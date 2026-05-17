@@ -1,0 +1,371 @@
+/* ====== Layer 3: Cell ====== */
+.cell-bg {
+    position:absolute; inset:-14%;
+    background:
+        radial-gradient(circle at 50% 48%, rgba(152, 183, 255, 0.72) 0 16%, transparent 34%),
+        radial-gradient(circle at 16% 20%, rgba(104, 214, 238, 0.55) 0 8%, transparent 22%),
+        radial-gradient(circle at 84% 76%, rgba(89, 188, 232, 0.45) 0 9%, transparent 24%),
+        linear-gradient(180deg, #1584e7 0%, #1d9ee8 44%, #34b9dc 100%);
+    overflow: hidden;
+}
+.cell-bg::before {
+    content: '';
+    position:absolute; inset:0;
+    background-image:
+        linear-gradient(rgba(255,255,255,0.08) 1px, transparent 1px),
+        linear-gradient(90deg, rgba(255,255,255,0.08) 1px, transparent 1px);
+    background-size: 6px 6px;
+    opacity: 0.36;
+    pointer-events: none;
+}
+.cell-bg::after {
+    content: '';
+    position:absolute; inset:0;
+    background:
+        radial-gradient(circle at 12% 84%, rgba(255,255,255,0.28) 0 1.8%, transparent 3.8%),
+        radial-gradient(circle at 78% 18%, rgba(255,255,255,0.24) 0 2%, transparent 4.2%),
+        radial-gradient(circle at 42% 12%, rgba(255,255,255,0.18) 0 1.5%, transparent 3.5%);
+    pointer-events:none;
+}
+
+.cell-drift-layer,
+.cell-arena {
+    position:absolute; inset:0;
+}
+.cell-drift-layer { z-index: 1; pointer-events:none; }
+.cell-trauma-layer {
+    position: absolute;
+    inset: 0;
+    z-index: 3;
+    pointer-events: none;
+}
+.cell-trauma-mark {
+    position: absolute;
+    width: clamp(24px, 4.6vw, 38px);
+    aspect-ratio: 1;
+    opacity: 0.92;
+    filter: drop-shadow(0 5px 8px rgba(0,0,0,0.38));
+    background: center / contain no-repeat url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 72 72'%3E%3Cdefs%3E%3CradialGradient id='body' cx='34%25' cy='24%25' r='76%25'%3E%3Cstop offset='0' stop-color='%23394a59'/%3E%3Cstop offset='.48' stop-color='%230a1420'/%3E%3Cstop offset='1' stop-color='%23000000'/%3E%3C/radialGradient%3E%3Cfilter id='soft' x='-20%25' y='-20%25' width='140%25' height='145%25'%3E%3CfeDropShadow dx='0' dy='5' stdDeviation='3' flood-color='%23000000' flood-opacity='.38'/%3E%3C/filter%3E%3C/defs%3E%3Cg filter='url(%23soft)'%3E%3Cellipse cx='36' cy='62' rx='24' ry='6' fill='%23152a3d' opacity='.34'/%3E%3Cpath d='M14 51c0-10 10-17 23-17 14 0 24 7 24 17 0 10-10 16-24 16-14 0-23-6-23-16Z' fill='url(%23body)'/%3E%3Cpath d='M18 42c0-9 9-15 21-15 11 0 19 6 19 14 0 9-8 15-21 15-12 0-19-6-19-14Z' fill='url(%23body)'/%3E%3Cpath d='M25 31c1-8 8-12 17-10 8 2 13 8 11 15-2 7-10 11-18 9-8-1-12-7-10-14Z' fill='url(%23body)'/%3E%3Cpath d='M35 23c2-7 0-11-4-14 9-2 18 5 18 14 0 7-6 11-14 11-7 0-11-3-13-8 5 2 10 1 13-3Z' fill='url(%23body)'/%3E%3Cpath d='M19 50c8 5 27 7 40-1-2 10-11 18-24 18-11 0-20-6-16-17Z' fill='%2300050a' opacity='.3'/%3E%3Cellipse cx='29' cy='44' rx='7' ry='8' fill='%23ffffff'/%3E%3Cellipse cx='44' cy='44' rx='7' ry='8' fill='%23ffffff'/%3E%3Ccircle cx='29' cy='46' r='3.2' fill='%2335223a'/%3E%3Ccircle cx='44' cy='46' r='3.2' fill='%2335223a'/%3E%3Cellipse cx='26.5' cy='41.5' rx='2' ry='1.7' fill='%23ffffff' opacity='.82'/%3E%3Cellipse cx='41.5' cy='41.5' rx='2' ry='1.7' fill='%23ffffff' opacity='.82'/%3E%3Cellipse cx='28' cy='27' rx='6' ry='4' fill='%23ffffff' opacity='.12' transform='rotate(-28 28 27)'/%3E%3C/g%3E%3C/svg%3E");
+    animation: cellTraumaDrift var(--trauma-dur, 4.6s) ease-in-out infinite;
+    animation-delay: var(--trauma-delay, 0s);
+}
+.cell-trauma-mark span { display: none; }
+.cell-trauma-mark.t1 { left: 18%; top: 18%; --trauma-x: 10px; --trauma-y: -8px; --trauma-dur: 4.8s; }
+.cell-trauma-mark.t2 { left: 73%; top: 20%; --trauma-x: -12px; --trauma-y: 9px; --trauma-dur: 5.2s; --trauma-delay: -1.1s; }
+.cell-trauma-mark.t3 { left: 13%; top: 52%; --trauma-x: 12px; --trauma-y: 10px; --trauma-dur: 5.6s; --trauma-delay: -2s; }
+.cell-trauma-mark.t4 { left: 77%; top: 55%; --trauma-x: -13px; --trauma-y: -8px; --trauma-dur: 5s; --trauma-delay: -2.7s; }
+.cell-trauma-mark.t5 { left: 39%; top: 20%; --trauma-x: 8px; --trauma-y: 12px; --trauma-dur: 5.4s; --trauma-delay: -1.8s; }
+.cell-trauma-mark.t6 { left: 45%; top: 72%; --trauma-x: -9px; --trauma-y: -10px; --trauma-dur: 5.8s; --trauma-delay: -3.1s; }
+@keyframes cellTraumaDrift {
+    0%, 100% { transform: translate(-50%, -50%) rotate(0deg) scale(1); }
+    50% { transform: translate(calc(-50% + var(--trauma-x, 8px)), calc(-50% + var(--trauma-y, -8px))) rotate(18deg) scale(1.08); }
+}
+.cell-float {
+    position:absolute;
+    display:block;
+    filter: drop-shadow(0 3px 4px rgba(6, 82, 137, 0.2));
+    animation: cellDrift var(--cell-dur, 5.6s) ease-in-out infinite;
+    animation-delay: var(--cell-delay, 0s);
+    will-change: transform;
+}
+@keyframes cellDrift {
+    0%, 100% { transform: translate(0, 0) rotate(var(--cell-rot, 0deg)); }
+    50% { transform: translate(var(--cell-x, 8px), var(--cell-y, -12px)) rotate(calc(var(--cell-rot, 0deg) + 8deg)); }
+}
+.cell-float-cell {
+    width: 34px; height: 34px;
+    border-radius: 50%;
+    background:
+        radial-gradient(circle at 38% 38%, #fff17e 0 12%, transparent 13%),
+        radial-gradient(circle, #a7f3d0 0 31%, #4ade80 33% 45%, transparent 47%),
+        repeating-conic-gradient(from 0deg, rgba(255,236,92,0.95) 0 10deg, transparent 10deg 22deg);
+}
+.cell-float-drop {
+    width: 27px; height: 34px;
+    border-radius: 50% 50% 55% 55%;
+    background: radial-gradient(circle at 35% 28%, #dcf7ff 0 14%, #93e5ff 38%, #48b7ef 100%);
+    transform-origin: 50% 60%;
+}
+.cell-float-drop::before {
+    content:'';
+    position:absolute; left: 50%; top: -7px;
+    width: 18px; height: 18px;
+    background: inherit;
+    border-radius: 4px 100% 4px 100%;
+    transform: translateX(-50%) rotate(45deg);
+}
+.cell-float-leaf {
+    width: 38px; height: 22px;
+    border-radius: 100% 0 100% 0;
+    background: linear-gradient(135deg, #77e0a2, #1ea66b);
+}
+.cell-float-leaf::after {
+    content:'';
+    position:absolute; left: 20%; right: 18%; top: 50%;
+    border-top: 2px solid rgba(255,255,255,0.38);
+    transform: rotate(-24deg);
+}
+.cell-float-dna {
+    width: 44px; height: 72px;
+    background:
+        radial-gradient(circle at 33% 8%, #a7f3d0 0 4px, transparent 4.5px),
+        radial-gradient(circle at 67% 21%, #fff17e 0 4px, transparent 4.5px),
+        radial-gradient(circle at 33% 34%, #a7f3d0 0 4px, transparent 4.5px),
+        radial-gradient(circle at 67% 47%, #fff17e 0 4px, transparent 4.5px),
+        radial-gradient(circle at 33% 60%, #a7f3d0 0 4px, transparent 4.5px),
+        radial-gradient(circle at 67% 73%, #fff17e 0 4px, transparent 4.5px),
+        radial-gradient(circle at 33% 86%, #a7f3d0 0 4px, transparent 4.5px);
+}
+.cell-float-dna::before,
+.cell-float-dna::after {
+    content:'';
+    position:absolute; inset:0;
+    border-left: 4px solid rgba(129, 232, 187, 0.9);
+    border-right: 4px solid rgba(255, 241, 126, 0.88);
+    border-radius: 50%;
+}
+.cell-float-dna::after {
+    transform: rotate(90deg) scaleX(0.56);
+    opacity: 0.55;
+}
+.cell-float-diet {
+    width: 44px;
+    height: 44px;
+    opacity: 0.94;
+    filter: drop-shadow(0 4px 5px rgba(6, 82, 137, 0.24));
+    pointer-events: auto;
+    cursor: pointer;
+    border-radius: 50%;
+    outline: none;
+    transition: filter 160ms ease, opacity 160ms ease;
+    touch-action: none;
+}
+.cell-float-diet:hover,
+.cell-float-diet:focus-visible {
+    opacity: 1;
+    filter: drop-shadow(0 5px 7px rgba(6, 82, 137, 0.28)) drop-shadow(0 0 0 rgba(255,255,255,0));
+}
+.cell-float-diet:focus-visible::before {
+    content:'';
+    position:absolute;
+    inset:-5px;
+    border:2px solid rgba(255,255,255,0.9);
+    border-radius: 50%;
+}
+.cell-float-diet svg {
+    display: block;
+    width: 100%;
+    height: 100%;
+}
+.cell-float.c1 { left: 4%; top: 13%; --cell-x: 10px; --cell-y: -8px; --cell-dur: 4.8s; }
+.cell-float.c2 { left: 75%; top: 9%; width: 42px; height: 42px; --cell-x: -8px; --cell-y: 13px; --cell-dur: 5.4s; --cell-delay: -1.1s; }
+.cell-float.c3 { left: 82%; top: 54%; width: 30px; height: 30px; --cell-x: -12px; --cell-y: -7px; --cell-dur: 4.9s; --cell-delay: -2.2s; }
+.cell-float.d1 { left: 49%; top: 15%; --cell-x: 5px; --cell-y: 12px; --cell-dur: 5.8s; --cell-delay: -0.6s; }
+.cell-float.d2 { left: 87%; top: 30%; width: 24px; height: 30px; --cell-x: -9px; --cell-y: 8px; --cell-dur: 5.2s; --cell-delay: -1.7s; }
+.cell-float.l1 { left: 18%; top: 29%; --cell-rot: -24deg; --cell-x: 9px; --cell-y: -9px; --cell-dur: 6s; }
+.cell-float.l2 { left: 66%; top: 23%; --cell-rot: -20deg; --cell-x: -7px; --cell-y: 10px; --cell-dur: 5.3s; --cell-delay: -1.4s; }
+.cell-float.n1 { left: 22%; top: 59%; --cell-rot: -18deg; --cell-x: 8px; --cell-y: -12px; --cell-dur: 6.2s; --cell-delay: -0.8s; }
+.cell-float.n2 { left: 69%; top: 60%; --cell-rot: 16deg; --cell-x: -9px; --cell-y: -8px; --cell-dur: 5.7s; --cell-delay: -2s; }
+.cell-float.diet-meat.diet-1 { left: 10%; top: 73%; --cell-rot: -14deg; --cell-x: 11px; --cell-y: -10px; --cell-dur: 5.5s; --cell-delay: -1.2s; }
+.cell-float.diet-vegetables.diet-1 { left: 10%; top: 73%; --cell-rot: 18deg; --cell-x: 10px; --cell-y: -9px; --cell-dur: 5.5s; --cell-delay: -1.2s; }
+.cell-float.diet-vegetables.diet-2 { left: 79%; top: 72%; --cell-rot: -18deg; --cell-x: -10px; --cell-y: -10px; --cell-dur: 5.9s; --cell-delay: -2.3s; }
+
+.cell-face-wrap {
+    position:absolute;
+    left: 50%; top: 50%;
+    width: clamp(150px, 28vw, 220px);
+    aspect-ratio: 1;
+    transform: translate(-50%, -50%);
+    z-index: 2;
+    pointer-events:none;
+    animation: cellFaceFloat 3.8s ease-in-out infinite;
+    filter: drop-shadow(0 14px 20px rgba(24, 62, 153, 0.28));
+    --cell-face-hi: #9bb1ff;
+    --cell-face-mid: #7272ec;
+    --cell-face-low: #7272ec;
+    --cell-face-deep: #5950c8;
+}
+@keyframes cellFaceFloat {
+    0%, 100% { transform: translate(-50%, -50%) rotate(-1deg); }
+    50% { transform: translate(-50%, calc(-50% - 10px)) rotate(1.5deg); }
+}
+.cell-face-svg { width: 100%; height: 100%; display:block; overflow: visible; }
+.cell-face-hunger-lines {
+    position: absolute;
+    top: 14%;
+    right: 15%;
+    display: flex;
+    gap: 3px;
+    opacity: 0;
+    transform: translateY(3px);
+    transition: opacity 160ms ease, transform 160ms ease;
+    filter: drop-shadow(0 2px 2px rgba(23, 24, 32, 0.22));
+}
+.cell-face-wrap.is-hungry .cell-face-hunger-lines {
+    opacity: 1;
+    transform: translateY(0);
+}
+.cell-face-hunger-lines i {
+    display: block;
+    width: 4px;
+    height: 25px;
+    border-radius: 999px;
+    background: linear-gradient(180deg, #111827, #020617);
+    border: 1px solid rgba(255,255,255,0.48);
+    animation: cellHungerLinePulse 1.15s ease-in-out infinite;
+}
+.cell-face-hunger-lines i:nth-child(2) { height: 30px; animation-delay: -0.18s; }
+.cell-face-hunger-lines i:nth-child(3) { height: 24px; animation-delay: -0.34s; }
+@keyframes cellHungerLinePulse {
+    0%, 100% { transform: translateY(0); opacity: 0.78; }
+    50% { transform: translateY(-3px); opacity: 1; }
+}
+.cell-face-body { fill: url(#cellFaceBody); }
+.cell-face-feeler {
+    fill: none;
+    stroke: var(--cell-face-deep);
+    stroke-width: 8;
+    stroke-linecap: round;
+}
+.cell-face-tip { fill: var(--cell-face-low); stroke: var(--cell-face-deep); stroke-width: 3; }
+.cell-face-wing { fill: url(#cellWing); opacity: 0.9; transform-origin: 90px 112px; }
+.cell-face-wing.left { transform: rotate(-18deg); }
+.cell-face-wing.right { transform: rotate(18deg); }
+.cell-face-blush { fill: #ef5ea8; opacity: 0.82; }
+.cell-face-eye {
+    fill: none;
+    stroke: #243469;
+    stroke-width: 7;
+    stroke-linecap: round;
+}
+.cell-face-expression { display: none; }
+.cell-face-wrap.is-expression-happy .cell-face-expression-happy,
+.cell-face-wrap.is-expression-worried .cell-face-expression-worried,
+.cell-face-wrap.is-expression-sad .cell-face-expression-sad,
+.cell-face-wrap.is-expression-sick .cell-face-expression-sick,
+.cell-face-wrap.is-expression-critical .cell-face-expression-critical { display: block; }
+.cell-face-wrap.is-sleeping .cell-face-expression-happy,
+.cell-face-wrap.is-sleeping .cell-face-expression-worried,
+.cell-face-wrap.is-sleeping .cell-face-expression-sad,
+.cell-face-wrap.is-sleeping .cell-face-expression-sick,
+.cell-face-wrap.is-sleeping .cell-face-expression-critical { display: none; }
+.cell-face-wrap.is-sleeping .cell-face-expression-sleep { display: block; }
+.cell-face-brow,
+.cell-face-x-eye {
+    fill: none;
+    stroke: #243469;
+    stroke-width: 5;
+    stroke-linecap: round;
+}
+.cell-face-expression-sad .cell-face-brow,
+.cell-face-expression-sick .cell-face-brow { stroke-width: 4.2; }
+.cell-face-weary-eye {
+    fill: none;
+    stroke: #243469;
+    stroke-width: 5.2;
+    stroke-linecap: round;
+}
+.cell-face-x-eye { stroke-width: 5.4; }
+.cell-face-open-eye {
+    fill: #f8fbff;
+    stroke: #243469;
+    stroke-width: 3.4;
+}
+.cell-face-expression-sad .cell-face-open-eye { stroke-width: 2.8; }
+.cell-face-iris { fill: #34477d; }
+.cell-face-pupil { fill: #1c2d5f; }
+.cell-face-eye-glint,
+.cell-face-eye-glint-small { fill: #ffffff; opacity: 0.92; }
+.cell-face-sleep-z {
+    fill: #243469;
+    font: 700 13px/1 sans-serif;
+    opacity: 0.82;
+}
+.cell-face-sleep-z.z2 { font-size: 10px; opacity: 0.64; }
+.cell-face-mouth {
+    fill: none;
+    stroke: #17315f;
+    stroke-width: 7;
+    stroke-linecap: round;
+}
+.cell-face-mouth-small { stroke-width: 5; }
+.cell-face-tear,
+.cell-face-sweat {
+    fill: #7dd3fc;
+    stroke: rgba(255,255,255,0.75);
+    stroke-width: 1.2;
+}
+.cell-face-spark { fill: #58dd87; opacity: 0.9; }
+
+.cell-hud {
+    position:absolute; top: 8px; left: 8px; right: 8px;
+    background: rgba(255,255,255,0.92);
+    border: 1.5px solid var(--border-card);
+    border-radius: 14px;
+    padding: 8px 12px;
+    z-index: 5;
+    box-shadow: 0 4px 12px rgba(0,0,0,0.15);
+}
+.cell-hud-row {
+    display:flex; align-items:center; gap: 8px;
+    font-size: 13px; font-weight: 700; color: var(--text-primary);
+    margin-bottom: 4px;
+}
+.cell-hud-row:last-child { margin-bottom: 0; font-weight: 500; }
+
+.cell-arena {
+    z-index: 4;
+    pointer-events: none;
+}
+.bad-cell {
+    position:absolute;
+    width: 54px; height: 54px;
+    border-radius: 50%;
+    background: radial-gradient(circle at 33% 28%, #ffd1d1, #f97373 48%, #dc2626 100%);
+    border: 2px solid rgba(127, 29, 29, 0.74);
+    display:flex; align-items:center; justify-content:center;
+    cursor: pointer;
+    pointer-events: auto;
+    box-shadow: 0 5px 12px rgba(127,29,29,0.36), inset -5px -6px 10px rgba(127,29,29,0.25), inset 4px 4px 8px rgba(255,255,255,0.36);
+    animation: pop .25s cubic-bezier(0.2, 1.4, 0.6, 1) both, badPulse 1.6s ease-in-out infinite .25s;
+    transform: translate(-50%, -50%);
+    overflow: visible;
+}
+.bad-cell::before,
+.bad-cell::after {
+    content:'';
+    position:absolute;
+    width: 12px; height: 12px;
+    border-radius: 50%;
+    background: #b91c1c;
+    box-shadow: 0 0 0 3px rgba(254, 202, 202, 0.45);
+}
+.bad-cell::before { left: -3px; top: 11px; }
+.bad-cell::after { right: 2px; bottom: -2px; }
+.bad-cell-core {
+    width: 21px; height: 21px;
+    border-radius: 46% 54% 58% 42%;
+    background: radial-gradient(circle at 34% 30%, #fff7ad, #f59e0b 62%, #991b1b 100%);
+    box-shadow: inset 0 0 4px rgba(0,0,0,0.25);
+}
+.bad-cell-dot {
+    position:absolute;
+    width: 7px; height: 7px;
+    border-radius: 50%;
+    background: rgba(127, 29, 29, 0.68);
+}
+.bad-cell-dot.d1 { left: 14px; top: 13px; }
+.bad-cell-dot.d2 { right: 12px; top: 17px; width: 6px; height: 6px; }
+.bad-cell-dot.d3 { left: 20px; bottom: 10px; width: 5px; height: 5px; }
+@keyframes badPulse { 0%,100%{ box-shadow: 0 5px 12px rgba(127,29,29,0.36), inset -5px -6px 10px rgba(127,29,29,0.25), inset 4px 4px 8px rgba(255,255,255,0.36); } 50%{ box-shadow: 0 5px 22px rgba(239,68,68,0.72), inset -5px -6px 10px rgba(127,29,29,0.25), inset 4px 4px 8px rgba(255,255,255,0.36); } }
+.bad-cell.boom {
+    animation: boom .25s ease-out forwards !important;
+}
+@keyframes boom {
+    from { transform: translate(-50%,-50%) scale(1); opacity: 1; filter: brightness(1); }
+    to   { transform: translate(-50%,-50%) scale(1.8); opacity: 0; filter: brightness(2.5); }
+}
+.cell-actions {
+    position:absolute; left: 0; right: 0; bottom: 12px;
+    text-align: center; z-index: 5;
+}

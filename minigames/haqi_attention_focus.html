@@ -1,0 +1,244 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+  <title>一一对应</title>
+  <script src="https://cdn.keepwork.com/keepwork/cdn/tailwindcss@3.4.16.js"></script>
+  <style>
+    * {
+      box-sizing: border-box
+    }
+
+    html,
+    body {
+      height: 100%;
+      margin: 0
+    }
+
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, 'PingFang SC', 'Microsoft YaHei', sans-serif;
+      background: linear-gradient(180deg, #fde68a, #f9a8d4);
+      color: #0f2747;
+      overflow: hidden
+    }
+
+    .shell {
+      height: 100%;
+      display: grid;
+      grid-template-rows: auto 1fr auto;
+      gap: 12px;
+      padding: 12px
+    }
+
+    .top {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 10px;
+      background: rgba(255, 255, 255, .88);
+      border: 2px solid #fff7ed;
+      border-radius: 14px;
+      padding: 10px 12px;
+      box-shadow: 0 5px 0 rgba(190, 24, 93, .16)
+    }
+
+    .title {
+      font-size: 18px;
+      font-weight: 900
+    }
+
+    .stats {
+      display: flex;
+      gap: 12px;
+      font-weight: 900;
+      color: #be185d
+    }
+
+    .topActions {
+      display: flex;
+      align-items: center;
+      gap: 10px
+    }
+
+    .helpBtn {
+      border: 0;
+      border-radius: 999px;
+      padding: 8px 12px;
+      background: #f97316;
+      color: white;
+      font-weight: 900;
+      box-shadow: 0 4px 0 #9a3412
+    }
+
+    .stage {
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      gap: 22px;
+      background: rgba(255, 255, 255, .8);
+      border-radius: 18px;
+      border: 2px solid rgba(255, 255, 255, .86);
+      box-shadow: 0 12px 30px rgba(15, 23, 42, .18)
+    }
+
+    .pair {
+      display: flex;
+      gap: min(10vw, 56px);
+      align-items: center;
+      justify-content: center
+    }
+
+    .shape {
+      width: min(30vmin, 150px);
+      height: min(30vmin, 150px);
+      display: grid;
+      place-items: center;
+      border-radius: 20px;
+      background: white;
+      box-shadow: 0 8px 0 rgba(14, 116, 144, .18), 0 12px 20px rgba(15, 23, 42, .16)
+    }
+
+    svg {
+      width: 72%;
+      height: 72%
+    }
+
+    .buttons {
+      display: flex;
+      justify-content: center;
+      gap: 18px
+    }
+
+    .btn {
+      border: 0;
+      border-radius: 999px;
+      padding: 12px 26px;
+      color: white;
+      font-size: 16px;
+      font-weight: 900;
+      box-shadow: 0 5px 0 rgba(15, 23, 42, .34)
+    }
+
+    .yes {
+      background: #22c55e
+    }
+
+    .no {
+      background: #f97316
+    }
+
+    .reset {
+      background: #0ea5e9
+    }
+
+    .toast {
+      position: fixed;
+      left: 50%;
+      top: 50%;
+      transform: translate(-50%, -50%);
+      background: #fff;
+      border: 2px solid #f9a8d4;
+      border-radius: 16px;
+      padding: 18px 22px;
+      font-weight: 900;
+      box-shadow: 0 16px 40px rgba(15, 23, 42, .25)
+    }
+
+    .howToOverlay {
+      position: fixed;
+      inset: 0;
+      z-index: 20;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      padding: 18px;
+      background: rgba(15, 39, 71, .42)
+    }
+
+    .howToCard {
+      width: min(92vw, 360px);
+      background: #fff;
+      border: 3px solid #f9a8d4;
+      border-radius: 16px;
+      padding: 20px;
+      box-shadow: 0 18px 44px rgba(15, 23, 42, .28)
+    }
+
+    .howToTitle {
+      margin: 0 0 10px;
+      font-size: 22px;
+      font-weight: 900;
+      color: #0f2747
+    }
+
+    .howToText {
+      margin: 0 0 16px;
+      line-height: 1.55;
+      font-weight: 800;
+      color: #be185d
+    }
+
+    [hidden] {
+      display: none !important
+    }
+
+    @media (max-width: 420px) {
+      .top {
+        align-items: flex-start;
+        flex-direction: column
+      }
+
+      .topActions {
+        width: 100%;
+        justify-content: space-between
+      }
+    }
+  </style>
+</head>
+
+<body>
+  <div class="shell">
+    <div class="top">
+      <div class="title">🎯 一一对应</div>
+      <div class="topActions">
+        <div class="stats"><span>轮次 <b id="round">1</b>/10</span><span>得分 <b id="score">0</b></span></div>
+        <button id="help" class="helpBtn" type="button">玩法</button>
+      </div>
+    </div>
+    <div class="stage">
+      <div class="pair">
+        <div id="left" class="shape"></div>
+        <div id="right" class="shape"></div>
+      </div>
+      <div class="buttons"><button class="btn yes" id="same">相同</button><button class="btn no"
+          id="different">不同</button></div>
+    </div>
+    <div class="buttons"><button id="restart" class="btn reset">重新开始</button></div>
+  </div>
+  <div id="howTo" class="howToOverlay" role="dialog" aria-modal="true" aria-labelledby="howToTitle" hidden>
+    <div class="howToCard">
+      <h1 id="howToTitle" class="howToTitle">怎么玩</h1>
+      <p class="howToText">观察左右两个图形。如果形状和颜色都一样，点“相同”；只要有一处不同，点“不同”。共 10 轮。</p>
+      <button id="startPlay" class="btn reset" type="button">开始玩</button>
+    </div>
+  </div>
+  <script>
+    const colors = ['#ef4444', '#22c55e', '#0ea5e9', '#a855f7', '#f59e0b']; const shapes = ['circle', 'rect', 'triangle', 'star']; let round = 1, score = 0, currentSame = false;
+    const howTo = document.getElementById('howTo'); let hasStarted = false;
+    function post(type, data = {}) { try { window.parent.postMessage({ type, data }, '*') } catch (e) { } }
+    function shapeSvg(shape, color) { if (shape === 'circle') return `<svg viewBox="0 0 100 100"><circle cx="50" cy="50" r="34" fill="${color}"/></svg>`; if (shape === 'rect') return `<svg viewBox="0 0 100 100"><rect x="20" y="20" width="60" height="60" rx="12" fill="${color}"/></svg>`; if (shape === 'triangle') return `<svg viewBox="0 0 100 100"><path d="M50 14 88 82H12Z" fill="${color}"/></svg>`; return `<svg viewBox="0 0 100 100"><path d="M50 10 61 36 90 38 68 57 75 86 50 70 25 86 32 57 10 38 39 36Z" fill="${color}"/></svg>` }
+    function pick(arr) { return arr[Math.floor(Math.random() * arr.length)] }
+    function nextRound() { document.getElementById('round').textContent = round; document.getElementById('score').textContent = score; const base = { shape: pick(shapes), color: pick(colors) }; currentSame = Math.random() > .45; let other = { ...base }; if (!currentSame) { if (Math.random() > .5) other.shape = pick(shapes.filter(x => x !== base.shape)); else other.color = pick(colors.filter(x => x !== base.color)) } document.getElementById('left').innerHTML = shapeSvg(base.shape, base.color); document.getElementById('right').innerHTML = shapeSvg(other.shape, other.color) }
+    function answer(value) { if (value === currentSame) score += 10; round++; if (round > 10) { finish(); return } nextRound() }
+    function finish() { document.getElementById('score').textContent = score; const box = document.createElement('div'); box.className = 'toast'; box.textContent = `完成！得分 ${score}`; document.body.appendChild(box); post('gameFinished', { earnedPoints: score, finishedAt: Date.now() }); setTimeout(() => box.remove(), 1400) }
+    function start() { round = 1; score = 0; post('gameStarted'); nextRound() }
+    function showHowTo() { howTo.hidden = false }
+    function closeHowTo() { howTo.hidden = true; if (!hasStarted) { hasStarted = true; start() } }
+    document.getElementById('same').onclick = () => answer(true); document.getElementById('different').onclick = () => answer(false); document.getElementById('help').onclick = showHowTo; document.getElementById('startPlay').onclick = closeHowTo; document.getElementById('restart').onclick = () => { hasStarted = true; start() }; window.addEventListener('message', e => { if (e.data?.type === 'gameContinue') { hasStarted = true; start() } }); post('gameLoaded'); showHowTo();
+  </script>
+</body>
+
+</html>

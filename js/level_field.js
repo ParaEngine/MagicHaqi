@@ -1,0 +1,1678 @@
+// Level 1 — Field：星球表面（陆 / 水 / 空 三大生态）
+
+import { $, $$, escapeHtml, showToast } from './utils.js';
+import { canPlaceItemInArea, CONFIG, DECO_VISUALS, findLargestHouseInLayout, getPlacedItemZOrder, isHouseItem, SHOP_ITEMS } from './config.js';
+import { getActivePlanetWeather, state, setCurrentField } from './state.js';
+import { getLayout, savePetDebounced, saveUserProfileDebounced } from './storage.js';
+import { displayPetName } from './dna.js';
+import { isPetInteractionBlocked, petArtHtml, playEggWelcomeOnce, playPetClickFeedback, playPetHappy, randomPetTalk, sleepingInteractionText } from './pet.js';
+import { markPetCared, normalizePetPoops } from './petTick.js';
+import { canPetAppearInField, getPetLocationType, getReleasedPetHome } from './petLifecycle.js';
+import SoundManager from './soundManager.js';
+
+const soundManager = SoundManager.getInstance();
+
+const ITEM_BY_ID = Object.fromEntries(SHOP_ITEMS.map(it => [it.id, it]));
+const ITEM_Z_INDEX_BASE = 5;
+const DRAG_PLACE_THRESHOLD = 8;
+const FUEL_MACHINE_WORK_DELAY_MS = 3000;
+const FUEL_MACHINE_ANIMATION_MS = 4600;
+const POOP_WIND_ANIMATION_MS = 980;
+const POOP_SUCK_ANIMATION_MS = 1850;
+const POOP_SUCK_STAGGER_MS = 150;
+const POOP_MACHINE_SWEEP_MIN_MS = 10000;
+const POOP_MACHINE_SWEEP_MAX_MS = 15000;
+const POOP_MACHINE_SWEEP_SCREEN_MS = 2500;
+const POOP_MACHINE_SWEEP_RETURN_MS = 520;
+const FUEL_MACHINE_VIEWBOX_TARGET_X = 0.5;
+const FUEL_MACHINE_VIEWBOX_TARGET_Y = 0.68;
+const FIELD_EFFECT_MIN_SCALE = 0.88;
+const FIELD_EFFECT_MAX_SCALE = 1.7;
+const FIELD_WIDTH_METERS = 10;
+const FIELD_HEIGHT_METERS = 3;
+const FIELD_BACKGROUND_CHUNKS = Math.max(1, Math.ceil(FIELD_WIDTH_METERS / FIELD_HEIGHT_METERS));
+const FIELD_PET_BASE_SIZE_PX = 96;
+const FIELD_ITEM_DEFAULT_SCALE = 1.15;
+const FIELD_ITEM_MIN_SCALE = 0.8;
+const FIELD_ITEM_MAX_SCALE = 3;
+const FIELD_ITEM_SCALE_STEP = 1.15;
+const DRAG_TO_SCENE_HINT = '拖动到场景中';
+let suppressFieldDockActivationUntil = 0;
+let fieldPan = 0;
+let fieldPxPerMeter = 1;
+const fieldPanById = {};
+let selectedFieldItem = null;
+let activePoopSweepId = 0;
+let activePoopSuckFinishAt = 0;
+
+const REMOTE_FIELD_DEFS = [
+    { id: 'fire', name: '火山', emoji: '', iconClass: 'field-tab-icon-fire', discoveryId: 'firebird', favoriteTrait: 'dragonLike' },
+    { id: 'ice', name: '冰湖', emoji: '', iconClass: 'field-tab-icon-ice', discoveryId: 'ice', favoriteTrait: 'fishLike' },
+    { id: 'life', name: '神树', emoji: '', iconClass: 'field-tab-icon-life', discoveryId: 'desert', favoriteTrait: 'fruitLike' },
+    { id: 'dark', name: '洞穴', emoji: '', iconClass: 'field-tab-icon-dark', discoveryId: 'shadow', favoriteTrait: 'catLike' },
+];
+
+const FIELD_THEMES = {
+    land: {
+        className: 'field-map-land',
+        sky: 'linear-gradient(180deg,#b7f2ff 0%,#e2ffe2 42%,#8bd05d 100%)',
+        terrain: ['#4fb06b', '#79c75d', '#a3d95b', '#7ec850'],
+        props: ['🌳', '🌲', '🌸', '🍄', '🪨', '🌼', '🌿'],
+        floaters: ['🦋', '✨', '🍃'],
+        path: 'rgba(255, 238, 180, 0.62)',
+    },
+    water: {
+        className: 'field-map-water',
+        sky: 'linear-gradient(180deg,#baf0ff 0%,#6ed2f7 44%,#1789ce 100%)',
+        terrain: ['#38bdf8', '#22c5d7', '#0ea5e9', '#2dd4bf'],
+        props: ['🪸', '🐚', '🪨', '🌾', '🫧', '⭐', '🌊'],
+        floaters: ['🐟', '🫧', '✨'],
+        path: 'rgba(224, 250, 255, 0.4)',
+    },
+    sky: {
+        className: 'field-map-sky',
+        sky: 'linear-gradient(180deg,#dbeafe 0%,#93c5fd 50%,#60a5fa 100%)',
+        terrain: ['#ffffff', '#e0f2fe', '#bfdbfe', '#fde68a'],
+        props: ['☁️', '🌈', '⭐', '🪁', '🎈', '✨', '💫'],
+        floaters: ['☁️', '🪁', '✨'],
+        path: 'rgba(255, 255, 255, 0.52)',
+    },
+    fire: {
+        className: 'field-map-fire',
+        sky: 'linear-gradient(180deg,#2b163d 0%,#7f1d1d 48%,#1f0f13 100%)',
+        terrain: ['#7f1d1d', '#b45309', '#ef4444', '#431407'],
+        props: ['🌋', '🔥', '🪨', '🌶️', '✨', '💥'],
+        floaters: ['🔥', '✨', '💫'],
+        path: 'rgba(251, 146, 60, 0.38)',
+        remoteLandmark: true,
+    },
+    ice: {
+        className: 'field-map-ice',
+        sky: 'linear-gradient(180deg,#e0f7ff 0%,#93c5fd 48%,#155e75 100%)',
+        terrain: ['#dffbff', '#bae6fd', '#7dd3fc', '#a5f3fc'],
+        props: ['🧊', '❄️', '🐚', '🪨', '✨'],
+        floaters: ['❄️', '✨', '🫧'],
+        path: 'rgba(224, 250, 255, 0.48)',
+        remoteLandmark: true,
+    },
+    life: {
+        className: 'field-map-life',
+        sky: 'linear-gradient(180deg,#fde68a 0%,#d9f99d 42%,#84cc16 100%)',
+        terrain: ['#facc15', '#bef264', '#65a30d', '#fef3c7'],
+        props: ['🏝️', '🌳', '🌸', '🌵', '🍄', '✨'],
+        floaters: ['🍃', '✨', '🦋'],
+        path: 'rgba(253, 230, 138, 0.62)',
+        remoteLandmark: true,
+    },
+    dark: {
+        className: 'field-map-dark',
+        sky: 'linear-gradient(180deg,#111827 0%,#374151 48%,#030712 100%)',
+        terrain: ['#111827', '#374151', '#4b5563', '#1f2937'],
+        props: ['🕳️', '🪨', '💎', '✨', '🌙'],
+        floaters: ['✨', '🌙', '💫'],
+        path: 'rgba(107, 114, 128, 0.36)',
+        remoteLandmark: true,
+    },
+};
+
+function availableFields() {
+    const discoveries = state.remotePlanetDiscoveries || {};
+    return [
+        ...CONFIG.fields,
+        ...REMOTE_FIELD_DEFS.filter(field => discoveries[field.discoveryId]),
+    ];
+}
+
+function hashString(value) {
+    const str = String(value || 'MagicHaqi');
+    let h = 2166136261 >>> 0;
+    for (let i = 0; i < str.length; i++) {
+        h ^= str.charCodeAt(i);
+        h = Math.imul(h, 16777619) >>> 0;
+    }
+    return h >>> 0;
+}
+
+function makeRng(seedText) {
+    let seed = hashString(seedText) || 1;
+    return () => {
+        seed = (Math.imul(seed, 1664525) + 1013904223) >>> 0;
+        return seed / 4294967296;
+    };
+}
+
+function pick(rng, arr) {
+    return arr[Math.floor(rng() * arr.length) % arr.length];
+}
+
+function pct(value) {
+    return (value * 100).toFixed(2) + '%';
+}
+
+function clamp01(value) {
+    const n = Number(value);
+    return Math.max(0, Math.min(1, Number.isFinite(n) ? n : 0));
+}
+
+function clampRange(value, min, max) {
+    const n = Number(value);
+    return Math.max(min, Math.min(max, Number.isFinite(n) ? n : min));
+}
+
+function setFieldEffectScale(zoom = 1) {
+    const stage = $('mhStage');
+    if (!stage) return;
+    stage.style.setProperty('--field-effect-scale', clampRange(zoom, FIELD_EFFECT_MIN_SCALE, FIELD_EFFECT_MAX_SCALE).toFixed(3));
+}
+
+function getFieldEffectScale() {
+    const stage = $('mhStage');
+    return clampRange(stage ? getComputedStyle(stage).getPropertyValue('--field-effect-scale') : 1, FIELD_EFFECT_MIN_SCALE, FIELD_EFFECT_MAX_SCALE);
+}
+
+function currentFieldKey() {
+    return 'field_' + state.currentField;
+}
+
+function isFieldDecorMode() {
+    return state.isDecorMode && state.zoomLevel === 1;
+}
+
+function pointToFieldCoords(clientX, clientY, requireInside = false) {
+    const scene = $('mhFieldScene');
+    const rect = scene?.getBoundingClientRect?.();
+    if (!rect || rect.width <= 0 || rect.height <= 0) return null;
+    if (requireInside && (clientX < rect.left || clientX > rect.right || clientY < rect.top || clientY > rect.bottom)) return null;
+    return {
+        x: clamp01((clientX - rect.left) / rect.width),
+        y: clamp01((clientY - rect.top) / rect.height),
+    };
+}
+
+function isPointOverDock(clientX, clientY) {
+    if (!isFieldDecorMode()) return false;
+    const dock = $('mhDock');
+    const rect = dock?.getBoundingClientRect?.();
+    return !!rect && clientX >= rect.left && clientX <= rect.right && clientY >= rect.top && clientY <= rect.bottom;
+}
+
+function setFieldDockDeleteTargetVisible(visible) {
+    const dock = $('mhDock');
+    const target = $('mhFieldDockDeleteTarget');
+    dock?.classList.toggle('mh-room-dock-delete-visible', !!visible);
+    dock?.classList.toggle('mh-room-dock-delete-active', !!visible);
+    if (target) target.setAttribute('aria-hidden', visible ? 'false' : 'true');
+}
+
+function makeFieldDragGhost(itemId) {
+    const item = ITEM_BY_ID[itemId];
+    const ghost = document.createElement('div');
+    ghost.className = 'mh-field-drag-ghost';
+    const fontSize = getFieldItemFontSize(item);
+    const svgMarkup = DECO_VISUALS[itemId]?.svg;
+    if (svgMarkup) {
+        ghost.classList.add('mh-field-drag-ghost-svg');
+        ghost.innerHTML = `<span class="field-house-svg" style="width:${(fontSize * 2.2).toFixed(0)}px;display:inline-block">${svgMarkup}</span>`;
+    } else {
+        ghost.textContent = item?.emoji || '';
+        ghost.style.fontSize = fontSize.toFixed(1) + 'px';
+    }
+    document.body.appendChild(ghost);
+    return ghost;
+}
+
+function moveFieldDragGhost(ghost, clientX, clientY) {
+    if (!ghost) return;
+    ghost.style.left = clientX + 'px';
+    ghost.style.top = clientY + 'px';
+}
+
+function getFieldItemScale(item, placedItem = null) {
+    const scale = Number(placedItem?.fieldSize ?? item?.fieldSize);
+    const safeScale = Number.isFinite(scale) ? scale : FIELD_ITEM_DEFAULT_SCALE;
+    return clampRange(safeScale, FIELD_ITEM_MIN_SCALE, FIELD_ITEM_MAX_SCALE);
+}
+
+function getFieldItemFontSize(item, placedItem = null) {
+    return Math.round(FIELD_PET_BASE_SIZE_PX * getFieldItemScale(item, placedItem));
+}
+
+function currentFieldPanKey() {
+    return state.currentField || 'land';
+}
+
+function metersToFieldPx(value) {
+    return Math.max(1, Math.round((Number(value) || 0) * fieldPxPerMeter));
+}
+
+function recomputeFieldMetrics() {
+    const stage = $('mhStage');
+    const scene = $('mhFieldScene');
+    const stageHeight = stage?.clientHeight || window.innerHeight || 540;
+    fieldPxPerMeter = Math.max(1, stageHeight / FIELD_HEIGHT_METERS);
+    if (scene) {
+        scene.style.width = metersToFieldPx(FIELD_WIDTH_METERS) + 'px';
+        scene.dataset.fieldWidthMeters = String(FIELD_WIDTH_METERS);
+        scene.dataset.fieldHeightMeters = String(FIELD_HEIGHT_METERS);
+    }
+}
+
+function applyFieldPan() {
+    const stage = $('mhStage');
+    const scene = $('mhFieldScene');
+    if (!stage || !scene) return;
+    recomputeFieldMetrics();
+    const key = currentFieldPanKey();
+    const maxPan = Math.max(0, scene.offsetWidth - stage.clientWidth);
+    if (!Number.isFinite(fieldPanById[key])) {
+        fieldPanById[key] = -maxPan / 2;
+    }
+    fieldPan = clampRange(fieldPanById[key], -maxPan, 0);
+    fieldPanById[key] = fieldPan;
+    scene.style.transform = `translate3d(${fieldPan.toFixed(1)}px,0,0)`;
+}
+
+function getFieldPanBounds() {
+    const stage = $('mhStage');
+    const scene = $('mhFieldScene');
+    if (!stage || !scene) return null;
+    recomputeFieldMetrics();
+    const stageWidth = stage.clientWidth || window.innerWidth || 1;
+    const sceneWidth = scene.offsetWidth || stageWidth;
+    return {
+        stage,
+        scene,
+        stageWidth,
+        sceneWidth,
+        maxPan: Math.max(0, sceneWidth - stageWidth),
+    };
+}
+
+function setFieldPanValue(value) {
+    const bounds = getFieldPanBounds();
+    if (!bounds) return;
+    fieldPan = clampRange(value, -bounds.maxPan, 0);
+    fieldPanById[currentFieldPanKey()] = fieldPan;
+    bounds.scene.style.transform = `translate3d(${fieldPan.toFixed(1)}px,0,0)`;
+}
+
+function animateFieldPanTo(targetPan, duration, onComplete) {
+    const bounds = getFieldPanBounds();
+    if (!bounds) {
+        onComplete?.();
+        return;
+    }
+    const panKey = currentFieldPanKey();
+    const startPan = fieldPan;
+    const endPan = clampRange(targetPan, -bounds.maxPan, 0);
+    const start = performance.now();
+    const step = (now) => {
+        const progress = clamp01((now - start) / Math.max(1, duration));
+        const eased = 1 - Math.pow(1 - progress, 3);
+        fieldPan = startPan + (endPan - startPan) * eased;
+        fieldPanById[panKey] = fieldPan;
+        bounds.scene.style.transform = `translate3d(${fieldPan.toFixed(1)}px,0,0)`;
+        if (progress < 1) requestAnimationFrame(step);
+        else onComplete?.();
+    };
+    requestAnimationFrame(step);
+}
+
+function getPoopsInField(pet, fieldId = state.currentField) {
+    return (pet?.poops || []).filter(p => (p?.field || 'land') === fieldId);
+}
+
+function hasTooManyPoops(pet, fieldId = state.currentField) {
+    return getPoopsInField(pet, fieldId).length > CONFIG.poopWarningThreshold;
+}
+
+function updateCleanPoopsButton(pet) {
+    const cleanBtn = $('mhFieldCleanPoopsBtn');
+    if (!cleanBtn) return;
+    const poopCount = getPoopsInField(pet).length;
+    const isUrgent = poopCount > CONFIG.poopWarningThreshold;
+    cleanBtn.disabled = poopCount === 0;
+    cleanBtn.classList.toggle('is-urgent', isUrgent && poopCount > 0);
+    cleanBtn.title = isUrgent
+        ? `当前场景有 ${poopCount} 坨便便，花 ${CONFIG.poopMachineCostCoins} 金币启动机器清理成生物燃料`
+        : `花 ${CONFIG.poopMachineCostCoins} 金币启动机器，清理当前场景里的便便并转成生物燃料`;
+}
+
+function updateBiofuelHud() {
+    const fuel = $('mhBiofuel');
+    const fuelValue = fuel?.querySelector?.('[data-hud-value="biofuel"]');
+    if (fuelValue) fuelValue.textContent = String(state.biofuel | 0);
+    else if (fuel) fuel.textContent = `⛽ ${state.biofuel | 0}`;
+}
+
+function updateCoinsHud() {
+    const coins = $('mhCoins');
+    const coinsValue = coins?.querySelector?.('[data-hud-value="coins"]');
+    if (coinsValue) coinsValue.textContent = String(state.coins | 0);
+}
+
+function renderFieldActionTray(pet) {
+    const sleeping = isPetInteractionBlocked(pet);
+    const isEgg = pet?.stage === 'egg';
+    const navDisabled = sleeping || isEgg;
+    const navDisabledTitle = isEgg ? '蛋还没有孵化，无法进行此操作。' : (sleeping ? sleepingInteractionText(pet) : '');
+    const poopCount = getPoopsInField(pet).length;
+    const urgentClass = hasTooManyPoops(pet) ? ' is-urgent' : '';
+    const cleanTitle = hasTooManyPoops(pet)
+        ? `当前场景有 ${poopCount} 坨便便，花 ${CONFIG.poopMachineCostCoins} 金币启动机器清理成生物燃料`
+        : `花 ${CONFIG.poopMachineCostCoins} 金币启动机器，清理当前场景里的便便并转成生物燃料`;
+    return `
+        <div class="mh-dock-row mh-scroll-x dock-action-row">
+            <button type="button" class="btn-secondary action-btn dock-icon-btn mh-decor-action mh-field-mode-toggle" id="mhFieldDecorBtn">
+                <span class="dock-icon">🛠</span>
+                <span class="dock-label">建造</span>
+            </button>
+            <button type="button" class="btn-secondary action-btn dock-icon-btn mh-field-clean-action${urgentClass}" id="mhFieldCleanPoopsBtn" ${poopCount ? '' : 'disabled'} title="${escapeHtml(cleanTitle)}">
+                <span class="dock-icon">♻️</span>
+                <span class="dock-label">清理</span>
+            </button>
+            <button type="button" class="btn-secondary action-btn dock-icon-btn mh-field-nav-action${navDisabled ? ' is-sleep-disabled' : ''}" data-field-nav="minigames" ${navDisabled ? 'disabled' : ''} title="${escapeHtml(navDisabledTitle)}">
+                <span class="dock-icon">🎾</span>
+                <span class="dock-label">玩耍</span>
+            </button>
+            <button type="button" class="btn-secondary action-btn dock-icon-btn mh-field-nav-action${navDisabled ? ' is-sleep-disabled' : ''}" data-field-nav="learning" ${navDisabled ? 'disabled' : ''} title="${escapeHtml(navDisabledTitle)}">
+                <span class="dock-icon">📚</span>
+                <span class="dock-label">学习</span>
+            </button>
+            <button type="button" class="btn-secondary action-btn dock-icon-btn mh-field-nav-action${navDisabled ? ' is-sleep-disabled' : ''}" data-field-nav="hatching" ${navDisabled ? 'disabled' : ''} title="${escapeHtml(navDisabledTitle)}">
+                <span class="dock-icon">🥚</span>
+                <span class="dock-label">孵化仓</span>
+            </button>
+        </div>
+    `;
+}
+
+function renderFieldDecorTray(inv, currentField) {
+    const items = SHOP_ITEMS
+        .filter(it => (it.type === 'furniture' || it.type === 'house') && canPlaceItemInArea(it, currentField.id))
+        .map(it => ({ ...it, qty: it.unlimited ? Infinity : (inv[it.id] || 0) }))
+        .filter(it => it.qty > 0 || it.unlimited);
+    return `
+        <div class="mh-dock-tray mh-scroll-x">
+            ${items.length === 0
+                ? `<div class="mh-dock-hint">📦 ${escapeHtml(currentField.name)}暂无可摆放户外物品，去商店买点吧～</div>`
+                : items.map(it => {
+                    const showCount = !it.uniqueItem;
+                    const countHtml = showCount ? ` ×${it.unlimited ? '∞' : it.qty}` : '';
+                    return `
+                    <div data-tray-item="${escapeHtml(it.id)}" class="shop-item" style="min-width:62px;padding:6px;flex-shrink:0">
+                        <div class="emoji">${it.emoji}</div>
+                        <div class="name" style="font-size:10px">${escapeHtml(it.name)}${countHtml}</div>
+                    </div>`;
+                }).join('')}
+        </div>
+    `;
+}
+
+function getUserSeedBase() {
+    const configured = String(state.settings?.fieldMapSeed || '').trim();
+    if (configured) return configured;
+    return state.user?.username || state.user?.name || state.user?.id || 'guest';
+}
+
+function generateFieldMap(fieldId) {
+    const theme = FIELD_THEMES[fieldId] || FIELD_THEMES.land;
+    const isRemoteLandmark = !!theme.remoteLandmark;
+    const rng = makeRng(`${getUserSeedBase()}::${fieldId}`);
+    const islands = [];
+    const chunks = FIELD_BACKGROUND_CHUNKS;
+    const propCountPerChunk = isRemoteLandmark ? 12 : (fieldId === 'sky' ? 18 : 26);
+    const patchCountPerChunk = fieldId === 'sky' ? 13 : 16;
+    const floaterCountPerChunk = isRemoteLandmark ? 6 : (fieldId === 'water' ? 11 : 8);
+
+    for (let chunk = 0; chunk < chunks; chunk++) {
+        const chunkLeft = chunk / chunks;
+        const chunkWidth = 1 / chunks;
+        for (let i = 0; i < patchCountPerChunk; i++) {
+            const w = (0.16 + rng() * 0.24) * chunkWidth;
+            const h = 0.08 + rng() * 0.16;
+            islands.push({
+                x: chunkLeft + (0.06 + rng() * 0.88) * chunkWidth,
+                y: 0.18 + rng() * 0.7,
+                w,
+                h,
+                rot: -16 + rng() * 32,
+                color: pick(rng, theme.terrain),
+                opacity: 0.54 + rng() * 0.34,
+                chunk,
+            });
+        }
+    }
+
+    const props = [];
+    for (let chunk = 0; chunk < chunks; chunk++) {
+        const chunkIslands = islands.filter(island => island.chunk === chunk);
+        for (let i = 0; i < propCountPerChunk; i++) {
+            const anchor = pick(rng, chunkIslands);
+            const x = Math.max(0.01, Math.min(0.99, anchor.x + (rng() - 0.5) * anchor.w * 1.3));
+            const y = Math.max(0.12, Math.min(0.9, anchor.y + (rng() - 0.5) * anchor.h * 1.8));
+            props.push({
+                x, y,
+                emoji: pick(rng, theme.props),
+                size: 17 + Math.floor(rng() * 19),
+                rot: -12 + rng() * 24,
+                opacity: 0.75 + rng() * 0.2,
+                z: Math.round(1 + y * 8),
+            });
+        }
+    }
+
+    const floaters = [];
+    for (let chunk = 0; chunk < chunks; chunk++) {
+        const chunkLeft = chunk / chunks;
+        const chunkWidth = 1 / chunks;
+        for (let i = 0; i < floaterCountPerChunk; i++) {
+            floaters.push({
+                x: chunkLeft + (0.05 + rng() * 0.9) * chunkWidth,
+                y: 0.08 + rng() * 0.58,
+                emoji: pick(rng, theme.floaters),
+                size: 13 + Math.floor(rng() * 15),
+                delay: -(rng() * 6).toFixed(2),
+                dur: (5 + rng() * 5).toFixed(2),
+                drift: (-18 + rng() * 36).toFixed(1),
+            });
+        }
+    }
+
+    const landmarks = [];
+    if (isRemoteLandmark) {
+        landmarks.push({
+            x: 0.5,
+            y: 0.16,
+            scale: 1,
+            z: 3,
+        });
+    }
+
+    return { theme, islands, props, floaters, landmarks };
+}
+
+function fieldMapHtml(fieldId) {
+    const map = generateFieldMap(fieldId);
+    const weather = getActivePlanetWeather();
+    const weatherClass = weather ? ` weather-${weather.id}` : '';
+    const weatherOverlay = weather ? planetWeatherOverlayHtml(weather) : '';
+    return `
+        <div class="field-bg ${map.theme.className}${weatherClass}" style="background:${map.theme.sky}">
+            <div class="field-horizon"></div>
+            <div class="field-map-path" style="--field-path-color:${map.theme.path}"></div>
+            ${map.landmarks.map((p) => `<div class="field-remote-landmark field-remote-${escapeHtml(fieldId)}" aria-hidden="true" style="left:${pct(p.x)};bottom:${pct(p.y)};transform:translateX(-50%) scale(${p.scale.toFixed(2)});z-index:${p.z}"></div>`).join('')}
+            <div class="field-terrain-layer">
+                ${map.islands.map((p, idx) => `<span class="field-terrain-patch" style="left:${pct(p.x)};top:${pct(p.y)};width:${pct(p.w)};height:${pct(p.h)};background:${p.color};opacity:${p.opacity.toFixed(2)};transform:translate(-50%,-50%) rotate(${p.rot.toFixed(1)}deg);z-index:${idx % 3}"></span>`).join('')}
+            </div>
+            <div class="field-prop-layer">
+                ${map.props.map((p) => `<span class="field-map-prop" style="left:${pct(p.x)};top:${pct(p.y)};font-size:${p.size}px;opacity:${p.opacity.toFixed(2)};transform:translate(-50%,-50%) rotate(${p.rot.toFixed(1)}deg);z-index:${p.z}">${p.emoji}</span>`).join('')}
+            </div>
+            <div class="field-floater-layer">
+                ${map.floaters.map((p) => `<span class="field-map-floater" style="left:${pct(p.x)};top:${pct(p.y)};font-size:${p.size}px;--field-float-delay:${p.delay}s;--field-float-dur:${p.dur}s;--field-float-drift:${p.drift}px">${p.emoji}</span>`).join('')}
+            </div>
+            ${weatherOverlay}
+        </div>
+    `;
+}
+
+function planetWeatherOverlayHtml(weather) {
+    if (weather.id === 'rain') {
+        return `<div class="field-weather-layer field-weather-rain" aria-hidden="true">${Array.from({ length: 42 }).map((_, i) => `<i style="left:${(i * 17) % 100}%;animation-delay:${-(i % 12) * 0.11}s"></i>`).join('')}</div>`;
+    }
+    if (weather.id === 'sunny') {
+        return '<div class="field-weather-layer field-weather-sun" aria-hidden="true"></div>';
+    }
+    if (weather.id === 'breeze') {
+        return '<div class="field-weather-layer field-weather-breeze" aria-hidden="true"><i></i><i></i><i></i></div>';
+    }
+    return '';
+}
+
+// 检查候选位置是否与其它房屋重叠（足够近时视为不可用）
+function isFieldPositionFree(x, y, fieldLayout, excludeIdx = -1) {
+    if (!Array.isArray(fieldLayout)) return true;
+    for (let i = 0; i < fieldLayout.length; i++) {
+        if (i === excludeIdx) continue;
+        const other = fieldLayout[i];
+        const otherDef = ITEM_BY_ID[other?.itemId];
+        if (!isHouseItem(otherDef)) continue;
+        const dx = x - clamp01(other.x);
+        const dy = y - clamp01(other.y);
+        if (dx * dx + dy * dy < 0.012) return false; // ~0.11 单位半径
+    }
+    return true;
+}
+
+function petFieldPosition(pet, fieldId, index) {
+    if (getPetLocationType(pet) === 'released') {
+        const home = getReleasedPetHome(pet);
+        if (home.kind === 'field' && home.id === fieldId) {
+            return {
+                x: home.x,
+                y: home.y,
+                delay: home.delay,
+                dur: home.dur,
+                dx: home.dx,
+                dy: home.dy,
+            };
+        }
+    }
+    // 默认：聚集在该场景"主屋"前；若位置被占，依次尝试右侧、左侧。
+    const fieldLayout = getLayout(pet?.id, 'field_' + fieldId);
+    const rallyHouse = findLargestHouseInLayout(fieldLayout);
+    if (rallyHouse && getPetLocationType(pet) !== 'released') {
+        const rng = makeRng(`${getUserSeedBase()}::${fieldId}::pet-rally::${pet?.id || index}`);
+        const hx = clamp01(rallyHouse.placed.x);
+        const hy = clamp01(rallyHouse.placed.y);
+        // 房屋大致占地半径（按 fieldSize 估算，单位：归一化场景坐标）
+        const hScale = Number(rallyHouse.placed?.fieldSize) || rallyHouse.def?.fieldSize || 1;
+        const houseHalfH = 0.08 * hScale; // 纵向半高
+        const houseHalfW = 0.08 * hScale; // 横向半宽
+        // 候选顺序：前（下方）→ 右 → 左；前方加入随机偏移，且偏出房屋投影外
+        const frontGap   = houseHalfH + 0.10 + rng() * 0.06;  // 0.10~0.16 + 半高
+        const frontJitterX = (rng() - 0.5) * 0.10;            // ±0.05 横向抖动
+        const sideGap    = houseHalfW + 0.08 + rng() * 0.04;
+        const sideY      = hy + houseHalfH * 0.4 + (rng() - 0.5) * 0.04;
+        const candidates = [
+            { x: clamp01(hx + frontJitterX),   y: Math.min(0.92, hy + frontGap) },     // 门前下方
+            { x: Math.min(0.94, hx + sideGap), y: Math.min(0.90, sideY) },             // 右侧
+            { x: Math.max(0.06, hx - sideGap), y: Math.min(0.90, sideY) },             // 左侧
+        ];
+        const chosen = candidates.find(c => isFieldPositionFree(c.x, c.y, fieldLayout, rallyHouse.idx)) || candidates[0];
+        return {
+            x: chosen.x,
+            y: chosen.y,
+            delay: -(rng() * 6).toFixed(2),
+            dur: (10 + rng() * 6).toFixed(2),
+            dx: (-14 + rng() * 28).toFixed(1),
+            dy: (-8 + rng() * 16).toFixed(1),
+        };
+    }
+    const rng = makeRng(`${getUserSeedBase()}::${fieldId}::pet::${pet?.id || index}`);
+    return {
+        x: 0.18 + rng() * 0.64,
+        y: 0.38 + rng() * 0.38,
+        delay: -(rng() * 8).toFixed(2),
+        dur: (9 + rng() * 7).toFixed(2),
+        dx: (-26 + rng() * 52).toFixed(1),
+        dy: (-16 + rng() * 32).toFixed(1),
+    };
+}
+
+function fieldPetsHtml(currentPet, fieldId) {
+    const petIds = (state.petOrder || []).filter(id => state.pets[id] && canPetAppearInField(state.pets[id], fieldId));
+    const orderedIds = petIds.includes(currentPet?.id)
+        ? [currentPet.id, ...petIds.filter(id => id !== currentPet.id)]
+        : petIds;
+    const visibleIds = state.isDecorMode && currentPet?.id
+        ? orderedIds.filter(id => id === currentPet.id)
+        : orderedIds;
+    return visibleIds.map((id, index) => {
+        const p = state.pets[id];
+        const pos = petFieldPosition(p, fieldId, index);
+        const isCurrent = id === currentPet?.id;
+        const size = isCurrent ? 96 : 78;
+        const zIndex = 16 + Math.round(pos.y * 18) + (isCurrent ? 5 : 0);
+        return `
+            <div class="pet-sprite field-pet ${isCurrent ? 'field-pet-current' : 'field-pet-friend'}" data-field-pet="${escapeHtml(id)}"
+                style="left:${pct(pos.x)};top:${pct(pos.y)};z-index:${zIndex};--field-wander-delay:${pos.delay}s;--field-wander-dur:${pos.dur}s;--field-wander-x:${pos.dx}px;--field-wander-y:${pos.dy}px">
+                <div class="field-pet-wander" style="width:${size}px;height:${size}px">${petArtHtml(p, { alt: displayPetName(p), motion: 'walk' })}</div>
+            </div>
+        `;
+    }).join('');
+}
+
+function fieldFuelPoopContentsHtml(poopCount) {
+    const count = Math.max(1, Math.min(10, Number(poopCount) || 1));
+    const positions = [
+        [48, 84], [72, 90], [58, 108], [84, 116], [42, 128],
+        [68, 138], [92, 146], [54, 154], [80, 160], [34, 104],
+    ];
+    return positions.slice(0, count).map((position, index) => {
+        const [x, y] = position;
+        const delay = (index * 0.13).toFixed(2);
+        const rotation = index % 2 ? 8 : -8;
+        return `<text class="field-fuel-poop-piece" x="${x}" y="${y}" text-anchor="middle" style="--field-fuel-poop-delay:${delay}s;--field-fuel-poop-rotate:${rotation}deg">💩</text>`;
+    }).join('');
+}
+
+function fieldFuelRoomAnimationHtml(fuelGain, { poopCount = fuelGain } = {}) {
+    return `
+        <div class="field-fuel-room-animation" aria-hidden="true">
+            <svg viewBox="0 0 128 200" focusable="false">
+                <defs>
+                    <linearGradient id="mhFuelGlass" x1="0" x2="1" y1="0" y2="1">
+                        <stop offset="0" stop-color="#ecfeff" stop-opacity="0.88"></stop>
+                        <stop offset="0.5" stop-color="#7dd3fc" stop-opacity="0.28"></stop>
+                        <stop offset="1" stop-color="#0e7490" stop-opacity="0.34"></stop>
+                    </linearGradient>
+                    <linearGradient id="mhFuelLiquid" x1="0" x2="1" y1="0" y2="1">
+                        <stop offset="0" stop-color="#fef08a"></stop>
+                        <stop offset="0.48" stop-color="#22c55e"></stop>
+                        <stop offset="1" stop-color="#06b6d4"></stop>
+                    </linearGradient>
+                    <filter id="mhFuelSoftGlow" x="-40%" y="-40%" width="180%" height="180%">
+                        <feGaussianBlur stdDeviation="2.2" result="blur"></feGaussianBlur>
+                        <feMerge><feMergeNode in="blur"></feMergeNode><feMergeNode in="SourceGraphic"></feMergeNode></feMerge>
+                    </filter>
+                    <clipPath id="mhFuelCylinderClip">
+                        <path d="M22 56 C22 36 106 36 106 56 L106 154 C106 176 22 176 22 154Z"></path>
+                    </clipPath>
+                </defs>
+                <ellipse cx="64" cy="180" rx="46" ry="10" fill="rgba(6,18,44,0.18)"></ellipse>
+                <g class="field-fuel-fan" aria-hidden="true">
+                    <path class="field-fuel-fan-blade" d="M64 36 C51 32 40 23 43 15 C52 13 60 23 64 36Z" fill="#67e8f9"></path>
+                    <path class="field-fuel-fan-blade" d="M64 36 C75 29 89 27 94 35 C89 43 75 41 64 36Z" fill="#bae6fd"></path>
+                    <path class="field-fuel-fan-blade" d="M64 36 C66 50 62 62 53 63 C48 55 55 43 64 36Z" fill="#86efac"></path>
+                    <circle cx="64" cy="36" r="7" fill="#0f2747" stroke="#ecfeff" stroke-width="2.4"></circle>
+                    <circle cx="64" cy="36" r="2.7" fill="#fef08a"></circle>
+                </g>
+                <path d="M22 56 C22 36 106 36 106 56 L106 154 C106 176 22 176 22 154Z" fill="url(#mhFuelGlass)" stroke="#0e7490" stroke-width="4"></path>
+                <ellipse cx="64" cy="56" rx="42" ry="15" fill="hsla(186, 100%, 96%, 0.78)" stroke="#67e8f9" stroke-width="3"></ellipse>
+                <path d="M24 58 C32 70 96 70 104 58" fill="none" stroke="rgba(255,255,255,0.58)" stroke-width="3" stroke-linecap="round"></path>
+                <g clip-path="url(#mhFuelCylinderClip)">
+                    <rect class="field-fuel-tank-fill" x="28" y="118" width="72" height="45" rx="18" fill="url(#mhFuelLiquid)"></rect>
+                    <g class="field-fuel-poop-stack">
+                        ${fieldFuelPoopContentsHtml(poopCount)}
+                    </g>
+                    <ellipse cx="64" cy="118" rx="36" ry="11" fill="#bbf7d0" opacity="0.78"></ellipse>
+                    <path d="M34 62 C44 148 44 148 34 166" fill="none" stroke="rgba(255,255,255,0.54)" stroke-width="6" stroke-linecap="round"></path>
+                </g>
+                <path class="field-fuel-energy" d="M67 74 L48 116 H65 L55 154 L86 102 H68 L78 74Z" fill="#fde047" stroke="#facc15" stroke-width="2" filter="url(#mhFuelSoftGlow)"></path>
+                <text class="field-fuel-gain" x="64" y="17" text-anchor="middle">+${Math.max(0, fuelGain | 0)} ⛽</text>
+                <circle class="field-fuel-spark field-fuel-spark-a" cx="33" cy="88" r="3" fill="#fef08a"></circle>
+                <circle class="field-fuel-spark field-fuel-spark-b" cx="102" cy="108" r="2.4" fill="#67e8f9"></circle>
+                <circle class="field-fuel-spark field-fuel-spark-c" cx="82" cy="166" r="2.8" fill="#86efac"></circle>
+            </svg>
+        </div>
+    `;
+}
+
+function flyFuelNumberToHud(fuelGain, onArrive) {
+    const fuel = $('mhBiofuel');
+    const fuelRect = fuel?.getBoundingClientRect?.();
+    const machinePoint = getFieldFuelMachinePoint();
+    if (!fuelRect || !machinePoint) {
+        onArrive?.();
+        return;
+    }
+
+    const startX = machinePoint.x;
+    const startY = machinePoint.y - 24;
+    const endX = fuelRect.left + fuelRect.width * 0.5;
+    const endY = fuelRect.top + fuelRect.height * 0.5;
+    const fly = document.createElement('div');
+    fly.className = 'field-fuel-fly-number';
+    fly.textContent = `+${Math.max(0, fuelGain | 0)}`;
+    fly.style.left = startX + 'px';
+    fly.style.top = startY + 'px';
+    const effectScale = getFieldEffectScale();
+    fly.style.setProperty('--field-fly-font-size', (18 * effectScale).toFixed(1) + 'px');
+    const dx = endX - startX;
+    const dy = endY - startY;
+    fly.style.setProperty('--fuel-fly-dx', dx.toFixed(1) + 'px');
+    fly.style.setProperty('--fuel-fly-dy', dy.toFixed(1) + 'px');
+    fly.style.setProperty('--fuel-fly-mid-x', (dx * 0.46).toFixed(1) + 'px');
+    fly.style.setProperty('--fuel-fly-mid-y', (dy * 0.24).toFixed(1) + 'px');
+    document.body.appendChild(fly);
+
+    let done = false;
+    const finish = () => {
+        if (done) return;
+        done = true;
+        fly.remove();
+        onArrive?.();
+        fuel.classList.add('field-fuel-hud-pop');
+        setTimeout(() => fuel.classList.remove('field-fuel-hud-pop'), 520);
+    };
+    fly.addEventListener('animationend', finish, { once: true });
+    setTimeout(finish, 1500);
+}
+
+function playPoopGlitchWind({ hold = false } = {}) {
+    const stage = $('mhStage');
+    if (!stage) return () => {};
+    stage.querySelectorAll('.field-poop-glitch-wind').forEach(el => el.remove());
+    const overlay = document.createElement('div');
+    overlay.className = `field-poop-glitch-wind${hold ? ' is-holding' : ''}`;
+    overlay.setAttribute('aria-hidden', 'true');
+    overlay.innerHTML = `
+        <svg viewBox="0 0 180 140" xmlns="http://www.w3.org/2000/svg" focusable="false">
+            <g class="field-poop-wind-shadow" fill="none" stroke-linecap="round" stroke-linejoin="round">
+                <path d="M10 28 C18 58 46 82 79 83 C104 84 109 70 89 62 C73 56 66 43 76 34 C85 26 99 34 103 48" />
+                <path d="M4 72 C28 100 65 116 106 114" />
+                <path d="M12 118 C47 136 87 138 126 128" />
+            </g>
+            <g class="field-poop-wind-main" fill="none" stroke-linecap="round" stroke-linejoin="round">
+                <path d="M10 28 C18 58 46 82 79 83 C104 84 109 70 89 62 C73 56 66 43 76 34 C85 26 99 34 103 48" />
+                <path d="M4 72 C28 100 65 116 106 114" />
+                <path d="M12 118 C47 136 87 138 126 128" />
+            </g>
+            <g class="field-poop-wind-glitch" fill="none" stroke-linecap="round" stroke-linejoin="round">
+                <path d="M12 31 C20 58 48 80 78 81 C102 82 107 70 89 63 C73 57 67 44 77 35 C86 27 99 35 102 48" />
+                <path d="M6 75 C29 101 66 114 105 112" />
+                <path d="M14 120 C49 134 87 136 125 126" />
+            </g>
+        </svg>
+    `;
+    stage.appendChild(overlay);
+    let done = false;
+    const finish = () => {
+        if (done || !overlay.isConnected) return;
+        done = true;
+        overlay.classList.remove('is-holding');
+        overlay.classList.add('is-ending');
+        setTimeout(() => overlay.remove(), 360);
+    };
+    if (!hold) setTimeout(finish, POOP_WIND_ANIMATION_MS + 160);
+    return finish;
+}
+
+function playFieldFuelRoomAnimation(fuelGain, onFuelArrive, { deferProcessing = false, poopCount = fuelGain } = {}) {
+    const stage = $('mhStage');
+    if (!stage) {
+        if (deferProcessing) return () => onFuelArrive?.();
+        onFuelArrive?.();
+        return () => {};
+    }
+    const old = stage.querySelector('.field-fuel-room-animation');
+    if (old) old.remove();
+    const wrap = document.createElement('div');
+    wrap.innerHTML = fieldFuelRoomAnimationHtml(fuelGain, { poopCount });
+    const overlay = wrap.firstElementChild;
+    if (deferProcessing) overlay.classList.add('is-waiting');
+    stage.appendChild(overlay);
+    let started = false;
+    const startProcessing = () => {
+        if (started || !overlay.isConnected) return;
+        started = true;
+        overlay.classList.remove('is-waiting');
+        soundManager.playPoopCollectorSuck(fuelGain);
+        setTimeout(() => flyFuelNumberToHud(fuelGain, onFuelArrive), FUEL_MACHINE_WORK_DELAY_MS);
+        setTimeout(() => overlay?.remove(), FUEL_MACHINE_ANIMATION_MS);
+    };
+    if (!deferProcessing) startProcessing();
+    return startProcessing;
+}
+
+function getFieldFuelMachinePoint() {
+    const stage = $('mhStage');
+    const machine = stage?.querySelector?.('.field-fuel-room-animation svg');
+    const rect = machine?.getBoundingClientRect?.();
+    if (rect && rect.width > 0 && rect.height > 0) {
+        return {
+            x: rect.left + rect.width * FUEL_MACHINE_VIEWBOX_TARGET_X,
+            y: rect.top + rect.height * FUEL_MACHINE_VIEWBOX_TARGET_Y,
+        };
+    }
+    const stageRect = stage?.getBoundingClientRect?.();
+    if (!stageRect || stageRect.width <= 0 || stageRect.height <= 0) return null;
+    const scale = getFieldEffectScale();
+    const machineWidth = Math.min(Math.max(window.innerWidth * 0.24, 92), 128) * scale;
+    const machineHeight = machineWidth * (200 / 128);
+    const right = stageRect.right - 10;
+    const bottom = stageRect.bottom - 12;
+    return {
+        x: right - machineWidth + machineWidth * FUEL_MACHINE_VIEWBOX_TARGET_X,
+        y: bottom - machineHeight + machineHeight * FUEL_MACHINE_VIEWBOX_TARGET_Y,
+    };
+}
+
+function getPoopFlyFontSize(source, rect) {
+    const computedSize = Number.parseFloat(getComputedStyle(source).fontSize) || 26;
+    const layoutHeight = source.offsetHeight || computedSize;
+    const visualScale = layoutHeight > 0 ? rect.height / layoutHeight : getFieldEffectScale();
+    return Math.max(computedSize, computedSize * visualScale);
+}
+
+function startFieldPetMachinePull() {
+    const target = getFieldFuelMachinePoint();
+    const petEls = Array.from(document.querySelectorAll('.field-pet'));
+    if (!target || petEls.length === 0) return () => {};
+    petEls.forEach(el => {
+        const rect = el.getBoundingClientRect?.();
+        if (!rect || rect.width <= 0 || rect.height <= 0) return;
+        const centerX = rect.left + rect.width * 0.5;
+        const centerY = rect.top + rect.height * 0.5;
+        const dx = target.x - centerX;
+        const dy = target.y - centerY;
+        const pullX = clampRange(dx * 0.1, -24, 24);
+        const pullY = clampRange(dy * 0.08, -16, 16);
+        const rotate = clampRange(dx * 0.045, -9, 9);
+        const skew = clampRange(rotate * 0.5, -4.5, 4.5);
+        el.style.setProperty('--field-pet-pull-x', pullX.toFixed(1) + 'px');
+        el.style.setProperty('--field-pet-pull-y', pullY.toFixed(1) + 'px');
+        el.style.setProperty('--field-pet-pull-rotate', rotate.toFixed(1) + 'deg');
+        el.style.setProperty('--field-pet-pull-skew', skew.toFixed(1) + 'deg');
+        el.classList.add('is-machine-pulled');
+    });
+    return () => {
+        petEls.forEach(el => {
+            el.classList.remove('is-machine-pulled');
+            el.style.removeProperty('--field-pet-pull-x');
+            el.style.removeProperty('--field-pet-pull-y');
+            el.style.removeProperty('--field-pet-pull-rotate');
+            el.style.removeProperty('--field-pet-pull-skew');
+        });
+    };
+}
+
+function playPoopSuckToMachine(poops, onComplete) {
+    const sourceEls = Array.from(document.querySelectorAll('.field-poops .poop-btn'));
+    const target = getFieldFuelMachinePoint();
+    const animated = [];
+    if (target) {
+        (poops || []).forEach((poop, index) => {
+            const source = sourceEls.find(el => el.dataset.poop === poop?.id);
+            const rect = source?.getBoundingClientRect?.();
+            if (!source || !rect || rect.width <= 0 || rect.height <= 0) return;
+            const fly = source.cloneNode(true);
+            const startX = rect.left + rect.width * 0.5;
+            const startY = rect.top + rect.height * 0.5;
+            const dx = target.x - startX;
+            const dy = target.y - startY;
+            const delay = Math.min(index * POOP_SUCK_STAGGER_MS, 1200);
+            fly.className = 'field-poop-suck-fly';
+            fly.disabled = true;
+            fly.style.left = startX + 'px';
+            fly.style.top = startY + 'px';
+            fly.style.fontSize = getPoopFlyFontSize(source, rect).toFixed(1) + 'px';
+            fly.style.setProperty('--poop-suck-dx', dx.toFixed(1) + 'px');
+            fly.style.setProperty('--poop-suck-dy', dy.toFixed(1) + 'px');
+            fly.style.setProperty('--poop-suck-arc-x', (dx * 0.28).toFixed(1) + 'px');
+            fly.style.setProperty('--poop-suck-arc-y', (dy * 0.2 - 18).toFixed(1) + 'px');
+            fly.style.setProperty('--poop-suck-near-x', (dx * 0.82).toFixed(1) + 'px');
+            fly.style.setProperty('--poop-suck-near-y', (dy * 0.78 - 6).toFixed(1) + 'px');
+            fly.style.animationDelay = delay + 'ms';
+            document.body.appendChild(fly);
+            source.classList.add('field-poop-suck-source');
+            setTimeout(() => source.remove(), Math.max(90, delay + 80));
+            setTimeout(() => fly.remove(), delay + POOP_SUCK_ANIMATION_MS + 120);
+            animated.push(delay);
+        });
+    }
+
+    const animatedIds = new Set((poops || []).map(p => p?.id));
+    sourceEls.forEach(el => {
+        if (animatedIds.has(el.dataset.poop) && !el.classList.contains('field-poop-suck-source')) el.remove();
+    });
+    const finishDelay = animated.length ? Math.max(...animated) + POOP_SUCK_ANIMATION_MS : 0;
+    if (finishDelay > 0) activePoopSuckFinishAt = Math.max(activePoopSuckFinishAt, performance.now() + finishDelay);
+    setTimeout(() => onComplete?.(), finishDelay);
+}
+
+function playPoopMachineSweep(poops, onComplete) {
+    const bounds = getFieldPanBounds();
+    const remaining = new Map((poops || []).filter(p => p?.id).map(p => [p.id, p]));
+    if (!bounds || bounds.maxPan <= 1 || remaining.size === 0) {
+        playPoopSuckToMachine(poops, onComplete);
+        return;
+    }
+
+    const sweepId = ++activePoopSweepId;
+    activePoopSuckFinishAt = 0;
+    const { stage, scene, stageWidth, sceneWidth, maxPan } = bounds;
+    const panKey = currentFieldPanKey();
+    const returnPan = clampRange(fieldPanById[panKey] ?? fieldPan, -maxPan, 0);
+    const duration = clampRange(
+        POOP_MACHINE_SWEEP_MIN_MS + (maxPan / Math.max(1, stageWidth)) * POOP_MACHINE_SWEEP_SCREEN_MS,
+        POOP_MACHINE_SWEEP_MIN_MS,
+        POOP_MACHINE_SWEEP_MAX_MS
+    );
+    const triggerVisiblePoops = () => {
+        const left = Math.max(0, -fieldPan / sceneWidth - 0.03);
+        const right = Math.min(1, (-fieldPan + stageWidth) / sceneWidth + 0.03);
+        const visible = [];
+        remaining.forEach((poop, id) => {
+            const x = clamp01(poop.x);
+            if (x >= left && x <= right) {
+                remaining.delete(id);
+                visible.push(poop);
+            }
+        });
+        if (visible.length) playPoopSuckToMachine(visible);
+    };
+    const finish = () => {
+        if (sweepId !== activePoopSweepId) return;
+        if (remaining.size) playPoopSuckToMachine(Array.from(remaining.values()));
+        animateFieldPanTo(returnPan, POOP_MACHINE_SWEEP_RETURN_MS, () => {
+            if (sweepId !== activePoopSweepId) return;
+            scene.classList.remove('is-machine-sweeping');
+            stage.__mhFieldPannedAt = Date.now();
+            const waitForLastPoop = Math.max(0, activePoopSuckFinishAt - performance.now());
+            setTimeout(() => onComplete?.(), waitForLastPoop + 180);
+        });
+    };
+
+    scene.classList.add('is-machine-sweeping');
+    setFieldPanValue(0);
+    triggerVisiblePoops();
+    const start = performance.now();
+    const step = (now) => {
+        if (sweepId !== activePoopSweepId) return;
+        const progress = clamp01((now - start) / duration);
+        fieldPan = -maxPan * progress;
+        fieldPanById[panKey] = fieldPan;
+        scene.style.transform = `translate3d(${fieldPan.toFixed(1)}px,0,0)`;
+        triggerVisiblePoops();
+        if (progress < 1) requestAnimationFrame(step);
+        else finish();
+    };
+    requestAnimationFrame(step);
+}
+
+function collectPoopsInCurrentField(pet) {
+    const fieldId = state.currentField;
+    const poops = getPoopsInField(pet, fieldId);
+    if (!poops.length) return 0;
+    const machineCost = CONFIG.poopMachineCostCoins | 0;
+    if (machineCost > 0 && (state.coins | 0) < machineCost) {
+        showToast(`金币不足，需要 ${machineCost} 金币启动机器清理`, 'error', 1200);
+        return 0;
+    }
+    if (machineCost > 0) {
+        state.coins = Math.max(0, (state.coins | 0) - machineCost);
+        updateCoinsHud();
+        showToast(`使用${machineCost} 金币启动机器清理`, 'info', 1200);
+    }
+    const poopIds = new Set(poops.map(p => p.id));
+    pet.poops = (pet.poops || []).filter(p => !poopIds.has(p?.id));
+    markPetCared(pet);
+    try {
+        const ls = state.lifetimeStats || (state.lifetimeStats = { feeds: 0, poopsCleaned: 0, adultsRaised: 0 });
+        ls.poopsCleaned = (Number(ls.poopsCleaned) || 0) + poops.length;
+    } catch (_) {}
+    const fuelGain = poops.length * (CONFIG.biofuelPerPoop || 1);
+    state.biofuel = (state.biofuel | 0) + fuelGain;
+    savePetDebounced(pet);
+    saveUserProfileDebounced();
+    soundManager.playPoopClean(poops.length);
+    const stopWind = playPoopGlitchWind({ hold: true });
+    const startFuelProcessing = playFieldFuelRoomAnimation(fuelGain, () => {
+        updateBiofuelHud();
+        showToast(`清理 ${poops.length} 坨，+${fuelGain} ⛽ 生物燃料`, 'success', 1200);
+    }, { deferProcessing: true, poopCount: poops.length });
+    const stopPetPull = startFieldPetMachinePull();
+    playPoopMachineSweep(poops, () => {
+        stopWind();
+        stopPetPull();
+        startFuelProcessing();
+    });
+    updateCleanPoopsButton(pet);
+    return poops.length;
+}
+
+function showFieldPetTalk(petEl, pet) {
+    const talk = randomPetTalk(pet);
+    playPetHappy(petEl, pet);
+    const anchor = petEl.querySelector?.(':scope > .field-pet-wander') || petEl;
+    let bubble = anchor.querySelector(':scope > .mh-pet-talk-bubble');
+    if (!bubble) {
+        bubble = document.createElement('div');
+        bubble.className = 'mh-pet-talk-bubble';
+        anchor.appendChild(bubble);
+    }
+    bubble.style.setProperty('--mh-talk-flip', '1');
+    bubble.textContent = talk.text;
+    bubble.classList.remove('mh-pet-talk-bubble-hide', 'mh-pet-talk-bubble-pop');
+    void bubble.offsetWidth;
+    bubble.classList.add('mh-pet-talk-bubble-pop');
+    clearTimeout(bubble.__mhFieldPetTalkTimer);
+    bubble.__mhFieldPetTalkTimer = setTimeout(() => {
+        bubble.classList.add('mh-pet-talk-bubble-hide');
+        bubble.addEventListener('animationend', () => bubble.remove(), { once: true });
+    }, talk.state === 'sleeping' ? 2600 : 2400);
+}
+
+export const fieldLevel = {
+    id: 'field',
+    index: 1,
+    minCamera: 0.6,    // 飞远 → 触发 zoomOut 回到 planet 视图
+    maxCamera: 1.7,    // 贴近 → 触发 zoomIn 进入 pet 视图
+    bestCamera: 1.0,
+    minVisualScale: 0.88,
+    enterFromAbove: 0.85,
+    enterFromInner: 1.65,
+
+    stageHtml(pet) {
+        const fields = availableFields();
+        const fld = fields.find(f => f.id === state.currentField) || fields[0] || CONFIG.fields[0];
+        const layout = getLayout(pet.id, 'field_' + fld.id) || [];
+        const removedPoops = normalizePetPoops(pet);
+        if (removedPoops > 0) savePetDebounced(pet);
+        const poops = getPoopsInField(pet, fld.id);
+
+        return `
+            <div id="mhFieldScene" class="mh-field-scene" style="width:${metersToFieldPx(FIELD_WIDTH_METERS)}px" data-field-width-meters="${FIELD_WIDTH_METERS}" data-field-height-meters="${FIELD_HEIGHT_METERS}">
+            ${fieldMapHtml(fld.id)}
+
+            <div class="field-build-overlay" aria-hidden="true"></div>
+
+            <div class="field-items">
+                ${(() => {
+                    const activeHouse = findLargestHouseInLayout(layout);
+                    const activeIdx = activeHouse?.idx ?? -1;
+                    return layout.map((it, idx) => {
+                        const def = ITEM_BY_ID[it.itemId];
+                        if (!def) return '';
+                        const zIndex = ITEM_Z_INDEX_BASE + getPlacedItemZOrder(it, def);
+                        const x = clamp01(it.x);
+                        const y = clamp01(it.y);
+                        const scale = getFieldItemScale(def, it);
+                        const fontSize = getFieldItemFontSize(def, it);
+                        const selectedClass = selectedFieldItem?.fieldKey === currentFieldKey() && selectedFieldItem.idx === idx ? ' selected' : '';
+                        const isHouse = isHouseItem(def);
+                        const houseClass = isHouse ? ' is-house' : '';
+                        const isActive = isHouse && idx === activeIdx;
+                        const flagHtml = isActive
+                            ? `<span class="field-house-flag" aria-hidden="true" title="主屋（${activeHouse.count} 间）"><span class="field-house-flag-pole"></span><span class="field-house-flag-banner">🚩</span></span>`
+                            : '';
+                        const inner = isHouse && DECO_VISUALS[def.id]?.svg
+                            ? `<span class="field-house-svg" style="width:${(fontSize * 2.2).toFixed(0)}px">${DECO_VISUALS[def.id].svg}</span>${flagHtml}`
+                            : def.emoji;
+                        return `<div class="field-item${selectedClass}${houseClass}" data-fidx="${idx}" data-x="${x}" data-y="${y}" data-field-size="${scale.toFixed(3)}" style="left:${(x * 100).toFixed(2)}%;top:${(y * 100).toFixed(2)}%;z-index:${zIndex};font-size:${fontSize}px">${inner}</div>`;
+                    }).join('');
+                })()}
+            </div>
+
+
+            <div class="field-poops">
+                ${poops.map(p => `<button class="poop-btn" data-poop="${escapeHtml(p.id)}" style="left:${(p.x * 100).toFixed(2)}%;top:${(p.y * 100).toFixed(2)}%" title="收集 → ⛽">💩</button>`).join('')}
+            </div>
+
+            <div class="field-pets">
+                ${fieldPetsHtml(pet, fld.id)}
+            </div>
+            </div>
+        `;
+    },
+
+    bindStage(pet, ctx) {
+        setFieldEffectScale();
+        applyFieldPan();
+        window.addEventListener('resize', applyFieldPan, { passive: true });
+        bindFieldPan(ctx);
+        $$('.poop-btn').forEach(el => {
+            el.onclick = (e) => {
+                e.stopPropagation();
+                const id = el.dataset.poop;
+                const idx = (pet.poops || []).findIndex(p => p.id === id);
+                if (idx >= 0) {
+                    const poop = pet.poops[idx];
+                    const fuelGain = CONFIG.biofuelPerPoop || 1;
+                    pet.poops.splice(idx, 1);
+                    markPetCared(pet);
+                    try {
+                        const ls = state.lifetimeStats || (state.lifetimeStats = { feeds: 0, poopsCleaned: 0, adultsRaised: 0 });
+                        ls.poopsCleaned = (Number(ls.poopsCleaned) || 0) + 1;
+                    } catch (_) {}
+                    state.biofuel = (state.biofuel | 0) + fuelGain;
+                    savePetDebounced(pet);
+                    saveUserProfileDebounced();
+                    soundManager.playPoopClean(1);
+                    playPoopGlitchWind();
+                    playFieldFuelRoomAnimation(fuelGain, () => {
+                        updateBiofuelHud();
+                        showToast(`+${fuelGain} ⛽ 生物燃料`, 'success', 900);
+                    });
+                    const stopPetPull = startFieldPetMachinePull();
+                    playPoopSuckToMachine([poop], stopPetPull);
+                    updateCleanPoopsButton(pet);
+                }
+            };
+        });
+
+        // 点击空地放置已选中的家具
+        const stage = $('mhStage');
+        if (stage) {
+            stage.addEventListener('click', (e) => {
+                if (Date.now() - (stage.__mhFieldPannedAt || 0) < 260) return;
+                if (e.target.closest('.poop-btn, .field-item, .pet-sprite, [data-tray-item], .mh-field-scale-controls')) return;
+                clearFieldItemSelection(ctx);
+                if (!isFieldDecorMode() || !ctx.selectedTrayItem) return;
+                const pos = pointToFieldCoords(e.clientX, e.clientY, true);
+                if (!pos) return;
+                ctx.callbacks.onPlaceItem?.(ctx.selectedTrayItem, pos.x, pos.y, currentFieldKey());
+            });
+        }
+        $$('.field-item').forEach(el => {
+            bindFieldItemDrag(el, ctx);
+            el.onclick = (e) => {
+                e.stopPropagation();
+                if (Date.now() - (el.__mhFieldDraggedAt || 0) < 260) return;
+                selectFieldItem(el, ctx);
+            };
+        });
+        ensureFieldItemScaleControls(ctx);
+        restoreFieldItemSelection(ctx);
+
+        // 点击宠物 → 播放开心动画（粒子 + 弹跳）
+        $$('.field-pet').forEach(petEl => {
+            petEl.onclick = (e) => {
+                e.stopPropagation();
+                const clickedPet = state.pets[petEl.dataset.fieldPet] || pet;
+                if (isPetInteractionBlocked(clickedPet)) { showToast(sleepingInteractionText(clickedPet), 'info', 1800); return; }
+                if (clickedPet.id === pet.id) {
+                    ctx.onPetTouch?.(petEl, clickedPet);
+                    playPetClickFeedback(petEl, clickedPet);
+                }
+                else showFieldPetTalk(petEl, clickedPet);
+            };
+        });
+
+        // 蛋阶段：首次进入 field 时把镜头平移到蛋的位置，然后在蛋上播放烟花特效
+        if (pet?.stage === 'egg') {
+            // 等下一帧，确保 .field-pet-current 已挂载到 DOM 上
+            requestAnimationFrame(() => {
+                try {
+                    const eggEl = document.querySelector(`.field-pet-current[data-field-pet="${pet.id}"]`);
+                    const bounds = getFieldPanBounds?.();
+                    if (eggEl && bounds) {
+                        const sceneWidth = bounds.sceneWidth;
+                        const stageWidth = bounds.stageWidth;
+                        const leftPct = parseFloat(eggEl.style.left) || 50;
+                        const eggSceneX = sceneWidth * (leftPct / 100);
+                        const targetPan = clampRange(stageWidth / 2 - eggSceneX, -bounds.maxPan, 0);
+                        animateFieldPanTo(targetPan, 520, () => {
+                            try { playEggWelcomeOnce(pet, 'field'); } catch (_) {}
+                        });
+                        return;
+                    }
+                } catch (_) {}
+                try { playEggWelcomeOnce(pet, 'field'); } catch (_) {}
+            });
+        }
+    },
+
+    dockHtml(pet) {
+        const fields = availableFields();
+        const currentField = fields.find(f => f.id === state.currentField) || fields[0] || CONFIG.fields[0];
+        const inv = state.inventory || {};
+
+        return `
+            <div class="mh-dock-row mh-scroll-x dock-tab-row ${isFieldDecorMode() ? 'has-decor-done' : ''}" id="mhFieldTabs">
+                ${fields.map(f => `
+                    <button class="btn-secondary dock-tab ${f.id === state.currentField ? 'active' : ''}" data-field="${f.id}">
+                        ${f.iconClass ? `<span class="field-tab-svg-icon ${escapeHtml(f.iconClass)}" aria-hidden="true"></span>` : escapeHtml(f.emoji || '')} ${escapeHtml(f.name)}
+                    </button>
+                `).join('')}
+            </div>
+            ${isFieldDecorMode() ? `<button type="button" class="mh-decor-done-btn mh-field-mode-toggle" id="mhFieldDecorDoneBtn">完成</button>` : ''}
+            ${isFieldDecorMode() ? `<button type="button" class="mh-room-dock-delete-target" id="mhFieldDockDeleteTarget" aria-hidden="true" tabindex="-1">🗑️ 收回背包</button>` : ''}
+            ${isFieldDecorMode() ? renderFieldDecorTray(inv, currentField) : renderFieldActionTray(pet)}
+        `;
+    },
+
+    bindDock(pet, ctx) {
+        const dock = ctx.dock;
+        if (!dock) return;
+        updateCleanPoopsButton(pet);
+
+        const activateFieldTab = (target, event) => {
+            const fieldBtn = target.closest?.('[data-field]');
+            if (!fieldBtn || !dock.contains(fieldBtn)) return false;
+            event?.preventDefault?.();
+            event?.stopPropagation?.();
+            dock.__mhFieldDockTabHandledAt = Date.now();
+            setCurrentField(fieldBtn.dataset.field);
+            return true;
+        };
+
+        const activateModeToggle = (target, event) => {
+            if (!target.closest?.('#mhFieldDecorBtn, #mhFieldDecorDoneBtn')) return false;
+            event?.preventDefault?.();
+            event?.stopPropagation?.();
+            dock.__mhFieldDockTabHandledAt = Date.now();
+            suppressFieldDockActivationUntil = Date.now() + 350;
+            ctx.callbacks.onToggleDecor?.(!state.isDecorMode);
+            return true;
+        };
+
+        const activateCleanPoops = (target, event) => {
+            const btn = target.closest?.('#mhFieldCleanPoopsBtn');
+            if (!btn || btn.disabled) return false;
+            event?.preventDefault?.();
+            event?.stopPropagation?.();
+            dock.__mhFieldDockTabHandledAt = Date.now();
+            collectPoopsInCurrentField(pet);
+            return true;
+        };
+
+        const activateFieldNav = (target, event) => {
+            const btn = target.closest?.('[data-field-nav]');
+            if (!btn || !dock.contains(btn)) return false;
+            if (btn.disabled) return false;
+            event?.preventDefault?.();
+            event?.stopPropagation?.();
+            dock.__mhFieldDockTabHandledAt = Date.now();
+            ctx.callbacks.onNav?.(btn.dataset.fieldNav);
+            return true;
+        };
+
+        if (dock.__mhFieldDockTabPointerDown) {
+            dock.removeEventListener('pointerdown', dock.__mhFieldDockTabPointerDown, true);
+        }
+        if (dock.__mhFieldDockTabPointerUp) {
+            dock.removeEventListener('pointerup', dock.__mhFieldDockTabPointerUp, true);
+            dock.removeEventListener('pointercancel', dock.__mhFieldDockTabPointerUp, true);
+        }
+        dock.__mhFieldDockTabPointer = null;
+        dock.__mhFieldDockTabPointerDown = (e) => {
+            const tab = e.target.closest?.('.dock-tab, .mh-field-mode-toggle, #mhFieldCleanPoopsBtn, [data-field-nav]');
+            if (!tab || !dock.contains(tab)) return;
+            if (tab.classList.contains('mh-field-mode-toggle')) e.preventDefault();
+            dock.__mhFieldDockTabPointer = {
+                id: e.pointerId,
+                x: e.clientX,
+                y: e.clientY,
+                target: tab,
+            };
+        };
+        dock.__mhFieldDockTabPointerUp = (e) => {
+            if (Date.now() < suppressFieldDockActivationUntil) {
+                e.preventDefault();
+                e.stopPropagation();
+                return;
+            }
+            const start = dock.__mhFieldDockTabPointer;
+            dock.__mhFieldDockTabPointer = null;
+            if (!start || start.id !== e.pointerId) return;
+            const moved = Math.hypot(e.clientX - start.x, e.clientY - start.y) > 8;
+            if (!moved && Date.now() - (dock.__mhFieldDockTabHandledAt || 0) >= 250) {
+                activateFieldNav(start.target, e) || activateCleanPoops(start.target, e) || activateModeToggle(start.target, e) || activateFieldTab(start.target, e);
+            }
+        };
+        dock.addEventListener('pointerdown', dock.__mhFieldDockTabPointerDown, true);
+        dock.addEventListener('pointerup', dock.__mhFieldDockTabPointerUp, true);
+        dock.addEventListener('pointercancel', dock.__mhFieldDockTabPointerUp, true);
+
+        if (dock.__mhFieldDockTabClick) {
+            dock.removeEventListener('click', dock.__mhFieldDockTabClick, true);
+        }
+        dock.__mhFieldDockTabClick = (e) => {
+            if (Date.now() < suppressFieldDockActivationUntil) {
+                e.preventDefault();
+                e.stopPropagation();
+                return;
+            }
+            const scroller = e.target.closest?.('.mh-scroll-x');
+            if (Date.now() - (scroller?.__mhDragScrolledAt || 0) < 250) {
+                e.preventDefault();
+                e.stopPropagation();
+                return;
+            }
+            if (Date.now() - (dock.__mhFieldDockTabHandledAt || 0) < 250) {
+                e.stopPropagation();
+                return;
+            }
+            activateFieldNav(e.target, e) || activateCleanPoops(e.target, e) || activateModeToggle(e.target, e) || activateFieldTab(e.target, e);
+        };
+        dock.addEventListener('click', dock.__mhFieldDockTabClick, true);
+
+        dock.querySelectorAll('[data-tray-item]').forEach(el => {
+            el.onclick = (e) => {
+                e.stopPropagation();
+                clearFieldItemSelection(ctx);
+                dock.querySelectorAll('[data-tray-item]').forEach(x => x.style.outline = '');
+                ctx.selectedTrayItem = el.dataset.trayItem;
+                el.style.outline = '2px solid var(--accent)';
+                if (isFieldDecorMode()) showToast(DRAG_TO_SCENE_HINT, 'info', 1400);
+            };
+            bindFieldTrayDrag(el, ctx);
+        });
+    },
+
+    onCameraChange(zoom) {
+        setFieldEffectScale(zoom);
+    },
+
+    onLeave() {
+        window.removeEventListener('resize', applyFieldPan);
+    },
+};
+
+function bindFieldPan(ctx) {
+    const stage = ctx.stage;
+    const scene = $('mhFieldScene');
+    if (!stage || !scene || stage.__mhFieldPanBound) return;
+    stage.__mhFieldPanBound = true;
+    let drag = null;
+    stage.addEventListener('pointerdown', (e) => {
+        if (scene.classList.contains('is-machine-sweeping')) return;
+        if (e.button != null && e.button !== 0) return;
+        if (e.target.closest?.('button, a, input, textarea, select, [contenteditable="true"], [data-tray-item], .poop-btn, .pet-sprite')) return;
+        if (isFieldDecorMode() && e.target.closest?.('.field-item')) return;
+        drag = { id: e.pointerId, x: e.clientX, y: e.clientY, pan: fieldPan, active: false };
+    });
+    stage.addEventListener('pointermove', (e) => {
+        if (!drag || drag.id !== e.pointerId) return;
+        const dx = e.clientX - drag.x;
+        const dy = e.clientY - drag.y;
+        if (!drag.active) {
+            if (Math.abs(dx) < DRAG_PLACE_THRESHOLD || Math.abs(dx) <= Math.abs(dy)) return;
+            drag.active = true;
+            clearFieldItemSelection(ctx);
+            try { stage.setPointerCapture?.(e.pointerId); } catch {}
+        }
+        e.preventDefault();
+        fieldPan = drag.pan + dx;
+        fieldPanById[currentFieldPanKey()] = fieldPan;
+        applyFieldPan();
+    });
+    const end = (e) => {
+        if (!drag || drag.id !== e.pointerId) return;
+        if (drag.active) {
+            try { stage.releasePointerCapture?.(e.pointerId); } catch {}
+            stage.__mhFieldPannedAt = Date.now();
+        }
+        drag = null;
+    };
+    stage.addEventListener('pointerup', end);
+    stage.addEventListener('pointercancel', end);
+    stage.addEventListener('click', (e) => {
+        if (Date.now() - (stage.__mhFieldPannedAt || 0) > 260) return;
+        e.preventDefault();
+        e.stopPropagation();
+    }, true);
+}
+
+function ensureFieldItemScaleControls(ctx) {
+    const stage = ctx.stage;
+    if (!stage) return null;
+    let controls = document.getElementById('mhFieldItemScaleControls');
+    if (controls) return controls;
+    controls = document.createElement('div');
+    controls.id = 'mhFieldItemScaleControls';
+    controls.className = 'mh-field-scale-controls';
+    controls.innerHTML = `
+        <button type="button" class="mh-field-scale-btn" data-field-scale="down" aria-label="缩小物品" title="缩小">−</button>
+        <button type="button" class="mh-field-scale-btn" data-field-scale="up" aria-label="放大物品" title="放大">+</button>
+    `;
+    controls.addEventListener('pointerdown', (e) => {
+        e.preventDefault();
+        e.stopPropagation();
+    });
+    controls.addEventListener('click', (e) => {
+        const btn = e.target.closest?.('[data-field-scale]');
+        if (!btn || btn.disabled) return;
+        e.preventDefault();
+        e.stopPropagation();
+        scaleSelectedFieldItem(ctx, btn.dataset.fieldScale === 'up' ? 1 : -1);
+    });
+    stage.appendChild(controls);
+    return controls;
+}
+
+function getSelectedFieldItemEl() {
+    const selected = selectedFieldItem;
+    if (!selected || selected.fieldKey !== currentFieldKey()) return null;
+    return document.querySelector(`.field-item[data-fidx="${selected.idx}"]`);
+}
+
+function updateFieldItemScaleControls(ctx) {
+    const controls = ensureFieldItemScaleControls(ctx);
+    if (!controls) return;
+    const el = getSelectedFieldItemEl();
+    if (!el || !isFieldDecorMode()) {
+        controls.classList.remove('is-visible');
+        ctx.stage?.appendChild(controls);
+        return;
+    }
+    const scale = clampRange(Number(el.dataset.fieldSize), FIELD_ITEM_MIN_SCALE, FIELD_ITEM_MAX_SCALE);
+    if (controls.parentElement !== el) el.appendChild(controls);
+    controls.classList.add('is-visible');
+    controls.querySelector('[data-field-scale="down"]')?.toggleAttribute('disabled', scale <= FIELD_ITEM_MIN_SCALE + 0.001);
+    controls.querySelector('[data-field-scale="up"]')?.toggleAttribute('disabled', scale >= FIELD_ITEM_MAX_SCALE - 0.001);
+}
+
+function clearFieldItemSelection(ctx = null) {
+    selectedFieldItem = null;
+    $$('.field-item.selected').forEach(item => item.classList.remove('selected'));
+    if (ctx) updateFieldItemScaleControls(ctx);
+}
+
+function selectFieldItem(el, ctx) {
+    if (!el || !isFieldDecorMode()) return;
+    const idx = parseInt(el.dataset.fidx, 10);
+    if (!Number.isInteger(idx)) return;
+    ctx.selectedTrayItem = null;
+    ctx.dock?.querySelectorAll('[data-tray-item]').forEach(item => item.style.outline = '');
+    $$('.field-item.selected').forEach(item => item.classList.remove('selected'));
+    el.classList.add('selected');
+    selectedFieldItem = { fieldKey: currentFieldKey(), idx };
+    updateFieldItemScaleControls(ctx);
+}
+
+function restoreFieldItemSelection(ctx) {
+    const el = getSelectedFieldItemEl();
+    if (el && isFieldDecorMode()) el.classList.add('selected');
+    else selectedFieldItem = null;
+    updateFieldItemScaleControls(ctx);
+}
+
+function selectPendingFieldItem(idx) {
+    if (!Number.isInteger(idx) || idx < 0) return;
+    selectedFieldItem = { fieldKey: currentFieldKey(), idx };
+}
+
+function scaleSelectedFieldItem(ctx, direction) {
+    const el = getSelectedFieldItemEl();
+    if (!el || !isFieldDecorMode()) return;
+    const idx = parseInt(el.dataset.fidx, 10);
+    const layout = getLayout(ctx.pet.id, currentFieldKey()) || [];
+    const placed = layout[idx];
+    const def = ITEM_BY_ID[placed?.itemId];
+    if (!placed || !def) return;
+    const currentScale = getFieldItemScale(def, placed);
+    const factor = direction > 0 ? FIELD_ITEM_SCALE_STEP : 1 / FIELD_ITEM_SCALE_STEP;
+    const nextScale = clampRange(currentScale * factor, FIELD_ITEM_MIN_SCALE, FIELD_ITEM_MAX_SCALE);
+    if (Math.abs(nextScale - currentScale) < 0.001) return;
+    el.dataset.fieldSize = nextScale.toFixed(3);
+    el.style.fontSize = getFieldItemFontSize(def, { ...placed, fieldSize: nextScale }).toFixed(1) + 'px';
+    updateFieldItemScaleControls(ctx);
+    playFieldItemDropSoundAsync();
+    const movePromise = ctx.callbacks.onMoveItem?.(
+        idx,
+        clamp01(el.dataset.x ?? placed.x),
+        clamp01(el.dataset.y ?? placed.y),
+        currentFieldKey(),
+        { fieldSize: nextScale, skipSound: true }
+    );
+    if (movePromise && typeof movePromise.catch === 'function') movePromise.catch(() => {});
+}
+
+function playFieldItemDropSoundAsync() {
+    soundManager.playItemPlace();
+}
+
+function bindFieldItemDrag(el, ctx) {
+    if (!el || el.__mhFieldItemDragBound) return;
+    el.__mhFieldItemDragBound = true;
+    let drag = null;
+    el.addEventListener('pointerdown', (e) => {
+        if (!isFieldDecorMode()) return;
+        if (e.target.closest?.('.mh-field-scale-controls')) return;
+        if (e.button != null && e.button !== 0) return;
+        e.preventDefault();
+        e.stopPropagation();
+        clearFieldItemSelection(ctx);
+        drag = {
+            id: e.pointerId,
+            x: e.clientX,
+            y: e.clientY,
+            startX: Number(el.dataset.x) || 0,
+            startY: Number(el.dataset.y) || 0,
+            moved: false,
+            idx: parseInt(el.dataset.fidx, 10),
+        };
+        el.classList.add('is-dragging');
+        try { el.setPointerCapture?.(e.pointerId); } catch {}
+    });
+    el.addEventListener('pointermove', (e) => {
+        if (!drag || drag.id !== e.pointerId) return;
+        const dist = Math.hypot(e.clientX - drag.x, e.clientY - drag.y);
+        if (dist < DRAG_PLACE_THRESHOLD && !drag.moved) return;
+        e.preventDefault();
+        e.stopPropagation();
+        drag.moved = true;
+        const pos = fieldDragDeltaToCoords(drag, e.clientX, e.clientY);
+        if (!pos) return;
+        const overDock = isPointOverDock(e.clientX, e.clientY);
+        setFieldDockDeleteTargetVisible(overDock);
+        el.classList.toggle('will-discard', overDock);
+        el.dataset.x = String(pos.x);
+        el.dataset.y = String(pos.y);
+        el.style.left = pct(pos.x);
+        el.style.top = pct(pos.y);
+        updateFieldItemScaleControls(ctx);
+    });
+    const end = async (e) => {
+        if (!drag || drag.id !== e.pointerId) return;
+        e.preventDefault();
+        e.stopPropagation();
+        try { el.releasePointerCapture?.(e.pointerId); } catch {}
+        el.classList.remove('is-dragging', 'will-discard');
+        setFieldDockDeleteTargetVisible(false);
+        if (drag.moved) {
+            el.__mhFieldDraggedAt = Date.now();
+            if (isPointOverDock(e.clientX, e.clientY)) {
+                el.remove();
+                clearFieldItemSelection(ctx);
+                playFieldItemDropSoundAsync();
+                await ctx.callbacks.onRemoveItem?.(drag.idx, currentFieldKey());
+                drag = null;
+                return;
+            }
+            const pos = fieldDragDeltaToCoords(drag, e.clientX, e.clientY);
+            if (pos) {
+                playFieldItemDropSoundAsync();
+                await ctx.callbacks.onMoveItem?.(drag.idx, pos.x, pos.y, currentFieldKey(), { skipSound: true });
+                clearFieldItemSelection(ctx);
+            }
+        } else if (e.type === 'pointerup') {
+            selectFieldItem(el, ctx);
+        }
+        drag = null;
+    };
+    el.addEventListener('pointerup', end);
+    el.addEventListener('pointercancel', end);
+}
+
+function fieldDragDeltaToCoords(drag, clientX, clientY) {
+    const scene = $('mhFieldScene');
+    const rect = scene?.getBoundingClientRect?.();
+    if (!rect || rect.width <= 0 || rect.height <= 0) return null;
+    return {
+        x: clamp01(drag.startX + (clientX - drag.x) / rect.width),
+        y: clamp01(drag.startY + (clientY - drag.y) / rect.height),
+    };
+}
+
+function bindFieldTrayDrag(el, ctx) {
+    let drag = null;
+    const cleanupWindowDrag = () => {
+        window.removeEventListener('pointermove', onMove);
+        window.removeEventListener('pointerup', onEnd);
+        window.removeEventListener('pointercancel', onEnd);
+    };
+    const clearDrag = (pointerId = null) => {
+        const current = drag;
+        drag = null;
+        cleanupWindowDrag();
+        current?.ghost?.remove();
+        if (pointerId != null && current?.sourceEl?.releasePointerCapture) {
+            try { current.sourceEl.releasePointerCapture(pointerId); } catch {}
+        }
+        return current;
+    };
+    const lockDragAsScroll = (e) => {
+        if (!drag) return;
+        e.preventDefault?.();
+        drag.scrollLocked = true;
+        const scroller = drag.scroller;
+        if (scroller) {
+            scroller.scrollLeft -= e.clientX - drag.lastScrollX;
+            drag.lastScrollX = e.clientX;
+            scroller.__mhTouchScrollMoved = true;
+        }
+    };
+    const pointInsideDock = (clientX, clientY) => {
+        const rect = drag?.scroller?.getBoundingClientRect?.();
+        return !!rect && clientX >= rect.left && clientX <= rect.right && clientY >= rect.top && clientY <= rect.bottom;
+    };
+    const startTrayItemDrag = (e) => {
+        e.preventDefault?.();
+        e.stopPropagation?.();
+        drag.active = true;
+        drag.scrollLocked = false;
+        ctx.selectedTrayItem = drag.itemId;
+        drag.ghost = makeFieldDragGhost(drag.itemId);
+        drag.sourceEl.__mhTrayDragActive = true;
+        drag.sourceEl?.setPointerCapture?.(e.pointerId);
+        moveFieldDragGhost(drag.ghost, e.clientX, e.clientY);
+    };
+    const onMove = (e) => {
+        if (!drag || drag.id !== e.pointerId) return;
+        const insideDock = pointInsideDock(e.clientX, e.clientY);
+        if (drag.scrollLocked) {
+            if (!insideDock) startTrayItemDrag(e);
+            else lockDragAsScroll(e);
+            return;
+        }
+        const dx = e.clientX - drag.x;
+        const dy = e.clientY - drag.y;
+        if (!drag.active) {
+            if (Math.hypot(dx, dy) < DRAG_PLACE_THRESHOLD) return;
+            if (insideDock && Math.abs(dx) >= Math.abs(dy)) {
+                lockDragAsScroll(e);
+                return;
+            }
+            startTrayItemDrag(e);
+            return;
+        }
+        e.preventDefault?.();
+        moveFieldDragGhost(drag.ghost, e.clientX, e.clientY);
+    };
+    const onEnd = (e) => {
+        if (!drag || drag.id !== e.pointerId) return;
+        const current = clearDrag(e.pointerId);
+        if (current?.sourceEl) current.sourceEl.__mhTrayDragActive = false;
+        if (!current.active) return;
+        const pos = pointToFieldCoords(e.clientX, e.clientY, true);
+        if (!pos) return;
+        const nextIdx = (getLayout(ctx.pet.id, currentFieldKey()) || []).length;
+        clearFieldItemSelection(ctx);
+        playFieldItemDropSoundAsync();
+        const placePromise = ctx.callbacks.onPlaceItem?.(current.itemId, pos.x, pos.y, currentFieldKey(), { skipSound: true });
+        if (placePromise && typeof placePromise.catch === 'function') {
+            placePromise.catch(() => {
+                if (selectedFieldItem?.fieldKey === currentFieldKey() && selectedFieldItem.idx === nextIdx) selectedFieldItem = null;
+            });
+        }
+    };
+    el.addEventListener('pointerdown', (e) => {
+        if (!isFieldDecorMode()) return;
+        if (e.button != null && e.button !== 0) return;
+        e.stopPropagation();
+        clearDrag();
+        const scroller = el.closest?.('.mh-scroll-x');
+        drag = {
+            id: e.pointerId,
+            x: e.clientX,
+            y: e.clientY,
+            itemId: el.dataset.trayItem,
+            ghost: null,
+            active: false,
+            scrollLocked: false,
+            scroller,
+            lastScrollX: e.clientX,
+            sourceEl: el,
+        };
+        el.__mhTrayDragActive = false;
+        try { el.setPointerCapture?.(e.pointerId); } catch {}
+        window.addEventListener('pointermove', onMove);
+        window.addEventListener('pointerup', onEnd);
+        window.addEventListener('pointercancel', onEnd);
+    });
+}

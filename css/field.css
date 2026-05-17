@@ -1,0 +1,702 @@
+/* ====== Layer 1: Field ====== */
+.mh-field-scene {
+    position: absolute;
+    left: 0;
+    top: 0;
+    height: 100%;
+    overflow: hidden;
+    transform: translate3d(0, 0, 0);
+    will-change: transform;
+    touch-action: none;
+    cursor: grab;
+}
+.mh-field-scene:active { cursor: grabbing; }
+.mh-field-scene.is-machine-sweeping { cursor: default; }
+.mh-stage.zoom-field.decor-mode .mh-field-scene { cursor: grab; }
+.field-bg { position:absolute; inset:-16%; overflow:hidden; z-index: 0; isolation: isolate; }
+.field-bg::before {
+    content:'';
+    position:absolute; inset:-14%;
+    z-index: 0;
+    background:
+        radial-gradient(circle at 18% 18%, rgba(255,255,255,0.34) 0 8%, transparent 22%),
+        radial-gradient(circle at 80% 12%, rgba(255,255,255,0.22) 0 7%, transparent 20%),
+        linear-gradient(180deg, rgba(255,255,255,0.08), rgba(255,255,255,0));
+    pointer-events:none;
+}
+.field-bg::after {
+    content: '';
+    position: absolute;
+    inset: 0;
+    z-index: 31;
+    pointer-events: none;
+    background: linear-gradient(rgba(255,255,255,0.045) 50%, rgba(6,18,44,0.05) 50%) 0 0 / 100% 4px;
+    opacity: 0.42;
+}
+.field-horizon {
+    position:absolute; left:-8%; right:-8%; bottom:-12%; height:38%;
+    border-radius: 50% 50% 0 0;
+    background: rgba(255,255,255,0.22);
+    filter: blur(2px);
+}
+.field-map-water .field-horizon { background: rgba(11, 112, 171, 0.28); }
+.field-map-sky .field-horizon { background: rgba(255,255,255,0.42); }
+.field-map-fire .field-horizon { background: rgba(127, 29, 29, 0.38); }
+.field-map-ice .field-horizon { background: rgba(224, 250, 255, 0.46); }
+.field-map-life .field-horizon { background: rgba(132, 204, 22, 0.28); }
+.field-map-dark .field-horizon { background: rgba(17, 24, 39, 0.52); }
+.field-map-path {
+    position:absolute; left:50%; bottom:-14%;
+    width: min(520px, 94vw); height: 48%;
+    transform: translateX(-50%) rotate(-2deg);
+    border-radius: 48% 52% 0 0;
+    background: var(--field-path-color);
+    opacity: 0.9;
+    box-shadow: inset 0 18px 26px rgba(255,255,255,0.18);
+    pointer-events:none;
+}
+.field-remote-landmark {
+    position: absolute;
+    left: 50%;
+    bottom: 16%;
+    width: min(340px, 54vw);
+    aspect-ratio: 1.45;
+    transform: translateX(-50%);
+    z-index: 3;
+    pointer-events: none;
+    background-repeat: no-repeat;
+    background-position: center bottom;
+    background-size: contain;
+    filter: drop-shadow(0 14px 18px rgba(0, 0, 0, 0.24));
+}
+.field-remote-fire {
+    width: min(360px, 56vw);
+    background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 260 180'%3E%3Cellipse cx='130' cy='161' rx='118' ry='15' fill='%232d100d' opacity='.5'/%3E%3Cpath d='M22 158 94 50c11-18 58-18 72 0l72 108Z' fill='%236b2218'/%3E%3Cpath d='M70 158 112 75c8-16 31-16 39 0l42 83Z' fill='%239a3412'/%3E%3Cpath d='M108 154c-15-40 35-57 24-112 41 41 61 76 31 112Z' fill='%23f97316'/%3E%3Cpath d='M126 148c-7-23 22-36 17-68 23 25 31 45 14 68Z' fill='%23fde047'/%3E%3Cpath d='M42 151c37 9 137 10 177 0' stroke='%23fb923c' stroke-width='8' stroke-linecap='round' opacity='.55'/%3E%3C/svg%3E");
+}
+.field-remote-ice {
+    width: min(380px, 58vw);
+    background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 280 180'%3E%3Cellipse cx='140' cy='138' rx='116' ry='32' fill='%237dd3fc'/%3E%3Cellipse cx='140' cy='132' rx='88' ry='20' fill='%23e0f7ff' opacity='.94'/%3E%3Cpath d='M42 136c43 27 152 27 196 0-11 33-188 33-196 0Z' fill='%230e7490' opacity='.24'/%3E%3Cpath d='M108 105 140 18l32 87-32 39Z' fill='%23cffafe' stroke='%230ea5e9' stroke-width='5'/%3E%3Cpath d='M90 120 45 76l65 14 23 52Z' fill='%23bae6fd' stroke='%2338bdf8' stroke-width='3'/%3E%3Cpath d='M190 120 235 76l-65 14-23 52Z' fill='%23bae6fd' stroke='%2338bdf8' stroke-width='3'/%3E%3Cpath d='M82 133h118' stroke='%23ffffff' stroke-width='7' stroke-linecap='round' opacity='.8'/%3E%3C/svg%3E");
+}
+.field-remote-life {
+    width: min(390px, 60vw);
+    background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 300 180'%3E%3Cellipse cx='150' cy='160' rx='124' ry='15' fill='%23d97706' opacity='.28'/%3E%3Cpath d='M34 160c40-51 178-58 231-3-66 14-158 15-231 3Z' fill='%23fef3c7'/%3E%3Cpath d='M145 153c-9-57 4-102 12-135' stroke='%237c3f12' stroke-width='16' stroke-linecap='round'/%3E%3Cpath d='M154 58c-32-39-75-36-103-4 34 25 79 29 103 4Z' fill='%2365a30d'/%3E%3Cpath d='M152 78c45-45 93-34 116 5-38 24-89 23-116-5Z' fill='%2384cc16'/%3E%3Cpath d='M151 39c35-38 82-33 104 2-30 27-76 31-104-2Z' fill='%23bef264'/%3E%3Ccircle cx='150' cy='69' r='15' fill='%23facc15' opacity='.85'/%3E%3C/svg%3E");
+}
+.field-remote-dark {
+    width: min(370px, 57vw);
+    background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 280 180'%3E%3Cellipse cx='140' cy='154' rx='120' ry='17' fill='%23030712' opacity='.72'/%3E%3Cpath d='M30 154c15-82 205-82 220 0Z' fill='%23374151'/%3E%3Cpath d='M76 151c12-46 116-48 130 0Z' fill='%23030712'/%3E%3Cpath d='M58 102 93 38l26 60 35-78 31 80 32-50' fill='none' stroke='%239ca3af' stroke-width='13' stroke-linecap='round' stroke-linejoin='round' opacity='.8'/%3E%3Cpath d='M95 146c16-23 74-24 91 0Z' fill='%23111827'/%3E%3Ccircle cx='215' cy='58' r='10' fill='%23d1d5db'/%3E%3Ccircle cx='222' cy='55' r='10' fill='%23374151'/%3E%3C/svg%3E");
+}
+.field-terrain-layer,
+.field-prop-layer,
+.field-floater-layer,
+.field-build-overlay,
+.field-pets {
+    position:absolute; inset:0;
+    pointer-events:none;
+}
+.field-terrain-patch {
+    position:absolute;
+    display:block;
+    border-radius: 45% 55% 50% 46%;
+    box-shadow: inset 0 8px 14px rgba(255,255,255,0.16), inset 0 -9px 16px rgba(0,0,0,0.12), 0 6px 14px rgba(0,0,0,0.08);
+}
+.field-map-water .field-terrain-patch {
+    box-shadow: inset 0 7px 16px rgba(255,255,255,0.28), inset 0 -10px 20px rgba(3,105,161,0.22), 0 5px 14px rgba(3,105,161,0.12);
+}
+.field-map-sky .field-terrain-patch {
+    filter: drop-shadow(0 8px 12px rgba(37,99,235,0.12));
+}
+.field-map-fire .field-terrain-patch {
+    box-shadow: inset 0 8px 12px rgba(255, 237, 213, 0.12), inset 0 -10px 18px rgba(69, 10, 10, 0.32), 0 7px 16px rgba(127, 29, 29, 0.2);
+}
+.field-map-ice .field-terrain-patch {
+    box-shadow: inset 0 8px 16px rgba(255, 255, 255, 0.42), inset 0 -10px 18px rgba(14, 116, 144, 0.22), 0 7px 16px rgba(125, 211, 252, 0.22);
+}
+.field-map-life .field-terrain-patch {
+    box-shadow: inset 0 8px 14px rgba(255, 255, 255, 0.22), inset 0 -10px 18px rgba(101, 163, 13, 0.22), 0 7px 16px rgba(132, 204, 22, 0.16);
+}
+.field-map-dark .field-terrain-patch {
+    box-shadow: inset 0 8px 14px rgba(255, 255, 255, 0.08), inset 0 -10px 18px rgba(0, 0, 0, 0.35), 0 7px 16px rgba(0, 0, 0, 0.22);
+}
+.field-weather-layer {
+    position: absolute;
+    inset: 0;
+    z-index: 30;
+    pointer-events: none;
+    overflow: hidden;
+}
+.field-weather-rain {
+    background: linear-gradient(180deg, rgba(34, 78, 120, 0.2), rgba(14, 116, 144, 0.08));
+}
+.field-weather-rain i {
+    position: absolute;
+    top: -14px;
+    width: 2px;
+    height: 20px;
+    border-radius: 999px;
+    background: linear-gradient(180deg, rgba(255,255,255,0), rgba(224, 250, 255, 0.9));
+    animation: fieldRainFall 0.62s linear infinite;
+}
+@keyframes fieldRainFall { to { transform: translateY(80vh); opacity: 0.2; } }
+.field-weather-sun {
+    background: radial-gradient(circle at 72% 18%, rgba(255, 244, 176, 0.42), transparent 21%);
+    mix-blend-mode: soft-light;
+}
+.field-weather-breeze i {
+    position: absolute;
+    left: -24%;
+    width: 52%;
+    height: 3px;
+    border-radius: 999px;
+    background: linear-gradient(90deg, transparent, rgba(255,255,255,0.62), transparent);
+    animation: fieldBreezeDrift 3.8s ease-in-out infinite;
+}
+.field-weather-breeze i:nth-child(1) { top: 28%; animation-delay: -0.4s; }
+.field-weather-breeze i:nth-child(2) { top: 51%; animation-delay: -1.5s; }
+.field-weather-breeze i:nth-child(3) { top: 74%; animation-delay: -2.7s; }
+@keyframes fieldBreezeDrift { to { transform: translateX(150vw); opacity: 0.12; } }
+.field-map-prop,
+.field-map-floater {
+    position:absolute;
+    display:block;
+    line-height:1;
+    text-shadow: 0 2px 4px rgba(0,0,0,0.18);
+    user-select:none;
+}
+.field-map-prop { filter: drop-shadow(0 3px 3px rgba(0,0,0,0.18)); }
+.field-map-floater {
+    opacity: 0.76;
+    animation: fieldFloat var(--field-float-dur, 7s) ease-in-out infinite;
+    animation-delay: var(--field-float-delay, 0s);
+    will-change: transform;
+}
+@keyframes fieldFloat {
+    0%, 100% { transform: translate(-50%, -50%) translateX(0) translateY(0); }
+    50% { transform: translate(-50%, -50%) translateX(var(--field-float-drift, 12px)) translateY(-12px); }
+}
+.field-build-overlay {
+    z-index: 4;
+    background-image:
+        linear-gradient(rgba(255,255,255,0.1) 1px, transparent 1px),
+        linear-gradient(90deg, rgba(255,255,255,0.1) 1px, transparent 1px);
+    background-size: 10% 12.5%;
+    opacity: 0;
+    transition: opacity .15s;
+}
+.mh-stage.zoom-field:hover .field-build-overlay,
+.mh-stage.zoom-field.decor-mode .field-build-overlay { opacity: 0.15; }
+.field-tabs {
+    position:absolute; top:8px; left:8px; right:8px;
+    display:flex; gap:6px; justify-content:center;
+    z-index: 5;
+}
+.field-tab {
+    background: rgba(255,255,255,0.85);
+    border: 1.5px solid rgba(255,255,255,0.6);
+    border-radius: 999px;
+    padding: 4px 12px;
+    font-size: 12px; font-weight: 700; color: var(--text-secondary);
+    display:flex; align-items:center; gap:4px;
+    cursor:pointer; transition: all .15s;
+    box-shadow: 0 2px 6px rgba(0,0,0,0.15);
+}
+.field-tab.active {
+    background: var(--accent); color:#fff; border-color: var(--accent-dark);
+    transform: translateY(-1px);
+}
+.field-tab-svg-icon {
+    display: inline-block;
+    width: 16px;
+    height: 16px;
+    flex: 0 0 auto;
+    background-repeat: no-repeat;
+    background-position: center;
+    background-size: contain;
+    filter: drop-shadow(0 1px 1px rgba(0, 0, 0, 0.18));
+}
+.field-tab-icon-fire {
+    background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 64 64'%3E%3Cellipse cx='32' cy='51' rx='26' ry='8' fill='%23502b21'/%3E%3Cpath d='M10 51 24 17c2-5 14-5 16 0l14 34Z' fill='%238a3d22'/%3E%3Cpath d='M21 51 30 24c1-3 7-3 8 0l9 27Z' fill='%23b45309'/%3E%3Cpath d='M27 45c-2-9 8-12 6-25 9 9 13 16 7 25Z' fill='%23f97316'/%3E%3Cpath d='M31 43c-1-5 5-8 4-15 5 6 7 10 3 15Z' fill='%23fde047'/%3E%3C/svg%3E");
+}
+.field-tab-icon-ice {
+    background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 64 64'%3E%3Cellipse cx='32' cy='44' rx='26' ry='13' fill='%237dd3fc'/%3E%3Cellipse cx='32' cy='43' rx='20' ry='8' fill='%23e0f7ff' opacity='.9'/%3E%3Cpath d='M14 43c8 5 28 5 36 0-2 9-34 9-36 0Z' fill='%230e7490' opacity='.28'/%3E%3Cpath d='M23 26 32 8l9 18-9 10Z' fill='%23cffafe' stroke='%230ea5e9' stroke-width='2'/%3E%3Cpath d='M18 34 9 23l14 3 6 12Z' fill='%23bae6fd'/%3E%3Cpath d='M46 34 55 23l-14 3-6 12Z' fill='%23bae6fd'/%3E%3C/svg%3E");
+}
+.field-tab-icon-life {
+    background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 64 64'%3E%3Cellipse cx='32' cy='52' rx='26' ry='7' fill='%23facc15'/%3E%3Cpath d='M12 52c7-15 33-19 43-2-13 4-29 5-43 2Z' fill='%23fef3c7'/%3E%3Cpath d='M31 48c-2-13 1-25 2-32' stroke='%237c3f12' stroke-width='5' stroke-linecap='round'/%3E%3Cpath d='M33 23c-5-8-13-8-19-2 6 5 15 6 19 2Z' fill='%2365a30d'/%3E%3Cpath d='M33 28c8-8 17-6 21 1-7 4-16 4-21-1Z' fill='%2384cc16'/%3E%3Cpath d='M32 18c6-7 14-6 18 0-5 5-13 6-18 0Z' fill='%23bef264'/%3E%3C/svg%3E");
+}
+.field-tab-icon-dark {
+    background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 64 64'%3E%3Cellipse cx='32' cy='50' rx='25' ry='9' fill='%23111827'/%3E%3Cellipse cx='32' cy='48' rx='17' ry='6' fill='%23030712'/%3E%3Cpath d='M15 49c3-18 31-18 34 0Z' fill='%23374151'/%3E%3Cpath d='M22 47c2-10 18-10 20 0Z' fill='%23030712'/%3E%3Cpath d='M20 33 28 18l5 14 7-18 6 19' fill='none' stroke='%239ca3af' stroke-width='4' stroke-linecap='round' stroke-linejoin='round'/%3E%3Ccircle cx='47' cy='24' r='3' fill='%23d1d5db'/%3E%3C/svg%3E");
+}
+.field-items, .field-poops { position:absolute; inset:0; pointer-events:none; }
+.field-items { z-index: 18; }
+.field-poops { z-index: 35; }
+.field-item {
+    position:absolute; transform: translate(-50%, -50%);
+    font-size: 30px; cursor:pointer; pointer-events:auto;
+    line-height: 1;
+    filter: drop-shadow(0 3px 4px rgba(0,0,0,0.25));
+    transition: transform .15s;
+    touch-action: none;
+}
+.field-item:hover { transform: translate(-50%, -50%) scale(1.15); }
+.mh-stage.zoom-field.decor-mode .field-item { cursor: grab; }
+.mh-stage.zoom-field.decor-mode .field-item:hover { transform: translate(-50%, -50%); }
+.mh-stage.zoom-field.decor-mode .field-item.selected {
+    filter: drop-shadow(0 0 10px rgba(255,255,255,0.95)) drop-shadow(0 0 18px rgba(34,197,94,0.7)) drop-shadow(0 3px 4px rgba(0,0,0,0.25));
+}
+.field-item.is-dragging {
+    cursor: grabbing;
+    transform: translate(-50%, -50%) scale(1.2);
+    opacity: 0.88;
+}
+.field-item.will-discard {
+    opacity: 0.45;
+    filter: grayscale(0.7) drop-shadow(0 3px 4px rgba(0,0,0,0.22));
+}
+/* —— 户外房屋（type: 'house'）：使用 SVG 而非 emoji —— */
+.field-item.is-house { line-height: 0; font-size: 0; filter: none !important; }
+.field-item.is-house .field-house-svg {
+    display: inline-block;
+    line-height: 0;
+    filter: none;
+}
+.field-item.is-house .field-house-svg svg {
+    width: 100%;
+    height: auto;
+    display: block;
+}
+/* —— 主屋旗帜（贴在房屋右下角，叠在房屋之上） —— */
+.field-house-flag {
+    position: absolute;
+    right: -6px;
+    bottom: -4px;
+    pointer-events: none;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    z-index: 2;
+    filter: drop-shadow(0 3px 5px rgba(0,0,0,0.32));
+}
+.field-house-flag-pole {
+    width: 3px;
+    height: 26px;
+    background: linear-gradient(180deg, #92400e 0%, #451a03 100%);
+    border-radius: 1.5px;
+}
+.field-house-flag-banner {
+    font-size: 20px;
+    line-height: 1;
+    margin-top: -22px;
+    margin-left: 14px;
+}
+.mh-field-drag-ghost {
+    position: fixed;
+    z-index: 20000;
+    left: 0;
+    top: 0;
+    transform: translate(-50%, -50%) scale(1.18);
+    pointer-events: none;
+    font-size: 34px;
+    filter: drop-shadow(0 8px 12px rgba(0,0,0,0.28));
+}
+.mh-field-drag-ghost-svg { line-height: 0; font-size: 0; }
+.mh-field-drag-ghost-svg .field-house-svg { display: inline-block; line-height: 0; }
+.mh-field-drag-ghost-svg .field-house-svg svg { width: 100%; height: auto; display: block; }
+.mh-field-scale-controls {
+    position: absolute;
+    left: 50%;
+    top: calc(100% + 4px);
+    transform: translateX(-50%) translateY(6px) scale(0.96);
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    opacity: 0;
+    pointer-events: none;
+    z-index: 80;
+    transition: opacity .18s ease, transform .18s ease;
+}
+.mh-field-scale-controls.is-visible {
+    opacity: 1;
+    pointer-events: auto;
+    transform: translateX(-50%) translateY(0) scale(1);
+}
+.mh-field-scale-btn {
+    width: 46px;
+    height: 46px;
+    border-radius: 50%;
+    border: 2px solid rgba(255,255,255,0.9);
+    background: rgba(22, 163, 74, 0.92);
+    color: #fff;
+    box-shadow: 0 8px 20px rgba(22, 101, 52, 0.32);
+    font-size: 30px;
+    font-weight: 800;
+    line-height: 1;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    cursor: pointer;
+    touch-action: none;
+}
+.mh-field-scale-btn:active { transform: scale(0.94); }
+.mh-field-scale-btn:disabled {
+    opacity: 0.45;
+    cursor: default;
+    transform: none;
+}
+.poop-btn {
+    position:absolute; transform: translate(-50%, -50%);
+    background: transparent; border: none;
+    font-size: 26px; cursor:pointer; pointer-events:auto;
+    filter: drop-shadow(0 3px 3px rgba(0,0,0,0.3));
+}
+.poop-btn:hover { transform: translate(-50%, -50%) scale(1.2); }
+.poop-btn.field-poop-suck-source {
+    pointer-events: none;
+    opacity: 0;
+    transform: translate(-50%, -50%) scale(0.72);
+    transition: opacity 0.16s ease-out, transform 0.16s ease-out;
+}
+.field-poop-suck-fly {
+    position: fixed;
+    z-index: 20008;
+    left: 0;
+    top: 0;
+    border: none;
+    background: transparent;
+    padding: 0;
+    appearance: none;
+    cursor: default;
+    font-size: 26px;
+    line-height: 1;
+    pointer-events: none;
+    filter: drop-shadow(0 5px 6px rgba(6,18,44,0.32));
+    transform: translate(-50%, -50%) scale(1);
+    animation: fieldPoopSuckToMachine 1.65s cubic-bezier(0.18, 0.86, 0.22, 1) both;
+}
+.field-poop-glitch-wind {
+    position: absolute;
+    left: 50%;
+    top: 50%;
+    z-index: 92;
+    width: clamp(116px, 24vw, 218px);
+    aspect-ratio: 180 / 140;
+    pointer-events: none;
+    transform: translate(-50%, -50%) scale(var(--field-effect-scale, 1));
+    transform-origin: center;
+    filter: drop-shadow(0 6px 8px rgba(69, 10, 10, 0.18));
+    animation: fieldPoopGlitchWind 0.98s steps(2, end) both;
+}
+.field-poop-glitch-wind.is-holding {
+    animation: fieldPoopGlitchWindHold 1.08s steps(2, end) infinite both;
+}
+.field-poop-glitch-wind.is-ending {
+    animation: fieldPoopGlitchWindExit 0.32s ease-in forwards;
+}
+.field-poop-glitch-wind svg {
+    display: block;
+    width: 100%;
+    height: 100%;
+    overflow: visible;
+}
+.field-poop-wind-main path,
+.field-poop-wind-shadow path,
+.field-poop-wind-glitch path {
+    stroke-dasharray: 170;
+    stroke-dashoffset: 170;
+    transform-box: fill-box;
+    transform-origin: center;
+}
+.field-poop-wind-shadow path {
+    stroke: rgba(120, 53, 15, 0.16);
+    stroke-width: 6.5;
+    animation: fieldPoopWindDraw 0.86s cubic-bezier(0.16, 0.82, 0.28, 1) both;
+}
+.field-poop-wind-main path {
+    stroke: #8f1d12;
+    stroke-width: 3.2;
+    animation: fieldPoopWindDraw 0.86s cubic-bezier(0.16, 0.82, 0.28, 1) both;
+}
+.field-poop-wind-glitch {
+    opacity: 0.62;
+    mix-blend-mode: multiply;
+    animation: fieldPoopWindJitter 0.18s steps(2, end) 5 both;
+}
+.field-poop-wind-glitch path {
+    stroke: #b91c1c;
+    stroke-width: 2.2;
+    animation: fieldPoopWindDraw 0.62s cubic-bezier(0.16, 0.82, 0.28, 1) 0.05s both;
+}
+.field-poop-glitch-wind.is-holding .field-poop-wind-main path,
+.field-poop-glitch-wind.is-holding .field-poop-wind-shadow path,
+.field-poop-glitch-wind.is-holding .field-poop-wind-glitch path {
+    animation-iteration-count: infinite;
+}
+.field-poop-wind-main path:nth-child(2),
+.field-poop-wind-shadow path:nth-child(2) { animation-delay: 0.08s; }
+.field-poop-wind-main path:nth-child(3),
+.field-poop-wind-shadow path:nth-child(3) { animation-delay: 0.16s; }
+.field-poop-wind-glitch path:nth-child(2) { animation-delay: 0.12s; }
+.field-poop-wind-glitch path:nth-child(3) { animation-delay: 0.2s; }
+.mh-field-clean-action {
+    border-color: #86efac;
+    color: #166534;
+    background:
+        linear-gradient(180deg, rgba(255,255,255,0.58), rgba(255,255,255,0.08)),
+        linear-gradient(135deg, #ecfdf5, #bae6fd);
+}
+.mh-field-clean-action.is-urgent:not(:disabled) {
+    border-color: #fbbf24;
+    color: #7c2d12;
+    background:
+        linear-gradient(180deg, rgba(255,255,255,0.72), rgba(255,255,255,0.08)),
+        linear-gradient(135deg, #fef3c7, #86efac 56%, #67e8f9);
+    box-shadow: 0 4px 0 rgba(146,64,14,0.24), 0 0 16px rgba(251,191,36,0.62), inset 0 1px 0 rgba(255,255,255,0.92);
+}
+.mh-field-clean-action:disabled {
+    opacity: 0.48;
+    cursor: not-allowed;
+    filter: grayscale(0.18);
+}
+.field-fuel-room-animation {
+    position: absolute;
+    inset: 0;
+    z-index: 88;
+    pointer-events: none;
+    overflow: hidden;
+    animation: fieldFuelOverlayFade 4.6s ease-out forwards;
+}
+.field-fuel-room-animation.is-waiting {
+    opacity: 1;
+    animation: none;
+}
+.field-fuel-room-animation svg {
+    display: block;
+    position: absolute;
+    right: 10px;
+    bottom: 12px;
+    width: clamp(92px, 24vw, 128px);
+    height: auto;
+    max-height: 46%;
+    transform: scale(var(--field-effect-scale, 1));
+    transform-origin: 100% 100%;
+}
+.field-fuel-fan {
+    transform-origin: 64px 36px;
+    transform-box: view-box;
+    animation: fieldFuelFanSpin 0.56s linear infinite;
+    filter: drop-shadow(0 2px 2px rgba(6,18,44,0.2));
+}
+.field-fuel-fan-blade { opacity: 0.92; }
+.field-fuel-poop-stack {
+    filter: drop-shadow(0 2px 2px rgba(6,18,44,0.22));
+}
+.field-fuel-poop-piece {
+    font-size: 14px;
+    dominant-baseline: middle;
+    paint-order: stroke;
+    stroke: rgba(255,255,255,0.72);
+    stroke-width: 1.4px;
+    animation: fieldFuelPoopBob 1.35s ease-in-out var(--field-fuel-poop-delay, 0s) infinite;
+    transform-origin: center;
+    transform-box: fill-box;
+}
+.field-fuel-tank-fill {
+    transform-origin: 50% 100%;
+    transform-box: fill-box;
+    animation: fieldFuelFillRise 2.5s ease-out 0.72s both;
+}
+.field-fuel-room-animation.is-waiting .field-fuel-tank-fill {
+    opacity: 0.42;
+    transform: scaleY(0.2);
+    animation: none;
+}
+.field-fuel-energy {
+    transform-origin: 50% 50%;
+    transform-box: fill-box;
+    animation: fieldFuelEnergyPop 2.7s ease-in-out 1s both;
+}
+.field-fuel-room-animation.is-waiting .field-fuel-energy,
+.field-fuel-room-animation.is-waiting .field-fuel-gain,
+.field-fuel-room-animation.is-waiting .field-fuel-spark {
+    opacity: 0;
+    animation: none;
+}
+.field-fuel-gain {
+    fill: #0f2747;
+    font-size: 14px;
+    font-weight: 900;
+    font-family: system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+    paint-order: stroke;
+    stroke: rgba(255,255,255,0.92);
+    stroke-width: 2.4px;
+    stroke-linejoin: round;
+    animation: fieldFuelGainFloat 2.8s ease-out 1.25s both;
+}
+.field-fuel-spark {
+    transform-origin: center;
+    transform-box: fill-box;
+    animation: fieldFuelSpark 1.1s ease-out 0.85s 3 both;
+}
+.field-fuel-spark-b { animation-delay: 1.05s; }
+.field-fuel-spark-c { animation-delay: 1.25s; }
+.field-fuel-fly-number {
+    position: fixed;
+    z-index: 20010;
+    left: 0;
+    top: 0;
+    min-width: 38px;
+    padding: 5px 10px;
+    border-radius: 999px;
+    background: linear-gradient(180deg, #ecfeff, #67e8f9);
+    border: 2px solid rgba(255,255,255,0.92);
+    color: #0f2747;
+    font-size: var(--field-fly-font-size, 18px);
+    font-weight: 900;
+    text-align: center;
+    pointer-events: none;
+    box-shadow: 0 8px 16px rgba(6,18,44,0.24), 0 0 16px rgba(103,232,249,0.68), inset 0 1px 0 rgba(255,255,255,0.86);
+    transform: translate(-50%, -50%) scale(0.78);
+    animation: fieldFuelFlyToHud 1.25s cubic-bezier(0.18, 0.86, 0.28, 1) forwards;
+}
+.hud-pill.field-fuel-hud-pop {
+    animation: fieldFuelHudPop 0.5s ease-out both;
+}
+@keyframes fieldFuelFillRise {
+    from { transform: scaleY(0.2); opacity: 0.65; }
+    70% { transform: scaleY(1.16); opacity: 1; }
+    to { transform: scaleY(1); opacity: 1; }
+}
+@keyframes fieldFuelEnergyPop {
+    0% { transform: scale(0.35) rotate(-8deg); opacity: 0; }
+    22% { transform: scale(1.2) rotate(5deg); opacity: 1; }
+    44% { transform: scale(0.92) rotate(-3deg); opacity: 1; }
+    66% { transform: scale(1.14) rotate(4deg); opacity: 1; }
+    100% { transform: scale(1) rotate(0deg); opacity: 1; }
+}
+@keyframes fieldFuelGainFloat {
+    0% { transform: translateY(4px) scale(0.78); opacity: 0; }
+    18% { transform: translateY(0) scale(1.08); opacity: 1; }
+    72% { transform: translateY(-2px) scale(1); opacity: 1; }
+    100% { transform: translateY(-8px) scale(1); opacity: 0; }
+}
+@keyframes fieldFuelSpark {
+    0% { transform: scale(0.3); opacity: 0; }
+    36% { transform: scale(1.7); opacity: 1; }
+    100% { transform: scale(0.45) translateY(-8px); opacity: 0; }
+}
+@keyframes fieldFuelFanSpin {
+    to { transform: rotate(360deg); }
+}
+@keyframes fieldFuelPoopBob {
+    0%, 100% { transform: translateY(0) rotate(0deg); }
+    50% { transform: translateY(-3px) rotate(var(--field-fuel-poop-rotate, 0deg)); }
+}
+@keyframes fieldFuelOverlayFade {
+    0% { opacity: 0; }
+    8% { opacity: 1; }
+    86% { opacity: 1; }
+    100% { opacity: 0; }
+}
+@keyframes fieldFuelFlyToHud {
+    0% { transform: translate(-50%, -50%) scale(0.78); opacity: 0; }
+    12% { transform: translate(-50%, -50%) scale(1.1); opacity: 1; }
+    58% { transform: translate(calc(var(--fuel-fly-mid-x) - 50%), calc(var(--fuel-fly-mid-y) - 50%)) scale(1); opacity: 1; }
+    100% { transform: translate(calc(var(--fuel-fly-dx) - 50%), calc(var(--fuel-fly-dy) - 50%)) scale(0.42); opacity: 0; }
+}
+@keyframes fieldFuelHudPop {
+    0% { transform: translateY(0) scale(1); filter: brightness(1); }
+    42% { transform: translateY(-2px) scale(1.14); filter: brightness(1.16); }
+    100% { transform: translateY(0) scale(1); filter: brightness(1); }
+}
+@keyframes fieldPoopSuckToMachine {
+    0% { transform: translate(-50%, -50%) scale(1) rotate(0deg); opacity: 1; }
+    34% { transform: translate(calc(var(--poop-suck-arc-x) - 50%), calc(var(--poop-suck-arc-y) - 50%)) scale(1.16) rotate(-10deg); opacity: 1; }
+    72% { transform: translate(calc(var(--poop-suck-near-x) - 50%), calc(var(--poop-suck-near-y) - 50%)) scale(0.58) rotate(15deg); opacity: 0.9; }
+    100% { transform: translate(calc(var(--poop-suck-dx) - 50%), calc(var(--poop-suck-dy) - 50%)) scale(0.08) rotate(28deg); opacity: 0; }
+}
+@keyframes fieldPoopGlitchWind {
+    0% { opacity: 0; transform: translate(-50%, -50%) scale(var(--field-effect-scale, 1)) skewX(0deg); }
+    12% { opacity: 1; transform: translate(calc(-50% - 2px), calc(-50% + 1px)) scale(var(--field-effect-scale, 1)) skewX(-2deg); }
+    20% { transform: translate(calc(-50% + 3px), calc(-50% - 1px)) scale(var(--field-effect-scale, 1)) skewX(2deg); }
+    58% { opacity: 0.96; }
+    100% { opacity: 0; transform: translate(-50%, calc(-50% - 8px)) scale(var(--field-effect-scale, 1)) skewX(0deg); }
+}
+@keyframes fieldPoopGlitchWindHold {
+    0% { opacity: 0.72; transform: translate(-50%, -50%) scale(var(--field-effect-scale, 1)) skewX(0deg); }
+    20% { opacity: 1; transform: translate(calc(-50% - 2px), calc(-50% + 1px)) scale(var(--field-effect-scale, 1)) skewX(-2deg); }
+    42% { transform: translate(calc(-50% + 3px), calc(-50% - 1px)) scale(var(--field-effect-scale, 1)) skewX(2deg); }
+    68% { opacity: 0.88; transform: translate(calc(-50% - 1px), -50%) scale(var(--field-effect-scale, 1)) skewX(-1deg); }
+    100% { opacity: 0.72; transform: translate(-50%, -50%) scale(var(--field-effect-scale, 1)) skewX(0deg); }
+}
+@keyframes fieldPoopGlitchWindExit {
+    0% { opacity: 0.9; transform: translate(-50%, -50%) scale(var(--field-effect-scale, 1)); }
+    100% { opacity: 0; transform: translate(-50%, calc(-50% - 10px)) scale(var(--field-effect-scale, 1)); }
+}
+@keyframes fieldPoopWindDraw {
+    0% { stroke-dashoffset: 170; opacity: 0; transform: translateX(-5px); }
+    22% { opacity: 1; }
+    72% { stroke-dashoffset: 0; opacity: 1; }
+    100% { stroke-dashoffset: -36; opacity: 0; transform: translateX(8px); }
+}
+@keyframes fieldPoopWindJitter {
+    0%, 100% { transform: translate(0, 0); }
+    25% { transform: translate(4px, -2px); }
+    50% { transform: translate(-3px, 1px); }
+    75% { transform: translate(2px, 2px); }
+}
+.field-pets { z-index: 28; }
+.field-pet {
+    position:absolute !important;
+    transform: translate(-50%, -50%);
+    transition: none;
+    pointer-events:auto;
+}
+.field-pet-wander {
+    position: relative;
+    animation: fieldPetWander var(--field-wander-dur, 12s) ease-in-out infinite;
+    animation-delay: var(--field-wander-delay, 0s);
+    will-change: transform;
+}
+.field-pet.is-machine-pulled .field-pet-wander {
+    animation: fieldPetMachinePull 0.72s ease-in-out infinite;
+    transform-origin: 50% 88%;
+}
+@keyframes fieldPetWander {
+    0%, 100% { transform: translate(0, 0); }
+    26% { transform: translate(calc(var(--field-wander-x, 20px) * 0.75), calc(var(--field-wander-y, -10px) * 0.55)); }
+    52% { transform: translate(var(--field-wander-x, 20px), var(--field-wander-y, -10px)); }
+    78% { transform: translate(calc(var(--field-wander-x, 20px) * -0.35), calc(var(--field-wander-y, -10px) * 0.35)); }
+}
+@keyframes fieldPetMachinePull {
+    0%, 100% { transform: translate(0, 0) rotate(0deg) skewX(0deg); }
+    34% { transform: translate(var(--field-pet-pull-x, 0px), var(--field-pet-pull-y, 0px)) rotate(var(--field-pet-pull-rotate, 0deg)) skewX(var(--field-pet-pull-skew, 0deg)); }
+    66% { transform: translate(var(--field-pet-pull-x, 0px), var(--field-pet-pull-y, 0px)) rotate(var(--field-pet-pull-rotate, 0deg)) skewX(var(--field-pet-pull-skew, 0deg)); }
+}
+.field-pet-friend { opacity: 0.93; }
+.field-pet-name {
+    position:absolute; left:50%; top: calc(100% - 5px);
+    transform: translateX(-50%);
+    max-width: 96px;
+    padding: 2px 7px;
+    border-radius: 999px;
+    background: rgba(0,0,0,0.48);
+    color: #fff;
+    font-size: 10px;
+    font-weight: 800;
+    line-height: 1.15;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    pointer-events:none;
+}
+.field-pet-current .field-pet-name { background: rgba(245, 158, 11, 0.84); }
+.field-tray {
+    position:absolute; left: 8px; right: 8px; bottom: 8px;
+    background: rgba(255,255,255,0.92);
+    border: 1.5px solid var(--border-card);
+    border-radius: 14px;
+    padding: 6px 8px;
+    z-index: 6;
+    backdrop-filter: blur(4px);
+    box-shadow: 0 4px 12px rgba(0,0,0,0.15);
+}
+.field-tray-hint { font-size: 11px; color: var(--text-muted); margin-bottom: 4px; }
+.field-tray-row { display:flex; gap:6px; overflow-x:auto; }
