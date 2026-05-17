@@ -5,7 +5,7 @@ import { formatDna, displayPetName, isAdultStage } from './dna.js';
 import { petArtHtml } from './pet.js';
 import { loadPetMemory } from './storage.js';
 import { state } from './state.js';
-import { CONFIG } from './config.js';
+import { CONFIG, getStageName } from './config.js';
 import { dominantTraits } from './petTick.js';
 
 export function renderProfile(panel, { pet }, { onBack } = {}) {
@@ -24,7 +24,7 @@ export function renderProfile(panel, { pet }, { onBack } = {}) {
                 </div>
                 <div style="flex:1;min-width:0">
                     <div class="text-lg font-extrabold" style="color:var(--text-primary)">${escapeHtml(displayPetName(pet))}${isAdultStage(pet.stage) ? '' : ' <span style=\'font-size:11px;color:var(--text-muted);font-weight:600\'>（未成年，名字未知）</span>'}</div>
-                    <div class="text-xs mt-1" style="color:var(--text-muted)">${escapeHtml(t('stage'))}：<b style="color:var(--accent-dark)">${pet.stageEmoji || ''} ${escapeHtml(pet.stageName || pet.stage || '')}</b></div>
+                    <div class="text-xs mt-1" style="color:var(--text-muted)">${escapeHtml(t('stage'))}：<b style="color:var(--accent-dark)">${escapeHtml(getStageName(pet.stage, pet.stage || ''))}</b></div>
                     <div class="text-xs mt-1" style="color:var(--text-muted)">${escapeHtml(t('bornAt'))}：${formatTime(pet.bornAt)}</div>
                     <div class="text-xs mt-1" style="color:var(--text-muted)">稀有度：<b style="color:var(--accent-dark)">${pet.rarity ?? '?'}</b></div>
                 </div>

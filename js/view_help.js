@@ -8,7 +8,7 @@ export function renderHelp(panel, _data, { onBack } = {}) {
             <span style="width:36px;height:36px"></span>
         </div>
         <iframe
-            title="${escapeHtml('魔法哈奇帮助')}"
+            title="${escapeHtml('蛋蛋星球帮助')}"
             src="./docs/userguide.html"
             style="position:absolute;top:52px;left:0;right:0;bottom:0;width:100%;height:calc(100% - 52px);border:0;background:#fff"
         ></iframe>`;

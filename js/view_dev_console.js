@@ -1,5 +1,5 @@
 // 由设置页在本机开发环境中按需加载。
-import { SHOP_ITEMS, CONFIG } from './config.js';
+import { SHOP_ITEMS, CONFIG, getStageName } from './config.js';
 import { state, notify, getCurrentPet, subscribe } from './state.js';
 import { addToInventory, savePet, savePetDebounced, saveUserProfileDebounced } from './storage.js';
 import { resetPetSheetImage, setAnim } from './pet.js';
@@ -11,12 +11,9 @@ const HOST_ALLOWLIST = new Set(['127.0.0.1', 'localhost']);
 const PET_SCALAR_EXCLUDE = new Set(['stats', 'traits', 'poops', 'parents']);
 const HOUR_MS = 60 * 60 * 1000;
 const STAT_LABELS = {
-    hunger: '饥饿',
+    hunger: '体力',
     mood: '心情',
     clean: '清洁',
-    energy: '精力',
-    health: '健康',
-    intel: '智力',
     bond: '亲密',
 };
 
@@ -273,8 +270,6 @@ async function resetCurrentPetToEgg() {
     }
     const now = Date.now();
     pet.stage = 'egg';
-    pet.stageName = '蛋';
-    pet.stageEmoji = '🥚';
     resetPetSheetImage(pet);
     pet.anim = 'idle';
     pet.stats = pet.stats && typeof pet.stats === 'object' ? pet.stats : {};
@@ -571,7 +566,7 @@ function refreshConsole(root, { preserveEditorFocus = false } = {}) {
     const pet = getCurrentPet();
     const petTitle = root.querySelector('[data-dev-pet-title]');
     if (petTitle) {
-        const titleText = pet ? `${pet.name || pet.id || '未命名'} · ${pet.stageName || pet.stage || ''}` : '未选择';
+        const titleText = pet ? `${pet.name || pet.id || '未命名'} · ${getStageName(pet.stage, pet.stage || '')}` : '未选择';
         petTitle.textContent = titleText;
         petTitle.title = titleText;
     }

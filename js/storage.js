@@ -155,7 +155,7 @@ function getUserProfilePayload() {
         planetActions: state.planetActions && typeof state.planetActions === 'object' ? state.planetActions : {},
         planetInfrastructure: state.planetInfrastructure && typeof state.planetInfrastructure === 'object' ? state.planetInfrastructure : {},
         planetMining: state.planetMining && typeof state.planetMining === 'object' ? state.planetMining : {},
-        haqiIslandFarewells: Array.isArray(state.haqiIslandFarewells) ? state.haqiIslandFarewells.slice(0, 200) : [],
+        haqiIslandFarewells: Array.isArray(state.haqiIslandFarewells) ? state.haqiIslandFarewells.slice(0, 200).map(createFarewellPayload) : [],
         remotePlanetDiscoveries: state.remotePlanetDiscoveries && typeof state.remotePlanetDiscoveries === 'object' ? state.remotePlanetDiscoveries : {},
         remoteElementStocks: state.remoteElementStocks && typeof state.remoteElementStocks === 'object' ? state.remoteElementStocks : {},
         lifetimeStats: state.lifetimeStats && typeof state.lifetimeStats === 'object' ? state.lifetimeStats : {},
@@ -163,6 +163,32 @@ function getUserProfilePayload() {
         petOrder: state.petOrder || [],
         currentPetId: state.currentPetId || null,
     };
+}
+
+function createFarewellPayload(record) {
+    if (!record || typeof record !== 'object') return record;
+    const { stageName, stageEmoji, ...payload } = record;
+    return payload;
+}
+
+function normalizePetRuntimeData(pet) {
+    if (!pet || typeof pet !== 'object') return pet;
+    delete pet.stageName;
+    delete pet.stageEmoji;
+    return pet;
+}
+
+function createPetPayload(pet) {
+    if (!pet || typeof pet !== 'object') return pet;
+    const { stageName, stageEmoji, ...payload } = pet;
+    const locationType = payload.location?.type || payload.status || 'home';
+    if (locationType === 'released') {
+        delete payload.stats;
+        delete payload.anim;
+        delete payload.sleepStartedAt;
+        delete payload.sleepLockedUntil;
+    }
+    return payload;
 }
 
 // ========== 用户 ==========
@@ -219,6 +245,7 @@ export async function loadAllPets() {
     for (const id of ids) {
         const p = await readJSON(PATHS.pet(id), null);
         if (p && p.id) {
+            normalizePetRuntimeData(p);
             state.pets[p.id] = p;
             state.petOrder.push(p.id);
         }
@@ -280,12 +307,13 @@ export async function ensurePetData(petId) {
 
 export async function savePet(pet) {
     if (!pet?.id) return;
+    normalizePetRuntimeData(pet);
     state.pets[pet.id] = pet;
     if (!state.petOrder.includes(pet.id)) {
         state.petOrder.push(pet.id);
         await saveUserProfile();
     }
-    await writeJSON(PATHS.pet(pet.id), pet);
+    await writeJSON(PATHS.pet(pet.id), createPetPayload(pet));
 }
 
 // 宠物配置使用独立的 20 秒防抖（每只宠物一个 timer），避免频繁写远端
@@ -296,10 +324,11 @@ function _flushPetSave(petId) {
     const pet = _petSavePending.get(petId);
     _petSavePending.delete(petId);
     _petSaveTimers.delete(petId);
-    if (pet) writeJSON(PATHS.pet(petId), pet);
+    if (pet) writeJSON(PATHS.pet(petId), createPetPayload(pet));
 }
 export function savePetDebounced(pet) {
     if (!pet?.id) return;
+    normalizePetRuntimeData(pet);
     state.pets[pet.id] = pet;
     _petSavePending.set(pet.id, pet);
     const existing = _petSaveTimers.get(pet.id);

@@ -9,7 +9,9 @@ import { addToInventory, getLayout, saveLayout, savePet, savePetDebounced, saveU
 import { clampEnergyToMax, defaultPermanentTrauma, defaultStats, dominantTraits } from './petTick.js';
 import { computePlanetProgress, getPlanetDayNumber } from './planetProgress.js';
 import { decodeDna, displayPetName, dnaRarity, dnaToName, isAdultStage, randomDna, randomDnaForElementalAttribute } from './dna.js';
-import { isPetOnCurrentPlanet, isPetSelectable, markPetHaqiIsland, selectablePets } from './petLifecycle.js';
+import { getRuntimePetStats, isPetOnCurrentPlanet, isPetSelectable, markPetHaqiIsland, selectablePets } from './petLifecycle.js';
+import { buildEggSvg, getPetSpriteCell, petArtHtml, scanAndMount, SHEET_COLS, SHEET_ROWS } from './pet.js';
+import { getStageName } from './config.js';
 import { createSpaceTravel, spaceTravelHtml } from './spacetravel.js';
 import SoundManager from './soundManager.js';
 
@@ -18,17 +20,18 @@ const soundManager = SoundManager.getInstance();
 const HAQI_DOWNLOAD_URL = 'https://keepwork.com/api/raw/maisi/maisi/webgames/data/magic_haqi_download';
 const WEATHER_DURATION_MS = 30 * 60 * 1000;
 const WEATHER_COOLDOWN_MS = 8 * 60 * 1000;
-const SOCIAL_FUEL_COST = 3;
+const SOCIAL_FUEL_COST = 30;
 const PLANET_INFRA_MAX_LEVEL = 3;
 const FAREWELL_PAGE_SIZE = 4;
 const SMALL_REMOTE_PLANET_NAME_RADIUS = 8;
 const SMALL_REMOTE_PLANET_SIZE_PER_RADIUS = 7;
 const REMOTE_ELEMENT_HAUL_TONS = 10;
 const REMOTE_ELEMENT_MAX_TONS = 100;
+const HAQI_VISIT_COIN_REWARD = 30;
 const PLANET_MINING_COIN_PER_HOUR = 5;
 const PLANET_MINING_MAX_COINS = 120;
 const PLANET_MINING_HOUR_MS = 60 * 60 * 1000;
-const PLANET_EXPRESSIONS = ['normal', 'happy', 'sad', 'dirty', 'sick', 'hungry', 'sleeping', 'tired'];
+const PLANET_EXPRESSIONS = ['normal', 'happy', 'sad', 'dirty', 'hungry', 'sleeping', 'tired'];
 const PLANET_EXPRESSION_ALIASES = {
     idle: 'normal',
     sleep: 'sleeping',
@@ -58,16 +61,16 @@ let __spaceTravel = null;
 let __remoteCargoActive = false;
 
 const WEATHER_OPTIONS = [
-    { id: 'rain', emoji: '🌧️', name: '召雨', label: '雨云', unlock: 1, mood: -2, energy: 4, message: '雨云覆盖星球，陆地会长出新植物，宠物更想回屋里。' },
+    { id: 'rain', emoji: '🌧️', name: '召雨', label: '雨云', unlock: 1, mood: -2, hunger: 4, message: '雨云覆盖星球，陆地会长出新植物，宠物更想回屋里。' },
     { id: 'sunny', emoji: '☀️', name: '晴光', label: '晴光', unlock: 2, mood: 7, message: '晴光照亮星球，宠物心情变好了。' },
     { id: 'breeze', emoji: '🍃', name: '季风', label: '季风', unlock: 4, clean: 5, mood: 3, message: '轻风穿过星球，大气变得清爽。' },
 ];
 
 const ASTRO_BUFFS = [
-    { id: 'gluttony', emoji: '🌕', name: '贪食之月', text: '饥饿下降更快，但今天喂食与照顾更有仪式感。', hunger: -8, mood: 4 },
+    { id: 'gluttony', emoji: '🌕', name: '贪食之月', text: '体力下降更快，但今天喂食与照顾更有仪式感。', hunger: -8, mood: 4 },
     { id: 'garden', emoji: '🌿', name: '花园星座', text: '心情衰减减慢，更适合散步。', mood: 12 },
-    { id: 'clarity', emoji: '🔭', name: '明晰星轨', text: '智力会缓慢增长，适合学习。', intel: 8 },
-    { id: 'tidal', emoji: '🌊', name: '潮汐双月', text: '清洁缓慢恢复，健康小幅提升。', clean: 10, health: 4 },
+    { id: 'clarity', emoji: '🔭', name: '明晰星轨', text: '玩耍与探索更有收获，亲密小幅提升。', bond: 4 },
+    { id: 'tidal', emoji: '🌊', name: '潮汐双月', text: '清洁缓慢恢复，心情小幅提升。', clean: 10, mood: 4 },
 ];
 
 const UFO_REWARDS = ['food_apple', 'food_carrot', 'field_flower', 'land_mushroom', 'water_shell'];
@@ -117,7 +120,7 @@ const PLANET_ACTION_DETAILS = {
         icon: '🔭',
         title: '星象校准',
         text: '校准今日星象，为宠物和星球启用当天的星轨加成。',
-        effect: '每天只能校准一次，可能改善心情、清洁、智力等状态。',
+        effect: '每天只能校准一次，可能改善心情、清洁、亲密等状态。',
         okText: '校准星象',
         unlock: 1,
         building: 'observatory',
@@ -187,7 +190,7 @@ function untilTomorrow(now = Date.now()) {
 function clampStat(pet, key, delta) {
     if (!pet?.stats || typeof delta !== 'number') return;
     pet.stats[key] = clamp((Number(pet.stats[key]) || 0) + delta, 0, 100);
-    if (key === 'energy' || key === 'hunger' || key === 'health') clampEnergyToMax(pet);
+    if (key === 'hunger') clampEnergyToMax(pet);
 }
 
 function addPlanetLog(type, text, emoji) {
@@ -397,12 +400,23 @@ function weatherCooldownMs() {
 
 function socialFuelCost() {
     const level = getActionInfrastructureLevel('visit') || 1;
-    return Math.max(1, SOCIAL_FUEL_COST - (level - 1));
+    return Math.max(24, SOCIAL_FUEL_COST - (level - 1) * 3);
 }
 
 function socialCoinReward() {
-    const level = getActionInfrastructureLevel('visit') || 1;
-    return 6 + (level - 1) * 4;
+    return HAQI_VISIT_COIN_REWARD;
+}
+
+function socialVisitTip(destinationId = 'haqi') {
+    const fuelCost = socialFuelCost();
+    if (destinationId === 'haqi') {
+        return `会消耗 ${fuelCost} 生物燃料，宠物会获得心情与羁绊，带回 ${socialCoinReward()} 金币和随机礼物。`;
+    }
+    const remote = SMALL_REMOTE_PLANETS.find(item => item.id === destinationId);
+    if (!remote) return `会消耗 ${fuelCost} 生物燃料，宠物会乘飞船拜访好友星球。`;
+    const stock = getRemoteElementStock(remote);
+    const added = Math.min(REMOTE_ELEMENT_HAUL_TONS, Math.max(0, REMOTE_ELEMENT_MAX_TONS - stock));
+    return `会消耗 ${fuelCost} 生物燃料，飞船会前往${remote.name}，带回 ${added} 吨${remote.elementalAttribute}元素。`;
 }
 
 function astroMultiplier() {
@@ -415,7 +429,7 @@ function actionEffectText(action, detail, buildingId, infraLevel) {
         return `${detail.effect} 当前天气持续 ${Math.round(weatherDurationMs() / 60000)} 分钟，冷却约 ${Math.round(weatherCooldownMs() / 60000)} 分钟。`;
     }
     if (buildingId === 'spaceport') {
-        return `会消耗 ${socialFuelCost()} 生物燃料，宠物会获得心情与羁绊，并带回 ${socialCoinReward()} 金币。`;
+        return socialVisitTip('haqi');
     }
     if (buildingId === 'ufoPad') {
         return `${detail.effect} 当前 Lv.${infraLevel || 1} 停机坪会让访客留下 ${Math.max(1, infraLevel || 1)} 份礼物。`;
@@ -620,14 +634,12 @@ function normalizePlanetExpression(expression) {
 }
 
 function inferPlanetExpression(pet) {
-    const stats = pet?.stats || {};
+    const stats = getRuntimePetStats(pet);
     if (pet?.anim === 'sleep') return 'sleeping';
-    if ((stats.health ?? 100) < 60) return 'sick';
     if ((stats.hunger ?? 100) < 22) return 'hungry';
     if ((stats.clean ?? 100) < 22) return 'dirty';
-    if ((stats.energy ?? 100) < 22) return 'tired';
     if ((stats.mood ?? 100) < 28) return 'sad';
-    if ((stats.mood ?? 0) >= 76 && (stats.health ?? 100) >= 70) return 'happy';
+    if ((stats.mood ?? 0) >= 76) return 'happy';
     return 'normal';
 }
 
@@ -702,7 +714,7 @@ export const planetLevel = {
         }).join('');
         const remoteLocked = progress.canVisitHaqiIsland ? '' : ' locked';
         const remoteTitle = progress.canVisitHaqiIsland
-            ? '前往哈奇岛下载魔法哈奇客户端'
+            ? '前往哈奇岛下载蛋蛋星球客户端'
             : '孵化一只宠物且星球等级达到 Lv.3 后解锁';
         return `
             <div class="space-camera-layer">
@@ -909,30 +921,12 @@ export const planetLevel = {
 
     dockHtml(pet) {
         const progress = computePlanetProgress();
-        const activeWeather = getActivePlanetWeather();
-        const activeBuff = getActivePlanetBuff();
-        const todayBuff = dailyBuffForToday();
-        const weatherLabel = activeWeather ? `${activeWeather.emoji} ${activeWeather.name}` : '气候稳定';
-        const buffLabel = activeBuff ? `${activeBuff.emoji} ${activeBuff.name}` : `${todayBuff.emoji} ${todayBuff.name}`;
         const socialLocked = isLocked(progress, 2);
-        const ufoLocked = isLocked(progress, 3);
-        const weatherInfraMissing = !getInfrastructure('weatherTower');
         const visitInfraMissing = !getInfrastructure('spaceport');
-        const ufoInfraMissing = !getInfrastructure('ufoPad');
-        const astroInfraMissing = !getInfrastructure('observatory');
         return `
             <div class="mh-dock-row planet-dock-actions">
-                <button class="btn-secondary dock-icon-btn ${weatherInfraMissing ? 'planet-action-locked' : ''}" data-act="weather" title="召唤雨云">
-                    <span class="dock-icon planet-dock-svg-icon">${planetActionIconHtml('weather')}</span><span class="dock-label">${escapeHtml(weatherLabel)}</span>
-                </button>
                 <button class="btn-secondary dock-icon-btn ${socialLocked || visitInfraMissing ? 'planet-action-locked' : ''}" data-act="visit" title="${socialLocked ? lockedTitle(2) : `消耗 ${SOCIAL_FUEL_COST} 生物燃料拜访好友星球`}">
                     <span class="dock-icon planet-dock-svg-icon">${planetActionIconHtml('visit')}</span><span class="dock-label">星际拜访</span>
-                </button>
-                <button class="btn-secondary dock-icon-btn ${ufoLocked || ufoInfraMissing ? 'planet-action-locked' : ''}" data-act="ufo" title="${ufoLocked ? lockedTitle(3) : '接待今日 UFO 访客'}">
-                    <span class="dock-icon planet-dock-svg-icon">${planetActionIconHtml('ufo')}</span><span class="dock-label">接待 UFO</span>
-                </button>
-                <button class="btn-secondary dock-icon-btn ${astroInfraMissing ? 'planet-action-locked' : ''}" data-act="astro" title="校准今日星象">
-                    <span class="dock-icon planet-dock-svg-icon">${planetActionIconHtml('astro')}</span><span class="dock-label">${escapeHtml(buffLabel)}</span>
                 </button>
                 <button class="btn-secondary dock-icon-btn" data-act="milestones" title="查看星球里程碑">
                     <span class="dock-icon planet-dock-svg-icon">${planetActionIconHtml('milestones')}</span><span class="dock-label">里程碑</span>
@@ -1023,6 +1017,7 @@ function openPlanetModal(innerHtml, onClick, cardClass = '') {
         onClick?.(e, close);
     });
     document.body.appendChild(mask);
+    scanAndMount(mask);
     return { mask, close };
 }
 
@@ -1043,6 +1038,7 @@ function showPlanetActionDialog(action, pet, ctx) {
         : locked
             ? lockedTitle(detail.unlock)
             : actionEffectText(action, detail, buildingId, infrastructureLevel);
+    const visitDestinationsHtml = action === 'visit' && !locked && !needsBuilding ? socialVisitDestinationPickerHtml() : '';
     openPlanetModal(`
         <div class="planet-action-dialog-head">
             <span class="planet-action-dialog-icon">${detail.icon}</span>
@@ -1051,7 +1047,7 @@ function showPlanetActionDialog(action, pet, ctx) {
                 <div class="planet-modal-subtitle">${escapeHtml(detail.text)}</div>
             </div>
         </div>
-        <div class="planet-action-dialog-body">
+        <div class="planet-action-dialog-body" ${action === 'visit' && !locked && !needsBuilding ? 'data-visit-tip' : ''}>
             ${escapeHtml(bodyText)}
         </div>
         ${buildingDef ? `
@@ -1059,6 +1055,7 @@ function showPlanetActionDialog(action, pet, ctx) {
                 <span class="planet-infra-card-icon">${planetInfrastructureSvg(buildingId, Math.max(1, infrastructureLevel || 1))}</span>
                 <span><b>${escapeHtml(buildingDef.name)} ${infrastructureLevel ? `Lv.${infrastructureLevel}` : '未建造'}</b><i>${escapeHtml(infrastructureLevel ? (canUpgrade ? `升级费用：${formatCost(cost)}` : '已满级') : `建造费用：${formatCost(cost)}`)}</i></span>
             </div>` : ''}
+        ${visitDestinationsHtml}
         <div class="planet-modal-actions">
             <button class="btn-secondary" data-act="close">${locked && !needsBuilding ? '知道了' : '取消'}</button>
             ${buildingDef && (needsBuilding || canUpgrade) ? `<button class="btn-secondary" data-infra-build="${escapeHtml(buildingId)}">${needsBuilding ? `建造${escapeHtml(buildingDef.name)}` : '升级'}</button>` : ''}
@@ -1070,8 +1067,29 @@ function showPlanetActionDialog(action, pet, ctx) {
             if (buildOrUpgradeInfrastructure(buildBtn.dataset.infraBuild)) close();
             return;
         }
+        const destinationBtn = e.target.closest?.('[data-visit-destination]');
+        if (destinationBtn) {
+            if (destinationBtn.disabled) return;
+            const list = destinationBtn.closest('.planet-visit-destinations');
+            list?.querySelectorAll('[data-visit-destination]').forEach(item => {
+                const selected = item === destinationBtn;
+                item.classList.toggle('is-selected', selected);
+                item.setAttribute('aria-selected', selected ? 'true' : 'false');
+            });
+            const tip = e.currentTarget.querySelector?.('[data-visit-tip]');
+            if (tip) tip.textContent = socialVisitTip(destinationBtn.dataset.visitDestination || 'haqi');
+            return;
+        }
         const btn = e.target.closest?.('[data-action-confirm]');
         if (!btn) return;
+        if (action === 'visit') {
+            const selected = e.currentTarget.querySelector?.('.planet-visit-destination.is-selected');
+            btn.disabled = true;
+            runSocialVisitDestination(selected?.dataset.visitDestination || 'haqi', pet, close).then(sent => {
+                if (!sent) btn.disabled = false;
+            });
+            return;
+        }
         close();
         runPlanetAction(action, pet, ctx);
     });
@@ -1143,7 +1161,7 @@ async function summonWeather(option, pet) {
         until: now + weatherDurationMs(),
     };
     actions.weatherAt = now;
-    ['mood', 'energy', 'clean', 'health'].forEach(key => clampStat(pet, key, option[key] || 0));
+    ['mood', 'hunger', 'clean', 'bond'].forEach(key => clampStat(pet, key, option[key] || 0));
     if (option.id === 'rain') {
         const grown = await growRainPlants(pet);
         state.currentRoom = pet.activeRoom = 'living';
@@ -1160,24 +1178,103 @@ async function summonWeather(option, pet) {
 function launchSocialVisit(pet) {
     const progress = computePlanetProgress();
     if (isLocked(progress, 2)) { showToast(lockedTitle(2), 'info'); return; }
+    runSocialVisitDestination('haqi', pet);
+}
+
+function socialVisitDestinationItems() {
+    return [
+        {
+            id: 'haqi',
+            name: '哈奇岛',
+            icon: '🏝️',
+            meta: `${socialFuelCost()}燃料 · ${socialCoinReward()}金币`,
+            locked: false,
+            selected: true,
+        },
+        ...SMALL_REMOTE_PLANETS.map(remote => {
+            const stock = getRemoteElementStock(remote);
+            const full = stock >= REMOTE_ELEMENT_MAX_TONS;
+            return {
+                id: remote.id,
+                name: remote.name,
+                remote,
+                icon: remote.equipmentEmoji,
+                meta: full ? '储量已满' : `${socialFuelCost()}燃料 · ${remote.elementalAttribute}${stock}/${REMOTE_ELEMENT_MAX_TONS}`,
+                locked: full,
+                selected: false,
+            };
+        }),
+    ];
+}
+
+function socialVisitDestinationPickerHtml() {
+    return `
+        <div class="planet-visit-destinations" role="listbox" aria-label="选择拜访星球">
+            ${socialVisitDestinationItems().map(destination => `
+                <button class="planet-visit-destination ${destination.selected ? 'is-selected' : ''} ${destination.locked ? 'is-disabled' : ''}"
+                    data-visit-destination="${escapeHtml(destination.id)}" type="button" role="option"
+                    aria-selected="${destination.selected ? 'true' : 'false'}" ${destination.locked ? 'disabled' : ''}>
+                    <span class="planet-visit-destination-icon">${destination.remote ? smallRemotePlanetSvg(destination.remote) : destination.icon}</span>
+                    <span class="planet-visit-destination-text">
+                        <b>${escapeHtml(destination.name)}</b>
+                        <i>${escapeHtml(destination.meta)}</i>
+                    </span>
+                </button>
+            `).join('')}
+        </div>
+    `;
+}
+
+async function runSocialVisitDestination(destinationId, pet, close) {
+    if (destinationId === 'haqi') return launchHaqiSocialVisit(pet, close);
+    const remote = SMALL_REMOTE_PLANETS.find(item => item.id === destinationId);
+    if (!remote) return false;
+    return visitRemotePlanet(remote, close);
+}
+
+async function launchHaqiSocialVisit(pet, close) {
     const fuelCost = socialFuelCost();
     const coinReward = socialCoinReward();
+    if (__remoteCargoActive) {
+        showToast('还有一批星际资源正在自动返航，请稍等片刻。', 'info', 2600);
+        return false;
+    }
     if ((state.biofuel | 0) < fuelCost) {
         showToast(`需要 ${fuelCost} ⛽ 生物燃料，去星球收集便便吧。`, 'error', 2600);
-        return;
+        return false;
     }
     state.biofuel = Math.max(0, (state.biofuel | 0) - fuelCost);
+    refreshTopbarResources();
+    saveUserProfileDebounced();
+    notify();
+    close?.();
+    __remoteCargoActive = true;
+    showToast('飞船出发！宠物正在前往哈奇岛拜访。', 'info', 2600);
+    try {
+        soundManager.playSpacecraftTakeoff();
+        if (__spaceTravel?.playMission) {
+            await __spaceTravel.playMission('haqi', { direction: 'outbound', duration: 8500, type: 'shuttle' });
+            soundManager.playSpacecraftArrive();
+            showToast('哈奇岛拜访完成，飞船正在返航。', 'info', 2200);
+            soundManager.playSpacecraftTakeoff();
+            await __spaceTravel.playMission('haqi', { direction: 'return', duration: 7500, type: 'shuttle' });
+        }
+    } finally {
+        __remoteCargoActive = false;
+    }
     state.coins += coinReward;
+    const gift = UFO_REWARDS[(Date.now() + (state.petOrder || []).length) % UFO_REWARDS.length];
+    await addToInventory(pet.id, gift, 1);
     clampStat(pet, 'mood', 12);
     clampStat(pet, 'bond', 6);
-    addPlanetLog('visit', `${pet.name || '宠物'}拜访了好友星球，带回 ${coinReward} 金币`, '🚀');
+    addPlanetLog('visit', `${pet.name || '宠物'}拜访了哈奇岛，带回 ${coinReward} 金币和随机礼物`, '🚀');
     refreshTopbarResources();
     savePetDebounced(pet);
     saveUserProfileDebounced();
-    soundManager.playSpacecraftTakeoff();
-    setTimeout(() => soundManager.playSpacecraftArrive(), 1300);
-    showToast(`飞船出发！宠物拜访好友星球后带回了 ${coinReward} 金币。`, 'success', 2600);
+    soundManager.playSpacecraftArrive();
+    showToast(`航程完成！宠物拜访哈奇岛后带回了 ${coinReward} 金币和 1 份随机礼物。`, 'success', 3000);
     notify();
+    return true;
 }
 
 async function acceptUfoVisitor(pet) {
@@ -1215,7 +1312,7 @@ function alignConstellations(pet) {
     actions.astroDay = key;
     state.planetBuff = { ...buff, day: key, until: untilTomorrow() };
     const multiplier = astroMultiplier();
-    ['hunger', 'mood', 'clean', 'energy', 'health', 'intel', 'bond'].forEach(stat => clampStat(pet, stat, (buff[stat] || 0) * multiplier));
+    ['hunger', 'mood', 'clean', 'bond'].forEach(stat => clampStat(pet, stat, (buff[stat] || 0) * multiplier));
     addPlanetLog('astro', `星象校准：${buff.name}`, buff.emoji);
     savePetDebounced(pet);
     saveUserProfileDebounced();
@@ -1513,7 +1610,7 @@ function showRemotePlanetPanel(remote) {
 }
 
 async function visitRemotePlanet(remote, close) {
-    const fuelCost = 1;
+    const fuelCost = socialFuelCost();
     if (__remoteCargoActive) {
         showToast('还有一批星际资源正在自动返航，请稍等片刻。', 'info', 2600);
         return false;
@@ -1596,17 +1693,17 @@ function getFarewellRecords() {
 
 function createFarewellRecord(pet) {
     const now = Date.now();
-    const stats = pet?.stats || {};
+    const stats = getRuntimePetStats(pet);
     const topTraits = dominantTraits(pet, 3).map(item => ({
         id: item.id,
         name: item.def?.name || item.id,
         emoji: item.def?.emoji || '✦',
         value: item.value,
     }));
-    const bestStat = ['bond', 'mood', 'intel', 'health', 'energy']
+    const bestStat = ['bond', 'mood', 'clean', 'hunger']
         .map(key => ({ key, value: Math.round(Number(stats[key]) || 0) }))
         .sort((a, b) => b.value - a.value)[0];
-    const statNames = { bond: '羁绊', mood: '心情', intel: '智慧', health: '健康', energy: '活力' };
+    const statNames = { bond: '羁绊', mood: '心情', clean: '清洁', hunger: '体力' };
     const name = displayPetName(pet) || pet?.name || '哈奇伙伴';
     return {
         id: 'farewell_' + randId(10),
@@ -1615,8 +1712,6 @@ function createFarewellRecord(pet) {
         trueName: pet.name || name,
         dna: pet.dna || '',
         stage: pet.stage || '',
-        stageName: pet.stageName || '',
-        stageEmoji: pet.stageEmoji || '🐉',
         rarity: Number(pet.rarity) || 0,
         bornAt: Number(pet.bornAt) || now,
         farewellAt: now,
@@ -1627,9 +1722,6 @@ function createFarewellRecord(pet) {
             hunger: Math.round(Number(stats.hunger) || 0),
             mood: Math.round(Number(stats.mood) || 0),
             clean: Math.round(Number(stats.clean) || 0),
-            energy: Math.round(Number(stats.energy) || 0),
-            health: Math.round(Number(stats.health) || 0),
-            intel: Math.round(Number(stats.intel) || 0),
             bond: Math.round(Number(stats.bond) || 0),
         },
         handbook: [
@@ -1648,19 +1740,44 @@ function farewellPortraitHtml(record) {
         const row = record.stage === 'elder' ? 3 : record.stage === 'adult' ? 2 : record.stage === 'teen' ? 1 : 0;
         return `<span class="haqi-farewell-portrait-img haqi-farewell-sheet" style="background-image:url('${escapeHtml(record.imageSheetUrl)}');--farewell-y:${(row * 33.333).toFixed(3)}%"></span>`;
     }
-    return `<span class="haqi-farewell-portrait-emoji">${record.stageEmoji || '🐉'}</span>`;
+    return `<span class="haqi-farewell-portrait-emoji">?</span>`;
+}
+
+function staticFarewellPetIconHtml(pet, record) {
+    const source = pet || record || {};
+    const alt = escapeHtml(displayPetName(source) || record?.name || '哈奇伙伴');
+    const url = source.imageSheetUrl || source.imageUrl || record?.imageSheetUrl || record?.imageUrl || '';
+    const cell = source.imageSheetUrl ? getPetSpriteCell(source) : null;
+
+    if (source.imageUrl && !source.imageSheetUrl) {
+        return `<span class="mh-pet-art mh-pet-list-raw" aria-label="${alt}"
+            style="width:100%;height:100%;display:block;background-image:url('${escapeHtml(url)}');background-size:contain;background-position:center;background-repeat:no-repeat;image-rendering:auto"></span>`;
+    }
+    if (!url || !cell) {
+        return `<span class="mh-pet-art mh-pet-art-egg" aria-label="${alt}"
+            style="width:100%;height:100%;display:flex;align-items:center;justify-content:center">
+            ${buildEggSvg(source)}
+        </span>`;
+    }
+
+    const bx = (cell.col * 100 / (SHEET_COLS - 1)).toFixed(3);
+    const by = (cell.row * 100 / (SHEET_ROWS - 1)).toFixed(3);
+    return `<span class="mh-pet-art mh-pet-art-sprite mh-pet-list-raw" aria-label="${alt}"
+        style="width:100%;height:100%;display:block;background:#000;background-image:url('${escapeHtml(url)}');background-size:${SHEET_COLS * 100}% ${SHEET_ROWS * 100}%;background-position:${bx}% ${by}%;background-repeat:no-repeat;image-rendering:auto"></span>`;
 }
 
 function farewellRecordHtml(record) {
+    const pet = state.pets?.[record.petId];
+    const portrait = pet ? staticFarewellPetIconHtml(pet, record) : farewellPortraitHtml(record);
     const traits = Array.isArray(record.topTraits) && record.topTraits.length
         ? record.topTraits.map(item => `${item.emoji || '✦'} ${escapeHtml(item.name || item.id)}`).join(' · ')
         : '独特哈奇气息';
     return `
         <article class="haqi-farewell-card">
-            <div class="haqi-farewell-portrait">${farewellPortraitHtml(record)}</div>
+            <div class="haqi-farewell-portrait">${portrait}</div>
             <div class="haqi-farewell-body">
                 <div class="haqi-farewell-name">${escapeHtml(record.name || '哈奇伙伴')}</div>
-                <div class="haqi-farewell-meta">${escapeHtml(formatFarewellDate(record.farewellAt))} · ${escapeHtml(record.stageName || '成年')}</div>
+                <div class="haqi-farewell-meta">${escapeHtml(formatFarewellDate(record.farewellAt))} · ${escapeHtml(getStageName(record.stage, '成年'))}</div>
                 <div class="haqi-farewell-note">${traits}</div>
                 <div class="haqi-handbook-lines">
                     ${(record.handbook || []).slice(0, 3).map(line => `<p>${escapeHtml(line)}</p>`).join('')}
@@ -1740,8 +1857,8 @@ function showFarewellPetIntro() {
         <div class="haqi-candidate-list">
             ${candidates.map(pet => `
                 <button class="planet-option" data-farewell-pet="${escapeHtml(pet.id)}" type="button">
-                    <span class="planet-option-icon">${pet.stageEmoji || '🐉'}</span>
-                    <span><b>${escapeHtml(displayPetName(pet))}</b><i>${escapeHtml(pet.stageName || pet.stage || '成年')} · 已陪伴 ${escapeHtml(formatPetAge(pet))}</i></span>
+                    <span class="planet-option-icon planet-option-pet-icon">${petArtHtml(pet, { alt: displayPetName(pet) })}</span>
+                    <span><b>${escapeHtml(displayPetName(pet))}</b><i>${escapeHtml(getStageName(pet.stage, '成年'))} · 已陪伴 ${escapeHtml(formatPetAge(pet))}</i></span>
                 </button>`).join('')}
         </div>
         <div class="planet-modal-actions"><button class="btn-secondary" data-act="close">取消</button></div>
@@ -1761,17 +1878,16 @@ function showFarewellCeremony(pet) {
         <div class="haqi-ceremony-card">
             <div class="haqi-ceremony-sky" aria-hidden="true"><span></span><span></span><span></span></div>
             <div class="haqi-ceremony-hero">
-                <div class="haqi-farewell-portrait large">${farewellPortraitHtml(record)}</div>
+                <div class="haqi-ceremony-pet-icon">${petArtHtml(pet, { alt: displayPetName(pet) })}</div>
                 <div>
                     <div class="planet-modal-title">${escapeHtml(record.name)} 的成人礼</div>
                     <div class="planet-modal-subtitle">音乐响起后，它会带着手帐飞回哈奇岛。此操作不可召回。</div>
                 </div>
             </div>
             <div class="haqi-handbook-preview">
-                <b>哈奇手帐</b>
                 ${record.handbook.map(line => `<p>${escapeHtml(line)}</p>`).join('')}
             </div>
-            <div class="haqi-ceremony-warning">确认后，${escapeHtml(record.name)} 会离开当前宠物列表，只能去《哈奇小镇》探望。</div>
+            <div class="haqi-ceremony-warning">确认后，${escapeHtml(record.name)} 会离开当前星球，只能去《哈奇小镇》探望。</div>
         </div>
         <div class="planet-modal-actions">
             <button class="btn-secondary" data-act="close">再陪一会儿</button>
@@ -1829,8 +1945,6 @@ async function ensureReplacementEgg() {
         lastCareAt: now,
         parents: null,
         stage: 'egg',
-        stageName: '蛋',
-        stageEmoji: '🥚',
         activeRoom: 'living',
     };
     await savePet(pet);

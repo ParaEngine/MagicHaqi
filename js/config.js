@@ -9,29 +9,19 @@ export const CONFIG = {
     tickInterval: 30 * 1000,
     // 每 tick 各属性衰减量
     statDecayPerTick: {
-        hunger: -1, mood: -0.6, clean: -0.4, energy: 0,
-        health: 0, intel: 0, bond: -0.2,
+        hunger: -1, mood: -0.6, clean: -0.4,
+        bond: -0.2,
     },
     // 离线最大补算（小时）；成长阶段仍按真实出生时间推进，不受此衰减上限影响。
     maxOfflineHours: 72,
     // 离线衰减按日常照料节奏计算，不复用在线 30s tick，避免每日登录时直接归零。
     offlineDecayPerHour: {
-        hunger: -1.5, mood: -1, clean: -1.25, energy: 0,
-        health: 0, intel: 0, bond: -0.2,
+        hunger: -1.5, mood: -1, clean: -1.25,
+        bond: -0.2,
     },
     offlineDecayDailyCap: {
-        hunger: -36, mood: -24, clean: -30, energy: 0,
-        health: 0, intel: 0, bond: -5,
-    },
-    offlineHealthGraceHours: 24,
-    offlineHealthPenaltyAfterHours: 48,
-    offlineHealthPenaltyPerHour: 0.2,
-    energyMax: {
-        min: 60,
-        hungerPenaltyBelow: 30,
-        maxHungerPenalty: 30,
-        healthPenaltyBelow: 60,
-        maxHealthPenalty: 30,
+        hunger: -36, mood: -24, clean: -30,
+        bond: -5,
     },
     companionMood: {
         dailyMax: 50,
@@ -43,15 +33,23 @@ export const CONFIG = {
             { id: '5m', seconds: 300, mood: 10 },
         ],
     },
+    hatchingCare: {
+        costPerDay: 100,
+        maxDays: 2,
+        minStatAverage: 50,
+        minMood: 50,
+        minHunger: 50,
+        targetMood: 62,
+        targetHunger: 66,
+        growthRate: 0.45,
+    },
 
     // 互动效果
     actions: {
-        feed:  { hunger: +25, mood: +5,  energy: +3,  bond: +2,  costCoins: 2,  cooldownSec: 30 },
+        feed:  { hunger: +28, mood: +5,  bond: +2,  costCoins: 2,  cooldownSec: 30 },
         bath:  { clean: +20, cooldownSec: 60 },
-        play:  { mood: +20, bond: +6,  energy: -10, costCoins: 0,  cooldownSec: 30, rewardCoins: 0 },
-        sleep: { energy: +40, mood: +5, hunger: -8, costCoins: 0,  cooldownSec: 120 },
-        study: { energy: -6, costCoins: 0, cooldownSec: 60, rewardCoins: 0 },
-        heal:  { health: +30, mood: +6, costCoins: 10, cooldownSec: 180 },
+        play:  { mood: +5, bond: +20,  hunger: -10, costCoins: 0,  cooldownSec: 30, rewardCoins: 0 },
+        sleep: { hunger: +40, mood: +5, costCoins: 0,  cooldownSec: 120 },
     },
 
     // 成长阶段（按总时长 / 成长积分）
@@ -116,13 +114,6 @@ export const CONFIG = {
     traitGainPerFeed: 8,
     traitMax: 100,
 
-    // 体内细胞迷你游戏 —— 触发条件
-    cellGame: {
-        sicknessThresholdHealth: 60,   // 健康低于此值视为生病
-        targetHits: 8,                 // 击破多少坏细胞算治愈
-        healPerHit: 6,                 // 每击命中恢复多少 health
-    },
-
     // 永久精神创伤：多日无人照料、饥饿、脏乱等会累积，无法治疗移除。
     trauma: {
         max: 6,
@@ -130,8 +121,6 @@ export const CONFIG = {
         hungerThreshold: 25,
         cleanThreshold: 35,
         moodThreshold: 25,
-        energyThreshold: 20,
-        healthThreshold: 65,
     },
 
     // Field 视图 —— 收集 poop 转 biofuel
@@ -159,6 +148,15 @@ export const CONFIG = {
     defaultIsPaid: false,
 };
 
+export function getStageDef(stageId) {
+    return CONFIG.stages.find(stage => stage.id === stageId) || null;
+}
+
+export function getStageName(stageId, fallback = '') {
+    const def = getStageDef(stageId);
+    return def?.name || fallback || stageId || '';
+}
+
 // 商店物品（同 assets/data/shop_items.json，但内置一份默认值方便启动）
 export const SHOP_ITEMS = [
     { id: 'food_basic_feed', name: '原始饲料', emoji: '🌿', price: 0, type: 'food', foodKind: 'both', stat: { hunger: +22 }, unlimited: true, hiddenFromShop: true, moodPenaltyStages: ['teen', 'adult', 'elder'], moodPenalty: -8 },
@@ -168,14 +166,14 @@ export const SHOP_ITEMS = [
     { id: 'food_cake',     name: '蛋糕',    emoji: '🍰', price: 18,  type: 'food', foodKind: 'vegetables', stat: { hunger: +20, mood: +10 }, trait: 'sweetLike' },
     { id: 'food_cookie',   name: '开心饼干', emoji: '🍪', price: 10,  type: 'food', foodKind: 'both',       stat: { hunger: +8,  mood: +8 } },
     { id: 'food_pudding',  name: '蜂蜜布丁', emoji: '🍮', price: 16,  type: 'food', foodKind: 'both',       stat: { hunger: +12, mood: +14 } },
-    { id: 'food_milk',     name: '温牛奶',  emoji: '🥛', price: 14,  type: 'food', foodKind: 'both',       stat: { hunger: +10, mood: +10, energy: +4 } },
+    { id: 'food_milk',     name: '温牛奶',  emoji: '🥛', price: 14,  type: 'food', foodKind: 'both',       stat: { hunger: +14, mood: +10 } },
     { id: 'food_party',    name: '欢乐套餐', emoji: '🥞', price: 28,  type: 'food', foodKind: 'both',       stat: { hunger: +18, mood: +22, bond: +2 } },
-    { id: 'food_carrot',   name: '胡萝卜',  emoji: '🥕', price: 8,   type: 'food', foodKind: 'vegetables', stat: { hunger: +18, intel: +2 }, trait: 'rabbitLike' },
-    { id: 'food_fish',     name: '小鱼干',  emoji: '🐟', price: 14,  type: 'food', foodKind: 'meat',       stat: { hunger: +24, energy: +4 }, trait: 'fishLike' },
+    { id: 'food_carrot',   name: '胡萝卜',  emoji: '🥕', price: 8,   type: 'food', foodKind: 'vegetables', stat: { hunger: +18 }, trait: 'rabbitLike' },
+    { id: 'food_fish',     name: '小鱼干',  emoji: '🐟', price: 14,  type: 'food', foodKind: 'meat',       stat: { hunger: +28 }, trait: 'fishLike' },
     { id: 'food_seed',     name: '麦穗',    emoji: '🌾', price: 6,   type: 'food', foodKind: 'vegetables', stat: { hunger: +12, mood: +4 },  trait: 'birdLike' },
-    { id: 'food_chili',    name: '火焰椒',  emoji: '🌶️', price: 20,  type: 'food', foodKind: 'vegetables', stat: { hunger: +20, energy: +8 }, trait: 'dragonLike' },
+    { id: 'food_chili',    name: '火焰椒',  emoji: '🌶️', price: 20,  type: 'food', foodKind: 'vegetables', stat: { hunger: +28 }, trait: 'dragonLike' },
     { id: 'toy_ball',      name: '皮球',    emoji: '⚽', price: 35,  type: 'toy',      stat: { mood: +12 } },
-    { id: 'toy_drum',      name: '小鼓',    emoji: '🥁', price: 50,  type: 'toy',      stat: { mood: +14, intel: +4 } },
+    { id: 'toy_drum',      name: '小鼓',    emoji: '🥁', price: 50,  type: 'toy',      stat: { mood: +14 } },
     { id: 'furn_bed',      name: '小床',    emoji: '🛏️', price: 54,  type: 'furniture', fields: ['indoor'] },
     { id: 'furn_sofa',     name: '沙发',    emoji: '🛋️', price: 64,  type: 'furniture', fields: ['indoor'] },
     { id: 'furn_lamp',     name: '台灯',    emoji: '💡', price: 24,  type: 'furniture', fields: ['indoor'] },

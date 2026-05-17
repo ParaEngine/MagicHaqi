@@ -7,7 +7,7 @@ import { getLayout, savePetDebounced, saveUserProfileDebounced } from './storage
 import { displayPetName } from './dna.js';
 import { isPetInteractionBlocked, petArtHtml, playEggWelcomeOnce, playPetClickFeedback, playPetHappy, randomPetTalk, sleepingInteractionText } from './pet.js';
 import { markPetCared, normalizePetPoops } from './petTick.js';
-import { canPetAppearInField, getPetLocationType, getReleasedPetHome } from './petLifecycle.js';
+import { canPetAppearInField, getNannyCareRemainingMs, getPetLocationType, getReleasedPetHome, hasNannyCare } from './petLifecycle.js';
 import SoundManager from './soundManager.js';
 
 const soundManager = SoundManager.getInstance();
@@ -32,6 +32,9 @@ const FIELD_WIDTH_METERS = 10;
 const FIELD_HEIGHT_METERS = 3;
 const FIELD_BACKGROUND_CHUNKS = Math.max(1, Math.ceil(FIELD_WIDTH_METERS / FIELD_HEIGHT_METERS));
 const FIELD_PET_BASE_SIZE_PX = 96;
+const FIELD_PET_REPEL_MIN_X = 0.058;
+const FIELD_PET_REPEL_MIN_Y = 0.155;
+const FIELD_PET_REPEL_MIN_GAP = 0.018;
 const FIELD_ITEM_DEFAULT_SCALE = 1.15;
 const FIELD_ITEM_MIN_SCALE = 0.8;
 const FIELD_ITEM_MAX_SCALE = 3;
@@ -318,6 +321,24 @@ function animateFieldPanTo(targetPan, duration, onComplete) {
     requestAnimationFrame(step);
 }
 
+function centerFieldPet(pet, { animate = false, duration = 520, onComplete = null } = {}) {
+    const petId = pet?.id;
+    if (!petId) return false;
+    const petEl = Array.from(document.querySelectorAll('.field-pet-current')).find(el => el.dataset.fieldPet === petId);
+    const bounds = getFieldPanBounds?.();
+    if (!petEl || !bounds) return false;
+    const leftPct = parseFloat(petEl.style.left);
+    if (!Number.isFinite(leftPct)) return false;
+    const petSceneX = bounds.sceneWidth * (leftPct / 100);
+    const targetPan = clampRange(bounds.stageWidth / 2 - petSceneX, -bounds.maxPan, 0);
+    if (animate && Math.abs(targetPan - fieldPan) > 0.5) animateFieldPanTo(targetPan, duration, onComplete);
+    else {
+        setFieldPanValue(targetPan);
+        onComplete?.();
+    }
+    return true;
+}
+
 function getPoopsInField(pet, fieldId = state.currentField) {
     return (pet?.poops || []).filter(p => (p?.field || 'land') === fieldId);
 }
@@ -374,10 +395,6 @@ function renderFieldActionTray(pet) {
             <button type="button" class="btn-secondary action-btn dock-icon-btn mh-field-nav-action${navDisabled ? ' is-sleep-disabled' : ''}" data-field-nav="minigames" ${navDisabled ? 'disabled' : ''} title="${escapeHtml(navDisabledTitle)}">
                 <span class="dock-icon">🎾</span>
                 <span class="dock-label">玩耍</span>
-            </button>
-            <button type="button" class="btn-secondary action-btn dock-icon-btn mh-field-nav-action${navDisabled ? ' is-sleep-disabled' : ''}" data-field-nav="learning" ${navDisabled ? 'disabled' : ''} title="${escapeHtml(navDisabledTitle)}">
-                <span class="dock-icon">📚</span>
-                <span class="dock-label">学习</span>
             </button>
             <button type="button" class="btn-secondary action-btn dock-icon-btn mh-field-nav-action${navDisabled ? ' is-sleep-disabled' : ''}" data-field-nav="hatching" ${navDisabled ? 'disabled' : ''} title="${escapeHtml(navDisabledTitle)}">
                 <span class="dock-icon">🥚</span>
@@ -600,6 +617,34 @@ function petFieldPosition(pet, fieldId, index) {
     };
 }
 
+function fieldPetsRepelledPositions(entries) {
+    const placed = [];
+    return entries.map((entry, index) => {
+        const pos = { ...entry.pos };
+        const rng = makeRng(`${getUserSeedBase()}::${entry.fieldId}::pet-repel::${entry.id || index}`);
+        for (let step = 0; step < 10; step++) {
+            let moved = false;
+            for (const other of placed) {
+                const dx = pos.x - other.x;
+                const dy = pos.y - other.y;
+                const nx = dx / FIELD_PET_REPEL_MIN_X;
+                const ny = dy / FIELD_PET_REPEL_MIN_Y;
+                const distSq = nx * nx + ny * ny;
+                if (distSq >= 1) continue;
+                const dist = Math.sqrt(distSq) || 0.001;
+                const angle = Math.atan2(dy || (rng() - 0.5), dx || (rng() - 0.5));
+                const strength = (1 - dist) * 0.55 + FIELD_PET_REPEL_MIN_GAP;
+                pos.x = clampRange(pos.x + Math.cos(angle) * FIELD_PET_REPEL_MIN_X * strength, 0.08, 0.92);
+                pos.y = clampRange(pos.y + Math.sin(angle) * FIELD_PET_REPEL_MIN_Y * strength, 0.36, 0.90);
+                moved = true;
+            }
+            if (!moved) break;
+        }
+        placed.push(pos);
+        return pos;
+    });
+}
+
 function fieldPetsHtml(currentPet, fieldId) {
     const petIds = (state.petOrder || []).filter(id => state.pets[id] && canPetAppearInField(state.pets[id], fieldId));
     const orderedIds = petIds.includes(currentPet?.id)
@@ -608,9 +653,15 @@ function fieldPetsHtml(currentPet, fieldId) {
     const visibleIds = state.isDecorMode && currentPet?.id
         ? orderedIds.filter(id => id === currentPet.id)
         : orderedIds;
+    const entries = visibleIds.map((id, index) => ({
+        id,
+        fieldId,
+        pos: petFieldPosition(state.pets[id], fieldId, index),
+    }));
+    const repelledPositions = fieldPetsRepelledPositions(entries);
     return visibleIds.map((id, index) => {
         const p = state.pets[id];
-        const pos = petFieldPosition(p, fieldId, index);
+        const pos = { ...entries[index].pos, ...repelledPositions[index] };
         const isCurrent = id === currentPet?.id;
         const size = isCurrent ? 96 : 78;
         const zIndex = 16 + Math.round(pos.y * 18) + (isCurrent ? 5 : 0);
@@ -1025,6 +1076,38 @@ function showFieldPetTalk(petEl, pet) {
     }, talk.state === 'sleeping' ? 2600 : 2400);
 }
 
+function showFieldPetText(petEl, text, duration = 3000) {
+    if (!petEl || !text) return;
+    const anchor = petEl.querySelector?.(':scope > .field-pet-wander') || petEl;
+    let bubble = anchor.querySelector(':scope > .mh-pet-talk-bubble');
+    if (!bubble) {
+        bubble = document.createElement('div');
+        bubble.className = 'mh-pet-talk-bubble';
+        anchor.appendChild(bubble);
+    }
+    bubble.style.setProperty('--mh-talk-flip', '1');
+    bubble.textContent = text;
+    bubble.classList.remove('mh-pet-talk-bubble-hide', 'mh-pet-talk-bubble-pop');
+    void bubble.offsetWidth;
+    bubble.classList.add('mh-pet-talk-bubble-pop');
+    clearTimeout(bubble.__mhFieldPetTalkTimer);
+    bubble.__mhFieldPetTalkTimer = setTimeout(() => {
+        bubble.classList.add('mh-pet-talk-bubble-hide');
+        bubble.addEventListener('animationend', () => bubble.remove(), { once: true });
+    }, Math.max(1000, Number(duration) || 3000));
+}
+
+function showCaretakerFieldNotice(pet) {
+    if (!hasNannyCare(pet)) return;
+    const now = Date.now();
+    if (now - (Number(pet.hatchingCare?.lastFieldNoticeAt) || 0) < 8000) return;
+    const petEl = Array.from(document.querySelectorAll('.field-pet-current')).find(el => el.dataset.fieldPet === pet.id);
+    if (!petEl) return;
+    const remainingHours = Math.max(1, Math.ceil(getNannyCareRemainingMs(pet, now) / 3600000));
+    pet.hatchingCare.lastFieldNoticeAt = now;
+    showFieldPetText(petEl, `托管中...(剩余${remainingHours}小时)`, 3000);
+}
+
 export const fieldLevel = {
     id: 'field',
     index: 1,
@@ -1166,23 +1249,14 @@ export const fieldLevel = {
             // 等下一帧，确保 .field-pet-current 已挂载到 DOM 上
             requestAnimationFrame(() => {
                 try {
-                    const eggEl = document.querySelector(`.field-pet-current[data-field-pet="${pet.id}"]`);
-                    const bounds = getFieldPanBounds?.();
-                    if (eggEl && bounds) {
-                        const sceneWidth = bounds.sceneWidth;
-                        const stageWidth = bounds.stageWidth;
-                        const leftPct = parseFloat(eggEl.style.left) || 50;
-                        const eggSceneX = sceneWidth * (leftPct / 100);
-                        const targetPan = clampRange(stageWidth / 2 - eggSceneX, -bounds.maxPan, 0);
-                        animateFieldPanTo(targetPan, 520, () => {
-                            try { playEggWelcomeOnce(pet, 'field'); } catch (_) {}
-                        });
-                        return;
-                    }
+                    if (centerFieldPet(pet, { animate: true, duration: 520, onComplete: () => {
+                        try { playEggWelcomeOnce(pet, 'field'); } catch (_) {}
+                    } })) return;
                 } catch (_) {}
                 try { playEggWelcomeOnce(pet, 'field'); } catch (_) {}
             });
         }
+        requestAnimationFrame(() => showCaretakerFieldNotice(pet));
     },
 
     dockHtml(pet) {
@@ -1325,6 +1399,10 @@ export const fieldLevel = {
 
     onCameraChange(zoom) {
         setFieldEffectScale(zoom);
+    },
+
+    centerPet(pet, options) {
+        return centerFieldPet(pet, options);
     },
 
     onLeave() {

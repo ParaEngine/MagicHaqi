@@ -1,6 +1,6 @@
 // 主程序：SDK 启动 + 路由 + 全局事件
 import { $, showToast, confirm, clamp, prompt } from './utils.js';
-import { canPlaceItemInArea, CONFIG, getItemZOrder, SHOP_ITEMS, findLargestHouseAcrossLayouts } from './config.js';
+import { canPlaceItemInArea, CONFIG, getItemZOrder, SHOP_ITEMS, findLargestHouseAcrossLayouts, getStageName } from './config.js';
 import { state, notify, subscribe, setView, setCurrentPet, getCurrentPet } from './state.js';
 import {
     loadUserProfile, saveUserProfile, saveUserProfileDebounced,
@@ -17,14 +17,17 @@ import { renderShop } from './view_shop.js';
 import { renderInventory } from './view_inventory.js';
 import { renderProfile } from './view_profile.js';
 import { renderHelp } from './view_help.js';
-import { randomDna, decodeDna, dnaRarity, dnaToName, biasDnaForFieldId } from './dna.js';
+import { randomDna, decodeDna, dnaRarity, dnaToName, biasDnaForFieldId, crossover } from './dna.js';
 import { randId } from './utils.js';
 import { t } from './i18n.js';
 import { ensurePlanetProgressStarted, flushPlanetPlaytime } from './planetProgress.js';
 import {
     getPetLocationInfo,
+    getNannyCareCost,
+    getNannyCareEligibility,
     getPlanetPetLimit,
     getPetFindTarget,
+    hasNannyCare,
     hireNannyForPet,
     isPetOnCurrentPlanet,
     isPetSelectable,
@@ -35,11 +38,11 @@ import {
 } from './petLifecycle.js';
 import SoundManager from './soundManager.js';
 // Side-effect import: 订阅 state 并接管所有 [data-mh-pet] 占位符的渲染 + 动画
-import { canWakePet, eatFood, isPetInteractionBlocked, isPetSleeping, preloadPetAssets, say, setAnim, sleepingInteractionText, startPetSleep, wakePet } from './pet.js';
+import { canWakePet, eatFood, isPetInteractionBlocked, isPetSleeping, petArtHtml, preloadPetAssets, say, scanAndMount, setAnim, sleepingInteractionText, startPetSleep, wakePet } from './pet.js';
 
 const soundManager = SoundManager.getInstance();
 const APP_AUDIO_VOLUME = 2.5;
-const SLEEP_BLOCKED_ROUTES = new Set(['chat', 'minigames', 'learning', 'hatching', 'hatch']);
+const SLEEP_BLOCKED_ROUTES = new Set(['chat', 'minigames', 'hatching', 'hatch']);
 
 // ==== SDK 初始化 ====
 if (!window.KeepworkSDK) {
@@ -65,8 +68,6 @@ let chatViewPromise = null;
 let chatViewModule = null;
 let minigamesViewPromise = null;
 let minigamesViewModule = null;
-let learningViewPromise = null;
-let learningViewModule = null;
 let hatchingViewPromise = null;
 let hatchingViewModule = null;
 let settingsViewPromise = null;
@@ -92,17 +93,6 @@ function loadMinigamesView() {
         });
     }
     return minigamesViewPromise;
-}
-
-function loadLearningView() {
-    if (learningViewModule) return Promise.resolve(learningViewModule);
-    if (!learningViewPromise) {
-        learningViewPromise = import('./view_learning.js').then((mod) => {
-            learningViewModule = mod;
-            return mod;
-        });
-    }
-    return learningViewPromise;
 }
 
 function loadHatchingView() {
@@ -157,7 +147,7 @@ function renderMinigamesRoute() {
     if (minigamesViewModule) {
         minigamesViewModule.renderMinigames(app, { pet }, {
             onBack: () => navigateToView('home'),
-            onGameFinished: (game, data) => rewardPetAction('play', `${game?.title || '小游戏'}完成啦，心情提升！`, data),
+            onGameFinished: (game, data) => rewardPetAction('play', `${game?.title || '玩耍'}完成啦，亲密度提升！`, data),
         });
         return;
     }
@@ -169,42 +159,13 @@ function renderMinigamesRoute() {
             if (state.currentView !== 'minigames') return;
             renderMinigames(app, { pet: getCurrentPet() }, {
                 onBack: () => navigateToView('home'),
-                onGameFinished: (game, data) => rewardPetAction('play', `${game?.title || '小游戏'}完成啦，心情提升！`, data),
+                onGameFinished: (game, data) => rewardPetAction('play', `${game?.title || '玩耍'}完成啦，亲密度提升！`, data),
             });
         })
         .catch((e) => {
             console.error('加载小游戏视图失败', e);
             showToast('加载小游戏失败：' + (e?.message || e), 'error');
             if (state.currentView === 'minigames') navigateToView('home');
-        });
-}
-
-function renderLearningRoute() {
-    const pet = getCurrentPet();
-    if (!pet) return;
-    if (guardSleepingRoute(pet)) return;
-    if (learningViewModule) {
-        learningViewModule.renderLearning(app, { pet }, {
-            onBack: () => navigateToView('home'),
-            onActivityFinished: (activity, data) => rewardPetAction('study', `${activity?.title || '学习'}完成啦，智慧提升！`, data),
-        });
-        return;
-    }
-    app.innerHTML = '<div class="topbar"><button class="btn-icon" id="mhBack" style="width:36px;height:36px;font-size:18px">‹</button><span class="font-bold" style="color:var(--text-primary)">学习</span><span style="width:36px;height:36px"></span></div><div style="padding:18px;color:var(--text-muted)">正在打开学习伙伴...</div>';
-    const back = $('mhBack');
-    if (back) back.onclick = () => navigateToView('home');
-    loadLearningView()
-        .then(({ renderLearning }) => {
-            if (state.currentView !== 'learning') return;
-            renderLearning(app, { pet: getCurrentPet() }, {
-                onBack: () => navigateToView('home'),
-                onActivityFinished: (activity, data) => rewardPetAction('study', `${activity?.title || '学习'}完成啦，智慧提升！`, data),
-            });
-        })
-        .catch((e) => {
-            console.error('加载学习视图失败', e);
-            showToast('加载学习失败：' + (e?.message || e), 'error');
-            if (state.currentView === 'learning') navigateToView('home');
         });
 }
 
@@ -311,7 +272,6 @@ const routes = {
     }),
     chat:      renderChatRoute,
     minigames: renderMinigamesRoute,
-    learning:  renderLearningRoute,
     hatching:  renderHatchingRoute,
     profile:   () => renderProfile(app, { pet: getCurrentPet() }, { onBack: () => navigateToView('home') }),
     help:      () => renderHelp(app, null, { onBack: () => navigateToView('home') }),
@@ -403,9 +363,9 @@ async function ensureDefaultEgg() {
     return await createNewEgg();
 }
 
-async function createNewEgg() {
+async function createNewEgg(options = {}) {
     const now = Date.now();
-    let dna = randomDna();
+    let dna = options.dna || randomDna();
     // 若用户已有"主屋"，新蛋更倾向于继承主屋所在领地的 DNA 特征
     const territory = findLargestHouseAcrossLayouts(state.layouts);
     if (territory?.fieldId) dna = biasDnaForFieldId(dna, territory.fieldId);
@@ -423,10 +383,8 @@ async function createNewEgg() {
         bornAt: now,
         lastTickAt: now,
         lastCareAt: now,
-        parents: null,
+        parents: Array.isArray(options.parents) ? options.parents : null,
         stage: 'egg',
-        stageName: '蛋',
-        stageEmoji: '🥚',
         activeRoom: 'living',
         // 蛋阶段累计的 DNA 偏置 —— 喂食 / 许愿都会落在这里，孵化时统一应用
         eggBias: { feedTraits: {}, feedCount: 0, initialFieldId: territory?.fieldId || null },
@@ -642,18 +600,34 @@ async function handleFindPet(id) {
     showToast(`正在前往 ${pet.name || '宠物'} 所在的房间`, 'info', 1200);
 }
 
-async function handleHireNanny(pet) {
+async function handleHireNanny(pet, days = 1) {
     if (!pet) return;
     if (!isPetOnCurrentPlanet(pet)) {
         showToast('这只宠物已经不在当前星球，无法雇佣保姆。', 'info');
         return;
     }
-    hireNannyForPet(pet);
+    if (hasNannyCare(pet)) {
+        showToast('保姆已经在照看中。', 'info', 1600);
+        return;
+    }
+    const eligibility = getNannyCareEligibility(pet);
+    if (!eligibility.ok) {
+        showToast(eligibility.reasons.join('；'), 'error', 2600);
+        return;
+    }
+    const cost = getNannyCareCost(days);
+    if ((state.coins | 0) < cost) {
+        showToast(`金币不足，需要 ${cost} 金币。`, 'error', 1800);
+        return;
+    }
+    state.coins = Math.max(0, (state.coins | 0) - cost);
     pet.lastTickAt = Date.now();
+    hireNannyForPet(pet, days, pet.lastTickAt);
     markPetCared(pet, pet.lastTickAt);
     applyStage(pet);
     await savePet(pet);
-    showToast('保姆已经开始照看，成长会更慢但状态会更稳定。', 'success', 2400);
+    await saveUserProfile();
+    showToast(`已支付 ${cost} 金币，保姆会照看 ${Math.max(1, Math.round(Number(days) || 1))} 天。`, 'success', 2400);
     notify();
 }
 
@@ -718,49 +692,241 @@ async function handleDeletePet(id) {
 function handleStartBreed() {
     const currentPet = getCurrentPet();
     if (currentPet && isPetInteractionBlocked(currentPet)) { showToast(sleepingInteractionText(currentPet), 'info', 1800); return; }
-    const adults = state.petOrder.map(id => state.pets[id]).filter(p => p && CONFIG.breedableStages.includes(p.stage));
+    const adults = state.petOrder.map(id => state.pets[id]).filter(p => p && isPetOnCurrentPlanet(p) && CONFIG.breedableStages.includes(p.stage));
     if (adults.length < 2) { showToast('需要至少两只成年宠物', 'error'); return; }
     if (state.coins < CONFIG.breedCost) { showToast(`繁殖需要 ${CONFIG.breedCost} 金币`, 'error'); return; }
-    // 简单 UI：弹两次选择
-    pickPet('选择 ' + '爸爸').then(a => {
-        if (!a) return;
-        pickPet('选择 ' + '妈妈', a.id).then(b => {
-            if (!b) return;
-            hatchCtx = { parents: [a, b] };
-            setView('hatch');
-        });
-    });
+    showBreedParentPicker(adults);
 }
 
-function pickPet(title, excludeId = null) {
+function ensureBreedPickerStyles() {
+    if (document.getElementById('mh-breed-picker-styles')) return;
+    const style = document.createElement('style');
+    style.id = 'mh-breed-picker-styles';
+    style.textContent = `
+        .mh-breed-modal { width:min(560px, calc(100vw - 32px)); max-height:calc(100vh - 32px); overflow:hidden; display:flex; flex-direction:column; gap:14px; }
+        .mh-breed-title { color:var(--text-primary); font-size:20px; font-weight:900; }
+        .mh-breed-subtitle { color:var(--text-muted); font-size:12px; line-height:1.45; }
+        .mh-breed-pet-scroll { display:flex; gap:10px; overflow-x:auto; padding:4px 2px 10px; scroll-snap-type:x proximity; -webkit-overflow-scrolling:touch; cursor:grab; }
+        .mh-breed-pet-scroll.is-dragging-scroll { cursor:grabbing; }
+        .mh-breed-pet-card { flex:0 0 104px; min-height:128px; border:1.5px solid var(--border-card); background:var(--bg-card); border-radius:16px; padding:9px; display:flex; flex-direction:column; align-items:center; gap:7px; color:var(--text-primary); box-shadow:0 3px 0 rgba(14,116,144,.15); scroll-snap-align:start; touch-action:none; }
+        .mh-breed-pet-card.is-used { opacity:.45; }
+        .mh-breed-pet-card:active { transform:translateY(2px); }
+        .mh-breed-pet-icon, .mh-breed-slot-icon { width:72px; height:72px; border-radius:14px; background:var(--bg-pill); overflow:hidden; flex:0 0 auto; }
+        .mh-breed-pet-icon .mh-pet-art, .mh-breed-slot-icon .mh-pet-art { width:100%; height:100%; }
+        .mh-breed-pet-name { max-width:100%; color:var(--text-primary); font-size:13px; font-weight:900; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+        .mh-breed-pet-stage { color:var(--text-muted); font-size:11px; font-weight:800; }
+        .mh-breed-slots { display:grid; grid-template-columns:1fr 1fr; gap:10px; }
+        .mh-breed-slot { min-height:118px; border:2px dashed rgba(14,165,233,.45); border-radius:18px; background:rgba(239,246,255,.72); color:var(--text-muted); display:flex; align-items:center; justify-content:center; text-align:center; padding:10px; }
+        .mh-breed-slot.is-over { border-color:var(--accent); background:#ecfeff; }
+        .mh-breed-slot.is-filled { border-style:solid; background:var(--bg-card); color:var(--text-primary); }
+        .mh-breed-slot-filled { display:flex; align-items:center; gap:10px; width:100%; text-align:left; }
+        .mh-breed-slot-label { color:var(--text-muted); font-size:11px; font-weight:900; }
+        .mh-breed-actions { display:flex; justify-content:flex-end; gap:10px; flex-wrap:wrap; }
+        .mh-breed-countdown { width:min(360px, calc(100vw - 40px)); text-align:center; }
+        .mh-breed-count-number { margin:12px auto 6px; width:92px; height:92px; border-radius:999px; display:flex; align-items:center; justify-content:center; background:var(--bg-pill); color:var(--accent-dark); font-size:42px; font-weight:900; border:2px solid var(--accent); box-shadow:0 5px 0 rgba(37,99,235,.45); }
+        @media (max-width:520px) { .mh-breed-slots { grid-template-columns:1fr; } .mh-breed-pet-card { flex-basis:96px; } }
+    `;
+    document.head.appendChild(style);
+}
+
+function breedPetIconHtml(pet) {
+    return `<span class="mh-breed-pet-icon">${petArtHtml(pet, { alt: pet.name || '' })}</span>`;
+}
+
+function showBreedParentPicker(adults) {
+    ensureBreedPickerStyles();
+    const selected = [null, null];
+    let draggedPetId = null;
+    let pointerDragPet = null;
+    let suppressNextClick = false;
+    const mask = document.createElement('div');
+    mask.className = 'modal-mask';
+    mask.innerHTML = `
+        <div class="modal-card mh-breed-modal">
+            <div>
+                <div class="mh-breed-title">选择宝宝父母</div>
+                <div class="mh-breed-subtitle">横向拖动浏览当前星球中的成年宠物，把两只宠物拖到下方槽位中。</div>
+            </div>
+            <div class="mh-breed-pet-scroll" data-breed-scroll>
+                ${adults.map(pet => `
+                    <button class="mh-breed-pet-card" type="button" draggable="true" data-breed-pet="${escapeHtml(pet.id)}">
+                        ${breedPetIconHtml(pet)}
+                        <span class="mh-breed-pet-name">${escapeHtml(pet.name || dnaToName(pet.dna || '') || '哈奇伙伴')}</span>
+                        <span class="mh-breed-pet-stage">${escapeHtml(getStageName(pet.stage, '成年'))}</span>
+                    </button>`).join('')}
+            </div>
+            <div class="mh-breed-slots">
+                <div class="mh-breed-slot" data-breed-slot="0"></div>
+                <div class="mh-breed-slot" data-breed-slot="1"></div>
+            </div>
+            <div class="mh-breed-actions">
+                <button class="btn-secondary" data-breed-cancel>取消</button>
+                <button class="btn-primary" data-breed-ok disabled>确定</button>
+            </div>
+        </div>`;
+
+    const close = () => mask.remove();
+    const petById = new Map(adults.map(pet => [pet.id, pet]));
+    const firstEmptySlot = () => selected.findIndex(item => !item);
+    const renderSlots = () => {
+        mask.querySelectorAll('[data-breed-slot]').forEach(slot => {
+            const idx = Number(slot.dataset.breedSlot) || 0;
+            const pet = selected[idx];
+            slot.classList.toggle('is-filled', !!pet);
+            slot.innerHTML = pet ? `
+                <div class="mh-breed-slot-filled">
+                    <span class="mh-breed-slot-icon">${petArtHtml(pet, { alt: pet.name || '' })}</span>
+                    <span><span class="mh-breed-slot-label">${idx === 0 ? '槽位 1' : '槽位 2'}</span><b style="display:block;color:var(--text-primary)">${escapeHtml(pet.name || '哈奇伙伴')}</b></span>
+                </div>` : `<span>${idx === 0 ? '拖入第一只宠物' : '拖入第二只宠物'}</span>`;
+        });
+        mask.querySelectorAll('[data-breed-pet]').forEach(btn => {
+            const used = selected.some(pet => pet?.id === btn.dataset.breedPet);
+            btn.classList.toggle('is-used', used);
+        });
+        const okBtn = mask.querySelector('[data-breed-ok]');
+        if (okBtn) okBtn.disabled = !(selected[0] && selected[1] && selected[0].id !== selected[1].id);
+        scanAndMount(mask);
+    };
+    const assignPet = (petId, slotIndex = firstEmptySlot()) => {
+        const pet = petById.get(petId);
+        if (!pet || slotIndex < 0) return;
+        const existingIndex = selected.findIndex(item => item?.id === pet.id);
+        if (existingIndex >= 0) selected[existingIndex] = null;
+        selected[slotIndex] = pet;
+        renderSlots();
+    };
+
+    mask.addEventListener('click', async (e) => {
+        if (suppressNextClick) { suppressNextClick = false; return; }
+        if (e.target === mask || e.target.closest('[data-breed-cancel]')) { close(); return; }
+        const petBtn = e.target.closest('[data-breed-pet]');
+        if (petBtn) { assignPet(petBtn.dataset.breedPet); return; }
+        const slot = e.target.closest('[data-breed-slot]');
+        if (slot && selected[Number(slot.dataset.breedSlot) || 0]) { selected[Number(slot.dataset.breedSlot) || 0] = null; renderSlots(); return; }
+        if (e.target.closest('[data-breed-ok]')) {
+            if (!selected[0] || !selected[1]) return;
+            await completeBreedWithParents(selected[0], selected[1], close);
+        }
+    });
+    mask.addEventListener('dragstart', (e) => {
+        const btn = e.target.closest?.('[data-breed-pet]');
+        if (!btn) return;
+        draggedPetId = btn.dataset.breedPet;
+        e.dataTransfer?.setData('text/plain', draggedPetId);
+    });
+    mask.addEventListener('dragover', (e) => {
+        const slot = e.target.closest?.('[data-breed-slot]');
+        if (!slot) return;
+        e.preventDefault();
+        slot.classList.add('is-over');
+    });
+    mask.addEventListener('dragleave', (e) => {
+        e.target.closest?.('[data-breed-slot]')?.classList.remove('is-over');
+    });
+    mask.addEventListener('drop', (e) => {
+        const slot = e.target.closest?.('[data-breed-slot]');
+        if (!slot) return;
+        e.preventDefault();
+        slot.classList.remove('is-over');
+        assignPet(e.dataTransfer?.getData('text/plain') || draggedPetId, Number(slot.dataset.breedSlot) || 0);
+    });
+    mask.addEventListener('pointerdown', (e) => {
+        const btn = e.target.closest?.('[data-breed-pet]');
+        if (!btn) return;
+        const scroller = mask.querySelector('[data-breed-scroll]');
+        pointerDragPet = { id: btn.dataset.breedPet, x: e.clientX, y: e.clientY, scroller, left: scroller?.scrollLeft || 0 };
+        btn.setPointerCapture?.(e.pointerId);
+    });
+    mask.addEventListener('pointermove', (e) => {
+        if (!pointerDragPet?.scroller) return;
+        const dx = e.clientX - pointerDragPet.x;
+        const dy = e.clientY - pointerDragPet.y;
+        if (Math.abs(dx) <= Math.abs(dy)) return;
+        pointerDragPet.scroller.scrollLeft = pointerDragPet.left - dx;
+    });
+    mask.addEventListener('pointerup', (e) => {
+        if (!pointerDragPet) return;
+        const drag = pointerDragPet;
+        pointerDragPet = null;
+        const moved = Math.hypot(e.clientX - drag.x, e.clientY - drag.y);
+        if (moved < 8) return;
+        const dropTarget = document.elementFromPoint(e.clientX, e.clientY)?.closest?.('[data-breed-slot]');
+        if (!dropTarget || !mask.contains(dropTarget)) return;
+        assignPet(drag.id, Number(dropTarget.dataset.breedSlot) || 0);
+        suppressNextClick = true;
+    });
+    mask.addEventListener('pointercancel', () => { pointerDragPet = null; });
+    const scroller = mask.querySelector('[data-breed-scroll]');
+    let scrollDrag = null;
+    scroller?.addEventListener('pointerdown', (e) => {
+        if (e.target.closest('[data-breed-pet]')) return;
+        scrollDrag = { x: e.clientX, left: scroller.scrollLeft };
+        scroller.classList.add('is-dragging-scroll');
+        scroller.setPointerCapture?.(e.pointerId);
+    });
+    scroller?.addEventListener('pointermove', (e) => {
+        if (!scrollDrag) return;
+        scroller.scrollLeft = scrollDrag.left - (e.clientX - scrollDrag.x);
+    });
+    const stopScrollDrag = () => { scrollDrag = null; scroller?.classList.remove('is-dragging-scroll'); };
+    scroller?.addEventListener('pointerup', stopScrollDrag);
+    scroller?.addEventListener('pointercancel', stopScrollDrag);
+
+    document.body.appendChild(mask);
+    renderSlots();
+}
+
+async function showBreedCountdown() {
     return new Promise((resolve) => {
-        const adults = state.petOrder.map(id => state.pets[id])
-            .filter(p => p && CONFIG.breedableStages.includes(p.stage) && p.id !== excludeId);
+        let left = 3;
         const mask = document.createElement('div');
         mask.className = 'modal-mask';
         mask.innerHTML = `
-            <div class="modal-card">
-                <div class="text-base font-bold mb-3">${title}</div>
-                <div style="display:flex;flex-direction:column;gap:8px">
-                    ${adults.map(p => `
-                        <button class="btn-secondary" data-pid="${p.id}" style="display:flex;gap:10px;align-items:center;text-align:left;padding:8px 12px">
-                            <span style="font-size:24px">${p.stageEmoji || '🐾'}</span>
-                            <span style="font-weight:700">${p.name}</span>
-                            <span style="font-size:11px;color:var(--text-muted);margin-left:auto">${p.stageName}</span>
-                        </button>
-                    `).join('') || '<div style="color:var(--text-muted);text-align:center;padding:14px">没有合适的宠物</div>'}
-                </div>
-                <div class="text-center mt-3">
-                    <button class="btn-secondary" data-cancel>取消</button>
-                </div>
+            <div class="modal-card mh-breed-countdown">
+                <div class="mh-breed-title">宝宝蛋正在抵达</div>
+                <div class="mh-breed-subtitle">倒计时结束后，新的蛋会出现在场景中。</div>
+                <div class="mh-breed-count-number" data-breed-count>${left}</div>
             </div>`;
-        mask.addEventListener('click', (e) => {
-            if (e.target === mask || e.target.closest('[data-cancel]')) { mask.remove(); resolve(null); return; }
-            const btn = e.target.closest('[data-pid]');
-            if (btn) { mask.remove(); resolve(state.pets[btn.dataset.pid]); }
-        });
         document.body.appendChild(mask);
+        const number = mask.querySelector('[data-breed-count]');
+        const timer = setInterval(() => {
+            left -= 1;
+            if (number) number.textContent = String(Math.max(0, left));
+            if (left > 0) return;
+            clearInterval(timer);
+            mask.remove();
+            resolve();
+        }, 1000);
     });
+}
+
+async function completeBreedWithParents(parentA, parentB, closePicker) {
+    if (!parentA || !parentB || parentA.id === parentB.id) return;
+    if (state.coins < CONFIG.breedCost) { showToast(`繁殖需要 ${CONFIG.breedCost} 金币`, 'error'); return; }
+    const current = getCurrentPet();
+    if (current && isPetOnCurrentPlanet(current)) {
+        const ok = await confirm(`繁殖宝宝前，${current.name || '当前宠物'} 会被放养到星球中，无法重新召回。确定继续吗？`, {
+            okText: '放养并孵化',
+            cancelText: '再想想',
+        });
+        if (!ok) return;
+        markPetReleased(current, state.planetName || '宠物星');
+        await savePet(current);
+    }
+    closePicker?.();
+    await showBreedCountdown();
+    const dna = crossover(parentA.dna, parentB.dna);
+    const newPet = await createNewEgg({ dna, parents: [parentA.id, parentB.id] });
+    state.coins = Math.max(0, state.coins - CONFIG.breedCost);
+    saveUserProfileDebounced();
+    try { await ensurePetData(newPet.id); } catch (_) {}
+    state.currentRoom = newPet.activeRoom || 'living';
+    state.isDecorMode = false;
+    state.isFeedMode = false;
+    const exiled = await enforcePlanetPetLimit(newPet.id);
+    const exileText = exiled.length ? ` ${exiled.map(item => `${item.pet.name || '一只宠物'}去了${item.location.name}`).join('，')}。` : '';
+    showToast(`宝宝蛋已经来到星球。${exileText}`, exiled.length ? 'info' : 'success', exiled.length ? 3600 : 2200);
+    setView('home');
 }
 
 // 互动操作
@@ -800,8 +966,8 @@ function handleAction(key, options = {}) {
         showToast('金币不足', 'error');
         return false;
     }
-    const energyCost = Math.abs(Math.min(0, Number(cfg.energy) || 0));
-    if (energyCost > 0 && (Number(pet.stats?.energy) || 0) < energyCost) {
+    const staminaCost = Math.abs(Math.min(0, Number(cfg.hunger) || 0));
+    if (staminaCost > 0 && (Number(pet.stats?.hunger) || 0) < staminaCost) {
         showToast('体力不足，睡一觉就能恢复', 'info', 1800);
         return false;
     }
@@ -843,8 +1009,8 @@ function rewardPetAction(key, message, sourceData = {}) {
     const cfg = CONFIG.actions[key];
     if (!cfg) return;
     if (!pet.stats) pet.stats = defaultStats();
-    const energyCost = Math.abs(Math.min(0, Number(cfg.energy) || 0));
-    if (energyCost > 0 && (Number(pet.stats.energy) || 0) < energyCost) {
+    const staminaCost = Math.abs(Math.min(0, Number(cfg.hunger) || 0));
+    if (staminaCost > 0 && (Number(pet.stats.hunger) || 0) < staminaCost) {
         showToast('体力不足，睡一觉就能恢复', 'info', 1800);
         return;
     }
@@ -870,7 +1036,7 @@ function rewardPetAction(key, message, sourceData = {}) {
 }
 
 function activityRewardCoins(key, sourceData = {}, cfg = {}) {
-    if (key !== 'play' && key !== 'study') return cfg.rewardCoins || 0;
+    if (key !== 'play') return cfg.rewardCoins || 0;
     const completed = sourceData.completed !== false && sourceData.passed !== false;
     const durationSeconds = activityDurationSeconds(sourceData);
     if (!completed) return Math.min(15, Math.max(0, Math.round(durationSeconds / 20)));

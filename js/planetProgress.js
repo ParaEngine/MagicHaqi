@@ -59,8 +59,8 @@ export function computePlanetProgress(now = Date.now()) {
     const stageScore = pets.reduce((sum, pet) => sum + (STAGE_SCORE[pet.stage] ?? 0), 0);
     const statScore = pets.reduce((sum, pet) => {
         const stats = pet.stats || {};
-        return sum + ['hunger', 'mood', 'clean', 'energy', 'health', 'intel', 'bond']
-            .reduce((inner, key) => inner + Math.max(0, Math.min(100, Number(stats[key]) || 0)), 0) / 700;
+        return sum + ['hunger', 'mood', 'clean', 'bond']
+            .reduce((inner, key) => inner + Math.max(0, Math.min(100, Number(stats[key]) || 0)), 0) / 400;
     }, 0);
     const inventoryEntries = Object.entries(state.inventory || {}).filter(([, count]) => Number(count) > 0);
     const itemCount = inventoryEntries.reduce((sum, [, count]) => sum + Math.max(0, Number(count) || 0), 0);

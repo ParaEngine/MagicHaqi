@@ -143,7 +143,8 @@ async function processSheet(bitmap) {
     }
 
     ctx.putImageData(imageData, 0, 0);
-    return await canvas.convertToBlob({ type: 'image/png' });
+    const blob = await canvas.convertToBlob({ type: 'image/png' });
+    return { blob, width, height };
 }
 
 async function loadBitmap(url) {
@@ -159,8 +160,8 @@ self.onmessage = async (event) => {
     if (!id || !url) return;
     try {
         const bitmap = await loadBitmap(url);
-        const blob = await processSheet(bitmap);
-        self.postMessage({ id, ok: true, blob });
+        const { blob, width, height } = await processSheet(bitmap);
+        self.postMessage({ id, ok: true, blob, width, height });
     } catch (e) {
         self.postMessage({ id, ok: false, error: e?.message || String(e) });
     }

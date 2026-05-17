@@ -18,6 +18,7 @@ import { savePetDebounced } from './storage.js';
 import { biasDnaForFieldId, biasDnaForTrait, decodeDna, dietPreferenceLabel, dnaDietPreference, dnaRarity, dnaToName } from './dna.js';
 import { CONFIG, findLargestHouseAcrossLayouts } from './config.js';
 import { applyStage, defaultTraits, gainTrait, markPetCared } from './petTick.js';
+import { getRuntimePetStats } from './petLifecycle.js';
 import { clamp, escapeHtml } from './utils.js';
 
 // 4 行 × 4 列：行=阶段（baby/teen/adult/elder），列=情绪（idle/happy/sad/sleep）
@@ -281,8 +282,6 @@ function _finishReadyEggHatch(pet) {
     pet.lastTickAt = now;
     pet.lastCareAt = now;
     pet.stage = 'baby';
-    pet.stageName = '幼年';
-    pet.stageEmoji = '🐣';
     pet.eggHatchPending = false;
     delete pet.eggHatchPending;
     _stopPendingEggEffect(pet.id || state.currentPetId);
@@ -340,7 +339,8 @@ function _petEffectAnchor(el) {
 }
 
 function _isPetFilthy(pet) {
-    return Number(pet?.stats?.clean ?? 100) <= 0;
+    const stats = getRuntimePetStats(pet);
+    return Number(stats.clean ?? 100) <= 0;
 }
 
 const DIRTY_SMOKE_PATHS = [
@@ -397,21 +397,31 @@ function _syncDirtySmokeEmitter(el, active) {
     el.appendChild(emitter);
 }
 
+function _isSceneCompanionHost(el, pet) {
+    if (!el || !pet?.id) return false;
+    if (pet.id === state.currentPetId) return false;
+    return !!el.closest?.('.field-pet-friend, .mh-released-room-pet');
+}
+
 function _syncAnimClass(el, anim, pet = null) {
     if (!el) return;
     const sleeping = anim === 'sleep';
-    const filthy = _isPetFilthy(pet);
+    const filthy = _isSceneCompanionHost(el, pet) ? false : _isPetFilthy(pet);
     el.classList.toggle('mh-egg-hatch-pending', _isEggAwaitingSheet(pet));
     _syncPendingEggEffect(pet);
     el.classList.toggle('mh-pet-sleeping', sleeping);
     el.classList.toggle('mh-pet-dirty', filthy);
     _syncDirtySmokeEmitter(el, filthy);
     const fieldWander = el.closest?.('.field-pet-wander');
-    if (fieldWander) fieldWander.classList.toggle('mh-pet-dirty', filthy);
+    if (fieldWander) {
+        fieldWander.classList.toggle('mh-pet-dirty', filthy);
+        if (!filthy) _syncDirtySmokeEmitter(fieldWander, false);
+    }
     const spriteHost = el.closest('.pet-sprite');
     if (spriteHost) {
         spriteHost.classList.toggle('mh-pet-sleeping', sleeping);
         spriteHost.classList.toggle('mh-pet-dirty', filthy);
+        if (!filthy) _syncDirtySmokeEmitter(spriteHost, false);
     }
 }
 
@@ -465,12 +475,6 @@ const PET_TALK_LINES = {
         '梦里有好多星星饼干 ✨',
         '轻轻摸摸就好，我快醒啦 🌙',
     ],
-    sick: [
-        '有点不舒服...想要抱抱 🤒',
-        '身体里好像有坏细胞在捣乱 🧬',
-        '我需要一点治疗和陪伴 💊',
-        '呜...今天想安静休息一下 🥺',
-    ],
     hungry: [
         '肚子咕噜咕噜叫啦 🍎',
         '可以给我一点好吃的吗？🍰',
@@ -516,15 +520,13 @@ function _pick(arr) {
 }
 
 function _petTalkState(pet) {
-    const stats = pet?.stats || {};
+    const stats = getRuntimePetStats(pet);
     if (pet?.stage === 'egg') return 'egg';
     if (pet?.anim === 'sleep') return 'sleeping';
-    if ((stats.health ?? 100) < 60) return 'sick';
     if ((stats.hunger ?? 100) < 22) return 'hungry';
     if ((stats.clean ?? 100) < 22) return 'dirty';
-    if ((stats.energy ?? 100) < 22) return 'tired';
     if ((stats.mood ?? 100) < 28) return 'sad';
-    if ((stats.mood ?? 0) >= 76 && (stats.health ?? 100) >= 70) return 'happy';
+    if ((stats.mood ?? 0) >= 76) return 'happy';
     return 'normal';
 }
 
@@ -984,9 +986,6 @@ const FOOD_STAT_ICONS = {
     hunger: '🍎',
     mood: '😊',
     clean: '🛁',
-    energy: '⚡',
-    health: '💊',
-    intel: '📚',
     bond: '💛',
 };
 
@@ -1590,11 +1589,11 @@ function _getSheetWorker() {
     try {
         _sheetWorker = new Worker(new URL('./petSheetWorker.js', import.meta.url));
         _sheetWorker.onmessage = (event) => {
-            const { id, ok, blob, error } = event.data || {};
+            const { id, ok, blob, width, height, error } = event.data || {};
             const job = _sheetWorkerJobs.get(id);
             if (!job) return;
             _sheetWorkerJobs.delete(id);
-            if (ok && blob) job.resolve(URL.createObjectURL(blob));
+            if (ok && blob) job.resolve({ blob, width, height, dataUrl: URL.createObjectURL(blob) });
             else job.reject(new Error(error || 'pet sheet worker failed'));
         };
         _sheetWorker.onerror = (event) => {
@@ -1629,14 +1628,14 @@ async function _processSheetInWorker(url) {
 }
 
 /**
- * 加载并处理 sheet。返回 { status, dataUrl } —— dataUrl 是可渲染 URL，处理完成后才有值。
+ * 加载并处理 sheet。返回 { status, dataUrl, dataBlob, width, height } —— dataUrl 是可渲染 URL，处理完成后才有值。
  */
 export function getProcessedSheet(url) {
     if (!url) return null;
     const existing = _processed.get(url);
     if (existing) return existing;
 
-    const entry = { status: 'loading', rawUrl: url, dataUrl: null, promise: null };
+    const entry = { status: 'loading', rawUrl: url, dataUrl: null, dataBlob: null, width: 0, height: 0, promise: null };
     _processed.set(url, entry);
 
     entry.promise = (async () => {
@@ -1649,7 +1648,11 @@ export function getProcessedSheet(url) {
         entry.status = 'processing';
         _scheduleScan();
         try {
-            entry.dataUrl = await _processSheetInWorker(url);
+            const processed = await _processSheetInWorker(url);
+            entry.dataBlob = processed?.blob || null;
+            entry.dataUrl = processed?.dataUrl || null;
+            entry.width = Number(processed?.width) || 0;
+            entry.height = Number(processed?.height) || 0;
             entry.status = entry.dataUrl ? 'loaded' : 'raw';
         } catch (e) {
             console.warn('[pet] sheet worker 处理失败，将保留原始 sheet：', e);
@@ -1661,7 +1664,7 @@ export function getProcessedSheet(url) {
     return entry;
 }
 
-const _processed = new Map(); // url -> { status, rawUrl, dataUrl, promise }
+const _processed = new Map(); // url -> { status, rawUrl, dataUrl, dataBlob, width, height, promise }
 const _memoryImages = new Map(); // url -> { status, img, promise }
 
 function _preloadImageToMemory(url, { crossOrigin = null } = {}) {

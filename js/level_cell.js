@@ -1,10 +1,10 @@
-// Level 3 — Cell：体内细胞冒险（治疗小游戏）
+// Level 3 — Cell：体内观察与蛋阶段许愿
 
 import { $, escapeHtml, showToast } from './utils.js';
 import { CONFIG } from './config.js';
 import { state } from './state.js';
 import { savePetDebounced } from './storage.js';
-import { getPermanentTraumaCount, isSick, markPetCared } from './petTick.js';
+import { getPermanentTraumaCount } from './petTick.js';
 import { decodeDna, dietPreferenceIcons, dietPreferenceLabel, dnaDietPreference } from './dna.js';
 import { isPetInteractionBlocked, isPetSleeping, sleepingInteractionText } from './pet.js';
 
@@ -65,16 +65,13 @@ function cellFaceStyle(pet) {
 function shouldShowCellHungerCue(pet) {
     if (pet?.stage === 'egg') return false;
     const stats = pet?.stats || {};
-    return (stats.health ?? 100) < CONFIG.cellGame.sicknessThresholdHealth || (stats.hunger ?? 100) < 50;
+    return (stats.hunger ?? 100) < 50;
 }
 
 function cellFaceExpression(pet) {
     if (pet?.stage === 'egg') return 'happy';
     const stats = pet?.stats || {};
-    const health = stats.health ?? 100;
     const mood = stats.mood ?? 100;
-    if (health < 25) return 'critical';
-    if (health < CONFIG.cellGame.sicknessThresholdHealth) return 'sick';
     if (mood < 25) return 'sad';
     if (mood < 50) return 'worried';
     return 'happy';
@@ -229,54 +226,6 @@ function refreshCellDock(pet, ctx) {
     window.dispatchEvent(new Event('mh:tick'));
 }
 
-function startCellGame(pet, ctx) {
-    const arena = $('mhCellArena');
-    if (!arena) return;
-    arena.innerHTML = '';
-    cellHits = 0;
-    const target = CONFIG.cellGame.targetHits;
-    const heal = CONFIG.cellGame.healPerHit;
-
-    const spawn = () => {
-        if (!$('mhCellArena')) { stopCellGame(); return; }
-        if (cellHits >= target) return;
-        const spot = CELL_TARGETS[cellHits % CELL_TARGETS.length];
-        const bad = document.createElement('button');
-        bad.className = 'bad-cell';
-        bad.type = 'button';
-        bad.setAttribute('aria-label', '击破坏细胞');
-        bad.innerHTML = '<span class="bad-cell-core"></span><span class="bad-cell-dot d1"></span><span class="bad-cell-dot d2"></span><span class="bad-cell-dot d3"></span>';
-        bad.style.left = Math.min(90, Math.max(10, spot.left + (Math.random() * 8 - 4))) + '%';
-        bad.style.top  = Math.min(84, Math.max(16, spot.top + (Math.random() * 8 - 4))) + '%';
-        bad.onclick = () => {
-            if (bad.disabled) return;
-            bad.disabled = true;
-            bad.classList.add('boom');
-            cellHits++;
-            pet.stats.health = Math.min(100, (pet.stats.health || 0) + heal);
-            updateCellFaceHealthCue(pet);
-            markPetCared(pet);
-            savePetDebounced(pet);
-            showToast(`💥 ${cellHits}/${target}`, 'success', 600);
-            setTimeout(() => bad.remove(), 250);
-            if (cellHits >= target) {
-                stopCellGame();
-                arena.querySelectorAll('.bad-cell').forEach(el => { if (el !== bad) el.remove(); });
-                showToast('治疗完成 ✨', 'success', 1500);
-                refreshCellDock(pet, ctx);
-            }
-        };
-        arena.appendChild(bad);
-        setTimeout(() => bad.remove(), 2200);
-    };
-    cellTimer = setInterval(spawn, 700);
-    spawn();
-
-    const dock = ctx.dock;
-    const btn = dock?.querySelector('#mhCellStart');
-    if (btn) { btn.innerHTML = '<span class="dock-icon">🧬</span><span class="dock-label">看病中…</span>'; btn.disabled = true; }
-}
-
 export const cellLevel = {
     id: 'cell',
     index: 3,
@@ -395,7 +344,6 @@ export const cellLevel = {
     },
 
     dockHtml(pet) {
-        const sick = isSick(pet);
         const traumaCount = getPermanentTraumaCount(pet);
         const sleeping = isPetInteractionBlocked(pet);
         const isEgg = pet?.stage === 'egg';
@@ -411,11 +359,8 @@ export const cellLevel = {
         return `
             <div class="mh-dock-row mh-scroll-x dock-action-row">
                 <button type="button" class="btn-secondary action-btn dock-icon-btn ${sleeping ? 'is-sleep-disabled' : ''}" data-act="chat" ${sleeping ? 'disabled' : ''} title="${sleeping ? escapeHtml(sleepingInteractionText(pet)) : ''}"><span class="dock-icon">💬</span><span class="dock-label">对话</span></button>
-                ${sick
-                    ? `<button type="button" class="btn-secondary action-btn dock-icon-btn pulse-warn" id="mhCellStart" data-act="start"><span class="dock-icon">🧬</span><span class="dock-label">看病</span></button>`
-                    : `<button type="button" class="btn-secondary action-btn dock-icon-btn" id="mhCellStart" data-act="start" disabled><span class="dock-icon">💊</span><span class="dock-label">看病</span></button>`}
             </div>
-            <div class="mh-dock-hint">${traumaCount ? `黑色旋风是永久精神伤害：${traumaCount}/${CONFIG.trauma.max}，无法治疗移除。` : (sick ? `点击红色坏细胞将其击破，治疗 ${CONFIG.cellGame.targetHits} 个即可恢复。` : '体内一切正常 ✨')}</div>
+            <div class="mh-dock-hint">${traumaCount ? `黑色旋风是永久精神伤害：${traumaCount}/${CONFIG.trauma.max}，无法治疗移除。` : '体内一切正常 ✨'}</div>
         `;
     },
 
@@ -426,7 +371,6 @@ export const cellLevel = {
             el.onclick = () => {
                 const k = el.dataset.act;
                 if (k === 'chat') { ctx.callbacks.onNav?.('chat'); return; }
-                if (k === 'start') startCellGame(pet, ctx);
                 if (k === 'wish') showWishModal(pet, ctx);
             };
         });

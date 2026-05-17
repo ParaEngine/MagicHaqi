@@ -1,4 +1,4 @@
-# 魔法哈奇 MagicHaqi —— 技术架构
+# 蛋蛋星球 MagicHaqi —— 技术架构
 
 ## 1. 目录结构
 
@@ -11,7 +11,7 @@ MagicHaqi/
     pet.css               # 宠物 sprite 与通用宠物视觉样式
   js/
     app.js                # 启动、SDK 初始化、路由、全局事件
-    config.js             # 常量（房间列表、属性范围、繁殖参数、商店配置、4 级 zoomLevels、fields、cellGame）
+    config.js             # 常量（房间列表、属性范围、繁殖参数、商店配置、4 级 zoomLevels、fields）
     state.js              # 全局内存状态（user, currentPet, currentView, zoomLevel, currentField, planetWeather, planetBuff, planetInfrastructure 等）
     storage.js            # PersonalPageStore 适配层（pets CRUD, memory.md, layouts）
     api.js                # AI 封装：DNA→prompt、genImage 调用、aiChat 包装
@@ -23,7 +23,7 @@ MagicHaqi/
     level_planet.js       # Level 0 — 🌌 宇宙：星球经营、设施建造、天气、拜访、UFO、星象、里程碑
     level_field.js        # Level 1 — 🪐 星球：陆/水/空 三生态 + poop→⛽ + 户外家具摆放 + 天气承接
     level_pet.js          # Level 2 — 🐾 宠物：经典房间互动 + 8×6 网格装饰 + 漫步
-    level_cell.js         # Level 3 — 🧬 细胞：生病时点击坏细胞治疗的迷你游戏
+    level_cell.js         # Level 3 — 🧬 细胞：体内观察、DNA 提示与蛋阶段许愿
     view_login.js
     view_petList.js
     view_hatch.js
@@ -145,8 +145,8 @@ view_home.js  (orchestrator)
 |-------|------|------|-----------------|
 | 0 🌌 宇宙 | [level_planet.js](../js/level_planet.js) | 星空 + 单个旋转星球，色调由 `dominantTraits` 决定；星球设施建造 / 升级、天气、星际拜访、UFO、星象、里程碑、哈奇岛入口；放大→进入 field | `state.planetName`、`state.planetWeather`、`state.planetBuff`、`state.planetInfrastructure`、`state.planetActions`、`state.planetVisitors`、`computePlanetProgress()` |
 | 1 🪐 星球 | [level_field.js](../js/level_field.js) | 陆 / 水 / 空 三生态切换；显示已摆放户外家具与 💩，点击 💩 收 ⛽；空地放置 dock 已选物品；承接宇宙层天气视觉与地表提示 | `state.currentField`、`pet.poops`、`getLayout(pet, 'field_'+id)`、`state.biofuel`、`getActivePlanetWeather()` |
-| 2 🐾 宠物 | [level_pet.js](../js/level_pet.js) | 5 个房间切换、8×6 装饰网格、宠物精灵 4.5s 随机漫步、6 个互动按钮（喂/玩/洗/睡/学/治）、`isSick` 时治疗按钮 pulse 引导切下一层 | `state.currentRoom`、`state.isDecorMode`、`getLayout(pet, roomId)`、`dominantTraits` |
-| 3 🧬 细胞 | [level_cell.js](../js/level_cell.js) | 体内场景；按 `CONFIG.cellGame` 在竞技场刷怪，点击恢复 health，达标后自动 zoomOut | `cellGame.targetHits/healPerHit`、`pet.stats.health` |
+| 2 🐾 宠物 | [level_pet.js](../js/level_pet.js) | 5 个房间切换、8×6 装饰网格、宠物精灵 4.5s 随机漫步、5 个互动按钮（喂/玩/洗/睡/学） | `state.currentRoom`、`state.isDecorMode`、`getLayout(pet, roomId)`、`dominantTraits` |
+| 3 🧬 细胞 | [level_cell.js](../js/level_cell.js) | 体内观察、DNA 食性提示与蛋阶段许愿 | `pet.wishPrompt`、`dnaDietPreference()` |
 
 层间过渡由 `view_home.js` 的「虫洞动画」统一驱动（不在 level 模块内）；level 模块只关注本层渲染与交互。新增层级时：在 `LEVELS` 数组追加、在 `CONFIG.zoomLevels` 增加描述项即可。
 
@@ -163,7 +163,7 @@ view_home.js  (orchestrator)
 | 里程碑 | 无 | 展示星球等级、下一等级进度、解锁目标和最近事件 | 只读 `computePlanetProgress()` 与 `planetVisitors` |
 | 哈奇岛入口 | 至少 1 只已孵化宠物且星球 Lv.3 | 打开客户端下载弹窗 | 只读 `computePlanetProgress().canVisitHaqiIsland` |
 
-星象 buff 会影响 `petTick.applyDecay()`：贪食之月加快 hunger 衰减并补 mood，花园星座减缓 mood 衰减，明晰星轨缓慢增长 intel，潮汐双月缓慢恢复 clean / health。雨云天气还会通过 `growRainPlants()` 向 `field_land` 布局追加户外植物。
+星象 buff 会影响 `petTick.applyDecay()`：贪食之月加快 hunger 衰减并补 mood，花园星座减缓 mood 衰减，明晰星轨提升 bond，潮汐双月恢复 clean / mood。雨云天气还会通过 `growRainPlants()` 向 `field_land` 布局追加户外植物。
 
 ## 7. 装饰模式（view_home.js 内部）
 
@@ -182,7 +182,7 @@ view_home.js  (orchestrator)
 
 - 复用 AIMovieMaker 的视觉规范：CSS 变量主题、`.btn-primary` / `.btn-secondary` / `.modal-input` / `.card-flat` / `.toast-*` / `.fade-in` 动画。
 - 主色调改为儿童向暖色：`--accent: #f59e0b`（橙），`--bg-base: #fef3c7`（暖米色，浅色为默认），夜间模式可选。
-- 顶部 brand: 「魔法哈奇 🐾」。
+- 顶部 brand: 「蛋蛋星球」。
 
 ## 10. 风险与对策
 

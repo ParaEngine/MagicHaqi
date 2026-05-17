@@ -3,7 +3,8 @@ import { $, $$, coinIconSvg, escapeHtml } from './utils.js';
 import { t } from './i18n.js';
 import { formatDna, displayPetName, dnaDietPreference, dietPreferenceLabel } from './dna.js';
 import { buildEggSvg, getPetSpriteCell, petArtHtml, SHEET_COLS, SHEET_ROWS } from './pet.js';
-import { getCompanionDays, getPetBirthday, getPetFindTarget, getPetLocationInfo, isPetOnCurrentPlanet, isPetSelectable } from './petLifecycle.js';
+import { getCompanionDays, getPetBirthday, getPetFindTarget, getPetLocationInfo, getRuntimePetStats, isPetOnCurrentPlanet, isPetSelectable } from './petLifecycle.js';
+import { getStageName } from './config.js';
 
 // 阶段顺序（与 4×4 精灵图行对齐）：baby=0, teen=1, adult=2, elder=3
 const ALBUM_STAGES = [
@@ -266,7 +267,7 @@ function openMemoryAlbum(pet) {
                 <div class="mh-album-meta">
                     <span>🎂 生日 <b>${escapeHtml(getPetBirthday(pet))}</b></span>
                     <span>🗓️ 陪伴第 <b>${days}</b> 天</span>
-                    <span>🌱 阶段 <b>${escapeHtml(pet.stageName || pet.stage || '')}</b></span>
+                    <span>🌱 阶段 <b>${escapeHtml(getStageName(pet.stage, pet.stage || ''))}</b></span>
                     <span>🍽️ 喜欢 <b>${escapeHtml(dietLabel)}</b></span>
                 </div>
                 ${wish ? `<div class="mh-album-wish">🌠 我的许愿：${escapeHtml(wish)}</div>` : ''}
@@ -347,8 +348,8 @@ function setupLazyRawPetImages(root) {
 }
 
 function petCardHtml(pet, isCurrent, allowSelect = false) {
-    const stats = pet.stats || {};
-    const healthBar = Math.round(stats.health || 0);
+    const stats = getRuntimePetStats(pet);
+    const staminaBar = Math.round(stats.hunger || 0);
     const moodBar = Math.round(stats.mood || 0);
     const sheetReady = !!pet.imageSheetUrl;
     const planetName = window.MH_state?.planetName || '宠物星';
@@ -371,7 +372,7 @@ function petCardHtml(pet, isCurrent, allowSelect = false) {
             <div style="flex:1;min-width:0">
                 <div style="display:flex;align-items:center;gap:6px;margin-bottom:4px;flex-wrap:wrap">
                     <span class="text-base font-bold" style="color:var(--text-primary)">${escapeHtml(displayPetName(pet))}</span>
-                    <span class="stage-badge">${pet.stageEmoji || ''} ${escapeHtml(pet.stageName || pet.stage || '')}</span>
+                    <span class="stage-badge">${escapeHtml(getStageName(pet.stage, pet.stage || ''))}</span>
                     ${isCurrent ? '<span class="stage-badge" style="background:var(--accent);color:#fff">当前</span>' : ''}
                     <span class="stage-badge" style="background:#ecfeff;color:${escapeHtml(location.tone)}">${escapeHtml(location.label)}</span>
                 </div>
@@ -384,7 +385,7 @@ function petCardHtml(pet, isCurrent, allowSelect = false) {
                 </div>
                 ${hint ? `<div style="font-size:11px;color:var(--text-faint);margin-bottom:4px">${escapeHtml(hint)}</div>` : ''}
                 <div style="display:flex;gap:6px;align-items:center;font-size:11px;color:var(--text-secondary)">
-                    <span>❤️</span><div class="stat-bar" style="flex:1"><div style="width:${healthBar}%;background:#ef4444"></div></div>
+                        <span>⚡</span><div class="stat-bar" style="flex:1"><div style="width:${staminaBar}%;background:#84cc16"></div></div>
                     <span>😊</span><div class="stat-bar" style="flex:1"><div style="width:${moodBar}%;background:#f59e0b"></div></div>
                 </div>
             </div>

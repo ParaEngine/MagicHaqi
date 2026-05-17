@@ -399,6 +399,26 @@
 .planet-option:hover { border-color: var(--accent); background: #fffbeb; }
 .planet-option.locked { opacity: 0.55; cursor: not-allowed; }
 .planet-option-icon { font-size: 26px; text-align: center; }
+.haqi-candidate-list .planet-option {
+    grid-template-columns: 72px 1fr;
+    gap: 12px;
+}
+.planet-option-pet-icon,
+.haqi-ceremony-pet-icon {
+    width: 72px;
+    height: 72px;
+    border-radius: 14px;
+    background: var(--bg-pill);
+    flex-shrink: 0;
+    overflow: hidden;
+    display: block;
+}
+.planet-option-pet-icon .mh-pet-art,
+.haqi-ceremony-pet-icon .mh-pet-art {
+    width: 100%;
+    height: 100%;
+}
+.planet-option-icon svg { width: 34px; height: 34px; display: block; margin: 0 auto; }
 .planet-milestone-body { min-width: 0; }
 .planet-option b,
 .planet-milestone b { display: block; font-size: 13px; font-weight: 900; }
@@ -569,6 +589,74 @@
 }
 .planet-infra-card b { display: block; font-size: 13px; font-weight: 900; }
 .planet-infra-card i { display: block; margin-top: 2px; color: var(--text-muted); font-size: 12px; font-style: normal; line-height: 1.35; }
+.planet-visit-destinations {
+    display: flex;
+    gap: 8px;
+    margin-top: 10px;
+    padding: 4px 2px 7px;
+    overflow-x: auto;
+    overflow-y: hidden;
+    scrollbar-width: none;
+    -ms-overflow-style: none;
+    -webkit-overflow-scrolling: touch;
+    touch-action: pan-x;
+}
+.planet-visit-destinations::-webkit-scrollbar { display: none; }
+.planet-visit-destination {
+    flex: 0 0 96px;
+    min-height: 82px;
+    border-radius: 14px;
+    border: 1.5px solid var(--border-card);
+    border-bottom-color: var(--panel-edge);
+    background:
+        linear-gradient(180deg, rgba(255,255,255,0.74), rgba(255,255,255,0) 48%),
+        linear-gradient(180deg, #ffffff, #dff7ff);
+    color: var(--text-primary);
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    gap: 5px;
+    padding: 8px 7px;
+    cursor: pointer;
+    box-shadow: 0 3px 0 rgba(14,116,144,0.18), inset 0 1px 0 rgba(255,255,255,0.82);
+    transition: transform 0.15s, border-color 0.15s, background 0.15s, box-shadow 0.15s;
+}
+.planet-visit-destination:hover { transform: translateY(-1px); border-color: var(--accent); }
+.planet-visit-destination.is-selected {
+    border-color: var(--accent-dark);
+    background:
+        linear-gradient(180deg, rgba(255,255,255,0.78), rgba(255,255,255,0.08) 48%),
+        linear-gradient(180deg, #e0f7ff, #bfdbfe);
+    box-shadow: 0 4px 0 rgba(29,78,216,0.24), 0 0 0 2px rgba(103,232,249,0.28), inset 0 1px 0 rgba(255,255,255,0.86);
+}
+.planet-visit-destination.is-disabled { opacity: 0.52; cursor: not-allowed; filter: grayscale(0.28); }
+.planet-visit-destination-icon {
+    width: 34px;
+    height: 34px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 28px;
+    line-height: 1;
+}
+.planet-visit-destination-icon svg { width: 34px; height: 34px; display: block; }
+.planet-visit-destination-text {
+    max-width: 100%;
+    min-width: 0;
+    text-align: center;
+    line-height: 1.15;
+}
+.planet-visit-destination-text b,
+.planet-visit-destination-text i {
+    display: block;
+    max-width: 100%;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+.planet-visit-destination-text b { font-size: 12px; font-weight: 900; }
+.planet-visit-destination-text i { margin-top: 2px; color: var(--text-muted); font-size: 10px; font-style: normal; font-weight: 800; }
 .remote-planet {
     position:absolute;
     left: clamp(32px, 12vw, 104px);
@@ -1537,7 +1625,7 @@
 }
 .haqi-farewell-card {
     display: grid;
-    grid-template-columns: 86px 1fr;
+    grid-template-columns: 84px 1fr;
     gap: 12px;
     padding: 12px;
     border: 1.5px solid rgba(252, 211, 77, 0.9);
@@ -1548,16 +1636,14 @@
     color: var(--text-secondary);
 }
 .haqi-farewell-portrait {
-    width: 78px;
-    height: 78px;
-    border-radius: 16px;
-    background: linear-gradient(145deg, #dbeafe, #fef3c7 58%, #fbcfe8);
-    border: 1.5px solid rgba(245, 158, 11, 0.35);
+    width: 72px;
+    height: 72px;
+    border-radius: 14px;
+    background: var(--bg-pill);
     display: flex;
     align-items: center;
     justify-content: center;
     overflow: hidden;
-    box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.45);
 }
 .haqi-farewell-portrait.large {
     width: 104px;
@@ -1573,6 +1659,10 @@
     background-size: contain;
     background-position: center;
     background-repeat: no-repeat;
+}
+.haqi-farewell-portrait .mh-pet-art {
+    width: 100%;
+    height: 100%;
 }
 .haqi-farewell-sheet {
     background-size: 400% 400%;
@@ -1739,8 +1829,8 @@
         top: min(64%, calc(100% - 124px));
     }
     .space-hint { bottom: 4px; font-size: 11px; }
-    .haqi-farewell-card { grid-template-columns: 62px 1fr; gap: 9px; padding: 10px; }
-    .haqi-farewell-portrait { width: 58px; height: 58px; border-radius: 13px; }
+    .haqi-farewell-card { grid-template-columns: 78px 1fr; gap: 9px; padding: 10px; }
+    .haqi-farewell-portrait { width: 72px; height: 72px; border-radius: 14px; }
     .haqi-farewell-portrait.large { width: 82px; height: 82px; }
     .haqi-ceremony-hero { align-items: flex-start; }
     .haqi-island-actions .btn-secondary,

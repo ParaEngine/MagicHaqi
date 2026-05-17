@@ -34,6 +34,8 @@ const ROOM_SCENE_WIDTH_METERS = ROOM_WIDTH_METERS + ROOM_SIDE_OVERDRAW_METERS * 
 const ROOM_HEIGHT_METERS = 3;
 const PET_HEIGHT_METERS = 0.75;
 const PET_WIDTH_METERS = 0.75;
+const ROOM_PET_REPEL_MIN_X_METERS = PET_WIDTH_METERS * 0.95;
+const ROOM_PET_REPEL_MIN_Y_METERS = PET_HEIGHT_METERS * 0.72;
 const FOOD_HIT_WIDTH_METERS = 1.45;
 const FOOD_HIT_HEIGHT_METERS = 0.78;
 const PET_START_X_METERS = ROOM_WIDTH_METERS - PET_WIDTH_METERS - 1.25;
@@ -104,8 +106,9 @@ function movePetToRoomPoint(xMeters, yMeters, options = {}) {
     if (!el) return false;
     if (options.mode) roomPetMode = options.mode;
     const currentX = Number(el.dataset.xMeters) || PET_START_X_METERS;
-    const nextX = clampRange(xMeters, 0, ROOM_WIDTH_METERS - PET_WIDTH_METERS);
-    const nextY = clampRange(yMeters, 0, ROOM_HEIGHT_METERS - PET_HEIGHT_METERS);
+    const nextPose = repelRoomPetPose({ x: xMeters, y: yMeters }, releasedRoomPetOccupiedPos(), `active-room-pet::${roomPetMode}`);
+    const nextX = nextPose.x;
+    const nextY = nextPose.y;
     el.dataset.xMeters = String(nextX);
     el.dataset.yMeters = String(nextY);
     decorPetPose = { x: nextX, y: nextY };
@@ -131,10 +134,11 @@ function updateFollowPetPosition() {
     if (!stage || !el) return;
     const targetScreenX = stage.clientWidth * PET_FOLLOW_SCREEN_X;
     const xMeters = ((targetScreenX - roomPan) / pxPerMeter) - ROOM_SIDE_OVERDRAW_METERS - PET_WIDTH_METERS / 2;
-    const nextX = clampRange(xMeters, 0, ROOM_WIDTH_METERS - PET_WIDTH_METERS);
+    const nextPose = repelRoomPetPose({ x: xMeters, y: PET_START_Y_METERS }, releasedRoomPetOccupiedPos(), 'active-room-pet::follow');
+    const nextX = nextPose.x;
     el.dataset.xMeters = String(nextX);
-    el.dataset.yMeters = String(PET_START_Y_METERS);
-    decorPetPose = { x: nextX, y: PET_START_Y_METERS };
+    el.dataset.yMeters = String(nextPose.y);
+    decorPetPose = { x: nextX, y: nextPose.y };
     el.dataset.roomPetMode = roomPetMode;
     applyMeterElementStyle(el);
     el.style.transform = 'scaleX(1)';
@@ -250,6 +254,24 @@ function clamp01(value) {
 function clampRange(value, min, max) {
     const n = Number(value);
     return Math.max(min, Math.min(max, Number.isFinite(n) ? n : min));
+}
+
+function hashString(value) {
+    const str = String(value || 'MagicHaqi');
+    let h = 2166136261 >>> 0;
+    for (let i = 0; i < str.length; i++) {
+        h ^= str.charCodeAt(i);
+        h = Math.imul(h, 16777619) >>> 0;
+    }
+    return h >>> 0;
+}
+
+function makeRng(seedText) {
+    let seed = hashString(seedText) || 1;
+    return () => {
+        seed = (Math.imul(seed, 1664525) + 1013904223) >>> 0;
+        return seed / 4294967296;
+    };
 }
 
 function pct(value) {
@@ -375,6 +397,40 @@ function getCurrentPetPose() {
         };
     }
     return decorPetPose || { x: PET_START_X_METERS, y: PET_START_Y_METERS };
+}
+
+function repelRoomPetPose(pose, occupied, seedText = 'room-pet') {
+    const next = {
+        x: clampRange(Number(pose?.x), 0, ROOM_WIDTH_METERS - PET_WIDTH_METERS),
+        y: clampRange(Number(pose?.y), 0, ROOM_HEIGHT_METERS - PET_HEIGHT_METERS),
+    };
+    const rng = makeRng(seedText);
+    for (let step = 0; step < 10; step++) {
+        let moved = false;
+        for (const other of occupied) {
+            const dx = next.x - other.x;
+            const dy = next.y - other.y;
+            const nx = dx / ROOM_PET_REPEL_MIN_X_METERS;
+            const ny = dy / ROOM_PET_REPEL_MIN_Y_METERS;
+            const distSq = nx * nx + ny * ny;
+            if (distSq >= 1) continue;
+            const dist = Math.sqrt(distSq) || 0.001;
+            const angle = Math.atan2(dy || (rng() - 0.5), dx || (rng() - 0.5));
+            const strength = (1 - dist) * 0.55 + 0.06;
+            next.x = clampRange(next.x + Math.cos(angle) * ROOM_PET_REPEL_MIN_X_METERS * strength, 0, ROOM_WIDTH_METERS - PET_WIDTH_METERS);
+            next.y = clampRange(next.y + Math.sin(angle) * ROOM_PET_REPEL_MIN_Y_METERS * strength, 1.08, ROOM_HEIGHT_METERS - PET_HEIGHT_METERS);
+            moved = true;
+        }
+        if (!moved) break;
+    }
+    return next;
+}
+
+function releasedRoomPetOccupiedPos() {
+    return $$('.mh-released-room-pet').map(el => ({
+        x: clampRange(Number(el.dataset.xMeters), 0, ROOM_WIDTH_METERS - PET_WIDTH_METERS),
+        y: clampRange(Number(el.dataset.yMeters), 0, ROOM_HEIGHT_METERS - PET_HEIGHT_METERS),
+    }));
 }
 
 function focusPetInRoom(pose = getCurrentPetPose()) {
@@ -1051,13 +1107,16 @@ function currentPetFocusPoint() {
 
 function releasedRoomPetsHtml(currentPet, roomId) {
     if (state.isDecorMode) return '';
+    const currentPose = getCurrentPetPose();
+    const occupied = [{ x: currentPose.x, y: currentPose.y }];
     return (state.petOrder || [])
         .map(id => state.pets[id])
         .filter(pet => pet && pet.id !== currentPet?.id && hasRenderablePetTexture(pet) && isReleasedPetInRoom(pet, roomId))
         .map((pet) => {
             const home = getReleasedPetHome(pet);
-            const x = clampRange(Number(home.xMeters), 0, ROOM_WIDTH_METERS - PET_WIDTH_METERS);
-            const y = clampRange(Number(home.yMeters), 0, ROOM_HEIGHT_METERS - PET_HEIGHT_METERS);
+            const pose = repelRoomPetPose({ x: home.xMeters, y: home.yMeters }, occupied, `${roomId}::released-room-pet::${pet.id}`);
+            occupied.push(pose);
+            const { x, y } = pose;
             const face = home.face === 'left' ? 'scaleX(-1)' : 'scaleX(1)';
             const zIndex = getRoomItemZIndex({ x, y, w: PET_WIDTH_METERS, h: PET_HEIGHT_METERS }, 3, 'pet');
             return `
@@ -1327,7 +1386,6 @@ export const petLevel = {
                 const k = el.dataset.action;
                 if (isPetInteractionBlocked(pet) && k !== 'sleep') { showSleepingBlocked(pet); return; }
                 if (k === 'play') { ctx.callbacks.onNav?.('minigames'); return; }
-                if (k === 'study') { ctx.callbacks.onNav?.('learning'); return; }
                 if (k === 'help') { ctx.callbacks.onNav?.('help'); return; }
                 if (k === 'hatching') { ctx.callbacks.onNav?.('hatching'); return; }
                 if (k === 'bath') { await runBathSequence(ctx); return; }
@@ -1366,6 +1424,7 @@ function bindRoomPan(ctx) {
     stage.__mhPetRoomPanBound = true;
     let drag = null;
     stage.addEventListener('pointerdown', (e) => {
+        if (bathAnimationRunning) return;
         if (e.button != null && e.button !== 0) return;
         if (e.target.closest?.('button, a, input, textarea, select, [contenteditable="true"], [data-tray-item]')) return;
         if (isRoomPlacementMode() && e.target.closest?.('.furniture')) return;
@@ -1373,6 +1432,11 @@ function bindRoomPan(ctx) {
     });
     stage.addEventListener('pointermove', (e) => {
         if (!drag || drag.id !== e.pointerId) return;
+        if (bathAnimationRunning) {
+            drag = null;
+            try { stage.releasePointerCapture?.(e.pointerId); } catch {}
+            return;
+        }
         const dx = e.clientX - drag.x;
         const dy = e.clientY - drag.y;
         if (!drag.active) {
@@ -1690,14 +1754,13 @@ function renderActionTray(pet) {
     const sleepLocked = isPetSleepLocked(pet);
     const feedUrgent = isPetVeryHungry(pet) && !sleeping;
     const isEgg = pet?.stage === 'egg';
-    const eggDisabledKeys = new Set(['bath', 'sleep', 'play', 'study']);
+    const eggDisabledKeys = new Set(['bath', 'sleep', 'play']);
     const actions = [
         { k: 'decor', icon: '🛠', label: stripActionIcon(t('decorate')), decor: true },
         { k: 'feed',  icon: '🍖', label: stripActionIcon(t('actionFeed')), feed: true },
         { k: 'bath',  icon: '🛁', label: stripActionIcon(t('actionBath')) },
         { k: 'sleep', icon: sleeping ? '☀️' : '😴', label: sleeping ? '唤醒' : stripActionIcon(t('actionSleep')) },
         { k: 'play',  icon: '🎾', label: stripActionIcon(t('actionPlay')) },
-        { k: 'study', icon: '📚', label: stripActionIcon(t('actionStudy')) },
     ];
     return `
         <div class="mh-dock-row mh-scroll-x dock-action-row">
@@ -1711,7 +1774,7 @@ function renderActionTray(pet) {
                     : sleepDisabled
                         ? sleepingInteractionText(pet)
                         : a.feed && feedUrgent
-                            ? `饥饿值 ${Math.max(0, Math.round(Number(pet?.stats?.hunger) || 0))}，需要喂食。`
+                            ? `体力值 ${Math.max(0, Math.round(Number(pet?.stats?.hunger) || 0))}，需要休息或喂食。`
                             : '';
                 return `
                 <button type="button" class="btn-secondary action-btn dock-icon-btn ${a.decor || a.feed ? 'mh-decor-action mh-room-mode-toggle' : ''} ${a.feed ? 'mh-feed-action' : ''}${urgentClass} ${sleepDisabled || eggDisabled ? 'is-sleep-disabled' : ''}" ${a.decor ? 'id="mhDecorBtn"' : a.feed ? 'id="mhFeedBtn"' : `data-action="${a.k}"`} ${disabled ? 'disabled' : ''} title="${escapeHtml(title)}">

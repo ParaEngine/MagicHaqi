@@ -10,7 +10,7 @@
 
 import { $, coinIconSvg, escapeHtml, showToast } from './utils.js';
 import { t } from './i18n.js';
-import { CONFIG } from './config.js';
+import { CONFIG, getStageName } from './config.js';
 import { state, setZoomLevel as _setZoomLevelRaw } from './state.js';
 import { savePetDebounced } from './storage.js';
 import { displayPetName } from './dna.js';
@@ -20,6 +20,7 @@ import { fieldLevel }  from './level_field.js';
 import { petLevel, stopPetWalk } from './level_pet.js';
 import { cellLevel, stopCellGame } from './level_cell.js';
 import { playPetHappy } from './pet.js';
+import { getRuntimePetStats } from './petLifecycle.js';
 import SoundManager from './soundManager.js';
 
 const soundManager = SoundManager.getInstance();
@@ -49,21 +50,18 @@ const ZOOM_BAR_STAGES = [
     { id: 'cell', label: '体内', color: '#f9a8d4', hint: '上下滑动 / 双指缩小 → 返回宠物房间' },
 ];
 
-const CARE_STAT_KEYS = ['health', 'hunger', 'mood', 'clean', 'energy'];
+const CARE_STAT_KEYS = ['hunger', 'mood', 'clean', 'bond'];
 const PET_STAT_ITEMS = [
-    { k: 'hunger', labelKey: 'statHunger', icon: '🍎', color: '#f59e0b', lowText: '有点饿了' },
+    { k: 'hunger', labelKey: 'statEnergy', icon: '⚡', color: '#84cc16', lowText: '需要休息或进食' },
     { k: 'mood',   labelKey: 'statMood',   icon: '😊', color: '#ec4899', lowText: '想要玩耍和陪伴' },
     { k: 'clean',  labelKey: 'statClean',  icon: '🛁', color: '#06b6d4', lowText: '需要清洁' },
-    { k: 'energy', labelKey: 'statEnergy', icon: '⚡', color: '#84cc16', lowText: '需要休息' },
-    { k: 'health', labelKey: 'statHealth', icon: '💊', color: '#ef4444', lowText: '需要照顾' },
-    { k: 'intel',  labelKey: 'statIntel',  icon: '📚', color: '#6366f1', lowText: '可以学习' },
     { k: 'bond',   labelKey: 'statBond',   icon: '💛', color: '#a855f7', lowText: '想更亲近' },
 ];
 const TOPBAR_ITEMS_BY_LEVEL = Object.freeze({
-    planet: [{ type: 'stat', key: 'bond' }, { type: 'resource', key: 'coins' }],
+    planet: [{ type: 'resource', key: 'biofuel' }, { type: 'resource', key: 'coins' }],
     field: [{ type: 'stat', key: 'mood' }, { type: 'resource', key: 'biofuel' }, { type: 'resource', key: 'coins' }],
-    pet: [{ type: 'stat', key: 'hunger' }, { type: 'stat', key: 'energy' }, { type: 'resource', key: 'coins' }],
-    cell: [{ type: 'stat', key: 'mood' }, { type: 'stat', key: 'health' }],
+    pet: [{ type: 'stat', key: 'hunger' }, { type: 'resource', key: 'coins' }],
+    cell: [{ type: 'stat', key: 'hunger' }, { type: 'stat', key: 'mood' }, { type: 'stat', key: 'bond' }],
 });
 
 // 模块状态
@@ -138,9 +136,8 @@ export function renderHome(panel, { pet }, callbacks = {}) {
 
     panel.innerHTML = `
         <div class="topbar">
-            <div class="mh-brand-logo" aria-label="魔法哈奇 宠物星球">
-                <span class="mh-brand-title">魔法哈奇</span>
-                <span class="mh-brand-subtitle">蛋蛋星球</span>
+            <div class="mh-brand-logo" aria-label="蛋蛋星球">
+                <span class="mh-brand-title">蛋蛋星球</span>
             </div>
             <div class="home-hud">
                 <span class="home-hud-stats" id="mhTopbarStats">${renderTopbarHudItems(pet, lvl)}</span>
@@ -256,7 +253,7 @@ function getZoomStageEmergency(stageId, pet = __lastPet) {
     if (stageId === 'pet' && Number.isFinite(hunger) && hunger <= 0) {
         return {
             iconHtml: '<svg class="mh-zoom-bar-emergency-svg" viewBox="0 0 32 32" aria-hidden="true"><circle cx="16" cy="16" r="13" fill="#7dd3fc" stroke="#fff" stroke-width="3"/><circle cx="11" cy="13" r="2.2" fill="#0f172a"/><circle cx="21" cy="13" r="2.2" fill="#0f172a"/><path d="M10 23c2.8-3.2 9.2-3.2 12 0" fill="none" stroke="#0f172a" stroke-width="2.5" stroke-linecap="round"/><path d="M24 9c3 3.7 3.3 7.4.7 10.6" fill="none" stroke="#38bdf8" stroke-width="2" stroke-linecap="round" opacity="0.85"/></svg>',
-            tip: '紧急：饥饿为 0，需要喂食。',
+            tip: '紧急：体力为 0，需要休息或喂食。',
         };
     }
     return null;
@@ -615,7 +612,7 @@ function closeHudTips(root) {
 }
 
 function statValue(pet, key) {
-    const stats = pet?.stats || {};
+    const stats = getRuntimePetStats(pet);
     return Math.max(0, Math.min(100, Math.round(stats[key] ?? 0)));
 }
 
@@ -636,7 +633,7 @@ function resourceInfo(key) {
     return {
         label: '金币',
         icon: coinIconSvg(),
-        description: '照顾、学习和玩耍可获得，用来购买食物、家具和道具。',
+        description: '照顾和玩耍可获得，用来购买食物、家具和道具。',
     };
 }
 
@@ -681,7 +678,7 @@ function renderTopbarResourcePill(key) {
             </span>`;
     }
     if (key === 'coins') {
-        const tip = '金币：照顾、学习和玩耍可获得，用来购买食物、家具和道具。';
+        const tip = '金币：照顾和玩耍可获得，用来购买食物、家具和道具。';
         return `
             <span class="hud-pill hud-pill-stacked hud-pill-coin topbar-resource-pill" id="mhCoins" tabindex="0" title="${escapeHtml(tip)}" data-topbar-resource="coins" data-tip="${escapeHtml(tip)}" aria-label="打开商店">
                 <span class="hud-pill-icon">${coinIconSvg()}</span>
@@ -1102,6 +1099,7 @@ function runZoomTransition(from, to) {
         bindDockHorizontalScroll();
         restoreDockScrollPositions(dock);
         newLevel.onEnter?.(pet, ctx);
+        if (to === 1) requestAnimationFrame(() => newLevel.centerPet?.(pet, { animate: true, duration: 460 }));
         applyCameraZoom();
 
         setTimeout(() => {
@@ -1588,7 +1586,7 @@ function showPetDetailsModal(pet) {
     }).join('');
     openModal(`
         <div style="text-align:center;margin-bottom:8px">
-            <div style="font-size:18px;font-weight:800;color:var(--text-primary)">${escapeHtml(displayPetNameWithoutTag(pet))} ${pet.stageEmoji || ''}</div>
+            <div style="font-size:18px;font-weight:800;color:var(--text-primary)">${escapeHtml(displayPetNameWithoutTag(pet))} ${escapeHtml(getStageName(pet.stage, pet.stage || ''))}</div>
             <div class="text-xs" style="color:var(--text-muted)">${escapeHtml(summary)}</div>
         </div>
         <div class="pet-state-list">${rows}</div>

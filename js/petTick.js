@@ -4,17 +4,66 @@ import { notify, state } from './state.js';
 import { savePetDebounced } from './storage.js';
 import { clamp } from './utils.js';
 import { isAdultStage } from './dna.js';
-import { hasNannyCare, nannyGrowthRate, softenStatsToAverage } from './petLifecycle.js';
-import { normalizePetSleepState } from './pet.js';
+import { applyReleasedPetAutoCareStats, getPetLocationType, hasNannyCare, nannyGrowthRate, softenStatsToAverage } from './petLifecycle.js';
+import { isNightSleepTime, nextMorningWakeAt, normalizePetSleepState } from './pet.js';
 
 export function defaultStats() {
-    return { hunger: 80, mood: 80, clean: 80, energy: 80, health: 100, intel: 10, bond: 30 };
+    return { hunger: 80, mood: 80, clean: 80, bond: 30 };
 }
 
 // 蛋的初始属性：除 hunger=0 之外，其余统一为 60。
-// 蛋阶段不衰减、不生病；只有当玩家喂食一次后，DNA 才会最终确定并孵化为 baby。
+// 蛋阶段不衰减；只有当玩家喂食一次后，DNA 才会最终确定并孵化为 baby。
 export function eggStats() {
-    return { hunger: 0, mood: 60, clean: 60, energy: 60, health: 60, intel: 60, bond: 60 };
+    return { hunger: 0, mood: 60, clean: 60, bond: 60 };
+}
+
+export function normalizeReleasedPetAutoCare(pet, now = Date.now()) {
+    if (!pet || getPetLocationType(pet) !== 'released') return false;
+    normalizePetStats(pet);
+    const changedStats = applyReleasedPetAutoCareStats(pet);
+    let changed = changedStats;
+
+    if (isNightSleepTime(now)) {
+        const wakeAt = nextMorningWakeAt(now);
+        if (pet.anim !== 'sleep') {
+            pet.anim = 'sleep';
+            pet.sleepStartedAt = now;
+            changed = true;
+        }
+        if (Number(pet.sleepLockedUntil) !== wakeAt) {
+            pet.sleepLockedUntil = wakeAt;
+            changed = true;
+        }
+    } else if (pet.anim === 'sleep' || pet.sleepLockedUntil || pet.sleepStartedAt) {
+        pet.anim = 'idle';
+        delete pet.sleepStartedAt;
+        delete pet.sleepLockedUntil;
+        changed = true;
+    }
+    return changed;
+}
+
+export function normalizePetStats(pet) {
+    if (!pet) return defaultStats();
+    const base = pet.stage === 'egg' ? eggStats() : defaultStats();
+    const stats = pet.stats && typeof pet.stats === 'object' ? pet.stats : {};
+    const hunger = Number(stats.hunger);
+    const legacyEnergy = Number(stats.energy);
+    const hasHunger = Number.isFinite(hunger);
+    const hasLegacyEnergy = Number.isFinite(legacyEnergy);
+    const isRestingEgg = pet.stage === 'egg' && (!hasHunger || hunger <= 0);
+
+    pet.stats = { ...base, ...stats };
+    if (!isRestingEgg && hasLegacyEnergy) {
+        pet.stats.hunger = hasHunger
+            ? Math.round((hunger + legacyEnergy) / 2)
+            : legacyEnergy;
+    }
+    pet.stats.hunger = clamp(Number(pet.stats.hunger ?? base.hunger), CONFIG.statMin, CONFIG.statMax);
+    delete pet.stats.energy;
+    delete pet.stats.health;
+    delete pet.stats.intel;
+    return pet.stats;
 }
 
 export function defaultPermanentTrauma() {
@@ -79,50 +128,32 @@ export function gainTrait(pet, traitId, amount = CONFIG.traitGainPerFeed) {
     pet.traits[traitId] = clamp((pet.traits[traitId] || 0) + amount, 0, CONFIG.traitMax);
 }
 
-/** 是否生病：health 低于阈值即触发体内细胞迷你游戏。 */
-export function isSick(pet) {
-    return (pet?.stats?.health ?? 100) < CONFIG.cellGame.sicknessThresholdHealth;
-}
-
 export function getEnergyMax(pet) {
-    const stats = pet?.stats || {};
-    const cfg = CONFIG.energyMax || {};
-    const min = Math.max(CONFIG.statMin, Math.min(CONFIG.statMax, Number(cfg.min) || 60));
-    const hunger = Math.max(CONFIG.statMin, Math.min(CONFIG.statMax, Number(stats.hunger ?? CONFIG.statMax)));
-    const health = Math.max(CONFIG.statMin, Math.min(CONFIG.statMax, Number(stats.health ?? CONFIG.statMax)));
-    const hungerBelow = Math.max(1, Number(cfg.hungerPenaltyBelow) || 30);
-    const healthBelow = Math.max(1, Number(cfg.healthPenaltyBelow) || CONFIG.cellGame.sicknessThresholdHealth || 60);
-    const hungerPenalty = hunger < hungerBelow
-        ? (1 - hunger / hungerBelow) * (Number(cfg.maxHungerPenalty) || 30)
-        : 0;
-    const healthPenalty = health < healthBelow
-        ? (1 - health / healthBelow) * (Number(cfg.maxHealthPenalty) || 30)
-        : 0;
-    return Math.round(clamp(CONFIG.statMax - hungerPenalty - healthPenalty, min, CONFIG.statMax));
+    normalizePetStats(pet);
+    return CONFIG.statMax;
 }
 
 export function clampEnergyToMax(pet) {
     if (!pet?.stats) return CONFIG.statMax;
-    const maxEnergy = getEnergyMax(pet);
-    pet.stats.energy = clamp(Number(pet.stats.energy ?? maxEnergy), CONFIG.statMin, maxEnergy);
-    return maxEnergy;
+    normalizePetStats(pet);
+    pet.stats.hunger = clamp(Number(pet.stats.hunger ?? CONFIG.statMax), CONFIG.statMin, CONFIG.statMax);
+    return CONFIG.statMax;
 }
 
 export function restoreEnergyToMax(pet) {
     if (!pet?.stats) return CONFIG.statMax;
-    const maxEnergy = getEnergyMax(pet);
-    pet.stats.energy = maxEnergy;
-    return maxEnergy;
+    normalizePetStats(pet);
+    pet.stats.hunger = CONFIG.statMax;
+    return CONFIG.statMax;
 }
 
 function traumaReasons(pet) {
     const stats = pet?.stats || {};
     const cfg = CONFIG.trauma || {};
     const reasons = [];
-    if ((stats.hunger ?? 100) < (cfg.hungerThreshold ?? 25)) reasons.push('饥饿');
+    if ((stats.hunger ?? 100) < (cfg.hungerThreshold ?? 25)) reasons.push('体力低');
     if ((stats.clean ?? 100) < (cfg.cleanThreshold ?? 35)) reasons.push('肮脏环境');
     if ((stats.mood ?? 100) < (cfg.moodThreshold ?? 25)) reasons.push('低落');
-    if ((stats.health ?? 100) < (cfg.healthThreshold ?? 65)) reasons.push('生病');
     if ((pet?.poops || []).length > CONFIG.poopWarningThreshold) reasons.push('便便堆积');
     return reasons;
 }
@@ -160,8 +191,12 @@ export function maybeApplyPermanentTrauma(pet, now = Date.now()) {
 }
 
 export function applyDecay(pet, ticks = 1) {
-    if (!pet?.stats) pet.stats = defaultStats();
-    // 蛋阶段（hunger=0 休眠）不衰减、不生病，也不会形成创伤。
+    normalizePetStats(pet);
+    if (getPetLocationType(pet) === 'released') {
+        normalizeReleasedPetAutoCare(pet);
+        return;
+    }
+    // 蛋阶段（hunger=0 休眠）不衰减，也不会形成创伤。
     if (pet.stage === 'egg' && (pet.stats?.hunger ?? 0) <= 0) return;
     const decay = CONFIG.statDecayPerTick;
     const buff = state.planetBuff && state.planetBuff.until > Date.now() ? state.planetBuff : null;
@@ -169,13 +204,8 @@ export function applyDecay(pet, ticks = 1) {
         let delta = decay[k] * ticks;
         if (buff?.id === 'gluttony' && k === 'hunger') delta *= 1.5;
         if (buff?.id === 'garden' && k === 'mood') delta *= 0.65;
-        if (buff?.id === 'clarity' && k === 'intel') delta += 0.35 * ticks;
         if (buff?.id === 'tidal' && k === 'clean') delta += 0.25 * ticks;
         pet.stats[k] = clamp((pet.stats[k] || 0) + delta, CONFIG.statMin, CONFIG.statMax);
-    }
-    // 饿/脏极端时影响健康；体力是活动资源，不再因自然消耗导致生病。
-    if (pet.stats.hunger < 10 || pet.stats.clean < 10) {
-        pet.stats.health = clamp(pet.stats.health - 0.5 * ticks, CONFIG.statMin, CONFIG.statMax);
     }
     clampEnergyToMax(pet);
     if (hasNannyCare(pet)) softenStatsToAverage(pet);
@@ -184,7 +214,11 @@ export function applyDecay(pet, ticks = 1) {
 }
 
 export function applyOfflineDecay(pet, elapsedMs, now = Date.now()) {
-    if (!pet?.stats) pet.stats = defaultStats();
+    normalizePetStats(pet);
+    if (getPetLocationType(pet) === 'released') {
+        normalizeReleasedPetAutoCare(pet, now);
+        return;
+    }
     if (pet.stage === 'egg' && (pet.stats?.hunger ?? 0) <= 0) return;
     const maxHours = Math.max(0, Number(CONFIG.maxOfflineHours) || 0);
     const elapsedHours = Math.max(0, Number(elapsedMs) || 0) / 3600 / 1000;
@@ -205,24 +239,20 @@ export function applyOfflineDecay(pet, elapsedMs, now = Date.now()) {
         pet.stats[k] = clamp((pet.stats[k] || 0) + delta, CONFIG.statMin, CONFIG.statMax);
     }
 
-    const healthPenaltyAfter = Math.max(
-        Number(CONFIG.offlineHealthGraceHours) || 0,
-        Number(CONFIG.offlineHealthPenaltyAfterHours) || 0
-    );
-    const healthPenaltyHours = Math.max(0, hours - healthPenaltyAfter);
-    const healthPenaltyPerHour = Math.max(0, Number(CONFIG.offlineHealthPenaltyPerHour) || 0);
-    if (healthPenaltyHours > 0 && healthPenaltyPerHour > 0
-        && (pet.stats.hunger < 10 || pet.stats.clean < 10)) {
-        pet.stats.health = clamp(
-            (pet.stats.health || 0) - healthPenaltyPerHour * healthPenaltyHours,
-            CONFIG.statMin,
-            CONFIG.statMax
-        );
-    }
     restoreEnergyToMax(pet);
-    if (hasNannyCare(pet)) softenStatsToAverage(pet);
+    if (hadNannyCareDuringOffline(pet, elapsedMs, now)) softenStatsToAverage(pet);
     clampEnergyToMax(pet);
     maybeApplyPermanentTrauma(pet, now);
+}
+
+function hadNannyCareDuringOffline(pet, elapsedMs, now) {
+    const care = pet?.hatchingCare;
+    if (care?.mode !== 'nanny') return false;
+    const last = now - Math.max(0, Number(elapsedMs) || 0);
+    const hiredAt = Number(care.hiredAt) || last;
+    const until = Number(care.until);
+    if (!Number.isFinite(until)) return hasNannyCare(pet, now);
+    return Math.max(last, hiredAt) < Math.min(now, until);
 }
 
 export function computeStage(pet) {
@@ -233,11 +263,16 @@ export function computeStage(pet) {
     }
     const now = Date.now();
     let ageMs = now - (pet.bornAt || now);
-    if (hasNannyCare(pet)) {
-        const hiredAt = Math.max(Number(pet.hatchingCare?.hiredAt) || pet.bornAt || now, pet.bornAt || now);
-        const beforeNannyMs = Math.max(0, hiredAt - (pet.bornAt || hiredAt));
-        const nannyMs = Math.max(0, now - hiredAt) * nannyGrowthRate(pet);
-        ageMs = beforeNannyMs + nannyMs;
+    const care = pet?.hatchingCare;
+    if (care?.mode === 'nanny') {
+        const bornAt = pet.bornAt || now;
+        const hiredAt = Math.max(Number(care.hiredAt) || bornAt, bornAt);
+        const until = Number.isFinite(Number(care.until)) ? Number(care.until) : now;
+        const careEnd = Math.max(hiredAt, Math.min(now, until));
+        const beforeNannyMs = Math.max(0, hiredAt - bornAt);
+        const nannyMs = Math.max(0, careEnd - hiredAt) * Math.max(0.1, Number(care.growthRate) || nannyGrowthRate(pet, now));
+        const afterNannyMs = Math.max(0, now - Math.max(careEnd, hiredAt));
+        ageMs = beforeNannyMs + nannyMs + afterNannyMs;
     }
     const ageHours = ageMs / 3600 / 1000;
     const babyStage = CONFIG.stages.find(st => st.id === 'baby') || CONFIG.stages[1] || CONFIG.stages[0];
@@ -293,15 +328,11 @@ export function applyStage(pet) {
         const eggDef = CONFIG.stages[0];
         const changed = pet.stage !== eggDef.id;
         pet.stage = eggDef.id;
-        pet.stageName = eggDef.name;
-        pet.stageEmoji = eggDef.emoji;
         _kickSheetGen(pet);
         return changed;
     }
     const changed = pet.stage !== st.id;
     pet.stage = st.id;
-    pet.stageName = st.name;
-    pet.stageEmoji = st.emoji;
     // Lifetime achievement: count first-time adult promotions per pet.
     if (isAdultStage(st.id) && !pet.everAdult) {
         pet.everAdult = true;
@@ -317,14 +348,14 @@ export function applyStage(pet) {
 export function tickOffline(pet) {
     if (!pet) return;
     const now = Date.now();
-    normalizePetSleepState(pet, now);
+    normalizeReleasedPetAutoCare(pet, now) || normalizePetSleepState(pet, now);
     const last = pet.lastTickAt || pet.bornAt || now;
     const elapsed = Math.max(0, now - last);
     if (elapsed > 0) applyOfflineDecay(pet, elapsed, now);
-    maybeApplyPermanentTrauma(pet, now);
+    if (getPetLocationType(pet) !== 'released') maybeApplyPermanentTrauma(pet, now);
     pet.lastTickAt = now;
     applyStage(pet);
-    savePetDebounced(pet);
+    if (getPetLocationType(pet) !== 'released') savePetDebounced(pet);
 }
 
 /** 周期 tick：所有宠物同时衰减 1 单位。
@@ -345,14 +376,18 @@ export function startTickLoop() {
         let sleepStateChanged = false;
         for (const id of Object.keys(state.pets)) {
             const p = state.pets[id];
-            const sleepChanged = normalizePetSleepState(p, now);
+            const isReleased = getPetLocationType(p) === 'released';
+            const autoCareChanged = normalizeReleasedPetAutoCare(p, now);
+            const sleepChanged = autoCareChanged || normalizePetSleepState(p, now);
             sleepStateChanged = sleepStateChanged || sleepChanged;
             applyDecay(p, 1);
             applyStage(p);
-            maybeProducePoop(p);
-            maybeApplyPermanentTrauma(p, now);
+            if (!isReleased) {
+                maybeProducePoop(p);
+                maybeApplyPermanentTrauma(p, now);
+            }
             p.lastTickAt = now;
-            if (shouldAutoSave || sleepChanged) savePetDebounced(p);
+            if (!isReleased && (shouldAutoSave || sleepChanged)) savePetDebounced(p);
         }
         if (shouldAutoSave) _lastAutoSaveAt = now;
         if (sleepStateChanged) notify();

@@ -4,7 +4,9 @@ import { decodeDna } from './dna.js';
 
 export const MAX_PLANET_PETS = 10;
 export const RELEASED_PET_FIELD_CHANCE = 0.9;
+export const RELEASED_AUTO_CARE_STATS = { hunger: 85, mood: 85, clean: 90, bond: 85 };
 const RELEASED_PET_RELOCATE_MS = 10 * 60 * 1000;
+const DAY_MS = 24 * 60 * 60 * 1000;
 const SESSION_PLACEMENT_SEED = `${Date.now().toString(36)}_${Math.random().toString(36).slice(2)}`;
 
 const REMOTE_DESTINATIONS = {
@@ -74,6 +76,29 @@ export function getPetLocationType(pet) {
     const type = pet?.location?.type || pet?.status || 'home';
     if (type === 'released' || type === 'haqiIsland' || type === 'remotePlanet') return type;
     return 'home';
+}
+
+function clampStatValue(value) {
+    return Math.max(CONFIG.statMin, Math.min(CONFIG.statMax, Number(value) || 0));
+}
+
+export function applyReleasedPetAutoCareStats(pet) {
+    if (!pet || getPetLocationType(pet) !== 'released') return false;
+    const stats = pet.stats && typeof pet.stats === 'object' ? pet.stats : (pet.stats = {});
+    let changed = false;
+    for (const [key, targetValue] of Object.entries(RELEASED_AUTO_CARE_STATS)) {
+        const target = clampStatValue(targetValue);
+        if (stats[key] !== target) {
+            stats[key] = target;
+            changed = true;
+        }
+    }
+    return changed;
+}
+
+export function getRuntimePetStats(pet) {
+    applyReleasedPetAutoCareStats(pet);
+    return pet?.stats || {};
 }
 
 export function isPetOnCurrentPlanet(pet) {
@@ -213,38 +238,89 @@ export function markPetRemoteExiled(pet, reason = 'capacity') {
     return pet.location;
 }
 
-export function hireNannyForPet(pet) {
+function caretakerConfig() {
+    return CONFIG.hatchingCare || {};
+}
+
+export function getNannyCareCost(days = 1) {
+    const cfg = caretakerConfig();
+    const maxDays = Math.max(1, Number(cfg.maxDays) || 2);
+    const safeDays = Math.max(1, Math.min(maxDays, Math.round(Number(days) || 1)));
+    return safeDays * Math.max(0, Number(cfg.costPerDay) || 100);
+}
+
+export function getNannyCareRemainingMs(pet, now = Date.now()) {
+    if (pet?.hatchingCare?.mode !== 'nanny') return 0;
+    const until = Number(pet.hatchingCare.until);
+    return Number.isFinite(until) ? Math.max(0, until - now) : 0;
+}
+
+export function formatNannyCareRemaining(pet, now = Date.now()) {
+    const remaining = getNannyCareRemainingMs(pet, now);
+    if (remaining <= 0) return '0小时';
+    const hours = Math.max(1, Math.ceil(remaining / 3600000));
+    if (hours >= 24) {
+        const days = Math.floor(hours / 24);
+        const restHours = hours % 24;
+        return restHours ? `${days}天${restHours}小时` : `${days}天`;
+    }
+    return `${hours}小时`;
+}
+
+export function getNannyCareEligibility(pet) {
+    const cfg = caretakerConfig();
+    const stats = pet?.stats || {};
+    const keys = ['hunger', 'mood', 'clean', 'bond'];
+    const average = keys.reduce((sum, key) => sum + (Number(stats[key]) || 0), 0) / keys.length;
+    const minAverage = Number(cfg.minStatAverage) || 50;
+    const minMood = Number(cfg.minMood) || 50;
+    const minHunger = Number(cfg.minHunger) || 50;
+    const mood = Number(stats.mood) || 0;
+    const hunger = Number(stats.hunger) || 0;
+    const reasons = [];
+    if (average <= minAverage) reasons.push(`整体状态平均值需要高于 ${minAverage}`);
+    if (mood <= minMood) reasons.push(`心情需要高于 ${minMood}`);
+    if (hunger <= minHunger) reasons.push(`体力需要高于 ${minHunger}`);
+    return { ok: reasons.length === 0, reasons, average, mood, hunger };
+}
+
+export function hireNannyForPet(pet, days = 1, now = Date.now()) {
     if (!pet) return null;
-    const now = Date.now();
+    const cfg = caretakerConfig();
+    const maxDays = Math.max(1, Number(cfg.maxDays) || 2);
+    const safeDays = Math.max(1, Math.min(maxDays, Math.round(Number(days) || 1)));
     pet.hatchingCare = {
-        ...(pet.hatchingCare || {}),
         mode: 'nanny',
-        hiredAt: pet.hatchingCare?.hiredAt || now,
+        hiredAt: now,
         updatedAt: now,
-        growthRate: 0.45,
+        until: now + safeDays * DAY_MS,
+        days: safeDays,
+        costCoins: getNannyCareCost(safeDays),
+        growthRate: Math.max(0.1, Number(cfg.growthRate) || 0.45),
         statProfile: 'average',
     };
     softenStatsToAverage(pet);
     return pet.hatchingCare;
 }
 
-export function hasNannyCare(pet) {
-    return pet?.hatchingCare?.mode === 'nanny';
+export function hasNannyCare(pet, now = Date.now()) {
+    return getNannyCareRemainingMs(pet, now) > 0;
 }
 
-export function nannyGrowthRate(pet) {
-    return hasNannyCare(pet) ? Math.max(0.1, Number(pet.hatchingCare?.growthRate) || 0.45) : 1;
+export function nannyGrowthRate(pet, now = Date.now()) {
+    return hasNannyCare(pet, now) ? Math.max(0.1, Number(pet.hatchingCare?.growthRate) || caretakerConfig().growthRate || 0.45) : 1;
 }
 
 export function softenStatsToAverage(pet) {
     if (!pet) return;
     if (!pet.stats) pet.stats = {};
-    const target = { hunger: 66, mood: 62, clean: 66, energy: 64, health: 72, intel: 18, bond: 32 };
+    const cfg = caretakerConfig();
+    const target = {
+        hunger: Number(cfg.targetHunger) || 66,
+        mood: Number(cfg.targetMood) || 62,
+    };
     for (const key of Object.keys(target)) {
-        const current = Number(pet.stats[key]);
-        pet.stats[key] = Number.isFinite(current)
-            ? Math.round(current * 0.45 + target[key] * 0.55)
-            : target[key];
+        pet.stats[key] = target[key];
         pet.stats[key] = Math.max(CONFIG.statMin, Math.min(CONFIG.statMax, pet.stats[key]));
     }
 }

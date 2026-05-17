@@ -1,10 +1,14 @@
 // 孵化仓：离线照看与领养新蛋。
 import { $, escapeHtml } from './utils.js';
 import { displayPetName } from './dna.js';
-import { CONFIG } from './config.js';
+import { CONFIG, getStageName } from './config.js';
 import { computePlanetProgress } from './planetProgress.js';
+import { state } from './state.js';
 import {
+    formatNannyCareRemaining,
     getCompanionDays,
+    getNannyCareCost,
+    getNannyCareEligibility,
     getPetBirthday,
     getPetLocationInfo,
     getPlanetPetLimit,
@@ -21,7 +25,6 @@ export function renderHatching(panel, { pet, pets = [], planetName = '' } = {}, 
     const limit = getPlanetPetLimit();
     const location = getPetLocationInfo(pet, planetName || '宠物星');
     const nannyActive = hasNannyCare(pet);
-    const isEgg = pet?.stage === 'egg';
     panel.innerHTML = `
         <div class="topbar">
             <button class="btn-icon" id="mhHatchingBack" title="返回" style="width:36px;height:36px;font-size:18px">‹</button>
@@ -36,7 +39,7 @@ export function renderHatching(panel, { pet, pets = [], planetName = '' } = {}, 
                 <div style="min-width:0;flex:1">
                     <div style="font-size:18px;font-weight:900;color:var(--text-primary);overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${escapeHtml(pet ? displayPetName(pet) : '等待新伙伴')}</div>
                     <div style="display:flex;gap:6px;flex-wrap:wrap;margin:6px 0">
-                        <span class="stage-badge">${escapeHtml(pet?.stageEmoji || '🥚')} ${escapeHtml(pet?.stageName || '蛋')}</span>
+                        <span class="stage-badge">${escapeHtml(getStageName(pet?.stage, '蛋'))}</span>
                         <span class="stage-badge" style="background:#ecfeff;color:${escapeHtml(location.tone)}">${escapeHtml(location.label)}</span>
                     </div>
                     <div style="font-size:12px;color:var(--text-muted);line-height:1.5">
@@ -57,19 +60,25 @@ export function renderHatching(panel, { pet, pets = [], planetName = '' } = {}, 
             </section>
 
             <section class="card-flat" style="margin-bottom:12px">
-                <div style="font-weight:900;color:var(--text-primary);margin-bottom:6px">保姆照看</div>
-                <div style="font-size:12px;color:var(--text-secondary);line-height:1.55;margin-bottom:10px">
-                    不常在线时可以雇佣保姆照看宠物。保姆会维持基础状态，但成长节奏更慢，成长后的属性会更平均。
+                <div style="display:flex;justify-content:space-between;gap:10px;align-items:center;margin-bottom:10px">
+                    <div>
+                        <div style="font-weight:900;color:var(--text-primary);margin-bottom:4px">保姆照看</div>
+                        <div style="font-size:12px;color:var(--text-muted);line-height:1.45">
+                            ${nannyActive ? `剩余 ${escapeHtml(formatNannyCareRemaining(pet))}` : '离线时维持基础心情和体力'}
+                        </div>
+                    </div>
+                    <span style="font-size:24px">🧸</span>
                 </div>
-                <button class="btn-primary w-full" id="mhHireNanny" ${!pet || nannyActive ? 'disabled' : ''}>
-                    ${nannyActive ? '✓ 保姆正在照看' : (isEgg ? '雇佣保姆照看这颗蛋' : '雇佣保姆照看宠物')}
-                </button>
+                <button class="btn-primary w-full" id="mhHireNanny" ${!pet || nannyActive ? 'disabled' : ''}>${nannyActive ? '保姆正在照看' : '雇佣保姆'}</button>
             </section>
 
             <section class="card-flat" style="background:#fffbeb;border-color:rgba(245,158,11,.24)">
-                <div style="font-weight:900;color:var(--text-primary);margin-bottom:6px">领养新蛋</div>
-                <div style="font-size:12px;color:var(--text-secondary);line-height:1.55;margin-bottom:10px">
-                    可以领养一个新的蛋。当前正在照看的宠物会被放养到 Field，放养后无法找回，但会继续在星球上长大，成年后可送往哈奇岛。
+                <div style="display:flex;justify-content:space-between;gap:10px;align-items:center;margin-bottom:10px">
+                    <div>
+                        <div style="font-weight:900;color:var(--text-primary);margin-bottom:4px">领养新蛋</div>
+                        <div style="font-size:12px;color:var(--text-muted);line-height:1.45">迎接新的伙伴</div>
+                    </div>
+                    <span style="font-size:24px">🥚</span>
                 </div>
                 <button class="btn-primary w-full" id="mhAdoptEgg">领养一个新的蛋</button>
             </section>
@@ -85,7 +94,82 @@ export function renderHatching(panel, { pet, pets = [], planetName = '' } = {}, 
 
     if ($('mhHatchingBack')) $('mhHatchingBack').onclick = () => onBack?.();
     if ($('mhHatchingAlbum')) $('mhHatchingAlbum').onclick = () => onOpenAlbum?.();
-    if ($('mhHireNanny')) $('mhHireNanny').onclick = () => onHireNanny?.(pet);
-    if ($('mhAdoptEgg')) $('mhAdoptEgg').onclick = () => onAdoptEgg?.(pet);
+    if ($('mhHireNanny')) $('mhHireNanny').onclick = () => showNannyCareModal(pet, onHireNanny);
+    if ($('mhAdoptEgg')) $('mhAdoptEgg').onclick = () => showAdoptEggModal(pet, onAdoptEgg);
     if ($('mhBreedBaby')) $('mhBreedBaby').onclick = () => onBreed?.();
+}
+
+function showAdoptEggModal(pet, onAdoptEgg) {
+    const mask = document.createElement('div');
+    mask.className = 'modal-mask';
+    mask.innerHTML = `
+        <div class="modal-card" style="width:min(420px, calc(100vw - 32px))">
+            <div style="font-size:18px;font-weight:900;color:var(--text-primary);margin-bottom:6px">领养新蛋</div>
+            <div style="font-size:12px;color:var(--text-secondary);line-height:1.55;margin-bottom:14px">
+                可以领养一个新的蛋。当前正在照看的宠物会被放养到星球中，放养后无法找回，但会继续在星球上长大，成年后可送往哈奇岛。
+            </div>
+            <div style="display:flex;justify-content:flex-end;gap:8px;flex-wrap:wrap">
+                <button class="btn-secondary" data-adopt-cancel>取消</button>
+                <button class="btn-primary" data-adopt-ok>继续领养</button>
+            </div>
+        </div>`;
+    const close = () => mask.remove();
+    mask.addEventListener('click', (e) => {
+        if (e.target === mask || e.target.closest('[data-adopt-cancel]')) { close(); return; }
+        if (!e.target.closest('[data-adopt-ok]')) return;
+        close();
+        onAdoptEgg?.(pet);
+    });
+    document.body.appendChild(mask);
+}
+
+function showNannyCareModal(pet, onHireNanny) {
+    const maxDays = Math.max(1, Number(CONFIG.hatchingCare?.maxDays) || 2);
+    const costPerDay = Math.max(0, Number(CONFIG.hatchingCare?.costPerDay) || 100);
+    const options = Array.from({ length: maxDays }, (_, index) => index + 1);
+    const eligibility = getNannyCareEligibility(pet);
+    const active = hasNannyCare(pet);
+    const statusText = !pet
+        ? '暂无可照看的宠物。'
+        : active
+            ? `保姆正在照看，剩余 ${formatNannyCareRemaining(pet)}。`
+            : eligibility.ok
+                ? '当前状态满足托管条件。'
+                : eligibility.reasons.join('；');
+    const mask = document.createElement('div');
+    mask.className = 'modal-mask';
+    mask.innerHTML = `
+        <div class="modal-card" style="width:min(420px, calc(100vw - 32px))">
+            <div style="font-size:18px;font-weight:900;color:var(--text-primary);margin-bottom:6px">雇佣保姆</div>
+            <div style="font-size:12px;color:var(--text-secondary);line-height:1.55;margin-bottom:12px">
+                每天 ${costPerDay} 金币，最多 ${maxDays} 天。保姆只维持平均心情和体力。
+            </div>
+            <div style="font-size:12px;color:${eligibility.ok && !active ? 'var(--accent-dark)' : '#b45309'};line-height:1.45;margin-bottom:12px">
+                ${escapeHtml(statusText)}
+            </div>
+            <div style="display:grid;grid-template-columns:repeat(${Math.min(2, options.length)}, minmax(0,1fr));gap:8px;margin-bottom:12px">
+                ${options.map(days => {
+                    const cost = getNannyCareCost(days);
+                    const canAfford = (state.coins | 0) >= cost;
+                    const disabled = !pet || active || !eligibility.ok || !canAfford;
+                    const title = !canAfford ? `金币不足，需要 ${cost} 金币` : `支付 ${cost} 金币`;
+                    return `<button class="btn-primary" data-hire-nanny-days="${days}" ${disabled ? 'disabled' : ''} title="${escapeHtml(title)}">
+                        ${days}天 · ${cost}金币
+                    </button>`;
+                }).join('')}
+            </div>
+            <div style="display:flex;justify-content:flex-end">
+                <button class="btn-secondary" data-nanny-cancel>取消</button>
+            </div>
+        </div>`;
+    const close = () => mask.remove();
+    mask.addEventListener('click', (e) => {
+        if (e.target === mask || e.target.closest('[data-nanny-cancel]')) { close(); return; }
+        const btn = e.target.closest('[data-hire-nanny-days]');
+        if (!btn || btn.disabled) return;
+        const days = Number(btn.dataset.hireNannyDays) || 1;
+        close();
+        onHireNanny?.(pet, days);
+    });
+    document.body.appendChild(mask);
 }

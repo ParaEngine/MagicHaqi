@@ -3,10 +3,23 @@ import { $, coinIconSvg, escapeHtml, showToast } from './utils.js';
 import { t } from './i18n.js';
 import { CONFIG } from './config.js';
 import { state } from './state.js';
+import { displayPetName } from './dna.js';
+import { generatePetSheet, getEggDataUrl, getPetSpriteCell, getProcessedSheet, SHEET_COLS, SHEET_ROWS } from './pet.js';
+import { isPetOnCurrentPlanet } from './petLifecycle.js';
 import SoundManager from './soundManager.js';
 
 const soundManager = SoundManager.getInstance();
 const STAT_REWARD_ANIMATION_MS = 1600;
+const EGG_IMAGE_SIZE = 256;
+const MINIGAME_PET_IMAGE_REQUESTS = new Set([
+    'haqi_get_pet_image',
+    'haqiGetPetImage',
+]);
+const MINIGAME_ALL_PET_IMAGE_REQUESTS = new Set([
+    'haqi_get_pet_images',
+    'haqi_get_all_pet_images',
+    'haqiGetPetImages',
+]);
 
 const MINIGAMES = [
     {
@@ -14,7 +27,6 @@ const MINIGAMES = [
         title: '舒尔特方格',
         icon: '📊',
         src: './minigames/haqi_schulte_grid.html',
-        intelReward: 4,
     },
     {
         id: 'attention_focus',
@@ -27,16 +39,53 @@ const MINIGAMES = [
         title: '数字复读机',
         icon: '🔢',
         src: './minigames/haqi_find_numbers.html',
-        intelReward: 3,
+    },
+    {
+        id: 'match_three_pets',
+        title: '宠物三消',
+        icon: '🐾',
+        src: './minigames/haqi_match_three_pets.html',
     },
 ];
 
+const PLAY_ACTIVITIES = [
+    /*
+    {
+        id: 'mindeye',
+        title: '精神之海',
+        icon: '💬',
+        desc: '进入 AI 伙伴的对话空间。',
+        src: 'https://keepwork.com/maisi/maisi/webgames/mindeye',
+        allow: 'microphone; camera; autoplay; fullscreen',
+        manualComplete: true,
+    },
+    {
+        id: 'wiki_dashboard',
+        title: '抱抱龙成长百科',
+        icon: '📚',
+        desc: '和数字伙伴一起查知识。',
+        src: 'https://keepwork.com/maisi/maisi/webgames/wiki_dashboard',
+        allow: 'microphone; camera; autoplay; fullscreen',
+        manualComplete: true,
+    },
+    {
+        id: 'characterAI',
+        title: '数字人对话',
+        icon: '🎙️',
+        desc: '打开数字人语音互动。',
+        src: 'https://keepwork.com/maisi/maisi/webgames/characterAI',
+        allow: 'microphone; camera; autoplay; fullscreen',
+        manualComplete: true,
+    },
+    */
+];
+
+const PLAY_ITEMS = [...MINIGAMES, ...PLAY_ACTIVITIES];
+
 const PET_STAT_ITEMS = [
-    { k: 'mood', labelKey: 'statMood', icon: '😊' },
-    { k: 'intel', labelKey: 'statIntel', icon: '📚' },
     { k: 'bond', labelKey: 'statBond', icon: '💛' },
-    { k: 'energy', labelKey: 'statEnergy', icon: '⚡' },
-    { k: 'hunger', labelKey: 'statHunger', icon: '🍎' },
+    { k: 'mood', labelKey: 'statMood', icon: '😊' },
+    { k: 'hunger', labelKey: 'statEnergy', icon: '⚡' },
 ].filter(it => isPlayAffectedStat(it.k));
 
 let cleanupMessageListener = null;
@@ -44,6 +93,7 @@ let currentGame = null;
 let rewardedRound = '';
 let currentPet = null;
 let currentGameStartedAt = 0;
+let defaultEggBlobPromise = null;
 
 export function renderMinigames(panel, { pet }, { onBack, onGameFinished } = {}) {
     cleanupMessageListener?.();
@@ -138,15 +188,17 @@ export function renderMinigames(panel, { pet }, { onBack, onGameFinished } = {})
         </div>
         <div class="absolute" style="top:52px;left:0;right:0;bottom:0;overflow:hidden;background:linear-gradient(180deg,#e0f7ff 0%,#bae6fd 46%,#d9f99d 100%)">
             <div id="mhMinigameList" style="height:100%;overflow:auto;padding:14px;display:grid;grid-template-columns:repeat(auto-fit,minmax(168px,1fr));gap:12px;align-content:start">
-                ${MINIGAMES.map(game => `
+                ${PLAY_ITEMS.map(game => `
                     <button type="button" class="card-flat" data-game-id="${escapeHtml(game.id)}" style="text-align:center;min-height:118px;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:10px;border-radius:12px;cursor:pointer">
                         <span style="font-size:48px;line-height:1">${game.icon}</span>
                         <span style="font-weight:800;color:var(--text-primary);font-size:17px;line-height:1.2">${escapeHtml(game.title)}</span>
+                        ${game.desc ? `<span style="color:var(--text-muted);font-size:12px;line-height:1.35;max-width:12em">${escapeHtml(game.desc)}</span>` : ''}
                     </button>
                 `).join('')}
             </div>
             <div id="mhMinigameFrameWrap" style="display:none;position:absolute;inset:0;background:#0f2747">
-                <iframe id="mhMinigameFrame" title="小游戏" style="width:100%;height:100%;border:0;background:#fff" allow="autoplay; fullscreen"></iframe>
+                <iframe id="mhMinigameFrame" title="玩耍内容" style="width:100%;height:100%;border:0;background:#fff" allow="autoplay; fullscreen"></iframe>
+                <button type="button" class="btn-primary" id="mhMinigameDone" style="display:none;position:absolute;right:12px;bottom:12px;z-index:3;padding:8px 14px;font-size:13px">完成玩耍</button>
             </div>
         </div>`;
 
@@ -162,31 +214,20 @@ export function renderMinigames(panel, { pet }, { onBack, onGameFinished } = {})
     panel.querySelectorAll('[data-game-id]').forEach(btn => {
         btn.onclick = () => openGame(btn.dataset.gameId);
     });
+    $('mhMinigameDone').onclick = () => finishCurrentGame(onGameFinished);
     bindStatTips(panel);
 
     const onMessage = (event) => {
         const frame = $('mhMinigameFrame');
         if (!frame || event.source !== frame.contentWindow) return;
         const msg = event.data || {};
+        if (isPetImageRequest(msg)) {
+            handlePetImageRequest(frame, msg);
+            return;
+        }
         if (msg.type === 'gameLoaded') return;
-        if (msg.type === 'gameFinished') {
-            const roundKey = `${currentGame?.id || 'game'}:${msg.data?.finishedAt || Date.now()}`;
-            if (rewardedRound === roundKey) return;
-            rewardedRound = roundKey;
-            const beforeStats = capturePetStatValues(currentPet);
-            const beforeCoins = coinValue();
-            const finishedAt = msg.data?.finishedAt || Date.now();
-            onGameFinished?.(currentGame, {
-                ...(msg.data || {}),
-                completed: true,
-                startedAt: currentGameStartedAt || undefined,
-                finishedAt,
-                durationSeconds: activityDurationSeconds(msg.data || {}, currentGameStartedAt, finishedAt),
-                statBonus: miniGameStatBonus(currentGame),
-            });
-            if (Number(msg.data?.earnedPoints) > 0) soundManager.playPointReward();
-            refreshCoins({ previous: beforeCoins, animate: true });
-            refreshPetStats({ previous: beforeStats, animate: true });
+        if (msg.type === 'gameFinished' || msg.type === 'learningFinished') {
+            finishCurrentGame(onGameFinished, msg.data || {});
         }
     };
     window.addEventListener('message', onMessage);
@@ -200,6 +241,194 @@ export function renderMinigames(panel, { pet }, { onBack, onGameFinished } = {})
         currentPet = null;
         currentGameStartedAt = 0;
         cleanupMessageListener = null;
+    };
+}
+
+function isPetImageRequest(msg) {
+    const type = String(msg?.type || '');
+    return MINIGAME_PET_IMAGE_REQUESTS.has(type) || MINIGAME_ALL_PET_IMAGE_REQUESTS.has(type);
+}
+
+async function handlePetImageRequest(frame, msg) {
+    const type = String(msg?.type || '');
+    const requestId = msg.requestId || msg.id || null;
+    const sourceWindow = frame?.contentWindow;
+    if (!sourceWindow) return;
+
+    try {
+        if (MINIGAME_ALL_PET_IMAGE_REQUESTS.has(type)) {
+            const pets = currentPlanetPetsForMinigame();
+            const results = await Promise.allSettled(pets.map(pet => buildPetImagePayload(pet, msg)));
+            const images = results.filter(result => result.status === 'fulfilled' && result.value).map(result => result.value);
+            const errors = results
+                .map((result, index) => result.status === 'rejected'
+                    ? { petId: pets[index]?.id || '', error: result.reason?.message || String(result.reason) }
+                    : null)
+                .filter(Boolean);
+            sourceWindow.postMessage({
+                type: 'haqi_pet_images',
+                requestId,
+                ok: true,
+                data: {
+                    pets: images,
+                    count: images.length,
+                    max: 10,
+                    errors,
+                },
+            }, '*');
+            return;
+        }
+
+        const pet = requestedPetForMinigame(msg);
+        const image = await buildPetImagePayload(pet, msg);
+        sourceWindow.postMessage({
+            type: 'haqi_pet_image',
+            requestId,
+            ok: true,
+            data: image,
+        }, '*');
+    } catch (e) {
+        sourceWindow.postMessage({
+            type: MINIGAME_ALL_PET_IMAGE_REQUESTS.has(type) ? 'haqi_pet_images' : 'haqi_pet_image',
+            requestId,
+            ok: false,
+            error: e?.message || String(e),
+        }, '*');
+    }
+}
+
+function requestedPetForMinigame(msg) {
+    const petId = msg?.petId || msg?.data?.petId;
+    if (petId && state.pets?.[petId]) return state.pets[petId];
+    if (currentPet?.id && state.pets?.[currentPet.id]) return state.pets[currentPet.id];
+    if (currentPet) return currentPet;
+    return state.currentPetId ? state.pets?.[state.currentPetId] : null;
+}
+
+function currentPlanetPetsForMinigame() {
+    const ids = state.petOrder || [];
+    const ordered = ids.map(id => state.pets?.[id]).filter(pet => pet && isPetOnCurrentPlanet(pet));
+    if (currentPet?.id) {
+        const current = state.pets?.[currentPet.id] || currentPet;
+        return [current, ...ordered.filter(pet => pet.id !== currentPet.id)].slice(0, 10);
+    }
+    return ordered.slice(0, 10);
+}
+
+async function buildPetImagePayload(pet, msg = {}) {
+    if (!pet) throw new Error('pet not found');
+    if (pet.stage === 'egg') return await buildEggImagePayload(pet);
+
+    let sheetUrl = pet.imageSheetUrl || '';
+    if (!sheetUrl) sheetUrl = await generatePetSheet(pet) || '';
+    if (!sheetUrl) throw new Error(`pet image is not available: ${pet.id || 'unknown'}`);
+
+    const anim = msg?.anim || msg?.data?.anim;
+    const originalAnim = pet.anim;
+    if (anim) pet.anim = anim;
+    const cell = getPetSpriteCell(pet);
+    if (anim) pet.anim = originalAnim;
+    if (!cell) return await buildEggImagePayload(pet);
+
+    const processed = getProcessedSheet(sheetUrl);
+    await processed?.promise;
+    if (!(processed?.status === 'loaded' && processed.dataBlob && processed.width && processed.height)) {
+        throw new Error(`pet image is still unavailable after processing: ${pet.id || 'unknown'}`);
+    }
+
+    const uv = petSpriteUv(cell, processed.width, processed.height);
+    return {
+        petId: pet.id || '',
+        name: displayPetName(pet),
+        stage: pet.stage || '',
+        anim: anim || pet.anim || 'idle',
+        imageBlob: processed.dataBlob,
+        imageType: processed.dataBlob.type || 'image/png',
+        imageWidth: processed.width,
+        imageHeight: processed.height,
+        uv,
+    };
+}
+
+async function buildEggImagePayload(pet) {
+    const imageBlob = await getDefaultEggBlob();
+    return {
+        petId: pet.id || '',
+        name: displayPetName(pet),
+        stage: pet.stage || 'egg',
+        anim: 'egg',
+        imageBlob,
+        imageType: imageBlob.type || 'image/png',
+        imageWidth: EGG_IMAGE_SIZE,
+        imageHeight: EGG_IMAGE_SIZE,
+        uv: {
+            x: 0,
+            y: 0,
+            width: EGG_IMAGE_SIZE,
+            height: EGG_IMAGE_SIZE,
+            row: 0,
+            col: 0,
+            cols: 1,
+            rows: 1,
+            u0: 0,
+            v0: 0,
+            u1: 1,
+            v1: 1,
+        },
+    };
+}
+
+function getDefaultEggBlob() {
+    if (defaultEggBlobPromise) return defaultEggBlobPromise;
+    defaultEggBlobPromise = new Promise((resolve, reject) => {
+        try {
+            const img = new Image();
+            img.onload = () => {
+                try {
+                    const canvas = document.createElement('canvas');
+                    canvas.width = EGG_IMAGE_SIZE;
+                    canvas.height = EGG_IMAGE_SIZE;
+                    const ctx = canvas.getContext('2d');
+                    if (!ctx) throw new Error('canvas context is not available');
+                    ctx.clearRect(0, 0, EGG_IMAGE_SIZE, EGG_IMAGE_SIZE);
+                    ctx.drawImage(img, 0, 0, EGG_IMAGE_SIZE, EGG_IMAGE_SIZE);
+                    canvas.toBlob((blob) => {
+                        if (blob) resolve(blob);
+                        else reject(new Error('failed to create egg image blob'));
+                    }, 'image/png');
+                } catch (e) {
+                    reject(e);
+                }
+            };
+            img.onerror = () => reject(new Error('failed to load egg image'));
+            img.src = getEggDataUrl();
+        } catch (e) {
+            reject(e);
+        }
+    });
+    return defaultEggBlobPromise;
+}
+
+function petSpriteUv(cell, imageWidth, imageHeight) {
+    const x = Math.floor(cell.col * imageWidth / SHEET_COLS);
+    const y = Math.floor(cell.row * imageHeight / SHEET_ROWS);
+    const nextX = Math.floor((cell.col + 1) * imageWidth / SHEET_COLS);
+    const nextY = Math.floor((cell.row + 1) * imageHeight / SHEET_ROWS);
+    const width = Math.max(1, nextX - x);
+    const height = Math.max(1, nextY - y);
+    return {
+        x,
+        y,
+        width,
+        height,
+        row: cell.row,
+        col: cell.col,
+        cols: SHEET_COLS,
+        rows: SHEET_ROWS,
+        u0: x / imageWidth,
+        v0: y / imageHeight,
+        u1: (x + width) / imageWidth,
+        v1: (y + height) / imageHeight,
     };
 }
 
@@ -235,7 +464,7 @@ function coinValue() {
 
 function renderCoinPill(id, className) {
     return `
-        <span class="${className} mh-coin-amount" id="${id}" title="金币：玩耍和学习可获得，用来购买食物、家具和道具。" aria-label="金币 ${coinValue()}"
+        <span class="${className} mh-coin-amount" id="${id}" title="金币：玩耍可获得，用来购买食物、家具和道具。" aria-label="金币 ${coinValue()}"
             style="position:relative;height:30px;min-width:46px;padding:0 7px;border-radius:999px;background:rgba(255,255,255,.86);border:1px solid rgba(217,119,6,.24);display:inline-flex;align-items:center;justify-content:center;gap:3px;font-weight:900;font-size:12px;color:var(--accent-dark);box-shadow:0 2px 0 rgba(217,119,6,.12)">
             ${coinIconSvg()}
             <span data-mh-minigame-coins>${coinValue()}</span>
@@ -249,7 +478,7 @@ function refreshCoins({ previous = null, animate = false } = {}) {
         el.textContent = String(value);
         const pill = el.closest('.mh-minigame-coin-pill');
         if (pill) {
-            pill.title = '金币：玩耍和学习可获得，用来购买食物、家具和道具。';
+            pill.title = '金币：玩耍可获得，用来购买食物、家具和道具。';
             pill.setAttribute('aria-label', `金币 ${value}`);
             if (animate && typeof previous === 'number' && value !== previous) {
                 animateCoinPill(pill, value - previous);
@@ -277,37 +506,24 @@ function animateCoinPill(pill, delta) {
 }
 
 function playStatDelta(key) {
-    if (key === 'intel') return currentGame ? miniGameIntelReward(currentGame) : maxMiniGameIntelReward();
     return Number(CONFIG.actions.play?.[key]) || 0;
 }
 
 function isPlayAffectedStat(key) {
     if (typeof CONFIG.actions.play?.[key] === 'number') return true;
-    return key === 'intel' && maxMiniGameIntelReward() > 0;
-}
-
-function miniGameIntelReward(game) {
-    return Math.max(0, Math.round(Number(game?.intelReward) || 0));
-}
-
-function maxMiniGameIntelReward() {
-    return MINIGAMES.reduce((max, game) => Math.max(max, miniGameIntelReward(game)), 0);
+    return false;
 }
 
 function miniGameStatBonus(game) {
-    const intel = miniGameIntelReward(game);
-    return intel > 0 ? { intel } : {};
+    return {};
 }
 
 function canPlayGame(pet) {
-    return statValue(pet, 'energy') >= Math.abs(Number(CONFIG.actions.play?.energy) || 0);
+    return statValue(pet, 'hunger') >= Math.abs(Number(CONFIG.actions.play?.hunger) || 0);
 }
 
 function petStatTip(key, label, value, delta) {
-    if (key === 'intel' && !currentGame) {
-        return `${label} ${value}，部分游戏通关后最多 +${delta}`;
-    }
-    const effect = delta > 0 ? `完成游戏后 +${delta}` : `完成游戏后 ${delta}`;
+    const effect = delta > 0 ? `完成玩耍后 +${delta}` : `完成玩耍后 ${delta}`;
     return `${label} ${value}，${effect}`;
 }
 
@@ -387,7 +603,7 @@ function animateStatPill(pill, delta) {
 }
 
 function openGame(gameId) {
-    const game = MINIGAMES.find(item => item.id === gameId);
+    const game = PLAY_ITEMS.find(item => item.id === gameId);
     if (!game) return;
     if (!canPlayGame(currentPet)) {
         refreshPetStats();
@@ -400,11 +616,35 @@ function openGame(gameId) {
     const list = $('mhMinigameList');
     const wrap = $('mhMinigameFrameWrap');
     const frame = $('mhMinigameFrame');
+    const done = $('mhMinigameDone');
     if (!list || !wrap || !frame) return;
     list.style.display = 'none';
     wrap.style.display = 'block';
-    frame.src = `${game.src}?t=${Date.now()}`;
+    if (done) done.style.display = game.manualComplete ? 'block' : 'none';
+    frame.setAttribute('allow', game.allow || 'autoplay; fullscreen');
+    frame.src = `${game.src}${game.src.includes('?') ? '&' : '?'}t=${Date.now()}`;
     showToast(`开始 ${game.title}`, 'info', 1000);
+}
+
+function finishCurrentGame(onGameFinished, data = {}) {
+    if (!currentGame) return;
+    if (rewardedRound) return;
+    const finishedAt = data?.finishedAt || Date.now();
+    const roundKey = `${currentGame.id || 'game'}:${finishedAt}`;
+    rewardedRound = roundKey;
+    const beforeStats = capturePetStatValues(currentPet);
+    const beforeCoins = coinValue();
+    onGameFinished?.(currentGame, {
+        ...data,
+        completed: true,
+        startedAt: currentGameStartedAt || undefined,
+        finishedAt,
+        durationSeconds: activityDurationSeconds(data, currentGameStartedAt, finishedAt),
+        statBonus: miniGameStatBonus(currentGame),
+    });
+    if (Number(data?.earnedPoints) > 0) soundManager.playPointReward();
+    refreshCoins({ previous: beforeCoins, animate: true });
+    refreshPetStats({ previous: beforeStats, animate: true });
 }
 
 function activityDurationSeconds(data = {}, startedAt = 0, finishedAt = Date.now()) {
@@ -435,7 +675,9 @@ function destroyMinigameIframe() {
 function showList() {
     const list = $('mhMinigameList');
     const wrap = $('mhMinigameFrameWrap');
+    const done = $('mhMinigameDone');
     resetMinigameIframe();
+    if (done) done.style.display = 'none';
     if (wrap) wrap.style.display = 'none';
     if (list) list.style.display = 'grid';
     currentGame = null;

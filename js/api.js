@@ -1,5 +1,5 @@
 // AI 调用封装：DNA→图、聊天、摘要
-import { CONFIG } from './config.js';
+import { CONFIG, getStageName } from './config.js';
 import { dnaToPrompt } from './dna.js';
 import { state } from './state.js';
 import { loadPetMemory, appendPetMemory } from './storage.js';
@@ -81,7 +81,7 @@ export function buildPetSystemPrompt(pet, memoryText) {
     const lines = [
         `你是一只名字叫"${pet.name}"的可爱魔法宠物虚拟宠物。`,
         `血统：${traits.element || '陆地'}族。元素属性：${traits.elementalAttribute || '自然'}。外观特征：${traits.color || ''}的${traits.species || '小动物'}，${traits.eyes || ''}，${traits.accessory || ''}。`,
-        `成长阶段：${pet.stageName || pet.stage}。亲密度：${Math.round(pet.stats?.bond || 0)}/100。`,
+        `成长阶段：${getStageName(pet.stage, pet.stage)}。亲密度：${Math.round(pet.stats?.bond || 0)}/100。`,
         '',
         '人格设定：天真活泼、爱撒娇、用第三人称称呼自己（用名字代替"我"），偶尔用 ~ 或 ✨ 这种小符号，喜欢和主人聊天。',
         '回复要求：用简短中文（1-3 句话），自然轻松，不要长篇大论；偶尔提到自己的成长或想吃东西想玩；遇到不会的就说"我还在学呢"。',

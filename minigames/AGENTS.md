@@ -7,8 +7,8 @@ This repository contains a collection of single-page HTML5 educational games and
 
 ### Single-File Structure
 - **Every game is a standalone `.html` or `.md` file**
-- Games are organized by type: educational activities, character AI, mini-games, contests
-- Obsolete files are moved to `old_obsoleted_files/` directory
+- games are added to view_minigames.js
+
 
 ### Standard Technology Stack
 1. **Tailwind CSS**: Always use CDN version for styling
@@ -57,6 +57,103 @@ window.parent.postMessage({
   data: { earnedPoints, wpm, accuracy, difficulty } 
 }, '*');
 ```
+
+#### MagicHaqi Pet Images
+MagicHaqi minigames run inside an iframe. They can ask the parent MagicHaqi app for transparent pet sprite sheets that have already had their background removed. The parent only replies after the image blob is loaded and processed. If the current pet is still in the egg stage, the parent returns a default transparent egg PNG instead of failing.
+
+Request the current pet:
+
+```javascript
+const requestId = `pet_${Date.now()}`;
+window.parent.postMessage({
+  type: 'haqi_get_pet_image',
+  requestId,
+  // Optional: anim can be 'idle', 'happy', 'sad', or 'sleep'. Defaults to the pet's current anim.
+  anim: 'idle'
+}, '*');
+```
+
+Request all pets on the current planet, with the current pet first and at most 10 pets:
+
+```javascript
+window.parent.postMessage({
+  type: 'haqi_get_pet_images',
+  requestId: `pets_${Date.now()}`,
+  anim: 'idle'
+}, '*');
+```
+
+Handle responses:
+
+```javascript
+window.addEventListener('message', async (event) => {
+  const msg = event.data || {};
+  if (msg.type === 'haqi_pet_image' && msg.ok) {
+    await drawPetFromPayload(msg.data, ctx, 40, 60, 96, 96);
+  }
+  if (msg.type === 'haqi_pet_images' && msg.ok) {
+    for (const [index, pet] of msg.data.pets.entries()) {
+      await drawPetFromPayload(pet, ctx, 30 + index * 88, 80, 72, 72);
+    }
+  }
+});
+```
+
+Each pet payload has this shape:
+
+```javascript
+{
+  petId: '...',
+  name: '...',
+  stage: 'baby',
+  anim: 'idle',
+  imageBlob: Blob,       // PNG sprite sheet with transparent background, or a default egg PNG
+  imageType: 'image/png',
+  imageWidth: 1024,
+  imageHeight: 1024,
+  uv: {
+    x: 0, y: 0, width: 256, height: 256, // pixel rect inside the sheet
+    row: 0, col: 0, cols: 4, rows: 4,
+    u0: 0, v0: 0, u1: 0.25, v1: 0.25     // normalized texture coordinates
+  }
+}
+```
+
+Egg-stage pets use the same payload shape, but `stage` is `'egg'`, `anim` is `'egg'`, and `uv` covers the whole image with `cols: 1` and `rows: 1`.
+
+Canvas drawing helper:
+
+```javascript
+async function drawPetFromPayload(pet, ctx, dx, dy, dw, dh) {
+  const bitmap = await createImageBitmap(pet.imageBlob);
+  const { x, y, width, height } = pet.uv;
+  ctx.drawImage(bitmap, x, y, width, height, dx, dy, dw, dh);
+  bitmap.close?.();
+}
+```
+
+DOM image helper, useful when not using canvas:
+
+```javascript
+function makePetSpriteElement(pet) {
+  const url = URL.createObjectURL(pet.imageBlob);
+  const el = document.createElement('div');
+  el.style.width = '96px';
+  el.style.height = '96px';
+  el.style.backgroundImage = `url("${url}")`;
+  el.style.backgroundSize = pet.uv.cols > 1 || pet.uv.rows > 1
+    ? `${pet.uv.cols * 100}% ${pet.uv.rows * 100}%`
+    : 'contain';
+  el.style.backgroundPosition = pet.uv.cols > 1 || pet.uv.rows > 1
+    ? `${pet.uv.col * 100 / (pet.uv.cols - 1)}% ${pet.uv.row * 100 / (pet.uv.rows - 1)}%`
+    : 'center';
+  el.style.backgroundRepeat = 'no-repeat';
+  el.dataset.objectUrl = url;
+  return el;
+}
+```
+
+If a response has `ok: false`, read `error` and fall back to a local placeholder. For `haqi_pet_images`, `msg.data.errors` may contain per-pet failures while `msg.data.pets` still contains the pets that are ready.
 
 #### Game State Management
 - Track `gameStarted` flag globally to send `gameLoaded` only once

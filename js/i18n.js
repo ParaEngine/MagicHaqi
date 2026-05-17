@@ -1,6 +1,6 @@
 // 中文文案
 export const zhCN = {
-    appName: '魔法哈奇',
+    appName: '蛋蛋星球',
     tagline: '蛋蛋星球',
 
     // 通用
@@ -47,19 +47,15 @@ export const zhCN = {
     actionBath: '🛁 洗澡',
     actionPlay: '🎾 玩耍',
     actionSleep: '😴 睡觉',
-    actionStudy: '📚 学习',
-    actionHeal: '💊 看病',
     decorate: '🛠 装饰',
     exitDecor: '✓ 完成',
     rooms: '房间',
 
     // 状态
-    statHunger: '饥饿',
+    statHunger: '体力',
     statMood: '心情',
     statClean: '清洁',
     statEnergy: '体力',
-    statHealth: '健康',
-    statIntel: '智力',
     statBond: '亲密',
 
     // 商店/背包
