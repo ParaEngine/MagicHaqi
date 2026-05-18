@@ -50,6 +50,9 @@ function mountDevConsole() {
         addPoopsToCurrentField,
         setVip,
         fillCurrentPetStats,
+        setAllOtherPetsStage: (stageId = 'adult') => setAllExiledPetsStage(null, stageId),
+        setAllReleasedPetsStage: (stageId = 'adult') => setAllExiledPetsStage(null, stageId),
+        setAllExiledPetsStage: (stageId = 'adult') => setAllExiledPetsStage(null, stageId),
         resetCurrentPetToEgg,
         forceCurrentPetSleep,
         saveCurrentPetAttributes: () => saveCurrentPetAttributes(root),
@@ -61,6 +64,7 @@ function mountDevConsole() {
 
 function renderConsoleHtml() {
     const itemOptions = SHOP_ITEMS.map(item => `<option value="${escapeHtml(item.id)}">${escapeHtml(item.emoji)} ${escapeHtml(item.name)}</option>`).join('');
+    const stageOptions = CONFIG.stages.map(stage => `<option value="${escapeHtml(stage.id)}" ${stage.id === 'adult' ? 'selected' : ''}>${escapeHtml(stage.emoji)} ${escapeHtml(stage.name)}</option>`).join('');
     return `
         <div class="mh-dev-window">
             <div class="mh-dev-titlebar">
@@ -99,6 +103,14 @@ function renderConsoleHtml() {
                 <select data-dev-item>${itemOptions}</select>
                 <button type="button" data-dev-action="item">+1 物品</button>
             </div>
+            <div class="mh-dev-row mh-dev-exiled-stage-row">
+                <label class="mh-dev-bulk-stage-field">
+                    <span>其他宠物</span>
+                    <select data-dev-exiled-stage>${stageOptions}</select>
+                </label>
+                <button type="button" data-dev-action="exiled-stage">改阶段</button>
+            </div>
+            <div class="mh-dev-subtle" data-dev-exiled-count>其他宠物 0 只</div>
             <div class="mh-dev-section">
                 <div class="mh-dev-section-head">
                     <strong>当前宠物属性</strong>
@@ -139,6 +151,7 @@ function bindConsole(root) {
         if (action === 'mining-reset') resetPlanetMining(root.querySelector('[data-dev-mining-hours]')?.value);
         if (action === 'stats') fillCurrentPetStats();
         if (action === 'item') await addSelectedItem(root);
+        if (action === 'exiled-stage') await setAllExiledPetsStage(root);
         if (action === 'pet-sleep-toggle') forceCurrentPetSleep(!isPetSleeping(getCurrentPet()));
         if (action === 'pet-reset-egg') await resetCurrentPetToEgg();
         if (action === 'pet-save') saveCurrentPetAttributes(root);
@@ -165,6 +178,60 @@ function closeDevConsole(root) {
         root.__mhDevAnimHandler = null;
     }
     root.remove();
+}
+
+function getExiledPets() {
+    const currentId = state.currentPetId;
+    return (state.petOrder || [])
+        .filter(id => id && id !== currentId)
+        .map(id => state.pets?.[id])
+        .filter(Boolean);
+}
+
+function getStageById(stageId) {
+    return CONFIG.stages.find(stage => stage.id === stageId) || CONFIG.stages.find(stage => stage.id === 'adult') || CONFIG.stages[0];
+}
+
+function setPetStageForDev(pet, stage) {
+    if (!pet || !stage) return;
+    const now = Date.now();
+    const stageIndex = CONFIG.stages.findIndex(item => item.id === stage.id);
+    const nextStage = CONFIG.stages[stageIndex + 1];
+    const minHours = Math.max(0, Number(stage.minHours) || 0);
+    const nextHours = nextStage ? Math.max(minHours, Number(nextStage.minHours) || minHours) : minHours + 24;
+    const ageHours = stage.id === 'egg'
+        ? 0
+        : minHours + Math.max(0.01, (nextHours - minHours) / 2);
+
+    pet.stage = stage.id;
+    pet.bornAt = now - Math.round(ageHours * HOUR_MS);
+    pet.lastTickAt = now;
+    pet.lastCareAt = now;
+    pet.stats = pet.stats && typeof pet.stats === 'object' ? pet.stats : defaultStats();
+    if (stage.id === 'egg') {
+        pet.stats.hunger = 0;
+    } else if ((Number(pet.stats.hunger) || 0) <= 0) {
+        pet.stats.hunger = defaultStats().hunger;
+    }
+    if (CONFIG.breedableStages.includes(stage.id)) pet.everAdult = true;
+    delete pet.eggHatchPending;
+    delete pet.eggHatchRequestedAt;
+}
+
+async function setAllExiledPetsStage(root, stageId = null) {
+    const selectedStageId = stageId || root?.querySelector('[data-dev-exiled-stage]')?.value || 'adult';
+    const stage = getStageById(selectedStageId);
+    if (!stage) return 0;
+    const pets = getExiledPets();
+    if (!pets.length) {
+        showToast('开发者：没有其他宠物', 'info', 1400);
+        return 0;
+    }
+    pets.forEach(pet => setPetStageForDev(pet, stage));
+    await Promise.all(pets.map(pet => savePet(pet)));
+    notify();
+    showToast(`开发者：其他宠物 ${pets.length} 只已改为${stage.name}`, 'success', 1600);
+    return pets.length;
 }
 
 function addCoins(amount) {
@@ -563,6 +630,11 @@ function refreshConsole(root, { preserveEditorFocus = false } = {}) {
         vipButton.textContent = state.isPaid ? '已开启' : '开启';
         vipButton.classList.toggle('enabled', !!state.isPaid);
     }
+    const exiledCount = getExiledPets().length;
+    const exiledCountEl = root.querySelector('[data-dev-exiled-count]');
+    if (exiledCountEl) exiledCountEl.textContent = `其他宠物 ${exiledCount} 只`;
+    const exiledStageButton = root.querySelector('[data-dev-action="exiled-stage"]');
+    if (exiledStageButton) exiledStageButton.disabled = exiledCount === 0;
     const pet = getCurrentPet();
     const petTitle = root.querySelector('[data-dev-pet-title]');
     if (petTitle) {
@@ -750,7 +822,8 @@ function injectStyles() {
         .mh-dev-mining-row {
             align-items: stretch;
         }
-        .mh-dev-mining-field {
+        .mh-dev-mining-field,
+        .mh-dev-bulk-stage-field {
             flex: 1 1 auto;
             min-width: 0;
             display: flex;
@@ -760,7 +833,8 @@ function injectStyles() {
             font-size: 11px;
             font-weight: 900;
         }
-        .mh-dev-mining-field span {
+        .mh-dev-mining-field span,
+        .mh-dev-bulk-stage-field span {
             flex: 0 0 auto;
             white-space: nowrap;
         }
@@ -772,6 +846,16 @@ function injectStyles() {
             border-radius: 10px;
             padding: 0 8px;
             background: #fffdf4;
+        }
+        .mh-dev-bulk-stage-field select {
+            flex: 1 1 auto;
+            min-width: 74px;
+        }
+        .mh-dev-subtle {
+            margin-top: -5px;
+            color: #92400e;
+            font-size: 11px;
+            font-weight: 800;
         }
         .mh-dev-window button:not(.mh-dev-close) {
             min-height: 32px;

@@ -1,0 +1,932 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+  <title>哈奇寻食蜂巢</title>
+  <script src="https://cdn.keepwork.com/keepwork/cdn/tailwindcss@3.4.16.js"></script>
+</head>
+
+<body></body>
+<script defer>
+(function () {
+  const STORAGE_KEY_LEVEL = 'haqiFoodHexcellsLevel';
+  const STORAGE_KEY_BEST = 'haqiFoodHexcellsBest';
+  const FALLBACK_PET = '🐾';
+  const FOOD_ICONS = ['🍎', '🍓', '🥕', '🍪', '🍯'];
+  const DIFFICULTIES = {
+    easy: { id: 'easy', label: '轻松', radius: 4, maxRadius: 5, traps: 7, foods: 11, target: 6, clues: 14, emptyCells: 2, reward: 90 },
+    normal: { id: 'normal', label: '标准', radius: 4, maxRadius: 5, traps: 10, foods: 14, target: 8, clues: 13, emptyCells: 3, reward: 115 },
+    hard: { id: 'hard', label: '挑战', radius: 5, maxRadius: 6, traps: 15, foods: 19, target: 12, clues: 18, emptyCells: 5, reward: 150 },
+  };
+  const DIFFICULTY_ORDER = ['easy', 'normal', 'hard'];
+  const NEIGHBORS = [
+    [1, 0], [1, -1], [0, -1], [-1, 0], [-1, 1], [0, 1]
+  ];
+
+  const state = {
+    difficulty: 'normal',
+    level: Math.max(1, Number(localStorage.getItem(STORAGE_KEY_LEVEL) || 1)),
+    best: Math.max(0, Number(localStorage.getItem(STORAGE_KEY_BEST) || 0)),
+    levelConfig: null,
+    cells: [],
+    cellMap: new Map(),
+    started: false,
+    finished: false,
+    flagMode: false,
+    collected: 0,
+    opened: 0,
+    flags: 0,
+    mistakes: 0,
+    seconds: 0,
+    timer: null,
+    petAsset: null,
+    objectUrls: [],
+    longPressTimer: null,
+    skipNextClick: false,
+    skipClickCellId: null,
+    pointerMark: null,
+  };
+
+  const sound = {
+    ctx: null,
+    masterGain: null,
+  };
+
+  const root = document.createElement('div');
+  root.id = 'haqiFoodHexcells';
+  root.innerHTML = `
+    <style>
+      * { box-sizing: border-box; -webkit-tap-highlight-color: transparent; }
+      html, body { width: 100%; height: 100%; margin: 0; overflow: hidden; }
+      body {
+        font-family: -apple-system, BlinkMacSystemFont, 'PingFang SC', 'Microsoft YaHei', sans-serif;
+        color: #15324b;
+        background:
+          radial-gradient(circle at 18% 15%, rgba(255,255,255,.82) 0 7%, transparent 22%),
+          radial-gradient(circle at 78% 20%, rgba(125,211,252,.34) 0 9%, transparent 24%),
+          linear-gradient(180deg, #d9f99d 0%, #fef3c7 48%, #bae6fd 100%);
+        touch-action: none;
+        user-select: none;
+      }
+      .mh-bg { position: fixed; inset: 0; pointer-events: none; overflow: hidden; }
+      .mh-bg::before {
+        content: ''; position: absolute; inset: -12%; opacity: .18;
+        background:
+          linear-gradient(30deg, transparent 23%, rgba(22,101,52,.18) 24% 26%, transparent 27% 73%, rgba(22,101,52,.18) 74% 76%, transparent 77%),
+          linear-gradient(90deg, transparent 23%, rgba(22,101,52,.14) 24% 26%, transparent 27% 73%, rgba(22,101,52,.14) 74% 76%, transparent 77%);
+        background-size: 62px 36px;
+        transform: rotate(-8deg);
+      }
+      .mh-shell { position: relative; z-index: 1; height: 100vh; height: 100dvh; display: grid; grid-template-rows: auto minmax(0,1fr) auto; gap: 8px; padding: 8px; overflow: hidden; }
+      .mh-top {
+        min-height: 48px; display: grid; grid-template-columns: 38px minmax(0,1fr) auto; align-items: center; gap: 8px;
+        padding: 7px 9px; border-radius: 14px; background: rgba(255,255,255,.9); border: 2px solid rgba(255,255,255,.96);
+        box-shadow: 0 5px 0 rgba(14,116,144,.13), 0 12px 24px rgba(15,23,42,.12);
+      }
+      .mh-title { min-width: 0; text-align: center; font-size: 17px; font-weight: 1000; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+      .mh-stats { display: flex; align-items: center; justify-content: flex-end; gap: 5px; flex-wrap: wrap; }
+      .mh-pill { height: 29px; min-width: 48px; display: inline-flex; align-items: center; justify-content: center; gap: 3px; padding: 0 8px; border-radius: 999px; background: #fff; border: 1px solid rgba(14,116,144,.2); color: #0f766e; font-size: 12px; font-weight: 900; box-shadow: 0 2px 0 rgba(14,116,144,.12); }
+      .mh-icon-btn, .mh-action, .mh-start, .mh-next, .mh-difficulty, .mh-flag-toggle { border: 0; cursor: pointer; font-weight: 900; }
+      .mh-icon-btn { width: 34px; height: 34px; border-radius: 999px; background: linear-gradient(180deg, #fb923c, #ea580c); color: white; box-shadow: 0 3px 0 #9a3412; font-size: 18px; }
+      .mh-stage { min-height: 0; display: grid; place-items: center; overflow: hidden; }
+      .mh-board-wrap {
+        position: relative; width: min(96vw, calc(100vh - 132px), 650px); max-width: calc(100vw - 16px); max-height: 100%; aspect-ratio: 1;
+        border-radius: 18px; border: 3px solid rgba(255,255,255,.94); background: linear-gradient(145deg, #0f766e, #16a34a 48%, #0e7490);
+        box-shadow: 0 18px 36px rgba(15,23,42,.22), inset 0 2px 0 rgba(255,255,255,.28), inset 0 -8px 0 rgba(20,83,45,.2);
+        overflow: hidden;
+      }
+      .mh-board { position: absolute; inset: 7px; overflow: hidden; border-radius: 14px; background: rgba(240,253,250,.34); }
+      .mh-cell {
+        position: absolute; width: var(--hex); height: calc(var(--hex) * 1.16); transform: translate(-50%, -50%);
+        border: 0; padding: 0; clip-path: polygon(50% 0%, 94% 25%, 94% 75%, 50% 100%, 6% 75%, 6% 25%);
+        display: grid; place-items: center; cursor: pointer; color: #fff; font-weight: 1000; font-size: calc(var(--hex) * .42);
+        transition: transform .12s ease, filter .12s ease, opacity .18s ease;
+      }
+      .mh-cell:active { transform: translate(-50%, -50%) scale(.94); }
+      .mh-cell.hidden {
+        background:
+          radial-gradient(circle at 35% 22%, rgba(255,255,255,.72), transparent 22%),
+          linear-gradient(180deg, #fde047, #f59e0b 72%, #d97706);
+        box-shadow: inset 0 3px 7px rgba(255,255,255,.38), inset 0 -6px 9px rgba(120,53,15,.22), 0 4px 0 #b45309, 0 8px 12px rgba(15,23,42,.15);
+      }
+      .mh-cell.hidden::before {
+        content: ''; position: absolute; inset: 12%; clip-path: inherit; opacity: .24;
+        background: linear-gradient(135deg, rgba(255,255,255,.9), transparent 44%);
+      }
+      .mh-cell.clue {
+        cursor: default; background: linear-gradient(180deg, #334155, #111827); color: #fff;
+        text-shadow: 0 2px 0 rgba(0,0,0,.35); box-shadow: inset 0 2px 0 rgba(255,255,255,.16), 0 4px 0 #020617, 0 8px 12px rgba(15,23,42,.2);
+      }
+      .mh-cell.open { cursor: default; background: linear-gradient(180deg, #f8fafc, #dcfce7); color: #166534; box-shadow: inset 0 2px 0 rgba(255,255,255,.8), inset 0 -3px 0 rgba(22,163,74,.16); }
+      .mh-cell.food { background: linear-gradient(180deg, #ecfdf5, #bbf7d0); color: #15803d; animation: mhFoodPop .35s ease-out; }
+      .mh-cell.trap { background: linear-gradient(180deg, #475569, #111827); color: #fef2f2; animation: mhTrap .42s ease-in-out; }
+      .mh-cell.flagged { background: linear-gradient(180deg, #38bdf8, #0284c7 68%, #0369a1); color: #ef4444; text-shadow: 0 2px 0 rgba(255,255,255,.78), 0 4px 5px rgba(15,23,42,.28); box-shadow: inset 0 3px 7px rgba(255,255,255,.3), 0 4px 0 #075985, 0 8px 12px rgba(15,23,42,.16); }
+      .mh-cell.drag-placeholder {
+        background: linear-gradient(180deg, rgba(255,255,255,.94), rgba(220,252,231,.9)); color: #0f766e;
+        box-shadow: inset 0 2px 0 rgba(255,255,255,.82), inset 0 -3px 0 rgba(22,163,74,.16), 0 0 0 2px rgba(255,255,255,.72);
+      }
+      .mh-cell.mark-wrong { filter: grayscale(.1) brightness(.92); }
+      .mh-cell .tiny { font-size: calc(var(--hex) * .3); line-height: 1; }
+      .mh-cell .food-icon { font-size: calc(var(--hex) * .62); line-height: 1; filter: drop-shadow(0 2px 0 rgba(255,255,255,.72)) drop-shadow(0 4px 3px rgba(15,23,42,.2)); }
+      .mh-drag-ghost {
+        position: fixed; z-index: 47; width: var(--ghost-w); height: var(--ghost-h); transform: translate(-50%, -50%) scale(1.04);
+        clip-path: polygon(50% 0%, 94% 25%, 94% 75%, 50% 100%, 6% 75%, 6% 25%);
+        background: radial-gradient(circle at 35% 22%, rgba(255,255,255,.72), transparent 22%), linear-gradient(180deg, #fde047, #f59e0b 72%, #d97706);
+        box-shadow: inset 0 3px 7px rgba(255,255,255,.38), inset 0 -6px 9px rgba(120,53,15,.22), 0 10px 18px rgba(15,23,42,.28);
+        pointer-events: none; opacity: .96;
+      }
+      .mh-fragment {
+        position: fixed; z-index: 38; width: var(--frag-size); height: var(--frag-size); border-radius: 3px;
+        background: var(--frag-color); box-shadow: inset 0 1px 0 rgba(255,255,255,.32), 0 3px 6px rgba(15,23,42,.18);
+        pointer-events: none; animation: mhFragmentFall var(--frag-duration) ease-in forwards;
+      }
+      .mh-food-fly {
+        position: fixed; left: var(--from-x); top: var(--from-y); z-index: 46; width: 1em; height: 1em;
+        display: grid; place-items: center; font-size: clamp(32px, 8vw, 54px); line-height: 1;
+        transform: translate(-50%, -50%); filter: drop-shadow(0 5px 4px rgba(15,23,42,.28));
+        pointer-events: none; animation: mhFoodFly .82s cubic-bezier(.74,0,.86,.34) forwards;
+      }
+      .mh-pet {
+        position: absolute; left: 4px; bottom: 4px; z-index: 4; width: clamp(56px, 13vw, 92px); height: clamp(56px, 13vw, 92px);
+        filter: drop-shadow(0 7px 4px rgba(15,23,42,.26)); pointer-events: none;
+      }
+      .mh-pet .sprite { width: 100%; height: 100%; background-repeat: no-repeat; background-position: center; background-size: contain; }
+      .mh-pet .fallback { width: 100%; height: 100%; display: grid; place-items: center; font-size: clamp(34px, 8vw, 62px); }
+      .mh-bottom { display: grid; grid-template-columns: minmax(0,1fr) auto; align-items: center; gap: 8px; min-height: 48px; }
+      .mh-controls { min-width: 0; display: flex; align-items: center; justify-content: center; gap: 6px; flex-wrap: wrap; }
+      .mh-action { height: 34px; border-radius: 999px; padding: 0 12px; background: linear-gradient(180deg, #38bdf8, #0284c7); color: white; box-shadow: 0 4px 0 #075985; }
+      .mh-action.help { background: linear-gradient(180deg, #fb923c, #ea580c); box-shadow-color: #9a3412; }
+      .mh-gesture-hint { min-height: 34px; display: inline-flex; align-items: center; justify-content: center; padding: 0 12px; border-radius: 999px; background: rgba(255,255,255,.9); border: 1px solid rgba(14,116,144,.2); color: #0f766e; font-size: 13px; font-weight: 900; box-shadow: 0 3px 0 rgba(14,116,144,.16); white-space: nowrap; }
+      .mh-difficulties { display: flex; align-items: center; gap: 4px; padding: 4px; border-radius: 999px; background: rgba(255,255,255,.78); border: 1px solid rgba(14,116,144,.16); overflow-x: auto; }
+      .mh-difficulty { flex: 0 0 auto; height: 28px; min-width: 44px; padding: 0 9px; border-radius: 999px; background: transparent; color: #0f766e; font-size: 12px; }
+      .mh-difficulty.active { background: linear-gradient(180deg, #34d399, #16a34a); color: white; box-shadow: 0 2px 0 #15803d; }
+      .mh-overlay { position: fixed; inset: 0; z-index: 40; display: flex; align-items: center; justify-content: center; padding: 18px; background: rgba(15,39,71,.46); }
+      .mh-card { width: min(92vw, 420px); padding: 20px; border-radius: 18px; background: linear-gradient(180deg, #fff, #f0fdf4); border: 3px solid #86efac; box-shadow: 0 18px 44px rgba(15,23,42,.28); text-align: center; }
+      .mh-card h1 { margin: 0 0 10px; color: #16324f; font-size: 25px; font-weight: 1000; }
+      .mh-card p { margin: 0 0 15px; color: #0f766e; font-size: 15px; font-weight: 800; line-height: 1.55; }
+      .mh-start, .mh-next { border-radius: 999px; padding: 10px 22px; background: linear-gradient(180deg, #34d399, #16a34a); color: white; box-shadow: 0 5px 0 #15803d; }
+      .mh-toast { position: fixed; left: 50%; top: 50%; z-index: 45; transform: translate(-50%, -50%); min-width: min(300px, 82vw); padding: 18px 22px; border-radius: 18px; background: white; border: 3px solid #86efac; color: #15803d; font-size: 22px; font-weight: 1000; text-align: center; box-shadow: 0 18px 42px rgba(15,23,42,.24); animation: mhToast 1.35s ease-out forwards; pointer-events: none; }
+      .mh-confetti { position: fixed; top: -16px; z-index: 48; width: 9px; height: 15px; border-radius: 3px; background: var(--c); animation: mhConfetti var(--d) ease-in forwards; pointer-events: none; }
+      [hidden] { display: none !important; }
+      @keyframes mhFoodPop { 0% { transform: translate(-50%, -50%) scale(.72); } 70% { transform: translate(-50%, -50%) scale(1.08); } 100% { transform: translate(-50%, -50%) scale(1); } }
+      @keyframes mhTrap { 0%,100% { transform: translate(-50%, -50%); } 25% { transform: translate(calc(-50% - 5px), -50%); } 75% { transform: translate(calc(-50% + 5px), -50%); } }
+      @keyframes mhFragmentFall { 0% { opacity: 1; transform: translate(0, 0) rotate(0deg) scale(1); } 100% { opacity: 0; transform: translate(var(--frag-x), var(--frag-y)) rotate(var(--frag-rot)) scale(.72); } }
+      @keyframes mhFoodFly {
+        0% { opacity: 1; transform: translate(-50%, -50%) scale(1); }
+        34% { opacity: 1; transform: translate(calc((var(--to-x) - var(--from-x)) * .12 - 50%), calc((var(--to-y) - var(--from-y)) * .12 - 50% - 10px)) scale(1.08); }
+        82% { opacity: 1; transform: translate(calc(var(--to-x) - var(--from-x) - 50%), calc(var(--to-y) - var(--from-y) - 50%)) scale(.78); }
+        100% { opacity: 0; transform: translate(calc(var(--to-x) - var(--from-x) - 50%), calc(var(--to-y) - var(--from-y) - 50%)) scale(.42); }
+      }
+      @keyframes mhToast { 0% { opacity: 0; transform: translate(-50%, -40%) scale(.82); } 18% { opacity: 1; transform: translate(-50%, -50%) scale(1); } 100% { opacity: 0; transform: translate(-50%, -78%) scale(.94); } }
+      @keyframes mhConfetti { 100% { opacity: 0; transform: translate3d(var(--x), 112vh, 0) rotate(680deg); } }
+      @media (max-width: 520px) {
+        .mh-shell { gap: 6px; padding: 6px; }
+        .mh-top { grid-template-columns: 36px 1fr; }
+        .mh-stats { grid-column: 1 / -1; justify-content: center; }
+        .mh-bottom { grid-template-columns: 1fr; justify-items: center; }
+        .mh-board-wrap { width: min(98vw, calc(100vh - 212px)); }
+      }
+      @media (max-height: 570px) {
+        .mh-stats .optional { display: none; }
+        .mh-bottom { position: absolute; left: 8px; right: 8px; bottom: 8px; pointer-events: none; }
+        .mh-controls, .mh-difficulties { pointer-events: auto; }
+        .mh-board-wrap { width: min(86vmin, 620px); }
+      }
+    </style>
+    <div class="mh-bg" aria-hidden="true"></div>
+    <div class="mh-shell">
+      <header class="mh-top">
+        <button id="mhMenu" class="mh-icon-btn" type="button" aria-label="玩法">?</button>
+        <div class="mh-title">哈奇寻食蜂巢 Lv.<span id="mhLevel">1</span></div>
+        <div class="mh-stats" aria-label="游戏状态">
+          <span class="mh-pill">食物 <b id="mhFood">0</b>/<b id="mhTarget">0</b></span>
+          <span class="mh-pill optional">陷阱 <b id="mhTraps">0</b></span>
+          <span class="mh-pill optional"><b id="mhTime">0</b>s</span>
+        </div>
+      </header>
+      <main class="mh-stage">
+        <div class="mh-board-wrap">
+          <div id="mhBoard" class="mh-board" aria-label="寻找食物蜂巢棋盘"></div>
+          <div id="mhPet" class="mh-pet" aria-hidden="true"><div class="fallback">${FALLBACK_PET}</div></div>
+        </div>
+      </main>
+      <footer class="mh-bottom">
+        <div class="mh-controls">
+          <span class="mh-gesture-hint">点击清理，拖动标记陷阱</span>
+          <button id="mhHelp" class="mh-action help" type="button">玩法</button>
+          <button id="mhRestart" class="mh-action" type="button">重开</button>
+          <button id="mhNext" class="mh-action" type="button" hidden>下一局</button>
+        </div>
+        <div id="mhDifficulties" class="mh-difficulties" aria-label="难度选择"></div>
+      </footer>
+    </div>
+    <div id="mhOverlay" class="mh-overlay" role="dialog" aria-modal="true" aria-labelledby="mhOverlayTitle">
+      <div class="mh-card">
+        <h1 id="mhOverlayTitle">寻找食物</h1>
+        <p id="mhOverlayText">黑色蜂巢上的数字表示周围有几个陷阱。点击黄色空地清理并寻找食物；拖动可疑格子可标记陷阱，电脑也可右键标记。每局收集到目标数量的食物就胜利。</p>
+        <button id="mhStart" class="mh-start" type="button">开始寻找</button>
+      </div>
+    </div>
+  `;
+  document.body.appendChild(root);
+
+  const boardEl = document.getElementById('mhBoard');
+  const overlayEl = document.getElementById('mhOverlay');
+  const overlayTitleEl = document.getElementById('mhOverlayTitle');
+  const overlayTextEl = document.getElementById('mhOverlayText');
+  const startBtn = document.getElementById('mhStart');
+
+  function post(type, data = {}) {
+    try { window.parent.postMessage({ type, data }, '*'); } catch (_) {}
+  }
+
+  function rand(min, max) {
+    return Math.floor(Math.random() * (max - min + 1)) + min;
+  }
+
+  function ensureAudio() {
+    try {
+      if (!sound.ctx) {
+        const AudioContext = window.AudioContext || window.webkitAudioContext;
+        if (!AudioContext) return null;
+        sound.ctx = new AudioContext();
+        sound.masterGain = sound.ctx.createGain();
+        sound.masterGain.gain.value = 0.55;
+        sound.masterGain.connect(sound.ctx.destination);
+      }
+      if (sound.ctx.state === 'suspended') sound.ctx.resume();
+      return sound.ctx;
+    } catch (_) {
+      return null;
+    }
+  }
+
+  function playTone(frequency, duration, options = {}) {
+    const ctx = ensureAudio();
+    if (!ctx || !sound.masterGain) return;
+    const startAt = ctx.currentTime + (options.delay || 0);
+    const stopAt = startAt + duration;
+    const osc = ctx.createOscillator();
+    const gain = ctx.createGain();
+    osc.type = options.type || 'sine';
+    osc.frequency.setValueAtTime(frequency, startAt);
+    if (options.endFrequency) osc.frequency.exponentialRampToValueAtTime(Math.max(20, options.endFrequency), stopAt);
+    gain.gain.setValueAtTime(0.0001, startAt);
+    gain.gain.exponentialRampToValueAtTime(options.gain || 0.08, startAt + 0.018);
+    gain.gain.exponentialRampToValueAtTime(0.0001, stopAt);
+    osc.connect(gain);
+    gain.connect(sound.masterGain);
+    osc.start(startAt);
+    osc.stop(stopAt + 0.02);
+  }
+
+  function playNoise(duration, options = {}) {
+    const ctx = ensureAudio();
+    if (!ctx || !sound.masterGain) return;
+    const startAt = ctx.currentTime + (options.delay || 0);
+    const sampleCount = Math.max(1, Math.floor(ctx.sampleRate * duration));
+    const buffer = ctx.createBuffer(1, sampleCount, ctx.sampleRate);
+    const data = buffer.getChannelData(0);
+    for (let index = 0; index < sampleCount; index++) data[index] = (Math.random() * 2 - 1) * (1 - index / sampleCount);
+    const source = ctx.createBufferSource();
+    const filter = ctx.createBiquadFilter();
+    const gain = ctx.createGain();
+    source.buffer = buffer;
+    filter.type = options.filterType || 'bandpass';
+    filter.frequency.value = options.frequency || 900;
+    filter.Q.value = options.q || 0.8;
+    gain.gain.setValueAtTime(options.gain || 0.06, startAt);
+    gain.gain.exponentialRampToValueAtTime(0.0001, startAt + duration);
+    source.connect(filter);
+    filter.connect(gain);
+    gain.connect(sound.masterGain);
+    source.start(startAt);
+  }
+
+  function playSound(name) {
+    if (name === 'start') {
+      playTone(392, 0.08, { type: 'triangle', gain: 0.045 });
+      playTone(523.25, 0.11, { type: 'triangle', gain: 0.05, delay: 0.07 });
+      return;
+    }
+    if (name === 'break') {
+      playNoise(0.12, { frequency: 1250, gain: 0.045 });
+      playTone(180, 0.08, { type: 'triangle', gain: 0.025, endFrequency: 120 });
+      return;
+    }
+    if (name === 'food') {
+      playTone(659.25, 0.08, { type: 'sine', gain: 0.06 });
+      playTone(880, 0.12, { type: 'sine', gain: 0.065, delay: 0.06 });
+      playTone(1174.66, 0.15, { type: 'triangle', gain: 0.045, delay: 0.14 });
+      return;
+    }
+    if (name === 'flag') {
+      playTone(420, 0.07, { type: 'square', gain: 0.035 });
+      playTone(560, 0.08, { type: 'square', gain: 0.028, delay: 0.055 });
+      return;
+    }
+    if (name === 'unflag') {
+      playTone(520, 0.06, { type: 'square', gain: 0.025, endFrequency: 360 });
+      return;
+    }
+    if (name === 'trap') {
+      playNoise(0.28, { filterType: 'lowpass', frequency: 520, gain: 0.09 });
+      playTone(160, 0.28, { type: 'sawtooth', gain: 0.055, endFrequency: 70 });
+      return;
+    }
+    if (name === 'win') {
+      [523.25, 659.25, 783.99, 1046.5].forEach((frequency, index) => {
+        playTone(frequency, 0.13, { type: 'triangle', gain: 0.055, delay: index * 0.09 });
+      });
+    }
+  }
+
+  function shuffle(items) {
+    const arr = items.slice();
+    for (let i = arr.length - 1; i > 0; i--) {
+      const j = rand(0, i);
+      [arr[i], arr[j]] = [arr[j], arr[i]];
+    }
+    return arr;
+  }
+
+  function key(q, r) { return `${q},${r}`; }
+
+  function config() {
+    if (state.levelConfig) return state.levelConfig;
+    state.levelConfig = createLevelConfig();
+    return state.levelConfig;
+  }
+
+  function createLevelConfig() {
+    return DIFFICULTIES[state.difficulty] || DIFFICULTIES.normal;
+  }
+
+  function makeLevelConfig(base = DIFFICULTIES.normal, level = 1) {
+    const stage = Math.max(0, Math.floor((level - 1) / 2));
+    const radius = Math.min(base.maxRadius || base.radius, base.radius + Math.floor(stage / 3));
+    const cellCount = 1 + 3 * radius * (radius + 1);
+    const emptyCells = Math.min(Math.floor(cellCount * .14), Math.max(0, base.emptyCells + Math.floor(stage / 2) + rand(0, 2)));
+    const playableCells = Math.max(12, cellCount - emptyCells);
+    const traps = Math.min(Math.floor(playableCells * .28), base.traps + stage * 2 + rand(0, 2));
+    const foods = Math.min(Math.floor(playableCells * .36), base.foods + stage * 2 + rand(0, 3));
+    const target = Math.min(foods, base.target + Math.floor(stage * 1.5) + rand(0, 1));
+    const clues = Math.min(Math.floor(playableCells * .34), base.clues + stage + rand(-2, 3));
+    return {
+      ...base,
+      radius,
+      traps: Math.max(3, traps),
+      foods: Math.max(target, foods),
+      target: Math.max(3, target),
+      clues: Math.max(6, clues),
+      emptyCells,
+      level,
+    };
+  }
+
+  function buildDifficulties() {
+    const wrap = document.getElementById('mhDifficulties');
+    wrap.innerHTML = DIFFICULTY_ORDER.map(id => `<button class="mh-difficulty" type="button" data-difficulty="${id}">${DIFFICULTIES[id].label}</button>`).join('');
+    wrap.querySelectorAll('[data-difficulty]').forEach(btn => {
+      btn.onclick = () => {
+        if (state.difficulty === btn.dataset.difficulty) return;
+        state.difficulty = btn.dataset.difficulty;
+        startGame();
+      };
+    });
+  }
+
+  function makeCells(radius) {
+    const cells = [];
+    for (let q = -radius; q <= radius; q++) {
+      const r1 = Math.max(-radius, -q - radius);
+      const r2 = Math.min(radius, -q + radius);
+      for (let r = r1; r <= r2; r++) {
+        cells.push({ q, r, id: key(q, r), clue: false, trap: false, food: false, collectedFood: false, open: false, flagged: false, n: 0, foodIcon: FOOD_ICONS[rand(0, FOOD_ICONS.length - 1)] });
+      }
+    }
+    return cells;
+  }
+
+  function neighbors(cell) {
+    return NEIGHBORS.map(([dq, dr]) => state.cellMap.get(key(cell.q + dq, cell.r + dr))).filter(Boolean);
+  }
+
+  function generateBoard() {
+    state.levelConfig = makeLevelConfig(DIFFICULTIES[state.difficulty] || DIFFICULTIES.normal, state.level);
+    const cfg = config();
+    state.cells = carveEmptyCells(makeCells(cfg.radius), cfg);
+    state.cellMap = new Map(state.cells.map(cell => [cell.id, cell]));
+    const center = state.cellMap.get('0,0');
+    if (center) center.clue = true;
+
+    const playableCount = state.cells.length;
+    const maxClues = Math.max(4, playableCount - cfg.target - cfg.traps - 4);
+    const clueCount = Math.max(4, Math.min(cfg.clues, maxClues));
+    const cluePool = shuffle(state.cells.filter(cell => !cell.clue && Math.max(Math.abs(cell.q), Math.abs(cell.r), Math.abs(-cell.q - cell.r)) > 1));
+    cluePool.slice(0, clueCount).forEach(cell => { cell.clue = true; });
+
+    const hidden = shuffle(state.cells.filter(cell => !cell.clue));
+    const trapCount = Math.min(cfg.traps, Math.max(1, hidden.length - cfg.target));
+    hidden.slice(0, trapCount).forEach(cell => { cell.trap = true; });
+    const foodCount = Math.min(cfg.foods, hidden.filter(cell => !cell.trap).length);
+    shuffle(hidden.filter(cell => !cell.trap)).slice(0, foodCount).forEach(cell => { cell.food = true; });
+    cfg.clues = clueCount;
+    cfg.traps = trapCount;
+    cfg.foods = foodCount;
+    cfg.target = Math.min(cfg.target, foodCount);
+
+    state.cells.forEach(cell => {
+      cell.n = neighbors(cell).filter(n => n.trap).length;
+    });
+  }
+
+  function carveEmptyCells(cells, cfg) {
+    const emptyCount = Math.max(0, Math.min(cells.length - 16, Math.round(cfg.emptyCells || 0)));
+    if (!emptyCount) return cells;
+    const selected = new Set();
+    const candidates = shuffle(cells.filter(cell => cell.id !== '0,0' && Math.max(Math.abs(cell.q), Math.abs(cell.r), Math.abs(-cell.q - cell.r)) > 1));
+    for (const cell of candidates) {
+      if (selected.size >= emptyCount) break;
+      const neighborHoles = NEIGHBORS.filter(([dq, dr]) => selected.has(key(cell.q + dq, cell.r + dr))).length;
+      if (neighborHoles > 1) continue;
+      selected.add(cell.id);
+    }
+    return cells.filter(cell => !selected.has(cell.id));
+  }
+
+  function startTimer() {
+    clearInterval(state.timer);
+    state.seconds = 0;
+    state.timer = setInterval(() => {
+      if (!state.started || state.finished) return;
+      state.seconds++;
+      document.getElementById('mhTime').textContent = String(state.seconds);
+    }, 1000);
+  }
+
+  function startGame() {
+    const cfg = config();
+    state.started = true;
+    state.finished = false;
+    state.collected = 0;
+    state.opened = 0;
+    state.flags = 0;
+    state.mistakes = 0;
+    state.flagMode = false;
+    state.pointerMark = null;
+    document.getElementById('mhNext').hidden = true;
+    generateBoard();
+    renderBoard();
+    updateHud();
+    startTimer();
+    hideOverlay();
+    playSound('start');
+    post('gameStarted', { difficulty: state.difficulty, level: state.level });
+  }
+
+  function renderBoard() {
+    const centers = state.cells.map(cell => ({
+      cell,
+      x: Math.sqrt(3) * (cell.q + cell.r / 2),
+      y: 1.5 * cell.r,
+    }));
+    const xs = centers.map(item => item.x);
+    const ys = centers.map(item => item.y);
+    const minX = Math.min(...xs);
+    const maxX = Math.max(...xs);
+    const minY = Math.min(...ys);
+    const maxY = Math.max(...ys);
+    const hexCoordWidth = Math.sqrt(3);
+    const hexCoordHeight = 2;
+    const pad = 4;
+    const scale = Math.min(
+      (100 - pad * 2) / (maxX - minX + hexCoordWidth),
+      (100 - pad * 2) / (maxY - minY + hexCoordHeight)
+    );
+    const hexPercent = hexCoordWidth * scale * .985;
+    boardEl.style.setProperty('--hex', `${hexPercent}%`);
+    boardEl.innerHTML = '';
+
+    centers.forEach(({ cell, x, y }) => {
+      const left = pad + (hexCoordWidth * scale / 2) + (x - minX) * scale;
+      const top = pad + (hexCoordHeight * scale / 2) + (y - minY) * scale;
+      const btn = document.createElement('button');
+      btn.type = 'button';
+      btn.className = cellClass(cell);
+      btn.style.left = `${left}%`;
+      btn.style.top = `${top}%`;
+      btn.dataset.id = cell.id;
+      btn.setAttribute('aria-label', cellLabel(cell));
+      btn.innerHTML = cellContent(cell);
+      bindCellEvents(btn, cell);
+      boardEl.appendChild(btn);
+    });
+  }
+
+  function bindCellEvents(btn, cell) {
+    btn.onclick = (event) => {
+      event.preventDefault();
+      if (state.skipNextClick && state.skipClickCellId === cell.id) {
+        state.skipNextClick = false;
+        state.skipClickCellId = null;
+        return;
+      }
+      if (cell.flagged) toggleFlag(cell);
+      else openCell(cell);
+    };
+    btn.oncontextmenu = (event) => {
+      event.preventDefault();
+      toggleFlag(cell);
+    };
+    btn.addEventListener('pointerdown', (event) => {
+      clearTimeout(state.longPressTimer);
+      try { btn.setPointerCapture(event.pointerId); } catch (_) {}
+      state.pointerMark = { id: cell.id, pointerId: event.pointerId, x: event.clientX, y: event.clientY, marked: false, dragging: false, sourceEl: btn, ghost: null };
+    });
+    btn.addEventListener('pointermove', (event) => {
+      const mark = state.pointerMark;
+      if (!mark || mark.id !== cell.id || mark.pointerId !== event.pointerId || mark.marked) return;
+      const dx = event.clientX - mark.x;
+      const dy = event.clientY - mark.y;
+      if (Math.hypot(dx, dy) >= 14) {
+        clearTimeout(state.longPressTimer);
+        skipNextCellClick(cell);
+        if (!mark.dragging) startCellDrag(mark, event);
+        moveCellDrag(mark, event);
+      }
+    });
+    btn.addEventListener('pointerup', (event) => finishPointerMark(cell, event));
+    btn.addEventListener('pointercancel', () => clearPointerMark(cell));
+    btn.addEventListener('pointerleave', () => {
+      if (!state.pointerMark?.dragging) clearTimeout(state.longPressTimer);
+    });
+  }
+
+  function startCellDrag(mark, event) {
+    const el = mark.sourceEl;
+    if (!el) return;
+    mark.dragging = true;
+    const rect = el.getBoundingClientRect();
+    const ghost = document.createElement('i');
+    ghost.className = 'mh-drag-ghost';
+    ghost.style.setProperty('--ghost-w', `${rect.width}px`);
+    ghost.style.setProperty('--ghost-h', `${rect.height}px`);
+    document.body.appendChild(ghost);
+    mark.ghost = ghost;
+    el.classList.add('drag-placeholder');
+    el.innerHTML = '?';
+    moveCellDrag(mark, event);
+  }
+
+  function moveCellDrag(mark, event) {
+    if (!mark?.ghost) return;
+    mark.ghost.style.left = `${event.clientX}px`;
+    mark.ghost.style.top = `${event.clientY}px`;
+  }
+
+  function finishPointerMark(cell, event) {
+    clearTimeout(state.longPressTimer);
+    const mark = state.pointerMark;
+    if (!mark || mark.id !== cell.id) return;
+    if (mark.dragging) {
+      skipNextCellClick(cell);
+      const dx = event.clientX - mark.x;
+      const dy = event.clientY - mark.y;
+      cleanupCellDrag(mark);
+      if (Math.hypot(dx, dy) >= 14) markTrap(cell);
+      else refreshCell(cell);
+    }
+    state.pointerMark = null;
+  }
+
+  function skipNextCellClick(cell) {
+    state.skipNextClick = true;
+    state.skipClickCellId = cell.id;
+    setTimeout(() => {
+      if (state.skipClickCellId === cell.id) {
+        state.skipNextClick = false;
+        state.skipClickCellId = null;
+      }
+    }, 60);
+  }
+
+  function cleanupCellDrag(mark) {
+    mark?.ghost?.remove();
+    if (mark?.sourceEl) {
+      mark.sourceEl.classList.remove('drag-placeholder');
+      const cell = state.cellMap.get(mark.id);
+      if (cell) refreshCell(cell);
+    }
+  }
+
+  function clearPointerMark(cell) {
+    clearTimeout(state.longPressTimer);
+    if (state.pointerMark?.id === cell.id) {
+      cleanupCellDrag(state.pointerMark);
+      state.pointerMark = null;
+    }
+  }
+
+  function cellClass(cell) {
+    if (cell.clue) return 'mh-cell clue';
+    if (cell.flagged && !cell.open) return 'mh-cell flagged';
+    if (!cell.open) return 'mh-cell hidden';
+    if (cell.trap) return 'mh-cell trap';
+    if (cell.food) return 'mh-cell food';
+    return 'mh-cell open';
+  }
+
+  function cellContent(cell) {
+    if (cell.clue) return String(cell.n);
+    if (cell.flagged && !cell.open) return '🚩';
+    if (!cell.open) return '';
+    if (cell.trap) return '🪤';
+    if (cell.food) return `<span class="food-icon">${cell.foodIcon}</span>`;
+    if (cell.collectedFood) return '';
+    return cell.n > 0 ? `<span class="tiny">${cell.n}</span>` : '';
+  }
+
+  function cellLabel(cell) {
+    if (cell.clue) return `线索，附近 ${cell.n} 个陷阱`;
+    if (cell.flagged) return '已标记为陷阱';
+    if (!cell.open) return '未探索空地';
+    if (cell.trap) return '陷阱';
+    if (cell.food) return '食物';
+    if (cell.collectedFood) return '已收集食物的空地';
+    return '安全空地';
+  }
+
+  function refreshCell(cell) {
+    const el = boardEl.querySelector(`[data-id="${cell.id}"]`);
+    if (!el) return;
+    el.className = cellClass(cell);
+    el.innerHTML = cellContent(cell);
+    el.setAttribute('aria-label', cellLabel(cell));
+  }
+
+  function openCell(cell) {
+    if (!state.started || state.finished || cell.clue || cell.open || cell.flagged) return;
+    const el = boardEl.querySelector(`[data-id="${cell.id}"]`);
+    breakCell(el);
+    playSound('break');
+    cell.open = true;
+    state.opened++;
+    if (cell.trap) {
+      state.mistakes++;
+      playSound('trap');
+      revealAll(false);
+      finish(false);
+      return;
+    }
+    if (cell.food) {
+      const foodIcon = cell.foodIcon;
+      state.collected++;
+      cell.food = false;
+      cell.collectedFood = true;
+      refreshCell(cell);
+      flyFoodToHud(foodIcon, el);
+      playSound('food');
+      if (state.collected >= config().target) {
+        revealAll(true);
+        finish(true);
+        return;
+      }
+    } else {
+      refreshCell(cell);
+      if (cell.n === 0) openSafePatch(cell);
+    }
+    updateHud();
+  }
+
+  function breakCell(el) {
+    if (!el) return;
+    const rect = el.getBoundingClientRect();
+    const colors = el.classList.contains('flagged')
+      ? ['#f97316', '#dc2626', '#fed7aa']
+      : el.classList.contains('clue')
+        ? ['#334155', '#111827', '#64748b']
+        : ['#fde047', '#f59e0b', '#fbbf24'];
+    for (let i = 0; i < 9; i++) {
+      const piece = document.createElement('i');
+      const size = Math.max(5, Math.round(rect.width * (i % 3 === 0 ? .14 : .11)));
+      piece.className = 'mh-fragment';
+      piece.style.left = `${rect.left + rect.width * (.24 + (i % 3) * .22)}px`;
+      piece.style.top = `${rect.top + rect.height * (.25 + Math.floor(i / 3) * .2)}px`;
+      piece.style.setProperty('--frag-size', `${size}px`);
+      piece.style.setProperty('--frag-color', colors[i % colors.length]);
+      piece.style.setProperty('--frag-x', `${rand(-42, 42)}px`);
+      piece.style.setProperty('--frag-y', `${rand(62, 138)}px`);
+      piece.style.setProperty('--frag-rot', `${rand(-190, 210)}deg`);
+      piece.style.setProperty('--frag-duration', `${rand(560, 860)}ms`);
+      document.body.appendChild(piece);
+      setTimeout(() => piece.remove(), 900);
+    }
+  }
+
+  function flyFoodToHud(icon, sourceEl) {
+    if (!sourceEl) return;
+    const from = sourceEl.getBoundingClientRect();
+    const target = document.getElementById('mhFood')?.getBoundingClientRect();
+    if (!target) return;
+    const fly = document.createElement('span');
+    fly.className = 'mh-food-fly';
+    fly.textContent = icon;
+    fly.style.setProperty('--from-x', `${from.left + from.width / 2}px`);
+    fly.style.setProperty('--from-y', `${from.top + from.height / 2}px`);
+    fly.style.setProperty('--to-x', `${target.left + target.width / 2}px`);
+    fly.style.setProperty('--to-y', `${target.top + target.height / 2}px`);
+    document.body.appendChild(fly);
+    setTimeout(() => fly.remove(), 860);
+  }
+
+  function openSafePatch(startCell) {
+    const queue = [startCell];
+    const seen = new Set([startCell.id]);
+    while (queue.length) {
+      const cell = queue.shift();
+      neighbors(cell).forEach(next => {
+        if (seen.has(next.id) || next.clue || next.trap || next.food || next.flagged) return;
+        seen.add(next.id);
+        if (!next.open) {
+          next.open = true;
+          state.opened++;
+          refreshCell(next);
+        }
+        if (next.n === 0) queue.push(next);
+      });
+    }
+  }
+
+  function toggleFlag(cell) {
+    if (!state.started || state.finished || cell.clue || cell.open) return;
+    cell.flagged = !cell.flagged;
+    state.flags += cell.flagged ? 1 : -1;
+    playSound(cell.flagged ? 'flag' : 'unflag');
+    refreshCell(cell);
+    updateHud();
+  }
+
+  function markTrap(cell) {
+    if (!state.started || state.finished || cell.clue || cell.open || cell.flagged) return;
+    cell.flagged = true;
+    state.flags++;
+    playSound('flag');
+    refreshCell(cell);
+    updateHud();
+  }
+
+  function revealAll(won) {
+    state.cells.forEach(cell => {
+      if (!cell.clue) {
+        cell.open = true;
+        if (cell.flagged && !cell.trap) {
+          const el = boardEl.querySelector(`[data-id="${cell.id}"]`);
+          el?.classList.add('mark-wrong');
+        }
+      }
+      refreshCell(cell);
+    });
+    if (won) burstConfetti();
+  }
+
+  function finish(won) {
+    if (state.finished) return;
+    state.finished = true;
+    clearInterval(state.timer);
+    const cfg = config();
+    const completedLevel = state.level;
+    const score = Math.max(10, cfg.reward + state.collected * 8 + state.level * 3 - state.seconds - state.mistakes * 18);
+    if (won) {
+      playSound('win');
+      state.best = Math.max(state.best, score);
+      state.level++;
+      localStorage.setItem(STORAGE_KEY_BEST, String(state.best));
+      localStorage.setItem(STORAGE_KEY_LEVEL, String(state.level));
+      document.getElementById('mhNext').hidden = false;
+      showResult('收集成功！', `找到了 ${state.collected} 份食物，没有让哈奇踩进陷阱。`, '下一局', () => startGame());
+    } else {
+      showResult('踩到陷阱了', '黑色数字会告诉你周围陷阱数量，再试一次就更稳。', '再来一次', () => startGame());
+    }
+    if (won) {
+      post('gameFinished', {
+        completed: true,
+        passed: true,
+        earnedPoints: score,
+        score,
+        level: completedLevel,
+        difficulty: DIFFICULTY_ORDER.indexOf(state.difficulty) + 1,
+        difficultyId: state.difficulty,
+        collected: state.collected,
+        targetFood: cfg.target,
+        traps: cfg.traps,
+        seconds: state.seconds,
+        finishedAt: Date.now(),
+        roundId: `${state.difficulty}-${completedLevel}-${Date.now()}`,
+      });
+    }
+  }
+
+  function updateHud() {
+    const cfg = config();
+    document.getElementById('mhLevel').textContent = String(state.level);
+    document.getElementById('mhFood').textContent = String(state.collected);
+    document.getElementById('mhTarget').textContent = String(cfg.target);
+    document.getElementById('mhTraps').textContent = String(Math.max(0, cfg.traps - state.flags));
+    document.getElementById('mhTime').textContent = String(state.seconds);
+    document.querySelectorAll('[data-difficulty]').forEach(btn => btn.classList.toggle('active', btn.dataset.difficulty === state.difficulty));
+  }
+
+  function showOverlay(title, text, buttonText, action) {
+    overlayTitleEl.textContent = title;
+    overlayTextEl.textContent = text;
+    startBtn.textContent = buttonText;
+    startBtn.onclick = action;
+    overlayEl.hidden = false;
+  }
+
+  function showResult(title, text, buttonText, action) {
+    setTimeout(() => showOverlay(title, text, buttonText, action), 420);
+  }
+
+  function hideOverlay() {
+    overlayEl.hidden = true;
+  }
+
+  function popToast(text, className = '') {
+    const toast = document.createElement('div');
+    toast.className = `mh-toast ${className}`.trim();
+    toast.textContent = text;
+    document.body.appendChild(toast);
+    setTimeout(() => toast.remove(), 1350);
+  }
+
+  function burstConfetti() {
+    const colors = ['#f97316', '#facc15', '#22c55e', '#38bdf8', '#fb7185'];
+    for (let i = 0; i < 34; i++) {
+      const piece = document.createElement('i');
+      piece.className = 'mh-confetti';
+      piece.style.left = `${rand(5, 95)}vw`;
+      piece.style.setProperty('--x', `${rand(-70, 70)}px`);
+      piece.style.setProperty('--d', `${rand(900, 1500)}ms`);
+      piece.style.setProperty('--c', colors[rand(0, colors.length - 1)]);
+      document.body.appendChild(piece);
+      setTimeout(() => piece.remove(), 1600);
+    }
+  }
+
+  function requestPetImage() {
+    const requestId = `food_hex_pet_${Date.now()}`;
+    try {
+      window.parent.postMessage({ type: 'haqi_get_pet_image', requestId, anim: 'happy' }, '*');
+    } catch (_) {}
+  }
+
+  async function setPetImage(pet) {
+    cleanupObjectUrls();
+    const holder = document.getElementById('mhPet');
+    if (!pet?.imageBlob || !pet?.uv) return;
+    const url = URL.createObjectURL(pet.imageBlob);
+    state.objectUrls.push(url);
+    const { col = 0, row = 0, cols = 1, rows = 1 } = pet.uv;
+    const posX = cols > 1 ? `${col * 100 / (cols - 1)}%` : 'center';
+    const posY = rows > 1 ? `${row * 100 / (rows - 1)}%` : 'center';
+    holder.innerHTML = `<div class="sprite"></div>`;
+    const sprite = holder.querySelector('.sprite');
+    sprite.style.backgroundImage = `url("${url}")`;
+    sprite.style.backgroundSize = cols > 1 || rows > 1 ? `${cols * 100}% ${rows * 100}%` : 'contain';
+    sprite.style.backgroundPosition = `${posX} ${posY}`;
+  }
+
+  function cleanupObjectUrls() {
+    state.objectUrls.forEach(url => URL.revokeObjectURL(url));
+    state.objectUrls = [];
+  }
+
+  window.addEventListener('message', event => {
+    const msg = event.data || {};
+    if (msg.type === 'gameContinue') startGame();
+    if (msg.type === 'haqi_pet_image' && msg.ok) setPetImage(msg.data);
+    if (msg.type === 'setGameConfig' && msg.data?.difficulty && DIFFICULTIES[msg.data.difficulty]) {
+      state.difficulty = msg.data.difficulty;
+      startGame();
+    }
+  });
+
+  document.getElementById('mhMenu').onclick = () => showOverlay('寻找食物', '数字表示相邻陷阱数量，可用它判断哪些黄色格子安全。点击黄色格子清理，拖动可疑格子可标记陷阱，电脑也可右键标记；收集到目标数量的食物即可过关。', state.started ? '继续' : '开始寻找', () => state.started ? hideOverlay() : startGame());
+  document.getElementById('mhHelp').onclick = document.getElementById('mhMenu').onclick;
+  document.getElementById('mhRestart').onclick = () => startGame();
+  document.getElementById('mhNext').onclick = () => startGame();
+  startBtn.onclick = () => startGame();
+  window.addEventListener('beforeunload', cleanupObjectUrls);
+
+  buildDifficulties();
+  updateHud();
+  requestPetImage();
+  post('gameLoaded');
+})();
+</script>
+
+</html>

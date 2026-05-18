@@ -1,0 +1,1453 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+  <title>哈奇泡泡龙</title>
+  <script src="https://cdn.keepwork.com/keepwork/cdn/tailwindcss@3.4.16.js"></script>
+</head>
+
+<body></body>
+<script defer>
+(function () {
+  const STORAGE_DIFFICULTY = 'haqiBubblePetsDifficultyV1';
+  const STORAGE_BEST_LEVEL = 'haqiBubblePetsBestLevelV1';
+  const STORAGE_BEST_SCORE = 'haqiBubblePetsBestScoreV1';
+  const FOOD_ICONS = ['🍎', '🍌', '🍓', '🍇', '🍪', '🍯', '🍰', '🍒', '🍊', '🍉'];
+  const PET_FALLBACK = '🐾';
+  const COLORS = [
+    { id: 0, name: 'berry', from: '#fb7185', to: '#e11d48', glow: 'rgba(251,113,133,.38)' },
+    { id: 1, name: 'sky', from: '#67e8f9', to: '#0284c7', glow: 'rgba(56,189,248,.34)' },
+    { id: 2, name: 'leaf', from: '#86efac', to: '#16a34a', glow: 'rgba(34,197,94,.34)' },
+    { id: 3, name: 'sun', from: '#fde68a', to: '#f59e0b', glow: 'rgba(245,158,11,.34)' },
+    { id: 4, name: 'violet', from: '#c4b5fd', to: '#7c3aed', glow: 'rgba(139,92,246,.34)' },
+    { id: 5, name: 'coral', from: '#fdba74', to: '#f97316', glow: 'rgba(249,115,22,.34)' },
+  ];
+  const DIFFICULTIES = {
+    easy: { id: 'easy', label: '轻松', colorCount: 4, rows: 5, foods: 6, shots: 38, speed: 0.82, score: 90, riseEvery: 8 },
+    normal: { id: 'normal', label: '标准', colorCount: 5, rows: 6, foods: 8, shots: 32, speed: 0.95, score: 130, riseEvery: 7 },
+    hard: { id: 'hard', label: '挑战', colorCount: 6, rows: 7, foods: 10, shots: 27, speed: 1.08, score: 180, riseEvery: 6 },
+  };
+  const DIFFICULTY_ORDER = ['easy', 'normal', 'hard'];
+  const COLS = 9;
+  const MAX_ROWS = 13;
+  const NEIGHBORS_EVEN = [[-1, -1], [-1, 0], [0, -1], [0, 1], [1, -1], [1, 0]];
+  const NEIGHBORS_ODD = [[-1, 0], [-1, 1], [0, -1], [0, 1], [1, 0], [1, 1]];
+
+  const state = {
+    difficulty: localStorage.getItem(STORAGE_DIFFICULTY) || 'normal',
+    bestLevel: Math.max(1, Number(localStorage.getItem(STORAGE_BEST_LEVEL) || 1)),
+    bestScore: Math.max(0, Number(localStorage.getItem(STORAGE_BEST_SCORE) || 0)),
+    level: 1,
+    score: 0,
+    foods: 0,
+    targetFoods: 0,
+    shotsLeft: 0,
+    shotsUsed: 0,
+    combo: 0,
+    board: new Map(),
+    particles: [],
+    floatingTexts: [],
+    projectile: null,
+    nextType: 0,
+    currentType: 0,
+    aiming: false,
+    aimX: 0,
+    aimY: 0,
+    started: false,
+    finished: false,
+    paused: false,
+    roundId: '',
+    levelSeed: 0,
+    colorCount: 5,
+    loadedPosted: false,
+    petBitmap: null,
+    petUrl: '',
+    petMeta: null,
+    objectUrls: [],
+  };
+  const sound = { ctx: null, master: null };
+
+  const root = document.createElement('div');
+  root.id = 'haqiBubblePets';
+  root.innerHTML = `
+    <style>
+      * { box-sizing: border-box; -webkit-tap-highlight-color: transparent; }
+      html, body { width: 100%; height: 100%; margin: 0; overflow: hidden; }
+      body {
+        font-family: -apple-system, BlinkMacSystemFont, 'PingFang SC', 'Microsoft YaHei', sans-serif;
+        color: #15324b;
+        background: linear-gradient(180deg, #c7f9ff 0%, #fdf2f8 48%, #dcfce7 100%);
+        user-select: none;
+        touch-action: none;
+      }
+      .mh-shell { position: relative; width: 100vw; height: 100vh; height: 100dvh; overflow: hidden; }
+      .mh-canvas { position: absolute; inset: 0; width: 100%; height: 100%; display: block; }
+      .mh-top {
+        position: absolute; left: 8px; right: 8px; top: 8px; z-index: 3;
+        min-height: 48px; display: grid; grid-template-columns: 38px minmax(0, 1fr) auto; align-items: center; gap: 8px;
+        padding: 7px 9px; border-radius: 14px; background: linear-gradient(180deg, rgba(255,255,255,.94), rgba(240,253,250,.9)); border: 2px solid rgba(255,255,255,.96);
+        box-shadow: 0 5px 0 rgba(14,116,144,.13), 0 12px 24px rgba(15,23,42,.12), inset 0 -1px 0 rgba(14,116,144,.08); backdrop-filter: blur(8px);
+      }
+      .mh-title { min-width: 0; text-align: center; font-size: 18px; font-weight: 1000; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; text-shadow: 0 2px 0 rgba(255,255,255,.86); }
+      .mh-stats { display: flex; align-items: center; justify-content: flex-end; gap: 5px; flex-wrap: wrap; }
+      .mh-pill {
+        height: 29px; min-width: 48px; display: inline-flex; align-items: center; justify-content: center; gap: 3px;
+        padding: 0 8px; border-radius: 999px; background: linear-gradient(180deg, #fff, #ecfeff); border: 1px solid rgba(14,116,144,.2);
+        color: #0f766e; font-size: 12px; font-weight: 900; box-shadow: 0 2px 0 rgba(14,116,144,.12), inset 0 1px 0 rgba(255,255,255,.9);
+      }
+      .mh-pill.low { color: #b45309; background: linear-gradient(180deg, #fff7ed, #fed7aa); border-color: rgba(249,115,22,.4); animation: mhPulseWarn .86s ease-in-out infinite; }
+      .mh-icon-btn, .mh-action, .mh-start, .mh-difficulty { border: 0; cursor: pointer; font-weight: 900; }
+      .mh-icon-btn { width: 34px; height: 34px; border-radius: 999px; background: linear-gradient(180deg, #fb923c, #ea580c); color: white; box-shadow: 0 3px 0 #9a3412; font-size: 18px; }
+      .mh-bottom {
+        position: absolute; left: 8px; right: 8px; bottom: 8px; z-index: 3;
+        display: grid; grid-template-columns: minmax(0, 1fr) auto; align-items: end; gap: 8px; pointer-events: none;
+      }
+      .mh-hint {
+        justify-self: center; min-height: 34px; display: inline-flex; align-items: center; justify-content: center; padding: 0 12px;
+        border-radius: 999px; background: rgba(255,255,255,.86); border: 1px solid rgba(14,116,144,.2);
+        color: #0f766e; font-size: 13px; font-weight: 900; box-shadow: 0 3px 0 rgba(14,116,144,.13); white-space: nowrap;
+      }
+      .mh-controls { pointer-events: auto; display: flex; align-items: center; justify-content: flex-end; gap: 6px; flex-wrap: wrap; }
+      .mh-action { height: 34px; border-radius: 999px; padding: 0 12px; background: linear-gradient(180deg, #38bdf8, #0284c7); color: white; box-shadow: 0 4px 0 #075985, 0 8px 16px rgba(2,132,199,.18); transition: transform .12s ease, filter .12s ease; }
+      .mh-action:active, .mh-start:active, .mh-icon-btn:active, .mh-difficulty:active { transform: translateY(2px); filter: brightness(.98); }
+      .mh-action.help { background: linear-gradient(180deg, #fb923c, #ea580c); box-shadow-color: #9a3412; }
+      .mh-difficulties { display: flex; align-items: center; gap: 4px; padding: 4px; border-radius: 999px; background: rgba(255,255,255,.82); border: 1px solid rgba(14,116,144,.16); }
+      .mh-difficulty { height: 28px; min-width: 44px; padding: 0 9px; border-radius: 999px; background: transparent; color: #0f766e; font-size: 12px; }
+      .mh-difficulty.active { background: linear-gradient(180deg, #34d399, #16a34a); color: white; box-shadow: 0 2px 0 #15803d; }
+      .mh-toast {
+        position: fixed; left: 50%; top: 50%; z-index: 45; transform: translate(-50%, -50%); min-width: min(300px, 82vw);
+        padding: 18px 22px; border-radius: 18px; background: white; border: 3px solid #86efac; color: #15803d;
+        font-size: 22px; font-weight: 1000; text-align: center; box-shadow: 0 18px 42px rgba(15,23,42,.24); animation: mhToast 1.2s ease-out forwards; pointer-events: none;
+      }
+      .mh-overlay { position: fixed; inset: 0; z-index: 40; display: flex; align-items: center; justify-content: center; padding: 18px; background: rgba(15,39,71,.48); }
+      .mh-card {
+        width: min(92vw, 440px); padding: 20px; border-radius: 18px; background: linear-gradient(180deg, #fff, #eff6ff 58%, #f0fdf4);
+        border: 3px solid #7dd3fc; box-shadow: 0 18px 44px rgba(15,23,42,.28), 0 0 0 7px rgba(255,255,255,.38); text-align: center;
+      }
+      .mh-card h1 { margin: 0 0 10px; color: #15324b; font-size: 26px; font-weight: 1000; }
+      .mh-card p { margin: 0 0 14px; color: #0f766e; font-size: 15px; font-weight: 800; line-height: 1.55; }
+      .mh-card-row { display: flex; align-items: center; justify-content: center; gap: 6px; flex-wrap: wrap; margin: 12px 0 16px; }
+      .mh-start { border-radius: 999px; padding: 10px 24px; background: linear-gradient(180deg, #34d399, #16a34a); color: white; box-shadow: 0 5px 0 #15803d; }
+      .mh-confetti { position: fixed; top: -16px; z-index: 48; width: 9px; height: 15px; border-radius: 3px; background: var(--c); animation: mhConfetti var(--d) ease-in forwards; pointer-events: none; }
+      [hidden] { display: none !important; }
+      @keyframes mhToast { 0% { opacity: 0; transform: translate(-50%, -42%) scale(.84); } 18% { opacity: 1; transform: translate(-50%, -50%) scale(1); } 100% { opacity: 0; transform: translate(-50%, -76%) scale(.94); } }
+      @keyframes mhConfetti { 100% { opacity: 0; transform: translate3d(var(--x), 112vh, 0) rotate(680deg); } }
+      @keyframes mhPulseWarn { 0%, 100% { transform: scale(1); } 50% { transform: scale(1.05); } }
+      @media (max-width: 560px) {
+        .mh-top { grid-template-columns: 36px 1fr; }
+        .mh-stats { grid-column: 1 / -1; justify-content: center; }
+        .mh-bottom { grid-template-columns: 1fr; justify-items: center; }
+        .mh-controls { justify-content: center; }
+        .mh-hint { font-size: 12px; }
+      }
+      @media (max-height: 520px) {
+        .mh-top { min-height: 42px; padding: 5px 7px; }
+        .mh-stats .optional { display: none; }
+        .mh-hint { display: none; }
+      }
+    </style>
+    <div class="mh-shell">
+      <canvas id="mhCanvas" class="mh-canvas" aria-label="哈奇泡泡龙游戏画面"></canvas>
+      <header class="mh-top">
+        <button id="mhMenu" class="mh-icon-btn" type="button" aria-label="玩法">?</button>
+        <div class="mh-title">哈奇泡泡龙</div>
+        <div class="mh-stats" aria-label="游戏状态">
+          <span class="mh-pill">关卡 <b id="mhLevel">1</b></span>
+          <span class="mh-pill">食物 <b id="mhFood">0</b>/<b id="mhTarget">0</b></span>
+          <span id="mhShotsPill" class="mh-pill">发射 <b id="mhShots">0</b></span>
+          <span class="mh-pill optional">分数 <b id="mhScore">0</b></span>
+        </div>
+      </header>
+      <footer class="mh-bottom">
+        <div class="mh-hint">拖动瞄准，松手发射泡泡，三个同色连在一起就会爆开</div>
+        <div class="mh-controls">
+          <div id="mhDifficulties" class="mh-difficulties" aria-label="选择难度"></div>
+          <button id="mhHelp" class="mh-action help" type="button">玩法</button>
+          <button id="mhRestart" class="mh-action" type="button">重开</button>
+        </div>
+      </footer>
+      <div id="mhOverlay" class="mh-overlay">
+        <div class="mh-card">
+          <h1 id="mhOverlayTitle">哈奇泡泡龙</h1>
+          <p id="mhOverlayText">选个难度就开玩。拖动瞄准，松手发射泡泡；三个或更多同色泡泡连在一起就会爆开。把藏在泡泡里的表情食物收集够，就能过关。过一关后会自动生成下一关。</p>
+          <div id="mhOverlayDifficulties" class="mh-card-row"></div>
+          <button id="mhStart" class="mh-start" type="button">开始挑战</button>
+        </div>
+      </div>
+    </div>`;
+  document.body.appendChild(root);
+
+  const canvas = document.getElementById('mhCanvas');
+  const ctx = canvas.getContext('2d');
+  const overlayEl = document.getElementById('mhOverlay');
+  const overlayTitleEl = document.getElementById('mhOverlayTitle');
+  const overlayTextEl = document.getElementById('mhOverlayText');
+  const startBtn = document.getElementById('mhStart');
+  const hudEls = {
+    level: document.getElementById('mhLevel'),
+    food: document.getElementById('mhFood'),
+    target: document.getElementById('mhTarget'),
+    shots: document.getElementById('mhShots'),
+    shotsPill: document.getElementById('mhShotsPill'),
+    score: document.getElementById('mhScore'),
+  };
+
+  let width = 0;
+  let height = 0;
+  let dpr = 1;
+  let radius = 18;
+  let boardLeft = 0;
+  let boardTop = 80;
+  let playLeft = 0;
+  let playRight = 0;
+  let shooterX = 0;
+  let shooterY = 0;
+  let rafId = 0;
+  let lastTime = 0;
+
+  function cfg() {
+    return DIFFICULTIES[state.difficulty] || DIFFICULTIES.normal;
+  }
+
+  function resize() {
+    dpr = Math.min(2, window.devicePixelRatio || 1);
+    width = Math.max(320, window.innerWidth);
+    height = Math.max(240, window.innerHeight);
+    canvas.width = Math.round(width * dpr);
+    canvas.height = Math.round(height * dpr);
+    canvas.style.width = `${width}px`;
+    canvas.style.height = `${height}px`;
+    ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+    refreshLayout();
+    draw(performance.now());
+  }
+
+  function refreshLayout() {
+    const topBar = root.querySelector('.mh-top')?.getBoundingClientRect();
+    const bottomBar = root.querySelector('.mh-bottom')?.getBoundingClientRect();
+    boardTop = Math.max(66, (topBar?.bottom || 54) + 14);
+    shooterX = width / 2;
+    shooterY = Math.min(height - 56, (bottomBar?.top || height - 46) - 34);
+    const verticalSpace = Math.max(220, shooterY - boardTop - 12);
+    radius = clamp(Math.min((width - 24) / 19, verticalSpace / (MAX_ROWS * 1.72)), 12, 23);
+    const boardWidth = 19 * radius;
+    boardLeft = (width - boardWidth) / 2;
+    if (width > 720) {
+      const playWidth = Math.min(560, Math.max(boardWidth + radius * 3.6, 460));
+      playLeft = (width - playWidth) / 2;
+      playRight = playLeft + playWidth;
+    } else {
+      playLeft = 0;
+      playRight = width;
+    }
+  }
+
+  function startGame(options = {}) {
+    const keepLevel = options.keepLevel === true;
+    stopLoop();
+    state.started = true;
+    state.finished = false;
+    state.paused = false;
+    state.level = keepLevel ? Math.max(1, state.level) : 1;
+    state.score = keepLevel ? state.score : 0;
+    state.foods = 0;
+    state.combo = 0;
+    state.shotsUsed = 0;
+    state.projectile = null;
+    state.particles = [];
+    state.floatingTexts = [];
+    state.roundId = `${state.difficulty}-${state.level}-${Date.now()}`;
+    generateLevel();
+    hideOverlay();
+    updateHud();
+    post('gameStarted', {
+      difficulty: DIFFICULTY_ORDER.indexOf(state.difficulty) + 1,
+      difficultyId: state.difficulty,
+      level: state.level,
+      targetFood: state.targetFoods,
+    });
+    playSound('start');
+    lastTime = performance.now();
+    rafId = requestAnimationFrame(loop);
+  }
+
+  function nextLevel() {
+    state.level += 1;
+    startGame({ keepLevel: true });
+  }
+
+  function generateLevel() {
+    const config = cfg();
+    const levelBoost = Math.floor((state.level - 1) / 3);
+    const rows = clamp(config.rows + Math.floor((state.level - 1) / 4), config.rows, 9);
+    const colorCount = clamp(config.colorCount + Math.floor((state.level - 1) / 8), config.colorCount, COLORS.length);
+    state.colorCount = colorCount;
+    state.board = new Map();
+    state.levelSeed = hashSeed(`${state.difficulty}:${state.level}:${Date.now() % 9973}`);
+    const random = seededRandom(state.levelSeed);
+    for (let row = 0; row < rows; row++) {
+      for (let col = 0; col < COLS; col++) {
+        if (row > 3 && random() < 0.1 + Math.min(0.13, state.level * 0.006)) continue;
+        const type = Math.floor(random() * colorCount);
+        setBubble(row, col, { type, food: null, wobble: random() * 10 });
+      }
+    }
+    const requestedFoods = config.foods + Math.floor((state.level - 1) * (state.difficulty === 'hard' ? 1.2 : state.difficulty === 'normal' ? 0.85 : 0.55));
+    state.targetFoods = clamp(requestedFoods, config.foods, Math.max(config.foods, Math.floor(state.board.size * 0.42)));
+    state.shotsLeft = Math.max(16, config.shots - levelBoost + Math.ceil(state.targetFoods * 0.7));
+    placeFood(random, colorCount);
+    state.currentType = usefulType(random, colorCount);
+    state.nextType = usefulType(random, colorCount);
+  }
+
+  function placeFood(random, colorCount) {
+    const bubbles = Array.from(state.board.values());
+    shuffle(bubbles, random);
+    const foodCount = Math.min(state.targetFoods + Math.ceil(state.level / 3), bubbles.length);
+    for (let i = 0; i < foodCount; i++) {
+      const bubble = bubbles[i];
+      bubble.food = FOOD_ICONS[Math.floor(random() * FOOD_ICONS.length)];
+      if (i < state.targetFoods && Math.random() < 0.35) bubble.type = i % colorCount;
+    }
+  }
+
+  function loop(now) {
+    rafId = 0;
+    if (!state.started || state.paused) return;
+    const dt = Math.min(34, Math.max(0, now - lastTime || 16));
+    lastTime = now;
+    update(dt, now);
+    draw(now);
+    if (state.started && !state.paused) rafId = requestAnimationFrame(loop);
+  }
+
+  function update(dt, now) {
+    if (state.finished) return;
+    updateProjectile(dt);
+    state.particles.forEach(p => {
+      p.x += p.vx * dt;
+      p.y += p.vy * dt;
+      p.vy += 0.0015 * dt;
+      p.life -= dt;
+      p.size *= 0.992;
+    });
+    state.floatingTexts.forEach(t => {
+      t.y -= 0.035 * dt;
+      t.life -= dt;
+    });
+    state.particles = state.particles.filter(p => p.life > 0);
+    state.floatingTexts = state.floatingTexts.filter(t => t.life > 0);
+    if (!state.board.size) finishLevel(true);
+    if (lowestBubbleY() + radius * 0.75 >= shooterY - radius * 1.7) finishLevel(false);
+  }
+
+  function updateProjectile(dt) {
+    const projectile = state.projectile;
+    if (!projectile) return;
+    projectile.x += projectile.vx * dt;
+    projectile.y += projectile.vy * dt;
+    projectile.spin += dt * 0.012;
+    const leftWall = playLeft + radius;
+    const rightWall = playRight - radius;
+    if (projectile.x < leftWall) {
+      projectile.x = leftWall;
+      projectile.vx = Math.abs(projectile.vx);
+      playSound('bounce');
+    }
+    if (projectile.x > rightWall) {
+      projectile.x = rightWall;
+      projectile.vx = -Math.abs(projectile.vx);
+      playSound('bounce');
+    }
+    if (projectile.y <= boardTop + radius * 0.2) {
+      attachProjectile(nearestCell(projectile.x, boardTop + radius));
+      return;
+    }
+    for (const bubble of state.board.values()) {
+      const p = cellCenter(bubble.row, bubble.col);
+      if (distance(projectile.x, projectile.y, p.x, p.y) <= radius * 1.86) {
+        attachProjectile(nearestEmptyNeighbor(bubble, projectile.x, projectile.y) || nearestCell(projectile.x, projectile.y));
+        return;
+      }
+    }
+  }
+
+  function attachProjectile(cell) {
+    if (!state.projectile || !cell) return;
+    const row = clamp(cell.row, 0, MAX_ROWS - 1);
+    const col = clamp(cell.col, 0, COLS - 1);
+    if (getBubble(row, col)) {
+      const fallback = nearestOpenCell(state.projectile.x, state.projectile.y);
+      if (!fallback) {
+        finishLevel(false);
+        return;
+      }
+      setBubble(fallback.row, fallback.col, { type: state.projectile.type, food: null, wobble: Math.random() * 10, born: performance.now() });
+      state.projectile = null;
+      resolveMatches(fallback.row, fallback.col);
+    } else {
+      setBubble(row, col, { type: state.projectile.type, food: null, wobble: Math.random() * 10, born: performance.now() });
+      state.projectile = null;
+      resolveMatches(row, col);
+    }
+    state.currentType = state.nextType;
+    state.nextType = usefulType(Math.random, state.colorCount);
+    updateHud();
+  }
+
+  function resolveMatches(row, col) {
+    const start = getBubble(row, col);
+    if (!start) return;
+    const cluster = collectSameColor(start);
+    if (cluster.length >= 3) {
+      const foods = removeBubbles(cluster, true);
+      const floating = removeFloatingBubbles();
+      const floatingFoods = removeBubbles(floating, false);
+      const gainedFood = foods + floatingFoods;
+      state.foods += gainedFood;
+      state.combo += 1;
+      const points = cluster.length * 12 + floating.length * 18 + gainedFood * 55 + state.combo * 8;
+      state.score += points;
+      showFloatingText(`+${points}`, cellCenter(row, col).x, cellCenter(row, col).y, '#16a34a');
+      playMatchSound(cluster.length, gainedFood, floating.length);
+      if (gainedFood) showToast(`收集食物 +${gainedFood}`);
+    } else {
+      state.combo = 0;
+      playSound('stick');
+      if (state.shotsUsed > 0 && state.shotsUsed % cfg().riseEvery === 0) pushBoardDown();
+    }
+    updateHud();
+    if (state.foods >= state.targetFoods) finishLevel(true);
+    else if (state.shotsLeft <= 0 && !state.projectile) finishLevel(false);
+  }
+
+  function removeBubbles(bubbles, burst) {
+    let foodCount = 0;
+    bubbles.forEach(bubble => {
+      const current = getBubble(bubble.row, bubble.col);
+      if (!current) return;
+      if (current.food) foodCount += 1;
+      deleteBubble(current.row, current.col);
+      const p = cellCenter(current.row, current.col);
+      makeParticles(p.x, p.y, COLORS[current.type].glow, burst ? 9 : 5, current.food);
+    });
+    return foodCount;
+  }
+
+  function removeFloatingBubbles() {
+    const anchored = new Set();
+    const queue = [];
+    for (let col = 0; col < COLS; col++) {
+      const bubble = getBubble(0, col);
+      if (bubble) {
+        anchored.add(key(0, col));
+        queue.push(bubble);
+      }
+    }
+    while (queue.length) {
+      const bubble = queue.shift();
+      for (const next of neighbors(bubble.row, bubble.col)) {
+        const nextKey = key(next.row, next.col);
+        if (!anchored.has(nextKey)) {
+          anchored.add(nextKey);
+          queue.push(next);
+        }
+      }
+    }
+    return Array.from(state.board.values()).filter(bubble => !anchored.has(key(bubble.row, bubble.col)));
+  }
+
+  function pushBoardDown() {
+    const items = Array.from(state.board.values()).sort((a, b) => b.row - a.row);
+    state.board.clear();
+    items.forEach(bubble => {
+      if (bubble.row + 1 < MAX_ROWS) setBubble(bubble.row + 1, bubble.col, { ...bubble, row: bubble.row + 1 });
+    });
+    showFloatingText('难度上升', width / 2, boardTop + radius * 2, '#ea580c');
+    playSound('drop');
+  }
+
+  function fireAt(x, y) {
+    if (!state.started || state.finished || state.projectile) return;
+    const angle = aimAngle(x, y);
+    const speed = Math.max(width, height) * 0.00105 * cfg().speed;
+    state.projectile = {
+      x: shooterX,
+      y: shooterY,
+      vx: Math.cos(angle) * speed,
+      vy: Math.sin(angle) * speed,
+      type: state.currentType,
+      spin: 0,
+    };
+    state.shotsLeft -= 1;
+    state.shotsUsed += 1;
+    state.aiming = false;
+    updateHud();
+    playSound('shoot');
+  }
+
+  function finishLevel(won) {
+    if (state.finished) return;
+    state.finished = true;
+    stopLoop();
+    const difficultyLevel = DIFFICULTY_ORDER.indexOf(state.difficulty) + 1;
+    if (won) {
+      const bonus = Math.max(0, state.shotsLeft) * 6 + state.level * 14;
+      state.score += bonus;
+      state.bestLevel = Math.max(state.bestLevel, state.level);
+      state.bestScore = Math.max(state.bestScore, state.score);
+      localStorage.setItem(STORAGE_BEST_LEVEL, String(state.bestLevel));
+      localStorage.setItem(STORAGE_BEST_SCORE, String(state.bestScore));
+      updateHud();
+      burstConfetti();
+      playSound('win');
+      showResult('通关成功！', `第 ${state.level} 关完成，收集了 ${state.foods}/${state.targetFoods} 份食物。`, '下一关', nextLevel);
+      post('gameFinished', {
+        completed: true,
+        passed: true,
+        earnedPoints: Math.max(10, cfg().score + state.score),
+        score: state.score,
+        difficulty: difficultyLevel,
+        difficultyId: state.difficulty,
+        level: state.level,
+        collected: state.foods,
+        targetFood: state.targetFoods,
+        shotsUsed: state.shotsUsed,
+        shotsLeft: state.shotsLeft,
+        finishedAt: Date.now(),
+        roundId: state.roundId,
+      });
+    } else {
+      playSound('hit');
+      shakeScreen();
+      showResult('挑战失败', '泡泡快压到发射台了，优先消除带食物的同色泡泡会更稳。', '再来一次', () => startGame({ keepLevel: true }));
+    }
+  }
+
+  function draw(now) {
+    drawBackground(now);
+    drawBoard(now);
+    drawAimGuide();
+    drawShooter(now);
+    drawProjectile(now);
+    drawParticles();
+    drawFloatingTexts();
+  }
+
+  function drawBackground(now) {
+    const gradient = ctx.createLinearGradient(0, 0, 0, height);
+    gradient.addColorStop(0, '#bae6fd');
+    gradient.addColorStop(0.48, '#fce7f3');
+    gradient.addColorStop(1, '#bbf7d0');
+    ctx.fillStyle = gradient;
+    ctx.fillRect(0, 0, width, height);
+
+    ctx.save();
+    ctx.globalAlpha = 0.52;
+    drawCloud((now * 0.01) % (width + 160) - 120, height * 0.2, 58);
+    drawCloud(width - ((now * 0.007) % (width + 180)), height * 0.34, 44);
+    ctx.globalAlpha = 1;
+    const hill = ctx.createLinearGradient(0, height * 0.78, 0, height);
+    hill.addColorStop(0, '#86efac');
+    hill.addColorStop(1, '#22c55e');
+    ctx.fillStyle = hill;
+    ctx.beginPath();
+    ctx.moveTo(0, height);
+    ctx.quadraticCurveTo(width * 0.22, height * 0.78, width * 0.48, height * 0.9);
+    ctx.quadraticCurveTo(width * 0.72, height * 0.74, width, height * 0.86);
+    ctx.lineTo(width, height);
+    ctx.closePath();
+    ctx.fill();
+    drawSideDecorations(now);
+    ctx.restore();
+  }
+
+  function drawSideDecorations(now) {
+    const leftEdge = Math.max(0, boardLeft - radius * 1.6);
+    const rightEdge = Math.min(width, boardLeft + radius * 19 + radius * 1.6);
+    const sideSpace = Math.min(leftEdge, width - rightEdge);
+    if (sideSpace < 64) return;
+    const treeSize = clamp(sideSpace * 0.42, 34, 82);
+    const baseY = height - clamp(height * 0.11, 34, 76);
+    drawSideTree(leftEdge * 0.34, baseY, treeSize, -1);
+    drawSideTree(width - (width - rightEdge) * 0.34, baseY, treeSize, 1);
+    drawSideBush(leftEdge * 0.62, height - treeSize * 0.4, treeSize * 0.55);
+    drawSideBush(width - (width - rightEdge) * 0.62, height - treeSize * 0.36, treeSize * 0.55);
+    drawSideSign(leftEdge * 0.62, height * 0.56, treeSize * 0.72, '连三');
+    drawSideSign(width - (width - rightEdge) * 0.62, height * 0.5, treeSize * 0.72, '收集');
+    drawSideBubbles(leftEdge * 0.48, height * 0.26, treeSize, now, -1);
+    drawSideBubbles(width - (width - rightEdge) * 0.48, height * 0.29, treeSize, now, 1);
+  }
+
+  function drawSideTree(x, y, size, flip) {
+    ctx.save();
+    ctx.translate(x, y);
+    ctx.scale(flip, 1);
+    ctx.fillStyle = '#9a6a31';
+    roundRectPath(-size * 0.1, -size * 0.6, size * 0.2, size * 0.68, size * 0.08);
+    ctx.fill();
+    const leaf = ctx.createRadialGradient(-size * 0.1, -size * 1.16, size * 0.12, 0, -size * 0.92, size * 0.72);
+    leaf.addColorStop(0, '#dcfce7');
+    leaf.addColorStop(0.42, '#4ade80');
+    leaf.addColorStop(1, '#16a34a');
+    ctx.fillStyle = leaf;
+    ctx.beginPath();
+    ctx.arc(-size * 0.24, -size * 0.88, size * 0.42, 0, Math.PI * 2);
+    ctx.arc(size * 0.16, -size * 1.02, size * 0.5, 0, Math.PI * 2);
+    ctx.arc(size * 0.36, -size * 0.66, size * 0.38, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.fillStyle = 'rgba(255,255,255,.42)';
+    ctx.beginPath();
+    ctx.ellipse(-size * 0.08, -size * 1.16, size * 0.18, size * 0.08, -0.35, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.restore();
+  }
+
+  function drawSideBush(x, y, size) {
+    const gradient = ctx.createLinearGradient(x, y - size, x, y + size * 0.4);
+    gradient.addColorStop(0, '#bbf7d0');
+    gradient.addColorStop(1, '#16a34a');
+    ctx.fillStyle = gradient;
+    ctx.beginPath();
+    ctx.arc(x - size * 0.5, y, size * 0.42, 0, Math.PI * 2);
+    ctx.arc(x, y - size * 0.16, size * 0.55, 0, Math.PI * 2);
+    ctx.arc(x + size * 0.52, y, size * 0.38, 0, Math.PI * 2);
+    ctx.fill();
+  }
+
+  function drawSideSign(x, y, size, text) {
+    ctx.save();
+    ctx.fillStyle = 'rgba(120,53,15,.74)';
+    roundRectPath(x - size * 0.04, y + size * 0.22, size * 0.08, size * 0.58, size * 0.03);
+    ctx.fill();
+    const panel = ctx.createLinearGradient(x, y - size * 0.24, x, y + size * 0.24);
+    panel.addColorStop(0, '#fef3c7');
+    panel.addColorStop(1, '#fdba74');
+    ctx.fillStyle = panel;
+    roundRectPath(x - size * 0.46, y - size * 0.24, size * 0.92, size * 0.48, size * 0.12);
+    ctx.fill();
+    ctx.strokeStyle = 'rgba(180,83,9,.42)';
+    ctx.lineWidth = Math.max(2, size * 0.04);
+    ctx.stroke();
+    ctx.fillStyle = '#0f766e';
+    ctx.font = `900 ${Math.round(size * 0.2)}px sans-serif`;
+    ctx.textAlign = 'center';
+    ctx.textBaseline = 'middle';
+    ctx.fillText(text, x, y + size * 0.01);
+    ctx.restore();
+  }
+
+  function drawSideBubbles(x, y, size, now, direction) {
+    for (let i = 0; i < 4; i++) {
+      const bubbleSize = size * (0.16 + i * 0.025);
+      const drift = Math.sin(now * 0.0014 + i * 1.7) * size * 0.08;
+      const bx = x + direction * (i % 2 ? size * 0.28 : size * 0.04) + drift;
+      const by = y + i * size * 0.42 + Math.cos(now * 0.001 + i) * size * 0.05;
+      ctx.save();
+      ctx.globalAlpha = 0.44;
+      drawBubbleCore(bx, by, bubbleSize, i % COLORS.length, null);
+      ctx.restore();
+    }
+  }
+
+  function drawCloud(x, y, size) {
+    ctx.fillStyle = 'rgba(255,255,255,.82)';
+    ctx.beginPath();
+    ctx.arc(x, y, size * 0.36, 0, Math.PI * 2);
+    ctx.arc(x + size * 0.34, y - size * 0.14, size * 0.44, 0, Math.PI * 2);
+    ctx.arc(x + size * 0.78, y, size * 0.32, 0, Math.PI * 2);
+    ctx.rect(x - size * 0.04, y, size * 0.9, size * 0.24);
+    ctx.fill();
+  }
+
+  function drawBoard(now) {
+    ctx.save();
+    drawPlayfieldPanel();
+    drawPlayfieldWalls();
+    ctx.strokeStyle = 'rgba(14,116,144,.18)';
+    ctx.lineWidth = 2;
+    ctx.beginPath();
+    ctx.moveTo(boardLeft + radius, boardTop - radius * 0.72);
+    ctx.lineTo(boardLeft + 18 * radius, boardTop - radius * 0.72);
+    ctx.stroke();
+    for (const bubble of state.board.values()) drawBubble(bubble, now);
+    ctx.restore();
+  }
+
+  function drawPlayfieldPanel() {
+    const top = boardTop - radius * 1.25;
+    const bottom = shooterY + radius * 1.55;
+    const inset = radius * 0.18;
+    if (playRight - playLeft >= width - 2) return;
+    ctx.save();
+    const panel = ctx.createLinearGradient(0, top, 0, bottom);
+    panel.addColorStop(0, 'rgba(255,255,255,.16)');
+    panel.addColorStop(0.52, 'rgba(255,255,255,.07)');
+    panel.addColorStop(1, 'rgba(255,255,255,.18)');
+    ctx.fillStyle = panel;
+    roundRectPath(playLeft + inset, top, playRight - playLeft - inset * 2, bottom - top, radius * 0.44);
+    ctx.fill();
+    ctx.strokeStyle = 'rgba(255,255,255,.34)';
+    ctx.lineWidth = 2;
+    ctx.stroke();
+    ctx.restore();
+  }
+
+  function drawPlayfieldWalls() {
+    if (playLeft <= 0 && playRight >= width) return;
+    ctx.save();
+    ctx.setLineDash([8, 10]);
+    ctx.lineWidth = 3;
+    ctx.strokeStyle = 'rgba(15,118,110,.25)';
+    ctx.shadowColor = 'rgba(56,189,248,.26)';
+    ctx.shadowBlur = 8;
+    ctx.beginPath();
+    ctx.moveTo(playLeft + radius * 0.12, boardTop - radius);
+    ctx.lineTo(playLeft + radius * 0.12, shooterY + radius * 1.25);
+    ctx.moveTo(playRight - radius * 0.12, boardTop - radius);
+    ctx.lineTo(playRight - radius * 0.12, shooterY + radius * 1.25);
+    ctx.stroke();
+    ctx.restore();
+  }
+
+  function drawBubble(bubble, now) {
+    const p = cellCenter(bubble.row, bubble.col);
+    const bornScale = bubble.born ? clamp((now - bubble.born) / 160, 0, 1) : 1;
+    const wobble = Math.sin(now * 0.003 + bubble.wobble) * radius * 0.04;
+    drawBubbleCore(p.x, p.y + wobble, radius * (0.94 + bornScale * 0.06), bubble.type, bubble.food, { pulse: Math.sin(now * 0.004 + bubble.wobble) * 0.035 });
+  }
+
+  function drawBubbleCore(x, y, size, type, food, options = {}) {
+    const color = COLORS[type % COLORS.length];
+    const pulse = options.pulse || 0;
+    size *= 1 + pulse;
+    const gradient = ctx.createRadialGradient(x - size * 0.32, y - size * 0.38, size * 0.12, x, y, size);
+    gradient.addColorStop(0, '#ffffff');
+    gradient.addColorStop(0.18, color.from);
+    gradient.addColorStop(1, color.to);
+    ctx.fillStyle = gradient;
+    ctx.beginPath();
+    ctx.arc(x, y, size, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.lineWidth = Math.max(2, size * 0.1);
+    ctx.strokeStyle = 'rgba(255,255,255,.72)';
+    ctx.stroke();
+    ctx.strokeStyle = 'rgba(15,23,42,.12)';
+    ctx.lineWidth = Math.max(1, size * 0.035);
+    ctx.stroke();
+    ctx.fillStyle = 'rgba(255,255,255,.72)';
+    ctx.beginPath();
+    ctx.ellipse(x - size * 0.28, y - size * 0.34, size * 0.24, size * 0.13, -0.55, 0, Math.PI * 2);
+    ctx.fill();
+    if (food) {
+      ctx.font = `${Math.round(size * 0.88)}px sans-serif`;
+      ctx.textAlign = 'center';
+      ctx.textBaseline = 'middle';
+      ctx.shadowColor = 'rgba(15,23,42,.24)';
+      ctx.shadowBlur = 4;
+      ctx.strokeStyle = 'rgba(255,255,255,.72)';
+      ctx.lineWidth = Math.max(2, size * 0.08);
+      ctx.strokeText(food, x, y + size * 0.04);
+      ctx.fillText(food, x, y + size * 0.04);
+      ctx.shadowBlur = 0;
+    }
+  }
+
+  function drawAimGuide() {
+    if (!state.started || state.finished || state.projectile) return;
+    const targetX = state.aiming ? state.aimX : shooterX;
+    const targetY = state.aiming ? state.aimY : shooterY - 160;
+    const angle = aimAngle(targetX, targetY);
+    let x = shooterX;
+    let y = shooterY;
+    let vx = Math.cos(angle);
+    let vy = Math.sin(angle);
+    ctx.save();
+    ctx.setLineDash([8, 8]);
+    ctx.lineWidth = 3;
+    ctx.strokeStyle = 'rgba(15,118,110,.48)';
+    ctx.shadowColor = 'rgba(255,255,255,.72)';
+    ctx.shadowBlur = 4;
+    ctx.beginPath();
+    ctx.moveTo(x, y);
+    for (let i = 0; i < 80; i++) {
+      x += vx * radius * 0.48;
+      y += vy * radius * 0.48;
+      if (x < playLeft + radius || x > playRight - radius) vx *= -1;
+      if (y < boardTop || hitsBubbleAt(x, y)) break;
+      ctx.lineTo(x, y);
+    }
+    ctx.stroke();
+    ctx.restore();
+  }
+
+  function drawShooter(now) {
+    const angle = aimAngle(state.aiming ? state.aimX : shooterX, state.aiming ? state.aimY : shooterY - 160);
+    drawLauncherBase(now);
+    ctx.save();
+    ctx.translate(shooterX, shooterY);
+    ctx.rotate(angle + Math.PI / 2);
+    const barrel = ctx.createLinearGradient(0, -radius * 2.2, 0, radius * 0.5);
+    barrel.addColorStop(0, '#fef3c7');
+    barrel.addColorStop(1, '#f97316');
+    ctx.fillStyle = barrel;
+    roundRectPath(-radius * 0.38, -radius * 2.15, radius * 0.76, radius * 2.2, radius * 0.38);
+    ctx.fill();
+    ctx.strokeStyle = 'rgba(154,52,18,.42)';
+    ctx.lineWidth = Math.max(2, radius * 0.12);
+    ctx.stroke();
+    ctx.restore();
+    drawBubbleCore(shooterX, shooterY - radius * 0.34, radius * 0.88, state.currentType, null);
+    const petX = clamp(shooterX - radius * 2.18, radius * 1.15, width - radius * 1.15);
+    const petY = shooterY + radius * 0.38;
+    drawPetShadow(petX, petY + radius * 0.76, radius * 0.92);
+    drawLauncherPet(petX, petY, radius * 0.98, now * 0.002);
+    drawBubbleCore(shooterX + radius * 2.25, shooterY + radius * 0.32, radius * 0.58, state.nextType, null);
+    ctx.font = `${Math.round(radius * 0.55)}px sans-serif`;
+    ctx.textAlign = 'center';
+    ctx.textBaseline = 'middle';
+    ctx.fillStyle = '#0f766e';
+    ctx.fillText('下个', shooterX + radius * 2.25, shooterY + radius * 1.2);
+  }
+
+  function drawLauncherBase(now) {
+    ctx.save();
+    const bob = Math.sin(now * 0.003) * radius * 0.04;
+    const base = ctx.createLinearGradient(0, shooterY - radius * 0.45, 0, shooterY + radius * 1.2);
+    base.addColorStop(0, '#fde68a');
+    base.addColorStop(0.42, '#f59e0b');
+    base.addColorStop(1, '#b45309');
+    ctx.fillStyle = 'rgba(15,23,42,.22)';
+    ctx.beginPath();
+    ctx.ellipse(shooterX, shooterY + radius * 1.02, radius * 1.65, radius * 0.34, 0, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.fillStyle = base;
+    roundRectPath(shooterX - radius * 1.35, shooterY + radius * 0.36 + bob, radius * 2.7, radius * 0.9, radius * 0.36);
+    ctx.fill();
+    ctx.strokeStyle = 'rgba(255,255,255,.7)';
+    ctx.lineWidth = Math.max(2, radius * 0.08);
+    ctx.stroke();
+    ctx.fillStyle = '#0f766e';
+    ctx.beginPath();
+    ctx.arc(shooterX, shooterY + radius * 0.36 + bob, radius * 0.48, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.strokeStyle = 'rgba(255,255,255,.78)';
+    ctx.stroke();
+    ctx.restore();
+  }
+
+  function drawPetShadow(x, y, size) {
+    ctx.save();
+    ctx.fillStyle = 'rgba(15,23,42,.22)';
+    ctx.beginPath();
+    ctx.ellipse(x, y, size * 0.82, size * 0.22, 0, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.restore();
+  }
+
+  function drawProjectile(now) {
+    const projectile = state.projectile;
+    if (!projectile) return;
+    drawBubbleCore(projectile.x, projectile.y, radius * 1.02, projectile.type, null);
+  }
+
+  function drawLauncherPet(x, y, size, spin) {
+    ctx.save();
+    ctx.translate(x, y);
+    ctx.rotate(Math.sin(spin) * 0.14);
+    ctx.beginPath();
+    ctx.arc(0, 0, size * 0.76, 0, Math.PI * 2);
+    ctx.clip();
+    if (state.petBitmap && state.petMeta?.uv) {
+      const uv = state.petMeta.uv;
+      ctx.drawImage(state.petBitmap, uv.x, uv.y, uv.width, uv.height, -size * 0.72, -size * 0.78, size * 1.44, size * 1.44);
+    } else {
+      ctx.font = `${Math.round(size * 0.95)}px sans-serif`;
+      ctx.textAlign = 'center';
+      ctx.textBaseline = 'middle';
+      ctx.fillText(PET_FALLBACK, 0, size * 0.02);
+    }
+    ctx.restore();
+  }
+
+  function drawParticles() {
+    state.particles.forEach(p => {
+      ctx.save();
+      ctx.globalAlpha = clamp(p.life / p.maxLife, 0, 1);
+      if (p.food) {
+        ctx.font = `${Math.round(p.size * 1.6)}px sans-serif`;
+        ctx.textAlign = 'center';
+        ctx.textBaseline = 'middle';
+        ctx.fillText(p.food, p.x, p.y);
+      } else {
+        ctx.fillStyle = p.color;
+        ctx.beginPath();
+        if (p.kind === 'spark') {
+          drawSpark(p.x, p.y, p.size, p.color);
+        } else {
+          ctx.arc(p.x, p.y, p.size, 0, Math.PI * 2);
+          ctx.fill();
+        }
+      }
+      ctx.restore();
+    });
+  }
+
+  function drawSpark(x, y, size, color) {
+    ctx.fillStyle = color;
+    ctx.beginPath();
+    for (let i = 0; i < 8; i++) {
+      const angle = i * Math.PI / 4;
+      const r = i % 2 ? size * 0.35 : size * 1.35;
+      const px = x + Math.cos(angle) * r;
+      const py = y + Math.sin(angle) * r;
+      if (i === 0) ctx.moveTo(px, py);
+      else ctx.lineTo(px, py);
+    }
+    ctx.closePath();
+    ctx.fill();
+  }
+
+  function drawFloatingTexts() {
+    state.floatingTexts.forEach(item => {
+      ctx.save();
+      ctx.globalAlpha = clamp(item.life / item.maxLife, 0, 1);
+      ctx.font = `900 ${Math.round(radius * 0.9)}px sans-serif`;
+      ctx.textAlign = 'center';
+      ctx.textBaseline = 'middle';
+      ctx.fillStyle = item.color;
+      ctx.strokeStyle = 'rgba(255,255,255,.9)';
+      ctx.lineWidth = 4;
+      ctx.strokeText(item.text, item.x, item.y);
+      ctx.fillText(item.text, item.x, item.y);
+      ctx.restore();
+    });
+  }
+
+  function collectSameColor(start) {
+    const cluster = [];
+    const seen = new Set([key(start.row, start.col)]);
+    const queue = [start];
+    while (queue.length) {
+      const bubble = queue.shift();
+      cluster.push(bubble);
+      neighbors(bubble.row, bubble.col).forEach(next => {
+        const nextKey = key(next.row, next.col);
+        if (!seen.has(nextKey) && next.type === start.type) {
+          seen.add(nextKey);
+          queue.push(next);
+        }
+      });
+    }
+    return cluster;
+  }
+
+  function neighbors(row, col) {
+    const offsets = row % 2 ? NEIGHBORS_ODD : NEIGHBORS_EVEN;
+    const result = [];
+    offsets.forEach(([dr, dc]) => {
+      const next = getBubble(row + dr, col + dc);
+      if (next) result.push(next);
+    });
+    return result;
+  }
+
+  function nearestEmptyNeighbor(bubble, x, y) {
+    const offsets = bubble.row % 2 ? NEIGHBORS_ODD : NEIGHBORS_EVEN;
+    let best = null;
+    offsets.forEach(([dr, dc]) => {
+      const row = bubble.row + dr;
+      const col = bubble.col + dc;
+      if (row < 0 || row >= MAX_ROWS || col < 0 || col >= COLS || getBubble(row, col)) return;
+      const p = cellCenter(row, col);
+      const d = distance(x, y, p.x, p.y);
+      if (!best || d < best.d) best = { row, col, d };
+    });
+    return best;
+  }
+
+  function nearestOpenCell(x, y) {
+    let best = null;
+    for (let row = 0; row < MAX_ROWS; row++) {
+      for (let col = 0; col < COLS; col++) {
+        if (getBubble(row, col)) continue;
+        const p = cellCenter(row, col);
+        const d = distance(x, y, p.x, p.y);
+        if (!best || d < best.d) best = { row, col, d };
+      }
+    }
+    return best;
+  }
+
+  function nearestCell(x, y) {
+    const row = clamp(Math.round((y - boardTop) / (radius * 1.72)), 0, MAX_ROWS - 1);
+    const col = clamp(Math.round((x - boardLeft - radius - (row % 2) * radius) / (radius * 2)), 0, COLS - 1);
+    if (!getBubble(row, col)) return { row, col };
+    return nearestOpenCell(x, y);
+  }
+
+  function cellCenter(row, col) {
+    return {
+      x: boardLeft + radius + col * radius * 2 + (row % 2) * radius,
+      y: boardTop + row * radius * 1.72,
+    };
+  }
+
+  function getBubble(row, col) {
+    return state.board.get(key(row, col));
+  }
+
+  function setBubble(row, col, bubble) {
+    state.board.set(key(row, col), { ...bubble, row, col });
+  }
+
+  function deleteBubble(row, col) {
+    state.board.delete(key(row, col));
+  }
+
+  function key(row, col) {
+    return `${row},${col}`;
+  }
+
+  function usefulType(randomSource, colorCount) {
+    const counts = new Map();
+    state.board.forEach(bubble => counts.set(bubble.type, (counts.get(bubble.type) || 0) + 1));
+    const useful = Array.from(counts.entries()).filter(([, count]) => count >= 2).map(([type]) => type);
+    const random = typeof randomSource === 'function' ? randomSource : Math.random;
+    if (useful.length) return useful[Math.floor(random() * useful.length)];
+    return Math.floor(random() * colorCount);
+  }
+
+  function lowestBubbleY() {
+    let lowest = boardTop;
+    state.board.forEach(bubble => {
+      lowest = Math.max(lowest, cellCenter(bubble.row, bubble.col).y);
+    });
+    return lowest;
+  }
+
+  function hitsBubbleAt(x, y) {
+    for (const bubble of state.board.values()) {
+      const p = cellCenter(bubble.row, bubble.col);
+      if (distance(x, y, p.x, p.y) <= radius * 1.9) return true;
+    }
+    return false;
+  }
+
+  function aimAngle(x, y) {
+    let angle = Math.atan2(y - shooterY, x - shooterX);
+    if (angle > -0.12) angle = -0.12;
+    if (angle < -Math.PI + 0.12) angle = -Math.PI + 0.12;
+    return angle;
+  }
+
+  function makeParticles(x, y, color, count, food) {
+    for (let i = 0; i < count; i++) {
+      const angle = Math.random() * Math.PI * 2;
+      const speed = Math.random() * 0.16 + 0.04;
+      state.particles.push({
+        x,
+        y,
+        vx: Math.cos(angle) * speed,
+        vy: Math.sin(angle) * speed - 0.04,
+        size: radius * (Math.random() * 0.18 + 0.12),
+        color,
+        kind: Math.random() < 0.34 ? 'spark' : 'dot',
+        food: food && i === 0 ? food : '',
+        life: 520 + Math.random() * 360,
+        maxLife: 880,
+      });
+    }
+  }
+
+  function showFloatingText(text, x, y, color) {
+    state.floatingTexts.push({ text, x, y, color, life: 900, maxLife: 900 });
+  }
+
+  function updateHud() {
+    hudEls.level.textContent = String(state.level);
+    hudEls.food.textContent = String(state.foods);
+    hudEls.target.textContent = String(state.targetFoods);
+    hudEls.shots.textContent = String(Math.max(0, state.shotsLeft));
+    hudEls.score.textContent = String(state.score);
+    hudEls.shotsPill?.classList.toggle('low', state.started && !state.finished && state.shotsLeft <= 5);
+  }
+
+  function buildDifficulties() {
+    const targets = [document.getElementById('mhDifficulties'), document.getElementById('mhOverlayDifficulties')];
+    targets.forEach(target => {
+      target.innerHTML = DIFFICULTY_ORDER.map(id => `<button class="mh-difficulty${state.difficulty === id ? ' active' : ''}" type="button" data-difficulty="${id}">${DIFFICULTIES[id].label}</button>`).join('');
+      target.querySelectorAll('[data-difficulty]').forEach(btn => {
+        btn.onclick = () => setDifficulty(btn.dataset.difficulty);
+      });
+    });
+  }
+
+  function setDifficulty(id) {
+    if (!DIFFICULTIES[id]) return;
+    state.difficulty = id;
+    localStorage.setItem(STORAGE_DIFFICULTY, id);
+    buildDifficulties();
+    playSound('select');
+    if (state.started && !state.projectile) startGame();
+  }
+
+  function showResult(title, text, buttonText, onClick) {
+    overlayTitleEl.textContent = title;
+    overlayTextEl.textContent = text;
+    startBtn.textContent = buttonText;
+    startBtn.onclick = onClick;
+    overlayEl.hidden = false;
+  }
+
+  function hideOverlay() {
+    overlayEl.hidden = true;
+  }
+
+  function showToast(text) {
+    const old = document.querySelector('.mh-toast');
+    old?.remove();
+    const toast = document.createElement('div');
+    toast.className = 'mh-toast';
+    toast.textContent = text;
+    document.body.appendChild(toast);
+    setTimeout(() => toast.remove(), 1250);
+  }
+
+  function burstConfetti() {
+    const colors = ['#f97316', '#22c55e', '#38bdf8', '#facc15', '#fb7185', '#a78bfa'];
+    for (let i = 0; i < 54; i++) {
+      const el = document.createElement('div');
+      el.className = 'mh-confetti';
+      el.style.left = `${Math.random() * 100}%`;
+      el.style.setProperty('--x', `${(Math.random() - 0.5) * 160}px`);
+      el.style.setProperty('--d', `${1.4 + Math.random() * 1.2}s`);
+      el.style.setProperty('--c', colors[i % colors.length]);
+      document.body.appendChild(el);
+      setTimeout(() => el.remove(), 2800);
+    }
+  }
+
+  function shakeScreen() {
+    canvas.style.transform = 'translateX(0)';
+    let count = 0;
+    const timer = setInterval(() => {
+      count += 1;
+      canvas.style.transform = `translateX(${count % 2 ? -5 : 5}px)`;
+      if (count > 8) {
+        clearInterval(timer);
+        canvas.style.transform = '';
+      }
+    }, 34);
+  }
+
+  function stopLoop() {
+    if (rafId) cancelAnimationFrame(rafId);
+    rafId = 0;
+  }
+
+  function resumeLoop() {
+    stopLoop();
+    lastTime = performance.now();
+    rafId = requestAnimationFrame(loop);
+  }
+
+  function initSound() {
+    if (sound.ctx) return;
+    try {
+      const AudioContext = window.AudioContext || window.webkitAudioContext;
+      if (!AudioContext) return;
+      sound.ctx = new AudioContext();
+      sound.compressor = sound.ctx.createDynamicsCompressor();
+      sound.compressor.threshold.value = -20;
+      sound.compressor.knee.value = 18;
+      sound.compressor.ratio.value = 8;
+      sound.compressor.attack.value = 0.004;
+      sound.compressor.release.value = 0.16;
+      sound.master = sound.ctx.createGain();
+      sound.master.gain.value = 0.18;
+      sound.master.connect(sound.compressor);
+      sound.compressor.connect(sound.ctx.destination);
+    } catch (_) {}
+  }
+
+  function playSound(type) {
+    initSound();
+    if (!sound.ctx || !sound.master) return;
+    try {
+      if (sound.ctx.state === 'suspended') sound.ctx.resume();
+      const now = sound.ctx.currentTime;
+      if (type === 'shoot') {
+        playTone(380, 620, 0.1, 'triangle', 0.18, now);
+        playNoise(0.06, 0.04, now, 'highpass', 900);
+      } else if (type === 'bounce') {
+        playTone(300, 390, 0.055, 'sine', 0.08, now);
+      } else if (type === 'stick') {
+        playTone(250, 170, 0.08, 'triangle', 0.11, now);
+      } else if (type === 'pop') {
+        playTone(620, 940, 0.12, 'sine', 0.12, now);
+        playNoise(0.09, 0.05, now, 'bandpass', 1400);
+      } else if (type === 'food') {
+        playTone(760, 1120, 0.12, 'sine', 0.13, now);
+        playTone(980, 1480, 0.15, 'triangle', 0.1, now + 0.04);
+      } else if (type === 'drop') {
+        playTone(210, 120, 0.18, 'sawtooth', 0.12, now);
+        playNoise(0.14, 0.05, now, 'lowpass', 900);
+      } else if (type === 'hit') {
+        playTone(160, 68, 0.24, 'sawtooth', 0.2, now);
+        playNoise(0.18, 0.12, now, 'lowpass', 700);
+      } else if (type === 'win') {
+        playSequence([523, 659, 784, 1046], 0.08, 0.12, 'triangle', now);
+      } else if (type === 'start') {
+        playSequence([392, 523, 659], 0.065, 0.08, 'sine', now);
+      } else if (type === 'select') {
+        playTone(520, 700, 0.055, 'sine', 0.08, now);
+      } else {
+        playTone(520, 760, 0.08, 'sine', 0.1, now);
+      }
+    } catch (_) {}
+  }
+
+  function playMatchSound(clusterCount, foodCount, floatingCount) {
+    playSound(foodCount ? 'food' : 'pop');
+    if (!sound.ctx || !sound.master) return;
+    const now = sound.ctx.currentTime;
+    const bonus = Math.min(3, Math.floor((clusterCount + floatingCount) / 4));
+    for (let i = 0; i < bonus; i++) {
+      playTone(720 + i * 120, 980 + i * 180, 0.08, 'sine', 0.07, now + 0.055 * (i + 1));
+    }
+  }
+
+  function playTone(startFreq, endFreq, duration, wave, volume, startAt = sound.ctx.currentTime) {
+    const osc = sound.ctx.createOscillator();
+    const gain = sound.ctx.createGain();
+    osc.type = wave || 'sine';
+    osc.frequency.setValueAtTime(Math.max(1, startFreq), startAt);
+    osc.frequency.exponentialRampToValueAtTime(Math.max(1, endFreq), startAt + duration);
+    gain.gain.setValueAtTime(0.001, startAt);
+    gain.gain.exponentialRampToValueAtTime(Math.max(0.002, volume), startAt + 0.012);
+    gain.gain.exponentialRampToValueAtTime(0.001, startAt + duration);
+    osc.connect(gain);
+    gain.connect(sound.master);
+    osc.start(startAt);
+    osc.stop(startAt + duration + 0.03);
+  }
+
+  function playSequence(notes, step, volume, wave, startAt = sound.ctx.currentTime) {
+    notes.forEach((note, index) => {
+      playTone(note, note * 1.12, step * 1.4, wave, volume, startAt + index * step);
+    });
+  }
+
+  function playNoise(duration, volume, startAt = sound.ctx.currentTime, filterType = 'bandpass', frequency = 1200) {
+    const length = Math.max(1, Math.floor(sound.ctx.sampleRate * duration));
+    const buffer = sound.ctx.createBuffer(1, length, sound.ctx.sampleRate);
+    const data = buffer.getChannelData(0);
+    for (let i = 0; i < length; i++) data[i] = (Math.random() * 2 - 1) * (1 - i / length);
+    const source = sound.ctx.createBufferSource();
+    const filter = sound.ctx.createBiquadFilter();
+    const gain = sound.ctx.createGain();
+    source.buffer = buffer;
+    filter.type = filterType;
+    filter.frequency.value = frequency;
+    gain.gain.setValueAtTime(volume, startAt);
+    gain.gain.exponentialRampToValueAtTime(0.001, startAt + duration);
+    source.connect(filter);
+    filter.connect(gain);
+    gain.connect(sound.master);
+    source.start(startAt);
+    source.stop(startAt + duration + 0.02);
+  }
+
+  function requestPetImage() {
+    try {
+      window.parent.postMessage({
+        type: 'haqi_get_pet_image',
+        requestId: `bubble_pet_${Date.now()}`,
+        anim: 'happy',
+      }, '*');
+    } catch (_) {}
+  }
+
+  async function setPetImage(pet) {
+    cleanupPetImage();
+    try {
+      state.petMeta = pet;
+      state.petBitmap = await createImageBitmap(pet.imageBlob);
+      if (pet.imageBlob) {
+        const url = URL.createObjectURL(pet.imageBlob);
+        state.petUrl = url;
+        state.objectUrls.push(url);
+      }
+      draw(performance.now());
+    } catch (_) {
+      state.petBitmap = null;
+      state.petMeta = null;
+    }
+  }
+
+  function cleanupPetImage() {
+    state.petBitmap?.close?.();
+    state.petBitmap = null;
+    state.objectUrls.forEach(url => URL.revokeObjectURL(url));
+    state.objectUrls = [];
+    state.petUrl = '';
+  }
+
+  function post(type, data = {}) {
+    try { window.parent.postMessage({ type, data }, '*'); } catch (_) {}
+  }
+
+  function handlePointerStart(event) {
+    if (event.target?.closest?.('button')) return;
+    event.preventDefault();
+    initSound();
+    if (!state.started || state.finished) {
+      startGame();
+      return;
+    }
+    if (state.projectile) return;
+    const p = pointerPoint(event);
+    state.aiming = true;
+    state.aimX = p.x;
+    state.aimY = p.y;
+  }
+
+  function handlePointerMove(event) {
+    if (!state.aiming) return;
+    event.preventDefault();
+    const p = pointerPoint(event);
+    state.aimX = p.x;
+    state.aimY = p.y;
+  }
+
+  function handlePointerEnd(event) {
+    if (!state.aiming) return;
+    event.preventDefault();
+    const p = pointerPoint(event);
+    fireAt(p.x, p.y);
+  }
+
+  function pointerPoint(event) {
+    const touch = event.changedTouches?.[0] || event.touches?.[0];
+    return { x: touch?.clientX ?? event.clientX ?? shooterX, y: touch?.clientY ?? event.clientY ?? shooterY - 160 };
+  }
+
+  function distance(ax, ay, bx, by) {
+    return Math.hypot(ax - bx, ay - by);
+  }
+
+  function clamp(value, min, max) {
+    return Math.max(min, Math.min(max, value));
+  }
+
+  function shuffle(items, random) {
+    for (let i = items.length - 1; i > 0; i--) {
+      const j = Math.floor(random() * (i + 1));
+      [items[i], items[j]] = [items[j], items[i]];
+    }
+    return items;
+  }
+
+  function hashSeed(text) {
+    let hash = 2166136261;
+    for (let i = 0; i < text.length; i++) {
+      hash ^= text.charCodeAt(i);
+      hash = Math.imul(hash, 16777619);
+    }
+    return hash >>> 0;
+  }
+
+  function seededRandom(seed) {
+    let value = seed || 1;
+    return function () {
+      value = Math.imul(1664525, value) + 1013904223;
+      return ((value >>> 0) / 4294967296);
+    };
+  }
+
+  function roundRectPath(x, y, w, h, r) {
+    if (ctx.roundRect) {
+      ctx.beginPath();
+      ctx.roundRect(x, y, w, h, r);
+      return;
+    }
+    const radiusValue = Math.min(r, w / 2, h / 2);
+    ctx.beginPath();
+    ctx.moveTo(x + radiusValue, y);
+    ctx.lineTo(x + w - radiusValue, y);
+    ctx.quadraticCurveTo(x + w, y, x + w, y + radiusValue);
+    ctx.lineTo(x + w, y + h - radiusValue);
+    ctx.quadraticCurveTo(x + w, y + h, x + w - radiusValue, y + h);
+    ctx.lineTo(x + radiusValue, y + h);
+    ctx.quadraticCurveTo(x, y + h, x, y + h - radiusValue);
+    ctx.lineTo(x, y + radiusValue);
+    ctx.quadraticCurveTo(x, y, x + radiusValue, y);
+  }
+
+  window.addEventListener('resize', resize);
+  window.addEventListener('pointerdown', handlePointerStart, { passive: false });
+  window.addEventListener('pointermove', handlePointerMove, { passive: false });
+  window.addEventListener('pointerup', handlePointerEnd, { passive: false });
+  window.addEventListener('pointercancel', () => { state.aiming = false; });
+  window.addEventListener('keydown', event => {
+    if (event.code === 'Space' || event.code === 'Enter') {
+      event.preventDefault();
+      if (!state.started || state.finished) startGame();
+      else fireAt(state.aiming ? state.aimX : shooterX, state.aiming ? state.aimY : shooterY - 160);
+    }
+    if (event.code === 'ArrowLeft') {
+      state.aiming = true;
+      state.aimX = shooterX - 120;
+      state.aimY = shooterY - 220;
+    }
+    if (event.code === 'ArrowRight') {
+      state.aiming = true;
+      state.aimX = shooterX + 120;
+      state.aimY = shooterY - 220;
+    }
+  });
+  window.addEventListener('message', event => {
+    const msg = event.data || {};
+    if (msg.type === 'gameContinue') {
+      if (state.paused) {
+        state.paused = false;
+        hideOverlay();
+        resumeLoop();
+      } else if (!state.started || state.finished) {
+        startGame();
+      }
+    }
+    if (msg.type === 'haqi_pet_image' && msg.ok) setPetImage(msg.data);
+    if (msg.type === 'setGameConfig' && msg.data?.difficulty && DIFFICULTIES[msg.data.difficulty]) {
+      setDifficulty(msg.data.difficulty);
+      startGame();
+    }
+  });
+  window.addEventListener('beforeunload', cleanupPetImage);
+
+  document.getElementById('mhMenu').onclick = () => showResult('哈奇泡泡龙', '拖住屏幕来瞄准，松手就发射泡泡。三个或更多同色泡泡碰到一起就会爆开；爆开或掉下来的表情食物都会被收集。收集够这一关的目标后，就会进入自动生成的新关卡。', state.started && !state.finished ? '继续游戏' : '开始挑战', () => {
+    if (state.started && !state.finished) {
+      state.paused = false;
+      hideOverlay();
+      resumeLoop();
+    } else {
+      startGame();
+    }
+  });
+  document.getElementById('mhHelp').onclick = document.getElementById('mhMenu').onclick;
+  document.getElementById('mhRestart').onclick = () => startGame({ keepLevel: true });
+  startBtn.onclick = () => startGame();
+
+  buildDifficulties();
+  resize();
+  updateHud();
+  requestPetImage();
+  draw(performance.now());
+  post('gameLoaded');
+})();
+</script>
+
+</html>

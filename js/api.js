@@ -41,6 +41,9 @@ export async function genPetSheet(dna, name = '', options = {}) {
     const customPrompt = (options && typeof options.customPrompt === 'string')
         ? options.customPrompt.trim()
         : '';
+    const referenceImage = (options && typeof options.referenceImage === 'string')
+        ? options.referenceImage.trim()
+        : '';
     const dnaPrompt = dnaToPrompt(dna, { name });
     const sheetTheme = '';
     const base = customPrompt
@@ -57,6 +60,7 @@ export async function genPetSheet(dna, name = '', options = {}) {
     const prompt = [
         base,
         customPrompt ? '重要：生成结果必须一眼能看出玩家许愿的核心内容，不能只生成普通随机萌宠。' : '',
+        referenceImage ? '参考图片是玩家提供的外观方向，请提取其中的主要轮廓、颜色、纹理、配饰或气质，并转化成同一只二头身萌宠；不要照搬照片背景或文字。' : '',
         '生成一张 4×4 共 16 格的精灵图（sprite sheet），所有格子尺寸相同、严格对齐网格、单元间无缝隙。',
         '每一行代表同一只宠物的同一成长阶段（共 4 个阶段）：第 1 行=宝宝/幼年（几乎只有一个圆圆大头，身体极小，只露出小短手小短脚，像头部占画面主体的婴儿萌宠, 不要暴漏主要生物特征和元素特征），第 2 行=青少年（标准二头身，可以展示没有完全发育的主要生物特征），第 3 行=成年（仍然是二头身，呈现出完整的主要生物特点），第 4 行=年长/长老（仍然是二头身，增加元素特征或增加华丽感）。',
         '每一行的 4 列代表同一阶段下的 4 种情绪/状态：第 1 列=idle（待机、自然站立、平静微笑），第 2 列=happy（开心、咧嘴大笑、雀跃姿态），第 3 列=sad（难过、眼角垂泪、垂头丧气），第 4 列=sleep（睡觉、闭眼、放松或蜷缩, 可正对，背对或侧卧等姿势皆可）。同一行的 4 个变体必须保持相同的种类、毛色、配饰，明显是同一只宠物。',
@@ -67,6 +71,7 @@ export async function genPetSheet(dna, name = '', options = {}) {
         const url = await state.sdk.aiGenerators.genImage(prompt, {
             width: CONFIG.imageWidth,
             height: CONFIG.imageHeight,
+            images: referenceImage ? [{ url: referenceImage, role: 'reference' }] : undefined,
         });
         return url || null;
     } catch (e) {

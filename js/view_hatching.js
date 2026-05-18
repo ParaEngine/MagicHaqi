@@ -20,7 +20,7 @@ import { petArtHtml } from './pet.js';
 export function renderHatching(panel, { pet, pets = [], planetName = '' } = {}, { onBack, onHireNanny, onAdoptEgg, onOpenAlbum, onBreed } = {}) {
     const progress = computePlanetProgress();
     const localPets = localPlanetPets(pets);
-    const breedReadyCount = pets.filter(p => p && CONFIG.breedableStages.includes(p.stage)).length;
+    const breedReadyCount = localPets.filter(p => p && CONFIG.breedableStages.includes(p.stage)).length;
     const breedReady = breedReadyCount >= 2;
     const limit = getPlanetPetLimit();
     const location = getPetLocationInfo(pet, planetName || '宠物星');
@@ -86,7 +86,7 @@ export function renderHatching(panel, { pet, pets = [], planetName = '' } = {}, 
             <section class="card-flat" style="margin-top:12px;background:#fff;border-color:rgba(236,72,153,.24)">
                 <div style="font-weight:900;color:var(--text-primary);margin-bottom:6px">繁殖宝宝</div>
                 <div style="font-size:12px;color:var(--text-secondary);line-height:1.55;margin-bottom:10px">
-                    选择两只成年宠物组合 DNA，生成一只新的宝宝。需要 ${CONFIG.breedCost} 金币。
+                    选择两只成年宠物组合 DNA，生成一只新的宝宝。
                 </div>
                 <button class="btn-secondary w-full" id="mhBreedBaby" ${breedReady ? '' : 'disabled'}>💕 繁殖宝宝</button>
             </section>

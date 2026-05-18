@@ -182,6 +182,9 @@ function createPetPayload(pet) {
     if (!pet || typeof pet !== 'object') return pet;
     const { stageName, stageEmoji, ...payload } = pet;
     const locationType = payload.location?.type || payload.status || 'home';
+    if (locationType !== 'home') {
+        delete payload.poops;
+    }
     if (locationType === 'released') {
         delete payload.stats;
         delete payload.anim;

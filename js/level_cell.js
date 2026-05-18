@@ -10,6 +10,9 @@ import { isPetInteractionBlocked, isPetSleeping, sleepingInteractionText } from 
 
 // 许愿文字上限（按字符数计；中文每字算 1，符合"最多 200 字"的需求）
 const WISH_MAX_LEN = 200;
+const WISH_REF_IMAGE_MAX_BYTES = 1024 * 1024;
+const WISH_REF_IMAGE_QUALITY_STEPS = [0.86, 0.72, 0.58, 0.44, 0.32];
+const WISH_REF_IMAGE_MAX_SCALE_ITERATIONS = 6;
 
 let cellTimer = null;
 let cellHits = 0;
@@ -164,6 +167,102 @@ function stopCellGame() {
     cellHits = 0;
 }
 
+function wishReferencePreviewHtml(src) {
+    if (!src) {
+        return `<div class="wish-ref-empty">可选：添加一张参考图片，让孵化外观更接近你的想法。</div>`;
+    }
+    return `<img class="wish-ref-img" src="${escapeHtml(src)}" alt="参考图片预览">`;
+}
+
+function setWishReferencePreview(box, src) {
+    if (!box) return;
+    box.innerHTML = wishReferencePreviewHtml(src);
+    box.classList.toggle('has-image', !!src);
+}
+
+function splitImageDataUri(dataUrl) {
+    const match = String(dataUrl || '').match(/^data:(image\/[^;]+);base64,(.+)$/);
+    return match ? { mimeType: match[1], base64: match[2] } : { mimeType: 'image/png', base64: String(dataUrl || '') };
+}
+
+function base64ByteSize(base64) {
+    const text = String(base64 || '');
+    const padding = text.endsWith('==') ? 2 : text.endsWith('=') ? 1 : 0;
+    return Math.max(0, Math.floor((text.length * 3) / 4) - padding);
+}
+
+function dataUriByteSize(dataUrl) {
+    return base64ByteSize(splitImageDataUri(dataUrl).base64);
+}
+
+function canvasToReferenceDataUrl(img, width, height, quality) {
+    const canvas = document.createElement('canvas');
+    canvas.width = width;
+    canvas.height = height;
+    const ctx = canvas.getContext('2d');
+    if (!ctx) throw new Error('无法压缩图片');
+    ctx.drawImage(img, 0, 0, width, height);
+    return canvas.toDataURL('image/jpeg', quality);
+}
+
+function compressWishReferenceDataUrl(dataUrl, maxBytes = WISH_REF_IMAGE_MAX_BYTES) {
+    return new Promise((resolve, reject) => {
+        if (!dataUrl || dataUriByteSize(dataUrl) <= maxBytes) {
+            resolve(dataUrl);
+            return;
+        }
+        const img = new Image();
+        img.onload = () => {
+            try {
+                let width = img.naturalWidth || img.width || 1;
+                let height = img.naturalHeight || img.height || 1;
+                let smallest = '';
+                let smallestSize = Infinity;
+
+                for (let scaleIter = 0; scaleIter < WISH_REF_IMAGE_MAX_SCALE_ITERATIONS; scaleIter++) {
+                    for (const quality of WISH_REF_IMAGE_QUALITY_STEPS) {
+                        const next = canvasToReferenceDataUrl(img, width, height, quality);
+                        const nextSize = dataUriByteSize(next);
+                        if (nextSize < smallestSize) {
+                            smallest = next;
+                            smallestSize = nextSize;
+                        }
+                        if (nextSize <= maxBytes) {
+                            resolve(next);
+                            return;
+                        }
+                    }
+                    width = Math.max(1, Math.floor(width / 2));
+                    height = Math.max(1, Math.floor(height / 2));
+                }
+
+                resolve(smallest || dataUrl);
+            } catch (e) {
+                reject(e);
+            }
+        };
+        img.onerror = () => reject(new Error('图片格式无法预览'));
+        img.src = dataUrl;
+    });
+}
+
+function readWishReferenceImage(file) {
+    return new Promise((resolve, reject) => {
+        if (!file || !/^image\//i.test(file.type || '')) {
+            reject(new Error('请选择图片文件'));
+            return;
+        }
+        const reader = new FileReader();
+        reader.onerror = () => reject(new Error('读取图片失败'));
+        reader.onload = () => {
+            const dataUrl = String(reader.result || '');
+            if (!dataUrl) { reject(new Error('读取图片失败')); return; }
+            compressWishReferenceDataUrl(dataUrl).then(resolve).catch(reject);
+        };
+        reader.readAsDataURL(file);
+    });
+}
+
 function showWishModal(pet, ctx) {
     if (!pet) return;
     if (pet.stage !== 'egg') {
@@ -171,16 +270,25 @@ function showWishModal(pet, ctx) {
         return;
     }
     const current = String(pet.wishPrompt || '').slice(0, WISH_MAX_LEN);
+    let referenceImage = typeof pet.wishReferenceImage === 'string' ? pet.wishReferenceImage : '';
     const mask = document.createElement('div');
     mask.className = 'modal-mask';
     mask.innerHTML = `
-        <div class="modal-card">
+        <div class="modal-card wish-modal-card">
             <div class="text-base font-bold mb-3" style="color:var(--text-primary)">🌠 为这颗蛋许愿</div>
             <textarea data-wish-input maxlength="${WISH_MAX_LEN}" rows="5"
                 placeholder="例如：龙宝宝,眼睛是星星眼…（最多 ${WISH_MAX_LEN} 字)"
                 style="width:100%;padding:10px;border-radius:12px;border:1.5px solid var(--border-card);background:var(--input-bg);color:var(--text-primary);font-size:14px;line-height:1.5;resize:vertical">${escapeHtml(current)}</textarea>
             <div class="text-xs mt-1" style="color:var(--text-muted);text-align:right">
                 <span data-wish-count>${current.length}</span> / ${WISH_MAX_LEN}
+            </div>
+            <div class="wish-ref-block">
+                <div class="wish-ref-preview ${referenceImage ? 'has-image' : ''}" data-wish-ref-preview>${wishReferencePreviewHtml(referenceImage)}</div>
+                <input data-wish-ref-input type="file" accept="image/*" hidden>
+                <div class="wish-ref-actions">
+                    <button class="btn-secondary" data-wish-act="pick-image">参考图片</button>
+                    <button class="btn-secondary" data-wish-act="remove-image" ${referenceImage ? '' : 'disabled'}>移除图片</button>
+                </div>
             </div>
             <div class="flex gap-2 justify-end mt-3">
                 <button class="btn-secondary" data-wish-act="clear">清除</button>
@@ -190,21 +298,44 @@ function showWishModal(pet, ctx) {
         </div>`;
     const input = mask.querySelector('[data-wish-input]');
     const counter = mask.querySelector('[data-wish-count]');
+    const refInput = mask.querySelector('[data-wish-ref-input]');
+    const refPreview = mask.querySelector('[data-wish-ref-preview]');
+    const removeImageBtn = mask.querySelector('[data-wish-act="remove-image"]');
     const updateCount = () => {
         if (counter) counter.textContent = String((input.value || '').length);
     };
+    const updateReferenceImage = (src) => {
+        referenceImage = src || '';
+        setWishReferencePreview(refPreview, referenceImage);
+        if (removeImageBtn) removeImageBtn.disabled = !referenceImage;
+    };
     input.addEventListener('input', updateCount);
+    refInput?.addEventListener('change', async () => {
+        const file = refInput.files?.[0];
+        if (!file) return;
+        try {
+            updateReferenceImage(await readWishReferenceImage(file));
+            showToast('已添加参考图片', 'success', 1400);
+        } catch (e) {
+            showToast(e?.message || '添加参考图片失败', 'error', 1800);
+        } finally {
+            refInput.value = '';
+        }
+    });
     const close = () => mask.remove();
     mask.addEventListener('click', (e) => {
         if (e.target === mask) { close(); return; }
         const act = e.target.closest?.('[data-wish-act]')?.dataset.wishAct;
         if (act === 'cancel') { close(); return; }
-        if (act === 'clear') { input.value = ''; updateCount(); return; }
+        if (act === 'pick-image') { refInput?.click(); return; }
+        if (act === 'remove-image') { updateReferenceImage(''); return; }
+        if (act === 'clear') { input.value = ''; updateCount(); updateReferenceImage(''); return; }
         if (act === 'ok') {
             const txt = (input.value || '').trim().slice(0, WISH_MAX_LEN);
             pet.wishPrompt = txt || null;
+            pet.wishReferenceImage = referenceImage || null;
             savePetDebounced(pet);
-            showToast(txt ? '已记录你的许愿 ✨' : '已清除许愿', 'success', 1600);
+            showToast(txt || referenceImage ? '已记录你的许愿 ✨' : '已清除许愿', 'success', 1600);
             close();
             // 刷新 dock 文本
             try { refreshCellDock(pet, ctx); } catch (_) {}

@@ -17,7 +17,7 @@ import { state, subscribe } from './state.js';
 import { savePetDebounced } from './storage.js';
 import { biasDnaForFieldId, biasDnaForTrait, decodeDna, dietPreferenceLabel, dnaDietPreference, dnaRarity, dnaToName } from './dna.js';
 import { CONFIG, findLargestHouseAcrossLayouts } from './config.js';
-import { applyStage, defaultTraits, gainTrait, markPetCared } from './petTick.js';
+import { applyStage, defaultTraits, gainTrait, markPetCared, recoverEnergyAfterSleep } from './petTick.js';
 import { getRuntimePetStats } from './petLifecycle.js';
 import { clamp, escapeHtml } from './utils.js';
 
@@ -101,6 +101,7 @@ export function wakePet(pet) {
     pet.anim = DEFAULT_ANIM;
     delete pet.sleepStartedAt;
     delete pet.sleepLockedUntil;
+    recoverEnergyAfterSleep(pet);
     return true;
 }
 
@@ -261,6 +262,22 @@ function _isEggReadyToHatch(pet) {
     return !!pet.eggHatchPending || !!pet.eggHatchRequestedAt || (pet.stats?.hunger ?? 0) > 0;
 }
 
+function _isEggHatchQueued(pet) {
+    return !!pet && pet.stage === 'egg' && !!pet.eggHatchQueuedAt;
+}
+
+function _isEggHatchStarted(pet) {
+    return !!pet && pet.stage === 'egg' && (!!pet.eggHatchPending || !!pet.eggHatchRequestedAt);
+}
+
+function _continueStartedEggHatch(pet) {
+    if (!_isEggHatchStarted(pet)) return false;
+    pet.eggHatchPending = true;
+    _syncPendingEggEffect(pet);
+    if (pet.imageSheetUrl) _requestReadyEggHatch(pet);
+    return true;
+}
+
 function _isEggSheetReadyToReveal(pet) {
     if (!pet?.imageSheetUrl) return false;
     const processed = getProcessedSheet(pet.imageSheetUrl);
@@ -284,6 +301,8 @@ function _finishReadyEggHatch(pet) {
     pet.stage = 'baby';
     pet.eggHatchPending = false;
     delete pet.eggHatchPending;
+    delete pet.eggHatchQueuedAt;
+    delete pet.eggHatchRequestedAt;
     _stopPendingEggEffect(pet.id || state.currentPetId);
 
     try { applyStage(pet); } catch (_) {}
@@ -695,8 +714,7 @@ function _playHatchAnimation(petId) {
 export function hatchPetFromEgg(pet) {
     if (!pet) return false;
     if (pet.stage !== 'egg') return false;
-    if (pet.eggHatchPending && pet.imageSheetUrl) {
-        _requestReadyEggHatch(pet);
+    if (_continueStartedEggHatch(pet)) {
         return true;
     }
     let dna = pet.dna || '';
@@ -718,6 +736,7 @@ export function hatchPetFromEgg(pet) {
     pet.lastCareAt = now;
     pet.lastTickAt = now;
     pet.eggHatchPending = true;
+    delete pet.eggHatchQueuedAt;
     _syncPendingEggEffect(pet);
 
     generatePetSheet(pet).then((url) => {
@@ -842,6 +861,12 @@ function _startEggChatter() {
 if (typeof window !== 'undefined') _startEggChatter();
 
 function _feedEggAndHatch(pet, foodItem, options = {}) {
+    if (_isEggHatchQueued(pet) || _isEggHatchStarted(pet)) {
+        _continueStartedEggHatch(pet);
+        say('正在孵化中，马上就破壳啦 ✨', 2400);
+        return false;
+    }
+
     const bias = _eggBias(pet);
     bias.feedCount = (bias.feedCount || 0) + 1;
     if (foodItem.trait) {
@@ -857,6 +882,8 @@ function _feedEggAndHatch(pet, foodItem, options = {}) {
     const hungerGain = Math.max(1, Number(foodItem?.stat?.hunger) || 0);
     pet.stats.hunger = clamp((pet.stats.hunger || 0) + hungerGain, CONFIG.statMin, CONFIG.statMax);
     applyLowMoodFoodBonus(pet);
+    pet.eggHatchQueuedAt = Date.now();
+    savePetDebounced(pet);
 
     const delayMs = Math.max(0, Number(options.delayEffectsMs) || 0);
     const sayDelayMs = Math.max(0, Number(options.sayDelayMs) || 0);
@@ -1372,8 +1399,8 @@ export function setPetMotion(elOrId, motion) {
 }
 
 // === Sheet URL 缓存（DNA → URL）：localStorage 持久化 ===
-// v5: 强化玩家许愿在 genImage prompt 中的优先级，避免复用旧的弱许愿缓存。
-const SHEET_CACHE_KEY = 'magichaqi.petSheetCache.v5';
+// v6: 许愿缓存键包含参考图片，避免换图后复用旧生成结果。
+const SHEET_CACHE_KEY = 'magichaqi.petSheetCache.v6';
 let _sheetUrlCache = null;
 function _loadSheetCache() {
     if (_sheetUrlCache) return _sheetUrlCache;
@@ -1416,7 +1443,11 @@ function _resolvePetWish(pet, dna) {
 
 function _sheetCacheKeyForPet(pet, dna = pet?.dna || '') {
     const wish = _resolvePetWish(pet, dna);
-    return wish ? `${dna}|w:${_hashWish(wish)}` : dna;
+    const referenceImage = _resolvePetWishReferenceImage(pet, dna);
+    const parts = [dna];
+    if (wish) parts.push(`w:${_hashWish(wish)}`);
+    if (referenceImage) parts.push(`r:${_hashWish(referenceImage)}`);
+    return parts.join('|');
 }
 
 function _getCachedSheetUrlForPet(pet) {
@@ -1440,10 +1471,30 @@ function _hashWish(text) {
     return h.toString(36);
 }
 
+function _resolvePetWishReferenceImage(pet, dna) {
+    const direct = typeof pet?.wishReferenceImage === 'string' ? pet.wishReferenceImage.trim() : '';
+    if (direct) return direct;
+    const byId = pet?.id ? state.pets?.[pet.id] : null;
+    const fromId = typeof byId?.wishReferenceImage === 'string' ? byId.wishReferenceImage.trim() : '';
+    if (fromId) return fromId;
+    const current = state.currentPetId ? state.pets?.[state.currentPetId] : null;
+    const currentImage = current?.dna === dna && typeof current.wishReferenceImage === 'string'
+        ? current.wishReferenceImage.trim()
+        : '';
+    if (currentImage) return currentImage;
+    const match = Object.values(state.pets || {}).find(item => (
+        item?.dna === dna
+        && typeof item.wishReferenceImage === 'string'
+        && item.wishReferenceImage.trim()
+        && !item.imageSheetUrl
+    ));
+    return match ? match.wishReferenceImage.trim() : '';
+}
+
 /**
  * 生成 / 复用 4×4 sprite sheet。
  * 命中 localStorage 缓存或 in-flight 请求时直接返回，不会再次调用 LLM。
- * 若 pet.wishPrompt 存在，则改为以"许愿"文本驱动 LLM，并按 dna|wishHash 作为缓存键。
+ * 若 pet.wishPrompt / pet.wishReferenceImage 存在，则改为以玩家许愿驱动 LLM，并纳入缓存键。
  * @param {object} pet
  * @param {object} [options]
  * @param {boolean} [options.assignToPet=true]
@@ -1457,7 +1508,8 @@ export async function generatePetSheet(pet, { assignToPet = true } = {}) {
     const requestVersion = _getPetSheetRequestVersion(pet);
 
     const wish = _resolvePetWish(pet, dna);
-    const cacheKey = wish ? `${dna}|w:${_hashWish(wish)}` : dna;
+    const referenceImage = _resolvePetWishReferenceImage(pet, dna);
+    const cacheKey = _sheetCacheKeyForPet(pet, dna);
 
     const cached = getCachedSheetUrl(cacheKey);
     if (cached) {
@@ -1469,7 +1521,7 @@ export async function generatePetSheet(pet, { assignToPet = true } = {}) {
     const promise = (async () => {
         try {
             const { genPetSheet } = await import('./api.js');
-            const url = await genPetSheet(dna, dnaToName(dna), wish ? { customPrompt: wish } : undefined);
+            const url = await genPetSheet(dna, dnaToName(dna), (wish || referenceImage) ? { customPrompt: wish, referenceImage } : undefined);
             const staleRequest = _isPetSheetRequestStale(pet, requestVersion);
             if (url && !staleRequest) {
                 setCachedSheetUrl(cacheKey, url);

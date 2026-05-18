@@ -1,5 +1,5 @@
 // 玩耍视图：小游戏列表 + iframe 容器
-import { $, coinIconSvg, escapeHtml, showToast } from './utils.js';
+import { $, clamp, coinIconSvg, confirm, escapeHtml, showToast } from './utils.js';
 import { t } from './i18n.js';
 import { CONFIG } from './config.js';
 import { state } from './state.js';
@@ -11,6 +11,8 @@ import SoundManager from './soundManager.js';
 const soundManager = SoundManager.getInstance();
 const STAT_REWARD_ANIMATION_MS = 1600;
 const EGG_IMAGE_SIZE = 256;
+const DEFAULT_MINIGAME_STAT_BONUS = { bond: 12, mood: 6 };
+const MINIGAME_REST_PROMPT_MS = 5 * 60 * 1000;
 const MINIGAME_PET_IMAGE_REQUESTS = new Set([
     'haqi_get_pet_image',
     'haqiGetPetImage',
@@ -23,28 +25,83 @@ const MINIGAME_ALL_PET_IMAGE_REQUESTS = new Set([
 
 const MINIGAMES = [
     {
-        id: 'schulte_grid',
-        title: '舒尔特方格',
-        icon: '📊',
-        src: './minigames/haqi_schulte_grid.html',
-    },
-    {
-        id: 'attention_focus',
-        title: '一一对应',
-        icon: '🎯',
-        src: './minigames/haqi_attention_focus.html',
-    },
-    {
-        id: 'find_numbers',
-        title: '数字复读机',
-        icon: '🔢',
-        src: './minigames/haqi_find_numbers.html',
+        id: 'bubble_pets',
+        title: '哈奇泡泡龙',
+        icon: '💦',
+        src: './minigames/haqi_bubble_pets.html',
+        statBonus: { bond: 22, mood: 10 },
+        levelReward: { coins: { min: 12, max: 64 }, label: '泡泡奖励', scoreDivisor: 16, levelBonus: 4, passBonus: 10 },
     },
     {
         id: 'match_three_pets',
         title: '宠物三消',
         icon: '🐾',
         src: './minigames/haqi_match_three_pets.html',
+        levelReward: { coins: { min: 10, max: 50 }, label: '通关奖励', scoreDivisor: 18, passBonus: 12 },
+    },
+    {
+        id: 'food_hexcells',
+        title: '哈奇寻食蜂巢',
+        icon: '🍯',
+        src: './minigames/haqi_food_hexcells.html',
+        statBonus: { bond: 20, mood: 9 },
+        levelReward: { coins: { min: 10, max: 55 }, label: '寻食奖励', scoreDivisor: 14, levelBonus: 3, passBonus: 10 },
+    },
+    {
+        id: 'canal_escape',
+        title: '宠物运河营救',
+        icon: '🚤',
+        src: './minigames/haqi_canal_escape.html',
+        statBonus: { bond: 18, mood: 10 },
+        levelReward: { coins: { min: 10, max: 50 }, label: '通关奖励', scoreDivisor: 14, levelBonus: 3, passBonus: 10 },
+    },
+    {
+        id: 'billiards',
+        title: '哈奇台球对战',
+        icon: '🎱',
+        src: './minigames/haqi_billiards.html',
+        statBonus: { bond: 30, mood: 9 },
+        levelReward: { coins: { min: 18, max: 88 }, label: '对战奖励', scoreDivisor: 12, levelBonus: 4, passBonus: 12 },
+    },
+    {
+        id: 'sokoban',
+        title: '宠物推箱子',
+        icon: '📦',
+        src: './minigames/haqi_sokoban.html',
+        statBonus: { bond: 24, mood: 8 },
+        levelReward: { coins: { min: 10, max: 50 }, label: '通关奖励', scoreDivisor: 12, levelBonus: 3, passBonus: 10 },
+    },
+    {
+        id: 'lightbot',
+        title: '宠物猎人编程',
+        icon: '💡',
+        src: './minigames/haqi_lightbot.html',
+        statBonus: { bond: 28, mood: 8 },
+        levelReward: { coins: { min: 12, max: 60 }, label: '编程奖励', scoreDivisor: 12, levelBonus: 4, passBonus: 12 },
+    },
+    {
+        id: 'flappy_pet',
+        title: '飞翔宠物',
+        icon: '🐦',
+        src: './minigames/haqi_flappy_pet.html',
+        statBonus: { bond: 18, mood: 10 },
+        levelReward: { coins: { min: 10, max: 55 }, label: '飞行奖励', scoreDivisor: 15, levelBonus: 3, passBonus: 10 },
+    },
+    {
+        id: 'xiangqi',
+        title: '宠物象棋',
+        icon: '♟️',
+        src: './minigames/haqi_xiangqi.html',
+        statBonus: { bond: 32, mood: 8 },
+        levelReward: { coins: { min: 20, max: 80 }, label: '对局奖励', scoreDivisor: 10, levelBonus: 4, passBonus: 8 },
+    },
+    {
+        id: 'gomoku',
+        title: '宠物五子棋',
+        icon: '⚫⚪',
+        src: './minigames/haqi_gomoku.html',
+        statBonus: { bond: 32, mood: 8 },
+        levelReward: { coins: { min: 20, max: 80 }, label: '对局奖励', scoreDivisor: 10, levelBonus: 4, passBonus: 8 },
     },
 ];
 
@@ -90,15 +147,17 @@ const PET_STAT_ITEMS = [
 
 let cleanupMessageListener = null;
 let currentGame = null;
-let rewardedRound = '';
+let rewardedRounds = new Set();
 let currentPet = null;
 let currentGameStartedAt = 0;
 let defaultEggBlobPromise = null;
+let restPromptTimer = null;
+let restPromptOpen = false;
 
 export function renderMinigames(panel, { pet }, { onBack, onGameFinished } = {}) {
     cleanupMessageListener?.();
     currentGame = null;
-    rewardedRound = '';
+    rewardedRounds = new Set();
     currentPet = pet || null;
     panel.innerHTML = `
         <style>
@@ -111,6 +170,17 @@ export function renderMinigames(panel, { pet }, { onBack, onGameFinished } = {})
                 0% { opacity: 0; transform: translate(-50%, 5px) scale(.86); }
                 18% { opacity: 1; transform: translate(-50%, -2px) scale(1); }
                 100% { opacity: 0; transform: translate(-50%, -22px) scale(.96); }
+            }
+            @keyframes mhMinigameRewardIn {
+                0% { opacity: 0; transform: translate(-50%, -44%) scale(.82); }
+                18% { opacity: 1; transform: translate(-50%, -50%) scale(1.06); }
+                64% { opacity: 1; transform: translate(-50%, -50%) scale(1); }
+                100% { opacity: 0; transform: translate(-50%, -58%) scale(.96); }
+            }
+            @keyframes mhMinigameCoinSpark {
+                0% { opacity: 0; transform: translateY(9px) scale(.72); }
+                22% { opacity: 1; transform: translateY(0) scale(1); }
+                100% { opacity: 0; transform: translateY(-18px) scale(.86); }
             }
             .mh-minigame-stat-pill.stat-up {
                 animation: mhMinigameStatPop 1.12s ease-out;
@@ -135,11 +205,76 @@ export function renderMinigames(panel, { pet }, { onBack, onGameFinished } = {})
             .mh-minigame-stat-pill {
                 cursor: pointer;
             }
+            .mh-minigame-icon {
+                width: 58px;
+                height: 58px;
+                display: inline-flex;
+                align-items: center;
+                justify-content: center;
+                font-size: 48px;
+                line-height: 1;
+            }
+            .mh-minigame-icon svg {
+                width: 58px;
+                height: 58px;
+                display: block;
+                filter: drop-shadow(0 2px 0 rgba(15,23,42,.18));
+            }
             .mh-minigame-coin-pill.coin-up {
                 animation: mhMinigameStatPop 1.12s ease-out;
                 background: #fef3c7 !important;
                 border-color: rgba(217,119,6,.48) !important;
             }
+            .mh-minigame-reward-fx {
+                position: absolute;
+                left: 50%;
+                top: 44%;
+                z-index: 6;
+                pointer-events: none;
+                display: none;
+                min-width: min(280px, 82vw);
+                padding: 16px 18px;
+                border-radius: 18px;
+                background: linear-gradient(180deg, rgba(255,255,255,.98), rgba(255,251,235,.98));
+                border: 2px solid rgba(245,158,11,.45);
+                color: #92400e;
+                text-align: center;
+                box-shadow: 0 20px 48px rgba(15,23,42,.28), 0 0 0 6px rgba(251,191,36,.16);
+            }
+            .mh-minigame-reward-fx.show {
+                display: block;
+                animation: mhMinigameRewardIn 1.62s ease-out forwards;
+            }
+            .mh-minigame-reward-title {
+                font-size: 13px;
+                font-weight: 900;
+                color: #0f766e;
+                margin-bottom: 4px;
+            }
+            .mh-minigame-reward-coins {
+                display: flex;
+                align-items: center;
+                justify-content: center;
+                gap: 7px;
+                font-size: 28px;
+                line-height: 1.1;
+                font-weight: 1000;
+            }
+            .mh-minigame-reward-note {
+                margin-top: 5px;
+                font-size: 12px;
+                font-weight: 800;
+                color: #64748b;
+            }
+            .mh-minigame-reward-spark {
+                position: absolute;
+                top: -10px;
+                font-size: 18px;
+                animation: mhMinigameCoinSpark 1.2s ease-out forwards;
+            }
+            .mh-minigame-reward-spark:nth-child(1) { left: 18%; animation-delay: .02s; }
+            .mh-minigame-reward-spark:nth-child(2) { right: 18%; animation-delay: .12s; }
+            .mh-minigame-reward-spark:nth-child(3) { left: 48%; top: -16px; animation-delay: .2s; }
             .mh-minigame-stat-pill.tip-open::after {
                 content: attr(data-tip);
                 position: absolute;
@@ -173,7 +308,9 @@ export function renderMinigames(panel, { pet }, { onBack, onGameFinished } = {})
                 .mh-minigame-stat-pill.stat-up,
                 .mh-minigame-stat-pill.stat-down,
                 .mh-minigame-coin-pill.coin-up,
-                .mh-minigame-stat-delta { animation: none; }
+                .mh-minigame-stat-delta,
+                .mh-minigame-reward-fx.show,
+                .mh-minigame-reward-spark { animation: none; }
             }
         </style>
         <div class="topbar">
@@ -190,7 +327,7 @@ export function renderMinigames(panel, { pet }, { onBack, onGameFinished } = {})
             <div id="mhMinigameList" style="height:100%;overflow:auto;padding:14px;display:grid;grid-template-columns:repeat(auto-fit,minmax(168px,1fr));gap:12px;align-content:start">
                 ${PLAY_ITEMS.map(game => `
                     <button type="button" class="card-flat" data-game-id="${escapeHtml(game.id)}" style="text-align:center;min-height:118px;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:10px;border-radius:12px;cursor:pointer">
-                        <span style="font-size:48px;line-height:1">${game.icon}</span>
+                        ${renderMinigameIcon(game)}
                         <span style="font-weight:800;color:var(--text-primary);font-size:17px;line-height:1.2">${escapeHtml(game.title)}</span>
                         ${game.desc ? `<span style="color:var(--text-muted);font-size:12px;line-height:1.35;max-width:12em">${escapeHtml(game.desc)}</span>` : ''}
                     </button>
@@ -198,6 +335,7 @@ export function renderMinigames(panel, { pet }, { onBack, onGameFinished } = {})
             </div>
             <div id="mhMinigameFrameWrap" style="display:none;position:absolute;inset:0;background:#0f2747">
                 <iframe id="mhMinigameFrame" title="玩耍内容" style="width:100%;height:100%;border:0;background:#fff" allow="autoplay; fullscreen"></iframe>
+                <div id="mhMinigameRewardFx" class="mh-minigame-reward-fx" aria-live="polite"></div>
                 <button type="button" class="btn-primary" id="mhMinigameDone" style="display:none;position:absolute;right:12px;bottom:12px;z-index:3;padding:8px 14px;font-size:13px">完成玩耍</button>
             </div>
         </div>`;
@@ -237,11 +375,46 @@ export function renderMinigames(panel, { pet }, { onBack, onGameFinished } = {})
         window.removeEventListener('mh:tick', refreshPetStats);
         destroyMinigameIframe();
         currentGame = null;
-        rewardedRound = '';
+        rewardedRounds = new Set();
         currentPet = null;
         currentGameStartedAt = 0;
+        clearMinigameRestPrompt();
         cleanupMessageListener = null;
     };
+
+    function renderMinigameIcon(game) {
+        const label = escapeHtml(game.title || '小游戏');
+        if (game.id === 'flappy_pet') {
+            return `
+                <span class="mh-minigame-icon" role="img" aria-label="${label}">
+                    <svg viewBox="0 0 64 64" aria-hidden="true" focusable="false">
+                        <path d="M9 31c9-13 23-15 35-8 7 4 11 11 12 20-8-8-17-11-26-9-8 1-14 1-21-3Z" fill="#67e8f9" stroke="#06172d" stroke-width="4" stroke-linejoin="round"/>
+                        <path d="M18 29c-3-12 3-20 14-22-1 10 3 17 10 22-10 3-17 3-24 0Z" fill="#38bdf8" stroke="#06172d" stroke-width="4" stroke-linejoin="round"/>
+                        <path d="M36 25c5-5 12-5 19-1-6 3-10 7-12 13-2-5-4-9-7-12Z" fill="#fde68a" stroke="#06172d" stroke-width="4" stroke-linejoin="round"/>
+                        <circle cx="42" cy="24" r="3" fill="#06172d"/>
+                        <path d="M52 27l7 3-7 3Z" fill="#fb923c" stroke="#06172d" stroke-width="3" stroke-linejoin="round"/>
+                        <path d="M18 42c5 1 10 0 15-3" fill="none" stroke="#06172d" stroke-width="4" stroke-linecap="round"/>
+                    </svg>
+                </span>
+            `;
+        }
+        if (game.id === 'gomoku') {
+            return `
+                <span class="mh-minigame-icon" role="img" aria-label="${label}">
+                    <svg viewBox="0 0 64 64" aria-hidden="true" focusable="false">
+                        <rect x="9" y="9" width="46" height="46" rx="8" fill="#f8c76d" stroke="#06172d" stroke-width="4"/>
+                        <path d="M20 13v38M32 13v38M44 13v38M13 20h38M13 32h38M13 44h38" stroke="#a16207" stroke-width="2.5" stroke-linecap="round"/>
+                        <circle cx="20" cy="20" r="7" fill="#020617"/>
+                        <circle cx="32" cy="32" r="7" fill="#ffffff" stroke="#020617" stroke-width="3"/>
+                        <circle cx="44" cy="44" r="7" fill="#020617"/>
+                        <circle cx="44" cy="20" r="7" fill="#ffffff" stroke="#020617" stroke-width="3"/>
+                        <circle cx="20" cy="44" r="7" fill="#020617"/>
+                    </svg>
+                </span>
+            `;
+        }
+        return `<span class="mh-minigame-icon" role="img" aria-label="${label}">${game.icon}</span>`;
+    }
 }
 
 function isPetImageRequest(msg) {
@@ -515,7 +688,48 @@ function isPlayAffectedStat(key) {
 }
 
 function miniGameStatBonus(game) {
-    return {};
+    return game?.statBonus || DEFAULT_MINIGAME_STAT_BONUS;
+}
+
+function levelRewardConfig(game) {
+    return game?.levelReward && typeof game.levelReward === 'object' ? game.levelReward : null;
+}
+
+function levelRewardCoinRange(levelReward) {
+    if (!levelReward) return null;
+    const coins = levelReward.coins && typeof levelReward.coins === 'object' ? levelReward.coins : levelReward;
+    const min = Math.max(0, Math.round(Number(coins.min ?? coins.coinMin ?? 10) || 10));
+    const max = Math.max(min, Math.round(Number(coins.max ?? coins.coinMax ?? 50) || 50));
+    return { min, max };
+}
+
+function miniGameLevelReward(game, data = {}, durationSeconds = 0) {
+    const levelReward = levelRewardConfig(game);
+    const range = levelRewardCoinRange(levelReward);
+    if (!levelReward || !range) return { levelReward: null, rewardCoins: null };
+    const explicit = Number(data.rewardCoins ?? data.coins ?? data.levelReward?.rewardCoins);
+    const rewardCoins = Number.isFinite(explicit)
+        ? clamp(Math.round(explicit), range.min, range.max)
+        : calculateLevelRewardCoins(levelReward, range, data, durationSeconds);
+    return {
+        levelReward: {
+            ...levelReward,
+            coins: range,
+            rewardCoins,
+        },
+        rewardCoins,
+    };
+}
+
+function calculateLevelRewardCoins(levelReward, range, data = {}, durationSeconds = 0) {
+    const score = Math.max(0, Number(data.earnedPoints ?? data.score) || 0);
+    const level = Math.max(0, Number(data.level ?? data.difficulty) || 0);
+    const scoreDivisor = Math.max(1, Number(levelReward.scoreDivisor) || 16);
+    const levelBonus = Math.max(0, Math.round(level * (Number(levelReward.levelBonus) || 2)));
+    const scoreBonus = Math.min(22, Math.round(score / scoreDivisor));
+    const timeBonus = Math.min(10, Math.round(Math.max(0, durationSeconds) / 30));
+    const passBonus = Math.max(0, Math.round(Number(levelReward.passBonus) || 0));
+    return clamp(range.min + passBonus + scoreBonus + levelBonus + timeBonus, range.min, range.max);
 }
 
 function canPlayGame(pet) {
@@ -611,8 +825,9 @@ function openGame(gameId) {
         return;
     }
     currentGame = game;
-    rewardedRound = '';
+    rewardedRounds = new Set();
     currentGameStartedAt = Date.now();
+    scheduleMinigameRestPrompt();
     const list = $('mhMinigameList');
     const wrap = $('mhMinigameFrameWrap');
     const frame = $('mhMinigameFrame');
@@ -628,23 +843,82 @@ function openGame(gameId) {
 
 function finishCurrentGame(onGameFinished, data = {}) {
     if (!currentGame) return;
-    if (rewardedRound) return;
     const finishedAt = data?.finishedAt || Date.now();
-    const roundKey = `${currentGame.id || 'game'}:${finishedAt}`;
-    rewardedRound = roundKey;
+    const roundKey = minigameRoundKey(currentGame, data, finishedAt);
+    if (rewardedRounds.has(roundKey)) return;
+    rewardedRounds.add(roundKey);
     const beforeStats = capturePetStatValues(currentPet);
     const beforeCoins = coinValue();
+    const durationSeconds = activityDurationSeconds(data, currentGameStartedAt, finishedAt);
+    const rewardData = miniGameLevelReward(currentGame, data, durationSeconds);
     onGameFinished?.(currentGame, {
         ...data,
-        completed: true,
+        completed: data?.completed ?? data?.passed ?? true,
         startedAt: currentGameStartedAt || undefined,
         finishedAt,
-        durationSeconds: activityDurationSeconds(data, currentGameStartedAt, finishedAt),
+        durationSeconds,
         statBonus: miniGameStatBonus(currentGame),
+        ...(rewardData.levelReward ? rewardData : {}),
     });
     if (Number(data?.earnedPoints) > 0) soundManager.playPointReward();
+    if (rewardData.rewardCoins) playLevelRewardAnimation(currentGame, rewardData.rewardCoins, rewardData.levelReward);
     refreshCoins({ previous: beforeCoins, animate: true });
     refreshPetStats({ previous: beforeStats, animate: true });
+}
+
+function minigameRoundKey(game, data = {}, finishedAt = Date.now()) {
+    const explicit = data.roundId ?? data.roundKey;
+    if (explicit != null && explicit !== '') return `${game?.id || 'game'}:${explicit}`;
+    return `${game?.id || 'game'}:${finishedAt}`;
+}
+
+function scheduleMinigameRestPrompt() {
+    clearMinigameRestPrompt();
+    restPromptTimer = setTimeout(showMinigameRestPrompt, MINIGAME_REST_PROMPT_MS);
+}
+
+function clearMinigameRestPrompt() {
+    if (restPromptTimer) clearTimeout(restPromptTimer);
+    restPromptTimer = null;
+    restPromptOpen = false;
+}
+
+async function showMinigameRestPrompt() {
+    restPromptTimer = null;
+    if (!currentGame || restPromptOpen) return;
+    restPromptOpen = true;
+    const keepPlaying = await confirm('已经玩了5分钟，休息一下吧。要继续玩吗？', {
+        okText: '继续玩',
+        cancelText: '退出',
+    });
+    restPromptOpen = false;
+    if (!currentGame) return;
+    if (keepPlaying) {
+        scheduleMinigameRestPrompt();
+    } else {
+        showList();
+    }
+}
+
+function playLevelRewardAnimation(game, rewardCoins, levelReward) {
+    const el = $('mhMinigameRewardFx');
+    if (!el || !rewardCoins) return;
+    const label = levelReward?.label || '通关奖励';
+    const note = levelReward?.note || game?.title || '';
+    el.classList.remove('show');
+    el.innerHTML = `
+        <span class="mh-minigame-reward-spark">🪙</span>
+        <span class="mh-minigame-reward-spark">🪙</span>
+        <span class="mh-minigame-reward-spark">✨</span>
+        <div class="mh-minigame-reward-title">${escapeHtml(label)}</div>
+        <div class="mh-minigame-reward-coins">${coinIconSvg('hud-coin-icon')}<span>+${escapeHtml(rewardCoins)} 金币</span></div>
+        ${note ? `<div class="mh-minigame-reward-note">${escapeHtml(note)}</div>` : ''}`;
+    void el.offsetWidth;
+    el.classList.add('show');
+    setTimeout(() => {
+        el.classList.remove('show');
+        el.innerHTML = '';
+    }, STAT_REWARD_ANIMATION_MS + 260);
 }
 
 function activityDurationSeconds(data = {}, startedAt = 0, finishedAt = Date.now()) {
@@ -677,10 +951,11 @@ function showList() {
     const wrap = $('mhMinigameFrameWrap');
     const done = $('mhMinigameDone');
     resetMinigameIframe();
+    clearMinigameRestPrompt();
     if (done) done.style.display = 'none';
     if (wrap) wrap.style.display = 'none';
     if (list) list.style.display = 'grid';
     currentGame = null;
-    rewardedRound = '';
+    rewardedRounds = new Set();
     currentGameStartedAt = 0;
 }

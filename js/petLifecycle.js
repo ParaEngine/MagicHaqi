@@ -315,11 +315,13 @@ export function softenStatsToAverage(pet) {
     if (!pet) return;
     if (!pet.stats) pet.stats = {};
     const cfg = caretakerConfig();
+    const foodOnlyEnergyStage = pet.stage === 'egg';
     const target = {
         hunger: Number(cfg.targetHunger) || 66,
         mood: Number(cfg.targetMood) || 62,
     };
     for (const key of Object.keys(target)) {
+        if (key === 'hunger' && foodOnlyEnergyStage) continue;
         pet.stats[key] = target[key];
         pet.stats[key] = Math.max(CONFIG.statMin, Math.min(CONFIG.statMax, pet.stats[key]));
     }

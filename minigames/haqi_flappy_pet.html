@@ -1,0 +1,1125 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+  <title>飞翔宠物</title>
+  <script src="https://cdn.keepwork.com/keepwork/cdn/tailwindcss@3.4.16.js"></script>
+</head>
+
+<body></body>
+<script defer>
+(function () {
+  const STORAGE_KEY_DIFFICULTY = 'haqiFlappyPetDifficulty';
+  const STORAGE_KEY_BEST = 'haqiFlappyPetBest';
+  const FALLBACK_PET = '🐾';
+  const FOOD_ICONS = ['🍎', '🍌', '🍓', '🍇', '🥕', '🍪', '🍯', '🥛', '🍰'];
+  const POWERUPS = {
+    grow: { id: 'grow', icon: '🔍', label: '变大', duration: 5200 },
+    shrink: { id: 'shrink', icon: '🫧', label: '变小', duration: 6200 },
+    speed: { id: 'speed', icon: '⚡', label: '加速', duration: 4200 },
+    slow: { id: 'slow', icon: '❄️', label: '减速', duration: 5600 },
+  };
+  const POWERUP_LIST = Object.values(POWERUPS);
+  const DIFFICULTIES = {
+    easy: { id: 'easy', label: '轻松', target: 8, gap: 0.39, speed: 0.22, gravity: 0.82, flap: 0.34, pipeInterval: 0.96, score: 100 },
+    normal: { id: 'normal', label: '标准', target: 12, gap: 0.34, speed: 0.26, gravity: 0.92, flap: 0.37, pipeInterval: 0.9, score: 130 },
+    hard: { id: 'hard', label: '挑战', target: 18, gap: 0.3, speed: 0.3, gravity: 1.02, flap: 0.4, pipeInterval: 0.84, score: 170 },
+  };
+  const DIFFICULTY_ORDER = ['easy', 'normal', 'hard'];
+  const LEVEL_THEMES = [
+    { name: '春日花园', sky: ['#bae6fd', '#dcfce7', '#fef3c7'], pipe: ['#22c55e', '#14b8a6', '#84cc16'], accent: '#f97316', deco: ['🌼', '🌷', '🍃'] },
+    { name: '莓果云路', sky: ['#bfdbfe', '#fbcfe8', '#dcfce7'], pipe: ['#38bdf8', '#a78bfa', '#fb7185'], accent: '#db2777', deco: ['🍓', '🫐', '✨'] },
+    { name: '蜂蜜山谷', sky: ['#fde68a', '#bbf7d0', '#bae6fd'], pipe: ['#f59e0b', '#84cc16', '#10b981'], accent: '#d97706', deco: ['🍯', '🌿', '⭐'] },
+  ];
+
+  const state = {
+    difficulty: localStorage.getItem(STORAGE_KEY_DIFFICULTY) || 'normal',
+    best: Math.max(0, Number(localStorage.getItem(STORAGE_KEY_BEST) || 0)),
+    started: false,
+    finished: false,
+    paused: false,
+    countingDown: false,
+    countdownStart: 0,
+    countdownValue: '',
+    loadedPosted: false,
+    lastTime: 0,
+    elapsed: 0,
+    score: 0,
+    collected: 0,
+    passed: 0,
+    combo: 0,
+    misses: 0,
+    obstacles: [],
+    particles: [],
+    foods: [],
+    powerups: [],
+    activePower: null,
+    activePowerUntil: 0,
+    nextObstacleAt: 0,
+    rafId: 0,
+    runToken: 0,
+    levelIndex: 0,
+    nextGateIndex: 0,
+    lastGateCenter: 0,
+    pendingFlap: false,
+    playTop: 68,
+    playBottom: 480,
+    hudValues: {},
+    petBitmap: null,
+    petUrl: '',
+    petMeta: null,
+    roundId: '',
+  };
+
+  const pet = {
+    x: 0,
+    y: 0,
+    vy: 0,
+    rotation: 0,
+    baseSize: 58,
+  };
+
+  const sound = { ctx: null, master: null };
+
+  const root = document.createElement('div');
+  root.id = 'haqiFlappyPet';
+  root.innerHTML = `
+    <style>
+      * { box-sizing: border-box; -webkit-tap-highlight-color: transparent; }
+      html, body { width: 100%; height: 100%; margin: 0; overflow: hidden; }
+      body {
+        font-family: -apple-system, BlinkMacSystemFont, 'PingFang SC', 'Microsoft YaHei', sans-serif;
+        color: #15324b;
+        background: linear-gradient(180deg, #bae6fd 0%, #dcfce7 58%, #fef3c7 100%);
+        user-select: none;
+        touch-action: none;
+      }
+      .mh-shell { position: relative; width: 100vw; height: 100vh; height: 100dvh; overflow: hidden; }
+      .mh-canvas { position: absolute; inset: 0; width: 100%; height: 100%; display: block; }
+      .mh-top {
+        position: absolute; left: 8px; right: 8px; top: 8px; z-index: 3;
+        min-height: 48px; display: grid; grid-template-columns: 38px minmax(0,1fr) auto; align-items: center; gap: 8px;
+        padding: 7px 9px; border-radius: 14px; background: rgba(255,255,255,.88); border: 2px solid rgba(255,255,255,.94);
+        box-shadow: 0 5px 0 rgba(14,116,144,.13), 0 12px 24px rgba(15,23,42,.12);
+        backdrop-filter: blur(8px);
+      }
+      .mh-title { min-width: 0; text-align: center; font-size: 18px; font-weight: 1000; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+      .mh-stats { display: flex; align-items: center; justify-content: flex-end; gap: 5px; flex-wrap: wrap; }
+      .mh-pill {
+        height: 29px; min-width: 48px; display: inline-flex; align-items: center; justify-content: center; gap: 3px;
+        padding: 0 8px; border-radius: 999px; background: #fff; border: 1px solid rgba(14,116,144,.2);
+        color: #0f766e; font-size: 12px; font-weight: 900; box-shadow: 0 2px 0 rgba(14,116,144,.12);
+      }
+      .mh-icon-btn, .mh-action, .mh-start, .mh-difficulty { border: 0; cursor: pointer; font-weight: 900; }
+      .mh-icon-btn { width: 34px; height: 34px; border-radius: 999px; background: linear-gradient(180deg, #fb923c, #ea580c); color: white; box-shadow: 0 3px 0 #9a3412; font-size: 18px; }
+      .mh-bottom {
+        position: absolute; left: 8px; right: 8px; bottom: 8px; z-index: 3;
+        display: grid; grid-template-columns: minmax(0,1fr) auto; align-items: end; gap: 8px; pointer-events: none;
+      }
+      .mh-hint {
+        justify-self: center; min-height: 34px; display: inline-flex; align-items: center; justify-content: center; padding: 0 12px;
+        border-radius: 999px; background: rgba(255,255,255,.86); border: 1px solid rgba(14,116,144,.2);
+        color: #0f766e; font-size: 13px; font-weight: 900; box-shadow: 0 3px 0 rgba(14,116,144,.13); white-space: nowrap;
+      }
+      .mh-controls { pointer-events: auto; display: flex; align-items: center; justify-content: flex-end; gap: 6px; flex-wrap: wrap; }
+      .mh-action { height: 34px; border-radius: 999px; padding: 0 12px; background: linear-gradient(180deg, #38bdf8, #0284c7); color: white; box-shadow: 0 4px 0 #075985; }
+      .mh-action.help { background: linear-gradient(180deg, #fb923c, #ea580c); box-shadow-color: #9a3412; }
+      .mh-difficulties { display: flex; align-items: center; gap: 4px; padding: 4px; border-radius: 999px; background: rgba(255,255,255,.82); border: 1px solid rgba(14,116,144,.16); }
+      .mh-difficulty { height: 28px; min-width: 44px; padding: 0 9px; border-radius: 999px; background: transparent; color: #0f766e; font-size: 12px; }
+      .mh-difficulty.active { background: linear-gradient(180deg, #34d399, #16a34a); color: white; box-shadow: 0 2px 0 #15803d; }
+      .mh-power {
+        position: absolute; left: 50%; top: 68px; z-index: 4; transform: translateX(-50%);
+        min-height: 34px; display: none; align-items: center; justify-content: center; gap: 7px; padding: 0 13px;
+        border-radius: 999px; background: rgba(255,255,255,.94); border: 2px solid rgba(34,197,94,.35);
+        color: #0f766e; font-weight: 1000; box-shadow: 0 5px 0 rgba(14,116,144,.12), 0 12px 26px rgba(15,23,42,.14);
+      }
+      .mh-power.show { display: inline-flex; animation: mhPowerPulse .62s ease-out; }
+      .mh-countdown {
+        position: absolute; left: 50%; top: 50%; z-index: 5; transform: translate(-50%, -50%);
+        min-width: 118px; height: 118px; display: grid; place-items: center; border-radius: 999px;
+        background: rgba(255,255,255,.9); border: 4px solid rgba(125,211,252,.92); color: #0f2747;
+        font-size: 64px; line-height: 1; font-weight: 1000; box-shadow: 0 16px 40px rgba(15,23,42,.22), 0 0 0 8px rgba(255,255,255,.36);
+        pointer-events: none; animation: mhCountdownPop .72s ease-out infinite;
+      }
+      .mh-toast {
+        position: fixed; left: 50%; top: 50%; z-index: 45; transform: translate(-50%, -50%); min-width: min(300px, 82vw);
+        padding: 18px 22px; border-radius: 18px; background: white; border: 3px solid #86efac; color: #15803d;
+        font-size: 22px; font-weight: 1000; text-align: center; box-shadow: 0 18px 42px rgba(15,23,42,.24); animation: mhToast 1.2s ease-out forwards; pointer-events: none;
+      }
+      .mh-food-fly {
+        position: fixed; left: var(--from-x); top: var(--from-y); z-index: 46; width: 1em; height: 1em;
+        display: grid; place-items: center; font-size: clamp(28px, 7vw, 48px); line-height: 1;
+        transform: translate(-50%, -50%); filter: drop-shadow(0 5px 4px rgba(15,23,42,.26));
+        pointer-events: none; animation: mhFoodFly .74s cubic-bezier(.2,.78,.24,1) forwards;
+      }
+      .mh-overlay { position: fixed; inset: 0; z-index: 40; display: flex; align-items: center; justify-content: center; padding: 18px; background: rgba(15,39,71,.48); }
+      .mh-card {
+        width: min(92vw, 430px); padding: 20px; border-radius: 18px; background: linear-gradient(180deg, #fff, #eff6ff 58%, #f0fdf4);
+        border: 3px solid #7dd3fc; box-shadow: 0 18px 44px rgba(15,23,42,.28); text-align: center;
+      }
+      .mh-card h1 { margin: 0 0 10px; color: #15324b; font-size: 26px; font-weight: 1000; }
+      .mh-card p { margin: 0 0 14px; color: #0f766e; font-size: 15px; font-weight: 800; line-height: 1.55; }
+      .mh-card-row { display: flex; align-items: center; justify-content: center; gap: 6px; flex-wrap: wrap; margin: 12px 0 16px; }
+      .mh-start { border-radius: 999px; padding: 10px 24px; background: linear-gradient(180deg, #34d399, #16a34a); color: white; box-shadow: 0 5px 0 #15803d; }
+      .mh-confetti { position: fixed; top: -16px; z-index: 48; width: 9px; height: 15px; border-radius: 3px; background: var(--c); animation: mhConfetti var(--d) ease-in forwards; pointer-events: none; }
+      [hidden] { display: none !important; }
+      @keyframes mhToast { 0% { opacity: 0; transform: translate(-50%, -42%) scale(.84); } 18% { opacity: 1; transform: translate(-50%, -50%) scale(1); } 100% { opacity: 0; transform: translate(-50%, -76%) scale(.94); } }
+      @keyframes mhFoodFly {
+        0% { opacity: 1; transform: translate(-50%, -50%) scale(1); }
+        42% { opacity: 1; transform: translate(calc((var(--to-x) - var(--from-x)) * .34 - 50%), calc((var(--to-y) - var(--from-y)) * .34 - 50% - 18px)) scale(1.08); }
+        88% { opacity: 1; transform: translate(calc(var(--to-x) - var(--from-x) - 50%), calc(var(--to-y) - var(--from-y) - 50%)) scale(.72); }
+        100% { opacity: 0; transform: translate(calc(var(--to-x) - var(--from-x) - 50%), calc(var(--to-y) - var(--from-y) - 50%)) scale(.38); }
+      }
+      @keyframes mhConfetti { 100% { opacity: 0; transform: translate3d(var(--x), 112vh, 0) rotate(680deg); } }
+      @keyframes mhPowerPulse { 0% { transform: translateX(-50%) scale(.84); } 70% { transform: translateX(-50%) scale(1.06); } 100% { transform: translateX(-50%) scale(1); } }
+      @keyframes mhCountdownPop { 0% { transform: translate(-50%, -50%) scale(.84); } 42% { transform: translate(-50%, -50%) scale(1.05); } 100% { transform: translate(-50%, -50%) scale(1); } }
+      @media (max-width: 560px) {
+        .mh-top { grid-template-columns: 36px 1fr; }
+        .mh-stats { grid-column: 1 / -1; justify-content: center; }
+        .mh-bottom { grid-template-columns: 1fr; justify-items: center; }
+        .mh-controls { justify-content: center; }
+        .mh-hint { font-size: 12px; }
+      }
+      @media (max-height: 520px) {
+        .mh-top { min-height: 42px; padding: 5px 7px; }
+        .mh-stats .optional { display: none; }
+        .mh-power { top: 56px; }
+        .mh-hint { display: none; }
+      }
+    </style>
+    <div class="mh-shell">
+      <canvas id="mhCanvas" class="mh-canvas" aria-label="飞翔宠物游戏画面"></canvas>
+      <header class="mh-top">
+        <button id="mhMenu" class="mh-icon-btn" type="button" aria-label="玩法">?</button>
+        <div class="mh-title">飞翔宠物</div>
+        <div class="mh-stats" aria-label="游戏状态">
+          <span class="mh-pill">食物 <b id="mhFood">0</b>/<b id="mhTarget">0</b></span>
+          <span class="mh-pill optional">分数 <b id="mhScore">0</b></span>
+          <span class="mh-pill optional">最佳 <b id="mhBest">0</b></span>
+        </div>
+      </header>
+      <div id="mhPower" class="mh-power" aria-live="polite"></div>
+      <div id="mhCountdown" class="mh-countdown" hidden aria-live="polite">3</div>
+      <footer class="mh-bottom">
+        <div class="mh-hint">点击、空格或触屏让宠物向上飞</div>
+        <div class="mh-controls">
+          <div id="mhDifficulties" class="mh-difficulties" aria-label="选择难度"></div>
+          <button id="mhHelp" class="mh-action help" type="button">玩法</button>
+          <button id="mhRestart" class="mh-action" type="button">重开</button>
+        </div>
+      </footer>
+      <div id="mhOverlay" class="mh-overlay">
+        <div class="mh-card">
+          <h1 id="mhOverlayTitle">飞翔宠物</h1>
+          <p id="mhOverlayText">点按让宠物穿过空隙，收集中间的食物。高难度要收集更多食物，飞行速度也会更快。道具会临时改变体型或速度。</p>
+          <div id="mhOverlayDifficulties" class="mh-card-row"></div>
+          <button id="mhStart" class="mh-start" type="button">开始飞行</button>
+        </div>
+      </div>
+    </div>`;
+  document.body.appendChild(root);
+
+  const canvas = document.getElementById('mhCanvas');
+  const ctx = canvas.getContext('2d');
+  const overlayEl = document.getElementById('mhOverlay');
+  const overlayTitleEl = document.getElementById('mhOverlayTitle');
+  const overlayTextEl = document.getElementById('mhOverlayText');
+  const startBtn = document.getElementById('mhStart');
+  const countdownEl = document.getElementById('mhCountdown');
+  const hudEls = {
+    food: document.getElementById('mhFood'),
+    target: document.getElementById('mhTarget'),
+    score: document.getElementById('mhScore'),
+    best: document.getElementById('mhBest'),
+  };
+  let width = 0;
+  let height = 0;
+  let dpr = 1;
+
+  function config() {
+    return DIFFICULTIES[state.difficulty] || DIFFICULTIES.normal;
+  }
+
+  function resize() {
+    dpr = Math.min(2, window.devicePixelRatio || 1);
+    width = Math.max(320, window.innerWidth);
+    height = Math.max(240, window.innerHeight);
+    canvas.width = Math.round(width * dpr);
+    canvas.height = Math.round(height * dpr);
+    canvas.style.width = `${width}px`;
+    canvas.style.height = `${height}px`;
+    ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+    pet.x = width * 0.25;
+    pet.baseSize = clamp(Math.min(width, height) * 0.095, 42, 70);
+    refreshPlayBounds();
+    if (!state.started) pet.y = startPetY();
+  }
+
+  function refreshPlayBounds() {
+    const top = root.querySelector('.mh-top')?.getBoundingClientRect();
+    const bottom = root.querySelector('.mh-bottom')?.getBoundingClientRect();
+    state.playTop = Math.max(68, (top?.bottom || 58) + 18);
+    state.playBottom = Math.min(height - 24, (bottom?.top || height) - 18);
+  }
+
+  function playTop() {
+    return state.playTop;
+  }
+
+  function playBottom() {
+    return state.playBottom;
+  }
+
+  function startPetY() {
+    const top = playTop();
+    const bottom = playBottom();
+    return top + Math.max(120, bottom - top) * 0.42;
+  }
+
+  function startGame() {
+    const cfg = config();
+    stopLoop();
+    const runToken = ++state.runToken;
+    refreshPlayBounds();
+    state.started = true;
+    state.finished = false;
+    state.paused = false;
+    state.countingDown = true;
+    state.countdownStart = performance.now();
+    state.countdownValue = '3';
+    state.lastTime = performance.now();
+    state.elapsed = 0;
+    state.score = 0;
+    state.collected = 0;
+    state.passed = 0;
+    state.combo = 0;
+    state.misses = 0;
+    state.obstacles = [];
+    state.particles = [];
+    state.foods = [];
+    state.powerups = [];
+    state.activePower = null;
+    state.activePowerUntil = 0;
+    state.nextObstacleAt = 0;
+    state.levelIndex = rand(0, LEVEL_THEMES.length - 1);
+    state.nextGateIndex = 0;
+    state.lastGateCenter = startPetY();
+    state.pendingFlap = false;
+    state.hudValues = {};
+    state.roundId = `${state.difficulty}-${Date.now()}`;
+    pet.x = width * 0.25;
+    pet.y = startPetY();
+    pet.vy = 0;
+    pet.rotation = 0;
+    hideOverlay();
+    updateHud();
+    updatePowerHud();
+    post('gameStarted', { difficulty: DIFFICULTY_ORDER.indexOf(state.difficulty) + 1, difficultyId: state.difficulty, targetFood: cfg.target });
+    spawnObstacle(true);
+    updateCountdown(state.countdownStart);
+    state.rafId = requestAnimationFrame(now => loop(now, runToken));
+  }
+
+  function stopLoop() {
+    if (state.rafId) cancelAnimationFrame(state.rafId);
+    state.rafId = 0;
+  }
+
+  function resumeLoop() {
+    stopLoop();
+    state.lastTime = performance.now();
+    state.rafId = requestAnimationFrame(now => loop(now, state.runToken));
+  }
+
+  function loop(now, runToken = state.runToken) {
+    if (runToken !== state.runToken) return;
+    state.rafId = 0;
+    if (!state.started || state.paused) return;
+    if (state.countingDown) {
+      updateCountdown(now);
+      draw(now);
+      state.rafId = requestAnimationFrame(nextNow => loop(nextNow, runToken));
+      return;
+    }
+    const dt = Math.min(34, Math.max(0, now - state.lastTime || 16));
+    state.lastTime = now;
+    if (!state.finished) update(dt, now);
+    draw(now);
+    if (state.started && !state.paused) state.rafId = requestAnimationFrame(nextNow => loop(nextNow, runToken));
+  }
+
+  function updateCountdown(now) {
+    const elapsed = now - state.countdownStart;
+    const nextValue = elapsed < 900 ? '3' : elapsed < 1800 ? '2' : elapsed < 2700 ? '1' : elapsed < 3200 ? '飞' : '';
+    if (nextValue !== state.countdownValue) {
+      state.countdownValue = nextValue;
+      countdownEl.textContent = nextValue;
+      countdownEl.style.animation = 'none';
+      void countdownEl.offsetWidth;
+      countdownEl.style.animation = '';
+    }
+    countdownEl.hidden = !nextValue;
+    if (elapsed >= 3200) beginFlight(now);
+  }
+
+  function beginFlight(now) {
+    state.countingDown = false;
+    state.countdownValue = '';
+    countdownEl.hidden = true;
+    state.lastTime = now;
+    pet.vy = state.pendingFlap ? -height * config().flap : -height * config().flap * 0.42;
+    state.pendingFlap = false;
+    makeParticles(pet.x - petSize() * 0.3, pet.y + petSize() * 0.2, '#7dd3fc', 5);
+    playSound('flap');
+  }
+
+  function update(dt, now) {
+    const cfg = config();
+    const dtSec = dt / 1000;
+    state.elapsed += dt;
+    if (state.activePower && now > state.activePowerUntil) {
+      state.activePower = null;
+      updatePowerHud();
+    }
+
+    const progress = Math.min(1, state.collected / Math.max(1, cfg.target));
+    const dynamic = 1 + progress * 0.42 + Math.min(0.26, state.elapsed / 90000);
+    const speedEffect = state.activePower === 'speed' ? 1.36 : state.activePower === 'slow' ? 0.72 : 1;
+    const speed = width * cfg.speed * dynamic * speedEffect;
+    const gap = height * clamp(cfg.gap - progress * 0.075 - Math.min(0.04, state.elapsed / 140000), 0.22, 0.44);
+    const gravity = height * cfg.gravity;
+
+    pet.vy += gravity * dtSec;
+    pet.y += pet.vy * dtSec;
+    pet.rotation = clamp(pet.vy / (height * 0.72), -0.55, 0.78);
+
+    state.nextObstacleAt -= speed * dtSec;
+    if (state.nextObstacleAt <= 0) spawnObstacle(false, gap);
+
+    state.obstacles.forEach(obstacle => {
+      obstacle.x -= speed * dtSec;
+      if (!obstacle.passed && obstacle.x + obstacle.width < pet.x - petSize() * 0.36) {
+        obstacle.passed = true;
+        state.passed++;
+        state.score += 4 + state.combo;
+        if (!obstacle.foodCollected) {
+          state.combo = 0;
+          state.misses++;
+        }
+        updateHud();
+      }
+    });
+    state.foods.forEach(food => {
+      food.x -= speed * dtSec;
+      food.pulse += dt * 0.006;
+    });
+    state.powerups.forEach(power => {
+      power.x -= speed * dtSec;
+      power.pulse += dt * 0.006;
+    });
+    state.particles.forEach(particle => {
+      particle.x += particle.vx * dt;
+      particle.y += particle.vy * dt;
+      particle.life -= dt;
+      particle.size *= 0.992;
+    });
+
+    state.obstacles = state.obstacles.filter(obstacle => obstacle.x + obstacle.width > -40);
+    state.foods = state.foods.filter(food => food.x > -50 && !food.collected);
+    state.powerups = state.powerups.filter(power => power.x > -50 && !power.collected);
+    state.particles = state.particles.filter(particle => particle.life > 0);
+
+    checkFoodCollisions();
+    checkPowerupCollisions(now);
+    if (collidesWithWorld()) finish(false);
+  }
+
+  function spawnObstacle(first = false, forcedGap = null) {
+    const cfg = config();
+    const theme = currentTheme();
+    const progress = Math.min(1, state.collected / Math.max(1, cfg.target));
+    const gap = forcedGap || height * clamp(cfg.gap - progress * 0.065, 0.23, 0.44);
+    const topLimit = Math.max(playTop() + 32, height * 0.17);
+    const bottomLimit = Math.max(topLimit + gap + 80, playBottom() - 28);
+    const gateIndex = state.nextGateIndex++;
+    const wave = Math.sin(gateIndex * 0.82 + state.levelIndex * 1.7) * (bottomLimit - topLimit) * 0.22;
+    const drift = Math.sin(gateIndex * 0.37 + state.levelIndex) * (bottomLimit - topLimit) * 0.12;
+    const desired = (topLimit + bottomLimit) / 2 + wave + drift;
+    const maxStep = height * 0.13;
+    const center = first
+      ? startPetY()
+      : clamp(state.lastGateCenter + clamp(desired - state.lastGateCenter, -maxStep, maxStep), topLimit + gap * 0.5, bottomLimit - gap * 0.5);
+    state.lastGateCenter = center;
+    const pipeWidth = clamp(width * 0.09, 42, 72);
+    const x = first ? width + pipeWidth * 1.3 : width + pipeWidth;
+    const obstacle = {
+      x,
+      width: pipeWidth,
+      top: center - gap / 2,
+      bottom: center + gap / 2,
+      passed: false,
+      foodCollected: false,
+      tint: theme.pipe[gateIndex % theme.pipe.length],
+      accent: theme.accent,
+      deco: theme.deco[gateIndex % theme.deco.length],
+      gateIndex,
+    };
+    state.obstacles.push(obstacle);
+    spawnFood(obstacle, center);
+    if (!first && Math.random() < 0.34) spawnPowerup(obstacle, center, gap);
+    const interval = gateSpacing(cfg, progress);
+    state.nextObstacleAt = interval;
+  }
+
+  function gateSpacing(cfg, progress) {
+    const playHeight = Math.max(220, playBottom() - playTop());
+    const base = Math.min(width * 0.72, playHeight * 1.28, 620);
+    const difficultyScale = cfg.pipeInterval / DIFFICULTIES.normal.pipeInterval;
+    return base * difficultyScale * clamp(1 - progress * 0.13, 0.82, 1);
+  }
+
+  function spawnFood(obstacle, center) {
+    const icon = FOOD_ICONS[(state.passed + state.collected + rand(0, FOOD_ICONS.length - 1)) % FOOD_ICONS.length];
+    const food = {
+      x: obstacle.x + obstacle.width * 0.5,
+      y: center + rand(-height * 0.045, height * 0.045),
+      r: clamp(Math.min(width, height) * 0.033, 18, 28),
+      icon,
+      pulse: Math.random() * 10,
+      obstacle,
+      collected: false,
+    };
+    state.foods.push(food);
+  }
+
+  function spawnPowerup(obstacle, center, gap) {
+    const item = POWERUP_LIST[rand(0, POWERUP_LIST.length - 1)];
+    const side = Math.random() < 0.5 ? -1 : 1;
+    const power = {
+      x: obstacle.x + obstacle.width * 0.5 + rand(32, 58),
+      y: clamp(center + side * gap * 0.28, 90, height - 70),
+      r: clamp(Math.min(width, height) * 0.027, 16, 24),
+      type: item.id,
+      icon: item.icon,
+      label: item.label,
+      pulse: Math.random() * 10,
+      collected: false,
+    };
+    state.powerups.push(power);
+  }
+
+  function flap() {
+    if (!state.started) return;
+    if (state.finished) return;
+    if (state.countingDown) {
+      state.pendingFlap = true;
+      return;
+    }
+    const cfg = config();
+    pet.vy = -height * cfg.flap;
+    makeParticles(pet.x - petSize() * 0.3, pet.y + petSize() * 0.2, '#7dd3fc', 5);
+    playSound('flap');
+  }
+
+  function petSize() {
+    if (state.activePower === 'grow') return pet.baseSize * 1.34;
+    if (state.activePower === 'shrink') return pet.baseSize * 0.72;
+    return pet.baseSize;
+  }
+
+  function checkFoodCollisions() {
+    const size = petSize();
+    state.foods.forEach(food => {
+      if (food.collected) return;
+      if (distance(pet.x, pet.y, food.x, food.y) < size * 0.48 + food.r * 0.72) {
+        food.collected = true;
+        food.obstacle.foodCollected = true;
+        state.collected++;
+        state.combo++;
+        state.score += 18 + state.combo * 3;
+        makeParticles(food.x, food.y, '#f59e0b', 14);
+        playSound('food');
+        flyFoodToHud(food.icon, food.x, food.y);
+        updateHud();
+        if (state.collected >= config().target) finish(true);
+      }
+    });
+  }
+
+  function flyFoodToHud(icon, x, y) {
+    const target = document.getElementById('mhFood')?.getBoundingClientRect();
+    if (!target) return;
+    const fly = document.createElement('span');
+    fly.className = 'mh-food-fly';
+    fly.textContent = icon;
+    fly.style.setProperty('--from-x', `${x}px`);
+    fly.style.setProperty('--from-y', `${y}px`);
+    fly.style.setProperty('--to-x', `${target.left + target.width / 2}px`);
+    fly.style.setProperty('--to-y', `${target.top + target.height / 2}px`);
+    document.body.appendChild(fly);
+    setTimeout(() => fly.remove(), 780);
+  }
+
+  function checkPowerupCollisions(now) {
+    const size = petSize();
+    state.powerups.forEach(power => {
+      if (power.collected) return;
+      if (distance(pet.x, pet.y, power.x, power.y) < size * 0.46 + power.r * 0.82) {
+        const item = POWERUPS[power.type];
+        power.collected = true;
+        state.activePower = item.id;
+        state.activePowerUntil = now + item.duration;
+        state.score += 8;
+        makeParticles(power.x, power.y, '#38bdf8', 12);
+        playSound('power');
+        updateHud();
+        updatePowerHud();
+      }
+    });
+  }
+
+  function collidesWithWorld() {
+    const size = petSize();
+    const radius = size * 0.38;
+    if (pet.y - radius < playTop()) {
+      pet.y = playTop() + radius;
+      pet.vy = Math.max(height * 0.08, pet.vy * -0.12);
+      return false;
+    }
+    if (pet.y + radius > playBottom()) return true;
+    return state.obstacles.some(obstacle => {
+      const left = obstacle.x;
+      const right = obstacle.x + obstacle.width;
+      const bodyLeft = pet.x - radius * 0.86;
+      const bodyRight = pet.x + radius * 0.86;
+      if (bodyRight < left || bodyLeft > right) return false;
+      return pet.y - radius < obstacle.top || pet.y + radius > obstacle.bottom;
+    });
+  }
+
+  function finish(won) {
+    if (state.finished) return;
+    state.finished = true;
+    state.countingDown = false;
+    stopLoop();
+    countdownEl.hidden = true;
+    const cfg = config();
+    const difficultyLevel = DIFFICULTY_ORDER.indexOf(state.difficulty) + 1;
+    const score = Math.max(0, state.score + state.collected * 10 + state.passed * 3 - state.misses * 4);
+    state.best = Math.max(state.best, score);
+    localStorage.setItem(STORAGE_KEY_BEST, String(state.best));
+    updateHud();
+    if (won) {
+      playSound('win');
+      burstConfetti();
+      showResult('通关成功！', `收集了 ${state.collected} 份食物，宠物飞得很稳。`, '再飞一次', () => startGame());
+      post('gameFinished', {
+        completed: true,
+        passed: true,
+        earnedPoints: Math.max(10, cfg.score + score),
+        score,
+        difficulty: difficultyLevel,
+        difficultyId: state.difficulty,
+        collected: state.collected,
+        targetFood: cfg.target,
+        passedGates: state.passed,
+        seconds: Math.round(state.elapsed / 1000),
+        finishedAt: Date.now(),
+        roundId: state.roundId,
+      });
+    } else {
+      playSound('hit');
+      shakeScreen();
+      showResult('碰到了障碍', '点按节奏放轻一点，先拿变小或减速道具会更容易。', '再来一次', () => startGame());
+    }
+  }
+
+  function draw(now) {
+    drawBackground(now);
+    drawObstacles();
+    drawCollectibles();
+    drawParticles();
+    drawPet();
+    if (!state.started && !state.finished) drawAttract();
+  }
+
+  function drawBackground(now) {
+    const theme = currentTheme();
+    const gradient = ctx.createLinearGradient(0, 0, 0, height);
+    gradient.addColorStop(0, theme.sky[0]);
+    gradient.addColorStop(0.55, theme.sky[1]);
+    gradient.addColorStop(1, theme.sky[2]);
+    ctx.fillStyle = gradient;
+    ctx.fillRect(0, 0, width, height);
+
+    ctx.save();
+    const drift = (now * 0.018) % width;
+    for (let i = -1; i < 5; i++) {
+      const x = i * width * 0.34 - drift * (0.28 + (i % 2) * 0.08);
+      const y = 84 + (i % 3) * 44;
+      drawCloud(x, y, 64 + (i % 2) * 28, 'rgba(255,255,255,.64)');
+    }
+    drawDistantHills(now, theme);
+    ctx.fillStyle = 'rgba(22,163,74,.18)';
+    ctx.beginPath();
+    ctx.moveTo(0, height - 36);
+    for (let x = 0; x <= width + 40; x += 40) {
+      ctx.lineTo(x, height - 42 - Math.sin((x + now * 0.03) * 0.025) * 8);
+    }
+    ctx.lineTo(width, height);
+    ctx.lineTo(0, height);
+    ctx.closePath();
+    ctx.fill();
+    ctx.restore();
+  }
+
+  function currentTheme() {
+    return LEVEL_THEMES[state.levelIndex % LEVEL_THEMES.length] || LEVEL_THEMES[0];
+  }
+
+  function drawDistantHills(now, theme) {
+    const offset = (now * 0.01) % width;
+    ctx.save();
+    ctx.globalAlpha = 0.22;
+    for (let layer = 0; layer < 2; layer++) {
+      ctx.fillStyle = layer ? theme.pipe[1] : theme.pipe[0];
+      ctx.beginPath();
+      ctx.moveTo(-width, height - 118 + layer * 34);
+      for (let x = -width; x <= width * 2; x += 80) {
+        const px = x - offset * (0.18 + layer * 0.08);
+        const py = height - 126 + layer * 38 - Math.sin((x + layer * 41) * 0.018) * 24;
+        ctx.lineTo(px, py);
+      }
+      ctx.lineTo(width * 2, height);
+      ctx.lineTo(-width, height);
+      ctx.closePath();
+      ctx.fill();
+    }
+    ctx.restore();
+  }
+
+  function drawCloud(x, y, size, color) {
+    ctx.fillStyle = color;
+    ctx.beginPath();
+    ctx.arc(x, y, size * 0.28, 0, Math.PI * 2);
+    ctx.arc(x + size * 0.25, y - size * 0.12, size * 0.34, 0, Math.PI * 2);
+    ctx.arc(x + size * 0.55, y, size * 0.27, 0, Math.PI * 2);
+    ctx.roundRect(x - size * 0.18, y, size * 0.92, size * 0.26, size * 0.13);
+    ctx.fill();
+  }
+
+  function drawObstacles() {
+    state.obstacles.forEach(obstacle => {
+      drawPipe(obstacle.x, 0, obstacle.width, obstacle.top, true, obstacle.tint);
+      drawPipe(obstacle.x, obstacle.bottom, obstacle.width, height - obstacle.bottom, false, obstacle.tint);
+      drawGateDecoration(obstacle);
+    });
+  }
+
+  function drawPipe(x, y, w, h, top, color) {
+    if (h <= 0) return;
+    const capH = Math.min(28, Math.max(18, w * 0.42));
+    const capY = top ? y + h - capH : y;
+    const bodyY = top ? y : y + capH;
+    const bodyH = Math.max(0, h - capH);
+    const grad = ctx.createLinearGradient(x, 0, x + w, 0);
+    grad.addColorStop(0, '#047857');
+    grad.addColorStop(0.38, color);
+    grad.addColorStop(1, '#065f46');
+    ctx.fillStyle = grad;
+    roundRect(x + w * 0.12, bodyY, w * 0.76, bodyH, 10);
+    ctx.fill();
+    ctx.fillStyle = '#ecfccb';
+    ctx.globalAlpha = 0.24;
+    roundRect(x + w * 0.25, bodyY + 8, w * 0.16, Math.max(0, bodyH - 16), 8);
+    ctx.fill();
+    ctx.globalAlpha = 1;
+    ctx.fillStyle = grad;
+    roundRect(x, capY, w, capH, 11);
+    ctx.fill();
+    ctx.strokeStyle = 'rgba(255,255,255,.34)';
+    ctx.lineWidth = 2;
+    ctx.stroke();
+  }
+
+  function drawGateDecoration(obstacle) {
+    const x = obstacle.x + obstacle.width / 2;
+    if (x < -40 || x > width + 40) return;
+    ctx.save();
+    ctx.textAlign = 'center';
+    ctx.textBaseline = 'middle';
+    ctx.font = `${clamp(obstacle.width * 0.42, 20, 30)}px sans-serif`;
+    ctx.globalAlpha = 0.88;
+    ctx.fillText(obstacle.deco, x, obstacle.top - 20);
+    ctx.fillText(obstacle.deco, x, obstacle.bottom + 20);
+    ctx.restore();
+  }
+
+  function drawCollectibles() {
+    ctx.textAlign = 'center';
+    ctx.textBaseline = 'middle';
+    state.foods.forEach(food => {
+      const scale = 1 + Math.sin(food.pulse) * 0.08;
+      drawBubble(food.x, food.y, food.r * scale, 'rgba(255,255,255,.72)', '#f59e0b');
+      ctx.font = `${food.r * 1.18}px sans-serif`;
+      ctx.fillText(food.icon, food.x, food.y + 1);
+    });
+    state.powerups.forEach(power => {
+      const scale = 1 + Math.sin(power.pulse) * 0.1;
+      drawBubble(power.x, power.y, power.r * scale, 'rgba(224,242,254,.82)', '#0284c7');
+      ctx.font = `${power.r * 1.05}px sans-serif`;
+      ctx.fillText(power.icon, power.x, power.y + 1);
+    });
+  }
+
+  function drawBubble(x, y, r, fill, stroke) {
+    ctx.save();
+    ctx.fillStyle = fill;
+    ctx.strokeStyle = stroke;
+    ctx.lineWidth = 3;
+    ctx.beginPath();
+    ctx.arc(x, y, r, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.stroke();
+    ctx.fillStyle = 'rgba(255,255,255,.72)';
+    ctx.beginPath();
+    ctx.arc(x - r * 0.28, y - r * 0.3, r * 0.22, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.restore();
+  }
+
+  function drawParticles() {
+    state.particles.forEach(particle => {
+      ctx.save();
+      ctx.globalAlpha = clamp(particle.life / particle.maxLife, 0, 1);
+      ctx.fillStyle = particle.color;
+      ctx.beginPath();
+      ctx.arc(particle.x, particle.y, particle.size, 0, Math.PI * 2);
+      ctx.fill();
+      ctx.restore();
+    });
+  }
+
+  function drawPet() {
+    const size = petSize();
+    ctx.save();
+    ctx.translate(pet.x, pet.y);
+    ctx.rotate(pet.rotation);
+    ctx.shadowColor = 'rgba(15,23,42,.24)';
+    ctx.shadowBlur = 8;
+    ctx.shadowOffsetY = 6;
+    if (state.petBitmap && state.petMeta?.uv) {
+      const uv = state.petMeta.uv;
+      ctx.drawImage(state.petBitmap, uv.x, uv.y, uv.width, uv.height, -size / 2, -size / 2, size, size);
+    } else {
+      ctx.font = `${size * 0.82}px sans-serif`;
+      ctx.textAlign = 'center';
+      ctx.textBaseline = 'middle';
+      ctx.fillText(FALLBACK_PET, 0, 1);
+    }
+    ctx.restore();
+  }
+
+  function drawAttract() {
+    ctx.save();
+    ctx.textAlign = 'center';
+    ctx.textBaseline = 'middle';
+    ctx.fillStyle = 'rgba(15,118,110,.82)';
+    ctx.font = '900 18px sans-serif';
+    ctx.fillText('选择难度后开始飞行', width / 2, height * 0.52);
+    ctx.restore();
+  }
+
+  function makeParticles(x, y, color, count) {
+    for (let i = 0; i < count; i++) {
+      state.particles.push({
+        x,
+        y,
+        vx: rand(-0.08, 0.05),
+        vy: rand(-0.09, 0.09),
+        size: rand(3, 7),
+        color,
+        life: rand(420, 760),
+        maxLife: 760,
+      });
+    }
+  }
+
+  function updateHud() {
+    const cfg = config();
+    setHudText('food', state.collected);
+    setHudText('target', cfg.target);
+    setHudText('score', Math.max(0, Math.round(state.score)));
+    setHudText('best', state.best);
+    if (state.hudValues.difficulty !== state.difficulty) {
+      state.hudValues.difficulty = state.difficulty;
+      document.querySelectorAll('[data-difficulty]').forEach(btn => btn.classList.toggle('active', btn.dataset.difficulty === state.difficulty));
+    }
+  }
+
+  function setHudText(key, value) {
+    const text = String(value);
+    if (state.hudValues[key] === text) return;
+    state.hudValues[key] = text;
+    if (hudEls[key]) hudEls[key].textContent = text;
+  }
+
+  function updatePowerHud() {
+    const el = document.getElementById('mhPower');
+    if (!state.activePower) {
+      el.className = 'mh-power';
+      el.textContent = '';
+      return;
+    }
+    const item = POWERUPS[state.activePower];
+    el.innerHTML = `<span>${item.icon}</span><span>${item.label}</span>`;
+    el.className = 'mh-power show';
+  }
+
+  function buildDifficulties() {
+    const targets = [document.getElementById('mhDifficulties'), document.getElementById('mhOverlayDifficulties')];
+    targets.forEach(target => {
+      target.innerHTML = DIFFICULTY_ORDER.map(id => {
+        const cfg = DIFFICULTIES[id];
+        return `<button class="mh-difficulty" type="button" data-difficulty="${id}">${cfg.label} ${cfg.target}</button>`;
+      }).join('');
+      target.querySelectorAll('[data-difficulty]').forEach(btn => {
+        btn.onclick = () => setDifficulty(btn.dataset.difficulty);
+      });
+    });
+  }
+
+  function setDifficulty(id) {
+    if (!DIFFICULTIES[id]) return;
+    state.difficulty = id;
+    localStorage.setItem(STORAGE_KEY_DIFFICULTY, id);
+    if (state.started && !state.finished) showOverlay('切换难度', '难度已更新，重新开始后生效。', '重新开始', () => startGame());
+    updateHud();
+  }
+
+  function showOverlay(title, text, buttonText, action) {
+    state.paused = state.started && !state.finished;
+    overlayTitleEl.textContent = title;
+    overlayTextEl.textContent = text;
+    startBtn.textContent = buttonText;
+    startBtn.onclick = action;
+    overlayEl.hidden = false;
+  }
+
+  function showResult(title, text, buttonText, action) {
+    setTimeout(() => showOverlay(title, text, buttonText, action), 360);
+  }
+
+  function hideOverlay() {
+    overlayEl.hidden = true;
+  }
+
+  function popToast(text) {
+    const toast = document.createElement('div');
+    toast.className = 'mh-toast';
+    toast.textContent = text;
+    document.body.appendChild(toast);
+    setTimeout(() => toast.remove(), 1200);
+  }
+
+  function burstConfetti() {
+    const colors = ['#f97316', '#facc15', '#22c55e', '#38bdf8', '#fb7185'];
+    for (let i = 0; i < 38; i++) {
+      const piece = document.createElement('i');
+      piece.className = 'mh-confetti';
+      piece.style.left = `${rand(5, 95)}vw`;
+      piece.style.setProperty('--x', `${rand(-70, 70)}px`);
+      piece.style.setProperty('--d', `${rand(900, 1500)}ms`);
+      piece.style.setProperty('--c', colors[rand(0, colors.length - 1)]);
+      document.body.appendChild(piece);
+      setTimeout(() => piece.remove(), 1600);
+    }
+  }
+
+  function shakeScreen() {
+    const shell = root.querySelector('.mh-shell');
+    shell.animate([
+      { transform: 'translateX(0)' },
+      { transform: 'translateX(-7px)' },
+      { transform: 'translateX(7px)' },
+      { transform: 'translateX(0)' },
+    ], { duration: 260, easing: 'ease-in-out' });
+  }
+
+  function requestPetImage() {
+    const requestId = `flappy_pet_${Date.now()}`;
+    try {
+      window.parent.postMessage({ type: 'haqi_get_pet_image', requestId, anim: 'happy' }, '*');
+    } catch (_) {}
+  }
+
+  async function setPetImage(payload) {
+    cleanupPetImage();
+    if (!payload?.imageBlob || !payload?.uv) return;
+    try {
+      state.petUrl = URL.createObjectURL(payload.imageBlob);
+      state.petBitmap = await createImageBitmap(payload.imageBlob);
+      state.petMeta = payload;
+    } catch (_) {
+      cleanupPetImage();
+    }
+  }
+
+  function cleanupPetImage() {
+    if (state.petBitmap?.close) state.petBitmap.close();
+    state.petBitmap = null;
+    state.petMeta = null;
+    if (state.petUrl) URL.revokeObjectURL(state.petUrl);
+    state.petUrl = '';
+  }
+
+  function initAudio() {
+    if (sound.ctx) return;
+    const AudioContext = window.AudioContext || window.webkitAudioContext;
+    if (!AudioContext) return;
+    sound.ctx = new AudioContext();
+    sound.master = sound.ctx.createGain();
+    sound.master.gain.value = 0.055;
+    sound.master.connect(sound.ctx.destination);
+  }
+
+  function playSound(type) {
+    try {
+      initAudio();
+      if (!sound.ctx || !sound.master) return;
+      if (sound.ctx.state === 'suspended') sound.ctx.resume();
+      const now = sound.ctx.currentTime;
+      const osc = sound.ctx.createOscillator();
+      const gain = sound.ctx.createGain();
+      const table = {
+        flap: [520, 690, 0.07],
+        food: [760, 1040, 0.12],
+        power: [440, 880, 0.16],
+        hit: [160, 72, 0.2],
+        win: [620, 980, 0.24],
+      };
+      const cfg = table[type] || table.flap;
+      osc.type = type === 'hit' ? 'sawtooth' : 'sine';
+      osc.frequency.setValueAtTime(cfg[0], now);
+      osc.frequency.exponentialRampToValueAtTime(Math.max(1, cfg[1]), now + cfg[2]);
+      gain.gain.setValueAtTime(0.001, now);
+      gain.gain.exponentialRampToValueAtTime(type === 'hit' ? 0.32 : 0.22, now + 0.015);
+      gain.gain.exponentialRampToValueAtTime(0.001, now + cfg[2]);
+      osc.connect(gain);
+      gain.connect(sound.master);
+      osc.start(now);
+      osc.stop(now + cfg[2] + 0.02);
+    } catch (_) {}
+  }
+
+  function post(type, data = {}) {
+    try { window.parent.postMessage({ type, data }, '*'); } catch (_) {}
+  }
+
+  function distance(ax, ay, bx, by) {
+    return Math.hypot(ax - bx, ay - by);
+  }
+
+  function rand(min, max) {
+    if (Number.isInteger(min) && Number.isInteger(max)) return Math.floor(Math.random() * (max - min + 1)) + min;
+    return Math.random() * (max - min) + min;
+  }
+
+  function pick(items) {
+    return items[rand(0, items.length - 1)];
+  }
+
+  function clamp(value, min, max) {
+    return Math.max(min, Math.min(max, value));
+  }
+
+  function roundRect(x, y, w, h, r) {
+    if (ctx.roundRect) {
+      ctx.beginPath();
+      ctx.roundRect(x, y, w, h, r);
+      return;
+    }
+    const radius = Math.min(r, w / 2, h / 2);
+    ctx.beginPath();
+    ctx.moveTo(x + radius, y);
+    ctx.lineTo(x + w - radius, y);
+    ctx.quadraticCurveTo(x + w, y, x + w, y + radius);
+    ctx.lineTo(x + w, y + h - radius);
+    ctx.quadraticCurveTo(x + w, y + h, x + w - radius, y + h);
+    ctx.lineTo(x + radius, y + h);
+    ctx.quadraticCurveTo(x, y + h, x, y + h - radius);
+    ctx.lineTo(x, y + radius);
+    ctx.quadraticCurveTo(x, y, x + radius, y);
+  }
+
+  function handleAction(event) {
+    if (event.target?.closest?.('button')) return;
+    if (!state.started || state.finished) return;
+    event.preventDefault();
+    if (state.countingDown) {
+      state.pendingFlap = true;
+      return;
+    }
+    if (state.paused) {
+      state.paused = false;
+      hideOverlay();
+      resumeLoop();
+      return;
+    }
+    flap();
+  }
+
+  window.addEventListener('resize', () => {
+    resize();
+    draw(performance.now());
+  });
+  window.addEventListener('pointerdown', handleAction, { passive: false });
+  window.addEventListener('keydown', event => {
+    if (event.code === 'Space' || event.code === 'ArrowUp') {
+      event.preventDefault();
+      if (!state.started || state.finished) startGame();
+      else flap();
+    }
+  });
+  window.addEventListener('message', event => {
+    const msg = event.data || {};
+    if (msg.type === 'gameContinue') {
+      if (state.paused) {
+        state.paused = false;
+        hideOverlay();
+        resumeLoop();
+      } else if (!state.started || state.finished) startGame();
+    }
+    if (msg.type === 'haqi_pet_image' && msg.ok) setPetImage(msg.data);
+    if (msg.type === 'setGameConfig' && msg.data?.difficulty && DIFFICULTIES[msg.data.difficulty]) {
+      setDifficulty(msg.data.difficulty);
+      startGame();
+    }
+  });
+  window.addEventListener('beforeunload', cleanupPetImage);
+
+  document.getElementById('mhMenu').onclick = () => showOverlay('飞翔宠物', '点按让宠物上升，穿过绿色障碍的空隙并收集食物。收集够目标食物即可通关；道具有变大、变小、加速、减速，难度会随进度逐步提高。', state.started && !state.finished ? '继续飞行' : '开始飞行', () => {
+    if (state.started && !state.finished) {
+      state.paused = false;
+      hideOverlay();
+      resumeLoop();
+    } else {
+      startGame();
+    }
+  });
+  document.getElementById('mhHelp').onclick = document.getElementById('mhMenu').onclick;
+  document.getElementById('mhRestart').onclick = () => startGame();
+  startBtn.onclick = () => startGame();
+
+  buildDifficulties();
+  resize();
+  updateHud();
+  requestPetImage();
+  draw(performance.now());
+  post('gameLoaded');
+})();
+</script>
+
+</html>

@@ -1,0 +1,461 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+  <title>宠物五子棋</title>
+  <script src="https://cdn.keepwork.com/keepwork/cdn/tailwindcss@3.4.16.js"></script>
+  <style>
+    * { box-sizing: border-box; -webkit-tap-highlight-color: transparent; user-select: none; }
+    html, body { width: 100%; height: 100%; margin: 0; overflow: hidden; }
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, "PingFang SC", "Microsoft YaHei", sans-serif;
+      color: #263238;
+      background: linear-gradient(180deg, #dff7ff 0%, #fff7d6 52%, #dcfce7 100%);
+      touch-action: none;
+    }
+    .shell { height: 100vh; height: 100dvh; display: grid; grid-template-rows: auto minmax(0, 1fr) auto; gap: 10px; padding: 10px; }
+    .top {
+      min-height: 58px; display: flex; align-items: center; justify-content: space-between; gap: 10px;
+      padding: 9px 12px; border-radius: 14px; background: rgba(255,255,255,.88);
+      border: 2px solid rgba(255,255,255,.9); box-shadow: 0 5px 0 rgba(14,116,144,.14);
+    }
+    .title { font-size: 20px; font-weight: 1000; color: #075985; white-space: nowrap; }
+    .stats { display: flex; align-items: center; justify-content: flex-end; gap: 7px; flex-wrap: wrap; }
+    .pill {
+      min-width: 66px; height: 32px; display: inline-flex; align-items: center; justify-content: center; gap: 4px;
+      padding: 0 10px; border-radius: 999px; background: #fff; border: 1px solid rgba(14,116,144,.2);
+      color: #0f766e; font-size: 13px; font-weight: 900; box-shadow: 0 2px 0 rgba(14,116,144,.12);
+    }
+    .main { min-height: 0; display: grid; grid-template-columns: minmax(0, 1fr) minmax(150px, 220px); gap: 10px; }
+    .boardPanel, .petPanel, .bottom {
+      border-radius: 16px; background: rgba(255,255,255,.74); border: 2px solid rgba(255,255,255,.9);
+      box-shadow: 0 10px 24px rgba(15,23,42,.15);
+    }
+    .boardPanel { min-height: 0; display: grid; place-items: center; padding: 8px; overflow: hidden; }
+    .board {
+      position: relative; width: min(100%, 620px, calc(100dvh - 150px)); aspect-ratio: 1 / 1;
+      border-radius: 12px; background: linear-gradient(135deg, #f5c978, #dda853);
+      border: 5px solid #9a6428; box-shadow: inset 0 0 0 3px rgba(255,255,255,.18), 0 10px 18px rgba(76,45,14,.24);
+      overflow: hidden;
+    }
+    .board svg { position: absolute; inset: 0; width: 100%; height: 100%; pointer-events: none; }
+    .point {
+      position: absolute; width: 7.1%; aspect-ratio: 1; transform: translate(-50%, -50%);
+      border: 0; border-radius: 50%; background: transparent; padding: 0; cursor: pointer; z-index: 2;
+    }
+    .point.hint::after {
+      content: ""; position: absolute; left: 50%; top: 50%; width: 28%; height: 28%; transform: translate(-50%, -50%);
+      border-radius: 50%; background: rgba(34,197,94,.58); box-shadow: 0 0 8px rgba(34,197,94,.38);
+    }
+    .point.last { background: rgba(14,165,233,.16); }
+    .stone {
+      position: absolute; inset: 8%; border-radius: 50%; box-shadow: inset 0 2px 5px rgba(255,255,255,.45), inset 0 -7px 10px rgba(15,23,42,.22), 0 3px 7px rgba(15,23,42,.33);
+    }
+    .stone.black { background: radial-gradient(circle at 34% 28%, #64748b 0%, #1f2937 38%, #020617 100%); border: 2px solid #020617; }
+    .stone.white { background: radial-gradient(circle at 34% 28%, #fff 0%, #f8fafc 42%, #cbd5e1 100%); border: 2px solid #64748b; }
+    .point.win .stone { animation: winPulse .72s ease-in-out infinite; box-shadow: 0 0 0 5px rgba(250,204,21,.44), 0 6px 12px rgba(15,23,42,.28); }
+    .petPanel { min-width: 0; display: grid; grid-template-rows: auto minmax(0, 1fr) auto; gap: 9px; padding: 12px; text-align: center; }
+    .petTitle { font-size: 16px; font-weight: 1000; color: #075985; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+    .petAvatarWrap { min-height: 0; display: grid; place-items: center; }
+    .petAvatar {
+      width: min(150px, 30vmin); height: min(150px, 30vmin); border-radius: 20px;
+      background: linear-gradient(180deg, #e0f2fe, #fef3c7); border: 3px solid #7dd3fc;
+      box-shadow: 0 7px 0 rgba(14,116,144,.16); display: grid; place-items: center; overflow: hidden;
+    }
+    .petSprite { width: 100%; height: 100%; background-repeat: no-repeat; image-rendering: auto; }
+    .petFallback { font-size: 54px; font-weight: 1000; color: #0ea5e9; }
+    .petBubble {
+      font-size: 14px; line-height: 1.45; font-weight: 900; color: #164e63; background: #ecfeff;
+      border: 2px solid #a5f3fc; border-radius: 13px; padding: 9px;
+    }
+    .bottom { min-height: 58px; display: flex; align-items: center; justify-content: space-between; gap: 10px; padding: 9px 12px; }
+    .status { min-width: 0; font-size: 16px; line-height: 1.35; font-weight: 1000; color: #7c2d12; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+    .actions { display: flex; gap: 8px; flex-wrap: wrap; justify-content: flex-end; }
+    .btn {
+      border: 0; border-radius: 999px; padding: 10px 15px; font-family: inherit; font-weight: 1000;
+      background: #0ea5e9; color: #fff; cursor: pointer; box-shadow: 0 4px 0 rgba(15,23,42,.24);
+    }
+    .btn:active { transform: translateY(2px); box-shadow: 0 2px 0 rgba(15,23,42,.24); }
+    .btn-orange { background: #f97316; }
+    .btn-soft { background: #fff7ed; color: #9a3412; border: 2px solid #fed7aa; }
+    .overlay { position: fixed; inset: 0; z-index: 20; display: flex; align-items: center; justify-content: center; padding: 16px; background: rgba(15,39,71,.46); }
+    .card { width: min(92vw, 420px); border-radius: 18px; background: #fff; border: 3px solid #fbbf24; padding: 22px; box-shadow: 0 18px 42px rgba(15,23,42,.28); }
+    .card h1 { margin: 0 0 10px; font-size: 28px; line-height: 1.1; font-weight: 1000; color: #b45309; }
+    .card p { margin: 0 0 16px; font-size: 15px; line-height: 1.7; font-weight: 850; color: #0f2747; }
+    .toast { position: fixed; left: 50%; top: 50%; z-index: 30; transform: translate(-50%, -50%); border-radius: 15px; background: #fff; border: 3px solid #7dd3fc; padding: 14px 18px; font-size: 18px; line-height: 1.45; font-weight: 1000; text-align: center; box-shadow: 0 15px 36px rgba(15,23,42,.28); }
+    [hidden] { display: none !important; }
+    @keyframes winPulse { 0%,100% { transform: scale(1); } 50% { transform: scale(1.12); } }
+    @media (max-width: 720px) {
+      .shell { padding: 7px; gap: 7px; }
+      .main { grid-template-columns: 1fr; grid-template-rows: auto minmax(0, 1fr); }
+      .petPanel { order: -1; grid-template-columns: auto 1fr; grid-template-rows: auto auto; align-items: center; text-align: left; padding: 8px; }
+      .petAvatarWrap { grid-row: 1 / 3; }
+      .petAvatar { width: 76px; height: 76px; border-radius: 13px; }
+      .petTitle { grid-column: 2; }
+      .petBubble { font-size: 13px; padding: 7px; }
+      .board { width: min(100%, calc(100dvh - 230px)); }
+      .top { align-items: flex-start; }
+      .title { font-size: 18px; }
+      .pill { min-width: 58px; height: 29px; font-size: 12px; padding: 0 8px; }
+      .bottom { align-items: stretch; flex-direction: column; }
+      .status { white-space: normal; }
+      .actions { width: 100%; justify-content: space-between; }
+      .btn { padding: 9px 13px; }
+    }
+  </style>
+</head>
+
+<body>
+  <div class="shell">
+    <div class="top">
+      <div class="title">宠物五子棋</div>
+      <div class="stats">
+        <span class="pill">手数 <b id="steps">0</b></span>
+        <span class="pill">得分 <b id="score">0</b></span>
+        <span class="pill">黑棋先手</span>
+      </div>
+    </div>
+    <div class="main">
+      <div class="boardPanel"><div id="board" class="board" aria-label="五子棋棋盘"></div></div>
+      <aside class="petPanel">
+        <div class="petTitle" id="petName">宠物执白棋</div>
+        <div class="petAvatarWrap"><div id="petAvatar" class="petAvatar"><span class="petFallback">五</span></div></div>
+        <div class="petBubble" id="petTalk">你执黑棋先走，我们来连成五子吧。</div>
+      </aside>
+    </div>
+    <div class="bottom">
+      <div id="status" class="status">点击开始后，你先落黑棋</div>
+      <div class="actions">
+        <button id="help" class="btn btn-soft" type="button">玩法</button>
+        <button id="undo" class="btn btn-soft" type="button">悔棋</button>
+        <button id="restart" class="btn btn-orange" type="button">重新开始</button>
+      </div>
+    </div>
+  </div>
+
+  <div id="intro" class="overlay" role="dialog" aria-modal="true" aria-labelledby="introTitle">
+    <div class="card">
+      <h1 id="introTitle">宠物五子棋</h1>
+      <p>你执黑棋先手，宠物执白棋。点击棋盘交叉点落子，横、竖或斜线任意方向先连成五子即可获胜。完成一局会提升亲密度。</p>
+      <button id="start" class="btn btn-orange" type="button">开始对弈</button>
+    </div>
+  </div>
+
+  <script>
+    const SIZE = 15;
+    const EMPTY = '';
+    const BLACK = 'black';
+    const WHITE = 'white';
+    const DIRECTIONS = [[1, 0], [0, 1], [1, 1], [1, -1]];
+    const els = {
+      board: document.getElementById('board'),
+      status: document.getElementById('status'),
+      steps: document.getElementById('steps'),
+      score: document.getElementById('score'),
+      intro: document.getElementById('intro'),
+      petAvatar: document.getElementById('petAvatar'),
+      petName: document.getElementById('petName'),
+      petTalk: document.getElementById('petTalk'),
+    };
+
+    let board = createBoard();
+    let phase = 'intro';
+    let turn = BLACK;
+    let steps = 0;
+    let score = 0;
+    let history = [];
+    let lastMove = null;
+    let winLine = [];
+    let finished = false;
+    let petObjectUrl = '';
+
+    function createBoard() { return Array.from({ length: SIZE }, () => Array(SIZE).fill(EMPTY)); }
+    function cloneBoard(source) { return source.map(row => row.slice()); }
+    function inside(x, y) { return x >= 0 && x < SIZE && y >= 0 && y < SIZE; }
+    function keyOf(x, y) { return `${x},${y}`; }
+    function sideName(side) { return side === BLACK ? '黑棋' : '白棋'; }
+    function post(type, data = {}, extra = {}) { try { window.parent.postMessage({ type, data, ...extra }, '*'); } catch (e) {} }
+    function setStatus(text) { els.status.textContent = text; }
+    function setPetTalk(text) { els.petTalk.textContent = text; }
+
+    function boardSvg() {
+      const ns = 'http://www.w3.org/2000/svg';
+      const svg = document.createElementNS(ns, 'svg');
+      svg.setAttribute('viewBox', '-0.6 -0.6 15.2 15.2');
+      for (let i = 0; i < SIZE; i++) {
+        svg.appendChild(line(ns, 0, i, SIZE - 1, i));
+        svg.appendChild(line(ns, i, 0, i, SIZE - 1));
+      }
+      [[3,3], [11,3], [7,7], [3,11], [11,11]].forEach(([x, y]) => {
+        const dot = document.createElementNS(ns, 'circle');
+        dot.setAttribute('cx', x); dot.setAttribute('cy', y); dot.setAttribute('r', '.13');
+        dot.setAttribute('fill', 'rgba(70,36,10,.72)');
+        svg.appendChild(dot);
+      });
+      return svg;
+    }
+    function line(ns, x1, y1, x2, y2) {
+      const el = document.createElementNS(ns, 'line');
+      el.setAttribute('x1', x1); el.setAttribute('y1', y1); el.setAttribute('x2', x2); el.setAttribute('y2', y2);
+      el.setAttribute('stroke', 'rgba(55,30,8,.62)'); el.setAttribute('stroke-width', '.045');
+      return el;
+    }
+    function render() {
+      els.board.innerHTML = '';
+      els.board.appendChild(boardSvg());
+      const pad = 0.6, total = 15.2;
+      const winKeys = new Set(winLine.map(p => keyOf(p.x, p.y)));
+      const hints = phase === 'playing' && turn === BLACK ? getHintCells() : new Set();
+      for (let y = 0; y < SIZE; y++) for (let x = 0; x < SIZE; x++) {
+        const btn = document.createElement('button');
+        btn.type = 'button'; btn.className = 'point'; btn.dataset.x = x; btn.dataset.y = y;
+        btn.style.left = `${((x + pad) / total) * 100}%`;
+        btn.style.top = `${((y + pad) / total) * 100}%`;
+        if (lastMove?.x === x && lastMove?.y === y) btn.classList.add('last');
+        if (winKeys.has(keyOf(x, y))) btn.classList.add('win');
+        if (!board[y][x] && hints.has(keyOf(x, y))) btn.classList.add('hint');
+        if (board[y][x]) {
+          const stone = document.createElement('span');
+          stone.className = `stone ${board[y][x]}`;
+          btn.appendChild(stone);
+        }
+        btn.onclick = handlePointClick;
+        els.board.appendChild(btn);
+      }
+      els.steps.textContent = steps;
+      els.score.textContent = score;
+    }
+
+    function handlePointClick(event) {
+      if (phase !== 'playing' || turn !== BLACK) return;
+      const x = Number(event.currentTarget.dataset.x), y = Number(event.currentTarget.dataset.y);
+      if (board[y][x]) { setStatus('这里已经有棋子了'); return; }
+      commitMove(x, y, BLACK);
+    }
+    function commitMove(x, y, side) {
+      history.push({ board: cloneBoard(board), turn, steps, score, lastMove, winLine: winLine.slice(), finished, phase });
+      board[y][x] = side;
+      lastMove = { x, y, side };
+      if (side === BLACK) {
+        steps++;
+        score += scoreForMove(x, y, BLACK);
+      }
+      render();
+      const result = checkResult(x, y, side);
+      if (result.ended) { finish(result.winner, result.reason, result.line); return; }
+      turn = side === BLACK ? WHITE : BLACK;
+      if (turn === WHITE) {
+        phase = 'thinking';
+        setStatus('宠物正在思考...');
+        setPetTalk('我看看哪里最关键。');
+        setTimeout(() => {
+          const move = chooseAIMove();
+          if (!move) finish('draw', '棋盘已满', []);
+          else commitMove(move.x, move.y, WHITE);
+        }, 420);
+      } else {
+        phase = 'playing';
+        setStatus('轮到你落黑棋');
+        setPetTalk(nearThreat(BLACK) ? '你已经有很强的连线了。' : '轮到你啦。');
+        render();
+      }
+    }
+
+    function checkResult(x, y, side) {
+      const line = findFiveLine(x, y, side);
+      if (line.length >= 5) return { ended: true, winner: side, reason: `${sideName(side)}连成五子`, line };
+      if (!emptyCells().length) return { ended: true, winner: 'draw', reason: '棋盘已满', line: [] };
+      return { ended: false };
+    }
+    function findFiveLine(x, y, side) {
+      for (const [dx, dy] of DIRECTIONS) {
+        const cells = [{ x, y }];
+        let nx = x + dx, ny = y + dy;
+        while (inside(nx, ny) && board[ny][nx] === side) { cells.push({ x: nx, y: ny }); nx += dx; ny += dy; }
+        nx = x - dx; ny = y - dy;
+        while (inside(nx, ny) && board[ny][nx] === side) { cells.unshift({ x: nx, y: ny }); nx -= dx; ny -= dy; }
+        if (cells.length >= 5) return cells;
+      }
+      return [];
+    }
+    function emptyCells() {
+      const cells = [];
+      for (let y = 0; y < SIZE; y++) for (let x = 0; x < SIZE; x++) if (!board[y][x]) cells.push({ x, y });
+      return cells;
+    }
+    function occupiedCells() {
+      const cells = [];
+      for (let y = 0; y < SIZE; y++) for (let x = 0; x < SIZE; x++) if (board[y][x]) cells.push({ x, y });
+      return cells;
+    }
+    function candidateCells() {
+      const occupied = occupiedCells();
+      if (!occupied.length) return [{ x: 7, y: 7 }];
+      const map = new Map();
+      occupied.forEach(({ x, y }) => {
+        for (let dy = -2; dy <= 2; dy++) for (let dx = -2; dx <= 2; dx++) {
+          const nx = x + dx, ny = y + dy;
+          if (inside(nx, ny) && !board[ny][nx]) map.set(keyOf(nx, ny), { x: nx, y: ny });
+        }
+      });
+      return Array.from(map.values());
+    }
+    function chooseAIMove() {
+      const candidates = candidateCells();
+      if (!candidates.length) return null;
+      let best = null;
+      for (const cell of candidates) {
+        const own = scoreCell(cell.x, cell.y, WHITE);
+        const block = scoreCell(cell.x, cell.y, BLACK);
+        const center = 16 - Math.abs(7 - cell.x) - Math.abs(7 - cell.y);
+        const score = own * 1.12 + block * 1.02 + center * 4 + Math.random() * 6;
+        if (!best || score > best.score) best = { ...cell, score };
+      }
+      return best;
+    }
+    function scoreCell(x, y, side) {
+      if (board[y][x]) return -Infinity;
+      board[y][x] = side;
+      let total = 0;
+      for (const [dx, dy] of DIRECTIONS) total += patternScore(x, y, side, dx, dy);
+      board[y][x] = EMPTY;
+      return total;
+    }
+    function patternScore(x, y, side, dx, dy) {
+      let count = 1, open = 0;
+      let nx = x + dx, ny = y + dy;
+      while (inside(nx, ny) && board[ny][nx] === side) { count++; nx += dx; ny += dy; }
+      if (inside(nx, ny) && !board[ny][nx]) open++;
+      nx = x - dx; ny = y - dy;
+      while (inside(nx, ny) && board[ny][nx] === side) { count++; nx -= dx; ny -= dy; }
+      if (inside(nx, ny) && !board[ny][nx]) open++;
+      if (count >= 5) return 1000000;
+      if (count === 4 && open === 2) return 120000;
+      if (count === 4 && open === 1) return 26000;
+      if (count === 3 && open === 2) return 9000;
+      if (count === 3 && open === 1) return 1400;
+      if (count === 2 && open === 2) return 600;
+      if (count === 2 && open === 1) return 90;
+      return open ? 18 : 2;
+    }
+    function scoreForMove(x, y, side) {
+      const value = scoreCellAfterPlaced(x, y, side);
+      if (value >= 1000000) return 120;
+      if (value >= 120000) return 40;
+      if (value >= 9000) return 24;
+      return 8;
+    }
+    function scoreCellAfterPlaced(x, y, side) {
+      let total = 0;
+      for (const [dx, dy] of DIRECTIONS) total += patternScore(x, y, side, dx, dy);
+      return total;
+    }
+    function nearThreat(side) {
+      return candidateCells().some(cell => scoreCell(cell.x, cell.y, side) >= 9000);
+    }
+    function getHintCells() {
+      const cells = candidateCells().map(cell => ({ ...cell, score: scoreCell(cell.x, cell.y, BLACK) + scoreCell(cell.x, cell.y, WHITE) * .55 }));
+      cells.sort((a, b) => b.score - a.score);
+      return new Set(cells.slice(0, 3).map(cell => keyOf(cell.x, cell.y)));
+    }
+
+    function resetGame() {
+      board = createBoard();
+      phase = 'playing';
+      turn = BLACK;
+      steps = 0;
+      score = 0;
+      history = [];
+      lastMove = null;
+      winLine = [];
+      finished = false;
+      setStatus('轮到你落黑棋');
+      setPetTalk('你先走，我执白棋。');
+      render();
+      post('gameStarted');
+    }
+    function undo() {
+      if (phase === 'thinking' || finished || history.length < 2) return;
+      history.pop();
+      const previous = history.pop();
+      if (!previous) return;
+      board = previous.board;
+      turn = BLACK;
+      steps = previous.steps;
+      score = previous.score;
+      lastMove = previous.lastMove;
+      winLine = previous.winLine || [];
+      finished = previous.finished;
+      phase = 'playing';
+      setStatus('已悔棋，轮到你落黑棋');
+      setPetTalk('没关系，我们再想一次。');
+      render();
+    }
+    function finish(winner, reason, line) {
+      if (finished) return;
+      finished = true;
+      phase = 'result';
+      turn = 'none';
+      winLine = line || [];
+      render();
+      const won = winner === BLACK;
+      const draw = winner === 'draw';
+      const earnedPoints = won ? 138 : draw ? 108 : 88;
+      const title = won ? '你赢啦！' : draw ? '平局' : '宠物获胜';
+      setStatus(`${title} ${reason || ''} 亲密度提升`);
+      setPetTalk(won ? '好厉害！这条连线太漂亮了。' : draw ? '下满一盘也很棒。' : '这局我赢啦，我们再来。');
+      toast(`${title}<br>亲密度提升`);
+      post('gameFinished', { earnedPoints, score, steps, difficulty: 1, difficultyName: '默认', winner, reason, bondBonus: 32, finishedAt: Date.now() });
+    }
+    function toast(html) {
+      const box = document.createElement('div');
+      box.className = 'toast';
+      box.innerHTML = html;
+      document.body.appendChild(box);
+      setTimeout(() => box.remove(), 1700);
+    }
+
+    function requestPetImage() {
+      const requestId = `gomoku_pet_${Date.now()}`;
+      const timer = setTimeout(() => window.removeEventListener('message', onMessage), 1400);
+      function onMessage(event) {
+        const msg = event.data || {};
+        if (msg.type !== 'haqi_pet_image' || msg.requestId !== requestId) return;
+        clearTimeout(timer); window.removeEventListener('message', onMessage);
+        if (!msg.ok || !msg.data) return;
+        mountPet(msg.data);
+      }
+      window.addEventListener('message', onMessage);
+      post('haqi_get_pet_image', { requestId, anim: 'idle' }, { requestId, anim: 'idle' });
+    }
+    function mountPet(pet) {
+      if (!pet?.imageBlob || !pet?.uv) return;
+      if (petObjectUrl) URL.revokeObjectURL(petObjectUrl);
+      petObjectUrl = URL.createObjectURL(pet.imageBlob);
+      const uv = pet.uv;
+      const el = document.createElement('div');
+      el.className = 'petSprite';
+      el.style.backgroundImage = `url("${petObjectUrl}")`;
+      if (uv.cols > 1 || uv.rows > 1) {
+        el.style.backgroundSize = `${uv.cols * 100}% ${uv.rows * 100}%`;
+        el.style.backgroundPosition = `${uv.cols > 1 ? uv.col * 100 / (uv.cols - 1) : 50}% ${uv.rows > 1 ? uv.row * 100 / (uv.rows - 1) : 50}%`;
+      } else {
+        el.style.backgroundSize = 'contain'; el.style.backgroundPosition = 'center';
+      }
+      els.petAvatar.innerHTML = ''; els.petAvatar.appendChild(el);
+      els.petName.textContent = `${pet.name || '宠物'}执白棋`;
+    }
+
+    document.getElementById('start').onclick = () => { els.intro.hidden = true; resetGame(); };
+    document.getElementById('restart').onclick = resetGame;
+    document.getElementById('undo').onclick = undo;
+    document.getElementById('help').onclick = () => { els.intro.hidden = false; };
+    window.addEventListener('message', e => { if (e.data?.type === 'gameContinue') resetGame(); });
+    window.addEventListener('beforeunload', () => { if (petObjectUrl) URL.revokeObjectURL(petObjectUrl); });
+    render(); requestPetImage(); post('gameLoaded');
+  </script>
+</body>
+
+</html>

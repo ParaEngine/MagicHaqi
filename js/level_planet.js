@@ -22,7 +22,6 @@ const WEATHER_DURATION_MS = 30 * 60 * 1000;
 const WEATHER_COOLDOWN_MS = 8 * 60 * 1000;
 const SOCIAL_FUEL_COST = 30;
 const PLANET_INFRA_MAX_LEVEL = 3;
-const FAREWELL_PAGE_SIZE = 4;
 const SMALL_REMOTE_PLANET_NAME_RADIUS = 8;
 const SMALL_REMOTE_PLANET_SIZE_PER_RADIUS = 7;
 const REMOTE_ELEMENT_HAUL_TONS = 10;
@@ -37,8 +36,6 @@ const PLANET_EXPRESSION_ALIASES = {
     sleep: 'sleeping',
     asleep: 'sleeping',
 };
-
-let __haqiIslandPage = 0;
 
 function getSharedAudioEngine() {
     return window.keepwork?.audioEngine
@@ -189,6 +186,7 @@ function untilTomorrow(now = Date.now()) {
 
 function clampStat(pet, key, delta) {
     if (!pet?.stats || typeof delta !== 'number') return;
+    if (key === 'hunger' && delta > 0 && (pet.stage === 'egg' || pet.stage === 'baby')) return;
     pet.stats[key] = clamp((Number(pet.stats[key]) || 0) + delta, 0, 100);
     if (key === 'hunger') clampEnergyToMax(pet);
 }
@@ -1769,30 +1767,52 @@ function staticFarewellPetIconHtml(pet, record) {
 function farewellRecordHtml(record) {
     const pet = state.pets?.[record.petId];
     const portrait = pet ? staticFarewellPetIconHtml(pet, record) : farewellPortraitHtml(record);
-    const traits = Array.isArray(record.topTraits) && record.topTraits.length
-        ? record.topTraits.map(item => `${item.emoji || '✦'} ${escapeHtml(item.name || item.id)}`).join(' · ')
-        : '独特哈奇气息';
     return `
-        <article class="haqi-farewell-card">
+        <article class="haqi-farewell-card" draggable="false">
             <div class="haqi-farewell-portrait">${portrait}</div>
             <div class="haqi-farewell-body">
                 <div class="haqi-farewell-name">${escapeHtml(record.name || '哈奇伙伴')}</div>
-                <div class="haqi-farewell-meta">${escapeHtml(formatFarewellDate(record.farewellAt))} · ${escapeHtml(getStageName(record.stage, '成年'))}</div>
-                <div class="haqi-farewell-note">${traits}</div>
-                <div class="haqi-handbook-lines">
-                    ${(record.handbook || []).slice(0, 3).map(line => `<p>${escapeHtml(line)}</p>`).join('')}
-                </div>
+                <div class="haqi-farewell-meta">${escapeHtml(formatFarewellDate(record.farewellAt))}</div>
             </div>
         </article>`;
 }
 
-function showHaqiIslandPanel(page = __haqiIslandPage || 0) {
+function enableHaqiIslandMemoryDrag(mask) {
+    const scroller = mask?.querySelector?.('.haqi-island-memory');
+    if (!scroller) return;
+    let drag = null;
+    const stopDrag = () => {
+        if (!drag) return;
+        try { scroller.releasePointerCapture?.(drag.pointerId); } catch (_) { }
+        scroller.classList.remove('is-dragging');
+        drag = null;
+    };
+    scroller.addEventListener('dragstart', e => e.preventDefault());
+    scroller.addEventListener('pointerdown', (e) => {
+        if (e.button !== undefined && e.button !== 0) return;
+        if (scroller.scrollWidth <= scroller.clientWidth + 1) return;
+        drag = {
+            pointerId: e.pointerId,
+            startX: e.clientX,
+            scrollLeft: scroller.scrollLeft,
+        };
+        scroller.classList.add('is-dragging');
+        scroller.setPointerCapture?.(e.pointerId);
+    });
+    scroller.addEventListener('pointermove', (e) => {
+        if (!drag || e.pointerId !== drag.pointerId) return;
+        const deltaX = e.clientX - drag.startX;
+        if (Math.abs(deltaX) > 2) e.preventDefault();
+        scroller.scrollLeft = drag.scrollLeft - deltaX;
+    });
+    scroller.addEventListener('pointerup', stopDrag);
+    scroller.addEventListener('pointercancel', stopDrag);
+    scroller.addEventListener('lostpointercapture', stopDrag);
+}
+
+function showHaqiIslandPanel() {
     const records = getFarewellRecords();
-    const pageCount = Math.max(1, Math.ceil(records.length / FAREWELL_PAGE_SIZE));
-    __haqiIslandPage = Math.max(0, Math.min(pageCount - 1, page | 0));
-    const start = __haqiIslandPage * FAREWELL_PAGE_SIZE;
-    const pageRecords = records.slice(start, start + FAREWELL_PAGE_SIZE);
-    openPlanetModal(`
+    const modal = openPlanetModal(`
         <div class="haqi-island-head">
             <div>
                 <div class="planet-modal-title">哈奇岛</div>
@@ -1801,28 +1821,17 @@ function showHaqiIslandPanel(page = __haqiIslandPage || 0) {
             <button class="menu-close-btn haqi-download-close" data-act="close" type="button" aria-label="关闭">×</button>
         </div>
         <div class="haqi-island-memory">
-            ${pageRecords.length ? pageRecords.map(farewellRecordHtml).join('') : `
+            ${records.length ? records.map(farewellRecordHtml).join('') : `
                 <div class="haqi-empty-memory">
                     <b>还没有告别记录</b>
                     <span>等宠物长大成年后，可以为它举行成人礼，让它居住在哈奇岛。</span>
                 </div>`}
-        </div>
-        <div class="haqi-island-pager">
-            <button class="btn-secondary" data-haqi-page="${__haqiIslandPage - 1}" ${__haqiIslandPage <= 0 ? 'disabled' : ''}>上一页</button>
-            <span>${records.length ? `${__haqiIslandPage + 1} / ${pageCount}` : '0 / 0'}</span>
-            <button class="btn-secondary" data-haqi-page="${__haqiIslandPage + 1}" ${__haqiIslandPage >= pageCount - 1 ? 'disabled' : ''}>下一页</button>
         </div>
         <div class="planet-modal-actions haqi-island-actions">
             <button class="btn-secondary" data-haqi-farewell="1">告别宠物</button>
             <button class="btn-primary" data-haqi-download="1">登录《哈奇小镇》</button>
         </div>
     `, (e, close) => {
-        const pageBtn = e.target.closest?.('[data-haqi-page]');
-        if (pageBtn && !pageBtn.disabled) {
-            close();
-            showHaqiIslandPanel(Number(pageBtn.dataset.haqiPage) || 0);
-            return;
-        }
         if (e.target.closest?.('[data-haqi-download]')) {
             close();
             showHaqiDownloadPopup();
@@ -1833,6 +1842,7 @@ function showHaqiIslandPanel(page = __haqiIslandPage || 0) {
             showFarewellPetIntro();
         }
     }, 'haqi-island-card');
+    enableHaqiIslandMemoryDrag(modal.mask);
 }
 
 function getFarewellCandidates() {

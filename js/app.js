@@ -1,5 +1,5 @@
 // 主程序：SDK 启动 + 路由 + 全局事件
-import { $, showToast, confirm, clamp, prompt } from './utils.js';
+import { $, showToast, confirm, clamp, prompt, escapeHtml } from './utils.js';
 import { canPlaceItemInArea, CONFIG, getItemZOrder, SHOP_ITEMS, findLargestHouseAcrossLayouts, getStageName } from './config.js';
 import { state, notify, subscribe, setView, setCurrentPet, getCurrentPet } from './state.js';
 import {
@@ -8,7 +8,7 @@ import {
     saveLayout, addToInventory, removeFromInventory, savePetDebounced,
     getLayout, ensurePetData, savePet, clearStoredData, saveDecorDataNow, saveInventoryDebounced,
 } from './storage.js';
-import { applyDecay, applyStage, clampEnergyToMax, defaultPermanentTrauma, defaultStats, eggStats, markPetCared, restoreEnergyToMax, tickOffline, startTickLoop, stopTickLoop } from './petTick.js';
+import { applyDecay, applyStage, clampEnergyToMax, defaultPermanentTrauma, defaultStats, eggStats, markPetCared, tickOffline, startTickLoop, stopTickLoop } from './petTick.js';
 import { renderLogin } from './view_login.js';
 import { renderPetList } from './view_petList.js';
 import { renderHatch } from './view_hatch.js';
@@ -693,8 +693,10 @@ function handleStartBreed() {
     const currentPet = getCurrentPet();
     if (currentPet && isPetInteractionBlocked(currentPet)) { showToast(sleepingInteractionText(currentPet), 'info', 1800); return; }
     const adults = state.petOrder.map(id => state.pets[id]).filter(p => p && isPetOnCurrentPlanet(p) && CONFIG.breedableStages.includes(p.stage));
-    if (adults.length < 2) { showToast('需要至少两只成年宠物', 'error'); return; }
-    if (state.coins < CONFIG.breedCost) { showToast(`繁殖需要 ${CONFIG.breedCost} 金币`, 'error'); return; }
+    if (adults.length < 2) {
+        showToast('需要至少两只当前星球的成年宠物才能繁殖', 'info', 2200);
+        return;
+    }
     showBreedParentPicker(adults);
 }
 
@@ -705,26 +707,29 @@ function ensureBreedPickerStyles() {
     style.textContent = `
         .mh-breed-modal { width:min(560px, calc(100vw - 32px)); max-height:calc(100vh - 32px); overflow:hidden; display:flex; flex-direction:column; gap:14px; }
         .mh-breed-title { color:var(--text-primary); font-size:20px; font-weight:900; }
-        .mh-breed-subtitle { color:var(--text-muted); font-size:12px; line-height:1.45; }
-        .mh-breed-pet-scroll { display:flex; gap:10px; overflow-x:auto; padding:4px 2px 10px; scroll-snap-type:x proximity; -webkit-overflow-scrolling:touch; cursor:grab; }
+        .mh-breed-pet-scroll { display:flex; gap:8px; overflow-x:auto; padding:2px 2px 8px; scroll-snap-type:x proximity; -webkit-overflow-scrolling:touch; cursor:grab; }
         .mh-breed-pet-scroll.is-dragging-scroll { cursor:grabbing; }
-        .mh-breed-pet-card { flex:0 0 104px; min-height:128px; border:1.5px solid var(--border-card); background:var(--bg-card); border-radius:16px; padding:9px; display:flex; flex-direction:column; align-items:center; gap:7px; color:var(--text-primary); box-shadow:0 3px 0 rgba(14,116,144,.15); scroll-snap-align:start; touch-action:none; }
+        .mh-breed-pet-card { flex:0 0 96px; min-height:124px; border:1.5px solid var(--border-card); background:var(--bg-card); border-radius:14px; padding:7px; display:flex; flex-direction:column; align-items:center; gap:4px; color:var(--text-primary); box-shadow:0 3px 0 rgba(14,116,144,.15); scroll-snap-align:start; touch-action:none; }
         .mh-breed-pet-card.is-used { opacity:.45; }
         .mh-breed-pet-card:active { transform:translateY(2px); }
-        .mh-breed-pet-icon, .mh-breed-slot-icon { width:72px; height:72px; border-radius:14px; background:var(--bg-pill); overflow:hidden; flex:0 0 auto; }
+        .mh-breed-pet-icon { width:68px; height:68px; border-radius:13px; background:var(--bg-pill); overflow:hidden; flex:0 0 auto; }
+        .mh-breed-slot-icon { width:76px; height:76px; border-radius:14px; background:var(--bg-pill); overflow:hidden; flex:0 0 auto; }
         .mh-breed-pet-icon .mh-pet-art, .mh-breed-slot-icon .mh-pet-art { width:100%; height:100%; }
-        .mh-breed-pet-name { max-width:100%; color:var(--text-primary); font-size:13px; font-weight:900; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
-        .mh-breed-pet-stage { color:var(--text-muted); font-size:11px; font-weight:800; }
-        .mh-breed-slots { display:grid; grid-template-columns:1fr 1fr; gap:10px; }
-        .mh-breed-slot { min-height:118px; border:2px dashed rgba(14,165,233,.45); border-radius:18px; background:rgba(239,246,255,.72); color:var(--text-muted); display:flex; align-items:center; justify-content:center; text-align:center; padding:10px; }
+        .mh-breed-pet-name { max-width:100%; color:var(--text-primary); font-size:13px; line-height:1.15; font-weight:900; overflow:hidden; text-align:center; white-space:normal; word-break:break-word; display:-webkit-box; -webkit-line-clamp:2; -webkit-box-orient:vertical; }
+        .mh-breed-pet-stage { color:var(--text-muted); font-size:11px; font-weight:800; flex:0 0 auto; }
+        .mh-breed-drag-ghost { position:fixed; left:0; top:0; z-index:100000; pointer-events:none; opacity:.94; transform:translate(-50%, -50%) scale(1.02); box-shadow:0 12px 28px rgba(14,116,144,.28); }
+        .mh-breed-notice { border:1px solid rgba(14,165,233,.24); background:#ecfeff; color:var(--accent-dark); border-radius:14px; padding:9px 11px; font-size:12px; font-weight:800; line-height:1.45; }
+        .mh-breed-notice.is-error { border-color:rgba(239,68,68,.28); background:#fff1f2; color:#b91c1c; }
+        .mh-breed-slots { display:flex; align-items:center; justify-content:center; gap:12px; padding:2px 0; }
+        .mh-breed-slot { width:96px; height:96px; border:2px dashed rgba(14,165,233,.55); border-radius:18px; background:rgba(239,246,255,.72); color:var(--text-muted); display:flex; align-items:center; justify-content:center; text-align:center; padding:8px; }
         .mh-breed-slot.is-over { border-color:var(--accent); background:#ecfeff; }
-        .mh-breed-slot.is-filled { border-style:solid; background:var(--bg-card); color:var(--text-primary); }
-        .mh-breed-slot-filled { display:flex; align-items:center; gap:10px; width:100%; text-align:left; }
-        .mh-breed-slot-label { color:var(--text-muted); font-size:11px; font-weight:900; }
+        .mh-breed-slot.is-filled { background:var(--bg-card); color:var(--text-primary); }
+        .mh-breed-slot-placeholder { width:36px; height:36px; border-radius:999px; border:2px dotted rgba(14,165,233,.34); }
+        .mh-breed-slot-plus { color:var(--accent-dark); font-size:28px; line-height:1; font-weight:900; }
         .mh-breed-actions { display:flex; justify-content:flex-end; gap:10px; flex-wrap:wrap; }
         .mh-breed-countdown { width:min(360px, calc(100vw - 40px)); text-align:center; }
         .mh-breed-count-number { margin:12px auto 6px; width:92px; height:92px; border-radius:999px; display:flex; align-items:center; justify-content:center; background:var(--bg-pill); color:var(--accent-dark); font-size:42px; font-weight:900; border:2px solid var(--accent); box-shadow:0 5px 0 rgba(37,99,235,.45); }
-        @media (max-width:520px) { .mh-breed-slots { grid-template-columns:1fr; } .mh-breed-pet-card { flex-basis:96px; } }
+        @media (max-width:520px) { .mh-breed-pet-card { flex-basis:96px; } .mh-breed-slots { gap:10px; } .mh-breed-slot { width:88px; height:88px; } .mh-breed-slot-icon { width:70px; height:70px; } }
     `;
     document.head.appendChild(style);
 }
@@ -736,6 +741,11 @@ function breedPetIconHtml(pet) {
 function showBreedParentPicker(adults) {
     ensureBreedPickerStyles();
     const selected = [null, null];
+    const noticeMessages = [];
+    const hasEnoughAdults = adults.length >= 2;
+    const canAffordBreed = state.coins >= CONFIG.breedCost;
+    if (!hasEnoughAdults) noticeMessages.push('需要至少两只成年宠物');
+    if (!canAffordBreed) noticeMessages.push(`繁殖需要 ${CONFIG.breedCost} 金币，当前 ${state.coins | 0} 金币`);
     let draggedPetId = null;
     let pointerDragPet = null;
     let suppressNextClick = false;
@@ -745,8 +755,8 @@ function showBreedParentPicker(adults) {
         <div class="modal-card mh-breed-modal">
             <div>
                 <div class="mh-breed-title">选择宝宝父母</div>
-                <div class="mh-breed-subtitle">横向拖动浏览当前星球中的成年宠物，把两只宠物拖到下方槽位中。</div>
             </div>
+            <div class="mh-breed-notice ${noticeMessages.length ? 'is-error' : ''}">${escapeHtml(noticeMessages.join('；') || `繁殖需要 ${CONFIG.breedCost} 金币，确认后扣除。`)}</div>
             <div class="mh-breed-pet-scroll" data-breed-scroll>
                 ${adults.map(pet => `
                     <button class="mh-breed-pet-card" type="button" draggable="true" data-breed-pet="${escapeHtml(pet.id)}">
@@ -756,8 +766,9 @@ function showBreedParentPicker(adults) {
                     </button>`).join('')}
             </div>
             <div class="mh-breed-slots">
-                <div class="mh-breed-slot" data-breed-slot="0"></div>
-                <div class="mh-breed-slot" data-breed-slot="1"></div>
+                <div class="mh-breed-slot" data-breed-slot="0" title="拖入第一只宠物"></div>
+                <div class="mh-breed-slot-plus">+</div>
+                <div class="mh-breed-slot" data-breed-slot="1" title="拖入第二只宠物"></div>
             </div>
             <div class="mh-breed-actions">
                 <button class="btn-secondary" data-breed-cancel>取消</button>
@@ -765,34 +776,55 @@ function showBreedParentPicker(adults) {
             </div>
         </div>`;
 
-    const close = () => mask.remove();
+    const close = () => { pointerDragPet?.ghost?.remove(); mask.remove(); };
     const petById = new Map(adults.map(pet => [pet.id, pet]));
     const firstEmptySlot = () => selected.findIndex(item => !item);
+    const clearSlotOvers = () => mask.querySelectorAll('[data-breed-slot]').forEach(slot => slot.classList.remove('is-over'));
+    const movePointerGhost = (drag, clientX, clientY) => {
+        if (!drag.ghost) return;
+        drag.ghost.style.left = clientX + 'px';
+        drag.ghost.style.top = clientY + 'px';
+        clearSlotOvers();
+        const dropTarget = document.elementFromPoint(clientX, clientY)?.closest?.('[data-breed-slot]');
+        if (dropTarget && mask.contains(dropTarget)) dropTarget.classList.add('is-over');
+    };
+    const startPointerGhost = (drag, clientX, clientY) => {
+        if (drag.ghost) return;
+        drag.ghost = drag.source.cloneNode(true);
+        drag.ghost.classList.add('mh-breed-drag-ghost');
+        drag.ghost.style.width = drag.source.getBoundingClientRect().width + 'px';
+        document.body.appendChild(drag.ghost);
+        movePointerGhost(drag, clientX, clientY);
+    };
+    const stopPointerDrag = () => {
+        pointerDragPet?.ghost?.remove();
+        pointerDragPet = null;
+        clearSlotOvers();
+    };
     const renderSlots = () => {
         mask.querySelectorAll('[data-breed-slot]').forEach(slot => {
             const idx = Number(slot.dataset.breedSlot) || 0;
             const pet = selected[idx];
             slot.classList.toggle('is-filled', !!pet);
-            slot.innerHTML = pet ? `
-                <div class="mh-breed-slot-filled">
-                    <span class="mh-breed-slot-icon">${petArtHtml(pet, { alt: pet.name || '' })}</span>
-                    <span><span class="mh-breed-slot-label">${idx === 0 ? '槽位 1' : '槽位 2'}</span><b style="display:block;color:var(--text-primary)">${escapeHtml(pet.name || '哈奇伙伴')}</b></span>
-                </div>` : `<span>${idx === 0 ? '拖入第一只宠物' : '拖入第二只宠物'}</span>`;
+            slot.innerHTML = pet ? `<span class="mh-breed-slot-icon">${petArtHtml(pet, { alt: pet.name || '' })}</span>` : '<span class="mh-breed-slot-placeholder" aria-hidden="true"></span>';
         });
         mask.querySelectorAll('[data-breed-pet]').forEach(btn => {
             const used = selected.some(pet => pet?.id === btn.dataset.breedPet);
             btn.classList.toggle('is-used', used);
         });
         const okBtn = mask.querySelector('[data-breed-ok]');
-        if (okBtn) okBtn.disabled = !(selected[0] && selected[1] && selected[0].id !== selected[1].id);
+        if (okBtn) okBtn.disabled = !(hasEnoughAdults && canAffordBreed && selected[0] && selected[1] && selected[0].id !== selected[1].id);
         scanAndMount(mask);
     };
     const assignPet = (petId, slotIndex = firstEmptySlot()) => {
         const pet = petById.get(petId);
-        if (!pet || slotIndex < 0) return;
+        if (!pet) return;
         const existingIndex = selected.findIndex(item => item?.id === pet.id);
-        if (existingIndex >= 0) selected[existingIndex] = null;
-        selected[slotIndex] = pet;
+        if (existingIndex >= 0) {
+            selected[existingIndex] = null;
+        } else {
+            selected[slotIndex < 0 ? 0 : slotIndex] = pet;
+        }
         renderSlots();
     };
 
@@ -834,28 +866,34 @@ function showBreedParentPicker(adults) {
         const btn = e.target.closest?.('[data-breed-pet]');
         if (!btn) return;
         const scroller = mask.querySelector('[data-breed-scroll]');
-        pointerDragPet = { id: btn.dataset.breedPet, x: e.clientX, y: e.clientY, scroller, left: scroller?.scrollLeft || 0 };
+        pointerDragPet = { id: btn.dataset.breedPet, x: e.clientX, y: e.clientY, scroller, left: scroller?.scrollLeft || 0, source: btn, ghost: null };
         btn.setPointerCapture?.(e.pointerId);
     });
     mask.addEventListener('pointermove', (e) => {
         if (!pointerDragPet?.scroller) return;
         const dx = e.clientX - pointerDragPet.x;
         const dy = e.clientY - pointerDragPet.y;
-        if (Math.abs(dx) <= Math.abs(dy)) return;
-        pointerDragPet.scroller.scrollLeft = pointerDragPet.left - dx;
+        const moved = Math.hypot(dx, dy);
+        if (moved < 8) return;
+        if (!pointerDragPet.ghost && Math.abs(dx) > Math.abs(dy)) {
+            pointerDragPet.scroller.scrollLeft = pointerDragPet.left - dx;
+            return;
+        }
+        e.preventDefault();
+        startPointerGhost(pointerDragPet, e.clientX, e.clientY);
+        movePointerGhost(pointerDragPet, e.clientX, e.clientY);
     });
     mask.addEventListener('pointerup', (e) => {
         if (!pointerDragPet) return;
         const drag = pointerDragPet;
-        pointerDragPet = null;
         const moved = Math.hypot(e.clientX - drag.x, e.clientY - drag.y);
-        if (moved < 8) return;
+        if (moved < 8) { stopPointerDrag(); return; }
         const dropTarget = document.elementFromPoint(e.clientX, e.clientY)?.closest?.('[data-breed-slot]');
-        if (!dropTarget || !mask.contains(dropTarget)) return;
-        assignPet(drag.id, Number(dropTarget.dataset.breedSlot) || 0);
+        if (dropTarget && mask.contains(dropTarget)) assignPet(drag.id, Number(dropTarget.dataset.breedSlot) || 0);
+        stopPointerDrag();
         suppressNextClick = true;
     });
-    mask.addEventListener('pointercancel', () => { pointerDragPet = null; });
+    mask.addEventListener('pointercancel', stopPointerDrag);
     const scroller = mask.querySelector('[data-breed-scroll]');
     let scrollDrag = null;
     scroller?.addEventListener('pointerdown', (e) => {
@@ -902,7 +940,7 @@ async function showBreedCountdown() {
 
 async function completeBreedWithParents(parentA, parentB, closePicker) {
     if (!parentA || !parentB || parentA.id === parentB.id) return;
-    if (state.coins < CONFIG.breedCost) { showToast(`繁殖需要 ${CONFIG.breedCost} 金币`, 'error'); return; }
+    if (state.coins < CONFIG.breedCost) return;
     const current = getCurrentPet();
     if (current && isPetOnCurrentPlanet(current)) {
         const ok = await confirm(`繁殖宝宝前，${current.name || '当前宠物'} 会被放养到星球中，无法重新召回。确定继续吗？`, {
@@ -930,6 +968,11 @@ async function completeBreedWithParents(parentA, parentB, closePicker) {
 }
 
 // 互动操作
+function lowEnergyText(pet) {
+    if (pet?.stage === 'egg' || pet?.stage === 'baby') return '体力不足，吃点东西才能恢复';
+    return '体力不足，睡醒后最多恢复到一半';
+}
+
 function handleAction(key, options = {}) {
     const pet = getCurrentPet();
     if (!pet) return false;
@@ -968,18 +1011,18 @@ function handleAction(key, options = {}) {
     }
     const staminaCost = Math.abs(Math.min(0, Number(cfg.hunger) || 0));
     if (staminaCost > 0 && (Number(pet.stats?.hunger) || 0) < staminaCost) {
-        showToast('体力不足，睡一觉就能恢复', 'info', 1800);
+        showToast(lowEnergyText(pet), 'info', 1800);
         return false;
     }
     // 应用属性变化
     for (const k of Object.keys(cfg)) {
         if (['costCoins', 'cooldownSec', 'rewardCoins'].includes(k)) continue;
+        if (key === 'sleep' && k === 'hunger') continue;
         if (typeof cfg[k] === 'number') {
             pet.stats[k] = clamp((pet.stats[k] || 0) + cfg[k], CONFIG.statMin, CONFIG.statMax);
         }
     }
-    if (key === 'sleep') restoreEnergyToMax(pet);
-    else clampEnergyToMax(pet);
+    clampEnergyToMax(pet);
     if (cfg.costCoins) { state.coins -= cfg.costCoins; saveUserProfileDebounced(); }
     if (cfg.rewardCoins) { state.coins += cfg.rewardCoins; saveUserProfileDebounced(); showToast(`+${cfg.rewardCoins} 🪙`, 'success', 1200); }
     cd[key] = now;
@@ -1011,7 +1054,7 @@ function rewardPetAction(key, message, sourceData = {}) {
     if (!pet.stats) pet.stats = defaultStats();
     const staminaCost = Math.abs(Math.min(0, Number(cfg.hunger) || 0));
     if (staminaCost > 0 && (Number(pet.stats.hunger) || 0) < staminaCost) {
-        showToast('体力不足，睡一觉就能恢复', 'info', 1800);
+        showToast(lowEnergyText(pet), 'info', 1800);
         return;
     }
     for (const k of Object.keys(cfg)) {
@@ -1040,6 +1083,8 @@ function activityRewardCoins(key, sourceData = {}, cfg = {}) {
     const completed = sourceData.completed !== false && sourceData.passed !== false;
     const durationSeconds = activityDurationSeconds(sourceData);
     if (!completed) return Math.min(15, Math.max(0, Math.round(durationSeconds / 20)));
+    const explicitRewardCoins = Number(sourceData.rewardCoins ?? sourceData.levelReward?.rewardCoins);
+    if (Number.isFinite(explicitRewardCoins)) return Math.max(0, Math.round(explicitRewardCoins));
     const score = Math.max(0, Number(sourceData.earnedPoints) || 0);
     const durationCoins = Math.min(25, Math.round(durationSeconds / 12));
     const scoreCoins = score > 0 ? Math.min(20, Math.round(score / 6)) : 0;

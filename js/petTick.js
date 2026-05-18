@@ -140,11 +140,17 @@ export function clampEnergyToMax(pet) {
     return CONFIG.statMax;
 }
 
-export function restoreEnergyToMax(pet) {
-    if (!pet?.stats) return CONFIG.statMax;
+export function canRecoverEnergyFromSleep(pet) {
+    return ['teen', 'adult', 'elder'].includes(pet?.stage);
+}
+
+export function recoverEnergyAfterSleep(pet) {
+    if (!pet?.stats || !canRecoverEnergyFromSleep(pet)) return false;
     normalizePetStats(pet);
-    pet.stats.hunger = CONFIG.statMax;
-    return CONFIG.statMax;
+    const before = Number(pet.stats.hunger) || 0;
+    const target = CONFIG.statMax * 0.5;
+    pet.stats.hunger = clamp(Math.max(before, target), CONFIG.statMin, CONFIG.statMax);
+    return pet.stats.hunger !== before;
 }
 
 function traumaReasons(pet) {
@@ -239,7 +245,6 @@ export function applyOfflineDecay(pet, elapsedMs, now = Date.now()) {
         pet.stats[k] = clamp((pet.stats[k] || 0) + delta, CONFIG.statMin, CONFIG.statMax);
     }
 
-    restoreEnergyToMax(pet);
     if (hadNannyCareDuringOffline(pet, elapsedMs, now)) softenStatsToAverage(pet);
     clampEnergyToMax(pet);
     maybeApplyPermanentTrauma(pet, now);
