@@ -1540,19 +1540,19 @@
         }
         @keyframes mhZoomOutOutCamera { /* 旧层：按 oldCameraMs 向远处退出，之后保持距离 */
             from { transform: translate3d(0,0,0) scale(1); }
-            to   { transform: translate3d(0,0,0) scale(1.04); }
+            to   { transform: translate3d(0,0,0) scale(0.41); }
         }
         @keyframes mhZoomInInCamera { /* 新层：按 newCameraMs 飞入目标，之后保持距离 */
-            from { transform: translate3d(0,0,0) scale(0.76); }
+            from { transform: translate3d(0,0,0) scale(0.41); }
             to   { transform: translate3d(0,0,0) scale(1); }
         }
         @keyframes mhZoomInOutCamera { /* 新层：按 newCameraMs 从近处拉回，之后保持距离 */
-            from { transform: translate3d(0,0,0) scale(1.68); }
+            from { transform: translate3d(0,0,0) scale(2.42); }
             to   { transform: translate3d(0,0,0) scale(1); }
         }
 
         .wormhole-overlay {
-            position: fixed; inset: -130vmax;
+            position: fixed; inset: 0;
             pointer-events: none;
             z-index: 9000;
             opacity: 0;
@@ -1562,18 +1562,9 @@
             transform: translate3d(0,0,0);
             transform-origin: center center;
             transition: opacity var(--mh-zoom-old-ms, 500ms) linear;
-            background:
-                radial-gradient(circle at center,
-                    rgba(255,255,255,0.95) 0%,
-                    rgba(255,245,186,0.86) 4%,
-                    rgba(103,232,249,0.56) 11%,
-                    rgba(139,92,246,0.42) 20%,
-                    rgba(15,23,42,0.0) 38%),
-                repeating-radial-gradient(circle at center,
-                    rgba(255,255,255,0.0) 0px,
-                    rgba(255,255,255,0.0) 18px,
-                    rgba(255,255,255,0.46) 20px,
-                    rgba(255,255,255,0.0) 23px);
+            /* Step 1 simplification: 用纯白替代多层 radial + repeating-radial 同心圆，降低性能开销 */
+            /* Step 3 simplification: 白色层无缩放/纹理，100% 视口即可，去掉 130vmax 超大绘制区域 */
+            background: #fff;
         }
         .wormhole-overlay.wh-visible { opacity: 1; }
         .wormhole-overlay.wh-flash {
@@ -1589,12 +1580,11 @@
         .wormhole-overlay::after {
             content: '';
             position: absolute;
-            left: 50%; top: 50%;
-            width: 130vmax; height: 130vmax;
-            border-radius: 50%;
-            transform: translate(-50%, -50%);
+            /* Step 4 simplification: 伪元素不再缩放/旋转/平移，静态铺满全屏 */
+            inset: 0;
+            width: 100%; height: 100%;
             pointer-events: none;
-            will-change: transform, opacity;
+            will-change: opacity;
         }
         .wormhole-overlay.wh-flash::before,
         .wormhole-overlay.wh-flash::after {
@@ -1605,101 +1595,90 @@
         .wormhole-overlay.wh-out::before {
             --mh-ray-shift: 0deg;
             --mh-ray-shift-alt: 0deg;
-            width: 250vmax; height: 250vmax;
+            /* Step 5 simplification: 减少射线数量，加宽每条射线 */
             background:
-                repeating-conic-gradient(from calc(3deg - var(--mh-ray-shift-alt)),
+                repeating-conic-gradient(from calc(0deg - var(--mh-ray-shift-alt)),
                     transparent 0deg,
-                    transparent 5.2deg,
-                    color-mix(in srgb, var(--mh-zoom-ray-color, #fff) 52%, transparent) 5.55deg,
-                    transparent 6.2deg,
-                    transparent 17deg),
-                repeating-conic-gradient(from calc(-11deg + var(--mh-ray-shift)),
+                    transparent 12deg,
+                    color-mix(in srgb, var(--mh-zoom-ray-color, #fff) 55%, transparent) 12deg,
+                    color-mix(in srgb, var(--mh-zoom-ray-color, #fff) 55%, transparent) 18deg,
+                    transparent 18deg,
+                    transparent 30deg),
+                repeating-conic-gradient(from calc(-15deg + var(--mh-ray-shift)),
                     transparent 0deg,
-                    transparent 19deg,
-                    color-mix(in srgb, var(--mh-zoom-ray-color, #fff) 36%, transparent) 19.35deg,
-                    transparent 20.15deg,
-                    transparent 38deg);
+                    transparent 27deg,
+                    color-mix(in srgb, var(--mh-zoom-ray-color, #fff) 38%, transparent) 27deg,
+                    color-mix(in srgb, var(--mh-zoom-ray-color, #fff) 38%, transparent) 33deg,
+                    transparent 33deg,
+                    transparent 60deg);
             -webkit-mask-image: radial-gradient(circle, transparent 0 19%, #000 25% 88%, transparent 98%);
             mask-image: radial-gradient(circle, transparent 0 19%, #000 25% 88%, transparent 98%);
             opacity: 0;
             mix-blend-mode: normal;
-            filter: contrast(1.25) blur(0.2px) drop-shadow(0 0 1px rgba(15,23,42,0.22));
-            will-change: transform, opacity, filter;
+            /* Step 1 simplification: 去掉 contrast/blur/drop-shadow，避免大面积滤镜重绘 */
+            will-change: opacity;
         }
         .wormhole-overlay.wh-in::after,
         .wormhole-overlay.wh-out::after {
             --mh-ray-shift: 0deg;
             --mh-ray-shift-alt: 0deg;
-            width: 230vmax; height: 230vmax;
-            border-radius: 50%;
+            /* Step 5 simplification: 减少射线数量，加宽每条射线 */
             background:
                 radial-gradient(circle, rgba(255,255,255,0.96) 0 14%, rgba(255,255,255,0.32) 18%, rgba(255,255,255,0) 30%),
-                repeating-conic-gradient(from calc(-4deg + var(--mh-ray-shift)),
-                    color-mix(in srgb, var(--mh-zoom-ray-color, #fff) 92%, transparent) 0deg,
-                    color-mix(in srgb, var(--mh-zoom-ray-color, #fff) 88%, transparent) 0.65deg,
-                    transparent 1.05deg,
-                    transparent 7.4deg,
-                    color-mix(in srgb, var(--mh-zoom-ray-color, #fff) 72%, transparent) 7.8deg,
-                    transparent 8.45deg,
-                    transparent 18deg),
-                repeating-conic-gradient(from calc(6deg - var(--mh-ray-shift-alt)),
+                repeating-conic-gradient(from calc(0deg + var(--mh-ray-shift)),
+                    color-mix(in srgb, var(--mh-zoom-ray-color, #fff) 90%, transparent) 0deg,
+                    color-mix(in srgb, var(--mh-zoom-ray-color, #fff) 90%, transparent) 6deg,
+                    transparent 6deg,
+                    transparent 30deg),
+                repeating-conic-gradient(from calc(15deg - var(--mh-ray-shift-alt)),
                     transparent 0deg,
-                    transparent 13deg,
-                    color-mix(in srgb, var(--mh-zoom-ray-color, #fff) 58%, transparent) 13.35deg,
-                    transparent 14.15deg,
-                    transparent 31deg);
+                    transparent 24deg,
+                    color-mix(in srgb, var(--mh-zoom-ray-color, #fff) 60%, transparent) 24deg,
+                    color-mix(in srgb, var(--mh-zoom-ray-color, #fff) 60%, transparent) 30deg,
+                    transparent 30deg,
+                    transparent 60deg);
             -webkit-mask-image: radial-gradient(circle, transparent 0 17%, #000 23% 86%, transparent 97%);
             mask-image: radial-gradient(circle, transparent 0 17%, #000 23% 86%, transparent 97%);
             opacity: 0;
             mix-blend-mode: normal;
-            filter: contrast(1.05) drop-shadow(0 0 1px rgba(15,23,42,0.22));
-            will-change: transform, opacity, filter;
+            /* Step 1 simplification: 去掉 contrast/drop-shadow 滤镜 */
+            will-change: opacity;
         }
         .wormhole-overlay.wh-reveal.wh-in::before  { animation: wormholeSpinIn var(--mh-zoom-new-ms, 1000ms) steps(11, end) forwards; }
         .wormhole-overlay.wh-reveal.wh-out::before { animation: wormholeSpinOut var(--mh-zoom-new-ms, 1000ms) steps(11, end) forwards; }
         .wormhole-overlay.wh-reveal.wh-in::after   { animation: wormholeStreakIn var(--mh-zoom-new-ms, 1000ms) steps(13, end) forwards; }
         .wormhole-overlay.wh-reveal.wh-out::after  { animation: wormholeStreakOut var(--mh-zoom-new-ms, 1000ms) steps(13, end) forwards; }
         @keyframes wormholeSpinIn {
-            from { --mh-ray-shift: 0deg; --mh-ray-shift-alt: 0deg; transform: translate(-50%, -50%) rotate(-8deg) scale(1.08) skew(0deg, 0deg); opacity: 0; filter: contrast(1.1) blur(0.2px); }
-            12%  { --mh-ray-shift: 16deg; --mh-ray-shift-alt: 7deg; transform: translate(calc(-50% + 12px), calc(-50% - 7px)) rotate(8deg) scale(1.0) skew(-4deg, 2deg); opacity: 0.62; filter: contrast(1.45) blur(0); }
-            14%  { transform: translate(calc(-50% - 9px), calc(-50% + 5px)) rotate(-2deg) scale(0.94) skew(5deg, -2deg); opacity: 0.24; }
-            32%  { --mh-ray-shift: 31deg; --mh-ray-shift-alt: 18deg; transform: translate(calc(-50% + 5px), calc(-50% + 10px)) rotate(15deg) scale(0.86) skew(2deg, -5deg); opacity: 0.7; }
-            49%  { --mh-ray-shift: 58deg; --mh-ray-shift-alt: 31deg; transform: translate(calc(-50% - 14px), calc(-50% - 3px)) rotate(24deg) scale(0.8) skew(-5deg, 3deg); opacity: 0.48; filter: contrast(1.7) blur(0.3px); }
-            51%  { transform: translate(calc(-50% + 8px), calc(-50% + 6px)) rotate(6deg) scale(0.78) skew(6deg, -4deg); opacity: 0.76; }
-            74%  { --mh-ray-shift: 79deg; --mh-ray-shift-alt: 46deg; transform: translate(calc(-50% - 4px), calc(-50% + 2px)) rotate(34deg) scale(0.66) skew(-2deg, 2deg); opacity: 0.32; filter: contrast(1.25) blur(0.2px); }
-            to   { --mh-ray-shift: 94deg; --mh-ray-shift-alt: 54deg; transform: translate(-50%, -50%) rotate(42deg) scale(0.56) skew(0deg, 0deg); opacity: 0; filter: contrast(1) blur(0); }
+            from { --mh-ray-shift: 0deg; --mh-ray-shift-alt: 0deg; opacity: 0; }
+            12%  { --mh-ray-shift: 8deg;  --mh-ray-shift-alt: 3deg;  opacity: 0.62; }
+            32%  { --mh-ray-shift: 15deg; --mh-ray-shift-alt: 9deg;  opacity: 0.7; }
+            49%  { --mh-ray-shift: 28deg; --mh-ray-shift-alt: 15deg; opacity: 0.48; }
+            74%  { --mh-ray-shift: 38deg; --mh-ray-shift-alt: 22deg; opacity: 0.32; }
+            to   { --mh-ray-shift: 45deg; --mh-ray-shift-alt: 26deg; opacity: 0; }
         }
         @keyframes wormholeSpinOut {
-            from { --mh-ray-shift: 0deg; --mh-ray-shift-alt: 0deg; transform: translate(-50%, -50%) rotate(8deg) scale(1.08) skew(0deg, 0deg); opacity: 0; filter: contrast(1.1) blur(0.2px); }
-            12%  { --mh-ray-shift: -16deg; --mh-ray-shift-alt: -7deg; transform: translate(calc(-50% - 12px), calc(-50% - 7px)) rotate(-8deg) scale(1.0) skew(4deg, 2deg); opacity: 0.62; filter: contrast(1.45) blur(0); }
-            14%  { transform: translate(calc(-50% + 9px), calc(-50% + 5px)) rotate(2deg) scale(0.94) skew(-5deg, -2deg); opacity: 0.24; }
-            32%  { --mh-ray-shift: -31deg; --mh-ray-shift-alt: -18deg; transform: translate(calc(-50% - 5px), calc(-50% + 10px)) rotate(-15deg) scale(0.86) skew(-2deg, -5deg); opacity: 0.7; }
-            49%  { --mh-ray-shift: -58deg; --mh-ray-shift-alt: -31deg; transform: translate(calc(-50% + 14px), calc(-50% - 3px)) rotate(-24deg) scale(0.8) skew(5deg, 3deg); opacity: 0.48; filter: contrast(1.7) blur(0.3px); }
-            51%  { transform: translate(calc(-50% - 8px), calc(-50% + 6px)) rotate(-6deg) scale(0.78) skew(-6deg, -4deg); opacity: 0.76; }
-            74%  { --mh-ray-shift: -79deg; --mh-ray-shift-alt: -46deg; transform: translate(calc(-50% + 4px), calc(-50% + 2px)) rotate(-34deg) scale(0.66) skew(2deg, 2deg); opacity: 0.32; filter: contrast(1.25) blur(0.2px); }
-            to   { --mh-ray-shift: -94deg; --mh-ray-shift-alt: -54deg; transform: translate(-50%, -50%) rotate(-42deg) scale(0.56) skew(0deg, 0deg); opacity: 0; filter: contrast(1) blur(0); }
+            from { --mh-ray-shift: 0deg;   --mh-ray-shift-alt: 0deg;   opacity: 0; }
+            12%  { --mh-ray-shift: -8deg;  --mh-ray-shift-alt: -3deg;  opacity: 0.62; }
+            32%  { --mh-ray-shift: -15deg; --mh-ray-shift-alt: -9deg;  opacity: 0.7; }
+            49%  { --mh-ray-shift: -28deg; --mh-ray-shift-alt: -15deg; opacity: 0.48; }
+            74%  { --mh-ray-shift: -38deg; --mh-ray-shift-alt: -22deg; opacity: 0.32; }
+            to   { --mh-ray-shift: -45deg; --mh-ray-shift-alt: -26deg; opacity: 0; }
         }
         @keyframes wormholeStreakIn {
-            from { --mh-ray-shift: 0deg; --mh-ray-shift-alt: 0deg; transform: translate(-50%, -50%) rotate(-5deg) scale(1.18) skew(0deg, 0deg); opacity: 0; filter: contrast(1.05) brightness(1); }
-            10%  { --mh-ray-shift: 8deg; --mh-ray-shift-alt: 5deg; transform: translate(calc(-50% - 8px), calc(-50% + 5px)) rotate(2deg) scale(1.06) skew(3deg, -2deg); opacity: 0.78; filter: contrast(1.28) brightness(0.96); }
-            18%  { --mh-ray-shift: 18deg; --mh-ray-shift-alt: 10deg; transform: translate(calc(-50% + 11px), calc(-50% - 4px)) rotate(-4deg) scale(1.0) skew(-5deg, 2deg); opacity: 0.46; filter: contrast(1.7) brightness(1.05); }
-            27%  { --mh-ray-shift: 24deg; --mh-ray-shift-alt: 14deg; transform: translate(calc(-50% - 3px), calc(-50% - 10px)) rotate(7deg) scale(0.95) skew(2deg, 4deg); opacity: 0.92; filter: contrast(1.32) brightness(0.98); }
-            39%  { --mh-ray-shift: 37deg; --mh-ray-shift-alt: 20deg; transform: translate(calc(-50% + 15px), calc(-50% + 7px)) rotate(-1deg) scale(0.88) skew(-6deg, -2deg); opacity: 0.62; filter: contrast(1.62) brightness(1.08); }
-            46%  { --mh-ray-shift: 49deg; --mh-ray-shift-alt: 27deg; transform: translate(calc(-50% - 12px), calc(-50% + 2px)) rotate(9deg) scale(0.84) skew(5deg, -4deg); opacity: 0.9; filter: contrast(1.44) brightness(0.94); }
-            61%  { --mh-ray-shift: 61deg; --mh-ray-shift-alt: 35deg; transform: translate(calc(-50% + 6px), calc(-50% - 8px)) rotate(3deg) scale(0.78) skew(-3deg, 5deg); opacity: 0.68; filter: contrast(1.5) brightness(1.02); }
-            74%  { --mh-ray-shift: 74deg; --mh-ray-shift-alt: 43deg; transform: translate(calc(-50% - 4px), calc(-50% + 2px)) rotate(11deg) scale(0.72) skew(2deg, -1deg); opacity: 0.54; filter: contrast(1.22) brightness(1); }
-            to   { --mh-ray-shift: 88deg; --mh-ray-shift-alt: 51deg; transform: translate(-50%, -50%) rotate(16deg) scale(0.62) skew(0deg, 0deg); opacity: 0; filter: contrast(1) brightness(1); }
+            from { --mh-ray-shift: 0deg;  --mh-ray-shift-alt: 0deg;  opacity: 0; }
+            18%  { --mh-ray-shift: 9deg;  --mh-ray-shift-alt: 5deg;  opacity: 0.46; }
+            39%  { --mh-ray-shift: 18deg; --mh-ray-shift-alt: 10deg; opacity: 0.62; }
+            61%  { --mh-ray-shift: 30deg; --mh-ray-shift-alt: 17deg; opacity: 0.68; }
+            74%  { --mh-ray-shift: 36deg; --mh-ray-shift-alt: 21deg; opacity: 0.54; }
+            to   { --mh-ray-shift: 42deg; --mh-ray-shift-alt: 24deg; opacity: 0; }
         }
         @keyframes wormholeStreakOut {
-            from { --mh-ray-shift: 0deg; --mh-ray-shift-alt: 0deg; transform: translate(-50%, -50%) rotate(5deg) scale(1.18) skew(0deg, 0deg); opacity: 0; filter: contrast(1.05) brightness(1); }
-            10%  { --mh-ray-shift: -8deg; --mh-ray-shift-alt: -5deg; transform: translate(calc(-50% + 8px), calc(-50% + 5px)) rotate(-2deg) scale(1.06) skew(-3deg, -2deg); opacity: 0.78; filter: contrast(1.28) brightness(0.96); }
-            18%  { --mh-ray-shift: -18deg; --mh-ray-shift-alt: -10deg; transform: translate(calc(-50% - 11px), calc(-50% - 4px)) rotate(4deg) scale(1.0) skew(5deg, 2deg); opacity: 0.46; filter: contrast(1.7) brightness(1.05); }
-            27%  { --mh-ray-shift: -24deg; --mh-ray-shift-alt: -14deg; transform: translate(calc(-50% + 3px), calc(-50% - 10px)) rotate(-7deg) scale(0.95) skew(-2deg, 4deg); opacity: 0.92; filter: contrast(1.32) brightness(0.98); }
-            39%  { --mh-ray-shift: -37deg; --mh-ray-shift-alt: -20deg; transform: translate(calc(-50% - 15px), calc(-50% + 7px)) rotate(1deg) scale(0.88) skew(6deg, -2deg); opacity: 0.62; filter: contrast(1.62) brightness(1.08); }
-            46%  { --mh-ray-shift: -49deg; --mh-ray-shift-alt: -27deg; transform: translate(calc(-50% + 12px), calc(-50% + 2px)) rotate(-9deg) scale(0.84) skew(-5deg, -4deg); opacity: 0.9; filter: contrast(1.44) brightness(0.94); }
-            61%  { --mh-ray-shift: -61deg; --mh-ray-shift-alt: -35deg; transform: translate(calc(-50% - 6px), calc(-50% - 8px)) rotate(-3deg) scale(0.78) skew(3deg, 5deg); opacity: 0.68; filter: contrast(1.5) brightness(1.02); }
-            74%  { --mh-ray-shift: -74deg; --mh-ray-shift-alt: -43deg; transform: translate(calc(-50% + 4px), calc(-50% + 2px)) rotate(-11deg) scale(0.72) skew(-2deg, -1deg); opacity: 0.54; filter: contrast(1.22) brightness(1); }
-            to   { --mh-ray-shift: -88deg; --mh-ray-shift-alt: -51deg; transform: translate(-50%, -50%) rotate(-16deg) scale(0.62) skew(0deg, 0deg); opacity: 0; filter: contrast(1) brightness(1); }
+            from { --mh-ray-shift: 0deg;   --mh-ray-shift-alt: 0deg;   opacity: 0; }
+            18%  { --mh-ray-shift: -9deg;  --mh-ray-shift-alt: -5deg;  opacity: 0.46; }
+            39%  { --mh-ray-shift: -18deg; --mh-ray-shift-alt: -10deg; opacity: 0.62; }
+            61%  { --mh-ray-shift: -30deg; --mh-ray-shift-alt: -17deg; opacity: 0.68; }
+            74%  { --mh-ray-shift: -36deg; --mh-ray-shift-alt: -21deg; opacity: 0.54; }
+            to   { --mh-ray-shift: -42deg; --mh-ray-shift-alt: -24deg; opacity: 0; }
         }
 
         @media (max-width: 380px) {

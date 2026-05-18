@@ -14,7 +14,21 @@
 (function () {
   const STORAGE_KEY = 'haqiBilliardsSettingsV1';
   const BEST_KEY = 'haqiBilliardsBestScoreV1';
-  const TABLE = { width: 9.6, height: 5.2, rail: .38, pocket: .34 };
+  const TABLE = { width: 10.4, height: 5.8, rail: .48, pocket: .36 };
+  const TABLE_PROFILES = {
+    eight: {
+      width: 10.4, height: 5.8, railWidth: .48, pocket: .36,
+      felt: 0x263fc8, feltDark: 0x192b91, cushion: 0x1c277f,
+      railColor: 0x7b3617, railDark: 0x3d1809, trim: 0xe8d7a6,
+      floor: 0x274f3f, wall: 0x744231, sky: 0x141b2c,
+    },
+    snooker: {
+      width: 12.4, height: 6.35, railWidth: .52, pocket: .34,
+      felt: 0x0b7f43, feltDark: 0x064d2a, cushion: 0x075e35,
+      railColor: 0x7a3514, railDark: 0x351506, trim: 0xf0dd9e,
+      floor: 0x244438, wall: 0x6f392f, sky: 0x14241b,
+    },
+  };
   const BALL_RADIUS = .135;
   const IS_MOBILE = /Mobi|Android|iPhone|iPad|iPod/i.test(navigator.userAgent) || navigator.maxTouchPoints > 1;
   const FIXED_DT = IS_MOBILE ? 1 / 90 : 1 / 120;
@@ -70,14 +84,6 @@
   const CUE_STICK_LENGTH = 3.05;
   const CUE_STICK_MESH_LENGTH = 3.2;
   const CUE_STICK_MIN_VISIBLE = .46;
-  const POCKET_CENTERS = [
-    { x: -TABLE.width / 2, y: -TABLE.height / 2 },
-    { x: 0, y: -TABLE.height / 2 - .02 },
-    { x: TABLE.width / 2, y: -TABLE.height / 2 },
-    { x: -TABLE.width / 2, y: TABLE.height / 2 },
-    { x: 0, y: TABLE.height / 2 + .02 },
-    { x: TABLE.width / 2, y: TABLE.height / 2 },
-  ];
   const MODES = {
     eight: { id: 'eight', label: '花球', title: '花球对战', target: 7 },
     snooker: { id: 'snooker', label: '斯诺克', title: '斯诺克练习赛', target: 32 },
@@ -347,6 +353,7 @@
     els.difficultySelect.value = normalizeDifficulty(state.difficulty);
     state.mode = els.modeSelect.value;
     state.difficulty = els.difficultySelect.value;
+    applyTableProfile();
     setupThree();
     bindEvents();
     requestPets();
@@ -437,12 +444,16 @@
   function setupThree() {
     const THREE = window.THREE;
     three.scene = new THREE.Scene();
-    three.scene.background = new THREE.Color(0xb9e5ef);
-    three.scene.fog = new THREE.Fog(0xb9e5ef, 12, 28);
+    const profile = tableProfile();
+    three.scene.background = new THREE.Color(profile.sky);
+    three.scene.fog = new THREE.Fog(profile.sky, 13, 32);
     three.camera = new THREE.PerspectiveCamera(38, 1, .1, 100);
     three.renderer = new THREE.WebGLRenderer({ antialias: true, alpha: false, powerPreference: 'high-performance' });
+    three.renderer.outputEncoding = THREE.sRGBEncoding;
+    three.renderer.toneMapping = THREE.ACESFilmicToneMapping;
+    three.renderer.toneMappingExposure = 1.04;
     setRendererPixelRatio();
-    three.renderer.setClearColor(0xb9e5ef, 1);
+    three.renderer.setClearColor(profile.sky, 1);
     three.renderer.shadowMap.enabled = currentGraphicsPreset().shadows;
     three.renderer.shadowMap.type = THREE.PCFSoftShadowMap;
     els.stage.insertBefore(three.renderer.domElement, els.stage.firstChild);
@@ -460,14 +471,29 @@
       tablePoint: new THREE.Vector3(),
     };
 
-    const ambient = new THREE.HemisphereLight(0xffffff, 0x5b735e, .86);
+    const ambient = new THREE.HemisphereLight(0xfff7e6, 0x26372f, .62);
     three.scene.add(ambient);
-    three.light = new THREE.DirectionalLight(0xffffff, .86);
-    three.light.position.set(-3.5, 7.5, 4.2);
+    three.light = new THREE.DirectionalLight(0xfff6df, 1.12);
+    three.light.position.set(-4.8, 8.5, 5.8);
     three.light.castShadow = currentGraphicsPreset().shadows;
     three.light.shadow.mapSize.width = currentGraphicsPreset().shadowMapSize || 512;
     three.light.shadow.mapSize.height = currentGraphicsPreset().shadowMapSize || 512;
+    three.light.shadow.camera.near = 1;
+    three.light.shadow.camera.far = 24;
+    three.light.shadow.camera.left = -9;
+    three.light.shadow.camera.right = 9;
+    three.light.shadow.camera.top = 7;
+    three.light.shadow.camera.bottom = -7;
     three.scene.add(three.light);
+
+    const fill = new THREE.PointLight(0x82d7ff, .52, 20);
+    fill.position.set(4.5, 4.2, -4.8);
+    three.scene.add(fill);
+
+    const tableGlow = new THREE.RectAreaLight(0xffffff, IS_MOBILE ? 1.8 : 2.4, 5.5, 2.4);
+    tableGlow.position.set(0, 5.3, 0);
+    tableGlow.rotation.x = -Math.PI / 2;
+    three.scene.add(tableGlow);
 
     three.tableGroup = new THREE.Group();
     three.scene.add(three.tableGroup);
@@ -479,57 +505,41 @@
   function createTable() {
     const THREE = window.THREE;
     three.tableGroup.clear();
+    const profile = tableProfile();
+    if (three.scene) {
+      three.scene.background = new THREE.Color(profile.sky);
+      three.scene.fog = new THREE.Fog(profile.sky, 13, 32);
+      three.renderer?.setClearColor(profile.sky, 1);
+    }
+
+    const feltTexture = makeFeltTexture(profile);
+    const feltMat = new THREE.MeshStandardMaterial({ map: feltTexture, color: 0xffffff, roughness: .86, metalness: .01 });
+    const railMat = new THREE.MeshStandardMaterial({ color: profile.railColor, roughness: .34, metalness: .08 });
+    const railDarkMat = new THREE.MeshStandardMaterial({ color: profile.railDark, roughness: .42, metalness: .04 });
+    const cushionMat = new THREE.MeshStandardMaterial({ color: profile.cushion, roughness: .76, metalness: .02 });
+    const trimMat = new THREE.MeshStandardMaterial({ color: profile.trim, roughness: .22, metalness: .42 });
+    const rubberMat = new THREE.MeshStandardMaterial({ color: 0x03040a, roughness: .72, metalness: .02 });
+
     const felt = new THREE.Mesh(
       new THREE.BoxGeometry(TABLE.width, .16, TABLE.height),
-      new THREE.MeshStandardMaterial({ color: 0x0f9f78, roughness: .72, metalness: .02 })
+      feltMat
     );
     felt.position.y = -.08;
     felt.receiveShadow = true;
     three.tableGroup.add(felt);
 
-    const railMat = new THREE.MeshStandardMaterial({ color: 0x7c3f1d, roughness: .48, metalness: .05 });
-    const cushionMat = new THREE.MeshStandardMaterial({ color: 0x065f46, roughness: .75 });
-    const railLong = new THREE.BoxGeometry(TABLE.width + TABLE.rail * 2, .36, TABLE.rail);
-    const railShort = new THREE.BoxGeometry(TABLE.rail, .36, TABLE.height);
-    const rails = [
-      { geo: railLong, pos: [0, .08, TABLE.height / 2 + TABLE.rail / 2] },
-      { geo: railLong, pos: [0, .08, -TABLE.height / 2 - TABLE.rail / 2] },
-      { geo: railShort, pos: [TABLE.width / 2 + TABLE.rail / 2, .08, 0] },
-      { geo: railShort, pos: [-TABLE.width / 2 - TABLE.rail / 2, .08, 0] },
-    ];
-    rails.forEach(r => {
-      const mesh = new THREE.Mesh(r.geo, railMat);
-      mesh.position.set(...r.pos);
-      mesh.castShadow = true;
-      mesh.receiveShadow = true;
-      three.tableGroup.add(mesh);
-    });
+    addContinuousApron(railDarkMat);
+    addFrameSegments(railMat, trimMat);
+    addPocketRailCaps(railMat, trimMat);
 
-    const cushionLong = new THREE.BoxGeometry(TABLE.width - .35, .13, .12);
-    const cushionShort = new THREE.BoxGeometry(.12, .13, TABLE.height - .35);
-    [
-      { geo: cushionLong, pos: [0, .15, TABLE.height / 2 + .02] },
-      { geo: cushionLong, pos: [0, .15, -TABLE.height / 2 - .02] },
-      { geo: cushionShort, pos: [TABLE.width / 2 + .02, .15, 0] },
-      { geo: cushionShort, pos: [-TABLE.width / 2 - .02, .15, 0] },
-    ].forEach(r => {
-      const mesh = new THREE.Mesh(r.geo, cushionMat);
-      mesh.position.set(...r.pos);
-      mesh.castShadow = true;
-      three.tableGroup.add(mesh);
-    });
+    addCushionSegments(cushionMat);
 
-    pocketCenters().forEach((p) => {
-      const pocket = new THREE.Mesh(
-        new THREE.CylinderGeometry(TABLE.pocket * 1.12, TABLE.pocket * 1.18, .08, IS_MOBILE ? 24 : 40),
-        new THREE.MeshStandardMaterial({ color: 0x050712, roughness: .9 })
-      );
-      pocket.position.set(p.x, .02, p.y);
-      three.tableGroup.add(pocket);
-    });
+    addTableDiamondSites(trimMat);
 
-    const legMat = new THREE.MeshStandardMaterial({ color: 0x5b2d16, roughness: .56, metalness: .04 });
-    const footMat = new THREE.MeshStandardMaterial({ color: 0x2d160b, roughness: .62 });
+    addPocketCutouts(rubberMat);
+
+    const legMat = new THREE.MeshStandardMaterial({ color: profile.railDark, roughness: .38, metalness: .08 });
+    const footMat = new THREE.MeshStandardMaterial({ color: 0x160906, roughness: .58, metalness: .08 });
     const legPositions = [
       [-TABLE.width / 2 + .55, -TABLE.height / 2 + .5],
       [TABLE.width / 2 - .55, -TABLE.height / 2 + .5],
@@ -551,18 +561,347 @@
 
     const floor = new THREE.Mesh(
       new THREE.PlaneGeometry(32, 18),
-      new THREE.MeshStandardMaterial({ color: 0x9fd6c0, roughness: .88 })
+      new THREE.MeshStandardMaterial({ map: makeCarpetTexture(profile), color: 0xffffff, roughness: .9 })
     );
     floor.rotation.x = -Math.PI / 2;
     floor.position.y = -1.5;
-    three.scene.add(floor);
+    floor.receiveShadow = true;
+    three.tableGroup.add(floor);
 
     const wall = new THREE.Mesh(
       new THREE.PlaneGeometry(32, 12),
-      new THREE.MeshBasicMaterial({ color: 0xb9e5ef })
+      new THREE.MeshStandardMaterial({ color: profile.wall, roughness: .82 })
     );
     wall.position.set(0, 4.8, -8.6);
-    three.scene.add(wall);
+    wall.receiveShadow = true;
+    three.tableGroup.add(wall);
+
+    const backBar = new THREE.Mesh(
+      new THREE.BoxGeometry(20, .72, .46),
+      new THREE.MeshStandardMaterial({ color: profile.railDark, roughness: .38, metalness: .04 })
+    );
+    backBar.position.set(0, 1.2, -7.95);
+    backBar.castShadow = true;
+    backBar.receiveShadow = true;
+    three.tableGroup.add(backBar);
+  }
+
+  function addTableBox(size, position, material) {
+    const THREE = window.THREE;
+    const mesh = new THREE.Mesh(new THREE.BoxGeometry(...size), material);
+    mesh.position.set(...position);
+    mesh.castShadow = true;
+    mesh.receiveShadow = true;
+    three.tableGroup.add(mesh);
+    return mesh;
+  }
+
+  function frameCutSegments() {
+    const cornerGap = TABLE.pocket * 1.38;
+    const middleGap = TABLE.pocket * 1.08;
+    return {
+      long: [
+        [-TABLE.width / 2 + cornerGap, -middleGap],
+        [middleGap, TABLE.width / 2 - cornerGap],
+      ],
+      short: [[-TABLE.height / 2 + cornerGap, TABLE.height / 2 - cornerGap]],
+    };
+  }
+
+  function addLongFramePieces(segments, z, y, depth, height, material, trimLength = 0) {
+    segments.forEach(([start, end]) => {
+      const length = Math.max(.05, end - start + trimLength);
+      addTableBox([length, height, depth], [(start + end) / 2, y, z], material);
+    });
+  }
+
+  function addShortFramePieces(segments, x, y, width, height, material, trimLength = 0) {
+    segments.forEach(([start, end]) => {
+      const length = Math.max(.05, end - start + trimLength);
+      addTableBox([width, height, length], [x, y, (start + end) / 2], material);
+    });
+  }
+
+  function addContinuousApron(railDarkMat) {
+    addTableBox([TABLE.width + TABLE.rail * 2.45, .72, TABLE.rail * .42], [0, -.28, TABLE.height / 2 + TABLE.rail * .9], railDarkMat);
+    addTableBox([TABLE.width + TABLE.rail * 2.45, .72, TABLE.rail * .42], [0, -.28, -TABLE.height / 2 - TABLE.rail * .9], railDarkMat);
+    addTableBox([TABLE.rail * .42, .72, TABLE.height + TABLE.rail * 1.45], [TABLE.width / 2 + TABLE.rail * .9, -.28, 0], railDarkMat);
+    addTableBox([TABLE.rail * .42, .72, TABLE.height + TABLE.rail * 1.45], [-TABLE.width / 2 - TABLE.rail * .9, -.28, 0], railDarkMat);
+  }
+
+  function addFrameSegments(railMat, trimMat) {
+    const segments = frameCutSegments();
+    [1, -1].forEach(sign => {
+      addLongFramePieces(segments.long, sign * (TABLE.height / 2 + TABLE.rail / 2), .08, TABLE.rail, .38, railMat, TABLE.rail * .1);
+      addLongFramePieces(segments.long, sign * (TABLE.height / 2 + TABLE.rail * .74), .29, .035, .035, trimMat, 0);
+    });
+    [1, -1].forEach(sign => {
+      addShortFramePieces(segments.short, sign * (TABLE.width / 2 + TABLE.rail / 2), .08, TABLE.rail, .38, railMat, 0);
+      addShortFramePieces(segments.short, sign * (TABLE.width / 2 + TABLE.rail * .74), .29, .035, .035, trimMat, -TABLE.rail * .14);
+    });
+  }
+
+  function addPocketRailCaps(railMat, trimMat) {
+    const THREE = window.THREE;
+    const surfaceMat = railMat.clone();
+    surfaceMat.side = THREE.DoubleSide;
+    const halfW = TABLE.width / 2;
+    const halfH = TABLE.height / 2;
+    const outer = TABLE.rail * 1.08;
+    const pocketRadius = TABLE.pocket * .92;
+    const surfaceY = .292;
+    const railDepth = .39;
+
+    function addRailSurface(shape) {
+      const geometry = new THREE.ExtrudeGeometry(shape, {
+        depth: railDepth,
+        bevelEnabled: false,
+        curveSegments: IS_MOBILE ? 18 : 28,
+      });
+      const mesh = new THREE.Mesh(geometry, surfaceMat);
+      mesh.rotation.x = Math.PI / 2;
+      mesh.position.y = surfaceY;
+      mesh.castShadow = true;
+      mesh.receiveShadow = true;
+      three.tableGroup.add(mesh);
+    }
+
+    function addLongRailSurface(sign) {
+      const innerZ = sign * halfH;
+      const outerZ = sign * (halfH + outer);
+      const clockwiseArc = sign < 0;
+      const shape = new THREE.Shape();
+      shape.moveTo(-halfW - outer, outerZ);
+      shape.lineTo(halfW + outer, outerZ);
+      shape.lineTo(halfW + outer, innerZ);
+      shape.lineTo(halfW + pocketRadius, innerZ);
+      shape.absarc(halfW, innerZ, pocketRadius, 0, Math.PI, clockwiseArc);
+      shape.lineTo(pocketRadius, innerZ);
+      shape.absarc(0, innerZ, pocketRadius, 0, Math.PI, clockwiseArc);
+      shape.lineTo(-halfW + pocketRadius, innerZ);
+      shape.absarc(-halfW, innerZ, pocketRadius, 0, Math.PI, clockwiseArc);
+      shape.lineTo(-halfW - outer, innerZ);
+      shape.lineTo(-halfW - outer, outerZ);
+      addRailSurface(shape);
+    }
+
+    function addSideRailSurface(sign) {
+      const innerX = sign * halfW;
+      const outerX = sign * (halfW + outer);
+      const shape = new THREE.Shape();
+      if (sign < 0) {
+        shape.moveTo(outerX, -halfH - outer);
+        shape.lineTo(innerX, -halfH - outer);
+        shape.lineTo(innerX, -halfH - pocketRadius);
+        shape.absarc(innerX, -halfH, pocketRadius, -Math.PI / 2, Math.PI / 2, true);
+        shape.lineTo(innerX, halfH - pocketRadius);
+        shape.absarc(innerX, halfH, pocketRadius, -Math.PI / 2, Math.PI / 2, true);
+        shape.lineTo(innerX, halfH + outer);
+        shape.lineTo(outerX, halfH + outer);
+      } else {
+        shape.moveTo(outerX, -halfH - outer);
+        shape.lineTo(outerX, halfH + outer);
+        shape.lineTo(innerX, halfH + outer);
+        shape.lineTo(innerX, halfH + pocketRadius);
+        shape.absarc(innerX, halfH, pocketRadius, Math.PI / 2, -Math.PI / 2, true);
+        shape.lineTo(innerX, -halfH + pocketRadius);
+        shape.absarc(innerX, -halfH, pocketRadius, Math.PI / 2, -Math.PI / 2, true);
+        shape.lineTo(innerX, -halfH - outer);
+      }
+      shape.lineTo(outerX, -halfH - outer);
+      addRailSurface(shape);
+    }
+
+    addLongRailSurface(1);
+    addLongRailSurface(-1);
+    addSideRailSurface(-1);
+    addSideRailSurface(1);
+  }
+
+  function addCushionSegments(cushionMat) {
+    const segments = frameCutSegments();
+    [1, -1].forEach(sign => {
+      addLongFramePieces(segments.long, sign * (TABLE.height / 2 + .04), .19, .16, .18, cushionMat, -TABLE.rail * .42);
+      addShortFramePieces(segments.short, sign * (TABLE.width / 2 + .04), .19, .16, .18, cushionMat, -TABLE.rail * .42);
+    });
+  }
+
+  function addPocketCutouts(rubberMat) {
+    const THREE = window.THREE;
+    visualPocketCenters().forEach((p) => {
+      const pocket = new THREE.Mesh(
+        new THREE.CylinderGeometry(TABLE.pocket * .92, TABLE.pocket * 1.05, .15, IS_MOBILE ? 28 : 48),
+        rubberMat
+      );
+      pocket.position.set(p.x, .06, p.y);
+      pocket.receiveShadow = true;
+      three.tableGroup.add(pocket);
+    });
+  }
+
+  function visualPocketCenters() {
+    const inset = TABLE.pocket * .28;
+    return [
+      { x: -TABLE.width / 2 + inset, y: -TABLE.height / 2 + inset },
+      { x: 0, y: -TABLE.height / 2 + TABLE.pocket * .1 },
+      { x: TABLE.width / 2 - inset, y: -TABLE.height / 2 + inset },
+      { x: -TABLE.width / 2 + inset, y: TABLE.height / 2 - inset },
+      { x: 0, y: TABLE.height / 2 - TABLE.pocket * .1 },
+      { x: TABLE.width / 2 - inset, y: TABLE.height / 2 - inset },
+    ];
+  }
+
+  function tableProfile() {
+    return TABLE_PROFILES[state.mode] || TABLE_PROFILES.eight;
+  }
+
+  function applyTableProfile() {
+    const profile = tableProfile();
+    TABLE.width = profile.width;
+    TABLE.height = profile.height;
+    TABLE.rail = profile.railWidth;
+    TABLE.pocket = profile.pocket;
+  }
+
+  function refreshTableForMode() {
+    applyTableProfile();
+    if (three.tableGroup) createTable();
+    state.cameraControl.targetX = clamp(state.cameraControl.targetX, -TABLE.width * .32, TABLE.width * .32);
+    state.cameraControl.targetY = clamp(state.cameraControl.targetY, -TABLE.height * .32, TABLE.height * .32);
+    if (three.renderer) resize();
+  }
+
+  function makeFeltTexture(profile) {
+    const THREE = window.THREE;
+    const canvas = document.createElement('canvas');
+    canvas.width = 1024;
+    canvas.height = 512;
+    const ctx = canvas.getContext('2d');
+    const base = `#${profile.felt.toString(16).padStart(6, '0')}`;
+    const dark = `#${profile.feltDark.toString(16).padStart(6, '0')}`;
+    ctx.fillStyle = base;
+    ctx.fillRect(0, 0, canvas.width, canvas.height);
+    ctx.globalAlpha = .18;
+    for (let y = 0; y < canvas.height; y += 3) {
+      ctx.fillStyle = y % 12 === 0 ? dark : 'rgba(255,255,255,.22)';
+      ctx.fillRect(0, y, canvas.width, 1);
+    }
+    ctx.globalAlpha = .12;
+    for (let x = -canvas.height; x < canvas.width; x += 22) {
+      ctx.beginPath();
+      ctx.moveTo(x, 0);
+      ctx.lineTo(x + canvas.height, canvas.height);
+      ctx.strokeStyle = '#ffffff';
+      ctx.lineWidth = 1;
+      ctx.stroke();
+    }
+    ctx.globalAlpha = .18;
+    const vignette = ctx.createRadialGradient(canvas.width / 2, canvas.height / 2, 90, canvas.width / 2, canvas.height / 2, canvas.width * .62);
+    vignette.addColorStop(0, 'rgba(255,255,255,.42)');
+    vignette.addColorStop(1, 'rgba(0,0,0,.5)');
+    ctx.fillStyle = vignette;
+    ctx.fillRect(0, 0, canvas.width, canvas.height);
+    const texture = new THREE.CanvasTexture(canvas);
+    texture.wrapS = THREE.RepeatWrapping;
+    texture.wrapT = THREE.RepeatWrapping;
+    texture.repeat.set(TABLE.width / 4.8, TABLE.height / 3);
+    texture.anisotropy = 8;
+    texture.encoding = THREE.sRGBEncoding;
+    return texture;
+  }
+
+  function makeCarpetTexture(profile) {
+    const THREE = window.THREE;
+    const canvas = document.createElement('canvas');
+    canvas.width = 512;
+    canvas.height = 512;
+    const ctx = canvas.getContext('2d');
+    const base = `#${profile.floor.toString(16).padStart(6, '0')}`;
+    ctx.fillStyle = base;
+    ctx.fillRect(0, 0, canvas.width, canvas.height);
+    ctx.globalAlpha = .16;
+    for (let y = 0; y < canvas.height; y += 42) {
+      ctx.fillStyle = '#ffffff';
+      ctx.fillRect(0, y, canvas.width, 2);
+    }
+    for (let x = 0; x < canvas.width; x += 42) {
+      ctx.fillStyle = '#000000';
+      ctx.fillRect(x, 0, 2, canvas.height);
+    }
+    const texture = new THREE.CanvasTexture(canvas);
+    texture.wrapS = THREE.RepeatWrapping;
+    texture.wrapT = THREE.RepeatWrapping;
+    texture.repeat.set(6, 4);
+    texture.anisotropy = 4;
+    texture.encoding = THREE.sRGBEncoding;
+    return texture;
+  }
+
+  function addCushionSegments(material) {
+    const THREE = window.THREE;
+    const cornerGap = TABLE.pocket * .9;
+    const sideGap = TABLE.pocket * 1.54;
+    const longZ = TABLE.height / 2 + .04;
+    const shortX = TABLE.width / 2 + .04;
+
+    [-1, 1].forEach(sign => {
+      const leftStart = -TABLE.width / 2 + cornerGap;
+      const leftEnd = -sideGap / 2;
+      const rightStart = sideGap / 2;
+      const rightEnd = TABLE.width / 2 - cornerGap;
+      addCushionBox(leftStart, leftEnd, sign * longZ, true, material);
+      addCushionBox(rightStart, rightEnd, sign * longZ, true, material);
+
+      const bottomStart = -TABLE.height / 2 + cornerGap;
+      const topEnd = TABLE.height / 2 - cornerGap;
+      addCushionBox(bottomStart, topEnd, sign * shortX, false, material);
+    });
+  }
+
+  function addCushionBox(start, end, fixedPosition, horizontal, material) {
+    const THREE = window.THREE;
+    const length = Math.max(.2, end - start);
+    const cushionHeight = .24;
+    const geometry = horizontal ? new THREE.BoxGeometry(length, cushionHeight, .16) : new THREE.BoxGeometry(.16, cushionHeight, length);
+    const mesh = new THREE.Mesh(geometry, material);
+    if (horizontal) mesh.position.set((start + end) / 2, .165, fixedPosition);
+    else mesh.position.set(fixedPosition, .165, (start + end) / 2);
+    mesh.castShadow = true;
+    three.tableGroup.add(mesh);
+  }
+
+  function addPocketCutouts(material) {
+    const THREE = window.THREE;
+    const wellGeo = new THREE.CircleGeometry(TABLE.pocket * .86, IS_MOBILE ? 30 : 48);
+    const linerGeo = new THREE.CylinderGeometry(TABLE.pocket * .9, TABLE.pocket * .72, .18, IS_MOBILE ? 30 : 48, 1, true);
+    const linerMat = new THREE.MeshBasicMaterial({ color: 0x02030a, side: THREE.DoubleSide });
+
+    pocketCenters().forEach((p) => {
+      const well = new THREE.Mesh(wellGeo, material);
+      well.rotation.x = -Math.PI / 2;
+      well.position.set(p.x, .006, p.y);
+      three.tableGroup.add(well);
+
+      const liner = new THREE.Mesh(linerGeo, linerMat);
+      liner.position.set(p.x, -.075, p.y);
+      three.tableGroup.add(liner);
+    });
+  }
+
+  function addTableDiamondSites(material) {
+    const THREE = window.THREE;
+    const diamondGeo = new THREE.BoxGeometry(.08, .026, .08);
+    const longY = TABLE.height / 2 + TABLE.rail * .56;
+    for (let i = 1; i < 8; i++) {
+      if (i === 4) continue;
+      const x = -TABLE.width / 2 + TABLE.width * i / 8;
+      [-longY, longY].forEach(z => {
+        const diamond = new THREE.Mesh(diamondGeo, material);
+        diamond.position.set(x, .32, z);
+        diamond.rotation.y = Math.PI / 4;
+        three.tableGroup.add(diamond);
+      });
+    }
   }
 
   function createCueMeshes() {
@@ -721,12 +1060,18 @@
     const THREE = window.THREE;
     const group = new THREE.Group();
     ball.rollQuat = new THREE.Quaternion();
-    const material = new THREE.MeshStandardMaterial({ map: makeBallTexture(ball), roughness: .38, metalness: .02 });
+    const material = new THREE.MeshStandardMaterial({ map: makeBallTexture(ball), roughness: .2, metalness: .02 });
     const sphere = new THREE.Mesh(new THREE.SphereGeometry(BALL_RADIUS, BALL_WIDTH_SEGMENTS, BALL_HEIGHT_SEGMENTS), material);
     sphere.castShadow = true;
     sphere.receiveShadow = true;
     group.userData.rollables = [sphere];
     group.add(sphere);
+    const shine = new THREE.Mesh(
+      new THREE.SphereGeometry(BALL_RADIUS * .18, IS_MOBILE ? 8 : 10, IS_MOBILE ? 6 : 8),
+      new THREE.MeshBasicMaterial({ color: 0xffffff, transparent: true, opacity: .34, depthWrite: false })
+    );
+    shine.position.set(-BALL_RADIUS * .32, BALL_RADIUS * .36, BALL_RADIUS * .42);
+    group.add(shine);
     return group;
   }
 
@@ -752,6 +1097,7 @@
     }
     const texture = new THREE.CanvasTexture(canvas);
     texture.anisotropy = 4;
+    texture.encoding = THREE.sRGBEncoding;
     texture.needsUpdate = true;
     return texture;
   }
@@ -2092,7 +2438,14 @@
   }
 
   function pocketCenters() {
-    return POCKET_CENTERS;
+    return [
+      { x: -TABLE.width / 2, y: -TABLE.height / 2 },
+      { x: 0, y: -TABLE.height / 2 - .02 },
+      { x: TABLE.width / 2, y: -TABLE.height / 2 },
+      { x: -TABLE.width / 2, y: TABLE.height / 2 },
+      { x: 0, y: TABLE.height / 2 + .02 },
+      { x: TABLE.width / 2, y: TABLE.height / 2 },
+    ];
   }
 
   function updateUI() {
@@ -2137,9 +2490,11 @@
   }
 
   function setMode(mode, rerack) {
+    const previousMode = state.mode;
     state.mode = normalizeMode(mode);
+    refreshTableForMode();
     saveSettings();
-    if (rerack || !state.started) resetGame(false);
+    if (rerack || !state.started || previousMode !== state.mode) resetGame(false);
     updateUI();
   }
 
@@ -2160,6 +2515,7 @@
   function applyGameConfig(config) {
     if (config.mode) state.mode = normalizeMode(config.mode);
     if (config.difficulty) state.difficulty = normalizeDifficulty(config.difficulty);
+    refreshTableForMode();
     saveSettings();
     resetGame(false);
   }
