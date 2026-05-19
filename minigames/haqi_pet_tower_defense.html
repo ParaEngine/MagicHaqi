@@ -1,0 +1,1785 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+  <title>细胞免疫塔防</title>
+  <script src="https://cdn.keepwork.com/keepwork/cdn/tailwindcss@3.4.16.js"></script>
+</head>
+
+<body></body>
+<script defer>
+(function () {
+  const STORAGE_DIFFICULTY = 'haqiPetTowerDefenseDifficultyV1';
+  const STORAGE_BEST_SCORE = 'haqiPetTowerDefenseBestScoreV1';
+  const STORAGE_BEST_WAVE = 'haqiPetTowerDefenseBestWaveV1';
+  const SVG_NS = 'http://www.w3.org/2000/svg';
+  const XLINK_NS = 'http://www.w3.org/1999/xlink';
+  const PET_FALLBACK = '哈奇';
+  const MAX_WAVE = 8;
+  const MAX_TOWER_LEVEL = 4;
+  const LAYOUTS = {
+    landscape: {
+      view: { width: 1000, height: 620 },
+      paths: [
+        [
+          { x: -60, y: 330 }, { x: 135, y: 330 }, { x: 135, y: 150 }, { x: 355, y: 150 },
+          { x: 355, y: 470 }, { x: 585, y: 470 }, { x: 585, y: 240 }, { x: 820, y: 240 }, { x: 872, y: 310 }
+        ],
+        [
+          { x: -50, y: 500 }, { x: 205, y: 500 }, { x: 205, y: 312 }, { x: 486, y: 312 },
+          { x: 486, y: 92 }, { x: 760, y: 92 }, { x: 760, y: 285 }, { x: 872, y: 310 }
+        ]
+      ],
+      spots: [
+        { x: 96, y: 216 }, { x: 232, y: 96 }, { x: 282, y: 270 }, { x: 468, y: 96 },
+        { x: 470, y: 340 }, { x: 720, y: 118 }, { x: 720, y: 360 }, { x: 880, y: 265 }
+      ],
+      gate: { x: 872, y: 310 },
+      hero: { x: 804, y: 332 },
+      tissue: 'M0 522 C150 476 255 552 420 510 C592 466 705 535 1000 492 L1000 620 L0 620 Z'
+    },
+    portrait: {
+      view: { width: 620, height: 1000 },
+      paths: [
+        [
+          { x: 70, y: -70 }, { x: 70, y: 160 }, { x: 270, y: 160 }, { x: 270, y: 330 },
+          { x: 112, y: 330 }, { x: 112, y: 570 }, { x: 382, y: 570 }, { x: 382, y: 742 },
+          { x: 520, y: 870 }
+        ],
+        [
+          { x: 545, y: -70 }, { x: 545, y: 132 }, { x: 388, y: 132 }, { x: 388, y: 262 },
+          { x: 502, y: 262 }, { x: 502, y: 488 }, { x: 286, y: 488 }, { x: 286, y: 690 },
+          { x: 520, y: 870 }
+        ]
+      ],
+      spots: [
+        { x: 178, y: 78 }, { x: 462, y: 204 }, { x: 160, y: 438 }, { x: 348, y: 440 },
+        { x: 502, y: 584 }, { x: 240, y: 728 }, { x: 338, y: 842 }, { x: 138, y: 628 }
+      ],
+      gate: { x: 520, y: 870 },
+      hero: { x: 452, y: 850 },
+      tissue: 'M0 850 C108 808 188 878 300 838 C430 792 506 850 620 814 L620 1000 L0 1000 Z'
+    }
+  };
+  const TOWER_TYPES = {
+    acorn: { id: 'acorn', label: '中药药丸', short: '药丸', cost: 65, range: 158, damage: 22, rate: 760, color: '#92400e', glow: '#fde68a', projectile: '#b45309', splash: 0 },
+    bubble: { id: 'bubble', label: '针头水枪', short: '针头', cost: 90, range: 138, damage: 12, rate: 1080, color: '#0ea5e9', glow: '#bae6fd', projectile: '#38bdf8', slow: 0.48, slowMs: 1500 },
+    flower: { id: 'flower', label: '靶向细胞', short: '靶向', cost: 115, range: 150, damage: 18, rate: 980, color: '#16a34a', glow: '#bbf7d0', projectile: '#22c55e', splash: 48 }
+  };
+  const ENEMY_TYPES = [
+    { kind: 'bacteria', color: '#a3e635', stroke: '#4d7c0f', hp: 54, speed: 64, reward: 10 },
+    { kind: 'virus', color: '#c084fc', stroke: '#6d28d9', hp: 66, speed: 72, reward: 12 },
+    { kind: 'spore', color: '#fca5a5', stroke: '#be123c', hp: 84, speed: 54, reward: 14 },
+    { kind: 'fastVirus', color: '#67e8f9', stroke: '#0369a1', hp: 48, speed: 95, reward: 11 }
+  ];
+  const DIFFICULTIES = {
+    easy: { id: 'easy', label: '轻松', coins: 170, lives: 18, enemyHp: 0.88, enemySpeed: 0.86, reward: 24, score: 70 },
+    normal: { id: 'normal', label: '标准', coins: 140, lives: 15, enemyHp: 1, enemySpeed: 1, reward: 22, score: 95 },
+    hard: { id: 'hard', label: '挑战', coins: 125, lives: 12, enemyHp: 1.18, enemySpeed: 1.12, reward: 20, score: 130 }
+  };
+  const DIFFICULTY_ORDER = ['easy', 'normal', 'hard'];
+  const ENEMY_TRAITS = {
+    bacteria: { label: '细菌', weak: 'acorn', weakText: '怕药丸', weakFactor: 1.32 },
+    virus: { label: '病毒', weak: 'bubble', weakText: '怕针头', weakFactor: 1.22 },
+    spore: { label: '孢子', weak: 'flower', weakText: '怕靶向', weakFactor: 1.3 },
+    fastVirus: { label: '速毒', weak: 'bubble', weakText: '怕减速', weakFactor: 1.28 },
+    eliteVirus: { label: '精英', weak: 'acorn', weakText: '怕重击', weakFactor: 1.18 }
+  };
+  const MUTATION_TYPES = [
+    { id: 'swarm', label: '病毒复制', text: '数量增多，血量降低', countBonus: 4, hp: .82, speed: 1, reward: 2, spawnGap: .78, color: '#16a34a' },
+    { id: 'speed', label: '急性发作', text: '移动更快，奖励更高', countBonus: 1, hp: .96, speed: 1.22, reward: 5, spawnGap: .86, color: '#dc2626' },
+    { id: 'hardy', label: '耐药菌群', text: '生命提高，减速变弱', countBonus: 0, hp: 1.24, speed: .94, reward: 8, spawnGap: 1, slowResist: .72, color: '#7c3aed' },
+    { id: 'glucose', label: '营养补给', text: '葡萄糖掉落提高', countBonus: 2, hp: 1.05, speed: 1.02, reward: 10, spawnGap: .95, color: '#d97706' }
+  ];
+
+  const state = {
+    difficulty: localStorage.getItem(STORAGE_DIFFICULTY) || 'normal',
+    bestScore: Math.max(0, Number(localStorage.getItem(STORAGE_BEST_SCORE) || 0)),
+    bestWave: Math.max(1, Number(localStorage.getItem(STORAGE_BEST_WAVE) || 1)),
+    started: false,
+    finished: false,
+    paused: false,
+    loadedPosted: false,
+    score: 0,
+    coins: 0,
+    lives: 15,
+    wave: 1,
+    enemiesToSpawn: 0,
+    spawnTimer: 0,
+    waveDelay: 0,
+    selectedType: 'acorn',
+    selectedTowerId: null,
+    specialCharge: 0,
+    heroCooldown: 0,
+    awaitingEvolution: false,
+    currentMutation: null,
+    evolutions: null,
+    roundId: '',
+    towers: [],
+    enemies: [],
+    shots: [],
+    bursts: [],
+    floating: [],
+    energyFlys: [],
+    evolutionSparks: [],
+    whiteCells: [],
+    petUrl: '',
+    petMeta: null
+  };
+  const sound = { ctx: null, master: null };
+
+  const root = document.createElement('div');
+  root.id = 'haqiPetTowerDefense';
+  root.innerHTML = `
+    <style>
+      * { box-sizing: border-box; -webkit-tap-highlight-color: transparent; }
+      html, body { width: 100%; height: 100%; margin: 0; overflow: hidden; }
+      body {
+        font-family: -apple-system, BlinkMacSystemFont, 'PingFang SC', 'Microsoft YaHei', sans-serif;
+        color: #3b1724;
+        background: linear-gradient(180deg, #ffe4e6 0%, #fecdd3 42%, #fef3c7 100%);
+        user-select: none;
+        touch-action: none;
+      }
+      .mh-shell { position: relative; width: 100vw; height: 100vh; height: 100dvh; overflow: hidden; }
+      .mh-svg { position: absolute; left: 0; right: 0; top: 72px; bottom: 98px; width: 100%; height: auto; display: block; }
+      .mh-top {
+        position: absolute; left: 8px; right: 8px; top: 8px; z-index: 4;
+        min-height: 86px; display: grid; grid-template-rows: 34px auto; gap: 6px;
+        padding: 7px 9px; border-radius: 14px; background: linear-gradient(180deg, rgba(255,255,255,.95), rgba(255,241,242,.92));
+        border: 2px solid rgba(255,255,255,.96); box-shadow: 0 5px 0 rgba(190,18,60,.13), 0 12px 24px rgba(15,23,42,.12);
+        backdrop-filter: blur(8px);
+      }
+      .mh-title-row { min-width: 0; display: grid; grid-template-columns: 34px minmax(0, 1fr) auto; align-items: center; gap: 6px; }
+      .mh-title { min-width: 0; text-align: center; font-size: 18px; font-weight: 1000; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+      .mh-top-actions { display: flex; align-items: center; justify-content: flex-end; gap: 5px; min-width: 0; }
+      .mh-top-difficulties { display: flex; align-items: center; gap: 3px; padding: 3px; border-radius: 999px; background: rgba(255,255,255,.78); border: 1px solid rgba(190,18,60,.15); }
+      .mh-stats { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 6px; align-items: stretch; }
+      .mh-pill {
+        min-width: 0; height: 44px; display: grid; grid-template-rows: 18px 18px; align-items: center; justify-items: center; gap: 1px;
+        padding: 4px 5px; border-radius: 12px; background: linear-gradient(180deg, #fff, #fff1f2); border: 1px solid rgba(190,18,60,.2);
+        color: #be123c; font-size: 11px; font-weight: 900; box-shadow: 0 2px 0 rgba(190,18,60,.12); line-height: 1;
+      }
+      .mh-pill-label { max-width: 100%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+      .mh-pill-value { font-size: 14px; font-weight: 1000; color: #7f1d1d; }
+      .mh-energy-pill { min-width: 74px; color: #92400e; background: linear-gradient(180deg, #fff7ed, #fde68a); border-color: rgba(245,158,11,.48); box-shadow: 0 3px 0 rgba(217,119,6,.2); }
+      .mh-energy-pill.gain { animation: mhEnergyGain .46s ease-out; }
+      .mh-pill.mutation-active { color: #7c2d12; background: linear-gradient(180deg, #fff7ed, #fed7aa); border-color: rgba(217,119,6,.42); animation: mhMutationPulse 1.1s ease-in-out infinite; }
+      .mh-pill.danger { color: #b91c1c; background: linear-gradient(180deg, #fff, #fee2e2); border-color: rgba(239,68,68,.35); animation: mhPulseWarn .82s ease-in-out infinite; }
+      .mh-icon-btn, .mh-action, .mh-start, .mh-difficulty, .mh-tower-btn { border: 0; cursor: pointer; font-weight: 900; }
+      .mh-icon-btn { width: 34px; height: 34px; border-radius: 999px; background: linear-gradient(180deg, #fb923c, #ea580c); color: white; box-shadow: 0 3px 0 #9a3412; font-size: 18px; }
+      .mh-restart-mini { width: 34px; height: 34px; border-radius: 999px; background: linear-gradient(180deg, #38bdf8, #0284c7); color: white; box-shadow: 0 3px 0 #075985; font-size: 15px; border: 0; font-weight: 1000; cursor: pointer; }
+      .mh-bottom {
+        position: absolute; left: 8px; right: 8px; bottom: 8px; z-index: 4;
+        display: grid; grid-template-columns: minmax(0, 1fr) auto; align-items: end; gap: 8px; pointer-events: none;
+      }
+      .mh-shop {
+        pointer-events: auto; display: flex; align-items: center; justify-content: center; gap: 7px; flex-wrap: nowrap;
+        padding: 6px; border-radius: 16px; background: rgba(255,255,255,.82); border: 1px solid rgba(190,18,60,.18); box-shadow: 0 4px 0 rgba(190,18,60,.12);
+      }
+      .mh-tower-btn, .mh-action {
+        height: 62px; width: 64px; border-radius: 13px; padding: 5px 4px; color: white; box-shadow: 0 4px 0 rgba(15,23,42,.24);
+        font-size: 11px; transition: transform .12s ease, filter .12s ease; display: grid; grid-template-rows: 34px 16px; align-items: center; justify-items: center; line-height: 1;
+      }
+      .mh-tower-btn { min-width: 0; background: linear-gradient(180deg, var(--from), var(--to)); }
+      .mh-tower-icon { width: 34px; height: 34px; display: block; filter: drop-shadow(0 2px 0 rgba(15,23,42,.2)); }
+      .mh-tower-price { max-width: 100%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-weight: 1000; text-shadow: 0 1px 0 rgba(15,23,42,.16); }
+      .mh-tower-btn.active {
+        outline: 3px solid #fef08a; outline-offset: 3px; transform: translateY(-4px) scale(1.04); filter: saturate(1.18) brightness(1.04);
+        box-shadow: 0 6px 0 rgba(146,64,14,.34), 0 0 0 4px rgba(255,255,255,.96), 0 0 18px rgba(250,204,21,.78);
+      }
+      .mh-action { background: linear-gradient(180deg, #38bdf8, #0284c7); }
+      .mh-action.help { background: linear-gradient(180deg, #fb923c, #ea580c); }
+      .mh-action.upgrade { width: 76px; background: linear-gradient(180deg, #fbbf24, #d97706); }
+      .mh-action.special { background: linear-gradient(180deg, #a78bfa, #7c3aed); }
+      .mh-action:disabled { opacity: .55; filter: grayscale(.15); }
+      .mh-action:active, .mh-start:active, .mh-icon-btn:active, .mh-difficulty:active, .mh-tower-btn:active { transform: translateY(2px); filter: brightness(.98); }
+      .mh-tower-btn.active:active { transform: translateY(-1px) scale(1.02); }
+      .mh-hint {
+        pointer-events: none; justify-self: center; min-height: 34px; display: inline-flex; align-items: center; justify-content: center; padding: 0 12px;
+        border-radius: 999px; background: rgba(255,255,255,.9); border: 1px solid rgba(190,18,60,.2);
+        color: #be123c; font-size: 13px; font-weight: 900; box-shadow: 0 3px 0 rgba(190,18,60,.13); white-space: nowrap;
+      }
+      .mh-overlay { position: fixed; inset: 0; z-index: 40; display: flex; align-items: center; justify-content: center; padding: 18px; background: rgba(15,39,71,.48); }
+      .mh-card {
+        width: min(92vw, 460px); padding: 20px; border-radius: 18px; background: linear-gradient(180deg, #fff, #eff6ff 58%, #f0fdf4);
+        border: 3px solid #7dd3fc; box-shadow: 0 18px 44px rgba(15,23,42,.28), 0 0 0 7px rgba(255,255,255,.38); text-align: center;
+      }
+      .mh-card h1 { margin: 0 0 10px; color: #15324b; font-size: 26px; font-weight: 1000; }
+      .mh-card p { margin: 0 0 14px; color: #0f766e; font-size: 15px; font-weight: 800; line-height: 1.55; }
+      .mh-card-row { display: flex; align-items: center; justify-content: center; gap: 6px; flex-wrap: wrap; margin: 12px 0 16px; }
+      .mh-evolution-row { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 8px; margin: 12px 0 4px; }
+      .mh-evolution-choice {
+        min-height: 94px; padding: 9px 7px; border: 0; border-radius: 14px; cursor: pointer;
+        display: grid; grid-template-rows: 28px auto; align-items: center; justify-items: center; gap: 5px;
+        background: linear-gradient(180deg, #fff7ed, #fed7aa); color: #7c2d12; box-shadow: 0 4px 0 rgba(154,52,18,.22);
+        font-weight: 1000; line-height: 1.18; animation: mhEvolutionPop .46s ease-out both; transition: transform .14s ease, filter .14s ease, box-shadow .14s ease;
+      }
+      .mh-evolution-choice:nth-child(2) { animation-delay: .06s; }
+      .mh-evolution-choice:nth-child(3) { animation-delay: .12s; }
+      .mh-evolution-choice:hover { transform: translateY(-4px) scale(1.03); filter: brightness(1.04) saturate(1.12); box-shadow: 0 7px 0 rgba(154,52,18,.22), 0 0 18px rgba(251,191,36,.45); }
+      .mh-evolution-choice:active { transform: translateY(1px) scale(.99); }
+      .mh-evolution-choice b { font-size: 13px; }
+      .mh-evolution-choice span { font-size: 11px; font-weight: 900; color: #9a3412; }
+      .mh-evolution-icon { width: 28px; height: 28px; border-radius: 999px; display: grid; place-items: center; background: rgba(255,255,255,.72); box-shadow: inset 0 0 0 2px rgba(255,255,255,.8), 0 0 12px rgba(251,191,36,.42); animation: mhEvolutionIcon 1.2s ease-in-out infinite; }
+      .mh-start { border-radius: 999px; padding: 10px 24px; background: linear-gradient(180deg, #34d399, #16a34a); color: white; box-shadow: 0 5px 0 #15803d; }
+      .mh-difficulty { height: 25px; min-width: 34px; padding: 0 7px; border-radius: 999px; background: #fee2e2; color: #be123c; font-size: 11px; }
+      .mh-difficulty.active { background: linear-gradient(180deg, #34d399, #16a34a); color: white; box-shadow: 0 2px 0 #15803d; }
+      .mh-toast {
+        position: fixed; left: 50%; top: 50%; z-index: 45; transform: translate(-50%, -50%); min-width: min(300px, 82vw);
+        padding: 18px 22px; border-radius: 18px; background: white; border: 3px solid #86efac; color: #15803d;
+        font-size: 22px; font-weight: 1000; text-align: center; box-shadow: 0 18px 42px rgba(15,23,42,.24); animation: mhToast 1.2s ease-out forwards; pointer-events: none;
+      }
+      [hidden] { display: none !important; }
+      @keyframes mhToast { 0% { opacity: 0; transform: translate(-50%, -42%) scale(.84); } 18% { opacity: 1; transform: translate(-50%, -50%) scale(1); } 100% { opacity: 0; transform: translate(-50%, -76%) scale(.94); } }
+      @keyframes mhPulseWarn { 0%, 100% { transform: scale(1); } 50% { transform: scale(1.05); } }
+      @keyframes mhEnergyGain { 0% { transform: scale(1); } 45% { transform: scale(1.16); } 100% { transform: scale(1); } }
+      @keyframes mhMutationPulse { 0%, 100% { transform: scale(1); box-shadow: 0 2px 0 rgba(217,119,6,.18); } 50% { transform: scale(1.04); box-shadow: 0 3px 0 rgba(217,119,6,.24), 0 0 14px rgba(251,146,60,.36); } }
+      @keyframes mhEvolutionPop { 0% { opacity: 0; transform: translateY(12px) scale(.86); } 70% { opacity: 1; transform: translateY(-3px) scale(1.04); } 100% { opacity: 1; transform: translateY(0) scale(1); } }
+      @keyframes mhEvolutionIcon { 0%, 100% { transform: rotate(-3deg) scale(1); } 50% { transform: rotate(3deg) scale(1.12); } }
+      @media (max-width: 640px) {
+        .mh-top { min-height: 92px; padding: 6px 7px; }
+        .mh-title-row { grid-template-columns: 34px minmax(0, 1fr) auto; gap: 5px; }
+        .mh-title { font-size: 17px; }
+        .mh-top-actions { gap: 4px; }
+        .mh-difficulty { min-width: 29px; padding: 0 5px; font-size: 10px; }
+        .mh-stats { gap: 5px; }
+        .mh-pill { height: 43px; padding: 4px 3px; font-size: 10px; border-radius: 11px; }
+        .mh-pill-value { font-size: 13px; }
+        .mh-evolution-row { grid-template-columns: 1fr; gap: 7px; }
+        .mh-evolution-choice { min-height: 72px; grid-template-columns: 32px 1fr; grid-template-rows: auto; text-align: left; justify-items: start; }
+        .mh-bottom { grid-template-columns: 1fr; justify-items: center; }
+        .mh-shop { max-width: 100%; gap: 6px; padding: 6px; }
+        .mh-tower-btn, .mh-action { width: 58px; height: 58px; grid-template-rows: 31px 15px; }
+        .mh-tower-icon { width: 31px; height: 31px; }
+        .mh-hint { font-size: 12px; }
+      }
+      @media (max-height: 520px) {
+        .mh-top { min-height: 76px; padding: 5px 7px; }
+        .mh-hint { display: none; }
+        .mh-tower-btn, .mh-action { height: 54px; }
+      }
+    </style>
+    <div class="mh-shell">
+      <svg id="mhSvg" class="mh-svg" viewBox="0 0 ${LAYOUTS.landscape.view.width} ${LAYOUTS.landscape.view.height}" preserveAspectRatio="xMidYMid meet" aria-label="细胞免疫塔防游戏画面">
+        <defs>
+          <linearGradient id="bgSky" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#ffe4e6"/><stop offset=".52" stop-color="#fecdd3"/><stop offset="1" stop-color="#fff7ed"/></linearGradient>
+          <linearGradient id="pathGrad" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stop-color="#fb7185"/><stop offset=".5" stop-color="#e11d48"/><stop offset="1" stop-color="#be123c"/></linearGradient>
+          <radialGradient id="spotGlow"><stop offset="0" stop-color="#ffffff" stop-opacity=".94"/><stop offset="1" stop-color="#fecdd3" stop-opacity=".46"/></radialGradient>
+          <filter id="softShadow" x="-30%" y="-30%" width="160%" height="160%"><feDropShadow dx="0" dy="6" stdDeviation="5" flood-color="#0f172a" flood-opacity=".22"/></filter>
+          <filter id="sparkGlow" x="-60%" y="-60%" width="220%" height="220%"><feGaussianBlur stdDeviation="3" result="blur"/><feMerge><feMergeNode in="blur"/><feMergeNode in="SourceGraphic"/></feMerge></filter>
+          <filter id="cellBlur" x="-70%" y="-70%" width="240%" height="240%"><feGaussianBlur stdDeviation="8"/></filter>
+          <clipPath id="petBaseClip" clipPathUnits="userSpaceOnUse"><circle cx="0" cy="-8" r="53"/></clipPath>
+        </defs>
+        <g id="sceneLayer"></g>
+        <g id="rangeLayer"></g>
+        <g id="spotsLayer"></g>
+        <g id="towersLayer"></g>
+        <g id="enemiesLayer"></g>
+        <g id="shotsLayer"></g>
+        <g id="heroLayer"></g>
+        <g id="fxLayer"></g>
+      </svg>
+      <header class="mh-top">
+        <div class="mh-title-row">
+          <button id="mhMenu" class="mh-icon-btn" type="button" aria-label="玩法">?</button>
+          <div class="mh-title">细胞免疫塔防</div>
+          <div class="mh-top-actions">
+            <div id="mhTopDifficulties" class="mh-top-difficulties" aria-label="选择难度"></div>
+            <button id="mhRestart" class="mh-restart-mini" type="button" aria-label="重开">↻</button>
+          </div>
+        </div>
+        <div class="mh-stats" aria-label="游戏状态">
+          <span class="mh-pill"><span class="mh-pill-label">🧫 波次</span><b id="mhWave" class="mh-pill-value">1</b></span>
+          <span id="mhEnergyPill" class="mh-pill mh-energy-pill"><span class="mh-pill-label">🍬 葡萄糖</span><b id="mhCoins" class="mh-pill-value">0</b></span>
+          <span class="mh-pill"><span class="mh-pill-label">⭐ 分数</span><b id="mhScore" class="mh-pill-value">0</b></span>
+          <span class="mh-pill"><span class="mh-pill-label">🧬 变异</span><b id="mhMutation" class="mh-pill-value">稳定</b></span>
+        </div>
+      </header>
+      <footer class="mh-bottom">
+        <div id="mhHint" class="mh-hint">选择防御单元，再点免疫节点部署；点已有单元可升级</div>
+        <div class="mh-shop">
+          <button class="mh-tower-btn" data-type="acorn" style="--from:#fcd34d;--to:#92400e" type="button" aria-label="中药药丸 65 葡萄糖">
+            <svg class="mh-tower-icon" viewBox="0 0 64 64" aria-hidden="true"><ellipse cx="25" cy="32" rx="22" ry="15" fill="#fef3c7" stroke="#78350f" stroke-width="5" transform="rotate(-24 25 32)"/><ellipse cx="40" cy="32" rx="22" ry="15" fill="#92400e" stroke="#78350f" stroke-width="5" transform="rotate(-24 40 32)"/><path d="M31 18l9 29" stroke="#fff7ed" stroke-width="5" stroke-linecap="round"/></svg>
+            <span class="mh-tower-price">药丸 65</span>
+          </button>
+          <button class="mh-tower-btn" data-type="bubble" style="--from:#7dd3fc;--to:#0284c7" type="button" aria-label="针头水枪 90 葡萄糖">
+            <svg class="mh-tower-icon" viewBox="0 0 64 64" aria-hidden="true"><path d="M14 50L50 14" stroke="#0f172a" stroke-width="9" stroke-linecap="round"/><path d="M18 46L54 10" stroke="#e0f2fe" stroke-width="5" stroke-linecap="round"/><path d="M10 54l10 10" stroke="#94a3b8" stroke-width="7" stroke-linecap="round"/><circle cx="54" cy="10" r="7" fill="#bae6fd" stroke="#075985" stroke-width="4"/></svg>
+            <span class="mh-tower-price">针头 90</span>
+          </button>
+          <button class="mh-tower-btn" data-type="flower" style="--from:#86efac;--to:#16a34a" type="button" aria-label="靶向细胞 115 葡萄糖">
+            <svg class="mh-tower-icon" viewBox="0 0 64 64" aria-hidden="true"><circle cx="32" cy="15" r="13" fill="#bbf7d0" stroke="#15803d" stroke-width="4"/><circle cx="47" cy="36" r="13" fill="#bbf7d0" stroke="#15803d" stroke-width="4"/><circle cx="18" cy="36" r="13" fill="#bbf7d0" stroke="#15803d" stroke-width="4"/><circle cx="32" cy="33" r="15" fill="#16a34a" stroke="#14532d" stroke-width="4"/><path d="M24 32l7 7 13-16" fill="none" stroke="#fff" stroke-width="5" stroke-linecap="round" stroke-linejoin="round"/></svg>
+            <span class="mh-tower-price">靶向 115</span>
+          </button>
+          <button id="mhSpecial" class="mh-action special" type="button" disabled aria-label="白细胞部队">
+            <svg class="mh-tower-icon" viewBox="0 0 64 64" aria-hidden="true"><circle cx="32" cy="32" r="24" fill="#f8fafc" stroke="#94a3b8" stroke-width="5"/><path d="M24 30c2-15 23-12 21 4-2 15-25 14-21-4Z" fill="#c4b5fd" stroke="#7c3aed" stroke-width="4"/><circle cx="24" cy="22" r="4" fill="#fff"/></svg>
+            <span id="mhSpecialLabel" class="mh-tower-price">0%</span>
+          </button>
+          <button id="mhUpgrade" class="mh-action upgrade" type="button" hidden aria-label="升级防御单元">
+            <svg class="mh-tower-icon" viewBox="0 0 64 64" aria-hidden="true"><circle cx="32" cy="32" r="24" fill="#fef3c7" stroke="#92400e" stroke-width="5"/><path d="M32 48V18" stroke="#fff" stroke-width="7" stroke-linecap="round"/><path d="M20 30l12-14 12 14" fill="none" stroke="#fff" stroke-width="7" stroke-linecap="round" stroke-linejoin="round"/></svg>
+            <span id="mhUpgradeLabel" class="mh-tower-price">升级</span>
+          </button>
+        </div>
+      </footer>
+      <div id="mhOverlay" class="mh-overlay">
+        <div class="mh-card">
+          <h1 id="mhOverlayTitle">细胞免疫塔防</h1>
+          <p id="mhOverlayText">血管里出现了细菌和病毒。让你的宠物守住免疫基地，部署中药药丸、针头水枪和靶向细胞。击败病原体会转化成葡萄糖能量，能量会飞到右上角。</p>
+          <div id="mhOverlayDifficulties" class="mh-card-row"></div>
+          <div id="mhEvolutionChoices" class="mh-evolution-row" hidden></div>
+          <button id="mhStart" class="mh-start" type="button">开始守护</button>
+        </div>
+      </div>
+    </div>`;
+  document.body.appendChild(root);
+
+  const svg = document.getElementById('mhSvg');
+  const layers = {
+    scene: document.getElementById('sceneLayer'),
+    range: document.getElementById('rangeLayer'),
+    spots: document.getElementById('spotsLayer'),
+    towers: document.getElementById('towersLayer'),
+    enemies: document.getElementById('enemiesLayer'),
+    shots: document.getElementById('shotsLayer'),
+    hero: document.getElementById('heroLayer'),
+    fx: document.getElementById('fxLayer')
+  };
+  const overlayEl = document.getElementById('mhOverlay');
+  const overlayTitleEl = document.getElementById('mhOverlayTitle');
+  const overlayTextEl = document.getElementById('mhOverlayText');
+  const evolutionChoicesEl = document.getElementById('mhEvolutionChoices');
+  const startBtn = document.getElementById('mhStart');
+  const specialBtn = document.getElementById('mhSpecial');
+  const upgradeBtn = document.getElementById('mhUpgrade');
+  const hintEl = document.getElementById('mhHint');
+  const hudEls = {
+    wave: document.getElementById('mhWave'),
+    coins: document.getElementById('mhCoins'),
+    energyPill: document.getElementById('mhEnergyPill'),
+    score: document.getElementById('mhScore'),
+    mutation: document.getElementById('mhMutation'),
+    specialLabel: document.getElementById('mhSpecialLabel'),
+    upgradeLabel: document.getElementById('mhUpgradeLabel')
+  };
+
+  let rafId = 0;
+  let lastTime = 0;
+  let towerIdSeq = 1;
+  let enemyIdSeq = 1;
+  let shotIdSeq = 1;
+  let burstIdSeq = 1;
+  let floatIdSeq = 1;
+  let sparkIdSeq = 1;
+  let currentLayout = LAYOUTS.landscape;
+  let view = currentLayout.view;
+  let paths = currentLayout.paths;
+  let buildSpots = currentLayout.spots;
+  let pathInfos = paths.map(buildPathInfo);
+
+  function cfg() {
+    return DIFFICULTIES[state.difficulty] || DIFFICULTIES.normal;
+  }
+
+  function defaultEvolutions() {
+    return { acornDamage: 0, bubbleSlowMs: 0, flowerSplash: 0, heroRate: 1, globalRange: 0, bonusIncome: 0 };
+  }
+
+  function selectLayout() {
+    const aspect = Math.max(0.1, window.innerWidth / Math.max(1, window.innerHeight));
+    return aspect < 0.9 ? LAYOUTS.portrait : LAYOUTS.landscape;
+  }
+
+  function applyResponsiveLayout(force = false) {
+    const nextLayout = selectLayout();
+    if (!force && nextLayout === currentLayout) return;
+    currentLayout = nextLayout;
+    view = currentLayout.view;
+    paths = currentLayout.paths;
+    buildSpots = currentLayout.spots;
+    pathInfos = paths.map(buildPathInfo);
+    svg.setAttribute('viewBox', `0 0 ${view.width} ${view.height}`);
+    renderStaticScene();
+    state.selectedTowerId = null;
+  }
+
+  function layoutSvgStage() {
+    const topBar = root.querySelector('.mh-top')?.getBoundingClientRect();
+    const bottomBar = root.querySelector('.mh-bottom')?.getBoundingClientRect();
+    const topInset = Math.ceil((topBar?.bottom || 58) + 8);
+    const bottomInset = Math.ceil(Math.max(74, window.innerHeight - (bottomBar?.top || window.innerHeight - 86) + 8));
+    const stageHeight = Math.max(220, window.innerHeight - topInset - bottomInset);
+    svg.style.top = `${topInset}px`;
+    svg.style.bottom = `${bottomInset}px`;
+    svg.style.height = `${stageHeight}px`;
+  }
+
+  function el(name, attrs = {}, children = []) {
+    const node = document.createElementNS(SVG_NS, name);
+    Object.entries(attrs).forEach(([key, value]) => {
+      if (value == null) return;
+      if (key === 'text') {
+        node.textContent = value;
+      } else if (key === 'href') {
+        node.setAttributeNS(XLINK_NS, 'href', value);
+        node.setAttribute('href', value);
+      } else {
+        node.setAttribute(key, String(value));
+      }
+    });
+    children.forEach(child => node.appendChild(child));
+    return node;
+  }
+
+  function clear(node) {
+    while (node.firstChild) node.removeChild(node.firstChild);
+  }
+
+  function buildPathInfo(points) {
+    const segments = [];
+    let total = 0;
+    for (let i = 0; i < points.length - 1; i++) {
+      const a = points[i];
+      const b = points[i + 1];
+      const len = Math.hypot(b.x - a.x, b.y - a.y);
+      segments.push({ a, b, len, start: total });
+      total += len;
+    }
+    return { segments, total };
+  }
+
+  function pointAt(distance, pathIndex = 0) {
+    const info = pathInfos[pathIndex] || pathInfos[0];
+    const d = Math.max(0, Math.min(info.total, distance));
+    const seg = info.segments.find(item => d <= item.start + item.len) || info.segments[info.segments.length - 1];
+    const t = seg.len ? (d - seg.start) / seg.len : 0;
+    return { x: seg.a.x + (seg.b.x - seg.a.x) * t, y: seg.a.y + (seg.b.y - seg.a.y) * t };
+  }
+
+  function pathData(points) {
+    return points.map((p, index) => `${index ? 'L' : 'M'}${p.x},${p.y}`).join(' ');
+  }
+
+  function renderStaticScene() {
+    clear(layers.scene);
+    layers.scene.appendChild(el('rect', { x: 0, y: 0, width: view.width, height: view.height, fill: 'url(#bgSky)' }));
+    for (let i = 0; i < 18; i++) {
+      const x = 35 + ((i * 71) % Math.max(120, view.width - 70));
+      const y = 82 + ((i * 47) % Math.max(160, view.height - 180));
+      const size = 18 + (i % 4) * 7;
+      layers.scene.appendChild(roundCellBackdrop(x, y, size, i));
+    }
+    renderCellOrganelleBackdrop();
+    layers.scene.appendChild(el('path', { d: currentLayout.tissue, fill: '#fee2e2', opacity: .68 }));
+    paths.forEach((pathPoints, index) => {
+      layers.scene.appendChild(el('path', { d: pathData(pathPoints), fill: 'none', stroke: '#fecdd3', 'stroke-width': index ? 66 : 76, 'stroke-linecap': 'round', 'stroke-linejoin': 'round', opacity: .92 }));
+      layers.scene.appendChild(el('path', { d: pathData(pathPoints), fill: 'none', stroke: 'url(#pathGrad)', 'stroke-width': index ? 44 : 54, 'stroke-linecap': 'round', 'stroke-linejoin': 'round', opacity: .9 }));
+      layers.scene.appendChild(el('path', { d: pathData(pathPoints), fill: 'none', stroke: '#ffe4e6', 'stroke-width': 5, 'stroke-linecap': 'round', 'stroke-dasharray': '18 24', opacity: .74 }));
+    });
+  }
+
+  function renderCellOrganelleBackdrop() {
+    const gate = currentLayout.gate;
+    const safeRadius = Math.max(120, Math.min(view.width, view.height) * .17);
+    const items = [
+      { kind: 'mito', dx: -210, dy: -118, s: 1.05, r: -18 },
+      { kind: 'vesicle', dx: -144, dy: 126, s: .92, r: 0 },
+      { kind: 'dna', dx: 128, dy: -138, s: .86, r: 14 },
+      { kind: 'mito', dx: 170, dy: 118, s: .82, r: 26 },
+      { kind: 'ribosome', dx: -264, dy: 64, s: .82, r: 0 },
+      { kind: 'vesicle', dx: 240, dy: -46, s: .72, r: 0 },
+      { kind: 'dna', dx: -58, dy: -206, s: .62, r: -20 },
+      { kind: 'ribosome', dx: 72, dy: 214, s: .68, r: 0 }
+    ];
+    items.forEach((item, index) => {
+      let x = gate.x + item.dx;
+      let y = gate.y + item.dy;
+      x = Math.max(54, Math.min(view.width - 54, x));
+      y = Math.max(54, Math.min(view.height - 54, y));
+      if (Math.hypot(x - gate.x, y - gate.y) < safeRadius) y = Math.max(54, Math.min(view.height - 54, y - safeRadius * .55));
+      const g = el('g', { transform: `translate(${x} ${y}) rotate(${item.r}) scale(${item.s})`, opacity: .52 + (index % 3) * .08 });
+      if (item.kind === 'mito') g.appendChild(mitochondrionShape());
+      if (item.kind === 'vesicle') g.appendChild(vesicleShape(index));
+      if (item.kind === 'dna') g.appendChild(dnaShape());
+      if (item.kind === 'ribosome') g.appendChild(ribosomeShape());
+      layers.scene.appendChild(g);
+    });
+  }
+
+  function mitochondrionShape() {
+    return el('g', {}, [
+      el('path', { d: 'M-52 -5 C-46 -38 -5 -48 30 -32 C65 -16 62 25 24 39 C-14 53 -59 31 -52 -5Z', fill: '#fed7aa', stroke: '#fb923c', 'stroke-width': 5, 'stroke-linejoin': 'round' }),
+      el('path', { d: 'M-31 -8 C-16 -24 -1 12 14 -6 C28 -22 34 7 45 -5', fill: 'none', stroke: '#ea580c', 'stroke-width': 5, 'stroke-linecap': 'round' }),
+      el('circle', { cx: -25, cy: 15, r: 5, fill: '#fff7ed', opacity: .85 }),
+      el('circle', { cx: 24, cy: -19, r: 4, fill: '#fff7ed', opacity: .72 })
+    ]);
+  }
+
+  function vesicleShape(index) {
+    return el('g', {}, [
+      el('circle', { cx: 0, cy: 0, r: 32, fill: index % 2 ? '#ccfbf1' : '#dbeafe', stroke: index % 2 ? '#2dd4bf' : '#60a5fa', 'stroke-width': 4 }),
+      el('circle', { cx: -10, cy: -11, r: 8, fill: '#fff', opacity: .65 }),
+      el('circle', { cx: 11, cy: 10, r: 6, fill: '#fff', opacity: .45 })
+    ]);
+  }
+
+  function dnaShape() {
+    const children = [];
+    for (let i = 0; i < 5; i++) {
+      const y = -34 + i * 17;
+      children.push(el('line', { x1: -18, y1: y, x2: 18, y2: y + 9, stroke: i % 2 ? '#a78bfa' : '#38bdf8', 'stroke-width': 4, 'stroke-linecap': 'round' }));
+    }
+    children.push(el('path', { d: 'M-22 -38 C22 -20 -22 -4 22 14 C-22 31 18 43 24 48', fill: 'none', stroke: '#7c3aed', 'stroke-width': 5, 'stroke-linecap': 'round' }));
+    children.push(el('path', { d: 'M22 -38 C-22 -20 22 -4 -22 14 C22 31 -18 43 -24 48', fill: 'none', stroke: '#0ea5e9', 'stroke-width': 5, 'stroke-linecap': 'round' }));
+    return el('g', {}, children);
+  }
+
+  function ribosomeShape() {
+    const dots = [];
+    for (let i = 0; i < 9; i++) {
+      const angle = (i * 41) * Math.PI / 180;
+      dots.push(el('circle', { cx: Math.cos(angle) * (14 + i % 3 * 8), cy: Math.sin(angle) * (12 + i % 2 * 9), r: 6 + i % 3, fill: '#fde68a', stroke: '#f59e0b', 'stroke-width': 2 }));
+    }
+    return el('g', {}, dots);
+  }
+
+  function roundCellBackdrop(x, y, r, index) {
+    const fill = index % 3 === 0 ? '#ffffff' : index % 3 === 1 ? '#fce7f3' : '#ccfbf1';
+    return el('g', { opacity: .28 + (index % 4) * .04, filter: 'url(#cellBlur)' }, [
+      el('circle', { cx: x, cy: y, r: r * 1.25, fill }),
+      el('circle', { cx: x - r * .32, cy: y - r * .24, r: r * .38, fill: '#ffffff', opacity: .54 }),
+      el('circle', { cx: x + r * .24, cy: y + r * .18, r: r * .2, fill: '#fb7185', opacity: .18 })
+    ]);
+  }
+
+  function renderAll() {
+    renderSpots();
+    renderTowers();
+    renderEnemies();
+    renderShots();
+    renderHero();
+    renderFx();
+    updateHud();
+  }
+
+  function renderSpots() {
+    clear(layers.spots);
+    buildSpots.forEach((spot, index) => {
+      const hasTower = state.towers.some(tower => tower.spotIndex === index);
+      const g = el('g', { class: 'build-spot', 'data-spot-index': index, transform: `translate(${spot.x} ${spot.y})`, style: 'cursor:pointer' });
+      if (!hasTower) {
+        g.appendChild(el('circle', { cx: 0, cy: 0, r: 36, fill: 'rgba(255,255,255,.14)', stroke: '#fb7185', 'stroke-width': 4, 'stroke-dasharray': '10 8', opacity: .92 }));
+        g.appendChild(el('text', { x: 0, y: 11, text: '+', 'text-anchor': 'middle', fill: '#be123c', 'font-size': 38, 'font-weight': 1000 }));
+      }
+      g.addEventListener('pointerdown', (event) => {
+        event.preventDefault();
+        event.stopPropagation();
+        handleSpotTap(index);
+      });
+      layers.spots.appendChild(g);
+    });
+  }
+
+  function renderTowers() {
+    clear(layers.towers);
+    clear(layers.range);
+    state.towers.forEach((tower) => {
+      const spot = buildSpots[tower.spotIndex];
+      if (!spot) return;
+      const type = TOWER_TYPES[tower.type];
+      if (state.selectedTowerId === tower.id) {
+        layers.range.appendChild(el('circle', { cx: spot.x, cy: spot.y, r: towerRange(tower), fill: type.glow, opacity: .23, stroke: type.color, 'stroke-width': 3, 'stroke-dasharray': '9 9' }));
+      }
+      const anim = towerFireAnim(tower);
+      const g = el('g', { transform: `translate(${spot.x} ${spot.y})`, filter: 'url(#softShadow)', style: 'cursor:pointer' });
+      const aura = towerEvolutionAura(tower);
+      if (aura) {
+        const pulse = .55 + Math.sin(performance.now() / 260 + tower.id) * .18;
+        g.appendChild(el('circle', { cx: 0, cy: 9, r: 39 + pulse * 5, fill: aura.fill, opacity: aura.opacity, stroke: aura.stroke, 'stroke-width': 3, 'stroke-dasharray': '7 9', filter: 'url(#sparkGlow)' }));
+      }
+      g.appendChild(el('ellipse', {
+        cx: 0,
+        cy: 10 + anim.squash * 5,
+        rx: 31 + anim.squash * 7,
+        ry: 31 - anim.squash * 8,
+        fill: type.glow,
+        stroke: '#064e3b',
+        'stroke-width': 4
+      }));
+      if (anim.active) g.appendChild(slimeSpitShape(type, anim));
+      g.appendChild(el('g', { transform: `translate(${anim.recoilX} ${anim.recoilY}) scale(${1 + anim.squash * .08} ${1 - anim.squash * .12})` }, [towerShape(tower)]));
+      g.appendChild(el('text', { x: 0, y: 57, text: `lv${tower.level}`, 'text-anchor': 'middle', fill: '#0f766e', 'font-size': 16, 'font-weight': 1000, stroke: '#fff', 'stroke-width': 3, 'paint-order': 'stroke' }));
+      g.addEventListener('pointerdown', (event) => {
+        event.preventDefault();
+        event.stopPropagation();
+        handleTowerTap(tower.id);
+      });
+      layers.towers.appendChild(g);
+    });
+  }
+
+  function towerFireAnim(tower) {
+    const age = performance.now() - (tower.fireAt || 0);
+    if (age < 0 || age > 260) return { active: false, squash: 0, stretch: 0, angle: tower.fireAngle || -Math.PI / 2, recoilX: 0, recoilY: 0 };
+    const t = age / 260;
+    const pulse = Math.sin(t * Math.PI);
+    const push = Math.sin(Math.min(1, t * 1.35) * Math.PI);
+    const angle = tower.fireAngle || -Math.PI / 2;
+    return {
+      active: true,
+      squash: pulse,
+      stretch: push,
+      angle,
+      recoilX: -Math.cos(angle) * pulse * 5,
+      recoilY: -Math.sin(angle) * pulse * 5
+    };
+  }
+
+  function slimeSpitShape(type, anim) {
+    const angle = anim.angle * 180 / Math.PI;
+    const stretch = anim.stretch;
+    return el('g', { transform: `rotate(${angle})`, opacity: .9 }, [
+      el('ellipse', { cx: 24 + stretch * 10, cy: 8, rx: 14 + stretch * 10, ry: 10 - stretch * 2, fill: type.glow, stroke: type.color, 'stroke-width': 3, opacity: .9 }),
+      el('circle', { cx: 42 + stretch * 15, cy: 8, r: 7 + stretch * 3, fill: type.projectile, stroke: '#fff', 'stroke-width': 3, filter: 'url(#sparkGlow)' })
+    ]);
+  }
+
+  function towerShape(tower) {
+    const type = TOWER_TYPES[tower.type];
+    if (tower.type === 'bubble') {
+      return el('g', {}, [
+        el('path', { d: 'M-26 18 L18 -26', stroke: '#0f172a', 'stroke-width': 9, 'stroke-linecap': 'round' }),
+        el('path', { d: 'M-20 12 L24 -32', stroke: type.color, 'stroke-width': 5, 'stroke-linecap': 'round' }),
+        el('path', { d: 'M-30 23 L-17 36', stroke: '#94a3b8', 'stroke-width': 7, 'stroke-linecap': 'round' }),
+        el('circle', { cx: 24, cy: -32, r: 7, fill: '#e0f2fe', stroke: '#075985', 'stroke-width': 3 })
+      ]);
+    }
+    if (tower.type === 'flower') {
+      const cells = [];
+      for (let i = 0; i < 5; i++) {
+        const angle = i * 72 * Math.PI / 180;
+        cells.push(el('circle', { cx: Math.cos(angle) * 17, cy: Math.sin(angle) * 17, r: 15, fill: type.glow, stroke: '#15803d', 'stroke-width': 3 }));
+      }
+      cells.push(el('circle', { cx: 0, cy: 0, r: 15, fill: type.color, stroke: '#14532d', 'stroke-width': 3 }));
+      cells.push(el('path', { d: 'M-7 0 L0 8 L14 -9', fill: 'none', stroke: '#fff', 'stroke-width': 4, 'stroke-linecap': 'round', 'stroke-linejoin': 'round' }));
+      return el('g', {}, cells);
+    }
+    return el('g', {}, [
+      el('ellipse', { cx: -7, cy: 0, rx: 22, ry: 15, fill: '#fef3c7', stroke: '#92400e', 'stroke-width': 4, transform: 'rotate(-24)' }),
+      el('ellipse', { cx: 12, cy: 0, rx: 22, ry: 15, fill: type.color, stroke: '#78350f', 'stroke-width': 4, transform: 'rotate(-24)' }),
+      el('path', { d: 'M-4 -14 L5 15', stroke: '#fff7ed', 'stroke-width': 4, 'stroke-linecap': 'round' })
+    ]);
+  }
+
+  function renderEnemies() {
+    clear(layers.enemies);
+    state.enemies.forEach((enemy) => {
+      const p = pointAt(enemy.distance, enemy.pathIndex);
+      const hpRatio = Math.max(0, enemy.hp / enemy.maxHp);
+      const g = el('g', { transform: `translate(${p.x} ${p.y})`, filter: 'url(#softShadow)' });
+      g.appendChild(el('ellipse', { cx: 0, cy: 19, rx: 24, ry: 7, fill: '#0f172a', opacity: .16 }));
+      g.appendChild(enemyShape(enemy));
+      if (enemy.slowUntil > performance.now()) g.appendChild(el('circle', { cx: 0, cy: 0, r: 34, fill: 'none', stroke: '#38bdf8', 'stroke-width': 4, 'stroke-dasharray': '5 8', opacity: .72 }));
+      g.appendChild(el('rect', { x: -25, y: -42, width: 50, height: 7, rx: 4, fill: '#fee2e2', stroke: '#fff', 'stroke-width': 2 }));
+      g.appendChild(el('rect', { x: -25, y: -42, width: 50 * hpRatio, height: 7, rx: 4, fill: hpRatio > .45 ? '#22c55e' : '#ef4444' }));
+      const trait = ENEMY_TRAITS[enemy.kind];
+      if (trait) {
+        g.appendChild(el('rect', { x: -31, y: -64, width: 62, height: 18, rx: 9, fill: '#fff7ed', stroke: traitColor(trait.weak), 'stroke-width': 2, opacity: .92 }));
+        g.appendChild(el('text', { x: 0, y: -51, text: trait.weakText, 'text-anchor': 'middle', fill: '#7f1d1d', 'font-size': 12, 'font-weight': 1000 }));
+      }
+      layers.enemies.appendChild(g);
+    });
+  }
+
+  function enemyShape(enemy) {
+    if (enemy.kind === 'virus' || enemy.kind === 'eliteVirus' || enemy.kind === 'fastVirus') {
+      const spikes = [];
+      for (let i = 0; i < 12; i++) {
+        const angle = i * 30;
+        spikes.push(el('line', { x1: 0, y1: -20, x2: 0, y2: -31, stroke: enemy.stroke, 'stroke-width': 5, 'stroke-linecap': 'round', transform: `rotate(${angle})` }));
+      }
+      spikes.push(el('circle', { cx: 0, cy: 0, r: enemy.kind === 'eliteVirus' ? 25 : 21, fill: enemy.color, stroke: enemy.stroke, 'stroke-width': 4 }));
+      spikes.push(el('circle', { cx: -7, cy: -4, r: 4, fill: '#fff', opacity: .65 }));
+      spikes.push(el('circle', { cx: 8, cy: 6, r: 3, fill: '#fff', opacity: .5 }));
+      return el('g', {}, spikes);
+    }
+    if (enemy.kind === 'spore') {
+      return el('g', {}, [
+        el('path', { d: 'M-25 6 C-28 -20 -4 -35 18 -23 C37 -12 30 24 5 28 C-12 31 -24 22 -25 6Z', fill: enemy.color, stroke: enemy.stroke, 'stroke-width': 4, 'stroke-linejoin': 'round' }),
+        el('circle', { cx: -8, cy: -8, r: 5, fill: '#fff', opacity: .72 }),
+        el('circle', { cx: 12, cy: 4, r: 4, fill: '#fff', opacity: .58 }),
+        el('circle', { cx: 0, cy: 15, r: 3, fill: '#fff', opacity: .5 })
+      ]);
+    }
+    return el('g', {}, [
+      el('path', { d: 'M-28 3 C-26 -20 -8 -31 13 -25 C34 -19 35 10 19 23 C-2 39 -30 27 -28 3Z', fill: enemy.color, stroke: enemy.stroke, 'stroke-width': 4, 'stroke-linejoin': 'round' }),
+      el('line', { x1: -20, y1: -18, x2: -32, y2: -30, stroke: enemy.stroke, 'stroke-width': 4, 'stroke-linecap': 'round' }),
+      el('line', { x1: 19, y1: -12, x2: 33, y2: -22, stroke: enemy.stroke, 'stroke-width': 4, 'stroke-linecap': 'round' }),
+      el('line', { x1: -22, y1: 18, x2: -35, y2: 26, stroke: enemy.stroke, 'stroke-width': 4, 'stroke-linecap': 'round' }),
+      el('circle', { cx: -8, cy: -4, r: 3.6, fill: '#172554' }),
+      el('circle', { cx: 9, cy: -2, r: 3.6, fill: '#172554' }),
+      el('path', { d: 'M-8 10 Q2 17 13 8', fill: 'none', stroke: '#172554', 'stroke-width': 3, 'stroke-linecap': 'round' })
+    ]);
+  }
+
+  function renderShots() {
+    clear(layers.shots);
+    state.shots.forEach((shot) => {
+      layers.shots.appendChild(el('line', { x1: shot.x, y1: shot.y, x2: shot.prevX, y2: shot.prevY, stroke: shot.color, 'stroke-width': 8, 'stroke-linecap': 'round', opacity: .55, filter: 'url(#sparkGlow)' }));
+      layers.shots.appendChild(el('circle', { cx: shot.x, cy: shot.y, r: shot.hero ? 9 : 7, fill: shot.color, stroke: '#fff', 'stroke-width': 3, filter: 'url(#sparkGlow)' }));
+    });
+  }
+
+  function renderHero() {
+    clear(layers.hero);
+    const hero = currentLayout.gate;
+    const maxLives = cfg().lives;
+    const healthRatio = Math.max(0, Math.min(1, state.lives / Math.max(1, maxLives)));
+    const healthColor = healthRatio > .55 ? '#22c55e' : healthRatio > .28 ? '#f59e0b' : '#ef4444';
+    const g = el('g', { transform: `translate(${hero.x} ${hero.y})`, filter: 'url(#softShadow)' });
+    g.appendChild(el('ellipse', { cx: 0, cy: 64, rx: 72, ry: 18, fill: '#0f172a', opacity: .18 }));
+    g.appendChild(el('circle', { cx: 0, cy: 0, r: 74, fill: '#fff1f2', stroke: '#fb7185', 'stroke-width': 9 }));
+    g.appendChild(el('circle', { cx: 0, cy: -8, r: 57, fill: '#ffffff', stroke: '#fecdd3', 'stroke-width': 7 }));
+    g.appendChild(el('path', { d: 'M-66 38 C-45 67 48 67 68 38', fill: 'none', stroke: '#fbbf24', 'stroke-width': 13, 'stroke-linecap': 'round', opacity: .82 }));
+    if (state.petUrl && state.petMeta) {
+      const meta = state.petMeta;
+      const size = 112;
+      const petGroup = el('g', { 'clip-path': 'url(#petBaseClip)' }, [
+        el('svg', {
+          x: -56,
+          y: -64,
+          width: size,
+          height: size,
+          viewBox: `${meta.uv.x} ${meta.uv.y} ${meta.uv.width} ${meta.uv.height}`,
+          overflow: 'hidden'
+        }, [
+          el('image', { href: state.petUrl, x: 0, y: 0, width: meta.imageWidth, height: meta.imageHeight })
+        ])
+      ]);
+      g.appendChild(petGroup);
+    } else {
+      g.appendChild(el('circle', { cx: 0, cy: -8, r: 48, fill: '#fef3c7', stroke: '#f97316', 'stroke-width': 6 }));
+      g.appendChild(el('text', { x: 0, y: 1, text: PET_FALLBACK, 'text-anchor': 'middle', fill: '#9a3412', 'font-size': 24, 'font-weight': 1000 }));
+    }
+    g.appendChild(el('circle', { cx: 43, cy: -45, r: 13, fill: '#bbf7d0', stroke: '#16a34a', 'stroke-width': 4 }));
+    g.appendChild(el('circle', { cx: -47, cy: -39, r: 9, fill: '#dbeafe', stroke: '#38bdf8', 'stroke-width': 3 }));
+    g.appendChild(el('g', { transform: 'translate(-58 86)' }, [
+      el('rect', { x: 0, y: 0, width: 116, height: 18, rx: 9, fill: '#fff1f2', stroke: '#ffffff', 'stroke-width': 5 }),
+      el('rect', { x: 4, y: 4, width: Math.max(0, 108 * healthRatio), height: 10, rx: 5, fill: healthColor }),
+      el('rect', { x: 4, y: 4, width: 108, height: 10, rx: 5, fill: 'none', stroke: '#be123c', 'stroke-width': 2, opacity: .42 })
+    ]));
+    layers.hero.appendChild(g);
+  }
+
+  function renderFx() {
+    clear(layers.fx);
+    renderMutationField();
+    state.energyFlys.forEach((energy) => {
+      layers.fx.appendChild(el('g', { transform: `translate(${energy.x} ${energy.y})`, opacity: energy.opacity, filter: 'url(#sparkGlow)' }, [
+        el('path', { d: 'M0 -14 L13 -7 L13 7 L0 14 L-13 7 L-13 -7Z', fill: '#fde68a', stroke: '#d97706', 'stroke-width': 3 }),
+        el('text', { x: 0, y: 5, text: 'G', 'text-anchor': 'middle', fill: '#92400e', 'font-size': 14, 'font-weight': 1000 })
+      ]));
+    });
+    state.whiteCells.forEach((cell) => {
+      layers.fx.appendChild(el('g', { transform: `translate(${cell.x} ${cell.y}) scale(${cell.scale})`, opacity: cell.opacity, filter: 'url(#softShadow)' }, [
+        el('circle', { cx: 0, cy: 0, r: 22, fill: '#f8fafc', stroke: '#94a3b8', 'stroke-width': 4 }),
+        el('path', { d: 'M-9 -2 C-5 -14 13 -11 11 3 C9 17 -12 15 -9 -2Z', fill: '#c4b5fd', stroke: '#7c3aed', 'stroke-width': 3 }),
+        el('circle', { cx: -7, cy: -7, r: 3, fill: '#fff', opacity: .85 })
+      ]));
+    });
+    state.bursts.forEach((burst) => {
+      layers.fx.appendChild(el('circle', { cx: burst.x, cy: burst.y, r: burst.r, fill: burst.fill, opacity: burst.opacity, stroke: burst.stroke, 'stroke-width': 4, filter: 'url(#sparkGlow)' }));
+    });
+    state.evolutionSparks.forEach((spark) => {
+      layers.fx.appendChild(el('g', { transform: `translate(${spark.x} ${spark.y}) rotate(${spark.rotate})`, opacity: spark.opacity, filter: 'url(#sparkGlow)' }, [
+        el('path', { d: `M0 ${-spark.size} L${spark.size * .36} ${-spark.size * .28} L${spark.size} 0 L${spark.size * .36} ${spark.size * .28} L0 ${spark.size} L${-spark.size * .36} ${spark.size * .28} L${-spark.size} 0 L${-spark.size * .36} ${-spark.size * .28}Z`, fill: spark.fill, stroke: '#fff', 'stroke-width': 2 })
+      ]));
+    });
+    state.floating.forEach((text) => {
+      layers.fx.appendChild(el('text', { x: text.x, y: text.y, text: text.text, 'text-anchor': 'middle', fill: text.color, 'font-size': text.size, 'font-weight': 1000, opacity: text.opacity, stroke: '#fff', 'stroke-width': 4, 'paint-order': 'stroke' }));
+    });
+  }
+
+  function updateHud() {
+    hudEls.wave.textContent = String(state.wave);
+    hudEls.coins.textContent = String(state.coins);
+    hudEls.score.textContent = String(state.score);
+    if (hudEls.mutation) hudEls.mutation.textContent = state.currentMutation ? state.currentMutation.label : '稳定';
+    if (hudEls.specialLabel) hudEls.specialLabel.textContent = state.specialCharge >= 100 ? '出击' : `${Math.floor(state.specialCharge)}%`;
+    hudEls.mutation?.parentElement?.classList.toggle('mutation-active', !!state.currentMutation && state.started && !state.finished);
+    specialBtn.disabled = !state.started || state.finished || state.specialCharge < 100;
+    updateUpgradeButton();
+    root.querySelectorAll('.mh-tower-btn').forEach((btn) => btn.classList.toggle('active', btn.dataset.type === state.selectedType));
+  }
+
+  function updateUpgradeButton() {
+    const tower = selectedTower();
+    upgradeBtn.hidden = !tower;
+    if (!tower) return;
+    if (tower.level >= MAX_TOWER_LEVEL) {
+      hudEls.upgradeLabel.textContent = '已满级';
+      upgradeBtn.disabled = true;
+      return;
+    }
+    const cost = upgradeCost(tower);
+    hudEls.upgradeLabel.textContent = `升级: ${cost}`;
+    upgradeBtn.disabled = !state.started || state.finished;
+  }
+
+  function selectedTower() {
+    return state.towers.find(item => item.id === state.selectedTowerId) || null;
+  }
+
+  function startGame(options = {}) {
+    stopLoop();
+    const conf = cfg();
+    state.started = true;
+    state.finished = false;
+    state.paused = false;
+    state.score = 0;
+    state.coins = conf.coins;
+    state.lives = conf.lives;
+    state.wave = 1;
+    state.enemiesToSpawn = 0;
+    state.spawnTimer = 0;
+    state.waveDelay = 1300;
+    state.selectedTowerId = null;
+    state.specialCharge = 0;
+    state.heroCooldown = 0;
+    state.awaitingEvolution = false;
+    state.currentMutation = null;
+    state.evolutions = defaultEvolutions();
+    state.towers = [];
+    state.enemies = [];
+    state.shots = [];
+    state.bursts = [];
+    state.floating = [];
+    state.energyFlys = [];
+    state.evolutionSparks = [];
+    state.whiteCells = [];
+    state.roundId = `${state.difficulty}-${Date.now()}`;
+    towerIdSeq = 1;
+    enemyIdSeq = 1;
+    shotIdSeq = 1;
+    sparkIdSeq = 1;
+    renderAll();
+    overlayEl.hidden = true;
+    postParent('gameStarted', { difficulty: state.difficulty, roundId: state.roundId });
+    showToast('守护开始！');
+    playTone(520, .08, 'sine');
+    startLoop();
+  }
+
+  function startWave() {
+    state.currentMutation = mutationForWave(state.wave);
+    state.enemiesToSpawn = 6 + state.wave * 3 + (state.currentMutation?.countBonus || 0);
+    state.spawnTimer = 1;
+    state.waveDelay = 0;
+    const waveText = state.currentMutation ? `第 ${state.wave} 波：${state.currentMutation.label}` : `第 ${state.wave} 波`;
+    floatText(view.width * .5, 90, waveText, state.currentMutation?.color || '#0f766e', 28);
+    hintEl.textContent = state.currentMutation ? `${state.currentMutation.label}：${state.currentMutation.text}` : '稳定波次，按克制关系布置防御';
+    if (state.currentMutation) {
+      paths.forEach((_, pathIndex) => {
+        const p = pointAt(36, pathIndex);
+        burstAt(p.x, p.y, state.currentMutation.color, '#ffffff', 38);
+        spawnSparkBurst(p.x, p.y, state.currentMutation.color, 8, 640, 120);
+      });
+      playTone(260 + state.wave * 18, .12, 'sawtooth', .045);
+    }
+    playTone(420 + state.wave * 24, .1, 'triangle');
+  }
+
+  function mutationForWave(wave) {
+    if (wave < 2) return null;
+    return MUTATION_TYPES[(wave + DIFFICULTY_ORDER.indexOf(state.difficulty)) % MUTATION_TYPES.length];
+  }
+
+  function spawnEnemy() {
+    const conf = cfg();
+    const pathIndex = state.enemiesToSpawn % Math.max(1, pathInfos.length);
+    const kindIndex = (state.wave + state.enemiesToSpawn) % ENEMY_TYPES.length;
+    const base = ENEMY_TYPES[kindIndex];
+    const elite = state.wave >= 4 && state.enemiesToSpawn % 7 === 0;
+    const mutation = state.currentMutation;
+    const hpFactor = mutation?.hp || 1;
+    const speedFactor = mutation?.speed || 1;
+    state.enemies.push({
+      id: enemyIdSeq++,
+      kind: elite ? 'eliteVirus' : base.kind,
+      pathIndex,
+      distance: 0,
+      hp: Math.round((base.hp + state.wave * 17 + (elite ? 62 : 0)) * conf.enemyHp * hpFactor),
+      maxHp: Math.round((base.hp + state.wave * 17 + (elite ? 62 : 0)) * conf.enemyHp * hpFactor),
+      speed: (base.speed + state.wave * 3 - (elite ? 8 : 0)) * conf.enemySpeed * speedFactor,
+      reward: base.reward + (elite ? 10 : 0) + (mutation?.reward || 0),
+      color: elite ? '#fb7185' : base.color,
+      stroke: elite ? '#9f1239' : base.stroke,
+      slowUntil: 0,
+      slowFactor: 1,
+      mutationId: mutation?.id || ''
+    });
+  }
+
+  function update(now, dt) {
+    if (!state.started || state.finished || state.paused) return;
+    if (state.waveDelay > 0) {
+      state.waveDelay -= dt;
+      if (state.waveDelay <= 0) startWave();
+    }
+    if (state.enemiesToSpawn > 0) {
+      state.spawnTimer -= dt;
+      if (state.spawnTimer <= 0) {
+        spawnEnemy();
+        state.enemiesToSpawn--;
+        state.spawnTimer = Math.max(300, (870 - state.wave * 35) * (state.currentMutation?.spawnGap || 1));
+      }
+    }
+    updateEnemies(now, dt);
+    updateTowers(now);
+    updateHero(now);
+    updateShots(dt);
+    updateWhiteCells(dt);
+    updateFx(dt);
+    checkWaveDone();
+  }
+
+  function updateEnemies(now, dt) {
+    const escaped = [];
+    state.enemies.forEach((enemy) => {
+      const slowActive = enemy.slowUntil > now;
+      enemy.distance += enemy.speed * (slowActive ? enemy.slowFactor : 1) * dt / 1000;
+      const info = pathInfos[enemy.pathIndex] || pathInfos[0];
+      if (enemy.distance >= info.total - 12) escaped.push(enemy);
+    });
+    escaped.forEach((enemy) => {
+      removeEnemy(enemy.id);
+      state.lives--;
+      burstAt(currentLayout.gate.x, currentLayout.gate.y, '#fee2e2', '#ef4444');
+      playTone(150, .08, 'sawtooth');
+      if (state.lives <= 0) endGame(false);
+    });
+  }
+
+  function updateTowers(now) {
+    state.towers.forEach((tower) => {
+      if (tower.cooldown > now) return;
+      const target = findTarget(buildSpots[tower.spotIndex], towerRange(tower));
+      if (!target) return;
+      fireShot(tower, target);
+      tower.cooldown = now + Math.max(260, TOWER_TYPES[tower.type].rate * Math.pow(.84, tower.level - 1));
+    });
+  }
+
+  function updateHero(now) {
+    if (state.heroCooldown > now) return;
+    const target = findTarget(currentLayout.hero, 230);
+    if (!target) return;
+    fireShot({ id: 'hero', type: 'hero', level: 1 }, target, true);
+    state.heroCooldown = now + 690 / (state.evolutions?.heroRate || 1);
+  }
+
+  function updateShots(dt) {
+    const remaining = [];
+    state.shots.forEach((shot) => {
+      const target = state.enemies.find(enemy => enemy.id === shot.targetId);
+      if (!target) return;
+      const p = pointAt(target.distance, target.pathIndex);
+      shot.prevX = shot.x;
+      shot.prevY = shot.y;
+      const dx = p.x - shot.x;
+      const dy = p.y - shot.y;
+      const dist = Math.hypot(dx, dy);
+      const step = shot.speed * dt / 1000;
+      if (dist <= step + 8) {
+        hitEnemy(target, shot);
+      } else {
+        shot.x += dx / dist * step;
+        shot.y += dy / dist * step;
+        remaining.push(shot);
+      }
+    });
+    state.shots = remaining;
+  }
+
+  function updateFx(dt) {
+    state.bursts = state.bursts.map((burst) => ({ ...burst, age: burst.age + dt, r: burst.r + dt * .075, opacity: Math.max(0, burst.opacity - dt / 420) })).filter(burst => burst.opacity > .02);
+    state.floating = state.floating.map((text) => ({ ...text, age: text.age + dt, y: text.y - dt * .045, opacity: Math.max(0, 1 - text.age / text.life) })).filter(text => text.opacity > .02);
+    state.energyFlys = state.energyFlys.map((energy) => {
+      const nextAge = energy.age + dt;
+      const t = Math.min(1, nextAge / energy.life);
+      const ease = 1 - Math.pow(1 - t, 3);
+      return {
+        ...energy,
+        age: nextAge,
+        x: energy.startX + (energy.targetX - energy.startX) * ease,
+        y: energy.startY + (energy.targetY - energy.startY) * ease - Math.sin(t * Math.PI) * 34,
+        opacity: Math.max(0, 1 - Math.max(0, t - .74) / .26)
+      };
+    }).filter(energy => energy.age < energy.life);
+    state.whiteCells = state.whiteCells.map((cell) => ({
+      ...cell,
+      age: cell.age + dt,
+      opacity: Math.max(0, 1 - Math.max(0, cell.age - cell.life * .78) / (cell.life * .22))
+    })).filter(cell => cell.age < cell.life && !cell.done);
+    state.evolutionSparks = state.evolutionSparks.map((spark) => {
+      const nextAge = spark.age + dt;
+      const t = Math.min(1, nextAge / spark.life);
+      return {
+        ...spark,
+        age: nextAge,
+        x: spark.x + spark.vx * dt / 1000,
+        y: spark.y + spark.vy * dt / 1000,
+        rotate: spark.rotate + spark.spin * dt / 1000,
+        opacity: Math.max(0, 1 - t),
+        size: spark.baseSize * (1 + Math.sin(t * Math.PI) * .28)
+      };
+    }).filter(spark => spark.age < spark.life);
+  }
+
+  function updateWhiteCells(dt) {
+    if (!state.whiteCells.length) return;
+    state.whiteCells.forEach((cell) => {
+      const info = pathInfos[cell.pathIndex] || pathInfos[0];
+      cell.distance = Math.max(0, cell.distance - cell.speed * dt / 1000);
+      const p = pointAt(cell.distance, cell.pathIndex);
+      cell.x = p.x;
+      cell.y = p.y + Math.sin((cell.age || 0) / 110 + cell.phase) * 4;
+      const target = state.enemies
+        .filter(enemy => enemy.pathIndex === cell.pathIndex && enemy.hp > 0)
+        .find(enemy => Math.abs(enemy.distance - cell.distance) <= cell.hitRadius);
+      if (target) {
+        const hitPoint = pointAt(target.distance, target.pathIndex);
+        damageEnemy(target, cell.damage);
+        burstAt(hitPoint.x, hitPoint.y, '#e0f2fe', '#7c3aed', 34);
+        cell.done = true;
+        playTone(920, .045, 'triangle', .05);
+      }
+      if (cell.distance <= 8 || cell.distance >= info.total + 20) cell.done = true;
+    });
+    state.whiteCells = state.whiteCells.filter(cell => !cell.done);
+  }
+
+  function findTarget(origin, range) {
+    if (!origin) return null;
+    let best = null;
+    state.enemies.forEach((enemy) => {
+      const p = pointAt(enemy.distance, enemy.pathIndex);
+      const dist = Math.hypot(p.x - origin.x, p.y - origin.y);
+      if (dist <= range && (!best || enemy.distance > best.distance)) best = enemy;
+    });
+    return best;
+  }
+
+  function fireShot(tower, target, hero = false) {
+    const origin = hero ? currentLayout.hero : buildSpots[tower.spotIndex];
+    if (!origin) return;
+    const type = TOWER_TYPES[tower.type] || { projectile: '#fde68a', damage: 16, range: 220, rate: 680 };
+    const targetPoint = pointAt(target.distance, target.pathIndex);
+    if (!hero) {
+      tower.fireAt = performance.now();
+      tower.fireAngle = Math.atan2(targetPoint.y - origin.y, targetPoint.x - origin.x);
+    }
+    const weakHit = !hero && isWeakHit(tower.type, target);
+    const towerDamage = hero ? 16 + state.wave * 2 : modifiedTowerDamage(tower, type, target);
+    state.shots.push({
+      id: shotIdSeq++,
+      targetId: target.id,
+      x: origin.x,
+      y: origin.y - (hero ? 25 : 8),
+      prevX: origin.x,
+      prevY: origin.y - (hero ? 25 : 8),
+      speed: hero ? 610 : 520,
+      color: hero ? '#fde047' : type.projectile,
+      damage: towerDamage,
+      slow: type.slow || 0,
+      slowMs: (type.slowMs || 0) + (state.evolutions?.bubbleSlowMs || 0),
+      splash: type.splash ? type.splash + tower.level * 8 + (state.evolutions?.flowerSplash || 0) : 0,
+      hero,
+      weakHit
+    });
+    playTone(hero ? 760 : 620, .035, 'sine', .035);
+  }
+
+  function hitEnemy(enemy, shot) {
+    const p = pointAt(enemy.distance, enemy.pathIndex);
+    if (shot.splash > 0) {
+      [...state.enemies].forEach((other) => {
+        if (other.id === enemy.id) return;
+        const op = pointAt(other.distance, other.pathIndex);
+        if (Math.hypot(op.x - p.x, op.y - p.y) <= shot.splash) damageEnemy(other, Math.round(shot.damage * .72));
+      });
+      burstAt(p.x, p.y, '#fbcfe8', '#db2777', 30);
+    }
+    if (shot.slow) {
+      enemy.slowUntil = performance.now() + shot.slowMs;
+      enemy.slowFactor = 1 - (1 - shot.slow) * (state.currentMutation?.slowResist || 1);
+      burstAt(p.x, p.y, '#dbeafe', '#38bdf8', 24);
+    }
+    if (shot.weakHit) {
+      burstAt(p.x, p.y, '#fef08a', '#f97316', 29);
+      floatText(p.x, p.y - 38, '克制!', '#ea580c', 18);
+      spawnSparkBurst(p.x, p.y, '#facc15', 7, 620, 150);
+      playTone(1080, .035, 'triangle', .03);
+    }
+    damageEnemy(enemy, shot.damage);
+    burstAt(p.x, p.y, shot.color, '#fff', shot.hero ? 23 : 17);
+  }
+
+  function damageEnemy(enemy, damage) {
+    if (!enemy || enemy.hp <= 0) return;
+    enemy.hp -= damage;
+    if (enemy.hp <= 0) killEnemy(enemy);
+  }
+
+  function killEnemy(enemy) {
+    const p = pointAt(enemy.distance, enemy.pathIndex);
+    removeEnemy(enemy.id);
+    const conf = cfg();
+    const coins = Math.max(4, Math.round(enemy.reward + state.wave * 1.2));
+    state.coins += coins;
+    animateEnergyPill();
+    state.score += conf.score + state.wave * 12;
+    state.specialCharge = Math.min(100, state.specialCharge + 8 + state.wave * .6);
+    floatText(p.x, p.y - 18, `葡萄糖 +${coins}`, '#d97706', 20);
+    spawnGlucoseFly(p.x, p.y, coins);
+    burstAt(p.x, p.y, '#fef3c7', '#f59e0b', 32);
+    playTone(880, .05, 'triangle', .045);
+    if (state.score > state.bestScore) {
+      state.bestScore = state.score;
+      localStorage.setItem(STORAGE_BEST_SCORE, String(state.bestScore));
+    }
+  }
+
+  function removeEnemy(id) {
+    state.enemies = state.enemies.filter(enemy => enemy.id !== id);
+  }
+
+  function checkWaveDone() {
+    if (state.enemiesToSpawn > 0 || state.enemies.length > 0 || state.waveDelay > 0 || state.finished || state.awaitingEvolution) return;
+    if (state.wave >= MAX_WAVE) {
+      endGame(true);
+      return;
+    }
+    state.wave++;
+    if (state.wave > state.bestWave) {
+      state.bestWave = state.wave;
+      localStorage.setItem(STORAGE_BEST_WAVE, String(state.bestWave));
+    }
+    state.coins += cfg().reward + state.wave * 8 + (state.evolutions?.bonusIncome || 0);
+    animateEnergyPill();
+    state.waveDelay = 0;
+    floatText(view.width * .5, 110, '守住了！选择免疫进化', '#16a34a', 25);
+    playTone(660, .1, 'triangle');
+    showEvolutionChoices();
+  }
+
+  function endGame(won) {
+    if (state.finished) return;
+    state.finished = true;
+    stopLoop();
+    state.bestScore = Math.max(state.bestScore, state.score);
+    state.bestWave = Math.max(state.bestWave, state.wave);
+    localStorage.setItem(STORAGE_BEST_SCORE, String(state.bestScore));
+    localStorage.setItem(STORAGE_BEST_WAVE, String(state.bestWave));
+    renderAll();
+    overlayTitleEl.textContent = won ? '免疫防线成功！' : '宠物基地需要支援';
+    overlayTextEl.textContent = won
+      ? `你的宠物主角守住了 ${MAX_WAVE} 波病原体。得分 ${state.score}。`
+      : `这次守到第 ${state.wave} 波，得分 ${state.score}。调整塔的位置，再来一次会更稳。`;
+    startBtn.textContent = '再玩一次';
+    overlayEl.hidden = false;
+    postParent('gameFinished', {
+      roundId: state.roundId,
+      completed: won,
+      passed: won,
+      earnedPoints: state.score,
+      score: state.score,
+      level: state.wave,
+      difficulty: state.difficulty,
+      waves: state.wave,
+      maxWave: MAX_WAVE
+    });
+    playTone(won ? 760 : 220, .14, won ? 'triangle' : 'sawtooth');
+  }
+
+  function handleSpotTap(index) {
+    if (!state.started || state.finished) return;
+    const existing = state.towers.find(tower => tower.spotIndex === index);
+    if (existing) {
+      handleTowerTap(existing.id);
+      return;
+    }
+    const type = TOWER_TYPES[state.selectedType];
+    if (state.coins < type.cost) {
+      showToast('葡萄糖不够');
+      playTone(160, .08, 'sawtooth');
+      return;
+    }
+    state.coins -= type.cost;
+    state.towers.push({ id: towerIdSeq++, spotIndex: index, type: type.id, level: 1, cooldown: 0 });
+    state.selectedTowerId = null;
+    hintEl.textContent = `${type.label}部署好了，点防御单元可以升级`;
+    burstAt(buildSpots[index].x, buildSpots[index].y, type.glow, type.color, 42);
+    playTone(560, .08, 'triangle');
+    renderAll();
+  }
+
+  function handleTowerTap(id) {
+    if (!state.started || state.finished) return;
+    const tower = state.towers.find(item => item.id === id);
+    if (!tower) return;
+    state.selectedTowerId = tower.id;
+    if (tower.level >= MAX_TOWER_LEVEL) {
+      hintEl.textContent = `${TOWER_TYPES[tower.type].short}已满级，当前显示攻击范围`;
+    } else {
+      hintEl.textContent = `${TOWER_TYPES[tower.type].short}已选中，点底部升级按钮提升战力`;
+    }
+    renderAll();
+  }
+
+  function upgradeSelectedTower() {
+    if (!state.started || state.finished) return;
+    const tower = selectedTower();
+    if (!tower) return;
+    const cost = upgradeCost(tower);
+    if (tower.level >= MAX_TOWER_LEVEL) {
+      hintEl.textContent = '这座塔已经满级，范围会显示出来';
+      renderAll();
+      return;
+    }
+    if (state.coins >= cost) {
+      const spot = buildSpots[tower.spotIndex];
+      if (!spot) return;
+      state.coins -= cost;
+      tower.level++;
+      hintEl.textContent = `${TOWER_TYPES[tower.type].short}战力升级到 lv${tower.level}`;
+      burstAt(spot.x, spot.y, '#fef3c7', '#f59e0b', 48);
+      floatText(spot.x, spot.y - 54, `lv${tower.level}`, '#0f766e', 22);
+      playTone(700, .08, 'triangle');
+    } else {
+      hintEl.textContent = `升级需要 ${cost} 葡萄糖`;
+      playTone(170, .07, 'sawtooth');
+    }
+    renderAll();
+  }
+
+  function deselectTower() {
+    if (!state.selectedTowerId) return;
+    state.selectedTowerId = null;
+    hintEl.textContent = `已选择 ${TOWER_TYPES[state.selectedType].label}，点免疫节点部署`;
+    renderAll();
+  }
+
+  function upgradeCost(tower) {
+    const multipliers = [0, .72, 1.05, 1.42];
+    return Math.round(TOWER_TYPES[tower.type].cost * (multipliers[tower.level] || 1.42));
+  }
+
+  function towerRange(tower) {
+    return TOWER_TYPES[tower.type].range + (tower.level - 1) * 22 + (state.evolutions?.globalRange || 0);
+  }
+
+  function traitColor(type) {
+    if (type === 'acorn') return '#b45309';
+    if (type === 'bubble') return '#0284c7';
+    if (type === 'flower') return '#16a34a';
+    return '#be123c';
+  }
+
+  function isWeakHit(towerType, target) {
+    return ENEMY_TRAITS[target.kind]?.weak === towerType;
+  }
+
+  function towerEvolutionAura(tower) {
+    if (!state.evolutions) return null;
+    if (tower.type === 'acorn' && state.evolutions.acornDamage > 0) return { fill: '#fef3c7', stroke: '#d97706', opacity: .18 };
+    if (tower.type === 'bubble' && state.evolutions.bubbleSlowMs > 0) return { fill: '#dbeafe', stroke: '#0284c7', opacity: .18 };
+    if (tower.type === 'flower' && state.evolutions.flowerSplash > 0) return { fill: '#dcfce7', stroke: '#16a34a', opacity: .18 };
+    if (state.evolutions.globalRange > 0) return { fill: '#fff7ed', stroke: '#f59e0b', opacity: .12 };
+    return null;
+  }
+
+  function renderMutationField() {
+    if (!state.currentMutation || state.finished || state.awaitingEvolution) return;
+    const mutation = state.currentMutation;
+    const pulse = .5 + Math.sin(performance.now() / 210) * .5;
+    layers.fx.appendChild(el('rect', { x: 0, y: 0, width: view.width, height: view.height, fill: mutation.color, opacity: .045 + pulse * .035 }));
+    paths.forEach((pathPoints, index) => {
+      layers.fx.appendChild(el('path', {
+        d: pathData(pathPoints),
+        fill: 'none',
+        stroke: mutation.color,
+        'stroke-width': index ? 20 : 24,
+        'stroke-linecap': 'round',
+        'stroke-linejoin': 'round',
+        'stroke-dasharray': `${18 + pulse * 14} ${24 - pulse * 8}`,
+        opacity: .13 + pulse * .12,
+        filter: 'url(#sparkGlow)'
+      }));
+    });
+    const labelX = Math.min(view.width - 120, Math.max(120, view.width * .5));
+    layers.fx.appendChild(el('g', { transform: `translate(${labelX} 42)`, opacity: .72 + pulse * .18 }, [
+      el('rect', { x: -92, y: -18, width: 184, height: 36, rx: 18, fill: '#fff7ed', stroke: mutation.color, 'stroke-width': 3, filter: 'url(#softShadow)' }),
+      el('text', { x: 0, y: 6, text: mutation.label, 'text-anchor': 'middle', fill: mutation.color, 'font-size': 18, 'font-weight': 1000 })
+    ]));
+  }
+
+  function modifiedTowerDamage(tower, type, target) {
+    let damage = type.damage * (1 + (tower.level - 1) * .44);
+    if (tower.type === 'acorn') damage *= 1 + (state.evolutions?.acornDamage || 0);
+    const trait = ENEMY_TRAITS[target.kind];
+    if (trait?.weak === tower.type) damage *= trait.weakFactor;
+    return Math.round(damage);
+  }
+
+  function spawnSparkBurst(x, y, fill = '#facc15', count = 10, life = 760, power = 180) {
+    for (let i = 0; i < count; i++) {
+      const angle = Math.PI * 2 * i / count + (i % 2) * .24;
+      const speed = power * (.55 + (i % 4) * .14);
+      state.evolutionSparks.push({
+        id: sparkIdSeq++,
+        x,
+        y,
+        vx: Math.cos(angle) * speed,
+        vy: Math.sin(angle) * speed,
+        fill,
+        baseSize: 6 + (i % 3) * 2,
+        size: 6 + (i % 3) * 2,
+        rotate: i * 31,
+        spin: i % 2 ? 150 : -150,
+        opacity: 1,
+        age: 0,
+        life
+      });
+    }
+  }
+
+  function spawnEvolutionAura(id) {
+    const colorMap = {
+      acornDamage: '#f59e0b',
+      bubbleSlow: '#38bdf8',
+      flowerSplash: '#22c55e',
+      heroRate: '#fde047',
+      globalRange: '#fb923c',
+      bonusIncome: '#facc15',
+      repair: '#fb7185',
+      coins: '#fbbf24'
+    };
+    const color = colorMap[id] || '#facc15';
+    const center = id === 'heroRate' || id === 'repair' ? currentLayout.hero : { x: view.width * .5, y: view.height * .5 };
+    burstAt(center.x, center.y, color, '#ffffff', id === 'globalRange' ? 120 : 78);
+    spawnSparkBurst(center.x, center.y, color, 18, 900, 230);
+    state.towers.forEach((tower) => {
+      const spot = buildSpots[tower.spotIndex];
+      if (!spot) return;
+      const appliesToTower = id === 'globalRange' || (id === 'acornDamage' && tower.type === 'acorn') || (id === 'bubbleSlow' && tower.type === 'bubble') || (id === 'flowerSplash' && tower.type === 'flower');
+      if (appliesToTower) {
+        burstAt(spot.x, spot.y, color, '#ffffff', 42);
+        spawnSparkBurst(spot.x, spot.y, color, 8, 640, 130);
+      }
+    });
+  }
+
+  function useSpecial() {
+    if (!state.started || state.finished || state.specialCharge < 100) return;
+    state.specialCharge = 0;
+    spawnWhiteCellTroop();
+    burstAt(currentLayout.hero.x, currentLayout.hero.y, '#e0f2fe', '#7c3aed', 118);
+    floatText(currentLayout.hero.x, currentLayout.hero.y - 77, '白细胞部队出击！', '#7c3aed', 25);
+    playTone(980, .16, 'triangle', .075);
+    renderAll();
+  }
+
+  function spawnGlucoseFly(x, y, amount) {
+    const count = Math.min(5, Math.max(2, Math.round(amount / 6)));
+    const target = glucoseTargetPoint();
+    for (let i = 0; i < count; i++) {
+      state.energyFlys.push({
+        x,
+        y,
+        startX: x + (i - count / 2) * 9,
+        startY: y + (i % 2 ? 10 : -8),
+        targetX: target.x + (i - count / 2) * 4,
+        targetY: target.y + (i % 2 ? 4 : -4),
+        opacity: 1,
+        age: 0,
+        life: 850 + i * 70
+      });
+    }
+  }
+
+  function glucoseTargetPoint() {
+    const rect = hudEls.energyPill?.getBoundingClientRect();
+    if (!rect || !rect.width || !rect.height) return { x: view.width * .5, y: 38 };
+    return clientToSvgPoint(rect.left + rect.width * .5, rect.top + rect.height * .5);
+  }
+
+  function clientToSvgPoint(clientX, clientY) {
+    const rect = svg.getBoundingClientRect();
+    if (!rect.width || !rect.height) return { x: view.width * .5, y: 38 };
+    const viewAspect = view.width / view.height;
+    const rectAspect = rect.width / rect.height;
+    let drawWidth = rect.width;
+    let drawHeight = rect.height;
+    let offsetX = 0;
+    let offsetY = 0;
+    if (rectAspect > viewAspect) {
+      drawWidth = rect.height * viewAspect;
+      offsetX = (rect.width - drawWidth) / 2;
+    } else {
+      drawHeight = rect.width / viewAspect;
+      offsetY = (rect.height - drawHeight) / 2;
+    }
+    const x = (clientX - rect.left - offsetX) / Math.max(1, drawWidth) * view.width;
+    const y = (clientY - rect.top - offsetY) / Math.max(1, drawHeight) * view.height;
+    return { x: Math.max(0, Math.min(view.width, x)), y: Math.max(0, Math.min(view.height, y)) };
+  }
+
+  function spawnWhiteCellTroop() {
+    const allocations = whiteCellAllocations(10);
+    allocations.forEach((count, pathIndex) => {
+      const info = pathInfos[pathIndex] || pathInfos[0];
+      const speed = whiteCellSpeedForPath(pathIndex);
+      const baseDistance = pathDistanceClosestTo(currentLayout.gate, pathIndex);
+      for (let i = 0; i < count; i++) {
+        const distance = Math.max(0, baseDistance - i * 22);
+        const p = pointAt(distance, pathIndex);
+        state.whiteCells.push({
+          pathIndex,
+          distance,
+          x: p.x,
+          y: p.y,
+          speed,
+          damage: 95 + state.wave * 18,
+          hitRadius: 28,
+          scale: .74 + (i % 3) * .1,
+          phase: i * .9,
+          opacity: 1,
+          age: 0,
+          life: Math.max(1400, (Math.max(baseDistance, info.total * .45) / Math.max(1, speed)) * 1000 + 500)
+        });
+      }
+    });
+  }
+
+  function pathDistanceClosestTo(point, pathIndex) {
+    const info = pathInfos[pathIndex] || pathInfos[0];
+    let bestDistance = info.total;
+    let bestGap = Infinity;
+    info.segments.forEach((segment) => {
+      const dx = segment.b.x - segment.a.x;
+      const dy = segment.b.y - segment.a.y;
+      const len2 = Math.max(1, dx * dx + dy * dy);
+      const t = Math.max(0, Math.min(1, ((point.x - segment.a.x) * dx + (point.y - segment.a.y) * dy) / len2));
+      const x = segment.a.x + dx * t;
+      const y = segment.a.y + dy * t;
+      const gap = Math.hypot(point.x - x, point.y - y);
+      if (gap < bestGap) {
+        bestGap = gap;
+        bestDistance = segment.start + segment.len * t;
+      }
+    });
+    return bestDistance;
+  }
+
+  function whiteCellAllocations(totalTroops) {
+    const counts = pathInfos.map((_, pathIndex) => state.enemies.filter(enemy => enemy.pathIndex === pathIndex && enemy.hp > 0).length);
+    const totalEnemies = counts.reduce((sum, count) => sum + count, 0);
+    if (!totalEnemies) {
+      return counts.map((_, index) => Math.floor(totalTroops / counts.length) + (index < totalTroops % counts.length ? 1 : 0));
+    }
+    const raw = counts.map(count => count ? count / totalEnemies * totalTroops : 0);
+    const allocations = raw.map(value => Math.floor(value));
+    let remaining = totalTroops - allocations.reduce((sum, value) => sum + value, 0);
+    raw
+      .map((value, index) => ({ index, rest: value - Math.floor(value), count: counts[index] }))
+      .sort((a, b) => b.rest - a.rest || b.count - a.count)
+      .forEach((item) => {
+        if (remaining <= 0) return;
+        allocations[item.index]++;
+        remaining--;
+      });
+    return allocations;
+  }
+
+  function whiteCellSpeedForPath(pathIndex) {
+    const enemies = state.enemies.filter(enemy => enemy.pathIndex === pathIndex && enemy.hp > 0);
+    if (!enemies.length) return 82 + state.wave * 3;
+    const total = enemies.reduce((sum, enemy) => {
+      const slowActive = enemy.slowUntil > performance.now();
+      return sum + enemy.speed * (slowActive ? enemy.slowFactor : 1);
+    }, 0);
+    return Math.max(45, total / enemies.length);
+  }
+
+  function animateEnergyPill() {
+    const pill = hudEls.energyPill;
+    if (!pill) return;
+    pill.classList.remove('gain');
+    void pill.offsetWidth;
+    pill.classList.add('gain');
+    setTimeout(() => pill.classList.remove('gain'), 520);
+  }
+
+  function burstAt(x, y, fill, stroke, startR = 18) {
+    state.bursts.push({ id: burstIdSeq++, x, y, r: startR, fill, stroke, opacity: .75, age: 0 });
+  }
+
+  function floatText(x, y, text, color, size = 20) {
+    state.floating.push({ id: floatIdSeq++, x, y, text, color, size, opacity: 1, age: 0, life: 1250 });
+  }
+
+  function evolutionPool() {
+    return [
+      { id: 'acornDamage', icon: '丸', title: '药丸浓缩', desc: '中药药丸伤害 +18%' },
+      { id: 'bubbleSlow', icon: '针', title: '长效针剂', desc: '针头减速时间 +0.45秒' },
+      { id: 'flowerSplash', icon: '靶', title: '群体标记', desc: '靶向细胞溅射 +18' },
+      { id: 'heroRate', icon: '宠', title: '宠物专注', desc: '宠物主角攻速 +16%' },
+      { id: 'globalRange', icon: '环', title: '免疫感知', desc: '全部防御范围 +10' },
+      { id: 'bonusIncome', icon: '糖', title: '代谢增强', desc: '每波额外 +16 葡萄糖' },
+      { id: 'repair', icon: '心', title: '组织修复', desc: '立即恢复 2 点基地生命' },
+      { id: 'coins', icon: 'G', title: '葡萄糖爆发', desc: '立即获得 90 葡萄糖' }
+    ];
+  }
+
+  function evolutionChoices() {
+    const pool = evolutionPool();
+    const start = (state.wave * 2 + state.score) % pool.length;
+    return [0, 3, 5].map(offset => pool[(start + offset) % pool.length]);
+  }
+
+  function showEvolutionChoices() {
+    state.awaitingEvolution = true;
+    state.paused = true;
+    evolutionChoicesEl.innerHTML = '';
+    evolutionChoices().forEach((choice) => {
+      const btn = document.createElement('button');
+      btn.type = 'button';
+      btn.className = 'mh-evolution-choice';
+      btn.innerHTML = `<span class="mh-evolution-icon">${choice.icon}</span><span><b>${choice.title}</b><br>${choice.desc}</span>`;
+      btn.onclick = () => chooseEvolution(choice.id, choice.title);
+      evolutionChoicesEl.appendChild(btn);
+    });
+    overlayTitleEl.textContent = '免疫进化';
+    overlayTextEl.textContent = `第 ${state.wave - 1} 波已守住。选择一种进化，准备迎接第 ${state.wave} 波。`;
+    document.getElementById('mhOverlayDifficulties').hidden = true;
+    evolutionChoicesEl.hidden = false;
+    startBtn.hidden = true;
+    overlayEl.hidden = false;
+  }
+
+  function chooseEvolution(id, title) {
+    applyEvolution(id);
+    spawnEvolutionAura(id);
+    state.awaitingEvolution = false;
+    state.paused = false;
+    state.waveDelay = 1200;
+    overlayEl.hidden = true;
+    evolutionChoicesEl.hidden = true;
+    startBtn.hidden = false;
+    document.getElementById('mhOverlayDifficulties').hidden = false;
+    hintEl.textContent = `${title} 生效，下一波即将到来`;
+    showToast(`${title} 已激活`);
+    playTone(740, .11, 'triangle');
+    renderAll();
+    startLoop();
+  }
+
+  function applyEvolution(id) {
+    if (!state.evolutions) state.evolutions = defaultEvolutions();
+    if (id === 'acornDamage') state.evolutions.acornDamage += .18;
+    if (id === 'bubbleSlow') state.evolutions.bubbleSlowMs += 450;
+    if (id === 'flowerSplash') state.evolutions.flowerSplash += 18;
+    if (id === 'heroRate') state.evolutions.heroRate += .16;
+    if (id === 'globalRange') state.evolutions.globalRange += 10;
+    if (id === 'bonusIncome') state.evolutions.bonusIncome += 16;
+    if (id === 'repair') state.lives = Math.min(cfg().lives, state.lives + 2);
+    if (id === 'coins') {
+      state.coins += 90;
+      animateEnergyPill();
+    }
+  }
+
+  function showOverlay(helpOnly = false) {
+    evolutionChoicesEl.hidden = true;
+    startBtn.hidden = false;
+    document.getElementById('mhOverlayDifficulties').hidden = false;
+    overlayTitleEl.textContent = '细胞免疫塔防';
+    overlayTextEl.textContent = '血管有多条入口，病原体会分路靠近宠物基地。部署中药药丸、针头水枪和靶向细胞，击败敌人会转化成葡萄糖能量飞向右上角。白细胞能量满后可以派出部队清场。';
+    startBtn.textContent = state.started && !state.finished ? '继续守护' : '开始守护';
+    overlayEl.hidden = false;
+    if (helpOnly && state.started && !state.finished) state.paused = true;
+  }
+
+  function hideOverlay() {
+    overlayEl.hidden = true;
+    if (state.started && !state.finished) {
+      state.paused = false;
+      startLoop();
+    } else {
+      startGame();
+    }
+  }
+
+  function makeDifficultyButtons() {
+    const wraps = [document.getElementById('mhOverlayDifficulties'), document.getElementById('mhTopDifficulties')].filter(Boolean);
+    wraps.forEach((wrap) => {
+      wrap.innerHTML = '';
+      DIFFICULTY_ORDER.forEach((id) => {
+        const btn = document.createElement('button');
+        btn.type = 'button';
+        btn.className = 'mh-difficulty';
+        btn.textContent = DIFFICULTIES[id].label;
+        btn.dataset.difficulty = id;
+        btn.onclick = () => setDifficulty(id);
+        wrap.appendChild(btn);
+      });
+    });
+    refreshDifficultyButtons();
+  }
+
+  function setDifficulty(id) {
+    if (!DIFFICULTIES[id]) return;
+    state.difficulty = id;
+    localStorage.setItem(STORAGE_DIFFICULTY, id);
+    refreshDifficultyButtons();
+  }
+
+  function refreshDifficultyButtons() {
+    root.querySelectorAll('.mh-difficulty').forEach((btn) => btn.classList.toggle('active', btn.dataset.difficulty === state.difficulty));
+  }
+
+  function bindControls() {
+    root.querySelectorAll('.mh-tower-btn').forEach((btn) => {
+      btn.onclick = () => {
+        state.selectedType = btn.dataset.type;
+        state.selectedTowerId = null;
+        hintEl.textContent = `已选择 ${TOWER_TYPES[state.selectedType].label}，点免疫节点部署`;
+        renderAll();
+      };
+    });
+    document.getElementById('mhMenu').onclick = () => showOverlay(true);
+    document.getElementById('mhRestart').onclick = () => startGame();
+    startBtn.onclick = hideOverlay;
+    specialBtn.onclick = useSpecial;
+    upgradeBtn.onclick = upgradeSelectedTower;
+    svg.addEventListener('pointerdown', () => deselectTower());
+    window.addEventListener('resize', () => {
+      layoutSvgStage();
+      applyResponsiveLayout();
+      renderAll();
+    });
+    window.addEventListener('message', onMessage);
+  }
+
+  async function onMessage(event) {
+    const msg = event.data || {};
+    if (msg.type === 'setGameConfig' && msg.data?.difficulty) {
+      setDifficulty(msg.data.difficulty);
+      return;
+    }
+    if (msg.type === 'haqi_pet_image' && msg.ok && msg.data) {
+      await setPetImage(msg.data);
+    }
+  }
+
+  async function requestPetImage() {
+    try {
+      window.parent.postMessage({ type: 'haqi_get_pet_image', requestId: `pet_td_${Date.now()}`, anim: 'happy' }, '*');
+    } catch (_) {}
+  }
+
+  async function setPetImage(pet) {
+    try {
+      if (state.petUrl) URL.revokeObjectURL(state.petUrl);
+      state.petUrl = URL.createObjectURL(pet.imageBlob);
+      state.petMeta = pet;
+      renderHero();
+    } catch (_) {
+      state.petUrl = '';
+      state.petMeta = null;
+      renderHero();
+    }
+  }
+
+  function postParent(type, data = {}) {
+    try {
+      window.parent.postMessage({ type, data }, '*');
+    } catch (_) {}
+  }
+
+  function showToast(text) {
+    const old = root.querySelector('.mh-toast');
+    old?.remove();
+    const toast = document.createElement('div');
+    toast.className = 'mh-toast';
+    toast.textContent = text;
+    root.appendChild(toast);
+    setTimeout(() => toast.remove(), 1300);
+  }
+
+  function startLoop() {
+    if (rafId) return;
+    lastTime = performance.now();
+    rafId = requestAnimationFrame(loop);
+  }
+
+  function stopLoop() {
+    if (rafId) cancelAnimationFrame(rafId);
+    rafId = 0;
+  }
+
+  function loop(now) {
+    rafId = requestAnimationFrame(loop);
+    const dt = Math.min(40, now - lastTime || 16);
+    lastTime = now;
+    update(now, dt);
+    renderAll();
+  }
+
+  function playTone(freq, duration = .08, type = 'sine', gain = .05) {
+    try {
+      if (!sound.ctx) {
+        sound.ctx = new (window.AudioContext || window.webkitAudioContext)();
+        sound.master = sound.ctx.createGain();
+        sound.master.gain.value = .16;
+        sound.master.connect(sound.ctx.destination);
+      }
+      const osc = sound.ctx.createOscillator();
+      const amp = sound.ctx.createGain();
+      osc.type = type;
+      osc.frequency.value = freq;
+      amp.gain.setValueAtTime(gain, sound.ctx.currentTime);
+      amp.gain.exponentialRampToValueAtTime(.001, sound.ctx.currentTime + duration);
+      osc.connect(amp);
+      amp.connect(sound.master);
+      osc.start();
+      osc.stop(sound.ctx.currentTime + duration);
+    } catch (_) {}
+  }
+
+  function init() {
+    layoutSvgStage();
+    applyResponsiveLayout(true);
+    makeDifficultyButtons();
+    bindControls();
+    layoutSvgStage();
+    renderAll();
+    requestPetImage();
+    updateHud();
+    requestAnimationFrame(() => {
+      layoutSvgStage();
+      renderAll();
+    });
+    if (!state.loadedPosted) {
+      state.loadedPosted = true;
+      postParent('gameLoaded');
+    }
+  }
+
+  init();
+})();
+</script>
+
+</html>

@@ -660,6 +660,7 @@ export const planetLevel = {
     id: 'planet',
     index: 0,
     expression: 'auto',
+    wipeColor: 'radial-gradient(ellipse at 50% 40%, #1a1e63 0%, #0a1137 48%, #020617 100%)',
     // 相机窗口
     minCamera: 0.38,    // 飞远（往外）→ 已经是最外层，不再切换；宇宙层允许看得更远
     maxCamera: 1.85,    // 贴近（往内）→ 触发进入 field
@@ -691,7 +692,7 @@ export const planetLevel = {
         const progress = computePlanetProgress();
         const activeWeather = getActivePlanetWeather();
         const activeBuff = getActivePlanetBuff();
-        const stars = Array.from({ length: 82 }).map((_, i) => {
+        const stars = Array.from({ length: 36 }).map((_, i) => {
             const x = Math.random() * 100;
             const y = Math.random() * 100;
             const s = Math.random() * 2.1 + 0.8;

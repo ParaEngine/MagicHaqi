@@ -38,7 +38,7 @@ import {
 } from './petLifecycle.js';
 import SoundManager from './soundManager.js';
 // Side-effect import: 订阅 state 并接管所有 [data-mh-pet] 占位符的渲染 + 动画
-import { canWakePet, eatFood, isPetInteractionBlocked, isPetSleeping, petArtHtml, preloadPetAssets, say, scanAndMount, setAnim, sleepingInteractionText, startPetSleep, wakePet } from './pet.js';
+import { canWakePet, daySleepRejectText, eatFood, isPetInteractionBlocked, isPetSleeping, petArtHtml, preloadPetAssets, say, scanAndMount, setAnim, shouldRejectDaySleep, sleepingInteractionText, startPetSleep, wakePet, wakePetForPlay } from './pet.js';
 
 const soundManager = SoundManager.getInstance();
 const APP_AUDIO_VOLUME = 2.5;
@@ -1000,6 +1000,14 @@ function handleAction(key, options = {}) {
     state.actionCooldown[pet.id] = state.actionCooldown[pet.id] || {};
     const cd = state.actionCooldown[pet.id];
     const now = Date.now();
+    if (key === 'sleep' && shouldRejectDaySleep(pet, now)) {
+        wakePet(pet, now, { skipRecover: true });
+        setAnim('idle', 0);
+        savePetDebounced(pet);
+        if (!skipNotify) notify();
+        requestAnimationFrame(() => say(daySleepRejectText(), 2400));
+        return true;
+    }
     if (cd[key] && now - cd[key] < cfg.cooldownSec * 1000) {
         const left = Math.ceil((cfg.cooldownSec * 1000 - (now - cd[key])) / 1000);
         showToast(`再等 ${left} 秒～`, 'info');
@@ -1031,9 +1039,14 @@ function handleAction(key, options = {}) {
     applyStage(pet);
     savePetDebounced(pet);
     if (key === 'sleep') {
-        setAnim('sleep', 0);
-        startPetSleep(pet, now);
+        const sleepResult = startPetSleep(pet, now);
+        setAnim(pet.anim || 'idle', 0);
         savePetDebounced(pet);
+        if (sleepResult?.wokeImmediately) {
+            if (!skipNotify) notify();
+            requestAnimationFrame(() => say(sleepResult.message || '我睡不着了', 2400));
+            return true;
+        }
     }
     if (!skipNotify) notify();
     if (key === 'sleep') {
@@ -1240,6 +1253,14 @@ async function navigateToView(target) {
     if (!target) return;
     await finishRoomModeIfNeeded();
     const pet = getCurrentPet();
+    if (pet && target === 'minigames' && isPetSleeping(pet)) {
+        wakePetForPlay(pet);
+        setAnim('idle', 0);
+        markPetCared(pet);
+        savePetDebounced(pet);
+        notify();
+        showToast('宠物被玩耍唤醒啦', 'success', 1200);
+    }
     if (pet && SLEEP_BLOCKED_ROUTES.has(target) && isPetInteractionBlocked(pet)) {
         showToast(sleepingInteractionText(pet), 'info', 1800);
         setView('home');

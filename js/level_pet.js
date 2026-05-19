@@ -6,7 +6,7 @@ import { canPlaceItemInArea, CONFIG, DECO_VISUALS, getActiveHouseRoomIds, getPla
 import { state } from './state.js';
 import { getLayout } from './storage.js';
 import { displayPetName } from './dna.js';
-import { canWakePet, isPetInteractionBlocked, isPetSleepLocked, petArtHtml, playPetClickFeedback, scanAndMount, sleepingInteractionText } from './pet.js';
+import { getPetSleepActionState, isPetInteractionBlocked, petArtHtml, playPetClickFeedback, playPetHappy, say, scanAndMount, sleepingInteractionText } from './pet.js';
 import { getReleasedPetHome, hasRenderablePetTexture, isReleasedPetInRoom } from './petLifecycle.js';
 import SoundManager from './soundManager.js';
 
@@ -28,6 +28,12 @@ const FOOD_EAT_MIN_ENERGY = 12;
 const FOOD_EAT_MAX_ENERGY = 30;
 const FEED_SAY_MIN_VISIBLE_MS = 3000;
 const BATH_SEQUENCE_MS = 10000;
+const BATH_COMPLETE_FEEDBACK_MS = 3000;
+const BATH_COMPLETE_LINES = [
+    '洗好啦，香香的！',
+    '泡泡浴完成，感觉闪闪发光！',
+    '干干净净，心情也亮起来啦！',
+];
 const ROOM_WIDTH_METERS = 10;
 const ROOM_SIDE_OVERDRAW_METERS = 1;
 const ROOM_SCENE_WIDTH_METERS = ROOM_WIDTH_METERS + ROOM_SIDE_OVERDRAW_METERS * 2;
@@ -912,6 +918,7 @@ async function runBathSequence(ctx) {
     const applied = await ctx.callbacks.onAction?.('bath', { skipNotify: true });
     if (!applied) return false;
     scanAndMount();
+    const bathedPet = state.pets[state.currentPetId];
     const petEl = $('mhPet');
     if (!isPetVisibleForBath(petEl)) return true;
     bathAnimationRunning = true;
@@ -928,6 +935,11 @@ async function runBathSequence(ctx) {
         $('mhPet')?.classList.remove('mh-pet-bathing');
         bathAnimationRunning = false;
         setPetRoomMotion('idle');
+        const currentPetEl = $('mhPet');
+        if (currentPetEl && isPetVisibleForBath(currentPetEl)) {
+            playPetHappy(currentPetEl, bathedPet, { holdAnimMs: BATH_COMPLETE_FEEDBACK_MS });
+            say(BATH_COMPLETE_LINES[randInt(0, BATH_COMPLETE_LINES.length - 1)], BATH_COMPLETE_FEEDBACK_MS);
+        }
     }, BATH_SEQUENCE_MS);
     return true;
 }
@@ -1121,7 +1133,7 @@ function releasedRoomPetsHtml(currentPet, roomId) {
             const zIndex = getRoomItemZIndex({ x, y, w: PET_WIDTH_METERS, h: PET_HEIGHT_METERS }, 3, 'pet');
             return `
                 <div class="pet-sprite mh-released-room-pet" data-released-room-pet="${escapeHtml(pet.id)}" data-x-meters="${x}" data-y-meters="${y}" data-w-meters="${PET_WIDTH_METERS}" data-h-meters="${PET_HEIGHT_METERS}" style="${meterStyle({ x, y, w: PET_WIDTH_METERS, h: PET_HEIGHT_METERS })};z-index:${zIndex};transform:${face}">
-                    <div style="width:100%;height:100%">${petArtHtml(pet, { alt: displayPetName(pet) })}</div>
+                    <div style="width:100%;height:100%">${petArtHtml(pet, { alt: displayPetName(pet), requireProcessedTexture: true })}</div>
                 </div>
             `;
         }).join('');
@@ -1150,6 +1162,7 @@ function resolveActiveRoom(pet) {
 export const petLevel = {
     id: 'pet',
     index: 2,
+    wipeColor: 'linear-gradient(180deg, #fde68a 0%, #d4a44a 36%, #c4baa8 40%, #c8c0b5 100%)',
     minCamera: 0.65,    // 拉远 → zoomOut 回 field
     maxCamera: 1.55,    // 推近 → zoomIn 进 cell
     bestCamera: 1.0,
@@ -1182,7 +1195,7 @@ export const petLevel = {
                 </div>
 
                 <div class="pet-sprite" id="mhPet" data-x-meters="${petPose.x}" data-y-meters="${petPose.y}" data-w-meters="${PET_WIDTH_METERS}" data-h-meters="${PET_HEIGHT_METERS}" style="${meterStyle({ x: petPose.x, y: petPose.y, w: PET_WIDTH_METERS, h: PET_HEIGHT_METERS })}">
-                    <div style="width:100%;height:100%">${petArtHtml(pet, { alt: displayPetName(pet) })}</div>
+                    <div style="width:100%;height:100%">${petArtHtml(pet, { alt: displayPetName(pet), requireProcessedTexture: true })}</div>
                 </div>
 
                 ${releasedRoomPetsHtml(pet, room.id)}
@@ -1751,28 +1764,29 @@ function bindTrayDrag(el, ctx) {
 
 function renderActionTray(pet) {
     const sleeping = isPetInteractionBlocked(pet);
-    const sleepLocked = isPetSleepLocked(pet);
+    const sleepAction = getPetSleepActionState(pet);
     const feedUrgent = isPetVeryHungry(pet) && !sleeping;
     const isEgg = pet?.stage === 'egg';
-    const eggDisabledKeys = new Set(['bath', 'sleep', 'play']);
+    const eggDisabledKeys = new Set(['bath', 'sleep']);
     const actions = [
         { k: 'decor', icon: '🛠', label: stripActionIcon(t('decorate')), decor: true },
         { k: 'feed',  icon: '🍖', label: stripActionIcon(t('actionFeed')), feed: true },
         { k: 'bath',  icon: '🛁', label: stripActionIcon(t('actionBath')) },
-        { k: 'sleep', icon: sleeping ? '☀️' : '😴', label: sleeping ? '唤醒' : stripActionIcon(t('actionSleep')) },
-        { k: 'play',  icon: '🎾', label: stripActionIcon(t('actionPlay')) },
+        { k: 'sleep', icon: sleepAction.icon, label: sleepAction.label },
     ];
     return `
         <div class="mh-dock-row mh-scroll-x dock-action-row">
             ${actions.map(a => {
                 const eggDisabled = isEgg && eggDisabledKeys.has(a.k);
                 const sleepDisabled = sleeping && a.k !== 'sleep';
-                const disabled = eggDisabled || sleepDisabled || (a.k === 'sleep' && sleepLocked);
+                const disabled = eggDisabled || sleepDisabled || (a.k === 'sleep' && sleepAction.disabled);
                 const urgentClass = a.feed && feedUrgent ? ' is-urgent' : '';
                 const title = eggDisabled
                     ? '蛋还没有孵化，无法进行此操作。'
                     : sleepDisabled
                         ? sleepingInteractionText(pet)
+                        : a.k === 'sleep'
+                            ? sleepAction.title
                         : a.feed && feedUrgent
                             ? `体力值 ${Math.max(0, Math.round(Number(pet?.stats?.hunger) || 0))}，需要休息或喂食。`
                             : '';
@@ -1783,7 +1797,7 @@ function renderActionTray(pet) {
                 </button>
             `; }).join('')}
         </div>
-        ${sleeping ? `<div class="mh-dock-hint">${canWakePet(pet) ? '宠物正在睡觉，可轻轻唤醒。' : escapeHtml(sleepingInteractionText(pet))}</div>` : ''}
+        ${sleeping ? `<div class="mh-dock-hint">${escapeHtml(sleepAction.hint)}</div>` : ''}
     `;
 }
 

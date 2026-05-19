@@ -7,6 +7,8 @@ import { isAdultStage } from './dna.js';
 import { applyReleasedPetAutoCareStats, getPetLocationType, hasNannyCare, nannyGrowthRate, softenStatsToAverage } from './petLifecycle.js';
 import { isNightSleepTime, nextMorningWakeAt, normalizePetSleepState } from './pet.js';
 
+export { canRecoverEnergyFromSleep, recoverEnergyAfterSleep } from './pet.js';
+
 export function defaultStats() {
     return { hunger: 80, mood: 80, clean: 80, bond: 30 };
 }
@@ -138,19 +140,6 @@ export function clampEnergyToMax(pet) {
     normalizePetStats(pet);
     pet.stats.hunger = clamp(Number(pet.stats.hunger ?? CONFIG.statMax), CONFIG.statMin, CONFIG.statMax);
     return CONFIG.statMax;
-}
-
-export function canRecoverEnergyFromSleep(pet) {
-    return ['teen', 'adult', 'elder'].includes(pet?.stage);
-}
-
-export function recoverEnergyAfterSleep(pet) {
-    if (!pet?.stats || !canRecoverEnergyFromSleep(pet)) return false;
-    normalizePetStats(pet);
-    const before = Number(pet.stats.hunger) || 0;
-    const target = CONFIG.statMax * 0.5;
-    pet.stats.hunger = clamp(Math.max(before, target), CONFIG.statMin, CONFIG.statMax);
-    return pet.stats.hunger !== before;
 }
 
 function traumaReasons(pet) {

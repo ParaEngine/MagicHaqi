@@ -28,21 +28,12 @@ const soundManager = SoundManager.getInstance();
 const LEVELS = [planetLevel, fieldLevel, petLevel, cellLevel];
 const DEV_HOSTS = new Set(['127.0.0.1', 'localhost']);
 const MH_DOCK_HEIGHT = 128;
-const CAMERA_SETTLE_EPSILON = 0.0025;
-const CAMERA_SMOOTHING = 17;
+const CAMERA_SETTLE_EPSILON = 0.0004;
+const CAMERA_SMOOTHING = 12;
 const CAMERA_MAX_DT = 0.05;
-const WHEEL_ZOOM_SENSITIVITY = 0.0032;
-const WHEEL_DELTA_LIMIT = 420;
-const DEFAULT_ZOOM_TRANSITION = Object.freeze({
-    oldSceneMs: 500,
-    oldCameraMs: 300,
-    flashMs: 300,
-    newSceneMs: 600,
-    newCameraMs: 600,
-    dockFadeMs: 420,
-    rayColor: '#174a8b',
-});
-const ZOOM_TRANSITION_NUMERIC_KEYS = ['oldSceneMs', 'oldCameraMs', 'flashMs', 'newSceneMs', 'newCameraMs', 'dockFadeMs'];
+const WHEEL_ZOOM_SENSITIVITY = 0.0018;
+const WHEEL_DELTA_LIMIT = 300;
+const WHEEL_CONSUME_RATE = 0.38;
 const ZOOM_BAR_STAGES = [
     { id: 'planet', label: '星球', color: '#172554', hint: '上下滑动 / 双指放大 → 登陆星球' },
     { id: 'field', label: '表面', color: '#65a30d', hint: '上下滑动 / 双指缩放 → 太空 / 宠物房间' },
@@ -86,6 +77,67 @@ const __companionMoodPendingTimers = new Map();
 let __zoomBarHideTimer = null;
 let __levelJumpCompleted = false;
 const __dockScrollPositions = new Map();
+
+// ========== DocumentFragment 预缓存系统 ==========
+// 在空闲时预渲染相邻层的 stageHtml + dockHtml，切换时直接移植节点而非解析 HTML
+const __levelCache = new Map(); // key: levelIndex → { stageEl, dockEl, petId, ts }
+let __preRenderIdleHandle = null;
+
+function invalidateLevelCache(levelIndex) {
+    if (levelIndex === undefined) { __levelCache.clear(); return; }
+    __levelCache.delete(levelIndex);
+}
+
+function preRenderLevel(levelIndex, pet) {
+    if (!pet || levelIndex < 0 || levelIndex >= LEVELS.length) return;
+    const level = LEVELS[levelIndex];
+    const stageEl = document.createElement('div');
+    stageEl.innerHTML = level.stageHtml(pet);
+    const dockEl = document.createElement('div');
+    dockEl.innerHTML = level.dockHtml(pet);
+    __levelCache.set(levelIndex, { stageEl, dockEl, petId: pet.id, ts: Date.now() });
+}
+
+function schedulePreRenderAdjacent() {
+    if (__preRenderIdleHandle) {
+        (typeof cancelIdleCallback === 'function' ? cancelIdleCallback : clearTimeout)(__preRenderIdleHandle);
+    }
+    const schedule = typeof requestIdleCallback === 'function' ? requestIdleCallback : (fn) => setTimeout(fn, 80);
+    __preRenderIdleHandle = schedule(() => {
+        __preRenderIdleHandle = null;
+        if (__mhZoomAnimating || !__lastPet) return;
+        const currentLvl = state.zoomLevel;
+        const pet = __lastPet;
+        // 预渲染相邻层
+        if (currentLvl > 0 && !isLevelCacheValid(currentLvl - 1, pet)) {
+            preRenderLevel(currentLvl - 1, pet);
+        }
+        if (currentLvl < LEVELS.length - 1 && !isLevelCacheValid(currentLvl + 1, pet)) {
+            preRenderLevel(currentLvl + 1, pet);
+        }
+    }, { timeout: 2000 });
+}
+
+function isLevelCacheValid(levelIndex, pet) {
+    const cached = __levelCache.get(levelIndex);
+    if (!cached) return false;
+    if (cached.petId !== pet?.id) return false;
+    // 缓存 10s 内有效
+    if (Date.now() - cached.ts > 10000) return false;
+    return true;
+}
+
+function useCachedLevel(levelIndex, pet, inner, dock) {
+    const cached = __levelCache.get(levelIndex);
+    if (!cached || cached.petId !== pet?.id) return false;
+    // 使用预渲染的 DOM 节点（直接移植，跳过 HTML 解析）
+    inner.textContent = '';
+    while (cached.stageEl.firstChild) inner.appendChild(cached.stageEl.firstChild);
+    dock.textContent = '';
+    while (cached.dockEl.firstChild) dock.appendChild(cached.dockEl.firstChild);
+    __levelCache.delete(levelIndex);
+    return true;
+}
 
 function getDockScrollKey(el) {
     return el?.id || el?.dataset?.dockScrollKey || '';
@@ -187,6 +239,10 @@ export function renderHome(panel, { pet }, callbacks = {}) {
     bindStageZoomGestures();
     applyCameraZoom();
     showZoomLevelBar();
+
+    // 首次进入后预渲染相邻层
+    invalidateLevelCache();
+    schedulePreRenderAdjacent();
 }
 
 // 兼容旧 API
@@ -986,50 +1042,38 @@ function requestZoomLevelAfterFocus(target, boundaryCamera) {
 function setCameraZoomFromGesture(next, direction) {
     const lvl = LEVELS[state.zoomLevel];
     const clamped = Math.max(lvl.minCamera, Math.min(lvl.maxCamera, next));
-    if (Math.abs(clamped - cameraZoom) > 0.0015) {
-        cameraZoom = clamped;
-        soundManager.playZoomScrollBeep(direction);
-        applyCameraZoom();
+    if (Math.abs(clamped - cameraZoom) < 0.0001) return;
+    cameraZoom = clamped;
+    // 连续手势（触摸/鼠标拖动）直接同步 visualCameraZoom，消除追逐延迟
+    visualCameraZoom = clamped;
+    stopCameraAnimation();
+    scheduleCameraRender();
+    soundManager.playZoomScrollBeep(direction);
+}
+
+const WIPE_FOCUS_SELECTORS = [
+    '#mhPlanet .planet-body, #mhPlanet',  // planet
+    '.field-pet-current',                   // field
+    '#mhPet',                               // pet
+    null,                                   // cell (default center)
+];
+
+function getWipeFocusCenter(levelIndex) {
+    const selector = WIPE_FOCUS_SELECTORS[levelIndex];
+    if (!selector) return { cx: 50, cy: 50, focusEl: null };
+    const parts = selector.split(',').map(s => s.trim());
+    let el = null;
+    for (const sel of parts) {
+        el = document.querySelector(sel);
+        if (el) break;
     }
-}
-
-function getZoomTransitionConfig() {
-    const userConfig = window.__magicHaqiZoomTransition || window.MagicHaqiZoomTransition || {};
-    const config = { ...DEFAULT_ZOOM_TRANSITION, ...userConfig };
-    for (const key of ZOOM_TRANSITION_NUMERIC_KEYS) {
-        const value = Number(config[key]);
-        config[key] = Number.isFinite(value) && value >= 0 ? value : DEFAULT_ZOOM_TRANSITION[key];
-    }
-    config.rayColor = normalizeRayColor(config.rayColor, DEFAULT_ZOOM_TRANSITION.rayColor);
-    config.oldCameraMs = Math.min(config.oldCameraMs, config.oldSceneMs);
-    config.newCameraMs = Math.min(config.newCameraMs, config.newSceneMs);
-    return config;
-}
-
-function normalizeRayColor(value, fallback) {
-    if (typeof value !== 'string') return fallback;
-    const color = value.trim();
-    return color || fallback;
-}
-
-function applyZoomTransitionVars(el, config) {
-    if (!el) return;
-    el.style.setProperty('--mh-zoom-old-ms', `${config.oldSceneMs}ms`);
-    el.style.setProperty('--mh-zoom-old-camera-ms', `${config.oldCameraMs}ms`);
-    el.style.setProperty('--mh-zoom-flash-ms', `${config.flashMs}ms`);
-    el.style.setProperty('--mh-zoom-new-ms', `${config.newSceneMs}ms`);
-    el.style.setProperty('--mh-zoom-new-camera-ms', `${config.newCameraMs}ms`);
-    el.style.setProperty('--mh-zoom-ray-color', config.rayColor);
-}
-
-function clearZoomTransitionVars(el) {
-    if (!el) return;
-    el.style.removeProperty('--mh-zoom-old-ms');
-    el.style.removeProperty('--mh-zoom-old-camera-ms');
-    el.style.removeProperty('--mh-zoom-flash-ms');
-    el.style.removeProperty('--mh-zoom-new-ms');
-    el.style.removeProperty('--mh-zoom-new-camera-ms');
-    el.style.removeProperty('--mh-zoom-ray-color');
+    if (!el) return { cx: 50, cy: 50, focusEl: null };
+    const rect = el.getBoundingClientRect();
+    const vw = window.innerWidth || document.documentElement.clientWidth;
+    const vh = window.innerHeight || document.documentElement.clientHeight;
+    const cx = Math.max(5, Math.min(95, ((rect.left + rect.width / 2) / vw) * 100));
+    const cy = Math.max(5, Math.min(95, ((rect.top + rect.height / 2) / vh) * 100));
+    return { cx, cy, focusEl: el };
 }
 
 function runZoomTransition(from, to) {
@@ -1047,85 +1091,121 @@ function runZoomTransition(from, to) {
     stopCameraAnimation();
     clearWheelGestureEndTimer();
     LEVELS[from].onLeave?.();
-    const transitionConfig = getZoomTransitionConfig();
 
-    // 1) 虫洞 overlay
-    const overlay = document.createElement('div');
-    overlay.className = 'wormhole-overlay ' + (direction === 'in' ? 'wh-in' : 'wh-out');
-    applyZoomTransitionVars(overlay, transitionConfig);
-    document.body.appendChild(overlay);
-    requestAnimationFrame(() => overlay.classList.add('wh-visible'));
+    // 0) 聚焦关键元素（仅向内切换时）：摄像头平移至焦点中心，然后整体放大+淡出
+    const { cx, cy, focusEl } = getWipeFocusCenter(from);
+    const useFocus = focusEl && direction === 'in';
+    if (useFocus) {
+        // 将整个 stage 的 transform-origin 设为焦点元素中心，然后整体放大
+        stage.style.transformOrigin = `${cx}% ${cy}%`;
+        stage.classList.add('mh-stage-focus-zoom');
+    }
 
-    // 2) 音效
+    // 1) 音效
     soundManager.playZoomLevelSound(direction);
 
-    // 3) 旧 stage 离场；dock 内容淡出
-    applyZoomTransitionVars(stage, transitionConfig);
-    stage.classList.add(direction === 'in' ? 'zoom-anim-out-in' : 'zoom-anim-out-out');
-    dock.classList.add('mh-dock-fading');
-
+    // 延迟启动 wipe，让聚焦放大展开一段后 wipe 从焦点膨胀覆盖
+    const wipeDelay = useFocus ? 260 : 0;
+    if (useFocus) dock.classList.add('mh-dock-fading');
     setTimeout(() => {
-        overlay.classList.add('wh-flash');
-        const pet = __lastPet;
-        state.zoomLevel = to;
-        state.lastHomeZoomLevel = to;
-        const newLevel = LEVELS[to];
+        // 2) 旧 stage 微缩放 + dock 滑出（聚焦模式下跳过额外缩放，由 focus-zoom 一并完成）
+        if (!useFocus) stage.classList.add(direction === 'in' ? 'zoom-anim-out-in' : 'zoom-anim-out-out');
+        if (!useFocus) dock.classList.add('mh-dock-fading');
 
-        // 进入新层时设定相机起点：使用该层最佳视角
-        const bestCamera = getLevelBestCamera(newLevel);
-        cameraZoom = bestCamera;
-        visualCameraZoom = bestCamera;
+        // 3) Circle-wipe 关闭（遮罩从焦点元素中心膨胀覆盖旧场景）
+        const wipe = document.createElement('div');
+        wipe.className = 'scene-wipe';
+        wipe.style.setProperty('--wipe-cx', cx + '%');
+        wipe.style.setProperty('--wipe-cy', cy + '%');
+        const fromWipeColor = LEVELS[from]?.wipeColor;
+        if (fromWipeColor) wipe.style.setProperty('--wipe-bg', fromWipeColor);
+        document.body.appendChild(wipe);
+        requestAnimationFrame(() => wipe.classList.add('sw-closing'));
 
-        // 替换 stage 内容
-        const inner = document.getElementById('mhStageInner');
-        if (inner) inner.innerHTML = newLevel.stageHtml(pet);
+        // 4) 关闭动画结束 → 旧场景完全被遮盖 → DOM 替换 → 打开动画
+        const onClosed = (e) => {
+            if (e.animationName !== 'wipeClose') return;
+            wipe.removeEventListener('animationend', onClosed);
 
-        // 替换 dock 内容（dock 节点本身不动）
-        rememberDockScrollPositions(dock);
-        dock.innerHTML = newLevel.dockHtml(pet);
+            // 清理聚焦放大
+            if (useFocus) {
+                stage.classList.remove('mh-stage-focus-zoom');
+                stage.style.transformOrigin = '';
+            }
 
-        // 同步 topbar zoom 标签 & stage class
-        const zd = CONFIG.zoomLevels[to];
-        const lab = document.getElementById('mhZoomLabel');
-        if (lab) lab.innerHTML = `${zd.emoji} ${escapeHtml(zd.name)} · <i>${escapeHtml(zd.subtitle)}</i>`;
-        refreshTopbarStatPills(pet);
-        stage.className = `mh-stage zoom-${zd.id} ${state.isDecorMode && (to === 1 || to === 2) ? 'decor-mode' : ''} ${state.isFeedMode && to === 2 ? 'feed-mode' : ''}`;
-        stage.style.touchAction = 'none';
-        refreshZoomLevelBar(stage);
+            const pet = __lastPet;
+            state.zoomLevel = to;
+            state.lastHomeZoomLevel = to;
+            const newLevel = LEVELS[to];
 
-        const ctx = makeCtx(pet, __lastCallbacks);
-        newLevel.bindStage(pet, ctx);
-        newLevel.bindDock(pet, ctx);
-        bindDockHorizontalScroll();
-        restoreDockScrollPositions(dock);
-        newLevel.onEnter?.(pet, ctx);
-        if (to === 1) requestAnimationFrame(() => newLevel.centerPet?.(pet, { animate: true, duration: 460 }));
-        applyCameraZoom();
+            const bestCamera = getLevelBestCamera(newLevel);
+            cameraZoom = bestCamera;
+            visualCameraZoom = bestCamera;
 
-        setTimeout(() => {
-            // 4) 新 stage 进场动画 + 从全白遮罩逐渐揭示新场景
-            stage.classList.remove('zoom-anim-out-in', 'zoom-anim-out-out');
-            applyZoomTransitionVars(stage, transitionConfig);
+            // DOM 替换（完全被 wipe 遮盖，用户不可见）
+            const inner = document.getElementById('mhStageInner');
+            rememberDockScrollPositions(dock);
+            if (!inner || !useCachedLevel(to, pet, inner, dock)) {
+                if (inner) inner.innerHTML = newLevel.stageHtml(pet);
+                dock.innerHTML = newLevel.dockHtml(pet);
+            }
+
+            const zd = CONFIG.zoomLevels[to];
+            const lab = document.getElementById('mhZoomLabel');
+            if (lab) lab.innerHTML = `${zd.emoji} ${escapeHtml(zd.name)} · <i>${escapeHtml(zd.subtitle)}</i>`;
+            refreshTopbarStatPills(pet);
+            stage.className = `mh-stage zoom-${zd.id} ${state.isDecorMode && (to === 1 || to === 2) ? 'decor-mode' : ''} ${state.isFeedMode && to === 2 ? 'feed-mode' : ''}`;
+            stage.style.touchAction = 'none';
+            refreshZoomLevelBar(stage);
+
+            const ctx = makeCtx(pet, __lastCallbacks);
+            newLevel.bindStage(pet, ctx);
+            newLevel.bindDock(pet, ctx);
+            bindDockHorizontalScroll();
+            restoreDockScrollPositions(dock);
+            stopCameraAnimation();
+            scheduleCameraRender();
+
+            // 新 stage 进场缩放 + dock 滑入
             stage.classList.add(direction === 'in' ? 'zoom-anim-in-in' : 'zoom-anim-in-out');
-            overlay.classList.remove('wh-flash');
-            overlay.classList.add('wh-reveal');
-            requestAnimationFrame(() => overlay.classList.remove('wh-visible'));
-
             dock.classList.remove('mh-dock-fading');
             dock.classList.add('mh-dock-fade-in');
-            setTimeout(() => dock.classList.remove('mh-dock-fade-in'), transitionConfig.dockFadeMs);
 
-            setTimeout(() => {
+            // 5) 打开阶段：回收至屏幕中央
+            const toWipeColor = LEVELS[to]?.wipeColor;
+            if (toWipeColor) wipe.style.setProperty('--wipe-bg', toWipeColor);
+            wipe.style.setProperty('--wipe-cx', '50%');
+            wipe.style.setProperty('--wipe-cy', '50%');
+            wipe.classList.remove('sw-closing');
+            // 等两帧：第一帧提交新 DOM 布局，第二帧完成光栅化，再启动收缩动画
+            requestAnimationFrame(() => {
+                requestAnimationFrame(() => {
+                    wipe.classList.add('sw-opening');
+                });
+            });
+
+            const onOpened = (e) => {
+                if (e.animationName !== 'wipeOpen') return;
+                wipe.removeEventListener('animationend', onOpened);
+                wipe.remove();
                 stage.classList.remove('zoom-anim-in-in', 'zoom-anim-in-out');
-                clearZoomTransitionVars(stage);
-                overlay.remove();
+                dock.classList.remove('mh-dock-fade-in');
                 __mhZoomAnimating = false;
                 __levelJumpCompleted = true;
                 showZoomLevelBar({ autoHide: true, delay: 2000, requireLevelJumpCompleted: true });
                 scheduleCameraIdleReturn();
-            }, transitionConfig.newSceneMs);
-        }, transitionConfig.flashMs);
-    }, transitionConfig.oldSceneMs);
+            };
+            wipe.addEventListener('animationend', onOpened);
+
+            // onEnter 延后到下一帧（重型初始化不阻塞 wipe 打开动画）
+            requestAnimationFrame(() => {
+                newLevel.onEnter?.(pet, ctx);
+                if (to === 1) newLevel.centerPet?.(pet, { animate: true, duration: 460 });
+                schedulePreRenderAdjacent();
+            });
+        };
+        wipe.addEventListener('animationend', onClosed);
+    }, wipeDelay);
 }
 
 // =============================================================================
@@ -1353,14 +1433,15 @@ function flushWheelZoom() {
         __wheelZoomDelta = 0;
         return;
     }
-    const delta = Math.max(-WHEEL_DELTA_LIMIT, Math.min(WHEEL_DELTA_LIMIT, __wheelZoomDelta));
-    __wheelZoomDelta -= delta;
-    const factor = Math.exp(-delta * WHEEL_ZOOM_SENSITIVITY);
-    applyDelta(factor);
+    // 每帧只消费一部分 delta，将缩放变化分摊到多帧，使滚轮缩放更丝滑
+    const consumed = __wheelZoomDelta * WHEEL_CONSUME_RATE;
+    __wheelZoomDelta -= consumed;
+    const factor = Math.exp(-consumed * WHEEL_ZOOM_SENSITIVITY);
+    applyWheelDelta(factor);
     showZoomLevelBar();
     scheduleCameraIdleReturn();
-    if (Math.abs(__wheelZoomDelta) > 0.5) __wheelZoomFrame = requestAnimationFrame(flushWheelZoom);
-    else __wheelZoomDelta = 0;
+    if (Math.abs(__wheelZoomDelta) > 0.3) __wheelZoomFrame = requestAnimationFrame(flushWheelZoom);
+    else { __wheelZoomDelta = 0; }
 }
 
 function shouldLetScrollableHandleWheel(e) {
@@ -1373,7 +1454,7 @@ function isStageZoomGestureBlocked(target) {
     if (!target?.closest) return false;
     if (target.closest('.remote-planet, .remote-mini-planet, .space-planet')) return false;
     if (target.closest('.poop-btn')) return false;
-    if (target.closest('button, a, input, textarea, select, [contenteditable="true"], .field-item, [data-tray-item], .field-tab, .bad-cell')) return true;
+    if (target.closest('button, a, input, textarea, select, [contenteditable="true"], [data-tray-item], .field-tab, .bad-cell')) return true;
     if (state.zoomLevel === 1 && state.isDecorMode && target.closest('.field-item')) return true;
     if (state.zoomLevel === 2 && (state.isDecorMode || state.isFeedMode) && target.closest('.room-cell, .furniture')) return true;
     return false;
@@ -1391,6 +1472,25 @@ function applyDelta(factor) {
         else { cameraZoom = lvl.minCamera; applyCameraZoom(); }
     } else {
         setCameraZoomFromGesture(next, factor >= 1 ? 'in' : 'out');
+    }
+}
+
+// 滚轮缩放专用：仍使用平滑插值（因为滚轮是离散脉冲输入，需要平滑化）
+function applyWheelDelta(factor) {
+    if (isDecorZoomLocked()) return;
+    const lvl = LEVELS[state.zoomLevel];
+    const next = cameraZoom * factor;
+    if (next > lvl.maxCamera) {
+        if (state.zoomLevel < LEVELS.length - 1) requestZoomLevelAfterFocus(state.zoomLevel + 1, lvl.maxCamera);
+        else { cameraZoom = lvl.maxCamera; applyCameraZoom(); }
+    } else if (next < lvl.minCamera) {
+        if (state.zoomLevel > 0) requestZoomLevel(state.zoomLevel - 1);
+        else { cameraZoom = lvl.minCamera; applyCameraZoom(); }
+    } else {
+        const clamped = Math.max(lvl.minCamera, Math.min(lvl.maxCamera, next));
+        cameraZoom = clamped;
+        soundManager.playZoomScrollBeep(factor >= 1 ? 'in' : 'out');
+        applyCameraZoom();
     }
 }
 

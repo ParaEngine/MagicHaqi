@@ -1,0 +1,1052 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+  <title>哈奇食物叠叠消</title>
+  <script src="https://cdn.keepwork.com/keepwork/cdn/tailwindcss@3.4.16.js"></script>
+</head>
+
+<body></body>
+<script defer>
+(function () {
+  const STORAGE_KEY = 'haqiFoodStackMatchBestV1';
+  const PROGRESS_KEY = 'haqiFoodStackMatchProgressV1';
+  const DIFFICULTY_KEY = 'haqiFoodStackMatchDifficultyV1';
+  const TRAY_SIZE = 7;
+  const TILE_TYPES = [
+    { id: 'apple', icon: '🍎', label: '苹果' },
+    { id: 'carrot', icon: '🥕', label: '胡萝卜' },
+    { id: 'corn', icon: '🌽', label: '玉米' },
+    { id: 'grape', icon: '🍇', label: '葡萄' },
+    { id: 'cake', icon: '🍰', label: '蛋糕' },
+    { id: 'fries', icon: '🍟', label: '薯条' },
+    { id: 'rice', icon: '🍙', label: '饭团' },
+    { id: 'melon', icon: '🍉', label: '西瓜' },
+    { id: 'cookie', icon: '🍪', label: '饼干' },
+    { id: 'bread', icon: '🥐', label: '面包' },
+    { id: 'cheese', icon: '🧀', label: '奶酪' },
+    { id: 'berry', icon: '🍓', label: '草莓' },
+    { id: 'burger', icon: '🍔', label: '汉堡' },
+    { id: 'pizza', icon: '🍕', label: '披萨' },
+    { id: 'taco', icon: '🌮', label: '塔可' },
+    { id: 'sushi', icon: '🍣', label: '寿司' },
+    { id: 'kiwi', icon: '🥝', label: '猕猴桃' },
+    { id: 'avocado', icon: '🥑', label: '牛油果' },
+    { id: 'pretzel', icon: '🥨', label: '椒盐卷饼' },
+    { id: 'dumpling', icon: '🥟', label: '饺子' },
+  ];
+  const LEVELS = [
+    { id: 'tutorial', label: '轻松', title: '新手草地', groups: 6, typeCount: 4, layers: 2, cols: 4, rows: 3, reward: 80, challengeRank: 0, note: '先感受规则：点亮的食物可以拿，下方凑够3个会消除。' },
+    { id: 'cliff', label: '挑战', title: '断崖挑战', groups: 32, typeCount: 9, layers: 7, cols: 7, rows: 5, reward: 180, challengeRank: 2, note: '真正的哈奇试炼：别让7格暂存槽被不同食物塞满。' },
+    { id: 'feast', label: '噩梦', title: '魔法餐桌', groups: 42, typeCount: 14, layers: 8, cols: 7, rows: 6, reward: 240, challengeRank: 3, note: '食物更多，遮挡更密，尽量优先清理上层。' },
+    { id: 'abyss', label: '炼狱', title: '深层餐塔', groups: 56, typeCount: 18, layers: 10, cols: 8, rows: 7, reward: 340, challengeRank: 4, note: '最难档：同类食物会被刻意拆散到不同深度，必须规划暂存槽。' },
+  ];
+
+  const state = {
+    levelIndex: loadDifficultyIndex(),
+    level: LEVELS[loadDifficultyIndex()] || LEVELS[0],
+    clears: loadProgress(),
+    tiles: [],
+    tray: [],
+    started: false,
+    finished: false,
+    score: 0,
+    combo: 0,
+    moves: 0,
+    seconds: 0,
+    timer: null,
+    best: Math.max(0, Number(localStorage.getItem(STORAGE_KEY) || 0)),
+    roundId: '',
+    tileElements: new Map(),
+  };
+
+  const sound = { ctx: null, master: null };
+
+  const root = document.createElement('div');
+  root.id = 'haqiFoodStackMatch';
+  root.innerHTML = `
+    <style>
+      * { box-sizing: border-box; -webkit-tap-highlight-color: transparent; }
+      html, body { width: 100%; height: 100%; margin: 0; overflow: hidden; }
+      body {
+        font-family: -apple-system, BlinkMacSystemFont, 'PingFang SC', 'Microsoft YaHei', sans-serif;
+        color: #17324d;
+        background:
+          radial-gradient(circle at 13% 18%, rgba(255,255,255,.55) 0 5%, transparent 18%),
+          radial-gradient(circle at 84% 14%, rgba(125,211,252,.3) 0 7%, transparent 22%),
+          linear-gradient(180deg, #bbf7d0 0%, #d9f99d 46%, #fef3c7 100%);
+        touch-action: none;
+        user-select: none;
+      }
+      .mh-bg { position: fixed; inset: 0; pointer-events: none; overflow: hidden; }
+      .mh-grass { position: absolute; width: 28px; height: 18px; opacity: .45; }
+      .mh-grass::before, .mh-grass::after { content: ''; position: absolute; bottom: 0; width: 3px; height: 16px; border-radius: 999px; background: #4d9d32; transform-origin: bottom; }
+      .mh-grass::before { left: 9px; transform: rotate(-24deg); }
+      .mh-grass::after { left: 16px; transform: rotate(22deg); }
+      .mh-shell { position: relative; z-index: 1; height: 100vh; height: 100dvh; display: grid; grid-template-rows: auto minmax(0,1fr) auto; gap: 8px; padding: 8px; overflow: hidden; }
+      .mh-top { min-height: 48px; display: grid; grid-template-columns: 38px minmax(0,1fr) auto; align-items: center; gap: 8px; padding: 7px 9px; border-radius: 14px; background: rgba(255,255,255,.9); border: 2px solid rgba(255,255,255,.96); box-shadow: 0 5px 0 rgba(22,101,52,.14), 0 12px 22px rgba(15,23,42,.12); }
+      .mh-icon-btn, .mh-action, .mh-start, .mh-level-btn { border: 0; cursor: pointer; font-weight: 900; }
+      .mh-icon-btn { width: 34px; height: 34px; border-radius: 999px; background: linear-gradient(180deg, #fb923c, #ea580c); color: #fff; box-shadow: 0 3px 0 #9a3412; font-size: 18px; }
+      .mh-title { min-width: 0; text-align: center; font-size: 17px; font-weight: 1000; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+      .mh-stats { display: flex; align-items: center; justify-content: flex-end; gap: 5px; flex-wrap: wrap; }
+      .mh-pill { height: 29px; min-width: 46px; display: inline-flex; align-items: center; justify-content: center; gap: 3px; padding: 0 8px; border-radius: 999px; background: #fff; border: 1px solid rgba(22,101,52,.18); color: #0f766e; font-size: 12px; font-weight: 900; box-shadow: 0 2px 0 rgba(22,101,52,.12); }
+      .mh-stage { position: relative; min-height: 0; display: grid; place-items: center; overflow: hidden; }
+      .mh-board-wrap { position: relative; width: min(98vw, 760px); height: min(calc(100vh - 158px), 510px); min-height: 260px; border-radius: 16px; border: 3px solid rgba(255,255,255,.9); background: linear-gradient(180deg, rgba(220,252,231,.62), rgba(187,247,208,.78)); box-shadow: inset 0 3px 0 rgba(255,255,255,.38), 0 14px 34px rgba(15,23,42,.18); overflow: hidden; }
+      .mh-board { position: absolute; inset: 6px; border-radius: 12px; overflow: hidden; contain: layout paint style; }
+      .mh-board.pick-pulse { animation: mhBoardPulse .18s ease-out; }
+      .mh-board.fail-shake { animation: mhBoardShake .36s ease-in-out; }
+      .mh-tile { position: absolute; left: var(--x); top: var(--y); width: var(--tile-w); height: auto; aspect-ratio: 1 / 1; border: 0; padding: 0; border-radius: 8px; display: grid; place-items: center; background: linear-gradient(180deg, #fff7ed, #fef3c7 76%, #d9b96d); box-shadow: 0 4px 0 #8a7135, 0 7px 10px rgba(15,23,42,.24), inset 0 2px 0 rgba(255,255,255,.9); transform: translate(-50%, -50%); cursor: pointer; transition: transform .14s ease, filter .14s ease, opacity .18s ease; animation: mhTileIn .24s ease-out both; will-change: transform, opacity, filter; contain: layout paint style; backface-visibility: hidden; }
+      .mh-tile::before { content: ''; position: absolute; inset: 5px; border-radius: 6px; border: 2px solid rgba(88,68,26,.24); box-shadow: inset 0 1px 3px rgba(255,255,255,.62); }
+      .mh-tile .mh-food { position: relative; z-index: 1; font-size: clamp(28px, 6.2vmin, 48px); line-height: 1; filter: drop-shadow(0 2px 0 rgba(255,255,255,.72)); }
+      .mh-tile:active { transform: translate(-50%, -50%) scale(.96); }
+      .mh-tile.locked { cursor: default; filter: saturate(.46) brightness(.78); }
+      .mh-tile.locked::after { content: ''; position: absolute; inset: 0; border-radius: 8px; background: rgba(15,23,42,.28); }
+      .mh-tile.hint { animation: mhHint 1s ease-in-out infinite; }
+      .mh-tile.removing { animation: mhRemove .24s ease-out forwards; pointer-events: none; }
+      .mh-tray-wrap { min-height: 74px; display: grid; grid-template-columns: minmax(0,1fr) auto; align-items: center; gap: 8px; }
+      .mh-tray { min-width: 0; height: 68px; display: grid; grid-template-columns: repeat(7, minmax(0, 1fr)); gap: 5px; padding: 6px; border-radius: 15px; background: rgba(255,255,255,.86); border: 2px solid rgba(255,255,255,.95); box-shadow: 0 5px 0 rgba(22,101,52,.13), 0 12px 22px rgba(15,23,42,.12); }
+      .mh-slot { position: relative; min-width: 0; border-radius: 10px; background: linear-gradient(180deg, rgba(240,253,244,.9), rgba(220,252,231,.9)); border: 1px dashed rgba(22,101,52,.3); display: grid; place-items: center; }
+      .mh-slot.filled { border-style: solid; background: linear-gradient(180deg, #fff7ed, #fef3c7); box-shadow: inset 0 2px 0 rgba(255,255,255,.8), 0 2px 0 rgba(138,113,53,.25); }
+      .mh-slot .mh-food { font-size: clamp(24px, 6vmin, 38px); line-height: 1; }
+      .mh-slot.clearing { animation: mhSlotClear .34s ease-out; }
+      .mh-controls { display: flex; align-items: center; justify-content: flex-end; gap: 6px; flex-wrap: wrap; }
+      .mh-action { height: 34px; border-radius: 999px; padding: 0 12px; background: linear-gradient(180deg, #38bdf8, #0284c7); color: white; box-shadow: 0 4px 0 #075985; }
+      .mh-action.help { background: linear-gradient(180deg, #fb923c, #ea580c); box-shadow-color: #9a3412; }
+      .mh-levels { position: absolute; left: 10px; top: 10px; z-index: 12; display: flex; gap: 5px; flex-wrap: wrap; }
+      .mh-level-btn { height: 28px; padding: 0 9px; border-radius: 999px; background: rgba(255,255,255,.88); color: #0f766e; border: 1px solid rgba(22,101,52,.18); box-shadow: 0 2px 0 rgba(22,101,52,.12); font-size: 12px; white-space: nowrap; }
+      .mh-level-btn.active { background: linear-gradient(180deg, #34d399, #16a34a); color: #fff; box-shadow: 0 2px 0 #15803d; }
+      .mh-overlay { position: fixed; inset: 0; z-index: 40; display: flex; align-items: center; justify-content: center; padding: 18px; background: rgba(15,39,71,.48); }
+      .mh-card { width: min(92vw, 440px); padding: 20px; border-radius: 18px; background: linear-gradient(180deg, #fff, #f0fdf4); border: 3px solid #86efac; box-shadow: 0 18px 44px rgba(15,23,42,.28); text-align: center; }
+      .mh-card h1 { margin: 0 0 10px; color: #17324d; font-size: 25px; font-weight: 1000; }
+      .mh-card p { margin: 0 0 15px; color: #0f766e; font-size: 15px; font-weight: 800; line-height: 1.55; }
+      .mh-start { border-radius: 999px; padding: 10px 22px; background: linear-gradient(180deg, #34d399, #16a34a); color: white; box-shadow: 0 5px 0 #15803d; }
+      .mh-toast { position: fixed; left: 50%; top: 50%; z-index: 45; transform: translate(-50%, -50%); min-width: min(310px, 82vw); padding: 18px 22px; border-radius: 18px; background: #fff; border: 3px solid #86efac; color: #15803d; font-size: 22px; font-weight: 1000; text-align: center; box-shadow: 0 18px 42px rgba(15,23,42,.24); animation: mhToast 1.35s ease-out forwards; pointer-events: none; }
+      .mh-fly { position: fixed; left: var(--from-x); top: var(--from-y); z-index: 50; width: var(--tile-w); height: var(--tile-h); border-radius: 8px; display: grid; place-items: center; background: linear-gradient(180deg, #fff7ed, #fef3c7 76%, #d9b96d); box-shadow: 0 8px 15px rgba(15,23,42,.22); transform: translate(-50%, -50%); pointer-events: none; animation: mhFly .26s ease-in forwards; }
+      .mh-fly span { font-size: clamp(24px, 5.5vmin, 42px); line-height: 1; }
+      .mh-spark { position: fixed; left: var(--x); top: var(--y); z-index: 49; width: var(--size); height: var(--size); border-radius: 999px; background: var(--c); box-shadow: 0 0 8px var(--c); transform: translate(-50%, -50%); pointer-events: none; animation: mhSpark var(--d) ease-out forwards; }
+      .mh-pop-text { position: fixed; left: var(--x); top: var(--y); z-index: 51; transform: translate(-50%, -50%); color: #15803d; font-weight: 1000; font-size: 18px; text-shadow: 0 2px 0 #fff, 0 5px 12px rgba(15,23,42,.18); pointer-events: none; animation: mhPopText .8s ease-out forwards; }
+      .mh-confetti { position: fixed; top: -16px; z-index: 48; width: 9px; height: 15px; border-radius: 3px; background: var(--c); animation: mhConfetti var(--d) ease-in forwards; pointer-events: none; }
+      [hidden] { display: none !important; }
+      @keyframes mhTileIn { 0% { opacity: 0; transform: translate(-50%, calc(-50% + 8px)) scale(.82); } 100% { opacity: 1; transform: translate(-50%, -50%) scale(1); } }
+      @keyframes mhHint { 0%,100% { transform: translate(-50%, -50%); } 50% { transform: translate(-50%, calc(-50% - 5px)) scale(1.04); filter: brightness(1.1); } }
+      @keyframes mhRemove { 100% { opacity: 0; transform: translate(-50%, -50%) scale(.62) rotate(8deg); } }
+      @keyframes mhSlotClear { 0% { transform: scale(1); } 45% { transform: scale(1.13); background: #dcfce7; } 100% { transform: scale(1); } }
+      @keyframes mhToast { 0% { opacity: 0; transform: translate(-50%, -40%) scale(.82); } 18% { opacity: 1; transform: translate(-50%, -50%) scale(1); } 100% { opacity: 0; transform: translate(-50%, -78%) scale(.94); } }
+      @keyframes mhFly { 100% { left: var(--to-x); top: var(--to-y); transform: translate(-50%, -50%) scale(.78); opacity: .18; } }
+      @keyframes mhSpark { 0% { opacity: 1; transform: translate(-50%, -50%) scale(1); } 100% { opacity: 0; transform: translate(calc(var(--dx) - 50%), calc(var(--dy) - 50%)) scale(.24); } }
+      @keyframes mhPopText { 0% { opacity: 0; transform: translate(-50%, -30%) scale(.8); } 20% { opacity: 1; transform: translate(-50%, -50%) scale(1.08); } 100% { opacity: 0; transform: translate(-50%, -115%) scale(.9); } }
+      @keyframes mhBoardPulse { 50% { filter: brightness(1.04); } }
+      @keyframes mhBoardShake { 0%,100% { transform: translateX(0); } 20% { transform: translateX(-6px); } 40% { transform: translateX(5px); } 60% { transform: translateX(-3px); } 80% { transform: translateX(2px); } }
+      @keyframes mhConfetti { 100% { opacity: 0; transform: translate3d(var(--x), 112vh, 0) rotate(660deg); } }
+      @media (prefers-reduced-motion: reduce) {
+        .mh-tile, .mh-tile.hint, .mh-tile.removing, .mh-slot.clearing, .mh-toast, .mh-fly, .mh-spark, .mh-pop-text, .mh-confetti, .mh-board.pick-pulse, .mh-board.fail-shake { animation: none !important; }
+      }
+      @media (max-width: 560px) {
+        .mh-shell { gap: 6px; padding: 6px; }
+        .mh-top { grid-template-columns: 36px minmax(0,1fr); }
+        .mh-stats { grid-column: 1 / -1; justify-content: center; }
+        .mh-tray-wrap { grid-template-columns: 1fr; min-height: 112px; }
+        .mh-controls { justify-content: center; }
+        .mh-board-wrap { height: min(calc(100vh - 206px), 440px); }
+      }
+      @media (max-height: 560px) {
+        .mh-top { min-height: 42px; }
+        .mh-tray-wrap { min-height: 58px; }
+        .mh-tray { height: 56px; }
+        .mh-board-wrap { height: calc(100vh - 124px); }
+        .mh-stats .optional { display: none; }
+      }
+    </style>
+    <div class="mh-bg" aria-hidden="true">
+      ${Array.from({ length: 16 }, (_, i) => `<i class="mh-grass" style="left:${(i * 23 + 7) % 96}%;top:${(i * 31 + 12) % 92}%;transform:scale(${0.75 + (i % 4) * 0.12}) rotate(${(i % 5 - 2) * 8}deg)"></i>`).join('')}
+    </div>
+    <div class="mh-shell">
+      <header class="mh-top">
+        <button id="mhMenu" class="mh-icon-btn" type="button" aria-label="玩法">?</button>
+        <div class="mh-title" id="mhTitle">哈奇食物叠叠消</div>
+        <div class="mh-stats" aria-label="游戏状态">
+          <span class="mh-pill">剩余 <b id="mhLeft">0</b></span>
+          <span class="mh-pill">得分 <b id="mhScore">0</b></span>
+          <span class="mh-pill optional">最佳 <b id="mhBest">0</b></span>
+          <span class="mh-pill optional"><b id="mhTime">0</b>s</span>
+        </div>
+      </header>
+      <main class="mh-stage">
+        <div class="mh-board-wrap">
+          <div id="mhLevels" class="mh-levels" aria-label="关卡选择"></div>
+          <div id="mhBoard" class="mh-board" aria-label="食物叠叠消棋盘"></div>
+        </div>
+      </main>
+      <footer class="mh-tray-wrap">
+        <div id="mhTray" class="mh-tray" aria-label="暂存槽"></div>
+        <div class="mh-controls">
+          <button id="mhHelp" class="mh-action help" type="button">玩法</button>
+          <button id="mhHint" class="mh-action" type="button">提示</button>
+          <button id="mhRestart" class="mh-action" type="button">重开</button>
+        </div>
+      </footer>
+    </div>
+    <div id="mhOverlay" class="mh-overlay" role="dialog" aria-modal="true" aria-labelledby="mhOverlayTitle">
+      <div class="mh-card">
+        <h1 id="mhOverlayTitle">食物叠叠消</h1>
+        <p id="mhOverlayText">点击没有被压住的食物，它会进入下方7格暂存槽。暂存槽里凑齐3个相同食物会自动消除；7格塞满还没消掉就失败。</p>
+        <button id="mhStart" class="mh-start" type="button">开始挑战</button>
+      </div>
+    </div>
+  `;
+  document.body.appendChild(root);
+
+  const boardEl = document.getElementById('mhBoard');
+  const trayEl = document.getElementById('mhTray');
+  const levelsEl = document.getElementById('mhLevels');
+  const overlayEl = document.getElementById('mhOverlay');
+  const overlayTitleEl = document.getElementById('mhOverlayTitle');
+  const overlayTextEl = document.getElementById('mhOverlayText');
+  const startBtn = document.getElementById('mhStart');
+
+  function post(type, data = {}) {
+    try { window.parent.postMessage({ type, data }, '*'); } catch (_) {}
+  }
+
+  function rand(min, max) {
+    return Math.floor(Math.random() * (max - min + 1)) + min;
+  }
+
+  function randFloat(min, max) {
+    return min + Math.random() * (max - min);
+  }
+
+  function shuffle(items) {
+    for (let i = items.length - 1; i > 0; i--) {
+      const j = rand(0, i);
+      [items[i], items[j]] = [items[j], items[i]];
+    }
+    return items;
+  }
+
+  function loadProgress() {
+    try {
+      const raw = JSON.parse(localStorage.getItem(PROGRESS_KEY) || '{}');
+      return LEVELS.reduce((progress, level) => {
+        progress[level.id] = Math.max(0, Math.round(Number(raw[level.id]) || 0));
+        return progress;
+      }, {});
+    } catch (_) {
+      return LEVELS.reduce((progress, level) => {
+        progress[level.id] = 0;
+        return progress;
+      }, {});
+    }
+  }
+
+  function loadDifficultyIndex() {
+    try {
+      const index = Math.round(Number(localStorage.getItem(DIFFICULTY_KEY)) || 0);
+      return Math.max(0, Math.min(LEVELS.length - 1, index));
+    } catch (_) {
+      return 0;
+    }
+  }
+
+  function saveDifficultyIndex(index) {
+    try { localStorage.setItem(DIFFICULTY_KEY, String(index)); } catch (_) {}
+  }
+
+  function saveProgress() {
+    try { localStorage.setItem(PROGRESS_KEY, JSON.stringify(state.clears)); } catch (_) {}
+  }
+
+  function buildLevel(base, clears = 0) {
+    const extra = Math.max(0, Math.round(clears));
+    const tier = extra + 1;
+    const rank = Number(base.challengeRank) || 0;
+    const groupStep = base.id === 'tutorial' ? 3 : 3 + rank;
+    const scaledGroups = base.groups + Math.min(rank >= 4 ? 42 : 28, extra * groupStep);
+    return {
+      ...base,
+      baseId: base.id,
+      tier,
+      groups: base.id === 'tutorial' && tier === 1 ? base.groups : scaledGroups,
+      typeCount: Math.min(TILE_TYPES.length, base.typeCount + Math.floor(extra / 2)),
+      layers: Math.min(rank >= 4 ? 12 : 10, base.layers + Math.floor((extra + 1) / 2)),
+      cols: Math.min(8, base.cols + Math.floor(extra / 4)),
+      rows: Math.min(7, base.rows + Math.floor(extra / 5)),
+      reward: base.reward + extra * 28,
+      title: `${base.label} Lv.${tier}`,
+      note: extra > 0
+        ? `${base.label}基础难度已通关 ${extra} 次，本局会增加食物数量、图案种类和叠放层数。`
+        : base.note,
+    };
+  }
+
+  function ensureAudio() {
+    try {
+      if (!sound.ctx) {
+        const AudioContext = window.AudioContext || window.webkitAudioContext;
+        if (!AudioContext) return null;
+        sound.ctx = new AudioContext();
+        sound.master = sound.ctx.createGain();
+        sound.master.gain.value = 0.42;
+        sound.master.connect(sound.ctx.destination);
+      }
+      if (sound.ctx.state === 'suspended') sound.ctx.resume();
+      return sound.ctx;
+    } catch (_) {
+      return null;
+    }
+  }
+
+  function beep(freq = 520, duration = 0.08, type = 'sine', gain = 0.1) {
+    const ctx = ensureAudio();
+    if (!ctx || !sound.master) return;
+    const osc = ctx.createOscillator();
+    const amp = ctx.createGain();
+    osc.type = type;
+    osc.frequency.setValueAtTime(freq, ctx.currentTime);
+    amp.gain.setValueAtTime(0.0001, ctx.currentTime);
+    amp.gain.exponentialRampToValueAtTime(gain, ctx.currentTime + 0.01);
+    amp.gain.exponentialRampToValueAtTime(0.0001, ctx.currentTime + duration);
+    osc.connect(amp);
+    amp.connect(sound.master);
+    osc.start();
+    osc.stop(ctx.currentTime + duration + 0.02);
+  }
+
+  function playPickSound() {
+    beep(520 + state.tray.length * 18, 0.055, 'triangle', 0.08);
+  }
+
+  function playClearSound(combo = 1) {
+    beep(660 + combo * 35, 0.08, 'sine', 0.1);
+    setTimeout(() => beep(880 + combo * 42, 0.1, 'triangle', 0.09), 70);
+  }
+
+  function playWinSound() {
+    [740, 930, 1110].forEach((freq, index) => setTimeout(() => beep(freq, 0.12, 'triangle', 0.1), index * 95));
+  }
+
+  function playFailSound() {
+    beep(180, 0.16, 'sawtooth', 0.09);
+    setTimeout(() => beep(130, 0.2, 'sawtooth', 0.08), 100);
+  }
+
+  function tileSizeForLevel(level) {
+    if (level.challengeRank >= 4 || level.groups > 58) return { w: '10.4%' };
+    if (level.challengeRank >= 2 || level.groups > 20) return { w: '11.2%' };
+    return { w: '13.2%' };
+  }
+
+  function boardAspectScale() {
+    const rect = boardEl?.getBoundingClientRect?.();
+    if (!rect?.width || !rect?.height) return 1;
+    return rect.width / rect.height;
+  }
+
+  function tileHeightPercent(tile) {
+    return tile.w * boardAspectScale();
+  }
+
+  function clampValue(value, min, max) {
+    return Math.max(min, Math.min(max, value));
+  }
+
+  function safeTileBounds(tileWidth) {
+    const halfW = tileWidth / 2;
+    const halfH = tileWidth * boardAspectScale() / 2;
+    const reservedTop = 18;
+    return {
+      xMin: halfW + 1.4,
+      xMax: 100 - halfW - 1.4,
+      yMin: reservedTop + halfH + 1.4,
+      yMax: 100 - halfH - 1.4,
+    };
+  }
+
+  function clampTilePoint(x, y, tileWidth) {
+    const bounds = safeTileBounds(tileWidth);
+    return {
+      x: clampValue(x, bounds.xMin, bounds.xMax),
+      y: clampValue(y, bounds.yMin, bounds.yMax),
+    };
+  }
+
+  function layoutPointForLevel(level, layer, row, col, cols, rows, jitter) {
+    const extreme = level.challengeRank >= 4;
+    const xMin = extreme ? 7 : level.groups > 20 ? 9 : 14;
+    const xMax = extreme ? 93 : level.groups > 20 ? 91 : 86;
+    const yMin = extreme ? 14 : level.groups > 20 ? 16 : 20;
+    const yMax = extreme ? 90 : level.groups > 20 ? 88 : 82;
+    const xStep = cols > 1 ? (xMax - xMin) / (cols - 1) : 0;
+    const yStep = rows > 1 ? (yMax - yMin) / (rows - 1) : 0;
+    const layerShiftX = ((layer % 4) - 1.5) * (extreme ? 3.2 : level.groups > 20 ? 2.4 : 1.5);
+    const layerShiftY = ((layer % 3) - 1) * (extreme ? 2.8 : level.groups > 20 ? 2.2 : 1.4);
+    return {
+      x: clampValue(xMin, 5, 95) + col * xStep + layerShiftX + rand(-jitter * 10, jitter * 10) / 10,
+      y: clampValue(yMin, 8, 92) + row * yStep + layerShiftY + rand(-jitter * 10, jitter * 10) / 10,
+      xMin,
+      xMax,
+      yMin,
+      yMax,
+    };
+  }
+
+  function buildTileBag(level) {
+    const groups = [];
+    for (let group = 0; group < level.groups; group++) {
+      groups.push(TILE_TYPES[group % level.typeCount]);
+    }
+
+    if (level.challengeRank >= 2) {
+      const shallow = [];
+      const middle = [];
+      const deep = [];
+      shuffle(groups).forEach((type, index) => {
+        if (level.challengeRank >= 4 && index % 4 === 0) {
+          shallow.push(type);
+          middle.push(type);
+          deep.push(type);
+        } else if (index % 2 === 0) {
+          shallow.push(type, type);
+          deep.push(type);
+        } else {
+          shallow.push(type);
+          middle.push(type);
+          deep.push(type);
+        }
+      });
+      return shuffle(deep).concat(shuffle(middle), shuffle(shallow));
+    }
+
+    return shuffle(groups.flatMap(type => [type, type, type]));
+  }
+
+  function layerGridSize(level, layer) {
+    const depth = level.layers <= 1 ? 0 : layer / (level.layers - 1);
+    let cols = level.cols;
+    let rows = level.rows;
+    if (level.challengeRank >= 3 && depth > 0.62) {
+      cols -= depth > 0.84 ? 3 : 2;
+      rows -= depth > 0.84 ? 2 : 1;
+    } else {
+      cols -= layer % 2 === 0 ? 0 : 1;
+      rows -= layer % 3 === 0 ? 0 : 1;
+    }
+    return {
+      cols: Math.max(3, cols),
+      rows: Math.max(3, rows),
+    };
+  }
+
+  function buildLayerCandidates(level, size) {
+    if (level.challengeRank >= 2) return buildStackLayerCandidates(level, size);
+
+    return Array.from({ length: level.layers }, (_, layer) => {
+      const grid = layerGridSize(level, layer);
+      const jitter = level.challengeRank >= 4 ? 3.2 : level.groups > 20 ? 2.2 : 1.2;
+      const candidates = [];
+      for (let row = 0; row < grid.rows; row++) {
+        for (let col = 0; col < grid.cols; col++) {
+          const point = layoutPointForLevel(level, layer, row, col, grid.cols, grid.rows, jitter);
+          const tileWidth = parseFloat(size.w);
+          const safePoint = clampTilePoint(point.x, point.y, tileWidth);
+          candidates.push({
+            layer,
+            x: safePoint.x,
+            y: safePoint.y,
+            w: tileWidth,
+          });
+        }
+      }
+      return shuffle(candidates);
+    });
+  }
+
+  function buildStackAnchors(level, tileWidth) {
+    const targetCount = level.challengeRank >= 4 ? 18 : level.challengeRank >= 3 ? 20 : 21;
+    const bounds = safeTileBounds(tileWidth);
+    const xMin = bounds.xMin + 0.8;
+    const xMax = bounds.xMax - 0.8;
+    const yMin = bounds.yMin + 2.8;
+    const yMax = bounds.yMax - 1.4;
+    const minDistance = tileWidth * (level.challengeRank >= 4 ? 1.28 : 1.18);
+    const anchors = [];
+
+    for (let attempt = 0; anchors.length < targetCount && attempt < 900; attempt++) {
+      const candidate = {
+        x: randFloat(xMin, xMax),
+        y: randFloat(yMin, yMax),
+      };
+      const suitable = anchors.every(anchor => {
+        const dx = candidate.x - anchor.x;
+        const dy = (candidate.y - anchor.y) / Math.max(0.7, boardAspectScale());
+        return Math.hypot(dx, dy) >= minDistance;
+      });
+      if (suitable || attempt > 560) {
+        anchors.push(candidate);
+      }
+    }
+    return shuffle(anchors);
+  }
+
+  function buildStackLayerCandidates(level, size) {
+    const tileWidth = parseFloat(size.w);
+    const anchors = buildStackAnchors(level, tileWidth);
+    const offsets = [
+      [0, 0],
+      [-3.5, 2.1],
+      [3.4, -2.0],
+      [-1.5, -3.0],
+      [1.9, 2.8],
+    ];
+    return Array.from({ length: level.layers }, (_, layer) => {
+      const depth = level.layers <= 1 ? 1 : layer / (level.layers - 1);
+      const variantCount = depth > 0.78 ? 1 : depth > 0.52 ? 2 : 4;
+      const layerLeanX = ((layer % 3) - 1) * 1.15;
+      const layerLeanY = ((layer % 4) - 1.5) * 0.9;
+      const peekScale = depth > 0.78 ? 0 : depth > 0.52 ? 0.85 : 1.2;
+      const candidates = [];
+      const dealtAnchors = shuffle([...anchors]);
+      dealtAnchors.forEach((anchor, anchorIndex) => {
+        for (let i = 0; i < variantCount; i++) {
+          const offset = depth > 0.78 ? offsets[0] : offsets[(i + anchorIndex + layer) % offsets.length];
+          const dealArc = (anchorIndex - dealtAnchors.length / 2) * 0.08;
+          const safePoint = clampTilePoint(
+            anchor.x + offset[0] * peekScale + layerLeanX + dealArc + rand(-12, 12) / 10,
+            anchor.y + offset[1] * peekScale + layerLeanY + Math.abs(dealArc) * 0.45 + rand(-12, 12) / 10,
+            tileWidth,
+          );
+          candidates.push({
+            layer,
+            x: safePoint.x,
+            y: safePoint.y,
+            w: tileWidth,
+          });
+        }
+      });
+      return shuffle(candidates);
+    });
+  }
+
+  function buildLayerQuotas(level, targetCount, layerCandidates) {
+    const quotas = Array(level.layers).fill(0);
+    const weights = layerCandidates.map((candidates, layer) => {
+      const depth = level.layers <= 1 ? 0 : layer / (level.layers - 1);
+      const strategicBias = level.challengeRank >= 3 ? 1.08 - depth * 0.22 : 1;
+      return Math.max(0.5, strategicBias) * Math.max(1, candidates.length);
+    });
+    let remaining = targetCount;
+    let weightSum = weights.reduce((sum, weight) => sum + weight, 0);
+    for (let layer = 0; layer < level.layers; layer++) {
+      const desired = Math.round(targetCount * weights[layer] / weightSum);
+      quotas[layer] = Math.min(layerCandidates[layer].length, Math.max(1, desired));
+      remaining -= quotas[layer];
+    }
+    while (remaining !== 0) {
+      let changed = false;
+      for (let layer = level.layers - 1; layer >= 0 && remaining > 0; layer--) {
+        if (quotas[layer] < layerCandidates[layer].length) {
+          quotas[layer]++;
+          remaining--;
+          changed = true;
+        }
+      }
+      for (let layer = 0; layer < level.layers && remaining < 0; layer++) {
+        if (quotas[layer] > 1) {
+          quotas[layer]--;
+          remaining++;
+          changed = true;
+        }
+      }
+      if (!changed) break;
+    }
+    return quotas;
+  }
+
+  function generateTutorialTiles() {
+    const size = tileSizeForLevel(LEVELS[0]);
+    const tiles = [];
+    const bottomGroups = [TILE_TYPES[2], TILE_TYPES[3], TILE_TYPES[4], TILE_TYPES[5]];
+    const topGroups = [TILE_TYPES[0], TILE_TYPES[1]];
+    const bottomPositions = [
+      [22, 29], [40, 29], [58, 29], [76, 29],
+      [22, 53], [40, 53], [58, 53], [76, 53],
+      [22, 77], [40, 77], [58, 77], [76, 77],
+    ];
+    const topPositions = [
+      [31, 40], [49, 40], [67, 40],
+      [31, 64], [49, 64], [67, 64],
+    ];
+    bottomGroups.flatMap(type => [type, type, type]).forEach((type, index) => {
+      const [x, y] = bottomPositions[index];
+      tiles.push({ uid: `tutorial_bottom_${index}`, typeId: type.id, icon: type.icon, label: type.label, layer: 0, x, y, w: parseFloat(size.w), removed: false });
+    });
+    topGroups.flatMap(type => [type, type, type]).forEach((type, index) => {
+      const [x, y] = topPositions[index];
+      tiles.push({ uid: `tutorial_top_${index}`, typeId: type.id, icon: type.icon, label: type.label, layer: 1, x, y, w: parseFloat(size.w), removed: false });
+    });
+    return tiles;
+  }
+
+  function generateTiles(level) {
+    if (level.id === 'tutorial' && level.tier === 1) return generateTutorialTiles();
+
+    const bag = buildTileBag(level);
+    const size = tileSizeForLevel(level);
+    const layerCandidates = buildLayerCandidates(level, size);
+    const layerQuotas = buildLayerQuotas(level, bag.length, layerCandidates);
+    const tiles = [];
+    let index = 0;
+    for (let layer = 0; layer < level.layers && index < bag.length; layer++) {
+      const candidates = layerCandidates[layer];
+      for (let i = 0; i < layerQuotas[layer] && index < bag.length; i++) {
+        const type = bag[index];
+        const point = candidates[i];
+        tiles.push({
+          uid: `tile_${layer}_${i}_${index}`,
+          typeId: type.id,
+          icon: type.icon,
+          label: type.label,
+          layer,
+          x: point.x,
+          y: point.y,
+          w: point.w,
+          removed: false,
+        });
+        index++;
+      }
+    }
+
+    while (index < bag.length) {
+      const type = bag[index];
+      const layer = level.layers - 1;
+      const tileWidth = parseFloat(size.w);
+      const safePoint = clampTilePoint(rand(9, 91), rand(16, 88), tileWidth);
+      tiles.push({
+        uid: `tile_extra_${index}`,
+        typeId: type.id,
+        icon: type.icon,
+        label: type.label,
+        layer,
+        x: safePoint.x,
+        y: safePoint.y,
+        w: tileWidth,
+        removed: false,
+      });
+      index++;
+    }
+    if (level.challengeRank >= 2) suppressInitialOpenTriples(tiles);
+    return tiles;
+  }
+
+  function copyTileFood(target, source) {
+    target.typeId = source.typeId;
+    target.icon = source.icon;
+    target.label = source.label;
+  }
+
+  function swapTileFood(a, b) {
+    const saved = { typeId: a.typeId, icon: a.icon, label: a.label };
+    copyTileFood(a, b);
+    copyTileFood(b, saved);
+  }
+
+  function openTilesFromList(tiles) {
+    const previousTiles = state.tiles;
+    state.tiles = tiles;
+    const openTiles = tiles.filter(isTileOpen);
+    state.tiles = previousTiles;
+    return openTiles;
+  }
+
+  function suppressInitialOpenTriples(tiles) {
+    for (let pass = 0; pass < 80; pass++) {
+      const openTiles = openTilesFromList(tiles);
+      const counts = openTiles.reduce((map, tile) => {
+        map[tile.typeId] = (map[tile.typeId] || 0) + 1;
+        return map;
+      }, {});
+      const crowdedType = Object.keys(counts).find(typeId => counts[typeId] >= 3);
+      if (!crowdedType) return;
+
+      const crowdedOpen = openTiles.filter(tile => tile.typeId === crowdedType);
+      const swapOut = crowdedOpen[crowdedOpen.length - 1];
+      const buriedCandidates = tiles.filter(tile => !tile.removed && !openTiles.includes(tile) && tile.typeId !== crowdedType);
+      const swapIn = buriedCandidates.find(tile => (counts[tile.typeId] || 0) <= 1) || buriedCandidates[0];
+      if (!swapIn) return;
+      swapTileFood(swapOut, swapIn);
+    }
+  }
+
+  function overlaps(a, b) {
+    const ah = tileHeightPercent(a);
+    const bh = tileHeightPercent(b);
+    const ax1 = a.x - a.w * 0.42;
+    const ax2 = a.x + a.w * 0.42;
+    const ay1 = a.y - ah * 0.42;
+    const ay2 = a.y + ah * 0.42;
+    const bx1 = b.x - b.w * 0.42;
+    const bx2 = b.x + b.w * 0.42;
+    const by1 = b.y - bh * 0.42;
+    const by2 = b.y + bh * 0.42;
+    return ax1 < bx2 && ax2 > bx1 && ay1 < by2 && ay2 > by1;
+  }
+
+  function isTileOpen(tile) {
+    if (tile.removed) return false;
+    return !state.tiles.some(other => !other.removed && other.layer > tile.layer && overlaps(tile, other));
+  }
+
+  function setupLevel(index = state.levelIndex) {
+    clearInterval(state.timer);
+    state.levelIndex = Math.max(0, Math.min(LEVELS.length - 1, index));
+    saveDifficultyIndex(state.levelIndex);
+    const base = LEVELS[state.levelIndex];
+    state.level = buildLevel(base, state.clears[base.id] || 0);
+    state.tiles = generateTiles(state.level);
+    state.tray = [];
+    state.started = false;
+    state.finished = false;
+    state.score = 0;
+    state.combo = 0;
+    state.moves = 0;
+    state.seconds = 0;
+    state.roundId = `${state.level.id}_${Date.now()}`;
+    renderLevels();
+    renderAll();
+    showOverlay(state.level.title, state.level.note, '开始挑战');
+  }
+
+  function startGame() {
+    if (state.started) return;
+    state.started = true;
+    state.finished = false;
+    overlayEl.hidden = true;
+    post('gameStarted', { level: state.level.tier, difficulty: state.level.id, baseDifficulty: state.level.baseId, roundId: state.roundId });
+    state.timer = setInterval(() => {
+      if (!state.finished) {
+        state.seconds++;
+        updateHud();
+      }
+    }, 1000);
+  }
+
+  function renderLevels() {
+    levelsEl.innerHTML = LEVELS.map((level, index) => {
+      const tier = (state.clears[level.id] || 0) + 1;
+      return `<button type="button" class="mh-level-btn${index === state.levelIndex ? ' active' : ''}" data-level="${index}">${level.label} Lv.${tier}</button>`;
+    }).join('');
+    levelsEl.querySelectorAll('[data-level]').forEach((btn) => {
+      btn.onclick = () => setupLevel(Number(btn.dataset.level));
+    });
+  }
+
+  function renderAll() {
+    renderBoard();
+    renderTray();
+    updateHud();
+  }
+
+  function renderBoard() {
+    boardEl.innerHTML = '';
+    state.tileElements.clear();
+    const size = tileSizeForLevel(state.level);
+    const ordered = [...state.tiles].sort((a, b) => a.layer - b.layer);
+    const fragment = document.createDocumentFragment();
+    ordered.forEach((tile) => {
+      if (tile.removed) return;
+      const button = document.createElement('button');
+      const open = isTileOpen(tile);
+      button.type = 'button';
+      button.className = `mh-tile${open ? '' : ' locked'}`;
+      button.style.setProperty('--x', `${tile.x}%`);
+      button.style.setProperty('--y', `${tile.y}%`);
+      button.style.setProperty('--tile-w', size.w);
+      button.style.zIndex = 10 + tile.layer;
+      button.dataset.uid = tile.uid;
+      button.disabled = state.finished;
+      button.setAttribute('aria-label', `${tile.label}${open ? '，可拿取' : '，被压住'}`);
+      button.innerHTML = `<span class="mh-food">${tile.icon}</span>`;
+      button.onclick = () => pickTile(tile.uid, button);
+      state.tileElements.set(tile.uid, button);
+      fragment.appendChild(button);
+    });
+    boardEl.appendChild(fragment);
+  }
+
+  function renderTray(clearingType = '') {
+    trayEl.innerHTML = '';
+    const fragment = document.createDocumentFragment();
+    for (let i = 0; i < TRAY_SIZE; i++) {
+      const tile = state.tray[i];
+      const slot = document.createElement('div');
+      slot.className = `mh-slot${tile ? ' filled' : ''}${tile && tile.typeId === clearingType ? ' clearing' : ''}`;
+      if (tile) slot.innerHTML = `<span class="mh-food" aria-label="${tile.label}">${tile.icon}</span>`;
+      fragment.appendChild(slot);
+    }
+    trayEl.appendChild(fragment);
+  }
+
+  function updateTileLocks() {
+    state.tiles.forEach((tile) => {
+      if (tile.removed) return;
+      const el = state.tileElements.get(tile.uid);
+      if (!el) return;
+      const wasLocked = el.classList.contains('locked');
+      const open = isTileOpen(tile);
+      el.classList.toggle('locked', !open);
+      el.setAttribute('aria-label', `${tile.label}${open ? '，可拿取' : '，被压住'}`);
+    });
+  }
+
+  function updateHud() {
+    const left = state.tiles.filter(tile => !tile.removed).length;
+    document.getElementById('mhTitle').textContent = state.level.title;
+    document.getElementById('mhLeft').textContent = String(left);
+    document.getElementById('mhScore').textContent = String(state.score);
+    document.getElementById('mhBest').textContent = String(state.best);
+    document.getElementById('mhTime').textContent = String(state.seconds);
+  }
+
+  function pickTile(uid, tileEl) {
+    if (state.finished) return;
+    if (!state.started) startGame();
+    const tile = state.tiles.find(item => item.uid === uid);
+    if (!tile || tile.removed || !isTileOpen(tile)) {
+      beep(170, 0.08, 'square', 0.08);
+      return;
+    }
+    if (state.tray.length >= TRAY_SIZE) return;
+
+    state.moves++;
+    tile.removed = true;
+    state.tray.push({ ...tile });
+    tileEl.classList.add('removing');
+    state.tileElements.delete(tile.uid);
+    flyToTray(tileEl, state.tray.length - 1, tile.icon);
+    spawnSparksFromRect(tileEl.getBoundingClientRect(), ['#facc15', '#fb923c', '#86efac'], 8);
+    pulseBoard('pick-pulse');
+    playPickSound();
+    setTimeout(() => tileEl.remove(), 240);
+    updateTileLocks();
+
+    const typeCount = state.tray.filter(item => item.typeId === tile.typeId).length;
+    if (typeCount >= 3) {
+      state.combo++;
+      state.score += 30 + state.combo * 8;
+      renderTray(tile.typeId);
+      setTimeout(() => {
+        const clearRect = trayEl.getBoundingClientRect();
+        let removed = 0;
+        state.tray = state.tray.filter((item) => {
+          if (item.typeId === tile.typeId && removed < 3) {
+            removed++;
+            return false;
+          }
+          return true;
+        });
+        playClearSound(state.combo);
+        spawnSparksFromRect(clearRect, ['#22c55e', '#38bdf8', '#facc15'], 18);
+        showPopText(`+${30 + state.combo * 8}`, clearRect.left + clearRect.width / 2, clearRect.top + clearRect.height / 2);
+        renderTray();
+        updateHud();
+        checkResult();
+      }, 170);
+    } else {
+      state.combo = 0;
+      renderTray();
+      updateHud();
+      checkResult();
+    }
+  }
+
+  function flyToTray(tileEl, trayIndex, icon) {
+    const from = tileEl.getBoundingClientRect();
+    const slots = trayEl.querySelectorAll('.mh-slot');
+    const to = slots[Math.min(trayIndex, slots.length - 1)]?.getBoundingClientRect();
+    if (!to) return;
+    const fly = document.createElement('div');
+    fly.className = 'mh-fly';
+    fly.style.setProperty('--from-x', `${from.left + from.width / 2}px`);
+    fly.style.setProperty('--from-y', `${from.top + from.height / 2}px`);
+    fly.style.setProperty('--to-x', `${to.left + to.width / 2}px`);
+    fly.style.setProperty('--to-y', `${to.top + to.height / 2}px`);
+    fly.style.setProperty('--tile-w', `${from.width}px`);
+    fly.style.setProperty('--tile-h', `${from.height}px`);
+    fly.innerHTML = `<span>${icon}</span>`;
+    document.body.appendChild(fly);
+    setTimeout(() => fly.remove(), 310);
+  }
+
+  function checkResult() {
+    if (state.finished) return;
+    const left = state.tiles.filter(tile => !tile.removed).length;
+    if (left === 0 && state.tray.length === 0) {
+      finish(true);
+      return;
+    }
+    if (state.tray.length >= TRAY_SIZE) {
+      pulseBoard('fail-shake');
+      finish(false);
+    }
+  }
+
+  function finish(passed) {
+    state.finished = true;
+    clearInterval(state.timer);
+    const left = state.tiles.filter(tile => !tile.removed).length;
+    const timeBonus = passed ? Math.max(0, 90 - state.seconds) : 0;
+    const earnedPoints = Math.max(0, state.score + timeBonus + (passed ? state.level.reward : 0));
+    if (earnedPoints > state.best) {
+      state.best = earnedPoints;
+      localStorage.setItem(STORAGE_KEY, String(state.best));
+    }
+    updateHud();
+    if (passed) {
+      state.clears[state.level.baseId] = (state.clears[state.level.baseId] || 0) + 1;
+      saveProgress();
+      renderLevels();
+      launchConfetti();
+      playWinSound();
+      showOverlay('挑战成功', `清空了所有食物，获得 ${earnedPoints} 分。${state.level.label}难度已升到 Lv.${state.clears[state.level.baseId] + 1}。`, '继续挑战');
+    } else {
+      playFailSound();
+      showOverlay('暂存槽满了', `还剩 ${left} 个食物没有清理，试着先消掉同类食物。`, '再试一次');
+    }
+    post('gameFinished', {
+      completed: passed,
+      passed,
+      earnedPoints,
+      score: earnedPoints,
+      level: state.level.tier,
+      difficulty: state.level.id,
+      baseDifficulty: state.level.baseId,
+      moves: state.moves,
+      seconds: state.seconds,
+      left,
+      roundId: state.roundId,
+      rewardCoins: passed ? undefined : 10,
+    });
+  }
+
+  function showOverlay(title, text, buttonText) {
+    overlayTitleEl.textContent = title;
+    overlayTextEl.textContent = text;
+    startBtn.textContent = buttonText;
+    overlayEl.hidden = false;
+  }
+
+  function showToast(text) {
+    const old = document.querySelector('.mh-toast');
+    old?.remove();
+    const toast = document.createElement('div');
+    toast.className = 'mh-toast';
+    toast.textContent = text;
+    document.body.appendChild(toast);
+    setTimeout(() => toast.remove(), 1400);
+  }
+
+  function pulseBoard(className) {
+    boardEl.classList.remove(className);
+    void boardEl.offsetWidth;
+    boardEl.classList.add(className);
+    setTimeout(() => boardEl.classList.remove(className), className === 'fail-shake' ? 400 : 220);
+  }
+
+  function spawnSparksFromRect(rect, colors, count = 10) {
+    if (!rect?.width || !rect?.height) return;
+    const centerX = rect.left + rect.width / 2;
+    const centerY = rect.top + rect.height / 2;
+    for (let i = 0; i < count; i++) {
+      const spark = document.createElement('i');
+      const angle = (Math.PI * 2 * i / count) + Math.random() * 0.45;
+      const distance = rand(22, 62);
+      spark.className = 'mh-spark';
+      spark.style.setProperty('--x', `${centerX + rand(-8, 8)}px`);
+      spark.style.setProperty('--y', `${centerY + rand(-8, 8)}px`);
+      spark.style.setProperty('--dx', `${Math.cos(angle) * distance}px`);
+      spark.style.setProperty('--dy', `${Math.sin(angle) * distance}px`);
+      spark.style.setProperty('--size', `${rand(5, 10)}px`);
+      spark.style.setProperty('--c', colors[i % colors.length]);
+      spark.style.setProperty('--d', `${rand(420, 720)}ms`);
+      document.body.appendChild(spark);
+      setTimeout(() => spark.remove(), 760);
+    }
+  }
+
+  function showPopText(text, x, y) {
+    const el = document.createElement('div');
+    el.className = 'mh-pop-text';
+    el.textContent = text;
+    el.style.setProperty('--x', `${x}px`);
+    el.style.setProperty('--y', `${y}px`);
+    document.body.appendChild(el);
+    setTimeout(() => el.remove(), 860);
+  }
+
+  function showHint() {
+    if (state.finished) return;
+    const trayCounts = state.tray.reduce((counts, item) => {
+      counts[item.typeId] = (counts[item.typeId] || 0) + 1;
+      return counts;
+    }, {});
+    const openTiles = state.tiles.filter(isTileOpen);
+    const preferred = openTiles.find(tile => trayCounts[tile.typeId] === 2)
+      || openTiles.find(tile => trayCounts[tile.typeId] === 1)
+      || openTiles[0];
+    boardEl.querySelectorAll('.mh-tile.hint').forEach(el => el.classList.remove('hint'));
+    if (!preferred) {
+      showToast('没有可拿的食物了');
+      return;
+    }
+    const el = boardEl.querySelector(`[data-uid="${preferred.uid}"]`);
+    el?.classList.add('hint');
+    setTimeout(() => el?.classList.remove('hint'), 1800);
+  }
+
+  function launchConfetti() {
+    const colors = ['#f97316', '#22c55e', '#38bdf8', '#facc15', '#f472b6'];
+    for (let i = 0; i < 34; i++) {
+      const piece = document.createElement('i');
+      piece.className = 'mh-confetti';
+      piece.style.left = `${rand(4, 96)}vw`;
+      piece.style.setProperty('--x', `${rand(-80, 80)}px`);
+      piece.style.setProperty('--c', colors[i % colors.length]);
+      piece.style.setProperty('--d', `${rand(900, 1500)}ms`);
+      document.body.appendChild(piece);
+      setTimeout(() => piece.remove(), 1700);
+    }
+  }
+
+  function handleOverlayAction() {
+    if (!state.started) {
+      startGame();
+      return;
+    }
+    if (state.finished) {
+      setupLevel(state.levelIndex);
+      return;
+    }
+    overlayEl.hidden = true;
+  }
+
+  window.addEventListener('message', (event) => {
+    const msg = event.data || {};
+    if (msg.type !== 'setGameConfig') return;
+    const nextLevel = Number(msg.data?.level ?? msg.level);
+    if (Number.isFinite(nextLevel)) setupLevel(Math.max(0, Math.min(LEVELS.length - 1, nextLevel - 1)));
+  });
+
+  document.getElementById('mhMenu').onclick = () => showOverlay('食物叠叠消', '点击没有被压住的食物放入下方7格。3个相同食物会消除；可以随时切换轻松、挑战、噩梦、炼狱基础难度，每次通关会让当前基础难度继续升级。', state.started && !state.finished ? '继续游戏' : '开始挑战');
+  document.getElementById('mhHelp').onclick = () => document.getElementById('mhMenu').click();
+  document.getElementById('mhRestart').onclick = () => setupLevel(state.levelIndex);
+  document.getElementById('mhHint').onclick = showHint;
+  startBtn.onclick = handleOverlayAction;
+
+  setupLevel(state.levelIndex);
+  post('gameLoaded', { title: '哈奇食物叠叠消' });
+})();
+</script>
+
+</html>

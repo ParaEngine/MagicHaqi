@@ -1,0 +1,1373 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+  <title>哈奇矩阵破解</title>
+  <script src="https://cdn.keepwork.com/keepwork/cdn/tailwindcss@3.4.16.js"></script>
+</head>
+
+<body></body>
+<script defer>
+(function () {
+  const STORAGE_KEY_DIFFICULTY = 'haqiMatrixHackDifficulty';
+  const STORAGE_KEY_KNOWN_POWERUPS = 'haqiMatrixHackKnownPowerups';
+  const STORAGE_KEY_KNOWN_GUIDES = 'haqiMatrixHackKnownGuides';
+  const DIRS = [[1, 0], [-1, 0], [0, 1], [0, -1]];
+  const DIFFICULTY_ORDER = ['easy', 'normal', 'hard', 'expert', 'nightmare'];
+  const DIFFICULTIES = {
+    easy: { id: 'easy', label: '入门', size: 5, pathMin: 10, pathMax: 15, checkpoints: 2, powerups: 1, obstacleRate: .28, hardRate: 0, baseScore: 80, pool: ['pulse', 'purify'] },
+    normal: { id: 'normal', label: '普通', size: 6, pathMin: 16, pathMax: 24, checkpoints: 3, powerups: 3, obstacleRate: .34, hardRate: 0, baseScore: 110, pool: ['pulse', 'cross', 'row', 'col', 'purify'] },
+    hard: { id: 'hard', label: '困难', size: 8, pathMin: 28, pathMax: 40, checkpoints: 4, powerups: 5, obstacleRate: .42, hardRate: 0, baseScore: 150, pool: ['pulse', 'cross', 'row', 'col', 'rotate', 'rotateCcw', 'purify'] },
+    expert: { id: 'expert', label: '专家', size: 9, pathMin: 46, pathMax: 68, checkpoints: 5, powerups: 7, obstacleRate: .54, hardRate: .2, baseScore: 190, pool: ['pulse', 'cross', 'row', 'col', 'rotate', 'rotateCcw', 'purify'] },
+    nightmare: { id: 'nightmare', label: '噩梦', size: 11, pathMin: 74, pathMax: 104, checkpoints: 7, powerups: 9, obstacleRate: .62, hardRate: .3, baseScore: 240, pool: ['pulse', 'cross', 'row', 'col', 'rotate', 'rotateCcw', 'purify'] },
+  };
+  const POWERUPS = {
+    pulse: { label: '脉冲', type: 'active', desc: '清除周围 8 格全部可清除障碍。', cls: 'power-pulse' },
+    cross: { label: '十字', type: 'active', desc: '净化上下左右各两格内的可清除障碍。', cls: 'power-cross' },
+    row: { label: '横切', type: 'active', desc: '打通当前整行上的可清除障碍。', cls: 'power-row' },
+    col: { label: '纵切', type: 'active', desc: '打通当前整列上的可清除障碍。', cls: 'power-col' },
+    rotate: { label: '顺旋', type: 'active', desc: '将周围 8 格的所有节点顺时针旋转。', cls: 'power-rotate' },
+    rotateCcw: { label: '逆旋', type: 'active', desc: '将周围 8 格的所有节点逆时针旋转。', cls: 'power-rotate-ccw' },
+    purify: { label: '净化', type: 'status', desc: '获得一次突破能力，可直接穿过下一个普通障碍，对不可净化障碍无效。', cls: 'power-purify' },
+  };
+  const CORE_GUIDES = {
+    start: { label: '起点', desc: '固定在矩阵左上角，路径必须从这里开始。' },
+    end: { label: '终点', desc: '接入全部必经点后，到达这里即可通关。' },
+    checkpoint: { label: '必经点', desc: '必须全部经过，顺序不限。' },
+    obstacle: { label: '障碍点', desc: '默认不可通过，可通过清除型道具移除，也可通过净化状态临时突破。' },
+    hardObstacle: { label: '不可净化障碍', desc: '只在高级难度下出现，不能被净化突破，也不能被清除型道具移除。' },
+  };
+
+  const state = {
+    difficulty: normalizeDifficulty(localStorage.getItem(STORAGE_KEY_DIFFICULTY)),
+    round: 1,
+    grid: [],
+    route: [],
+    checkpoints: new Set(),
+    visitedCheckpoints: new Set(),
+    path: [],
+    pathKeys: new Set(),
+    heldPowers: [],
+    purifyReady: false,
+    dragging: false,
+    animating: false,
+    finished: false,
+    seconds: 0,
+    timer: null,
+    timeline: [],
+    lastTimelineStep: -1,
+    knownPowerups: loadKnownPowerups(),
+    knownGuides: loadKnownGuides(),
+    pendingGuide: [],
+    score: 0,
+  };
+
+  const root = document.createElement('div');
+  root.id = 'haqiMatrixHack';
+  root.innerHTML = `
+    <style>
+      * { box-sizing: border-box; -webkit-tap-highlight-color: transparent; }
+      html, body { width: 100%; height: 100%; margin: 0; overflow: hidden; }
+      body { font-family: -apple-system, BlinkMacSystemFont, 'PingFang SC', 'Microsoft YaHei', sans-serif; color: #e8fbff; background: linear-gradient(145deg, #06131f 0%, #0d3142 48%, #0b3b35 100%); touch-action: none; user-select: none; }
+      .mh-shell { position: relative; height: 100vh; height: 100dvh; display: grid; grid-template-rows: auto minmax(0, 1fr) auto; gap: 8px; padding: 8px; overflow: hidden; }
+      .mh-shell::before { content: ''; position: fixed; inset: 0; pointer-events: none; background: linear-gradient(90deg, rgba(125,211,252,.08) 1px, transparent 1px), linear-gradient(180deg, rgba(52,211,153,.07) 1px, transparent 1px); background-size: 36px 36px; opacity: .8; }
+      .mh-top, .mh-panel-section, .mh-bottom-bar { position: relative; border: 1px solid rgba(125,211,252,.28); background: rgba(4, 20, 34, .82); box-shadow: inset 0 1px 0 rgba(255,255,255,.07), 0 8px 20px rgba(0,0,0,.2); }
+      .mh-top { min-height: 54px; display: grid; grid-template-columns: minmax(0,1fr) auto; gap: 8px; align-items: center; padding: 8px 10px; border-radius: 12px; }
+      .mh-title { min-width: 0; font-size: 18px; font-weight: 1000; color: #f0fdff; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+      .mh-stats { display: flex; gap: 6px; align-items: center; justify-content: flex-end; flex-wrap: wrap; }
+      .mh-pill { min-height: 30px; display: inline-flex; align-items: center; gap: 4px; padding: 0 9px; border-radius: 999px; background: rgba(236,254,255,.92); color: #075985; font-size: 12px; font-weight: 900; }
+      .mh-stage { position: relative; min-height: 0; display: grid; grid-template-columns: minmax(0, 1fr) minmax(190px, 250px); gap: 8px; overflow: hidden; }
+      .mh-board-wrap { position: relative; place-self: center; width: min(calc(100vh - 132px), calc(100vw - 274px), 710px); max-width: 100%; aspect-ratio: 1; padding: 9px; border-radius: 14px; border: 2px solid rgba(165,243,252,.62); background: linear-gradient(145deg, rgba(8,47,73,.96), rgba(15,118,110,.92)); box-shadow: 0 18px 36px rgba(0,0,0,.34), inset 0 1px 0 rgba(255,255,255,.16); }
+      .mh-board { position: relative; width: 100%; height: 100%; display: grid; grid-template-columns: repeat(var(--size), 1fr); grid-template-rows: repeat(var(--size), 1fr); gap: clamp(2px, .48vmin, 5px); padding: clamp(4px, .78vmin, 8px); border-radius: 10px; background: rgba(2, 8, 23, .66); overflow: hidden; }
+      .mh-lines { position: absolute; inset: clamp(13px, 1.35vmin, 17px); z-index: 4; overflow: visible; pointer-events: none; }
+      .mh-cell { position: relative; min-width: 0; min-height: 0; display: grid; place-items: center; border-radius: 8px; border: 1px solid rgba(125,211,252,.23); background: linear-gradient(180deg, rgba(15,23,42,.94), rgba(12,74,110,.72)); color: #e0f2fe; font-weight: 1000; overflow: hidden; cursor: pointer; }
+      .mh-cell::before { content: ''; position: absolute; inset: 0; background: linear-gradient(135deg, rgba(255,255,255,.12), transparent 38%); pointer-events: none; }
+      .mh-cell-icon { position: relative; z-index: 6; width: min(72%, 42px); height: min(72%, 42px); display: block; filter: drop-shadow(0 2px 2px rgba(0,0,0,.25)); }
+      .mh-token-icon { width: 17px; height: 17px; flex: 0 0 auto; display: block; }
+      .mh-held-icon { width: 22px; height: 22px; flex: 0 0 auto; display: block; }
+      .mh-cell.start, .mh-cell.end, .mh-cell.checkpoint { background: linear-gradient(180deg, rgba(15,23,42,.94), rgba(12,74,110,.72)); color: #e0f2fe; }
+      .mh-cell.start .mh-cell-icon { filter: drop-shadow(0 0 7px rgba(74,222,128,.85)); }
+      .mh-cell.end .mh-cell-icon { filter: drop-shadow(0 0 7px rgba(251,191,36,.88)); }
+      .mh-cell.checkpoint .mh-cell-icon { filter: drop-shadow(0 0 7px rgba(167,139,250,.86)); }
+      .mh-cell.obstacle { background: linear-gradient(145deg, #1f2937, #020617); color: #cbd5e1; border-color: rgba(148,163,184,.32); cursor: not-allowed; }
+      .mh-cell.hardObstacle { background: linear-gradient(145deg, #111827, #3f1d1d); color: #fecaca; border-color: rgba(252,165,165,.38); cursor: not-allowed; }
+      .mh-cell.power { color: #06202a; border-color: rgba(255,255,255,.82); box-shadow: 0 0 15px rgba(103,232,249,.34), inset 0 1px 0 rgba(255,255,255,.62); }
+      .mh-cell.power.used { background: linear-gradient(180deg, rgba(203,213,225,.85), rgba(100,116,139,.78)); color: #e2e8f0; opacity: .78; }
+      .mh-cell.visited { outline: 2px solid rgba(236,254,255,.88); outline-offset: -3px; }
+      .mh-cell.current { animation: currentPulse .9s ease-in-out infinite; }
+      .mh-cell.blocked { animation: shake .28s ease-in-out; }
+      .power-pulse { background: linear-gradient(180deg, #f0abfc, #c026d3); }
+      .power-cross { background: linear-gradient(180deg, #67e8f9, #0891b2); }
+      .power-row { background: linear-gradient(180deg, #bfdbfe, #2563eb); }
+      .power-col { background: linear-gradient(180deg, #a7f3d0, #059669); }
+      .power-rotate { background: linear-gradient(180deg, #ddd6fe, #6d28d9); }
+      .power-rotate-ccw { background: linear-gradient(180deg, #fecdd3, #be123c); }
+      .power-purify { background: linear-gradient(180deg, #fed7aa, #ea580c); }
+      .mh-panel { min-width: 0; display: grid; grid-template-rows: auto minmax(0,1fr); gap: 8px; overflow: hidden; }
+      .mh-panel-section { border-radius: 12px; padding: 10px; overflow: hidden; }
+      .mh-panel-title { margin: 0 0 7px; font-size: 13px; font-weight: 1000; color: #cffafe; }
+      .mh-status { min-height: 42px; color: #bae6fd; font-size: 13px; font-weight: 800; line-height: 1.35; }
+      .mh-list { display: flex; flex-wrap: wrap; gap: 5px; }
+      .mh-token { min-height: 25px; display: inline-flex; align-items: center; justify-content: center; gap: 4px; border-radius: 999px; padding: 0 8px; background: rgba(236,254,255,.9); color: #075985; font-size: 12px; font-weight: 900; }
+      .mh-token.done { background: rgba(134,239,172,.94); color: #14532d; }
+      .mh-held { max-height: min(34vh, 280px); overflow-y: auto; display: grid; gap: 7px; padding-right: 3px; }
+      .mh-held-card { min-height: 46px; display: flex; align-items: center; justify-content: space-between; gap: 8px; padding: 8px; border-radius: 10px; background: rgba(236,254,255,.9); color: #075985; font-size: 13px; font-weight: 900; }
+      .mh-held-card span { display: inline-flex; align-items: center; gap: 6px; min-width: 0; }
+      .mh-held-count { flex: 0 0 auto; padding: 1px 7px; border-radius: 999px; background: rgba(14,116,144,.13); color: #0f172a; }
+      .mh-held-card button, .mh-action, .mh-start, .mh-difficulty, .mh-guide-item, .mh-guide-close, .mh-new-guide-next { border: 0; cursor: pointer; font-weight: 900; }
+      .mh-use { min-height: 30px; border-radius: 999px; padding: 0 10px; background: linear-gradient(180deg, #22d3ee, #0284c7); color: #ecfeff; box-shadow: 0 3px 0 #075985; }
+      .mh-use:disabled, .mh-action:disabled { opacity: .55; cursor: default; }
+      .mh-bottom-bar { display: grid; grid-template-columns: minmax(0,1fr) auto; gap: 8px; align-items: center; min-height: 48px; padding: 6px; border-radius: 12px; }
+      .mh-controls, .mh-difficulties { display: flex; align-items: center; justify-content: center; gap: 6px; flex-wrap: wrap; }
+      .mh-action { min-height: 34px; border-radius: 999px; padding: 0 13px; background: linear-gradient(180deg, #22d3ee, #0284c7); color: #ecfeff; box-shadow: 0 4px 0 #075985; }
+      .mh-action.warn { background: linear-gradient(180deg, #fb923c, #ea580c); box-shadow-color: #9a3412; }
+      .mh-difficulties { flex-wrap: nowrap; padding: 4px; border-radius: 999px; background: rgba(2,8,23,.45); overflow-x: auto; }
+      .mh-difficulty { flex: 0 0 auto; min-height: 28px; min-width: 44px; padding: 0 9px; border-radius: 999px; background: transparent; color: #bae6fd; font-size: 12px; }
+      .mh-difficulty.active { background: linear-gradient(180deg, #34d399, #0d9488); color: #042f2e; box-shadow: 0 2px 0 #115e59; }
+      .mh-overlay, .mh-guide-overlay, .mh-new-guide-overlay, .mh-rewind-overlay { position: fixed; inset: 0; z-index: 30; display: flex; align-items: center; justify-content: center; padding: 18px; background: rgba(2,6,23,.66); }
+      .mh-card, .mh-guide-card, .mh-new-guide-card, .mh-rewind-card { width: min(92vw, 510px); max-height: min(88vh, 600px); overflow: auto; padding: 18px; border-radius: 16px; background: linear-gradient(180deg, #f0fdff, #e0f2fe); border: 3px solid #67e8f9; color: #123047; text-align: center; box-shadow: 0 22px 52px rgba(0,0,0,.36); }
+      .mh-card h1, .mh-guide-card h1 { margin: 0 0 10px; font-size: 24px; font-weight: 1000; }
+      .mh-card p, .mh-guide-card p { margin: 0 0 12px; color: #0f766e; font-size: 14px; font-weight: 850; line-height: 1.45; }
+      .mh-start, .mh-guide-close, .mh-new-guide-next, .mh-rewind-close { border: 0; cursor: pointer; font-weight: 900; border-radius: 999px; padding: 10px 22px; background: linear-gradient(180deg, #34d399, #16a34a); color: #052e16; box-shadow: 0 5px 0 #15803d; }
+      .mh-guide-card { width: min(94vw, 760px); display: grid; grid-template-rows: auto auto minmax(0, 1fr) auto auto; gap: 12px; text-align: left; }
+      .mh-guide-card h1, .mh-guide-card p { text-align: center; }
+      .mh-guide-list { min-height: 0; max-height: min(42vh, 360px); overflow-y: auto; display: grid; grid-template-columns: repeat(auto-fill, minmax(104px, 1fr)); gap: 10px; padding: 4px 6px 6px; }
+      .mh-guide-item { aspect-ratio: 1; min-height: 104px; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 9px; border-radius: 12px; padding: 10px; background: linear-gradient(180deg, #ecfeff, #cffafe); color: #075985; font-size: 14px; box-shadow: 0 4px 0 rgba(14,116,144,.2), inset 0 1px 0 rgba(255,255,255,.9); }
+      .mh-guide-item.active { background: linear-gradient(180deg, #a7f3d0, #22d3ee); color: #042f2e; outline: 3px solid rgba(14,116,144,.28); }
+      .mh-guide-detail { min-height: 116px; display: grid; grid-template-columns: 76px minmax(0,1fr); gap: 12px; align-items: center; padding: 12px; border-radius: 12px; background: rgba(255,255,255,.82); border: 1px solid rgba(14,116,144,.18); text-align: left; }
+      .mh-guide-icon { width: 66px; height: 66px; display: grid; place-items: center; border-radius: 14px; background: #ecfeff; color: #075985; }
+      .mh-guide-icon .mh-node-svg { width: 48px; height: 48px; display: block; }
+      .mh-guide-item .mh-node-svg { width: 48px; height: 48px; display: block; }
+      .mh-guide-detail h2 { margin: 0 0 5px; font-size: 18px; font-weight: 1000; color: #0f172a; }
+      .mh-guide-detail div:last-child { color: #0f766e; font-size: 14px; font-weight: 850; line-height: 1.45; }
+      .mh-new-guide-card { width: min(90vw, 420px); display: grid; gap: 13px; overflow: hidden; }
+      .mh-new-guide-card h1 { margin: 0; font-size: 24px; font-weight: 1000; color: #0f172a; }
+      .mh-new-guide-card p { margin: 0; color: #0f766e; font-size: 14px; font-weight: 850; line-height: 1.45; }
+      .mh-new-guide-detail { display: grid; grid-template-columns: 82px minmax(0,1fr); gap: 12px; align-items: center; padding: 13px; border-radius: 14px; background: rgba(255,255,255,.86); border: 1px solid rgba(14,116,144,.18); text-align: left; }
+      .mh-new-guide-detail h2 { margin: 0 0 5px; font-size: 19px; font-weight: 1000; color: #0f172a; }
+      .mh-new-guide-progress { color: #075985; font-size: 13px; font-weight: 900; }
+      .mh-rewind-card { width: min(94vw, 820px); display: grid; grid-template-rows: auto auto minmax(0, 1fr) auto; gap: 12px; text-align: left; }
+      .mh-rewind-card h1 { margin: 0; text-align: center; font-size: 24px; font-weight: 1000; color: #0f172a; }
+      .mh-rewind-card p { margin: 0; text-align: center; color: #0f766e; font-size: 14px; font-weight: 850; line-height: 1.45; }
+      .mh-rewind-list { min-height: 0; max-height: min(54vh, 440px); overflow-y: auto; display: grid; grid-template-columns: repeat(auto-fill, minmax(138px, 1fr)); gap: 10px; padding: 3px; }
+      .mh-rewind-item { min-width: 0; display: grid; gap: 7px; padding: 8px; border: 0; border-radius: 12px; background: rgba(236,254,255,.92); color: #075985; cursor: pointer; box-shadow: 0 4px 0 rgba(14,116,144,.22), inset 0 1px 0 rgba(255,255,255,.85); text-align: left; }
+      .mh-rewind-item:first-child { outline: 3px solid rgba(20,184,166,.34); }
+      .mh-rewind-item img { width: 100%; aspect-ratio: 1; display: block; border-radius: 8px; background: #082f49; object-fit: cover; }
+      .mh-rewind-meta { display: grid; gap: 2px; font-size: 12px; font-weight: 900; line-height: 1.25; }
+      .mh-rewind-meta b { color: #0f172a; font-size: 13px; }
+      .mh-toast { position: fixed; left: 50%; top: 50%; z-index: 45; transform: translate(-50%, -50%); min-width: min(310px,82vw); padding: 16px 20px; border-radius: 15px; background: #ecfeff; border: 3px solid #67e8f9; color: #075985; font-size: 20px; font-weight: 1000; text-align: center; box-shadow: 0 18px 42px rgba(0,0,0,.3); animation: toastUp 1.25s ease-out forwards; pointer-events: none; }
+      .mh-ring, .mh-beam, .mh-flash, .mh-shot, .mh-impact { position: absolute; z-index: 12; pointer-events: none; }
+      .mh-ring { border: 4px solid rgba(250,204,21,.95); border-radius: 999px; animation: ring .62s ease-out forwards; }
+      .mh-beam { background: rgba(103,232,249,.58); box-shadow: 0 0 18px rgba(103,232,249,.8); animation: beam .58s ease-out forwards; }
+      .mh-flash { border-radius: 8px; background: rgba(250,250,255,.78); animation: flash .52s ease-out forwards; }
+      .mh-shot { height: 8px; border-radius: 999px; background: linear-gradient(90deg, rgba(236,254,255,.15), rgba(103,232,249,.96), rgba(250,250,255,.95)); box-shadow: 0 0 16px rgba(103,232,249,.95), 0 0 30px rgba(250,204,21,.38); transform-origin: left center; animation: laserShot .34s ease-out forwards; }
+      .mh-impact { border: 3px solid rgba(250,250,255,.95); border-radius: 9px; background: rgba(250,204,21,.35); box-shadow: 0 0 18px rgba(250,204,21,.8); animation: impactBreak .36s ease-out forwards; }
+      .mh-rotate-ghost { position: absolute; z-index: 16; display: grid; place-items: center; pointer-events: none; animation: rotateOrbit .62s ease-in-out forwards; }
+      .mh-rotate-ghost .mh-cell-icon { width: 72%; height: 72%; }
+      [hidden] { display: none !important; }
+      @keyframes currentPulse { 50% { transform: scale(.94); filter: brightness(1.14); } }
+      @keyframes shake { 0%,100% { transform: translateX(0); } 25% { transform: translateX(-5px); } 75% { transform: translateX(5px); } }
+      @keyframes toastUp { 0% { opacity: 0; transform: translate(-50%, -40%) scale(.86); } 18% { opacity: 1; transform: translate(-50%, -50%) scale(1); } 100% { opacity: 0; transform: translate(-50%, -74%) scale(.96); } }
+      @keyframes ring { 0% { opacity: .95; transform: scale(.25); } 100% { opacity: 0; transform: scale(1.9); } }
+      @keyframes beam { 0% { opacity: 0; transform: scale(.85); } 20% { opacity: 1; } 100% { opacity: 0; transform: scale(1.03); } }
+      @keyframes flash { 100% { opacity: 0; transform: scale(.45); } }
+      @keyframes laserShot { 0% { opacity: 0; transform: rotate(var(--r)) scaleX(0); } 28% { opacity: 1; } 100% { opacity: .85; transform: rotate(var(--r)) scaleX(1); } }
+      @keyframes impactBreak { 0% { opacity: 0; transform: scale(.55); } 35% { opacity: 1; transform: scale(1.18); } 100% { opacity: 0; transform: scale(.35) rotate(16deg); } }
+      @keyframes rotateOrbit { 0% { opacity: .95; transform: translate(0, 0) rotate(0deg) scale(1); } 72% { opacity: 1; } 100% { opacity: .18; transform: translate(var(--dx), var(--dy)) rotate(var(--turn)) scale(.92); } }
+      @keyframes guideHint { 0%,100% { filter: brightness(1); transform: translateY(0); } 35% { filter: brightness(1.42); transform: translateY(-2px); } 70% { filter: brightness(1.16); } }
+      .mh-action.guide-hint { animation: guideHint .46s ease-in-out 4; }
+      @media (max-width: 760px) {
+        .mh-shell { gap: 6px; padding: 6px; }
+        .mh-top { grid-template-columns: 1fr; justify-items: center; }
+        .mh-stage { grid-template-columns: 1fr; grid-template-rows: minmax(0,1fr) auto; }
+        .mh-board-wrap { width: min(97vw, calc(100vh - 238px)); }
+        .mh-panel { grid-template-columns: repeat(2, minmax(0,1fr)); grid-template-rows: auto; }
+        .mh-panel-section { padding: 8px; }
+        .mh-held { max-height: min(25vh, 210px); }
+        .mh-bottom-bar { grid-template-columns: 1fr; justify-items: center; }
+      }
+      @media (max-width: 480px) {
+        .mh-overlay, .mh-guide-overlay, .mh-new-guide-overlay, .mh-rewind-overlay { padding: 10px; }
+        .mh-guide-card { width: min(94vw, 360px); max-height: min(86vh, 620px); grid-template-rows: auto auto minmax(0, .82fr) auto auto; gap: 9px; padding: 14px; border-radius: 14px; }
+        .mh-guide-card h1, .mh-new-guide-card h1 { font-size: 22px; }
+        .mh-guide-card p, .mh-new-guide-card p { font-size: 13px; margin-bottom: 6px; }
+        .mh-guide-list { max-height: min(27vh, 210px); grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 8px; padding: 2px 4px 4px; }
+        .mh-guide-item { min-height: 82px; gap: 6px; padding: 8px; border-radius: 10px; font-size: 13px; }
+        .mh-guide-item .mh-node-svg { width: 38px; height: 38px; }
+        .mh-guide-detail { min-height: 88px; grid-template-columns: 58px minmax(0,1fr); gap: 9px; padding: 10px; }
+        .mh-guide-icon { width: 52px; height: 52px; border-radius: 12px; }
+        .mh-guide-icon .mh-node-svg { width: 38px; height: 38px; }
+        .mh-guide-detail h2 { font-size: 16px; }
+        .mh-guide-detail div:last-child { font-size: 13px; line-height: 1.38; }
+        .mh-guide-close, .mh-new-guide-next { padding: 9px 18px; }
+        .mh-new-guide-card { width: min(92vw, 340px); max-height: min(84vh, 540px); padding: 14px; }
+        .mh-new-guide-detail { grid-template-columns: 58px minmax(0,1fr); padding: 10px; }
+        .mh-new-guide-detail h2 { font-size: 17px; }
+      }
+      @media (max-height: 590px) {
+        .mh-stats .optional { display: none; }
+        .mh-board-wrap { width: min(76vmin, 620px); }
+      }
+    </style>
+    <div class="mh-shell">
+      <header class="mh-top">
+        <div class="mh-title">哈奇矩阵破解 · <span id="mhDifficultyTitle"></span> · 第 <span id="mhRound">1</span> 局</div>
+        <div class="mh-stats">
+          <span class="mh-pill">必经 <b id="mhCheckpoints">0</b>/<b id="mhCheckpointTotal">0</b></span>
+          <span class="mh-pill">步数 <b id="mhSteps">0</b></span>
+          <span class="mh-pill optional"><b id="mhTime">0</b>s</span>
+        </div>
+      </header>
+      <main class="mh-stage">
+        <div id="mhBoardWrap" class="mh-board-wrap">
+          <svg id="mhLines" class="mh-lines" aria-hidden="true"></svg>
+          <div id="mhBoard" class="mh-board" aria-label="矩阵破解面板"></div>
+        </div>
+        <aside class="mh-panel" aria-label="破解信息">
+          <section class="mh-panel-section">
+            <h2 class="mh-panel-title">破解状态</h2>
+            <div id="mhStatus" class="mh-status"></div>
+          </section>
+          <section class="mh-panel-section">
+            <h2 class="mh-panel-title">当前持有</h2>
+            <div id="mhHeld" class="mh-held"></div>
+          </section>
+        </aside>
+      </main>
+      <footer class="mh-bottom-bar">
+        <div class="mh-controls">
+          <button id="mhGuide" class="mh-action" type="button">节点</button>
+          <button id="mhUndo" class="mh-action" type="button">倒退</button>
+          <button id="mhRestart" class="mh-action warn" type="button">重开</button>
+          <button id="mhNext" class="mh-action" type="button" hidden>下一局</button>
+        </div>
+        <div id="mhDifficulties" class="mh-difficulties" aria-label="难度选择"></div>
+      </footer>
+    </div>
+    <div id="mhOverlay" class="mh-overlay">
+      <div class="mh-card">
+        <h1>哈奇矩阵破解</h1>
+        <p>从左上角起点拖拽连线，只能向上下左右相邻节点移动，路径不能交叉回绕。</p>
+        <p>经过全部必经点后到达终点即可通关。障碍默认不可通过，需要绕行，或利用道具清除、净化突破。</p>
+        <button id="mhStart" class="mh-start" type="button">开始破解</button>
+      </div>
+    </div>
+    <div id="mhGuideOverlay" class="mh-guide-overlay" hidden>
+      <div class="mh-guide-card">
+        <h1>节点说明</h1>
+        <p>选择一个已知节点查看作用。</p>
+        <div id="mhGuideList" class="mh-guide-list"></div>
+        <div id="mhGuideDetail" class="mh-guide-detail"></div>
+        <button id="mhGuideClose" class="mh-guide-close" type="button">知道了</button>
+      </div>
+    </div>
+    <div id="mhNewGuideOverlay" class="mh-new-guide-overlay" hidden>
+      <div class="mh-new-guide-card">
+        <h1>发现新节点</h1>
+        <p id="mhNewGuidePrompt"></p>
+        <div id="mhNewGuideDetail" class="mh-new-guide-detail"></div>
+        <div id="mhNewGuideProgress" class="mh-new-guide-progress"></div>
+        <button id="mhNewGuideNext" class="mh-new-guide-next" type="button">知道了</button>
+      </div>
+    </div>
+    <div id="mhRewindOverlay" class="mh-rewind-overlay" hidden>
+      <div class="mh-rewind-card">
+        <h1>选择倒退时间点</h1>
+        <p>显示最近记录的矩阵状态。选择后会恢复该状态，并清除之后的状态点。</p>
+        <div id="mhRewindList" class="mh-rewind-list"></div>
+        <button id="mhRewindClose" class="mh-rewind-close" type="button">取消</button>
+      </div>
+    </div>
+  `;
+  document.body.appendChild(root);
+
+  const els = {
+    board: document.getElementById('mhBoard'),
+    boardWrap: document.getElementById('mhBoardWrap'),
+    lines: document.getElementById('mhLines'),
+    difficultyTitle: document.getElementById('mhDifficultyTitle'),
+    round: document.getElementById('mhRound'),
+    checkpoints: document.getElementById('mhCheckpoints'),
+    checkpointTotal: document.getElementById('mhCheckpointTotal'),
+    steps: document.getElementById('mhSteps'),
+    time: document.getElementById('mhTime'),
+    status: document.getElementById('mhStatus'),
+    held: document.getElementById('mhHeld'),
+    guide: document.getElementById('mhGuide'),
+    undo: document.getElementById('mhUndo'),
+    restart: document.getElementById('mhRestart'),
+    next: document.getElementById('mhNext'),
+    difficulties: document.getElementById('mhDifficulties'),
+    overlay: document.getElementById('mhOverlay'),
+    start: document.getElementById('mhStart'),
+    guideOverlay: document.getElementById('mhGuideOverlay'),
+    guideList: document.getElementById('mhGuideList'),
+    guideDetail: document.getElementById('mhGuideDetail'),
+    guideClose: document.getElementById('mhGuideClose'),
+    newGuideOverlay: document.getElementById('mhNewGuideOverlay'),
+    newGuidePrompt: document.getElementById('mhNewGuidePrompt'),
+    newGuideDetail: document.getElementById('mhNewGuideDetail'),
+    newGuideProgress: document.getElementById('mhNewGuideProgress'),
+    newGuideNext: document.getElementById('mhNewGuideNext'),
+    rewindOverlay: document.getElementById('mhRewindOverlay'),
+    rewindList: document.getElementById('mhRewindList'),
+    rewindClose: document.getElementById('mhRewindClose'),
+  };
+
+  function normalizeDifficulty(id) {
+    return DIFFICULTIES[id] ? id : 'easy';
+  }
+
+  function loadKnownPowerups() {
+    try {
+      return new Set(JSON.parse(localStorage.getItem(STORAGE_KEY_KNOWN_POWERUPS) || '[]').filter((id) => POWERUPS[id]));
+    } catch (error) {
+      return new Set();
+    }
+  }
+
+  function saveKnownPowerups() {
+    localStorage.setItem(STORAGE_KEY_KNOWN_POWERUPS, JSON.stringify([...state.knownPowerups]));
+  }
+
+  function loadKnownGuides() {
+    try {
+      return new Set(JSON.parse(localStorage.getItem(STORAGE_KEY_KNOWN_GUIDES) || '[]').filter((id) => guideData(id)));
+    } catch (error) {
+      return new Set();
+    }
+  }
+
+  function saveKnownGuides() {
+    localStorage.setItem(STORAGE_KEY_KNOWN_GUIDES, JSON.stringify([...state.knownGuides]));
+  }
+
+  function guideData(id) {
+    return CORE_GUIDES[id] || POWERUPS[id] || null;
+  }
+
+  function keyOf(x, y) {
+    return `${x},${y}`;
+  }
+
+  function randInt(min, max) {
+    return min + Math.floor(Math.random() * (max - min + 1));
+  }
+
+  function sample(items) {
+    return items[Math.floor(Math.random() * items.length)];
+  }
+
+  function shuffle(items) {
+    const copy = items.slice();
+    for (let i = copy.length - 1; i > 0; i -= 1) {
+      const j = Math.floor(Math.random() * (i + 1));
+      [copy[i], copy[j]] = [copy[j], copy[i]];
+    }
+    return copy;
+  }
+
+  function inBounds(x, y, size = DIFFICULTIES[state.difficulty].size) {
+    return x >= 0 && y >= 0 && x < size && y < size;
+  }
+
+  function makeEmptyGrid(size) {
+    return Array.from({ length: size }, (_, y) => Array.from({ length: size }, (_, x) => ({ x, y, type: 'normal', power: null, used: false })));
+  }
+
+  function createRoute(size, minLength, maxLength) {
+    const target = randInt(minLength, Math.min(maxLength, size * size - 1));
+    let best = [{ x: 0, y: 0 }];
+    for (let attempt = 0; attempt < 420; attempt += 1) {
+      const path = [{ x: 0, y: 0 }];
+      const used = new Set(['0,0']);
+      while (path.length < target) {
+        const last = path[path.length - 1];
+        const choices = shuffle(DIRS)
+          .map(([dx, dy]) => ({ x: last.x + dx, y: last.y + dy }))
+          .filter((pos) => inBounds(pos.x, pos.y, size) && !used.has(keyOf(pos.x, pos.y)));
+        if (!choices.length) break;
+        const next = choices.sort((a, b) => countOpenNeighbors(a, used, size) - countOpenNeighbors(b, used, size))[0];
+        path.push(next);
+        used.add(keyOf(next.x, next.y));
+      }
+      if (path.length > best.length) best = path;
+      if (path.length >= minLength) return path;
+    }
+    return best;
+  }
+
+  function countOpenNeighbors(pos, used, size) {
+    return DIRS.reduce((total, [dx, dy]) => {
+      const x = pos.x + dx;
+      const y = pos.y + dy;
+      return total + (inBounds(x, y, size) && !used.has(keyOf(x, y)) ? 1 : 0);
+    }, 0);
+  }
+
+  function choosePowerForBlocker(pool, powerPos, blockerPos, preferPurify, config) {
+    const available = pool.filter((id) => id === 'purify' || affectsPosition(id, powerPos, blockerPos));
+    if (preferPurify && available.includes('purify')) return 'purify';
+    const weighted = [];
+    (available.length ? available : ['purify']).forEach((id) => {
+      let weight = 2;
+      if (['expert', 'nightmare'].includes(config.id) && ['cross', 'row', 'col', 'rotate', 'rotateCcw'].includes(id)) weight = 5;
+      if (['expert', 'nightmare'].includes(config.id) && id === 'purify') weight = 1;
+      for (let i = 0; i < weight; i += 1) weighted.push(id);
+    });
+    return sample(weighted);
+  }
+
+  function selectLevelPowerPool(config) {
+    const pool = config.pool.slice();
+    if (pool.length <= 3) return pool;
+    const maxDistinct = Math.min(pool.length - 1, config.id === 'nightmare' ? 6 : 5);
+    const minDistinct = config.id === 'normal' ? 3 : 4;
+    const target = randInt(minDistinct, maxDistinct);
+    const selected = new Set();
+    if (['hard', 'expert', 'nightmare'].includes(config.id)) {
+      const tactical = pool.filter((id) => ['cross', 'row', 'col', 'rotate', 'rotateCcw'].includes(id));
+      selected.add(sample(tactical));
+    }
+    shuffle(pool).forEach((id) => {
+      if (selected.size < target) selected.add(id);
+    });
+    return [...selected];
+  }
+
+  function affectsPosition(power, origin, target) {
+    if (power === 'purify') return true;
+    if (power === 'pulse') return Math.max(Math.abs(origin.x - target.x), Math.abs(origin.y - target.y)) === 1;
+    if (isRotationPower(power)) return Math.max(Math.abs(origin.x - target.x), Math.abs(origin.y - target.y)) === 1;
+    if (power === 'cross') return ((origin.x === target.x && Math.abs(origin.y - target.y) <= 2) || (origin.y === target.y && Math.abs(origin.x - target.x) <= 2)) && !(origin.x === target.x && origin.y === target.y);
+    if (power === 'row') return origin.y === target.y;
+    if (power === 'col') return origin.x === target.x;
+    return false;
+  }
+
+  function affectedCells(power, origin, size) {
+    const cells = [];
+    for (let y = 0; y < size; y += 1) {
+      for (let x = 0; x < size; x += 1) {
+        if (power === 'pulse' && Math.max(Math.abs(origin.x - x), Math.abs(origin.y - y)) === 1) cells.push({ x, y });
+        if (isRotationPower(power) && Math.max(Math.abs(origin.x - x), Math.abs(origin.y - y)) === 1) cells.push({ x, y });
+        if (power === 'cross' && ((origin.x === x && Math.abs(origin.y - y) <= 2) || (origin.y === y && Math.abs(origin.x - x) <= 2)) && !(origin.x === x && origin.y === y)) cells.push({ x, y });
+        if (power === 'row' && origin.y === y) cells.push({ x, y });
+        if (power === 'col' && origin.x === x) cells.push({ x, y });
+      }
+    }
+    return cells;
+  }
+
+  function isRotationPower(power) {
+    return power === 'rotate' || power === 'rotateCcw';
+  }
+
+  function rotationStep(power) {
+    return power === 'rotateCcw' ? -1 : 1;
+  }
+
+  function nodeIcon(id, className = 'mh-node-svg') {
+    const icons = {
+      start: `<svg class="${className}" viewBox="0 0 64 64" aria-hidden="true"><circle cx="32" cy="32" r="24" fill="#bbf7d0" stroke="#052e16" stroke-width="5"/><path d="M24 18v28l22-14z" fill="#16a34a" stroke="#052e16" stroke-width="3" stroke-linejoin="round"/></svg>`,
+      end: `<svg class="${className}" viewBox="0 0 64 64" aria-hidden="true"><path d="M18 52V13" stroke="#431407" stroke-width="6" stroke-linecap="round"/><path d="M20 14h28l-7 10 7 10H20z" fill="#fde68a" stroke="#431407" stroke-width="4" stroke-linejoin="round"/><circle cx="18" cy="52" r="5" fill="#431407"/></svg>`,
+      checkpoint: `<svg class="${className}" viewBox="0 0 64 64" aria-hidden="true"><path d="M32 8l24 24-24 24L8 32z" fill="#ddd6fe" stroke="#3b0764" stroke-width="5" stroke-linejoin="round"/><circle cx="32" cy="32" r="9" fill="#7c3aed"/><path d="M32 18v28M18 32h28" stroke="#f5f3ff" stroke-width="4" stroke-linecap="round" opacity=".86"/></svg>`,
+      obstacle: `<svg class="${className}" viewBox="0 0 64 64" aria-hidden="true"><rect x="11" y="12" width="42" height="40" rx="7" fill="#0f172a" stroke="#cbd5e1" stroke-width="4"/><path d="M18 24h28M18 39h28M28 13v38M42 13v38" stroke="#475569" stroke-width="4" stroke-linecap="round"/><path d="M23 22l8 9-6 10 12-9-4-10" stroke="#e2e8f0" stroke-width="3" fill="none" stroke-linecap="round" stroke-linejoin="round"/></svg>`,
+      hardObstacle: `<svg class="${className}" viewBox="0 0 64 64" aria-hidden="true"><path d="M32 7l22 9v15c0 14-8 22-22 27C18 53 10 45 10 31V16z" fill="#1f2937" stroke="#fecaca" stroke-width="4" stroke-linejoin="round"/><path d="M23 33v-7a9 9 0 0118 0v7" stroke="#fecaca" stroke-width="5" fill="none" stroke-linecap="round"/><rect x="20" y="31" width="24" height="17" rx="5" fill="#7f1d1d" stroke="#fecaca" stroke-width="3"/></svg>`,
+      pulse: `<svg class="${className}" viewBox="0 0 64 64" aria-hidden="true"><circle cx="32" cy="32" r="8" fill="#fdf4ff"/><circle cx="32" cy="32" r="18" fill="none" stroke="#fdf4ff" stroke-width="5" opacity=".9"/><circle cx="32" cy="32" r="27" fill="none" stroke="#701a75" stroke-width="4" opacity=".82"/><path d="M32 4v10M32 50v10M4 32h10M50 32h10" stroke="#fdf4ff" stroke-width="4" stroke-linecap="round"/></svg>`,
+      cross: `<svg class="${className}" viewBox="0 0 64 64" aria-hidden="true"><path d="M29 7h6v22h22v6H35v22h-6V35H7v-6h22z" fill="#ecfeff" stroke="#164e63" stroke-width="4" stroke-linejoin="round"/><circle cx="32" cy="32" r="8" fill="#06b6d4" stroke="#ecfeff" stroke-width="3"/></svg>`,
+      row: `<svg class="${className}" viewBox="0 0 64 64" aria-hidden="true"><path d="M9 32h46" stroke="#eff6ff" stroke-width="9" stroke-linecap="round"/><path d="M18 21L7 32l11 11M46 21l11 11-11 11" fill="none" stroke="#1e3a8a" stroke-width="5" stroke-linecap="round" stroke-linejoin="round"/><rect x="24" y="22" width="16" height="20" rx="4" fill="#bfdbfe" stroke="#1e40af" stroke-width="3"/></svg>`,
+      col: `<svg class="${className}" viewBox="0 0 64 64" aria-hidden="true"><path d="M32 9v46" stroke="#ecfdf5" stroke-width="9" stroke-linecap="round"/><path d="M21 18L32 7l11 11M21 46l11 11 11-11" fill="none" stroke="#064e3b" stroke-width="5" stroke-linecap="round" stroke-linejoin="round"/><rect x="22" y="24" width="20" height="16" rx="4" fill="#a7f3d0" stroke="#047857" stroke-width="3"/></svg>`,
+      rotate: `<svg class="${className}" viewBox="0 0 64 64" aria-hidden="true"><path d="M48 24a18 18 0 00-30-7" fill="none" stroke="#f5f3ff" stroke-width="6" stroke-linecap="round"/><path d="M46 13l3 14-14-3" fill="none" stroke="#f5f3ff" stroke-width="5" stroke-linecap="round" stroke-linejoin="round"/><path d="M16 40a18 18 0 0030 7" fill="none" stroke="#3b0764" stroke-width="6" stroke-linecap="round"/><path d="M18 51l-3-14 14 3" fill="none" stroke="#3b0764" stroke-width="5" stroke-linecap="round" stroke-linejoin="round"/><rect x="24" y="24" width="16" height="16" rx="4" fill="#ddd6fe" stroke="#4c1d95" stroke-width="3"/></svg>`,
+      rotateCcw: `<svg class="${className}" viewBox="0 0 64 64" aria-hidden="true"><path d="M16 24a18 18 0 0130-7" fill="none" stroke="#fff1f2" stroke-width="6" stroke-linecap="round"/><path d="M18 13l-3 14 14-3" fill="none" stroke="#fff1f2" stroke-width="5" stroke-linecap="round" stroke-linejoin="round"/><path d="M48 40a18 18 0 01-30 7" fill="none" stroke="#881337" stroke-width="6" stroke-linecap="round"/><path d="M46 51l3-14-14 3" fill="none" stroke="#881337" stroke-width="5" stroke-linecap="round" stroke-linejoin="round"/><path d="M25 24h14v16H25z" fill="#fecdd3" stroke="#9f1239" stroke-width="3" stroke-linejoin="round"/></svg>`,
+      purify: `<svg class="${className}" viewBox="0 0 64 64" aria-hidden="true"><path d="M32 7c9 11 18 21 18 32a18 18 0 01-36 0C14 28 23 18 32 7z" fill="#ffedd5" stroke="#7c2d12" stroke-width="4" stroke-linejoin="round"/><path d="M23 38l6 6 13-17" fill="none" stroke="#ea580c" stroke-width="6" stroke-linecap="round" stroke-linejoin="round"/><path d="M47 12l3 7 7 3-7 3-3 7-3-7-7-3 7-3z" fill="#fed7aa" stroke="#7c2d12" stroke-width="2" stroke-linejoin="round"/></svg>`,
+    };
+    return icons[id] || '';
+  }
+
+  function buildLevel() {
+    const config = DIFFICULTIES[state.difficulty];
+    let level = null;
+    for (let attempt = 0; attempt < 220; attempt += 1) {
+      const grid = makeEmptyGrid(config.size);
+      const route = createRoute(config.size, config.pathMin, config.pathMax);
+      if (route.length < config.pathMin) continue;
+      const levelPowerPool = selectLevelPowerPool(config);
+      const protectedKeys = new Set(['0,0', keyOf(route[route.length - 1].x, route[route.length - 1].y)]);
+      const plannedPowerups = [];
+      const blockerKeys = new Set();
+      const segment = Math.max(3, Math.floor((route.length - 3) / (config.powerups + 1)));
+      for (let i = 0; i < config.powerups; i += 1) {
+        const powerIndex = Math.min(route.length - 3, 1 + i * segment + randInt(0, Math.max(0, segment - 2)));
+        const blockerIndex = Math.min(route.length - 2, powerIndex + 1);
+        const powerPos = route[powerIndex];
+        const blockerPos = route[blockerIndex];
+        const powerKey = keyOf(powerPos.x, powerPos.y);
+        const blockerKey = keyOf(blockerPos.x, blockerPos.y);
+        if (protectedKeys.has(powerKey) || protectedKeys.has(blockerKey) || blockerKeys.has(powerKey)) continue;
+        const power = choosePowerForBlocker(levelPowerPool, powerPos, blockerPos, i % 4 === 1, config);
+        plannedPowerups.push({ power, pos: powerPos, blocker: blockerPos, blockerIndex });
+        protectedKeys.add(powerKey);
+        protectedKeys.add(blockerKey);
+        blockerKeys.add(blockerKey);
+      }
+      if (plannedPowerups.length < config.powerups) continue;
+      const routeKeys = new Set(route.map((pos) => keyOf(pos.x, pos.y)));
+      grid[0][0].type = 'start';
+      const end = route[route.length - 1];
+      grid[end.y][end.x].type = 'end';
+      plannedPowerups.forEach(({ power, pos, blocker }) => {
+        grid[pos.y][pos.x].type = 'power';
+        grid[pos.y][pos.x].power = power;
+        grid[blocker.y][blocker.x].type = 'obstacle';
+      });
+      placeRouteGates(grid, route, plannedPowerups, protectedKeys, config);
+      const checkpointCandidates = route
+        .slice(2, -2)
+        .filter((pos) => !protectedKeys.has(keyOf(pos.x, pos.y)) && grid[pos.y][pos.x].type === 'normal');
+      if (checkpointCandidates.length < config.checkpoints) continue;
+      shuffle(checkpointCandidates).slice(0, config.checkpoints).forEach((pos) => {
+        grid[pos.y][pos.x].type = 'checkpoint';
+      });
+      placeExtraObstacles(grid, routeKeys, plannedPowerups, config);
+      if (isLevelTooOpen(grid, config)) continue;
+      level = { grid, route };
+      break;
+    }
+    if (!level) {
+      const grid = makeEmptyGrid(config.size);
+      const route = createRoute(config.size, config.pathMin, config.pathMax);
+      grid[0][0].type = 'start';
+      const end = route[route.length - 1];
+      grid[end.y][end.x].type = 'end';
+      level = { grid, route };
+    }
+    state.grid = level.grid;
+    state.route = level.route;
+    state.checkpoints = new Set();
+    state.grid.flat().forEach((cell) => {
+      if (cell.type === 'checkpoint') state.checkpoints.add(keyOf(cell.x, cell.y));
+    });
+  }
+
+  function placeExtraObstacles(grid, routeKeys, plannedPowerups, config) {
+    const size = config.size;
+    const solvableKeys = new Set();
+    let hasPurify = false;
+    plannedPowerups.forEach(({ power, pos }) => {
+      if (power === 'purify') {
+        hasPurify = true;
+      } else if (!isRotationPower(power)) {
+        affectedCells(power, pos, size).forEach((target) => solvableKeys.add(keyOf(target.x, target.y)));
+      }
+    });
+    const targetObstacles = Math.floor(size * size * config.obstacleRate);
+    const candidates = grid.flat().filter((cell) => cell.type === 'normal' && !routeKeys.has(keyOf(cell.x, cell.y)));
+    let placed = grid.flat().filter((cell) => cell.type === 'obstacle').length;
+    const placedCells = grid.flat().filter((cell) => cell.type === 'obstacle' || cell.type === 'hardObstacle');
+    const sectorCounts = new Map();
+    placedCells.forEach((cell) => addSectorCount(sectorCounts, cell, size));
+    while (placed < targetObstacles && candidates.length) {
+      const cell = pickSpreadCandidate(candidates, placedCells, sectorCounts, size);
+      candidates.splice(candidates.indexOf(cell), 1);
+      const key = keyOf(cell.x, cell.y);
+      const canBeSolved = hasPurify || solvableKeys.has(key) || ['hard', 'expert', 'nightmare'].includes(config.id);
+      if (config.hardRate > 0 && Math.random() < config.hardRate) {
+        cell.type = 'hardObstacle';
+        placed += 1;
+        placedCells.push(cell);
+        addSectorCount(sectorCounts, cell, size);
+      } else if (canBeSolved) {
+        cell.type = 'obstacle';
+        placed += 1;
+        placedCells.push(cell);
+        addSectorCount(sectorCounts, cell, size);
+      }
+    }
+  }
+
+  function placeRouteGates(grid, route, plannedPowerups, protectedKeys, config) {
+    if (!['hard', 'expert', 'nightmare'].includes(config.id)) return;
+    const size = config.size;
+    plannedPowerups.forEach(({ blockerIndex, blocker }) => {
+      const allowed = new Set([
+        keyOf(route[blockerIndex - 1]?.x, route[blockerIndex - 1]?.y),
+        keyOf(route[blockerIndex + 1]?.x, route[blockerIndex + 1]?.y),
+        keyOf(blocker.x, blocker.y),
+      ]);
+      DIRS.map(([dx, dy]) => ({ x: blocker.x + dx, y: blocker.y + dy }))
+        .filter((pos) => inBounds(pos.x, pos.y, size))
+        .forEach((pos) => {
+          const key = keyOf(pos.x, pos.y);
+          const cell = grid[pos.y][pos.x];
+          if (allowed.has(key) || protectedKeys.has(key) || cell.type !== 'normal') return;
+          cell.type = Math.random() < config.hardRate * .45 ? 'hardObstacle' : 'obstacle';
+        });
+    });
+  }
+
+  function isLevelTooOpen(grid, config) {
+    if (!['hard', 'expert', 'nightmare'].includes(config.id)) return false;
+    const access = analyzeNoToolAccess(grid, config.size);
+    if (access.endReachable && access.checkpointsReachable >= config.checkpoints) return true;
+    if (config.id === 'nightmare' && access.endReachable) return true;
+    if (config.id === 'nightmare' && access.reachableRatio > .48) return true;
+    if (config.id === 'expert' && access.reachableRatio > .58) return true;
+    return false;
+  }
+
+  function analyzeNoToolAccess(grid, size) {
+    const queue = [{ x: 0, y: 0 }];
+    const seen = new Set(['0,0']);
+    let endReachable = false;
+    let checkpointsReachable = 0;
+    for (let i = 0; i < queue.length; i += 1) {
+      const pos = queue[i];
+      const cell = grid[pos.y][pos.x];
+      if (cell.type === 'end') endReachable = true;
+      if (cell.type === 'checkpoint') checkpointsReachable += 1;
+      DIRS.forEach(([dx, dy]) => {
+        const next = { x: pos.x + dx, y: pos.y + dy };
+        const key = keyOf(next.x, next.y);
+        if (!inBounds(next.x, next.y, size) || seen.has(key)) return;
+        const nextCell = grid[next.y][next.x];
+        if (nextCell.type === 'obstacle' || nextCell.type === 'hardObstacle') return;
+        seen.add(key);
+        queue.push(next);
+      });
+    }
+    return { endReachable, checkpointsReachable, reachableRatio: seen.size / (size * size) };
+  }
+
+  function pickSpreadCandidate(candidates, placedCells, sectorCounts, size) {
+    const pool = shuffle(candidates).slice(0, Math.min(candidates.length, 18));
+    return pool.sort((a, b) => spreadScore(b, placedCells, sectorCounts, size) - spreadScore(a, placedCells, sectorCounts, size))[0];
+  }
+
+  function spreadScore(cell, placedCells, sectorCounts, size) {
+    const minDistance = placedCells.length ? Math.min(...placedCells.map((other) => Math.abs(cell.x - other.x) + Math.abs(cell.y - other.y))) : size;
+    const sectorPenalty = sectorCounts.get(sectorKey(cell, size)) || 0;
+    const edgeBias = Math.min(cell.x, cell.y, size - 1 - cell.x, size - 1 - cell.y) * .12;
+    return minDistance * 3 - sectorPenalty * 4 + edgeBias + Math.random() * .35;
+  }
+
+  function addSectorCount(sectorCounts, cell, size) {
+    const key = sectorKey(cell, size);
+    sectorCounts.set(key, (sectorCounts.get(key) || 0) + 1);
+  }
+
+  function sectorKey(cell, size) {
+    const band = Math.max(1, Math.ceil(size / 3));
+    return `${Math.floor(cell.x / band)},${Math.floor(cell.y / band)}`;
+  }
+
+  function resetLevel(keepRound) {
+    stopTimer();
+    state.visitedCheckpoints = new Set();
+    state.path = [];
+    state.pathKeys = new Set();
+    state.heldPowers = [];
+    state.purifyReady = false;
+    state.dragging = false;
+    state.finished = false;
+    state.seconds = 0;
+    state.timeline = [];
+    state.lastTimelineStep = -1;
+    state.score = 0;
+    els.rewindOverlay.hidden = true;
+    els.newGuideOverlay.hidden = true;
+    if (!keepRound) state.round += 1;
+    buildLevel();
+    collectNewGuideNodes();
+    renderAll();
+    queueTimelineSnapshot(true);
+    if (els.overlay.hidden) maybeShowNewGuide();
+  }
+
+  function collectNewGuideNodes() {
+    state.pendingGuide = [];
+    presentGuideIds().forEach((id) => {
+      if (!state.knownGuides.has(id)) state.pendingGuide.push(id);
+      else if (POWERUPS[id] && !state.knownPowerups.has(id)) state.knownPowerups.add(id);
+    });
+    saveKnownPowerups();
+  }
+
+  function markGuideKnown(id) {
+    if (!guideData(id)) return;
+    state.knownGuides.add(id);
+    if (POWERUPS[id]) state.knownPowerups.add(id);
+    saveKnownGuides();
+    saveKnownPowerups();
+  }
+
+  function presentGuideIds() {
+    const ids = new Set();
+    state.grid.flat().forEach((cell) => {
+      if (cell.type === 'power') ids.add(cell.power);
+      else if (guideData(cell.type)) ids.add(cell.type);
+    });
+    return ['start', 'end', 'checkpoint', 'obstacle', 'hardObstacle', ...Object.keys(POWERUPS)].filter((id) => ids.has(id));
+  }
+
+  function renderAll() {
+    const config = DIFFICULTIES[state.difficulty];
+    els.board.style.setProperty('--size', config.size);
+    els.difficultyTitle.textContent = config.label;
+    els.round.textContent = state.round;
+    els.time.textContent = state.seconds;
+    els.checkpointTotal.textContent = state.checkpoints.size;
+    els.checkpoints.textContent = state.visitedCheckpoints.size;
+    els.steps.textContent = Math.max(0, state.path.length - 1);
+    renderBoard();
+    renderLines();
+    renderHeld();
+    renderDifficulties();
+    renderStatus();
+    els.next.hidden = !state.finished;
+    els.undo.disabled = state.timeline.length === 0 || state.finished;
+  }
+
+  function renderBoard() {
+    els.board.innerHTML = '';
+    const currentKey = state.path.length ? keyOf(state.path[state.path.length - 1].x, state.path[state.path.length - 1].y) : '';
+    state.grid.flat().forEach((cell) => {
+      const button = document.createElement('button');
+      button.type = 'button';
+      button.className = `mh-cell ${cellClass(cell)}`;
+      button.dataset.x = cell.x;
+      button.dataset.y = cell.y;
+      const cellKey = keyOf(cell.x, cell.y);
+      if (state.pathKeys.has(cellKey)) button.classList.add('visited');
+      if (cellIcon(cell)) button.classList.add('has-icon');
+      if (currentKey === cellKey) button.classList.add('current');
+      if (cell.type === 'checkpoint' && state.visitedCheckpoints.has(cellKey)) button.classList.add('done');
+      if (cell.type === 'power' && cell.used) button.classList.add('used');
+      button.innerHTML = cellIcon(cell);
+      button.addEventListener('pointerdown', onPointerDown);
+      button.addEventListener('pointerenter', onPointerEnter);
+      els.board.appendChild(button);
+    });
+  }
+
+  function cellClass(cell) {
+    if (cell.type === 'power') return `power ${POWERUPS[cell.power].cls}`;
+    return cell.type;
+  }
+
+  function cellIcon(cell) {
+    if (cell.type === 'power') return nodeIcon(cell.power, 'mh-cell-icon');
+    if (['start', 'end', 'checkpoint', 'obstacle', 'hardObstacle'].includes(cell.type)) return nodeIcon(cell.type, 'mh-cell-icon');
+    return '';
+  }
+
+  function renderLines() {
+    const size = DIFFICULTIES[state.difficulty].size;
+    const points = state.path.map((pos) => `${((pos.x + .5) / size) * 100},${((pos.y + .5) / size) * 100}`).join(' ');
+    els.lines.setAttribute('viewBox', '0 0 100 100');
+    els.lines.innerHTML = points ? `<polyline points="${points}" fill="none" stroke="#67e8f9" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"/><polyline points="${points}" fill="none" stroke="#fef08a" stroke-width=".65" stroke-linecap="round" stroke-linejoin="round"/>` : '';
+  }
+
+  function renderHeld() {
+    const purifyText = state.purifyReady ? '<div class="mh-token done">净化：下一次障碍突破有效</div>' : '<div class="mh-token">净化：未生效</div>';
+    if (!state.heldPowers.length) {
+      els.held.innerHTML = `<div class="mh-held-card"><span>主动道具：无</span><button class="mh-use" disabled>释放</button></div>${purifyText}`;
+      return;
+    }
+    const grouped = [];
+    state.heldPowers.forEach((power) => {
+      const group = grouped.find((item) => item.power === power);
+      if (group) group.count += 1;
+      else grouped.push({ power, count: 1 });
+    });
+    const items = grouped.map(({ power, count }) => {
+      const item = POWERUPS[power];
+      return `<div class="mh-held-card"><span>${nodeIcon(power, 'mh-held-icon')} ${item.label}<b class="mh-held-count">×${count}</b></span><button class="mh-use" type="button" data-power-id="${power}">释放</button></div>`;
+    });
+    els.held.innerHTML = `${items.join('')}${purifyText}`;
+    els.held.querySelectorAll('[data-power-id]').forEach((button) => {
+      button.addEventListener('click', () => useHeldPower(state.heldPowers.indexOf(button.dataset.powerId)));
+    });
+  }
+
+  function renderDifficulties() {
+    els.difficulties.innerHTML = DIFFICULTY_ORDER.map((id) => `<button class="mh-difficulty ${state.difficulty === id ? 'active' : ''}" type="button" data-difficulty="${id}">${DIFFICULTIES[id].label}</button>`).join('');
+    els.difficulties.querySelectorAll('button').forEach((button) => {
+      button.addEventListener('click', () => {
+        state.difficulty = button.dataset.difficulty;
+        state.round = 1;
+        localStorage.setItem(STORAGE_KEY_DIFFICULTY, state.difficulty);
+        resetLevel(true);
+      });
+    });
+  }
+
+  function renderStatus() {
+    if (state.finished) {
+      els.status.textContent = `破解完成，得分 ${state.score}。`;
+    } else if (!state.path.length) {
+      els.status.textContent = '从左上角起点开始连接路径。';
+    } else if (state.purifyReady) {
+      els.status.textContent = '净化生效中：下一次普通障碍突破有效。';
+    } else if (state.heldPowers.length) {
+      els.status.textContent = `当前持有 ${state.heldPowers.length} 个主动道具，可选择合适时机释放。`;
+    } else {
+      els.status.textContent = '继续连接必经点，并判断哪些道具值得获取。';
+    }
+  }
+
+  function onPointerDown(event) {
+    event.preventDefault();
+    if (state.finished || state.animating) return;
+    state.dragging = true;
+    try { event.currentTarget.setPointerCapture?.(event.pointerId); } catch (error) {}
+    attemptMove(Number(event.currentTarget.dataset.x), Number(event.currentTarget.dataset.y));
+    startTimer();
+  }
+
+  function onPointerEnter(event) {
+    if (!state.dragging || state.finished || state.animating) return;
+    attemptMove(Number(event.currentTarget.dataset.x), Number(event.currentTarget.dataset.y));
+  }
+
+  function onPointerMove(event) {
+    if (!state.dragging || state.finished || state.animating) return;
+    const target = document.elementFromPoint(event.clientX, event.clientY)?.closest?.('.mh-cell');
+    if (target) attemptMove(Number(target.dataset.x), Number(target.dataset.y));
+  }
+
+  function onPointerUp() {
+    state.dragging = false;
+  }
+
+  function attemptMove(x, y) {
+    if (state.animating) return;
+    const cell = state.grid[y]?.[x];
+    if (!cell) return;
+    const key = keyOf(x, y);
+    if (!state.path.length) {
+      if (cell.type !== 'start') return;
+      enterCell(cell);
+      renderAll();
+      maybeRecordTimelineSnapshot();
+      return;
+    }
+    const last = state.path[state.path.length - 1];
+    if (Math.abs(last.x - x) + Math.abs(last.y - y) !== 1) return;
+    if (state.pathKeys.has(key)) return;
+    if (cell.type === 'hardObstacle') return flashPathEnd();
+    if (cell.type === 'obstacle' && !state.purifyReady) return flashPathEnd();
+    if (cell.type === 'end' && state.visitedCheckpoints.size < state.checkpoints.size) return;
+    if (cell.type === 'obstacle' && state.purifyReady) {
+      state.purifyReady = false;
+      cell.type = 'normal';
+      animatePurify(cell);
+    }
+    enterCell(cell);
+    if (cell.type === 'end' && state.visitedCheckpoints.size === state.checkpoints.size) finishGame();
+    renderAll();
+    maybeRecordTimelineSnapshot();
+  }
+
+  function enterCell(cell) {
+    const key = keyOf(cell.x, cell.y);
+    state.path.push({ x: cell.x, y: cell.y });
+    state.pathKeys.add(key);
+    if (cell.type === 'checkpoint') state.visitedCheckpoints.add(key);
+    if (cell.type === 'power' && !cell.used) collectPower(cell);
+  }
+
+  function collectPower(cell) {
+    const power = POWERUPS[cell.power];
+    const powerId = cell.power;
+    cell.type = 'normal';
+    cell.power = null;
+    cell.used = true;
+    if (power.type === 'status') {
+      state.purifyReady = true;
+      animatePurify(cell);
+      toast('净化生效');
+    } else {
+      state.heldPowers.push(powerId);
+      toast(`获得${power.label}`);
+    }
+  }
+
+  function useHeldPower(index) {
+    if (state.animating || index < 0 || index >= state.heldPowers.length || state.finished || !state.path.length) return;
+    const power = state.heldPowers[index];
+    const origin = state.path[state.path.length - 1];
+    const size = DIFFICULTIES[state.difficulty].size;
+    state.heldPowers.splice(index, 1);
+    renderHeld();
+    renderStatus();
+    if (isRotationPower(power)) {
+      state.dragging = false;
+      state.animating = true;
+      animateRotateAround(origin, size, rotationStep(power), () => {
+        const moved = rotateAround(origin, size, rotationStep(power));
+        syncCheckpointsFromGrid();
+        animatePower(power, origin, moved);
+        state.animating = false;
+        toast(power === 'rotateCcw' ? '周围节点已逆旋' : '周围节点已顺旋');
+        renderAll();
+        recordTimelineSnapshot(true);
+      });
+      return;
+    }
+    const targets = affectedCells(power, origin, size)
+      .map(({ x, y }) => state.grid[y][x])
+      .filter((cell) => cell.type === 'obstacle');
+    animatePower(power, origin, targets);
+    if (['row', 'col', 'cross'].includes(power)) {
+      window.setTimeout(() => {
+        targets.forEach((cell) => {
+          cell.type = 'normal';
+        });
+        toast(targets.length ? `清除 ${targets.length} 个障碍` : '道具已释放');
+        renderAll();
+        recordTimelineSnapshot(true);
+      }, 320);
+    } else {
+      targets.forEach((cell) => {
+        cell.type = 'normal';
+        animateFlash(cell);
+      });
+      toast(targets.length ? `清除 ${targets.length} 个障碍` : '道具已释放');
+      renderAll();
+      recordTimelineSnapshot(true);
+    }
+  }
+
+  function rotateAround(origin, size, step = 1) {
+    const ring = rotateRing(origin, size);
+    const data = ring.map((pos) => copyCellState(state.grid[pos.y][pos.x]));
+    ring.forEach((pos, index) => {
+      const targetPos = ring[(index + step + ring.length) % ring.length];
+      const target = state.grid[targetPos.y][targetPos.x];
+      Object.assign(target, data[index]);
+    });
+    return ring.map((pos) => state.grid[pos.y][pos.x]);
+  }
+
+  function rotateRing(origin, size) {
+    return [
+      { x: origin.x - 1, y: origin.y - 1 },
+      { x: origin.x, y: origin.y - 1 },
+      { x: origin.x + 1, y: origin.y - 1 },
+      { x: origin.x + 1, y: origin.y },
+      { x: origin.x + 1, y: origin.y + 1 },
+      { x: origin.x, y: origin.y + 1 },
+      { x: origin.x - 1, y: origin.y + 1 },
+      { x: origin.x - 1, y: origin.y },
+    ].filter((pos) => inBounds(pos.x, pos.y, size));
+  }
+
+  function copyCellState(cell) {
+    return { type: cell.type, power: cell.power, used: cell.used };
+  }
+
+  function syncCheckpointsFromGrid() {
+    state.checkpoints = new Set();
+    state.grid.flat().forEach((cell) => {
+      if (cell.type === 'checkpoint') state.checkpoints.add(keyOf(cell.x, cell.y));
+    });
+    syncVisitedCheckpoints();
+  }
+
+  function syncVisitedCheckpoints() {
+    state.visitedCheckpoints = new Set();
+    state.path.forEach((pos) => {
+      const key = keyOf(pos.x, pos.y);
+      if (state.checkpoints.has(key)) state.visitedCheckpoints.add(key);
+    });
+  }
+
+  function timelineInterval() {
+    return Math.max(3, Math.ceil(DIFFICULTIES[state.difficulty].size / 2));
+  }
+
+  function maybeRecordTimelineSnapshot() {
+    const step = Math.max(0, state.path.length - 1);
+    if (step === 0 || step === state.lastTimelineStep || step % timelineInterval() !== 0) return;
+    recordTimelineSnapshot(false);
+  }
+
+  function queueTimelineSnapshot(force) {
+    window.requestAnimationFrame(() => recordTimelineSnapshot(force));
+  }
+
+  function recordTimelineSnapshot(force) {
+    const step = Math.max(0, state.path.length - 1);
+    if (!force && step === state.lastTimelineStep) return;
+    state.timeline.push(makeTimelineSnapshot(step));
+    state.lastTimelineStep = step;
+    if (state.timeline.length > 10) state.timeline.shift();
+    renderAll();
+  }
+
+  function makeTimelineSnapshot(step) {
+    const data = {
+      step,
+      seconds: state.seconds,
+      difficulty: state.difficulty,
+      grid: cloneGrid(state.grid),
+      route: state.route.map((pos) => ({ ...pos })),
+      checkpoints: [...state.checkpoints],
+      visitedCheckpoints: [...state.visitedCheckpoints],
+      path: state.path.map((pos) => ({ ...pos })),
+      heldPowers: state.heldPowers.slice(),
+      purifyReady: state.purifyReady,
+      score: state.score,
+    };
+    return { ...data, thumb: renderTimelineThumb(data) };
+  }
+
+  function cloneGrid(grid) {
+    return grid.map((row) => row.map((cell) => ({ x: cell.x, y: cell.y, type: cell.type, power: cell.power, used: cell.used })));
+  }
+
+  function showRewind() {
+    if (!state.timeline.length || state.finished || state.animating) return;
+    const newestFirst = state.timeline.map((snapshot, index) => ({ snapshot, index })).slice().reverse();
+    els.rewindList.innerHTML = newestFirst.map(({ snapshot, index }) => `
+      <button class="mh-rewind-item" type="button" data-timeline-index="${index}">
+        <img src="${snapshot.thumb}" alt="${snapshot.step} 步状态缩略图">
+        <span class="mh-rewind-meta"><b>${snapshot.step} 步</b><span>${snapshot.seconds}s · ${snapshot.heldPowers.length} 道具 · ${snapshot.visitedCheckpoints.length}/${snapshot.checkpoints.length} 必经</span></span>
+      </button>
+    `).join('');
+    els.rewindList.querySelectorAll('[data-timeline-index]').forEach((button) => {
+      button.addEventListener('click', () => restoreTimelineSnapshot(Number(button.dataset.timelineIndex)));
+    });
+    els.rewindOverlay.hidden = false;
+  }
+
+  function restoreTimelineSnapshot(index) {
+    const snapshot = state.timeline[index];
+    if (!snapshot || state.animating) return;
+    state.grid = cloneGrid(snapshot.grid);
+    state.route = snapshot.route.map((pos) => ({ ...pos }));
+    state.checkpoints = new Set(snapshot.checkpoints);
+    state.visitedCheckpoints = new Set(snapshot.visitedCheckpoints);
+    state.path = snapshot.path.map((pos) => ({ ...pos }));
+    state.pathKeys = new Set(state.path.map((pos) => keyOf(pos.x, pos.y)));
+    state.heldPowers = snapshot.heldPowers.slice();
+    state.purifyReady = snapshot.purifyReady;
+    state.seconds = snapshot.seconds;
+    state.score = snapshot.score;
+    state.finished = false;
+    state.dragging = false;
+    state.timeline = state.timeline.slice(0, index + 1);
+    state.lastTimelineStep = snapshot.step;
+    els.rewindOverlay.hidden = true;
+    syncVisitedCheckpoints();
+    renderAll();
+    toast(`已倒退到 ${snapshot.step} 步`);
+  }
+
+  function renderTimelineThumb(snapshot) {
+    const size = DIFFICULTIES[snapshot.difficulty].size;
+    const canvas = document.createElement('canvas');
+    canvas.width = 180;
+    canvas.height = 180;
+    const ctx = canvas.getContext('2d');
+    const pad = 10;
+    const gap = Math.max(1, Math.floor(5 - size / 3));
+    const cellSize = (canvas.width - pad * 2 - gap * (size - 1)) / size;
+    ctx.fillStyle = '#082f49';
+    ctx.fillRect(0, 0, canvas.width, canvas.height);
+    snapshot.grid.flat().forEach((cell) => drawThumbCell(ctx, cell, pad, gap, cellSize));
+    drawThumbPath(ctx, snapshot.path, pad, gap, cellSize);
+    return canvas.toDataURL('image/png');
+  }
+
+  function drawThumbCell(ctx, cell, pad, gap, cellSize) {
+    const x = pad + cell.x * (cellSize + gap);
+    const y = pad + cell.y * (cellSize + gap);
+    const color = { normal: '#0f3f5a', start: '#22c55e', end: '#f59e0b', checkpoint: '#8b5cf6', obstacle: '#111827', hardObstacle: '#7f1d1d', power: '#06b6d4' }[cell.type] || '#0f3f5a';
+    ctx.fillStyle = color;
+    ctx.fillRect(x, y, cellSize, cellSize);
+    if (cell.type === 'power') {
+      ctx.fillStyle = cell.power === 'rotateCcw' ? '#fb7185' : '#f0f9ff';
+      ctx.beginPath();
+      ctx.arc(x + cellSize / 2, y + cellSize / 2, Math.max(2, cellSize * .18), 0, Math.PI * 2);
+      ctx.fill();
+    }
+  }
+
+  function drawThumbPath(ctx, path, pad, gap, cellSize) {
+    if (path.length < 2) return;
+    ctx.lineWidth = Math.max(2, cellSize * .18);
+    ctx.lineCap = 'round';
+    ctx.lineJoin = 'round';
+    ctx.strokeStyle = '#67e8f9';
+    ctx.beginPath();
+    path.forEach((pos, index) => {
+      const x = pad + pos.x * (cellSize + gap) + cellSize / 2;
+      const y = pad + pos.y * (cellSize + gap) + cellSize / 2;
+      if (index === 0) ctx.moveTo(x, y);
+      else ctx.lineTo(x, y);
+    });
+    ctx.stroke();
+  }
+
+  function finishGame() {
+    state.finished = true;
+    stopTimer();
+    const config = DIFFICULTIES[state.difficulty];
+    state.score = Math.max(10, config.baseScore + state.checkpoints.size * 20 - state.seconds * 2);
+    toast(`破解成功 ${state.score}分`);
+    window.parent?.postMessage({ type: 'gameFinished', data: { earnedPoints: state.score, difficulty: config.label } }, '*');
+  }
+
+  function startTimer() {
+    if (state.timer) return;
+    window.parent?.postMessage({ type: 'gameStarted' }, '*');
+    state.timer = setInterval(() => {
+      state.seconds += 1;
+      els.time.textContent = state.seconds;
+    }, 1000);
+  }
+
+  function stopTimer() {
+    if (state.timer) clearInterval(state.timer);
+    state.timer = null;
+  }
+
+  function flashCell(x, y) {
+    const el = els.board.querySelector(`[data-x="${x}"][data-y="${y}"]`);
+    if (!el) return;
+    el.classList.remove('blocked');
+    void el.offsetWidth;
+    el.classList.add('blocked');
+  }
+
+  function flashPathEnd() {
+    const last = state.path[state.path.length - 1];
+    if (last) flashCell(last.x, last.y);
+  }
+
+  function cellRect(cell) {
+    const target = els.board.querySelector(`[data-x="${cell.x}"][data-y="${cell.y}"]`);
+    const boardRect = els.boardWrap.getBoundingClientRect();
+    const rect = target.getBoundingClientRect();
+    return { left: rect.left - boardRect.left, top: rect.top - boardRect.top, width: rect.width, height: rect.height, cx: rect.left - boardRect.left + rect.width / 2, cy: rect.top - boardRect.top + rect.height / 2 };
+  }
+
+  function animatePower(power, origin, targets = []) {
+    const rect = cellRect(origin);
+    if (power === 'pulse' || isRotationPower(power)) {
+      const ring = document.createElement('div');
+      ring.className = 'mh-ring';
+      ring.style.left = `${rect.cx - rect.width * 1.15}px`;
+      ring.style.top = `${rect.cy - rect.height * 1.15}px`;
+      ring.style.width = `${rect.width * 2.3}px`;
+      ring.style.height = `${rect.height * 2.3}px`;
+      els.boardWrap.appendChild(ring);
+      setTimeout(() => ring.remove(), 700);
+      return;
+    }
+    if (['row', 'col', 'cross'].includes(power)) {
+      animateLaserShots(power, rect, targets);
+      return;
+    }
+    const beam = document.createElement('div');
+    beam.className = 'mh-beam';
+    if (power === 'row') {
+      beam.style.left = '9px';
+      beam.style.right = '9px';
+      beam.style.top = `${rect.cy - rect.height * .18}px`;
+      beam.style.height = `${rect.height * .36}px`;
+    } else if (power === 'col') {
+      beam.style.top = '9px';
+      beam.style.bottom = '9px';
+      beam.style.left = `${rect.cx - rect.width * .18}px`;
+      beam.style.width = `${rect.width * .36}px`;
+    } else {
+      beam.style.inset = '9px';
+      beam.style.clipPath = `polygon(${rect.cx - rect.width * .18}px 0, ${rect.cx + rect.width * .18}px 0, ${rect.cx + rect.width * .18}px 100%, ${rect.cx - rect.width * .18}px 100%, ${rect.cx - rect.width * .18}px ${rect.cy - rect.height * .18}px, 0 ${rect.cy - rect.height * .18}px, 0 ${rect.cy + rect.height * .18}px, 100% ${rect.cy + rect.height * .18}px, 100% ${rect.cy - rect.height * .18}px, ${rect.cx - rect.width * .18}px ${rect.cy - rect.height * .18}px)`;
+    }
+    els.boardWrap.appendChild(beam);
+    setTimeout(() => beam.remove(), 650);
+  }
+
+  function animateRotateAround(origin, size, step, done) {
+    const ring = rotateRing(origin, size);
+    if (ring.length < 2) {
+      done();
+      return;
+    }
+    ring.forEach((pos, index) => {
+      const next = ring[(index + step + ring.length) % ring.length];
+      const cell = state.grid[pos.y][pos.x];
+      const from = cellRect(cell);
+      const to = cellRect(state.grid[next.y][next.x]);
+      const ghost = document.createElement('div');
+      ghost.className = 'mh-rotate-ghost';
+      ghost.style.left = `${from.left}px`;
+      ghost.style.top = `${from.top}px`;
+      ghost.style.width = `${from.width}px`;
+      ghost.style.height = `${from.height}px`;
+      ghost.style.setProperty('--dx', `${to.left - from.left}px`);
+      ghost.style.setProperty('--dy', `${to.top - from.top}px`);
+      ghost.style.setProperty('--turn', `${step * 90}deg`);
+      ghost.innerHTML = cellIcon(cell);
+      els.boardWrap.appendChild(ghost);
+      window.setTimeout(() => ghost.remove(), 700);
+    });
+    window.setTimeout(done, 620);
+  }
+
+  function animateLaserShots(power, rect, targets) {
+    const boardRect = els.boardWrap.getBoundingClientRect();
+    const pad = 9;
+    const directions = [];
+    const shortLength = rect.width * 2.35;
+    if (power === 'row') directions.push({ angle: 0, length: boardRect.width - rect.cx - pad }, { angle: 180, length: rect.cx - pad });
+    if (power === 'col') directions.push({ angle: 90, length: boardRect.height - rect.cy - pad }, { angle: -90, length: rect.cy - pad });
+    if (power === 'cross') directions.push({ angle: 0, length: shortLength }, { angle: 180, length: shortLength }, { angle: 90, length: shortLength }, { angle: -90, length: shortLength });
+    directions.forEach((direction) => {
+      const shot = document.createElement('div');
+      shot.className = 'mh-shot';
+      shot.style.left = `${rect.cx}px`;
+      shot.style.top = `${rect.cy - 4}px`;
+      shot.style.width = `${Math.max(0, direction.length)}px`;
+      shot.style.setProperty('--r', `${direction.angle}deg`);
+      els.boardWrap.appendChild(shot);
+      setTimeout(() => shot.remove(), 380);
+    });
+    window.setTimeout(() => targets.forEach((cell) => animateImpact(cell)), 260);
+  }
+
+  function animatePurify(cell) {
+    const rect = cellRect(cell);
+    const ring = document.createElement('div');
+    ring.className = 'mh-ring';
+    ring.style.borderColor = 'rgba(251,146,60,.95)';
+    ring.style.left = `${rect.left}px`;
+    ring.style.top = `${rect.top}px`;
+    ring.style.width = `${rect.width}px`;
+    ring.style.height = `${rect.height}px`;
+    els.boardWrap.appendChild(ring);
+    setTimeout(() => ring.remove(), 700);
+  }
+
+  function animateFlash(cell) {
+    const rect = cellRect(cell);
+    const flash = document.createElement('div');
+    flash.className = 'mh-flash';
+    flash.style.left = `${rect.left}px`;
+    flash.style.top = `${rect.top}px`;
+    flash.style.width = `${rect.width}px`;
+    flash.style.height = `${rect.height}px`;
+    els.boardWrap.appendChild(flash);
+    setTimeout(() => flash.remove(), 560);
+  }
+
+  function animateImpact(cell) {
+    const rect = cellRect(cell);
+    const impact = document.createElement('div');
+    impact.className = 'mh-impact';
+    impact.style.left = `${rect.left}px`;
+    impact.style.top = `${rect.top}px`;
+    impact.style.width = `${rect.width}px`;
+    impact.style.height = `${rect.height}px`;
+    els.boardWrap.appendChild(impact);
+    setTimeout(() => impact.remove(), 420);
+  }
+
+  function toast(text) {
+    const el = document.createElement('div');
+    el.className = 'mh-toast';
+    el.textContent = text;
+    document.body.appendChild(el);
+    setTimeout(() => el.remove(), 1300);
+  }
+
+  function showGuide(selectedId) {
+    const items = [
+      ...Object.entries(CORE_GUIDES).filter(([id]) => id !== 'hardObstacle' || ['expert', 'nightmare'].includes(state.difficulty)).map(([id, data]) => ({ id, ...data })),
+      ...[...state.knownPowerups].filter((id) => POWERUPS[id]).map((id) => ({ id, ...POWERUPS[id] })),
+    ];
+    const selected = items.find((item) => item.id === selectedId) || items[0];
+    els.guideList.innerHTML = items.map((item) => `<button class="mh-guide-item ${selected.id === item.id ? 'active' : ''}" type="button" data-guide="${item.id}">${nodeIcon(item.id)}${item.label}</button>`).join('');
+    els.guideDetail.innerHTML = `<div class="mh-guide-icon">${nodeIcon(selected.id)}</div><div><h2>${selected.label}</h2><div>${selected.desc}</div></div>`;
+    els.guideList.querySelectorAll('button').forEach((button) => button.addEventListener('click', () => showGuide(button.dataset.guide)));
+    els.guideOverlay.hidden = false;
+  }
+
+  function maybeShowNewGuide() {
+    if (!state.pendingGuide.length) return;
+    showNewGuideStep();
+  }
+
+  function showNewGuideStep() {
+    const id = state.pendingGuide[0];
+    const data = guideData(id);
+    if (!data) {
+      state.pendingGuide.shift();
+      maybeShowNewGuide();
+      return;
+    }
+    const total = Number(els.newGuideOverlay.dataset.total || state.pendingGuide.length || 1);
+    const index = total - state.pendingGuide.length + 1;
+    els.newGuideOverlay.dataset.total = total;
+    els.newGuidePrompt.textContent = state.pendingGuide.length > 1 ? '连续查看本局新出现的节点。' : '查看这个节点的作用。';
+    els.newGuideDetail.innerHTML = `<div class="mh-guide-icon">${nodeIcon(id)}</div><div><h2>${data.label}</h2><div>${data.desc}</div></div>`;
+    els.newGuideProgress.textContent = `${index}/${total}`;
+    els.newGuideNext.textContent = state.pendingGuide.length > 1 ? '下一个' : '知道了';
+    els.newGuideOverlay.hidden = false;
+  }
+
+  function advanceNewGuide() {
+    markGuideKnown(state.pendingGuide.shift());
+    if (state.pendingGuide.length) {
+      showNewGuideStep();
+      return;
+    }
+    els.newGuideOverlay.hidden = true;
+    delete els.newGuideOverlay.dataset.total;
+    flashGuideButton();
+  }
+
+  function flashGuideButton() {
+    els.guide.classList.remove('guide-hint');
+    void els.guide.offsetWidth;
+    els.guide.classList.add('guide-hint');
+    window.setTimeout(() => els.guide.classList.remove('guide-hint'), 2100);
+  }
+
+  els.start.addEventListener('click', () => {
+    els.overlay.hidden = true;
+    maybeShowNewGuide();
+  });
+  els.guide.addEventListener('click', () => showGuide());
+  els.guideClose.addEventListener('click', () => { els.guideOverlay.hidden = true; });
+  els.newGuideNext.addEventListener('click', advanceNewGuide);
+  els.undo.addEventListener('click', showRewind);
+  els.rewindClose.addEventListener('click', () => { els.rewindOverlay.hidden = true; });
+  els.restart.addEventListener('click', () => resetLevel(true));
+  els.next.addEventListener('click', () => resetLevel(false));
+  window.addEventListener('pointermove', onPointerMove, { passive: false });
+  window.addEventListener('pointerup', onPointerUp);
+  window.addEventListener('pointercancel', onPointerUp);
+  window.addEventListener('message', (event) => {
+    const message = event.data || {};
+    if (message.type === 'setGameConfig' && message.difficulty) {
+      state.difficulty = normalizeDifficulty(message.difficulty);
+      localStorage.setItem(STORAGE_KEY_DIFFICULTY, state.difficulty);
+      resetLevel(true);
+    }
+  });
+
+  buildLevel();
+  collectNewGuideNodes();
+  renderAll();
+  queueTimelineSnapshot(true);
+  window.parent?.postMessage({ type: 'gameLoaded' }, '*');
+})();
+</script>
+
+</html>

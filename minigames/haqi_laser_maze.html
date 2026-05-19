@@ -1,0 +1,1109 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+
+<head>
+	<meta charset="UTF-8">
+	<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+	<title>哈奇激光迷宫</title>
+	<script src="https://cdn.keepwork.com/keepwork/cdn/tailwindcss@3.4.16.js"></script>
+</head>
+
+<body></body>
+<script defer>
+(function () {
+	const STORAGE_DIFFICULTY = 'haqiLaserMazeDifficultyV1';
+	const STORAGE_BEST = 'haqiLaserMazeBestScoreV1';
+	const FALLBACK_PET = '●';
+	const DIRS = [
+		{ id: 0, name: '上', dr: -1, dc: 0, arrow: '↑' },
+		{ id: 1, name: '右', dr: 0, dc: 1, arrow: '→' },
+		{ id: 2, name: '下', dr: 1, dc: 0, arrow: '↓' },
+		{ id: 3, name: '左', dr: 0, dc: -1, arrow: '←' },
+	];
+	const DIFFICULTIES = {
+		easy: { id: 'easy', label: '轻松', size: 8, blockers: 3, lasers: 1, clutter: 7, mines: 1, reward: 80, period: 6 },
+		normal: { id: 'normal', label: '标准', size: 9, blockers: 4, lasers: 2, clutter: 12, mines: 2, reward: 110, period: 5 },
+		hard: { id: 'hard', label: '困难', size: 10, blockers: 5, lasers: 3, clutter: 18, mines: 3, reward: 145, period: 4 },
+		expert: { id: 'expert', label: '专家', size: 11, blockers: 7, lasers: 4, clutter: 24, mines: 4, reward: 190, period: 4 },
+	};
+	const DIFFICULTY_ORDER = ['easy', 'normal', 'hard', 'expert'];
+	const BLOCKER_TYPES = ['fire', 'lava', 'rock', 'ice', 'gas'];
+	const PASSABLE = new Set(['floor', 'start', 'baby', 'water']);
+
+	const state = {
+		difficulty: normalizeDifficulty(localStorage.getItem(STORAGE_DIFFICULTY)),
+		level: 1,
+		best: Number(localStorage.getItem(STORAGE_BEST) || 0),
+		started: false,
+		finished: false,
+		dead: false,
+		moving: false,
+		size: 9,
+		cells: [],
+		start: null,
+		baby: null,
+		pet: null,
+		path: [],
+		route: [],
+		routeTimer: null,
+		tickTimer: null,
+		seconds: 0,
+		pulse: 0,
+		moves: 0,
+		toolsUsed: 0,
+		selectedTool: null,
+		selectedFanDir: 1,
+		lasers: [],
+		laserCells: new Map(),
+		inventory: {},
+		petAsset: null,
+		objectUrls: [],
+	};
+
+	const root = document.createElement('div');
+	root.id = 'haqiLaserMaze';
+	root.innerHTML = `
+		<style>
+			* { box-sizing: border-box; -webkit-tap-highlight-color: transparent; }
+			html, body { width: 100%; height: 100%; margin: 0; overflow: hidden; }
+			body {
+				font-family: -apple-system, BlinkMacSystemFont, 'PingFang SC', 'Microsoft YaHei', sans-serif;
+				color: #12324a;
+				background:
+					radial-gradient(circle at 15% 12%, rgba(255,255,255,.82) 0 7%, transparent 23%),
+					radial-gradient(circle at 82% 18%, rgba(125,211,252,.36) 0 9%, transparent 25%),
+					linear-gradient(180deg, #cffafe 0%, #fef3c7 48%, #dcfce7 100%);
+				touch-action: none;
+				user-select: none;
+			}
+			.mh-shell { height: 100vh; height: 100dvh; display: grid; grid-template-rows: auto minmax(0, 1fr) auto; gap: 8px; padding: 8px; overflow: hidden; }
+			.mh-top {
+				min-height: 52px; display: grid; grid-template-columns: 38px minmax(0,1fr) auto; align-items: center; gap: 8px;
+				padding: 7px 9px; border-radius: 14px; background: rgba(255,255,255,.92); border: 2px solid rgba(255,255,255,.96);
+				box-shadow: 0 5px 0 rgba(14,116,144,.14), 0 12px 24px rgba(15,23,42,.12);
+			}
+			.mh-title { min-width: 0; text-align: center; font-size: 18px; font-weight: 1000; color: #075985; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+			.mh-stats { display: flex; justify-content: flex-end; align-items: center; gap: 5px; flex-wrap: wrap; }
+			.mh-pill { min-width: 48px; height: 28px; display: inline-flex; align-items: center; justify-content: center; gap: 3px; padding: 0 8px; border-radius: 999px; background: #fff; border: 1px solid rgba(14,116,144,.18); color: #0f766e; font-size: 12px; font-weight: 900; box-shadow: 0 2px 0 rgba(14,116,144,.1); }
+			.mh-main { min-height: 0; display: grid; grid-template-columns: minmax(0, 1fr) minmax(250px, 330px); gap: 8px; }
+			.mh-stage, .mh-panel { min-height: 0; border-radius: 16px; background: rgba(255,255,255,.74); border: 2px solid rgba(255,255,255,.94); box-shadow: 0 12px 28px rgba(15,23,42,.14); }
+			.mh-stage { position: relative; display: grid; place-items: center; overflow: hidden; }
+			.mh-stage::before { content: ''; position: absolute; inset: 0; background: linear-gradient(90deg, rgba(255,255,255,.2) 1px, transparent 1px), linear-gradient(180deg, rgba(255,255,255,.16) 1px, transparent 1px); background-size: 42px 42px; mask-image: linear-gradient(180deg, rgba(0,0,0,.64), rgba(0,0,0,.08)); pointer-events: none; }
+			.mh-board-wrap {
+				position: relative; z-index: 1; width: min(100%, calc(100vh - 150px), 690px); max-width: calc(100vw - 282px); aspect-ratio: 1; padding: 10px; border-radius: 18px;
+				background: linear-gradient(145deg, #075985, #0f766e 52%, #14532d); border: 3px solid rgba(255,255,255,.96);
+				box-shadow: 0 18px 34px rgba(15,23,42,.24), 0 0 0 6px rgba(255,255,255,.22), inset 0 2px 0 rgba(255,255,255,.32), inset 0 -7px 0 rgba(20,83,45,.32);
+			}
+			.mh-board { position: relative; width: 100%; height: 100%; display: grid; grid-template-columns: repeat(var(--size), 1fr); grid-template-rows: repeat(var(--size), 1fr); gap: 3px; padding: 3px; border-radius: 12px; background: rgba(7,45,64,.78); overflow: hidden; }
+			.mh-cell { position: relative; min-width: 0; min-height: 0; border-radius: 7px; overflow: hidden; cursor: pointer; background: linear-gradient(180deg, #98e0c8, #5fbca8); box-shadow: inset 0 1px 0 rgba(255,255,255,.34), inset 0 -2px 0 rgba(15,23,42,.12); }
+			.mh-cell::before { content: ''; position: absolute; inset: 0; background: radial-gradient(circle at 30% 24%, rgba(255,255,255,.28), transparent 28%), linear-gradient(90deg, rgba(255,255,255,.1) 1px, transparent 1px), linear-gradient(180deg, rgba(15,23,42,.12) 1px, transparent 1px); background-size: auto, 50% 50%, 50% 50%; pointer-events: none; }
+			.mh-cell.reachable { outline: 2px solid rgba(250,204,21,.78); outline-offset: -5px; }
+			.mh-cell.targetable { outline: 3px solid rgba(14,165,233,.72); outline-offset: -5px; }
+			.mh-cell.wall { cursor: default; background: linear-gradient(145deg, #9ca3af, #64748b 48%, #334155); box-shadow: inset 4px 4px 0 rgba(255,255,255,.38), inset -5px -6px 0 rgba(15,23,42,.22), 0 3px 0 rgba(15,23,42,.3); }
+			.mh-cell.rock { background: linear-gradient(145deg, #fbbf24, #d97706 52%, #92400e); box-shadow: inset 4px 4px 0 rgba(255,255,255,.36), inset -5px -7px 0 rgba(124,45,18,.32), 0 3px 0 rgba(124,45,18,.42); }
+			.mh-cell.ice { background: linear-gradient(145deg, #f0f9ff, #7dd3fc 48%, #0284c7); box-shadow: inset 4px 4px 0 rgba(255,255,255,.72), inset -5px -6px 0 rgba(7,89,133,.22), 0 0 12px rgba(125,211,252,.4); }
+			.mh-cell.fire { background: linear-gradient(180deg, #fde68a, #fb923c 45%, #dc2626); animation: mhHot .62s ease-in-out infinite alternate; }
+			.mh-cell.lava { background: radial-gradient(circle at 36% 35%, #fff7ad 0 8%, #fb923c 22%, #dc2626 52%, #7f1d1d 100%); animation: mhLava 1.1s ease-in-out infinite alternate; }
+			.mh-cell.gas { background: radial-gradient(circle at 38% 38%, rgba(220,252,231,.9), rgba(134,239,172,.86) 38%, rgba(22,163,74,.55) 66%, rgba(20,83,45,.48)); }
+			.mh-cell.gas::after { content: ''; position: absolute; inset: 12%; border-radius: 999px; background: radial-gradient(circle, rgba(255,255,255,.56), transparent 58%); animation: mhGas 1.5s ease-in-out infinite alternate; }
+			.mh-cell.water { background: radial-gradient(circle at 36% 30%, rgba(236,254,255,.95), rgba(56,189,248,.76) 46%, rgba(14,116,144,.55)); }
+			.mh-cell.mine { background: linear-gradient(180deg, #cbd5e1, #475569); }
+			.mh-cell.mine::after { content: ''; position: absolute; left: 50%; top: 50%; width: 48%; height: 48%; border-radius: 999px; background: radial-gradient(circle at 35% 28%, #fff, #ef4444 18%, #7f1d1d 64%); transform: translate(-50%, -50%); box-shadow: 0 0 0 4px rgba(127,29,29,.24), 0 5px 0 rgba(15,23,42,.22); }
+			.mh-cell.start { box-shadow: inset 0 0 0 3px rgba(34,197,94,.5), inset 0 -2px 0 rgba(15,23,42,.12); }
+			.mh-cell.baby { box-shadow: inset 0 0 0 3px rgba(250,204,21,.78), 0 0 18px rgba(250,204,21,.45); }
+			.mh-svg { position: absolute; inset: 8%; width: 84%; height: 84%; z-index: 2; pointer-events: none; filter: drop-shadow(0 4px 3px rgba(15,23,42,.22)); }
+			.mh-laser-layer { position: absolute; inset: 13px; z-index: 8; pointer-events: none; }
+			.mh-laser-seg { position: absolute; border-radius: 999px; background: linear-gradient(90deg, rgba(255,255,255,.96), #fef08a 20%, #ef4444 52%, rgba(239,68,68,.18)); box-shadow: 0 0 8px #fef08a, 0 0 18px rgba(239,68,68,.8); animation: mhBeam .24s linear infinite alternate; }
+			.mh-laser-seg.rev { background: linear-gradient(270deg, rgba(255,255,255,.96), #fef08a 20%, #ef4444 52%, rgba(239,68,68,.18)); }
+			.mh-laser-seg.v { background: linear-gradient(180deg, rgba(255,255,255,.96), #fef08a 20%, #ef4444 52%, rgba(239,68,68,.18)); }
+			.mh-laser-seg.v.rev { background: linear-gradient(0deg, rgba(255,255,255,.96), #fef08a 20%, #ef4444 52%, rgba(239,68,68,.18)); }
+			.mh-pet { position: absolute; z-index: 12; width: calc(100% / var(--size)); height: calc(100% / var(--size)); left: calc(var(--c) * 100% / var(--size)); top: calc(var(--r) * 100% / var(--size)); display: grid; place-items: center; transition: left .32s cubic-bezier(.2,.72,.28,1), top .32s cubic-bezier(.2,.72,.28,1), transform .18s ease, filter .18s ease; pointer-events: none; filter: drop-shadow(0 7px 3px rgba(15,23,42,.28)); }
+			.mh-pet.dead { transform: scale(.72) rotate(16deg); opacity: .42; filter: grayscale(1) drop-shadow(0 4px 2px rgba(15,23,42,.2)); }
+			.mh-pet::after { content: ''; position: absolute; left: 20%; right: 20%; bottom: 8%; height: 16%; border-radius: 999px; background: rgba(15,23,42,.22); filter: blur(1px); z-index: 0; }
+			.mh-pet-flip { position: relative; z-index: 1; width: 112%; height: 112%; transform-origin: 50% 50%; animation: mhPetFlip 22s ease-in-out infinite; will-change: transform; }
+			.mh-sprite { width: 100%; height: 100%; background-repeat: no-repeat; background-position: center; transform-origin: 50% 100%; animation: mhPetIdle 12s ease-in-out infinite; will-change: transform; }
+			.mh-fallback { position: relative; z-index: 1; width: 68%; height: 68%; display: grid; place-items: center; border-radius: 999px; background: radial-gradient(circle at 35% 28%, #f5d0fe, #a855f7 58%, #6b21a8); color: #fff; border: 3px solid rgba(255,255,255,.82); font-size: clamp(18px, 4vmin, 34px); box-shadow: inset 0 3px 0 rgba(255,255,255,.35), inset 0 -5px 0 rgba(88,28,135,.28); transform-origin: 50% 100%; animation: mhPetIdle 12s ease-in-out infinite; will-change: transform; }
+			.mh-pet.walking .mh-sprite, .mh-pet.walking .mh-fallback { animation: mhPetWalk .46s ease-in-out infinite; }
+			.mh-pet.walking::after { animation: mhPetShadow .46s ease-in-out infinite; }
+			.mh-baby-mark { position: absolute; inset: 12%; z-index: 5; display: grid; place-items: center; pointer-events: none; }
+			.mh-baby-mark .mh-svg { inset: 2%; width: 96%; height: 96%; }
+			.mh-baby-mark .mh-fallback { width: 74%; height: 74%; font-size: clamp(14px, 3vmin, 28px); background: radial-gradient(circle at 35% 28%, #fff7ed, #f59e0b 56%, #b45309); }
+			.mh-panel { display: grid; grid-template-rows: auto auto minmax(0,1fr); gap: 8px; padding: 10px; overflow: hidden; }
+			.mh-status { min-height: 40px; padding: 8px 10px; border-radius: 12px; background: #fff; color: #0f766e; font-size: 13px; line-height: 1.35; font-weight: 900; box-shadow: inset 0 -2px 0 rgba(14,116,144,.09); }
+			.mh-tools { display: grid; grid-template-columns: repeat(3, minmax(0,1fr)); gap: 6px; }
+			.mh-tool, .mh-action, .mh-icon-btn, .mh-start, .mh-difficulty, .mh-dir { border: 0; cursor: pointer; font-family: inherit; font-weight: 1000; color: inherit; }
+			.mh-tool { min-height: 58px; border-radius: 12px; background: linear-gradient(180deg, #fff, #ecfeff); border: 2px solid rgba(14,116,144,.16); box-shadow: 0 4px 0 rgba(14,116,144,.16); color: #075985; display: grid; grid-template-rows: 1fr auto; place-items: center; padding: 5px; }
+			.mh-tool.active { background: linear-gradient(180deg, #fef3c7, #fdba74); border-color: rgba(249,115,22,.58); color: #9a3412; transform: translateY(2px); box-shadow: 0 2px 0 rgba(154,52,18,.3); }
+			.mh-tool:disabled { opacity: .38; filter: grayscale(.4); cursor: default; }
+			.mh-tool .mh-svg { position: static; inset: auto; width: 28px; height: 28px; display: block; filter: drop-shadow(0 2px 1px rgba(15,23,42,.18)); }
+			.mh-tool span { font-size: 11px; line-height: 1; white-space: nowrap; }
+			.mh-tool b { font-size: 11px; color: #0f766e; }
+			.mh-actions { display: flex; align-items: center; justify-content: space-between; gap: 6px; flex-wrap: wrap; }
+			.mh-action, .mh-dir { height: 34px; border-radius: 999px; padding: 0 12px; background: linear-gradient(180deg, #38bdf8, #0284c7); color: #fff; box-shadow: 0 4px 0 #075985; }
+			.mh-action.orange { background: linear-gradient(180deg, #fb923c, #ea580c); box-shadow-color: #9a3412; }
+			.mh-action.soft { background: #fff7ed; color: #9a3412; border: 2px solid #fed7aa; box-shadow: 0 2px 0 rgba(154,52,18,.18); }
+			.mh-dir { min-width: 36px; padding: 0; background: #fff; color: #0f766e; border: 1px solid rgba(14,116,144,.18); box-shadow: 0 2px 0 rgba(14,116,144,.16); }
+			.mh-dir.active { background: #0ea5e9; color: #fff; }
+			.mh-difficulties { display: flex; gap: 4px; flex-wrap: wrap; }
+			.mh-difficulty { height: 28px; min-width: 48px; border-radius: 999px; padding: 0 9px; background: rgba(255,255,255,.86); color: #0f766e; border: 1px solid rgba(14,116,144,.18); font-size: 12px; }
+			.mh-difficulty.active { background: linear-gradient(180deg, #34d399, #16a34a); color: #fff; box-shadow: 0 2px 0 #15803d; }
+			.mh-icon-btn { width: 34px; height: 34px; border-radius: 999px; background: linear-gradient(180deg, #fb923c, #ea580c); color: #fff; box-shadow: 0 3px 0 #9a3412; font-size: 18px; }
+			.mh-overlay { position: fixed; inset: 0; z-index: 70; display: flex; align-items: center; justify-content: center; padding: 16px; background: rgba(15,39,71,.48); }
+			.mh-card { width: min(92vw, 480px); padding: 21px; border-radius: 18px; background: linear-gradient(180deg, #fff, #eff6ff 58%, #f0fdf4); border: 3px solid #7dd3fc; box-shadow: 0 18px 44px rgba(15,23,42,.28), 0 0 0 7px rgba(255,255,255,.34); text-align: center; }
+			.mh-card h1 { margin: 0 0 10px; color: #075985; font-size: 26px; line-height: 1.12; font-weight: 1000; }
+			.mh-card p { margin: 0 0 14px; color: #0f766e; font-size: 15px; font-weight: 800; line-height: 1.55; }
+			.mh-start { border-radius: 999px; padding: 10px 24px; background: linear-gradient(180deg, #34d399, #16a34a); color: #fff; box-shadow: 0 5px 0 #15803d; }
+			.mh-toast { position: fixed; left: 50%; top: 50%; z-index: 90; transform: translate(-50%, -50%); padding: 15px 20px; border-radius: 16px; background: #fff; border: 3px solid #86efac; color: #15803d; font-size: 20px; line-height: 1.35; font-weight: 1000; text-align: center; box-shadow: 0 18px 42px rgba(15,23,42,.24); animation: mhToast 1.25s ease-out forwards; pointer-events: none; }
+			.mh-confetti { position: fixed; top: -16px; z-index: 88; width: 9px; height: 15px; border-radius: 3px; background: var(--c); animation: mhConfetti var(--d) ease-in forwards; pointer-events: none; }
+			[hidden] { display: none !important; }
+			@keyframes mhHot { 100% { filter: brightness(1.18) saturate(1.12); } }
+			@keyframes mhLava { 100% { filter: brightness(1.16); transform: scale(1.02); } }
+			@keyframes mhGas { 100% { transform: translate(12%, -8%) scale(1.18); opacity: .72; } }
+			@keyframes mhBeam { 100% { opacity: .72; filter: brightness(1.28); } }
+			@keyframes mhPetIdle { 0% { transform: scale(1,1) translateY(0); } 8% { transform: scale(1.012,.99) translateY(.3%); } 16% { transform: scale(1,1) translateY(0); } 24% { transform: scale(1.012,.99) translateY(.3%); } 32% { transform: scale(1,1) translateY(0); } 40% { transform: scale(1.06,.94) translateY(1.2%); } 46% { transform: scale(.97,1.04) translateY(-1.5%); } 52% { transform: scale(1.03,.98) translateY(.4%); } 58% { transform: scale(1,1) translateY(0); } 70% { transform: scale(1.012,.99) translateY(.3%); } 82% { transform: scale(1,1) translateY(0); } 92% { transform: scale(1.008,.994) translateY(.2%); } 100% { transform: scale(1,1) translateY(0); } }
+			@keyframes mhPetWalk { 0% { transform: translateY(0) scale(1.08,.92); } 18% { transform: translateY(-8%) scale(.96,1.06); } 50% { transform: translateY(-18%) scale(1,1.02); } 82% { transform: translateY(-4%) scale(1.03,.97); } 100% { transform: translateY(0) scale(1.1,.9); } }
+			@keyframes mhPetFlip { 0%, 48% { transform: scaleX(1); } 50%, 98% { transform: scaleX(-1); } 100% { transform: scaleX(1); } }
+			@keyframes mhPetShadow { 0%, 100% { transform: scaleX(1.05); opacity: .26; } 50% { transform: scaleX(.74); opacity: .14; } }
+			@keyframes mhToast { 0% { opacity: 0; transform: translate(-50%, -42%) scale(.84); } 18% { opacity: 1; transform: translate(-50%, -50%) scale(1); } 100% { opacity: 0; transform: translate(-50%, -76%) scale(.94); } }
+			@keyframes mhConfetti { 100% { opacity: 0; transform: translate3d(var(--x), 112vh, 0) rotate(680deg); } }
+			@media (max-width: 860px) {
+				.mh-main { grid-template-columns: 1fr; grid-template-rows: minmax(0,1fr) auto; }
+				.mh-board-wrap { max-width: calc(100vw - 16px); width: min(92vw, calc(100vh - 260px), 600px); }
+				.mh-panel { grid-template-rows: auto auto auto; }
+				.mh-tools { grid-template-columns: repeat(6, minmax(0,1fr)); }
+				.mh-tool { min-height: 50px; }
+			}
+			@media (max-width: 560px) {
+				.mh-shell { grid-template-rows: auto minmax(0, 1fr); padding: 5px; gap: 5px; }
+				.mh-top { min-height: 42px; grid-template-columns: 32px 1fr auto; gap: 5px; padding: 5px 7px; border-radius: 12px; }
+				.mh-icon-btn { width: 30px; height: 30px; font-size: 16px; }
+				.mh-title { font-size: 16px; }
+				.mh-stats { justify-content: flex-end; gap: 3px; flex-wrap: nowrap; }
+				.mh-pill { min-width: 0; height: 24px; padding: 0 6px; font-size: 11px; }
+				.mh-main { grid-template-rows: minmax(0, 1fr) auto; gap: 5px; }
+				.mh-stage, .mh-panel { border-radius: 13px; border-width: 2px; }
+				.mh-board-wrap { width: min(96vw, calc(100dvh - 224px), 560px); max-width: calc(100vw - 10px); padding: 6px; border-radius: 14px; }
+				.mh-laser-layer { inset: 10px; }
+				.mh-panel { grid-template-rows: auto auto auto; gap: 5px; padding: 7px; }
+				.mh-status { min-height: 30px; padding: 6px 8px; border-radius: 10px; font-size: 12px; line-height: 1.25; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+				.mh-tools { grid-template-columns: repeat(7, minmax(0,1fr)); gap: 4px; }
+				.mh-tool { min-height: 42px; border-radius: 10px; border-width: 1px; padding: 3px 2px; box-shadow: 0 2px 0 rgba(14,116,144,.16); }
+				.mh-tool .mh-svg { width: 23px; height: 23px; }
+				.mh-tool span { font-size: 0; line-height: 1; }
+				.mh-tool b { font-size: 10px; }
+				.mh-actions { gap: 4px; justify-content: center; }
+				.mh-action, .mh-dir { height: 30px; padding: 0 10px; font-size: 12px; box-shadow: 0 2px 0 #075985; }
+				.mh-action.soft { box-shadow: 0 1px 0 rgba(154,52,18,.18); }
+				.mh-difficulties { gap: 3px; }
+				.mh-difficulty { height: 26px; min-width: 42px; padding: 0 7px; font-size: 11px; }
+				.mh-shell > footer { display: none; }
+			}
+			@media (max-height: 620px) and (min-width: 861px) {
+				.mh-board-wrap { width: min(100%, calc(100vh - 126px), 620px); }
+			}
+		</style>
+		<div class="mh-shell">
+			<header class="mh-top">
+				<button id="mhHelp" class="mh-icon-btn" type="button" aria-label="玩法">?</button>
+				<div class="mh-title">哈奇激光迷宫 Lv.<span id="mhLevel">1</span></div>
+				<div class="mh-stats">
+					<span class="mh-pill">难度 <b id="mhDifficultyLabel">标准</b></span>
+					<span class="mh-pill">步数 <b id="mhMoves">0</b></span>
+					<span class="mh-pill">工具 <b id="mhToolsUsed">0</b></span>
+					<span class="mh-pill"><b id="mhTime">0</b>s</span>
+				</div>
+			</header>
+			<main class="mh-main">
+				<section class="mh-stage" aria-label="激光迷宫棋盘">
+					<div class="mh-board-wrap">
+						<div id="mhBoard" class="mh-board"></div>
+						<div id="mhLaserLayer" class="mh-laser-layer"></div>
+						<div id="mhPet" class="mh-pet"><div class="mh-fallback">${FALLBACK_PET}</div></div>
+					</div>
+				</section>
+				<aside class="mh-panel">
+					<div id="mhStatus" class="mh-status">选择难度后开始。点击空地移动，选工具后点格子布置机关。</div>
+					<div id="mhTools" class="mh-tools"></div>
+					<div class="mh-actions">
+						<div class="mh-difficulties" id="mhDifficulties"></div>
+						<button id="mhWait" class="mh-action soft" type="button">等待</button>
+						<button id="mhFanDir" class="mh-dir" type="button" title="风扇方向">→</button>
+						<button id="mhReset" class="mh-action orange" type="button">重开</button>
+					</div>
+				</aside>
+			</main>
+			<footer class="mh-actions">
+				<span class="mh-pill">镜子反射激光，激光可引爆炸弹，风扇吹散毒雾。</span>
+				<span class="mh-pill">最高 <b id="mhBest">0</b></span>
+			</footer>
+		</div>
+		<div id="mhOverlay" class="mh-overlay">
+			<div class="mh-card">
+				<h1>哈奇激光迷宫</h1>
+				<p>参考 Dweep 的规划玩法：先布置镜子、炸弹、水桶、风扇和锤子，再点击地面让宠物沿最短路径前进。激光、火焰、熔岩、地雷和毒雾都会让宠物立刻失败。</p>
+				<p>动态激光会闪烁，移动过程中也能继续放工具。抵达右上角餐盘就过关。</p>
+				<button id="mhStart" class="mh-start" type="button">开始解谜</button>
+			</div>
+		</div>
+	`;
+	document.body.appendChild(root);
+
+	const els = {
+		board: root.querySelector('#mhBoard'),
+		laserLayer: root.querySelector('#mhLaserLayer'),
+		pet: root.querySelector('#mhPet'),
+		tools: root.querySelector('#mhTools'),
+		status: root.querySelector('#mhStatus'),
+		overlay: root.querySelector('#mhOverlay'),
+		help: root.querySelector('#mhHelp'),
+		start: root.querySelector('#mhStart'),
+		reset: root.querySelector('#mhReset'),
+		wait: root.querySelector('#mhWait'),
+		fanDir: root.querySelector('#mhFanDir'),
+		difficulties: root.querySelector('#mhDifficulties'),
+		level: root.querySelector('#mhLevel'),
+		difficultyLabel: root.querySelector('#mhDifficultyLabel'),
+		moves: root.querySelector('#mhMoves'),
+		toolsUsed: root.querySelector('#mhToolsUsed'),
+		time: root.querySelector('#mhTime'),
+		best: root.querySelector('#mhBest'),
+	};
+
+	const TOOL_DEFS = [
+		{ id: 'mirrorSlash', label: '镜子/', icon: mirrorSvg('/') },
+		{ id: 'mirrorBack', label: '镜子\\', icon: mirrorSvg('\\') },
+		{ id: 'wrench', label: '扳手', icon: wrenchSvg() },
+		{ id: 'bomb', label: '炸弹', icon: bombSvg() },
+		{ id: 'fan', label: '风扇', icon: fanSvg() },
+		{ id: 'bucket', label: '水桶', icon: bucketSvg() },
+		{ id: 'hammer', label: '锤子', icon: hammerSvg() },
+	];
+
+	function normalizeDifficulty(value) {
+		return DIFFICULTIES[value] ? value : 'normal';
+	}
+
+	function post(type, data = {}) {
+		try { window.parent && window.parent.postMessage({ type, data }, '*'); } catch (err) {}
+	}
+
+	function randInt(min, max) {
+		return Math.floor(Math.random() * (max - min + 1)) + min;
+	}
+
+	function sample(list) {
+		return list[Math.floor(Math.random() * list.length)];
+	}
+
+	function shuffle(list) {
+		const copy = list.slice();
+		for (let i = copy.length - 1; i > 0; i--) {
+			const j = Math.floor(Math.random() * (i + 1));
+			[copy[i], copy[j]] = [copy[j], copy[i]];
+		}
+		return copy;
+	}
+
+	function key(r, c) { return `${r},${c}`; }
+	function inBounds(r, c) { return r >= 0 && c >= 0 && r < state.size && c < state.size; }
+	function cellAt(r, c) { return state.cells[r]?.[c]; }
+	function isSame(a, b) { return a && b && a.r === b.r && a.c === b.c; }
+
+	function newCell(r, c, type = 'floor') {
+		return { r, c, type, item: null, dir: 1, active: false, pulseOffset: 0 };
+	}
+
+	function buildMainPath(size) {
+		const start = { r: size - 2, c: 1 };
+		const baby = { r: 1, c: size - 2 };
+		const path = [{ ...start }];
+		let r = start.r;
+		let c = start.c;
+		let guard = 0;
+		while ((r !== baby.r || c !== baby.c) && guard++ < size * size * 4) {
+			const moves = [];
+			if (r > baby.r) moves.push({ dr: -1, dc: 0, weight: 4 });
+			if (c < baby.c) moves.push({ dr: 0, dc: 1, weight: 4 });
+			if (r < size - 2) moves.push({ dr: 1, dc: 0, weight: 1 });
+			if (c > 1) moves.push({ dr: 0, dc: -1, weight: 1 });
+			const weighted = [];
+			moves.forEach(move => { for (let i = 0; i < move.weight; i++) weighted.push(move); });
+			const move = sample(weighted);
+			const nr = r + move.dr;
+			const nc = c + move.dc;
+			if (nr <= 0 || nc <= 0 || nr >= size - 1 || nc >= size - 1) continue;
+			r = nr;
+			c = nc;
+			if (!path.some(p => p.r === r && p.c === c)) path.push({ r, c });
+		}
+		if (!path.some(p => p.r === baby.r && p.c === baby.c)) path.push({ ...baby });
+		return { start, baby, path };
+	}
+
+	function generateLevel() {
+		stopTimers();
+		const difficulty = DIFFICULTIES[state.difficulty];
+		state.size = difficulty.size;
+		state.cells = [];
+		for (let r = 0; r < state.size; r++) {
+			const row = [];
+			for (let c = 0; c < state.size; c++) {
+				row.push(newCell(r, c, r === 0 || c === 0 || r === state.size - 1 || c === state.size - 1 ? 'wall' : 'floor'));
+			}
+			state.cells.push(row);
+		}
+
+		const main = buildMainPath(state.size);
+		state.start = main.start;
+		state.baby = main.baby;
+		state.path = main.path;
+		state.pet = { ...state.start };
+		cellAt(state.start.r, state.start.c).type = 'start';
+		cellAt(state.baby.r, state.baby.c).type = 'baby';
+
+		const pathKeys = new Set(state.path.map(p => key(p.r, p.c)));
+		const candidatePath = state.path.slice(2, -2).filter((_, index) => index % 2 === 0);
+		const blockers = shuffle(candidatePath).slice(0, difficulty.blockers);
+		const needed = { mirrorSlash: 1, mirrorBack: 1, wrench: 1, bomb: 1, fan: 1, bucket: 0, hammer: 0 };
+		blockers.forEach((pos, index) => {
+			const type = BLOCKER_TYPES[index % BLOCKER_TYPES.length];
+			cellAt(pos.r, pos.c).type = type;
+			if (type === 'fire' || type === 'lava') needed.bucket += 1;
+			if (type === 'rock') needed.bomb += 1;
+			if (type === 'ice') needed.hammer += 1;
+			if (type === 'gas') needed.fan += 1;
+		});
+
+		const free = [];
+		for (let r = 1; r < state.size - 1; r++) {
+			for (let c = 1; c < state.size - 1; c++) {
+				if (!pathKeys.has(key(r, c)) && !isSame({ r, c }, state.start) && !isSame({ r, c }, state.baby)) free.push({ r, c });
+			}
+		}
+		shuffle(free).slice(0, difficulty.clutter).forEach((pos, index) => {
+			const type = index % 4 === 0 ? 'wall' : (index % 4 === 1 ? 'rock' : (index % 4 === 2 ? 'ice' : 'floor'));
+			cellAt(pos.r, pos.c).type = type;
+		});
+		shuffle(free.filter(pos => cellAt(pos.r, pos.c).type === 'floor')).slice(0, difficulty.mines).forEach(pos => {
+			cellAt(pos.r, pos.c).type = 'mine';
+		});
+
+		state.lasers = createLasers(difficulty);
+		needed.mirrorSlash += Math.max(1, Math.ceil(difficulty.lasers / 2));
+		needed.mirrorBack += Math.max(1, Math.floor(difficulty.lasers / 2));
+		needed.wrench += difficulty.id === 'expert' ? 2 : 1;
+
+		state.inventory = {
+			mirrorSlash: needed.mirrorSlash,
+			mirrorBack: needed.mirrorBack,
+			wrench: needed.wrench,
+			bomb: needed.bomb + 1,
+			fan: needed.fan,
+			bucket: needed.bucket,
+			hammer: needed.hammer,
+		};
+		if (difficulty.id === 'easy') {
+			state.inventory.bucket += 1;
+			state.inventory.hammer += 1;
+		}
+		state.selectedTool = null;
+		state.dead = false;
+		state.finished = false;
+		state.moving = false;
+		state.route = [];
+		state.moves = 0;
+		state.toolsUsed = 0;
+		state.seconds = 0;
+		state.pulse = randInt(0, 20);
+		simulateLasers(false);
+	}
+
+	function createLasers(difficulty) {
+		const lasers = [];
+		const rows = shuffle([...Array(state.size - 2)].map((_, i) => i + 1));
+		for (let i = 0; i < difficulty.lasers && i < rows.length; i++) {
+			const r = rows[i];
+			const fromLeft = i % 2 === 0;
+			const c = fromLeft ? 0 : state.size - 1;
+			const dir = fromLeft ? 1 : 3;
+			cellAt(r, c).type = 'emitter';
+			cellAt(r, c).dir = dir;
+			lasers.push({ r, c, dir, period: difficulty.period + (i % 2), phase: i % 3 });
+			const targetCol = fromLeft ? state.size - 2 : 1;
+			const target = cellAt(r, targetCol);
+			if (target.type === 'floor') target.type = 'rock';
+		}
+		return lasers;
+	}
+
+	function render() {
+		els.board.style.setProperty('--size', state.size);
+		els.pet.style.setProperty('--size', state.size);
+		els.board.innerHTML = '';
+		const reachable = new Set(findReachable().map(pos => key(pos.r, pos.c)));
+		for (let r = 0; r < state.size; r++) {
+			for (let c = 0; c < state.size; c++) {
+				const cell = cellAt(r, c);
+				const div = document.createElement('button');
+				div.type = 'button';
+				div.className = `mh-cell ${cell.type}`;
+				if (reachable.has(key(r, c)) && PASSABLE.has(cell.type)) div.classList.add('reachable');
+				if (state.selectedTool && isToolTarget(cell)) div.classList.add('targetable');
+				div.dataset.r = r;
+				div.dataset.c = c;
+				div.setAttribute('aria-label', `${r},${c}`);
+				div.innerHTML = cellInnerSvg(cell);
+				if (cell.type === 'baby') div.appendChild(babyElement());
+				div.addEventListener('click', () => onCellClick(r, c));
+				els.board.appendChild(div);
+			}
+		}
+		renderPet();
+		renderTools();
+		renderLasers();
+		updateHud();
+	}
+
+	function babyElement() {
+		const mark = document.createElement('div');
+		mark.className = 'mh-baby-mark';
+		mark.innerHTML = dishSvg();
+		return mark;
+	}
+
+	function renderPet() {
+		els.pet.style.setProperty('--r', state.pet.r);
+		els.pet.style.setProperty('--c', state.pet.c);
+		els.pet.classList.toggle('dead', state.dead);
+		els.pet.classList.toggle('walking', state.moving && !state.dead && !state.finished);
+		els.pet.innerHTML = '';
+		if (state.petAsset) {
+			els.pet.appendChild(wrapPetArt(makeSpriteElement(state.petAsset)));
+		} else {
+			const fallback = document.createElement('div');
+			fallback.className = 'mh-fallback';
+			fallback.textContent = FALLBACK_PET;
+			els.pet.appendChild(fallback);
+		}
+	}
+
+	function renderTools() {
+		els.tools.innerHTML = '';
+		TOOL_DEFS.forEach(tool => {
+			const count = state.inventory[tool.id] || 0;
+			const btn = document.createElement('button');
+			btn.type = 'button';
+			btn.className = `mh-tool${state.selectedTool === tool.id ? ' active' : ''}`;
+			btn.disabled = count <= 0 || state.finished || state.dead;
+			btn.innerHTML = `${tool.icon}<span>${tool.label} <b>x${count}</b></span>`;
+			btn.addEventListener('click', () => {
+				state.selectedTool = state.selectedTool === tool.id ? null : tool.id;
+				setStatus(toolHint(state.selectedTool));
+				render();
+			});
+			els.tools.appendChild(btn);
+		});
+	}
+
+	function updateHud() {
+		const difficulty = DIFFICULTIES[state.difficulty];
+		els.level.textContent = state.level;
+		els.difficultyLabel.textContent = difficulty.label;
+		els.moves.textContent = state.moves;
+		els.toolsUsed.textContent = state.toolsUsed;
+		els.time.textContent = state.seconds;
+		els.best.textContent = state.best;
+		els.fanDir.textContent = DIRS[state.selectedFanDir].arrow;
+		els.fanDir.classList.toggle('active', state.selectedTool === 'fan');
+		[...els.difficulties.children].forEach(btn => btn.classList.toggle('active', btn.dataset.id === state.difficulty));
+	}
+
+	function renderLasers() {
+		els.laserLayer.innerHTML = '';
+		const unit = 100 / state.size;
+		state.laserCells.forEach((dirs, laserKey) => {
+			const [r, c] = laserKey.split(',').map(Number);
+			const cell = cellAt(r, c);
+			dirs.forEach(dir => {
+				if (cell?.item === 'mirror') {
+					appendLaserSegment(r, c, dir, unit, 'entry');
+					appendLaserSegment(r, c, reflect(dir, cell.mirror), unit, 'exit');
+				} else {
+					appendLaserSegment(r, c, dir, unit, 'full');
+				}
+			});
+		});
+	}
+
+	function appendLaserSegment(r, c, dir, unit, mode) {
+		const seg = document.createElement('div');
+		const vertical = dir === 0 || dir === 2;
+		const half = unit * .5;
+		seg.className = `mh-laser-seg${vertical ? ' v' : ''}${dir === 0 || dir === 3 ? ' rev' : ''}`;
+		if (vertical) {
+			seg.style.left = `${c * unit + unit * .43}%`;
+			seg.style.width = `${unit * .14}%`;
+			if (mode === 'entry') {
+				seg.style.top = `${r * unit + (dir === 0 ? half : 0)}%`;
+				seg.style.height = `${half}%`;
+			} else if (mode === 'exit') {
+				seg.style.top = `${r * unit + (dir === 2 ? half : 0)}%`;
+				seg.style.height = `${half}%`;
+			} else {
+				seg.style.top = `${r * unit}%`;
+				seg.style.height = `${unit}%`;
+			}
+		} else {
+			seg.style.top = `${r * unit + unit * .43}%`;
+			seg.style.height = `${unit * .14}%`;
+			if (mode === 'entry') {
+				seg.style.left = `${c * unit + (dir === 3 ? half : 0)}%`;
+				seg.style.width = `${half}%`;
+			} else if (mode === 'exit') {
+				seg.style.left = `${c * unit + (dir === 1 ? half : 0)}%`;
+				seg.style.width = `${half}%`;
+			} else {
+				seg.style.left = `${c * unit}%`;
+				seg.style.width = `${unit}%`;
+			}
+		}
+		els.laserLayer.appendChild(seg);
+	}
+
+	function cellInnerSvg(cell) {
+		if (cell.type === 'wall') return wallSvg();
+		if (cell.type === 'rock') return rockSvg();
+		if (cell.type === 'ice') return iceSvg();
+		if (cell.type === 'fire') return fireSvg();
+		if (cell.type === 'lava') return lavaSvg();
+		if (cell.type === 'gas') return gasSvg();
+		if (cell.type === 'mine') return mineSvg();
+		if (cell.type === 'emitter') return emitterSvg(cell.dir);
+		if (cell.item === 'mirror') return mirrorSvg(cell.mirror);
+		if (cell.item === 'bomb') return bombSvg();
+		if (cell.item === 'fan') return fanPlacedSvg(cell.dir);
+		return '';
+	}
+
+	function onCellClick(r, c) {
+		if (state.finished || state.dead) return;
+		if (!state.started) startGame();
+		const cell = cellAt(r, c);
+		if (state.selectedTool) {
+			useTool(state.selectedTool, cell);
+			return;
+		}
+		if (!PASSABLE.has(cell.type) || cell.item) {
+			setStatus('这里不能走。先用工具改变环境，或换一个目标点。');
+			return;
+		}
+		const route = findPath(state.pet, { r, c });
+		if (!route.length) {
+			setStatus('找不到安全路线。也许要先处理挡路机关。');
+			return;
+		}
+		walkRoute(route);
+	}
+
+	function useTool(tool, cell) {
+		if ((state.inventory[tool] || 0) <= 0) return;
+		let used = false;
+		if ((tool === 'mirrorSlash' || tool === 'mirrorBack') && canPlaceOn(cell)) {
+			cell.item = 'mirror';
+			cell.mirror = tool === 'mirrorSlash' ? '/' : '\\';
+			used = true;
+			setStatus('镜子已经放好。激光会被它转向，别忘了观察红色光路。');
+		} else if (tool === 'wrench' && (cell.item === 'mirror' || cell.item === 'fan' || cell.type === 'emitter')) {
+			if (cell.item === 'mirror') cell.mirror = cell.mirror === '/' ? '\\' : '/';
+			if (cell.item === 'fan') cell.dir = (cell.dir + 1) % 4;
+			if (cell.type === 'emitter') cell.dir = (cell.dir + 1) % 4;
+			state.lasers.forEach(laser => { if (laser.r === cell.r && laser.c === cell.c) laser.dir = cell.dir; });
+			used = true;
+			setStatus('机关旋转完成。这个小转角可能就是生路。');
+		} else if (tool === 'bomb' && canPlaceOn(cell)) {
+			cell.item = 'bomb';
+			used = true;
+			setStatus('炸弹已放置。把激光引过来会引爆它，并清掉周围石块与火焰。');
+		} else if (tool === 'fan' && canPlaceOn(cell)) {
+			cell.item = 'fan';
+			cell.dir = state.selectedFanDir;
+			blowFan(cell);
+			used = true;
+			setStatus('风扇开始吹风。它会沿箭头方向吹散毒雾。');
+		} else if (tool === 'bucket' && (cell.type === 'fire' || cell.type === 'lava')) {
+			cell.type = cell.type === 'lava' ? 'water' : 'floor';
+			used = true;
+			setStatus('水桶奏效了，危险地形已经冷却。');
+		} else if (tool === 'hammer' && (cell.type === 'ice' || cell.type === 'rock')) {
+			cell.type = 'floor';
+			used = true;
+			setStatus('障碍被敲碎了，新的路线打开了。');
+		}
+		if (!used) {
+			setStatus(toolHint(tool));
+			return;
+		}
+		state.inventory[tool] -= 1;
+		state.toolsUsed += 1;
+		state.selectedTool = null;
+		simulateLasers(true);
+		render();
+		checkPetDanger();
+	}
+
+	function canPlaceOn(cell) {
+		return PASSABLE.has(cell.type) && !cell.item && !isSame(cell, state.pet) && !isSame(cell, state.baby) && !isSame(cell, state.start);
+	}
+
+	function isToolTarget(cell) {
+		const tool = state.selectedTool;
+		if (!tool) return false;
+		if (tool === 'mirrorSlash' || tool === 'mirrorBack' || tool === 'bomb' || tool === 'fan') return canPlaceOn(cell);
+		if (tool === 'wrench') return cell.item === 'mirror' || cell.item === 'fan' || cell.type === 'emitter';
+		if (tool === 'bucket') return cell.type === 'fire' || cell.type === 'lava';
+		if (tool === 'hammer') return cell.type === 'ice' || cell.type === 'rock';
+		return false;
+	}
+
+	function toolHint(tool) {
+		const hints = {
+			mirrorSlash: '选择一个空格放置 / 镜子，让激光转弯。',
+			mirrorBack: '选择一个空格放置 \\ 镜子，让激光转弯。',
+			wrench: '点击已有镜子、风扇或激光器来旋转。',
+			bomb: '把炸弹放在空地上，再用激光引爆它清障。',
+			fan: '点击箭头切换风向，再把风扇放到空地吹散毒雾。',
+			bucket: '点击火焰或熔岩，把它浇灭或冷却。',
+			hammer: '点击冰块或石块，直接敲开道路。',
+		};
+		return hints[tool] || '点击空地移动，或选择工具处理危险机关。';
+	}
+
+	function blowFan(cell) {
+		const dir = DIRS[cell.dir];
+		let r = cell.r + dir.dr;
+		let c = cell.c + dir.dc;
+		while (inBounds(r, c)) {
+			const target = cellAt(r, c);
+			if (target.type === 'wall' || target.type === 'rock' || target.type === 'emitter') break;
+			if (target.type === 'gas') target.type = 'floor';
+			r += dir.dr;
+			c += dir.dc;
+		}
+	}
+
+	function simulateLasers(allowChain) {
+		state.laserCells = new Map();
+		const bombsToExplode = [];
+		state.lasers.forEach(laser => {
+			if (!isLaserActive(laser)) return;
+			traceLaser(laser, bombsToExplode);
+		});
+		if (allowChain && bombsToExplode.length) {
+			bombsToExplode.forEach(cell => explodeBomb(cell));
+			state.laserCells = new Map();
+			state.lasers.forEach(laser => { if (isLaserActive(laser)) traceLaser(laser, []); });
+			showToast('连锁爆破！');
+		}
+	}
+
+	function isLaserActive(laser) {
+		return ((state.pulse + laser.phase) % laser.period) < Math.ceil(laser.period / 2);
+	}
+
+	function traceLaser(laser, bombsToExplode) {
+		let dir = laser.dir;
+		let r = laser.r + DIRS[dir].dr;
+		let c = laser.c + DIRS[dir].dc;
+		const seen = new Set();
+		let guard = 0;
+		while (inBounds(r, c) && guard++ < state.size * state.size * 4) {
+			const traceKey = `${r},${c},${dir}`;
+			if (seen.has(traceKey)) break;
+			seen.add(traceKey);
+			const cell = cellAt(r, c);
+			if (cell.type === 'wall' || cell.type === 'rock' || cell.type === 'ice' || cell.type === 'emitter') break;
+			const laserKey = key(r, c);
+			if (!state.laserCells.has(laserKey)) state.laserCells.set(laserKey, []);
+			state.laserCells.get(laserKey).push(dir);
+			if (cell.item === 'bomb') bombsToExplode.push(cell);
+			if (cell.item === 'mirror') dir = reflect(dir, cell.mirror);
+			r += DIRS[dir].dr;
+			c += DIRS[dir].dc;
+		}
+	}
+
+	function reflect(dir, mirror) {
+		if (mirror === '/') return [1, 0, 3, 2][dir];
+		return [3, 2, 1, 0][dir];
+	}
+
+	function explodeBomb(cell) {
+		cell.item = null;
+		for (let dr = -1; dr <= 1; dr++) {
+			for (let dc = -1; dc <= 1; dc++) {
+				const target = cellAt(cell.r + dr, cell.c + dc);
+				if (!target) continue;
+				if (target.type === 'rock' || target.type === 'ice' || target.type === 'fire' || target.type === 'gas') target.type = 'floor';
+				if (target.type === 'lava') target.type = 'water';
+			}
+		}
+	}
+
+	function findReachable() {
+		const out = [];
+		const queue = [{ ...state.pet }];
+		const seen = new Set([key(state.pet.r, state.pet.c)]);
+		while (queue.length) {
+			const cur = queue.shift();
+			out.push(cur);
+			DIRS.forEach(dir => {
+				const nr = cur.r + dir.dr;
+				const nc = cur.c + dir.dc;
+				const next = cellAt(nr, nc);
+				const nextKey = key(nr, nc);
+				if (!next || seen.has(nextKey) || !PASSABLE.has(next.type) || next.item) return;
+				seen.add(nextKey);
+				queue.push({ r: nr, c: nc });
+			});
+		}
+		return out;
+	}
+
+	function findPath(from, to) {
+		const queue = [{ ...from, prev: null }];
+		const seen = new Set([key(from.r, from.c)]);
+		let end = null;
+		while (queue.length) {
+			const cur = queue.shift();
+			if (cur.r === to.r && cur.c === to.c) { end = cur; break; }
+			DIRS.forEach(dir => {
+				const nr = cur.r + dir.dr;
+				const nc = cur.c + dir.dc;
+				const next = cellAt(nr, nc);
+				const nextKey = key(nr, nc);
+				if (!next || seen.has(nextKey) || !PASSABLE.has(next.type) || next.item) return;
+				seen.add(nextKey);
+				queue.push({ r: nr, c: nc, prev: cur });
+			});
+		}
+		if (!end) return [];
+		const route = [];
+		let cur = end;
+		while (cur && !(cur.r === from.r && cur.c === from.c)) {
+			route.push({ r: cur.r, c: cur.c });
+			cur = cur.prev;
+		}
+		return route.reverse();
+	}
+
+	function walkRoute(route) {
+		clearInterval(state.routeTimer);
+		state.route = route.slice();
+		state.moving = state.route.length > 0;
+		els.pet.classList.toggle('walking', state.moving);
+		setStatus('宠物正在前进。可以继续布置工具，注意激光闪烁节奏。');
+		state.routeTimer = setInterval(() => {
+			if (!state.route.length || state.dead || state.finished) {
+				clearInterval(state.routeTimer);
+				state.routeTimer = null;
+				state.moving = false;
+				els.pet.classList.remove('walking');
+				render();
+				return;
+			}
+			const next = state.route.shift();
+			state.pet = next;
+			state.moves += 1;
+			renderPet();
+			updateHud();
+			checkPetDanger();
+			if (!state.dead && isSame(state.pet, state.baby)) finishLevel();
+		}, 360);
+	}
+
+	function checkPetDanger() {
+		const cell = cellAt(state.pet.r, state.pet.c);
+		if (state.laserCells.has(key(state.pet.r, state.pet.c))) return failLevel('宠物碰到了激光。');
+		if (cell.type === 'fire') return failLevel('宠物踩进火焰。');
+		if (cell.type === 'lava') return failLevel('宠物掉进熔岩。');
+		if (cell.type === 'gas') return failLevel('宠物吸入了毒雾。');
+		if (cell.type === 'mine') return failLevel('宠物踩中了地雷。');
+	}
+
+	function failLevel(reason) {
+		state.dead = true;
+		state.moving = false;
+		clearInterval(state.routeTimer);
+		state.routeTimer = null;
+		setStatus(`${reason} 点击重开再试。`);
+		showToast('挑战失败');
+		renderPet();
+	}
+
+	function finishLevel() {
+		state.finished = true;
+		state.moving = false;
+		clearInterval(state.routeTimer);
+		clearInterval(state.tickTimer);
+		const difficulty = DIFFICULTIES[state.difficulty];
+		const efficiency = Math.max(0, 40 - state.moves - state.toolsUsed * 2 - Math.floor(state.seconds / 2));
+		const earnedPoints = difficulty.reward + state.level * 8 + efficiency;
+		state.best = Math.max(state.best, earnedPoints);
+		localStorage.setItem(STORAGE_BEST, String(state.best));
+		post('gameFinished', {
+			earnedPoints,
+			score: earnedPoints,
+			difficulty: state.difficulty,
+			level: state.level,
+			moves: state.moves,
+			toolsUsed: state.toolsUsed,
+			time: state.seconds,
+		});
+		showToast(`抵达餐盘 +${earnedPoints}`);
+		confetti();
+		setStatus('美食到手啦！已自动生成下一关。');
+		setTimeout(() => {
+			state.level += 1;
+			generateLevel();
+			render();
+			startTimers();
+		}, 1500);
+	}
+
+	function tick() {
+		if (!state.started || state.finished || state.dead) return;
+		state.pulse += 1;
+		if (state.pulse % 2 === 0) state.seconds += 1;
+		simulateLasers(true);
+		renderLasers();
+		updateHud();
+		checkPetDanger();
+	}
+
+	function startGame() {
+		if (!state.started) {
+			state.started = true;
+			post('gameStarted', { difficulty: state.difficulty });
+		}
+		startTimers();
+	}
+
+	function startTimers() {
+		clearInterval(state.tickTimer);
+		state.tickTimer = setInterval(tick, 520);
+	}
+
+	function stopTimers() {
+		clearInterval(state.routeTimer);
+		clearInterval(state.tickTimer);
+		state.routeTimer = null;
+		state.tickTimer = null;
+	}
+
+	function resetLevel() {
+		generateLevel();
+		render();
+		if (state.started) startTimers();
+		setStatus('新迷宫已生成。先看激光线路，再规划工具顺序。');
+	}
+
+	function setDifficulty(id) {
+		state.difficulty = normalizeDifficulty(id);
+		localStorage.setItem(STORAGE_DIFFICULTY, state.difficulty);
+		state.level = 1;
+		resetLevel();
+	}
+
+	function setStatus(text) {
+		els.status.textContent = text;
+	}
+
+	function showToast(text) {
+		const toast = document.createElement('div');
+		toast.className = 'mh-toast';
+		toast.textContent = text;
+		document.body.appendChild(toast);
+		setTimeout(() => toast.remove(), 1300);
+	}
+
+	function confetti() {
+		const colors = ['#38bdf8', '#34d399', '#facc15', '#fb7185', '#a78bfa', '#fb923c'];
+		for (let i = 0; i < 32; i++) {
+			const piece = document.createElement('div');
+			piece.className = 'mh-confetti';
+			piece.style.left = `${randInt(8, 92)}vw`;
+			piece.style.setProperty('--c', sample(colors));
+			piece.style.setProperty('--x', `${randInt(-80, 80)}px`);
+			piece.style.setProperty('--d', `${randInt(900, 1600)}ms`);
+			document.body.appendChild(piece);
+			setTimeout(() => piece.remove(), 1700);
+		}
+	}
+
+	function makeSpriteElement(pet) {
+		const el = document.createElement('div');
+		el.className = 'mh-sprite';
+		el.style.backgroundImage = `url("${pet.url}")`;
+		if (pet.uv && (pet.uv.cols > 1 || pet.uv.rows > 1)) {
+			el.style.backgroundSize = `${pet.uv.cols * 100}% ${pet.uv.rows * 100}%`;
+			el.style.backgroundPosition = `${pet.uv.col * 100 / Math.max(1, pet.uv.cols - 1)}% ${pet.uv.row * 100 / Math.max(1, pet.uv.rows - 1)}%`;
+		} else {
+			el.style.backgroundSize = 'contain';
+			el.style.backgroundPosition = 'center';
+		}
+		return el;
+	}
+
+	function wrapPetArt(el) {
+		const wrap = document.createElement('div');
+		wrap.className = 'mh-pet-flip';
+		wrap.appendChild(el);
+		return wrap;
+	}
+
+	function requestPetImage() {
+		const requestId = `laser_pet_${Date.now()}_${Math.random().toString(16).slice(2)}`;
+		const onMessage = event => {
+			const msg = event.data || {};
+			if (msg.type !== 'haqi_pet_image' || msg.requestId !== requestId) return;
+			window.removeEventListener('message', onMessage);
+			if (!msg.ok || !msg.data?.imageBlob) return;
+			const url = URL.createObjectURL(msg.data.imageBlob);
+			state.objectUrls.push(url);
+			state.petAsset = { ...msg.data, url };
+			render();
+		};
+		window.addEventListener('message', onMessage);
+		try { window.parent?.postMessage({ type: 'haqi_get_pet_image', requestId, anim: 'idle' }, '*'); } catch (err) {}
+		setTimeout(() => window.removeEventListener('message', onMessage), 3500);
+	}
+
+	function initDifficulties() {
+		els.difficulties.innerHTML = '';
+		DIFFICULTY_ORDER.forEach(id => {
+			const btn = document.createElement('button');
+			btn.type = 'button';
+			btn.className = `mh-difficulty${id === state.difficulty ? ' active' : ''}`;
+			btn.dataset.id = id;
+			btn.textContent = DIFFICULTIES[id].label;
+			btn.addEventListener('click', () => setDifficulty(id));
+			els.difficulties.appendChild(btn);
+		});
+	}
+
+	function bindEvents() {
+		els.help.addEventListener('click', () => { els.overlay.hidden = false; });
+		els.start.addEventListener('click', () => {
+			els.overlay.hidden = true;
+			startGame();
+			setStatus('点击地面移动；选工具后点格子使用。先到达右上角的餐盘。');
+		});
+		els.reset.addEventListener('click', resetLevel);
+		els.wait.addEventListener('click', () => {
+			if (!state.started) startGame();
+			tick();
+			setStatus('等待了一个节拍。观察激光开关，再决定什么时候出发。');
+		});
+		els.fanDir.addEventListener('click', () => {
+			state.selectedFanDir = (state.selectedFanDir + 1) % 4;
+			updateHud();
+			setStatus(`风扇方向：${DIRS[state.selectedFanDir].name}`);
+		});
+		window.addEventListener('message', event => {
+			const msg = event.data || {};
+			if (msg.type === 'setGameConfig' && msg.data?.difficulty) setDifficulty(msg.data.difficulty);
+		});
+		window.addEventListener('beforeunload', () => {
+			state.objectUrls.forEach(url => URL.revokeObjectURL(url));
+			stopTimers();
+		});
+	}
+
+	function svgWrap(content, viewBox = '0 0 64 64') {
+		return `<svg class="mh-svg" viewBox="${viewBox}" aria-hidden="true">${content}</svg>`;
+	}
+
+	function mirrorSvg(kind) {
+		const slash = kind === '/';
+		return svgWrap(`
+			<defs><linearGradient id="m${slash ? 's' : 'b'}" x1="0" x2="1"><stop offset="0" stop-color="#f8fafc"/><stop offset=".45" stop-color="#67e8f9"/><stop offset="1" stop-color="#0284c7"/></linearGradient></defs>
+			<circle cx="32" cy="32" r="24" fill="#164e63" opacity=".18"/>
+			<rect x="12" y="27" width="40" height="10" rx="5" fill="url(#m${slash ? 's' : 'b'})" stroke="#e0f2fe" stroke-width="3" transform="rotate(${slash ? -45 : 45} 32 32)"/>
+			<rect x="18" y="29" width="21" height="3" rx="1.5" fill="#fff" opacity=".86" transform="rotate(${slash ? -45 : 45} 32 32)"/>
+		`);
+	}
+
+	function wrenchSvg() {
+		return svgWrap('<path d="M45 8a17 17 0 0 0-19 22L10 46a6 6 0 1 0 8 8l16-16A17 17 0 0 0 56 19l-11 11-9-3-3-9L45 8z" fill="#94a3b8" stroke="#334155" stroke-width="3"/><circle cx="14" cy="50" r="3" fill="#e0f2fe"/>');
+	}
+
+	function bombSvg() {
+		return svgWrap('<circle cx="32" cy="36" r="18" fill="#334155" stroke="#0f172a" stroke-width="4"/><path d="M39 19c2-8 8-10 14-7" fill="none" stroke="#78350f" stroke-width="5" stroke-linecap="round"/><path d="M51 10l3-6 3 6 6 3-6 3-3 6-3-6-6-3 6-3z" fill="#facc15"/><circle cx="25" cy="29" r="5" fill="#fff" opacity=".72"/>');
+	}
+
+	function fanSvg() {
+		return svgWrap('<circle cx="32" cy="32" r="22" fill="#dbeafe" stroke="#0284c7" stroke-width="4"/><path d="M32 30C24 18 25 11 32 10c8 1 8 9 2 20h-2zM34 32c14-2 21 2 18 9-4 7-12 3-20-7l2-2zM30 34c-6 13-13 16-18 10-4-7 3-12 17-12l1 2z" fill="#38bdf8" stroke="#075985" stroke-width="2"/><circle cx="32" cy="32" r="6" fill="#fff" stroke="#075985" stroke-width="3"/>');
+	}
+
+	function fanPlacedSvg(dir) {
+		return svgWrap(`<g transform="rotate(${dirRotation(dir)} 32 32)"><path d="M50 32l-14-9v6H10v6h26v6l14-9z" fill="#0ea5e9" stroke="#075985" stroke-width="3"/><circle cx="18" cy="32" r="10" fill="#dbeafe" stroke="#0284c7" stroke-width="3"/></g>`);
+	}
+
+	function dirRotation(dir) {
+		return (dir - 1) * 90;
+	}
+
+	function bucketSvg() {
+		return svgWrap('<path d="M18 22h28l-4 30H22L18 22z" fill="#38bdf8" stroke="#075985" stroke-width="4"/><path d="M20 24c3 8 21 8 24 0" fill="none" stroke="#e0f2fe" stroke-width="4"/><path d="M20 22c1-12 23-12 24 0" fill="none" stroke="#64748b" stroke-width="4"/><path d="M24 35c5 3 11 3 16 0" fill="none" stroke="#cffafe" stroke-width="4" stroke-linecap="round"/>');
+	}
+
+	function hammerSvg() {
+		return svgWrap('<rect x="12" y="40" width="34" height="8" rx="4" fill="#92400e" transform="rotate(-42 29 44)"/><path d="M34 10h20v16H34l-8-8 8-8z" fill="#94a3b8" stroke="#334155" stroke-width="4"/><path d="M14 48l9 9" stroke="#fed7aa" stroke-width="3" stroke-linecap="round"/>');
+	}
+
+	function wallSvg() {
+		return svgWrap('<rect x="8" y="10" width="48" height="44" rx="8" fill="#64748b"/><path d="M10 24h44M10 39h44M24 10v14M42 24v15M28 39v15" stroke="#cbd5e1" stroke-width="3" opacity=".72"/><path d="M15 15h18" stroke="#fff" stroke-width="3" opacity=".45" stroke-linecap="round"/>');
+	}
+
+	function rockSvg() {
+		return svgWrap('<path d="M12 43l7-22 17-10 16 10 4 23-15 10H24L12 43z" fill="#d97706" stroke="#78350f" stroke-width="4"/><path d="M24 24l9-6 11 8M21 42l8 7M39 35l12 7" fill="none" stroke="#fed7aa" stroke-width="3" opacity=".5"/>');
+	}
+
+	function iceSvg() {
+		return svgWrap('<path d="M14 18l20-8 17 12-5 27-24 5-12-18 4-18z" fill="#bae6fd" stroke="#0284c7" stroke-width="4"/><path d="M24 18l7 15-11 13M35 14l-3 19 15-8M33 34l13 13" fill="none" stroke="#fff" stroke-width="3" opacity=".82"/>');
+	}
+
+	function fireSvg() {
+		return svgWrap('<path d="M32 56c-12 0-20-8-18-20 1-9 8-13 11-24 7 5 6 13 6 13 5-5 7-11 7-17 10 8 14 17 12 29-1 11-8 19-18 19z" fill="#ef4444"/><path d="M32 53c-7 0-12-5-11-12 1-6 6-8 8-15 5 4 4 9 4 9 4-3 5-7 5-12 6 5 9 11 8 19-1 7-6 11-14 11z" fill="#facc15"/><path d="M31 52c-4 0-7-3-7-7 0-4 4-6 6-11 3 3 2 7 2 7 3-2 4-4 4-8 4 4 5 8 4 12-1 5-4 7-9 7z" fill="#fff7ad"/>');
+	}
+
+	function lavaSvg() {
+		return svgWrap('<path d="M9 43c7-8 13 5 21-3s13 4 25-5v18H9V43z" fill="#7f1d1d"/><path d="M10 34c9-9 14 6 23-3 8-8 11 4 21-5v18c-11 9-16-4-24 4-8 8-14-5-20 3V34z" fill="#ef4444"/><path d="M14 38c6-4 10 4 16-2 6-5 9 3 17-3" fill="none" stroke="#fef08a" stroke-width="5" stroke-linecap="round"/>');
+	}
+
+	function gasSvg() {
+		return svgWrap('<circle cx="24" cy="36" r="14" fill="#bbf7d0" opacity=".82"/><circle cx="38" cy="29" r="16" fill="#86efac" opacity=".72"/><circle cx="42" cy="44" r="10" fill="#22c55e" opacity=".55"/><path d="M18 29c8-8 17 5 27-4" fill="none" stroke="#f0fdf4" stroke-width="4" stroke-linecap="round" opacity=".84"/>');
+	}
+
+	function mineSvg() {
+		return svgWrap('<circle cx="32" cy="36" r="17" fill="#334155" stroke="#0f172a" stroke-width="4"/><path d="M32 13v10M18 20l7 7M46 20l-7 7" stroke="#0f172a" stroke-width="4" stroke-linecap="round"/><circle cx="26" cy="30" r="4" fill="#fff" opacity=".65"/><circle cx="43" cy="25" r="5" fill="#ef4444"/>');
+	}
+
+	function dishSvg() {
+		return svgWrap('<ellipse cx="32" cy="43" rx="24" ry="10" fill="#e0f2fe" stroke="#0284c7" stroke-width="3"/><ellipse cx="32" cy="39" rx="19" ry="8" fill="#fff" stroke="#bae6fd" stroke-width="2"/><text x="23" y="38" font-size="15" text-anchor="middle">🍗</text><text x="34" y="34" font-size="15" text-anchor="middle">🥦</text><text x="44" y="39" font-size="15" text-anchor="middle">🍓</text><path d="M15 49c8 5 26 6 35 0" fill="none" stroke="#075985" stroke-width="3" stroke-linecap="round" opacity=".45"/>');
+	}
+
+	function emitterSvg(dir) {
+		return svgWrap(`<g transform="rotate(${dirRotation(dir)} 32 32)"><rect x="9" y="20" width="34" height="24" rx="7" fill="#475569" stroke="#0f172a" stroke-width="4"/><path d="M42 24l14 8-14 8V24z" fill="#ef4444" stroke="#7f1d1d" stroke-width="3"/><circle cx="23" cy="32" r="7" fill="#fef08a" stroke="#ef4444" stroke-width="3"/></g>`);
+	}
+
+	initDifficulties();
+	bindEvents();
+	generateLevel();
+	render();
+	requestPetImage();
+	post('gameLoaded', { title: '哈奇激光迷宫' });
+})();
+</script>
+
+</html>

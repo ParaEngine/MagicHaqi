@@ -17,7 +17,7 @@ import { state, subscribe } from './state.js';
 import { savePetDebounced } from './storage.js';
 import { biasDnaForFieldId, biasDnaForTrait, decodeDna, dietPreferenceLabel, dnaDietPreference, dnaRarity, dnaToName } from './dna.js';
 import { CONFIG, findLargestHouseAcrossLayouts } from './config.js';
-import { applyStage, defaultTraits, gainTrait, markPetCared, recoverEnergyAfterSleep } from './petTick.js';
+import { applyStage, defaultTraits, gainTrait, markPetCared } from './petTick.js';
 import { getRuntimePetStats } from './petLifecycle.js';
 import { clamp, escapeHtml } from './utils.js';
 
@@ -32,6 +32,10 @@ export const DEFAULT_ANIM = 'idle';
 
 const NIGHT_SLEEP_START_HOUR = 22;
 const MORNING_WAKE_HOUR = 6;
+const DAY_SLEEP_ENERGY_INTERVAL_MS = 10 * 1000;
+const DAY_SLEEP_ENERGY_PER_INTERVAL = 10;
+const DAY_SLEEP_ENERGY_CAP_RATIO = 0.5;
+const DAY_SLEEP_REJECT_TEXT = '我睡不着了';
 
 const _animResetTimers = new Map(); // petId -> timeoutId
 const EGG_HATCH_VISIBLE_DELAY_MS = 2000;
@@ -73,6 +77,14 @@ export function isNightSleepTime(now = Date.now()) {
     return hour >= NIGHT_SLEEP_START_HOUR || hour < MORNING_WAKE_HOUR;
 }
 
+function localDateKey(now = Date.now()) {
+    const date = new Date(now);
+    const year = date.getFullYear();
+    const month = String(date.getMonth() + 1).padStart(2, '0');
+    const day = String(date.getDate()).padStart(2, '0');
+    return `${year}-${month}-${day}`;
+}
+
 export function nextMorningWakeAt(now = Date.now()) {
     const date = new Date(now);
     if (date.getHours() >= NIGHT_SLEEP_START_HOUR) date.setDate(date.getDate() + 1);
@@ -85,31 +97,100 @@ export function isPetSleeping(pet) {
 }
 
 export function startPetSleep(pet, now = Date.now()) {
-    if (!pet) return null;
+    if (!pet) return { sleeping: false, reason: 'missingPet' };
+    const cap = sleepEnergyCap(pet);
+    const isNight = isNightSleepTime(now);
+    const currentEnergy = Number(pet.stats?.hunger) || 0;
+    if (!isNight && currentEnergy > cap) {
+        pet.anim = DEFAULT_ANIM;
+        delete pet.sleepStartedAt;
+        delete pet.sleepLockedUntil;
+        delete pet.sleepEnergyRecoveredAt;
+        delete pet.sleepSessionEnergyCap;
+        return { sleeping: false, wokeImmediately: true, reason: 'tooMuchEnergy', message: DAY_SLEEP_REJECT_TEXT };
+    }
     pet.anim = 'sleep';
     pet.sleepStartedAt = now;
-    if (isNightSleepTime(now)) {
+    pet.sleepEnergyRecoveredAt = now;
+    delete pet.sleepSessionEnergyCap;
+    if (isNight) {
         pet.sleepLockedUntil = nextMorningWakeAt(now);
     } else {
         delete pet.sleepLockedUntil;
+        if (canRecoverEnergyFromSleep(pet)) {
+            const dateKey = localDateKey(now);
+            if (pet.daySleepRecoveryDate !== dateKey) {
+                if (pet.stats) pet.stats.hunger = clamp(Math.max(currentEnergy, cap), CONFIG.statMin, CONFIG.statMax);
+                pet.daySleepRecoveryDate = dateKey;
+            } else {
+                pet.sleepSessionEnergyCap = Math.min(cap, currentEnergy + DAY_SLEEP_ENERGY_PER_INTERVAL);
+            }
+        }
     }
-    return pet.sleepLockedUntil || null;
+    return { sleeping: true, lockedUntil: pet.sleepLockedUntil || null };
 }
 
-export function wakePet(pet) {
+export function canRecoverEnergyFromSleep(pet) {
+    return ['teen', 'adult', 'elder'].includes(pet?.stage);
+}
+
+export function sleepEnergyCap() {
+    return CONFIG.statMax * DAY_SLEEP_ENERGY_CAP_RATIO;
+}
+
+export function recoverEnergyDuringSleep(pet, now = Date.now()) {
+    if (!pet?.stats || !isPetSleeping(pet) || !canRecoverEnergyFromSleep(pet)) return false;
+    if (!isNightSleepTime(now) && (Number(pet.stats.hunger) || 0) > sleepEnergyCap(pet)) {
+        wakePet(pet, now, { skipRecover: true });
+        return true;
+    }
+    const lastRecoveredAt = Number(pet.sleepEnergyRecoveredAt || pet.sleepStartedAt || now) || now;
+    const intervals = Math.floor(Math.max(0, now - lastRecoveredAt) / DAY_SLEEP_ENERGY_INTERVAL_MS);
+    if (intervals <= 0) return false;
+    pet.sleepEnergyRecoveredAt = lastRecoveredAt + intervals * DAY_SLEEP_ENERGY_INTERVAL_MS;
+    const before = Number(pet.stats.hunger) || 0;
+    const cap = Math.min(sleepEnergyCap(pet), Number(pet.sleepSessionEnergyCap) || sleepEnergyCap(pet));
+    if (before >= cap) return false;
+    pet.stats.hunger = clamp(Math.min(cap, before + intervals * DAY_SLEEP_ENERGY_PER_INTERVAL), CONFIG.statMin, CONFIG.statMax);
+    return pet.stats.hunger !== before;
+}
+
+export function recoverEnergyAfterSleep(pet, now = Date.now()) {
+    return recoverEnergyDuringSleep(pet, now);
+}
+
+export function shouldRejectDaySleep(pet, now = Date.now()) {
+    return !!pet && !isNightSleepTime(now) && (Number(pet.stats?.hunger) || 0) > sleepEnergyCap(pet);
+}
+
+export function daySleepRejectText() {
+    return DAY_SLEEP_REJECT_TEXT;
+}
+
+export function wakePet(pet, now = Date.now(), options = {}) {
     if (!pet) return false;
+    if (!options.skipRecover) recoverEnergyAfterSleep(pet, now);
     pet.anim = DEFAULT_ANIM;
     delete pet.sleepStartedAt;
     delete pet.sleepLockedUntil;
-    recoverEnergyAfterSleep(pet);
+    delete pet.sleepEnergyRecoveredAt;
+    delete pet.sleepSessionEnergyCap;
     return true;
+}
+
+export function wakePetForPlay(pet, now = Date.now()) {
+    return wakePet(pet, now);
 }
 
 export function normalizePetSleepState(pet, now = Date.now()) {
     if (!isPetSleeping(pet)) return false;
+    if (!isNightSleepTime(now) && (Number(pet.stats?.hunger) || 0) > sleepEnergyCap(pet)) {
+        return wakePet(pet, now, { skipRecover: true });
+    }
+    const recovered = recoverEnergyDuringSleep(pet, now);
     const lockedUntil = Number(pet.sleepLockedUntil) || 0;
-    if (lockedUntil && now >= lockedUntil) return wakePet(pet);
-    return false;
+    if (lockedUntil && now >= lockedUntil) return wakePet(pet, now) || recovered;
+    return recovered;
 }
 
 export function isPetSleepLocked(pet, now = Date.now()) {
@@ -129,6 +210,20 @@ export function sleepLockText(pet, now = Date.now()) {
 
 export function sleepingInteractionText(pet, now = Date.now()) {
     return sleepLockText(pet, now) || '宠物正在睡觉，醒来后再互动吧。';
+}
+
+export function getPetSleepActionState(pet, now = Date.now()) {
+    const sleeping = isPetInteractionBlocked(pet, now);
+    const sleepLocked = isPetSleepLocked(pet, now);
+    return {
+        sleeping,
+        sleepLocked,
+        icon: sleeping ? '☀️' : '😴',
+        label: sleeping ? '唤醒' : '睡觉',
+        disabled: sleepLocked,
+        title: sleepLocked ? sleepingInteractionText(pet, now) : '',
+        hint: sleeping ? (canWakePet(pet, now) ? '宠物正在睡觉，可轻轻唤醒。' : sleepingInteractionText(pet, now)) : '',
+    };
 }
 
 export function isPetInteractionBlocked(pet, now = Date.now()) {
@@ -1082,8 +1177,9 @@ function _spawnHappyParticles(petEl, count) {
  * @param {HTMLElement} petEl  宠物 DOM 容器（通常是 #mhPet 或 .pet-sprite 节点）
  * @param {object}      [pet]  对应 pet 数据；提供则同时切换 sprite cell 到 happy 列
  */
-export function playPetHappy(petEl, pet) {
+export function playPetHappy(petEl, pet, options = {}) {
     if (!petEl) return;
+    const holdAnimMs = Math.max(0, Number(options.holdAnimMs) || 0);
     const effectAnchor = _petEffectAnchor(petEl) || petEl;
     // 暂停漫步 transition，避免与 CSS 动画打架
     const prevTransition = petEl.style.transition;
@@ -1094,7 +1190,20 @@ export function playPetHappy(petEl, pet) {
 
     // 切换 sprite 到 happy 列（若可用）
     const prevAnim = pet?.anim;
-    if (pet) setPetAnim(pet, 'happy');
+    const petId = pet?.id || state.currentPetId;
+    if (pet) {
+        if (holdAnimMs > 0 && petId) {
+            if (_animResetTimers.has(petId)) clearTimeout(_animResetTimers.get(petId));
+            setPetAnim(pet, 'happy');
+            const timer = setTimeout(() => {
+                _animResetTimers.delete(petId);
+                if (state.pets[petId] === pet) setPetAnim(pet, prevAnim || DEFAULT_ANIM);
+            }, holdAnimMs);
+            _animResetTimers.set(petId, timer);
+        } else {
+            setPetAnim(pet, 'happy');
+        }
+    }
 
     // 顶部主表情爆发
     const burst = document.createElement('div');
@@ -1109,7 +1218,7 @@ export function playPetHappy(petEl, pet) {
     const cleanup = () => {
         petEl.classList.remove('mh-happy');
         petEl.style.transition = prevTransition || '';
-        if (pet) setPetAnim(pet, prevAnim || DEFAULT_ANIM);
+        if (pet && holdAnimMs <= 0) setPetAnim(pet, prevAnim || DEFAULT_ANIM);
     };
     // 兜底：弹跳约 0.9s，1.1s 后强制恢复
     const fallback = setTimeout(cleanup, 1100);
@@ -1349,15 +1458,24 @@ export function getPetSpriteCell(pet) {
  * @param {string} [opts.alt] 图片 alt
  * @param {string} [opts.extraClass] 附加 class（例如 'floaty'）
  * @param {'idle'|'walk'} [opts.motion] 动作模式：'idle'=轻微呼吸（默认）, 'walk'=史莱姆 squash/stretch
+ * @param {boolean} [opts.requireProcessedTexture] true 时，精灵图透明化完成前保持不可见
  */
 export function petArtHtml(pet, opts = {}) {
     const alt = escapeHtml(opts.alt || '');
     const extraClass = opts.extraClass ? ` ${opts.extraClass}` : '';
     const motion = opts.motion === 'walk' ? 'walk' : 'idle';
+    const requireProcessedTexture = !!opts.requireProcessedTexture;
     const cell = getPetSpriteCell(pet);
     const petId = escapeHtml(pet?.id || '');
-    const hostAttrs = `data-mh-pet="${petId}" data-mh-pet-motion="${motion}" aria-label="${alt}"`;
+    const requireAttr = requireProcessedTexture ? ' data-mh-pet-require-processed="1"' : '';
+    const hostAttrs = `data-mh-pet="${petId}" data-mh-pet-motion="${motion}"${requireAttr} aria-label="${alt}"`;
     const hostStyle = 'width:100%;height:100%;display:block';
+    const row = _stageRow(pet);
+
+    if (requireProcessedTexture && row != null && !isPetProcessedTextureReady(pet)) {
+        return `<div class="mh-pet-art mh-pet-art-pending${extraClass}" ${hostAttrs} aria-hidden="true"
+            style="${hostStyle};visibility:hidden;pointer-events:none"></div>`;
+    }
 
     const eggSvg = buildEggSvg(pet);
     if (!cell) {
@@ -1716,6 +1834,15 @@ export function getProcessedSheet(url) {
     return entry;
 }
 
+export function isPetProcessedTextureReady(pet) {
+    const row = _stageRow(pet);
+    if (row == null || _isEggAwaitingSheet(pet)) return true;
+    const url = pet?.imageSheetUrl || _getCachedSheetUrlForPet(pet);
+    if (!url) return false;
+    const processed = getProcessedSheet(url);
+    return !!(processed?.status === 'loaded' && processed.dataUrl);
+}
+
 const _processed = new Map(); // url -> { status, rawUrl, dataUrl, dataBlob, width, height, promise }
 const _memoryImages = new Map(); // url -> { status, img, promise }
 
@@ -1792,6 +1919,20 @@ export function mountPetArt(el, pet) {
     if (!el || !pet) return;
     const url = pet.imageSheetUrl || _getCachedSheetUrlForPet(pet);
     const row = _stageRow(pet);
+    const requireProcessedTexture = el.dataset.mhPetRequireProcessed === '1';
+
+    if (requireProcessedTexture && row != null && !url) {
+        const mountKey = `sprite-pending|no-url|${pet.dna || ''}`;
+        if (el.dataset.mhPetMounted !== mountKey) {
+            el.dataset.mhPetMounted = mountKey;
+            el.innerHTML = '';
+        }
+        el.style.visibility = 'hidden';
+        el.style.pointerEvents = 'none';
+        el.setAttribute('aria-hidden', 'true');
+        _mounted.set(el, { state: mountKey, inner: null });
+        return;
+    }
 
     // 蛋阶段 / 孵化待揭晓 / 还没有 sheet → 蛋形 SVG（按 DNA 渲染颜色 / 眼睛 / 纹身）
     if (_isEggAwaitingSheet(pet) || !url || row == null) {
@@ -1800,6 +1941,9 @@ export function mountPetArt(el, pet) {
             el.dataset.mhPetMounted = mountKey;
             el.innerHTML = `<div style="width:100%;height:100%;display:flex;align-items:center;justify-content:center">${buildEggSvg(pet)}</div>`;
         }
+        el.style.visibility = '';
+        el.style.pointerEvents = '';
+        el.removeAttribute('aria-hidden');
         _syncAnimClass(el, pet.anim, pet);
         _mounted.set(el, { state: 'egg', inner: null });
         return;
@@ -1810,6 +1954,18 @@ export function mountPetArt(el, pet) {
     // 透明化处理未完成时，先显示原图对应格子，避免首屏被同步像素处理卡住。
     const proc = getProcessedSheet(url);
     if (!(proc?.status === 'loaded' && proc.dataUrl)) {
+        if (requireProcessedTexture) {
+            const waitKey = `sprite-pending|${proc?.rawUrl || url}|${row}|${col}`;
+            if (el.dataset.mhPetMounted !== waitKey) {
+                el.dataset.mhPetMounted = waitKey;
+                el.innerHTML = '';
+            }
+            el.style.visibility = 'hidden';
+            el.style.pointerEvents = 'none';
+            el.setAttribute('aria-hidden', 'true');
+            _mounted.set(el, { state: waitKey, inner: null });
+            return;
+        }
         const rawUrl = proc?.rawUrl || url;
         const wantRaw = `sprite-raw|${rawUrl}|${row}|${col}`;
         if (el.dataset.mhPetMounted !== wantRaw) {
@@ -1823,6 +1979,9 @@ export function mountPetArt(el, pet) {
         return; // 处理完成会通过 _scheduleScan 再次进入 mountPetArt
     }
     const renderUrl = proc.dataUrl;
+    el.style.visibility = '';
+    el.style.pointerEvents = '';
+    el.removeAttribute('aria-hidden');
 
     const want = `sprite|${url}|${row}|${col}`;
     const prev = _mounted.get(el);

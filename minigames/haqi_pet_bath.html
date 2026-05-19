@@ -1,0 +1,1872 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+  <title>萌宠爱洗澡</title>
+  <script src="https://cdn.keepwork.com/keepwork/cdn/tailwindcss@3.4.16.js"></script>
+</head>
+
+<body></body>
+<script defer>
+(function () {
+  const STORAGE_DIFFICULTY = 'haqiPetBathDifficultyV1';
+  const STORAGE_BEST_SCORE = 'haqiPetBathBestScoreV1';
+  const STORAGE_BEST_LEVEL = 'haqiPetBathBestLevelV1';
+  const TILE = { DIRT: 0, EMPTY: 1, ROCK: 2 };
+  const DIG_SUBDIV = 4;
+  const DIFFICULTIES = {
+    easy: { id: 'easy', label: '轻松', cols: 14, rows: 15, mobileRows: 24, rocks: 18, mobileRocks: 32, ducks: 2, mobileDucks: 3, water: 145, mobileWater: 190, score: 110, leak: 0.18, carve: 1 },
+    normal: { id: 'normal', label: '标准', cols: 16, rows: 16, mobileRows: 32, rocks: 30, mobileRocks: 54, ducks: 3, mobileDucks: 4, water: 125, mobileWater: 250, score: 150, leak: 0.28, carve: 1 },
+    hard: { id: 'hard', label: '挑战', cols: 18, rows: 17, mobileRows: 42, rocks: 48, mobileRocks: 84, ducks: 4, mobileDucks: 6, water: 108, mobileWater: 330, score: 210, leak: 0.38, carve: 0 },
+  };
+  const DIFFICULTY_ORDER = ['easy', 'normal', 'hard'];
+  const COLORS = ['#facc15', '#f97316', '#22c55e', '#38bdf8', '#ec4899'];
+  const STONE_MOTIFS = [
+    { w: 5, h: 4, cells: [[1, 0], [2, 0], [3, 0], [0, 1], [4, 1], [0, 2], [4, 2], [1, 3], [3, 3]] },
+    { w: 5, h: 5, cells: [[2, 0], [1, 1], [3, 1], [0, 2], [4, 2], [1, 3], [3, 3], [2, 4]] },
+    { w: 6, h: 4, cells: [[0, 0], [1, 0], [4, 0], [5, 0], [1, 1], [4, 1], [2, 2], [3, 2], [1, 3], [4, 3]] },
+    { w: 5, h: 5, cells: [[0, 0], [1, 1], [2, 2], [3, 3], [4, 4], [4, 0], [3, 1], [1, 3], [0, 4]] },
+    { w: 4, h: 6, cells: [[1, 0], [2, 0], [0, 1], [3, 1], [1, 2], [2, 2], [0, 4], [3, 4], [1, 5], [2, 5]] },
+  ];
+  const MOBILE_BREAKPOINT = 640;
+  const MOBILE_RAIL_WIDTH = 50;
+
+  const state = {
+    difficulty: localStorage.getItem(STORAGE_DIFFICULTY) || 'normal',
+    level: 1,
+    bestLevel: Math.max(1, Number(localStorage.getItem(STORAGE_BEST_LEVEL) || 1)),
+    bestScore: Math.max(0, Number(localStorage.getItem(STORAGE_BEST_SCORE) || 0)),
+    score: 0,
+    started: false,
+    finished: false,
+    paused: false,
+    roundId: '',
+    grid: [],
+    digMask: [],
+    cols: 16,
+    rows: 16,
+    source: { c: 7, r: 1 },
+    bath: { c: 8, r: 14, w: 4, h: 2 },
+    ducks: [],
+    tubes: [],
+    particles: [],
+    splashes: [],
+    waterBudget: 0,
+    waterReleased: 0,
+    waterSaved: 0,
+    bathWater: 0,
+    collectedDucks: 0,
+    requiredWater: 72,
+    introPending: false,
+    introScrolling: false,
+    pointerDown: false,
+    lastCarve: null,
+    petBitmap: null,
+    petMeta: null,
+    objectUrls: [],
+  };
+
+  const sound = { ctx: null, master: null };
+
+  const root = document.createElement('div');
+  root.id = 'haqiPetBath';
+  root.innerHTML = `
+    <style>
+      #haqiPetBath { --mh-rail: 0px; }
+      * { box-sizing: border-box; -webkit-tap-highlight-color: transparent; }
+      html, body { width: 100%; height: 100%; margin: 0; overflow: hidden; }
+      body {
+        font-family: -apple-system, BlinkMacSystemFont, 'PingFang SC', 'Microsoft YaHei', sans-serif;
+        color: #17314a;
+        background: #121923;
+        user-select: none;
+        touch-action: none;
+      }
+      .mh-shell { position: relative; width: 100vw; height: 100vh; height: 100dvh; overflow: hidden; background: #121923; }
+      .mh-stage { position: absolute; inset: 0; overflow: hidden; }
+      .mh-shell::before,
+      .mh-shell::after {
+        content: ''; position: absolute; top: 0; bottom: 0; width: max(13vw, 68px); opacity: .82;
+        background-color: #111827;
+        background-image:
+          linear-gradient(0deg, rgba(255,255,255,.07) 1px, transparent 1px),
+          linear-gradient(90deg, rgba(255,255,255,.05) 1px, transparent 1px),
+          linear-gradient(135deg, rgba(255,255,255,.04), transparent 45%);
+        background-size: 44px 22px, 44px 22px, 100% 100%;
+        box-shadow: inset 0 0 22px rgba(0,0,0,.5);
+      }
+      .mh-shell::before { left: 0; }
+      .mh-shell::after { right: 0; }
+      .mh-canvas { position: absolute; inset: 0; width: 100%; height: 100%; display: block; }
+      .mh-scroll-button { display: none; }
+      .mh-intro-prompt { display: none; }
+      .mh-top {
+        position: absolute; left: 8px; right: 8px; top: 8px; z-index: 3;
+        min-height: 48px; display: grid; grid-template-columns: 38px minmax(0, 1fr) auto; align-items: center; gap: 8px;
+        padding: 7px 9px; border-radius: 12px; background: linear-gradient(180deg, rgba(255,255,255,.96), rgba(225,245,255,.92));
+        border: 2px solid rgba(125,211,252,.9); box-shadow: 0 5px 0 rgba(3,105,161,.28), 0 14px 25px rgba(0,0,0,.18);
+      }
+      .mh-title { min-width: 0; text-align: center; font-size: 18px; font-weight: 1000; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+      .mh-stats { display: flex; align-items: center; justify-content: flex-end; gap: 5px; flex-wrap: wrap; }
+      .mh-pill {
+        height: 29px; min-width: 48px; display: inline-flex; align-items: center; justify-content: center; gap: 3px;
+        padding: 0 8px; border-radius: 999px; background: #fff; border: 1px solid rgba(14,116,144,.2);
+        color: #0f766e; font-size: 12px; font-weight: 900; box-shadow: 0 2px 0 rgba(14,116,144,.12);
+      }
+      .mh-icon-btn, .mh-action, .mh-start, .mh-difficulty { border: 0; cursor: pointer; font-weight: 900; }
+      .mh-icon-btn { width: 34px; height: 34px; border-radius: 999px; background: linear-gradient(180deg, #38bdf8, #0284c7); color: white; box-shadow: 0 3px 0 #075985; font-size: 18px; }
+      .mh-bottom {
+        position: absolute; left: 8px; right: 8px; bottom: 8px; z-index: 3;
+        display: grid; grid-template-columns: minmax(0, 1fr) auto; align-items: end; gap: 8px; pointer-events: none;
+      }
+      .mh-hint {
+        justify-self: center; min-height: 34px; display: inline-flex; align-items: center; justify-content: center; padding: 0 12px;
+        border-radius: 999px; background: rgba(255,255,255,.9); border: 1px solid rgba(14,116,144,.2);
+        color: #0f766e; font-size: 13px; font-weight: 900; box-shadow: 0 3px 0 rgba(14,116,144,.14); white-space: nowrap;
+      }
+      .mh-controls { pointer-events: auto; display: flex; align-items: center; justify-content: flex-end; gap: 6px; flex-wrap: wrap; }
+      .mh-action { height: 34px; border-radius: 999px; padding: 0 12px; background: linear-gradient(180deg, #38bdf8, #0284c7); color: white; box-shadow: 0 4px 0 #075985; }
+      .mh-action.help { background: linear-gradient(180deg, #fb923c, #ea580c); box-shadow-color: #9a3412; }
+      .mh-difficulties { display: flex; align-items: center; gap: 4px; padding: 4px; border-radius: 999px; background: rgba(255,255,255,.86); border: 1px solid rgba(14,116,144,.16); }
+      .mh-difficulty { height: 28px; min-width: 44px; padding: 0 9px; border-radius: 999px; background: transparent; color: #0f766e; font-size: 12px; }
+      .mh-difficulty.active { background: linear-gradient(180deg, #34d399, #16a34a); color: white; box-shadow: 0 2px 0 #15803d; }
+      .mh-action:active, .mh-start:active, .mh-icon-btn:active, .mh-difficulty:active { transform: translateY(2px); filter: brightness(.98); }
+      .mh-overlay { position: fixed; inset: 0; z-index: 40; display: flex; align-items: center; justify-content: center; padding: 18px; background: rgba(15,39,71,.5); }
+      .mh-card {
+        width: min(92vw, 448px); padding: 20px; border-radius: 16px; background: linear-gradient(180deg, #fff, #eff6ff 58%, #ecfeff);
+        border: 3px solid #7dd3fc; box-shadow: 0 18px 44px rgba(15,23,42,.32), 0 0 0 7px rgba(255,255,255,.36); text-align: center;
+      }
+      .mh-card h1 { margin: 0 0 10px; color: #15324b; font-size: 26px; font-weight: 1000; }
+      .mh-card p { margin: 0 0 14px; color: #0f766e; font-size: 15px; font-weight: 800; line-height: 1.55; }
+      .mh-card-row { display: flex; align-items: center; justify-content: center; gap: 6px; flex-wrap: wrap; margin: 12px 0 16px; }
+      .mh-start { border-radius: 999px; padding: 10px 24px; background: linear-gradient(180deg, #34d399, #16a34a); color: white; box-shadow: 0 5px 0 #15803d; }
+      .mh-toast {
+        position: fixed; left: 50%; top: 50%; z-index: 45; transform: translate(-50%, -50%); min-width: min(300px, 82vw);
+        padding: 18px 22px; border-radius: 18px; background: white; border: 3px solid #86efac; color: #15803d;
+        font-size: 22px; font-weight: 1000; text-align: center; box-shadow: 0 18px 42px rgba(15,23,42,.24); animation: mhToast 1.25s ease-out forwards; pointer-events: none;
+      }
+      .mh-confetti { position: fixed; top: -16px; z-index: 48; width: 9px; height: 15px; border-radius: 3px; background: var(--c); animation: mhConfetti var(--d) ease-in forwards; pointer-events: none; }
+      .mh-intro-prompt {
+        position: fixed; left: 50%; top: 50%; z-index: 7; transform: translate(-50%, -50%);
+        width: min(280px, 72vw); padding: 13px 16px; border-radius: 18px;
+        background: linear-gradient(180deg, rgba(255,255,255,.96), rgba(229,247,255,.94));
+        border: 3px solid #7dd3fc; color: #0f766e; text-align: center; font-size: 15px; font-weight: 1000; line-height: 1.45;
+        box-shadow: 0 6px 0 rgba(3,105,161,.24), 0 18px 34px rgba(15,23,42,.28); pointer-events: none;
+      }
+      .mh-intro-prompt.visible { display: block; }
+      [hidden] { display: none !important; }
+      @keyframes mhToast { 0% { opacity: 0; transform: translate(-50%, -42%) scale(.84); } 18% { opacity: 1; transform: translate(-50%, -50%) scale(1); } 100% { opacity: 0; transform: translate(-50%, -76%) scale(.94); } }
+      @keyframes mhConfetti { 100% { opacity: 0; transform: translate3d(var(--x), 112vh, 0) rotate(680deg); } }
+      @media (max-width: 640px) {
+        html, body { height: 100%; overflow: hidden; }
+        body { touch-action: none; }
+        .mh-shell { height: 100vh; height: 100dvh; overflow: hidden; }
+        .mh-shell::before,
+        .mh-shell::after { display: none; }
+        .mh-stage {
+          top: 104px; bottom: 96px; overflow-x: hidden; overflow-y: auto; overscroll-behavior: contain; scrollbar-width: none;
+          background-color: #111827;
+          background-image:
+            linear-gradient(0deg, rgba(255,255,255,.07) 1px, transparent 1px),
+            linear-gradient(90deg, rgba(255,255,255,.05) 1px, transparent 1px),
+            linear-gradient(135deg, rgba(255,255,255,.04), transparent 45%);
+          background-size: 44px 22px, 44px 22px, 100% 100%;
+          box-shadow: inset 0 0 22px rgba(0,0,0,.5);
+        }
+        .mh-stage::-webkit-scrollbar { display: none; }
+        .mh-stage::before,
+        .mh-stage::after {
+          content: ''; position: fixed; top: 104px; bottom: 96px; width: var(--mh-rail); z-index: 5; pointer-events: none;
+          background-color: #111827;
+          background-image:
+            radial-gradient(circle at 22px 34px, rgba(56,189,248,.18) 0 2px, transparent 3px),
+            radial-gradient(circle at 33px 118px, rgba(20,184,166,.16) 0 2px, transparent 3px),
+            linear-gradient(0deg, rgba(255,255,255,.07) 1px, transparent 1px),
+            linear-gradient(90deg, rgba(255,255,255,.05) 1px, transparent 1px),
+            linear-gradient(135deg, rgba(8,145,178,.16), transparent 38%, rgba(255,255,255,.04));
+          background-size: 74px 152px, 88px 176px, 44px 22px, 44px 22px, 100% 100%;
+          box-shadow: inset 0 0 22px rgba(0,0,0,.62), inset 0 0 0 1px rgba(125,211,252,.08);
+        }
+        .mh-stage::before { left: 0; }
+        .mh-stage::after { right: 0; }
+        .mh-scroll-button {
+          position: fixed; z-index: 6; display: block; width: 30px; height: 54px; border-radius: 11px; pointer-events: none;
+          background:
+            radial-gradient(circle at 28% 22%, rgba(255,255,255,.32) 0 3px, transparent 4px),
+            radial-gradient(circle at 72% 74%, rgba(35,29,88,.32) 0 4px, transparent 5px),
+            linear-gradient(180deg, #8d7bc7 0%, #6f5db0 52%, #51458f 100%);
+          border: 3px solid #342b78;
+          box-shadow: inset 0 0 0 2px rgba(255,255,255,.13), 0 3px 0 rgba(15,23,42,.44), 0 0 0 1px rgba(125,211,252,.18);
+        }
+        .mh-scroll-button::before,
+        .mh-scroll-button::after {
+          content: ''; position: absolute; left: 8px; right: 8px; height: 4px; border-radius: 999px;
+          background: rgba(196,233,255,.68); box-shadow: 0 9px 0 rgba(196,233,255,.46), 0 18px 0 rgba(196,233,255,.3);
+        }
+        .mh-scroll-button::before { top: 13px; }
+        .mh-scroll-button::after { display: none; }
+        .mh-shell::after { display: none; }
+        .mh-canvas { position: relative; inset: auto; touch-action: pan-y; z-index: 2; }
+        .mh-top { left: 6px; right: 6px; }
+        .mh-bottom { left: 6px; right: 6px; }
+        .mh-top { grid-template-columns: 36px 1fr; }
+        .mh-stats { grid-column: 1 / -1; justify-content: center; }
+        .mh-bottom { grid-template-columns: 1fr; justify-items: center; }
+        .mh-controls { justify-content: center; }
+        .mh-hint { font-size: 12px; }
+      }
+      @media (max-height: 520px) {
+        .mh-top { min-height: 42px; padding: 5px 7px; }
+        .mh-stats .optional { display: none; }
+        .mh-hint { display: none; }
+      }
+    </style>
+    <div class="mh-shell">
+      <div id="mhStage" class="mh-stage">
+        <canvas id="mhCanvas" class="mh-canvas" aria-label="萌宠爱洗澡游戏画面"></canvas>
+      </div>
+      <i id="mhScrollLeft" class="mh-scroll-button left" aria-hidden="true"></i>
+      <i id="mhScrollRight" class="mh-scroll-button right" aria-hidden="true"></i>
+      <div id="mhIntroPrompt" class="mh-intro-prompt" aria-hidden="true">宠物弄脏啦，要洗澡了！<br>点击任意位置查看水路</div>
+      <header class="mh-top">
+        <button id="mhMenu" class="mh-icon-btn" type="button" aria-label="玩法">?</button>
+        <div class="mh-title">萌宠爱洗澡</div>
+        <div class="mh-stats" aria-label="游戏状态">
+          <span class="mh-pill">关卡 <b id="mhLevel">1</b></span>
+          <span class="mh-pill">水量 <b id="mhWater">0</b>%</span>
+          <span class="mh-pill">玩具 <b id="mhDucks">0</b>/<b id="mhDuckTarget">0</b></span>
+          <span class="mh-pill optional">分数 <b id="mhScore">0</b></span>
+        </div>
+      </header>
+      <footer class="mh-bottom">
+        <div class="mh-hint">按住并滑动挖开泥土，把清水引到浴缸里</div>
+        <div class="mh-controls">
+          <div id="mhDifficulties" class="mh-difficulties" aria-label="选择难度"></div>
+          <button id="mhHelp" class="mh-action help" type="button">玩法</button>
+          <button id="mhRestart" class="mh-action" type="button">重开</button>
+        </div>
+      </footer>
+      <div id="mhOverlay" class="mh-overlay">
+        <div class="mh-card">
+          <h1 id="mhOverlayTitle">萌宠爱洗澡</h1>
+          <p id="mhOverlayText">选择难度后开始。像经典挖水路玩法一样，拖动挖开棕色泥土，让水绕开石头流进浴缸；顺路冲到玩具会加分。每一关都会随机生成。</p>
+          <div id="mhOverlayDifficulties" class="mh-card-row"></div>
+          <button id="mhStart" class="mh-start" type="button">开始洗澡</button>
+        </div>
+      </div>
+    </div>`;
+  document.body.appendChild(root);
+
+  const shell = root.querySelector('.mh-shell');
+  const stage = document.getElementById('mhStage');
+  const canvas = document.getElementById('mhCanvas');
+  const ctx = canvas.getContext('2d');
+  const scrollLeft = document.getElementById('mhScrollLeft');
+  const scrollRight = document.getElementById('mhScrollRight');
+  const introPrompt = document.getElementById('mhIntroPrompt');
+  const overlayEl = document.getElementById('mhOverlay');
+  const overlayTitleEl = document.getElementById('mhOverlayTitle');
+  const overlayTextEl = document.getElementById('mhOverlayText');
+  const hud = {
+    level: document.getElementById('mhLevel'),
+    water: document.getElementById('mhWater'),
+    ducks: document.getElementById('mhDucks'),
+    duckTarget: document.getElementById('mhDuckTarget'),
+    score: document.getElementById('mhScore'),
+  };
+
+  let width = 0;
+  let height = 0;
+  let dpr = 1;
+  let boardLeft = 0;
+  let boardTop = 72;
+  let cell = 24;
+  let boardWidth = 0;
+  let boardHeight = 0;
+  let rafId = 0;
+  let lastTime = 0;
+  let releaseAcc = 0;
+  let scrollAnimId = 0;
+  const boardCache = { canvas: document.createElement('canvas'), ctx: null, width: 0, height: 0, dpr: 0, dirty: true };
+  boardCache.ctx = boardCache.canvas.getContext('2d');
+
+  function cfg() {
+    return DIFFICULTIES[state.difficulty] || DIFFICULTIES.normal;
+  }
+
+  function isMobileLayout() {
+    return width <= MOBILE_BREAKPOINT;
+  }
+
+  function mobileRailWidth() {
+    return isMobileLayout() ? Math.min(58, Math.max(44, Math.round(width * 0.13), MOBILE_RAIL_WIDTH)) : 0;
+  }
+
+  function configValue(config, key) {
+    const mobileKey = `mobile${key.charAt(0).toUpperCase()}${key.slice(1)}`;
+    return isMobileLayout() && config[mobileKey] != null ? config[mobileKey] : config[key];
+  }
+
+  function resize() {
+    dpr = Math.min(2, window.devicePixelRatio || 1);
+    width = Math.max(320, window.innerWidth);
+    height = Math.max(240, window.innerHeight);
+    layoutBoard();
+    syncCanvasSize();
+    draw(performance.now());
+    updateScrollButtons();
+  }
+
+  function syncCanvasSize() {
+    const mobile = isMobileLayout();
+    const viewportHeight = Math.max(240, window.innerHeight);
+    const contentHeight = mobile ? Math.max(viewportHeight, boardTop + boardHeight + 24) : viewportHeight;
+    height = contentHeight;
+    root.style.setProperty('--mh-rail', `${mobileRailWidth()}px`);
+    canvas.width = Math.round(width * dpr);
+    canvas.height = Math.round(height * dpr);
+    canvas.style.width = `${width}px`;
+    canvas.style.height = `${height}px`;
+    shell.style.height = `${viewportHeight}px`;
+    if (!mobile) shell.style.height = `${height}px`;
+    ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+    markBoardDirty();
+  }
+
+  function markBoardDirty() {
+    boardCache.dirty = true;
+  }
+
+  function updateScrollButtons() {
+    if (!isMobileLayout()) return;
+    const rail = mobileRailWidth();
+    const rect = stage.getBoundingClientRect();
+    const buttonHeight = scrollLeft.offsetHeight || 54;
+    const maxScroll = Math.max(0, stage.scrollHeight - stage.clientHeight);
+    const progress = maxScroll > 0 ? stage.scrollTop / maxScroll : 0;
+    const top = rect.top + 8 + progress * Math.max(0, rect.height - buttonHeight - 16);
+    const side = Math.max(6, Math.round((rail - 30) / 2));
+    scrollLeft.style.top = `${top}px`;
+    scrollRight.style.top = `${top}px`;
+    scrollLeft.style.left = `${side}px`;
+    scrollRight.style.right = `${side}px`;
+  }
+
+  function prepareLevelStartIntro() {
+    if (!isMobileLayout()) return;
+    if (scrollAnimId) cancelAnimationFrame(scrollAnimId);
+    const maxScroll = Math.max(0, stage.scrollHeight - stage.clientHeight);
+    stage.scrollTop = maxScroll;
+    state.introPending = maxScroll > 2;
+    state.introScrolling = false;
+    introPrompt.classList.toggle('visible', state.introPending);
+    updateScrollButtons();
+  }
+
+  function beginLevelStartScroll() {
+    if (!state.introPending || !isMobileLayout()) return false;
+    if (scrollAnimId) cancelAnimationFrame(scrollAnimId);
+    const maxScroll = Math.max(0, stage.scrollHeight - stage.clientHeight);
+    state.introPending = false;
+    introPrompt.classList.remove('visible');
+    if (maxScroll <= 2) {
+      state.introScrolling = false;
+      stage.scrollTop = 0;
+      updateScrollButtons();
+      lastTime = performance.now();
+      return true;
+    }
+    state.introScrolling = true;
+    const duration = 1800;
+    const start = performance.now();
+    stage.scrollTop = maxScroll;
+    updateScrollButtons();
+    const step = now => {
+      const t = clamp((now - start) / duration, 0, 1);
+      const eased = 1 - Math.pow(1 - t, 3);
+      stage.scrollTop = Math.round(maxScroll * (1 - eased));
+      updateScrollButtons();
+      if (t < 1) scrollAnimId = requestAnimationFrame(step);
+      else {
+        scrollAnimId = 0;
+        state.introScrolling = false;
+        lastTime = performance.now();
+      }
+    };
+    scrollAnimId = requestAnimationFrame(step);
+    return true;
+  }
+
+  function layoutBoard() {
+    const config = cfg();
+    const mobile = isMobileLayout();
+    const rail = mobileRailWidth();
+    const sideSafe = mobile ? 0 : width < 560 ? 8 : Math.max(82, width * 0.16);
+    const topSafe = mobile ? 12 : 72;
+    const bottomSafe = mobile ? 24 : 70;
+    state.cols = config.cols;
+    state.rows = configValue(config, 'rows');
+    const availableWidth = mobile ? width - rail * 2 : width - sideSafe * 2;
+    const widthCell = availableWidth / state.cols;
+    const heightCell = mobile ? widthCell : (height - topSafe - bottomSafe) / state.rows;
+    cell = Math.floor(Math.min(widthCell, heightCell));
+    cell = Math.max(18, Math.min(42, cell));
+    boardWidth = cell * state.cols;
+    boardHeight = cell * state.rows;
+    boardLeft = Math.round(mobile ? rail + Math.max(0, (availableWidth - boardWidth) / 2) : (width - boardWidth) / 2);
+    boardTop = Math.round(topSafe + (mobile ? 0 : Math.max(0, height - topSafe - bottomSafe - boardHeight) * 0.45));
+  }
+
+  function startGame(options = {}) {
+    const keepLevel = options.keepLevel === true;
+    initSound();
+    stopLoop();
+    state.started = true;
+    state.finished = false;
+    state.paused = false;
+    state.introPending = false;
+    state.introScrolling = false;
+    introPrompt.classList.remove('visible');
+    state.level = keepLevel ? Math.max(1, state.level) : 1;
+    state.score = keepLevel ? state.score : 0;
+    state.roundId = `${state.difficulty}-${state.level}-${Date.now()}`;
+    generateLevel();
+    hideOverlay();
+    updateHud();
+    prepareLevelStartIntro();
+    post('gameStarted', {
+      difficulty: DIFFICULTY_ORDER.indexOf(state.difficulty) + 1,
+      difficultyId: state.difficulty,
+      level: state.level,
+      targetToys: state.ducks.length,
+    });
+    playTone(460, 700, 0.12, 'triangle', 0.035);
+    lastTime = performance.now();
+    rafId = requestAnimationFrame(loop);
+  }
+
+  function nextLevel() {
+    state.level += 1;
+    startGame({ keepLevel: true });
+  }
+
+  function generateLevel() {
+    const config = cfg();
+    state.cols = config.cols;
+    state.rows = configValue(config, 'rows');
+    layoutBoard();
+    state.grid = Array.from({ length: state.rows }, () => Array.from({ length: state.cols }, () => TILE.DIRT));
+    state.digMask = Array.from({ length: state.rows }, () => Array.from({ length: state.cols }, () => fullDirtMask()));
+    state.tubes = [];
+    state.particles = [];
+    state.splashes = [];
+    state.waterBudget = Math.max(70, configValue(config, 'water') - Math.floor((state.level - 1) * (state.difficulty === 'hard' ? 5 : 3)));
+    state.waterReleased = 0;
+    state.waterSaved = 0;
+    state.bathWater = 0;
+    state.collectedDucks = 0;
+    state.requiredWater = Math.max(52, Math.round(state.waterBudget * 0.58));
+    releaseAcc = 0;
+
+    const random = seededRandom(hashSeed(`${state.difficulty}:${state.level}:${Date.now() % 100000}`));
+    state.source = { c: Math.floor(state.cols * (0.24 + random() * 0.52)), r: 1 };
+    state.bath = {
+      w: Math.max(4, Math.min(5, Math.floor(state.cols * 0.28))),
+      h: 2,
+      c: Math.floor(state.cols * (0.32 + random() * 0.25)),
+      r: state.rows - 2,
+    };
+    state.bath.c = clamp(state.bath.c, 1, state.cols - state.bath.w - 1);
+
+    const path = buildSolutionPath(random);
+    placeLevelFeatures(random, path);
+    placeRocks(random, path);
+    placeTubes(random, path);
+    placeDucks(random, path);
+    clearCell(state.source.c, state.source.r);
+    clearCell(state.source.c, state.source.r + 1);
+    for (let c = state.bath.c; c < state.bath.c + state.bath.w; c++) {
+      clearCell(c, state.rows - 1);
+      clearCell(c, state.rows - 2);
+    }
+    markBoardDirty();
+    if (width > 0) syncCanvasSize();
+  }
+
+  function buildSolutionPath(random) {
+    const points = [];
+    let c = state.source.c;
+    let r = state.source.r + 1;
+    const targetC = state.bath.c + Math.floor(state.bath.w / 2);
+    const targetR = state.bath.r - 1;
+    points.push(key(c, r));
+    while (r < targetR) {
+      if (random() < 0.62) r += 1;
+      else c += Math.sign(targetC - c) || (random() < 0.5 ? -1 : 1);
+      c = clamp(c, 1, state.cols - 2);
+      points.push(key(c, r));
+      if (random() < 0.32 && r < targetR - 1) {
+        const dir = random() < 0.5 ? -1 : 1;
+        const sideSteps = 1 + Math.floor(random() * 2);
+        for (let i = 0; i < sideSteps; i++) {
+          c = clamp(c + dir, 1, state.cols - 2);
+          points.push(key(c, r));
+        }
+      }
+    }
+    while (c !== targetC) {
+      c += Math.sign(targetC - c);
+      points.push(key(c, r));
+    }
+    return new Set(points);
+  }
+
+  function placeRocks(random, path) {
+    const config = cfg();
+    let placed = 0;
+    const bathArea = bathCells();
+    const max = configValue(config, 'rocks') + Math.floor(state.level * (state.difficulty === 'hard' ? 1.7 : 1));
+    while (placed < max) {
+      const c = 1 + Math.floor(random() * (state.cols - 2));
+      const r = 2 + Math.floor(random() * (state.rows - 5));
+      if (path.has(key(c, r)) || bathArea.has(key(c, r)) || distanceCells(c, r, state.source.c, state.source.r) < 3) continue;
+      if (state.grid[r][c] === TILE.ROCK) continue;
+      if (setRock(c, r)) placed += 1;
+      if (random() < 0.32 && c + 1 < state.cols - 1 && !path.has(key(c + 1, r))) {
+        setRock(c + 1, r);
+      }
+    }
+  }
+
+  function placeLevelFeatures(random, path) {
+    const bathArea = bathCells();
+    const motifCount = clamp(1 + Math.floor(state.level / 3) + (state.difficulty === 'hard' ? 1 : 0), 1, isMobileLayout() ? 4 : 3);
+    for (let i = 0; i < motifCount; i++) placeStoneMotif(random, path, bathArea);
+
+    const featureCount = 2 + Math.floor(state.level / 2) + (state.difficulty === 'hard' ? 2 : state.difficulty === 'normal' ? 1 : 0);
+    for (let i = 0; i < featureCount; i++) {
+      if (i % 3 === 0) placeRockShelf(random, path, bathArea);
+      else if (i % 3 === 1) openCavePocket(random, path, bathArea);
+      else placeDiagonalBank(random, path, bathArea);
+    }
+  }
+
+  function placeRockShelf(random, path, bathArea) {
+    const r = clamp(3 + Math.floor(random() * (state.rows - 7)), 3, state.rows - 4);
+    const length = clamp(4 + Math.floor(random() * 6), 3, state.cols - 4);
+    const start = clamp(Math.floor(random() * (state.cols - length)), 1, state.cols - length - 1);
+    const gap = start + Math.floor(random() * length);
+    for (let c = start; c < start + length; c++) {
+      if (Math.abs(c - gap) <= 1) continue;
+      if (canPlaceFeatureRock(c, r, path, bathArea)) setRock(c, r);
+      if (random() < 0.35 && canPlaceFeatureRock(c, r + 1, path, bathArea)) setRock(c, r + 1);
+    }
+  }
+
+  function openCavePocket(random, path, bathArea) {
+    const w = 2 + Math.floor(random() * 4);
+    const h = 2 + Math.floor(random() * 3);
+    const c0 = clamp(1 + Math.floor(random() * (state.cols - w - 2)), 1, state.cols - w - 1);
+    const r0 = clamp(3 + Math.floor(random() * (state.rows - h - 6)), 2, state.rows - h - 3);
+    for (let r = r0; r < r0 + h; r++) {
+      for (let c = c0; c < c0 + w; c++) {
+        if (bathArea.has(key(c, r))) continue;
+        if (distanceCells(c, r, state.source.c, state.source.r) < 2) continue;
+        if (random() < 0.78 || path.has(key(c, r))) clearCell(c, r);
+      }
+    }
+  }
+
+  function placeDiagonalBank(random, path, bathArea) {
+    const downRight = random() < 0.5;
+    let c = downRight ? 1 + Math.floor(random() * 4) : state.cols - 3 - Math.floor(random() * 4);
+    let r = 4 + Math.floor(random() * Math.max(1, state.rows - 9));
+    const length = 4 + Math.floor(random() * 5);
+    for (let i = 0; i < length; i++) {
+      const cc = clamp(c + (downRight ? i : -i), 1, state.cols - 2);
+      const rr = clamp(r + i, 2, state.rows - 4);
+      if (canPlaceFeatureRock(cc, rr, path, bathArea)) setRock(cc, rr);
+      if (random() < 0.5 && canPlaceFeatureRock(cc + (downRight ? 1 : -1), rr, path, bathArea)) setRock(cc + (downRight ? 1 : -1), rr);
+    }
+  }
+
+  function placeStoneMotif(random, path, bathArea) {
+    for (let attempt = 0; attempt < 28; attempt++) {
+      const motif = STONE_MOTIFS[Math.floor(random() * STONE_MOTIFS.length)];
+      const mirror = random() < 0.5;
+      const c0 = clamp(1 + Math.floor(random() * Math.max(1, state.cols - motif.w - 1)), 1, state.cols - motif.w - 1);
+      const r0 = clamp(3 + Math.floor(random() * Math.max(1, state.rows - motif.h - 6)), 2, state.rows - motif.h - 3);
+      const cells = motif.cells.map(([x, y]) => ({ c: c0 + (mirror ? motif.w - 1 - x : x), r: r0 + y }));
+      if (!cells.every(({ c, r }) => canPlaceFeatureRock(c, r, path, bathArea))) continue;
+      for (const { c, r } of cells) setRock(c, r);
+      return true;
+    }
+    return false;
+  }
+
+  function canPlaceFeatureRock(c, r, path, bathArea) {
+    if (r < 1 || r >= state.rows - 1 || c < 1 || c >= state.cols - 1) return false;
+    if (path.has(key(c, r)) || bathArea.has(key(c, r))) return false;
+    if (distanceCells(c, r, state.source.c, state.source.r) < 3) return false;
+    return state.grid[r]?.[c] !== TILE.ROCK;
+  }
+
+  function setRock(c, r) {
+    if (r < 0 || r >= state.rows || c < 0 || c >= state.cols) return false;
+    if (isBathCell(c, r)) return false;
+    state.grid[r][c] = TILE.ROCK;
+    state.digMask[r][c] = null;
+    return true;
+  }
+
+  function placeDucks(random, path) {
+    const config = cfg();
+    const cells = Array.from(path).map(parseKey).filter(p => p.r > 2 && p.r < state.rows - 4);
+    shuffle(cells, random);
+    state.ducks = [];
+    for (let i = 0; i < Math.min(configValue(config, 'ducks'), cells.length); i++) {
+      const p = cells[i];
+      state.ducks.push({ c: p.c, r: p.r, hit: false, wobble: random() * 10, color: COLORS[i % COLORS.length] });
+    }
+  }
+
+  function placeTubes(random, path) {
+    const pathCells = Array.from(path).map(parseKey).filter(p => p.r > 2 && p.r < state.rows - 3);
+    const count = clamp(1 + Math.floor((state.level - 1) / 3) + (state.difficulty === 'hard' ? 1 : 0), 1, 4);
+    shuffle(pathCells, random);
+    const used = new Set();
+    const bathCenter = state.bath.c + state.bath.w / 2;
+    for (let i = 0; i < count && pathCells.length; i++) {
+      const inlet = pathCells.shift();
+      if (!inlet || used.has(key(inlet.c, inlet.r))) continue;
+      const outletR = clamp(inlet.r + 2 + Math.floor(random() * 4), 3, state.rows - 3);
+      const drift = Math.sign(bathCenter - inlet.c) * (2 + Math.floor(random() * 4));
+      const outletC = clamp(inlet.c + drift + Math.floor(random() * 3) - 1, 1, state.cols - 2);
+      if (used.has(key(outletC, outletR)) || isBathCell(outletC, outletR)) continue;
+      const tube = {
+        inC: inlet.c,
+        inR: inlet.r,
+        outC: outletC,
+        outR: outletR,
+        bend: random() < 0.5 ? -1 : 1,
+        outAngle: Math.PI * (0.24 + random() * 0.18),
+        wobble: random() * 10,
+      };
+      if (outletC < inlet.c) tube.outAngle = Math.PI - tube.outAngle;
+      state.tubes.push(tube);
+      used.add(key(tube.inC, tube.inR));
+      used.add(key(tube.outC, tube.outR));
+      openTubeMouth(tube.inC, tube.inR);
+      openTubeMouth(tube.outC, tube.outR);
+    }
+  }
+
+  function openTubeMouth(c, r) {
+    forceClearCell(c, r);
+    forceClearCell(c, r - 1);
+    if (c > 0) carveCell(c - 1, r, cellCenterX(c), cellCenterY(r), cell * 0.42);
+    if (c < state.cols - 1) carveCell(c + 1, r, cellCenterX(c), cellCenterY(r), cell * 0.42);
+  }
+
+  function loop(now) {
+    rafId = 0;
+    if (!state.started || state.paused) return;
+    const dt = Math.min(36, Math.max(0, now - lastTime || 16));
+    lastTime = now;
+    update(dt, now);
+    draw(now);
+    if (state.started && !state.paused) rafId = requestAnimationFrame(loop);
+  }
+
+  function update(dt, now) {
+    if (state.finished || state.introPending || state.introScrolling) return;
+    releaseWater(dt);
+    updateParticles(dt);
+    updateSplashes(dt);
+    if (state.waterSaved >= state.requiredWater) finishLevel(true);
+    else if (state.waterReleased >= state.waterBudget && state.particles.length === 0) finishLevel(false);
+  }
+
+  function releaseWater(dt) {
+    if (state.waterReleased >= state.waterBudget) return;
+    releaseAcc += dt * 0.028;
+    while (releaseAcc >= 1 && state.waterReleased < state.waterBudget) {
+      releaseAcc -= 1;
+      state.waterReleased += 1;
+      const jitter = (Math.random() - 0.5) * cell * 0.42;
+      state.particles.push({
+        x: cellCenterX(state.source.c) + jitter,
+        y: cellCenterY(state.source.r) + cell * 0.1,
+        vx: (Math.random() - 0.5) * 0.08,
+        vy: 0.06 + Math.random() * 0.04,
+        age: 0,
+        stagnant: 0,
+        tubeCooldown: 0,
+        saved: false,
+      });
+    }
+  }
+
+  function updateParticles(dt) {
+    const gravity = 0.0009 * dt;
+    for (const p of state.particles) {
+      p.age = (p.age || 0) + dt;
+      p.tubeCooldown = Math.max(0, (p.tubeCooldown || 0) - dt);
+      p.vy += gravity;
+      p.vx *= 0.996;
+      p.vy = Math.min(p.vy, 0.52);
+
+      if (tryTubeTransport(p)) continue;
+
+      const below = tileAtPoint(p.x, p.y + cell * 0.34);
+      const here = tileAtPoint(p.x, p.y);
+      const left = tileAtPoint(p.x - cell * 0.3, p.y + cell * 0.08);
+      const right = tileAtPoint(p.x + cell * 0.3, p.y + cell * 0.08);
+      const blockedBelow = below === TILE.DIRT || below === TILE.ROCK;
+      const blockedHere = here === TILE.DIRT || here === TILE.ROCK;
+
+      if (blockedBelow) {
+        p.vy *= -0.08;
+        p.y -= Math.max(0.5, cell * 0.02);
+        const canLeft = left === TILE.EMPTY;
+        const canRight = right === TILE.EMPTY;
+        if (canLeft && canRight) p.vx += (Math.random() < 0.5 ? -1 : 1) * 0.045;
+        else if (canLeft) p.vx -= 0.055;
+        else if (canRight) p.vx += 0.055;
+        else {
+          p.vx *= 0.82;
+          p.vy *= 0.5;
+        }
+      }
+      if (blockedHere && p.vy > 0) {
+        p.y -= cell * 0.04;
+        p.vy *= -0.05;
+      }
+
+      if (blockedBelow && Math.abs(p.vx) < 0.018 && Math.abs(p.vy) < 0.06) p.stagnant += dt;
+      else p.stagnant = Math.max(0, p.stagnant - dt * 0.65);
+
+      applyWaterPressure(p, dt, blockedBelow, blockedHere);
+
+      const contained = blockedBelow || blockedHere || isNearTubeMouth(p.x, p.y);
+      if (contained) {
+        p.vx *= p.stagnant > 260 ? 0.998 : 0.992;
+        if (p.stagnant > 520) p.vy *= 0.9;
+      }
+
+      moveWaterParticle(p, dt);
+      if (p.x < boardLeft + cell * 0.2 || p.x > boardLeft + boardWidth - cell * 0.2) {
+        p.vx *= -0.25;
+        p.x = clamp(p.x, boardLeft + cell * 0.2, boardLeft + boardWidth - cell * 0.2);
+      }
+      if (p.y > boardTop + boardHeight - cell * 0.2) {
+        p.vy *= -0.12;
+        p.vx *= 0.86;
+        p.y = boardTop + boardHeight - cell * 0.2;
+        p.stagnant += dt;
+      }
+      if (isInBath(p.x, p.y)) saveWater(p);
+      collectDucks(p);
+    }
+    state.particles = state.particles.filter(p => !p.saved);
+  }
+
+  function applyWaterPressure(p, dt, blockedBelow, blockedHere) {
+    if (!blockedBelow || p.stagnant < 180) return;
+    const pressure = clamp((p.stagnant - 180) / 780, 0, 1);
+    const lift = (0.035 + pressure * 0.055) * dt;
+    if (!blockedHere && !isSolidAt(p.x, p.y - cell * 0.34)) {
+      p.y -= Math.min(cell * 0.12, lift);
+      p.vy -= 0.0007 * dt * (0.4 + pressure);
+    }
+
+    const direction = Math.random() < 0.5 ? -1 : 1;
+    const sideLevels = [0.08, 0.28, 0.48, 0.68];
+    for (const level of sideLevels) {
+      const probeY = p.y - cell * level;
+      const leftOpen = tileAtPoint(p.x - cell * 0.46, probeY) === TILE.EMPTY;
+      const rightOpen = tileAtPoint(p.x + cell * 0.46, probeY) === TILE.EMPTY;
+      if (!leftOpen && !rightOpen) continue;
+      const spillDir = leftOpen && rightOpen ? direction : leftOpen ? -1 : 1;
+      p.y = Math.min(p.y, probeY + cell * 0.08);
+      p.vx += spillDir * (0.035 + pressure * 0.09);
+      p.vy *= 0.56;
+      p.stagnant = Math.max(0, p.stagnant - dt * 0.25);
+      return;
+    }
+
+    p.vx += direction * pressure * 0.018;
+  }
+
+  function moveWaterParticle(p, dt) {
+    const distance = Math.hypot(p.vx * dt, p.vy * dt);
+    const steps = Math.max(1, Math.ceil(distance / Math.max(2, cell * 0.18)));
+    const stepDt = dt / steps;
+    for (let i = 0; i < steps; i++) {
+      const nextX = p.x + p.vx * stepDt;
+      const nextY = p.y + p.vy * stepDt;
+      const solidX = isSolidAt(nextX, p.y);
+      const solidY = isSolidAt(p.x, nextY);
+      const solidBoth = isSolidAt(nextX, nextY);
+      if (!solidBoth) {
+        p.x = nextX;
+        p.y = nextY;
+        continue;
+      }
+      if (!solidX) {
+        p.x = nextX;
+        p.vy *= -0.08;
+      } else if (!solidY) {
+        p.y = nextY;
+        p.vx *= -0.18;
+      } else {
+        p.vx *= -0.12;
+        p.vy *= -0.08;
+      }
+      p.stagnant += stepDt * 0.7;
+    }
+  }
+
+  function isSolidAt(x, y) {
+    const tile = tileAtPoint(x, y);
+    return tile === TILE.DIRT || tile === TILE.ROCK;
+  }
+
+  function isNearTubeMouth(x, y) {
+    for (const tube of state.tubes) {
+      if (Math.hypot(x - cellCenterX(tube.inC), y - cellCenterY(tube.inR)) < cell * 0.75) return true;
+      if (Math.hypot(x - cellCenterX(tube.outC), y - cellCenterY(tube.outR)) < cell * 0.75) return true;
+    }
+    return false;
+  }
+
+  function tryTubeTransport(p) {
+    if (p.tubeCooldown > 0) return false;
+    for (const tube of state.tubes) {
+      const inletX = cellCenterX(tube.inC);
+      const inletY = cellCenterY(tube.inR);
+      if (Math.hypot(p.x - inletX, p.y - inletY) > cell * 0.55) continue;
+      const outletX = cellCenterX(tube.outC);
+      const outletY = cellCenterY(tube.outR);
+      p.x = outletX + Math.cos(tube.outAngle) * cell * 0.45;
+      p.y = outletY + Math.sin(tube.outAngle) * cell * 0.45;
+      p.vx = Math.cos(tube.outAngle) * 0.34;
+      p.vy = Math.sin(tube.outAngle) * 0.34;
+      p.stagnant = 0;
+      p.tubeCooldown = 520;
+      makeTubeSplash(outletX, outletY, tube.outAngle);
+      if (Math.random() < 0.08) playTone(520, 760, 0.05, 'sine', 0.012);
+      return true;
+    }
+    return false;
+  }
+
+  function makeTubeSplash(x, y, angle) {
+    for (let i = 0; i < 2; i++) {
+      state.splashes.push({
+        x: x + Math.cos(angle) * cell * 0.36,
+        y: y + Math.sin(angle) * cell * 0.36,
+        vx: Math.cos(angle) * 0.08 + (Math.random() - 0.5) * 0.08,
+        vy: Math.sin(angle) * 0.08 - Math.random() * 0.08,
+        life: 240 + Math.random() * 120,
+      });
+    }
+  }
+
+  function updateSplashes(dt) {
+    for (const s of state.splashes) {
+      s.x += s.vx * dt;
+      s.y += s.vy * dt;
+      s.vy += 0.0014 * dt;
+      s.life -= dt;
+    }
+    state.splashes = state.splashes.filter(s => s.life > 0);
+  }
+
+  function saveWater(p) {
+    p.saved = true;
+    state.waterSaved += 1;
+    state.bathWater = Math.min(1, state.waterSaved / state.requiredWater);
+    if (state.waterSaved % 9 === 0) playTone(620, 920, 0.06, 'sine', 0.016);
+    for (let i = 0; i < 3; i++) {
+      state.splashes.push({ x: p.x, y: p.y, vx: (Math.random() - 0.5) * 0.18, vy: -0.22 - Math.random() * 0.1, life: 360 + Math.random() * 180 });
+    }
+    updateHud();
+  }
+
+  function collectDucks(p) {
+    for (const duck of state.ducks) {
+      if (duck.hit) continue;
+      const dx = p.x - cellCenterX(duck.c);
+      const dy = p.y - cellCenterY(duck.r);
+      if (Math.hypot(dx, dy) < cell * 0.55) {
+        duck.hit = true;
+        state.collectedDucks += 1;
+        state.score += 55;
+        showToast('玩具 +1');
+        playTone(740, 1180, 0.11, 'triangle', 0.03);
+        updateHud();
+      }
+    }
+  }
+
+  function finishLevel(won) {
+    if (state.finished) return;
+    state.finished = true;
+    stopLoop();
+    const difficultyLevel = DIFFICULTY_ORDER.indexOf(state.difficulty) + 1;
+    if (won) {
+      const waterBonus = Math.max(0, state.waterBudget - state.waterReleased) * 3;
+      const toyBonus = state.collectedDucks * 80;
+      const levelBonus = state.level * 18;
+      state.score += waterBonus + toyBonus + levelBonus;
+      state.bestScore = Math.max(state.bestScore, state.score);
+      state.bestLevel = Math.max(state.bestLevel, state.level);
+      localStorage.setItem(STORAGE_BEST_SCORE, String(state.bestScore));
+      localStorage.setItem(STORAGE_BEST_LEVEL, String(state.bestLevel));
+      updateHud();
+      burstConfetti();
+      playWinSound();
+      showResult('洗澡完成！', `第 ${state.level} 关完成，收集了 ${state.collectedDucks}/${state.ducks.length} 个玩具。`, '下一关', nextLevel);
+      post('gameFinished', {
+        completed: true,
+        passed: true,
+        earnedPoints: Math.max(12, cfg().score + state.score),
+        score: state.score,
+        difficulty: difficultyLevel,
+        difficultyId: state.difficulty,
+        level: state.level,
+        collected: state.collectedDucks,
+        targetToys: state.ducks.length,
+        waterSaved: state.waterSaved,
+        waterRequired: state.requiredWater,
+        finishedAt: Date.now(),
+        roundId: state.roundId,
+      });
+    } else {
+      playTone(180, 110, 0.18, 'sawtooth', 0.03);
+      showResult('水不够啦', '试着先挖一条连续的水路，再打开更多泥土。石头不能挖，绕过去会更稳。', '再来一次', () => startGame({ keepLevel: true }));
+    }
+  }
+
+  function draw(now) {
+    ctx.clearRect(0, 0, width, height);
+    drawBackdrop(now);
+    drawBoard(now);
+    drawLowerDirtFill();
+    drawTubes(now);
+    drawDucks(now);
+    drawBath(now);
+    drawSource(now);
+    drawParticles(now);
+    drawSplashes();
+    drawDigCursor();
+  }
+
+  function drawBackdrop(now) {
+    const cave = ctx.createLinearGradient(0, 0, 0, height);
+    cave.addColorStop(0, '#0f2f3b');
+    cave.addColorStop(0.35, '#176b80');
+    cave.addColorStop(1, '#6d63ad');
+    ctx.fillStyle = cave;
+    const caveLeft = isMobileLayout() ? boardLeft : boardLeft - cell * 0.55;
+    const caveWidth = isMobileLayout() ? width - boardLeft - mobileRailWidth() : boardWidth + cell * 1.1;
+    ctx.fillRect(caveLeft, 0, caveWidth, height);
+
+    ctx.save();
+    ctx.globalAlpha = 0.23;
+    ctx.fillStyle = '#504790';
+    for (let i = 0; i < 80; i++) {
+      const x = caveLeft + ((i * 47) % Math.max(1, Math.round(caveWidth)));
+      const y = height * 0.24 + ((i * 31) % Math.max(1, Math.round(height * 0.7)));
+      ctx.beginPath();
+      ctx.arc(x, y, 2 + (i % 4), 0, Math.PI * 2);
+      ctx.fill();
+    }
+    ctx.globalAlpha = 0.2;
+    ctx.strokeStyle = '#0e7490';
+    ctx.lineWidth = 3;
+    for (let i = 0; i < 5; i++) {
+      const y = height * 0.18 + i * 74 + Math.sin(now * 0.001 + i) * 5;
+      ctx.beginPath();
+      ctx.moveTo(boardLeft - 18, y);
+      ctx.bezierCurveTo(boardLeft + boardWidth * 0.2, y + 15, boardLeft + boardWidth * 0.72, y - 18, boardLeft + boardWidth + 18, y + 9);
+      ctx.stroke();
+    }
+    ctx.restore();
+  }
+
+  function drawBoard(now) {
+    ctx.save();
+    drawCaveSilhouette(boardLeft - cell * 0.46, boardTop - cell * 0.52, boardWidth + cell * 0.92, boardHeight + cell * 0.95, now);
+    ctx.fillStyle = '#134e5e';
+    ctx.fill();
+    ctx.lineWidth = 5;
+    ctx.strokeStyle = '#0a3945';
+    ctx.stroke();
+    ctx.beginPath();
+    ctx.rect(boardLeft, boardTop, boardWidth, boardHeight);
+    ctx.clip();
+    renderBoardCache();
+    ctx.drawImage(boardCache.canvas, boardLeft, boardTop, boardWidth, boardHeight);
+    ctx.restore();
+  }
+
+  function renderBoardCache() {
+    const cacheWidth = Math.max(1, Math.round(boardWidth * dpr));
+    const cacheHeight = Math.max(1, Math.round(boardHeight * dpr));
+    if (boardCache.width !== cacheWidth || boardCache.height !== cacheHeight || boardCache.dpr !== dpr) {
+      boardCache.width = cacheWidth;
+      boardCache.height = cacheHeight;
+      boardCache.dpr = dpr;
+      boardCache.canvas.width = cacheWidth;
+      boardCache.canvas.height = cacheHeight;
+      boardCache.dirty = true;
+    }
+    if (!boardCache.dirty) return;
+    const cacheCtx = boardCache.ctx;
+    cacheCtx.setTransform(dpr, 0, 0, dpr, 0, 0);
+    cacheCtx.clearRect(0, 0, boardWidth, boardHeight);
+    for (let r = 0; r < state.rows; r++) {
+      for (let c = 0; c < state.cols; c++) {
+        drawTile(cacheCtx, c, r, c * cell, r * cell);
+      }
+    }
+    boardCache.dirty = false;
+  }
+
+  function drawCaveSilhouette(x, y, w, h, now) {
+    const wobble = Math.sin(now * 0.001) * cell * 0.04;
+    ctx.beginPath();
+    ctx.moveTo(x + w * 0.08, y + h * 0.02);
+    ctx.lineTo(x + w * 0.38, y + h * 0.03 + wobble);
+    ctx.quadraticCurveTo(x + w * 0.5, y - h * 0.04, x + w * 0.62, y + h * 0.04);
+    ctx.lineTo(x + w * 0.94, y + h * 0.02);
+    ctx.quadraticCurveTo(x + w * 1.02, y + h * 0.35, x + w * 0.93, y + h * 0.54);
+    ctx.quadraticCurveTo(x + w * 0.84, y + h * 0.76, x + w * 0.75, y + h * 0.99);
+    ctx.lineTo(x + w * 0.16, y + h * 0.99);
+    ctx.quadraticCurveTo(x + w * 0.06, y + h * 0.78, x + w * 0.05, y + h * 0.57);
+    ctx.quadraticCurveTo(x - w * 0.02, y + h * 0.34, x + w * 0.08, y + h * 0.02);
+  }
+
+  function drawTubes(now) {
+    ctx.save();
+    for (const tube of state.tubes) drawTube(tube, now);
+    ctx.restore();
+  }
+
+  function drawTube(tube, now) {
+    const x1 = cellCenterX(tube.inC);
+    const y1 = cellCenterY(tube.inR);
+    const x2 = cellCenterX(tube.outC);
+    const y2 = cellCenterY(tube.outR);
+    const midX = (x1 + x2) / 2 + tube.bend * cell * 1.2;
+    const midY = (y1 + y2) / 2 - cell * (0.8 + Math.sin(now * 0.001 + tube.wobble) * 0.05);
+
+    ctx.save();
+    ctx.lineCap = 'round';
+    ctx.lineJoin = 'round';
+    ctx.strokeStyle = '#1e293b';
+    ctx.lineWidth = Math.max(8, cell * 0.42);
+    ctx.beginPath();
+    ctx.moveTo(x1, y1);
+    ctx.quadraticCurveTo(midX, midY, x2, y2);
+    ctx.stroke();
+    ctx.strokeStyle = '#64748b';
+    ctx.lineWidth = Math.max(5, cell * 0.28);
+    ctx.beginPath();
+    ctx.moveTo(x1, y1);
+    ctx.quadraticCurveTo(midX, midY, x2, y2);
+    ctx.stroke();
+    ctx.strokeStyle = 'rgba(203,213,225,.75)';
+    ctx.lineWidth = Math.max(2, cell * 0.08);
+    ctx.beginPath();
+    ctx.moveTo(x1 + cell * 0.07, y1 - cell * 0.08);
+    ctx.quadraticCurveTo(midX, midY - cell * 0.18, x2 - cell * 0.06, y2 - cell * 0.08);
+    ctx.stroke();
+
+    drawTubeMouth(x1, y1, Math.atan2(y1 - midY, x1 - midX), true, now + tube.wobble);
+    drawTubeMouth(x2, y2, tube.outAngle, false, now + tube.wobble);
+    drawTubeJet(x2, y2, tube.outAngle, now + tube.wobble);
+    ctx.restore();
+  }
+
+  function drawTubeMouth(x, y, angle, inlet, now) {
+    ctx.save();
+    ctx.translate(x, y);
+    ctx.rotate(angle);
+    ctx.fillStyle = inlet ? '#475569' : '#526274';
+    ctx.strokeStyle = '#0f172a';
+    ctx.lineWidth = 2;
+    roundRect(-cell * 0.36, -cell * 0.24, cell * 0.72, cell * 0.48, cell * 0.14);
+    ctx.fill();
+    ctx.stroke();
+    ctx.fillStyle = inlet ? '#0f3b47' : '#0e7490';
+    roundRect(-cell * 0.24, -cell * 0.13, cell * 0.48, cell * 0.26, cell * 0.08);
+    ctx.fill();
+    if (inlet) {
+      ctx.strokeStyle = `rgba(103,232,249,${0.38 + Math.sin(now * 0.008) * 0.12})`;
+      ctx.lineWidth = 2;
+      ctx.beginPath();
+      ctx.arc(0, 0, cell * 0.42, 0, Math.PI * 2);
+      ctx.stroke();
+    }
+    ctx.restore();
+  }
+
+  function drawTubeJet(x, y, angle, now) {
+    ctx.save();
+    ctx.strokeStyle = 'rgba(103,232,249,.78)';
+    ctx.lineWidth = Math.max(2, cell * 0.1);
+    ctx.lineCap = 'round';
+    for (let i = 0; i < 3; i++) {
+      const offset = (i - 1) * cell * 0.09;
+      const sx = x + Math.cos(angle + Math.PI / 2) * offset + Math.cos(angle) * cell * 0.28;
+      const sy = y + Math.sin(angle + Math.PI / 2) * offset + Math.sin(angle) * cell * 0.28;
+      ctx.beginPath();
+      ctx.moveTo(sx, sy);
+      ctx.quadraticCurveTo(
+        sx + Math.cos(angle) * cell * 0.48 + Math.sin(now * 0.008 + i) * 2,
+        sy + Math.sin(angle) * cell * 0.48,
+        sx + Math.cos(angle) * cell * 0.85,
+        sy + Math.sin(angle) * cell * 0.85
+      );
+      ctx.stroke();
+    }
+    ctx.restore();
+  }
+
+  function drawTile(targetCtx, c, r, x, y) {
+    const tile = state.grid[r]?.[c];
+    if (tile === TILE.EMPTY) {
+      targetCtx.fillStyle = '#168da3';
+      targetCtx.fillRect(x, y, cell, cell);
+      targetCtx.fillStyle = 'rgba(255,255,255,.11)';
+      targetCtx.beginPath();
+      targetCtx.arc(x + cell * 0.72, y + cell * 0.28, cell * 0.08, 0, Math.PI * 2);
+      targetCtx.fill();
+      return;
+    }
+    if (tile === TILE.ROCK) {
+      const g = targetCtx.createLinearGradient(x, y, x + cell, y + cell);
+      g.addColorStop(0, '#697586');
+      g.addColorStop(1, '#263244');
+      targetCtx.fillStyle = g;
+      targetCtx.fillRect(x, y, cell, cell);
+      targetCtx.fillStyle = 'rgba(255,255,255,.16)';
+      targetCtx.beginPath();
+      targetCtx.arc(x + cell * 0.32, y + cell * 0.26, cell * 0.12, 0, Math.PI * 2);
+      targetCtx.fill();
+      targetCtx.strokeStyle = 'rgba(15,23,42,.34)';
+      targetCtx.lineWidth = 1;
+      targetCtx.strokeRect(x + 1, y + 1, cell - 2, cell - 2);
+      return;
+    }
+
+    targetCtx.fillStyle = '#168da3';
+    targetCtx.fillRect(x, y, cell, cell);
+    drawDirtPixels(targetCtx, c, r, x, y);
+  }
+
+  function drawDirtPixels(targetCtx, c, r, x, y, maskOverride = null) {
+    const mask = maskOverride || state.digMask[r]?.[c];
+    if (!mask) return;
+    const px = cell / DIG_SUBDIV;
+    for (let sy = 0; sy < DIG_SUBDIV; sy++) {
+      for (let sx = 0; sx < DIG_SUBDIV; sx++) {
+        if (!mask[sy * DIG_SUBDIV + sx]) continue;
+        const shade = (c * 11 + r * 17 + sx * 7 + sy * 13) % 5;
+        targetCtx.fillStyle = ['#d38a45', '#bf7337', '#a95f31', '#c77b3b', '#93512c'][shade];
+        targetCtx.fillRect(x + sx * px - 0.35, y + sy * px - 0.35, px + 0.7, px + 0.7);
+        if ((sx + sy + c + r) % 3 === 0) {
+          targetCtx.fillStyle = 'rgba(93,48,28,.34)';
+          targetCtx.beginPath();
+          targetCtx.arc(x + sx * px + px * 0.62, y + sy * px + px * 0.58, Math.max(1, px * 0.16), 0, Math.PI * 2);
+          targetCtx.fill();
+        }
+      }
+    }
+    targetCtx.strokeStyle = 'rgba(255,236,190,.16)';
+    targetCtx.lineWidth = 1;
+    for (let sy = 0; sy < DIG_SUBDIV; sy++) {
+      for (let sx = 0; sx < DIG_SUBDIV; sx++) {
+        const i = sy * DIG_SUBDIV + sx;
+        if (!mask[i]) continue;
+        const exposed = !mask[i - 1] || !mask[i + 1] || !mask[i - DIG_SUBDIV] || !mask[i + DIG_SUBDIV];
+        if (!exposed) continue;
+        targetCtx.strokeRect(x + sx * px + 0.5, y + sy * px + 0.5, px - 1, px - 1);
+      }
+    }
+  }
+
+  function drawSource(now) {
+    const x = cellCenterX(state.source.c);
+    const y = cellCenterY(state.source.r) - cell * 0.52;
+    ctx.save();
+    ctx.translate(x, y);
+    ctx.rotate(-0.08);
+    ctx.fillStyle = '#0f766e';
+    roundRect(-cell * 0.84, -cell * 0.24, cell * 1.5, cell * 0.48, cell * 0.18);
+    ctx.fill();
+    ctx.lineWidth = 3;
+    ctx.strokeStyle = '#083344';
+    ctx.stroke();
+    ctx.fillStyle = '#67e8f9';
+    roundRect(-cell * 0.46, -cell * 0.13, cell * 0.82, cell * 0.26, cell * 0.1);
+    ctx.fill();
+    ctx.fillStyle = '#164e63';
+    ctx.beginPath();
+    ctx.arc(cell * 0.72, 0, cell * 0.18, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.restore();
+    ctx.fillStyle = 'rgba(103,232,249,.85)';
+    ctx.beginPath();
+    ctx.arc(x + Math.sin(now * 0.012) * 2, y + cell * 0.47, cell * 0.13, 0, Math.PI * 2);
+    ctx.fill();
+  }
+
+  function drawLowerDirtFill() {
+    if (!isMobileLayout()) return;
+    const top = boardTop + boardHeight;
+    if (top >= height) return;
+    ctx.save();
+    ctx.beginPath();
+    ctx.rect(boardLeft, top, boardWidth, height - top);
+    ctx.clip();
+    const fullMask = fullDirtMask();
+    const startRow = state.rows;
+    const extraRows = Math.ceil((height - top) / cell);
+    for (let r = 0; r < extraRows; r++) {
+      for (let c = 0; c < state.cols; c++) {
+        const x = boardLeft + c * cell;
+        const y = top + r * cell;
+        ctx.fillStyle = '#168da3';
+        ctx.fillRect(x, y, cell, cell);
+        drawDirtPixels(ctx, c, startRow + r, x, y, fullMask);
+      }
+    }
+    ctx.restore();
+  }
+
+  function drawBath(now) {
+    const bathX = boardLeft + state.bath.c * cell;
+    const bathY = boardTop + state.bath.r * cell - cell * 0.34;
+    const bathW = state.bath.w * cell;
+    const bathH = state.bath.h * cell + cell * 0.56;
+    const cx = bathX + bathW / 2;
+    const cy = bathY + bathH * 0.54;
+    ctx.save();
+    ctx.fillStyle = 'rgba(15,23,42,.35)';
+    ctx.beginPath();
+    ctx.ellipse(cx, bathY + bathH + cell * 0.16, bathW * 0.64, cell * 0.28, 0, 0, Math.PI * 2);
+    ctx.fill();
+
+    ctx.fillStyle = '#0f766e';
+    ctx.beginPath();
+    ctx.ellipse(cx, cy, bathW * 0.72, bathH * 0.62, 0, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.lineWidth = 4;
+    ctx.strokeStyle = '#083344';
+    ctx.stroke();
+
+    const segments = 14;
+    for (let i = 0; i < segments; i++) {
+      const a = i / segments * Math.PI * 2 + 0.04;
+      const x = cx + Math.cos(a) * bathW * 0.69;
+      const y = cy + Math.sin(a) * bathH * 0.58;
+      ctx.save();
+      ctx.translate(x, y);
+      ctx.rotate(a + Math.PI / 2);
+      ctx.fillStyle = i % 2 ? '#159c93' : '#0e817b';
+      roundRect(-cell * 0.27, -cell * 0.16, cell * 0.54, cell * 0.32, cell * 0.08);
+      ctx.fill();
+      ctx.strokeStyle = '#083344';
+      ctx.lineWidth = 1.5;
+      ctx.stroke();
+      ctx.restore();
+    }
+
+    const tub = ctx.createLinearGradient(0, bathY, 0, bathY + bathH);
+    tub.addColorStop(0, '#fde68a');
+    tub.addColorStop(0.58, '#fbbf24');
+    tub.addColorStop(1, '#b7791f');
+    ctx.fillStyle = tub;
+    ctx.beginPath();
+    ctx.ellipse(cx, cy, bathW * 0.53, bathH * 0.43, 0, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.strokeStyle = '#78350f';
+    ctx.lineWidth = 3;
+    ctx.stroke();
+
+    ctx.fillStyle = '#fef3c7';
+    ctx.beginPath();
+    ctx.ellipse(cx, cy - bathH * 0.04, bathW * 0.42, bathH * 0.28, 0, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.strokeStyle = 'rgba(120,53,15,.48)';
+    ctx.lineWidth = 2;
+    ctx.stroke();
+
+    const waterH = bathH * 0.34 * state.bathWater;
+    if (waterH > 1) {
+      ctx.save();
+      ctx.beginPath();
+      ctx.ellipse(cx, cy - bathH * 0.04, bathW * 0.39, bathH * 0.25, 0, 0, Math.PI * 2);
+      ctx.clip();
+      const gy = cy + bathH * 0.19 - waterH;
+      const wg = ctx.createLinearGradient(0, gy, 0, bathY + bathH);
+      wg.addColorStop(0, '#67e8f9');
+      wg.addColorStop(1, '#0891b2');
+      ctx.fillStyle = wg;
+      ctx.fillRect(bathX, gy, bathW, waterH + cell);
+      ctx.strokeStyle = 'rgba(255,255,255,.75)';
+      ctx.lineWidth = 2;
+      ctx.beginPath();
+      ctx.moveTo(bathX + bathW * 0.18, gy + Math.sin(now * 0.005) * 2);
+      ctx.bezierCurveTo(bathX + bathW * 0.35, gy - 6, bathX + bathW * 0.64, gy + 7, bathX + bathW * 0.82, gy + Math.cos(now * 0.005) * 2);
+      ctx.stroke();
+      ctx.restore();
+    }
+
+    drawShower(cx - bathW * 0.36, bathY + bathH * 0.12, bathW * 0.52, bathH * 0.36, now);
+    drawPet(cx, cy - bathH * 0.04, bathW * 0.58, bathH * 0.58, now);
+    ctx.fillStyle = 'rgba(255,255,255,.58)';
+    for (let i = 0; i < 9; i++) {
+      const bx = cx - bathW * 0.28 + (i % 5) * bathW * 0.14;
+      const by = cy - bathH * 0.23 - Math.floor(i / 5) * cell * 0.25 + Math.sin(now * 0.006 + i) * 2;
+      ctx.beginPath();
+      ctx.arc(bx, by, cell * (0.07 + (i % 3) * 0.02), 0, Math.PI * 2);
+      ctx.fill();
+    }
+    ctx.restore();
+  }
+
+  function drawShower(x, y, w, h, now) {
+    ctx.save();
+    ctx.strokeStyle = '#475569';
+    ctx.lineWidth = Math.max(3, cell * 0.12);
+    ctx.lineCap = 'round';
+    ctx.beginPath();
+    ctx.moveTo(x, y + h);
+    ctx.quadraticCurveTo(x + w * 0.28, y + h * 0.12, x + w, y + h * 0.08);
+    ctx.stroke();
+    ctx.fillStyle = '#64748b';
+    ctx.strokeStyle = '#1e293b';
+    ctx.lineWidth = 2;
+    ctx.save();
+    ctx.translate(x + w, y + h * 0.08);
+    ctx.rotate(-0.18);
+    roundRect(-cell * 0.28, -cell * 0.18, cell * 0.62, cell * 0.36, cell * 0.14);
+    ctx.fill();
+    ctx.stroke();
+    ctx.restore();
+    ctx.strokeStyle = 'rgba(103,232,249,.8)';
+    ctx.lineWidth = 2;
+    for (let i = 0; i < 4; i++) {
+      const sx = x + w + i * cell * 0.06;
+      ctx.beginPath();
+      ctx.moveTo(sx, y + h * 0.28);
+      ctx.quadraticCurveTo(sx + cell * 0.08, y + h * 0.55, sx + Math.sin(now * 0.006 + i) * 3, y + h * 0.78);
+      ctx.stroke();
+    }
+    ctx.restore();
+  }
+
+  function drawPet(cx, cy, w, h, now) {
+    if (state.petBitmap && state.petMeta?.uv) {
+      const uv = state.petMeta.uv;
+      ctx.save();
+      ctx.translate(cx, cy + Math.sin(now * 0.004) * 2);
+      ctx.drawImage(state.petBitmap, uv.x, uv.y, uv.width, uv.height, -w / 2, -h / 2, w, h);
+      ctx.restore();
+      return;
+    }
+    ctx.save();
+    ctx.translate(cx, cy);
+    ctx.font = `${Math.round(Math.min(w, h) * 0.72)}px sans-serif`;
+    ctx.textAlign = 'center';
+    ctx.textBaseline = 'middle';
+    ctx.fillText('🐶', 0, 0);
+    ctx.restore();
+  }
+
+  function drawDucks(now) {
+    for (const duck of state.ducks) {
+      if (duck.hit) continue;
+      const x = cellCenterX(duck.c);
+      const y = cellCenterY(duck.r) + Math.sin(now * 0.005 + duck.wobble) * 2;
+      ctx.save();
+      ctx.translate(x, y);
+      ctx.fillStyle = duck.color;
+      ctx.strokeStyle = '#0f172a';
+      ctx.lineWidth = 2;
+      ctx.beginPath();
+      ctx.ellipse(0, cell * 0.08, cell * 0.33, cell * 0.24, 0, 0, Math.PI * 2);
+      ctx.fill();
+      ctx.stroke();
+      ctx.beginPath();
+      ctx.arc(cell * 0.2, -cell * 0.12, cell * 0.18, 0, Math.PI * 2);
+      ctx.fill();
+      ctx.stroke();
+      ctx.fillStyle = '#fb923c';
+      ctx.beginPath();
+      ctx.moveTo(cell * 0.34, -cell * 0.12);
+      ctx.lineTo(cell * 0.56, -cell * 0.04);
+      ctx.lineTo(cell * 0.34, cell * 0.03);
+      ctx.closePath();
+      ctx.fill();
+      ctx.fillStyle = '#0f172a';
+      ctx.beginPath();
+      ctx.arc(cell * 0.25, -cell * 0.17, Math.max(1.4, cell * 0.035), 0, Math.PI * 2);
+      ctx.fill();
+      ctx.restore();
+    }
+  }
+
+  function drawParticles() {
+    ctx.save();
+    for (const p of state.particles) {
+      const settled = (p.stagnant || 0) > 900;
+      const size = cell * (settled ? 0.14 : 0.12);
+      ctx.globalAlpha = 0.95;
+      ctx.fillStyle = settled ? '#7dd3fc' : '#67e8f9';
+      ctx.beginPath();
+      ctx.arc(p.x, p.y, size, 0, Math.PI * 2);
+      ctx.fill();
+    }
+    ctx.restore();
+  }
+
+  function drawSplashes() {
+    ctx.save();
+    ctx.fillStyle = 'rgba(186,230,253,.8)';
+    for (const s of state.splashes) {
+      ctx.globalAlpha = Math.max(0, s.life / 520);
+      ctx.beginPath();
+      ctx.arc(s.x, s.y, cell * 0.055, 0, Math.PI * 2);
+      ctx.fill();
+    }
+    ctx.restore();
+  }
+
+  function drawDigCursor() {
+    if (!state.pointerDown || !state.lastCarve) return;
+    const x = cellCenterX(state.lastCarve.c);
+    const y = cellCenterY(state.lastCarve.r);
+    ctx.save();
+    ctx.strokeStyle = 'rgba(255,255,255,.9)';
+    ctx.lineWidth = 3;
+    ctx.beginPath();
+    ctx.arc(x, y, cell * 0.48, 0, Math.PI * 2);
+    ctx.stroke();
+    ctx.restore();
+  }
+
+  function carveAtPoint(x, y) {
+    if (!state.started || state.finished) return;
+    const p = pointToCell(x, y);
+    if (!p) return;
+    const radius = cell * (cfg().carve ? 0.78 : 0.55);
+    carveCircle(x, y, radius);
+    state.lastCarve = p;
+    draw(performance.now());
+  }
+
+  function carveCircle(x, y, radius) {
+    const minC = Math.floor((x - radius - boardLeft) / cell);
+    const maxC = Math.floor((x + radius - boardLeft) / cell);
+    const minR = Math.floor((y - radius - boardTop) / cell);
+    const maxR = Math.floor((y + radius - boardTop) / cell);
+    for (let r = minR; r <= maxR; r++) {
+      for (let c = minC; c <= maxC; c++) carveCell(c, r, x, y, radius);
+    }
+  }
+
+  function carveCell(c, r, x = cellCenterX(c), y = cellCenterY(r), radius = cell) {
+    if (r < 0 || r >= state.rows || c < 0 || c >= state.cols) return false;
+    if (state.grid[r][c] === TILE.ROCK) return false;
+    if (isBathCell(c, r)) return false;
+    const mask = state.digMask[r]?.[c];
+    if (!mask) return false;
+    let remaining = 0;
+    let changed = false;
+    const px = cell / DIG_SUBDIV;
+    for (let sy = 0; sy < DIG_SUBDIV; sy++) {
+      for (let sx = 0; sx < DIG_SUBDIV; sx++) {
+        const index = sy * DIG_SUBDIV + sx;
+        if (!mask[index]) continue;
+        const cx = boardLeft + c * cell + sx * px + px / 2;
+        const cy = boardTop + r * cell + sy * px + px / 2;
+        const edgeNoise = ((c * 17 + r * 31 + sx * 13 + sy * 19) % 9 - 4) * px * 0.08;
+        if (Math.hypot(cx - x, cy - y) <= radius + edgeNoise) {
+          mask[index] = 0;
+          changed = true;
+        } else {
+          remaining += 1;
+        }
+      }
+    }
+    if (!remaining) state.grid[r][c] = TILE.EMPTY;
+    if (changed) markBoardDirty();
+    return changed;
+  }
+
+  function clearCell(c, r) {
+    if (r < 0 || r >= state.rows || c < 0 || c >= state.cols) return;
+    if (state.grid[r][c] === TILE.ROCK) return;
+    state.grid[r][c] = TILE.EMPTY;
+    state.digMask[r][c]?.fill(0);
+    markBoardDirty();
+  }
+
+  function forceClearCell(c, r) {
+    if (r < 0 || r >= state.rows || c < 0 || c >= state.cols) return;
+    if (isBathCell(c, r)) return;
+    state.grid[r][c] = TILE.EMPTY;
+    if (!state.digMask[r][c]) state.digMask[r][c] = fullDirtMask();
+    state.digMask[r][c].fill(0);
+    markBoardDirty();
+  }
+
+  function handlePointerStart(event) {
+    if (event.target?.closest?.('button')) return;
+    if (state.introPending) {
+      event.preventDefault();
+      initSound();
+      beginLevelStartScroll();
+      return;
+    }
+    if (state.introScrolling) {
+      event.preventDefault();
+      return;
+    }
+    const point = pointerPoint(event);
+    if (isMobileLayout() && (point.x < boardLeft || point.x > boardLeft + boardWidth)) return;
+    event.preventDefault();
+    initSound();
+    if (!state.started || state.finished) {
+      startGame();
+      return;
+    }
+    state.pointerDown = true;
+    carveAtPoint(point.x, point.y);
+  }
+
+  function handlePointerMove(event) {
+    if (!state.pointerDown) return;
+    event.preventDefault();
+    const p = pointerPoint(event);
+    carveAtPoint(p.x, p.y);
+  }
+
+  function handlePointerEnd() {
+    state.pointerDown = false;
+    state.lastCarve = null;
+  }
+
+  function pointToCell(x, y) {
+    const c = Math.floor((x - boardLeft) / cell);
+    const r = Math.floor((y - boardTop) / cell);
+    if (c < 0 || c >= state.cols || r < 0 || r >= state.rows) return null;
+    return { c, r };
+  }
+
+  function tileAtPoint(x, y) {
+    const p = pointToCell(x, y);
+    if (!p) return TILE.ROCK;
+    if (isBathCell(p.c, p.r)) return TILE.EMPTY;
+    if (state.grid[p.r]?.[p.c] === TILE.DIRT && dirtPixelAtPoint(x, y)) return TILE.DIRT;
+    if (state.grid[p.r]?.[p.c] === TILE.DIRT) return TILE.EMPTY;
+    return state.grid[p.r]?.[p.c] ?? TILE.ROCK;
+  }
+
+  function dirtPixelAtPoint(x, y) {
+    const p = pointToCell(x, y);
+    if (!p) return false;
+    const mask = state.digMask[p.r]?.[p.c];
+    if (!mask) return false;
+    const localX = clamp((x - boardLeft - p.c * cell) / cell, 0, 0.9999);
+    const localY = clamp((y - boardTop - p.r * cell) / cell, 0, 0.9999);
+    const sx = Math.floor(localX * DIG_SUBDIV);
+    const sy = Math.floor(localY * DIG_SUBDIV);
+    return !!mask[sy * DIG_SUBDIV + sx];
+  }
+
+  function isInBath(x, y) {
+    const left = boardLeft + state.bath.c * cell;
+    const top = boardTop + state.bath.r * cell - cell * 0.18;
+    const right = left + state.bath.w * cell;
+    const bottom = top + state.bath.h * cell + cell * 0.25;
+    return x >= left + cell * 0.16 && x <= right - cell * 0.16 && y >= top + cell * 0.1 && y <= bottom;
+  }
+
+  function isBathCell(c, r) {
+    return c >= state.bath.c && c < state.bath.c + state.bath.w && r >= state.bath.r && r < state.bath.r + state.bath.h;
+  }
+
+  function bathCells() {
+    const cells = new Set();
+    for (let r = state.bath.r; r < state.bath.r + state.bath.h; r++) {
+      for (let c = state.bath.c; c < state.bath.c + state.bath.w; c++) cells.add(key(c, r));
+    }
+    return cells;
+  }
+
+  function buildDifficulties() {
+    const containers = [document.getElementById('mhDifficulties'), document.getElementById('mhOverlayDifficulties')];
+    containers.forEach(container => {
+      container.innerHTML = '';
+      DIFFICULTY_ORDER.forEach(id => {
+        const button = document.createElement('button');
+        button.type = 'button';
+        button.className = `mh-difficulty${state.difficulty === id ? ' active' : ''}`;
+        button.textContent = DIFFICULTIES[id].label;
+        button.onclick = () => setDifficulty(id);
+        container.appendChild(button);
+      });
+    });
+  }
+
+  function setDifficulty(id) {
+    if (!DIFFICULTIES[id]) return;
+    state.difficulty = id;
+    localStorage.setItem(STORAGE_DIFFICULTY, id);
+    buildDifficulties();
+    layoutBoard();
+    if (state.started && !state.finished) startGame();
+    else draw(performance.now());
+  }
+
+  function updateHud() {
+    hud.level.textContent = String(state.level);
+    hud.water.textContent = String(clamp(Math.round(state.waterSaved / Math.max(1, state.requiredWater) * 100), 0, 100));
+    hud.ducks.textContent = String(state.collectedDucks);
+    hud.duckTarget.textContent = String(state.ducks.length);
+    hud.score.textContent = String(state.score);
+  }
+
+  function showResult(title, text, buttonText, action) {
+    overlayTitleEl.textContent = title;
+    overlayTextEl.textContent = text;
+    document.getElementById('mhStart').textContent = buttonText;
+    document.getElementById('mhStart').onclick = action;
+    overlayEl.hidden = false;
+  }
+
+  function hideOverlay() {
+    overlayEl.hidden = true;
+  }
+
+  function showHelp() {
+    const wasRunning = state.started && !state.finished;
+    if (wasRunning) state.paused = true;
+    showResult('萌宠爱洗澡', '按住屏幕拖动，就能把棕色泥土挖开。清水会受重力往下流，碰到石头会被挡住；把足够多的水引到浴缸里即可通关，顺路冲到玩具会加分。', wasRunning ? '继续游戏' : '开始洗澡', () => {
+      if (wasRunning) {
+        state.paused = false;
+        hideOverlay();
+        lastTime = performance.now();
+        rafId = requestAnimationFrame(loop);
+      } else {
+        startGame();
+      }
+    });
+  }
+
+  function requestPetImage() {
+    try {
+      window.parent.postMessage({ type: 'haqi_get_pet_image', requestId: `pet_bath_${Date.now()}`, anim: 'happy' }, '*');
+    } catch (_) {}
+  }
+
+  async function setPetImage(pet) {
+    cleanupPetImage();
+    try {
+      state.petMeta = pet;
+      state.petBitmap = await createImageBitmap(pet.imageBlob);
+      if (pet.imageBlob) {
+        const url = URL.createObjectURL(pet.imageBlob);
+        state.objectUrls.push(url);
+      }
+      draw(performance.now());
+    } catch (_) {
+      state.petBitmap = null;
+      state.petMeta = null;
+    }
+  }
+
+  function cleanupPetImage() {
+    state.petBitmap?.close?.();
+    state.petBitmap = null;
+    state.objectUrls.forEach(url => URL.revokeObjectURL(url));
+    state.objectUrls = [];
+  }
+
+  function stopLoop() {
+    if (rafId) cancelAnimationFrame(rafId);
+    rafId = 0;
+  }
+
+  function post(type, data = {}) {
+    try { window.parent.postMessage({ type, data }, '*'); } catch (_) {}
+  }
+
+  function showToast(text) {
+    const toast = document.createElement('div');
+    toast.className = 'mh-toast';
+    toast.textContent = text;
+    document.body.appendChild(toast);
+    setTimeout(() => toast.remove(), 1300);
+  }
+
+  function burstConfetti() {
+    for (let i = 0; i < 26; i++) {
+      const piece = document.createElement('i');
+      piece.className = 'mh-confetti';
+      piece.style.left = `${8 + Math.random() * 84}%`;
+      piece.style.setProperty('--x', `${(Math.random() - 0.5) * 140}px`);
+      piece.style.setProperty('--d', `${0.85 + Math.random() * 0.7}s`);
+      piece.style.setProperty('--c', COLORS[i % COLORS.length]);
+      document.body.appendChild(piece);
+      setTimeout(() => piece.remove(), 1800);
+    }
+  }
+
+  function initSound() {
+    if (sound.ctx) return;
+    try {
+      sound.ctx = new (window.AudioContext || window.webkitAudioContext)();
+      sound.master = sound.ctx.createGain();
+      sound.master.gain.value = 0.18;
+      sound.master.connect(sound.ctx.destination);
+    } catch (_) {}
+  }
+
+  function playTone(from, to, duration, wave, volume) {
+    if (!sound.ctx || !sound.master) return;
+    const now = sound.ctx.currentTime;
+    const osc = sound.ctx.createOscillator();
+    const gain = sound.ctx.createGain();
+    osc.type = wave;
+    osc.frequency.setValueAtTime(from, now);
+    osc.frequency.exponentialRampToValueAtTime(Math.max(1, to), now + duration);
+    gain.gain.setValueAtTime(0.001, now);
+    gain.gain.exponentialRampToValueAtTime(Math.max(0.002, volume), now + 0.012);
+    gain.gain.exponentialRampToValueAtTime(0.001, now + duration);
+    osc.connect(gain);
+    gain.connect(sound.master);
+    osc.start(now);
+    osc.stop(now + duration + 0.03);
+  }
+
+  function playWinSound() {
+    playTone(520, 780, 0.12, 'triangle', 0.035);
+    setTimeout(() => playTone(650, 980, 0.12, 'triangle', 0.035), 95);
+    setTimeout(() => playTone(820, 1230, 0.16, 'triangle', 0.035), 190);
+  }
+
+  function pointerPoint(event) {
+    const touch = event.changedTouches?.[0] || event.touches?.[0];
+    const clientX = touch?.clientX ?? event.clientX ?? 0;
+    const clientY = touch?.clientY ?? event.clientY ?? 0;
+    const rect = canvas.getBoundingClientRect();
+    return { x: clientX - rect.left, y: clientY - rect.top };
+  }
+
+  function key(c, r) { return `${c},${r}`; }
+  function fullDirtMask() { return new Uint8Array(DIG_SUBDIV * DIG_SUBDIV).fill(1); }
+  function parseKey(text) {
+    const parts = text.split(',').map(Number);
+    return { c: parts[0], r: parts[1] };
+  }
+  function cellCenterX(c) { return boardLeft + c * cell + cell / 2; }
+  function cellCenterY(r) { return boardTop + r * cell + cell / 2; }
+  function distanceCells(c1, r1, c2, r2) { return Math.abs(c1 - c2) + Math.abs(r1 - r2); }
+  function clamp(value, min, max) { return Math.max(min, Math.min(max, value)); }
+
+  function shuffle(items, random) {
+    for (let i = items.length - 1; i > 0; i--) {
+      const j = Math.floor(random() * (i + 1));
+      [items[i], items[j]] = [items[j], items[i]];
+    }
+    return items;
+  }
+
+  function hashSeed(text) {
+    let hash = 2166136261;
+    for (let i = 0; i < text.length; i++) {
+      hash ^= text.charCodeAt(i);
+      hash = Math.imul(hash, 16777619);
+    }
+    return hash >>> 0;
+  }
+
+  function seededRandom(seed) {
+    let value = seed || 1;
+    return function () {
+      value = Math.imul(1664525, value) + 1013904223;
+      return ((value >>> 0) / 4294967296);
+    };
+  }
+
+  function roundRect(x, y, w, h, r) {
+    if (ctx.roundRect) {
+      ctx.beginPath();
+      ctx.roundRect(x, y, w, h, r);
+      return;
+    }
+    const radius = Math.min(r, w / 2, h / 2);
+    ctx.beginPath();
+    ctx.moveTo(x + radius, y);
+    ctx.lineTo(x + w - radius, y);
+    ctx.quadraticCurveTo(x + w, y, x + w, y + radius);
+    ctx.lineTo(x + w, y + h - radius);
+    ctx.quadraticCurveTo(x + w, y + h, x + w - radius, y + h);
+    ctx.lineTo(x + radius, y + h);
+    ctx.quadraticCurveTo(x, y + h, x, y + h - radius);
+    ctx.lineTo(x, y + radius);
+    ctx.quadraticCurveTo(x, y, x + radius, y);
+  }
+
+  window.addEventListener('resize', resize);
+  stage.addEventListener('scroll', updateScrollButtons, { passive: true });
+  window.addEventListener('pointerdown', handlePointerStart, { passive: false });
+  window.addEventListener('pointermove', handlePointerMove, { passive: false });
+  window.addEventListener('pointerup', handlePointerEnd);
+  window.addEventListener('pointercancel', handlePointerEnd);
+  window.addEventListener('message', event => {
+    const msg = event.data || {};
+    if (msg.type === 'gameContinue') {
+      if (state.paused) {
+        state.paused = false;
+        hideOverlay();
+        lastTime = performance.now();
+        rafId = requestAnimationFrame(loop);
+      } else if (!state.started || state.finished) {
+        startGame();
+      }
+    }
+    if (msg.type === 'haqi_pet_image' && msg.ok) setPetImage(msg.data);
+    if (msg.type === 'setGameConfig' && msg.data?.difficulty && DIFFICULTIES[msg.data.difficulty]) {
+      setDifficulty(msg.data.difficulty);
+      startGame();
+    }
+  });
+  window.addEventListener('beforeunload', cleanupPetImage);
+
+  document.getElementById('mhMenu').onclick = showHelp;
+  document.getElementById('mhHelp').onclick = showHelp;
+  document.getElementById('mhRestart').onclick = () => startGame({ keepLevel: true });
+  document.getElementById('mhStart').onclick = () => startGame();
+
+  buildDifficulties();
+  resize();
+  generateLevel();
+  updateHud();
+  requestPetImage();
+  draw(performance.now());
+  post('gameLoaded');
+})();
+</script>
+
+</html>

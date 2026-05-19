@@ -5,7 +5,7 @@ import { canPlaceItemInArea, CONFIG, DECO_VISUALS, findLargestHouseInLayout, get
 import { getActivePlanetWeather, state, setCurrentField } from './state.js';
 import { getLayout, savePetDebounced, saveUserProfileDebounced } from './storage.js';
 import { displayPetName } from './dna.js';
-import { isPetInteractionBlocked, petArtHtml, playEggWelcomeOnce, playPetClickFeedback, playPetHappy, randomPetTalk, sleepingInteractionText } from './pet.js';
+import { getPetSleepActionState, isPetInteractionBlocked, petArtHtml, playEggWelcomeOnce, playPetClickFeedback, playPetHappy, randomPetTalk, sleepingInteractionText } from './pet.js';
 import { markPetCared, normalizePetPoops } from './petTick.js';
 import { canPetAppearInField, getNannyCareRemainingMs, getPetLocationType, getReleasedPetHome, hasNannyCare } from './petLifecycle.js';
 import SoundManager from './soundManager.js';
@@ -374,9 +374,12 @@ function updateCoinsHud() {
 
 function renderFieldActionTray(pet) {
     const sleeping = isPetInteractionBlocked(pet);
+    const sleepAction = getPetSleepActionState(pet);
     const isEgg = pet?.stage === 'egg';
-    const navDisabled = sleeping || isEgg;
-    const navDisabledTitle = isEgg ? '蛋还没有孵化，无法进行此操作。' : (sleeping ? sleepingInteractionText(pet) : '');
+    const playDisabled = isEgg;
+    const playTitle = isEgg ? '蛋还没有孵化，无法进行此操作。' : (sleeping ? '玩耍会唤醒宠物。' : '');
+    const hatchingDisabled = sleeping || isEgg;
+    const hatchingTitle = isEgg ? '蛋还没有孵化，无法进行此操作。' : (sleeping ? sleepingInteractionText(pet) : '');
     const poopCount = getPoopsInField(pet).length;
     const urgentClass = hasTooManyPoops(pet) ? ' is-urgent' : '';
     const cleanTitle = hasTooManyPoops(pet)
@@ -392,11 +395,15 @@ function renderFieldActionTray(pet) {
                 <span class="dock-icon">♻️</span>
                 <span class="dock-label">清理</span>
             </button>
-            <button type="button" class="btn-secondary action-btn dock-icon-btn mh-field-nav-action${navDisabled ? ' is-sleep-disabled' : ''}" data-field-nav="minigames" ${navDisabled ? 'disabled' : ''} title="${escapeHtml(navDisabledTitle)}">
+            <button type="button" class="btn-secondary action-btn dock-icon-btn mh-field-nav-action${playDisabled ? ' is-sleep-disabled' : ''}" data-field-nav="minigames" ${playDisabled ? 'disabled' : ''} title="${escapeHtml(playTitle)}">
                 <span class="dock-icon">🎾</span>
                 <span class="dock-label">玩耍</span>
             </button>
-            <button type="button" class="btn-secondary action-btn dock-icon-btn mh-field-nav-action${navDisabled ? ' is-sleep-disabled' : ''}" data-field-nav="hatching" ${navDisabled ? 'disabled' : ''} title="${escapeHtml(navDisabledTitle)}">
+            <button type="button" class="btn-secondary action-btn dock-icon-btn mh-field-action" data-field-action="sleep" ${(isEgg || sleepAction.disabled) ? 'disabled' : ''} title="${escapeHtml(isEgg ? '蛋还没有孵化，无法进行此操作。' : sleepAction.title)}">
+                <span class="dock-icon">${sleepAction.icon}</span>
+                <span class="dock-label">${escapeHtml(sleepAction.label)}</span>
+            </button>
+            <button type="button" class="btn-secondary action-btn dock-icon-btn mh-field-nav-action${hatchingDisabled ? ' is-sleep-disabled' : ''}" data-field-nav="hatching" ${hatchingDisabled ? 'disabled' : ''} title="${escapeHtml(hatchingTitle)}">
                 <span class="dock-icon">🥚</span>
                 <span class="dock-label">孵化仓</span>
             </button>
@@ -668,7 +675,7 @@ function fieldPetsHtml(currentPet, fieldId) {
         return `
             <div class="pet-sprite field-pet ${isCurrent ? 'field-pet-current' : 'field-pet-friend'}" data-field-pet="${escapeHtml(id)}"
                 style="left:${pct(pos.x)};top:${pct(pos.y)};z-index:${zIndex};--field-wander-delay:${pos.delay}s;--field-wander-dur:${pos.dur}s;--field-wander-x:${pos.dx}px;--field-wander-y:${pos.dy}px">
-                <div class="field-pet-wander" style="width:${size}px;height:${size}px">${petArtHtml(p, { alt: displayPetName(p), motion: 'walk' })}</div>
+                <div class="field-pet-wander" style="width:${size}px;height:${size}px">${petArtHtml(p, { alt: displayPetName(p), motion: 'walk', requireProcessedTexture: true })}</div>
             </div>
         `;
     }).join('');
@@ -1111,6 +1118,7 @@ function showCaretakerFieldNotice(pet) {
 export const fieldLevel = {
     id: 'field',
     index: 1,
+    wipeColor: 'linear-gradient(180deg, #b7f2ff 0%, #e2ffe2 42%, #8bd05d 100%)',
     minCamera: 0.6,    // 飞远 → 触发 zoomOut 回到 planet 视图
     maxCamera: 1.7,    // 贴近 → 触发 zoomIn 进入 pet 视图
     bestCamera: 1.0,
@@ -1313,6 +1321,16 @@ export const fieldLevel = {
             return true;
         };
 
+        const activateFieldAction = (target, event) => {
+            const btn = target.closest?.('[data-field-action]');
+            if (!btn || btn.disabled || !dock.contains(btn)) return false;
+            event?.preventDefault?.();
+            event?.stopPropagation?.();
+            dock.__mhFieldDockTabHandledAt = Date.now();
+            ctx.callbacks.onAction?.(btn.dataset.fieldAction);
+            return true;
+        };
+
         const activateFieldNav = (target, event) => {
             const btn = target.closest?.('[data-field-nav]');
             if (!btn || !dock.contains(btn)) return false;
@@ -1333,7 +1351,7 @@ export const fieldLevel = {
         }
         dock.__mhFieldDockTabPointer = null;
         dock.__mhFieldDockTabPointerDown = (e) => {
-            const tab = e.target.closest?.('.dock-tab, .mh-field-mode-toggle, #mhFieldCleanPoopsBtn, [data-field-nav]');
+            const tab = e.target.closest?.('.dock-tab, .mh-field-mode-toggle, #mhFieldCleanPoopsBtn, [data-field-action], [data-field-nav]');
             if (!tab || !dock.contains(tab)) return;
             if (tab.classList.contains('mh-field-mode-toggle')) e.preventDefault();
             dock.__mhFieldDockTabPointer = {
@@ -1354,7 +1372,7 @@ export const fieldLevel = {
             if (!start || start.id !== e.pointerId) return;
             const moved = Math.hypot(e.clientX - start.x, e.clientY - start.y) > 8;
             if (!moved && Date.now() - (dock.__mhFieldDockTabHandledAt || 0) >= 250) {
-                activateFieldNav(start.target, e) || activateCleanPoops(start.target, e) || activateModeToggle(start.target, e) || activateFieldTab(start.target, e);
+                activateFieldAction(start.target, e) || activateFieldNav(start.target, e) || activateCleanPoops(start.target, e) || activateModeToggle(start.target, e) || activateFieldTab(start.target, e);
             }
         };
         dock.addEventListener('pointerdown', dock.__mhFieldDockTabPointerDown, true);
@@ -1380,7 +1398,7 @@ export const fieldLevel = {
                 e.stopPropagation();
                 return;
             }
-            activateFieldNav(e.target, e) || activateCleanPoops(e.target, e) || activateModeToggle(e.target, e) || activateFieldTab(e.target, e);
+            activateFieldAction(e.target, e) || activateFieldNav(e.target, e) || activateCleanPoops(e.target, e) || activateModeToggle(e.target, e) || activateFieldTab(e.target, e);
         };
         dock.addEventListener('click', dock.__mhFieldDockTabClick, true);
 

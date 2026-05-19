@@ -25,12 +25,44 @@ const MINIGAME_ALL_PET_IMAGE_REQUESTS = new Set([
 
 const MINIGAMES = [
     {
+        id: 'pet_snake',
+        title: '宠物贪吃蛇大乱斗',
+        icon: '🐍',
+        src: './minigames/haqi_pet_snake.html',
+        statBonus: { bond: 26, mood: 12 },
+        levelReward: { coins: { min: 14, max: 78 }, label: '大乱斗奖励', scoreDivisor: 14, levelBonus: 4, passBonus: 12 },
+    },
+    {
+        id: 'zuma',
+        title: '哈奇祖玛',
+        icon: '🟠',
+        src: './minigames/haqi_zuma.html',
+        statBonus: { bond: 24, mood: 10 },
+        levelReward: { coins: { min: 12, max: 70 }, label: '祖玛奖励', scoreDivisor: 15, levelBonus: 4, passBonus: 12 },
+    },
+    {
         id: 'bubble_pets',
         title: '哈奇泡泡龙',
         icon: '💦',
         src: './minigames/haqi_bubble_pets.html',
         statBonus: { bond: 22, mood: 10 },
         levelReward: { coins: { min: 12, max: 64 }, label: '泡泡奖励', scoreDivisor: 16, levelBonus: 4, passBonus: 10 },
+    },
+    {
+        id: 'pet_tower_defense',
+        title: '细胞免疫塔防',
+        icon: '🏰',
+        src: './minigames/haqi_pet_tower_defense.html',
+        statBonus: { bond: 26, mood: 10 },
+        levelReward: { coins: { min: 14, max: 74 }, label: '守护奖励', scoreDivisor: 18, levelBonus: 4, passBonus: 14 },
+    },
+    {
+        id: 'pet_bath',
+        title: '萌宠爱洗澡',
+        icon: '🛁',
+        src: './minigames/haqi_pet_bath.html',
+        statBonus: { bond: 24, mood: 12 },
+        levelReward: { coins: { min: 12, max: 68 }, label: '洗澡奖励', scoreDivisor: 14, levelBonus: 4, passBonus: 12 },
     },
     {
         id: 'match_three_pets',
@@ -46,6 +78,14 @@ const MINIGAMES = [
         src: './minigames/haqi_food_hexcells.html',
         statBonus: { bond: 20, mood: 9 },
         levelReward: { coins: { min: 10, max: 55 }, label: '寻食奖励', scoreDivisor: 14, levelBonus: 3, passBonus: 10 },
+    },
+    {
+        id: 'food_stack_match',
+        title: '哈奇食物叠叠消',
+        icon: '🍱',
+        src: './minigames/haqi_food_stack_match.html',
+        statBonus: { bond: 22, mood: 10 },
+        levelReward: { coins: { min: 12, max: 66 }, label: '叠叠消奖励', scoreDivisor: 16, levelBonus: 4, passBonus: 12 },
     },
     {
         id: 'canal_escape',
@@ -70,6 +110,14 @@ const MINIGAMES = [
         src: './minigames/haqi_sokoban.html',
         statBonus: { bond: 24, mood: 8 },
         levelReward: { coins: { min: 10, max: 50 }, label: '通关奖励', scoreDivisor: 12, levelBonus: 3, passBonus: 10 },
+    },
+    {
+        id: 'laser_maze',
+        title: '哈奇激光迷宫',
+        icon: '⚡',
+        src: './minigames/haqi_laser_maze.html',
+        statBonus: { bond: 26, mood: 10 },
+        levelReward: { coins: { min: 14, max: 72 }, label: '解谜奖励', scoreDivisor: 12, levelBonus: 4, passBonus: 12 },
     },
     {
         id: 'lightbot',
@@ -102,6 +150,14 @@ const MINIGAMES = [
         src: './minigames/haqi_gomoku.html',
         statBonus: { bond: 32, mood: 8 },
         levelReward: { coins: { min: 20, max: 80 }, label: '对局奖励', scoreDivisor: 10, levelBonus: 4, passBonus: 8 },
+    },
+    {
+        id: 'matrix_hack',
+        title: '哈奇矩阵破解',
+        icon: '⌘',
+        src: './minigames/haqi_matrix_hack.html',
+        statBonus: { bond: 26, mood: 9 },
+        levelReward: { coins: { min: 12, max: 72 }, label: '破解奖励', scoreDivisor: 12, levelBonus: 4, passBonus: 12 },
     },
 ];
 

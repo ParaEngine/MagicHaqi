@@ -360,6 +360,7 @@ function refreshCellDock(pet, ctx) {
 export const cellLevel = {
     id: 'cell',
     index: 3,
+    wipeColor: 'linear-gradient(180deg, #1584e7 0%, #1d9ee8 44%, #34b9dc 100%)',
     minCamera: 0.6,    // 拉远 → zoomOut 回 pet
     maxCamera: 1.7,    // 推近 → 已经是最深层，不再切换
     bestCamera: 1.0,

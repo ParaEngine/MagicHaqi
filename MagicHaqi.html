@@ -1196,10 +1196,10 @@
             overflow: hidden;
             box-shadow: 0 -7px 0 rgba(14,116,144,0.14), 0 -18px 30px rgba(6,18,44,0.18), inset 0 1px 0 rgba(255,255,255,0.78);
         }
-        .mh-dock.mh-dock-fading  { opacity: 0; transform: translateY(8px); }
-        .mh-dock.mh-dock-fade-in { animation: mhDockFadeIn 320ms ease-out both; }
+        .mh-dock.mh-dock-fading  { opacity: 0; transform: translateY(12px); transition: opacity 480ms ease-in, transform 480ms ease-in; }
+        .mh-dock.mh-dock-fade-in { animation: mhDockFadeIn 600ms ease-out both; }
         @keyframes mhDockFadeIn {
-            from { opacity: 0; transform: translateY(10px); }
+            from { opacity: 0; transform: translateY(14px); }
             to   { opacity: 1; transform: translateY(0); }
         }
         .mh-dock-row {
@@ -1512,175 +1512,122 @@
             font-size: 11px;
         }
 
-        /* ====== Wormhole Zoom Transition ====== */
-        @property --mh-ray-shift {
-            syntax: '<angle>';
-            inherits: false;
-            initial-value: 0deg;
-        }
-        @property --mh-ray-shift-alt {
-            syntax: '<angle>';
-            inherits: false;
-            initial-value: 0deg;
-        }
+        /* ====== Zoom Transition: stage camera ====== */
         .mh-stage.zoom-anim-out-in,
         .mh-stage.zoom-anim-out-out,
         .mh-stage.zoom-anim-in-in,
         .mh-stage.zoom-anim-in-out {
             pointer-events: none;
-            will-change: transform;
+            will-change: transform, opacity;
         }
-        .mh-stage.zoom-anim-out-in  { animation: mhZoomOutInCamera  var(--mh-zoom-old-camera-ms, 400ms) cubic-bezier(0.72, 0, 0.28, 1) forwards; }
-        .mh-stage.zoom-anim-out-out { animation: mhZoomOutOutCamera var(--mh-zoom-old-camera-ms, 400ms) cubic-bezier(0.72, 0, 0.28, 1) forwards; }
-        .mh-stage.zoom-anim-in-in   { animation: mhZoomInInCamera   var(--mh-zoom-new-camera-ms, 400ms) cubic-bezier(0.16, 1, 0.3, 1) forwards; }
-        .mh-stage.zoom-anim-in-out  { animation: mhZoomInOutCamera  var(--mh-zoom-new-camera-ms, 400ms) cubic-bezier(0.16, 1, 0.3, 1) forwards; }
-        @keyframes mhZoomOutInCamera { /* 旧层：按 oldCameraMs 向中心被吸入，之后保持距离 */
-            from { transform: translate3d(0,0,0) scale(1); }
-            to   { transform: translate3d(0,0,0) scale(2.42); }
+        .mh-stage.zoom-anim-out-in  { animation: mhZoomOutInCamera  580ms ease-in forwards; }
+        .mh-stage.zoom-anim-out-out { animation: mhZoomOutOutCamera 580ms ease-in forwards; }
+        .mh-stage.zoom-anim-in-in   { animation: mhZoomInInCamera   660ms ease-out forwards; }
+        .mh-stage.zoom-anim-in-out  { animation: mhZoomInOutCamera  660ms ease-out forwards; }
+        @keyframes mhZoomOutInCamera {
+            from { transform: scale(1); opacity: 1; }
+            to   { transform: scale(1.18); opacity: 0.3; }
         }
-        @keyframes mhZoomOutOutCamera { /* 旧层：按 oldCameraMs 向远处退出，之后保持距离 */
-            from { transform: translate3d(0,0,0) scale(1); }
-            to   { transform: translate3d(0,0,0) scale(0.41); }
+        @keyframes mhZoomOutOutCamera {
+            from { transform: scale(1); opacity: 1; }
+            to   { transform: scale(0.88); opacity: 0.3; }
         }
-        @keyframes mhZoomInInCamera { /* 新层：按 newCameraMs 飞入目标，之后保持距离 */
-            from { transform: translate3d(0,0,0) scale(0.41); }
-            to   { transform: translate3d(0,0,0) scale(1); }
+        @keyframes mhZoomInInCamera {
+            from { transform: scale(0.88); opacity: 0.5; }
+            to   { transform: scale(1); opacity: 1; }
         }
-        @keyframes mhZoomInOutCamera { /* 新层：按 newCameraMs 从近处拉回，之后保持距离 */
-            from { transform: translate3d(0,0,0) scale(2.42); }
-            to   { transform: translate3d(0,0,0) scale(1); }
+        @keyframes mhZoomInOutCamera {
+            from { transform: scale(1.12); opacity: 0.5; }
+            to   { transform: scale(1); opacity: 1; }
         }
 
-        .wormhole-overlay {
-            position: fixed; inset: 0;
+        /* ====== Pre-wipe: whole-stage focus zoom ====== */
+        .mh-stage.mh-stage-focus-zoom {
+            transition: transform 680ms cubic-bezier(0.4, 0, 0.2, 1), opacity 500ms 180ms ease-out !important;
+            transform: scale(3.2) !important;
+            opacity: 0 !important;
             pointer-events: none;
+            will-change: transform, opacity;
+        }
+
+        /* ====== Circle-Wipe with wormhole visuals ====== */
+        .scene-wipe {
+            position: fixed; inset: 0;
             z-index: 9000;
-            opacity: 0;
-            overflow: hidden;
+            pointer-events: none;
+            clip-path: circle(0% at var(--wipe-cx, 50%) var(--wipe-cy, 50%));
+            will-change: clip-path;
             contain: strict;
-            will-change: opacity;
-            transform: translate3d(0,0,0);
-            transform-origin: center center;
-            transition: opacity var(--mh-zoom-old-ms, 500ms) linear;
-            /* Step 1 simplification: 用纯白替代多层 radial + repeating-radial 同心圆，降低性能开销 */
-            /* Step 3 simplification: 白色层无缩放/纹理，100% 视口即可，去掉 130vmax 超大绘制区域 */
-            background: #fff;
+            transform: translateZ(0);
+            --wipe-bg: #0c1025;
+            background: var(--wipe-bg);
         }
-        .wormhole-overlay.wh-visible { opacity: 1; }
-        .wormhole-overlay.wh-flash {
-            opacity: 1;
-            transition-duration: var(--mh-zoom-flash-ms, 500ms);
-            background: #fff;
-        }
-        .wormhole-overlay.wh-reveal {
-            transition-duration: var(--mh-zoom-new-ms, 1000ms);
-            background: #fff;
-        }
-        .wormhole-overlay::before,
-        .wormhole-overlay::after {
+        .scene-wipe::before,
+        .scene-wipe::after {
             content: '';
             position: absolute;
-            /* Step 4 simplification: 伪元素不再缩放/旋转/平移，静态铺满全屏 */
             inset: 0;
-            width: 100%; height: 100%;
             pointer-events: none;
-            will-change: opacity;
-        }
-        .wormhole-overlay.wh-flash::before,
-        .wormhole-overlay.wh-flash::after {
-            opacity: 0 !important;
-            animation: none !important;
-        }
-        .wormhole-overlay.wh-in::before,
-        .wormhole-overlay.wh-out::before {
-            --mh-ray-shift: 0deg;
-            --mh-ray-shift-alt: 0deg;
-            /* Step 5 simplification: 减少射线数量，加宽每条射线 */
-            background:
-                repeating-conic-gradient(from calc(0deg - var(--mh-ray-shift-alt)),
-                    transparent 0deg,
-                    transparent 12deg,
-                    color-mix(in srgb, var(--mh-zoom-ray-color, #fff) 55%, transparent) 12deg,
-                    color-mix(in srgb, var(--mh-zoom-ray-color, #fff) 55%, transparent) 18deg,
-                    transparent 18deg,
-                    transparent 30deg),
-                repeating-conic-gradient(from calc(-15deg + var(--mh-ray-shift)),
-                    transparent 0deg,
-                    transparent 27deg,
-                    color-mix(in srgb, var(--mh-zoom-ray-color, #fff) 38%, transparent) 27deg,
-                    color-mix(in srgb, var(--mh-zoom-ray-color, #fff) 38%, transparent) 33deg,
-                    transparent 33deg,
-                    transparent 60deg);
-            -webkit-mask-image: radial-gradient(circle, transparent 0 19%, #000 25% 88%, transparent 98%);
-            mask-image: radial-gradient(circle, transparent 0 19%, #000 25% 88%, transparent 98%);
+            will-change: transform, opacity;
+            backface-visibility: hidden;
             opacity: 0;
-            mix-blend-mode: normal;
-            /* Step 1 simplification: 去掉 contrast/blur/drop-shadow，避免大面积滤镜重绘 */
-            will-change: opacity;
         }
-        .wormhole-overlay.wh-in::after,
-        .wormhole-overlay.wh-out::after {
-            --mh-ray-shift: 0deg;
-            --mh-ray-shift-alt: 0deg;
-            /* Step 5 simplification: 减少射线数量，加宽每条射线 */
-            background:
-                radial-gradient(circle, rgba(255,255,255,0.96) 0 14%, rgba(255,255,255,0.32) 18%, rgba(255,255,255,0) 30%),
-                repeating-conic-gradient(from calc(0deg + var(--mh-ray-shift)),
-                    color-mix(in srgb, var(--mh-zoom-ray-color, #fff) 90%, transparent) 0deg,
-                    color-mix(in srgb, var(--mh-zoom-ray-color, #fff) 90%, transparent) 6deg,
-                    transparent 6deg,
-                    transparent 30deg),
-                repeating-conic-gradient(from calc(15deg - var(--mh-ray-shift-alt)),
-                    transparent 0deg,
-                    transparent 24deg,
-                    color-mix(in srgb, var(--mh-zoom-ray-color, #fff) 60%, transparent) 24deg,
-                    color-mix(in srgb, var(--mh-zoom-ray-color, #fff) 60%, transparent) 30deg,
-                    transparent 30deg,
-                    transparent 60deg);
-            -webkit-mask-image: radial-gradient(circle, transparent 0 17%, #000 23% 86%, transparent 97%);
-            mask-image: radial-gradient(circle, transparent 0 17%, #000 23% 86%, transparent 97%);
-            opacity: 0;
-            mix-blend-mode: normal;
-            /* Step 1 simplification: 去掉 contrast/drop-shadow 滤镜 */
-            will-change: opacity;
+        .scene-wipe::before {
+            background: repeating-linear-gradient(
+                0deg,
+                rgba(255,255,255,0.22) 0px, rgba(255,255,255,0.22) 1px,
+                transparent 1px, transparent 12px
+            );
         }
-        .wormhole-overlay.wh-reveal.wh-in::before  { animation: wormholeSpinIn var(--mh-zoom-new-ms, 1000ms) steps(11, end) forwards; }
-        .wormhole-overlay.wh-reveal.wh-out::before { animation: wormholeSpinOut var(--mh-zoom-new-ms, 1000ms) steps(11, end) forwards; }
-        .wormhole-overlay.wh-reveal.wh-in::after   { animation: wormholeStreakIn var(--mh-zoom-new-ms, 1000ms) steps(13, end) forwards; }
-        .wormhole-overlay.wh-reveal.wh-out::after  { animation: wormholeStreakOut var(--mh-zoom-new-ms, 1000ms) steps(13, end) forwards; }
-        @keyframes wormholeSpinIn {
-            from { --mh-ray-shift: 0deg; --mh-ray-shift-alt: 0deg; opacity: 0; }
-            12%  { --mh-ray-shift: 8deg;  --mh-ray-shift-alt: 3deg;  opacity: 0.62; }
-            32%  { --mh-ray-shift: 15deg; --mh-ray-shift-alt: 9deg;  opacity: 0.7; }
-            49%  { --mh-ray-shift: 28deg; --mh-ray-shift-alt: 15deg; opacity: 0.48; }
-            74%  { --mh-ray-shift: 38deg; --mh-ray-shift-alt: 22deg; opacity: 0.32; }
-            to   { --mh-ray-shift: 45deg; --mh-ray-shift-alt: 26deg; opacity: 0; }
+        .scene-wipe::after {
+            background: radial-gradient(circle at var(--wipe-cx, 50%) var(--wipe-cy, 50%), rgba(255,255,255,0.4) 0%, rgba(255,255,255,0.08) 28%, transparent 52%);
         }
-        @keyframes wormholeSpinOut {
-            from { --mh-ray-shift: 0deg;   --mh-ray-shift-alt: 0deg;   opacity: 0; }
-            12%  { --mh-ray-shift: -8deg;  --mh-ray-shift-alt: -3deg;  opacity: 0.62; }
-            32%  { --mh-ray-shift: -15deg; --mh-ray-shift-alt: -9deg;  opacity: 0.7; }
-            49%  { --mh-ray-shift: -28deg; --mh-ray-shift-alt: -15deg; opacity: 0.48; }
-            74%  { --mh-ray-shift: -38deg; --mh-ray-shift-alt: -22deg; opacity: 0.32; }
-            to   { --mh-ray-shift: -45deg; --mh-ray-shift-alt: -26deg; opacity: 0; }
+        .scene-wipe.sw-closing {
+            animation: wipeClose 580ms cubic-bezier(0.35, 0, 0.75, 0.35) forwards;
         }
-        @keyframes wormholeStreakIn {
-            from { --mh-ray-shift: 0deg;  --mh-ray-shift-alt: 0deg;  opacity: 0; }
-            18%  { --mh-ray-shift: 9deg;  --mh-ray-shift-alt: 5deg;  opacity: 0.46; }
-            39%  { --mh-ray-shift: 18deg; --mh-ray-shift-alt: 10deg; opacity: 0.62; }
-            61%  { --mh-ray-shift: 30deg; --mh-ray-shift-alt: 17deg; opacity: 0.68; }
-            74%  { --mh-ray-shift: 36deg; --mh-ray-shift-alt: 21deg; opacity: 0.54; }
-            to   { --mh-ray-shift: 42deg; --mh-ray-shift-alt: 24deg; opacity: 0; }
+        .scene-wipe.sw-closing::before {
+            animation: wipeLinesIn 580ms ease-out forwards;
         }
-        @keyframes wormholeStreakOut {
-            from { --mh-ray-shift: 0deg;   --mh-ray-shift-alt: 0deg;   opacity: 0; }
-            18%  { --mh-ray-shift: -9deg;  --mh-ray-shift-alt: -5deg;  opacity: 0.46; }
-            39%  { --mh-ray-shift: -18deg; --mh-ray-shift-alt: -10deg; opacity: 0.62; }
-            61%  { --mh-ray-shift: -30deg; --mh-ray-shift-alt: -17deg; opacity: 0.68; }
-            74%  { --mh-ray-shift: -36deg; --mh-ray-shift-alt: -21deg; opacity: 0.54; }
-            to   { --mh-ray-shift: -42deg; --mh-ray-shift-alt: -24deg; opacity: 0; }
+        .scene-wipe.sw-closing::after {
+            animation: wipeGlowIn 580ms ease-out forwards;
         }
-
+        .scene-wipe.sw-opening {
+            animation: wipeOpen 660ms cubic-bezier(0.15, 0.65, 0.35, 1) forwards;
+        }
+        .scene-wipe.sw-opening::before {
+            animation: wipeLinesOut 660ms ease-in forwards;
+        }
+        .scene-wipe.sw-opening::after {
+            animation: wipeGlowOut 660ms ease-in forwards;
+        }
+        @keyframes wipeClose {
+            from { clip-path: circle(0% at var(--wipe-cx, 50%) var(--wipe-cy, 50%)); }
+            to   { clip-path: circle(80% at var(--wipe-cx, 50%) var(--wipe-cy, 50%)); }
+        }
+        @keyframes wipeOpen {
+            from { clip-path: circle(80% at var(--wipe-cx, 50%) var(--wipe-cy, 50%)); }
+            to   { clip-path: circle(0% at var(--wipe-cx, 50%) var(--wipe-cy, 50%)); }
+        }
+        @keyframes wipeLinesIn {
+            from { background-position: 0 0; opacity: 0; }
+            30%  { opacity: 0.6; }
+            to   { background-position: 0 -24px; opacity: 0.35; }
+        }
+        @keyframes wipeLinesOut {
+            from { background-position: 0 -24px; opacity: 0.35; }
+            70%  { opacity: 0.6; }
+            to   { background-position: 0 -48px; opacity: 0; }
+        }
+        @keyframes wipeGlowIn {
+            from { opacity: 0; }
+            35%  { opacity: 0.75; }
+            to   { opacity: 0.45; }
+        }
+        @keyframes wipeGlowOut {
+            from { opacity: 0.45; }
+            65%  { opacity: 0.75; }
+            to   { opacity: 0; }
+        }
         @media (max-width: 380px) {
             /* .pet-sprite img 移动端尺寸见 ./css/pet.css */
             .zoom-dial { width: 46px; }

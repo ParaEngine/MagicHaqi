@@ -48,7 +48,7 @@ export const CONFIG = {
     actions: {
         feed:  { hunger: +28, mood: +5,  bond: +2,  costCoins: 2,  cooldownSec: 30 },
         bath:  { clean: +20, cooldownSec: 60 },
-        play:  { mood: +5, bond: +20,  hunger: -10, costCoins: 0,  cooldownSec: 30, rewardCoins: 0 },
+        play:  { mood: +5, bond: +20,  hunger: 0, costCoins: 0,  cooldownSec: 30, rewardCoins: 0 },
         sleep: { mood: +5, costCoins: 0,  cooldownSec: 120 },
     },
 
