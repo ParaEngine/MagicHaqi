@@ -53,12 +53,19 @@
     tubes: [],
     particles: [],
     splashes: [],
+    crumbs: [],
+    rockSparks: [],
     waterBudget: 0,
     waterReleased: 0,
     waterSaved: 0,
     bathWater: 0,
     collectedDucks: 0,
     requiredWater: 72,
+    waterStarted: false,
+    waterWarningLevel: '',
+    stuckTime: 0,
+    stuckHinted: false,
+    failureReason: '',
     introPending: false,
     introScrolling: false,
     pointerDown: false,
@@ -115,6 +122,8 @@
         padding: 0 8px; border-radius: 999px; background: #fff; border: 1px solid rgba(14,116,144,.2);
         color: #0f766e; font-size: 12px; font-weight: 900; box-shadow: 0 2px 0 rgba(14,116,144,.12);
       }
+      .mh-pill.warning { color: #b45309; border-color: rgba(251,146,60,.45); background: #fff7ed; }
+      .mh-pill.danger { color: #b91c1c; border-color: rgba(248,113,113,.55); background: #fef2f2; animation: mhPulse .85s ease-in-out infinite alternate; }
       .mh-icon-btn, .mh-action, .mh-start, .mh-difficulty { border: 0; cursor: pointer; font-weight: 900; }
       .mh-icon-btn { width: 34px; height: 34px; border-radius: 999px; background: linear-gradient(180deg, #38bdf8, #0284c7); color: white; box-shadow: 0 3px 0 #075985; font-size: 18px; }
       .mh-bottom {
@@ -157,6 +166,7 @@
       }
       .mh-intro-prompt.visible { display: block; }
       [hidden] { display: none !important; }
+      @keyframes mhPulse { 100% { transform: translateY(-1px) scale(1.04); } }
       @keyframes mhToast { 0% { opacity: 0; transform: translate(-50%, -42%) scale(.84); } 18% { opacity: 1; transform: translate(-50%, -50%) scale(1); } 100% { opacity: 0; transform: translate(-50%, -76%) scale(.94); } }
       @keyframes mhConfetti { 100% { opacity: 0; transform: translate3d(var(--x), 112vh, 0) rotate(680deg); } }
       @media (max-width: 640px) {
@@ -235,13 +245,13 @@
         <div class="mh-title">萌宠爱洗澡</div>
         <div class="mh-stats" aria-label="游戏状态">
           <span class="mh-pill">关卡 <b id="mhLevel">1</b></span>
-          <span class="mh-pill">水量 <b id="mhWater">0</b>%</span>
+          <span id="mhWaterPill" class="mh-pill">水量 <b id="mhWater">0</b>%</span>
           <span class="mh-pill">玩具 <b id="mhDucks">0</b>/<b id="mhDuckTarget">0</b></span>
           <span class="mh-pill optional">分数 <b id="mhScore">0</b></span>
         </div>
       </header>
       <footer class="mh-bottom">
-        <div class="mh-hint">按住并滑动挖开泥土，把清水引到浴缸里</div>
+        <div id="mhHint" class="mh-hint">先观察水源和浴缸，第一次挖开后清水才会流出</div>
         <div class="mh-controls">
           <div id="mhDifficulties" class="mh-difficulties" aria-label="选择难度"></div>
           <button id="mhHelp" class="mh-action help" type="button">玩法</button>
@@ -272,9 +282,11 @@
   const hud = {
     level: document.getElementById('mhLevel'),
     water: document.getElementById('mhWater'),
+    waterPill: document.getElementById('mhWaterPill'),
     ducks: document.getElementById('mhDucks'),
     duckTarget: document.getElementById('mhDuckTarget'),
     score: document.getElementById('mhScore'),
+    hint: document.getElementById('mhHint'),
   };
 
   let width = 0;
@@ -428,6 +440,11 @@
     state.paused = false;
     state.introPending = false;
     state.introScrolling = false;
+    state.waterStarted = false;
+    state.waterWarningLevel = '';
+    state.stuckTime = 0;
+    state.stuckHinted = false;
+    state.failureReason = '';
     introPrompt.classList.remove('visible');
     state.level = keepLevel ? Math.max(1, state.level) : 1;
     state.score = keepLevel ? state.score : 0;
@@ -462,6 +479,8 @@
     state.tubes = [];
     state.particles = [];
     state.splashes = [];
+    state.crumbs = [];
+    state.rockSparks = [];
     state.waterBudget = Math.max(70, configValue(config, 'water') - Math.floor((state.level - 1) * (state.difficulty === 'hard' ? 5 : 3)));
     state.waterReleased = 0;
     state.waterSaved = 0;
@@ -682,11 +701,14 @@
 
   function update(dt, now) {
     if (state.finished || state.introPending || state.introScrolling) return;
+    updateEffects(dt);
+    if (!state.waterStarted) return;
     releaseWater(dt);
     updateParticles(dt);
     updateSplashes(dt);
+    updateCoaching(dt);
     if (state.waterSaved >= state.requiredWater) finishLevel(true);
-    else if (state.waterReleased >= state.waterBudget && state.particles.length === 0) finishLevel(false);
+    else if (shouldFailRound()) finishLevel(false);
   }
 
   function releaseWater(dt) {
@@ -699,6 +721,8 @@
       state.particles.push({
         x: cellCenterX(state.source.c) + jitter,
         y: cellCenterY(state.source.r) + cell * 0.1,
+        px: cellCenterX(state.source.c) + jitter,
+        py: cellCenterY(state.source.r) + cell * 0.1,
         vx: (Math.random() - 0.5) * 0.08,
         vy: 0.06 + Math.random() * 0.04,
         age: 0,
@@ -709,6 +733,16 @@
     }
   }
 
+  function launchWater() {
+    if (state.waterStarted || state.finished) return;
+    state.waterStarted = true;
+    state.stuckTime = 0;
+    releaseAcc = 0;
+    showToast('清水开始流啦');
+    playTone(420, 720, 0.1, 'triangle', 0.025);
+    updateHud();
+  }
+
   function updateParticles(dt) {
     const gravity = 0.0009 * dt;
     for (const p of state.particles) {
@@ -717,6 +751,8 @@
       p.vy += gravity;
       p.vx *= 0.996;
       p.vy = Math.min(p.vy, 0.52);
+      p.px = p.x;
+      p.py = p.y;
 
       if (tryTubeTransport(p)) continue;
 
@@ -771,6 +807,56 @@
       collectDucks(p);
     }
     state.particles = state.particles.filter(p => !p.saved);
+  }
+
+  function updateCoaching(dt) {
+    const active = state.particles.filter(p => !p.saved);
+    const stuckCount = active.filter(p => (p.stagnant || 0) > 900).length;
+    const stuckRatio = active.length ? stuckCount / active.length : 0;
+    state.stuckTime = stuckRatio > 0.45 && active.length > 8 ? state.stuckTime + dt : Math.max(0, state.stuckTime - dt * 0.8);
+    if (!state.stuckHinted && state.stuckTime > 2600) {
+      state.stuckHinted = true;
+      showToast('水堵住啦，挖低一点试试');
+    }
+
+    const remainingRatio = 1 - state.waterReleased / Math.max(1, state.waterBudget);
+    const level = remainingRatio <= 0.1 ? 'danger' : remainingRatio <= 0.3 ? 'warning' : '';
+    if (level !== state.waterWarningLevel) {
+      state.waterWarningLevel = level;
+      updateHud();
+      if (level === 'warning') showToast('水量不多啦');
+      if (level === 'danger') showToast('最后一点水了');
+    }
+  }
+
+  function shouldFailRound() {
+    if (state.waterReleased < state.waterBudget) return false;
+    if (state.particles.length === 0) {
+      state.failureReason = state.waterSaved < state.requiredWater * 0.35 ? 'missed' : 'short';
+      return true;
+    }
+    const trapped = state.particles.every(p => (p.stagnant || 0) > 1500 || (p.age || 0) > 14000);
+    if (trapped) {
+      state.failureReason = 'stuck';
+      return true;
+    }
+    return false;
+  }
+
+  function updateEffects(dt) {
+    for (const crumb of state.crumbs) {
+      crumb.x += crumb.vx * dt;
+      crumb.y += crumb.vy * dt;
+      crumb.vy += 0.0016 * dt;
+      crumb.life -= dt;
+    }
+    for (const spark of state.rockSparks) {
+      spark.x += spark.vx * dt;
+      spark.y += spark.vy * dt;
+      spark.life -= dt;
+    }
+    state.crumbs = state.crumbs.filter(crumb => crumb.life > 0);
+    state.rockSparks = state.rockSparks.filter(spark => spark.life > 0);
   }
 
   function applyWaterPressure(p, dt, blockedBelow, blockedHere) {
@@ -929,7 +1015,8 @@
       updateHud();
       burstConfetti();
       playWinSound();
-      showResult('洗澡完成！', `第 ${state.level} 关完成，收集了 ${state.collectedDucks}/${state.ducks.length} 个玩具。`, '下一关', nextLevel);
+      const stars = scoreStars();
+      showResult('洗澡完成！', `第 ${state.level} 关完成，收集了 ${state.collectedDucks}/${state.ducks.length} 个玩具，评价：${stars}星。`, '下一关', nextLevel);
       post('gameFinished', {
         completed: true,
         passed: true,
@@ -947,8 +1034,22 @@
       });
     } else {
       playTone(180, 110, 0.18, 'sawtooth', 0.03);
-      showResult('水不够啦', '试着先挖一条连续的水路，再打开更多泥土。石头不能挖，绕过去会更稳。', '再来一次', () => startGame({ keepLevel: true }));
+      showResult('水不够啦', failAdvice(), '再来一次', () => startGame({ keepLevel: true }));
     }
+  }
+
+  function scoreStars() {
+    let stars = 1;
+    if (state.waterReleased <= state.waterBudget * 0.86) stars += 1;
+    if (state.ducks.length && state.collectedDucks >= Math.ceil(state.ducks.length * 0.75)) stars += 1;
+    return stars;
+  }
+
+  function failAdvice() {
+    if (state.failureReason === 'stuck') return '水被堵住了。下一次从堵住的位置下方挖开一点，让水能继续往浴缸方向流。';
+    if (state.failureReason === 'missed') return '水路偏离浴缸了。先从水源到浴缸上方规划一条主路，再少量打开旁边泥土。';
+    if (state.waterSaved > state.requiredWater * 0.65) return '差一点就够了。试着少挖分岔路，把更多水集中送进浴缸。';
+    return '试着先挖一条连续的水路，再打开更多泥土。石头不能挖，绕过去会更稳。';
   }
 
   function draw(now) {
@@ -962,6 +1063,7 @@
     drawSource(now);
     drawParticles(now);
     drawSplashes();
+    drawDigEffects();
     drawDigCursor();
   }
 
@@ -1205,6 +1307,14 @@
     const x = cellCenterX(state.source.c);
     const y = cellCenterY(state.source.r) - cell * 0.52;
     ctx.save();
+    if (!state.waterStarted && state.started && !state.finished) {
+      const pulse = 0.5 + Math.sin(now * 0.006) * 0.5;
+      ctx.strokeStyle = `rgba(250,204,21,${0.35 + pulse * 0.35})`;
+      ctx.lineWidth = 3 + pulse * 2;
+      ctx.beginPath();
+      ctx.arc(x, y + cell * 0.35, cell * (0.86 + pulse * 0.18), 0, Math.PI * 2);
+      ctx.stroke();
+    }
     ctx.translate(x, y);
     ctx.rotate(-0.08);
     ctx.fillStyle = '#0f766e';
@@ -1258,6 +1368,14 @@
     const cx = bathX + bathW / 2;
     const cy = bathY + bathH * 0.54;
     ctx.save();
+    if (!state.waterStarted && state.started && !state.finished) {
+      const pulse = 0.5 + Math.sin(now * 0.006 + 1.6) * 0.5;
+      ctx.strokeStyle = `rgba(134,239,172,${0.28 + pulse * 0.32})`;
+      ctx.lineWidth = 4 + pulse * 2;
+      ctx.beginPath();
+      ctx.ellipse(cx, cy, bathW * (0.72 + pulse * 0.04), bathH * (0.62 + pulse * 0.04), 0, 0, Math.PI * 2);
+      ctx.stroke();
+    }
     ctx.fillStyle = 'rgba(15,23,42,.35)';
     ctx.beginPath();
     ctx.ellipse(cx, bathY + bathH + cell * 0.16, bathW * 0.64, cell * 0.28, 0, 0, Math.PI * 2);
@@ -1426,14 +1544,55 @@
 
   function drawParticles() {
     ctx.save();
+    ctx.lineCap = 'round';
+    for (const p of state.particles) {
+      if (p.px == null || p.py == null) continue;
+      const speed = Math.hypot(p.x - p.px, p.y - p.py);
+      if (speed < 0.5) continue;
+      ctx.globalAlpha = 0.32;
+      ctx.strokeStyle = '#bae6fd';
+      ctx.lineWidth = cell * 0.12;
+      ctx.beginPath();
+      ctx.moveTo(p.px, p.py);
+      ctx.lineTo(p.x, p.y);
+      ctx.stroke();
+    }
     for (const p of state.particles) {
       const settled = (p.stagnant || 0) > 900;
       const size = cell * (settled ? 0.14 : 0.12);
+      if ((p.stagnant || 0) > 650) {
+        ctx.globalAlpha = Math.min(0.4, (p.stagnant || 0) / 2800);
+        ctx.fillStyle = '#7dd3fc';
+        ctx.beginPath();
+        ctx.ellipse(p.x, p.y + cell * 0.08, cell * 0.26, cell * 0.1, 0, 0, Math.PI * 2);
+        ctx.fill();
+      }
       ctx.globalAlpha = 0.95;
       ctx.fillStyle = settled ? '#7dd3fc' : '#67e8f9';
       ctx.beginPath();
       ctx.arc(p.x, p.y, size, 0, Math.PI * 2);
       ctx.fill();
+    }
+    ctx.restore();
+  }
+
+  function drawDigEffects() {
+    ctx.save();
+    for (const crumb of state.crumbs) {
+      ctx.globalAlpha = Math.max(0, crumb.life / 420);
+      ctx.fillStyle = crumb.color;
+      ctx.beginPath();
+      ctx.arc(crumb.x, crumb.y, Math.max(1.5, cell * 0.045), 0, Math.PI * 2);
+      ctx.fill();
+    }
+    for (const spark of state.rockSparks) {
+      ctx.globalAlpha = Math.max(0, spark.life / 280);
+      ctx.strokeStyle = '#e5e7eb';
+      ctx.lineWidth = 2;
+      ctx.beginPath();
+      ctx.moveTo(spark.x, spark.y);
+      ctx.lineTo(spark.x - spark.vx * 70, spark.y - spark.vy * 70);
+      ctx.stroke();
     }
     ctx.restore();
   }
@@ -1468,7 +1627,10 @@
     const p = pointToCell(x, y);
     if (!p) return;
     const radius = cell * (cfg().carve ? 0.78 : 0.55);
-    carveCircle(x, y, radius);
+    const changed = carveCircle(x, y, radius);
+    if (changed && !state.waterStarted) launchWater();
+    if (changed) spawnCrumbs(x, y);
+    else if (state.grid[p.r]?.[p.c] === TILE.ROCK) spawnRockSparks(x, y);
     state.lastCarve = p;
     draw(performance.now());
   }
@@ -1478,9 +1640,41 @@
     const maxC = Math.floor((x + radius - boardLeft) / cell);
     const minR = Math.floor((y - radius - boardTop) / cell);
     const maxR = Math.floor((y + radius - boardTop) / cell);
+    let changed = false;
     for (let r = minR; r <= maxR; r++) {
-      for (let c = minC; c <= maxC; c++) carveCell(c, r, x, y, radius);
+      for (let c = minC; c <= maxC; c++) {
+        if (carveCell(c, r, x, y, radius)) changed = true;
+      }
     }
+    return changed;
+  }
+
+  function spawnCrumbs(x, y) {
+    if (state.crumbs.length > 80) state.crumbs.splice(0, state.crumbs.length - 80);
+    for (let i = 0; i < 4; i++) {
+      state.crumbs.push({
+        x: x + (Math.random() - 0.5) * cell * 0.3,
+        y: y + (Math.random() - 0.5) * cell * 0.3,
+        vx: (Math.random() - 0.5) * 0.08,
+        vy: -0.04 - Math.random() * 0.06,
+        life: 260 + Math.random() * 160,
+        color: ['#d38a45', '#bf7337', '#93512c'][Math.floor(Math.random() * 3)],
+      });
+    }
+  }
+
+  function spawnRockSparks(x, y) {
+    if (state.rockSparks.length > 30) state.rockSparks.splice(0, state.rockSparks.length - 30);
+    for (let i = 0; i < 3; i++) {
+      state.rockSparks.push({
+        x,
+        y,
+        vx: (Math.random() - 0.5) * 0.12,
+        vy: -0.08 - Math.random() * 0.08,
+        life: 160 + Math.random() * 120,
+      });
+    }
+    if (Math.random() < 0.14) playTone(130, 90, 0.05, 'square', 0.01);
   }
 
   function carveCell(c, r, x = cellCenterX(c), y = cellCenterY(r), radius = cell) {
@@ -1641,9 +1835,12 @@
   function updateHud() {
     hud.level.textContent = String(state.level);
     hud.water.textContent = String(clamp(Math.round(state.waterSaved / Math.max(1, state.requiredWater) * 100), 0, 100));
+    hud.waterPill.classList.toggle('warning', state.waterWarningLevel === 'warning');
+    hud.waterPill.classList.toggle('danger', state.waterWarningLevel === 'danger');
     hud.ducks.textContent = String(state.collectedDucks);
     hud.duckTarget.textContent = String(state.ducks.length);
     hud.score.textContent = String(state.score);
+    hud.hint.textContent = state.waterStarted ? '按住并滑动挖开泥土，把清水引到浴缸里' : '先规划水路，第一次挖开泥土后清水才会流出';
   }
 
   function showResult(title, text, buttonText, action) {

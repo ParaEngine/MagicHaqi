@@ -52,6 +52,7 @@
     projectile: null,
     nextType: 0,
     currentType: 0,
+    swappedThisShot: false,
     aiming: false,
     aimX: 0,
     aimY: 0,
@@ -161,9 +162,10 @@
         </div>
       </header>
       <footer class="mh-bottom">
-        <div class="mh-hint">拖动瞄准，松手发射泡泡，三个同色连在一起就会爆开</div>
+        <div class="mh-hint">拖动瞄准，松手发射；点下个泡泡可交换一次</div>
         <div class="mh-controls">
           <div id="mhDifficulties" class="mh-difficulties" aria-label="选择难度"></div>
+          <button id="mhSwap" class="mh-action" type="button">交换</button>
           <button id="mhHelp" class="mh-action help" type="button">玩法</button>
           <button id="mhRestart" class="mh-action" type="button">重开</button>
         </div>
@@ -171,7 +173,7 @@
       <div id="mhOverlay" class="mh-overlay">
         <div class="mh-card">
           <h1 id="mhOverlayTitle">哈奇泡泡龙</h1>
-          <p id="mhOverlayText">选个难度就开玩。拖动瞄准，松手发射泡泡；三个或更多同色泡泡连在一起就会爆开。把藏在泡泡里的表情食物收集够，就能过关。过一关后会自动生成下一关。</p>
+          <p id="mhOverlayText">选个难度就开玩。拖动瞄准，松手发射泡泡；点“交换”或点下个泡泡，每一发都能换一次。三个或更多同色泡泡连在一起就会爆开，收集够藏在泡泡里的表情食物就能过关。</p>
           <div id="mhOverlayDifficulties" class="mh-card-row"></div>
           <button id="mhStart" class="mh-start" type="button">开始挑战</button>
         </div>
@@ -255,6 +257,7 @@
     state.foods = 0;
     state.combo = 0;
     state.shotsUsed = 0;
+    state.swappedThisShot = false;
     state.projectile = null;
     state.particles = [];
     state.floatingTexts = [];
@@ -298,19 +301,47 @@
     state.targetFoods = clamp(requestedFoods, config.foods, Math.max(config.foods, Math.floor(state.board.size * 0.42)));
     state.shotsLeft = Math.max(16, config.shots - levelBoost + Math.ceil(state.targetFoods * 0.7));
     placeFood(random, colorCount);
-    state.currentType = usefulType(random, colorCount);
+    const openerTypes = seedPlayableOpenings(random, colorCount, rows);
+    state.currentType = openerTypes[0] ?? usefulType(random, colorCount);
     state.nextType = usefulType(random, colorCount);
   }
 
   function placeFood(random, colorCount) {
     const bubbles = Array.from(state.board.values());
-    shuffle(bubbles, random);
+    const lowestRow = bubbles.reduce((max, bubble) => Math.max(max, bubble.row), 0);
+    const safeFoodRow = Math.max(2, Math.min(lowestRow - 1, Math.floor(lowestRow * 0.78)));
+    const preferred = shuffle(bubbles.filter(bubble => bubble.row <= safeFoodRow), random);
+    const fallback = shuffle(bubbles.filter(bubble => bubble.row > safeFoodRow), random);
+    const candidates = preferred.concat(fallback);
     const foodCount = Math.min(state.targetFoods + Math.ceil(state.level / 3), bubbles.length);
     for (let i = 0; i < foodCount; i++) {
-      const bubble = bubbles[i];
+      const bubble = candidates[i];
       bubble.food = FOOD_ICONS[Math.floor(random() * FOOD_ICONS.length)];
-      if (i < state.targetFoods && Math.random() < 0.35) bubble.type = i % colorCount;
+      if (i < state.targetFoods && random() < 0.22) bubble.type = i % colorCount;
     }
+  }
+
+  function seedPlayableOpenings(random, colorCount, rows) {
+    const openerTypes = [];
+    const slots = [
+      { row: Math.min(rows - 1, 2), col: 2 },
+      { row: Math.min(rows - 1, 2), col: 6 },
+      { row: Math.min(rows - 1, 3), col: 4 },
+      { row: Math.min(rows - 1, 1), col: 1 },
+    ];
+    const openingCount = clamp(2 + Math.floor((4 - Math.min(4, state.level)) / 2), 2, 3);
+    shuffle(slots, random).slice(0, openingCount).forEach((slot, index) => {
+      const type = index % colorCount;
+      const row = clamp(slot.row, 0, MAX_ROWS - 1);
+      const col = clamp(slot.col, 0, COLS - 2);
+      const left = getBubble(row, col);
+      const right = getBubble(row, col + 1);
+      if (!left || !right) return;
+      left.type = type;
+      right.type = type;
+      openerTypes.push(type);
+    });
+    return openerTypes;
   }
 
   function loop(now) {
@@ -368,7 +399,7 @@
     for (const bubble of state.board.values()) {
       const p = cellCenter(bubble.row, bubble.col);
       if (distance(projectile.x, projectile.y, p.x, p.y) <= radius * 1.86) {
-        attachProjectile(nearestEmptyNeighbor(bubble, projectile.x, projectile.y) || nearestCell(projectile.x, projectile.y));
+        attachProjectile(bestAttachCellNear(projectile.x, projectile.y, projectile.type) || nearestEmptyNeighbor(bubble, projectile.x, projectile.y) || nearestCell(projectile.x, projectile.y));
         return;
       }
     }
@@ -394,6 +425,7 @@
     }
     state.currentType = state.nextType;
     state.nextType = usefulType(Math.random, state.colorCount);
+    state.swappedThisShot = false;
     updateHud();
   }
 
@@ -411,6 +443,8 @@
       const points = cluster.length * 12 + floating.length * 18 + gainedFood * 55 + state.combo * 8;
       state.score += points;
       showFloatingText(`+${points}`, cellCenter(row, col).x, cellCenter(row, col).y, '#16a34a');
+      if (state.combo >= 2) showFloatingText(`连击 x${state.combo}`, cellCenter(row, col).x, cellCenter(row, col).y - radius * 1.4, '#f97316');
+      if (floating.length >= 4) showFloatingText('大片掉落', cellCenter(row, col).x, cellCenter(row, col).y + radius * 1.35, '#0284c7');
       playMatchSound(cluster.length, gainedFood, floating.length);
       if (gainedFood) showToast(`收集食物 +${gainedFood}`);
     } else {
@@ -486,6 +520,17 @@
     state.aiming = false;
     updateHud();
     playSound('shoot');
+  }
+
+  function swapBubbles() {
+    if (!state.started || state.finished || state.projectile || state.swappedThisShot) return;
+    [state.currentType, state.nextType] = [state.nextType, state.currentType];
+    state.swappedThisShot = true;
+    state.aiming = false;
+    showFloatingText('已交换', shooterX, shooterY - radius * 2.4, '#0284c7');
+    updateHud();
+    playSound('select');
+    draw(performance.now());
   }
 
   function finishLevel(won) {
@@ -666,6 +711,7 @@
     ctx.save();
     drawPlayfieldPanel();
     drawPlayfieldWalls();
+    drawDangerLine(now);
     ctx.strokeStyle = 'rgba(14,116,144,.18)';
     ctx.lineWidth = 2;
     ctx.beginPath();
@@ -709,6 +755,33 @@
     ctx.moveTo(playRight - radius * 0.12, boardTop - radius);
     ctx.lineTo(playRight - radius * 0.12, shooterY + radius * 1.25);
     ctx.stroke();
+    ctx.restore();
+  }
+
+  function drawDangerLine(now) {
+    if (!state.started || state.finished) return;
+    const lineY = dangerLineY();
+    const danger = lowestBubbleY() >= lineY - radius * 0.7;
+    ctx.save();
+    ctx.setLineDash([10, 8]);
+    ctx.lineWidth = danger ? 4 : 2;
+    ctx.globalAlpha = danger ? 0.72 + Math.sin(now * 0.012) * 0.18 : 0.34;
+    ctx.strokeStyle = danger ? '#ef4444' : '#fb923c';
+    ctx.shadowColor = danger ? 'rgba(239,68,68,.36)' : 'rgba(251,146,60,.22)';
+    ctx.shadowBlur = danger ? 12 : 5;
+    ctx.beginPath();
+    ctx.moveTo(playLeft + radius * 0.9, lineY);
+    ctx.lineTo(playRight - radius * 0.9, lineY);
+    ctx.stroke();
+    ctx.setLineDash([]);
+    ctx.font = `900 ${Math.round(radius * 0.54)}px sans-serif`;
+    ctx.textAlign = 'right';
+    ctx.textBaseline = 'bottom';
+    ctx.fillStyle = danger ? '#b91c1c' : '#ea580c';
+    ctx.strokeStyle = 'rgba(255,255,255,.86)';
+    ctx.lineWidth = 3;
+    ctx.strokeText('危险线', playRight - radius, lineY - 4);
+    ctx.fillText('危险线', playRight - radius, lineY - 4);
     ctx.restore();
   }
 
@@ -757,29 +830,21 @@
 
   function drawAimGuide() {
     if (!state.started || state.finished || state.projectile) return;
-    const targetX = state.aiming ? state.aimX : shooterX;
-    const targetY = state.aiming ? state.aimY : shooterY - 160;
-    const angle = aimAngle(targetX, targetY);
-    let x = shooterX;
-    let y = shooterY;
-    let vx = Math.cos(angle);
-    let vy = Math.sin(angle);
+    const preview = predictShot(state.aiming ? state.aimX : shooterX, state.aiming ? state.aimY : shooterY - 160);
+    if (!preview.points.length) return;
     ctx.save();
-    ctx.setLineDash([8, 8]);
-    ctx.lineWidth = 3;
-    ctx.strokeStyle = 'rgba(15,118,110,.48)';
+    ctx.lineWidth = 0;
     ctx.shadowColor = 'rgba(255,255,255,.72)';
     ctx.shadowBlur = 4;
-    ctx.beginPath();
-    ctx.moveTo(x, y);
-    for (let i = 0; i < 80; i++) {
-      x += vx * radius * 0.48;
-      y += vy * radius * 0.48;
-      if (x < playLeft + radius || x > playRight - radius) vx *= -1;
-      if (y < boardTop || hitsBubbleAt(x, y)) break;
-      ctx.lineTo(x, y);
-    }
-    ctx.stroke();
+    preview.points.forEach((point, index) => {
+      if (index % 3) return;
+      const alpha = clamp(0.74 - index / preview.points.length * 0.48, 0.18, 0.74);
+      ctx.globalAlpha = alpha;
+      ctx.fillStyle = '#0f766e';
+      ctx.beginPath();
+      ctx.arc(point.x, point.y, radius * 0.12, 0, Math.PI * 2);
+      ctx.fill();
+    });
     ctx.restore();
   }
 
@@ -809,7 +874,7 @@
     ctx.textAlign = 'center';
     ctx.textBaseline = 'middle';
     ctx.fillStyle = '#0f766e';
-    ctx.fillText('下个', shooterX + radius * 2.25, shooterY + radius * 1.2);
+    ctx.fillText(state.swappedThisShot ? '已换' : '下个', shooterX + radius * 2.25, shooterY + radius * 1.2);
   }
 
   function drawLauncherBase(now) {
@@ -968,6 +1033,28 @@
     return best;
   }
 
+  function bestAttachCellNear(x, y, type) {
+    const options = [];
+    state.board.forEach(bubble => {
+      const offsets = bubble.row % 2 ? NEIGHBORS_ODD : NEIGHBORS_EVEN;
+      offsets.forEach(([dr, dc]) => {
+        const row = bubble.row + dr;
+        const col = bubble.col + dc;
+        if (row < 0 || row >= MAX_ROWS || col < 0 || col >= COLS || getBubble(row, col)) return;
+        const p = cellCenter(row, col);
+        const sameNeighbors = neighborsForCell(row, col).filter(next => next.type === type).length;
+        if (!sameNeighbors) return;
+        const d = distance(x, y, p.x, p.y);
+        const score = d - sameNeighbors * radius * 0.85;
+        options.push({ row, col, d, score, sameNeighbors });
+      });
+    });
+    options.sort((a, b) => a.score - b.score);
+    const best = options[0];
+    if (best && best.d <= radius * (best.sameNeighbors >= 2 ? 2.9 : 2.15)) return best;
+    return null;
+  }
+
   function nearestOpenCell(x, y) {
     let best = null;
     for (let row = 0; row < MAX_ROWS; row++) {
@@ -982,6 +1069,8 @@
   }
 
   function nearestCell(x, y) {
+    const assisted = bestAttachCellNear(x, y, state.projectile?.type ?? state.currentType);
+    if (assisted) return assisted;
     const row = clamp(Math.round((y - boardTop) / (radius * 1.72)), 0, MAX_ROWS - 1);
     const col = clamp(Math.round((x - boardLeft - radius - (row % 2) * radius) / (radius * 2)), 0, COLS - 1);
     if (!getBubble(row, col)) return { row, col };
@@ -1011,6 +1100,56 @@
     return `${row},${col}`;
   }
 
+  function neighborsForCell(row, col) {
+    const offsets = row % 2 ? NEIGHBORS_ODD : NEIGHBORS_EVEN;
+    const result = [];
+    offsets.forEach(([dr, dc]) => {
+      const next = getBubble(row + dr, col + dc);
+      if (next) result.push(next);
+    });
+    return result;
+  }
+
+  function predictShot(targetX, targetY) {
+    const angle = aimAngle(targetX, targetY);
+    let x = shooterX;
+    let y = shooterY;
+    let vx = Math.cos(angle);
+    let vy = Math.sin(angle);
+    const points = [];
+    let hitCell = null;
+    for (let i = 0; i < 130; i++) {
+      x += vx * radius * 0.42;
+      y += vy * radius * 0.42;
+      if (x < playLeft + radius) {
+        x = playLeft + radius;
+        vx = Math.abs(vx);
+      }
+      if (x > playRight - radius) {
+        x = playRight - radius;
+        vx = -Math.abs(vx);
+      }
+      points.push({ x, y });
+      if (y <= boardTop + radius * 0.2) {
+        hitCell = nearestCell(x, boardTop + radius);
+        break;
+      }
+      let hitBubble = null;
+      for (const bubble of state.board.values()) {
+        const p = cellCenter(bubble.row, bubble.col);
+        if (distance(x, y, p.x, p.y) <= radius * 1.86) {
+          hitBubble = bubble;
+          break;
+        }
+      }
+      if (hitBubble) {
+        hitCell = bestAttachCellNear(x, y, state.currentType) || nearestEmptyNeighbor(hitBubble, x, y) || nearestCell(x, y);
+        break;
+      }
+    }
+    return { points, cell: hitCell };
+  }
+
   function usefulType(randomSource, colorCount) {
     const counts = new Map();
     state.board.forEach(bubble => counts.set(bubble.type, (counts.get(bubble.type) || 0) + 1));
@@ -1026,6 +1165,10 @@
       lowest = Math.max(lowest, cellCenter(bubble.row, bubble.col).y);
     });
     return lowest;
+  }
+
+  function dangerLineY() {
+    return shooterY - radius * 2.45;
   }
 
   function hitsBubbleAt(x, y) {
@@ -1072,7 +1215,8 @@
     hudEls.target.textContent = String(state.targetFoods);
     hudEls.shots.textContent = String(Math.max(0, state.shotsLeft));
     hudEls.score.textContent = String(state.score);
-    hudEls.shotsPill?.classList.toggle('low', state.started && !state.finished && state.shotsLeft <= 5);
+    const inDanger = state.started && !state.finished && lowestBubbleY() >= dangerLineY() - radius * 0.7;
+    hudEls.shotsPill?.classList.toggle('low', state.started && !state.finished && (state.shotsLeft <= 5 || inDanger));
   }
 
   function buildDifficulties() {
@@ -1310,6 +1454,10 @@
     }
     if (state.projectile) return;
     const p = pointerPoint(event);
+    if (isNextBubblePoint(p.x, p.y)) {
+      swapBubbles();
+      return;
+    }
     state.aiming = true;
     state.aimX = p.x;
     state.aimY = p.y;
@@ -1333,6 +1481,10 @@
   function pointerPoint(event) {
     const touch = event.changedTouches?.[0] || event.touches?.[0];
     return { x: touch?.clientX ?? event.clientX ?? shooterX, y: touch?.clientY ?? event.clientY ?? shooterY - 160 };
+  }
+
+  function isNextBubblePoint(x, y) {
+    return state.started && !state.finished && !state.projectile && distance(x, y, shooterX + radius * 2.25, shooterY + radius * 0.32) <= radius * 1.35;
   }
 
   function distance(ax, ay, bx, by) {
@@ -1398,6 +1550,10 @@
       if (!state.started || state.finished) startGame();
       else fireAt(state.aiming ? state.aimX : shooterX, state.aiming ? state.aimY : shooterY - 160);
     }
+    if (event.code === 'KeyX' || event.code === 'KeyS') {
+      event.preventDefault();
+      swapBubbles();
+    }
     if (event.code === 'ArrowLeft') {
       state.aiming = true;
       state.aimX = shooterX - 120;
@@ -1428,7 +1584,7 @@
   });
   window.addEventListener('beforeunload', cleanupPetImage);
 
-  document.getElementById('mhMenu').onclick = () => showResult('哈奇泡泡龙', '拖住屏幕来瞄准，松手就发射泡泡。三个或更多同色泡泡碰到一起就会爆开；爆开或掉下来的表情食物都会被收集。收集够这一关的目标后，就会进入自动生成的新关卡。', state.started && !state.finished ? '继续游戏' : '开始挑战', () => {
+  document.getElementById('mhMenu').onclick = () => showResult('哈奇泡泡龙', '拖住屏幕来瞄准，松手就发射泡泡。点“交换”或点下个泡泡可换一次。三个或更多同色泡泡碰到一起就会爆开，越会连击和打掉大片泡泡，得分越高。', state.started && !state.finished ? '继续游戏' : '开始挑战', () => {
     if (state.started && !state.finished) {
       state.paused = false;
       hideOverlay();
@@ -1438,6 +1594,7 @@
     }
   });
   document.getElementById('mhHelp').onclick = document.getElementById('mhMenu').onclick;
+  document.getElementById('mhSwap').onclick = swapBubbles;
   document.getElementById('mhRestart').onclick = () => startGame({ keepLevel: true });
   startBtn.onclick = () => startGame();
 

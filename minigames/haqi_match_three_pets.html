@@ -15,6 +15,7 @@
 	const MAX_MOVES = 28;
 	const TARGET_SCORE = 900;
 	const STORAGE_KEY = 'haqiMatchThreePetsSettingsV1';
+	const SETTINGS_VERSION = 2;
 	const SPECIAL_BASE = 100;
 	const SPECIAL_KIND = { ROW: 0, COL: 1, BOMB: 2 };
 	const MAP_TERRAINS = ['grass', 'water', 'mud', 'stone'];
@@ -26,11 +27,11 @@
 		{ id: 'cookie', icon: '🍪', name: '饼干' },
 	];
 	const LEVEL_PRESETS = [
-		{ id: 'story1', title: 'Lv.1 轻松', moves: 30, targetScore: 760, goalType: null, goalCount: 0, tileCount: 0, glassCount: 0, vineCount: 0, objectCount: 0, special: true },
-		{ id: 'story2', title: 'Lv.2 收集', moves: 28, targetScore: 980, goalType: 0, goalCount: 8, tileCount: 6, glassCount: 3, vineCount: 0, objectCount: 2, special: true },
-		{ id: 'story3', title: 'Lv.3 花园', moves: 27, targetScore: 1180, goalType: 2, goalCount: 10, tileCount: 14, glassCount: 5, vineCount: 5, objectCount: 3, special: true },
-		{ id: 'story4', title: 'Lv.4 连锁', moves: 25, targetScore: 1480, goalType: 4, goalCount: 12, tileCount: 20, glassCount: 8, vineCount: 7, objectCount: 4, special: true },
-		{ id: 'story5', title: 'Lv.5 挑战', moves: 24, targetScore: 1780, goalType: 5, goalCount: 15, tileCount: 26, glassCount: 10, vineCount: 9, objectCount: 5, special: true },
+		{ id: 'story1', title: 'Lv.1 轻松', moves: 30, targetScore: 620, goalType: null, goalCount: 0, tileCount: 0, glassCount: 0, vineCount: 0, objectCount: 0, special: true },
+		{ id: 'story2', title: 'Lv.2 收集', moves: 30, targetScore: 860, goalType: 0, goalCount: 7, tileCount: 0, glassCount: 0, vineCount: 0, objectCount: 2, special: true },
+		{ id: 'story3', title: 'Lv.3 花园', moves: 29, targetScore: 1080, goalType: 2, goalCount: 8, tileCount: 12, glassCount: 4, vineCount: 0, objectCount: 3, special: true },
+		{ id: 'story4', title: 'Lv.4 连锁', moves: 28, targetScore: 1320, goalType: 4, goalCount: 10, tileCount: 16, glassCount: 6, vineCount: 5, objectCount: 4, special: true },
+		{ id: 'story5', title: 'Lv.5 挑战', moves: 28, targetScore: 1580, goalType: 5, goalCount: 12, tileCount: 20, glassCount: 8, vineCount: 7, objectCount: 5, special: true },
 	];
 	const FALLBACK_PETS = [
 		{ name: '星星', emoji: '⭐' },
@@ -41,12 +42,12 @@
 		{ name: '水晶', emoji: '💎' },
 	];
 	const JELLY_COLORS = [
-		{ from: '#ff8aa1', to: '#f43f5e', shine: 'rgba(255,255,255,.72)' },
-		{ from: '#6dd6ff', to: '#0284c7', shine: 'rgba(255,255,255,.7)' },
-		{ from: '#86efac', to: '#16a34a', shine: 'rgba(255,255,255,.68)' },
-		{ from: '#fde68a', to: '#f59e0b', shine: 'rgba(255,255,255,.76)' },
-		{ from: '#d8b4fe', to: '#9333ea', shine: 'rgba(255,255,255,.7)' },
-		{ from: '#f9a8d4', to: '#db2777', shine: 'rgba(255,255,255,.68)' },
+		{ from: '#ff5a5f', to: '#b91c1c', shine: 'rgba(255,255,255,.74)' },
+		{ from: '#38bdf8', to: '#1d4ed8', shine: 'rgba(255,255,255,.72)' },
+		{ from: '#4ade80', to: '#047857', shine: 'rgba(255,255,255,.7)' },
+		{ from: '#fde047', to: '#ca8a04', shine: 'rgba(255,255,255,.78)' },
+		{ from: '#a78bfa', to: '#6d28d9', shine: 'rgba(255,255,255,.72)' },
+		{ from: '#fb923c', to: '#c2410c', shine: 'rgba(255,255,255,.7)' },
 	];
 
 	const state = {
@@ -71,6 +72,8 @@
 		started: false,
 		finished: false,
 		drag: null,
+		hintCells: new Set(),
+		bestResults: {},
 		objectUrls: [],
 	};
 	const sound = {
@@ -123,6 +126,7 @@
 				border: 0; border-radius: 999px; padding: 9px 14px; background: #f97316; color: white;
 				font-weight: 900; box-shadow: 0 4px 0 #9a3412; cursor: pointer;
 			}
+			.mh-hint-btn { background: #22c55e; box-shadow-color: #166534; }
 			.mh-stage { min-height: 0; display: grid; place-items: center; overflow: hidden; }
 			.mh-game-area { width: 100%; height: 100%; min-height: 0; display: grid; grid-template-rows: auto auto; justify-items: center; align-content: center; row-gap: 10px; }
 			.mh-game-hud { width: 100%; display: flex; align-items: center; justify-content: center; gap: 10px; flex-wrap: wrap; margin: 0 auto; position: relative; z-index: 2; }
@@ -162,7 +166,7 @@
 			.mh-cell.dragging { z-index: 8; cursor: grabbing; filter: brightness(1.08) saturate(1.08); transition: none; }
 			.mh-cell.swap-target { z-index: 6; outline: 4px solid rgba(56,189,248,.82); filter: brightness(1.12); transition: none; }
 			.mh-cell.swapping { z-index: 7; transition: transform .18s ease; }
-			.mh-cell.hint { animation: mhHint .9s ease-in-out infinite; }
+			.mh-cell.hint { outline: 4px solid #facc15; z-index: 3; animation: mhHint .9s ease-in-out infinite; }
 			.mh-cell.matching { animation: mhPop .35s ease-out forwards; }
 			.mh-cell.matching::after {
 				content: ''; position: absolute; inset: 10%; border-radius: 999px; pointer-events: none;
@@ -330,6 +334,9 @@
 			}
 			.mh-card h1 { margin: 0 0 10px; color: #16324f; font-size: 24px; font-weight: 900; }
 			.mh-card p { margin: 0 0 16px; color: #0f766e; font-size: 15px; font-weight: 800; line-height: 1.55; }
+			.mh-card-actions { display: flex; justify-content: center; gap: 10px; flex-wrap: wrap; }
+			.mh-stars { margin: 7px 0 11px; color: #f59e0b; font-size: 28px; letter-spacing: 0; text-shadow: 0 2px 0 #fff7ed; }
+			.mh-result-detail { margin: 0 0 14px; color: #0f766e; font-size: 14px; font-weight: 900; line-height: 1.45; }
 			.mh-pet-preview { display: flex; justify-content: center; gap: 7px; margin: 12px 0 16px; }
 			.mh-preview-token { position: relative; width: 42px; height: 42px; border-radius: 14px; background: transparent; display: grid; place-items: center; overflow: hidden; container-type: inline-size; }
 			.mh-preview-token .mh-token { inset: 0; }
@@ -361,6 +368,8 @@
 			@keyframes mhSpecialSpin { 0% { transform: rotate(0deg) scale(1); } 100% { transform: rotate(360deg) scale(1); } }
 			@keyframes mhSpecialActivate { 0% { transform: scale(1); filter: brightness(1.1); } 45% { transform: scale(1.22); filter: brightness(1.55); } 100% { transform: scale(.12); filter: brightness(1.8); opacity: 0; } }
 			@keyframes mhMoveWarning { 0%, 100% { transform: scale(1); } 50% { transform: scale(1.035); } }
+			@keyframes mhShuffle { 0%, 100% { transform: rotate(0deg) scale(1); } 25% { transform: rotate(-2deg) scale(1.02); } 60% { transform: rotate(2deg) scale(1.02); } }
+			.mh-board-wrap.shuffle { animation: mhShuffle .46s ease-out; }
 			@media (max-width: 430px) {
 				.mh-shell { gap: 7px; padding: 8px; }
 				.mh-top { align-items: flex-start; flex-direction: column; }
@@ -386,6 +395,7 @@
 				<div class="mh-title">🍎 宠物三消</div>
 				<div class="mh-stats">
 					<select class="mh-select" id="mhLevelSelect" aria-label="关卡难度"></select>
+					<button class="mh-help mh-hint-btn" id="mhHint" type="button">提示</button>
 					<button class="mh-help" id="mhHelp" type="button">玩法</button>
 				</div>
 			</div>
@@ -403,11 +413,21 @@
 		<div class="mh-overlay" id="mhHowTo" role="dialog" aria-modal="true" aria-labelledby="mhHowToTitle" hidden>
 			<div class="mh-card">
 				<h1 id="mhHowToTitle">宠物三消</h1>
-				<p>交换相邻格子，让 3 个或更多相同食物能量排成一行或一列。清掉地图地形、打碎玻璃、解开藤蔓，帮助哈奇捕捉悬挂在格子上的食物。</p>
+				<p>交换相邻格子，让 3 个或更多相同食物能量排成一行或一列。4 连会产生横竖技能，5 连会产生爆破技能，两个技能互换会触发更强连锁。</p>
 				<div class="mh-pet-preview" id="mhPetPreview"></div>
 				<button class="mh-start" id="mhStart" type="button">开始玩</button>
 			</div>
 		</div>
+		<div class="mh-overlay" id="mhResult" role="dialog" aria-modal="true" aria-labelledby="mhResultTitle" hidden>
+			<div class="mh-card">
+				<h1 id="mhResultTitle">完成</h1>
+				<div class="mh-stars" id="mhResultStars"></div>
+				<div class="mh-result-detail" id="mhResultDetail"></div>
+				<div class="mh-card-actions">
+					<button class="mh-start" id="mhResultRetry" type="button">再玩一次</button>
+					<button class="mh-restart" id="mhResultClose" type="button">关闭</button>
+				</div>
+			</div>
 	`;
 
 	function boot() {
@@ -428,10 +448,23 @@
 			playSound('tap');
 			showHowTo();
 		};
+		byId('mhHint').onclick = () => {
+			playSound('select');
+			showHint();
+		};
 		byId('mhStart').onclick = () => {
 			playSound('start');
 			byId('mhHowTo').hidden = true;
 			if (!state.started || state.finished) startGame();
+		};
+		byId('mhResultRetry').onclick = () => {
+			playSound('start');
+			byId('mhResult').hidden = true;
+			startGame();
+		};
+		byId('mhResultClose').onclick = () => {
+			playSound('tap');
+			byId('mhResult').hidden = true;
 		};
 		byId('mhRestart').onclick = () => {
 			playSound('start');
@@ -509,10 +542,12 @@
 
 	function startGame() {
 		state.levelConfig = state.levelConfig || state.levelConfigs[0];
+		byId('mhResult').hidden = true;
 		state.started = true;
 		state.finished = false;
 		state.locked = false;
 		state.selected = null;
+		state.hintCells.clear();
 		state.moves = activeConfig().moves;
 		state.score = 0;
 		state.combo = 0;
@@ -526,11 +561,15 @@
 		state.glass = createGlass();
 		state.vines = createVines();
 		state.objects = createObjects();
+		ensurePlayableBoard();
 		post('gameStarted');
 		updateStats();
 		updateObjectives();
 		renderBoard();
 		setTip(`${difficultyLabel(activeConfig())}：交换相邻宠物，完成本关目标。`);
+		if (activeConfig().id === 'story1') setTimeout(() => {
+			if (state.started && !state.finished && !state.locked && !state.selected) showHint();
+		}, 650);
 	}
 
 	function createBoard() {
@@ -548,6 +587,80 @@
 			}
 		}
 		return board;
+	}
+
+	function ensurePlayableBoard(options = {}) {
+		if (!findMatches().length && findValidMove()) return false;
+		for (let attempt = 0; attempt < 60; attempt++) {
+			if (options.reshuffleExisting) shuffleBoardValues();
+			else state.board = createBoard();
+			if (!findMatches().length && findValidMove()) return true;
+		}
+		state.board = createBoard();
+		return true;
+	}
+
+	function shuffleBoardValues() {
+		const values = [];
+		for (let row = 0; row < BOARD_SIZE; row++) {
+			for (let col = 0; col < BOARD_SIZE; col++) values.push(state.board[row][col]);
+		}
+		shuffle(values);
+		for (let row = 0, index = 0; row < BOARD_SIZE; row++) {
+			for (let col = 0; col < BOARD_SIZE; col++, index++) state.board[row][col] = values[index];
+		}
+	}
+
+	function findValidMove() {
+		for (let row = 0; row < BOARD_SIZE; row++) {
+			for (let col = 0; col < BOARD_SIZE; col++) {
+				if (state.vines[row]?.[col]) continue;
+				const current = { row, col };
+				const candidates = [{ row, col: col + 1 }, { row: row + 1, col }];
+				for (const next of candidates) {
+					if (!isInsideBoard(next.row, next.col) || state.vines[next.row]?.[next.col]) continue;
+					if (wouldSwapCreateMatch(current, next)) return { first: current, second: next };
+				}
+			}
+		}
+		return null;
+	}
+
+	function wouldSwapCreateMatch(first, second) {
+		if (isSpecial(state.board[first.row]?.[first.col]) || isSpecial(state.board[second.row]?.[second.col])) return true;
+		swap(first, second);
+		const ok = findMatches().length > 0;
+		swap(first, second);
+		return ok;
+	}
+
+	function showHint() {
+		if (state.locked || state.finished) return;
+		const move = findValidMove();
+		state.hintCells.clear();
+		if (!move) {
+			state.locked = true;
+			ensurePlayableBoard({ reshuffleExisting: true });
+			renderBoard();
+			pulseShuffle();
+			showToast('棋盘重新排列啦');
+			setTip('没有合适的交换，已经帮你重新排列棋盘。');
+			setTimeout(() => { state.locked = false; renderBoard(); }, 480);
+			return;
+		}
+		state.hintCells.add(key(move.first.row, move.first.col));
+		state.hintCells.add(key(move.second.row, move.second.col));
+		renderBoard();
+		setTip('试试交换发光的两个格子。4 连和 5 连会产生技能。');
+		setTimeout(() => {
+			state.hintCells.clear();
+			if (!state.locked && !state.finished) renderBoard();
+		}, 2600);
+	}
+
+	function clearHint() {
+		if (!state.hintCells.size) return;
+		state.hintCells.clear();
 	}
 
 	function createTiles() {
@@ -603,17 +716,20 @@
 		try {
 			saved = JSON.parse(localStorage.getItem(STORAGE_KEY) || 'null');
 		} catch (_) {}
-		if (Array.isArray(saved?.levelConfigs) && saved.levelConfigs.length) {
+		if (saved?.version === SETTINGS_VERSION && Array.isArray(saved?.levelConfigs) && saved.levelConfigs.length) {
 			state.levelConfigs = saved.levelConfigs.map(normalizeLevelConfig).slice(0, 12);
 		}
+		if (saved?.bestResults && typeof saved.bestResults === 'object') state.bestResults = saved.bestResults;
 		state.levelConfig = getLevelConfig(saved?.selectedLevelId) || state.levelConfigs[0];
 	}
 
 	function saveSettings() {
 		try {
 			localStorage.setItem(STORAGE_KEY, JSON.stringify({
+				version: SETTINGS_VERSION,
 				selectedLevelId: state.levelConfig?.id || state.levelConfigs[0]?.id,
 				levelConfigs: state.levelConfigs,
+				bestResults: state.bestResults,
 			}));
 		} catch (_) {}
 	}
@@ -701,6 +817,7 @@
 				cell.dataset.row = row;
 				cell.dataset.col = col;
 				if (state.selected && state.selected.row === row && state.selected.col === col) cell.classList.add('selected');
+				if (state.hintCells.has(key(row, col))) cell.classList.add('hint');
 				if (changed.has(key(row, col))) cell.classList.add('drop');
 				const terrain = state.tiles[row]?.[col];
 				if (terrain) cell.classList.add('has-terrain', 'has-tile', `terrain-${terrain}`);
@@ -766,6 +883,7 @@
 
 	function handlePointerDown(event, row, col) {
 		if (state.locked || state.finished) return;
+		clearHint();
 		if (state.vines[row]?.[col]) {
 			playSound('invalid');
 			showInvalidSwap([{ row, col }]);
@@ -1008,6 +1126,7 @@
 
 	function selectCell(row, col) {
 		if (state.locked || state.finished) return;
+		clearHint();
 		if (state.vines[row]?.[col]) {
 			playSound('invalid');
 			showInvalidSwap([{ row, col }]);
@@ -1049,7 +1168,8 @@
 		state.selected = null;
 		clearSelectedVisual();
 
-		let matches = findMatches();
+		const specialCombo = specialComboCells(first, second);
+		let matches = specialCombo.length ? [specialCombo] : findMatches();
 		const directSpecials = [first, second].filter(({ row, col }) => isSpecial(state.board[row][col]));
 		if (!matches.length && directSpecials.length) matches = [directSpecials];
 		if (!matches.length) {
@@ -1068,6 +1188,7 @@
 		state.moves--;
 		state.combo = 0;
 		updateStats();
+		if (specialCombo.length) showComboBanner('技能组合!');
 		await resolveMatches(matches);
 		state.locked = false;
 		renderBoard();
@@ -1104,6 +1225,13 @@
 			renderBoard(changed);
 			await delay(170);
 			matches = findMatches();
+		}
+		if (state.moves > 0 && ensurePlayableBoard({ reshuffleExisting: true })) {
+			state.hintCells.clear();
+			renderBoard();
+			pulseShuffle();
+			showToast('棋盘重新排列啦');
+			await delay(260);
 		}
 		setTip(state.combo > 1 ? `漂亮，触发 ${state.combo} 连锁！` : '继续寻找下一组宠物。');
 	}
@@ -1170,6 +1298,47 @@
 		for (let r = row - 1; r <= row + 1; r++) {
 			for (let c = col - 1; c <= col + 1; c++) {
 				if (isInsideBoard(r, c)) cells.push({ row: r, col: c });
+			}
+		}
+		return cells;
+	}
+
+	function specialComboCells(first, second) {
+		const firstValue = state.board[first.row]?.[first.col];
+		const secondValue = state.board[second.row]?.[second.col];
+		if (!isSpecial(firstValue) || !isSpecial(secondValue)) return [];
+		const firstKind = specialKind(firstValue);
+		const secondKind = specialKind(secondValue);
+		if (firstKind === SPECIAL_KIND.BOMB && secondKind === SPECIAL_KIND.BOMB) {
+			return uniqueCells([...radiusCells(first.row, first.col, 2), ...radiusCells(second.row, second.col, 2)]);
+		}
+		const lineKind = firstKind === SPECIAL_KIND.BOMB ? secondKind : firstKind;
+		const lineCell = firstKind === SPECIAL_KIND.BOMB ? second : first;
+		if (firstKind === SPECIAL_KIND.BOMB || secondKind === SPECIAL_KIND.BOMB) {
+			if (lineKind === SPECIAL_KIND.ROW) return uniqueCells(range(lineCell.row - 1, lineCell.row + 2).flatMap((row) => rowCells(row)));
+			if (lineKind === SPECIAL_KIND.COL) return uniqueCells(range(lineCell.col - 1, lineCell.col + 2).flatMap((col) => colCells(col)));
+			return radiusCells(lineCell.row, lineCell.col, 2);
+		}
+		if (firstKind === SPECIAL_KIND.ROW && secondKind === SPECIAL_KIND.ROW) return uniqueCells([...rowCells(first.row), ...rowCells(second.row)]);
+		if (firstKind === SPECIAL_KIND.COL && secondKind === SPECIAL_KIND.COL) return uniqueCells([...colCells(first.col), ...colCells(second.col)]);
+		return uniqueCells([...rowCells(first.row), ...colCells(second.col), ...rowCells(second.row), ...colCells(first.col)]);
+	}
+
+	function rowCells(row) {
+		if (row < 0 || row >= BOARD_SIZE) return [];
+		return range(0, BOARD_SIZE).map((col) => ({ row, col }));
+	}
+
+	function colCells(col) {
+		if (col < 0 || col >= BOARD_SIZE) return [];
+		return range(0, BOARD_SIZE).map((row) => ({ row, col }));
+	}
+
+	function radiusCells(centerRow, centerCol, radius) {
+		const cells = [];
+		for (let row = centerRow - radius; row <= centerRow + radius; row++) {
+			for (let col = centerCol - radius; col <= centerCol + radius; col++) {
+				if (isInsideBoard(row, col)) cells.push({ row, col });
 			}
 		}
 		return cells;
@@ -1369,6 +1538,15 @@
 		setTimeout(() => wrap.classList.remove('stage-pulse'), 540);
 	}
 
+	function pulseShuffle() {
+		const wrap = document.querySelector('.mh-board-wrap');
+		if (!wrap) return;
+		wrap.classList.remove('shuffle');
+		void wrap.offsetWidth;
+		wrap.classList.add('shuffle');
+		setTimeout(() => wrap.classList.remove('shuffle'), 500);
+	}
+
 	function showInvalidSwap(cells) {
 		cells.forEach(({ row, col }) => {
 			const cell = document.querySelector(`[data-row="${row}"][data-col="${col}"]`);
@@ -1443,15 +1621,22 @@
 		if (state.finished) return;
 		state.finished = true;
 		state.locked = true;
+		state.hintCells.clear();
 		renderBoard();
+		const stars = calculateStars(won);
+		const best = saveBestResult(won, stars);
 		const earnedPoints = won ? Math.max(60, Math.round(state.score / 10)) : Math.max(20, Math.round(state.score / 18));
 		playSound(won ? 'win' : 'lose');
 		if (won) launchConfetti();
 		showComboBanner(won ? '完成!' : '再试一次');
 		showToast(`${text}<br>心情 +${earnedPoints}`);
+		showResultPanel(won, text, earnedPoints, stars, best);
 		post('gameFinished', {
 			earnedPoints,
 			score: state.score,
+			stars,
+			bestScore: best.score,
+			bestStars: best.stars,
 			movesLeft: state.moves,
 			levelId: activeConfig().id,
 			levelTitle: difficultyLabel(activeConfig()),
@@ -1463,6 +1648,43 @@
 			won,
 			finishedAt: Date.now(),
 		});
+	}
+
+	function calculateStars(won) {
+		if (!won) return 0;
+		const config = activeConfig();
+		const scoreRatio = state.score / Math.max(1, config.targetScore);
+		const moveRatio = state.moves / Math.max(1, config.moves);
+		if (scoreRatio >= 1.35 || moveRatio >= 0.34) return 3;
+		if (scoreRatio >= 1.12 || moveRatio >= 0.18) return 2;
+		return 1;
+	}
+
+	function saveBestResult(won, stars) {
+		const id = activeConfig().id;
+		const previous = state.bestResults[id] || { score: 0, stars: 0, wins: 0 };
+		const next = {
+			score: Math.max(previous.score || 0, state.score),
+			stars: Math.max(previous.stars || 0, stars),
+			wins: (previous.wins || 0) + (won ? 1 : 0),
+			updatedAt: Date.now(),
+		};
+		state.bestResults[id] = next;
+		saveSettings();
+		return next;
+	}
+
+	function showResultPanel(won, text, earnedPoints, stars, best) {
+		byId('mhResultTitle').textContent = won ? '目标达成！' : text;
+		byId('mhResultStars').textContent = won ? `${'★'.repeat(stars)}${'☆'.repeat(3 - stars)}` : '☆☆☆';
+		byId('mhResultDetail').innerHTML = [
+			`得分 ${state.score}，剩余 ${state.moves} 步`,
+			`最佳 ${best.score} 分，最高 ${best.stars} 星`,
+			`心情 +${earnedPoints}`,
+		].join('<br>');
+		setTimeout(() => {
+			byId('mhResult').hidden = false;
+		}, won ? 650 : 360);
 	}
 
 	function launchConfetti() {

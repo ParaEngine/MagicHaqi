@@ -13,6 +13,7 @@
 (function () {
   const STORAGE_KEY_DIFFICULTY = 'haqiFlappyPetDifficulty';
   const STORAGE_KEY_BEST = 'haqiFlappyPetBest';
+  const STORAGE_KEY_BESTS = 'haqiFlappyPetBests';
   const FALLBACK_PET = '🐾';
   const FOOD_ICONS = ['🍎', '🍌', '🍓', '🍇', '🥕', '🍪', '🍯', '🥛', '🍰'];
   const POWERUPS = {
@@ -36,7 +37,8 @@
 
   const state = {
     difficulty: localStorage.getItem(STORAGE_KEY_DIFFICULTY) || 'normal',
-    best: Math.max(0, Number(localStorage.getItem(STORAGE_KEY_BEST) || 0)),
+    bests: loadBestScores(),
+    best: 0,
     started: false,
     finished: false,
     paused: false,
@@ -112,6 +114,14 @@
         padding: 0 8px; border-radius: 999px; background: #fff; border: 1px solid rgba(14,116,144,.2);
         color: #0f766e; font-size: 12px; font-weight: 900; box-shadow: 0 2px 0 rgba(14,116,144,.12);
       }
+      .mh-progress {
+        grid-column: 1 / -1; height: 8px; width: 100%; overflow: hidden; border-radius: 999px;
+        background: rgba(14,116,144,.14); border: 1px solid rgba(255,255,255,.72);
+      }
+      .mh-progress-bar {
+        height: 100%; width: 0%; border-radius: inherit; background: linear-gradient(90deg, #34d399, #facc15, #fb923c);
+        transition: width .18s ease-out;
+      }
       .mh-icon-btn, .mh-action, .mh-start, .mh-difficulty { border: 0; cursor: pointer; font-weight: 900; }
       .mh-icon-btn { width: 34px; height: 34px; border-radius: 999px; background: linear-gradient(180deg, #fb923c, #ea580c); color: white; box-shadow: 0 3px 0 #9a3412; font-size: 18px; }
       .mh-bottom {
@@ -136,6 +146,8 @@
         color: #0f766e; font-weight: 1000; box-shadow: 0 5px 0 rgba(14,116,144,.12), 0 12px 26px rgba(15,23,42,.14);
       }
       .mh-power.show { display: inline-flex; animation: mhPowerPulse .62s ease-out; }
+      .mh-power-timer { width: 56px; height: 7px; overflow: hidden; border-radius: 999px; background: rgba(14,116,144,.16); }
+      .mh-power-timer i { display: block; height: 100%; width: var(--pct); border-radius: inherit; background: linear-gradient(90deg, #38bdf8, #22c55e); }
       .mh-countdown {
         position: absolute; left: 50%; top: 50%; z-index: 5; transform: translate(-50%, -50%);
         min-width: 118px; height: 118px; display: grid; place-items: center; border-radius: 999px;
@@ -199,6 +211,7 @@
           <span class="mh-pill optional">分数 <b id="mhScore">0</b></span>
           <span class="mh-pill optional">最佳 <b id="mhBest">0</b></span>
         </div>
+        <div class="mh-progress" aria-hidden="true"><div id="mhProgressBar" class="mh-progress-bar"></div></div>
       </header>
       <div id="mhPower" class="mh-power" aria-live="polite"></div>
       <div id="mhCountdown" class="mh-countdown" hidden aria-live="polite">3</div>
@@ -233,6 +246,7 @@
     target: document.getElementById('mhTarget'),
     score: document.getElementById('mhScore'),
     best: document.getElementById('mhBest'),
+    progress: document.getElementById('mhProgressBar'),
   };
   let width = 0;
   let height = 0;
@@ -240,6 +254,26 @@
 
   function config() {
     return DIFFICULTIES[state.difficulty] || DIFFICULTIES.normal;
+  }
+
+  function loadBestScores() {
+    const legacyBest = Math.max(0, Number(localStorage.getItem(STORAGE_KEY_BEST) || 0));
+    try {
+      const parsed = JSON.parse(localStorage.getItem(STORAGE_KEY_BESTS) || '{}') || {};
+      const bests = {};
+      DIFFICULTY_ORDER.forEach(id => {
+        bests[id] = Math.max(0, Number(parsed[id] || 0));
+      });
+      if (legacyBest && !bests.normal) bests.normal = legacyBest;
+      return bests;
+    } catch (_) {
+      return { easy: 0, normal: legacyBest, hard: 0 };
+    }
+  }
+
+  function saveBestScores() {
+    localStorage.setItem(STORAGE_KEY_BESTS, JSON.stringify(state.bests));
+    localStorage.setItem(STORAGE_KEY_BEST, String(Math.max(...Object.values(state.bests), 0)));
   }
 
   function resize() {
@@ -309,6 +343,7 @@
     state.pendingFlap = false;
     state.hudValues = {};
     state.roundId = `${state.difficulty}-${Date.now()}`;
+    state.best = state.bests[state.difficulty] || 0;
     pet.x = width * 0.25;
     pet.y = startPetY();
     pet.vy = 0;
@@ -382,6 +417,8 @@
     if (state.activePower && now > state.activePowerUntil) {
       state.activePower = null;
       updatePowerHud();
+    } else if (state.activePower) {
+      updatePowerHud(now);
     }
 
     const progress = Math.min(1, state.collected / Math.max(1, cfg.target));
@@ -440,7 +477,8 @@
     const cfg = config();
     const theme = currentTheme();
     const progress = Math.min(1, state.collected / Math.max(1, cfg.target));
-    const gap = forcedGap || height * clamp(cfg.gap - progress * 0.065, 0.23, 0.44);
+    const openingAssist = Math.max(0, 3 - state.nextGateIndex) * 0.06;
+    const gap = Math.min(height * 0.48, (forcedGap || height * clamp(cfg.gap - progress * 0.065, 0.23, 0.44)) * (1 + openingAssist));
     const topLimit = Math.max(playTop() + 32, height * 0.17);
     const bottomLimit = Math.max(topLimit + gap + 80, playBottom() - 28);
     const gateIndex = state.nextGateIndex++;
@@ -582,7 +620,7 @@
 
   function collidesWithWorld() {
     const size = petSize();
-    const radius = size * 0.38;
+    const radius = size * 0.32;
     if (pet.y - radius < playTop()) {
       pet.y = playTop() + radius;
       pet.vy = Math.max(height * 0.08, pet.vy * -0.12);
@@ -592,8 +630,8 @@
     return state.obstacles.some(obstacle => {
       const left = obstacle.x;
       const right = obstacle.x + obstacle.width;
-      const bodyLeft = pet.x - radius * 0.86;
-      const bodyRight = pet.x + radius * 0.86;
+      const bodyLeft = pet.x - radius * 0.76;
+      const bodyRight = pet.x + radius * 0.76;
       if (bodyRight < left || bodyLeft > right) return false;
       return pet.y - radius < obstacle.top || pet.y + radius > obstacle.bottom;
     });
@@ -609,7 +647,8 @@
     const difficultyLevel = DIFFICULTY_ORDER.indexOf(state.difficulty) + 1;
     const score = Math.max(0, state.score + state.collected * 10 + state.passed * 3 - state.misses * 4);
     state.best = Math.max(state.best, score);
-    localStorage.setItem(STORAGE_KEY_BEST, String(state.best));
+    state.bests[state.difficulty] = state.best;
+    saveBestScores();
     updateHud();
     if (won) {
       playSound('win');
@@ -852,7 +891,13 @@
     setHudText('food', state.collected);
     setHudText('target', cfg.target);
     setHudText('score', Math.max(0, Math.round(state.score)));
+    state.best = state.bests[state.difficulty] || 0;
     setHudText('best', state.best);
+    const progress = clamp(state.collected / Math.max(1, cfg.target), 0, 1);
+    if (state.hudValues.progress !== progress) {
+      state.hudValues.progress = progress;
+      if (hudEls.progress) hudEls.progress.style.width = `${Math.round(progress * 100)}%`;
+    }
     if (state.hudValues.difficulty !== state.difficulty) {
       state.hudValues.difficulty = state.difficulty;
       document.querySelectorAll('[data-difficulty]').forEach(btn => btn.classList.toggle('active', btn.dataset.difficulty === state.difficulty));
@@ -866,7 +911,7 @@
     if (hudEls[key]) hudEls[key].textContent = text;
   }
 
-  function updatePowerHud() {
+  function updatePowerHud(now = performance.now()) {
     const el = document.getElementById('mhPower');
     if (!state.activePower) {
       el.className = 'mh-power';
@@ -874,7 +919,8 @@
       return;
     }
     const item = POWERUPS[state.activePower];
-    el.innerHTML = `<span>${item.icon}</span><span>${item.label}</span>`;
+    const remaining = clamp((state.activePowerUntil - now) / item.duration, 0, 1);
+    el.innerHTML = `<span>${item.icon}</span><span>${item.label}</span><span class="mh-power-timer"><i style="--pct:${Math.round(remaining * 100)}%"></i></span>`;
     el.className = 'mh-power show';
   }
 
@@ -894,6 +940,7 @@
   function setDifficulty(id) {
     if (!DIFFICULTIES[id]) return;
     state.difficulty = id;
+    state.best = state.bests[id] || 0;
     localStorage.setItem(STORAGE_KEY_DIFFICULTY, id);
     if (state.started && !state.finished) showOverlay('切换难度', '难度已更新，重新开始后生效。', '重新开始', () => startGame());
     updateHud();
@@ -1056,7 +1103,11 @@
 
   function handleAction(event) {
     if (event.target?.closest?.('button')) return;
-    if (!state.started || state.finished) return;
+    if (!state.started || state.finished) {
+      event.preventDefault();
+      startGame();
+      return;
+    }
     event.preventDefault();
     if (state.countingDown) {
       state.pendingFlap = true;

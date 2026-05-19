@@ -39,6 +39,8 @@
     opened: 0,
     flags: 0,
     mistakes: 0,
+    firstMove: true,
+    hintCellId: null,
     seconds: 0,
     timer: null,
     petAsset: null,
@@ -88,6 +90,7 @@
       .mh-title { min-width: 0; text-align: center; font-size: 17px; font-weight: 1000; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
       .mh-stats { display: flex; align-items: center; justify-content: flex-end; gap: 5px; flex-wrap: wrap; }
       .mh-pill { height: 29px; min-width: 48px; display: inline-flex; align-items: center; justify-content: center; gap: 3px; padding: 0 8px; border-radius: 999px; background: #fff; border: 1px solid rgba(14,116,144,.2); color: #0f766e; font-size: 12px; font-weight: 900; box-shadow: 0 2px 0 rgba(14,116,144,.12); }
+      .mh-pill.food-goal { min-width: 76px; background: linear-gradient(180deg, #fefce8, #dcfce7); color: #166534; }
       .mh-icon-btn, .mh-action, .mh-start, .mh-next, .mh-difficulty, .mh-flag-toggle { border: 0; cursor: pointer; font-weight: 900; }
       .mh-icon-btn { width: 34px; height: 34px; border-radius: 999px; background: linear-gradient(180deg, #fb923c, #ea580c); color: white; box-shadow: 0 3px 0 #9a3412; font-size: 18px; }
       .mh-stage { min-height: 0; display: grid; place-items: center; overflow: hidden; }
@@ -115,10 +118,20 @@
         content: ''; position: absolute; inset: 12%; clip-path: inherit; opacity: .24;
         background: linear-gradient(135deg, rgba(255,255,255,.9), transparent 44%);
       }
+      .mh-cell.hint {
+        animation: mhHintPulse 1.05s ease-in-out infinite;
+        box-shadow: inset 0 3px 7px rgba(255,255,255,.4), inset 0 -6px 9px rgba(120,53,15,.22), 0 4px 0 #b45309, 0 0 0 4px rgba(255,255,255,.9), 0 0 0 9px rgba(34,197,94,.36), 0 8px 12px rgba(15,23,42,.15);
+      }
       .mh-cell.clue {
         cursor: default; background: linear-gradient(180deg, #334155, #111827); color: #fff;
         text-shadow: 0 2px 0 rgba(0,0,0,.35); box-shadow: inset 0 2px 0 rgba(255,255,255,.16), 0 4px 0 #020617, 0 8px 12px rgba(15,23,42,.2);
       }
+      .mh-cell .clue-num { line-height: 1; filter: drop-shadow(0 2px 0 rgba(0,0,0,.28)); }
+      .mh-cell .clue-num.n0 { color: #cbd5e1; }
+      .mh-cell .clue-num.n1 { color: #86efac; }
+      .mh-cell .clue-num.n2 { color: #7dd3fc; }
+      .mh-cell .clue-num.n3 { color: #fde047; }
+      .mh-cell .clue-num.n4, .mh-cell .clue-num.n5, .mh-cell .clue-num.n6 { color: #fb7185; }
       .mh-cell.open { cursor: default; background: linear-gradient(180deg, #f8fafc, #dcfce7); color: #166534; box-shadow: inset 0 2px 0 rgba(255,255,255,.8), inset 0 -3px 0 rgba(22,163,74,.16); }
       .mh-cell.food { background: linear-gradient(180deg, #ecfdf5, #bbf7d0); color: #15803d; animation: mhFoodPop .35s ease-out; }
       .mh-cell.trap { background: linear-gradient(180deg, #475569, #111827); color: #fef2f2; animation: mhTrap .42s ease-in-out; }
@@ -158,7 +171,11 @@
       .mh-controls { min-width: 0; display: flex; align-items: center; justify-content: center; gap: 6px; flex-wrap: wrap; }
       .mh-action { height: 34px; border-radius: 999px; padding: 0 12px; background: linear-gradient(180deg, #38bdf8, #0284c7); color: white; box-shadow: 0 4px 0 #075985; }
       .mh-action.help { background: linear-gradient(180deg, #fb923c, #ea580c); box-shadow-color: #9a3412; }
+      .mh-flag-toggle { height: 34px; min-width: 76px; border-radius: 999px; padding: 0 12px; background: linear-gradient(180deg, #34d399, #16a34a); color: white; box-shadow: 0 4px 0 #15803d; }
+      .mh-flag-toggle.active { background: linear-gradient(180deg, #f87171, #dc2626); box-shadow-color: #991b1b; }
       .mh-gesture-hint { min-height: 34px; display: inline-flex; align-items: center; justify-content: center; padding: 0 12px; border-radius: 999px; background: rgba(255,255,255,.9); border: 1px solid rgba(14,116,144,.2); color: #0f766e; font-size: 13px; font-weight: 900; box-shadow: 0 3px 0 rgba(14,116,144,.16); white-space: nowrap; }
+      .mh-progress { position: absolute; left: 10px; right: 10px; bottom: 10px; height: 10px; border-radius: 999px; background: rgba(255,255,255,.62); border: 1px solid rgba(255,255,255,.78); overflow: hidden; box-shadow: inset 0 1px 2px rgba(15,23,42,.16); }
+      .mh-progress-fill { width: 0%; height: 100%; border-radius: inherit; background: linear-gradient(90deg, #facc15, #22c55e); transition: width .24s ease; }
       .mh-difficulties { display: flex; align-items: center; gap: 4px; padding: 4px; border-radius: 999px; background: rgba(255,255,255,.78); border: 1px solid rgba(14,116,144,.16); overflow-x: auto; }
       .mh-difficulty { flex: 0 0 auto; height: 28px; min-width: 44px; padding: 0 9px; border-radius: 999px; background: transparent; color: #0f766e; font-size: 12px; }
       .mh-difficulty.active { background: linear-gradient(180deg, #34d399, #16a34a); color: white; box-shadow: 0 2px 0 #15803d; }
@@ -171,6 +188,7 @@
       .mh-confetti { position: fixed; top: -16px; z-index: 48; width: 9px; height: 15px; border-radius: 3px; background: var(--c); animation: mhConfetti var(--d) ease-in forwards; pointer-events: none; }
       [hidden] { display: none !important; }
       @keyframes mhFoodPop { 0% { transform: translate(-50%, -50%) scale(.72); } 70% { transform: translate(-50%, -50%) scale(1.08); } 100% { transform: translate(-50%, -50%) scale(1); } }
+      @keyframes mhHintPulse { 0%,100% { filter: brightness(1); } 50% { filter: brightness(1.16); } }
       @keyframes mhTrap { 0%,100% { transform: translate(-50%, -50%); } 25% { transform: translate(calc(-50% - 5px), -50%); } 75% { transform: translate(calc(-50% + 5px), -50%); } }
       @keyframes mhFragmentFall { 0% { opacity: 1; transform: translate(0, 0) rotate(0deg) scale(1); } 100% { opacity: 0; transform: translate(var(--frag-x), var(--frag-y)) rotate(var(--frag-rot)) scale(.72); } }
       @keyframes mhFoodFly {
@@ -201,20 +219,23 @@
         <button id="mhMenu" class="mh-icon-btn" type="button" aria-label="玩法">?</button>
         <div class="mh-title">哈奇寻食蜂巢 Lv.<span id="mhLevel">1</span></div>
         <div class="mh-stats" aria-label="游戏状态">
-          <span class="mh-pill">食物 <b id="mhFood">0</b>/<b id="mhTarget">0</b></span>
+          <span class="mh-pill food-goal">食物 <b id="mhFood">0</b>/<b id="mhTarget">0</b></span>
           <span class="mh-pill optional">陷阱 <b id="mhTraps">0</b></span>
           <span class="mh-pill optional"><b id="mhTime">0</b>s</span>
+          <span class="mh-pill optional">最佳 <b id="mhBest">0</b></span>
         </div>
       </header>
       <main class="mh-stage">
         <div class="mh-board-wrap">
           <div id="mhBoard" class="mh-board" aria-label="寻找食物蜂巢棋盘"></div>
           <div id="mhPet" class="mh-pet" aria-hidden="true"><div class="fallback">${FALLBACK_PET}</div></div>
+          <div class="mh-progress" aria-hidden="true"><div id="mhProgressFill" class="mh-progress-fill"></div></div>
         </div>
       </main>
       <footer class="mh-bottom">
         <div class="mh-controls">
           <span class="mh-gesture-hint">点击清理，拖动标记陷阱</span>
+          <button id="mhFlagToggle" class="mh-flag-toggle" type="button" aria-pressed="false">清理</button>
           <button id="mhHelp" class="mh-action help" type="button">玩法</button>
           <button id="mhRestart" class="mh-action" type="button">重开</button>
           <button id="mhNext" class="mh-action" type="button" hidden>下一局</button>
@@ -475,10 +496,13 @@
     state.opened = 0;
     state.flags = 0;
     state.mistakes = 0;
+    state.firstMove = true;
+    state.hintCellId = null;
     state.flagMode = false;
     state.pointerMark = null;
     document.getElementById('mhNext').hidden = true;
     generateBoard();
+    chooseHintCell();
     renderBoard();
     updateHud();
     startTimer();
@@ -534,7 +558,8 @@
         state.skipClickCellId = null;
         return;
       }
-      if (cell.flagged) toggleFlag(cell);
+      if (state.flagMode) toggleFlag(cell);
+      else if (cell.flagged) toggleFlag(cell);
       else openCell(cell);
     };
     btn.oncontextmenu = (event) => {
@@ -551,7 +576,7 @@
       if (!mark || mark.id !== cell.id || mark.pointerId !== event.pointerId || mark.marked) return;
       const dx = event.clientX - mark.x;
       const dy = event.clientY - mark.y;
-      if (Math.hypot(dx, dy) >= 14) {
+      if (Math.hypot(dx, dy) >= 20) {
         clearTimeout(state.longPressTimer);
         skipNextCellClick(cell);
         if (!mark.dragging) startCellDrag(mark, event);
@@ -596,7 +621,7 @@
       const dx = event.clientX - mark.x;
       const dy = event.clientY - mark.y;
       cleanupCellDrag(mark);
-      if (Math.hypot(dx, dy) >= 14) markTrap(cell);
+      if (Math.hypot(dx, dy) >= 20) markTrap(cell);
       else refreshCell(cell);
     }
     state.pointerMark = null;
@@ -610,7 +635,7 @@
         state.skipNextClick = false;
         state.skipClickCellId = null;
       }
-    }, 60);
+    }, 120);
   }
 
   function cleanupCellDrag(mark) {
@@ -631,22 +656,27 @@
   }
 
   function cellClass(cell) {
+    const hintClass = cell.id === state.hintCellId && !cell.open && !cell.flagged ? ' hint' : '';
     if (cell.clue) return 'mh-cell clue';
     if (cell.flagged && !cell.open) return 'mh-cell flagged';
-    if (!cell.open) return 'mh-cell hidden';
+    if (!cell.open) return `mh-cell hidden${hintClass}`;
     if (cell.trap) return 'mh-cell trap';
     if (cell.food) return 'mh-cell food';
     return 'mh-cell open';
   }
 
   function cellContent(cell) {
-    if (cell.clue) return String(cell.n);
+    if (cell.clue) return clueContent(cell.n);
     if (cell.flagged && !cell.open) return '🚩';
     if (!cell.open) return '';
     if (cell.trap) return '🪤';
     if (cell.food) return `<span class="food-icon">${cell.foodIcon}</span>`;
     if (cell.collectedFood) return '';
-    return cell.n > 0 ? `<span class="tiny">${cell.n}</span>` : '';
+    return cell.n > 0 ? `<span class="tiny clue-num n${Math.min(6, cell.n)}">${cell.n}</span>` : '';
+  }
+
+  function clueContent(number) {
+    return `<span class="clue-num n${Math.min(6, number)}">${number}</span>`;
   }
 
   function cellLabel(cell) {
@@ -669,6 +699,15 @@
 
   function openCell(cell) {
     if (!state.started || state.finished || cell.clue || cell.open || cell.flagged) return;
+    const wasFirstMove = state.firstMove;
+    const previousHintCellId = state.hintCellId;
+    state.firstMove = false;
+    state.hintCellId = null;
+    if (wasFirstMove) protectFirstMove(cell);
+    if (previousHintCellId && previousHintCellId !== cell.id) {
+      const previousHintCell = state.cellMap.get(previousHintCellId);
+      if (previousHintCell) refreshCell(previousHintCell);
+    }
     const el = boardEl.querySelector(`[data-id="${cell.id}"]`);
     breakCell(el);
     playSound('break');
@@ -696,6 +735,7 @@
       }
     } else {
       refreshCell(cell);
+      maybeNearMiss(cell);
       if (cell.n === 0) openSafePatch(cell);
     }
     updateHud();
@@ -760,12 +800,42 @@
     }
   }
 
+  function protectFirstMove(cell) {
+    if (!cell.trap) return;
+    const replacement = shuffle(state.cells.filter(candidate => !candidate.clue && candidate.id !== cell.id && !candidate.trap && !candidate.food))[0];
+    if (!replacement) return;
+    replacement.trap = true;
+    replacement.food = false;
+    cell.trap = false;
+    cell.food = false;
+    recalculateClues();
+  }
+
+  function recalculateClues() {
+    state.cells.forEach(cell => {
+      cell.n = neighbors(cell).filter(next => next.trap).length;
+    });
+    renderBoard();
+  }
+
+  function chooseHintCell() {
+    const candidates = state.cells.filter(cell => !cell.clue && !cell.trap && neighbors(cell).some(next => next.clue));
+    const safest = candidates.filter(cell => cell.n === 0);
+    const foodNearClue = candidates.filter(cell => cell.food);
+    state.hintCellId = (shuffle(safest)[0] || shuffle(foodNearClue)[0] || shuffle(candidates)[0] || null)?.id || null;
+  }
+
+  function maybeNearMiss(cell) {
+    if (cell.n >= 3) popToast('好险！周围陷阱很多');
+  }
+
   function toggleFlag(cell) {
     if (!state.started || state.finished || cell.clue || cell.open) return;
     cell.flagged = !cell.flagged;
     state.flags += cell.flagged ? 1 : -1;
     playSound(cell.flagged ? 'flag' : 'unflag');
     refreshCell(cell);
+    if (cell.flagged && cell.trap && state.difficulty === 'easy') popToast('判断正确');
     updateHud();
   }
 
@@ -775,6 +845,7 @@
     state.flags++;
     playSound('flag');
     refreshCell(cell);
+    if (cell.trap && state.difficulty === 'easy') popToast('判断正确');
     updateHud();
   }
 
@@ -836,6 +907,12 @@
     document.getElementById('mhTarget').textContent = String(cfg.target);
     document.getElementById('mhTraps').textContent = String(Math.max(0, cfg.traps - state.flags));
     document.getElementById('mhTime').textContent = String(state.seconds);
+    document.getElementById('mhBest').textContent = String(state.best);
+    document.getElementById('mhProgressFill').style.width = `${Math.min(100, Math.round(state.collected / Math.max(1, cfg.target) * 100))}%`;
+    const flagToggle = document.getElementById('mhFlagToggle');
+    flagToggle.textContent = state.flagMode ? '标记' : '清理';
+    flagToggle.classList.toggle('active', state.flagMode);
+    flagToggle.setAttribute('aria-pressed', String(state.flagMode));
     document.querySelectorAll('[data-difficulty]').forEach(btn => btn.classList.toggle('active', btn.dataset.difficulty === state.difficulty));
   }
 
@@ -917,6 +994,12 @@
 
   document.getElementById('mhMenu').onclick = () => showOverlay('寻找食物', '数字表示相邻陷阱数量，可用它判断哪些黄色格子安全。点击黄色格子清理，拖动可疑格子可标记陷阱，电脑也可右键标记；收集到目标数量的食物即可过关。', state.started ? '继续' : '开始寻找', () => state.started ? hideOverlay() : startGame());
   document.getElementById('mhHelp').onclick = document.getElementById('mhMenu').onclick;
+  document.getElementById('mhFlagToggle').onclick = () => {
+    if (!state.started || state.finished) return;
+    state.flagMode = !state.flagMode;
+    playSound(state.flagMode ? 'flag' : 'unflag');
+    updateHud();
+  };
   document.getElementById('mhRestart').onclick = () => startGame();
   document.getElementById('mhNext').onclick = () => startGame();
   startBtn.onclick = () => startGame();

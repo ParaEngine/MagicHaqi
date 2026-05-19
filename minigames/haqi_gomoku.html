@@ -23,11 +23,16 @@
     }
     .title { font-size: 20px; font-weight: 1000; color: #075985; white-space: nowrap; }
     .stats { display: flex; align-items: center; justify-content: flex-end; gap: 7px; flex-wrap: wrap; }
-    .pill {
+    .pill, .selectWrap {
       min-width: 66px; height: 32px; display: inline-flex; align-items: center; justify-content: center; gap: 4px;
       padding: 0 10px; border-radius: 999px; background: #fff; border: 1px solid rgba(14,116,144,.2);
       color: #0f766e; font-size: 13px; font-weight: 900; box-shadow: 0 2px 0 rgba(14,116,144,.12);
     }
+    .turnBadge { color: #fff; background: #0ea5e9; border-color: rgba(14,165,233,.4); transition: background .18s ease, transform .18s ease; }
+    .turnBadge.thinking { background: #8b5cf6; }
+    .turnBadge.result { background: #f97316; }
+    .selectWrap { padding-right: 8px; }
+    .selectWrap select { border: 0; outline: 0; background: transparent; color: #0f766e; font: inherit; max-width: 70px; }
     .main { min-height: 0; display: grid; grid-template-columns: minmax(0, 1fr) minmax(150px, 220px); gap: 10px; }
     .boardPanel, .petPanel, .bottom {
       border-radius: 16px; background: rgba(255,255,255,.74); border: 2px solid rgba(255,255,255,.9);
@@ -38,21 +43,32 @@
       position: relative; width: min(100%, 620px, calc(100dvh - 150px)); aspect-ratio: 1 / 1;
       border-radius: 12px; background: linear-gradient(135deg, #f5c978, #dda853);
       border: 5px solid #9a6428; box-shadow: inset 0 0 0 3px rgba(255,255,255,.18), 0 10px 18px rgba(76,45,14,.24);
-      overflow: hidden;
+      overflow: hidden; cursor: pointer;
+    }
+    .board.isThinking { cursor: wait; }
+    .board.isResult, .board.isIntro { cursor: default; }
+    .board.isThinking::after {
+      content: "宠物思考中"; position: absolute; left: 50%; top: 12px; z-index: 4; transform: translateX(-50%);
+      border-radius: 999px; background: rgba(139,92,246,.9); color: #fff; padding: 6px 12px; font-size: 13px; font-weight: 1000;
+      box-shadow: 0 5px 12px rgba(15,23,42,.2); pointer-events: none;
     }
     .board svg { position: absolute; inset: 0; width: 100%; height: 100%; pointer-events: none; }
     .point {
-      position: absolute; width: 7.1%; aspect-ratio: 1; transform: translate(-50%, -50%);
-      border: 0; border-radius: 50%; background: transparent; padding: 0; cursor: pointer; z-index: 2;
+      position: absolute; width: 7.8%; aspect-ratio: 1; transform: translate(-50%, -50%);
+      border: 0; border-radius: 50%; background: transparent; padding: 0; pointer-events: none; z-index: 2;
     }
     .point.hint::after {
       content: ""; position: absolute; left: 50%; top: 50%; width: 28%; height: 28%; transform: translate(-50%, -50%);
       border-radius: 50%; background: rgba(34,197,94,.58); box-shadow: 0 0 8px rgba(34,197,94,.38);
     }
-    .point.last { background: rgba(14,165,233,.16); }
+    .point.hint.defense::after { background: rgba(14,165,233,.65); box-shadow: 0 0 8px rgba(14,165,233,.4); }
+    .point.hint.win::after { width: 36%; height: 36%; background: rgba(250,204,21,.78); box-shadow: 0 0 12px rgba(250,204,21,.5); }
+    .point.last { background: rgba(14,165,233,.16); box-shadow: inset 0 0 0 2px rgba(14,165,233,.34); }
+    .point.lastWhite { background: rgba(139,92,246,.16); box-shadow: inset 0 0 0 2px rgba(139,92,246,.32); }
     .stone {
       position: absolute; inset: 8%; border-radius: 50%; box-shadow: inset 0 2px 5px rgba(255,255,255,.45), inset 0 -7px 10px rgba(15,23,42,.22), 0 3px 7px rgba(15,23,42,.33);
     }
+    .stone.new { animation: stoneDrop .2s ease-out; }
     .stone.black { background: radial-gradient(circle at 34% 28%, #64748b 0%, #1f2937 38%, #020617 100%); border: 2px solid #020617; }
     .stone.white { background: radial-gradient(circle at 34% 28%, #fff 0%, #f8fafc 42%, #cbd5e1 100%); border: 2px solid #64748b; }
     .point.win .stone { animation: winPulse .72s ease-in-out infinite; box-shadow: 0 0 0 5px rgba(250,204,21,.44), 0 6px 12px rgba(15,23,42,.28); }
@@ -64,6 +80,8 @@
       background: linear-gradient(180deg, #e0f2fe, #fef3c7); border: 3px solid #7dd3fc;
       box-shadow: 0 7px 0 rgba(14,116,144,.16); display: grid; place-items: center; overflow: hidden;
     }
+    .petAvatar.thinking { animation: petThink .7s ease-in-out infinite alternate; }
+    .petAvatar.happy { animation: petHappy .45s ease-in-out 3; }
     .petSprite { width: 100%; height: 100%; background-repeat: no-repeat; image-rendering: auto; }
     .petFallback { font-size: 54px; font-weight: 1000; color: #0ea5e9; }
     .petBubble {
@@ -78,15 +96,23 @@
       background: #0ea5e9; color: #fff; cursor: pointer; box-shadow: 0 4px 0 rgba(15,23,42,.24);
     }
     .btn:active { transform: translateY(2px); box-shadow: 0 2px 0 rgba(15,23,42,.24); }
+    .btn:disabled { opacity: .48; cursor: not-allowed; transform: none; box-shadow: 0 2px 0 rgba(15,23,42,.12); }
     .btn-orange { background: #f97316; }
     .btn-soft { background: #fff7ed; color: #9a3412; border: 2px solid #fed7aa; }
     .overlay { position: fixed; inset: 0; z-index: 20; display: flex; align-items: center; justify-content: center; padding: 16px; background: rgba(15,39,71,.46); }
     .card { width: min(92vw, 420px); border-radius: 18px; background: #fff; border: 3px solid #fbbf24; padding: 22px; box-shadow: 0 18px 42px rgba(15,23,42,.28); }
     .card h1 { margin: 0 0 10px; font-size: 28px; line-height: 1.1; font-weight: 1000; color: #b45309; }
     .card p { margin: 0 0 16px; font-size: 15px; line-height: 1.7; font-weight: 850; color: #0f2747; }
+    .cardActions { display: flex; gap: 10px; flex-wrap: wrap; }
+    .resultStats { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 8px; margin: 14px 0 16px; }
+    .resultStat { border-radius: 12px; background: #ecfeff; border: 2px solid #a5f3fc; padding: 10px; color: #164e63; font-size: 14px; font-weight: 1000; }
+    .resultStat b { display: block; margin-top: 2px; color: #0f766e; font-size: 18px; }
     .toast { position: fixed; left: 50%; top: 50%; z-index: 30; transform: translate(-50%, -50%); border-radius: 15px; background: #fff; border: 3px solid #7dd3fc; padding: 14px 18px; font-size: 18px; line-height: 1.45; font-weight: 1000; text-align: center; box-shadow: 0 15px 36px rgba(15,23,42,.28); }
     [hidden] { display: none !important; }
     @keyframes winPulse { 0%,100% { transform: scale(1); } 50% { transform: scale(1.12); } }
+    @keyframes stoneDrop { from { transform: scale(.55); opacity: .2; } to { transform: scale(1); opacity: 1; } }
+    @keyframes petThink { from { transform: translateY(0); } to { transform: translateY(-5px); } }
+    @keyframes petHappy { 0%,100% { transform: scale(1); } 50% { transform: scale(1.07) rotate(2deg); } }
     @media (max-width: 720px) {
       .shell { padding: 7px; gap: 7px; }
       .main { grid-template-columns: 1fr; grid-template-rows: auto minmax(0, 1fr); }
@@ -99,6 +125,7 @@
       .top { align-items: flex-start; }
       .title { font-size: 18px; }
       .pill { min-width: 58px; height: 29px; font-size: 12px; padding: 0 8px; }
+      .selectWrap { min-width: 84px; height: 29px; font-size: 12px; padding: 0 6px 0 8px; }
       .bottom { align-items: stretch; flex-direction: column; }
       .status { white-space: normal; }
       .actions { width: 100%; justify-content: space-between; }
@@ -114,7 +141,14 @@
       <div class="stats">
         <span class="pill">手数 <b id="steps">0</b></span>
         <span class="pill">得分 <b id="score">0</b></span>
-        <span class="pill">黑棋先手</span>
+        <span class="pill turnBadge" id="turnBadge">准备</span>
+        <label class="selectWrap">难度
+          <select id="difficulty" aria-label="难度">
+            <option value="easy">轻松</option>
+            <option value="normal" selected>普通</option>
+            <option value="hard">挑战</option>
+          </select>
+        </label>
       </div>
     </div>
     <div class="main">
@@ -129,6 +163,7 @@
       <div id="status" class="status">点击开始后，你先落黑棋</div>
       <div class="actions">
         <button id="help" class="btn btn-soft" type="button">玩法</button>
+        <button id="hint" class="btn btn-soft" type="button">提示</button>
         <button id="undo" class="btn btn-soft" type="button">悔棋</button>
         <button id="restart" class="btn btn-orange" type="button">重新开始</button>
       </div>
@@ -143,21 +178,56 @@
     </div>
   </div>
 
+  <div id="result" class="overlay" role="dialog" aria-modal="true" aria-labelledby="resultTitle" hidden>
+    <div class="card">
+      <h1 id="resultTitle">本局结束</h1>
+      <p id="resultText">亲密度提升</p>
+      <div class="resultStats">
+        <div class="resultStat">手数<b id="resultSteps">0</b></div>
+        <div class="resultStat">得分<b id="resultScore">0</b></div>
+        <div class="resultStat">难度<b id="resultDifficulty">普通</b></div>
+        <div class="resultStat">奖励<b id="resultReward">0</b></div>
+      </div>
+      <div class="cardActions">
+        <button id="again" class="btn btn-orange" type="button">再来一局</button>
+        <button id="closeResult" class="btn btn-soft" type="button">查看棋盘</button>
+      </div>
+    </div>
+  </div>
+
   <script>
     const SIZE = 15;
     const EMPTY = '';
     const BLACK = 'black';
     const WHITE = 'white';
     const DIRECTIONS = [[1, 0], [0, 1], [1, 1], [1, -1]];
+    const DIFFICULTIES = {
+      easy: { level: 0, name: '轻松', own: .82, block: .66, noise: 80, missBlock: .28, reward: 24 },
+      normal: { level: 1, name: '普通', own: 1.12, block: 1.02, noise: 8, missBlock: 0, reward: 32 },
+      hard: { level: 2, name: '挑战', own: 1.22, block: 1.18, noise: 2, missBlock: 0, reward: 46 },
+    };
     const els = {
       board: document.getElementById('board'),
       status: document.getElementById('status'),
       steps: document.getElementById('steps'),
       score: document.getElementById('score'),
+      turnBadge: document.getElementById('turnBadge'),
+      difficulty: document.getElementById('difficulty'),
       intro: document.getElementById('intro'),
+      result: document.getElementById('result'),
+      resultTitle: document.getElementById('resultTitle'),
+      resultText: document.getElementById('resultText'),
+      resultSteps: document.getElementById('resultSteps'),
+      resultScore: document.getElementById('resultScore'),
+      resultDifficulty: document.getElementById('resultDifficulty'),
+      resultReward: document.getElementById('resultReward'),
       petAvatar: document.getElementById('petAvatar'),
       petName: document.getElementById('petName'),
       petTalk: document.getElementById('petTalk'),
+      start: document.getElementById('start'),
+      hint: document.getElementById('hint'),
+      undo: document.getElementById('undo'),
+      restart: document.getElementById('restart'),
     };
 
     let board = createBoard();
@@ -169,6 +239,9 @@
     let lastMove = null;
     let winLine = [];
     let finished = false;
+    let difficulty = 'normal';
+    let hintVisible = false;
+    let resultTimer = 0;
     let petObjectUrl = '';
 
     function createBoard() { return Array.from({ length: SIZE }, () => Array(SIZE).fill(EMPTY)); }
@@ -177,8 +250,9 @@
     function keyOf(x, y) { return `${x},${y}`; }
     function sideName(side) { return side === BLACK ? '黑棋' : '白棋'; }
     function post(type, data = {}, extra = {}) { try { window.parent.postMessage({ type, data, ...extra }, '*'); } catch (e) {} }
-    function setStatus(text) { els.status.textContent = text; }
+    function setStatus(text) { els.status.textContent = text; updateControls(); }
     function setPetTalk(text) { els.petTalk.textContent = text; }
+    function clamp(value, min, max) { return Math.max(min, Math.min(max, value)); }
 
     function boardSvg() {
       const ns = 'http://www.w3.org/2000/svg';
@@ -205,42 +279,54 @@
     function render() {
       els.board.innerHTML = '';
       els.board.appendChild(boardSvg());
+      els.board.classList.toggle('isThinking', phase === 'thinking');
+      els.board.classList.toggle('isResult', phase === 'result');
+      els.board.classList.toggle('isIntro', phase === 'intro');
+      els.petAvatar.classList.toggle('thinking', phase === 'thinking');
       const pad = 0.6, total = 15.2;
       const winKeys = new Set(winLine.map(p => keyOf(p.x, p.y)));
-      const hints = phase === 'playing' && turn === BLACK ? getHintCells() : new Set();
+      const hints = phase === 'playing' && turn === BLACK && hintVisible ? getHintCells() : new Map();
       for (let y = 0; y < SIZE; y++) for (let x = 0; x < SIZE; x++) {
         const btn = document.createElement('button');
         btn.type = 'button'; btn.className = 'point'; btn.dataset.x = x; btn.dataset.y = y;
         btn.style.left = `${((x + pad) / total) * 100}%`;
         btn.style.top = `${((y + pad) / total) * 100}%`;
-        if (lastMove?.x === x && lastMove?.y === y) btn.classList.add('last');
+        if (lastMove?.x === x && lastMove?.y === y) btn.classList.add('last', lastMove.side === WHITE ? 'lastWhite' : 'lastBlack');
         if (winKeys.has(keyOf(x, y))) btn.classList.add('win');
-        if (!board[y][x] && hints.has(keyOf(x, y))) btn.classList.add('hint');
+        const hint = hints.get(keyOf(x, y));
+        if (!board[y][x] && hint) btn.classList.add('hint', hint.type);
         if (board[y][x]) {
           const stone = document.createElement('span');
           stone.className = `stone ${board[y][x]}`;
+          if (lastMove?.x === x && lastMove?.y === y) stone.classList.add('new');
           btn.appendChild(stone);
         }
-        btn.onclick = handlePointClick;
         els.board.appendChild(btn);
       }
       els.steps.textContent = steps;
       els.score.textContent = score;
+      updateControls();
     }
 
-    function handlePointClick(event) {
+    function handleBoardClick(event) {
       if (phase !== 'playing' || turn !== BLACK) return;
-      const x = Number(event.currentTarget.dataset.x), y = Number(event.currentTarget.dataset.y);
+      const rect = els.board.getBoundingClientRect();
+      const pad = 0.6, total = 15.2;
+      const x = clamp(Math.round(((event.clientX - rect.left) / rect.width) * total - pad), 0, SIZE - 1);
+      const y = clamp(Math.round(((event.clientY - rect.top) / rect.height) * total - pad), 0, SIZE - 1);
       if (board[y][x]) { setStatus('这里已经有棋子了'); return; }
+      hintVisible = false;
       commitMove(x, y, BLACK);
     }
     function commitMove(x, y, side) {
-      history.push({ board: cloneBoard(board), turn, steps, score, lastMove, winLine: winLine.slice(), finished, phase });
+      history.push({ board: cloneBoard(board), turn, steps, score, lastMove, winLine: winLine.slice(), finished, phase, hintVisible });
       board[y][x] = side;
       lastMove = { x, y, side };
       if (side === BLACK) {
         steps++;
-        score += scoreForMove(x, y, BLACK);
+        const gain = scoreForMove(x, y, BLACK);
+        score += gain;
+        if (gain >= 40) toast(`漂亮连线<br>+${gain} 分`);
       }
       render();
       const result = checkResult(x, y, side);
@@ -249,18 +335,33 @@
       if (turn === WHITE) {
         phase = 'thinking';
         setStatus('宠物正在思考...');
-        setPetTalk('我看看哪里最关键。');
+        setPetTalk(nearThreat(BLACK) ? '这一步很危险，我得认真挡住。' : '我看看哪里最关键。');
         setTimeout(() => {
           const move = chooseAIMove();
           if (!move) finish('draw', '棋盘已满', []);
-          else commitMove(move.x, move.y, WHITE);
+          else {
+            hintVisible = false;
+            commitMove(move.x, move.y, WHITE);
+          }
         }, 420);
       } else {
         phase = 'playing';
         setStatus('轮到你落黑棋');
-        setPetTalk(nearThreat(BLACK) ? '你已经有很强的连线了。' : '轮到你啦。');
+        setPetTalk(reactionAfterPetMove());
         render();
       }
+    }
+
+    function updateControls() {
+      const isPlaying = phase === 'playing' && turn === BLACK;
+      els.turnBadge.textContent = phase === 'thinking' ? '宠物思考' : phase === 'result' ? '本局结束' : phase === 'playing' ? '你的回合' : '准备';
+      els.turnBadge.classList.toggle('thinking', phase === 'thinking');
+      els.turnBadge.classList.toggle('result', phase === 'result');
+      els.hint.disabled = !isPlaying || finished;
+      els.hint.textContent = hintVisible ? '收起提示' : '提示';
+      els.undo.disabled = phase === 'thinking' || finished || history.length < 2;
+      els.difficulty.disabled = phase === 'thinking';
+      els.restart.textContent = phase === 'result' ? '再来一局' : '重新开始';
     }
 
     function checkResult(x, y, side) {
@@ -305,12 +406,21 @@
     function chooseAIMove() {
       const candidates = candidateCells();
       if (!candidates.length) return null;
+      const config = DIFFICULTIES[difficulty] || DIFFICULTIES.normal;
+      const winning = candidates.find(cell => scoreCell(cell.x, cell.y, WHITE) >= 1000000);
+      if (winning) return winning;
+      const mustBlock = candidates.find(cell => scoreCell(cell.x, cell.y, BLACK) >= 1000000);
+      if (mustBlock && Math.random() >= config.missBlock) return mustBlock;
+      if (difficulty === 'hard') {
+        const openFour = candidates.find(cell => scoreCell(cell.x, cell.y, BLACK) >= 120000);
+        if (openFour) return openFour;
+      }
       let best = null;
       for (const cell of candidates) {
         const own = scoreCell(cell.x, cell.y, WHITE);
         const block = scoreCell(cell.x, cell.y, BLACK);
         const center = 16 - Math.abs(7 - cell.x) - Math.abs(7 - cell.y);
-        const score = own * 1.12 + block * 1.02 + center * 4 + Math.random() * 6;
+        const score = own * config.own + block * config.block + center * 4 + Math.random() * config.noise;
         if (!best || score > best.score) best = { ...cell, score };
       }
       return best;
@@ -356,12 +466,51 @@
       return candidateCells().some(cell => scoreCell(cell.x, cell.y, side) >= 9000);
     }
     function getHintCells() {
-      const cells = candidateCells().map(cell => ({ ...cell, score: scoreCell(cell.x, cell.y, BLACK) + scoreCell(cell.x, cell.y, WHITE) * .55 }));
+      const cells = candidateCells().map(cell => {
+        const attack = scoreCell(cell.x, cell.y, BLACK);
+        const defense = scoreCell(cell.x, cell.y, WHITE);
+        const score = attack + defense * .7;
+        const type = attack >= 1000000 ? 'win' : defense > attack ? 'defense' : 'attack';
+        return { ...cell, score, type, attack, defense };
+      });
       cells.sort((a, b) => b.score - a.score);
-      return new Set(cells.slice(0, 3).map(cell => keyOf(cell.x, cell.y)));
+      return new Map(cells.slice(0, 3).map(cell => [keyOf(cell.x, cell.y), cell]));
+    }
+    function showHint() {
+      if (phase !== 'playing' || turn !== BLACK) return;
+      hintVisible = !hintVisible;
+      if (hintVisible) {
+        score = Math.max(0, score - 3);
+        const best = Array.from(getHintCells().values())[0];
+        if (best?.type === 'win') setPetTalk('金色提示能直接连成五子。');
+        else if (best?.type === 'defense') setPetTalk('蓝色提示适合防守我的连线。');
+        else setPetTalk('绿色提示适合继续进攻。');
+        setStatus('已显示提示，使用提示扣 3 分');
+      } else {
+        setStatus('轮到你落黑棋');
+        setPetTalk('提示收起来啦，试试自己的判断。');
+      }
+      render();
+    }
+    function openHelp() {
+      els.start.textContent = phase === 'intro' ? '开始对弈' : '继续对弈';
+      els.intro.hidden = false;
+    }
+    function closeIntroOrStart() {
+      els.intro.hidden = true;
+      if (phase === 'intro') resetGame();
+    }
+    function reactionAfterPetMove() {
+      if (nearThreat(WHITE)) return '我也连出威胁了，看看你能不能挡住。';
+      if (nearThreat(BLACK)) return '你已经有很强的连线了。';
+      return '轮到你啦。';
     }
 
     function resetGame() {
+      if (resultTimer) {
+        clearTimeout(resultTimer);
+        resultTimer = 0;
+      }
       board = createBoard();
       phase = 'playing';
       turn = BLACK;
@@ -371,6 +520,8 @@
       lastMove = null;
       winLine = [];
       finished = false;
+      hintVisible = false;
+      els.result.hidden = true;
       setStatus('轮到你落黑棋');
       setPetTalk('你先走，我执白棋。');
       render();
@@ -388,6 +539,7 @@
       lastMove = previous.lastMove;
       winLine = previous.winLine || [];
       finished = previous.finished;
+      hintVisible = previous.hintVisible || false;
       phase = 'playing';
       setStatus('已悔棋，轮到你落黑棋');
       setPetTalk('没关系，我们再想一次。');
@@ -402,12 +554,32 @@
       render();
       const won = winner === BLACK;
       const draw = winner === 'draw';
-      const earnedPoints = won ? 138 : draw ? 108 : 88;
+      const config = DIFFICULTIES[difficulty] || DIFFICULTIES.normal;
+      const earnedPoints = (won ? 106 : draw ? 82 : 64) + config.reward;
       const title = won ? '你赢啦！' : draw ? '平局' : '宠物获胜';
       setStatus(`${title} ${reason || ''} 亲密度提升`);
       setPetTalk(won ? '好厉害！这条连线太漂亮了。' : draw ? '下满一盘也很棒。' : '这局我赢啦，我们再来。');
+      pulsePet();
       toast(`${title}<br>亲密度提升`);
-      post('gameFinished', { earnedPoints, score, steps, difficulty: 1, difficultyName: '默认', winner, reason, bondBonus: 32, finishedAt: Date.now() });
+      resultTimer = setTimeout(() => {
+        resultTimer = 0;
+        if (finished && phase === 'result') showResult(title, reason, earnedPoints, config.name);
+      }, 2400);
+      post('gameFinished', { earnedPoints, score, steps, difficulty: config.level, difficultyName: config.name, winner, reason, bondBonus: config.reward, finishedAt: Date.now() });
+    }
+    function showResult(title, reason, earnedPoints, difficultyName) {
+      els.resultTitle.textContent = title;
+      els.resultText.textContent = `${reason || '本局完成'}，亲密度提升。`;
+      els.resultSteps.textContent = steps;
+      els.resultScore.textContent = score;
+      els.resultDifficulty.textContent = difficultyName;
+      els.resultReward.textContent = `+${earnedPoints}`;
+      els.result.hidden = false;
+    }
+    function pulsePet() {
+      els.petAvatar.classList.remove('happy');
+      void els.petAvatar.offsetWidth;
+      els.petAvatar.classList.add('happy');
     }
     function toast(html) {
       const box = document.createElement('div');
@@ -448,10 +620,15 @@
       els.petName.textContent = `${pet.name || '宠物'}执白棋`;
     }
 
-    document.getElementById('start').onclick = () => { els.intro.hidden = true; resetGame(); };
-    document.getElementById('restart').onclick = resetGame;
-    document.getElementById('undo').onclick = undo;
-    document.getElementById('help').onclick = () => { els.intro.hidden = false; };
+    els.board.onclick = handleBoardClick;
+    els.start.onclick = closeIntroOrStart;
+    els.restart.onclick = resetGame;
+    els.undo.onclick = undo;
+    els.hint.onclick = showHint;
+    els.difficulty.onchange = () => { difficulty = els.difficulty.value; setPetTalk(`难度切换为${DIFFICULTIES[difficulty].name}。`); updateControls(); };
+    document.getElementById('again').onclick = resetGame;
+    document.getElementById('closeResult').onclick = () => { els.result.hidden = true; };
+    document.getElementById('help').onclick = openHelp;
     window.addEventListener('message', e => { if (e.data?.type === 'gameContinue') resetGame(); });
     window.addEventListener('beforeunload', () => { if (petObjectUrl) URL.revokeObjectURL(petObjectUrl); });
     render(); requestPetImage(); post('gameLoaded');

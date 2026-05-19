@@ -80,7 +80,7 @@
   const FRICTION = .74;
   const CUSHION_RESTITUTION = .84;
   const BALL_RESTITUTION = .96;
-  const STOP_SPEED = .035;
+  const STOP_SPEED = .045;
   const CUE_SPIN_CURVE = .24;
   const CUE_SPIN_DECAY = .18;
   const CUE_SPIN_COLLISION = 2.35;
@@ -133,7 +133,7 @@
     lastTime: 0,
     pointer: null,
     inputMode: 'view',
-    cuePlacement: { active: false, pointer: null },
+    cuePlacement: { active: false, pointer: null, afterScratch: false },
     hitPoint: { x: 0, y: 0 },
     hitControl: { active: false, pointer: null, moved: false, startX: 0, startY: 0 },
     aim: { active: false, intentReady: false, startX: 0, startY: 0, screenStartX: 0, screenStartY: 0, x: 0, y: 0, power: 0, dir: { x: 1, y: 0 }, blocked: false },
@@ -148,6 +148,7 @@
       gesture: null,
     },
     aiThinking: false,
+    turnSummary: '',
     petAssets: [],
     objectUrls: [],
     best: Number(localStorage.getItem(BEST_KEY) || 0),
@@ -166,6 +167,8 @@
     cueHitDot: null,
     aimLine: null,
     targetLine: null,
+    pocketLine: null,
+    ghostBall: null,
     petActor: null,
     petBillboard: null,
     petBillboardTexture: null,
@@ -1014,13 +1017,25 @@
 
     const aimMat = new THREE.LineBasicMaterial({ color: 0xffffff, transparent: true, opacity: .82 });
     const targetMat = new THREE.LineBasicMaterial({ color: 0xfacc15, transparent: true, opacity: .58 });
+    const pocketMat = new THREE.LineBasicMaterial({ color: 0x22c55e, transparent: true, opacity: .52 });
     three.aimLine = new THREE.Line(createLineGeometry(), aimMat);
     three.targetLine = new THREE.Line(createLineGeometry(), targetMat);
+    three.pocketLine = new THREE.Line(createLineGeometry(), pocketMat);
     three.aimLine.frustumCulled = false;
     three.targetLine.frustumCulled = false;
+    three.pocketLine.frustumCulled = false;
     three.aimLine.visible = false;
     three.targetLine.visible = false;
-    three.scene.add(three.aimLine, three.targetLine);
+    three.pocketLine.visible = false;
+    three.scene.add(three.aimLine, three.targetLine, three.pocketLine);
+
+    three.ghostBall = new THREE.Mesh(
+      new THREE.SphereGeometry(BALL_RADIUS, IS_MOBILE ? 18 : 24, IS_MOBILE ? 12 : 16),
+      new THREE.MeshBasicMaterial({ color: 0xffffff, transparent: true, opacity: .36, depthWrite: false })
+    );
+    three.ghostBall.visible = false;
+    three.ghostBall.renderOrder = 12;
+    three.scene.add(three.ghostBall);
   }
 
   function createPetActor() {
@@ -1270,11 +1285,25 @@
       const fallT = fall ? clamp(fall.elapsed / fall.duration, 0, 1) : 0;
       mesh.visible = !ball.pocketed || falling;
       mesh.position.set(ball.x, BALL_RADIUS - POCKET_FALL_DEPTH * fallT * fallT, ball.y);
-      mesh.scale.setScalar(falling ? 1 - fallT * .34 : 1);
+      const highlighted = shouldHighlightLegalTarget(ball);
+      mesh.scale.setScalar(falling ? 1 - fallT * .34 : highlighted ? 1.08 : 1);
       (mesh.userData.rollables || []).forEach((part) => {
         if (ball.rollQuat) part.quaternion.copy(ball.rollQuat);
+        updateBallHighlight(part, highlighted);
       });
     });
+  }
+
+  function shouldHighlightLegalTarget(ball) {
+    if (!ball || ball.pocketed || ball.type === 'cue') return false;
+    return canHumanShoot() && state.inputMode !== 'swing' && legalTargetsFor(0).includes(ball);
+  }
+
+  function updateBallHighlight(part, highlighted) {
+    const mat = part?.material;
+    if (!mat || !mat.emissive) return;
+    mat.emissive.setHex(highlighted ? 0x164e2f : 0x000000);
+    mat.emissiveIntensity = highlighted ? .42 : 0;
   }
 
   function startGame() {
@@ -1287,10 +1316,12 @@
       state.petScore = 0;
       state.seconds = 0;
       state.shotCount = 0;
+      state.turnSummary = '';
       resetHitPoint();
       rackBalls();
       state.inputMode = 'view';
       state.cuePlacement.active = state.mode === 'snooker';
+      state.cuePlacement.afterScratch = false;
       startTimer();
       window.parent.postMessage({ type: 'gameStarted' }, '*');
     }
@@ -1310,10 +1341,12 @@
     state.petScore = 0;
     state.seconds = 0;
     state.shotCount = 0;
+    state.turnSummary = '';
     state.inputMode = 'view';
     resetHitPoint();
     state.cuePlacement.active = false;
     state.cuePlacement.pointer = null;
+    state.cuePlacement.afterScratch = false;
     cancelAim();
     hidePetActor(true);
     stopTimer();
@@ -1682,6 +1715,7 @@
     const cuePotted = state.turnPots.some(b => b.type === 'cue');
     if (cuePotted) respotCue();
     const scoringPots = state.turnPots.filter(b => b.type !== 'cue');
+    state.turnSummary = '';
     let keepTurn = scoringPots.length > 0 && !cuePotted;
     if (state.mode === 'eight') keepTurn = settleEight(scoringPots, cuePotted);
     else keepTurn = settleSnooker(scoringPots, cuePotted);
@@ -1690,8 +1724,18 @@
     if (!keepTurn) state.currentPlayer = state.currentPlayer ? 0 : 1;
     state.inputMode = 'view';
     state.cuePlacement.active = false;
+    state.cuePlacement.afterScratch = false;
+    if (cuePotted && state.currentPlayer === 0) {
+      state.cuePlacement.active = true;
+      state.cuePlacement.afterScratch = true;
+    }
     if (state.currentPlayer === 0) resetHitPoint();
-    state.message = state.currentPlayer === 0 ? '拖动调整视角，然后拖动或点击下面白色球挥杆' : '宠物正在瞄准';
+    const nextAction = state.cuePlacement.active
+      ? '白球进袋：拖动白球摆位，然后点击下面白色球确认'
+      : state.currentPlayer === 0
+        ? '拖动调整视角，或点击白球/下面白色球挥杆'
+        : '宠物正在瞄准';
+    state.message = state.turnSummary ? `${state.turnSummary} · ${nextAction}` : nextAction;
     updateUI();
     if (state.currentPlayer === 1) scheduleAIShot();
     if (cue) {
@@ -1733,17 +1777,26 @@
     if (cuePotted) {
       keepTurn = false;
       addScore(state.currentPlayer ? 0 : 1, 1);
+      state.turnSummary = '白球进袋，对手得分';
     }
     if (foulEight) {
       addScore(state.currentPlayer ? 0 : 1, 4);
-      state.message = '误进黑八，对手得分';
+      state.turnSummary = '误进黑八，对手得分';
+    }
+    if (!state.turnSummary) {
+      if (scoringPots.length) state.turnSummary = keepTurn ? '进球，继续' : '进球后换人';
+      else state.turnSummary = '没有进球，换人';
     }
     return keepTurn && !foulEight;
   }
 
   function settleSnooker(scoringPots, cuePotted) {
     let keepTurn = scoringPots.length > 0 && !cuePotted;
-    if (cuePotted) addScore(state.currentPlayer ? 0 : 1, 4);
+    let illegalPot = false;
+    if (cuePotted) {
+      addScore(state.currentPlayer ? 0 : 1, 4);
+      state.turnSummary = '白球进袋，对手加4分';
+    }
     scoringPots.forEach(ball => {
       const expectedRed = state.snookerNext === 'red';
       const legal = expectedRed ? ball.type === 'red' : ball.type !== 'red';
@@ -1756,10 +1809,16 @@
         addScore(opponent, Math.max(4, ball.points || 4));
         recordPottedBall(opponent, ball);
         keepTurn = false;
+        illegalPot = true;
       }
       if (ball.type !== 'red' && redsRemaining()) respotColored(ball);
     });
     if (!redsRemaining()) state.snookerNext = 'color';
+    if (!state.turnSummary) {
+      if (illegalPot) state.turnSummary = '打错目标，对手得分';
+      else if (scoringPots.length) state.turnSummary = keepTurn ? '进球，继续' : '进球后换人';
+      else state.turnSummary = '没有进球，换人';
+    }
     return keepTurn;
   }
 
@@ -1996,7 +2055,7 @@
   }
 
   function canPlaceCue() {
-    return canHumanShoot() && state.mode === 'snooker' && state.cuePlacement.active && state.inputMode === 'view';
+    return canHumanShoot() && state.cuePlacement.active && state.inputMode === 'view';
   }
 
   function pointerNearCue(point, cue) {
@@ -2006,8 +2065,13 @@
   function placeCueBall(point) {
     const cue = cueBall();
     if (!cue || !point) return;
-    cue.x = clamp(point.x, -TABLE.width / 2 + BALL_RADIUS * 2.2, -TABLE.width * .24);
-    cue.y = clamp(point.y, -TABLE.height * .3, TABLE.height * .3);
+    const fullTable = state.cuePlacement.afterScratch;
+    cue.x = fullTable
+      ? clamp(point.x, -TABLE.width / 2 + BALL_RADIUS * 2.2, TABLE.width / 2 - BALL_RADIUS * 2.2)
+      : clamp(point.x, -TABLE.width / 2 + BALL_RADIUS * 2.2, -TABLE.width * .24);
+    cue.y = fullTable
+      ? clamp(point.y, -TABLE.height / 2 + BALL_RADIUS * 2.2, TABLE.height / 2 - BALL_RADIUS * 2.2)
+      : clamp(point.y, -TABLE.height * .3, TABLE.height * .3);
     cue.vx = 0;
     cue.vy = 0;
     resetBallSpin(cue);
@@ -2024,8 +2088,13 @@
       els.stage.setPointerCapture?.(event.pointerId);
       state.cuePlacement.pointer = event.pointerId;
       placeCueBall(point);
-      state.message = '拖动白球摆位，然后点击下面白色球确认';
+      state.message = state.cuePlacement.afterScratch ? '拖动白球自由摆位，然后点击下面白色球确认' : '拖动白球摆位，然后点击下面白色球确认';
       updateUI();
+      event.preventDefault();
+      return;
+    }
+    if (canHumanShoot() && state.inputMode === 'view' && pointerNearCue(point, cue)) {
+      enterSwingMode();
       event.preventDefault();
       return;
     }
@@ -2148,6 +2217,8 @@
     if (three.cueHitDot) three.cueHitDot.visible = false;
     three.aimLine.visible = false;
     three.targetLine.visible = false;
+    if (three.pocketLine) three.pocketLine.visible = false;
+    if (three.ghostBall) three.ghostBall.visible = false;
   }
 
   function startCameraPointer(event) {
@@ -2314,7 +2385,7 @@
       if (state.currentPlayer !== 1 || state.running || state.finished) return;
       const shot = chooseAIShot();
       startPetHitAnimation(shot);
-    }, 760 + Math.random() * 560);
+    }, 460 + Math.random() * 360);
   }
 
   function showThinkingPetActor() {
@@ -2426,23 +2497,54 @@
   function chooseAIShot() {
     const cue = cueBall();
     const targets = legalTargetsFor(1);
-    let best = targets[0] || state.balls.find(b => b.type !== 'cue' && !b.pocketed);
+    let bestShot = null;
     let bestScore = -Infinity;
     const pockets = pocketCenters();
     targets.forEach(ball => {
-      const pocket = pockets.reduce((a, p) => distance(ball, p) < distance(ball, a) ? p : a, pockets[0]);
-      const cueToBall = distance(cue, ball);
-      const ballToPocket = distance(ball, pocket);
-      const score = -cueToBall - ballToPocket * .82 + Math.random() * .4;
-      if (score > bestScore) { bestScore = score; best = ball; }
+      pockets.forEach(pocket => {
+        const candidate = pocketShotFor(cue, ball, pocket);
+        if (!candidate) return;
+        const cueToGhost = distance(cue, candidate.ghost);
+        const ballToPocket = distance(ball, pocket);
+        const anglePenalty = Math.abs(candidate.cutAngle) * 1.35;
+        const score = -cueToGhost - ballToPocket * .74 - anglePenalty + Math.random() * .28;
+        if (score > bestScore) { bestScore = score; bestShot = candidate; }
+      });
     });
+    const best = bestShot?.ball || targets[0] || state.balls.find(b => b.type !== 'cue' && !b.pocketed);
     if (!best) return { dir: { x: 1, y: 0 }, power: .48 };
-    const aim = ghostAim(cue, best);
+    const aim = bestShot ? bestShot.dir : ghostAim(cue, best);
     const diff = DIFFICULTIES[state.difficulty];
     const angle = Math.atan2(aim.y, aim.x) + (Math.random() - .5) * diff.aiNoise;
-    const dist = Math.hypot(best.x - cue.x, best.y - cue.y);
+    const dist = bestShot ? distance(cue, bestShot.ghost) + distance(best, bestShot.pocket) * .34 : Math.hypot(best.x - cue.x, best.y - cue.y);
     const power = Math.max(.32, Math.min(.96, (.34 + dist / 7.5) * diff.aiPower));
     return { dir: { x: Math.cos(angle), y: Math.sin(angle) }, power };
+  }
+
+  function pocketShotFor(cue, ball, pocket) {
+    if (!cue || !ball || !pocket) return null;
+    const targetToPocket = normalize({ x: pocket.x - ball.x, y: pocket.y - ball.y });
+    const ghost = { x: ball.x - targetToPocket.x * BALL_RADIUS * 2, y: ball.y - targetToPocket.y * BALL_RADIUS * 2 };
+    const cueToGhost = normalize({ x: ghost.x - cue.x, y: ghost.y - cue.y });
+    const cutAngle = Math.acos(clamp(cueToGhost.x * targetToPocket.x + cueToGhost.y * targetToPocket.y, -1, 1));
+    if (cutAngle > Math.PI * .54) return null;
+    if (!isPathClear(cue, ghost, cue, ball, BALL_RADIUS * 2.16)) return null;
+    if (!isPathClear(ball, pocket, ball, null, BALL_RADIUS * 1.72)) return null;
+    return { ball, pocket, ghost, dir: cueToGhost, cutAngle };
+  }
+
+  function isPathClear(from, to, ignoreA, ignoreB, clearance) {
+    const dx = to.x - from.x;
+    const dy = to.y - from.y;
+    const lengthSq = dx * dx + dy * dy;
+    if (lengthSq <= .0001) return false;
+    return !state.balls.some(ball => {
+      if (ball.pocketed || ball === ignoreA || ball === ignoreB || ball.type === 'cue') return false;
+      const t = clamp(((ball.x - from.x) * dx + (ball.y - from.y) * dy) / lengthSq, 0, 1);
+      const closestX = from.x + dx * t;
+      const closestY = from.y + dy * t;
+      return Math.hypot(ball.x - closestX, ball.y - closestY) < clearance;
+    });
   }
 
   function legalTargetsFor(player) {
@@ -2494,6 +2596,8 @@
       updateCueHitDot(cue, state.aim.dir);
       three.aimLine.visible = false;
       three.targetLine.visible = false;
+      if (three.pocketLine) three.pocketLine.visible = false;
+      if (three.ghostBall) three.ghostBall.visible = false;
       return;
     }
     if (!state.aim.intentReady) {
@@ -2501,6 +2605,8 @@
       updateCueHitDot(cue, state.aim.dir);
       three.aimLine.visible = false;
       three.targetLine.visible = false;
+      if (three.pocketLine) three.pocketLine.visible = false;
+      if (three.ghostBall) three.ghostBall.visible = false;
       return;
     }
     updateCueHitDot(cue, dir);
@@ -2508,6 +2614,8 @@
     if (state.aim.blocked) {
       three.aimLine.visible = false;
       three.targetLine.visible = false;
+      if (three.pocketLine) three.pocketLine.visible = false;
+      if (three.ghostBall) three.ghostBall.visible = false;
       els.guideText.textContent = '这个角度球杆被挡住了，换个方向试试';
       return;
     }
@@ -2522,8 +2630,15 @@
       const targetEnd = extendToTableEdge(prediction.ball, out, 2.8);
       setLine(three.targetLine, prediction.ball.x, prediction.ball.y, targetEnd.x, targetEnd.y);
       three.targetLine.visible = true;
+      if (three.pocketLine) three.pocketLine.visible = false;
+      if (three.ghostBall) {
+        three.ghostBall.position.set(prediction.contact.x, BALL_RADIUS * 1.04, prediction.contact.y);
+        three.ghostBall.visible = true;
+      }
     } else {
       three.targetLine.visible = false;
+      if (three.pocketLine) three.pocketLine.visible = false;
+      if (three.ghostBall) three.ghostBall.visible = false;
     }
   }
 
@@ -2620,7 +2735,8 @@
       const projection = ox * dir.x + oy * dir.y;
       if (projection <= BALL_RADIUS * 2 || projection > maxDistance) return;
       const closestSq = ox * ox + oy * oy - projection * projection;
-      const hitRadius = BALL_RADIUS * 2.08;
+      const assist = DIFFICULTIES[state.difficulty]?.aimHelp || 0;
+      const hitRadius = BALL_RADIUS * (2.08 + assist * .55);
       if (closestSq > hitRadius * hitRadius) return;
       const offset = Math.sqrt(Math.max(0, hitRadius * hitRadius - closestSq));
       const t = projection - offset;
@@ -2644,6 +2760,12 @@
     if (dir.y < -.001) distances.push((minY - origin.y) / dir.y);
     const distance = Math.min(fallbackLength, ...distances.filter(v => v > 0));
     return { x: origin.x + dir.x * distance, y: origin.y + dir.y * distance };
+  }
+
+  function bestPocketForBall(ball) {
+    const pockets = pocketCenters();
+    if (!ball || !pockets.length) return null;
+    return pockets.reduce((best, pocket) => distance(ball, pocket) < distance(ball, best) ? pocket : best, pockets[0]);
   }
 
   function setLine(line, x1, y1, x2, y2) {
@@ -2779,7 +2901,8 @@
     els.playerScore.textContent = String(state.playerScore);
     els.petScore.textContent = String(state.petScore);
     renderPottedBalls();
-    els.centerNote.textContent = `${MODES[state.mode].label} · ${formatTime(state.seconds)}`;
+    const targetHint = currentTargetHint();
+    els.centerNote.textContent = `${MODES[state.mode].label} · ${targetHint} · ${formatTime(state.seconds)}`;
     els.guideText.textContent = state.finished ? '点击开始再来一局' : state.started ? state.message : '选择模式和难度，点击开始';
     els.playerHud.classList.toggle('active', state.currentPlayer === 0 && state.started && !state.running);
     els.petHud.classList.toggle('active', state.currentPlayer === 1 && state.started && !state.running);
@@ -2799,6 +2922,15 @@
 
   function updateQualityUI() {
     els.qualityButtons.forEach(btn => btn.classList.toggle('active', btn.dataset.quality === state.graphics.mode));
+  }
+
+  function currentTargetHint() {
+    if (!state.started || state.finished) return '准备';
+    if (state.mode === 'snooker') return state.snookerNext === 'red' && redsRemaining() ? '目标红球' : '目标彩球';
+    const group = playerGroup(state.currentPlayer);
+    if (group === 'solid') return '目标小号';
+    if (group === 'stripe') return '目标大号';
+    return '目标任意';
   }
 
   function isPointOverElement(event, element) {

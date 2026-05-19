@@ -62,6 +62,7 @@
     projectile: null,
     currentType: 0,
     nextType: 1,
+    comboStreak: 0,
     particles: [],
     floatingTexts: [],
     shockwaves: [],
@@ -102,6 +103,9 @@
         padding: 0 8px; border-radius: 999px; background: linear-gradient(180deg, #fff, #ecfeff); border: 1px solid rgba(14,116,144,.2);
         color: #0f766e; font-size: 12px; font-weight: 900; box-shadow: 0 2px 0 rgba(14,116,144,.12);
       }
+      .mh-food-pill { min-width: 96px; position: relative; overflow: hidden; }
+      .mh-food-fill { position: absolute; left: 4px; right: auto; bottom: 3px; width: 0%; height: 4px; border-radius: 999px; background: linear-gradient(90deg, #facc15, #22c55e); transition: width .22s ease; }
+      .mh-food-pill b, .mh-food-pill span { position: relative; z-index: 1; }
       .mh-pill.danger { color: #b91c1c; background: linear-gradient(180deg, #fff, #fee2e2); border-color: rgba(239,68,68,.35); animation: mhPulseWarn .82s ease-in-out infinite; }
       .mh-icon-btn, .mh-action, .mh-start, .mh-difficulty { border: 0; cursor: pointer; font-weight: 900; }
       .mh-icon-btn { width: 34px; height: 34px; border-radius: 999px; background: linear-gradient(180deg, #fb923c, #ea580c); color: white; box-shadow: 0 3px 0 #9a3412; font-size: 18px; }
@@ -117,6 +121,7 @@
       .mh-controls { pointer-events: auto; display: flex; align-items: center; justify-content: flex-end; gap: 6px; flex-wrap: wrap; }
       .mh-action { height: 34px; border-radius: 999px; padding: 0 12px; background: linear-gradient(180deg, #38bdf8, #0284c7); color: white; box-shadow: 0 4px 0 #075985; }
       .mh-action.help { background: linear-gradient(180deg, #fb923c, #ea580c); box-shadow-color: #9a3412; }
+      .mh-action.swap { min-width: 42px; padding: 0 10px; background: linear-gradient(180deg, #a78bfa, #7c3aed); box-shadow-color: #5b21b6; }
       .mh-difficulties { display: flex; align-items: center; gap: 4px; padding: 4px; border-radius: 999px; background: rgba(255,255,255,.82); border: 1px solid rgba(14,116,144,.16); }
       .mh-difficulty { height: 28px; min-width: 44px; padding: 0 9px; border-radius: 999px; background: transparent; color: #0f766e; font-size: 12px; }
       .mh-difficulty.active { background: linear-gradient(180deg, #34d399, #16a34a); color: white; box-shadow: 0 2px 0 #15803d; }
@@ -160,15 +165,16 @@
         <div class="mh-title">哈奇祖玛</div>
         <div class="mh-stats" aria-label="游戏状态">
           <span class="mh-pill">关卡 <b id="mhLevel">1</b></span>
-          <span id="mhDangerPill" class="mh-pill">食物 <b id="mhFood">0</b>/<b id="mhTarget">0</b></span>
+          <span id="mhDangerPill" class="mh-pill mh-food-pill"><span>食物</span> <b id="mhFood">0</b>/<b id="mhTarget">0</b><i id="mhFoodFill" class="mh-food-fill"></i></span>
           <span class="mh-pill optional">分数 <b id="mhScore">0</b></span>
           <span class="mh-pill optional">最佳 <b id="mhBest">0</b></span>
         </div>
       </header>
       <footer class="mh-bottom">
-        <div class="mh-hint">拖动瞄准，松手发射，三个同色连在一起就会爆开</div>
+        <div class="mh-hint">拖动瞄准，松手发射；需要时可交换当前球和下一个球</div>
         <div class="mh-controls">
           <div id="mhDifficulties" class="mh-difficulties" aria-label="选择难度"></div>
+          <button id="mhSwap" class="mh-action swap" type="button" aria-label="交换当前球和下一个球">⇄</button>
           <button id="mhHelp" class="mh-action help" type="button">玩法</button>
           <button id="mhRestart" class="mh-action" type="button">重开</button>
         </div>
@@ -197,6 +203,7 @@
     score: document.getElementById('mhScore'),
     best: document.getElementById('mhBest'),
     danger: document.getElementById('mhDangerPill'),
+    foodFill: document.getElementById('mhFoodFill'),
   };
 
   let width = 0;
@@ -248,6 +255,7 @@
     state.score = keepLevel ? state.score : 0;
     state.foods = 0;
     state.projectile = null;
+    state.comboStreak = 0;
     state.chainMotion = null;
     state.pendingInsert = null;
     state.queuedShot = null;
@@ -279,12 +287,14 @@
   function generateLevel() {
     const config = cfg();
     const random = seededRandom(hashSeed(`${state.difficulty}:${state.level}:${Date.now() % 9973}`));
-    state.colorCount = clamp(config.colorCount + Math.floor((state.level - 1) / 7), config.colorCount, COLORS.length);
-    state.speed = config.speed * (1 + Math.min(0.32, (state.level - 1) * 0.025));
-    state.targetFoods = config.targetFoods + Math.floor((state.level - 1) * (state.difficulty === 'hard' ? 0.8 : state.difficulty === 'normal' ? 0.55 : 0.35));
+    const levelStep = Math.max(0, state.level - 1);
+    const starterEase = state.level === 1 ? 0.86 : state.level === 2 ? 0.94 : 1;
+    state.colorCount = clamp(config.colorCount + Math.floor(Math.max(0, state.level - 4) / 6), config.colorCount, COLORS.length);
+    state.speed = config.speed * starterEase * (1 + Math.min(0.24, levelStep * 0.018));
+    state.targetFoods = config.targetFoods + Math.floor(levelStep * (state.difficulty === 'hard' ? 0.65 : state.difficulty === 'normal' ? 0.45 : 0.28));
     state.path = createRandomPath(random);
     buildSamples();
-    const count = config.balls + Math.floor((state.level - 1) * (state.difficulty === 'hard' ? 2.4 : state.difficulty === 'normal' ? 1.7 : 1.1));
+    const count = config.balls + Math.floor(levelStep * (state.difficulty === 'hard' ? 1.85 : state.difficulty === 'normal' ? 1.35 : 0.9));
     state.headS = Math.min(state.pathLength * 0.34, count * state.gap * 0.42);
     state.chain = [];
     for (let i = 0; i < count; i++) {
@@ -519,7 +529,7 @@
     state.chainMotion = null;
     reflowChain();
     if (tryCombo && state.chain[comboIndex] && state.chain[comboIndex - 1] && state.chain[comboIndex].type === state.chain[comboIndex - 1].type) {
-      resolveMatches(comboIndex);
+      resolveMatches(comboIndex, true);
     }
   }
 
@@ -578,7 +588,7 @@
     updateHud();
   }
 
-  function resolveMatches(index) {
+  function resolveMatches(index, fromCombo = false) {
     const ball = state.chain[index];
     if (!ball) return;
     let start = index;
@@ -587,9 +597,11 @@
     while (end < state.chain.length - 1 && state.chain[end + 1].type === ball.type) end += 1;
     const count = end - start + 1;
     if (count < 3) {
+      if (!fromCombo) state.comboStreak = 0;
       playSound('stick');
       return;
     }
+    state.comboStreak = fromCombo || state.comboStreak > 0 ? state.comboStreak + 1 : 1;
     const removed = state.chain.splice(start, count);
     const foods = removed.filter(item => item.food).length;
     state.foods += foods;
@@ -598,11 +610,13 @@
       const p = pathPoint(ball.s - (offset - Math.floor(count / 2)) * state.gap * 0.32);
       makeParticles(p.x, p.y, COLORS[item.type].glow, item.food, 9);
     });
-    const points = count * 24 + foods * 90 + Math.max(0, count - 3) * 15;
+    const comboBonus = Math.max(0, state.comboStreak - 1) * 45;
+    const points = count * 24 + foods * 90 + Math.max(0, count - 3) * 15 + comboBonus;
     state.score += points;
     state.pendingInsert = null;
     beginGapMotion(start, count);
     showFloatingText(`+${points}`, basePoint.x, basePoint.y, foods ? '#f59e0b' : '#16a34a');
+    if (state.comboStreak > 1) showFloatingText(`连击 x${state.comboStreak}`, basePoint.x, basePoint.y - state.radius * 1.45, '#7c3aed');
     if (foods) showToast(`收集食物 +${foods}`);
     playSound(foods ? 'food' : 'pop');
     reflowChain();
@@ -637,9 +651,10 @@
       return;
     }
     const angle = aimAngle(x, y);
-    const speed = Math.max(width, height) * 0.00102;
+    const speed = Math.max(width, height) * 0.00118;
     const muzzleX = shooterX + Math.cos(angle) * state.radius * 1.35;
     const muzzleY = shooterY + Math.sin(angle) * state.radius * 1.35;
+    state.comboStreak = 0;
     state.projectile = {
       x: muzzleX,
       y: muzzleY,
@@ -863,6 +878,9 @@
     const tx = state.aiming ? state.aimX : shooterX + state.radius * 4;
     const ty = state.aiming ? state.aimY : shooterY - state.radius * 3;
     const angle = aimAngle(tx, ty);
+    const guideLength = Math.min(Math.max(width, height) * 0.72, state.radius * 24);
+    const endX = shooterX + Math.cos(angle) * guideLength;
+    const endY = shooterY + Math.sin(angle) * guideLength;
     ctx.save();
     ctx.setLineDash([8, 8]);
     ctx.lineWidth = 3;
@@ -871,7 +889,7 @@
     ctx.shadowBlur = 4;
     ctx.beginPath();
     ctx.moveTo(shooterX, shooterY);
-    ctx.lineTo(shooterX + Math.cos(angle) * state.radius * 8, shooterY + Math.sin(angle) * state.radius * 8);
+    ctx.lineTo(endX, endY);
     ctx.stroke();
     ctx.restore();
   }
@@ -1064,6 +1082,12 @@
 
   function usefulType(randomSource) {
     const random = typeof randomSource === 'function' ? randomSource : Math.random;
+    if (state.chain[0]?.s > state.pathLength * 0.74) {
+      const frontCounts = new Map();
+      state.chain.slice(0, Math.min(14, state.chain.length)).forEach(ball => frontCounts.set(ball.type, (frontCounts.get(ball.type) || 0) + 1));
+      const rescue = Array.from(frontCounts.entries()).filter(([, count]) => count >= 2).map(([type]) => type);
+      if (rescue.length && random() < 0.94) return rescue[Math.floor(random() * rescue.length)];
+    }
     const counts = new Map();
     state.chain.forEach(ball => counts.set(ball.type, (counts.get(ball.type) || 0) + 1));
     const useful = Array.from(counts.entries()).filter(([, count]) => count >= 2).map(([type]) => type);
@@ -1127,12 +1151,22 @@
     state.floatingTexts.push({ text, x, y, color, life: 900, maxLife: 900 });
   }
 
+  function swapBalls() {
+    if (!state.started || state.finished || state.projectile || state.pendingInsert) return;
+    [state.currentType, state.nextType] = [state.nextType, state.currentType];
+    state.aiming = false;
+    playSound('select');
+    draw(performance.now());
+  }
+
   function updateHud() {
     hudEls.level.textContent = String(state.level);
     hudEls.food.textContent = String(state.foods);
     hudEls.target.textContent = String(state.targetFoods);
     hudEls.score.textContent = String(state.score);
     hudEls.best.textContent = String(state.bestScore);
+    const progress = state.targetFoods > 0 ? clamp(state.foods / state.targetFoods, 0, 1) : 0;
+    if (hudEls.foodFill) hudEls.foodFill.style.width = `${Math.round(progress * 100)}%`;
     const danger = state.started && !state.finished && state.chain[0]?.s > state.pathLength * 0.78;
     hudEls.danger?.classList.toggle('danger', Boolean(danger));
   }
@@ -1418,6 +1452,11 @@
   window.addEventListener('pointerup', handlePointerEnd, { passive: false });
   window.addEventListener('pointercancel', () => { state.aiming = false; });
   window.addEventListener('keydown', event => {
+    if (event.code === 'KeyX') {
+      event.preventDefault();
+      swapBalls();
+      return;
+    }
     if (event.code === 'Space' || event.code === 'Enter') {
       event.preventDefault();
       if (!state.started || state.finished) startGame();
@@ -1443,7 +1482,7 @@
   });
   window.addEventListener('beforeunload', cleanupPetImage);
 
-  document.getElementById('mhMenu').onclick = () => showResult('哈奇祖玛', '拖住屏幕来瞄准，松手发射彩球。彩球碰到轨道球链后会插入当前位置；三个或更多同色相连会爆开。收集够带食物的彩球即可过关，球链进入终点则挑战失败。', state.started && !state.finished ? '继续游戏' : '开始挑战', () => {
+  document.getElementById('mhMenu').onclick = () => showResult('哈奇祖玛', '拖住屏幕来瞄准，松手发射彩球。彩球碰到轨道球链后会插入当前位置；三个或更多同色相连会爆开。收集够藏在球里的食物就能过关，交换按钮可以调换当前球和下一个球。', state.started && !state.finished ? '继续游戏' : '开始挑战', () => {
     if (state.started && !state.finished) {
       state.paused = false;
       hideOverlay();
@@ -1454,6 +1493,7 @@
   });
   document.getElementById('mhHelp').onclick = document.getElementById('mhMenu').onclick;
   document.getElementById('mhRestart').onclick = () => startGame({ keepLevel: true });
+  document.getElementById('mhSwap').onclick = swapBalls;
   startBtn.onclick = () => startGame();
 
   buildDifficulties();

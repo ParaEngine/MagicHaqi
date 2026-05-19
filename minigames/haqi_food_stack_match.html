@@ -39,9 +39,9 @@
   ];
   const LEVELS = [
     { id: 'tutorial', label: '轻松', title: '新手草地', groups: 6, typeCount: 4, layers: 2, cols: 4, rows: 3, reward: 80, challengeRank: 0, note: '先感受规则：点亮的食物可以拿，下方凑够3个会消除。' },
-    { id: 'cliff', label: '挑战', title: '断崖挑战', groups: 32, typeCount: 9, layers: 7, cols: 7, rows: 5, reward: 180, challengeRank: 2, note: '真正的哈奇试炼：别让7格暂存槽被不同食物塞满。' },
-    { id: 'feast', label: '噩梦', title: '魔法餐桌', groups: 42, typeCount: 14, layers: 8, cols: 7, rows: 6, reward: 240, challengeRank: 3, note: '食物更多，遮挡更密，尽量优先清理上层。' },
-    { id: 'abyss', label: '炼狱', title: '深层餐塔', groups: 56, typeCount: 18, layers: 10, cols: 8, rows: 7, reward: 340, challengeRank: 4, note: '最难档：同类食物会被刻意拆散到不同深度，必须规划暂存槽。' },
+    { id: 'cliff', label: '挑战', title: '断崖挑战', groups: 24, typeCount: 7, layers: 5, cols: 6, rows: 4, reward: 170, challengeRank: 2, note: '开始进入策略局：先凑对子，再清上层，别让7格暂存槽被塞满。' },
+    { id: 'feast', label: '噩梦', title: '魔法餐桌', groups: 36, typeCount: 12, layers: 7, cols: 7, rows: 5, reward: 240, challengeRank: 3, note: '食物更多，遮挡更密，尽量优先清理能打开局面的上层。' },
+    { id: 'abyss', label: '炼狱', title: '深层餐塔', groups: 50, typeCount: 16, layers: 9, cols: 8, rows: 6, reward: 340, challengeRank: 4, note: '最难档：同类食物会被拆散到不同深度，必须规划暂存槽。' },
   ];
 
   const state = {
@@ -56,6 +56,9 @@
     combo: 0,
     moves: 0,
     seconds: 0,
+    hintUses: 0,
+    maxTray: 0,
+    maxTrayTypes: 0,
     timer: null,
     best: Math.max(0, Number(localStorage.getItem(STORAGE_KEY) || 0)),
     roundId: '',
@@ -101,12 +104,17 @@
       .mh-tile::before { content: ''; position: absolute; inset: 5px; border-radius: 6px; border: 2px solid rgba(88,68,26,.24); box-shadow: inset 0 1px 3px rgba(255,255,255,.62); }
       .mh-tile .mh-food { position: relative; z-index: 1; font-size: clamp(28px, 6.2vmin, 48px); line-height: 1; filter: drop-shadow(0 2px 0 rgba(255,255,255,.72)); }
       .mh-tile:active { transform: translate(-50%, -50%) scale(.96); }
+      .mh-tile.open { outline: 2px solid rgba(34,197,94,.62); outline-offset: -2px; filter: brightness(1.04); }
       .mh-tile.locked { cursor: default; filter: saturate(.46) brightness(.78); }
       .mh-tile.locked::after { content: ''; position: absolute; inset: 0; border-radius: 8px; background: rgba(15,23,42,.28); }
       .mh-tile.hint { animation: mhHint 1s ease-in-out infinite; }
+      .mh-tile.blocker-pulse { animation: mhBlockerPulse .72s ease-out; }
       .mh-tile.removing { animation: mhRemove .24s ease-out forwards; pointer-events: none; }
+      .mh-tile.entered:not(.hint):not(.blocker-pulse):not(.removing) { animation: none; }
       .mh-tray-wrap { min-height: 74px; display: grid; grid-template-columns: minmax(0,1fr) auto; align-items: center; gap: 8px; }
       .mh-tray { min-width: 0; height: 68px; display: grid; grid-template-columns: repeat(7, minmax(0, 1fr)); gap: 5px; padding: 6px; border-radius: 15px; background: rgba(255,255,255,.86); border: 2px solid rgba(255,255,255,.95); box-shadow: 0 5px 0 rgba(22,101,52,.13), 0 12px 22px rgba(15,23,42,.12); }
+      .mh-tray.warn { border-color: #f59e0b; box-shadow: 0 5px 0 rgba(180,83,9,.18), 0 0 0 4px rgba(245,158,11,.16), 0 12px 22px rgba(15,23,42,.12); }
+      .mh-tray.danger { border-color: #ef4444; box-shadow: 0 5px 0 rgba(153,27,27,.2), 0 0 0 5px rgba(239,68,68,.2), 0 12px 22px rgba(15,23,42,.14); animation: mhTrayDanger .72s ease-in-out infinite; }
       .mh-slot { position: relative; min-width: 0; border-radius: 10px; background: linear-gradient(180deg, rgba(240,253,244,.9), rgba(220,252,231,.9)); border: 1px dashed rgba(22,101,52,.3); display: grid; place-items: center; }
       .mh-slot.filled { border-style: solid; background: linear-gradient(180deg, #fff7ed, #fef3c7); box-shadow: inset 0 2px 0 rgba(255,255,255,.8), 0 2px 0 rgba(138,113,53,.25); }
       .mh-slot .mh-food { font-size: clamp(24px, 6vmin, 38px); line-height: 1; }
@@ -131,8 +139,10 @@
       [hidden] { display: none !important; }
       @keyframes mhTileIn { 0% { opacity: 0; transform: translate(-50%, calc(-50% + 8px)) scale(.82); } 100% { opacity: 1; transform: translate(-50%, -50%) scale(1); } }
       @keyframes mhHint { 0%,100% { transform: translate(-50%, -50%); } 50% { transform: translate(-50%, calc(-50% - 5px)) scale(1.04); filter: brightness(1.1); } }
+      @keyframes mhBlockerPulse { 0%,100% { transform: translate(-50%, -50%); filter: brightness(1.04); } 45% { transform: translate(-50%, calc(-50% - 4px)) scale(1.08); filter: brightness(1.24) saturate(1.2); } }
       @keyframes mhRemove { 100% { opacity: 0; transform: translate(-50%, -50%) scale(.62) rotate(8deg); } }
       @keyframes mhSlotClear { 0% { transform: scale(1); } 45% { transform: scale(1.13); background: #dcfce7; } 100% { transform: scale(1); } }
+      @keyframes mhTrayDanger { 0%,100% { transform: translateY(0); } 50% { transform: translateY(-2px); } }
       @keyframes mhToast { 0% { opacity: 0; transform: translate(-50%, -40%) scale(.82); } 18% { opacity: 1; transform: translate(-50%, -50%) scale(1); } 100% { opacity: 0; transform: translate(-50%, -78%) scale(.94); } }
       @keyframes mhFly { 100% { left: var(--to-x); top: var(--to-y); transform: translate(-50%, -50%) scale(.78); opacity: .18; } }
       @keyframes mhSpark { 0% { opacity: 1; transform: translate(-50%, -50%) scale(1); } 100% { opacity: 0; transform: translate(calc(var(--dx) - 50%), calc(var(--dy) - 50%)) scale(.24); } }
@@ -147,8 +157,11 @@
         .mh-shell { gap: 6px; padding: 6px; }
         .mh-top { grid-template-columns: 36px minmax(0,1fr); }
         .mh-stats { grid-column: 1 / -1; justify-content: center; }
-        .mh-tray-wrap { grid-template-columns: 1fr; min-height: 112px; }
+        .mh-tray-wrap { grid-template-columns: 1fr; min-height: 118px; }
         .mh-controls { justify-content: center; }
+        .mh-action { height: 38px; min-width: 64px; padding: 0 14px; }
+        .mh-levels { left: 8px; right: 8px; top: 8px; justify-content: center; }
+        .mh-level-btn { height: 30px; padding: 0 8px; }
         .mh-board-wrap { height: min(calc(100vh - 206px), 440px); }
       }
       @media (max-height: 560px) {
@@ -262,15 +275,15 @@
     const extra = Math.max(0, Math.round(clears));
     const tier = extra + 1;
     const rank = Number(base.challengeRank) || 0;
-    const groupStep = base.id === 'tutorial' ? 3 : 3 + rank;
-    const scaledGroups = base.groups + Math.min(rank >= 4 ? 42 : 28, extra * groupStep);
+    const groupStep = base.id === 'tutorial' ? 2 : rank >= 4 ? 4 : rank >= 3 ? 3 : 2;
+    const scaledGroups = base.groups + Math.min(rank >= 4 ? 28 : 20, extra * groupStep);
     return {
       ...base,
       baseId: base.id,
       tier,
       groups: base.id === 'tutorial' && tier === 1 ? base.groups : scaledGroups,
-      typeCount: Math.min(TILE_TYPES.length, base.typeCount + Math.floor(extra / 2)),
-      layers: Math.min(rank >= 4 ? 12 : 10, base.layers + Math.floor((extra + 1) / 2)),
+      typeCount: Math.min(TILE_TYPES.length, base.typeCount + Math.floor(extra / 3)),
+      layers: Math.min(rank >= 4 ? 11 : 9, base.layers + Math.floor((extra + 2) / 3)),
       cols: Math.min(8, base.cols + Math.floor(extra / 4)),
       rows: Math.min(7, base.rows + Math.floor(extra / 5)),
       reward: base.reward + extra * 28,
@@ -420,6 +433,62 @@
     }
 
     return shuffle(groups.flatMap(type => [type, type, type]));
+  }
+
+  function countOpenMatches(tiles) {
+    return openTilesFromList(tiles).reduce((counts, tile) => {
+      counts[tile.typeId] = (counts[tile.typeId] || 0) + 1;
+      return counts;
+    }, {});
+  }
+
+  function hasPlayableOpening(tiles, level) {
+    const openTiles = openTilesFromList(tiles);
+    if (openTiles.length < Math.min(4, level.typeCount)) return false;
+    const openCounts = countOpenMatches(tiles);
+    const pairCount = Object.values(openCounts).filter(count => count >= 2).length;
+    if (level.challengeRank === 0) return Object.values(openCounts).some(count => count >= 3);
+    return pairCount >= 1 || openTiles.length >= Math.min(7, level.typeCount);
+  }
+
+  function estimateBoardFlow(tiles, level) {
+    const testTiles = tiles.map(tile => ({ ...tile }));
+    const tray = [];
+    let picks = 0;
+    const targetPicks = Math.min(testTiles.length, Math.max(12, level.groups));
+
+    while (picks < targetPicks) {
+      const previousTiles = state.tiles;
+      state.tiles = testTiles;
+      const openTiles = testTiles.filter(isTileOpen);
+      state.tiles = previousTiles;
+      if (!openTiles.length) break;
+
+      const trayCounts = tray.reduce((counts, item) => {
+        counts[item.typeId] = (counts[item.typeId] || 0) + 1;
+        return counts;
+      }, {});
+      const next = openTiles.find(tile => trayCounts[tile.typeId] === 2)
+        || openTiles.find(tile => trayCounts[tile.typeId] === 1)
+        || openTiles.find(tile => tray.length < TRAY_SIZE - 2 || !trayCounts[tile.typeId])
+        || openTiles[0];
+
+      next.removed = true;
+      tray.push({ ...next });
+      const matches = tray.filter(item => item.typeId === next.typeId).length;
+      if (matches >= 3) {
+        let removed = 0;
+        for (let i = tray.length - 1; i >= 0; i--) {
+          if (tray[i].typeId === next.typeId && removed < 3) {
+            tray.splice(i, 1);
+            removed++;
+          }
+        }
+      }
+      picks++;
+      if (tray.length >= TRAY_SIZE) break;
+    }
+    return picks;
   }
 
   function layerGridSize(level, layer) {
@@ -640,6 +709,23 @@
     return tiles;
   }
 
+  function generateFairTiles(level) {
+    let bestTiles = null;
+    let bestFlow = -1;
+    const attempts = level.challengeRank >= 3 ? 18 : 10;
+    for (let attempt = 0; attempt < attempts; attempt++) {
+      const tiles = generateTiles(level);
+      if (!hasPlayableOpening(tiles, level)) continue;
+      const flow = estimateBoardFlow(tiles, level);
+      if (flow > bestFlow) {
+        bestTiles = tiles;
+        bestFlow = flow;
+      }
+      if (flow >= Math.min(tiles.length, Math.max(14, level.groups))) return tiles;
+    }
+    return bestTiles || generateTiles(level);
+  }
+
   function copyTileFood(target, source) {
     target.typeId = source.typeId;
     target.icon = source.icon;
@@ -704,7 +790,7 @@
     saveDifficultyIndex(state.levelIndex);
     const base = LEVELS[state.levelIndex];
     state.level = buildLevel(base, state.clears[base.id] || 0);
-    state.tiles = generateTiles(state.level);
+    state.tiles = generateFairTiles(state.level);
     state.tray = [];
     state.started = false;
     state.finished = false;
@@ -712,6 +798,9 @@
     state.combo = 0;
     state.moves = 0;
     state.seconds = 0;
+    state.hintUses = 0;
+    state.maxTray = 0;
+    state.maxTrayTypes = 0;
     state.roundId = `${state.level.id}_${Date.now()}`;
     renderLevels();
     renderAll();
@@ -759,7 +848,7 @@
       const button = document.createElement('button');
       const open = isTileOpen(tile);
       button.type = 'button';
-      button.className = `mh-tile${open ? '' : ' locked'}`;
+      button.className = `mh-tile${open ? ' open' : ' locked'}`;
       button.style.setProperty('--x', `${tile.x}%`);
       button.style.setProperty('--y', `${tile.y}%`);
       button.style.setProperty('--tile-w', size.w);
@@ -769,6 +858,7 @@
       button.setAttribute('aria-label', `${tile.label}${open ? '，可拿取' : '，被压住'}`);
       button.innerHTML = `<span class="mh-food">${tile.icon}</span>`;
       button.onclick = () => pickTile(tile.uid, button);
+      setTimeout(() => button.classList.add('entered'), 280);
       state.tileElements.set(tile.uid, button);
       fragment.appendChild(button);
     });
@@ -777,6 +867,8 @@
 
   function renderTray(clearingType = '') {
     trayEl.innerHTML = '';
+    trayEl.classList.toggle('warn', state.tray.length >= 5 && state.tray.length < 6);
+    trayEl.classList.toggle('danger', state.tray.length >= 6);
     const fragment = document.createDocumentFragment();
     for (let i = 0; i < TRAY_SIZE; i++) {
       const tile = state.tray[i];
@@ -796,7 +888,16 @@
       const wasLocked = el.classList.contains('locked');
       const open = isTileOpen(tile);
       el.classList.toggle('locked', !open);
+      el.classList.toggle('open', open);
       el.setAttribute('aria-label', `${tile.label}${open ? '，可拿取' : '，被压住'}`);
+      if (wasLocked && open) {
+        el.classList.remove('entered');
+        el.classList.add('blocker-pulse');
+        setTimeout(() => {
+          el.classList.remove('blocker-pulse');
+          el.classList.add('entered');
+        }, 760);
+      }
     });
   }
 
@@ -815,6 +916,7 @@
     const tile = state.tiles.find(item => item.uid === uid);
     if (!tile || tile.removed || !isTileOpen(tile)) {
       beep(170, 0.08, 'square', 0.08);
+      if (tile && !tile.removed) highlightBlockers(tile);
       return;
     }
     if (state.tray.length >= TRAY_SIZE) return;
@@ -822,6 +924,7 @@
     state.moves++;
     tile.removed = true;
     state.tray.push({ ...tile });
+    updateTrayPressureStats();
     tileEl.classList.add('removing');
     state.tileElements.delete(tile.uid);
     flyToTray(tileEl, state.tray.length - 1, tile.icon);
@@ -892,6 +995,22 @@
     }
   }
 
+  function updateTrayPressureStats() {
+    state.maxTray = Math.max(state.maxTray, state.tray.length);
+    state.maxTrayTypes = Math.max(state.maxTrayTypes, new Set(state.tray.map(item => item.typeId)).size);
+  }
+
+  function resultSummary(passed, earnedPoints, left) {
+    if (passed) {
+      const cleanPlay = state.hintUses === 0 ? '没有使用提示，' : `使用了 ${state.hintUses} 次提示，`;
+      const pressure = state.maxTray <= 4 ? '暂存槽控制得很稳。' : `最高占用 ${state.maxTray}/7 格。`;
+      return `清空了所有食物，获得 ${earnedPoints} 分。${cleanPlay}${pressure} ${state.level.label}难度已升到 Lv.${state.clears[state.level.baseId] + 1}。`;
+    }
+    if (state.maxTrayTypes >= 6) return `还剩 ${left} 个食物。暂存槽里最多同时出现 ${state.maxTrayTypes} 种食物，下一局优先把已有对子凑成3个。`;
+    if (state.maxTray >= 6) return `还剩 ${left} 个食物。暂存槽一度只剩1格，看到同类食物时先清掉最安全。`;
+    return `还剩 ${left} 个食物。试着先清理上层，打开更多可拿的食物。`;
+  }
+
   function finish(passed) {
     state.finished = true;
     clearInterval(state.timer);
@@ -909,10 +1028,10 @@
       renderLevels();
       launchConfetti();
       playWinSound();
-      showOverlay('挑战成功', `清空了所有食物，获得 ${earnedPoints} 分。${state.level.label}难度已升到 Lv.${state.clears[state.level.baseId] + 1}。`, '继续挑战');
+      showOverlay('挑战成功', resultSummary(true, earnedPoints, left), '继续挑战');
     } else {
       playFailSound();
-      showOverlay('暂存槽满了', `还剩 ${left} 个食物没有清理，试着先消掉同类食物。`, '再试一次');
+      showOverlay('暂存槽满了', resultSummary(false, earnedPoints, left), '再试一次');
     }
     post('gameFinished', {
       completed: passed,
@@ -924,6 +1043,9 @@
       baseDifficulty: state.level.baseId,
       moves: state.moves,
       seconds: state.seconds,
+      hintUses: state.hintUses,
+      maxTray: state.maxTray,
+      maxTrayTypes: state.maxTrayTypes,
       left,
       roundId: state.roundId,
       rewardCoins: passed ? undefined : 10,
@@ -945,6 +1067,22 @@
     toast.textContent = text;
     document.body.appendChild(toast);
     setTimeout(() => toast.remove(), 1400);
+  }
+
+  function highlightBlockers(tile) {
+    const blockers = state.tiles.filter(other => !other.removed && other.layer > tile.layer && overlaps(tile, other));
+    blockers.slice(-4).forEach((blocker) => {
+      const el = state.tileElements.get(blocker.uid);
+      if (!el) return;
+      el.classList.remove('blocker-pulse');
+      void el.offsetWidth;
+      el.classList.add('blocker-pulse');
+      setTimeout(() => {
+        el.classList.remove('blocker-pulse');
+        el.classList.add('entered');
+      }, 760);
+    });
+    showToast(blockers.length ? '先拿开上面的食物' : '这个食物暂时拿不了');
   }
 
   function pulseBoard(className) {
@@ -992,17 +1130,39 @@
       return counts;
     }, {});
     const openTiles = state.tiles.filter(isTileOpen);
-    const preferred = openTiles.find(tile => trayCounts[tile.typeId] === 2)
-      || openTiles.find(tile => trayCounts[tile.typeId] === 1)
-      || openTiles[0];
     boardEl.querySelectorAll('.mh-tile.hint').forEach(el => el.classList.remove('hint'));
-    if (!preferred) {
+    if (!openTiles.length) {
       showToast('没有可拿的食物了');
       return;
     }
+    const preferred = openTiles
+      .map(tile => ({ tile, score: scoreHintTile(tile, trayCounts) }))
+      .sort((a, b) => b.score - a.score)[0].tile;
+    state.hintUses++;
     const el = boardEl.querySelector(`[data-uid="${preferred.uid}"]`);
     el?.classList.add('hint');
+    showToast(hintReason(preferred, trayCounts));
     setTimeout(() => el?.classList.remove('hint'), 1800);
+  }
+
+  function scoreHintTile(tile, trayCounts) {
+    let score = 0;
+    const trayCount = trayCounts[tile.typeId] || 0;
+    if (trayCount === 2) score += 120;
+    if (trayCount === 1) score += 48;
+    if (state.tray.length >= 5 && trayCount === 0) score -= 45;
+    const blockersBelow = state.tiles.filter(other => !other.removed && other.layer < tile.layer && overlaps(other, tile)).length;
+    score += blockersBelow * 8;
+    score += tile.layer * 3;
+    return score;
+  }
+
+  function hintReason(tile, trayCounts) {
+    const trayCount = trayCounts[tile.typeId] || 0;
+    if (trayCount === 2) return '这个可以凑成3个';
+    if (trayCount === 1) return '先把同类凑成对子';
+    if (state.tray.length >= 5) return '先选不容易堵槽的上层';
+    return '先清理上层打开局面';
   }
 
   function launchConfetti() {

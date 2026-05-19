@@ -4,7 +4,7 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-  <title>宠物猎人</title>
+  <title>宠物飞船寻宝</title>
   <script src="https://cdn.keepwork.com/keepwork/cdn/tailwindcss@3.4.16.js"></script>
   <script src="https://cdnproxy.keepwork.com/jsdelivr/npm/three@0.128.0/build/three.min.js"></script>
 </head>
@@ -14,6 +14,8 @@
 (function () {
   const STORAGE_DIFFICULTY = 'haqiLightbotDifficultyV1';
   const STORAGE_BEST = 'haqiLightbotBestLevelV1';
+  const STORAGE_SPEED = 'haqiLightbotSpeedV1';
+  const STORAGE_SKIP_TUTORIAL = 'haqiLightbotSkipTutorialV1';
   const FALLBACK_PET = '🐾';
   const FOOD_ITEMS = ['🍎', '🍓', '🍇', '🍌', '🥕', '🍒', '🥝', '🍪'];
   const DIRS = [
@@ -42,6 +44,53 @@
   const DIFFICULTY_ORDER = ['easy', 'normal', 'hard', 'expert'];
   const PROGRAMS = ['main', 'p1', 'p2'];
   const PROGRAM_LABELS = { main: '主程序', p1: 'P1函数', p2: 'P2函数' };
+  const RUN_SPEEDS = {
+    slow: { id: 'slow', label: '慢速', interval: 620 },
+    normal: { id: 'normal', label: '中速', interval: 430 },
+    fast: { id: 'fast', label: '快速', interval: 230 },
+  };
+  const TUTORIAL_LEVELS = [
+    {
+      title: '跳跃收集',
+      tip: '食物悬在格子上方，第一关只要跳到食物所在格。',
+      size: 5,
+      start: { row: 2, col: 1, dir: 1 },
+      path: [{ row: 2, col: 1, height: 0 }, { row: 2, col: 2, height: 0 }],
+      goals: [[2, 2]],
+    },
+    {
+      title: '先走再跳',
+      tip: '没有食物的平地用前进，最后一步用跳跃收集。',
+      size: 5,
+      start: { row: 2, col: 1, dir: 1 },
+      path: [{ row: 2, col: 1, height: 0 }, { row: 2, col: 2, height: 0 }, { row: 2, col: 3, height: 0 }],
+      goals: [[2, 3]],
+    },
+    {
+      title: '转向路线',
+      tip: '飞船只会朝面向的方向移动，先转向再前进。',
+      size: 5,
+      start: { row: 3, col: 1, dir: 1 },
+      path: [{ row: 3, col: 1, height: 0 }, { row: 3, col: 2, height: 0 }, { row: 2, col: 2, height: 0 }],
+      goals: [[2, 2]],
+    },
+    {
+      title: '高低台阶',
+      tip: '前方更高时必须跳跃，跳跃也能顺手收集食物。',
+      size: 5,
+      start: { row: 3, col: 1, dir: 1 },
+      path: [{ row: 3, col: 1, height: 0 }, { row: 3, col: 2, height: 1 }, { row: 2, col: 2, height: 1 }, { row: 2, col: 3, height: 0 }],
+      goals: [[3, 2], [2, 3]],
+    },
+    {
+      title: '重复节奏',
+      tip: '这关可以直接完成，也可以试试用重复指令压缩程序。',
+      size: 5,
+      start: { row: 2, col: 0, dir: 1 },
+      path: [{ row: 2, col: 0, height: 0 }, { row: 2, col: 1, height: 0 }, { row: 2, col: 2, height: 0 }, { row: 2, col: 3, height: 0 }, { row: 2, col: 4, height: 0 }],
+      goals: [[2, 4]],
+    },
+  ];
 
   const state = {
     difficulty: normalizeDifficulty(localStorage.getItem(STORAGE_DIFFICULTY)),
@@ -54,6 +103,13 @@
     selectedProgram: 'main',
     running: false,
     awaitingReset: false,
+    runMode: 'auto',
+    speed: normalizeSpeed(localStorage.getItem(STORAGE_SPEED)),
+    skipTutorial: localStorage.getItem(STORAGE_SKIP_TUTORIAL) === '1',
+    activeStep: null,
+    undoStack: [],
+    hintLevel: 0,
+    clearConfirmAt: 0,
     started: false,
     finished: false,
     steps: 0,
@@ -186,11 +242,13 @@
       .mh-action.orange { background: #f97316; box-shadow-color: #9a3412; }
       .mh-action.soft { background: #fff7ed; color: #9a3412; border: 2px solid #fed7aa; box-shadow: 0 2px 0 rgba(154,52,18,.2); }
       .mh-action:disabled { opacity: .5; cursor: default; }
+      .mh-speed-select { height: 34px; border: 0; border-radius: 999px; padding: 0 10px; background: #ecfeff; color: #0f766e; font: inherit; font-size: 12px; font-weight: 1000; box-shadow: 0 2px 0 rgba(7,89,133,.16); outline: 0; }
       .mh-overlay { position: fixed; inset: 0; z-index: 70; display: flex; align-items: center; justify-content: center; padding: 16px; background: rgba(15,39,71,.46); }
       .mh-card { width: min(92vw, 460px); padding: 21px; border-radius: 18px; background: linear-gradient(180deg, #fff, #f0fdf4); border: 3px solid #86efac; box-shadow: 0 18px 44px rgba(15,23,42,.28); text-align: center; }
       .mh-card h1 { margin: 0 0 10px; color: #075985; font-size: 26px; line-height: 1.12; font-weight: 1000; }
       .mh-card p { margin: 0 0 15px; color: #0f766e; font-size: 15px; font-weight: 800; line-height: 1.55; }
       .mh-start, .mh-next { border-radius: 999px; padding: 10px 22px; background: linear-gradient(180deg, #34d399, #16a34a); color: #fff; box-shadow: 0 5px 0 #15803d; }
+      .mh-card-actions { display: flex; justify-content: center; gap: 9px; flex-wrap: wrap; }
       .mh-toast { position: fixed; left: 50%; top: 50%; z-index: 90; transform: translate(-50%, -50%); padding: 15px 19px; border-radius: 16px; background: #fff; border: 3px solid #7dd3fc; color: #075985; font-size: 18px; line-height: 1.35; font-weight: 1000; text-align: center; box-shadow: 0 18px 42px rgba(15,23,42,.24); animation: mhToast 1.25s ease-out forwards; pointer-events: none; }
       .mh-confetti { position: fixed; top: -16px; z-index: 88; width: 9px; height: 15px; border-radius: 3px; background: var(--c); animation: mhConfetti var(--d) ease-in forwards; pointer-events: none; }
       [hidden] { display: none !important; }
@@ -210,6 +268,7 @@
         .mh-top { grid-template-columns: 34px 1fr; }
         .mh-stats { grid-column: 1 / -1; justify-content: center; }
         .mh-main { grid-template-rows: minmax(190px, .8fr) minmax(0, 1fr); }
+        .mh-panel { grid-template-rows: auto auto minmax(0,1fr); gap: 6px; padding: 8px; }
         .mh-tile { width: 68px; height: 92px; }
         .mh-cube { width: 68px; height: 48px; }
         .mh-cube-top { width: 68px; height: 39px; }
@@ -219,24 +278,29 @@
         .mh-palette { grid-template-columns: repeat(5, minmax(0,1fr)); gap: 4px; }
         .mh-command { height: 40px; border-radius: 9px; }
         .mh-command span { display: none; }
-        .mh-programs { grid-template-columns: repeat(auto-fit, minmax(104px, 1fr)); gap: 6px; max-height: none; }
+        .mh-programs { grid-template-columns: repeat(auto-fit, minmax(104px, 1fr)); gap: 6px; max-height: none; min-height: 0; padding: 0 2px 4px 0; }
+        .mh-program-tabs { display: flex; gap: 5px; }
+        .mh-programs.tabbed { grid-template-columns: 1fr; }
+        .mh-programs.tabbed .mh-program:not(.selected) { display: none; }
+        .mh-programs.tabbed .mh-program-head { display: none; }
         .mh-program { padding: 6px; border-radius: 10px; }
         .mh-program-head { gap: 4px; margin-bottom: 5px; }
         .mh-program-name { font-size: 12px; }
         .mh-program-tip { font-size: 10px; }
         .mh-slots { grid-template-columns: repeat(2, minmax(0,1fr)); gap: 4px; }
-        .mh-slot { height: 31px; border-radius: 8px; }
+        .mh-slot { height: 40px; border-radius: 9px; }
           .mh-run-float { right: 9px; top: 9px; min-width: 72px; height: 42px; font-size: 16px; }
-        .mh-bottom { grid-template-columns: 1fr; gap: 5px; min-height: 86px; }
+        .mh-bottom { position: relative; z-index: 8; grid-template-columns: 1fr; gap: 5px; min-height: 86px; padding: 6px 6px 7px; border-radius: 14px; background: rgba(240,253,244,.94); border: 2px solid rgba(255,255,255,.86); box-shadow: 0 -6px 18px rgba(15,23,42,.08); }
         .mh-status { width: 100%; text-align: center; font-size: 13px; }
-        .mh-actions { justify-content: center; }
-        .mh-action { height: 31px; padding: 0 10px; }
+        .mh-actions { justify-content: center; gap: 5px; }
+        .mh-action { height: 31px; padding: 0 9px; }
+        .mh-speed-select { height: 31px; padding: 0 8px; }
       }
     </style>
     <div class="mh-shell">
       <header class="mh-top">
         <button id="mhMenu" class="mh-icon-btn" type="button" aria-label="玩法">?</button>
-        <div class="mh-title">宠物猎人 Lv.<span id="mhLevel">1</span></div>
+        <div class="mh-title">宠物飞船寻宝 Lv.<span id="mhLevel">1</span></div>
         <div class="mh-stats" aria-label="游戏状态">
           <label class="mh-pill">难度 <select id="mhDifficultySelect" class="mh-difficulty-select" aria-label="选择难度"></select></label>
           <span class="mh-pill">食物 <b id="mhGoalCount">0/0</b></span>
@@ -258,17 +322,23 @@
       <footer class="mh-bottom">
         <div id="mhStatus" class="mh-status">把指令拖到程序槽里，然后点击运行。</div>
         <div class="mh-actions">
+          <button id="mhStep" class="mh-action soft" type="button">单步</button>
           <button id="mhHint" class="mh-action soft" type="button">提示</button>
           <button id="mhUndo" class="mh-action soft" type="button">撤销</button>
           <button id="mhClear" class="mh-action soft" type="button">清空</button>
+          <button id="mhSkipTutorial" class="mh-action soft" type="button" hidden>跳过教程</button>
+          <select id="mhSpeedSelect" class="mh-speed-select" aria-label="运行速度"></select>
         </div>
       </footer>
     </div>
     <div id="mhHowTo" class="mh-overlay" role="dialog" aria-modal="true" aria-labelledby="mhHowToTitle" hidden>
       <div class="mh-card">
-        <h1 id="mhHowToTitle">宠物猎人</h1>
-        <p>把前进、转向和跳跃指令排进程序槽，让飞船跳起收集悬浮在方块上方的食物。食物用虚线连到所属格子中心，只有跳跃触碰才算收集。</p>
-        <button id="mhStart" class="mh-start" type="button">开始游戏</button>
+        <h1 id="mhHowToTitle">宠物飞船寻宝</h1>
+        <p>把前进、转向和跳跃指令排进程序槽，让飞船跳起收集悬浮在方块上方的食物。食物用虚线连到所属格子中心，只有跳跃到食物所在格才算收集。</p>
+        <div class="mh-card-actions">
+          <button id="mhStart" class="mh-start" type="button">开始游戏</button>
+          <button id="mhSkipIntro" class="mh-action soft" type="button">跳过教程</button>
+        </div>
       </div>
     </div>
     <div id="mhWin" class="mh-overlay" role="dialog" aria-modal="true" aria-labelledby="mhWinTitle" hidden>
@@ -284,6 +354,7 @@
     document.body.appendChild(root);
     bindEvents();
     renderDifficultySelect();
+    renderSpeedSelect();
     renderPalette();
     requestPetImage().then((asset) => {
       state.petAsset = asset;
@@ -300,16 +371,21 @@
       byId('mhHowTo').hidden = true;
       if (!state.started) startGame();
     };
+    byId('mhSkipIntro').onclick = () => skipTutorial(true);
+    byId('mhSkipTutorial').onclick = () => skipTutorial(true);
     byId('mhNext').onclick = () => {
       byId('mhWin').hidden = true;
       prepareAndStart(state.level + 1);
     };
     byId('mhRun').onclick = handleRunButton;
+    byId('mhStep').onclick = stepOnce;
     byId('mhUndo').onclick = undoCommand;
     byId('mhClear').onclick = clearSelectedProgram;
     byId('mhHint').onclick = showHint;
     window.addEventListener('keydown', onKeyDown);
     window.addEventListener('resize', () => {
+      renderProgramTabs();
+      renderPrograms(state.activeStep);
       if (state.puzzle && state.actor) renderBoard();
     });
     window.addEventListener('message', (event) => {
@@ -343,13 +419,36 @@
     state.steps = 0;
     state.seconds = 0;
     state.litGoals = new Set();
+    state.undoStack = [];
+    state.hintLevel = 0;
+    state.activeStep = null;
     state.actor = { row: puzzle.start.row, col: puzzle.start.col, dir: puzzle.start.dir };
     renderPalette();
     renderProgramTabs();
     renderPrograms();
     renderBoard();
     updateStats();
-    setStatus('新关卡已生成，跳起来收集悬浮食物吧。');
+    updateTutorialSkipButton();
+    setStatus(puzzle.tip || '新关卡已生成，跳起来收集悬浮食物吧。');
+  }
+
+  function skipTutorial(startAfterSkip = false) {
+    state.skipTutorial = true;
+    localStorage.setItem(STORAGE_SKIP_TUTORIAL, '1');
+    byId('mhHowTo').hidden = true;
+    stopRun('');
+    prepareLevel(1);
+    updateTutorialSkipButton();
+    setStatus('已跳过教程，之后会直接进入正式关卡。');
+    if (state.started) startTimer();
+    else if (startAfterSkip) startGame();
+  }
+
+  function updateTutorialSkipButton() {
+    const skip = byId('mhSkipTutorial');
+    if (skip) skip.hidden = state.skipTutorial || !state.puzzle?.tutorial;
+    const introSkip = byId('mhSkipIntro');
+    if (introSkip) introSkip.hidden = state.skipTutorial;
   }
 
   function startTimer() {
@@ -367,6 +466,8 @@
 
   function generatePuzzle(difficultyId, level) {
     const difficulty = DIFFICULTIES[difficultyId] || DIFFICULTIES.normal;
+    const tutorial = authoredTutorialPuzzle(level, difficulty);
+    if (tutorial) return tutorial;
     let best = null;
     for (let attempt = 0; attempt < 80; attempt++) {
       const candidate = randomPuzzle(difficulty, level, attempt);
@@ -375,6 +476,39 @@
       if (candidate.solution.length >= Math.min(solutionBudget(difficulty), difficulty.basePath + level * difficulty.pathGrow)) return candidate;
     }
     return best || fallbackPuzzle(difficulty);
+  }
+
+  function authoredTutorialPuzzle(level, difficulty) {
+    if (state.skipTutorial) return null;
+    const template = TUTORIAL_LEVELS[level - 1];
+    if (!template) return null;
+    const path = template.path.map(cell => ({ ...cell }));
+    const goals = new Set(template.goals.map(([row, col]) => cellKey(row, col)));
+    return {
+      size: template.size,
+      start: { ...template.start },
+      path,
+      goals,
+      cells: buildAuthoredCells(template.size, path),
+      solution: buildSolution(path, template.start.dir, goals),
+      seed: `tutorial-${difficulty.id}-${level}`,
+      title: template.title,
+      tutorial: true,
+      tip: `${template.title}：${template.tip}`,
+    };
+  }
+
+  function buildAuthoredCells(size, path) {
+    const pathMap = new Map(path.map(cell => [cellKey(cell.row, cell.col), cell.height]));
+    const cells = [];
+    for (let row = 0; row < size; row++) {
+      for (let col = 0; col < size; col++) {
+        const key = cellKey(row, col);
+        const onPath = pathMap.has(key);
+        cells.push({ row, col, key, height: onPath ? pathMap.get(key) : 0, blocked: !onPath });
+      }
+    }
+    return cells;
   }
 
   function randomPuzzle(difficulty, level, attempt) {
@@ -509,6 +643,18 @@
     };
   }
 
+  function renderSpeedSelect() {
+    const select = byId('mhSpeedSelect');
+    if (!select) return;
+    select.innerHTML = Object.values(RUN_SPEEDS).map(speed => `<option value="${speed.id}">${speed.label}</option>`).join('');
+    select.value = state.speed;
+    select.onchange = () => {
+      state.speed = normalizeSpeed(select.value);
+      localStorage.setItem(STORAGE_SPEED, state.speed);
+      if (state.running && state.runMode === 'auto') restartRunner();
+    };
+  }
+
   function availableCommands() {
     const difficulty = DIFFICULTIES[state.difficulty] || DIFFICULTIES.normal;
     const commands = ['forward', 'left', 'right', 'jump'];
@@ -538,12 +684,22 @@
 
   function renderProgramTabs() {
     const tabs = byId('mhProgramTabs');
-    if (tabs) tabs.innerHTML = '';
+    if (!tabs) return;
+    const slots = programSlots();
+    tabs.innerHTML = PROGRAMS.filter(id => slots[id] > 0).map(id => `<button class="mh-program-tab${state.selectedProgram === id ? ' active' : ''}" type="button" data-tab-program="${id}">${PROGRAM_LABELS[id]}</button>`).join('');
+    tabs.querySelectorAll('[data-tab-program]').forEach((tab) => {
+      tab.onclick = () => {
+        state.selectedProgram = tab.dataset.tabProgram;
+        renderProgramTabs();
+        renderPrograms(state.activeStep);
+      };
+    });
   }
 
   function renderPrograms(active = null) {
     const wrap = byId('mhPrograms');
     const slots = programSlots();
+    wrap.classList.toggle('tabbed', window.innerWidth <= 560);
     wrap.innerHTML = PROGRAMS.filter(id => slots[id] > 0).map((id) => {
       const commands = state.programs[id] || [];
       return `
@@ -561,6 +717,7 @@
       el.onclick = (event) => {
         if (event.target.closest('.mh-slot')) return;
         state.selectedProgram = el.dataset.program;
+        renderProgramTabs();
         renderPrograms(active);
       };
     });
@@ -570,9 +727,13 @@
         const index = Number(slot.dataset.index);
         state.selectedProgram = program;
         if (slot.dataset.command) {
+          recordUndo();
           state.programs[program].splice(index, 1);
+          state.hintLevel = 0;
+          renderProgramTabs();
           renderPrograms();
         } else {
+          renderProgramTabs();
           renderPrograms();
         }
       };
@@ -603,7 +764,9 @@
       showToast(`${PROGRAM_LABELS[state.selectedProgram]} 已经满了`);
       return;
     }
+    recordUndo();
     state.programs[state.selectedProgram].push(command);
+    state.hintLevel = 0;
     renderPrograms();
   }
 
@@ -613,23 +776,50 @@
     if (!slots) return;
     state.selectedProgram = program;
     const commands = state.programs[program];
+    recordUndo();
     if (index < commands.length) commands[index] = command;
     else if (commands.length < slots) commands.push(command);
     else commands[slots - 1] = command;
+    state.hintLevel = 0;
+    renderProgramTabs();
     renderPrograms();
   }
 
   function undoCommand() {
     if (state.running) return;
-    const commands = state.programs[state.selectedProgram];
-    commands.pop();
+    const previous = state.undoStack.pop();
+    if (!previous) {
+      showToast('没有可撤销的操作');
+      return;
+    }
+    state.programs = clonePrograms(previous.programs);
+    state.selectedProgram = previous.selectedProgram;
+    state.hintLevel = 0;
+    renderProgramTabs();
     renderPrograms();
   }
 
   function clearSelectedProgram() {
     if (state.running) return;
+    const now = performance.now();
+    if (state.programs[state.selectedProgram].length && now - state.clearConfirmAt > 1600) {
+      state.clearConfirmAt = now;
+      showToast('再点一次清空当前程序');
+      return;
+    }
+    recordUndo();
     state.programs[state.selectedProgram] = [];
+    state.hintLevel = 0;
     renderPrograms();
+  }
+
+  function recordUndo() {
+    state.undoStack.push({ programs: clonePrograms(state.programs), selectedProgram: state.selectedProgram });
+    if (state.undoStack.length > 40) state.undoStack.shift();
+  }
+
+  function clonePrograms(programs) {
+    return { main: [...(programs.main || [])], p1: [...(programs.p1 || [])], p2: [...(programs.p2 || [])] };
   }
 
   function runProgram() {
@@ -642,13 +832,50 @@
     resetActor('');
     state.running = true;
     state.awaitingReset = true;
+    state.runMode = 'auto';
     updateRunButton();
     state.stack = [{ program: 'main', commands: state.programs.main.slice(), index: 0, depth: 0 }];
     setStatus('宠物正在执行程序...');
-    state.runner = setInterval(stepProgram, 430);
+    restartRunner();
   }
 
-  function stepProgram() {
+  function startStepRun() {
+    if (!state.puzzle) return false;
+    if (!state.programs.main.length) {
+      showToast('先放入主程序指令');
+      return false;
+    }
+    ensureAudioContext();
+    resetActor('');
+    state.running = true;
+    state.awaitingReset = true;
+    state.runMode = 'step';
+    state.stack = [{ program: 'main', commands: state.programs.main.slice(), index: 0, depth: 0 }];
+    updateRunButton();
+    setStatus('单步调试中：继续点击单步。');
+    return true;
+  }
+
+  function stepOnce() {
+    if (state.finished) return;
+    if (state.running && state.runMode === 'auto') {
+      clearInterval(state.runner);
+      state.runner = null;
+      state.runMode = 'step';
+      state.awaitingReset = true;
+      updateRunButton();
+      setStatus('已暂停，点击单步继续调试，或点重置回到起点。');
+    }
+    if (!state.running && !startStepRun()) return;
+    stepProgram(true);
+  }
+
+  function restartRunner() {
+    clearInterval(state.runner);
+    state.runner = setInterval(() => stepProgram(false), RUN_SPEEDS[state.speed].interval);
+  }
+
+  function stepProgram(manual = false) {
     if (!state.running) return;
     const frame = state.stack[state.stack.length - 1];
     if (!frame) {
@@ -661,10 +888,18 @@
     }
     const index = frame.index;
     const command = frame.commands[frame.index++];
-    renderPrograms({ program: frame.program, index });
+    state.activeStep = { program: frame.program, index };
+    renderPrograms(state.activeStep);
+    setStatus(`${callStackLabel()} 正在执行：${COMMANDS[command]?.label || command}`);
     executeCommand(command, frame.depth);
     updateStats();
     if (state.litGoals.size >= state.puzzle.goals.size) winLevel();
+    else if (manual && state.running) setStatus(`${callStackLabel()} 已执行一步，继续点击单步。`);
+  }
+
+  function callStackLabel() {
+    if (!state.stack.length) return '程序';
+    return state.stack.map(frame => PROGRAM_LABELS[frame.program]).join(' > ');
   }
 
   function executeCommand(command, depth) {
@@ -733,16 +968,16 @@
     const from = cellAt(state.actor.row, state.actor.col);
     const to = cellAt(nr, nc);
     if (!to || to.blocked) {
-      stopRun('前面没有路，程序停下来了。');
+      stopRun('前面没有路，程序停下来了。试试先左转或右转。');
       return;
     }
     const climb = (to.height || 0) - (from.height || 0);
     if (!isJump && climb > 0) {
-      stopRun('前面更高，需要使用跳跃。');
+      stopRun('前面更高，需要使用跳跃。把这一步换成跳跃再试试。');
       return;
     }
     if (isJump && climb > 1) {
-      stopRun('太高了，跳不过去。');
+      stopRun('太高了，跳不过去。找一条只升高一层的路线。');
       return;
     }
     if (isJump && climb <= 0 && !state.puzzle.goals.has(cellKey(nr, nc))) {
@@ -790,7 +1025,9 @@
     state.runner = null;
     state.running = false;
     state.stack = [];
+    state.activeStep = null;
     updateRunButton();
+    renderProgramTabs();
     renderPrograms();
     if (message) setStatus(message);
   }
@@ -1554,8 +1791,45 @@
 
   function showHint() {
     if (!state.puzzle) return;
-    const sample = state.puzzle.solution.slice(0, 10).map(id => COMMANDS[id]?.short || id).join(' ');
-    setStatus(`生成器参考前几步：${sample}${state.puzzle.solution.length > 10 ? ' ...' : ''}`);
+    state.hintLevel = Math.min(state.hintLevel + 1, 4);
+    const nextAction = nextHelpfulCommand();
+    if (state.hintLevel === 1) {
+      setStatus(state.puzzle.tip || '先观察飞船朝向，再决定转向、前进或跳跃。');
+      return;
+    }
+    if (state.hintLevel === 2 && nextAction) {
+      setStatus(`下一步可以试试：${COMMANDS[nextAction]?.label || nextAction}。`);
+      return;
+    }
+    if (state.hintLevel === 3) {
+      const sample = state.puzzle.solution.slice(0, 4).map(id => COMMANDS[id]?.short || id).join(' ');
+      setStatus(`参考开头：${sample}${state.puzzle.solution.length > 4 ? ' ...' : ''}`);
+      return;
+    }
+    setStatus(compressionHint() || '完整路线不一定最短，试着把重复片段放进 P1 或用重复指令。');
+  }
+
+  function nextHelpfulCommand() {
+    const current = state.programs[state.selectedProgram] || [];
+    if (state.selectedProgram !== 'main' || current.length >= state.puzzle.solution.length) return state.puzzle.solution[0];
+    for (let i = 0; i < state.puzzle.solution.length; i++) {
+      if (current[i] !== state.puzzle.solution[i]) return state.puzzle.solution[i];
+    }
+    return state.puzzle.solution[current.length] || state.puzzle.solution[0];
+  }
+
+  function compressionHint() {
+    const solution = state.puzzle?.solution || [];
+    const slots = programSlots();
+    if (slots.p1 <= 0 && solution.length <= 4) return '';
+    for (let size = 2; size <= 4; size++) {
+      for (let start = 0; start + size * 2 <= solution.length; start++) {
+        const chunk = solution.slice(start, start + size).join(',');
+        const next = solution.slice(start + size, start + size * 2).join(',');
+        if (chunk === next) return `发现重复片段：${solution.slice(start, start + size).map(id => COMMANDS[id]?.short || id).join(' ')}，可以试试重复指令或 P1。`;
+      }
+    }
+    return slots.p1 > 0 ? '如果主程序放不下，把一小段常用动作放进 P1，再在主程序调用 P1。' : '';
   }
 
   function ensureAudioContext() {
@@ -1616,7 +1890,7 @@
 
   function onKeyDown(event) {
     if (byId('mhHowTo').hidden === false || byId('mhWin').hidden === false) return;
-    const keyMap = { '1': 'forward', '2': 'left', '3': 'right', '4': 'jump', '5': 'light', '6': 'p1', '7': 'p2' };
+    const keyMap = { '1': 'forward', '2': 'left', '3': 'right', '4': 'jump', '5': 'repeat2', '6': 'repeat3', '7': 'p1', '8': 'p2' };
     if (event.key === 'Enter') { event.preventDefault(); handleRunButton(); return; }
     if (event.key === 'Backspace') { event.preventDefault(); undoCommand(); return; }
     const command = keyMap[event.key];
@@ -1694,10 +1968,14 @@
   function cellKey(row, col) { return `${row},${col}`; }
   function clamp(value, min, max) { return Math.max(min, Math.min(max, value)); }
   function normalizeDifficulty(value) { return DIFFICULTIES[value] ? value : 'normal'; }
+  function normalizeSpeed(value) { return RUN_SPEEDS[value] ? value : 'normal'; }
   function byId(id) { return document.getElementById(id); }
   function setStatus(text) { byId('mhStatus').textContent = text; }
 
-  function showHowTo() { byId('mhHowTo').hidden = false; }
+  function showHowTo() {
+    updateTutorialSkipButton();
+    byId('mhHowTo').hidden = false;
+  }
 
   function showToast(text) {
     const toast = document.createElement('div');

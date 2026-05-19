@@ -53,6 +53,9 @@
 		toolsUsed: 0,
 		selectedTool: null,
 		selectedFanDir: 1,
+		plannedRoute: [],
+		plannedTarget: null,
+		lastToolSnapshot: null,
 		lasers: [],
 		laserCells: new Map(),
 		inventory: {},
@@ -98,7 +101,12 @@
 			.mh-cell { position: relative; min-width: 0; min-height: 0; border-radius: 7px; overflow: hidden; cursor: pointer; background: linear-gradient(180deg, #98e0c8, #5fbca8); box-shadow: inset 0 1px 0 rgba(255,255,255,.34), inset 0 -2px 0 rgba(15,23,42,.12); }
 			.mh-cell::before { content: ''; position: absolute; inset: 0; background: radial-gradient(circle at 30% 24%, rgba(255,255,255,.28), transparent 28%), linear-gradient(90deg, rgba(255,255,255,.1) 1px, transparent 1px), linear-gradient(180deg, rgba(15,23,42,.12) 1px, transparent 1px); background-size: auto, 50% 50%, 50% 50%; pointer-events: none; }
 			.mh-cell.reachable { outline: 2px solid rgba(250,204,21,.78); outline-offset: -5px; }
+			.mh-cell.dangerous { box-shadow: inset 0 0 0 3px rgba(239,68,68,.58), inset 0 -2px 0 rgba(15,23,42,.12), 0 0 14px rgba(239,68,68,.38); }
+			.mh-cell.planned { outline: 3px solid rgba(168,85,247,.86); outline-offset: -6px; }
+			.mh-cell.planned.safe-plan { box-shadow: inset 0 0 0 3px rgba(34,197,94,.62), inset 0 -2px 0 rgba(15,23,42,.12), 0 0 15px rgba(34,197,94,.32); }
 			.mh-cell.targetable { outline: 3px solid rgba(14,165,233,.72); outline-offset: -5px; }
+			.mh-cell.invalid-target { opacity: .62; filter: grayscale(.25); }
+			.mh-cell.tool-preview { box-shadow: inset 0 0 0 3px rgba(14,165,233,.5), inset 0 -2px 0 rgba(15,23,42,.12), 0 0 13px rgba(14,165,233,.34); }
 			.mh-cell.wall { cursor: default; background: linear-gradient(145deg, #9ca3af, #64748b 48%, #334155); box-shadow: inset 4px 4px 0 rgba(255,255,255,.38), inset -5px -6px 0 rgba(15,23,42,.22), 0 3px 0 rgba(15,23,42,.3); }
 			.mh-cell.rock { background: linear-gradient(145deg, #fbbf24, #d97706 52%, #92400e); box-shadow: inset 4px 4px 0 rgba(255,255,255,.36), inset -5px -7px 0 rgba(124,45,18,.32), 0 3px 0 rgba(124,45,18,.42); }
 			.mh-cell.ice { background: linear-gradient(145deg, #f0f9ff, #7dd3fc 48%, #0284c7); box-shadow: inset 4px 4px 0 rgba(255,255,255,.72), inset -5px -6px 0 rgba(7,89,133,.22), 0 0 12px rgba(125,211,252,.4); }
@@ -142,6 +150,7 @@
 			.mh-action, .mh-dir { height: 34px; border-radius: 999px; padding: 0 12px; background: linear-gradient(180deg, #38bdf8, #0284c7); color: #fff; box-shadow: 0 4px 0 #075985; }
 			.mh-action.orange { background: linear-gradient(180deg, #fb923c, #ea580c); box-shadow-color: #9a3412; }
 			.mh-action.soft { background: #fff7ed; color: #9a3412; border: 2px solid #fed7aa; box-shadow: 0 2px 0 rgba(154,52,18,.18); }
+			.mh-action:disabled { opacity: .42; filter: grayscale(.35); cursor: default; transform: none; }
 			.mh-dir { min-width: 36px; padding: 0; background: #fff; color: #0f766e; border: 1px solid rgba(14,116,144,.18); box-shadow: 0 2px 0 rgba(14,116,144,.16); }
 			.mh-dir.active { background: #0ea5e9; color: #fff; }
 			.mh-difficulties { display: flex; gap: 4px; flex-wrap: wrap; }
@@ -210,6 +219,7 @@
 					<span class="mh-pill">难度 <b id="mhDifficultyLabel">标准</b></span>
 					<span class="mh-pill">步数 <b id="mhMoves">0</b></span>
 					<span class="mh-pill">工具 <b id="mhToolsUsed">0</b></span>
+					<span class="mh-pill">激光 <b id="mhPulse">--</b></span>
 					<span class="mh-pill"><b id="mhTime">0</b>s</span>
 				</div>
 			</header>
@@ -227,6 +237,7 @@
 					<div class="mh-actions">
 						<div class="mh-difficulties" id="mhDifficulties"></div>
 						<button id="mhWait" class="mh-action soft" type="button">等待</button>
+						<button id="mhUndo" class="mh-action soft" type="button">撤销</button>
 						<button id="mhFanDir" class="mh-dir" type="button" title="风扇方向">→</button>
 						<button id="mhReset" class="mh-action orange" type="button">重开</button>
 					</div>
@@ -259,12 +270,14 @@
 		start: root.querySelector('#mhStart'),
 		reset: root.querySelector('#mhReset'),
 		wait: root.querySelector('#mhWait'),
+		undo: root.querySelector('#mhUndo'),
 		fanDir: root.querySelector('#mhFanDir'),
 		difficulties: root.querySelector('#mhDifficulties'),
 		level: root.querySelector('#mhLevel'),
 		difficultyLabel: root.querySelector('#mhDifficultyLabel'),
 		moves: root.querySelector('#mhMoves'),
 		toolsUsed: root.querySelector('#mhToolsUsed'),
+		pulse: root.querySelector('#mhPulse'),
 		time: root.querySelector('#mhTime'),
 		best: root.querySelector('#mhBest'),
 	};
@@ -407,6 +420,8 @@
 			state.inventory.hammer += 1;
 		}
 		state.selectedTool = null;
+		clearPlannedRoute();
+		state.lastToolSnapshot = null;
 		state.dead = false;
 		state.finished = false;
 		state.moving = false;
@@ -441,14 +456,23 @@
 		els.pet.style.setProperty('--size', state.size);
 		els.board.innerHTML = '';
 		const reachable = new Set(findReachable().map(pos => key(pos.r, pos.c)));
+		const planned = new Set(state.plannedRoute.map(pos => key(pos.r, pos.c)));
+		const preview = new Set(toolPreviewCells().map(pos => key(pos.r, pos.c)));
 		for (let r = 0; r < state.size; r++) {
 			for (let c = 0; c < state.size; c++) {
 				const cell = cellAt(r, c);
 				const div = document.createElement('button');
 				div.type = 'button';
 				div.className = `mh-cell ${cell.type}`;
+				const cellKey = key(r, c);
 				if (reachable.has(key(r, c)) && PASSABLE.has(cell.type)) div.classList.add('reachable');
-				if (state.selectedTool && isToolTarget(cell)) div.classList.add('targetable');
+				if (isDangerousCell(cell)) div.classList.add('dangerous');
+				if (planned.has(cellKey)) {
+					div.classList.add('planned');
+					if (!routeHasDanger(state.plannedRoute)) div.classList.add('safe-plan');
+				}
+				if (preview.has(cellKey)) div.classList.add('tool-preview');
+				if (state.selectedTool) div.classList.add(isToolTarget(cell) ? 'targetable' : 'invalid-target');
 				div.dataset.r = r;
 				div.dataset.c = c;
 				div.setAttribute('aria-label', `${r},${c}`);
@@ -498,6 +522,7 @@
 			btn.innerHTML = `${tool.icon}<span>${tool.label} <b>x${count}</b></span>`;
 			btn.addEventListener('click', () => {
 				state.selectedTool = state.selectedTool === tool.id ? null : tool.id;
+				clearPlannedRoute();
 				setStatus(toolHint(state.selectedTool));
 				render();
 			});
@@ -511,10 +536,12 @@
 		els.difficultyLabel.textContent = difficulty.label;
 		els.moves.textContent = state.moves;
 		els.toolsUsed.textContent = state.toolsUsed;
+		els.pulse.textContent = laserPulseLabel();
 		els.time.textContent = state.seconds;
 		els.best.textContent = state.best;
 		els.fanDir.textContent = DIRS[state.selectedFanDir].arrow;
 		els.fanDir.classList.toggle('active', state.selectedTool === 'fan');
+		els.undo.disabled = !state.lastToolSnapshot || state.moving || state.finished || state.dead;
 		[...els.difficulties.children].forEach(btn => btn.classList.toggle('active', btn.dataset.id === state.difficulty));
 	}
 
@@ -593,20 +620,73 @@
 			useTool(state.selectedTool, cell);
 			return;
 		}
+		if (state.moving) return;
 		if (!PASSABLE.has(cell.type) || cell.item) {
+			clearPlannedRoute();
 			setStatus('这里不能走。先用工具改变环境，或换一个目标点。');
+			render();
 			return;
 		}
 		const route = findPath(state.pet, { r, c });
 		if (!route.length) {
+			clearPlannedRoute();
 			setStatus('找不到安全路线。也许要先处理挡路机关。');
+			render();
 			return;
 		}
-		walkRoute(route);
+		if (state.plannedTarget && state.plannedTarget.r === r && state.plannedTarget.c === c) {
+			const plannedRoute = state.plannedRoute.slice();
+			clearPlannedRoute();
+			walkRoute(plannedRoute);
+			return;
+		}
+		state.plannedRoute = route;
+		state.plannedTarget = { r, c };
+		const danger = routeHasDanger(route);
+		setStatus(danger ? '路线已预览，但会穿过危险格。再次点击仍可出发，建议先处理机关。' : '路线已预览。再次点击终点确认出发。');
+		render();
+	}
+
+	function clearPlannedRoute() {
+		state.plannedRoute = [];
+		state.plannedTarget = null;
+	}
+
+	function routeHasDanger(route) {
+		return route.some(pos => isDangerousCell(cellAt(pos.r, pos.c)));
+	}
+
+	function isDangerousCell(cell) {
+		if (!cell) return false;
+		return state.laserCells.has(key(cell.r, cell.c)) || cell.type === 'fire' || cell.type === 'lava' || cell.type === 'gas' || cell.type === 'mine';
+	}
+
+	function toolPreviewCells() {
+		const tool = state.selectedTool;
+		if (!tool) return [];
+		if (tool === 'bucket') return allCells().filter(cell => cell.type === 'fire' || cell.type === 'lava');
+		if (tool === 'hammer') return allCells().filter(cell => cell.type === 'ice' || cell.type === 'rock');
+		if (tool === 'wrench') return allCells().filter(cell => cell.item === 'mirror' || cell.item === 'fan' || cell.type === 'emitter');
+		return [];
+	}
+
+	function allCells() {
+		return state.cells.flatMap(row => row);
+	}
+
+	function laserPulseLabel() {
+		if (!state.lasers.length) return '安全';
+		const active = state.lasers.filter(isLaserActive).length;
+		return active ? `${active}/${state.lasers.length}开` : '全关';
 	}
 
 	function useTool(tool, cell) {
 		if ((state.inventory[tool] || 0) <= 0) return;
+		if (!isToolTarget(cell)) {
+			setStatus(invalidToolHint(tool));
+			return;
+		}
+		const snapshot = makeToolSnapshot();
 		let used = false;
 		if ((tool === 'mirrorSlash' || tool === 'mirrorBack') && canPlaceOn(cell)) {
 			cell.item = 'mirror';
@@ -643,11 +723,40 @@
 			setStatus(toolHint(tool));
 			return;
 		}
+		state.lastToolSnapshot = snapshot;
+		clearPlannedRoute();
 		state.inventory[tool] -= 1;
 		state.toolsUsed += 1;
 		state.selectedTool = null;
 		simulateLasers(true);
 		render();
+		checkPetDanger();
+	}
+
+	function makeToolSnapshot() {
+		return {
+			cells: state.cells.map(row => row.map(cell => ({ ...cell }))),
+			lasers: state.lasers.map(laser => ({ ...laser })),
+			inventory: { ...state.inventory },
+			toolsUsed: state.toolsUsed,
+			selectedFanDir: state.selectedFanDir,
+		};
+	}
+
+	function undoLastTool() {
+		const snapshot = state.lastToolSnapshot;
+		if (!snapshot || state.moving || state.finished || state.dead) return;
+		state.cells = snapshot.cells.map(row => row.map(cell => ({ ...cell })));
+		state.lasers = snapshot.lasers.map(laser => ({ ...laser }));
+		state.inventory = { ...snapshot.inventory };
+		state.toolsUsed = snapshot.toolsUsed;
+		state.selectedFanDir = snapshot.selectedFanDir;
+		state.selectedTool = null;
+		state.lastToolSnapshot = null;
+		clearPlannedRoute();
+		simulateLasers(false);
+		render();
+		setStatus('已撤销上一次工具操作。');
 		checkPetDanger();
 	}
 
@@ -676,6 +785,19 @@
 			hammer: '点击冰块或石块，直接敲开道路。',
 		};
 		return hints[tool] || '点击空地移动，或选择工具处理危险机关。';
+	}
+
+	function invalidToolHint(tool) {
+		const hints = {
+			mirrorSlash: '镜子只能放在空地，不能覆盖宠物、起点或餐盘。',
+			mirrorBack: '镜子只能放在空地，不能覆盖宠物、起点或餐盘。',
+			wrench: '扳手只能旋转镜子、风扇或激光器。',
+			bomb: '炸弹只能放在空地，之后可用激光引爆。',
+			fan: '风扇只能放在空地，箭头方向可先用方向按钮调整。',
+			bucket: '水桶只能处理火焰或熔岩。',
+			hammer: '锤子只能敲碎冰块或石块。',
+		};
+		return hints[tool] || toolHint(tool);
 	}
 
 	function blowFan(cell) {
@@ -875,8 +997,7 @@
 		state.pulse += 1;
 		if (state.pulse % 2 === 0) state.seconds += 1;
 		simulateLasers(true);
-		renderLasers();
-		updateHud();
+		render();
 		checkPetDanger();
 	}
 
@@ -999,10 +1120,13 @@
 			setStatus('点击地面移动；选工具后点格子使用。先到达右上角的餐盘。');
 		});
 		els.reset.addEventListener('click', resetLevel);
+		els.undo.addEventListener('click', undoLastTool);
 		els.wait.addEventListener('click', () => {
 			if (!state.started) startGame();
+			clearPlannedRoute();
 			tick();
 			setStatus('等待了一个节拍。观察激光开关，再决定什么时候出发。');
+			render();
 		});
 		els.fanDir.addEventListener('click', () => {
 			state.selectedFanDir = (state.selectedFanDir + 1) % 4;

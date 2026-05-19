@@ -37,6 +37,9 @@
     moves: 0,
     seconds: 0,
     timer: null,
+    history: [],
+    hintsUsed: 0,
+    hint: null,
     petAsset: null,
     objectUrls: [],
     pointer: null,
@@ -75,7 +78,7 @@
         padding: 4px 7px 4px 4px; border-radius: 999px; background: rgba(36,78,104,.62); color: white;
         box-shadow: inset 0 1px 0 rgba(255,255,255,.22), 0 5px 14px rgba(15,23,42,.12);
       }
-      .mh-menu, .mh-help, .mh-start, .mh-next, .mh-restart {
+      .mh-menu, .mh-help, .mh-start, .mh-next, .mh-restart, .mh-undo, .mh-hint {
         border: 0; cursor: pointer; font-weight: 900;
       }
       .mh-menu { width: 29px; height: 29px; border-radius: 50%; background: rgba(255,255,255,.9); color: #2f7583; font-size: 18px; line-height: 29px; }
@@ -123,6 +126,7 @@
       }
       .mh-cell-grid { position: absolute; inset: 10px; display: grid; grid-template-columns: repeat(5, 1fr); gap: 5px; }
       .mh-cell { border: 2px dotted rgba(255,255,255,.78); border-radius: 7px; background: rgba(255,255,255,.08); box-shadow: inset 0 1px 5px rgba(255,255,255,.08); }
+      .mh-cell.path { background: rgba(254,240,138,.34); border-color: rgba(250,204,21,.98); box-shadow: inset 0 0 0 2px rgba(255,255,255,.34), 0 0 10px rgba(250,204,21,.24); }
       .mh-piece-layer { position: absolute; inset: 10px; }
       .mh-piece {
         position: absolute; border: 2px solid rgba(255,255,255,.98); border-radius: 7px; overflow: hidden;
@@ -133,7 +137,9 @@
         transition: transform .16s ease, filter .16s ease, left .18s ease, top .18s ease;
       }
       .mh-piece.selected { outline: 3px solid rgba(255,255,255,.98); z-index: 8; filter: brightness(1.04); }
+      .mh-piece.hinted { outline: 4px solid #fde047; box-shadow: inset 0 1px 0 rgba(255,255,255,.9), 0 2px 0 var(--shadow), 0 0 0 7px rgba(250,204,21,.28), 0 8px 18px rgba(15,82,113,.2); }
       .mh-piece.dragging { z-index: 10; filter: brightness(1.13) saturate(1.08); transition: none; cursor: grabbing; }
+      .mh-piece.blocked { animation: mhBlocked .26s ease-in-out; }
       .mh-piece::before, .mh-piece::after { content: ''; position: absolute; pointer-events: none; }
       .mh-piece::before { inset: 8px; border-radius: 6px; border: 2px solid rgba(255,255,255,.42); }
       .mh-piece.horizontal::after { left: 14px; right: 14px; top: 50%; height: 7px; margin-top: -3.5px; border-radius: 999px; background: linear-gradient(90deg, rgba(133,151,171,.22), rgba(103,120,139,.28)); }
@@ -150,10 +156,14 @@
       .mh-boat .mh-pet-fallback { display: grid; place-items: center; font-size: clamp(30px, 10vw, 48px); line-height: 1; }
       .mh-arrows { position: absolute; inset: 0; pointer-events: none; z-index: 11; }
       .mh-arrow { position: absolute; width: clamp(32px, 7.5vw, 42px); height: clamp(32px, 7.5vw, 42px); transform: translate(-50%, -50%); border-radius: 50%; border: 0; background: rgba(255,255,255,.96); color: #38bdf8; font-size: clamp(15px, 3.8vw, 22px); font-weight: 1000; box-shadow: 0 5px 12px rgba(15,82,113,.22), inset 0 1px 0 rgba(255,255,255,.95); pointer-events: auto; }
+      .mh-arrow.hint { background: #fef08a; color: #b45309; animation: mhHintPulse .75s ease-in-out infinite alternate; }
       .mh-bottom { display: flex; align-items: center; justify-content: center; gap: 7px; min-height: 38px; padding-bottom: 2px; }
       .mh-pill { min-width: 66px; height: 32px; display: inline-flex; align-items: center; justify-content: center; gap: 4px; padding: 0 10px; border-radius: 999px; background: rgba(255,255,255,.9); color: #0f766e; font-size: 12px; font-weight: 900; box-shadow: 0 3px 0 rgba(14,116,144,.2); }
-      .mh-help, .mh-restart { height: 32px; border-radius: 999px; padding: 0 12px; background: #0ea5e9; color: white; box-shadow: 0 4px 0 #1e3a8a; }
+      .mh-help, .mh-restart, .mh-undo, .mh-hint { height: 32px; border-radius: 999px; padding: 0 12px; background: #0ea5e9; color: white; box-shadow: 0 4px 0 #1e3a8a; }
       .mh-help { background: #f97316; box-shadow: 0 4px 0 #9a3412; }
+      .mh-hint { background: #eab308; box-shadow: 0 4px 0 #a16207; }
+      .mh-undo { background: #14b8a6; box-shadow: 0 4px 0 #0f766e; }
+      .mh-undo:disabled { opacity: .45; cursor: default; transform: translateY(2px); box-shadow: 0 2px 0 #0f766e; }
       .mh-overlay { position: fixed; inset: 0; z-index: 40; display: flex; align-items: center; justify-content: center; padding: 18px; background: rgba(15,39,71,.42); }
       .mh-card { width: min(92vw, 390px); padding: 19px; border-radius: 16px; background: #fff; border: 3px solid #7dd3fc; box-shadow: 0 18px 44px rgba(15,23,42,.28); text-align: center; }
       .mh-card h1 { margin: 0 0 10px; color: #0f2747; font-size: 24px; font-weight: 1000; }
@@ -165,6 +175,8 @@
       [hidden] { display: none !important; }
       @keyframes mhToast { 0% { opacity: 0; transform: translate(-50%, -40%) scale(.82); } 18% { opacity: 1; transform: translate(-50%, -50%) scale(1); } 100% { opacity: 0; transform: translate(-50%, -78%) scale(.94); } }
       @keyframes mhConfetti { 100% { opacity: 0; transform: translate3d(var(--x), 112vh, 0) rotate(680deg); } }
+      @keyframes mhHintPulse { from { transform: translate(-50%, -50%) scale(1); } to { transform: translate(-50%, -50%) scale(1.08); } }
+      @keyframes mhBlocked { 0%, 100% { transform: translateX(0); } 25% { transform: translateX(-5px); } 75% { transform: translateX(5px); } }
       @media (max-width: 430px) {
         .mh-shell { gap: 5px; padding: 4px 7px 8px; }
         .mh-board-wrap { width: min(calc(100vw - 22px), calc(100vh - 198px), 330px); }
@@ -214,7 +226,9 @@
       </main>
       <footer class="mh-bottom">
         <span class="mh-pill">步数 <b id="mhMoves">0</b></span>
-        <span class="mh-pill">AI难度 <b id="mhDifficulty">1</b></span>
+        <span class="mh-pill">最短 <b id="mhDifficulty">1</b></span>
+        <button id="mhUndo" class="mh-undo" type="button">撤销</button>
+        <button id="mhHint" class="mh-hint" type="button">提示</button>
         <button id="mhHelp" class="mh-help" type="button">玩法</button>
         <button id="mhRestart" class="mh-restart" type="button">重开</button>
       </footer>
@@ -222,7 +236,7 @@
     <div id="mhHowTo" class="mh-overlay" role="dialog" aria-modal="true" aria-labelledby="mhHowToTitle" hidden>
       <div class="mh-card">
         <h1 id="mhHowToTitle">宠物运河营救</h1>
-        <p>哈奇宠物坐在小船上。滑动横向或纵向船块，给小船让出右侧水道。每一关都会随机生成并验证可解，通关后难度继续上升。</p>
+        <p>哈奇宠物坐在小船上。滑动横向或纵向船块，给小船让出上方水道。卡住时可以撤销或使用提示，通关后难度继续上升。</p>
         <button id="mhStart" class="mh-start" type="button">开始闯关</button>
       </div>
     </div>
@@ -265,6 +279,8 @@
   function bindEvents() {
     byId('mhHelp').onclick = showHowTo;
     byId('mhMenu').onclick = showHowTo;
+    byId('mhUndo').onclick = undoMove;
+    byId('mhHint').onclick = useHint;
     byId('mhStart').onclick = () => {
       byId('mhHowTo').hidden = true;
       if (!state.started) startGame();
@@ -275,6 +291,9 @@
       state.moves = 0;
       state.seconds = 0;
       state.selectedId = TARGET_ID;
+      state.history = [];
+      state.hintsUsed = 0;
+      state.hint = null;
       prepareLevel(state.level);
       startTimer();
       post('gameStarted');
@@ -297,6 +316,9 @@
     state.moves = 0;
     state.seconds = 0;
     state.selectedId = TARGET_ID;
+    state.history = [];
+    state.hintsUsed = 0;
+    state.hint = null;
     startTimer();
     post('gameStarted');
     updateStats();
@@ -306,7 +328,7 @@
     clearInterval(state.timer);
     state.seconds = 0;
     state.timer = setInterval(() => {
-      if (state.finished || state.generating) return;
+      if (state.finished || state.generating || byId('mhHowTo').hidden === false || byId('mhWin').hidden === false) return;
       state.seconds += 1;
       updateStats();
     }, 1000);
@@ -321,6 +343,9 @@
     state.solutionMoves = puzzle.solutionMoves;
     state.selectedId = TARGET_ID;
     state.moves = 0;
+    state.history = [];
+    state.hintsUsed = 0;
+    state.hint = null;
     state.finished = false;
     state.generating = false;
     byId('mhGenerating').hidden = true;
@@ -330,6 +355,8 @@
 
   function generatePuzzle(level) {
     const minimumMoves = Math.min(5 + Math.floor(level * 1.35), 24);
+    const maximumMoves = Math.min(minimumMoves + 8, 30);
+    const targetMoves = Math.min(minimumMoves + 3, maximumMoves);
     const pieceCount = Math.min(6 + Math.floor(level / 2), 11);
     let best = null;
     const attempts = Math.min(80 + level * 8, 220);
@@ -338,8 +365,9 @@
       const pieces = scrambleSolvedBoard(pieceCount, 34 + level * 7 + attempt);
       const solutionMoves = solveMinimumMoves(pieces);
       if (!Number.isFinite(solutionMoves)) continue;
-      if (!best || solutionMoves > best.solutionMoves) best = { pieces, solutionMoves };
-      if (solutionMoves >= minimumMoves && pieces.find(p => p.id === TARGET_ID).r >= 2) {
+      const distance = Math.abs(solutionMoves - targetMoves) + (solutionMoves < minimumMoves ? 6 : 0) + (solutionMoves > maximumMoves ? 8 : 0);
+      if (!best || distance < best.distance || (distance === best.distance && solutionMoves > best.solutionMoves)) best = { pieces, solutionMoves, distance };
+      if (solutionMoves >= minimumMoves && solutionMoves <= maximumMoves && pieces.find(p => p.id === TARGET_ID).r >= 2) {
         return { pieces, solutionMoves };
       }
     }
@@ -425,6 +453,27 @@
     return Infinity;
   }
 
+  function findBestNextMove(startPieces) {
+    const start = normalizePieces(startPieces);
+    const startKey = keyOf(start);
+    const seen = new Set([startKey]);
+    const queue = [{ pieces: start, firstMove: null }];
+    let cursor = 0;
+    while (cursor < queue.length && seen.size < MAX_SOLVER_NODES) {
+      const node = queue[cursor++];
+      for (const move of legalOneStepMoves(node.pieces)) {
+        const next = applyMove(node.pieces, move.id, move.dr, move.dc);
+        const key = keyOf(next);
+        if (seen.has(key)) continue;
+        const firstMove = node.firstMove || move;
+        if (isSolved(next)) return firstMove;
+        seen.add(key);
+        queue.push({ pieces: next, firstMove });
+      }
+    }
+    return null;
+  }
+
   function legalOneStepMoves(pieces) {
     const moves = [];
     for (const pieceItem of pieces) {
@@ -474,7 +523,7 @@
     for (const pieceItem of state.pieces) {
       const el = document.createElement('button');
       el.type = 'button';
-      el.className = `mh-piece ${pieceItem.axis === 'h' ? 'horizontal' : 'vertical'}${pieceItem.id === TARGET_ID ? ' mh-boat' : ''}${state.selectedId === pieceItem.id ? ' selected' : ''}`;
+      el.className = `mh-piece ${pieceItem.axis === 'h' ? 'horizontal' : 'vertical'}${pieceItem.id === TARGET_ID ? ' mh-boat' : ''}${state.selectedId === pieceItem.id ? ' selected' : ''}${state.hint?.id === pieceItem.id ? ' hinted' : ''}`;
       el.dataset.id = pieceItem.id;
       const [from, to, shadow] = pieceItem.id === TARGET_ID ? ['#f59e0b', '#b45309', '#0e7490'] : COLORS[Math.max(0, pieceItem.colorIndex) % COLORS.length];
       el.style.setProperty('--from', from);
@@ -493,6 +542,7 @@
       layer.appendChild(el);
     }
     renderArrows();
+    renderHintPath();
   }
 
   function placeElement(el, item) {
@@ -542,7 +592,7 @@
       if (!canMove(state.pieces, selected.id, direction.dr, direction.dc)) return;
       const btn = document.createElement('button');
       btn.type = 'button';
-      btn.className = 'mh-arrow';
+      btn.className = `mh-arrow${state.hint?.id === selected.id && state.hint.dr === direction.dr && state.hint.dc === direction.dc ? ' hint' : ''}`;
       btn.textContent = direction.label;
       btn.onclick = (event) => {
         event.stopPropagation();
@@ -556,6 +606,20 @@
       btn.style.top = `${top / GRID * 100}%`;
       byId('mhArrows').appendChild(btn);
     });
+  }
+
+  function renderHintPath() {
+    document.querySelectorAll('.mh-cell.path').forEach(cell => cell.classList.remove('path'));
+    if (!state.hint || state.hint.level < 2) return;
+    const item = state.pieces.find(p => p.id === state.hint.id);
+    if (!item) return;
+    const steps = countMovableSteps(state.pieces, item.id, state.hint.dr, state.hint.dc);
+    for (let step = 1; step <= steps; step++) {
+      const row = state.hint.dr < 0 ? item.r - step : state.hint.dr > 0 ? item.r + item.h - 1 + step : item.r;
+      const col = state.hint.dc < 0 ? item.c - step : state.hint.dc > 0 ? item.c + item.w - 1 + step : item.c;
+      const cell = document.querySelector(`.mh-cell[data-index="${row * GRID + col}"]`);
+      cell?.classList.add('path');
+    }
   }
 
   function beginDrag(event, id, el) {
@@ -635,6 +699,50 @@
     return state.pieces.find(p => p.id === state.selectedId);
   }
 
+  function saveHistory() {
+    state.history.push({
+      pieces: normalizePieces(state.pieces),
+      moves: state.moves,
+      selectedId: state.selectedId,
+    });
+    if (state.history.length > 40) state.history.shift();
+  }
+
+  function undoMove() {
+    if (state.finished || state.generating) return;
+    const snapshot = state.history.pop();
+    if (!snapshot) {
+      showToast('还没有可撤销的步数');
+      return;
+    }
+    state.pieces = normalizePieces(snapshot.pieces);
+    state.moves = snapshot.moves;
+    state.selectedId = snapshot.selectedId;
+    state.hint = null;
+    updateStats();
+    renderBoard();
+  }
+
+  function useHint() {
+    if (state.finished || state.generating) return;
+    const move = findBestNextMove(state.pieces);
+    if (!move) {
+      showToast('小船快到出口了');
+      return;
+    }
+    state.hintsUsed += 1;
+    state.selectedId = move.id;
+    state.hint = { ...move, level: Math.min(3, state.hintsUsed) };
+    if (state.hint.level >= 3) {
+      showToast('提示帮你走一步');
+      movePiece(move.id, move.dr, move.dc, 1);
+      return;
+    }
+    showToast(state.hint.level === 1 ? '先移动发光的船块' : '沿黄色方向移动');
+    updateStats();
+    renderBoard();
+  }
+
   function moveSelectedToward(row, col) {
     const item = getSelectedPiece();
     if (!item || state.finished || state.generating) return;
@@ -650,6 +758,12 @@
 
   function movePiece(id, dr, dc, requestedSteps) {
     if (state.finished || state.generating) return;
+    if (!canMove(state.pieces, id, dr, dc)) {
+      pulseBlocked(id);
+      return;
+    }
+    saveHistory();
+    state.hint = null;
     let moved = 0;
     for (let i = 0; i < requestedSteps; i++) {
       if (!canMove(state.pieces, id, dr, dc)) break;
@@ -664,13 +778,22 @@
     if (isSolved(state.pieces)) winLevel();
   }
 
+  function pulseBlocked(id) {
+    const el = document.querySelector(`.mh-piece[data-id="${id}"]`);
+    if (!el) return;
+    el.classList.remove('blocked');
+    void el.offsetWidth;
+    el.classList.add('blocked');
+  }
+
   function winLevel() {
     state.finished = true;
     clearInterval(state.timer);
     state.bestLevel = Math.max(state.bestLevel, state.level + 1);
     localStorage.setItem(STORAGE_KEY, String(state.bestLevel));
-    const earnedPoints = Math.max(50, 70 + state.level * 8 + Math.max(0, state.solutionMoves - state.moves) * 3);
-    byId('mhWinText').textContent = `Lv.${state.level} 完成，用了 ${state.moves} 步，AI最短 ${state.solutionMoves} 步。`;
+    const stars = calculateStars();
+    const earnedPoints = calculateScore(stars);
+    byId('mhWinText').textContent = `Lv.${state.level} 完成，${'★'.repeat(stars)}${'☆'.repeat(3 - stars)} 用了 ${state.moves} 步，最短 ${state.solutionMoves} 步。`;
     byId('mhWin').hidden = false;
     launchConfetti();
     showToast('通关!');
@@ -681,8 +804,23 @@
       seconds: state.seconds,
       difficulty: state.level,
       solutionMoves: state.solutionMoves,
+      hintsUsed: state.hintsUsed,
+      stars,
       finishedAt: Date.now(),
     });
+  }
+
+  function calculateStars() {
+    const extraMoves = Math.max(0, state.moves - state.solutionMoves) + state.hintsUsed * 2;
+    if (extraMoves <= 2) return 3;
+    if (extraMoves <= 6) return 2;
+    return 1;
+  }
+
+  function calculateScore(stars) {
+    const starScore = stars === 3 ? 100 : stars === 2 ? 82 : 64;
+    const timePenalty = Math.min(18, Math.floor(state.seconds / 18));
+    return Math.max(50, starScore - state.hintsUsed * 5 - timePenalty);
   }
 
   function updateStats() {
@@ -691,6 +829,7 @@
     byId('mhMoves').textContent = String(state.moves);
     byId('mhDifficulty').textContent = String(Math.max(1, Math.round(state.solutionMoves || state.level)));
     byId('mhEnergy').textContent = String(560 + state.level * 40);
+    byId('mhUndo').disabled = state.history.length === 0;
     const progress = Math.min(100, Math.round((state.level / Math.max(state.bestLevel, state.level + 2)) * 100));
     byId('mhProgress').style.width = `${progress}%`;
   }
