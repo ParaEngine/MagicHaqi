@@ -4,7 +4,7 @@ import { canPlaceItemInArea, CONFIG, getItemZOrder, SHOP_ITEMS, findLargestHouse
 import { state, notify, subscribe, setView, setCurrentPet, getCurrentPet } from './state.js';
 import {
     loadUserProfile, saveUserProfile, saveUserProfileDebounced,
-    loadAllPets, deletePet, setCurrentPetPersisted,
+    loadAllPets, loadPet, deletePet, setCurrentPetPersisted,
     saveLayout, addToInventory, removeFromInventory, savePetDebounced,
     getLayout, ensurePetData, savePet, clearStoredData, saveDecorDataNow, saveInventoryDebounced,
 } from './storage.js';
@@ -17,6 +17,7 @@ import { renderShop } from './view_shop.js';
 import { renderInventory } from './view_inventory.js';
 import { renderProfile } from './view_profile.js';
 import { renderHelp } from './view_help.js';
+import { hasPostcardParams } from './view_postcard.js';
 import { randomDna, decodeDna, dnaRarity, dnaToName, biasDnaForFieldId, crossover } from './dna.js';
 import { randId } from './utils.js';
 import { t } from './i18n.js';
@@ -25,8 +26,12 @@ import {
     getPetLocationInfo,
     getNannyCareCost,
     getNannyCareEligibility,
+    getHomePetRoomPose,
     getPlanetPetLimit,
     getPetFindTarget,
+    getGeneratedPetLocation,
+    getPetLocationType,
+    getReleasedPetHome,
     hasNannyCare,
     hireNannyForPet,
     isPetOnCurrentPlanet,
@@ -72,6 +77,13 @@ let hatchingViewPromise = null;
 let hatchingViewModule = null;
 let settingsViewPromise = null;
 let settingsViewModule = null;
+let postcardViewPromise = null;
+let postcardViewModule = null;
+let mailboxViewPromise = null;
+let mailboxViewModule = null;
+let emailViewPromise = null;
+let emailViewModule = null;
+let pendingPostcard = null;
 
 function loadChatView() {
     if (chatViewModule) return Promise.resolve(chatViewModule);
@@ -115,6 +127,97 @@ function loadSettingsView() {
         });
     }
     return settingsViewPromise;
+}
+
+function loadPostcardView() {
+    if (postcardViewModule) return Promise.resolve(postcardViewModule);
+    if (!postcardViewPromise) {
+        postcardViewPromise = import('./view_postcard.js').then((mod) => {
+            postcardViewModule = mod;
+            return mod;
+        });
+    }
+    return postcardViewPromise;
+}
+
+function loadMailboxView() {
+    if (mailboxViewModule) return Promise.resolve(mailboxViewModule);
+    if (!mailboxViewPromise) {
+        mailboxViewPromise = import('./view_mailbox.js').then((mod) => {
+            mailboxViewModule = mod;
+            return mod;
+        });
+    }
+    return mailboxViewPromise;
+}
+
+function loadEmailView() {
+    if (emailViewModule) return Promise.resolve(emailViewModule);
+    if (!emailViewPromise) {
+        emailViewPromise = import('./view_email.js').then((mod) => {
+            emailViewModule = mod;
+            return mod;
+        });
+    }
+    return emailViewPromise;
+}
+
+function renderPostcardRoute() {
+    const options = { onBack: () => navigateToView('mailbox'), onPlay: () => navigateToView('home') };
+    const data = pendingPostcard ? { postcard: pendingPostcard } : null;
+    if (postcardViewModule) {
+        postcardViewModule.renderPostcard(app, data, options);
+        return;
+    }
+    app.innerHTML = '<div class="topbar"><button class="btn-icon" id="mhBack" style="width:36px;height:36px;font-size:18px">‹</button><span class="font-bold" style="color:var(--text-primary)">明信片</span><span style="width:36px;height:36px"></span></div><div style="padding:18px;color:var(--text-muted)">正在打开明信片...</div>';
+    const back = $('mhBack');
+    if (back) back.onclick = options.onBack;
+    loadPostcardView()
+        .then(({ renderPostcard }) => {
+            if (state.currentView !== 'postcard') return;
+            renderPostcard(app, data, options);
+        })
+        .catch((e) => {
+            console.error('加载明信片失败', e);
+            showToast('加载明信片失败：' + (e?.message || e), 'error');
+            if (state.currentView === 'postcard') navigateToView('home');
+        });
+}
+
+function renderMailboxRoute() {
+    const options = {
+        onBack: () => navigateToView('home'),
+        onOpenPostcard: (postcard) => { pendingPostcard = postcard; navigateToView('postcard'); },
+        onEmail: () => navigateToView('email'),
+    };
+    if (mailboxViewModule) { mailboxViewModule.renderMailbox(app, null, options); return; }
+    app.innerHTML = '<div class="topbar"><button class="btn-icon" id="mhBack" style="width:36px;height:36px;font-size:18px">‹</button><span class="font-bold" style="color:var(--text-primary)">邮箱</span><span style="width:36px;height:36px"></span></div><div style="padding:18px;color:var(--text-muted)">正在打开邮箱...</div>';
+    const back = $('mhBack');
+    if (back) back.onclick = options.onBack;
+    loadMailboxView().then(({ renderMailbox }) => {
+        if (state.currentView !== 'mailbox') return;
+        renderMailbox(app, null, options);
+    }).catch((e) => {
+        console.error('加载邮箱失败', e);
+        showToast('加载邮箱失败：' + (e?.message || e), 'error');
+        if (state.currentView === 'mailbox') navigateToView('home');
+    });
+}
+
+function renderEmailRoute() {
+    const options = { onBack: () => navigateToView('mailbox') };
+    if (emailViewModule) { emailViewModule.renderEmail(app, null, options); return; }
+    app.innerHTML = '<div class="topbar"><button class="btn-icon" id="mhBack" style="width:36px;height:36px;font-size:18px">‹</button><span class="font-bold" style="color:var(--text-primary)">发邮件</span><span style="width:36px;height:36px"></span></div><div style="padding:18px;color:var(--text-muted)">正在打开邮件...</div>';
+    const back = $('mhBack');
+    if (back) back.onclick = options.onBack;
+    loadEmailView().then(({ renderEmail }) => {
+        if (state.currentView !== 'email') return;
+        renderEmail(app, null, options);
+    }).catch((e) => {
+        console.error('加载邮件失败', e);
+        showToast('加载邮件失败：' + (e?.message || e), 'error');
+        if (state.currentView === 'email') navigateToView('mailbox');
+    });
 }
 
 function renderChatRoute() {
@@ -225,14 +328,28 @@ function renderSettingsRoute() {
         });
 }
 
-// ==== 路由 ====
-const routes = {
-    login:     () => renderLogin(app, null, { onLogin: handleLogin }),
-    petList:   () => renderPetList(app, { pets: state.petOrder.map(id => state.pets[id]).filter(Boolean) }, {
+async function renderPetListRoute() {
+    app.innerHTML = '<div class="topbar"><button class="btn-icon" id="mhPetListBack" style="width:36px;height:36px;font-size:18px">‹</button><span class="font-bold" style="color:var(--text-primary)">我的宠物</span><span style="width:36px;height:36px"></span></div><div style="padding:18px;color:var(--text-muted)">正在加载宠物列表...</div>';
+    const back = $('mhPetListBack');
+    if (back) back.onclick = () => setView(state.currentPetId ? 'home' : 'petList');
+    if (state.currentView !== 'petList') return;
+    renderPetList(app, { pets: (state.petOrder || []).map(id => state.pets[id] || { id, lazyPetRecord: true }) }, {
         onSelect: handleSelectPet,
         onFind:   handleFindPet,
         onBack:   () => setView(state.currentPetId ? 'home' : 'petList'),
-    }),
+        onLoadPet: async (id) => {
+            if (!id || state.pets[id] || state.currentView !== 'petList') return;
+            try { await loadPet(id); }
+            catch (e) { console.warn('加载宠物卡片失败', id, e); }
+            if (state.currentView === 'petList') renderPetListRoute();
+        },
+    });
+}
+
+// ==== 路由 ====
+const routes = {
+    login:     () => renderLogin(app, null, { onLogin: handleLogin }),
+    petList:   renderPetListRoute,
     hatch:     () => {
         const pet = getCurrentPet();
         if (pet && guardSleepingRoute(pet)) return;
@@ -275,6 +392,9 @@ const routes = {
     hatching:  renderHatchingRoute,
     profile:   () => renderProfile(app, { pet: getCurrentPet() }, { onBack: () => navigateToView('home') }),
     help:      () => renderHelp(app, null, { onBack: () => navigateToView('home') }),
+    postcard:  renderPostcardRoute,
+    mailbox:   renderMailboxRoute,
+    email:     renderEmailRoute,
     settings:  renderSettingsRoute,
 };
 
@@ -282,8 +402,8 @@ let hatchCtx = {};
 
 function preloadLoadedPetAssets() {
     try {
-        const pets = localPlanetPets((state.petOrder || []).map(id => state.pets[id]).filter(Boolean));
-        if (pets.length) preloadPetAssets(pets);
+        const pet = getCurrentPet();
+        if (pet) preloadPetAssets(pet, { includeAll: false });
     } catch (e) {
         console.warn('预加载宠物资源失败', e);
     }
@@ -353,7 +473,7 @@ async function bootstrap() {
     }
     preloadLoadedPetAssets();
     // 进入 home；首次启动为星球外层，视图间返回时由 state 恢复上次 home level。
-    setView('home');
+    setView(hasPostcardParams() ? 'postcard' : 'home');
 }
 
 /** 系统默认蛋：当玩家没有任何宠物时（首次进入 / 删光宠物后）静默创建。 */
@@ -396,14 +516,18 @@ async function createNewEgg(options = {}) {
     return pet;
 }
 
-function firstSelectablePetId(excludeId = null) {
-    return selectablePets(state.petOrder.map(id => state.pets[id]).filter(Boolean))
-        .find(pet => pet.id !== excludeId)?.id || null;
+async function firstSelectablePetId(excludeId = null) {
+    for (const id of state.petOrder || []) {
+        if (!id || id === excludeId) continue;
+        const pet = state.pets[id] || await loadPet(id);
+        if (pet && isPetSelectable(pet)) return pet.id;
+    }
+    return null;
 }
 
 async function selectFirstAvailablePet(preferredId = null) {
-    const preferred = preferredId ? state.pets[preferredId] : null;
-    const nextId = preferred && isPetSelectable(preferred) ? preferredId : firstSelectablePetId();
+    const preferred = preferredId ? (state.pets[preferredId] || await loadPet(preferredId)) : null;
+    const nextId = preferred && isPetSelectable(preferred) ? preferredId : await firstSelectablePetId();
     if (!nextId) {
         state.currentPetId = null;
         await saveUserProfile();
@@ -509,7 +633,7 @@ async function handleLogin() {
             try { await ensurePetData(state.currentPetId); } catch (_) {}
         }
         preloadLoadedPetAssets();
-        setView('home');
+        setView(hasPostcardParams() ? 'postcard' : 'home');
     }
 }
 
@@ -541,6 +665,8 @@ async function handleClearData() {
         state.planetInfrastructure = {};
         state.planetMining = {};
         state.haqiIslandFarewells = [];
+        state.invitedPets = [];
+        state.activeInvitedPet = null;
         state.remotePlanetDiscoveries = {};
         state.remoteElementStocks = {};
         await saveUserProfile();
@@ -563,6 +689,9 @@ async function handleSelectPet(id) {
     setCurrentPet(id);
     setCurrentPetPersisted(id).catch(()=>{});
     state.currentRoom = state.pets[id]?.activeRoom || 'living';
+    state.activePetFieldPose = null;
+    state.activePetRoomPose = null;
+    state.activePetRoomFocusPose = null;
     state.isDecorMode = false;
     state.isFeedMode = false;
     try { await ensurePetData(id); } catch (_) {}
@@ -571,7 +700,7 @@ async function handleSelectPet(id) {
 }
 
 async function handleFindPet(id) {
-    const pet = state.pets[id];
+    const pet = state.pets[id] || (id ? { id } : null);
     if (!pet) return;
     const target = getPetFindTarget(pet);
     if (!target) {
@@ -579,25 +708,52 @@ async function handleFindPet(id) {
         showToast(`${pet.name || '这只宠物'} 现在在 ${info.label}，不能在当前星球寻找。`, 'info', 2200);
         return;
     }
-    if (isPetSelectable(pet)) {
-        setCurrentPet(id);
-        try { await setCurrentPetPersisted(id); } catch (_) {}
-        try { await ensurePetData(id); } catch (_) {}
-    }
+    const current = getCurrentPet();
+    if (!current) return;
     state.isDecorMode = false;
     state.isFeedMode = false;
     if (target.kind === 'field') {
+        const home = pet?.id !== state.currentPetId ? getGeneratedPetLocation(pet)
+            : getPetLocationType(pet) === 'released' ? getReleasedPetHome(pet) : null;
         state.currentField = target.id || 'land';
+        const side = Math.random() < 0.5 ? -1 : 1;
+        const activeX = home?.kind === 'field' ? clamp(home.x + side * 0.085, 0.08, 0.92) : 0;
+        const activeY = home?.kind === 'field' ? clamp(home.y + 0.025 + Math.random() * 0.035, 0.36, 0.90) : 0;
+        state.activePetFieldPose = home?.kind === 'field'
+            ? { fieldId: state.currentField, targetPetId: pet.id, targetX: home.x, targetY: home.y, x: activeX, y: activeY, delay: 0, dur: 9, dx: 0, dy: 0 }
+            : null;
+        state.activePetRoomPose = null;
+        state.activePetRoomFocusPose = null;
+        state.zoomLevel = 1;
         state.lastHomeZoomLevel = 1;
         setView('home');
-        showToast(`正在前往 ${pet.name || '宠物'} 所在的场景`, 'info', 1200);
+        showToast(`已带 ${current?.name || '当前宠物'} 前往 ${pet.name || '宠物'} 所在的场景`, 'info', 1400);
         return;
     }
     state.currentRoom = target.id || pet.activeRoom || 'living';
-    if (isPetSelectable(pet)) pet.activeRoom = state.currentRoom;
+    const home = pet?.id !== state.currentPetId
+        ? getGeneratedPetLocation(pet)
+        : getPetLocationType(pet) === 'released'
+            ? getReleasedPetHome(pet)
+            : getHomePetRoomPose(pet, state.currentRoom);
+    const roomSide = Math.random() < 0.5 ? -1 : 1;
+    const activeRoomX = home?.kind === 'room' ? clamp(home.xMeters + roomSide * 0.85, 0, 9.25) : 0;
+    const activeRoomY = home?.kind === 'room' ? clamp(home.yMeters + 0.03, 0, 2.25) : 0;
+    state.activePetRoomPose = home?.kind === 'room'
+        ? { roomId: state.currentRoom, targetPetId: pet.id, targetXMeters: home.xMeters, targetYMeters: home.yMeters, xMeters: activeRoomX, yMeters: activeRoomY, face: roomSide < 0 ? 'right' : 'left' }
+        : null;
+    state.activePetRoomFocusPose = home?.kind === 'room'
+        ? { roomId: state.currentRoom, targetPetId: pet.id, x: (activeRoomX + home.xMeters) / 2, y: (activeRoomY + home.yMeters) / 2 }
+        : null;
+    state.activePetFieldPose = null;
+    if (current && isPetSelectable(current)) {
+        current.activeRoom = state.currentRoom;
+        savePetDebounced(current);
+    }
+    state.zoomLevel = 2;
     state.lastHomeZoomLevel = 2;
     setView('home');
-    showToast(`正在前往 ${pet.name || '宠物'} 所在的房间`, 'info', 1200);
+    showToast(`已带 ${current?.name || '当前宠物'} 前往 ${pet.name || '宠物'} 所在的房间`, 'info', 1400);
 }
 
 async function handleHireNanny(pet, days = 1) {
@@ -1268,6 +1424,7 @@ async function navigateToView(target) {
     }
     if (target === 'home') { setView('home'); return; }
     if (target === 'petList') { setView('petList'); return; }
+    if (target !== 'postcard') pendingPostcard = null;
     if (routes[target]) { setView(target); return; }
     showToast('未知导航：' + target, 'info');
 }

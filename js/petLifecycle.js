@@ -1,6 +1,7 @@
 // 宠物生命周期与位置记录：当前星球、放养、哈奇岛、其它星球。
 import { CONFIG } from './config.js';
 import { decodeDna } from './dna.js';
+import { state } from './state.js';
 
 export const MAX_PLANET_PETS = 10;
 export const RELEASED_PET_FIELD_CHANCE = 0.9;
@@ -8,6 +9,9 @@ export const RELEASED_AUTO_CARE_STATS = { hunger: 85, mood: 85, clean: 90, bond:
 const RELEASED_PET_RELOCATE_MS = 10 * 60 * 1000;
 const DAY_MS = 24 * 60 * 60 * 1000;
 const SESSION_PLACEMENT_SEED = `${Date.now().toString(36)}_${Math.random().toString(36).slice(2)}`;
+const GENERATED_LOCATION_CACHE = new Map();
+let GENERATED_NEAR_ACTIVE_KEY = '';
+let GENERATED_NEAR_ACTIVE_IDS = [];
 
 const REMOTE_DESTINATIONS = {
     firebird: { id: 'firebird', name: '火鸟岛', emoji: '🔥', field: 'fire' },
@@ -78,6 +82,36 @@ export function getPetLocationType(pet) {
     return 'home';
 }
 
+function petRefId(petOrId) {
+    return typeof petOrId === 'string' ? petOrId : petOrId?.id;
+}
+
+function useGeneratedLocation(petOrId) {
+    const id = petRefId(petOrId);
+    return !!id && id !== state.currentPetId;
+}
+
+export function getNearActiveGeneratedPetIds(limit = 2) {
+    const currentId = state.currentPetId;
+    const ids = (state.petOrder || []).filter(id => id && id !== currentId);
+    const count = Math.max(0, Number(limit) || 0);
+    const key = `${currentId || ''}::${count}::${ids.join('|')}`;
+    if (key === GENERATED_NEAR_ACTIVE_KEY) return GENERATED_NEAR_ACTIVE_IDS.slice(0, count);
+    const pool = ids.slice();
+    for (let index = pool.length - 1; index > 0; index--) {
+        const swapIndex = Math.floor(Math.random() * (index + 1));
+        [pool[index], pool[swapIndex]] = [pool[swapIndex], pool[index]];
+    }
+    GENERATED_NEAR_ACTIVE_KEY = key;
+    GENERATED_NEAR_ACTIVE_IDS = pool.slice(0, count);
+    return GENERATED_NEAR_ACTIVE_IDS.slice();
+}
+
+export function isNearActiveGeneratedPet(petOrId) {
+    const id = petRefId(petOrId);
+    return !!id && getNearActiveGeneratedPetIds(2).includes(id);
+}
+
 function clampStatValue(value) {
     return Math.max(CONFIG.statMin, Math.min(CONFIG.statMax, Number(value) || 0));
 }
@@ -97,11 +131,21 @@ export function applyReleasedPetAutoCareStats(pet) {
 }
 
 export function getRuntimePetStats(pet) {
+    if (pet?.id && pet.id !== state.currentPetId) {
+        return {
+            ...(pet.stats && typeof pet.stats === 'object' ? pet.stats : {}),
+            hunger: CONFIG.statMax,
+            mood: CONFIG.statMax,
+            clean: CONFIG.statMax,
+            bond: CONFIG.statMax,
+        };
+    }
     applyReleasedPetAutoCareStats(pet);
     return pet?.stats || {};
 }
 
 export function isPetOnCurrentPlanet(pet) {
+    if (useGeneratedLocation(pet)) return true;
     const type = getPetLocationType(pet);
     return type === 'home' || type === 'released';
 }
@@ -111,6 +155,12 @@ export function isPetSelectable(pet) {
 }
 
 export function getPetFindTarget(pet) {
+    if (useGeneratedLocation(pet)) {
+        const home = getGeneratedPetLocation(pet);
+        return home.kind === 'field'
+            ? { kind: 'field', id: home.id }
+            : { kind: 'room', id: home.id };
+    }
     if (!isPetOnCurrentPlanet(pet)) return null;
     if (getPetLocationType(pet) === 'released') {
         const home = getReleasedPetHome(pet);
@@ -121,11 +171,78 @@ export function getPetFindTarget(pet) {
     return { kind: 'room', id: pet?.activeRoom || 'living' };
 }
 
+export function getGeneratedPetLocation(petOrId, now = Date.now()) {
+    const id = petRefId(petOrId) || 'pet';
+    const cached = GENERATED_LOCATION_CACHE.get(id);
+    if (cached) return cached;
+    const bucket = Math.floor(now / RELEASED_PET_RELOCATE_MS);
+    const rng = Math.random;
+    if (isNearActiveGeneratedPet(id)) {
+        const home = {
+            kind: 'field',
+            id: state.currentField || 'land',
+            nearActive: true,
+            x: round3(0.42 + rng() * 0.16),
+            y: round3(0.56 + rng() * 0.12),
+            delay: round2(-(rng() * 4)),
+            dur: round2(8 + rng() * 4),
+            dx: round1(-12 + rng() * 24),
+            dy: round1(-8 + rng() * 16),
+            assignedUntil: (bucket + 1) * RELEASED_PET_RELOCATE_MS,
+        };
+        GENERATED_LOCATION_CACHE.set(id, home);
+        return home;
+    }
+    if (rng() < RELEASED_PET_FIELD_CHANCE) {
+        const fieldId = weightedPick(rng, [], ['land', 'water', 'sky']);
+        const home = {
+            kind: 'field',
+            id: fieldId,
+            x: round3(0.14 + rng() * 0.72),
+            y: round3(0.42 + rng() * 0.32),
+            delay: round2(-(rng() * 8)),
+            dur: round2(9 + rng() * 7),
+            dx: round1(-28 + rng() * 56),
+            dy: round1(-18 + rng() * 34),
+            assignedUntil: (bucket + 1) * RELEASED_PET_RELOCATE_MS,
+        };
+        GENERATED_LOCATION_CACHE.set(id, home);
+        return home;
+    }
+    const roomId = weightedPick(rng, [], CONFIG.rooms.map(room => room.id));
+    const home = {
+        kind: 'room',
+        id: roomId,
+        xMeters: round2(0.8 + rng() * 7.2),
+        yMeters: round2(1.18 + rng() * 0.95),
+        face: rng() < 0.5 ? 'left' : 'right',
+        assignedUntil: (bucket + 1) * RELEASED_PET_RELOCATE_MS,
+    };
+    GENERATED_LOCATION_CACHE.set(id, home);
+    return home;
+}
+
+export function getHomePetRoomPose(pet, roomId = null) {
+    const id = roomId || pet?.activeRoom || 'living';
+    const rng = makeRng(`${pet?.id || 'pet'}::${id}::home-room-pose`);
+    return {
+        kind: 'room',
+        id,
+        xMeters: round2(0.8 + rng() * 7.2),
+        yMeters: round2(1.18 + rng() * 0.95),
+        face: rng() < 0.5 ? 'left' : 'right',
+    };
+}
+
 export function hasRenderablePetTexture(pet) {
     return !!(pet?.imageSheetUrl || pet?.imageUrl);
 }
 
 export function canPetAppearInField(pet, fieldId = null) {
+    if (useGeneratedLocation(pet)) {
+        const home = getGeneratedPetLocation(pet);
+        return home.kind === 'field' && (!fieldId || home.id === fieldId);
+    }
     if (!isPetOnCurrentPlanet(pet)) return false;
     if (getPetLocationType(pet) !== 'released') return true;
     if (!hasRenderablePetTexture(pet)) return false;
@@ -155,6 +272,25 @@ export function getCompanionDays(pet, now = Date.now()) {
 }
 
 export function getPetLocationInfo(pet, planetName = '宠物星') {
+    if (useGeneratedLocation(pet)) {
+        const home = getGeneratedPetLocation(pet);
+        if (home.kind === 'field') {
+            const field = CONFIG.fields.find(item => item.id === home.id);
+            return {
+                type: 'generatedField',
+                label: `${planetName || '宠物星'} · ${field?.name || '表面'}`,
+                detail: '位置已在本次进入时生成，资料进入视野后再加载',
+                tone: '#0f766e',
+            };
+        }
+        const room = CONFIG.rooms.find(item => item.id === home.id);
+        return {
+            type: 'generatedRoom',
+            label: room?.name || '房间',
+            detail: '位置已在本次进入时生成，资料进入视野后再加载',
+            tone: '#d97706',
+        };
+    }
     const type = getPetLocationType(pet);
     const location = pet?.location || {};
     if (type === 'released') {

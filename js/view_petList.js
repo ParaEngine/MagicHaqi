@@ -348,41 +348,43 @@ function setupLazyRawPetImages(root) {
 }
 
 function petCardHtml(pet, isCurrent, allowSelect = false) {
-    const stats = getRuntimePetStats(pet);
+    const lazy = !!pet.lazyPetRecord;
+    const stats = lazy ? { hunger: 100, mood: 100 } : getRuntimePetStats(pet);
     const staminaBar = Math.round(stats.hunger || 0);
     const moodBar = Math.round(stats.mood || 0);
     const sheetReady = !!pet.imageSheetUrl;
     const planetName = window.MH_state?.planetName || '宠物星';
     const location = getPetLocationInfo(pet, planetName);
-    const selectable = isPetSelectable(pet);
+    const selectable = !lazy && isPetSelectable(pet);
     const onCurrentPlanet = isPetOnCurrentPlanet(pet);
     const canSelect = allowSelect && selectable;
     const findTarget = getPetFindTarget(pet);
+    const name = lazy ? `宠物 ${String(pet.id || '').slice(0, 6)}` : displayPetName(pet);
     const hint = pet.stage === 'egg'
         ? (sheetReady ? '即将破壳…' : '正在孕育中…')
         : '';
         return `
                 <div class="card-flat fade-in ${canSelect ? 'cursor-pointer' : ''} ${isCurrent ? 'mh-pet-card-current' : ''}"
                          data-pet-id="${escapeHtml(pet.id)}"
+                         ${lazy ? 'data-pet-lazy="1"' : ''}
                          data-selectable="${canSelect ? '1' : '0'}"
                          style="display:flex;gap:12px;align-items:center;${isCurrent ? 'outline:2px solid var(--accent);outline-offset:-2px' : ''};opacity:${selectable ? '1' : '.88'}">
             <div style="width:72px;height:72px;border-radius:14px;background:var(--bg-pill);overflow:hidden;flex-shrink:0">
-                ${onCurrentPlanet ? petArtHtml(pet, { alt: displayPetName(pet) }) : rawPetArtHtml(pet, displayPetName(pet))}
+                ${lazy ? '<div style="width:100%;height:100%;display:flex;align-items:center;justify-content:center;color:var(--text-faint);font-size:12px">加载中</div>' : onCurrentPlanet ? petArtHtml(pet, { alt: displayPetName(pet) }) : rawPetArtHtml(pet, displayPetName(pet))}
             </div>
             <div style="flex:1;min-width:0">
                 <div style="display:flex;align-items:center;gap:6px;margin-bottom:4px;flex-wrap:wrap">
-                    <span class="text-base font-bold" style="color:var(--text-primary)">${escapeHtml(displayPetName(pet))}</span>
-                    <span class="stage-badge">${escapeHtml(getStageName(pet.stage, pet.stage || ''))}</span>
+                    <span class="text-base font-bold" style="color:var(--text-primary)">${escapeHtml(name)}</span>
+                    ${lazy ? '<span class="stage-badge">未加载</span>' : `<span class="stage-badge">${escapeHtml(getStageName(pet.stage, pet.stage || ''))}</span>`}
                     ${isCurrent ? '<span class="stage-badge" style="background:var(--accent);color:#fff">当前</span>' : ''}
                     <span class="stage-badge" style="background:#ecfeff;color:${escapeHtml(location.tone)}">${escapeHtml(location.label)}</span>
                 </div>
                 <div style="font-size:11px;color:var(--text-secondary);margin-bottom:5px;display:flex;gap:8px;flex-wrap:wrap">
-                    <span>生日 ${escapeHtml(getPetBirthday(pet))}</span>
-                    <span>陪伴第 ${getCompanionDays(pet)} 天</span>
+                    ${lazy ? '<span>进入视野后加载资料</span>' : `<span>生日 ${escapeHtml(getPetBirthday(pet))}</span><span>陪伴第 ${getCompanionDays(pet)} 天</span>`}
                 </div>
-                <div style="font-size:11px;color:var(--text-muted);margin-bottom:6px;font-family:ui-monospace,Menlo,monospace">
+                ${lazy ? '' : `<div style="font-size:11px;color:var(--text-muted);margin-bottom:6px;font-family:ui-monospace,Menlo,monospace">
                     DNA: ${escapeHtml(formatDna(pet.dna || ''))}
-                </div>
+                </div>`}
                 ${hint ? `<div style="font-size:11px;color:var(--text-faint);margin-bottom:4px">${escapeHtml(hint)}</div>` : ''}
                 <div style="display:flex;gap:6px;align-items:center;font-size:11px;color:var(--text-secondary)">
                         <span>⚡</span><div class="stat-bar" style="flex:1"><div style="width:${staminaBar}%;background:#84cc16"></div></div>
@@ -390,13 +392,46 @@ function petCardHtml(pet, isCurrent, allowSelect = false) {
                 </div>
             </div>
             <div style="display:flex;flex-direction:column;gap:6px;align-self:center;flex-shrink:0">
-                ${findTarget ? `<button class="btn-secondary" data-find="${escapeHtml(pet.id)}" title="寻找 ${escapeHtml(displayPetName(pet))}" style="padding:7px 10px;font-size:12px">寻找</button>` : ''}
-                <button class="btn-secondary" data-album="${escapeHtml(pet.id)}" title="查看 ${escapeHtml(displayPetName(pet))} 的回忆相册" style="padding:7px 10px;font-size:12px">相册</button>
+                ${findTarget ? `<button class="btn-secondary" data-find="${escapeHtml(pet.id)}" title="寻找 ${escapeHtml(name)}" style="padding:7px 10px;font-size:12px">寻找</button>` : ''}
+                ${lazy ? '' : `<button class="btn-secondary" data-album="${escapeHtml(pet.id)}" title="查看 ${escapeHtml(name)} 的回忆相册" style="padding:7px 10px;font-size:12px">相册</button>`}
             </div>
         </div>`;
 }
 
-export function renderPetList(panel, { pets }, { onSelect, onBack, onFind, allowSelect = false } = {}) {
+function setupLazyPetCards(panel, onLoadPet) {
+    if (typeof onLoadPet !== 'function') return;
+    const targets = $$('[data-pet-lazy="1"]', panel);
+    if (!targets.length) return;
+    const load = (el) => {
+        const id = el?.dataset?.petId;
+        if (!id || el.dataset.petLazyLoading === '1') return;
+        el.dataset.petLazyLoading = '1';
+        onLoadPet(id);
+    };
+    if (typeof IntersectionObserver !== 'undefined') {
+        const observer = new IntersectionObserver((entries, obs) => {
+            entries.forEach((entry) => {
+                if (!entry.isIntersecting && entry.intersectionRatio <= 0) return;
+                load(entry.target);
+                obs.unobserve(entry.target);
+            });
+        }, { root: null, rootMargin: '140px 0px', threshold: 0.01 });
+        targets.forEach(el => observer.observe(el));
+        return;
+    }
+    const scroller = panel.querySelector('[style*="overflow-y:auto"]') || panel;
+    const check = () => {
+        const vh = window.innerHeight || document.documentElement?.clientHeight || 0;
+        targets.forEach((el) => {
+            const rect = el.getBoundingClientRect?.();
+            if (rect && rect.bottom > -140 && rect.top < vh + 140) load(el);
+        });
+    };
+    scroller.addEventListener?.('scroll', check, { passive: true });
+    requestAnimationFrame(check);
+}
+
+export function renderPetList(panel, { pets }, { onSelect, onBack, onFind, onLoadPet, allowSelect = false } = {}) {
     const list = sortPetsByRecentBirthday(pets || []);
     const currentId = (typeof window !== 'undefined' && window.MH_state) ? window.MH_state.currentPetId : null;
     const currentPets = currentId ? list.filter(p => p.id === currentId) : [];
@@ -452,4 +487,5 @@ export function renderPetList(panel, { pets }, { onSelect, onBack, onFind, allow
         };
     });
     setupLazyRawPetImages(panel);
+    setupLazyPetCards(panel, onLoadPet);
 }

@@ -34,11 +34,14 @@
   };
   const CORE_GUIDES = {
     start: { label: '起点', desc: '固定在矩阵左上角，路径必须从这里开始。' },
-    end: { label: '终点', desc: '接入全部必经点后，到达这里即可通关。' },
-    checkpoint: { label: '必经点', desc: '必须全部经过，顺序不限。' },
+    end: { label: '终点', desc: '接入全部破解点后，到达这里即可通关。' },
+    checkpoint: { label: '破解点', desc: '必须全部经过，顺序不限。' },
     obstacle: { label: '障碍点', desc: '默认不可通过，可通过清除型道具移除，也可通过净化状态临时突破。' },
-    hardObstacle: { label: '不可净化障碍', desc: '只在高级难度下出现，不能被净化突破，也不能被清除型道具移除。' },
+    hardObstacle: { label: '不可净化障碍', desc: '不可通过，不能被净化突破，也不能被清除型道具移除。' },
   };
+  const IS_LIVE_PREVIEW = new URLSearchParams(window.location.search).get('vscode-livepreview') === 'true';
+  const AUTO_STEP_DELAY = 170;
+  const AUTO_POWER_DELAY = 720;
 
   const state = {
     difficulty: normalizeDifficulty(localStorage.getItem(STORAGE_KEY_DIFFICULTY)),
@@ -53,6 +56,8 @@
     purifyReady: false,
     dragging: false,
     animating: false,
+    autoSolving: false,
+    autoToken: 0,
     finished: false,
     seconds: 0,
     timer: null,
@@ -68,115 +73,140 @@
   root.id = 'haqiMatrixHack';
   root.innerHTML = `
     <style>
+      :root {
+        --mh-bg: #030810;
+        --mh-bg-2: #07131d;
+        --mh-panel: rgba(8, 18, 28, .86);
+        --mh-panel-strong: rgba(12, 25, 38, .96);
+        --mh-grid: rgba(117, 151, 174, .18);
+        --mh-line: rgba(184, 226, 242, .9);
+        --mh-muted: #7f98a8;
+        --mh-text: #e8f7ff;
+        --mh-cyan: #73e8ff;
+        --mh-cyan-soft: rgba(115, 232, 255, .18);
+        --mh-amber: #ffbf5f;
+        --mh-red: #ff6b6b;
+        --mh-green: #9cffce;
+        --mh-purple: #b8a0ff;
+        --mh-radius: 6px;
+      }
       * { box-sizing: border-box; -webkit-tap-highlight-color: transparent; }
       html, body { width: 100%; height: 100%; margin: 0; overflow: hidden; }
-      body { font-family: -apple-system, BlinkMacSystemFont, 'PingFang SC', 'Microsoft YaHei', sans-serif; color: #e8fbff; background: linear-gradient(145deg, #06131f 0%, #0d3142 48%, #0b3b35 100%); touch-action: none; user-select: none; }
+      body { font-family: -apple-system, BlinkMacSystemFont, 'PingFang SC', 'Microsoft YaHei', sans-serif; color: var(--mh-text); background: radial-gradient(circle at 50% 8%, rgba(31, 88, 110, .32), transparent 38%), linear-gradient(150deg, #020711 0%, #07131f 48%, #041018 100%); touch-action: none; user-select: none; }
       .mh-shell { position: relative; height: 100vh; height: 100dvh; display: grid; grid-template-rows: auto minmax(0, 1fr) auto; gap: 8px; padding: 8px; overflow: hidden; }
-      .mh-shell::before { content: ''; position: fixed; inset: 0; pointer-events: none; background: linear-gradient(90deg, rgba(125,211,252,.08) 1px, transparent 1px), linear-gradient(180deg, rgba(52,211,153,.07) 1px, transparent 1px); background-size: 36px 36px; opacity: .8; }
-      .mh-top, .mh-panel-section, .mh-bottom-bar { position: relative; border: 1px solid rgba(125,211,252,.28); background: rgba(4, 20, 34, .82); box-shadow: inset 0 1px 0 rgba(255,255,255,.07), 0 8px 20px rgba(0,0,0,.2); }
-      .mh-top { min-height: 54px; display: grid; grid-template-columns: minmax(0,1fr) auto; gap: 8px; align-items: center; padding: 8px 10px; border-radius: 12px; }
-      .mh-title { min-width: 0; font-size: 18px; font-weight: 1000; color: #f0fdff; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+      .mh-shell::before { content: ''; position: fixed; inset: 0; pointer-events: none; background: linear-gradient(90deg, rgba(120,176,198,.075) 1px, transparent 1px), linear-gradient(180deg, rgba(120,176,198,.055) 1px, transparent 1px), linear-gradient(180deg, transparent 0 48%, rgba(255,255,255,.025) 49%, transparent 51%); background-size: 40px 40px, 40px 40px, 100% 4px; opacity: .75; }
+      .mh-shell::after { content: ''; position: fixed; inset: 8px; pointer-events: none; border: 1px solid rgba(115,232,255,.12); box-shadow: inset 0 0 70px rgba(30,120,150,.08); }
+      .mh-top, .mh-panel-section, .mh-bottom-bar { position: relative; border: 1px solid rgba(115,232,255,.22); background: linear-gradient(180deg, rgba(10, 24, 36, .9), rgba(5, 13, 22, .84)); box-shadow: inset 0 1px 0 rgba(255,255,255,.06), 0 14px 32px rgba(0,0,0,.25); clip-path: polygon(0 0, calc(100% - 12px) 0, 100% 12px, 100% 100%, 12px 100%, 0 calc(100% - 12px)); }
+      .mh-top { min-height: 52px; display: grid; grid-template-columns: minmax(0,1fr) auto; gap: 10px; align-items: center; padding: 8px 12px; }
+      .mh-title { min-width: 0; font-size: 17px; font-weight: 1000; color: var(--mh-text); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; text-shadow: 0 0 14px rgba(115,232,255,.3); }
+      .mh-title::before { content: 'SYS// '; color: var(--mh-cyan); font-size: 12px; font-weight: 900; }
       .mh-stats { display: flex; gap: 6px; align-items: center; justify-content: flex-end; flex-wrap: wrap; }
-      .mh-pill { min-height: 30px; display: inline-flex; align-items: center; gap: 4px; padding: 0 9px; border-radius: 999px; background: rgba(236,254,255,.92); color: #075985; font-size: 12px; font-weight: 900; }
-      .mh-stage { position: relative; min-height: 0; display: grid; grid-template-columns: minmax(0, 1fr) minmax(190px, 250px); gap: 8px; overflow: hidden; }
-      .mh-board-wrap { position: relative; place-self: center; width: min(calc(100vh - 132px), calc(100vw - 274px), 710px); max-width: 100%; aspect-ratio: 1; padding: 9px; border-radius: 14px; border: 2px solid rgba(165,243,252,.62); background: linear-gradient(145deg, rgba(8,47,73,.96), rgba(15,118,110,.92)); box-shadow: 0 18px 36px rgba(0,0,0,.34), inset 0 1px 0 rgba(255,255,255,.16); }
-      .mh-board { position: relative; width: 100%; height: 100%; display: grid; grid-template-columns: repeat(var(--size), 1fr); grid-template-rows: repeat(var(--size), 1fr); gap: clamp(2px, .48vmin, 5px); padding: clamp(4px, .78vmin, 8px); border-radius: 10px; background: rgba(2, 8, 23, .66); overflow: hidden; }
-      .mh-lines { position: absolute; inset: clamp(13px, 1.35vmin, 17px); z-index: 4; overflow: visible; pointer-events: none; }
-      .mh-cell { position: relative; min-width: 0; min-height: 0; display: grid; place-items: center; border-radius: 8px; border: 1px solid rgba(125,211,252,.23); background: linear-gradient(180deg, rgba(15,23,42,.94), rgba(12,74,110,.72)); color: #e0f2fe; font-weight: 1000; overflow: hidden; cursor: pointer; }
-      .mh-cell::before { content: ''; position: absolute; inset: 0; background: linear-gradient(135deg, rgba(255,255,255,.12), transparent 38%); pointer-events: none; }
-      .mh-cell-icon { position: relative; z-index: 6; width: min(72%, 42px); height: min(72%, 42px); display: block; filter: drop-shadow(0 2px 2px rgba(0,0,0,.25)); }
+      .mh-pill { min-height: 28px; display: inline-flex; align-items: center; gap: 4px; padding: 0 10px; border: 1px solid rgba(115,232,255,.28); border-radius: var(--mh-radius); background: rgba(4, 13, 22, .74); color: #c8e8f2; font-size: 12px; font-weight: 900; box-shadow: inset 0 0 16px rgba(115,232,255,.06); }
+      .mh-pill b { color: #ffffff; }
+      .mh-stage { position: relative; min-height: 0; display: grid; grid-template-columns: minmax(0, 1fr) minmax(210px, 268px); gap: 8px; overflow: hidden; }
+      .mh-board-wrap { position: relative; place-self: center; width: min(calc(100vh - 132px), calc(100vw - 292px), 718px); max-width: 100%; aspect-ratio: 1; padding: 12px; border: 1px solid rgba(115,232,255,.42); border-radius: var(--mh-radius); background: linear-gradient(180deg, rgba(12,28,42,.95), rgba(3,9,16,.96)); box-shadow: 0 20px 44px rgba(0,0,0,.42), 0 0 42px rgba(74,186,218,.12), inset 0 0 0 1px rgba(255,255,255,.05); }
+      .mh-board-wrap::before, .mh-board-wrap::after { content: ''; position: absolute; inset: 5px; pointer-events: none; border: 1px solid rgba(115,232,255,.16); }
+      .mh-board-wrap::after { inset: 0; border: 0; background: linear-gradient(90deg, transparent 0, rgba(115,232,255,.55) 13%, transparent 27%) 0 0 / 86px 1px no-repeat, linear-gradient(90deg, transparent 73%, rgba(115,232,255,.42) 88%, transparent 100%) 0 100% / 100% 1px no-repeat; }
+      .mh-board { position: relative; width: 100%; height: 100%; display: grid; grid-template-columns: repeat(var(--size), 1fr); grid-template-rows: repeat(var(--size), 1fr); gap: clamp(2px, .42vmin, 4px); padding: clamp(5px, .82vmin, 9px); border-radius: 4px; border: 1px solid rgba(115,232,255,.18); background: radial-gradient(circle at center, rgba(115,232,255,.08), transparent 62%), rgba(2, 8, 15, .9); overflow: hidden; }
+      .mh-board::before { content: ''; position: absolute; inset: 0; pointer-events: none; background: linear-gradient(90deg, rgba(115,232,255,.045) 1px, transparent 1px), linear-gradient(180deg, rgba(115,232,255,.035) 1px, transparent 1px); background-size: calc(100% / var(--size)) calc(100% / var(--size)); opacity: .7; }
+      .mh-lines { position: absolute; inset: clamp(17px, 1.65vmin, 21px); z-index: 4; overflow: visible; pointer-events: none; filter: drop-shadow(0 0 8px rgba(115,232,255,.46)); }
+      .mh-cell { position: relative; min-width: 0; min-height: 0; display: grid; place-items: center; border-radius: 4px; border: 1px solid rgba(115,232,255,.16); background: linear-gradient(145deg, rgba(12,23,34,.96), rgba(7,17,28,.88)); color: var(--mh-text); font-weight: 1000; overflow: hidden; cursor: pointer; box-shadow: inset 0 0 0 1px rgba(255,255,255,.02); }
+      .mh-cell::before { content: ''; position: absolute; inset: 0; background: linear-gradient(135deg, rgba(255,255,255,.07), transparent 32%), linear-gradient(180deg, rgba(115,232,255,.04), transparent 56%); pointer-events: none; }
+      .mh-cell::after { content: ''; position: absolute; left: 4px; top: 4px; width: 6px; height: 6px; border-left: 1px solid rgba(115,232,255,.32); border-top: 1px solid rgba(115,232,255,.32); opacity: .55; }
+      .mh-cell-icon { position: relative; z-index: 6; width: min(68%, 40px); height: min(68%, 40px); display: block; filter: drop-shadow(0 0 6px rgba(115,232,255,.22)); }
       .mh-token-icon { width: 17px; height: 17px; flex: 0 0 auto; display: block; }
       .mh-held-icon { width: 22px; height: 22px; flex: 0 0 auto; display: block; }
-      .mh-cell.start, .mh-cell.end, .mh-cell.checkpoint { background: linear-gradient(180deg, rgba(15,23,42,.94), rgba(12,74,110,.72)); color: #e0f2fe; }
-      .mh-cell.start .mh-cell-icon { filter: drop-shadow(0 0 7px rgba(74,222,128,.85)); }
-      .mh-cell.end .mh-cell-icon { filter: drop-shadow(0 0 7px rgba(251,191,36,.88)); }
-      .mh-cell.checkpoint .mh-cell-icon { filter: drop-shadow(0 0 7px rgba(167,139,250,.86)); }
-      .mh-cell.obstacle { background: linear-gradient(145deg, #1f2937, #020617); color: #cbd5e1; border-color: rgba(148,163,184,.32); cursor: not-allowed; }
-      .mh-cell.hardObstacle { background: linear-gradient(145deg, #111827, #3f1d1d); color: #fecaca; border-color: rgba(252,165,165,.38); cursor: not-allowed; }
-      .mh-cell.power { color: #06202a; border-color: rgba(255,255,255,.82); box-shadow: 0 0 15px rgba(103,232,249,.34), inset 0 1px 0 rgba(255,255,255,.62); }
-      .mh-cell.power.used { background: linear-gradient(180deg, rgba(203,213,225,.85), rgba(100,116,139,.78)); color: #e2e8f0; opacity: .78; }
-      .mh-cell.visited { outline: 2px solid rgba(236,254,255,.88); outline-offset: -3px; }
-      .mh-cell.current { animation: currentPulse .9s ease-in-out infinite; }
-      .mh-cell.blocked { animation: shake .28s ease-in-out; }
-      .power-pulse { background: linear-gradient(180deg, #f0abfc, #c026d3); }
-      .power-cross { background: linear-gradient(180deg, #67e8f9, #0891b2); }
-      .power-row { background: linear-gradient(180deg, #bfdbfe, #2563eb); }
-      .power-col { background: linear-gradient(180deg, #a7f3d0, #059669); }
-      .power-rotate { background: linear-gradient(180deg, #ddd6fe, #6d28d9); }
-      .power-rotate-ccw { background: linear-gradient(180deg, #fecdd3, #be123c); }
-      .power-purify { background: linear-gradient(180deg, #fed7aa, #ea580c); }
+      .mh-cell.start, .mh-cell.end, .mh-cell.checkpoint { background: linear-gradient(145deg, rgba(14,30,44,.98), rgba(7,17,28,.9)); }
+      .mh-cell.start .mh-cell-icon { filter: drop-shadow(0 0 8px rgba(156,255,206,.62)); }
+      .mh-cell.end .mh-cell-icon { filter: drop-shadow(0 0 8px rgba(255,191,95,.7)); }
+      .mh-cell.checkpoint .mh-cell-icon { filter: drop-shadow(0 0 8px rgba(184,160,255,.72)); }
+      .mh-cell.checkpoint.done { border-color: rgba(255,255,255,.58); box-shadow: inset 0 0 14px rgba(255,255,255,.09), 0 0 14px rgba(115,232,255,.12); }
+      .mh-cell.obstacle { background: linear-gradient(145deg, rgba(17,24,34,.98), rgba(5,8,13,.96)); color: #9daebe; border-color: rgba(139,154,168,.28); cursor: not-allowed; }
+      .mh-cell.hardObstacle { background: linear-gradient(145deg, rgba(36,20,24,.98), rgba(9,8,12,.96)); color: #ffc5c5; border-color: rgba(255,107,107,.4); cursor: not-allowed; }
+      .mh-cell.power { color: var(--mh-text); border-color: rgba(115,232,255,.48); box-shadow: 0 0 18px rgba(115,232,255,.16), inset 0 0 18px rgba(115,232,255,.08); }
+      .mh-cell.power.used { background: linear-gradient(145deg, rgba(28,35,44,.72), rgba(10,14,20,.82)); color: #8795a2; border-color: rgba(135,149,162,.22); opacity: .72; }
+      .mh-cell.visited { outline: 1px solid rgba(255,255,255,.86); outline-offset: -3px; box-shadow: inset 0 0 16px rgba(255,255,255,.06), 0 0 18px rgba(115,232,255,.12); }
+      .mh-cell.current { animation: currentPulse 1.05s ease-in-out infinite; border-color: rgba(255,255,255,.82); }
+      .mh-cell.blocked { animation: shake .24s linear; }
+      .power-pulse { background: linear-gradient(145deg, rgba(45,25,68,.96), rgba(12,15,28,.95)); }
+      .power-cross { background: linear-gradient(145deg, rgba(18,50,62,.96), rgba(9,18,28,.95)); }
+      .power-row { background: linear-gradient(145deg, rgba(20,42,72,.96), rgba(8,16,28,.95)); }
+      .power-col { background: linear-gradient(145deg, rgba(14,53,43,.96), rgba(8,17,25,.95)); }
+      .power-rotate { background: linear-gradient(145deg, rgba(39,32,78,.96), rgba(10,14,28,.95)); }
+      .power-rotate-ccw { background: linear-gradient(145deg, rgba(66,28,42,.96), rgba(15,12,24,.95)); }
+      .power-purify { background: linear-gradient(145deg, rgba(71,46,20,.96), rgba(16,14,20,.95)); }
       .mh-panel { min-width: 0; display: grid; grid-template-rows: auto minmax(0,1fr); gap: 8px; overflow: hidden; }
-      .mh-panel-section { border-radius: 12px; padding: 10px; overflow: hidden; }
-      .mh-panel-title { margin: 0 0 7px; font-size: 13px; font-weight: 1000; color: #cffafe; }
-      .mh-status { min-height: 42px; color: #bae6fd; font-size: 13px; font-weight: 800; line-height: 1.35; }
+      .mh-panel-section { padding: 11px; overflow: hidden; }
+      .mh-panel-title { margin: 0 0 8px; font-size: 12px; font-weight: 1000; color: var(--mh-cyan); letter-spacing: .02em; text-transform: uppercase; }
+      .mh-status { min-height: 48px; color: #c7deea; font-size: 13px; font-weight: 800; line-height: 1.42; }
       .mh-list { display: flex; flex-wrap: wrap; gap: 5px; }
-      .mh-token { min-height: 25px; display: inline-flex; align-items: center; justify-content: center; gap: 4px; border-radius: 999px; padding: 0 8px; background: rgba(236,254,255,.9); color: #075985; font-size: 12px; font-weight: 900; }
-      .mh-token.done { background: rgba(134,239,172,.94); color: #14532d; }
+      .mh-token { min-height: 28px; display: inline-flex; align-items: center; justify-content: center; gap: 4px; border-radius: var(--mh-radius); padding: 0 9px; border: 1px solid rgba(115,232,255,.24); background: rgba(4, 13, 22, .72); color: #b8d5e2; font-size: 12px; font-weight: 900; }
+      .mh-token.done { border-color: rgba(156,255,206,.55); background: rgba(20,68,54,.46); color: #d7ffea; box-shadow: 0 0 16px rgba(156,255,206,.12); }
       .mh-held { max-height: min(34vh, 280px); overflow-y: auto; display: grid; gap: 7px; padding-right: 3px; }
-      .mh-held-card { min-height: 46px; display: flex; align-items: center; justify-content: space-between; gap: 8px; padding: 8px; border-radius: 10px; background: rgba(236,254,255,.9); color: #075985; font-size: 13px; font-weight: 900; }
+      .mh-held-card { min-height: 46px; display: flex; align-items: center; justify-content: space-between; gap: 8px; padding: 8px; border-radius: var(--mh-radius); border: 1px solid rgba(115,232,255,.18); background: rgba(4, 13, 22, .66); color: #d8eef6; font-size: 13px; font-weight: 900; }
       .mh-held-card span { display: inline-flex; align-items: center; gap: 6px; min-width: 0; }
-      .mh-held-count { flex: 0 0 auto; padding: 1px 7px; border-radius: 999px; background: rgba(14,116,144,.13); color: #0f172a; }
+      .mh-held-count { flex: 0 0 auto; padding: 1px 7px; border-radius: 4px; border: 1px solid rgba(255,255,255,.14); background: rgba(255,255,255,.08); color: #ffffff; }
       .mh-held-card button, .mh-action, .mh-start, .mh-difficulty, .mh-guide-item, .mh-guide-close, .mh-new-guide-next { border: 0; cursor: pointer; font-weight: 900; }
-      .mh-use { min-height: 30px; border-radius: 999px; padding: 0 10px; background: linear-gradient(180deg, #22d3ee, #0284c7); color: #ecfeff; box-shadow: 0 3px 0 #075985; }
-      .mh-use:disabled, .mh-action:disabled { opacity: .55; cursor: default; }
-      .mh-bottom-bar { display: grid; grid-template-columns: minmax(0,1fr) auto; gap: 8px; align-items: center; min-height: 48px; padding: 6px; border-radius: 12px; }
+      .mh-use { min-height: 30px; border-radius: 4px; padding: 0 10px; border: 1px solid rgba(115,232,255,.42); background: rgba(24, 95, 116, .72); color: #eafbff; box-shadow: inset 0 1px 0 rgba(255,255,255,.12), 0 0 12px rgba(115,232,255,.14); }
+      .mh-use:disabled, .mh-action:disabled { opacity: .45; cursor: default; }
+      .mh-bottom-bar { display: grid; grid-template-columns: minmax(0,1fr) auto; gap: 8px; align-items: center; min-height: 48px; padding: 6px; }
       .mh-controls, .mh-difficulties { display: flex; align-items: center; justify-content: center; gap: 6px; flex-wrap: wrap; }
-      .mh-action { min-height: 34px; border-radius: 999px; padding: 0 13px; background: linear-gradient(180deg, #22d3ee, #0284c7); color: #ecfeff; box-shadow: 0 4px 0 #075985; }
-      .mh-action.warn { background: linear-gradient(180deg, #fb923c, #ea580c); box-shadow-color: #9a3412; }
-      .mh-difficulties { flex-wrap: nowrap; padding: 4px; border-radius: 999px; background: rgba(2,8,23,.45); overflow-x: auto; }
-      .mh-difficulty { flex: 0 0 auto; min-height: 28px; min-width: 44px; padding: 0 9px; border-radius: 999px; background: transparent; color: #bae6fd; font-size: 12px; }
-      .mh-difficulty.active { background: linear-gradient(180deg, #34d399, #0d9488); color: #042f2e; box-shadow: 0 2px 0 #115e59; }
-      .mh-overlay, .mh-guide-overlay, .mh-new-guide-overlay, .mh-rewind-overlay { position: fixed; inset: 0; z-index: 30; display: flex; align-items: center; justify-content: center; padding: 18px; background: rgba(2,6,23,.66); }
-      .mh-card, .mh-guide-card, .mh-new-guide-card, .mh-rewind-card { width: min(92vw, 510px); max-height: min(88vh, 600px); overflow: auto; padding: 18px; border-radius: 16px; background: linear-gradient(180deg, #f0fdff, #e0f2fe); border: 3px solid #67e8f9; color: #123047; text-align: center; box-shadow: 0 22px 52px rgba(0,0,0,.36); }
-      .mh-card h1, .mh-guide-card h1 { margin: 0 0 10px; font-size: 24px; font-weight: 1000; }
-      .mh-card p, .mh-guide-card p { margin: 0 0 12px; color: #0f766e; font-size: 14px; font-weight: 850; line-height: 1.45; }
-      .mh-start, .mh-guide-close, .mh-new-guide-next, .mh-rewind-close { border: 0; cursor: pointer; font-weight: 900; border-radius: 999px; padding: 10px 22px; background: linear-gradient(180deg, #34d399, #16a34a); color: #052e16; box-shadow: 0 5px 0 #15803d; }
+      .mh-action { min-height: 34px; border-radius: 4px; padding: 0 14px; border: 1px solid rgba(115,232,255,.36); background: linear-gradient(180deg, rgba(21,92,113,.9), rgba(9,36,52,.94)); color: #eafbff; box-shadow: inset 0 1px 0 rgba(255,255,255,.12), 0 0 14px rgba(115,232,255,.12); }
+      .mh-action.warn { border-color: rgba(255,191,95,.42); background: linear-gradient(180deg, rgba(120,70,25,.92), rgba(50,28,14,.96)); color: #fff1d8; box-shadow: 0 0 14px rgba(255,191,95,.1); }
+      .mh-difficulties { flex-wrap: nowrap; padding: 4px; border-radius: 5px; border: 1px solid rgba(115,232,255,.16); background: rgba(2,8,15,.66); overflow-x: auto; }
+      .mh-difficulty { flex: 0 0 auto; min-height: 28px; min-width: 44px; padding: 0 9px; border-radius: 3px; background: transparent; color: #93acba; font-size: 12px; }
+      .mh-difficulty.active { background: rgba(115,232,255,.18); color: #f1fcff; box-shadow: inset 0 0 0 1px rgba(115,232,255,.42), 0 0 14px rgba(115,232,255,.12); }
+      .mh-overlay, .mh-guide-overlay, .mh-new-guide-overlay, .mh-rewind-overlay { position: fixed; inset: 0; z-index: 30; display: flex; align-items: center; justify-content: center; padding: 18px; background: rgba(1,5,11,.76); backdrop-filter: blur(4px); }
+      .mh-card, .mh-guide-card, .mh-new-guide-card, .mh-rewind-card { width: min(92vw, 510px); max-height: min(88vh, 600px); overflow: auto; padding: 18px; border-radius: var(--mh-radius); border: 1px solid rgba(115,232,255,.38); background: linear-gradient(180deg, rgba(12,27,40,.96), rgba(4,10,18,.96)); color: var(--mh-text); text-align: center; box-shadow: 0 24px 62px rgba(0,0,0,.54), inset 0 1px 0 rgba(255,255,255,.07); clip-path: polygon(0 0, calc(100% - 16px) 0, 100% 16px, 100% 100%, 16px 100%, 0 calc(100% - 16px)); }
+      .mh-card h1, .mh-guide-card h1 { margin: 0 0 10px; font-size: 24px; font-weight: 1000; color: #ffffff; text-shadow: 0 0 16px rgba(115,232,255,.24); }
+      .mh-card p, .mh-guide-card p { margin: 0 0 12px; color: #a9c5d2; font-size: 14px; font-weight: 850; line-height: 1.45; }
+      .mh-start, .mh-guide-close, .mh-new-guide-next, .mh-rewind-close { border: 1px solid rgba(115,232,255,.45); cursor: pointer; font-weight: 900; border-radius: 4px; padding: 10px 22px; background: linear-gradient(180deg, rgba(115,232,255,.28), rgba(27,100,122,.78)); color: #f2fcff; box-shadow: inset 0 1px 0 rgba(255,255,255,.14), 0 0 18px rgba(115,232,255,.16); }
       .mh-guide-card { width: min(94vw, 760px); display: grid; grid-template-rows: auto auto minmax(0, 1fr) auto auto; gap: 12px; text-align: left; }
       .mh-guide-card h1, .mh-guide-card p { text-align: center; }
       .mh-guide-list { min-height: 0; max-height: min(42vh, 360px); overflow-y: auto; display: grid; grid-template-columns: repeat(auto-fill, minmax(104px, 1fr)); gap: 10px; padding: 4px 6px 6px; }
-      .mh-guide-item { aspect-ratio: 1; min-height: 104px; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 9px; border-radius: 12px; padding: 10px; background: linear-gradient(180deg, #ecfeff, #cffafe); color: #075985; font-size: 14px; box-shadow: 0 4px 0 rgba(14,116,144,.2), inset 0 1px 0 rgba(255,255,255,.9); }
-      .mh-guide-item.active { background: linear-gradient(180deg, #a7f3d0, #22d3ee); color: #042f2e; outline: 3px solid rgba(14,116,144,.28); }
-      .mh-guide-detail { min-height: 116px; display: grid; grid-template-columns: 76px minmax(0,1fr); gap: 12px; align-items: center; padding: 12px; border-radius: 12px; background: rgba(255,255,255,.82); border: 1px solid rgba(14,116,144,.18); text-align: left; }
-      .mh-guide-icon { width: 66px; height: 66px; display: grid; place-items: center; border-radius: 14px; background: #ecfeff; color: #075985; }
+      .mh-guide-item { aspect-ratio: 1; min-height: 104px; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 9px; border-radius: var(--mh-radius); padding: 10px; border: 1px solid rgba(115,232,255,.18); background: rgba(5,14,24,.72); color: #cbe3ee; font-size: 14px; box-shadow: inset 0 1px 0 rgba(255,255,255,.05); }
+      .mh-guide-item.active { background: rgba(115,232,255,.14); color: #ffffff; outline: 1px solid rgba(115,232,255,.52); box-shadow: 0 0 18px rgba(115,232,255,.13); }
+      .mh-guide-detail { min-height: 116px; display: grid; grid-template-columns: 76px minmax(0,1fr); gap: 12px; align-items: center; padding: 12px; border-radius: var(--mh-radius); background: rgba(4,13,22,.72); border: 1px solid rgba(115,232,255,.18); text-align: left; }
+      .mh-guide-icon { width: 66px; height: 66px; display: grid; place-items: center; border-radius: var(--mh-radius); border: 1px solid rgba(115,232,255,.22); background: rgba(5,16,26,.88); color: var(--mh-cyan); }
       .mh-guide-icon .mh-node-svg { width: 48px; height: 48px; display: block; }
       .mh-guide-item .mh-node-svg { width: 48px; height: 48px; display: block; }
-      .mh-guide-detail h2 { margin: 0 0 5px; font-size: 18px; font-weight: 1000; color: #0f172a; }
-      .mh-guide-detail div:last-child { color: #0f766e; font-size: 14px; font-weight: 850; line-height: 1.45; }
+      .mh-guide-detail h2 { margin: 0 0 5px; font-size: 18px; font-weight: 1000; color: #ffffff; }
+      .mh-guide-detail div:last-child { color: #a9c5d2; font-size: 14px; font-weight: 850; line-height: 1.45; }
       .mh-new-guide-card { width: min(90vw, 420px); display: grid; gap: 13px; overflow: hidden; }
-      .mh-new-guide-card h1 { margin: 0; font-size: 24px; font-weight: 1000; color: #0f172a; }
-      .mh-new-guide-card p { margin: 0; color: #0f766e; font-size: 14px; font-weight: 850; line-height: 1.45; }
-      .mh-new-guide-detail { display: grid; grid-template-columns: 82px minmax(0,1fr); gap: 12px; align-items: center; padding: 13px; border-radius: 14px; background: rgba(255,255,255,.86); border: 1px solid rgba(14,116,144,.18); text-align: left; }
-      .mh-new-guide-detail h2 { margin: 0 0 5px; font-size: 19px; font-weight: 1000; color: #0f172a; }
-      .mh-new-guide-progress { color: #075985; font-size: 13px; font-weight: 900; }
+      .mh-new-guide-card h1 { margin: 0; font-size: 24px; font-weight: 1000; color: #ffffff; }
+      .mh-new-guide-card p { margin: 0; color: #a9c5d2; font-size: 14px; font-weight: 850; line-height: 1.45; }
+      .mh-new-guide-detail { display: grid; grid-template-columns: 82px minmax(0,1fr); gap: 12px; align-items: center; padding: 13px; border-radius: var(--mh-radius); background: rgba(4,13,22,.72); border: 1px solid rgba(115,232,255,.18); text-align: left; }
+      .mh-new-guide-detail h2 { margin: 0 0 5px; font-size: 19px; font-weight: 1000; color: #ffffff; }
+      .mh-new-guide-progress { color: var(--mh-cyan); font-size: 13px; font-weight: 900; }
       .mh-rewind-card { width: min(94vw, 820px); display: grid; grid-template-rows: auto auto minmax(0, 1fr) auto; gap: 12px; text-align: left; }
-      .mh-rewind-card h1 { margin: 0; text-align: center; font-size: 24px; font-weight: 1000; color: #0f172a; }
-      .mh-rewind-card p { margin: 0; text-align: center; color: #0f766e; font-size: 14px; font-weight: 850; line-height: 1.45; }
+      .mh-rewind-card h1 { margin: 0; text-align: center; font-size: 24px; font-weight: 1000; color: #ffffff; }
+      .mh-rewind-card p { margin: 0; text-align: center; color: #a9c5d2; font-size: 14px; font-weight: 850; line-height: 1.45; }
       .mh-rewind-list { min-height: 0; max-height: min(54vh, 440px); overflow-y: auto; display: grid; grid-template-columns: repeat(auto-fill, minmax(138px, 1fr)); gap: 10px; padding: 3px; }
-      .mh-rewind-item { min-width: 0; display: grid; gap: 7px; padding: 8px; border: 0; border-radius: 12px; background: rgba(236,254,255,.92); color: #075985; cursor: pointer; box-shadow: 0 4px 0 rgba(14,116,144,.22), inset 0 1px 0 rgba(255,255,255,.85); text-align: left; }
-      .mh-rewind-item:first-child { outline: 3px solid rgba(20,184,166,.34); }
-      .mh-rewind-item img { width: 100%; aspect-ratio: 1; display: block; border-radius: 8px; background: #082f49; object-fit: cover; }
+      .mh-rewind-item { min-width: 0; display: grid; gap: 7px; padding: 8px; border: 1px solid rgba(115,232,255,.18); border-radius: var(--mh-radius); background: rgba(4,13,22,.72); color: #cbe3ee; cursor: pointer; box-shadow: inset 0 1px 0 rgba(255,255,255,.05); text-align: left; }
+      .mh-rewind-item:first-child { outline: 1px solid rgba(115,232,255,.58); box-shadow: 0 0 18px rgba(115,232,255,.12); }
+      .mh-rewind-item img { width: 100%; aspect-ratio: 1; display: block; border-radius: 4px; background: #020810; border: 1px solid rgba(115,232,255,.14); object-fit: cover; }
       .mh-rewind-meta { display: grid; gap: 2px; font-size: 12px; font-weight: 900; line-height: 1.25; }
-      .mh-rewind-meta b { color: #0f172a; font-size: 13px; }
-      .mh-toast { position: fixed; left: 50%; top: 50%; z-index: 45; transform: translate(-50%, -50%); min-width: min(310px,82vw); padding: 16px 20px; border-radius: 15px; background: #ecfeff; border: 3px solid #67e8f9; color: #075985; font-size: 20px; font-weight: 1000; text-align: center; box-shadow: 0 18px 42px rgba(0,0,0,.3); animation: toastUp 1.25s ease-out forwards; pointer-events: none; }
+      .mh-rewind-meta b { color: #ffffff; font-size: 13px; }
+      .mh-toast { position: fixed; left: 50%; top: 50%; z-index: 45; transform: translate(-50%, -50%); min-width: min(310px,82vw); padding: 16px 20px; border-radius: var(--mh-radius); background: rgba(8,23,35,.96); border: 1px solid rgba(115,232,255,.5); color: #f2fcff; font-size: 20px; font-weight: 1000; text-align: center; box-shadow: 0 20px 48px rgba(0,0,0,.5), 0 0 20px rgba(115,232,255,.14); animation: toastUp 1.25s ease-out forwards; pointer-events: none; }
       .mh-ring, .mh-beam, .mh-flash, .mh-shot, .mh-impact { position: absolute; z-index: 12; pointer-events: none; }
-      .mh-ring { border: 4px solid rgba(250,204,21,.95); border-radius: 999px; animation: ring .62s ease-out forwards; }
-      .mh-beam { background: rgba(103,232,249,.58); box-shadow: 0 0 18px rgba(103,232,249,.8); animation: beam .58s ease-out forwards; }
-      .mh-flash { border-radius: 8px; background: rgba(250,250,255,.78); animation: flash .52s ease-out forwards; }
-      .mh-shot { height: 8px; border-radius: 999px; background: linear-gradient(90deg, rgba(236,254,255,.15), rgba(103,232,249,.96), rgba(250,250,255,.95)); box-shadow: 0 0 16px rgba(103,232,249,.95), 0 0 30px rgba(250,204,21,.38); transform-origin: left center; animation: laserShot .34s ease-out forwards; }
-      .mh-impact { border: 3px solid rgba(250,250,255,.95); border-radius: 9px; background: rgba(250,204,21,.35); box-shadow: 0 0 18px rgba(250,204,21,.8); animation: impactBreak .36s ease-out forwards; }
+      .mh-ring { border: 2px solid rgba(115,232,255,.92); border-radius: 999px; animation: ring .62s ease-out forwards; }
+      .mh-beam { background: rgba(115,232,255,.38); box-shadow: 0 0 16px rgba(115,232,255,.72); animation: beam .58s ease-out forwards; }
+      .mh-flash { border-radius: 4px; background: rgba(255,255,255,.62); animation: flash .52s ease-out forwards; }
+      .mh-shot { height: 5px; border-radius: 999px; background: linear-gradient(90deg, rgba(115,232,255,.06), rgba(115,232,255,.92), rgba(255,255,255,.96)); box-shadow: 0 0 14px rgba(115,232,255,.9), 0 0 26px rgba(255,191,95,.18); transform-origin: left center; animation: laserShot .34s ease-out forwards; }
+      .mh-impact { border: 1px solid rgba(255,255,255,.92); border-radius: 4px; background: rgba(255,191,95,.24); box-shadow: 0 0 16px rgba(255,191,95,.62); animation: impactBreak .36s ease-out forwards; }
       .mh-rotate-ghost { position: absolute; z-index: 16; display: grid; place-items: center; pointer-events: none; animation: rotateOrbit .62s ease-in-out forwards; }
-      .mh-rotate-ghost .mh-cell-icon { width: 72%; height: 72%; }
+      .mh-rotate-ghost .mh-cell-icon { width: 68%; height: 68%; }
       [hidden] { display: none !important; }
-      @keyframes currentPulse { 50% { transform: scale(.94); filter: brightness(1.14); } }
-      @keyframes shake { 0%,100% { transform: translateX(0); } 25% { transform: translateX(-5px); } 75% { transform: translateX(5px); } }
-      @keyframes toastUp { 0% { opacity: 0; transform: translate(-50%, -40%) scale(.86); } 18% { opacity: 1; transform: translate(-50%, -50%) scale(1); } 100% { opacity: 0; transform: translate(-50%, -74%) scale(.96); } }
-      @keyframes ring { 0% { opacity: .95; transform: scale(.25); } 100% { opacity: 0; transform: scale(1.9); } }
-      @keyframes beam { 0% { opacity: 0; transform: scale(.85); } 20% { opacity: 1; } 100% { opacity: 0; transform: scale(1.03); } }
-      @keyframes flash { 100% { opacity: 0; transform: scale(.45); } }
-      @keyframes laserShot { 0% { opacity: 0; transform: rotate(var(--r)) scaleX(0); } 28% { opacity: 1; } 100% { opacity: .85; transform: rotate(var(--r)) scaleX(1); } }
-      @keyframes impactBreak { 0% { opacity: 0; transform: scale(.55); } 35% { opacity: 1; transform: scale(1.18); } 100% { opacity: 0; transform: scale(.35) rotate(16deg); } }
-      @keyframes rotateOrbit { 0% { opacity: .95; transform: translate(0, 0) rotate(0deg) scale(1); } 72% { opacity: 1; } 100% { opacity: .18; transform: translate(var(--dx), var(--dy)) rotate(var(--turn)) scale(.92); } }
-      @keyframes guideHint { 0%,100% { filter: brightness(1); transform: translateY(0); } 35% { filter: brightness(1.42); transform: translateY(-2px); } 70% { filter: brightness(1.16); } }
+      @keyframes currentPulse { 50% { transform: scale(.97); filter: brightness(1.24); box-shadow: inset 0 0 20px rgba(255,255,255,.12), 0 0 20px rgba(115,232,255,.28); } }
+      @keyframes shake { 0%,100% { transform: translateX(0); } 30% { transform: translateX(-3px); } 70% { transform: translateX(3px); } }
+      @keyframes toastUp { 0% { opacity: 0; transform: translate(-50%, -44%) scale(.96); } 18% { opacity: 1; transform: translate(-50%, -50%) scale(1); } 100% { opacity: 0; transform: translate(-50%, -66%) scale(.98); } }
+      @keyframes ring { 0% { opacity: .95; transform: scale(.35); } 100% { opacity: 0; transform: scale(1.75); } }
+      @keyframes beam { 0% { opacity: 0; transform: scale(.92); } 20% { opacity: 1; } 100% { opacity: 0; transform: scale(1.02); } }
+      @keyframes flash { 100% { opacity: 0; transform: scale(.55); } }
+      @keyframes laserShot { 0% { opacity: 0; transform: rotate(var(--r)) scaleX(0); } 28% { opacity: 1; } 100% { opacity: .88; transform: rotate(var(--r)) scaleX(1); } }
+      @keyframes impactBreak { 0% { opacity: 0; transform: scale(.68); } 35% { opacity: 1; transform: scale(1.08); } 100% { opacity: 0; transform: scale(.42) rotate(10deg); } }
+      @keyframes rotateOrbit { 0% { opacity: .95; transform: translate(0, 0) rotate(0deg) scale(1); } 72% { opacity: 1; } 100% { opacity: .2; transform: translate(var(--dx), var(--dy)) rotate(var(--turn)) scale(.9); } }
+      @keyframes guideHint { 0%,100% { filter: brightness(1); transform: translateY(0); } 35% { filter: brightness(1.4); transform: translateY(-1px); } 70% { filter: brightness(1.16); } }
       .mh-action.guide-hint { animation: guideHint .46s ease-in-out 4; }
       @media (max-width: 760px) {
         .mh-shell { gap: 6px; padding: 6px; }
@@ -240,6 +270,7 @@
         <div class="mh-controls">
           <button id="mhGuide" class="mh-action" type="button">节点</button>
           <button id="mhUndo" class="mh-action" type="button">倒退</button>
+          <button id="mhAutoSolve" class="mh-action" type="button" hidden>自动破解</button>
           <button id="mhRestart" class="mh-action warn" type="button">重开</button>
           <button id="mhNext" class="mh-action" type="button" hidden>下一局</button>
         </div>
@@ -249,8 +280,8 @@
     <div id="mhOverlay" class="mh-overlay">
       <div class="mh-card">
         <h1>哈奇矩阵破解</h1>
-        <p>从左上角起点拖拽连线，只能向上下左右相邻节点移动，路径不能交叉回绕。</p>
-        <p>经过全部必经点后到达终点即可通关。障碍默认不可通过，需要绕行，或利用道具清除、净化突破。</p>
+        <p>从左上角起点开始破解，向上下左右相邻节点移动，路径不能交叉回绕。</p>
+        <p>经过全部破解点后到达终点即可通关。障碍默认不可通过，需要绕行，或利用道具清除、净化突破。</p>
         <button id="mhStart" class="mh-start" type="button">开始破解</button>
       </div>
     </div>
@@ -297,6 +328,7 @@
     held: document.getElementById('mhHeld'),
     guide: document.getElementById('mhGuide'),
     undo: document.getElementById('mhUndo'),
+    autoSolve: document.getElementById('mhAutoSolve'),
     restart: document.getElementById('mhRestart'),
     next: document.getElementById('mhNext'),
     difficulties: document.getElementById('mhDifficulties'),
@@ -380,23 +412,110 @@
   function createRoute(size, minLength, maxLength) {
     const target = randInt(minLength, Math.min(maxLength, size * size - 1));
     let best = [{ x: 0, y: 0 }];
-    for (let attempt = 0; attempt < 420; attempt += 1) {
+    let bestScore = -Infinity;
+    for (let attempt = 0; attempt < 1600; attempt += 1) {
       const path = [{ x: 0, y: 0 }];
       const used = new Set(['0,0']);
+      let lastDir = null;
       while (path.length < target) {
         const last = path[path.length - 1];
         const choices = shuffle(DIRS)
-          .map(([dx, dy]) => ({ x: last.x + dx, y: last.y + dy }))
+          .map(([dx, dy]) => ({ x: last.x + dx, y: last.y + dy, dx, dy }))
           .filter((pos) => inBounds(pos.x, pos.y, size) && !used.has(keyOf(pos.x, pos.y)));
         if (!choices.length) break;
-        const next = choices.sort((a, b) => countOpenNeighbors(a, used, size) - countOpenNeighbors(b, used, size))[0];
+        const scored = choices
+          .map((pos) => ({ pos, score: routeStepScore(pos, path, used, size, target, lastDir) }))
+          .filter((item) => item.score > -900);
+        if (!scored.length) break;
+        const next = weightedPick(scored).pos;
         path.push(next);
         used.add(keyOf(next.x, next.y));
+        lastDir = { dx: next.dx, dy: next.dy };
       }
-      if (path.length > best.length) best = path;
-      if (path.length >= minLength) return path;
+      const score = routeShapeScore(path, size, minLength);
+      if (score > bestScore || path.length > best.length + 8) {
+        best = path.map(({ x, y }) => ({ x, y }));
+        bestScore = score;
+      }
+      if (path.length >= minLength && routeShapeOk(path, size)) return path.map(({ x, y }) => ({ x, y }));
     }
     return best;
+  }
+
+  function routeStepScore(pos, path, used, size, target, lastDir) {
+    const nextUsed = new Set(used);
+    nextUsed.add(keyOf(pos.x, pos.y));
+    const open = countOpenNeighbors(pos, nextUsed, size);
+    if (open === 0 && path.length + 1 < target) return -1000;
+    const center = (size - 1) / 2;
+    const centerPull = 1 - ((Math.abs(pos.x - center) + Math.abs(pos.y - center)) / Math.max(1, size - 1));
+    const boundary = isBoundary(pos, size) ? -1 : 0;
+    const earlyBoundary = path.length < size * 2 && isBoundary(pos, size) ? -1.25 : 0;
+    const turn = lastDir && (lastDir.dx !== pos.dx || lastDir.dy !== pos.dy) ? .42 : 0;
+    const openPressure = (4 - open) * .28;
+    const contactPenalty = Math.max(0, countUsedNeighbors(pos, used, size) - 1) * -.18;
+    return centerPull * .9 + boundary + earlyBoundary + turn + openPressure + contactPenalty + Math.random() * .55;
+  }
+
+  function weightedPick(scored) {
+    const min = Math.min(...scored.map((item) => item.score));
+    const weights = scored.map((item) => Math.max(.01, item.score - min + .2));
+    const total = weights.reduce((sum, weight) => sum + weight, 0);
+    let roll = Math.random() * total;
+    for (let i = 0; i < scored.length; i += 1) {
+      roll -= weights[i];
+      if (roll <= 0) return scored[i];
+    }
+    return scored[scored.length - 1];
+  }
+
+  function routeShapeScore(path, size, minLength) {
+    const lengthScore = Math.min(path.length, minLength) * 2;
+    const boundaryPenalty = boundaryRatio(path, size) * path.length * 1.1;
+    const earlyPenalty = boundaryRatio(path.slice(0, Math.min(path.length, size * 2)), size) * size * 1.4;
+    const turnScore = turnRatio(path) * path.length * 1.6;
+    const box = routeBox(path);
+    const areaScore = ((box.maxX - box.minX + 1) * (box.maxY - box.minY + 1)) / (size * size) * 18;
+    return lengthScore + turnScore + areaScore - boundaryPenalty - earlyPenalty;
+  }
+
+  function routeShapeOk(path, size) {
+    if (path.length < size * 4) return true;
+    const early = path.slice(0, Math.min(path.length, size * 2));
+    return boundaryRatio(path, size) <= .46 && boundaryRatio(early, size) <= .58 && turnRatio(path) >= .18;
+  }
+
+  function boundaryRatio(path, size) {
+    if (!path.length) return 1;
+    return path.filter((pos) => isBoundary(pos, size)).length / path.length;
+  }
+
+  function turnRatio(path) {
+    if (path.length < 3) return 0;
+    let turns = 0;
+    for (let i = 2; i < path.length; i += 1) {
+      const a = path[i - 1];
+      const b = path[i];
+      const p = path[i - 2];
+      if ((a.x - p.x) !== (b.x - a.x) || (a.y - p.y) !== (b.y - a.y)) turns += 1;
+    }
+    return turns / (path.length - 2);
+  }
+
+  function routeBox(path) {
+    return path.reduce((box, pos) => ({ minX: Math.min(box.minX, pos.x), maxX: Math.max(box.maxX, pos.x), minY: Math.min(box.minY, pos.y), maxY: Math.max(box.maxY, pos.y) }), { minX: Infinity, maxX: -Infinity, minY: Infinity, maxY: -Infinity });
+  }
+
+  function isBoundary(pos, size) {
+    return pos.x === 0 || pos.y === 0 || pos.x === size - 1 || pos.y === size - 1;
+  }
+
+  function countUsedNeighbors(pos, used, size) {
+    return DIRS.reduce((total, [dx, dy]) => {
+      const x = pos.x + dx;
+      const y = pos.y + dy;
+      return total + (inBounds(x, y, size) && used.has(keyOf(x, y)) ? 1 : 0);
+    }, 0);
   }
 
   function countOpenNeighbors(pos, used, size) {
@@ -427,6 +546,7 @@
     const minDistinct = config.id === 'normal' ? 3 : 4;
     const target = randInt(minDistinct, maxDistinct);
     const selected = new Set();
+    if (requiresRotationSolution(config)) selected.add(sample(['rotate', 'rotateCcw']));
     if (['hard', 'expert', 'nightmare'].includes(config.id)) {
       const tactical = pool.filter((id) => ['cross', 'row', 'col', 'rotate', 'rotateCcw'].includes(id));
       selected.add(sample(tactical));
@@ -465,24 +585,28 @@
     return power === 'rotate' || power === 'rotateCcw';
   }
 
+  function requiresRotationSolution(config) {
+    return config.pool.some((id) => isRotationPower(id));
+  }
+
   function rotationStep(power) {
     return power === 'rotateCcw' ? -1 : 1;
   }
 
   function nodeIcon(id, className = 'mh-node-svg') {
     const icons = {
-      start: `<svg class="${className}" viewBox="0 0 64 64" aria-hidden="true"><circle cx="32" cy="32" r="24" fill="#bbf7d0" stroke="#052e16" stroke-width="5"/><path d="M24 18v28l22-14z" fill="#16a34a" stroke="#052e16" stroke-width="3" stroke-linejoin="round"/></svg>`,
-      end: `<svg class="${className}" viewBox="0 0 64 64" aria-hidden="true"><path d="M18 52V13" stroke="#431407" stroke-width="6" stroke-linecap="round"/><path d="M20 14h28l-7 10 7 10H20z" fill="#fde68a" stroke="#431407" stroke-width="4" stroke-linejoin="round"/><circle cx="18" cy="52" r="5" fill="#431407"/></svg>`,
-      checkpoint: `<svg class="${className}" viewBox="0 0 64 64" aria-hidden="true"><path d="M32 8l24 24-24 24L8 32z" fill="#ddd6fe" stroke="#3b0764" stroke-width="5" stroke-linejoin="round"/><circle cx="32" cy="32" r="9" fill="#7c3aed"/><path d="M32 18v28M18 32h28" stroke="#f5f3ff" stroke-width="4" stroke-linecap="round" opacity=".86"/></svg>`,
-      obstacle: `<svg class="${className}" viewBox="0 0 64 64" aria-hidden="true"><rect x="11" y="12" width="42" height="40" rx="7" fill="#0f172a" stroke="#cbd5e1" stroke-width="4"/><path d="M18 24h28M18 39h28M28 13v38M42 13v38" stroke="#475569" stroke-width="4" stroke-linecap="round"/><path d="M23 22l8 9-6 10 12-9-4-10" stroke="#e2e8f0" stroke-width="3" fill="none" stroke-linecap="round" stroke-linejoin="round"/></svg>`,
-      hardObstacle: `<svg class="${className}" viewBox="0 0 64 64" aria-hidden="true"><path d="M32 7l22 9v15c0 14-8 22-22 27C18 53 10 45 10 31V16z" fill="#1f2937" stroke="#fecaca" stroke-width="4" stroke-linejoin="round"/><path d="M23 33v-7a9 9 0 0118 0v7" stroke="#fecaca" stroke-width="5" fill="none" stroke-linecap="round"/><rect x="20" y="31" width="24" height="17" rx="5" fill="#7f1d1d" stroke="#fecaca" stroke-width="3"/></svg>`,
-      pulse: `<svg class="${className}" viewBox="0 0 64 64" aria-hidden="true"><circle cx="32" cy="32" r="8" fill="#fdf4ff"/><circle cx="32" cy="32" r="18" fill="none" stroke="#fdf4ff" stroke-width="5" opacity=".9"/><circle cx="32" cy="32" r="27" fill="none" stroke="#701a75" stroke-width="4" opacity=".82"/><path d="M32 4v10M32 50v10M4 32h10M50 32h10" stroke="#fdf4ff" stroke-width="4" stroke-linecap="round"/></svg>`,
-      cross: `<svg class="${className}" viewBox="0 0 64 64" aria-hidden="true"><path d="M29 7h6v22h22v6H35v22h-6V35H7v-6h22z" fill="#ecfeff" stroke="#164e63" stroke-width="4" stroke-linejoin="round"/><circle cx="32" cy="32" r="8" fill="#06b6d4" stroke="#ecfeff" stroke-width="3"/></svg>`,
-      row: `<svg class="${className}" viewBox="0 0 64 64" aria-hidden="true"><path d="M9 32h46" stroke="#eff6ff" stroke-width="9" stroke-linecap="round"/><path d="M18 21L7 32l11 11M46 21l11 11-11 11" fill="none" stroke="#1e3a8a" stroke-width="5" stroke-linecap="round" stroke-linejoin="round"/><rect x="24" y="22" width="16" height="20" rx="4" fill="#bfdbfe" stroke="#1e40af" stroke-width="3"/></svg>`,
-      col: `<svg class="${className}" viewBox="0 0 64 64" aria-hidden="true"><path d="M32 9v46" stroke="#ecfdf5" stroke-width="9" stroke-linecap="round"/><path d="M21 18L32 7l11 11M21 46l11 11 11-11" fill="none" stroke="#064e3b" stroke-width="5" stroke-linecap="round" stroke-linejoin="round"/><rect x="22" y="24" width="20" height="16" rx="4" fill="#a7f3d0" stroke="#047857" stroke-width="3"/></svg>`,
-      rotate: `<svg class="${className}" viewBox="0 0 64 64" aria-hidden="true"><path d="M48 24a18 18 0 00-30-7" fill="none" stroke="#f5f3ff" stroke-width="6" stroke-linecap="round"/><path d="M46 13l3 14-14-3" fill="none" stroke="#f5f3ff" stroke-width="5" stroke-linecap="round" stroke-linejoin="round"/><path d="M16 40a18 18 0 0030 7" fill="none" stroke="#3b0764" stroke-width="6" stroke-linecap="round"/><path d="M18 51l-3-14 14 3" fill="none" stroke="#3b0764" stroke-width="5" stroke-linecap="round" stroke-linejoin="round"/><rect x="24" y="24" width="16" height="16" rx="4" fill="#ddd6fe" stroke="#4c1d95" stroke-width="3"/></svg>`,
-      rotateCcw: `<svg class="${className}" viewBox="0 0 64 64" aria-hidden="true"><path d="M16 24a18 18 0 0130-7" fill="none" stroke="#fff1f2" stroke-width="6" stroke-linecap="round"/><path d="M18 13l-3 14 14-3" fill="none" stroke="#fff1f2" stroke-width="5" stroke-linecap="round" stroke-linejoin="round"/><path d="M48 40a18 18 0 01-30 7" fill="none" stroke="#881337" stroke-width="6" stroke-linecap="round"/><path d="M46 51l3-14-14 3" fill="none" stroke="#881337" stroke-width="5" stroke-linecap="round" stroke-linejoin="round"/><path d="M25 24h14v16H25z" fill="#fecdd3" stroke="#9f1239" stroke-width="3" stroke-linejoin="round"/></svg>`,
-      purify: `<svg class="${className}" viewBox="0 0 64 64" aria-hidden="true"><path d="M32 7c9 11 18 21 18 32a18 18 0 01-36 0C14 28 23 18 32 7z" fill="#ffedd5" stroke="#7c2d12" stroke-width="4" stroke-linejoin="round"/><path d="M23 38l6 6 13-17" fill="none" stroke="#ea580c" stroke-width="6" stroke-linecap="round" stroke-linejoin="round"/><path d="M47 12l3 7 7 3-7 3-3 7-3-7-7-3 7-3z" fill="#fed7aa" stroke="#7c2d12" stroke-width="2" stroke-linejoin="round"/></svg>`,
+      start: `<svg class="${className}" viewBox="0 0 64 64" aria-hidden="true"><circle cx="32" cy="32" r="24" fill="#9cffce" fill-opacity=".08" stroke="#9cffce" stroke-width="3"/><path d="M27 20l18 12-18 12z" fill="none" stroke="#ffffff" stroke-width="4" stroke-linejoin="round"/><path d="M12 32h9M43 32h9" stroke="#9cffce" stroke-width="3" stroke-linecap="round"/></svg>`,
+      end: `<svg class="${className}" viewBox="0 0 64 64" aria-hidden="true"><circle cx="32" cy="32" r="24" fill="#ffbf5f" fill-opacity=".08" stroke="#ffbf5f" stroke-width="3"/><circle cx="32" cy="32" r="12" fill="none" stroke="#ffffff" stroke-width="3"/><path d="M32 8v11M32 45v11M8 32h11M45 32h11" stroke="#ffbf5f" stroke-width="3" stroke-linecap="round"/><path d="M25 32h14" stroke="#ffffff" stroke-width="3" stroke-linecap="round"/></svg>`,
+      checkpoint: `<svg class="${className}" viewBox="0 0 64 64" aria-hidden="true"><path d="M32 8l24 24-24 24L8 32z" fill="#b8a0ff" fill-opacity=".08" stroke="#b8a0ff" stroke-width="3" stroke-linejoin="round"/><circle cx="32" cy="32" r="8" fill="none" stroke="#ffffff" stroke-width="3"/><path d="M32 18v8M32 38v8M18 32h8M38 32h8" stroke="#b8a0ff" stroke-width="3" stroke-linecap="round"/></svg>`,
+      obstacle: `<svg class="${className}" viewBox="0 0 64 64" aria-hidden="true"><rect x="13" y="13" width="38" height="38" rx="4" fill="#a0aebc" fill-opacity=".08" stroke="#9fb0bd" stroke-width="3"/><path d="M19 19l26 26M45 19L19 45" stroke="#dce8ee" stroke-width="3" stroke-linecap="round"/><path d="M26 13v38M38 13v38" stroke="#5d7180" stroke-width="2" opacity=".8"/></svg>`,
+      hardObstacle: `<svg class="${className}" viewBox="0 0 64 64" aria-hidden="true"><path d="M32 8l22 9v15c0 14-8 22-22 27C18 54 10 46 10 32V17z" fill="#ff6b6b" fill-opacity=".08" stroke="#ff6b6b" stroke-width="3" stroke-linejoin="round"/><path d="M23 32v-7a9 9 0 0118 0v7" stroke="#ffd6d6" stroke-width="4" fill="none" stroke-linecap="round"/><rect x="20" y="31" width="24" height="17" rx="3" fill="none" stroke="#ff6b6b" stroke-width="3"/><path d="M32 36v6" stroke="#ffd6d6" stroke-width="3" stroke-linecap="round"/></svg>`,
+      pulse: `<svg class="${className}" viewBox="0 0 64 64" aria-hidden="true"><circle cx="32" cy="32" r="6" fill="#ffffff"/><circle cx="32" cy="32" r="17" fill="none" stroke="#d7b8ff" stroke-width="3"/><circle cx="32" cy="32" r="27" fill="none" stroke="#b8a0ff" stroke-width="2" opacity=".75"/><path d="M32 5v8M32 51v8M5 32h8M51 32h8" stroke="#ffffff" stroke-width="3" stroke-linecap="round"/></svg>`,
+      cross: `<svg class="${className}" viewBox="0 0 64 64" aria-hidden="true"><path d="M32 8v48M8 32h48" stroke="#73e8ff" stroke-width="5" stroke-linecap="round"/><circle cx="32" cy="32" r="9" fill="#04131d" stroke="#ffffff" stroke-width="3"/><path d="M18 18l8 8M46 18l-8 8M18 46l8-8M46 46l-8-8" stroke="#73e8ff" stroke-width="2" stroke-linecap="round" opacity=".85"/></svg>`,
+      row: `<svg class="${className}" viewBox="0 0 64 64" aria-hidden="true"><path d="M8 32h48" stroke="#9cc3ff" stroke-width="5" stroke-linecap="round"/><path d="M18 22L8 32l10 10M46 22l10 10-10 10" fill="none" stroke="#ffffff" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"/><rect x="25" y="24" width="14" height="16" rx="2" fill="none" stroke="#9cc3ff" stroke-width="3"/></svg>`,
+      col: `<svg class="${className}" viewBox="0 0 64 64" aria-hidden="true"><path d="M32 8v48" stroke="#9cffce" stroke-width="5" stroke-linecap="round"/><path d="M22 18L32 8l10 10M22 46l10 10 10-10" fill="none" stroke="#ffffff" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"/><rect x="24" y="25" width="16" height="14" rx="2" fill="none" stroke="#9cffce" stroke-width="3"/></svg>`,
+      rotate: `<svg class="${className}" viewBox="0 0 64 64" aria-hidden="true"><path d="M48 24a18 18 0 00-30-7" fill="none" stroke="#b8a0ff" stroke-width="4" stroke-linecap="round"/><path d="M47 13l3 13-13-3" fill="none" stroke="#ffffff" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"/><path d="M16 40a18 18 0 0030 7" fill="none" stroke="#b8a0ff" stroke-width="4" stroke-linecap="round"/><rect x="25" y="25" width="14" height="14" rx="2" fill="none" stroke="#ffffff" stroke-width="3"/></svg>`,
+      rotateCcw: `<svg class="${className}" viewBox="0 0 64 64" aria-hidden="true"><path d="M16 24a18 18 0 0130-7" fill="none" stroke="#ff9fb4" stroke-width="4" stroke-linecap="round"/><path d="M17 13l-3 13 13-3" fill="none" stroke="#ffffff" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"/><path d="M48 40a18 18 0 01-30 7" fill="none" stroke="#ff9fb4" stroke-width="4" stroke-linecap="round"/><rect x="25" y="25" width="14" height="14" rx="2" fill="none" stroke="#ffffff" stroke-width="3"/></svg>`,
+      purify: `<svg class="${className}" viewBox="0 0 64 64" aria-hidden="true"><path d="M32 8c9 10 17 20 17 31a17 17 0 01-34 0C15 28 23 18 32 8z" fill="#ffbf5f" fill-opacity=".08" stroke="#ffbf5f" stroke-width="3" stroke-linejoin="round"/><path d="M23 38l6 6 13-17" fill="none" stroke="#ffffff" stroke-width="4" stroke-linecap="round" stroke-linejoin="round"/><path d="M48 12l3 7 7 3-7 3-3 7-3-7-7-3 7-3z" fill="none" stroke="#ffbf5f" stroke-width="2" stroke-linejoin="round"/></svg>`,
     };
     return icons[id] || '';
   }
@@ -490,10 +614,11 @@
   function buildLevel() {
     const config = DIFFICULTIES[state.difficulty];
     let level = null;
-    for (let attempt = 0; attempt < 220; attempt += 1) {
+    for (let attempt = 0; attempt < 1400; attempt += 1) {
       const grid = makeEmptyGrid(config.size);
       const route = createRoute(config.size, config.pathMin, config.pathMax);
       if (route.length < config.pathMin) continue;
+      const routeKeys = new Set(route.map((pos) => keyOf(pos.x, pos.y)));
       const levelPowerPool = selectLevelPowerPool(config);
       const protectedKeys = new Set(['0,0', keyOf(route[route.length - 1].x, route[route.length - 1].y)]);
       const plannedPowerups = [];
@@ -508,13 +633,18 @@
         const blockerKey = keyOf(blockerPos.x, blockerPos.y);
         if (protectedKeys.has(powerKey) || protectedKeys.has(blockerKey) || blockerKeys.has(powerKey)) continue;
         const power = choosePowerForBlocker(levelPowerPool, powerPos, blockerPos, i % 4 === 1, config);
+        const source = isRotationPower(power) ? rotationSourceForTarget(power, powerPos, blockerPos, config.size) : null;
+        if (source) {
+          const sourceKey = keyOf(source.x, source.y);
+          if (!routeKeys.has(sourceKey)) protectedKeys.add(sourceKey);
+        }
         plannedPowerups.push({ power, pos: powerPos, blocker: blockerPos, blockerIndex });
         protectedKeys.add(powerKey);
         protectedKeys.add(blockerKey);
         blockerKeys.add(blockerKey);
       }
       if (plannedPowerups.length < config.powerups) continue;
-      const routeKeys = new Set(route.map((pos) => keyOf(pos.x, pos.y)));
+      if (requiresRotationSolution(config) && !plannedPowerups.some((item) => isRotationPower(item.power))) continue;
       grid[0][0].type = 'start';
       const end = route[route.length - 1];
       grid[end.y][end.x].type = 'end';
@@ -523,7 +653,7 @@
         grid[pos.y][pos.x].power = power;
         grid[blocker.y][blocker.x].type = 'obstacle';
       });
-      placeRouteGates(grid, route, plannedPowerups, protectedKeys, config);
+      placeRouteGates(grid, route, routeKeys, plannedPowerups, protectedKeys, config);
       const checkpointCandidates = route
         .slice(2, -2)
         .filter((pos) => !protectedKeys.has(keyOf(pos.x, pos.y)) && grid[pos.y][pos.x].type === 'normal');
@@ -532,17 +662,14 @@
         grid[pos.y][pos.x].type = 'checkpoint';
       });
       placeExtraObstacles(grid, routeKeys, plannedPowerups, config);
-      if (isLevelTooOpen(grid, config)) continue;
+      const solution = computeRouteSolution(grid, route);
+      if (!solution.ok) continue;
+      if (requiresRotationSolution(config) && !solution.actions.some((action) => action.type === 'power' && isRotationPower(action.power))) continue;
       level = { grid, route };
       break;
     }
     if (!level) {
-      const grid = makeEmptyGrid(config.size);
-      const route = createRoute(config.size, config.pathMin, config.pathMax);
-      grid[0][0].type = 'start';
-      const end = route[route.length - 1];
-      grid[end.y][end.x].type = 'end';
-      level = { grid, route };
+      throw new Error(`无法生成有效${config.label}矩阵`);
     }
     state.grid = level.grid;
     state.route = level.route;
@@ -588,7 +715,127 @@
     }
   }
 
-  function placeRouteGates(grid, route, plannedPowerups, protectedKeys, config) {
+  function isRouteAutoSolvable(grid, route) {
+    return computeRouteSolution(grid, route).ok;
+  }
+
+  function computeRouteSolution(grid, route) {
+    if (!route.length) return { ok: false, actions: [] };
+    const sim = makeSimState(grid);
+    const actions = [];
+    for (let index = 0; index < route.length; index += 1) {
+      const pos = route[index];
+      const previous = route[index - 1] || null;
+      if (index > 0 && (!previous || Math.abs(previous.x - pos.x) + Math.abs(previous.y - pos.y) !== 1)) return { ok: false, actions };
+      if (!prepareSimCell(sim, previous, pos, index, actions)) return { ok: false, actions };
+      if (!enterSimCell(sim, pos)) return { ok: false, actions };
+    }
+    const end = route[route.length - 1];
+    const endCell = sim.grid[end.y]?.[end.x];
+    return { ok: Boolean(endCell && endCell.type === 'end' && sim.visitedCheckpoints.size === sim.checkpoints.size), actions };
+  }
+
+  function makeSimState(grid) {
+    const sim = { grid: cloneGrid(grid), path: [], pathKeys: new Set(), heldPowers: [], purifyReady: false, checkpoints: new Set(), visitedCheckpoints: new Set() };
+    syncSimCheckpoints(sim);
+    return sim;
+  }
+
+  function prepareSimCell(sim, origin, target, routeIndex, actions) {
+    const cell = sim.grid[target.y]?.[target.x];
+    if (!cell || sim.pathKeys.has(keyOf(target.x, target.y)) || cell.type === 'hardObstacle') return false;
+    if (cell.type !== 'obstacle') return true;
+    const powerIndex = findSimPowerForTarget(sim, origin, target);
+    if (powerIndex >= 0) {
+      const power = sim.heldPowers.splice(powerIndex, 1)[0];
+      applyPowerToGrid(sim.grid, power, origin);
+      if (isRotationPower(power)) syncSimCheckpoints(sim);
+      actions.push({ routeIndex, type: 'power', power });
+      const nextCell = sim.grid[target.y]?.[target.x];
+      return Boolean(nextCell && nextCell.type !== 'obstacle' && nextCell.type !== 'hardObstacle');
+    }
+    if (sim.purifyReady) {
+      sim.purifyReady = false;
+      cell.type = 'normal';
+      actions.push({ routeIndex, type: 'purify' });
+      return true;
+    }
+    return false;
+  }
+
+  function enterSimCell(sim, pos) {
+    const cell = sim.grid[pos.y]?.[pos.x];
+    if (!cell) return false;
+    if (cell.type === 'end' && sim.visitedCheckpoints.size < sim.checkpoints.size) return false;
+    const key = keyOf(pos.x, pos.y);
+    sim.path.push({ x: pos.x, y: pos.y });
+    sim.pathKeys.add(key);
+    if (cell.type === 'checkpoint') sim.visitedCheckpoints.add(key);
+    if (cell.type === 'power' && !cell.used) {
+      const power = POWERUPS[cell.power];
+      if (!power) return false;
+      if (power.type === 'status') sim.purifyReady = true;
+      else sim.heldPowers.push(cell.power);
+      cell.type = 'normal';
+      cell.power = null;
+      cell.used = true;
+    }
+    return true;
+  }
+
+  function findSimPowerForTarget(sim, origin, target) {
+    if (!origin) return -1;
+    return sim.heldPowers.findIndex((power) => powerOpensTarget(sim.grid, power, origin, target));
+  }
+
+  function powerOpensTarget(grid, power, origin, target) {
+    if (!origin || !affectsPosition(power, origin, target)) return false;
+    const trial = cloneGrid(grid);
+    applyPowerToGrid(trial, power, origin);
+    const cell = trial[target.y]?.[target.x];
+    return Boolean(cell && cell.type !== 'obstacle' && cell.type !== 'hardObstacle');
+  }
+
+  function applyPowerToGrid(grid, power, origin) {
+    if (isRotationPower(power)) {
+      rotateGridAround(grid, origin, rotationStep(power));
+      return;
+    }
+    affectedCells(power, origin, grid.length).forEach(({ x, y }) => {
+      const cell = grid[y]?.[x];
+      if (cell?.type === 'obstacle') cell.type = 'normal';
+    });
+  }
+
+  function rotateGridAround(grid, origin, step = 1) {
+    const ring = rotateRing(origin, grid.length);
+    const data = ring.map((pos) => copyCellState(grid[pos.y][pos.x]));
+    ring.forEach((pos, index) => {
+      const targetPos = ring[(index + step + ring.length) % ring.length];
+      Object.assign(grid[targetPos.y][targetPos.x], data[index]);
+    });
+  }
+
+  function syncSimCheckpoints(sim) {
+    sim.checkpoints = new Set();
+    sim.grid.flat().forEach((cell) => {
+      if (cell.type === 'checkpoint') sim.checkpoints.add(keyOf(cell.x, cell.y));
+    });
+    sim.visitedCheckpoints = new Set();
+    sim.path.forEach((pos) => {
+      const key = keyOf(pos.x, pos.y);
+      if (sim.checkpoints.has(key)) sim.visitedCheckpoints.add(key);
+    });
+  }
+
+  function rotationSourceForTarget(power, origin, target, size) {
+    const ring = rotateRing(origin, size);
+    const targetIndex = ring.findIndex((pos) => samePos(pos, target));
+    if (targetIndex < 0) return null;
+    return ring[(targetIndex - rotationStep(power) + ring.length) % ring.length] || null;
+  }
+
+  function placeRouteGates(grid, route, routeKeys, plannedPowerups, protectedKeys, config) {
     if (!['hard', 'expert', 'nightmare'].includes(config.id)) return;
     const size = config.size;
     plannedPowerups.forEach(({ blockerIndex, blocker }) => {
@@ -602,7 +849,7 @@
         .forEach((pos) => {
           const key = keyOf(pos.x, pos.y);
           const cell = grid[pos.y][pos.x];
-          if (allowed.has(key) || protectedKeys.has(key) || cell.type !== 'normal') return;
+          if (allowed.has(key) || routeKeys.has(key) || protectedKeys.has(key) || cell.type !== 'normal') return;
           cell.type = Math.random() < config.hardRate * .45 ? 'hardObstacle' : 'obstacle';
         });
     });
@@ -727,7 +974,12 @@
     renderDifficulties();
     renderStatus();
     els.next.hidden = !state.finished;
-    els.undo.disabled = state.timeline.length === 0 || state.finished;
+    els.undo.disabled = state.autoSolving || state.timeline.length === 0 || state.finished;
+    els.guide.disabled = state.autoSolving;
+    els.restart.disabled = state.autoSolving;
+    els.next.disabled = state.autoSolving;
+    els.autoSolve.hidden = !IS_LIVE_PREVIEW;
+    els.autoSolve.disabled = state.autoSolving || state.finished;
   }
 
   function renderBoard() {
@@ -767,7 +1019,16 @@
     const size = DIFFICULTIES[state.difficulty].size;
     const points = state.path.map((pos) => `${((pos.x + .5) / size) * 100},${((pos.y + .5) / size) * 100}`).join(' ');
     els.lines.setAttribute('viewBox', '0 0 100 100');
-    els.lines.innerHTML = points ? `<polyline points="${points}" fill="none" stroke="#67e8f9" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"/><polyline points="${points}" fill="none" stroke="#fef08a" stroke-width=".65" stroke-linecap="round" stroke-linejoin="round"/>` : '';
+    if (!points) {
+      els.lines.innerHTML = '';
+      return;
+    }
+    const nodes = state.path.map((pos) => {
+      const cx = ((pos.x + .5) / size) * 100;
+      const cy = ((pos.y + .5) / size) * 100;
+      return `<circle cx="${cx}" cy="${cy}" r=".95" fill="#f8fdff" stroke="#73e8ff" stroke-width=".32"/>`;
+    }).join('');
+    els.lines.innerHTML = `<polyline points="${points}" fill="none" stroke="#73e8ff" stroke-width="2.65" stroke-linecap="round" stroke-linejoin="round" opacity=".28"/><polyline points="${points}" fill="none" stroke="#f8fdff" stroke-width="1.18" stroke-linecap="round" stroke-linejoin="round"/><polyline points="${points}" fill="none" stroke="#ffbf5f" stroke-width=".36" stroke-linecap="round" stroke-linejoin="round" opacity=".82"/>${nodes}`;
   }
 
   function renderHeld() {
@@ -788,14 +1049,20 @@
     });
     els.held.innerHTML = `${items.join('')}${purifyText}`;
     els.held.querySelectorAll('[data-power-id]').forEach((button) => {
-      button.addEventListener('click', () => useHeldPower(state.heldPowers.indexOf(button.dataset.powerId)));
+      button.disabled = state.autoSolving;
+      button.addEventListener('click', () => {
+        if (state.autoSolving) return;
+        useHeldPower(state.heldPowers.indexOf(button.dataset.powerId));
+      });
     });
   }
 
   function renderDifficulties() {
     els.difficulties.innerHTML = DIFFICULTY_ORDER.map((id) => `<button class="mh-difficulty ${state.difficulty === id ? 'active' : ''}" type="button" data-difficulty="${id}">${DIFFICULTIES[id].label}</button>`).join('');
     els.difficulties.querySelectorAll('button').forEach((button) => {
+      button.disabled = state.autoSolving;
       button.addEventListener('click', () => {
+        if (state.autoSolving) return;
         state.difficulty = button.dataset.difficulty;
         state.round = 1;
         localStorage.setItem(STORAGE_KEY_DIFFICULTY, state.difficulty);
@@ -814,13 +1081,13 @@
     } else if (state.heldPowers.length) {
       els.status.textContent = `当前持有 ${state.heldPowers.length} 个主动道具，可选择合适时机释放。`;
     } else {
-      els.status.textContent = '继续连接必经点，并判断哪些道具值得获取。';
+      els.status.textContent = '继续连接破解点，并判断哪些道具值得获取。';
     }
   }
 
   function onPointerDown(event) {
     event.preventDefault();
-    if (state.finished || state.animating) return;
+    if (state.autoSolving || state.finished || state.animating) return;
     state.dragging = true;
     try { event.currentTarget.setPointerCapture?.(event.pointerId); } catch (error) {}
     attemptMove(Number(event.currentTarget.dataset.x), Number(event.currentTarget.dataset.y));
@@ -828,12 +1095,12 @@
   }
 
   function onPointerEnter(event) {
-    if (!state.dragging || state.finished || state.animating) return;
+    if (state.autoSolving || !state.dragging || state.finished || state.animating) return;
     attemptMove(Number(event.currentTarget.dataset.x), Number(event.currentTarget.dataset.y));
   }
 
   function onPointerMove(event) {
-    if (!state.dragging || state.finished || state.animating) return;
+    if (state.autoSolving || !state.dragging || state.finished || state.animating) return;
     const target = document.elementFromPoint(event.clientX, event.clientY)?.closest?.('.mh-cell');
     if (target) attemptMove(Number(target.dataset.x), Number(target.dataset.y));
   }
@@ -1030,7 +1297,7 @@
   }
 
   function showRewind() {
-    if (!state.timeline.length || state.finished || state.animating) return;
+    if (state.autoSolving || !state.timeline.length || state.finished || state.animating) return;
     const newestFirst = state.timeline.map((snapshot, index) => ({ snapshot, index })).slice().reverse();
     els.rewindList.innerHTML = newestFirst.map(({ snapshot, index }) => `
       <button class="mh-rewind-item" type="button" data-timeline-index="${index}">
@@ -1339,22 +1606,183 @@
     window.setTimeout(() => els.guide.classList.remove('guide-hint'), 2100);
   }
 
+  function sleep(ms) {
+    return new Promise((resolve) => window.setTimeout(resolve, ms));
+  }
+
+  function currentPathPos() {
+    return state.path[state.path.length - 1] || null;
+  }
+
+  function samePos(a, b) {
+    return Boolean(a && b && a.x === b.x && a.y === b.y);
+  }
+
+  function routeIndexForCurrent() {
+    const current = currentPathPos();
+    if (!current) return -1;
+    return state.route.findIndex((pos) => samePos(pos, current));
+  }
+
+  function findHeldPowerForTarget(origin, target) {
+    return state.heldPowers.findIndex((power) => powerOpensTarget(state.grid, power, origin, target));
+  }
+
+  async function waitForAutoIdle(token) {
+    for (let i = 0; i < 80 && token === state.autoToken && state.animating; i += 1) {
+      await sleep(40);
+    }
+    await sleep(AUTO_STEP_DELAY);
+  }
+
+  async function prepareAutoRouteCell(target, token) {
+    for (let guard = 0; guard < 8 && token === state.autoToken; guard += 1) {
+      const cell = state.grid[target.y]?.[target.x];
+      const origin = currentPathPos();
+      if (!cell || !origin) return false;
+      if (cell.type === 'hardObstacle') return false;
+      if (cell.type !== 'obstacle') return true;
+      const powerIndex = findHeldPowerForTarget(origin, target);
+      if (powerIndex >= 0) {
+        useHeldPower(powerIndex);
+        await sleep(AUTO_POWER_DELAY);
+        await waitForAutoIdle(token);
+      } else if (state.purifyReady) {
+        return true;
+      } else {
+        return false;
+      }
+    }
+    const cell = state.grid[target.y]?.[target.x];
+    return Boolean(cell && (cell.type !== 'obstacle' || state.purifyReady) && cell.type !== 'hardObstacle');
+  }
+
+  async function autoAttemptMove(target, token) {
+    if (token !== state.autoToken || state.finished) return false;
+    const ready = state.path.length ? await prepareAutoRouteCell(target, token) : true;
+    if (!ready || token !== state.autoToken) return false;
+    const beforeStep = state.path.length;
+    attemptMove(target.x, target.y);
+    await waitForAutoIdle(token);
+    const current = currentPathPos();
+    return samePos(current, target) && state.path.length > beforeStep;
+  }
+
+  async function autoSolve() {
+    if (!IS_LIVE_PREVIEW) return false;
+    if (state.autoSolving) return false;
+    if (!state.route.length) return false;
+    state.autoSolving = true;
+    state.autoToken += 1;
+    state.dragging = false;
+    const token = state.autoToken;
+    els.overlay.hidden = true;
+    els.guideOverlay.hidden = true;
+    els.newGuideOverlay.hidden = true;
+    els.rewindOverlay.hidden = true;
+    startTimer();
+    renderAll();
+    toast('自动破解启动');
+    try {
+      if (!state.path.length) {
+        const movedToStart = await autoAttemptMove(state.route[0], token);
+        if (!movedToStart) throw new Error('无法进入起点');
+      }
+      for (let guard = 0; guard < state.route.length * 3 && token === state.autoToken && !state.finished; guard += 1) {
+        const routeIndex = routeIndexForCurrent();
+        if (routeIndex < 0 || routeIndex >= state.route.length - 1) break;
+        const moved = await autoAttemptMove(state.route[routeIndex + 1], token);
+        if (!moved) throw new Error('路线被当前矩阵状态阻断');
+      }
+      if (!state.finished && token === state.autoToken) throw new Error('未能完成全部破解点');
+      return state.finished;
+    } catch (error) {
+      if (token === state.autoToken) {
+        toast(error.message || '自动破解中断');
+        return false;
+      }
+      return false;
+    } finally {
+      if (token === state.autoToken) {
+        state.autoSolving = false;
+        state.dragging = false;
+        renderAll();
+      }
+    }
+  }
+
+  function runAutoSolveStressTest(options = {}) {
+    if (!IS_LIVE_PREVIEW) return { ok: false, error: '仅 vscode-livepreview=true 可用' };
+    const count = Math.max(1, Number(options.count || 500));
+    const difficulty = normalizeDifficulty(options.difficulty || 'nightmare');
+    const previousDifficulty = state.difficulty;
+    const previousRound = state.round;
+    const previousOverlayHidden = els.overlay.hidden;
+    const failures = [];
+    stopTimer();
+    state.difficulty = difficulty;
+    for (let i = 0; i < count; i += 1) {
+      state.visitedCheckpoints = new Set();
+      state.path = [];
+      state.pathKeys = new Set();
+      state.heldPowers = [];
+      state.purifyReady = false;
+      state.dragging = false;
+      state.animating = false;
+      state.finished = false;
+      state.timeline = [];
+      state.lastTimelineStep = -1;
+      buildLevel();
+      const config = DIFFICULTIES[difficulty];
+      const solution = computeRouteSolution(state.grid, state.route);
+      const usesRotation = solution.actions.some((action) => action.type === 'power' && isRotationPower(action.power));
+      const ok = state.route.length >= config.pathMin
+        && state.checkpoints.size === config.checkpoints
+        && routeShapeOk(state.route, config.size)
+        && (!requiresRotationSolution(config) || usesRotation)
+        && solution.ok;
+      if (!ok) {
+        failures.push({ index: i + 1, routeLength: state.route.length, checkpoints: state.checkpoints.size, boundaryRatio: boundaryRatio(state.route, config.size), turnRatio: turnRatio(state.route), usesRotation, solutionOk: solution.ok });
+        break;
+      }
+    }
+    state.difficulty = previousDifficulty;
+    state.round = previousRound;
+    resetLevel(true);
+    els.overlay.hidden = previousOverlayHidden;
+    const result = { ok: failures.length === 0, count, difficulty, failures };
+    console.log('[haqiMatrixHack] auto solve stress test', result);
+    return result;
+  }
+
+  function runAllDifficultyStressTest(options = {}) {
+    if (!IS_LIVE_PREVIEW) return { ok: false, error: '仅 vscode-livepreview=true 可用' };
+    const count = Math.max(1, Number(options.count || 200));
+    const results = DIFFICULTY_ORDER.map((difficulty) => runAutoSolveStressTest({ count, difficulty }));
+    const result = { ok: results.every((item) => item.ok), count, results };
+    console.log('[haqiMatrixHack] all difficulty stress test', result);
+    return result;
+  }
+
   els.start.addEventListener('click', () => {
+    if (state.autoSolving) return;
     els.overlay.hidden = true;
     maybeShowNewGuide();
   });
-  els.guide.addEventListener('click', () => showGuide());
-  els.guideClose.addEventListener('click', () => { els.guideOverlay.hidden = true; });
-  els.newGuideNext.addEventListener('click', advanceNewGuide);
+  els.guide.addEventListener('click', () => { if (!state.autoSolving) showGuide(); });
+  els.guideClose.addEventListener('click', () => { if (!state.autoSolving) els.guideOverlay.hidden = true; });
+  els.newGuideNext.addEventListener('click', () => { if (!state.autoSolving) advanceNewGuide(); });
   els.undo.addEventListener('click', showRewind);
-  els.rewindClose.addEventListener('click', () => { els.rewindOverlay.hidden = true; });
-  els.restart.addEventListener('click', () => resetLevel(true));
-  els.next.addEventListener('click', () => resetLevel(false));
+  els.rewindClose.addEventListener('click', () => { if (!state.autoSolving) els.rewindOverlay.hidden = true; });
+  els.autoSolve.addEventListener('click', autoSolve);
+  els.restart.addEventListener('click', () => { if (!state.autoSolving) resetLevel(true); });
+  els.next.addEventListener('click', () => { if (!state.autoSolving) resetLevel(false); });
   window.addEventListener('pointermove', onPointerMove, { passive: false });
   window.addEventListener('pointerup', onPointerUp);
   window.addEventListener('pointercancel', onPointerUp);
   window.addEventListener('message', (event) => {
     const message = event.data || {};
+    if (state.autoSolving) return;
     if (message.type === 'setGameConfig' && message.difficulty) {
       state.difficulty = normalizeDifficulty(message.difficulty);
       localStorage.setItem(STORAGE_KEY_DIFFICULTY, state.difficulty);
@@ -1366,6 +1794,12 @@
   collectNewGuideNodes();
   renderAll();
   queueTimelineSnapshot(true);
+  if (IS_LIVE_PREVIEW) {
+    window.haqiMatrixHackAutoSolve = autoSolve;
+    window.haqiMatrixHackRunAutoTest = runAutoSolveStressTest;
+    window.haqiMatrixHackRunAllDifficultyTest = runAllDifficultyStressTest;
+    window.haqiMatrixHack = Object.assign(window.haqiMatrixHack || {}, { autoSolve, runAutoSolveStressTest, runAllDifficultyStressTest });
+  }
   window.parent?.postMessage({ type: 'gameLoaded' }, '*');
 })();
 </script>

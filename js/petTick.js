@@ -19,7 +19,12 @@ export function eggStats() {
     return { hunger: 0, mood: 60, clean: 60, bond: 60 };
 }
 
+export function isActivePet(pet) {
+    return !!pet?.id && pet.id === state.currentPetId;
+}
+
 export function normalizeReleasedPetAutoCare(pet, now = Date.now()) {
+    if (!isActivePet(pet)) return false;
     if (!pet || getPetLocationType(pet) !== 'released') return false;
     normalizePetStats(pet);
     const changedStats = applyReleasedPetAutoCareStats(pet);
@@ -46,6 +51,7 @@ export function normalizeReleasedPetAutoCare(pet, now = Date.now()) {
 }
 
 export function normalizePetStats(pet) {
+    if (pet?.id && !isActivePet(pet)) return pet.stats || defaultStats();
     if (!pet) return defaultStats();
     const base = pet.stage === 'egg' ? eggStats() : defaultStats();
     const stats = pet.stats && typeof pet.stats === 'object' ? pet.stats : {};
@@ -186,6 +192,7 @@ export function maybeApplyPermanentTrauma(pet, now = Date.now()) {
 }
 
 export function applyDecay(pet, ticks = 1) {
+    if (!isActivePet(pet)) return;
     normalizePetStats(pet);
     if (getPetLocationType(pet) === 'released') {
         normalizeReleasedPetAutoCare(pet);
@@ -209,6 +216,7 @@ export function applyDecay(pet, ticks = 1) {
 }
 
 export function applyOfflineDecay(pet, elapsedMs, now = Date.now()) {
+    if (!isActivePet(pet)) return;
     normalizePetStats(pet);
     if (getPetLocationType(pet) === 'released') {
         normalizeReleasedPetAutoCare(pet, now);
@@ -282,6 +290,7 @@ const _sheetInflight = new Set(); // pet.id
 
 function _kickSheetGen(pet) {
     if (!pet || !pet.id) return;
+    if (!isActivePet(pet)) return;
     if (pet.imageSheetUrl) return;
     if (_sheetInflight.has(pet.id)) return;
     _sheetInflight.add(pet.id);
@@ -308,6 +317,7 @@ function _kickSheetGen(pet) {
 }
 
 export function applyStage(pet) {
+    if (!isActivePet(pet)) return false;
     const st = computeStage(pet);
     const eggIsWaitingForVisibleHatch = pet?.stage === 'egg'
         && (pet.eggHatchPending || (pet.imageSheetUrl && (pet.eggHatchRequestedAt || (pet.stats?.hunger ?? 0) > 0)));
@@ -341,6 +351,7 @@ export function applyStage(pet) {
 /** 离线追溯：根据 lastTickAt 一次性补算。 */
 export function tickOffline(pet) {
     if (!pet) return;
+    if (!isActivePet(pet)) return;
     const now = Date.now();
     normalizeReleasedPetAutoCare(pet, now) || normalizePetSleepState(pet, now);
     const last = pet.lastTickAt || pet.bornAt || now;
@@ -352,7 +363,7 @@ export function tickOffline(pet) {
     if (getPetLocationType(pet) !== 'released') savePetDebounced(pet);
 }
 
-/** 周期 tick：所有宠物同时衰减 1 单位。
+/** 周期 tick：仅当前激活宠物衰减 1 单位。
  *  注意：
  *    - 不再调用 notify()，避免每个 tick 触发整页 re-render 导致界面闪烁。
  *      关心实时数值的视图可监听 window 'mh:tick' 事件做局部更新。
@@ -368,8 +379,8 @@ export function startTickLoop() {
         const now = Date.now();
         const shouldAutoSave = (now - _lastAutoSaveAt) >= AUTO_SAVE_MIN_INTERVAL_MS;
         let sleepStateChanged = false;
-        for (const id of Object.keys(state.pets)) {
-            const p = state.pets[id];
+        const p = state.currentPetId ? state.pets[state.currentPetId] : null;
+        if (p) {
             const isReleased = getPetLocationType(p) === 'released';
             const autoCareChanged = normalizeReleasedPetAutoCare(p, now);
             const sleepChanged = autoCareChanged || normalizePetSleepState(p, now);

@@ -1550,83 +1550,18 @@
             will-change: transform, opacity;
         }
 
-        /* ====== Circle-Wipe with wormhole visuals ====== */
-        .scene-wipe {
-            position: fixed; inset: 0;
+        /* ====== Canvas Circle-Wipe with wormhole visuals ====== */
+        .scene-wipe-canvas {
+            position: fixed;
+            inset: 0;
             z-index: 9000;
+            width: 100vw;
+            height: 100vh;
+            display: none;
             pointer-events: none;
-            clip-path: circle(0% at var(--wipe-cx, 50%) var(--wipe-cy, 50%));
-            will-change: clip-path;
             contain: strict;
             transform: translateZ(0);
-            --wipe-bg: #0c1025;
-            background: var(--wipe-bg);
-        }
-        .scene-wipe::before,
-        .scene-wipe::after {
-            content: '';
-            position: absolute;
-            inset: 0;
-            pointer-events: none;
-            will-change: transform, opacity;
             backface-visibility: hidden;
-            opacity: 0;
-        }
-        .scene-wipe::before {
-            background: repeating-linear-gradient(
-                0deg,
-                rgba(255,255,255,0.22) 0px, rgba(255,255,255,0.22) 1px,
-                transparent 1px, transparent 12px
-            );
-        }
-        .scene-wipe::after {
-            background: radial-gradient(circle at var(--wipe-cx, 50%) var(--wipe-cy, 50%), rgba(255,255,255,0.4) 0%, rgba(255,255,255,0.08) 28%, transparent 52%);
-        }
-        .scene-wipe.sw-closing {
-            animation: wipeClose 580ms cubic-bezier(0.35, 0, 0.75, 0.35) forwards;
-        }
-        .scene-wipe.sw-closing::before {
-            animation: wipeLinesIn 580ms ease-out forwards;
-        }
-        .scene-wipe.sw-closing::after {
-            animation: wipeGlowIn 580ms ease-out forwards;
-        }
-        .scene-wipe.sw-opening {
-            animation: wipeOpen 660ms cubic-bezier(0.15, 0.65, 0.35, 1) forwards;
-        }
-        .scene-wipe.sw-opening::before {
-            animation: wipeLinesOut 660ms ease-in forwards;
-        }
-        .scene-wipe.sw-opening::after {
-            animation: wipeGlowOut 660ms ease-in forwards;
-        }
-        @keyframes wipeClose {
-            from { clip-path: circle(0% at var(--wipe-cx, 50%) var(--wipe-cy, 50%)); }
-            to   { clip-path: circle(80% at var(--wipe-cx, 50%) var(--wipe-cy, 50%)); }
-        }
-        @keyframes wipeOpen {
-            from { clip-path: circle(80% at var(--wipe-cx, 50%) var(--wipe-cy, 50%)); }
-            to   { clip-path: circle(0% at var(--wipe-cx, 50%) var(--wipe-cy, 50%)); }
-        }
-        @keyframes wipeLinesIn {
-            from { background-position: 0 0; opacity: 0; }
-            30%  { opacity: 0.6; }
-            to   { background-position: 0 -24px; opacity: 0.35; }
-        }
-        @keyframes wipeLinesOut {
-            from { background-position: 0 -24px; opacity: 0.35; }
-            70%  { opacity: 0.6; }
-            to   { background-position: 0 -48px; opacity: 0; }
-        }
-        @keyframes wipeGlowIn {
-            from { opacity: 0; }
-            35%  { opacity: 0.75; }
-            to   { opacity: 0.45; }
-        }
-        @keyframes wipeGlowOut {
-            from { opacity: 0.45; }
-            65%  { opacity: 0.75; }
-            to   { opacity: 0; }
         }
         @media (max-width: 380px) {
             /* .pet-sprite img 移动端尺寸见 ./css/pet.css */

@@ -3,11 +3,11 @@
 import { $, $$, escapeHtml, randInt, showToast } from './utils.js';
 import { t } from './i18n.js';
 import { canPlaceItemInArea, CONFIG, DECO_VISUALS, getActiveHouseRoomIds, getPlacedItemZOrder, SHOP_ITEMS } from './config.js';
-import { state } from './state.js';
-import { getLayout } from './storage.js';
+import { notify, state } from './state.js';
+import { getLayout, loadPets } from './storage.js';
 import { displayPetName } from './dna.js';
 import { getPetSleepActionState, isPetInteractionBlocked, petArtHtml, playPetClickFeedback, playPetHappy, say, scanAndMount, sleepingInteractionText } from './pet.js';
-import { getReleasedPetHome, hasRenderablePetTexture, isReleasedPetInRoom } from './petLifecycle.js';
+import { getGeneratedPetLocation, hasRenderablePetTexture } from './petLifecycle.js';
 import SoundManager from './soundManager.js';
 
 const ITEM_BY_ID = Object.fromEntries(SHOP_ITEMS.map(it => [it.id, it]));
@@ -15,6 +15,7 @@ const BASIC_FEED_ID = 'food_basic_feed';
 const soundManager = SoundManager.getInstance();
 const ITEM_Z_INDEX_BASE = 5;
 const FOOD_Z_INDEX_BASE = 24;
+let roomCompanionPetsLoadedKey = '';
 const ROOM_Z_ORDER_STRIDE = 10000;
 const ROOM_DEPTH_Z_STEP = 100;
 const ROOM_ITEM_SELECTOR = '#mhFurnitureLayer .mh-room-furniture, #mhFoodLayer .mh-room-furniture';
@@ -395,6 +396,13 @@ function applyRoomPan() {
 }
 
 function getCurrentPetPose() {
+    if (state.activePetRoomPose?.roomId === (state.currentRoom || 'living')) {
+        const pose = state.activePetRoomPose;
+        decorPetPose = repelRoomPetPose({ x: pose.xMeters, y: pose.yMeters }, releasedRoomPetOccupiedPos(), 'active-room-pet::find');
+        state.activePetRoomPose = null;
+        roomPetMode = 'engaged';
+        return decorPetPose;
+    }
     const petElement = $('mhPet');
     if (petElement) {
         decorPetPose = {
@@ -1117,16 +1125,20 @@ function currentPetFocusPoint() {
     return { x: centerX, y: centerY };
 }
 
-function releasedRoomPetsHtml(currentPet, roomId) {
+function roomCompanionPetsHtml(currentPet, roomId) {
     if (state.isDecorMode) return '';
     const currentPose = getCurrentPetPose();
     const occupied = [{ x: currentPose.x, y: currentPose.y }];
-    return (state.petOrder || [])
+    return roomCompanionPetIds(currentPet, roomId)
         .map(id => state.pets[id])
-        .filter(pet => pet && pet.id !== currentPet?.id && hasRenderablePetTexture(pet) && isReleasedPetInRoom(pet, roomId))
+        .filter(Boolean)
+        .filter((pet) => {
+            if (!pet || pet.id === currentPet?.id || !hasRenderablePetTexture(pet)) return false;
+            return getGeneratedPetLocation(pet).kind === 'room';
+        })
         .map((pet) => {
-            const home = getReleasedPetHome(pet);
-            const pose = repelRoomPetPose({ x: home.xMeters, y: home.yMeters }, occupied, `${roomId}::released-room-pet::${pet.id}`);
+            const home = getGeneratedPetLocation(pet);
+            const pose = repelRoomPetPose({ x: home.xMeters, y: home.yMeters }, occupied, `${roomId}::room-companion-pet::${pet.id}`);
             occupied.push(pose);
             const { x, y } = pose;
             const face = home.face === 'left' ? 'scaleX(-1)' : 'scaleX(1)';
@@ -1137,6 +1149,14 @@ function releasedRoomPetsHtml(currentPet, roomId) {
                 </div>
             `;
         }).join('');
+}
+
+function roomCompanionPetIds(currentPet, roomId) {
+    return (state.petOrder || []).filter((id) => {
+        if (!id || id === currentPet?.id) return false;
+        const home = getGeneratedPetLocation(state.pets[id] || id);
+        return home.kind === 'room' && home.id === roomId;
+    });
 }
 
 // 根据当前激活房屋（field 中房间数最多的房屋）解析合法房间。无激活房屋时回退到默认 1 间。
@@ -1198,7 +1218,7 @@ export const petLevel = {
                     <div style="width:100%;height:100%">${petArtHtml(pet, { alt: displayPetName(pet), requireProcessedTexture: true })}</div>
                 </div>
 
-                ${releasedRoomPetsHtml(pet, room.id)}
+                ${roomCompanionPetsHtml(pet, room.id)}
 
                 <div id="mhFoodLayer" class="mh-food-layer">
                     ${foodLayout.map(({ item: it, index }) => roomItemHtml(it, index)).join('')}
@@ -1209,6 +1229,15 @@ export const petLevel = {
     },
 
     bindStage(pet, ctx) {
+        const room = resolveActiveRoom(pet);
+        const missingPetIds = roomCompanionPetIds(pet, room.id).filter(id => id && !state.pets[id]);
+        const loadKey = `${room.id}::${missingPetIds.join('|')}`;
+        if (missingPetIds.length && loadKey !== roomCompanionPetsLoadedKey) {
+            roomCompanionPetsLoadedKey = loadKey;
+            loadPets(missingPetIds)
+                .then((loaded) => { if (loaded.length && state.currentView === 'home' && state.zoomLevel === 2) notify(); })
+                .catch((e) => console.warn('加载房间宠物失败', e));
+        }
         const petEl = $('mhPet');
         petEl?.classList.add('mh-pet-room-instant');
         applyRoomMeterLayout();
@@ -1218,7 +1247,9 @@ export const petLevel = {
             } else {
                 roomPetMode = 'follow';
                 clearRoomAgentTimer();
-                focusPetInRoom();
+                const focusPose = state.activePetRoomFocusPose?.roomId === room.id ? state.activePetRoomFocusPose : null;
+                focusPetInRoom(focusPose || undefined);
+                if (!focusPose || !focusPose.targetPetId || state.pets[focusPose.targetPetId]) state.activePetRoomFocusPose = null;
                 setPetRoomMotion('idle');
             }
             requestAnimationFrame(() => {

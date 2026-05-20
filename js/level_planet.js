@@ -3,7 +3,7 @@
 // 相机距离范围：minCamera 时已经"贴到星球表面" → 触发 zoomIn 进入 field；
 //               maxCamera 时已经"飞得很远" → 此处是最外层，无更外层可去。
 
-import { $, clamp, escapeHtml, randId, showToast } from './utils.js';
+import { $, clamp, escapeHtml, prompt, randId, showToast } from './utils.js';
 import { getActivePlanetBuff, getActivePlanetWeather, notify, setCurrentPet, state } from './state.js';
 import { addToInventory, getLayout, saveLayout, savePet, savePetDebounced, saveUserProfileDebounced, setCurrentPetPersisted } from './storage.js';
 import { clampEnergyToMax, defaultPermanentTrauma, defaultStats, dominantTraits } from './petTick.js';
@@ -13,6 +13,7 @@ import { getRuntimePetStats, isPetOnCurrentPlanet, isPetSelectable, markPetHaqiI
 import { buildEggSvg, getPetSpriteCell, petArtHtml, scanAndMount, SHEET_COLS, SHEET_ROWS } from './pet.js';
 import { getStageName } from './config.js';
 import { createSpaceTravel, spaceTravelHtml } from './spacetravel.js';
+import { defaultPostcardText, drawPetPostcardImage, normalizePostcardLayout, POSTCARD_TEXTS, renderPetPostcardHtml, serializePostcardLayout } from './view_postcard.js';
 import SoundManager from './soundManager.js';
 
 const soundManager = SoundManager.getInstance();
@@ -36,6 +37,7 @@ const PLANET_EXPRESSION_ALIASES = {
     sleep: 'sleeping',
     asleep: 'sleeping',
 };
+const SHARE_POSTCARD_MAX_TEXT = 64;
 
 function getSharedAudioEngine() {
     return window.keepwork?.audioEngine
@@ -927,6 +929,9 @@ export const planetLevel = {
                 <button class="btn-secondary dock-icon-btn ${socialLocked || visitInfraMissing ? 'planet-action-locked' : ''}" data-act="visit" title="${socialLocked ? lockedTitle(2) : `消耗 ${SOCIAL_FUEL_COST} 生物燃料拜访好友星球`}">
                     <span class="dock-icon planet-dock-svg-icon">${planetActionIconHtml('visit')}</span><span class="dock-label">星际拜访</span>
                 </button>
+                ${pet?.stage !== 'egg' ? `<button class="btn-secondary dock-icon-btn" data-act="mailbox" title="打开邮箱">
+                    <span class="dock-icon planet-dock-svg-icon planet-dock-emoji-icon">💌</span><span class="dock-label">邮箱</span>
+                </button>` : ''}
                 <button class="btn-secondary dock-icon-btn" data-act="milestones" title="查看星球里程碑">
                     <span class="dock-icon planet-dock-svg-icon">${planetActionIconHtml('milestones')}</span><span class="dock-label">里程碑</span>
                 </button>
@@ -941,6 +946,7 @@ export const planetLevel = {
             el.onclick = () => {
                 const action = el.dataset.act;
                 if (action === 'milestones') showMilestonesPanel();
+                else if (action === 'mailbox') ctx.callbacks?.onNav?.('mailbox');
                 else showPlanetActionDialog(action, pet, ctx);
             };
         });
@@ -1018,6 +1024,161 @@ function openPlanetModal(innerHtml, onClick, cardClass = '') {
     document.body.appendChild(mask);
     scanAndMount(mask);
     return { mask, close };
+}
+
+function getShareUsername() {
+    const direct = state.user?.username || state.sdk?.user?.username;
+    if (direct) return Promise.resolve(direct);
+    return state.sdk?.getUsername?.().catch?.(() => '') || Promise.resolve('');
+}
+
+function buildPetShareUrl(pet, username, layout, text) {
+    const url = new URL('MagicHaqi.html', window.location.href);
+    url.searchParams.set('postcardFrom', username || state.user?.username || 'friend');
+    url.searchParams.set('petId', pet?.id || '');
+    url.searchParams.set('layout', serializePostcardLayout(layout, pet));
+    url.searchParams.set('text', text || defaultPostcardText(pet));
+    return url.href;
+}
+
+function updatePetSharePostcard(root, pet, shareState) {
+    const previewHost = root.querySelector('[data-share-preview-host]');
+    if (!previewHost) return;
+    previewHost.innerHTML = renderPetPostcardHtml(pet, {
+        layout: shareState.layout,
+        text: shareState.text,
+        interactive: true,
+    });
+}
+
+function shareTextOptions(pet) {
+    const name = displayPetName(pet) || '我的宠物';
+    return [
+        defaultPostcardText(pet),
+        `${name}想认识新的星际好友。`,
+        `${name}在星球上等你来做客。`,
+        ...POSTCARD_TEXTS,
+    ].filter((text, index, arr) => text && arr.indexOf(text) === index);
+}
+
+function nextShareLayout(layout, pet) {
+    const count = normalizePostcardLayout(layout, pet).length;
+    return normalizePostcardLayout(count >= 4 ? 1 : count + 1, pet);
+}
+
+async function copyText(text, okMessage = '已复制') {
+    try {
+        if (navigator.clipboard?.writeText) await navigator.clipboard.writeText(text);
+        else {
+            const input = document.createElement('textarea');
+            input.value = text;
+            input.style.position = 'fixed';
+            input.style.opacity = '0';
+            document.body.appendChild(input);
+            input.select();
+            document.execCommand('copy');
+            input.remove();
+        }
+        showToast(okMessage, 'success', 1600);
+        return true;
+    } catch (_) {
+        showToast('复制失败，请手动复制链接。', 'error', 2200);
+        return false;
+    }
+}
+
+async function sharePetImage(pet, layout, text, url) {
+    const blob = await drawPetPostcardImage(pet, layout, text);
+    if (!blob) {
+        await copyText(url, '图片生成失败，已复制链接');
+        return;
+    }
+    const file = new File([blob], `${pet?.id || 'pet'}-invite.png`, { type: 'image/png' });
+    if (navigator.canShare?.({ files: [file] }) && navigator.share) {
+        try { await navigator.share({ title: '宠物邀请', text, url, files: [file] }); return; } catch (_) {}
+    }
+    const a = document.createElement('a');
+    a.href = URL.createObjectURL(blob);
+    a.download = file.name;
+    document.body.appendChild(a);
+    a.click();
+    setTimeout(() => { URL.revokeObjectURL(a.href); a.remove(); }, 800);
+    showToast('分享图片已生成。', 'success', 1600);
+}
+
+export function showPetSharePanel(pet) {
+    if (!pet) return;
+    if (pet.stage === 'egg') {
+        showToast('宠物破壳后才能分享。', 'info', 1800);
+        return;
+    }
+    const textOptions = shareTextOptions(pet);
+    const shareState = {
+        layout: normalizePostcardLayout(1, pet),
+        text: textOptions[0] || defaultPostcardText(pet),
+        textIndex: 0,
+        showEdit: false,
+    };
+    const modal = openPlanetModal(`
+        <div class="pet-share-head">
+            <div class="planet-modal-title">分享 ${escapeHtml(displayPetName(pet))}</div>
+            <div class="planet-modal-subtitle">点击照片切换张数，点击文字切换文案。</div>
+        </div>
+        <div data-share-preview-host>${renderPetPostcardHtml(pet, { layout: shareState.layout, text: shareState.text, interactive: true })}</div>
+        <div class="planet-modal-actions pet-share-actions">
+            <button class="btn-secondary" data-act="close">关闭</button>
+            <button class="btn-secondary" data-share-method="url">复制链接</button>
+            <button class="btn-secondary" data-share-method="wechat">微信</button>
+            <button class="btn-primary" data-share-method="image">图片</button>
+        </div>
+    `, async (e) => {
+        const root = e.currentTarget;
+        const imageToggle = e.target.closest?.('[data-postcard-image-toggle]');
+        if (imageToggle) {
+            shareState.layout = nextShareLayout(shareState.layout, pet);
+            updatePetSharePostcard(root, pet, shareState);
+            return;
+        }
+        if (e.target.closest?.('[data-share-edit-text]')) {
+            const customText = await prompt('编辑明信片文字', {
+                defaultValue: shareState.text,
+                placeholder: '写一句邀请好友的话',
+                okText: '保存',
+                maxLength: SHARE_POSTCARD_MAX_TEXT,
+                validate: (value) => value ? '' : '请输入邀请文字',
+            });
+            if (customText) {
+                shareState.text = customText;
+                shareState.showEdit = true;
+                updatePetSharePostcard(root, pet, shareState);
+            }
+            return;
+        }
+        const textToggle = e.target.closest?.('[data-postcard-text-toggle]');
+        if (textToggle) {
+            shareState.textIndex = (shareState.textIndex + 1) % textOptions.length;
+            shareState.text = textOptions[shareState.textIndex];
+            shareState.showEdit = true;
+            updatePetSharePostcard(root, pet, shareState);
+            return;
+        }
+        const methodBtn = e.target.closest?.('[data-share-method]');
+        if (!methodBtn) return;
+        const username = await getShareUsername();
+        const url = buildPetShareUrl(pet, username, shareState.layout, shareState.text);
+        if (methodBtn.dataset.shareMethod === 'url') {
+            if (navigator.share) {
+                try { await navigator.share({ title: '宠物邀请', text: shareState.text, url }); return; } catch (_) {}
+            }
+            await copyText(url, '分享链接已复制');
+        } else if (methodBtn.dataset.shareMethod === 'wechat') {
+            await copyText(`${shareState.text}\n${url}`, '已复制微信分享内容');
+        } else if (methodBtn.dataset.shareMethod === 'image') {
+            methodBtn.disabled = true;
+            try { await sharePetImage(pet, shareState.layout, shareState.text, url); }
+            finally { methodBtn.disabled = false; }
+        }
+    }, 'pet-share-modal-card');
 }
 
 function showPlanetActionDialog(action, pet, ctx) {

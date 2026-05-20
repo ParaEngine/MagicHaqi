@@ -34,6 +34,7 @@ const CAMERA_MAX_DT = 0.05;
 const WHEEL_ZOOM_SENSITIVITY = 0.0018;
 const WHEEL_DELTA_LIMIT = 300;
 const WHEEL_CONSUME_RATE = 0.38;
+const PRE_RENDER_FALLBACK_DELAY = 900;
 const ZOOM_BAR_STAGES = [
     { id: 'planet', label: '星球', color: '#172554', hint: '上下滑动 / 双指放大 → 登陆星球' },
     { id: 'field', label: '表面', color: '#65a30d', hint: '上下滑动 / 双指缩放 → 太空 / 宠物房间' },
@@ -77,15 +78,24 @@ const __companionMoodPendingTimers = new Map();
 let __zoomBarHideTimer = null;
 let __levelJumpCompleted = false;
 const __dockScrollPositions = new Map();
+let __stageZoomWindowCleanup = null;
+let __sceneWipeCanvas = null;
+let __sceneWipeFrame = 0;
 
 // ========== DocumentFragment 预缓存系统 ==========
 // 在空闲时预渲染相邻层的 stageHtml + dockHtml，切换时直接移植节点而非解析 HTML
 const __levelCache = new Map(); // key: levelIndex → { stageEl, dockEl, petId, ts }
 let __preRenderIdleHandle = null;
+let __preRenderQueue = [];
 
 function invalidateLevelCache(levelIndex) {
-    if (levelIndex === undefined) { __levelCache.clear(); return; }
+    if (levelIndex === undefined) {
+        __levelCache.clear();
+        __preRenderQueue = [];
+        return;
+    }
     __levelCache.delete(levelIndex);
+    __preRenderQueue = __preRenderQueue.filter(queuedLevel => queuedLevel !== levelIndex);
 }
 
 function preRenderLevel(levelIndex, pet) {
@@ -101,20 +111,26 @@ function preRenderLevel(levelIndex, pet) {
 function schedulePreRenderAdjacent() {
     if (__preRenderIdleHandle) {
         (typeof cancelIdleCallback === 'function' ? cancelIdleCallback : clearTimeout)(__preRenderIdleHandle);
+        __preRenderIdleHandle = null;
     }
-    const schedule = typeof requestIdleCallback === 'function' ? requestIdleCallback : (fn) => setTimeout(fn, 80);
+    __preRenderQueue = [];
+}
+
+function flushDeferredPreRenderQueue() {
+    if (__mhZoomAnimating || __cameraGestureActive || __pendingZoomTransitionTimer || !__lastPet) {
+        schedulePreRenderAdjacent();
+        return;
+    }
+    const nextLevel = __preRenderQueue.shift();
+    if (nextLevel === undefined) return;
+    if (!isLevelCacheValid(nextLevel, __lastPet)) preRenderLevel(nextLevel, __lastPet);
+    if (!__preRenderQueue.length) return;
+    const schedule = typeof requestIdleCallback === 'function'
+        ? requestIdleCallback
+        : (fn) => setTimeout(fn, PRE_RENDER_FALLBACK_DELAY);
     __preRenderIdleHandle = schedule(() => {
         __preRenderIdleHandle = null;
-        if (__mhZoomAnimating || !__lastPet) return;
-        const currentLvl = state.zoomLevel;
-        const pet = __lastPet;
-        // 预渲染相邻层
-        if (currentLvl > 0 && !isLevelCacheValid(currentLvl - 1, pet)) {
-            preRenderLevel(currentLvl - 1, pet);
-        }
-        if (currentLvl < LEVELS.length - 1 && !isLevelCacheValid(currentLvl + 1, pet)) {
-            preRenderLevel(currentLvl + 1, pet);
-        }
+        flushDeferredPreRenderQueue();
     }, { timeout: 2000 });
 }
 
@@ -137,6 +153,197 @@ function useCachedLevel(levelIndex, pet, inner, dock) {
     while (cached.dockEl.firstChild) dock.appendChild(cached.dockEl.firstChild);
     __levelCache.delete(levelIndex);
     return true;
+}
+
+function scheduleTransitionFollowup(task) {
+    requestAnimationFrame(() => {
+        requestAnimationFrame(() => {
+            task?.();
+        });
+    });
+}
+
+function getOrCreateSceneWipeCanvas() {
+    if (!__sceneWipeCanvas || !__sceneWipeCanvas.isConnected) {
+        __sceneWipeCanvas = document.createElement('canvas');
+        __sceneWipeCanvas.className = 'scene-wipe-canvas';
+        __sceneWipeCanvas.setAttribute('aria-hidden', 'true');
+        document.body.appendChild(__sceneWipeCanvas);
+    }
+    return __sceneWipeCanvas;
+}
+
+function resetSceneWipeCanvas() {
+    if (__sceneWipeFrame) cancelAnimationFrame(__sceneWipeFrame);
+    __sceneWipeFrame = 0;
+    const canvas = __sceneWipeCanvas;
+    if (!canvas) return;
+    const ctx = canvas.getContext('2d');
+    ctx?.clearRect(0, 0, canvas.width || 0, canvas.height || 0);
+    canvas.style.display = 'none';
+}
+
+function playSceneWipe({ phase, cx = 50, cy = 50, color = '#0c1025', duration = 600 }) {
+    resetSceneWipeCanvas();
+    const canvas = getOrCreateSceneWipeCanvas();
+    const ctx = canvas.getContext('2d', { alpha: true });
+    if (!ctx) return Promise.resolve();
+
+    const viewportWidth = Math.max(1, window.innerWidth || document.documentElement.clientWidth || 1);
+    const viewportHeight = Math.max(1, window.innerHeight || document.documentElement.clientHeight || 1);
+    const dpr = Math.max(1, Math.min(2, window.devicePixelRatio || 1));
+    canvas.width = Math.ceil(viewportWidth * dpr);
+    canvas.height = Math.ceil(viewportHeight * dpr);
+    canvas.style.display = 'block';
+    ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+
+    const centerX = viewportWidth * (Math.max(0, Math.min(100, Number(cx) || 50)) / 100);
+    const centerY = viewportHeight * (Math.max(0, Math.min(100, Number(cy) || 50)) / 100);
+    const farX = Math.max(centerX, viewportWidth - centerX);
+    const farY = Math.max(centerY, viewportHeight - centerY);
+    const maxRadius = Math.hypot(farX, farY) * 1.08;
+    const ease = phase === 'closing'
+        ? (t) => t * t * (3 - 2 * t)
+        : (t) => 1 - Math.pow(1 - t, 3);
+    const startedAt = performance.now();
+    drawSceneWipeFrame(ctx, viewportWidth, viewportHeight, centerX, centerY, phase === 'closing' ? 0 : maxRadius, 0, phase, color);
+
+    return new Promise((resolve) => {
+        const draw = (now) => {
+            const raw = Math.max(0, Math.min(1, (now - startedAt) / duration));
+            const eased = ease(raw);
+            const radius = phase === 'closing'
+                ? maxRadius * eased
+                : maxRadius * (1 - eased);
+            drawSceneWipeFrame(ctx, viewportWidth, viewportHeight, centerX, centerY, radius, raw, phase, color);
+            if (raw < 1) {
+                __sceneWipeFrame = requestAnimationFrame(draw);
+                return;
+            }
+            __sceneWipeFrame = 0;
+            if (phase === 'opening') resetSceneWipeCanvas();
+            resolve();
+        };
+        __sceneWipeFrame = requestAnimationFrame(draw);
+    });
+}
+
+function drawSceneWipeFrame(ctx, width, height, cx, cy, radius, progress, phase, color) {
+    ctx.clearRect(0, 0, width, height);
+    if (radius <= 0.5) return;
+    ctx.save();
+    ctx.beginPath();
+    ctx.arc(cx, cy, radius, 0, Math.PI * 2);
+    ctx.clip();
+    ctx.fillStyle = createSceneWipeFill(ctx, width, height, color);
+    ctx.fillRect(0, 0, width, height);
+    drawSceneWipeLines(ctx, width, height, progress, phase);
+    drawSceneWipeGlow(ctx, cx, cy, radius, progress, phase);
+    ctx.restore();
+}
+
+function createSceneWipeFill(ctx, width, height, color) {
+    const css = String(color || '').trim();
+    if (css.startsWith('linear-gradient(')) return createSceneLinearGradient(ctx, width, height, css);
+    if (css.startsWith('radial-gradient(')) return createSceneRadialGradient(ctx, width, height, css);
+    return css || '#0c1025';
+}
+
+function createSceneLinearGradient(ctx, width, height, css) {
+    const stops = parseGradientStops(css);
+    const gradient = ctx.createLinearGradient(0, 0, 0, height);
+    addCanvasGradientStops(gradient, stops);
+    return gradient;
+}
+
+function createSceneRadialGradient(ctx, width, height, css) {
+    const firstArg = getGradientArgs(css)[0] || '';
+    const atMatch = firstArg.match(/at\s+([\d.]+)%\s+([\d.]+)%/i);
+    const cx = width * ((Number(atMatch?.[1]) || 50) / 100);
+    const cy = height * ((Number(atMatch?.[2]) || 50) / 100);
+    const radius = Math.hypot(Math.max(cx, width - cx), Math.max(cy, height - cy));
+    const gradient = ctx.createRadialGradient(cx, cy, 0, cx, cy, radius);
+    addCanvasGradientStops(gradient, parseGradientStops(css));
+    return gradient;
+}
+
+function parseGradientStops(css) {
+    const args = getGradientArgs(css);
+    const colorStops = args.filter(arg => /#[0-9a-f]{3,8}\b|rgba?\(/i.test(arg));
+    return colorStops.map((arg, index) => {
+        const colorMatch = arg.match(/#[0-9a-f]{3,8}\b|rgba?\([^)]*\)/i);
+        const percentMatches = [...arg.matchAll(/(-?[\d.]+)%/g)].map(match => Number(match[1]));
+        const offset = percentMatches.length ? percentMatches[percentMatches.length - 1] / 100 : (colorStops.length <= 1 ? 0 : index / (colorStops.length - 1));
+        return { color: colorMatch?.[0] || '#0c1025', offset: Math.max(0, Math.min(1, offset)) };
+    });
+}
+
+function getGradientArgs(css) {
+    const body = css.slice(css.indexOf('(') + 1, css.lastIndexOf(')'));
+    const args = [];
+    let depth = 0;
+    let start = 0;
+    for (let i = 0; i < body.length; i += 1) {
+        const ch = body[i];
+        if (ch === '(') depth += 1;
+        else if (ch === ')') depth = Math.max(0, depth - 1);
+        else if (ch === ',' && depth === 0) {
+            args.push(body.slice(start, i).trim());
+            start = i + 1;
+        }
+    }
+    args.push(body.slice(start).trim());
+    return args;
+}
+
+function addCanvasGradientStops(gradient, stops) {
+    const normalized = stops.length ? stops : [{ color: '#0c1025', offset: 0 }, { color: '#0c1025', offset: 1 }];
+    normalized.forEach(stop => gradient.addColorStop(stop.offset, stop.color));
+    if (normalized[0].offset > 0) gradient.addColorStop(0, normalized[0].color);
+    const last = normalized[normalized.length - 1];
+    if (last.offset < 1) gradient.addColorStop(1, last.color);
+}
+
+function drawSceneWipeLines(ctx, width, height, progress, phase) {
+    const opacity = phase === 'closing'
+        ? (progress < 0.3 ? progress / 0.3 * 0.6 : 0.6 + (progress - 0.3) / 0.7 * (0.35 - 0.6))
+        : (progress < 0.7 ? 0.35 + progress / 0.7 * (0.6 - 0.35) : 0.6 * (1 - (progress - 0.7) / 0.3));
+    if (opacity <= 0.01) return;
+    const offset = phase === 'closing' ? -24 * progress : -24 - 24 * progress;
+    const lineStops = [
+        { y: 0, alpha: 0.22 },
+        { y: 12, alpha: 0.18 },
+        { y: 24, alpha: 0.14 },
+        { y: 36, alpha: 0.10 },
+    ];
+    ctx.lineWidth = 1;
+    ctx.strokeStyle = '#fff';
+    for (let tileY = -48 + (offset % 48); tileY < height + 48; tileY += 48) {
+        for (const stop of lineStops) {
+            ctx.globalAlpha = opacity * stop.alpha;
+            const y = Math.round(tileY + stop.y) + 0.5;
+            ctx.beginPath();
+            ctx.moveTo(0, y);
+            ctx.lineTo(width, y);
+            ctx.stroke();
+        }
+    }
+    ctx.globalAlpha = 1;
+}
+
+function drawSceneWipeGlow(ctx, cx, cy, radius, progress, phase) {
+    const opacity = phase === 'closing'
+        ? (progress < 0.35 ? progress / 0.35 * 0.75 : 0.75 + (progress - 0.35) / 0.65 * (0.45 - 0.75))
+        : (progress < 0.65 ? 0.45 + progress / 0.65 * (0.75 - 0.45) : 0.75 * (1 - (progress - 0.65) / 0.35));
+    if (opacity <= 0.01) return;
+    const glowRadius = Math.max(radius * 0.74, 16);
+    const gradient = ctx.createRadialGradient(cx, cy, 0, cx, cy, glowRadius);
+    gradient.addColorStop(0, `rgba(255,255,255,${0.4 * opacity})`);
+    gradient.addColorStop(0.28, `rgba(255,255,255,${0.08 * opacity})`);
+    gradient.addColorStop(0.52, 'rgba(255,255,255,0)');
+    gradient.addColorStop(1, 'rgba(255,255,255,0)');
+    ctx.fillStyle = gradient;
+    ctx.fillRect(cx - glowRadius, cy - glowRadius, glowRadius * 2, glowRadius * 2);
 }
 
 function getDockScrollKey(el) {
@@ -281,22 +488,77 @@ function renderZoomLevelBar(pet = __lastPet) {
         <button class="mh-zoom-bar ${pointerConflictsWithEmergency ? 'has-pointer-emergency-icon' : ''}" id="mhZoomLevelBar" type="button"
             style="--zoom-pos:${progress.toFixed(4)}"
             title="${escapeHtml(hint)}" aria-label="${escapeHtml(hint)}" aria-hidden="true" tabindex="-1" disabled data-tip="${escapeHtml(hint)}">
-            <span class="mh-zoom-bar-track" aria-hidden="true">
-                ${ZOOM_BAR_STAGES.map((stage, index) => {
-                    const emergency = getZoomStageEmergency(stage.id, pet);
-                    return `
-                    <span class="mh-zoom-bar-stage ${index === lvl ? 'active' : ''}" style="--stage-color:${stage.color}" title="${escapeHtml(emergency?.tip || stage.label)}">
-                        <i>${escapeHtml(stage.label)}</i>
-                    </span>`;
-                }).join('')}
-            </span>
-            ${ZOOM_BAR_STAGES.map((stage, index) => {
-                const emergency = getZoomStageEmergency(stage.id, pet);
-                return emergency ? `<span class="mh-zoom-bar-emergency" data-zoom-emergency="${escapeHtml(stage.id)}" style="--stage-index:${index}" title="${escapeHtml(emergency.tip)}">${emergency.iconHtml}</span>` : '';
-            }).join('')}
+            ${renderZoomLevelBarInner(pet, lvl)}
             <span class="mh-zoom-bar-pointer" aria-hidden="true"></span>
         </button>
     `;
+}
+
+function renderZoomLevelBarInner(pet = __lastPet, lvl = clampLvl(state.zoomLevel ?? 0)) {
+    return `
+        <span class="mh-zoom-bar-track" aria-hidden="true">
+            ${ZOOM_BAR_STAGES.map((stage, index) => {
+                const emergency = getZoomStageEmergency(stage.id, pet);
+                return `
+                <span class="mh-zoom-bar-stage ${index === lvl ? 'active' : ''}" data-zoom-stage="${escapeHtml(stage.id)}" style="--stage-color:${stage.color}" title="${escapeHtml(emergency?.tip || stage.label)}">
+                    <i>${escapeHtml(stage.label)}</i>
+                </span>`;
+            }).join('')}
+        </span>
+        ${ZOOM_BAR_STAGES.map((stage, index) => {
+            const emergency = getZoomStageEmergency(stage.id, pet);
+            return emergency ? `<span class="mh-zoom-bar-emergency" data-zoom-emergency="${escapeHtml(stage.id)}" style="--stage-index:${index}" title="${escapeHtml(emergency.tip)}">${emergency.iconHtml}</span>` : '';
+        }).join('')}
+    `;
+}
+
+function ensureZoomLevelBarStructure(bar, pet = __lastPet) {
+    if (!bar) return;
+    const stages = bar.querySelectorAll('.mh-zoom-bar-stage');
+    const pointer = bar.querySelector('.mh-zoom-bar-pointer');
+    const track = bar.querySelector('.mh-zoom-bar-track');
+    if (!track || !pointer || stages.length !== ZOOM_BAR_STAGES.length) {
+        bar.innerHTML = `${renderZoomLevelBarInner(pet)}<span class="mh-zoom-bar-pointer" aria-hidden="true"></span>`;
+    }
+}
+
+function syncZoomLevelBar(bar, pet = __lastPet) {
+    if (!bar) return null;
+    ensureZoomLevelBarStructure(bar, pet);
+    const lvl = clampLvl(state.zoomLevel ?? 0);
+    const hint = getZoomLevelHint(lvl, pet);
+    bar.style.setProperty('--zoom-pos', getZoomBarProgress(visualCameraZoom || cameraZoom).toFixed(4));
+    bar.title = hint;
+    bar.setAttribute('aria-label', hint);
+    bar.dataset.tip = hint;
+    bar.querySelectorAll('.mh-zoom-bar-stage').forEach((stageEl, index) => {
+        const stage = ZOOM_BAR_STAGES[index];
+        if (!stage) return;
+        const emergency = getZoomStageEmergency(stage.id, pet);
+        stageEl.classList.toggle('active', index === lvl);
+        stageEl.style.setProperty('--stage-color', stage.color);
+        stageEl.title = emergency?.tip || stage.label;
+    });
+    refreshZoomLevelBarEmergency(pet, bar);
+    updateZoomLevelBarPointer();
+    return bar;
+}
+
+function ensureZoomLevelBar(root = document, pet = __lastPet) {
+    const host = root.querySelector?.('#mhStage') || root;
+    let bar = host?.querySelector?.('#mhZoomLevelBar') || document.getElementById('mhZoomLevelBar');
+    if (isZoomLevelBarSuppressed()) {
+        bar?.remove();
+        return null;
+    }
+    if (!bar && host?.insertAdjacentHTML) {
+        host.insertAdjacentHTML('beforeend', renderZoomLevelBar(pet));
+        bar = host.querySelector?.('#mhZoomLevelBar') || document.getElementById('mhZoomLevelBar');
+    }
+    if (!bar) return null;
+    syncZoomLevelBar(bar, pet);
+    bindZoomLevelBar(host);
+    return bar;
 }
 
 function getZoomStageEmergency(stageId, pet = __lastPet) {
@@ -419,11 +681,8 @@ function closeZoomLevelBarTips() {
 }
 
 function refreshZoomLevelBar(root = document) {
-    const bar = root.querySelector?.('#mhZoomLevelBar') || document.getElementById('mhZoomLevelBar');
+    const bar = ensureZoomLevelBar(root, __lastPet);
     if (!bar) return;
-    bar.outerHTML = renderZoomLevelBar();
-    bindZoomLevelBar(root);
-    updateZoomLevelBarPointer();
     if (!isAutoShowLevelBarEnabled()) showZoomLevelBar();
 }
 
@@ -753,13 +1012,44 @@ function renderTopbarHudItems(pet, lvl = state.zoomLevel) {
     }).join('');
 }
 
+function getTopbarHudSignature(lvl = state.zoomLevel) {
+    return getTopbarItems(lvl).map(item => `${item.type}:${item.key}`).join('|');
+}
+
 function refreshTopbarStatPills(pet = __lastPet) {
     const root = document.getElementById('mhTopbarStats');
     if (!root || !pet) return;
-    root.innerHTML = renderTopbarHudItems(pet);
-    bindHudTips(document);
-    bindTopbarStatDetails(document, pet);
-    bindTopbarResourceShop(document, __lastCallbacks);
+    const signature = getTopbarHudSignature();
+    if (root.dataset.topbarSignature !== signature) {
+        root.innerHTML = renderTopbarHudItems(pet);
+        root.dataset.topbarSignature = signature;
+        bindHudTips(document);
+        bindTopbarStatDetails(document, pet);
+        bindTopbarResourceShop(document, __lastCallbacks);
+        return;
+    }
+    root.querySelectorAll('[data-hud-value]').forEach((el) => {
+        const key = el.dataset.hudValue;
+        if (!key) return;
+        el.textContent = String(resourceValue(key));
+    });
+    getTopbarStatKeys().forEach((key) => {
+        const valueEl = root.querySelector(`[data-mh-topbar-stat-value="${key}"]`);
+        if (!valueEl) return;
+        const item = PET_STAT_ITEMS.find(it => it.k === key);
+        const value = statValue(pet, key);
+        const pill = valueEl.closest('.topbar-stat-pill');
+        valueEl.dataset.statValue = String(value);
+        valueEl.textContent = String(value);
+        if (!pill || !item) return;
+        const level = stateLevel(value);
+        const tip = `${t(item.labelKey)}：${value} · ${item.lowText}`;
+        pill.classList.remove('state-good', 'state-warn', 'state-danger');
+        pill.classList.add(`state-${level.key}`);
+        pill.title = tip;
+        pill.setAttribute('aria-label', tip);
+        pill.dataset.tip = tip;
+    });
 }
 
 function getLowestCareStat(pet) {
@@ -806,8 +1096,7 @@ function refreshPetStateUi(pet) {
     refreshZoomLevelBarEmergency(current);
 }
 
-function refreshZoomLevelBarEmergency(pet = __lastPet) {
-    const bar = document.getElementById('mhZoomLevelBar');
+function refreshZoomLevelBarEmergency(pet = __lastPet, bar = document.getElementById('mhZoomLevelBar')) {
     if (!bar) return;
     const hint = getZoomLevelHint(state.zoomLevel, pet);
     bar.title = hint;
@@ -815,7 +1104,7 @@ function refreshZoomLevelBarEmergency(pet = __lastPet) {
     bar.dataset.tip = hint;
     let pointerConflictsWithEmergency = false;
     ZOOM_BAR_STAGES.forEach((stage, index) => {
-        const stageEl = bar.querySelector(`.mh-zoom-bar-stage:nth-child(${index + 1})`);
+        const stageEl = bar.querySelector(`.mh-zoom-bar-stage[data-zoom-stage="${stage.id}"]`);
         const emergency = getZoomStageEmergency(stage.id, pet);
         if (emergency && index === clampLvl(state.zoomLevel)) pointerConflictsWithEmergency = true;
         if (stageEl) stageEl.title = emergency?.tip || stage.label;
@@ -1107,104 +1396,75 @@ function runZoomTransition(from, to) {
     // 延迟启动 wipe，让聚焦放大展开一段后 wipe 从焦点膨胀覆盖
     const wipeDelay = useFocus ? 260 : 0;
     if (useFocus) dock.classList.add('mh-dock-fading');
-    setTimeout(() => {
+    setTimeout(async () => {
         // 2) 旧 stage 微缩放 + dock 滑出（聚焦模式下跳过额外缩放，由 focus-zoom 一并完成）
         if (!useFocus) stage.classList.add(direction === 'in' ? 'zoom-anim-out-in' : 'zoom-anim-out-out');
         if (!useFocus) dock.classList.add('mh-dock-fading');
 
-        // 3) Circle-wipe 关闭（遮罩从焦点元素中心膨胀覆盖旧场景）
-        const wipe = document.createElement('div');
-        wipe.className = 'scene-wipe';
-        wipe.style.setProperty('--wipe-cx', cx + '%');
-        wipe.style.setProperty('--wipe-cy', cy + '%');
+        // 3) Canvas circle-wipe 关闭（遮罩从焦点元素中心膨胀覆盖旧场景）
         const fromWipeColor = LEVELS[from]?.wipeColor;
-        if (fromWipeColor) wipe.style.setProperty('--wipe-bg', fromWipeColor);
-        document.body.appendChild(wipe);
-        requestAnimationFrame(() => wipe.classList.add('sw-closing'));
+        await playSceneWipe({ phase: 'closing', cx, cy, color: fromWipeColor || '#0c1025', duration: 580 });
 
         // 4) 关闭动画结束 → 旧场景完全被遮盖 → DOM 替换 → 打开动画
-        const onClosed = (e) => {
-            if (e.animationName !== 'wipeClose') return;
-            wipe.removeEventListener('animationend', onClosed);
+        if (useFocus) {
+            stage.classList.remove('mh-stage-focus-zoom');
+            stage.style.transformOrigin = '';
+        }
 
-            // 清理聚焦放大
-            if (useFocus) {
-                stage.classList.remove('mh-stage-focus-zoom');
-                stage.style.transformOrigin = '';
-            }
+        const pet = __lastPet;
+        state.zoomLevel = to;
+        state.lastHomeZoomLevel = to;
+        const newLevel = LEVELS[to];
 
-            const pet = __lastPet;
-            state.zoomLevel = to;
-            state.lastHomeZoomLevel = to;
-            const newLevel = LEVELS[to];
+        const bestCamera = getLevelBestCamera(newLevel);
+        cameraZoom = bestCamera;
+        visualCameraZoom = bestCamera;
 
-            const bestCamera = getLevelBestCamera(newLevel);
-            cameraZoom = bestCamera;
-            visualCameraZoom = bestCamera;
+        // DOM 替换（完全被 wipe 遮盖，用户不可见）
+        const inner = document.getElementById('mhStageInner');
+        rememberDockScrollPositions(dock);
+        if (!inner || !useCachedLevel(to, pet, inner, dock)) {
+            if (inner) inner.innerHTML = newLevel.stageHtml(pet);
+            dock.innerHTML = newLevel.dockHtml(pet);
+        }
 
-            // DOM 替换（完全被 wipe 遮盖，用户不可见）
-            const inner = document.getElementById('mhStageInner');
-            rememberDockScrollPositions(dock);
-            if (!inner || !useCachedLevel(to, pet, inner, dock)) {
-                if (inner) inner.innerHTML = newLevel.stageHtml(pet);
-                dock.innerHTML = newLevel.dockHtml(pet);
-            }
+        const zd = CONFIG.zoomLevels[to];
+        const lab = document.getElementById('mhZoomLabel');
+        if (lab) lab.innerHTML = `${zd.emoji} ${escapeHtml(zd.name)} · <i>${escapeHtml(zd.subtitle)}</i>`;
+        stage.className = `mh-stage zoom-${zd.id} ${state.isDecorMode && (to === 1 || to === 2) ? 'decor-mode' : ''} ${state.isFeedMode && to === 2 ? 'feed-mode' : ''}`;
+        stage.style.touchAction = 'none';
+        refreshZoomLevelBar(stage);
 
-            const zd = CONFIG.zoomLevels[to];
-            const lab = document.getElementById('mhZoomLabel');
-            if (lab) lab.innerHTML = `${zd.emoji} ${escapeHtml(zd.name)} · <i>${escapeHtml(zd.subtitle)}</i>`;
+        const ctx = makeCtx(pet, __lastCallbacks);
+        newLevel.bindStage(pet, ctx);
+        stopCameraAnimation();
+        scheduleCameraRender();
+
+        // 新 stage 进场缩放 + dock 滑入
+        stage.classList.add(direction === 'in' ? 'zoom-anim-in-in' : 'zoom-anim-in-out');
+        dock.classList.remove('mh-dock-fading');
+        dock.classList.add('mh-dock-fade-in');
+
+        // 5) 打开阶段：回收至屏幕中央
+        const toWipeColor = LEVELS[to]?.wipeColor;
+        await new Promise(resolve => requestAnimationFrame(() => requestAnimationFrame(resolve)));
+        await playSceneWipe({ phase: 'opening', cx: 50, cy: 50, color: toWipeColor || '#0c1025', duration: 660 });
+
+        stage.classList.remove('zoom-anim-in-in', 'zoom-anim-in-out');
+        dock.classList.remove('mh-dock-fade-in');
+        __mhZoomAnimating = false;
+        __levelJumpCompleted = true;
+        scheduleTransitionFollowup(() => {
             refreshTopbarStatPills(pet);
-            stage.className = `mh-stage zoom-${zd.id} ${state.isDecorMode && (to === 1 || to === 2) ? 'decor-mode' : ''} ${state.isFeedMode && to === 2 ? 'feed-mode' : ''}`;
-            stage.style.touchAction = 'none';
-            refreshZoomLevelBar(stage);
-
-            const ctx = makeCtx(pet, __lastCallbacks);
-            newLevel.bindStage(pet, ctx);
             newLevel.bindDock(pet, ctx);
             bindDockHorizontalScroll();
             restoreDockScrollPositions(dock);
-            stopCameraAnimation();
-            scheduleCameraRender();
-
-            // 新 stage 进场缩放 + dock 滑入
-            stage.classList.add(direction === 'in' ? 'zoom-anim-in-in' : 'zoom-anim-in-out');
-            dock.classList.remove('mh-dock-fading');
-            dock.classList.add('mh-dock-fade-in');
-
-            // 5) 打开阶段：回收至屏幕中央
-            const toWipeColor = LEVELS[to]?.wipeColor;
-            if (toWipeColor) wipe.style.setProperty('--wipe-bg', toWipeColor);
-            wipe.style.setProperty('--wipe-cx', '50%');
-            wipe.style.setProperty('--wipe-cy', '50%');
-            wipe.classList.remove('sw-closing');
-            // 等两帧：第一帧提交新 DOM 布局，第二帧完成光栅化，再启动收缩动画
-            requestAnimationFrame(() => {
-                requestAnimationFrame(() => {
-                    wipe.classList.add('sw-opening');
-                });
-            });
-
-            const onOpened = (e) => {
-                if (e.animationName !== 'wipeOpen') return;
-                wipe.removeEventListener('animationend', onOpened);
-                wipe.remove();
-                stage.classList.remove('zoom-anim-in-in', 'zoom-anim-in-out');
-                dock.classList.remove('mh-dock-fade-in');
-                __mhZoomAnimating = false;
-                __levelJumpCompleted = true;
-                showZoomLevelBar({ autoHide: true, delay: 2000, requireLevelJumpCompleted: true });
-                scheduleCameraIdleReturn();
-            };
-            wipe.addEventListener('animationend', onOpened);
-
-            // onEnter 延后到下一帧（重型初始化不阻塞 wipe 打开动画）
-            requestAnimationFrame(() => {
-                newLevel.onEnter?.(pet, ctx);
-                if (to === 1) newLevel.centerPet?.(pet, { animate: true, duration: 460 });
-                schedulePreRenderAdjacent();
-            });
-        };
-        wipe.addEventListener('animationend', onClosed);
+            newLevel.onEnter?.(pet, ctx);
+            if (to === 1) newLevel.centerPet?.(pet, { animate: true, duration: 460 });
+            schedulePreRenderAdjacent();
+        });
+        showZoomLevelBar({ autoHide: true, delay: 2000, requireLevelJumpCompleted: true });
+        scheduleCameraIdleReturn();
     }, wipeDelay);
 }
 
@@ -1214,6 +1474,8 @@ function runZoomTransition(from, to) {
 function bindStageZoomGestures() {
     const stage = $('mhStage');
     if (!stage) return;
+    __stageZoomWindowCleanup?.();
+    __stageZoomWindowCleanup = null;
 
     // 滚轮
     const onWheelZoom = (e) => {
@@ -1377,7 +1639,7 @@ function bindStageZoomGestures() {
         mouseStartY = e.clientY;
         mouseStartZoom = cameraZoom;
     });
-    window.addEventListener('mousemove', (e) => {
+    const onMouseMove = (e) => {
         if (!mouseDragging || __mhZoomAnimating || __pendingZoomTransitionTimer) return;
         const dx = e.clientX - mouseStartX;
         const dy = e.clientY - mouseStartY;
@@ -1408,8 +1670,8 @@ function bindStageZoomGestures() {
         }
         setCameraZoomFromGesture(target, target >= cameraZoom ? 'in' : 'out');
         scheduleCameraIdleReturn();
-    });
-    window.addEventListener('mouseup', () => {
+    };
+    const onMouseUp = () => {
         if (!mouseDragging) return;
         mouseDragging = false;
         if (mouseMoved) {
@@ -1419,7 +1681,13 @@ function bindStageZoomGestures() {
         mouseMoved = false;
         if (mouseGestureStarted) markCameraGestureEnd();
         mouseGestureStarted = false;
-    });
+    };
+    window.addEventListener('mousemove', onMouseMove);
+    window.addEventListener('mouseup', onMouseUp);
+    __stageZoomWindowCleanup = () => {
+        window.removeEventListener('mousemove', onMouseMove);
+        window.removeEventListener('mouseup', onMouseUp);
+    };
 }
 
 function normalizeWheelDelta(e) {
@@ -1704,6 +1972,7 @@ function showMenuModal(callbacks) {
         { k: 'petList',   icon: '🐾', label: t('petList') },
         { k: 'shop',      icon: '🛒', label: t('shop') },
         { k: 'inventory', icon: '🎒', label: t('inventory') },
+        { k: 'mailbox',   icon: '💌', label: '邮箱' },
         { k: 'help',      icon: '❔', label: t('help') },
         { k: 'profile',   icon: '📋', label: t('profile') },
         { k: 'settings',  icon: '⚙️', label: t('settings') },

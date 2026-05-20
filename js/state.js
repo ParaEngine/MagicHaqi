@@ -19,6 +19,9 @@ export const state = {
     currentField: 'land',       // 'land' | 'water' | 'sky'
     isDecorMode: false,
     isFeedMode: false,
+    activePetFieldPose: null,
+    activePetRoomPose: null,
+    activePetRoomFocusPose: null,
     biofuel: 0,                 // recycled from pet poop, used for "space travel"
     inventory: {},              // runtime map { itemId: count }; storage uses ordered arrays
     inventoryOrder: [],         // user-defined display order, persisted in user/inventory.json
@@ -37,6 +40,8 @@ export const state = {
     planetInfrastructure: {},   // buildingId -> { level, builtAt, upgradedAt }
     planetMining: {},           // offline coin mining { lastCollectedHourAt, lastCollectedAt }
     haqiIslandFarewells: [],     // pets that completed the adult farewell ceremony
+    invitedPets: [],             // recent pets accepted from share links (latest 10)
+    activeInvitedPet: null,       // transient invited pet currently visiting the field scene
     remotePlanetDiscoveries: {}, // remoteId -> { visitedAt, equipmentId, elementalAttribute, dna }
     remoteElementStocks: {},     // remoteId -> stored element tons on the user planet
     lifetimeStats: {             // cumulative lifetime counters for achievements

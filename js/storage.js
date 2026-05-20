@@ -79,10 +79,29 @@ const PATHS = {
     userProfile: 'user/profile.json',
     layouts:     'user/layouts.json',
     inventory:   'user/inventory.json',
+    postcardList: 'user/postcard_list.json',
     pet:        (id) => `pets/${id}.json`,
     memory:     (id) => `pets/${id}.memory.md`,
     chatLog:    (id) => `pets/${id}.chat.log`,
 };
+
+function normalizePostcardRecord(record) {
+    if (!record || typeof record !== 'object') return null;
+    const fromUsername = String(record.fromUsername || record.from || '').trim();
+    const petId = String(record.petId || '').trim();
+    if (!fromUsername || !petId) return null;
+    return {
+        fromUsername,
+        petId,
+        text: String(record.text || '').slice(0, 500),
+        layout: String(record.layout || 'idle').slice(0, 120),
+        dateReceived: Number.isFinite(record.dateReceived) ? record.dateReceived : Date.now(),
+    };
+}
+
+function postcardRecordKey(record) {
+    return `${record.fromUsername}\n${record.petId}\n${record.text}\n${record.layout}`;
+}
 
 const NON_PERSISTENT_PLANET_VISITOR_TYPES = new Set(['achievement', 'mining']);
 
@@ -156,6 +175,7 @@ function getUserProfilePayload() {
         planetInfrastructure: state.planetInfrastructure && typeof state.planetInfrastructure === 'object' ? state.planetInfrastructure : {},
         planetMining: state.planetMining && typeof state.planetMining === 'object' ? state.planetMining : {},
         haqiIslandFarewells: Array.isArray(state.haqiIslandFarewells) ? state.haqiIslandFarewells.slice(0, 200).map(createFarewellPayload) : [],
+        invitedPets: Array.isArray(state.invitedPets) ? state.invitedPets.slice(0, 10).map(createInvitedPetPayload) : [],
         remotePlanetDiscoveries: state.remotePlanetDiscoveries && typeof state.remotePlanetDiscoveries === 'object' ? state.remotePlanetDiscoveries : {},
         remoteElementStocks: state.remoteElementStocks && typeof state.remoteElementStocks === 'object' ? state.remoteElementStocks : {},
         lifetimeStats: state.lifetimeStats && typeof state.lifetimeStats === 'object' ? state.lifetimeStats : {},
@@ -169,6 +189,21 @@ function createFarewellPayload(record) {
     if (!record || typeof record !== 'object') return record;
     const { stageName, stageEmoji, ...payload } = record;
     return payload;
+}
+
+function createInvitedPetPayload(record) {
+    if (!record || typeof record !== 'object') return record;
+    const pet = record.pet && typeof record.pet === 'object' ? createPetPayload(record.pet) : null;
+    return {
+        id: typeof record.id === 'string' ? record.id : '',
+        from: typeof record.from === 'string' ? record.from : '',
+        petId: typeof record.petId === 'string' ? record.petId : '',
+        text: typeof record.text === 'string' ? record.text : '',
+        layout: typeof record.layout === 'string' ? record.layout : Math.max(1, Math.min(4, Number(record.layout) || 1)),
+        acceptedAt: Number.isFinite(record.acceptedAt) ? record.acceptedAt : Date.now(),
+        friendStatus: typeof record.friendStatus === 'string' ? record.friendStatus : '',
+        pet,
+    };
 }
 
 function normalizePetRuntimeData(pet) {
@@ -211,6 +246,8 @@ export async function loadUserProfile() {
     state.planetInfrastructure = p.planetInfrastructure && typeof p.planetInfrastructure === 'object' ? p.planetInfrastructure : {};
     state.planetMining = p.planetMining && typeof p.planetMining === 'object' ? p.planetMining : {};
     state.haqiIslandFarewells = Array.isArray(p.haqiIslandFarewells) ? p.haqiIslandFarewells.slice(0, 200) : [];
+    state.invitedPets = Array.isArray(p.invitedPets) ? p.invitedPets.slice(0, 10).filter(item => item && typeof item === 'object') : [];
+    state.activeInvitedPet = state.invitedPets[0] || null;
     state.remotePlanetDiscoveries = p.remotePlanetDiscoveries && typeof p.remotePlanetDiscoveries === 'object' ? p.remotePlanetDiscoveries : {};
     state.remoteElementStocks = p.remoteElementStocks && typeof p.remoteElementStocks === 'object' ? p.remoteElementStocks : {};
     const ls = p.lifetimeStats && typeof p.lifetimeStats === 'object' ? p.lifetimeStats : {};
@@ -236,7 +273,49 @@ export function saveUserProfileDebounced() {
     saveJSONDebounced(PATHS.userProfile, getUserProfilePayload());
 }
 
+export async function loadPostcardList() {
+    const list = await readJSON(PATHS.postcardList, []);
+    if (!Array.isArray(list)) return [];
+    return list.map(normalizePostcardRecord).filter(Boolean).slice(0, 500);
+}
+
+export async function savePostcardList(list) {
+    const normalized = Array.isArray(list) ? list.map(normalizePostcardRecord).filter(Boolean).slice(0, 500) : [];
+    await writeJSON(PATHS.postcardList, normalized);
+    return normalized;
+}
+
+export async function addPostcardRecord(record) {
+    const normalized = normalizePostcardRecord(record);
+    if (!normalized) return [];
+    const existing = await loadPostcardList();
+    const key = postcardRecordKey(normalized);
+    const next = [normalized, ...existing.filter(item => postcardRecordKey(item) !== key)].slice(0, 500);
+    await savePostcardList(next);
+    return next;
+}
+
 // ========== 宠物 ==========
+export async function loadPet(petId) {
+    if (!petId) return null;
+    if (state.pets[petId]) return state.pets[petId];
+    const pet = await readJSON(PATHS.pet(petId), null);
+    if (!pet || !pet.id) return null;
+    normalizePetRuntimeData(pet);
+    state.pets[pet.id] = pet;
+    if (!state.petOrder.includes(pet.id)) state.petOrder.push(pet.id);
+    return pet;
+}
+
+export async function loadPets(petIds = []) {
+    const loaded = [];
+    for (const id of petIds) {
+        const pet = await loadPet(id);
+        if (pet) loaded.push(pet);
+    }
+    return loaded;
+}
+
 export async function loadAllPets() {
     state.pets = {};
     const profile = await readJSON(PATHS.userProfile, {});
@@ -244,19 +323,25 @@ export async function loadAllPets() {
         ? profile.petOrder.filter(id => typeof id === 'string' && id)
         : (state.petOrder || []);
     const profileCurrentPetId = typeof profile?.currentPetId === 'string' && profile.currentPetId ? profile.currentPetId : null;
-    state.petOrder = [];
-    for (const id of ids) {
-        const p = await readJSON(PATHS.pet(id), null);
-        if (p && p.id) {
-            normalizePetRuntimeData(p);
-            state.pets[p.id] = p;
-            state.petOrder.push(p.id);
+    state.petOrder = ids.slice();
+    state.currentPetId = profileCurrentPetId || state.currentPetId || ids[0] || null;
+
+    if (state.currentPetId) {
+        const current = await loadPet(state.currentPetId);
+        if (!current) state.currentPetId = null;
+    }
+
+    if (!state.currentPetId && ids.length > 0) {
+        for (const id of ids) {
+            const pet = await loadPet(id);
+            if (pet) {
+                state.currentPetId = pet.id;
+                break;
+            }
         }
     }
-    state.currentPetId = profileCurrentPetId || state.currentPetId || null;
-    if (state.currentPetId && !state.pets[state.currentPetId]) state.currentPetId = null;
-    if (!state.currentPetId && state.petOrder.length > 0) state.currentPetId = state.petOrder[0];
-    if (profileCurrentPetId !== state.currentPetId || ids.length !== state.petOrder.length) {
+
+    if (profileCurrentPetId !== state.currentPetId) {
         await saveUserProfile();
     }
 
@@ -310,6 +395,10 @@ export async function ensurePetData(petId) {
 
 export async function savePet(pet) {
     if (!pet?.id) return;
+    const existing = _petSaveTimers.get(pet.id);
+    if (existing) clearTimeout(existing);
+    _petSaveTimers.delete(pet.id);
+    _petSavePending.delete(pet.id);
     normalizePetRuntimeData(pet);
     state.pets[pet.id] = pet;
     if (!state.petOrder.includes(pet.id)) {
@@ -327,10 +416,18 @@ function _flushPetSave(petId) {
     const pet = _petSavePending.get(petId);
     _petSavePending.delete(petId);
     _petSaveTimers.delete(petId);
+    if (petId !== state.currentPetId) return;
     if (pet) writeJSON(PATHS.pet(petId), createPetPayload(pet));
 }
 export function savePetDebounced(pet) {
     if (!pet?.id) return;
+    if (pet.id !== state.currentPetId) {
+        _petSavePending.delete(pet.id);
+        const existing = _petSaveTimers.get(pet.id);
+        if (existing) clearTimeout(existing);
+        _petSaveTimers.delete(pet.id);
+        return;
+    }
     normalizePetRuntimeData(pet);
     state.pets[pet.id] = pet;
     _petSavePending.set(pet.id, pet);
@@ -421,6 +518,7 @@ export async function clearStoredData() {
         writeFileSafe(PATHS.userProfile, ''),
         writeFileSafe(PATHS.layouts, ''),
         writeFileSafe(PATHS.inventory, ''),
+        writeFileSafe(PATHS.postcardList, ''),
         ...ids.map(id => writeFileSafe(PATHS.pet(id), '')),
     ]);
     state.layouts = {};

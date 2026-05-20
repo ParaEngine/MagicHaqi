@@ -183,6 +183,7 @@ export function wakePetForPlay(pet, now = Date.now()) {
 }
 
 export function normalizePetSleepState(pet, now = Date.now()) {
+    if (pet?.id && pet.id !== state.currentPetId) return false;
     if (!isPetSleeping(pet)) return false;
     if (!isNightSleepTime(now) && (Number(pet.stats?.hunger) || 0) > sleepEnergyCap(pet)) {
         return wakePet(pet, now, { skipRecover: true });
@@ -376,7 +377,7 @@ function _continueStartedEggHatch(pet) {
 function _isEggSheetReadyToReveal(pet) {
     if (!pet?.imageSheetUrl) return false;
     const processed = getProcessedSheet(pet.imageSheetUrl);
-    return (processed?.status === 'loaded' && !!processed.dataUrl) || processed?.status === 'raw';
+    return processed?.status === 'loaded' && !!processed.dataUrl;
 }
 
 function _finishReadyEggHatch(pet) {
@@ -453,6 +454,7 @@ function _petEffectAnchor(el) {
 }
 
 function _isPetFilthy(pet) {
+    if (pet?.id && pet.id !== state.currentPetId) return false;
     const stats = getRuntimePetStats(pet);
     return Number(stats.clean ?? 100) <= 0;
 }
@@ -1458,13 +1460,13 @@ export function getPetSpriteCell(pet) {
  * @param {string} [opts.alt] 图片 alt
  * @param {string} [opts.extraClass] 附加 class（例如 'floaty'）
  * @param {'idle'|'walk'} [opts.motion] 动作模式：'idle'=轻微呼吸（默认）, 'walk'=史莱姆 squash/stretch
- * @param {boolean} [opts.requireProcessedTexture] true 时，精灵图透明化完成前保持不可见
+ * @param {boolean} [opts.requireProcessedTexture] false 时允许透明化完成前显示原始图
  */
 export function petArtHtml(pet, opts = {}) {
     const alt = escapeHtml(opts.alt || '');
     const extraClass = opts.extraClass ? ` ${opts.extraClass}` : '';
     const motion = opts.motion === 'walk' ? 'walk' : 'idle';
-    const requireProcessedTexture = !!opts.requireProcessedTexture;
+    const requireProcessedTexture = opts.requireProcessedTexture !== false;
     const cell = getPetSpriteCell(pet);
     const petId = escapeHtml(pet?.id || '');
     const requireAttr = requireProcessedTexture ? ' data-mh-pet-require-processed="1"' : '';
@@ -1485,7 +1487,7 @@ export function petArtHtml(pet, opts = {}) {
             ${eggSvg}
         </div>`;
     }
-    // 已有 sheet：先显示蛋占位（避免黑色背景闪烁），mountPetArt 会在透明化处理完成后接管
+    // 已有 sheet：先保持不可见，mountPetArt 会在透明化处理完成后接管
     return `<div class="mh-pet-art mh-pet-art-egg${extraClass}" ${hostAttrs}
         style="${hostStyle};display:flex;align-items:center;justify-content:center">
         ${eggSvg}

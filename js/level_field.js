@@ -2,18 +2,19 @@
 
 import { $, $$, escapeHtml, showToast } from './utils.js';
 import { canPlaceItemInArea, CONFIG, DECO_VISUALS, findLargestHouseInLayout, getPlacedItemZOrder, isHouseItem, SHOP_ITEMS } from './config.js';
-import { getActivePlanetWeather, state, setCurrentField } from './state.js';
-import { getLayout, savePetDebounced, saveUserProfileDebounced } from './storage.js';
+import { getActivePlanetWeather, notify, state, setCurrentField } from './state.js';
+import { getLayout, loadPets, savePetDebounced, saveUserProfileDebounced } from './storage.js';
 import { displayPetName } from './dna.js';
-import { getPetSleepActionState, isPetInteractionBlocked, petArtHtml, playEggWelcomeOnce, playPetClickFeedback, playPetHappy, randomPetTalk, sleepingInteractionText } from './pet.js';
+import { buildEggSvg, getPetSpriteCell, getPetSleepActionState, isPetInteractionBlocked, petArtHtml, playEggWelcomeOnce, playPetClickFeedback, playPetHappy, randomPetTalk, SHEET_COLS, SHEET_ROWS, sleepingInteractionText } from './pet.js';
 import { markPetCared, normalizePetPoops } from './petTick.js';
-import { canPetAppearInField, getNannyCareRemainingMs, getPetLocationType, getReleasedPetHome, hasNannyCare } from './petLifecycle.js';
+import { canPetAppearInField, getGeneratedPetLocation, getNannyCareRemainingMs, getPetLocationType, getReleasedPetHome, hasNannyCare, isNearActiveGeneratedPet } from './petLifecycle.js';
 import SoundManager from './soundManager.js';
 
 const soundManager = SoundManager.getInstance();
 
 const ITEM_BY_ID = Object.fromEntries(SHOP_ITEMS.map(it => [it.id, it]));
 const ITEM_Z_INDEX_BASE = 5;
+let fieldPetsLoadedKey = '';
 const DRAG_PLACE_THRESHOLD = 8;
 const FUEL_MACHINE_WORK_DELAY_MS = 3000;
 const FUEL_MACHINE_ANIMATION_MS = 4600;
@@ -324,7 +325,7 @@ function animateFieldPanTo(targetPan, duration, onComplete) {
 function centerFieldPet(pet, { animate = false, duration = 520, onComplete = null } = {}) {
     const petId = pet?.id;
     if (!petId) return false;
-    const petEl = Array.from(document.querySelectorAll('.field-pet-current')).find(el => el.dataset.fieldPet === petId);
+    const petEl = Array.from(document.querySelectorAll('.field-pet')).find(el => el.dataset.fieldPet === petId);
     const bounds = getFieldPanBounds?.();
     if (!petEl || !bounds) return false;
     const leftPct = parseFloat(petEl.style.left);
@@ -568,10 +569,35 @@ function isFieldPositionFree(x, y, fieldLayout, excludeIdx = -1) {
     return true;
 }
 
-function petFieldPosition(pet, fieldId, index) {
-    if (getPetLocationType(pet) === 'released') {
-        const home = getReleasedPetHome(pet);
+function petFieldPosition(pet, fieldId, index, activeFieldPosition = null) {
+    const petId = typeof pet === 'string' ? pet : pet?.id;
+    if (pet?.id && pet.id === state.currentPetId && state.activePetFieldPose?.fieldId === fieldId) {
+        const pose = state.activePetFieldPose;
+        return {
+            x: pose.x,
+            y: pose.y,
+            delay: pose.delay ?? -1,
+            dur: pose.dur ?? 10,
+            dx: pose.dx ?? 0,
+            dy: pose.dy ?? 0,
+        };
+    }
+    if (petId && petId !== state.currentPetId) {
+        const home = getGeneratedPetLocation(pet);
         if (home.kind === 'field' && home.id === fieldId) {
+            if (home.nearActive && activeFieldPosition) {
+                const rng = makeRng(`${getUserSeedBase()}::${fieldId}::near-active-pet::${petId}`);
+                const slot = Math.max(0, (state.petOrder || []).filter(id => id && id !== state.currentPetId).indexOf(petId));
+                const side = slot % 2 === 0 ? -1 : 1;
+                return {
+                    x: clampRange(activeFieldPosition.x + side * (0.09 + rng() * 0.05), 0.08, 0.92),
+                    y: clampRange(activeFieldPosition.y + 0.02 + rng() * 0.08, 0.36, 0.90),
+                    delay: home.delay,
+                    dur: home.dur,
+                    dx: home.dx,
+                    dy: home.dy,
+                };
+            }
             return {
                 x: home.x,
                 y: home.y,
@@ -653,20 +679,22 @@ function fieldPetsRepelledPositions(entries) {
 }
 
 function fieldPetsHtml(currentPet, fieldId) {
-    const petIds = (state.petOrder || []).filter(id => state.pets[id] && canPetAppearInField(state.pets[id], fieldId));
+    const petIds = getFieldPetIds(currentPet, fieldId);
     const orderedIds = petIds.includes(currentPet?.id)
         ? [currentPet.id, ...petIds.filter(id => id !== currentPet.id)]
         : petIds;
     const visibleIds = state.isDecorMode && currentPet?.id
         ? orderedIds.filter(id => id === currentPet.id)
         : orderedIds;
-    const entries = visibleIds.map((id, index) => ({
+    const renderIds = visibleIds.filter(id => state.pets[id]);
+    const activeFieldPosition = currentPet?.id ? petFieldPosition(currentPet, fieldId, 0) : null;
+    const entries = renderIds.map((id, index) => ({
         id,
         fieldId,
-        pos: petFieldPosition(state.pets[id], fieldId, index),
+        pos: id === currentPet?.id ? activeFieldPosition : petFieldPosition(state.pets[id], fieldId, index, activeFieldPosition),
     }));
     const repelledPositions = fieldPetsRepelledPositions(entries);
-    return visibleIds.map((id, index) => {
+    const localHtml = renderIds.map((id, index) => {
         const p = state.pets[id];
         const pos = { ...entries[index].pos, ...repelledPositions[index] };
         const isCurrent = id === currentPet?.id;
@@ -675,10 +703,45 @@ function fieldPetsHtml(currentPet, fieldId) {
         return `
             <div class="pet-sprite field-pet ${isCurrent ? 'field-pet-current' : 'field-pet-friend'}" data-field-pet="${escapeHtml(id)}"
                 style="left:${pct(pos.x)};top:${pct(pos.y)};z-index:${zIndex};--field-wander-delay:${pos.delay}s;--field-wander-dur:${pos.dur}s;--field-wander-x:${pos.dx}px;--field-wander-y:${pos.dy}px">
-                <div class="field-pet-wander" style="width:${size}px;height:${size}px">${petArtHtml(p, { alt: displayPetName(p), motion: 'walk', requireProcessedTexture: true })}</div>
+                <div class="field-pet-wander" style="width:${size}px;height:${size}px">${petArtHtml(p, { alt: displayPetName(p), motion: 'walk' })}</div>
             </div>
         `;
     }).join('');
+    return localHtml + invitedFieldPetHtml(fieldId, renderIds.length);
+}
+
+function getFieldPetIds(currentPet, fieldId) {
+    return (state.petOrder || []).filter((id) => {
+        if (!id) return false;
+        if (id === currentPet?.id) return canPetAppearInField(currentPet, fieldId);
+        if (isNearActiveGeneratedPet(id)) return fieldId === (state.currentField || 'land');
+        return canPetAppearInField(state.pets[id] || id, fieldId);
+    });
+}
+
+function invitedFieldPetHtml(fieldId, index = 0) {
+    const record = state.activeInvitedPet;
+    const pet = record?.pet;
+    if (!pet || state.isDecorMode) return '';
+    const pos = petFieldPosition({ ...pet, id: record.id || pet.id }, fieldId, index + 7);
+    const size = 78;
+    const zIndex = 16 + Math.round(pos.y * 18);
+    return `
+        <div class="pet-sprite field-pet field-pet-friend field-pet-invite" data-field-pet="${escapeHtml(pet.id || '')}" data-invited-field-pet="1"
+            style="left:${pct(pos.x)};top:${pct(pos.y)};z-index:${zIndex};--field-wander-delay:${pos.delay}s;--field-wander-dur:${pos.dur}s;--field-wander-x:${pos.dx}px;--field-wander-y:${pos.dy}px">
+            <div class="field-pet-wander" style="width:${size}px;height:${size}px">${invitedPetArtHtml(pet)}</div>
+        </div>
+    `;
+}
+
+function invitedPetArtHtml(pet) {
+    const cell = getPetSpriteCell({ ...pet, anim: pet?.anim || 'idle' });
+    if (!pet?.imageSheetUrl || !cell) {
+        return `<div class="mh-pet-art mh-pet-art-egg" style="width:100%;height:100%;display:flex;align-items:center;justify-content:center">${buildEggSvg(pet)}</div>`;
+    }
+    const bx = (cell.col * 100 / (SHEET_COLS - 1)).toFixed(3);
+    const by = (cell.row * 100 / (SHEET_ROWS - 1)).toFixed(3);
+    return `<div class="mh-pet-art mh-pet-art-sprite mh-pet-walk" style="width:100%;height:100%;display:block;background-image:url('${escapeHtml(pet.imageSheetUrl)}');background-size:${SHEET_COLS * 100}% ${SHEET_ROWS * 100}%;background-position:${bx}% ${by}%;background-repeat:no-repeat;background-color:transparent;image-rendering:pixelated"></div>`;
 }
 
 function fieldFuelPoopContentsHtml(poopCount) {
@@ -1180,6 +1243,18 @@ export const fieldLevel = {
     },
 
     bindStage(pet, ctx) {
+        const fields = availableFields();
+        const fld = fields.find(f => f.id === state.currentField) || fields[0] || CONFIG.fields[0];
+        const missingPetIds = getFieldPetIds(pet, fld.id).filter(id => id && id !== pet?.id && !state.pets[id]);
+        const loadKey = missingPetIds.join('|');
+        if (loadKey && loadKey !== fieldPetsLoadedKey) {
+            fieldPetsLoadedKey = loadKey;
+            loadPets(missingPetIds)
+                .then(() => {
+                    if (state.zoomLevel === 1) notify();
+                })
+                .catch(e => console.warn('加载星球表面宠物失败', e));
+        }
         setFieldEffectScale();
         applyFieldPan();
         window.addEventListener('resize', applyFieldPan, { passive: true });
@@ -1242,6 +1317,13 @@ export const fieldLevel = {
         $$('.field-pet').forEach(petEl => {
             petEl.onclick = (e) => {
                 e.stopPropagation();
+                if (petEl.dataset.invitedFieldPet === '1') {
+                    const record = state.activeInvitedPet;
+                    const guestPet = record?.pet;
+                    showToast(record?.text || `${displayPetName(guestPet)} 来做客啦`, 'info', 2200);
+                    showFieldPetTalk(petEl, guestPet || pet);
+                    return;
+                }
                 const clickedPet = state.pets[petEl.dataset.fieldPet] || pet;
                 if (isPetInteractionBlocked(clickedPet)) { showToast(sleepingInteractionText(clickedPet), 'info', 1800); return; }
                 if (clickedPet.id === pet.id) {
@@ -1252,8 +1334,13 @@ export const fieldLevel = {
             };
         });
 
+        if (state.activePetFieldPose?.fieldId === state.currentField && state.activePetFieldPose?.targetPetId) {
+            requestAnimationFrame(() => {
+                try { centerFieldPet(pet, { animate: true, duration: 420 }); } catch (_) {}
+            });
+        }
         // 蛋阶段：首次进入 field 时把镜头平移到蛋的位置，然后在蛋上播放烟花特效
-        if (pet?.stage === 'egg') {
+        else if (pet?.stage === 'egg') {
             // 等下一帧，确保 .field-pet-current 已挂载到 DOM 上
             requestAnimationFrame(() => {
                 try {
