@@ -19,9 +19,14 @@ function friendName(item) {
     return user?.username || user?.name || user?.nickname || item?.comment || '好友';
 }
 
-function friendEmail(item) {
+function friendId(item) {
     const user = friendUser(item);
-    return user?.email || item?.email || item?.friendEmail || '';
+    return user?.id || user?.userId || user?._id || item?.friendId || item?.userId || item?.targetId || item?.id || '';
+}
+
+function friendUsername(item) {
+    const user = friendUser(item);
+    return user?.username || item?.username || item?.friendUsername || '';
 }
 
 async function loadFriends() {
@@ -51,8 +56,6 @@ export function renderEmail(panel, _data = {}, { onBack } = {}) {
             <div class="card-flat email-card">
                 <label class="email-label">好友</label>
                 <select class="modal-input" data-email-friend><option value="">正在读取好友...</option></select>
-                <label class="email-label">收件邮箱</label>
-                <input class="modal-input" data-email-to placeholder="好友邮箱" inputmode="email">
                 <label class="email-label">主题</label>
                 <input class="modal-input" data-email-subject maxlength="80" value="来自蛋蛋星球的邮件">
                 <label class="email-label">内容</label>
@@ -63,7 +66,6 @@ export function renderEmail(panel, _data = {}, { onBack } = {}) {
     const back = panel.querySelector('#mhBack');
     if (back) back.onclick = () => onBack?.();
     const select = panel.querySelector('[data-email-friend]');
-    const toInput = panel.querySelector('[data-email-to]');
     const subjectInput = panel.querySelector('[data-email-subject]');
     const textInput = panel.querySelector('[data-email-text]');
     let friends = [];
@@ -71,25 +73,31 @@ export function renderEmail(panel, _data = {}, { onBack } = {}) {
     loadFriends().then(list => {
         friends = list;
         select.innerHTML = friends.length
-            ? '<option value="">选择好友</option>' + friends.map((item, index) => `<option value="${index}">${escapeHtml(friendName(item))}${friendEmail(item) ? ` · ${escapeHtml(friendEmail(item))}` : ''}</option>`).join('')
+            ? '<option value="">选择好友</option>' + friends.map((item, index) => `<option value="${index}">${escapeHtml(friendName(item))}</option>`).join('')
             : '<option value="">暂无好友，请先加好友</option>';
     });
-    select.onchange = () => {
-        const item = friends[Number(select.value)];
-        if (item) toInput.value = friendEmail(item) || '';
-    };
     panel.querySelector('[data-email-send]').onclick = async (e) => {
         const btn = e.currentTarget;
-        const to = (toInput.value || '').trim();
+        const selectedIndex = select.value;
+        const friend = selectedIndex === '' ? null : friends[Number(selectedIndex)];
+        const userId = friendId(friend);
+        const username = friendUsername(friend);
         const subject = (subjectInput.value || '').trim();
         const text = (textInput.value || '').trim();
-        if (!to) { showToast('请输入收件邮箱', 'error'); return; }
+        if (!friend) { showToast('请选择好友', 'error'); return; }
+        if (!userId && !username) { showToast('没有找到好友账号信息', 'error'); return; }
         if (!text) { showToast('请输入邮件内容', 'error'); return; }
-        if (!state.sdk?.socialFriends?.sendEmail) { showToast('当前 SDK 不支持发邮件', 'error'); return; }
+        if (!state.sdk?.socialFriends?.sendMail) { showToast('当前 SDK 不支持站内邮件', 'error'); return; }
         btn.disabled = true;
         try {
-            const from = await state.sdk.getUserEmail?.().catch?.(() => '') || undefined;
-            await state.sdk.socialFriends.sendEmail({ to, subject: subject || '来自蛋蛋星球的邮件', html: textToHtml(text), from });
+            await state.sdk.socialFriends.sendMail({
+                toUserId: userId,
+                toUsername: username,
+                title: subject || '来自蛋蛋星球的邮件',
+                subject: subject || '来自蛋蛋星球的邮件',
+                content: text,
+                html: textToHtml(text),
+            });
             showToast('邮件已发送', 'success');
             onBack?.();
         } catch (err) {

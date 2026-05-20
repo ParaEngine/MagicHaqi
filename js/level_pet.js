@@ -1125,10 +1125,12 @@ function currentPetFocusPoint() {
     return { x: centerX, y: centerY };
 }
 
-function roomCompanionPetsHtml(currentPet, roomId) {
+function roomCompanionPetsHtml(currentPet, roomId, currentPose = null) {
     if (state.isDecorMode) return '';
-    const currentPose = getCurrentPetPose();
-    const occupied = [{ x: currentPose.x, y: currentPose.y }];
+    const isFindingInRoom = state.activePetRoomFocusPose?.roomId === roomId
+        && state.activePetRoomFocusPose?.targetPetId;
+    const petPose = currentPose || getCurrentPetPose();
+    const occupied = isFindingInRoom ? [] : [{ x: petPose.x, y: petPose.y }];
     return roomCompanionPetIds(currentPet, roomId)
         .map(id => state.pets[id])
         .filter(Boolean)
@@ -1218,7 +1220,7 @@ export const petLevel = {
                     <div style="width:100%;height:100%">${petArtHtml(pet, { alt: displayPetName(pet), requireProcessedTexture: true })}</div>
                 </div>
 
-                ${roomCompanionPetsHtml(pet, room.id)}
+                ${roomCompanionPetsHtml(pet, room.id, petPose)}
 
                 <div id="mhFoodLayer" class="mh-food-layer">
                     ${foodLayout.map(({ item: it, index }) => roomItemHtml(it, index)).join('')}

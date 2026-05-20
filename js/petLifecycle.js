@@ -12,6 +12,8 @@ const SESSION_PLACEMENT_SEED = `${Date.now().toString(36)}_${Math.random().toStr
 const GENERATED_LOCATION_CACHE = new Map();
 let GENERATED_NEAR_ACTIVE_KEY = '';
 let GENERATED_NEAR_ACTIVE_IDS = [];
+let GENERATED_NEAR_ACTIVE_FIELD = '';
+let GENERATED_NEAR_ACTIVE_READY = false;
 
 const REMOTE_DESTINATIONS = {
     firebird: { id: 'firebird', name: '火鸟岛', emoji: '🔥', field: 'fire' },
@@ -93,8 +95,10 @@ function useGeneratedLocation(petOrId) {
 
 export function getNearActiveGeneratedPetIds(limit = 2) {
     const currentId = state.currentPetId;
+    if (!currentId) return [];
     const ids = (state.petOrder || []).filter(id => id && id !== currentId);
     const count = Math.max(0, Number(limit) || 0);
+    if (GENERATED_NEAR_ACTIVE_READY) return GENERATED_NEAR_ACTIVE_IDS.slice(0, count);
     const key = `${currentId || ''}::${count}::${ids.join('|')}`;
     if (key === GENERATED_NEAR_ACTIVE_KEY) return GENERATED_NEAR_ACTIVE_IDS.slice(0, count);
     const pool = ids.slice();
@@ -104,7 +108,14 @@ export function getNearActiveGeneratedPetIds(limit = 2) {
     }
     GENERATED_NEAR_ACTIVE_KEY = key;
     GENERATED_NEAR_ACTIVE_IDS = pool.slice(0, count);
+    GENERATED_NEAR_ACTIVE_FIELD = state.currentField || GENERATED_NEAR_ACTIVE_FIELD || 'land';
+    GENERATED_NEAR_ACTIVE_READY = true;
     return GENERATED_NEAR_ACTIVE_IDS.slice();
+}
+
+function getNearActiveGeneratedPetField() {
+    getNearActiveGeneratedPetIds(2);
+    return GENERATED_NEAR_ACTIVE_FIELD || state.currentField || 'land';
 }
 
 export function isNearActiveGeneratedPet(petOrId) {
@@ -180,14 +191,14 @@ export function getGeneratedPetLocation(petOrId, now = Date.now()) {
     if (isNearActiveGeneratedPet(id)) {
         const home = {
             kind: 'field',
-            id: state.currentField || 'land',
+            id: getNearActiveGeneratedPetField(),
             nearActive: true,
             x: round3(0.42 + rng() * 0.16),
             y: round3(0.56 + rng() * 0.12),
             delay: round2(-(rng() * 4)),
             dur: round2(8 + rng() * 4),
-            dx: round1(-12 + rng() * 24),
-            dy: round1(-8 + rng() * 16),
+            dx: round1(-7 + rng() * 14),
+            dy: round1(-5 + rng() * 10),
             assignedUntil: (bucket + 1) * RELEASED_PET_RELOCATE_MS,
         };
         GENERATED_LOCATION_CACHE.set(id, home);

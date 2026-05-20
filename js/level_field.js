@@ -36,6 +36,9 @@ const FIELD_PET_BASE_SIZE_PX = 96;
 const FIELD_PET_REPEL_MIN_X = 0.058;
 const FIELD_PET_REPEL_MIN_Y = 0.155;
 const FIELD_PET_REPEL_MIN_GAP = 0.018;
+const NEAR_ACTIVE_PET_MIN_RADIUS = 0.055;
+const NEAR_ACTIVE_PET_RANDOM_RADIUS = 0.065;
+const NEAR_ACTIVE_PET_Y_SCALE = 0.82;
 const FIELD_ITEM_DEFAULT_SCALE = 1.15;
 const FIELD_ITEM_MIN_SCALE = 0.8;
 const FIELD_ITEM_MAX_SCALE = 3;
@@ -586,17 +589,7 @@ function petFieldPosition(pet, fieldId, index, activeFieldPosition = null) {
         const home = getGeneratedPetLocation(pet);
         if (home.kind === 'field' && home.id === fieldId) {
             if (home.nearActive && activeFieldPosition) {
-                const rng = makeRng(`${getUserSeedBase()}::${fieldId}::near-active-pet::${petId}`);
-                const slot = Math.max(0, (state.petOrder || []).filter(id => id && id !== state.currentPetId).indexOf(petId));
-                const side = slot % 2 === 0 ? -1 : 1;
-                return {
-                    x: clampRange(activeFieldPosition.x + side * (0.09 + rng() * 0.05), 0.08, 0.92),
-                    y: clampRange(activeFieldPosition.y + 0.02 + rng() * 0.08, 0.36, 0.90),
-                    delay: home.delay,
-                    dur: home.dur,
-                    dx: home.dx,
-                    dy: home.dy,
-                };
+                anchorNearActiveGeneratedPet(home, petId, fieldId, activeFieldPosition);
             }
             return {
                 x: home.x,
@@ -650,32 +643,60 @@ function petFieldPosition(pet, fieldId, index, activeFieldPosition = null) {
     };
 }
 
+function anchorNearActiveGeneratedPet(home, petId, fieldId, activeFieldPosition) {
+    if (!home || home.nearActiveAnchored) return;
+    const rng = makeRng(`${getUserSeedBase()}::${fieldId}::near-active-pet::${petId}`);
+    const slot = Math.max(0, (state.petOrder || []).filter(id => id && id !== state.currentPetId).indexOf(petId));
+    const baseAngle = rng() * Math.PI * 2;
+    const angle = slot === 0 ? baseAngle : baseAngle + Math.PI * (0.65 + rng() * 0.7);
+    const radius = NEAR_ACTIVE_PET_MIN_RADIUS + rng() * NEAR_ACTIVE_PET_RANDOM_RADIUS;
+    const xOffset = Math.cos(angle) * radius;
+    const yOffset = Math.sin(angle) * radius * NEAR_ACTIVE_PET_Y_SCALE;
+    home.x = clampRange(activeFieldPosition.x + xOffset, 0.08, 0.92);
+    home.y = clampRange(activeFieldPosition.y + yOffset, 0.36, 0.90);
+    home.nearActiveAnchored = true;
+}
+
 function fieldPetsRepelledPositions(entries) {
     const placed = [];
-    return entries.map((entry, index) => {
-        const pos = { ...entry.pos };
-        const rng = makeRng(`${getUserSeedBase()}::${entry.fieldId}::pet-repel::${entry.id || index}`);
-        for (let step = 0; step < 10; step++) {
-            let moved = false;
-            for (const other of placed) {
-                const dx = pos.x - other.x;
-                const dy = pos.y - other.y;
-                const nx = dx / FIELD_PET_REPEL_MIN_X;
-                const ny = dy / FIELD_PET_REPEL_MIN_Y;
-                const distSq = nx * nx + ny * ny;
-                if (distSq >= 1) continue;
-                const dist = Math.sqrt(distSq) || 0.001;
-                const angle = Math.atan2(dy || (rng() - 0.5), dx || (rng() - 0.5));
-                const strength = (1 - dist) * 0.55 + FIELD_PET_REPEL_MIN_GAP;
-                pos.x = clampRange(pos.x + Math.cos(angle) * FIELD_PET_REPEL_MIN_X * strength, 0.08, 0.92);
-                pos.y = clampRange(pos.y + Math.sin(angle) * FIELD_PET_REPEL_MIN_Y * strength, 0.36, 0.90);
-                moved = true;
-            }
-            if (!moved) break;
+    return entries.map((entry, index) => repelFieldPetPosition(entry, placed, index));
+}
+
+function repelFieldPetPosition(entry, placed, index = 0) {
+    const pos = { ...entry.pos };
+    const rng = makeRng(`${getUserSeedBase()}::${entry.fieldId}::pet-repel::${entry.id || index}`);
+    for (let step = 0; step < 10; step++) {
+        let moved = false;
+        for (const other of placed) {
+            const dx = pos.x - other.x;
+            const dy = pos.y - other.y;
+            const nx = dx / FIELD_PET_REPEL_MIN_X;
+            const ny = dy / FIELD_PET_REPEL_MIN_Y;
+            const distSq = nx * nx + ny * ny;
+            if (distSq >= 1) continue;
+            const dist = Math.sqrt(distSq) || 0.001;
+            const angle = Math.atan2(dy || (rng() - 0.5), dx || (rng() - 0.5));
+            const strength = (1 - dist) * 0.55 + FIELD_PET_REPEL_MIN_GAP;
+            pos.x = clampRange(pos.x + Math.cos(angle) * FIELD_PET_REPEL_MIN_X * strength, 0.08, 0.92);
+            pos.y = clampRange(pos.y + Math.sin(angle) * FIELD_PET_REPEL_MIN_Y * strength, 0.36, 0.90);
+            moved = true;
         }
-        placed.push(pos);
-        return pos;
-    });
+        if (!moved) break;
+    }
+    placed.push(pos);
+    return pos;
+}
+
+function fieldPetsFindRepelledPositions(entries, currentPetId) {
+    const fixedEntries = entries.filter(entry => entry.id !== currentPetId);
+    const fixedPositions = fieldPetsRepelledPositions(fixedEntries);
+    const fixedById = new Map(fixedEntries.map((entry, index) => [entry.id, fixedPositions[index]]));
+    const occupied = fixedPositions.map(pos => ({ x: pos.x, y: pos.y }));
+    const activeIndex = entries.findIndex(entry => entry.id === currentPetId);
+    const activePos = activeIndex >= 0
+        ? repelFieldPetPosition(entries[activeIndex], occupied, activeIndex)
+        : null;
+    return entries.map(entry => entry.id === currentPetId ? activePos : fixedById.get(entry.id));
 }
 
 function fieldPetsHtml(currentPet, fieldId) {
@@ -693,7 +714,12 @@ function fieldPetsHtml(currentPet, fieldId) {
         fieldId,
         pos: id === currentPet?.id ? activeFieldPosition : petFieldPosition(state.pets[id], fieldId, index, activeFieldPosition),
     }));
-    const repelledPositions = fieldPetsRepelledPositions(entries);
+    const isFindingInField = !!currentPet?.id
+        && state.activePetFieldPose?.fieldId === fieldId
+        && state.activePetFieldPose?.targetPetId;
+    const repelledPositions = isFindingInField
+        ? fieldPetsFindRepelledPositions(entries, currentPet.id)
+        : fieldPetsRepelledPositions(entries);
     const localHtml = renderIds.map((id, index) => {
         const p = state.pets[id];
         const pos = { ...entries[index].pos, ...repelledPositions[index] };
@@ -714,7 +740,10 @@ function getFieldPetIds(currentPet, fieldId) {
     return (state.petOrder || []).filter((id) => {
         if (!id) return false;
         if (id === currentPet?.id) return canPetAppearInField(currentPet, fieldId);
-        if (isNearActiveGeneratedPet(id)) return fieldId === (state.currentField || 'land');
+        if (isNearActiveGeneratedPet(id)) {
+            const home = getGeneratedPetLocation(state.pets[id] || id);
+            return home.kind === 'field' && home.id === fieldId;
+        }
         return canPetAppearInField(state.pets[id] || id, fieldId);
     });
 }

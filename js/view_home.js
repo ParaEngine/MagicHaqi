@@ -1437,6 +1437,7 @@ function runZoomTransition(from, to) {
 
         const ctx = makeCtx(pet, __lastCallbacks);
         newLevel.bindStage(pet, ctx);
+        if (to === 1) newLevel.centerPet?.(pet, { animate: false });
         stopCameraAnimation();
         scheduleCameraRender();
 
@@ -1460,7 +1461,6 @@ function runZoomTransition(from, to) {
             bindDockHorizontalScroll();
             restoreDockScrollPositions(dock);
             newLevel.onEnter?.(pet, ctx);
-            if (to === 1) newLevel.centerPet?.(pet, { animate: true, duration: 460 });
             schedulePreRenderAdjacent();
         });
         showZoomLevelBar({ autoHide: true, delay: 2000, requireLevelJumpCompleted: true });
