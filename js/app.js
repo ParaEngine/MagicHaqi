@@ -8,7 +8,7 @@ import {
     saveLayout, addToInventory, removeFromInventory, savePetDebounced,
     getLayout, ensurePetData, savePet, clearStoredData, saveDecorDataNow, saveInventoryDebounced,
 } from './storage.js';
-import { applyDecay, applyStage, clampEnergyToMax, defaultPermanentTrauma, defaultStats, eggStats, markPetCared, tickOffline, startTickLoop, stopTickLoop } from './petTick.js';
+import { applyDecay, applyStage, clampEnergyToMax, defaultPermanentTrauma, defaultStats, eggStats, getActiveSickness, getEffectiveSicknessSeverity, getSicknessDef, markPetCared, maybeRollDailySickness, tickOffline, startTickLoop, stopTickLoop, treatPetSicknessOneLevel } from './petTick.js';
 import { renderLogin } from './view_login.js';
 import { renderPetList } from './view_petList.js';
 import { renderHatch } from './view_hatch.js';
@@ -45,6 +45,54 @@ import SoundManager from './soundManager.js';
 // Side-effect import: 订阅 state 并接管所有 [data-mh-pet] 占位符的渲染 + 动画
 import { canWakePet, daySleepRejectText, eatFood, isPetInteractionBlocked, isPetSleeping, petArtHtml, preloadPetAssets, say, scanAndMount, setAnim, shouldRejectDaySleep, sleepingInteractionText, startPetSleep, wakePet, wakePetForPlay } from './pet.js';
 
+const sdkCdnUrl = 'https://cdn.keepwork.com/sdk/keepworkSDK.iife.js?v=20260522a';
+
+function loadScript(src) {
+    return new Promise((resolve, reject) => {
+        const existing = [...document.scripts].find(script => script.src === src);
+        if (existing) {
+            existing.addEventListener('load', resolve, { once: true });
+            existing.addEventListener('error', reject, { once: true });
+            return;
+        }
+        const script = document.createElement('script');
+        script.src = src;
+        script.onload = resolve;
+        script.onerror = reject;
+        document.head.appendChild(script);
+    });
+}
+
+function importRuntimeModule(src) {
+    return new Function('src', 'return import(src)')(src);
+}
+
+async function ensureKeepworkSDK() {
+    if (window.KeepworkSDK) return;
+    const host = window.location.hostname;
+    try {
+        if (host === '127.0.0.1' || host === 'localhost') {
+            await importRuntimeModule('/keepworkSDK/index.js');
+        } else {
+            await loadScript(sdkCdnUrl);
+        }
+    } catch (err) {
+        if (host === '127.0.0.1' || host === 'localhost') {
+            await loadScript(sdkCdnUrl);
+            return;
+        }
+        throw err;
+    }
+}
+
+try {
+    await ensureKeepworkSDK();
+} catch (err) {
+    console.error('SDK 加载失败', err);
+    document.getElementById('app').innerHTML = '<div style="padding:40px;text-align:center;color:#b91c1c">SDK 加载失败，请检查网络后刷新。</div>';
+    throw err;
+}
+
 const soundManager = SoundManager.getInstance();
 const APP_AUDIO_VOLUME = 2.5;
 const SLEEP_BLOCKED_ROUTES = new Set(['chat', 'minigames', 'hatching', 'hatch']);
@@ -59,6 +107,7 @@ const sdk = window.keepwork || new window.KeepworkSDK({ timeout: 30000 });
 if (sdk.setUserApiKey && window.KeepworkSDK?.API_KEYS?.maisi) {
     sdk.setUserApiKey(window.KeepworkSDK.API_KEYS.maisi);
 }
+sdk.localAPIKeySettings?.load?.().catch(err => console.warn('Local API Key settings load failed:', err));
 sdk.audioEngine?.setVolume?.(APP_AUDIO_VOLUME);
 state.sdk = sdk;
 window.MH_state = state; // 给 view_petList 顶部金币使用
@@ -73,6 +122,7 @@ let chatViewPromise = null;
 let chatViewModule = null;
 let minigamesViewPromise = null;
 let minigamesViewModule = null;
+let pendingMinigameLaunch = null;
 let hatchingViewPromise = null;
 let hatchingViewModule = null;
 let settingsViewPromise = null;
@@ -83,7 +133,19 @@ let mailboxViewPromise = null;
 let mailboxViewModule = null;
 let emailViewPromise = null;
 let emailViewModule = null;
+let storyPlayerViewPromise = null;
+let storyPlayerViewModule = null;
+let storyListViewPromise = null;
+let storyListViewModule = null;
+let storyMakerViewPromise = null;
+let storyMakerViewModule = null;
 let pendingPostcard = null;
+let pendingStoryPath = null;
+let pendingStoryData = null;
+let pendingStoryReturnToMaker = null;
+let pendingStoryReturnToList = false;
+
+const NEW_USER_STORY_PARAM = 'new_user_story';
 
 function loadChatView() {
     if (chatViewModule) return Promise.resolve(chatViewModule);
@@ -160,6 +222,157 @@ function loadEmailView() {
         });
     }
     return emailViewPromise;
+}
+
+function loadStoryPlayerView() {
+    if (storyPlayerViewModule) return Promise.resolve(storyPlayerViewModule);
+    if (!storyPlayerViewPromise) {
+        storyPlayerViewPromise = import('./view_story_player.js').then((mod) => {
+            storyPlayerViewModule = mod;
+            return mod;
+        });
+    }
+    return storyPlayerViewPromise;
+}
+
+function loadStoryListView() {
+    if (storyListViewModule) return Promise.resolve(storyListViewModule);
+    if (!storyListViewPromise) {
+        storyListViewPromise = import('./view_story_list.js').then((mod) => {
+            storyListViewModule = mod;
+            return mod;
+        });
+    }
+    return storyListViewPromise;
+}
+
+function loadStoryMakerView() {
+    if (storyMakerViewModule) return Promise.resolve(storyMakerViewModule);
+    if (!storyMakerViewPromise) {
+        storyMakerViewPromise = import('./view_story_maker.js').then((mod) => {
+            storyMakerViewModule = mod;
+            return mod;
+        });
+    }
+    return storyMakerViewPromise;
+}
+
+function storyRouteOptions() {
+    return {
+        onBack: () => {
+            if (pendingStoryReturnToMaker) {
+                const story = pendingStoryReturnToMaker;
+                pendingStoryReturnToMaker = null;
+                pendingStoryReturnToList = false;
+                pendingStoryPath = null;
+                pendingStoryData = null;
+                setView('storyMaker');
+                openStoryMakerEditor(story);
+                return;
+            }
+            if (pendingStoryReturnToList) {
+                pendingStoryReturnToList = false;
+                pendingStoryPath = null;
+                pendingStoryData = null;
+                setView('storyMaker');
+                return;
+            }
+            navigateToView(state.currentPetId ? 'home' : 'petList');
+        },
+        onPetAction: (action) => handleAction(action, { skipNotify: true }),
+        onLaunchMinigame: handleStoryMinigameLaunch,
+        onRaisePet: handleStoryRaisePet,
+    };
+}
+
+function renderStoryPlayerRoute() {
+    const options = storyRouteOptions();
+    const showLoading = () => {
+        app.innerHTML = '<div class="topbar"><button class="btn-icon" id="mhBack" style="width:36px;height:36px;font-size:18px">‹</button><span class="font-bold" style="color:var(--text-primary)">故事</span><span style="width:36px;height:36px"></span></div><div style="padding:18px;color:var(--text-muted)">正在打开故事...</div>';
+        const back = $('mhBack');
+        if (back) back.onclick = options.onBack;
+    };
+    const renderLoaded = (mod, story) => {
+        if (state.currentView !== 'storyPlayer') return;
+        mod.renderStoryPlayer(app, { story }, options);
+    };
+    if (storyPlayerViewModule && pendingStoryData) {
+        renderLoaded(storyPlayerViewModule, pendingStoryData);
+        return;
+    }
+    showLoading();
+    loadStoryPlayerView()
+        .then(async (mod) => {
+            if (!pendingStoryData) pendingStoryData = await mod.loadStoryFile(pendingStoryPath || undefined);
+            renderLoaded(mod, pendingStoryData);
+        })
+        .catch((e) => {
+            console.error('加载故事失败', e);
+            showToast('加载故事失败：' + (e?.message || e), 'error');
+            if (state.currentView === 'storyPlayer') navigateToView(state.currentPetId ? 'home' : 'petList');
+        });
+}
+
+function renderStoryMakerRoute() {
+    const listOptions = {
+        onBack: () => navigateToView(state.currentPetId ? 'settings' : 'petList'),
+        onNewStory: () => openStoryMakerEditor(null),
+        onEditStory: (story) => openStoryMakerEditor(story),
+        onPlayStory: (story) => {
+            pendingStoryData = story;
+            pendingStoryPath = null;
+            pendingStoryReturnToMaker = null;
+            pendingStoryReturnToList = true;
+            setView('storyPlayer');
+        },
+    };
+    if (storyListViewModule) {
+        storyListViewModule.renderStoryList(app, null, listOptions);
+        return;
+    }
+    app.innerHTML = '<div class="topbar"><button class="btn-icon" id="mhBack" style="width:36px;height:36px;font-size:18px">‹</button><span class="font-bold" style="color:var(--text-primary)">故事创作</span><span style="width:36px;height:36px"></span></div><div style="padding:18px;color:var(--text-muted)">正在打开故事列表...</div>';
+    const back = $('mhBack');
+    if (back) back.onclick = listOptions.onBack;
+    loadStoryListView()
+        .then(({ renderStoryList }) => {
+            if (state.currentView !== 'storyMaker') return;
+            renderStoryList(app, null, listOptions);
+        })
+        .catch((e) => {
+            console.error('加载故事列表失败', e);
+            showToast('加载故事列表失败：' + (e?.message || e), 'error');
+            if (state.currentView === 'storyMaker') navigateToView(state.currentPetId ? 'settings' : 'petList');
+        });
+}
+
+function openStoryMakerEditor(story = null) {
+    const options = {
+        onBack: () => renderStoryMakerRoute(),
+        onPlayStory: (story) => {
+            pendingStoryData = story;
+            pendingStoryPath = null;
+            pendingStoryReturnToMaker = story;
+            pendingStoryReturnToList = false;
+            setView('storyPlayer');
+        },
+    };
+    if (storyMakerViewModule) {
+        storyMakerViewModule.renderStoryMaker(app, { story }, options);
+        return;
+    }
+    app.innerHTML = '<div class="topbar"><button class="btn-icon" id="mhBack" style="width:36px;height:36px;font-size:18px">‹</button><span class="font-bold" style="color:var(--text-primary)">故事创作</span><span style="width:36px;height:36px"></span></div><div style="padding:18px;color:var(--text-muted)">正在打开故事创作...</div>';
+    const back = $('mhBack');
+    if (back) back.onclick = options.onBack;
+    loadStoryMakerView()
+        .then(({ renderStoryMaker }) => {
+            if (state.currentView !== 'storyMaker') return;
+            renderStoryMaker(app, { story }, options);
+        })
+        .catch((e) => {
+            console.error('加载故事创作失败', e);
+            showToast('加载故事创作失败：' + (e?.message || e), 'error');
+            if (state.currentView === 'storyMaker') renderStoryMakerRoute();
+        });
 }
 
 function renderPostcardRoute() {
@@ -247,23 +460,48 @@ function renderMinigamesRoute() {
     const pet = getCurrentPet();
     if (!pet) return;
     if (guardSleepingRoute(pet)) return;
+    const launch = pendingMinigameLaunch;
+    const returnToCellLevel = () => {
+        state.lastHomeZoomLevel = 3;
+        navigateToView('home');
+    };
+    const renderOptions = {
+        onBack: () => {
+            pendingMinigameLaunch = null;
+            if (launch?.mode === 'sickness') {
+                returnToCellLevel();
+                return;
+            }
+            navigateToView('home');
+        },
+        onGameFinished: (game, data) => {
+            if (launch?.mode === 'story') {
+                handleStoryMinigameResult(game, data);
+                return;
+            }
+            if (launch?.mode === 'sickness') {
+                handleSicknessTreatmentResult(game, data);
+                return;
+            }
+            rewardPetAction('play', `${game?.title || '玩耍'}完成啦，亲密度提升！`, data);
+        },
+        initialGameId: launch?.gameId || null,
+        initialGameParams: launch?.params || null,
+        allowPlayWhenLowEnergy: !!launch?.allowLowEnergy,
+        suppressRewards: !!launch?.suppressRewards,
+        exitGameToBack: launch?.mode === 'sickness',
+    };
     if (minigamesViewModule) {
-        minigamesViewModule.renderMinigames(app, { pet }, {
-            onBack: () => navigateToView('home'),
-            onGameFinished: (game, data) => rewardPetAction('play', `${game?.title || '玩耍'}完成啦，亲密度提升！`, data),
-        });
+        minigamesViewModule.renderMinigames(app, { pet }, renderOptions);
         return;
     }
-    app.innerHTML = '<div class="topbar"><button class="btn-icon" id="mhBack" style="width:36px;height:36px;font-size:18px">‹</button><span class="font-bold" style="color:var(--text-primary)">玩耍</span><span style="width:36px;height:36px"></span></div><div style="padding:18px;color:var(--text-muted)">正在打开小游戏...</div>';
+    app.innerHTML = '<div class="topbar"><button class="btn-icon" id="mhBack" style="width:36px;height:36px;font-size:18px">‹</button><span class="font-bold" style="color:var(--text-primary)">玩耍</span><span style="width:36px;height:36px"></span></div>';
     const back = $('mhBack');
     if (back) back.onclick = () => navigateToView('home');
     loadMinigamesView()
         .then(({ renderMinigames }) => {
             if (state.currentView !== 'minigames') return;
-            renderMinigames(app, { pet: getCurrentPet() }, {
-                onBack: () => navigateToView('home'),
-                onGameFinished: (game, data) => rewardPetAction('play', `${game?.title || '玩耍'}完成啦，亲密度提升！`, data),
-            });
+            renderMinigames(app, { pet: getCurrentPet() }, renderOptions);
         })
         .catch((e) => {
             console.error('加载小游戏视图失败', e);
@@ -329,7 +567,7 @@ function renderSettingsRoute() {
 }
 
 async function renderPetListRoute() {
-    app.innerHTML = '<div class="topbar"><button class="btn-icon" id="mhPetListBack" style="width:36px;height:36px;font-size:18px">‹</button><span class="font-bold" style="color:var(--text-primary)">我的宠物</span><span style="width:36px;height:36px"></span></div><div style="padding:18px;color:var(--text-muted)">正在加载宠物列表...</div>';
+    app.innerHTML = '<div class="topbar"><button class="btn-icon" id="mhPetListBack" style="width:36px;height:36px;font-size:18px">‹</button><span class="font-bold" style="color:var(--text-primary)">宠物图鉴</span><span style="width:36px;height:36px"></span></div><div style="padding:18px;color:var(--text-muted)">正在加载宠物图鉴...</div>';
     const back = $('mhPetListBack');
     if (back) back.onclick = () => setView(state.currentPetId ? 'home' : 'petList');
     if (state.currentView !== 'petList') return;
@@ -369,6 +607,7 @@ const routes = {
         onFeedItem:   handleFeedItem,
         onFeedComplete: render,
         onNav:        handleNav,
+        onTreatSickness: handleTreatSickness,
     }),
     shop:      () => renderShop(app, null, { onBack: () => navigateToView('home'), onBuy: handleBuy }),
     inventory: () => renderInventory(app, null, {
@@ -395,6 +634,8 @@ const routes = {
     postcard:  renderPostcardRoute,
     mailbox:   renderMailboxRoute,
     email:     renderEmailRoute,
+    storyPlayer: renderStoryPlayerRoute,
+    storyMaker:  renderStoryMakerRoute,
     settings:  renderSettingsRoute,
 };
 
@@ -454,18 +695,33 @@ async function bootstrap() {
         console.warn('加载数据失败', e);
     }
 
-    // 离线追溯所有宠物
-    for (const id of Object.keys(state.pets)) tickOffline(state.pets[id]);
+    // 离线追溯所有宠物，并在每次登录时进行一次每日疾病判定。
+    for (const id of Object.keys(state.pets)) {
+        const pet = state.pets[id];
+        tickOffline(pet);
+        if (maybeRollDailySickness(pet)) savePetDebounced(pet);
+    }
     startTickLoop();
 
     // 进入游戏前必须先给"星球"命名（每位用户只有一个星球）
     await ensurePlanetNamed();
 
-    if (state.petOrder.length === 0 || selectablePets(state.petOrder.map(id => state.pets[id]).filter(Boolean)).length === 0) {
-        // 不允许玩家随意创建宠物：系统默认赠送一颗蛋。
-        await ensureDefaultEgg();
+    if (!hasSelectablePets()) {
+        if (await maybeStartNewUserStory()) return;
+        await enterDefaultEggHome();
+        return;
     } else if (state.currentPetId && !isPetSelectable(state.pets[state.currentPetId])) {
         await selectFirstAvailablePet();
+    }
+
+    const urlStoryPath = await getInitialStoryPath();
+    if (urlStoryPath) {
+        pendingStoryPath = urlStoryPath;
+        pendingStoryData = null;
+        pendingStoryReturnToMaker = null;
+        pendingStoryReturnToList = false;
+        setView('storyPlayer');
+        return;
     }
     await enforcePlanetPetLimit(state.currentPetId);
     if (state.currentPetId) {
@@ -473,6 +729,56 @@ async function bootstrap() {
     }
     preloadLoadedPetAssets();
     // 进入 home；首次启动为星球外层，视图间返回时由 state 恢复上次 home level。
+    setView(hasPostcardParams() ? 'postcard' : 'home');
+}
+
+async function getInitialStoryPath() {
+    try {
+        const { storyPathFromUrl, normalizeStoryPath } = await loadStoryPlayerView();
+        const urlStory = storyPathFromUrl();
+        return urlStory ? normalizeStoryPath(urlStory) : '';
+    } catch (_) {
+        try {
+            const url = new URL(window.location.href);
+            const story = url.searchParams.get('story') || '';
+            return story ? story.replace(/^\/+/, '') : '';
+        } catch (__) { return ''; }
+    }
+}
+
+function hasSelectablePets() {
+    return selectablePets(state.petOrder.map(id => state.pets[id]).filter(Boolean)).length > 0;
+}
+
+async function getNewUserStoryPath() {
+    try {
+        const url = new URL(window.location.href);
+        const requestedStory = url.searchParams.get(NEW_USER_STORY_PARAM) || '';
+        if (!requestedStory) return '';
+        const { normalizeStoryPath } = await loadStoryPlayerView();
+        return normalizeStoryPath(requestedStory);
+    } catch (_) { return ''; }
+}
+
+async function maybeStartNewUserStory() {
+    const newUserStoryPath = await getNewUserStoryPath();
+    if (!newUserStoryPath) return false;
+    pendingStoryPath = newUserStoryPath;
+    pendingStoryData = null;
+    pendingStoryReturnToMaker = null;
+    pendingStoryReturnToList = false;
+    setView('storyPlayer');
+    return true;
+}
+
+async function enterDefaultEggHome() {
+    const newPet = await ensureDefaultEgg();
+    try { await ensurePetData(state.currentPetId); } catch (_) {}
+    state.currentRoom = newPet?.activeRoom || 'living';
+    state.isDecorMode = false;
+    state.isFeedMode = false;
+    await enforcePlanetPetLimit(newPet?.id || state.currentPetId);
+    preloadLoadedPetAssets();
     setView(hasPostcardParams() ? 'postcard' : 'home');
 }
 
@@ -620,13 +926,28 @@ async function handleLogin() {
         try { await loadUserProfile(); await loadAllPets(); } catch (e) { console.warn(e); }
         ensurePlanetProgressStarted();
         startPlanetPlaytimePersistence();
-        for (const id of Object.keys(state.pets)) tickOffline(state.pets[id]);
+        for (const id of Object.keys(state.pets)) {
+            const pet = state.pets[id];
+            tickOffline(pet);
+            if (maybeRollDailySickness(pet)) savePetDebounced(pet);
+        }
         startTickLoop();
         await ensurePlanetNamed();
-        if (state.petOrder.length === 0 || selectablePets(state.petOrder.map(id => state.pets[id]).filter(Boolean)).length === 0) {
-            await ensureDefaultEgg();
+        if (!hasSelectablePets()) {
+            if (await maybeStartNewUserStory()) return;
+            await enterDefaultEggHome();
+            return;
         } else if (state.currentPetId && !isPetSelectable(state.pets[state.currentPetId])) {
             await selectFirstAvailablePet();
+        }
+        const urlStoryPath = await getInitialStoryPath();
+        if (urlStoryPath) {
+            pendingStoryPath = urlStoryPath;
+            pendingStoryData = null;
+            pendingStoryReturnToMaker = null;
+            pendingStoryReturnToList = false;
+            setView('storyPlayer');
+            return;
         }
         await enforcePlanetPetLimit(state.currentPetId);
         if (state.currentPetId) {
@@ -671,8 +992,8 @@ async function handleClearData() {
         state.remoteElementStocks = {};
         await saveUserProfile();
         showToast('已清除', 'success');
-        await ensureDefaultEgg();
-        setView('home');
+        if (await maybeStartNewUserStory()) return;
+        await enterDefaultEggHome();
     } catch (e) {
         showToast('清除失败：' + (e?.message || e), 'error');
     }
@@ -1405,9 +1726,12 @@ async function handleFeedItem(itemId, source = {}) {
     return true;
 }
 
-async function navigateToView(target) {
+async function navigateToView(target, options = {}) {
     if (!target) return;
     await finishRoomModeIfNeeded();
+    if (target === 'minigames' && !options.preserveMinigameLaunch) {
+        pendingMinigameLaunch = null;
+    }
     const pet = getCurrentPet();
     if (pet && target === 'minigames' && isPetSleeping(pet)) {
         wakePetForPlay(pet);
@@ -1429,7 +1753,162 @@ async function navigateToView(target) {
     showToast('未知导航：' + target, 'info');
 }
 
+function handleStoryMinigameLaunch(activity = {}) {
+    const gameId = activity.gameId || activity.id || 'pet_tower_defense';
+    if (!getCurrentPet()) {
+        storyPlayerViewModule?.completeStoryMinigameActivity?.({ completed: true, storyOnly: true });
+        showToast('守护训练完成，抱抱龙更信任你了', 'success', 1600);
+        return;
+    }
+    pendingMinigameLaunch = {
+        mode: 'story',
+        gameId,
+        params: activity.params || null,
+        allowLowEnergy: true,
+        suppressRewards: true,
+    };
+    navigateToView('minigames', { preserveMinigameLaunch: true });
+}
+
+async function handleStoryMinigameResult(_game, data = {}) {
+    pendingMinigameLaunch = null;
+    const mod = await loadStoryPlayerView();
+    mod.completeStoryMinigameActivity?.(data);
+    setView('storyPlayer');
+}
+
+async function handleStoryRaisePet(story, actor) {
+    const template = actor?.petTemplate || actor?.pet || story?.ending?.petTemplate || null;
+    if (!template) {
+        showToast('故事没有配置可领取的宠物', 'error');
+        return;
+    }
+    const now = Date.now();
+    const pet = {
+        id: 'pet_' + randId(8),
+        name: template.name || actor?.name || '抱抱龙',
+        dna: template.dna || randomDna(),
+        imageUrl: template.imageUrl || null,
+        imageSheetUrl: template.imageSheetUrl || '',
+        traits: template.traits || decodeDna(template.dna || randomDna()),
+        rarity: Number.isFinite(template.rarity) ? template.rarity : dnaRarity(template.dna || ''),
+        stats: { ...defaultStats(), ...(template.stats || {}), hunger: 100, mood: 100, clean: 100, bond: 80 },
+        permanentTrauma: defaultPermanentTrauma(),
+        bornAt: now - 24 * 60 * 60 * 1000,
+        lastTickAt: now,
+        lastCareAt: now,
+        parents: null,
+        stage: template.stage || 'adult',
+        wishPrompt: template.wishPrompt || actor?.description || story?.title || '',
+        anim: 'happy',
+        everAdult: true,
+        activeRoom: 'living',
+        sourceStoryId: story?.id || '',
+        sourceActorId: actor?.id || '',
+    };
+    applyStage(pet);
+    await savePet(pet);
+    await setCurrentPetPersisted(pet.id);
+    setCurrentPet(pet.id);
+    try { await ensurePetData(pet.id); } catch (_) {}
+    await enforcePlanetPetLimit(pet.id);
+    pendingStoryPath = null;
+    pendingStoryData = null;
+    pendingStoryReturnToMaker = null;
+    pendingStoryReturnToList = false;
+    preloadLoadedPetAssets();
+    showToast(`${pet.name} 已来到你的星球！`, 'success', 2600);
+    setView('home');
+}
+
 // 底部导航统一入口
+function handleTreatSickness() {
+    const pet = getCurrentPet();
+    const sickness = getActiveSickness(pet);
+    if (!pet || !sickness) {
+        showToast('当前没有需要治疗的疾病。', 'info', 1400);
+        return;
+    }
+    if (isPetInteractionBlocked(pet)) {
+        showToast(sleepingInteractionText(pet), 'info', 1800);
+        return;
+    }
+    const severity = getEffectiveSicknessSeverity(pet);
+    const treatmentHelp = `${sickness.def.name}：当前病情 ${severity}/10。治疗方案：抵御至少 ${severity} 波攻击才能康复。`;
+    pendingMinigameLaunch = {
+        mode: 'sickness',
+        gameId: 'pet_tower_defense',
+        params: { additionalHelp: treatmentHelp, sicknessType: sickness.type, sicknessName: sickness.def.name },
+        allowLowEnergy: true,
+        suppressRewards: true,
+    };
+    navigateToView('minigames', { preserveMinigameLaunch: true });
+}
+
+async function handleSicknessTreatmentResult(game, data = {}) {
+    const pet = getCurrentPet();
+    const sickness = getActiveSickness(pet);
+    if (!pet || !sickness) return;
+    if (game?.id !== 'pet_tower_defense') {
+        showToast('治疗还没有成功通关，病情不会记录改善。', 'info', 2200);
+        return;
+    }
+    const treatmentLevels = sicknessTreatmentLevelsFromMinigame(data);
+    if (treatmentLevels <= 0) {
+        pendingMinigameLaunch = null;
+        showToast('还没有守住任何波次，病情不会记录改善。', 'info', 2200);
+        state.lastHomeZoomLevel = 3;
+        navigateToView('home');
+        return;
+    }
+    let result = null;
+    for (let i = 0; i < treatmentLevels; i++) {
+        result = treatPetSicknessOneLevel(pet);
+        if (result.cured) break;
+    }
+    const def = result.sickness?.def || getSicknessDef(sickness.type) || sickness.def;
+    if (result.cured) {
+        pendingMinigameLaunch = null;
+        await savePet(pet);
+        postTowerDefenseTreatmentControl('treatmentCuredPrompt');
+        const keepPlaying = await confirm(`${def?.name || '疾病'}已经治好，24小时内不会再生病。要继续守护训练吗？`, {
+            okText: '继续守护',
+            cancelText: '退出',
+        });
+        if (keepPlaying) {
+            postTowerDefenseTreatmentControl('treatmentContinue');
+            showToast('治疗已完成，守护训练继续。', 'success', 1800);
+            return;
+        }
+        state.lastHomeZoomLevel = 3;
+        navigateToView('home');
+        return;
+    }
+    showToast(`${def?.name || '疾病'}病情减轻 ${treatmentLevels} 级，本次登录剩余 ${getEffectiveSicknessSeverity(pet)} 级。`, 'success', 1800);
+    if (data.treatmentCheckpoint) return;
+    notify();
+    pendingMinigameLaunch = null;
+    state.lastHomeZoomLevel = 3;
+    navigateToView('home');
+}
+
+function sicknessTreatmentLevelsFromMinigame(data = {}) {
+    const explicit = Number(data.treatmentLevels);
+    if (Number.isFinite(explicit) && explicit > 0) return Math.max(1, Math.round(explicit));
+    const won = data.completed !== false && data.passed !== false;
+    const maxWave = Math.max(1, Number(data.maxWave) || 1);
+    const wave = Math.max(0, Number(data.waves ?? data.level ?? data.wave) || 0);
+    if (won) return Math.max(1, Math.min(maxWave, wave || maxWave));
+    return Math.max(0, Math.min(maxWave, wave - 1));
+}
+
+function postTowerDefenseTreatmentControl(type) {
+    const frame = document.getElementById('mhMinigameFrame');
+    try {
+        frame?.contentWindow?.postMessage({ type }, '*');
+    } catch (_) {}
+}
+
 function handleNav(target) {
     navigateToView(target);
 }

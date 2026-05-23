@@ -1595,22 +1595,6 @@
         window.addEventListener('resize', updateAppScale, { passive: true });
         window.visualViewport?.addEventListener('resize', updateAppScale, { passive: true });
 
-        const sdkCdnUrl = 'https://cdn.keepwork.com/sdk/keepworkSDK.iife.js?v=20260515a';
-        const loadScript = src => new Promise((resolve, reject) => {
-            const s = document.createElement('script');
-            s.src = src; s.onload = resolve; s.onerror = reject;
-            document.head.appendChild(s);
-        });
-        const loadSDK = () => (window.location.hostname === '127.0.0.1' || window.location.hostname === 'localhost')
-            ? import('/keepworkSDK/index.js').catch(() => loadScript(sdkCdnUrl))
-            : loadScript(sdkCdnUrl);
-        try {
-            await loadSDK();
-        } catch (err) {
-            console.error('SDK 加载失败', err);
-            document.getElementById('app').innerHTML = '<div style="padding:40px;text-align:center;color:#b91c1c">SDK 加载失败，请检查网络后刷新。</div>';
-            throw err;
-        }
         await import('./js/app.js');
     </script>
 </body>

@@ -3,13 +3,14 @@ import { SHOP_ITEMS, CONFIG, getStageName } from './config.js';
 import { state, notify, getCurrentPet, subscribe } from './state.js';
 import { addToInventory, savePet, savePetDebounced, saveUserProfileDebounced } from './storage.js';
 import { resetPetSheetImage, setAnim } from './pet.js';
-import { applyStage, defaultStats, defaultTraits, getPermanentTraumaCount, normalizePermanentTrauma } from './petTick.js';
+import { applyStage, curePetSickness, defaultStats, defaultTraits, getActiveSickness, getEffectiveSicknessSeverity, getPermanentTraumaCount, SICKNESS_DEFS, normalizePermanentTrauma } from './petTick.js';
 import { clamp, escapeHtml, showToast } from './utils.js';
 
 const DEV_CONSOLE_ID = 'mhDevConsole';
 const HOST_ALLOWLIST = new Set(['127.0.0.1', 'localhost']);
 const PET_SCALAR_EXCLUDE = new Set(['stats', 'traits', 'poops', 'parents']);
 const HOUR_MS = 60 * 60 * 1000;
+const DAY_MS = 24 * HOUR_MS;
 const STAT_LABELS = {
     hunger: '体力',
     mood: '心情',
@@ -55,6 +56,8 @@ function mountDevConsole() {
         setAllExiledPetsStage: (stageId = 'adult') => setAllExiledPetsStage(null, stageId),
         resetCurrentPetToEgg,
         forceCurrentPetSleep,
+        recoverCurrentPetSickness,
+        setCurrentPetSickness,
         saveCurrentPetAttributes: () => saveCurrentPetAttributes(root),
         addItem,
         refresh: () => refreshConsole(root),
@@ -154,6 +157,7 @@ function bindConsole(root) {
         if (action === 'exiled-stage') await setAllExiledPetsStage(root);
         if (action === 'pet-sleep-toggle') forceCurrentPetSleep(!isPetSleeping(getCurrentPet()));
         if (action === 'pet-reset-egg') await resetCurrentPetToEgg();
+        if (action === 'pet-sickness-recover') await recoverCurrentPetSickness();
         if (action === 'pet-save') saveCurrentPetAttributes(root);
         refreshConsole(root);
     });
@@ -210,6 +214,7 @@ function setPetStageForDev(pet, stage) {
     pet.stats = pet.stats && typeof pet.stats === 'object' ? pet.stats : defaultStats();
     if (stage.id === 'egg') {
         pet.stats.hunger = 0;
+        delete pet.sickness;
     } else if ((Number(pet.stats.hunger) || 0) <= 0) {
         pet.stats.hunger = defaultStats().hunger;
     }
@@ -346,6 +351,8 @@ async function resetCurrentPetToEgg() {
     delete pet.eggHatchedAt;
     delete pet.eggHatchPending;
     delete pet.eggHatchRequestedAt;
+    delete pet.sickness;
+    delete pet.sicknessCooldownUntil;
     delete pet.sleepStartedAt;
     delete pet.sleepLockedUntil;
     await savePet(pet);
@@ -363,6 +370,32 @@ function forceCurrentPetSleep(sleeping = true) {
     setAnim(sleeping ? 'sleep' : 'idle', 0);
     notify();
     showToast(sleeping ? '开发者：宠物已强制睡觉' : '开发者：宠物已强制唤醒', 'success', 1200);
+    return true;
+}
+
+async function recoverCurrentPetSickness() {
+    const pet = getCurrentPet();
+    if (!pet) {
+        showToast('请先选择宠物', 'error', 1400);
+        return false;
+    }
+    curePetSickness(pet);
+    await savePet(pet);
+    notify();
+    showToast('开发者：宠物疾病已康复，并进入 24 小时免疫期', 'success', 1600);
+    return true;
+}
+
+function setCurrentPetSickness(type = 'flu', level = 1) {
+    const pet = getCurrentPet();
+    if (!pet) {
+        showToast('请先选择宠物', 'error', 1400);
+        return false;
+    }
+    setPetSicknessForDev(pet, type, level);
+    savePetDebounced(pet);
+    notify();
+    showToast(type ? `开发者：疾病已设为 ${type} Lv.${level}` : '开发者：疾病已清除', 'success', 1400);
     return true;
 }
 
@@ -452,6 +485,8 @@ function applyPetFormValues(root, pet) {
 
     const traumaInput = root.querySelector('[data-dev-pet-trauma-count]');
     if (traumaInput) setPermanentTraumaCount(pet, traumaInput.value);
+
+    applySicknessFormValues(root, pet);
 }
 
 function setPermanentTraumaCount(pet, value) {
@@ -469,6 +504,45 @@ function setPermanentTraumaCount(pet, value) {
     }
     pet.permanentTrauma = traumas;
     pet.lastPermanentTraumaAt = now;
+}
+
+function applySicknessFormValues(root, pet) {
+    const typeSelect = root.querySelector('[data-dev-pet-sickness-type]');
+    if (!typeSelect) return;
+    const type = typeSelect.value || '';
+    if (!type) {
+        delete pet.sickness;
+    } else {
+        const levelInput = root.querySelector('[data-dev-pet-sickness-level]');
+        const level = clampNumber(levelInput?.value, 1, 10, 1) | 0;
+        setPetSicknessForDev(pet, type, level);
+    }
+    const cooldownInput = root.querySelector('[data-dev-pet-sickness-cooldown-hours]');
+    if (cooldownInput) {
+        const hours = clampNumber(cooldownInput.value, 0, 168, 0);
+        if (hours > 0) {
+            pet.sicknessCooldownUntil = Date.now() + Math.round(hours * HOUR_MS);
+            pet.lastSicknessCuredAt = Date.now();
+        } else {
+            delete pet.sicknessCooldownUntil;
+        }
+    }
+}
+
+function setPetSicknessForDev(pet, type, level = 1) {
+    const def = SICKNESS_DEFS.find(item => item.id === type);
+    if (!pet || !def) {
+        if (pet) delete pet.sickness;
+        return false;
+    }
+    const normalizedLevel = clampNumber(level, 1, 10, 1) | 0;
+    const now = Date.now();
+    pet.sickness = {
+        type: def.id,
+        startedAt: now - Math.max(0, normalizedLevel - 1) * DAY_MS,
+    };
+    delete pet.sicknessCooldownUntil;
+    return true;
 }
 
 function renderPetEditorHtml(pet) {
@@ -493,6 +567,7 @@ function renderPetEditorHtml(pet) {
         step: 1,
         dataAttr: 'data-dev-pet-trauma-count',
     });
+    const sicknessControls = renderSicknessControls(pet);
     const scalarRows = getEditableScalarKeys(pet).map(key => renderScalarField(key, pet[key])).join('');
     const rawJson = escapeHtml(JSON.stringify(pet, null, 2));
     return `
@@ -508,7 +583,7 @@ function renderPetEditorHtml(pet) {
         </div>
         <div class="mh-dev-editor-group">
             <div class="mh-dev-editor-caption">常用字段</div>
-            <div class="mh-dev-field-grid">${traumaRow}${scalarRows || ''}</div>
+            <div class="mh-dev-field-grid">${traumaRow}${sicknessControls}${scalarRows || ''}</div>
         </div>
         <details class="mh-dev-json-wrap">
             <summary>完整 JSON</summary>
@@ -985,4 +1060,40 @@ function injectStyles() {
         }
     `;
     document.head.appendChild(style);
+}
+
+function renderSicknessControls(pet) {
+    const sickness = getActiveSickness(pet);
+    const activeType = sickness?.type || '';
+    const level = getEffectiveSicknessSeverity(pet) || 1;
+    const cooldownHours = pet?.sicknessCooldownUntil && Number(pet.sicknessCooldownUntil) > Date.now()
+        ? Math.ceil((Number(pet.sicknessCooldownUntil) - Date.now()) / HOUR_MS)
+        : 0;
+    const options = [
+        `<option value="" ${activeType ? '' : 'selected'}>无疾病</option>`,
+        ...SICKNESS_DEFS.map(def => `<option value="${escapeHtml(def.id)}" ${def.id === activeType ? 'selected' : ''}>${escapeHtml(def.name)}</option>`),
+    ].join('');
+    return `
+        <label class="mh-dev-field">
+            <span title="疾病类型">疾病</span>
+            <select data-dev-pet-sickness-type>${options}</select>
+        </label>
+        ${renderNumberField({
+            label: '病情等级',
+            value: level,
+            min: 1,
+            max: 10,
+            step: 1,
+            dataAttr: 'data-dev-pet-sickness-level',
+        })}
+        ${renderNumberField({
+            label: '免疫小时',
+            value: cooldownHours,
+            min: 0,
+            max: 168,
+            step: 1,
+            dataAttr: 'data-dev-pet-sickness-cooldown-hours',
+        })}
+        <button type="button" class="mh-dev-recover-btn" data-dev-action="pet-sickness-recover" ${pet ? '' : 'disabled'}>疾病康复</button>
+    `;
 }

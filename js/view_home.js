@@ -11,16 +11,18 @@
 import { $, coinIconSvg, escapeHtml, showToast } from './utils.js';
 import { t } from './i18n.js';
 import { CONFIG, getStageName } from './config.js';
-import { state, setZoomLevel as _setZoomLevelRaw } from './state.js';
+import { isVisitingMode, state, setZoomLevel as _setZoomLevelRaw } from './state.js';
 import { savePetDebounced } from './storage.js';
 import { displayPetName } from './dna.js';
 
-import { planetLevel } from './level_planet.js';
+import { planetLevel, showPlanetResearchPanel, showVisitReturnPrompt } from './level_planet.js';
 import { fieldLevel }  from './level_field.js';
 import { petLevel, stopPetWalk } from './level_pet.js';
 import { cellLevel, stopCellGame } from './level_cell.js';
 import { playPetHappy } from './pet.js';
 import { getRuntimePetStats } from './petLifecycle.js';
+import { getActiveSickness, getEffectiveSicknessSeverity } from './petTick.js';
+import { computePlanetProgress } from './planetProgress.js';
 import SoundManager from './soundManager.js';
 
 const soundManager = SoundManager.getInstance();
@@ -563,6 +565,14 @@ function ensureZoomLevelBar(root = document, pet = __lastPet) {
 
 function getZoomStageEmergency(stageId, pet = __lastPet) {
     if (!pet) return null;
+    const sickness = getActiveSickness(pet);
+    if (stageId === 'cell' && sickness) {
+        const severity = getEffectiveSicknessSeverity(pet);
+        return {
+            iconHtml: '<svg class="mh-zoom-bar-emergency-svg" viewBox="0 0 32 32" aria-hidden="true"><circle cx="16" cy="16" r="13" fill="#fee2e2" stroke="#fff" stroke-width="3"/><path d="M14 7h4v7h7v4h-7v7h-4v-7H7v-4h7Z" fill="#dc2626" stroke="#991b1b" stroke-width="1" stroke-linejoin="round"/></svg>',
+            tip: `生病：${sickness.def.name}，当前病情 ${severity}/10，进入细胞层治疗。`,
+        };
+    }
     const mood = Number(pet.stats?.mood);
     const hunger = Number(pet.stats?.hunger);
     if (stageId === 'field' && Number.isFinite(mood) && mood <= 0) {
@@ -578,6 +588,10 @@ function getZoomStageEmergency(stageId, pet = __lastPet) {
 }
 
 function getZoomLevelHint(lvl = state.zoomLevel, pet = __lastPet) {
+    if (isVisitingMode()) {
+        if (lvl <= 0) return '好友星球太空层只用于返航确认。';
+        if (lvl >= 3) return '拜访好友时只能在星球表面和宠物房间活动。';
+    }
     const stage = ZOOM_BAR_STAGES[clampLvl(lvl)];
     const emergency = getZoomStageEmergency(stage?.id, pet);
     if (emergency) return `${emergency.tip} ${stage?.hint || '滚动 / 双指缩放视角'}`;
@@ -1294,6 +1308,13 @@ function handleCompanionPetTouch(petEl, pet = __lastPet) {
 function requestZoomLevel(target) {
     if (isDecorZoomLocked()) return;
     const to = clampLvl(target);
+    if (isVisitingMode()) {
+        if (to > 2) {
+            showToast('拜访好友时只能在星球表面和宠物房间活动。', 'info', 1800);
+            forceBestCameraDistance();
+            return;
+        }
+    }
     if (to === state.zoomLevel) return;
     if (__mhZoomAnimating) return;
     clearPendingZoomTransition();
@@ -1461,6 +1482,7 @@ function runZoomTransition(from, to) {
             bindDockHorizontalScroll();
             restoreDockScrollPositions(dock);
             newLevel.onEnter?.(pet, ctx);
+            if (isVisitingMode() && to === 0) showVisitReturnPrompt(pet, ctx);
             schedulePreRenderAdjacent();
         });
         showZoomLevelBar({ autoHide: true, delay: 2000, requireLevelJumpCompleted: true });
@@ -1968,11 +1990,14 @@ function showPetDetailsModal(pet) {
 }
 
 function showMenuModal(callbacks) {
+    const progress = computePlanetProgress();
     const items = [
         { k: 'petList',   icon: '🐾', label: t('petList') },
         { k: 'shop',      icon: '🛒', label: t('shop') },
         { k: 'inventory', icon: '🎒', label: t('inventory') },
+        ...(progress.level >= 3 ? [{ k: 'research', icon: '🔬', label: '研究' }] : []),
         { k: 'mailbox',   icon: '💌', label: '邮箱' },
+        { k: 'storyMaker', icon: '📖', label: t('storyMaker') },
         { k: 'help',      icon: '❔', label: t('help') },
         { k: 'profile',   icon: '📋', label: t('profile') },
         { k: 'settings',  icon: '⚙️', label: t('settings') },
@@ -1999,12 +2024,45 @@ function showMenuModal(callbacks) {
         </div>
     `, (e, close) => {
         const navBtn = e.target.closest?.('[data-nav]');
-        if (navBtn) { close(); callbacks.onNav?.(navBtn.dataset.nav); return; }
+        if (navBtn) {
+            close();
+            if (navBtn.dataset.nav === 'research') openResearchFromMenu(callbacks);
+            else callbacks.onNav?.(navBtn.dataset.nav);
+            return;
+        }
         if (e.target.closest?.('[data-act="close"]')) close();
     }, () => {
         if (timeTimer) clearInterval(timeTimer);
     });
     timeTimer = setInterval(() => updateTime(modal.mask), 1000);
+}
+
+function openResearchFromMenu(callbacks = __lastCallbacks) {
+    if (!__lastPet) return;
+    const openResearch = () => showPlanetResearchPanel(__lastPet, makeCtx(__lastPet, callbacks));
+    if (state.zoomLevel === 0) {
+        openResearch();
+        return;
+    }
+    if (isDecorZoomLocked()) {
+        showToast('请先退出当前操作模式，再进入研究。', 'info', 2200);
+        return;
+    }
+    requestZoomLevel(0);
+    waitForPlanetLevel(openResearch);
+}
+
+function waitForPlanetLevel(callback, startedAt = Date.now()) {
+    const ready = state.zoomLevel === 0 && !__mhZoomAnimating && !__pendingZoomTransitionTimer;
+    if (ready) {
+        requestAnimationFrame(() => callback?.());
+        return;
+    }
+    if (Date.now() - startedAt > 2800) {
+        if (state.zoomLevel === 0) callback?.();
+        return;
+    }
+    setTimeout(() => waitForPlanetLevel(callback, startedAt), 80);
 }
 
 function formatMenuTime() {

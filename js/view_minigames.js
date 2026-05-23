@@ -13,6 +13,7 @@ const STAT_REWARD_ANIMATION_MS = 1600;
 const EGG_IMAGE_SIZE = 256;
 const DEFAULT_MINIGAME_STAT_BONUS = { bond: 12, mood: 6 };
 const MINIGAME_REST_PROMPT_MS = 5 * 60 * 1000;
+const MINIGAME_ENTRY_CLICK_GUARD_MS = 520;
 const MINIGAME_PET_IMAGE_REQUESTS = new Set([
     'haqi_get_pet_image',
     'haqiGetPetImage',
@@ -34,7 +35,7 @@ const MINIGAMES = [
     },
     {
         id: 'zuma',
-        title: '哈奇祖玛',
+        title: '宠物祖玛',
         icon: '🟠',
         src: './minigames/haqi_zuma.html',
         statBonus: { bond: 24, mood: 10 },
@@ -42,7 +43,7 @@ const MINIGAMES = [
     },
     {
         id: 'bubble_pets',
-        title: '哈奇泡泡龙',
+        title: '宠物泡泡龙',
         icon: '💦',
         src: './minigames/haqi_bubble_pets.html',
         statBonus: { bond: 22, mood: 10 },
@@ -73,7 +74,7 @@ const MINIGAMES = [
     },
     {
         id: 'food_hexcells',
-        title: '哈奇寻食蜂巢',
+        title: '宠物寻食蜂巢',
         icon: '🍯',
         src: './minigames/haqi_food_hexcells.html',
         statBonus: { bond: 20, mood: 9 },
@@ -81,7 +82,7 @@ const MINIGAMES = [
     },
     {
         id: 'food_stack_match',
-        title: '哈奇食物叠叠消',
+        title: '宠物食物叠叠消',
         icon: '🍱',
         src: './minigames/haqi_food_stack_match.html',
         statBonus: { bond: 22, mood: 10 },
@@ -97,7 +98,7 @@ const MINIGAMES = [
     },
     {
         id: 'billiards',
-        title: '哈奇台球对战',
+        title: '宠物台球对战',
         icon: '🎱',
         src: './minigames/haqi_billiards.html',
         statBonus: { bond: 30, mood: 9 },
@@ -113,7 +114,7 @@ const MINIGAMES = [
     },
     {
         id: 'laser_maze',
-        title: '哈奇激光迷宫',
+        title: '宠物激光迷宫',
         icon: '⚡',
         src: './minigames/haqi_laser_maze.html',
         statBonus: { bond: 26, mood: 10 },
@@ -153,7 +154,7 @@ const MINIGAMES = [
     },
     {
         id: 'matrix_hack',
-        title: '哈奇矩阵破解',
+        title: '宠物矩阵破解',
         icon: '⌘',
         src: './minigames/haqi_matrix_hack.html',
         statBonus: { bond: 26, mood: 9 },
@@ -209,12 +210,15 @@ let currentGameStartedAt = 0;
 let defaultEggBlobPromise = null;
 let restPromptTimer = null;
 let restPromptOpen = false;
+let suppressCurrentRewards = false;
 
-export function renderMinigames(panel, { pet }, { onBack, onGameFinished } = {}) {
+export function renderMinigames(panel, { pet }, { onBack, onGameFinished, initialGameId = null, initialGameParams = null, allowPlayWhenLowEnergy = false, suppressRewards = false, exitGameToBack = false } = {}) {
     cleanupMessageListener?.();
     currentGame = null;
     rewardedRounds = new Set();
     currentPet = pet || null;
+    suppressCurrentRewards = !!suppressRewards;
+    const ignoreListClicksUntil = initialGameId ? 0 : Date.now() + MINIGAME_ENTRY_CLICK_GUARD_MS;
     panel.innerHTML = `
         <style>
             @keyframes mhMinigameStatPop {
@@ -237,6 +241,17 @@ export function renderMinigames(panel, { pet }, { onBack, onGameFinished } = {})
                 0% { opacity: 0; transform: translateY(9px) scale(.72); }
                 22% { opacity: 1; transform: translateY(0) scale(1); }
                 100% { opacity: 0; transform: translateY(-18px) scale(.86); }
+            }
+            @keyframes mhMinigameLoadingSpin {
+                to { transform: rotate(360deg); }
+            }
+            @keyframes mhMinigameLoadingFloat {
+                0%, 100% { transform: translateY(0); }
+                50% { transform: translateY(-6px); }
+            }
+            @keyframes mhMinigameLoadingDot {
+                0%, 80%, 100% { opacity: .35; transform: translateY(0); }
+                40% { opacity: 1; transform: translateY(-4px); }
             }
             .mh-minigame-stat-pill.stat-up {
                 animation: mhMinigameStatPop 1.12s ease-out;
@@ -331,6 +346,82 @@ export function renderMinigames(panel, { pet }, { onBack, onGameFinished } = {})
             .mh-minigame-reward-spark:nth-child(1) { left: 18%; animation-delay: .02s; }
             .mh-minigame-reward-spark:nth-child(2) { right: 18%; animation-delay: .12s; }
             .mh-minigame-reward-spark:nth-child(3) { left: 48%; top: -16px; animation-delay: .2s; }
+            .mh-minigame-loading {
+                position: absolute;
+                inset: 0;
+                z-index: 4;
+                display: none;
+                align-items: center;
+                justify-content: center;
+                padding: 24px;
+                color: #0f2747;
+                background:
+                    radial-gradient(circle at 50% 38%, rgba(224,247,255,.98), rgba(186,230,253,.88) 34%, rgba(15,39,71,.52) 74%),
+                    linear-gradient(180deg, rgba(6,18,44,.28), rgba(15,39,71,.54));
+                transition: opacity .24s ease;
+            }
+            .mh-minigame-is-loading #mhMinigameFrame {
+                opacity: 0;
+                pointer-events: none;
+            }
+            .mh-minigame-loading.show { display: flex; }
+            .mh-minigame-loading-card {
+                width: min(300px, 76vw);
+                min-height: 172px;
+                padding: 24px 22px 22px;
+                border-radius: 22px;
+                border: 2px solid rgba(224,247,255,.9);
+                background: linear-gradient(180deg, rgba(255,255,255,.96), rgba(219,246,255,.92));
+                box-shadow: 0 22px 54px rgba(6,18,44,.34), inset 0 2px 0 rgba(255,255,255,.9), 0 0 0 7px rgba(103,232,249,.14);
+                text-align: center;
+                animation: mhMinigameLoadingFloat 2.2s ease-in-out infinite;
+            }
+            .mh-minigame-loading-spinner {
+                position: relative;
+                width: 64px;
+                height: 64px;
+                margin: 0 auto 14px;
+                border-radius: 50%;
+                background: conic-gradient(from 0deg, #67e8f9, #0ea5e9, #8b5cf6, #67e8f9);
+                animation: mhMinigameLoadingSpin 1.05s linear infinite;
+                box-shadow: 0 8px 18px rgba(14,116,144,.22);
+            }
+            .mh-minigame-loading-spinner::after {
+                content: '';
+                position: absolute;
+                inset: 8px;
+                border-radius: 50%;
+                background: linear-gradient(180deg, #ffffff, #e0f7ff);
+                box-shadow: inset 0 2px 0 rgba(255,255,255,.86);
+            }
+            .mh-minigame-loading-title {
+                font-size: 20px;
+                line-height: 1.2;
+                font-weight: 1000;
+                color: var(--text-primary);
+                text-shadow: 0 1px 0 rgba(255,255,255,.95);
+            }
+            .mh-minigame-loading-dots {
+                display: inline-flex;
+                gap: 4px;
+                margin-left: 3px;
+                vertical-align: .12em;
+            }
+            .mh-minigame-loading-dots span {
+                width: 5px;
+                height: 5px;
+                border-radius: 50%;
+                background: #0ea5e9;
+                animation: mhMinigameLoadingDot 1s ease-in-out infinite;
+            }
+            .mh-minigame-loading-dots span:nth-child(2) { animation-delay: .14s; }
+            .mh-minigame-loading-dots span:nth-child(3) { animation-delay: .28s; }
+            .mh-minigame-loading-subtitle {
+                margin-top: 8px;
+                font-size: 13px;
+                font-weight: 800;
+                color: var(--text-muted);
+            }
             .mh-minigame-stat-pill.tip-open::after {
                 content: attr(data-tip);
                 position: absolute;
@@ -366,7 +457,10 @@ export function renderMinigames(panel, { pet }, { onBack, onGameFinished } = {})
                 .mh-minigame-coin-pill.coin-up,
                 .mh-minigame-stat-delta,
                 .mh-minigame-reward-fx.show,
-                .mh-minigame-reward-spark { animation: none; }
+                .mh-minigame-reward-spark,
+                .mh-minigame-loading-card,
+                .mh-minigame-loading-spinner,
+                .mh-minigame-loading-dots span { animation: none; }
             }
         </style>
         <div class="topbar">
@@ -380,7 +474,7 @@ export function renderMinigames(panel, { pet }, { onBack, onGameFinished } = {})
             </div>
         </div>
         <div class="absolute" style="top:52px;left:0;right:0;bottom:0;overflow:hidden;background:linear-gradient(180deg,#e0f7ff 0%,#bae6fd 46%,#d9f99d 100%)">
-            <div id="mhMinigameList" style="height:100%;overflow:auto;padding:14px;display:grid;grid-template-columns:repeat(auto-fit,minmax(168px,1fr));gap:12px;align-content:start">
+            <div id="mhMinigameList" style="height:100%;overflow:auto;padding:14px;display:${initialGameId ? 'none' : 'grid'};grid-template-columns:repeat(auto-fit,minmax(168px,1fr));gap:12px;align-content:start">
                 ${PLAY_ITEMS.map(game => `
                     <button type="button" class="card-flat" data-game-id="${escapeHtml(game.id)}" style="text-align:center;min-height:118px;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:10px;border-radius:12px;cursor:pointer">
                         ${renderMinigameIcon(game)}
@@ -389,8 +483,17 @@ export function renderMinigames(panel, { pet }, { onBack, onGameFinished } = {})
                     </button>
                 `).join('')}
             </div>
-            <div id="mhMinigameFrameWrap" style="display:none;position:absolute;inset:0;background:#0f2747">
+            <div id="mhMinigameFrameWrap" class="${initialGameId ? 'mh-minigame-is-loading' : ''}" style="display:${initialGameId ? 'block' : 'none'};position:absolute;inset:0;background:#0f2747">
                 <iframe id="mhMinigameFrame" title="玩耍内容" style="width:100%;height:100%;border:0;background:#fff" allow="autoplay; fullscreen"></iframe>
+                <div id="mhMinigameLoading" class="mh-minigame-loading${initialGameId ? ' show' : ''}" role="status" aria-live="polite" aria-label="小游戏加载中" aria-hidden="${initialGameId ? 'false' : 'true'}">
+                    <div class="mh-minigame-loading-card">
+                        <div class="mh-minigame-loading-spinner" aria-hidden="true"></div>
+                        <div class="mh-minigame-loading-title">
+                            加载中<span class="mh-minigame-loading-dots" aria-hidden="true"><span></span><span></span><span></span></span>
+                        </div>
+                        <div class="mh-minigame-loading-subtitle">正在打开小游戏</div>
+                    </div>
+                </div>
                 <div id="mhMinigameRewardFx" class="mh-minigame-reward-fx" aria-live="polite"></div>
                 <button type="button" class="btn-primary" id="mhMinigameDone" style="display:none;position:absolute;right:12px;bottom:12px;z-index:3;padding:8px 14px;font-size:13px">完成玩耍</button>
             </div>
@@ -398,6 +501,11 @@ export function renderMinigames(panel, { pet }, { onBack, onGameFinished } = {})
 
     $('mhBack').onclick = () => {
         if (currentGame) {
+            if (exitGameToBack) {
+                cleanupMessageListener?.();
+                onBack?.();
+                return;
+            }
             showList();
             return;
         }
@@ -406,7 +514,14 @@ export function renderMinigames(panel, { pet }, { onBack, onGameFinished } = {})
     };
 
     panel.querySelectorAll('[data-game-id]').forEach(btn => {
-        btn.onclick = () => openGame(btn.dataset.gameId);
+        btn.onclick = (e) => {
+            if (e?.isTrusted && Date.now() < ignoreListClicksUntil) {
+                e.preventDefault();
+                e.stopPropagation();
+                return;
+            }
+            openGame(btn.dataset.gameId);
+        };
     });
     $('mhMinigameDone').onclick = () => finishCurrentGame(onGameFinished);
     bindStatTips(panel);
@@ -419,7 +534,10 @@ export function renderMinigames(panel, { pet }, { onBack, onGameFinished } = {})
             handlePetImageRequest(frame, msg);
             return;
         }
-        if (msg.type === 'gameLoaded') return;
+        if (msg.type === 'gameLoaded') {
+            setMinigameLoading(false);
+            return;
+        }
         if (msg.type === 'gameFinished' || msg.type === 'learningFinished') {
             finishCurrentGame(onGameFinished, msg.data || {});
         }
@@ -434,9 +552,11 @@ export function renderMinigames(panel, { pet }, { onBack, onGameFinished } = {})
         rewardedRounds = new Set();
         currentPet = null;
         currentGameStartedAt = 0;
+        suppressCurrentRewards = false;
         clearMinigameRestPrompt();
         cleanupMessageListener = null;
     };
+    if (initialGameId && !currentGame) openGame(initialGameId, initialGameParams, { allowLowEnergy: allowPlayWhenLowEnergy });
 
     function renderMinigameIcon(game) {
         const label = escapeHtml(game.title || '小游戏');
@@ -872,10 +992,10 @@ function animateStatPill(pill, delta) {
     }, STAT_REWARD_ANIMATION_MS);
 }
 
-function openGame(gameId) {
+function openGame(gameId, params = null, { allowLowEnergy = false } = {}) {
     const game = PLAY_ITEMS.find(item => item.id === gameId);
     if (!game) return;
-    if (!canPlayGame(currentPet)) {
+    if (!allowLowEnergy && !canPlayGame(currentPet)) {
         refreshPetStats();
         showToast('体力不足，先休息一下吧', 'info', 1400);
         return;
@@ -891,10 +1011,22 @@ function openGame(gameId) {
     if (!list || !wrap || !frame) return;
     list.style.display = 'none';
     wrap.style.display = 'block';
+    setMinigameLoading(true);
     if (done) done.style.display = game.manualComplete ? 'block' : 'none';
     frame.setAttribute('allow', game.allow || 'autoplay; fullscreen');
-    frame.src = `${game.src}${game.src.includes('?') ? '&' : '?'}t=${Date.now()}`;
+    frame.src = minigameUrl(game.src, params);
     showToast(`开始 ${game.title}`, 'info', 1000);
+}
+
+function minigameUrl(src, params = null) {
+    const query = new URLSearchParams({ t: String(Date.now()) });
+    if (params && typeof params === 'object') {
+        Object.entries(params).forEach(([key, value]) => {
+            if (value == null || value === '') return;
+            query.set(key, String(value));
+        });
+    }
+    return `${src}${src.includes('?') ? '&' : '?'}${query.toString()}`;
 }
 
 function finishCurrentGame(onGameFinished, data = {}) {
@@ -906,17 +1038,17 @@ function finishCurrentGame(onGameFinished, data = {}) {
     const beforeStats = capturePetStatValues(currentPet);
     const beforeCoins = coinValue();
     const durationSeconds = activityDurationSeconds(data, currentGameStartedAt, finishedAt);
-    const rewardData = miniGameLevelReward(currentGame, data, durationSeconds);
+    const rewardData = suppressCurrentRewards ? { levelReward: null, rewardCoins: null } : miniGameLevelReward(currentGame, data, durationSeconds);
     onGameFinished?.(currentGame, {
         ...data,
         completed: data?.completed ?? data?.passed ?? true,
         startedAt: currentGameStartedAt || undefined,
         finishedAt,
         durationSeconds,
-        statBonus: miniGameStatBonus(currentGame),
+        statBonus: suppressCurrentRewards ? {} : miniGameStatBonus(currentGame),
         ...(rewardData.levelReward ? rewardData : {}),
     });
-    if (Number(data?.earnedPoints) > 0) soundManager.playPointReward();
+    if (!suppressCurrentRewards && Number(data?.earnedPoints) > 0) soundManager.playPointReward();
     if (rewardData.rewardCoins) playLevelRewardAnimation(currentGame, rewardData.rewardCoins, rewardData.levelReward);
     refreshCoins({ previous: beforeCoins, animate: true });
     refreshPetStats({ previous: beforeStats, animate: true });
@@ -987,6 +1119,7 @@ function activityDurationSeconds(data = {}, startedAt = 0, finishedAt = Date.now
 function resetMinigameIframe() {
     const frame = $('mhMinigameFrame');
     if (!frame) return;
+    setMinigameLoading(false);
     try {
         frame.src = 'about:blank';
     } catch (_) {}
@@ -1014,4 +1147,14 @@ function showList() {
     currentGame = null;
     rewardedRounds = new Set();
     currentGameStartedAt = 0;
+}
+
+function setMinigameLoading(isLoading) {
+    const loading = $('mhMinigameLoading');
+    const wrap = $('mhMinigameFrameWrap');
+    const active = !!isLoading;
+    if (wrap) wrap.classList.toggle('mh-minigame-is-loading', active);
+    if (!loading) return;
+    loading.classList.toggle('show', active);
+    loading.setAttribute('aria-hidden', isLoading ? 'false' : 'true');
 }

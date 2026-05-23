@@ -43,6 +43,17 @@ async function writeFileSafe(path, content) {
     }
 }
 
+async function listDirSafe(path) {
+    try {
+        const s = ensureStore();
+        if (typeof s.listDir !== 'function') return [];
+        const list = await s.listDir(path);
+        return Array.isArray(list) ? list : [];
+    } catch (_) {
+        return [];
+    }
+}
+
 async function readJSON(path, def = null) {
     const text = await readFileSafe(path);
     if (!text) return def;
@@ -80,10 +91,106 @@ const PATHS = {
     layouts:     'user/layouts.json',
     inventory:   'user/inventory.json',
     postcardList: 'user/postcard_list.json',
+    storyList:   'stories/index.json',
+    story:      (name) => `stories/${name}.json`,
     pet:        (id) => `pets/${id}.json`,
     memory:     (id) => `pets/${id}.memory.md`,
     chatLog:    (id) => `pets/${id}.chat.log`,
 };
+
+function safeStoryName(name) {
+    const text = String(name || '').trim().replace(/\.json$/i, '');
+    return (text || 'story_' + Date.now())
+        .replace(/[^a-zA-Z0-9_\-\u4e00-\u9fa5]/g, '_')
+        .slice(0, 64) || ('story_' + Date.now());
+}
+
+function normalizeStoryListRecord(record) {
+    if (!record || typeof record !== 'object') return null;
+    const path = String(record.path || '').trim().replace(/^\/+/, '');
+    if (!path) return null;
+    return {
+        path,
+        id: String(record.id || path).slice(0, 120),
+        title: String(record.title || record.id || '我的宠物故事').slice(0, 80),
+        sceneCount: Math.max(0, Number(record.sceneCount) || 0),
+        actorCount: Math.max(0, Number(record.actorCount) || 0),
+        lineCount: Math.max(0, Number(record.lineCount) || 0),
+        activityCount: Math.max(0, Number(record.activityCount) || 0),
+        minigameCount: Math.max(0, Number(record.minigameCount) || 0),
+        updatedAt: Number.isFinite(record.updatedAt) ? record.updatedAt : 0,
+        coverActor: record.coverActor && typeof record.coverActor === 'object' ? record.coverActor : null,
+    };
+}
+
+function createStoryListRecord(story, path) {
+    const scenes = Array.isArray(story?.scenes) ? story.scenes : [];
+    let lineCount = 0;
+    let activityCount = 0;
+    let minigameCount = 0;
+    scenes.forEach(scene => {
+        const timeline = Array.isArray(scene?.timeline) && scene.timeline.length
+            ? scene.timeline
+            : [
+                ...(Array.isArray(scene?.lines) ? scene.lines.map(line => ({ kind: 'line', ...line })) : []),
+                ...(Array.isArray(scene?.activities) ? scene.activities.map(activity => ({ kind: 'activity', ...activity })) : []),
+            ];
+        timeline.forEach(item => {
+            if (item?.kind === 'activity' || item?.type) {
+                activityCount += 1;
+                if (item.type === 'minigame') minigameCount += 1;
+            } else if (String(item?.text || item?.say || '').trim()) {
+                lineCount += 1;
+            }
+        });
+    });
+    const actors = Array.isArray(story?.actors) ? story.actors : [];
+    const coverActor = actors.find(actor => actor.isMainActor) || actors[0] || null;
+    return normalizeStoryListRecord({
+        path,
+        id: story?.id || path,
+        title: story?.title || '我的宠物故事',
+        sceneCount: scenes.length,
+        actorCount: actors.length,
+        lineCount,
+        activityCount,
+        minigameCount,
+        updatedAt: Number.isFinite(story?.savedAt) ? story.savedAt : Date.now(),
+        coverActor,
+    });
+}
+
+function storyPathFromDirEntry(entry) {
+    if (typeof entry === 'string') {
+        const clean = entry.replace(/^\/+/, '');
+        if (!clean || clean.endsWith('/')) return '';
+        return clean.startsWith('stories/') ? clean : `stories/${clean}`;
+    }
+    if (!entry || typeof entry !== 'object') return '';
+    const raw = String(entry.path || entry.fullPath || entry.name || '').trim().replace(/^\/+/, '');
+    if (!raw || raw.endsWith('/')) return '';
+    return raw.startsWith('stories/') ? raw : `stories/${raw}`;
+}
+
+function createStoryPathRecord(path) {
+    const cleanPath = String(path || '').trim().replace(/^\/+/, '');
+    if (!cleanPath) return null;
+    const filename = cleanPath.split('/').pop() || cleanPath;
+    const title = filename.replace(/\.json$/i, '').replace(/[_-]+/g, ' ').trim() || '我的宠物故事';
+    return normalizeStoryListRecord({
+        path: cleanPath,
+        id: cleanPath,
+        title,
+    });
+}
+
+async function discoverWorkspaceStoryRecords() {
+    const entries = await listDirSafe('stories');
+    const paths = [...new Set(entries
+        .map(storyPathFromDirEntry)
+        .filter(path => /\.json$/i.test(path) && path !== PATHS.storyList))];
+    return paths.map(createStoryPathRecord).filter(Boolean);
+}
 
 function normalizePostcardRecord(record) {
     if (!record || typeof record !== 'object') return null;
@@ -176,6 +283,7 @@ function getUserProfilePayload() {
         planetMining: state.planetMining && typeof state.planetMining === 'object' ? state.planetMining : {},
         haqiIslandFarewells: Array.isArray(state.haqiIslandFarewells) ? state.haqiIslandFarewells.slice(0, 200).map(createFarewellPayload) : [],
         invitedPets: Array.isArray(state.invitedPets) ? state.invitedPets.slice(0, 10).map(createInvitedPetPayload) : [],
+        recentFriendPlanets: Array.isArray(state.recentFriendPlanets) ? state.recentFriendPlanets.slice(0, 3).map(createRecentFriendPlanetPayload).filter(Boolean) : [],
         remotePlanetDiscoveries: state.remotePlanetDiscoveries && typeof state.remotePlanetDiscoveries === 'object' ? state.remotePlanetDiscoveries : {},
         remoteElementStocks: state.remoteElementStocks && typeof state.remoteElementStocks === 'object' ? state.remoteElementStocks : {},
         lifetimeStats: state.lifetimeStats && typeof state.lifetimeStats === 'object' ? state.lifetimeStats : {},
@@ -203,6 +311,20 @@ function createInvitedPetPayload(record) {
         acceptedAt: Number.isFinite(record.acceptedAt) ? record.acceptedAt : Date.now(),
         friendStatus: typeof record.friendStatus === 'string' ? record.friendStatus : '',
         pet,
+    };
+}
+
+function createRecentFriendPlanetPayload(record) {
+    if (!record || typeof record !== 'object') return null;
+    const username = typeof record.username === 'string' ? record.username.trim().slice(0, 64) : '';
+    const userId = typeof record.userId === 'string' || typeof record.userId === 'number' ? String(record.userId).trim().slice(0, 64) : '';
+    if (!username && !userId) return null;
+    return {
+        username,
+        userId,
+        name: typeof record.name === 'string' ? record.name.trim().slice(0, 80) : '',
+        planetName: typeof record.planetName === 'string' ? record.planetName.trim().slice(0, 80) : '',
+        visitedAt: Number.isFinite(record.visitedAt) ? record.visitedAt : Date.now(),
     };
 }
 
@@ -248,6 +370,7 @@ export async function loadUserProfile() {
     state.haqiIslandFarewells = Array.isArray(p.haqiIslandFarewells) ? p.haqiIslandFarewells.slice(0, 200) : [];
     state.invitedPets = Array.isArray(p.invitedPets) ? p.invitedPets.slice(0, 10).filter(item => item && typeof item === 'object') : [];
     state.activeInvitedPet = state.invitedPets[0] || null;
+    state.recentFriendPlanets = Array.isArray(p.recentFriendPlanets) ? p.recentFriendPlanets.map(createRecentFriendPlanetPayload).filter(Boolean).slice(0, 3) : [];
     state.remotePlanetDiscoveries = p.remotePlanetDiscoveries && typeof p.remotePlanetDiscoveries === 'object' ? p.remotePlanetDiscoveries : {};
     state.remoteElementStocks = p.remoteElementStocks && typeof p.remoteElementStocks === 'object' ? p.remoteElementStocks : {};
     const ls = p.lifetimeStats && typeof p.lifetimeStats === 'object' ? p.lifetimeStats : {};
@@ -293,6 +416,61 @@ export async function addPostcardRecord(record) {
     const next = [normalized, ...existing.filter(item => postcardRecordKey(item) !== key)].slice(0, 500);
     await savePostcardList(next);
     return next;
+}
+
+export async function loadWorkspaceStory(pathOrName) {
+    const raw = String(pathOrName || '').trim();
+    if (!raw) return null;
+    const path = raw.includes('/') ? raw : PATHS.story(raw);
+    return await readJSON(path.replace(/^\/+/, ''), null);
+}
+
+export async function loadWorkspaceStoryRecord(pathOrName) {
+    const raw = String(pathOrName || '').trim();
+    if (!raw) return null;
+    const path = raw.includes('/') ? raw : PATHS.story(raw);
+    const cleanPath = path.replace(/^\/+/, '');
+    const story = await loadWorkspaceStory(cleanPath);
+    return story ? createStoryListRecord(story, cleanPath) : null;
+}
+
+export async function loadWorkspaceStoryList() {
+    const list = await readJSON(PATHS.storyList, []);
+    const indexed = (Array.isArray(list) ? list : [])
+        .map(normalizeStoryListRecord)
+        .filter(Boolean);
+    const discovered = await discoverWorkspaceStoryRecords();
+    const byPath = new Map();
+    [...indexed, ...discovered].forEach(record => {
+        if (!record?.path) return;
+        const prev = byPath.get(record.path);
+        byPath.set(record.path, !prev || (record.updatedAt || 0) >= (prev.updatedAt || 0) ? record : prev);
+    });
+    return [...byPath.values()].sort((a, b) => (b.updatedAt || 0) - (a.updatedAt || 0));
+}
+
+export async function saveWorkspaceStoryList(list) {
+    const normalized = (Array.isArray(list) ? list : [])
+        .map(normalizeStoryListRecord)
+        .filter(Boolean)
+        .slice(0, 300);
+    await writeJSON(PATHS.storyList, normalized);
+    return normalized;
+}
+
+export async function saveWorkspaceStory(story, name = '') {
+    const baseName = safeStoryName(name || story?.id || story?.title || 'story');
+    const path = PATHS.story(baseName);
+    const payload = {
+        ...story,
+        id: story?.id || baseName,
+        savedAt: Date.now(),
+    };
+    await writeJSON(path, payload);
+    const record = createStoryListRecord(payload, path);
+    const existing = await loadWorkspaceStoryList();
+    await saveWorkspaceStoryList([record, ...existing.filter(item => item.path !== path)]);
+    return { path, story: payload };
 }
 
 // ========== 宠物 ==========
@@ -519,6 +697,7 @@ export async function clearStoredData() {
         writeFileSafe(PATHS.layouts, ''),
         writeFileSafe(PATHS.inventory, ''),
         writeFileSafe(PATHS.postcardList, ''),
+        writeFileSafe(PATHS.storyList, ''),
         ...ids.map(id => writeFileSafe(PATHS.pet(id), '')),
     ]);
     state.layouts = {};

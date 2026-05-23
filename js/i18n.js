@@ -19,9 +19,9 @@ export const zhCN = {
     loggingIn: '登录中…',
 
     // 宠物列表
-    myPets: '我的宠物',
-    petList: '宠物列表',
-    switchPet: '宠物列表',
+    myPets: '宠物图鉴',
+    petList: '宠物图鉴',
+    switchPet: '宠物图鉴',
     hatchNew: '🥚 孵化新蛋',
     breedNew: '💕 繁殖宝宝',
     noPets: '还没有宠物，孵化你的第一只吧！',
@@ -69,6 +69,7 @@ export const zhCN = {
     // 聊天
     chat: '聊天',
     help: '帮助',
+    storyMaker: '故事创作',
     chatPlaceholder: '说点什么…',
     send: '发送',
     voiceChat: '🎙 语音对话',

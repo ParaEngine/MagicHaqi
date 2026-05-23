@@ -1,9 +1,12 @@
 // 宠物列表视图（用于浏览所有宠物）
-import { $, $$, coinIconSvg, escapeHtml } from './utils.js';
+import { $, $$, coinIconSvg, confirm, escapeHtml, randId, showToast } from './utils.js';
 import { t } from './i18n.js';
 import { formatDna, displayPetName, dnaDietPreference, dietPreferenceLabel } from './dna.js';
-import { buildEggSvg, getPetSpriteCell, petArtHtml, SHEET_COLS, SHEET_ROWS } from './pet.js';
-import { getCompanionDays, getPetBirthday, getPetFindTarget, getPetLocationInfo, getRuntimePetStats, isPetOnCurrentPlanet, isPetSelectable } from './petLifecycle.js';
+import { buildEggSvg, getPetSpriteCell, SHEET_COLS, SHEET_ROWS } from './pet.js';
+import { defaultPermanentTrauma, defaultStats, eggStats, applyStage } from './petTick.js';
+import { markPetReleased, getCompanionDays, getPetBirthday, getPetFindTarget, getPetLocationInfo, getRuntimePetStats, isPetOnCurrentPlanet, isPetSelectable } from './petLifecycle.js';
+import { savePet, setCurrentPetPersisted, saveUserProfileDebounced, ensurePetData } from './storage.js';
+import { notify, setView, state } from './state.js';
 import { getStageName } from './config.js';
 
 // 阶段顺序（与 4×4 精灵图行对齐）：baby=0, teen=1, adult=2, elder=3
@@ -14,6 +17,14 @@ const ALBUM_STAGES = [
     { id: 'elder', name: '长老', emoji: '🦄' },
 ];
 const ALBUM_ANIMS = ['idle', 'happy', 'sad', 'sleep'];
+const PET_LIST_TABS = [
+    { id: 'mine', label: '我的宠物' },
+    { id: 'rare', label: '稀有宠物' },
+];
+let activePetListTab = 'mine';
+let famousPetsIndex = null;
+let famousPetsIndexPromise = null;
+const famousPetConfigCache = new Map();
 // 16 个 (stage, anim) 格子，每格多条候选小标题，按 seed 选其一。
 const ALBUM_CAPTIONS = {
     baby: [
@@ -216,7 +227,8 @@ function _ensureAlbumStyles() {
     const style = document.createElement('style');
     style.id = 'mh-album-styles';
     style.textContent = `
-        .mh-album-mask .modal-card { max-width: 460px; max-height:calc(100vh - 32px); padding:18px; overflow:hidden; display:flex; flex-direction:column; }
+        .mh-album-mask { zoom:1 !important; align-items:flex-start; padding:12px 16px; overflow:hidden; }
+        .mh-album-mask .modal-card { width:min(460px, calc(100vw - 32px)); max-width:460px; max-height:calc(100dvh - 24px); padding:18px; overflow:hidden; display:flex; flex-direction:column; }
         .mh-album-header { flex:0 0 auto; display:flex; flex-direction:column; gap:4px; padding-bottom:10px; margin-bottom:10px; border-bottom:1px dashed #d4d4d8; }
         .mh-album-meta { display:flex; flex-wrap:wrap; gap:6px 12px; font-size:12px; color:var(--text-secondary); }
         .mh-album-meta b { color:var(--text-primary); font-weight:600; }
@@ -296,6 +308,328 @@ function sortPetsByRecentBirthday(pets) {
     });
 }
 
+async function loadFamousPetsIndex() {
+    if (Array.isArray(famousPetsIndex)) return famousPetsIndex;
+    if (!famousPetsIndexPromise) {
+        const indexUrl = new URL('../famous-pets/index.json', import.meta.url);
+        famousPetsIndexPromise = fetch(indexUrl.href, { cache: 'no-cache' })
+            .then(response => response.ok ? response.json() : [])
+            .then(data => {
+                const list = Array.isArray(data) ? data : (Array.isArray(data?.pets) ? data.pets : []);
+                famousPetsIndex = list
+                    .map(item => ({
+                        id: String(item?.id || '').trim(),
+                        name: String(item?.name || '').trim(),
+                        imageSheetUrl: resolveFamousPetIndexAssetUrl(item?.imageSheetUrl, indexUrl.href),
+                        imageUrl: resolveFamousPetIndexAssetUrl(item?.imageUrl, indexUrl.href),
+                        rarity: Number(item?.rarity) || 0,
+                        price: Math.max(0, Math.round(Number(item?.price ?? 100) || 100)),
+                    }))
+                    .filter(item => item.id)
+                    .sort((a, b) => (b.rarity || 0) - (a.rarity || 0) || a.id.localeCompare(b.id));
+                return famousPetsIndex;
+            })
+            .catch((e) => {
+                console.warn('加载稀有宠物索引失败', e);
+                famousPetsIndex = [];
+                return famousPetsIndex;
+            })
+            .finally(() => { famousPetsIndexPromise = null; });
+    }
+    return famousPetsIndexPromise;
+}
+
+function resolveFamousPetIndexAssetUrl(value, baseUrl) {
+    const raw = String(value || '').trim();
+    if (!raw || /^(?:https?:|data:|blob:|\/)/i.test(raw)) return raw;
+    try { return new URL(raw, baseUrl).href; }
+    catch (_) { return raw; }
+}
+
+function hasHatchedFamousPet(entry, pets) {
+    const id = String(entry?.id || '').trim();
+    const name = String(entry?.name || '').trim();
+    if (!id && !name) return false;
+    return (pets || []).some(pet => {
+        if (!pet) return false;
+        const petId = String(pet.id || '').trim();
+        if (pet.lazyPetRecord) return !!id && petId === id;
+        const petName = String(pet.name || '').trim();
+        return (!!id && petId === id) || (!!name && petName === name);
+    });
+}
+
+function rarePetArtHtml(entry, unlocked) {
+    if (!unlocked) {
+        return `<div class="mh-rare-pet-unknown" aria-label="未发现">?</div>`;
+    }
+    const pet = {
+        id: entry.id,
+        stage: 'adult',
+        anim: 'happy',
+        imageUrl: entry.imageUrl || null,
+        imageSheetUrl: entry.imageSheetUrl || null,
+    };
+    return rawPetArtHtml(pet, entry.name || entry.id);
+}
+
+function rarePetCardHtml(entry, pets) {
+    const unlocked = hasHatchedFamousPet(entry, pets);
+    const name = unlocked ? (entry.name || entry.id) : '???';
+    const rarity = Math.max(0, Math.round(Number(entry.rarity) || 0));
+    return `
+        <button class="card-flat fade-in mh-rare-pet-card ${unlocked ? 'is-unlocked' : 'is-locked'}" data-rare-pet-id="${escapeHtml(entry.id)}" type="button">
+            <div class="mh-rare-pet-portrait">
+                ${rarePetArtHtml(entry, unlocked)}
+            </div>
+            <div class="mh-rare-pet-info">
+                <div class="mh-rare-pet-name">${escapeHtml(name)}</div>
+                <div class="mh-rare-pet-meta">
+                    <span class="stage-badge" style="background:${unlocked ? '#ecfeff' : '#f3f4f6'};color:${unlocked ? 'var(--accent-dark)' : '#6b7280'}">稀有度 ${rarity}</span>
+                    <span>${unlocked ? '已发现' : '未发现'}</span>
+                </div>
+            </div>
+        </button>`;
+}
+
+function rarePetPrice(entry) {
+    return Math.max(0, Math.round(Number(entry?.price ?? 100) || 100));
+}
+
+function rarePetPhotoCellHtml(entry, stageIdx, animIdx, unlocked) {
+    const canReveal = unlocked || stageIdx === 0;
+    const seed = _hashStr(`${entry?.id || ''}|rare|${stageIdx}|${animIdx}`);
+    const rotate = (((seed >> 4) % 1000) / 100 - 5).toFixed(2);
+    const offsetX = (((seed >> 8) % 60) / 10 - 3).toFixed(2);
+    const offsetY = (((seed >> 12) % 50) / 10 - 2.5).toFixed(2);
+    if (!canReveal || !entry?.imageSheetUrl) {
+        return `
+            <div class="mh-rare-album-photo" style="transform:translate(${offsetX}px, ${offsetY}px) rotate(${rotate}deg)">
+                <div class="mh-rare-album-image mh-rare-photo-unknown">?</div>
+            </div>`;
+    }
+    const bx = (animIdx * 100 / (SHEET_COLS - 1)).toFixed(3);
+    const by = (stageIdx * 100 / (SHEET_ROWS - 1)).toFixed(3);
+    const bg = ALBUM_BG_PALETTE[seed % ALBUM_BG_PALETTE.length];
+    return `
+        <div class="mh-rare-album-photo" style="transform:translate(${offsetX}px, ${offsetY}px) rotate(${rotate}deg)">
+            <div class="mh-rare-album-image mh-rare-photo-image mh-pet-list-raw" data-mh-raw-url="${escapeHtml(entry.imageSheetUrl)}" style="background-color:${bg};background-size:${SHEET_COLS * 100}% ${SHEET_ROWS * 100}%;background-position:${bx}% ${by}%;background-repeat:no-repeat;image-rendering:auto"></div>
+        </div>`;
+}
+
+function rarePetPhotoGridHtml(entry, unlocked) {
+    const blocks = ALBUM_STAGES.map((stage, stageIdx) => {
+        const cells = [];
+        for (let animIdx = 0; animIdx < SHEET_COLS; animIdx++) {
+            cells.push(rarePetPhotoCellHtml(entry, stageIdx, animIdx, unlocked));
+        }
+        return `
+            <div class="mh-rare-album-stage">
+                <div class="mh-rare-album-stage-title">
+                    <span style="font-size:18px">${stage.emoji}</span>
+                    <span class="font-bold">${escapeHtml(stage.name)}</span>
+                </div>
+                <div class="mh-rare-album-grid">${cells.join('')}</div>
+            </div>`;
+    }).join('');
+    return `<div class="mh-rare-album-scroll">${blocks}</div>`;
+}
+
+async function loadFamousPetConfig(entry) {
+    const id = String(entry?.id || '').trim();
+    if (!id) return null;
+    if (famousPetConfigCache.has(id)) return famousPetConfigCache.get(id);
+    const jsonUrl = new URL(`../famous-pets/${id}.json`, import.meta.url);
+    const promise = fetch(jsonUrl.href, { cache: 'no-cache' })
+        .then(response => response.ok ? response.json() : null)
+        .then(data => {
+            if (!data || typeof data !== 'object') return null;
+            return {
+                ...data,
+                imageUrl: resolveFamousPetIndexAssetUrl(data.imageUrl, jsonUrl.href) || null,
+                imageSheetUrl: resolveFamousPetIndexAssetUrl(data.imageSheetUrl, jsonUrl.href) || entry.imageSheetUrl || null,
+            };
+        })
+        .catch((e) => {
+            console.warn('加载稀有宠物配置失败', e);
+            return null;
+        });
+    famousPetConfigCache.set(id, promise);
+    const config = await promise;
+    famousPetConfigCache.set(id, config);
+    return config;
+}
+
+function openRarePetModal(entry, pets, refreshPetList) {
+    const unlocked = hasHatchedFamousPet(entry, pets);
+    const price = rarePetPrice(entry);
+    const canAfford = (Number(state.coins) || 0) >= price;
+    const mask = document.createElement('div');
+    mask.className = 'modal-mask mh-rare-modal-mask';
+    mask.innerHTML = `
+        <div class="modal-card mh-rare-modal-card">
+            <div class="mh-rare-modal-head">
+                <div>
+                    <div class="mh-rare-modal-title">${escapeHtml(unlocked ? (entry.name || entry.id) : '???')}</div>
+                    <div class="mh-rare-modal-subtitle">稀有度 ${escapeHtml(Math.round(Number(entry.rarity) || 0))}</div>
+                </div>
+                <button class="mh-rare-modal-close" data-rare-close type="button" aria-label="关闭">×</button>
+            </div>
+            ${rarePetPhotoGridHtml(entry, unlocked)}
+            <div class="mh-rare-modal-actions">
+                ${unlocked
+                    ? '<button class="btn-secondary" data-rare-close type="button">已拥有</button>'
+                    : `<button class="btn-primary" data-rare-hatch type="button" ${canAfford ? '' : 'disabled'}>孵化 ${coinIconSvg()} ${price}</button>`}
+            </div>
+        </div>`;
+    const close = () => mask.remove();
+    mask.addEventListener('click', (e) => {
+        if (e.target === mask || e.target.closest?.('[data-rare-close]')) { close(); return; }
+        if (e.target.closest?.('[data-rare-hatch]')) hatchRarePet(entry, mask, refreshPetList);
+    });
+    document.body.appendChild(mask);
+    setupLazyRawPetImages(mask);
+    if (!unlocked && !canAfford) showToast(`金币不足，需要 ${price} 金币`, 'error', 1800);
+}
+
+async function hatchRarePet(entry, mask, refreshPetList) {
+    const price = rarePetPrice(entry);
+    if ((Number(state.coins) || 0) < price) {
+        showToast(`金币不足，需要 ${price} 金币`, 'error', 1800);
+        return;
+    }
+    const button = mask.querySelector('[data-rare-hatch]');
+    if (button?.disabled) return;
+    if (button) button.disabled = true;
+
+    const current = state.currentPetId ? state.pets[state.currentPetId] : null;
+    if (current && isPetOnCurrentPlanet(current)) {
+        const targetName = entry?.name || entry?.id || '稀有宠物';
+        const ok = await confirm(`孵化 ${targetName} 前，${current.name || '当前宠物'} 会被放养到星球中，无法重新召回；随后会扣除 ${price} 金币。确定继续吗？`, {
+            okText: '放养并孵化',
+            cancelText: '再想想',
+        });
+        if (!ok) {
+            if (button) button.disabled = false;
+            return;
+        }
+    }
+
+    const config = await loadFamousPetConfig(entry);
+    if (!config?.id) {
+        showToast('稀有宠物配置不存在', 'error', 2200);
+        if (button) button.disabled = false;
+        return;
+    }
+
+    if (current && isPetOnCurrentPlanet(current)) {
+        markPetReleased(current, state.planetName || '宠物星');
+        await savePet(current);
+    }
+
+    const now = Date.now();
+    const pet = {
+        ...JSON.parse(JSON.stringify(config)),
+        id: config.id || entry.id || `rare_${randId(8)}`,
+        name: config.name || entry.name || config.id || entry.id || '稀有宠物',
+        imageUrl: config.imageUrl || null,
+        imageSheetUrl: config.imageSheetUrl || entry.imageSheetUrl || null,
+        source: 'famous-pets',
+        sourcePetId: `famous-pets/${entry.id}`,
+        stats: eggStats(),
+        permanentTrauma: defaultPermanentTrauma(),
+        bornAt: now,
+        lastTickAt: now,
+        lastCareAt: now,
+        parents: null,
+        stage: 'egg',
+        anim: 'idle',
+        activeRoom: 'living',
+        eggHatchPending: true,
+        eggHatchQueuedAt: now,
+    };
+
+    state.coins = Math.max(0, (Number(state.coins) || 0) - price);
+    await savePet(pet);
+    await setCurrentPetPersisted(pet.id);
+    saveUserProfileDebounced();
+    try { await ensurePetData(pet.id); } catch (_) {}
+    mask.remove();
+    showToast(`${pet.name} 的蛋已经来到星球`, 'success', 1800);
+    notify();
+    setView('home');
+
+    setTimeout(async () => {
+        const currentPet = state.pets[pet.id];
+        if (!currentPet || currentPet.stage !== 'egg') return;
+        currentPet.stage = 'baby';
+        currentPet.anim = 'happy';
+        currentPet.stats = defaultStats();
+        currentPet.bornAt = Date.now();
+        currentPet.lastTickAt = currentPet.bornAt;
+        currentPet.lastCareAt = currentPet.bornAt;
+        delete currentPet.eggHatchPending;
+        delete currentPet.eggHatchQueuedAt;
+        delete currentPet.eggHatchRequestedAt;
+        try { applyStage(currentPet); } catch (_) {}
+        await savePet(currentPet);
+        notify();
+        showToast(`${currentPet.name || '稀有宠物'} 孵化啦`, 'success', 2000);
+        refreshPetList?.();
+    }, 2000);
+}
+
+function petListTabsHtml({ petCount = 0, rareUnlockedCount = 0, rareTotalCount = 0 } = {}) {
+    return `
+        <div class="mh-pet-list-tabs" role="tablist" aria-label="宠物列表分类">
+            ${PET_LIST_TABS.map(tab => `
+                <button class="mh-pet-list-tab ${activePetListTab === tab.id ? 'active' : ''}" data-pet-list-tab="${escapeHtml(tab.id)}" type="button" role="tab" aria-selected="${activePetListTab === tab.id ? 'true' : 'false'}">
+                    ${escapeHtml(tab.id === 'mine' ? `${tab.label}（${petCount}）` : `${tab.label}（${rareUnlockedCount}/${rareTotalCount}）`)}
+                </button>`).join('')}
+        </div>`;
+}
+
+function ensurePetListTabStyles() {
+    if (document.getElementById('mh-pet-list-tab-styles')) return;
+    const style = document.createElement('style');
+    style.id = 'mh-pet-list-tab-styles';
+    style.textContent = `
+        .mh-pet-list-tabs { display:grid; grid-template-columns:repeat(2, minmax(0, 1fr)); gap:6px; margin-bottom:12px; }
+        .mh-pet-list-tab { height:34px; border-radius:999px; border:1.5px solid var(--border-card); background:#effaff; color:var(--text-secondary); font-size:13px; font-weight:900; cursor:pointer; box-shadow:inset 0 1px 0 rgba(255,255,255,0.78); }
+        .mh-pet-list-tab.active { background:linear-gradient(135deg, var(--accent-light), var(--accent-dark)); color:#fff; border-color:var(--accent); text-shadow:0 1px 0 rgba(15,23,42,0.45); }
+        .mh-rare-pet-list { display:grid; grid-template-columns:repeat(auto-fill, minmax(138px, 1fr)); gap:10px; }
+        .mh-rare-pet-card { appearance:none; font:inherit; cursor:pointer; min-height:184px; display:flex; flex-direction:column; align-items:center; gap:10px; text-align:center; }
+        .mh-rare-pet-card:hover { transform:translateY(-2px); border-color:var(--accent); }
+        .mh-rare-pet-card.is-locked { filter:saturate(.75); }
+        .mh-rare-pet-portrait { width:96px; height:96px; border-radius:16px; background:var(--bg-pill); overflow:hidden; flex:0 0 auto; box-shadow:inset 0 2px 8px rgba(14,116,144,0.16); }
+        .mh-rare-pet-unknown { width:100%; height:100%; display:flex; align-items:center; justify-content:center; color:#64748b; font-size:48px; font-weight:900; background:linear-gradient(135deg, #f8fafc, #dbeafe); }
+        .mh-rare-pet-info { width:100%; min-width:0; display:flex; flex-direction:column; gap:6px; }
+        .mh-rare-pet-name { color:var(--text-primary); font-size:15px; font-weight:900; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+        .mh-rare-pet-meta { display:flex; align-items:center; justify-content:center; flex-wrap:wrap; gap:6px; font-size:11px; color:var(--text-muted); }
+        .mh-rare-modal-mask { zoom:1 !important; align-items:flex-start; padding:12px 16px; overflow:hidden; }
+        .mh-rare-modal-card { width:min(460px, calc(100vw - 32px)); max-width:460px; max-height:calc(100dvh - 24px); overflow:hidden; display:flex; flex-direction:column; gap:12px; }
+        .mh-rare-modal-head { display:flex; align-items:flex-start; justify-content:space-between; gap:12px; }
+        .mh-rare-modal-title { color:var(--text-primary); font-size:18px; font-weight:900; }
+        .mh-rare-modal-subtitle { color:var(--text-muted); font-size:12px; font-weight:800; margin-top:2px; }
+        .mh-rare-modal-close { width:36px; height:36px; border-radius:50%; border:1.5px solid var(--border-card); background:#fff; color:var(--text-primary); font-size:24px; line-height:1; cursor:pointer; }
+        .mh-rare-album-scroll { flex:1 1 auto; min-height:0; overflow-y:auto; overflow-x:hidden; padding:0 4px 2px; margin:0 -4px; overscroll-behavior:contain; }
+        .mh-rare-album-stage { margin-top:14px; }
+        .mh-rare-album-stage:first-child { margin-top:2px; }
+        .mh-rare-album-stage-title { display:flex; align-items:center; gap:6px; margin-bottom:8px; color:var(--text-primary); font-size:13px; }
+        .mh-rare-album-grid { display:grid; grid-template-columns:repeat(2, minmax(0, 1fr)); gap:14px 10px; padding:6px 4px 10px; }
+        .mh-rare-album-photo { background:#ffffff; border:1px solid #e5e7eb; border-radius:6px; padding:6px; box-shadow:0 3px 8px rgba(0,0,0,0.12), 0 1px 2px rgba(0,0,0,0.08); transition:transform .2s ease; }
+        .mh-rare-album-photo:hover { transform:translate(0,0) rotate(0deg) scale(1.04) !important; z-index:2; position:relative; }
+        .mh-rare-album-image { width:100%; aspect-ratio:1/1; border-radius:3px; overflow:hidden; }
+        .mh-rare-photo-image { display:block; background-color:#effaff; }
+        .mh-rare-photo-unknown { display:flex; align-items:center; justify-content:center; color:#64748b; font-size:28px; font-weight:900; background:linear-gradient(135deg, #f8fafc, #dbeafe); }
+        .mh-rare-modal-actions { flex:0 0 auto; display:flex; justify-content:flex-end; gap:8px; padding-top:10px; border-top:1px dashed #d4d4d8; }
+        .mh-rare-modal-actions .btn-primary { min-width:128px; }
+        .mh-rare-modal-actions .hud-coin-icon { width:15px; height:15px; }
+        @media (max-width:420px) { .mh-rare-album-grid { gap:12px 8px; } .mh-rare-album-photo { padding:5px; } }
+    `;
+    document.head.appendChild(style);
+}
+
 function rawPetArtHtml(pet, alt = '') {
     const url = pet?.imageSheetUrl || pet?.imageUrl || '';
     const cell = pet?.imageSheetUrl ? getPetSpriteCell(pet) : null;
@@ -347,30 +681,31 @@ function setupLazyRawPetImages(root) {
     targets.forEach(el => observer.observe(el));
 }
 
-function petCardHtml(pet, isCurrent, allowSelect = false) {
+function petCardHtml(pet, isCurrent, allowSelect = false, picker = null) {
     const lazy = !!pet.lazyPetRecord;
+    const isPicker = !!picker;
     const stats = lazy ? { hunger: 100, mood: 100 } : getRuntimePetStats(pet);
     const staminaBar = Math.round(stats.hunger || 0);
     const moodBar = Math.round(stats.mood || 0);
     const sheetReady = !!pet.imageSheetUrl;
     const planetName = window.MH_state?.planetName || '宠物星';
     const location = getPetLocationInfo(pet, planetName);
-    const selectable = !lazy && isPetSelectable(pet);
-    const onCurrentPlanet = isPetOnCurrentPlanet(pet);
-    const canSelect = allowSelect && selectable;
+    const selectable = !lazy && (isPicker || isPetSelectable(pet));
+    const canSelect = (allowSelect || isPicker) && selectable;
+    const picked = isPicker && picker.selectedIds?.has?.(pet.id);
     const findTarget = getPetFindTarget(pet);
     const name = lazy ? `宠物 ${String(pet.id || '').slice(0, 6)}` : displayPetName(pet);
     const hint = pet.stage === 'egg'
         ? (sheetReady ? '即将破壳…' : '正在孕育中…')
         : '';
         return `
-                <div class="card-flat fade-in ${canSelect ? 'cursor-pointer' : ''} ${isCurrent ? 'mh-pet-card-current' : ''}"
+                <div class="card-flat fade-in ${canSelect ? 'cursor-pointer' : ''} ${isCurrent ? 'mh-pet-card-current' : ''} ${picked ? 'mh-pet-card-picked' : ''}"
                          data-pet-id="${escapeHtml(pet.id)}"
                          ${lazy ? 'data-pet-lazy="1"' : ''}
                          data-selectable="${canSelect ? '1' : '0'}"
-                         style="display:flex;gap:12px;align-items:center;${isCurrent ? 'outline:2px solid var(--accent);outline-offset:-2px' : ''};opacity:${selectable ? '1' : '.88'}">
+                         style="display:flex;gap:12px;align-items:center;${isCurrent ? 'outline:2px solid var(--accent);outline-offset:-2px' : ''};${picked ? 'box-shadow:0 0 0 2px var(--accent) inset;' : ''};opacity:${selectable ? '1' : '.88'}">
             <div style="width:72px;height:72px;border-radius:14px;background:var(--bg-pill);overflow:hidden;flex-shrink:0">
-                ${lazy ? '<div style="width:100%;height:100%;display:flex;align-items:center;justify-content:center;color:var(--text-faint);font-size:12px">加载中</div>' : onCurrentPlanet ? petArtHtml(pet, { alt: displayPetName(pet) }) : rawPetArtHtml(pet, displayPetName(pet))}
+                ${lazy ? '<div style="width:100%;height:100%;display:flex;align-items:center;justify-content:center;color:var(--text-faint);font-size:12px">加载中</div>' : rawPetArtHtml(pet, displayPetName(pet))}
             </div>
             <div style="flex:1;min-width:0">
                 <div style="display:flex;align-items:center;gap:6px;margin-bottom:4px;flex-wrap:wrap">
@@ -382,18 +717,19 @@ function petCardHtml(pet, isCurrent, allowSelect = false) {
                 <div style="font-size:11px;color:var(--text-secondary);margin-bottom:5px;display:flex;gap:8px;flex-wrap:wrap">
                     ${lazy ? '<span>进入视野后加载资料</span>' : `<span>生日 ${escapeHtml(getPetBirthday(pet))}</span><span>陪伴第 ${getCompanionDays(pet)} 天</span>`}
                 </div>
-                ${lazy ? '' : `<div style="font-size:11px;color:var(--text-muted);margin-bottom:6px;font-family:ui-monospace,Menlo,monospace">
+                ${lazy || isPicker ? '' : `<div style="font-size:11px;color:var(--text-muted);margin-bottom:6px;font-family:ui-monospace,Menlo,monospace">
                     DNA: ${escapeHtml(formatDna(pet.dna || ''))}
                 </div>`}
                 ${hint ? `<div style="font-size:11px;color:var(--text-faint);margin-bottom:4px">${escapeHtml(hint)}</div>` : ''}
-                <div style="display:flex;gap:6px;align-items:center;font-size:11px;color:var(--text-secondary)">
+                ${isPicker ? '' : `<div style="display:flex;gap:6px;align-items:center;font-size:11px;color:var(--text-secondary)">
                         <span>⚡</span><div class="stat-bar" style="flex:1"><div style="width:${staminaBar}%;background:#84cc16"></div></div>
                     <span>😊</span><div class="stat-bar" style="flex:1"><div style="width:${moodBar}%;background:#f59e0b"></div></div>
-                </div>
+                </div>`}
             </div>
             <div style="display:flex;flex-direction:column;gap:6px;align-self:center;flex-shrink:0">
-                ${findTarget ? `<button class="btn-secondary" data-find="${escapeHtml(pet.id)}" title="寻找 ${escapeHtml(name)}" style="padding:7px 10px;font-size:12px">寻找</button>` : ''}
-                ${lazy ? '' : `<button class="btn-secondary" data-album="${escapeHtml(pet.id)}" title="查看 ${escapeHtml(name)} 的回忆相册" style="padding:7px 10px;font-size:12px">相册</button>`}
+                ${isPicker && !lazy ? `<span class="stage-badge" data-picker-state style="align-self:flex-end;background:${picked ? 'var(--accent)' : '#effaff'};color:${picked ? '#fff' : 'var(--text-secondary)'}">${picked ? '已选' : '选择'}</span>` : ''}
+                ${!isPicker && findTarget ? `<button class="btn-secondary" data-find="${escapeHtml(pet.id)}" title="寻找 ${escapeHtml(name)}" style="padding:7px 10px;font-size:12px">寻找</button>` : ''}
+                ${!isPicker && !lazy ? `<button class="btn-secondary" data-album="${escapeHtml(pet.id)}" title="查看 ${escapeHtml(name)} 的回忆相册" style="padding:7px 10px;font-size:12px">相册</button>` : ''}
             </div>
         </div>`;
 }
@@ -431,8 +767,16 @@ function setupLazyPetCards(panel, onLoadPet) {
     requestAnimationFrame(check);
 }
 
-export function renderPetList(panel, { pets }, { onSelect, onBack, onFind, onLoadPet, allowSelect = false } = {}) {
+export function renderPetList(panel, { pets }, { onSelect, onBack, onFind, onLoadPet, allowSelect = false, pickerMode = false, multiple = false, selectedIds = [], onConfirm, title, confirmText } = {}) {
+    ensurePetListTabStyles();
     const list = sortPetsByRecentBirthday(pets || []);
+    const rareList = Array.isArray(famousPetsIndex) ? famousPetsIndex : [];
+    const rareUnlockedCount = rareList.filter(item => hasHatchedFamousPet(item, pets || [])).length;
+    const isPicker = !!pickerMode;
+    if (isPicker) activePetListTab = 'mine';
+    const isRareTab = !isPicker && activePetListTab === 'rare';
+    const pickedIds = new Set((Array.isArray(selectedIds) ? selectedIds : []).filter(Boolean));
+    const picker = isPicker ? { selectedIds: pickedIds } : null;
     const currentId = (typeof window !== 'undefined' && window.MH_state) ? window.MH_state.currentPetId : null;
     const currentPets = currentId ? list.filter(p => p.id === currentId) : [];
     const otherPets = currentId ? list.filter(p => p.id !== currentId) : list;
@@ -445,34 +789,90 @@ export function renderPetList(panel, { pets }, { onSelect, onBack, onFind, onLoa
             <button class="btn-icon" id="mhPetListBack" title="返回" style="width:36px;height:36px;font-size:18px">‹</button>
             <div class="flex items-center gap-2">
                 <span style="font-size:22px">🐾</span>
-                <span class="font-extrabold" style="color:var(--text-primary)">${escapeHtml(t('myPets'))}</span>
+                <span class="font-extrabold" style="color:var(--text-primary)">${escapeHtml(title || t('myPets'))}</span>
             </div>
-            <span class="font-bold mh-coin-amount" style="color:var(--accent-dark)">${coinIconSvg()} ${window.MH_state?.coins || 0}</span>
+            ${isPicker ? '<span style="width:36px;height:36px"></span>' : `<span class="font-bold mh-coin-amount" style="color:var(--accent-dark)">${coinIconSvg()} ${window.MH_state?.coins || 0}</span>`}
         </div>
-        <div class="absolute" style="top:52px;left:0;right:0;bottom:0;overflow-y:auto;padding:14px">
-            <div class="text-base font-bold mb-1" style="color:var(--text-primary)">宠物列表（${list.length}）</div>
-            <div class="text-xs mb-3" style="color:var(--text-muted)">记录每个宠物的生日、陪伴天数和当前位置。当前版本仅支持浏览宠物列表。</div>
-            ${list.length === 0
+        <div class="absolute" style="top:52px;left:0;right:0;bottom:${isPicker && multiple ? '62px' : '0'};overflow-y:auto;padding:14px">
+            ${isPicker ? '' : petListTabsHtml({ petCount: list.length, rareUnlockedCount, rareTotalCount: rareList.length })}
+            ${isRareTab
+                ? (Array.isArray(famousPetsIndex)
+                    ? (rareList.length === 0
+                        ? `<div class="card-flat text-center" style="color:var(--text-muted);padding:30px 14px">暂无稀有宠物记录。</div>`
+                        : `<div class="mh-rare-pet-list" id="mhRarePetList">${rareList.map(item => rarePetCardHtml(item, pets || [])).join('')}</div>`)
+                    : `<div class="card-flat text-center" style="color:var(--text-muted);padding:30px 14px">正在加载稀有宠物...</div>`)
+                : (list.length === 0
                 ? `<div class="card-flat text-center" style="color:var(--text-muted);padding:30px 14px">${escapeHtml(t('noPets'))}</div>`
                 : `<div style="display:flex;flex-direction:column;gap:10px" id="mhPetList">
-                    ${currentPets.map(p => petCardHtml(p, true, allowSelect)).join('')}
-                    ${tipsHtml}
-                    ${otherPets.map(p => petCardHtml(p, false, allowSelect)).join('')}
-                </div>`}
-            ${list.length === 0 ? tipsHtml : ''}
-        </div>`;
+                    ${currentPets.map(p => petCardHtml(p, true, allowSelect, picker)).join('')}
+                    ${isPicker ? '' : tipsHtml}
+                    ${otherPets.map(p => petCardHtml(p, false, allowSelect, picker)).join('')}
+                </div>`)}
+            ${!isPicker && !isRareTab && list.length === 0 ? tipsHtml : ''}
+        </div>
+        ${isPicker && multiple ? `<div class="absolute" style="left:0;right:0;bottom:0;padding:10px 14px max(12px,env(safe-area-inset-bottom));background:rgba(239,250,255,.95);border-top:1px solid rgba(125,211,252,.58);display:flex;gap:8px;align-items:center">
+            <div data-picker-count style="flex:1;color:var(--text-muted);font-size:12px;font-weight:800">已选择 ${pickedIds.size} 只</div>
+            <button class="btn-primary" id="mhPetPickerConfirm" type="button">${escapeHtml(confirmText || '确定')}</button>
+        </div>` : ''}`;
 
     if ($('mhPetListBack')) $('mhPetListBack').onclick = () => onBack?.();
+    $$('[data-pet-list-tab]', panel).forEach(el => {
+        el.onclick = () => {
+            const next = el.dataset.petListTab || 'mine';
+            if (activePetListTab === next) return;
+            activePetListTab = next;
+            renderPetList(panel, { pets }, { onSelect, onBack, onFind, onLoadPet, allowSelect, pickerMode, multiple, selectedIds: [...pickedIds], onConfirm, title, confirmText });
+        };
+    });
+
+    if (!isPicker && !Array.isArray(famousPetsIndex)) {
+        loadFamousPetsIndex().then(() => {
+            if (panel?.isConnected) renderPetList(panel, { pets }, { onSelect, onBack, onFind, onLoadPet, allowSelect, pickerMode, multiple, selectedIds: [...pickedIds], onConfirm, title, confirmText });
+        });
+    }
+
+    $$('#mhRarePetList [data-rare-pet-id]', panel).forEach(el => {
+        el.onclick = () => {
+            const entry = rareList.find(item => item.id === el.dataset.rarePetId);
+            if (entry) openRarePetModal(entry, pets || [], () => renderPetList(panel, { pets }, { onSelect, onBack, onFind, onLoadPet, allowSelect, pickerMode, multiple, selectedIds: [...pickedIds], onConfirm, title, confirmText }));
+        };
+    });
 
     const petById = new Map((pets || []).map(p => [p?.id, p]));
+    const updatePickerCardState = (el, picked) => {
+        el.classList.toggle('mh-pet-card-picked', picked);
+        el.style.boxShadow = picked ? '0 0 0 2px var(--accent) inset' : '';
+        const badge = el.querySelector('[data-picker-state]');
+        if (badge) {
+            badge.textContent = picked ? '已选' : '选择';
+            badge.style.background = picked ? 'var(--accent)' : '#effaff';
+            badge.style.color = picked ? '#fff' : 'var(--text-secondary)';
+        }
+        const count = panel.querySelector('[data-picker-count]');
+        if (count) count.textContent = `已选择 ${pickedIds.size} 只`;
+    };
     $$('#mhPetList [data-pet-id]').forEach(el => {
         el.onclick = (e) => {
             if (e.target.closest('[data-find]')) return;
             if (e.target.closest('[data-album]')) return;
             if (el.dataset.selectable !== '1') return;
-            onSelect?.(el.dataset.petId);
+            const id = el.dataset.petId;
+            if (isPicker) {
+                if (multiple) {
+                    const picked = !pickedIds.has(id);
+                    if (picked) pickedIds.add(id);
+                    else pickedIds.delete(id);
+                    updatePickerCardState(el, picked);
+                } else {
+                    onSelect?.(id);
+                    onConfirm?.([id]);
+                }
+                return;
+            }
+            onSelect?.(id);
         };
     });
+    if ($('mhPetPickerConfirm')) $('mhPetPickerConfirm').onclick = () => onConfirm?.([...pickedIds]);
     $$('#mhPetList [data-find]').forEach(el => {
         el.onclick = (e) => {
             e.stopPropagation();

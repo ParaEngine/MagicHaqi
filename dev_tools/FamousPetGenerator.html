@@ -1,0 +1,899 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Famous Pet Generator</title>
+  <style>
+    :root {
+      color-scheme: light;
+      --bg: #f4f7fb;
+      --panel: #ffffff;
+      --panel-soft: #f8fbff;
+      --line: #d8e4f0;
+      --line-strong: #bdd4e8;
+      --text: #172033;
+      --muted: #607086;
+      --accent: #0f8ccf;
+      --accent-2: #13a36b;
+      --danger: #c43d3d;
+      --shadow: 0 14px 34px rgba(26, 43, 72, .12);
+      font-family: Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+    }
+    * { box-sizing: border-box; }
+    body { margin: 0; min-height: 100vh; background: var(--bg); color: var(--text); }
+    button, input, textarea, select { font: inherit; }
+    button {
+      min-height: 34px; border: 1px solid var(--line); border-radius: 6px; background: #fff; color: var(--text);
+      padding: 0 11px; cursor: pointer; transition: background .16s ease, border-color .16s ease, transform .08s ease;
+    }
+    button:hover { border-color: #9fc7e4; background: #f8fcff; }
+    button:active { transform: translateY(1px); }
+    button:disabled { opacity: .55; cursor: not-allowed; transform: none; }
+    .primary { background: var(--accent); border-color: var(--accent); color: #fff; }
+    .primary:hover { background: #0b7dbb; border-color: #0b7dbb; }
+    .success { background: var(--accent-2); border-color: var(--accent-2); color: #fff; }
+    .success:hover { background: #0e8f5c; border-color: #0e8f5c; color: #fff; }
+    .danger { color: var(--danger); border-color: #ffc4c4; background: #fff5f5; }
+    input, textarea, select {
+      width: 100%; min-height: 34px; border: 1px solid var(--line); border-radius: 6px; background: #fff; color: var(--text);
+      padding: 7px 9px; outline: none;
+    }
+    textarea { resize: vertical; line-height: 1.48; }
+    input:focus, textarea:focus, select:focus { border-color: var(--accent); box-shadow: 0 0 0 3px rgba(15,140,207,.12); }
+    label { display: flex; flex-direction: column; gap: 5px; font-size: 12px; color: var(--muted); }
+    h1, h2, h3 { margin: 0; letter-spacing: 0; }
+    h1 { font-size: 18px; line-height: 1.15; }
+    h2 { font-size: 14px; }
+    h3 { font-size: 12px; color: var(--muted); font-weight: 500; }
+    .app { display: grid; grid-template-columns: 260px 310px minmax(520px, 1fr); gap: 12px; min-height: 100vh; padding: 12px; }
+    .panel { min-height: 0; display: flex; flex-direction: column; background: var(--panel); border: 1px solid var(--line); border-radius: 8px; box-shadow: var(--shadow); overflow: hidden; }
+    .panel-head { min-height: 56px; padding: 12px 14px; border-bottom: 1px solid var(--line); display: flex; align-items: center; justify-content: space-between; gap: 10px; }
+    .panel-body { min-height: 0; flex: 1 1 auto; overflow: auto; padding: 12px; display: flex; flex-direction: column; gap: 12px; }
+    .sidebar .panel-body { padding: 12px; }
+    .section { border: 1px solid var(--line); border-radius: 8px; background: var(--panel-soft); padding: 11px; display: flex; flex-direction: column; gap: 10px; }
+    .toolbar { display: flex; gap: 8px; flex-wrap: wrap; align-items: center; }
+    .toolbar button { flex: 0 0 auto; }
+    .row { display: grid; grid-template-columns: 1fr 1fr; gap: 9px; }
+    .row-3 { display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 9px; }
+    .toggle-line { flex-direction: row; align-items: center; gap: 7px; color: var(--text); }
+    .toggle-line input { width: 15px; height: 15px; min-height: 0; }
+    .hint { font-size: 12px; color: var(--muted); line-height: 1.45; }
+    .status { border: 1px solid #cfe4f8; border-radius: 6px; background: #eef7ff; color: #24536f; padding: 8px 9px; font-size: 12px; line-height: 1.45; white-space: pre-wrap; }
+    .status.ok { border-color: #bde8d0; background: #f0fff6; color: #1d6945; }
+    .status.error { border-color: #ffc8c8; background: #fff5f5; color: #9b2c2c; }
+    .status-action { min-height: 0; border: 0; background: transparent; color: inherit; padding: 0; font-weight: 700; text-decoration: underline; text-underline-offset: 2px; }
+    .status-action:hover { background: transparent; border-color: transparent; }
+    .pill { display: inline-flex; align-items: center; min-height: 24px; padding: 0 8px; border: 1px solid var(--line); border-radius: 999px; color: var(--muted); font-size: 12px; background: #fff; white-space: nowrap; }
+    .records-toolbar { display: grid; grid-template-columns: 1fr auto; gap: 8px; padding: 12px; border-bottom: 1px solid var(--line); background: var(--panel-soft); }
+    .record-list { min-height: 0; overflow: auto; padding: 8px; display: flex; flex-direction: column; gap: 6px; }
+    .record-item { width: 100%; border: 1px solid var(--line); border-radius: 7px; background: #fff; padding: 9px; text-align: left; display: grid; grid-template-columns: 42px 1fr; gap: 9px; align-items: center; }
+    .record-item.active { border-color: var(--accent); background: #eff8ff; box-shadow: 0 0 0 2px rgba(15,140,207,.12); }
+    .record-thumb { width: 42px; height: 42px; border-radius: 6px; background: #0a0f18; overflow: hidden; border: 1px solid #cbd8e6; }
+    .record-thumb span { display: block; width: 100%; height: 100%; background-size: 400% 400%; background-position: 66.667% 33.333%; background-repeat: no-repeat; }
+    .record-title { min-width: 0; font-weight: 700; font-size: 13px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+    .record-meta { min-width: 0; color: var(--muted); font-size: 11px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+    .editor-grid { display: grid; grid-template-columns: minmax(360px, 1fr) minmax(360px, 1fr); gap: 12px; align-items: start; }
+    .stack { display: flex; flex-direction: column; gap: 12px; min-width: 0; }
+    .sheet-box { width: 100%; aspect-ratio: 1 / 1; border: 1px solid var(--line); border-radius: 8px; background: #0a0f18; position: relative; overflow: hidden; display: grid; place-items: center; }
+    .sheet-box img { width: 100%; height: 100%; object-fit: contain; display: block; }
+    .empty-preview { color: #c6d2de; font-size: 13px; text-align: center; padding: 16px; }
+    .grid-overlay { position: absolute; inset: 0; pointer-events: none; background-image: linear-gradient(to right, rgba(255,255,255,.32) 1px, transparent 1px), linear-gradient(to bottom, rgba(255,255,255,.32) 1px, transparent 1px); background-size: 25% 25%; }
+    .cell-preview { display: grid; grid-template-columns: repeat(4, 1fr); gap: 8px; }
+    .cell { aspect-ratio: 1 / 1; border: 1px solid var(--line); border-radius: 6px; background: #0a0f18; overflow: hidden; position: relative; }
+    .cell span { position: absolute; inset: 0; background-size: 400% 400%; background-repeat: no-repeat; }
+    .cell em { position: absolute; left: 5px; bottom: 4px; padding: 1px 5px; border-radius: 999px; background: rgba(255,255,255,.82); color: #223047; font-size: 10px; font-style: normal; }
+    .ref-preview { min-height: 86px; border: 1px dashed #b7cadc; border-radius: 8px; background: #f7fbff; display: grid; place-items: center; overflow: hidden; }
+    .ref-preview img { width: 100%; height: 140px; object-fit: contain; display: block; }
+    .output { min-height: 240px; font-family: Consolas, "SFMono-Regular", Menlo, monospace; font-size: 12px; line-height: 1.48; white-space: pre; overflow: auto; }
+    .prompt-box { min-height: 150px; font-family: inherit; font-size: 12px; }
+    .workspace-overlay { position: fixed; inset: 0; z-index: 1000; background: rgba(10,20,36,.58); display: flex; padding: 18px; }
+    .workspace-window { width: min(1180px, 100%); height: min(780px, 100%); margin: auto; background: #fff; border-radius: 8px; overflow: hidden; box-shadow: 0 26px 80px rgba(0,0,0,.34); display: flex; flex-direction: column; }
+    .workspace-titlebar { height: 48px; display: flex; align-items: center; justify-content: space-between; gap: 10px; border-bottom: 1px solid var(--line); padding: 0 12px 0 16px; background: #f8fbff; }
+    .workspace-host { flex: 1 1 auto; min-height: 0; }
+    @media (max-width: 1220px) { .app { grid-template-columns: 260px minmax(300px, 1fr); } .editor { grid-column: 1 / -1; } .editor-grid { grid-template-columns: 1fr; } }
+    @media (max-width: 760px) { .app { grid-template-columns: 1fr; padding: 8px; } .row, .row-3 { grid-template-columns: 1fr; } .workspace-overlay { padding: 0; } .workspace-window { width: 100%; height: 100%; border-radius: 0; } }
+  </style>
+</head>
+<body>
+  <main class="app">
+    <aside class="panel sidebar">
+      <div class="panel-head">
+        <div>
+          <h1>Famous Pet Generator</h1>
+          <h3>内部 famous-pet 生成器</h3>
+        </div>
+        <span id="sdkState" class="pill">SDK loading</span>
+      </div>
+      <div class="panel-body">
+        <section class="section">
+          <h2>账号与工具</h2>
+          <div id="loginState" class="status">正在加载 KeepworkSDK...</div>
+          <div class="toolbar">
+            <button id="btnLocalApi" type="button">本地 API Key</button>
+            <button id="btnWorkspace" type="button">Workspace</button>
+          </div>
+        </section>
+
+        <section class="section">
+          <h2>图片模型</h2>
+          <label>模型 dropdown
+            <select id="imageModelSelect"></select>
+          </label>
+          <label>分辨率
+            <select id="imageSize">
+              <option value="2048x2048" selected>2048x2048 默认</option>
+              <option value="1024x1024">1024x1024 产品规格</option>
+            </select>
+          </label>
+          <div class="toolbar">
+            <label class="toggle-line"><input id="uploadResultToKeepwork" type="checkbox" checked>上传临时 CDN</label>
+          </div>
+        </section>
+
+        <section class="section">
+          <h2>参考图</h2>
+          <label>参考图 URL
+            <input id="referenceUrl" placeholder="https://... 或 data:image/...">
+          </label>
+          <label>上传参考图
+            <input id="referenceFile" type="file" accept="image/*">
+          </label>
+          <div id="referencePreview" class="ref-preview"><span class="hint">可选参考图预览</span></div>
+        </section>
+      </div>
+    </aside>
+
+    <section class="panel records">
+      <div class="panel-head">
+        <div>
+          <h2>famous-pets</h2>
+          <h3>Workspace: MagicHaqi/famous-pets</h3>
+        </div>
+        <span id="recordCount" class="pill">0</span>
+      </div>
+      <div class="records-toolbar">
+        <input id="recordSearch" placeholder="搜索 id / name">
+        <button id="btnNewPet" class="primary" type="button">新建</button>
+        <button id="btnRefreshRecords" type="button">刷新</button>
+        <button id="btnOpenIndex" type="button">index</button>
+      </div>
+      <div id="recordList" class="record-list">
+        <div class="hint" style="padding:10px">加载 SDK 后会列出 workspace famous-pets 下的所有记录。</div>
+      </div>
+    </section>
+
+    <section class="panel editor">
+      <div class="panel-head">
+        <div>
+          <h2 id="editorTitle">新建 famous pet</h2>
+          <h3 id="editorSubtitle">属性 + result + regenerate</h3>
+        </div>
+        <div class="toolbar">
+          <button id="btnSavePet" class="success" type="button">保存</button>
+          <button id="btnSaveIndex" class="success" type="button">更新 index</button>
+          <button id="btnGenerate" class="primary" type="button">Regenerate</button>
+        </div>
+      </div>
+      <div class="panel-body">
+        <div id="runStatus" class="status">准备就绪。选择记录或新建后，可生成 4x4 sprite sheet。</div>
+        <div class="editor-grid">
+          <div class="stack">
+            <section class="section">
+              <h2>Properties</h2>
+              <div class="row">
+                <label>ID
+                  <input id="petId" maxlength="64">
+                </label>
+                <label>名称
+                  <input id="petName" maxlength="40">
+                </label>
+              </div>
+              <div class="row-3">
+                <label>DNA
+                  <input id="dna" maxlength="32">
+                </label>
+                <label>稀有度
+                  <input id="rarity" type="number" min="1" max="999" value="64">
+                </label>
+                <label>阶段
+                  <select id="stage">
+                    <option value="baby">baby</option>
+                    <option value="teen">teen</option>
+                    <option value="adult" selected>adult</option>
+                    <option value="elder">elder</option>
+                  </select>
+                </label>
+              </div>
+              <div class="row-3">
+                <label>动作
+                  <select id="anim">
+                    <option value="idle">idle</option>
+                    <option value="happy" selected>happy</option>
+                    <option value="sad">sad</option>
+                    <option value="sleep">sleep</option>
+                  </select>
+                </label>
+                <label>血统
+                  <select id="element"><option>陆地</option><option>水系</option><option>天空</option></select>
+                </label>
+                <label>元素
+                  <select id="elementalAttribute"><option>自然</option><option>火</option><option>冰</option><option>生命</option><option>暗</option></select>
+                </label>
+              </div>
+              <div class="row">
+                <label>种类
+                  <input id="species">
+                </label>
+                <label>颜色
+                  <input id="color">
+                </label>
+              </div>
+              <div class="row">
+                <label>眼睛
+                  <input id="eyes">
+                </label>
+                <label>配饰
+                  <input id="accessory">
+                </label>
+              </div>
+              <label>核心提示词
+                <textarea id="wishPrompt" class="prompt-box"></textarea>
+              </label>
+              <label>额外 traits JSON
+                <textarea id="extraTraits" class="output" style="min-height:120px" spellcheck="false"></textarea>
+              </label>
+              <div class="toolbar">
+                <button id="btnRandomDna" type="button">随机 DNA</button>
+                <button id="btnDecodeDna" type="button">DNA 填充 traits</button>
+                <button id="btnBuildPrompt" type="button">刷新 Prompt</button>
+              </div>
+            </section>
+
+            <section class="section">
+              <h2>Output JSON</h2>
+              <textarea id="petJson" class="output" spellcheck="false"></textarea>
+              <div class="toolbar">
+                <button id="btnRefreshJson" type="button">刷新 JSON</button>
+                <button id="btnCopyJson" type="button">复制 JSON</button>
+                <button id="btnDownloadJson" type="button">下载 JSON</button>
+                <button id="btnCopyIndex" type="button">复制 index 条目</button>
+              </div>
+              <div id="saveStatus" class="status">保存路径：famous-pets/&lt;id&gt;.json</div>
+            </section>
+          </div>
+
+          <div class="stack">
+            <section class="section">
+              <h2>Result</h2>
+              <div class="sheet-box" id="sheetBox"><div class="empty-preview">尚未生成贴图</div></div>
+              <div id="cellPreview" class="cell-preview"></div>
+              <div class="row">
+                <label>生成图片 URL
+                  <input id="imageSheetUrl" placeholder="生成后自动填入，也可手动粘贴">
+                </label>
+                <label>邀请链接
+                  <input id="inviteUrl" readonly>
+                </label>
+              </div>
+              <div class="toolbar">
+                <button id="btnRegenerate" class="primary" type="button">Regenerate</button>
+                <button id="btnOpenInvite" type="button">打开邀请</button>
+              </div>
+            </section>
+
+            <section class="section">
+              <h2>Final genImage Prompt</h2>
+              <textarea id="finalPrompt" class="prompt-box" style="min-height:260px" spellcheck="false"></textarea>
+            </section>
+          </div>
+        </div>
+      </div>
+    </section>
+  </main>
+
+  <script type="module">
+    import { normalizeDna, randomDna, decodeDna, dnaToName } from '../js/dna.js';
+
+    const WORKSPACE = 'MagicHaqi';
+    const FAMOUS_DIR = 'famous-pets';
+    const SHEET_COLS = 4;
+    const SHEET_ROWS = 4;
+    const STAGE_ROW = { baby: 0, teen: 1, adult: 2, elder: 3 };
+    const ANIM_COL = { idle: 0, happy: 1, sad: 2, sleep: 3 };
+    const $ = (id) => document.getElementById(id);
+    const state = { sdk: null, referenceDataUrl: '', workspaceViewer: null, records: [], selectedId: '', currentPath: '', dirty: false };
+
+    function setStatus(el, text, kind = '') {
+      el.textContent = text;
+      el.classList.toggle('error', kind === 'error');
+      el.classList.toggle('ok', kind === 'ok');
+    }
+
+    function escapeHtml(value) {
+      const div = document.createElement('div');
+      div.textContent = value == null ? '' : String(value);
+      return div.innerHTML;
+    }
+
+    function safeId(value, fallback = '') {
+      return String(value || '').trim().replace(/[^a-zA-Z0-9_-]/g, '_').replace(/^_+|_+$/g, '').slice(0, 64) || fallback;
+    }
+
+    function parseJsonObject(text, fallback = {}) {
+      const raw = String(text || '').trim();
+      if (!raw) return fallback;
+      const value = JSON.parse(raw);
+      if (!value || typeof value !== 'object' || Array.isArray(value)) throw new Error('额外 traits 必须是 JSON 对象');
+      return value;
+    }
+
+    function getReferenceImage() {
+      return state.referenceDataUrl || $('referenceUrl').value.trim();
+    }
+
+    function getSelectedImageModel() {
+      return $('imageModelSelect').value.trim();
+    }
+
+    function getImageSize() {
+      const [width, height] = ($('imageSize').value || '2048x2048').split('x').map(Number);
+      return { width: width || 2048, height: height || 2048 };
+    }
+
+    function buildTraits() {
+      return {
+        element: $('element').value,
+        species: $('species').value.trim() || dnaToName($('dna').value),
+        color: $('color').value.trim(),
+        eyes: $('eyes').value.trim(),
+        accessory: $('accessory').value.trim(),
+        elementalAttribute: $('elementalAttribute').value,
+        ...parseJsonObject($('extraTraits').value, {}),
+      };
+    }
+
+    function buildPetConfig() {
+      const id = safeId($('petId').value, state.selectedId || 'new_famous_pet');
+      const dna = normalizeDna($('dna').value || randomDna());
+      $('dna').value = dna;
+      return {
+        id,
+        name: $('petName').value.trim() || id,
+        dna,
+        imageUrl: null,
+        imageSheetUrl: $('imageSheetUrl').value.trim() || null,
+        traits: buildTraits(),
+        rarity: Math.max(1, Number($('rarity').value) || 64),
+        parents: null,
+        stage: $('stage').value,
+        wishPrompt: $('wishPrompt').value.trim(),
+        anim: $('anim').value,
+        everAdult: true,
+      };
+    }
+
+    function buildIndexEntry(pet = buildPetConfig()) {
+      return { id: pet.id, name: pet.name, imageSheetUrl: pet.imageSheetUrl || '', rarity: pet.rarity };
+    }
+
+    function defaultPet() {
+      const dna = randomDna();
+      const traits = decodeDna(dna);
+      return {
+        id: 'new_famous_pet',
+        name: '新稀有宠物',
+        dna,
+        imageUrl: null,
+        imageSheetUrl: null,
+        traits: { ...traits, catLike: 8, sweetLike: 8 },
+        rarity: 64,
+        parents: null,
+        stage: 'adult',
+        wishPrompt: '一只适合作为活动限定奖励的二头身萌宠，颜色明亮，外形有清晰记忆点，开心、干净、辨识度高。',
+        anim: 'happy',
+        everAdult: true,
+      };
+    }
+
+    function buildPrompt() {
+      const pet = buildPetConfig();
+      const traits = pet.traits || {};
+      const dnaLine = [
+        `${traits.color || ''}的${traits.species || dnaToName(pet.dna)}`,
+        traits.eyes || '',
+        traits.accessory || '',
+        `${traits.element || '陆地'}族`,
+        `${traits.elementalAttribute || '自然'}属性`,
+      ].filter(Boolean).join('，');
+      const reference = getReferenceImage();
+      const prompt = [
+        `宠物名称：${pet.name}。`,
+        pet.wishPrompt ? `玩家/运营指定外观（最高优先级）：${pet.wishPrompt}。` : '',
+        `配置 traits 灵感：${dnaLine}。`,
+        reference ? '参考图片是外观方向，请提取主要轮廓、颜色、纹理、配饰或气质，并转化成同一只二头身萌宠；不要照搬照片背景或文字。' : '',
+        '生成一张 4x4 共 16 格的精灵图 sprite sheet，所有格子尺寸相同、严格对齐网格、单元间无缝隙。',
+        '每一行代表同一只宠物的同一成长阶段：第 1 行=baby 宝宝/幼年，几乎只有圆圆大头，身体极小，只露出小短手小短脚；第 2 行=teen 青少年，标准二头身，展示未完全发育的主要特征；第 3 行=adult 成年，仍为二头身，完整呈现主要生物特点；第 4 行=elder 年长/长老，仍为二头身，增加元素特征或华丽感。',
+        '每一行的 4 列代表同一阶段下的 4 种情绪/状态：第 1 列=idle 待机自然站立平静微笑，第 2 列=happy 开心咧嘴大笑雀跃姿态，第 3 列=sad 难过眼角垂泪垂头丧气，第 4 列=sleep 睡觉闭眼放松或蜷缩。',
+        '同一行的 4 个变体必须保持相同种类、毛色、配饰，明显是同一只宠物；每个格子内只有一只宠物完整居中，四肢和头部不能被裁切。',
+        '严格背景要求：背景必须是纯黑色 #000000 填充整张图，每个格子内背景也都是纯黑；不能有阴影、渐变、白边、灰边、网格线、文字、水印或其他背景颜色；宠物本体不能整体过暗或全黑。',
+        '风格要求：参考 Tamagotchi Paradise / Sanrio 系列吉祥物，超扁平 2D 卡通插画，糖果色明亮饱和，超大水汪汪眼睛，小圆身体，柔和但清晰的深色描边，单色简单上色加少量高光；不要写实、不要 3D、不要复杂阴影。',
+      ].filter(Boolean).join(' ');
+      $('finalPrompt').value = prompt;
+      updateOutput();
+      return prompt;
+    }
+
+    function applyPetToForm(pet, path = '') {
+      const normalized = { ...defaultPet(), ...(pet || {}) };
+      normalized.traits = { ...(defaultPet().traits || {}), ...(pet?.traits || normalized.traits || {}) };
+      state.selectedId = normalized.id || '';
+      const id = safeId(normalized.id, 'new_famous_pet');
+      state.currentPath = path || `${FAMOUS_DIR}/${id}.json`;
+      $('petId').value = id;
+      $('petName').value = normalized.name || normalized.id || '';
+      $('dna').value = normalizeDna(normalized.dna || randomDna());
+      $('rarity').value = normalized.rarity || 64;
+      $('stage').value = normalized.stage || 'adult';
+      $('anim').value = normalized.anim || 'happy';
+      $('element').value = normalized.traits?.element || '陆地';
+      $('elementalAttribute').value = normalized.traits?.elementalAttribute || '自然';
+      $('species').value = normalized.traits?.species || dnaToName(normalized.dna);
+      $('color').value = normalized.traits?.color || '';
+      $('eyes').value = normalized.traits?.eyes || '';
+      $('accessory').value = normalized.traits?.accessory || '';
+      const { element, elementalAttribute, species, color, eyes, accessory, ...extra } = normalized.traits || {};
+      $('extraTraits').value = JSON.stringify(extra, null, 2);
+      $('wishPrompt').value = normalized.wishPrompt || '';
+      $('imageSheetUrl').value = normalized.imageSheetUrl || '';
+      renderSheet(normalized.imageSheetUrl || '');
+      buildPrompt();
+      updateEditorTitle();
+      state.dirty = false;
+      renderRecordList();
+    }
+
+    function updateEditorTitle() {
+      const id = $('petId').value || 'new';
+      $('editorTitle').textContent = `${$('petName').value || id}`;
+      const draftPath = `${FAMOUS_DIR}/${safeId(id, 'new_famous_pet')}.json`;
+      $('editorSubtitle').textContent = state.selectedId ? (state.currentPath || draftPath) : draftPath;
+    }
+
+    function updateOutput() {
+      const pet = buildPetConfig();
+      $('petJson').value = JSON.stringify(pet, null, 2);
+      const invite = new URL('../MagicHaqi.html', window.location.href);
+      invite.searchParams.set('petId', `famous-pets/${pet.id}`);
+      invite.searchParams.set('layout', pet.anim || 'idle');
+      invite.searchParams.set('text', `${pet.name} 来找你玩啦`);
+      $('inviteUrl').value = invite.href;
+      updateEditorTitle();
+    }
+
+    async function populateModelDropdown() {
+      const sdk = state.sdk || window.keepwork;
+      const select = $('imageModelSelect');
+      if (!sdk?.localAPIKeySettings?.listModels) {
+        select.innerHTML = '<option value="">等待 SDK 加载...</option>';
+        select.disabled = true;
+        return;
+      }
+      await sdk.localAPIKeySettings.load?.();
+      const current = select.value;
+      const models = sdk.localAPIKeySettings.listModels('Image').filter(model => model.enabled !== false);
+      select.innerHTML = models.length
+        ? models.map(model => {
+            const value = model.name || model.modelId || '';
+            const label = model.modelId && model.modelId !== value ? `${value} (${model.modelId})` : value;
+            return `<option value="${escapeHtml(value)}">${escapeHtml(label)}</option>`;
+          }).join('')
+        : '<option value="">没有本地图片模型</option>';
+      select.disabled = !models.length;
+      if (models.some(model => (model.name || model.modelId || '') === current)) select.value = current;
+    }
+
+    const sdkCdnUrl = 'https://cdn.keepwork.com/sdk/keepworkSDK.iife.js?v=20260522a';
+
+    function loadScript(src) {
+      return new Promise((resolve, reject) => {
+        const existing = [...document.scripts].find(script => script.src === src);
+        if (existing) {
+          existing.addEventListener('load', resolve, { once: true });
+          existing.addEventListener('error', reject, { once: true });
+          return;
+        }
+        const script = document.createElement('script');
+        script.src = src;
+        script.onload = resolve;
+        script.onerror = reject;
+        document.head.appendChild(script);
+      });
+    }
+
+    function importRuntimeModule(src) {
+      return new Function('src', 'return import(src)')(src);
+    }
+
+    function shouldLoadSdkAsModule(src) {
+      return /(^|\/)index\.js(?:[?#].*)?$/.test(src);
+    }
+
+    function getSdkCandidates() {
+      const params = new URLSearchParams(window.location.search);
+      const explicitSdk = params.get('sdk');
+      const hostname = window.location.hostname;
+      const isLocalHost = !hostname || hostname === 'localhost' || hostname === '127.0.0.1' || hostname === '::1';
+      const localCandidates = [
+        '../../../../../keepworkSDK/index.js',
+        '/keepworkSDK/index.js',
+      ];
+      const deployedCandidates = [
+        sdkCdnUrl,
+        'https://keepwork.com/public/resource/keepworkSDK.iife.js',
+      ];
+      return [
+        explicitSdk,
+        ...(isLocalHost || window.location.protocol === 'file:' ? localCandidates : []),
+        ...deployedCandidates,
+        ...(isLocalHost || window.location.protocol === 'file:' ? [] : localCandidates),
+      ].filter(Boolean);
+    }
+
+    async function loadSdk() {
+      const candidates = getSdkCandidates();
+      let lastError = null;
+      for (const url of candidates) {
+        try {
+          if (shouldLoadSdkAsModule(url)) await importRuntimeModule(url);
+          else await loadScript(url);
+          if (window.keepwork) {
+            state.sdk = window.keepwork;
+            await state.sdk.localAPIKeySettings?.load?.();
+            $('sdkState').textContent = 'SDK ready';
+            await populateModelDropdown();
+            await refreshLoginState();
+            await loadRecords();
+            return;
+          }
+        } catch (e) { lastError = e; }
+      }
+      $('sdkState').textContent = 'SDK failed';
+      setStatus($('loginState'), `KeepworkSDK 加载失败：${lastError?.message || lastError || 'unknown'}`, 'error');
+    }
+
+    async function refreshLoginState() {
+      const sdk = state.sdk || window.keepwork;
+      if (!sdk) return;
+      let username = sdk.user?.username || '';
+      if (sdk.token && !username) {
+        try {
+          const user = typeof sdk.getUserProfile === 'function' ? await sdk.getUserProfile() : await sdk.getCurrentUser?.();
+          username = user?.username || sdk.user?.username || '';
+        } catch (_) {}
+      }
+      const loginState = $('loginState');
+      loginState.classList.toggle('error', false);
+      loginState.classList.toggle('ok', !!sdk.token);
+      loginState.innerHTML = sdk.token
+        ? `已登录：<button id="btnProfile" class="status-action" type="button">${escapeHtml(username || 'Keepwork 用户')}</button>`
+        : '<button id="btnProfile" class="status-action" type="button">未登录</button>。可点击登录，或使用 localAPI。';
+      $('btnProfile').onclick = openLoginOrProfile;
+    }
+
+    async function openLoginOrProfile() {
+      const sdk = state.sdk || window.keepwork;
+      if (!sdk) return;
+      if (!sdk.token) {
+        if (sdk.loginWindow?.show) sdk.loginWindow.show({ onLogin: refreshLoginState });
+        else if (sdk.login) await sdk.login();
+        setTimeout(refreshLoginState, 600);
+        return;
+      }
+      if (typeof sdk.showProfileWindow === 'function') {
+        const result = await sdk.showProfileWindow();
+        if (result?.action === 'logout') await refreshLoginState();
+      } else if (sdk.profileWindow?.show) {
+        await sdk.profileWindow.show();
+      } else {
+        setStatus($('loginState'), '当前 SDK 不支持 ProfileWindow。', 'error');
+      }
+      await refreshLoginState();
+    }
+
+    function getWorkspaceStore() {
+      const sdk = state.sdk || window.keepwork;
+      if (!sdk?.personalPageStore) throw new Error('PersonalPageStore 不可用');
+      return typeof sdk.personalPageStore.withWorkspace === 'function' ? sdk.personalPageStore.withWorkspace(WORKSPACE) : sdk.personalPageStore;
+    }
+
+    async function readFile(path) {
+      const store = getWorkspaceStore();
+      try { return await store.readFile(path, 1, 99999) || ''; }
+      catch (_) { return await store.readFile(path) || ''; }
+    }
+
+    async function writeFile(path, content) {
+      await getWorkspaceStore().createFile(path, content == null ? '' : String(content));
+    }
+
+    function entryToPath(entry) {
+      if (typeof entry === 'string') {
+        const clean = entry.replace(/^\/+/, '');
+        return clean.startsWith(`${FAMOUS_DIR}/`) ? clean : `${FAMOUS_DIR}/${clean}`;
+      }
+      const raw = String(entry?.path || entry?.fullPath || entry?.name || '').trim().replace(/^\/+/, '');
+      if (!raw) return '';
+      return raw.startsWith(`${FAMOUS_DIR}/`) ? raw : `${FAMOUS_DIR}/${raw}`;
+    }
+
+    async function loadRecords() {
+      setStatus($('runStatus'), '正在读取 workspace famous-pets 记录...', '');
+      let paths = [];
+      try {
+        const list = await getWorkspaceStore().listDir(FAMOUS_DIR);
+        paths = (Array.isArray(list) ? list : []).map(entryToPath).filter(path => /\.json$/i.test(path) && !/\/index\.json$/i.test(path));
+      } catch (_) {}
+      if (!paths.length) {
+        try {
+          const index = JSON.parse(await readFile(`${FAMOUS_DIR}/index.json`) || '[]');
+          paths = (Array.isArray(index) ? index : []).map(item => safeId(item.id)).filter(Boolean).map(id => `${FAMOUS_DIR}/${id}.json`);
+        } catch (_) {}
+      }
+      const records = [];
+      for (const path of [...new Set(paths)]) {
+        try {
+          const raw = await readFile(path);
+          if (!raw) continue;
+          const pet = JSON.parse(raw);
+          records.push({ id: pet.id || path.split('/').pop().replace(/\.json$/i, ''), name: pet.name || pet.id || path, path, pet });
+        } catch (e) {
+          records.push({ id: path.split('/').pop().replace(/\.json$/i, ''), name: '(JSON 解析失败)', path, pet: null, error: e?.message || String(e) });
+        }
+      }
+      state.records = records.sort((a, b) => String(a.id).localeCompare(String(b.id)));
+      renderRecordList();
+      $('recordCount').textContent = String(state.records.length);
+      setStatus($('runStatus'), `已加载 ${state.records.length} 条 workspace famous-pets 记录。`, 'ok');
+    }
+
+    function renderRecordList() {
+      const query = $('recordSearch').value.trim().toLowerCase();
+      const records = state.records.filter(record => !query || `${record.id} ${record.name}`.toLowerCase().includes(query));
+      $('recordList').innerHTML = records.length ? records.map(record => {
+        const pet = record.pet || {};
+        const active = record.id === state.selectedId ? ' active' : '';
+        const url = pet.imageSheetUrl || '';
+        const thumb = url ? `<span style="background-image:url('${escapeHtml(url)}')"></span>` : '';
+        return `<button type="button" class="record-item${active}" data-id="${escapeHtml(record.id)}">
+          <span class="record-thumb">${thumb}</span>
+          <span style="min-width:0"><span class="record-title">${escapeHtml(record.name || record.id)}</span><span class="record-meta">${escapeHtml(record.path)}</span></span>
+        </button>`;
+      }).join('') : '<div class="hint" style="padding:10px">没有匹配记录。点击“新建”创建一条。</div>';
+      $('recordList').querySelectorAll('.record-item').forEach(btn => {
+        btn.onclick = () => selectRecord(btn.dataset.id);
+      });
+    }
+
+    function selectRecord(id) {
+      const record = state.records.find(item => item.id === id);
+      if (!record?.pet) {
+        setStatus($('runStatus'), record?.error ? `记录无法读取：${record.error}` : '记录为空。', 'error');
+        return;
+      }
+      applyPetToForm(record.pet, record.path);
+      setStatus($('runStatus'), `已打开 ${record.path}`, 'ok');
+    }
+
+    function newPet() {
+      applyPetToForm(defaultPet(), `${FAMOUS_DIR}/new_famous_pet.json`);
+      state.selectedId = '';
+      state.currentPath = `${FAMOUS_DIR}/new_famous_pet.json`;
+      renderRecordList();
+      setStatus($('runStatus'), '已创建新记录草稿。编辑 ID 后保存即可写入 workspace。', '');
+    }
+
+    async function generateSheet() {
+      const sdk = state.sdk || window.keepwork;
+      if (!sdk?.aiGenerators?.genImage) throw new Error('sdk.aiGenerators.genImage 不可用');
+      const prompt = buildPrompt();
+      const reference = getReferenceImage();
+      const model = getSelectedImageModel();
+      if (!model) throw new Error('请先在本地 API Key 设置中配置 Image 模型');
+      const { width, height } = getImageSize();
+      const opts = { model, width, height };
+      if (!$('uploadResultToKeepwork').checked) opts.uploadResultToKeepwork = false;
+      if (reference) opts.images = [{ url: reference, role: 'reference' }];
+      setStatus($('runStatus'), `正在调用 genImage...\nmodel=${model}，size=${width}x${height}`, '');
+      $('btnGenerate').disabled = true;
+      $('btnRegenerate').disabled = true;
+      try {
+        const url = await sdk.aiGenerators.genImage(prompt, opts);
+        if (!url) throw new Error('genImage 未返回图片 URL');
+        $('imageSheetUrl').value = url;
+        renderSheet(url);
+        updateOutput();
+        const isDataUri = String(url).startsWith('data:');
+        setStatus($('runStatus'), isDataUri ? `生成完成，返回 data URI (${url.length} chars)。` : '生成完成。请检查 4x4 网格是否对齐。', 'ok');
+      } catch (e) {
+        setStatus($('runStatus'), `生成失败：${e?.message || e}`, 'error');
+        throw e;
+      } finally {
+        $('btnGenerate').disabled = false;
+        $('btnRegenerate').disabled = false;
+      }
+    }
+
+    function renderSheet(url) {
+      if (!url) {
+        $('sheetBox').innerHTML = '<div class="empty-preview">尚未生成贴图</div>';
+        $('cellPreview').innerHTML = '';
+        return;
+      }
+      const safe = escapeHtml(url);
+      $('sheetBox').innerHTML = `<img alt="4x4 sprite sheet" src="${safe}"><div class="grid-overlay"></div>`;
+      const row = STAGE_ROW[$('stage').value] ?? 2;
+      $('cellPreview').innerHTML = ['idle', 'happy', 'sad', 'sleep'].map(anim => {
+        const col = ANIM_COL[anim];
+        const bx = (col * 100 / (SHEET_COLS - 1)).toFixed(3);
+        const by = (row * 100 / (SHEET_ROWS - 1)).toFixed(3);
+        return `<div class="cell"><span style="background-image:url('${safe}');background-position:${bx}% ${by}%"></span><em>${anim}</em></div>`;
+      }).join('');
+    }
+
+    async function savePetJson() {
+      const pet = JSON.parse($('petJson').value);
+      const id = safeId(pet.id || $('petId').value, `famous_pet_${Date.now()}`);
+      const path = `${FAMOUS_DIR}/${id}.json`;
+      const savedPet = { ...pet, id };
+      $('petId').value = id;
+      await writeFile(path, JSON.stringify(savedPet, null, 2));
+      await upsertIndexEntry(buildIndexEntry(savedPet));
+      state.currentPath = path;
+      state.selectedId = id;
+      await loadRecords();
+      setStatus($('saveStatus'), `已写入 ${path}，并更新 ${FAMOUS_DIR}/index.json`, 'ok');
+    }
+
+    async function upsertIndexEntry(entry) {
+      let list = [];
+      try { list = JSON.parse(await readFile(`${FAMOUS_DIR}/index.json`) || '[]'); } catch (_) { list = []; }
+      if (!Array.isArray(list)) list = [];
+      const index = list.findIndex(item => item?.id === entry.id);
+      if (index >= 0) list[index] = { ...list[index], ...entry };
+      else list.push(entry);
+      await writeFile(`${FAMOUS_DIR}/index.json`, JSON.stringify(list, null, 2));
+      return list;
+    }
+
+    async function saveIndexJson() {
+      const entry = buildIndexEntry(JSON.parse($('petJson').value));
+      await upsertIndexEntry(entry);
+      setStatus($('saveStatus'), `已更新 ${FAMOUS_DIR}/index.json：${entry.id}`, 'ok');
+    }
+
+    function openWorkspaceViewer() {
+      if (typeof window.createWorkspaceViewer !== 'function') {
+        setStatus($('saveStatus'), 'WorkspaceViewer 不可用：当前 SDK 未导出 createWorkspaceViewer', 'error');
+        return;
+      }
+      closeWorkspaceViewer();
+      const overlay = document.createElement('div');
+      overlay.className = 'workspace-overlay';
+      overlay.id = 'workspaceOverlay';
+      overlay.innerHTML = `<div class="workspace-window" role="dialog" aria-modal="true" aria-label="WorkspaceViewer"><div class="workspace-titlebar"><strong>WorkspaceViewer · ${WORKSPACE}/${FAMOUS_DIR}</strong><button type="button" id="closeWorkspaceViewer">关闭</button></div><div class="workspace-host" id="workspaceHost"></div></div>`;
+      document.body.appendChild(overlay);
+      overlay.addEventListener('click', event => { if (event.target === overlay) closeWorkspaceViewer(); });
+      $('closeWorkspaceViewer').onclick = closeWorkspaceViewer;
+      state.workspaceViewer = window.createWorkspaceViewer({ container: $('workspaceHost'), sdk: state.sdk || window.keepwork, workspace: WORKSPACE, mountFolder: FAMOUS_DIR, compact: true, hideUserInfo: true });
+    }
+
+    function closeWorkspaceViewer() {
+      try { state.workspaceViewer?.destroy?.(); } catch (_) {}
+      state.workspaceViewer = null;
+      $('workspaceOverlay')?.remove();
+    }
+
+    async function copyText(text) {
+      await navigator.clipboard.writeText(text);
+      setStatus($('saveStatus'), '已复制到剪贴板。', 'ok');
+    }
+
+    function downloadText(filename, text) {
+      const blob = new Blob([text], { type: 'application/json;charset=utf-8' });
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = filename;
+      document.body.appendChild(a);
+      a.click();
+      a.remove();
+      setTimeout(() => URL.revokeObjectURL(url), 500);
+    }
+
+    function fillTraitsFromDna() {
+      const dna = normalizeDna($('dna').value || randomDna());
+      $('dna').value = dna;
+      const traits = decodeDna(dna);
+      $('element').value = traits.element || '陆地';
+      $('elementalAttribute').value = traits.elementalAttribute || '自然';
+      $('species').value = traits.species || dnaToName(dna);
+      $('color').value = traits.color || '';
+      $('eyes').value = traits.eyes || '';
+      $('accessory').value = traits.accessory || '';
+    }
+
+    async function handleReferenceFile() {
+      const file = $('referenceFile').files?.[0];
+      if (!file) { state.referenceDataUrl = ''; renderReferencePreview(); return; }
+      state.referenceDataUrl = await new Promise((resolve, reject) => {
+        const reader = new FileReader();
+        reader.onload = () => resolve(String(reader.result || ''));
+        reader.onerror = () => reject(reader.error || new Error('参考图读取失败'));
+        reader.readAsDataURL(file);
+      });
+      renderReferencePreview();
+    }
+
+    function renderReferencePreview() {
+      const url = getReferenceImage();
+      $('referencePreview').innerHTML = url ? `<img alt="reference" src="${escapeHtml(url)}">` : '<span class="hint">可选参考图预览</span>';
+      buildPrompt();
+    }
+
+    function markDirty() {
+      state.dirty = true;
+      try { buildPrompt(); } catch (e) { setStatus($('saveStatus'), e?.message || String(e), 'error'); }
+      renderSheet($('imageSheetUrl').value.trim());
+    }
+
+    function wireEvents() {
+      $('btnLocalApi').onclick = async () => {
+        const settings = (state.sdk || window.keepwork)?.localAPIKeySettings;
+        if (!settings?.show) return setStatus($('loginState'), '当前 SDK 不支持本地 API Key 设置。', 'error');
+        await settings.load?.();
+        settings.show({ title: '本地 API Key 设置', fullscreen: true, onSave: async () => { await populateModelDropdown(); setStatus($('saveStatus'), '本地 API Key 设置已保存。', 'ok'); refreshLoginState(); } });
+      };
+      $('btnWorkspace').onclick = openWorkspaceViewer;
+      $('btnRefreshRecords').onclick = () => loadRecords().catch(e => setStatus($('runStatus'), e?.message || String(e), 'error'));
+      $('btnNewPet').onclick = newPet;
+      $('btnOpenIndex').onclick = async () => {
+        try {
+          const raw = await readFile(`${FAMOUS_DIR}/index.json`);
+          $('petJson').value = raw || '[]';
+          setStatus($('saveStatus'), `已读取 ${FAMOUS_DIR}/index.json`, 'ok');
+        } catch (e) { setStatus($('saveStatus'), `读取 index 失败：${e?.message || e}`, 'error'); }
+      };
+      $('recordSearch').addEventListener('input', renderRecordList);
+      $('referenceUrl').addEventListener('input', renderReferencePreview);
+      $('referenceFile').addEventListener('change', handleReferenceFile);
+      $('btnRandomDna').onclick = () => { $('dna').value = randomDna(); fillTraitsFromDna(); markDirty(); };
+      $('btnDecodeDna').onclick = () => { fillTraitsFromDna(); markDirty(); };
+      $('btnBuildPrompt').onclick = buildPrompt;
+      $('btnGenerate').onclick = () => generateSheet().catch(e => console.error(e));
+      $('btnRegenerate').onclick = () => generateSheet().catch(e => console.error(e));
+      $('btnRefreshJson').onclick = updateOutput;
+      $('btnCopyJson').onclick = () => copyText($('petJson').value);
+      $('btnDownloadJson').onclick = () => downloadText(`${safeId($('petId').value, 'famous_pet')}.json`, $('petJson').value);
+      $('btnCopyIndex').onclick = () => copyText(JSON.stringify(buildIndexEntry(), null, 2));
+      $('btnSavePet').onclick = () => savePetJson().catch(e => setStatus($('saveStatus'), `写入失败：${e?.message || e}`, 'error'));
+      $('btnSaveIndex').onclick = () => saveIndexJson().catch(e => setStatus($('saveStatus'), `更新 index 失败：${e?.message || e}`, 'error'));
+      $('btnOpenInvite').onclick = () => window.open($('inviteUrl').value, '_blank');
+      $('imageSheetUrl').addEventListener('change', markDirty);
+      ['petId', 'petName', 'dna', 'rarity', 'stage', 'anim', 'element', 'elementalAttribute', 'species', 'color', 'eyes', 'accessory', 'extraTraits', 'wishPrompt'].forEach(id => {
+        $(id).addEventListener('input', markDirty);
+        $(id).addEventListener('change', markDirty);
+      });
+    }
+
+    function init() {
+      wireEvents();
+      populateModelDropdown();
+      applyPetToForm(defaultPet(), `${FAMOUS_DIR}/new_famous_pet.json`);
+      loadSdk();
+    }
+
+    init();
+  </script>
+</body>
+</html>

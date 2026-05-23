@@ -2,7 +2,7 @@
 import { escapeHtml, formatTime, prompt, showToast } from './utils.js';
 import { getCurrentPet, state } from './state.js';
 import { loadPostcardList } from './storage.js';
-import { renderPetPostcardHtml } from './view_postcard.js';
+import { postcardSourceLabel, renderPetPostcardHtml } from './view_postcard.js';
 import { showPetSharePanel } from './level_planet.js';
 
 const FRIEND_APPLY_RECENT_DAYS = 14;
@@ -56,7 +56,9 @@ function pickMailContent(value) {
 
 function normalizeRewardRows(value, fallback = []) {
     const raw = unwrapMailPayload(value);
-    const candidates = [raw?.rewards, raw?.receivedRewards, raw?.rewardList, raw?.items, raw?.data?.rewards, fallback].filter(Boolean);
+    const hasOwn = raw && typeof raw === 'object' ? (key) => Object.prototype.hasOwnProperty.call(raw, key) : () => false;
+    const hasExplicitRewardField = ['rewards', 'reward', 'rewardList', 'items', 'receivedRewards'].some(hasOwn);
+    const candidates = [raw?.rewards, raw?.reward, raw?.rewardList, raw?.items, raw?.data?.rewards, hasExplicitRewardField ? [] : fallback].filter(Boolean);
     const rows = [];
     candidates.forEach(candidate => {
         const list = Array.isArray(candidate) ? candidate : (typeof candidate === 'object' ? [candidate] : []);
@@ -81,6 +83,14 @@ function rewardTitle(item) {
     return [item.name || `奖励 ${item.id}`, item.desc].filter(Boolean).join('：');
 }
 
+function firstOwnValue(source, keys, fallback) {
+    if (!source || typeof source !== 'object') return fallback;
+    for (const key of keys) {
+        if (Object.prototype.hasOwnProperty.call(source, key)) return source[key];
+    }
+    return fallback;
+}
+
 function normalizeMail(item, fallback = {}) {
     const raw = unwrapMailPayload(item) || {};
     const base = fallback && typeof fallback === 'object' ? fallback : {};
@@ -88,8 +98,8 @@ function normalizeMail(item, fallback = {}) {
     const title = raw.title || raw.subject || base.title || `邮件 ${id || ''}`.trim() || '无主题';
     const createdAt = raw.createdAt || raw.created_at || raw.createTime || raw.updatedAt || base.createdAt || '';
     const rawRead = raw.read ?? raw.isRead ?? base.read ?? 0;
-    const rawRewards = raw.rewards ?? raw.reward ?? base.rewards ?? 0;
-    const rawRewardReceived = raw.receivedRewards ?? raw.rewardReceived ?? raw.rewardsReceived ?? base.rewardReceived ?? 0;
+    const rawRewards = firstOwnValue(raw, ['rewards', 'reward'], base.rewards ?? 0);
+    const rawRewardReceived = firstOwnValue(raw, ['receivedRewards', 'rewardReceived', 'rewardsReceived'], base.rewardReceived ?? 0);
     const read = Number(rawRead) === 1 || rawRead === true;
     const rewardReceived = Number(rawRewardReceived) === 1 || rawRewardReceived === true;
     const rewardRows = normalizeRewardRows(raw, base.rewardRows || []);
@@ -128,6 +138,12 @@ function timestampOf(item) {
     if (typeof raw === 'number') return raw > 100000000000 ? raw : raw * 1000;
     const parsed = Date.parse(raw);
     return Number.isFinite(parsed) ? parsed : 0;
+}
+
+function formatChineseDate(timestamp = Date.now()) {
+    const date = new Date(timestamp || Date.now());
+    if (Number.isNaN(date.getTime())) return '';
+    return `${date.getFullYear()}年${date.getMonth() + 1}月${date.getDate()}日`;
 }
 
 function isRecentApply(item, now = Date.now()) {
@@ -207,9 +223,10 @@ async function requestFriendByName() {
 }
 
 function postcardCardHtml(item, index) {
+    const sourceLabel = postcardSourceLabel(item) || item.fromUsername || '好友';
     const pet = {
         id: `postcard_${index}`,
-        name: `${item.fromUsername}的宠物`,
+        name: `${sourceLabel}的宠物`,
         stage: 'egg',
         anim: 'idle',
         bornAt: item.dateReceived,
@@ -217,8 +234,8 @@ function postcardCardHtml(item, index) {
     return `
         <button class="mailbox-card mailbox-postcard-card" data-open-postcard="${index}" type="button">
             <div class="mailbox-card-kicker">明信片 · ${escapeHtml(formatTime(item.dateReceived))}</div>
-            ${renderPetPostcardHtml(pet, { layout: item.layout, text: item.text })}
-            <div class="mailbox-card-foot">来自 ${escapeHtml(item.fromUsername)}</div>
+            ${renderPetPostcardHtml(pet, { layout: item.layout, text: item.text, photoTheme: item.photoTheme || item.theme })}
+            <div class="mailbox-card-foot">来自 ${escapeHtml(sourceLabel)}</div>
         </button>`;
 }
 
@@ -243,24 +260,63 @@ function mailCardHtml(item, index = 0) {
     const mail = normalizeMail(item);
     const timestamp = timestampOf({ createdAt: mail.createdAt });
     const statusBadges = [
-        mail.read ? '' : '<span class="mailbox-status-badge mailbox-status-unread">📬 未读</span>',
-        mail.rewards ? '<span class="mailbox-status-badge mailbox-status-reward">🎁 奖励</span>' : '',
-        mail.rewardReceived ? '<span class="mailbox-status-badge mailbox-status-claimed">已领取</span>' : '',
+        mail.read ? '' : '<span class="mailbox-status-badge mailbox-status-unread">✉️ 未读</span>',
     ].join('');
     return `
-        <button class="mailbox-card mailbox-mail-card mailbox-art-card${mail.read ? ' is-read' : ' is-unread'}${mail.rewards ? ' has-reward' : ''}" data-open-mail-index="${index}" type="button">
-            <div class="mailbox-card-kicker"><span>邮件 · ${escapeHtml(mail.from)}</span>${timestamp ? `<i>${escapeHtml(formatTime(timestamp))}</i>` : ''}</div>
-            <div class="mailbox-title mailbox-mail-title"><span class="mailbox-avatar">${mail.rewards ? '🎁' : (mail.read ? '✉️' : '📬')}</span>${escapeHtml(mail.title)}</div>
+        <button class="mailbox-card mailbox-mail-card mailbox-art-card${mail.read ? ' is-read' : ' is-unread'}" data-open-mail-index="${index}" type="button">
+            <div class="mailbox-card-kicker"><span>邮件</span>${timestamp ? `<i>${escapeHtml(formatTime(timestamp))}</i>` : ''}</div>
+            <div class="mailbox-title mailbox-mail-title"><span class="mailbox-avatar">✉️</span>${escapeHtml(mail.title)}</div>
             <div class="mailbox-status-row">${statusBadges}</div>
             ${mail.read ? '<div class="mailbox-read-stamp" aria-label="已读">已读</div>' : ''}
-            ${mail.rewardReceived ? '<div class="mailbox-claimed-stamp" aria-label="奖励已领取">已领取</div>' : ''}
         </button>`;
 }
 
-function mailContentHtml(content) {
+function mailContentText(content) {
     const value = typeof content === 'string' ? content : (content ? JSON.stringify(content, null, 2) : '暂无邮件正文');
-    if (/<([a-z][\w:-]*)(\s|>|\/)/i.test(value)) return value;
-    return `<pre class="mailbox-mail-pre">${escapeHtml(value)}</pre>`;
+    if (!/<([a-z][\w:-]*)(\s|>|\/)/i.test(value)) return value;
+    const html = value
+        .replace(/<br\s*\/?>/gi, '\n')
+        .replace(/<\/(p|div|li|h[1-6])>/gi, '\n');
+    const box = document.createElement('div');
+    box.innerHTML = html;
+    return box.textContent || '暂无邮件正文';
+}
+
+function parseMailLetter(content, mail) {
+    const text = mailContentText(content).replace(/\r\n?/g, '\n').trim();
+    const match = text.match(/^亲爱的\s+(.+?),\s*\n+([\s\S]*?)\n+来自：\s*(.+?)(?:\n+(.+))?$/);
+    const fallbackDate = formatChineseDate(timestampOf({ createdAt: mail.createdAt }));
+    if (match) {
+        return {
+            recipient: match[1].trim() || userNameOf(state.user) || '你',
+            body: match[2].trim() || '暂无邮件正文',
+            sender: match[3].trim() || mail.from || '系统邮件',
+            date: (match[4] || '').trim() || fallbackDate,
+        };
+    }
+    return {
+        recipient: userNameOf(state.user) || '你',
+        body: text || '暂无邮件正文',
+        sender: mail.from || '系统邮件',
+        date: fallbackDate,
+    };
+}
+
+function mailContentHtml(content, mail) {
+    const letter = parseMailLetter(content, mail);
+    return `
+        <div class="mailbox-letter-paper">
+            <span class="mailbox-letter-watermark">蛋蛋星球</span>
+            <div class="email-paper-head mailbox-letter-head">
+                ${letter.date ? `<span class="email-paper-date">${escapeHtml(letter.date)}</span>` : ''}
+            </div>
+            <div class="email-letter-greeting">亲爱的 ${escapeHtml(letter.recipient)},</div>
+            <div class="mailbox-letter-body">${escapeHtml(letter.body).replace(/\n/g, '<br>')}</div>
+            <div class="email-letter-signature mailbox-letter-signature">
+                <div>来自：${escapeHtml(letter.sender)}</div>
+                ${letter.date ? `<div>${escapeHtml(letter.date)}</div>` : ''}
+            </div>
+        </div>`;
 }
 
 function rewardHtml(mail) {
@@ -268,7 +324,7 @@ function rewardHtml(mail) {
     return `<div class="mailbox-mail-rewards">${mail.rewardRows.map(item => `<span title="${escapeHtml(rewardTitle(item))}">${escapeHtml(rewardLabel(item))} x${escapeHtml(item.amount)}</span>`).join('')}</div>`;
 }
 
-function showMailDetailModal(mail, detail = null) {
+function showMailDetailModal(mail, detail = null, { onMarkRead, onDelete } = {}) {
     const data = detail ? normalizeMail(detail, normalizeMail(mail)) : normalizeMail(mail);
     const mask = document.createElement('div');
     mask.className = 'modal-mask';
@@ -278,18 +334,35 @@ function showMailDetailModal(mail, detail = null) {
                 <span class="mailbox-mail-detail-icon">${data.read ? '✉️' : '📬'}</span>
                 <div>
                     <div class="mailbox-mail-detail-title">${escapeHtml(data.title)}</div>
-                    <div class="mailbox-mail-detail-meta">${escapeHtml(data.from)}${data.createdAt ? ` · ${escapeHtml(formatTime(timestampOf({ createdAt: data.createdAt })) || data.createdAt)}` : ''}${data.id ? ` · ID ${escapeHtml(data.id)}` : ''}</div>
                 </div>
                 <button class="mailbox-mail-close" data-mail-close type="button" aria-label="关闭">×</button>
             </div>
             ${rewardHtml(data)}
             ${data.rewardReceived ? '<div class="mailbox-claimed-stamp mailbox-claimed-stamp-detail" aria-label="奖励已领取">已领取</div>' : ''}
-            <div class="mailbox-mail-content">${mailContentHtml(data.content)}</div>
+            <div class="mailbox-mail-content">${mailContentHtml(data.content, data)}</div>
+            <div class="mailbox-mail-detail-actions">
+                <button class="mailbox-mail-action mailbox-mail-action-delete" data-mail-delete type="button">删除</button>
+                <button class="mailbox-mail-action mailbox-mail-action-read" data-mail-mark-read type="button" ${data.read ? 'disabled' : ''}>${data.read ? '已读' : '标记已读'}</button>
+            </div>
         </div>`;
     mask.addEventListener('click', (e) => {
         if (e.target === mask || e.target.closest?.('[data-mail-close]')) mask.remove();
     });
+    const markReadBtn = mask.querySelector('[data-mail-mark-read]');
+    if (markReadBtn) markReadBtn.onclick = () => onMarkRead?.(data, { mask, button: markReadBtn });
+    const deleteBtn = mask.querySelector('[data-mail-delete]');
+    if (deleteBtn) deleteBtn.onclick = () => onDelete?.(data, { mask, button: deleteBtn });
     document.body.appendChild(mask);
+}
+
+function markMailObjectRead(item) {
+    if (!item || typeof item !== 'object') return;
+    item.read = 1;
+    item.isRead = 1;
+    if (item.raw && typeof item.raw === 'object') {
+        item.raw.read = 1;
+        item.raw.isRead = 1;
+    }
 }
 
 function friendApplySectionHtml(applies) {
@@ -383,6 +456,18 @@ export function renderMailbox(panel, _data = {}, { onBack, onOpenPostcard, onEma
     (async () => {
         const [postcards, applies, mails] = await Promise.all([loadPostcardList(), loadFriendApplies(), loadMails()]);
         const data = { postcards, applies, mails };
+        const findMailIndex = (mail) => {
+            const mailId = normalizeMail(mail).id;
+            return data.mails.findIndex(item => normalizeMail(item).id === mailId);
+        };
+        const markMailReadLocally = (mail) => {
+            const index = findMailIndex(mail);
+            markMailObjectRead(index >= 0 ? data.mails[index] : mail);
+        };
+        const deleteMailLocally = (mail) => {
+            const index = findMailIndex(mail);
+            if (index >= 0) data.mails.splice(index, 1);
+        };
         const renderCurrentList = () => {
             listEl.innerHTML = renderMailboxItems(data);
             const moreBtn = listEl.querySelector('[data-mailbox-more-applies]');
@@ -397,7 +482,52 @@ export function renderMailbox(panel, _data = {}, { onBack, onOpenPostcard, onEma
                     btn.disabled = true;
                     try {
                         const detail = await readMailDetail(mail);
-                        showMailDetailModal(mail, detail);
+                        const detailMail = detail ? normalizeMail(detail, normalizeMail(mail)) : normalizeMail(mail);
+                        if (detailMail.read && !normalizeMail(mail).read) {
+                            markMailReadLocally(detailMail);
+                            bindTabs(data, renderCurrentList);
+                            renderCurrentList();
+                        }
+                        showMailDetailModal(mail, detail, {
+                            onMarkRead: async (detailMail, { button }) => {
+                                const mailId = normalizeMail(detailMail || mail).id;
+                                if (!mailId || !state.sdk?.socialFriends?.setMailRead) {
+                                    showToast('当前 SDK 不支持标记已读', 'error');
+                                    return;
+                                }
+                                button.disabled = true;
+                                try {
+                                    await state.sdk.socialFriends.setMailRead({ ids: [mailId] });
+                                    markMailReadLocally(detailMail || mail);
+                                    bindTabs(data, renderCurrentList);
+                                    renderCurrentList();
+                                    button.textContent = '已读';
+                                    showToast('已标记为已读', 'success');
+                                } catch (e) {
+                                    showToast('标记失败：' + (e?.message || e), 'error');
+                                    button.disabled = false;
+                                }
+                            },
+                            onDelete: async (detailMail, { mask, button }) => {
+                                const mailId = normalizeMail(detailMail || mail).id;
+                                if (!mailId || !state.sdk?.socialFriends?.deleteMail) {
+                                    showToast('当前 SDK 不支持删除邮件', 'error');
+                                    return;
+                                }
+                                button.disabled = true;
+                                try {
+                                    await state.sdk.socialFriends.deleteMail({ ids: [mailId] });
+                                    deleteMailLocally(detailMail || mail);
+                                    bindTabs(data, renderCurrentList);
+                                    renderCurrentList();
+                                    mask.remove();
+                                    showToast('邮件已删除', 'success');
+                                } catch (e) {
+                                    showToast('删除失败：' + (e?.message || e), 'error');
+                                    button.disabled = false;
+                                }
+                            },
+                        });
                     } finally {
                         btn.disabled = false;
                     }

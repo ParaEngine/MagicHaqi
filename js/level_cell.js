@@ -4,7 +4,7 @@ import { $, escapeHtml, showToast } from './utils.js';
 import { CONFIG } from './config.js';
 import { state } from './state.js';
 import { savePetDebounced } from './storage.js';
-import { getPermanentTraumaCount } from './petTick.js';
+import { getActiveSickness, getEffectiveSicknessSeverity, getPermanentTraumaCount } from './petTick.js';
 import { decodeDna, dietPreferenceIcons, dietPreferenceLabel, dnaDietPreference } from './dna.js';
 import { isPetInteractionBlocked, isPetSleeping, sleepingInteractionText } from './pet.js';
 
@@ -73,6 +73,9 @@ function shouldShowCellHungerCue(pet) {
 
 function cellFaceExpression(pet) {
     if (pet?.stage === 'egg') return 'happy';
+    const sicknessSeverity = getEffectiveSicknessSeverity(pet);
+    if (sicknessSeverity >= 7) return 'critical';
+    if (sicknessSeverity > 0) return 'sick';
     const stats = pet?.stats || {};
     const mood = stats.mood ?? 100;
     if (mood < 25) return 'sad';
@@ -160,6 +163,70 @@ function traumaLayerHtml(pet) {
             ${Array.from({ length: count }, (_, index) => `<span class="cell-trauma-mark t${index + 1}" title="永久精神伤害 ${index + 1}/${CONFIG.trauma.max}"><span></span></span>`).join('')}
         </div>
     `;
+}
+
+function sicknessIconSvg(type) {
+    const spots = {
+        diarrhea: '<circle cx="25" cy="30" r="4"/><circle cx="39" cy="38" r="3"/>',
+        bacterial: '<circle cx="23" cy="32" r="4"/><circle cx="36" cy="27" r="3"/><circle cx="41" cy="40" r="3"/>',
+        depression: '<path d="M23 41c6-5 14-5 20 0" fill="none" stroke-width="5" stroke-linecap="round"/>',
+        fatigue: '<path d="M35 17 24 34h10l-4 15 14-23h-9Z" stroke-width="3" stroke-linejoin="round"/>',
+        allergy: '<path d="M21 27c8 5 15-5 23 0M23 40c7-4 12 4 19 0" fill="none" stroke-width="5" stroke-linecap="round"/>',
+        flu: '<path d="M29 18h6v11h11v6H35v11h-6V35H18v-6h11Z" stroke-width="2" stroke-linejoin="round"/>',
+    };
+    return `<svg viewBox="0 0 64 64" aria-hidden="true"><ellipse cx="32" cy="34" rx="22" ry="15" fill="#18181b" stroke="#7f1d1d" stroke-width="5" transform="rotate(-20 32 34)"/><path d="M12 19l10 8M52 43l8 7M48 15l-9 9M17 50l9-8" stroke="#27272a" stroke-width="5" stroke-linecap="round"/><g fill="#ef4444" stroke="#fecaca" stroke-opacity=".82">${spots[type] || spots.flu}</g><circle cx="24" cy="29" r="3" fill="#fecaca"/><circle cx="39" cy="35" r="2.5" fill="#fecaca"/></svg>`;
+}
+
+function sicknessLayerHtml(pet) {
+    const sickness = getActiveSickness(pet);
+    if (!sickness) return '';
+    const count = getEffectiveSicknessSeverity(pet);
+    if (!count) return '';
+    const label = `${sickness.def.name} ${count}/10`;
+    return `
+        <div class="cell-sickness-layer" aria-label="${escapeHtml(label)}">
+            ${Array.from({ length: count }, (_, index) => `<span class="cell-sickness-icon s${index + 1}" role="button" tabindex="0" title="${escapeHtml(label)}" data-sickness-name="${escapeHtml(sickness.def.name)}" data-sickness-level="${count}">${sicknessIconSvg(sickness.type)}</span>`).join('')}
+            ${Array.from({ length: Math.min(6, Math.max(3, count)) }, (_, index) => `<span class="cell-white-cell w${index + 1}" title="白细胞"></span>`).join('')}
+        </div>
+    `;
+}
+
+function bindSicknessIcons() {
+    document.querySelectorAll('.cell-sickness-icon[data-sickness-name]').forEach(el => {
+        let start = null;
+        const showName = (event) => {
+            event?.stopPropagation?.();
+            showToast(`${el.dataset.sicknessName}：病情 ${el.dataset.sicknessLevel}/10`, 'info', 1600);
+        };
+        el.addEventListener('pointerdown', (e) => {
+            start = { id: e.pointerId, x: e.clientX, y: e.clientY };
+        });
+        el.addEventListener('pointerup', (e) => {
+            if (!start || start.id !== e.pointerId) return;
+            const moved = Math.hypot(e.clientX - start.x, e.clientY - start.y);
+            start = null;
+            if (moved > DIET_TAP_MOVE_THRESHOLD) return;
+            showName(e);
+        });
+        el.addEventListener('pointercancel', () => { start = null; });
+        el.addEventListener('keydown', (e) => {
+            if (e.key !== 'Enter' && e.key !== ' ') return;
+            e.preventDefault();
+            showName(e);
+        });
+    });
+}
+
+function treatmentIconSvg() {
+    return '<svg class="dock-icon-svg dock-icon-treatment" viewBox="0 0 32 32" aria-hidden="true"><circle cx="16" cy="16" r="13" fill="#fee2e2" stroke="#fff" stroke-width="3"/><path d="M14 7h4v7h7v4h-7v7h-4v-7H7v-4h7Z" fill="#dc2626" stroke="#991b1b" stroke-width="1" stroke-linejoin="round"/></svg>';
+}
+
+function cellStatusText(pet) {
+    const sickness = getActiveSickness(pet);
+    if (sickness) return `当前状态：${sickness.def.name} ${getEffectiveSicknessSeverity(pet)}/10`;
+    const traumaCount = getPermanentTraumaCount(pet);
+    if (traumaCount) return `当前状态：永久精神伤害 ${traumaCount}/${CONFIG.trauma.max}`;
+    return '当前状态：体内正常';
 }
 
 function stopCellGame() {
@@ -385,6 +452,7 @@ export const cellLevel = {
             </div>
 
             ${traumaLayerHtml(pet)}
+            ${sicknessLayerHtml(pet)}
 
             <div class="cell-face-wrap ${isPetSleeping(pet) ? 'is-sleeping' : `is-awake ${cellFaceStateClass(pet)}`} ${!isPetSleeping(pet) && shouldShowCellHungerCue(pet) ? 'is-hungry' : ''}" style="${cellFaceStyle(pet)}" aria-hidden="true">
                 <svg class="cell-face-svg" viewBox="0 0 180 180" role="img" aria-label="细胞精灵">
@@ -471,12 +539,13 @@ export const cellLevel = {
 
     bindStage(pet, _ctx) {
         bindDietFloatIcons();
+        bindSicknessIcons();
         bindCellFaceTick(pet);
         updateCellFaceHealthCue(pet);
     },
 
     dockHtml(pet) {
-        const traumaCount = getPermanentTraumaCount(pet);
+        const sickness = getActiveSickness(pet);
         const sleeping = isPetInteractionBlocked(pet);
         const isEgg = pet?.stage === 'egg';
         if (isEgg) {
@@ -491,8 +560,9 @@ export const cellLevel = {
         return `
             <div class="mh-dock-row mh-scroll-x dock-action-row">
                 <button type="button" class="btn-secondary action-btn dock-icon-btn ${sleeping ? 'is-sleep-disabled' : ''}" data-act="chat" ${sleeping ? 'disabled' : ''} title="${sleeping ? escapeHtml(sleepingInteractionText(pet)) : ''}"><span class="dock-icon">💬</span><span class="dock-label">对话</span></button>
+                ${sickness ? `<button type="button" class="btn-secondary action-btn dock-icon-btn cell-treat-btn ${sleeping ? 'is-sleep-disabled' : ''}" data-act="treatSickness" ${sleeping ? 'disabled' : ''} title="${sleeping ? escapeHtml(sleepingInteractionText(pet)) : '启动细胞免疫塔防治疗疾病'}"><span class="dock-icon">${treatmentIconSvg()}</span><span class="dock-label">治疗</span></button>` : ''}
             </div>
-            <div class="mh-dock-hint">${traumaCount ? `黑色旋风是永久精神伤害：${traumaCount}/${CONFIG.trauma.max}，无法治疗移除。` : '体内一切正常 ✨'}</div>
+            <div class="mh-dock-hint">${escapeHtml(cellStatusText(pet))}</div>
         `;
     },
 
@@ -504,6 +574,7 @@ export const cellLevel = {
                 const k = el.dataset.act;
                 if (k === 'chat') { ctx.callbacks.onNav?.('chat'); return; }
                 if (k === 'wish') showWishModal(pet, ctx);
+                if (k === 'treatSickness') ctx.callbacks.onTreatSickness?.();
             };
         });
     },

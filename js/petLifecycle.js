@@ -127,6 +127,14 @@ function clampStatValue(value) {
     return Math.max(CONFIG.statMin, Math.min(CONFIG.statMax, Number(value) || 0));
 }
 
+function clearBodyState(pet) {
+    if (!pet) return;
+    delete pet.sickness;
+    delete pet.lastSicknessCuredAt;
+    delete pet.sicknessCooldownUntil;
+    delete pet.lastSicknessCheckDay;
+}
+
 export function applyReleasedPetAutoCareStats(pet) {
     if (!pet || getPetLocationType(pet) !== 'released') return false;
     const stats = pet.stats && typeof pet.stats === 'object' ? pet.stats : (pet.stats = {});
@@ -339,6 +347,7 @@ export function getPetLocationInfo(pet, planetName = '宠物星') {
 export function markPetReleased(pet, planetName = '宠物星') {
     if (!pet) return null;
     const now = Date.now();
+    clearBodyState(pet);
     pet.status = 'released';
     pet.location = {
         type: 'released',
@@ -354,6 +363,7 @@ export function markPetReleased(pet, planetName = '宠物星') {
 export function markPetHaqiIsland(pet) {
     if (!pet) return null;
     const now = Date.now();
+    clearBodyState(pet);
     pet.status = 'haqiIsland';
     pet.location = {
         type: 'haqiIsland',
@@ -370,6 +380,7 @@ export function markPetRemoteExiled(pet, reason = 'capacity') {
     if (!pet) return null;
     const now = Date.now();
     const destination = chooseRemoteDestination(pet);
+    clearBodyState(pet);
     pet.status = 'remotePlanet';
     pet.location = {
         type: 'remotePlanet',

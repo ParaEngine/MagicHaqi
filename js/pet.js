@@ -2058,7 +2058,8 @@ export function scanAndMount(root) {
     els.forEach((el) => {
         const id = el.getAttribute('data-mh-pet');
         if (!id) return;
-        const pet = state.pets[id];
+        const visitPet = state.visitingMode?.friendPet;
+        const pet = state.pets[id] || (visitPet?.id === id ? visitPet : null);
         if (pet) mountPetArt(el, pet);
     });
 }

@@ -34,18 +34,22 @@
         100% 100%;
     opacity: 0.82;
 }
-.star {
-    position:absolute; background:var(--star-glow, #fff); border-radius:50%;
-    box-shadow: 0 0 5px var(--star-glow, #fff), 0 0 13px rgba(125, 225, 255, 0.24);
-    animation: starTwinkle ease-in-out infinite;
-    opacity: 0.78;
+.space-star-canvas {
+    position: absolute;
+    inset: 0;
+    width: 100%;
+    height: 100%;
+    display: block;
+    pointer-events: none;
 }
-@keyframes starTwinkle { 0%,100%{opacity:.28;transform:scale(.78)} 50%{opacity:1;transform:scale(1.3)} }
 
 .space-travel-layer,
 .space-travel-front-layer {
     position: absolute;
     inset: 0;
+    display: block;
+    width: 100%;
+    height: 100%;
     pointer-events: none;
     overflow: visible;
 }
@@ -120,7 +124,8 @@
     stroke-width: 5;
     stroke-linecap: round;
     filter: drop-shadow(0 0 7px rgba(126, 236, 255, 0.58));
-    animation: shipTrailPulse 1.8s ease-in-out infinite;
+    stroke-dasharray: 22 14;
+    opacity: 0.58;
 }
 .ship-trail-glow { fill: rgba(112, 230, 255, 0.13); }
 .shuttle-body { fill: #e8f7ff; stroke: #68c8ff; stroke-width: 2; }
@@ -153,6 +158,35 @@
     cursor: default;
     animation: planetBreathFloat 2.4s ease-in-out infinite;
     will-change: transform;
+}
+.space-planet.user-planet.visiting-friend-planet .planet-body {
+    box-shadow:
+        inset -18px -28px 60px rgba(0,0,0,0.42),
+        0 0 26px rgba(125, 211, 252, 0.58),
+        0 0 54px rgba(250, 204, 21, 0.18);
+}
+.planet-visit-friend-pet {
+    display: inline-grid;
+    place-items: center;
+    width: 42px;
+    height: 42px;
+    overflow: hidden;
+    border-radius: 14px;
+    background: rgba(255,255,255,0.55);
+}
+.planet-visit-friend-pet .mh-pet-art,
+.planet-visit-friend-pet canvas,
+.planet-visit-friend-pet img {
+    max-width: 100%;
+    max-height: 100%;
+}
+.planet-visit-dock {
+    align-items: center;
+}
+.planet-visit-dock .mh-dock-hint {
+    flex: 1 1 180px;
+    min-width: 160px;
+    white-space: normal;
 }
 .space-planet.user-planet.has-mining-coins {
     cursor: pointer;
@@ -255,7 +289,7 @@
     height: 18px;
     border-radius: 999px;
     background: linear-gradient(180deg, rgba(179, 236, 255, 0), rgba(179, 236, 255, 0.82));
-    animation: planetRainFall 0.78s linear infinite;
+    animation: planetRainFall 1.15s linear infinite;
 }
 @keyframes planetRainFall { to { transform: translateY(72vh); opacity: 0.25; } }
 .planet-orbit-sun {
@@ -336,11 +370,35 @@
 .pet-share-modal-card {
     width: min(468px, calc(100vw - 28px));
     max-width: 468px;
-    max-height: calc(100vh - 18px);
-    overflow-y: auto;
-    padding: 20px;
+    height: min(680px, calc(100vh - 8px));
+    height: min(680px, calc(100dvh - 8px));
+    max-height: calc(100vh - 8px);
+    max-height: calc(100dvh - 8px);
+    overflow: visible;
+    display: flex;
+    flex-direction: column;
+    padding: 18px;
+}
+.modal-card.pet-share-modal-card {
+    height: min(680px, calc(100vh - 8px));
+    height: min(680px, calc(100dvh - 8px));
+    max-height: calc(100vh - 8px);
+    max-height: calc(100dvh - 8px);
 }
 .pet-share-head .planet-modal-subtitle { margin-bottom: 10px; }
+[data-share-preview-host] {
+    flex: 1 1 0;
+    min-height: 0;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    overflow: visible;
+}
+.pet-share-modal-card [data-share-preview-host] .pet-postcard {
+    width: 100%;
+    transform: scale(var(--pet-share-scale, 1));
+    transform-origin: center center;
+}
 .pet-postcard {
     position: relative;
     overflow: hidden;
@@ -405,19 +463,45 @@
     aspect-ratio: 1 / 1;
     border-radius: 12px;
     border: 2px solid rgba(255,255,255,0.92);
-    background-color: #f8fafc;
+    background:
+        radial-gradient(circle at 28% 18%, rgba(255,255,255,0.82), transparent 24%),
+        radial-gradient(circle at 76% 78%, rgba(255,255,255,0.36), transparent 28%),
+        linear-gradient(135deg, var(--pet-postcard-photo-bg-1, #ffe4f1), var(--pet-postcard-photo-bg-2, #dff7ff));
     overflow: visible;
     box-shadow: 0 7px 14px rgba(15,23,42,0.18), 0 1px 0 rgba(14,116,144,0.16), inset 0 0 0 1px rgba(14,116,144,0.16);
     transform-origin: center;
     transition: transform 160ms ease;
+}
+.pet-postcard-photo:nth-child(2) {
+    background:
+        radial-gradient(circle at 74% 16%, rgba(255,255,255,0.84), transparent 24%),
+        radial-gradient(circle at 18% 84%, rgba(255,255,255,0.34), transparent 30%),
+        linear-gradient(135deg, var(--pet-postcard-photo-bg-2, #dff7ff), var(--pet-postcard-photo-bg-3, #fff3bf));
+}
+.pet-postcard-photo:nth-child(3) {
+    background:
+        radial-gradient(circle at 35% 72%, rgba(255,255,255,0.78), transparent 26%),
+        radial-gradient(circle at 85% 18%, rgba(255,255,255,0.32), transparent 30%),
+        linear-gradient(135deg, var(--pet-postcard-photo-bg-3, #fff3bf), var(--pet-postcard-photo-bg-4, #e9d5ff));
+}
+.pet-postcard-photo:nth-child(4) {
+    background:
+        radial-gradient(circle at 22% 22%, rgba(255,255,255,0.82), transparent 24%),
+        radial-gradient(circle at 78% 74%, rgba(255,255,255,0.34), transparent 30%),
+        linear-gradient(135deg, var(--pet-postcard-photo-bg-4, #e9d5ff), var(--pet-postcard-photo-bg-1, #ffe4f1));
 }
 .pet-postcard-photo-art {
     position: absolute;
     inset: 7px;
     border-radius: 9px;
     overflow: hidden;
-    background-color: #f8fafc;
+    background-color: transparent;
     box-shadow: inset 0 0 0 1px rgba(14,116,144,0.08);
+}
+.pet-postcard-photo-pending .pet-postcard-photo-art {
+    background:
+        radial-gradient(circle at 50% 45%, rgba(255,255,255,0.82), transparent 38%),
+        linear-gradient(135deg, #f8fafc, #e0f7ff);
 }
 .pet-postcard-photo::after {
     content: '';
@@ -568,7 +652,7 @@
 .pet-postcard-message:focus-visible {
     box-shadow: 0 0 0 3px rgba(56,189,248,0.38);
 }
-.pet-share-actions { gap: 8px; }
+.pet-share-actions { gap: 8px; flex-wrap: wrap; }
 .invite-view {
     position: absolute;
     inset: 52px 0 0;
@@ -1126,18 +1210,119 @@
     padding: 5px 9px;
 }
 .mailbox-mail-content {
-    min-height: 160px;
-    max-height: min(420px, calc(100vh - 220px));
+    min-height: 220px;
+    max-height: min(420px, calc(100vh - 276px));
     overflow: auto;
-    border: 1.5px solid rgba(14, 165, 233, 0.18);
-    border-radius: 12px;
-    background: rgba(255,255,255,0.78);
-    color: var(--text-secondary);
-    padding: 12px;
+    border: 0;
+    border-radius: 10px;
+    background: transparent;
+    color: #173456;
+    padding: 0 2px 8px;
     font-size: 13px;
     font-weight: 700;
     line-height: 1.6;
     overflow-wrap: anywhere;
+}
+.mailbox-mail-detail-actions {
+    display: flex;
+    justify-content: flex-end;
+    gap: 12px;
+    padding: 2px 4px 0;
+}
+.mailbox-mail-action {
+    min-width: 104px;
+    min-height: 42px;
+    border: 1.5px solid rgba(255,255,255,0.88);
+    border-radius: 16px;
+    color: #fff;
+    font-size: 15px;
+    font-weight: 1000;
+    cursor: pointer;
+    text-shadow: 0 1px 0 rgba(15, 23, 42, 0.22);
+    box-shadow: 0 4px 0 rgba(15, 23, 42, 0.18), inset 0 1px 0 rgba(255,255,255,0.46);
+}
+.mailbox-mail-action:active {
+    transform: translateY(2px);
+    box-shadow: 0 2px 0 rgba(15, 23, 42, 0.18), inset 0 2px 5px rgba(15,23,42,0.16);
+}
+.mailbox-mail-action:disabled {
+    opacity: 0.58;
+    cursor: not-allowed;
+    transform: none;
+}
+.mailbox-mail-action-delete { background: linear-gradient(180deg, #fecaca, #ef4444); }
+.mailbox-mail-action-read { background: linear-gradient(180deg, #67e8f9, #0ea5e9 54%, #1d4ed8); }
+.mailbox-letter-paper {
+    position: relative;
+    display: grid;
+    gap: 10px;
+    overflow: hidden;
+    min-height: 250px;
+    padding: 18px 18px 16px;
+    border: 1.5px solid rgba(146, 64, 14, 0.18);
+    border-radius: 10px;
+    background:
+        linear-gradient(90deg, rgba(239, 68, 68, 0.16) 0 2px, transparent 2px 100%) 29px 0 / 100% 100% no-repeat,
+        repeating-linear-gradient(180deg, transparent 0 31px, rgba(14, 116, 144, 0.13) 31px 32px),
+        linear-gradient(145deg, #fffdf4 0%, #fff8df 58%, #fef3c7 100%);
+    box-shadow: 0 8px 0 rgba(146, 64, 14, 0.1), 0 16px 28px rgba(6, 18, 44, 0.16), inset 0 1px 0 rgba(255,255,255,0.9);
+}
+.mailbox-letter-paper::before {
+    content: '';
+    position: absolute;
+    right: 0;
+    top: 0;
+    width: 48px;
+    height: 48px;
+    background: linear-gradient(135deg, rgba(255,255,255,0.15) 0 49%, rgba(146, 64, 14, 0.18) 50%, #fde68a 51% 100%);
+    clip-path: polygon(100% 0, 100% 100%, 0 0);
+    pointer-events: none;
+}
+.mailbox-letter-paper::after {
+    content: '';
+    position: absolute;
+    left: 19px;
+    top: 0;
+    bottom: 0;
+    width: 1px;
+    background: rgba(239, 68, 68, 0.18);
+    pointer-events: none;
+}
+.mailbox-letter-head,
+.mailbox-letter-body,
+.mailbox-letter-signature {
+    position: relative;
+    z-index: 1;
+}
+.mailbox-letter-head {
+    min-height: 28px;
+    justify-content: flex-end;
+}
+.mailbox-letter-watermark {
+    position: absolute;
+    left: 50%;
+    top: 45%;
+    z-index: 0;
+    color: rgba(146, 64, 14, 0.075);
+    font-size: 46px;
+    font-weight: 1000;
+    line-height: 1;
+    white-space: nowrap;
+    transform: translate(-50%, -50%) rotate(-12deg);
+    pointer-events: none;
+    user-select: none;
+}
+.mailbox-letter-body {
+    min-height: 112px;
+    padding: 0 8px;
+    color: #173456;
+    font-size: 15px;
+    font-weight: 850;
+    line-height: 32px;
+    word-break: break-word;
+}
+.mailbox-letter-signature {
+    margin-top: auto;
 }
 .mailbox-mail-pre {
     margin: 0;
@@ -1148,23 +1333,189 @@
 .email-view {
     overflow-y: auto;
     padding: 14px;
+    background:
+        radial-gradient(circle at 20% 10%, rgba(254, 243, 199, 0.45), transparent 32%),
+        radial-gradient(circle at 82% 12%, rgba(186, 230, 253, 0.42), transparent 34%);
 }
-.email-card {
-    width: min(560px, 100%);
+.email-compose-shell {
+    width: min(620px, 100%);
     margin: 0 auto;
-    display: grid;
-    gap: 8px;
+    padding: 6px 0 22px;
 }
-.email-label {
-    color: var(--text-secondary);
+.email-paper-controls {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr);
+    gap: 8px 10px;
+    margin-bottom: 12px;
+    padding: 12px;
+    border: 1.5px solid rgba(255,255,255,0.72);
+    border-radius: 12px;
+    background: rgba(239, 250, 255, 0.72);
+    box-shadow: 0 6px 16px rgba(6, 18, 44, 0.12), inset 0 1px 0 rgba(255,255,255,0.74);
+}
+.email-control-field {
+    display: grid;
+    gap: 5px;
+    min-width: 0;
+}
+.email-paper-controls .email-label {
+    margin: 0 0 -3px;
+}
+.email-paper-card {
+    position: relative;
+    display: grid;
+    gap: 10px;
+    overflow: hidden;
+    padding: 22px 20px 18px;
+    border: 1.5px solid rgba(146, 64, 14, 0.18);
+    border-radius: 10px;
+    background:
+        linear-gradient(90deg, rgba(239, 68, 68, 0.16) 0 2px, transparent 2px 100%) 31px 0 / 100% 100% no-repeat,
+        repeating-linear-gradient(180deg, transparent 0 31px, rgba(14, 116, 144, 0.13) 31px 32px),
+        linear-gradient(145deg, #fffdf4 0%, #fff8df 58%, #fef3c7 100%);
+    box-shadow: 0 12px 0 rgba(146, 64, 14, 0.12), 0 24px 44px rgba(6, 18, 44, 0.24), inset 0 1px 0 rgba(255,255,255,0.9);
+}
+.email-paper-card::before {
+    content: '';
+    position: absolute;
+    right: 0;
+    top: 0;
+    width: 58px;
+    height: 58px;
+    background: linear-gradient(135deg, rgba(255,255,255,0.15) 0 49%, rgba(146, 64, 14, 0.18) 50%, #fde68a 51% 100%);
+    clip-path: polygon(100% 0, 100% 100%, 0 0);
+    pointer-events: none;
+}
+.email-paper-card::after {
+    content: '';
+    position: absolute;
+    left: 21px;
+    top: 0;
+    bottom: 0;
+    width: 1px;
+    background: rgba(239, 68, 68, 0.18);
+    pointer-events: none;
+}
+.email-paper-head {
+    position: relative;
+    z-index: 1;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 10px;
+}
+.email-paper-mark {
+    color: #92400e;
+    font-size: 18px;
+    font-weight: 1000;
+    letter-spacing: 0;
+}
+.email-paper-date {
+    color: rgba(37, 99, 235, 0.62);
     font-size: 12px;
     font-weight: 900;
+}
+.email-label {
+    position: relative;
+    z-index: 1;
+    color: #92400e;
+    font-size: 12px;
+    font-weight: 900;
+    margin: 2px 0 -4px;
+}
+.email-paper-controls .email-paper-input,
+.email-paper-textarea {
+    position: relative;
+    z-index: 1;
+    width: 100%;
+    border: 0;
+    border-bottom: 1.5px solid rgba(14, 116, 144, 0.2);
+    border-radius: 0;
+    background: rgba(255, 253, 244, 0.54);
+    color: #0f2747;
+    font: inherit;
+    font-size: 15px;
+    font-weight: 800;
+    line-height: 1.55;
+    outline: none;
+}
+.email-paper-controls .email-paper-input {
+    min-height: 38px;
+    padding: 6px 8px;
+}
+.email-paper-controls .email-paper-input:focus,
+.email-paper-textarea:focus {
+    border-color: rgba(14, 165, 233, 0.68);
+    background: rgba(255, 255, 255, 0.52);
+}
+.email-letter-greeting,
+.email-letter-signature {
+    position: relative;
+    z-index: 1;
+    color: #173456;
+    font-size: 16px;
+    font-weight: 900;
+    line-height: 32px;
+    overflow-wrap: anywhere;
+}
+.email-letter-greeting {
     margin-top: 4px;
+    padding: 0 8px;
+}
+.email-letter-signature {
+    justify-self: end;
+    min-width: min(220px, 66%);
+    padding: 0 8px;
+    text-align: left;
+}
+.email-paper-writing-area {
+    position: relative;
+    z-index: 1;
+    min-height: 230px;
+    padding: 4px 8px 8px;
+    border-radius: 8px;
+    background: linear-gradient(180deg, rgba(255,255,255,0.18), rgba(255,255,255,0));
+}
+.email-paper-textarea {
+    display: block;
+    min-height: 220px;
+    resize: none;
+    padding: 0;
+    border-bottom: 0;
+    background: transparent;
+    color: #173456;
+    line-height: 32px;
+}
+.email-paper-textarea::placeholder { color: rgba(37, 108, 151, 0.54); }
+.email-word-count {
+    color: rgba(37, 108, 151, 0.82);
+    font-size: 12px;
+    font-weight: 900;
+}
+.email-word-count.is-over { color: #dc2626; }
+.email-compose-actions {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 12px;
+    padding: 0 18px;
+    margin-top: 16px;
+}
+.email-compose-actions .btn-primary {
+    min-width: 96px;
 }
 .email-actions {
     display: flex;
     justify-content: flex-end;
     margin-top: 8px;
+}
+@media (max-width: 420px) {
+    .email-view { padding: 10px; }
+    .email-paper-controls { grid-template-columns: 1fr; }
+    .email-paper-card { padding: 18px 14px 16px; }
+    .email-paper-card::after { left: 16px; }
+    .email-paper-writing-area { min-height: 200px; padding-left: 6px; padding-right: 6px; }
+    .email-paper-textarea { min-height: 190px; }
 }
 .field-pet-invite::after {
     content: '好友';
@@ -1252,6 +1603,59 @@
 .planet-option:hover { border-color: var(--accent); background: #fffbeb; }
 .planet-option.locked { opacity: 0.55; cursor: not-allowed; }
 .planet-option-icon { font-size: 26px; text-align: center; }
+.planet-research-card {
+    grid-template-columns: 38px minmax(0, 1fr) auto auto;
+    padding: 9px 10px;
+    gap: 9px;
+}
+.planet-research-icon {
+    width: 34px;
+    height: 34px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+}
+.planet-research-icon svg {
+    width: 34px;
+    height: 34px;
+    display: block;
+    overflow: visible;
+    filter: drop-shadow(0 1px 1px rgba(0, 0, 0, 0.18));
+}
+.planet-research-body { min-width: 0; }
+.planet-research-body b {
+    display: flex;
+    align-items: baseline;
+    gap: 6px;
+    font-size: 14px;
+}
+.planet-research-body b em {
+    color: var(--text-muted);
+    font-size: 11px;
+    font-style: normal;
+    font-weight: 900;
+}
+.planet-research-cost {
+    color: #92400e;
+    font-size: 12px;
+    font-weight: 900;
+    white-space: nowrap;
+    display: inline-flex;
+    align-items: center;
+    gap: 3px;
+}
+.planet-research-coin-icon,
+.planet-research-coin-icon svg {
+    width: 16px;
+    height: 16px;
+    display: inline-block;
+}
+.planet-research-build {
+    min-width: 52px;
+    padding: 6px 10px;
+    font-size: 12px;
+    white-space: nowrap;
+}
 .haqi-candidate-list .planet-option {
     grid-template-columns: 72px 1fr;
     gap: 12px;
@@ -1277,6 +1681,12 @@
 .planet-milestone b { display: block; font-size: 13px; font-weight: 900; }
 .planet-option i,
 .planet-milestone i { display: block; margin-top: 2px; color: var(--text-muted); font-size: 12px; font-style: normal; line-height: 1.35; overflow-wrap: anywhere; }
+.planet-research-body b {
+    display: flex;
+    align-items: baseline;
+    gap: 6px;
+    font-size: 14px;
+}
 .planet-milestone.done { border-color: #86efac; background: #ecfdf5; }
 .planet-achievements-head {
     display: flex;
@@ -1416,7 +1826,7 @@
 .planet-infra-card {
     margin-top: 10px;
     display: grid;
-    grid-template-columns: 48px 1fr;
+    grid-template-columns: 48px minmax(0, 1fr) auto;
     gap: 10px;
     align-items: center;
     padding: 9px 10px;
@@ -1442,6 +1852,13 @@
 }
 .planet-infra-card b { display: block; font-size: 13px; font-weight: 900; }
 .planet-infra-card i { display: block; margin-top: 2px; color: var(--text-muted); font-size: 12px; font-style: normal; line-height: 1.35; }
+.planet-infra-card-action {
+    min-width: 54px;
+    padding: 7px 12px;
+    font-size: 12px;
+    font-weight: 900;
+    white-space: nowrap;
+}
 .planet-visit-destinations {
     display: flex;
     gap: 8px;
@@ -1476,6 +1893,12 @@
     transition: transform 0.15s, border-color 0.15s, background 0.15s, box-shadow 0.15s;
 }
 .planet-visit-destination:hover { transform: translateY(-1px); border-color: var(--accent); }
+.planet-visit-friend-picker {
+    background:
+        linear-gradient(180deg, rgba(255,255,255,0.78), rgba(255,255,255,0.05) 48%),
+        linear-gradient(180deg, #fff7ed, #dff7ff);
+    border-color: #fbbf24;
+}
 .planet-visit-destination.is-selected {
     border-color: var(--accent-dark);
     background:
@@ -1494,6 +1917,16 @@
     line-height: 1;
 }
 .planet-visit-destination-icon svg { width: 34px; height: 34px; display: block; }
+.planet-visit-friend-planet-icon,
+.planet-visit-destination-icon .planet-visit-friend-planet-icon {
+    width: 38px;
+    height: 38px;
+    --remote-mini-size: 38px;
+}
+.planet-visit-destination-icon .planet-visit-friend-planet-icon svg {
+    width: 100%;
+    height: 100%;
+}
 .planet-visit-destination-text {
     max-width: 100%;
     min-width: 0;
@@ -1510,6 +1943,52 @@
 }
 .planet-visit-destination-text b { font-size: 12px; font-weight: 900; }
 .planet-visit-destination-text i { margin-top: 2px; color: var(--text-muted); font-size: 10px; font-style: normal; font-weight: 800; }
+.planet-friend-picker-modal { max-width: 440px; }
+.planet-friend-picker-body {
+    display: flex;
+    flex-direction: column;
+    gap: 12px;
+    max-height: min(58vh, 430px);
+    overflow-y: auto;
+    padding-right: 3px;
+    -webkit-overflow-scrolling: touch;
+}
+.planet-friend-picker-heading {
+    margin: 0 2px 6px;
+    color: var(--text-primary);
+    font-size: 13px;
+    font-weight: 900;
+}
+.planet-friend-picker-list { gap: 7px; }
+.planet-friend-visit-row {
+    grid-template-columns: 42px 1fr;
+    min-height: 62px;
+}
+.planet-friend-visit-row.is-recent {
+    background: #fffbeb;
+    border-color: #fcd34d;
+}
+.planet-friend-visit-icon {
+    width: 38px;
+    height: 38px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+}
+.planet-friend-visit-icon .planet-visit-friend-pet {
+    width: 38px;
+    height: 38px;
+}
+.planet-friend-picker-empty {
+    border: 1.5px dashed var(--border-card);
+    border-radius: 14px;
+    padding: 12px;
+    color: var(--text-muted);
+    background: rgba(239, 250, 255, 0.72);
+    font-size: 12px;
+    font-weight: 800;
+    text-align: center;
+}
 .remote-planet {
     position:absolute;
     left: clamp(32px, 12vw, 104px);
@@ -1900,7 +2379,6 @@
     transform: translateX(-50%) rotate(-4deg) scale(var(--coin-pile-scale));
     pointer-events: none;
     filter: drop-shadow(0 9px 10px rgba(8, 22, 52, 0.28));
-    animation: planetCoinPilePulse 1.9s ease-in-out infinite;
 }
 .planet-coin-piece {
     position: absolute;

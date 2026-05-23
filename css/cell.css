@@ -108,6 +108,82 @@
     0%, 100% { transform: translate(-50%, -50%) rotate(0deg) scale(1); }
     50% { transform: translate(calc(-50% + var(--trauma-x, 8px)), calc(-50% + var(--trauma-y, -8px))) rotate(18deg) scale(1.08); }
 }
+.cell-sickness-layer {
+    position: absolute;
+    inset: 0;
+    z-index: 3;
+    pointer-events: none;
+}
+.cell-sickness-icon,
+.cell-white-cell {
+    position: absolute;
+    display: block;
+    transform: translate(-50%, -50%);
+    animation: cellSicknessDrift var(--sick-dur, 5.2s) ease-in-out infinite;
+    animation-delay: var(--sick-delay, 0s);
+    will-change: transform;
+}
+.cell-sickness-icon {
+    width: clamp(28px, 5vw, 46px);
+    aspect-ratio: 1;
+    opacity: 0.94;
+    filter: drop-shadow(0 5px 8px rgba(127, 29, 29, 0.38));
+    pointer-events: auto;
+    cursor: pointer;
+    border-radius: 50%;
+    outline: none;
+}
+.cell-sickness-icon svg { width: 100%; height: 100%; display: block; }
+.cell-sickness-icon:hover,
+.cell-sickness-icon:focus-visible {
+    filter: drop-shadow(0 6px 10px rgba(127, 29, 29, 0.46)) brightness(1.06);
+}
+.dock-icon-svg {
+    width: 24px;
+    height: 24px;
+    display: block;
+}
+.cell-treat-btn {
+    border-color: #fca5a5 !important;
+    background: linear-gradient(180deg, #fff1f2, #fecaca) !important;
+    color: #991b1b !important;
+}
+.cell-white-cell {
+    width: clamp(18px, 3.3vw, 30px);
+    aspect-ratio: 1;
+    border-radius: 50%;
+    background:
+        radial-gradient(circle at 34% 28%, #ffffff 0 18%, transparent 20%),
+        radial-gradient(circle at 58% 58%, #dbeafe 0 22%, #f8fafc 24% 58%, #bfdbfe 60% 100%);
+    border: 2px solid rgba(255,255,255,0.9);
+    box-shadow: 0 5px 10px rgba(14,116,144,0.18), inset -3px -4px 7px rgba(59,130,246,0.18);
+    opacity: 0.9;
+    animation-name: cellWhiteCellDrift;
+}
+.cell-sickness-icon.s1 { left: 18%; top: 18%; --sick-x: 10px; --sick-y: -8px; --sick-dur: 4.8s; }
+.cell-sickness-icon.s2 { left: 76%; top: 18%; --sick-x: -12px; --sick-y: 9px; --sick-dur: 5.3s; --sick-delay: -1.1s; }
+.cell-sickness-icon.s3 { left: 16%; top: 55%; --sick-x: 14px; --sick-y: 10px; --sick-dur: 5.8s; --sick-delay: -2s; }
+.cell-sickness-icon.s4 { left: 79%; top: 56%; --sick-x: -13px; --sick-y: -8px; --sick-dur: 5.1s; --sick-delay: -2.7s; }
+.cell-sickness-icon.s5 { left: 40%; top: 18%; --sick-x: 8px; --sick-y: 12px; --sick-dur: 5.5s; --sick-delay: -1.8s; }
+.cell-sickness-icon.s6 { left: 48%; top: 73%; --sick-x: -9px; --sick-y: -10px; --sick-dur: 5.9s; --sick-delay: -3.1s; }
+.cell-sickness-icon.s7 { left: 30%; top: 38%; --sick-x: 10px; --sick-y: -13px; --sick-dur: 5.4s; --sick-delay: -2.4s; }
+.cell-sickness-icon.s8 { left: 67%; top: 39%; --sick-x: -11px; --sick-y: 12px; --sick-dur: 5.7s; --sick-delay: -3.6s; }
+.cell-sickness-icon.s9 { left: 31%; top: 78%; --sick-x: 9px; --sick-y: -9px; --sick-dur: 6s; --sick-delay: -4s; }
+.cell-sickness-icon.s10 { left: 66%; top: 78%; --sick-x: -10px; --sick-y: -12px; --sick-dur: 5.6s; --sick-delay: -4.8s; }
+.cell-white-cell.w1 { left: 25%; top: 27%; --sick-x: -8px; --sick-y: 10px; --sick-dur: 4.9s; --sick-delay: -0.8s; }
+.cell-white-cell.w2 { left: 69%; top: 29%; --sick-x: 9px; --sick-y: -9px; --sick-dur: 5.2s; --sick-delay: -1.6s; }
+.cell-white-cell.w3 { left: 50%; top: 41%; --sick-x: 11px; --sick-y: 7px; --sick-dur: 5.5s; --sick-delay: -2.2s; }
+.cell-white-cell.w4 { left: 23%; top: 72%; --sick-x: -10px; --sick-y: -8px; --sick-dur: 5.6s; --sick-delay: -3s; }
+.cell-white-cell.w5 { left: 75%; top: 72%; --sick-x: 8px; --sick-y: -10px; --sick-dur: 5.9s; --sick-delay: -3.7s; }
+.cell-white-cell.w6 { left: 51%; top: 82%; --sick-x: -9px; --sick-y: -7px; --sick-dur: 5.4s; --sick-delay: -4.2s; }
+@keyframes cellSicknessDrift {
+    0%, 100% { transform: translate(-50%, -50%) rotate(-5deg) scale(1); }
+    50% { transform: translate(calc(-50% + var(--sick-x, 8px)), calc(-50% + var(--sick-y, -8px))) rotate(14deg) scale(1.08); }
+}
+@keyframes cellWhiteCellDrift {
+    0%, 100% { transform: translate(-50%, -50%) scale(1); }
+    50% { transform: translate(calc(-50% + var(--sick-x, 8px)), calc(-50% + var(--sick-y, -8px))) scale(1.12); }
+}
 .cell-float {
     position:absolute;
     display:block;

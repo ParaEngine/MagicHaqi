@@ -3,7 +3,7 @@
 import { $, $$, escapeHtml, randInt, showToast } from './utils.js';
 import { t } from './i18n.js';
 import { canPlaceItemInArea, CONFIG, DECO_VISUALS, getActiveHouseRoomIds, getPlacedItemZOrder, SHOP_ITEMS } from './config.js';
-import { notify, state } from './state.js';
+import { isVisitingMode, notify, state } from './state.js';
 import { getLayout, loadPets } from './storage.js';
 import { displayPetName } from './dna.js';
 import { getPetSleepActionState, isPetInteractionBlocked, petArtHtml, playPetClickFeedback, playPetHappy, say, scanAndMount, sleepingInteractionText } from './pet.js';
@@ -1125,8 +1125,35 @@ function currentPetFocusPoint() {
     return { x: centerX, y: centerY };
 }
 
+function activeLayouts() {
+    return isVisitingMode() ? (state.visitingMode?.remoteLayouts || {}) : (state.layouts || {});
+}
+
+function activeLayout(roomId) {
+    return activeLayouts()[roomId] || [];
+}
+
+function visitingRoomOwnerPet(fallbackPet) {
+    return isVisitingMode() ? (state.visitingMode?.friendPet || fallbackPet) : fallbackPet;
+}
+
+function visitingRoomCompanionPetsHtml(currentPet, roomId, currentPose = null) {
+    const hostPet = visitingRoomOwnerPet(currentPet);
+    if (!currentPet || currentPet.id === hostPet?.id) return '';
+    const occupied = currentPose ? [{ x: currentPose.x, y: currentPose.y }] : [];
+    const pose = repelRoomPetPose({ x: 1.15, y: PET_START_Y_METERS }, occupied, `${roomId}::visit-player-pet::${currentPet.id || 'current'}`);
+    const face = 'scaleX(1)';
+    const zIndex = getRoomItemZIndex({ x: pose.x, y: pose.y, w: PET_WIDTH_METERS, h: PET_HEIGHT_METERS }, 3, 'pet');
+    return `
+        <div class="pet-sprite mh-released-room-pet mh-visit-room-guest-pet" data-released-room-pet="${escapeHtml(currentPet.id || 'current')}" data-x-meters="${pose.x}" data-y-meters="${pose.y}" data-w-meters="${PET_WIDTH_METERS}" data-h-meters="${PET_HEIGHT_METERS}" style="${meterStyle({ x: pose.x, y: pose.y, w: PET_WIDTH_METERS, h: PET_HEIGHT_METERS })};z-index:${zIndex};transform:${face}">
+            <div style="width:100%;height:100%">${petArtHtml(currentPet, { alt: displayPetName(currentPet), requireProcessedTexture: true })}</div>
+        </div>
+    `;
+}
+
 function roomCompanionPetsHtml(currentPet, roomId, currentPose = null) {
     if (state.isDecorMode) return '';
+    if (isVisitingMode()) return visitingRoomCompanionPetsHtml(currentPet, roomId, currentPose);
     const isFindingInRoom = state.activePetRoomFocusPose?.roomId === roomId
         && state.activePetRoomFocusPose?.targetPetId;
     const petPose = currentPose || getCurrentPetPose();
@@ -1163,7 +1190,7 @@ function roomCompanionPetIds(currentPet, roomId) {
 
 // 根据当前激活房屋（field 中房间数最多的房屋）解析合法房间。无激活房屋时回退到默认 1 间。
 function getUnlockedRooms() {
-    const ids = getActiveHouseRoomIds(state.layouts || {});
+    const ids = getActiveHouseRoomIds(activeLayouts());
     const idSet = new Set(ids);
     // 保持 CONFIG.rooms 中的原顺序
     return CONFIG.rooms.filter(r => idSet.has(r.id));
@@ -1199,9 +1226,10 @@ export const petLevel = {
     },
 
     stageHtml(pet) {
-        const room = resolveActiveRoom(pet);
+        const roomPet = visitingRoomOwnerPet(pet);
+        const room = resolveActiveRoom(roomPet);
         const petPose = getCurrentPetPose();
-        const layout = (getLayout(pet.id, room.id) || [])
+        const layout = (isVisitingMode() ? activeLayout(room.id) : (getLayout(pet.id, room.id) || []))
             .map((item, index) => ({ item, index }))
             .filter(entry => entry.item?.coord === 'roomMeters');
         const furnitureLayout = layout.filter(({ item }) => ITEM_BY_ID[item.itemId]?.type !== 'food');
@@ -1217,7 +1245,7 @@ export const petLevel = {
                 </div>
 
                 <div class="pet-sprite" id="mhPet" data-x-meters="${petPose.x}" data-y-meters="${petPose.y}" data-w-meters="${PET_WIDTH_METERS}" data-h-meters="${PET_HEIGHT_METERS}" style="${meterStyle({ x: petPose.x, y: petPose.y, w: PET_WIDTH_METERS, h: PET_HEIGHT_METERS })}">
-                    <div style="width:100%;height:100%">${petArtHtml(pet, { alt: displayPetName(pet), requireProcessedTexture: true })}</div>
+                    <div style="width:100%;height:100%">${petArtHtml(roomPet, { alt: displayPetName(roomPet), requireProcessedTexture: true })}</div>
                 </div>
 
                 ${roomCompanionPetsHtml(pet, room.id, petPose)}
@@ -1231,7 +1259,8 @@ export const petLevel = {
     },
 
     bindStage(pet, ctx) {
-        const room = resolveActiveRoom(pet);
+        const roomPet = visitingRoomOwnerPet(pet);
+        const room = resolveActiveRoom(roomPet);
         const missingPetIds = roomCompanionPetIds(pet, room.id).filter(id => id && !state.pets[id]);
         const loadKey = `${room.id}::${missingPetIds.join('|')}`;
         if (missingPetIds.length && loadKey !== roomCompanionPetsLoadedKey) {
@@ -1268,6 +1297,10 @@ export const petLevel = {
         bindPetDrag(petEl);
         if (petEl) petEl.onclick = () => {
             if (isRoomPlacementMode()) return;
+            if (isVisitingMode()) {
+                playPetClickFeedback(petEl, roomPet);
+                return;
+            }
             if (isPetInteractionBlocked(pet)) { showSleepingBlocked(pet); return; }
             ctx.onPetTouch?.(petEl, pet);
             playPetClickFeedback(petEl, pet);
@@ -1284,7 +1317,7 @@ export const petLevel = {
     },
 
     dockHtml(pet) {
-        const room = resolveActiveRoom(pet);
+        const room = resolveActiveRoom(visitingRoomOwnerPet(pet));
         const unlockedRooms = getUnlockedRooms();
         const visibleRooms = unlockedRooms.length ? unlockedRooms : [CONFIG.rooms[0]];
         const inv = state.inventory || {};
@@ -1430,6 +1463,12 @@ export const petLevel = {
             el.onclick = async () => {
                 if (el.disabled) return;
                 const k = el.dataset.action;
+                if (isVisitingMode()) {
+                    if (k === 'visit-pet-wave') showToast('宠物和好友伙伴开心互动了一会儿。', 'success', 1600);
+                    else if (k === 'visit-pet-snack') showToast('大家分享了星球点心。', 'success', 1600);
+                    else if (k === 'visit-pet-field') ctx.zoomOut?.();
+                    return;
+                }
                 if (isPetInteractionBlocked(pet) && k !== 'sleep') { showSleepingBlocked(pet); return; }
                 if (k === 'play') { ctx.callbacks.onNav?.('minigames'); return; }
                 if (k === 'help') { ctx.callbacks.onNav?.('help'); return; }
@@ -1796,6 +1835,24 @@ function bindTrayDrag(el, ctx) {
 }
 
 function renderActionTray(pet) {
+    if (isVisitingMode()) {
+        return `
+            <div class="mh-dock-row mh-scroll-x dock-action-row visit-pet-actions">
+                <button type="button" class="btn-secondary action-btn dock-icon-btn" data-action="visit-pet-wave">
+                    <span class="dock-icon">👋</span>
+                    <span class="dock-label">互动</span>
+                </button>
+                <button type="button" class="btn-secondary action-btn dock-icon-btn" data-action="visit-pet-snack">
+                    <span class="dock-icon">🍪</span>
+                    <span class="dock-label">点心</span>
+                </button>
+                <button type="button" class="btn-secondary action-btn dock-icon-btn" data-action="visit-pet-field">
+                    <span class="dock-icon">🪐</span>
+                    <span class="dock-label">到表面</span>
+                </button>
+            </div>
+        `;
+    }
     const sleeping = isPetInteractionBlocked(pet);
     const sleepAction = getPetSleepActionState(pet);
     const feedUrgent = isPetVeryHungry(pet) && !sleeping;

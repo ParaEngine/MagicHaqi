@@ -42,6 +42,8 @@ export const state = {
     haqiIslandFarewells: [],     // pets that completed the adult farewell ceremony
     invitedPets: [],             // recent pets accepted from share links (latest 10)
     activeInvitedPet: null,       // transient invited pet currently visiting the field scene
+    visitingMode: null,           // transient friend-planet visit { active, friendName, planetName, friendPet, ... }
+    recentFriendPlanets: [],       // recently visited friend planets, newest first
     remotePlanetDiscoveries: {}, // remoteId -> { visitedAt, equipmentId, elementalAttribute, dna }
     remoteElementStocks: {},     // remoteId -> stored element tons on the user planet
     lifetimeStats: {             // cumulative lifetime counters for achievements
@@ -119,4 +121,25 @@ export function getActivePlanetBuff(now = Date.now()) {
     const buff = state.planetBuff;
     if (!buff || !Number.isFinite(buff.until) || buff.until <= now) return null;
     return buff;
+}
+
+export function isVisitingMode() {
+    return !!state.visitingMode?.active;
+}
+
+export function startVisitingMode(visit) {
+    state.visitingMode = {
+        ...(visit || {}),
+        active: true,
+        startedAt: Number(visit?.startedAt) || Date.now(),
+        previousField: visit?.previousField || state.currentField || 'land',
+    };
+    notify();
+}
+
+export function endVisitingMode() {
+    const previousField = state.visitingMode?.previousField || 'land';
+    state.visitingMode = null;
+    state.currentField = previousField;
+    notify();
 }

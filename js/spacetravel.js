@@ -56,13 +56,32 @@ const AIRCRAFT_TYPES = ['ufo', 'rocket', 'shuttle'];
 
 const DEFAULT_OPTIONS = {
     minVisible: 2,
-    maxVisible: 4,
-    targetVisible: 4,
+    maxVisible: 3,
+    targetVisible: 3,
     haqiTrafficRatio: 0.5,
     flyOverRatio: 0.2,
 };
 
 const ROTATION_RESPONSE_MS = 180;
+const HIDDEN_TAB_TICK_MS = 250;
+const MAX_CANVAS_DPR = 2;
+const BASE_AIRCRAFT_WIDTH = 112;
+const CAMERA_BLUR_SCALE = 1.08;
+
+const AIRCRAFT_TEXTURE_SIZES = {
+    ufo: { width: 96, height: 64 },
+    rocket: { width: 96, height: 64 },
+    shuttle: { width: 112, height: 58 },
+};
+
+const AIRCRAFT_TEXTURES = new Map();
+const SPACECRAFT_SVG_STYLE = `
+    .ship-trail{fill:none;stroke:rgba(144,231,255,.7);stroke-width:5;stroke-linecap:round;stroke-dasharray:22 14;opacity:.58}
+    .ship-trail-glow{fill:rgba(112,230,255,.13)}
+    .shuttle-body{fill:#e8f7ff;stroke:#68c8ff;stroke-width:2}.shuttle-wing{fill:#79d5ff;stroke:#2563eb;stroke-width:2}.shuttle-wing.rear{fill:#fbbf24;stroke:#b45309}.shuttle-cockpit{fill:#1f3b89}.shuttle-light{fill:#fff6a8}
+    .ufo-dome{fill:#d9fbff;stroke:#0e7490;stroke-width:2.5}.ufo-rim{fill:#5eead4;stroke:#0891b2;stroke-width:2.5}.ufo-light{fill:#fff38a}
+    .rocket-body{fill:#f8fafc;stroke:#475569;stroke-width:2.4}.rocket-fin{fill:#fb923c;stroke:#9a3412;stroke-width:2.2}.rocket-window{fill:#93c5fd;stroke:#1d4ed8;stroke-width:2.2}.rocket-flame{fill:#facc15;stroke:#f97316;stroke-width:2}
+`;
 
 const REMOTE_PLANETS = [
     { id: 'haqi', name: '哈奇岛', x: 12, y: 16, radius: 9, depth: 10, selector: '#mhHaqiIsland .remote-planet-body' },
@@ -73,8 +92,8 @@ const REMOTE_PLANETS = [
 
 export function spaceTravelHtml() {
     return `
-        <div class="space-travel-layer" id="mhSpaceTravelRear" aria-hidden="true"></div>
-        <div class="space-travel-front-layer" id="mhSpaceTravelFront" aria-hidden="true"></div>`;
+    <canvas class="space-travel-layer" id="mhSpaceTravelRear" aria-hidden="true"></canvas>
+    <canvas class="space-travel-front-layer" id="mhSpaceTravelFront" aria-hidden="true"></canvas>`;
 }
 
 export function createSpaceTravel(options = {}) {
@@ -87,12 +106,16 @@ class SpaceTravel {
         this.root = null;
         this.rearLayer = null;
         this.frontLayer = null;
+        this.rearCtx = null;
+        this.frontCtx = null;
         this.aircraft = [];
-        this.missionRafs = new Set();
+        this.missions = [];
         this.raf = 0;
+        this.tickTimer = 0;
         this.lastTime = 0;
         this.layerWidth = 1;
         this.layerHeight = 1;
+        this.canvasDpr = 1;
         this.userPlanet = normalizePlanet(options.userPlanet || { id: 'user', name: '宠物星', x: 70, y: 65, radius: 14, depth: 1, selector: '#mhPlanet' });
         this.remotePlanets = (options.remotePlanets || REMOTE_PLANETS).map(normalizePlanet);
         this.resizeTimer = 0;
@@ -105,32 +128,51 @@ class SpaceTravel {
         this.rearLayer = root.getElementById?.('mhSpaceTravelRear') || document.getElementById('mhSpaceTravelRear');
         this.frontLayer = root.getElementById?.('mhSpaceTravelFront') || document.getElementById('mhSpaceTravelFront');
         if (!this.rearLayer || !this.frontLayer) return this;
-        this.rearLayer.innerHTML = '';
-        this.frontLayer.innerHTML = '';
+        this.rearCtx = this.rearLayer.getContext?.('2d', { alpha: true }) || null;
+        this.frontCtx = this.frontLayer.getContext?.('2d', { alpha: true }) || null;
+        if (!this.rearCtx || !this.frontCtx) return this;
+        AIRCRAFT_TYPES.forEach(type => getAircraftTexture(type));
         this.aircraft = [];
+        this.missions = [];
         this.recalculatePlanetLocations();
         window.addEventListener('resize', this.boundResize);
         for (let i = 0; i < this.options.targetVisible; i++) {
             this.spawnAircraft({ phase: i / this.options.targetVisible });
         }
         this.lastTime = 0;
-        this.raf = requestAnimationFrame(this.boundTick);
+        this.scheduleTick();
         return this;
     }
 
     destroy() {
         if (this.raf) cancelAnimationFrame(this.raf);
+        if (this.tickTimer) clearTimeout(this.tickTimer);
         if (this.resizeTimer) clearTimeout(this.resizeTimer);
-        this.missionRafs.forEach(id => cancelAnimationFrame(id));
         this.raf = 0;
+        this.tickTimer = 0;
         this.resizeTimer = 0;
-        this.missionRafs.clear();
         window.removeEventListener('resize', this.boundResize);
-        this.aircraft.forEach(item => {
-            item.rearEl?.remove();
-            item.frontEl?.remove();
-        });
+        this.clearCanvases();
         this.aircraft = [];
+        this.missions.forEach(item => item.resolve?.(false));
+        this.missions = [];
+    }
+
+    scheduleTick(delay = 0) {
+        if (this.tickTimer) {
+            clearTimeout(this.tickTimer);
+            this.tickTimer = 0;
+        }
+        if (delay > 0) {
+            this.tickTimer = window.setTimeout(() => {
+                this.tickTimer = 0;
+                this.raf = requestAnimationFrame(this.boundTick);
+            }, delay);
+            return;
+        }
+        if (!this.raf) {
+            this.raf = requestAnimationFrame(this.boundTick);
+        }
     }
 
     getPlanetPoint(id = 'user') {
@@ -168,46 +210,38 @@ class SpaceTravel {
     }
 
     animateMissionRoute(route, type, { cargoClass = '', cargoHue = null } = {}) {
-        const frontEl = createAircraftElement(type, 'mission-front');
-        frontEl.classList.add('space-travel-mission-aircraft');
-        attachMissionCargo(frontEl, cargoClass, cargoHue);
-        this.frontLayer.appendChild(frontEl);
-        let startedAt = 0;
-        let displayRotation = null;
-        let rafId = 0;
         return new Promise(resolve => {
-            const step = (time) => {
-                if (rafId) this.missionRafs.delete(rafId);
-                if (!startedAt) startedAt = time;
-                const progress = Math.min(1, (time - startedAt) / route.duration);
-                const sample = sampleRoute(route, progress);
-                displayRotation = smoothAngle(displayRotation, sample.rotation, 32);
-                const displaySample = { ...sample, rotation: displayRotation };
-                const depth = depthProfile(progress, route.nearBias);
-                const scale = route.minScale + (route.maxScale - route.minScale) * depth;
-                const opacity = 0.58 + 0.42 * depth;
-                applyAircraftTransform(frontEl, displaySample, scale, opacity, 0, route, this.layerWidth, this.layerHeight);
-                if (progress < 1) {
-                    rafId = requestAnimationFrame(step);
-                    this.missionRafs.add(rafId);
-                } else {
-                    frontEl.remove();
-                    resolve(true);
-                }
-            };
-            rafId = requestAnimationFrame(step);
-            this.missionRafs.add(rafId);
+            this.missions.push({
+                type,
+                route,
+                cargoClass,
+                cargoHue,
+                startedAt: 0,
+                displayRotation: null,
+                resolve,
+                alive: true,
+            });
+            this.scheduleTick();
         });
     }
 
     tick(time) {
+        this.raf = 0;
+        if (!this.rearLayer?.isConnected || document.hidden) {
+            this.lastTime = 0;
+            this.scheduleTick(HIDDEN_TAB_TICK_MS);
+            return;
+        }
         if (!this.lastTime) this.lastTime = time;
         const dt = Math.min(80, time - this.lastTime);
         this.lastTime = time;
 
         this.aircraft.forEach(item => this.updateAircraft(item, dt));
+        this.missions.forEach(item => this.updateMission(item, time, dt));
+        this.missions = this.missions.filter(item => item.alive);
         this.ensureVisibleTraffic();
-        this.raf = requestAnimationFrame(this.boundTick);
+        this.drawFrame();
+        this.scheduleTick();
     }
 
     scheduleRecalculatePlanetLocations() {
@@ -229,6 +263,9 @@ class SpaceTravel {
         const rect = this.rearLayer?.getBoundingClientRect?.();
         this.layerWidth = rect?.width || 1;
         this.layerHeight = rect?.height || 1;
+        this.canvasDpr = Math.max(1, Math.min(MAX_CANVAS_DPR, window.devicePixelRatio || 1));
+        prepareCanvas(this.rearLayer, this.rearCtx, this.layerWidth, this.layerHeight, this.canvasDpr);
+        prepareCanvas(this.frontLayer, this.frontCtx, this.layerWidth, this.layerHeight, this.canvasDpr);
     }
 
     ensureVisibleTraffic() {
@@ -239,11 +276,8 @@ class SpaceTravel {
     }
 
     resetAircraft() {
-        this.aircraft.forEach(item => {
-            item.rearEl?.remove();
-            item.frontEl?.remove();
-        });
         this.aircraft = [];
+        this.clearCanvases();
         if (!this.rearLayer || !this.frontLayer) return;
         for (let i = 0; i < this.options.targetVisible; i++) {
             this.spawnAircraft({ phase: i / this.options.targetVisible });
@@ -254,19 +288,14 @@ class SpaceTravel {
         const route = this.createRoute();
         const type = randomItem(AIRCRAFT_TYPES);
         const flyOver = Math.random() < this.options.flyOverRatio;
-        const rearEl = createAircraftElement(type, 'rear');
-        const frontEl = flyOver ? createAircraftElement(type, 'front') : null;
-        this.rearLayer.appendChild(rearEl);
-        if (frontEl) this.frontLayer.appendChild(frontEl);
         const aircraft = {
             type,
             route,
             flyOver,
-            rearEl,
-            frontEl,
             age: route.duration * phase,
             alive: true,
             displayRotation: null,
+            display: null,
         };
         this.aircraft.push(aircraft);
         this.updateAircraft(aircraft, 0);
@@ -278,8 +307,6 @@ class SpaceTravel {
         const progress = item.age / item.route.duration;
         if (progress >= 1) {
             item.alive = false;
-            item.rearEl.remove();
-            item.frontEl?.remove();
             this.aircraft = this.aircraft.filter(candidate => candidate !== item);
             this.spawnAircraft();
             return;
@@ -294,8 +321,48 @@ class SpaceTravel {
         const blur = 0.9 * (1 - depth);
         const frontAlpha = item.flyOver ? nearPassAlpha(progress) : 0;
         const rearAlpha = item.flyOver ? 1 - frontAlpha : 1;
-        applyAircraftTransform(item.rearEl, displaySample, scale, opacity * rearAlpha, blur, item.route, this.layerWidth, this.layerHeight);
-        if (item.frontEl) applyAircraftTransform(item.frontEl, displaySample, scale, opacity * frontAlpha, blur, item.route, this.layerWidth, this.layerHeight);
+        item.display = { sample: displaySample, scale, opacity, blur, frontAlpha, rearAlpha };
+    }
+
+    updateMission(item, time, dt) {
+        if (!item.startedAt) item.startedAt = time;
+        const progress = Math.min(1, (time - item.startedAt) / item.route.duration);
+        const sample = sampleRoute(item.route, progress);
+        item.displayRotation = smoothAngle(item.displayRotation, sample.rotation, dt || 32);
+        const displaySample = { ...sample, rotation: item.displayRotation };
+        const depth = depthProfile(progress, item.route.nearBias);
+        const scale = item.route.minScale + (item.route.maxScale - item.route.minScale) * depth;
+        const opacity = 0.58 + 0.42 * depth;
+        item.display = { sample: displaySample, scale, opacity, blur: 0, progress };
+        if (progress >= 1) {
+            item.alive = false;
+            item.resolve?.(true);
+        }
+    }
+
+    drawFrame() {
+        if (!this.rearCtx || !this.frontCtx) return;
+        this.clearCanvases();
+        this.aircraft.forEach(item => {
+            if (!item.alive || !item.display) return;
+            const { sample, scale, opacity, blur, frontAlpha, rearAlpha } = item.display;
+            drawAircraft(this.rearCtx, item.type, sample, scale, opacity * rearAlpha, blur, item.route, this.layerWidth, this.layerHeight);
+            if (item.flyOver && frontAlpha > 0) {
+                drawAircraft(this.frontCtx, item.type, sample, scale, opacity * frontAlpha, blur, item.route, this.layerWidth, this.layerHeight);
+            }
+        });
+        this.missions.forEach(item => {
+            if (!item.alive || !item.display) return;
+            const { sample, scale, opacity, blur, progress } = item.display;
+            drawMissionBrackets(this.frontCtx, sample, scale, opacity, item.route, this.layerWidth, this.layerHeight, progress);
+            drawAircraft(this.frontCtx, item.type, sample, scale, opacity, blur, item.route, this.layerWidth, this.layerHeight, { mission: true });
+            drawCargo(this.frontCtx, item, sample, scale, opacity, this.layerWidth, this.layerHeight);
+        });
+    }
+
+    clearCanvases() {
+        this.rearCtx?.clearRect(0, 0, this.layerWidth, this.layerHeight);
+        this.frontCtx?.clearRect(0, 0, this.layerWidth, this.layerHeight);
     }
 
     createRoute() {
@@ -400,35 +467,199 @@ function catmullRom(p0, p1, p2, p3, t) {
     };
 }
 
-function applyAircraftTransform(el, sample, scale, opacity, blur, route, layerWidth, layerHeight) {
+function drawAircraft(ctx, type, sample, scale, opacity, blur, route, layerWidth, layerHeight, { mission = false } = {}) {
+    if (!ctx || opacity <= 0.003) return;
+    const texture = getAircraftTexture(type);
+    const size = AIRCRAFT_TEXTURE_SIZES[type] || AIRCRAFT_TEXTURE_SIZES.shuttle;
     const z = scale > route.maxScale * 0.74 ? 1 : 0;
     const depthScale = 1 / Math.max(0.1, sample.depth || 1);
     const finalScale = scale * depthScale;
     const x = (sample.x / 100) * layerWidth;
     const y = (sample.y / 100) * layerHeight;
-    el.style.opacity = opacity.toFixed(3);
-    el.style.filter = `blur(${blur.toFixed(2)}px)`;
-    el.style.transform = `translate3d(${x.toFixed(3)}px, ${y.toFixed(3)}px, 0) translate(-50%, -50%) scale(${finalScale.toFixed(4)})`;
-    const body = el.firstElementChild;
-    if (body) body.style.transform = `rotate(${sample.rotation.toFixed(2)}deg) scaleX(${sample.flip})`;
-    el.dataset.near = z ? '1' : '0';
+    const drawWidth = BASE_AIRCRAFT_WIDTH * finalScale;
+    const drawHeight = drawWidth * (size.height / size.width);
+    const cameraBlur = z ? Math.min(2.8, Math.max(0, (finalScale - CAMERA_BLUR_SCALE) * 3.4)) : 0;
+    const totalBlur = Math.max(blur || 0, cameraBlur);
+    ctx.save();
+    ctx.globalAlpha = Math.max(0, Math.min(1, opacity));
+    ctx.translate(x, y);
+    ctx.rotate(sample.rotation * Math.PI / 180);
+    ctx.scale(sample.flip || 1, 1);
+    ctx.imageSmoothingEnabled = true;
+    ctx.imageSmoothingQuality = 'high';
+    const glow = mission ? 'rgba(255, 230, 128, 0.66)' : 'rgba(113, 231, 255, 0.46)';
+    const shadow = mission ? 'rgba(0, 0, 0, 0.42)' : 'rgba(0, 0, 0, 0.34)';
+    ctx.filter = `drop-shadow(0 0 ${mission ? 9 : 7}px ${glow}) drop-shadow(0 8px 12px ${shadow})${totalBlur ? ` blur(${totalBlur.toFixed(2)}px)` : ''}`;
+    if (texture.complete && texture.naturalWidth) {
+        ctx.drawImage(texture, -drawWidth / 2, -drawHeight / 2, drawWidth, drawHeight);
+    } else {
+        drawFallbackAircraft(ctx, type, drawWidth, drawHeight);
+    }
+    ctx.restore();
 }
 
-function createAircraftElement(type, depth) {
-    const el = document.createElement('span');
-    el.className = `space-travel-aircraft space-travel-${depth}`;
-    el.innerHTML = `<span class="spacecraft-body spacecraft-${type}">${spacecraftSvg(type)}</span>`;
-    return el;
+function drawMissionBrackets(ctx, sample, scale, opacity, route, layerWidth, layerHeight, progress = 0) {
+    if (!ctx || opacity <= 0.003) return;
+    const depthScale = 1 / Math.max(0.1, sample.depth || 1);
+    const finalScale = scale * depthScale;
+    const x = (sample.x / 100) * layerWidth;
+    const y = (sample.y / 100) * layerHeight;
+    const width = BASE_AIRCRAFT_WIDTH * finalScale * 1.28;
+    const height = width * 0.68;
+    const pulse = 0.76 + Math.sin(progress * Math.PI * 18) * 0.12;
+    ctx.save();
+    ctx.globalAlpha = opacity * 0.78;
+    ctx.translate(x, y);
+    ctx.rotate(sample.rotation * Math.PI / 180);
+    ctx.strokeStyle = '#fde68a';
+    ctx.lineWidth = Math.max(1.5, 2.2 * finalScale);
+    ctx.shadowColor = 'rgba(250, 204, 21, 0.82)';
+    ctx.shadowBlur = 9 * pulse;
+    drawCornerBrackets(ctx, width * pulse, height * pulse, Math.max(8, 15 * finalScale));
+    ctx.restore();
 }
 
-function attachMissionCargo(el, cargoClass, cargoHue) {
-    if (!cargoClass) return;
-    const body = el.firstElementChild;
-    if (!body) return;
-    const cargo = document.createElement('span');
-    cargo.className = `spacecraft-cargo ${cargoClass}`;
-    if (cargoHue != null) cargo.style.setProperty('--remote-artifact-hue', cargoHue);
-    body.appendChild(cargo);
+function drawCargo(ctx, item, sample, scale, opacity, layerWidth, layerHeight) {
+    if (!ctx || !item.cargoClass || opacity <= 0.003) return;
+    const match = /planet-remote-([\w-]+)/.exec(item.cargoClass || '');
+    const id = match?.[1] || 'artifact';
+    const hue = Number.isFinite(item.cargoHue) ? item.cargoHue : 190;
+    const depthScale = 1 / Math.max(0.1, sample.depth || 1);
+    const finalScale = scale * depthScale;
+    const x = (sample.x / 100) * layerWidth;
+    const y = (sample.y / 100) * layerHeight;
+    const cargoSize = 22 * finalScale;
+    ctx.save();
+    ctx.globalAlpha = opacity;
+    ctx.translate(x, y);
+    ctx.rotate(sample.rotation * Math.PI / 180);
+    ctx.scale(sample.flip || 1, 1);
+    ctx.translate(-BASE_AIRCRAFT_WIDTH * finalScale * 0.28, BASE_AIRCRAFT_WIDTH * finalScale * 0.1);
+    ctx.shadowColor = `hsla(${hue}, 90%, 70%, 0.78)`;
+    ctx.shadowBlur = 7 * finalScale;
+    drawCargoIcon(ctx, id, cargoSize, hue);
+    ctx.restore();
+}
+
+function prepareCanvas(canvas, ctx, width, height, dpr) {
+    if (!canvas || !ctx) return;
+    const pixelWidth = Math.max(1, Math.round(width * dpr));
+    const pixelHeight = Math.max(1, Math.round(height * dpr));
+    if (canvas.width !== pixelWidth || canvas.height !== pixelHeight) {
+        canvas.width = pixelWidth;
+        canvas.height = pixelHeight;
+    }
+    ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+    ctx.imageSmoothingEnabled = true;
+    ctx.imageSmoothingQuality = 'high';
+}
+
+function getAircraftTexture(type) {
+    const key = AIRCRAFT_TYPES.includes(type) ? type : 'shuttle';
+    if (AIRCRAFT_TEXTURES.has(key)) return AIRCRAFT_TEXTURES.get(key);
+    const image = new Image();
+    image.decoding = 'async';
+    image.src = `data:image/svg+xml;charset=utf-8,${encodeURIComponent(spacecraftSvgDocument(key))}`;
+    AIRCRAFT_TEXTURES.set(key, image);
+    return image;
+}
+
+function spacecraftSvgDocument(type) {
+    return spacecraftSvg(type)
+        .replace('<svg ', '<svg xmlns="http://www.w3.org/2000/svg" ')
+        .replace('>', `><style>${SPACECRAFT_SVG_STYLE}</style>`);
+}
+
+function drawFallbackAircraft(ctx, type, width, height) {
+    ctx.save();
+    ctx.fillStyle = type === 'rocket' ? '#f8fafc' : type === 'ufo' ? '#5eead4' : '#e8f7ff';
+    ctx.strokeStyle = type === 'rocket' ? '#475569' : '#2563eb';
+    ctx.lineWidth = Math.max(1, width * 0.018);
+    ctx.beginPath();
+    ctx.ellipse(0, 0, width * 0.38, height * 0.26, -0.12, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.stroke();
+    ctx.fillStyle = 'rgba(144, 231, 255, 0.45)';
+    ctx.beginPath();
+    ctx.ellipse(-width * 0.32, height * 0.12, width * 0.2, height * 0.09, 0, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.restore();
+}
+
+function drawCornerBrackets(ctx, width, height, corner) {
+    const left = -width / 2;
+    const right = width / 2;
+    const top = -height / 2;
+    const bottom = height / 2;
+    ctx.beginPath();
+    ctx.moveTo(left, top + corner); ctx.lineTo(left, top); ctx.lineTo(left + corner, top);
+    ctx.moveTo(right - corner, top); ctx.lineTo(right, top); ctx.lineTo(right, top + corner);
+    ctx.moveTo(left, bottom - corner); ctx.lineTo(left, bottom); ctx.lineTo(left + corner, bottom);
+    ctx.moveTo(right - corner, bottom); ctx.lineTo(right, bottom); ctx.lineTo(right, bottom - corner);
+    ctx.stroke();
+}
+
+function drawCargoIcon(ctx, id, size, hue) {
+    const half = size / 2;
+    const accent = `hsl(${hue}, 86%, 58%)`;
+    ctx.fillStyle = accent;
+    ctx.strokeStyle = 'rgba(255, 255, 255, 0.88)';
+    ctx.lineWidth = Math.max(1, size * 0.08);
+    if (id === 'firebird') {
+        ctx.beginPath();
+        ctx.moveTo(0, -half);
+        ctx.lineTo(half * 0.72, half * 0.68);
+        ctx.lineTo(-half * 0.72, half * 0.68);
+        ctx.closePath();
+        ctx.fill();
+        ctx.stroke();
+        ctx.fillStyle = '#fde047';
+        ctx.beginPath();
+        ctx.ellipse(0, half * 0.08, half * 0.26, half * 0.48, 0.25, 0, Math.PI * 2);
+        ctx.fill();
+        return;
+    }
+    if (id === 'ice') {
+        ctx.beginPath();
+        ctx.moveTo(0, -half); ctx.lineTo(half * 0.78, 0); ctx.lineTo(0, half); ctx.lineTo(-half * 0.78, 0);
+        ctx.closePath();
+        ctx.fill();
+        ctx.stroke();
+        return;
+    }
+    if (id === 'desert') {
+        ctx.fillStyle = '#fef3c7';
+        ctx.beginPath();
+        ctx.ellipse(0, half * 0.32, half * 0.88, half * 0.34, 0, 0, Math.PI * 2);
+        ctx.fill();
+        ctx.stroke();
+        ctx.strokeStyle = '#7c3f12';
+        ctx.lineWidth = Math.max(1, size * 0.12);
+        ctx.beginPath();
+        ctx.moveTo(0, half * 0.38); ctx.lineTo(0, -half * 0.54);
+        ctx.stroke();
+        ctx.fillStyle = '#84cc16';
+        ctx.beginPath();
+        ctx.ellipse(half * 0.2, -half * 0.34, half * 0.42, half * 0.2, -0.22, 0, Math.PI * 2);
+        ctx.fill();
+        return;
+    }
+    if (id === 'shadow') {
+        ctx.fillStyle = '#374151';
+        ctx.beginPath();
+        ctx.arc(0, 0, half * 0.82, 0, Math.PI * 2);
+        ctx.fill();
+        ctx.stroke();
+        ctx.fillStyle = '#030712';
+        ctx.beginPath();
+        ctx.arc(0, half * 0.12, half * 0.48, 0, Math.PI * 2);
+        ctx.fill();
+        return;
+    }
+    ctx.beginPath();
+    ctx.arc(0, 0, half * 0.76, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.stroke();
 }
 
 function depthProfile(progress, nearBias) {

@@ -34,6 +34,7 @@ export function renderSettings(panel, _data, { onBack, onLogout, onClearData } =
     const canOpenDevPanel = typeof window !== 'undefined' && ['127.0.0.1', 'localhost'].includes(window.location.hostname);
     const username = getDisplayUsername();
     const autoShowLevelBar = state.settings?.autoShowLevelBar === true;
+    const hasLocalAPIKeySettings = !!(state.sdk || window.keepwork)?.localAPIKeySettings;
     const openDevPanel = async (button = null) => {
         if (!canOpenDevPanel) return;
         if (button) button.disabled = true;
@@ -43,6 +44,26 @@ export function renderSettings(panel, _data, { onBack, onLogout, onClearData } =
             showToast(opened ? '开发者面板已打开' : '开发者面板仅本机可用', opened ? 'success' : 'error', 1200);
         } catch (e) {
             showToast('开发者面板加载失败：' + (e?.message || e), 'error', 2200);
+        } finally {
+            if (button) button.disabled = false;
+        }
+    };
+    const openLocalAPIKeySettings = async (button = null) => {
+        const localSettings = (state.sdk || window.keepwork)?.localAPIKeySettings;
+        if (!localSettings?.show) {
+            showToast('当前 SDK 不支持本地 API Key 设置', 'error', 1800);
+            return;
+        }
+        if (button) button.disabled = true;
+        try {
+            await localSettings.load?.();
+            localSettings.show({
+                title: '本地 API Key 设置',
+                fullscreen: true,
+                onSave: () => showToast('API Key 设置已保存', 'success', 1200),
+            });
+        } catch (e) {
+            showToast('API Key 设置打开失败：' + (e?.message || e), 'error', 2200);
         } finally {
             if (button) button.disabled = false;
         }
@@ -79,6 +100,13 @@ export function renderSettings(panel, _data, { onBack, onLogout, onClearData } =
                 </div>
                 <button id="mhOpenWorkspaceViewer" class="btn-secondary">查看</button>
             </div>` : ''}
+            <div class="card-flat" style="display:flex;justify-content:space-between;align-items:center;gap:12px">
+                <div>
+                    <div style="font-size:14px;font-weight:700">🔑 本地 API Key</div>
+                    <div style="font-size:11px;color:var(--text-muted)">配置聊天、图片、视频模型的本地密钥</div>
+                </div>
+                <button id="mhOpenLocalAPIKeySettings" class="btn-secondary" ${hasLocalAPIKeySettings ? '' : 'disabled'}>${hasLocalAPIKeySettings ? '配置' : '不可用'}</button>
+            </div>
             <div class="card-flat" style="display:flex;justify-content:space-between;align-items:center;gap:12px">
                 <div>
                     <div style="font-size:14px;font-weight:700">📏 自动显示层级条</div>
@@ -128,6 +156,7 @@ export function renderSettings(panel, _data, { onBack, onLogout, onClearData } =
         renderSettings(panel, _data, { onBack, onLogout, onClearData });
     };
     if ($('mhOpenDevPanel')) $('mhOpenDevPanel').onclick = () => openDevPanel($('mhOpenDevPanel'));
+    if ($('mhOpenLocalAPIKeySettings')) $('mhOpenLocalAPIKeySettings').onclick = () => openLocalAPIKeySettings($('mhOpenLocalAPIKeySettings'));
     if ($('mhOpenWorkspaceViewer')) $('mhOpenWorkspaceViewer').onclick = () => {
         try {
             const opened = openWorkspaceViewer();

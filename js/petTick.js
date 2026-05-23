@@ -9,6 +9,18 @@ import { isNightSleepTime, nextMorningWakeAt, normalizePetSleepState } from './p
 
 export { canRecoverEnergyFromSleep, recoverEnergyAfterSleep } from './pet.js';
 
+const DAY_MS = 24 * 60 * 60 * 1000;
+const sicknessTreatmentReductions = new Map();
+
+export const SICKNESS_DEFS = [
+    { id: 'flu', name: '流感', label: '发热乏力', stats: ['hunger', 'mood'], baseWeight: 1.1, lowBias: 2.1, color: '#ef4444' },
+    { id: 'diarrhea', name: '拉肚子', label: '肠胃不适', stats: ['hunger', 'clean'], baseWeight: 1, lowBias: 2.4, color: '#f97316' },
+    { id: 'bacterial', name: '细菌感染', label: '环境感染', stats: ['clean'], baseWeight: 0.9, lowBias: 3.1, color: '#16a34a' },
+    { id: 'depression', name: '抑郁', label: '情绪低落', stats: ['mood', 'bond'], baseWeight: 0.9, lowBias: 2.9, color: '#6366f1' },
+    { id: 'fatigue', name: '过劳虚弱', label: '体力透支', stats: ['hunger', 'bond'], baseWeight: 0.75, lowBias: 2.2, color: '#0ea5e9' },
+    { id: 'allergy', name: '过敏', label: '免疫反应', stats: ['clean', 'mood'], baseWeight: 0.7, lowBias: 1.8, color: '#ec4899' },
+];
+
 export function defaultStats() {
     return { hunger: 80, mood: 80, clean: 80, bond: 30 };
 }
@@ -72,6 +84,155 @@ export function normalizePetStats(pet) {
     delete pet.stats.health;
     delete pet.stats.intel;
     return pet.stats;
+}
+
+function localDayKey(now = Date.now()) {
+    const d = new Date(now);
+    return `${d.getFullYear()}-${d.getMonth() + 1}-${d.getDate()}`;
+}
+
+function sicknessReductionKey(pet) {
+    const sickness = pet?.sickness;
+    if (!pet?.id || !sickness?.type || !sickness?.startedAt) return '';
+    return `${pet.id}:${sickness.type}:${Number(sickness.startedAt) || 0}`;
+}
+
+export function getSicknessDef(type) {
+    return SICKNESS_DEFS.find(def => def.id === type) || null;
+}
+
+export function normalizeSickness(pet, now = Date.now()) {
+    if (!pet) return null;
+    if (pet.stage === 'egg') {
+        if (pet.sickness) delete pet.sickness;
+        return null;
+    }
+    const sickness = pet.sickness;
+    if (!sickness || typeof sickness !== 'object') return null;
+    const def = getSicknessDef(sickness.type);
+    const startedAt = Number(sickness.startedAt);
+    if (!def || !Number.isFinite(startedAt) || startedAt <= 0 || startedAt > now + DAY_MS) {
+        delete pet.sickness;
+        return null;
+    }
+    pet.sickness = {
+        type: def.id,
+        startedAt,
+    };
+    return pet.sickness;
+}
+
+export function getActiveSickness(pet, now = Date.now()) {
+    const sickness = normalizeSickness(pet, now);
+    if (!sickness) return null;
+    const def = getSicknessDef(sickness.type);
+    return def ? { ...sickness, def } : null;
+}
+
+export function hasActiveSickness(pet, now = Date.now()) {
+    return !!getActiveSickness(pet, now);
+}
+
+export function getBaseSicknessSeverity(pet, now = Date.now()) {
+    const sickness = getActiveSickness(pet, now);
+    if (!sickness) return 0;
+    const elapsed = Math.max(0, now - Number(sickness.startedAt));
+    return Math.max(1, Math.min(10, 1 + Math.floor(elapsed / DAY_MS)));
+}
+
+export function getEffectiveSicknessSeverity(pet, now = Date.now()) {
+    const base = getBaseSicknessSeverity(pet, now);
+    if (!base) return 0;
+    const key = sicknessReductionKey(pet);
+    const reduction = Math.max(0, Number(sicknessTreatmentReductions.get(key)) || 0);
+    return Math.max(0, base - reduction);
+}
+
+function stageSicknessMultiplier(stage) {
+    if (stage === 'baby') return 1.35;
+    if (stage === 'teen') return 1.12;
+    if (stage === 'adult') return 0.86;
+    if (stage === 'elder') return 0.74;
+    return 1;
+}
+
+function statLowPressure(pet, key) {
+    const value = clamp(Number(pet?.stats?.[key] ?? CONFIG.statMax), CONFIG.statMin, CONFIG.statMax);
+    return Math.max(0, Math.min(1, (70 - value) / 70));
+}
+
+export function calculateSicknessProbability(pet) {
+    if (!pet || pet.stage === 'egg') return 0;
+    normalizePetStats(pet);
+    const keys = ['hunger', 'mood', 'clean', 'bond'];
+    const pressure = keys.reduce((sum, key) => sum + statLowPressure(pet, key), 0) / keys.length;
+    const scaled = Math.pow(pressure, 1.15);
+    const raw = (0.05 + scaled * 0.75) * stageSicknessMultiplier(pet.stage);
+    return Math.max(0.05, Math.min(0.8, raw));
+}
+
+function chooseSicknessType(pet) {
+    const weighted = SICKNESS_DEFS.map(def => {
+        const pressure = def.stats.reduce((sum, key) => sum + statLowPressure(pet, key), 0) / Math.max(1, def.stats.length);
+        return { def, weight: Math.max(0.01, def.baseWeight + pressure * def.lowBias) };
+    });
+    const total = weighted.reduce((sum, item) => sum + item.weight, 0);
+    let roll = Math.random() * total;
+    for (const item of weighted) {
+        roll -= item.weight;
+        if (roll <= 0) return item.def.id;
+    }
+    return weighted[0]?.def.id || 'flu';
+}
+
+export function maybeRollDailySickness(pet, now = Date.now()) {
+    if (!pet) return false;
+    if (!isActivePet(pet)) return false;
+    normalizePetStats(pet);
+    if (pet.stage === 'egg') {
+        const hadSickness = !!pet.sickness;
+        if (hadSickness) delete pet.sickness;
+        return hadSickness;
+    }
+    if (getActiveSickness(pet, now)) return false;
+    const cooldownUntil = Number(pet.sicknessCooldownUntil) || Number(pet.lastSicknessCuredAt) + DAY_MS || 0;
+    if (cooldownUntil > now) return false;
+    const day = localDayKey(now);
+    if (pet.lastSicknessCheckDay === day) return false;
+    pet.lastSicknessCheckDay = day;
+    const probability = calculateSicknessProbability(pet);
+    if (Math.random() >= probability) return true;
+    pet.sickness = {
+        type: chooseSicknessType(pet),
+        startedAt: now,
+    };
+    sicknessTreatmentReductions.delete(sicknessReductionKey(pet));
+    return true;
+}
+
+export function treatPetSicknessOneLevel(pet, now = Date.now()) {
+    const sickness = getActiveSickness(pet, now);
+    if (!sickness) return { ok: false, cured: false, severity: 0, remaining: 0 };
+    const before = getEffectiveSicknessSeverity(pet, now);
+    if (before <= 1) {
+        curePetSickness(pet, now);
+        return { ok: true, cured: true, severity: before, remaining: 0, sickness };
+    }
+    const key = sicknessReductionKey(pet);
+    sicknessTreatmentReductions.set(key, (Number(sicknessTreatmentReductions.get(key)) || 0) + 1);
+    return { ok: true, cured: false, severity: before, remaining: getEffectiveSicknessSeverity(pet, now), sickness };
+}
+
+export function curePetSickness(pet, now = Date.now()) {
+    if (!pet) return false;
+    const key = sicknessReductionKey(pet);
+    const hadSickness = !!pet.sickness;
+    if (key) sicknessTreatmentReductions.delete(key);
+    delete pet.sickness;
+    pet.lastSicknessCuredAt = now;
+    pet.sicknessCooldownUntil = now + DAY_MS;
+    pet.lastSicknessCheckDay = localDayKey(now);
+    return hadSickness;
 }
 
 export function defaultPermanentTrauma() {

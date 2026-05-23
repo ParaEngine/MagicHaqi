@@ -2,7 +2,7 @@
 
 import { $, $$, escapeHtml, showToast } from './utils.js';
 import { canPlaceItemInArea, CONFIG, DECO_VISUALS, findLargestHouseInLayout, getPlacedItemZOrder, isHouseItem, SHOP_ITEMS } from './config.js';
-import { getActivePlanetWeather, notify, state, setCurrentField } from './state.js';
+import { getActivePlanetWeather, isVisitingMode, notify, state, setCurrentField } from './state.js';
 import { getLayout, loadPets, savePetDebounced, saveUserProfileDebounced } from './storage.js';
 import { displayPetName } from './dna.js';
 import { buildEggSvg, getPetSpriteCell, getPetSleepActionState, isPetInteractionBlocked, petArtHtml, playEggWelcomeOnce, playPetClickFeedback, playPetHappy, randomPetTalk, SHEET_COLS, SHEET_ROWS, sleepingInteractionText } from './pet.js';
@@ -123,7 +123,9 @@ const FIELD_THEMES = {
 };
 
 function availableFields() {
-    const discoveries = state.remotePlanetDiscoveries || {};
+    const discoveries = isVisitingMode()
+        ? (state.visitingMode?.remoteProfile?.remotePlanetDiscoveries || {})
+        : (state.remotePlanetDiscoveries || {});
     return [
         ...CONFIG.fields,
         ...REMOTE_FIELD_DEFS.filter(field => discoveries[field.discoveryId]),
@@ -178,7 +180,20 @@ function getFieldEffectScale() {
 }
 
 function currentFieldKey() {
+    if (isVisitingMode()) return 'visit_field_' + state.currentField;
     return 'field_' + state.currentField;
+}
+
+function activeLayouts() {
+    return isVisitingMode() ? (state.visitingMode?.remoteLayouts || {}) : (state.layouts || {});
+}
+
+function activeLayout(roomId) {
+    return activeLayouts()[roomId] || [];
+}
+
+function activeFieldLayout(fieldId) {
+    return activeLayout('field_' + fieldId);
 }
 
 function isFieldDecorMode() {
@@ -377,6 +392,24 @@ function updateCoinsHud() {
 }
 
 function renderFieldActionTray(pet) {
+    if (isVisitingMode()) {
+        return `
+            <div class="mh-dock-row mh-scroll-x dock-action-row visit-field-actions">
+                <button type="button" class="btn-secondary action-btn dock-icon-btn" data-field-action="visit-wave">
+                    <span class="dock-icon">👋</span>
+                    <span class="dock-label">打招呼</span>
+                </button>
+                <button type="button" class="btn-secondary action-btn dock-icon-btn" data-field-action="visit-photo">
+                    <span class="dock-icon">📷</span>
+                    <span class="dock-label">合影</span>
+                </button>
+                <button type="button" class="btn-secondary action-btn dock-icon-btn" data-field-action="visit-return">
+                    <span class="dock-icon">🚀</span>
+                    <span class="dock-label">返航</span>
+                </button>
+            </div>
+        `;
+    }
     const sleeping = isPetInteractionBlocked(pet);
     const sleepAction = getPetSleepActionState(pet);
     const isEgg = pet?.stage === 'egg';
@@ -602,7 +635,7 @@ function petFieldPosition(pet, fieldId, index, activeFieldPosition = null) {
         }
     }
     // 默认：聚集在该场景"主屋"前；若位置被占，依次尝试右侧、左侧。
-    const fieldLayout = getLayout(pet?.id, 'field_' + fieldId);
+    const fieldLayout = activeFieldLayout(fieldId);
     const rallyHouse = findLargestHouseInLayout(fieldLayout);
     if (rallyHouse && getPetLocationType(pet) !== 'released') {
         const rng = makeRng(`${getUserSeedBase()}::${fieldId}::pet-rally::${pet?.id || index}`);
@@ -700,6 +733,7 @@ function fieldPetsFindRepelledPositions(entries, currentPetId) {
 }
 
 function fieldPetsHtml(currentPet, fieldId) {
+    if (isVisitingMode()) return visitingFieldPetsHtml(currentPet, fieldId);
     const petIds = getFieldPetIds(currentPet, fieldId);
     const orderedIds = petIds.includes(currentPet?.id)
         ? [currentPet.id, ...petIds.filter(id => id !== currentPet.id)]
@@ -734,6 +768,66 @@ function fieldPetsHtml(currentPet, fieldId) {
         `;
     }).join('');
     return localHtml + invitedFieldPetHtml(fieldId, renderIds.length);
+}
+
+function visitingFieldPetsHtml(currentPet, fieldId) {
+    const visit = state.visitingMode || {};
+    const friendPet = visit.friendPet;
+    const seen = new Set();
+    const addEntry = (entries, pet, options = {}) => {
+        const id = options.id || pet?.id;
+        if (!pet || !id || seen.has(id)) return;
+        seen.add(id);
+        entries.push({ pet, id, ...options });
+    };
+    const entries = [];
+    addEntry(entries, currentPet, { id: currentPet?.id || 'current', current: true, index: 0 });
+    (visit.crewPets || [])
+        .map(pet => typeof pet === 'string' ? state.pets?.[pet] : pet)
+        .forEach((pet, index) => addEntry(entries, pet, { current: false, index: index + 2 }));
+    (visit.crewIds || [])
+        .map(id => state.pets?.[id])
+        .forEach((pet, index) => addEntry(entries, pet, { current: false, index: index + 4 }));
+    addEntry(entries, friendPet, { id: friendPet?.id || 'friend', host: true, current: false, index: 7 });
+    const activePose = state.activePetFieldPose?.fieldId === fieldId ? state.activePetFieldPose : null;
+    const hostBase = activePose && friendPet
+        ? { x: activePose.targetX ?? 0.52, y: activePose.targetY ?? 0.62, delay: -0.4, dur: 10, dx: 8, dy: 4 }
+        : (friendPet ? petFieldPosition({ ...friendPet, id: friendPet.id || 'friend' }, fieldId, 7) : null);
+    const clusterOffsets = [
+        { x: 0, y: 0 },
+        { x: 0.105, y: 0.035 },
+        { x: -0.095, y: 0.045 },
+        { x: 0.025, y: 0.13 },
+        { x: -0.145, y: 0.12 },
+    ];
+    const positions = entries.map((entry, index) => {
+        if (entry.host && hostBase) return hostBase;
+        if (entry.current) return petFieldPosition({ ...entry.pet, id: entry.id }, fieldId, entry.index);
+        if (hostBase) {
+            const offset = clusterOffsets[index % clusterOffsets.length];
+            return {
+                x: Math.max(0.08, Math.min(0.92, hostBase.x + offset.x)),
+                y: Math.max(0.36, Math.min(0.90, hostBase.y + offset.y)),
+                delay: -0.35 * index,
+                dur: 9 + index,
+                dx: index % 2 ? -10 : 10,
+                dy: index % 2 ? 5 : -5,
+            };
+        }
+        return petFieldPosition({ ...entry.pet, id: entry.id }, fieldId, entry.index);
+    });
+    const repelledPositions = fieldPetsRepelledPositions(entries.map((entry, index) => ({ id: entry.id, fieldId, pos: positions[index] })));
+    return entries.map((entry, index) => {
+        const pos = { ...positions[index], ...repelledPositions[index] };
+        const size = entry.current ? 96 : 82;
+        const zIndex = 16 + Math.round(pos.y * 18) + (entry.current ? 5 : 0);
+        return `
+            <div class="pet-sprite field-pet ${entry.current ? 'field-pet-current' : `field-pet-friend ${entry.host ? 'field-pet-visit-host' : 'field-pet-visit-crew'}`}" data-field-pet="${escapeHtml(entry.id)}" ${entry.host ? 'data-visit-host-pet="1"' : ''}
+                style="left:${pct(pos.x)};top:${pct(pos.y)};z-index:${zIndex};--field-wander-delay:${pos.delay}s;--field-wander-dur:${pos.dur}s;--field-wander-x:${pos.dx}px;--field-wander-y:${pos.dy}px">
+                <div class="field-pet-wander" style="width:${size}px;height:${size}px">${petArtHtml(entry.pet, { alt: displayPetName(entry.pet), motion: 'walk' })}</div>
+            </div>
+        `;
+    }).join('');
 }
 
 function getFieldPetIds(currentPet, fieldId) {
@@ -1221,14 +1315,17 @@ export const fieldLevel = {
     stageHtml(pet) {
         const fields = availableFields();
         const fld = fields.find(f => f.id === state.currentField) || fields[0] || CONFIG.fields[0];
-        const layout = getLayout(pet.id, 'field_' + fld.id) || [];
-        const removedPoops = normalizePetPoops(pet);
+        const visiting = isVisitingMode();
+        const visit = state.visitingMode || {};
+        const layout = visiting ? activeFieldLayout(fld.id) : (getLayout(pet.id, 'field_' + fld.id) || []);
+        const removedPoops = visiting ? 0 : normalizePetPoops(pet);
         if (removedPoops > 0) savePetDebounced(pet);
-        const poops = getPoopsInField(pet, fld.id);
+        const poops = visiting ? [] : getPoopsInField(pet, fld.id);
 
         return `
             <div id="mhFieldScene" class="mh-field-scene" style="width:${metersToFieldPx(FIELD_WIDTH_METERS)}px" data-field-width-meters="${FIELD_WIDTH_METERS}" data-field-height-meters="${FIELD_HEIGHT_METERS}">
             ${fieldMapHtml(fld.id)}
+            ${visiting ? `<div class="visit-field-banner">拜访中 · ${escapeHtml(visit.planetName || '好友星球')}</div>` : ''}
 
             <div class="field-build-overlay" aria-hidden="true"></div>
 
@@ -1274,7 +1371,7 @@ export const fieldLevel = {
     bindStage(pet, ctx) {
         const fields = availableFields();
         const fld = fields.find(f => f.id === state.currentField) || fields[0] || CONFIG.fields[0];
-        const missingPetIds = getFieldPetIds(pet, fld.id).filter(id => id && id !== pet?.id && !state.pets[id]);
+        const missingPetIds = isVisitingMode() ? [] : getFieldPetIds(pet, fld.id).filter(id => id && id !== pet?.id && !state.pets[id]);
         const loadKey = missingPetIds.join('|');
         if (loadKey && loadKey !== fieldPetsLoadedKey) {
             fieldPetsLoadedKey = loadKey;
@@ -1346,6 +1443,12 @@ export const fieldLevel = {
         $$('.field-pet').forEach(petEl => {
             petEl.onclick = (e) => {
                 e.stopPropagation();
+                if (petEl.dataset.visitHostPet === '1') {
+                    const hostPet = state.visitingMode?.friendPet;
+                    showToast(`${displayPetName(hostPet)} 欢迎你来到好友星球。`, 'info', 2200);
+                    showFieldPetTalk(petEl, hostPet || pet);
+                    return;
+                }
                 if (petEl.dataset.invitedFieldPet === '1') {
                     const record = state.activeInvitedPet;
                     const guestPet = record?.pet;
@@ -1418,6 +1521,7 @@ export const fieldLevel = {
         };
 
         const activateModeToggle = (target, event) => {
+            if (isVisitingMode() && target.closest?.('#mhFieldDecorBtn, #mhFieldDecorDoneBtn')) return false;
             if (!target.closest?.('#mhFieldDecorBtn, #mhFieldDecorDoneBtn')) return false;
             event?.preventDefault?.();
             event?.stopPropagation?.();
@@ -1429,6 +1533,7 @@ export const fieldLevel = {
 
         const activateCleanPoops = (target, event) => {
             const btn = target.closest?.('#mhFieldCleanPoopsBtn');
+            if (isVisitingMode()) return false;
             if (!btn || btn.disabled) return false;
             event?.preventDefault?.();
             event?.stopPropagation?.();
@@ -1443,6 +1548,12 @@ export const fieldLevel = {
             event?.preventDefault?.();
             event?.stopPropagation?.();
             dock.__mhFieldDockTabHandledAt = Date.now();
+            if (isVisitingMode()) {
+                if (btn.dataset.fieldAction === 'visit-wave') showToast('你和好友宠物打了个招呼。', 'success', 1500);
+                else if (btn.dataset.fieldAction === 'visit-photo') showToast('好友星球合影已记录在这次旅程里。', 'success', 1800);
+                else if (btn.dataset.fieldAction === 'visit-return') ctx.zoomOut?.();
+                return true;
+            }
             ctx.callbacks.onAction?.(btn.dataset.fieldAction);
             return true;
         };
@@ -1488,7 +1599,7 @@ export const fieldLevel = {
             if (!start || start.id !== e.pointerId) return;
             const moved = Math.hypot(e.clientX - start.x, e.clientY - start.y) > 8;
             if (!moved && Date.now() - (dock.__mhFieldDockTabHandledAt || 0) >= 250) {
-                activateFieldAction(start.target, e) || activateFieldNav(start.target, e) || activateCleanPoops(start.target, e) || activateModeToggle(start.target, e) || activateFieldTab(start.target, e);
+                activateFieldAction(start.target, e) || activateCleanPoops(start.target, e) || activateModeToggle(start.target, e) || activateFieldTab(start.target, e);
             }
         };
         dock.addEventListener('pointerdown', dock.__mhFieldDockTabPointerDown, true);

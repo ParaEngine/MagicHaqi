@@ -6,11 +6,13 @@ import { petArtHtml } from './pet.js';
 import { loadPetMemory } from './storage.js';
 import { state } from './state.js';
 import { CONFIG, getStageName } from './config.js';
-import { dominantTraits } from './petTick.js';
+import { dominantTraits, getActiveSickness, getEffectiveSicknessSeverity } from './petTick.js';
 
 export function renderProfile(panel, { pet }, { onBack } = {}) {
     if (!pet) return;
     const evolvedTraits = dominantTraits(pet, 3);
+    const sickness = getActiveSickness(pet);
+    const sicknessSeverity = getEffectiveSicknessSeverity(pet);
     panel.innerHTML = `
         <div class="topbar">
             <button class="btn-icon" id="mhBack" style="width:36px;height:36px;font-size:18px">‹</button>
@@ -28,6 +30,18 @@ export function renderProfile(panel, { pet }, { onBack } = {}) {
                     <div class="text-xs mt-1" style="color:var(--text-muted)">${escapeHtml(t('bornAt'))}：${formatTime(pet.bornAt)}</div>
                     <div class="text-xs mt-1" style="color:var(--text-muted)">稀有度：<b style="color:var(--accent-dark)">${pet.rarity ?? '?'}</b></div>
                 </div>
+            </div>
+
+            <div class="card-flat mb-3">
+                <div class="text-xs font-bold mb-2" style="color:var(--text-secondary)">身体状态</div>
+                ${sickness ? `
+                    <div class="text-sm font-bold" style="color:#b91c1c">✚ ${escapeHtml(sickness.def.name)} · ${escapeHtml(sickness.def.label)}</div>
+                    <div class="text-xs mt-1" style="color:var(--text-muted)">得病日期：${formatTime(sickness.startedAt)}</div>
+                    <div class="text-xs mt-1" style="color:var(--text-muted)">当前病情：<b style="color:#b91c1c">${sicknessSeverity}/10</b></div>
+                ` : `
+                    <div class="text-sm font-bold" style="color:#166534">健康</div>
+                    <div class="text-xs mt-1" style="color:var(--text-muted)">没有正在记录的疾病。</div>
+                `}
             </div>
 
             <div class="card-flat mb-3">
