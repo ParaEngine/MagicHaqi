@@ -9,6 +9,7 @@ import { buildEggSvg, getPetSpriteCell, getPetSleepActionState, isPetInteraction
 import { markPetCared, normalizePetPoops } from './petTick.js';
 import { canPetAppearInField, getGeneratedPetLocation, getNannyCareRemainingMs, getPetLocationType, getReleasedPetHome, hasNannyCare, isNearActiveGeneratedPet } from './petLifecycle.js';
 import SoundManager from './soundManager.js';
+import ParticleEffects, { renderParticleCanvasHtml } from './particleEffects.js';
 
 const soundManager = SoundManager.getInstance();
 
@@ -569,17 +570,25 @@ function fieldMapHtml(fieldId) {
             <div class="field-prop-layer">
                 ${map.props.map((p) => `<span class="field-map-prop" style="left:${pct(p.x)};top:${pct(p.y)};font-size:${p.size}px;opacity:${p.opacity.toFixed(2)};transform:translate(-50%,-50%) rotate(${p.rot.toFixed(1)}deg);z-index:${p.z}">${p.emoji}</span>`).join('')}
             </div>
-            <div class="field-floater-layer">
-                ${map.floaters.map((p) => `<span class="field-map-floater" style="left:${pct(p.x)};top:${pct(p.y)};font-size:${p.size}px;--field-float-delay:${p.delay}s;--field-float-dur:${p.dur}s;--field-float-drift:${p.drift}px">${p.emoji}</span>`).join('')}
-            </div>
+            <div class="field-floater-layer">${renderParticleCanvasHtml(fieldParticleEffects(fieldId), { className: 'field-map-particles', density: 'field', seed: `field-${fieldId}` })}</div>
             ${weatherOverlay}
         </div>
     `;
 }
 
+function fieldParticleEffects(fieldId) {
+    if (fieldId === 'water') return ['bubbles', 'sparkle'];
+    if (fieldId === 'sky') return ['mist', 'sparkle'];
+    if (fieldId === 'fire') return ['embers', 'sparkle'];
+    if (fieldId === 'ice') return ['snow', 'sparkle'];
+    if (fieldId === 'life') return ['petals', 'sparkle'];
+    if (fieldId === 'dark') return ['sparkle', 'embers'];
+    return ['petals', 'sparkle'];
+}
+
 function planetWeatherOverlayHtml(weather) {
     if (weather.id === 'rain') {
-        return `<div class="field-weather-layer field-weather-rain" aria-hidden="true">${Array.from({ length: 42 }).map((_, i) => `<i style="left:${(i * 17) % 100}%;animation-delay:${-(i % 12) * 0.11}s"></i>`).join('')}</div>`;
+        return `<div class="field-weather-layer field-weather-rain" aria-hidden="true">${renderParticleCanvasHtml(['rain'], { className: 'field-weather-particles', density: 'weather', seed: 'weather-rain' })}</div>`;
     }
     if (weather.id === 'sunny') {
         return '<div class="field-weather-layer field-weather-sun" aria-hidden="true"></div>';
@@ -1383,6 +1392,7 @@ export const fieldLevel = {
         }
         setFieldEffectScale();
         applyFieldPan();
+        ParticleEffects.getInstance().mountAll($('mhFieldScene'));
         window.addEventListener('resize', applyFieldPan, { passive: true });
         bindFieldPan(ctx);
         $$('.poop-btn').forEach(el => {

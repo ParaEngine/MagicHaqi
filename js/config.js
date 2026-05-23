@@ -1,6 +1,12 @@
 // 全局常量配置
+export const CDN_ROOT = 'https://cdn.keepwork.com/maisi/magichaqi/';
+
 export const CONFIG = {
     workspace: 'MagicHaqi',
+    assets: {
+        cdnRoot: CDN_ROOT,
+        bgSounds: {},
+    },
     initialCoins: 100,
     statMax: 100,
     statMin: 0,
@@ -140,13 +146,49 @@ export const CONFIG = {
     chatHistoryMaxBytes: 16 * 1024,
 
     // AI
-    // 注意：Seedream 要求 width*height >= 3686400 像素，所以这里至少 2048x2048。
-    imageWidth: 2048,
-    imageHeight: 2048,
+    defaultSceneImageSize: '1024x1024',
+    sceneImageSizes: [
+        { value: '1024x1024', label: '1024x1024 默认', width: 1024, height: 1024 },
+        { value: '2048x2048', label: '2048x2048 高清', width: 2048, height: 2048 },
+        { value: '1080x1920', label: '1080x1920 story maker', width: 1080, height: 1920 },
+        { value: '1024x1792', label: '1024x1792', width: 1024, height: 1792 },
+        { value: '768x1344', label: '768x1344', width: 768, height: 1344 },
+        { value: '720x1280', label: '720x1280', width: 720, height: 1280 },
+    ],
+    imageWidth: 1024,
+    imageHeight: 1024,
 
     // 付费默认（开发态可在设置中切换）
     defaultIsPaid: false,
 };
+
+export function normalizeSceneImageSizeOption(option = {}) {
+    const value = String(option.value || `${option.width || ''}x${option.height || ''}` || '').trim();
+    const [parsedWidth, parsedHeight] = value.split('x').map(Number);
+    const width = Number(option.width) || parsedWidth || 1024;
+    const height = Number(option.height) || parsedHeight || 1024;
+    return {
+        value: `${width}x${height}`,
+        label: String(option.label || `${width}x${height}`),
+        width,
+        height,
+    };
+}
+
+export function getSceneImageSizes(config = CONFIG) {
+    const sizes = Array.isArray(config.sceneImageSizes) && config.sceneImageSizes.length
+        ? config.sceneImageSizes
+        : [{ value: config.defaultSceneImageSize || `${config.imageWidth || 1024}x${config.imageHeight || 1024}`, width: config.imageWidth || 1024, height: config.imageHeight || 1024 }];
+    return sizes.map(normalizeSceneImageSizeOption);
+}
+
+export function getDefaultSceneImageSize(config = CONFIG, selectedValue = '') {
+    const sizes = getSceneImageSizes(config);
+    const defaultValue = selectedValue || config.defaultSceneImageSize || `${config.imageWidth || 1024}x${config.imageHeight || 1024}`;
+    const configured = sizes.find(item => item.value === defaultValue);
+    if (configured) return configured;
+    return normalizeSceneImageSizeOption({ value: defaultValue });
+}
 
 export function getStageDef(stageId) {
     return CONFIG.stages.find(stage => stage.id === stageId) || null;
@@ -477,3 +519,19 @@ export function getActiveHouseRoomIds(layouts) {
     const defHouse = SHOP_BY_ID[CONFIG.defaultHouseId];
     return defHouse?.rooms ? [...defHouse.rooms] : ['bedroom'];
 }
+
+function cdnAsset(relativePath) {
+    return `${CDN_ROOT}${relativePath}`;
+}
+
+CONFIG.assets.bgSounds = {
+    selector: cdnAsset('audio/bgm_selector.mp3'),
+    square: cdnAsset('audio/bgm_square.mp3'),
+    forest: cdnAsset('audio/bgm_forest.mp3'),
+    farm: cdnAsset('audio/bgm_farm.mp3'),
+    mountain: cdnAsset('audio/bgm_mountain.mp3'),
+    park: cdnAsset('audio/bgm_park.mp3'),
+    playground: cdnAsset('audio/bgm_playground.mp3'),
+    ship: cdnAsset('audio/bgm_ship.mp3'),
+    haqiLoop: cdnAsset('audio/haqi_bgm_loop.mp3'),
+};

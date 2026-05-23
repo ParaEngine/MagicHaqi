@@ -5,9 +5,12 @@ import { CONFIG } from './config.js';
 import { petArtHtml, scanAndMount, say, setAnim } from './pet.js';
 import { loadWorkspaceStory } from './storage.js';
 import { renderSceneParticles, sceneParticleCss } from './view_story_scene_maker.js';
+import SoundManager from './soundManager.js';
+import ParticleEffects from './particleEffects.js';
 
 let runtime = null;
 const STORY_LINE_ADVANCE_MS = 1300;
+const soundManager = SoundManager.getInstance();
 
 const ACTIVITY_LABELS = {
     feed: '喂养',
@@ -159,6 +162,34 @@ function sceneBackground(scene) {
     const imageUrl = bg.imageUrl || scene?.backgroundImage || '';
     if (imageUrl) return `linear-gradient(rgba(255,255,255,.12),rgba(255,255,255,.12)), url("${String(imageUrl).replace(/"/g, '%22')}") center/cover no-repeat`;
     return `radial-gradient(circle at 50% 12%,rgba(255,255,255,.86),transparent 34%), linear-gradient(180deg, ${color}, #ffffff)`;
+}
+
+function sceneBgMusic(scene) {
+    return String(scene?.bgMusic || scene?.background?.bgMusic || '').trim();
+}
+
+function renderMusicToggleButton(track) {
+    if (!track) return '';
+    const muted = soundManager.isBgMusicMuted?.();
+    return `<button type="button" class="mh-story-music-toggle ${muted ? 'is-muted' : ''}" data-story-music-toggle aria-label="${muted ? '开启音乐' : '静音'}" title="${muted ? '开启音乐' : '静音'}">${muted ? '♪' : '♫'}</button>`;
+}
+
+function syncSceneBgMusic(scene, { paused = false } = {}) {
+    if (paused) {
+        if (runtime?.storyBgMusicActive) {
+            soundManager.stopBgMusic({ fadeMs: 700 });
+            runtime.storyBgMusicActive = false;
+        }
+        return;
+    }
+    const music = sceneBgMusic(scene);
+    if (music) {
+        soundManager.playBgMusic(music, { fadeMs: 1000, volume: 0.3 });
+        if (runtime) runtime.storyBgMusicActive = true;
+    } else if (runtime?.storyBgMusicActive) {
+        soundManager.stopBgMusic({ fadeMs: 700 });
+        runtime.storyBgMusicActive = false;
+    }
 }
 
 function activityCount(activity) {
@@ -430,6 +461,7 @@ export function renderStoryPlayer(panel, data = {}, options = {}) {
             activityProgress: {},
             finished: false,
             pendingMinigame: null,
+            storyBgMusicActive: false,
         };
     }
     clearTimelineTimer();
@@ -439,6 +471,7 @@ export function renderStoryPlayer(panel, data = {}, options = {}) {
     const scene = currentScene();
     const selectableActors = story.actors.filter(actor => actor.allowUserSelection);
     const needsActorSelect = selectableActors.length > 1 && !runtime.actorConfirmed;
+    syncSceneBgMusic(scene, { paused: needsActorSelect || runtime.finished });
     const mainPet = storyPetForActor(selectedActor());
     const timeline = sceneTimeline(scene);
     runtime.timelineIndex = Math.max(0, Math.min(runtime.timelineIndex || 0, timeline.length));
@@ -463,6 +496,8 @@ export function renderStoryPlayer(panel, data = {}, options = {}) {
             .mh-story-hero { width:100%; max-width:360px; aspect-ratio:1/1; min-height:0; align-self:center; border-radius:18px; border:2px solid rgba(255,255,255,.78); background:var(--mh-story-scene-bg); background-size:cover; background-position:center; display:flex; align-items:center; justify-content:center; position:relative; overflow:hidden; box-shadow:var(--game-shadow-small); }
             .mh-story-hero.has-action { padding-bottom:64px; }
             .mh-story-scene-label { position:absolute; top:10px; left:10px; z-index:4; border-radius:999px; background:rgba(255,255,255,.88); color:var(--accent-dark); font-size:12px; font-weight:900; padding:5px 9px; box-shadow:0 2px 8px rgba(15,39,71,.14); }
+            .mh-story-music-toggle { position:absolute; top:10px; right:10px; z-index:6; width:34px; height:34px; border-radius:11px; border:2px solid rgba(255,255,255,.92); background:rgba(14,165,233,.92); color:white; font-size:18px; font-weight:900; line-height:1; display:grid; place-items:center; box-shadow:0 4px 0 rgba(37,99,235,.34),0 8px 18px rgba(15,39,71,.16); }
+            .mh-story-music-toggle.is-muted { background:rgba(255,255,255,.92); color:var(--accent-dark); }
             .mh-story-pet { width:min(220px,58vw); height:min(220px,58vw); display:block; position:relative; z-index:2; }
             .mh-story-stage-cast { position:absolute; inset:0; z-index:2; transform-origin:50% 54%; transition:transform .42s ease; }
             .mh-story-stage-cast.is-zooming { transform:scale(1.08); }
@@ -515,6 +550,7 @@ export function renderStoryPlayer(panel, data = {}, options = {}) {
                 ` : `
                     <div class="mh-story-hero ${isTimelineActivity(activeItem) ? 'has-action' : ''}" style="--mh-story-scene-bg:${escapeHtml(sceneBackground(scene))}">
                         ${renderSceneParticles(scene)}
+                        ${renderMusicToggleButton(sceneBgMusic(scene))}
                         <div class="mh-story-scene-label">第${runtime.sceneIndex + 1}幕</div>
                         ${renderStageActors(timeline, runtime.timelineIndex)}
                         ${activeSubtitle(story, scene, timeline) ? `<div class="mh-story-subtitle">${escapeHtml(activeSubtitle(story, scene, timeline))}</div>` : ''}
@@ -544,6 +580,14 @@ export function renderStoryPlayer(panel, data = {}, options = {}) {
     };
     if ($('mhStoryNext')) $('mhStoryNext').onclick = () => goNext(panel, options);
     if ($('mhStoryClaim')) $('mhStoryClaim').onclick = () => options.onRaisePet?.(story, selectedActor());
+    panel.querySelector('[data-story-music-toggle]')?.addEventListener('click', (e) => {
+        e.preventDefault();
+        e.stopPropagation();
+        const track = sceneBgMusic(currentScene());
+        const muted = soundManager.toggleBgMusicMuted?.({ fadeMs: 220 });
+        if (!muted && track) soundManager.playBgMusic(track, { fadeMs: 260, volume: 0.3 });
+        renderStoryPlayer(panel, { story }, options);
+    });
     panel.querySelectorAll('[data-story-activity]').forEach(btn => {
         btn.onclick = () => {
             const index = Number(btn.dataset.storyActivity) || 0;
@@ -557,6 +601,7 @@ export function renderStoryPlayer(panel, data = {}, options = {}) {
             runPetActivity(activity, panel, options, index);
         };
     });
+    ParticleEffects.getInstance().mountAll(panel);
     scanAndMount(panel);
     if (!needsActorSelect) scheduleTimelinePlayback(panel, options);
 }

@@ -1,0 +1,2571 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+	<meta charset="utf-8">
+	<meta name="viewport" content="width=device-width, initial-scale=1">
+	<title>Scene Presets Generator</title>
+	<script src="https://cdn.keepwork.com/keepwork/cdn/tailwindcss@3.4.16.js"></script>
+	<style type="text/tailwindcss">
+		@layer base {
+			:root { color-scheme: light; }
+			body { @apply m-0 min-h-screen bg-slate-100 text-slate-900 font-sans; }
+			button { @apply min-h-[34px] cursor-pointer rounded-md border border-slate-300 bg-white px-3 text-slate-900 transition hover:border-sky-300 hover:bg-slate-50 active:translate-y-px disabled:cursor-not-allowed disabled:opacity-50 disabled:active:translate-y-0; }
+			input, textarea, select { @apply w-full min-h-[34px] rounded-md border border-slate-300 bg-white px-2.5 py-1.5 text-slate-900 outline-none focus:border-sky-600 focus:ring-2 focus:ring-sky-600/15; }
+			textarea { @apply resize-y leading-normal; }
+			label { @apply flex flex-col gap-1.5 text-xs text-slate-500; }
+			h1, h2, h3 { @apply m-0 tracking-normal; }
+			h1 { @apply text-lg leading-tight font-semibold; }
+			h2 { @apply text-sm font-semibold; }
+			h3 { @apply text-xs font-normal text-slate-500; }
+		}
+		@layer components {
+			.app { @apply grid min-h-screen grid-cols-1 gap-3 p-2 lg:grid-cols-[270px_minmax(320px,1fr)] lg:p-3 xl:grid-cols-[270px_320px_minmax(540px,1fr)]; }
+			.panel { @apply flex min-h-0 flex-col overflow-hidden rounded-lg border border-slate-300 bg-white shadow-lg shadow-slate-300/40; }
+			.panel-head { @apply flex min-h-14 items-center justify-between gap-2.5 border-b border-slate-300 px-3.5 py-3; }
+			.panel-body { @apply flex min-h-0 flex-1 flex-col gap-3 overflow-auto p-3; }
+			.section { @apply flex flex-col gap-2.5 rounded-lg border border-slate-300 bg-slate-50 p-3; }
+			.toolbar, .music-controls { @apply flex flex-wrap items-center gap-2; }
+			.toolbar button { @apply flex-none; }
+			.primary { @apply border-sky-600 bg-sky-600 text-white hover:border-sky-700 hover:bg-sky-700; }
+			.success { @apply border-emerald-600 bg-emerald-600 text-white hover:border-emerald-700 hover:bg-emerald-700; }
+			.danger { @apply border-red-200 bg-red-50 text-red-700; }
+			.row { @apply grid grid-cols-1 gap-2.5 md:grid-cols-2; }
+			.row-3 { @apply grid grid-cols-1 gap-2.5 md:grid-cols-3; }
+			.toggle-line { @apply flex-row items-center gap-2 text-slate-900; }
+			.toggle-line input { @apply min-h-0 h-4 w-4; }
+			.hint, .filter-label { @apply text-xs leading-normal text-slate-500; }
+			#sceneCdnStatus { @apply whitespace-pre-wrap; }
+			.status { @apply whitespace-pre-wrap rounded-md border border-sky-200 bg-sky-50 px-2.5 py-2 text-xs leading-normal text-sky-900; }
+			.status.ok { @apply border-emerald-200 bg-emerald-50 text-emerald-800; }
+			.status.error { @apply border-red-200 bg-red-50 text-red-800; }
+			.status-action { @apply min-h-0 border-0 bg-transparent p-0 font-bold underline underline-offset-2 hover:border-transparent hover:bg-transparent; }
+			.pill { @apply inline-flex min-h-6 items-center whitespace-nowrap rounded-full border border-slate-300 bg-white px-2 text-xs text-slate-500; }
+			.records-toolbar { @apply grid grid-cols-[1fr_auto_auto] gap-2 border-b border-slate-300 bg-slate-50 p-3; }
+			.records-filters { @apply grid gap-2 border-b border-slate-300 bg-white px-3 py-2.5; }
+			.records-filter-actions { @apply grid grid-cols-[minmax(0,1fr)_auto] items-end gap-2; }
+			.batch-grid { @apply grid grid-cols-1 gap-3 lg:grid-cols-[270px_minmax(0,1fr)]; }
+			.batch-tag-counts { @apply grid max-h-[310px] grid-cols-2 gap-1.5 overflow-auto rounded-md border border-slate-300 bg-slate-50 p-2; }
+			.batch-tag-count { @apply flex items-center justify-between gap-2 rounded border border-slate-200 bg-white px-2 py-1 text-xs; }
+			.batch-combo-list { @apply flex min-h-0 flex-col gap-2 overflow-auto; }
+			.batch-combo-row { @apply grid grid-cols-[minmax(0,1fr)_72px_auto] items-end gap-2 rounded-md border border-slate-300 bg-slate-50 p-2; }
+			.batch-progress { @apply min-h-[110px] max-h-[210px] overflow-auto whitespace-pre-wrap font-mono text-xs; }
+			.record-list { @apply flex min-h-0 flex-col gap-1.5 overflow-auto p-2; }
+			.record-item { @apply grid w-full grid-cols-[42px_minmax(0,1fr)_auto] items-center gap-2.5 rounded-md border border-slate-300 bg-white p-2.5 text-left; }
+			.record-item.active { @apply border-sky-600 bg-sky-50 ring-2 ring-sky-600/15; }
+			.record-main { @apply block min-w-0 border-0 bg-transparent p-0 text-left hover:border-transparent hover:bg-transparent; }
+			.record-title { @apply block min-w-0 overflow-hidden text-ellipsis whitespace-nowrap text-[13px] font-bold; }
+			.record-meta { @apply block min-w-0 overflow-hidden text-ellipsis whitespace-nowrap text-[11px] text-slate-500; }
+			.record-actions { @apply flex gap-1.5; }
+			.record-actions button { @apply min-h-[30px] min-w-[34px] px-2 text-xs; }
+			.icon-button, .record-actions .icon-button { @apply grid w-[34px] place-items-center p-0; }
+			.icon-button svg, .record-actions .icon-button svg { @apply h-[15px] w-[15px]; stroke: currentColor; }
+			.record-thumb { @apply relative h-[42px] w-[42px] overflow-hidden rounded-md border border-slate-300 bg-sky-50; }
+			.record-thumb-image { @apply absolute inset-0 bg-cover bg-center; }
+			.record-audio-badge { @apply absolute -bottom-px -right-px z-[2] h-[18px] w-[18px] rounded-tl-md border border-white/90 bg-sky-600 text-center text-xs font-black leading-4 text-white shadow; }
+			.record-tag-filter { @apply relative flex flex-col gap-1.5; }
+			.record-tag-filter select { @apply hidden; }
+			.record-tag-filter-button { @apply flex w-full items-center justify-between gap-2 text-left; }
+			.record-tag-filter-label { @apply min-w-0 overflow-hidden text-ellipsis whitespace-nowrap; }
+			.record-tag-filter-caret { @apply text-xs text-slate-500; }
+			.record-tag-filter-menu { @apply absolute left-0 right-0 top-[calc(100%+5px)] z-40 hidden max-h-[220px] overflow-auto rounded-md border border-sky-300 bg-white p-1.5 shadow-xl; }
+			.record-tag-filter.open .record-tag-filter-menu { @apply flex flex-col gap-0.5; }
+			.record-tag-option { @apply flex-row items-center gap-2 rounded px-1.5 py-1 text-xs text-slate-900 hover:bg-sky-50; }
+			.record-tag-option input { @apply min-h-0 h-3.5 w-3.5 flex-none; }
+			.editor { @apply lg:col-span-2 xl:col-span-1; }
+			.editor-grid { @apply grid grid-cols-1 items-start gap-3 xl:grid-cols-[minmax(360px,1fr)_minmax(380px,1fr)]; }
+			.stack { @apply flex min-w-0 flex-col gap-3; }
+			.scene-preview { @apply relative grid place-items-center justify-self-center overflow-hidden rounded-lg border border-slate-300 bg-sky-100; width: min(var(--preview-width, 220px), 100%); aspect-ratio: var(--preview-aspect-ratio, 1 / 1); }
+			#scenePreview { @apply cursor-zoom-in; }
+			.scene-preview.large { width: min(var(--large-preview-width, 620px), 92vw); max-height: min(76vh, 760px); }
+			.scene-preview img { @apply absolute inset-0 block h-full w-full object-cover; }
+			.scene-music-toggle { @apply absolute right-2 top-2 z-[5] grid h-[34px] w-[34px] min-h-[34px] place-items-center rounded-xl border-2 border-white/90 bg-sky-600 p-0 text-lg font-black leading-none text-white shadow-lg hover:border-white hover:bg-sky-700; }
+			.scene-music-toggle.is-muted { @apply bg-white/90 text-sky-800; }
+			.scene-preview-title { @apply relative z-[4] m-2.5 self-end justify-self-stretch rounded-lg bg-white/80 px-2.5 py-2 text-center text-[13px] font-extrabold text-slate-900; }
+			.empty-preview { @apply z-[2] p-4 text-center text-[13px] text-slate-600; }
+			.ref-grid { @apply grid grid-cols-2 gap-2; }
+			.ref-preview { @apply grid min-h-[78px] place-items-center overflow-hidden rounded-lg border border-dashed border-slate-300 bg-slate-50; }
+			.ref-preview img { @apply block h-24 w-full object-cover; }
+			.image-size-label { @apply min-h-[14px] text-center text-[11px] leading-tight text-slate-500; }
+			.current-image-size { @apply -mt-1; }
+			.history-grid { @apply grid gap-2; grid-template-columns: repeat(auto-fill, minmax(66px, 1fr)); }
+			.history-item { @apply relative flex flex-col gap-1 overflow-hidden rounded-md border border-slate-300 bg-white p-0 hover:border-sky-600 hover:bg-sky-50; }
+			.history-thumb-frame { @apply relative aspect-square overflow-hidden; }
+			.history-item img { @apply block h-full w-full object-cover; }
+			.history-item .image-size-label { @apply px-1 pb-1; }
+			.history-delete { @apply absolute right-1 top-1 z-[2] grid h-[22px] w-[22px] min-h-[22px] place-items-center rounded-full border border-white/90 bg-red-600/90 p-0 text-[15px] leading-none text-white hover:bg-red-700; }
+			.history-empty { @apply rounded-md border border-dashed border-slate-300 bg-slate-50 p-2.5 text-center text-xs text-slate-500; }
+			.output { @apply min-h-60 overflow-auto whitespace-pre font-mono text-xs leading-normal; }
+			.prompt-box { @apply min-h-[150px] text-xs; }
+			.tag-row { @apply flex flex-wrap gap-1.5; }
+			.tag-row button { @apply min-h-7 rounded-full px-2.5 text-xs; }
+			.tag-row button.active { @apply border-sky-600 bg-sky-50 font-bold text-sky-800; }
+			.music-controls button { @apply min-w-[34px] px-2.5; }
+			.workspace-overlay, .modal-overlay { @apply fixed inset-0 flex bg-slate-950/60 p-[18px]; }
+			.workspace-overlay { @apply z-[1000]; }
+			.modal-overlay { @apply z-[1050]; }
+			.workspace-window, .modal-window { @apply m-auto flex flex-col overflow-hidden rounded-lg bg-white shadow-2xl; }
+			.workspace-window { width: min(1180px, 100%); height: min(780px, 100%); }
+			.modal-window { width: min(980px, 100%); height: min(760px, 100%); }
+			.workspace-titlebar, .modal-titlebar { @apply flex min-h-12 items-center justify-between gap-2.5 border-b border-slate-300 bg-slate-50 px-4 py-0 select-none; }
+			.modal-titlebar { @apply cursor-move touch-none; }
+			.workspace-host, .modal-body { @apply min-h-0 flex-1; }
+			.modal-body { @apply flex flex-col gap-2.5 p-3; }
+			.modal-body textarea { @apply min-h-0 flex-1; }
+			.cdn-review-window { width: min(1120px, 100%); height: min(920px, 100%); }
+			.cdn-review-preview-frame { @apply grid min-h-0 flex-1 place-items-center overflow-auto rounded-lg border border-slate-300 bg-slate-50 p-2.5; }
+			.cdn-review-preview-frame img, .cdn-full-preview-body img { @apply block max-h-none max-w-none rounded-lg; }
+			.cdn-review-preview-frame img { @apply cursor-zoom-in; }
+			.cdn-full-preview-body { @apply grid min-h-0 flex-1 place-items-start justify-center overflow-auto bg-slate-50 p-3; }
+			.quality-control { @apply gap-2; }
+			.quality-control input[type="range"] { @apply min-h-7 p-0 accent-sky-600; }
+			.range-scale { @apply grid grid-cols-[1fr_auto_1fr] items-center gap-2 text-[11px] text-slate-500; }
+			.range-scale span:last-child { @apply text-right; }
+			.range-value { @apply font-bold text-slate-900; }
+		}
+		@media (max-width: 760px) {
+			.scene-preview { width: min(var(--preview-width-mobile, 180px), 100%); }
+			.scene-preview.large { width: min(var(--large-preview-width-mobile, 420px), 92vw); max-height: min(78vh, 720px); }
+			.workspace-overlay, .modal-overlay { @apply p-0; }
+			.workspace-window, .modal-window { @apply h-full w-full rounded-none; }
+		}
+	</style>
+</head>
+<body>
+	<main class="app">
+		<aside class="panel sidebar">
+			<div class="panel-head">
+				<div>
+					<h1>Scene Presets Generator</h1>
+					<h3>story maker scenes 生成器</h3>
+				</div>
+				<span id="sdkState" class="pill">SDK loading</span>
+			</div>
+			<div class="panel-body">
+				<section class="section">
+					<h2>账号与工具</h2>
+					<div id="loginState" class="status">正在加载 KeepworkSDK...</div>
+					<div class="toolbar">
+						<button id="btnLocalApi" type="button">本地 API Key</button>
+						<button id="btnWorkspace" type="button">Workspace</button>
+					</div>
+				</section>
+
+				<section class="section">
+					<h2>图片模型</h2>
+					<label>模型 dropdown
+						<select id="imageModelSelect"></select>
+					</label>
+					<label>分辨率
+						<select id="imageSize">
+							<option value="1024x1024" selected>1024x1024 默认</option>
+						</select>
+					</label>
+					<label class="toggle-line"><input id="uploadResultToKeepwork" type="checkbox" checked>上传临时 CDN</label>
+					<label class="toggle-line"><input id="uploadCompressedSceneToCdn" type="checkbox">生成后压缩上传 CDN</label>
+					<div class="toolbar"><button id="btnSceneCdnConfig" type="button">设置</button></div>
+					<div id="sceneCdnStatus" class="hint">CDN folder: maisi/magichaqi/scenes</div>
+				</section>
+
+				<section class="section">
+					<h2>参考图</h2>
+					<label>参考图 URL（一行一个）
+						<textarea id="referenceUrls" class="prompt-box" style="min-height:78px" placeholder="https://...&#10;data:image/..."></textarea>
+					</label>
+					<label>上传参考图
+						<input id="referenceFiles" type="file" accept="image/*" multiple>
+					</label>
+					<div id="referencePreview" class="ref-grid"><div class="ref-preview"><span class="hint">可选参考图预览</span></div></div>
+				</section>
+			</div>
+		</aside>
+
+		<section class="panel records">
+			<div class="panel-head">
+				<div>
+					<h2>scenes.json</h2>
+					<h3>Workspace: MagicHaqi/pet-story/presets</h3>
+				</div>
+				<span id="recordCount" class="pill">0</span>
+			</div>
+			<div class="records-toolbar">
+				<input id="recordSearch" placeholder="搜索 id / title / tags">
+				<button id="btnNewScene" class="primary" type="button">新建</button>
+				<button id="btnRefreshRecords" type="button">刷新</button>
+			</div>
+			<div class="records-filters">
+				<div class="record-tag-filter" id="recordTagFilterWrap">
+					<span class="filter-label">Tags 筛选</span>
+					<select id="recordTagFilter" multiple></select>
+					<button id="recordTagFilterButton" class="record-tag-filter-button" type="button" aria-haspopup="listbox" aria-expanded="false"><span id="recordTagFilterLabel" class="record-tag-filter-label">全部 tags</span><span class="record-tag-filter-caret">▾</span></button>
+					<div id="recordTagFilterMenu" class="record-tag-filter-menu" role="listbox" aria-multiselectable="true"></div>
+				</div>
+				<div class="records-filter-actions">
+					<label>图片筛选
+						<select id="recordImageFilter">
+							<option value="all">全部</option>
+							<option value="noImage">无图</option>
+							<option value="hasImage">有图</option>
+						</select>
+					</label>
+					<button id="btnClearRecordFilters" type="button">清除筛选</button>
+				</div>
+			</div>
+			<div id="recordList" class="record-list">
+				<div class="hint" style="padding:10px">加载 SDK 后会读取 workspace scenes.json；也可从本地 preset 文件回退加载。</div>
+			</div>
+		</section>
+
+		<section class="panel editor">
+			<div class="panel-head">
+				<div>
+					<h2 id="editorTitle">新建场景</h2>
+					<h3 id="editorSubtitle">pet-story/presets/scenes.json</h3>
+				</div>
+				<div class="toolbar">
+					<button id="btnOpenIndexPreview" type="button">导入导出</button>
+					<button id="btnBatchGenerate" class="primary" type="button">批量生成</button>
+					<button id="btnSaveScene" class="success" type="button">保存场景</button>
+				</div>
+			</div>
+			<div class="panel-body">
+				<div id="runStatus" class="status">准备就绪。选择记录或新建后，可用文字 + 参考图生成场景背景。</div>
+				<div class="editor-grid">
+					<div class="stack">
+						<section class="section">
+							<h2>Properties</h2>
+							<div class="row">
+								<label>ID
+									<input id="sceneId" maxlength="80" placeholder="forest_glade">
+								</label>
+								<label>标题
+									<input id="sceneTitle" maxlength="40" placeholder="森林空地">
+								</label>
+							</div>
+							<div class="row">
+								<label>背景色
+									<input id="sceneColor" type="color" value="#bae6fd">
+								</label>
+								<label>背景音乐
+									<select id="bgMusic"><option value="">无音乐</option></select>
+								</label>
+							</div>
+							<div class="music-controls">
+								<button id="btnPreviewMusic" type="button">试听</button>
+								<button id="btnStopMusic" type="button">停止</button>
+								<button id="btnMuteMusic" class="icon-button" type="button" title="静音/取消静音" aria-label="静音/取消静音"><svg viewBox="0 0 24 24" fill="none" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M11 5 6 9H3v6h3l5 4V5z"></path><path d="M16 9.5a4 4 0 0 1 0 5"></path><path d="M19 7a8 8 0 0 1 0 10"></path></svg></button>
+								<span id="musicState" class="pill">Music loading</span>
+							</div>
+							<label>Tags（逗号分隔）
+								<input id="sceneTags" placeholder="outdoor, forest, land, spring">
+							</label>
+							<div id="tagButtons" class="tag-row"></div>
+							<label>Particles（逗号分隔）
+								<input id="sceneParticles" placeholder="sparkle, snow, rain, mist, petals">
+							</label>
+							<div id="particleButtons" class="tag-row"></div>
+							<label>场景描述 / Prompt 核心
+								<textarea id="scenePrompt" class="prompt-box" placeholder="明亮童话感的哈奇森林空地，柔和阳光穿过树叶，中间留出宠物站立空间。"></textarea>
+							</label>
+							<div class="toolbar">
+								<button id="btnSlug" type="button">标题生成 ID</button>
+								<button id="btnBuildPrompt" type="button">刷新 Prompt</button>
+								<button id="btnUsePromptTags" type="button">从描述提取 tags</button>
+							</div>
+						</section>
+
+						<section class="section">
+							<h2>Scene JSON</h2>
+							<textarea id="sceneJson" class="output" spellcheck="false"></textarea>
+							<div class="toolbar">
+								<button id="btnRefreshJson" type="button">刷新 JSON</button>
+								<button id="btnCopySceneJson" type="button">复制场景</button>
+								<button id="btnDownloadIndex" type="button">下载 scenes.json</button>
+							</div>
+							<label class="toggle-line"><input id="removeHistoryUrlsOnExport" type="checkbox">复制 / 下载时移除 historyUrls</label>
+							<div id="saveStatus" class="status">保存目标：pet-story/presets/scenes.json，格式保持与当前 scenes.json 一致。</div>
+						</section>
+					</div>
+
+					<div class="stack">
+						<section class="section">
+							<h2>Result</h2>
+							<div id="scenePreview" class="scene-preview"><div class="empty-preview">尚未生成背景图</div></div>
+							<div id="currentImageSize" class="image-size-label current-image-size">&nbsp;</div>
+							<label>生成图片 URL
+								<input id="imageUrl" placeholder="生成后自动填入，也可手动粘贴">
+							</label>
+							<div class="toolbar">
+								<button id="btnGenerate" class="primary" type="button">生成图片</button>
+								<button id="btnUploadCurrentImageToCdn" type="button">上传 CDN</button>
+							</div>
+							<div id="historyPreview" class="history-grid"><div class="history-empty">暂无历史图片</div></div>
+						</section>
+
+						<section class="section">
+							<h2>Final genImage Prompt</h2>
+							<textarea id="finalPrompt" class="prompt-box" style="min-height:260px" spellcheck="false"></textarea>
+						</section>
+					</div>
+				</div>
+			</div>
+		</section>
+	</main>
+	<input id="sceneCdnConfigInput" type="file" accept=".yaml,.yml" hidden>
+
+	<script>
+		const WORKSPACE = 'MagicHaqi';
+		const SCENE_INDEX_PATH = 'pet-story/presets/scenes.json';
+		const LOCAL_SCENE_INDEX_URL = '../pet-story/presets/scenes.json';
+		const SETTINGS_STORAGE_KEY = 'MagicHaqi.ScenePresetsGenerator.generationSettings';
+		const BATCH_SETTINGS_STORAGE_KEY = 'MagicHaqi.ScenePresetsGenerator.batchSettings';
+		const SCENE_CDN_UPLOAD_ENABLED_STORAGE_KEY = 'MagicHaqi.ScenePresetsGenerator.uploadCompressedSceneToCdn';
+		const SCENE_CDN_UPLOAD_OPTIONS_STORAGE_KEY = 'MagicHaqi.ScenePresetsGenerator.sceneCdnUploadOptions';
+		const SAVED_CDN_CONFIG_STORAGE_KEY = 'keepwork_upload_cdn_config';
+		const SCENE_CDN_FOLDER = 'maisi/magichaqi/scenes';
+		const SCENE_CDN_DEFAULT_BUCKET = 'haqi';
+		const SCENE_CDN_DEFAULT_DOMAIN = 'https://cdn.keepwork.com';
+		const SCENE_CDN_DEFAULT_UPLOAD_HOST = 'https://up-z2.qiniup.com';
+		const SCENE_CDN_DEFAULT_IMAGE_FORMAT = 'webp';
+		const SCENE_CDN_DEFAULT_COMPRESSION_RATIO = 12;
+		let DEFAULT_SCENE_TAGS = ['indoor', 'outdoor', 'land', 'sky', 'ocean', 'playground', 'bathroom', 'living room', 'shop', 'school', 'spring', 'winter', 'seaside', 'haqi', 'townhall', 'forest', 'sand', 'hospital'];
+		let PARTICLE_EFFECTS = ['sparkle', 'snow', 'rain', 'mist', 'bubbles', 'petals', 'embers'];
+		const BG_MUSIC_LABELS = { selector: '选择', square: '广场', forest: '森林', farm: '农场', mountain: '山地', park: '公园', playground: '游乐场', ship: '飞船', haqiLoop: '哈奇循环' };
+		let TAG_ALIASES = {
+			indoors: 'indoor', outside: 'outdoor', outdoors: 'outdoor', sea: 'ocean', beach: 'seaside', room: 'living room', livingroom: 'living room', bath: 'bathroom', town: 'townhall', woods: 'forest', playgrounds: 'playground', clinic: 'hospital', snow: 'winter', warm: 'spring', home: 'living room',
+			室内: 'indoor', 户外: 'outdoor', 室外: 'outdoor', 陆地: 'land', 天空: 'sky', 海洋: 'ocean', 操场: 'playground', 浴室: 'bathroom', 客厅: 'living room', 商店: 'shop', 学校: 'school', 春天: 'spring', 冬天: 'winter', 海边: 'seaside', 哈奇: 'haqi', 镇大厅: 'townhall', 森林: 'forest', 沙滩: 'sand', 沙子: 'sand', 医院: 'hospital', 家: 'living room', 小店: 'shop', 水: 'ocean', 雪: 'winter'
+		};
+		const $ = (id) => document.getElementById(id);
+		const state = { sdk: null, referenceDataUrls: [], scenes: [], selectedId: '', indexMeta: null, lastLLMModel: '', lastChatModel: '', lastImageSize: '', currentHistoryUrls: [], imageSizeCache: new Map(), imageSizeRequests: new Map(), recordThumbObserver: null, workspaceViewer: null, storyConfig: null, storyConfigModule: null, soundManager: null, particleEffectsModule: null, generationPromptsPromise: null, batchAbortRequested: false };
+
+		function loadGenerationPrompts() {
+			state.generationPromptsPromise ||= importRuntimeModule('../js/generationPrompts.js');
+			return state.generationPromptsPromise;
+		}
+
+		function setStatus(el, text, kind = '') {
+			el.textContent = text;
+			el.classList.toggle('error', kind === 'error');
+			el.classList.toggle('ok', kind === 'ok');
+		}
+
+		function escapeHtml(value) {
+			const div = document.createElement('div');
+			div.textContent = value == null ? '' : String(value);
+			return div.innerHTML;
+		}
+
+		function safeId(value, fallback = '') {
+			return String(value || '').trim().replace(/[^a-zA-Z0-9_-]+/g, '_').replace(/^_+|_+$/g, '').slice(0, 80) || fallback;
+		}
+
+		function splitList(value) {
+			return String(value || '').replace(/[，、；;|/]/g, ',').split(',').map(item => item.trim()).filter(Boolean);
+		}
+
+		function unique(items) {
+			return [...new Set(items.filter(Boolean))];
+		}
+
+		function normalizeTag(tag) {
+			const text = String(tag || '').trim().toLowerCase();
+			if (!text) return '';
+			return TAG_ALIASES[text] || text.replace(/[_-]+/g, ' ');
+		}
+
+		function normalizeSceneTags(value) {
+			const raw = Array.isArray(value) ? value : splitList(value);
+			return unique(raw.map(normalizeTag));
+		}
+
+		function parseParticleList(value) {
+			const raw = Array.isArray(value) ? value : splitList(value);
+			return unique(raw.map(getParticleEffectId).filter(Boolean));
+		}
+
+		function getParticleEffectId(effect) {
+			return String(typeof effect === 'object' ? effect?.id : effect || '').trim();
+		}
+
+		function getParticleEffectIds() {
+			return unique(PARTICLE_EFFECTS.map(getParticleEffectId).filter(Boolean));
+		}
+
+		function getParticleEffectLabel(effect) {
+			return String(typeof effect === 'object' ? (effect?.label || effect?.id || '') : effect || '').trim();
+		}
+
+		function applyStoryMakerDefinitions(module = {}) {
+			if (module.TAG_ALIASES && typeof module.TAG_ALIASES === 'object') TAG_ALIASES = { ...module.TAG_ALIASES };
+			if (Array.isArray(module.DEFAULT_SCENE_TAGS) && module.DEFAULT_SCENE_TAGS.length) DEFAULT_SCENE_TAGS = unique(module.DEFAULT_SCENE_TAGS.map(tag => String(tag || '').trim()).filter(Boolean));
+			if (Array.isArray(module.PARTICLE_EFFECTS) && module.PARTICLE_EFFECTS.length) PARTICLE_EFFECTS = module.PARTICLE_EFFECTS.map(effect => typeof effect === 'object' ? { id: getParticleEffectId(effect), label: getParticleEffectLabel(effect) } : getParticleEffectId(effect)).filter(effect => getParticleEffectId(effect));
+		}
+
+		function applyParticleEffectsCss(module = state.particleEffectsModule) {
+			if (document.getElementById('sharedParticleEffectsCss')) return;
+			const css = typeof module?.particleEffectsCss === 'function' ? module.particleEffectsCss() : '';
+			if (!css) return;
+			const style = document.createElement('style');
+			style.id = 'sharedParticleEffectsCss';
+			style.textContent = css;
+			document.head.appendChild(style);
+		}
+
+		function mountParticleEffects(root) {
+			state.particleEffectsModule?.default?.getInstance?.().mountAll(root || document);
+		}
+
+		function normalizeHistoryUrls(value) {
+			return unique((Array.isArray(value) ? value : splitList(value)).map(url => String(url || '').trim()).filter(Boolean));
+		}
+
+		function formatImageKilobytes(bytes) {
+			if (!Number.isFinite(bytes) || bytes <= 0) return '';
+			const kb = bytes / 1024;
+			return `${kb >= 100 ? Math.round(kb) : kb.toFixed(1)} KB`;
+		}
+
+		function getDataUriByteSize(url) {
+			const text = String(url || '');
+			if (!text.startsWith('data:')) return null;
+			const comma = text.indexOf(',');
+			if (comma < 0) return null;
+			const meta = text.slice(0, comma).toLowerCase();
+			const data = text.slice(comma + 1).replace(/\s/g, '');
+			if (meta.includes(';base64')) return Math.max(0, Math.floor((data.length * 3) / 4) - (data.endsWith('==') ? 2 : data.endsWith('=') ? 1 : 0));
+			try { return new Blob([decodeURIComponent(data)]).size; }
+			catch (_) { return new Blob([data]).size; }
+		}
+
+		async function getImageByteSize(url) {
+			const key = String(url || '').trim();
+			if (!key) return null;
+			if (state.imageSizeCache.has(key)) return state.imageSizeCache.get(key);
+			if (state.imageSizeRequests.has(key)) return state.imageSizeRequests.get(key);
+			const request = (async () => {
+				const dataSize = getDataUriByteSize(key);
+				if (dataSize != null) return dataSize;
+				try {
+					const head = await fetch(key, { method: 'HEAD', cache: 'force-cache' });
+					const length = Number(head.headers.get('content-length'));
+					if (Number.isFinite(length) && length > 0) return length;
+				} catch (_) {}
+				try {
+					const res = await fetch(key, { cache: 'force-cache' });
+					if (!res.ok) return null;
+					return (await res.blob()).size;
+				} catch (_) { return null; }
+			})();
+			state.imageSizeRequests.set(key, request);
+			const size = await request;
+			state.imageSizeRequests.delete(key);
+			state.imageSizeCache.set(key, size);
+			return size;
+		}
+
+		function setImageSizeLabel(url, text) {
+			document.querySelectorAll('[data-image-size-url]').forEach(el => {
+				if (el.dataset.imageSizeUrl === url) el.textContent = text || '大小未知';
+			});
+		}
+
+		function refreshImageSizeLabels(urls) {
+			normalizeHistoryUrls(urls).forEach(url => {
+				const cached = state.imageSizeCache.has(url) ? state.imageSizeCache.get(url) : undefined;
+				setImageSizeLabel(url, cached === undefined ? '计算中...' : formatImageKilobytes(cached));
+				if (cached !== undefined) return;
+				getImageByteSize(url).then(size => setImageSizeLabel(url, formatImageKilobytes(size))).catch(() => setImageSizeLabel(url, '大小未知'));
+			});
+		}
+
+		function renderCurrentImageSize() {
+			const url = $('imageUrl')?.value?.trim() || '';
+			const el = $('currentImageSize');
+			if (!el) return;
+			if (!url) {
+				el.textContent = '\u00a0';
+				delete el.dataset.imageSizeUrl;
+				return;
+			}
+			el.dataset.imageSizeUrl = url;
+			el.textContent = '计算中...';
+			refreshImageSizeLabels([url]);
+		}
+
+		function updateManualCdnUploadButton() {
+			const button = $('btnUploadCurrentImageToCdn');
+			if (!button) return;
+			const autoUploadEnabled = !!$('uploadCompressedSceneToCdn')?.checked;
+			const hasImageUrl = !!$('imageUrl')?.value?.trim();
+			button.style.display = autoUploadEnabled ? 'none' : '';
+			button.disabled = autoUploadEnabled || !hasImageUrl;
+		}
+
+		function buildImageHistoryUrls(newUrl, scene = buildSceneConfig()) {
+			return normalizeHistoryUrls([scene.imageUrl, ...(scene.historyUrls || [])]).filter(url => url !== newUrl);
+		}
+
+		function renderHistoryPreview() {
+			const current = $('imageUrl')?.value?.trim() || '';
+			const urls = normalizeHistoryUrls(state.currentHistoryUrls).filter(url => url !== current);
+			const root = $('historyPreview');
+			if (!root) return;
+			root.innerHTML = urls.length ? urls.map((url, index) => `<button type="button" class="history-item" data-history-url="${escapeHtml(url)}" title="${escapeHtml(url)}"><span class="history-thumb-frame"><img alt="history ${index + 1}" src="${escapeHtml(url)}"><span class="history-delete" data-history-delete="${escapeHtml(url)}" title="删除" aria-label="删除">×</span></span><span class="image-size-label" data-image-size-url="${escapeHtml(url)}">计算中...</span></button>`).join('') : '<div class="history-empty">暂无历史图片</div>';
+			root.querySelectorAll('[data-history-url]').forEach(btn => {
+				btn.onclick = () => selectHistoryImage(btn.dataset.historyUrl || '');
+			});
+			root.querySelectorAll('[data-history-delete]').forEach(btn => {
+				btn.onclick = (event) => {
+					event.stopPropagation();
+					deleteHistoryImage(btn.dataset.historyDelete || '');
+				};
+			});
+			refreshImageSizeLabels(urls);
+		}
+
+		function selectHistoryImage(url) {
+			if (!url) return;
+			const current = $('imageUrl').value.trim();
+			if (url === current) return;
+			const nextHistoryUrls = normalizeHistoryUrls(state.currentHistoryUrls.map(item => item === url ? current : item));
+			$('imageUrl').value = url;
+			state.currentHistoryUrls = normalizeHistoryUrls([current, ...nextHistoryUrls]).filter(item => item && item !== url);
+			updateOutput();
+			setStatus($('saveStatus'), '已与历史图片交换。点击“保存场景”保存。', 'ok');
+		}
+
+		function deleteHistoryImage(url) {
+			if (!url) return;
+			state.currentHistoryUrls = normalizeHistoryUrls(state.currentHistoryUrls.filter(item => item !== url));
+			updateOutput();
+			setStatus($('saveStatus'), '已从历史图片中删除。点击“保存场景”保存。', 'ok');
+		}
+
+		function sceneTagsFromText(text) {
+			const lower = String(text || '').toLowerCase();
+			const tags = [];
+			[...DEFAULT_SCENE_TAGS, ...Object.keys(TAG_ALIASES)].forEach(tag => {
+				const normalized = normalizeTag(tag);
+				if (normalized && (lower.includes(tag.toLowerCase()) || lower.includes(normalized))) tags.push(normalized);
+			});
+			return unique(tags);
+		}
+
+		function normalizeScene(scene = {}, index = 0) {
+			return {
+				id: safeId(scene.id || `scene_preset_${index + 1}`, `scene_preset_${index + 1}`),
+				title: String(scene.title || scene.name || `场景 ${index + 1}`),
+				imageUrl: String(scene.imageUrl || scene.url || scene.src || ''),
+				historyUrls: normalizeHistoryUrls(scene.historyUrls || scene.historyUrl || scene.imageHistoryUrls || []),
+				color: String(scene.color || scene.bgColor || '#bae6fd'),
+				tags: normalizeSceneTags(scene.tags || scene.sceneTags || scene.keywords || []),
+				particles: parseParticleList(scene.particles || scene.effects || []),
+				bgMusic: String(scene.bgMusic || scene.music || scene.bgm || scene.background?.bgMusic || '').trim(),
+				prompt: String(scene.prompt || scene.description || '').trim(),
+			};
+		}
+
+		function compactScene(scene = buildSceneConfig()) {
+			const result = {
+				id: scene.id,
+				title: scene.title,
+				imageUrl: scene.imageUrl || '',
+				color: scene.color || '#bae6fd',
+				tags: normalizeSceneTags(scene.tags),
+				particles: parseParticleList(scene.particles),
+			};
+			const historyUrls = normalizeHistoryUrls(scene.historyUrls);
+			if (historyUrls.length) result.historyUrls = historyUrls;
+			if (scene.bgMusic) result.bgMusic = scene.bgMusic;
+			if (scene.prompt) result.prompt = scene.prompt;
+			return result;
+		}
+
+		function removeHistoryUrlsFromScene(scene) {
+			const result = { ...scene };
+			delete result.historyUrls;
+			return result;
+		}
+
+		function shouldRemoveHistoryUrlsOnExport() {
+			if ($('removeHistoryUrlsOnIndexExport')) return !!$('removeHistoryUrlsOnIndexExport').checked;
+			return !!$('removeHistoryUrlsOnExport')?.checked;
+		}
+
+		function loadExportSettings() {
+			if (!$('removeHistoryUrlsOnExport')) return;
+			$('removeHistoryUrlsOnExport').checked = true;
+		}
+
+		function stringifyExportJson(value) {
+			const inlineArrayKeys = new Set(['tags', 'particles']);
+			const indentUnit = '  ';
+			const formatValue = (item, level = 0, key = '') => {
+				if (Array.isArray(item)) {
+					if (inlineArrayKeys.has(key)) return `[${item.map(entry => JSON.stringify(entry)).join(', ')}]`;
+					if (!item.length) return '[]';
+					const childIndent = indentUnit.repeat(level + 1);
+					const currentIndent = indentUnit.repeat(level);
+					return `[
+${item.map(entry => `${childIndent}${formatValue(entry, level + 1)}`).join(',\n')}
+${currentIndent}]`;
+				}
+				if (item && typeof item === 'object') {
+					const entries = Object.entries(item);
+					if (!entries.length) return '{}';
+					const childIndent = indentUnit.repeat(level + 1);
+					const currentIndent = indentUnit.repeat(level);
+					return `{
+${entries.map(([entryKey, entryValue]) => `${childIndent}${JSON.stringify(entryKey)}: ${formatValue(entryValue, level + 1, entryKey)}`).join(',\n')}
+${currentIndent}}`;
+				}
+				return JSON.stringify(item);
+			};
+			return formatValue(value);
+		}
+
+		function getSceneExportJsonText() {
+			let scene;
+			try { scene = compactScene(JSON.parse($('sceneJson').value || '{}')); }
+			catch (_) { scene = compactScene(buildSceneConfig()); }
+			return stringifyExportJson(shouldRemoveHistoryUrlsOnExport() ? removeHistoryUrlsFromScene(scene) : scene);
+		}
+
+		function defaultScene() {
+			return {
+				id: 'new_scene_preset',
+				title: '新场景预设',
+				imageUrl: '',
+				historyUrls: [],
+				color: '#bae6fd',
+				tags: ['outdoor', 'haqi', 'spring', 'land'],
+				particles: ['sparkle'],
+				bgMusic: '',
+				prompt: '明亮童话感的哈奇星球户外场景，干净温暖，中央保留宠物角色站立空间。',
+			};
+		}
+
+		function getReferenceImages() {
+			return unique([...splitList($('referenceUrls').value), ...state.referenceDataUrls]).slice(0, 4);
+		}
+
+		function getSelectedImageModel() {
+			return $('imageModelSelect').value.trim();
+		}
+
+		function getSelectedImageSizeValue() {
+			return $('imageSize')?.value?.trim() || '';
+		}
+
+		function rememberGenerationSettings() {
+			state.lastLLMModel = getSelectedImageModel() || state.lastLLMModel || '';
+			state.lastImageSize = getSelectedImageSizeValue() || state.lastImageSize || getDefaultImageSizeValue();
+		}
+
+		function readLocalGenerationSettings() {
+			try { return JSON.parse(localStorage.getItem(SETTINGS_STORAGE_KEY) || '{}') || {}; }
+			catch (_) { return {}; }
+		}
+
+		function saveLocalGenerationSettings() {
+			rememberGenerationSettings();
+			try {
+				localStorage.setItem(SETTINGS_STORAGE_KEY, JSON.stringify({
+					lastLLMModel: state.lastLLMModel || '',
+					lastChatModel: state.lastChatModel || '',
+					lastImageSize: state.lastImageSize || getDefaultImageSizeValue(),
+					updatedAt: new Date().toISOString(),
+				}));
+			} catch (_) {}
+		}
+
+		function readBatchSettings() {
+			try { return JSON.parse(localStorage.getItem(BATCH_SETTINGS_STORAGE_KEY) || '{}') || {}; }
+			catch (_) { return {}; }
+		}
+
+		function saveBatchSettings(settings = {}) {
+			try {
+				localStorage.setItem(BATCH_SETTINGS_STORAGE_KEY, JSON.stringify({
+					lastChatModel: settings.lastChatModel || state.lastChatModel || '',
+					generateImages: settings.generateImages !== false,
+					userPrompt: settings.userPrompt || '',
+					combinations: Array.isArray(settings.combinations) ? settings.combinations : [],
+					updatedAt: new Date().toISOString(),
+				}));
+			} catch (_) {}
+		}
+
+		function shouldBatchGenerateImages() {
+			const checkbox = $('batchGenerateImages');
+			return checkbox ? checkbox.checked : true;
+		}
+
+		function getEnabledLocalModels(category) {
+			const sdk = state.sdk || window.keepwork;
+			return sdk?.localAPIKeySettings?.listModels ? sdk.localAPIKeySettings.listModels(category).filter(model => model.enabled !== false) : [];
+		}
+
+		function renderModelOptions(select, category, remembered = '') {
+			if (!select) return [];
+			const models = getEnabledLocalModels(category);
+			select.innerHTML = models.length
+				? models.map(model => {
+						const value = model.name || model.modelId || '';
+						const label = model.modelId && model.modelId !== value ? `${value} (${model.modelId})` : value;
+						return `<option value="${escapeHtml(value)}">${escapeHtml(label)}</option>`;
+					}).join('')
+				: `<option value="">没有本地${category === 'Chat' ? '聊天' : '图片'}模型</option>`;
+			select.disabled = !models.length;
+			if (remembered && models.some(model => (model.name || model.modelId || '') === remembered)) select.value = remembered;
+			return models;
+		}
+
+		function loadSceneCdnUploadSetting() {
+			try { return localStorage.getItem(SCENE_CDN_UPLOAD_ENABLED_STORAGE_KEY) === '1'; }
+			catch (_) { return false; }
+		}
+
+		function saveSceneCdnUploadSetting() {
+			try {
+				localStorage.setItem(SCENE_CDN_UPLOAD_ENABLED_STORAGE_KEY, $('uploadCompressedSceneToCdn')?.checked ? '1' : '0');
+			} catch (_) {}
+		}
+
+		function normalizeSceneCdnImageFormat(value) {
+			return String(value || '').toLowerCase() === 'jpeg' ? 'jpeg' : 'webp';
+		}
+
+		function normalizeCompressionRatio(value) {
+			const numberValue = Number(value);
+			if (!Number.isFinite(numberValue)) return SCENE_CDN_DEFAULT_COMPRESSION_RATIO;
+			return Math.max(0, Math.min(95, Math.round(numberValue)));
+		}
+
+		function loadSceneCdnUploadOptions() {
+			try {
+				const parsed = JSON.parse(localStorage.getItem(SCENE_CDN_UPLOAD_OPTIONS_STORAGE_KEY) || '{}') || {};
+				return {
+					format: normalizeSceneCdnImageFormat(parsed.format || SCENE_CDN_DEFAULT_IMAGE_FORMAT),
+					compressionRatio: normalizeCompressionRatio(parsed.compressionRatio ?? SCENE_CDN_DEFAULT_COMPRESSION_RATIO),
+				};
+			} catch (_) {
+				return { format: SCENE_CDN_DEFAULT_IMAGE_FORMAT, compressionRatio: SCENE_CDN_DEFAULT_COMPRESSION_RATIO };
+			}
+		}
+
+		function saveSceneCdnUploadOptions(options = {}) {
+			const normalized = {
+				format: normalizeSceneCdnImageFormat(options.format),
+				compressionRatio: normalizeCompressionRatio(options.compressionRatio),
+			};
+			try { localStorage.setItem(SCENE_CDN_UPLOAD_OPTIONS_STORAGE_KEY, JSON.stringify(normalized)); }
+			catch (_) {}
+			return normalized;
+		}
+
+		function getSceneCdnFormatMeta(format) {
+			const normalized = normalizeSceneCdnImageFormat(format);
+			return normalized === 'jpeg'
+				? { format: 'jpeg', mimeType: 'image/jpeg', extension: 'jpg', label: 'JPEG' }
+				: { format: 'webp', mimeType: 'image/webp', extension: 'webp', label: 'WebP' };
+		}
+
+		function sceneCdnCompressionQuality(compressionRatio) {
+			return Math.max(0.05, Math.min(1, (100 - normalizeCompressionRatio(compressionRatio)) / 100));
+		}
+
+		function sceneCdnQualityPercentFromCompression(compressionRatio) {
+			return Math.max(5, Math.min(100, 100 - normalizeCompressionRatio(compressionRatio)));
+		}
+
+		function sceneCdnCompressionFromQualityPercent(qualityPercent) {
+			const numberValue = Number(qualityPercent);
+			if (!Number.isFinite(numberValue)) return SCENE_CDN_DEFAULT_COMPRESSION_RATIO;
+			return normalizeCompressionRatio(100 - Math.max(5, Math.min(100, Math.round(numberValue))));
+		}
+
+		function getSceneCdnUploadOptionsFromDialog() {
+			return {
+				format: $('sceneCdnImageFormat')?.value || SCENE_CDN_DEFAULT_IMAGE_FORMAT,
+				compressionRatio: sceneCdnCompressionFromQualityPercent($('sceneCdnQualityRatio')?.value ?? sceneCdnQualityPercentFromCompression(SCENE_CDN_DEFAULT_COMPRESSION_RATIO)),
+			};
+		}
+
+		function updateSceneCdnUploadQualityLabel() {
+			const slider = $('sceneCdnQualityRatio');
+			const label = $('sceneCdnQualityValue');
+			if (!slider || !label) return;
+			const qualityPercent = sceneCdnQualityPercentFromCompression(sceneCdnCompressionFromQualityPercent(slider.value));
+			slider.value = String(qualityPercent);
+			label.textContent = `${qualityPercent}%`;
+		}
+
+		function applySceneCdnUploadOptionsToDialog() {
+			const options = loadSceneCdnUploadOptions();
+			if ($('sceneCdnImageFormat')) $('sceneCdnImageFormat').value = options.format;
+			if ($('sceneCdnQualityRatio')) $('sceneCdnQualityRatio').value = String(sceneCdnQualityPercentFromCompression(options.compressionRatio));
+			updateSceneCdnUploadQualityLabel();
+		}
+
+		function buildIndexMetadataOnlyObject() {
+			rememberGenerationSettings();
+			return {
+				...(state.indexMeta && typeof state.indexMeta === 'object' ? state.indexMeta : {}),
+				version: Number(state.indexMeta?.version) || 1,
+				updatedAt: new Date().toISOString().slice(0, 10),
+				tagPromptHint: DEFAULT_SCENE_TAGS.join(', '),
+				lastLLMModel: state.lastLLMModel || '',
+				lastChatModel: state.lastChatModel || '',
+				lastImageSize: state.lastImageSize || getDefaultImageSizeValue(),
+				scenes: state.scenes.map(compactScene),
+			};
+		}
+
+		async function persistGenerationSettings({ silent = true } = {}) {
+			saveLocalGenerationSettings();
+			if (!(state.sdk || window.keepwork)?.personalPageStore || !Array.isArray(state.scenes)) return;
+			const data = JSON.stringify(buildIndexMetadataOnlyObject(), null, 2);
+			await writeFile(SCENE_INDEX_PATH, data);
+			state.indexMeta = JSON.parse(data);
+			if (!silent) setStatus($('saveStatus'), '生成设置已写入 scenes.json。', 'ok');
+		}
+
+		function getImageSize() {
+			const [width, height] = ($('imageSize').value || getDefaultImageSizeValue()).split('x').map(Number);
+			return { width: width || 1024, height: height || 1024 };
+		}
+
+		function formatBytes(bytes) {
+			if (!Number.isFinite(bytes) || bytes < 0) return '-';
+			if (bytes < 1024) return `${bytes} B`;
+			if (bytes < 1024 * 1024) return `${Math.round(bytes / 1024)} KB`;
+			return `${(bytes / 1024 / 1024).toFixed(2)} MB`;
+		}
+
+		function parseSimpleYaml(text) {
+			const result = {};
+			for (const raw of String(text || '').split(/\r?\n/)) {
+				const line = raw.trim();
+				if (!line || line.startsWith('#')) continue;
+				const index = line.indexOf(':');
+				if (index <= 0) continue;
+				const key = line.slice(0, index).trim();
+				let value = line.slice(index + 1).trim();
+				if ((value.startsWith('"') && value.endsWith('"')) || (value.startsWith("'") && value.endsWith("'"))) value = value.slice(1, -1);
+				result[key] = value;
+			}
+			return result;
+		}
+
+		function saveSceneCdnConfig(config, sourceLabel) {
+			try {
+				localStorage.setItem(SAVED_CDN_CONFIG_STORAGE_KEY, JSON.stringify({
+					config,
+					configSource: sourceLabel || 'ScenePresetsGenerator',
+					savedAt: Date.now(),
+				}));
+			} catch (_) {}
+		}
+
+		function sceneCdnConfigToYaml(config) {
+			if (!config) return '';
+			return [
+				`accessKey: ${config.accessKey || ''}`,
+				`secretKey: ${config.secretKey || ''}`,
+				`bucketName: ${config.bucketName || SCENE_CDN_DEFAULT_BUCKET}`,
+				`publicDomain: ${config.publicDomain || SCENE_CDN_DEFAULT_DOMAIN}`,
+				`uploadHost: ${config.uploadHost || SCENE_CDN_DEFAULT_UPLOAD_HOST}`,
+			].join('\n');
+		}
+
+		function applySceneCdnConfigFromText(text, sourceLabel) {
+			const parsed = parseSimpleYaml(text);
+			const source = parsed.qiniu || parsed;
+			if (!source.accessKey || !source.secretKey) {
+				setStatus($('runStatus'), 'CDN 配置缺少 accessKey 或 secretKey。', 'error');
+				return false;
+			}
+			const config = {
+				accessKey: source.accessKey,
+				secretKey: source.secretKey,
+				bucketName: source.bucketName || SCENE_CDN_DEFAULT_BUCKET,
+				publicDomain: (source.publicDomain || SCENE_CDN_DEFAULT_DOMAIN).replace(/\/+$/, ''),
+				uploadHost: (source.uploadHost || SCENE_CDN_DEFAULT_UPLOAD_HOST).replace(/\/+$/, ''),
+			};
+			saveSceneCdnConfig(config, sourceLabel || 'qiniu.yaml');
+			updateSceneCdnStatus();
+			setStatus($('runStatus'), `CDN 配置已加载：${config.bucketName} · ${sourceLabel || 'qiniu.yaml'}`, 'ok');
+			return true;
+		}
+
+		function pickSceneCdnConfigFile() {
+			const input = $('sceneCdnConfigInput');
+			if (!input) return;
+			input.onchange = async () => {
+				try {
+					const file = input.files?.[0];
+					if (!file) return;
+					if (applySceneCdnConfigFromText(await file.text(), file.name) && $('sceneCdnConfigText')) {
+						$('sceneCdnConfigText').value = sceneCdnConfigToYaml(getSceneCdnConfig());
+					}
+				} catch (error) {
+					setStatus($('runStatus'), `CDN 配置读取失败：${error?.message || error}`, 'error');
+				} finally {
+					input.value = '';
+				}
+			};
+			input.click();
+		}
+
+		function openSceneCdnConfigPasteDialog() {
+			closeSceneCdnConfigPasteDialog();
+			const overlay = document.createElement('div');
+			overlay.className = 'modal-overlay';
+			overlay.id = 'sceneCdnConfigOverlay';
+			overlay.innerHTML = `<div class="modal-window" role="dialog" aria-modal="true" aria-label="CDN Settings" style="width:min(560px,100%);height:min(520px,100%)">
+				<div class="modal-titlebar"><strong>上传设置</strong><button type="button" id="closeSceneCdnConfig">关闭</button></div>
+				<div class="modal-body">
+					<div class="hint">选择 qiniu.yaml 文件，或直接粘贴 YAML 内容。格式和压缩设置只保存到本浏览器，供压缩上传场景图使用。</div>
+					<div class="row">
+						<label>上传格式
+							<select id="sceneCdnImageFormat"><option value="webp">WebP</option><option value="jpeg">JPEG</option></select>
+						</label>
+						<label class="quality-control">质量 / 接近原图 (%)
+							<input id="sceneCdnQualityRatio" type="range" min="5" max="100" step="1">
+							<div class="range-scale"><span>更小文件</span><span id="sceneCdnQualityValue" class="range-value">88%</span><span>接近原图</span></div>
+						</label>
+					</div>
+					<div class="hint">默认 WebP，质量 88%，压缩 12%。滑块越靠左文件越小，越靠右越接近原图。</div>
+					<div class="toolbar"><button id="btnDialogPickSceneCdnConfig" type="button">选择 qiniu.yaml 文件</button></div>
+					<textarea id="sceneCdnConfigText" class="prompt-box" spellcheck="false" placeholder="accessKey: xxx&#10;secretKey: xxx&#10;bucketName: haqi&#10;publicDomain: https://cdn.keepwork.com&#10;uploadHost: https://up-z2.qiniup.com"></textarea>
+					<div class="toolbar" style="justify-content:flex-end"><button id="btnCancelSceneCdnConfig" type="button">取消</button><button id="btnApplySceneCdnConfig" class="primary" type="button">确认</button></div>
+				</div>
+			</div>`;
+			document.body.appendChild(overlay);
+			overlay.addEventListener('click', event => { if (event.target === overlay) closeSceneCdnConfigPasteDialog(); });
+			$('closeSceneCdnConfig').onclick = closeSceneCdnConfigPasteDialog;
+			$('btnCancelSceneCdnConfig').onclick = closeSceneCdnConfigPasteDialog;
+			$('btnDialogPickSceneCdnConfig').onclick = pickSceneCdnConfigFile;
+			$('btnApplySceneCdnConfig').onclick = () => {
+					saveSceneCdnUploadOptions(getSceneCdnUploadOptionsFromDialog());
+					updateSceneCdnStatus();
+				const text = $('sceneCdnConfigText').value.trim();
+				if (!text) {
+					setStatus($('runStatus'), '图片上传格式设置已保存。CDN YAML 为空，上传前仍需加载配置。', 'error');
+					return;
+				}
+				if (applySceneCdnConfigFromText(text, '手动粘贴')) closeSceneCdnConfigPasteDialog();
+			};
+			applySceneCdnUploadOptionsToDialog();
+			$('sceneCdnQualityRatio')?.addEventListener('input', updateSceneCdnUploadQualityLabel);
+			$('sceneCdnConfigText').value = sceneCdnConfigToYaml(getSceneCdnConfig());
+			$('sceneCdnConfigText').focus();
+		}
+
+		function closeSceneCdnConfigPasteDialog() {
+			$('sceneCdnConfigOverlay')?.remove();
+		}
+
+		function getSceneCdnConfig() {
+			try {
+				const raw = localStorage.getItem(SAVED_CDN_CONFIG_STORAGE_KEY);
+				if (!raw) return null;
+				const parsed = JSON.parse(raw);
+				const source = parsed?.config || parsed;
+				if (!source?.accessKey || !source?.secretKey) return null;
+				return {
+					accessKey: source.accessKey,
+					secretKey: source.secretKey,
+					bucketName: source.bucketName || SCENE_CDN_DEFAULT_BUCKET,
+					publicDomain: (source.publicDomain || SCENE_CDN_DEFAULT_DOMAIN).replace(/\/+$/, ''),
+					uploadHost: (source.uploadHost || SCENE_CDN_DEFAULT_UPLOAD_HOST).replace(/\/+$/, ''),
+					sourceLabel: parsed?.configSource || 'uploadCDN cache',
+				};
+			} catch (_) {
+				return null;
+			}
+		}
+
+		function updateSceneCdnStatus() {
+			const el = $('sceneCdnStatus');
+			if (!el) return;
+			const config = getSceneCdnConfig();
+			const options = loadSceneCdnUploadOptions();
+			const formatLabel = getSceneCdnFormatMeta(options.format).label;
+			const qualityPercent = sceneCdnQualityPercentFromCompression(options.compressionRatio);
+			const optionText = `${formatLabel} · 质量 ${qualityPercent}% · 压缩 ${options.compressionRatio}%`;
+			el.textContent = config
+				? `${optionText}\nCDN folder: ${SCENE_CDN_FOLDER} · ${config.bucketName} · ${config.sourceLabel}`
+				: `${optionText}\nCDN folder: ${SCENE_CDN_FOLDER} · 未加载 uploadCDN 配置`;
+		}
+
+		function base64UrlSafe(buffer) {
+			const bytes = buffer instanceof ArrayBuffer ? new Uint8Array(buffer) : buffer;
+			let binary = '';
+			for (const byteValue of bytes) binary += String.fromCharCode(byteValue);
+			return btoa(binary).replace(/\+/g, '-').replace(/\//g, '_');
+		}
+
+		async function signSceneCdnUploadToken(config, remoteKey) {
+			const deadline = Math.floor(Date.now() / 1000) + 3600;
+			const policy = JSON.stringify({ deadline, scope: `${config.bucketName}:${remoteKey}` });
+			const encodedPolicy = base64UrlSafe(new TextEncoder().encode(policy));
+			const keyData = new TextEncoder().encode(config.secretKey);
+			const cryptoKey = await crypto.subtle.importKey('raw', keyData, { name: 'HMAC', hash: 'SHA-1' }, false, ['sign']);
+			const signature = await crypto.subtle.sign('HMAC', cryptoKey, new TextEncoder().encode(encodedPolicy));
+			return `${config.accessKey}:${base64UrlSafe(signature)}:${encodedPolicy}`;
+		}
+
+		function loadImageForCanvas(url) {
+			return new Promise((resolve, reject) => {
+				const img = new Image();
+				if (!String(url).startsWith('data:')) img.crossOrigin = 'anonymous';
+				img.onload = () => resolve(img);
+				img.onerror = () => reject(new Error('图片加载失败，无法压缩上传 CDN'));
+				img.src = url;
+			});
+		}
+
+		function canvasToBlob(canvas, type, quality) {
+			return new Promise((resolve, reject) => {
+				canvas.toBlob(result => result ? resolve(result) : reject(new Error('当前浏览器不支持图片压缩导出')), type, quality);
+			});
+		}
+
+		async function compressSceneImageForCdn(url, options = loadSceneCdnUploadOptions()) {
+			const formatMeta = getSceneCdnFormatMeta(options.format);
+			const compressionRatio = normalizeCompressionRatio(options.compressionRatio);
+			const quality = sceneCdnCompressionQuality(compressionRatio);
+			const img = await loadImageForCanvas(url);
+			const width = img.naturalWidth || img.width || getImageSize().width;
+			const height = img.naturalHeight || img.height || getImageSize().height;
+			const canvas = document.createElement('canvas');
+			canvas.width = width;
+			canvas.height = height;
+			const ctx = canvas.getContext('2d');
+			if (!ctx) throw new Error('Canvas 不可用，无法压缩图片');
+			if (formatMeta.format === 'jpeg') {
+				ctx.fillStyle = '#ffffff';
+				ctx.fillRect(0, 0, width, height);
+			}
+			ctx.imageSmoothingEnabled = true;
+			ctx.imageSmoothingQuality = 'high';
+			ctx.drawImage(img, 0, 0, width, height);
+			const blob = await canvasToBlob(canvas, formatMeta.mimeType, quality);
+			return { blob, width, height, format: formatMeta.format, extension: formatMeta.extension, formatLabel: formatMeta.label, compressionRatio };
+		}
+
+		async function uploadBlobToSceneCdn(blob, fileName) {
+			const config = getSceneCdnConfig();
+			if (!config) throw new Error('未找到 uploadCDN 配置，请先在 uploadCDN 工具加载 qiniu.yaml');
+			const remoteKey = `${SCENE_CDN_FOLDER}/${fileName}`;
+			const token = await signSceneCdnUploadToken(config, remoteKey);
+			const file = new File([blob], fileName, { type: blob.type || 'image/webp' });
+			const formData = new FormData();
+			formData.append('token', token);
+			formData.append('key', remoteKey);
+			formData.append('file', file, fileName);
+			const response = await fetch(config.uploadHost, { method: 'POST', body: formData });
+			if (!response.ok) throw new Error((await response.text()) || `CDN 上传失败 (${response.status})`);
+			return { remoteKey, url: `${config.publicDomain}/${remoteKey}` };
+		}
+
+		function getSceneCdnFileName(extension = 'webp') {
+			const sceneId = safeId($('sceneId').value || state.selectedId || 'scene', 'scene');
+			return `${sceneId}-${Date.now()}.${extension}`;
+		}
+
+		async function compressAndUploadGeneratedSceneImage(url) {
+			const compressed = await compressSceneImageForCdn(url);
+			const uploaded = await uploadBlobToSceneCdn(compressed.blob, getSceneCdnFileName(compressed.extension));
+			state.imageSizeCache.set(uploaded.url, compressed.blob.size);
+			return { ...uploaded, ...compressed };
+		}
+
+		function normalizeImageSizeOption(option) {
+			if (state.storyConfigModule?.normalizeSceneImageSizeOption) return state.storyConfigModule.normalizeSceneImageSizeOption(option);
+			const value = String(option?.value || `${option?.width || ''}x${option?.height || ''}` || '').trim();
+			const [parsedWidth, parsedHeight] = value.split('x').map(Number);
+			const width = Number(option?.width) || parsedWidth || 1024;
+			const height = Number(option?.height) || parsedHeight || 1024;
+			return { value: `${width}x${height}`, label: String(option?.label || `${width}x${height}`), width, height };
+		}
+
+		function getConfiguredImageSizes() {
+			if (state.storyConfigModule?.getSceneImageSizes) return state.storyConfigModule.getSceneImageSizes(state.storyConfig);
+			return [normalizeImageSizeOption({ value: getDefaultImageSizeValue(), label: '1024x1024 默认' })];
+		}
+
+		function getDefaultImageSizeValue() {
+			if (state.storyConfigModule?.getDefaultSceneImageSize) return state.storyConfigModule.getDefaultSceneImageSize(state.storyConfig).value;
+			return state.storyConfig?.defaultSceneImageSize || `${state.storyConfig?.imageWidth || 1024}x${state.storyConfig?.imageHeight || 1024}`;
+		}
+
+		function renderImageSizeOptions(selected = $('imageSize')?.value || '') {
+			const select = $('imageSize');
+			if (!select) return;
+			const sizes = getConfiguredImageSizes();
+			const defaultValue = getDefaultImageSizeValue();
+			const remembered = state.lastImageSize || selected || defaultValue;
+			const value = remembered && sizes.some(option => option.value === remembered) ? remembered : defaultValue;
+			select.innerHTML = sizes.map(option => `<option value="${escapeHtml(option.value)}">${escapeHtml(option.label)}</option>`).join('');
+			select.value = sizes.some(option => option.value === value) ? value : (sizes[0]?.value || '1024x1024');
+			state.lastImageSize = select.value || state.lastImageSize || defaultValue;
+		}
+
+		function getImageAspectRatio() {
+			const { width, height } = getImageSize();
+			return { width, height, ratio: width / height };
+		}
+
+		function applyPreviewAspectRatio(el, large = false) {
+			if (!el) return;
+			const { width, height, ratio } = getImageAspectRatio();
+			const safeWidth = width || 1024;
+			const safeHeight = height || 1024;
+			const safeRatio = ratio || 1;
+			el.style.setProperty('--preview-aspect-ratio', `${safeWidth} / ${safeHeight}`);
+			if (large) {
+				el.style.setProperty('--large-preview-width', `${Math.min(760, Math.max(360, Math.round(620 * Math.min(safeRatio, 1.35))))}px`);
+				el.style.setProperty('--large-preview-width-mobile', `${Math.min(420, Math.max(260, Math.round(420 * Math.min(safeRatio, 1.2))))}px`);
+			} else {
+				el.style.setProperty('--preview-width', `${Math.min(260, Math.max(160, Math.round(220 * Math.min(safeRatio, 1.18))))}px`);
+				el.style.setProperty('--preview-width-mobile', `${Math.min(220, Math.max(150, Math.round(180 * Math.min(safeRatio, 1.18))))}px`);
+			}
+		}
+
+		function bgMusicLabel(value) {
+			return BG_MUSIC_LABELS[value] || value || '无音乐';
+		}
+
+		function getBgMusicOptions() {
+			return Object.keys(state.storyConfig?.assets?.bgSounds || {}).map(id => ({ id, label: bgMusicLabel(id) }));
+		}
+
+		function renderBgMusicOptions(selected = $('bgMusic')?.value || '') {
+			const select = $('bgMusic');
+			if (!select) return;
+			const value = selected || '';
+			const options = getBgMusicOptions();
+			const hasSelected = !value || options.some(option => option.id === value);
+			select.innerHTML = '<option value="">无音乐</option>'
+				+ (hasSelected ? '' : `<option value="${escapeHtml(value)}">${escapeHtml(bgMusicLabel(value))}（当前）</option>`)
+				+ options.map(option => `<option value="${escapeHtml(option.id)}">${escapeHtml(option.label)} (${escapeHtml(option.id)})</option>`).join('');
+			select.value = value;
+			select.disabled = !options.length && !value;
+			if ($('musicState')) $('musicState').textContent = options.length ? `${options.length} tracks` : (value ? 'Custom track' : 'No tracks');
+			updateMusicButtons();
+		}
+
+		function updateMusicButtons() {
+			const track = $('bgMusic')?.value || '';
+			if ($('btnPreviewMusic')) $('btnPreviewMusic').disabled = !track || !state.soundManager;
+			if ($('btnStopMusic')) $('btnStopMusic').disabled = !state.soundManager;
+			if ($('btnMuteMusic')) {
+				$('btnMuteMusic').disabled = !state.soundManager;
+				const muted = !!state.soundManager?.isBgMusicMuted?.();
+				$('btnMuteMusic').classList.toggle('danger', muted);
+				$('btnMuteMusic').title = muted ? '取消静音' : '静音';
+				$('btnMuteMusic').setAttribute('aria-label', muted ? '取消静音' : '静音');
+			}
+		}
+
+		function previewBgMusic() {
+			const track = $('bgMusic').value.trim();
+			if (!track) {
+				stopBgMusicPreview({ silent: true });
+				return setStatus($('saveStatus'), '背景音乐已设为无音乐。', 'ok');
+			}
+			if (!state.soundManager?.playBgMusic) return setStatus($('saveStatus'), 'SoundManager 不可用，无法试听。', 'error');
+			const ok = state.soundManager.playBgMusic(track, { fadeMs: 260, volume: 0.32, restart: true });
+			state.soundManager.setBgMusicMuted?.(false, { fadeMs: 120 });
+			updateMusicButtons();
+			setStatus($('saveStatus'), ok ? `正在试听：${bgMusicLabel(track)} (${track})` : `无法播放：${track}`, ok ? 'ok' : 'error');
+		}
+
+		function stopBgMusicPreview({ silent = false } = {}) {
+			state.soundManager?.stopBgMusic?.({ fadeMs: 260 });
+			updateMusicButtons();
+			if (!silent) setStatus($('saveStatus'), '背景音乐试听已停止。', 'ok');
+		}
+
+		function toggleBgMusicMuted() {
+			const muted = state.soundManager?.toggleBgMusicMuted?.({ fadeMs: 180 });
+			updateMusicButtons();
+			setStatus($('saveStatus'), muted ? '背景音乐已静音。' : '背景音乐已取消静音。', 'ok');
+		}
+
+		async function loadStoryMakerAudioModules() {
+			try {
+				const [configModule, soundModule, storySceneModule, particleEffectsModule] = await Promise.all([
+					importRuntimeModule('../js/config.js'),
+					importRuntimeModule('../js/soundManager.js'),
+					importRuntimeModule('../js/view_story_scene_maker.js'),
+					importRuntimeModule('../js/particleEffects.js'),
+				]);
+				applyStoryMakerDefinitions(storySceneModule);
+				state.storyConfig = configModule.CONFIG || null;
+				state.storyConfigModule = configModule;
+				state.soundManager = soundModule.default?.getInstance?.() || null;
+				state.particleEffectsModule = particleEffectsModule;
+				applyParticleEffectsCss(particleEffectsModule);
+				renderImageSizeOptions(state.lastImageSize || $('imageSize').value);
+				renderBgMusicOptions($('bgMusic').value);
+				renderTagButtons();
+				updateOutput();
+				setStatus($('runStatus'), `已连接 story maker 配置：${DEFAULT_SCENE_TAGS.length} tags，${getParticleEffectIds().length} particles，${getBgMusicOptions().length} tracks。`, 'ok');
+			} catch (e) {
+				if ($('musicState')) $('musicState').textContent = 'Music unavailable';
+				setStatus($('runStatus'), `story maker 配置加载失败：${e?.message || e}`, 'error');
+			}
+		}
+
+		async function buildSceneImagePrompt(promptText = $('scenePrompt').value, tags = normalizeSceneTags($('sceneTags').value), referenceCount = getReferenceImages().length, title = $('sceneTitle').value) {
+			const description = String(promptText || title || '').trim() || '温暖的2D游戏场景背景图';
+			try {
+				const promptsModule = await loadGenerationPrompts();
+				if (typeof promptsModule.buildSceneImagePrompt === 'function') return promptsModule.buildSceneImagePrompt(promptText, tags, referenceCount, { normalizeTags: normalizeSceneTags, title });
+			} catch (_) {}
+			return [
+				'生成一个卡通风格的2D游戏场景背景图，摄影机在正常第一人称视角往下微微俯视，只要场景背景，不要角色，不要文字，不要水印。',
+				`场景描述：${description}`,
+				`场景标签：${normalizeSceneTags(tags).join(', ') || 'haqi, spring, outdoor'}`,
+				referenceCount ? `参考图数量：${referenceCount}。请提取构图、颜色和材质作为参考，不要复制文字或人物。` : '',
+				'风格：明亮、干净、童话感、适合手机故事播放器，画面中央保留宠物角色站立空间。',
+			].filter(Boolean).join('\n');
+		}
+
+		function buildSceneConfig() {
+			const id = safeId($('sceneId').value, state.selectedId || `scene_${Date.now()}`);
+			$('sceneId').value = id;
+			const imageUrl = $('imageUrl').value.trim();
+			return {
+				id,
+				title: $('sceneTitle').value.trim() || id,
+				imageUrl,
+				historyUrls: normalizeHistoryUrls(state.currentHistoryUrls).filter(url => url !== imageUrl),
+				color: $('sceneColor').value || '#bae6fd',
+				tags: normalizeSceneTags($('sceneTags').value),
+				particles: parseParticleList($('sceneParticles').value),
+				bgMusic: $('bgMusic').value.trim(),
+				prompt: $('scenePrompt').value.trim(),
+			};
+		}
+
+		function buildIndexObject() {
+			rememberGenerationSettings();
+			const scenes = state.scenes.map(compactScene);
+			const current = compactScene(buildSceneConfig());
+			const index = scenes.findIndex(scene => scene.id === current.id);
+			if (index >= 0) scenes[index] = current;
+			else scenes.push(current);
+			return {
+				...(state.indexMeta && typeof state.indexMeta === 'object' ? state.indexMeta : {}),
+				version: Number(state.indexMeta?.version) || 1,
+				updatedAt: new Date().toISOString().slice(0, 10),
+				tagPromptHint: DEFAULT_SCENE_TAGS.join(', '),
+				lastLLMModel: state.lastLLMModel || '',
+				lastChatModel: state.lastChatModel || '',
+				lastImageSize: state.lastImageSize || getDefaultImageSizeValue(),
+				scenes,
+			};
+		}
+
+		function getSavedSceneImageUrl(sceneId) {
+			const id = safeId(sceneId || $('sceneId').value, '');
+			if (!id) return '';
+			return String(state.scenes.find(scene => scene.id === id)?.imageUrl || '').trim();
+		}
+
+		function renderParticles(scene) {
+			const effects = parseParticleList(scene?.particles || scene?.effects || []);
+			if (!effects.length) return '';
+			if (typeof state.particleEffectsModule?.renderParticleCanvasHtml === 'function') {
+				return state.particleEffectsModule.renderParticleCanvasHtml(effects, { seed: scene?.id || scene?.title || effects.join('-') });
+			}
+			return '';
+		}
+
+		function sceneMusicToggleHtml(scene) {
+			if (!scene.bgMusic) return '';
+			const muted = !!state.soundManager?.isBgMusicMuted?.();
+			return `<button type="button" class="scene-music-toggle ${muted ? 'is-muted' : ''}" data-preview-music-toggle title="${muted ? '开启音乐' : '静音'}" aria-label="${muted ? '开启音乐' : '静音'}">${muted ? '♪' : '♫'}</button>`;
+		}
+
+		function scenePreviewHtml(scene) {
+			const image = scene.imageUrl ? `<img alt="scene background" src="${escapeHtml(scene.imageUrl)}">` : '<div class="empty-preview">尚未生成背景图</div>';
+			return `${image}${renderParticles(scene)}${sceneMusicToggleHtml(scene)}<div class="scene-preview-title">${escapeHtml(scene.title || scene.id)}</div>`;
+		}
+
+		function scenePreviewBackground(scene) {
+			const color = scene.color || '#bae6fd';
+			return scene.imageUrl ? color : `radial-gradient(circle at 50% 14%,rgba(255,255,255,.82),transparent 34%), linear-gradient(180deg, ${color}, #ffffff)`;
+		}
+
+		function renderPreview(scene = buildSceneConfig()) {
+			applyPreviewAspectRatio($('scenePreview'));
+			$('scenePreview').style.background = scenePreviewBackground(scene);
+			$('scenePreview').innerHTML = scenePreviewHtml(scene);
+			mountParticleEffects($('scenePreview'));
+			bindPreviewMusicToggle($('scenePreview'));
+		}
+
+		function bindPreviewMusicToggle(root) {
+			root?.querySelector('[data-preview-music-toggle]')?.addEventListener('click', (event) => {
+				event.stopPropagation();
+				togglePreviewMusicFromScene();
+			});
+		}
+
+		function togglePreviewMusicFromScene() {
+			const track = $('bgMusic').value.trim();
+			if (!track) return;
+			if (!state.soundManager?.playBgMusic) {
+				previewBgMusic();
+				return;
+			}
+			const current = state.soundManager.getCurrentBgMusic?.();
+			const expectedSrc = state.soundManager.resolveBgMusicSource?.(track) || track;
+			const isCurrentTrackPlaying = current?.src === expectedSrc && !current.paused;
+			if (!isCurrentTrackPlaying) {
+				state.soundManager.playBgMusic(track, { fadeMs: 260, volume: 0.32 });
+				state.soundManager.setBgMusicMuted?.(false, { fadeMs: 120 });
+				updateMusicButtons();
+				renderPreview(buildSceneConfig());
+				return;
+			}
+			const muted = state.soundManager.toggleBgMusicMuted({ fadeMs: 180 });
+			if (!muted) state.soundManager.playBgMusic?.(track, { fadeMs: 260, volume: 0.32 });
+			updateMusicButtons();
+			renderPreview(buildSceneConfig());
+			const largePreview = $('largeScenePreview');
+			if (largePreview) {
+				const scene = compactScene(buildSceneConfig());
+				largePreview.innerHTML = scenePreviewHtml(scene);
+				mountParticleEffects(largePreview);
+				bindPreviewMusicToggle(largePreview);
+			}
+		}
+
+		function updateEditorTitle() {
+			const scene = buildSceneConfig();
+			$('editorTitle').textContent = scene.title || scene.id;
+			$('editorSubtitle').textContent = SCENE_INDEX_PATH;
+		}
+
+		function updateOutput() {
+			const scene = compactScene(buildSceneConfig());
+			$('sceneJson').value = JSON.stringify(scene, null, 2);
+			if ($('indexJson')) $('indexJson').value = JSON.stringify(buildIndexObject(), null, 2);
+			renderCurrentImageSize();
+			updateManualCdnUploadButton();
+			renderHistoryPreview();
+			buildSceneImagePrompt(scene.prompt, scene.tags, getReferenceImages().length, scene.title)
+				.then(prompt => { $('finalPrompt').value = prompt; })
+				.catch(e => setStatus($('runStatus'), `Prompt 生成失败：${e?.message || e}`, 'error'));
+			updateEditorTitle();
+			renderPreview(scene);
+		}
+
+		function applySceneToForm(scene, select = true) {
+			const normalized = normalizeScene(scene || defaultScene());
+			if (select) state.selectedId = normalized.id;
+			$('sceneId').value = normalized.id;
+			$('sceneTitle').value = normalized.title;
+			$('imageUrl').value = normalized.imageUrl;
+			state.currentHistoryUrls = normalizeHistoryUrls(normalized.historyUrls);
+			$('sceneColor').value = /^#[0-9a-f]{6}$/i.test(normalized.color) ? normalized.color : '#bae6fd';
+			$('sceneTags').value = normalized.tags.join(', ');
+			$('sceneParticles').value = normalized.particles.join(', ');
+			renderBgMusicOptions(normalized.bgMusic || '');
+			$('scenePrompt').value = normalized.prompt || '';
+			renderTagButtons();
+			updateOutput();
+			renderRecordList();
+		}
+
+		function getSelectedRecordTags() {
+			return [...($('recordTagFilter')?.selectedOptions || [])].map(option => option.value).filter(Boolean);
+		}
+
+		function updateRecordTagFilterLabel() {
+			const tags = getSelectedRecordTags();
+			const label = $('recordTagFilterLabel');
+			if (!label) return;
+			label.textContent = tags.length ? (tags.length <= 2 ? tags.join(', ') : `${tags.length} tags selected`) : '全部 tags';
+		}
+
+		function renderRecordTagFilterOptions() {
+			const select = $('recordTagFilter');
+			if (!select) return;
+			const selected = new Set(getSelectedRecordTags());
+			const tags = unique([...DEFAULT_SCENE_TAGS, ...state.scenes.flatMap(scene => scene.tags || [])]).sort((a, b) => a.localeCompare(b));
+			select.innerHTML = tags.map(tag => `<option value="${escapeHtml(tag)}">${escapeHtml(tag)}</option>`).join('');
+			[...select.options].forEach(option => { option.selected = selected.has(option.value); });
+			const menu = $('recordTagFilterMenu');
+			if (menu) {
+				menu.innerHTML = tags.length ? tags.map(tag => `<label class="record-tag-option" role="option" aria-selected="${selected.has(tag) ? 'true' : 'false'}"><input type="checkbox" data-record-tag="${escapeHtml(tag)}" ${selected.has(tag) ? 'checked' : ''}>${escapeHtml(tag)}</label>`).join('') : '<div class="hint" style="padding:6px">暂无 tags</div>';
+				menu.querySelectorAll('[data-record-tag]').forEach(input => {
+					input.onchange = () => {
+						const option = [...select.options].find(item => item.value === input.dataset.recordTag);
+						if (option) option.selected = input.checked;
+						updateRecordTagFilterLabel();
+						renderRecordList();
+					};
+				});
+			}
+			updateRecordTagFilterLabel();
+		}
+
+		function setRecordTagFilterOpen(open) {
+			const wrap = $('recordTagFilterWrap');
+			if (!wrap) return;
+			wrap.classList.toggle('open', open);
+			$('recordTagFilterButton')?.setAttribute('aria-expanded', open ? 'true' : 'false');
+		}
+
+		function matchesRecordFilters(scene, query, selectedTags, imageFilter) {
+			const hasImage = !!String(scene.imageUrl || '').trim();
+			const matchesQuery = !query || [scene.id, scene.title, scene.tags.join(' ')].join(' ').toLowerCase().includes(query);
+			const matchesImage = imageFilter === 'noImage' ? !hasImage : imageFilter === 'hasImage' ? hasImage : true;
+			const matchesTags = !selectedTags.length || selectedTags.every(tag => scene.tags.includes(tag));
+			return matchesQuery && matchesImage && matchesTags;
+		}
+
+		function loadRecordThumbImage(el) {
+			const url = el?.dataset?.recordThumbUrl || '';
+			if (!url || el.dataset.recordThumbLoaded) return;
+			el.style.backgroundImage = `url("${url.replace(/"/g, '%22')}")`;
+			el.style.backgroundSize = 'cover';
+			el.style.backgroundPosition = 'center';
+			el.dataset.recordThumbLoaded = '1';
+		}
+
+		function observeRecordThumbs() {
+			state.recordThumbObserver?.disconnect?.();
+			const thumbs = [...$('recordList').querySelectorAll('[data-record-thumb-url]')];
+			if (!thumbs.length) return;
+			if (!('IntersectionObserver' in window)) {
+				thumbs.forEach(loadRecordThumbImage);
+				return;
+			}
+			state.recordThumbObserver = new IntersectionObserver(entries => {
+				entries.forEach(entry => {
+					if (!entry.isIntersecting) return;
+					loadRecordThumbImage(entry.target);
+					state.recordThumbObserver?.unobserve(entry.target);
+				});
+			}, { root: $('recordList'), rootMargin: '180px 0px', threshold: 0.01 });
+			thumbs.forEach(el => state.recordThumbObserver.observe(el));
+		}
+
+		function renderRecordList() {
+			renderRecordTagFilterOptions();
+			const query = $('recordSearch').value.trim().toLowerCase();
+			const selectedTags = getSelectedRecordTags();
+			const imageFilter = $('recordImageFilter')?.value || 'all';
+			const filteredRecords = state.scenes.filter(scene => matchesRecordFilters(scene, query, selectedTags, imageFilter));
+			const selectedScene = state.selectedId ? state.scenes.find(scene => scene.id === state.selectedId) : null;
+			const selectedInFilteredRecords = !!selectedScene && filteredRecords.some(scene => scene.id === selectedScene.id);
+			const records = selectedScene && !selectedInFilteredRecords ? [selectedScene, ...filteredRecords] : filteredRecords;
+			$('recordList').innerHTML = records.length ? records.map(scene => {
+				const active = scene.id === state.selectedId ? ' active' : '';
+				const color = scene.color || '#bae6fd';
+				const thumb = scene.imageUrl
+					? `<span class="record-thumb-image" data-record-thumb-url="${escapeHtml(scene.imageUrl)}" style="background-color:${escapeHtml(color)}"></span>`
+					: `<span class="record-thumb-image" style="background-color:${escapeHtml(color)}"></span>`;
+				const audioBadge = scene.bgMusic ? `<span class="record-audio-badge" title="${escapeHtml(bgMusicLabel(scene.bgMusic))}" aria-label="有背景音乐">♫</span>` : '';
+				return `<div class="record-item${active}" data-id="${escapeHtml(scene.id)}">
+					<span class="record-thumb">${thumb}${audioBadge}</span>
+					<button type="button" class="record-main" data-open-id="${escapeHtml(scene.id)}"><span class="record-title">${escapeHtml(scene.title || scene.id)}</span><span class="record-meta">${escapeHtml(scene.tags.join(', ') || scene.id)}</span></button>
+					<span class="record-actions"><button type="button" data-copy-id="${escapeHtml(scene.id)}" title="复制">复制</button><button type="button" class="danger icon-button" data-delete-id="${escapeHtml(scene.id)}" title="删除" aria-label="删除"><svg viewBox="0 0 24 24" fill="none" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M3 6h18"></path><path d="M8 6V4h8v2"></path><path d="M19 6l-1 14H6L5 6"></path><path d="M10 11v5"></path><path d="M14 11v5"></path></svg></button></span>
+				</div>`;
+			}).join('') : '<div class="hint" style="padding:10px">没有匹配记录。点击“新建”创建一条。</div>';
+			$('recordList').querySelectorAll('[data-open-id]').forEach(btn => {
+				btn.onclick = () => selectRecord(btn.dataset.openId);
+			});
+			$('recordList').querySelectorAll('[data-copy-id]').forEach(btn => {
+				btn.onclick = () => copyRecord(btn.dataset.copyId);
+			});
+			$('recordList').querySelectorAll('[data-delete-id]').forEach(btn => {
+				btn.onclick = () => deleteRecord(btn.dataset.deleteId);
+			});
+			observeRecordThumbs();
+			requestAnimationFrame(() => {
+				$('recordList')?.querySelector('.record-item.active')?.scrollIntoView({ block: 'nearest' });
+			});
+			$('recordCount').textContent = records.length === state.scenes.length ? String(state.scenes.length) : `${records.length}/${state.scenes.length}`;
+		}
+
+		function selectRecord(id) {
+			const scene = state.scenes.find(item => item.id === id);
+			if (!scene) return;
+			applySceneToForm(scene);
+			setStatus($('runStatus'), `已打开 ${id}`, 'ok');
+		}
+
+		function newScene() {
+			state.selectedId = '';
+			applySceneToForm(defaultScene(), false);
+			setStatus($('runStatus'), '已创建新场景草稿。编辑 ID 后保存即可写入 scenes.json。', '');
+		}
+
+		function nextCopyId(baseId) {
+			const base = safeId(`${baseId || 'scene'}_copy`, 'scene_copy');
+			const used = new Set(state.scenes.map(scene => scene.id));
+			if (!used.has(base)) return base;
+			for (let index = 2; index < 1000; index += 1) {
+				const id = `${base}_${index}`;
+				if (!used.has(id)) return id;
+			}
+			return `${base}_${Date.now()}`;
+		}
+
+		function copyRecord(id) {
+			const scene = state.scenes.find(item => item.id === id);
+			if (!scene) return;
+			const copied = normalizeScene({ ...scene, id: nextCopyId(scene.id), title: `${scene.title || scene.id} 副本` }, state.scenes.length);
+			state.scenes.push(copied);
+			applySceneToForm(copied);
+			setStatus($('saveStatus'), `已复制 ${id} 为 ${copied.id}。点击“保存场景”保存到 workspace。`, 'ok');
+		}
+
+		function deleteRecord(id) {
+			const scene = state.scenes.find(item => item.id === id);
+			if (!scene) return;
+			if (!window.confirm(`删除场景 ${scene.title || scene.id}？\n删除后需点击“保存场景”才会保存到 workspace。`)) return;
+			state.scenes = state.scenes.filter(item => item.id !== id);
+			if (state.selectedId === id) {
+				state.selectedId = '';
+				if (state.scenes.length) applySceneToForm(state.scenes[0]);
+				else applySceneToForm(defaultScene(), false);
+			} else {
+				renderRecordList();
+				updateOutput();
+			}
+			setStatus($('saveStatus'), `已从列表删除 ${id}。点击“保存场景”保存到 workspace。`, 'ok');
+		}
+
+		async function populateModelDropdown() {
+			const sdk = state.sdk || window.keepwork;
+			const select = $('imageModelSelect');
+			if (!sdk?.localAPIKeySettings?.listModels) {
+				select.innerHTML = '<option value="">等待 SDK 加载...</option>';
+				select.disabled = true;
+				return;
+			}
+			await sdk.localAPIKeySettings.load?.();
+			const current = select.value;
+			const models = renderModelOptions(select, 'Image', state.lastLLMModel || current);
+			const remembered = state.lastLLMModel || current;
+			if (models.some(model => (model.name || model.modelId || '') === remembered)) select.value = remembered;
+			else if (models.some(model => (model.name || model.modelId || '') === current)) select.value = current;
+			rememberGenerationSettings();
+		}
+
+		const sdkCdnUrl = 'https://cdn.keepwork.com/sdk/keepworkSDK.iife.js?v=20260522a';
+
+		function loadScript(src) {
+			return new Promise((resolve, reject) => {
+				const existing = [...document.scripts].find(script => script.src === src);
+				if (existing) {
+					existing.addEventListener('load', resolve, { once: true });
+					existing.addEventListener('error', reject, { once: true });
+					return;
+				}
+				const script = document.createElement('script');
+				script.src = src;
+				script.onload = resolve;
+				script.onerror = reject;
+				document.head.appendChild(script);
+			});
+		}
+
+		function importRuntimeModule(src) {
+			return new Function('src', 'return import(src)')(src);
+		}
+
+		function shouldLoadSdkAsModule(src) {
+			return /(^|\/)index\.js(?:[?#].*)?$/.test(src);
+		}
+
+		function getSdkCandidates() {
+			const params = new URLSearchParams(window.location.search);
+			const explicitSdk = params.get('sdk');
+			const hostname = window.location.hostname;
+			const isLocalHost = !hostname || hostname === 'localhost' || hostname === '127.0.0.1' || hostname === '::1';
+			const localCandidates = ['../../../../../keepworkSDK/index.js', '/keepworkSDK/index.js'];
+			const deployedCandidates = [sdkCdnUrl, 'https://keepwork.com/public/resource/keepworkSDK.iife.js'];
+			return [explicitSdk, ...(isLocalHost || window.location.protocol === 'file:' ? localCandidates : []), ...deployedCandidates, ...(isLocalHost || window.location.protocol === 'file:' ? [] : localCandidates)].filter(Boolean);
+		}
+
+		async function loadSdk() {
+			const candidates = getSdkCandidates();
+			let lastError = null;
+			for (const url of candidates) {
+				try {
+					if (shouldLoadSdkAsModule(url)) await importRuntimeModule(url);
+					else await loadScript(url);
+					if (window.keepwork) {
+						state.sdk = window.keepwork;
+						await state.sdk.localAPIKeySettings?.load?.();
+						$('sdkState').textContent = 'SDK ready';
+						await populateModelDropdown();
+						await refreshLoginState();
+						await loadRecords();
+						return;
+					}
+				} catch (e) { lastError = e; }
+			}
+			$('sdkState').textContent = 'SDK failed';
+			setStatus($('loginState'), `KeepworkSDK 加载失败：${lastError?.message || lastError || 'unknown'}`, 'error');
+			await loadRecords({ localOnly: true });
+		}
+
+		async function refreshLoginState() {
+			const sdk = state.sdk || window.keepwork;
+			if (!sdk) return;
+			let username = sdk.user?.username || '';
+			if (sdk.token && !username) {
+				try {
+					const user = typeof sdk.getUserProfile === 'function' ? await sdk.getUserProfile() : await sdk.getCurrentUser?.();
+					username = user?.username || sdk.user?.username || '';
+				} catch (_) {}
+			}
+			const loginState = $('loginState');
+			loginState.classList.toggle('error', false);
+			loginState.classList.toggle('ok', !!sdk.token);
+			loginState.innerHTML = sdk.token
+				? `已登录：<button id="btnProfile" class="status-action" type="button">${escapeHtml(username || 'Keepwork 用户')}</button>`
+				: '<button id="btnProfile" class="status-action" type="button">未登录</button>。可点击登录，或使用 localAPI。';
+			$('btnProfile').onclick = openLoginOrProfile;
+		}
+
+		async function openLoginOrProfile() {
+			const sdk = state.sdk || window.keepwork;
+			if (!sdk) return;
+			if (!sdk.token) {
+				if (sdk.loginWindow?.show) sdk.loginWindow.show({ onLogin: refreshLoginState });
+				else if (sdk.login) await sdk.login();
+				setTimeout(refreshLoginState, 600);
+				return;
+			}
+			if (typeof sdk.showProfileWindow === 'function') {
+				const result = await sdk.showProfileWindow();
+				if (result?.action === 'logout') await refreshLoginState();
+			} else if (sdk.profileWindow?.show) {
+				await sdk.profileWindow.show();
+			} else {
+				setStatus($('loginState'), '当前 SDK 不支持 ProfileWindow。', 'error');
+			}
+			await refreshLoginState();
+		}
+
+		function getWorkspaceStore() {
+			const sdk = state.sdk || window.keepwork;
+			if (!sdk?.personalPageStore) throw new Error('PersonalPageStore 不可用');
+			return typeof sdk.personalPageStore.withWorkspace === 'function' ? sdk.personalPageStore.withWorkspace(WORKSPACE) : sdk.personalPageStore;
+		}
+
+		async function readFile(path) {
+			const store = getWorkspaceStore();
+			try { return await store.readFile(path, 1, 99999) || ''; }
+			catch (_) { return await store.readFile(path) || ''; }
+		}
+
+		async function writeFile(path, content) {
+			await getWorkspaceStore().createFile(path, content == null ? '' : String(content));
+		}
+
+		async function loadLocalPresetFile() {
+			const res = await fetch(LOCAL_SCENE_INDEX_URL, { cache: 'no-cache' });
+			if (!res.ok) throw new Error(`本地 scenes.json 加载失败 (${res.status})`);
+			return await res.json();
+		}
+
+		async function loadRecords({ localOnly = false } = {}) {
+			setStatus($('runStatus'), '正在读取 scenes.json...', '');
+			const localSettings = readLocalGenerationSettings();
+			let data = null;
+			let source = 'local';
+			if (!localOnly && (state.sdk || window.keepwork)?.personalPageStore) {
+				try {
+					data = JSON.parse(await readFile(SCENE_INDEX_PATH) || '{}');
+					source = 'workspace';
+				} catch (_) {}
+			}
+			if (!data?.scenes) {
+				data = await loadLocalPresetFile();
+				source = 'local preset file';
+			}
+			state.indexMeta = data && typeof data === 'object' ? data : {};
+			state.lastLLMModel = String(data?.lastLLMModel || data?.lastImageModel || data?.lastModel || localSettings.lastLLMModel || state.lastLLMModel || '').trim();
+			state.lastChatModel = String(data?.lastChatModel || localSettings.lastChatModel || readBatchSettings().lastChatModel || state.lastChatModel || '').trim();
+			state.lastImageSize = String(data?.lastImageSize || data?.lastSceneImageSize || data?.imageSize || localSettings.lastImageSize || state.lastImageSize || '').trim();
+			state.scenes = (Array.isArray(data?.scenes) ? data.scenes : []).map(normalizeScene);
+			renderImageSizeOptions(state.lastImageSize || $('imageSize').value);
+			await populateModelDropdown();
+			saveLocalGenerationSettings();
+			renderRecordList();
+			if (state.scenes.length && !state.selectedId) applySceneToForm(state.scenes[0]);
+			else updateOutput();
+			setStatus($('runStatus'), `已从 ${source} 加载 ${state.scenes.length} 个场景。`, 'ok');
+		}
+
+		async function generateSceneImage() {
+			const sdk = state.sdk || window.keepwork;
+			if (!sdk?.aiGenerators?.genImage) throw new Error('sdk.aiGenerators.genImage 不可用');
+			const model = getSelectedImageModel();
+			if (!model) throw new Error('请先在本地 API Key 设置中配置 Image 模型');
+			rememberGenerationSettings();
+			const prompt = await buildSceneImagePrompt();
+			const references = getReferenceImages();
+			const { width, height } = getImageSize();
+			const opts = { model, width, height };
+			if (!$('uploadResultToKeepwork').checked) opts.uploadResultToKeepwork = false;
+			if (references.length) opts.images = references.map(url => ({ url, role: 'reference' }));
+			setStatus($('runStatus'), `正在调用 genImage...\nmodel=${model}，size=${width}x${height}，refs=${references.length}`, '');
+			$('btnGenerate').disabled = true;
+			try {
+				const generatedUrl = await sdk.aiGenerators.genImage(prompt, opts);
+				if (!generatedUrl) throw new Error('genImage 未返回图片 URL');
+				const sceneBeforeGeneration = buildSceneConfig();
+				let finalUrl = generatedUrl;
+				let cdnUploadText = '';
+				state.currentHistoryUrls = buildImageHistoryUrls(generatedUrl, sceneBeforeGeneration);
+				$('imageUrl').value = generatedUrl;
+				updateOutput();
+				if ($('uploadCompressedSceneToCdn')?.checked) {
+					await saveIndexJson();
+					setStatus($('runStatus'), `原图已写入 scenes.json，正在压缩并上传到 ${SCENE_CDN_FOLDER}...`, '');
+					try {
+						const uploaded = await compressAndUploadGeneratedSceneImage(generatedUrl);
+						finalUrl = uploaded.url;
+						state.currentHistoryUrls = buildImageHistoryUrls(finalUrl, buildSceneConfig());
+						cdnUploadText = `\n已压缩上传 CDN：${uploaded.remoteKey}\n原图已保留到 historyUrls。\n格式：${uploaded.formatLabel}，压缩比例：${uploaded.compressionRatio}%\n大小：${formatBytes(uploaded.blob.size)}，尺寸：${uploaded.width}x${uploaded.height}`;
+					} catch (uploadError) {
+						cdnUploadText = `\nCDN 压缩上传失败，已保留原图 URL：${uploadError?.message || uploadError}`;
+					}
+				}
+				$('imageUrl').value = finalUrl;
+				updateOutput();
+				await saveIndexJson();
+				setStatus($('runStatus'), String(finalUrl).startsWith('data:') ? `生成完成，返回 data URI (${finalUrl.length} chars)，已自动写入 scenes.json。${cdnUploadText}` : `生成完成，已自动写入 scenes.json。${cdnUploadText}`, cdnUploadText.includes('失败') ? 'error' : 'ok');
+			} catch (e) {
+				setStatus($('runStatus'), `生成失败：${e?.message || e}`, 'error');
+				throw e;
+			} finally {
+				$('btnGenerate').disabled = false;
+			}
+		}
+
+		function countScenesByTag() {
+			const counts = new Map(DEFAULT_SCENE_TAGS.map(tag => [tag, 0]));
+			state.scenes.forEach(scene => normalizeSceneTags(scene.tags).forEach(tag => counts.set(tag, (counts.get(tag) || 0) + 1)));
+			return [...counts.entries()].sort((a, b) => a[0].localeCompare(b[0]));
+		}
+
+		function countScenesForTags(tags) {
+			const normalized = normalizeSceneTags(tags);
+			if (!normalized.length) return 0;
+			return state.scenes.filter(scene => normalized.every(tag => normalizeSceneTags(scene.tags).includes(tag))).length;
+		}
+
+		function appendBatchProgress(text, kind = '') {
+			const el = $('batchProgress');
+			if (!el) return;
+			const prefix = kind === 'error' ? '[error] ' : kind === 'ok' ? '[ok] ' : '';
+			el.textContent += `${el.textContent ? '\n' : ''}${prefix}${text}`;
+			el.scrollTop = el.scrollHeight;
+		}
+
+		function renderBatchTagCounts() {
+			const root = $('batchTagCounts');
+			if (!root) return;
+			root.innerHTML = countScenesByTag().map(([tag, count]) => `<div class="batch-tag-count"><span>${escapeHtml(tag)}</span><strong>${count}</strong></div>`).join('') || '<div class="hint">暂无 tags</div>';
+		}
+
+		function parseBatchCombinationsFromDialog() {
+			return [...document.querySelectorAll('[data-batch-combo-row]')].map(row => ({
+				tags: normalizeSceneTags(row.querySelector('[data-batch-tags]')?.value || ''),
+				count: Math.max(0, Math.min(50, Math.round(Number(row.querySelector('[data-batch-count]')?.value || 0)))),
+			})).filter(item => item.tags.length && item.count > 0);
+		}
+
+		function updateBatchComboExistingCounts() {
+			document.querySelectorAll('[data-batch-combo-row]').forEach(row => {
+				const tags = normalizeSceneTags(row.querySelector('[data-batch-tags]')?.value || '');
+				const count = countScenesForTags(tags);
+				const el = row.querySelector('[data-batch-existing]');
+				if (el) el.textContent = tags.length ? `已有 ${count}` : '输入 tags';
+			});
+		}
+
+		function addBatchCombinationRow(tags = '', count = 1) {
+			const list = $('batchComboList');
+			if (!list) return;
+			const row = document.createElement('div');
+			row.className = 'batch-combo-row';
+			row.dataset.batchComboRow = '1';
+			row.innerHTML = `<label>Tags 组合
+				<input data-batch-tags placeholder="outdoor, forest, spring" value="${escapeHtml(Array.isArray(tags) ? tags.join(', ') : tags)}">
+				<span data-batch-existing class="hint">输入 tags</span>
+			</label>
+			<label>数量
+				<input data-batch-count type="number" min="1" max="50" step="1" value="${Math.max(1, Math.round(Number(count) || 1))}">
+			</label>
+			<button type="button" data-batch-remove>删除</button>`;
+			list.appendChild(row);
+			row.querySelector('[data-batch-remove]').onclick = () => { row.remove(); updateBatchComboExistingCounts(); };
+			row.querySelector('[data-batch-tags]').addEventListener('input', updateBatchComboExistingCounts);
+			updateBatchComboExistingCounts();
+		}
+
+		function renderBatchCombinationRows(combinations = []) {
+			const list = $('batchComboList');
+			if (!list) return;
+			list.innerHTML = '';
+			const rows = combinations.length ? combinations : [
+				{ tags: ['outdoor', 'haqi', 'spring'], count: 1 },
+				{ tags: ['indoor', 'living room', 'haqi'], count: 1 },
+			];
+			rows.forEach(item => addBatchCombinationRow(item.tags || '', item.count || 1));
+		}
+
+		async function populateBatchChatModelDropdown() {
+			const sdk = state.sdk || window.keepwork;
+			const select = $('batchChatModel');
+			if (!select) return;
+			if (!sdk?.localAPIKeySettings?.listModels) {
+				select.innerHTML = '<option value="">等待 SDK 加载...</option>';
+				select.disabled = true;
+				return;
+			}
+			await sdk.localAPIKeySettings.load?.();
+			renderModelOptions(select, 'Chat', state.lastChatModel || select.value);
+			state.lastChatModel = select.value || state.lastChatModel;
+		}
+
+		function buildBatchSceneSettingsPrompt(tags, count, userPrompt) {
+			const existingIds = state.scenes.map(scene => scene.id).slice(-220);
+			const existingTitles = state.scenes.map(scene => scene.title).filter(Boolean).slice(-220);
+			return [
+				'You are creating scene presets for a Chinese children\'s 2D pet story maker called MagicHaqi.',
+				'Return only valid JSON with this exact shape: {"scenes":[{"id":"snake_case_id","title":"中文标题","color":"#bae6fd","tags":["tag"],"particles":["sparkle"],"bgMusic":"","prompt":"中文图像生成核心描述"}]}',
+				`Generate exactly ${count} scene presets for this tag combination: ${normalizeSceneTags(tags).join(', ')}.`,
+				`Allowed common tags: ${DEFAULT_SCENE_TAGS.join(', ')}. Allowed particles: ${getParticleEffectIds().join(', ')}. Background music options: ${getBgMusicOptions().map(item => item.id).join(', ') || 'none'}.`,
+				'Each scene must be distinct, child friendly, bright, clean, fairy-tale styled, and leave an open central area for a pet character. Do not include characters, words, logos, or UI in the prompt.',
+				'Use the requested tags plus any helpful compatible tags. Choose particles and bgMusic only when they fit; otherwise use empty arrays or empty string.',
+				`Avoid duplicate ids and titles. Existing ids: ${existingIds.join(', ') || 'none'}. Existing titles: ${existingTitles.join(', ') || 'none'}.`,
+				userPrompt ? `User direction with highest priority: ${userPrompt}` : '',
+			].filter(Boolean).join('\n');
+		}
+
+		function extractJsonObject(text) {
+			const value = String(text || '').trim();
+			if (!value) throw new Error('LLM 未返回内容');
+			try { return JSON.parse(value); } catch (_) {}
+			const fenced = value.match(/```(?:json)?\s*([\s\S]*?)```/i);
+			if (fenced) return JSON.parse(fenced[1]);
+			const start = value.indexOf('{');
+			const end = value.lastIndexOf('}');
+			if (start >= 0 && end > start) return JSON.parse(value.slice(start, end + 1));
+			throw new Error('LLM 返回不是 JSON');
+		}
+
+		function uniqueSceneId(base, reserved = new Set()) {
+			const used = new Set([...state.scenes.map(scene => scene.id), ...reserved]);
+			const cleanBase = safeId(base || `scene_${Date.now()}`, 'scene');
+			if (!used.has(cleanBase)) return cleanBase;
+			for (let index = 2; index < 1000; index += 1) {
+				const candidate = `${cleanBase}_${index}`;
+				if (!used.has(candidate)) return candidate;
+			}
+			return `${cleanBase}_${Date.now()}`;
+		}
+
+		function normalizeBatchSceneBlueprint(scene, comboTags, index, reservedIds) {
+			const tags = unique([...normalizeSceneTags(comboTags), ...normalizeSceneTags(scene?.tags || [])]);
+			const title = String(scene?.title || scene?.name || `批量场景 ${index + 1}`).trim();
+			const id = uniqueSceneId(scene?.id || `${tags[0] || 'scene'}_${title}`, reservedIds);
+			reservedIds.add(id);
+			return compactScene({
+				id,
+				title,
+				imageUrl: '',
+				historyUrls: [],
+				color: /^#[0-9a-f]{6}$/i.test(scene?.color || '') ? scene.color : '#bae6fd',
+				tags,
+				particles: parseParticleList(scene?.particles || []),
+				bgMusic: String(scene?.bgMusic || '').trim(),
+				prompt: String(scene?.prompt || scene?.description || title).trim(),
+			});
+		}
+
+		async function generateBatchSceneBlueprints(combo, userPrompt) {
+			const sdk = state.sdk || window.keepwork;
+			if (!sdk?.aiGenerators?.chat) throw new Error('sdk.aiGenerators.chat 不可用');
+			const model = $('batchChatModel')?.value?.trim() || state.lastChatModel;
+			if (!model) throw new Error('请先在本地 API Key 设置中配置 Chat 模型');
+			state.lastChatModel = model;
+			const response = await sdk.aiGenerators.chat({
+				model,
+				stream: false,
+				temperature: 0.85,
+				responseFormat: 'json_object',
+				messages: [
+					{ role: 'system', content: 'Return strict JSON only. No markdown, no explanations.' },
+					{ role: 'user', content: buildBatchSceneSettingsPrompt(combo.tags, combo.count, userPrompt) },
+				],
+			});
+			const text = typeof response === 'string' ? response : (response?.result || response?.text || response?.data?.result || JSON.stringify(response));
+			const parsed = extractJsonObject(text);
+			const scenes = Array.isArray(parsed?.scenes) ? parsed.scenes : (Array.isArray(parsed) ? parsed : []);
+			if (!scenes.length) throw new Error('LLM JSON 中没有 scenes 数组');
+			if (scenes.length < combo.count) throw new Error(`LLM 只返回 ${scenes.length} 个场景，少于请求的 ${combo.count} 个`);
+			const reservedIds = new Set();
+			return scenes.slice(0, combo.count).map((scene, index) => normalizeBatchSceneBlueprint(scene, combo.tags, index, reservedIds));
+		}
+
+		function upsertSceneInMemory(scene) {
+			const normalized = normalizeScene(scene, state.scenes.length);
+			const index = state.scenes.findIndex(item => item.id === normalized.id);
+			if (index >= 0) state.scenes[index] = normalized;
+			else state.scenes.push(normalized);
+			state.selectedId = normalized.id;
+			return normalized;
+		}
+
+		async function saveScenesToIndex(statusText = '') {
+			const data = JSON.stringify(buildIndexMetadataOnlyObject(), null, 2);
+			await writeFile(SCENE_INDEX_PATH, data);
+			state.indexMeta = JSON.parse(data);
+			if (statusText) setStatus($('saveStatus'), statusText, 'ok');
+		}
+
+		async function generateImageForSceneConfig(scene) {
+			const sdk = state.sdk || window.keepwork;
+			if (!sdk?.aiGenerators?.genImage) throw new Error('sdk.aiGenerators.genImage 不可用');
+			const model = getSelectedImageModel();
+			if (!model) throw new Error('请先在本地 API Key 设置中配置 Image 模型');
+			rememberGenerationSettings();
+			const references = getReferenceImages();
+			const { width, height } = getImageSize();
+			const opts = { model, width, height };
+			if (!$('uploadResultToKeepwork').checked) opts.uploadResultToKeepwork = false;
+			if (references.length) opts.images = references.map(url => ({ url, role: 'reference' }));
+			const prompt = await buildSceneImagePrompt(scene.prompt, scene.tags, references.length, scene.title);
+			const generatedUrl = await sdk.aiGenerators.genImage(prompt, opts);
+			if (!generatedUrl) throw new Error('genImage 未返回图片 URL');
+			let finalScene = compactScene({ ...scene, imageUrl: generatedUrl, historyUrls: normalizeHistoryUrls(scene.historyUrls || []) });
+			if ($('uploadCompressedSceneToCdn')?.checked) {
+				const previousSceneId = $('sceneId')?.value;
+				if ($('sceneId')) $('sceneId').value = finalScene.id;
+				try {
+					const uploaded = await compressAndUploadGeneratedSceneImage(generatedUrl);
+					finalScene = compactScene({ ...finalScene, imageUrl: uploaded.url, historyUrls: normalizeHistoryUrls([generatedUrl, ...(finalScene.historyUrls || [])]) });
+				} finally {
+					if ($('sceneId')) $('sceneId').value = previousSceneId;
+				}
+			}
+			return finalScene;
+		}
+
+		async function runBatchGeneration() {
+			const combinations = parseBatchCombinationsFromDialog();
+			if (!combinations.length) return setStatus($('batchRunStatus'), '请至少添加一个 tags 组合和数量。', 'error');
+			const userPrompt = $('batchUserPrompt')?.value?.trim() || '';
+			const generateImages = shouldBatchGenerateImages();
+			state.batchAbortRequested = false;
+			$('batchProgress').textContent = '';
+			setStatus($('batchRunStatus'), `准备批量生成 ${combinations.reduce((sum, item) => sum + item.count, 0)} 个场景${generateImages ? '并生成图片' : '配置'}...`, '');
+			$('btnRunBatchGenerate').disabled = true;
+			$('btnStopBatchGenerate').disabled = false;
+			saveBatchSettings({ lastChatModel: $('batchChatModel')?.value || '', generateImages, userPrompt, combinations });
+			let completed = 0;
+			try {
+				for (const combo of combinations) {
+					if (state.batchAbortRequested) break;
+					appendBatchProgress(`规划组合：${combo.tags.join(', ')} × ${combo.count}`);
+					const blueprints = await generateBatchSceneBlueprints(combo, userPrompt);
+					appendBatchProgress(`已生成 ${blueprints.length} 个场景设置`, 'ok');
+					for (const blueprint of blueprints) {
+						if (state.batchAbortRequested) break;
+						let sceneToSave = blueprint;
+						if (generateImages) {
+							setStatus($('batchRunStatus'), `正在生成图片：${blueprint.title} (${completed + 1})`, '');
+							appendBatchProgress(`生成图片：${blueprint.id} · ${blueprint.title}`);
+							sceneToSave = await generateImageForSceneConfig(blueprint);
+						} else {
+							setStatus($('batchRunStatus'), `正在保存配置：${blueprint.title} (${completed + 1})`, '');
+							appendBatchProgress(`保存无图配置：${blueprint.id} · ${blueprint.title}`);
+						}
+						upsertSceneInMemory(sceneToSave);
+						await saveScenesToIndex(`批量生成已保存 ${sceneToSave.id}。`);
+						completed += 1;
+						appendBatchProgress(`已保存：${sceneToSave.id}`, 'ok');
+						renderRecordList();
+						renderBatchTagCounts();
+						updateBatchComboExistingCounts();
+					}
+				}
+				if (state.scenes.length) applySceneToForm(state.scenes.find(scene => scene.id === state.selectedId) || state.scenes[state.scenes.length - 1]);
+				setStatus($('batchRunStatus'), state.batchAbortRequested ? `已停止。完成 ${completed} 个场景。` : `批量生成完成：${completed} 个场景${generateImages ? '' : '配置'}。`, state.batchAbortRequested ? '' : 'ok');
+				setStatus($('runStatus'), state.batchAbortRequested ? `批量生成已停止，已保存 ${completed} 个场景。` : `批量生成完成，已保存 ${completed} 个场景${generateImages ? '' : '配置'}。`, state.batchAbortRequested ? '' : 'ok');
+			} catch (error) {
+				appendBatchProgress(error?.message || String(error), 'error');
+				setStatus($('batchRunStatus'), `批量生成失败：${error?.message || error}`, 'error');
+				setStatus($('runStatus'), `批量生成失败：${error?.message || error}`, 'error');
+			} finally {
+				$('btnRunBatchGenerate').disabled = false;
+				$('btnStopBatchGenerate').disabled = true;
+				saveLocalGenerationSettings();
+			}
+		}
+
+		function openBatchGenerateDialog() {
+			closeBatchGenerateDialog();
+			const settings = readBatchSettings();
+			const generateImages = settings.generateImages !== false;
+			if (settings.lastChatModel) state.lastChatModel = settings.lastChatModel;
+			const overlay = document.createElement('div');
+			overlay.className = 'modal-overlay';
+			overlay.id = 'batchGenerateOverlay';
+			overlay.innerHTML = `<div class="modal-window" role="dialog" aria-modal="true" aria-label="Batch Scene Generation" style="width:min(1180px,100%);height:min(860px,100%)">
+				<div class="modal-titlebar"><strong>批量生成 · Type Combinations</strong><button type="button" id="closeBatchGenerate">关闭</button></div>
+				<div class="modal-body">
+					<div class="batch-grid">
+						<section class="section">
+							<h2>单 tag 现有数量</h2>
+							<div id="batchTagCounts" class="batch-tag-counts"></div>
+						</section>
+						<section class="section">
+							<div class="row">
+								<label>Chat 模型
+									<select id="batchChatModel"></select>
+								</label>
+								<label>图片模型
+									<input value="${escapeHtml(getSelectedImageModel() || '未选择')}" disabled>
+								</label>
+							</div>
+							<label class="toggle-line"><input id="batchGenerateImages" type="checkbox" ${generateImages ? 'checked' : ''}>生成图片</label>
+							<label>用户补充要求（生成场景设置前发送给 LLM）
+								<textarea id="batchUserPrompt" class="prompt-box" style="min-height:84px" placeholder="例如：多生成哈奇小镇日常生活场景，避免重复森林和广场。">${escapeHtml(settings.userPrompt || '')}</textarea>
+							</label>
+							<div class="toolbar"><button id="btnAddBatchCombo" type="button">添加组合</button><button id="btnRunBatchGenerate" class="primary" type="button">开始批量生成</button><button id="btnStopBatchGenerate" type="button" disabled>停止</button></div>
+							<div id="batchComboList" class="batch-combo-list"></div>
+						</section>
+					</div>
+					<div id="batchRunStatus" class="status">按 tags 组合配置数量。每个组合会先调用一次 Chat 模型生成场景设置，再逐个生成图片并保存。</div>
+					<div id="batchProgress" class="status batch-progress"></div>
+				</div>
+			</div>`;
+			document.body.appendChild(overlay);
+			makeModalDraggable(overlay);
+			overlay.addEventListener('click', event => { if (event.target === overlay && !$('btnRunBatchGenerate')?.disabled) closeBatchGenerateDialog(); });
+			$('closeBatchGenerate').onclick = () => {
+				if ($('btnRunBatchGenerate')?.disabled) return setStatus($('batchRunStatus'), '批量生成进行中，可先点击停止。', 'error');
+				closeBatchGenerateDialog();
+			};
+			$('btnAddBatchCombo').onclick = () => addBatchCombinationRow('', 1);
+			$('btnRunBatchGenerate').onclick = () => runBatchGeneration();
+			$('btnStopBatchGenerate').onclick = () => { state.batchAbortRequested = true; setStatus($('batchRunStatus'), '将在当前请求完成后停止...', ''); };
+			$('batchChatModel').addEventListener('change', () => { state.lastChatModel = $('batchChatModel').value; saveBatchSettings({ lastChatModel: state.lastChatModel, generateImages: shouldBatchGenerateImages(), userPrompt: $('batchUserPrompt').value, combinations: parseBatchCombinationsFromDialog() }); });
+			$('batchGenerateImages').addEventListener('change', () => saveBatchSettings({ lastChatModel: $('batchChatModel').value, generateImages: shouldBatchGenerateImages(), userPrompt: $('batchUserPrompt').value, combinations: parseBatchCombinationsFromDialog() }));
+			renderBatchTagCounts();
+			renderBatchCombinationRows(Array.isArray(settings.combinations) ? settings.combinations : []);
+			populateBatchChatModelDropdown().catch(error => setStatus($('batchRunStatus'), `Chat 模型加载失败：${error?.message || error}`, 'error'));
+		}
+
+		function closeBatchGenerateDialog() {
+			$('batchGenerateOverlay')?.remove();
+		}
+
+		function updateCurrentSceneInMemory() {
+			const scene = compactScene(JSON.parse($('sceneJson').value));
+			const index = state.scenes.findIndex(item => item.id === scene.id);
+			if (index >= 0) state.scenes[index] = normalizeScene(scene, index);
+			else state.scenes.push(normalizeScene(scene, state.scenes.length));
+			state.selectedId = scene.id;
+			renderRecordList();
+			updateOutput();
+			return scene;
+		}
+
+		async function saveSceneToIndex() {
+			const scene = updateCurrentSceneInMemory();
+			const data = JSON.stringify(buildIndexObject(), null, 2);
+			await writeFile(SCENE_INDEX_PATH, data);
+			setStatus($('saveStatus'), `已保存场景 ${scene.id} 到 ${SCENE_INDEX_PATH}。`, 'ok');
+		}
+
+		async function saveIndexJson() {
+			updateCurrentSceneInMemory();
+			const data = JSON.stringify(buildIndexObject(), null, 2);
+			await writeFile(SCENE_INDEX_PATH, data);
+			setStatus($('saveStatus'), `已写入 ${SCENE_INDEX_PATH}，格式为 scenes.json 索引结构。`, 'ok');
+		}
+
+		async function copyText(text) {
+			await navigator.clipboard.writeText(text);
+			setStatus($('saveStatus'), '已复制到剪贴板。', 'ok');
+		}
+
+		function downloadText(filename, text) {
+			const blob = new Blob([text], { type: 'application/json;charset=utf-8' });
+			const url = URL.createObjectURL(blob);
+			const a = document.createElement('a');
+			a.href = url;
+			a.download = filename;
+			document.body.appendChild(a);
+			a.click();
+			a.remove();
+			setTimeout(() => URL.revokeObjectURL(url), 500);
+		}
+
+		async function handleReferenceFiles() {
+			const files = [...($('referenceFiles').files || [])].slice(0, 4);
+			state.referenceDataUrls = await Promise.all(files.map(file => new Promise((resolve, reject) => {
+				const reader = new FileReader();
+				reader.onload = () => resolve(String(reader.result || ''));
+				reader.onerror = () => reject(reader.error || new Error('参考图读取失败'));
+				reader.readAsDataURL(file);
+			})));
+			renderReferencePreview();
+		}
+
+		function renderReferencePreview() {
+			const refs = getReferenceImages();
+			$('referencePreview').innerHTML = refs.length
+				? refs.map(url => `<div class="ref-preview"><img alt="reference" src="${escapeHtml(url)}"></div>`).join('')
+				: '<div class="ref-preview"><span class="hint">可选参考图预览</span></div>';
+			updateOutput();
+		}
+
+		function renderTagButtons() {
+			const activeTags = new Set(normalizeSceneTags($('sceneTags').value));
+			$('tagButtons').innerHTML = DEFAULT_SCENE_TAGS.map(tag => `<button type="button" class="${activeTags.has(tag) ? 'active' : ''}" data-tag="${escapeHtml(tag)}">${escapeHtml(tag)}</button>`).join('');
+			$('tagButtons').querySelectorAll('[data-tag]').forEach(btn => {
+				btn.onclick = () => {
+					const tag = normalizeTag(btn.dataset.tag);
+					const tags = normalizeSceneTags($('sceneTags').value);
+					$('sceneTags').value = (tags.includes(tag) ? tags.filter(item => item !== tag) : [...tags, tag]).join(', ');
+					renderTagButtons();
+					updateOutput();
+				};
+			});
+				applyPreviewAspectRatio($('largeScenePreview'), true);
+			const activeParticles = new Set(parseParticleList($('sceneParticles').value));
+			$('particleButtons').innerHTML = PARTICLE_EFFECTS.map(effect => {
+				const id = getParticleEffectId(effect);
+				if (!id) return '';
+				return `<button type="button" class="${activeParticles.has(id) ? 'active' : ''}" data-particle="${escapeHtml(id)}">${escapeHtml(getParticleEffectLabel(effect) || id)}</button>`;
+			}).join('');
+			$('particleButtons').querySelectorAll('[data-particle]').forEach(btn => {
+				btn.onclick = () => {
+					const id = btn.dataset.particle;
+					const particles = parseParticleList($('sceneParticles').value);
+					$('sceneParticles').value = (particles.includes(id) ? particles.filter(item => item !== id) : [...particles, id]).join(', ');
+					renderTagButtons();
+					updateOutput();
+				};
+			});
+		}
+
+		function titleToId() {
+			const title = $('sceneTitle').value.trim();
+			const tagPrefix = normalizeSceneTags($('sceneTags').value)[0] || 'scene';
+			$('sceneId').value = safeId(`${tagPrefix}_${title || 'preset'}`, `scene_${Date.now()}`);
+			updateOutput();
+		}
+
+		function openWorkspaceViewer() {
+			if (typeof window.createWorkspaceViewer !== 'function') {
+				setStatus($('saveStatus'), 'WorkspaceViewer 不可用：当前 SDK 未导出 createWorkspaceViewer', 'error');
+				return;
+			}
+			closeWorkspaceViewer();
+			const overlay = document.createElement('div');
+			overlay.className = 'workspace-overlay';
+			overlay.id = 'workspaceOverlay';
+			overlay.innerHTML = `<div class="workspace-window" role="dialog" aria-modal="true" aria-label="WorkspaceViewer"><div class="workspace-titlebar"><strong>WorkspaceViewer · ${WORKSPACE}/pet-story/presets</strong><button type="button" id="closeWorkspaceViewer">关闭</button></div><div class="workspace-host" id="workspaceHost"></div></div>`;
+			document.body.appendChild(overlay);
+			overlay.addEventListener('click', event => { if (event.target === overlay) closeWorkspaceViewer(); });
+			$('closeWorkspaceViewer').onclick = closeWorkspaceViewer;
+			state.workspaceViewer = window.createWorkspaceViewer({ container: $('workspaceHost'), sdk: state.sdk || window.keepwork, workspace: WORKSPACE, mountFolder: 'pet-story/presets', compact: true, hideUserInfo: true });
+		}
+
+		function closeWorkspaceViewer() {
+			try { state.workspaceViewer?.destroy?.(); } catch (_) {}
+			state.workspaceViewer = null;
+			$('workspaceOverlay')?.remove();
+		}
+
+		function getIndexJsonText() {
+			const index = buildIndexObject();
+			if (shouldRemoveHistoryUrlsOnExport()) {
+				index.scenes = (Array.isArray(index.scenes) ? index.scenes : []).map(removeHistoryUrlsFromScene);
+			}
+			return stringifyExportJson(index);
+		}
+
+		function openIndexPreviewDialog() {
+			closeIndexPreviewDialog();
+			const overlay = document.createElement('div');
+			overlay.className = 'modal-overlay';
+			overlay.id = 'indexPreviewOverlay';
+			overlay.innerHTML = `<div class="modal-window" role="dialog" aria-modal="true" aria-label="导入导出">
+				<div class="modal-titlebar"><strong>导入导出 · ${SCENE_INDEX_PATH}</strong><button type="button" id="closeIndexPreview">关闭</button></div>
+				<div class="modal-body">
+					<textarea id="indexJson" class="output" spellcheck="false"></textarea>
+					<label class="toggle-line"><input id="removeHistoryUrlsOnIndexExport" type="checkbox" checked>复制 / 下载时移除 historyUrls</label>
+					<div class="toolbar"><button id="btnCopyIndexJson" type="button">复制</button><button id="btnReloadFromIndexText" type="button">从预览载入</button><button id="btnDownloadIndexModal" type="button">下载 scenes.json</button></div>
+				</div>
+			</div>`;
+			document.body.appendChild(overlay);
+			$('indexJson').value = getIndexJsonText();
+			overlay.addEventListener('click', event => { if (event.target === overlay) closeIndexPreviewDialog(); });
+			$('closeIndexPreview').onclick = closeIndexPreviewDialog;
+			$('removeHistoryUrlsOnIndexExport').onchange = () => { $('indexJson').value = getIndexJsonText(); };
+			$('btnCopyIndexJson').onclick = () => copyText($('indexJson').value);
+			$('btnDownloadIndexModal').onclick = () => downloadText('scenes.json', $('indexJson').value);
+			$('btnReloadFromIndexText').onclick = reloadFromIndexPreview;
+		}
+
+		function closeIndexPreviewDialog() {
+			$('indexPreviewOverlay')?.remove();
+		}
+
+		function openEnlargePreviewDialog() {
+			closeEnlargePreviewDialog();
+			const scene = compactScene(buildSceneConfig());
+			const overlay = document.createElement('div');
+			overlay.className = 'modal-overlay';
+			overlay.id = 'enlargePreviewOverlay';
+			overlay.innerHTML = `<div class="modal-window" role="dialog" aria-modal="true" aria-label="Scene Preview" style="width:min(620px,100%);height:min(880px,100%)">
+				<div class="modal-titlebar"><strong>${escapeHtml(scene.title || scene.id)} · Preview</strong><button type="button" id="closeEnlargePreview">关闭</button></div>
+				<div class="modal-body" style="align-items:center;justify-content:center;background:#f8fbff"><div id="largeScenePreview" class="scene-preview large"></div></div>
+			</div>`;
+			document.body.appendChild(overlay);
+			$('largeScenePreview').style.background = scenePreviewBackground(scene);
+			$('largeScenePreview').innerHTML = scenePreviewHtml(scene);
+			mountParticleEffects($('largeScenePreview'));
+			bindPreviewMusicToggle($('largeScenePreview'));
+			overlay.addEventListener('click', event => { if (event.target === overlay) closeEnlargePreviewDialog(); });
+			$('closeEnlargePreview').onclick = closeEnlargePreviewDialog;
+		}
+
+		function closeEnlargePreviewDialog() {
+			$('enlargePreviewOverlay')?.remove();
+		}
+
+		function makeModalDraggable(overlay) {
+			const modal = overlay?.querySelector('.modal-window');
+			const titlebar = modal?.querySelector('.modal-titlebar');
+			if (!modal || !titlebar || window.matchMedia('(max-width: 760px)').matches) return;
+			let startX = 0;
+			let startY = 0;
+			let currentX = 0;
+			let currentY = 0;
+			let dragging = false;
+			titlebar.addEventListener('pointerdown', event => {
+				if (event.button !== 0 || event.target.closest('button, input, select, textarea')) return;
+				dragging = true;
+				startX = event.clientX - currentX;
+				startY = event.clientY - currentY;
+				titlebar.setPointerCapture?.(event.pointerId);
+			});
+			titlebar.addEventListener('pointermove', event => {
+				if (!dragging) return;
+				currentX = event.clientX - startX;
+				currentY = event.clientY - startY;
+				modal.style.transform = `translate(${currentX}px, ${currentY}px)`;
+			});
+			const stopDrag = event => {
+				if (!dragging) return;
+				dragging = false;
+				titlebar.releasePointerCapture?.(event.pointerId);
+			};
+			titlebar.addEventListener('pointerup', stopDrag);
+			titlebar.addEventListener('pointercancel', stopDrag);
+		}
+
+		function sizeSceneCdnReviewImage(compressed) {
+			const image = $('sceneCdnReviewImage');
+			if (!image || !compressed) return;
+			image.style.width = `${Math.max(1, Math.round(compressed.width * 0.25))}px`;
+			image.style.height = `${Math.max(1, Math.round(compressed.height * 0.25))}px`;
+		}
+
+		function openSceneCdnCompressedPreviewDialog() {
+			const compressed = state.sceneCdnReview?.compressed;
+			if (!compressed?.blob) return;
+			closeSceneCdnCompressedPreviewDialog();
+			const previewUrl = URL.createObjectURL(compressed.blob);
+			state.sceneCdnReview.fullPreviewUrl = previewUrl;
+			const overlay = document.createElement('div');
+			overlay.className = 'modal-overlay';
+			overlay.id = 'sceneCdnCompressedPreviewOverlay';
+			const width = Math.min(compressed.width + 34, Math.max(360, window.innerWidth - 36));
+			const height = Math.min(compressed.height + 104, Math.max(360, window.innerHeight - 36));
+			overlay.innerHTML = `<div class="modal-window" role="dialog" aria-modal="true" aria-label="Compressed Image Preview" style="width:${width}px;height:${height}px">
+				<div class="modal-titlebar"><strong>压缩图预览 · ${compressed.formatLabel} · ${compressed.width}x${compressed.height}</strong><button type="button" id="closeSceneCdnCompressedPreview">关闭</button></div>
+				<div class="cdn-full-preview-body"><img alt="full size compressed preview" src="${previewUrl}" style="width:${compressed.width}px;height:${compressed.height}px"></div>
+			</div>`;
+			document.body.appendChild(overlay);
+			makeModalDraggable(overlay);
+			overlay.addEventListener('click', event => { if (event.target === overlay) closeSceneCdnCompressedPreviewDialog(); });
+			$('closeSceneCdnCompressedPreview').onclick = closeSceneCdnCompressedPreviewDialog;
+		}
+
+		function closeSceneCdnCompressedPreviewDialog() {
+			$('sceneCdnCompressedPreviewOverlay')?.remove();
+			if (state.sceneCdnReview?.fullPreviewUrl) URL.revokeObjectURL(state.sceneCdnReview.fullPreviewUrl);
+			if (state.sceneCdnReview) state.sceneCdnReview.fullPreviewUrl = '';
+		}
+
+		function getSceneCdnReviewOptionsFromDialog() {
+			return {
+				format: $('reviewSceneCdnImageFormat')?.value || SCENE_CDN_DEFAULT_IMAGE_FORMAT,
+				compressionRatio: sceneCdnCompressionFromQualityPercent($('reviewSceneCdnQualityRatio')?.value ?? sceneCdnQualityPercentFromCompression(SCENE_CDN_DEFAULT_COMPRESSION_RATIO)),
+			};
+		}
+
+		function updateSceneCdnReviewQualityLabel() {
+			const slider = $('reviewSceneCdnQualityRatio');
+			const label = $('reviewSceneCdnQualityValue');
+			if (!slider || !label) return;
+			const qualityPercent = sceneCdnQualityPercentFromCompression(sceneCdnCompressionFromQualityPercent(slider.value));
+			slider.value = String(qualityPercent);
+			label.textContent = `${qualityPercent}%`;
+		}
+
+		function applySceneCdnReviewOptionsToDialog() {
+			const options = loadSceneCdnUploadOptions();
+			if ($('reviewSceneCdnImageFormat')) $('reviewSceneCdnImageFormat').value = options.format;
+			if ($('reviewSceneCdnQualityRatio')) $('reviewSceneCdnQualityRatio').value = String(sceneCdnQualityPercentFromCompression(options.compressionRatio));
+			updateSceneCdnReviewQualityLabel();
+		}
+
+		function setSceneCdnReviewStatus(text, kind = '') {
+			const el = $('sceneCdnReviewStatus');
+			if (!el) return;
+			el.textContent = text;
+			el.classList.toggle('error', kind === 'error');
+			el.classList.toggle('ok', kind === 'ok');
+		}
+
+		function setSceneCdnReviewBusy(busy) {
+			if ($('btnRefreshSceneCdnReview')) $('btnRefreshSceneCdnReview').disabled = busy;
+			if ($('btnConfirmSceneCdnUpload')) $('btnConfirmSceneCdnUpload').disabled = busy || !state.sceneCdnReview?.compressed;
+		}
+
+		async function refreshSceneCdnUploadReview() {
+			const sourceUrl = $('imageUrl').value.trim();
+			if (!sourceUrl) return;
+			state.sceneCdnReview = state.sceneCdnReview || {};
+			const requestId = Date.now() + Math.random();
+			state.sceneCdnReview.requestId = requestId;
+			state.sceneCdnReview.compressed = null;
+			setSceneCdnReviewBusy(true);
+			setSceneCdnReviewStatus('正在生成压缩预览...', '');
+			try {
+				const options = getSceneCdnReviewOptionsFromDialog();
+				const compressed = await compressSceneImageForCdn(sourceUrl, options);
+				if (state.sceneCdnReview?.requestId !== requestId) return;
+				closeSceneCdnCompressedPreviewDialog();
+				if (state.sceneCdnReview.previewUrl) URL.revokeObjectURL(state.sceneCdnReview.previewUrl);
+				const previewUrl = URL.createObjectURL(compressed.blob);
+				state.sceneCdnReview.previewUrl = previewUrl;
+				state.sceneCdnReview.compressed = compressed;
+				if ($('sceneCdnReviewImage')) {
+					$('sceneCdnReviewImage').src = previewUrl;
+					sizeSceneCdnReviewImage(compressed);
+				}
+				setSceneCdnReviewStatus(`预览已生成：${compressed.formatLabel}，质量 ${sceneCdnQualityPercentFromCompression(compressed.compressionRatio)}%，压缩 ${compressed.compressionRatio}%，${formatBytes(compressed.blob.size)}，${compressed.width}x${compressed.height}`, 'ok');
+			} catch (error) {
+				if (state.sceneCdnReview?.requestId !== requestId) return;
+				setSceneCdnReviewStatus(`预览失败：${error?.message || error}`, 'error');
+			} finally {
+				if (state.sceneCdnReview?.requestId === requestId) setSceneCdnReviewBusy(false);
+			}
+		}
+
+		async function confirmSceneCdnReviewUpload() {
+			const sourceUrl = $('imageUrl').value.trim();
+			if (!sourceUrl) return;
+			setSceneCdnReviewBusy(true);
+			setSceneCdnReviewStatus('正在上传 CDN...', '');
+			try {
+				const options = saveSceneCdnUploadOptions(getSceneCdnReviewOptionsFromDialog());
+				let compressed = state.sceneCdnReview?.compressed;
+				if (!compressed || compressed.format !== normalizeSceneCdnImageFormat(options.format) || compressed.compressionRatio !== normalizeCompressionRatio(options.compressionRatio)) {
+					compressed = await compressSceneImageForCdn(sourceUrl, options);
+				}
+				const uploaded = await uploadBlobToSceneCdn(compressed.blob, getSceneCdnFileName(compressed.extension));
+				state.imageSizeCache.set(uploaded.url, compressed.blob.size);
+				$('imageUrl').value = uploaded.url;
+				state.currentHistoryUrls = normalizeHistoryUrls([sourceUrl, ...state.currentHistoryUrls]).filter(url => url && url !== uploaded.url);
+				updateOutput();
+				await saveIndexJson();
+				closeSceneCdnUploadReviewDialog();
+				setStatus($('runStatus'), `已上传 CDN 并替换当前场景图片：${uploaded.remoteKey}\n格式：${compressed.formatLabel}，质量：${sceneCdnQualityPercentFromCompression(compressed.compressionRatio)}%，压缩：${compressed.compressionRatio}%\n大小：${formatBytes(compressed.blob.size)}，尺寸：${compressed.width}x${compressed.height}`, 'ok');
+			} catch (error) {
+				setSceneCdnReviewStatus(`上传失败：${error?.message || error}`, 'error');
+				setSceneCdnReviewBusy(false);
+			}
+		}
+
+		function openSceneCdnUploadReviewDialog() {
+			const sourceUrl = $('imageUrl').value.trim();
+			if (!sourceUrl) {
+				setStatus($('runStatus'), '当前没有可上传的图片 URL。', 'error');
+				return;
+			}
+			closeSceneCdnUploadReviewDialog();
+			const overlay = document.createElement('div');
+			overlay.className = 'modal-overlay';
+			overlay.id = 'sceneCdnUploadReviewOverlay';
+			overlay.innerHTML = `<div class="modal-window cdn-review-window" role="dialog" aria-modal="true" aria-label="Upload Image to CDN">
+				<div class="modal-titlebar"><strong>上传 CDN · 压缩预览</strong><button type="button" id="closeSceneCdnUploadReview">关闭</button></div>
+				<div class="modal-body">
+					<div class="row">
+						<label>上传格式
+							<select id="reviewSceneCdnImageFormat"><option value="webp">WebP</option><option value="jpeg">JPEG</option></select>
+						</label>
+						<label class="quality-control">质量 / 接近原图 (%)
+							<input id="reviewSceneCdnQualityRatio" type="range" min="5" max="100" step="1">
+							<div class="range-scale"><span>更小文件</span><span id="reviewSceneCdnQualityValue" class="range-value">88%</span><span>接近原图</span></div>
+						</label>
+					</div>
+					<div class="cdn-review-preview-frame"><img id="sceneCdnReviewImage" alt="compressed preview" title="点击查看原始尺寸预览"></div>
+					<div id="sceneCdnReviewStatus" class="status">准备生成压缩预览...</div>
+					<div class="toolbar" style="justify-content:flex-end"><button id="btnRefreshSceneCdnReview" type="button">刷新预览</button><button id="btnCancelSceneCdnUpload" type="button">取消</button><button id="btnConfirmSceneCdnUpload" class="primary" type="button">上传并替换</button></div>
+				</div>
+			</div>`;
+			document.body.appendChild(overlay);
+			state.sceneCdnReview = { previewUrl: '', compressed: null, requestId: 0 };
+			applySceneCdnReviewOptionsToDialog();
+			makeModalDraggable(overlay);
+			overlay.addEventListener('click', event => { if (event.target === overlay) closeSceneCdnUploadReviewDialog(); });
+			$('closeSceneCdnUploadReview').onclick = closeSceneCdnUploadReviewDialog;
+			$('btnCancelSceneCdnUpload').onclick = closeSceneCdnUploadReviewDialog;
+			$('btnRefreshSceneCdnReview').onclick = () => refreshSceneCdnUploadReview().catch(error => setSceneCdnReviewStatus(`预览失败：${error?.message || error}`, 'error'));
+			$('btnConfirmSceneCdnUpload').onclick = () => confirmSceneCdnReviewUpload().catch(error => setSceneCdnReviewStatus(`上传失败：${error?.message || error}`, 'error'));
+			$('sceneCdnReviewImage').onclick = openSceneCdnCompressedPreviewDialog;
+			$('reviewSceneCdnQualityRatio')?.addEventListener('input', updateSceneCdnReviewQualityLabel);
+			['reviewSceneCdnImageFormat', 'reviewSceneCdnQualityRatio'].forEach(id => $(id)?.addEventListener('change', () => refreshSceneCdnUploadReview().catch(error => setSceneCdnReviewStatus(`预览失败：${error?.message || error}`, 'error'))));
+			refreshSceneCdnUploadReview().catch(error => setSceneCdnReviewStatus(`预览失败：${error?.message || error}`, 'error'));
+		}
+
+		function closeSceneCdnUploadReviewDialog() {
+			closeSceneCdnCompressedPreviewDialog();
+			if (state.sceneCdnReview?.previewUrl) URL.revokeObjectURL(state.sceneCdnReview.previewUrl);
+			state.sceneCdnReview = null;
+			$('sceneCdnUploadReviewOverlay')?.remove();
+		}
+
+		function reloadFromIndexPreview() {
+			try {
+				const data = JSON.parse($('indexJson').value || '{}');
+				state.indexMeta = data;
+				state.scenes = (Array.isArray(data.scenes) ? data.scenes : []).map(normalizeScene);
+				state.selectedId = '';
+				renderRecordList();
+				if (state.scenes.length) applySceneToForm(state.scenes[0]);
+				else applySceneToForm(defaultScene(), false);
+				setStatus($('saveStatus'), '已从 Index Preview 重新载入。', 'ok');
+				closeIndexPreviewDialog();
+			} catch (e) { setStatus($('saveStatus'), `载入失败：${e?.message || e}`, 'error'); }
+		}
+
+		function wireEvents() {
+			$('btnLocalApi').onclick = async () => {
+				const settings = (state.sdk || window.keepwork)?.localAPIKeySettings;
+				if (!settings?.show) return setStatus($('loginState'), '当前 SDK 不支持本地 API Key 设置。', 'error');
+				await settings.load?.();
+				settings.show({ title: '本地 API Key 设置', fullscreen: true, onSave: async () => { await populateModelDropdown(); setStatus($('saveStatus'), '本地 API Key 设置已保存。', 'ok'); refreshLoginState(); } });
+			};
+			$('btnWorkspace').onclick = openWorkspaceViewer;
+			$('btnOpenIndexPreview').onclick = openIndexPreviewDialog;
+			$('btnBatchGenerate').onclick = openBatchGenerateDialog;
+			$('btnRefreshRecords').onclick = () => loadRecords().catch(e => setStatus($('runStatus'), e?.message || String(e), 'error'));
+			$('btnNewScene').onclick = newScene;
+			$('btnSaveScene').onclick = () => saveSceneToIndex().catch(e => setStatus($('saveStatus'), `保存失败：${e?.message || e}`, 'error'));
+			$('btnPreviewMusic').onclick = previewBgMusic;
+			$('btnStopMusic').onclick = stopBgMusicPreview;
+			$('btnMuteMusic').onclick = toggleBgMusicMuted;
+			$('btnGenerate').onclick = () => generateSceneImage().catch(e => console.error(e));
+			$('btnUploadCurrentImageToCdn').onclick = openSceneCdnUploadReviewDialog;
+			$('scenePreview').onclick = openEnlargePreviewDialog;
+			$('btnBuildPrompt').onclick = updateOutput;
+			$('btnRefreshJson').onclick = updateOutput;
+			$('btnCopySceneJson').onclick = () => copyText(getSceneExportJsonText());
+			$('btnDownloadIndex').onclick = () => downloadText('scenes.json', getIndexJsonText());
+			$('removeHistoryUrlsOnExport').addEventListener('change', () => {
+				if ($('indexJson')) $('indexJson').value = getIndexJsonText();
+			});
+			$('btnSlug').onclick = titleToId;
+			$('btnUsePromptTags').onclick = () => {
+				const tags = unique([...normalizeSceneTags($('sceneTags').value), ...sceneTagsFromText($('scenePrompt').value)]);
+				$('sceneTags').value = tags.join(', ');
+				renderTagButtons();
+				updateOutput();
+			};
+			$('recordSearch').addEventListener('input', renderRecordList);
+			$('recordImageFilter').addEventListener('change', renderRecordList);
+			$('recordTagFilter').addEventListener('change', renderRecordList);
+			$('recordTagFilterButton').onclick = (event) => {
+				event.preventDefault();
+				event.stopPropagation();
+				setRecordTagFilterOpen(!$('recordTagFilterWrap').classList.contains('open'));
+			};
+			$('recordTagFilterMenu').onclick = (event) => event.stopPropagation();
+			document.addEventListener('click', () => setRecordTagFilterOpen(false));
+			$('btnClearRecordFilters').onclick = () => {
+				$('recordSearch').value = '';
+				$('recordImageFilter').value = 'all';
+				[...$('recordTagFilter').options].forEach(option => { option.selected = false; });
+				setRecordTagFilterOpen(false);
+				updateRecordTagFilterLabel();
+				renderRecordList();
+			};
+			$('referenceUrls').addEventListener('input', renderReferencePreview);
+			$('referenceFiles').addEventListener('change', () => handleReferenceFiles().catch(e => setStatus($('runStatus'), e?.message || String(e), 'error')));
+			$('imageSize').addEventListener('change', () => { persistGenerationSettings().catch(e => setStatus($('saveStatus'), `生成设置保存失败：${e?.message || e}`, 'error')); updateOutput(); });
+			$('imageModelSelect').addEventListener('change', () => { persistGenerationSettings().catch(e => setStatus($('saveStatus'), `生成设置保存失败：${e?.message || e}`, 'error')); updateOutput(); });
+			$('btnSceneCdnConfig').onclick = openSceneCdnConfigPasteDialog;
+			$('uploadCompressedSceneToCdn')?.addEventListener('change', () => {
+				saveSceneCdnUploadSetting();
+				updateSceneCdnStatus();
+				updateManualCdnUploadButton();
+			});
+			['sceneId', 'sceneTitle', 'sceneColor', 'sceneTags', 'sceneParticles', 'bgMusic', 'scenePrompt', 'imageUrl'].forEach(id => {
+				$(id).addEventListener('input', () => { renderTagButtons(); updateOutput(); });
+				$(id).addEventListener('change', () => { renderTagButtons(); updateOutput(); });
+			});
+			$('bgMusic').addEventListener('change', previewBgMusic);
+		}
+
+		function init() {
+			const localSettings = readLocalGenerationSettings();
+			state.lastLLMModel = String(localSettings.lastLLMModel || '').trim();
+			state.lastChatModel = String(localSettings.lastChatModel || readBatchSettings().lastChatModel || '').trim();
+			state.lastImageSize = String(localSettings.lastImageSize || '').trim();
+			if ($('uploadCompressedSceneToCdn')) $('uploadCompressedSceneToCdn').checked = loadSceneCdnUploadSetting();
+			loadExportSettings();
+			wireEvents();
+			renderTagButtons();
+			renderImageSizeOptions();
+			renderBgMusicOptions();
+			populateModelDropdown();
+			updateSceneCdnStatus();
+			applySceneToForm(defaultScene(), false);
+			loadStoryMakerAudioModules();
+			loadSdk();
+		}
+
+		init();
+	</script>
+</body>
+</html>

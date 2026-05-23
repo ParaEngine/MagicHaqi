@@ -4,109 +4,112 @@
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>Famous Pet Generator</title>
-  <style>
-    :root {
-      color-scheme: light;
-      --bg: #f4f7fb;
-      --panel: #ffffff;
-      --panel-soft: #f8fbff;
-      --line: #d8e4f0;
-      --line-strong: #bdd4e8;
-      --text: #172033;
-      --muted: #607086;
-      --accent: #0f8ccf;
-      --accent-2: #13a36b;
-      --danger: #c43d3d;
-      --shadow: 0 14px 34px rgba(26, 43, 72, .12);
-      font-family: Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+  <script src="https://cdn.keepwork.com/keepwork/cdn/tailwindcss@3.4.16.js"></script>
+  <style type="text/tailwindcss">
+    @layer base {
+      :root { color-scheme: light; }
+      button { @apply min-h-[34px] cursor-pointer rounded-md border border-slate-300 bg-white px-3 text-slate-900 transition hover:border-sky-300 hover:bg-slate-50 active:translate-y-px disabled:cursor-not-allowed disabled:opacity-50 disabled:active:translate-y-0; }
+      input, textarea, select { @apply w-full min-h-[34px] rounded-md border border-slate-300 bg-white px-2.5 py-1.5 text-slate-900 outline-none focus:border-sky-600 focus:ring-2 focus:ring-sky-600/15; }
+      textarea { @apply resize-y leading-normal; }
+      label { @apply flex flex-col gap-1.5 text-xs text-slate-500; }
+      h1, h2, h3 { @apply m-0 tracking-normal; }
+      h1 { @apply text-lg leading-tight font-semibold; }
+      h2 { @apply text-sm font-semibold; }
+      h3 { @apply text-xs font-normal text-slate-500; }
     }
-    * { box-sizing: border-box; }
-    body { margin: 0; min-height: 100vh; background: var(--bg); color: var(--text); }
-    button, input, textarea, select { font: inherit; }
-    button {
-      min-height: 34px; border: 1px solid var(--line); border-radius: 6px; background: #fff; color: var(--text);
-      padding: 0 11px; cursor: pointer; transition: background .16s ease, border-color .16s ease, transform .08s ease;
+    @layer components {
+      .toolbar { @apply flex flex-wrap items-center gap-2; }
+      .toolbar button { @apply flex-none; }
+      .primary { @apply border-sky-600 bg-sky-600 text-white hover:border-sky-700 hover:bg-sky-700; }
+      .success, .export { @apply border-emerald-600 bg-emerald-600 text-white hover:border-emerald-700 hover:bg-emerald-700; }
+      .export { @apply font-bold ring-4 ring-emerald-600/10; }
+      .danger { @apply border-red-200 bg-red-50 text-red-700; }
+      .toggle-line { @apply flex-row items-center gap-2 text-slate-900; }
+      .toggle-line input { @apply min-h-0 h-4 w-4; }
+      .hint { @apply text-xs leading-normal text-slate-500; }
+      .status { @apply whitespace-pre-wrap rounded-md border border-sky-200 bg-sky-50 px-2.5 py-2 text-xs leading-normal text-sky-900; }
+      .status.ok { @apply border-emerald-200 bg-emerald-50 text-emerald-800; }
+      .status.error { @apply border-red-200 bg-red-50 text-red-800; }
+      .status-action { @apply min-h-0 border-0 bg-transparent p-0 font-bold underline underline-offset-2 hover:border-transparent hover:bg-transparent; }
+      .pill { @apply inline-flex min-h-6 items-center whitespace-nowrap rounded-full border border-slate-300 bg-white px-2 text-xs text-slate-500; }
+      .record-list { @apply flex min-h-0 flex-col gap-1.5 overflow-auto p-2; }
+      .record-item { @apply grid w-full min-w-0 grid-cols-[42px_minmax(0,1fr)_auto] items-center gap-2.5 overflow-hidden rounded-md border border-slate-300 bg-white p-2.5 text-left; }
+      .record-item.active { @apply border-sky-600 bg-sky-50 ring-2 ring-sky-600/15; }
+      .record-main { @apply block min-w-0 border-0 bg-transparent p-0 text-left hover:border-transparent hover:bg-transparent; }
+      .record-thumb { @apply h-[42px] w-[42px] overflow-hidden rounded-md border border-slate-300; background-color: #fff; background-image: linear-gradient(45deg, #dfe6ee 25%, transparent 25%), linear-gradient(-45deg, #dfe6ee 25%, transparent 25%), linear-gradient(45deg, transparent 75%, #dfe6ee 75%), linear-gradient(-45deg, transparent 75%, #dfe6ee 75%); background-size: 12px 12px; background-position: 0 0, 0 6px, 6px -6px, -6px 0; }
+      .record-thumb span { @apply block h-full w-full bg-no-repeat; background-size: 400% 400%; background-position: 66.667% 33.333%; }
+      .record-title { @apply block min-w-0 overflow-hidden text-ellipsis whitespace-nowrap text-[13px] font-bold; }
+      .record-meta { @apply block min-w-0 overflow-hidden text-ellipsis whitespace-nowrap text-[11px] text-slate-500; }
+      .record-actions { @apply flex gap-1.5; }
+      .record-actions button { @apply min-h-[30px] min-w-[34px] px-2 text-xs; }
+      .icon-button, .record-actions .icon-button { @apply grid w-[34px] place-items-center p-0; }
+      .icon-button svg, .record-actions .icon-button svg { @apply h-[15px] w-[15px]; stroke: currentColor; }
+      .sheet-box { @apply relative grid aspect-square place-items-center justify-self-center overflow-hidden rounded-lg border border-slate-300; width: min(100%, 520px); contain: paint; background-color: #fff; background-image: linear-gradient(45deg, #dfe6ee 25%, transparent 25%), linear-gradient(-45deg, #dfe6ee 25%, transparent 25%), linear-gradient(45deg, transparent 75%, #dfe6ee 75%), linear-gradient(-45deg, transparent 75%, #dfe6ee 75%); background-size: 20px 20px; background-position: 0 0, 0 10px, 10px -10px, -10px 0; }
+      .sheet-box img { @apply absolute inset-0 block h-full max-h-full w-full max-w-full object-contain; }
+      .image-size-label { @apply min-h-[14px] text-center text-[11px] leading-tight text-slate-500; }
+      .empty-preview { @apply p-4 text-center text-[13px] text-slate-300; }
+      .grid-overlay { @apply pointer-events-none absolute inset-0; background-image: linear-gradient(to right, rgb(255 255 255 / .32) 1px, transparent 1px), linear-gradient(to bottom, rgb(255 255 255 / .32) 1px, transparent 1px); background-size: 25% 25%; }
+      .cell-preview { @apply grid grid-cols-4 gap-2; }
+      .cell { @apply relative aspect-square overflow-hidden rounded-md border border-slate-300; background-color: #fff; background-image: linear-gradient(45deg, #dfe6ee 25%, transparent 25%), linear-gradient(-45deg, #dfe6ee 25%, transparent 25%), linear-gradient(45deg, transparent 75%, #dfe6ee 75%), linear-gradient(-45deg, transparent 75%, #dfe6ee 75%); background-size: 14px 14px; background-position: 0 0, 0 7px, 7px -7px, -7px 0; }
+      .cell span { @apply absolute inset-0 bg-no-repeat; background-size: 400% 400%; }
+      .cell em { @apply absolute bottom-1 left-1 rounded-full bg-white/80 px-1.5 py-px text-[10px] not-italic text-slate-700; }
+      .history-grid { @apply grid gap-2; grid-template-columns: repeat(auto-fill, minmax(66px, 1fr)); }
+      .history-item { @apply flex flex-col gap-1 overflow-hidden rounded-md border border-slate-300 bg-white p-0 hover:border-sky-600 hover:bg-sky-50; }
+      .history-thumb-frame { @apply relative aspect-square overflow-hidden; background-color: #fff; background-image: linear-gradient(45deg, #dfe6ee 25%, transparent 25%), linear-gradient(-45deg, #dfe6ee 25%, transparent 25%), linear-gradient(45deg, transparent 75%, #dfe6ee 75%), linear-gradient(-45deg, transparent 75%, #dfe6ee 75%); background-size: 12px 12px; background-position: 0 0, 0 6px, 6px -6px, -6px 0; }
+      .history-thumb-image { @apply absolute inset-0 bg-no-repeat; background-size: 400% 400%; background-position: 66.667% 33.333%; }
+      .history-item em { @apply overflow-hidden text-ellipsis whitespace-nowrap px-1 pb-1 text-[10px] not-italic text-slate-500; }
+      .history-item .image-size-label { @apply px-1 pb-1; }
+      .history-empty { @apply rounded-md border border-dashed border-slate-300 bg-slate-50 p-2.5 text-center text-xs text-slate-500; }
+      .ref-preview { @apply grid min-h-[86px] place-items-center overflow-hidden rounded-lg border border-dashed border-slate-300 bg-slate-50; }
+      .ref-preview img { @apply block h-[140px] w-full object-contain; }
+      .output { @apply min-h-60 overflow-auto whitespace-pre font-mono text-xs leading-normal; }
+      .prompt-box { @apply min-h-[150px] text-xs; }
+      .workspace-overlay, .modal-overlay, .webp-overlay { @apply fixed inset-0 z-[1000] flex bg-slate-950/60 p-[18px]; }
+      .modal-overlay { @apply z-[1050]; }
+      .webp-overlay { @apply z-[1100]; }
+      .workspace-window, .modal-window, .webp-window { @apply m-auto flex flex-col overflow-hidden rounded-lg bg-white shadow-2xl; }
+      .workspace-window { width: min(1180px, 100%); height: min(780px, 100%); }
+      .modal-window { width: min(980px, 100%); height: min(760px, 100%); }
+      .webp-window { width: min(1180px, calc(100vw - 36px)); height: min(860px, calc(100vh - 36px)); }
+      .workspace-titlebar, .modal-titlebar, .webp-titlebar { @apply flex min-h-12 items-center justify-between gap-2.5 border-b border-slate-300 bg-slate-50 px-4 py-0 select-none; }
+      .webp-titlebar { @apply cursor-move; }
+      .workspace-host, .modal-body, .webp-body { @apply min-h-0 flex-1; }
+      .modal-body { @apply flex flex-col gap-2.5 p-3; }
+      .modal-body textarea { @apply min-h-0 flex-1; }
+      .webp-body { @apply grid grid-cols-[minmax(520px,1fr)_240px] grid-rows-[minmax(0,1fr)] gap-3 overflow-hidden p-3; }
+      .webp-preview-box { @apply relative grid h-full min-h-0 place-items-center overflow-hidden rounded-lg border border-slate-300 bg-slate-950 p-2; }
+      .webp-preview-box.transparent { background-color: #fff; background-image: linear-gradient(45deg, #dfe6ee 25%, transparent 25%), linear-gradient(-45deg, #dfe6ee 25%, transparent 25%), linear-gradient(45deg, transparent 75%, #dfe6ee 75%), linear-gradient(-45deg, transparent 75%, #dfe6ee 75%); background-size: 20px 20px; background-position: 0 0, 0 10px, 10px -10px, -10px 0; }
+      .webp-preview-box img { @apply block h-auto max-h-full min-h-0 w-auto max-w-full min-w-0 object-contain object-center; }
+      .webp-preview-badge { @apply pointer-events-none absolute left-2.5 top-2.5 rounded-full bg-white/90 px-2 py-1 text-[11px] text-slate-900; }
+      .webp-controls { @apply flex flex-col gap-2; }
+      .webp-controls label { @apply gap-1; }
+      .webp-controls select, .webp-controls input { @apply min-h-[30px] py-1; }
+      .webp-controls input[type="range"] { @apply p-0; }
+      .webp-compact-grid { @apply grid grid-cols-2 gap-x-2 gap-y-1.5; }
+      .webp-control-head { @apply flex items-center justify-between gap-1.5 leading-tight; }
+      .webp-control-value { @apply font-bold text-slate-900; }
+      .webp-hintable { @apply cursor-help; }
+      .export-option { @apply mt-0.5; }
     }
-    button:hover { border-color: #9fc7e4; background: #f8fcff; }
-    button:active { transform: translateY(1px); }
-    button:disabled { opacity: .55; cursor: not-allowed; transform: none; }
-    .primary { background: var(--accent); border-color: var(--accent); color: #fff; }
-    .primary:hover { background: #0b7dbb; border-color: #0b7dbb; }
-    .success { background: var(--accent-2); border-color: var(--accent-2); color: #fff; }
-    .success:hover { background: #0e8f5c; border-color: #0e8f5c; color: #fff; }
-    .danger { color: var(--danger); border-color: #ffc4c4; background: #fff5f5; }
-    input, textarea, select {
-      width: 100%; min-height: 34px; border: 1px solid var(--line); border-radius: 6px; background: #fff; color: var(--text);
-      padding: 7px 9px; outline: none;
+    @media (max-width: 760px) {
+      .webp-body { @apply grid-cols-1; }
+      .workspace-overlay, .webp-overlay { @apply p-0; }
+      .workspace-window, .webp-window { @apply h-full w-full max-h-none rounded-none; }
     }
-    textarea { resize: vertical; line-height: 1.48; }
-    input:focus, textarea:focus, select:focus { border-color: var(--accent); box-shadow: 0 0 0 3px rgba(15,140,207,.12); }
-    label { display: flex; flex-direction: column; gap: 5px; font-size: 12px; color: var(--muted); }
-    h1, h2, h3 { margin: 0; letter-spacing: 0; }
-    h1 { font-size: 18px; line-height: 1.15; }
-    h2 { font-size: 14px; }
-    h3 { font-size: 12px; color: var(--muted); font-weight: 500; }
-    .app { display: grid; grid-template-columns: 260px 310px minmax(520px, 1fr); gap: 12px; min-height: 100vh; padding: 12px; }
-    .panel { min-height: 0; display: flex; flex-direction: column; background: var(--panel); border: 1px solid var(--line); border-radius: 8px; box-shadow: var(--shadow); overflow: hidden; }
-    .panel-head { min-height: 56px; padding: 12px 14px; border-bottom: 1px solid var(--line); display: flex; align-items: center; justify-content: space-between; gap: 10px; }
-    .panel-body { min-height: 0; flex: 1 1 auto; overflow: auto; padding: 12px; display: flex; flex-direction: column; gap: 12px; }
-    .sidebar .panel-body { padding: 12px; }
-    .section { border: 1px solid var(--line); border-radius: 8px; background: var(--panel-soft); padding: 11px; display: flex; flex-direction: column; gap: 10px; }
-    .toolbar { display: flex; gap: 8px; flex-wrap: wrap; align-items: center; }
-    .toolbar button { flex: 0 0 auto; }
-    .row { display: grid; grid-template-columns: 1fr 1fr; gap: 9px; }
-    .row-3 { display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 9px; }
-    .toggle-line { flex-direction: row; align-items: center; gap: 7px; color: var(--text); }
-    .toggle-line input { width: 15px; height: 15px; min-height: 0; }
-    .hint { font-size: 12px; color: var(--muted); line-height: 1.45; }
-    .status { border: 1px solid #cfe4f8; border-radius: 6px; background: #eef7ff; color: #24536f; padding: 8px 9px; font-size: 12px; line-height: 1.45; white-space: pre-wrap; }
-    .status.ok { border-color: #bde8d0; background: #f0fff6; color: #1d6945; }
-    .status.error { border-color: #ffc8c8; background: #fff5f5; color: #9b2c2c; }
-    .status-action { min-height: 0; border: 0; background: transparent; color: inherit; padding: 0; font-weight: 700; text-decoration: underline; text-underline-offset: 2px; }
-    .status-action:hover { background: transparent; border-color: transparent; }
-    .pill { display: inline-flex; align-items: center; min-height: 24px; padding: 0 8px; border: 1px solid var(--line); border-radius: 999px; color: var(--muted); font-size: 12px; background: #fff; white-space: nowrap; }
-    .records-toolbar { display: grid; grid-template-columns: 1fr auto; gap: 8px; padding: 12px; border-bottom: 1px solid var(--line); background: var(--panel-soft); }
-    .record-list { min-height: 0; overflow: auto; padding: 8px; display: flex; flex-direction: column; gap: 6px; }
-    .record-item { width: 100%; border: 1px solid var(--line); border-radius: 7px; background: #fff; padding: 9px; text-align: left; display: grid; grid-template-columns: 42px 1fr; gap: 9px; align-items: center; }
-    .record-item.active { border-color: var(--accent); background: #eff8ff; box-shadow: 0 0 0 2px rgba(15,140,207,.12); }
-    .record-thumb { width: 42px; height: 42px; border-radius: 6px; background: #0a0f18; overflow: hidden; border: 1px solid #cbd8e6; }
-    .record-thumb span { display: block; width: 100%; height: 100%; background-size: 400% 400%; background-position: 66.667% 33.333%; background-repeat: no-repeat; }
-    .record-title { min-width: 0; font-weight: 700; font-size: 13px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-    .record-meta { min-width: 0; color: var(--muted); font-size: 11px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-    .editor-grid { display: grid; grid-template-columns: minmax(360px, 1fr) minmax(360px, 1fr); gap: 12px; align-items: start; }
-    .stack { display: flex; flex-direction: column; gap: 12px; min-width: 0; }
-    .sheet-box { width: 100%; aspect-ratio: 1 / 1; border: 1px solid var(--line); border-radius: 8px; background: #0a0f18; position: relative; overflow: hidden; display: grid; place-items: center; }
-    .sheet-box img { width: 100%; height: 100%; object-fit: contain; display: block; }
-    .empty-preview { color: #c6d2de; font-size: 13px; text-align: center; padding: 16px; }
-    .grid-overlay { position: absolute; inset: 0; pointer-events: none; background-image: linear-gradient(to right, rgba(255,255,255,.32) 1px, transparent 1px), linear-gradient(to bottom, rgba(255,255,255,.32) 1px, transparent 1px); background-size: 25% 25%; }
-    .cell-preview { display: grid; grid-template-columns: repeat(4, 1fr); gap: 8px; }
-    .cell { aspect-ratio: 1 / 1; border: 1px solid var(--line); border-radius: 6px; background: #0a0f18; overflow: hidden; position: relative; }
-    .cell span { position: absolute; inset: 0; background-size: 400% 400%; background-repeat: no-repeat; }
-    .cell em { position: absolute; left: 5px; bottom: 4px; padding: 1px 5px; border-radius: 999px; background: rgba(255,255,255,.82); color: #223047; font-size: 10px; font-style: normal; }
-    .ref-preview { min-height: 86px; border: 1px dashed #b7cadc; border-radius: 8px; background: #f7fbff; display: grid; place-items: center; overflow: hidden; }
-    .ref-preview img { width: 100%; height: 140px; object-fit: contain; display: block; }
-    .output { min-height: 240px; font-family: Consolas, "SFMono-Regular", Menlo, monospace; font-size: 12px; line-height: 1.48; white-space: pre; overflow: auto; }
-    .prompt-box { min-height: 150px; font-family: inherit; font-size: 12px; }
-    .workspace-overlay { position: fixed; inset: 0; z-index: 1000; background: rgba(10,20,36,.58); display: flex; padding: 18px; }
-    .workspace-window { width: min(1180px, 100%); height: min(780px, 100%); margin: auto; background: #fff; border-radius: 8px; overflow: hidden; box-shadow: 0 26px 80px rgba(0,0,0,.34); display: flex; flex-direction: column; }
-    .workspace-titlebar { height: 48px; display: flex; align-items: center; justify-content: space-between; gap: 10px; border-bottom: 1px solid var(--line); padding: 0 12px 0 16px; background: #f8fbff; }
-    .workspace-host { flex: 1 1 auto; min-height: 0; }
-    @media (max-width: 1220px) { .app { grid-template-columns: 260px minmax(300px, 1fr); } .editor { grid-column: 1 / -1; } .editor-grid { grid-template-columns: 1fr; } }
-    @media (max-width: 760px) { .app { grid-template-columns: 1fr; padding: 8px; } .row, .row-3 { grid-template-columns: 1fr; } .workspace-overlay { padding: 0; } .workspace-window { width: 100%; height: 100%; border-radius: 0; } }
   </style>
 </head>
-<body>
-  <main class="app">
-    <aside class="panel sidebar">
-      <div class="panel-head">
+<body class="m-0 min-h-screen bg-slate-100 text-slate-900 font-sans">
+  <main class="grid min-h-screen grid-cols-1 gap-3 p-2 lg:grid-cols-[260px_minmax(300px,1fr)] lg:p-3 xl:grid-cols-[260px_310px_minmax(520px,1fr)]">
+    <aside class="sidebar flex min-h-0 flex-col overflow-hidden rounded-lg border border-slate-300 bg-white shadow-lg shadow-slate-300/40">
+      <div class="flex min-h-14 items-center justify-between gap-2.5 border-b border-slate-300 px-3.5 py-3">
         <div>
           <h1>Famous Pet Generator</h1>
           <h3>内部 famous-pet 生成器</h3>
         </div>
         <span id="sdkState" class="pill">SDK loading</span>
       </div>
-      <div class="panel-body">
-        <section class="section">
+      <div class="flex min-h-0 flex-1 flex-col gap-3 overflow-auto p-3">
+        <section class="flex flex-col gap-2.5 rounded-lg border border-slate-300 bg-slate-50 p-3">
           <h2>账号与工具</h2>
           <div id="loginState" class="status">正在加载 KeepworkSDK...</div>
           <div class="toolbar">
@@ -115,7 +118,7 @@
           </div>
         </section>
 
-        <section class="section">
+        <section class="flex flex-col gap-2.5 rounded-lg border border-slate-300 bg-slate-50 p-3">
           <h2>图片模型</h2>
           <label>模型 dropdown
             <select id="imageModelSelect"></select>
@@ -128,10 +131,12 @@
           </label>
           <div class="toolbar">
             <label class="toggle-line"><input id="uploadResultToKeepwork" type="checkbox" checked>上传临时 CDN</label>
+            <button id="btnPetCdnConfig" type="button">设置</button>
           </div>
+          <div id="petCdnStatus" class="hint">CDN folder: maisi/magichaqi/pet</div>
         </section>
 
-        <section class="section">
+        <section class="flex flex-col gap-2.5 rounded-lg border border-slate-300 bg-slate-50 p-3">
           <h2>参考图</h2>
           <label>参考图 URL
             <input id="referenceUrl" placeholder="https://... 或 data:image/...">
@@ -144,44 +149,44 @@
       </div>
     </aside>
 
-    <section class="panel records">
-      <div class="panel-head">
+    <section class="records flex min-h-0 flex-col overflow-hidden rounded-lg border border-slate-300 bg-white shadow-lg shadow-slate-300/40">
+      <div class="flex min-h-14 items-center justify-between gap-2.5 border-b border-slate-300 px-3.5 py-3">
         <div>
           <h2>famous-pets</h2>
           <h3>Workspace: MagicHaqi/famous-pets</h3>
         </div>
         <span id="recordCount" class="pill">0</span>
       </div>
-      <div class="records-toolbar">
+      <div class="grid grid-cols-[1fr_auto] gap-2 border-b border-slate-300 bg-slate-50 p-3">
         <input id="recordSearch" placeholder="搜索 id / name">
         <button id="btnNewPet" class="primary" type="button">新建</button>
         <button id="btnRefreshRecords" type="button">刷新</button>
         <button id="btnOpenIndex" type="button">index</button>
       </div>
       <div id="recordList" class="record-list">
-        <div class="hint" style="padding:10px">加载 SDK 后会列出 workspace famous-pets 下的所有记录。</div>
+        <div class="hint p-2.5">加载 SDK 后会列出 workspace famous-pets 下的所有记录。</div>
       </div>
     </section>
 
-    <section class="panel editor">
-      <div class="panel-head">
+    <section class="editor flex min-h-0 flex-col overflow-hidden rounded-lg border border-slate-300 bg-white shadow-lg shadow-slate-300/40 lg:col-span-2 xl:col-span-1">
+      <div class="flex min-h-14 items-center justify-between gap-2.5 border-b border-slate-300 px-3.5 py-3">
         <div>
           <h2 id="editorTitle">新建 famous pet</h2>
-          <h3 id="editorSubtitle">属性 + result + regenerate</h3>
+          <h3 id="editorSubtitle">属性 + 结果 + 重新生成</h3>
         </div>
         <div class="toolbar">
+          <button id="btnImportExport" type="button">导入导出</button>
           <button id="btnSavePet" class="success" type="button">保存</button>
           <button id="btnSaveIndex" class="success" type="button">更新 index</button>
-          <button id="btnGenerate" class="primary" type="button">Regenerate</button>
         </div>
       </div>
-      <div class="panel-body">
+      <div class="flex min-h-0 flex-1 flex-col gap-3 overflow-auto p-3">
         <div id="runStatus" class="status">准备就绪。选择记录或新建后，可生成 4x4 sprite sheet。</div>
-        <div class="editor-grid">
-          <div class="stack">
-            <section class="section">
+        <div class="grid grid-cols-1 items-start gap-3 xl:grid-cols-[minmax(360px,1fr)_minmax(360px,1fr)]">
+          <div class="flex min-w-0 flex-col gap-3">
+            <section class="flex flex-col gap-2.5 rounded-lg border border-slate-300 bg-slate-50 p-3">
               <h2>Properties</h2>
-              <div class="row">
+              <div class="grid grid-cols-1 gap-2.5 md:grid-cols-2">
                 <label>ID
                   <input id="petId" maxlength="64">
                 </label>
@@ -189,7 +194,7 @@
                   <input id="petName" maxlength="40">
                 </label>
               </div>
-              <div class="row-3">
+              <div class="grid grid-cols-1 gap-2.5 md:grid-cols-3">
                 <label>DNA
                   <input id="dna" maxlength="32">
                 </label>
@@ -205,7 +210,7 @@
                   </select>
                 </label>
               </div>
-              <div class="row-3">
+              <div class="grid grid-cols-1 gap-2.5 md:grid-cols-3">
                 <label>动作
                   <select id="anim">
                     <option value="idle">idle</option>
@@ -221,7 +226,7 @@
                   <select id="elementalAttribute"><option>自然</option><option>火</option><option>冰</option><option>生命</option><option>暗</option></select>
                 </label>
               </div>
-              <div class="row">
+              <div class="grid grid-cols-1 gap-2.5 md:grid-cols-2">
                 <label>种类
                   <input id="species">
                 </label>
@@ -229,7 +234,7 @@
                   <input id="color">
                 </label>
               </div>
-              <div class="row">
+              <div class="grid grid-cols-1 gap-2.5 md:grid-cols-2">
                 <label>眼睛
                   <input id="eyes">
                 </label>
@@ -241,7 +246,7 @@
                 <textarea id="wishPrompt" class="prompt-box"></textarea>
               </label>
               <label>额外 traits JSON
-                <textarea id="extraTraits" class="output" style="min-height:120px" spellcheck="false"></textarea>
+                <textarea id="extraTraits" class="output min-h-[120px]" spellcheck="false"></textarea>
               </label>
               <div class="toolbar">
                 <button id="btnRandomDna" type="button">随机 DNA</button>
@@ -250,7 +255,7 @@
               </div>
             </section>
 
-            <section class="section">
+            <section class="flex flex-col gap-2.5 rounded-lg border border-slate-300 bg-slate-50 p-3">
               <h2>Output JSON</h2>
               <textarea id="petJson" class="output" spellcheck="false"></textarea>
               <div class="toolbar">
@@ -259,16 +264,18 @@
                 <button id="btnDownloadJson" type="button">下载 JSON</button>
                 <button id="btnCopyIndex" type="button">复制 index 条目</button>
               </div>
+              <label class="toggle-line export-option"><input id="removeHistoryUrlsOnExport" type="checkbox" checked>复制 / 下载时移除 historyUrls</label>
               <div id="saveStatus" class="status">保存路径：famous-pets/&lt;id&gt;.json</div>
             </section>
           </div>
 
-          <div class="stack">
-            <section class="section">
+          <div class="flex min-w-0 flex-col gap-3">
+            <section class="flex flex-col gap-2.5 rounded-lg border border-slate-300 bg-slate-50 p-3">
               <h2>Result</h2>
               <div class="sheet-box" id="sheetBox"><div class="empty-preview">尚未生成贴图</div></div>
+              <div id="currentImageSize" class="image-size-label">&nbsp;</div>
               <div id="cellPreview" class="cell-preview"></div>
-              <div class="row">
+              <div class="grid grid-cols-1 gap-2.5 md:grid-cols-2">
                 <label>生成图片 URL
                   <input id="imageSheetUrl" placeholder="生成后自动填入，也可手动粘贴">
                 </label>
@@ -277,32 +284,45 @@
                 </label>
               </div>
               <div class="toolbar">
-                <button id="btnRegenerate" class="primary" type="button">Regenerate</button>
+                <button id="btnRegenerate" class="primary" type="button">重新生成</button>
+                <button id="btnDownloadWebp" class="export" type="button">导出 WebP</button>
                 <button id="btnOpenInvite" type="button">打开邀请</button>
               </div>
+              <div id="historyPreview" class="history-grid"><div class="history-empty">暂无历史图片</div></div>
             </section>
 
-            <section class="section">
+            <section class="flex flex-col gap-2.5 rounded-lg border border-slate-300 bg-slate-50 p-3">
               <h2>Final genImage Prompt</h2>
-              <textarea id="finalPrompt" class="prompt-box" style="min-height:260px" spellcheck="false"></textarea>
+              <textarea id="finalPrompt" class="prompt-box min-h-[260px]" spellcheck="false"></textarea>
             </section>
           </div>
         </div>
       </div>
     </section>
   </main>
+  <input id="petCdnConfigInput" type="file" accept=".yaml,.yml" hidden>
 
   <script type="module">
     import { normalizeDna, randomDna, decodeDna, dnaToName } from '../js/dna.js';
 
     const WORKSPACE = 'MagicHaqi';
     const FAMOUS_DIR = 'famous-pets';
+    const PET_CDN_FOLDER = 'maisi/magichaqi/pet';
+    const SAVED_CDN_CONFIG_STORAGE_KEY = 'keepwork_upload_cdn_config';
+    const PET_CDN_DEFAULT_BUCKET = 'haqi';
+    const PET_CDN_DEFAULT_DOMAIN = 'https://cdn.keepwork.com';
+    const PET_CDN_DEFAULT_UPLOAD_HOST = 'https://up-z2.qiniup.com';
     const SHEET_COLS = 4;
     const SHEET_ROWS = 4;
     const STAGE_ROW = { baby: 0, teen: 1, adult: 2, elder: 3 };
     const ANIM_COL = { idle: 0, happy: 1, sad: 2, sleep: 3 };
     const $ = (id) => document.getElementById(id);
-    const state = { sdk: null, referenceDataUrl: '', workspaceViewer: null, records: [], selectedId: '', currentPath: '', dirty: false };
+    const state = { sdk: null, referenceDataUrl: '', workspaceViewer: null, webpExport: null, records: [], selectedId: '', selectedPath: '', currentPath: '', currentHistoryUrls: [], imageSizeCache: new Map(), imageSizeRequests: new Map(), dirty: false, generationPromptsPromise: null };
+
+    function loadGenerationPrompts() {
+      state.generationPromptsPromise ||= import('../js/generationPrompts.js');
+      return state.generationPromptsPromise;
+    }
 
     function setStatus(el, text, kind = '') {
       el.textContent = text;
@@ -326,6 +346,105 @@
       const value = JSON.parse(raw);
       if (!value || typeof value !== 'object' || Array.isArray(value)) throw new Error('额外 traits 必须是 JSON 对象');
       return value;
+    }
+
+    function normalizeHistoryUrls(value) {
+      const raw = Array.isArray(value) ? value : String(value || '').split(/[\n,，、；;|]+/);
+      return [...new Set(raw.map(url => String(url || '').trim()).filter(Boolean))];
+    }
+
+    function formatImageKilobytes(bytes) {
+      if (!Number.isFinite(bytes) || bytes <= 0) return '';
+      const kb = bytes / 1024;
+      return `${kb >= 100 ? Math.round(kb) : kb.toFixed(1)} KB`;
+    }
+
+    function getDataUriByteSize(url) {
+      const text = String(url || '');
+      if (!text.startsWith('data:')) return null;
+      const comma = text.indexOf(',');
+      if (comma < 0) return null;
+      const meta = text.slice(0, comma).toLowerCase();
+      const data = text.slice(comma + 1).replace(/\s/g, '');
+      if (meta.includes(';base64')) return Math.max(0, Math.floor((data.length * 3) / 4) - (data.endsWith('==') ? 2 : data.endsWith('=') ? 1 : 0));
+      try { return new Blob([decodeURIComponent(data)]).size; }
+      catch (_) { return new Blob([data]).size; }
+    }
+
+    async function getImageByteSize(url) {
+      const key = String(url || '').trim();
+      if (!key) return null;
+      if (state.imageSizeCache.has(key)) return state.imageSizeCache.get(key);
+      if (state.imageSizeRequests.has(key)) return state.imageSizeRequests.get(key);
+      const request = (async () => {
+        const dataSize = getDataUriByteSize(key);
+        if (dataSize != null) return dataSize;
+        try {
+          const head = await fetch(key, { method: 'HEAD', cache: 'force-cache' });
+          const length = Number(head.headers.get('content-length'));
+          if (Number.isFinite(length) && length > 0) return length;
+        } catch (_) {}
+        try {
+          const res = await fetch(key, { cache: 'force-cache' });
+          if (!res.ok) return null;
+          return (await res.blob()).size;
+        } catch (_) { return null; }
+      })();
+      state.imageSizeRequests.set(key, request);
+      const size = await request;
+      state.imageSizeRequests.delete(key);
+      state.imageSizeCache.set(key, size);
+      return size;
+    }
+
+    function setImageSizeLabel(url, text) {
+      document.querySelectorAll('[data-image-size-url]').forEach(el => {
+        if (el.dataset.imageSizeUrl === url) el.textContent = text || '大小未知';
+      });
+    }
+
+    function refreshImageSizeLabels(urls) {
+      normalizeHistoryUrls(urls).forEach(url => {
+        const cached = state.imageSizeCache.has(url) ? state.imageSizeCache.get(url) : undefined;
+        setImageSizeLabel(url, cached === undefined ? '计算中...' : formatImageKilobytes(cached));
+        if (cached !== undefined) return;
+        getImageByteSize(url).then(size => setImageSizeLabel(url, formatImageKilobytes(size))).catch(() => setImageSizeLabel(url, '大小未知'));
+      });
+    }
+
+    function renderCurrentImageSize() {
+      const url = $('imageSheetUrl')?.value?.trim() || '';
+      const el = $('currentImageSize');
+      if (!el) return;
+      if (!url) {
+        el.textContent = '\u00a0';
+        delete el.dataset.imageSizeUrl;
+        return;
+      }
+      el.dataset.imageSizeUrl = url;
+      el.textContent = '计算中...';
+      refreshImageSizeLabels([url]);
+    }
+
+    function buildImageHistoryUrls(newUrl, pet = buildPetConfig()) {
+      return normalizeHistoryUrls([pet.imageSheetUrl, ...(pet.historyUrls || [])]).filter(url => url && url !== newUrl);
+    }
+
+    function shouldRemoveHistoryUrlsOnExport() {
+      return !!$('removeHistoryUrlsOnExport')?.checked;
+    }
+
+    function removeHistoryUrlsFromPet(pet) {
+      const result = { ...pet };
+      delete result.historyUrls;
+      return result;
+    }
+
+    function getPetExportJsonText() {
+      let pet;
+      try { pet = JSON.parse($('petJson').value || '{}'); }
+      catch (_) { pet = buildPetConfig(); }
+      return JSON.stringify(shouldRemoveHistoryUrlsOnExport() ? removeHistoryUrlsFromPet(pet) : pet, null, 2);
     }
 
     function getReferenceImage() {
@@ -357,12 +476,14 @@
       const id = safeId($('petId').value, state.selectedId || 'new_famous_pet');
       const dna = normalizeDna($('dna').value || randomDna());
       $('dna').value = dna;
-      return {
+      const imageSheetUrl = $('imageSheetUrl').value.trim() || null;
+      const historyUrls = normalizeHistoryUrls(state.currentHistoryUrls).filter(url => url !== imageSheetUrl);
+      const pet = {
         id,
         name: $('petName').value.trim() || id,
         dna,
         imageUrl: null,
-        imageSheetUrl: $('imageSheetUrl').value.trim() || null,
+        imageSheetUrl,
         traits: buildTraits(),
         rarity: Math.max(1, Number($('rarity').value) || 64),
         parents: null,
@@ -371,6 +492,8 @@
         anim: $('anim').value,
         everAdult: true,
       };
+      if (historyUrls.length) pet.historyUrls = historyUrls;
+      return pet;
     }
 
     function buildIndexEntry(pet = buildPetConfig()) {
@@ -386,6 +509,7 @@
         dna,
         imageUrl: null,
         imageSheetUrl: null,
+        historyUrls: [],
         traits: { ...traits, catLike: 8, sweetLike: 8 },
         rarity: 64,
         parents: null,
@@ -396,29 +520,11 @@
       };
     }
 
-    function buildPrompt() {
+    async function buildPrompt() {
       const pet = buildPetConfig();
-      const traits = pet.traits || {};
-      const dnaLine = [
-        `${traits.color || ''}的${traits.species || dnaToName(pet.dna)}`,
-        traits.eyes || '',
-        traits.accessory || '',
-        `${traits.element || '陆地'}族`,
-        `${traits.elementalAttribute || '自然'}属性`,
-      ].filter(Boolean).join('，');
       const reference = getReferenceImage();
-      const prompt = [
-        `宠物名称：${pet.name}。`,
-        pet.wishPrompt ? `玩家/运营指定外观（最高优先级）：${pet.wishPrompt}。` : '',
-        `配置 traits 灵感：${dnaLine}。`,
-        reference ? '参考图片是外观方向，请提取主要轮廓、颜色、纹理、配饰或气质，并转化成同一只二头身萌宠；不要照搬照片背景或文字。' : '',
-        '生成一张 4x4 共 16 格的精灵图 sprite sheet，所有格子尺寸相同、严格对齐网格、单元间无缝隙。',
-        '每一行代表同一只宠物的同一成长阶段：第 1 行=baby 宝宝/幼年，几乎只有圆圆大头，身体极小，只露出小短手小短脚；第 2 行=teen 青少年，标准二头身，展示未完全发育的主要特征；第 3 行=adult 成年，仍为二头身，完整呈现主要生物特点；第 4 行=elder 年长/长老，仍为二头身，增加元素特征或华丽感。',
-        '每一行的 4 列代表同一阶段下的 4 种情绪/状态：第 1 列=idle 待机自然站立平静微笑，第 2 列=happy 开心咧嘴大笑雀跃姿态，第 3 列=sad 难过眼角垂泪垂头丧气，第 4 列=sleep 睡觉闭眼放松或蜷缩。',
-        '同一行的 4 个变体必须保持相同种类、毛色、配饰，明显是同一只宠物；每个格子内只有一只宠物完整居中，四肢和头部不能被裁切。',
-        '严格背景要求：背景必须是纯黑色 #000000 填充整张图，每个格子内背景也都是纯黑；不能有阴影、渐变、白边、灰边、网格线、文字、水印或其他背景颜色；宠物本体不能整体过暗或全黑。',
-        '风格要求：参考 Tamagotchi Paradise / Sanrio 系列吉祥物，超扁平 2D 卡通插画，糖果色明亮饱和，超大水汪汪眼睛，小圆身体，柔和但清晰的深色描边，单色简单上色加少量高光；不要写实、不要 3D、不要复杂阴影。',
-      ].filter(Boolean).join(' ');
+      const { buildPetSheetPrompt } = await loadGenerationPrompts();
+      const prompt = buildPetSheetPrompt(pet.dna, pet.name, { customPrompt: pet.wishPrompt, referenceImage: reference });
       $('finalPrompt').value = prompt;
       updateOutput();
       return prompt;
@@ -430,6 +536,7 @@
       state.selectedId = normalized.id || '';
       const id = safeId(normalized.id, 'new_famous_pet');
       state.currentPath = path || `${FAMOUS_DIR}/${id}.json`;
+      state.selectedPath = state.currentPath;
       $('petId').value = id;
       $('petName').value = normalized.name || normalized.id || '';
       $('dna').value = normalizeDna(normalized.dna || randomDna());
@@ -446,8 +553,9 @@
       $('extraTraits').value = JSON.stringify(extra, null, 2);
       $('wishPrompt').value = normalized.wishPrompt || '';
       $('imageSheetUrl').value = normalized.imageSheetUrl || '';
+      state.currentHistoryUrls = normalizeHistoryUrls(normalized.historyUrls || normalized.imageHistoryUrls || []).filter(url => url !== $('imageSheetUrl').value.trim());
       renderSheet(normalized.imageSheetUrl || '');
-      buildPrompt();
+      buildPrompt().catch(e => setStatus($('saveStatus'), e?.message || String(e), 'error'));
       updateEditorTitle();
       state.dirty = false;
       renderRecordList();
@@ -553,7 +661,7 @@
             $('sdkState').textContent = 'SDK ready';
             await populateModelDropdown();
             await refreshLoginState();
-            await loadRecords();
+            await loadRecords({ selectFirstValid: true });
             return;
           }
         } catch (e) { lastError = e; }
@@ -617,6 +725,13 @@
       await getWorkspaceStore().createFile(path, content == null ? '' : String(content));
     }
 
+    async function deleteFile(path) {
+      const store = getWorkspaceStore();
+      if (typeof store.deleteFile === 'function') return await store.deleteFile(path);
+      if (typeof store.deletePageData === 'function') return await store.deletePageData(path, 'content', true);
+      throw new Error('当前 SDK 不支持删除 workspace 文件');
+    }
+
     function entryToPath(entry) {
       if (typeof entry === 'string') {
         const clean = entry.replace(/^\/+/, '');
@@ -627,7 +742,7 @@
       return raw.startsWith(`${FAMOUS_DIR}/`) ? raw : `${FAMOUS_DIR}/${raw}`;
     }
 
-    async function loadRecords() {
+    async function loadRecords({ selectFirstValid = false } = {}) {
       setStatus($('runStatus'), '正在读取 workspace famous-pets 记录...', '');
       let paths = [];
       try {
@@ -652,8 +767,14 @@
         }
       }
       state.records = records.sort((a, b) => String(a.id).localeCompare(String(b.id)));
-      renderRecordList();
       $('recordCount').textContent = String(state.records.length);
+      const firstValidRecord = state.records.find(record => record.pet);
+      if (selectFirstValid && firstValidRecord) {
+        applyPetToForm(firstValidRecord.pet, firstValidRecord.path);
+        setStatus($('runStatus'), `已加载 ${state.records.length} 条 workspace famous-pets 记录，已打开 ${firstValidRecord.path}。`, 'ok');
+        return;
+      }
+      renderRecordList();
       setStatus($('runStatus'), `已加载 ${state.records.length} 条 workspace famous-pets 记录。`, 'ok');
     }
 
@@ -662,21 +783,37 @@
       const records = state.records.filter(record => !query || `${record.id} ${record.name}`.toLowerCase().includes(query));
       $('recordList').innerHTML = records.length ? records.map(record => {
         const pet = record.pet || {};
-        const active = record.id === state.selectedId ? ' active' : '';
+        const active = record.path === state.selectedPath ? ' active' : '';
         const url = pet.imageSheetUrl || '';
         const thumb = url ? `<span style="background-image:url('${escapeHtml(url)}')"></span>` : '';
-        return `<button type="button" class="record-item${active}" data-id="${escapeHtml(record.id)}">
+        return `<div class="record-item${active}" data-path="${escapeHtml(record.path)}">
           <span class="record-thumb">${thumb}</span>
-          <span style="min-width:0"><span class="record-title">${escapeHtml(record.name || record.id)}</span><span class="record-meta">${escapeHtml(record.path)}</span></span>
-        </button>`;
-      }).join('') : '<div class="hint" style="padding:10px">没有匹配记录。点击“新建”创建一条。</div>';
-      $('recordList').querySelectorAll('.record-item').forEach(btn => {
-        btn.onclick = () => selectRecord(btn.dataset.id);
+          <button type="button" class="record-main" data-open-path="${escapeHtml(record.path)}"><span class="record-title">${escapeHtml(record.name || record.id)}</span><span class="record-meta">${escapeHtml(record.path)}</span></button>
+          <span class="record-actions"><button type="button" data-copy-path="${escapeHtml(record.path)}" title="复制">复制</button><button type="button" class="danger icon-button" data-delete-path="${escapeHtml(record.path)}" title="删除" aria-label="删除"><svg viewBox="0 0 24 24" fill="none" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M3 6h18"></path><path d="M8 6V4h8v2"></path><path d="M19 6l-1 14H6L5 6"></path><path d="M10 11v5"></path><path d="M14 11v5"></path></svg></button></span>
+        </div>`;
+      }).join('') : '<div class="hint p-2.5">没有匹配记录。点击“新建”创建一条。</div>';
+      $('recordList').querySelectorAll('[data-open-path]').forEach(btn => {
+        btn.onclick = () => selectRecord(btn.dataset.openPath);
+      });
+      $('recordList').querySelectorAll('[data-copy-path]').forEach(btn => {
+        btn.onclick = () => cloneRecord(btn.dataset.copyPath);
+      });
+      $('recordList').querySelectorAll('[data-delete-path]').forEach(btn => {
+        btn.onclick = () => deleteRecord(btn.dataset.deletePath).catch(e => setStatus($('saveStatus'), `删除失败：${e?.message || e}`, 'error'));
       });
     }
 
-    function selectRecord(id) {
-      const record = state.records.find(item => item.id === id);
+    function updatePetCdnStatus() {
+      const el = $('petCdnStatus');
+      if (!el) return;
+      const config = getPetCdnConfig();
+      el.textContent = config
+        ? `CDN folder: ${PET_CDN_FOLDER} · ${config.bucketName} · ${config.sourceLabel}`
+        : `CDN folder: ${PET_CDN_FOLDER} · 未加载 qiniu.yaml`;
+    }
+
+    function selectRecord(path) {
+      const record = state.records.find(item => item.path === path) || state.records.find(item => item.id === path);
       if (!record?.pet) {
         setStatus($('runStatus'), record?.error ? `记录无法读取：${record.error}` : '记录为空。', 'error');
         return;
@@ -689,14 +826,75 @@
       applyPetToForm(defaultPet(), `${FAMOUS_DIR}/new_famous_pet.json`);
       state.selectedId = '';
       state.currentPath = `${FAMOUS_DIR}/new_famous_pet.json`;
+      state.selectedPath = state.currentPath;
       renderRecordList();
       setStatus($('runStatus'), '已创建新记录草稿。编辑 ID 后保存即可写入 workspace。', '');
+    }
+
+    function nextCopyId(baseId) {
+      const base = safeId(`${baseId || 'famous_pet'}_copy`, 'famous_pet_copy');
+      const used = new Set(state.records.map(record => record.id));
+      if (!used.has(base)) return base;
+      for (let index = 2; index < 1000; index += 1) {
+        const id = `${base}_${index}`;
+        if (!used.has(id)) return id;
+      }
+      return `${base}_${Date.now()}`;
+    }
+
+    function cloneRecord(path) {
+      const record = state.records.find(item => item.path === path) || state.records.find(item => item.id === path);
+      if (!record?.pet) {
+        setStatus($('saveStatus'), record?.error ? `无法复制：${record.error}` : '无法复制空记录。', 'error');
+        return;
+      }
+      const id = nextCopyId(record.pet.id || record.id);
+      const copied = {
+        ...JSON.parse(JSON.stringify(record.pet)),
+        id,
+        name: `${record.pet.name || record.name || record.id} 副本`,
+      };
+      const copiedPath = `${FAMOUS_DIR}/${id}.json`;
+      state.records.push({ id, name: copied.name, path: copiedPath, pet: copied });
+      state.records.sort((a, b) => String(a.id).localeCompare(String(b.id)));
+      applyPetToForm(copied, copiedPath);
+      $('recordCount').textContent = String(state.records.length);
+      setStatus($('saveStatus'), `已复制 ${record.id} 为 ${id}。点击“保存”写入 workspace 和 index。`, 'ok');
+    }
+
+    async function removeIndexEntry(id) {
+      let list = [];
+      try { list = JSON.parse(await readFile(`${FAMOUS_DIR}/index.json`) || '[]'); } catch (_) { list = []; }
+      if (!Array.isArray(list)) list = [];
+      const next = list.filter(item => item?.id !== id);
+      if (next.length !== list.length) await writeFile(`${FAMOUS_DIR}/index.json`, JSON.stringify(next, null, 2));
+      return next;
+    }
+
+    async function deleteRecord(path) {
+      const record = state.records.find(item => item.path === path) || state.records.find(item => item.id === path);
+      if (!record) return;
+      if (!window.confirm(`删除宠物 ${record.name || record.id}？\n将删除 ${record.path}，并从 ${FAMOUS_DIR}/index.json 移除。`)) return;
+      let fileDeleted = false;
+      try { fileDeleted = await deleteFile(record.path) !== false; } catch (e) { throw e; }
+      await removeIndexEntry(record.id);
+      state.records = state.records.filter(item => item.path !== record.path);
+      if (state.selectedPath === record.path) {
+        const nextRecord = state.records.find(item => item.pet);
+        if (nextRecord) applyPetToForm(nextRecord.pet, nextRecord.path);
+        else newPet();
+      } else {
+        renderRecordList();
+      }
+      $('recordCount').textContent = String(state.records.length);
+      const suffix = fileDeleted ? '' : '（文件删除接口返回失败，已从 index 移除）';
+      setStatus($('saveStatus'), `已删除 ${record.id}${suffix}。`, fileDeleted ? 'ok' : 'error');
     }
 
     async function generateSheet() {
       const sdk = state.sdk || window.keepwork;
       if (!sdk?.aiGenerators?.genImage) throw new Error('sdk.aiGenerators.genImage 不可用');
-      const prompt = buildPrompt();
+      const prompt = await buildPrompt();
       const reference = getReferenceImage();
       const model = getSelectedImageModel();
       if (!model) throw new Error('请先在本地 API Key 设置中配置 Image 模型');
@@ -705,21 +903,23 @@
       if (!$('uploadResultToKeepwork').checked) opts.uploadResultToKeepwork = false;
       if (reference) opts.images = [{ url: reference, role: 'reference' }];
       setStatus($('runStatus'), `正在调用 genImage...\nmodel=${model}，size=${width}x${height}`, '');
-      $('btnGenerate').disabled = true;
+      if ($('btnGenerate')) $('btnGenerate').disabled = true;
       $('btnRegenerate').disabled = true;
       try {
         const url = await sdk.aiGenerators.genImage(prompt, opts);
         if (!url) throw new Error('genImage 未返回图片 URL');
+        state.currentHistoryUrls = buildImageHistoryUrls(url, buildPetConfig());
         $('imageSheetUrl').value = url;
         renderSheet(url);
         updateOutput();
+        await savePetJson({ reload: true, silent: true });
         const isDataUri = String(url).startsWith('data:');
-        setStatus($('runStatus'), isDataUri ? `生成完成，返回 data URI (${url.length} chars)。` : '生成完成。请检查 4x4 网格是否对齐。', 'ok');
+        setStatus($('runStatus'), isDataUri ? `生成完成，返回 data URI (${url.length} chars)，已自动保存 pet 和 index。` : '生成完成，已自动保存 pet 和 index。请检查 4x4 网格是否对齐。', 'ok');
       } catch (e) {
         setStatus($('runStatus'), `生成失败：${e?.message || e}`, 'error');
         throw e;
       } finally {
-        $('btnGenerate').disabled = false;
+        if ($('btnGenerate')) $('btnGenerate').disabled = false;
         $('btnRegenerate').disabled = false;
       }
     }
@@ -728,6 +928,8 @@
       if (!url) {
         $('sheetBox').innerHTML = '<div class="empty-preview">尚未生成贴图</div>';
         $('cellPreview').innerHTML = '';
+        renderCurrentImageSize();
+        renderHistoryPreview();
         return;
       }
       const safe = escapeHtml(url);
@@ -739,9 +941,39 @@
         const by = (row * 100 / (SHEET_ROWS - 1)).toFixed(3);
         return `<div class="cell"><span style="background-image:url('${safe}');background-position:${bx}% ${by}%"></span><em>${anim}</em></div>`;
       }).join('');
+      renderCurrentImageSize();
+      renderHistoryPreview();
     }
 
-    async function savePetJson() {
+    function renderHistoryPreview() {
+      const root = $('historyPreview');
+      if (!root) return;
+      const current = $('imageSheetUrl')?.value?.trim() || '';
+      const urls = normalizeHistoryUrls(state.currentHistoryUrls).filter(url => url && url !== current);
+      state.currentHistoryUrls = urls;
+      root.innerHTML = urls.length ? urls.map((url, index) => {
+        const safe = escapeHtml(url);
+        return `<button type="button" class="history-item" data-url="${safe}" title="${safe}"><span class="history-thumb-frame"><span class="history-thumb-image" style="background-image:url('${safe}')"></span></span><em>#${index + 1}</em><span class="image-size-label" data-image-size-url="${safe}">计算中...</span></button>`;
+      }).join('') : '<div class="history-empty">暂无历史图片</div>';
+      root.querySelectorAll('.history-item').forEach(button => {
+        button.onclick = () => selectHistoryImage(button.dataset.url || '');
+      });
+      refreshImageSizeLabels(urls);
+    }
+
+    function selectHistoryImage(url) {
+      if (!url) return;
+      const current = $('imageSheetUrl').value.trim();
+      if (url === current) return;
+      const nextHistoryUrls = normalizeHistoryUrls(state.currentHistoryUrls.map(item => item === url ? current : item));
+      $('imageSheetUrl').value = url;
+      state.currentHistoryUrls = normalizeHistoryUrls([current, ...nextHistoryUrls]).filter(item => item && item !== url);
+      renderSheet(url);
+      updateOutput();
+      setStatus($('saveStatus'), '已与历史图片交换。点击“保存”保存。', 'ok');
+    }
+
+    async function savePetJson({ reload = true, silent = false } = {}) {
       const pet = JSON.parse($('petJson').value);
       const id = safeId(pet.id || $('petId').value, `famous_pet_${Date.now()}`);
       const path = `${FAMOUS_DIR}/${id}.json`;
@@ -751,8 +983,11 @@
       await upsertIndexEntry(buildIndexEntry(savedPet));
       state.currentPath = path;
       state.selectedId = id;
-      await loadRecords();
-      setStatus($('saveStatus'), `已写入 ${path}，并更新 ${FAMOUS_DIR}/index.json`, 'ok');
+      state.selectedPath = path;
+      if (reload) await loadRecords();
+      else renderRecordList();
+      if (!silent) setStatus($('saveStatus'), `已写入 ${path}，并更新 ${FAMOUS_DIR}/index.json`, 'ok');
+      return { path, pet: savedPet };
     }
 
     async function upsertIndexEntry(entry) {
@@ -770,6 +1005,194 @@
       const entry = buildIndexEntry(JSON.parse($('petJson').value));
       await upsertIndexEntry(entry);
       setStatus($('saveStatus'), `已更新 ${FAMOUS_DIR}/index.json：${entry.id}`, 'ok');
+    }
+
+    async function readIndexListForExport() {
+      try {
+        const parsed = JSON.parse(await readFile(`${FAMOUS_DIR}/index.json`) || '[]');
+        if (Array.isArray(parsed)) return parsed;
+      } catch (_) {}
+      return state.records.filter(record => record.pet).map(record => buildIndexEntry(record.pet));
+    }
+
+    function getExportPetPaths() {
+      const checked = [...document.querySelectorAll('[data-export-pet-path]:checked')].map(input => input.dataset.exportPetPath).filter(Boolean);
+      return [...new Set(checked)];
+    }
+
+    function currentEditorPetPath() {
+      return `${FAMOUS_DIR}/${safeId($('petId').value, 'new_famous_pet')}.json`;
+    }
+
+    async function readPetForExport(path) {
+      const currentPath = currentEditorPetPath();
+      if (path === currentPath) {
+        try { return JSON.parse($('petJson').value || '{}'); } catch (_) {}
+      }
+      const record = state.records.find(item => item.path === path);
+      if (record?.pet) return record.pet;
+      return JSON.parse(await readFile(path));
+    }
+
+    async function buildFamousPetsExportBundle(paths) {
+      const files = { [`${FAMOUS_DIR}/index.json`]: await readIndexListForExport() };
+      for (const path of paths) {
+        if (!path || path === `${FAMOUS_DIR}/index.json` || !path.startsWith(`${FAMOUS_DIR}/`) || !/\.json$/i.test(path)) continue;
+        const pet = await readPetForExport(path);
+        files[path] = shouldRemoveHistoryUrlsOnExport() ? removeHistoryUrlsFromPet(pet) : pet;
+      }
+      return { type: 'MagicHaqi.famous-pets-export', version: 1, exportedAt: new Date().toISOString(), root: FAMOUS_DIR, files };
+    }
+
+    async function copySelectedFamousPetsExport() {
+      const paths = getExportPetPaths();
+      const bundle = await buildFamousPetsExportBundle(paths);
+      await copyText(JSON.stringify(bundle, null, 2));
+      setImportExportStatus(`已复制 index 和 ${paths.length} 个 pet 文件。`, 'ok');
+    }
+
+    async function downloadSelectedFamousPetsExport() {
+      const paths = getExportPetPaths();
+      const indexList = await readIndexListForExport();
+      downloadText('index.json', JSON.stringify(indexList, null, 2));
+      for (const path of paths) {
+        if (!path || path === `${FAMOUS_DIR}/index.json` || !path.startsWith(`${FAMOUS_DIR}/`) || !/\.json$/i.test(path)) continue;
+        const pet = await readPetForExport(path);
+        const exportPet = shouldRemoveHistoryUrlsOnExport() ? removeHistoryUrlsFromPet(pet) : pet;
+        const fileName = path.split('/').pop() || `${safeId(exportPet.id, 'famous_pet')}.json`;
+        downloadText(fileName, JSON.stringify(exportPet, null, 2));
+      }
+      setImportExportStatus(`已分别下载完整 index.json 和 ${paths.length} 个 pet 文件。`, 'ok');
+    }
+
+    function setImportExportStatus(text, kind = '') {
+      const el = $('importExportStatus');
+      if (!el) return;
+      el.textContent = text;
+      el.classList.toggle('error', kind === 'error');
+      el.classList.toggle('ok', kind === 'ok');
+    }
+
+    function normalizeImportFiles(data) {
+      const files = new Map();
+      const addFile = (path, value) => {
+        const clean = String(path || '').trim().replace(/^\/+/, '');
+        if (!clean.startsWith(`${FAMOUS_DIR}/`) || !/\.json$/i.test(clean)) return;
+        files.set(clean, typeof value === 'string' ? value : JSON.stringify(value, null, 2));
+      };
+      if (data?.files && typeof data.files === 'object' && !Array.isArray(data.files)) {
+        Object.entries(data.files).forEach(([path, value]) => addFile(path, value));
+      } else if (Array.isArray(data)) {
+        addFile(`${FAMOUS_DIR}/index.json`, data);
+      } else if (data?.index || data?.pets) {
+        if (data.index) addFile(`${FAMOUS_DIR}/index.json`, data.index);
+        const pets = Array.isArray(data.pets) ? data.pets : Object.values(data.pets || {});
+        pets.forEach(pet => pet?.id && addFile(`${FAMOUS_DIR}/${safeId(pet.id)}.json`, pet));
+      } else if (data?.id) {
+        addFile(`${FAMOUS_DIR}/${safeId(data.id)}.json`, data);
+      }
+      return files;
+    }
+
+    function importPathFromFile(file, data) {
+      const raw = String(file?.webkitRelativePath || file?.name || '').trim().replace(/^\/+/, '');
+      const fileName = raw.split(/[\\/]/).pop() || '';
+      if (/^index\.json$/i.test(fileName)) return `${FAMOUS_DIR}/index.json`;
+      const pathFromFolder = raw.includes(`${FAMOUS_DIR}/`) ? raw.slice(raw.indexOf(`${FAMOUS_DIR}/`)) : '';
+      if (pathFromFolder && /\.(json|js)$/i.test(pathFromFolder)) return pathFromFolder.replace(/\.js$/i, '.json');
+      if (data?.id) return `${FAMOUS_DIR}/${safeId(data.id)}.json`;
+      return fileName ? `${FAMOUS_DIR}/${fileName.replace(/\.js$/i, '.json')}` : '';
+    }
+
+    async function importFamousPetsBundleFromFile() {
+      const input = document.createElement('input');
+      input.type = 'file';
+      input.multiple = true;
+      input.accept = 'application/json,.json,.js';
+      input.onchange = async () => {
+        const selectedFiles = [...(input.files || [])];
+        if (!selectedFiles.length) return;
+        try {
+          const files = new Map();
+          for (const file of selectedFiles) {
+            const data = JSON.parse(await file.text());
+            const bundledFiles = selectedFiles.length === 1 ? normalizeImportFiles(data) : new Map();
+            if (bundledFiles.size) {
+              bundledFiles.forEach((content, path) => files.set(path, content));
+              continue;
+            }
+            const path = importPathFromFile(file, data);
+            if (path && path.startsWith(`${FAMOUS_DIR}/`) && /\.json$/i.test(path)) files.set(path, JSON.stringify(data, null, 2));
+          }
+          if (!files.size) throw new Error('未找到可导入的 famous-pets JSON 文件');
+          const hasIndex = files.has(`${FAMOUS_DIR}/index.json`);
+          let petCount = 0;
+          for (const [path, content] of files) {
+            await writeFile(path, content);
+            if (path !== `${FAMOUS_DIR}/index.json`) petCount += 1;
+          }
+          if (!hasIndex) {
+            for (const [path, content] of files) {
+              if (path === `${FAMOUS_DIR}/index.json`) continue;
+              try { await upsertIndexEntry(buildIndexEntry(JSON.parse(content))); } catch (_) {}
+            }
+          }
+          await loadRecords();
+          setImportExportStatus(`已导入 ${petCount} 个 pet 文件${hasIndex ? '，并覆盖 index' : '，并更新 index'}。`, 'ok');
+          setStatus($('saveStatus'), '导入完成。', 'ok');
+        } catch (e) {
+          setImportExportStatus(`导入失败：${e?.message || e}`, 'error');
+        }
+      };
+      input.click();
+    }
+
+    function renderImportExportPetList() {
+      const root = $('exportPetList');
+      if (!root) return;
+      const currentPath = state.selectedPath || currentEditorPetPath();
+      root.innerHTML = state.records.length ? state.records.map(record => {
+        const checked = record.path === currentPath ? 'checked' : '';
+        return `<label class="toggle-line rounded border border-slate-200 bg-white px-2 py-1.5"><input type="checkbox" data-export-pet-path="${escapeHtml(record.path)}" ${checked}> <span class="min-w-0 overflow-hidden text-ellipsis whitespace-nowrap">${escapeHtml(record.name || record.id)} · ${escapeHtml(record.path)}</span></label>`;
+      }).join('') : '<div class="hint">暂无 pet 记录。先刷新或保存当前 pet 后再导出。</div>';
+      updateImportExportSelectedCount();
+      root.querySelectorAll('[data-export-pet-path]').forEach(input => input.addEventListener('change', updateImportExportSelectedCount));
+    }
+
+    function updateImportExportSelectedCount() {
+      if ($('exportSelectedCount')) $('exportSelectedCount').textContent = String(getExportPetPaths().length);
+    }
+
+    function openImportExportDialog() {
+      closeImportExportDialog();
+      const overlay = document.createElement('div');
+      overlay.className = 'modal-overlay';
+      overlay.id = 'importExportOverlay';
+      overlay.innerHTML = `<div class="modal-window" role="dialog" aria-modal="true" aria-label="导入导出 famous-pets">
+        <div class="modal-titlebar"><strong>导入导出 · ${FAMOUS_DIR}</strong><button type="button" id="closeImportExport">关闭</button></div>
+        <div class="modal-body">
+          <div class="hint">导出会分别下载完整 index.json（包含 index 中全部宠物）以及下方勾选的 pet JSON 文件；导入可一次选择 index.json 和多个 pet JSON 文件。</div>
+          <div class="toolbar"><button id="btnExportSelectAll" type="button">全选</button><button id="btnExportSelectNone" type="button">清空</button><span class="pill">已选 <span id="exportSelectedCount">0</span></span></div>
+          <div id="exportPetList" class="flex min-h-0 flex-1 flex-col gap-1.5 overflow-auto rounded-md border border-slate-300 bg-slate-50 p-2"></div>
+          <label class="toggle-line"><input id="modalRemoveHistoryUrlsOnExport" type="checkbox" ${shouldRemoveHistoryUrlsOnExport() ? 'checked' : ''}>导出 pet 时移除 historyUrls</label>
+          <div id="importExportStatus" class="status">准备导入/导出。</div>
+          <div class="toolbar justify-end"><button id="btnImportFamousPets" type="button">导入 JSON</button><button id="btnCopyFamousPetsExport" type="button">复制 JSON 包</button><button id="btnDownloadFamousPetsExport" class="primary" type="button">下载所选文件</button></div>
+        </div>
+      </div>`;
+      document.body.appendChild(overlay);
+      overlay.addEventListener('click', event => { if (event.target === overlay) closeImportExportDialog(); });
+      $('closeImportExport').onclick = closeImportExportDialog;
+      $('modalRemoveHistoryUrlsOnExport').onchange = () => { $('removeHistoryUrlsOnExport').checked = $('modalRemoveHistoryUrlsOnExport').checked; };
+      $('btnExportSelectAll').onclick = () => { document.querySelectorAll('[data-export-pet-path]').forEach(input => { input.checked = true; }); updateImportExportSelectedCount(); };
+      $('btnExportSelectNone').onclick = () => { document.querySelectorAll('[data-export-pet-path]').forEach(input => { input.checked = false; }); updateImportExportSelectedCount(); };
+      $('btnImportFamousPets').onclick = () => importFamousPetsBundleFromFile().catch(e => setImportExportStatus(`导入失败：${e?.message || e}`, 'error'));
+      $('btnCopyFamousPetsExport').onclick = () => copySelectedFamousPetsExport().catch(e => setImportExportStatus(`复制失败：${e?.message || e}`, 'error'));
+      $('btnDownloadFamousPetsExport').onclick = () => downloadSelectedFamousPetsExport().catch(e => setImportExportStatus(`导出失败：${e?.message || e}`, 'error'));
+      renderImportExportPetList();
+    }
+
+    function closeImportExportDialog() {
+      $('importExportOverlay')?.remove();
     }
 
     function openWorkspaceViewer() {
@@ -801,6 +1224,10 @@
 
     function downloadText(filename, text) {
       const blob = new Blob([text], { type: 'application/json;charset=utf-8' });
+      downloadBlob(filename, blob);
+    }
+
+    function downloadBlob(filename, blob) {
       const url = URL.createObjectURL(blob);
       const a = document.createElement('a');
       a.href = url;
@@ -809,6 +1236,440 @@
       a.click();
       a.remove();
       setTimeout(() => URL.revokeObjectURL(url), 500);
+    }
+
+    function parseSimpleYaml(text) {
+      const result = {};
+      for (const raw of String(text || '').split(/\r?\n/)) {
+        const line = raw.trim();
+        if (!line || line.startsWith('#')) continue;
+        const index = line.indexOf(':');
+        if (index <= 0) continue;
+        const key = line.slice(0, index).trim();
+        let value = line.slice(index + 1).trim();
+        if ((value.startsWith('"') && value.endsWith('"')) || (value.startsWith("'") && value.endsWith("'"))) value = value.slice(1, -1);
+        result[key] = value;
+      }
+      return result;
+    }
+
+    function savePetCdnConfig(config, sourceLabel) {
+      try {
+        localStorage.setItem(SAVED_CDN_CONFIG_STORAGE_KEY, JSON.stringify({
+          config,
+          configSource: sourceLabel || 'FamousPetGenerator',
+          savedAt: Date.now(),
+        }));
+      } catch (_) {}
+    }
+
+    function petCdnConfigToYaml(config) {
+      if (!config) return '';
+      return [
+        `accessKey: ${config.accessKey || ''}`,
+        `secretKey: ${config.secretKey || ''}`,
+        `bucketName: ${config.bucketName || PET_CDN_DEFAULT_BUCKET}`,
+        `publicDomain: ${config.publicDomain || PET_CDN_DEFAULT_DOMAIN}`,
+        `uploadHost: ${config.uploadHost || PET_CDN_DEFAULT_UPLOAD_HOST}`,
+      ].join('\n');
+    }
+
+    function applyPetCdnConfigFromText(text, sourceLabel) {
+      const parsed = parseSimpleYaml(text);
+      const source = parsed.qiniu || parsed;
+      if (!source.accessKey || !source.secretKey) {
+        setStatus($('runStatus'), 'CDN 配置缺少 accessKey 或 secretKey。', 'error');
+        return false;
+      }
+      const config = {
+        accessKey: source.accessKey,
+        secretKey: source.secretKey,
+        bucketName: source.bucketName || PET_CDN_DEFAULT_BUCKET,
+        publicDomain: (source.publicDomain || PET_CDN_DEFAULT_DOMAIN).replace(/\/+$/, ''),
+        uploadHost: (source.uploadHost || PET_CDN_DEFAULT_UPLOAD_HOST).replace(/\/+$/, ''),
+      };
+      savePetCdnConfig(config, sourceLabel || 'qiniu.yaml');
+      updatePetCdnStatus();
+      updateWebpCdnMeta();
+      setStatus($('runStatus'), `CDN 配置已加载：${config.bucketName} · ${sourceLabel || 'qiniu.yaml'}`, 'ok');
+      return true;
+    }
+
+    function pickPetCdnConfigFile() {
+      const input = $('petCdnConfigInput');
+      if (!input) return;
+      input.onchange = async () => {
+        try {
+          const file = input.files?.[0];
+          if (!file) return;
+          if (applyPetCdnConfigFromText(await file.text(), file.name) && $('petCdnConfigText')) {
+            $('petCdnConfigText').value = petCdnConfigToYaml(getPetCdnConfig());
+          }
+        } catch (error) {
+          setStatus($('runStatus'), `CDN 配置读取失败：${error?.message || error}`, 'error');
+        } finally {
+          input.value = '';
+        }
+      };
+      input.click();
+    }
+
+    function updateWebpCdnMeta() {
+      const el = $('webpCdnMeta');
+      if (!el) return;
+      const config = getPetCdnConfig();
+      el.textContent = config
+        ? `CDN folder: ${PET_CDN_FOLDER} · ${config.bucketName} · ${config.sourceLabel}`
+        : `CDN folder: ${PET_CDN_FOLDER} · 未加载 qiniu.yaml`;
+    }
+
+    function openPetCdnConfigPasteDialog() {
+      closePetCdnConfigPasteDialog();
+      const overlay = document.createElement('div');
+      overlay.className = 'modal-overlay';
+      overlay.id = 'petCdnConfigOverlay';
+      overlay.innerHTML = `<div class="modal-window max-h-[440px] max-w-[560px]" role="dialog" aria-modal="true" aria-label="CDN Settings">
+        <div class="modal-titlebar"><strong>上传设置</strong><button type="button" id="closePetCdnConfig">关闭</button></div>
+        <div class="modal-body">
+          <div class="hint">选择 qiniu.yaml 文件，或直接粘贴 YAML 内容。该配置保存到本浏览器，并和场景生成器、uploadCDN 工具共用。</div>
+          <div class="hint">当前上传目录：${PET_CDN_FOLDER}</div>
+          <div class="toolbar"><button id="btnDialogPickPetCdnConfig" type="button">选择 qiniu.yaml 文件</button></div>
+          <textarea id="petCdnConfigText" class="prompt-box" spellcheck="false" placeholder="accessKey: xxx&#10;secretKey: xxx&#10;bucketName: haqi&#10;publicDomain: https://cdn.keepwork.com&#10;uploadHost: https://up-z2.qiniup.com"></textarea>
+          <div class="toolbar justify-end"><button id="btnCancelPetCdnConfig" type="button">取消</button><button id="btnApplyPetCdnConfig" class="primary" type="button">确认</button></div>
+        </div>
+      </div>`;
+      document.body.appendChild(overlay);
+      overlay.addEventListener('click', event => { if (event.target === overlay) closePetCdnConfigPasteDialog(); });
+      $('closePetCdnConfig').onclick = closePetCdnConfigPasteDialog;
+      $('btnCancelPetCdnConfig').onclick = closePetCdnConfigPasteDialog;
+      $('btnDialogPickPetCdnConfig').onclick = pickPetCdnConfigFile;
+      $('btnApplyPetCdnConfig').onclick = () => {
+        const text = $('petCdnConfigText').value.trim();
+        if (!text) {
+          setStatus($('runStatus'), 'CDN YAML 为空，上传前需要加载配置。', 'error');
+          return;
+        }
+        if (applyPetCdnConfigFromText(text, '手动粘贴')) closePetCdnConfigPasteDialog();
+      };
+      $('petCdnConfigText').value = petCdnConfigToYaml(getPetCdnConfig());
+      $('petCdnConfigText').focus();
+    }
+
+    function closePetCdnConfigPasteDialog() {
+      $('petCdnConfigOverlay')?.remove();
+    }
+
+    function getPetCdnConfig() {
+      try {
+        const saved = JSON.parse(localStorage.getItem(SAVED_CDN_CONFIG_STORAGE_KEY) || 'null');
+        const source = saved?.config || saved?.qiniu || saved;
+        if (!source?.accessKey || !source?.secretKey) return null;
+        return {
+          accessKey: source.accessKey,
+          secretKey: source.secretKey,
+          bucketName: source.bucketName || PET_CDN_DEFAULT_BUCKET,
+          publicDomain: (source.publicDomain || PET_CDN_DEFAULT_DOMAIN).replace(/\/+$/, ''),
+          uploadHost: (source.uploadHost || PET_CDN_DEFAULT_UPLOAD_HOST).replace(/\/+$/, ''),
+          sourceLabel: saved?.configSource || 'localStorage',
+        };
+      } catch (_) {
+        return null;
+      }
+    }
+
+    function base64UrlSafe(buffer) {
+      const bytes = buffer instanceof ArrayBuffer ? new Uint8Array(buffer) : buffer;
+      let binary = '';
+      for (const byteValue of bytes) binary += String.fromCharCode(byteValue);
+      return btoa(binary).replace(/\+/g, '-').replace(/\//g, '_');
+    }
+
+    async function signPetCdnUploadToken(config, remoteKey) {
+      const deadline = Math.floor(Date.now() / 1000) + 3600;
+      const policy = { scope: `${config.bucketName}:${remoteKey}`, deadline };
+      const encodedPolicy = btoa(JSON.stringify(policy)).replace(/\+/g, '-').replace(/\//g, '_');
+      const cryptoKey = await crypto.subtle.importKey('raw', new TextEncoder().encode(config.secretKey), { name: 'HMAC', hash: 'SHA-1' }, false, ['sign']);
+      const signature = await crypto.subtle.sign('HMAC', cryptoKey, new TextEncoder().encode(encodedPolicy));
+      return `${config.accessKey}:${base64UrlSafe(signature)}:${encodedPolicy}`;
+    }
+
+    function getPetCdnFileName(extension = 'webp') {
+      const id = safeId($('petId').value, 'famous_pet');
+      return `${id}_${new Date().toISOString().replace(/[-:.TZ]/g, '').slice(0, 14)}.${extension}`;
+    }
+
+    async function uploadBlobToPetCdn(blob, fileName) {
+      const config = getPetCdnConfig();
+      if (!config) throw new Error('未找到 CDN 配置，请先点击“设置”加载 qiniu.yaml');
+      const remoteKey = `${PET_CDN_FOLDER}/${fileName}`;
+      const token = await signPetCdnUploadToken(config, remoteKey);
+      const form = new FormData();
+      form.append('token', token);
+      form.append('key', remoteKey);
+      form.append('file', blob, fileName);
+      const response = await fetch(config.uploadHost, { method: 'POST', body: form });
+      if (!response.ok) throw new Error(`CDN 上传失败：${response.status} ${await response.text()}`);
+      const result = await response.json().catch(() => ({}));
+      const key = result.key || remoteKey;
+      return { url: `${config.publicDomain}/${key}`, remoteKey: key, config };
+    }
+
+    function loadImageForCanvas(url) {
+      return new Promise((resolve, reject) => {
+        const img = new Image();
+        if (!String(url).startsWith('data:')) img.crossOrigin = 'anonymous';
+        img.onload = () => resolve(img);
+        img.onerror = () => reject(new Error('图片加载失败，无法转换 WebP'));
+        img.src = url;
+      });
+    }
+
+    function getWebpExportSize(sourceWidth, sourceHeight, mode) {
+      if (mode.endsWith('%')) {
+        const scale = Math.max(0.05, Math.min(1, Number(mode.slice(0, -1)) / 100 || 1));
+        return { width: Math.max(1, Math.round(sourceWidth * scale)), height: Math.max(1, Math.round(sourceHeight * scale)) };
+      }
+      const maxEdge = Number(mode) || Math.max(sourceWidth, sourceHeight);
+      const scale = Math.min(1, maxEdge / Math.max(sourceWidth, sourceHeight));
+      return { width: Math.max(1, Math.round(sourceWidth * scale)), height: Math.max(1, Math.round(sourceHeight * scale)) };
+    }
+
+    function formatBytes(bytes) {
+      if (!Number.isFinite(bytes)) return '-';
+      if (bytes < 1024) return `${bytes} B`;
+      if (bytes < 1024 * 1024) return `${Math.round(bytes / 1024)} KB`;
+      return `${(bytes / 1024 / 1024).toFixed(2)} MB`;
+    }
+
+    function processSheetBackgroundWithWorker(blob, options = {}) {
+      return new Promise((resolve, reject) => {
+        const worker = new Worker('../js/petSheetWorker.js');
+        const id = `webp_export_${Date.now()}_${Math.random().toString(36).slice(2)}`;
+        const cleanup = () => worker.terminate();
+        worker.onmessage = event => {
+          const result = event.data || {};
+          if (result.id !== id) return;
+          cleanup();
+          if (result.ok) resolve(result.blob);
+          else reject(new Error(result.error || '去除背景失败'));
+        };
+        worker.onerror = event => {
+          cleanup();
+          reject(new Error(event.message || 'petSheetWorker 加载失败'));
+        };
+        worker.postMessage({ id, blob, options });
+      });
+    }
+
+    function getWebpBgOptions() {
+      return {
+        seedThreshold: Number($('webpBgSeed').value) || 60,
+        growThreshold: Number($('webpBgGrow').value) || 78,
+        haloThreshold: Number($('webpBgHalo').value) || 112,
+        borderRatio: (Number($('webpBgBorder').value) || 2) / 100,
+      };
+    }
+
+    function updateWebpBgOptionLabels() {
+      $('webpBgSeedText').textContent = $('webpBgSeed').value;
+      $('webpBgGrowText').textContent = $('webpBgGrow').value;
+      $('webpBgHaloText').textContent = $('webpBgHalo').value;
+      $('webpBgBorderText').textContent = `${$('webpBgBorder').value}%`;
+    }
+
+    function canvasToBlob(canvas, type, quality) {
+      return new Promise((resolve, reject) => {
+        canvas.toBlob(result => result ? resolve(result) : reject(new Error('当前浏览器不支持图片导出')), type, quality);
+      });
+    }
+
+    async function createWebpBlob(img, width, height, quality, removeBlackBackground = false, bgOptions = {}) {
+      const canvas = document.createElement('canvas');
+      canvas.width = width;
+      canvas.height = height;
+      const ctx = canvas.getContext('2d');
+      if (!ctx) throw new Error('Canvas 不可用');
+      ctx.imageSmoothingEnabled = true;
+      ctx.imageSmoothingQuality = 'high';
+      ctx.drawImage(img, 0, 0, width, height);
+      if (removeBlackBackground) {
+        const sourceBlob = await canvasToBlob(canvas, 'image/png');
+        const processedBlob = await processSheetBackgroundWithWorker(sourceBlob, bgOptions);
+        const processedBitmap = await createImageBitmap(processedBlob);
+        ctx.clearRect(0, 0, width, height);
+        ctx.drawImage(processedBitmap, 0, 0, width, height);
+        processedBitmap.close?.();
+      }
+      return await canvasToBlob(canvas, 'image/webp', quality);
+    }
+
+    function closeWebpExportDialog() {
+      if (state.webpExport?.previewUrl) URL.revokeObjectURL(state.webpExport.previewUrl);
+      state.webpExport = null;
+      $('webpExportOverlay')?.remove();
+    }
+
+    function enableDraggableDialog(dialog, handle) {
+      let dragState = null;
+      handle.addEventListener('pointerdown', event => {
+        if (event.target.closest('button, input, select, textarea')) return;
+        const rect = dialog.getBoundingClientRect();
+        dragState = { offsetX: event.clientX - rect.left, offsetY: event.clientY - rect.top };
+        dialog.style.position = 'fixed';
+        dialog.style.margin = '0';
+        dialog.style.left = `${rect.left}px`;
+        dialog.style.top = `${rect.top}px`;
+        handle.setPointerCapture(event.pointerId);
+      });
+      handle.addEventListener('pointermove', event => {
+        if (!dragState) return;
+        const rect = dialog.getBoundingClientRect();
+        const maxLeft = Math.max(0, window.innerWidth - rect.width);
+        const maxTop = Math.max(0, window.innerHeight - rect.height);
+        const left = Math.min(maxLeft, Math.max(0, event.clientX - dragState.offsetX));
+        const top = Math.min(maxTop, Math.max(0, event.clientY - dragState.offsetY));
+        dialog.style.left = `${left}px`;
+        dialog.style.top = `${top}px`;
+      });
+      handle.addEventListener('pointerup', () => { dragState = null; });
+      handle.addEventListener('pointercancel', () => { dragState = null; });
+    }
+
+    async function updateWebpPreview() {
+      const exportState = state.webpExport;
+      if (!exportState) return;
+      const token = (exportState.token || 0) + 1;
+      exportState.token = token;
+      const quality = Number($('webpQuality').value) || 0.35;
+      const removeBlackBackground = $('webpRemoveBlackBg').checked;
+      if (removeBlackBackground) updateWebpBgOptionLabels();
+      const bgOptions = removeBlackBackground ? getWebpBgOptions() : {};
+      const size = getWebpExportSize(exportState.sourceWidth, exportState.sourceHeight, $('webpResolution').value);
+      $('webpQualityText').textContent = `${Math.round(quality * 100)}%`;
+      $('webpDownload').disabled = true;
+      if ($('webpUploadCdn')) $('webpUploadCdn').disabled = true;
+      $('webpPreviewImg').style.aspectRatio = `${size.width} / ${size.height}`;
+      $('webpPreviewBox').classList.toggle('transparent', removeBlackBackground);
+      $('webpMeta').textContent = `正在生成预览... ${size.width}x${size.height}`;
+      try {
+        const blob = await createWebpBlob(exportState.img, size.width, size.height, quality, removeBlackBackground, bgOptions);
+        if (!state.webpExport || state.webpExport.token !== token) return;
+        if (exportState.previewUrl) URL.revokeObjectURL(exportState.previewUrl);
+        exportState.previewBlob = blob;
+        exportState.previewSize = size;
+        exportState.previewQuality = quality;
+        exportState.removeBlackBackground = removeBlackBackground;
+        exportState.bgOptions = bgOptions;
+        exportState.previewUrl = URL.createObjectURL(blob);
+        $('webpPreviewImg').src = exportState.previewUrl;
+        const bgText = removeBlackBackground ? `已去背景 seed=${bgOptions.seedThreshold}, grow=${bgOptions.growThreshold}, halo=${bgOptions.haloThreshold}, edge=${Math.round(bgOptions.borderRatio * 100)}%，` : '';
+        $('webpMeta').textContent = `当前预览即实际导出的 WebP。原图 ${exportState.sourceWidth}x${exportState.sourceHeight}，导出 ${size.width}x${size.height}，质量 ${Math.round(quality * 100)}%，${bgText}约 ${formatBytes(blob.size)}`;
+        $('webpDownload').disabled = false;
+        if ($('webpUploadCdn')) $('webpUploadCdn').disabled = false;
+      } catch (e) {
+        $('webpMeta').textContent = `预览失败：${e?.message || e}`;
+        if ($('webpUploadCdn')) $('webpUploadCdn').disabled = true;
+        throw e;
+      }
+    }
+
+    function downloadWebpPreview() {
+      const exportState = state.webpExport;
+      if (!exportState?.previewBlob || !exportState.previewSize) return;
+      const quality = Math.round((exportState.previewQuality || 0.35) * 100);
+      const suffix = exportState.removeBlackBackground ? '_transparent' : '';
+      const filename = `${safeId($('petId').value, 'famous_pet')}_${exportState.previewSize.width}x${exportState.previewSize.height}_q${quality}${suffix}.webp`;
+      downloadBlob(filename, exportState.previewBlob);
+      setStatus($('runStatus'), `WebP 下载完成：${filename} (${formatBytes(exportState.previewBlob.size)})。`, 'ok');
+    }
+
+    async function uploadWebpPreviewToCdn() {
+      const exportState = state.webpExport;
+      if (!exportState) return;
+      if (!exportState.previewBlob || !exportState.previewSize) await updateWebpPreview();
+      if (!exportState.previewBlob || !exportState.previewSize) throw new Error('没有可上传的 WebP 预览');
+      const uploadButton = $('webpUploadCdn');
+      uploadButton.disabled = true;
+      $('webpMeta').textContent = `正在上传 CDN：${PET_CDN_FOLDER}...`;
+      try {
+        const sourceUrl = $('imageSheetUrl').value.trim();
+        const uploaded = await uploadBlobToPetCdn(exportState.previewBlob, getPetCdnFileName('webp'));
+        state.imageSizeCache.set(uploaded.url, exportState.previewBlob.size);
+        state.currentHistoryUrls = buildImageHistoryUrls(uploaded.url, buildPetConfig());
+        $('imageSheetUrl').value = uploaded.url;
+        renderSheet(uploaded.url);
+        updateOutput();
+        await savePetJson();
+        $('webpMeta').textContent = `已上传 CDN 并替换当前贴图：${uploaded.remoteKey}\n${formatBytes(exportState.previewBlob.size)}，${exportState.previewSize.width}x${exportState.previewSize.height}`;
+        setStatus($('runStatus'), sourceUrl ? `已上传 WebP 到 CDN，并将原图加入 historyUrls。` : '已上传 WebP 到 CDN。', 'ok');
+      } catch (e) {
+        $('webpMeta').textContent = `CDN 上传失败：${e?.message || e}`;
+        setStatus($('runStatus'), `CDN 上传失败：${e?.message || e}`, 'error');
+        throw e;
+      } finally {
+        if (state.webpExport) uploadButton.disabled = !state.webpExport.previewBlob;
+      }
+    }
+
+    async function openWebpExportDialog() {
+      const imageUrl = $('imageSheetUrl').value.trim();
+      if (!imageUrl) throw new Error('请先生成或填写图片 URL');
+      const button = $('btnDownloadWebp');
+      button.disabled = true;
+      setStatus($('runStatus'), '正在准备 WebP 预览...', '');
+      try {
+        const img = await loadImageForCanvas(imageUrl);
+        const width = img.naturalWidth || img.width;
+        const height = img.naturalHeight || img.height;
+        if (!width || !height) throw new Error('无法读取图片尺寸');
+        closeWebpExportDialog();
+        const overlay = document.createElement('div');
+        overlay.className = 'webp-overlay';
+        overlay.id = 'webpExportOverlay';
+        overlay.innerHTML = `<div class="webp-window" role="dialog" aria-modal="true" aria-label="WebP 导出预览">
+          <div class="webp-titlebar" id="webpDragHandle"><strong>WebP 导出预览</strong><button type="button" id="webpClose">关闭</button></div>
+          <div class="webp-body">
+            <div class="webp-preview-box" id="webpPreviewBox"><span class="webp-preview-badge">实际压缩后 WebP</span><img id="webpPreviewImg" alt="compressed WebP preview"></div>
+            <div class="webp-controls">
+              <label class="webp-hintable" title="导出图片尺寸。降低最长边会显著减少文件大小，也会减少细节。"><span class="webp-control-head"><span>分辨率</span></span><select id="webpResolution"><option value="${Math.max(width, height)}">原始 ${width}x${height}</option><option value="1024">最长边 1024</option><option value="768">最长边 768</option><option value="512">最长边 512</option><option value="384">最长边 384</option><option value="256">最长边 256</option><option value="192">最长边 192</option><option value="128">最长边 128</option><option value="64">最长边 64</option><option value="50%">50%</option><option value="25%">25%</option><option value="12.5%">12.5%</option><option value="6.25%">6.25%</option><option value="3.125%">3.125%</option></select></label>
+              <label class="webp-hintable" title="WebP 有损编码质量。数值越低文件越小，但边缘、眼睛高光和细节会更糊。"><span class="webp-control-head"><span>质量</span><span id="webpQualityText" class="webp-control-value">35%</span></span><input id="webpQuality" type="range" min="0.01" max="0.95" step="0.01" value="0.35"></label>
+              <label class="toggle-line webp-hintable" title="使用 petSheetWorker 的 4x4 单元格 flood-fill 管线，把纯黑背景转为透明。"><input id="webpRemoveBlackBg" type="checkbox" checked>去背景</label>
+              <div class="webp-compact-grid">
+                <label class="webp-hintable" title="从每格边缘挑选背景起点时允许的颜色距离。越大，越多边缘像素会被当作背景种子。"><span class="webp-control-head"><span>种子</span><span id="webpBgSeedText" class="webp-control-value">60</span></span><input id="webpBgSeed" type="range" min="20" max="120" step="1" value="60"></label>
+                <label class="webp-hintable" title="背景 flood-fill 向内部扩张的颜色距离。越大，去背景越强，也更可能吃进角色边缘。"><span class="webp-control-head"><span>扩张</span><span id="webpBgGrowText" class="webp-control-value">78</span></span><input id="webpBgGrow" type="range" min="30" max="160" step="1" value="78"></label>
+                <label class="webp-hintable" title="对接近背景色的残边/光晕做半透明清理。越大，残边更少，但轮廓可能更薄。"><span class="webp-control-head"><span>残边</span><span id="webpBgHaloText" class="webp-control-value">112</span></span><input id="webpBgHalo" type="range" min="50" max="220" step="1" value="112"></label>
+                <label class="webp-hintable" title="每个 sprite 单元格最外圈强制透明的比例，用来去掉生成出的网格线或黑边。"><span class="webp-control-head"><span>裁边</span><span id="webpBgBorderText" class="webp-control-value">2%</span></span><input id="webpBgBorder" type="range" min="0" max="6" step="0.25" value="2"></label>
+              </div>
+              <div id="webpMeta" class="status">当前预览会显示实际压缩后的 WebP。</div>
+              <div id="webpCdnMeta" class="hint">CDN folder: ${PET_CDN_FOLDER} · ${(getPetCdnConfig()?.bucketName) || '未加载 qiniu.yaml'}</div>
+              <div class="toolbar"><button id="webpDownload" class="success" type="button" disabled>下载 WebP</button><button id="webpUploadCdn" class="export" type="button" disabled>上传 CDN</button><button id="webpCloseBottom" type="button">取消</button></div>
+            </div>
+          </div>
+        </div>`;
+        document.body.appendChild(overlay);
+        state.webpExport = { img, sourceWidth: width, sourceHeight: height, previewUrl: '', previewBlob: null, previewSize: null, previewQuality: 0.35, removeBlackBackground: true, bgOptions: getWebpBgOptions(), token: 0 };
+        enableDraggableDialog(overlay.querySelector('.webp-window'), $('webpDragHandle'));
+        overlay.addEventListener('click', event => { if (event.target === overlay) closeWebpExportDialog(); });
+        $('webpClose').onclick = closeWebpExportDialog;
+        $('webpCloseBottom').onclick = closeWebpExportDialog;
+        $('webpDownload').onclick = downloadWebpPreview;
+        $('webpUploadCdn').onclick = () => uploadWebpPreviewToCdn().catch(e => console.error(e));
+        updateWebpCdnMeta();
+        $('webpResolution').onchange = () => updateWebpPreview().catch(e => console.error(e));
+        $('webpQuality').oninput = () => updateWebpPreview().catch(e => console.error(e));
+        $('webpRemoveBlackBg').onchange = () => updateWebpPreview().catch(e => console.error(e));
+        ['webpBgSeed', 'webpBgGrow', 'webpBgHalo', 'webpBgBorder'].forEach(id => {
+          $(id).oninput = () => updateWebpPreview().catch(e => console.error(e));
+        });
+        await updateWebpPreview();
+        setStatus($('runStatus'), 'WebP 预览已生成，可调整分辨率和压缩质量后下载。', 'ok');
+      } catch (e) {
+        const detail = /tainted|SecurityError/i.test(e?.message || String(e)) ? '图片服务器未允许跨域读取，请先下载原图或换用可跨域访问的 URL。' : (e?.message || String(e));
+        setStatus($('runStatus'), `WebP 预览失败：${detail}`, 'error');
+        throw e;
+      } finally {
+        button.disabled = false;
+      }
     }
 
     function fillTraitsFromDna() {
@@ -838,13 +1699,14 @@
     function renderReferencePreview() {
       const url = getReferenceImage();
       $('referencePreview').innerHTML = url ? `<img alt="reference" src="${escapeHtml(url)}">` : '<span class="hint">可选参考图预览</span>';
-      buildPrompt();
+      buildPrompt().catch(e => setStatus($('saveStatus'), e?.message || String(e), 'error'));
     }
 
     function markDirty() {
       state.dirty = true;
-      try { buildPrompt(); } catch (e) { setStatus($('saveStatus'), e?.message || String(e), 'error'); }
+      buildPrompt().catch(e => setStatus($('saveStatus'), e?.message || String(e), 'error'));
       renderSheet($('imageSheetUrl').value.trim());
+      updatePetCdnStatus();
     }
 
     function wireEvents() {
@@ -855,6 +1717,8 @@
         settings.show({ title: '本地 API Key 设置', fullscreen: true, onSave: async () => { await populateModelDropdown(); setStatus($('saveStatus'), '本地 API Key 设置已保存。', 'ok'); refreshLoginState(); } });
       };
       $('btnWorkspace').onclick = openWorkspaceViewer;
+      $('btnPetCdnConfig').onclick = openPetCdnConfigPasteDialog;
+      $('btnImportExport').onclick = openImportExportDialog;
       $('btnRefreshRecords').onclick = () => loadRecords().catch(e => setStatus($('runStatus'), e?.message || String(e), 'error'));
       $('btnNewPet').onclick = newPet;
       $('btnOpenIndex').onclick = async () => {
@@ -869,12 +1733,13 @@
       $('referenceFile').addEventListener('change', handleReferenceFile);
       $('btnRandomDna').onclick = () => { $('dna').value = randomDna(); fillTraitsFromDna(); markDirty(); };
       $('btnDecodeDna').onclick = () => { fillTraitsFromDna(); markDirty(); };
-      $('btnBuildPrompt').onclick = buildPrompt;
-      $('btnGenerate').onclick = () => generateSheet().catch(e => console.error(e));
+      $('btnBuildPrompt').onclick = () => buildPrompt().catch(e => setStatus($('saveStatus'), e?.message || String(e), 'error'));
+      if ($('btnGenerate')) $('btnGenerate').onclick = () => generateSheet().catch(e => console.error(e));
       $('btnRegenerate').onclick = () => generateSheet().catch(e => console.error(e));
+      $('btnDownloadWebp').onclick = () => openWebpExportDialog().catch(e => console.error(e));
       $('btnRefreshJson').onclick = updateOutput;
-      $('btnCopyJson').onclick = () => copyText($('petJson').value);
-      $('btnDownloadJson').onclick = () => downloadText(`${safeId($('petId').value, 'famous_pet')}.json`, $('petJson').value);
+      $('btnCopyJson').onclick = () => copyText(getPetExportJsonText());
+      $('btnDownloadJson').onclick = () => downloadText(`${safeId($('petId').value, 'famous_pet')}.json`, getPetExportJsonText());
       $('btnCopyIndex').onclick = () => copyText(JSON.stringify(buildIndexEntry(), null, 2));
       $('btnSavePet').onclick = () => savePetJson().catch(e => setStatus($('saveStatus'), `写入失败：${e?.message || e}`, 'error'));
       $('btnSaveIndex').onclick = () => saveIndexJson().catch(e => setStatus($('saveStatus'), `更新 index 失败：${e?.message || e}`, 'error'));
@@ -890,6 +1755,7 @@
       wireEvents();
       populateModelDropdown();
       applyPetToForm(defaultPet(), `${FAMOUS_DIR}/new_famous_pet.json`);
+      updatePetCdnStatus();
       loadSdk();
     }
 

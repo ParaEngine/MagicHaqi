@@ -16,6 +16,27 @@
 
 const SHEET_COLS = 4;
 const SHEET_ROWS = 4;
+const TRANSPARENT_CORNER_SAMPLE_SIZE = 3;
+
+function areCornersFullyTransparent(data, width, height) {
+    if (!data || width <= 0 || height <= 0) return false;
+    const sample = Math.max(1, Math.min(TRANSPARENT_CORNER_SAMPLE_SIZE, width, height));
+    const corners = [
+        { x0: 0, y0: 0 },
+        { x0: width - sample, y0: 0 },
+        { x0: 0, y0: height - sample },
+        { x0: width - sample, y0: height - sample },
+    ];
+    for (const corner of corners) {
+        for (let y = 0; y < sample; y++) {
+            for (let x = 0; x < sample; x++) {
+                const alpha = data[((corner.y0 + y) * width + corner.x0 + x) << 2 | 3];
+                if (alpha !== 0) return false;
+            }
+        }
+    }
+    return true;
+}
 
 function rgbDistanceSq(data, di, r, g, b) {
     const dr = data[di] - r;
@@ -42,16 +63,20 @@ function sampleCellBackground(data, width, cellX, cellY, cellW, cellH) {
     return { r: median[0], g: median[1], b: median[2] };
 }
 
-function removeCellBackground(data, width, height, cellX, cellY, cellW, cellH) {
+function removeCellBackground(data, width, height, cellX, cellY, cellW, cellH, options = {}) {
     const bg = sampleCellBackground(data, width, cellX, cellY, cellW, cellH);
     const maxCellPx = cellW * cellH;
     const visited = new Uint8Array(maxCellPx);
     const queue = new Int32Array(maxCellPx * 2);
     let head = 0;
     let tail = 0;
-    const seedThresholdSq = 60 * 60;
-    const growThresholdSq = 78 * 78;
-    const haloThresholdSq = 112 * 112;
+    const seedThreshold = Number(options.seedThreshold) || 60;
+    const growThreshold = Number(options.growThreshold) || 78;
+    const haloThreshold = Number(options.haloThreshold) || 112;
+    const borderRatio = Number.isFinite(Number(options.borderRatio)) ? Number(options.borderRatio) : 0.02;
+    const seedThresholdSq = seedThreshold * seedThreshold;
+    const growThresholdSq = growThreshold * growThreshold;
+    const haloThresholdSq = haloThreshold * haloThreshold;
 
     const mark = (x, y) => {
         if (x < 0 || x >= cellW || y < 0 || y >= cellH) return;
@@ -113,7 +138,7 @@ function removeCellBackground(data, width, height, cellX, cellY, cellW, cellH) {
         }
     }
 
-    const border = Math.max(3, Math.min(14, Math.floor(Math.min(cellW, cellH) * 0.02)));
+    const border = Math.max(0, Math.min(24, Math.floor(Math.min(cellW, cellH) * borderRatio)));
     for (let y = 0; y < cellH; y++) {
         for (let x = 0; x < cellW; x++) {
             if (x >= border && y >= border && cellW - 1 - x >= border && cellH - 1 - y >= border) continue;
@@ -122,7 +147,7 @@ function removeCellBackground(data, width, height, cellX, cellY, cellW, cellH) {
     }
 }
 
-async function processSheet(bitmap) {
+async function processSheet(bitmap, options = {}) {
     const width = bitmap.width;
     const height = bitmap.height;
     const canvas = new OffscreenCanvas(width, height);
@@ -131,6 +156,11 @@ async function processSheet(bitmap) {
     bitmap.close?.();
     const imageData = ctx.getImageData(0, 0, width, height);
     const data = imageData.data;
+
+    if (areCornersFullyTransparent(data, width, height)) {
+        return { direct: true, width, height };
+    }
+
     const cellW = Math.floor(width / SHEET_COLS);
     const cellH = Math.floor(height / SHEET_ROWS);
 
@@ -138,7 +168,7 @@ async function processSheet(bitmap) {
         for (let col = 0; col < SHEET_COLS; col++) {
             const cellX = Math.floor(col * width / SHEET_COLS);
             const cellY = Math.floor(row * height / SHEET_ROWS);
-            removeCellBackground(data, width, height, cellX, cellY, Math.min(cellW, width - cellX), Math.min(cellH, height - cellY));
+            removeCellBackground(data, width, height, cellX, cellY, Math.min(cellW, width - cellX), Math.min(cellH, height - cellY), options);
         }
     }
 
@@ -155,13 +185,18 @@ async function loadBitmap(url) {
     return await createImageBitmap(blob);
 }
 
+async function loadBitmapFromBlob(blob) {
+    if (typeof createImageBitmap !== 'function') throw new Error('createImageBitmap is not available in worker');
+    return await createImageBitmap(blob);
+}
+
 self.onmessage = async (event) => {
-    const { id, url } = event.data || {};
-    if (!id || !url) return;
+    const { id, url, blob, options } = event.data || {};
+    if (!id || (!url && !blob)) return;
     try {
-        const bitmap = await loadBitmap(url);
-        const { blob, width, height } = await processSheet(bitmap);
-        self.postMessage({ id, ok: true, blob, width, height });
+        const bitmap = blob ? await loadBitmapFromBlob(blob) : await loadBitmap(url);
+        const result = await processSheet(bitmap, options || {});
+        self.postMessage({ id, ok: true, blob: result.blob, direct: !!result.direct, width: result.width, height: result.height });
     } catch (e) {
         self.postMessage({ id, ok: false, error: e?.message || String(e) });
     }

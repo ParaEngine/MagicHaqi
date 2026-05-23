@@ -44,29 +44,11 @@ export async function genPetSheet(dna, name = '', options = {}) {
     const referenceImage = (options && typeof options.referenceImage === 'string')
         ? options.referenceImage.trim()
         : '';
-    const dnaPrompt = dnaToPrompt(dna, { name });
-    const sheetTheme = '';
-    const base = customPrompt
-        ? [
-            sheetTheme,
-            `玩家许愿外观（最高优先级，必须具体体现在宠物种类、身体结构、颜色、眼睛、装饰或气质上）：${customPrompt}。`,
-            '如果玩家许愿与默认 DNA 外观有冲突，以玩家许愿为准；DNA 只作为补充灵感，不要覆盖玩家许愿。',
-            `默认 DNA 灵感（低优先级，仅用于补充没有被许愿指定的细节）：${dnaPrompt}`,
-        ].join(' ')
-        : [sheetTheme, dnaPrompt].join(' ');
     // 背景使用纯黑色 #000000，配合 pet.js 的 createBorderedTexture 风格抠图（HSL flood-fill）。
     // 与 MapCopilot.genGeoCultureGridImage 同款管线 —— prompt 端要求纯黑背景，浏览器端
     // 用 lightness/saturation 双阈值从格子边缘做 flood fill，得到带透明通道的精灵。
-    const prompt = [
-        base,
-        customPrompt ? '重要：生成结果必须一眼能看出玩家许愿的核心内容，不能只生成普通随机萌宠。' : '',
-        referenceImage ? '参考图片是玩家提供的外观方向，请提取其中的主要轮廓、颜色、纹理、配饰或气质，并转化成同一只二头身萌宠；不要照搬照片背景或文字。' : '',
-        '生成一张 4×4 共 16 格的精灵图（sprite sheet），所有格子尺寸相同、严格对齐网格、单元间无缝隙。',
-        '每一行代表同一只宠物的同一成长阶段（共 4 个阶段）：第 1 行=宝宝/幼年（几乎只有一个圆圆大头，身体极小，只露出小短手小短脚，像头部占画面主体的婴儿萌宠, 不要暴漏主要生物特征和元素特征），第 2 行=青少年（标准二头身，可以展示没有完全发育的主要生物特征），第 3 行=成年（仍然是二头身，呈现出完整的主要生物特点），第 4 行=年长/长老（仍然是二头身，增加元素特征或增加华丽感）。',
-        '每一行的 4 列代表同一阶段下的 4 种情绪/状态：第 1 列=idle（待机、自然站立、平静微笑），第 2 列=happy（开心、咧嘴大笑、雀跃姿态），第 3 列=sad（难过、眼角垂泪、垂头丧气），第 4 列=sleep（睡觉、闭眼、放松或蜷缩, 可正对，背对或侧卧等姿势皆可）。同一行的 4 个变体必须保持相同的种类、毛色、配饰，明显是同一只宠物。',
-        '严格背景要求：背景必须是**纯黑色 #000000** 填充整张图（每个格子内的背景也都是纯黑），不能有任何阴影、渐变、白边、灰边、网格线或其他颜色；宠物本体不能整体过暗或全黑，要明亮饱和、与黑色背景对比强烈。每个格子内只有一只宠物完整居中、四肢/头部不被裁切，宠物之间不重叠、不互相遮挡。',
-        '风格要求（重要）：参考 Tamagotchi Paradise / Sanrio 系列吉祥物 —— 超扁平 2D 卡通插画，糖果色明亮饱和，超大水汪汪眼睛，小圆身体，整体必须是二头身可爱比例；宝宝阶段要更夸张，几乎只有头。柔和但清晰的深色描边，单色简单上色加少量高光，不要厚重写实质感，不要 3D 皮克斯风格，不要复杂阴影，不要任何文字。',
-    ].join(' ');
+    const { buildPetSheetPrompt } = await import('./generationPrompts.js');
+    const prompt = buildPetSheetPrompt(dna, name, { customPrompt, referenceImage });
     try {
         const url = await state.sdk.aiGenerators.genImage(prompt, {
             width: CONFIG.imageWidth,

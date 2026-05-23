@@ -6,6 +6,8 @@ import { displayPetName } from './dna.js';
 import { loadPet, saveWorkspaceStory } from './storage.js';
 import { renderPetList } from './view_petList.js';
 import { assignPresetScenesToStory, renderSceneParticles, renderStorySceneMaker, sceneParticleCss, SCENE_TAG_PROMPT_HINT } from './view_story_scene_maker.js';
+import SoundManager from './soundManager.js';
+import ParticleEffects from './particleEffects.js';
 
 const DEFAULT_SCENE_COUNT = 5;
 const SCENE_BG_COLORS = ['#bae6fd', '#fde68a', '#bbf7d0', '#fecdd3', '#ddd6fe', '#fed7aa', '#ccfbf1', '#e0e7ff'];
@@ -36,6 +38,7 @@ const MINIGAMES = [
     { id: 'matrix_hack', title: '宠物矩阵破解' },
 ];
 const REVIEW_LINE_ADVANCE_MS = 1200;
+const soundManager = SoundManager.getInstance();
 
 function sceneBg(index = 0, value = null) {
     const color = typeof value === 'string' && value ? value : SCENE_BG_COLORS[index % SCENE_BG_COLORS.length];
@@ -93,6 +96,7 @@ function sceneFromTimeline(scene, index) {
         sceneTags: Array.isArray(scene?.sceneTags) ? scene.sceneTags : (Array.isArray(scene?.tags) ? scene.tags : []),
         background: sceneBg(index, scene?.background || scene?.bgColor),
         particles: Array.isArray(scene?.particles) ? scene.particles : [],
+        bgMusic: scene?.bgMusic || scene?.background?.bgMusic || '',
         timeline,
         lines: timeline.filter(item => item.kind === 'line').map(({ actor, text }) => ({ actor, text })),
         activities: timeline.filter(item => item.kind === 'activity').map(item => {
@@ -182,9 +186,10 @@ function buildStoryPrompt(promptText, count, actors) {
         `故事主题：${promptText || '温暖的宠物冒险'}`,
         `场景数量：${count}`,
         '顶层字段必须包含：id, title, version, selectionPrompt, actors, startSceneId, scenes, ending。',
-        '每个 scene 字段：id, sceneTags, background, particles, timeline。不要使用 subtitle 字段；旁白/字幕必须写成 timeline 里的 line，actor 使用 "$narrator"。background 先使用 {"type":"color","color":"#bae6fd","imageUrl":""}。',
+        '每个 scene 字段：id, sceneTags, background, particles, bgMusic, timeline。不要使用 subtitle 字段；旁白/字幕必须写成 timeline 里的 line，actor 使用 "$narrator"。background 先使用 {"type":"color","color":"#bae6fd","imageUrl":""}。',
         `sceneTags 用英文短标签数组，优先从这些标签里选择：${SCENE_TAG_PROMPT_HINT}。每幕给 2-5 个标签，用来低成本匹配预生成背景图。`,
         'particles 是粒子效果数组，可选 sparkle, snow, rain, mist, bubbles, petals, embers；没有需要可为空数组。',
+        `bgMusic 是背景音乐 key，可为空字符串；可选：${Object.keys(CONFIG.assets?.bgSounds || {}).join(', ')}。`,
         'timeline 是完整时间顺序数组，元素 kind 为 line 或 activity。line 格式 {"kind":"line","actor":"$selected","text":"..."}；旁白格式 {"kind":"line","actor":"$narrator","text":"..."}。',
         '人物对白可以用开头括号写舞台指示，例如 "(左侧，开心)我们出发吧"、"(中间)看这里"、"(远处,睡觉)呼呼"、"(近处,伤心)我有点难过"。括号中的文字只表示角色在场景里的位置/动作，播放时不显示。没有括号时，角色会自动在画面中间区域随机排开，并保持安全距离。',
         'activity 必须使用真实游戏数据：feed(actionKey feed, source CONFIG.actions.feed), bath(actionKey bath, source CONFIG.actions.bath), tap(actionKey play, source level_pet pet tapping feedback), comfort/play(actionKey play, source CONFIG.actions.play), minigame(source view_minigames.MINIGAMES)。',
@@ -400,6 +405,7 @@ function renderSceneEditorHtml(story, { onlySceneIndex = null } = {}) {
             <input class="modal-input" data-scene-bg-image placeholder="背景图 URL（未来 AI 生成后填入）" value="${escapeHtml(sceneBg(sceneIndex, scene.background).imageUrl || '')}">
             <input class="modal-input" data-scene-tags placeholder="场景标签，例如 forest, spring, haqi" value="${escapeHtml((scene.sceneTags || scene.tags || []).join(', '))}">
             <input class="modal-input" data-scene-particles placeholder="粒子效果，例如 sparkle, snow, bubbles" value="${escapeHtml((scene.particles || []).join(', '))}">
+            <input type="hidden" data-scene-bg-music value="${escapeHtml(scene.bgMusic || scene.background?.bgMusic || '')}">
             <div class="mh-scene-preview" style="background:${escapeHtml(sceneBg(sceneIndex, scene.background).color || '#bae6fd')};color:#0f2747">${renderSceneParticles(scene)}<span>背景预览</span></div>
             <div class="mh-scene-timeline">
                 ${sceneTimeline(scene).map((item, itemIndex) => item.kind === 'activity'
@@ -500,6 +506,16 @@ function activityIcon(activity) {
     if (type === 'comfort') return '💗';
     if (type === 'minigame') return '🎾';
     return '✨';
+}
+
+function sceneBgMusic(scene) {
+    return String(scene?.bgMusic || scene?.background?.bgMusic || '').trim();
+}
+
+function renderMusicToggleButton(track, className = 'mh-review-music-toggle') {
+    if (!track) return '';
+    const muted = soundManager.isBgMusicMuted?.();
+    return `<button type="button" class="${className} ${muted ? 'is-muted' : ''}" data-review-music-toggle aria-label="${muted ? '开启音乐' : '静音'}" title="${muted ? '开启音乐' : '静音'}">${muted ? '♪' : '♫'}</button>`;
 }
 
 function reviewActionKey(sceneIndex, itemIndex, activity) {
@@ -665,11 +681,14 @@ function renderReviewHtml(story, sceneIndex = 0, layout = defaultReviewLayout(),
         </div>
         <section class="mh-review-scene is-${reviewLayout}" data-edit-scene="${safeIndex}">
             <div class="mh-review-hero ${isTimelineActivity(playbackState.activeItem) ? 'has-action' : ''}" data-open-scene-maker data-scene-maker-index="${safeIndex}" role="button" tabindex="0" title="选择背景场景" style="background:${sceneBackgroundStyle(scene, safeIndex)}">
-                ${renderSceneParticles(scene)}
-                <div class="mh-review-scene-label">第${safeIndex + 1}幕</div>
-                ${renderStoryStageActorsHtml(story, timeline, activeItemIndex)}
-                ${reviewSubtitleText(story, scene, timeline, playbackState) ? `<div class="mh-review-subtitle">${escapeHtml(reviewSubtitleText(story, scene, timeline, playbackState))}</div>` : ''}
-                ${renderReviewActionBar(safeIndex, activeItemIndex, playbackState.activeItem, playbackState.actionProgress)}
+                <div class="mh-review-phone-canvas">
+                    ${renderSceneParticles(scene)}
+                    ${renderMusicToggleButton(sceneBgMusic(scene))}
+                    <div class="mh-review-scene-label">第${safeIndex + 1}幕</div>
+                    ${renderStoryStageActorsHtml(story, timeline, activeItemIndex)}
+                    ${reviewSubtitleText(story, scene, timeline, playbackState) ? `<div class="mh-review-subtitle">${escapeHtml(reviewSubtitleText(story, scene, timeline, playbackState))}</div>` : ''}
+                    ${renderReviewActionBar(safeIndex, activeItemIndex, playbackState.activeItem, playbackState.actionProgress)}
+                </div>
             </div>
             <div class="mh-review-scene-detail">
                 <div class="mh-review-beats">
@@ -691,10 +710,12 @@ export function renderStoryMaker(panel, data = {}, { onBack, onPlayStory } = {})
     let currentStory = initialStory ? normalizeStoryForSave(initialStory, initialStory.actors || []) : null;
     let syncing = false;
     let activeMode = currentStory ? 'review' : 'draft';
+    let advancedTab = 'visual';
     let reviewLayout = defaultReviewLayout();
     let reviewSceneIndex = currentStory ? -1 : 0;
     let reviewPlayback = null;
     let reviewPlaybackTimer = null;
+    let reviewBgMusicActive = false;
     let generationController = null;
     let actorPress = null;
     let reviewPagerDrag = null;
@@ -756,11 +777,26 @@ export function renderStoryMaker(panel, data = {}, { onBack, onPlayStory } = {})
         reviewPlaybackTimer = null;
     };
 
+    const syncReviewBgMusic = ({ paused = false } = {}) => {
+        const scene = reviewSceneIndex >= 0 ? currentStory?.scenes?.[reviewSceneIndex] : null;
+        const track = sceneBgMusic(scene);
+        if (paused || !track) {
+            if (reviewBgMusicActive) {
+                soundManager.stopBgMusic({ fadeMs: 520 });
+                reviewBgMusicActive = false;
+            }
+            return;
+        }
+        soundManager.playBgMusic(track, { fadeMs: 700, volume: 0.3 });
+        reviewBgMusicActive = true;
+    };
+
     const startReviewScenePlayback = (sceneIndex) => {
         if (!currentStory?.scenes?.[sceneIndex]) return;
         clearReviewPlaybackTimer();
         reviewSceneIndex = sceneIndex;
         reviewPlayback = { sceneIndex, stepIndex: 0, actionProgress: {} };
+        syncReviewBgMusic();
         renderReviewPanel();
         scheduleReviewPlayback();
     };
@@ -806,6 +842,7 @@ export function renderStoryMaker(panel, data = {}, { onBack, onPlayStory } = {})
                 .mh-maker-tabs button.is-active { background:var(--accent); border-color:var(--accent); color:white; box-shadow:0 3px 0 rgba(37,99,235,.25); }
                 .mh-maker-panel { display:none; flex-direction:column; gap:12px; }
                 .mh-maker-panel.is-active { display:flex; }
+                .mh-maker-panel[data-maker-panel="advanced"].is-active { flex:1; min-height:0; }
                 .mh-maker-pets { display:flex; gap:9px; overflow-x:auto; padding-bottom:4px; }
                 .mh-maker-pet { position:relative; flex:0 0 126px; border:1.5px solid var(--border-card); border-radius:14px; background:rgba(255,255,255,.9); padding:8px; display:flex; flex-direction:column; gap:7px; cursor:pointer; }
                 .mh-maker-pet-main { border-color:var(--accent); box-shadow:0 0 0 2px rgba(14,165,233,.18) inset; }
@@ -823,6 +860,13 @@ export function renderStoryMaker(panel, data = {}, { onBack, onPlayStory } = {})
                 .mh-maker-presets { display:grid; grid-template-columns:repeat(3,minmax(0,1fr)); gap:7px; }
                 .mh-maker-presets button { border:1.5px solid var(--border-card); border-radius:13px; background:rgba(255,255,255,.85); color:var(--text-primary); padding:8px 4px; font-size:12px; font-weight:900; }
                 .mh-maker-presets button.is-active { border-color:var(--accent); background:#ecfeff; color:var(--accent-dark); }
+                .mh-advanced-tabs { display:grid; grid-template-columns:1fr 1fr; gap:7px; }
+                .mh-advanced-tabs button { border:1.5px solid rgba(14,165,233,.32); border-radius:999px; background:rgba(255,255,255,.84); color:var(--text-secondary); min-height:38px; padding:8px 10px; font-size:13px; font-weight:900; }
+                .mh-advanced-tabs button.is-active { background:var(--accent); border-color:var(--accent); color:white; box-shadow:0 3px 0 rgba(37,99,235,.25); }
+                .mh-advanced-panel { display:none; flex-direction:column; gap:9px; }
+                .mh-advanced-panel.is-active { display:flex; }
+                .mh-advanced-panel[data-advanced-panel="json"].is-active { flex:1; min-height:0; }
+                .mh-advanced-panel[data-advanced-panel="json"] .mh-maker-output { flex:1; min-height:0; resize:none; }
                 .mh-maker-save-top { width:64px; height:34px; padding:0 10px; border-radius:12px; font-size:13px; }
                 .mh-maker-label { display:block; font-size:12px; font-weight:900; color:var(--text-secondary); margin-bottom:5px; }
                 .mh-maker-empty { padding:12px; border:1.5px dashed rgba(14,165,233,.38); border-radius:14px; color:var(--text-muted); background:rgba(255,255,255,.54); font-size:13px; line-height:1.45; }
@@ -845,19 +889,24 @@ export function renderStoryMaker(panel, data = {}, { onBack, onPlayStory } = {})
                 .mh-review-cover-info { display:flex; flex-direction:column; gap:5px; padding:0 2px 2px; }
                 .mh-review-cover-title { color:var(--text-primary); font-size:18px; line-height:1.25; font-weight:900; word-break:break-word; }
                 .mh-review-cover-subtitle { color:var(--text-secondary); font-size:13px; line-height:1.42; font-weight:800; }
-                .mh-review-scene { position:relative; border:1.5px solid rgba(125,211,252,.78); border-radius:16px; background:rgba(255,255,255,.9); padding:10px; display:flex; flex-direction:column; gap:10px; }
-                .mh-review-hero { width:min(100%,240px); aspect-ratio:1/1; min-height:0; align-self:flex-start; border-radius:15px; position:relative; overflow:hidden; display:flex; align-items:center; justify-content:center; border:2px solid rgba(255,255,255,.82); box-shadow:var(--game-shadow-small); cursor:pointer; background-size:cover; background-position:center; }
+                .mh-review-scene { position:relative; border:1.5px solid rgba(125,211,252,.78); border-radius:16px; background:rgba(255,255,255,.9); padding:10px; display:flex; flex-direction:column; align-items:center; gap:10px; }
+                .mh-review-hero { width:min(100%,230px); aspect-ratio:9/16; min-height:0; align-self:center; border-radius:22px; position:relative; overflow:hidden; display:block; border:3px solid rgba(255,255,255,.9); box-shadow:0 0 0 2px rgba(14,165,233,.3),0 10px 26px rgba(15,39,71,.18),inset 0 0 0 1px rgba(15,39,71,.08); cursor:pointer; background-size:cover; background-position:center; container-type:inline-size; }
                 .mh-review-hero:focus-visible { outline:3px solid rgba(14,165,233,.45); outline-offset:3px; }
+                .mh-review-phone-canvas { --mh-phone-rem:2.777777cqw; position:absolute; inset:0; overflow:hidden; border-radius:inherit; font-size:var(--mh-phone-rem); }
+                .mh-review-phone-canvas::before { content:''; position:absolute; top:.8em; left:50%; z-index:6; width:8.4em; height:.55em; border-radius:999px; background:rgba(15,39,71,.2); transform:translateX(-50%); box-shadow:0 1px 0 rgba(255,255,255,.45); pointer-events:none; }
+                .mh-review-phone-canvas::after { content:''; position:absolute; left:50%; bottom:.7em; z-index:6; width:10.2em; height:.42em; border-radius:999px; background:rgba(15,39,71,.24); transform:translateX(-50%); pointer-events:none; }
+                .mh-review-music-toggle { position:absolute; top:1.8em; right:1em; z-index:8; width:3.4em; height:3.4em; border-radius:1em; border:.18em solid rgba(255,255,255,.92); background:rgba(14,165,233,.92); color:white; font-size:1em; font-weight:900; line-height:1; display:grid; place-items:center; box-shadow:0 .35em 0 rgba(37,99,235,.34),0 .7em 1.5em rgba(15,39,71,.16); }
+                .mh-review-music-toggle.is-muted { background:rgba(255,255,255,.92); color:var(--accent-dark); }
                 .mh-review-pet { width:min(210px,58vw); height:min(210px,58vw); display:block; position:relative; z-index:2; }
                 .mh-review-stage-cast { position:absolute; inset:0; z-index:2; transform-origin:50% 54%; transition:transform .42s ease; }
                 .mh-review-stage-cast.is-zooming { transform:scale(1.08); }
-                .mh-review-stage-actor { position:absolute; width:min(92px,30vw); height:min(92px,30vw); transform:translateX(-50%) scale(var(--stage-scale,1)); transform-origin:50% 100%; transition:left .38s ease,bottom .38s ease,transform .38s ease,filter .38s ease; }
-                .mh-review-stage-actor.is-speaking { z-index:3; filter:drop-shadow(0 8px 10px rgba(14,116,144,.24)); transform:translateX(-50%) scale(calc(var(--stage-scale,1) * 1.16)); }
+                .mh-review-stage-actor { position:absolute; width:9.2em; height:9.2em; transform:translateX(-50%) scale(var(--stage-scale,1)); transform-origin:50% 100%; transition:left .38s ease,bottom .38s ease,transform .38s ease,filter .38s ease; }
+                .mh-review-stage-actor.is-speaking { z-index:3; filter:drop-shadow(0 .8em 1em rgba(14,116,144,.24)); transform:translateX(-50%) scale(calc(var(--stage-scale,1) * 1.16)); }
                 .mh-review-stage-actor.is-sleep { opacity:.82; }
-                .mh-review-stage-actor.is-sad { filter:saturate(.84) drop-shadow(0 6px 8px rgba(15,39,71,.18)); }
-                .mh-review-stage-actor.is-happy { filter:saturate(1.14) drop-shadow(0 8px 10px rgba(14,116,144,.22)); }
-                .mh-review-subtitle { position:absolute; left:10px; right:10px; bottom:10px; border-radius:13px; background:rgba(15,39,71,.78); color:white; padding:8px 10px; text-align:center; font-size:14px; font-weight:900; line-height:1.35; z-index:3; max-height:58px; overflow:hidden; }
-                .mh-review-scene-label { position:absolute; top:10px; left:10px; z-index:4; border-radius:999px; background:rgba(255,255,255,.88); color:var(--accent-dark); font-size:12px; font-weight:900; padding:5px 9px; box-shadow:0 2px 8px rgba(15,39,71,.14); }
+                .mh-review-stage-actor.is-sad { filter:saturate(.84) drop-shadow(0 .6em .8em rgba(15,39,71,.18)); }
+                .mh-review-stage-actor.is-happy { filter:saturate(1.14) drop-shadow(0 .8em 1em rgba(14,116,144,.22)); }
+                .mh-review-subtitle { position:absolute; left:1em; right:1em; bottom:2em; border-radius:1.3em; background:rgba(15,39,71,.78); color:white; padding:.8em 1em; text-align:center; font-size:1.4em; font-weight:900; line-height:1.35; z-index:3; max-height:5.8em; overflow:hidden; }
+                .mh-review-scene-label { position:absolute; top:2.2em; left:1em; z-index:4; border-radius:999px; background:rgba(255,255,255,.88); color:var(--accent-dark); font-size:1.2em; font-weight:900; padding:.5em .9em; box-shadow:0 .2em .8em rgba(15,39,71,.14); }
                 .mh-review-scene-detail { display:flex; flex-direction:column; gap:10px; min-width:0; }
                 .mh-review-titlebar { display:flex; align-items:center; justify-content:space-between; gap:8px; }
                 .mh-review-titlebar strong { display:block; font-size:15px; color:var(--text-primary); }
@@ -868,13 +917,12 @@ export function renderStoryMaker(panel, data = {}, { onBack, onPlayStory } = {})
                 .mh-review-beat-icon { width:34px; height:34px; border-radius:12px; display:grid; place-items:center; background:rgba(255,255,255,.82); font-size:18px; }
                 .mh-review-beat b { display:block; font-size:13px; color:var(--accent-dark); overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
                 .mh-review-beat small { display:block; font-size:13px; color:var(--text-primary); overflow:hidden; text-overflow:ellipsis; white-space:nowrap; margin-top:2px; }
-                .mh-review-hero.has-action { align-items:center; padding-bottom:58px; }
-                .mh-review-hero.has-action .mh-review-subtitle { bottom:67px; font-size:12px; padding:6px 8px; line-height:1.25; max-height:48px; }
-                .mh-review-action-bar { position:absolute; left:9px; right:9px; bottom:8px; z-index:5; justify-content:flex-start; padding:0; margin:0; overflow-x:auto; }
-                .mh-review-action-bar .mh-story-dock-action { min-width:68px; height:50px; border-color:rgba(14,165,233,.48); background:linear-gradient(180deg,rgba(255,255,255,.7),rgba(255,255,255,.16)),linear-gradient(135deg,#ecfeff,#bae6fd); box-shadow:0 4px 0 rgba(14,116,144,.24),0 8px 16px rgba(15,39,71,.12),inset 0 1px 0 rgba(255,255,255,.85); }
-                .mh-review-action-bar .mh-story-dock-action .dock-icon { font-size:17px; }
-                .mh-review-action-bar .mh-story-dock-action .dock-label { max-width:60px; font-size:10px; font-weight:900; color:var(--accent-dark); }
-                .mh-review-action-bar.is-idle { min-height:44px; border:1.5px dashed rgba(14,165,233,.28); border-radius:14px; background:rgba(239,250,255,.72); display:grid; place-items:center; color:var(--text-muted); font-size:12px; font-weight:900; }
+                .mh-review-hero.has-action .mh-review-subtitle { bottom:7em; font-size:1.2em; padding:.6em .8em; line-height:1.25; max-height:4.8em; }
+                .mh-review-action-bar { position:absolute; left:.9em; right:.9em; bottom:1.7em; z-index:5; justify-content:flex-start; gap:.6em; padding:0; margin:0; overflow-x:auto; }
+                .mh-review-action-bar .mh-story-dock-action { min-width:6.8em; height:5em; padding:.45em .55em; border-radius:1.3em; gap:.25em; font-size:var(--mh-phone-rem); line-height:1.05; border-color:rgba(14,165,233,.48); background:linear-gradient(180deg,rgba(255,255,255,.7),rgba(255,255,255,.16)),linear-gradient(135deg,#ecfeff,#bae6fd); box-shadow:0 .4em 0 rgba(14,116,144,.24),0 .8em 1.6em rgba(15,39,71,.12),inset 0 .1em 0 rgba(255,255,255,.85); }
+                .mh-review-action-bar .mh-story-dock-action .dock-icon { font-size:1.7em; }
+                .mh-review-action-bar .mh-story-dock-action .dock-label { max-width:6em; font-size:1em; font-weight:900; color:var(--accent-dark); }
+                .mh-review-action-bar.is-idle { min-height:4.4em; border:.15em dashed rgba(14,165,233,.28); border-radius:1.4em; background:rgba(239,250,255,.72); display:grid; place-items:center; color:var(--text-muted); font-size:1.2em; font-weight:900; }
                 .mh-review-ai { display:grid; grid-template-columns:repeat(2,minmax(0,1fr)); gap:8px; margin-top:14px; }
                 .mh-review-scene.is-portrait .mh-review-pet { width:min(190px,46vw); height:min(190px,46vw); }
                 .mh-review-cover.is-landscape .mh-review-cover-main { display:grid; grid-template-columns:minmax(0,1.12fr) minmax(150px,.88fr); align-items:stretch; text-align:left; }
@@ -967,19 +1015,23 @@ export function renderStoryMaker(panel, data = {}, { onBack, onPlayStory } = {})
                         <div id="mhMakerReview">${renderReviewHtml(currentStory, reviewSceneIndex, reviewLayout)}</div>
                     </section>
                     <section class="mh-maker-panel" data-maker-panel="advanced">
-                    <div class="card-flat" style="display:flex;flex-direction:column;gap:9px">
+                    <div class="mh-advanced-tabs" aria-label="高级编辑模式">
+                        <button type="button" class="${advancedTab === 'visual' ? 'is-active' : ''}" data-advanced-tab="visual">可视化编辑</button>
+                        <button type="button" class="${advancedTab === 'json' ? 'is-active' : ''}" data-advanced-tab="json">JSON文本</button>
+                    </div>
+                    <div class="card-flat mh-advanced-panel ${advancedTab === 'visual' ? 'is-active' : ''}" data-advanced-panel="visual">
+                        <div style="font-size:14px;font-weight:900">详细时间轴</div>
+                        <div id="mhMakerSceneEditor" class="mh-scene-stack">${renderSceneEditorHtml(currentStory)}</div>
+                    </div>
+                    <div class="card-flat mh-advanced-panel ${advancedTab === 'json' ? 'is-active' : ''}" data-advanced-panel="json">
                         <div style="display:flex;justify-content:space-between;align-items:center;gap:8px">
                             <div>
                                 <div style="font-size:14px;font-weight:900">JSON 数据</div>
-                                <div class="mh-maker-status">给高级用户粘贴、校验和整理故事数据。</div>
+                                <div class="mh-maker-status">完整故事 JSON，可直接编辑、粘贴后保存。</div>
                             </div>
-                            <button id="mhMakerFormat" class="btn-secondary">解析/整理</button>
+                            <button id="mhMakerFormat" class="btn-primary">保存</button>
                         </div>
-                        <textarea id="mhMakerJson" class="modal-input mh-maker-output" spellcheck="false" placeholder="AI 输出会同步到这里；也可以粘贴故事 JSON 后点解析/整理。">${currentStory ? escapeHtml(JSON.stringify(currentStory, null, 2)) : ''}</textarea>
-                    </div>
-                    <div class="card-flat" style="display:flex;flex-direction:column;gap:9px">
-                        <div style="font-size:14px;font-weight:900">详细时间轴</div>
-                        <div id="mhMakerSceneEditor" class="mh-scene-stack">${renderSceneEditorHtml(currentStory)}</div>
+                        <textarea id="mhMakerJson" class="modal-input mh-maker-output" spellcheck="false" placeholder="AI 输出会同步到这里；也可以粘贴故事 JSON 后保存。">${currentStory ? escapeHtml(JSON.stringify(currentStory, null, 2)) : ''}</textarea>
                     </div>
                     </section>
                     <div id="mhMakerSaved" style="font-size:12px;color:var(--text-muted);min-height:18px"></div>
@@ -988,6 +1040,7 @@ export function renderStoryMaker(panel, data = {}, { onBack, onPlayStory } = {})
 
         bindEvents();
         setMode(activeMode);
+        ParticleEffects.getInstance().mountAll(panel);
         scanAndMount(panel);
     };
 
@@ -998,11 +1051,16 @@ export function renderStoryMaker(panel, data = {}, { onBack, onPlayStory } = {})
         panel.querySelectorAll('[data-maker-panel]').forEach(section => section.classList.toggle('is-active', section.dataset.makerPanel === activeMode));
         if (activeMode === 'review') {
             renderReviewPanel();
+            syncReviewBgMusic();
             scheduleReviewPlayback();
         } else {
             clearReviewPlaybackTimer();
+            syncReviewBgMusic({ paused: true });
         }
-        if (activeMode === 'advanced') renderSceneEditor();
+        if (activeMode === 'advanced') {
+            renderSceneEditor();
+            setAdvancedTab(advancedTab);
+        }
     }
 
     function setStatus(text) {
@@ -1023,10 +1081,33 @@ export function renderStoryMaker(panel, data = {}, { onBack, onPlayStory } = {})
         host.innerHTML = renderSceneEditorHtml(currentStory);
     }
 
+    function setAdvancedTab(tab) {
+        const nextTab = tab === 'json' ? 'json' : 'visual';
+        if (nextTab === 'json') {
+            if (currentStory) syncSceneEditorToJson();
+        } else if (advancedTab === 'json') {
+            const parsed = parseJsonEditor({ quiet: true });
+            if (parsed) {
+                currentStory = parsed;
+                syncJsonFromStory();
+                renderSceneEditor();
+                refreshStoryPanels();
+            } else if (($('mhMakerJson')?.value || '').trim()) {
+                showToast('JSON 格式错误，暂时停留在文本编辑', 'error');
+                advancedTab = 'json';
+                return;
+            }
+        }
+        advancedTab = nextTab;
+        panel.querySelectorAll('[data-advanced-tab]').forEach(btn => btn.classList.toggle('is-active', btn.dataset.advancedTab === advancedTab));
+        panel.querySelectorAll('[data-advanced-panel]').forEach(section => section.classList.toggle('is-active', section.dataset.advancedPanel === advancedTab));
+    }
+
     function renderReviewPanel() {
         const host = $('mhMakerReview');
         if (!host) return;
         host.innerHTML = renderReviewHtml(currentStory, reviewSceneIndex, reviewLayout, reviewPlayback);
+        ParticleEffects.getInstance().mountAll(host);
         scanAndMount(host);
     }
 
@@ -1038,6 +1119,7 @@ export function renderStoryMaker(panel, data = {}, { onBack, onPlayStory } = {})
         const body = sheet.querySelector('.mh-maker-sheet-body');
         if (!body) return;
         body.innerHTML = `<div class="mh-scene-stack">${renderSceneEditorHtml(currentStory, { onlySceneIndex: sceneIndex })}</div>`;
+        ParticleEffects.getInstance().mountAll(body);
         scanAndMount(body);
     }
 
@@ -1088,6 +1170,7 @@ export function renderStoryMaker(panel, data = {}, { onBack, onPlayStory } = {})
             });
             scene.sceneTags = (sceneEl.querySelector('[data-scene-tags]')?.value || '').split(/[，,、\s]+/).map(item => item.trim()).filter(Boolean);
             scene.particles = (sceneEl.querySelector('[data-scene-particles]')?.value || '').split(/[，,、\s]+/).map(item => item.trim()).filter(Boolean);
+            scene.bgMusic = sceneEl.querySelector('[data-scene-bg-music]')?.value || scene.bgMusic || '';
             scene.timeline = Array.from(sceneEl.querySelectorAll('[data-timeline-index]')).map(row => {
                 if (row.dataset.timelineKind === 'line') {
                     return {
@@ -1316,6 +1399,15 @@ export function renderStoryMaker(panel, data = {}, { onBack, onPlayStory } = {})
     }
 
     function parseEditorStory() {
+        if (advancedTab === 'json' && ($('mhMakerJson')?.value || '').trim()) {
+            const parsed = parseJsonEditor();
+            if (!parsed) return null;
+            currentStory = parsed;
+            renderSceneEditor();
+            syncJsonFromStory();
+            setStatus(`已解析 ${currentStory.scenes.length} 幕，可继续编辑。`);
+            return currentStory;
+        }
         if (currentStory) {
             const story = readStoryFromSceneEditor();
             if (story) return story;
@@ -1453,16 +1545,7 @@ export function renderStoryMaker(panel, data = {}, { onBack, onPlayStory } = {})
     function bindEvents() {
         $('mhMakerBack').onclick = () => onBack?.();
         $('mhMakerGenerate').onclick = () => runGenerate();
-        $('mhMakerFormat').onclick = () => {
-            const parsed = parseJsonEditor();
-            if (!parsed) return;
-            currentStory = parsed;
-            reviewSceneIndex = -1;
-            syncJsonFromStory();
-            refreshStoryPanels();
-            setMode('review');
-            setStatus(`已解析 ${currentStory.scenes.length} 幕，可在预览中检查。`);
-        };
+        $('mhMakerFormat').onclick = saveCurrentStory;
         $('mhMakerSave').onclick = saveCurrentStory;
         panel.addEventListener('input', (e) => {
             if (e.target.closest?.('#mhMakerActorList')) {
@@ -1543,6 +1626,8 @@ export function renderStoryMaker(panel, data = {}, { onBack, onPlayStory } = {})
             if (e.target.closest?.('[data-abort-generation]')) { abortGeneration(); return; }
             const modeBtn = e.target.closest?.('[data-maker-mode]');
             if (modeBtn) { setMode(modeBtn.dataset.makerMode); return; }
+            const advancedTabBtn = e.target.closest?.('[data-advanced-tab]');
+            if (advancedTabBtn) { setAdvancedTab(advancedTabBtn.dataset.advancedTab); return; }
             if (e.target.closest?.('[data-maker-play]')) { playCurrentStory(); return; }
             const modeToBtn = e.target.closest?.('[data-maker-mode-to]');
             if (modeToBtn) { setMode(modeToBtn.dataset.makerModeTo); return; }
@@ -1567,6 +1652,7 @@ export function renderStoryMaker(panel, data = {}, { onBack, onPlayStory } = {})
                 else {
                     clearReviewPlaybackTimer();
                     reviewPlayback = null;
+                    syncReviewBgMusic({ paused: true });
                     renderReviewPanel();
                 }
                 return;
@@ -1574,6 +1660,17 @@ export function renderStoryMaker(panel, data = {}, { onBack, onPlayStory } = {})
             const reviewActionBtn = e.target.closest?.('[data-review-action]');
             if (reviewActionBtn) {
                 clickReviewAction(Number(reviewActionBtn.dataset.reviewAction));
+                return;
+            }
+            const reviewMusicBtn = e.target.closest?.('[data-review-music-toggle]');
+            if (reviewMusicBtn) {
+                e.preventDefault();
+                e.stopPropagation();
+                const scene = currentStory?.scenes?.[reviewSceneIndex];
+                const track = sceneBgMusic(scene);
+                const muted = soundManager.toggleBgMusicMuted?.({ fadeMs: 220 });
+                if (!muted && track) soundManager.playBgMusic(track, { fadeMs: 260, volume: 0.3 });
+                renderReviewPanel();
                 return;
             }
             const tweakBtn = e.target.closest?.('[data-ai-tweak]');

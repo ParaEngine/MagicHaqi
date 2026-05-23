@@ -1,4 +1,14 @@
-// WebAudio sound manager for short MIDI-style game cues.
+/*
+ * WebAudio sound manager for short MIDI-style game cues.
+ *
+ * Background music usage:
+ *   soundManager.playBgMusic('selector');
+ *   soundManager.playBgMusic('forest', { fadeMs: 1200, volume: 0.3 });
+ *   soundManager.stopBgMusic();
+ *
+ * See config.js CONFIG.assets.bgSounds for known background music keys.
+ */
+import { CONFIG } from './config.js';
 
 const ZOOM_BEEP_GAP_MS = 72;
 const ZOOM_LEVEL_GAP_MS = 180;
@@ -11,6 +21,8 @@ const BUTTON_CLICK_GAP_MS = 24;
 const POINT_REWARD_GAP_MS = 420;
 const FOOD_EAT_GAP_MS = 560;
 const BATH_CUE_GAP_MS = 900;
+const DEFAULT_BG_MUSIC_VOLUME = 0.36;
+const DEFAULT_BG_MUSIC_FADE_MS = 900;
 
 let singletonInstance = null;
 
@@ -41,6 +53,9 @@ export default class SoundManager {
         this.lastPointRewardAt = 0;
         this.lastFoodEatAt = 0;
         this.lastBathCueAt = 0;
+        this.currentBgMusic = null;
+        this.bgMusicMuted = false;
+        this.bgMusicToken = 0;
         this.audioEngine = getSharedAudioEngine();
         singletonInstance = this;
         if (typeof window !== 'undefined') {
@@ -58,6 +73,7 @@ export default class SoundManager {
         });
         const unlock = () => {
             this.resumeAudioContext();
+            this._resumeBgMusicAfterGesture();
         };
         const opts = { capture: true, passive: true };
         ['pointerdown', 'touchstart', 'mousedown', 'keydown', 'click'].forEach((ev) => {
@@ -91,6 +107,187 @@ export default class SoundManager {
             try { return ctx.resume?.() || Promise.resolve(ctx); } catch (_) { return null; }
         }
         return Promise.resolve(ctx);
+    }
+
+    resolveBgMusicSource(track) {
+        if (!track) return '';
+        if (typeof track === 'object') return track.src || track.url || this.resolveBgMusicSource(track.id || track.key || track.name);
+        const source = String(track);
+        return CONFIG.assets?.bgSounds?.[source] || source;
+    }
+
+    playBgMusic(track, {
+        volume = DEFAULT_BG_MUSIC_VOLUME,
+        fadeMs = DEFAULT_BG_MUSIC_FADE_MS,
+        restart = false,
+    } = {}) {
+        const src = this.resolveBgMusicSource(track);
+        if (!src || typeof Audio === 'undefined') return false;
+
+        const targetVolume = this.clampVolume(volume);
+        const durationMs = this.normalizeFadeMs(fadeMs);
+        const active = this.currentBgMusic;
+        if (active?.src === src && !restart) {
+            active.shouldPlay = true;
+            active.targetVolume = targetVolume;
+            active.fadeMs = durationMs;
+            active.audio.loop = true;
+            if (active.audio.paused) this._startBgMusicEntry(active);
+            else this.fadeAudio(active.audio, this.bgMusicMuted ? 0 : targetVolume, durationMs);
+            return true;
+        }
+
+        this.bgMusicToken += 1;
+        if (active?.audio) {
+            active.shouldPlay = false;
+            this.fadeAudio(active.audio, 0, durationMs, () => this.disposeBgAudio(active.audio));
+        }
+
+        const audio = this.createBgAudio(src);
+        const entry = {
+            audio,
+            src,
+            shouldPlay: true,
+            targetVolume,
+            fadeMs: durationMs,
+            token: this.bgMusicToken,
+        };
+        this.currentBgMusic = entry;
+        this._startBgMusicEntry(entry);
+        return true;
+    }
+
+    stopBgMusic({ fadeMs = DEFAULT_BG_MUSIC_FADE_MS } = {}) {
+        const active = this.currentBgMusic;
+        if (!active?.audio) return false;
+        this.bgMusicToken += 1;
+        this.currentBgMusic = null;
+        active.shouldPlay = false;
+        this.fadeAudio(active.audio, 0, this.normalizeFadeMs(fadeMs), () => this.disposeBgAudio(active.audio));
+        return true;
+    }
+
+    getCurrentBgMusic() {
+        const active = this.currentBgMusic;
+        if (!active?.audio) return null;
+        return {
+            src: active.src,
+            paused: active.audio.paused,
+            volume: active.audio.volume,
+            targetVolume: active.targetVolume,
+            muted: this.bgMusicMuted,
+        };
+    }
+
+    isBgMusicMuted() {
+        return !!this.bgMusicMuted;
+    }
+
+    setBgMusicMuted(muted, { fadeMs = 260 } = {}) {
+        this.bgMusicMuted = !!muted;
+        const active = this.currentBgMusic;
+        if (active?.audio) {
+            if (!active.audio.paused && active.shouldPlay) {
+                this.fadeAudio(active.audio, this.bgMusicMuted ? 0 : active.targetVolume, this.normalizeFadeMs(fadeMs));
+            } else if (!this.bgMusicMuted && active.shouldPlay) {
+                this._startBgMusicEntry(active);
+            }
+        }
+        return this.bgMusicMuted;
+    }
+
+    toggleBgMusicMuted(options = {}) {
+        return this.setBgMusicMuted(!this.bgMusicMuted, options);
+    }
+
+    createBgAudio(src) {
+        const audio = new Audio(src);
+        audio.loop = true;
+        audio.preload = 'auto';
+        audio.volume = 0;
+        audio.crossOrigin = 'anonymous';
+        audio.playsInline = true;
+        return audio;
+    }
+
+    _startBgMusicEntry(entry) {
+        if (!entry?.audio || this.currentBgMusic !== entry) return;
+        entry.audio.volume = entry.audio.paused ? 0 : entry.audio.volume;
+        let playResult = null;
+        try {
+            playResult = entry.audio.play();
+        } catch (_) {
+            entry.needsResume = true;
+            return;
+        }
+        if (playResult && typeof playResult.then === 'function') {
+            playResult.then(() => {
+                if (this.currentBgMusic !== entry || !entry.shouldPlay) return;
+                entry.needsResume = false;
+                this.fadeAudio(entry.audio, this.bgMusicMuted ? 0 : entry.targetVolume, entry.fadeMs);
+            }).catch(() => {
+                if (this.currentBgMusic !== entry) return;
+                entry.audio.volume = 0;
+                entry.needsResume = true;
+            });
+            return;
+        }
+        this.fadeAudio(entry.audio, this.bgMusicMuted ? 0 : entry.targetVolume, entry.fadeMs);
+    }
+
+    _resumeBgMusicAfterGesture() {
+        const active = this.currentBgMusic;
+        if (!active?.shouldPlay || !active.audio?.paused) return;
+        this._startBgMusicEntry(active);
+    }
+
+    fadeAudio(audio, toVolume, durationMs = DEFAULT_BG_MUSIC_FADE_MS, onComplete = null) {
+        if (!audio) return false;
+        if (audio._mhFadeFrame && typeof cancelAnimationFrame === 'function') {
+            cancelAnimationFrame(audio._mhFadeFrame);
+        }
+        const target = this.clampVolume(toVolume);
+        const duration = this.normalizeFadeMs(durationMs);
+        const from = this.clampVolume(audio.volume);
+        if (duration <= 0 || typeof requestAnimationFrame !== 'function' || typeof performance === 'undefined') {
+            audio.volume = target;
+            if (typeof onComplete === 'function') onComplete();
+            return true;
+        }
+        const startedAt = performance.now();
+        const step = (nowMs) => {
+            const progress = Math.min(1, Math.max(0, (nowMs - startedAt) / duration));
+            audio.volume = from + (target - from) * progress;
+            if (progress < 1) {
+                audio._mhFadeFrame = requestAnimationFrame(step);
+                return;
+            }
+            audio._mhFadeFrame = null;
+            if (typeof onComplete === 'function') onComplete();
+        };
+        audio._mhFadeFrame = requestAnimationFrame(step);
+        return true;
+    }
+
+    disposeBgAudio(audio) {
+        if (!audio) return;
+        if (audio._mhFadeFrame && typeof cancelAnimationFrame === 'function') {
+            cancelAnimationFrame(audio._mhFadeFrame);
+            audio._mhFadeFrame = null;
+        }
+        try { audio.pause(); } catch (_) {}
+        try { audio.removeAttribute('src'); audio.load?.(); } catch (_) {}
+    }
+
+    normalizeFadeMs(value) {
+        const fadeMs = Number(value);
+        return Number.isFinite(fadeMs) ? Math.max(0, fadeMs) : DEFAULT_BG_MUSIC_FADE_MS;
+    }
+
+    clampVolume(value) {
+        const volume = Number(value);
+        if (!Number.isFinite(volume)) return DEFAULT_BG_MUSIC_VOLUME;
+        return Math.max(0, Math.min(1, volume));
     }
 
     midiToFrequency(note) {

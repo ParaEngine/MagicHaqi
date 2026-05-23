@@ -1761,11 +1761,12 @@ function _getSheetWorker() {
     try {
         _sheetWorker = new Worker(new URL('./petSheetWorker.js', import.meta.url));
         _sheetWorker.onmessage = (event) => {
-            const { id, ok, blob, width, height, error } = event.data || {};
+            const { id, ok, blob, direct, width, height, error } = event.data || {};
             const job = _sheetWorkerJobs.get(id);
             if (!job) return;
             _sheetWorkerJobs.delete(id);
-            if (ok && blob) job.resolve({ blob, width, height, dataUrl: URL.createObjectURL(blob) });
+            if (ok && direct) job.resolve({ direct: true, blob: null, width, height, dataUrl: job.url });
+            else if (ok && blob) job.resolve({ direct: false, blob, width, height, dataUrl: URL.createObjectURL(blob) });
             else job.reject(new Error(error || 'pet sheet worker failed'));
         };
         _sheetWorker.onerror = (event) => {
@@ -1789,7 +1790,7 @@ async function _processSheetInWorker(url) {
     if (!worker) return null;
     const id = ++_sheetWorkerSeq;
     return await new Promise((resolve, reject) => {
-        _sheetWorkerJobs.set(id, { resolve, reject });
+        _sheetWorkerJobs.set(id, { resolve, reject, url });
         try {
             worker.postMessage({ id, url });
         } catch (e) {

@@ -105,8 +105,9 @@ function normalizeMail(item, fallback = {}) {
     const rewardRows = normalizeRewardRows(raw, base.rewardRows || []);
     const rewards = Number(rawRewards) === 1 || rawRewards === true || rewardRows.length > 0;
     const content = pickMailContent(raw) || base.content || '';
+    const username = raw.username || raw.fromUsername || raw.senderUsername || base.username || '';
     const from = raw.from || raw.fromEmail || raw.sender || raw.senderName || raw.fromName || base.from || '系统邮件';
-    return { raw, id, title, createdAt, read, rewards, rewardRows, rewardReceived, content, from };
+    return { raw, id, title, username, createdAt, read, rewards, rewardRows, rewardReceived, content, from };
 }
 
 function userNameOf(user) {
@@ -259,15 +260,15 @@ function friendApplyCardHtml(item, index) {
 function mailCardHtml(item, index = 0) {
     const mail = normalizeMail(item);
     const timestamp = timestampOf({ createdAt: mail.createdAt });
-    const statusBadges = [
-        mail.read ? '' : '<span class="mailbox-status-badge mailbox-status-unread">✉️ 未读</span>',
-    ].join('');
+    const mailTypeLabel = mail.username ? `邮件(${mail.username})` : '邮件';
+    const readStamp = mail.read
+        ? '<div class="mailbox-read-stamp" aria-label="已读">已读</div>'
+        : '<div class="mailbox-read-stamp mailbox-unread-stamp" aria-label="未读">未读</div>';
     return `
         <button class="mailbox-card mailbox-mail-card mailbox-art-card${mail.read ? ' is-read' : ' is-unread'}" data-open-mail-index="${index}" type="button">
-            <div class="mailbox-card-kicker"><span>邮件</span>${timestamp ? `<i>${escapeHtml(formatTime(timestamp))}</i>` : ''}</div>
+            <div class="mailbox-card-kicker"><span>${escapeHtml(mailTypeLabel)}</span>${timestamp ? `<i>${escapeHtml(formatTime(timestamp))}</i>` : ''}</div>
             <div class="mailbox-title mailbox-mail-title"><span class="mailbox-avatar">✉️</span>${escapeHtml(mail.title)}</div>
-            <div class="mailbox-status-row">${statusBadges}</div>
-            ${mail.read ? '<div class="mailbox-read-stamp" aria-label="已读">已读</div>' : ''}
+            ${readStamp}
         </button>`;
 }
 

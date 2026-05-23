@@ -113,6 +113,15 @@
     position:absolute; inset:0;
     pointer-events:none;
 }
+.mh-particle-canvas {
+    position: absolute;
+    inset: 0;
+    z-index: 1;
+    width: 100%;
+    height: 100%;
+    display: block;
+    pointer-events: none;
+}
 .field-terrain-patch {
     position:absolute;
     display:block;
@@ -147,16 +156,6 @@
 .field-weather-rain {
     background: linear-gradient(180deg, rgba(34, 78, 120, 0.2), rgba(14, 116, 144, 0.08));
 }
-.field-weather-rain i {
-    position: absolute;
-    top: -14px;
-    width: 2px;
-    height: 20px;
-    border-radius: 999px;
-    background: linear-gradient(180deg, rgba(255,255,255,0), rgba(224, 250, 255, 0.9));
-    animation: fieldRainFall 0.62s linear infinite;
-}
-@keyframes fieldRainFall { to { transform: translateY(80vh); opacity: 0.2; } }
 .field-weather-sun {
     background: radial-gradient(circle at 72% 18%, rgba(255, 244, 176, 0.42), transparent 21%);
     mix-blend-mode: soft-light;
@@ -311,9 +310,8 @@
     position: fixed;
     z-index: 20000;
     left: 0;
-    top: 0;
-    transform: translate(-50%, -50%) scale(1.18);
-    pointer-events: none;
+    }
+    .field-map-prop {
     font-size: 34px;
     filter: drop-shadow(0 8px 12px rgba(0,0,0,0.28));
 }
@@ -321,16 +319,6 @@
 .mh-field-drag-ghost-svg .field-house-svg { display: inline-block; line-height: 0; }
 .mh-field-drag-ghost-svg .field-house-svg svg { width: 100%; height: auto; display: block; }
 .mh-field-scale-controls {
-    position: absolute;
-    left: 50%;
-    top: calc(100% + 4px);
-    transform: translateX(-50%) translateY(6px) scale(0.96);
-    display: flex;
-    align-items: center;
-    gap: 12px;
-    opacity: 0;
-    pointer-events: none;
-    z-index: 80;
     transition: opacity .18s ease, transform .18s ease;
 }
 .mh-field-scale-controls.is-visible {
