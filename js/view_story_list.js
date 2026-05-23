@@ -146,7 +146,7 @@ function renderStoryCard(record) {
                 <div class="mh-story-card-time">${escapeHtml(formatDate(record.updatedAt))}</div>
                 ${renderStoryStats(record)}
                 <div class="mh-story-card-actions">
-                    <button type="button" class="btn-secondary" data-story-play="${escapeHtml(record.path)}">试玩</button>
+                    <button type="button" class="btn-secondary mh-story-play-btn" data-story-play="${escapeHtml(record.path)}">试玩</button>
                     <button type="button" class="btn-secondary" data-story-share="${escapeHtml(record.path)}">分享</button>
                     <button type="button" class="btn-primary" data-story-edit="${escapeHtml(record.path)}">编辑</button>
                 </div>
@@ -246,6 +246,11 @@ export async function renderStoryList(panel, _data = {}, { onBack, onNewStory, o
             .mh-story-list-stats span { border-radius:999px; background:#effaff; color:var(--text-secondary); font-size:11px; font-weight:900; padding:5px 6px; text-align:center; white-space:nowrap; }
             .mh-story-card-actions { margin-top:auto; display:grid; grid-template-columns:repeat(3,minmax(0,1fr)); gap:6px; }
             .mh-story-card-actions button { padding:7px 8px; font-size:12px; }
+            .mh-story-card-actions .mh-story-play-btn { background:linear-gradient(180deg,rgba(255,255,255,.46),rgba(255,255,255,0) 48%),linear-gradient(180deg,#86efac 0%,#22c55e 100%); border-color:#16a34a; border-bottom-color:#15803d; color:#ffffff; text-shadow:0 1px 0 rgba(20,83,45,.42); box-shadow:0 3px 0 #15803d,inset 0 1px 0 rgba(255,255,255,.62); }
+            @media (hover: hover) and (pointer: fine) {
+                .mh-story-card-actions .mh-story-play-btn:hover { background:linear-gradient(180deg,rgba(255,255,255,.5),rgba(255,255,255,0) 46%),linear-gradient(180deg,#bbf7d0 0%,#16a34a 100%); color:#ffffff; }
+            }
+            .mh-story-card-actions .mh-story-play-btn:active { box-shadow:0 1px 0 #15803d,inset 0 2px 5px rgba(20,83,45,.22); }
             .mh-story-share-mask { zoom:1 !important; align-items:flex-end; padding:14px 12px max(14px,env(safe-area-inset-bottom)); }
             .mh-story-share-card { width:min(420px, calc(100vw - 24px)); display:flex; flex-direction:column; gap:12px; border-radius:20px 20px 16px 16px; }
             .mh-story-share-head { display:flex; align-items:flex-start; justify-content:space-between; gap:12px; }

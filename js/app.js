@@ -279,7 +279,8 @@ function storyRouteOptions() {
             }
             navigateToView(state.currentPetId ? 'home' : 'petList');
         },
-        onPetAction: (action) => handleAction(action, { skipNotify: true }),
+        onPetAction: (action) => handleAction(action, { skipNotify: true, ignoreCooldown: true }),
+        onFeedItem: handleFeedItem,
         onLaunchMinigame: handleStoryMinigameLaunch,
         onRaisePet: handleStoryRaisePet,
     };
@@ -468,6 +469,10 @@ function renderMinigamesRoute() {
     const renderOptions = {
         onBack: () => {
             pendingMinigameLaunch = null;
+            if (launch?.mode === 'story') {
+                handleStoryMinigameExit();
+                return;
+            }
             if (launch?.mode === 'sickness') {
                 returnToCellLevel();
                 return;
@@ -489,7 +494,7 @@ function renderMinigamesRoute() {
         initialGameParams: launch?.params || null,
         allowPlayWhenLowEnergy: !!launch?.allowLowEnergy,
         suppressRewards: !!launch?.suppressRewards,
-        exitGameToBack: launch?.mode === 'sickness',
+        exitGameToBack: launch?.mode === 'sickness' || launch?.mode === 'story',
     };
     if (minigamesViewModule) {
         minigamesViewModule.renderMinigames(app, { pet }, renderOptions);
@@ -1485,7 +1490,7 @@ function handleAction(key, options = {}) {
         requestAnimationFrame(() => say(daySleepRejectText(), 2400));
         return true;
     }
-    if (cd[key] && now - cd[key] < cfg.cooldownSec * 1000) {
+    if (!options.ignoreCooldown && cd[key] && now - cd[key] < cfg.cooldownSec * 1000) {
         const left = Math.ceil((cfg.cooldownSec * 1000 - (now - cd[key])) / 1000);
         showToast(`再等 ${left} 秒～`, 'info');
         return false;
@@ -1510,7 +1515,7 @@ function handleAction(key, options = {}) {
     clampEnergyToMax(pet);
     if (cfg.costCoins) { state.coins -= cfg.costCoins; saveUserProfileDebounced(); }
     if (cfg.rewardCoins) { state.coins += cfg.rewardCoins; saveUserProfileDebounced(); showToast(`+${cfg.rewardCoins} 🪙`, 'success', 1200); }
-    cd[key] = now;
+    if (!options.ignoreCooldown) cd[key] = now;
     pet.lastTickAt = now;
     markPetCared(pet, now);
     applyStage(pet);
@@ -1774,6 +1779,11 @@ async function handleStoryMinigameResult(_game, data = {}) {
     pendingMinigameLaunch = null;
     const mod = await loadStoryPlayerView();
     mod.completeStoryMinigameActivity?.(data);
+    setView('storyPlayer');
+}
+
+function handleStoryMinigameExit() {
+    pendingMinigameLaunch = null;
     setView('storyPlayer');
 }
 

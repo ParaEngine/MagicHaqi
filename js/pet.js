@@ -269,28 +269,34 @@ function _showPetBubble(petId, text, duration = 4500) {
     const message = String(text == null ? '' : text).trim();
     if (!message) return;
     _findPetHosts(petId).forEach((host) => {
-        const anchor = _petEffectAnchor(host);
-        if (!anchor) return;
-        let bubble = anchor.querySelector(':scope > .mh-pet-talk-bubble');
-        if (!bubble) {
-            bubble = document.createElement('div');
-            bubble.className = 'mh-pet-talk-bubble';
-            anchor.appendChild(bubble);
-        }
-        const isFlipped = String(anchor.style.transform || '').includes('scaleX(-1)');
-        bubble.style.setProperty('--mh-talk-flip', isFlipped ? '-1' : '1');
-        bubble.textContent = message;
-        bubble.classList.remove('mh-pet-talk-bubble-hide');
-        bubble.classList.remove('mh-pet-talk-bubble-pop');
-        void bubble.offsetWidth;
-        bubble.classList.add('mh-pet-talk-bubble-pop');
-        clearTimeout(bubble.__mhPetSayTimer);
-        const ms = Math.max(900, Number(duration) || 4500);
-        bubble.__mhPetSayTimer = setTimeout(() => {
-            bubble.classList.add('mh-pet-talk-bubble-hide');
-            bubble.addEventListener('animationend', () => bubble.remove(), { once: true });
-        }, ms);
+        _showPetBubbleAtHost(host, message, duration);
     });
+}
+
+function _showPetBubbleAtHost(host, text, duration = 4500) {
+    const message = String(text == null ? '' : text).trim();
+    if (!message) return;
+    const anchor = _petEffectAnchor(host);
+    if (!anchor) return;
+    let bubble = anchor.querySelector(':scope > .mh-pet-talk-bubble');
+    if (!bubble) {
+        bubble = document.createElement('div');
+        bubble.className = 'mh-pet-talk-bubble';
+        anchor.appendChild(bubble);
+    }
+    const isFlipped = String(anchor.style.transform || '').includes('scaleX(-1)');
+    bubble.style.setProperty('--mh-talk-flip', isFlipped ? '-1' : '1');
+    bubble.textContent = message;
+    bubble.classList.remove('mh-pet-talk-bubble-hide');
+    bubble.classList.remove('mh-pet-talk-bubble-pop');
+    void bubble.offsetWidth;
+    bubble.classList.add('mh-pet-talk-bubble-pop');
+    clearTimeout(bubble.__mhPetSayTimer);
+    const ms = Math.max(900, Number(duration) || 4500);
+    bubble.__mhPetSayTimer = setTimeout(() => {
+        bubble.classList.add('mh-pet-talk-bubble-hide');
+        bubble.addEventListener('animationend', () => bubble.remove(), { once: true });
+    }, ms);
 }
 
 function _randomPendingEggEmoji() {
@@ -578,6 +584,14 @@ export function say(text, duration = 4500) {
     _showPetBubble(state.currentPetId, text, Math.max(2400, Number(duration) || 4500));
 }
 
+export function sayOnPet(petEl, text, duration = 4500) {
+    if (petEl) {
+        _showPetBubbleAtHost(petEl, text, Math.max(900, Number(duration) || 4500));
+        return;
+    }
+    say(text, duration);
+}
+
 const PET_TALK_LINES = {
     egg: [
         '好饿呀，给我吃点东西，我就长大了 🥚',
@@ -655,7 +669,7 @@ export function randomPetTalk(pet) {
 export function playPetClickFeedback(petEl, pet) {
     const talk = randomPetTalk(pet);
     playPetHappy(petEl, pet);
-    requestAnimationFrame(() => say(talk.text, talk.state === 'sleeping' ? 2600 : 2400));
+    requestAnimationFrame(() => sayOnPet(petEl, talk.text, talk.state === 'sleeping' ? 2600 : 2400));
 }
 
 function playFoodTrill(wasHungry = false) {

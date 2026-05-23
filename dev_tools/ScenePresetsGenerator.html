@@ -40,7 +40,8 @@
 			.status.error { @apply border-red-200 bg-red-50 text-red-800; }
 			.status-action { @apply min-h-0 border-0 bg-transparent p-0 font-bold underline underline-offset-2 hover:border-transparent hover:bg-transparent; }
 			.pill { @apply inline-flex min-h-6 items-center whitespace-nowrap rounded-full border border-slate-300 bg-white px-2 text-xs text-slate-500; }
-			.records-toolbar { @apply grid grid-cols-[1fr_auto_auto] gap-2 border-b border-slate-300 bg-slate-50 p-3; }
+			.records-toolbar { @apply grid grid-cols-[minmax(0,1fr)_auto_auto] gap-2 border-b border-slate-300 bg-slate-50 p-3; }
+			.generate-all-button { @apply min-h-10 whitespace-nowrap px-5 text-sm font-bold; }
 			.records-filters { @apply grid gap-2 border-b border-slate-300 bg-white px-3 py-2.5; }
 			.records-filter-actions { @apply grid grid-cols-[minmax(0,1fr)_auto] items-end gap-2; }
 			.batch-grid { @apply grid grid-cols-1 gap-3 lg:grid-cols-[270px_minmax(0,1fr)]; }
@@ -83,8 +84,11 @@
 			.scene-preview-title { @apply relative z-[4] m-2.5 self-end justify-self-stretch rounded-lg bg-white/80 px-2.5 py-2 text-center text-[13px] font-extrabold text-slate-900; }
 			.empty-preview { @apply z-[2] p-4 text-center text-[13px] text-slate-600; }
 			.ref-grid { @apply grid grid-cols-2 gap-2; }
-			.ref-preview { @apply grid min-h-[78px] place-items-center overflow-hidden rounded-lg border border-dashed border-slate-300 bg-slate-50; }
+			.reference-dropzone { @apply rounded-md border border-dashed border-slate-300 bg-white p-2.5 outline-none focus:border-sky-500 focus:ring-2 focus:ring-sky-600/15; }
+			.reference-dropzone.is-pasting { @apply border-sky-500 bg-sky-50; }
+			.ref-preview { @apply relative grid min-h-[78px] place-items-center overflow-hidden rounded-lg border border-dashed border-slate-300 bg-slate-50; }
 			.ref-preview img { @apply block h-24 w-full object-cover; }
+			.reference-delete { @apply absolute right-1 top-1 z-[2] grid h-[24px] w-[24px] min-h-[24px] place-items-center rounded-full border border-white/90 bg-red-600/90 p-0 text-[16px] leading-none text-white hover:bg-red-700; }
 			.image-size-label { @apply min-h-[14px] text-center text-[11px] leading-tight text-slate-500; }
 			.current-image-size { @apply -mt-1; }
 			.history-grid { @apply grid gap-2; grid-template-columns: repeat(auto-fill, minmax(66px, 1fr)); }
@@ -166,14 +170,15 @@
 					<div id="sceneCdnStatus" class="hint">CDN folder: maisi/magichaqi/scenes</div>
 				</section>
 
-				<section class="section">
+				<section id="referenceSection" class="section reference-dropzone" tabindex="0" aria-label="参考图，可粘贴剪贴板图片">
 					<h2>参考图</h2>
 					<label>参考图 URL（一行一个）
-						<textarea id="referenceUrls" class="prompt-box" style="min-height:78px" placeholder="https://...&#10;data:image/..."></textarea>
+						<textarea id="referenceUrls" class="prompt-box" style="min-height:78px" placeholder="https://...&#10;data:image/...&#10;也可在此区域按 Ctrl+V 粘贴图片"></textarea>
 					</label>
 					<label>上传参考图
 						<input id="referenceFiles" type="file" accept="image/*" multiple>
 					</label>
+					<div id="referencePasteHint" class="hint">点击此区域后按 Ctrl+V，可将剪贴板图片作为 base64 参考图发送给模型。</div>
 					<div id="referencePreview" class="ref-grid"><div class="ref-preview"><span class="hint">可选参考图预览</span></div></div>
 				</section>
 			</div>
@@ -189,8 +194,8 @@
 			</div>
 			<div class="records-toolbar">
 				<input id="recordSearch" placeholder="搜索 id / title / tags">
-				<button id="btnNewScene" class="primary" type="button">新建</button>
-				<button id="btnRefreshRecords" type="button">刷新</button>
+				<button id="btnGenerateAllMissing" class="primary generate-all-button" type="button">全部生成(0)</button>
+				<button id="btnNewScene" type="button">新建</button>
 			</div>
 			<div class="records-filters">
 				<div class="record-tag-filter" id="recordTagFilterWrap">
@@ -223,7 +228,6 @@
 				</div>
 				<div class="toolbar">
 					<button id="btnOpenIndexPreview" type="button">导入导出</button>
-					<button id="btnBatchGenerate" class="primary" type="button">批量生成</button>
 					<button id="btnSaveScene" class="success" type="button">保存场景</button>
 				</div>
 			</div>
@@ -335,7 +339,7 @@
 			室内: 'indoor', 户外: 'outdoor', 室外: 'outdoor', 陆地: 'land', 天空: 'sky', 海洋: 'ocean', 操场: 'playground', 浴室: 'bathroom', 客厅: 'living room', 商店: 'shop', 学校: 'school', 春天: 'spring', 冬天: 'winter', 海边: 'seaside', 哈奇: 'haqi', 镇大厅: 'townhall', 森林: 'forest', 沙滩: 'sand', 沙子: 'sand', 医院: 'hospital', 家: 'living room', 小店: 'shop', 水: 'ocean', 雪: 'winter'
 		};
 		const $ = (id) => document.getElementById(id);
-		const state = { sdk: null, referenceDataUrls: [], scenes: [], selectedId: '', indexMeta: null, lastLLMModel: '', lastChatModel: '', lastImageSize: '', currentHistoryUrls: [], imageSizeCache: new Map(), imageSizeRequests: new Map(), recordThumbObserver: null, workspaceViewer: null, storyConfig: null, storyConfigModule: null, soundManager: null, particleEffectsModule: null, generationPromptsPromise: null, batchAbortRequested: false };
+		const state = { sdk: null, referenceDataUrls: [], scenes: [], selectedId: '', indexMeta: null, lastLLMModel: '', lastChatModel: '', lastImageSize: '', currentHistoryUrls: [], imageSizeCache: new Map(), imageSizeRequests: new Map(), recordThumbObserver: null, workspaceViewer: null, storyConfig: null, storyConfigModule: null, soundManager: null, particleEffectsModule: null, generationPromptsPromise: null, batchAbortRequested: false, generateAll: { running: false, pauseRequested: false, completed: 0, total: 0, activeId: '' } };
 
 		function loadGenerationPrompts() {
 			state.generationPromptsPromise ||= importRuntimeModule('../js/generationPrompts.js');
@@ -658,6 +662,7 @@ ${currentIndent}}`;
 
 		function rememberGenerationSettings() {
 			state.lastLLMModel = getSelectedImageModel() || state.lastLLMModel || '';
+			state.lastChatModel = $('batchChatModel')?.value?.trim() || state.lastChatModel || '';
 			state.lastImageSize = getSelectedImageSizeValue() || state.lastImageSize || getDefaultImageSizeValue();
 		}
 
@@ -687,17 +692,12 @@ ${currentIndent}}`;
 			try {
 				localStorage.setItem(BATCH_SETTINGS_STORAGE_KEY, JSON.stringify({
 					lastChatModel: settings.lastChatModel || state.lastChatModel || '',
-					generateImages: settings.generateImages !== false,
+					generateImages: false,
 					userPrompt: settings.userPrompt || '',
 					combinations: Array.isArray(settings.combinations) ? settings.combinations : [],
 					updatedAt: new Date().toISOString(),
 				}));
 			} catch (_) {}
-		}
-
-		function shouldBatchGenerateImages() {
-			const checkbox = $('batchGenerateImages');
-			return checkbox ? checkbox.checked : true;
 		}
 
 		function getEnabledLocalModels(category) {
@@ -1070,14 +1070,19 @@ ${currentIndent}}`;
 			return { remoteKey, url: `${config.publicDomain}/${remoteKey}` };
 		}
 
-		function getSceneCdnFileName(extension = 'webp') {
-			const sceneId = safeId($('sceneId').value || state.selectedId || 'scene', 'scene');
-			return `${sceneId}-${Date.now()}.${extension}`;
+		function getSceneCdnFileNameForSceneId(sceneId, extension = 'webp') {
+			const safeSceneId = safeId(sceneId || 'scene', 'scene');
+			return `${safeSceneId}-${Date.now()}.${extension}`;
 		}
 
-		async function compressAndUploadGeneratedSceneImage(url) {
-			const compressed = await compressSceneImageForCdn(url);
-			const uploaded = await uploadBlobToSceneCdn(compressed.blob, getSceneCdnFileName(compressed.extension));
+		function getSceneCdnFileName(extension = 'webp') {
+			const sceneId = safeId($('sceneId').value || state.selectedId || 'scene', 'scene');
+			return getSceneCdnFileNameForSceneId(sceneId, extension);
+		}
+
+		async function compressAndUploadGeneratedSceneImage(url, sceneId = '', options = loadSceneCdnUploadOptions()) {
+			const compressed = await compressSceneImageForCdn(url, options);
+			const uploaded = await uploadBlobToSceneCdn(compressed.blob, getSceneCdnFileNameForSceneId(sceneId || $('sceneId')?.value || state.selectedId, compressed.extension));
 			state.imageSizeCache.set(uploaded.url, compressed.blob.size);
 			return { ...uploaded, ...compressed };
 		}
@@ -1275,6 +1280,27 @@ ${currentIndent}}`;
 			const id = safeId(sceneId || $('sceneId').value, '');
 			if (!id) return '';
 			return String(state.scenes.find(scene => scene.id === id)?.imageUrl || '').trim();
+		}
+
+		function getMissingImageScenes() {
+			return state.scenes.filter(scene => !String(scene.imageUrl || '').trim());
+		}
+
+		function updateGenerateAllButton() {
+			const button = $('btnGenerateAllMissing');
+			if (!button) return;
+			const missingCount = getMissingImageScenes().length;
+			const progress = state.generateAll || {};
+			if (progress.running) {
+				const current = Math.min(progress.total || 0, (progress.completed || 0) + (progress.activeId ? 1 : 0));
+				button.textContent = progress.pauseRequested ? `暂停中(${current}/${progress.total || 0})` : `暂停(${current}/${progress.total || 0})`;
+				button.disabled = !!progress.pauseRequested;
+				button.classList.toggle('danger', !!progress.pauseRequested);
+				return;
+			}
+			button.textContent = `全部生成(${missingCount})`;
+			button.disabled = missingCount <= 0;
+			button.classList.toggle('danger', false);
 		}
 
 		function renderParticles(scene) {
@@ -1480,7 +1506,7 @@ ${currentIndent}}`;
 					<button type="button" class="record-main" data-open-id="${escapeHtml(scene.id)}"><span class="record-title">${escapeHtml(scene.title || scene.id)}</span><span class="record-meta">${escapeHtml(scene.tags.join(', ') || scene.id)}</span></button>
 					<span class="record-actions"><button type="button" data-copy-id="${escapeHtml(scene.id)}" title="复制">复制</button><button type="button" class="danger icon-button" data-delete-id="${escapeHtml(scene.id)}" title="删除" aria-label="删除"><svg viewBox="0 0 24 24" fill="none" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M3 6h18"></path><path d="M8 6V4h8v2"></path><path d="M19 6l-1 14H6L5 6"></path><path d="M10 11v5"></path><path d="M14 11v5"></path></svg></button></span>
 				</div>`;
-			}).join('') : '<div class="hint" style="padding:10px">没有匹配记录。点击“新建”创建一条。</div>';
+			}).join('') : '<div class="hint" style="padding:10px">没有匹配记录。可清除筛选或点击“新建”创建新场景。</div>';
 			$('recordList').querySelectorAll('[data-open-id]').forEach(btn => {
 				btn.onclick = () => selectRecord(btn.dataset.openId);
 			});
@@ -1495,6 +1521,7 @@ ${currentIndent}}`;
 				$('recordList')?.querySelector('.record-item.active')?.scrollIntoView({ block: 'nearest' });
 			});
 			$('recordCount').textContent = records.length === state.scenes.length ? String(state.scenes.length) : `${records.length}/${state.scenes.length}`;
+			updateGenerateAllButton();
 		}
 
 		function selectRecord(id) {
@@ -1761,8 +1788,13 @@ ${currentIndent}}`;
 
 		function countScenesByTag() {
 			const counts = new Map(DEFAULT_SCENE_TAGS.map(tag => [tag, 0]));
-			state.scenes.forEach(scene => normalizeSceneTags(scene.tags).forEach(tag => counts.set(tag, (counts.get(tag) || 0) + 1)));
-			return [...counts.entries()].sort((a, b) => a[0].localeCompare(b[0]));
+			state.scenes.forEach(scene => {
+				const sceneTags = normalizeSceneTags(scene.tags);
+				DEFAULT_SCENE_TAGS.forEach(tag => {
+					if (sceneTags.includes(tag)) counts.set(tag, counts.get(tag) + 1);
+				});
+			});
+			return DEFAULT_SCENE_TAGS.map(tag => [tag, counts.get(tag) || 0]);
 		}
 
 		function countScenesForTags(tags) {
@@ -1782,7 +1814,27 @@ ${currentIndent}}`;
 		function renderBatchTagCounts() {
 			const root = $('batchTagCounts');
 			if (!root) return;
-			root.innerHTML = countScenesByTag().map(([tag, count]) => `<div class="batch-tag-count"><span>${escapeHtml(tag)}</span><strong>${count}</strong></div>`).join('') || '<div class="hint">暂无 tags</div>';
+			root.innerHTML = countScenesByTag().map(([tag, count]) => `<button type="button" class="batch-tag-count" data-batch-tag="${escapeHtml(tag)}" title="添加 ${escapeHtml(tag)}"><span>${escapeHtml(tag)}</span><strong>${count}</strong></button>`).join('') || '<div class="hint">暂无 tags</div>';
+			root.querySelectorAll('[data-batch-tag]').forEach(button => {
+				button.onclick = () => addBatchTagToActiveCombination(button.dataset.batchTag || '');
+			});
+		}
+
+		function addBatchTagToActiveCombination(tag) {
+			const normalizedTag = normalizeTag(tag);
+			if (!normalizedTag) return;
+			let input = state.activeBatchTagsInput?.isConnected ? state.activeBatchTagsInput : null;
+			if (!input) input = document.querySelector('[data-batch-tags]');
+			if (!input) {
+				addBatchCombinationRow('', 1);
+				input = document.querySelector('[data-batch-tags]');
+			}
+			if (!input) return;
+			const tags = unique([...normalizeSceneTags(input.value), normalizedTag]);
+			input.value = tags.join(', ');
+			state.activeBatchTagsInput = input;
+			input.focus();
+			updateBatchComboExistingCounts();
 		}
 
 		function parseBatchCombinationsFromDialog() {
@@ -1816,8 +1868,10 @@ ${currentIndent}}`;
 			</label>
 			<button type="button" data-batch-remove>删除</button>`;
 			list.appendChild(row);
+			const tagsInput = row.querySelector('[data-batch-tags]');
 			row.querySelector('[data-batch-remove]').onclick = () => { row.remove(); updateBatchComboExistingCounts(); };
-			row.querySelector('[data-batch-tags]').addEventListener('input', updateBatchComboExistingCounts);
+			tagsInput.addEventListener('focus', () => { state.activeBatchTagsInput = tagsInput; });
+			tagsInput.addEventListener('input', updateBatchComboExistingCounts);
 			updateBatchComboExistingCounts();
 		}
 
@@ -1844,6 +1898,7 @@ ${currentIndent}}`;
 			await sdk.localAPIKeySettings.load?.();
 			renderModelOptions(select, 'Chat', state.lastChatModel || select.value);
 			state.lastChatModel = select.value || state.lastChatModel;
+			saveLocalGenerationSettings();
 		}
 
 		function buildBatchSceneSettingsPrompt(tags, count, userPrompt) {
@@ -1871,6 +1926,30 @@ ${currentIndent}}`;
 			const end = value.lastIndexOf('}');
 			if (start >= 0 && end > start) return JSON.parse(value.slice(start, end + 1));
 			throw new Error('LLM 返回不是 JSON');
+		}
+
+		function extractAssistantText(result) {
+			if (typeof result === 'string') return result;
+			return result?.result
+				|| result?.choices?.[0]?.message?.content
+				|| result?.data?.choices?.[0]?.message?.content
+				|| result?.text
+				|| result?.data?.result
+				|| '';
+		}
+
+		function formatBatchSceneStreamPreview(text, reasoning = '') {
+			const parts = [];
+			if (reasoning) parts.push(`Thinking:\n${reasoning}`);
+			parts.push(`JSON:\n${text || '等待模型输出...'}`);
+			return parts.join('\n\n');
+		}
+
+		function setBatchSceneStreamPreview(text, reasoning = '') {
+			const preview = $('batchStreamPreview');
+			if (!preview) return;
+			preview.textContent = formatBatchSceneStreamPreview(text, reasoning);
+			preview.scrollTop = preview.scrollHeight;
 		}
 
 		function uniqueSceneId(base, reserved = new Set()) {
@@ -1902,23 +1981,61 @@ ${currentIndent}}`;
 			});
 		}
 
-		async function generateBatchSceneBlueprints(combo, userPrompt) {
+		async function generateBatchSceneBlueprints(combo, userPrompt, onStreamUpdate) {
 			const sdk = state.sdk || window.keepwork;
-			if (!sdk?.aiGenerators?.chat) throw new Error('sdk.aiGenerators.chat 不可用');
+			if (!sdk?.aiGenerators?.chat && !sdk?.aiChat?.chat) throw new Error('当前 SDK 不支持文本模型调用');
 			const model = $('batchChatModel')?.value?.trim() || state.lastChatModel;
 			if (!model) throw new Error('请先在本地 API Key 设置中配置 Chat 模型');
 			state.lastChatModel = model;
-			const response = await sdk.aiGenerators.chat({
-				model,
-				stream: false,
-				temperature: 0.85,
-				responseFormat: 'json_object',
-				messages: [
-					{ role: 'system', content: 'Return strict JSON only. No markdown, no explanations.' },
-					{ role: 'user', content: buildBatchSceneSettingsPrompt(combo.tags, combo.count, userPrompt) },
-				],
-			});
-			const text = typeof response === 'string' ? response : (response?.result || response?.text || response?.data?.result || JSON.stringify(response));
+			saveLocalGenerationSettings();
+			const messages = [
+				{ role: 'system', content: 'Return strict JSON only. No markdown, no explanations.' },
+				{ role: 'user', content: buildBatchSceneSettingsPrompt(combo.tags, combo.count, userPrompt) },
+			];
+			let reasoningText = '';
+			const handleMessage = (fullText, payload) => {
+				const text = typeof fullText === 'string' ? fullText : extractAssistantText(payload);
+				reasoningText = payload?.reasoning_content || payload?.reasoning || reasoningText;
+				onStreamUpdate?.({ text, reasoning: reasoningText });
+			};
+			const handleReasoning = (fullReasoning) => {
+				reasoningText = String(fullReasoning || reasoningText || '');
+				onStreamUpdate?.({ reasoning: reasoningText });
+			};
+			let response;
+			if (sdk?.aiGenerators?.chat) {
+				try {
+					response = await sdk.aiGenerators.chat({
+						model,
+						stream: true,
+						temperature: 0.85,
+						responseFormat: 'json_object',
+						messages,
+						onMessage: handleMessage,
+						onReasoning: handleReasoning,
+					});
+				} catch (error) {
+					if (!/response.?format|json_object/i.test(error?.message || String(error))) throw error;
+					response = await sdk.aiGenerators.chat({
+						model,
+						stream: true,
+						temperature: 0.85,
+						messages,
+						onMessage: handleMessage,
+						onReasoning: handleReasoning,
+					});
+				}
+			} else {
+				response = await sdk.aiChat.chat({
+					model,
+					stream: true,
+					temperature: 0.85,
+					messages,
+					onMessage: handleMessage,
+					onReasoning: handleReasoning,
+				});
+			}
+			const text = extractAssistantText(response) || '';
 			const parsed = extractJsonObject(text);
 			const scenes = Array.isArray(parsed?.scenes) ? parsed.scenes : (Array.isArray(parsed) ? parsed : []);
 			if (!scenes.length) throw new Error('LLM JSON 中没有 scenes 数组');
@@ -1927,12 +2044,12 @@ ${currentIndent}}`;
 			return scenes.slice(0, combo.count).map((scene, index) => normalizeBatchSceneBlueprint(scene, combo.tags, index, reservedIds));
 		}
 
-		function upsertSceneInMemory(scene) {
+		function upsertSceneInMemory(scene, { select = true } = {}) {
 			const normalized = normalizeScene(scene, state.scenes.length);
 			const index = state.scenes.findIndex(item => item.id === normalized.id);
 			if (index >= 0) state.scenes[index] = normalized;
 			else state.scenes.push(normalized);
-			state.selectedId = normalized.id;
+			if (select) state.selectedId = normalized.id;
 			return normalized;
 		}
 
@@ -1943,63 +2060,114 @@ ${currentIndent}}`;
 			if (statusText) setStatus($('saveStatus'), statusText, 'ok');
 		}
 
-		async function generateImageForSceneConfig(scene) {
+		async function generateImageForSceneConfig(scene, { forceCdnUpload = false, forceCdnFormat = '', onBeforeGenerate = null } = {}) {
 			const sdk = state.sdk || window.keepwork;
 			if (!sdk?.aiGenerators?.genImage) throw new Error('sdk.aiGenerators.genImage 不可用');
 			const model = getSelectedImageModel();
 			if (!model) throw new Error('请先在本地 API Key 设置中配置 Image 模型');
 			rememberGenerationSettings();
+			const targetScene = compactScene(scene);
+			const targetId = targetScene.id;
 			const references = getReferenceImages();
 			const { width, height } = getImageSize();
 			const opts = { model, width, height };
 			if (!$('uploadResultToKeepwork').checked) opts.uploadResultToKeepwork = false;
 			if (references.length) opts.images = references.map(url => ({ url, role: 'reference' }));
-			const prompt = await buildSceneImagePrompt(scene.prompt, scene.tags, references.length, scene.title);
+			const prompt = await buildSceneImagePrompt(targetScene.prompt, targetScene.tags, references.length, targetScene.title);
+			onBeforeGenerate?.(targetId);
 			const generatedUrl = await sdk.aiGenerators.genImage(prompt, opts);
 			if (!generatedUrl) throw new Error('genImage 未返回图片 URL');
-			let finalScene = compactScene({ ...scene, imageUrl: generatedUrl, historyUrls: normalizeHistoryUrls(scene.historyUrls || []) });
-			if ($('uploadCompressedSceneToCdn')?.checked) {
-				const previousSceneId = $('sceneId')?.value;
-				if ($('sceneId')) $('sceneId').value = finalScene.id;
-				try {
-					const uploaded = await compressAndUploadGeneratedSceneImage(generatedUrl);
-					finalScene = compactScene({ ...finalScene, imageUrl: uploaded.url, historyUrls: normalizeHistoryUrls([generatedUrl, ...(finalScene.historyUrls || [])]) });
-				} finally {
-					if ($('sceneId')) $('sceneId').value = previousSceneId;
-				}
+			let finalScene = compactScene({ ...targetScene, imageUrl: generatedUrl, historyUrls: normalizeHistoryUrls(targetScene.historyUrls || []) });
+			const shouldUploadToCdn = forceCdnUpload ? !!getSceneCdnConfig() : !!$('uploadCompressedSceneToCdn')?.checked;
+			if (shouldUploadToCdn) {
+				const uploadOptions = forceCdnFormat ? { ...loadSceneCdnUploadOptions(), format: forceCdnFormat } : loadSceneCdnUploadOptions();
+				const uploaded = await compressAndUploadGeneratedSceneImage(generatedUrl, targetId, uploadOptions);
+				finalScene = compactScene({ ...finalScene, imageUrl: uploaded.url, historyUrls: normalizeHistoryUrls([generatedUrl, ...(finalScene.historyUrls || [])]) });
 			}
 			return finalScene;
+		}
+
+		async function runGenerateAllMissingImages() {
+			if (state.generateAll.running) {
+				state.generateAll.pauseRequested = true;
+				updateGenerateAllButton();
+				setStatus($('runStatus'), '将在当前图片生成并保存后暂停。', '');
+				return;
+			}
+			const targets = getMissingImageScenes().map(scene => compactScene(scene));
+			if (!targets.length) {
+				updateGenerateAllButton();
+				return setStatus($('runStatus'), '没有未生成图片的场景。', 'ok');
+			}
+			state.generateAll = { running: true, pauseRequested: false, completed: 0, total: targets.length, activeId: '' };
+			updateGenerateAllButton();
+			const cdnEnabled = !!getSceneCdnConfig();
+			setStatus($('runStatus'), `开始全部生成：${targets.length} 个未生成图片的场景。${cdnEnabled ? '检测到 CDN 配置，将自动压缩为 WebP 并上传。' : '未检测到 CDN 配置，将保存模型返回的图片 URL。'}`, '');
+			try {
+				for (const target of targets) {
+					if (state.generateAll.pauseRequested) break;
+					const currentScene = state.scenes.find(scene => scene.id === target.id);
+					if (!currentScene || String(currentScene.imageUrl || '').trim()) continue;
+					state.generateAll.activeId = target.id;
+					updateGenerateAllButton();
+					setStatus($('runStatus'), `正在生成 ${target.id} (${state.generateAll.completed + 1}/${state.generateAll.total})...`, '');
+					const generatedScene = await generateImageForSceneConfig(currentScene, {
+						forceCdnUpload: true,
+						forceCdnFormat: 'webp',
+						onBeforeGenerate: (id) => setStatus($('runStatus'), `已记录目标 ID：${id}\n正在生成图片 (${state.generateAll.completed + 1}/${state.generateAll.total})...`, ''),
+					});
+					const savedScene = upsertSceneInMemory(generatedScene, { select: false });
+					await saveScenesToIndex(`已保存 ${savedScene.id}，继续查找下一个未生成图片的场景。`);
+					state.generateAll.completed += 1;
+					state.generateAll.activeId = '';
+					if (state.selectedId === savedScene.id) applySceneToForm(savedScene);
+					else renderRecordList();
+					updateGenerateAllButton();
+				}
+				const paused = state.generateAll.pauseRequested;
+				setStatus($('runStatus'), paused ? `已暂停全部生成，完成 ${state.generateAll.completed}/${state.generateAll.total} 个。` : `全部生成完成，完成 ${state.generateAll.completed}/${state.generateAll.total} 个。`, paused ? '' : 'ok');
+			} catch (error) {
+				setStatus($('runStatus'), `全部生成已终止：${error?.message || error}`, 'error');
+			} finally {
+				state.generateAll = { running: false, pauseRequested: false, completed: 0, total: 0, activeId: '' };
+				updateGenerateAllButton();
+				saveLocalGenerationSettings();
+			}
 		}
 
 		async function runBatchGeneration() {
 			const combinations = parseBatchCombinationsFromDialog();
 			if (!combinations.length) return setStatus($('batchRunStatus'), '请至少添加一个 tags 组合和数量。', 'error');
 			const userPrompt = $('batchUserPrompt')?.value?.trim() || '';
-			const generateImages = shouldBatchGenerateImages();
 			state.batchAbortRequested = false;
 			$('batchProgress').textContent = '';
-			setStatus($('batchRunStatus'), `准备批量生成 ${combinations.reduce((sum, item) => sum + item.count, 0)} 个场景${generateImages ? '并生成图片' : '配置'}...`, '');
+			setBatchSceneStreamPreview('等待模型输出...');
+			setStatus($('batchRunStatus'), `准备批量生成 ${combinations.reduce((sum, item) => sum + item.count, 0)} 个场景配置（不生成图片）...`, '');
 			$('btnRunBatchGenerate').disabled = true;
 			$('btnStopBatchGenerate').disabled = false;
-			saveBatchSettings({ lastChatModel: $('batchChatModel')?.value || '', generateImages, userPrompt, combinations });
+			state.lastChatModel = $('batchChatModel')?.value || state.lastChatModel || '';
+			saveBatchSettings({ lastChatModel: state.lastChatModel, generateImages: false, userPrompt, combinations });
+			saveLocalGenerationSettings();
 			let completed = 0;
 			try {
 				for (const combo of combinations) {
 					if (state.batchAbortRequested) break;
 					appendBatchProgress(`规划组合：${combo.tags.join(', ')} × ${combo.count}`);
-					const blueprints = await generateBatchSceneBlueprints(combo, userPrompt);
+					let streamedText = '';
+					let streamedReasoning = '';
+					setBatchSceneStreamPreview('等待模型输出...');
+					const blueprints = await generateBatchSceneBlueprints(combo, userPrompt, update => {
+						if (update.text) streamedText = update.text;
+						if (update.reasoning) streamedReasoning = update.reasoning;
+						setBatchSceneStreamPreview(streamedText, streamedReasoning);
+					});
+					setBatchSceneStreamPreview(JSON.stringify({ scenes: blueprints }, null, 2), streamedReasoning);
 					appendBatchProgress(`已生成 ${blueprints.length} 个场景设置`, 'ok');
 					for (const blueprint of blueprints) {
 						if (state.batchAbortRequested) break;
-						let sceneToSave = blueprint;
-						if (generateImages) {
-							setStatus($('batchRunStatus'), `正在生成图片：${blueprint.title} (${completed + 1})`, '');
-							appendBatchProgress(`生成图片：${blueprint.id} · ${blueprint.title}`);
-							sceneToSave = await generateImageForSceneConfig(blueprint);
-						} else {
-							setStatus($('batchRunStatus'), `正在保存配置：${blueprint.title} (${completed + 1})`, '');
-							appendBatchProgress(`保存无图配置：${blueprint.id} · ${blueprint.title}`);
-						}
+						const sceneToSave = blueprint;
+						setStatus($('batchRunStatus'), `正在保存配置：${blueprint.title} (${completed + 1})`, '');
+						appendBatchProgress(`保存无图配置：${blueprint.id} · ${blueprint.title}`);
 						upsertSceneInMemory(sceneToSave);
 						await saveScenesToIndex(`批量生成已保存 ${sceneToSave.id}。`);
 						completed += 1;
@@ -2010,8 +2178,8 @@ ${currentIndent}}`;
 					}
 				}
 				if (state.scenes.length) applySceneToForm(state.scenes.find(scene => scene.id === state.selectedId) || state.scenes[state.scenes.length - 1]);
-				setStatus($('batchRunStatus'), state.batchAbortRequested ? `已停止。完成 ${completed} 个场景。` : `批量生成完成：${completed} 个场景${generateImages ? '' : '配置'}。`, state.batchAbortRequested ? '' : 'ok');
-				setStatus($('runStatus'), state.batchAbortRequested ? `批量生成已停止，已保存 ${completed} 个场景。` : `批量生成完成，已保存 ${completed} 个场景${generateImages ? '' : '配置'}。`, state.batchAbortRequested ? '' : 'ok');
+				setStatus($('batchRunStatus'), state.batchAbortRequested ? `已停止。完成 ${completed} 个场景。` : `批量生成完成：${completed} 个场景配置。`, state.batchAbortRequested ? '' : 'ok');
+				setStatus($('runStatus'), state.batchAbortRequested ? `批量生成已停止，已保存 ${completed} 个场景。` : `批量生成完成，已保存 ${completed} 个场景配置，未生成图片。`, state.batchAbortRequested ? '' : 'ok');
 			} catch (error) {
 				appendBatchProgress(error?.message || String(error), 'error');
 				setStatus($('batchRunStatus'), `批量生成失败：${error?.message || error}`, 'error');
@@ -2026,17 +2194,16 @@ ${currentIndent}}`;
 		function openBatchGenerateDialog() {
 			closeBatchGenerateDialog();
 			const settings = readBatchSettings();
-			const generateImages = settings.generateImages !== false;
 			if (settings.lastChatModel) state.lastChatModel = settings.lastChatModel;
 			const overlay = document.createElement('div');
 			overlay.className = 'modal-overlay';
 			overlay.id = 'batchGenerateOverlay';
-			overlay.innerHTML = `<div class="modal-window" role="dialog" aria-modal="true" aria-label="Batch Scene Generation" style="width:min(1180px,100%);height:min(860px,100%)">
-				<div class="modal-titlebar"><strong>批量生成 · Type Combinations</strong><button type="button" id="closeBatchGenerate">关闭</button></div>
+			overlay.innerHTML = `<div class="modal-window" role="dialog" aria-modal="true" aria-label="New Scenes" style="width:min(1180px,100%);height:min(860px,100%)">
+				<div class="modal-titlebar"><strong>New Scenes · Type Combinations</strong><button type="button" id="closeBatchGenerate">关闭</button></div>
 				<div class="modal-body">
 					<div class="batch-grid">
 						<section class="section">
-							<h2>单 tag 现有数量</h2>
+							<h2>内置 tags 现有数量</h2>
 							<div id="batchTagCounts" class="batch-tag-counts"></div>
 						</section>
 						<section class="section">
@@ -2044,11 +2211,7 @@ ${currentIndent}}`;
 								<label>Chat 模型
 									<select id="batchChatModel"></select>
 								</label>
-								<label>图片模型
-									<input value="${escapeHtml(getSelectedImageModel() || '未选择')}" disabled>
-								</label>
 							</div>
-							<label class="toggle-line"><input id="batchGenerateImages" type="checkbox" ${generateImages ? 'checked' : ''}>生成图片</label>
 							<label>用户补充要求（生成场景设置前发送给 LLM）
 								<textarea id="batchUserPrompt" class="prompt-box" style="min-height:84px" placeholder="例如：多生成哈奇小镇日常生活场景，避免重复森林和广场。">${escapeHtml(settings.userPrompt || '')}</textarea>
 							</label>
@@ -2056,7 +2219,8 @@ ${currentIndent}}`;
 							<div id="batchComboList" class="batch-combo-list"></div>
 						</section>
 					</div>
-					<div id="batchRunStatus" class="status">按 tags 组合配置数量。每个组合会先调用一次 Chat 模型生成场景设置，再逐个生成图片并保存。</div>
+					<div id="batchRunStatus" class="status">按 tags 组合配置数量。每个组合会调用一次 Chat 模型生成场景设置，只保存配置，不生成图片。</div>
+					<div id="batchStreamPreview" class="status batch-progress">等待模型输出...</div>
 					<div id="batchProgress" class="status batch-progress"></div>
 				</div>
 			</div>`;
@@ -2070,8 +2234,11 @@ ${currentIndent}}`;
 			$('btnAddBatchCombo').onclick = () => addBatchCombinationRow('', 1);
 			$('btnRunBatchGenerate').onclick = () => runBatchGeneration();
 			$('btnStopBatchGenerate').onclick = () => { state.batchAbortRequested = true; setStatus($('batchRunStatus'), '将在当前请求完成后停止...', ''); };
-			$('batchChatModel').addEventListener('change', () => { state.lastChatModel = $('batchChatModel').value; saveBatchSettings({ lastChatModel: state.lastChatModel, generateImages: shouldBatchGenerateImages(), userPrompt: $('batchUserPrompt').value, combinations: parseBatchCombinationsFromDialog() }); });
-			$('batchGenerateImages').addEventListener('change', () => saveBatchSettings({ lastChatModel: $('batchChatModel').value, generateImages: shouldBatchGenerateImages(), userPrompt: $('batchUserPrompt').value, combinations: parseBatchCombinationsFromDialog() }));
+			$('batchChatModel').addEventListener('change', () => {
+				state.lastChatModel = $('batchChatModel').value;
+				saveBatchSettings({ lastChatModel: state.lastChatModel, generateImages: false, userPrompt: $('batchUserPrompt').value, combinations: parseBatchCombinationsFromDialog() });
+				saveLocalGenerationSettings();
+			});
 			renderBatchTagCounts();
 			renderBatchCombinationRows(Array.isArray(settings.combinations) ? settings.combinations : []);
 			populateBatchChatModelDropdown().catch(error => setStatus($('batchRunStatus'), `Chat 模型加载失败：${error?.message || error}`, 'error'));
@@ -2123,22 +2290,82 @@ ${currentIndent}}`;
 			setTimeout(() => URL.revokeObjectURL(url), 500);
 		}
 
-		async function handleReferenceFiles() {
-			const files = [...($('referenceFiles').files || [])].slice(0, 4);
-			state.referenceDataUrls = await Promise.all(files.map(file => new Promise((resolve, reject) => {
+		function readImageFileAsDataUrl(file) {
+			return new Promise((resolve, reject) => {
 				const reader = new FileReader();
 				reader.onload = () => resolve(String(reader.result || ''));
 				reader.onerror = () => reject(reader.error || new Error('参考图读取失败'));
 				reader.readAsDataURL(file);
-			})));
+			});
+		}
+
+		async function addReferenceImageFiles(files, { append = true, sourceLabel = '参考图' } = {}) {
+			const imageFiles = [...(files || [])].filter(file => /^image\//i.test(file?.type || '')).slice(0, 4);
+			if (!imageFiles.length) return 0;
+			const dataUrls = await Promise.all(imageFiles.map(readImageFileAsDataUrl));
+			state.referenceDataUrls = unique([...(append ? state.referenceDataUrls : []), ...dataUrls]).slice(0, 4);
 			renderReferencePreview();
+			setStatus($('runStatus'), `${sourceLabel}已加入 ${dataUrls.length} 张 base64 参考图。生成图片时会随请求发送给模型。`, 'ok');
+			return dataUrls.length;
+		}
+
+		async function handleReferenceFiles() {
+			await addReferenceImageFiles($('referenceFiles').files, { append: false, sourceLabel: '上传参考图' });
+		}
+
+		async function handleReferencePaste(event) {
+			const files = [...(event.clipboardData?.files || [])];
+			const items = [...(event.clipboardData?.items || [])]
+				.filter(item => item.kind === 'file' && /^image\//i.test(item.type || ''))
+				.map(item => item.getAsFile())
+				.filter(Boolean);
+			const imageFiles = files.length ? files : items;
+			if (!imageFiles.length) return;
+			event.preventDefault();
+			$('referenceSection')?.classList.add('is-pasting');
+			try {
+				await addReferenceImageFiles(imageFiles, { append: true, sourceLabel: '剪贴板图片' });
+			} catch (error) {
+				setStatus($('runStatus'), `剪贴板图片读取失败：${error?.message || error}`, 'error');
+			} finally {
+				setTimeout(() => $('referenceSection')?.classList.remove('is-pasting'), 180);
+			}
+		}
+
+		function deleteReferenceDataUrl(url) {
+			state.referenceDataUrls = state.referenceDataUrls.filter(item => item !== url);
+			renderReferencePreview();
+			setStatus($('runStatus'), '已删除粘贴的参考图。', 'ok');
 		}
 
 		function renderReferencePreview() {
 			const refs = getReferenceImages();
-			$('referencePreview').innerHTML = refs.length
-				? refs.map(url => `<div class="ref-preview"><img alt="reference" src="${escapeHtml(url)}"></div>`).join('')
-				: '<div class="ref-preview"><span class="hint">可选参考图预览</span></div>';
+			const root = $('referencePreview');
+			root.innerHTML = '';
+			if (!refs.length) {
+				root.innerHTML = '<div class="ref-preview"><span class="hint">可选参考图预览</span></div>';
+				updateOutput();
+				return;
+			}
+			refs.forEach(url => {
+				const frame = document.createElement('div');
+				frame.className = 'ref-preview';
+				const image = document.createElement('img');
+				image.alt = 'reference';
+				image.src = url;
+				frame.appendChild(image);
+				if (state.referenceDataUrls.includes(url)) {
+					const button = document.createElement('button');
+					button.type = 'button';
+					button.className = 'reference-delete';
+					button.title = '删除粘贴参考图';
+					button.setAttribute('aria-label', '删除粘贴参考图');
+					button.textContent = '×';
+					button.onclick = () => deleteReferenceDataUrl(url);
+					frame.appendChild(button);
+				}
+				root.appendChild(frame);
+			});
 			updateOutput();
 		}
 
@@ -2488,9 +2715,8 @@ ${currentIndent}}`;
 			};
 			$('btnWorkspace').onclick = openWorkspaceViewer;
 			$('btnOpenIndexPreview').onclick = openIndexPreviewDialog;
-			$('btnBatchGenerate').onclick = openBatchGenerateDialog;
-			$('btnRefreshRecords').onclick = () => loadRecords().catch(e => setStatus($('runStatus'), e?.message || String(e), 'error'));
-			$('btnNewScene').onclick = newScene;
+			$('btnGenerateAllMissing').onclick = () => runGenerateAllMissingImages().catch(e => setStatus($('runStatus'), e?.message || String(e), 'error'));
+			$('btnNewScene').onclick = openBatchGenerateDialog;
 			$('btnSaveScene').onclick = () => saveSceneToIndex().catch(e => setStatus($('saveStatus'), `保存失败：${e?.message || e}`, 'error'));
 			$('btnPreviewMusic').onclick = previewBgMusic;
 			$('btnStopMusic').onclick = stopBgMusicPreview;
@@ -2531,6 +2757,10 @@ ${currentIndent}}`;
 				renderRecordList();
 			};
 			$('referenceUrls').addEventListener('input', renderReferencePreview);
+			$('referenceSection').addEventListener('paste', event => handleReferencePaste(event));
+			$('referenceSection').addEventListener('click', event => {
+				if (!event.target.closest('textarea, input, button, select')) $('referenceUrls').focus();
+			});
 			$('referenceFiles').addEventListener('change', () => handleReferenceFiles().catch(e => setStatus($('runStatus'), e?.message || String(e), 'error')));
 			$('imageSize').addEventListener('change', () => { persistGenerationSettings().catch(e => setStatus($('saveStatus'), `生成设置保存失败：${e?.message || e}`, 'error')); updateOutput(); });
 			$('imageModelSelect').addEventListener('change', () => { persistGenerationSettings().catch(e => setStatus($('saveStatus'), `生成设置保存失败：${e?.message || e}`, 'error')); updateOutput(); });

@@ -54,14 +54,20 @@
       .cell span { @apply absolute inset-0 bg-no-repeat; background-size: 400% 400%; }
       .cell em { @apply absolute bottom-1 left-1 rounded-full bg-white/80 px-1.5 py-px text-[10px] not-italic text-slate-700; }
       .history-grid { @apply grid gap-2; grid-template-columns: repeat(auto-fill, minmax(66px, 1fr)); }
-      .history-item { @apply flex flex-col gap-1 overflow-hidden rounded-md border border-slate-300 bg-white p-0 hover:border-sky-600 hover:bg-sky-50; }
+      .history-item { @apply relative flex flex-col gap-1 overflow-hidden rounded-md border border-slate-300 bg-white p-0 hover:border-sky-600 hover:bg-sky-50; }
+      .history-select { @apply flex flex-col gap-1 border-0 bg-transparent p-0 text-left hover:border-transparent hover:bg-transparent; }
       .history-thumb-frame { @apply relative aspect-square overflow-hidden; background-color: #fff; background-image: linear-gradient(45deg, #dfe6ee 25%, transparent 25%), linear-gradient(-45deg, #dfe6ee 25%, transparent 25%), linear-gradient(45deg, transparent 75%, #dfe6ee 75%), linear-gradient(-45deg, transparent 75%, #dfe6ee 75%); background-size: 12px 12px; background-position: 0 0, 0 6px, 6px -6px, -6px 0; }
       .history-thumb-image { @apply absolute inset-0 bg-no-repeat; background-size: 400% 400%; background-position: 66.667% 33.333%; }
+      .history-delete { @apply absolute right-1 top-1 z-[2] grid h-[22px] w-[22px] min-h-[22px] place-items-center rounded-full border border-white/90 bg-red-600/90 p-0 text-white shadow-sm hover:border-white hover:bg-red-700; }
+      .history-delete svg { @apply h-[13px] w-[13px]; stroke: currentColor; }
       .history-item em { @apply overflow-hidden text-ellipsis whitespace-nowrap px-1 pb-1 text-[10px] not-italic text-slate-500; }
       .history-item .image-size-label { @apply px-1 pb-1; }
       .history-empty { @apply rounded-md border border-dashed border-slate-300 bg-slate-50 p-2.5 text-center text-xs text-slate-500; }
-      .ref-preview { @apply grid min-h-[86px] place-items-center overflow-hidden rounded-lg border border-dashed border-slate-300 bg-slate-50; }
+      .reference-dropzone { @apply rounded-md border border-dashed border-slate-300 bg-white p-2.5 outline-none focus:border-sky-500 focus:ring-2 focus:ring-sky-600/15; }
+      .reference-dropzone.is-pasting { @apply border-sky-500 bg-sky-50; }
+      .ref-preview { @apply relative grid min-h-[86px] place-items-center overflow-hidden rounded-lg border border-dashed border-slate-300 bg-slate-50; }
       .ref-preview img { @apply block h-[140px] w-full object-contain; }
+      .reference-delete { @apply absolute right-1 top-1 z-[2] grid h-[24px] w-[24px] min-h-[24px] place-items-center rounded-full border border-white/90 bg-red-600/90 p-0 text-[16px] leading-none text-white hover:bg-red-700; }
       .output { @apply min-h-60 overflow-auto whitespace-pre font-mono text-xs leading-normal; }
       .prompt-box { @apply min-h-[150px] text-xs; }
       .workspace-overlay, .modal-overlay, .webp-overlay { @apply fixed inset-0 z-[1000] flex bg-slate-950/60 p-[18px]; }
@@ -90,6 +96,8 @@
       .webp-control-value { @apply font-bold text-slate-900; }
       .webp-hintable { @apply cursor-help; }
       .export-option { @apply mt-0.5; }
+      .batch-preview { @apply max-h-52 overflow-auto whitespace-pre-wrap rounded-md border border-slate-300 bg-white p-2.5 font-mono text-xs leading-normal; }
+      .batch-prompt-preview { @apply min-h-[260px] font-mono text-xs leading-normal; height: 260px; }
     }
     @media (max-width: 760px) {
       .webp-body { @apply grid-cols-1; }
@@ -114,7 +122,6 @@
           <div id="loginState" class="status">正在加载 KeepworkSDK...</div>
           <div class="toolbar">
             <button id="btnLocalApi" type="button">本地 API Key</button>
-            <button id="btnWorkspace" type="button">Workspace</button>
           </div>
         </section>
 
@@ -136,14 +143,15 @@
           <div id="petCdnStatus" class="hint">CDN folder: maisi/magichaqi/pet</div>
         </section>
 
-        <section class="flex flex-col gap-2.5 rounded-lg border border-slate-300 bg-slate-50 p-3">
+        <section id="referenceSection" class="reference-dropzone flex flex-col gap-2.5 rounded-lg border border-slate-300 bg-slate-50 p-3" tabindex="0" aria-label="参考图，可粘贴剪贴板图片">
           <h2>参考图</h2>
           <label>参考图 URL
-            <input id="referenceUrl" placeholder="https://... 或 data:image/...">
+            <input id="referenceUrl" placeholder="https://... 或 data:image/...，也可在此区域按 Ctrl+V 粘贴图片">
           </label>
           <label>上传参考图
             <input id="referenceFile" type="file" accept="image/*">
           </label>
+          <div id="referencePasteHint" class="hint">点击此区域后按 Ctrl+V，可将剪贴板图片作为 base64 参考图发送给模型。</div>
           <div id="referencePreview" class="ref-preview"><span class="hint">可选参考图预览</span></div>
         </section>
       </div>
@@ -160,8 +168,8 @@
       <div class="grid grid-cols-[1fr_auto] gap-2 border-b border-slate-300 bg-slate-50 p-3">
         <input id="recordSearch" placeholder="搜索 id / name">
         <button id="btnNewPet" class="primary" type="button">新建</button>
-        <button id="btnRefreshRecords" type="button">刷新</button>
-        <button id="btnOpenIndex" type="button">index</button>
+        <button id="btnRefreshRecords" class="primary" type="button">全部生成(0)</button>
+        <button id="btnOpenIndex" type="button">打开</button>
       </div>
       <div id="recordList" class="record-list">
         <div class="hint p-2.5">加载 SDK 后会列出 workspace famous-pets 下的所有记录。</div>
@@ -194,12 +202,10 @@
                   <input id="petName" maxlength="40">
                 </label>
               </div>
-              <div class="grid grid-cols-1 gap-2.5 md:grid-cols-3">
-                <label>DNA
-                  <input id="dna" maxlength="32">
-                </label>
+              <input id="dna" type="hidden">
+              <div class="grid grid-cols-1 gap-2.5 md:grid-cols-2">
                 <label>稀有度
-                  <input id="rarity" type="number" min="1" max="999" value="64">
+                  <input id="rarity" type="number" min="0" max="100" value="64">
                 </label>
                 <label>阶段
                   <select id="stage">
@@ -245,12 +251,7 @@
               <label>核心提示词
                 <textarea id="wishPrompt" class="prompt-box"></textarea>
               </label>
-              <label>额外 traits JSON
-                <textarea id="extraTraits" class="output min-h-[120px]" spellcheck="false"></textarea>
-              </label>
               <div class="toolbar">
-                <button id="btnRandomDna" type="button">随机 DNA</button>
-                <button id="btnDecodeDna" type="button">DNA 填充 traits</button>
                 <button id="btnBuildPrompt" type="button">刷新 Prompt</button>
               </div>
             </section>
@@ -303,11 +304,12 @@
   <input id="petCdnConfigInput" type="file" accept=".yaml,.yml" hidden>
 
   <script type="module">
-    import { normalizeDna, randomDna, decodeDna, dnaToName } from '../js/dna.js';
+    import { normalizeDna, randomDna, decodeDna, dnaToName, traitsToDna, TRAIT_TABLE, ELEMENTS, ELEMENTAL_ATTRIBUTES, SPECIES_BY_ELEMENT } from '../js/dna.js';
 
     const WORKSPACE = 'MagicHaqi';
     const FAMOUS_DIR = 'famous-pets';
     const PET_CDN_FOLDER = 'maisi/magichaqi/pet';
+    const SETTINGS_STORAGE_KEY = 'MagicHaqi.FamousPetGenerator.generationSettings';
     const SAVED_CDN_CONFIG_STORAGE_KEY = 'keepwork_upload_cdn_config';
     const PET_CDN_DEFAULT_BUCKET = 'haqi';
     const PET_CDN_DEFAULT_DOMAIN = 'https://cdn.keepwork.com';
@@ -316,8 +318,10 @@
     const SHEET_ROWS = 4;
     const STAGE_ROW = { baby: 0, teen: 1, adult: 2, elder: 3 };
     const ANIM_COL = { idle: 0, happy: 1, sad: 2, sleep: 3 };
+    const WEBP_DEFAULT_QUALITY = 0.2;
+    const WEBP_DEFAULT_BG_OPTIONS = { seedThreshold: 60, growThreshold: 78, haloThreshold: 112, borderRatio: 0.02 };
     const $ = (id) => document.getElementById(id);
-    const state = { sdk: null, referenceDataUrl: '', workspaceViewer: null, webpExport: null, records: [], selectedId: '', selectedPath: '', currentPath: '', currentHistoryUrls: [], imageSizeCache: new Map(), imageSizeRequests: new Map(), dirty: false, generationPromptsPromise: null };
+    const state = { sdk: null, referenceDataUrl: '', workspaceViewer: null, webpExport: null, records: [], selectedId: '', selectedPath: '', currentPath: '', currentHistoryUrls: [], imageSizeCache: new Map(), imageSizeRequests: new Map(), imageDimensionCache: new Map(), imageDimensionRequests: new Map(), dirty: false, generationPromptsPromise: null, batchCreate: null, batchGenerate: null, lastImageModel: '', lastTextModel: '' };
 
     function loadGenerationPrompts() {
       state.generationPromptsPromise ||= import('../js/generationPrompts.js');
@@ -340,14 +344,6 @@
       return String(value || '').trim().replace(/[^a-zA-Z0-9_-]/g, '_').replace(/^_+|_+$/g, '').slice(0, 64) || fallback;
     }
 
-    function parseJsonObject(text, fallback = {}) {
-      const raw = String(text || '').trim();
-      if (!raw) return fallback;
-      const value = JSON.parse(raw);
-      if (!value || typeof value !== 'object' || Array.isArray(value)) throw new Error('额外 traits 必须是 JSON 对象');
-      return value;
-    }
-
     function normalizeHistoryUrls(value) {
       const raw = Array.isArray(value) ? value : String(value || '').split(/[\n,，、；;|]+/);
       return [...new Set(raw.map(url => String(url || '').trim()).filter(Boolean))];
@@ -357,6 +353,13 @@
       if (!Number.isFinite(bytes) || bytes <= 0) return '';
       const kb = bytes / 1024;
       return `${kb >= 100 ? Math.round(kb) : kb.toFixed(1)} KB`;
+    }
+
+    function formatImageInfo(bytes, dimensions) {
+      const sizeText = formatImageKilobytes(bytes);
+      const dimensionText = dimensions?.width && dimensions?.height ? `${dimensions.width}x${dimensions.height}` : '';
+      if (dimensionText && sizeText) return `${dimensionText} (${sizeText})`;
+      return dimensionText || sizeText || '大小未知';
     }
 
     function getDataUriByteSize(url) {
@@ -397,6 +400,25 @@
       return size;
     }
 
+    async function getImageDimensions(url) {
+      const key = String(url || '').trim();
+      if (!key) return null;
+      if (state.imageDimensionCache.has(key)) return state.imageDimensionCache.get(key);
+      if (state.imageDimensionRequests.has(key)) return state.imageDimensionRequests.get(key);
+      const request = new Promise(resolve => {
+        const img = new Image();
+        if (!key.startsWith('data:')) img.crossOrigin = 'anonymous';
+        img.onload = () => resolve({ width: img.naturalWidth || img.width, height: img.naturalHeight || img.height });
+        img.onerror = () => resolve(null);
+        img.src = key;
+      });
+      state.imageDimensionRequests.set(key, request);
+      const dimensions = await request;
+      state.imageDimensionRequests.delete(key);
+      state.imageDimensionCache.set(key, dimensions);
+      return dimensions;
+    }
+
     function setImageSizeLabel(url, text) {
       document.querySelectorAll('[data-image-size-url]').forEach(el => {
         if (el.dataset.imageSizeUrl === url) el.textContent = text || '大小未知';
@@ -406,9 +428,12 @@
     function refreshImageSizeLabels(urls) {
       normalizeHistoryUrls(urls).forEach(url => {
         const cached = state.imageSizeCache.has(url) ? state.imageSizeCache.get(url) : undefined;
-        setImageSizeLabel(url, cached === undefined ? '计算中...' : formatImageKilobytes(cached));
-        if (cached !== undefined) return;
-        getImageByteSize(url).then(size => setImageSizeLabel(url, formatImageKilobytes(size))).catch(() => setImageSizeLabel(url, '大小未知'));
+        const cachedDimensions = state.imageDimensionCache.has(url) ? state.imageDimensionCache.get(url) : undefined;
+        setImageSizeLabel(url, cached === undefined || cachedDimensions === undefined ? '计算中...' : formatImageInfo(cached, cachedDimensions));
+        if (cached !== undefined && cachedDimensions !== undefined) return;
+        Promise.all([getImageByteSize(url), getImageDimensions(url)])
+          .then(([size, dimensions]) => setImageSizeLabel(url, formatImageInfo(size, dimensions)))
+          .catch(() => setImageSizeLabel(url, '大小未知'));
       });
     }
 
@@ -428,6 +453,28 @@
 
     function buildImageHistoryUrls(newUrl, pet = buildPetConfig()) {
       return normalizeHistoryUrls([pet.imageSheetUrl, ...(pet.historyUrls || [])]).filter(url => url && url !== newUrl);
+    }
+
+    function isRecordMissingImage(record) {
+      return !!record?.pet && !String(record.pet.imageSheetUrl || '').trim();
+    }
+
+    function getUngeneratedRecords() {
+      return state.records.filter(isRecordMissingImage);
+    }
+
+    function updateBatchGenerateButton() {
+      const button = $('btnRefreshRecords');
+      if (!button) return;
+      const batch = state.batchGenerate;
+      if (batch?.running) {
+        const current = Math.min(batch.total, Math.max(1, batch.current || batch.done + 1));
+        button.textContent = `${batch.stopRequested ? '暂停中' : '暂停'}(${current}/${batch.total})`;
+        button.disabled = false;
+        return;
+      }
+      button.textContent = `全部生成(${getUngeneratedRecords().length})`;
+      button.disabled = false;
     }
 
     function shouldRemoveHistoryUrlsOnExport() {
@@ -455,6 +502,24 @@
       return $('imageModelSelect').value.trim();
     }
 
+    function readLocalGenerationSettings() {
+      try { return JSON.parse(localStorage.getItem(SETTINGS_STORAGE_KEY) || '{}') || {}; }
+      catch (_) { return {}; }
+    }
+
+    function saveLocalGenerationSettings() {
+      state.lastImageModel = getSelectedImageModel() || state.lastImageModel || '';
+      const textModelSelect = $('batchTextModelSelect');
+      state.lastTextModel = textModelSelect?.value?.trim() || state.lastTextModel || '';
+      try {
+        localStorage.setItem(SETTINGS_STORAGE_KEY, JSON.stringify({
+          lastImageModel: state.lastImageModel || '',
+          lastTextModel: state.lastTextModel || '',
+          updatedAt: new Date().toISOString(),
+        }));
+      } catch (_) {}
+    }
+
     function getImageSize() {
       const [width, height] = ($('imageSize').value || '2048x2048').split('x').map(Number);
       return { width: width || 2048, height: height || 2048 };
@@ -463,18 +528,18 @@
     function buildTraits() {
       return {
         element: $('element').value,
-        species: $('species').value.trim() || dnaToName($('dna').value),
+        species: $('species').value.trim(),
         color: $('color').value.trim(),
         eyes: $('eyes').value.trim(),
         accessory: $('accessory').value.trim(),
         elementalAttribute: $('elementalAttribute').value,
-        ...parseJsonObject($('extraTraits').value, {}),
       };
     }
 
     function buildPetConfig() {
       const id = safeId($('petId').value, state.selectedId || 'new_famous_pet');
-      const dna = normalizeDna($('dna').value || randomDna());
+      const traits = buildTraits();
+      const dna = traitsToDna(traits);
       $('dna').value = dna;
       const imageSheetUrl = $('imageSheetUrl').value.trim() || null;
       const historyUrls = normalizeHistoryUrls(state.currentHistoryUrls).filter(url => url !== imageSheetUrl);
@@ -484,8 +549,8 @@
         dna,
         imageUrl: null,
         imageSheetUrl,
-        traits: buildTraits(),
-        rarity: Math.max(1, Number($('rarity').value) || 64),
+        traits,
+        rarity: Math.max(0, Math.min(100, Number($('rarity').value) || 0)),
         parents: null,
         stage: $('stage').value,
         wishPrompt: $('wishPrompt').value.trim(),
@@ -500,9 +565,34 @@
       return { id: pet.id, name: pet.name, imageSheetUrl: pet.imageSheetUrl || '', rarity: pet.rarity };
     }
 
+    function uniquePetId(baseId, usedIds = new Set()) {
+      const base = safeId(baseId, `famous_pet_${Date.now()}`);
+      if (!usedIds.has(base)) {
+        usedIds.add(base);
+        return base;
+      }
+      for (let index = 2; index < 1000; index += 1) {
+        const id = `${base}_${index}`;
+        if (!usedIds.has(id)) {
+          usedIds.add(id);
+          return id;
+        }
+      }
+      const id = `${base}_${Date.now()}`;
+      usedIds.add(id);
+      return id;
+    }
+
     function defaultPet() {
-      const dna = randomDna();
-      const traits = decodeDna(dna);
+      const traits = {
+        element: '天空',
+        species: '云朵雀',
+        color: '奶白色',
+        eyes: '星星眼',
+        accessory: '戴着花环',
+        elementalAttribute: '生命',
+      };
+      const dna = traitsToDna(traits);
       return {
         id: 'new_famous_pet',
         name: '新稀有宠物',
@@ -510,7 +600,7 @@
         imageUrl: null,
         imageSheetUrl: null,
         historyUrls: [],
-        traits: { ...traits, catLike: 8, sweetLike: 8 },
+        traits,
         rarity: 64,
         parents: null,
         stage: 'adult',
@@ -522,12 +612,16 @@
 
     async function buildPrompt() {
       const pet = buildPetConfig();
-      const reference = getReferenceImage();
-      const { buildPetSheetPrompt } = await loadGenerationPrompts();
-      const prompt = buildPetSheetPrompt(pet.dna, pet.name, { customPrompt: pet.wishPrompt, referenceImage: reference });
+      const prompt = await buildPromptForPet(pet);
       $('finalPrompt').value = prompt;
       updateOutput();
       return prompt;
+    }
+
+    async function buildPromptForPet(pet) {
+      const reference = getReferenceImage();
+      const { buildPetSheetPrompt } = await loadGenerationPrompts();
+      return buildPetSheetPrompt(pet.dna, pet.name, { customPrompt: pet.wishPrompt, referenceImage: reference, traits: pet.traits });
     }
 
     function applyPetToForm(pet, path = '') {
@@ -539,7 +633,6 @@
       state.selectedPath = state.currentPath;
       $('petId').value = id;
       $('petName').value = normalized.name || normalized.id || '';
-      $('dna').value = normalizeDna(normalized.dna || randomDna());
       $('rarity').value = normalized.rarity || 64;
       $('stage').value = normalized.stage || 'adult';
       $('anim').value = normalized.anim || 'happy';
@@ -549,9 +642,8 @@
       $('color').value = normalized.traits?.color || '';
       $('eyes').value = normalized.traits?.eyes || '';
       $('accessory').value = normalized.traits?.accessory || '';
-      const { element, elementalAttribute, species, color, eyes, accessory, ...extra } = normalized.traits || {};
-      $('extraTraits').value = JSON.stringify(extra, null, 2);
       $('wishPrompt').value = normalized.wishPrompt || '';
+      $('dna').value = traitsToDna(buildTraits());
       $('imageSheetUrl').value = normalized.imageSheetUrl || '';
       state.currentHistoryUrls = normalizeHistoryUrls(normalized.historyUrls || normalized.imageHistoryUrls || []).filter(url => url !== $('imageSheetUrl').value.trim());
       renderSheet(normalized.imageSheetUrl || '');
@@ -579,6 +671,14 @@
       updateEditorTitle();
     }
 
+    function getPetPath(pet) {
+      return `${FAMOUS_DIR}/${safeId(pet?.id, 'new_famous_pet')}.json`;
+    }
+
+    function isCurrentPetTarget(path, id) {
+      return state.selectedPath === path && safeId($('petId')?.value, '') === safeId(id, '');
+    }
+
     async function populateModelDropdown() {
       const sdk = state.sdk || window.keepwork;
       const select = $('imageModelSelect');
@@ -598,7 +698,33 @@
           }).join('')
         : '<option value="">没有本地图片模型</option>';
       select.disabled = !models.length;
-      if (models.some(model => (model.name || model.modelId || '') === current)) select.value = current;
+      const remembered = state.lastImageModel || current;
+      if (models.some(model => (model.name || model.modelId || '') === remembered)) select.value = remembered;
+      else if (models.some(model => (model.name || model.modelId || '') === current)) select.value = current;
+      state.lastImageModel = select.value || state.lastImageModel;
+    }
+
+    async function populateTextModelDropdown(select = $('batchTextModelSelect')) {
+      const sdk = state.sdk || window.keepwork;
+      if (!select) return;
+      if (!sdk?.localAPIKeySettings?.listModels) {
+        select.innerHTML = '<option value="keepwork-pro">keepwork-pro</option><option value="keepwork-flash">keepwork-flash</option>';
+        return;
+      }
+      await sdk.localAPIKeySettings.load?.();
+      const current = select.value;
+      const models = sdk.localAPIKeySettings.listModels('Chat').filter(model => model.enabled !== false);
+      select.innerHTML = models.length
+        ? models.map(model => {
+            const value = model.name || model.modelId || '';
+            const label = model.modelId && model.modelId !== value ? `${value} (${model.modelId})` : value;
+            return `<option value="${escapeHtml(value)}">${escapeHtml(label)}</option>`;
+          }).join('')
+        : '<option value="keepwork-pro">keepwork-pro</option><option value="keepwork-flash">keepwork-flash</option>';
+      const remembered = state.lastTextModel || current;
+      if ([...select.options].some(option => option.value === remembered)) select.value = remembered;
+      else if ([...select.options].some(option => option.value === current)) select.value = current;
+      state.lastTextModel = select.value || state.lastTextModel;
     }
 
     const sdkCdnUrl = 'https://cdn.keepwork.com/sdk/keepworkSDK.iife.js?v=20260522a';
@@ -768,14 +894,17 @@
       }
       state.records = records.sort((a, b) => String(a.id).localeCompare(String(b.id)));
       $('recordCount').textContent = String(state.records.length);
+      updateBatchGenerateButton();
       const firstValidRecord = state.records.find(record => record.pet);
       if (selectFirstValid && firstValidRecord) {
         applyPetToForm(firstValidRecord.pet, firstValidRecord.path);
         setStatus($('runStatus'), `已加载 ${state.records.length} 条 workspace famous-pets 记录，已打开 ${firstValidRecord.path}。`, 'ok');
+        updateBatchGenerateButton();
         return;
       }
       renderRecordList();
       setStatus($('runStatus'), `已加载 ${state.records.length} 条 workspace famous-pets 记录。`, 'ok');
+      updateBatchGenerateButton();
     }
 
     function renderRecordList() {
@@ -829,6 +958,374 @@
       state.selectedPath = state.currentPath;
       renderRecordList();
       setStatus($('runStatus'), '已创建新记录草稿。编辑 ID 后保存即可写入 workspace。', '');
+    }
+
+    function extractJsonFromText(text) {
+      const raw = String(text || '').trim();
+      if (!raw) throw new Error('模型没有返回内容');
+      try { return JSON.parse(raw); } catch (_) {}
+      const fenced = raw.match(/```(?:json)?\s*([\s\S]*?)```/i);
+      if (fenced) {
+        try { return JSON.parse(fenced[1].trim()); } catch (_) {}
+      }
+      const firstArray = raw.indexOf('[');
+      const lastArray = raw.lastIndexOf(']');
+      if (firstArray >= 0 && lastArray > firstArray) {
+        try { return JSON.parse(raw.slice(firstArray, lastArray + 1)); } catch (_) {}
+      }
+      const firstObject = raw.indexOf('{');
+      const lastObject = raw.lastIndexOf('}');
+      if (firstObject >= 0 && lastObject > firstObject) return JSON.parse(raw.slice(firstObject, lastObject + 1));
+      throw new Error('模型返回的内容不是有效 JSON');
+    }
+
+    function extractAssistantText(result) {
+      if (typeof result === 'string') return result;
+      return result?.result
+        || result?.choices?.[0]?.message?.content
+        || result?.data?.choices?.[0]?.message?.content
+        || result?.text
+        || '';
+    }
+
+    function normalizeGeneratedPet(rawPet, index) {
+      const source = rawPet && typeof rawPet === 'object' ? rawPet : {};
+      const defaults = defaultPet();
+      const traits = source.traits && typeof source.traits === 'object' && !Array.isArray(source.traits) ? source.traits : {};
+      const idSeed = source.id || source.fileName || source.filename || source.name || `famous_pet_${index + 1}`;
+      const id = safeId(idSeed, `famous_pet_${index + 1}`);
+      const dna = normalizeDna(source.dna || randomDna());
+      const dnaTraits = decodeDna(dna);
+      const sourceRarity = Number(source.rarity);
+      const rarity = Number.isFinite(sourceRarity) ? sourceRarity : (defaults.rarity || 64);
+      const finalTraits = {
+        ...(defaults.traits || {}),
+        ...dnaTraits,
+        ...traits,
+        species: traits.species || source.species || dnaTraits.species || dnaToName(dna),
+        color: traits.color || source.color || dnaTraits.color || '',
+        eyes: traits.eyes || source.eyes || dnaTraits.eyes || '',
+        accessory: traits.accessory || source.accessory || dnaTraits.accessory || '',
+        element: traits.element || source.element || dnaTraits.element || defaults.traits?.element || '陆地',
+        elementalAttribute: traits.elementalAttribute || source.elementalAttribute || dnaTraits.elementalAttribute || defaults.traits?.elementalAttribute || '自然',
+      };
+      return {
+        ...defaults,
+        id,
+        name: String(source.name || id).trim() || id,
+        dna: traitsToDna(finalTraits),
+        imageUrl: null,
+        imageSheetUrl: null,
+        traits: finalTraits,
+        rarity: Math.max(0, Math.min(100, rarity)),
+        parents: null,
+        stage: ['baby', 'teen', 'adult', 'elder'].includes(source.stage) ? source.stage : 'adult',
+        wishPrompt: String(source.wishPrompt || source.description || source.prompt || '').trim() || defaults.wishPrompt,
+        anim: ['idle', 'happy', 'sad', 'sleep'].includes(source.anim) ? source.anim : 'happy',
+        everAdult: source.everAdult !== false,
+      };
+    }
+
+    function normalizeGeneratedPetsPayload(payload, requestedCount) {
+      const list = Array.isArray(payload) ? payload : (Array.isArray(payload?.pets) ? payload.pets : Array.isArray(payload?.items) ? payload.items : []);
+      if (!list.length) throw new Error('模型 JSON 中没有 pets 数组');
+      if (list.length < requestedCount) throw new Error(`模型只返回了 ${list.length} 个 pet，少于请求的 ${requestedCount} 个`);
+      return list.slice(0, requestedCount).map((pet, index) => normalizeGeneratedPet(pet, index));
+    }
+
+    function normalizePetNameKey(value) {
+      return String(value || '').trim();
+    }
+
+    function normalizePetIdKey(value) {
+      return safeId(value).toLowerCase();
+    }
+
+    function getExistingPetIdentitySets() {
+      return {
+        ids: new Set(state.records.map(record => normalizePetIdKey(record.id || record.pet?.id)).filter(Boolean)),
+        names: new Set(state.records.map(record => normalizePetNameKey(record.name || record.pet?.name)).filter(Boolean)),
+      };
+    }
+
+    function getPetIdentityDuplicateInfo(pet, usedIds, usedNames) {
+      const id = normalizePetIdKey(pet.id);
+      const name = normalizePetNameKey(pet.name);
+      const duplicate = { id: false, name: false, values: [] };
+      if (id && usedIds.has(id)) {
+        duplicate.id = true;
+        duplicate.values.push(`id=${pet.id}`);
+      }
+      if (name && usedNames.has(name)) {
+        duplicate.name = true;
+        duplicate.values.push(`name=${pet.name}`);
+      }
+      return duplicate.values.length ? duplicate : null;
+    }
+
+    function buildRenameCandidatesPrompt(pet, duplicateInfo) {
+      return `你是 MagicHaqi 稀有宠物命名助手。下面这个 pet 的中文名或英文 ID 已经重复，需要重新起 3 组不重复候选名。只生成 JSON，不要输出 Markdown。\n\n重复内容：${duplicateInfo.values.join('、')}\n当前 pet：\n${JSON.stringify({ id: pet.id, name: pet.name, traits: pet.traits, wishPrompt: pet.wishPrompt }, null, 2)}\n\n要求：\n- 返回合法 JSON，格式必须是 {"candidates":[{"id":"ascii_id","name":"中文可爱名"}]}。\n- candidates 必须正好 3 个。\n- id 只能用英文字母、数字、下划线或连字符，短、好记、语义接近宠物外观。\n- name 必须是非常可爱的中文名字，要有软萌、好记、像宠物昵称的感觉，例如：布布马古、瓦豆喵星星、糯糯啾啾。\n- 不要复用重复内容里的 id 或 name。`;
+    }
+
+    async function callRenameCandidatesModel(pet, duplicateInfo, model) {
+      const sdk = state.sdk || window.keepwork;
+      const messages = [
+        { role: 'system', content: 'You generate strict JSON only. No markdown, no commentary.' },
+        { role: 'user', content: buildRenameCandidatesPrompt(pet, duplicateInfo) },
+      ];
+      if (sdk?.aiGenerators?.chat) {
+        let result;
+        try {
+          result = await sdk.aiGenerators.chat({ messages, model, stream: false, temperature: 0.9, responseFormat: 'json_object' });
+        } catch (error) {
+          if (!/response.?format|json_object/i.test(error?.message || String(error))) throw error;
+          result = await sdk.aiGenerators.chat({ messages, model, stream: false, temperature: 0.9 });
+        }
+        return extractAssistantText(result);
+      }
+      if (sdk?.aiChat?.chat) {
+        const result = await sdk.aiChat.chat({ messages, model, stream: false, temperature: 0.9 });
+        return extractAssistantText(result);
+      }
+      throw new Error('当前 SDK 不支持文本模型调用');
+    }
+
+    function normalizeRenameCandidates(payload) {
+      const list = Array.isArray(payload) ? payload : (Array.isArray(payload?.candidates) ? payload.candidates : Array.isArray(payload?.names) ? payload.names : []);
+      return list.map((item, index) => {
+        const source = item && typeof item === 'object' ? item : { name: item };
+        return {
+          id: safeId(source.id || source.fileName || source.filename || source.name, `renamed_pet_${index + 1}`),
+          name: normalizePetNameKey(source.name),
+        };
+      }).filter(item => item.id && item.name);
+    }
+
+    function pickRandomAvailableRenameCandidate(candidates, usedIds, usedNames) {
+      const available = candidates.filter(candidate => !usedIds.has(normalizePetIdKey(candidate.id)) && !usedNames.has(normalizePetNameKey(candidate.name)));
+      if (!available.length) return null;
+      return available[Math.floor(Math.random() * available.length)];
+    }
+
+    async function resolveGeneratedPetIdentityDuplicates(pets, model, onStatus) {
+      const existing = getExistingPetIdentitySets();
+      const usedIds = new Set(existing.ids);
+      const usedNames = new Set(existing.names);
+      const resolved = [];
+      for (const pet of pets) {
+        let nextPet = { ...pet };
+        let duplicateInfo = getPetIdentityDuplicateInfo(nextPet, usedIds, usedNames);
+        for (let attempt = 1; duplicateInfo && attempt <= 3; attempt += 1) {
+          if (onStatus) onStatus(`发现重复：${duplicateInfo.values.join('、')}。正在让 AI 重新起 3 个名字...`);
+          const text = await callRenameCandidatesModel(nextPet, duplicateInfo, model);
+          const candidates = normalizeRenameCandidates(extractJsonFromText(text));
+          const picked = pickRandomAvailableRenameCandidate(candidates, usedIds, usedNames);
+          if (!picked) continue;
+          nextPet = { ...nextPet, id: picked.id, name: picked.name };
+          duplicateInfo = getPetIdentityDuplicateInfo(nextPet, usedIds, usedNames);
+        }
+        if (duplicateInfo) throw new Error(`AI 重新命名后仍然重复：${duplicateInfo.values.join('、')}`);
+        usedIds.add(normalizePetIdKey(nextPet.id));
+        usedNames.add(normalizePetNameKey(nextPet.name));
+        resolved.push(nextPet);
+      }
+      return resolved;
+    }
+
+    function buildSupportedTraitPromptText() {
+      const speciesLines = ELEMENTS.map(element => `  - ${element}: ${(SPECIES_BY_ELEMENT[element] || []).join('、')}`).join('\n');
+      const speciesCount = ELEMENTS.reduce((sum, element) => sum + (SPECIES_BY_ELEMENT[element] || []).length, 0);
+      return [
+        `血统 element：共 ${ELEMENTS.length} 种，只能从这些值选择：${ELEMENTS.join('、')}`,
+        `元素属性 elementalAttribute：共 ${ELEMENTAL_ATTRIBUTES.length} 种，只能从这些值选择：${ELEMENTAL_ATTRIBUTES.join('、')}`,
+        `种类 species：下面 ${speciesCount} 个只作为参考例子，不做限制；可以根据用户描述创造更合适的物种名称。`,
+        speciesLines,
+        `颜色 color：例如 ${(TRAIT_TABLE.color || []).join('、')}；这些只是例子，不做限制。`,
+        `眼睛 eyes：例如 ${(TRAIT_TABLE.eyes || []).join('、')}；这些只是例子，不做限制。`,
+        `配饰 accessory：例如 ${(TRAIT_TABLE.accessory || []).join('、')}；这些只是例子，不做限制。`,
+      ].join('\n');
+    }
+
+    function buildFormBasedPetExample() {
+      // const traits = decodeDna(normalizeDna('AAAT93FF4NVM56Q32F'));
+      return {
+        pets: [
+         {
+            "id": "husky_puppy",
+            "name": "哈士奇奇",
+            "rarity": 64,
+            "stage": "adult",
+            "anim": "happy",
+            "traits": {
+              "element": "陆地",
+              "elementalAttribute": "冰",
+              "species": "苔藓貂",
+              "color": "银灰色",
+              "eyes": "小眯眯眼",
+              "accessory": "没有任何配饰"
+            },
+            "wishPrompt": "一只银灰色、没有任何配饰的苔藓貂，拥有冰属性和小眯眯眼，是陆地血统的哈士奇幼崽。",
+          }
+        ],
+      };
+    }
+
+    function buildBatchPetPrompt(description, count) {
+      const exampleJson = JSON.stringify(buildFormBasedPetExample(), null, 2);
+      return `你是 famous-pets JSON 配置设计助手。根据用户描述生成 ${count} 个稀有宠物配置，只生成 JSON，不要生成图片，不要输出 Markdown。\n\n最重要的是生成 Properties 表单会显示的内容：id、name、rarity、stage、anim、traits.element、traits.elementalAttribute、traits.species、traits.color、traits.eyes、traits.accessory、wishPrompt。DNA 不需要生成，工具会自动计算；如果没有必要，不要在返回 JSON 中包含 dna。\n\n你返回的内容必须是合法 JSON，外层必须包含 pets 数组。pets 数组里的每一个对象就是最终保存到 famous-pets/<id>.json 的文件对象。示例格式如下：\n${exampleJson}\n\nMagicHaqi 支持的固定选项和参考示例：\n${buildSupportedTraitPromptText()}\n\n约束：\n- id 会作为 famous-pets/<id>.json 文件名，只能用英文字母、数字、下划线或连字符，必须唯一。\n- name 必须使用非常可爱的中文名字，要有软萌、好记、像宠物昵称的感觉，例如：布布马古、瓦豆喵星星、糯糯啾啾。\n- rarity 只能是 0 到 100 的数字，数值越大表示越稀有。\n- stage 只能是 baby、teen、adult、elder；默认 adult。\n- anim 只能是 idle、happy、sad、sleep；默认 happy。\n- traits.element 和 traits.elementalAttribute 必须使用上面的固定选项。\n- traits.species、traits.color、traits.eyes、traits.accessory 可以参考上面的例子，也可以根据用户描述自由创作。\n- wishPrompt 必须写出宠物核心外观，明确包含或呼应 traits 中的物种、血统、元素属性、颜色、眼睛和配饰。\n- 每个宠物都要有鲜明但适合二头身萌宠 sprite sheet 的外观。\n\n用户描述：\n${description || '（等待输入）'}\n\n根据用户描述生成 ${count} 个稀有宠物配置，只生成 JSON`;
+    }
+
+    function refreshBatchPromptPreview() {
+      const preview = $('batchPetPromptPreview');
+      if (!preview) return;
+      const description = $('batchPetDescription')?.value.trim() || '';
+      const count = Math.max(1, Math.min(20, Number($('batchPetCount')?.value) || 1));
+      preview.value = buildBatchPetPrompt(description, count);
+    }
+
+    async function callPetDescriptionModel(description, count, model, onStreamUpdate) {
+      const sdk = state.sdk || window.keepwork;
+      const messages = [
+        { role: 'system', content: 'You generate strict JSON configuration only. No markdown, no commentary.' },
+        { role: 'user', content: buildBatchPetPrompt(description, count) },
+      ];
+      let reasoningText = '';
+      const handleMessage = (fullText, payload) => {
+        const text = typeof fullText === 'string' ? fullText : extractAssistantText(payload);
+        reasoningText = payload?.reasoning_content || payload?.reasoning || reasoningText;
+        if (onStreamUpdate) onStreamUpdate({ text, reasoning: reasoningText });
+      };
+      const handleReasoning = (fullReasoning) => {
+        reasoningText = String(fullReasoning || reasoningText || '');
+        if (onStreamUpdate) onStreamUpdate({ reasoning: reasoningText });
+      };
+      if (sdk?.aiGenerators?.chat) {
+        let result;
+        try {
+          result = await sdk.aiGenerators.chat({ messages, model, stream: true, temperature: 0.8, responseFormat: 'json_object', onMessage: handleMessage, onReasoning: handleReasoning });
+        } catch (error) {
+          if (!/response.?format|json_object/i.test(error?.message || String(error))) throw error;
+          result = await sdk.aiGenerators.chat({ messages, model, stream: true, temperature: 0.8, onMessage: handleMessage, onReasoning: handleReasoning });
+        }
+        return extractAssistantText(result);
+      }
+      if (sdk?.aiChat?.chat) {
+        const result = await sdk.aiChat.chat({ messages, model, stream: true, temperature: 0.8, onMessage: handleMessage, onReasoning: handleReasoning });
+        return extractAssistantText(result);
+      }
+      throw new Error('当前 SDK 不支持文本模型调用');
+    }
+
+    function formatBatchPetStreamPreview(text, reasoning = '') {
+      const parts = [];
+      if (reasoning) parts.push(`Thinking:\n${reasoning}`);
+      parts.push(`JSON:\n${text || '等待模型输出...'}`);
+      return parts.join('\n\n');
+    }
+
+    function setBatchPetStreamPreview(text, reasoning = '') {
+      const preview = $('batchPetPreview');
+      if (!preview) return;
+      preview.classList.remove('hidden');
+      preview.textContent = formatBatchPetStreamPreview(text, reasoning);
+      preview.scrollTop = preview.scrollHeight;
+    }
+
+    async function saveGeneratedPets(pets) {
+      const saved = [];
+      for (const pet of pets) {
+        const id = safeId(pet.id, `famous_pet_${Date.now()}`);
+        const savedPet = { ...pet, id, imageUrl: null, imageSheetUrl: null };
+        delete savedPet.historyUrls;
+        const path = `${FAMOUS_DIR}/${id}.json`;
+        await writeFile(path, JSON.stringify(savedPet, null, 2));
+        await upsertIndexEntry(buildIndexEntry(savedPet));
+        saved.push({ path, pet: savedPet });
+      }
+      await loadRecords();
+      const first = saved[0];
+      if (first) applyPetToForm(first.pet, first.path);
+      return saved;
+    }
+
+    function closeBatchCreateDialog() {
+      state.batchCreate = null;
+      $('batchPetOverlay')?.remove();
+    }
+
+    function openBatchCreateDialog() {
+      closeBatchCreateDialog();
+      const overlay = document.createElement('div');
+      overlay.className = 'modal-overlay';
+      overlay.id = 'batchPetOverlay';
+      overlay.innerHTML = `<div class="modal-window max-h-[720px] max-w-[720px]" role="dialog" aria-modal="true" aria-label="批量新建 famous pets">
+        <div class="modal-titlebar"><strong>新建 famous pets</strong><button type="button" id="closeBatchPetDialog">关闭</button></div>
+        <div class="modal-body">
+          <div class="grid grid-cols-1 gap-2.5 md:grid-cols-[1fr_120px]">
+            <label>文本模型
+              <select id="batchTextModelSelect"></select>
+            </label>
+            <label>数量
+              <input id="batchPetCount" type="number" min="1" max="20" value="3">
+            </label>
+          </div>
+          <label>描述
+            <textarea id="batchPetDescription" class="prompt-box" spellcheck="false" placeholder="例如：生成一组龙园限定宠物，偏紫色水晶、可爱、适合作为稀有活动奖励。"></textarea>
+          </label>
+          <label>最终提示词（已自动替换用户描述）
+            <textarea id="batchPetPromptPreview" class="batch-prompt-preview" rows="12" readonly spellcheck="false"></textarea>
+          </label>
+          <div id="batchPetStatus" class="status">输入描述和数量后，将调用文本模型生成 pet JSON，并立即保存到 famous-pets/index.json。不会生成图片。</div>
+          <pre id="batchPetPreview" class="batch-preview hidden"></pre>
+          <div class="toolbar justify-end"><button id="btnBlankPetDraft" type="button">空白新建</button><button id="btnCancelBatchPet" type="button">取消</button><button id="btnGeneratePetConfigs" class="primary" type="button">生成并保存</button></div>
+        </div>
+      </div>`;
+      document.body.appendChild(overlay);
+      overlay.addEventListener('click', event => { if (event.target === overlay) closeBatchCreateDialog(); });
+      $('closeBatchPetDialog').onclick = closeBatchCreateDialog;
+      $('btnCancelBatchPet').onclick = closeBatchCreateDialog;
+      $('btnBlankPetDraft').onclick = () => { closeBatchCreateDialog(); newPet(); };
+      $('btnGeneratePetConfigs').onclick = () => generatePetConfigsFromDialog().catch(e => setStatus($('batchPetStatus') || $('runStatus'), `生成失败：${e?.message || e}`, 'error'));
+      $('batchPetDescription').addEventListener('input', refreshBatchPromptPreview);
+      $('batchPetCount').addEventListener('input', refreshBatchPromptPreview);
+      $('batchPetCount').addEventListener('change', refreshBatchPromptPreview);
+      $('batchTextModelSelect').addEventListener('change', saveLocalGenerationSettings);
+      refreshBatchPromptPreview();
+      populateTextModelDropdown($('batchTextModelSelect')).catch(e => setStatus($('batchPetStatus'), `模型列表加载失败：${e?.message || e}`, 'error'));
+      $('batchPetDescription').focus();
+    }
+
+    async function generatePetConfigsFromDialog() {
+      const description = $('batchPetDescription').value.trim();
+      const count = Math.max(1, Math.min(20, Number($('batchPetCount').value) || 1));
+      const model = $('batchTextModelSelect').value.trim() || 'keepwork-pro';
+      state.lastTextModel = model;
+      saveLocalGenerationSettings();
+      if (!description) throw new Error('请先输入宠物描述');
+      const button = $('btnGeneratePetConfigs');
+      button.disabled = true;
+      setStatus($('batchPetStatus'), `正在调用文本模型生成 ${count} 个 pet JSON...`, '');
+      let streamedText = '';
+      let streamedReasoning = '';
+      setBatchPetStreamPreview('等待模型输出...');
+      try {
+        const text = await callPetDescriptionModel(description, count, model, update => {
+          if (update.text) streamedText = update.text;
+          if (update.reasoning) streamedReasoning = update.reasoning;
+          setBatchPetStreamPreview(streamedText, streamedReasoning);
+        }) || streamedText;
+        const payload = extractJsonFromText(text);
+        let pets = normalizeGeneratedPetsPayload(payload, count);
+        pets = await resolveGeneratedPetIdentityDuplicates(pets, model, message => setStatus($('batchPetStatus'), message, ''));
+        setBatchPetStreamPreview(JSON.stringify(pets, null, 2), streamedReasoning);
+        setStatus($('batchPetStatus'), `正在保存 ${pets.length} 个 pet JSON，并更新 index...`, '');
+        const saved = await saveGeneratedPets(pets);
+        setStatus($('runStatus'), `已生成并保存 ${saved.length} 个 pet JSON，未生成图片。`, 'ok');
+        setStatus($('saveStatus'), `已写入 ${saved.map(item => item.path).join('、')}，并更新 ${FAMOUS_DIR}/index.json`, 'ok');
+        closeBatchCreateDialog();
+      } finally {
+        if ($('btnGeneratePetConfigs')) button.disabled = false;
+      }
     }
 
     function nextCopyId(baseId) {
@@ -894,7 +1391,15 @@
     async function generateSheet() {
       const sdk = state.sdk || window.keepwork;
       if (!sdk?.aiGenerators?.genImage) throw new Error('sdk.aiGenerators.genImage 不可用');
-      const prompt = await buildPrompt();
+      const targetPet = buildPetConfig();
+      const targetPath = getPetPath(targetPet);
+      const startSelectedPath = state.selectedPath;
+      const targetIsStillCurrent = () => state.selectedPath === startSelectedPath && safeId($('petId')?.value, '') === targetPet.id;
+      const prompt = await buildPromptForPet(targetPet);
+      if (targetIsStillCurrent()) {
+        $('finalPrompt').value = prompt;
+        updateOutput();
+      }
       const reference = getReferenceImage();
       const model = getSelectedImageModel();
       if (!model) throw new Error('请先在本地 API Key 设置中配置 Image 模型');
@@ -902,21 +1407,29 @@
       const opts = { model, width, height };
       if (!$('uploadResultToKeepwork').checked) opts.uploadResultToKeepwork = false;
       if (reference) opts.images = [{ url: reference, role: 'reference' }];
-      setStatus($('runStatus'), `正在调用 genImage...\nmodel=${model}，size=${width}x${height}`, '');
+      setStatus($('runStatus'), `正在为 ${targetPet.id} 调用 genImage...\nmodel=${model}，size=${width}x${height}`, '');
       if ($('btnGenerate')) $('btnGenerate').disabled = true;
       $('btnRegenerate').disabled = true;
       try {
         const url = await sdk.aiGenerators.genImage(prompt, opts);
         if (!url) throw new Error('genImage 未返回图片 URL');
-        state.currentHistoryUrls = buildImageHistoryUrls(url, buildPetConfig());
-        $('imageSheetUrl').value = url;
-        renderSheet(url);
-        updateOutput();
-        await savePetJson({ reload: true, silent: true });
+        const historyUrls = buildImageHistoryUrls(url, targetPet);
+        const savedPet = { ...targetPet, imageSheetUrl: url };
+        if (historyUrls.length) savedPet.historyUrls = historyUrls;
+        else delete savedPet.historyUrls;
+        const stillCurrent = targetIsStillCurrent();
+        if (stillCurrent) {
+          state.currentHistoryUrls = historyUrls;
+          $('imageSheetUrl').value = url;
+          renderSheet(url);
+          updateOutput();
+        }
+        await savePetObject(savedPet, { path: targetPath, reload: true, silent: true });
         const isDataUri = String(url).startsWith('data:');
-        setStatus($('runStatus'), isDataUri ? `生成完成，返回 data URI (${url.length} chars)，已自动保存 pet 和 index。` : '生成完成，已自动保存 pet 和 index。请检查 4x4 网格是否对齐。', 'ok');
+        setStatus($('runStatus'), isDataUri ? `生成完成：${targetPet.id}，返回 data URI (${url.length} chars)，已自动保存 pet 和 index。` : `生成完成：${targetPet.id}，已自动保存 pet 和 index。请检查 4x4 网格是否对齐。`, 'ok');
+        return { path: targetPath, pet: savedPet, url, selectedPath: startSelectedPath };
       } catch (e) {
-        setStatus($('runStatus'), `生成失败：${e?.message || e}`, 'error');
+        setStatus($('runStatus'), `生成失败：${targetPet.id}：${e?.message || e}`, 'error');
         throw e;
       } finally {
         if ($('btnGenerate')) $('btnGenerate').disabled = false;
@@ -953,12 +1466,26 @@
       state.currentHistoryUrls = urls;
       root.innerHTML = urls.length ? urls.map((url, index) => {
         const safe = escapeHtml(url);
-        return `<button type="button" class="history-item" data-url="${safe}" title="${safe}"><span class="history-thumb-frame"><span class="history-thumb-image" style="background-image:url('${safe}')"></span></span><em>#${index + 1}</em><span class="image-size-label" data-image-size-url="${safe}">计算中...</span></button>`;
+        return `<div class="history-item" title="${safe}"><button type="button" class="history-select" data-url="${safe}"><span class="history-thumb-frame"><span class="history-thumb-image" style="background-image:url('${safe}')"></span></span><em>#${index + 1}</em><span class="image-size-label" data-image-size-url="${safe}">计算中...</span></button><button type="button" class="history-delete" data-delete-history-url="${safe}" title="删除历史图片" aria-label="删除历史图片"><svg viewBox="0 0 24 24" fill="none" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M3 6h18"></path><path d="M8 6V4h8v2"></path><path d="M19 6l-1 14H6L5 6"></path><path d="M10 11v5"></path><path d="M14 11v5"></path></svg></button></div>`;
       }).join('') : '<div class="history-empty">暂无历史图片</div>';
-      root.querySelectorAll('.history-item').forEach(button => {
+      root.querySelectorAll('.history-select').forEach(button => {
         button.onclick = () => selectHistoryImage(button.dataset.url || '');
       });
+      root.querySelectorAll('[data-delete-history-url]').forEach(button => {
+        button.onclick = event => {
+          event.stopPropagation();
+          deleteHistoryImage(button.dataset.deleteHistoryUrl || '');
+        };
+      });
       refreshImageSizeLabels(urls);
+    }
+
+    function deleteHistoryImage(url) {
+      if (!url) return;
+      state.currentHistoryUrls = normalizeHistoryUrls(state.currentHistoryUrls).filter(item => item !== url);
+      renderHistoryPreview();
+      updateOutput();
+      setStatus($('saveStatus'), '已从历史图片中删除。点击“保存”保存。', 'ok');
     }
 
     function selectHistoryImage(url) {
@@ -976,18 +1503,31 @@
     async function savePetJson({ reload = true, silent = false } = {}) {
       const pet = JSON.parse($('petJson').value);
       const id = safeId(pet.id || $('petId').value, `famous_pet_${Date.now()}`);
-      const path = `${FAMOUS_DIR}/${id}.json`;
-      const savedPet = { ...pet, id };
       $('petId').value = id;
-      await writeFile(path, JSON.stringify(savedPet, null, 2));
+      return await savePetObject({ ...pet, id }, { reload, silent, activate: true });
+    }
+
+    async function savePetObject(pet, { path = '', reload = true, silent = false, activate = false } = {}) {
+      const id = safeId(pet.id, `famous_pet_${Date.now()}`);
+      const savedPet = { ...pet, id };
+      const targetPath = path || getPetPath(savedPet);
+      await writeFile(targetPath, JSON.stringify(savedPet, null, 2));
       await upsertIndexEntry(buildIndexEntry(savedPet));
-      state.currentPath = path;
-      state.selectedId = id;
-      state.selectedPath = path;
+      const record = { id, name: savedPet.name || id, path: targetPath, pet: savedPet };
+      const index = state.records.findIndex(item => item.path === targetPath || item.id === id);
+      if (index >= 0) state.records[index] = record;
+      else state.records.push(record);
+      state.records.sort((a, b) => String(a.id).localeCompare(String(b.id)));
+      if (activate) {
+        state.currentPath = targetPath;
+        state.selectedId = id;
+        state.selectedPath = targetPath;
+      }
       if (reload) await loadRecords();
       else renderRecordList();
-      if (!silent) setStatus($('saveStatus'), `已写入 ${path}，并更新 ${FAMOUS_DIR}/index.json`, 'ok');
-      return { path, pet: savedPet };
+      updateBatchGenerateButton();
+      if (!silent) setStatus($('saveStatus'), `已写入 ${targetPath}，并更新 ${FAMOUS_DIR}/index.json`, 'ok');
+      return { path: targetPath, pet: savedPet };
     }
 
     async function upsertIndexEntry(entry) {
@@ -1195,7 +1735,7 @@
       $('importExportOverlay')?.remove();
     }
 
-    function openWorkspaceViewer() {
+    function openWorkspaceViewer(file = '') {
       if (typeof window.createWorkspaceViewer !== 'function') {
         setStatus($('saveStatus'), 'WorkspaceViewer 不可用：当前 SDK 未导出 createWorkspaceViewer', 'error');
         return;
@@ -1204,11 +1744,12 @@
       const overlay = document.createElement('div');
       overlay.className = 'workspace-overlay';
       overlay.id = 'workspaceOverlay';
-      overlay.innerHTML = `<div class="workspace-window" role="dialog" aria-modal="true" aria-label="WorkspaceViewer"><div class="workspace-titlebar"><strong>WorkspaceViewer · ${WORKSPACE}/${FAMOUS_DIR}</strong><button type="button" id="closeWorkspaceViewer">关闭</button></div><div class="workspace-host" id="workspaceHost"></div></div>`;
+      const titlePath = file || FAMOUS_DIR;
+      overlay.innerHTML = `<div class="workspace-window" role="dialog" aria-modal="true" aria-label="WorkspaceViewer"><div class="workspace-titlebar"><strong>WorkspaceViewer · ${WORKSPACE}/${escapeHtml(titlePath)}</strong><button type="button" id="closeWorkspaceViewer">关闭</button></div><div class="workspace-host" id="workspaceHost"></div></div>`;
       document.body.appendChild(overlay);
       overlay.addEventListener('click', event => { if (event.target === overlay) closeWorkspaceViewer(); });
       $('closeWorkspaceViewer').onclick = closeWorkspaceViewer;
-      state.workspaceViewer = window.createWorkspaceViewer({ container: $('workspaceHost'), sdk: state.sdk || window.keepwork, workspace: WORKSPACE, mountFolder: FAMOUS_DIR, compact: true, hideUserInfo: true });
+      state.workspaceViewer = window.createWorkspaceViewer({ container: $('workspaceHost'), sdk: state.sdk || window.keepwork, workspace: WORKSPACE, mountFolder: file ? '' : FAMOUS_DIR, file, compact: true, hideUserInfo: true });
     }
 
     function closeWorkspaceViewer() {
@@ -1393,8 +1934,8 @@
       return `${config.accessKey}:${base64UrlSafe(signature)}:${encodedPolicy}`;
     }
 
-    function getPetCdnFileName(extension = 'webp') {
-      const id = safeId($('petId').value, 'famous_pet');
+    function getPetCdnFileName(extension = 'webp', petId = $('petId')?.value) {
+      const id = safeId(petId, 'famous_pet');
       return `${id}_${new Date().toISOString().replace(/[-:.TZ]/g, '').slice(0, 14)}.${extension}`;
     }
 
@@ -1450,8 +1991,16 @@
           const result = event.data || {};
           if (result.id !== id) return;
           cleanup();
-          if (result.ok) resolve(result.blob);
-          else reject(new Error(result.error || '去除背景失败'));
+          if (!result.ok) {
+            reject(new Error(result.error || '去除背景失败'));
+            return;
+          }
+          if (result.direct) {
+            resolve(null);
+            return;
+          }
+          if (result.blob instanceof Blob) resolve(result.blob);
+          else reject(new Error('去除背景没有返回有效图片'));
         };
         worker.onerror = event => {
           cleanup();
@@ -1463,10 +2012,10 @@
 
     function getWebpBgOptions() {
       return {
-        seedThreshold: Number($('webpBgSeed').value) || 60,
-        growThreshold: Number($('webpBgGrow').value) || 78,
-        haloThreshold: Number($('webpBgHalo').value) || 112,
-        borderRatio: (Number($('webpBgBorder').value) || 2) / 100,
+        seedThreshold: Number($('webpBgSeed')?.value) || WEBP_DEFAULT_BG_OPTIONS.seedThreshold,
+        growThreshold: Number($('webpBgGrow')?.value) || WEBP_DEFAULT_BG_OPTIONS.growThreshold,
+        haloThreshold: Number($('webpBgHalo')?.value) || WEBP_DEFAULT_BG_OPTIONS.haloThreshold,
+        borderRatio: $('webpBgBorder') ? (Number($('webpBgBorder').value) || 2) / 100 : WEBP_DEFAULT_BG_OPTIONS.borderRatio,
       };
     }
 
@@ -1483,6 +2032,15 @@
       });
     }
 
+    function blobToDataUrl(blob) {
+      return new Promise((resolve, reject) => {
+        const reader = new FileReader();
+        reader.onload = () => resolve(String(reader.result || ''));
+        reader.onerror = () => reject(reader.error || new Error('WebP data URL 生成失败'));
+        reader.readAsDataURL(blob);
+      });
+    }
+
     async function createWebpBlob(img, width, height, quality, removeBlackBackground = false, bgOptions = {}) {
       const canvas = document.createElement('canvas');
       canvas.width = width;
@@ -1495,10 +2053,12 @@
       if (removeBlackBackground) {
         const sourceBlob = await canvasToBlob(canvas, 'image/png');
         const processedBlob = await processSheetBackgroundWithWorker(sourceBlob, bgOptions);
-        const processedBitmap = await createImageBitmap(processedBlob);
-        ctx.clearRect(0, 0, width, height);
-        ctx.drawImage(processedBitmap, 0, 0, width, height);
-        processedBitmap.close?.();
+        if (processedBlob) {
+          const processedBitmap = await createImageBitmap(processedBlob);
+          ctx.clearRect(0, 0, width, height);
+          ctx.drawImage(processedBitmap, 0, 0, width, height);
+          processedBitmap.close?.();
+        }
       }
       return await canvasToBlob(canvas, 'image/webp', quality);
     }
@@ -1540,7 +2100,7 @@
       if (!exportState) return;
       const token = (exportState.token || 0) + 1;
       exportState.token = token;
-      const quality = Number($('webpQuality').value) || 0.35;
+      const quality = Number($('webpQuality').value) || WEBP_DEFAULT_QUALITY;
       const removeBlackBackground = $('webpRemoveBlackBg').checked;
       if (removeBlackBackground) updateWebpBgOptionLabels();
       const bgOptions = removeBlackBackground ? getWebpBgOptions() : {};
@@ -1576,7 +2136,7 @@
     function downloadWebpPreview() {
       const exportState = state.webpExport;
       if (!exportState?.previewBlob || !exportState.previewSize) return;
-      const quality = Math.round((exportState.previewQuality || 0.35) * 100);
+      const quality = Math.round((exportState.previewQuality || WEBP_DEFAULT_QUALITY) * 100);
       const suffix = exportState.removeBlackBackground ? '_transparent' : '';
       const filename = `${safeId($('petId').value, 'famous_pet')}_${exportState.previewSize.width}x${exportState.previewSize.height}_q${quality}${suffix}.webp`;
       downloadBlob(filename, exportState.previewBlob);
@@ -1611,6 +2171,100 @@
       }
     }
 
+    async function createAutoWebpBlobFromUrl(imageUrl) {
+      const img = await loadImageForCanvas(imageUrl);
+      const width = img.naturalWidth || img.width;
+      const height = img.naturalHeight || img.height;
+      if (!width || !height) throw new Error('无法读取图片尺寸');
+      const size = getWebpExportSize(width, height, String(Math.max(width, height)));
+      const blob = await createWebpBlob(img, size.width, size.height, WEBP_DEFAULT_QUALITY, true, { ...WEBP_DEFAULT_BG_OPTIONS });
+      return { blob, size, sourceWidth: width, sourceHeight: height };
+    }
+
+    async function autoGenerateWebpForCurrentPet(target = {}) {
+      const targetPet = target.pet || buildPetConfig();
+      const targetPath = target.path || getPetPath(targetPet);
+      const targetIsStillCurrent = () => target.selectedPath
+        ? state.selectedPath === target.selectedPath && safeId($('petId')?.value, '') === targetPet.id
+        : isCurrentPetTarget(targetPath, targetPet.id);
+      const sourceUrl = String(target.sourceUrl || targetPet.imageSheetUrl || $('imageSheetUrl').value).trim();
+      if (!sourceUrl) throw new Error('没有可转换 WebP 的图片 URL');
+      const { blob, size } = await createAutoWebpBlobFromUrl(sourceUrl);
+      const config = getPetCdnConfig();
+      let nextUrl = '';
+      let detail = '';
+      if (config) {
+        const uploaded = await uploadBlobToPetCdn(blob, getPetCdnFileName('webp', targetPet.id));
+        nextUrl = uploaded.url;
+        detail = `已上传 CDN：${uploaded.remoteKey}`;
+      } else {
+        nextUrl = await blobToDataUrl(blob);
+        detail = '未配置 CDN key，已保存为 WebP data URL';
+      }
+      state.imageSizeCache.set(nextUrl, blob.size);
+      const historyUrls = buildImageHistoryUrls(nextUrl, targetPet);
+      const savedPet = { ...targetPet, imageSheetUrl: nextUrl };
+      if (historyUrls.length) savedPet.historyUrls = historyUrls;
+      else delete savedPet.historyUrls;
+      if (targetIsStillCurrent()) {
+        state.currentHistoryUrls = historyUrls;
+        $('imageSheetUrl').value = nextUrl;
+        renderSheet(nextUrl);
+        updateOutput();
+      }
+      await savePetObject(savedPet, { path: targetPath, reload: true, silent: true });
+      return { url: nextUrl, blob, size, detail };
+    }
+
+    async function startBatchGenerateAll() {
+      if (state.batchGenerate?.running) {
+        state.batchGenerate.stopRequested = true;
+        updateBatchGenerateButton();
+        setStatus($('runStatus'), '收到暂停请求。当前图片生成和保存完成后会停止。', '');
+        return;
+      }
+      await loadRecords();
+      const queue = getUngeneratedRecords().slice();
+      if (!queue.length) {
+        setStatus($('runStatus'), '没有需要生成图片的 famous-pets。', 'ok');
+        updateBatchGenerateButton();
+        return;
+      }
+      state.batchGenerate = { running: true, stopRequested: false, total: queue.length, done: 0, current: 1 };
+      updateBatchGenerateButton();
+      try {
+        for (let index = 0; index < queue.length; index += 1) {
+          if (state.batchGenerate.stopRequested) break;
+          state.batchGenerate.current = index + 1;
+          updateBatchGenerateButton();
+          const queuedRecord = queue[index];
+          const record = state.records.find(item => item.path === queuedRecord.path) || queuedRecord;
+          if (!isRecordMissingImage(record)) {
+            state.batchGenerate.done += 1;
+            continue;
+          }
+          applyPetToForm(record.pet, record.path);
+          setStatus($('runStatus'), `批量生成 ${index + 1}/${queue.length}：${record.name || record.id}\n正在生成 sprite sheet...`, '');
+          const generated = await generateSheet();
+          setStatus($('runStatus'), `批量生成 ${index + 1}/${queue.length}：${record.name || record.id}\n正在生成 WebP${getPetCdnConfig() ? ' 并上传 CDN' : ''}...`, '');
+          const webp = await autoGenerateWebpForCurrentPet({ pet: generated.pet, path: generated.path, sourceUrl: generated.url, selectedPath: generated.selectedPath });
+          state.batchGenerate.done += 1;
+          setStatus($('saveStatus'), `已完成 ${record.id}：${webp.detail}，${webp.size.width}x${webp.size.height}，${formatBytes(webp.blob.size)}。`, 'ok');
+          updateBatchGenerateButton();
+        }
+        if (state.batchGenerate.stopRequested) {
+          setStatus($('runStatus'), `批量生成已暂停：已完成 ${state.batchGenerate.done}/${state.batchGenerate.total}。`, 'ok');
+        } else {
+          setStatus($('runStatus'), `批量生成完成：已完成 ${state.batchGenerate.done}/${state.batchGenerate.total}。`, 'ok');
+        }
+      } catch (e) {
+        setStatus($('runStatus'), `批量生成已终止：${e?.message || e}`, 'error');
+      } finally {
+        state.batchGenerate = null;
+        updateBatchGenerateButton();
+      }
+    }
+
     async function openWebpExportDialog() {
       const imageUrl = $('imageSheetUrl').value.trim();
       if (!imageUrl) throw new Error('请先生成或填写图片 URL');
@@ -1632,7 +2286,7 @@
             <div class="webp-preview-box" id="webpPreviewBox"><span class="webp-preview-badge">实际压缩后 WebP</span><img id="webpPreviewImg" alt="compressed WebP preview"></div>
             <div class="webp-controls">
               <label class="webp-hintable" title="导出图片尺寸。降低最长边会显著减少文件大小，也会减少细节。"><span class="webp-control-head"><span>分辨率</span></span><select id="webpResolution"><option value="${Math.max(width, height)}">原始 ${width}x${height}</option><option value="1024">最长边 1024</option><option value="768">最长边 768</option><option value="512">最长边 512</option><option value="384">最长边 384</option><option value="256">最长边 256</option><option value="192">最长边 192</option><option value="128">最长边 128</option><option value="64">最长边 64</option><option value="50%">50%</option><option value="25%">25%</option><option value="12.5%">12.5%</option><option value="6.25%">6.25%</option><option value="3.125%">3.125%</option></select></label>
-              <label class="webp-hintable" title="WebP 有损编码质量。数值越低文件越小，但边缘、眼睛高光和细节会更糊。"><span class="webp-control-head"><span>质量</span><span id="webpQualityText" class="webp-control-value">35%</span></span><input id="webpQuality" type="range" min="0.01" max="0.95" step="0.01" value="0.35"></label>
+              <label class="webp-hintable" title="WebP 有损编码质量。数值越低文件越小，但边缘、眼睛高光和细节会更糊。"><span class="webp-control-head"><span>质量</span><span id="webpQualityText" class="webp-control-value">20%</span></span><input id="webpQuality" type="range" min="0.01" max="0.95" step="0.01" value="${WEBP_DEFAULT_QUALITY}"></label>
               <label class="toggle-line webp-hintable" title="使用 petSheetWorker 的 4x4 单元格 flood-fill 管线，把纯黑背景转为透明。"><input id="webpRemoveBlackBg" type="checkbox" checked>去背景</label>
               <div class="webp-compact-grid">
                 <label class="webp-hintable" title="从每格边缘挑选背景起点时允许的颜色距离。越大，越多边缘像素会被当作背景种子。"><span class="webp-control-head"><span>种子</span><span id="webpBgSeedText" class="webp-control-value">60</span></span><input id="webpBgSeed" type="range" min="20" max="120" step="1" value="60"></label>
@@ -1647,7 +2301,7 @@
           </div>
         </div>`;
         document.body.appendChild(overlay);
-        state.webpExport = { img, sourceWidth: width, sourceHeight: height, previewUrl: '', previewBlob: null, previewSize: null, previewQuality: 0.35, removeBlackBackground: true, bgOptions: getWebpBgOptions(), token: 0 };
+        state.webpExport = { img, sourceWidth: width, sourceHeight: height, previewUrl: '', previewBlob: null, previewSize: null, previewQuality: WEBP_DEFAULT_QUALITY, removeBlackBackground: true, bgOptions: getWebpBgOptions(), token: 0 };
         enableDraggableDialog(overlay.querySelector('.webp-window'), $('webpDragHandle'));
         overlay.addEventListener('click', event => { if (event.target === overlay) closeWebpExportDialog(); });
         $('webpClose').onclick = closeWebpExportDialog;
@@ -1672,33 +2326,81 @@
       }
     }
 
-    function fillTraitsFromDna() {
-      const dna = normalizeDna($('dna').value || randomDna());
-      $('dna').value = dna;
-      const traits = decodeDna(dna);
-      $('element').value = traits.element || '陆地';
-      $('elementalAttribute').value = traits.elementalAttribute || '自然';
-      $('species').value = traits.species || dnaToName(dna);
-      $('color').value = traits.color || '';
-      $('eyes').value = traits.eyes || '';
-      $('accessory').value = traits.accessory || '';
-    }
-
-    async function handleReferenceFile() {
-      const file = $('referenceFile').files?.[0];
-      if (!file) { state.referenceDataUrl = ''; renderReferencePreview(); return; }
-      state.referenceDataUrl = await new Promise((resolve, reject) => {
+    function readImageFileAsDataUrl(file) {
+      return new Promise((resolve, reject) => {
         const reader = new FileReader();
         reader.onload = () => resolve(String(reader.result || ''));
         reader.onerror = () => reject(reader.error || new Error('参考图读取失败'));
         reader.readAsDataURL(file);
       });
+    }
+
+    async function setReferenceImageFile(file, sourceLabel = '参考图') {
+      if (!file) {
+        state.referenceDataUrl = '';
+        renderReferencePreview();
+        return false;
+      }
+      if (!/^image\//i.test(file.type || '')) throw new Error('请选择图片文件');
+      state.referenceDataUrl = await readImageFileAsDataUrl(file);
       renderReferencePreview();
+      setStatus($('runStatus'), `${sourceLabel}已加入 base64 参考图。生成图片时会随请求发送给模型。`, 'ok');
+      return true;
+    }
+
+    async function handleReferenceFile() {
+      await setReferenceImageFile($('referenceFile').files?.[0], '上传参考图');
+    }
+
+    async function handleReferencePaste(event) {
+      const files = [...(event.clipboardData?.files || [])];
+      const items = [...(event.clipboardData?.items || [])]
+        .filter(item => item.kind === 'file' && /^image\//i.test(item.type || ''))
+        .map(item => item.getAsFile())
+        .filter(Boolean);
+      const imageFile = (files.length ? files : items).find(file => /^image\//i.test(file?.type || ''));
+      if (!imageFile) return;
+      event.preventDefault();
+      $('referenceSection')?.classList.add('is-pasting');
+      try {
+        await setReferenceImageFile(imageFile, '剪贴板图片');
+      } catch (error) {
+        setStatus($('runStatus'), `剪贴板图片读取失败：${error?.message || error}`, 'error');
+      } finally {
+        setTimeout(() => $('referenceSection')?.classList.remove('is-pasting'), 180);
+      }
+    }
+
+    function deleteReferenceDataUrl() {
+      state.referenceDataUrl = '';
+      if ($('referenceFile')) $('referenceFile').value = '';
+      renderReferencePreview();
+      setStatus($('runStatus'), '已删除粘贴/上传的参考图。', 'ok');
     }
 
     function renderReferencePreview() {
       const url = getReferenceImage();
-      $('referencePreview').innerHTML = url ? `<img alt="reference" src="${escapeHtml(url)}">` : '<span class="hint">可选参考图预览</span>';
+      const root = $('referencePreview');
+      root.innerHTML = '';
+      if (!url) {
+        root.innerHTML = '<span class="hint">可选参考图预览</span>';
+        buildPrompt().catch(e => setStatus($('saveStatus'), e?.message || String(e), 'error'));
+        return;
+      }
+      const image = document.createElement('img');
+      image.alt = 'reference';
+      image.src = url;
+      root.appendChild(image);
+      if (state.referenceDataUrl && url === state.referenceDataUrl) {
+        const button = document.createElement('button');
+        button.type = 'button';
+        button.className = 'reference-delete';
+        button.title = '删除粘贴/上传参考图';
+        button.setAttribute('aria-label', '删除粘贴/上传参考图');
+        button.textContent = '×';
+        button.onclick = deleteReferenceDataUrl;
+        root.appendChild(button);
+      }
       buildPrompt().catch(e => setStatus($('saveStatus'), e?.message || String(e), 'error'));
     }
 
@@ -1716,23 +2418,19 @@
         await settings.load?.();
         settings.show({ title: '本地 API Key 设置', fullscreen: true, onSave: async () => { await populateModelDropdown(); setStatus($('saveStatus'), '本地 API Key 设置已保存。', 'ok'); refreshLoginState(); } });
       };
-      $('btnWorkspace').onclick = openWorkspaceViewer;
       $('btnPetCdnConfig').onclick = openPetCdnConfigPasteDialog;
       $('btnImportExport').onclick = openImportExportDialog;
-      $('btnRefreshRecords').onclick = () => loadRecords().catch(e => setStatus($('runStatus'), e?.message || String(e), 'error'));
-      $('btnNewPet').onclick = newPet;
-      $('btnOpenIndex').onclick = async () => {
-        try {
-          const raw = await readFile(`${FAMOUS_DIR}/index.json`);
-          $('petJson').value = raw || '[]';
-          setStatus($('saveStatus'), `已读取 ${FAMOUS_DIR}/index.json`, 'ok');
-        } catch (e) { setStatus($('saveStatus'), `读取 index 失败：${e?.message || e}`, 'error'); }
-      };
+      $('btnRefreshRecords').onclick = () => startBatchGenerateAll().catch(e => setStatus($('runStatus'), `批量生成失败：${e?.message || e}`, 'error'));
+      $('btnNewPet').onclick = openBatchCreateDialog;
+      $('btnOpenIndex').onclick = () => openWorkspaceViewer(`${FAMOUS_DIR}/index.json`);
       $('recordSearch').addEventListener('input', renderRecordList);
       $('referenceUrl').addEventListener('input', renderReferencePreview);
+      $('referenceSection').addEventListener('paste', event => handleReferencePaste(event));
+      $('referenceSection').addEventListener('click', event => {
+        if (!event.target.closest('input, textarea, button, select')) $('referenceUrl').focus();
+      });
       $('referenceFile').addEventListener('change', handleReferenceFile);
-      $('btnRandomDna').onclick = () => { $('dna').value = randomDna(); fillTraitsFromDna(); markDirty(); };
-      $('btnDecodeDna').onclick = () => { fillTraitsFromDna(); markDirty(); };
+      $('imageModelSelect').addEventListener('change', saveLocalGenerationSettings);
       $('btnBuildPrompt').onclick = () => buildPrompt().catch(e => setStatus($('saveStatus'), e?.message || String(e), 'error'));
       if ($('btnGenerate')) $('btnGenerate').onclick = () => generateSheet().catch(e => console.error(e));
       $('btnRegenerate').onclick = () => generateSheet().catch(e => console.error(e));
@@ -1745,16 +2443,20 @@
       $('btnSaveIndex').onclick = () => saveIndexJson().catch(e => setStatus($('saveStatus'), `更新 index 失败：${e?.message || e}`, 'error'));
       $('btnOpenInvite').onclick = () => window.open($('inviteUrl').value, '_blank');
       $('imageSheetUrl').addEventListener('change', markDirty);
-      ['petId', 'petName', 'dna', 'rarity', 'stage', 'anim', 'element', 'elementalAttribute', 'species', 'color', 'eyes', 'accessory', 'extraTraits', 'wishPrompt'].forEach(id => {
+      ['petId', 'petName', 'rarity', 'stage', 'anim', 'element', 'elementalAttribute', 'species', 'color', 'eyes', 'accessory', 'wishPrompt'].forEach(id => {
         $(id).addEventListener('input', markDirty);
         $(id).addEventListener('change', markDirty);
       });
     }
 
     function init() {
+      const localSettings = readLocalGenerationSettings();
+      state.lastImageModel = String(localSettings.lastImageModel || '').trim();
+      state.lastTextModel = String(localSettings.lastTextModel || '').trim();
       wireEvents();
       populateModelDropdown();
       applyPetToForm(defaultPet(), `${FAMOUS_DIR}/new_famous_pet.json`);
+      updateBatchGenerateButton();
       updatePetCdnStatus();
       loadSdk();
     }

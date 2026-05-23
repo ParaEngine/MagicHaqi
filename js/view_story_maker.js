@@ -37,7 +37,7 @@ const MINIGAMES = [
     { id: 'gomoku', title: '宠物五子棋' },
     { id: 'matrix_hack', title: '宠物矩阵破解' },
 ];
-const REVIEW_LINE_ADVANCE_MS = 1200;
+const REVIEW_LINE_REVEAL_MS = 38;
 const soundManager = SoundManager.getInstance();
 
 function sceneBg(index = 0, value = null) {
@@ -326,6 +326,10 @@ function visibleLineText(text = '') {
     return splitStageText(text).text;
 }
 
+function revealText(text = '', count = Infinity) {
+    return Array.from(String(text || '')).slice(0, Math.max(0, count)).join('');
+}
+
 function moveIcon(direction) {
     const path = direction === 'up' ? 'M12 5l-6 6h4v8h4v-8h4z' : 'M12 19l6-6h-4V5h-4v8H6z';
     return `<svg viewBox="0 0 24 24" aria-hidden="true" focusable="false"><path d="${path}"></path></svg>`;
@@ -437,7 +441,7 @@ function timelineActorId(story, actorId) {
     return actorId || '';
 }
 
-function stageCueStyle(cue, index, total) {
+function stageCueStyle(cue, index, total, isActive = false) {
     const text = String(cue || '').toLowerCase();
     let left = total <= 1 ? 50 : 28 + (44 * index / Math.max(1, total - 1));
     let bottom = 19;
@@ -451,25 +455,44 @@ function stageCueStyle(cue, index, total) {
     if (/开心|happy/.test(text)) mood = 'happy';
     if (/伤心|sad/.test(text)) mood = 'sad';
     if (/睡|sleep/.test(text)) mood = 'sleep';
+    if (isActive) { left = 50; bottom = 26; scale = Math.max(scale, 1.16); }
     return { left, bottom, scale, mood };
 }
 
-function renderStoryStageActorsHtml(story, timeline, activeItemIndex) {
+function reviewActiveSpeechText(item) {
+    if (!item || isTimelineActivity(item)) return '';
+    return visibleLineText(item.text || item.say || '');
+}
+
+function reviewActiveNarratorText(item, revealedChars = Infinity) {
+    if (!item || isTimelineActivity(item) || item.actor !== '$narrator') return '';
+    return revealText(reviewActiveSpeechText(item), revealedChars);
+}
+
+function isNarratorLine(item) {
+    return !!item && !isTimelineActivity(item) && item.actor === '$narrator';
+}
+
+function renderStoryStageActorsHtml(story, timeline, activeItemIndex, revealedChars = Infinity) {
     const actors = Array.isArray(story?.actors) ? story.actors : [];
     const activeItem = timeline?.[activeItemIndex] || null;
     const activeActorId = !isTimelineActivity(activeItem) ? timelineActorId(story, activeItem?.actor) : '';
     const activeCue = !isTimelineActivity(activeItem) ? splitStageText(activeItem?.text || activeItem?.say || '').cue : '';
+    const speechText = !isTimelineActivity(activeItem) ? revealText(reviewActiveSpeechText(activeItem), revealedChars) : '';
     const cast = actors.map((actor, index) => {
-        const cue = actor.id === activeActorId ? activeCue : '';
-        const style = stageCueStyle(cue, index, actors.length);
+        const speaking = actor.id === activeActorId;
+        const cue = speaking ? activeCue : '';
+        const style = stageCueStyle(cue, index, actors.length, speaking);
         const pet = storyPetForActor(actor);
         if (!pet) return '';
         return `
-            <div class="mh-review-stage-actor ${actor.id === activeActorId ? 'is-speaking' : ''} ${style.mood ? `is-${style.mood}` : ''}" style="left:${style.left}%;bottom:${style.bottom}%;--stage-scale:${style.scale}">
-                ${petArtHtml(pet, { alt: actor.name || pet.name || '', extraClass: actor.id === activeActorId ? 'pop-in' : 'floaty', requireProcessedTexture: false })}
+            <div class="mh-story-stage-actor pet-sprite ${speaking ? 'is-speaking' : ''} ${activeActorId && !speaking ? 'is-listening' : ''} ${style.mood ? `is-${style.mood}` : ''}" data-story-actor-stage="${escapeHtml(actor.id)}" style="left:${style.left}%;bottom:${style.bottom}%;--stage-scale:${style.scale}">
+                ${speaking ? `<div class="mh-story-speech-bubble"><span data-story-speech-text>${escapeHtml(speechText)}</span></div>` : ''}
+                ${petArtHtml(pet, { alt: actor.name || pet.name || '', extraClass: speaking ? 'pop-in' : 'floaty', requireProcessedTexture: true })}
+                <div class="mh-story-actor-foot-name">${escapeHtml(actor.name || pet.name || '角色')}</div>
             </div>`;
     }).join('');
-    return `<div class="mh-review-stage-cast ${activeActorId ? 'is-zooming' : ''}">${cast}</div>`;
+    return `<div class="mh-story-stage-cast ${activeActorId ? 'is-zooming is-interaction-locked' : ''}">${cast}</div>`;
 }
 
 function mainStoryActor(story) {
@@ -524,10 +547,15 @@ function reviewActionKey(sceneIndex, itemIndex, activity) {
 
 function reviewPlaybackState(sceneIndex, timeline, playback) {
     if (!playback || playback.sceneIndex !== sceneIndex) {
-        return { stepIndex: timeline.length, activeItem: null, actionProgress: {} };
+        return { stepIndex: timeline.length, activeItem: null, actionProgress: {}, revealedChars: Infinity };
     }
     const stepIndex = Math.max(0, Math.min(Number(playback.stepIndex) || 0, timeline.length));
-    return { stepIndex, activeItem: timeline[stepIndex] || null, actionProgress: playback.actionProgress || {} };
+    return { stepIndex, activeItem: timeline[stepIndex] || null, actionProgress: playback.actionProgress || {}, revealedChars: Number(playback.revealedChars) || 0 };
+}
+
+function reviewLineText(story, item) {
+    if (!item || isTimelineActivity(item)) return '';
+    return `${actorNameForTimeline(story, item.actor)}：${visibleLineText(item.text || item.say || '')}`;
 }
 
 function storyStats(story) {
@@ -587,16 +615,48 @@ function renderBeatHtml(story, item, itemIndex, active = false) {
         </button>`;
 }
 
-function renderReviewActionBar(sceneIndex, itemIndex, activity, actionProgress) {
-    if (!isTimelineActivity(activity)) return '';
+function renderReviewActionButton(sceneIndex, timelineIndex, activity, activityIndex, current, actionProgress) {
+    if (!activity) return '';
     const total = activityTotal(activity);
-    const done = Math.min(total, actionProgress[reviewActionKey(sceneIndex, itemIndex, activity)] || 0);
+    const done = Math.min(total, actionProgress[reviewActionKey(sceneIndex, timelineIndex, activity)] || 0);
     const left = Math.max(0, total - done);
     return `
-        <div class="mh-review-action-bar mh-dock-row mh-scroll-x dock-action-row">
-            <button type="button" class="btn-secondary action-btn dock-icon-btn mh-story-dock-action" data-review-action="${itemIndex}" ${left <= 0 ? 'disabled' : ''}>
-                <span class="dock-icon">${activityIcon(activity)}</span>
-                <span class="dock-label">${escapeHtml(activityTitle(activity))} × ${left}</span>
+        <button type="button" class="btn-secondary action-btn dock-icon-btn mh-story-dock-action ${current ? 'is-current' : ''} ${left <= 0 ? 'is-complete' : ''}" data-review-action="${timelineIndex}">
+            <span class="dock-icon">${activityIcon(activity)}</span>
+            <span class="dock-label">${escapeHtml(activityTitle(activity))} ${left <= 0 ? '✓' : `× ${left}`}</span>
+        </button>`;
+}
+
+function renderReviewActionDock(story, sceneIndex, timeline, playbackState, activeItemIndex) {
+    const reachedActivities = timeline
+        .map((item, timelineIndex) => ({ item, timelineIndex }))
+        .filter(({ item, timelineIndex }) => isTimelineActivity(item) && timelineIndex <= (playbackState.stepIndex || 0));
+    const actionButtons = reachedActivities
+        .map(({ item, timelineIndex }, activityIndex) => renderReviewActionButton(sceneIndex, timelineIndex, item, activityIndex, timelineIndex === activeItemIndex, playbackState.actionProgress || {}))
+        .join('');
+    const canContinue = (playbackState.stepIndex || 0) >= timeline.length;
+    const hasPrevious = sceneIndex > 0;
+    const isLastScene = sceneIndex >= (story?.scenes?.length || 0) - 1;
+    const nextLabel = isLastScene ? '完成故事' : '下一页';
+    const rightControl = canContinue
+        ? `<button type="button" class="btn-primary dock-icon-btn mh-story-page-arrow is-next" data-review-next-page aria-label="${nextLabel}" title="${nextLabel}">›</button>`
+        : '<span class="mh-story-page-arrow mh-story-page-arrow-placeholder"></span>';
+    return `
+        <div class="mh-story-actions">
+            <button type="button" class="btn-secondary dock-icon-btn mh-story-page-arrow" data-review-prev-page ${hasPrevious ? '' : 'disabled'} aria-label="上一页" title="上一页">‹</button>
+            <div class="mh-story-action-strip">
+                ${actionButtons || '<span class="mh-story-action-placeholder"> </span>'}
+            </div>
+            ${rightControl}
+        </div>`;
+}
+
+function renderReviewContinueButton(activeItem) {
+    if (!activeItem || isTimelineActivity(activeItem)) return '';
+    return `
+        <div class="mh-story-hero-continue">
+            <button type="button" class="mh-story-continue-hit" data-review-continue aria-label="点击继续" title="点击继续">
+                <span>点击继续</span>
             </button>
         </div>`;
 }
@@ -607,7 +667,7 @@ function reviewSubtitleText(story, scene, timeline, playbackState) {
     if (isTimelineActivity(active)) {
         return scene?.subtitle || '';
     }
-    return `${actorNameForTimeline(story, active.actor)}：${visibleLineText(active.text || active.say || '')}`;
+    return revealText(reviewLineText(story, active), playbackState.revealedChars);
 }
 
 function defaultReviewLayout() {
@@ -623,6 +683,17 @@ function renderReviewLayoutToggle(layout) {
         <button type="button" class="mh-review-layout-icon" data-review-layout-toggle="${next}" aria-label="切换预览布局" title="切换预览布局">
             <svg viewBox="0 0 24 24" aria-hidden="true" focusable="false">${iconPath}</svg>
         </button>`;
+}
+
+function renderReviewSceneBadge(sceneIndex) {
+    return `
+        <div class="mh-review-scene-badge">
+            <span>第${sceneIndex + 1}幕</span>
+        </div>`;
+}
+
+function renderReviewBgEditButton(sceneIndex) {
+    return `<button type="button" class="mh-review-bg-edit" data-open-scene-maker data-scene-maker-index="${sceneIndex}" aria-label="编辑第${sceneIndex + 1}幕背景" title="编辑背景">背景</button>`;
 }
 
 function renderReviewHtml(story, sceneIndex = 0, layout = defaultReviewLayout(), playback = null) {
@@ -679,16 +750,18 @@ function renderReviewHtml(story, sceneIndex = 0, layout = defaultReviewLayout(),
             </div>
             ${renderReviewLayoutToggle(reviewLayout)}
         </div>
-        <section class="mh-review-scene is-${reviewLayout}" data-edit-scene="${safeIndex}">
-            <div class="mh-review-hero ${isTimelineActivity(playbackState.activeItem) ? 'has-action' : ''}" data-open-scene-maker data-scene-maker-index="${safeIndex}" role="button" tabindex="0" title="选择背景场景" style="background:${sceneBackgroundStyle(scene, safeIndex)}">
-                <div class="mh-review-phone-canvas">
+        <section class="mh-review-scene is-${reviewLayout}">
+            <div class="mh-review-story-stage">
+                <div class="mh-story-hero ${isTimelineActivity(playbackState.activeItem) ? 'has-action' : ''}" style="--mh-story-scene-bg:${sceneBackgroundStyle(scene, safeIndex)}">
                     ${renderSceneParticles(scene)}
-                    ${renderMusicToggleButton(sceneBgMusic(scene))}
-                    <div class="mh-review-scene-label">第${safeIndex + 1}幕</div>
-                    ${renderStoryStageActorsHtml(story, timeline, activeItemIndex)}
-                    ${reviewSubtitleText(story, scene, timeline, playbackState) ? `<div class="mh-review-subtitle">${escapeHtml(reviewSubtitleText(story, scene, timeline, playbackState))}</div>` : ''}
-                    ${renderReviewActionBar(safeIndex, activeItemIndex, playbackState.activeItem, playbackState.actionProgress)}
+                    ${renderMusicToggleButton(sceneBgMusic(scene), 'mh-story-music-toggle')}
+                    ${renderReviewSceneBadge(safeIndex)}
+                    ${renderStoryStageActorsHtml(story, timeline, activeItemIndex, playbackState.revealedChars)}
+                    ${isNarratorLine(playbackState.activeItem) ? `<div class="mh-story-narrator-bubble"><span data-story-narrator-text>${escapeHtml(reviewActiveNarratorText(playbackState.activeItem, playbackState.revealedChars))}</span></div>` : ''}
+                    ${renderReviewContinueButton(playbackState.activeItem)}
                 </div>
+                ${renderReviewBgEditButton(safeIndex)}
+                ${renderReviewActionDock(story, safeIndex, timeline, playbackState, activeItemIndex)}
             </div>
             <div class="mh-review-scene-detail">
                 <div class="mh-review-beats">
@@ -795,7 +868,7 @@ export function renderStoryMaker(panel, data = {}, { onBack, onPlayStory } = {})
         if (!currentStory?.scenes?.[sceneIndex]) return;
         clearReviewPlaybackTimer();
         reviewSceneIndex = sceneIndex;
-        reviewPlayback = { sceneIndex, stepIndex: 0, actionProgress: {} };
+        reviewPlayback = { sceneIndex, stepIndex: 0, actionProgress: {}, revealedChars: 0 };
         syncReviewBgMusic();
         renderReviewPanel();
         scheduleReviewPlayback();
@@ -807,26 +880,64 @@ export function renderStoryMaker(panel, data = {}, { onBack, onPlayStory } = {})
         const timeline = sceneTimeline(currentStory.scenes[reviewPlayback.sceneIndex]);
         const item = timeline[reviewPlayback.stepIndex];
         if (!item || isTimelineActivity(item)) return;
+        const fullText = reviewActiveSpeechText(item);
+        if (reviewPlayback.revealedChars >= Array.from(fullText).length) return;
         reviewPlaybackTimer = setTimeout(() => {
             if (!reviewPlayback || reviewPlayback.sceneIndex !== reviewSceneIndex) return;
-            reviewPlayback.stepIndex = Math.min(timeline.length, reviewPlayback.stepIndex + 1);
-            renderReviewPanel();
+            reviewPlayback.revealedChars = Math.min(Array.from(fullText).length, (reviewPlayback.revealedChars || 0) + 1);
+            updateReviewSpeechText();
             scheduleReviewPlayback();
-        }, REVIEW_LINE_ADVANCE_MS);
+        }, REVIEW_LINE_REVEAL_MS);
+    };
+
+    const continueReviewLine = () => {
+        if (!currentStory || !reviewPlayback || reviewPlayback.sceneIndex !== reviewSceneIndex) return;
+        const timeline = sceneTimeline(currentStory.scenes[reviewPlayback.sceneIndex]);
+        const item = timeline[reviewPlayback.stepIndex];
+        if (!item || isTimelineActivity(item)) return;
+        const fullLength = Array.from(reviewActiveSpeechText(item)).length;
+        if ((reviewPlayback.revealedChars || 0) < fullLength) {
+            reviewPlayback.revealedChars = fullLength;
+            updateReviewSpeechText();
+            scheduleReviewPlayback();
+            return;
+        } else {
+            reviewPlayback.stepIndex = Math.min(timeline.length, reviewPlayback.stepIndex + 1);
+            reviewPlayback.revealedChars = 0;
+        }
+        renderReviewPanel();
+        scheduleReviewPlayback();
     };
 
     const clickReviewAction = (itemIndex) => {
-        if (!currentStory || !reviewPlayback || reviewPlayback.sceneIndex !== reviewSceneIndex || itemIndex !== reviewPlayback.stepIndex) return;
+        if (!currentStory || !reviewPlayback || reviewPlayback.sceneIndex !== reviewSceneIndex) return;
         const scene = currentStory.scenes[reviewPlayback.sceneIndex];
         const timeline = sceneTimeline(scene);
         const activity = timeline[itemIndex];
         if (!isTimelineActivity(activity)) return;
         const key = reviewActionKey(reviewPlayback.sceneIndex, itemIndex, activity);
         const total = activityTotal(activity);
-        reviewPlayback.actionProgress[key] = Math.min(total, (reviewPlayback.actionProgress[key] || 0) + 1);
-        if (reviewPlayback.actionProgress[key] >= total) reviewPlayback.stepIndex = Math.min(timeline.length, reviewPlayback.stepIndex + 1);
+        reviewPlayback.actionProgress[key] = total;
+        if (itemIndex === reviewPlayback.stepIndex) {
+            reviewPlayback.stepIndex = Math.min(timeline.length, reviewPlayback.stepIndex + 1);
+            reviewPlayback.revealedChars = 0;
+        }
         renderReviewPanel();
         scheduleReviewPlayback();
+    };
+
+    const goReviewPrevPage = () => {
+        if (!currentStory || reviewSceneIndex <= 0) return;
+        startReviewScenePlayback(reviewSceneIndex - 1);
+    };
+
+    const goReviewNextPage = () => {
+        if (!currentStory || reviewSceneIndex < 0) return;
+        if (reviewSceneIndex < currentStory.scenes.length - 1) {
+            startReviewScenePlayback(reviewSceneIndex + 1);
+            return;
+        }
+        showToast('预览完成', 'success');
     };
 
     const draw = () => {
@@ -890,47 +1001,59 @@ export function renderStoryMaker(panel, data = {}, { onBack, onPlayStory } = {})
                 .mh-review-cover-title { color:var(--text-primary); font-size:18px; line-height:1.25; font-weight:900; word-break:break-word; }
                 .mh-review-cover-subtitle { color:var(--text-secondary); font-size:13px; line-height:1.42; font-weight:800; }
                 .mh-review-scene { position:relative; border:1.5px solid rgba(125,211,252,.78); border-radius:16px; background:rgba(255,255,255,.9); padding:10px; display:flex; flex-direction:column; align-items:center; gap:10px; }
-                .mh-review-hero { width:min(100%,230px); aspect-ratio:9/16; min-height:0; align-self:center; border-radius:22px; position:relative; overflow:hidden; display:block; border:3px solid rgba(255,255,255,.9); box-shadow:0 0 0 2px rgba(14,165,233,.3),0 10px 26px rgba(15,39,71,.18),inset 0 0 0 1px rgba(15,39,71,.08); cursor:pointer; background-size:cover; background-position:center; container-type:inline-size; }
-                .mh-review-hero:focus-visible { outline:3px solid rgba(14,165,233,.45); outline-offset:3px; }
-                .mh-review-phone-canvas { --mh-phone-rem:2.777777cqw; position:absolute; inset:0; overflow:hidden; border-radius:inherit; font-size:var(--mh-phone-rem); }
-                .mh-review-phone-canvas::before { content:''; position:absolute; top:.8em; left:50%; z-index:6; width:8.4em; height:.55em; border-radius:999px; background:rgba(15,39,71,.2); transform:translateX(-50%); box-shadow:0 1px 0 rgba(255,255,255,.45); pointer-events:none; }
-                .mh-review-phone-canvas::after { content:''; position:absolute; left:50%; bottom:.7em; z-index:6; width:10.2em; height:.42em; border-radius:999px; background:rgba(15,39,71,.24); transform:translateX(-50%); pointer-events:none; }
-                .mh-review-music-toggle { position:absolute; top:1.8em; right:1em; z-index:8; width:3.4em; height:3.4em; border-radius:1em; border:.18em solid rgba(255,255,255,.92); background:rgba(14,165,233,.92); color:white; font-size:1em; font-weight:900; line-height:1; display:grid; place-items:center; box-shadow:0 .35em 0 rgba(37,99,235,.34),0 .7em 1.5em rgba(15,39,71,.16); }
-                .mh-review-music-toggle.is-muted { background:rgba(255,255,255,.92); color:var(--accent-dark); }
+                .mh-review-story-stage { width:min(100%,230px); aspect-ratio:9/16; min-height:0; align-self:center; border-radius:22px; position:relative; overflow:hidden; display:flex; flex-direction:column; border:3px solid rgba(255,255,255,.9); box-shadow:0 0 0 2px rgba(14,165,233,.3),0 10px 26px rgba(15,39,71,.18),inset 0 0 0 1px rgba(15,39,71,.08); container-type:inline-size; }
+                .mh-review-story-stage .mh-story-hero { flex:1; width:100%; min-height:0; border-radius:0; border:0; background:var(--mh-story-scene-bg); background-size:cover; background-position:center; display:flex; align-items:center; justify-content:center; position:relative; overflow:hidden; box-shadow:none; }
+                .mh-review-story-stage .mh-story-hero.has-action { padding-bottom:54px; }
+                .mh-review-story-stage .mh-story-music-toggle { position:absolute; top:8px; right:8px; z-index:6; width:28px; height:28px; border-radius:9px; border:2px solid rgba(255,255,255,.92); background:rgba(14,165,233,.92); color:white; font-size:15px; font-weight:900; line-height:1; display:grid; place-items:center; box-shadow:0 3px 0 rgba(37,99,235,.34),0 7px 14px rgba(15,39,71,.16); }
+                .mh-review-story-stage .mh-story-music-toggle.is-muted { background:rgba(255,255,255,.92); color:var(--accent-dark); }
                 .mh-review-pet { width:min(210px,58vw); height:min(210px,58vw); display:block; position:relative; z-index:2; }
-                .mh-review-stage-cast { position:absolute; inset:0; z-index:2; transform-origin:50% 54%; transition:transform .42s ease; }
-                .mh-review-stage-cast.is-zooming { transform:scale(1.08); }
-                .mh-review-stage-actor { position:absolute; width:9.2em; height:9.2em; transform:translateX(-50%) scale(var(--stage-scale,1)); transform-origin:50% 100%; transition:left .38s ease,bottom .38s ease,transform .38s ease,filter .38s ease; }
-                .mh-review-stage-actor.is-speaking { z-index:3; filter:drop-shadow(0 .8em 1em rgba(14,116,144,.24)); transform:translateX(-50%) scale(calc(var(--stage-scale,1) * 1.16)); }
-                .mh-review-stage-actor.is-sleep { opacity:.82; }
-                .mh-review-stage-actor.is-sad { filter:saturate(.84) drop-shadow(0 .6em .8em rgba(15,39,71,.18)); }
-                .mh-review-stage-actor.is-happy { filter:saturate(1.14) drop-shadow(0 .8em 1em rgba(14,116,144,.22)); }
-                .mh-review-subtitle { position:absolute; left:1em; right:1em; bottom:2em; border-radius:1.3em; background:rgba(15,39,71,.78); color:white; padding:.8em 1em; text-align:center; font-size:1.4em; font-weight:900; line-height:1.35; z-index:3; max-height:5.8em; overflow:hidden; }
-                .mh-review-scene-label { position:absolute; top:2.2em; left:1em; z-index:4; border-radius:999px; background:rgba(255,255,255,.88); color:var(--accent-dark); font-size:1.2em; font-weight:900; padding:.5em .9em; box-shadow:0 .2em .8em rgba(15,39,71,.14); }
-                .mh-review-scene-detail { display:flex; flex-direction:column; gap:10px; min-width:0; }
-                .mh-review-titlebar { display:flex; align-items:center; justify-content:space-between; gap:8px; }
-                .mh-review-titlebar strong { display:block; font-size:15px; color:var(--text-primary); }
-                .mh-review-beats { display:flex; flex-direction:column; gap:7px; }
+                .mh-review-story-stage .mh-story-stage-cast { position:absolute; inset:0; z-index:2; transform-origin:50% 54%; transition:transform .42s ease; }
+                .mh-review-story-stage .mh-story-stage-cast.is-zooming { transform:scale(1.08); }
+                .mh-review-story-stage .mh-story-stage-cast.is-interaction-locked .mh-story-stage-actor { pointer-events:none; }
+                .mh-review-story-stage .mh-story-stage-actor { position:absolute; width:30cqw; height:30cqw; transform:translateX(-50%) scale(var(--stage-scale,1)); transform-origin:50% 100%; transition:left .38s ease,bottom .38s ease,transform .38s ease,filter .38s ease; }
+                .mh-review-story-stage .mh-story-stage-actor [data-mh-pet] { pointer-events:none; }
+                .mh-review-story-stage .mh-story-stage-actor.is-speaking { z-index:3; filter:drop-shadow(0 8px 10px rgba(14,116,144,.24)); transform:translateX(-50%) scale(calc(var(--stage-scale,1) * 1.16)); }
+                .mh-review-story-stage .mh-story-stage-actor.is-listening { opacity:.82; }
+                .mh-review-story-stage .mh-story-stage-actor.is-sleep { opacity:.82; }
+                .mh-review-story-stage .mh-story-stage-actor.is-sad { filter:saturate(.84) drop-shadow(0 6px 8px rgba(15,39,71,.18)); }
+                .mh-review-story-stage .mh-story-stage-actor.is-happy { filter:saturate(1.14) drop-shadow(0 8px 10px rgba(14,116,144,.22)); }
+                .mh-review-story-stage .mh-story-speech-bubble { position:absolute; left:50%; bottom:calc(100% + 8px); z-index:5; min-width:36cqw; max-width:68cqw; transform:translateX(-50%); border-radius:12px; background:rgba(255,255,255,.9); color:#17324d; border:1.5px solid rgba(255,255,255,.78); box-shadow:0 7px 15px rgba(15,39,71,.18); padding:5px 7px; font-size:clamp(9px,4.7cqw,11px); line-height:1.24; font-weight:900; text-align:center; }
+                .mh-review-story-stage .mh-story-speech-bubble::after { content:''; position:absolute; left:50%; bottom:-6px; width:12px; height:12px; background:rgba(255,255,255,.9); border-right:1.5px solid rgba(255,255,255,.78); border-bottom:1.5px solid rgba(255,255,255,.78); transform:translateX(-50%) rotate(45deg); }
+                .mh-review-story-stage .mh-story-actor-foot-name { position:absolute; left:50%; top:calc(100% + 3px); transform:translateX(-50%); max-width:40cqw; border-radius:999px; background:rgba(15,39,71,.5); color:white; padding:2px 6px; font-size:clamp(8px,3.9cqw,10px); line-height:1; font-weight:900; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; box-shadow:0 3px 8px rgba(15,39,71,.12); }
+                .mh-review-story-stage .mh-story-narrator-bubble { position:absolute; left:50%; top:22%; z-index:4; transform:translateX(-50%); max-width:78cqw; border-radius:15px; background:rgba(255,255,255,.88); color:#17324d; border:1.5px solid rgba(255,255,255,.72); box-shadow:0 9px 20px rgba(15,39,71,.16); padding:8px 11px; font-size:12px; line-height:1.34; font-weight:900; text-align:center; }
+                .mh-review-story-stage .mh-story-hero-continue { position:absolute; left:10px; right:10px; bottom:10px; z-index:6; min-height:58px; display:flex; align-items:flex-end; justify-content:center; }
+                .mh-review-story-stage .mh-story-continue-hit { width:100%; min-height:54px; border:0; background:transparent; box-shadow:none; padding:0 0 7px; display:flex; align-items:flex-end; justify-content:center; cursor:pointer; }
+                .mh-review-story-stage .mh-story-continue-hit span { min-width:92px; border-radius:999px; background:rgba(15,39,71,.52); color:white; border:1px solid rgba(255,255,255,.42); box-shadow:0 4px 12px rgba(15,39,71,.16); padding:7px 14px; font-size:12px; font-weight:900; line-height:1; pointer-events:none; }
+                .mh-review-scene-badge { position:absolute; top:12px; left:10px; z-index:8; display:flex; align-items:center; gap:6px; }
+                .mh-review-scene-badge span { border-radius:999px; background:rgba(255,255,255,.9); color:var(--accent-dark); font-size:12px; font-weight:900; line-height:1; box-shadow:0 3px 12px rgba(15,39,71,.14); padding:7px 10px; }
+                .mh-review-bg-edit { position:absolute; top:8px; right:8px; z-index:9; min-width:52px; height:32px; border:1.5px solid rgba(14,165,233,.72); border-radius:999px; background:rgba(255,255,255,.92); color:var(--accent-dark); padding:0 12px; cursor:pointer; font-size:13px; font-weight:900; line-height:1; box-shadow:0 3px 0 rgba(37,99,235,.18),0 8px 16px rgba(15,39,71,.14); }
+                .mh-review-bg-edit:focus-visible { outline:2px solid rgba(14,165,233,.45); outline-offset:2px; }
+                .mh-review-story-stage .mh-story-actions { flex:0 0 auto; display:flex; align-items:center; gap:6px; overflow:hidden; padding:7px 8px 9px; background:linear-gradient(180deg,#7dd3fc 0%,#38bdf8 48%,#0ea5e9 100%); border-top:1px solid rgba(255,255,255,.54); box-shadow:inset 0 1px 0 rgba(255,255,255,.42),0 -8px 20px rgba(14,116,144,.16); }
+                .mh-review-story-stage .mh-story-action-strip { flex:1; min-width:0; display:flex; align-items:center; justify-content:center; gap:6px; overflow-x:auto; padding:1px 0 4px; }
+                .mh-review-story-stage .mh-story-action-placeholder { flex:1; min-width:24px; }
+                .mh-review-story-stage .mh-story-page-arrow { flex:0 0 34px; width:34px; height:34px; min-width:34px; border-radius:13px; font-size:21px; font-weight:900; line-height:1; display:grid; place-items:center; padding:0; background:rgba(239,250,255,.92); border-color:rgba(255,255,255,.74); color:var(--accent-dark); box-shadow:0 3px 0 rgba(14,116,144,.22),0 7px 13px rgba(15,39,71,.14),inset 0 1px 0 rgba(255,255,255,.9); }
+                .mh-review-story-stage .mh-story-page-arrow:disabled { opacity:.34; cursor:default; }
+                .mh-review-story-stage .mh-story-page-arrow-placeholder { visibility:hidden; }
+                .mh-review-story-stage .mh-story-actions .mh-story-dock-action { min-width:58px; height:44px; border-radius:12px; border-color:rgba(14,165,233,.48); background:linear-gradient(180deg,rgba(255,255,255,.7),rgba(255,255,255,.16)),linear-gradient(135deg,#ecfeff,#bae6fd); box-shadow:0 3px 0 rgba(14,116,144,.24),0 7px 13px rgba(15,39,71,.12),inset 0 1px 0 rgba(255,255,255,.85); }
+                .mh-review-story-stage .mh-story-actions .mh-story-dock-action.is-current { border-color:rgba(37,99,235,.74); box-shadow:0 4px 0 rgba(37,99,235,.34),0 0 0 3px rgba(14,165,233,.2),0 8px 16px rgba(15,39,71,.12),inset 0 1px 0 rgba(255,255,255,.85); }
+                .mh-review-story-stage .mh-story-actions .mh-story-dock-action.is-complete { background:linear-gradient(180deg,rgba(255,255,255,.72),rgba(255,255,255,.2)),linear-gradient(135deg,#ecfdf5,#bbf7d0); border-color:rgba(16,185,129,.55); }
+                .mh-review-story-stage .mh-story-actions .mh-story-dock-action .dock-icon { font-size:16px; }
+                .mh-review-story-stage .mh-story-actions .mh-story-dock-action .dock-label { max-width:52px; font-size:10px; font-weight:900; color:var(--accent-dark); }
+                .mh-review-scene-detail { display:flex; flex-direction:column; gap:10px; min-width:0; width:100%; }
+                .mh-review-beats { display:flex; flex-direction:column; gap:7px; max-height:100%; overflow:auto; padding:2px; }
                 .mh-review-beat { width:100%; border:1.5px solid rgba(14,165,233,.28); border-radius:13px; background:#f8fdff; padding:9px; display:grid; grid-template-columns:34px minmax(0,1fr); gap:8px; align-items:center; text-align:left; color:var(--text-primary); }
                 .mh-review-beat.is-activity { border-color:rgba(245,158,11,.42); background:#fffbeb; }
                 .mh-review-beat.is-active { box-shadow:0 0 0 3px rgba(14,165,233,.18); }
                 .mh-review-beat-icon { width:34px; height:34px; border-radius:12px; display:grid; place-items:center; background:rgba(255,255,255,.82); font-size:18px; }
                 .mh-review-beat b { display:block; font-size:13px; color:var(--accent-dark); overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
                 .mh-review-beat small { display:block; font-size:13px; color:var(--text-primary); overflow:hidden; text-overflow:ellipsis; white-space:nowrap; margin-top:2px; }
-                .mh-review-hero.has-action .mh-review-subtitle { bottom:7em; font-size:1.2em; padding:.6em .8em; line-height:1.25; max-height:4.8em; }
-                .mh-review-action-bar { position:absolute; left:.9em; right:.9em; bottom:1.7em; z-index:5; justify-content:flex-start; gap:.6em; padding:0; margin:0; overflow-x:auto; }
-                .mh-review-action-bar .mh-story-dock-action { min-width:6.8em; height:5em; padding:.45em .55em; border-radius:1.3em; gap:.25em; font-size:var(--mh-phone-rem); line-height:1.05; border-color:rgba(14,165,233,.48); background:linear-gradient(180deg,rgba(255,255,255,.7),rgba(255,255,255,.16)),linear-gradient(135deg,#ecfeff,#bae6fd); box-shadow:0 .4em 0 rgba(14,116,144,.24),0 .8em 1.6em rgba(15,39,71,.12),inset 0 .1em 0 rgba(255,255,255,.85); }
-                .mh-review-action-bar .mh-story-dock-action .dock-icon { font-size:1.7em; }
-                .mh-review-action-bar .mh-story-dock-action .dock-label { max-width:6em; font-size:1em; font-weight:900; color:var(--accent-dark); }
-                .mh-review-action-bar.is-idle { min-height:4.4em; border:.15em dashed rgba(14,165,233,.28); border-radius:1.4em; background:rgba(239,250,255,.72); display:grid; place-items:center; color:var(--text-muted); font-size:1.2em; font-weight:900; }
                 .mh-review-ai { display:grid; grid-template-columns:repeat(2,minmax(0,1fr)); gap:8px; margin-top:14px; }
-                .mh-review-scene.is-portrait .mh-review-pet { width:min(190px,46vw); height:min(190px,46vw); }
                 .mh-review-cover.is-landscape .mh-review-cover-main { display:grid; grid-template-columns:minmax(0,1.12fr) minmax(150px,.88fr); align-items:stretch; text-align:left; }
                 .mh-review-cover.is-landscape .mh-review-cover-art { width:min(100%,220px); justify-self:center; }
                 .mh-review-cover.is-landscape .mh-review-cover-info { justify-content:center; padding:8px 4px; }
                 .mh-review-scene.is-landscape { display:grid; grid-template-columns:minmax(0,1.18fr) minmax(150px,.82fr); align-items:start; }
-                .mh-review-scene.is-landscape .mh-review-hero { width:min(100%,220px); align-self:start; justify-self:center; }
-                .mh-review-scene.is-landscape .mh-review-pet { width:min(210px,36vw); height:min(210px,36vw); }
+                .mh-review-scene.is-landscape .mh-review-story-stage { width:min(100%,220px); align-self:start; justify-self:center; }
+                .mh-review-scene.is-landscape .mh-review-scene-detail { align-self:stretch; max-height:420px; }
                 .mh-maker-stream-modal { position:absolute; inset:0; z-index:55; background:rgba(15,39,71,.35); display:flex; align-items:flex-end; justify-content:center; padding:14px 12px max(14px,env(safe-area-inset-bottom)); }
                 .mh-maker-stream-panel { width:100%; max-height:86%; border-radius:20px 20px 16px 16px; background:linear-gradient(180deg,#effaff 0%,#ffffff 100%); box-shadow:0 16px 40px rgba(15,39,71,.28); border:1.5px solid rgba(125,211,252,.78); padding:12px; display:flex; flex-direction:column; gap:10px; }
                 .mh-maker-stream-head { display:flex; align-items:center; justify-content:space-between; gap:10px; }
@@ -1109,6 +1232,16 @@ export function renderStoryMaker(panel, data = {}, { onBack, onPlayStory } = {})
         host.innerHTML = renderReviewHtml(currentStory, reviewSceneIndex, reviewLayout, reviewPlayback);
         ParticleEffects.getInstance().mountAll(host);
         scanAndMount(host);
+    }
+
+    function updateReviewSpeechText() {
+        const host = $('mhMakerReview');
+        if (!host || !currentStory || !reviewPlayback || reviewPlayback.sceneIndex !== reviewSceneIndex) return;
+        const item = sceneTimeline(currentStory.scenes[reviewPlayback.sceneIndex])[reviewPlayback.stepIndex];
+        const text = revealText(reviewActiveSpeechText(item), reviewPlayback.revealedChars || 0);
+        host.querySelectorAll('[data-story-speech-text]').forEach(el => { el.textContent = text; });
+        const narrator = host.querySelector('[data-story-narrator-text]');
+        if (narrator) narrator.textContent = reviewActiveNarratorText(item, reviewPlayback.revealedChars || 0);
     }
 
     function renderOpenEditSheet() {
@@ -1660,6 +1793,18 @@ export function renderStoryMaker(panel, data = {}, { onBack, onPlayStory } = {})
             const reviewActionBtn = e.target.closest?.('[data-review-action]');
             if (reviewActionBtn) {
                 clickReviewAction(Number(reviewActionBtn.dataset.reviewAction));
+                return;
+            }
+            if (e.target.closest?.('[data-review-prev-page]')) {
+                goReviewPrevPage();
+                return;
+            }
+            if (e.target.closest?.('[data-review-next-page]')) {
+                goReviewNextPage();
+                return;
+            }
+            if (e.target.closest?.('[data-review-continue]')) {
+                continueReviewLine();
                 return;
             }
             const reviewMusicBtn = e.target.closest?.('[data-review-music-toggle]');

@@ -9,6 +9,7 @@ import { displayPetName } from './dna.js';
 import { getPetSleepActionState, isPetInteractionBlocked, petArtHtml, playPetClickFeedback, playPetHappy, say, scanAndMount, sleepingInteractionText } from './pet.js';
 import { getGeneratedPetLocation, hasRenderablePetTexture } from './petLifecycle.js';
 import SoundManager from './soundManager.js';
+import { BATH_COMPLETE_FEEDBACK_MS, BATH_COMPLETE_LINES, BATH_SEQUENCE_MS, createBathSequenceOverlay, isPetVisibleInStage } from './petInteractions.js';
 
 const ITEM_BY_ID = Object.fromEntries(SHOP_ITEMS.map(it => [it.id, it]));
 const BASIC_FEED_ID = 'food_basic_feed';
@@ -28,13 +29,6 @@ const FOOD_EAT_MAX_MS = 5000;
 const FOOD_EAT_MIN_ENERGY = 12;
 const FOOD_EAT_MAX_ENERGY = 30;
 const FEED_SAY_MIN_VISIBLE_MS = 3000;
-const BATH_SEQUENCE_MS = 10000;
-const BATH_COMPLETE_FEEDBACK_MS = 3000;
-const BATH_COMPLETE_LINES = [
-    '洗好啦，香香的！',
-    '泡泡浴完成，感觉闪闪发光！',
-    '干干净净，心情也亮起来啦！',
-];
 const ROOM_WIDTH_METERS = 10;
 const ROOM_SIDE_OVERDRAW_METERS = 1;
 const ROOM_SCENE_WIDTH_METERS = ROOM_WIDTH_METERS + ROOM_SIDE_OVERDRAW_METERS * 2;
@@ -820,101 +814,7 @@ async function runFeedServingSequence(itemId, source, ctx) {
 
 function isPetVisibleForBath(petEl = $('mhPet')) {
     const stage = $('mhStage');
-    if (!petEl || !stage || !petEl.isConnected || !stage.isConnected) return false;
-    const petRect = petEl.getBoundingClientRect();
-    const stageRect = stage.getBoundingClientRect();
-    if (petRect.width <= 4 || petRect.height <= 4 || stageRect.width <= 4 || stageRect.height <= 4) return false;
-    const style = getComputedStyle(petEl);
-    if (style.display === 'none' || style.visibility === 'hidden' || Number(style.opacity) === 0) return false;
-    return petRect.right > stageRect.left + 8
-        && petRect.left < stageRect.right - 8
-        && petRect.bottom > stageRect.top + 8
-        && petRect.top < stageRect.bottom - 8;
-}
-
-function bathBubbleSvg(count = 30) {
-    return Array.from({ length: count }, (_, index) => {
-        const x = 20 + Math.random() * 280;
-        const y = 178 + Math.random() * 96;
-        const r = 5 + Math.random() * 13;
-        const drift = Math.random() * 58 - 29;
-        const rise = 78 + Math.random() * 132;
-        const delay = 0.55 + Math.random() * 5.8 + index * 0.035;
-        const dur = 2.4 + Math.random() * 2.2;
-        return `<circle class="mh-bath-bubble" cx="${x.toFixed(1)}" cy="${y.toFixed(1)}" r="${r.toFixed(1)}" style="--mh-bath-drift:${drift.toFixed(1)}px;--mh-bath-rise:${rise.toFixed(1)}px;--mh-bath-delay:${delay.toFixed(2)}s;--mh-bath-dur:${dur.toFixed(2)}s"></circle>`;
-    }).join('');
-}
-
-function bathSparkleSvg(count = 14) {
-    return Array.from({ length: count }, (_, index) => {
-        const x = 54 + Math.random() * 212;
-        const y = 44 + Math.random() * 180;
-        const size = 0.7 + Math.random() * 0.65;
-        const r = 10 * size;
-        const n = 2.7 * size;
-        const delay = 7.1 + Math.random() * 1.6 + index * 0.045;
-        return `<path class="mh-bath-sparkle" d="M${x.toFixed(1)} ${(y - r).toFixed(1)} L${(x + n).toFixed(1)} ${(y - n).toFixed(1)} L${(x + r).toFixed(1)} ${y.toFixed(1)} L${(x + n).toFixed(1)} ${(y + n).toFixed(1)} L${x.toFixed(1)} ${(y + r).toFixed(1)} L${(x - n).toFixed(1)} ${(y + n).toFixed(1)} L${(x - r).toFixed(1)} ${y.toFixed(1)} L${(x - n).toFixed(1)} ${(y - n).toFixed(1)}Z" style="--mh-bath-sparkle-delay:${delay.toFixed(2)}s"></path>`;
-    }).join('');
-}
-
-function createBathSequenceOverlay(petEl = $('mhPet')) {
-    const stage = $('mhStage');
-    if (!stage || !petEl) return null;
-    const stageRect = stage.getBoundingClientRect();
-    const petRect = petEl.getBoundingClientRect();
-    const scaleX = stageRect.width > 0 ? stage.clientWidth / stageRect.width : 1;
-    const scaleY = stageRect.height > 0 ? stage.clientHeight / stageRect.height : 1;
-    const petWidth = petRect.width * scaleX;
-    const petHeight = petRect.height * scaleY;
-    const width = Math.max(164, petWidth * 2.42);
-    const height = Math.max(148, petHeight * 2.18);
-    const centerX = (petRect.left - stageRect.left + petRect.width / 2) * scaleX;
-    const centerY = (petRect.bottom - stageRect.top) * scaleY;
-    const overlay = document.createElement('div');
-    overlay.className = 'mh-bath-sequence';
-    overlay.style.left = centerX.toFixed(1) + 'px';
-    overlay.style.top = centerY.toFixed(1) + 'px';
-    overlay.style.width = width.toFixed(1) + 'px';
-    overlay.style.height = height.toFixed(1) + 'px';
-    overlay.innerHTML = `
-        <svg class="mh-bath-svg" viewBox="0 0 320 280" aria-hidden="true" focusable="false">
-            <defs>
-                <radialGradient id="mhBathBubble" cx="34%" cy="28%" r="72%">
-                    <stop offset="0" stop-color="#ffffff" stop-opacity="0.98"></stop>
-                    <stop offset="0.38" stop-color="#cffafe" stop-opacity="0.78"></stop>
-                    <stop offset="1" stop-color="#38bdf8" stop-opacity="0.18"></stop>
-                </radialGradient>
-                <linearGradient id="mhBathTub" x1="40" y1="146" x2="282" y2="250" gradientUnits="userSpaceOnUse">
-                    <stop offset="0" stop-color="#ecfeff"></stop>
-                    <stop offset="0.52" stop-color="#7dd3fc"></stop>
-                    <stop offset="1" stop-color="#0284c7"></stop>
-                </linearGradient>
-                <filter id="mhBathGlow" x="-40%" y="-40%" width="180%" height="180%">
-                    <feGaussianBlur stdDeviation="5" result="blur"></feGaussianBlur>
-                    <feMerge><feMergeNode in="blur"></feMergeNode><feMergeNode in="SourceGraphic"></feMergeNode></feMerge>
-                </filter>
-            </defs>
-            <g class="mh-bath-shower-stream">
-                <path d="M92 62 C126 96 156 122 204 144" fill="none" stroke="#bae6fd" stroke-width="8" stroke-linecap="round" stroke-dasharray="3 18"></path>
-                <path d="M118 48 C145 92 176 112 232 126" fill="none" stroke="#67e8f9" stroke-width="5" stroke-linecap="round" stroke-dasharray="2 15"></path>
-            </g>
-            <g class="mh-bath-tut-tool">
-                <path d="M86 92 C88 64 112 44 142 44 H224 C248 44 266 62 266 86" fill="none" stroke="#075985" stroke-width="12" stroke-linecap="round"></path>
-                <path d="M56 146 H268 C260 208 232 236 162 236 C92 236 64 208 56 146Z" fill="url(#mhBathTub)" stroke="#075985" stroke-width="8" stroke-linejoin="round"></path>
-                <path d="M74 142 C92 116 122 112 144 132 C164 104 204 106 224 135 C244 114 270 122 280 146Z" fill="#ecfeff" stroke="#7dd3fc" stroke-width="4"></path>
-                <circle cx="106" cy="239" r="10" fill="#075985"></circle>
-                <circle cx="224" cy="239" r="10" fill="#075985"></circle>
-                <path d="M92 154 C126 176 192 178 240 154" fill="none" stroke="#ecfeff" stroke-width="8" stroke-linecap="round" opacity="0.75"></path>
-            </g>
-            <g class="mh-bath-bubbles">${bathBubbleSvg()}</g>
-            <g class="mh-bath-sparkles" filter="url(#mhBathGlow)">${bathSparkleSvg()}</g>
-        </svg>`;
-    stage.appendChild(overlay);
-    overlay.addEventListener('animationend', (event) => {
-        if (event.animationName === 'mhBathSequenceFade') overlay.remove();
-    });
-    setTimeout(() => overlay.remove(), BATH_SEQUENCE_MS + 650);
-    return overlay;
+    return isPetVisibleInStage(petEl, stage);
 }
 
 async function runBathSequence(ctx) {
@@ -934,7 +834,7 @@ async function runBathSequence(ctx) {
     clearRoomAgentTimer();
     setPetRoomMotion('idle');
     petEl.classList.add('mh-pet-bathing');
-    createBathSequenceOverlay(petEl);
+    createBathSequenceOverlay({ stage: $('mhStage'), petEl });
     soundManager.playBathCue('start');
     const cueTimers = [1800, 3400, 5100].map(delay => setTimeout(() => soundManager.playBathCue('wash'), delay));
     cueTimers.push(setTimeout(() => soundManager.playBathCue('sparkle'), 7700));

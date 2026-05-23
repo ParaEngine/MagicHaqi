@@ -2,14 +2,15 @@
 import { $, escapeHtml, showToast } from './utils.js';
 import { state } from './state.js';
 import { CONFIG } from './config.js';
-import { petArtHtml, scanAndMount, say, setAnim } from './pet.js';
+import { getProcessedSheet, mountPetArt, petArtHtml, scanAndMount, say, sayOnPet } from './pet.js';
 import { loadWorkspaceStory } from './storage.js';
 import { renderSceneParticles, sceneParticleCss } from './view_story_scene_maker.js';
 import SoundManager from './soundManager.js';
 import ParticleEffects from './particleEffects.js';
+import { foodEatDurationMs, pickRandomPreferredFood, runBathInteraction, runFeedInteraction, runTouchInteraction } from './petInteractions.js';
 
 let runtime = null;
-const STORY_LINE_ADVANCE_MS = 1300;
+const STORY_LINE_REVEAL_MS = 38;
 const soundManager = SoundManager.getInstance();
 
 const ACTIVITY_LABELS = {
@@ -22,6 +23,10 @@ const ACTIVITY_LABELS = {
     minigame: '小游戏',
 };
 
+function wait(ms) {
+    return new Promise(resolve => setTimeout(resolve, Math.max(0, Number(ms) || 0)));
+}
+
 export async function loadStoryFile(path) {
     const share = parseStoryShareParams();
     const sharedPath = remoteStoryPath(share.story);
@@ -31,6 +36,7 @@ export async function loadStoryFile(path) {
         const remoteStory = await loadRemoteWorkspaceStory(share.fromUsername, sharedPath);
         if (remoteStory) return normalizeStory(remoteStory, remoteStory.sourcePath || share.story);
     }
+
     const storyPath = normalizeStoryPath(requestedPath);
     if (storyPath.startsWith('stories/')) {
         const workspaceStory = await loadWorkspaceStory(storyPath);
@@ -51,6 +57,198 @@ export function storyPathFromUrl() {
 
 export function hasStoryParam() {
     return !!storyPathFromUrl();
+}
+
+function storyActorAtPoint(panel, clientX, clientY) {
+    const actors = Array.from(panel.querySelectorAll('[data-story-actor-stage]'));
+    let best = null;
+    actors.forEach((el) => {
+        const visual = el.querySelector('[data-mh-pet]') || el;
+        const rect = visual.getBoundingClientRect();
+        if (rect.width <= 2 || rect.height <= 2) return;
+        const padX = Math.max(24, rect.width * 0.28);
+        const padY = Math.max(24, rect.height * 0.28);
+        const inside = clientX >= rect.left - padX
+            && clientX <= rect.right + padX
+            && clientY >= rect.top - padY
+            && clientY <= rect.bottom + padY;
+        if (!inside) return;
+        const centerX = rect.left + rect.width / 2;
+        const centerY = rect.top + rect.height / 2;
+        const distance = Math.hypot(clientX - centerX, clientY - centerY);
+        const speakingBias = el.classList.contains('is-speaking') ? 12 : 0;
+        const score = distance + speakingBias;
+        if (!best || score < best.score) best = { el, score };
+    });
+    return best?.el || null;
+}
+
+function createStoryFeedDragGhost(foodItem, clientX, clientY) {
+    const ghost = document.createElement('div');
+    ghost.className = 'mh-story-feed-drag-ghost';
+    ghost.textContent = foodItem?.emoji || '🍽️';
+    document.body.appendChild(ghost);
+    moveStoryFeedDragGhost(ghost, clientX, clientY);
+    return ghost;
+}
+
+function moveStoryFeedDragGhost(ghost, clientX, clientY) {
+    if (!ghost) return;
+    ghost.style.left = `${clientX}px`;
+    ghost.style.top = `${clientY}px`;
+}
+
+function bindStoryFeedDrag(btn, activity, panel, options, index) {
+    let drag = null;
+    const DRAG_THRESHOLD = 8;
+    const touchPoint = (event) => event.changedTouches?.[0] || event.touches?.[0] || null;
+    const clearDrag = () => {
+        if (!drag) return null;
+        const current = drag;
+        drag = null;
+        current.ghost?.remove();
+        window.removeEventListener('pointermove', onMove);
+        window.removeEventListener('pointerup', onEnd);
+        window.removeEventListener('pointercancel', onEnd);
+        window.removeEventListener('touchmove', onTouchMove);
+        window.removeEventListener('touchend', onTouchEnd);
+        window.removeEventListener('touchcancel', onTouchEnd);
+        return current;
+    };
+    const pointInsideScroller = (clientX, clientY) => {
+        const rect = drag?.scroller?.getBoundingClientRect?.();
+        return !!rect && clientX >= rect.left && clientX <= rect.right && clientY >= rect.top && clientY <= rect.bottom;
+    };
+    const lockDragAsScroll = (e) => {
+        if (!drag) return;
+        e.preventDefault?.();
+        drag.scrollLocked = true;
+        const scroller = drag.scroller;
+        if (scroller) {
+            scroller.scrollLeft -= e.clientX - drag.lastScrollX;
+            drag.lastScrollX = e.clientX;
+            scroller.__mhStoryActionScrollMoved = true;
+        }
+    };
+    const startFeedDrag = (e) => {
+        if (!drag || drag.active) return;
+        e.preventDefault?.();
+        e.stopPropagation?.();
+        drag.active = true;
+        drag.scrollLocked = false;
+        drag.ghost = createStoryFeedDragGhost(drag.foodItem, e.clientX, e.clientY);
+        btn.classList.add('is-dragging-feed');
+    };
+    const onMove = (e) => {
+        if (!drag || drag.pointerId !== e.pointerId) return;
+        const insideScroller = pointInsideScroller(e.clientX, e.clientY);
+        if (drag.scrollLocked) {
+            if (insideScroller) lockDragAsScroll(e);
+            else startFeedDrag(e);
+            return;
+        }
+        const dx = e.clientX - drag.startX;
+        const dy = e.clientY - drag.startY;
+        if (!drag.active) {
+            if (Math.hypot(dx, dy) < DRAG_THRESHOLD) return;
+            if (insideScroller && Math.abs(dx) >= Math.abs(dy)) {
+                lockDragAsScroll(e);
+                return;
+            }
+            startFeedDrag(e);
+            return;
+        }
+        e.preventDefault?.();
+        moveStoryFeedDragGhost(drag.ghost, e.clientX, e.clientY);
+        const targetEl = storyActorAtPoint(panel, e.clientX, e.clientY);
+        panel.querySelectorAll('[data-story-actor-stage]').forEach(el => el.classList.toggle('is-feed-target', el === targetEl));
+    };
+    const onEnd = async (e) => {
+        if (!drag || drag.pointerId !== e.pointerId) return;
+        const current = clearDrag();
+        btn.classList.remove('is-dragging-feed');
+        panel.querySelectorAll('[data-story-actor-stage]').forEach(el => el.classList.remove('is-feed-target'));
+        if (current?.scrollLocked) {
+            btn.__mhStoryFeedDragHandledAt = Date.now();
+            return;
+        }
+        if (!current?.active) return;
+        btn.__mhStoryFeedDragHandledAt = Date.now();
+        e.preventDefault?.();
+        e.stopPropagation?.();
+        const targetEl = storyActorAtPoint(panel, e.clientX, e.clientY);
+        const actor = actorById(targetEl?.dataset?.storyActorStage) || selectedActor();
+        btn.disabled = true;
+        try { await runFeedStoryActivity(activity, panel, options, index, { actor }); }
+        finally { if (btn.isConnected) btn.disabled = false; }
+    };
+    const onTouchMove = (event) => {
+        if (!drag || drag.pointerId !== 'touch') return;
+        const point = touchPoint(event);
+        if (!point) return;
+        onMove({
+            pointerId: 'touch',
+            clientX: point.clientX,
+            clientY: point.clientY,
+            preventDefault: () => event.preventDefault(),
+        });
+    };
+    const onTouchEnd = (event) => {
+        if (!drag || drag.pointerId !== 'touch') return;
+        const point = touchPoint(event);
+        if (!point) {
+            clearDrag();
+            return;
+        }
+        onEnd({
+            pointerId: 'touch',
+            clientX: point.clientX,
+            clientY: point.clientY,
+            preventDefault: () => event.preventDefault(),
+            stopPropagation: () => event.stopPropagation(),
+        });
+    };
+    btn.addEventListener('touchstart', (event) => {
+        if (drag || btn.disabled || isDialogueActive()) return;
+        const point = touchPoint(event);
+        if (!point) return;
+        const targetPet = storyPetForFeedActor(selectedActor());
+        drag = {
+            pointerId: 'touch',
+            startX: point.clientX,
+            startY: point.clientY,
+            active: false,
+            scrollLocked: false,
+            ghost: null,
+            foodItem: storyFeedFood(activity, index, targetPet),
+            scroller: btn.closest?.('.mh-story-action-strip'),
+            lastScrollX: point.clientX,
+        };
+        window.addEventListener('touchmove', onTouchMove, { passive: false });
+        window.addEventListener('touchend', onTouchEnd, { passive: false });
+        window.addEventListener('touchcancel', onTouchEnd, { passive: false });
+    }, { passive: true });
+    btn.addEventListener('pointerdown', (e) => {
+        if (drag) return;
+        if (btn.disabled || isDialogueActive()) return;
+        if (e.button != null && e.button !== 0) return;
+        const targetPet = storyPetForFeedActor(selectedActor());
+        drag = {
+            pointerId: e.pointerId,
+            startX: e.clientX,
+            startY: e.clientY,
+            active: false,
+            scrollLocked: false,
+            ghost: null,
+            foodItem: storyFeedFood(activity, index, targetPet),
+            scroller: btn.closest?.('.mh-story-action-strip'),
+            lastScrollX: e.clientX,
+        };
+        try { btn.setPointerCapture?.(e.pointerId); } catch (_) {}
+        window.addEventListener('pointermove', onMove);
+        window.addEventListener('pointerup', onEnd);
+        window.addEventListener('pointercancel', onEnd);
+    });
 }
 
 export function normalizeStoryPath(path) {
@@ -156,6 +354,10 @@ function visibleLineText(text = '') {
     return splitStageText(text).text;
 }
 
+function revealText(text = '', count = Infinity) {
+    return Array.from(String(text || '')).slice(0, Math.max(0, count)).join('');
+}
+
 function sceneBackground(scene) {
     const bg = scene?.background || {};
     const color = bg.color || scene?.bgColor || '#bae6fd';
@@ -221,8 +423,45 @@ function timelineActivityIndex(timeline, itemIndex) {
     return activityIndex;
 }
 
+function timelineIndexForActivity(timeline, activityIndex) {
+    let currentActivityIndex = -1;
+    for (let index = 0; index < timeline.length; index += 1) {
+        if (!isTimelineActivity(timeline[index])) continue;
+        currentActivityIndex += 1;
+        if (currentActivityIndex === activityIndex) return index;
+    }
+    return -1;
+}
+
 function currentTimeline() {
     return sceneTimeline(currentScene());
+}
+
+function saveScenePlaybackState() {
+    if (!runtime?.sceneId) return;
+    runtime.scenePlayback[runtime.sceneId] = {
+        timelineIndex: runtime.timelineIndex || 0,
+        revealedChars: runtime.revealedChars || 0,
+    };
+}
+
+function restoreScenePlaybackState(sceneId) {
+    const saved = runtime?.scenePlayback?.[sceneId] || null;
+    runtime.timelineIndex = Math.max(0, saved?.timelineIndex || 0);
+    runtime.revealedChars = Math.max(0, saved?.revealedChars || 0);
+}
+
+function skipCompletedActiveActivities(scene) {
+    const timeline = sceneTimeline(scene);
+    runtime.timelineIndex = Math.max(0, Math.min(runtime.timelineIndex || 0, timeline.length));
+    while (runtime.timelineIndex < timeline.length) {
+        const item = timeline[runtime.timelineIndex];
+        if (!isTimelineActivity(item)) break;
+        const activityIndex = timelineActivityIndex(timeline, runtime.timelineIndex);
+        if (activityProgress(item, activityIndex) < activityCount(item)) break;
+        runtime.timelineIndex += 1;
+        runtime.revealedChars = 0;
+    }
 }
 
 function isSceneComplete(scene) {
@@ -237,7 +476,7 @@ function storyPetForActor(actor) {
     const template = actor.petTemplate || actor.pet || null;
     if (!template) return null;
     return {
-        id: actor.id || template.id || 'story_pet',
+        id: template.id || actor.sourcePetId || actor.petId || actor.id || 'story_pet',
         name: actor.name || template.name || '抱抱龙',
         stage: template.stage || 'adult',
         imageSheetUrl: template.imageSheetUrl || '',
@@ -254,7 +493,7 @@ function timelineActorId(actorId) {
     return actorId || '';
 }
 
-function stageCueStyle(cue, index, total) {
+function stageCueStyle(cue, index, total, isActive = false) {
     const text = String(cue || '').toLowerCase();
     let left = total <= 1 ? 50 : 28 + (44 * index / Math.max(1, total - 1));
     let bottom = 19;
@@ -268,6 +507,7 @@ function stageCueStyle(cue, index, total) {
     if (/开心|happy/.test(text)) mood = 'happy';
     if (/伤心|sad/.test(text)) mood = 'sad';
     if (/睡|sleep/.test(text)) mood = 'sleep';
+    if (isActive) { left = 50; bottom = 26; scale = Math.max(scale, 1.16); }
     return { left, bottom, scale, mood };
 }
 
@@ -276,17 +516,21 @@ function renderStageActors(timeline, activeItemIndex) {
     const activeItem = timeline?.[activeItemIndex] || null;
     const activeActorId = !isTimelineActivity(activeItem) ? timelineActorId(activeItem?.actor) : '';
     const activeCue = !isTimelineActivity(activeItem) ? splitStageText(activeItem?.text || activeItem?.say || '').cue : '';
+    const speechText = !isTimelineActivity(activeItem) ? revealText(activeSpeechText(activeItem), runtime?.revealedChars || 0) : '';
     const cast = actors.map((actor, index) => {
-        const cue = actor.id === activeActorId ? activeCue : '';
-        const style = stageCueStyle(cue, index, actors.length);
+        const speaking = actor.id === activeActorId;
+        const cue = speaking ? activeCue : '';
+        const style = stageCueStyle(cue, index, actors.length, speaking);
         const pet = storyPetForActor(actor);
         if (!pet) return '';
         return `
-            <div class="mh-story-stage-actor ${actor.id === activeActorId ? 'is-speaking' : ''} ${style.mood ? `is-${style.mood}` : ''}" style="left:${style.left}%;bottom:${style.bottom}%;--stage-scale:${style.scale}">
-                ${petArtHtml(pet, { alt: actor.name || pet.name || '', extraClass: actor.id === activeActorId ? 'pop-in' : 'floaty', requireProcessedTexture: false })}
+            <div class="mh-story-stage-actor pet-sprite ${speaking ? 'is-speaking' : ''} ${activeActorId && !speaking ? 'is-listening' : ''} ${style.mood ? `is-${style.mood}` : ''}" data-story-actor-stage="${escapeHtml(actor.id)}" style="left:${style.left}%;bottom:${style.bottom}%;--stage-scale:${style.scale}">
+                ${speaking ? `<div class="mh-story-speech-bubble"><span data-story-speech-text>${escapeHtml(speechText)}</span></div>` : ''}
+                ${petArtHtml(pet, { alt: actor.name || pet.name || '', extraClass: speaking ? 'pop-in' : 'floaty', requireProcessedTexture: true })}
+                <div class="mh-story-actor-foot-name">${escapeHtml(actor.name || pet.name || '角色')}</div>
             </div>`;
     }).join('');
-    return `<div class="mh-story-stage-cast ${activeActorId ? 'is-zooming' : ''}">${cast}</div>`;
+    return `<div class="mh-story-stage-cast ${activeActorId ? 'is-zooming is-interaction-locked' : ''}">${cast}</div>`;
 }
 
 function actorCard(actor, selected = false) {
@@ -299,10 +543,32 @@ function actorCard(actor, selected = false) {
         </button>`;
 }
 
-function renderLine(line) {
+function mountStoryActorPets(root) {
+    if (!root || !runtime?.story?.actors) return;
+    const petsById = new Map();
+    runtime.story.actors.forEach((actor) => {
+        const pet = storyPetForActor(actor);
+        if (pet?.id) petsById.set(String(pet.id), pet);
+    });
+    root.querySelectorAll('[data-mh-pet]').forEach((el) => {
+        const pet = petsById.get(el.getAttribute('data-mh-pet') || '');
+        if (!pet) return;
+        mountPetArt(el, pet);
+        const processed = getProcessedSheet(pet.imageSheetUrl || '');
+        if (processed?.status !== 'loaded' && processed?.promise && !el.__mhStoryRemountAfterProcess) {
+            el.__mhStoryRemountAfterProcess = true;
+            processed.promise.finally(() => {
+                el.__mhStoryRemountAfterProcess = false;
+                if (root.isConnected) mountStoryActorPets(root);
+            });
+        }
+    });
+}
+
+function renderLine(line, revealedChars = Infinity) {
     const actor = line.actor || null;
     const name = actor?.name || line.actorName || '旁白';
-    const text = visibleLineText(line.text || line.say || '');
+    const text = revealText(visibleLineText(line.text || line.say || ''), revealedChars);
     return `
         <div class="mh-story-line ${actor ? '' : 'is-narrator'}">
             <b>${escapeHtml(name)}</b>
@@ -329,9 +595,18 @@ function renderActivity(activity, index) {
         </div>`;
 }
 
-function activityIcon(activity) {
+function storyFeedFood(activity, activityIndex, pet = null) {
+    if (!runtime) return null;
+    const key = activityKey(activity, activityIndex);
+    if (!runtime.feedFoodItems[key]) {
+        runtime.feedFoodItems[key] = pickRandomPreferredFood(pet || storyPetForActor(selectedActor())) || null;
+    }
+    return runtime.feedFoodItems[key];
+}
+
+function activityIcon(activity, activityIndex) {
     const type = activity?.type || 'play';
-    if (type === 'feed') return '🍪';
+    if (type === 'feed') return storyFeedFood(activity, activityIndex)?.emoji || '🍪';
     if (type === 'bath' || type === 'clean') return '🫧';
     if (type === 'tap') return '👆';
     if (type === 'comfort') return '💗';
@@ -339,7 +614,7 @@ function activityIcon(activity) {
     return '✨';
 }
 
-function renderActionButton(activity, activityIndex) {
+function renderActionButton(activity, activityIndex, { current = false, locked = false } = {}) {
     if (!activity) return '<button type="button" class="btn-secondary" disabled>播放中...</button>';
     const type = activity?.type || 'play';
     const done = activityProgress(activity, activityIndex);
@@ -347,10 +622,82 @@ function renderActionButton(activity, activityIndex) {
     const left = Math.max(0, total - done);
     const title = activity.title || ACTIVITY_LABELS[type] || '互动';
     return `
-        <button type="button" class="btn-secondary action-btn dock-icon-btn mh-story-dock-action" data-story-activity="${activityIndex}" ${left <= 0 ? 'disabled' : ''}>
-            <span class="dock-icon">${activityIcon(activity)}</span>
-            <span class="dock-label">${escapeHtml(title)} × ${left}</span>
+        <button type="button" class="btn-secondary action-btn dock-icon-btn mh-story-dock-action ${type === 'feed' ? 'is-feed-action' : ''} ${current ? 'is-current' : ''} ${left <= 0 ? 'is-complete' : ''}" data-story-activity="${activityIndex}" ${locked ? 'disabled' : ''}>
+            <span class="dock-icon">${activityIcon(activity, activityIndex)}</span>
+            <span class="dock-label">${escapeHtml(title)} ${left <= 0 ? '✓' : `× ${left}`}</span>
         </button>`;
+}
+
+function renderHeroContinue(activeItem, canContinue, isLastScene) {
+    if (isTimelineActivity(activeItem)) return '';
+    const isLine = !!activeItem;
+    const label = isLine ? '点击继续' : '';
+    if (!label) return '';
+    const id = isLine ? 'mhStoryContinue' : 'mhStoryNext';
+    return `
+        <div class="mh-story-hero-continue">
+            <button type="button" class="mh-story-continue-hit" id="${id}" ${!isLine && !canContinue ? 'disabled' : ''}>
+                <span>${label}</span>
+            </button>
+        </div>`;
+}
+
+function renderStepButton(activeItem) {
+    if (!activeItem || isTimelineActivity(activeItem)) return '';
+    const fullLength = Array.from(activeSpeechText(activeItem)).length;
+    const animating = (runtime?.revealedChars || 0) < fullLength;
+    return `
+        <button type="button" class="btn-secondary action-btn dock-icon-btn mh-story-step-action ${animating ? 'is-highlight' : ''}" data-story-step>
+            <span class="dock-icon">›</span>
+            <span class="dock-label">下一步</span>
+        </button>`;
+}
+
+function renderStoryActionDock(scene, timeline, activeItem, activeActivityIndex, canContinue) {
+    const interactionsLocked = isDialogueActive();
+    const reachedActivities = sceneActivities(scene)
+        .map((activity, index) => ({ activity, index, timelineIndex: timelineIndexForActivity(timeline, index) }))
+        .filter(item => item.timelineIndex >= 0 && item.timelineIndex <= (runtime.timelineIndex || 0));
+    const actionButtons = reachedActivities
+        .map(item => renderActionButton(item.activity, item.index, { current: activeActivityIndex === item.index, locked: interactionsLocked }))
+        .join('');
+    const hasPrevious = runtime.sceneIndex > 0;
+    const isLastScene = runtime.sceneIndex >= runtime.story.scenes.length - 1;
+    const nextLabel = isLastScene ? '完成故事' : '下一页';
+    const rightControl = canContinue
+        ? `<button type="button" class="btn-primary dock-icon-btn mh-story-page-arrow is-next" data-story-next-page aria-label="${nextLabel}" title="${nextLabel}">›</button>`
+        : '<span class="mh-story-page-arrow mh-story-page-arrow-placeholder"></span>';
+    return `
+        <div class="mh-story-actions">
+            <button type="button" class="btn-secondary dock-icon-btn mh-story-page-arrow" data-story-prev-page ${hasPrevious ? '' : 'disabled'} aria-label="上一页" title="上一页">‹</button>
+            <div class="mh-story-action-strip">
+                ${actionButtons || '<span class="mh-story-action-placeholder"> </span>'}
+            </div>
+            ${rightControl}
+        </div>`;
+}
+
+function activeLineText(item) {
+    if (!item || isTimelineActivity(item)) return '';
+    const line = resolveLine(item);
+    const name = line?.actor?.name || line?.actorName || '旁白';
+    return `${name}：${visibleLineText(line?.text || line?.say || '')}`;
+}
+
+function activeSpeechText(item) {
+    if (!item || isTimelineActivity(item)) return '';
+    const line = resolveLine(item);
+    return visibleLineText(line?.text || line?.say || '');
+}
+
+function activeNarratorText(item) {
+    if (!item || isTimelineActivity(item)) return '';
+    if (timelineActorId(item.actor) || item.actor !== '$narrator') return '';
+    return revealText(activeSpeechText(item), runtime?.revealedChars || 0);
+}
+
+function isNarratorLine(item) {
+    return !!item && !isTimelineActivity(item) && item.actor === '$narrator';
 }
 
 function activeSubtitle(story, scene, timeline) {
@@ -359,9 +706,16 @@ function activeSubtitle(story, scene, timeline) {
     if (isTimelineActivity(item)) {
         return '';
     }
-    const line = resolveLine(item);
-    const name = line?.actor?.name || line?.actorName || '旁白';
-    return `${name}：${visibleLineText(line?.text || line?.say || '')}`;
+    return revealText(activeLineText(item), runtime.revealedChars || 0);
+}
+
+function updateActiveSpeechText(panel) {
+    if (!panel || !runtime) return;
+    const item = currentTimeline()[runtime.timelineIndex];
+    const text = revealText(activeSpeechText(item), runtime.revealedChars || 0);
+    panel.querySelectorAll('[data-story-speech-text]').forEach(el => { el.textContent = text; });
+    const narrator = panel.querySelector('[data-story-narrator-text]');
+    if (narrator) narrator.textContent = activeNarratorText(item);
 }
 
 function clearTimelineTimer() {
@@ -372,6 +726,7 @@ function clearTimelineTimer() {
 function resetScenePlayback() {
     clearTimelineTimer();
     runtime.timelineIndex = 0;
+    runtime.revealedChars = 0;
 }
 
 function scheduleTimelinePlayback(panel, options) {
@@ -380,25 +735,69 @@ function scheduleTimelinePlayback(panel, options) {
     const timeline = currentTimeline();
     const item = timeline[runtime.timelineIndex];
     if (!item || isTimelineActivity(item)) return;
+    const fullText = activeSpeechText(item);
+    if ((runtime.revealedChars || 0) >= Array.from(fullText).length) return;
     runtime.timelineTimer = setTimeout(() => {
         if (!runtime || runtime.finished) return;
+        runtime.revealedChars = Math.min(Array.from(fullText).length, (runtime.revealedChars || 0) + 1);
+        updateActiveSpeechText(panel);
+        scheduleTimelinePlayback(panel, options);
+    }, STORY_LINE_REVEAL_MS);
+}
+
+function continueTimelineLine(panel, options) {
+    if (!runtime || runtime.finished || runtime.pendingMinigame) return;
+    const timeline = currentTimeline();
+    const item = timeline[runtime.timelineIndex];
+    if (!item || isTimelineActivity(item)) return;
+    const fullLength = Array.from(activeSpeechText(item)).length;
+    if ((runtime.revealedChars || 0) < fullLength) {
+        runtime.revealedChars = fullLength;
+        updateActiveSpeechText(panel);
+        scheduleTimelinePlayback(panel, options);
+    } else {
         runtime.timelineIndex = Math.min(timeline.length, (runtime.timelineIndex || 0) + 1);
+        runtime.revealedChars = 0;
         renderStoryPlayer(panel, { story: runtime.story }, options);
-    }, STORY_LINE_ADVANCE_MS);
+    }
+}
+
+function isDialogueActive() {
+    if (!runtime || runtime.finished || runtime.pendingMinigame) return false;
+    const item = currentTimeline()[runtime.timelineIndex];
+    return !!item && !isTimelineActivity(item);
+}
+
+function isStoryPetSpeaking() {
+    if (!isDialogueActive()) return false;
+    const item = currentTimeline()[runtime.timelineIndex];
+    return !!timelineActorId(item?.actor);
 }
 
 function sceneIndexOf(sceneId) {
     return runtime.story.scenes.findIndex(scene => scene.id === sceneId);
 }
 
+function goPrev(panel, options) {
+    if (!runtime || runtime.sceneIndex <= 0) return;
+    saveScenePlaybackState();
+    const prevIndex = runtime.sceneIndex - 1;
+    runtime.sceneIndex = prevIndex;
+    runtime.sceneId = runtime.story.scenes[prevIndex].id;
+    restoreScenePlaybackState(runtime.sceneId);
+    renderStoryPlayer(panel, { story: runtime.story }, options);
+}
+
 function goNext(panel, options) {
     const scene = currentScene();
+    if (scene && !isSceneComplete(scene)) return;
+    saveScenePlaybackState();
     const explicitNext = scene?.nextSceneId;
     const nextIndex = explicitNext ? sceneIndexOf(explicitNext) : runtime.sceneIndex + 1;
     if (nextIndex >= 0 && nextIndex < runtime.story.scenes.length) {
         runtime.sceneIndex = nextIndex;
         runtime.sceneId = runtime.story.scenes[nextIndex].id;
-        resetScenePlayback();
+        restoreScenePlaybackState(runtime.sceneId);
         renderStoryPlayer(panel, { story: runtime.story }, options);
         return;
     }
@@ -412,24 +811,86 @@ function completeActivity(index, panel, options) {
     const activity = sceneActivities(scene)[index];
     if (!activity) return;
     const key = activityKey(activity, index);
-    runtime.activityProgress[key] = Math.min(activityCount(activity), (runtime.activityProgress[key] || 0) + 1);
-    if (runtime.activityProgress[key] >= activityCount(activity)) {
+    const previous = runtime.activityProgress[key] || 0;
+    const total = activityCount(activity);
+    runtime.activityProgress[key] = Math.min(total, previous + 1);
+    const timeline = currentTimeline();
+    const activityTimelineIndex = timelineIndexForActivity(timeline, index);
+    if (previous < total && runtime.activityProgress[key] >= total && runtime.timelineIndex === activityTimelineIndex) {
         runtime.timelineIndex = Math.min(currentTimeline().length, (runtime.timelineIndex || 0) + 1);
+        runtime.revealedChars = 0;
     }
     renderStoryPlayer(panel, { story: runtime.story }, options);
 }
 
-function runPetActivity(activity, panel, options, index) {
+function actorForActivity(activity) {
+    const actorId = activity?.actor || activity?.actorId || '$selected';
+    if (actorId === '$selected') return selectedActor();
+    return actorById(actorId) || selectedActor();
+}
+
+function petForActivity(activity) {
+    const actorPet = storyPetForActor(actorForActivity(activity));
+    return state.pets?.[actorPet?.id] || state.pets?.[state.currentPetId] || actorPet || null;
+}
+
+function petElementForActivity(activity, panel) {
+    const actor = actorForActivity(activity);
+    const actorEl = actor?.id
+        ? Array.from(panel.querySelectorAll('[data-story-actor-stage]')).find(el => el.dataset.storyActorStage === actor.id)
+        : null;
+    return actorEl || panel.querySelector('.mh-story-stage-actor.is-speaking') || panel.querySelector('.mh-story-stage-actor');
+}
+
+function petElementForActor(actor, panel) {
+    return actor?.id
+        ? Array.from(panel.querySelectorAll('[data-story-actor-stage]')).find(el => el.dataset.storyActorStage === actor.id)
+        : null;
+}
+
+function storyPetForFeedActor(actor) {
+    const actorPet = storyPetForActor(actor || selectedActor());
+    return state.pets?.[actorPet?.id] || actorPet || state.pets?.[state.currentPetId] || null;
+}
+
+async function runPetActivity(activity, panel, options, index, interactionOptions = {}) {
     const type = activity?.type || 'play';
-    const actionMap = { clean: 'bath', bath: 'bath', feed: 'feed', tap: 'play', comfort: 'play', play: 'play' };
-    const action = activity.actionKey && activity.actionKey !== 'minigame' ? activity.actionKey : (actionMap[type] || 'play');
-    const ok = options?.onPetAction?.(action, activity) !== false;
-    if (ok) {
-        setAnim(type === 'feed' || type === 'comfort' || type === 'tap' ? 'happy' : 'idle', 1200);
-        const line = activity.successText || (type === 'feed' ? '好吃！' : type === 'clean' || type === 'bath' ? '香香的！' : type === 'tap' ? '我收到你的轻拍啦！' : '我感觉好多啦');
-        requestAnimationFrame(() => say(line, 2200));
+    const pet = interactionOptions.targetPet || petForActivity(activity);
+    const petEl = interactionOptions.targetPetEl || petElementForActivity(activity, panel);
+    let ok = false;
+    let feedFoodItem = null;
+    if (type === 'feed') {
+        const onFeedItem = interactionOptions.onFeedItem || (interactionOptions.useFeedCallback === false ? null : options?.onFeedItem);
+        feedFoodItem = interactionOptions.foodItem || storyFeedFood(activity, index, pet);
+        ok = await runFeedInteraction({ pet, petEl, foodItem: feedFoodItem, onFeedItem, source: 'story' });
+    } else if (type === 'bath' || type === 'clean') {
+        ok = await runBathInteraction({ pet, petEl, stage: panel.querySelector('.mh-story-hero'), onAction: options?.onPetAction });
+    } else {
+        const action = activity.actionKey && activity.actionKey !== 'minigame' ? activity.actionKey : 'play';
+        ok = options?.onPetAction?.(action, activity) !== false;
+        if (ok && !interactionOptions.skipTouchFeedback) runTouchInteraction(petEl, pet);
     }
-    completeActivity(index, panel, options);
+    if (ok) {
+        const line = activity.successText || (type === 'feed' ? '好吃！' : type === 'clean' || type === 'bath' ? '香香的！' : type === 'tap' ? '我收到你的轻拍啦！' : '我感觉好多啦');
+        requestAnimationFrame(() => sayOnPet(petEl, line, 2200));
+        if (type === 'feed') await wait(foodEatDurationMs(feedFoodItem) + 160);
+        completeActivity(index, panel, options);
+    }
+}
+
+async function runFeedStoryActivity(activity, panel, options, index, { actor = null, showDragHint = false } = {}) {
+    const targetActor = actor || selectedActor();
+    const targetPet = storyPetForFeedActor(targetActor);
+    const targetPetEl = petElementForActor(targetActor, panel) || petElementForActivity(activity, panel);
+    const foodItem = storyFeedFood(activity, index, targetPet);
+    if (showDragHint) showToast('拖动可喂食', 'info', 1500);
+    await runPetActivity(activity, panel, options, index, {
+        targetPet,
+        targetPetEl,
+        foodItem,
+        useFeedCallback: !actor || targetActor?.id === selectedActor()?.id,
+        onFeedItem: actor && targetActor?.id !== selectedActor()?.id ? async () => true : null,
+    });
 }
 
 export function completeStoryMinigameActivity(result = {}) {
@@ -462,6 +923,9 @@ export function renderStoryPlayer(panel, data = {}, options = {}) {
             finished: false,
             pendingMinigame: null,
             storyBgMusicActive: false,
+            revealedChars: 0,
+            scenePlayback: {},
+            feedFoodItems: {},
         };
     }
     clearTimelineTimer();
@@ -473,17 +937,11 @@ export function renderStoryPlayer(panel, data = {}, options = {}) {
     const needsActorSelect = selectableActors.length > 1 && !runtime.actorConfirmed;
     syncSceneBgMusic(scene, { paused: needsActorSelect || runtime.finished });
     const mainPet = storyPetForActor(selectedActor());
+    skipCompletedActiveActivities(scene);
     const timeline = sceneTimeline(scene);
     runtime.timelineIndex = Math.max(0, Math.min(runtime.timelineIndex || 0, timeline.length));
-    const visibleTimeline = timeline.slice(0, Math.min(timeline.length, runtime.timelineIndex + 1));
     const activeItem = timeline[runtime.timelineIndex] || null;
     const activeActivityIndex = isTimelineActivity(activeItem) ? timelineActivityIndex(timeline, runtime.timelineIndex) : -1;
-    let renderActivityIndex = 0;
-    const renderTimelineItem = (item) => {
-        if (item?.kind === 'activity' || item?.type) return renderActivity(item, renderActivityIndex++);
-        const line = resolveLine(item);
-        return line ? renderLine(line) : '';
-    };
     const canContinue = scene ? isSceneComplete(scene) : true;
     const progressText = scene ? `${runtime.sceneIndex + 1}/${story.scenes.length}` : '完成';
     const endingText = story.ending?.subtitle || '故事完成啦。';
@@ -492,21 +950,29 @@ export function renderStoryPlayer(panel, data = {}, options = {}) {
         <style>
             ${sceneParticleCss()}
             .mh-story-root { position:absolute; inset:0; display:flex; flex-direction:column; background:linear-gradient(180deg,#e0f7ff 0%,#bae6fd 45%,#fef3c7 100%); color:var(--text-primary); }
-            .mh-story-stage { flex:1; min-height:0; overflow:auto; padding:14px; display:flex; flex-direction:column; gap:12px; }
-            .mh-story-hero { width:100%; max-width:360px; aspect-ratio:1/1; min-height:0; align-self:center; border-radius:18px; border:2px solid rgba(255,255,255,.78); background:var(--mh-story-scene-bg); background-size:cover; background-position:center; display:flex; align-items:center; justify-content:center; position:relative; overflow:hidden; box-shadow:var(--game-shadow-small); }
+            .mh-story-stage { flex:1; min-height:0; overflow:hidden; padding:0; display:flex; flex-direction:column; }
+            .mh-story-hero { flex:1; width:100%; max-width:none; min-height:0; align-self:stretch; border-radius:0; border:0; background:var(--mh-story-scene-bg); background-size:cover; background-position:center; display:flex; align-items:center; justify-content:center; position:relative; overflow:hidden; box-shadow:none; }
             .mh-story-hero.has-action { padding-bottom:64px; }
-            .mh-story-scene-label { position:absolute; top:10px; left:10px; z-index:4; border-radius:999px; background:rgba(255,255,255,.88); color:var(--accent-dark); font-size:12px; font-weight:900; padding:5px 9px; box-shadow:0 2px 8px rgba(15,39,71,.14); }
+            .mh-story-scene-label { display:none; }
             .mh-story-music-toggle { position:absolute; top:10px; right:10px; z-index:6; width:34px; height:34px; border-radius:11px; border:2px solid rgba(255,255,255,.92); background:rgba(14,165,233,.92); color:white; font-size:18px; font-weight:900; line-height:1; display:grid; place-items:center; box-shadow:0 4px 0 rgba(37,99,235,.34),0 8px 18px rgba(15,39,71,.16); }
             .mh-story-music-toggle.is-muted { background:rgba(255,255,255,.92); color:var(--accent-dark); }
             .mh-story-pet { width:min(220px,58vw); height:min(220px,58vw); display:block; position:relative; z-index:2; }
             .mh-story-stage-cast { position:absolute; inset:0; z-index:2; transform-origin:50% 54%; transition:transform .42s ease; }
             .mh-story-stage-cast.is-zooming { transform:scale(1.08); }
-            .mh-story-stage-actor { position:absolute; width:min(104px,30vw); height:min(104px,30vw); transform:translateX(-50%) scale(var(--stage-scale,1)); transform-origin:50% 100%; transition:left .38s ease,bottom .38s ease,transform .38s ease,filter .38s ease; }
+            .mh-story-stage-cast.is-interaction-locked .mh-story-stage-actor { pointer-events:none; }
+            .mh-story-stage-actor { position:absolute; width:min(128px,31vw); height:min(128px,31vw); transform:translateX(-50%) scale(var(--stage-scale,1)); transform-origin:50% 100%; transition:left .38s ease,bottom .38s ease,transform .38s ease,filter .38s ease; }
+            .mh-story-stage-actor [data-mh-pet] { pointer-events:none; }
             .mh-story-stage-actor.is-speaking { z-index:3; filter:drop-shadow(0 8px 10px rgba(14,116,144,.24)); transform:translateX(-50%) scale(calc(var(--stage-scale,1) * 1.16)); }
+            .mh-story-stage-actor.is-listening { opacity:.82; }
+            .mh-story-stage-actor.is-feed-target { filter:drop-shadow(0 0 16px rgba(250,204,21,.9)) drop-shadow(0 8px 10px rgba(14,116,144,.24)); transform:translateX(-50%) scale(calc(var(--stage-scale,1) * 1.18)); }
             .mh-story-stage-actor.is-sleep { opacity:.82; }
             .mh-story-stage-actor.is-sad { filter:saturate(.84) drop-shadow(0 6px 8px rgba(15,39,71,.18)); }
             .mh-story-stage-actor.is-happy { filter:saturate(1.14) drop-shadow(0 8px 10px rgba(14,116,144,.22)); }
-            .mh-story-subtitle { position:absolute; left:12px; right:12px; bottom:10px; padding:9px 11px; border-radius:14px; background:rgba(15,39,71,.78); color:white; font-size:14px; font-weight:800; line-height:1.35; text-align:center; z-index:3; }
+            .mh-story-subtitle { position:absolute; left:18px; right:18px; bottom:94px; padding:10px 12px; border-radius:14px; background:rgba(15,39,71,.78); color:white; font-size:15px; font-weight:800; line-height:1.35; text-align:center; z-index:3; }
+            .mh-story-speech-bubble { position:absolute; left:50%; bottom:calc(100% + 14px); z-index:5; min-width:132px; max-width:min(260px,74vw); transform:translateX(-50%); border-radius:18px; background:rgba(255,255,255,.9); color:#17324d; border:1.5px solid rgba(255,255,255,.78); box-shadow:0 10px 26px rgba(15,39,71,.18); padding:10px 12px; font-size:14px; line-height:1.35; font-weight:900; text-align:center; }
+            .mh-story-speech-bubble::after { content:''; position:absolute; left:50%; bottom:-8px; width:16px; height:16px; background:rgba(255,255,255,.9); border-right:1.5px solid rgba(255,255,255,.78); border-bottom:1.5px solid rgba(255,255,255,.78); transform:translateX(-50%) rotate(45deg); }
+            .mh-story-actor-foot-name { position:absolute; left:50%; top:calc(100% + 5px); transform:translateX(-50%); max-width:140px; border-radius:999px; background:rgba(15,39,71,.5); color:white; padding:4px 10px; font-size:12px; line-height:1; font-weight:900; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; box-shadow:0 4px 12px rgba(15,39,71,.12); }
+            .mh-story-narrator-bubble { position:absolute; left:50%; top:22%; z-index:4; transform:translateX(-50%); max-width:min(300px,82vw); border-radius:18px; background:rgba(255,255,255,.88); color:#17324d; border:1.5px solid rgba(255,255,255,.72); box-shadow:0 10px 26px rgba(15,39,71,.16); padding:11px 14px; font-size:15px; line-height:1.36; font-weight:900; text-align:center; }
             .mh-story-actors { display:flex; gap:9px; overflow-x:auto; padding-bottom:3px; }
             .mh-story-actor { flex:0 0 106px; border:1.5px solid var(--border-card); border-radius:14px; background:rgba(255,255,255,.86); padding:7px; display:flex; flex-direction:column; align-items:center; gap:4px; color:var(--text-primary); box-shadow:0 3px 0 rgba(14,116,144,.16); }
             .mh-story-actor.is-selected { border-color:var(--accent); background:#ecfeff; box-shadow:0 3px 0 rgba(37,99,235,.35),0 0 0 3px rgba(14,165,233,.15); }
@@ -523,16 +989,34 @@ export function renderStoryPlayer(panel, data = {}, options = {}) {
             .mh-story-task small { display:block; color:var(--text-muted); font-size:12px; margin-top:2px; }
             .mh-story-task-state { flex:0 0 auto; border-radius:999px; background:#effaff; color:var(--accent-dark); font-size:12px; font-weight:900; padding:6px 9px; }
             .mh-story-task.is-complete { border-color:rgba(16,185,129,.45); background:#ecfdf5; }
-            .mh-story-actions { flex:0 0 auto; display:flex; align-items:center; gap:8px; overflow-x:auto; padding:8px 14px max(10px,env(safe-area-inset-bottom)); background:rgba(239,250,255,.9); border-top:1px solid rgba(125,211,252,.58); }
+            .mh-story-actions { flex:0 0 auto; display:flex; align-items:center; gap:8px; overflow:hidden; padding:10px 14px max(12px,env(safe-area-inset-bottom)); background:linear-gradient(180deg,#7dd3fc 0%,#38bdf8 48%,#0ea5e9 100%); border-top:1px solid rgba(255,255,255,.54); box-shadow:inset 0 1px 0 rgba(255,255,255,.42),0 -8px 20px rgba(14,116,144,.16); }
             .mh-story-actions > button:not(.dock-icon-btn) { flex:1; }
-            .mh-story-actions .mh-story-dock-action { min-width:66px; height:54px; border-color:rgba(14,165,233,.48); background:linear-gradient(180deg,rgba(255,255,255,.7),rgba(255,255,255,.16)),linear-gradient(135deg,#ecfeff,#bae6fd); box-shadow:0 4px 0 rgba(14,116,144,.24),0 8px 16px rgba(15,39,71,.12),inset 0 1px 0 rgba(255,255,255,.85); }
+            .mh-story-action-strip { flex:1; min-width:0; display:flex; align-items:center; justify-content:flex-start; gap:8px; overflow-x:auto; overflow-y:hidden; padding:2px 0 5px; touch-action:pan-x; -webkit-overflow-scrolling:touch; overscroll-behavior-x:contain; scrollbar-width:none; }
+            .mh-story-action-strip::-webkit-scrollbar { display:none; }
+            .mh-story-action-placeholder { flex:1; min-width:24px; }
+            .mh-story-page-arrow { flex:0 0 44px; width:44px; height:44px; min-width:44px; border-radius:16px; font-size:25px; font-weight:900; line-height:1; display:grid; place-items:center; padding:0; background:rgba(239,250,255,.92); border-color:rgba(255,255,255,.74); color:var(--accent-dark); box-shadow:0 4px 0 rgba(14,116,144,.22),0 8px 16px rgba(15,39,71,.14),inset 0 1px 0 rgba(255,255,255,.9); }
+            .mh-story-page-arrow:disabled { opacity:.34; cursor:default; }
+            .mh-story-page-arrow-placeholder { visibility:hidden; }
+            .mh-story-hero-continue { position:absolute; left:12px; right:12px; bottom:max(12px,env(safe-area-inset-bottom)); z-index:6; min-height:88px; display:flex; align-items:flex-end; justify-content:center; }
+            .mh-story-continue-hit { width:100%; min-height:76px; border:0; background:transparent; box-shadow:none; padding:0 0 10px; display:flex; align-items:flex-end; justify-content:center; cursor:pointer; }
+            .mh-story-continue-hit span { min-width:116px; border-radius:999px; background:rgba(15,39,71,.52); color:white; border:1px solid rgba(255,255,255,.42); box-shadow:0 4px 14px rgba(15,39,71,.16); padding:9px 18px; font-size:13px; font-weight:900; line-height:1; pointer-events:none; }
+            .mh-story-continue-hit:disabled { opacity:.55; cursor:default; }
+            .mh-story-actions .mh-story-dock-action { flex:0 0 auto; min-width:66px; height:54px; border-color:rgba(14,165,233,.48); background:linear-gradient(180deg,rgba(255,255,255,.7),rgba(255,255,255,.16)),linear-gradient(135deg,#ecfeff,#bae6fd); box-shadow:0 4px 0 rgba(14,116,144,.24),0 8px 16px rgba(15,39,71,.12),inset 0 1px 0 rgba(255,255,255,.85); }
+            .mh-story-actions .mh-story-dock-action.is-feed-action { touch-action:none; user-select:none; -webkit-user-select:none; -webkit-user-drag:none; }
+            .mh-story-actions .mh-story-dock-action.is-dragging-feed { opacity:.72; transform:translateY(2px); }
+            .mh-story-actions .mh-story-dock-action.is-current { border-color:rgba(37,99,235,.74); box-shadow:0 4px 0 rgba(37,99,235,.34),0 0 0 3px rgba(14,165,233,.2),0 8px 16px rgba(15,39,71,.12),inset 0 1px 0 rgba(255,255,255,.85); }
+            .mh-story-actions .mh-story-dock-action.is-complete { background:linear-gradient(180deg,rgba(255,255,255,.72),rgba(255,255,255,.2)),linear-gradient(135deg,#ecfdf5,#bbf7d0); border-color:rgba(16,185,129,.55); }
+            .mh-story-actions .mh-story-step-action { flex:0 0 68px; min-width:68px; width:68px; height:54px; border-color:rgba(245,158,11,.62); background:linear-gradient(180deg,rgba(255,255,255,.72),rgba(255,255,255,.18)),linear-gradient(135deg,#fff7ed,#fde68a); box-shadow:0 4px 0 rgba(217,119,6,.24),0 8px 16px rgba(15,39,71,.12),inset 0 1px 0 rgba(255,255,255,.85); }
+            .mh-story-actions .mh-story-step-action.is-highlight { animation:mhStoryStepPulse 1s ease-in-out infinite; }
+            @keyframes mhStoryStepPulse { 0%,100% { transform:translateY(0); box-shadow:0 4px 0 rgba(217,119,6,.24),0 8px 16px rgba(15,39,71,.12),0 0 0 0 rgba(245,158,11,.32); } 50% { transform:translateY(-2px); box-shadow:0 5px 0 rgba(217,119,6,.24),0 10px 18px rgba(15,39,71,.14),0 0 0 5px rgba(245,158,11,.18); } }
             .mh-story-actions .mh-story-dock-action .dock-icon { font-size:18px; }
             .mh-story-actions .mh-story-dock-action .dock-label { max-width:58px; font-size:10.5px; font-weight:900; color:var(--accent-dark); }
-            .mh-story-hero-action { position:absolute; left:10px; right:10px; bottom:8px; z-index:5; display:flex; align-items:center; gap:8px; overflow-x:auto; }
+            .mh-story-hero-action { position:absolute; left:12px; right:12px; bottom:max(12px,env(safe-area-inset-bottom)); z-index:5; display:flex; align-items:center; justify-content:center; gap:8px; overflow-x:auto; min-height:82px; }
             .mh-story-hero-action .mh-story-dock-action { min-width:66px; height:54px; border-color:rgba(14,165,233,.48); background:linear-gradient(180deg,rgba(255,255,255,.7),rgba(255,255,255,.16)),linear-gradient(135deg,#ecfeff,#bae6fd); box-shadow:0 4px 0 rgba(14,116,144,.24),0 8px 16px rgba(15,39,71,.12),inset 0 1px 0 rgba(255,255,255,.85); }
             .mh-story-hero-action .mh-story-dock-action .dock-icon { font-size:18px; }
             .mh-story-hero-action .mh-story-dock-action .dock-label { max-width:58px; font-size:10.5px; font-weight:900; color:var(--accent-dark); }
             .mh-story-fallback-art { font-size:34px; font-weight:900; color:var(--accent-dark); }
+            .mh-story-feed-drag-ghost { position:fixed; z-index:99999; left:0; top:0; width:54px; height:54px; margin:-27px 0 0 -27px; border-radius:18px; display:grid; place-items:center; pointer-events:none; font-size:30px; background:rgba(255,255,255,.9); border:2px solid rgba(250,204,21,.86); box-shadow:0 10px 24px rgba(15,39,71,.22),0 0 0 5px rgba(250,204,21,.18); transform:translateZ(0); }
         </style>
         <div class="mh-story-root">
             <div class="topbar">
@@ -551,19 +1035,15 @@ export function renderStoryPlayer(panel, data = {}, options = {}) {
                     <div class="mh-story-hero ${isTimelineActivity(activeItem) ? 'has-action' : ''}" style="--mh-story-scene-bg:${escapeHtml(sceneBackground(scene))}">
                         ${renderSceneParticles(scene)}
                         ${renderMusicToggleButton(sceneBgMusic(scene))}
-                        <div class="mh-story-scene-label">第${runtime.sceneIndex + 1}幕</div>
                         ${renderStageActors(timeline, runtime.timelineIndex)}
-                        ${activeSubtitle(story, scene, timeline) ? `<div class="mh-story-subtitle">${escapeHtml(activeSubtitle(story, scene, timeline))}</div>` : ''}
-                        ${isTimelineActivity(activeItem) ? `<div class="mh-story-hero-action">${renderActionButton(activeItem, activeActivityIndex)}</div>` : ''}
-                    </div>
-                    <div style="display:flex;flex-direction:column;gap:8px">
-                        ${visibleTimeline.length ? visibleTimeline.map(renderTimelineItem).join('') : '<div class="mh-story-line is-narrator"><b>故事</b><span>这一幕开始了。</span></div>'}
+                        ${isNarratorLine(activeItem) ? `<div class="mh-story-narrator-bubble"><span data-story-narrator-text>${escapeHtml(activeNarratorText(activeItem))}</span></div>` : ''}
+                        ${renderHeroContinue(activeItem, canContinue, runtime.sceneIndex >= story.scenes.length - 1)}
                     </div>
                 `}
             </div>
-            ${runtime.finished || needsActorSelect || !isTimelineActivity(activeItem) ? `<div class="mh-story-actions">
-                ${runtime.finished ? `<button class="btn-primary" id="mhStoryClaim">带它回家</button>` : needsActorSelect ? `<button class="btn-primary" id="mhStoryStart">开始故事</button>` : `<button class="btn-primary" id="mhStoryNext" ${canContinue ? '' : 'disabled'}>${canContinue ? (runtime.sceneIndex >= story.scenes.length - 1 ? '完成故事' : '下一幕') : '播放中...'}</button>`}
-            </div>` : ''}
+            ${runtime.finished || needsActorSelect ? `<div class="mh-story-actions">
+                ${runtime.finished ? `<button class="btn-primary" id="mhStoryClaim">带它回家</button>` : `<button class="btn-primary" id="mhStoryStart">开始故事</button>`}
+            </div>` : renderStoryActionDock(scene, timeline, activeItem, activeActivityIndex, canContinue)}
         </div>`;
 
     $('mhStoryBack').onclick = () => options.onBack?.();
@@ -579,7 +1059,32 @@ export function renderStoryPlayer(panel, data = {}, options = {}) {
         renderStoryPlayer(panel, { story }, options);
     };
     if ($('mhStoryNext')) $('mhStoryNext').onclick = () => goNext(panel, options);
+    if ($('mhStoryContinue')) $('mhStoryContinue').onclick = () => continueTimelineLine(panel, options);
     if ($('mhStoryClaim')) $('mhStoryClaim').onclick = () => options.onRaisePet?.(story, selectedActor());
+    panel.querySelector('[data-story-step]')?.addEventListener('click', () => continueTimelineLine(panel, options));
+    panel.querySelector('[data-story-prev-page]')?.addEventListener('click', () => goPrev(panel, options));
+    panel.querySelector('[data-story-next-page]')?.addEventListener('click', () => goNext(panel, options));
+    panel.querySelectorAll('[data-story-actor-stage]').forEach(el => {
+        el.onclick = (e) => {
+            if (isStoryPetSpeaking()) return;
+            e.preventDefault();
+            e.stopPropagation();
+            const actor = actorById(el.dataset.storyActorStage) || selectedActor();
+            const pet = state.pets?.[storyPetForActor(actor)?.id] || storyPetForActor(actor);
+            runTouchInteraction(el, pet);
+            const item = currentTimeline()[runtime.timelineIndex];
+            if (isTimelineActivity(item)) {
+                const activityIndex = timelineActivityIndex(currentTimeline(), runtime.timelineIndex);
+                const activity = sceneActivities(currentScene())[activityIndex];
+                if (activity && ['tap', 'comfort', 'play'].includes(activity.type || 'play')) runPetActivity(activity, panel, options, activityIndex, { skipTouchFeedback: true });
+            }
+        };
+    });
+    panel.querySelector('.mh-story-root')?.addEventListener('click', (e) => {
+        if (!isDialogueActive()) return;
+        if (e.target.closest?.('button,input,select,textarea,a,[data-story-actor],[data-story-activity],[data-story-music-toggle]')) return;
+        continueTimelineLine(panel, options);
+    });
     panel.querySelector('[data-story-music-toggle]')?.addEventListener('click', (e) => {
         e.preventDefault();
         e.stopPropagation();
@@ -589,19 +1094,28 @@ export function renderStoryPlayer(panel, data = {}, options = {}) {
         renderStoryPlayer(panel, { story }, options);
     });
     panel.querySelectorAll('[data-story-activity]').forEach(btn => {
-        btn.onclick = () => {
-            const index = Number(btn.dataset.storyActivity) || 0;
-            const activity = sceneActivities(currentScene())[index];
+        const index = Number(btn.dataset.storyActivity) || 0;
+        const activity = sceneActivities(currentScene())[index];
+        if (activity?.type === 'feed') bindStoryFeedDrag(btn, activity, panel, options, index);
+        btn.onclick = async () => {
+            if (btn.disabled || isDialogueActive()) return;
+            if (Date.now() - (btn.__mhStoryFeedDragHandledAt || 0) < 350) return;
             if (!activity) return;
             if (activity.type === 'minigame') {
                 runtime.pendingMinigame = { index, activity };
                 options.onLaunchMinigame?.(activity);
                 return;
             }
-            runPetActivity(activity, panel, options, index);
+            btn.disabled = true;
+            try {
+                if (activity.type === 'feed') await runFeedStoryActivity(activity, panel, options, index, { showDragHint: true });
+                else await runPetActivity(activity, panel, options, index);
+            }
+            finally { if (btn.isConnected) btn.disabled = false; }
         };
     });
     ParticleEffects.getInstance().mountAll(panel);
+    mountStoryActorPets(panel);
     scanAndMount(panel);
     if (!needsActorSelect) scheduleTimelinePlayback(panel, options);
 }

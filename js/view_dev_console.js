@@ -1,4 +1,4 @@
-// 由设置页在本机开发环境中按需加载。
+// 由设置页在本机开发环境或隐藏开发者模式中按需加载。
 import { SHOP_ITEMS, CONFIG, getStageName } from './config.js';
 import { state, notify, getCurrentPet, subscribe } from './state.js';
 import { addToInventory, savePet, savePetDebounced, saveUserProfileDebounced } from './storage.js';
@@ -26,7 +26,7 @@ export function openDevConsole({ expanded = true } = {}) {
 }
 
 export function isDevConsoleAllowed() {
-    return typeof window !== 'undefined' && HOST_ALLOWLIST.has(window.location.hostname);
+    return typeof window !== 'undefined' && (HOST_ALLOWLIST.has(window.location.hostname) || state.settings?.developerMode === true);
 }
 
 function mountDevConsole() {
@@ -73,7 +73,7 @@ function renderConsoleHtml() {
             <div class="mh-dev-titlebar">
                 <div class="mh-dev-title">
                     <strong>开发者面板</strong>
-                    <span>仅本机生效</span>
+                    <span>开发者模式</span>
                 </div>
                 <button class="mh-dev-close" type="button" data-dev-action="close" aria-label="关闭开发者面板">×</button>
             </div>

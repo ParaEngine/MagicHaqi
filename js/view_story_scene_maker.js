@@ -536,8 +536,16 @@ export async function renderStorySceneMaker(panel, data = {}, { onBack, onApplyS
     }
 
     function bindEvents() {
-        panel.querySelector('#mhSceneMakerBack').onclick = () => onBack?.();
-        panel.querySelector('#mhSceneMakerApply').onclick = applySelected;
+        panel.querySelector('#mhSceneMakerBack').onclick = (e) => {
+            e.preventDefault();
+            e.stopPropagation();
+            onBack?.();
+        };
+        panel.querySelector('#mhSceneMakerApply').onclick = (e) => {
+            e.preventDefault();
+            e.stopPropagation();
+            applySelected();
+        };
         panel.querySelector('[data-scene-music-toggle]')?.addEventListener('click', (e) => {
             e.stopPropagation();
             if (!draftScene.bgMusic) return;

@@ -61,6 +61,58 @@ function randomChar() {
     return ALPHABET[Math.floor(Math.random() * ALPHABET.length)];
 }
 
+function normalizeTraitText(value) {
+    return String(value || '').toLowerCase().replace(/\s+/g, '');
+}
+
+function scoreTraitTextMatch(input, candidate) {
+    const source = normalizeTraitText(input);
+    const target = normalizeTraitText(candidate);
+    if (!source && !target) return 1;
+    if (!source || !target) return 0;
+    if (source === target) return 10000 + target.length;
+    if (source.includes(target) || target.includes(source)) return 5000 + Math.min(source.length, target.length);
+    const sourceChars = [...source];
+    const targetChars = [...target];
+    const used = new Array(targetChars.length).fill(false);
+    let score = 0;
+    sourceChars.forEach((ch, sourceIndex) => {
+        const targetIndex = targetChars.findIndex((targetCh, index) => !used[index] && targetCh === ch);
+        if (targetIndex < 0) return;
+        used[targetIndex] = true;
+        score += 10;
+        if (sourceIndex === targetIndex) score += 1;
+    });
+    return score;
+}
+
+function bestTraitIndex(value, list) {
+    const choices = Array.isArray(list) && list.length ? list : [''];
+    let bestIndex = 0;
+    let bestScore = -1;
+    choices.forEach((candidate, index) => {
+        const score = scoreTraitTextMatch(value, candidate);
+        if (score > bestScore) {
+            bestScore = score;
+            bestIndex = index;
+        }
+    });
+    return bestIndex;
+}
+
+function segmentForTraitIndex(index, listLength) {
+    const size = Math.max(1, Number(listLength) || 1);
+    const target = ((Number(index) || 0) % size + size) % size;
+    for (let a = 0; a < ALPHABET.length; a++) {
+        for (let b = 0; b < ALPHABET.length; b++) {
+            for (let c = 0; c < ALPHABET.length; c++) {
+                if ((a * 7 + b * 3 + c) % size === target) return ALPHABET[a] + ALPHABET[b] + ALPHABET[c];
+            }
+        }
+    }
+    return ALPHABET[0] + ALPHABET[0] + ALPHABET[target % ALPHABET.length];
+}
+
 export function randomDna() {
     let s = '';
     for (let i = 0; i < SEGMENT_KEYS.length * SEGMENT_LEN; i++) s += randomChar();
@@ -203,6 +255,27 @@ export function decodeDna(dna) {
         traits[key] = list[sum % list.length];
     });
     return traits;
+}
+
+export function traitsToDna(traits = {}) {
+    const source = traits && typeof traits === 'object' && !Array.isArray(traits) ? traits : {};
+    const elementIndex = bestTraitIndex(source.element, ELEMENTS);
+    const element = ELEMENTS[elementIndex] || ELEMENTS[0];
+    const speciesList = SPECIES_BY_ELEMENT[element] || SPECIES_BY_ELEMENT[ELEMENTS[0]];
+    const indexes = {
+        element: elementIndex,
+        species: bestTraitIndex(source.species, speciesList),
+        color: bestTraitIndex(source.color, TRAIT_TABLE.color),
+        eyes: bestTraitIndex(source.eyes, TRAIT_TABLE.eyes),
+        accessory: bestTraitIndex(source.accessory, TRAIT_TABLE.accessory),
+        elementalAttribute: bestTraitIndex(source.elementalAttribute, ELEMENTAL_ATTRIBUTES),
+    };
+    return SEGMENT_KEYS.map(key => {
+        const list = key === 'species'
+            ? speciesList
+            : (key === 'element' ? ELEMENTS : TRAIT_TABLE[key]);
+        return segmentForTraitIndex(indexes[key], list.length);
+    }).join('');
 }
 
 export function dnaDietPreference(dna) {

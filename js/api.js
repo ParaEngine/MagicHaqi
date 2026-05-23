@@ -44,11 +44,14 @@ export async function genPetSheet(dna, name = '', options = {}) {
     const referenceImage = (options && typeof options.referenceImage === 'string')
         ? options.referenceImage.trim()
         : '';
+    const traits = options && options.traits && typeof options.traits === 'object' && !Array.isArray(options.traits)
+        ? options.traits
+        : undefined;
     // 背景使用纯黑色 #000000，配合 pet.js 的 createBorderedTexture 风格抠图（HSL flood-fill）。
     // 与 MapCopilot.genGeoCultureGridImage 同款管线 —— prompt 端要求纯黑背景，浏览器端
     // 用 lightness/saturation 双阈值从格子边缘做 flood fill，得到带透明通道的精灵。
     const { buildPetSheetPrompt } = await import('./generationPrompts.js');
-    const prompt = buildPetSheetPrompt(dna, name, { customPrompt, referenceImage });
+    const prompt = buildPetSheetPrompt(dna, name, { customPrompt, referenceImage, traits });
     try {
         const url = await state.sdk.aiGenerators.genImage(prompt, {
             width: CONFIG.imageWidth,

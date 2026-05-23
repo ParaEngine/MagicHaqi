@@ -6,6 +6,11 @@ import { saveUserProfile } from './storage.js';
 import { CONFIG } from './config.js';
 
 let workspaceViewerInstance = null;
+let logoTapCount = 0;
+let logoTapResetTimer = null;
+
+const LOGO_DEV_MODE_TAP_COUNT = 5;
+const LOGO_DEV_MODE_TAP_RESET_MS = 1600;
 
 function getKeepworkUsername(user) {
     return user?.username || '';
@@ -30,8 +35,49 @@ async function refreshSettingsUsername(panel) {
     } catch (_) {}
 }
 
+function isDeveloperMode() {
+    return state.settings?.developerMode === true;
+}
+
+function getDevToolUrl(fileName) {
+    if (typeof window === 'undefined') return '';
+    return new URL(`./dev_tools/${fileName}`, window.location.href).href;
+}
+
+function openDevTool(fileName, title) {
+    const url = getDevToolUrl(fileName);
+    if (!url) return false;
+    const opened = window.open(url, '_blank');
+    if (opened) {
+        try { opened.opener = null; } catch (_) {}
+        showToast(`${title}已打开`, 'success', 1200);
+        return true;
+    }
+    showToast('新窗口被浏览器拦截，请允许弹出窗口', 'error', 2200);
+    return false;
+}
+
+async function handleLogoTap(panel, data, options) {
+    if (isDeveloperMode()) return;
+    logoTapCount += 1;
+    if (logoTapResetTimer) clearTimeout(logoTapResetTimer);
+    logoTapResetTimer = setTimeout(() => { logoTapCount = 0; }, LOGO_DEV_MODE_TAP_RESET_MS);
+    if (logoTapCount < LOGO_DEV_MODE_TAP_COUNT) return;
+
+    logoTapCount = 0;
+    clearTimeout(logoTapResetTimer);
+    logoTapResetTimer = null;
+    state.settings = state.settings || {};
+    state.settings.developerMode = true;
+    await saveUserProfile();
+    notify();
+    showToast('开发者模式已开启', 'success', 1400);
+    renderSettings(panel, data, options);
+}
+
 export function renderSettings(panel, _data, { onBack, onLogout, onClearData } = {}) {
-    const canOpenDevPanel = typeof window !== 'undefined' && ['127.0.0.1', 'localhost'].includes(window.location.hostname);
+    const canOpenDevPanel = (typeof window !== 'undefined' && ['127.0.0.1', 'localhost'].includes(window.location.hostname)) || isDeveloperMode();
+    const developerMode = canOpenDevPanel;
     const username = getDisplayUsername();
     const autoShowLevelBar = state.settings?.autoShowLevelBar === true;
     const hasLocalAPIKeySettings = !!(state.sdk || window.keepwork)?.localAPIKeySettings;
@@ -41,7 +87,7 @@ export function renderSettings(panel, _data, { onBack, onLogout, onClearData } =
         try {
             const { openDevConsole } = await import('./view_dev_console.js');
             const opened = openDevConsole?.({ expanded: true });
-            showToast(opened ? '开发者面板已打开' : '开发者面板仅本机可用', opened ? 'success' : 'error', 1200);
+            showToast(opened ? '开发者面板已打开' : '开发者面板不可用', opened ? 'success' : 'error', 1200);
         } catch (e) {
             showToast('开发者面板加载失败：' + (e?.message || e), 'error', 2200);
         } finally {
@@ -100,6 +146,21 @@ export function renderSettings(panel, _data, { onBack, onLogout, onClearData } =
                 </div>
                 <button id="mhOpenWorkspaceViewer" class="btn-secondary">查看</button>
             </div>` : ''}
+            ${developerMode ? `
+            <div class="card-flat" style="display:flex;justify-content:space-between;align-items:center;gap:12px">
+                <div>
+                    <div style="font-size:14px;font-weight:700">🧬 AI宠物编辑器</div>
+                    <div style="font-size:11px;color:var(--text-muted)">打开 Pet Generator</div>
+                </div>
+                <button id="mhOpenPetGenerator" class="btn-secondary">打开</button>
+            </div>
+            <div class="card-flat" style="display:flex;justify-content:space-between;align-items:center;gap:12px">
+                <div>
+                    <div style="font-size:14px;font-weight:700">🗺 AI场景编辑器</div>
+                    <div style="font-size:11px;color:var(--text-muted)">打开 Scene Generator</div>
+                </div>
+                <button id="mhOpenSceneGenerator" class="btn-secondary">打开</button>
+            </div>` : ''}
             <div class="card-flat" style="display:flex;justify-content:space-between;align-items:center;gap:12px">
                 <div>
                     <div style="font-size:14px;font-weight:700">🔑 本地 API Key</div>
@@ -138,7 +199,7 @@ export function renderSettings(panel, _data, { onBack, onLogout, onClearData } =
                 <span style="font-size:14px;color:#b91c1c">🗑 ${escapeHtml(t('clearData'))}</span>
                 <button id="mhClear" class="btn-danger">${escapeHtml(t('clearData'))}</button>
             </div>
-            <div class="text-center text-xs mt-4" style="color:rgba(255,255,255,0.78);text-shadow:0 1px 2px rgba(15,23,42,0.28)">${escapeHtml(t('appName'))} · v0.1</div>
+            <div id="mhSettingsLogo" class="text-center text-xs mt-4" role="button" tabindex="0" style="color:rgba(255,255,255,0.78);text-shadow:0 1px 2px rgba(15,23,42,0.28);cursor:pointer;touch-action:manipulation">${escapeHtml(t('appName'))} · v0.1</div>
         </div>`;
     if (canOpenDevPanel) {
         panel.oncontextmenu = (e) => {
@@ -156,6 +217,8 @@ export function renderSettings(panel, _data, { onBack, onLogout, onClearData } =
         renderSettings(panel, _data, { onBack, onLogout, onClearData });
     };
     if ($('mhOpenDevPanel')) $('mhOpenDevPanel').onclick = () => openDevPanel($('mhOpenDevPanel'));
+    if ($('mhOpenPetGenerator')) $('mhOpenPetGenerator').onclick = () => openDevTool('FamousPetGenerator.html', 'AI宠物编辑器');
+    if ($('mhOpenSceneGenerator')) $('mhOpenSceneGenerator').onclick = () => openDevTool('ScenePresetsGenerator.html', 'AI场景编辑器');
     if ($('mhOpenLocalAPIKeySettings')) $('mhOpenLocalAPIKeySettings').onclick = () => openLocalAPIKeySettings($('mhOpenLocalAPIKeySettings'));
     if ($('mhOpenWorkspaceViewer')) $('mhOpenWorkspaceViewer').onclick = () => {
         try {
@@ -198,6 +261,14 @@ export function renderSettings(panel, _data, { onBack, onLogout, onClearData } =
         const ok = await confirmDialog(t('clearConfirm'));
         if (ok) onClearData?.();
     };
+    if ($('mhSettingsLogo')) {
+        $('mhSettingsLogo').onclick = () => handleLogoTap(panel, _data, { onBack, onLogout, onClearData });
+        $('mhSettingsLogo').onkeydown = (event) => {
+            if (event.key !== 'Enter' && event.key !== ' ') return;
+            event.preventDefault();
+            handleLogoTap(panel, _data, { onBack, onLogout, onClearData });
+        };
+    }
     refreshSettingsUsername(panel);
 }
 

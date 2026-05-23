@@ -447,6 +447,24 @@
     z-index: 13;
 }
 
+@keyframes mhStoryFeedEmoji {
+    0%   { opacity: 0; transform: translate(-50%, -2px) scale(0.68) rotate(-8deg); }
+    15%  { opacity: 1; transform: translate(-50%, -24px) scale(1.12) rotate(4deg); }
+    78%  { opacity: 1; transform: translate(-50%, -30px) scale(1) rotate(-2deg); }
+    100% { opacity: 0; transform: translate(-50%, -36px) scale(0.72) rotate(8deg); }
+}
+.mh-story-feed-emoji {
+    position: absolute;
+    left: 50%;
+    top: 18%;
+    z-index: 13;
+    font-size: 32px;
+    line-height: 1;
+    pointer-events: none;
+    filter: drop-shadow(0 4px 6px rgba(120, 53, 15, 0.24));
+    animation: mhStoryFeedEmoji var(--mh-story-feed-duration, 3.2s) ease-in-out forwards;
+}
+
 @keyframes mhFoodStatFloat {
     0%   { opacity: 0; transform: translate(calc(-50% + var(--mh-stat-x, 0px)), 4px) scale(0.72); }
     16%  { opacity: 1; transform: translate(calc(-50% + var(--mh-stat-x, 0px)), -18px) scale(1.06); }
@@ -487,6 +505,21 @@
     pointer-events: none;
     animation: mhServingFoodIdle 1.25s ease-in-out infinite;
     filter: drop-shadow(0 10px 14px rgba(120, 53, 15, 0.26));
+}
+.mh-story-serving-food.mh-room-furniture.mh-serving-food {
+    position: absolute;
+    left: 50%;
+    top: 24%;
+    width: 62px;
+    height: 62px;
+    z-index: 14;
+    display: block;
+    font-size: 0;
+}
+.mh-story-serving-food .mh-food-svg {
+    width: 78%;
+    height: 78%;
+    margin: auto;
 }
 @keyframes mhServingFoodSliceEat {
     0% {
