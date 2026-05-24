@@ -16,6 +16,8 @@ export const POSTCARD_PHOTO_THEMES = [
     { id: 'garden', colors: ['#dcfce7', '#bbf7d0', '#ecfccb', '#ccfbf1'], canvas: [['#dcfce7', '#bbf7d0'], ['#ecfccb', '#fde68a'], ['#ccfbf1', '#bae6fd'], ['#f0fdf4', '#d9f99d']] },
 ];
 const FAMOUS_PETS_PREFIX = 'famous-pets/';
+let famousPetsIndexCache = null;
+let famousPetsIndexPromise = null;
 
 export function isFamousPetId(petId) {
     return String(petId || '').trim().startsWith(FAMOUS_PETS_PREFIX);
@@ -220,9 +222,66 @@ async function readFamousPetText(localId, jsonUrl) {
     }
 }
 
+async function readFamousPetsIndexText(indexUrl) {
+    try {
+        const response = await fetch(indexUrl.href, { cache: 'no-cache' });
+        if (response.ok) return await response.text();
+    } catch (_) {}
+
+    const base = state.sdk?.personalPageStore;
+    if (!base?.readFile) return '';
+    const store = (typeof base.withWorkspace === 'function') ? base.withWorkspace(CONFIG.workspace) : base;
+    try { return (await store.readFile('famous-pets/index.json', 1, 99999)) || ''; }
+    catch (_) {
+        try { return (await store.readFile('famous-pets/index.json')) || ''; }
+        catch (__) { return ''; }
+    }
+}
+
+async function loadFamousPetsIndex(indexUrl) {
+    if (Array.isArray(famousPetsIndexCache)) return famousPetsIndexCache;
+    if (!famousPetsIndexPromise) {
+        famousPetsIndexPromise = (async () => {
+            const text = await readFamousPetsIndexText(indexUrl);
+            if (!text) return [];
+            const data = JSON.parse(text);
+            return Array.isArray(data) ? data : (Array.isArray(data?.pets) ? data.pets : []);
+        })()
+            .then(list => {
+                famousPetsIndexCache = list.filter(item => item && typeof item === 'object');
+                return famousPetsIndexCache;
+            })
+            .catch((e) => {
+                console.warn('读取明星宠物索引失败', e);
+                famousPetsIndexCache = [];
+                return famousPetsIndexCache;
+            })
+            .finally(() => { famousPetsIndexPromise = null; });
+    }
+    return famousPetsIndexPromise;
+}
+
+async function readFamousPetFromIndex(localId, petId) {
+    const indexUrl = new URL('../famous-pets/index.json', import.meta.url);
+    const list = await loadFamousPetsIndex(indexUrl);
+    const entry = list.find(item => String(item?.id || '').trim() === localId);
+    if (!entry) return null;
+    const id = String(entry.id || localId).trim() || localId;
+    return {
+        ...entry,
+        id: `invite_famous_${safeIdPart(id)}`,
+        source: 'famous-pets',
+        sourcePetId: petId,
+        imageUrl: resolveFamousPetAssetUrl(entry.imageUrl, indexUrl.href) || null,
+        imageSheetUrl: resolveFamousPetAssetUrl(entry.imageSheetUrl, indexUrl.href) || null,
+    };
+}
+
 async function readFamousPet(petId) {
     const localId = famousPetLocalId(petId);
     if (!localId) return null;
+    const indexPet = await readFamousPetFromIndex(localId, petId);
+    if (indexPet) return indexPet;
     const jsonUrl = new URL(`../famous-pets/${localId}.json`, import.meta.url);
     try {
         const text = await readFamousPetText(localId, jsonUrl);

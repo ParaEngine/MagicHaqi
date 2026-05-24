@@ -32,9 +32,12 @@
       .status.error { @apply border-red-200 bg-red-50 text-red-800; }
       .status-action { @apply min-h-0 border-0 bg-transparent p-0 font-bold underline underline-offset-2 hover:border-transparent hover:bg-transparent; }
       .pill { @apply inline-flex min-h-6 items-center whitespace-nowrap rounded-full border border-slate-300 bg-white px-2 text-xs text-slate-500; }
-      .record-list { @apply flex min-h-0 flex-col gap-1.5 overflow-auto p-2; }
-      .record-item { @apply grid w-full min-w-0 grid-cols-[42px_minmax(0,1fr)_auto] items-center gap-2.5 overflow-hidden rounded-md border border-slate-300 bg-white p-2.5 text-left; }
+      .record-list { @apply flex min-h-0 flex-1 flex-col gap-1.5 overflow-auto p-2; }
+      .record-item { @apply grid w-full min-w-0 flex-none grid-cols-[24px_42px_minmax(0,1fr)_auto] items-center gap-2.5 overflow-hidden rounded-md border border-slate-300 bg-white p-2.5 text-left; }
+      .record-item.checked { @apply border-sky-300 bg-sky-50/60; }
       .record-item.active { @apply border-sky-600 bg-sky-50 ring-2 ring-sky-600/15; }
+      .record-select { @apply grid place-items-center; }
+      .record-select input { @apply h-4 w-4 min-h-0; }
       .record-main { @apply block min-w-0 border-0 bg-transparent p-0 text-left hover:border-transparent hover:bg-transparent; }
       .record-thumb { @apply h-[42px] w-[42px] overflow-hidden rounded-md border border-slate-300; background-color: #fff; background-image: linear-gradient(45deg, #dfe6ee 25%, transparent 25%), linear-gradient(-45deg, #dfe6ee 25%, transparent 25%), linear-gradient(45deg, transparent 75%, #dfe6ee 75%), linear-gradient(-45deg, transparent 75%, #dfe6ee 75%); background-size: 12px 12px; background-position: 0 0, 0 6px, 6px -6px, -6px 0; }
       .record-thumb span { @apply block h-full w-full bg-no-repeat; background-size: 400% 400%; background-position: 66.667% 33.333%; }
@@ -107,7 +110,7 @@
   </style>
 </head>
 <body class="m-0 min-h-screen bg-slate-100 text-slate-900 font-sans">
-  <main class="grid min-h-screen grid-cols-1 gap-3 p-2 lg:grid-cols-[260px_minmax(300px,1fr)] lg:p-3 xl:grid-cols-[260px_310px_minmax(520px,1fr)]">
+  <main class="grid min-h-screen grid-cols-1 gap-3 p-2 lg:h-screen lg:min-h-0 lg:grid-cols-[260px_minmax(300px,1fr)] lg:overflow-hidden lg:p-3 xl:grid-cols-[260px_310px_minmax(520px,1fr)]">
     <aside class="sidebar flex min-h-0 flex-col overflow-hidden rounded-lg border border-slate-300 bg-white shadow-lg shadow-slate-300/40">
       <div class="flex min-h-14 items-center justify-between gap-2.5 border-b border-slate-300 px-3.5 py-3">
         <div>
@@ -168,8 +171,9 @@
       <div class="grid grid-cols-[1fr_auto] gap-2 border-b border-slate-300 bg-slate-50 p-3">
         <input id="recordSearch" placeholder="搜索 id / name">
         <button id="btnNewPet" class="primary" type="button">新建</button>
-        <button id="btnRefreshRecords" class="primary" type="button">全部生成(0)</button>
+        <button id="btnRefreshRecords" class="primary" type="button">生成选中(0)</button>
         <button id="btnOpenIndex" type="button">打开</button>
+        <label class="toggle-line col-span-2"><input id="recordSelectAll" type="checkbox"><span id="recordSelectAllLabel">全选当前列表</span></label>
       </div>
       <div id="recordList" class="record-list">
         <div class="hint p-2.5">加载 SDK 后会列出 workspace famous-pets 下的所有记录。</div>
@@ -319,9 +323,10 @@
     const STAGE_ROW = { baby: 0, teen: 1, adult: 2, elder: 3 };
     const ANIM_COL = { idle: 0, happy: 1, sad: 2, sleep: 3 };
     const WEBP_DEFAULT_QUALITY = 0.2;
-    const WEBP_DEFAULT_BG_OPTIONS = { seedThreshold: 60, growThreshold: 78, haloThreshold: 112, borderRatio: 0.02 };
+    const WEBP_DEFAULT_BG_OPTIONS = { seedThreshold: 60, growThreshold: 78, haloThreshold: 112, borderRatio: 0.02, gridLineWidth: 6 };
+    const INDEX_ENTRY_FIELDS = ['id', 'name', 'dna', 'imageSheetUrl', 'traits', 'rarity'];
     const $ = (id) => document.getElementById(id);
-    const state = { sdk: null, referenceDataUrl: '', workspaceViewer: null, webpExport: null, records: [], selectedId: '', selectedPath: '', currentPath: '', currentHistoryUrls: [], imageSizeCache: new Map(), imageSizeRequests: new Map(), imageDimensionCache: new Map(), imageDimensionRequests: new Map(), dirty: false, generationPromptsPromise: null, batchCreate: null, batchGenerate: null, lastImageModel: '', lastTextModel: '' };
+    const state = { sdk: null, referenceDataUrl: '', workspaceViewer: null, webpExport: null, records: [], selectedRecordPaths: new Set(), selectedId: '', selectedPath: '', currentPath: '', currentHistoryUrls: [], imageSizeCache: new Map(), imageSizeRequests: new Map(), imageDimensionCache: new Map(), imageDimensionRequests: new Map(), dirty: false, generationPromptsPromise: null, batchCreate: null, batchGenerate: null, lastImageModel: '', lastTextModel: '' };
 
     function loadGenerationPrompts() {
       state.generationPromptsPromise ||= import('../js/generationPrompts.js');
@@ -463,6 +468,62 @@
       return state.records.filter(isRecordMissingImage);
     }
 
+    function selectMissingPetRecords(records = state.records) {
+      state.selectedRecordPaths = new Set(records.filter(isRecordMissingImage).map(record => record.path));
+    }
+
+    function pruneSelectedRecordPaths() {
+      const validPaths = new Set(state.records.map(record => record.path));
+      for (const path of state.selectedRecordPaths) {
+        if (!validPaths.has(path)) state.selectedRecordPaths.delete(path);
+      }
+    }
+
+    function getFilteredRecordList() {
+      const query = $('recordSearch').value.trim().toLowerCase();
+      const filteredRecords = state.records.filter(record => !query || `${record.id} ${record.name}`.toLowerCase().includes(query));
+      const selectedRecord = state.selectedPath ? state.records.find(record => record.path === state.selectedPath) : null;
+      const selectedInFilteredRecords = !!selectedRecord && filteredRecords.some(record => record.path === selectedRecord.path);
+      return selectedRecord && !selectedInFilteredRecords ? [selectedRecord, ...filteredRecords] : filteredRecords;
+    }
+
+    function selectMissingVisibleRecords() {
+      selectMissingPetRecords(getFilteredRecordList());
+    }
+
+    function getRenderedRecordPaths() {
+      return [...($('recordList')?.querySelectorAll('[data-select-path]') || [])].map(input => input.dataset.selectPath).filter(Boolean);
+    }
+
+    function updateRecordSelectAllState() {
+      const checkbox = $('recordSelectAll');
+      if (!checkbox) return;
+      const paths = getRenderedRecordPaths();
+      const selectedCount = paths.filter(path => state.selectedRecordPaths.has(path)).length;
+      checkbox.disabled = !paths.length;
+      checkbox.checked = !!paths.length && selectedCount === paths.length;
+      checkbox.indeterminate = selectedCount > 0 && selectedCount < paths.length;
+      if ($('recordSelectAllLabel')) $('recordSelectAllLabel').textContent = checkbox.checked ? '全不选当前列表' : '全选当前列表';
+    }
+
+    function setRenderedRecordSelection(checked) {
+      const paths = getRenderedRecordPaths();
+      paths.forEach(path => {
+        if (checked) state.selectedRecordPaths.add(path);
+        else state.selectedRecordPaths.delete(path);
+      });
+      renderRecordList();
+    }
+
+    function getCheckedRecords() {
+      pruneSelectedRecordPaths();
+      return state.records.filter(record => state.selectedRecordPaths.has(record.path) && record.pet);
+    }
+
+    function getBatchGenerateTargets() {
+      return { mode: 'selected', records: getCheckedRecords() };
+    }
+
     function updateBatchGenerateButton() {
       const button = $('btnRefreshRecords');
       if (!button) return;
@@ -473,8 +534,9 @@
         button.disabled = false;
         return;
       }
-      button.textContent = `全部生成(${getUngeneratedRecords().length})`;
-      button.disabled = false;
+      const targetCount = getBatchGenerateTargets().records.length;
+      button.textContent = `生成选中(${targetCount})`;
+      button.disabled = targetCount <= 0;
     }
 
     function shouldRemoveHistoryUrlsOnExport() {
@@ -562,7 +624,18 @@
     }
 
     function buildIndexEntry(pet = buildPetConfig()) {
-      return { id: pet.id, name: pet.name, imageSheetUrl: pet.imageSheetUrl || '', rarity: pet.rarity };
+      const normalized = { ...pet, id: safeId(pet.id, 'new_famous_pet') };
+      if (!normalized.dna && normalized.traits) normalized.dna = traitsToDna(normalized.traits);
+      const entry = {};
+      INDEX_ENTRY_FIELDS.forEach(field => {
+        if (normalized[field] !== undefined) entry[field] = normalized[field];
+      });
+      return JSON.parse(JSON.stringify(entry));
+    }
+
+    function petRecordPath(petOrId) {
+      const id = typeof petOrId === 'string' ? petOrId : petOrId?.id;
+      return `${FAMOUS_DIR}/${safeId(id, 'new_famous_pet')}.json`;
     }
 
     function uniquePetId(baseId, usedIds = new Set()) {
@@ -629,7 +702,7 @@
       normalized.traits = { ...(defaultPet().traits || {}), ...(pet?.traits || normalized.traits || {}) };
       state.selectedId = normalized.id || '';
       const id = safeId(normalized.id, 'new_famous_pet');
-      state.currentPath = path || `${FAMOUS_DIR}/${id}.json`;
+      state.currentPath = path || petRecordPath(id);
       state.selectedPath = state.currentPath;
       $('petId').value = id;
       $('petName').value = normalized.name || normalized.id || '';
@@ -656,7 +729,7 @@
     function updateEditorTitle() {
       const id = $('petId').value || 'new';
       $('editorTitle').textContent = `${$('petName').value || id}`;
-      const draftPath = `${FAMOUS_DIR}/${safeId(id, 'new_famous_pet')}.json`;
+      const draftPath = petRecordPath(id);
       $('editorSubtitle').textContent = state.selectedId ? (state.currentPath || draftPath) : draftPath;
     }
 
@@ -672,7 +745,7 @@
     }
 
     function getPetPath(pet) {
-      return `${FAMOUS_DIR}/${safeId(pet?.id, 'new_famous_pet')}.json`;
+      return petRecordPath(pet);
     }
 
     function isCurrentPetTarget(path, id) {
@@ -787,7 +860,7 @@
             $('sdkState').textContent = 'SDK ready';
             await populateModelDropdown();
             await refreshLoginState();
-            await loadRecords({ selectFirstValid: true });
+            await loadRecords();
             return;
           }
         } catch (e) { lastError = e; }
@@ -869,67 +942,104 @@
     }
 
     async function loadRecords({ selectFirstValid = false } = {}) {
-      setStatus($('runStatus'), '正在读取 workspace famous-pets 记录...', '');
-      let paths = [];
+      setStatus($('runStatus'), '正在读取 workspace famous-pets/index.json...', '');
+      let indexPets = [];
       try {
-        const list = await getWorkspaceStore().listDir(FAMOUS_DIR);
-        paths = (Array.isArray(list) ? list : []).map(entryToPath).filter(path => /\.json$/i.test(path) && !/\/index\.json$/i.test(path));
-      } catch (_) {}
-      if (!paths.length) {
-        try {
-          const index = JSON.parse(await readFile(`${FAMOUS_DIR}/index.json`) || '[]');
-          paths = (Array.isArray(index) ? index : []).map(item => safeId(item.id)).filter(Boolean).map(id => `${FAMOUS_DIR}/${id}.json`);
-        } catch (_) {}
+        const parsed = JSON.parse(await readFile(`${FAMOUS_DIR}/index.json`) || '[]');
+        indexPets = Array.isArray(parsed) ? parsed : (Array.isArray(parsed?.pets) ? parsed.pets : []);
+      } catch (e) {
+        setStatus($('runStatus'), `index.json 读取失败：${e?.message || e}`, 'error');
       }
-      const records = [];
-      for (const path of [...new Set(paths)]) {
-        try {
-          const raw = await readFile(path);
-          if (!raw) continue;
-          const pet = JSON.parse(raw);
-          records.push({ id: pet.id || path.split('/').pop().replace(/\.json$/i, ''), name: pet.name || pet.id || path, path, pet });
-        } catch (e) {
-          records.push({ id: path.split('/').pop().replace(/\.json$/i, ''), name: '(JSON 解析失败)', path, pet: null, error: e?.message || String(e) });
-        }
-      }
-      state.records = records.sort((a, b) => String(a.id).localeCompare(String(b.id)));
+      const records = indexPets.map((pet, index) => {
+        const id = safeId(pet?.id, `famous_pet_${index + 1}`);
+        return { id, name: pet?.name || id, path: petRecordPath(id), pet: { ...(pet || {}), id }, indexPet: pet || null, fullLoaded: false };
+      });
+      state.records = records;
+      selectMissingPetRecords();
       $('recordCount').textContent = String(state.records.length);
       updateBatchGenerateButton();
       const firstValidRecord = state.records.find(record => record.pet);
       if (selectFirstValid && firstValidRecord) {
         applyPetToForm(firstValidRecord.pet, firstValidRecord.path);
-        setStatus($('runStatus'), `已加载 ${state.records.length} 条 workspace famous-pets 记录，已打开 ${firstValidRecord.path}。`, 'ok');
+        setStatus($('runStatus'), `已从 index.json 加载 ${state.records.length} 条 famous-pets 记录，已打开 ${firstValidRecord.path}。`, 'ok');
         updateBatchGenerateButton();
         return;
       }
       renderRecordList();
-      setStatus($('runStatus'), `已加载 ${state.records.length} 条 workspace famous-pets 记录。`, 'ok');
+      setStatus($('runStatus'), `已从 index.json 加载 ${state.records.length} 条 famous-pets 记录。`, 'ok');
       updateBatchGenerateButton();
     }
 
+    async function loadRecordPet(record) {
+      if (!record) return null;
+      if (record.fullLoaded && record.pet) return record.pet;
+      try {
+        const raw = await readFile(record.path);
+        if (raw) {
+          const pet = JSON.parse(raw);
+          record.pet = { ...(record.indexPet || {}), ...pet, id: safeId(pet.id || record.id, record.id) };
+          record.id = record.pet.id || record.id;
+          record.name = record.pet.name || record.name || record.id;
+          record.path = petRecordPath(record.id);
+          record.fullLoaded = true;
+          return record.pet;
+        }
+      } catch (e) {
+        record.error = e?.message || String(e);
+      }
+      record.pet = { ...defaultPet(), ...(record.indexPet || record.pet || {}), id: record.id };
+      record.fullLoaded = true;
+      return record.pet;
+    }
+
     function renderRecordList() {
-      const query = $('recordSearch').value.trim().toLowerCase();
-      const records = state.records.filter(record => !query || `${record.id} ${record.name}`.toLowerCase().includes(query));
+      pruneSelectedRecordPaths();
+      const records = getFilteredRecordList();
       $('recordList').innerHTML = records.length ? records.map(record => {
         const pet = record.pet || {};
         const active = record.path === state.selectedPath ? ' active' : '';
+        const checked = state.selectedRecordPaths.has(record.path);
+        const checkedClass = checked ? ' checked' : '';
+        const checkedAttr = checked ? ' checked' : '';
         const url = pet.imageSheetUrl || '';
         const thumb = url ? `<span style="background-image:url('${escapeHtml(url)}')"></span>` : '';
-        return `<div class="record-item${active}" data-path="${escapeHtml(record.path)}">
+        return `<div class="record-item${active}${checkedClass}" data-path="${escapeHtml(record.path)}">
+          <label class="record-select" title="选择后由批量生成重新生成"><input type="checkbox" data-select-path="${escapeHtml(record.path)}" aria-label="选择 ${escapeHtml(record.name || record.id)}"${checkedAttr}></label>
           <span class="record-thumb">${thumb}</span>
           <button type="button" class="record-main" data-open-path="${escapeHtml(record.path)}"><span class="record-title">${escapeHtml(record.name || record.id)}</span><span class="record-meta">${escapeHtml(record.path)}</span></button>
           <span class="record-actions"><button type="button" data-copy-path="${escapeHtml(record.path)}" title="复制">复制</button><button type="button" class="danger icon-button" data-delete-path="${escapeHtml(record.path)}" title="删除" aria-label="删除"><svg viewBox="0 0 24 24" fill="none" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M3 6h18"></path><path d="M8 6V4h8v2"></path><path d="M19 6l-1 14H6L5 6"></path><path d="M10 11v5"></path><path d="M14 11v5"></path></svg></button></span>
         </div>`;
       }).join('') : '<div class="hint p-2.5">没有匹配记录。点击“新建”创建一条。</div>';
       $('recordList').querySelectorAll('[data-open-path]').forEach(btn => {
-        btn.onclick = () => selectRecord(btn.dataset.openPath);
+        btn.onclick = () => selectRecord(btn.dataset.openPath).catch(e => setStatus($('runStatus'), `打开失败：${e?.message || e}`, 'error'));
       });
       $('recordList').querySelectorAll('[data-copy-path]').forEach(btn => {
-        btn.onclick = () => cloneRecord(btn.dataset.copyPath);
+        btn.onclick = () => cloneRecord(btn.dataset.copyPath).catch(e => setStatus($('saveStatus'), `复制失败：${e?.message || e}`, 'error'));
       });
       $('recordList').querySelectorAll('[data-delete-path]').forEach(btn => {
         btn.onclick = () => deleteRecord(btn.dataset.deletePath).catch(e => setStatus($('saveStatus'), `删除失败：${e?.message || e}`, 'error'));
       });
+      $('recordList').querySelectorAll('[data-select-path]').forEach(input => {
+        input.onchange = () => {
+          const path = input.dataset.selectPath;
+          if (input.checked) state.selectedRecordPaths.add(path);
+          else state.selectedRecordPaths.delete(path);
+          input.closest('.record-item')?.classList.toggle('checked', input.checked);
+          updateRecordSelectAllState();
+          updateBatchGenerateButton();
+        };
+      });
+      requestAnimationFrame(() => {
+        $('recordList')?.querySelector('.record-item.active')?.scrollIntoView({ block: 'nearest' });
+      });
+      $('recordCount').textContent = records.length === state.records.length ? String(state.records.length) : `${records.length}/${state.records.length}`;
+      updateRecordSelectAllState();
+      updateBatchGenerateButton();
+    }
+
+    function handleRecordFilterChange() {
+      selectMissingVisibleRecords();
+      renderRecordList();
     }
 
     function updatePetCdnStatus() {
@@ -941,20 +1051,21 @@
         : `CDN folder: ${PET_CDN_FOLDER} · 未加载 qiniu.yaml`;
     }
 
-    function selectRecord(path) {
+    async function selectRecord(path) {
       const record = state.records.find(item => item.path === path) || state.records.find(item => item.id === path);
-      if (!record?.pet) {
+      const pet = await loadRecordPet(record);
+      if (!pet) {
         setStatus($('runStatus'), record?.error ? `记录无法读取：${record.error}` : '记录为空。', 'error');
         return;
       }
-      applyPetToForm(record.pet, record.path);
+      applyPetToForm(pet, record.path);
       setStatus($('runStatus'), `已打开 ${record.path}`, 'ok');
     }
 
     function newPet() {
-      applyPetToForm(defaultPet(), `${FAMOUS_DIR}/new_famous_pet.json`);
+      applyPetToForm(defaultPet(), petRecordPath('new_famous_pet'));
       state.selectedId = '';
-      state.currentPath = `${FAMOUS_DIR}/new_famous_pet.json`;
+      state.currentPath = petRecordPath('new_famous_pet');
       state.selectedPath = state.currentPath;
       renderRecordList();
       setStatus($('runStatus'), '已创建新记录草稿。编辑 ID 后保存即可写入 workspace。', '');
@@ -1237,7 +1348,7 @@
         const id = safeId(pet.id, `famous_pet_${Date.now()}`);
         const savedPet = { ...pet, id, imageUrl: null, imageSheetUrl: null };
         delete savedPet.historyUrls;
-        const path = `${FAMOUS_DIR}/${id}.json`;
+        const path = petRecordPath(id);
         await writeFile(path, JSON.stringify(savedPet, null, 2));
         await upsertIndexEntry(buildIndexEntry(savedPet));
         saved.push({ path, pet: savedPet });
@@ -1339,21 +1450,22 @@
       return `${base}_${Date.now()}`;
     }
 
-    function cloneRecord(path) {
+    async function cloneRecord(path) {
       const record = state.records.find(item => item.path === path) || state.records.find(item => item.id === path);
-      if (!record?.pet) {
+      const sourcePet = await loadRecordPet(record);
+      if (!sourcePet) {
         setStatus($('saveStatus'), record?.error ? `无法复制：${record.error}` : '无法复制空记录。', 'error');
         return;
       }
-      const id = nextCopyId(record.pet.id || record.id);
+      const id = nextCopyId(sourcePet.id || record.id);
       const copied = {
-        ...JSON.parse(JSON.stringify(record.pet)),
+        ...JSON.parse(JSON.stringify(sourcePet)),
         id,
-        name: `${record.pet.name || record.name || record.id} 副本`,
+        name: `${sourcePet.name || record.name || record.id} 副本`,
       };
-      const copiedPath = `${FAMOUS_DIR}/${id}.json`;
+      const copiedPath = petRecordPath(id);
       state.records.push({ id, name: copied.name, path: copiedPath, pet: copied });
-      state.records.sort((a, b) => String(a.id).localeCompare(String(b.id)));
+      state.selectedRecordPaths.add(copiedPath);
       applyPetToForm(copied, copiedPath);
       $('recordCount').textContent = String(state.records.length);
       setStatus($('saveStatus'), `已复制 ${record.id} 为 ${id}。点击“保存”写入 workspace 和 index。`, 'ok');
@@ -1376,9 +1488,10 @@
       try { fileDeleted = await deleteFile(record.path) !== false; } catch (e) { throw e; }
       await removeIndexEntry(record.id);
       state.records = state.records.filter(item => item.path !== record.path);
+      state.selectedRecordPaths.delete(record.path);
       if (state.selectedPath === record.path) {
         const nextRecord = state.records.find(item => item.pet);
-        if (nextRecord) applyPetToForm(nextRecord.pet, nextRecord.path);
+        if (nextRecord) selectRecord(nextRecord.path).catch(e => setStatus($('runStatus'), `打开失败：${e?.message || e}`, 'error'));
         else newPet();
       } else {
         renderRecordList();
@@ -1419,7 +1532,7 @@
       return opts;
     }
 
-    async function generateSheet() {
+    async function generateSheet({ reload = true } = {}) {
       const sdk = state.sdk || window.keepwork;
       if (!sdk?.aiGenerators?.genImage) throw new Error('sdk.aiGenerators.genImage 不可用');
       const targetPet = buildPetConfig();
@@ -1457,7 +1570,7 @@
           renderSheet(url);
           updateOutput();
         }
-        await savePetObject(savedPet, { path: targetPath, reload: true, silent: true });
+        await savePetObject(savedPet, { path: targetPath, reload, silent: true });
         const isDataUri = String(url).startsWith('data:');
         setStatus($('runStatus'), isDataUri ? `生成完成：${targetPet.id}，返回 data URI (${url.length} chars)，已自动保存 pet 和 index。` : `生成完成：${targetPet.id}，已自动保存 pet 和 index。请检查 4x4 网格是否对齐。`, 'ok');
         return { path: targetPath, pet: savedPet, url, selectedPath: startSelectedPath };
@@ -1550,7 +1663,6 @@
       const index = state.records.findIndex(item => item.path === targetPath || item.id === id);
       if (index >= 0) state.records[index] = record;
       else state.records.push(record);
-      state.records.sort((a, b) => String(a.id).localeCompare(String(b.id)));
       if (activate) {
         state.currentPath = targetPath;
         state.selectedId = id;
@@ -1583,59 +1695,27 @@
     async function readIndexListForExport() {
       try {
         const parsed = JSON.parse(await readFile(`${FAMOUS_DIR}/index.json`) || '[]');
-        if (Array.isArray(parsed)) return parsed;
-      } catch (_) {}
-      return state.records.filter(record => record.pet).map(record => buildIndexEntry(record.pet));
-    }
-
-    function getExportPetPaths() {
-      const checked = [...document.querySelectorAll('[data-export-pet-path]:checked')].map(input => input.dataset.exportPetPath).filter(Boolean);
-      return [...new Set(checked)];
-    }
-
-    function currentEditorPetPath() {
-      return `${FAMOUS_DIR}/${safeId($('petId').value, 'new_famous_pet')}.json`;
-    }
-
-    async function readPetForExport(path) {
-      const currentPath = currentEditorPetPath();
-      if (path === currentPath) {
-        try { return JSON.parse($('petJson').value || '{}'); } catch (_) {}
+        const list = Array.isArray(parsed) ? parsed : (Array.isArray(parsed?.pets) ? parsed.pets : []);
+        return list.filter(item => item && typeof item === 'object' && item.id).map(buildIndexEntry);
+      } catch (e) {
+        throw new Error(`读取 ${FAMOUS_DIR}/index.json 失败：${e?.message || e}`);
       }
-      const record = state.records.find(item => item.path === path);
-      if (record?.pet) return record.pet;
-      return JSON.parse(await readFile(path));
     }
 
-    async function buildFamousPetsExportBundle(paths) {
-      const files = { [`${FAMOUS_DIR}/index.json`]: await readIndexListForExport() };
-      for (const path of paths) {
-        if (!path || path === `${FAMOUS_DIR}/index.json` || !path.startsWith(`${FAMOUS_DIR}/`) || !/\.json$/i.test(path)) continue;
-        const pet = await readPetForExport(path);
-        files[path] = shouldRemoveHistoryUrlsOnExport() ? removeHistoryUrlsFromPet(pet) : pet;
-      }
-      return { type: 'MagicHaqi.famous-pets-export', version: 1, exportedAt: new Date().toISOString(), root: FAMOUS_DIR, files };
+    async function buildFamousPetsExportIndex() {
+      return await readIndexListForExport();
     }
 
     async function copySelectedFamousPetsExport() {
-      const paths = getExportPetPaths();
-      const bundle = await buildFamousPetsExportBundle(paths);
-      await copyText(JSON.stringify(bundle, null, 2));
-      setImportExportStatus(`已复制 index 和 ${paths.length} 个 pet 文件。`, 'ok');
+      const indexList = await buildFamousPetsExportIndex();
+      await copyText(JSON.stringify(indexList, null, 2));
+      setImportExportStatus(`已复制 ${FAMOUS_DIR}/index.json（${indexList.length} 个 pet）。`, 'ok');
     }
 
     async function downloadSelectedFamousPetsExport() {
-      const paths = getExportPetPaths();
-      const indexList = await readIndexListForExport();
+      const indexList = await buildFamousPetsExportIndex();
       downloadText('index.json', JSON.stringify(indexList, null, 2));
-      for (const path of paths) {
-        if (!path || path === `${FAMOUS_DIR}/index.json` || !path.startsWith(`${FAMOUS_DIR}/`) || !/\.json$/i.test(path)) continue;
-        const pet = await readPetForExport(path);
-        const exportPet = shouldRemoveHistoryUrlsOnExport() ? removeHistoryUrlsFromPet(pet) : pet;
-        const fileName = path.split('/').pop() || `${safeId(exportPet.id, 'famous_pet')}.json`;
-        downloadText(fileName, JSON.stringify(exportPet, null, 2));
-      }
-      setImportExportStatus(`已分别下载完整 index.json 和 ${paths.length} 个 pet 文件。`, 'ok');
+      setImportExportStatus(`已下载完整 index.json（${indexList.length} 个 pet）。`, 'ok');
     }
 
     function setImportExportStatus(text, kind = '') {
@@ -1646,72 +1726,33 @@
       el.classList.toggle('ok', kind === 'ok');
     }
 
-    function normalizeImportFiles(data) {
-      const files = new Map();
-      const addFile = (path, value) => {
-        const clean = String(path || '').trim().replace(/^\/+/, '');
-        if (!clean.startsWith(`${FAMOUS_DIR}/`) || !/\.json$/i.test(clean)) return;
-        files.set(clean, typeof value === 'string' ? value : JSON.stringify(value, null, 2));
-      };
+    function normalizeImportIndex(data) {
       if (data?.files && typeof data.files === 'object' && !Array.isArray(data.files)) {
-        Object.entries(data.files).forEach(([path, value]) => addFile(path, value));
-      } else if (Array.isArray(data)) {
-        addFile(`${FAMOUS_DIR}/index.json`, data);
-      } else if (data?.index || data?.pets) {
-        if (data.index) addFile(`${FAMOUS_DIR}/index.json`, data.index);
-        const pets = Array.isArray(data.pets) ? data.pets : Object.values(data.pets || {});
-        pets.forEach(pet => pet?.id && addFile(`${FAMOUS_DIR}/${safeId(pet.id)}.json`, pet));
-      } else if (data?.id) {
-        addFile(`${FAMOUS_DIR}/${safeId(data.id)}.json`, data);
+        const bundledIndex = data.files[`${FAMOUS_DIR}/index.json`] || data.files['index.json'];
+        if (bundledIndex) return normalizeImportIndex(typeof bundledIndex === 'string' ? JSON.parse(bundledIndex) : bundledIndex);
       }
-      return files;
-    }
-
-    function importPathFromFile(file, data) {
-      const raw = String(file?.webkitRelativePath || file?.name || '').trim().replace(/^\/+/, '');
-      const fileName = raw.split(/[\\/]/).pop() || '';
-      if (/^index\.json$/i.test(fileName)) return `${FAMOUS_DIR}/index.json`;
-      const pathFromFolder = raw.includes(`${FAMOUS_DIR}/`) ? raw.slice(raw.indexOf(`${FAMOUS_DIR}/`)) : '';
-      if (pathFromFolder && /\.(json|js)$/i.test(pathFromFolder)) return pathFromFolder.replace(/\.js$/i, '.json');
-      if (data?.id) return `${FAMOUS_DIR}/${safeId(data.id)}.json`;
-      return fileName ? `${FAMOUS_DIR}/${fileName.replace(/\.js$/i, '.json')}` : '';
+      const list = Array.isArray(data) ? data : (Array.isArray(data?.pets) ? data.pets : Array.isArray(data?.index) ? data.index : []);
+      return list.filter(item => item && typeof item === 'object' && item.id).map(item => ({ ...item, id: safeId(item.id, 'famous_pet') }));
     }
 
     async function importFamousPetsBundleFromFile() {
       const input = document.createElement('input');
       input.type = 'file';
-      input.multiple = true;
+      input.multiple = false;
       input.accept = 'application/json,.json,.js';
       input.onchange = async () => {
         const selectedFiles = [...(input.files || [])];
         if (!selectedFiles.length) return;
         try {
-          const files = new Map();
-          for (const file of selectedFiles) {
-            const data = JSON.parse(await file.text());
-            const bundledFiles = selectedFiles.length === 1 ? normalizeImportFiles(data) : new Map();
-            if (bundledFiles.size) {
-              bundledFiles.forEach((content, path) => files.set(path, content));
-              continue;
-            }
-            const path = importPathFromFile(file, data);
-            if (path && path.startsWith(`${FAMOUS_DIR}/`) && /\.json$/i.test(path)) files.set(path, JSON.stringify(data, null, 2));
+          const data = JSON.parse(await selectedFiles[0].text());
+          const indexList = normalizeImportIndex(data);
+          if (!indexList.length) throw new Error('未找到可导入的 famous-pets/index.json 数据');
+          for (const pet of indexList) {
+            await writeFile(petRecordPath(pet), JSON.stringify(pet, null, 2));
           }
-          if (!files.size) throw new Error('未找到可导入的 famous-pets JSON 文件');
-          const hasIndex = files.has(`${FAMOUS_DIR}/index.json`);
-          let petCount = 0;
-          for (const [path, content] of files) {
-            await writeFile(path, content);
-            if (path !== `${FAMOUS_DIR}/index.json`) petCount += 1;
-          }
-          if (!hasIndex) {
-            for (const [path, content] of files) {
-              if (path === `${FAMOUS_DIR}/index.json`) continue;
-              try { await upsertIndexEntry(buildIndexEntry(JSON.parse(content))); } catch (_) {}
-            }
-          }
+          await writeFile(`${FAMOUS_DIR}/index.json`, JSON.stringify(indexList.map(buildIndexEntry), null, 2));
           await loadRecords();
-          setImportExportStatus(`已导入 ${petCount} 个 pet 文件${hasIndex ? '，并覆盖 index' : '，并更新 index'}。`, 'ok');
+          setImportExportStatus(`已导入 index.json（${indexList.length} 个 pet），并写入对应 pet JSON。`, 'ok');
           setStatus($('saveStatus'), '导入完成。', 'ok');
         } catch (e) {
           setImportExportStatus(`导入失败：${e?.message || e}`, 'error');
@@ -1723,17 +1764,7 @@
     function renderImportExportPetList() {
       const root = $('exportPetList');
       if (!root) return;
-      const currentPath = state.selectedPath || currentEditorPetPath();
-      root.innerHTML = state.records.length ? state.records.map(record => {
-        const checked = record.path === currentPath ? 'checked' : '';
-        return `<label class="toggle-line rounded border border-slate-200 bg-white px-2 py-1.5"><input type="checkbox" data-export-pet-path="${escapeHtml(record.path)}" ${checked}> <span class="min-w-0 overflow-hidden text-ellipsis whitespace-nowrap">${escapeHtml(record.name || record.id)} · ${escapeHtml(record.path)}</span></label>`;
-      }).join('') : '<div class="hint">暂无 pet 记录。先刷新或保存当前 pet 后再导出。</div>';
-      updateImportExportSelectedCount();
-      root.querySelectorAll('[data-export-pet-path]').forEach(input => input.addEventListener('change', updateImportExportSelectedCount));
-    }
-
-    function updateImportExportSelectedCount() {
-      if ($('exportSelectedCount')) $('exportSelectedCount').textContent = String(getExportPetPaths().length);
+      root.innerHTML = state.records.length ? `<div class="hint">将导入或导出一个完整的 ${FAMOUS_DIR}/index.json，当前包含 ${state.records.length} 个 pet。</div>` : '<div class="hint">暂无 pet 记录。先刷新或保存当前 pet 后再导出。</div>';
     }
 
     function openImportExportDialog() {
@@ -1744,20 +1775,15 @@
       overlay.innerHTML = `<div class="modal-window" role="dialog" aria-modal="true" aria-label="导入导出 famous-pets">
         <div class="modal-titlebar"><strong>导入导出 · ${FAMOUS_DIR}</strong><button type="button" id="closeImportExport">关闭</button></div>
         <div class="modal-body">
-          <div class="hint">导出会分别下载完整 index.json（包含 index 中全部宠物）以及下方勾选的 pet JSON 文件；导入可一次选择 index.json 和多个 pet JSON 文件。</div>
-          <div class="toolbar"><button id="btnExportSelectAll" type="button">全选</button><button id="btnExportSelectNone" type="button">清空</button><span class="pill">已选 <span id="exportSelectedCount">0</span></span></div>
+          <div class="hint">导入/导出只处理一个完整的 index.json。index 中每个条目都包含渲染和孵化所需的 pet 信息。</div>
           <div id="exportPetList" class="flex min-h-0 flex-1 flex-col gap-1.5 overflow-auto rounded-md border border-slate-300 bg-slate-50 p-2"></div>
-          <label class="toggle-line"><input id="modalRemoveHistoryUrlsOnExport" type="checkbox" ${shouldRemoveHistoryUrlsOnExport() ? 'checked' : ''}>导出 pet 时移除 historyUrls</label>
           <div id="importExportStatus" class="status">准备导入/导出。</div>
-          <div class="toolbar justify-end"><button id="btnImportFamousPets" type="button">导入 JSON</button><button id="btnCopyFamousPetsExport" type="button">复制 JSON 包</button><button id="btnDownloadFamousPetsExport" class="primary" type="button">下载所选文件</button></div>
+          <div class="toolbar justify-end"><button id="btnImportFamousPets" type="button">导入 index.json</button><button id="btnCopyFamousPetsExport" type="button">复制 index.json</button><button id="btnDownloadFamousPetsExport" class="primary" type="button">下载 index.json</button></div>
         </div>
       </div>`;
       document.body.appendChild(overlay);
       overlay.addEventListener('click', event => { if (event.target === overlay) closeImportExportDialog(); });
       $('closeImportExport').onclick = closeImportExportDialog;
-      $('modalRemoveHistoryUrlsOnExport').onchange = () => { $('removeHistoryUrlsOnExport').checked = $('modalRemoveHistoryUrlsOnExport').checked; };
-      $('btnExportSelectAll').onclick = () => { document.querySelectorAll('[data-export-pet-path]').forEach(input => { input.checked = true; }); updateImportExportSelectedCount(); };
-      $('btnExportSelectNone').onclick = () => { document.querySelectorAll('[data-export-pet-path]').forEach(input => { input.checked = false; }); updateImportExportSelectedCount(); };
       $('btnImportFamousPets').onclick = () => importFamousPetsBundleFromFile().catch(e => setImportExportStatus(`导入失败：${e?.message || e}`, 'error'));
       $('btnCopyFamousPetsExport').onclick = () => copySelectedFamousPetsExport().catch(e => setImportExportStatus(`复制失败：${e?.message || e}`, 'error'));
       $('btnDownloadFamousPetsExport').onclick = () => downloadSelectedFamousPetsExport().catch(e => setImportExportStatus(`导出失败：${e?.message || e}`, 'error'));
@@ -2044,11 +2070,14 @@
     }
 
     function getWebpBgOptions() {
+      const borderValue = Number($('webpBgBorder')?.value);
+      const gridLineWidth = Number($('webpBgGridLine')?.value);
       return {
         seedThreshold: Number($('webpBgSeed')?.value) || WEBP_DEFAULT_BG_OPTIONS.seedThreshold,
         growThreshold: Number($('webpBgGrow')?.value) || WEBP_DEFAULT_BG_OPTIONS.growThreshold,
         haloThreshold: Number($('webpBgHalo')?.value) || WEBP_DEFAULT_BG_OPTIONS.haloThreshold,
-        borderRatio: $('webpBgBorder') ? (Number($('webpBgBorder').value) || 2) / 100 : WEBP_DEFAULT_BG_OPTIONS.borderRatio,
+        borderRatio: Number.isFinite(borderValue) ? borderValue / 100 : WEBP_DEFAULT_BG_OPTIONS.borderRatio,
+        gridLineWidth: Number.isFinite(gridLineWidth) ? gridLineWidth : WEBP_DEFAULT_BG_OPTIONS.gridLineWidth,
       };
     }
 
@@ -2057,6 +2086,7 @@
       $('webpBgGrowText').textContent = $('webpBgGrow').value;
       $('webpBgHaloText').textContent = $('webpBgHalo').value;
       $('webpBgBorderText').textContent = `${$('webpBgBorder').value}%`;
+      $('webpBgGridLineText').textContent = `${$('webpBgGridLine').value}px`;
     }
 
     function canvasToBlob(canvas, type, quality) {
@@ -2155,7 +2185,7 @@
         exportState.bgOptions = bgOptions;
         exportState.previewUrl = URL.createObjectURL(blob);
         $('webpPreviewImg').src = exportState.previewUrl;
-        const bgText = removeBlackBackground ? `已去背景 seed=${bgOptions.seedThreshold}, grow=${bgOptions.growThreshold}, halo=${bgOptions.haloThreshold}, edge=${Math.round(bgOptions.borderRatio * 100)}%，` : '';
+        const bgText = removeBlackBackground ? `已去背景 seed=${bgOptions.seedThreshold}, grow=${bgOptions.growThreshold}, halo=${bgOptions.haloThreshold}, edge=${Math.round(bgOptions.borderRatio * 100)}%，grid=${bgOptions.gridLineWidth}px，` : '';
         $('webpMeta').textContent = `当前预览即实际导出的 WebP。原图 ${exportState.sourceWidth}x${exportState.sourceHeight}，导出 ${size.width}x${size.height}，质量 ${Math.round(quality * 100)}%，${bgText}约 ${formatBytes(blob.size)}`;
         $('webpDownload').disabled = false;
         if ($('webpUploadCdn')) $('webpUploadCdn').disabled = false;
@@ -2245,7 +2275,7 @@
         renderSheet(nextUrl);
         updateOutput();
       }
-      await savePetObject(savedPet, { path: targetPath, reload: true, silent: true });
+      await savePetObject(savedPet, { path: targetPath, reload: target.reload !== false, silent: true });
       return { url: nextUrl, blob, size, detail };
     }
 
@@ -2256,10 +2286,9 @@
         setStatus($('runStatus'), '收到暂停请求。当前图片生成和保存完成后会停止。', '');
         return;
       }
-      await loadRecords();
-      const queue = getUngeneratedRecords().slice();
+      const queue = getBatchGenerateTargets().records.slice();
       if (!queue.length) {
-        setStatus($('runStatus'), '没有需要生成图片的 famous-pets。', 'ok');
+        setStatus($('runStatus'), '没有选中的 famous-pets。请勾选要生成的记录。', 'ok');
         updateBatchGenerateButton();
         return;
       }
@@ -2272,17 +2301,20 @@
           updateBatchGenerateButton();
           const queuedRecord = queue[index];
           const record = state.records.find(item => item.path === queuedRecord.path) || queuedRecord;
-          if (!isRecordMissingImage(record)) {
+          const pet = await loadRecordPet(record);
+          if (!pet) {
             state.batchGenerate.done += 1;
             continue;
           }
-          applyPetToForm(record.pet, record.path);
+          applyPetToForm(pet, record.path);
           setStatus($('runStatus'), `批量生成 ${index + 1}/${queue.length}：${record.name || record.id}\n正在生成 sprite sheet...`, '');
-          const generated = await generateSheet();
+          const generated = await generateSheet({ reload: false });
           setStatus($('runStatus'), `批量生成 ${index + 1}/${queue.length}：${record.name || record.id}\n正在生成 WebP${getPetCdnConfig() ? ' 并上传 CDN' : ''}...`, '');
-          const webp = await autoGenerateWebpForCurrentPet({ pet: generated.pet, path: generated.path, sourceUrl: generated.url, selectedPath: generated.selectedPath });
+          const webp = await autoGenerateWebpForCurrentPet({ pet: generated.pet, path: generated.path, sourceUrl: generated.url, selectedPath: generated.selectedPath, reload: false });
+          state.selectedRecordPaths.delete(record.path);
           state.batchGenerate.done += 1;
           setStatus($('saveStatus'), `已完成 ${record.id}：${webp.detail}，${webp.size.width}x${webp.size.height}，${formatBytes(webp.blob.size)}。`, 'ok');
+          renderRecordList();
           updateBatchGenerateButton();
         }
         if (state.batchGenerate.stopRequested) {
@@ -2326,6 +2358,7 @@
                 <label class="webp-hintable" title="背景 flood-fill 向内部扩张的颜色距离。越大，去背景越强，也更可能吃进角色边缘。"><span class="webp-control-head"><span>扩张</span><span id="webpBgGrowText" class="webp-control-value">78</span></span><input id="webpBgGrow" type="range" min="30" max="160" step="1" value="78"></label>
                 <label class="webp-hintable" title="对接近背景色的残边/光晕做半透明清理。越大，残边更少，但轮廓可能更薄。"><span class="webp-control-head"><span>残边</span><span id="webpBgHaloText" class="webp-control-value">112</span></span><input id="webpBgHalo" type="range" min="50" max="220" step="1" value="112"></label>
                 <label class="webp-hintable" title="每个 sprite 单元格最外圈强制透明的比例，用来去掉生成出的网格线或黑边。"><span class="webp-control-head"><span>裁边</span><span id="webpBgBorderText" class="webp-control-value">2%</span></span><input id="webpBgBorder" type="range" min="0" max="6" step="0.25" value="2"></label>
+                <label class="webp-hintable" title="按 4x4 分隔线位置预先透明化的像素宽度。白色/灰色网格线越粗，这里可调得越大。"><span class="webp-control-head"><span>网格线</span><span id="webpBgGridLineText" class="webp-control-value">6px</span></span><input id="webpBgGridLine" type="range" min="0" max="18" step="1" value="6"></label>
               </div>
               <div id="webpMeta" class="status">当前预览会显示实际压缩后的 WebP。</div>
               <div id="webpCdnMeta" class="hint">CDN folder: ${PET_CDN_FOLDER} · ${(getPetCdnConfig()?.bucketName) || '未加载 qiniu.yaml'}</div>
@@ -2345,7 +2378,7 @@
         $('webpResolution').onchange = () => updateWebpPreview().catch(e => console.error(e));
         $('webpQuality').oninput = () => updateWebpPreview().catch(e => console.error(e));
         $('webpRemoveBlackBg').onchange = () => updateWebpPreview().catch(e => console.error(e));
-        ['webpBgSeed', 'webpBgGrow', 'webpBgHalo', 'webpBgBorder'].forEach(id => {
+        ['webpBgSeed', 'webpBgGrow', 'webpBgHalo', 'webpBgBorder', 'webpBgGridLine'].forEach(id => {
           $(id).oninput = () => updateWebpPreview().catch(e => console.error(e));
         });
         await updateWebpPreview();
@@ -2456,7 +2489,8 @@
       $('btnRefreshRecords').onclick = () => startBatchGenerateAll().catch(e => setStatus($('runStatus'), `批量生成失败：${e?.message || e}`, 'error'));
       $('btnNewPet').onclick = openBatchCreateDialog;
       $('btnOpenIndex').onclick = () => openWorkspaceViewer(`${FAMOUS_DIR}/index.json`);
-      $('recordSearch').addEventListener('input', renderRecordList);
+      $('recordSearch').addEventListener('input', handleRecordFilterChange);
+      $('recordSelectAll').addEventListener('change', () => setRenderedRecordSelection($('recordSelectAll').checked));
       $('referenceUrl').addEventListener('input', renderReferencePreview);
       $('referenceSection').addEventListener('paste', event => handleReferencePaste(event));
       $('referenceSection').addEventListener('click', event => {

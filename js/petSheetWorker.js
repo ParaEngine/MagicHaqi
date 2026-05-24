@@ -17,6 +17,8 @@
 const SHEET_COLS = 4;
 const SHEET_ROWS = 4;
 const TRANSPARENT_CORNER_SAMPLE_SIZE = 3;
+const DEFAULT_GRID_LINE_RATIO = 0.045;
+const DEFAULT_GRID_LINE_MAX_WIDTH = 18;
 
 function areCornersFullyTransparent(data, width, height) {
     if (!data || width <= 0 || height <= 0) return false;
@@ -45,6 +47,72 @@ function rgbDistanceSq(data, di, r, g, b) {
     return dr * dr + dg * dg + db * db;
 }
 
+function resolveGridLineWidth(width, height, options = {}) {
+    const explicitWidth = Number(options.gridLineWidth);
+    if (Number.isFinite(explicitWidth) && explicitWidth >= 0) return Math.min(DEFAULT_GRID_LINE_MAX_WIDTH, Math.round(explicitWidth));
+    const ratio = Number.isFinite(Number(options.gridLineRatio)) ? Number(options.gridLineRatio) : DEFAULT_GRID_LINE_RATIO;
+    const approxCell = Math.min(width / SHEET_COLS, height / SHEET_ROWS);
+    return Math.max(3, Math.min(DEFAULT_GRID_LINE_MAX_WIDTH, Math.ceil(approxCell * ratio)));
+}
+
+function clearAlphaBand(data, width, height, x0, y0, x1, y1) {
+    const left = Math.max(0, Math.floor(x0));
+    const top = Math.max(0, Math.floor(y0));
+    const right = Math.min(width, Math.ceil(x1));
+    const bottom = Math.min(height, Math.ceil(y1));
+    for (let y = top; y < bottom; y++) {
+        for (let x = left; x < right; x++) {
+            data[(y * width + x) << 2 | 3] = 0;
+        }
+    }
+}
+
+function clearGridLineBands(data, width, height, options = {}) {
+    const lineWidth = resolveGridLineWidth(width, height, options);
+    if (lineWidth <= 0) return;
+    const half = Math.max(1, Math.ceil(lineWidth / 2));
+    for (let col = 1; col < SHEET_COLS; col++) {
+        const x = Math.round(col * width / SHEET_COLS);
+        clearAlphaBand(data, width, height, x - half, 0, x + half + 1, height);
+    }
+    for (let row = 1; row < SHEET_ROWS; row++) {
+        const y = Math.round(row * height / SHEET_ROWS);
+        clearAlphaBand(data, width, height, 0, y - half, width, y + half + 1);
+    }
+}
+
+function hasOpaqueInternalGridBands(data, width, height, options = {}) {
+    const lineWidth = Math.max(3, resolveGridLineWidth(width, height, options));
+    const half = Math.max(1, Math.ceil(lineWidth / 2));
+    const alphaThreshold = 12;
+    const opaqueRatioThreshold = 0.08;
+    const measure = (x0, y0, x1, y1) => {
+        const left = Math.max(0, Math.floor(x0));
+        const top = Math.max(0, Math.floor(y0));
+        const right = Math.min(width, Math.ceil(x1));
+        const bottom = Math.min(height, Math.ceil(y1));
+        let total = 0;
+        let opaque = 0;
+        const step = Math.max(1, Math.floor(Math.max(right - left, bottom - top) / 160));
+        for (let y = top; y < bottom; y += step) {
+            for (let x = left; x < right; x += step) {
+                total++;
+                if (data[(y * width + x) << 2 | 3] > alphaThreshold) opaque++;
+            }
+        }
+        return total > 0 && opaque / total >= opaqueRatioThreshold;
+    };
+    for (let col = 1; col < SHEET_COLS; col++) {
+        const x = Math.round(col * width / SHEET_COLS);
+        if (measure(x - half, 0, x + half + 1, height)) return true;
+    }
+    for (let row = 1; row < SHEET_ROWS; row++) {
+        const y = Math.round(row * height / SHEET_ROWS);
+        if (measure(0, y - half, width, y + half + 1)) return true;
+    }
+    return false;
+}
+
 function sampleCellBackground(data, width, cellX, cellY, cellW, cellH) {
     const samples = [];
     const edge = Math.max(4, Math.min(18, Math.round(Math.min(cellW, cellH) * 0.045)));
@@ -54,6 +122,7 @@ function sampleCellBackground(data, width, cellX, cellY, cellW, cellH) {
             const onEdge = x < edge || y < edge || cellW - 1 - x < edge || cellH - 1 - y < edge;
             if (!onEdge) continue;
             const di = ((cellY + y) * width + cellX + x) << 2;
+            if (data[di + 3] < 16) continue;
             samples.push([data[di], data[di + 1], data[di + 2]]);
         }
     }
@@ -83,6 +152,12 @@ function removeCellBackground(data, width, height, cellX, cellY, cellW, cellH, o
         const localIndex = y * cellW + x;
         if (visited[localIndex]) return;
         const di = ((cellY + y) * width + cellX + x) << 2;
+        if (data[di + 3] === 0) {
+            visited[localIndex] = 1;
+            queue[tail++] = x;
+            queue[tail++] = y;
+            return;
+        }
         if (rgbDistanceSq(data, di, bg.r, bg.g, bg.b) > seedThresholdSq) return;
         visited[localIndex] = 1;
         queue[tail++] = x;
@@ -107,7 +182,7 @@ function removeCellBackground(data, width, height, cellX, cellY, cellW, cellH, o
             const localIndex = ny * cellW + nx;
             if (visited[localIndex]) continue;
             const di = ((cellY + ny) * width + cellX + nx) << 2;
-            if (rgbDistanceSq(data, di, bg.r, bg.g, bg.b) <= growThresholdSq) {
+            if (data[di + 3] === 0 || rgbDistanceSq(data, di, bg.r, bg.g, bg.b) <= growThresholdSq) {
                 visited[localIndex] = 1;
                 queue[tail++] = nx;
                 queue[tail++] = ny;
@@ -130,7 +205,12 @@ function removeCellBackground(data, width, height, cellX, cellY, cellW, cellH, o
                     if (dx === 0 && dy === 0) continue;
                     const nx = x + dx;
                     const ny = y + dy;
-                    if (nx < 0 || nx >= cellW || ny < 0 || ny >= cellH || visited[ny * cellW + nx]) transparentNeighbors++;
+                    if (nx < 0 || nx >= cellW || ny < 0 || ny >= cellH || visited[ny * cellW + nx]) {
+                        transparentNeighbors++;
+                        continue;
+                    }
+                    const ni = ((cellY + ny) * width + cellX + nx) << 2;
+                    if (data[ni + 3] === 0) transparentNeighbors++;
                 }
             }
             if (transparentNeighbors >= 4) data[di + 3] = Math.round(data[di + 3] * 0.25);
@@ -157,18 +237,19 @@ async function processSheet(bitmap, options = {}) {
     const imageData = ctx.getImageData(0, 0, width, height);
     const data = imageData.data;
 
-    if (areCornersFullyTransparent(data, width, height)) {
+    if (areCornersFullyTransparent(data, width, height) && !hasOpaqueInternalGridBands(data, width, height, options)) {
         return { direct: true, width, height };
     }
 
-    const cellW = Math.floor(width / SHEET_COLS);
-    const cellH = Math.floor(height / SHEET_ROWS);
+    clearGridLineBands(data, width, height, options);
 
     for (let row = 0; row < SHEET_ROWS; row++) {
         for (let col = 0; col < SHEET_COLS; col++) {
             const cellX = Math.floor(col * width / SHEET_COLS);
             const cellY = Math.floor(row * height / SHEET_ROWS);
-            removeCellBackground(data, width, height, cellX, cellY, Math.min(cellW, width - cellX), Math.min(cellH, height - cellY), options);
+            const nextCellX = Math.floor((col + 1) * width / SHEET_COLS);
+            const nextCellY = Math.floor((row + 1) * height / SHEET_ROWS);
+            removeCellBackground(data, width, height, cellX, cellY, nextCellX - cellX, nextCellY - cellY, options);
         }
     }
 

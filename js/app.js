@@ -145,6 +145,7 @@ let pendingStoryData = null;
 let pendingStoryReturnToMaker = null;
 let pendingStoryReturnToList = false;
 let shopReturnPreserveRoomMode = false;
+let lastRenderedView = null;
 
 const NEW_USER_STORY_PARAM = 'new_user_story';
 
@@ -284,6 +285,7 @@ function storyRouteOptions() {
         onFeedItem: handleFeedItem,
         onLaunchMinigame: handleStoryMinigameLaunch,
         onRaisePet: handleStoryRaisePet,
+        onStoryFinished: markStoryCompleted,
     };
 }
 
@@ -296,7 +298,14 @@ function renderStoryPlayerRoute() {
     };
     const renderLoaded = (mod, story) => {
         if (state.currentView !== 'storyPlayer') return;
-        mod.renderStoryPlayer(app, { story }, options);
+        const completedPlayback = getCompletedStoryPlayback(story, pendingStoryPath);
+        mod.renderStoryPlayer(app, { story }, {
+            ...options,
+            initialFinished: !!completedPlayback,
+            allowUnlockedReplay: !!completedPlayback,
+            initialActorId: completedPlayback?.actorId || '',
+            sessionKey: `${story?.id || 'story'}:${pendingStoryPath || story?.sourcePath || ''}:${completedPlayback ? 'completed' : 'active'}`,
+        });
     };
     if (storyPlayerViewModule && pendingStoryData) {
         renderLoaded(storyPlayerViewModule, pendingStoryData);
@@ -496,6 +505,13 @@ function renderMinigamesRoute() {
         allowPlayWhenLowEnergy: !!launch?.allowLowEnergy,
         suppressRewards: !!launch?.suppressRewards,
         exitGameToBack: launch?.mode === 'sickness' || launch?.mode === 'story',
+        deferGameFinishedUntilCompletionExit: launch?.mode === 'story',
+        completionPrompt: launch?.mode === 'story' ? {
+            title: '小游戏完成啦',
+            text: '要继续玩一会儿，还是回到故事？',
+            continueText: '继续玩',
+            backText: '回到故事',
+        } : null,
     };
     if (minigamesViewModule) {
         minigamesViewModule.renderMinigames(app, { pet }, renderOptions);
@@ -663,7 +679,15 @@ function preloadLoadedPetAssets() {
     }
 }
 
+function cleanupLeavingView(nextView) {
+    if (lastRenderedView === nextView) return;
+    if (lastRenderedView === 'storyPlayer') storyPlayerViewModule?.disposeStoryPlayer?.();
+    if (lastRenderedView === 'storyMaker') storyMakerViewModule?.disposeStoryMaker?.();
+    lastRenderedView = nextView;
+}
+
 function render() {
+    cleanupLeavingView(state.currentView);
     stopHomeWalk();
     const fn = routes[state.currentView] || routes.login;
     try { fn(); } catch (e) { console.error('render 失败', e); app.innerHTML = '<div style="padding:30px;color:#b91c1c">渲染错误：' + (e?.message || e) + '</div>'; }
@@ -844,6 +868,16 @@ async function firstSelectablePetId(excludeId = null) {
     return null;
 }
 
+async function loadOrderedPets() {
+    const pets = [];
+    for (const id of state.petOrder || []) {
+        if (!id) continue;
+        const pet = state.pets[id] || await loadPet(id);
+        if (pet) pets.push(pet);
+    }
+    return pets;
+}
+
 async function selectFirstAvailablePet(preferredId = null) {
     const preferred = preferredId ? (state.pets[preferredId] || await loadPet(preferredId)) : null;
     const nextId = preferred && isPetSelectable(preferred) ? preferredId : await firstSelectablePetId();
@@ -860,14 +894,16 @@ async function selectFirstAvailablePet(preferredId = null) {
 
 async function enforcePlanetPetLimit(preferredKeepId = state.currentPetId) {
     const limit = getPlanetPetLimit();
-    let localPets = localPlanetPets(state.petOrder.map(id => state.pets[id]).filter(Boolean));
+    const orderedPets = await loadOrderedPets();
+    const orderIndex = new Map((state.petOrder || []).map((id, index) => [id, index]));
+    let localPets = localPlanetPets(orderedPets);
     if (localPets.length <= limit) return [];
     const candidates = localPets
         .filter(pet => pet.id !== preferredKeepId)
         .sort((a, b) => {
-            const aReleased = a.location?.type === 'released' ? 0 : 1;
-            const bReleased = b.location?.type === 'released' ? 0 : 1;
-            return (aReleased - bReleased) || ((Number(a.bornAt) || 0) - (Number(b.bornAt) || 0));
+            const ai = orderIndex.has(a.id) ? orderIndex.get(a.id) : Number.MAX_SAFE_INTEGER;
+            const bi = orderIndex.has(b.id) ? orderIndex.get(b.id) : Number.MAX_SAFE_INTEGER;
+            return (ai - bi) || ((Number(a.bornAt) || 0) - (Number(b.bornAt) || 0));
         });
     const exiled = [];
     while (localPets.length > limit && candidates.length) {
@@ -880,6 +916,59 @@ async function enforcePlanetPetLimit(preferredKeepId = state.currentPetId) {
     if (exiled.some(item => item.pet.id === state.currentPetId)) await selectFirstAvailablePet(preferredKeepId);
     if (exiled.length) saveUserProfileDebounced();
     return exiled;
+}
+
+function normalizeStoryPetName(value) {
+    return String(value || '').trim().toLowerCase();
+}
+
+function storyPetImageKeys(pet = {}) {
+    return [pet.imageUrl, pet.imageSheetUrl]
+        .map(value => String(value || '').trim())
+        .filter(Boolean);
+}
+
+async function findDuplicateStoryPet(template = {}, actor = {}) {
+    const rewardName = normalizeStoryPetName(template.name || actor?.name || '');
+    const rewardImageKeys = new Set(storyPetImageKeys(template));
+    const pets = await loadOrderedPets();
+    return pets.find(pet => {
+        if (rewardName && normalizeStoryPetName(pet.name) === rewardName) return true;
+        if (!rewardImageKeys.size) return false;
+        return storyPetImageKeys(pet).some(url => rewardImageKeys.has(url));
+    }) || null;
+}
+
+function storyProgressKeys(story, path = '') {
+    return [...new Set([
+        story?.id,
+        story?.sourcePath,
+        path,
+    ].map(value => String(value || '').trim()).filter(Boolean))];
+}
+
+function getCompletedStoryPlayback(story, path = '') {
+    const completed = state.storyProgress?.completed || {};
+    const key = storyProgressKeys(story, path).find(item => completed[item]);
+    if (key) return completed[key];
+    const duplicate = Object.values(state.pets || {}).find(pet => pet?.sourceStoryId && storyProgressKeys(story, path).includes(pet.sourceStoryId));
+    return duplicate ? { completedAt: duplicate.bornAt || Date.now(), actorId: duplicate.sourceActorId || '' } : null;
+}
+
+function markStoryCompleted(story, actor) {
+    const keys = storyProgressKeys(story, pendingStoryPath);
+    if (!keys.length) return;
+    const completed = { ...(state.storyProgress?.completed || {}) };
+    const completedAt = Date.now();
+    keys.forEach(key => {
+        completed[key] = {
+            ...(completed[key] || {}),
+            completedAt: completed[key]?.completedAt || completedAt,
+            actorId: actor?.id || completed[key]?.actorId || '',
+        };
+    });
+    state.storyProgress = { ...(state.storyProgress || {}), completed };
+    saveUserProfile().catch(e => console.warn('保存故事进度失败', e));
 }
 
 // 强制弹出命名框，直到玩家给出非空名称（不可关闭）。
@@ -1785,10 +1874,8 @@ function handleStoryMinigameLaunch(activity = {}) {
 }
 
 async function handleStoryMinigameResult(_game, data = {}) {
-    pendingMinigameLaunch = null;
     const mod = await loadStoryPlayerView();
     mod.completeStoryMinigameActivity?.(data);
-    setView('storyPlayer');
 }
 
 function handleStoryMinigameExit() {
@@ -1800,6 +1887,21 @@ async function handleStoryRaisePet(story, actor) {
     const template = actor?.petTemplate || actor?.pet || story?.ending?.petTemplate || null;
     if (!template) {
         showToast('故事没有配置可领取的宠物', 'error');
+        return;
+    }
+    const duplicate = await findDuplicateStoryPet(template, actor);
+    if (duplicate) {
+        markStoryCompleted(story, actor);
+        pendingStoryPath = null;
+        pendingStoryData = null;
+        pendingStoryReturnToMaker = null;
+        pendingStoryReturnToList = false;
+        if (isPetSelectable(duplicate)) {
+            await setCurrentPetPersisted(duplicate.id);
+            setCurrentPet(duplicate.id);
+        }
+        showToast(`你已经拥有 ${duplicate.name || template.name || actor?.name || '这只宠物'} 啦，不需要重复带回星球。`, 'info', 3600);
+        setView(state.currentPetId ? 'home' : 'petList');
         return;
     }
     const now = Date.now();
@@ -1827,16 +1929,20 @@ async function handleStoryRaisePet(story, actor) {
     };
     applyStage(pet);
     await savePet(pet);
+    markStoryCompleted(story, actor);
     await setCurrentPetPersisted(pet.id);
     setCurrentPet(pet.id);
     try { await ensurePetData(pet.id); } catch (_) {}
-    await enforcePlanetPetLimit(pet.id);
+    const exiled = await enforcePlanetPetLimit(pet.id);
     pendingStoryPath = null;
     pendingStoryData = null;
     pendingStoryReturnToMaker = null;
     pendingStoryReturnToList = false;
     preloadLoadedPetAssets();
-    showToast(`${pet.name} 已来到你的星球！`, 'success', 2600);
+    const exileText = exiled.length
+        ? ` 星球满了，${exiled.map(item => `${item.pet.name || '一只宠物'}去了${item.location.name}`).join('，')}。`
+        : '';
+    showToast(`${pet.name} 已来到你的星球！${exileText}`, exiled.length ? 'info' : 'success', exiled.length ? 4600 : 2600);
     setView('home');
 }
 

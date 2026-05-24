@@ -43,6 +43,19 @@ async function writeFileSafe(path, content) {
     }
 }
 
+async function deleteFileSafe(path) {
+    try {
+        const s = ensureStore();
+        if (typeof s.deleteFile === 'function') {
+            await s.deleteFile(path);
+            return true;
+        }
+    } catch (e) {
+        console.warn('deleteFile 失败', path, e);
+    }
+    return await writeFileSafe(path, '');
+}
+
 async function listDirSafe(path) {
     try {
         const s = ensureStore();
@@ -189,7 +202,11 @@ async function discoverWorkspaceStoryRecords() {
     const paths = [...new Set(entries
         .map(storyPathFromDirEntry)
         .filter(path => /\.json$/i.test(path) && path !== PATHS.storyList))];
-    return paths.map(createStoryPathRecord).filter(Boolean);
+    const records = await Promise.all(paths.map(async (path) => {
+        const text = await readFileSafe(path);
+        return text.trim() ? createStoryPathRecord(path) : null;
+    }));
+    return records.filter(Boolean);
 }
 
 function normalizePostcardRecord(record) {
@@ -288,6 +305,7 @@ function getUserProfilePayload() {
         remoteElementStocks: state.remoteElementStocks && typeof state.remoteElementStocks === 'object' ? state.remoteElementStocks : {},
         lifetimeStats: state.lifetimeStats && typeof state.lifetimeStats === 'object' ? state.lifetimeStats : {},
         achievements: state.achievements && typeof state.achievements === 'object' ? state.achievements : { claimed: {} },
+        storyProgress: state.storyProgress && typeof state.storyProgress === 'object' ? state.storyProgress : { completed: {} },
         petOrder: state.petOrder || [],
         currentPetId: state.currentPetId || null,
     };
@@ -381,6 +399,8 @@ export async function loadUserProfile() {
     };
     const ach = p.achievements && typeof p.achievements === 'object' ? p.achievements : {};
     state.achievements = { claimed: (ach.claimed && typeof ach.claimed === 'object') ? ach.claimed : {} };
+    const storyProgress = p.storyProgress && typeof p.storyProgress === 'object' ? p.storyProgress : {};
+    state.storyProgress = { completed: (storyProgress.completed && typeof storyProgress.completed === 'object') ? storyProgress.completed : {} };
     state.playSessionStartedAt = 0;
     state.petOrder = Array.isArray(p.petOrder) ? p.petOrder.filter(id => typeof id === 'string' && id) : [];
     state.currentPetId = typeof p.currentPetId === 'string' && p.currentPetId ? p.currentPetId : null;
@@ -469,8 +489,19 @@ export async function saveWorkspaceStory(story, name = '') {
     await writeJSON(path, payload);
     const record = createStoryListRecord(payload, path);
     const existing = await loadWorkspaceStoryList();
-    await saveWorkspaceStoryList([record, ...existing.filter(item => item.path !== path)]);
-    return { path, story: payload };
+    const nextIndex = [record, ...existing.filter(item => item.path !== path)];
+    await saveWorkspaceStoryList(nextIndex);
+    return { path, story: payload, record, index: nextIndex };
+}
+
+export async function deleteWorkspaceStory(pathOrName) {
+    const raw = String(pathOrName || '').trim();
+    if (!raw) return false;
+    const path = (raw.includes('/') ? raw : PATHS.story(raw)).replace(/^\/+/, '');
+    const existing = await loadWorkspaceStoryList();
+    await saveWorkspaceStoryList(existing.filter(item => item.path !== path));
+    await deleteFileSafe(path);
+    return true;
 }
 
 // ========== 宠物 ==========

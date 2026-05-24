@@ -1,7 +1,7 @@
 // 宠物列表视图（用于浏览所有宠物）
 import { $, $$, coinIconSvg, confirm, escapeHtml, randId, showToast } from './utils.js';
 import { t } from './i18n.js';
-import { formatDna, displayPetName, dnaDietPreference, dietPreferenceLabel } from './dna.js';
+import { formatDna, displayPetName, dnaDietPreference, dietPreferenceLabel, decodeDna, ELEMENTAL_ATTRIBUTES } from './dna.js';
 import { buildEggSvg, getPetSpriteCell, SHEET_COLS, SHEET_ROWS } from './pet.js';
 import { defaultPermanentTrauma, defaultStats, eggStats, applyStage } from './petTick.js';
 import { markPetReleased, getCompanionDays, getPetBirthday, getPetFindTarget, getPetLocationInfo, getRuntimePetStats, isPetOnCurrentPlanet, isPetSelectable } from './petLifecycle.js';
@@ -22,9 +22,18 @@ const PET_LIST_TABS = [
     { id: 'rare', label: '稀有宠物' },
 ];
 let activePetListTab = 'mine';
+let activeFamousPetFilter = 'all';
 let famousPetsIndex = null;
 let famousPetsIndexPromise = null;
-const famousPetConfigCache = new Map();
+let famousPetsFilterMetadataPromise = null;
+let famousPetFilterTabsScrollLeft = 0;
+const FAMOUS_PET_FILTERS = [
+    { id: 'all', label: '全部', type: 'all' },
+    { id: 'element:天空', label: '天空', type: 'element', value: '天空' },
+    { id: 'element:陆地', label: '陆地', type: 'element', value: '陆地' },
+    { id: 'element:水系', label: '海洋', type: 'element', value: '水系' },
+    ...ELEMENTAL_ATTRIBUTES.map(value => ({ id: `attribute:${value}`, label: value, type: 'attribute', value })),
+];
 // 16 个 (stage, anim) 格子，每格多条候选小标题，按 seed 选其一。
 const ALBUM_CAPTIONS = {
     baby: [
@@ -169,6 +178,14 @@ const ALBUM_BG_PALETTE = [
     '#dbeafe', '#ede9fe', '#fce7f3', '#fee2e2', '#fef9c3',
     '#e0f2fe', '#f0fdf4', '#fdf2f8', '#f5f3ff', '#ffe4e6', '#f0fdfa',
 ];
+const ELEMENTAL_ATTRIBUTE_BACKGROUNDS = {
+    '自然': '#d9f99d',
+    '火': '#fed7aa',
+    '冰': '#bae6fd',
+    '生命': '#bbf7d0',
+    '暗': '#ddd6fe',
+};
+const DEFAULT_PET_ART_BACKGROUND = '#dff7ff';
 
 function _stageReachedIndex(stage) {
     const idx = ALBUM_STAGES.findIndex(s => s.id === stage);
@@ -317,14 +334,7 @@ async function loadFamousPetsIndex() {
             .then(data => {
                 const list = Array.isArray(data) ? data : (Array.isArray(data?.pets) ? data.pets : []);
                 famousPetsIndex = list
-                    .map(item => ({
-                        id: String(item?.id || '').trim(),
-                        name: String(item?.name || '').trim(),
-                        imageSheetUrl: resolveFamousPetIndexAssetUrl(item?.imageSheetUrl, indexUrl.href),
-                        imageUrl: resolveFamousPetIndexAssetUrl(item?.imageUrl, indexUrl.href),
-                        rarity: Number(item?.rarity) || 0,
-                        price: Math.max(0, Math.round(Number(item?.price ?? 100) || 100)),
-                    }))
+                    .map(item => normalizeFamousPetIndexEntry(item, indexUrl.href))
                     .filter(item => item.id)
                     .sort((a, b) => (b.rarity || 0) - (a.rarity || 0) || a.id.localeCompare(b.id));
                 return famousPetsIndex;
@@ -339,11 +349,90 @@ async function loadFamousPetsIndex() {
     return famousPetsIndexPromise;
 }
 
+function normalizeFamousPetIndexEntry(item, baseUrl) {
+    const entry = item && typeof item === 'object' ? { ...item } : {};
+    const decodedTraits = entry.dna ? decodeDna(entry.dna) : null;
+    entry.id = String(entry.id || '').trim();
+    entry.name = String(entry.name || '').trim();
+    entry.imageSheetUrl = resolveFamousPetIndexAssetUrl(entry.imageSheetUrl, baseUrl);
+    entry.imageUrl = resolveFamousPetIndexAssetUrl(entry.imageUrl, baseUrl);
+    entry.traits = normalizeFamousPetTraits(entry.traits || decodedTraits || entry);
+    entry.rarity = Number(entry.rarity) || 0;
+    entry.price = Math.max(0, Math.round(Number(entry.price ?? 100) || 100));
+    entry.filterMetadataLoaded = true;
+    return entry;
+}
+
 function resolveFamousPetIndexAssetUrl(value, baseUrl) {
     const raw = String(value || '').trim();
     if (!raw || /^(?:https?:|data:|blob:|\/)/i.test(raw)) return raw;
     try { return new URL(raw, baseUrl).href; }
     catch (_) { return raw; }
+}
+
+function normalizeFamousPetElement(value) {
+    const raw = String(value || '').trim().toLowerCase();
+    if (!raw) return '';
+    if (raw === 'sky' || raw.includes('天空')) return '天空';
+    if (raw === 'land' || raw.includes('陆地')) return '陆地';
+    if (raw === 'water' || raw === 'ocean' || raw.includes('水') || raw.includes('海')) return '水系';
+    return String(value || '').trim();
+}
+
+function normalizeFamousPetTraits(source) {
+    const traits = source?.traits && typeof source.traits === 'object' ? source.traits : source;
+    if (!traits || typeof traits !== 'object') return {};
+    const element = normalizeFamousPetElement(traits.element || traits.habitat || traits.category || traits.field);
+    const elementalAttribute = String(traits.elementalAttribute || traits.attribute || '').trim();
+    return {
+        ...traits,
+        ...(element ? { element } : {}),
+        ...(elementalAttribute ? { elementalAttribute } : {}),
+    };
+}
+
+function petElementalAttribute(petOrEntry) {
+    const traits = normalizeFamousPetTraits(petOrEntry?.traits || petOrEntry || {});
+    if (traits.elementalAttribute) return traits.elementalAttribute;
+    if (petOrEntry?.dna) {
+        try { return decodeDna(petOrEntry.dna)?.elementalAttribute || ''; }
+        catch (_) { return ''; }
+    }
+    return '';
+}
+
+function petArtBackground(petOrEntry) {
+    return ELEMENTAL_ATTRIBUTE_BACKGROUNDS[petElementalAttribute(petOrEntry)] || DEFAULT_PET_ART_BACKGROUND;
+}
+
+function applyFamousPetConfigMetadata(entry, config) {
+    if (!entry) return entry;
+    if (!config) {
+        entry.filterMetadataLoaded = true;
+        return entry;
+    }
+    const decodedTraits = config.dna ? decodeDna(config.dna) : null;
+    entry.traits = normalizeFamousPetTraits(config.traits || decodedTraits || entry.traits || {});
+    entry.dna = config.dna || entry.dna || '';
+    entry.filterMetadataLoaded = true;
+    return entry;
+}
+
+function needsFamousPetFilterMetadata(list) {
+    return Array.isArray(list) && list.some(entry => !(entry?.filterMetadataLoaded || entry?.traits?.element || entry?.traits?.elementalAttribute));
+}
+
+async function loadFamousPetFilterMetadata() {
+    const list = await loadFamousPetsIndex();
+    if (!needsFamousPetFilterMetadata(list)) return list;
+    if (!famousPetsFilterMetadataPromise) {
+        famousPetsFilterMetadataPromise = Promise.all(list.map(async (entry) => {
+            if (entry.filterMetadataLoaded || entry.traits?.element || entry.traits?.elementalAttribute) return entry;
+            const config = await loadFamousPetConfig(entry);
+            return applyFamousPetConfigMetadata(entry, config);
+        })).then(() => list).finally(() => { famousPetsFilterMetadataPromise = null; });
+    }
+    return famousPetsFilterMetadataPromise;
 }
 
 function hasHatchedFamousPet(entry, pets) {
@@ -360,15 +449,18 @@ function hasHatchedFamousPet(entry, pets) {
 }
 
 function rarePetArtHtml(entry, unlocked) {
-    if (!unlocked) {
+    const canShowBaby = !!(entry?.imageSheetUrl || entry?.imageUrl);
+    if (!unlocked && !canShowBaby) {
         return `<div class="mh-rare-pet-unknown" aria-label="未发现">?</div>`;
     }
     const pet = {
         id: entry.id,
-        stage: 'adult',
+        stage: unlocked ? 'adult' : 'baby',
         anim: 'happy',
         imageUrl: entry.imageUrl || null,
         imageSheetUrl: entry.imageSheetUrl || null,
+        dna: entry.dna || '',
+        traits: entry.traits || null,
     };
     return rawPetArtHtml(pet, entry.name || entry.id);
 }
@@ -392,6 +484,55 @@ function rarePetCardHtml(entry, pets) {
         </button>`;
 }
 
+function famousPetFilterMatches(entry, filterId = activeFamousPetFilter) {
+    if (!filterId || filterId === 'all') return true;
+    const filter = FAMOUS_PET_FILTERS.find(item => item.id === filterId);
+    if (!filter) return true;
+    const traits = normalizeFamousPetTraits(entry?.traits || {});
+    if (filter.type === 'element') return traits.element === filter.value;
+    if (filter.type === 'attribute') return traits.elementalAttribute === filter.value;
+    return true;
+}
+
+function filteredFamousPets(list) {
+    return (list || []).filter(entry => famousPetFilterMatches(entry));
+}
+
+function famousPetFilterTabsHtml(list) {
+    const safeList = Array.isArray(list) ? list : [];
+    const countFor = (filter) => filter.id === 'all'
+        ? safeList.length
+        : safeList.filter(entry => famousPetFilterMatches(entry, filter.id)).length;
+    return `
+        <div class="mh-famous-filter-tabs" role="tablist" aria-label="稀有宠物分类">
+            ${FAMOUS_PET_FILTERS.map(filter => {
+                const active = activeFamousPetFilter === filter.id;
+                const count = countFor(filter);
+                return `
+                    <button class="mh-famous-filter-tab ${active ? 'active' : ''}" data-famous-pet-filter="${escapeHtml(filter.id)}" type="button" role="tab" aria-selected="${active ? 'true' : 'false'}">
+                        ${escapeHtml(filter.label)}<span>${count}</span>
+                    </button>`;
+            }).join('')}
+        </div>`;
+}
+
+
+function rememberFamousPetFilterScroll(panel) {
+    const tabs = panel?.querySelector?.('.mh-famous-filter-tabs');
+    if (tabs) famousPetFilterTabsScrollLeft = tabs.scrollLeft || 0;
+}
+
+function restoreFamousPetFilterScroll(panel) {
+    const tabs = panel?.querySelector?.('.mh-famous-filter-tabs');
+    if (!tabs) return;
+    const restore = () => { tabs.scrollLeft = famousPetFilterTabsScrollLeft; };
+    restore();
+    requestAnimationFrame(restore);
+    tabs.addEventListener('scroll', () => {
+        famousPetFilterTabsScrollLeft = tabs.scrollLeft || 0;
+    }, { passive: true });
+}
+
 function rarePetPrice(entry) {
     return Math.max(0, Math.round(Number(entry?.price ?? 100) || 100));
 }
@@ -410,7 +551,7 @@ function rarePetPhotoCellHtml(entry, stageIdx, animIdx, unlocked) {
     }
     const bx = (animIdx * 100 / (SHEET_COLS - 1)).toFixed(3);
     const by = (stageIdx * 100 / (SHEET_ROWS - 1)).toFixed(3);
-    const bg = ALBUM_BG_PALETTE[seed % ALBUM_BG_PALETTE.length];
+    const bg = petArtBackground(entry);
     return `
         <div class="mh-rare-album-photo" style="transform:translate(${offsetX}px, ${offsetY}px) rotate(${rotate}deg)">
             <div class="mh-rare-album-image mh-rare-photo-image mh-pet-list-raw" data-mh-raw-url="${escapeHtml(entry.imageSheetUrl)}" style="background-color:${bg};background-size:${SHEET_COLS * 100}% ${SHEET_ROWS * 100}%;background-position:${bx}% ${by}%;background-repeat:no-repeat;image-rendering:auto"></div>
@@ -418,7 +559,8 @@ function rarePetPhotoCellHtml(entry, stageIdx, animIdx, unlocked) {
 }
 
 function rarePetPhotoGridHtml(entry, unlocked) {
-    const blocks = ALBUM_STAGES.map((stage, stageIdx) => {
+    const stages = unlocked ? ALBUM_STAGES : ALBUM_STAGES.slice(0, 1);
+    const blocks = stages.map((stage, stageIdx) => {
         const cells = [];
         for (let animIdx = 0; animIdx < SHEET_COLS; animIdx++) {
             cells.push(rarePetPhotoCellHtml(entry, stageIdx, animIdx, unlocked));
@@ -438,26 +580,14 @@ function rarePetPhotoGridHtml(entry, unlocked) {
 async function loadFamousPetConfig(entry) {
     const id = String(entry?.id || '').trim();
     if (!id) return null;
-    if (famousPetConfigCache.has(id)) return famousPetConfigCache.get(id);
-    const jsonUrl = new URL(`../famous-pets/${id}.json`, import.meta.url);
-    const promise = fetch(jsonUrl.href, { cache: 'no-cache' })
-        .then(response => response.ok ? response.json() : null)
-        .then(data => {
-            if (!data || typeof data !== 'object') return null;
-            return {
-                ...data,
-                imageUrl: resolveFamousPetIndexAssetUrl(data.imageUrl, jsonUrl.href) || null,
-                imageSheetUrl: resolveFamousPetIndexAssetUrl(data.imageSheetUrl, jsonUrl.href) || entry.imageSheetUrl || null,
-            };
-        })
-        .catch((e) => {
-            console.warn('加载稀有宠物配置失败', e);
-            return null;
-        });
-    famousPetConfigCache.set(id, promise);
-    const config = await promise;
-    famousPetConfigCache.set(id, config);
-    return config;
+    return {
+        ...entry,
+        id,
+        name: entry.name || id,
+        imageUrl: entry.imageUrl || null,
+        imageSheetUrl: entry.imageSheetUrl || null,
+        traits: normalizeFamousPetTraits(entry.traits || entry),
+    };
 }
 
 function openRarePetModal(entry, pets, refreshPetList) {
@@ -597,6 +727,12 @@ function ensurePetListTabStyles() {
         .mh-pet-list-tabs { display:grid; grid-template-columns:repeat(2, minmax(0, 1fr)); gap:6px; margin-bottom:12px; }
         .mh-pet-list-tab { height:34px; border-radius:999px; border:1.5px solid var(--border-card); background:#effaff; color:var(--text-secondary); font-size:13px; font-weight:900; cursor:pointer; box-shadow:inset 0 1px 0 rgba(255,255,255,0.78); }
         .mh-pet-list-tab.active { background:linear-gradient(135deg, var(--accent-light), var(--accent-dark)); color:#fff; border-color:var(--accent); text-shadow:0 1px 0 rgba(15,23,42,0.45); }
+        .mh-famous-filter-tabs { display:flex; gap:6px; overflow-x:auto; padding:0 0 10px; margin:-2px 0 10px; overscroll-behavior-x:contain; scrollbar-width:none; }
+        .mh-famous-filter-tabs::-webkit-scrollbar { display:none; }
+        .mh-famous-filter-tab { flex:0 0 auto; height:30px; border-radius:999px; border:1.5px solid var(--border-card); background:#fff; color:var(--text-secondary); font-size:12px; font-weight:900; padding:0 10px; display:inline-flex; align-items:center; gap:5px; cursor:pointer; }
+        .mh-famous-filter-tab span { min-width:16px; height:16px; padding:0 4px; border-radius:999px; background:#f1f5f9; color:#64748b; font-size:10px; line-height:16px; text-align:center; }
+        .mh-famous-filter-tab.active { background:linear-gradient(135deg, #e0f7ff, #8edfff); border-color:#38bdf8; color:var(--text-primary); box-shadow:inset 0 1px 0 rgba(255,255,255,.82), 0 2px 5px rgba(14,116,144,.16); }
+        .mh-famous-filter-tab.active span { background:rgba(255,255,255,.72); color:var(--accent-dark); }
         .mh-rare-pet-list { display:grid; grid-template-columns:repeat(auto-fill, minmax(138px, 1fr)); gap:10px; }
         .mh-rare-pet-card { appearance:none; font:inherit; cursor:pointer; min-height:184px; display:flex; flex-direction:column; align-items:center; gap:10px; text-align:center; }
         .mh-rare-pet-card:hover { transform:translateY(-2px); border-color:var(--accent); }
@@ -634,10 +770,11 @@ function rawPetArtHtml(pet, alt = '') {
     const url = pet?.imageSheetUrl || pet?.imageUrl || '';
     const cell = pet?.imageSheetUrl ? getPetSpriteCell(pet) : null;
     const safeAlt = escapeHtml(alt);
+    const bg = petArtBackground(pet);
 
     if (pet?.imageUrl && !pet?.imageSheetUrl) {
         return `<div class="mh-pet-art mh-pet-list-raw" data-mh-raw-url="${escapeHtml(url)}" aria-label="${safeAlt}"
-            style="width:100%;height:100%;display:block;background:#000;background-size:contain;background-position:center;background-repeat:no-repeat;image-rendering:auto"></div>`;
+            style="width:100%;height:100%;display:block;background:${bg};background-size:contain;background-position:center;background-repeat:no-repeat;image-rendering:auto"></div>`;
     }
 
     if (!url || !cell) {
@@ -650,7 +787,7 @@ function rawPetArtHtml(pet, alt = '') {
     const bx = (cell.col * 100 / (SHEET_COLS - 1)).toFixed(3);
     const by = (cell.row * 100 / (SHEET_ROWS - 1)).toFixed(3);
     return `<div class="mh-pet-art mh-pet-art-sprite mh-pet-list-raw" data-mh-raw-url="${escapeHtml(url)}" aria-label="${safeAlt}"
-        style="width:100%;height:100%;display:block;background:#000;background-size:${SHEET_COLS * 100}% ${SHEET_ROWS * 100}%;background-position:${bx}% ${by}%;background-repeat:no-repeat;image-rendering:auto"></div>`;
+        style="width:100%;height:100%;display:block;background:${bg};background-size:${SHEET_COLS * 100}% ${SHEET_ROWS * 100}%;background-position:${bx}% ${by}%;background-repeat:no-repeat;image-rendering:auto"></div>`;
 }
 
 function setupLazyRawPetImages(root) {
@@ -769,8 +906,10 @@ function setupLazyPetCards(panel, onLoadPet) {
 
 export function renderPetList(panel, { pets }, { onSelect, onBack, onFind, onLoadPet, allowSelect = false, pickerMode = false, multiple = false, selectedIds = [], onConfirm, title, confirmText } = {}) {
     ensurePetListTabStyles();
+    rememberFamousPetFilterScroll(panel);
     const list = sortPetsByRecentBirthday(pets || []);
     const rareList = Array.isArray(famousPetsIndex) ? famousPetsIndex : [];
+    const rareFilteredList = filteredFamousPets(rareList);
     const rareUnlockedCount = rareList.filter(item => hasHatchedFamousPet(item, pets || [])).length;
     const isPicker = !!pickerMode;
     if (isPicker) activePetListTab = 'mine';
@@ -799,7 +938,9 @@ export function renderPetList(panel, { pets }, { onSelect, onBack, onFind, onLoa
                 ? (Array.isArray(famousPetsIndex)
                     ? (rareList.length === 0
                         ? `<div class="card-flat text-center" style="color:var(--text-muted);padding:30px 14px">暂无稀有宠物记录。</div>`
-                        : `<div class="mh-rare-pet-list" id="mhRarePetList">${rareList.map(item => rarePetCardHtml(item, pets || [])).join('')}</div>`)
+                        : `${famousPetFilterTabsHtml(rareList)}${rareFilteredList.length === 0
+                            ? `<div class="card-flat text-center" style="color:var(--text-muted);padding:30px 14px">这个分类里暂时没有稀有宠物。</div>`
+                            : `<div class="mh-rare-pet-list" id="mhRarePetList">${rareFilteredList.map(item => rarePetCardHtml(item, pets || [])).join('')}</div>`}`)
                     : `<div class="card-flat text-center" style="color:var(--text-muted);padding:30px 14px">正在加载稀有宠物...</div>`)
                 : (list.length === 0
                 ? `<div class="card-flat text-center" style="color:var(--text-muted);padding:30px 14px">${escapeHtml(t('noPets'))}</div>`
@@ -814,6 +955,8 @@ export function renderPetList(panel, { pets }, { onSelect, onBack, onFind, onLoa
             <div data-picker-count style="flex:1;color:var(--text-muted);font-size:12px;font-weight:800">已选择 ${pickedIds.size} 只</div>
             <button class="btn-primary" id="mhPetPickerConfirm" type="button">${escapeHtml(confirmText || '确定')}</button>
         </div>` : ''}`;
+
+    if (isRareTab) restoreFamousPetFilterScroll(panel);
 
     if ($('mhPetListBack')) $('mhPetListBack').onclick = () => onBack?.();
     $$('[data-pet-list-tab]', panel).forEach(el => {
@@ -830,6 +973,21 @@ export function renderPetList(panel, { pets }, { onSelect, onBack, onFind, onLoa
             if (panel?.isConnected) renderPetList(panel, { pets }, { onSelect, onBack, onFind, onLoadPet, allowSelect, pickerMode, multiple, selectedIds: [...pickedIds], onConfirm, title, confirmText });
         });
     }
+
+    if (isRareTab && needsFamousPetFilterMetadata(famousPetsIndex) && !famousPetsFilterMetadataPromise) {
+        loadFamousPetFilterMetadata().then(() => {
+            if (panel?.isConnected) renderPetList(panel, { pets }, { onSelect, onBack, onFind, onLoadPet, allowSelect, pickerMode, multiple, selectedIds: [...pickedIds], onConfirm, title, confirmText });
+        });
+    }
+
+    $$('[data-famous-pet-filter]', panel).forEach(el => {
+        el.onclick = () => {
+            const next = el.dataset.famousPetFilter || 'all';
+            if (activeFamousPetFilter === next) return;
+            activeFamousPetFilter = FAMOUS_PET_FILTERS.some(filter => filter.id === next) ? next : 'all';
+            renderPetList(panel, { pets }, { onSelect, onBack, onFind, onLoadPet, allowSelect, pickerMode, multiple, selectedIds: [...pickedIds], onConfirm, title, confirmText });
+        };
+    });
 
     $$('#mhRarePetList [data-rare-pet-id]', panel).forEach(el => {
         el.onclick = () => {

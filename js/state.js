@@ -54,6 +54,9 @@ export const state = {
     achievements: {              // achievement state: { claimed: { id: timestamp } }
         claimed: {},
     },
+    storyProgress: {             // story completion state: { completed: { storyKey: { completedAt, actorId } } }
+        completed: {},
+    },
 };
 
 const subs = new Set();

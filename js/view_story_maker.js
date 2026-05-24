@@ -1,23 +1,23 @@
 // 故事创作视图：移动端优先的轻量 AI story JSON maker。
-import { $, escapeHtml, showToast } from './utils.js';
+import { $, confirm as confirmDialog, escapeHtml, showToast } from './utils.js';
 import { state } from './state.js';
+import { CONFIG } from './config.js';
 import { petArtHtml, scanAndMount } from './pet.js';
 import { displayPetName } from './dna.js';
 import { loadPet, saveWorkspaceStory } from './storage.js';
 import { renderPetList } from './view_petList.js';
 import { assignPresetScenesToStory, renderSceneParticles, renderStorySceneMaker, sceneParticleCss, SCENE_TAG_PROMPT_HINT } from './view_story_scene_maker.js';
+import { buildStoryPrompt } from './generationPrompts.js';
 import SoundManager from './soundManager.js';
 import ParticleEffects from './particleEffects.js';
 
 const DEFAULT_SCENE_COUNT = 5;
 const SCENE_BG_COLORS = ['#bae6fd', '#fde68a', '#bbf7d0', '#fecdd3', '#ddd6fe', '#fed7aa', '#ccfbf1', '#e0e7ff'];
 const ACTIVITY_TYPES = [
-    { value: 'feed', label: '喂养', actionKey: 'feed', source: 'CONFIG.actions.feed' },
-    { value: 'bath', label: '洗澡/清洁', actionKey: 'bath', source: 'CONFIG.actions.bath' },
-    { value: 'tap', label: '轻拍互动', actionKey: 'play', source: 'level_pet pet tapping feedback' },
-    { value: 'comfort', label: '安抚', actionKey: 'play', source: 'CONFIG.actions.play' },
-    { value: 'play', label: '玩耍', actionKey: 'play', source: 'CONFIG.actions.play' },
-    { value: 'minigame', label: '小游戏', actionKey: 'minigame', source: 'view_minigames.MINIGAMES' },
+    { value: 'feed', label: '喂养' },
+    { value: 'bath', label: '洗澡/清洁' },
+    { value: 'tap', label: '轻拍互动' },
+    { value: 'minigame', label: '小游戏' },
 ];
 const MINIGAMES = [
     { id: 'pet_tower_defense', title: '细胞免疫塔防' },
@@ -39,6 +39,12 @@ const MINIGAMES = [
 ];
 const REVIEW_LINE_REVEAL_MS = 38;
 const soundManager = SoundManager.getInstance();
+let activeStoryMakerCleanup = null;
+
+export function disposeStoryMaker() {
+    if (activeStoryMakerCleanup) activeStoryMakerCleanup();
+    activeStoryMakerCleanup = null;
+}
 
 function sceneBg(index = 0, value = null) {
     const color = typeof value === 'string' && value ? value : SCENE_BG_COLORS[index % SCENE_BG_COLORS.length];
@@ -49,19 +55,20 @@ function sceneBg(index = 0, value = null) {
 }
 
 function normalizeActivity(activity = {}) {
-    const type = activity.type === 'clean' ? 'bath' : (activity.type || 'comfort');
-    const def = ACTIVITY_TYPES.find(item => item.value === type) || ACTIVITY_TYPES[3];
+    const rawType = String(activity.type || '').trim().toLowerCase();
+    const type = rawType === 'clean' ? 'bath' : ['feed', 'bath', 'tap', 'minigame'].includes(rawType) ? rawType : 'tap';
+    const def = ACTIVITY_TYPES.find(item => item.value === type) || ACTIVITY_TYPES[2];
     const gameId = activity.gameId || 'pet_tower_defense';
     const game = MINIGAMES.find(item => item.id === gameId);
+    const target = String(activity.target || activity.actor || activity.actorId || '').trim();
     const result = {
         kind: 'activity',
         type: def.value,
-        actionKey: activity.actionKey || def.actionKey,
-        source: activity.source || def.source,
         title: activity.title || (def.value === 'minigame' ? game?.title : def.label) || '互动',
         count: Math.max(1, Number(activity.count ?? activity.times ?? 1) || 1),
         successText: activity.successText || '',
     };
+    if (def.value !== 'minigame' && target) result.target = target;
     if (def.value === 'minigame') {
         result.gameId = gameId;
         result.gameTitle = activity.gameTitle || game?.title || result.title;
@@ -166,38 +173,82 @@ function extractJson(text) {
     try { return JSON.parse(match[1]); } catch (_) { return null; }
 }
 
+function actorMatchKey(value) {
+    return String(value || '').trim().toLowerCase();
+}
+
+function petIdFromActor(actor = {}) {
+    const direct = actor.sourcePetId || actor.petTemplate?.id || actor.pet?.id || '';
+    if (direct) return direct;
+    const actorId = String(actor.id || '').trim();
+    const match = actorId.match(/^actor_(pet_[a-z0-9_-]+)$/i);
+    return match ? match[1] : '';
+}
+
+function petTemplateFromPet(pet) {
+    if (!pet) return null;
+    return {
+        id: pet.id,
+        name: pet.name,
+        dna: pet.dna,
+        imageSheetUrl: pet.imageSheetUrl || '',
+        traits: pet.traits || {},
+        stage: pet.stage || 'adult',
+    };
+}
+
+function findPetForActor(actor = {}) {
+    const petId = petIdFromActor(actor);
+    if (petId && state.pets?.[petId]) return state.pets[petId];
+    const actorName = String(actor.name || '').trim();
+    if (!actorName) return null;
+    return Object.values(state.pets || {}).find(pet => displayPetName(pet) === actorName || pet?.name === actorName) || null;
+}
+
+function mergeStoryActors(storyActors, selectedActors) {
+    const selected = Array.isArray(selectedActors) ? selectedActors : [];
+    const generated = Array.isArray(storyActors) ? storyActors : [];
+    if (!generated.length) return selected;
+    const selectedById = new Map(selected.map(actor => [actorMatchKey(actor.id), actor]));
+    const selectedByName = new Map(selected.map(actor => [actorMatchKey(actor.name), actor]));
+    const usedSelectedIds = new Set();
+    const merged = generated.map((actor, index) => {
+        const matched = selectedById.get(actorMatchKey(actor?.id))
+            || selectedByName.get(actorMatchKey(actor?.name))
+            || selected[index]
+            || null;
+        if (matched?.id) usedSelectedIds.add(matched.id);
+        const baseActor = { ...(matched || {}), ...(actor || {}) };
+        const matchedPet = findPetForActor(baseActor) || findPetForActor(matched) || findPetForActor(actor);
+        const sourcePetId = baseActor.sourcePetId || matchedPet?.id || petIdFromActor(baseActor);
+        return {
+            ...baseActor,
+            id: actor?.id || matched?.id || `actor_${index + 1}`,
+            name: actor?.name || matched?.name || `角色${index + 1}`,
+            sourcePetId,
+            petTemplate: baseActor.petTemplate || baseActor.pet || petTemplateFromPet(matchedPet),
+        };
+    });
+    selected.forEach(actor => {
+        if (!usedSelectedIds.has(actor.id) && !merged.some(item => item.id === actor.id)) merged.push(actor);
+    });
+    if (!merged.some(actor => actor.isMainActor) && merged[0]) merged[0].isMainActor = true;
+    return merged;
+}
+
 function normalizeStoryForSave(story, actors) {
     const scenes = Array.isArray(story?.scenes) ? story.scenes : [];
+    const mergedActors = mergeStoryActors(story?.actors, actors);
     return {
         id: story?.id || `story_${Date.now()}`,
         title: story?.title || '我的宠物故事',
         version: 1,
         selectionPrompt: story?.selectionPrompt || '选择一位主角进入故事。',
-        actors: Array.isArray(story?.actors) && story.actors.length ? story.actors : actors,
+        actors: mergedActors,
         startSceneId: story?.startSceneId || scenes[0]?.id || 'scene_1',
         scenes: scenes.map(sceneFromTimeline),
         ending: story?.ending || { subtitle: '故事完成。', text: '新的故事已经可以分享。' },
     };
-}
-
-function buildStoryPrompt(promptText, count, actors) {
-    return [
-        '请为一个移动端虚拟宠物游戏生成互动故事 JSON。只返回合法 JSON，不要 markdown。',
-        `故事主题：${promptText || '温暖的宠物冒险'}`,
-        `场景数量：${count}`,
-        '顶层字段必须包含：id, title, version, selectionPrompt, actors, startSceneId, scenes, ending。',
-        '每个 scene 字段：id, sceneTags, background, particles, bgMusic, timeline。不要使用 subtitle 字段；旁白/字幕必须写成 timeline 里的 line，actor 使用 "$narrator"。background 先使用 {"type":"color","color":"#bae6fd","imageUrl":""}。',
-        `sceneTags 用英文短标签数组，优先从这些标签里选择：${SCENE_TAG_PROMPT_HINT}。每幕给 2-5 个标签，用来低成本匹配预生成背景图。`,
-        'particles 是粒子效果数组，可选 sparkle, snow, rain, mist, bubbles, petals, embers；没有需要可为空数组。',
-        `bgMusic 是背景音乐 key，可为空字符串；可选：${Object.keys(CONFIG.assets?.bgSounds || {}).join(', ')}。`,
-        'timeline 是完整时间顺序数组，元素 kind 为 line 或 activity。line 格式 {"kind":"line","actor":"$selected","text":"..."}；旁白格式 {"kind":"line","actor":"$narrator","text":"..."}。',
-        '人物对白可以用开头括号写舞台指示，例如 "(左侧，开心)我们出发吧"、"(中间)看这里"、"(远处,睡觉)呼呼"、"(近处,伤心)我有点难过"。括号中的文字只表示角色在场景里的位置/动作，播放时不显示。没有括号时，角色会自动在画面中间区域随机排开，并保持安全距离。',
-        'activity 必须使用真实游戏数据：feed(actionKey feed, source CONFIG.actions.feed), bath(actionKey bath, source CONFIG.actions.bath), tap(actionKey play, source level_pet pet tapping feedback), comfort/play(actionKey play, source CONFIG.actions.play), minigame(source view_minigames.MINIGAMES)。',
-        `可用 minigame id: ${MINIGAMES.map(game => `${game.id}=${game.title}`).join(', ')}。`,
-        '活动格式示例 {"kind":"activity","type":"feed","actionKey":"feed","source":"CONFIG.actions.feed","title":"喂养","count":3,"successText":"好吃"}。小游戏示例 {"kind":"activity","type":"minigame","actionKey":"minigame","source":"view_minigames.MINIGAMES","title":"完成塔防","gameId":"pet_tower_defense","gameTitle":"细胞免疫塔防","count":1}。',
-        '每幕建议 timeline 中 2-4 条对白，0-2 个活动，允许 line/activity 交错。对白短小，适合儿童，中文。',
-        `actors: ${JSON.stringify(actors.map(actor => ({ id: actor.id, name: actor.name, allowUserSelection: actor.allowUserSelection, isMainActor: actor.isMainActor })))}`,
-    ].join('\n');
 }
 
 function isAbortError(error) {
@@ -239,7 +290,11 @@ function textFromStreamPayload(value, payload) {
 
 async function generateStoryWithAI(promptText, count, actors, { onChunk, signal, abortController } = {}) {
     const sdk = state.sdk || window.keepwork;
-    const userPrompt = buildStoryPrompt(promptText, count, actors);
+    const userPrompt = buildStoryPrompt(promptText, count, actors, {
+        sceneTagPromptHint: SCENE_TAG_PROMPT_HINT,
+        bgMusicKeys: Object.keys(CONFIG.assets?.bgSounds || {}),
+        minigames: MINIGAMES,
+    });
     let text = '';
     const appendChunk = (delta) => {
         throwIfAborted(signal);
@@ -315,6 +370,11 @@ function actorOptions(actors, selected) {
     return optionList(opts.map(actor => ({ value: actor.id, label: actor.name || actor.id })), selected || '$selected');
 }
 
+function activityTargetOptions(actors, selected) {
+    const opts = [{ value: '', label: '任意角色' }, { value: '$selected', label: '玩家选择的主角' }, ...actors.map(actor => ({ value: actor.id, label: actor.name || actor.id }))];
+    return optionList(opts, selected || '');
+}
+
 function splitStageText(text = '') {
     const raw = String(text || '');
     const match = raw.match(/^\s*[（(]([^）)]+)[）)]\s*/);
@@ -358,13 +418,15 @@ function renderLineEditor(line, itemIndex, actors) {
         </div>`;
 }
 
-function renderActivityEditor(activity, itemIndex) {
-    const type = activity?.type || 'comfort';
-    const def = ACTIVITY_TYPES.find(item => item.value === type) || ACTIVITY_TYPES[3];
+function renderActivityEditor(activity, itemIndex, actors) {
+    const rawType = activity?.type || 'tap';
+    const type = ACTIVITY_TYPES.some(item => item.value === rawType) ? rawType : 'tap';
+    const def = ACTIVITY_TYPES.find(item => item.value === type) || ACTIVITY_TYPES[2];
+    const target = activity?.target || activity?.actor || activity?.actorId || '';
     return `
         <div class="mh-scene-row is-activity" data-timeline-index="${itemIndex}" data-timeline-kind="activity">
             <div class="mh-scene-row-head">
-                <span class="mh-scene-row-kind">${itemIndex + 1}. 互动 · ${escapeHtml(def.source)}</span>
+                <span class="mh-scene-row-kind">${itemIndex + 1}. 互动 · ${escapeHtml(def.label)}</span>
                 <div class="mh-scene-row-actions">
                     ${renderTimelineMoveButtons(itemIndex)}
                     <button type="button" class="mh-maker-mini danger" data-remove-timeline="${itemIndex}">删除</button>
@@ -375,7 +437,9 @@ function renderActivityEditor(activity, itemIndex) {
                 <input class="modal-input" data-activity-count type="number" min="1" max="20" value="${Math.max(1, Number(activity?.count ?? activity?.times ?? 1) || 1)}" aria-label="次数">
             </div>
             <input class="modal-input" data-activity-title placeholder="互动标题" value="${escapeHtml(activity?.title || activity?.gameTitle || '')}">
-            <input class="modal-input" data-activity-source placeholder="真实数据来源" value="${escapeHtml(activity?.source || def.source)}">
+            <div class="mh-maker-target-fields" style="display:${type === 'minigame' ? 'none' : 'grid'};gap:8px">
+                <select class="modal-input" data-activity-target>${activityTargetOptions(actors, target)}</select>
+            </div>
             <div class="mh-maker-game-fields" style="display:${type === 'minigame' ? 'grid' : 'none'};gap:8px">
                 <select class="modal-input" data-activity-game>${optionList(MINIGAMES.map(game => ({ value: game.id, label: game.title })), activity?.gameId || 'pet_tower_defense')}</select>
             </div>
@@ -413,7 +477,7 @@ function renderSceneEditorHtml(story, { onlySceneIndex = null } = {}) {
             <div class="mh-scene-preview" style="background:${escapeHtml(sceneBg(sceneIndex, scene.background).color || '#bae6fd')};color:#0f2747">${renderSceneParticles(scene)}<span>背景预览</span></div>
             <div class="mh-scene-timeline">
                 ${sceneTimeline(scene).map((item, itemIndex) => item.kind === 'activity'
-                    ? renderActivityEditor(item, itemIndex)
+                    ? renderActivityEditor(item, itemIndex, actors)
                     : renderLineEditor(item, itemIndex, actors)).join('')}
             </div>
         </section>`).join('');
@@ -422,6 +486,11 @@ function renderSceneEditorHtml(story, { onlySceneIndex = null } = {}) {
 function storyPetForActor(actor) {
     if (!actor) return null;
     if (actor.sourcePetId && state.pets?.[actor.sourcePetId]) return state.pets[actor.sourcePetId];
+    const actorName = String(actor.name || '').trim();
+    if (actorName) {
+        const matchedPet = Object.values(state.pets || {}).find(pet => displayPetName(pet) === actorName || pet?.name === actorName);
+        if (matchedPet) return matchedPet;
+    }
     const template = actor.petTemplate || actor.pet || null;
     if (!template) return null;
     return {
@@ -515,18 +584,17 @@ function activityTotal(activity) {
 }
 
 function activityTitle(activity) {
-    const typeDef = ACTIVITY_TYPES.find(type => type.value === activity?.type) || ACTIVITY_TYPES[3];
+    const typeDef = ACTIVITY_TYPES.find(type => type.value === activity?.type) || ACTIVITY_TYPES[2];
     return activity?.type === 'minigame'
         ? (activity.gameTitle || activity.title || typeDef.label)
         : (activity?.title || typeDef.label);
 }
 
 function activityIcon(activity) {
-    const type = activity?.type || 'play';
+    const type = activity?.type || 'tap';
     if (type === 'feed') return '🍪';
     if (type === 'bath' || type === 'clean') return '🫧';
     if (type === 'tap') return '👆';
-    if (type === 'comfort') return '💗';
     if (type === 'minigame') return '🎾';
     return '✨';
 }
@@ -541,7 +609,7 @@ function renderMusicToggleButton(track, className = 'mh-review-music-toggle') {
     return `<button type="button" class="${className} ${muted ? 'is-muted' : ''}" data-review-music-toggle aria-label="${muted ? '开启音乐' : '静音'}" title="${muted ? '开启音乐' : '静音'}">${muted ? '♪' : '♫'}</button>`;
 }
 
-function reviewActionKey(sceneIndex, itemIndex, activity) {
+function reviewActivityProgressKey(sceneIndex, itemIndex, activity) {
     return `${sceneIndex}:${itemIndex}:${activity?.type || 'activity'}`;
 }
 
@@ -618,12 +686,14 @@ function renderBeatHtml(story, item, itemIndex, active = false) {
 function renderReviewActionButton(sceneIndex, timelineIndex, activity, activityIndex, current, actionProgress) {
     if (!activity) return '';
     const total = activityTotal(activity);
-    const done = Math.min(total, actionProgress[reviewActionKey(sceneIndex, timelineIndex, activity)] || 0);
+    const done = Math.min(total, actionProgress[reviewActivityProgressKey(sceneIndex, timelineIndex, activity)] || 0);
     const left = Math.max(0, total - done);
+    const badge = left <= 0 ? '✓' : String(left);
     return `
         <button type="button" class="btn-secondary action-btn dock-icon-btn mh-story-dock-action ${current ? 'is-current' : ''} ${left <= 0 ? 'is-complete' : ''}" data-review-action="${timelineIndex}">
+            <span class="mh-story-action-badge" aria-hidden="true">${badge}</span>
             <span class="dock-icon">${activityIcon(activity)}</span>
-            <span class="dock-label">${escapeHtml(activityTitle(activity))} ${left <= 0 ? '✓' : `× ${left}`}</span>
+            <span class="dock-label">${escapeHtml(activityTitle(activity))}</span>
         </button>`;
 }
 
@@ -778,7 +848,10 @@ function renderReviewHtml(story, sceneIndex = 0, layout = defaultReviewLayout(),
 }
 
 export function renderStoryMaker(panel, data = {}, { onBack, onPlayStory } = {}) {
+    disposeStoryMaker();
     const initialStory = data?.story || null;
+    let disposed = false;
+    let eventController = null;
     let busy = false;
     let currentStory = initialStory ? normalizeStoryForSave(initialStory, initialStory.actors || []) : null;
     let syncing = false;
@@ -864,6 +937,18 @@ export function renderStoryMaker(panel, data = {}, { onBack, onPlayStory } = {})
         reviewBgMusicActive = true;
     };
 
+    activeStoryMakerCleanup = () => {
+        disposed = true;
+        eventController?.abort?.();
+        panel.querySelectorAll?.('.mh-maker-actor-picker, .mh-maker-scene-picker').forEach(el => el.remove());
+        document.getElementById('mhMakerStreamModal')?.remove();
+        clearReviewPlaybackTimer();
+        if (reviewBgMusicActive) {
+            soundManager.stopBgMusic({ fadeMs: 520 });
+            reviewBgMusicActive = false;
+        }
+    };
+
     const startReviewScenePlayback = (sceneIndex) => {
         if (!currentStory?.scenes?.[sceneIndex]) return;
         clearReviewPlaybackTimer();
@@ -915,7 +1000,7 @@ export function renderStoryMaker(panel, data = {}, { onBack, onPlayStory } = {})
         const timeline = sceneTimeline(scene);
         const activity = timeline[itemIndex];
         if (!isTimelineActivity(activity)) return;
-        const key = reviewActionKey(reviewPlayback.sceneIndex, itemIndex, activity);
+        const key = reviewActivityProgressKey(reviewPlayback.sceneIndex, itemIndex, activity);
         const total = activityTotal(activity);
         reviewPlayback.actionProgress[key] = total;
         if (itemIndex === reviewPlayback.stepIndex) {
@@ -1034,9 +1119,11 @@ export function renderStoryMaker(panel, data = {}, { onBack, onPlayStory } = {})
                 .mh-review-story-stage .mh-story-page-arrow { flex:0 0 34px; width:34px; height:34px; min-width:34px; border-radius:13px; font-size:21px; font-weight:900; line-height:1; display:grid; place-items:center; padding:0; background:rgba(239,250,255,.92); border-color:rgba(255,255,255,.74); color:var(--accent-dark); box-shadow:0 3px 0 rgba(14,116,144,.22),0 7px 13px rgba(15,39,71,.14),inset 0 1px 0 rgba(255,255,255,.9); }
                 .mh-review-story-stage .mh-story-page-arrow:disabled { opacity:.34; cursor:default; }
                 .mh-review-story-stage .mh-story-page-arrow-placeholder { visibility:hidden; }
-                .mh-review-story-stage .mh-story-actions .mh-story-dock-action { min-width:58px; height:44px; border-radius:12px; border-color:rgba(14,165,233,.48); background:linear-gradient(180deg,rgba(255,255,255,.7),rgba(255,255,255,.16)),linear-gradient(135deg,#ecfeff,#bae6fd); box-shadow:0 3px 0 rgba(14,116,144,.24),0 7px 13px rgba(15,39,71,.12),inset 0 1px 0 rgba(255,255,255,.85); }
+                .mh-review-story-stage .mh-story-actions .mh-story-dock-action { position:relative; min-width:58px; height:44px; border-radius:12px; border-color:rgba(14,165,233,.48); background:linear-gradient(180deg,rgba(255,255,255,.7),rgba(255,255,255,.16)),linear-gradient(135deg,#ecfeff,#bae6fd); box-shadow:0 3px 0 rgba(14,116,144,.24),0 7px 13px rgba(15,39,71,.12),inset 0 1px 0 rgba(255,255,255,.85); }
                 .mh-review-story-stage .mh-story-actions .mh-story-dock-action.is-current { border-color:rgba(37,99,235,.74); box-shadow:0 4px 0 rgba(37,99,235,.34),0 0 0 3px rgba(14,165,233,.2),0 8px 16px rgba(15,39,71,.12),inset 0 1px 0 rgba(255,255,255,.85); }
                 .mh-review-story-stage .mh-story-actions .mh-story-dock-action.is-complete { background:linear-gradient(180deg,rgba(255,255,255,.72),rgba(255,255,255,.2)),linear-gradient(135deg,#ecfdf5,#bbf7d0); border-color:rgba(16,185,129,.55); }
+                .mh-review-story-stage .mh-story-actions .mh-story-action-badge { position:absolute; right:2px; top:2px; z-index:2; min-width:17px; height:17px; padding:0 5px; border-radius:999px; display:grid; place-items:center; border:2px solid rgba(255,255,255,.94); background:linear-gradient(180deg,#fef3c7,#f59e0b); color:#7c2d12; font-size:11px; font-weight:1000; line-height:1; box-shadow:0 2px 0 rgba(146,64,14,.28),0 5px 10px rgba(15,39,71,.18); }
+                .mh-review-story-stage .mh-story-actions .mh-story-dock-action.is-complete .mh-story-action-badge { background:linear-gradient(180deg,#86efac,#16a34a); color:white; box-shadow:0 3px 0 rgba(22,101,52,.34),0 6px 12px rgba(15,39,71,.18); }
                 .mh-review-story-stage .mh-story-actions .mh-story-dock-action .dock-icon { font-size:16px; }
                 .mh-review-story-stage .mh-story-actions .mh-story-dock-action .dock-label { max-width:52px; font-size:10px; font-weight:900; color:var(--accent-dark); }
                 .mh-review-scene-detail { display:flex; flex-direction:column; gap:10px; min-width:0; width:100%; }
@@ -1312,12 +1399,11 @@ export function renderStoryMaker(panel, data = {}, { onBack, onPlayStory } = {})
                         text: row.querySelector('[data-line-text]')?.value || '',
                     };
                 }
-                const type = row.querySelector('[data-activity-type]')?.value || 'comfort';
-                const def = ACTIVITY_TYPES.find(item => item.value === type) || ACTIVITY_TYPES[3];
+                const type = row.querySelector('[data-activity-type]')?.value || 'tap';
+                const def = ACTIVITY_TYPES.find(item => item.value === type) || ACTIVITY_TYPES[2];
                 return normalizeActivity({
                     type,
-                    actionKey: def.actionKey,
-                    source: row.querySelector('[data-activity-source]')?.value || def.source,
+                    target: row.querySelector('[data-activity-target]')?.value || '',
                     title: row.querySelector('[data-activity-title]')?.value || def.label,
                     count: Math.max(1, Number(row.querySelector('[data-activity-count]')?.value) || 1),
                     gameId: row.querySelector('[data-activity-game]')?.value || 'pet_tower_defense',
@@ -1413,6 +1499,17 @@ export function renderStoryMaker(panel, data = {}, { onBack, onPlayStory } = {})
         document.getElementById('mhMakerStreamModal')?.remove();
     }
 
+    function clearGeneratedStoryForRegenerate() {
+        clearReviewPlaybackTimer();
+        document.getElementById('mhMakerEditSheet')?.remove();
+        reviewPlayback = null;
+        reviewSceneIndex = 0;
+        currentStory = null;
+        setJsonText('');
+        refreshStoryPanels();
+        setMode('draft');
+    }
+
     function abortGeneration() {
         if (!generationController || generationController.signal.aborted) return;
         generationController.abort();
@@ -1425,6 +1522,15 @@ export function renderStoryMaker(panel, data = {}, { onBack, onPlayStory } = {})
         if (busy) return;
         const actors = selectedActorsFromPanel(panel);
         if (!actors.length) { showToast('请至少选择一只宠物演员', 'info'); return; }
+        const isFullRegenerate = !tweakText;
+        const hasGeneratedStory = !!currentStory || !!(($('mhMakerJson')?.value || '').trim());
+        if (isFullRegenerate && hasGeneratedStory) {
+            const ok = await confirmDialog('重新生成会覆盖当前已经生成的故事、场景、对白和互动内容。确定要继续吗？', {
+                okText: '重新生成',
+                cancelText: '取消',
+            });
+            if (!ok) return;
+        }
         busy = true;
         const generateBtn = $('mhMakerGenerate');
         if (generateBtn) {
@@ -1435,9 +1541,7 @@ export function renderStoryMaker(panel, data = {}, { onBack, onPlayStory } = {})
         openGenerationModal(tweakText ? 'AI 正在调整故事' : 'AI 正在生成故事');
         const previousStory = currentStory;
         const previousStoryJson = tweakText && currentStory ? JSON.stringify(currentStory) : '';
-        setJsonText('');
-        currentStory = null;
-        refreshStoryPanels();
+        clearGeneratedStoryForRegenerate();
         setStatus(tweakText ? 'AI 正在重新调整故事...' : 'AI 正在流式生成故事...');
         try {
             const count = Math.max(1, Math.min(12, Number($('mhMakerSceneCount')?.value) || DEFAULT_SCENE_COUNT));
@@ -1464,6 +1568,14 @@ export function renderStoryMaker(panel, data = {}, { onBack, onPlayStory } = {})
                     return;
                 }
                 console.warn('AI story generation fallback', e);
+                if (isFullRegenerate) {
+                    currentStory = null;
+                    setJsonText('');
+                    refreshStoryPanels();
+                    setStatus('重新生成失败，请稍后再试。');
+                    showToast('重新生成失败：' + (e?.message || e), 'error', 2600);
+                    return;
+                }
                 currentStory = await assignPresetScenesToStory(fallbackStory(prompt, count, actors));
                 showToast('AI 生成不可用，已创建可编辑草稿', 'info', 2200);
             }
@@ -1471,8 +1583,12 @@ export function renderStoryMaker(panel, data = {}, { onBack, onPlayStory } = {})
             syncJsonFromStory();
             refreshStoryPanels();
             setMode('review');
-            setStatus(`已生成 ${currentStory.scenes.length} 幕，可在预览中检查和微调。`);
-            showToast('故事已生成', 'success', 1600);
+            setStatus(`已生成 ${currentStory.scenes.length} 幕，正在自动保存...`);
+            const saved = await persistStory(currentStory);
+            setStatus(saved
+                ? `已生成 ${currentStory.scenes.length} 幕，并已自动保存到 ${saved.path}。`
+                : `已生成 ${currentStory.scenes.length} 幕，但自动保存失败，请手动保存。`);
+            showToast(saved ? '故事已生成并自动保存' : '故事已生成，自动保存失败', saved ? 'success' : 'error', 1800);
         } finally {
             generationController = null;
             closeGenerationModal();
@@ -1499,12 +1615,20 @@ export function renderStoryMaker(panel, data = {}, { onBack, onPlayStory } = {})
     }
 
     function openActorPicker() {
+        if (disposed) return;
         readActorSettings();
+        panel.querySelectorAll?.('.mh-maker-actor-picker').forEach(el => el.remove());
         const overlay = document.createElement('div');
         overlay.className = 'mh-maker-actor-picker';
         overlay.style.cssText = 'position:absolute;inset:0;z-index:30;background:var(--bg-page,#e0f7ff)';
         panel.appendChild(overlay);
         const close = () => overlay.remove();
+        overlay.addEventListener('click', (e) => {
+            if (!e.target.closest?.('#mhPetListBack')) return;
+            e.preventDefault();
+            e.stopPropagation();
+            close();
+        }, { capture: true });
         const rerender = () => renderPetList(overlay, { pets: petListRecords() }, {
             pickerMode: true,
             multiple: true,
@@ -1514,12 +1638,13 @@ export function renderStoryMaker(panel, data = {}, { onBack, onPlayStory } = {})
             onBack: close,
             onLoadPet: async (id) => {
                 await loadPet(id).catch(() => null);
-                if (overlay.isConnected) rerender();
+                if (!disposed && overlay.isConnected) rerender();
             },
             onConfirm: async (ids) => {
                 const uniqueIds = [...new Set(ids.filter(Boolean))];
                 if (!uniqueIds.length) { showToast('请至少选择一只宠物演员', 'info'); return; }
                 await ensureActorPetsLoaded(uniqueIds);
+                if (disposed || !overlay.isConnected) return;
                 readActorSettings();
                 actorPetIds = uniqueIds.filter(id => state.pets?.[id]);
                 if (!actorPetIds.length) { showToast('选择的宠物资料还没有加载完成', 'info'); return; }
@@ -1557,18 +1682,28 @@ export function renderStoryMaker(panel, data = {}, { onBack, onPlayStory } = {})
     async function saveCurrentStory() {
         const story = parseEditorStory();
         if (!story) return;
+        await persistStory(story, { toast: true });
+    }
+
+    async function persistStory(story, { toast = false } = {}) {
         try {
             const result = await saveWorkspaceStory(story, story.id || story.title);
-            $('mhMakerSaved').textContent = `已保存到 ${result.path}，分享参数：?story=${result.path}`;
-            showToast('故事已保存', 'success');
+            const saved = $('mhMakerSaved');
+            if (saved) saved.textContent = `已保存到 ${result.path}，已写入故事索引，分享参数：?story=${result.path}`;
+            currentStory = result.story || story;
+            syncJsonFromStory();
+            if (toast) showToast('故事已保存', 'success');
+            return result;
         } catch (e) {
             showToast('保存失败：' + (e?.message || e), 'error');
+            return null;
         }
     }
 
     function playCurrentStory() {
         const story = parseEditorStory();
         if (!story) return;
+        disposeStoryMaker();
         onPlayStory?.(story);
     }
 
@@ -1676,19 +1811,26 @@ export function renderStoryMaker(panel, data = {}, { onBack, onPlayStory } = {})
     }
 
     function bindEvents() {
-        $('mhMakerBack').onclick = () => onBack?.();
+        eventController = new AbortController();
+        const eventOptions = { signal: eventController.signal };
+        $('mhMakerBack').onclick = () => {
+            disposeStoryMaker();
+            onBack?.();
+        };
         $('mhMakerGenerate').onclick = () => runGenerate();
         $('mhMakerFormat').onclick = saveCurrentStory;
         $('mhMakerSave').onclick = saveCurrentStory;
         panel.addEventListener('input', (e) => {
+            if (disposed) return;
             if (e.target.closest?.('#mhMakerActorList')) {
                 readActorSettings();
                 syncStoryActorsAfterPicker();
                 return;
             }
             if (e.target.closest?.('#mhMakerSceneEditor') || e.target.closest?.('#mhMakerEditSheet')) syncSceneEditorToJson();
-        });
+        }, eventOptions);
         panel.addEventListener('change', (e) => {
+            if (disposed) return;
             if (e.target.closest?.('#mhMakerActorList')) {
                 readActorSettings();
                 syncStoryActorsAfterPicker();
@@ -1700,13 +1842,13 @@ export function renderStoryMaker(panel, data = {}, { onBack, onPlayStory } = {})
             if (e.target.matches?.('[data-activity-type]') && row) {
                 const fields = row.querySelector('.mh-maker-game-fields');
                 if (fields) fields.style.display = e.target.value === 'minigame' ? 'grid' : 'none';
-                const source = row.querySelector('[data-activity-source]');
-                const def = ACTIVITY_TYPES.find(item => item.value === e.target.value);
-                if (source && def) source.value = def.source;
+                const targetFields = row.querySelector('.mh-maker-target-fields');
+                if (targetFields) targetFields.style.display = e.target.value === 'minigame' ? 'none' : 'grid';
             }
             if (e.target.closest?.('#mhMakerSceneEditor') || e.target.closest?.('#mhMakerEditSheet')) syncSceneEditorToJson();
-        });
+        }, eventOptions);
         panel.addEventListener('pointerdown', (e) => {
+            if (disposed) return;
             const pager = e.target.closest?.('.mh-review-pager');
             if (pager && !e.target.closest?.('button')) {
                 reviewPagerDrag = { pager, pointerId: e.pointerId, startX: e.clientX, scrollLeft: pager.scrollLeft, moved: false };
@@ -1719,8 +1861,9 @@ export function renderStoryMaker(panel, data = {}, { onBack, onPlayStory } = {})
             const card = e.target.closest?.('[data-maker-pet]');
             if (!card || e.target.closest?.('input,button,[data-maker-add-actor]')) { actorPress = null; return; }
             actorPress = { id: card.dataset.makerPet, x: e.clientX, y: e.clientY };
-        });
+        }, eventOptions);
         panel.addEventListener('pointermove', (e) => {
+            if (disposed) return;
             if (!reviewPagerDrag || reviewPagerDrag.pointerId !== e.pointerId) return;
             const deltaX = e.clientX - reviewPagerDrag.startX;
             if (Math.abs(deltaX) > 4) {
@@ -1729,8 +1872,9 @@ export function renderStoryMaker(panel, data = {}, { onBack, onPlayStory } = {})
             }
             reviewPagerDrag.pager.scrollLeft = reviewPagerDrag.scrollLeft - deltaX;
             if (reviewPagerDrag.moved) e.preventDefault();
-        });
+        }, eventOptions);
         panel.addEventListener('pointerup', (e) => {
+            if (disposed) return;
             if (reviewPagerDrag && reviewPagerDrag.pointerId === e.pointerId) {
                 reviewPagerDrag.pager.classList.remove('is-dragging');
                 try { reviewPagerDrag.pager.releasePointerCapture?.(e.pointerId); } catch (_) {}
@@ -1743,15 +1887,17 @@ export function renderStoryMaker(panel, data = {}, { onBack, onPlayStory } = {})
             if (!card || card.dataset.makerPet !== press.id || e.target.closest?.('input,button,[data-maker-add-actor]')) return;
             if (Math.hypot(e.clientX - press.x, e.clientY - press.y) > 8) return;
             setMainActor(press.id);
-        });
+        }, eventOptions);
         panel.addEventListener('pointercancel', (e) => {
+            if (disposed) return;
             if (reviewPagerDrag && reviewPagerDrag.pointerId === e.pointerId) {
                 reviewPagerDrag.pager.classList.remove('is-dragging');
                 reviewPagerDrag = null;
             }
             actorPress = null;
-        });
+        }, eventOptions);
         panel.addEventListener('click', (e) => {
+            if (disposed) return;
             if (suppressReviewPagerClick && e.target.closest?.('.mh-review-pager')) {
                 suppressReviewPagerClick = false;
                 return;
@@ -1849,11 +1995,11 @@ export function renderStoryMaker(panel, data = {}, { onBack, onPlayStory } = {})
             if (removeBtn) { removeTimelineItem(sceneIndex, Number(removeBtn.dataset.removeTimeline)); return; }
             const moveBtn = e.target.closest?.('[data-move-timeline]');
             if (moveBtn) moveTimelineItem(sceneIndex, Number(moveBtn.dataset.timelineMoveIndex), moveBtn.dataset.moveTimeline);
-        });
+        }, eventOptions);
     }
 
     draw();
     ensureActorPetsLoaded().then(() => {
-        if (panel?.isConnected) renderActorCards();
+        if (!disposed && panel?.isConnected) renderActorCards();
     });
 }

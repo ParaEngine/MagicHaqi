@@ -10,7 +10,7 @@ import { markPetCared, normalizePetPoops } from './petTick.js';
 import { canPetAppearInField, getGeneratedPetLocation, getNannyCareRemainingMs, getPetLocationType, getReleasedPetHome, hasNannyCare, isNearActiveGeneratedPet } from './petLifecycle.js';
 import SoundManager from './soundManager.js';
 import ParticleEffects, { renderParticleCanvasHtml } from './particleEffects.js';
-import { PARTICLE_EFFECTS, bgMusicLabel, bgMusicOptions, loadScenePresets, rankScenePresets, renderSceneParticles, sceneBackgroundStyle } from './view_story_scene_maker.js';
+import { PARTICLE_EFFECTS, bgMusicLabel, bgMusicOptions, lazySceneBackgroundAttrs, loadScenePresets, rankScenePresets, renderSceneParticles, sceneBackgroundStyle, setupLazySceneBackgrounds } from './view_story_scene_maker.js';
 import { setShopFilter, suppressShopInitialClick } from './view_shop.js';
 
 const soundManager = SoundManager.getInstance();
@@ -581,7 +581,7 @@ function renderFieldBackgroundTray(currentField) {
         <div class="mh-dock-tray mh-scroll-x mh-field-build-tray mh-field-background-tray">
             ${presets.map(scene => `
                 <button type="button" class="mh-field-build-card ${scene.id === selectedId ? 'is-active' : ''}" data-field-background="${escapeHtml(scene.id)}">
-                    <span class="mh-field-build-card-art" style="background:${escapeHtml(sceneBackgroundStyle(scene, scene.color))}">${renderSceneParticles(scene, { density: 'thumbnail' })}</span>
+                    <span class="mh-field-build-card-art" ${lazySceneBackgroundAttrs(scene, scene.color)}>${renderSceneParticles(scene, { density: 'thumbnail' })}</span>
                     <span class="mh-field-build-card-title">${escapeHtml(scene.title)}</span>
                 </button>
             `).join('')}
@@ -1733,6 +1733,7 @@ export const fieldLevel = {
         updateCleanPoopsButton(pet);
         const fields = availableFields();
         const currentField = fields.find(f => f.id === state.currentField) || fields[0] || CONFIG.fields[0];
+        setupLazySceneBackgrounds(dock);
 
         const activateFieldTab = (target, event) => {
             const fieldBtn = target.closest?.('[data-field]');

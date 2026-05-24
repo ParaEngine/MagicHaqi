@@ -14,6 +14,7 @@ const EGG_IMAGE_SIZE = 256;
 const DEFAULT_MINIGAME_STAT_BONUS = { bond: 12, mood: 6 };
 const MINIGAME_REST_PROMPT_MS = 5 * 60 * 1000;
 const MINIGAME_ENTRY_CLICK_GUARD_MS = 520;
+const MINIGAME_COMPLETION_PROMPT_MIN_SECONDS = 60;
 const MINIGAME_PET_IMAGE_REQUESTS = new Set([
     'haqi_get_pet_image',
     'haqiGetPetImage',
@@ -212,13 +213,14 @@ let restPromptTimer = null;
 let restPromptOpen = false;
 let suppressCurrentRewards = false;
 
-export function renderMinigames(panel, { pet }, { onBack, onGameFinished, initialGameId = null, initialGameParams = null, allowPlayWhenLowEnergy = false, suppressRewards = false, exitGameToBack = false } = {}) {
+export function renderMinigames(panel, { pet }, { onBack, onGameFinished, initialGameId = null, initialGameParams = null, allowPlayWhenLowEnergy = false, suppressRewards = false, exitGameToBack = false, completionPrompt = null, deferGameFinishedUntilCompletionExit = false } = {}) {
     cleanupMessageListener?.();
     currentGame = null;
     rewardedRounds = new Set();
     currentPet = pet || null;
     suppressCurrentRewards = !!suppressRewards;
     const ignoreListClicksUntil = initialGameId ? 0 : Date.now() + MINIGAME_ENTRY_CLICK_GUARD_MS;
+    let deferredCompletion = null;
     panel.innerHTML = `
         <style>
             @keyframes mhMinigameStatPop {
@@ -365,6 +367,33 @@ export function renderMinigames(panel, { pet }, { onBack, onGameFinished, initia
                 pointer-events: none;
             }
             .mh-minigame-loading.show { display: flex; }
+            .mh-minigame-completion {
+                position:absolute;
+                inset:0;
+                z-index:7;
+                display:none;
+                align-items:flex-end;
+                justify-content:center;
+                padding:18px 14px max(18px,env(safe-area-inset-bottom));
+                pointer-events:none;
+                background:linear-gradient(180deg,rgba(15,39,71,0),rgba(15,39,71,.46));
+            }
+            .mh-minigame-completion.show { display:flex; }
+            .mh-minigame-completion-card {
+                width:min(360px,calc(100vw - 28px));
+                border-radius:18px;
+                border:1.5px solid rgba(255,255,255,.78);
+                background:rgba(255,255,255,.94);
+                color:var(--text-primary);
+                padding:14px;
+                box-shadow:0 18px 42px rgba(15,39,71,.28),inset 0 1px 0 rgba(255,255,255,.86);
+                pointer-events:auto;
+            }
+            .mh-minigame-completion-title { font-size:18px; line-height:1.2; font-weight:1000; text-align:center; }
+            .mh-minigame-completion-text { margin-top:5px; color:var(--text-muted); font-size:13px; line-height:1.38; font-weight:800; text-align:center; }
+            .mh-minigame-completion-actions { display:flex; gap:9px; margin-top:12px; }
+            .mh-minigame-completion-actions .btn-secondary,
+            .mh-minigame-completion-actions .btn-primary { flex:1; min-width:0; }
             .mh-minigame-loading-card {
                 width: min(300px, 76vw);
                 min-height: 172px;
@@ -458,6 +487,7 @@ export function renderMinigames(panel, { pet }, { onBack, onGameFinished, initia
                 .mh-minigame-stat-delta,
                 .mh-minigame-reward-fx.show,
                 .mh-minigame-reward-spark,
+                .mh-minigame-completion-card,
                 .mh-minigame-loading-card,
                 .mh-minigame-loading-spinner,
                 .mh-minigame-loading-dots span { animation: none; }
@@ -495,6 +525,16 @@ export function renderMinigames(panel, { pet }, { onBack, onGameFinished, initia
                     </div>
                 </div>
                 <div id="mhMinigameRewardFx" class="mh-minigame-reward-fx" aria-live="polite"></div>
+                <div id="mhMinigameCompletion" class="mh-minigame-completion" role="dialog" aria-modal="false" aria-live="polite" aria-hidden="true">
+                    <div class="mh-minigame-completion-card">
+                        <div class="mh-minigame-completion-title">${escapeHtml(completionPrompt?.title || '小游戏完成啦')}</div>
+                        <div class="mh-minigame-completion-text">${escapeHtml(completionPrompt?.text || '要继续玩一会儿，还是返回？')}</div>
+                        <div class="mh-minigame-completion-actions">
+                            <button type="button" class="btn-secondary" id="mhMinigameContinue">${escapeHtml(completionPrompt?.continueText || '继续玩')}</button>
+                            <button type="button" class="btn-primary" id="mhMinigameBackToStory">${escapeHtml(completionPrompt?.backText || '返回')}</button>
+                        </div>
+                    </div>
+                </div>
                 <button type="button" class="btn-primary" id="mhMinigameDone" style="display:none;position:absolute;right:12px;bottom:12px;z-index:3;padding:8px 14px;font-size:13px">完成玩耍</button>
             </div>
         </div>`;
@@ -502,6 +542,7 @@ export function renderMinigames(panel, { pet }, { onBack, onGameFinished, initia
     $('mhBack').onclick = () => {
         if (currentGame) {
             if (exitGameToBack) {
+                completeDeferredGame();
                 cleanupMessageListener?.();
                 onBack?.();
                 return;
@@ -523,7 +564,18 @@ export function renderMinigames(panel, { pet }, { onBack, onGameFinished, initia
             openGame(btn.dataset.gameId);
         };
     });
+    const showCompletionAfterFinish = completionPrompt ? showGameCompletionPrompt : null;
     $('mhMinigameDone').onclick = () => finishCurrentGame(onGameFinished);
+    $('mhMinigameContinue')?.addEventListener('click', () => {
+        hideGameCompletionPrompt();
+        postGameContinue();
+    });
+    $('mhMinigameBackToStory')?.addEventListener('click', () => {
+        hideGameCompletionPrompt();
+        completeDeferredGame();
+        cleanupMessageListener?.();
+        onBack?.();
+    });
     bindStatTips(panel);
 
     const onMessage = (event) => {
@@ -539,7 +591,12 @@ export function renderMinigames(panel, { pet }, { onBack, onGameFinished, initia
             return;
         }
         if (msg.type === 'gameFinished' || msg.type === 'learningFinished') {
-            finishCurrentGame(onGameFinished, msg.data || {});
+            if (deferGameFinishedUntilCompletionExit && completionPrompt) {
+                const result = finishCurrentGame(null, msg.data || {}, showCompletionAfterFinish, { forcePrompt: true });
+                if (result) deferredCompletion = { game: currentGame, data: result };
+            } else {
+                finishCurrentGame(onGameFinished, msg.data || {}, showCompletionAfterFinish);
+            }
         }
     };
     window.addEventListener('message', onMessage);
@@ -557,6 +614,34 @@ export function renderMinigames(panel, { pet }, { onBack, onGameFinished, initia
         cleanupMessageListener = null;
     };
     if (initialGameId && !currentGame) openGame(initialGameId, initialGameParams, { allowLowEnergy: allowPlayWhenLowEnergy });
+
+    function showGameCompletionPrompt() {
+        if (!completionPrompt) return;
+        const prompt = $('mhMinigameCompletion');
+        if (!prompt) return;
+        prompt.classList.add('show');
+        prompt.setAttribute('aria-hidden', 'false');
+    }
+
+    function hideGameCompletionPrompt() {
+        const prompt = $('mhMinigameCompletion');
+        if (!prompt) return;
+        prompt.classList.remove('show');
+        prompt.setAttribute('aria-hidden', 'true');
+    }
+
+    function completeDeferredGame() {
+        if (!deferredCompletion) return false;
+        const { game, data } = deferredCompletion;
+        deferredCompletion = null;
+        onGameFinished?.(game, data);
+        return true;
+    }
+
+    function postGameContinue() {
+        const frame = $('mhMinigameFrame');
+        try { frame?.contentWindow?.postMessage({ type: 'gameContinue' }, '*'); } catch (_) {}
+    }
 
     function renderMinigameIcon(game) {
         const label = escapeHtml(game.title || '小游戏');
@@ -1029,17 +1114,17 @@ function minigameUrl(src, params = null) {
     return `${src}${src.includes('?') ? '&' : '?'}${query.toString()}`;
 }
 
-function finishCurrentGame(onGameFinished, data = {}) {
-    if (!currentGame) return;
+function finishCurrentGame(onGameFinished, data = {}, onFinishedPrompt = null, { forcePrompt = false } = {}) {
+    if (!currentGame) return null;
     const finishedAt = data?.finishedAt || Date.now();
     const roundKey = minigameRoundKey(currentGame, data, finishedAt);
-    if (rewardedRounds.has(roundKey)) return;
+    if (rewardedRounds.has(roundKey)) return null;
     rewardedRounds.add(roundKey);
     const beforeStats = capturePetStatValues(currentPet);
     const beforeCoins = coinValue();
     const durationSeconds = activityDurationSeconds(data, currentGameStartedAt, finishedAt);
     const rewardData = suppressCurrentRewards ? { levelReward: null, rewardCoins: null } : miniGameLevelReward(currentGame, data, durationSeconds);
-    onGameFinished?.(currentGame, {
+    const result = {
         ...data,
         completed: data?.completed ?? data?.passed ?? true,
         startedAt: currentGameStartedAt || undefined,
@@ -1047,11 +1132,14 @@ function finishCurrentGame(onGameFinished, data = {}) {
         durationSeconds,
         statBonus: suppressCurrentRewards ? {} : miniGameStatBonus(currentGame),
         ...(rewardData.levelReward ? rewardData : {}),
-    });
+    };
+    onGameFinished?.(currentGame, result);
     if (!suppressCurrentRewards && Number(data?.earnedPoints) > 0) soundManager.playPointReward();
     if (rewardData.rewardCoins) playLevelRewardAnimation(currentGame, rewardData.rewardCoins, rewardData.levelReward);
     refreshCoins({ previous: beforeCoins, animate: true });
     refreshPetStats({ previous: beforeStats, animate: true });
+    if (onFinishedPrompt && (forcePrompt || durationSeconds > MINIGAME_COMPLETION_PROMPT_MIN_SECONDS)) onFinishedPrompt(result);
+    return result;
 }
 
 function minigameRoundKey(game, data = {}, finishedAt = Date.now()) {
@@ -1065,6 +1153,11 @@ function scheduleMinigameRestPrompt() {
     restPromptTimer = setTimeout(showMinigameRestPrompt, MINIGAME_REST_PROMPT_MS);
 }
 
+function isMinigameSessionActive() {
+    const frame = $('mhMinigameFrame');
+    return state.currentView === 'minigames' && !!currentGame && !!frame?.isConnected;
+}
+
 function clearMinigameRestPrompt() {
     if (restPromptTimer) clearTimeout(restPromptTimer);
     restPromptTimer = null;
@@ -1073,14 +1166,14 @@ function clearMinigameRestPrompt() {
 
 async function showMinigameRestPrompt() {
     restPromptTimer = null;
-    if (!currentGame || restPromptOpen) return;
+    if (!isMinigameSessionActive() || restPromptOpen) return;
     restPromptOpen = true;
     const keepPlaying = await confirm('已经玩了5分钟，休息一下吧。要继续玩吗？', {
         okText: '继续玩',
         cancelText: '退出',
     });
     restPromptOpen = false;
-    if (!currentGame) return;
+    if (!isMinigameSessionActive()) return;
     if (keepPlaying) {
         scheduleMinigameRestPrompt();
     } else {

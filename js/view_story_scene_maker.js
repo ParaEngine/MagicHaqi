@@ -9,8 +9,40 @@ export const PRESET_SCENE_PATH = 'pet-story/presets/scenes.json';
 export const DEFAULT_SCENE_TAGS = [
     'indoor', 'outdoor', 'land', 'sky', 'ocean', 'playground', 'bathroom', 'living room',
     'shop', 'school', 'spring', 'winter', 'seaside', 'haqi', 'townhall', 'forest', 'sand', 'hospital',
+    'night', 'mountain', 'spaceship', 'castle', 'farm', 'park', 'zoo', 'underwater', 'jungle', 'candy',
 ];
 export const SCENE_TAG_PROMPT_HINT = DEFAULT_SCENE_TAGS.join(', ');
+
+export const SCENE_TAG_LABELS = {
+    indoor: '室内',
+    outdoor: '户外',
+    land: '陆地',
+    sky: '天空',
+    ocean: '海洋',
+    playground: '操场',
+    bathroom: '浴室',
+    'living room': '客厅',
+    shop: '商店',
+    school: '学校',
+    spring: '春天',
+    winter: '冬天',
+    seaside: '海边',
+    haqi: '哈奇',
+    townhall: '镇大厅',
+    forest: '森林',
+    sand: '沙滩',
+    hospital: '医院',
+    night: '夜晚',
+    mountain: '山地',
+    spaceship: '飞船',
+    castle: '城堡',
+    farm: '农场',
+    park: '公园',
+    zoo: '动物园',
+    underwater: '海底',
+    jungle: '丛林',
+    candy: '糖果',
+};
 
 export const PARTICLE_EFFECTS = [
     { id: 'sparkle', label: '星光' },
@@ -38,10 +70,18 @@ export const TAG_ALIASES = {
     indoors: 'indoor', outside: 'outdoor', outdoors: 'outdoor', sea: 'ocean', beach: 'seaside',
     room: 'living room', livingroom: 'living room', bath: 'bathroom', town: 'townhall', woods: 'forest',
     playgrounds: 'playground', clinic: 'hospital', snow: 'winter', warm: 'spring', home: 'living room',
+    evening: 'night', nighttime: 'night', hills: 'mountain', hill: 'mountain', mountains: 'mountain',
+    space: 'spaceship', rocket: 'spaceship', starship: 'spaceship', palace: 'castle', farms: 'farm',
+    garden: 'park', animals: 'zoo', aquarium: 'underwater', undersea: 'underwater', rainforest: 'jungle',
+    sweets: 'candy', dessert: 'candy',
     室内: 'indoor', 户外: 'outdoor', 室外: 'outdoor', 陆地: 'land', 天空: 'sky', 海洋: 'ocean',
     操场: 'playground', 浴室: 'bathroom', 客厅: 'living room', 商店: 'shop', 学校: 'school',
     春天: 'spring', 冬天: 'winter', 海边: 'seaside', 哈奇: 'haqi', 镇大厅: 'townhall', 森林: 'forest',
     沙滩: 'sand', 沙子: 'sand', 医院: 'hospital', 家: 'living room', 小店: 'shop', 水: 'ocean', 雪: 'winter',
+    夜晚: 'night', 夜里: 'night', 晚上: 'night', 山地: 'mountain', 高山: 'mountain', 山: 'mountain',
+    飞船: 'spaceship', 太空: 'spaceship', 火箭: 'spaceship', 城堡: 'castle', 宫殿: 'castle',
+    农场: 'farm', 牧场: 'farm', 公园: 'park', 花园: 'park', 动物园: 'zoo', 动物: 'zoo',
+    海底: 'underwater', 水下: 'underwater', 丛林: 'jungle', 雨林: 'jungle', 糖果: 'candy', 甜点: 'candy',
 };
 
 let presetCache = null;
@@ -220,6 +260,65 @@ export function sceneBackgroundStyle(scene = {}, fallbackColor = '#bae6fd') {
     return `radial-gradient(circle at 50% 14%,rgba(255,255,255,.82),transparent 34%), linear-gradient(180deg, ${color}, #ffffff)`;
 }
 
+export function sceneBackgroundPlaceholderStyle(scene = {}, fallbackColor = '#bae6fd') {
+    const bg = scene.background || scene;
+    const color = bg.color || scene.color || fallbackColor;
+    return `radial-gradient(circle at 50% 14%,rgba(255,255,255,.82),transparent 34%), linear-gradient(180deg, ${color}, #ffffff)`;
+}
+
+export function lazySceneBackgroundAttrs(scene = {}, fallbackColor = '#bae6fd') {
+    const bg = scene.background || scene;
+    const imageUrl = bg.imageUrl || scene.imageUrl || '';
+    const style = imageUrl ? sceneBackgroundPlaceholderStyle(scene, fallbackColor) : sceneBackgroundStyle(scene, fallbackColor);
+    const lazyStyle = imageUrl ? ` data-mh-scene-bg-style="${escapeHtml(sceneBackgroundStyle(scene, fallbackColor))}"` : '';
+    return `style="background:${escapeHtml(style)}"${lazyStyle}`;
+}
+
+export function setupLazySceneBackgrounds(root) {
+    const scope = root || document;
+    const targets = [...scope.querySelectorAll('[data-mh-scene-bg-style]')]
+        .filter(el => el.dataset.mhSceneBgLoaded !== '1');
+    if (!targets.length) return;
+
+    const load = (el) => {
+        if (!el || el.dataset.mhSceneBgLoaded === '1') return;
+        const style = el.dataset.mhSceneBgStyle || '';
+        if (!style) return;
+        el.style.background = style;
+        el.dataset.mhSceneBgLoaded = '1';
+        el.removeAttribute('data-mh-scene-bg-style');
+    };
+
+    if ('IntersectionObserver' in window) {
+        const observer = new IntersectionObserver((entries, obs) => {
+            entries.forEach(entry => {
+                if (!entry.isIntersecting && entry.intersectionRatio <= 0) return;
+                load(entry.target);
+                obs.unobserve(entry.target);
+            });
+        }, { root: null, rootMargin: '0px', threshold: 0.01 });
+        targets.forEach(el => observer.observe(el));
+        return;
+    }
+
+    const isVisible = (el) => {
+        const rect = el.getBoundingClientRect();
+        const width = window.innerWidth || document.documentElement?.clientWidth || 0;
+        const height = window.innerHeight || document.documentElement?.clientHeight || 0;
+        return rect.bottom > 0 && rect.right > 0 && rect.top < height && rect.left < width;
+    };
+    const check = () => {
+        targets.forEach(el => { if (isVisible(el)) load(el); });
+        if (targets.every(el => el.dataset.mhSceneBgLoaded === '1')) {
+            window.removeEventListener('scroll', check, true);
+            window.removeEventListener('resize', check);
+        }
+    };
+    window.addEventListener('scroll', check, true);
+    window.addEventListener('resize', check);
+    requestAnimationFrame(check);
+}
+
 export function renderSceneParticles(scene = {}, { density = 'scene' } = {}) {
     const effects = parseParticleList(scene.particles || scene.effects || []);
     return renderParticleCanvasHtml(effects, { density, seed: `${scene?.id || scene?.background?.presetId || scene?.background?.title || effects.join('-')}` });
@@ -253,14 +352,14 @@ export async function generateSceneBackgroundImage({ promptText = '', tags = [],
 
 function tagButtonsHtml(tags, selected) {
     const active = new Set(normalizeSceneTags(selected));
-    return tags.map(tag => `<button type="button" class="${active.has(tag) ? 'is-active' : ''}" data-scene-tag="${escapeHtml(tag)}">${escapeHtml(tag)}</button>`).join('');
+    return tags.map(tag => `<button type="button" class="${active.has(tag) ? 'is-active' : ''}" data-scene-tag="${escapeHtml(tag)}">${escapeHtml(SCENE_TAG_LABELS[tag] || tag)}</button>`).join('');
 }
 
 function presetCardHtml(scene, selectedId) {
     const selected = scene.id === selectedId;
     return `
         <button type="button" class="mh-scene-preset ${selected ? 'is-selected' : ''}" data-preset-id="${escapeHtml(scene.id)}">
-            <span class="mh-scene-preset-art" style="background:${escapeHtml(sceneBackgroundStyle(scene, scene.color))}">${renderSceneParticles(scene, { density: 'thumbnail' })}</span>
+            <span class="mh-scene-preset-art" ${lazySceneBackgroundAttrs(scene, scene.color)}>${renderSceneParticles(scene, { density: 'thumbnail' })}</span>
             <span class="mh-scene-preset-title">${escapeHtml(scene.title)}</span>
             <small>${escapeHtml(scene.tags.slice(0, 4).join(' · '))}</small>
         </button>`;
@@ -269,8 +368,9 @@ function presetCardHtml(scene, selectedId) {
 export async function renderStorySceneMaker(panel, data = {}, { onBack, onApplyScene } = {}) {
     let presets = await loadScenePresets();
     let query = String(data.query || '').trim();
-    let selectedTags = normalizeSceneTags(data.tags || []);
     let draftScene = normalizeEditableScene(data.scene || {}, presets[0]);
+    let filterTags = normalizeSceneTags(draftScene.sceneTags || draftScene.background?.tags || [])
+        .filter(tag => DEFAULT_SCENE_TAGS.includes(tag));
     let selectedPresetId = draftScene.background?.presetId || data.scene?.id || presets[0]?.id || '';
     let activeTool = 'image';
     let imageMode = 'presets';
@@ -281,8 +381,8 @@ export async function renderStorySceneMaker(panel, data = {}, { onBack, onApplyS
 
     const currentPreset = () => presets.find(scene => scene.id === selectedPresetId) || presets[0] || null;
     const visiblePresets = () => {
-        const tags = selectedTags.length ? selectedTags : sceneTagsFromText(query);
-        const base = tags.length ? rankScenePresets(tags, presets).map(item => item.scene) : presets;
+        const tags = filterTags.length ? filterTags : sceneTagsFromText(query);
+        const base = tags.length ? rankScenePresets(tags, presets).filter(item => item.score > 0).map(item => item.scene) : presets;
         if (!query) return base;
         const lower = query.toLowerCase();
         return base.filter(scene => [scene.title, scene.id, scene.tags.join(' ')].join(' ').toLowerCase().includes(lower));
@@ -310,7 +410,6 @@ export async function renderStorySceneMaker(panel, data = {}, { onBack, onApplyS
 
     function setDraftScene(nextScene) {
         draftScene = normalizeEditableScene(nextScene || draftScene, currentPreset());
-        selectedTags = normalizeSceneTags(draftScene.sceneTags || draftScene.background?.tags || selectedTags);
     }
 
     function sceneForPreview() {
@@ -323,7 +422,7 @@ export async function renderStorySceneMaker(panel, data = {}, { onBack, onApplyS
     const applySelected = () => {
         onApplyScene?.({
             ...draftScene,
-            sceneTags: selectedTags,
+            sceneTags: draftScene.sceneTags || [],
             background: {
                 ...draftScene.background,
                 bgMusic: draftScene.bgMusic || '',
@@ -335,7 +434,7 @@ export async function renderStorySceneMaker(panel, data = {}, { onBack, onApplyS
     function applyPresetToDraft(preset) {
         if (!preset) return;
         const previousMusic = draftScene.bgMusic;
-        const nextScene = applyScenePreset({ ...draftScene, sceneTags: selectedTags }, preset);
+        const nextScene = applyScenePreset(draftScene, preset);
         setDraftScene({
             ...nextScene,
             bgMusic: previousMusic || nextScene.bgMusic || '',
@@ -408,10 +507,15 @@ export async function renderStorySceneMaker(panel, data = {}, { onBack, onApplyS
                 </div>`
             : `
                 <div class="mh-scene-maker-search">
-                    <input id="mhSceneSearch" class="modal-input" value="${escapeHtml(query)}" placeholder="搜索：forest, school, 海边, 浴室...">
-                    <div class="mh-scene-tag-row">${tagButtonsHtml(DEFAULT_SCENE_TAGS, selectedTags)}</div>
+                    <div class="mh-scene-search-box">
+                        <input id="mhSceneSearch" class="modal-input" value="${escapeHtml(query)}" placeholder="搜索：forest, school, 海边, 浴室...">
+                        <button type="button" id="mhSceneSearchClear" class="mh-scene-search-clear ${query ? '' : 'is-hidden'}">清空</button>
+                    </div>
+                    <div class="mh-scene-tag-row">${tagButtonsHtml(DEFAULT_SCENE_TAGS, filterTags)}</div>
                 </div>
-                <div class="mh-scene-preset-grid">${visible.length ? visible.map(scene => presetCardHtml(scene, selectedPresetId)).join('') : '<div class="mh-scene-empty">没有匹配的场景。</div>'}</div>`;
+                <div class="mh-scene-preset-scroll">
+                    <div class="mh-scene-preset-grid">${visible.length ? visible.map(scene => presetCardHtml(scene, selectedPresetId)).join('') : '<div class="mh-scene-empty">没有匹配的场景。</div>'}</div>
+                </div>`;
         return `
             <div class="mh-scene-tool-panel">
                 <div class="mh-scene-mode-row">
@@ -432,15 +536,20 @@ export async function renderStorySceneMaker(panel, data = {}, { onBack, onApplyS
             <style>
                 ${sceneParticleCss()}
                 .mh-scene-maker-root { position:absolute; inset:0; display:flex; flex-direction:column; background:linear-gradient(180deg,#e0f7ff 0%,#bae6fd 48%,#fef3c7 100%); color:var(--text-primary); }
-                .mh-scene-maker-body { flex:1; min-height:0; overflow:auto; padding:14px; display:flex; flex-direction:column; gap:12px; }
+                .mh-scene-maker-body { flex:1; min-height:0; overflow-y:auto; overscroll-behavior:contain; padding:14px; display:flex; flex-direction:column; gap:12px; }
                 .mh-scene-maker-search { display:flex; flex-direction:column; gap:9px; }
+                .mh-scene-search-box { position:relative; display:flex; align-items:center; }
+                .mh-scene-search-box .modal-input { padding-right:66px; }
+                .mh-scene-search-clear { position:absolute; right:5px; top:5px; bottom:5px; min-width:54px; border:1.5px solid rgba(14,165,233,.32); border-radius:10px; background:rgba(255,255,255,.9); color:var(--accent-dark); font-size:13px; font-weight:900; }
+                .mh-scene-search-clear.is-hidden { display:none; }
                 .mh-scene-tag-row { display:flex; gap:7px; overflow-x:auto; padding-bottom:2px; }
                 .mh-scene-tag-row button { flex:0 0 auto; border:1.5px solid rgba(14,165,233,.28); border-radius:999px; background:rgba(255,255,255,.82); color:var(--text-secondary); font-size:12px; font-weight:900; padding:6px 10px; }
                 .mh-scene-tag-row button.is-active { background:var(--accent); border-color:var(--accent); color:white; }
-                .mh-scene-preset-grid { display:grid; grid-template-columns:repeat(2,minmax(0,1fr)); gap:10px; }
+                .mh-scene-preset-scroll { height:70dvh; min-height:70dvh; overflow-y:auto; overscroll-behavior:contain; padding:2px 3px 3px 0; }
+                .mh-scene-preset-grid { display:grid; grid-template-columns:repeat(2,minmax(0,1fr)); gap:10px; align-content:start; align-items:start; }
                 .mh-scene-preset { border:1.5px solid rgba(125,211,252,.75); border-radius:14px; background:rgba(255,255,255,.9); padding:8px; display:flex; flex-direction:column; gap:6px; text-align:left; color:var(--text-primary); }
                 .mh-scene-preset.is-selected { border-color:var(--accent); box-shadow:0 0 0 3px rgba(14,165,233,.16); }
-                .mh-scene-preset-art { position:relative; overflow:hidden; border-radius:12px; aspect-ratio:9/13; display:block; border:2px solid rgba(255,255,255,.84); }
+                .mh-scene-preset-art { position:relative; overflow:hidden; border-radius:12px; aspect-ratio:1/1; display:block; border:2px solid rgba(255,255,255,.84); }
                 .mh-scene-preset-title { font-size:13px; font-weight:900; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
                 .mh-scene-preset small { color:var(--text-muted); font-size:11px; font-weight:800; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
                 .mh-scene-preview-card { border:1.5px solid rgba(125,211,252,.78); border-radius:16px; background:rgba(255,255,255,.9); padding:10px; display:flex; flex-direction:column; gap:9px; }
@@ -457,7 +566,7 @@ export async function renderStorySceneMaker(panel, data = {}, { onBack, onApplyS
                 .mh-scene-mode-row { grid-template-columns:1fr 1fr; }
                 .mh-scene-tool-tabs button, .mh-scene-mode-row button, .mh-scene-chip-grid button { border:1.5px solid rgba(14,165,233,.32); border-radius:12px; background:rgba(255,255,255,.86); color:var(--text-secondary); min-height:38px; padding:7px 8px; font-size:12px; font-weight:900; }
                 .mh-scene-tool-tabs button.is-active, .mh-scene-mode-row button.is-active, .mh-scene-chip-grid button.is-active { background:var(--accent); border-color:var(--accent); color:white; }
-                .mh-scene-tool-panel { border:1.5px solid rgba(125,211,252,.55); border-radius:14px; background:rgba(255,255,255,.74); padding:10px; display:flex; flex-direction:column; gap:10px; }
+                .mh-scene-tool-panel { border:1.5px solid rgba(125,211,252,.55); border-radius:14px; background:rgba(255,255,255,.74); padding:10px; display:flex; flex-direction:column; gap:10px; min-height:0; }
                 .mh-scene-tool-row { display:grid; grid-template-columns:72px minmax(0,1fr); gap:10px; align-items:center; color:var(--text-secondary); font-size:13px; font-weight:900; }
                 .mh-scene-tool-row input[type="color"] { width:100%; height:42px; border:1.5px solid rgba(14,165,233,.28); border-radius:12px; background:white; padding:4px; }
                 .mh-scene-chip-grid { grid-template-columns:repeat(2,minmax(0,1fr)); }
@@ -479,7 +588,6 @@ export async function renderStorySceneMaker(panel, data = {}, { onBack, onApplyS
                         <div class="mh-scene-preview-art" style="--mh-scene-preview-bg:${escapeHtml(sceneBackgroundStyle(previewScene, bg.color || '#bae6fd'))}">${renderSceneParticles(previewScene)}${musicToggleButtonHtml(draftScene.bgMusic)}</div>
                         <div class="mh-scene-preview-meta">
                             <strong>${escapeHtml(bg.title || '当前场景')}</strong>
-                            <small>${escapeHtml(selectedTags.join(', ') || 'haqi')}</small>
                         </div>
                         <div class="mh-scene-status-grid">
                             <span>图片：${escapeHtml(imageName)}</span>
@@ -500,6 +608,7 @@ export async function renderStorySceneMaker(panel, data = {}, { onBack, onApplyS
                 </div>
             </div>`;
         ParticleEffects.getInstance().mountAll(panel);
+        setupLazySceneBackgrounds(panel);
         bindEvents();
     };
 
@@ -513,13 +622,13 @@ export async function renderStorySceneMaker(panel, data = {}, { onBack, onApplyS
         draw();
         try {
             const referenceImages = referenceText.split(/\n+/).map(item => item.trim()).filter(Boolean);
-            const imageUrl = await generateSceneBackgroundImage({ promptText, tags: selectedTags, referenceImages, imageSize: selectedImageSize });
+            const imageUrl = await generateSceneBackgroundImage({ promptText, tags: filterTags, referenceImages, imageSize: selectedImageSize });
             const custom = normalizeScenePreset({
                 id: `custom_scene_${Date.now()}`,
                 title: promptText.slice(0, 24) || '自定义场景',
                 imageUrl,
                 color: draftScene.background?.color || currentPreset()?.color || '#bae6fd',
-                tags: selectedTags.length ? selectedTags : sceneTagsFromText(promptText),
+                tags: filterTags.length ? filterTags : sceneTagsFromText(promptText),
                 particles: currentPreset()?.particles || [],
                 prompt: promptText,
             });
@@ -533,6 +642,36 @@ export async function renderStorySceneMaker(panel, data = {}, { onBack, onApplyS
             generating = false;
             draw();
         }
+    }
+
+    function refreshPresetList() {
+        const grid = panel.querySelector('.mh-scene-preset-grid');
+        if (!grid) return;
+        const visible = visiblePresets();
+        grid.innerHTML = visible.length ? visible.map(scene => presetCardHtml(scene, selectedPresetId)).join('') : '<div class="mh-scene-empty">没有匹配的场景。</div>';
+        setupLazySceneBackgrounds(grid);
+        bindPresetEvents();
+    }
+
+    function syncTagButtons() {
+        const active = new Set(normalizeSceneTags(filterTags));
+        panel.querySelectorAll('[data-scene-tag]').forEach(btn => {
+            btn.classList.toggle('is-active', active.has(normalizeTag(btn.dataset.sceneTag)));
+        });
+    }
+
+    function syncSearchClearButton() {
+        panel.querySelector('#mhSceneSearchClear')?.classList.toggle('is-hidden', !query && !filterTags.length);
+    }
+
+    function bindPresetEvents() {
+        panel.querySelectorAll('[data-preset-id]').forEach(btn => {
+            btn.onclick = () => {
+                selectedPresetId = btn.dataset.presetId;
+                applyPresetToDraft(currentPreset());
+                draw();
+            };
+        });
     }
 
     function bindEvents() {
@@ -560,7 +699,20 @@ export async function renderStorySceneMaker(panel, data = {}, { onBack, onApplyS
             btn.onclick = () => { imageMode = btn.dataset.imageMode || 'presets'; activeTool = 'image'; draw(); };
         });
         const search = panel.querySelector('#mhSceneSearch');
-        if (search) search.oninput = (e) => { query = e.target.value || ''; draw(); };
+        if (search) search.oninput = (e) => {
+            query = e.target.value || '';
+            syncSearchClearButton();
+            refreshPresetList();
+        };
+        panel.querySelector('#mhSceneSearchClear')?.addEventListener('click', () => {
+            query = '';
+            filterTags = [];
+            if (search) search.value = '';
+            syncSearchClearButton();
+            syncTagButtons();
+            refreshPresetList();
+            search?.focus();
+        });
         const generateButton = panel.querySelector('#mhSceneGenerate');
         if (generateButton) generateButton.onclick = runGenerate;
         const imageSizeSelect = panel.querySelector('#mhSceneImageSize');
@@ -605,19 +757,15 @@ export async function renderStorySceneMaker(panel, data = {}, { onBack, onApplyS
         panel.querySelectorAll('[data-scene-tag]').forEach(btn => {
             btn.onclick = () => {
                 const tag = normalizeTag(btn.dataset.sceneTag);
-                selectedTags = selectedTags.includes(tag) ? selectedTags.filter(item => item !== tag) : [...selectedTags, tag];
-                const ranked = rankScenePresets(selectedTags, presets);
+                filterTags = filterTags.length === 1 && filterTags[0] === tag ? [] : [tag];
+                const ranked = rankScenePresets(filterTags, presets).filter(item => item.score > 0);
                 if (ranked[0]) selectedPresetId = ranked[0].scene.id;
-                draw();
+                syncTagButtons();
+                syncSearchClearButton();
+                refreshPresetList();
             };
         });
-        panel.querySelectorAll('[data-preset-id]').forEach(btn => {
-            btn.onclick = () => {
-                selectedPresetId = btn.dataset.presetId;
-                applyPresetToDraft(currentPreset());
-                draw();
-            };
-        });
+        bindPresetEvents();
     }
 
     draw();

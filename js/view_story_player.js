@@ -11,20 +11,188 @@ import { foodEatDurationMs, pickRandomPreferredFood, runBathInteraction, runFeed
 
 let runtime = null;
 const STORY_LINE_REVEAL_MS = 38;
+const STORY_SCENE_FALLBACK_IMAGE_RATIO = 1;
+const STORY_SCENE_DRAG_THRESHOLD = 8;
+const STORY_ACTOR_MAX_OVERLAP = 0.05;
+const STORY_DIALOGUE_EDGE_MARGIN = 12;
+const STORY_TAP_FEEDBACK_MS = 2000;
 const soundManager = SoundManager.getInstance();
+const storySceneImageMeta = new Map();
 
 const ACTIVITY_LABELS = {
     feed: '喂养',
     bath: '清洁',
     clean: '清洁',
     tap: '轻拍',
-    comfort: '安抚',
-    play: '玩耍',
     minigame: '小游戏',
 };
 
 function wait(ms) {
     return new Promise(resolve => setTimeout(resolve, Math.max(0, Number(ms) || 0)));
+}
+
+function ensureStoryCenterPromptStyle() {
+    if (document.getElementById('mhStoryCenterPromptStyle')) return;
+    const style = document.createElement('style');
+    style.id = 'mhStoryCenterPromptStyle';
+    style.textContent = `
+        .mh-story-center-prompt {
+            position:fixed;
+            left:50%;
+            top:50%;
+            z-index:99998;
+            max-width:min(320px,82vw);
+            transform:translate(-50%,-50%) scale(.96);
+            border-radius:18px;
+            background:rgba(15,39,71,.84);
+            color:white;
+            border:1px solid rgba(255,255,255,.42);
+            box-shadow:0 14px 34px rgba(15,39,71,.24);
+            padding:12px 16px;
+            font-size:16px;
+            line-height:1.35;
+            font-weight:900;
+            text-align:center;
+            pointer-events:none;
+            opacity:0;
+            animation:mhStoryCenterPrompt 1.65s ease forwards;
+        }
+        @keyframes mhStoryCenterPrompt {
+            0% { opacity:0; transform:translate(-50%,-46%) scale(.96); }
+            16%,78% { opacity:1; transform:translate(-50%,-50%) scale(1); }
+            100% { opacity:0; transform:translate(-50%,-54%) scale(.98); }
+        }`;
+    document.head.appendChild(style);
+}
+
+function showStoryCenterPrompt(text, durationMs = 1650) {
+    const message = String(text || '').trim();
+    if (!message) return;
+    ensureStoryCenterPromptStyle();
+    document.querySelectorAll('.mh-story-center-prompt').forEach(el => el.remove());
+    const prompt = document.createElement('div');
+    prompt.className = 'mh-story-center-prompt';
+    prompt.textContent = message;
+    document.body.appendChild(prompt);
+    setTimeout(() => prompt.remove(), Math.max(300, Number(durationMs) || 1650));
+}
+
+function clampRange(value, min, max) {
+    const n = Number(value);
+    return Math.max(min, Math.min(max, Number.isFinite(n) ? n : min));
+}
+
+function currentStoryScenePanKey() {
+    return runtime?.sceneId || currentScene()?.id || 'story_scene';
+}
+
+function requestStorySceneImageMeta(imageUrl) {
+    if (!imageUrl || storySceneImageMeta.has(imageUrl)) return;
+    const meta = { status: 'loading', ratio: STORY_SCENE_FALLBACK_IMAGE_RATIO };
+    storySceneImageMeta.set(imageUrl, meta);
+    const image = new Image();
+    image.onload = () => {
+        const width = image.naturalWidth || image.width || 0;
+        const height = image.naturalHeight || image.height || 0;
+        meta.status = 'loaded';
+        meta.width = width;
+        meta.height = height;
+        meta.ratio = width > 0 && height > 0 ? width / height : STORY_SCENE_FALLBACK_IMAGE_RATIO;
+        if (runtime?.panel?.isConnected) applyStoryScenePan(runtime.panel);
+    };
+    image.onerror = () => { meta.status = 'error'; };
+    image.src = imageUrl;
+}
+
+function getStoryScenePanBounds(panel) {
+    const hero = panel?.querySelector?.('[data-story-hero]');
+    const scene = panel?.querySelector?.('[data-story-scene]');
+    if (!hero || !scene) return null;
+    const heroWidth = hero.clientWidth || window.innerWidth || 1;
+    const heroHeight = hero.clientHeight || window.innerHeight || 540;
+    const imageUrl = sceneBackgroundImageUrl(currentScene());
+    if (imageUrl) requestStorySceneImageMeta(imageUrl);
+    const imageRatio = imageUrl ? (storySceneImageMeta.get(imageUrl)?.ratio || STORY_SCENE_FALLBACK_IMAGE_RATIO) : 0;
+    const sceneWidth = imageUrl ? Math.max(1, Math.round(heroHeight * imageRatio)) : heroWidth;
+    const sceneLeft = Math.max(0, (heroWidth - sceneWidth) / 2);
+    scene.style.width = `${sceneWidth}px`;
+    scene.style.left = `${sceneLeft}px`;
+    scene.style.setProperty('--mh-story-viewport-height', `${heroHeight}px`);
+    return {
+        hero,
+        scene,
+        heroWidth,
+        sceneWidth,
+        maxPan: Math.max(0, sceneWidth - heroWidth),
+    };
+}
+
+function applyStoryScenePan(panel) {
+    const bounds = getStoryScenePanBounds(panel);
+    if (!bounds || !runtime) return;
+    const key = currentStoryScenePanKey();
+    if (!runtime.scenePanById) runtime.scenePanById = {};
+    if (!Number.isFinite(runtime.scenePanById[key])) runtime.scenePanById[key] = -bounds.maxPan / 2;
+    const pan = clampRange(runtime.scenePanById[key], -bounds.maxPan, 0);
+    runtime.scenePanById[key] = pan;
+    bounds.scene.style.transform = `translate3d(${pan.toFixed(1)}px,0,0)`;
+}
+
+function bindStoryScenePan(panel) {
+    const hero = panel?.querySelector?.('[data-story-hero]');
+    const scene = panel?.querySelector?.('[data-story-scene]');
+    if (!hero || !scene || !runtime) return;
+    applyStoryScenePan(panel);
+    if (runtime.storySceneResizeHandler) window.removeEventListener('resize', runtime.storySceneResizeHandler);
+    runtime.storySceneResizeHandler = () => {
+        if (!panel.isConnected) {
+            window.removeEventListener('resize', runtime.storySceneResizeHandler);
+            runtime.storySceneResizeHandler = null;
+            return;
+        }
+        applyStoryScenePan(panel);
+    };
+    window.addEventListener('resize', runtime.storySceneResizeHandler, { passive: true });
+
+    let drag = null;
+    hero.addEventListener('pointerdown', (e) => {
+        if (e.button != null && e.button !== 0) return;
+        if (e.target.closest?.('button,a,input,textarea,select,[contenteditable="true"],[data-story-actor-stage],[data-story-music-toggle]')) return;
+        const bounds = getStoryScenePanBounds(panel);
+        if (!bounds || bounds.maxPan <= 1) return;
+        const key = currentStoryScenePanKey();
+        drag = { id: e.pointerId, x: e.clientX, y: e.clientY, pan: runtime.scenePanById?.[key] || 0, active: false };
+    });
+    hero.addEventListener('pointermove', (e) => {
+        if (!drag || drag.id !== e.pointerId) return;
+        const dx = e.clientX - drag.x;
+        const dy = e.clientY - drag.y;
+        if (!drag.active) {
+            if (Math.abs(dx) < STORY_SCENE_DRAG_THRESHOLD || Math.abs(dx) <= Math.abs(dy)) return;
+            drag.active = true;
+            try { hero.setPointerCapture?.(e.pointerId); } catch (_) {}
+        }
+        e.preventDefault();
+        const bounds = getStoryScenePanBounds(panel);
+        if (!bounds) return;
+        runtime.scenePanById[currentStoryScenePanKey()] = clampRange(drag.pan + dx, -bounds.maxPan, 0);
+        applyStoryScenePan(panel);
+    });
+    const endDrag = (e) => {
+        if (!drag || drag.id !== e.pointerId) return;
+        if (drag.active) {
+            try { hero.releasePointerCapture?.(e.pointerId); } catch (_) {}
+            hero.__mhStoryPannedAt = Date.now();
+        }
+        drag = null;
+    };
+    hero.addEventListener('pointerup', endDrag);
+    hero.addEventListener('pointercancel', endDrag);
+    hero.addEventListener('click', (e) => {
+        if (Date.now() - (hero.__mhStoryPannedAt || 0) > 260) return;
+        e.preventDefault();
+        e.stopPropagation();
+    }, true);
 }
 
 export async function loadStoryFile(path) {
@@ -359,11 +527,24 @@ function revealText(text = '', count = Infinity) {
 }
 
 function sceneBackground(scene) {
-    const bg = scene?.background || {};
-    const color = bg.color || scene?.bgColor || '#bae6fd';
-    const imageUrl = bg.imageUrl || scene?.backgroundImage || '';
-    if (imageUrl) return `linear-gradient(rgba(255,255,255,.12),rgba(255,255,255,.12)), url("${String(imageUrl).replace(/"/g, '%22')}") center/cover no-repeat`;
+    const color = sceneFallbackColor(scene);
+    const imageUrl = sceneBackgroundImageUrl(scene);
+    if (imageUrl) return `linear-gradient(rgba(255,255,255,.12),rgba(255,255,255,.12)), url("${String(imageUrl).replace(/"/g, '%22')}")`;
     return `radial-gradient(circle at 50% 12%,rgba(255,255,255,.86),transparent 34%), linear-gradient(180deg, ${color}, #ffffff)`;
+}
+
+function sceneFallbackColor(scene) {
+    const bg = scene?.background || {};
+    return bg.color || scene?.bgColor || '#bae6fd';
+}
+
+function sceneBackgroundImageUrl(scene) {
+    const bg = scene?.background || {};
+    return String(bg.imageUrl || scene?.backgroundImage || '').trim();
+}
+
+function hasSceneBackgroundImage(scene) {
+    return !!sceneBackgroundImageUrl(scene);
 }
 
 function sceneBgMusic(scene) {
@@ -394,16 +575,48 @@ function syncSceneBgMusic(scene, { paused = false } = {}) {
     }
 }
 
+export function disposeStoryPlayer() {
+    clearTimelineTimer();
+    if (runtime?.storySceneResizeHandler) {
+        window.removeEventListener('resize', runtime.storySceneResizeHandler);
+        runtime.storySceneResizeHandler = null;
+    }
+    if (runtime?.storyBgMusicActive) {
+        soundManager.stopBgMusic({ fadeMs: 520 });
+        runtime.storyBgMusicActive = false;
+    }
+}
+
 function activityCount(activity) {
     const count = Number(activity?.count ?? activity?.times ?? 1);
     return Math.max(1, Number.isFinite(count) ? Math.round(count) : 1);
 }
 
+function activityType(activity) {
+    const type = String(activity?.type || '').trim().toLowerCase();
+    const text = `${activity?.title || ''} ${activity?.label || ''} ${activity?.action || ''}`;
+    if (type === 'encourage' || /轻拍/.test(text) || (/鼓励/.test(text) && !type)) return 'tap';
+    if (type === 'clean') return 'bath';
+    return ['feed', 'bath', 'tap', 'minigame'].includes(type) ? type : 'tap';
+}
+
 function activityKey(activity, index) {
-    return `${runtime.sceneId}:${index}:${activity?.type || 'activity'}`;
+    return `${runtime.sceneId}:${index}:${activityType(activity) || 'activity'}`;
+}
+
+function activityTargetId(activity) {
+    return String(activity?.target || activity?.actor || activity?.actorId || '').trim();
+}
+
+function isActorAllowedForActivity(activity, actor) {
+    const targetId = activityTargetId(activity);
+    if (!targetId) return true;
+    const resolvedTargetId = targetId === '$selected' ? selectedActor()?.id : targetId;
+    return !!actor?.id && actor.id === resolvedTargetId;
 }
 
 function activityProgress(activity, index) {
+    if (runtime?.completedNotified && !runtime?.replayUnlocked) return activityCount(activity);
     return runtime.activityProgress[activityKey(activity, index)] || 0;
 }
 
@@ -447,8 +660,10 @@ function saveScenePlaybackState() {
 
 function restoreScenePlaybackState(sceneId) {
     const saved = runtime?.scenePlayback?.[sceneId] || null;
-    runtime.timelineIndex = Math.max(0, saved?.timelineIndex || 0);
-    runtime.revealedChars = Math.max(0, saved?.revealedChars || 0);
+    const scene = runtime?.story?.scenes?.find(item => item.id === sceneId) || null;
+    const completedIndex = runtime?.completedNotified && !runtime?.replayUnlocked ? sceneTimeline(scene).length : 0;
+    runtime.timelineIndex = Math.max(0, saved?.timelineIndex ?? completedIndex);
+    runtime.revealedChars = Math.max(0, saved?.revealedChars ?? 0);
 }
 
 function skipCompletedActiveActivities(scene) {
@@ -465,6 +680,7 @@ function skipCompletedActiveActivities(scene) {
 }
 
 function isSceneComplete(scene) {
+    if (runtime?.completedNotified && !runtime?.replayUnlocked) return true;
     return (runtime?.timelineIndex || 0) >= sceneTimeline(scene).length
         && sceneActivities(scene).every((activity, index) => activityProgress(activity, index) >= activityCount(activity));
 }
@@ -493,9 +709,76 @@ function timelineActorId(actorId) {
     return actorId || '';
 }
 
+function storyActorBaseWidthPercent(total) {
+    const hero = runtime?.panel?.querySelector?.('[data-story-hero]');
+    const heroWidth = hero?.clientWidth || runtime?.panel?.clientWidth || window.innerWidth || 430;
+    const cssWidth = Math.min(31, (128 / Math.max(1, heroWidth)) * 100);
+    const countFitWidth = total > 1 ? 94 / (total - (STORY_ACTOR_MAX_OVERLAP * (total - 1))) : cssWidth;
+    return Math.max(14, Math.min(cssWidth, countFitWidth));
+}
+
+function storyActorSizePx(total) {
+    const hero = runtime?.panel?.querySelector?.('[data-story-hero]');
+    const heroWidth = hero?.clientWidth || runtime?.panel?.clientWidth || window.innerWidth || 430;
+    return Math.max(58, Math.min(128, Math.round((storyActorBaseWidthPercent(total) / 100) * heroWidth)));
+}
+
+function repelStageActorStyles(items) {
+    if (items.length <= 1) return items;
+    const baseWidth = storyActorBaseWidthPercent(items.length);
+    const nextItems = items.map(item => {
+        const renderScale = item.speaking ? item.style.scale * 1.16 : item.style.scale;
+        const width = baseWidth * renderScale;
+        return {
+            ...item,
+            style: { ...item.style, left: clampRange(item.style.left, width / 2 + 2, 100 - width / 2 - 2) },
+            width,
+        };
+    });
+
+    for (let iteration = 0; iteration < 12; iteration += 1) {
+        let moved = false;
+        nextItems.sort((leftItem, rightItem) => leftItem.style.left - rightItem.style.left);
+        for (let index = 0; index < nextItems.length - 1; index += 1) {
+            const leftItem = nextItems[index];
+            const rightItem = nextItems[index + 1];
+            const minDistance = ((leftItem.width + rightItem.width) / 2) * (1 - STORY_ACTOR_MAX_OVERLAP);
+            const distance = rightItem.style.left - leftItem.style.left;
+            if (distance >= minDistance) continue;
+            const push = (minDistance - distance) / 2;
+            leftItem.style.left -= push;
+            rightItem.style.left += push;
+            moved = true;
+        }
+        nextItems.forEach((item) => {
+            const minLeft = item.width / 2 + 2;
+            const maxLeft = 100 - item.width / 2 - 2;
+            item.style.left = clampRange(item.style.left, minLeft, maxLeft);
+        });
+        if (!moved) break;
+    }
+    return nextItems.sort((leftItem, rightItem) => leftItem.index - rightItem.index);
+}
+
+function storyCastFocusPanPx(items) {
+    const speakingItem = items.find(item => item.speaking);
+    if (!speakingItem) return 0;
+    const hero = runtime?.panel?.querySelector?.('[data-story-hero]');
+    const heroWidth = hero?.clientWidth || runtime?.panel?.clientWidth || window.innerWidth || 430;
+    const actorSize = storyActorSizePx(items.length);
+    const actorScale = (speakingItem.style.scale || 1) * 1.16 * 1.08;
+    const actorHalf = (actorSize * actorScale) / 2;
+    const speechHalf = Math.min(260, heroWidth * 0.74) / 2;
+    const focusHalf = Math.max(actorHalf, speechHalf) + STORY_DIALOGUE_EDGE_MARGIN;
+    const center = (speakingItem.style.left / 100) * heroWidth;
+    if (center - focusHalf < STORY_DIALOGUE_EDGE_MARGIN) return STORY_DIALOGUE_EDGE_MARGIN - (center - focusHalf);
+    if (center + focusHalf > heroWidth - STORY_DIALOGUE_EDGE_MARGIN) return (heroWidth - STORY_DIALOGUE_EDGE_MARGIN) - (center + focusHalf);
+    return 0;
+}
+
 function stageCueStyle(cue, index, total, isActive = false) {
     const text = String(cue || '').toLowerCase();
-    let left = total <= 1 ? 50 : 28 + (44 * index / Math.max(1, total - 1));
+    let left = total <= 1 ? 50 : 32 + (36 * index / Math.max(1, total - 1));
     let bottom = 19;
     let scale = 1;
     let mood = '';
@@ -507,7 +790,7 @@ function stageCueStyle(cue, index, total, isActive = false) {
     if (/开心|happy/.test(text)) mood = 'happy';
     if (/伤心|sad/.test(text)) mood = 'sad';
     if (/睡|sleep/.test(text)) mood = 'sleep';
-    if (isActive) { left = 50; bottom = 26; scale = Math.max(scale, 1.16); }
+    if (isActive) { bottom = 26; scale = Math.max(scale, 1.04); }
     return { left, bottom, scale, mood };
 }
 
@@ -517,12 +800,13 @@ function renderStageActors(timeline, activeItemIndex) {
     const activeActorId = !isTimelineActivity(activeItem) ? timelineActorId(activeItem?.actor) : '';
     const activeCue = !isTimelineActivity(activeItem) ? splitStageText(activeItem?.text || activeItem?.say || '').cue : '';
     const speechText = !isTimelineActivity(activeItem) ? revealText(activeSpeechText(activeItem), runtime?.revealedChars || 0) : '';
-    const cast = actors.map((actor, index) => {
+    const visibleActors = actors.map(actor => ({ actor, pet: storyPetForActor(actor) })).filter(item => item.pet);
+    const layoutItems = repelStageActorStyles(visibleActors.map(({ actor, pet }, index) => {
         const speaking = actor.id === activeActorId;
         const cue = speaking ? activeCue : '';
-        const style = stageCueStyle(cue, index, actors.length, speaking);
-        const pet = storyPetForActor(actor);
-        if (!pet) return '';
+        return { actor, pet, index, speaking, style: stageCueStyle(cue, index, visibleActors.length, speaking) };
+    }));
+    const cast = layoutItems.map(({ actor, pet, speaking, style }) => {
         return `
             <div class="mh-story-stage-actor pet-sprite ${speaking ? 'is-speaking' : ''} ${activeActorId && !speaking ? 'is-listening' : ''} ${style.mood ? `is-${style.mood}` : ''}" data-story-actor-stage="${escapeHtml(actor.id)}" style="left:${style.left}%;bottom:${style.bottom}%;--stage-scale:${style.scale}">
                 ${speaking ? `<div class="mh-story-speech-bubble"><span data-story-speech-text>${escapeHtml(speechText)}</span></div>` : ''}
@@ -530,7 +814,8 @@ function renderStageActors(timeline, activeItemIndex) {
                 <div class="mh-story-actor-foot-name">${escapeHtml(actor.name || pet.name || '角色')}</div>
             </div>`;
     }).join('');
-    return `<div class="mh-story-stage-cast ${activeActorId ? 'is-zooming is-interaction-locked' : ''}">${cast}</div>`;
+    const focusPan = storyCastFocusPanPx(layoutItems);
+    return `<div class="mh-story-stage-cast ${activeActorId ? 'is-zooming is-interaction-locked' : ''}" style="--story-actor-size:${storyActorSizePx(visibleActors.length)}px;--story-cast-pan:${focusPan.toFixed(1)}px">${cast}</div>`;
 }
 
 function actorCard(actor, selected = false) {
@@ -577,14 +862,14 @@ function renderLine(line, revealedChars = Infinity) {
 }
 
 function renderActivity(activity, index) {
-    const type = activity?.type || 'play';
+    const type = activityType(activity);
     const done = activityProgress(activity, index);
     const total = activityCount(activity);
     const complete = done >= total;
     const title = activity.title || ACTIVITY_LABELS[type] || '互动';
     const detail = type === 'minigame'
         ? (activity.gameTitle || activity.gameId || '小游戏')
-        : (activity.source || activity.hint || '和宠物完成互动');
+        : (activity.hint || ACTIVITY_LABELS[type] || '和宠物完成互动');
     return `
         <div class="mh-story-task ${complete ? 'is-complete' : ''}">
             <div>
@@ -605,26 +890,27 @@ function storyFeedFood(activity, activityIndex, pet = null) {
 }
 
 function activityIcon(activity, activityIndex) {
-    const type = activity?.type || 'play';
+    const type = activityType(activity);
     if (type === 'feed') return storyFeedFood(activity, activityIndex)?.emoji || '🍪';
     if (type === 'bath' || type === 'clean') return '🫧';
     if (type === 'tap') return '👆';
-    if (type === 'comfort') return '💗';
     if (type === 'minigame') return '🎾';
     return '✨';
 }
 
 function renderActionButton(activity, activityIndex, { current = false, locked = false } = {}) {
     if (!activity) return '<button type="button" class="btn-secondary" disabled>播放中...</button>';
-    const type = activity?.type || 'play';
+    const type = activityType(activity);
     const done = activityProgress(activity, activityIndex);
     const total = activityCount(activity);
     const left = Math.max(0, total - done);
-    const title = activity.title || ACTIVITY_LABELS[type] || '互动';
+    const title = type === 'tap' ? ACTIVITY_LABELS.tap : (activity.title || ACTIVITY_LABELS[type] || '互动');
+    const badge = left <= 0 ? '✓' : String(left);
     return `
         <button type="button" class="btn-secondary action-btn dock-icon-btn mh-story-dock-action ${type === 'feed' ? 'is-feed-action' : ''} ${current ? 'is-current' : ''} ${left <= 0 ? 'is-complete' : ''}" data-story-activity="${activityIndex}" ${locked ? 'disabled' : ''}>
+            <span class="mh-story-action-badge" aria-hidden="true">${badge}</span>
             <span class="dock-icon">${activityIcon(activity, activityIndex)}</span>
-            <span class="dock-label">${escapeHtml(title)} ${left <= 0 ? '✓' : `× ${left}`}</span>
+            <span class="dock-label">${escapeHtml(title)}</span>
         </button>`;
 }
 
@@ -779,7 +1065,14 @@ function sceneIndexOf(sceneId) {
 }
 
 function goPrev(panel, options) {
-    if (!runtime || runtime.sceneIndex <= 0) return;
+    if (!runtime) return;
+    if (runtime.finished) {
+        runtime.finished = false;
+        restoreScenePlaybackState(runtime.sceneId);
+        renderStoryPlayer(panel, { story: runtime.story }, options);
+        return;
+    }
+    if (runtime.sceneIndex <= 0) return;
     saveScenePlaybackState();
     const prevIndex = runtime.sceneIndex - 1;
     runtime.sceneIndex = prevIndex;
@@ -803,7 +1096,34 @@ function goNext(panel, options) {
     }
     clearTimelineTimer();
     runtime.finished = true;
+    notifyStoryFinished(options);
     renderStoryPlayer(panel, { story: runtime.story }, options);
+}
+
+function notifyStoryFinished(options = {}) {
+    if (!runtime || runtime.completedNotified) return;
+    runtime.completedNotified = true;
+    options.onStoryFinished?.(runtime.story, selectedActor());
+}
+
+function startUnlockedReplay(panel, options) {
+    if (!runtime?.story) return;
+    clearTimelineTimer();
+    const story = runtime.story;
+    const startIndex = Math.max(0, story.scenes.findIndex(scene => scene.id === story.startSceneId));
+    runtime.sceneIndex = startIndex;
+    runtime.sceneId = story.scenes[startIndex]?.id || story.startSceneId;
+    runtime.timelineIndex = 0;
+    runtime.revealedChars = 0;
+    runtime.activityProgress = {};
+    runtime.pendingMinigame = null;
+    runtime.finished = false;
+    runtime.actorConfirmed = true;
+    runtime.replayUnlocked = false;
+    runtime.completedNotified = false;
+    runtime.scenePlayback = {};
+    runtime.feedFoodItems = {};
+    renderStoryPlayer(panel, { story }, options);
 }
 
 function completeActivity(index, panel, options) {
@@ -824,7 +1144,7 @@ function completeActivity(index, panel, options) {
 }
 
 function actorForActivity(activity) {
-    const actorId = activity?.actor || activity?.actorId || '$selected';
+    const actorId = activityTargetId(activity) || '$selected';
     if (actorId === '$selected') return selectedActor();
     return actorById(actorId) || selectedActor();
 }
@@ -854,7 +1174,7 @@ function storyPetForFeedActor(actor) {
 }
 
 async function runPetActivity(activity, panel, options, index, interactionOptions = {}) {
-    const type = activity?.type || 'play';
+    const type = activityType(activity);
     const pet = interactionOptions.targetPet || petForActivity(activity);
     const petEl = interactionOptions.targetPetEl || petElementForActivity(activity, panel);
     let ok = false;
@@ -865,31 +1185,40 @@ async function runPetActivity(activity, panel, options, index, interactionOption
         ok = await runFeedInteraction({ pet, petEl, foodItem: feedFoodItem, onFeedItem, source: 'story' });
     } else if (type === 'bath' || type === 'clean') {
         ok = await runBathInteraction({ pet, petEl, stage: panel.querySelector('.mh-story-hero'), onAction: options?.onPetAction });
-    } else {
-        const action = activity.actionKey && activity.actionKey !== 'minigame' ? activity.actionKey : 'play';
-        ok = options?.onPetAction?.(action, activity) !== false;
+    } else if (type === 'tap') {
+        ok = true;
+        if (interactionOptions.showCenterPrompt) showStoryCenterPrompt(activity.title || activity.hint || activity.successText || ACTIVITY_LABELS.tap);
         if (ok && !interactionOptions.skipTouchFeedback) runTouchInteraction(petEl, pet);
+    } else {
+        ok = false;
     }
     if (ok) {
         const line = activity.successText || (type === 'feed' ? '好吃！' : type === 'clean' || type === 'bath' ? '香香的！' : type === 'tap' ? '我收到你的轻拍啦！' : '我感觉好多啦');
-        requestAnimationFrame(() => sayOnPet(petEl, line, 2200));
+        const lineDuration = type === 'tap' ? STORY_TAP_FEEDBACK_MS : 2200;
+        requestAnimationFrame(() => sayOnPet(petEl, line, lineDuration));
         if (type === 'feed') await wait(foodEatDurationMs(feedFoodItem) + 160);
+        if (type === 'tap') await wait(STORY_TAP_FEEDBACK_MS);
         completeActivity(index, panel, options);
     }
 }
 
 async function runFeedStoryActivity(activity, panel, options, index, { actor = null, showDragHint = false } = {}) {
-    const targetActor = actor || selectedActor();
+    const targetActor = actor || actorForActivity(activity) || selectedActor();
+    if (!isActorAllowedForActivity(activity, targetActor)) {
+        showStoryCenterPrompt('换一个目标试试');
+        return;
+    }
     const targetPet = storyPetForFeedActor(targetActor);
     const targetPetEl = petElementForActor(targetActor, panel) || petElementForActivity(activity, panel);
     const foodItem = storyFeedFood(activity, index, targetPet);
+    const shouldApplyToMainPet = targetActor?.id === selectedActor()?.id && targetPet?.id === state.currentPetId;
     if (showDragHint) showToast('拖动可喂食', 'info', 1500);
     await runPetActivity(activity, panel, options, index, {
         targetPet,
         targetPetEl,
         foodItem,
-        useFeedCallback: !actor || targetActor?.id === selectedActor()?.id,
-        onFeedItem: actor && targetActor?.id !== selectedActor()?.id ? async () => true : null,
+        useFeedCallback: shouldApplyToMainPet,
+        onFeedItem: shouldApplyToMainPet ? null : async () => true,
     });
 }
 
@@ -911,26 +1240,38 @@ export function renderStoryPlayer(panel, data = {}, options = {}) {
         panel.innerHTML = '<div style="padding:18px;color:var(--text-muted)">正在加载故事...</div>';
         return;
     }
-    if (!runtime || runtime.story?.id !== story.id) {
+    const sessionKey = options.sessionKey || story.id || story.sourcePath || 'story';
+    if (!runtime || runtime.story?.id !== story.id || runtime.sessionKey !== sessionKey) {
         const startIndex = Math.max(0, story.scenes.findIndex(scene => scene.id === story.startSceneId));
+        const completedInitial = !!options.initialFinished;
+        const initialSceneIndex = completedInitial ? Math.max(0, story.scenes.length - 1) : startIndex;
         runtime = {
             story,
-            sceneIndex: startIndex,
-            sceneId: story.scenes[startIndex]?.id || story.startSceneId,
-            timelineIndex: 0,
-            selectedActorId: story.actors.find(actor => actor.allowUserSelection)?.id || story.actors[0]?.id || '',
+            sessionKey,
+            sceneIndex: initialSceneIndex,
+            sceneId: story.scenes[initialSceneIndex]?.id || story.startSceneId,
+            timelineIndex: completedInitial ? sceneTimeline(story.scenes[initialSceneIndex]).length : 0,
+            selectedActorId: options.initialActorId || story.actors.find(actor => actor.allowUserSelection)?.id || story.actors[0]?.id || '',
             activityProgress: {},
-            finished: false,
+            finished: completedInitial,
+            replayUnlocked: false,
+            actorConfirmed: !!options.initialActorId || completedInitial,
+            completedNotified: completedInitial,
             pendingMinigame: null,
             storyBgMusicActive: false,
             revealedChars: 0,
             scenePlayback: {},
+            scenePanById: {},
             feedFoodItems: {},
         };
     }
     clearTimelineTimer();
     runtime.panel = panel;
     runtime.options = options;
+    if (runtime.storySceneResizeHandler) {
+        window.removeEventListener('resize', runtime.storySceneResizeHandler);
+        runtime.storySceneResizeHandler = null;
+    }
 
     const scene = currentScene();
     const selectableActors = story.actors.filter(actor => actor.allowUserSelection);
@@ -951,16 +1292,18 @@ export function renderStoryPlayer(panel, data = {}, options = {}) {
             ${sceneParticleCss()}
             .mh-story-root { position:absolute; inset:0; display:flex; flex-direction:column; background:linear-gradient(180deg,#e0f7ff 0%,#bae6fd 45%,#fef3c7 100%); color:var(--text-primary); }
             .mh-story-stage { flex:1; min-height:0; overflow:hidden; padding:0; display:flex; flex-direction:column; }
-            .mh-story-hero { flex:1; width:100%; max-width:none; min-height:0; align-self:stretch; border-radius:0; border:0; background:var(--mh-story-scene-bg); background-size:cover; background-position:center; display:flex; align-items:center; justify-content:center; position:relative; overflow:hidden; box-shadow:none; }
+            .mh-story-hero { flex:1; width:100%; max-width:none; min-height:0; align-self:stretch; border-radius:0; border:0; background:var(--mh-story-hero-bg,#bae6fd); display:flex; align-items:center; justify-content:center; position:relative; overflow:hidden; box-shadow:none; touch-action:pan-y; }
             .mh-story-hero.has-action { padding-bottom:64px; }
+            .mh-story-scene { position:absolute; inset:0 auto 0 0; width:100%; background:var(--mh-story-scene-bg); background-size:cover; background-position:center; overflow:hidden; will-change:transform; transform:translate3d(0,0,0); }
+            .mh-story-scene.is-image-bg { background-size:100% 100%, 100% 100%; background-position:center, center; background-repeat:no-repeat; }
             .mh-story-scene-label { display:none; }
             .mh-story-music-toggle { position:absolute; top:10px; right:10px; z-index:6; width:34px; height:34px; border-radius:11px; border:2px solid rgba(255,255,255,.92); background:rgba(14,165,233,.92); color:white; font-size:18px; font-weight:900; line-height:1; display:grid; place-items:center; box-shadow:0 4px 0 rgba(37,99,235,.34),0 8px 18px rgba(15,39,71,.16); }
             .mh-story-music-toggle.is-muted { background:rgba(255,255,255,.92); color:var(--accent-dark); }
             .mh-story-pet { width:min(220px,58vw); height:min(220px,58vw); display:block; position:relative; z-index:2; }
-            .mh-story-stage-cast { position:absolute; inset:0; z-index:2; transform-origin:50% 54%; transition:transform .42s ease; }
-            .mh-story-stage-cast.is-zooming { transform:scale(1.08); }
+            .mh-story-stage-cast { position:absolute; inset:0; z-index:2; transform:translate3d(var(--story-cast-pan,0px),0,0); transform-origin:50% 54%; transition:transform .42s ease; }
+            .mh-story-stage-cast.is-zooming { transform:translate3d(var(--story-cast-pan,0px),0,0) scale(1.08); }
             .mh-story-stage-cast.is-interaction-locked .mh-story-stage-actor { pointer-events:none; }
-            .mh-story-stage-actor { position:absolute; width:min(128px,31vw); height:min(128px,31vw); transform:translateX(-50%) scale(var(--stage-scale,1)); transform-origin:50% 100%; transition:left .38s ease,bottom .38s ease,transform .38s ease,filter .38s ease; }
+            .mh-story-stage-actor { position:absolute; width:min(var(--story-actor-size,128px),31vw); height:min(var(--story-actor-size,128px),31vw); transform:translateX(-50%) scale(var(--stage-scale,1)); transform-origin:50% 100%; transition:left .38s ease,bottom .38s ease,transform .38s ease,filter .38s ease; }
             .mh-story-stage-actor [data-mh-pet] { pointer-events:none; }
             .mh-story-stage-actor.is-speaking { z-index:3; filter:drop-shadow(0 8px 10px rgba(14,116,144,.24)); transform:translateX(-50%) scale(calc(var(--stage-scale,1) * 1.16)); }
             .mh-story-stage-actor.is-listening { opacity:.82; }
@@ -997,15 +1340,19 @@ export function renderStoryPlayer(panel, data = {}, options = {}) {
             .mh-story-page-arrow { flex:0 0 44px; width:44px; height:44px; min-width:44px; border-radius:16px; font-size:25px; font-weight:900; line-height:1; display:grid; place-items:center; padding:0; background:rgba(239,250,255,.92); border-color:rgba(255,255,255,.74); color:var(--accent-dark); box-shadow:0 4px 0 rgba(14,116,144,.22),0 8px 16px rgba(15,39,71,.14),inset 0 1px 0 rgba(255,255,255,.9); }
             .mh-story-page-arrow:disabled { opacity:.34; cursor:default; }
             .mh-story-page-arrow-placeholder { visibility:hidden; }
+            .mh-story-finished-action-strip { flex:1; min-width:0; display:flex; gap:8px; align-items:center; }
+            .mh-story-finished-action-strip > button { flex:1; min-width:0; }
             .mh-story-hero-continue { position:absolute; left:12px; right:12px; bottom:max(12px,env(safe-area-inset-bottom)); z-index:6; min-height:88px; display:flex; align-items:flex-end; justify-content:center; }
             .mh-story-continue-hit { width:100%; min-height:76px; border:0; background:transparent; box-shadow:none; padding:0 0 10px; display:flex; align-items:flex-end; justify-content:center; cursor:pointer; }
             .mh-story-continue-hit span { min-width:116px; border-radius:999px; background:rgba(15,39,71,.52); color:white; border:1px solid rgba(255,255,255,.42); box-shadow:0 4px 14px rgba(15,39,71,.16); padding:9px 18px; font-size:13px; font-weight:900; line-height:1; pointer-events:none; }
             .mh-story-continue-hit:disabled { opacity:.55; cursor:default; }
-            .mh-story-actions .mh-story-dock-action { flex:0 0 auto; min-width:66px; height:54px; border-color:rgba(14,165,233,.48); background:linear-gradient(180deg,rgba(255,255,255,.7),rgba(255,255,255,.16)),linear-gradient(135deg,#ecfeff,#bae6fd); box-shadow:0 4px 0 rgba(14,116,144,.24),0 8px 16px rgba(15,39,71,.12),inset 0 1px 0 rgba(255,255,255,.85); }
+            .mh-story-actions .mh-story-dock-action { position:relative; flex:0 0 auto; min-width:66px; height:54px; border-color:rgba(14,165,233,.48); background:linear-gradient(180deg,rgba(255,255,255,.7),rgba(255,255,255,.16)),linear-gradient(135deg,#ecfeff,#bae6fd); box-shadow:0 4px 0 rgba(14,116,144,.24),0 8px 16px rgba(15,39,71,.12),inset 0 1px 0 rgba(255,255,255,.85); }
             .mh-story-actions .mh-story-dock-action.is-feed-action { touch-action:none; user-select:none; -webkit-user-select:none; -webkit-user-drag:none; }
             .mh-story-actions .mh-story-dock-action.is-dragging-feed { opacity:.72; transform:translateY(2px); }
             .mh-story-actions .mh-story-dock-action.is-current { border-color:rgba(37,99,235,.74); box-shadow:0 4px 0 rgba(37,99,235,.34),0 0 0 3px rgba(14,165,233,.2),0 8px 16px rgba(15,39,71,.12),inset 0 1px 0 rgba(255,255,255,.85); }
             .mh-story-actions .mh-story-dock-action.is-complete { background:linear-gradient(180deg,rgba(255,255,255,.72),rgba(255,255,255,.2)),linear-gradient(135deg,#ecfdf5,#bbf7d0); border-color:rgba(16,185,129,.55); }
+            .mh-story-actions .mh-story-action-badge { position:absolute; right:3px; top:3px; z-index:2; min-width:19px; height:19px; padding:0 5px; border-radius:999px; display:grid; place-items:center; border:2px solid rgba(255,255,255,.94); background:linear-gradient(180deg,#fef3c7,#f59e0b); color:#7c2d12; font-size:12px; font-weight:1000; line-height:1; box-shadow:0 2px 0 rgba(146,64,14,.28),0 5px 10px rgba(15,39,71,.18); }
+            .mh-story-actions .mh-story-dock-action.is-complete .mh-story-action-badge { background:linear-gradient(180deg,#86efac,#16a34a); color:white; box-shadow:0 3px 0 rgba(22,101,52,.34),0 6px 12px rgba(15,39,71,.18); }
             .mh-story-actions .mh-story-step-action { flex:0 0 68px; min-width:68px; width:68px; height:54px; border-color:rgba(245,158,11,.62); background:linear-gradient(180deg,rgba(255,255,255,.72),rgba(255,255,255,.18)),linear-gradient(135deg,#fff7ed,#fde68a); box-shadow:0 4px 0 rgba(217,119,6,.24),0 8px 16px rgba(15,39,71,.12),inset 0 1px 0 rgba(255,255,255,.85); }
             .mh-story-actions .mh-story-step-action.is-highlight { animation:mhStoryStepPulse 1s ease-in-out infinite; }
             @keyframes mhStoryStepPulse { 0%,100% { transform:translateY(0); box-shadow:0 4px 0 rgba(217,119,6,.24),0 8px 16px rgba(15,39,71,.12),0 0 0 0 rgba(245,158,11,.32); } 50% { transform:translateY(-2px); box-shadow:0 5px 0 rgba(217,119,6,.24),0 10px 18px rgba(15,39,71,.14),0 0 0 5px rgba(245,158,11,.18); } }
@@ -1032,17 +1379,26 @@ export function renderStoryPlayer(panel, data = {}, options = {}) {
                     <div class="mh-story-line is-narrator"><b>选择主角</b><span>${escapeHtml(story.selectionPrompt || '选择一只抱抱龙，故事结束后它会来到你的星球。')}</span></div>
                     <div class="mh-story-actors">${selectableActors.map(actor => actorCard(actor, actor.id === runtime.selectedActorId)).join('')}</div>
                 ` : `
-                    <div class="mh-story-hero ${isTimelineActivity(activeItem) ? 'has-action' : ''}" style="--mh-story-scene-bg:${escapeHtml(sceneBackground(scene))}">
-                        ${renderSceneParticles(scene)}
-                        ${renderMusicToggleButton(sceneBgMusic(scene))}
+                    <div class="mh-story-hero ${isTimelineActivity(activeItem) ? 'has-action' : ''}" data-story-hero style="--mh-story-hero-bg:${escapeHtml(sceneFallbackColor(scene))}">
+                        <div class="mh-story-scene ${hasSceneBackgroundImage(scene) ? 'is-image-bg' : ''}" data-story-scene style="--mh-story-scene-bg:${escapeHtml(sceneBackground(scene))}">
+                            ${renderSceneParticles(scene)}
+                        </div>
                         ${renderStageActors(timeline, runtime.timelineIndex)}
+                        ${renderMusicToggleButton(sceneBgMusic(scene))}
                         ${isNarratorLine(activeItem) ? `<div class="mh-story-narrator-bubble"><span data-story-narrator-text>${escapeHtml(activeNarratorText(activeItem))}</span></div>` : ''}
                         ${renderHeroContinue(activeItem, canContinue, runtime.sceneIndex >= story.scenes.length - 1)}
                     </div>
                 `}
             </div>
             ${runtime.finished || needsActorSelect ? `<div class="mh-story-actions">
-                ${runtime.finished ? `<button class="btn-primary" id="mhStoryClaim">带它回家</button>` : `<button class="btn-primary" id="mhStoryStart">开始故事</button>`}
+                ${runtime.finished ? `
+                    <button type="button" class="btn-secondary dock-icon-btn mh-story-page-arrow" data-story-prev-page aria-label="上一页" title="上一页">‹</button>
+                    <div class="mh-story-finished-action-strip">
+                        ${options.allowUnlockedReplay ? `<button class="btn-secondary" id="mhStoryReplay">重玩故事</button>` : ''}
+                        <button class="btn-primary" id="mhStoryClaim">带它回家</button>
+                    </div>
+                    <span class="mh-story-page-arrow mh-story-page-arrow-placeholder"></span>
+                ` : `<button class="btn-primary" id="mhStoryStart">开始故事</button>`}
             </div>` : renderStoryActionDock(scene, timeline, activeItem, activeActivityIndex, canContinue)}
         </div>`;
 
@@ -1060,28 +1416,34 @@ export function renderStoryPlayer(panel, data = {}, options = {}) {
     };
     if ($('mhStoryNext')) $('mhStoryNext').onclick = () => goNext(panel, options);
     if ($('mhStoryContinue')) $('mhStoryContinue').onclick = () => continueTimelineLine(panel, options);
+    if ($('mhStoryReplay')) $('mhStoryReplay').onclick = () => startUnlockedReplay(panel, options);
     if ($('mhStoryClaim')) $('mhStoryClaim').onclick = () => options.onRaisePet?.(story, selectedActor());
     panel.querySelector('[data-story-step]')?.addEventListener('click', () => continueTimelineLine(panel, options));
     panel.querySelector('[data-story-prev-page]')?.addEventListener('click', () => goPrev(panel, options));
     panel.querySelector('[data-story-next-page]')?.addEventListener('click', () => goNext(panel, options));
     panel.querySelectorAll('[data-story-actor-stage]').forEach(el => {
         el.onclick = (e) => {
-            if (isStoryPetSpeaking()) return;
             e.preventDefault();
             e.stopPropagation();
             const actor = actorById(el.dataset.storyActorStage) || selectedActor();
             const pet = state.pets?.[storyPetForActor(actor)?.id] || storyPetForActor(actor);
-            runTouchInteraction(el, pet);
+            if (isStoryPetSpeaking()) return;
             const item = currentTimeline()[runtime.timelineIndex];
             if (isTimelineActivity(item)) {
                 const activityIndex = timelineActivityIndex(currentTimeline(), runtime.timelineIndex);
                 const activity = sceneActivities(currentScene())[activityIndex];
-                if (activity && ['tap', 'comfort', 'play'].includes(activity.type || 'play')) runPetActivity(activity, panel, options, activityIndex, { skipTouchFeedback: true });
+                if (activity && activityType(activity) === 'tap' && isActorAllowedForActivity(activity, actor)) {
+                    runPetActivity(activity, panel, options, activityIndex, { targetPet: pet, targetPetEl: el });
+                    return;
+                }
             }
+            runTouchInteraction(el, pet);
         };
     });
     panel.querySelector('.mh-story-root')?.addEventListener('click', (e) => {
         if (!isDialogueActive()) return;
+        const hero = panel.querySelector('[data-story-hero]');
+        if (Date.now() - (hero?.__mhStoryPannedAt || 0) < 260) return;
         if (e.target.closest?.('button,input,select,textarea,a,[data-story-actor],[data-story-activity],[data-story-music-toggle]')) return;
         continueTimelineLine(panel, options);
     });
@@ -1096,24 +1458,27 @@ export function renderStoryPlayer(panel, data = {}, options = {}) {
     panel.querySelectorAll('[data-story-activity]').forEach(btn => {
         const index = Number(btn.dataset.storyActivity) || 0;
         const activity = sceneActivities(currentScene())[index];
-        if (activity?.type === 'feed') bindStoryFeedDrag(btn, activity, panel, options, index);
+        if (activityType(activity) === 'feed') bindStoryFeedDrag(btn, activity, panel, options, index);
         btn.onclick = async () => {
             if (btn.disabled || isDialogueActive()) return;
             if (Date.now() - (btn.__mhStoryFeedDragHandledAt || 0) < 350) return;
             if (!activity) return;
-            if (activity.type === 'minigame') {
+            const type = activityType(activity);
+            if (type === 'minigame') {
+                if (!activity.gameId) { showToast('小游戏缺少 gameId', 'error'); return; }
                 runtime.pendingMinigame = { index, activity };
                 options.onLaunchMinigame?.(activity);
                 return;
             }
             btn.disabled = true;
             try {
-                if (activity.type === 'feed') await runFeedStoryActivity(activity, panel, options, index, { showDragHint: true });
+                if (type === 'feed') await runFeedStoryActivity(activity, panel, options, index, { showDragHint: true });
                 else await runPetActivity(activity, panel, options, index);
             }
             finally { if (btn.isConnected) btn.disabled = false; }
         };
     });
+    bindStoryScenePan(panel);
     ParticleEffects.getInstance().mountAll(panel);
     mountStoryActorPets(panel);
     scanAndMount(panel);

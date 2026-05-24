@@ -55,6 +55,8 @@
 			.batch-combo-list { @apply flex min-h-0 flex-col gap-2 overflow-auto; }
 			.batch-combo-row { @apply grid grid-cols-[minmax(0,1fr)_72px_auto] items-end gap-2 rounded-md border border-slate-300 bg-slate-50 p-2; }
 			.batch-progress { @apply min-h-[110px] max-h-[210px] overflow-auto whitespace-pre-wrap font-mono text-xs; }
+			.batch-modal-window { width: min(1180px, 100%); height: min(860px, calc(100vh - 36px)); max-height: calc(100vh - 36px); }
+			.batch-modal-body { @apply overflow-auto pb-4; }
 			.record-list { @apply flex min-h-0 flex-1 flex-col gap-1.5 overflow-auto p-2; }
 			.record-item { @apply grid w-full grid-cols-[18px_42px_minmax(0,1fr)_auto] items-center gap-2.5 rounded-md border border-slate-300 bg-white p-2.5 text-left; }
 			.record-item.active { @apply border-sky-600 bg-sky-50 ring-2 ring-sky-600/15; }
@@ -346,13 +348,14 @@
 		const SCENE_CDN_DEFAULT_UPLOAD_HOST = 'https://up-z2.qiniup.com';
 		const SCENE_CDN_DEFAULT_IMAGE_FORMAT = 'webp';
 		const SCENE_CDN_DEFAULT_COMPRESSION_RATIO = 70;
-		let DEFAULT_SCENE_TAGS = ['indoor', 'outdoor', 'land', 'sky', 'ocean', 'playground', 'bathroom', 'living room', 'shop', 'school', 'spring', 'winter', 'seaside', 'haqi', 'townhall', 'forest', 'sand', 'hospital'];
+		const SCENE_CDN_BATCH_TARGET_MIN_KB = 80;
+		const SCENE_CDN_BATCH_TARGET_MAX_KB = 100;
+		const SCENE_CDN_BATCH_TARGET_MAX_ATTEMPTS = 5;
+		const SCENE_CDN_BATCH_INITIAL_QUALITY = 0.3;
+		let DEFAULT_SCENE_TAGS = [];
 		let PARTICLE_EFFECTS = ['sparkle', 'snow', 'rain', 'mist', 'bubbles', 'petals', 'embers'];
 		const BG_MUSIC_LABELS = { selector: '选择', square: '广场', forest: '森林', farm: '农场', mountain: '山地', park: '公园', playground: '游乐场', ship: '飞船', haqiLoop: '哈奇循环' };
-		let TAG_ALIASES = {
-			indoors: 'indoor', outside: 'outdoor', outdoors: 'outdoor', sea: 'ocean', beach: 'seaside', room: 'living room', livingroom: 'living room', bath: 'bathroom', town: 'townhall', woods: 'forest', playgrounds: 'playground', clinic: 'hospital', snow: 'winter', warm: 'spring', home: 'living room',
-			室内: 'indoor', 户外: 'outdoor', 室外: 'outdoor', 陆地: 'land', 天空: 'sky', 海洋: 'ocean', 操场: 'playground', 浴室: 'bathroom', 客厅: 'living room', 商店: 'shop', 学校: 'school', 春天: 'spring', 冬天: 'winter', 海边: 'seaside', 哈奇: 'haqi', 镇大厅: 'townhall', 森林: 'forest', 沙滩: 'sand', 沙子: 'sand', 医院: 'hospital', 家: 'living room', 小店: 'shop', 水: 'ocean', 雪: 'winter'
-		};
+		let TAG_ALIASES = {};
 		const $ = (id) => document.getElementById(id);
 		const state = { sdk: null, referenceDataUrls: [], scenes: [], selectedId: '', selectedSceneIds: new Set(), indexMeta: null, lastLLMModel: '', lastChatModel: '', lastImageSize: '', currentHistoryUrls: [], imageSizeCache: new Map(), imageSizeRequests: new Map(), imageDimensionCache: new Map(), imageDimensionRequests: new Map(), recordThumbObserver: null, workspaceViewer: null, storyConfig: null, storyConfigModule: null, soundManager: null, particleEffectsModule: null, generationPromptsPromise: null, batchAbortRequested: false, generateAll: { running: false, pauseRequested: false, completed: 0, total: 0, activeId: '' } };
 
@@ -771,6 +774,10 @@ ${currentIndent}}`;
 			} catch (_) {}
 		}
 
+		function getBatchFinalPromptPreviewCombo() {
+			return parseBatchCombinationsFromDialog()[0] || { tags: ['outdoor', 'haqi', 'spring'], count: 1 };
+		}
+
 		function getEnabledLocalModels(category) {
 			const sdk = state.sdk || window.keepwork;
 			return sdk?.localAPIKeySettings?.listModels ? sdk.localAPIKeySettings.listModels(category).filter(model => model.enabled !== false) : [];
@@ -812,22 +819,39 @@ ${currentIndent}}`;
 			return Math.max(0, Math.min(95, Math.round(numberValue)));
 		}
 
+		function normalizeTargetSizeKb(value, fallback) {
+			const numberValue = Number(value);
+			if (!Number.isFinite(numberValue)) return fallback;
+			return Math.max(10, Math.min(2048, Math.round(numberValue)));
+		}
+
+		function normalizeSceneCdnTargetSizeOptions(options = {}) {
+			let targetMinKb = normalizeTargetSizeKb(options.targetMinKb, SCENE_CDN_BATCH_TARGET_MIN_KB);
+			let targetMaxKb = normalizeTargetSizeKb(options.targetMaxKb, SCENE_CDN_BATCH_TARGET_MAX_KB);
+			if (targetMaxKb < targetMinKb) [targetMinKb, targetMaxKb] = [targetMaxKb, targetMinKb];
+			return { targetMinKb, targetMaxKb };
+		}
+
 		function loadSceneCdnUploadOptions() {
 			try {
 				const parsed = JSON.parse(localStorage.getItem(SCENE_CDN_UPLOAD_OPTIONS_STORAGE_KEY) || '{}') || {};
+				const targetSize = normalizeSceneCdnTargetSizeOptions(parsed);
 				return {
 					format: normalizeSceneCdnImageFormat(parsed.format || SCENE_CDN_DEFAULT_IMAGE_FORMAT),
 					compressionRatio: normalizeCompressionRatio(parsed.compressionRatio ?? SCENE_CDN_DEFAULT_COMPRESSION_RATIO),
+					...targetSize,
 				};
 			} catch (_) {
-				return { format: SCENE_CDN_DEFAULT_IMAGE_FORMAT, compressionRatio: SCENE_CDN_DEFAULT_COMPRESSION_RATIO };
+				return { format: SCENE_CDN_DEFAULT_IMAGE_FORMAT, compressionRatio: SCENE_CDN_DEFAULT_COMPRESSION_RATIO, targetMinKb: SCENE_CDN_BATCH_TARGET_MIN_KB, targetMaxKb: SCENE_CDN_BATCH_TARGET_MAX_KB };
 			}
 		}
 
 		function saveSceneCdnUploadOptions(options = {}) {
+			const targetSize = normalizeSceneCdnTargetSizeOptions(options);
 			const normalized = {
 				format: normalizeSceneCdnImageFormat(options.format),
 				compressionRatio: normalizeCompressionRatio(options.compressionRatio),
+				...targetSize,
 			};
 			try { localStorage.setItem(SCENE_CDN_UPLOAD_OPTIONS_STORAGE_KEY, JSON.stringify(normalized)); }
 			catch (_) {}
@@ -859,6 +883,8 @@ ${currentIndent}}`;
 			return {
 				format: $('sceneCdnImageFormat')?.value || SCENE_CDN_DEFAULT_IMAGE_FORMAT,
 				compressionRatio: sceneCdnCompressionFromQualityPercent($('sceneCdnQualityRatio')?.value ?? sceneCdnQualityPercentFromCompression(SCENE_CDN_DEFAULT_COMPRESSION_RATIO)),
+				targetMinKb: $('sceneCdnTargetMinKb')?.value,
+				targetMaxKb: $('sceneCdnTargetMaxKb')?.value,
 			};
 		}
 
@@ -875,6 +901,8 @@ ${currentIndent}}`;
 			const options = loadSceneCdnUploadOptions();
 			if ($('sceneCdnImageFormat')) $('sceneCdnImageFormat').value = options.format;
 			if ($('sceneCdnQualityRatio')) $('sceneCdnQualityRatio').value = String(sceneCdnQualityPercentFromCompression(options.compressionRatio));
+			if ($('sceneCdnTargetMinKb')) $('sceneCdnTargetMinKb').value = String(options.targetMinKb);
+			if ($('sceneCdnTargetMaxKb')) $('sceneCdnTargetMaxKb').value = String(options.targetMaxKb);
 			updateSceneCdnUploadQualityLabel();
 		}
 
@@ -1054,7 +1082,15 @@ ${currentIndent}}`;
 							<div class="range-scale"><span>更小文件</span><span id="sceneCdnQualityValue" class="range-value">30%</span><span>接近原图</span></div>
 						</label>
 					</div>
-					<div class="hint">默认 WebP，质量 30%，压缩 70%。滑块越靠左文件越小，越靠右越接近原图。</div>
+					<div class="row">
+						<label>批量目标最小 KB
+							<input id="sceneCdnTargetMinKb" type="number" min="10" max="2048" step="1" value="${SCENE_CDN_BATCH_TARGET_MIN_KB}">
+						</label>
+						<label>批量目标最大 KB
+							<input id="sceneCdnTargetMaxKb" type="number" min="10" max="2048" step="1" value="${SCENE_CDN_BATCH_TARGET_MAX_KB}">
+						</label>
+					</div>
+					<div class="hint">默认 WebP，质量 30%，压缩 70%。批量生成会从 30% 质量开始，最多尝试 5 次，让文件接近目标 KB 范围。</div>
 					<div class="toolbar"><button id="btnDialogPickSceneCdnConfig" type="button">选择 qiniu.yaml 文件</button></div>
 					<textarea id="sceneCdnConfigText" class="prompt-box" spellcheck="false" placeholder="accessKey: xxx&#10;secretKey: xxx&#10;bucketName: haqi&#10;publicDomain: https://cdn.keepwork.com&#10;uploadHost: https://up-z2.qiniup.com"></textarea>
 					<div class="toolbar" style="justify-content:flex-end"><button id="btnCancelSceneCdnConfig" type="button">取消</button><button id="btnApplySceneCdnConfig" class="primary" type="button">确认</button></div>
@@ -1112,7 +1148,7 @@ ${currentIndent}}`;
 			const options = loadSceneCdnUploadOptions();
 			const formatLabel = getSceneCdnFormatMeta(options.format).label;
 			const qualityPercent = sceneCdnQualityPercentFromCompression(options.compressionRatio);
-			const optionText = `${formatLabel} · 质量 ${qualityPercent}% · 压缩 ${options.compressionRatio}%`;
+			const optionText = `${formatLabel} · 质量 ${qualityPercent}% · 压缩 ${options.compressionRatio}% · 批量目标 ${options.targetMinKb}-${options.targetMaxKb} KB`;
 			el.textContent = config
 				? `${optionText}\nCDN folder: ${SCENE_CDN_FOLDER} · ${config.bucketName} · ${config.sourceLabel}`
 				: `${optionText}\nCDN folder: ${SCENE_CDN_FOLDER} · 未加载 uploadCDN 配置`;
@@ -1151,6 +1187,44 @@ ${currentIndent}}`;
 			});
 		}
 
+		function compressionRatioFromSceneCdnQuality(quality) {
+			const qualityPercent = Math.max(5, Math.min(100, Math.round(Number(quality) * 100)));
+			return sceneCdnCompressionFromQualityPercent(qualityPercent);
+		}
+
+		async function canvasToTargetSizeBlob(canvas, formatMeta, _preferredCompressionRatio, options = {}) {
+			const targetSize = normalizeSceneCdnTargetSizeOptions(options);
+			const targetMinBytes = Math.max(1, Number(options.targetMinBytes) || targetSize.targetMinKb * 1024);
+			const targetMaxBytes = Math.max(targetMinBytes, Number(options.targetMaxBytes) || targetSize.targetMaxKb * 1024);
+			const defaultIdealBytes = ((targetMinBytes / 1024 + targetMaxBytes / 1024) / 2) * 1024;
+			const targetIdealBytes = Math.max(targetMinBytes, Math.min(targetMaxBytes, Number(options.targetIdealBytes) || defaultIdealBytes));
+			const maxAttempts = Math.max(1, Math.round(Number(options.maxAttempts) || SCENE_CDN_BATCH_TARGET_MAX_ATTEMPTS));
+			const initialQuality = Math.max(0.05, Math.min(1, Number(options.initialQuality) || SCENE_CDN_BATCH_INITIAL_QUALITY));
+			let best = null;
+			let lowQuality = 0.05;
+			let highQuality = 1;
+
+			for (let index = 0; index < maxAttempts; index += 1) {
+				const quality = index === 0 ? initialQuality : (lowQuality + highQuality) / 2;
+				const blob = await canvasToBlob(canvas, formatMeta.mimeType, quality);
+				const distance = blob.size >= targetMinBytes && blob.size <= targetMaxBytes ? 0 : Math.abs(blob.size - targetIdealBytes);
+				const candidate = { blob, quality, distance };
+				if (!best || candidate.distance < best.distance || (candidate.distance === best.distance && Math.abs(candidate.blob.size - targetIdealBytes) < Math.abs(best.blob.size - targetIdealBytes))) best = candidate;
+				if (blob.size >= targetMinBytes && blob.size <= targetMaxBytes) break;
+				if (blob.size > targetMaxBytes) highQuality = quality;
+				else lowQuality = quality;
+			}
+
+			return {
+				blob: best.blob,
+				compressionRatio: compressionRatioFromSceneCdnQuality(best.quality),
+				qualityPercent: Math.max(5, Math.min(100, Math.round(best.quality * 100))),
+				targetMinBytes,
+				targetMaxBytes,
+				attempts: maxAttempts,
+			};
+		}
+
 		async function compressSceneImageForCdn(url, options = loadSceneCdnUploadOptions()) {
 			const formatMeta = getSceneCdnFormatMeta(options.format);
 			const compressionRatio = normalizeCompressionRatio(options.compressionRatio);
@@ -1170,8 +1244,10 @@ ${currentIndent}}`;
 			ctx.imageSmoothingEnabled = true;
 			ctx.imageSmoothingQuality = 'high';
 			ctx.drawImage(img, 0, 0, width, height);
-			const blob = await canvasToBlob(canvas, formatMeta.mimeType, quality);
-			return { blob, width, height, format: formatMeta.format, extension: formatMeta.extension, formatLabel: formatMeta.label, compressionRatio };
+			const compressed = options.autoTargetSize
+				? await canvasToTargetSizeBlob(canvas, formatMeta, compressionRatio, options)
+				: { blob: await canvasToBlob(canvas, formatMeta.mimeType, quality), compressionRatio, qualityPercent: sceneCdnQualityPercentFromCompression(compressionRatio) };
+			return { blob: compressed.blob, width, height, format: formatMeta.format, extension: formatMeta.extension, formatLabel: formatMeta.label, compressionRatio: compressed.compressionRatio, qualityPercent: compressed.qualityPercent, targetMinBytes: compressed.targetMinBytes, targetMaxBytes: compressed.targetMaxBytes, attempts: compressed.attempts };
 		}
 
 		async function uploadBlobToSceneCdn(blob, fileName) {
@@ -1985,7 +2061,7 @@ ${currentIndent}}`;
 			const model = getSelectedImageModel();
 			if (!model) throw new Error('请先在本地 API Key 设置中配置 Image 模型');
 			rememberGenerationSettings();
-			const prompt = await buildSceneImagePrompt();
+			const prompt = $('finalPrompt')?.value?.trim() || await buildSceneImagePrompt();
 			const references = getReferenceImages();
 			const { width, height } = getImageSize();
 			const opts = buildImageGenerationOptions(model, width, height);
@@ -2086,6 +2162,28 @@ ${currentIndent}}`;
 			})).filter(item => item.tags.length && item.count > 0);
 		}
 
+		function getLeastPlannedBatchTag() {
+			const plannedCounts = new Map(DEFAULT_SCENE_TAGS.map(tag => [tag, 0]));
+			parseBatchCombinationsFromDialog().forEach(({ tags, count }) => {
+				tags.forEach(tag => {
+					if (plannedCounts.has(tag)) plannedCounts.set(tag, plannedCounts.get(tag) + count);
+				});
+			});
+			return countScenesByTag()
+				.map(([tag, count], index) => ({ tag, count: count + (plannedCounts.get(tag) || 0), index }))
+				.sort((left, right) => left.count - right.count || left.index - right.index)[0]?.tag || '';
+		}
+
+		function addLeastCountBatchCombination() {
+			const tag = getLeastPlannedBatchTag();
+			if (!tag) {
+				setStatus($('batchRunStatus'), '暂无可自动添加的内置 tag。', 'error');
+				return;
+			}
+			addBatchCombinationRow([tag], 3);
+			setStatus($('batchRunStatus'), `已自动添加 ${tag}，数量 3。`, 'ok');
+		}
+
 		function updateBatchComboExistingCounts() {
 			document.querySelectorAll('[data-batch-combo-row]').forEach(row => {
 				const tags = normalizeSceneTags(row.querySelector('[data-batch-tags]')?.value || '');
@@ -2093,6 +2191,7 @@ ${currentIndent}}`;
 				const el = row.querySelector('[data-batch-existing]');
 				if (el) el.textContent = tags.length ? `已有 ${count}` : '输入 tags';
 			});
+			updateBatchFinalPromptPreview();
 		}
 
 		function addBatchCombinationRow(tags = '', count = 1) {
@@ -2111,9 +2210,11 @@ ${currentIndent}}`;
 			<button type="button" data-batch-remove>删除</button>`;
 			list.appendChild(row);
 			const tagsInput = row.querySelector('[data-batch-tags]');
+			const countInput = row.querySelector('[data-batch-count]');
 			row.querySelector('[data-batch-remove]').onclick = () => { row.remove(); updateBatchComboExistingCounts(); };
 			tagsInput.addEventListener('focus', () => { state.activeBatchTagsInput = tagsInput; });
 			tagsInput.addEventListener('input', updateBatchComboExistingCounts);
+			countInput?.addEventListener('input', updateBatchComboExistingCounts);
 			updateBatchComboExistingCounts();
 		}
 
@@ -2156,6 +2257,23 @@ ${currentIndent}}`;
 				`Avoid duplicate ids and titles. Existing ids: ${existingIds.join(', ') || 'none'}. Existing titles: ${existingTitles.join(', ') || 'none'}.`,
 				userPrompt ? `User direction with highest priority: ${userPrompt}` : '',
 			].filter(Boolean).join('\n');
+		}
+
+		function buildCurrentBatchSceneSettingsPrompt() {
+			const combo = getBatchFinalPromptPreviewCombo();
+			return buildBatchSceneSettingsPrompt(combo.tags, combo.count, $('batchUserPrompt')?.value?.trim() || '');
+		}
+
+		function updateBatchFinalPromptPreview({ force = false } = {}) {
+			const el = $('batchFinalPrompt');
+			if (!el || (state.batchFinalPromptDirty && !force)) return;
+			el.value = buildCurrentBatchSceneSettingsPrompt();
+			state.batchFinalPromptDirty = false;
+		}
+
+		function getBatchSceneSettingsPromptForRequest(combo, userPrompt, allowEditedPrompt = false) {
+			const edited = $('batchFinalPrompt')?.value?.trim() || '';
+			return allowEditedPrompt && edited ? edited : buildBatchSceneSettingsPrompt(combo.tags, combo.count, userPrompt);
 		}
 
 		function extractJsonObject(text) {
@@ -2223,17 +2341,14 @@ ${currentIndent}}`;
 			});
 		}
 
-		async function generateBatchSceneBlueprints(combo, userPrompt, onStreamUpdate) {
+		async function generateBatchSceneBlueprints(combo, userPrompt, onStreamUpdate, promptOverride = '') {
 			const sdk = state.sdk || window.keepwork;
 			if (!sdk?.aiGenerators?.chat && !sdk?.aiChat?.chat) throw new Error('当前 SDK 不支持文本模型调用');
 			const model = $('batchChatModel')?.value?.trim() || state.lastChatModel;
 			if (!model) throw new Error('请先在本地 API Key 设置中配置 Chat 模型');
 			state.lastChatModel = model;
 			saveLocalGenerationSettings();
-			const messages = [
-				{ role: 'system', content: 'Return strict JSON only. No markdown, no explanations.' },
-				{ role: 'user', content: buildBatchSceneSettingsPrompt(combo.tags, combo.count, userPrompt) },
-			];
+			const messages = [{ role: 'user', content: promptOverride || buildBatchSceneSettingsPrompt(combo.tags, combo.count, userPrompt) }];
 			let reasoningText = '';
 			const handleMessage = (fullText, payload) => {
 				const text = typeof fullText === 'string' ? fullText : extractAssistantText(payload);
@@ -2302,7 +2417,7 @@ ${currentIndent}}`;
 			if (statusText) setStatus($('saveStatus'), statusText, 'ok');
 		}
 
-		async function generateImageForSceneConfig(scene, { forceCdnUpload = false, forceCdnFormat = '', onBeforeGenerate = null } = {}) {
+		async function generateImageForSceneConfig(scene, { forceCdnUpload = false, forceCdnFormat = '', autoTargetCdnSize = false, onBeforeGenerate = null } = {}) {
 			const sdk = state.sdk || window.keepwork;
 			if (!sdk?.aiGenerators?.genImage) throw new Error('sdk.aiGenerators.genImage 不可用');
 			const model = getSelectedImageModel();
@@ -2323,7 +2438,7 @@ ${currentIndent}}`;
 			let finalScene = compactScene({ ...targetScene, imageUrl: generatedUrl, historyUrls: normalizeHistoryUrls(targetScene.historyUrls || []) });
 			const shouldUploadToCdn = forceCdnUpload ? !!getSceneCdnConfig() : !!$('uploadCompressedSceneToCdn')?.checked;
 			if (shouldUploadToCdn) {
-				const uploadOptions = forceCdnFormat ? { ...loadSceneCdnUploadOptions(), format: forceCdnFormat } : loadSceneCdnUploadOptions();
+				const uploadOptions = { ...loadSceneCdnUploadOptions(), ...(forceCdnFormat ? { format: forceCdnFormat } : {}), ...(autoTargetCdnSize ? { autoTargetSize: true } : {}) };
 				const uploaded = await compressAndUploadGeneratedSceneImage(generatedUrl, targetId, uploadOptions);
 				finalScene = compactScene({ ...finalScene, imageUrl: uploaded.url, historyUrls: normalizeHistoryUrls([generatedUrl, ...(finalScene.historyUrls || [])]) });
 			}
@@ -2361,9 +2476,10 @@ ${currentIndent}}`;
 			state.generateAll = { running: true, pauseRequested: false, completed: 0, total: targets.length, activeId: '' };
 			updateGenerateAllButton();
 			const cdnEnabled = !!getSceneCdnConfig();
+			const uploadOptions = loadSceneCdnUploadOptions();
 			const targetLabel = '选中场景';
 			const continueLabel = '选中场景';
-			setStatus($('runStatus'), `开始全部生成：${targets.length} 个${targetLabel}。${cdnEnabled ? '检测到 CDN 配置，将自动压缩为 WebP 并上传。' : '未检测到 CDN 配置，将保存模型返回的图片 URL。'}`, '');
+			setStatus($('runStatus'), `开始全部生成：${targets.length} 个${targetLabel}。${cdnEnabled ? `检测到 CDN 配置，将自动压缩为约 ${uploadOptions.targetMinKb}-${uploadOptions.targetMaxKb} KB 的 WebP 并上传。` : '未检测到 CDN 配置，将保存模型返回的图片 URL。'}`, '');
 			try {
 				for (const target of targets) {
 					if (state.generateAll.pauseRequested) break;
@@ -2376,6 +2492,7 @@ ${currentIndent}}`;
 					const generatedScene = await generateImageForSceneConfigWithBatchRetry(currentScene, {
 						forceCdnUpload: true,
 						forceCdnFormat: 'webp',
+						autoTargetCdnSize: true,
 						onBeforeGenerate: (id) => setStatus($('runStatus'), `已记录目标 ID：${id}\n正在生成图片 (${state.generateAll.completed + 1}/${state.generateAll.total})...`, ''),
 					}, progressLabel);
 					const savedScene = upsertSceneInMemory(generatedScene, { select: false });
@@ -2402,6 +2519,7 @@ ${currentIndent}}`;
 			const combinations = parseBatchCombinationsFromDialog();
 			if (!combinations.length) return setStatus($('batchRunStatus'), '请至少添加一个 tags 组合和数量。', 'error');
 			const userPrompt = $('batchUserPrompt')?.value?.trim() || '';
+			const useEditedFinalPrompt = !!state.batchFinalPromptDirty;
 			state.batchAbortRequested = false;
 			$('batchProgress').textContent = '';
 			setBatchSceneStreamPreview('等待模型输出...');
@@ -2413,8 +2531,13 @@ ${currentIndent}}`;
 			saveLocalGenerationSettings();
 			let completed = 0;
 			try {
-				for (const combo of combinations) {
+				for (const [comboIndex, combo] of combinations.entries()) {
 					if (state.batchAbortRequested) break;
+					const promptOverride = getBatchSceneSettingsPromptForRequest(combo, userPrompt, useEditedFinalPrompt && comboIndex === 0);
+					if (!useEditedFinalPrompt || comboIndex > 0) {
+						if ($('batchFinalPrompt')) $('batchFinalPrompt').value = promptOverride;
+						state.batchFinalPromptDirty = false;
+					}
 					appendBatchProgress(`规划组合：${combo.tags.join(', ')} × ${combo.count}`);
 					let streamedText = '';
 					let streamedReasoning = '';
@@ -2423,7 +2546,7 @@ ${currentIndent}}`;
 						if (update.text) streamedText = update.text;
 						if (update.reasoning) streamedReasoning = update.reasoning;
 						setBatchSceneStreamPreview(streamedText, streamedReasoning);
-					});
+					}, promptOverride);
 					setBatchSceneStreamPreview(JSON.stringify({ scenes: blueprints }, null, 2), streamedReasoning);
 					appendBatchProgress(`已生成 ${blueprints.length} 个场景设置`, 'ok');
 					for (const blueprint of blueprints) {
@@ -2461,9 +2584,9 @@ ${currentIndent}}`;
 			const overlay = document.createElement('div');
 			overlay.className = 'modal-overlay';
 			overlay.id = 'batchGenerateOverlay';
-			overlay.innerHTML = `<div class="modal-window" role="dialog" aria-modal="true" aria-label="New Scenes" style="width:min(1180px,100%);height:min(860px,100%)">
+			overlay.innerHTML = `<div class="modal-window batch-modal-window" role="dialog" aria-modal="true" aria-label="New Scenes">
 				<div class="modal-titlebar"><strong>New Scenes · Type Combinations</strong><button type="button" id="closeBatchGenerate">关闭</button></div>
-				<div class="modal-body">
+				<div class="modal-body batch-modal-body">
 					<div class="batch-grid">
 						<section class="section">
 							<h2>内置 tags 现有数量</h2>
@@ -2478,7 +2601,10 @@ ${currentIndent}}`;
 							<label>用户补充要求（生成场景设置前发送给 LLM）
 								<textarea id="batchUserPrompt" class="prompt-box" style="min-height:84px" placeholder="例如：多生成哈奇小镇日常生活场景，避免重复森林和广场。">${escapeHtml(settings.userPrompt || '')}</textarea>
 							</label>
-							<div class="toolbar"><button id="btnAddBatchCombo" type="button">添加组合</button><button id="btnRunBatchGenerate" class="primary" type="button">开始批量生成</button><button id="btnStopBatchGenerate" type="button" disabled>停止</button></div>
+							<label>完整 user prompt（实际发送给 Chat，可编辑）
+								<textarea id="batchFinalPrompt" class="prompt-box" style="min-height:210px" spellcheck="false"></textarea>
+							</label>
+							<div class="toolbar"><button id="btnAddBatchCombo" type="button">添加组合</button><button id="btnAddLeastBatchCombo" type="button">自动补最少 tag</button><button id="btnRunBatchGenerate" class="primary" type="button">开始批量生成</button><button id="btnStopBatchGenerate" type="button" disabled>停止</button></div>
 							<div id="batchComboList" class="batch-combo-list"></div>
 						</section>
 					</div>
@@ -2495,6 +2621,7 @@ ${currentIndent}}`;
 				closeBatchGenerateDialog();
 			};
 			$('btnAddBatchCombo').onclick = () => addBatchCombinationRow('', 1);
+			$('btnAddLeastBatchCombo').onclick = () => addLeastCountBatchCombination();
 			$('btnRunBatchGenerate').onclick = () => runBatchGeneration();
 			$('btnStopBatchGenerate').onclick = () => { state.batchAbortRequested = true; setStatus($('batchRunStatus'), '将在当前请求完成后停止...', ''); };
 			$('batchChatModel').addEventListener('change', () => {
@@ -2502,8 +2629,14 @@ ${currentIndent}}`;
 				saveBatchSettings({ lastChatModel: state.lastChatModel, generateImages: false, userPrompt: $('batchUserPrompt').value, combinations: parseBatchCombinationsFromDialog() });
 				saveLocalGenerationSettings();
 			});
+			$('batchFinalPrompt')?.addEventListener('input', () => { state.batchFinalPromptDirty = true; });
+			$('batchUserPrompt')?.addEventListener('input', () => updateBatchFinalPromptPreview());
+			$('batchUserPrompt')?.addEventListener('change', () => {
+				saveBatchSettings({ lastChatModel: $('batchChatModel')?.value || state.lastChatModel, generateImages: false, userPrompt: $('batchUserPrompt')?.value || '', combinations: parseBatchCombinationsFromDialog() });
+			});
 			renderBatchTagCounts();
 			renderBatchCombinationRows(Array.isArray(settings.combinations) ? settings.combinations : []);
+			updateBatchFinalPromptPreview({ force: true });
 			populateBatchChatModelDropdown().catch(error => setStatus($('batchRunStatus'), `Chat 模型加载失败：${error?.message || error}`, 'error'));
 		}
 
@@ -2822,9 +2955,12 @@ ${currentIndent}}`;
 		}
 
 		function getSceneCdnReviewOptionsFromDialog() {
+			const savedOptions = loadSceneCdnUploadOptions();
 			return {
 				format: $('reviewSceneCdnImageFormat')?.value || SCENE_CDN_DEFAULT_IMAGE_FORMAT,
 				compressionRatio: sceneCdnCompressionFromQualityPercent($('reviewSceneCdnQualityRatio')?.value ?? sceneCdnQualityPercentFromCompression(SCENE_CDN_DEFAULT_COMPRESSION_RATIO)),
+				targetMinKb: savedOptions.targetMinKb,
+				targetMaxKb: savedOptions.targetMaxKb,
 			};
 		}
 
@@ -3053,7 +3189,7 @@ ${currentIndent}}`;
 			$('bgMusic').addEventListener('change', previewBgMusic);
 		}
 
-		function init() {
+		async function init() {
 			const localSettings = readLocalGenerationSettings();
 			state.lastLLMModel = String(localSettings.lastLLMModel || '').trim();
 			state.lastChatModel = String(localSettings.lastChatModel || readBatchSettings().lastChatModel || '').trim();
@@ -3061,17 +3197,17 @@ ${currentIndent}}`;
 			if ($('uploadCompressedSceneToCdn')) $('uploadCompressedSceneToCdn').checked = loadSceneCdnUploadSetting();
 			loadExportSettings();
 			wireEvents();
+			await loadStoryMakerAudioModules();
 			renderTagButtons();
 			renderImageSizeOptions();
 			renderBgMusicOptions();
 			populateModelDropdown();
 			updateSceneCdnStatus();
 			applySceneToForm(defaultScene(), false);
-			loadStoryMakerAudioModules();
 			loadSdk();
 		}
 
-		init();
+		init().catch(error => setStatus($('runStatus'), `初始化失败：${error?.message || error}`, 'error'));
 	</script>
 </body>
 </html>

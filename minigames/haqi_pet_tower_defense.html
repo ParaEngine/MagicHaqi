@@ -31,6 +31,13 @@
     sparks: 260,
     audioGapMs: 28
   };
+    const AUDIO_MASTER_GAIN = 1;
+    const AUDIO_PREAMP_GAIN = 6;
+    const AUDIO_MAX_SOURCE_GAIN = .75;
+  const BUILD_SPOT_EDGE_PADDING = 70;
+  const BUILD_SPOT_MIN_GAP = 100;
+  const BUILD_SPOT_ROUTE_CLEARANCE = 96;
+  const BUILD_SPOT_GATE_CLEARANCE = 135;
   const SCENE_DEFS = {
     blood: {
       id: 'blood', label: '血管', tissue: '血管免疫基地',
@@ -82,10 +89,7 @@
           { x: 500, y: 500 }, { x: 760, y: 500 }, { x: 760, y: 260 }, { x: 900, y: 310 }
         ]
       ],
-      spots: [
-        { x: 98, y: 306 }, { x: 250, y: 286 }, { x: 332, y: 88 }, { x: 454, y: 318 },
-        { x: 590, y: 88 }, { x: 626, y: 506 }, { x: 792, y: 386 }, { x: 850, y: 232 }
-      ],
+      spots: [{ x: 60, y: 312 }, { x: 158, y: 74 }, { x: 60, y: 60 }, { x: 746, y: 158 }, { x: 676, y: 60 }, { x: 844, y: 550 }, { x: 928, y: 494 }, { x: 858, y: 186 }],
       gate: { x: 900, y: 310 },
       hero: { x: 822, y: 334 },
       tissue: 'M0 522 C150 476 255 552 420 510 C592 466 705 535 1000 492 L1000 620 L0 620 Z'
@@ -102,10 +106,7 @@
           { x: 510, y: 435 }, { x: 510, y: 690 }, { x: 250, y: 690 }, { x: 250, y: 840 }, { x: 520, y: 870 }
         ]
       ],
-      spots: [
-        { x: 178, y: 104 }, { x: 430, y: 110 }, { x: 180, y: 360 }, { x: 400, y: 330 },
-        { x: 318, y: 594 }, { x: 504, y: 566 }, { x: 186, y: 706 }, { x: 384, y: 840 }
-      ],
+      spots: [{ x: 186, y: 102 }, { x: 424, y: 88 }, { x: 172, y: 354 }, { x: 452, y: 326 }, { x: 410, y: 536 }, { x: 550, y: 340 }, { x: 158, y: 872 }, { x: 74, y: 914 }],
       gate: { x: 520, y: 870 },
       hero: { x: 452, y: 850 },
       tissue: 'M0 850 C108 808 188 878 300 838 C430 792 506 850 620 814 L620 1000 L0 1000 Z'
@@ -118,7 +119,7 @@
           [{ x: -70, y: 140 }, { x: 180, y: 140 }, { x: 180, y: 260 }, { x: 420, y: 260 }, { x: 420, y: 380 }, { x: 180, y: 380 }, { x: 180, y: 515 }, { x: 560, y: 515 }, { x: 560, y: 300 }, { x: 830, y: 300 }, { x: 900, y: 310 }],
           [{ x: -70, y: 500 }, { x: 240, y: 500 }, { x: 240, y: 390 }, { x: 520, y: 390 }, { x: 520, y: 230 }, { x: 280, y: 230 }, { x: 280, y: 100 }, { x: 670, y: 100 }, { x: 670, y: 450 }, { x: 900, y: 310 }]
         ],
-        spots: [{ x: 116, y: 250 }, { x: 282, y: 154 }, { x: 316, y: 324 }, { x: 438, y: 476 }, { x: 570, y: 202 }, { x: 686, y: 344 }, { x: 742, y: 88 }, { x: 820, y: 420 }],
+        spots: [{ x: 88, y: 256 }, { x: 88, y: 354 }, { x: 648, y: 550 }, { x: 746, y: 550 }, { x: 774, y: 186 }, { x: 816, y: 480 }, { x: 760, y: 74 }, { x: 900, y: 438 }],
         gate: { x: 900, y: 310 }, hero: { x: 824, y: 334 },
         tissue: 'M0 515 C120 468 230 560 366 504 C520 438 660 552 1000 486 L1000 620 L0 620 Z'
       },
@@ -127,7 +128,7 @@
           [{ x: 96, y: -70 }, { x: 96, y: 150 }, { x: 420, y: 150 }, { x: 420, y: 282 }, { x: 156, y: 282 }, { x: 156, y: 430 }, { x: 470, y: 430 }, { x: 470, y: 610 }, { x: 190, y: 610 }, { x: 190, y: 790 }, { x: 522, y: 872 }],
           [{ x: 536, y: -70 }, { x: 536, y: 112 }, { x: 220, y: 112 }, { x: 220, y: 246 }, { x: 502, y: 246 }, { x: 502, y: 392 }, { x: 132, y: 392 }, { x: 132, y: 556 }, { x: 412, y: 556 }, { x: 412, y: 748 }, { x: 522, y: 872 }]
         ],
-        spots: [{ x: 250, y: 78 }, { x: 468, y: 190 }, { x: 174, y: 214 }, { x: 320, y: 354 }, { x: 520, y: 512 }, { x: 238, y: 512 }, { x: 304, y: 700 }, { x: 442, y: 824 }],
+        spots: [{ x: 60, y: 242 }, { x: 550, y: 662 }, { x: 60, y: 620 }, { x: 312, y: 704 }, { x: 354, y: 928 }, { x: 88, y: 718 }, { x: 242, y: 900 }, { x: 144, y: 914 }],
         gate: { x: 522, y: 872 }, hero: { x: 452, y: 852 },
         tissue: 'M0 855 C120 810 190 884 314 836 C450 782 528 846 620 812 L620 1000 L0 1000 Z'
       }
@@ -138,7 +139,7 @@
           [{ x: -60, y: 160 }, { x: 220, y: 160 }, { x: 420, y: 310 }, { x: 220, y: 460 }, { x: 500, y: 460 }, { x: 690, y: 310 }, { x: 500, y: 160 }, { x: 900, y: 310 }],
           [{ x: -60, y: 470 }, { x: 220, y: 470 }, { x: 420, y: 310 }, { x: 220, y: 150 }, { x: 500, y: 150 }, { x: 690, y: 310 }, { x: 500, y: 470 }, { x: 900, y: 310 }]
         ],
-        spots: [{ x: 152, y: 300 }, { x: 314, y: 246 }, { x: 420, y: 226 }, { x: 420, y: 394 }, { x: 584, y: 246 }, { x: 584, y: 394 }, { x: 742, y: 310 }, { x: 820, y: 208 }],
+        spots: [{ x: 158, y: 298 }, { x: 256, y: 312 }, { x: 522, y: 298 }, { x: 550, y: 550 }, { x: 648, y: 116 }, { x: 662, y: 508 }, { x: 802, y: 172 }, { x: 900, y: 172 }],
         gate: { x: 900, y: 310 }, hero: { x: 824, y: 334 },
         tissue: 'M0 520 C150 450 260 540 410 498 C570 452 710 535 1000 486 L1000 620 L0 620 Z'
       },
@@ -147,7 +148,7 @@
           [{ x: 82, y: -60 }, { x: 180, y: 118 }, { x: 310, y: 330 }, { x: 170, y: 520 }, { x: 360, y: 650 }, { x: 250, y: 780 }, { x: 520, y: 870 }],
           [{ x: 540, y: -60 }, { x: 440, y: 118 }, { x: 310, y: 330 }, { x: 452, y: 520 }, { x: 260, y: 650 }, { x: 370, y: 780 }, { x: 520, y: 870 }]
         ],
-        spots: [{ x: 178, y: 88 }, { x: 444, y: 88 }, { x: 220, y: 300 }, { x: 400, y: 300 }, { x: 310, y: 430 }, { x: 222, y: 618 }, { x: 400, y: 618 }, { x: 310, y: 822 }],
+        spots: [{ x: 256, y: 60 }, { x: 354, y: 74 }, { x: 186, y: 312 }, { x: 424, y: 326 }, { x: 312, y: 494 }, { x: 158, y: 634 }, { x: 452, y: 634 }, { x: 270, y: 886 }],
         gate: { x: 520, y: 870 }, hero: { x: 450, y: 850 },
         tissue: 'M0 848 C116 802 210 878 316 838 C444 790 520 850 620 812 L620 1000 L0 1000 Z'
       }
@@ -158,7 +159,7 @@
           [{ x: 145, y: -70 }, { x: 145, y: 140 }, { x: 300, y: 110 }, { x: 420, y: 220 }, { x: 350, y: 360 }, { x: 180, y: 360 }, { x: 110, y: 250 }, { x: 220, y: 160 }, { x: 450, y: 450 }, { x: 680, y: 430 }, { x: 840, y: 310 }, { x: 900, y: 310 }],
           [{ x: 855, y: -70 }, { x: 855, y: 140 }, { x: 700, y: 110 }, { x: 580, y: 220 }, { x: 650, y: 360 }, { x: 820, y: 360 }, { x: 890, y: 250 }, { x: 780, y: 160 }, { x: 550, y: 450 }, { x: 680, y: 430 }, { x: 840, y: 310 }, { x: 900, y: 310 }]
         ],
-        spots: [{ x: 246, y: 230 }, { x: 346, y: 290 }, { x: 112, y: 432 }, { x: 500, y: 508 }, { x: 654, y: 290 }, { x: 754, y: 230 }, { x: 858, y: 432 }, { x: 790, y: 120 }],
+        spots: [{ x: 382, y: 60 }, { x: 480, y: 312 }, { x: 116, y: 438 }, { x: 508, y: 550 }, { x: 522, y: 144 }, { x: 592, y: 74 }, { x: 872, y: 438 }, { x: 480, y: 60 }],
         gate: { x: 900, y: 310 }, hero: { x: 824, y: 334 },
         tissue: 'M0 522 C160 468 285 548 430 508 C595 462 715 532 1000 492 L1000 620 L0 620 Z'
       },
@@ -167,7 +168,7 @@
           [{ x: 160, y: -70 }, { x: 160, y: 140 }, { x: 270, y: 200 }, { x: 180, y: 330 }, { x: 86, y: 260 }, { x: 150, y: 170 }, { x: 310, y: 470 }, { x: 190, y: 650 }, { x: 330, y: 785 }, { x: 520, y: 870 }],
           [{ x: 462, y: -70 }, { x: 462, y: 140 }, { x: 352, y: 200 }, { x: 442, y: 330 }, { x: 536, y: 260 }, { x: 472, y: 170 }, { x: 312, y: 470 }, { x: 432, y: 650 }, { x: 330, y: 785 }, { x: 520, y: 870 }]
         ],
-        spots: [{ x: 246, y: 104 }, { x: 376, y: 104 }, { x: 130, y: 380 }, { x: 492, y: 380 }, { x: 246, y: 522 }, { x: 376, y: 522 }, { x: 168, y: 730 }, { x: 444, y: 730 }],
+        spots: [{ x: 270, y: 88 }, { x: 368, y: 74 }, { x: 116, y: 410 }, { x: 508, y: 396 }, { x: 186, y: 480 }, { x: 438, y: 480 }, { x: 144, y: 746 }, { x: 480, y: 746 }],
         gate: { x: 520, y: 870 }, hero: { x: 452, y: 850 },
         tissue: 'M0 852 C106 808 188 878 306 838 C432 792 510 850 620 814 L620 1000 L0 1000 Z'
       }
@@ -178,7 +179,7 @@
           [{ x: -70, y: 130 }, { x: 210, y: 120 }, { x: 410, y: 205 }, { x: 250, y: 310 }, { x: 455, y: 405 }, { x: 345, y: 520 }, { x: 620, y: 510 }, { x: 770, y: 390 }, { x: 900, y: 310 }],
           [{ x: -70, y: 520 }, { x: 230, y: 520 }, { x: 390, y: 435 }, { x: 260, y: 330 }, { x: 470, y: 245 }, { x: 360, y: 145 }, { x: 640, y: 150 }, { x: 790, y: 230 }, { x: 900, y: 310 }]
         ],
-        spots: [{ x: 130, y: 238 }, { x: 176, y: 430 }, { x: 328, y: 236 }, { x: 378, y: 350 }, { x: 512, y: 166 }, { x: 560, y: 470 }, { x: 720, y: 318 }, { x: 828, y: 406 }],
+        spots: [{ x: 130, y: 242 }, { x: 172, y: 424 }, { x: 312, y: 60 }, { x: 522, y: 340 }, { x: 564, y: 242 }, { x: 592, y: 410 }, { x: 718, y: 312 }, { x: 858, y: 452 }],
         gate: { x: 900, y: 310 }, hero: { x: 824, y: 334 },
         tissue: 'M0 520 C136 468 240 552 398 504 C570 448 698 538 1000 488 L1000 620 L0 620 Z'
       },
@@ -187,7 +188,7 @@
           [{ x: 80, y: -60 }, { x: 112, y: 142 }, { x: 372, y: 210 }, { x: 180, y: 345 }, { x: 430, y: 470 }, { x: 230, y: 620 }, { x: 420, y: 760 }, { x: 520, y: 870 }],
           [{ x: 540, y: -60 }, { x: 508, y: 142 }, { x: 248, y: 210 }, { x: 440, y: 345 }, { x: 190, y: 470 }, { x: 390, y: 620 }, { x: 250, y: 760 }, { x: 520, y: 870 }]
         ],
-        spots: [{ x: 184, y: 108 }, { x: 438, y: 108 }, { x: 132, y: 280 }, { x: 492, y: 280 }, { x: 310, y: 400 }, { x: 164, y: 574 }, { x: 454, y: 574 }, { x: 344, y: 806 }],
+        spots: [{ x: 200, y: 60 }, { x: 424, y: 60 }, { x: 116, y: 270 }, { x: 494, y: 270 }, { x: 508, y: 410 }, { x: 144, y: 564 }, { x: 466, y: 564 }, { x: 312, y: 886 }],
         gate: { x: 520, y: 870 }, hero: { x: 452, y: 850 },
         tissue: 'M0 854 C116 812 190 880 312 838 C438 790 514 850 620 814 L620 1000 L0 1000 Z'
       }
@@ -196,18 +197,100 @@
   const TEST_ROUTE_TEMPLATES = {
     straight: {
       label: '直线',
-      landscape: { paths: [[{ x: -70, y: 310 }, { x: 900, y: 310 }]], gate: { x: 900, y: 310 }, hero: { x: 820, y: 350 } },
-      portrait: { paths: [[{ x: 82, y: -70 }, { x: 520, y: 870 }]], gate: { x: 520, y: 870 }, hero: { x: 452, y: 850 } }
+      landscape: { paths: [[{ x: -70, y: 310 }, { x: 900, y: 310 }]], spots: [{ x: 110, y: 150 }, { x: 310, y: 150 }, { x: 510, y: 150 }, { x: 710, y: 150 }, { x: 110, y: 470 }, { x: 310, y: 470 }, { x: 510, y: 470 }, { x: 710, y: 470 }], gate: { x: 900, y: 310 }, hero: { x: 820, y: 350 } },
+      portrait: { paths: [[{ x: 82, y: -70 }, { x: 520, y: 870 }]], spots: [{ x: 70, y: 150 }, { x: 120, y: 290 }, { x: 190, y: 430 }, { x: 250, y: 570 }, { x: 320, y: 710 }, { x: 420, y: 390 }, { x: 480, y: 540 }, { x: 540, y: 690 }], gate: { x: 520, y: 870 }, hero: { x: 452, y: 850 } }
     },
     loop: {
       label: '环形',
-      landscape: { paths: [[{ x: -70, y: 310 }, { x: 180, y: 310 }, { x: 180, y: 150 }, { x: 610, y: 150 }, { x: 610, y: 470 }, { x: 180, y: 470 }, { x: 180, y: 310 }, { x: 900, y: 310 }]], gate: { x: 900, y: 310 }, hero: { x: 820, y: 350 } },
-      portrait: { paths: [[{ x: 82, y: -70 }, { x: 82, y: 190 }, { x: 452, y: 190 }, { x: 452, y: 660 }, { x: 130, y: 660 }, { x: 130, y: 350 }, { x: 360, y: 350 }, { x: 520, y: 870 }]], gate: { x: 520, y: 870 }, hero: { x: 452, y: 850 } }
+      landscape: { paths: [[{ x: -70, y: 310 }, { x: 240, y: 310 }, { x: 240, y: 190 }, { x: 640, y: 190 }, { x: 640, y: 430 }, { x: 240, y: 430 }, { x: 240, y: 310 }, { x: 900, y: 310 }]], spots: [{ x: 110, y: 70 }, { x: 380, y: 70 }, { x: 760, y: 70 }, { x: 880, y: 170 }, { x: 110, y: 550 }, { x: 380, y: 550 }, { x: 760, y: 550 }, { x: 880, y: 450 }], gate: { x: 900, y: 310 }, hero: { x: 820, y: 350 } },
+      portrait: { paths: [[{ x: 95, y: -70 }, { x: 95, y: 220 }, { x: 440, y: 220 }, { x: 440, y: 620 }, { x: 170, y: 620 }, { x: 170, y: 390 }, { x: 360, y: 390 }, { x: 520, y: 870 }]], spots: [{ x: 220, y: 80 }, { x: 520, y: 80 }, { x: 560, y: 340 }, { x: 560, y: 520 }, { x: 70, y: 380 }, { x: 70, y: 520 }, { x: 240, y: 760 }, { x: 380, y: 760 }], gate: { x: 520, y: 870 }, hero: { x: 452, y: 850 } }
     },
     cross: {
       label: '交叉',
-      landscape: { paths: [[{ x: -70, y: 165 }, { x: 250, y: 165 }, { x: 500, y: 310 }, { x: 900, y: 310 }], [{ x: -70, y: 455 }, { x: 250, y: 455 }, { x: 500, y: 310 }, { x: 900, y: 310 }]], gate: { x: 900, y: 310 }, hero: { x: 820, y: 350 } },
-      portrait: { paths: [[{ x: 96, y: -70 }, { x: 96, y: 340 }, { x: 310, y: 520 }, { x: 520, y: 870 }], [{ x: 524, y: -70 }, { x: 524, y: 340 }, { x: 310, y: 520 }, { x: 520, y: 870 }]], gate: { x: 520, y: 870 }, hero: { x: 452, y: 850 } }
+      landscape: { paths: [[{ x: -70, y: 180 }, { x: 250, y: 180 }, { x: 500, y: 310 }, { x: 900, y: 310 }], [{ x: -70, y: 440 }, { x: 250, y: 440 }, { x: 500, y: 310 }, { x: 900, y: 310 }]], spots: [{ x: 110, y: 70 }, { x: 340, y: 70 }, { x: 660, y: 70 }, { x: 880, y: 150 }, { x: 110, y: 550 }, { x: 340, y: 550 }, { x: 660, y: 550 }, { x: 880, y: 470 }], gate: { x: 900, y: 310 }, hero: { x: 820, y: 350 } },
+      portrait: { paths: [[{ x: 100, y: -70 }, { x: 100, y: 340 }, { x: 310, y: 520 }, { x: 520, y: 870 }], [{ x: 520, y: -70 }, { x: 520, y: 340 }, { x: 310, y: 520 }, { x: 520, y: 870 }]], spots: [{ x: 215, y: 165 }, { x: 215, y: 285 }, { x: 405, y: 285 }, { x: 70, y: 430 }, { x: 550, y: 430 }, { x: 300, y: 700 }, { x: 360, y: 820 }, { x: 480, y: 600 }], gate: { x: 520, y: 870 }, hero: { x: 452, y: 850 } }
+    }
+  };
+  const SCENE_LAYOUT_REDESIGN = {
+    blood: {
+      landscape: {
+        paths: [
+          [{ x: -70, y: 190 }, { x: 190, y: 190 }, { x: 190, y: 360 }, { x: 430, y: 360 }, { x: 430, y: 190 }, { x: 660, y: 190 }, { x: 660, y: 360 }, { x: 900, y: 310 }],
+          [{ x: -70, y: 440 }, { x: 300, y: 440 }, { x: 300, y: 270 }, { x: 540, y: 270 }, { x: 540, y: 500 }, { x: 790, y: 500 }, { x: 790, y: 310 }, { x: 900, y: 310 }]
+        ],
+        spots: [{ x: 90, y: 70 }, { x: 330, y: 70 }, { x: 560, y: 70 }, { x: 840, y: 130 }, { x: 90, y: 305 }, { x: 90, y: 545 }, { x: 420, y: 545 }, { x: 900, y: 540 }]
+      },
+      portrait: {
+        paths: [
+          [{ x: 95, y: -70 }, { x: 95, y: 210 }, { x: 260, y: 210 }, { x: 260, y: 500 }, { x: 120, y: 500 }, { x: 120, y: 760 }, { x: 340, y: 760 }, { x: 340, y: 620 }, { x: 520, y: 870 }],
+          [{ x: 525, y: -70 }, { x: 525, y: 210 }, { x: 360, y: 210 }, { x: 360, y: 450 }, { x: 500, y: 450 }, { x: 500, y: 700 }, { x: 285, y: 700 }, { x: 285, y: 850 }, { x: 520, y: 870 }]
+        ],
+        spots: [{ x: 210, y: 70 }, { x: 310, y: 70 }, { x: 410, y: 70 }, { x: 70, y: 310 }, { x: 550, y: 310 }, { x: 230, y: 610 }, { x: 410, y: 550 }, { x: 190, y: 870 }]
+      }
+    },
+    intestine: {
+      landscape: {
+        paths: [
+          [{ x: -70, y: 130 }, { x: 250, y: 130 }, { x: 250, y: 270 }, { x: 560, y: 270 }, { x: 560, y: 410 }, { x: 820, y: 410 }, { x: 900, y: 310 }],
+          [{ x: -70, y: 490 }, { x: 210, y: 490 }, { x: 210, y: 350 }, { x: 500, y: 350 }, { x: 500, y: 210 }, { x: 740, y: 210 }, { x: 740, y: 330 }, { x: 900, y: 310 }]
+        ],
+        spots: [{ x: 100, y: 270 }, { x: 380, y: 70 }, { x: 620, y: 80 }, { x: 860, y: 140 }, { x: 100, y: 590 }, { x: 360, y: 590 }, { x: 620, y: 550 }, { x: 860, y: 510 }]
+      },
+      portrait: {
+        paths: [
+          [{ x: 180, y: -70 }, { x: 180, y: 150 }, { x: 390, y: 150 }, { x: 390, y: 280 }, { x: 210, y: 280 }, { x: 210, y: 420 }, { x: 430, y: 420 }, { x: 430, y: 560 }, { x: 230, y: 560 }, { x: 230, y: 700 }, { x: 522, y: 872 }],
+          [{ x: 440, y: -70 }, { x: 440, y: 120 }, { x: 230, y: 120 }, { x: 230, y: 250 }, { x: 410, y: 250 }, { x: 410, y: 390 }, { x: 190, y: 390 }, { x: 190, y: 530 }, { x: 390, y: 530 }, { x: 390, y: 670 }, { x: 522, y: 872 }]
+        ],
+        spots: [{ x: 70, y: 160 }, { x: 550, y: 160 }, { x: 70, y: 330 }, { x: 550, y: 330 }, { x: 70, y: 500 }, { x: 550, y: 500 }, { x: 90, y: 700 }, { x: 530, y: 610 }]
+      }
+    },
+    brain: {
+      landscape: {
+        paths: [
+          [{ x: -70, y: 185 }, { x: 220, y: 185 }, { x: 410, y: 310 }, { x: 220, y: 435 }, { x: 520, y: 435 }, { x: 700, y: 310 }, { x: 900, y: 310 }],
+          [{ x: -70, y: 435 }, { x: 220, y: 435 }, { x: 410, y: 310 }, { x: 220, y: 185 }, { x: 520, y: 185 }, { x: 700, y: 310 }, { x: 900, y: 310 }]
+        ],
+        spots: [{ x: 90, y: 70 }, { x: 360, y: 70 }, { x: 620, y: 70 }, { x: 850, y: 120 }, { x: 90, y: 310 }, { x: 90, y: 550 }, { x: 430, y: 550 }, { x: 700, y: 550 }]
+      },
+      portrait: {
+        paths: [
+          [{ x: 95, y: -60 }, { x: 190, y: 150 }, { x: 310, y: 330 }, { x: 190, y: 520 }, { x: 360, y: 660 }, { x: 260, y: 800 }, { x: 520, y: 870 }],
+          [{ x: 525, y: -60 }, { x: 430, y: 150 }, { x: 310, y: 330 }, { x: 430, y: 520 }, { x: 260, y: 660 }, { x: 360, y: 800 }, { x: 520, y: 870 }]
+        ],
+        spots: [{ x: 70, y: 130 }, { x: 310, y: 70 }, { x: 550, y: 130 }, { x: 110, y: 360 }, { x: 510, y: 360 }, { x: 70, y: 610 }, { x: 550, y: 610 }, { x: 110, y: 800 }]
+      }
+    },
+    lung: {
+      landscape: {
+        paths: [
+          [{ x: 180, y: -70 }, { x: 180, y: 150 }, { x: 320, y: 150 }, { x: 370, y: 260 }, { x: 310, y: 370 }, { x: 180, y: 370 }, { x: 120, y: 260 }, { x: 180, y: 150 }, { x: 500, y: 470 }, { x: 760, y: 470 }, { x: 900, y: 310 }],
+          [{ x: 820, y: -70 }, { x: 820, y: 150 }, { x: 680, y: 150 }, { x: 630, y: 260 }, { x: 690, y: 370 }, { x: 820, y: 370 }, { x: 880, y: 260 }, { x: 820, y: 150 }, { x: 500, y: 470 }, { x: 760, y: 470 }, { x: 900, y: 310 }]
+        ],
+        spots: [{ x: 70, y: 90 }, { x: 400, y: 80 }, { x: 600, y: 80 }, { x: 930, y: 90 }, { x: 70, y: 515 }, { x: 330, y: 570 }, { x: 670, y: 570 }, { x: 930, y: 515 }]
+      },
+      portrait: {
+        paths: [
+          [{ x: 180, y: -70 }, { x: 180, y: 160 }, { x: 300, y: 220 }, { x: 180, y: 360 }, { x: 120, y: 520 }, { x: 250, y: 680 }, { x: 340, y: 800 }, { x: 520, y: 870 }],
+          [{ x: 440, y: -70 }, { x: 440, y: 160 }, { x: 320, y: 220 }, { x: 440, y: 360 }, { x: 500, y: 520 }, { x: 370, y: 680 }, { x: 340, y: 800 }, { x: 520, y: 870 }]
+        ],
+        spots: [{ x: 70, y: 90 }, { x: 310, y: 70 }, { x: 550, y: 90 }, { x: 70, y: 340 }, { x: 550, y: 340 }, { x: 70, y: 700 }, { x: 550, y: 700 }, { x: 310, y: 520 }]
+      }
+    },
+    stomach: {
+      landscape: {
+        paths: [
+          [{ x: -70, y: 165 }, { x: 250, y: 165 }, { x: 450, y: 245 }, { x: 280, y: 325 }, { x: 490, y: 425 }, { x: 380, y: 510 }, { x: 650, y: 510 }, { x: 900, y: 310 }],
+          [{ x: -70, y: 475 }, { x: 260, y: 475 }, { x: 430, y: 410 }, { x: 300, y: 325 }, { x: 510, y: 230 }, { x: 390, y: 165 }, { x: 660, y: 165 }, { x: 900, y: 310 }]
+        ],
+        spots: [{ x: 100, y: 280 }, { x: 100, y: 590 }, { x: 320, y: 70 }, { x: 550, y: 60 }, { x: 620, y: 300 }, { x: 620, y: 410 }, { x: 800, y: 540 }, { x: 880, y: 150 }]
+      },
+      portrait: {
+        paths: [
+          [{ x: 95, y: -60 }, { x: 125, y: 170 }, { x: 380, y: 235 }, { x: 190, y: 365 }, { x: 430, y: 490 }, { x: 240, y: 640 }, { x: 420, y: 780 }, { x: 520, y: 870 }],
+          [{ x: 525, y: -60 }, { x: 495, y: 170 }, { x: 240, y: 235 }, { x: 430, y: 365 }, { x: 190, y: 490 }, { x: 380, y: 640 }, { x: 260, y: 780 }, { x: 520, y: 870 }]
+        ],
+        spots: [{ x: 230, y: 70 }, { x: 390, y: 70 }, { x: 70, y: 330 }, { x: 550, y: 330 }, { x: 70, y: 570 }, { x: 550, y: 570 }, { x: 110, y: 760 }, { x: 310, y: 910 }]
+      }
     }
   };
   const layoutCache = new Map();
@@ -396,20 +479,25 @@
         padding: 6px; border-radius: 12px; background: linear-gradient(180deg, rgba(13,29,57,.9), rgba(9,21,42,.78)); border: 1px solid var(--mh-line); box-shadow: var(--mh-shadow), inset 0 1px 0 rgba(255,255,255,.1); backdrop-filter: blur(12px) saturate(1.12);
       }
       .mh-build-panel { background: linear-gradient(180deg, rgba(13,43,61,.9), rgba(8,24,43,.82)); border-color: rgba(45,212,191,.34); }
-      .mh-tower-panel { min-width: min(520px, 100%); justify-content: flex-start; background: linear-gradient(180deg, rgba(28,36,68,.92), rgba(10,22,42,.84)); border-color: rgba(251,191,36,.36); }
+      #haqiPetTowerDefense.phantom-tower-selected .mh-build-panel { justify-self: end; margin-right: 73px; }
+      .mh-tower-panel { grid-column: 1 / -1; justify-self: end; width: min(560px, 100%); min-width: 0; display: grid; grid-template-columns: minmax(156px, 1fr) auto; justify-content: stretch; background: linear-gradient(180deg, rgba(28,36,68,.92), rgba(10,22,42,.84)); border-color: rgba(251,191,36,.36); }
       .mh-tower-info {
-        min-width: 150px; max-width: 220px; display: grid; gap: 3px; padding: 6px 9px; border-radius: 12px;
+        min-width: 0; max-width: none; display: grid; gap: 3px; padding: 6px 9px; border-radius: 12px;
         background: linear-gradient(180deg, rgba(24,42,72,.9), rgba(11,24,45,.84)); border: 1px solid rgba(251,191,36,.28);
         color: #fde68a; font-size: 11px; font-weight: 1000; line-height: 1.25;
       }
       .mh-tower-info b { color: #fff7ed; font-size: 13px; }
       .mh-tower-info span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+      .mh-tower-actions { min-width: 0; display: flex; align-items: center; justify-content: flex-end; gap: 6px; overflow-x: auto; overscroll-behavior-x: contain; scrollbar-width: none; }
+      .mh-tower-actions::-webkit-scrollbar { display: none; }
       .mh-tower-btn, .mh-action {
         height: 62px; width: 64px; border-radius: 10px; padding: 5px 4px; color: white; box-shadow: 0 8px 18px rgba(0,8,24,.28), inset 0 1px 0 rgba(255,255,255,.16);
         font-size: 11px; transition: transform .12s ease, filter .12s ease; display: grid; grid-template-rows: 34px 16px; align-items: center; justify-items: center; line-height: 1;
       }
       .mh-tower-btn { min-width: 0; background: linear-gradient(180deg, var(--from), var(--to)); border: 1px solid rgba(255,255,255,.18); }
       .mh-tower-icon { width: 34px; height: 34px; display: block; filter: drop-shadow(0 2px 0 rgba(15,23,42,.2)); }
+      .mh-action-icon { width: 36px; height: 36px; display: block; filter: drop-shadow(0 0 10px rgba(255,255,255,.2)); }
+      .mh-action-icon svg { width: 100%; height: 100%; display: block; overflow: visible; }
       .mh-tower-price { max-width: 100%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-weight: 1000; text-shadow: 0 1px 0 rgba(15,23,42,.16); }
       .mh-tower-btn.active {
         outline: 2px solid rgba(255,255,255,.9); outline-offset: 3px; transform: translateY(-4px) scale(1.04); filter: saturate(1.2) brightness(1.08);
@@ -417,8 +505,8 @@
       }
       .mh-action { background: linear-gradient(180deg, #38bdf8, #0284c7); }
       .mh-action.help { background: linear-gradient(180deg, #22d3ee, #0e7490); }
-      .mh-action.upgrade { width: 76px; background: linear-gradient(180deg, #fbbf24, #d97706); }
-      .mh-action.branch { width: 62px; background: linear-gradient(180deg, #34d399, #0f766e); }
+      .mh-action.upgrade { width: 72px; background: linear-gradient(180deg, #fbbf24, #d97706); }
+      .mh-action.branch { width: 60px; flex: 0 0 auto; background: linear-gradient(180deg, #34d399, #0f766e); }
       .mh-action.branch.fire { background: linear-gradient(180deg, #fb923c, #dc2626); }
       .mh-action.branch.toxin { background: linear-gradient(180deg, #86efac, #16a34a); }
       .mh-action.branch.rate { background: linear-gradient(180deg, #7dd3fc, #0284c7); }
@@ -462,10 +550,10 @@
       }
       .mh-select-option { min-height: 31px; border: 0; border-radius: 7px; padding: 0 9px; color: #d9fbff; background: transparent; font: inherit; text-align: left; cursor: pointer; }
       .mh-select-option:hover, .mh-select-option.active { background: rgba(34,211,238,.16); color: #fff; box-shadow: inset 0 0 0 1px rgba(103,232,249,.18); }
-      .mh-evolution-row { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 8px; margin: 12px 0 4px; }
+      .mh-evolution-row { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 9px; margin: 12px 0 4px; }
       .mh-evolution-choice {
-        min-height: 94px; padding: 9px 7px; border: 0; border-radius: 14px; cursor: pointer;
-        display: grid; grid-template-rows: 28px auto; align-items: center; justify-items: center; gap: 5px;
+        min-height: 128px; padding: 10px 8px; border: 0; border-radius: 14px; cursor: pointer;
+        display: grid; grid-template-rows: 58px auto; align-items: center; justify-items: center; gap: 7px;
         background: linear-gradient(180deg, rgba(30,49,82,.96), rgba(13,28,52,.9)); color: #fef3c7; border: 1px solid rgba(251,191,36,.36); box-shadow: 0 10px 22px rgba(0,8,24,.32), inset 0 1px 0 rgba(255,255,255,.12);
         font-weight: 1000; line-height: 1.18; animation: mhEvolutionPop .46s ease-out both; transition: transform .14s ease, filter .14s ease, box-shadow .14s ease;
       }
@@ -475,7 +563,8 @@
       .mh-evolution-choice:active { transform: translateY(1px) scale(.99); }
       .mh-evolution-choice b { font-size: 13px; }
       .mh-evolution-choice span { font-size: 11px; font-weight: 900; color: #bae6fd; }
-      .mh-evolution-icon { width: 28px; height: 28px; border-radius: 999px; display: grid; place-items: center; background: rgba(34,211,238,.14); box-shadow: inset 0 0 0 1px rgba(255,255,255,.3), 0 0 14px rgba(251,191,36,.42); animation: mhEvolutionIcon 1.2s ease-in-out infinite; }
+      .mh-evolution-icon { width: 58px; height: 58px; display: block; filter: drop-shadow(0 0 12px rgba(251,191,36,.34)); animation: mhEvolutionIcon 1.2s ease-in-out infinite; }
+      .mh-evolution-icon svg { width: 100%; height: 100%; display: block; overflow: visible; }
       .mh-start { border-radius: 999px; padding: 10px 24px; background: linear-gradient(180deg, #2dd4bf, #0f766e); color: white; box-shadow: 0 10px 22px rgba(0,8,24,.32), 0 0 18px rgba(45,212,191,.32); }
       .mh-start.test { background: linear-gradient(180deg, #22d3ee, #0f766e); box-shadow: 0 5px 0 #115e59; }
       .mh-difficulty { height: 25px; min-width: 34px; padding: 0 7px; border-radius: 999px; background: rgba(8,21,36,.72); color: #bae6fd; border: 1px solid rgba(103,232,249,.2); font-size: 11px; }
@@ -577,14 +666,17 @@
         .mh-pill { height: 43px; padding: 4px 3px; font-size: 10px; border-radius: 11px; }
         .mh-pill-value { font-size: 13px; }
         .mh-evolution-row { grid-template-columns: 1fr; gap: 7px; }
-        .mh-evolution-choice { min-height: 72px; grid-template-columns: 32px 1fr; grid-template-rows: auto; text-align: left; justify-items: start; }
+        .mh-evolution-choice { min-height: 82px; grid-template-columns: 58px 1fr; grid-template-rows: auto; text-align: left; justify-items: start; }
         .mh-bottom { grid-template-columns: 1fr; justify-items: center; }
         .mh-control-panel { max-width: 100%; gap: 6px; padding: 6px; }
-        .mh-tower-panel { min-width: 0; justify-content: center; flex-wrap: wrap; }
-        .mh-tower-info { min-width: 132px; max-width: 100%; }
+        #haqiPetTowerDefense.phantom-tower-selected .mh-build-panel { justify-self: center; margin-right: 0; }
+        .mh-tower-panel { width: 100%; grid-template-columns: minmax(126px, 1fr) minmax(0, auto); justify-self: stretch; justify-content: stretch; }
+        .mh-tower-info { min-width: 0; max-width: 100%; }
+        .mh-tower-actions { max-width: min(246px, calc(100vw - 162px)); justify-content: flex-start; }
         .mh-tower-btn, .mh-action { width: 58px; height: 58px; grid-template-rows: 31px 15px; }
-        .mh-action.branch { width: 56px; }
+        .mh-action.branch { width: 54px; }
         .mh-tower-icon { width: 31px; height: 31px; }
+        .mh-action-icon { width: 33px; height: 33px; }
         .mh-hint { font-size: 12px; }
         .mh-test-fab { right: 10px; bottom: 84px; width: 58px; height: 58px; font-size: 14px; }
         .mh-test-routes { right: 12px; bottom: 150px; }
@@ -651,26 +743,28 @@
         </div>
         <div id="mhTowerPanel" class="mh-control-panel mh-tower-panel" hidden>
           <div id="mhTowerInfo" class="mh-tower-info" aria-live="polite"></div>
+          <div class="mh-tower-actions" aria-label="防御装置操作">
           <button id="mhUpgrade" class="mh-action upgrade" type="button" hidden aria-label="升级防御单元">
-            <svg class="mh-tower-icon" viewBox="0 0 64 64" aria-hidden="true"><circle cx="32" cy="32" r="24" fill="#fef3c7" stroke="#92400e" stroke-width="5"/><path d="M32 48V18" stroke="#fff" stroke-width="7" stroke-linecap="round"/><path d="M20 30l12-14 12 14" fill="none" stroke="#fff" stroke-width="7" stroke-linecap="round" stroke-linejoin="round"/></svg>
+            <span class="mh-action-icon" aria-hidden="true"></span>
             <span id="mhUpgradeLabel" class="mh-tower-price">升级</span>
           </button>
           <button id="mhBranchA" class="mh-action branch" type="button" hidden aria-label="分支一">
-            <svg class="mh-tower-icon" viewBox="0 0 64 64" aria-hidden="true"><circle cx="32" cy="32" r="24" fill="#fff7ed" stroke="#92400e" stroke-width="5"/><path d="M18 33h28" stroke="#fff" stroke-width="7" stroke-linecap="round"/><path d="M36 21l12 12-12 12" fill="none" stroke="#fff" stroke-width="7" stroke-linecap="round" stroke-linejoin="round"/></svg>
+            <span class="mh-action-icon" aria-hidden="true"></span>
             <span id="mhBranchALabel" class="mh-tower-price">分支</span>
           </button>
           <button id="mhBranchB" class="mh-action branch" type="button" hidden aria-label="分支二">
-            <svg class="mh-tower-icon" viewBox="0 0 64 64" aria-hidden="true"><circle cx="32" cy="32" r="24" fill="#ecfeff" stroke="#0e7490" stroke-width="5"/><path d="M21 42c8-20 14-20 22 0" fill="none" stroke="#fff" stroke-width="7" stroke-linecap="round"/><path d="M32 18v26" stroke="#fff" stroke-width="7" stroke-linecap="round"/></svg>
+            <span class="mh-action-icon" aria-hidden="true"></span>
             <span id="mhBranchBLabel" class="mh-tower-price">分支</span>
           </button>
           <button id="mhBranchC" class="mh-action branch" type="button" hidden aria-label="分支三">
-            <svg class="mh-tower-icon" viewBox="0 0 64 64" aria-hidden="true"><circle cx="32" cy="32" r="24" fill="#ecfdf5" stroke="#0f766e" stroke-width="5"/><path d="M18 32h28" stroke="#fff" stroke-width="7" stroke-linecap="round"/><path d="M38 22l12 10-12 10" fill="none" stroke="#fff" stroke-width="7" stroke-linecap="round" stroke-linejoin="round"/></svg>
+            <span class="mh-action-icon" aria-hidden="true"></span>
             <span id="mhBranchCLabel" class="mh-tower-price">分支</span>
           </button>
           <button id="mhDowngrade" class="mh-action mh-downgrade-tower" type="button" hidden aria-label="降级防御单元">
-            <svg class="mh-tower-icon" viewBox="0 0 64 64" aria-hidden="true"><circle cx="32" cy="32" r="24" fill="#f8fafc" stroke="#475569" stroke-width="5"/><path d="M32 16v30" stroke="#475569" stroke-width="7" stroke-linecap="round"/><path d="M20 34l12 14 12-14" fill="none" stroke="#475569" stroke-width="7" stroke-linecap="round" stroke-linejoin="round"/></svg>
+            <span class="mh-action-icon" aria-hidden="true"></span>
             <span id="mhDowngradeLabel" class="mh-tower-price">降级</span>
           </button>
+          </div>
         </div>
       </footer>
       <div id="mhTutorialPointer" class="mh-tutorial-pointer" hidden>
@@ -906,7 +1000,7 @@
   }
 
   function defaultEvolutions() {
-    return { acornDamage: 0, bubbleSlowMs: 0, flowerSplash: 0, heroRate: 1, globalRange: 0, bonusIncome: 0 };
+    return { acornDamage: 0, bubbleSlowMs: 0, flowerSplash: 0, heroRate: 1, globalRange: 0 };
   }
 
   function selectLayout() {
@@ -920,7 +1014,7 @@
     const key = `${sceneId}:${orientation}`;
     if (layoutCache.has(key)) return layoutCache.get(key);
     const base = LAYOUTS[orientation] || LAYOUTS.landscape;
-    const override = SCENE_LAYOUT_OVERRIDES[sceneId]?.[orientation] || {};
+    const override = SCENE_LAYOUT_REDESIGN[sceneId]?.[orientation] || SCENE_LAYOUT_OVERRIDES[sceneId]?.[orientation] || {};
     const layout = {
       ...base,
       ...override,
@@ -945,7 +1039,7 @@
     return {
       view: { ...base.view },
       paths,
-      spots: generateTestBuildSpots(paths, base.view, selected.gate),
+      spots: selected.spots ? selected.spots.map(point => ({ ...point })) : generateTestBuildSpots(paths, base.view, selected.gate),
       gate: { ...selected.gate },
       hero: { ...selected.hero },
       tissue: orientation === 'portrait'
@@ -958,12 +1052,33 @@
 
   function generateTestBuildSpots(routePaths, viewBox, gate) {
     const spots = [];
-    const minGap = 62;
+    const minGap = BUILD_SPOT_MIN_GAP;
+    const routeOffset = BUILD_SPOT_ROUTE_CLEARANCE + 10;
+    const distanceBetween = (a, b) => Math.hypot(a.x - b.x, a.y - b.y);
+    const routeDistance = (point) => {
+      let best = Infinity;
+      routePaths.forEach((path) => {
+        for (let index = 0; index < path.length - 1; index++) {
+          const a = path[index];
+          const b = path[index + 1];
+          const dx = b.x - a.x;
+          const dy = b.y - a.y;
+          const len2 = dx * dx + dy * dy || 1;
+          const t = Math.max(0, Math.min(1, ((point.x - a.x) * dx + (point.y - a.y) * dy) / len2));
+          const x = a.x + dx * t;
+          const y = a.y + dy * t;
+          best = Math.min(best, Math.hypot(point.x - x, point.y - y));
+        }
+      });
+      return best;
+    };
     const addSpot = (x, y) => {
-      if (x < 46 || y < 46 || x > viewBox.width - 46 || y > viewBox.height - 46) return;
-      if (gate && Math.hypot(x - gate.x, y - gate.y) < 96) return;
-      if (spots.some(spot => Math.hypot(spot.x - x, spot.y - y) < minGap)) return;
-      spots.push({ x: Math.round(x), y: Math.round(y) });
+      const spot = { x: Math.round(x), y: Math.round(y) };
+      if (spot.x < BUILD_SPOT_EDGE_PADDING || spot.y < BUILD_SPOT_EDGE_PADDING || spot.x > viewBox.width - BUILD_SPOT_EDGE_PADDING || spot.y > viewBox.height - BUILD_SPOT_EDGE_PADDING) return;
+      if (gate && distanceBetween(spot, gate) < BUILD_SPOT_GATE_CLEARANCE) return;
+      if (routeDistance(spot) < BUILD_SPOT_ROUTE_CLEARANCE) return;
+      if (spots.some(existing => distanceBetween(existing, spot) < minGap)) return;
+      spots.push(spot);
     };
     routePaths.forEach((path) => {
       for (let index = 0; index < path.length - 1; index++) {
@@ -979,8 +1094,8 @@
           const t = step / (steps + 1);
           const px = a.x + dx * t;
           const py = a.y + dy * t;
-          addSpot(px + nx * 74, py + ny * 74);
-          addSpot(px - nx * 74, py - ny * 74);
+          addSpot(px + nx * routeOffset, py + ny * routeOffset);
+          addSpot(px - nx * routeOffset, py - ny * routeOffset);
         }
       }
     });
@@ -1998,8 +2113,10 @@
       mutationActive: !!state.currentMutation && state.started && !state.finished,
       buildPanelHidden: !showBuildPanel,
       towerPanelHidden: !showTowerPanel,
+      selectedType: state.selectedType,
       towerInfo: tower ? towerInfoText(tower) : ''
     };
+    root.classList.toggle('phantom-tower-selected', isPhantomDeviceActive() && !!tower);
     if (hudCache.wave !== values.wave) hudEls.wave.textContent = values.wave;
     if (hudCache.lives !== values.lives && hudEls.lives) hudEls.lives.textContent = values.lives;
     if (hudCache.coins !== values.coins) hudEls.coins.textContent = values.coins;
@@ -2013,7 +2130,7 @@
     if (deleteTowerBtn) deleteTowerBtn.hidden = !(isPhantomDeviceActive() && !!tower);
     if (hudCache.towerInfo !== values.towerInfo && towerInfoEl) towerInfoEl.innerHTML = values.towerInfo;
     updateUpgradeButton();
-    if (hudCache.buildPanelHidden !== values.buildPanelHidden) towerButtons.forEach((btn) => btn.classList.remove('active'));
+    if (hudCache.buildPanelHidden !== values.buildPanelHidden || hudCache.selectedType !== values.selectedType) towerButtons.forEach((btn) => btn.classList.toggle('active', showBuildPanel && btn.dataset.type === state.selectedType));
     Object.assign(hudCache, values);
     renderDirty.hud = false;
   }
@@ -2024,6 +2141,8 @@
     const showUpgrade = !!tower && branchTier === 0;
     const showBranches = !!tower && branchTier > 0;
     const showDowngrade = isPhantomDeviceActive() && !!tower && tower.level > 1;
+    syncActionIcon(upgradeBtn, upgradeIconSvg(tower));
+    if (downgradeBtn) syncActionIcon(downgradeBtn, downgradeIconSvg());
     if (hudCache.upgradeHidden !== !showUpgrade) upgradeBtn.hidden = !showUpgrade;
     if (hudCache.branchHidden !== !showBranches) {
       branchABtn.hidden = !showBranches;
@@ -2069,12 +2188,41 @@
         }
         btn.dataset.branch = branch.id;
         btn.className = `mh-action branch ${branch.id}`;
+        syncActionIcon(btn, branchIconSvg(branch));
         btn.setAttribute('aria-label', `${branch.label}，${branch.text}，需要 ${cost} 葡萄糖`);
         btn.disabled = disabled;
       });
       hudCache.branchDisabled = disabled;
     }
-    if (showDowngrade) downgradeBtn.disabled = disabled;
+    if (showDowngrade) downgradeBtn.disabled = !state.started || state.finished;
+  }
+
+  function syncActionIcon(button, svgMarkup) {
+    const slot = button?.querySelector('.mh-action-icon');
+    if (!slot || slot.dataset.iconSvg === svgMarkup) return;
+    slot.innerHTML = svgMarkup;
+    slot.dataset.iconSvg = svgMarkup;
+  }
+
+  function upgradeIconSvg(tower) {
+    const type = TOWER_TYPES[tower?.type] || TOWER_TYPES.acorn;
+    return `<svg viewBox="0 0 72 72" aria-hidden="true"><circle cx="36" cy="36" r="25" fill="${type.glow}" stroke="${type.color}" stroke-width="4" opacity=".95"/><path d="M36 53V20" stroke="#fff" stroke-width="7" stroke-linecap="round"/><path d="M23 32l13-14 13 14" fill="none" stroke="#fff" stroke-width="7" stroke-linecap="round" stroke-linejoin="round"/><path d="M49 17l5 5 8-10" fill="none" stroke="#22c55e" stroke-width="5" stroke-linecap="round" stroke-linejoin="round"/><circle cx="52" cy="52" r="8" fill="#fef3c7" stroke="#92400e" stroke-width="3"/></svg>`;
+  }
+
+  function branchIconSvg(branch) {
+    const icons = {
+      steady: `<svg viewBox="0 0 72 72" aria-hidden="true"><circle cx="36" cy="36" r="25" fill="#ede9fe" stroke="#7c3aed" stroke-width="4"/><path d="M20 38c8-8 24-8 32 0" fill="none" stroke="#fff" stroke-width="6" stroke-linecap="round"/><path d="M25 48h22" stroke="#a78bfa" stroke-width="5" stroke-linecap="round"/><path d="M36 18v30" stroke="#5b21b6" stroke-width="5" stroke-linecap="round"/><circle cx="36" cy="36" r="6" fill="#fff" stroke="#7c3aed" stroke-width="3"/></svg>`,
+      range: `<svg viewBox="0 0 72 72" aria-hidden="true"><circle cx="36" cy="36" r="28" fill="rgba(20,184,166,.18)" stroke="#14b8a6" stroke-width="4" stroke-dasharray="7 6"/><circle cx="36" cy="36" r="17" fill="#ccfbf1" stroke="#0f766e" stroke-width="4"/><path d="M36 14v11M36 47v11M14 36h11M47 36h11" stroke="#ecfeff" stroke-width="5" stroke-linecap="round"/><circle cx="36" cy="36" r="5" fill="#0f766e"/></svg>`,
+      multi: `<svg viewBox="0 0 72 72" aria-hidden="true"><circle cx="36" cy="36" r="25" fill="#fef3c7" stroke="#d97706" stroke-width="4"/><path d="M20 29l16-9 16 9v18l-16 9-16-9z" fill="#fde68a" stroke="#92400e" stroke-width="3"/><path d="M36 20v36M20 29l32 18M52 29L20 47" stroke="#fff7ed" stroke-width="4" stroke-linecap="round"/><circle cx="56" cy="20" r="7" fill="#fbbf24" stroke="#92400e" stroke-width="3"/><circle cx="56" cy="52" r="7" fill="#fbbf24" stroke="#92400e" stroke-width="3"/></svg>`,
+      rate: `<svg viewBox="0 0 72 72" aria-hidden="true"><circle cx="36" cy="36" r="25" fill="#dbeafe" stroke="#0284c7" stroke-width="4"/><path d="M41 8L23 38h13l-7 26 21-34H37z" fill="#fef08a" stroke="#075985" stroke-width="3" stroke-linejoin="round"/><path d="M15 28c5-8 12-13 21-16M57 45c-6 8-13 13-23 15" fill="none" stroke="#38bdf8" stroke-width="5" stroke-linecap="round"/></svg>`,
+      fire: `<svg viewBox="0 0 72 72" aria-hidden="true"><circle cx="36" cy="38" r="24" fill="#ffedd5" stroke="#ea580c" stroke-width="4"/><path d="M37 60c-12-6-18-15-15-25 2-8 10-11 11-22 10 8 18 18 17 30 5-4 7-9 7-15 9 14 3 28-20 32z" fill="#fb923c" stroke="#9a3412" stroke-width="3"/><path d="M38 54c-6-4-8-10-4-17 5 4 9 9 8 15" fill="#fef3c7"/></svg>`,
+      toxin: `<svg viewBox="0 0 72 72" aria-hidden="true"><circle cx="36" cy="36" r="25" fill="#dcfce7" stroke="#16a34a" stroke-width="4"/><path d="M22 44c12-24 28-24 28 0" fill="none" stroke="#14532d" stroke-width="5" stroke-linecap="round"/><circle cx="36" cy="35" r="13" fill="#86efac" stroke="#166534" stroke-width="4"/><path d="M36 23v25M24 35h24" stroke="#ecfdf5" stroke-width="5" stroke-linecap="round"/><circle cx="55" cy="19" r="6" fill="#bbf7d0" stroke="#166534" stroke-width="3"/></svg>`
+    };
+    return icons[branch?.id] || icons.range;
+  }
+
+  function downgradeIconSvg() {
+    return `<svg viewBox="0 0 72 72" aria-hidden="true"><circle cx="36" cy="36" r="25" fill="#f8fafc" stroke="#475569" stroke-width="4"/><path d="M36 18v32" stroke="#64748b" stroke-width="7" stroke-linecap="round"/><path d="M23 39l13 14 13-14" fill="none" stroke="#64748b" stroke-width="7" stroke-linecap="round" stroke-linejoin="round"/><path d="M21 19h30" stroke="#cbd5e1" stroke-width="5" stroke-linecap="round"/></svg>`;
   }
 
   function towerInfoText(tower) {
@@ -2194,7 +2342,7 @@
     if (!isPhantomDeviceActive()) startTutorialGuide();
     postParent('gameStarted', { difficulty: state.difficulty, scene: state.sceneId, roundId: state.roundId });
     showToast('守护开始！');
-    playTone(520, .08, 'sine');
+    playSound('start');
     startLoop();
   }
 
@@ -2212,9 +2360,9 @@
         burstAt(p.x, p.y, state.currentMutation.color, '#ffffff', 38);
         spawnSparkBurst(p.x, p.y, state.currentMutation.color, 8, 640, 120);
       });
-      playTone(260 + state.wave * 18, .12, 'sawtooth', .045);
+      playSound('mutatedWave', { wave: state.wave });
     }
-    playTone(420 + state.wave * 24, .1, 'triangle');
+    playSound('wave', { wave: state.wave });
   }
 
   function mutationForWave(wave) {
@@ -2316,7 +2464,7 @@
       state.lives--;
       markRenderDirty('hero', 'hud');
       burstAt(currentLayout.gate.x, currentLayout.gate.y, '#fee2e2', '#ef4444');
-      playTone(150, .08, 'sawtooth');
+      playSound('escape');
       if (state.lives <= 0) endGame(false);
     });
   }
@@ -2448,7 +2596,7 @@
         damageEnemy(target, cell.damage);
         burstAt(hitPoint.x, hitPoint.y, '#e0f2fe', '#7c3aed', 34);
         cell.done = true;
-        playTone(920, .045, 'triangle', .05);
+        playSound('whiteCellHit');
       }
       if (cell.distance <= 8 || cell.distance >= info.total + 20) cell.done = true;
     });
@@ -2506,7 +2654,7 @@
       });
       spawnSparkBurst(origin.x, origin.y - 10, TOWER_BRANCHES.tier3.multi.color, 4, 360, 80);
     }
-    playTone(hero ? 760 : 620, .035, 'sine', .035);
+    playSound(hero ? 'heroShoot' : 'shoot');
   }
 
   function addProjectileShot({ tower, target, origin, type, hero = false, weakHit = false, damage, speedScale = 1, isSplit = false }) {
@@ -2585,7 +2733,7 @@
       burstAt(p.x, p.y, '#fef08a', '#f97316', 29);
       floatText(p.x, p.y - 38, '克制!', '#ea580c', 18);
       spawnSparkBurst(p.x, p.y, '#facc15', 7, 620, 150);
-      playTone(1080, .035, 'triangle', .03);
+      playSound('weakHit');
     }
     burstAt(p.x, p.y, shot.color, '#fff', shot.hero ? 23 : 17);
   }
@@ -2664,7 +2812,7 @@
     floatText(p.x, p.y - 18, `葡萄糖 +${coins}`, '#d97706', 20);
     spawnGlucoseFly(p.x, p.y, coins);
     burstAt(p.x, p.y, '#fef3c7', '#f59e0b', 32);
-    playTone(880, .05, 'triangle', .045);
+    playSound('kill');
     if (state.score > state.bestScore) {
       state.bestScore = state.score;
       localStorage.setItem(STORAGE_BEST_SCORE, String(state.bestScore));
@@ -2688,11 +2836,11 @@
       state.bestWave = state.wave;
       localStorage.setItem(STORAGE_BEST_WAVE, String(state.bestWave));
     }
-    state.coins += cfg().reward + state.wave * 8 + (state.evolutions?.bonusIncome || 0);
+    state.coins += cfg().reward + state.wave * 8;
     animateEnergyPill();
     state.waveDelay = 0;
     floatText(view.width * .5, 110, '守住了！选择免疫进化', '#16a34a', 25);
-    playTone(660, .1, 'triangle');
+    playSound('waveClear');
     if (treatmentMode) {
       scheduleTreatmentAutoEvolution();
       return;
@@ -2767,7 +2915,7 @@
         maxWave: MAX_WAVE
       });
     }
-    playTone(won ? 760 : 220, .14, won ? 'triangle' : 'sawtooth');
+    playSound(won ? 'win' : 'lose');
   }
 
   function handleSpotTap(index) {
@@ -2780,6 +2928,7 @@
     state.selectedSpotIndex = index;
     state.selectedTowerId = null;
     hintEl.textContent = '选择要部署的防御单元';
+    playSound('select');
     markRenderDirty('spots', 'hud');
     renderAll();
     if (tutorialStep === 'spot') {
@@ -2796,7 +2945,7 @@
     if (!type) return;
     if (!testFreeBuildActive() && state.coins < type.cost) {
       showToast('葡萄糖不够');
-      playTone(160, .08, 'sawtooth');
+      playSound('invalid');
       return;
     }
     if (!testFreeBuildActive()) state.coins -= type.cost;
@@ -2808,8 +2957,33 @@
     hintEl.textContent = `${type.label}部署好了，点防御单元可以升级`;
     if (tutorialStep === 'tower') completeTutorialGuide();
     burstAt(buildSpots[index].x, buildSpots[index].y, type.glow, type.color, 42);
-    playTone(560, .08, 'triangle');
+    playSound('build');
     renderAll();
+  }
+
+  function replaceSelectedTowerType(typeId) {
+    if (!isPhantomDeviceActive() || !state.started || state.finished) return false;
+    const tower = selectedTower();
+    const type = TOWER_TYPES[typeId];
+    if (!tower || !type) return false;
+    tower.type = type.id;
+    tower.level = 1;
+    tower.cooldown = 0;
+    tower.lockedTargetId = '';
+    delete tower.tier2Branch;
+    delete tower.tier3Branch;
+    delete tower.tier4Branch;
+    state.selectedType = type.id;
+    const spot = buildSpots[tower.spotIndex];
+    if (spot) {
+      burstAt(spot.x, spot.y, type.glow, type.color, 42);
+      floatText(spot.x, spot.y - 54, type.short, type.color, 22);
+    }
+    hintEl.textContent = `已替换为${type.label} lv1`;
+    playSound('build');
+    markRenderDirty('spots', 'hud');
+    renderAll();
+    return true;
   }
 
   function handleTowerTap(id) {
@@ -2825,6 +2999,7 @@
     } else {
       hintEl.textContent = `${TOWER_TYPES[tower.type].short}已选中；路线：${towerRouteText(tower)}；自身伤害 ${towerSelfDamagePercent(tower)}%；${globalBoostText()}`;
     }
+    playSound('select');
     markRenderDirty('spots', 'hud');
     renderAll();
   }
@@ -2854,10 +3029,10 @@
       hintEl.textContent = `${TOWER_TYPES[tower.type].short}升级到 lv${tower.level}${branchText}；${globalBoostText()}`;
       burstAt(spot.x, spot.y, '#fef3c7', branch?.color || '#f59e0b', 48);
       floatText(spot.x, spot.y - 54, branch?.short || `lv${tower.level}`, branch?.color || '#0f766e', 22);
-      playTone(700, .08, 'triangle');
+      playSound('upgrade');
     } else {
       hintEl.textContent = `升级需要 ${cost} 葡萄糖`;
-      playTone(170, .07, 'sawtooth');
+      playSound('invalid');
     }
     renderAll();
   }
@@ -2964,7 +3139,6 @@
     if (evo.flowerSplash > 0) parts.push(`溅射 +${evo.flowerSplash}`);
     if (evo.heroRate > 1) parts.push(`宠物攻速 +${Math.round((evo.heroRate - 1) * 100)}%`);
     if (evo.globalRange > 0) parts.push(`全域 +${evo.globalRange}`);
-    if (evo.bonusIncome > 0) parts.push(`代谢 +${evo.bonusIncome}`);
     return parts.length ? `进化：${parts.join(' / ')}` : '进化：无';
   }
 
@@ -3039,7 +3213,6 @@
       flowerSplash: '#22c55e',
       heroRate: '#fde047',
       globalRange: '#fb923c',
-      bonusIncome: '#facc15',
       repair: '#fb7185',
       coins: '#fbbf24'
     };
@@ -3064,7 +3237,7 @@
     spawnWhiteCellTroop();
     burstAt(currentLayout.hero.x, currentLayout.hero.y, '#e0f2fe', '#7c3aed', 118);
     floatText(currentLayout.hero.x, currentLayout.hero.y - 77, '白细胞部队出击！', '#7c3aed', 25);
-    playTone(980, .16, 'triangle', .075);
+    playSound('special');
     renderAll();
   }
 
@@ -3076,7 +3249,7 @@
     }
     hintEl.textContent = `白细胞蓄能 ${Math.floor(state.specialCharge)}%，击败病原体继续积攒`;
     burstAt(currentLayout.gate.x, currentLayout.gate.y, '#ede9fe', '#7c3aed', 62);
-    playTone(360, .05, 'sine', .035);
+    playSound('specialHint');
     renderAll();
   }
 
@@ -3224,15 +3397,27 @@
 
   function evolutionPool() {
     return [
-      { id: 'acornDamage', icon: '囊', title: '抗生素增效', desc: '抗生素胶囊伤害 +18%' },
-      { id: 'bubbleSlow', icon: '针', title: '长效针剂', desc: '抗体针剂减速时间 +0.45秒' },
-      { id: 'flowerSplash', icon: '单', title: '单抗扩散', desc: '单抗靶向药溅射 +18' },
-      { id: 'heroRate', icon: '宠', title: '宠物专注', desc: '宠物主角攻速 +16%' },
-      { id: 'globalRange', icon: '环', title: '免疫感知', desc: '全部防御范围 +10' },
-      { id: 'bonusIncome', icon: '糖', title: '代谢增强', desc: '每波额外 +16 葡萄糖' },
-      { id: 'repair', icon: '心', title: '组织修复', desc: '立即恢复 2 点基地生命' },
-      { id: 'coins', icon: 'G', title: '葡萄糖爆发', desc: '立即获得 90 葡萄糖' }
+      { id: 'acornDamage', title: '抗生素增效', desc: '抗生素胶囊伤害 +18%' },
+      { id: 'bubbleSlow', title: '长效针剂', desc: '抗体针剂减速时间 +0.45秒' },
+      { id: 'flowerSplash', title: '单抗扩散', desc: '单抗溅射范围 +18' },
+      { id: 'heroRate', title: '宠物专注', desc: '宠物主角攻速 +16%' },
+      { id: 'globalRange', title: '免疫感知', desc: '全部防御范围 +10' },
+      { id: 'repair', title: '组织修复', desc: '立即恢复 2 点基地生命' },
+      { id: 'coins', title: '葡萄糖爆发', desc: '立即获得 90 葡萄糖' }
     ];
+  }
+
+  function evolutionIconSvg(id) {
+    const icons = {
+      acornDamage: `<svg viewBox="0 0 72 72" aria-hidden="true"><g transform="rotate(-24 34 35)"><rect x="9" y="24" width="48" height="25" rx="12.5" fill="#fff7ed" stroke="#9a3412" stroke-width="4"/><path d="M33 24v25" stroke="#fed7aa" stroke-width="4"/><path d="M33 24h12.5a12.5 12.5 0 0 1 0 25H33z" fill="#ea580c" stroke="#9a3412" stroke-width="4"/></g><g fill="none" stroke="#22c55e" stroke-width="5" stroke-linecap="round" stroke-linejoin="round"><path d="M47 45l8-8 8 8"/><path d="M47 55l8-8 8 8"/><path d="M55 37v20"/></g><circle cx="54" cy="17" r="8" fill="#dcfce7" stroke="#16a34a" stroke-width="3"/></svg>`,
+      bubbleSlow: `<svg viewBox="0 0 72 72" aria-hidden="true"><g transform="rotate(-40 35 34)"><line x1="45" y1="20" x2="62" y2="20" stroke="#0f172a" stroke-width="3" stroke-linecap="round"/><rect x="18" y="11" width="28" height="19" rx="5" fill="#eff6ff" stroke="#0f172a" stroke-width="3"/><rect x="26" y="14" width="12" height="12" rx="3" fill="#38bdf8" opacity=".86"/><line x1="9" y1="20" x2="18" y2="20" stroke="#94a3b8" stroke-width="5" stroke-linecap="round"/><line x1="6" y1="12" x2="6" y2="28" stroke="#94a3b8" stroke-width="4" stroke-linecap="round"/></g><circle cx="51" cy="47" r="13" fill="#dbeafe" stroke="#0284c7" stroke-width="4"/><path d="M51 39v9l7 4" fill="none" stroke="#0f172a" stroke-width="4" stroke-linecap="round"/><path d="M20 50h9M24.5 45.5v9M17 57h15" stroke="#7dd3fc" stroke-width="3" stroke-linecap="round"/></svg>`,
+      flowerSplash: `<svg viewBox="0 0 72 72" aria-hidden="true"><rect x="25" y="17" width="25" height="35" rx="8" fill="#dcfce7" stroke="#166534" stroke-width="4"/><rect x="29" y="9" width="17" height="10" rx="3" fill="#bbf7d0" stroke="#166534" stroke-width="4"/><circle cx="37.5" cy="35" r="10" fill="#ecfdf5" stroke="#15803d" stroke-width="3"/><circle cx="37.5" cy="35" r="4" fill="#22c55e"/><path d="M20 31h9M51 31h8M38 45v11" stroke="#16a34a" stroke-width="3" stroke-linecap="round"/><g fill="#bbf7d0" stroke="#15803d" stroke-width="2.5"><circle cx="15" cy="40" r="5"/><circle cx="58" cy="49" r="5"/><circle cx="18" cy="55" r="4"/></g><path d="M48 43c7 3 10 6 12 11M27 43c-8 4-11 8-12 14" fill="none" stroke="#22c55e" stroke-width="3" stroke-linecap="round"/></svg>`,
+      heroRate: `<svg viewBox="0 0 72 72" aria-hidden="true"><circle cx="36" cy="38" r="21" fill="#fef3c7" stroke="#d97706" stroke-width="4"/><circle cx="28" cy="35" r="3.2" fill="#78350f"/><circle cx="44" cy="35" r="3.2" fill="#78350f"/><path d="M29 47c5 4 10 4 15 0" fill="none" stroke="#78350f" stroke-width="3" stroke-linecap="round"/><path d="M42 6L26 34h12l-8 28 19-34H37z" fill="#fde047" stroke="#92400e" stroke-width="3" stroke-linejoin="round"/><path d="M12 25c5-8 12-13 21-15M61 48c-5 8-12 13-22 15" fill="none" stroke="#facc15" stroke-width="4" stroke-linecap="round"/></svg>`,
+      globalRange: `<svg viewBox="0 0 72 72" aria-hidden="true"><circle cx="36" cy="36" r="27" fill="rgba(251,146,60,.18)" stroke="#fb923c" stroke-width="4" stroke-dasharray="7 6"/><circle cx="36" cy="36" r="17" fill="rgba(20,184,166,.22)" stroke="#14b8a6" stroke-width="4"/><path d="M36 16v9M36 47v9M16 36h9M47 36h9" stroke="#ecfeff" stroke-width="4" stroke-linecap="round"/><g fill="#ecfdf5" stroke="#0f766e" stroke-width="2.5"><circle cx="36" cy="36" r="5"/><circle cx="22" cy="22" r="4"/><circle cx="51" cy="51" r="4"/></g></svg>`,
+      repair: `<svg viewBox="0 0 72 72" aria-hidden="true"><path d="M36 61C19 50 11 39 12 27c1-9 12-14 21-5 9-9 21-4 22 5 1 12-6 23-19 34z" fill="#fee2e2" stroke="#be123c" stroke-width="4"/><path d="M36 24v25M24 36h25" stroke="#ffffff" stroke-width="7" stroke-linecap="round"/><path d="M12 50c9-3 15-2 22 4 7-6 15-7 25-3" fill="none" stroke="#22c55e" stroke-width="4" stroke-linecap="round"/></svg>`,
+      coins: `<svg viewBox="0 0 72 72" aria-hidden="true"><circle cx="36" cy="36" r="24" fill="#fef9c3" stroke="#ca8a04" stroke-width="4"/><path d="M36 12v48M12 36h48M19 20l34 34M53 20L19 54" stroke="#fde047" stroke-width="4" stroke-linecap="round"/><g fill="#facc15" stroke="#92400e" stroke-width="3"><path d="M36 19l8 5v9l-8 5-8-5v-9z"/><path d="M23 43l7 4v8l-7 4-7-4v-8z"/><path d="M50 43l7 4v8l-7 4-7-4v-8z"/></g></svg>`
+    };
+    return icons[id] || icons.globalRange;
   }
 
   function evolutionChoices() {
@@ -3249,7 +3434,7 @@
       const btn = document.createElement('button');
       btn.type = 'button';
       btn.className = 'mh-evolution-choice';
-      btn.innerHTML = `<span class="mh-evolution-icon">${choice.icon}</span><span><b>${choice.title}</b><br>${choice.desc}</span>`;
+      btn.innerHTML = `<span class="mh-evolution-icon">${evolutionIconSvg(choice.id)}</span><span><b>${choice.title}</b><br>${choice.desc}</span>`;
       btn.onclick = () => chooseEvolution(choice.id, choice.title);
       evolutionChoicesEl.appendChild(btn);
     });
@@ -3279,7 +3464,7 @@
     hintEl.textContent = `${title} 生效；${globalBoostText()}；下一波即将到来`;
     markRenderDirty('hero', 'hud');
     showToast(`${title} 已激活`);
-    playTone(740, .11, 'triangle');
+    playSound('evolution');
     renderAll();
     startLoop();
   }
@@ -3291,7 +3476,6 @@
     if (id === 'flowerSplash') state.evolutions.flowerSplash += 18;
     if (id === 'heroRate') state.evolutions.heroRate += .16;
     if (id === 'globalRange') state.evolutions.globalRange += 10;
-    if (id === 'bonusIncome') state.evolutions.bonusIncome += 16;
     if (id === 'repair') state.lives = Math.min(cfg().lives, state.lives + 2);
     if (id === 'coins') {
       state.coins += 90;
@@ -3434,6 +3618,7 @@
     towerButtons.forEach((btn) => {
       btn.onclick = () => {
         state.selectedType = btn.dataset.type;
+        if (replaceSelectedTowerType(state.selectedType)) return;
         buildTowerAtSelectedSpot(state.selectedType);
       };
     });
@@ -3552,6 +3737,7 @@
     enemyById.clear();
     applyResponsiveLayout(true);
     layoutSvgStage();
+    updateTestRouteButtons();
     refreshTestPathOptions();
     markRenderDirty('spots', 'hero', 'hud');
     renderAll();
@@ -3663,7 +3849,6 @@
     if (id === 'flowerSplash') evo.flowerSplash = Math.max(0, evo.flowerSplash - 18);
     if (id === 'heroRate') evo.heroRate = Math.max(1, evo.heroRate - .16);
     if (id === 'globalRange') evo.globalRange = Math.max(0, evo.globalRange - 10);
-    if (id === 'bonusIncome') evo.bonusIncome = Math.max(0, evo.bonusIncome - 16);
   }
 
   function refreshTestBuffControls() {
@@ -3674,8 +3859,7 @@
       bubbleSlow: Math.round((evo.bubbleSlowMs || 0) / 450),
       flowerSplash: Math.round((evo.flowerSplash || 0) / 18),
       heroRate: Math.max(0, Math.round(((evo.heroRate || 1) - 1) / .16)),
-      globalRange: Math.round((evo.globalRange || 0) / 10),
-      bonusIncome: Math.round((evo.bonusIncome || 0) / 16)
+      globalRange: Math.round((evo.globalRange || 0) / 10)
     };
     Object.entries(values).forEach(([id, value]) => {
       const out = testBuffsEl.querySelector(`[data-buff-value="${id}"]`);
@@ -3808,25 +3992,118 @@
     }
   });
 
-  function playTone(freq, duration = .08, type = 'sine', gain = .05) {
+  function ensureAudio() {
+    if (!sound.ctx) {
+      const AudioContext = window.AudioContext || window.webkitAudioContext;
+      if (!AudioContext) return null;
+      sound.ctx = new AudioContext();
+      sound.master = sound.ctx.createGain();
+      sound.master.gain.value = AUDIO_MASTER_GAIN;
+      sound.master.connect(sound.ctx.destination);
+    }
+    if (sound.ctx.state === 'suspended') sound.ctx.resume?.();
+    return sound.ctx;
+  }
+
+  function playSound(type, detail = {}) {
+    try {
+      const ctx = ensureAudio();
+      if (!ctx) return;
+      const now = ctx.currentTime;
+      if (type === 'start') {
+        playSequence([392, 520, 660], .06, .045, 'sine', now);
+      } else if (type === 'wave') {
+        playTone(420 + (detail.wave || 1) * 24, .1, 'triangle', .05, { slideTo: 540 + (detail.wave || 1) * 22, startAt: now });
+      } else if (type === 'mutatedWave') {
+        playTone(260 + (detail.wave || 1) * 18, .14, 'sawtooth', .045, { slideTo: 160, startAt: now });
+        playNoise(.09, .028, now, 'bandpass', 760);
+      } else if (type === 'shoot') {
+        playTone(560, .035, 'sine', .03, { slideTo: 660, startAt: now });
+      } else if (type === 'heroShoot') {
+        playTone(700, .04, 'sine', .035, { slideTo: 820, startAt: now });
+      } else if (type === 'weakHit') {
+        playTone(1080, .04, 'triangle', .032, { slideTo: 1320, startAt: now });
+      } else if (type === 'kill') {
+        playSequence([720, 880], .05, .045, 'triangle', now);
+      } else if (type === 'waveClear') {
+        playSequence([520, 660, 840], .07, .048, 'triangle', now);
+      } else if (type === 'build') {
+        playTone(480, .075, 'triangle', .05, { slideTo: 640, startAt: now });
+      } else if (type === 'upgrade') {
+        playSequence([620, 780], .055, .05, 'triangle', now);
+      } else if (type === 'select') {
+        playTone(420, .045, 'sine', .03, { slideTo: 520, startAt: now });
+      } else if (type === 'invalid') {
+        playTone(170, .08, 'sawtooth', .045, { slideTo: 110, startAt: now });
+      } else if (type === 'escape') {
+        playTone(170, .13, 'sawtooth', .055, { slideTo: 92, startAt: now });
+        playNoise(.08, .025, now, 'lowpass', 420);
+      } else if (type === 'specialHint') {
+        playTone(360, .05, 'sine', .035, { slideTo: 430, startAt: now });
+      } else if (type === 'special') {
+        playSequence([740, 980, 1240], .065, .062, 'triangle', now);
+      } else if (type === 'whiteCellHit') {
+        playTone(920, .045, 'triangle', .05, { slideTo: 1180, startAt: now });
+      } else if (type === 'evolution') {
+        playSequence([560, 740, 920], .075, .052, 'triangle', now);
+      } else if (type === 'win') {
+        playSequence([440, 587, 740, 880], .09, .056, 'triangle', now);
+      } else if (type === 'lose') {
+        playTone(220, .24, 'sawtooth', .055, { slideTo: 95, startAt: now });
+        playNoise(.16, .035, now, 'lowpass', 360);
+      } else {
+        playTone(520, .07, 'sine', .04, { startAt: now });
+      }
+    } catch (_) {}
+  }
+
+  function playTone(freq, duration = .08, type = 'sine', gain = .05, options = {}) {
     try {
       if (!canPlayTone(freq, type)) return;
-      if (!sound.ctx) {
-        sound.ctx = new (window.AudioContext || window.webkitAudioContext)();
-        sound.master = sound.ctx.createGain();
-        sound.master.gain.value = .16;
-        sound.master.connect(sound.ctx.destination);
-      }
-      const osc = sound.ctx.createOscillator();
-      const amp = sound.ctx.createGain();
+      const ctx = ensureAudio();
+      if (!ctx || !sound.master) return;
+      const startAt = options.startAt ?? ctx.currentTime;
+      const osc = ctx.createOscillator();
+      const amp = ctx.createGain();
+      const sourceGain = Math.min(AUDIO_MAX_SOURCE_GAIN, Math.max(.002, gain * AUDIO_PREAMP_GAIN));
       osc.type = type;
-      osc.frequency.value = freq;
-      amp.gain.setValueAtTime(gain, sound.ctx.currentTime);
-      amp.gain.exponentialRampToValueAtTime(.001, sound.ctx.currentTime + duration);
+      osc.frequency.setValueAtTime(Math.max(1, freq), startAt);
+      if (options.slideTo) osc.frequency.exponentialRampToValueAtTime(Math.max(1, options.slideTo), startAt + duration);
+      amp.gain.setValueAtTime(.001, startAt);
+      amp.gain.exponentialRampToValueAtTime(sourceGain, startAt + Math.min(.018, duration * .45));
+      amp.gain.exponentialRampToValueAtTime(.001, startAt + duration);
       osc.connect(amp);
       amp.connect(sound.master);
-      osc.start();
-      osc.stop(sound.ctx.currentTime + duration);
+      osc.start(startAt);
+      osc.stop(startAt + duration + .03);
+    } catch (_) {}
+  }
+
+  function playSequence(notes, step, gain, type, startAt) {
+    notes.forEach((note, index) => playTone(note, step * 1.45, type, gain, { slideTo: note * 1.08, startAt: startAt + index * step }));
+  }
+
+  function playNoise(duration, gain, startAt, filterType = 'bandpass', frequency = 1200) {
+    try {
+      const ctx = ensureAudio();
+      if (!ctx || !sound.master) return;
+      const length = Math.max(1, Math.floor(ctx.sampleRate * duration));
+      const buffer = ctx.createBuffer(1, length, ctx.sampleRate);
+      const data = buffer.getChannelData(0);
+      for (let i = 0; i < length; i++) data[i] = Math.random() * 2 - 1;
+      const source = ctx.createBufferSource();
+      const filter = ctx.createBiquadFilter();
+      const amp = ctx.createGain();
+      source.buffer = buffer;
+      filter.type = filterType;
+      filter.frequency.setValueAtTime(frequency, startAt);
+      amp.gain.setValueAtTime(Math.min(AUDIO_MAX_SOURCE_GAIN, Math.max(.001, gain * AUDIO_PREAMP_GAIN)), startAt);
+      amp.gain.exponentialRampToValueAtTime(.001, startAt + duration);
+      source.connect(filter);
+      filter.connect(amp);
+      amp.connect(sound.master);
+      source.start(startAt);
+      source.stop(startAt + duration + .02);
     } catch (_) {}
   }
 

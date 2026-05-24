@@ -1,6 +1,6 @@
 // 故事列表视图：先展示已有故事卡片，第一个卡片用于新建故事。
-import { $, escapeHtml, showToast } from './utils.js';
-import { loadWorkspaceStory, loadWorkspaceStoryList, loadWorkspaceStoryRecord } from './storage.js';
+import { $, confirm as confirmDialog, escapeHtml, showToast } from './utils.js';
+import { deleteWorkspaceStory, loadWorkspaceStory, loadWorkspaceStoryList, loadWorkspaceStoryRecord } from './storage.js';
 import { petArtHtml, scanAndMount } from './pet.js';
 import { state } from './state.js';
 
@@ -138,6 +138,7 @@ function renderStoryCard(record) {
     const pet = storyPetForRecord(record);
     return `
         <article class="mh-story-card" data-story-path="${escapeHtml(record.path)}">
+            <button type="button" class="mh-story-card-delete" data-story-delete="${escapeHtml(record.path)}" aria-label="删除故事" title="删除故事">×</button>
             <div class="mh-story-card-art">
                 ${pet ? `<div class="mh-story-card-pet">${petArtHtml(pet, { alt: pet.name || '', extraClass: 'floaty', requireProcessedTexture: false })}</div>` : '<span class="mh-story-card-placeholder">故事</span>'}
             </div>
@@ -235,11 +236,17 @@ export async function renderStoryList(panel, _data = {}, { onBack, onNewStory, o
             .mh-story-new-card { min-height:144px; border:1.5px dashed rgba(14,165,233,.62); border-radius:16px; background:rgba(255,255,255,.72); color:var(--text-primary); display:flex; flex-direction:column; align-items:center; justify-content:center; gap:7px; padding:14px; text-align:center; }
             .mh-story-new-plus { width:44px; height:44px; border-radius:999px; background:var(--accent); color:white; display:grid; place-items:center; font-size:30px; font-weight:900; line-height:1; box-shadow:0 4px 0 rgba(37,99,235,.25); }
             .mh-story-new-card strong { font-size:16px; font-weight:900; }
-            .mh-story-card { border:1.5px solid rgba(125,211,252,.78); border-radius:16px; background:rgba(255,255,255,.9); padding:10px; display:grid; grid-template-columns:104px minmax(0,1fr); gap:10px; align-items:stretch; }
+            .mh-story-card { position:relative; border:1.5px solid rgba(125,211,252,.78); border-radius:16px; background:rgba(255,255,255,.9); padding:10px; display:grid; grid-template-columns:104px minmax(0,1fr); gap:10px; align-items:stretch; }
+            .mh-story-card-delete { position:absolute; top:8px; right:8px; z-index:2; width:26px; height:26px; border-radius:999px; border:1.5px solid rgba(148,163,184,.45); background:rgba(255,255,255,.68); color:rgba(100,116,139,.72); display:grid; place-items:center; padding:0; font-size:18px; font-weight:900; line-height:1; box-shadow:none; }
+            @media (hover: hover) and (pointer: fine) {
+                .mh-story-card-delete { opacity:.48; transition:opacity .16s ease, color .16s ease, border-color .16s ease, background .16s ease; }
+                .mh-story-card:hover .mh-story-card-delete,
+                .mh-story-card-delete:focus-visible { opacity:1; background:#fff; border-color:rgba(239,68,68,.62); color:#dc2626; }
+            }
             .mh-story-card-art { min-height:126px; border-radius:14px; overflow:hidden; background:radial-gradient(circle at 50% 18%,rgba(255,255,255,.9),transparent 36%),linear-gradient(180deg,#bae6fd,#fef3c7); display:flex; align-items:center; justify-content:center; box-shadow:var(--game-shadow-small); }
             .mh-story-card-pet { width:94px; height:94px; flex:0 0 94px; }
             .mh-story-card-placeholder { color:var(--accent-dark); font-size:18px; font-weight:900; }
-            .mh-story-card-body { min-width:0; display:flex; flex-direction:column; gap:7px; }
+            .mh-story-card-body { min-width:0; display:flex; flex-direction:column; gap:7px; padding-right:22px; }
             .mh-story-card-title { color:var(--text-primary); font-size:15px; line-height:1.25; font-weight:900; overflow:hidden; display:-webkit-box; -webkit-line-clamp:2; -webkit-box-orient:vertical; }
             .mh-story-card-time { color:var(--text-muted); font-size:12px; font-weight:800; }
             .mh-story-list-stats { display:grid; grid-template-columns:repeat(2,minmax(0,1fr)); gap:5px; }
@@ -262,9 +269,12 @@ export async function renderStoryList(panel, _data = {}, { onBack, onNewStory, o
             .mh-story-share-actions { display:grid; grid-template-columns:repeat(3,minmax(0,1fr)); gap:8px; }
             .mh-story-share-actions button { padding:8px 6px; font-size:12px; }
             .mh-story-list-empty { border:1.5px dashed rgba(14,165,233,.38); border-radius:14px; color:var(--text-muted); background:rgba(255,255,255,.54); padding:12px; font-size:13px; line-height:1.45; }
-            @media (min-width: 560px) {
-                .mh-story-list-grid { grid-template-columns:repeat(2,minmax(0,1fr)); }
+            @media (min-width: 760px) {
+                .mh-story-list-body { padding:14px 22px; }
+                .mh-story-list-grid { grid-template-columns:repeat(2,minmax(340px,1fr)); gap:20px; }
                 .mh-story-new-card { min-height:166px; }
+                .mh-story-card { grid-template-columns:116px minmax(0,1fr); gap:14px; padding:12px; }
+                .mh-story-card-pet { width:104px; height:104px; flex-basis:104px; }
             }
         </style>
         <div class="mh-story-list-root">
@@ -296,6 +306,27 @@ export async function renderStoryList(panel, _data = {}, { onBack, onNewStory, o
     panel.onclick = async (e) => {
         if (e.target.closest?.('#mhStoryListBack')) return;
         if (e.target.closest?.('#mhStoryNewCard')) { onNewStory?.(); return; }
+        const deleteBtn = e.target.closest?.('[data-story-delete]');
+        if (deleteBtn) {
+            const card = deleteBtn.closest?.('[data-story-path]');
+            const path = deleteBtn.dataset.storyDelete || card?.dataset.storyPath || '';
+            const title = card?.querySelector?.('.mh-story-card-title')?.textContent?.trim() || '这个故事';
+            if (!path) return;
+            const confirmed = await confirmDialog(`确定要删除《${title}》吗？删除后不能恢复。`, { okText: '删除', cancelText: '取消' });
+            if (!confirmed) return;
+            deleteBtn.disabled = true;
+            try {
+                await deleteWorkspaceStory(path);
+                records = records.filter(item => item.path !== path);
+                card?.remove();
+                if (content && !content.querySelector('[data-story-path]')) content.innerHTML = renderListHtml(records);
+                showToast('故事已删除', 'success', 1600);
+            } catch (err) {
+                deleteBtn.disabled = false;
+                showToast('删除故事失败：' + (err?.message || err), 'error');
+            }
+            return;
+        }
         const shareBtn = e.target.closest?.('[data-story-share]');
         if (shareBtn) {
             const card = shareBtn.closest?.('[data-story-path]');
