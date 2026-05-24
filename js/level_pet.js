@@ -10,6 +10,7 @@ import { getPetSleepActionState, isPetInteractionBlocked, petArtHtml, playPetCli
 import { getGeneratedPetLocation, hasRenderablePetTexture } from './petLifecycle.js';
 import SoundManager from './soundManager.js';
 import { BATH_COMPLETE_FEEDBACK_MS, BATH_COMPLETE_LINES, BATH_SEQUENCE_MS, createBathSequenceOverlay, isPetVisibleInStage } from './petInteractions.js';
+import { setShopFilter, suppressShopInitialClick } from './view_shop.js';
 
 const ITEM_BY_ID = Object.fromEntries(SHOP_ITEMS.map(it => [it.id, it]));
 const BASIC_FEED_ID = 'food_basic_feed';
@@ -1378,6 +1379,16 @@ export const petLevel = {
             };
         });
 
+        dock.querySelectorAll('[data-room-shop]').forEach(el => {
+            el.onclick = (e) => {
+                e.preventDefault?.();
+                e.stopPropagation?.();
+                setShopFilter(el.dataset.roomShop || (state.isFeedMode ? 'food' : 'indoor'));
+                suppressShopInitialClick();
+                ctx.callbacks.onNav?.('shop', { preserveRoomMode: true });
+            };
+        });
+
         dock.querySelectorAll('[data-tray-item]').forEach(el => {
             el.onclick = () => {
                 if (Date.now() - (el.__mhTrayTapHandledAt || 0) < 250) return;
@@ -1807,6 +1818,7 @@ function renderDecorTray(inv) {
     const items = Object.entries(inv)
         .map(([id, qty]) => ({ ...ITEM_BY_ID[id], qty }))
         .filter(it => it && it.id && it.type === 'furniture' && canPlaceItemInArea(it, currentRoom));
+    const shopButton = renderRoomShopButton('indoor', { minWidth: 62, padding: '6px' });
     return `
         <div class="mh-dock-tray mh-scroll-x">
             ${items.length === 0
@@ -1817,6 +1829,7 @@ function renderDecorTray(inv) {
                         <div class="name" style="font-size:10px">${escapeHtml(it.name)} ×${it.qty}</div>
                     </div>
                 `).join('')}
+            ${shopButton}
         </div>
     `;
 }
@@ -1827,6 +1840,7 @@ function renderFeedTray(inv) {
         .filter(it => it && it.id && it.type === 'food');
     const basicFeed = ITEM_BY_ID[BASIC_FEED_ID] ? { ...ITEM_BY_ID[BASIC_FEED_ID], qty: Infinity } : null;
     const items = [basicFeed, ...ownedItems.filter(it => it.id !== BASIC_FEED_ID)].filter(Boolean);
+    const shopButton = renderRoomShopButton('food', { minWidth: 76, padding: '10px 8px' });
     return `
         <div class="mh-dock-tray mh-scroll-x">
             ${items.length === 0
@@ -1837,8 +1851,17 @@ function renderFeedTray(inv) {
                         <div class="name" style="font-size:10px">${escapeHtml(it.name)} ×${it.unlimited ? '∞' : it.qty}</div>
                     </div>
                 `).join('')}
+            ${shopButton}
         </div>
     `;
+}
+
+function renderRoomShopButton(filterId, { minWidth = 62, padding = '6px' } = {}) {
+    return `
+        <button type="button" class="shop-item mh-room-shop-button" data-room-shop="${escapeHtml(filterId)}" style="min-width:${minWidth}px;padding:${escapeHtml(padding)};flex-shrink:0">
+            <div class="emoji">🛒</div>
+            <div class="name" style="font-size:10px">商店</div>
+        </button>`;
 }
 
 export { movePetToRoomPoint, setPetFollowUser, startPetWalk, stopPetWalk };

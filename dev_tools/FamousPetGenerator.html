@@ -1388,6 +1388,37 @@
       setStatus($('saveStatus'), `已删除 ${record.id}${suffix}。`, fileDeleted ? 'ok' : 'error');
     }
 
+    function buildImageGenerationOptions(model, width, height) {
+      return { model, width, height, stream: true };
+    }
+
+    function enablePetImageStreaming(opts, baseStatus) {
+      if (!opts) return opts;
+      opts.stream = true;
+      let streamedText = '';
+      let streamedReasoning = '';
+      const render = (line = '正在接收流式响应...') => {
+        const parts = [baseStatus, 'stream=true', line];
+        if (streamedReasoning) parts.push(`reasoning: ${streamedReasoning.slice(-360)}`);
+        if (streamedText) parts.push(`text: ${streamedText.slice(-360)}`);
+        setStatus($('runStatus'), parts.filter(Boolean).join('\n'), '');
+      };
+      opts.onMessage = (fullText, _delta, _raw, meta = {}) => {
+        streamedText = String(fullText || '').trim();
+        streamedReasoning = String(meta.reasoning || streamedReasoning || '').trim();
+        render('正在接收模型文字响应...');
+      };
+      opts.onReasoning = (fullReasoning) => {
+        streamedReasoning = String(fullReasoning || '').trim();
+        render('正在接收模型推理响应...');
+      };
+      opts.onImage = (url) => {
+        const label = String(url || '').startsWith('data:') ? 'data URI' : String(url || '').slice(0, 160);
+        render(`已收到图片数据：${label}`);
+      };
+      return opts;
+    }
+
     async function generateSheet() {
       const sdk = state.sdk || window.keepwork;
       if (!sdk?.aiGenerators?.genImage) throw new Error('sdk.aiGenerators.genImage 不可用');
@@ -1404,10 +1435,12 @@
       const model = getSelectedImageModel();
       if (!model) throw new Error('请先在本地 API Key 设置中配置 Image 模型');
       const { width, height } = getImageSize();
-      const opts = { model, width, height };
+      const opts = buildImageGenerationOptions(model, width, height);
       if (!$('uploadResultToKeepwork').checked) opts.uploadResultToKeepwork = false;
       if (reference) opts.images = [{ url: reference, role: 'reference' }];
-      setStatus($('runStatus'), `正在为 ${targetPet.id} 调用 genImage...\nmodel=${model}，size=${width}x${height}`, '');
+      const statusText = `正在为 ${targetPet.id} 调用 genImage...\nmodel=${model}，size=${width}x${height}`;
+      enablePetImageStreaming(opts, statusText);
+      setStatus($('runStatus'), `${statusText}\nstream=true`, '');
       if ($('btnGenerate')) $('btnGenerate').disabled = true;
       $('btnRegenerate').disabled = true;
       try {

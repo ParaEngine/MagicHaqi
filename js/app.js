@@ -144,6 +144,7 @@ let pendingStoryPath = null;
 let pendingStoryData = null;
 let pendingStoryReturnToMaker = null;
 let pendingStoryReturnToList = false;
+let shopReturnPreserveRoomMode = false;
 
 const NEW_USER_STORY_PARAM = 'new_user_story';
 
@@ -614,7 +615,14 @@ const routes = {
         onNav:        handleNav,
         onTreatSickness: handleTreatSickness,
     }),
-    shop:      () => renderShop(app, null, { onBack: () => navigateToView('home'), onBuy: handleBuy }),
+    shop:      () => renderShop(app, null, {
+        onBack: () => {
+            const preserveRoomMode = shopReturnPreserveRoomMode;
+            shopReturnPreserveRoomMode = false;
+            navigateToView('home', { preserveRoomMode });
+        },
+        onBuy: handleBuy,
+    }),
     inventory: () => renderInventory(app, null, {
         onBack:  () => navigateToView('home'),
         onUse:   handleUseItem,
@@ -1733,10 +1741,11 @@ async function handleFeedItem(itemId, source = {}) {
 
 async function navigateToView(target, options = {}) {
     if (!target) return;
-    await finishRoomModeIfNeeded();
+    if (!options.preserveRoomMode) await finishRoomModeIfNeeded();
     if (target === 'minigames' && !options.preserveMinigameLaunch) {
         pendingMinigameLaunch = null;
     }
+    if (target === 'shop') shopReturnPreserveRoomMode = !!options.preserveRoomMode;
     const pet = getCurrentPet();
     if (pet && target === 'minigames' && isPetSleeping(pet)) {
         wakePetForPlay(pet);
@@ -1919,8 +1928,8 @@ function postTowerDefenseTreatmentControl(type) {
     } catch (_) {}
 }
 
-function handleNav(target) {
-    navigateToView(target);
+function handleNav(target, options = {}) {
+    navigateToView(target, options);
 }
 
 function guardSleepingRoute(pet = getCurrentPet()) {

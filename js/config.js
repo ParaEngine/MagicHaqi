@@ -150,6 +150,12 @@ export const CONFIG = {
     sceneImageSizes: [
         { value: '1024x1024', label: '1024x1024 默认', width: 1024, height: 1024 },
         { value: '2048x2048', label: '2048x2048 高清', width: 2048, height: 2048 },
+        { value: '1792x1008', label: '1792x1008 横屏 16:9', width: 1792, height: 1008 },
+        { value: '1536x864', label: '1536x864 横屏 16:9', width: 1536, height: 864 },
+        { value: '1344x756', label: '1344x756 横屏 16:9', width: 1344, height: 756 },
+        { value: '1280x720', label: '1280x720 横屏 16:9', width: 1280, height: 720 },
+        { value: '1344x576', label: '1344x576 超宽 21:9', width: 1344, height: 576 },
+        { value: '1792x768', label: '1792x768 超宽 21:9', width: 1792, height: 768 },
         { value: '1080x1920', label: '1080x1920 story maker', width: 1080, height: 1920 },
         { value: '1024x1792', label: '1024x1792', width: 1024, height: 1792 },
         { value: '768x1344', label: '768x1344', width: 768, height: 1344 },

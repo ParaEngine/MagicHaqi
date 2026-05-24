@@ -10,17 +10,26 @@ const INDOOR_AREAS = CONFIG.rooms.map(room => room.id);
 const SHOP_FILTERS = [
     { id: 'all', label: '全部', matches: () => true },
     { id: 'food', label: '食物', matches: item => item.type === 'food' },
-    { id: 'toy', label: '玩具', matches: item => item.type === 'toy' },
-    { id: 'furniture', label: '家具/设施', matches: isFurnitureItem },
-    { id: 'house', label: '房屋', matches: item => item.type === 'house' },
+    { id: 'outdoor', label: '户外', matches: item => isFurnitureItem(item) && OUTDOOR_AREAS.some(area => canPlaceItemInArea(item, area)) },
     { id: 'indoor', label: '室内', matches: item => isFurnitureItem(item) && INDOOR_AREAS.some(area => canPlaceItemInArea(item, area)) },
-    { id: 'outdoor', label: '户外设施', matches: item => isFurnitureItem(item) && OUTDOOR_AREAS.some(area => canPlaceItemInArea(item, area)) },
+    { id: 'toy', label: '玩具', matches: item => item.type === 'toy' },
+    { id: 'house', label: '房屋', matches: item => item.type === 'house' },
+    { id: 'furniture', label: '家具', matches: isFurnitureItem },
     { id: 'land', label: '陆地', matches: item => isFurnitureItem(item) && canPlaceItemInArea(item, 'land') },
     { id: 'water', label: '水域', matches: item => isFurnitureItem(item) && canPlaceItemInArea(item, 'water') },
     { id: 'sky', label: '天空', matches: item => isFurnitureItem(item) && canPlaceItemInArea(item, 'sky') },
 ];
 
 let currentShopFilter = 'all';
+let suppressInitialShopClickUntil = 0;
+
+export function setShopFilter(filterId = 'all') {
+    currentShopFilter = SHOP_FILTERS.some(filter => filter.id === filterId) ? filterId : 'all';
+}
+
+export function suppressShopInitialClick(durationMs = 450) {
+    suppressInitialShopClickUntil = Date.now() + Math.max(0, Number(durationMs) || 0);
+}
 
 export function renderShop(panel, _data, { onBuy, onBack } = {}) {
     panel.innerHTML = `
@@ -37,6 +46,7 @@ export function renderShop(panel, _data, { onBuy, onBack } = {}) {
             </div>
             <div class="grid grid-cols-3 gap-2" id="mhShopGrid"></div>
         </div>`;
+    bindInitialClickBlocker(panel);
     if ($('mhBack')) $('mhBack').onclick = () => onBack?.();
 
     $$('[data-shop-filter]').forEach(el => {
@@ -48,6 +58,18 @@ export function renderShop(panel, _data, { onBuy, onBack } = {}) {
     });
 
     renderShopItems(onBuy);
+}
+
+function bindInitialClickBlocker(panel) {
+    if (!panel || panel.__mhShopInitialClickBlocker) return;
+    const block = (e) => {
+        if (Date.now() >= suppressInitialShopClickUntil) return;
+        e.preventDefault?.();
+        e.stopPropagation?.();
+        e.stopImmediatePropagation?.();
+    };
+    panel.__mhShopInitialClickBlocker = block;
+    ['click', 'mouseup', 'mousedown'].forEach(type => panel.addEventListener(type, block, true));
 }
 
 function renderFilterButton(filter) {

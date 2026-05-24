@@ -10,6 +10,8 @@ import { markPetCared, normalizePetPoops } from './petTick.js';
 import { canPetAppearInField, getGeneratedPetLocation, getNannyCareRemainingMs, getPetLocationType, getReleasedPetHome, hasNannyCare, isNearActiveGeneratedPet } from './petLifecycle.js';
 import SoundManager from './soundManager.js';
 import ParticleEffects, { renderParticleCanvasHtml } from './particleEffects.js';
+import { PARTICLE_EFFECTS, bgMusicLabel, bgMusicOptions, loadScenePresets, rankScenePresets, renderSceneParticles, sceneBackgroundStyle } from './view_story_scene_maker.js';
+import { setShopFilter, suppressShopInitialClick } from './view_shop.js';
 
 const soundManager = SoundManager.getInstance();
 
@@ -45,6 +47,33 @@ const FIELD_ITEM_MIN_SCALE = 0.8;
 const FIELD_ITEM_MAX_SCALE = 3;
 const FIELD_ITEM_SCALE_STEP = 1.15;
 const DRAG_TO_SCENE_HINT = '拖动到场景中';
+const FIELD_DRAG_EXISTING_HINT = '拖动物品可移动，拖到底部可收回';
+const FIELD_BUILD_CATEGORIES = [
+    { id: 'houses', name: '房屋' },
+    { id: 'backgrounds', name: '背景' },
+    { id: 'effects', name: '特效' },
+    { id: 'music', name: '音乐' },
+];
+const FIELD_EFFECT_EMOJIS = {
+    sparkle: '✨',
+    snow: '❄️',
+    rain: '🌧️',
+    mist: '🌫️',
+    bubbles: '🫧',
+    petals: '🌸',
+    embers: '🔥',
+};
+const FIELD_MUSIC_EMOJIS = {
+    selector: '🎵',
+    square: '🏛️',
+    forest: '🌲',
+    farm: '🌾',
+    mountain: '⛰️',
+    park: '🌳',
+    playground: '🎠',
+    ship: '🚀',
+    haqiLoop: '🎶',
+};
 let suppressFieldDockActivationUntil = 0;
 let fieldPan = 0;
 let fieldPxPerMeter = 1;
@@ -52,6 +81,9 @@ const fieldPanById = {};
 let selectedFieldItem = null;
 let activePoopSweepId = 0;
 let activePoopSuckFinishAt = 0;
+let activeFieldBuildCategory = 'houses';
+let fieldScenePresets = [];
+let fieldScenePresetsLoading = null;
 
 const REMOTE_FIELD_DEFS = [
     { id: 'fire', name: '火山', emoji: '', iconClass: 'field-tab-icon-fire', discoveryId: 'firebird', favoriteTrait: 'dragonLike' },
@@ -275,9 +307,17 @@ function recomputeFieldMetrics() {
     fieldPxPerMeter = Math.max(1, stageHeight / FIELD_HEIGHT_METERS);
     if (scene) {
         scene.style.width = metersToFieldPx(FIELD_WIDTH_METERS) + 'px';
+        scene.style.setProperty('--field-viewport-height', `${stageHeight}px`);
         scene.dataset.fieldWidthMeters = String(FIELD_WIDTH_METERS);
         scene.dataset.fieldHeightMeters = String(FIELD_HEIGHT_METERS);
     }
+}
+
+function updateFieldViewportParticleFrame(stage, scene) {
+    if (!stage || !scene) return;
+    const centerX = -fieldPan + (stage.clientWidth || window.innerWidth || 0) / 2;
+    scene.style.setProperty('--field-viewport-center-x', `${centerX.toFixed(1)}px`);
+    scene.style.setProperty('--field-viewport-height', `${stage.clientHeight || window.innerHeight || 540}px`);
 }
 
 function applyFieldPan() {
@@ -292,6 +332,7 @@ function applyFieldPan() {
     }
     fieldPan = clampRange(fieldPanById[key], -maxPan, 0);
     fieldPanById[key] = fieldPan;
+    updateFieldViewportParticleFrame(stage, scene);
     scene.style.transform = `translate3d(${fieldPan.toFixed(1)}px,0,0)`;
 }
 
@@ -316,6 +357,7 @@ function setFieldPanValue(value) {
     if (!bounds) return;
     fieldPan = clampRange(value, -bounds.maxPan, 0);
     fieldPanById[currentFieldPanKey()] = fieldPan;
+    updateFieldViewportParticleFrame(bounds.stage, bounds.scene);
     bounds.scene.style.transform = `translate3d(${fieldPan.toFixed(1)}px,0,0)`;
 }
 
@@ -334,6 +376,7 @@ function animateFieldPanTo(targetPan, duration, onComplete) {
         const eased = 1 - Math.pow(1 - progress, 3);
         fieldPan = startPan + (endPan - startPan) * eased;
         fieldPanById[panKey] = fieldPan;
+        updateFieldViewportParticleFrame(bounds.stage, bounds.scene);
         bounds.scene.style.transform = `translate3d(${fieldPan.toFixed(1)}px,0,0)`;
         if (progress < 1) requestAnimationFrame(step);
         else onComplete?.();
@@ -454,6 +497,11 @@ function renderFieldDecorTray(inv, currentField) {
         .filter(it => (it.type === 'furniture' || it.type === 'house') && canPlaceItemInArea(it, currentField.id))
         .map(it => ({ ...it, qty: it.unlimited ? Infinity : (inv[it.id] || 0) }))
         .filter(it => it.qty > 0 || it.unlimited);
+    const shopButton = `
+        <button type="button" class="shop-item mh-field-shop-button" data-field-shop="outdoor" style="min-width:62px;padding:6px;flex-shrink:0">
+            <div class="emoji">🛒</div>
+            <div class="name" style="font-size:10px">商店</div>
+        </button>`;
     return `
         <div class="mh-dock-tray mh-scroll-x">
             ${items.length === 0
@@ -467,8 +515,138 @@ function renderFieldDecorTray(inv, currentField) {
                         <div class="name" style="font-size:10px">${escapeHtml(it.name)}${countHtml}</div>
                     </div>`;
                 }).join('')}
+            ${shopButton}
         </div>
     `;
+}
+
+function ensureFieldScenePresetsLoaded() {
+    if (fieldScenePresets.length || fieldScenePresetsLoading) return;
+    fieldScenePresetsLoading = loadScenePresets()
+        .then((presets) => {
+            fieldScenePresets = Array.isArray(presets) ? presets : [];
+            notify();
+        })
+        .catch((e) => console.warn('加载建造背景预设失败', e))
+        .finally(() => { fieldScenePresetsLoading = null; });
+}
+
+function fieldSceneSettings() {
+    const settings = state.settings || (state.settings = {});
+    return settings.fieldScenes || (settings.fieldScenes = {});
+}
+
+function currentFieldSceneConfig(fieldId = state.currentField) {
+    return fieldSceneSettings()[fieldId] || {};
+}
+
+function saveCurrentFieldSceneConfig(fieldId, patch) {
+    const scenes = fieldSceneSettings();
+    const next = { ...(scenes[fieldId] || {}), ...(patch || {}) };
+    if (next.background && Object.prototype.hasOwnProperty.call(next.background, 'tags')) {
+        const { tags, ...background } = next.background;
+        next.background = background;
+    }
+    scenes[fieldId] = next;
+    saveUserProfileDebounced();
+    notify();
+}
+
+function fieldSceneTag(fieldId) {
+    if (fieldId === 'water') return 'ocean';
+    return fieldId || 'land';
+}
+
+function fieldBackgroundPresets(currentField) {
+    const tag = fieldSceneTag(currentField.id);
+    const tagged = fieldScenePresets.filter(scene => {
+        const tags = new Set((scene.tags || []).map(item => String(item || '').toLowerCase()));
+        return tags.has('outdoor') && tags.has(tag);
+    });
+    return rankScenePresets(['outdoor', tag], tagged.length ? tagged : fieldScenePresets).map(item => item.scene);
+}
+
+function selectedFieldPresetId(fieldId = state.currentField) {
+    return currentFieldSceneConfig(fieldId).background?.presetId || '';
+}
+
+function renderFieldBackgroundTray(currentField) {
+    ensureFieldScenePresetsLoaded();
+    const presets = fieldBackgroundPresets(currentField);
+    const selectedId = selectedFieldPresetId(currentField.id);
+    if (!presets.length) {
+        return `<div class="mh-dock-tray mh-scroll-x"><div class="mh-dock-hint">正在加载${escapeHtml(currentField.name)}背景...</div></div>`;
+    }
+    return `
+        <div class="mh-dock-tray mh-scroll-x mh-field-build-tray mh-field-background-tray">
+            ${presets.map(scene => `
+                <button type="button" class="mh-field-build-card ${scene.id === selectedId ? 'is-active' : ''}" data-field-background="${escapeHtml(scene.id)}">
+                    <span class="mh-field-build-card-art" style="background:${escapeHtml(sceneBackgroundStyle(scene, scene.color))}">${renderSceneParticles(scene, { density: 'thumbnail' })}</span>
+                    <span class="mh-field-build-card-title">${escapeHtml(scene.title)}</span>
+                </button>
+            `).join('')}
+        </div>
+    `;
+}
+
+function selectedFieldParticles(fieldId = state.currentField) {
+    const effects = currentFieldSceneConfig(fieldId).particles;
+    return Array.isArray(effects) ? effects : [];
+}
+
+function renderFieldEffectsTray(currentField) {
+    const active = new Set(selectedFieldParticles(currentField.id));
+    return `
+        <div class="mh-dock-tray mh-scroll-x mh-field-build-tray mh-field-card-tray">
+            <button type="button" class="mh-field-build-card mh-field-icon-card ${active.size ? '' : 'is-active'}" data-field-effect="">
+                <span class="mh-field-build-card-art mh-field-build-card-icon">Ø</span>
+                <span class="mh-field-build-card-title">无特效</span>
+            </button>
+            ${PARTICLE_EFFECTS.map(effect => `
+                <button type="button" class="mh-field-build-card mh-field-icon-card ${active.has(effect.id) ? 'is-active' : ''}" data-field-effect="${escapeHtml(effect.id)}">
+                    <span class="mh-field-build-card-art mh-field-build-card-icon">${escapeHtml(FIELD_EFFECT_EMOJIS[effect.id] || '✨')}</span>
+                    <span class="mh-field-build-card-title">${escapeHtml(effect.label)}</span>
+                </button>
+            `).join('')}
+        </div>
+    `;
+}
+
+function selectedFieldMusic(fieldId = state.currentField) {
+    return String(currentFieldSceneConfig(fieldId).bgMusic || '');
+}
+
+function renderFieldMusicTray(currentField) {
+    const active = selectedFieldMusic(currentField.id);
+    const options = bgMusicOptions();
+    return `
+        <div class="mh-dock-tray mh-scroll-x mh-field-build-tray mh-field-card-tray">
+            <button type="button" class="mh-field-build-card mh-field-icon-card ${active ? '' : 'is-active'}" data-field-music="">
+                <span class="mh-field-build-card-art mh-field-build-card-icon">🔇</span>
+                <span class="mh-field-build-card-title">无音乐</span>
+            </button>
+            ${options.map(option => `
+                <button type="button" class="mh-field-build-card mh-field-icon-card ${active === option.id ? 'is-active' : ''}" data-field-music="${escapeHtml(option.id)}">
+                    <span class="mh-field-build-card-art mh-field-build-card-icon">${escapeHtml(FIELD_MUSIC_EMOJIS[option.id] || '🎵')}</span>
+                    <span class="mh-field-build-card-title">${escapeHtml(bgMusicLabel(option.id))}</span>
+                </button>
+            `).join('')}
+        </div>
+    `;
+}
+
+function fieldMusicToggleHtml(fieldId) {
+    const music = selectedFieldMusic(fieldId);
+    if (!music || isVisitingMode()) return '';
+    const muted = soundManager.isBgMusicMuted?.();
+    return `<button type="button" class="field-music-toggle ${muted ? 'is-muted' : ''}" data-field-music-toggle aria-label="${muted ? '开启音乐' : '静音'}" title="${muted ? '开启音乐' : '静音'}">${muted ? '♪' : '♫'}</button>`;
+}
+
+function renderActiveFieldBuildTray(inv, currentField) {
+    if (activeFieldBuildCategory === 'backgrounds') return renderFieldBackgroundTray(currentField);
+    if (activeFieldBuildCategory === 'effects') return renderFieldEffectsTray(currentField);
+    if (activeFieldBuildCategory === 'music') return renderFieldMusicTray(currentField);
+    return renderFieldDecorTray(inv, currentField);
 }
 
 function getUserSeedBase() {
@@ -555,10 +733,30 @@ function generateFieldMap(fieldId) {
 }
 
 function fieldMapHtml(fieldId) {
+    const custom = isVisitingMode() ? {} : currentFieldSceneConfig(fieldId);
+    const customBg = custom.background;
     const map = generateFieldMap(fieldId);
     const weather = getActivePlanetWeather();
     const weatherClass = weather ? ` weather-${weather.id}` : '';
     const weatherOverlay = weather ? planetWeatherOverlayHtml(weather) : '';
+    if (customBg?.imageUrl || customBg?.color) {
+        const scene = {
+            id: customBg.presetId || `field-${fieldId}-custom`,
+            title: customBg.title || '',
+            background: customBg,
+            particles: Array.isArray(custom.particles) ? custom.particles : [],
+        };
+        const imageHtml = customBg.imageUrl
+            ? `<img class="field-custom-background-image" src="${escapeHtml(customBg.imageUrl)}" alt="" draggable="false">`
+            : '';
+        return `
+            <div class="field-bg ${map.theme.className} field-bg-custom${weatherClass}" style="background:${escapeHtml(customBg.color || map.theme.sky)}">
+                ${imageHtml}
+                <div class="field-custom-background-particles field-viewport-particles">${renderSceneParticles(scene, { density: 'field' })}</div>
+                ${weatherOverlay}
+            </div>
+        `;
+    }
     return `
         <div class="field-bg ${map.theme.className}${weatherClass}" style="background:${map.theme.sky}">
             <div class="field-horizon"></div>
@@ -570,7 +768,7 @@ function fieldMapHtml(fieldId) {
             <div class="field-prop-layer">
                 ${map.props.map((p) => `<span class="field-map-prop" style="left:${pct(p.x)};top:${pct(p.y)};font-size:${p.size}px;opacity:${p.opacity.toFixed(2)};transform:translate(-50%,-50%) rotate(${p.rot.toFixed(1)}deg);z-index:${p.z}">${p.emoji}</span>`).join('')}
             </div>
-            <div class="field-floater-layer">${renderParticleCanvasHtml(fieldParticleEffects(fieldId), { className: 'field-map-particles', density: 'field', seed: `field-${fieldId}` })}</div>
+            <div class="field-floater-layer field-viewport-particles">${renderParticleCanvasHtml(custom.particles?.length ? custom.particles : fieldParticleEffects(fieldId), { className: 'field-map-particles', density: 'field', seed: `field-${fieldId}-${(custom.particles || []).join('-')}` })}</div>
             ${weatherOverlay}
         </div>
     `;
@@ -1207,6 +1405,7 @@ function playPoopMachineSweep(poops, onComplete) {
         const progress = clamp01((now - start) / duration);
         fieldPan = -maxPan * progress;
         fieldPanById[panKey] = fieldPan;
+        updateFieldViewportParticleFrame(stage, scene);
         scene.style.transform = `translate3d(${fieldPan.toFixed(1)}px,0,0)`;
         triggerVisiblePoops();
         if (progress < 1) requestAnimationFrame(step);
@@ -1374,6 +1573,7 @@ export const fieldLevel = {
                 ${fieldPetsHtml(pet, fld.id)}
             </div>
             </div>
+            ${fieldMusicToggleHtml(fld.id)}
         `;
     },
 
@@ -1393,6 +1593,18 @@ export const fieldLevel = {
         setFieldEffectScale();
         applyFieldPan();
         ParticleEffects.getInstance().mountAll($('mhFieldScene'));
+        const fieldMusic = selectedFieldMusic(fld.id);
+        if (!isVisitingMode() && fieldMusic) soundManager.playBgMusic(fieldMusic, { fadeMs: 420, volume: 0.3 });
+        const musicToggle = document.querySelector('[data-field-music-toggle]');
+        if (musicToggle) {
+            musicToggle.onclick = (e) => {
+                e.preventDefault();
+                e.stopPropagation();
+                const muted = soundManager.toggleBgMusicMuted?.({ fadeMs: 220 });
+                if (!muted && fieldMusic) soundManager.playBgMusic(fieldMusic, { fadeMs: 260, volume: 0.3 });
+                notify();
+            };
+        }
         window.addEventListener('resize', applyFieldPan, { passive: true });
         bindFieldPan(ctx);
         $$('.poop-btn').forEach(el => {
@@ -1430,7 +1642,7 @@ export const fieldLevel = {
         if (stage) {
             stage.addEventListener('click', (e) => {
                 if (Date.now() - (stage.__mhFieldPannedAt || 0) < 260) return;
-                if (e.target.closest('.poop-btn, .field-item, .pet-sprite, [data-tray-item], .mh-field-scale-controls')) return;
+                if (e.target.closest('.poop-btn, .field-item, .pet-sprite, [data-tray-item], .mh-field-scale-controls, [data-field-music-toggle]')) return;
                 clearFieldItemSelection(ctx);
                 if (!isFieldDecorMode() || !ctx.selectedTrayItem) return;
                 const pos = pointToFieldCoords(e.clientX, e.clientY, true);
@@ -1440,11 +1652,6 @@ export const fieldLevel = {
         }
         $$('.field-item').forEach(el => {
             bindFieldItemDrag(el, ctx);
-            el.onclick = (e) => {
-                e.stopPropagation();
-                if (Date.now() - (el.__mhFieldDraggedAt || 0) < 260) return;
-                selectFieldItem(el, ctx);
-            };
         });
         ensureFieldItemScaleControls(ctx);
         restoreFieldItemSelection(ctx);
@@ -1500,10 +1707,15 @@ export const fieldLevel = {
         const fields = availableFields();
         const currentField = fields.find(f => f.id === state.currentField) || fields[0] || CONFIG.fields[0];
         const inv = state.inventory || {};
+        if (!FIELD_BUILD_CATEGORIES.some(category => category.id === activeFieldBuildCategory)) activeFieldBuildCategory = 'houses';
 
         return `
             <div class="mh-dock-row mh-scroll-x dock-tab-row ${isFieldDecorMode() ? 'has-decor-done' : ''}" id="mhFieldTabs">
-                ${fields.map(f => `
+                ${isFieldDecorMode() ? FIELD_BUILD_CATEGORIES.map(category => `
+                    <button type="button" class="btn-secondary dock-tab ${category.id === activeFieldBuildCategory ? 'active' : ''}" data-field-build-category="${escapeHtml(category.id)}">
+                        ${escapeHtml(category.name)}
+                    </button>
+                `).join('') : fields.map(f => `
                     <button class="btn-secondary dock-tab ${f.id === state.currentField ? 'active' : ''}" data-field="${f.id}">
                         ${f.iconClass ? `<span class="field-tab-svg-icon ${escapeHtml(f.iconClass)}" aria-hidden="true"></span>` : escapeHtml(f.emoji || '')} ${escapeHtml(f.name)}
                     </button>
@@ -1511,7 +1723,7 @@ export const fieldLevel = {
             </div>
             ${isFieldDecorMode() ? `<button type="button" class="mh-decor-done-btn mh-field-mode-toggle" id="mhFieldDecorDoneBtn">完成</button>` : ''}
             ${isFieldDecorMode() ? `<button type="button" class="mh-room-dock-delete-target" id="mhFieldDockDeleteTarget" aria-hidden="true" tabindex="-1">🗑️ 收回背包</button>` : ''}
-            ${isFieldDecorMode() ? renderFieldDecorTray(inv, currentField) : renderFieldActionTray(pet)}
+            ${isFieldDecorMode() ? renderActiveFieldBuildTray(inv, currentField) : renderFieldActionTray(pet)}
         `;
     },
 
@@ -1519,6 +1731,8 @@ export const fieldLevel = {
         const dock = ctx.dock;
         if (!dock) return;
         updateCleanPoopsButton(pet);
+        const fields = availableFields();
+        const currentField = fields.find(f => f.id === state.currentField) || fields[0] || CONFIG.fields[0];
 
         const activateFieldTab = (target, event) => {
             const fieldBtn = target.closest?.('[data-field]');
@@ -1537,7 +1751,97 @@ export const fieldLevel = {
             event?.stopPropagation?.();
             dock.__mhFieldDockTabHandledAt = Date.now();
             suppressFieldDockActivationUntil = Date.now() + 350;
+            if (!state.isDecorMode) activeFieldBuildCategory = 'houses';
+            ctx.selectedTrayItem = null;
+            clearFieldItemSelection(ctx);
             ctx.callbacks.onToggleDecor?.(!state.isDecorMode);
+            return true;
+        };
+
+        const activateBuildCategory = (target, event) => {
+            const btn = target.closest?.('[data-field-build-category]');
+            if (!btn || !dock.contains(btn)) return false;
+            event?.preventDefault?.();
+            event?.stopPropagation?.();
+            const nextCategory = btn.dataset.fieldBuildCategory || 'houses';
+            if (!FIELD_BUILD_CATEGORIES.some(category => category.id === nextCategory)) return false;
+            dock.__mhFieldDockTabHandledAt = Date.now();
+            activeFieldBuildCategory = nextCategory;
+            ctx.selectedTrayItem = null;
+            clearFieldItemSelection(ctx);
+            notify();
+            return true;
+        };
+
+        const activateFieldBackground = (target, event) => {
+            const btn = target.closest?.('[data-field-background]');
+            if (!btn || !dock.contains(btn)) return false;
+            event?.preventDefault?.();
+            event?.stopPropagation?.();
+            const preset = fieldScenePresets.find(scene => scene.id === btn.dataset.fieldBackground);
+            if (!preset) return false;
+            dock.__mhFieldDockTabHandledAt = Date.now();
+            saveCurrentFieldSceneConfig(currentField.id, {
+                background: {
+                    type: preset.imageUrl ? 'image' : 'color',
+                    color: preset.color || '#bae6fd',
+                    imageUrl: preset.imageUrl || '',
+                    presetId: preset.id,
+                    title: preset.title || '',
+                },
+            });
+            showToast(`已切换背景：${preset.title || currentField.name}`, 'success', 1200);
+            return true;
+        };
+
+        const activateFieldEffect = (target, event) => {
+            const btn = target.closest?.('[data-field-effect]');
+            if (!btn || !dock.contains(btn)) return false;
+            event?.preventDefault?.();
+            event?.stopPropagation?.();
+            const id = btn.dataset.fieldEffect || '';
+            dock.__mhFieldDockTabHandledAt = Date.now();
+            if (!id) {
+                saveCurrentFieldSceneConfig(currentField.id, { particles: [] });
+                showToast('已关闭场景特效', 'success', 1000);
+                return true;
+            }
+            const current = selectedFieldParticles(currentField.id);
+            const particles = current.includes(id) ? current.filter(item => item !== id) : [...current, id];
+            saveCurrentFieldSceneConfig(currentField.id, { particles });
+            const label = PARTICLE_EFFECTS.find(effect => effect.id === id)?.label || id;
+            showToast(`${current.includes(id) ? '已移除' : '已添加'}特效：${label}`, 'success', 1000);
+            return true;
+        };
+
+        const activateFieldMusic = (target, event) => {
+            const btn = target.closest?.('[data-field-music]');
+            if (!btn || !dock.contains(btn)) return false;
+            event?.preventDefault?.();
+            event?.stopPropagation?.();
+            const music = btn.dataset.fieldMusic || '';
+            dock.__mhFieldDockTabHandledAt = Date.now();
+            saveCurrentFieldSceneConfig(currentField.id, { bgMusic: music });
+            if (music) {
+                soundManager.setBgMusicMuted?.(false, { fadeMs: 120 });
+                soundManager.playBgMusic(music, { fadeMs: 320, volume: 0.3, restart: true });
+                showToast(`已播放音乐：${bgMusicLabel(music)}`, 'success', 1000);
+            } else {
+                soundManager.stopBgMusic({ fadeMs: 320 });
+                showToast('已关闭场景音乐', 'success', 1000);
+            }
+            return true;
+        };
+
+        const activateFieldShop = (target, event) => {
+            const btn = target.closest?.('[data-field-shop]');
+            if (!btn || !dock.contains(btn)) return false;
+            event?.preventDefault?.();
+            event?.stopPropagation?.();
+            dock.__mhFieldDockTabHandledAt = Date.now();
+            setShopFilter(btn.dataset.fieldShop || 'outdoor');
+            suppressShopInitialClick();
+            ctx.callbacks.onNav?.('shop', { preserveRoomMode: true });
             return true;
         };
 
@@ -1588,7 +1892,7 @@ export const fieldLevel = {
         }
         dock.__mhFieldDockTabPointer = null;
         dock.__mhFieldDockTabPointerDown = (e) => {
-            const tab = e.target.closest?.('.dock-tab, .mh-field-mode-toggle, #mhFieldCleanPoopsBtn, [data-field-action], [data-field-nav]');
+            const tab = e.target.closest?.('.dock-tab, .mh-field-mode-toggle, #mhFieldCleanPoopsBtn, [data-field-action], [data-field-nav], [data-field-shop]');
             if (!tab || !dock.contains(tab)) return;
             if (tab.classList.contains('mh-field-mode-toggle')) e.preventDefault();
             dock.__mhFieldDockTabPointer = {
@@ -1609,7 +1913,7 @@ export const fieldLevel = {
             if (!start || start.id !== e.pointerId) return;
             const moved = Math.hypot(e.clientX - start.x, e.clientY - start.y) > 8;
             if (!moved && Date.now() - (dock.__mhFieldDockTabHandledAt || 0) >= 250) {
-                activateFieldAction(start.target, e) || activateCleanPoops(start.target, e) || activateModeToggle(start.target, e) || activateFieldTab(start.target, e);
+                activateFieldAction(start.target, e) || activateFieldShop(start.target, e) || activateFieldBackground(start.target, e) || activateFieldEffect(start.target, e) || activateFieldMusic(start.target, e) || activateCleanPoops(start.target, e) || activateModeToggle(start.target, e) || activateBuildCategory(start.target, e) || activateFieldTab(start.target, e);
             }
         };
         dock.addEventListener('pointerdown', dock.__mhFieldDockTabPointerDown, true);
@@ -1635,7 +1939,7 @@ export const fieldLevel = {
                 e.stopPropagation();
                 return;
             }
-            activateFieldAction(e.target, e) || activateFieldNav(e.target, e) || activateCleanPoops(e.target, e) || activateModeToggle(e.target, e) || activateFieldTab(e.target, e);
+            activateFieldAction(e.target, e) || activateFieldNav(e.target, e) || activateFieldShop(e.target, e) || activateFieldBackground(e.target, e) || activateFieldEffect(e.target, e) || activateFieldMusic(e.target, e) || activateCleanPoops(e.target, e) || activateModeToggle(e.target, e) || activateBuildCategory(e.target, e) || activateFieldTab(e.target, e);
         };
         dock.addEventListener('click', dock.__mhFieldDockTabClick, true);
 
@@ -1885,6 +2189,7 @@ function bindFieldItemDrag(el, ctx) {
             }
         } else if (e.type === 'pointerup') {
             selectFieldItem(el, ctx);
+            showToast(FIELD_DRAG_EXISTING_HINT, 'info', 1400);
         }
         drag = null;
     };

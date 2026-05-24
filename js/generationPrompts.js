@@ -70,6 +70,8 @@ export function buildSceneImagePrompt(promptText, tags = [], referenceCount = 0,
     const description = String(promptText || options.title || '').trim() || '温暖的2D游戏场景背景图';
     return [
         '生成一个卡通风格的2D游戏场景背景图，采用第一人称视角往下微微俯视，只要场景，不要角色，不要文字，不要水印。',
+        '严格禁止黑边，画面内容必须铺满整张图片。',
+        '用途：这张图相当于是 2D 横版滚动游戏的背景图，画面需要有横向延展感和清晰的前景、中景、远景层次。',
         `场景描述：${description}`,
         `场景标签：${normalizeTags(tags).join(', ') || 'haqi, spring, outdoor'}`,
         referenceCount ? `参考图数量：${referenceCount}。请提取构图、颜色和材质作为参考，不要复制文字或人物。` : '',

@@ -22,7 +22,7 @@ export const PARTICLE_EFFECTS = [
     { id: 'embers', label: '暖光' },
 ];
 
-const BG_MUSIC_LABELS = {
+export const BG_MUSIC_LABELS = {
     selector: '选择',
     square: '广场',
     forest: '森林',
@@ -98,20 +98,20 @@ function normalizeHistoryUrls(value) {
     return [...new Set(raw.map(url => String(url || '').trim()).filter(Boolean))];
 }
 
-function bgMusicOptions() {
+export function bgMusicOptions() {
     return Object.keys(CONFIG.assets?.bgSounds || {}).map(key => ({
         id: key,
         label: BG_MUSIC_LABELS[key] || key,
     }));
 }
 
-function normalizeBgMusic(value) {
+export function normalizeBgMusic(value) {
     if (!value) return '';
     const music = typeof value === 'object' ? (value.id || value.key || value.name || value.src || value.url || '') : value;
     return String(music || '').trim();
 }
 
-function bgMusicLabel(value) {
+export function bgMusicLabel(value) {
     const music = normalizeBgMusic(value);
     if (!music) return '无音乐';
     return BG_MUSIC_LABELS[music] || music;

@@ -41,18 +41,26 @@
 			.status-action { @apply min-h-0 border-0 bg-transparent p-0 font-bold underline underline-offset-2 hover:border-transparent hover:bg-transparent; }
 			.pill { @apply inline-flex min-h-6 items-center whitespace-nowrap rounded-full border border-slate-300 bg-white px-2 text-xs text-slate-500; }
 			.records-toolbar { @apply grid grid-cols-[minmax(0,1fr)_auto_auto] gap-2 border-b border-slate-300 bg-slate-50 p-3; }
+			.scene-index-heading { min-width: 0; }
+			.scene-index-title { display: flex; min-width: 0; align-items: center; gap: 0.5rem; }
+			.scene-index-title button { min-height: 1.75rem; padding-left: 0.625rem; padding-right: 0.625rem; font-size: 0.75rem; line-height: 1rem; }
 			.generate-all-button { @apply min-h-10 whitespace-nowrap px-5 text-sm font-bold; }
 			.records-filters { @apply grid gap-2 border-b border-slate-300 bg-white px-3 py-2.5; }
-			.records-filter-actions { @apply grid grid-cols-[minmax(0,1fr)_auto] items-end gap-2; }
+			.records-filter-actions { @apply grid grid-cols-[minmax(0,1fr)_auto] items-center gap-2; }
+			.record-select-all { @apply flex flex-row items-center gap-2 text-xs text-slate-700; }
+			.record-select-all input { @apply h-4 min-h-0 w-4 p-0 accent-sky-600; }
 			.batch-grid { @apply grid grid-cols-1 gap-3 lg:grid-cols-[270px_minmax(0,1fr)]; }
 			.batch-tag-counts { @apply grid max-h-[310px] grid-cols-2 gap-1.5 overflow-auto rounded-md border border-slate-300 bg-slate-50 p-2; }
 			.batch-tag-count { @apply flex items-center justify-between gap-2 rounded border border-slate-200 bg-white px-2 py-1 text-xs; }
 			.batch-combo-list { @apply flex min-h-0 flex-col gap-2 overflow-auto; }
 			.batch-combo-row { @apply grid grid-cols-[minmax(0,1fr)_72px_auto] items-end gap-2 rounded-md border border-slate-300 bg-slate-50 p-2; }
 			.batch-progress { @apply min-h-[110px] max-h-[210px] overflow-auto whitespace-pre-wrap font-mono text-xs; }
-			.record-list { @apply flex min-h-0 flex-col gap-1.5 overflow-auto p-2; }
-			.record-item { @apply grid w-full grid-cols-[42px_minmax(0,1fr)_auto] items-center gap-2.5 rounded-md border border-slate-300 bg-white p-2.5 text-left; }
+			.record-list { @apply flex min-h-0 flex-1 flex-col gap-1.5 overflow-auto p-2; }
+			.record-item { @apply grid w-full grid-cols-[18px_42px_minmax(0,1fr)_auto] items-center gap-2.5 rounded-md border border-slate-300 bg-white p-2.5 text-left; }
 			.record-item.active { @apply border-sky-600 bg-sky-50 ring-2 ring-sky-600/15; }
+			.record-item.checked { @apply border-sky-500 bg-sky-50; }
+			.record-select { @apply grid h-[18px] w-[18px] place-items-center; }
+			.record-select input { @apply h-4 min-h-0 w-4 p-0 accent-sky-600; }
 			.record-main { @apply block min-w-0 border-0 bg-transparent p-0 text-left hover:border-transparent hover:bg-transparent; }
 			.record-title { @apply block min-w-0 overflow-hidden text-ellipsis whitespace-nowrap text-[13px] font-bold; }
 			.record-meta { @apply block min-w-0 overflow-hidden text-ellipsis whitespace-nowrap text-[11px] text-slate-500; }
@@ -81,7 +89,8 @@
 			.scene-preview img { @apply absolute inset-0 block h-full w-full object-cover; }
 			.scene-music-toggle { @apply absolute right-2 top-2 z-[5] grid h-[34px] w-[34px] min-h-[34px] place-items-center rounded-xl border-2 border-white/90 bg-sky-600 p-0 text-lg font-black leading-none text-white shadow-lg hover:border-white hover:bg-sky-700; }
 			.scene-music-toggle.is-muted { @apply bg-white/90 text-sky-800; }
-			.scene-preview-title { @apply relative z-[4] m-2.5 self-end justify-self-stretch rounded-lg bg-white/80 px-2.5 py-2 text-center text-[13px] font-extrabold text-slate-900; }
+			.scene-preview-title { @apply min-h-[22px] justify-self-center px-2 text-center text-[13px] font-extrabold leading-tight text-slate-900; width: min(var(--preview-title-width, 260px), 100%); }
+			.scene-preview-title.large { width: min(var(--large-preview-title-width, 760px), 92vw); }
 			.empty-preview { @apply z-[2] p-4 text-center text-[13px] text-slate-600; }
 			.ref-grid { @apply grid grid-cols-2 gap-2; }
 			.reference-dropzone { @apply rounded-md border border-dashed border-slate-300 bg-white p-2.5 outline-none focus:border-sky-500 focus:ring-2 focus:ring-sky-600/15; }
@@ -126,6 +135,10 @@
 			.range-scale span:last-child { @apply text-right; }
 			.range-value { @apply font-bold text-slate-900; }
 		}
+		@media (min-width: 1024px) {
+			.app { height: 100vh; overflow: hidden; }
+			.records { height: 100%; }
+		}
 		@media (max-width: 760px) {
 			.scene-preview { width: min(var(--preview-width-mobile, 180px), 100%); }
 			.scene-preview.large { width: min(var(--large-preview-width-mobile, 420px), 92vw); max-height: min(78vh, 720px); }
@@ -150,7 +163,6 @@
 					<div id="loginState" class="status">正在加载 KeepworkSDK...</div>
 					<div class="toolbar">
 						<button id="btnLocalApi" type="button">本地 API Key</button>
-						<button id="btnWorkspace" type="button">Workspace</button>
 					</div>
 				</section>
 
@@ -186,34 +198,35 @@
 
 		<section class="panel records">
 			<div class="panel-head">
-				<div>
-					<h2>scenes.json</h2>
+				<div class="scene-index-heading">
+					<div class="scene-index-title">
+						<h2>scenes.json</h2>
+						<button id="btnWorkspace" type="button">打开</button>
+					</div>
 					<h3>Workspace: MagicHaqi/pet-story/presets</h3>
 				</div>
 				<span id="recordCount" class="pill">0</span>
 			</div>
 			<div class="records-toolbar">
 				<input id="recordSearch" placeholder="搜索 id / title / tags">
-				<button id="btnGenerateAllMissing" class="primary generate-all-button" type="button">全部生成(0)</button>
+				<button id="btnGenerateAllMissing" class="primary generate-all-button" type="button">生成选中(0)</button>
 				<button id="btnNewScene" type="button">新建</button>
 			</div>
 			<div class="records-filters">
 				<div class="record-tag-filter" id="recordTagFilterWrap">
-					<span class="filter-label">Tags 筛选</span>
 					<select id="recordTagFilter" multiple></select>
 					<button id="recordTagFilterButton" class="record-tag-filter-button" type="button" aria-haspopup="listbox" aria-expanded="false"><span id="recordTagFilterLabel" class="record-tag-filter-label">全部 tags</span><span class="record-tag-filter-caret">▾</span></button>
 					<div id="recordTagFilterMenu" class="record-tag-filter-menu" role="listbox" aria-multiselectable="true"></div>
 				</div>
 				<div class="records-filter-actions">
-					<label>图片筛选
-						<select id="recordImageFilter">
-							<option value="all">全部</option>
-							<option value="noImage">无图</option>
-							<option value="hasImage">有图</option>
-						</select>
-					</label>
+					<select id="recordImageFilter" aria-label="图片筛选">
+						<option value="all">全部</option>
+						<option value="noImage">无图</option>
+						<option value="hasImage">有图</option>
+					</select>
 					<button id="btnClearRecordFilters" type="button">清除筛选</button>
 				</div>
+				<label class="record-select-all"><input id="recordSelectAll" type="checkbox"><span id="recordSelectAllLabel">全选当前列表</span></label>
 			</div>
 			<div id="recordList" class="record-list">
 				<div class="hint" style="padding:10px">加载 SDK 后会读取 workspace scenes.json；也可从本地 preset 文件回退加载。</div>
@@ -286,6 +299,7 @@
 								<button id="btnDownloadIndex" type="button">下载 scenes.json</button>
 							</div>
 							<label class="toggle-line"><input id="removeHistoryUrlsOnExport" type="checkbox">复制 / 下载时移除 historyUrls</label>
+							<label class="toggle-line"><input id="removePromptOnExport" type="checkbox" checked>复制 / 下载时移除 prompt</label>
 							<div id="saveStatus" class="status">保存目标：pet-story/presets/scenes.json，格式保持与当前 scenes.json 一致。</div>
 						</section>
 					</div>
@@ -293,6 +307,7 @@
 					<div class="stack">
 						<section class="section">
 							<h2>Result</h2>
+							<div id="scenePreviewTitle" class="scene-preview-title">&nbsp;</div>
 							<div id="scenePreview" class="scene-preview"><div class="empty-preview">尚未生成背景图</div></div>
 							<div id="currentImageSize" class="image-size-label current-image-size">&nbsp;</div>
 							<label>生成图片 URL
@@ -330,7 +345,7 @@
 		const SCENE_CDN_DEFAULT_DOMAIN = 'https://cdn.keepwork.com';
 		const SCENE_CDN_DEFAULT_UPLOAD_HOST = 'https://up-z2.qiniup.com';
 		const SCENE_CDN_DEFAULT_IMAGE_FORMAT = 'webp';
-		const SCENE_CDN_DEFAULT_COMPRESSION_RATIO = 12;
+		const SCENE_CDN_DEFAULT_COMPRESSION_RATIO = 70;
 		let DEFAULT_SCENE_TAGS = ['indoor', 'outdoor', 'land', 'sky', 'ocean', 'playground', 'bathroom', 'living room', 'shop', 'school', 'spring', 'winter', 'seaside', 'haqi', 'townhall', 'forest', 'sand', 'hospital'];
 		let PARTICLE_EFFECTS = ['sparkle', 'snow', 'rain', 'mist', 'bubbles', 'petals', 'embers'];
 		const BG_MUSIC_LABELS = { selector: '选择', square: '广场', forest: '森林', farm: '农场', mountain: '山地', park: '公园', playground: '游乐场', ship: '飞船', haqiLoop: '哈奇循环' };
@@ -339,7 +354,7 @@
 			室内: 'indoor', 户外: 'outdoor', 室外: 'outdoor', 陆地: 'land', 天空: 'sky', 海洋: 'ocean', 操场: 'playground', 浴室: 'bathroom', 客厅: 'living room', 商店: 'shop', 学校: 'school', 春天: 'spring', 冬天: 'winter', 海边: 'seaside', 哈奇: 'haqi', 镇大厅: 'townhall', 森林: 'forest', 沙滩: 'sand', 沙子: 'sand', 医院: 'hospital', 家: 'living room', 小店: 'shop', 水: 'ocean', 雪: 'winter'
 		};
 		const $ = (id) => document.getElementById(id);
-		const state = { sdk: null, referenceDataUrls: [], scenes: [], selectedId: '', indexMeta: null, lastLLMModel: '', lastChatModel: '', lastImageSize: '', currentHistoryUrls: [], imageSizeCache: new Map(), imageSizeRequests: new Map(), recordThumbObserver: null, workspaceViewer: null, storyConfig: null, storyConfigModule: null, soundManager: null, particleEffectsModule: null, generationPromptsPromise: null, batchAbortRequested: false, generateAll: { running: false, pauseRequested: false, completed: 0, total: 0, activeId: '' } };
+		const state = { sdk: null, referenceDataUrls: [], scenes: [], selectedId: '', selectedSceneIds: new Set(), indexMeta: null, lastLLMModel: '', lastChatModel: '', lastImageSize: '', currentHistoryUrls: [], imageSizeCache: new Map(), imageSizeRequests: new Map(), imageDimensionCache: new Map(), imageDimensionRequests: new Map(), recordThumbObserver: null, workspaceViewer: null, storyConfig: null, storyConfigModule: null, soundManager: null, particleEffectsModule: null, generationPromptsPromise: null, batchAbortRequested: false, generateAll: { running: false, pauseRequested: false, completed: 0, total: 0, activeId: '' } };
 
 		function loadGenerationPrompts() {
 			state.generationPromptsPromise ||= importRuntimeModule('../js/generationPrompts.js');
@@ -428,6 +443,16 @@
 			return `${kb >= 100 ? Math.round(kb) : kb.toFixed(1)} KB`;
 		}
 
+		function formatImageDimensions(dimensions) {
+			const width = Number(dimensions?.width);
+			const height = Number(dimensions?.height);
+			return width > 0 && height > 0 ? `${Math.round(width)}x${Math.round(height)}` : '';
+		}
+
+		function formatImageInfo(bytes, dimensions) {
+			return [formatImageKilobytes(bytes), formatImageDimensions(dimensions)].filter(Boolean).join(' · ');
+		}
+
 		function getDataUriByteSize(url) {
 			const text = String(url || '');
 			if (!text.startsWith('data:')) return null;
@@ -466,6 +491,32 @@
 			return size;
 		}
 
+		async function getImageDimensions(url) {
+			const key = String(url || '').trim();
+			if (!key) return null;
+			if (state.imageDimensionCache.has(key)) return state.imageDimensionCache.get(key);
+			if (state.imageDimensionRequests.has(key)) return state.imageDimensionRequests.get(key);
+			const request = new Promise(resolve => {
+				const img = new Image();
+				img.onload = () => resolve({ width: img.naturalWidth || img.width || 0, height: img.naturalHeight || img.height || 0 });
+				img.onerror = () => resolve(null);
+				img.src = key;
+			});
+			state.imageDimensionRequests.set(key, request);
+			const dimensions = await request;
+			state.imageDimensionRequests.delete(key);
+			state.imageDimensionCache.set(key, dimensions);
+			return dimensions;
+		}
+
+		async function getImageInfo(url) {
+			const [sizeResult, dimensionResult] = await Promise.allSettled([getImageByteSize(url), getImageDimensions(url)]);
+			return {
+				bytes: sizeResult.status === 'fulfilled' ? sizeResult.value : null,
+				dimensions: dimensionResult.status === 'fulfilled' ? dimensionResult.value : null,
+			};
+		}
+
 		function setImageSizeLabel(url, text) {
 			document.querySelectorAll('[data-image-size-url]').forEach(el => {
 				if (el.dataset.imageSizeUrl === url) el.textContent = text || '大小未知';
@@ -475,9 +526,10 @@
 		function refreshImageSizeLabels(urls) {
 			normalizeHistoryUrls(urls).forEach(url => {
 				const cached = state.imageSizeCache.has(url) ? state.imageSizeCache.get(url) : undefined;
-				setImageSizeLabel(url, cached === undefined ? '计算中...' : formatImageKilobytes(cached));
-				if (cached !== undefined) return;
-				getImageByteSize(url).then(size => setImageSizeLabel(url, formatImageKilobytes(size))).catch(() => setImageSizeLabel(url, '大小未知'));
+				const cachedDimensions = state.imageDimensionCache.has(url) ? state.imageDimensionCache.get(url) : undefined;
+				setImageSizeLabel(url, cached === undefined || cachedDimensions === undefined ? '计算中...' : formatImageInfo(cached, cachedDimensions));
+				if (cached !== undefined && cachedDimensions !== undefined) return;
+				getImageInfo(url).then(info => setImageSizeLabel(url, formatImageInfo(info.bytes, info.dimensions))).catch(() => setImageSizeLabel(url, '大小未知'));
 			});
 		}
 
@@ -590,14 +642,33 @@
 			return result;
 		}
 
+		function removePromptFromScene(scene) {
+			const result = { ...scene };
+			delete result.prompt;
+			return result;
+		}
+
+		function applySceneExportOptions(scene) {
+			let result = { ...scene };
+			if (shouldRemoveHistoryUrlsOnExport()) result = removeHistoryUrlsFromScene(result);
+			if (shouldRemovePromptOnExport()) result = removePromptFromScene(result);
+			return result;
+		}
+
 		function shouldRemoveHistoryUrlsOnExport() {
 			if ($('removeHistoryUrlsOnIndexExport')) return !!$('removeHistoryUrlsOnIndexExport').checked;
 			return !!$('removeHistoryUrlsOnExport')?.checked;
 		}
 
+		function shouldRemovePromptOnExport() {
+			if ($('removePromptOnIndexExport')) return !!$('removePromptOnIndexExport').checked;
+			return !!$('removePromptOnExport')?.checked;
+		}
+
 		function loadExportSettings() {
 			if (!$('removeHistoryUrlsOnExport')) return;
 			$('removeHistoryUrlsOnExport').checked = true;
+			if ($('removePromptOnExport')) $('removePromptOnExport').checked = true;
 		}
 
 		function stringifyExportJson(value) {
@@ -631,7 +702,7 @@ ${currentIndent}}`;
 			let scene;
 			try { scene = compactScene(JSON.parse($('sceneJson').value || '{}')); }
 			catch (_) { scene = compactScene(buildSceneConfig()); }
-			return stringifyExportJson(shouldRemoveHistoryUrlsOnExport() ? removeHistoryUrlsFromScene(scene) : scene);
+			return stringifyExportJson(applySceneExportOptions(scene));
 		}
 
 		function defaultScene() {
@@ -835,6 +906,54 @@ ${currentIndent}}`;
 			return { width: width || 1024, height: height || 1024 };
 		}
 
+		function getProviderAspectRatio(width, height) {
+			const ratio = (Number(width) || 0) / (Number(height) || 0);
+			if (!Number.isFinite(ratio) || ratio <= 0) return '';
+			const supported = ['1:1', '1:4', '1:8', '2:3', '3:2', '3:4', '4:1', '4:3', '4:5', '5:4', '8:1', '9:16', '16:9', '21:9'];
+			let best = null;
+			for (const value of supported) {
+				const [w, h] = value.split(':').map(Number);
+				const candidateRatio = w / h;
+				const distance = Math.abs(Math.log(ratio / candidateRatio));
+				if (!best || distance < best.distance) best = { value, distance };
+			}
+			return best && best.distance <= 0.12 ? best.value : '';
+		}
+
+		function buildImageGenerationOptions(model, width, height) {
+			const opts = { model, width, height, stream: true };
+			const aspectRatio = getProviderAspectRatio(width, height);
+			if (aspectRatio) opts.aspectRatio = aspectRatio;
+			return opts;
+		}
+
+		function enableSceneImageStreaming(opts, baseStatus) {
+			if (!opts) return opts;
+			opts.stream = true;
+			let streamedText = '';
+			let streamedReasoning = '';
+			const render = (line = '正在接收流式响应...') => {
+				const parts = [baseStatus, 'stream=true', line];
+				if (streamedReasoning) parts.push(`reasoning: ${streamedReasoning.slice(-360)}`);
+				if (streamedText) parts.push(`text: ${streamedText.slice(-360)}`);
+				setStatus($('runStatus'), parts.filter(Boolean).join('\n'), '');
+			};
+			opts.onMessage = (fullText, _delta, _raw, meta = {}) => {
+				streamedText = String(fullText || '').trim();
+				streamedReasoning = String(meta.reasoning || streamedReasoning || '').trim();
+				render('正在接收模型文字响应...');
+			};
+			opts.onReasoning = (fullReasoning) => {
+				streamedReasoning = String(fullReasoning || '').trim();
+				render('正在接收模型推理响应...');
+			};
+			opts.onImage = (url) => {
+				const label = String(url || '').startsWith('data:') ? 'data URI' : String(url || '').slice(0, 160);
+				render(`已收到图片数据：${label}`);
+			};
+			return opts;
+		}
+
 		function formatBytes(bytes) {
 			if (!Number.isFinite(bytes) || bytes < 0) return '-';
 			if (bytes < 1024) return `${bytes} B`;
@@ -932,10 +1051,10 @@ ${currentIndent}}`;
 						</label>
 						<label class="quality-control">质量 / 接近原图 (%)
 							<input id="sceneCdnQualityRatio" type="range" min="5" max="100" step="1">
-							<div class="range-scale"><span>更小文件</span><span id="sceneCdnQualityValue" class="range-value">88%</span><span>接近原图</span></div>
+							<div class="range-scale"><span>更小文件</span><span id="sceneCdnQualityValue" class="range-value">30%</span><span>接近原图</span></div>
 						</label>
 					</div>
-					<div class="hint">默认 WebP，质量 88%，压缩 12%。滑块越靠左文件越小，越靠右越接近原图。</div>
+					<div class="hint">默认 WebP，质量 30%，压缩 70%。滑块越靠左文件越小，越靠右越接近原图。</div>
 					<div class="toolbar"><button id="btnDialogPickSceneCdnConfig" type="button">选择 qiniu.yaml 文件</button></div>
 					<textarea id="sceneCdnConfigText" class="prompt-box" spellcheck="false" placeholder="accessKey: xxx&#10;secretKey: xxx&#10;bucketName: haqi&#10;publicDomain: https://cdn.keepwork.com&#10;uploadHost: https://up-z2.qiniup.com"></textarea>
 					<div class="toolbar" style="justify-content:flex-end"><button id="btnCancelSceneCdnConfig" type="button">取消</button><button id="btnApplySceneCdnConfig" class="primary" type="button">确认</button></div>
@@ -1084,6 +1203,7 @@ ${currentIndent}}`;
 			const compressed = await compressSceneImageForCdn(url, options);
 			const uploaded = await uploadBlobToSceneCdn(compressed.blob, getSceneCdnFileNameForSceneId(sceneId || $('sceneId')?.value || state.selectedId, compressed.extension));
 			state.imageSizeCache.set(uploaded.url, compressed.blob.size);
+			state.imageDimensionCache.set(uploaded.url, { width: compressed.width, height: compressed.height });
 			return { ...uploaded, ...compressed };
 		}
 
@@ -1106,30 +1226,56 @@ ${currentIndent}}`;
 			return state.storyConfig?.defaultSceneImageSize || `${state.storyConfig?.imageWidth || 1024}x${state.storyConfig?.imageHeight || 1024}`;
 		}
 
+		function normalizeRememberedImageSizeValue(value) {
+			const normalized = String(value || '').trim();
+			return ({
+				'1792x1024': '1792x1008',
+				'1344x768': '1344x756',
+				'1536x768': '1792x768',
+			})[normalized] || normalized;
+		}
+
 		function renderImageSizeOptions(selected = $('imageSize')?.value || '') {
 			const select = $('imageSize');
 			if (!select) return;
-			const sizes = getConfiguredImageSizes();
+			const remembered = normalizeRememberedImageSizeValue(state.lastImageSize || selected || '');
+			if (remembered && state.lastImageSize !== remembered) state.lastImageSize = remembered;
+			const sizes = [...getConfiguredImageSizes()];
+			if (remembered && !sizes.some(option => option.value === remembered)) {
+				sizes.push(normalizeImageSizeOption({ value: remembered, label: `${remembered} 上次选择` }));
+			}
 			const defaultValue = getDefaultImageSizeValue();
-			const remembered = state.lastImageSize || selected || defaultValue;
 			const value = remembered && sizes.some(option => option.value === remembered) ? remembered : defaultValue;
 			select.innerHTML = sizes.map(option => `<option value="${escapeHtml(option.value)}">${escapeHtml(option.label)}</option>`).join('');
 			select.value = sizes.some(option => option.value === value) ? value : (sizes[0]?.value || '1024x1024');
 			state.lastImageSize = select.value || state.lastImageSize || defaultValue;
 		}
 
-		function getImageAspectRatio() {
+		function getImageAspectRatio(scene = null) {
+			const imageUrl = String(scene?.imageUrl || '').trim();
+			const dimensions = imageUrl && state.imageDimensionCache.has(imageUrl) ? state.imageDimensionCache.get(imageUrl) : null;
+			const imageWidth = Number(dimensions?.width);
+			const imageHeight = Number(dimensions?.height);
+			if (imageWidth > 0 && imageHeight > 0) return { width: imageWidth, height: imageHeight, ratio: imageWidth / imageHeight, source: 'image' };
 			const { width, height } = getImageSize();
-			return { width, height, ratio: width / height };
+			return { width, height, ratio: width / height, source: 'selected' };
 		}
 
-		function applyPreviewAspectRatio(el, large = false) {
+		function applyPreviewAspectRatio(el, large = false, scene = null) {
 			if (!el) return;
-			const { width, height, ratio } = getImageAspectRatio();
+			const imageUrl = String(scene?.imageUrl || '').trim();
+			if (imageUrl) el.dataset.previewImageUrl = imageUrl;
+			else delete el.dataset.previewImageUrl;
+			const { width, height, ratio, source } = getImageAspectRatio(scene);
 			const safeWidth = width || 1024;
 			const safeHeight = height || 1024;
 			const safeRatio = ratio || 1;
 			el.style.setProperty('--preview-aspect-ratio', `${safeWidth} / ${safeHeight}`);
+			if (imageUrl && source !== 'image') {
+				getImageDimensions(imageUrl).then(() => {
+					if (el.isConnected && el.dataset.previewImageUrl === imageUrl) applyPreviewAspectRatio(el, large, scene);
+				}).catch(() => {});
+			}
 			if (large) {
 				el.style.setProperty('--large-preview-width', `${Math.min(760, Math.max(360, Math.round(620 * Math.min(safeRatio, 1.35))))}px`);
 				el.style.setProperty('--large-preview-width-mobile', `${Math.min(420, Math.max(260, Math.round(420 * Math.min(safeRatio, 1.2))))}px`);
@@ -1137,6 +1283,16 @@ ${currentIndent}}`;
 				el.style.setProperty('--preview-width', `${Math.min(260, Math.max(160, Math.round(220 * Math.min(safeRatio, 1.18))))}px`);
 				el.style.setProperty('--preview-width-mobile', `${Math.min(220, Math.max(150, Math.round(180 * Math.min(safeRatio, 1.18))))}px`);
 			}
+			if (el.id === 'scenePreview') syncPreviewTitleWidth(el, $('scenePreviewTitle'), false);
+			if (el.id === 'largeScenePreview') syncPreviewTitleWidth(el, $('largeScenePreviewTitle'), true);
+		}
+
+		function syncPreviewTitleWidth(previewEl, titleEl, large = false) {
+			if (!previewEl || !titleEl) return;
+			const propertyName = large ? '--large-preview-title-width' : '--preview-title-width';
+			const previewPropertyName = large ? '--large-preview-width' : '--preview-width';
+			const width = previewEl.style.getPropertyValue(previewPropertyName).trim();
+			if (width) titleEl.style.setProperty(propertyName, width);
 		}
 
 		function bgMusicLabel(value) {
@@ -1233,6 +1389,8 @@ ${currentIndent}}`;
 			} catch (_) {}
 			return [
 				'生成一个卡通风格的2D游戏场景背景图，摄影机在正常第一人称视角往下微微俯视，只要场景背景，不要角色，不要文字，不要水印。',
+				'严格禁止黑边，画面内容必须铺满整张图片。',
+				'用途：这张图相当于是 2D 横版滚动游戏的背景图，画面需要有横向延展感和清晰的前景、中景、远景层次。',
 				`场景描述：${description}`,
 				`场景标签：${normalizeSceneTags(tags).join(', ') || 'haqi, spring, outdoor'}`,
 				referenceCount ? `参考图数量：${referenceCount}。请提取构图、颜色和材质作为参考，不要复制文字或人物。` : '',
@@ -1286,10 +1444,70 @@ ${currentIndent}}`;
 			return state.scenes.filter(scene => !String(scene.imageUrl || '').trim());
 		}
 
+		function selectMissingImageScenes(records = state.scenes) {
+			state.selectedSceneIds = new Set(records.filter(scene => !String(scene.imageUrl || '').trim()).map(scene => scene.id));
+		}
+
+		function pruneSelectedSceneIds() {
+			const validIds = new Set(state.scenes.map(scene => scene.id));
+			for (const id of state.selectedSceneIds) {
+				if (!validIds.has(id)) state.selectedSceneIds.delete(id);
+			}
+		}
+
+		function getCheckedScenes() {
+			pruneSelectedSceneIds();
+			return state.scenes.filter(scene => state.selectedSceneIds.has(scene.id));
+		}
+
+		function getGenerateAllTargets() {
+			const checkedScenes = getCheckedScenes();
+			return { mode: 'selected', scenes: checkedScenes };
+		}
+
+		function getFilteredRecordList() {
+			const query = $('recordSearch').value.trim().toLowerCase();
+			const selectedTags = getSelectedRecordTags();
+			const imageFilter = $('recordImageFilter')?.value || 'all';
+			const filteredRecords = state.scenes.filter(scene => matchesRecordFilters(scene, query, selectedTags, imageFilter));
+			const selectedScene = state.selectedId ? state.scenes.find(scene => scene.id === state.selectedId) : null;
+			const selectedInFilteredRecords = !!selectedScene && filteredRecords.some(scene => scene.id === selectedScene.id);
+			return selectedScene && !selectedInFilteredRecords ? [selectedScene, ...filteredRecords] : filteredRecords;
+		}
+
+		function selectMissingVisibleRecords() {
+			selectMissingImageScenes(getFilteredRecordList());
+		}
+
+		function getRenderedRecordIds() {
+			return [...($('recordList')?.querySelectorAll('[data-select-id]') || [])].map(input => input.dataset.selectId).filter(Boolean);
+		}
+
+		function updateRecordSelectAllState() {
+			const checkbox = $('recordSelectAll');
+			if (!checkbox) return;
+			const ids = getRenderedRecordIds();
+			const selectedCount = ids.filter(id => state.selectedSceneIds.has(id)).length;
+			checkbox.disabled = !ids.length;
+			checkbox.checked = !!ids.length && selectedCount === ids.length;
+			checkbox.indeterminate = selectedCount > 0 && selectedCount < ids.length;
+			if ($('recordSelectAllLabel')) $('recordSelectAllLabel').textContent = checkbox.checked ? '全不选当前列表' : '全选当前列表';
+		}
+
+		function setRenderedRecordSelection(checked) {
+			const ids = getRenderedRecordIds();
+			ids.forEach(id => {
+				if (checked) state.selectedSceneIds.add(id);
+				else state.selectedSceneIds.delete(id);
+			});
+			renderRecordList();
+		}
+
 		function updateGenerateAllButton() {
 			const button = $('btnGenerateAllMissing');
 			if (!button) return;
-			const missingCount = getMissingImageScenes().length;
+			const targetInfo = getGenerateAllTargets();
+			const targetCount = targetInfo.scenes.length;
 			const progress = state.generateAll || {};
 			if (progress.running) {
 				const current = Math.min(progress.total || 0, (progress.completed || 0) + (progress.activeId ? 1 : 0));
@@ -1298,8 +1516,8 @@ ${currentIndent}}`;
 				button.classList.toggle('danger', !!progress.pauseRequested);
 				return;
 			}
-			button.textContent = `全部生成(${missingCount})`;
-			button.disabled = missingCount <= 0;
+			button.textContent = `生成选中(${targetCount})`;
+			button.disabled = targetCount <= 0;
 			button.classList.toggle('danger', false);
 		}
 
@@ -1320,7 +1538,7 @@ ${currentIndent}}`;
 
 		function scenePreviewHtml(scene) {
 			const image = scene.imageUrl ? `<img alt="scene background" src="${escapeHtml(scene.imageUrl)}">` : '<div class="empty-preview">尚未生成背景图</div>';
-			return `${image}${renderParticles(scene)}${sceneMusicToggleHtml(scene)}<div class="scene-preview-title">${escapeHtml(scene.title || scene.id)}</div>`;
+			return `${image}${renderParticles(scene)}${sceneMusicToggleHtml(scene)}`;
 		}
 
 		function scenePreviewBackground(scene) {
@@ -1329,7 +1547,9 @@ ${currentIndent}}`;
 		}
 
 		function renderPreview(scene = buildSceneConfig()) {
-			applyPreviewAspectRatio($('scenePreview'));
+			applyPreviewAspectRatio($('scenePreview'), false, scene);
+			syncPreviewTitleWidth($('scenePreview'), $('scenePreviewTitle'));
+			if ($('scenePreviewTitle')) $('scenePreviewTitle').textContent = scene.title || scene.id || '\u00a0';
 			$('scenePreview').style.background = scenePreviewBackground(scene);
 			$('scenePreview').innerHTML = scenePreviewHtml(scene);
 			mountParticleEffects($('scenePreview'));
@@ -1367,6 +1587,9 @@ ${currentIndent}}`;
 			const largePreview = $('largeScenePreview');
 			if (largePreview) {
 				const scene = compactScene(buildSceneConfig());
+				applyPreviewAspectRatio(largePreview, true, scene);
+				syncPreviewTitleWidth(largePreview, $('largeScenePreviewTitle'), true);
+				if ($('largeScenePreviewTitle')) $('largeScenePreviewTitle').textContent = scene.title || scene.id || '\u00a0';
 				largePreview.innerHTML = scenePreviewHtml(scene);
 				mountParticleEffects(largePreview);
 				bindPreviewMusicToggle(largePreview);
@@ -1487,21 +1710,20 @@ ${currentIndent}}`;
 
 		function renderRecordList() {
 			renderRecordTagFilterOptions();
-			const query = $('recordSearch').value.trim().toLowerCase();
-			const selectedTags = getSelectedRecordTags();
-			const imageFilter = $('recordImageFilter')?.value || 'all';
-			const filteredRecords = state.scenes.filter(scene => matchesRecordFilters(scene, query, selectedTags, imageFilter));
-			const selectedScene = state.selectedId ? state.scenes.find(scene => scene.id === state.selectedId) : null;
-			const selectedInFilteredRecords = !!selectedScene && filteredRecords.some(scene => scene.id === selectedScene.id);
-			const records = selectedScene && !selectedInFilteredRecords ? [selectedScene, ...filteredRecords] : filteredRecords;
+			pruneSelectedSceneIds();
+			const records = getFilteredRecordList();
 			$('recordList').innerHTML = records.length ? records.map(scene => {
 				const active = scene.id === state.selectedId ? ' active' : '';
+				const checked = state.selectedSceneIds.has(scene.id);
+				const checkedClass = checked ? ' checked' : '';
+				const checkedAttr = checked ? ' checked' : '';
 				const color = scene.color || '#bae6fd';
 				const thumb = scene.imageUrl
 					? `<span class="record-thumb-image" data-record-thumb-url="${escapeHtml(scene.imageUrl)}" style="background-color:${escapeHtml(color)}"></span>`
 					: `<span class="record-thumb-image" style="background-color:${escapeHtml(color)}"></span>`;
 				const audioBadge = scene.bgMusic ? `<span class="record-audio-badge" title="${escapeHtml(bgMusicLabel(scene.bgMusic))}" aria-label="有背景音乐">♫</span>` : '';
-				return `<div class="record-item${active}" data-id="${escapeHtml(scene.id)}">
+				return `<div class="record-item${active}${checkedClass}" data-id="${escapeHtml(scene.id)}">
+					<label class="record-select" title="选择后由全部生成重新生成"><input type="checkbox" data-select-id="${escapeHtml(scene.id)}" aria-label="选择 ${escapeHtml(scene.title || scene.id)}"${checkedAttr}></label>
 					<span class="record-thumb">${thumb}${audioBadge}</span>
 					<button type="button" class="record-main" data-open-id="${escapeHtml(scene.id)}"><span class="record-title">${escapeHtml(scene.title || scene.id)}</span><span class="record-meta">${escapeHtml(scene.tags.join(', ') || scene.id)}</span></button>
 					<span class="record-actions"><button type="button" data-copy-id="${escapeHtml(scene.id)}" title="复制">复制</button><button type="button" class="danger icon-button" data-delete-id="${escapeHtml(scene.id)}" title="删除" aria-label="删除"><svg viewBox="0 0 24 24" fill="none" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M3 6h18"></path><path d="M8 6V4h8v2"></path><path d="M19 6l-1 14H6L5 6"></path><path d="M10 11v5"></path><path d="M14 11v5"></path></svg></button></span>
@@ -1516,12 +1738,28 @@ ${currentIndent}}`;
 			$('recordList').querySelectorAll('[data-delete-id]').forEach(btn => {
 				btn.onclick = () => deleteRecord(btn.dataset.deleteId);
 			});
+			$('recordList').querySelectorAll('[data-select-id]').forEach(input => {
+				input.onchange = () => {
+					const id = input.dataset.selectId;
+					if (input.checked) state.selectedSceneIds.add(id);
+					else state.selectedSceneIds.delete(id);
+					input.closest('.record-item')?.classList.toggle('checked', input.checked);
+					updateRecordSelectAllState();
+					updateGenerateAllButton();
+				};
+			});
 			observeRecordThumbs();
 			requestAnimationFrame(() => {
 				$('recordList')?.querySelector('.record-item.active')?.scrollIntoView({ block: 'nearest' });
 			});
 			$('recordCount').textContent = records.length === state.scenes.length ? String(state.scenes.length) : `${records.length}/${state.scenes.length}`;
+			updateRecordSelectAllState();
 			updateGenerateAllButton();
+		}
+
+		function handleRecordFilterChange() {
+			selectMissingVisibleRecords();
+			renderRecordList();
 		}
 
 		function selectRecord(id) {
@@ -1562,6 +1800,7 @@ ${currentIndent}}`;
 			if (!scene) return;
 			if (!window.confirm(`删除场景 ${scene.title || scene.id}？\n删除后需点击“保存场景”才会保存到 workspace。`)) return;
 			state.scenes = state.scenes.filter(item => item.id !== id);
+			state.selectedSceneIds.delete(id);
 			if (state.selectedId === id) {
 				state.selectedId = '';
 				if (state.scenes.length) applySceneToForm(state.scenes[0]);
@@ -1730,6 +1969,7 @@ ${currentIndent}}`;
 			state.lastChatModel = String(data?.lastChatModel || localSettings.lastChatModel || readBatchSettings().lastChatModel || state.lastChatModel || '').trim();
 			state.lastImageSize = String(data?.lastImageSize || data?.lastSceneImageSize || data?.imageSize || localSettings.lastImageSize || state.lastImageSize || '').trim();
 			state.scenes = (Array.isArray(data?.scenes) ? data.scenes : []).map(normalizeScene);
+			selectMissingImageScenes();
 			renderImageSizeOptions(state.lastImageSize || $('imageSize').value);
 			await populateModelDropdown();
 			saveLocalGenerationSettings();
@@ -1748,10 +1988,12 @@ ${currentIndent}}`;
 			const prompt = await buildSceneImagePrompt();
 			const references = getReferenceImages();
 			const { width, height } = getImageSize();
-			const opts = { model, width, height };
+			const opts = buildImageGenerationOptions(model, width, height);
 			if (!$('uploadResultToKeepwork').checked) opts.uploadResultToKeepwork = false;
 			if (references.length) opts.images = references.map(url => ({ url, role: 'reference' }));
-			setStatus($('runStatus'), `正在调用 genImage...\nmodel=${model}，size=${width}x${height}，refs=${references.length}`, '');
+			const statusText = `正在调用 genImage...\nmodel=${model}，size=${width}x${height}，refs=${references.length}`;
+			enableSceneImageStreaming(opts, statusText);
+			setStatus($('runStatus'), `${statusText}\nstream=true`, '');
 			$('btnGenerate').disabled = true;
 			try {
 				const generatedUrl = await sdk.aiGenerators.genImage(prompt, opts);
@@ -2070,11 +2312,12 @@ ${currentIndent}}`;
 			const targetId = targetScene.id;
 			const references = getReferenceImages();
 			const { width, height } = getImageSize();
-			const opts = { model, width, height };
+			const opts = buildImageGenerationOptions(model, width, height);
 			if (!$('uploadResultToKeepwork').checked) opts.uploadResultToKeepwork = false;
 			if (references.length) opts.images = references.map(url => ({ url, role: 'reference' }));
 			const prompt = await buildSceneImagePrompt(targetScene.prompt, targetScene.tags, references.length, targetScene.title);
 			onBeforeGenerate?.(targetId);
+			enableSceneImageStreaming(opts, `正在生成 ${targetId}\nmodel=${model}，size=${width}x${height}，refs=${references.length}`);
 			const generatedUrl = await sdk.aiGenerators.genImage(prompt, opts);
 			if (!generatedUrl) throw new Error('genImage 未返回图片 URL');
 			let finalScene = compactScene({ ...targetScene, imageUrl: generatedUrl, historyUrls: normalizeHistoryUrls(targetScene.historyUrls || []) });
@@ -2087,6 +2330,21 @@ ${currentIndent}}`;
 			return finalScene;
 		}
 
+		function isNoImageOutputError(error) {
+			const message = String(error?.message || error || '');
+			return /图片生成未返回图片数据|genImage 未返回图片 URL|image_tokens\s*=\s*0|image_tokens["']?\s*:\s*0/i.test(message);
+		}
+
+		async function generateImageForSceneConfigWithBatchRetry(scene, options, progressLabel) {
+			try {
+				return await generateImageForSceneConfig(scene, options);
+			} catch (error) {
+				if (!isNoImageOutputError(error)) throw error;
+				setStatus($('runStatus'), `${progressLabel}\n模型本次正常结束但没有返回图片，正在自动重试 1 次...`, '');
+				return await generateImageForSceneConfig(scene, options);
+			}
+		}
+
 		async function runGenerateAllMissingImages() {
 			if (state.generateAll.running) {
 				state.generateAll.pauseRequested = true;
@@ -2094,30 +2352,35 @@ ${currentIndent}}`;
 				setStatus($('runStatus'), '将在当前图片生成并保存后暂停。', '');
 				return;
 			}
-			const targets = getMissingImageScenes().map(scene => compactScene(scene));
+			const targetInfo = getGenerateAllTargets();
+			const targets = targetInfo.scenes.map(scene => compactScene(scene));
 			if (!targets.length) {
 				updateGenerateAllButton();
-				return setStatus($('runStatus'), '没有未生成图片的场景。', 'ok');
+				return setStatus($('runStatus'), '没有选中的场景。请勾选要生成的场景。', 'ok');
 			}
 			state.generateAll = { running: true, pauseRequested: false, completed: 0, total: targets.length, activeId: '' };
 			updateGenerateAllButton();
 			const cdnEnabled = !!getSceneCdnConfig();
-			setStatus($('runStatus'), `开始全部生成：${targets.length} 个未生成图片的场景。${cdnEnabled ? '检测到 CDN 配置，将自动压缩为 WebP 并上传。' : '未检测到 CDN 配置，将保存模型返回的图片 URL。'}`, '');
+			const targetLabel = '选中场景';
+			const continueLabel = '选中场景';
+			setStatus($('runStatus'), `开始全部生成：${targets.length} 个${targetLabel}。${cdnEnabled ? '检测到 CDN 配置，将自动压缩为 WebP 并上传。' : '未检测到 CDN 配置，将保存模型返回的图片 URL。'}`, '');
 			try {
 				for (const target of targets) {
 					if (state.generateAll.pauseRequested) break;
 					const currentScene = state.scenes.find(scene => scene.id === target.id);
-					if (!currentScene || String(currentScene.imageUrl || '').trim()) continue;
+					if (!currentScene) continue;
 					state.generateAll.activeId = target.id;
 					updateGenerateAllButton();
-					setStatus($('runStatus'), `正在生成 ${target.id} (${state.generateAll.completed + 1}/${state.generateAll.total})...`, '');
-					const generatedScene = await generateImageForSceneConfig(currentScene, {
+					const progressLabel = `正在生成 ${target.id} (${state.generateAll.completed + 1}/${state.generateAll.total})...`;
+					setStatus($('runStatus'), progressLabel, '');
+					const generatedScene = await generateImageForSceneConfigWithBatchRetry(currentScene, {
 						forceCdnUpload: true,
 						forceCdnFormat: 'webp',
 						onBeforeGenerate: (id) => setStatus($('runStatus'), `已记录目标 ID：${id}\n正在生成图片 (${state.generateAll.completed + 1}/${state.generateAll.total})...`, ''),
-					});
+					}, progressLabel);
 					const savedScene = upsertSceneInMemory(generatedScene, { select: false });
-					await saveScenesToIndex(`已保存 ${savedScene.id}，继续查找下一个未生成图片的场景。`);
+					await saveScenesToIndex(`已保存 ${savedScene.id}，继续查找下一个${continueLabel}。`);
+					state.selectedSceneIds.delete(savedScene.id);
 					state.generateAll.completed += 1;
 					state.generateAll.activeId = '';
 					if (state.selectedId === savedScene.id) applySceneToForm(savedScene);
@@ -2381,7 +2644,7 @@ ${currentIndent}}`;
 					updateOutput();
 				};
 			});
-				applyPreviewAspectRatio($('largeScenePreview'), true);
+				applyPreviewAspectRatio($('largeScenePreview'), true, buildSceneConfig());
 			const activeParticles = new Set(parseParticleList($('sceneParticles').value));
 			$('particleButtons').innerHTML = PARTICLE_EFFECTS.map(effect => {
 				const id = getParticleEffectId(effect);
@@ -2406,7 +2669,7 @@ ${currentIndent}}`;
 			updateOutput();
 		}
 
-		function openWorkspaceViewer() {
+		function openWorkspaceViewer(file = '') {
 			if (typeof window.createWorkspaceViewer !== 'function') {
 				setStatus($('saveStatus'), 'WorkspaceViewer 不可用：当前 SDK 未导出 createWorkspaceViewer', 'error');
 				return;
@@ -2415,11 +2678,12 @@ ${currentIndent}}`;
 			const overlay = document.createElement('div');
 			overlay.className = 'workspace-overlay';
 			overlay.id = 'workspaceOverlay';
-			overlay.innerHTML = `<div class="workspace-window" role="dialog" aria-modal="true" aria-label="WorkspaceViewer"><div class="workspace-titlebar"><strong>WorkspaceViewer · ${WORKSPACE}/pet-story/presets</strong><button type="button" id="closeWorkspaceViewer">关闭</button></div><div class="workspace-host" id="workspaceHost"></div></div>`;
+			const titlePath = file || 'pet-story/presets';
+			overlay.innerHTML = `<div class="workspace-window" role="dialog" aria-modal="true" aria-label="WorkspaceViewer"><div class="workspace-titlebar"><strong>WorkspaceViewer · ${WORKSPACE}/${escapeHtml(titlePath)}</strong><button type="button" id="closeWorkspaceViewer">关闭</button></div><div class="workspace-host" id="workspaceHost"></div></div>`;
 			document.body.appendChild(overlay);
 			overlay.addEventListener('click', event => { if (event.target === overlay) closeWorkspaceViewer(); });
 			$('closeWorkspaceViewer').onclick = closeWorkspaceViewer;
-			state.workspaceViewer = window.createWorkspaceViewer({ container: $('workspaceHost'), sdk: state.sdk || window.keepwork, workspace: WORKSPACE, mountFolder: 'pet-story/presets', compact: true, hideUserInfo: true });
+			state.workspaceViewer = window.createWorkspaceViewer({ container: $('workspaceHost'), sdk: state.sdk || window.keepwork, workspace: WORKSPACE, mountFolder: file ? '' : 'pet-story/presets', file, compact: true, hideUserInfo: true });
 		}
 
 		function closeWorkspaceViewer() {
@@ -2430,14 +2694,14 @@ ${currentIndent}}`;
 
 		function getIndexJsonText() {
 			const index = buildIndexObject();
-			if (shouldRemoveHistoryUrlsOnExport()) {
-				index.scenes = (Array.isArray(index.scenes) ? index.scenes : []).map(removeHistoryUrlsFromScene);
-			}
+			index.scenes = (Array.isArray(index.scenes) ? index.scenes : []).map(applySceneExportOptions);
 			return stringifyExportJson(index);
 		}
 
 		function openIndexPreviewDialog() {
 			closeIndexPreviewDialog();
+			const removeHistoryUrls = shouldRemoveHistoryUrlsOnExport();
+			const removePrompt = shouldRemovePromptOnExport();
 			const overlay = document.createElement('div');
 			overlay.className = 'modal-overlay';
 			overlay.id = 'indexPreviewOverlay';
@@ -2446,14 +2710,18 @@ ${currentIndent}}`;
 				<div class="modal-body">
 					<textarea id="indexJson" class="output" spellcheck="false"></textarea>
 					<label class="toggle-line"><input id="removeHistoryUrlsOnIndexExport" type="checkbox" checked>复制 / 下载时移除 historyUrls</label>
+					<label class="toggle-line"><input id="removePromptOnIndexExport" type="checkbox">复制 / 下载时移除 prompt</label>
 					<div class="toolbar"><button id="btnCopyIndexJson" type="button">复制</button><button id="btnReloadFromIndexText" type="button">从预览载入</button><button id="btnDownloadIndexModal" type="button">下载 scenes.json</button></div>
 				</div>
 			</div>`;
 			document.body.appendChild(overlay);
+			$('removeHistoryUrlsOnIndexExport').checked = removeHistoryUrls;
+			$('removePromptOnIndexExport').checked = removePrompt;
 			$('indexJson').value = getIndexJsonText();
 			overlay.addEventListener('click', event => { if (event.target === overlay) closeIndexPreviewDialog(); });
 			$('closeIndexPreview').onclick = closeIndexPreviewDialog;
 			$('removeHistoryUrlsOnIndexExport').onchange = () => { $('indexJson').value = getIndexJsonText(); };
+			$('removePromptOnIndexExport').onchange = () => { $('indexJson').value = getIndexJsonText(); };
 			$('btnCopyIndexJson').onclick = () => copyText($('indexJson').value);
 			$('btnDownloadIndexModal').onclick = () => downloadText('scenes.json', $('indexJson').value);
 			$('btnReloadFromIndexText').onclick = reloadFromIndexPreview;
@@ -2471,9 +2739,11 @@ ${currentIndent}}`;
 			overlay.id = 'enlargePreviewOverlay';
 			overlay.innerHTML = `<div class="modal-window" role="dialog" aria-modal="true" aria-label="Scene Preview" style="width:min(620px,100%);height:min(880px,100%)">
 				<div class="modal-titlebar"><strong>${escapeHtml(scene.title || scene.id)} · Preview</strong><button type="button" id="closeEnlargePreview">关闭</button></div>
-				<div class="modal-body" style="align-items:center;justify-content:center;background:#f8fbff"><div id="largeScenePreview" class="scene-preview large"></div></div>
+				<div class="modal-body" style="align-items:center;justify-content:center;background:#f8fbff"><div id="largeScenePreviewTitle" class="scene-preview-title large">${escapeHtml(scene.title || scene.id || '')}</div><div id="largeScenePreview" class="scene-preview large"></div></div>
 			</div>`;
 			document.body.appendChild(overlay);
+			applyPreviewAspectRatio($('largeScenePreview'), true, scene);
+			syncPreviewTitleWidth($('largeScenePreview'), $('largeScenePreviewTitle'), true);
 			$('largeScenePreview').style.background = scenePreviewBackground(scene);
 			$('largeScenePreview').innerHTML = scenePreviewHtml(scene);
 			mountParticleEffects($('largeScenePreview'));
@@ -2520,8 +2790,8 @@ ${currentIndent}}`;
 		function sizeSceneCdnReviewImage(compressed) {
 			const image = $('sceneCdnReviewImage');
 			if (!image || !compressed) return;
-			image.style.width = `${Math.max(1, Math.round(compressed.width * 0.25))}px`;
-			image.style.height = `${Math.max(1, Math.round(compressed.height * 0.25))}px`;
+			image.style.width = `${Math.max(1, Math.round(compressed.width))}px`;
+			image.style.height = `${Math.max(1, Math.round(compressed.height))}px`;
 		}
 
 		function openSceneCdnCompressedPreviewDialog() {
@@ -2631,6 +2901,7 @@ ${currentIndent}}`;
 				}
 				const uploaded = await uploadBlobToSceneCdn(compressed.blob, getSceneCdnFileName(compressed.extension));
 				state.imageSizeCache.set(uploaded.url, compressed.blob.size);
+				state.imageDimensionCache.set(uploaded.url, { width: compressed.width, height: compressed.height });
 				$('imageUrl').value = uploaded.url;
 				state.currentHistoryUrls = normalizeHistoryUrls([sourceUrl, ...state.currentHistoryUrls]).filter(url => url && url !== uploaded.url);
 				updateOutput();
@@ -2662,7 +2933,7 @@ ${currentIndent}}`;
 						</label>
 						<label class="quality-control">质量 / 接近原图 (%)
 							<input id="reviewSceneCdnQualityRatio" type="range" min="5" max="100" step="1">
-							<div class="range-scale"><span>更小文件</span><span id="reviewSceneCdnQualityValue" class="range-value">88%</span><span>接近原图</span></div>
+							<div class="range-scale"><span>更小文件</span><span id="reviewSceneCdnQualityValue" class="range-value">30%</span><span>接近原图</span></div>
 						</label>
 					</div>
 					<div class="cdn-review-preview-frame"><img id="sceneCdnReviewImage" alt="compressed preview" title="点击查看原始尺寸预览"></div>
@@ -2698,6 +2969,7 @@ ${currentIndent}}`;
 				state.indexMeta = data;
 				state.scenes = (Array.isArray(data.scenes) ? data.scenes : []).map(normalizeScene);
 				state.selectedId = '';
+				selectMissingImageScenes();
 				renderRecordList();
 				if (state.scenes.length) applySceneToForm(state.scenes[0]);
 				else applySceneToForm(defaultScene(), false);
@@ -2713,7 +2985,7 @@ ${currentIndent}}`;
 				await settings.load?.();
 				settings.show({ title: '本地 API Key 设置', fullscreen: true, onSave: async () => { await populateModelDropdown(); setStatus($('saveStatus'), '本地 API Key 设置已保存。', 'ok'); refreshLoginState(); } });
 			};
-			$('btnWorkspace').onclick = openWorkspaceViewer;
+			$('btnWorkspace').onclick = () => openWorkspaceViewer(SCENE_INDEX_PATH);
 			$('btnOpenIndexPreview').onclick = openIndexPreviewDialog;
 			$('btnGenerateAllMissing').onclick = () => runGenerateAllMissingImages().catch(e => setStatus($('runStatus'), e?.message || String(e), 'error'));
 			$('btnNewScene').onclick = openBatchGenerateDialog;
@@ -2731,6 +3003,9 @@ ${currentIndent}}`;
 			$('removeHistoryUrlsOnExport').addEventListener('change', () => {
 				if ($('indexJson')) $('indexJson').value = getIndexJsonText();
 			});
+			$('removePromptOnExport').addEventListener('change', () => {
+				if ($('indexJson')) $('indexJson').value = getIndexJsonText();
+			});
 			$('btnSlug').onclick = titleToId;
 			$('btnUsePromptTags').onclick = () => {
 				const tags = unique([...normalizeSceneTags($('sceneTags').value), ...sceneTagsFromText($('scenePrompt').value)]);
@@ -2738,9 +3013,10 @@ ${currentIndent}}`;
 				renderTagButtons();
 				updateOutput();
 			};
-			$('recordSearch').addEventListener('input', renderRecordList);
-			$('recordImageFilter').addEventListener('change', renderRecordList);
-			$('recordTagFilter').addEventListener('change', renderRecordList);
+			$('recordSearch').addEventListener('input', handleRecordFilterChange);
+			$('recordImageFilter').addEventListener('change', handleRecordFilterChange);
+			$('recordSelectAll').addEventListener('change', () => setRenderedRecordSelection($('recordSelectAll').checked));
+			$('recordTagFilter').addEventListener('change', handleRecordFilterChange);
 			$('recordTagFilterButton').onclick = (event) => {
 				event.preventDefault();
 				event.stopPropagation();
@@ -2754,7 +3030,7 @@ ${currentIndent}}`;
 				[...$('recordTagFilter').options].forEach(option => { option.selected = false; });
 				setRecordTagFilterOpen(false);
 				updateRecordTagFilterLabel();
-				renderRecordList();
+				handleRecordFilterChange();
 			};
 			$('referenceUrls').addEventListener('input', renderReferencePreview);
 			$('referenceSection').addEventListener('paste', event => handleReferencePaste(event));
