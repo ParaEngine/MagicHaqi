@@ -1,4 +1,4 @@
-import { CONFIG, SHOP_ITEMS } from './config.js';
+import { CONFIG, getShopItemsByType } from './config.js';
 import { dnaDietPreference } from './dna.js';
 import { escapeHtml, randInt, showToast } from './utils.js';
 import { eatFood, playPetClickFeedback, playPetHappy, sayOnPet, scanAndMount } from './pet.js';
@@ -19,7 +19,9 @@ const FOOD_EAT_MIN_ENERGY = 12;
 const FOOD_EAT_MAX_ENERGY = 30;
 const STORY_FEED_VISIBLE_MS = 3200;
 
-const FOOD_ITEMS = SHOP_ITEMS.filter(item => item?.type === 'food');
+function foodItems() {
+    return getShopItemsByType('food');
+}
 
 function foodEnergyValue(item) {
     const stats = item?.stat || {};
@@ -35,7 +37,7 @@ export function foodEatDurationMs(item) {
 
 function preferredFoodCandidates(pet) {
     const preference = dnaDietPreference(pet?.dna || '');
-    const usable = FOOD_ITEMS.filter(item => !item.hiddenFromShop && !item.unlimited && item.id !== 'food_large_feed');
+    const usable = foodItems().filter(item => !item.hiddenFromShop && !item.unlimited && item.id !== 'food_large_feed');
     if (preference === 'meat') return usable.filter(item => item.foodKind === 'meat');
     if (preference === 'vegetables') return usable.filter(item => item.foodKind === 'vegetables');
     return usable.filter(item => item.foodKind === 'meat' || item.foodKind === 'vegetables' || item.foodKind === 'both');
@@ -43,8 +45,8 @@ function preferredFoodCandidates(pet) {
 
 export function pickRandomPreferredFood(pet) {
     const candidates = preferredFoodCandidates(pet);
-    const fallback = FOOD_ITEMS.filter(item => item.foodKind === 'both' && !item.hiddenFromShop && !item.unlimited);
-    const list = candidates.length ? candidates : fallback.length ? fallback : FOOD_ITEMS;
+    const fallback = foodItems().filter(item => item.foodKind === 'both' && !item.hiddenFromShop && !item.unlimited);
+    const list = candidates.length ? candidates : fallback.length ? fallback : foodItems();
     return list[randInt(0, list.length - 1)] || null;
 }
 

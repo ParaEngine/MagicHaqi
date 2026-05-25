@@ -1,7 +1,7 @@
 // Level 1 — Field：星球表面（陆 / 水 / 空 三大生态）
 
 import { $, $$, escapeHtml, showToast } from './utils.js';
-import { canPlaceItemInArea, CONFIG, DECO_VISUALS, findLargestHouseInLayout, getPlacedItemZOrder, isHouseItem, SHOP_ITEMS } from './config.js';
+import { canPlaceItemInArea, CONFIG, DECO_VISUALS, findLargestHouseInLayout, getPlacedItemZOrder, getShopItemById, isHouseItem, SHOP_ITEMS } from './config.js';
 import { getActivePlanetWeather, isVisitingMode, notify, state, setCurrentField } from './state.js';
 import { getLayout, loadPets, savePetDebounced, saveUserProfileDebounced } from './storage.js';
 import { displayPetName } from './dna.js';
@@ -12,10 +12,11 @@ import SoundManager from './soundManager.js';
 import ParticleEffects, { renderParticleCanvasHtml } from './particleEffects.js';
 import { PARTICLE_EFFECTS, bgMusicLabel, bgMusicOptions, lazySceneBackgroundAttrs, loadScenePresets, rankScenePresets, renderSceneParticles, sceneBackgroundStyle, setupLazySceneBackgrounds } from './view_story_scene_maker.js';
 import { setShopFilter, suppressShopInitialClick } from './view_shop.js';
+import { getTerrainFieldSlots, normalizeTerrainFieldSlotId, resolveTerrainFieldTypeId, terrainFieldTabIconHtml } from './view_terrain_fields.js';
 
 const soundManager = SoundManager.getInstance();
 
-const ITEM_BY_ID = Object.fromEntries(SHOP_ITEMS.map(it => [it.id, it]));
+const ITEM_BY_ID = new Proxy({}, { get: (_, id) => getShopItemById(id) });
 const ITEM_Z_INDEX_BASE = 5;
 let fieldPetsLoadedKey = '';
 const DRAG_PLACE_THRESHOLD = 8;
@@ -85,13 +86,6 @@ let activeFieldBuildCategory = 'houses';
 let fieldScenePresets = [];
 let fieldScenePresetsLoading = null;
 
-const REMOTE_FIELD_DEFS = [
-    { id: 'fire', name: '火山', emoji: '', iconClass: 'field-tab-icon-fire', discoveryId: 'firebird', favoriteTrait: 'dragonLike' },
-    { id: 'ice', name: '冰湖', emoji: '', iconClass: 'field-tab-icon-ice', discoveryId: 'ice', favoriteTrait: 'fishLike' },
-    { id: 'life', name: '神树', emoji: '', iconClass: 'field-tab-icon-life', discoveryId: 'desert', favoriteTrait: 'fruitLike' },
-    { id: 'dark', name: '洞穴', emoji: '', iconClass: 'field-tab-icon-dark', discoveryId: 'shadow', favoriteTrait: 'catLike' },
-];
-
 const FIELD_THEMES = {
     land: {
         className: 'field-map-land',
@@ -156,14 +150,21 @@ const FIELD_THEMES = {
 };
 
 function availableFields() {
-    const discoveries = isVisitingMode()
-        ? (state.visitingMode?.remoteProfile?.remotePlanetDiscoveries || {})
-        : (state.remotePlanetDiscoveries || {});
-    return [
-        ...CONFIG.fields,
-        ...REMOTE_FIELD_DEFS.filter(field => discoveries[field.discoveryId]),
-    ];
+    if (isVisitingMode()) return CONFIG.fields;
+    const slots = getTerrainFieldSlots();
+    return slots.length ? slots.map(slot => {
+        const type = SHOP_FIELD_TYPES[slot.typeId] || CONFIG.fields.find(field => field.id === slot.typeId) || {};
+        return { ...type, id: slot.id, typeId: slot.typeId, name: slot.name, positionLabel: slot.positionLabel };
+    }) : CONFIG.fields;
 }
+
+const SHOP_FIELD_TYPES = Object.fromEntries([
+    ...CONFIG.fields,
+    { id: 'fire', name: '火山', favoriteTrait: 'dragonLike' },
+    { id: 'ice', name: '冰湖', favoriteTrait: 'fishLike' },
+    { id: 'life', name: '神树', favoriteTrait: 'fruitLike' },
+    { id: 'dark', name: '洞穴', favoriteTrait: 'catLike' },
+].map(field => [field.id, field]));
 
 function hashString(value) {
     const str = String(value || 'MagicHaqi');
@@ -214,7 +215,7 @@ function getFieldEffectScale() {
 
 function currentFieldKey() {
     if (isVisitingMode()) return 'visit_field_' + state.currentField;
-    return 'field_' + state.currentField;
+    return 'field_' + normalizeTerrainFieldSlotId(state.currentField);
 }
 
 function activeLayouts() {
@@ -226,6 +227,9 @@ function activeLayout(roomId) {
 }
 
 function activeFieldLayout(fieldId) {
+    const key = 'field_' + normalizeTerrainFieldSlotId(fieldId);
+    const layout = activeLayout(key);
+    if (layout.length || !isVisitingMode()) return layout;
     return activeLayout('field_' + fieldId);
 }
 
@@ -293,7 +297,7 @@ function getFieldItemFontSize(item, placedItem = null) {
 }
 
 function currentFieldPanKey() {
-    return state.currentField || 'land';
+    return normalizeTerrainFieldSlotId(state.currentField);
 }
 
 function metersToFieldPx(value) {
@@ -403,7 +407,8 @@ function centerFieldPet(pet, { animate = false, duration = 520, onComplete = nul
 }
 
 function getPoopsInField(pet, fieldId = state.currentField) {
-    return (pet?.poops || []).filter(p => (p?.field || 'land') === fieldId);
+    const targetFieldId = normalizeTerrainFieldSlotId(fieldId);
+    return (pet?.poops || []).filter(p => normalizeTerrainFieldSlotId(p?.field) === targetFieldId);
 }
 
 function hasTooManyPoops(pet, fieldId = state.currentField) {
@@ -493,8 +498,9 @@ function renderFieldActionTray(pet) {
 }
 
 function renderFieldDecorTray(inv, currentField) {
+    const areaId = currentField.typeId || resolveTerrainFieldTypeId(currentField.id);
     const items = SHOP_ITEMS
-        .filter(it => (it.type === 'furniture' || it.type === 'house') && canPlaceItemInArea(it, currentField.id))
+        .filter(it => (it.type === 'furniture' || it.type === 'house') && canPlaceItemInArea(it, areaId))
         .map(it => ({ ...it, qty: it.unlimited ? Infinity : (inv[it.id] || 0) }))
         .filter(it => it.qty > 0 || it.unlimited);
     const shopButton = `
@@ -533,28 +539,44 @@ function ensureFieldScenePresetsLoaded() {
 
 function fieldSceneSettings() {
     const settings = state.settings || (state.settings = {});
-    return settings.fieldScenes || (settings.fieldScenes = {});
+    const rawScenes = settings.fieldScenes && typeof settings.fieldScenes === 'object' && !Array.isArray(settings.fieldScenes)
+        ? settings.fieldScenes
+        : {};
+    const normalized = {};
+    let changed = rawScenes !== settings.fieldScenes;
+    Object.entries(rawScenes).forEach(([rawKey, config]) => {
+        if (!config || typeof config !== 'object' || Array.isArray(config)) return;
+        const key = normalizeTerrainFieldSlotId(String(rawKey || '').replace(/^field_/, ''));
+        if (!/^[1-7]$/.test(key)) return;
+        normalized[key] = { ...(normalized[key] || {}), ...config };
+        if (key !== rawKey) changed = true;
+    });
+    if (changed) settings.fieldScenes = normalized;
+    else if (!settings.fieldScenes) settings.fieldScenes = normalized;
+    return settings.fieldScenes;
 }
 
 function currentFieldSceneConfig(fieldId = state.currentField) {
-    return fieldSceneSettings()[fieldId] || {};
+    return fieldSceneSettings()[normalizeTerrainFieldSlotId(fieldId)] || {};
 }
 
 function saveCurrentFieldSceneConfig(fieldId, patch) {
     const scenes = fieldSceneSettings();
-    const next = { ...(scenes[fieldId] || {}), ...(patch || {}) };
+    const slotId = normalizeTerrainFieldSlotId(fieldId);
+    const next = { ...(scenes[slotId] || {}), ...(patch || {}) };
     if (next.background && Object.prototype.hasOwnProperty.call(next.background, 'tags')) {
         const { tags, ...background } = next.background;
         next.background = background;
     }
-    scenes[fieldId] = next;
+    scenes[slotId] = next;
     saveUserProfileDebounced();
     notify();
 }
 
 function fieldSceneTag(fieldId) {
-    if (fieldId === 'water') return 'ocean';
-    return fieldId || 'land';
+    const typeId = resolveTerrainFieldTypeId(fieldId);
+    if (typeId === 'water') return 'ocean';
+    return typeId || 'land';
 }
 
 function fieldBackgroundPresets(currentField) {
@@ -656,7 +678,8 @@ function getUserSeedBase() {
 }
 
 function generateFieldMap(fieldId) {
-    const theme = FIELD_THEMES[fieldId] || FIELD_THEMES.land;
+    const typeId = resolveTerrainFieldTypeId(fieldId);
+    const theme = FIELD_THEMES[typeId] || FIELD_THEMES.land;
     const isRemoteLandmark = !!theme.remoteLandmark;
     const rng = makeRng(`${getUserSeedBase()}::${fieldId}`);
     const islands = [];
@@ -733,6 +756,7 @@ function generateFieldMap(fieldId) {
 }
 
 function fieldMapHtml(fieldId) {
+    const typeId = resolveTerrainFieldTypeId(fieldId);
     const custom = isVisitingMode() ? {} : currentFieldSceneConfig(fieldId);
     const customBg = custom.background;
     const map = generateFieldMap(fieldId);
@@ -761,14 +785,14 @@ function fieldMapHtml(fieldId) {
         <div class="field-bg ${map.theme.className}${weatherClass}" style="background:${map.theme.sky}">
             <div class="field-horizon"></div>
             <div class="field-map-path" style="--field-path-color:${map.theme.path}"></div>
-            ${map.landmarks.map((p) => `<div class="field-remote-landmark field-remote-${escapeHtml(fieldId)}" aria-hidden="true" style="left:${pct(p.x)};bottom:${pct(p.y)};transform:translateX(-50%) scale(${p.scale.toFixed(2)});z-index:${p.z}"></div>`).join('')}
+            ${map.landmarks.map((p) => `<div class="field-remote-landmark field-remote-${escapeHtml(typeId)}" aria-hidden="true" style="left:${pct(p.x)};bottom:${pct(p.y)};transform:translateX(-50%) scale(${p.scale.toFixed(2)});z-index:${p.z}"></div>`).join('')}
             <div class="field-terrain-layer">
                 ${map.islands.map((p, idx) => `<span class="field-terrain-patch" style="left:${pct(p.x)};top:${pct(p.y)};width:${pct(p.w)};height:${pct(p.h)};background:${p.color};opacity:${p.opacity.toFixed(2)};transform:translate(-50%,-50%) rotate(${p.rot.toFixed(1)}deg);z-index:${idx % 3}"></span>`).join('')}
             </div>
             <div class="field-prop-layer">
                 ${map.props.map((p) => `<span class="field-map-prop" style="left:${pct(p.x)};top:${pct(p.y)};font-size:${p.size}px;opacity:${p.opacity.toFixed(2)};transform:translate(-50%,-50%) rotate(${p.rot.toFixed(1)}deg);z-index:${p.z}">${p.emoji}</span>`).join('')}
             </div>
-            <div class="field-floater-layer field-viewport-particles">${renderParticleCanvasHtml(custom.particles?.length ? custom.particles : fieldParticleEffects(fieldId), { className: 'field-map-particles', density: 'field', seed: `field-${fieldId}-${(custom.particles || []).join('-')}` })}</div>
+            <div class="field-floater-layer field-viewport-particles">${renderParticleCanvasHtml(custom.particles?.length ? custom.particles : fieldParticleEffects(typeId), { className: 'field-map-particles', density: 'field', seed: `field-${fieldId}-${(custom.particles || []).join('-')}` })}</div>
             ${weatherOverlay}
         </div>
     `;
@@ -1717,7 +1741,7 @@ export const fieldLevel = {
                     </button>
                 `).join('') : fields.map(f => `
                     <button class="btn-secondary dock-tab ${f.id === state.currentField ? 'active' : ''}" data-field="${f.id}">
-                        ${f.iconClass ? `<span class="field-tab-svg-icon ${escapeHtml(f.iconClass)}" aria-hidden="true"></span>` : escapeHtml(f.emoji || '')} ${escapeHtml(f.name)}
+                        ${terrainFieldTabIconHtml(f)} ${escapeHtml(f.name)}
                     </button>
                 `).join('')}
             </div>

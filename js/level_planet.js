@@ -5,7 +5,7 @@
 
 import { $, clamp, coinIconSvg, escapeHtml, formatTime, prompt, randId, showToast } from './utils.js';
 import { endVisitingMode, getActivePlanetBuff, getActivePlanetWeather, isVisitingMode, notify, setCurrentPet, startVisitingMode, state } from './state.js';
-import { addToInventory, getLayout, saveLayout, savePet, savePetDebounced, saveUserProfileDebounced, setCurrentPetPersisted } from './storage.js';
+import { addToInventory, getLayout, loadPet, loadPlanetVisitors, loadRecentFriendPlanets, recordPlanetVisitor, saveLayout, savePet, savePetDebounced, saveRecentFriendPlanetsDebounced, saveUserProfileDebounced, setCurrentPetPersisted } from './storage.js';
 import { clampEnergyToMax, defaultPermanentTrauma, defaultStats, dominantTraits } from './petTick.js';
 import { computePlanetProgress, getPlanetDayNumber } from './planetProgress.js';
 import { decodeDna, displayPetName, dnaRarity, dnaToName, isAdultStage, randomDna, randomDnaForElementalAttribute } from './dna.js';
@@ -17,6 +17,7 @@ import { defaultPostcardText, drawPetPostcardImage, hydratePetPostcardImages, no
 import { friendDropdownLabel, friendId, friendName, friendUsername, loadFriends } from './view_email.js';
 import { playVisitArrival, playVisitDeparture, playVisitReturn } from './visit_animations.js';
 import SoundManager from './soundManager.js';
+import { getTerrainFieldSlots, getTerrainFieldType, TERRAIN_FIELD_SLOT_DEFS } from './view_terrain_fields.js';
 
 const soundManager = SoundManager.getInstance();
 
@@ -34,6 +35,8 @@ const PLANET_MINING_COIN_PER_HOUR = 5;
 const PLANET_MINING_MAX_COINS = 120;
 const PLANET_MINING_HOUR_MS = 60 * 60 * 1000;
 const PLANET_SPACECRAFT_ENABLED = true;
+const PLANET_DECOR_CANVAS_DPR = 2;
+const PLANET_DECOR_CANVAS_PADDING = 0.2;
 const PLANET_EXPRESSIONS = ['normal', 'happy', 'sad', 'dirty', 'hungry', 'sleeping', 'tired'];
 const PLANET_EXPRESSION_ALIASES = {
     idle: 'normal',
@@ -145,7 +148,7 @@ const PLANET_INFRASTRUCTURE = {
     weatherTower: {
         name: '天气塔',
         action: 'weather',
-        x: 32,
+        x: 24,
         y: 23,
         scale: 1,
         buildCost: { coins: 60 },
@@ -155,7 +158,7 @@ const PLANET_INFRASTRUCTURE = {
     spaceport: {
         name: '航天站',
         action: 'visit',
-        x: 72,
+        x: 68,
         y: 30,
         scale: 1,
         buildCost: { coins: 120 },
@@ -165,7 +168,7 @@ const PLANET_INFRASTRUCTURE = {
     ufoPad: {
         name: 'UFO停机坪',
         action: 'ufo',
-        x: 45,
+        x: 41,
         y: 18,
         scale: 1,
         buildCost: { coins: 150 },
@@ -175,8 +178,8 @@ const PLANET_INFRASTRUCTURE = {
     observatory: {
         name: '观星台',
         action: 'astro',
-        x: 28,
-        y: 70,
+        x: 65,
+        y: -3,
         scale: 1,
         buildCost: { coins: 90 },
         upgradeCosts: [{ coins: 140 }, { coins: 210 }],
@@ -210,7 +213,7 @@ function clampStat(pet, key, delta) {
 
 function addPlanetLog(type, text, emoji) {
     const entry = { type, text, emoji, at: Date.now() };
-    state.planetVisitors = [entry, ...(state.planetVisitors || [])].slice(0, 12);
+    recordPlanetVisitor(entry);
 }
 
 function getInfrastructure(buildingId) {
@@ -551,10 +554,11 @@ function recentFriendVisitDestinations() {
         .slice(0, 3);
 }
 
-function rememberFriendPlanetVisit(friend, remotePlanet) {
+async function rememberFriendPlanetVisit(friend, remotePlanet) {
     const username = safeRemoteUsername(remotePlanet?.username || friend?.username || friend?.name);
     const userId = String(friend?.userId || '').trim();
     if (!username && !userId) return;
+    await loadRecentFriendPlanets();
     const record = {
         username,
         userId,
@@ -568,7 +572,7 @@ function rememberFriendPlanetVisit(friend, remotePlanet) {
         return (username && itemUsername === username) || (userId && itemUserId === userId);
     };
     state.recentFriendPlanets = [record, ...(Array.isArray(state.recentFriendPlanets) ? state.recentFriendPlanets : []).filter(item => !sameFriend(item))].slice(0, 3);
-    saveUserProfileDebounced();
+    saveRecentFriendPlanetsDebounced();
 }
 
 function friendVisitDestinations() {
@@ -741,34 +745,281 @@ async function askAndSendVisitMessage(visit, pet) {
     }
 }
 
-function planetInfrastructureHtml() {
+function planetInfrastructureEntries() {
     const entries = Object.entries(PLANET_INFRASTRUCTURE)
         .map(([id, def]) => ({ id, def, infra: getInfrastructure(id) }))
         .filter(item => item.infra);
-    if (!entries.length) return '';
-    return `<div class="planet-infra-layer" aria-hidden="true">
-        ${entries.map(({ id, def, infra }) => {
-            const angle = Math.atan2(def.y - 50, def.x - 50);
-            const rimRadius = 53;
-            const x = 50 + Math.cos(angle) * rimRadius;
-            const y = 50 + Math.sin(angle) * rimRadius;
-            const rotation = angle * 180 / Math.PI + 90;
-            return `
-            <span class="planet-infra planet-infra-${id}" style="left:${x.toFixed(1)}%;top:${y.toFixed(1)}%;--infra-rotation:${rotation.toFixed(1)}deg;--infra-scale:${Number(def.scale) || 1}" title="${escapeHtml(def.name)} Lv.${infra.level}">
-                ${planetInfrastructureSvg(id, infra.level)}
-            </span>
-        `;
-        }).join('')}
-    </div>`;
+    return entries.map(({ id, def, infra }) => {
+        const angle = Math.atan2(def.y - 50, def.x - 50);
+        const rimRadius = 53;
+        return {
+            id,
+            level: infra.level,
+            x: 50 + Math.cos(angle) * rimRadius,
+            y: 50 + Math.sin(angle) * rimRadius,
+            rotation: angle * 180 / Math.PI + 90,
+            scale: Number(def.scale) || 1,
+        };
+    });
 }
 
-function planetRemoteArtifactsHtml() {
-    const discoveries = state.remotePlanetDiscoveries || {};
-    const entries = SMALL_REMOTE_PLANETS.filter(planet => discoveries[planet.id]);
-    if (!entries.length) return '';
-    return `<div class="planet-remote-artifacts" aria-hidden="true">
-        ${entries.map(planet => `<span class="planet-remote-artifact planet-remote-${planet.id}" style="left:${planet.surfaceX}%;top:${planet.surfaceY}%;--remote-artifact-hue:${planet.hue};--surface-rot:${Number(planet.surfaceRot) || 0}deg;--surface-scale:${Number(planet.surfaceScale) || 1}" title="${escapeHtml(planet.equipmentName)}"></span>`).join('')}
-    </div>`;
+function planetTerrainFieldEntries() {
+    const slots = getTerrainFieldSlots({ includeEmpty: true });
+    const radiusScale = 1.13;
+    return slots.map((slot, index) => {
+        const pos = TERRAIN_FIELD_SLOT_DEFS[index] || slot;
+        const isBrow = pos.index === 2 || pos.index === 3;
+        const isLowerSlot = pos.index >= 5;
+        const slotRadiusScale = isLowerSlot ? 1.22 : radiusScale;
+        const angle = Math.atan2(pos.y - 50, pos.x - 50);
+        return {
+            typeId: slot.typeId,
+            x: 50 + (pos.x - 50) * slotRadiusScale,
+            y: 50 + (pos.y - 50) * slotRadiusScale,
+            rotation: isBrow ? 0 : (angle * 180 / Math.PI + 90),
+            isBrow,
+        };
+    }).filter(entry => entry.typeId);
+}
+
+const planetDecorImageCache = new Map();
+let planetDecorBitmapCache = { signature: '', canvas: null };
+let planetDecorRenderId = 0;
+
+function loadPlanetDecorImage(key, src) {
+    if (!src) return Promise.resolve(null);
+    if (planetDecorImageCache.has(key)) return planetDecorImageCache.get(key);
+    const promise = new Promise((resolve) => {
+        const img = new Image();
+        img.onload = () => resolve(img);
+        img.onerror = () => resolve(null);
+        img.src = src;
+    });
+    planetDecorImageCache.set(key, promise);
+    return promise;
+}
+
+function svgToDataUrl(svgMarkup) {
+    let markup = String(svgMarkup || '').trim();
+    if (markup && !markup.includes('xmlns=')) markup = markup.replace('<svg ', '<svg xmlns="http://www.w3.org/2000/svg" ');
+    return `data:image/svg+xml;charset=utf-8,${encodeURIComponent(markup)}`;
+}
+
+function cssBackgroundImageUrl(className) {
+    if (!className || typeof document === 'undefined') return '';
+    const el = document.createElement('span');
+    el.className = `field-tab-svg-icon ${className}`;
+    el.style.cssText = 'position:absolute;left:-9999px;top:-9999px;width:28px;height:28px;pointer-events:none';
+    document.body.appendChild(el);
+    const bg = getComputedStyle(el).backgroundImage || '';
+    el.remove();
+    const match = bg.match(/^url\(["']?(.*?)["']?\)$/);
+    return match ? match[1] : '';
+}
+
+function drawRotatedImage(ctx, image, x, y, width, height, rotationDeg = 0) {
+    if (!image) return;
+    ctx.save();
+    ctx.translate(x, y);
+    ctx.rotate(rotationDeg * Math.PI / 180);
+    ctx.drawImage(image, -width / 2, -height / 2, width, height);
+    ctx.restore();
+}
+
+function drawTerrainEmoji(ctx, emoji, x, y, size, rotationDeg = 0) {
+    if (!emoji) return;
+    ctx.save();
+    ctx.translate(x, y);
+    ctx.rotate(rotationDeg * Math.PI / 180);
+    ctx.font = `900 ${size}px "Apple Color Emoji", "Segoe UI Emoji", "Noto Color Emoji", sans-serif`;
+    ctx.textAlign = 'center';
+    ctx.textBaseline = 'middle';
+    ctx.shadowColor = 'rgba(0, 0, 0, 0.45)';
+    ctx.shadowBlur = 4;
+    ctx.shadowOffsetY = 2;
+    ctx.fillText(emoji, 0, 1);
+    ctx.restore();
+}
+
+const PLANET_TREE_SPROUTS = [
+    { left: 30, bottom: 86, rotation: -13, scale: 0.66, opacity: 0.82, flower: 0 },
+    { left: 55, bottom: 87, rotation: 6, scale: 0.7, opacity: 0.82, flower: 0 },
+    { left: 66, bottom: 86, rotation: 17, scale: 0.62, opacity: 0.78, flower: 0 },
+    { left: 25, bottom: 82, rotation: -20, scale: 0.84, opacity: 1, flower: 1 },
+    { left: 36, bottom: 82, rotation: -8, scale: 1.02, opacity: 1, flower: 2 },
+    { left: 48, bottom: 84, rotation: 2, scale: 1.12, opacity: 1, flower: 1 },
+    { left: 60, bottom: 82, rotation: 11, scale: 0.98, opacity: 1, flower: 2 },
+    { left: 71, bottom: 82, rotation: 22, scale: 0.82, opacity: 1, flower: 1 },
+];
+
+function drawLeaf(ctx, x, y, width, height, rotation, scale = 1) {
+    ctx.save();
+    ctx.translate(x, y);
+    ctx.rotate(rotation * Math.PI / 180);
+    ctx.scale(scale, scale);
+    const w = width;
+    const h = height;
+    const gradient = ctx.createLinearGradient(0, -h, 0, 0);
+    gradient.addColorStop(0, '#c9ff9a');
+    gradient.addColorStop(0.72, '#37bf72');
+    gradient.addColorStop(1, '#178d61');
+    ctx.fillStyle = gradient;
+    ctx.beginPath();
+    ctx.moveTo(0, -h);
+    ctx.lineTo(-w / 2, 0);
+    ctx.quadraticCurveTo(0, -h * 0.12, w / 2, 0);
+    ctx.closePath();
+    ctx.fill();
+    ctx.restore();
+}
+
+function drawFlower(ctx, x, y, scale = 1) {
+    ctx.save();
+    ctx.translate(x, y);
+    ctx.scale(scale, scale);
+    ctx.fillStyle = '#ff86c5';
+    [[-4, 0], [4, 0], [0, -4], [0, 4]].forEach(([dx, dy]) => {
+        ctx.beginPath();
+        ctx.arc(dx, dy, 3.4, 0, Math.PI * 2);
+        ctx.fill();
+    });
+    ctx.fillStyle = '#ffe36e';
+    ctx.beginPath();
+    ctx.arc(0, 0, 3.2, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.restore();
+}
+
+function drawTreeSprout(ctx, sprout, size) {
+    const baseX = size * sprout.left / 100;
+    const baseY = size * (1 - sprout.bottom / 100);
+    const width = size * 0.11;
+    const height = size * 0.2;
+    ctx.save();
+    ctx.globalAlpha = sprout.opacity;
+    ctx.translate(baseX, baseY);
+    ctx.rotate(sprout.rotation * Math.PI / 180);
+    ctx.scale(sprout.scale, sprout.scale);
+    ctx.shadowColor = 'rgba(12, 73, 64, 0.3)';
+    ctx.shadowBlur = 3;
+    ctx.shadowOffsetY = 2;
+
+    const stemGradient = ctx.createLinearGradient(0, -height * 0.52, 0, 0);
+    stemGradient.addColorStop(0, '#8b5a2b');
+    stemGradient.addColorStop(1, '#5b351c');
+    ctx.strokeStyle = stemGradient;
+    ctx.lineWidth = Math.max(2, width * 0.1);
+    ctx.lineCap = 'round';
+    ctx.beginPath();
+    ctx.moveTo(0, 0);
+    ctx.lineTo(0, -height * 0.52);
+    ctx.stroke();
+
+    const leafY = -height * 0.42;
+    drawLeaf(ctx, -width * 0.22, leafY, width * 0.82, height * 0.42, -28, 0.76);
+    drawLeaf(ctx, 0, leafY - height * 0.06, width * 0.82, height * 0.42, 0, 1);
+    drawLeaf(ctx, width * 0.22, leafY, width * 0.82, height * 0.42, 28, 0.74);
+    if (sprout.flower) {
+        const flowerX = sprout.flower === 2 ? -width * 0.16 : width * 0.16;
+        const flowerY = -height * (sprout.flower === 2 ? 0.56 : 0.62);
+        drawFlower(ctx, flowerX, flowerY, sprout.flower === 2 ? 0.82 : 1);
+    }
+    ctx.restore();
+}
+
+function drawPlanetTreeHair(ctx, size) {
+    ctx.save();
+    ctx.fillStyle = 'rgba(19, 96, 83, 0.18)';
+    ctx.translate(size * 0.515, size * 0.145);
+    ctx.rotate(-3 * Math.PI / 180);
+    ctx.beginPath();
+    ctx.ellipse(0, 0, size * 0.235, size * 0.065, 0, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.restore();
+    PLANET_TREE_SPROUTS.forEach(sprout => drawTreeSprout(ctx, sprout, size));
+}
+
+function planetDecorSignature(pixelSize, infrastructure, terrain) {
+    return JSON.stringify({
+        pixelSize,
+        infrastructure: infrastructure.map(entry => [entry.id, entry.level, entry.x.toFixed(2), entry.y.toFixed(2), entry.rotation.toFixed(1), entry.scale]),
+        terrain: terrain.map(entry => [entry.typeId, entry.x.toFixed(2), entry.y.toFixed(2), entry.rotation.toFixed(1), entry.isBrow ? 1 : 0]),
+    });
+}
+
+function setupPlanetDecorDisplayCanvas(canvas, pixelSize) {
+    if (canvas.width !== pixelSize || canvas.height !== pixelSize) {
+        canvas.width = pixelSize;
+        canvas.height = pixelSize;
+    }
+}
+
+function blitPlanetDecorBitmap(canvas) {
+    const cached = planetDecorBitmapCache.canvas;
+    if (!cached) return false;
+    const ctx = canvas.getContext('2d');
+    if (!ctx) return false;
+    ctx.setTransform(1, 0, 0, 1, 0, 0);
+    ctx.clearRect(0, 0, canvas.width, canvas.height);
+    ctx.drawImage(cached, 0, 0);
+    return true;
+}
+
+async function drawPlanetDecorCanvas() {
+    const canvas = $('mhPlanetDecorCanvas');
+    const body = canvas?.closest?.('.planet-body');
+    if (!canvas || !body || !canvas.isConnected) return;
+    const rect = body.getBoundingClientRect();
+    const size = Math.max(1, Math.round(Math.min(rect.width, rect.height)));
+    const padding = size * PLANET_DECOR_CANVAS_PADDING;
+    const canvasSize = size + padding * 2;
+    const dpr = Math.max(1, Math.min(PLANET_DECOR_CANVAS_DPR, window.devicePixelRatio || 1));
+    const pixelSize = Math.round(canvasSize * dpr);
+    const infrastructure = planetInfrastructureEntries();
+    const terrain = planetTerrainFieldEntries();
+    const signature = planetDecorSignature(pixelSize, infrastructure, terrain);
+    setupPlanetDecorDisplayCanvas(canvas, pixelSize);
+    if (planetDecorBitmapCache.signature === signature && blitPlanetDecorBitmap(canvas)) return;
+
+    const renderId = ++planetDecorRenderId;
+    const renderCanvas = document.createElement('canvas');
+    renderCanvas.width = pixelSize;
+    renderCanvas.height = pixelSize;
+    const ctx = renderCanvas.getContext('2d');
+    if (!ctx) return;
+    ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+    ctx.clearRect(0, 0, canvasSize, canvasSize);
+
+    for (const entry of infrastructure) {
+        const img = await loadPlanetDecorImage(`infra:${entry.id}:${entry.level}`, svgToDataUrl(planetInfrastructureSvg(entry.id, entry.level)));
+        if (!canvas.isConnected || renderId !== planetDecorRenderId) return;
+        const baseSize = entry.id === 'weatherTower' || entry.id === 'observatory' ? 32 : 34;
+        const drawSize = baseSize * entry.scale * (size / 180);
+        drawRotatedImage(ctx, img, padding + size * entry.x / 100, padding + size * entry.y / 100, drawSize, drawSize, entry.rotation);
+    }
+
+    for (const entry of terrain) {
+        const type = getTerrainFieldType(entry.typeId);
+        if (!type) continue;
+        const x = padding + size * entry.x / 100;
+        const y = padding + size * entry.y / 100;
+        const rotation = entry.isBrow ? 0 : entry.rotation;
+        const drawSize = 28 * (size / 180);
+        if (type.iconClass) {
+            const img = await loadPlanetDecorImage(`terrain:${type.iconClass}`, cssBackgroundImageUrl(type.iconClass));
+            if (!canvas.isConnected || renderId !== planetDecorRenderId) return;
+            drawRotatedImage(ctx, img, x, y, drawSize, drawSize, rotation);
+        } else {
+            drawTerrainEmoji(ctx, type.emoji || '🪐', x, y, 25 * (size / 180), rotation);
+        }
+    }
+    ctx.save();
+    ctx.translate(padding, padding);
+    drawPlanetTreeHair(ctx, size);
+    ctx.restore();
+    if (!canvas.isConnected || renderId !== planetDecorRenderId) return;
+    planetDecorBitmapCache = { signature, canvas: renderCanvas };
+    blitPlanetDecorBitmap(canvas);
 }
 
 function getRemoteElementStock(remote) {
@@ -823,6 +1074,8 @@ function remoteTravelPlanets() {
 }
 
 function planetActionIconHtml(action) {
+    if (action === 'terrainFields') return '🗺️';
+    if (action === 'starSettlements') return '🚀';
     if (action === 'milestones') return `
         <svg viewBox="0 0 64 64" role="img" focusable="false">
             <path d="M21 56h22" stroke="#7c2d12" stroke-width="5" stroke-linecap="round"/>
@@ -877,7 +1130,7 @@ function planetInfrastructureSvg(id, level) {
 }
 
 async function growRainPlants(pet) {
-    const key = 'field_land';
+    const key = 'field_1';
     const existing = [...(getLayout(pet.id, key) || [])];
     const choices = ['field_flower', 'furn_plant', 'land_mushroom'];
     const count = 2 + Math.floor(Math.random() * 2);
@@ -1066,22 +1319,20 @@ export const planetLevel = {
         const visiting = isVisitingMode();
         const visit = state.visitingMode || {};
         const top = dominantTraits(pet, 1)[0];
-        const planetHue = top ? hueForTrait(top.id) : 36;
+        const settlementStyle = !visiting && state.settings?.starSettlement?.source === 'official' ? state.settings.starSettlement.planetStyle || {} : null;
+        const planetHue = settlementStyle?.hue || (top ? hueForTrait(top.id) : 36);
+        const settlementStyleText = settlementStyle ? [
+            `--planet-hue:${planetHue}`,
+            settlementStyle.bodyBackground ? `--settlement-planet-bg:${settlementStyle.bodyBackground}` : '',
+            settlementStyle.glowColor ? `--settlement-planet-glow:${settlementStyle.glowColor}` : '',
+        ].filter(Boolean).join(';') : `--planet-hue:${visiting ? 205 : planetHue}`;
         const planetExpression = resolvePlanetExpression(this.expression, pet);
         const progress = computePlanetProgress();
         const activeWeather = visiting ? null : getActivePlanetWeather();
         const activeBuff = visiting ? null : getActivePlanetBuff();
         const planetName = visiting ? (visit.planetName || '好友星球') : ((state.planetName && state.planetName.trim()) || '宠物星');
         const miningCoins = visiting ? 0 : planetMiningCoins();
-        const infrastructureHtml = visiting ? '' : planetInfrastructureHtml();
-        const remoteArtifactsHtml = visiting ? '' : planetRemoteArtifactsHtml();
-        const moons = Array.from({ length: progress.moonCount }).map((_, i) => {
-            const size = 12 + (i % 4) * 3;
-            const orbit = 230 + i * 18;
-            const duration = 8 + i * 1.8;
-            const delay = -(i * 1.15).toFixed(2);
-            return `<span class="planet-moon-orbit" style="--moon-size:${size}px;--orbit:${orbit}px;--moon-dur:${duration}s;--moon-delay:${delay}s;--moon-angle:${i * 37}deg"><i></i></span>`;
-        }).join('');
+        const moons = '';
         const remoteLocked = progress.canVisitHaqiIsland ? '' : ' locked';
         const remoteTitle = progress.canVisitHaqiIsland
             ? '前往哈奇岛下载蛋蛋星球客户端'
@@ -1092,7 +1343,7 @@ export const planetLevel = {
                 ${PLANET_SPACECRAFT_ENABLED ? spaceTravelHtml() : ''}
                 ${activeWeather ? planetWeatherSpaceHtml(activeWeather) : ''}
                 ${visiting ? '' : smallRemotePlanetsHtml()}
-                <div class="space-planet user-planet ${visiting ? 'visiting-friend-planet' : ''} planet-expression-${planetExpression} ${miningCoins > 0 ? 'has-mining-coins' : ''}" id="mhPlanet" data-planet-expression="${planetExpression}" style="--planet-hue:${visiting ? 205 : planetHue}" title="${visiting ? '好友星球返航确认' : miningCoins > 0 ? `领取 ${miningCoins} 金币` : '星球'}">
+                <div class="space-planet user-planet ${visiting ? 'visiting-friend-planet' : ''} ${settlementStyle ? 'has-settlement-style' : ''} planet-expression-${planetExpression} ${miningCoins > 0 ? 'has-mining-coins' : ''}" id="mhPlanet" data-planet-expression="${planetExpression}" style="${escapeHtml(settlementStyleText)}" title="${visiting ? '好友星球返航确认' : miningCoins > 0 ? `领取 ${miningCoins} 金币` : '星球'}">
                     ${planetMiningPileHtml(miningCoins)}
                     <div class="planet-moons">${moons}</div>
                     <div class="planet-ring"></div>
@@ -1113,18 +1364,7 @@ export const planetLevel = {
                             <span class="planet-cute-mark planet-cute-mark-right"></span>
                             <span class="planet-cute-sleep-z">Z</span>
                         </div>
-                        <div class="planet-tree-hair" aria-hidden="true">
-                            <span class="planet-tree-hair-sprout sprout-6"><i class="tree-leaf leaf-1"></i><i class="tree-leaf leaf-2"></i><i class="tree-leaf leaf-3"></i></span>
-                            <span class="planet-tree-hair-sprout sprout-7"><i class="tree-leaf leaf-1"></i><i class="tree-leaf leaf-2"></i><i class="tree-leaf leaf-3"></i></span>
-                            <span class="planet-tree-hair-sprout sprout-8"><i class="tree-leaf leaf-1"></i><i class="tree-leaf leaf-2"></i><i class="tree-leaf leaf-3"></i></span>
-                            <span class="planet-tree-hair-sprout sprout-1"><i class="tree-leaf leaf-1"></i><i class="tree-leaf leaf-2"></i><i class="tree-leaf leaf-3"></i><em class="tree-flower flower-1"></em></span>
-                            <span class="planet-tree-hair-sprout sprout-2"><i class="tree-leaf leaf-1"></i><i class="tree-leaf leaf-2"></i><i class="tree-leaf leaf-3"></i><em class="tree-flower flower-2"></em></span>
-                            <span class="planet-tree-hair-sprout sprout-3"><i class="tree-leaf leaf-1"></i><i class="tree-leaf leaf-2"></i><i class="tree-leaf leaf-3"></i><em class="tree-flower flower-1"></em></span>
-                            <span class="planet-tree-hair-sprout sprout-4"><i class="tree-leaf leaf-1"></i><i class="tree-leaf leaf-2"></i><i class="tree-leaf leaf-3"></i><em class="tree-flower flower-2"></em></span>
-                            <span class="planet-tree-hair-sprout sprout-5"><i class="tree-leaf leaf-1"></i><i class="tree-leaf leaf-2"></i><i class="tree-leaf leaf-3"></i><em class="tree-flower flower-1"></em></span>
-                        </div>
-                        ${infrastructureHtml}
-                        ${remoteArtifactsHtml}
+                        ${visiting ? '' : '<canvas class="planet-decoration-canvas" id="mhPlanetDecorCanvas" aria-hidden="true"></canvas>'}
                     </div>
                 </div>
             <div class="planet-status-panel">
@@ -1265,6 +1505,7 @@ export const planetLevel = {
             : null;
 
         const planet = $('mhPlanet');
+        if (!isVisitingMode()) requestAnimationFrame(() => drawPlanetDecorCanvas());
         if (planet) planet.setPlanetExpression = (expression = 'auto') => this.setPlanetExpression(expression, pet);
         if (planet) planet.onclick = () => {
             if (isVisitingMode()) {
@@ -1719,6 +1960,22 @@ export function showPlanetResearchPanel(pet, ctx) {
     openPlanetModal(`
         <div class="planet-modal-title">🔬 星球研究</div>
         <div class="planet-modal-subtitle">建造、升级或进入设施。</div>
+        <button class="planet-terrain-editor-entry" data-research-terrain="1" type="button">
+            <span class="planet-terrain-editor-icon">🗺️</span>
+            <span class="planet-terrain-editor-body">
+                <b>星球地貌编辑器</b>
+                <i>管理天空、陆地、海洋和元素的比例。</i>
+            </span>
+            <span class="planet-terrain-editor-go">进入</span>
+        </button>
+        <button class="planet-terrain-editor-entry" data-research-settlements="1" type="button">
+            <span class="planet-terrain-editor-icon">🚀</span>
+            <span class="planet-terrain-editor-body">
+                <b>星际移民</b>
+                <i>把家迁移到官方星球。</i>
+            </span>
+            <span class="planet-terrain-editor-go">进入</span>
+        </button>
         <div class="planet-option-list planet-research-list">
             ${PLANET_RESEARCH_ACTIONS.map(item => {
                 const action = item.action;
@@ -1729,7 +1986,7 @@ export function showPlanetResearchPanel(pet, ctx) {
                 const locked = detail?.unlock && isLocked(progress, detail.unlock);
                 const cost = buildingId ? infrastructureCost(buildingId, infraLevel) : null;
                 const canBuildOrUpgrade = !locked && cost && infraLevel < PLANET_INFRA_MAX_LEVEL;
-                const levelText = locked ? lockedTitle(detail.unlock) : infraLevel ? `Lv.${infraLevel}` : '未建造';
+                const levelText = !buildingId ? '管理' : (locked ? lockedTitle(detail.unlock) : infraLevel ? `Lv.${infraLevel}` : '未建造');
                 const actionText = infraLevel <= 0 ? '建造' : '升级';
                 return `
                     <div class="planet-option planet-research-card ${locked ? 'locked' : ''}" data-research-action="${escapeHtml(action)}" role="button" tabindex="0">
@@ -1738,13 +1995,23 @@ export function showPlanetResearchPanel(pet, ctx) {
                             <b>${escapeHtml(item.name)} <em>${escapeHtml(levelText)}</em></b>
                             <i>${escapeHtml(item.desc)}</i>
                         </span>
-                        <span class="planet-research-cost">${cost ? `<span class="planet-research-coin-icon">${coinIconSvg()}</span>${cost.coins}` : '满级'}</span>
+                        <span class="planet-research-cost">${buildingId ? (cost ? `<span class="planet-research-coin-icon">${coinIconSvg()}</span>${cost.coins}` : '满级') : '进入'}</span>
                         ${canBuildOrUpgrade ? `<button class="btn-secondary planet-research-build" data-research-build="${escapeHtml(buildingId)}" type="button">${actionText}</button>` : ''}
                     </div>`;
             }).join('')}
         </div>
         <div class="planet-modal-actions"><button class="btn-secondary" data-act="close">关闭</button></div>
     `, (e, close) => {
+        if (e.target.closest?.('[data-research-terrain]')) {
+            close();
+            ctx.callbacks?.onNav?.('terrainFields');
+            return;
+        }
+        if (e.target.closest?.('[data-research-settlements]')) {
+            close();
+            ctx.callbacks?.onNav?.('starSettlements');
+            return;
+        }
         const buildBtn = e.target.closest?.('[data-research-build]');
         if (buildBtn) {
             e.stopPropagation();
@@ -1764,7 +2031,7 @@ export function showPlanetResearchPanel(pet, ctx) {
         }
         close();
         showPlanetActionDialog(action, pet, ctx);
-    });
+    }, 'planet-research-modal');
 }
 
 function showWeatherPanel(pet) {
@@ -1950,7 +2217,8 @@ function friendVisitPickerContentHtml(isLoading = false) {
     `;
 }
 
-function openFriendVisitPickerModal(pet, parentClose) {
+async function openFriendVisitPickerModal(pet, parentClose) {
+    await loadRecentFriendPlanets();
     const modal = openPlanetModal(`
         <div class="planet-action-dialog-head">
             <span class="planet-action-dialog-icon">👥</span>
@@ -2437,7 +2705,8 @@ function claimAllAchievements() {
     return ready.length;
 }
 
-function showMilestonesPanel() {
+async function showMilestonesPanel() {
+    await loadPlanetVisitors();
     const progress = computePlanetProgress();
     const logs = (state.planetVisitors || [])
         .slice()
@@ -2618,9 +2887,51 @@ async function completeRemoteElementReturn(remote) {
 
 function getFarewellRecords() {
     return (Array.isArray(state.haqiIslandFarewells) ? state.haqiIslandFarewells : [])
+        .map(createDisplayFarewellRecord)
         .filter(Boolean)
-        .slice()
         .sort((a, b) => (Number(b?.farewellAt) || 0) - (Number(a?.farewellAt) || 0));
+}
+
+function farewellPetId(record) {
+    if (typeof record === 'string') return record.trim();
+    if (!record || typeof record !== 'object') return '';
+    return typeof record.petId === 'string' ? record.petId.trim() : '';
+}
+
+function farewellPetIds(records = state.haqiIslandFarewells) {
+    if (!Array.isArray(records)) return [];
+    const ids = [];
+    records.forEach(record => {
+        const id = farewellPetId(record);
+        if (id && !ids.includes(id)) ids.push(id);
+    });
+    return ids.slice(0, 200);
+}
+
+function createDisplayFarewellRecord(record) {
+    const petId = farewellPetId(record);
+    if (!petId) return null;
+    if (record && typeof record === 'object') return { ...record, petId };
+    const pet = state.pets?.[petId];
+    const farewellAt = Number(pet?.haqiIslandAt) || Number(pet?.location?.movedAt) || Number(pet?.releasedAt) || 0;
+    return {
+        id: `farewell_${petId}`,
+        petId,
+        name: displayPetName(pet) || pet?.name || '哈奇伙伴',
+        trueName: pet?.name || '',
+        dna: pet?.dna || '',
+        stage: pet?.stage || '',
+        rarity: Number(pet?.rarity) || 0,
+        bornAt: Number(pet?.bornAt) || 0,
+        farewellAt,
+        imageSheetUrl: pet?.imageSheetUrl || '',
+        imageUrl: pet?.imageUrl || '',
+    };
+}
+
+async function ensureFarewellPetsLoaded() {
+    const ids = farewellPetIds();
+    await Promise.all(ids.map(id => state.pets?.[id] ? null : loadPet(id).catch(() => null)));
 }
 
 function createFarewellRecord(pet) {
@@ -2744,7 +3055,8 @@ function enableHaqiIslandMemoryDrag(mask) {
     scroller.addEventListener('lostpointercapture', stopDrag);
 }
 
-function showHaqiIslandPanel() {
+async function showHaqiIslandPanel() {
+    await ensureFarewellPetsLoaded();
     const records = getFarewellRecords();
     const modal = openPlanetModal(`
         <div class="haqi-island-head">
@@ -2851,7 +3163,7 @@ async function completeFarewellPet(petId, close) {
     if (!isAdultStage(pet.stage)) { showToast('只有成年宠物才能举行成人礼。', 'info'); return; }
     const record = createFarewellRecord(pet);
     playFarewellChime();
-    state.haqiIslandFarewells = [record, ...getFarewellRecords()].slice(0, 200);
+    state.haqiIslandFarewells = [pet.id, ...farewellPetIds()].filter((id, index, ids) => ids.indexOf(id) === index).slice(0, 200);
     addPlanetLog('farewell', `${record.name}完成成人礼，飞回哈奇岛`, '🪄');
     markPetHaqiIsland(pet);
     await savePet(pet);

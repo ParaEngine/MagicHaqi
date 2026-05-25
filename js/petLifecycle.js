@@ -115,7 +115,7 @@ export function getNearActiveGeneratedPetIds(limit = 2) {
 
 function getNearActiveGeneratedPetField() {
     getNearActiveGeneratedPetIds(2);
-    return GENERATED_NEAR_ACTIVE_FIELD || state.currentField || 'land';
+    return GENERATED_NEAR_ACTIVE_FIELD || state.currentField || '1';
 }
 
 export function isNearActiveGeneratedPet(petOrId) {

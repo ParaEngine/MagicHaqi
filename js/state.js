@@ -16,7 +16,7 @@ export const state = {
     // Game boots into the cosmic / space view, then remembers the last home level in memory.
     zoomLevel: 0,
     lastHomeZoomLevel: 0,
-    currentField: 'land',       // 'land' | 'water' | 'sky'
+    currentField: '1',          // terrain slot index as string: '1'..'7'
     isDecorMode: false,
     isFeedMode: false,
     activePetFieldPose: null,
@@ -28,6 +28,7 @@ export const state = {
     layouts: {},                // user shared { roomId: [{ itemId, x, y, zorder }] }
     actionCooldown: {},         // petId -> { actionKey: timestamp }
     settings: {},
+    temporaryHomePlanetOverride: null,
     // 玩家"星球"名字。每位用户只有一个星球；首次进入游戏时必须命名。
     planetName: '',
     planetCreatedAt: 0,
@@ -39,7 +40,7 @@ export const state = {
     planetActions: {},          // action cooldowns and once-per-day stamps
     planetInfrastructure: {},   // buildingId -> { level, builtAt, upgradedAt }
     planetMining: {},           // offline coin mining { lastCollectedHourAt, lastCollectedAt }
-    haqiIslandFarewells: [],     // pets that completed the adult farewell ceremony
+    haqiIslandFarewells: [],     // [petId] pets that completed the adult farewell ceremony
     invitedPets: [],             // recent pets accepted from share links (latest 10)
     activeInvitedPet: null,       // transient invited pet currently visiting the field scene
     visitingMode: null,           // transient friend-planet visit { active, friendName, planetName, friendPet, ... }
@@ -135,7 +136,7 @@ export function startVisitingMode(visit) {
         ...(visit || {}),
         active: true,
         startedAt: Number(visit?.startedAt) || Date.now(),
-        previousField: visit?.previousField || state.currentField || 'land',
+        previousField: visit?.previousField || state.currentField || '1',
     };
     notify();
 }

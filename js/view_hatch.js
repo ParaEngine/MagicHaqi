@@ -9,13 +9,14 @@ import { savePet, setCurrentPetPersisted } from './storage.js';
 import { state } from './state.js';
 import { CONFIG } from './config.js';
 import { findLargestHouseAcrossLayouts } from './config.js';
+import { resolveTerrainFieldTypeId } from './view_terrain_fields.js';
 
 export function renderHatch(panel, { parents } = {}, { onCreated, onCancel } = {}) {
     const isBreed = !!(parents && parents.length === 2);
     let dna = isBreed ? crossover(parents[0].dna, parents[1].dna) : randomDna();
     // 主屋所在领地为新蛋 DNA 提供领地特征加成
     const territory = findLargestHouseAcrossLayouts(state.layouts);
-    if (territory?.fieldId) dna = biasDnaForFieldId(dna, territory.fieldId);
+    if (territory?.fieldId) dna = biasDnaForFieldId(dna, resolveTerrainFieldTypeId(territory.fieldId));
     let imageSheetUrl = null;
     let busy = false;
 

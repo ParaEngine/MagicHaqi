@@ -20,6 +20,12 @@ const TRANSPARENT_CORNER_SAMPLE_SIZE = 3;
 const DEFAULT_GRID_LINE_RATIO = 0.045;
 const DEFAULT_GRID_LINE_MAX_WIDTH = 18;
 
+function getSheetGrid(options = {}) {
+    const cols = Math.max(1, Math.min(16, Math.round(Number(options.sheetCols) || SHEET_COLS)));
+    const rows = Math.max(1, Math.min(16, Math.round(Number(options.sheetRows) || SHEET_ROWS)));
+    return { cols, rows };
+}
+
 function areCornersFullyTransparent(data, width, height) {
     if (!data || width <= 0 || height <= 0) return false;
     const sample = Math.max(1, Math.min(TRANSPARENT_CORNER_SAMPLE_SIZE, width, height));
@@ -51,7 +57,8 @@ function resolveGridLineWidth(width, height, options = {}) {
     const explicitWidth = Number(options.gridLineWidth);
     if (Number.isFinite(explicitWidth) && explicitWidth >= 0) return Math.min(DEFAULT_GRID_LINE_MAX_WIDTH, Math.round(explicitWidth));
     const ratio = Number.isFinite(Number(options.gridLineRatio)) ? Number(options.gridLineRatio) : DEFAULT_GRID_LINE_RATIO;
-    const approxCell = Math.min(width / SHEET_COLS, height / SHEET_ROWS);
+    const { cols, rows } = getSheetGrid(options);
+    const approxCell = Math.min(width / cols, height / rows);
     return Math.max(3, Math.min(DEFAULT_GRID_LINE_MAX_WIDTH, Math.ceil(approxCell * ratio)));
 }
 
@@ -68,20 +75,22 @@ function clearAlphaBand(data, width, height, x0, y0, x1, y1) {
 }
 
 function clearGridLineBands(data, width, height, options = {}) {
+    const { cols, rows } = getSheetGrid(options);
     const lineWidth = resolveGridLineWidth(width, height, options);
     if (lineWidth <= 0) return;
     const half = Math.max(1, Math.ceil(lineWidth / 2));
-    for (let col = 1; col < SHEET_COLS; col++) {
-        const x = Math.round(col * width / SHEET_COLS);
+    for (let col = 1; col < cols; col++) {
+        const x = Math.round(col * width / cols);
         clearAlphaBand(data, width, height, x - half, 0, x + half + 1, height);
     }
-    for (let row = 1; row < SHEET_ROWS; row++) {
-        const y = Math.round(row * height / SHEET_ROWS);
+    for (let row = 1; row < rows; row++) {
+        const y = Math.round(row * height / rows);
         clearAlphaBand(data, width, height, 0, y - half, width, y + half + 1);
     }
 }
 
 function hasOpaqueInternalGridBands(data, width, height, options = {}) {
+    const { cols, rows } = getSheetGrid(options);
     const lineWidth = Math.max(3, resolveGridLineWidth(width, height, options));
     const half = Math.max(1, Math.ceil(lineWidth / 2));
     const alphaThreshold = 12;
@@ -102,12 +111,12 @@ function hasOpaqueInternalGridBands(data, width, height, options = {}) {
         }
         return total > 0 && opaque / total >= opaqueRatioThreshold;
     };
-    for (let col = 1; col < SHEET_COLS; col++) {
-        const x = Math.round(col * width / SHEET_COLS);
+    for (let col = 1; col < cols; col++) {
+        const x = Math.round(col * width / cols);
         if (measure(x - half, 0, x + half + 1, height)) return true;
     }
-    for (let row = 1; row < SHEET_ROWS; row++) {
-        const y = Math.round(row * height / SHEET_ROWS);
+    for (let row = 1; row < rows; row++) {
+        const y = Math.round(row * height / rows);
         if (measure(0, y - half, width, y + half + 1)) return true;
     }
     return false;
@@ -230,6 +239,7 @@ function removeCellBackground(data, width, height, cellX, cellY, cellW, cellH, o
 async function processSheet(bitmap, options = {}) {
     const width = bitmap.width;
     const height = bitmap.height;
+    const { cols, rows } = getSheetGrid(options);
     const canvas = new OffscreenCanvas(width, height);
     const ctx = canvas.getContext('2d', { willReadFrequently: true });
     ctx.drawImage(bitmap, 0, 0);
@@ -243,12 +253,12 @@ async function processSheet(bitmap, options = {}) {
 
     clearGridLineBands(data, width, height, options);
 
-    for (let row = 0; row < SHEET_ROWS; row++) {
-        for (let col = 0; col < SHEET_COLS; col++) {
-            const cellX = Math.floor(col * width / SHEET_COLS);
-            const cellY = Math.floor(row * height / SHEET_ROWS);
-            const nextCellX = Math.floor((col + 1) * width / SHEET_COLS);
-            const nextCellY = Math.floor((row + 1) * height / SHEET_ROWS);
+    for (let row = 0; row < rows; row++) {
+        for (let col = 0; col < cols; col++) {
+            const cellX = Math.floor(col * width / cols);
+            const cellY = Math.floor(row * height / rows);
+            const nextCellX = Math.floor((col + 1) * width / cols);
+            const nextCellY = Math.floor((row + 1) * height / rows);
             removeCellBackground(data, width, height, cellX, cellY, nextCellX - cellX, nextCellY - cellY, options);
         }
     }

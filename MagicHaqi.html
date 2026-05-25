@@ -1316,7 +1316,7 @@
             left: 0; right: 0; top: 7px;
             height: 12px;
             display: grid;
-            grid-template-columns: repeat(4, 1fr);
+            grid-template-columns: repeat(var(--zoom-visible-count, 4), 1fr);
             overflow: hidden;
             border: 2px solid rgba(255,255,255,0.96);
             border-radius: 999px;
@@ -1326,6 +1326,9 @@
             position: relative;
             min-width: 0;
             background: var(--stage-color);
+        }
+        .mh-zoom-bar-stage.is-hidden {
+            display: none;
         }
         .mh-zoom-bar-stage + .mh-zoom-bar-stage { border-left: 1px solid rgba(255,255,255,0.7); }
         .mh-zoom-bar-stage i {

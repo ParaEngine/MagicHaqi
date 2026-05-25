@@ -10,7 +10,7 @@
 
 import { $, coinIconSvg, escapeHtml, showToast } from './utils.js';
 import { t } from './i18n.js';
-import { CONFIG, getStageName } from './config.js';
+import { CONFIG, getDefaultZoomLevelIndex, getStageName, getVisibleZoomLevelIndices, resolveZoomLevelIndex } from './config.js';
 import { isVisitingMode, state, setZoomLevel as _setZoomLevelRaw } from './state.js';
 import { savePetDebounced } from './storage.js';
 import { displayPetName } from './dna.js';
@@ -78,6 +78,41 @@ let __companionMoodTimer = null;
 let __companionMoodLastAt = 0;
 const __companionMoodPendingTimers = new Map();
 let __zoomBarHideTimer = null;
+
+function currentAppTitle() {
+    const title = String(state.settings?.starSettlement?.appTitle || '').trim();
+    return title || t('appName');
+}
+
+function currentZoomOptions() {
+    return state.settings?.starSettlement?.source === 'official'
+        ? state.settings.starSettlement.zoomOptions || {}
+        : {};
+}
+
+function defaultHomeZoomLevel() {
+    return getDefaultZoomLevelIndex(currentZoomOptions());
+}
+
+function visibleZoomLevels() {
+    let indices = getVisibleZoomLevelIndices(currentZoomOptions());
+    if (isVisitingMode()) indices = indices.filter(index => index <= 2);
+    return indices.length ? indices : [1, 2];
+}
+
+function resolveHomeZoomLevel(target, from = state.zoomLevel) {
+    let resolved = resolveZoomLevelIndex(target, currentZoomOptions(), from);
+    if (isVisitingMode() && resolved > 2) resolved = resolveZoomLevelIndex(2, currentZoomOptions(), from);
+    return resolved;
+}
+
+function nextVisibleZoomLevel(direction, from = state.zoomLevel) {
+    const current = clampLvl(from ?? 0);
+    const visible = visibleZoomLevels();
+    return direction > 0
+        ? (visible.find(index => index > current) ?? current)
+        : ([...visible].reverse().find(index => index < current) ?? current);
+}
 let __levelJumpCompleted = false;
 const __dockScrollPositions = new Map();
 let __stageZoomWindowCleanup = null;
@@ -384,12 +419,14 @@ export function renderHome(panel, { pet }, callbacks = {}) {
     __lastPet = pet;
     __lastCallbacks = callbacks;
 
-    const lvl = clampLvl(state.zoomLevel ?? 0);
+    const rawLevel = Number.isFinite(state.zoomLevel) || state.zoomLevel != null ? state.zoomLevel : defaultHomeZoomLevel();
+    const lvl = resolveHomeZoomLevel(rawLevel, state.lastHomeZoomLevel);
     state.zoomLevel = lvl;
     state.lastHomeZoomLevel = lvl;
 
     const zoomDef = CONFIG.zoomLevels[lvl];
     const level = LEVELS[lvl];
+    const appTitle = currentAppTitle();
     clearCameraIdleReturn();
     // 起点相机：使用该层最佳视角
     cameraZoom = getLevelBestCamera(level);
@@ -397,8 +434,8 @@ export function renderHome(panel, { pet }, callbacks = {}) {
 
     panel.innerHTML = `
         <div class="topbar">
-            <div class="mh-brand-logo" aria-label="蛋蛋星球">
-                <span class="mh-brand-title">蛋蛋星球</span>
+            <div class="mh-brand-logo" aria-label="${escapeHtml(appTitle)}">
+                <span class="mh-brand-title">${escapeHtml(appTitle)}</span>
             </div>
             <div class="home-hud">
                 <span class="home-hud-stats" id="mhTopbarStats">${renderTopbarHudItems(pet, lvl)}</span>
@@ -497,12 +534,13 @@ function renderZoomLevelBar(pet = __lastPet) {
 }
 
 function renderZoomLevelBarInner(pet = __lastPet, lvl = clampLvl(state.zoomLevel ?? 0)) {
+    const visible = new Set(visibleZoomLevels());
     return `
-        <span class="mh-zoom-bar-track" aria-hidden="true">
+        <span class="mh-zoom-bar-track" aria-hidden="true" style="--zoom-visible-count:${visible.size || 1}">
             ${ZOOM_BAR_STAGES.map((stage, index) => {
                 const emergency = getZoomStageEmergency(stage.id, pet);
                 return `
-                <span class="mh-zoom-bar-stage ${index === lvl ? 'active' : ''}" data-zoom-stage="${escapeHtml(stage.id)}" style="--stage-color:${stage.color}" title="${escapeHtml(emergency?.tip || stage.label)}">
+                <span class="mh-zoom-bar-stage ${index === lvl ? 'active' : ''} ${visible.has(index) ? '' : 'is-hidden'}" data-zoom-stage="${escapeHtml(stage.id)}" style="--stage-color:${stage.color}" title="${escapeHtml(emergency?.tip || stage.label)}">
                     <i>${escapeHtml(stage.label)}</i>
                 </span>`;
             }).join('')}
@@ -528,6 +566,9 @@ function syncZoomLevelBar(bar, pet = __lastPet) {
     if (!bar) return null;
     ensureZoomLevelBarStructure(bar, pet);
     const lvl = clampLvl(state.zoomLevel ?? 0);
+    const visible = new Set(visibleZoomLevels());
+    const track = bar.querySelector('.mh-zoom-bar-track');
+    if (track) track.style.setProperty('--zoom-visible-count', visible.size || 1);
     const hint = getZoomLevelHint(lvl, pet);
     bar.style.setProperty('--zoom-pos', getZoomBarProgress(visualCameraZoom || cameraZoom).toFixed(4));
     bar.title = hint;
@@ -538,6 +579,7 @@ function syncZoomLevelBar(bar, pet = __lastPet) {
         if (!stage) return;
         const emergency = getZoomStageEmergency(stage.id, pet);
         stageEl.classList.toggle('active', index === lvl);
+        stageEl.classList.toggle('is-hidden', !visible.has(index));
         stageEl.style.setProperty('--stage-color', stage.color);
         stageEl.title = emergency?.tip || stage.label;
     });
@@ -588,6 +630,8 @@ function getZoomStageEmergency(stageId, pet = __lastPet) {
 }
 
 function getZoomLevelHint(lvl = state.zoomLevel, pet = __lastPet) {
+    const visible = new Set(visibleZoomLevels());
+    if (!visible.has(clampLvl(lvl))) return '这个缩放层在当前星球配置中已隐藏。';
     if (isVisitingMode()) {
         if (lvl <= 0) return '好友星球太空层只用于返航确认。';
         if (lvl >= 3) return '拜访好友时只能在星球表面和宠物房间活动。';
@@ -876,8 +920,8 @@ function makeCtx(pet, callbacks) {
         get stage() { return document.getElementById('mhStage'); },
         get stageInner() { return document.getElementById('mhStageInner'); },
         selectedTrayItem: null,
-        zoomIn:  () => { if (!isDecorZoomLocked()) requestZoomLevel(state.zoomLevel + 1); },
-        zoomOut: () => { if (!isDecorZoomLocked()) requestZoomLevel(state.zoomLevel - 1); },
+        zoomIn:  () => { if (!isDecorZoomLocked()) requestZoomLevel(nextVisibleZoomLevel(1)); },
+        zoomOut: () => { if (!isDecorZoomLocked()) requestZoomLevel(nextVisibleZoomLevel(-1)); },
         openPetDetails: () => showPetDetailsModal(pet),
         onPetTouch: (petEl, touchedPet = pet) => handleCompanionPetTouch(petEl, touchedPet),
     };
@@ -1307,7 +1351,7 @@ function handleCompanionPetTouch(petEl, pet = __lastPet) {
 // =============================================================================
 function requestZoomLevel(target) {
     if (isDecorZoomLocked()) return;
-    const to = clampLvl(target);
+    const to = resolveHomeZoomLevel(target, state.zoomLevel);
     if (isVisitingMode()) {
         if (to > 2) {
             showToast('拜访好友时只能在星球表面和宠物房间活动。', 'info', 1800);
@@ -1315,7 +1359,10 @@ function requestZoomLevel(target) {
             return;
         }
     }
-    if (to === state.zoomLevel) return;
+    if (to === state.zoomLevel) {
+        forceBestCameraDistance();
+        return;
+    }
     if (__mhZoomAnimating) return;
     clearPendingZoomTransition();
     clearCameraIdleReturn();
@@ -1577,12 +1624,12 @@ function bindStageZoomGestures() {
             const lvl = LEVELS[state.zoomLevel];
             if (target > lvl.maxCamera * 1.05 && state.zoomLevel < LEVELS.length - 1) {
                 pinchTriggered = true;
-                requestZoomLevelAfterFocus(state.zoomLevel + 1, lvl.maxCamera);
+                requestZoomLevelAfterFocus(nextVisibleZoomLevel(1), lvl.maxCamera);
                 return;
             }
             if (target < lvl.minCamera * 0.95 && state.zoomLevel > 0) {
                 pinchTriggered = true;
-                requestZoomLevel(state.zoomLevel - 1);
+                requestZoomLevel(nextVisibleZoomLevel(-1));
                 return;
             }
             setCameraZoomFromGesture(target, target >= cameraZoom ? 'in' : 'out');
@@ -1612,13 +1659,13 @@ function bindStageZoomGestures() {
             if (target > lvl.maxCamera * 1.05 && state.zoomLevel < LEVELS.length - 1) {
                 touchTriggered = true;
                 touchDragging = false;
-                requestZoomLevelAfterFocus(state.zoomLevel + 1, lvl.maxCamera);
+                requestZoomLevelAfterFocus(nextVisibleZoomLevel(1), lvl.maxCamera);
                 return;
             }
             if (target < lvl.minCamera * 0.95 && state.zoomLevel > 0) {
                 touchTriggered = true;
                 touchDragging = false;
-                requestZoomLevel(state.zoomLevel - 1);
+                requestZoomLevel(nextVisibleZoomLevel(-1));
                 return;
             }
             setCameraZoomFromGesture(target, target >= cameraZoom ? 'in' : 'out');
@@ -1683,11 +1730,11 @@ function bindStageZoomGestures() {
         const target = mouseStartZoom * Math.exp(-dy / 220);
         const lvl = LEVELS[state.zoomLevel];
         if (target > lvl.maxCamera * 1.05 && state.zoomLevel < LEVELS.length - 1) {
-            requestZoomLevelAfterFocus(state.zoomLevel + 1, lvl.maxCamera);
+            requestZoomLevelAfterFocus(nextVisibleZoomLevel(1), lvl.maxCamera);
             return;
         }
         if (target < lvl.minCamera * 0.95 && state.zoomLevel > 0) {
-            requestZoomLevel(state.zoomLevel - 1);
+            requestZoomLevel(nextVisibleZoomLevel(-1));
             return;
         }
         setCameraZoomFromGesture(target, target >= cameraZoom ? 'in' : 'out');
@@ -1755,10 +1802,12 @@ function applyDelta(factor) {
     const lvl = LEVELS[state.zoomLevel];
     const next = cameraZoom * factor;
     if (next > lvl.maxCamera) {
-        if (state.zoomLevel < LEVELS.length - 1) requestZoomLevelAfterFocus(state.zoomLevel + 1, lvl.maxCamera);
+        const nextLevel = nextVisibleZoomLevel(1);
+        if (nextLevel !== state.zoomLevel) requestZoomLevelAfterFocus(nextLevel, lvl.maxCamera);
         else { cameraZoom = lvl.maxCamera; applyCameraZoom(); }
     } else if (next < lvl.minCamera) {
-        if (state.zoomLevel > 0) requestZoomLevel(state.zoomLevel - 1);
+        const nextLevel = nextVisibleZoomLevel(-1);
+        if (nextLevel !== state.zoomLevel) requestZoomLevel(nextLevel);
         else { cameraZoom = lvl.minCamera; applyCameraZoom(); }
     } else {
         setCameraZoomFromGesture(next, factor >= 1 ? 'in' : 'out');
@@ -1771,10 +1820,12 @@ function applyWheelDelta(factor) {
     const lvl = LEVELS[state.zoomLevel];
     const next = cameraZoom * factor;
     if (next > lvl.maxCamera) {
-        if (state.zoomLevel < LEVELS.length - 1) requestZoomLevelAfterFocus(state.zoomLevel + 1, lvl.maxCamera);
+        const nextLevel = nextVisibleZoomLevel(1);
+        if (nextLevel !== state.zoomLevel) requestZoomLevelAfterFocus(nextLevel, lvl.maxCamera);
         else { cameraZoom = lvl.maxCamera; applyCameraZoom(); }
     } else if (next < lvl.minCamera) {
-        if (state.zoomLevel > 0) requestZoomLevel(state.zoomLevel - 1);
+        const nextLevel = nextVisibleZoomLevel(-1);
+        if (nextLevel !== state.zoomLevel) requestZoomLevel(nextLevel);
         else { cameraZoom = lvl.minCamera; applyCameraZoom(); }
     } else {
         const clamped = Math.max(lvl.minCamera, Math.min(lvl.maxCamera, next));
@@ -2039,6 +2090,10 @@ function showMenuModal(callbacks) {
 
 function openResearchFromMenu(callbacks = __lastCallbacks) {
     if (!__lastPet) return;
+    if (!visibleZoomLevels().includes(0)) {
+        showToast('当前星球隐藏了 planet 层，无法进入研究。', 'info', 2200);
+        return;
+    }
     const openResearch = () => showPlanetResearchPanel(__lastPet, makeCtx(__lastPet, callbacks));
     if (state.zoomLevel === 0) {
         openResearch();
