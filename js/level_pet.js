@@ -1,6 +1,6 @@
 // Level 2 — 宠物 + 房间（经典电子宠物日常）
 
-import { $, $$, escapeHtml, randInt, showToast } from './utils.js';
+import { $, $$, escapeHtml, randInt, renderVisualAsset, showToast } from './utils.js';
 import { t } from './i18n.js';
 import { canPlaceItemInArea, CONFIG, DECO_VISUALS, getActiveHouseRoomIds, getPlacedItemZOrder, getShopItemById, SHOP_ITEMS } from './config.js';
 import { isVisitingMode, notify, state } from './state.js';
@@ -203,8 +203,16 @@ function pinPetInRoom() {
 }
 
 function getFurnitureVisual(item) {
-    if (item?.type === 'food') return { w: FOOD_HIT_WIDTH_METERS / ROOM_WIDTH_METERS, h: FOOD_HIT_HEIGHT_METERS / ROOM_HEIGHT_METERS, svg: fallbackFoodSvg(item) };
-    return DECO_VISUALS[item?.id] || { w: 0.11, h: 0.16, svg: fallbackFurnitureSvg(item) };
+    const custom = DECO_VISUALS[item?.id] || {};
+    const visual = {
+        ...custom,
+        svg: item?.svg || custom.svg,
+        imageUrl: item?.imageUrl || custom.imageUrl,
+    };
+    if (item?.type === 'food') {
+        return { w: FOOD_HIT_WIDTH_METERS / ROOM_WIDTH_METERS, h: FOOD_HIT_HEIGHT_METERS / ROOM_HEIGHT_METERS, ...visual, svg: visual.svg || fallbackFoodSvg(item) };
+    }
+    return { w: 0.11, h: 0.16, ...visual, svg: visual.svg || fallbackFurnitureSvg(item) };
 }
 
 function fallbackFurnitureSvg(item) {
@@ -220,7 +228,8 @@ function fallbackFoodSvg(item) {
 function furnitureHtml(def) {
     const visual = getFurnitureVisual(def);
     const visualClass = def?.type === 'food' ? ' mh-food-svg' : '';
-    return `<span class="mh-furniture-svg${visualClass}" aria-hidden="true">${visual.svg}</span>`;
+    const visualHtml = renderVisualAsset(visual, { className: 'mh-furniture-img', alt: def?.name || '' });
+    return `<span class="mh-furniture-svg${visualClass}" aria-hidden="true">${visualHtml}</span>`;
 }
 
 function servingFoodCutHtml(item) {
@@ -1826,7 +1835,8 @@ function renderDecorTray(inv) {
                 : items.map(it => `
                     <div data-tray-item="${escapeHtml(it.id)}" class="shop-item" style="min-width:62px;padding:6px;flex-shrink:0">
                         <div class="emoji mh-tray-furniture-icon">${furnitureHtml(it)}</div>
-                        <div class="name" style="font-size:10px">${escapeHtml(it.name)} ×${it.qty}</div>
+                        <div class="name" style="font-size:10px">${escapeHtml(it.name)}</div>
+                        ${it.qty > 1 ? `<span class="shop-item-count-badge">${escapeHtml(it.qty)}</span>` : ''}
                     </div>
                 `).join('')}
             ${shopButton}
@@ -1848,7 +1858,8 @@ function renderFeedTray(inv) {
                 : items.map(it => `
                     <div data-tray-item="${escapeHtml(it.id)}" data-feed-tray-item="true" class="shop-item" style="min-width:76px;padding:10px 8px;flex-shrink:0">
                         <div class="emoji mh-tray-furniture-icon">${furnitureHtml(it)}</div>
-                        <div class="name" style="font-size:10px">${escapeHtml(it.name)} ×${it.unlimited ? '∞' : it.qty}</div>
+                        <div class="name" style="font-size:10px">${escapeHtml(it.name)}</div>
+                        ${(it.unlimited || it.qty > 1) ? `<span class="shop-item-count-badge">${it.unlimited ? '∞' : escapeHtml(it.qty)}</span>` : ''}
                     </div>
                 `).join('')}
             ${shopButton}

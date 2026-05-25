@@ -1,6 +1,6 @@
 // Level 1 — Field：星球表面（陆 / 水 / 空 三大生态）
 
-import { $, $$, escapeHtml, showToast } from './utils.js';
+import { $, $$, escapeHtml, renderVisualAsset, showToast } from './utils.js';
 import { canPlaceItemInArea, CONFIG, DECO_VISUALS, findLargestHouseInLayout, getPlacedItemZOrder, getShopItemById, isHouseItem, SHOP_ITEMS } from './config.js';
 import { getActivePlanetWeather, isVisitingMode, notify, state, setCurrentField } from './state.js';
 import { getLayout, loadPets, savePetDebounced, saveUserProfileDebounced } from './storage.js';
@@ -237,6 +237,22 @@ function isFieldDecorMode() {
     return state.isDecorMode && state.zoomLevel === 1;
 }
 
+function clientScaleForElement(el) {
+    const rect = el?.getBoundingClientRect?.();
+    if (!rect || rect.width <= 0 || rect.height <= 0) return { x: 1, y: 1 };
+    return {
+        x: (el.offsetWidth || el.clientWidth || rect.width) / rect.width,
+        y: (el.offsetHeight || el.clientHeight || rect.height) / rect.height,
+    };
+}
+
+function fieldLayoutPxToClientPx(value) {
+    const scene = $('mhFieldScene');
+    const scale = clientScaleForElement(scene);
+    const safeScale = Math.max(0.001, (scale.x + scale.y) / 2);
+    return (Number(value) || 0) / safeScale;
+}
+
 function pointToFieldCoords(clientX, clientY, requireInside = false) {
     const scene = $('mhFieldScene');
     const rect = scene?.getBoundingClientRect?.();
@@ -267,17 +283,34 @@ function makeFieldDragGhost(itemId) {
     const item = ITEM_BY_ID[itemId];
     const ghost = document.createElement('div');
     ghost.className = 'mh-field-drag-ghost';
-    const fontSize = getFieldItemFontSize(item);
-    const svgMarkup = DECO_VISUALS[itemId]?.svg;
-    if (svgMarkup) {
+    const fontSize = fieldLayoutPxToClientPx(getFieldItemFontSize(item));
+    const visualHtml = fieldItemVisualHtml(item, fontSize, { displayInline: true });
+    if (visualHtml) {
         ghost.classList.add('mh-field-drag-ghost-svg');
-        ghost.innerHTML = `<span class="field-house-svg" style="width:${(fontSize * 2.2).toFixed(0)}px;display:inline-block">${svgMarkup}</span>`;
+        ghost.innerHTML = visualHtml;
     } else {
         ghost.textContent = item?.emoji || '';
         ghost.style.fontSize = fontSize.toFixed(1) + 'px';
     }
     document.body.appendChild(ghost);
     return ghost;
+}
+
+function getItemVisual(item) {
+    const visual = DECO_VISUALS[item?.id] || {};
+    return {
+        ...visual,
+        svg: item?.svg || visual.svg,
+        imageUrl: item?.imageUrl || visual.imageUrl,
+    };
+}
+
+function fieldItemVisualHtml(item, fontSize, { extraHtml = '', displayInline = false } = {}) {
+    const visualHtml = renderVisualAsset(getItemVisual(item), { className: 'field-house-img', alt: item?.name || '' });
+    if (!visualHtml) return '';
+    const width = (fontSize * 2.2).toFixed(0);
+    const display = displayInline ? ';display:inline-block' : '';
+    return `<span class="field-item-visual field-house-svg" style="width:${width}px${display}">${visualHtml}</span>${extraHtml}`;
 }
 
 function moveFieldDragGhost(ghost, clientX, clientY) {
@@ -505,7 +538,7 @@ function renderFieldDecorTray(inv, currentField) {
         .filter(it => it.qty > 0 || it.unlimited);
     const shopButton = `
         <button type="button" class="shop-item mh-field-shop-button" data-field-shop="outdoor" style="min-width:62px;padding:6px;flex-shrink:0">
-            <div class="emoji">🛒</div>
+            <div class="emoji shop-item-visual shop-item-emoji">🛒</div>
             <div class="name" style="font-size:10px">商店</div>
         </button>`;
     return `
@@ -513,17 +546,25 @@ function renderFieldDecorTray(inv, currentField) {
             ${items.length === 0
                 ? `<div class="mh-dock-hint">📦 ${escapeHtml(currentField.name)}暂无可摆放户外物品，去商店买点吧～</div>`
                 : items.map(it => {
-                    const showCount = !it.uniqueItem;
-                    const countHtml = showCount ? ` ×${it.unlimited ? '∞' : it.qty}` : '';
+                    const showCount = !it.uniqueItem && (it.unlimited || it.qty > 1);
+                    const countHtml = showCount ? `<span class="shop-item-count-badge">${it.unlimited ? '∞' : escapeHtml(it.qty)}</span>` : '';
                     return `
                     <div data-tray-item="${escapeHtml(it.id)}" class="shop-item" style="min-width:62px;padding:6px;flex-shrink:0">
-                        <div class="emoji">${it.emoji}</div>
-                        <div class="name" style="font-size:10px">${escapeHtml(it.name)}${countHtml}</div>
+                        ${renderFieldTrayIcon(it)}
+                        <div class="name" style="font-size:10px">${escapeHtml(it.name)}</div>
+                        ${countHtml}
                     </div>`;
                 }).join('')}
             ${shopButton}
         </div>
     `;
+}
+
+function renderFieldTrayIcon(item) {
+    const visualHtml = renderVisualAsset(getItemVisual(item), { className: 'shop-item-img', alt: item?.name || '' });
+    return visualHtml
+        ? `<div class="emoji shop-item-visual">${visualHtml}</div>`
+        : `<div class="emoji shop-item-visual shop-item-emoji">${escapeHtml(item?.emoji || '')}</div>`;
 }
 
 function ensureFieldScenePresetsLoaded() {
@@ -1575,15 +1616,15 @@ export const fieldLevel = {
                         const fontSize = getFieldItemFontSize(def, it);
                         const selectedClass = selectedFieldItem?.fieldKey === currentFieldKey() && selectedFieldItem.idx === idx ? ' selected' : '';
                         const isHouse = isHouseItem(def);
-                        const houseClass = isHouse ? ' is-house' : '';
                         const isActive = isHouse && idx === activeIdx;
                         const flagHtml = isActive
                             ? `<span class="field-house-flag" aria-hidden="true" title="主屋（${activeHouse.count} 间）"><span class="field-house-flag-pole"></span><span class="field-house-flag-banner">🚩</span></span>`
                             : '';
-                        const inner = isHouse && DECO_VISUALS[def.id]?.svg
-                            ? `<span class="field-house-svg" style="width:${(fontSize * 2.2).toFixed(0)}px">${DECO_VISUALS[def.id].svg}</span>${flagHtml}`
-                            : def.emoji;
-                        return `<div class="field-item${selectedClass}${houseClass}" data-fidx="${idx}" data-x="${x}" data-y="${y}" data-field-size="${scale.toFixed(3)}" style="left:${(x * 100).toFixed(2)}%;top:${(y * 100).toFixed(2)}%;z-index:${zIndex};font-size:${fontSize}px">${inner}</div>`;
+                        const visualHtml = fieldItemVisualHtml(def, fontSize, { extraHtml: flagHtml });
+                        const houseClass = isHouse ? ' is-house' : '';
+                        const visualClass = visualHtml ? ' has-visual' : '';
+                        const inner = visualHtml || escapeHtml(def.emoji || '');
+                        return `<div class="field-item${selectedClass}${houseClass}${visualClass}" data-fidx="${idx}" data-x="${x}" data-y="${y}" data-field-size="${scale.toFixed(3)}" style="left:${(x * 100).toFixed(2)}%;top:${(y * 100).toFixed(2)}%;z-index:${zIndex};font-size:${fontSize}px">${inner}</div>`;
                     }).join('');
                 })()}
             </div>

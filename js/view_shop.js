@@ -1,7 +1,7 @@
 // 商店视图
-import { $, $$, coinIconSvg, escapeHtml, showToast } from './utils.js';
+import { $, $$, coinIconSvg, escapeHtml, renderVisualAsset, showToast } from './utils.js';
 import { t } from './i18n.js';
-import { canPlaceItemInArea, CONFIG, SHOP_ITEMS } from './config.js';
+import { canPlaceItemInArea, CONFIG, DECO_VISUALS, SHOP_ITEMS } from './config.js';
 import { state } from './state.js';
 
 const OUTDOOR_AREAS = ['land', 'water', 'sky'];
@@ -95,7 +95,7 @@ function renderShopItems(onBuy) {
         const owned = item.uniqueItem && (inv[item.id] || 0) > 0;
         return `
         <div class="shop-item${owned ? ' is-owned' : ''}" data-buy="${escapeHtml(item.id)}"${owned ? ' data-owned="1"' : ''}>
-            <div class="emoji">${item.emoji}</div>
+            ${renderShopItemIcon(item)}
             <div class="name">${escapeHtml(item.name)}</div>
             <div class="price mh-coin-amount">${owned ? '已拥有' : `${coinIconSvg()} ${item.price}`}</div>
         </div>`;
@@ -111,6 +111,22 @@ function renderShopItems(onBuy) {
             showBuyConfirm(item, onBuy);
         };
     });
+}
+
+function getShopItemVisual(item) {
+    const visual = DECO_VISUALS[item?.id] || {};
+    return {
+        ...visual,
+        svg: item?.svg || visual.svg,
+        imageUrl: item?.imageUrl || visual.imageUrl,
+    };
+}
+
+function renderShopItemIcon(item) {
+    const visualHtml = renderVisualAsset(getShopItemVisual(item), { className: 'shop-item-img', alt: item?.name || '' });
+    return visualHtml
+        ? `<div class="emoji shop-item-visual">${visualHtml}</div>`
+        : `<div class="emoji">${escapeHtml(item?.emoji || '')}</div>`;
 }
 
 function showBuyConfirm(item, onBuy) {

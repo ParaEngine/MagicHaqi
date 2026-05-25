@@ -428,17 +428,23 @@
     opacity: 0.45;
     filter: grayscale(0.7) drop-shadow(0 3px 4px rgba(0,0,0,0.22));
 }
-/* —— 户外房屋（type: 'house'）：使用 SVG 而非 emoji —— */
-.field-item.is-house { line-height: 0; font-size: 0; filter: none !important; }
-.field-item.is-house .field-house-svg {
+/* —— 户外物品可使用 SVG / 透明图片，而非 emoji —— */
+.field-item.is-house,
+.field-item.has-visual { line-height: 0; font-size: 0; filter: none !important; }
+.field-item.is-house .field-house-svg,
+.field-item.has-visual .field-house-svg {
     display: inline-block;
     line-height: 0;
     filter: none;
 }
-.field-item.is-house .field-house-svg svg {
+.field-item.is-house .field-house-svg svg,
+.field-item.is-house .field-house-svg img,
+.field-item.has-visual .field-house-svg svg,
+.field-item.has-visual .field-house-svg img {
     width: 100%;
     height: auto;
     display: block;
+    object-fit: contain;
 }
 /* —— 主屋旗帜（贴在房屋右下角，叠在房屋之上） —— */
 .field-house-flag {
@@ -468,14 +474,20 @@
     position: fixed;
     z-index: 20000;
     left: 0;
-    }
-    .field-map-prop {
+    top: 0;
+    transform: translate(-50%, -50%);
+    pointer-events: none;
+    opacity: 0.9;
+    filter: drop-shadow(0 12px 18px rgba(6,18,44,0.28));
+}
+.field-map-prop {
     font-size: 34px;
     filter: drop-shadow(0 8px 12px rgba(0,0,0,0.28));
 }
 .mh-field-drag-ghost-svg { line-height: 0; font-size: 0; }
 .mh-field-drag-ghost-svg .field-house-svg { display: inline-block; line-height: 0; }
-.mh-field-drag-ghost-svg .field-house-svg svg { width: 100%; height: auto; display: block; }
+.mh-field-drag-ghost-svg .field-house-svg svg,
+.mh-field-drag-ghost-svg .field-house-svg img { width: 100%; height: auto; display: block; object-fit: contain; }
 .mh-field-scale-controls {
     position: absolute;
     left: 50%;

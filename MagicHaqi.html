@@ -475,10 +475,12 @@
             filter: grayscale(0.45) drop-shadow(0 0 12px rgba(239, 68, 68, 0.82));
         }
         .mh-furniture-svg,
-        .mh-furniture-svg svg {
+        .mh-furniture-svg svg,
+        .mh-furniture-svg img {
             display: block;
             width: 100%;
             height: 100%;
+            object-fit: contain;
         }
         .mh-room-furniture[data-item-type="food"] .mh-food-svg,
         .mh-furniture-drag-ghost[data-item-type="food"] .mh-food-svg {
@@ -728,6 +730,7 @@
 
         /* 商店物品卡 */
         .shop-item {
+            position: relative;
             background:
                 linear-gradient(180deg, rgba(255,255,255,0.78), rgba(255,255,255,0.06) 48%),
                 linear-gradient(180deg, #ffffff, #dff7ff);
@@ -742,7 +745,46 @@
         }
         .shop-item:hover { border-color: var(--accent); transform: translateY(-3px) rotateX(6deg); box-shadow: 0 7px 0 rgba(14,116,144,0.22), 0 16px 20px rgba(14,116,144,0.18), 0 0 0 3px rgba(103,232,249,0.18), inset 0 1px 0 rgba(255,255,255,0.86); }
         .shop-item .emoji { font-size: 32px; }
+        .shop-item .shop-item-visual {
+            width: 42px;
+            height: 38px;
+            display: grid;
+            place-items: center;
+            font-size: 0;
+            line-height: 0;
+        }
+        .shop-item .shop-item-emoji {
+            font-size: 30px;
+            line-height: 1;
+        }
+        .shop-item .shop-item-visual svg,
+        .shop-item .shop-item-visual img {
+            display: block;
+            width: 100%;
+            height: 100%;
+            object-fit: contain;
+        }
         .shop-item .name { font-size: 12px; font-weight: 700; }
+        .shop-item-count-badge {
+            position: absolute;
+            right: -2px;
+            bottom: -2px;
+            min-width: 18px;
+            height: 18px;
+            padding: 0 5px;
+            border-radius: 999px;
+            display: inline-flex;
+            align-items: center;
+            justify-content: center;
+            background: rgba(255,255,255,0.94);
+            border: 1.5px solid rgba(14,116,144,0.42);
+            color: #164e7a;
+            font-size: 10px;
+            font-weight: 900;
+            line-height: 1;
+            box-shadow: 0 2px 4px rgba(6,18,44,0.12), inset 0 1px 0 rgba(255,255,255,0.9);
+            pointer-events: none;
+        }
         .shop-item .price { font-size: 11px; color: var(--accent-dark); font-weight: 700; }
         .shop-item.is-owned { filter: grayscale(0.4); opacity: 0.7; cursor: not-allowed; }
         .shop-item.is-owned:hover { transform: none; box-shadow: 0 4px 0 rgba(14,116,144,0.22), 0 10px 16px rgba(14,116,144,0.14), inset 0 1px 0 rgba(255,255,255,0.82); }
