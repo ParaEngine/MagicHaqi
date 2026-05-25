@@ -264,7 +264,7 @@ function addPoopsToCurrentField(amount = 5) {
         return 0;
     }
     const count = normalizePositiveInt(amount) || 5;
-    const field = state.currentField || 'land';
+    const field = state.currentField || '1';
     const maxPerField = Math.max(0, Number(CONFIG.maxPoopsPerField) || 0);
     pet.poops = Array.isArray(pet.poops) ? pet.poops : [];
     const currentCount = pet.poops.filter(poop => (poop?.field || 'land') === field).length;

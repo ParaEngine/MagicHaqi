@@ -40,7 +40,7 @@
 			.status.error { @apply border-red-200 bg-red-50 text-red-800; }
 			.status-action { @apply min-h-0 border-0 bg-transparent p-0 font-bold underline underline-offset-2 hover:border-transparent hover:bg-transparent; }
 			.pill { @apply inline-flex min-h-6 items-center whitespace-nowrap rounded-full border border-slate-300 bg-white px-2 text-xs text-slate-500; }
-			.records-toolbar { @apply grid grid-cols-[minmax(0,1fr)_auto_auto] gap-2 border-b border-slate-300 bg-slate-50 p-3; }
+			.records-toolbar { @apply grid grid-cols-[minmax(0,1fr)_auto_auto_auto] gap-2 border-b border-slate-300 bg-slate-50 p-3; }
 			.scene-index-heading { min-width: 0; }
 			.scene-index-title { display: flex; min-width: 0; align-items: center; gap: 0.5rem; }
 			.scene-index-title button { min-height: 1.75rem; padding-left: 0.625rem; padding-right: 0.625rem; font-size: 0.75rem; line-height: 1rem; }
@@ -178,7 +178,7 @@
 							<option value="1024x1024" selected>1024x1024 默认</option>
 						</select>
 					</label>
-					<label class="toggle-line"><input id="uploadResultToKeepwork" type="checkbox" checked>上传临时 CDN</label>
+					<label class="toggle-line"><input id="uploadResultToKeepwork" type="checkbox" checked disabled>上传临时 CDN</label>
 					<label class="toggle-line"><input id="uploadCompressedSceneToCdn" type="checkbox">生成后压缩上传 CDN</label>
 					<div class="toolbar"><button id="btnSceneCdnConfig" type="button">设置</button></div>
 					<div id="sceneCdnStatus" class="hint">CDN folder: maisi/magichaqi/scenes</div>
@@ -212,6 +212,7 @@
 			<div class="records-toolbar">
 				<input id="recordSearch" placeholder="搜索 id / title / tags">
 				<button id="btnGenerateAllMissing" class="primary generate-all-button" type="button">生成选中(0)</button>
+				<button id="btnRepairScenes" type="button">修复</button>
 				<button id="btnNewScene" type="button">新建</button>
 			</div>
 			<div class="records-filters">
@@ -350,6 +351,7 @@
 		const SCENE_CDN_DEFAULT_COMPRESSION_RATIO = 70;
 		const SCENE_CDN_BATCH_TARGET_MIN_KB = 80;
 		const SCENE_CDN_BATCH_TARGET_MAX_KB = 100;
+		const SCENE_REPAIR_MAX_BYTES = 120 * 1024;
 		const SCENE_CDN_BATCH_TARGET_MAX_ATTEMPTS = 5;
 		const SCENE_CDN_BATCH_INITIAL_QUALITY = 0.3;
 		let DEFAULT_SCENE_TAGS = [];
@@ -357,7 +359,7 @@
 		const BG_MUSIC_LABELS = { selector: '选择', square: '广场', forest: '森林', farm: '农场', mountain: '山地', park: '公园', playground: '游乐场', ship: '飞船', haqiLoop: '哈奇循环' };
 		let TAG_ALIASES = {};
 		const $ = (id) => document.getElementById(id);
-		const state = { sdk: null, referenceDataUrls: [], scenes: [], selectedId: '', selectedSceneIds: new Set(), indexMeta: null, lastLLMModel: '', lastChatModel: '', lastImageSize: '', currentHistoryUrls: [], imageSizeCache: new Map(), imageSizeRequests: new Map(), imageDimensionCache: new Map(), imageDimensionRequests: new Map(), recordThumbObserver: null, workspaceViewer: null, storyConfig: null, storyConfigModule: null, soundManager: null, particleEffectsModule: null, generationPromptsPromise: null, batchAbortRequested: false, generateAll: { running: false, pauseRequested: false, completed: 0, total: 0, activeId: '' } };
+		const state = { sdk: null, referenceDataUrls: [], scenes: [], selectedId: '', selectedSceneIds: new Set(), indexMeta: null, lastLLMModel: '', lastChatModel: '', lastImageSize: '', currentHistoryUrls: [], imageSizeCache: new Map(), imageSizeRequests: new Map(), imageDimensionCache: new Map(), imageDimensionRequests: new Map(), recordThumbObserver: null, workspaceViewer: null, storyConfig: null, storyConfigModule: null, soundManager: null, particleEffectsModule: null, generationPromptsPromise: null, batchAbortRequested: false, batchRepair: null, generateAll: { running: false, pauseRequested: false, completed: 0, total: 0, activeId: '' } };
 
 		function loadGenerationPrompts() {
 			state.generationPromptsPromise ||= importRuntimeModule('../js/generationPrompts.js');
@@ -466,6 +468,27 @@
 			if (meta.includes(';base64')) return Math.max(0, Math.floor((data.length * 3) / 4) - (data.endsWith('==') ? 2 : data.endsWith('=') ? 1 : 0));
 			try { return new Blob([decodeURIComponent(data)]).size; }
 			catch (_) { return new Blob([data]).size; }
+		}
+
+		function isDataUrl(value) {
+			return /^data:/i.test(String(value || '').trim());
+		}
+
+		function getDataUrlMimeType(value) {
+			const match = String(value || '').trim().match(/^data:([^;,]+)[;,]/i);
+			return (match?.[1] || '').toLowerCase();
+		}
+
+		function isWebpImageUrl(value) {
+			const url = String(value || '').trim();
+			if (!url) return false;
+			if (isDataUrl(url)) return getDataUrlMimeType(url) === 'image/webp';
+			try {
+				const parsed = new URL(url, window.location.href);
+				return /\.webp$/i.test(parsed.pathname);
+			} catch (_) {
+				return /\.webp(?:[?#].*)?$/i.test(url);
+			}
 		}
 
 		async function getImageByteSize(url) {
@@ -923,6 +946,7 @@ ${currentIndent}}`;
 		async function persistGenerationSettings({ silent = true } = {}) {
 			saveLocalGenerationSettings();
 			if (!(state.sdk || window.keepwork)?.personalPageStore || !Array.isArray(state.scenes)) return;
+			state.scenes = await sanitizeScenesBeforeSave(state.scenes);
 			const data = JSON.stringify(buildIndexMetadataOnlyObject(), null, 2);
 			await writeFile(SCENE_INDEX_PATH, data);
 			state.indexMeta = JSON.parse(data);
@@ -1265,6 +1289,61 @@ ${currentIndent}}`;
 			return { remoteKey, url: `${config.publicDomain}/${remoteKey}` };
 		}
 
+		async function dataUrlToBlob(dataUrl) {
+			const response = await fetch(dataUrl);
+			if (!response.ok) throw new Error(`data URL 解析失败：${response.status}`);
+			return await response.blob();
+		}
+
+		function mimeTypeToExtension(mimeType) {
+			const normalized = String(mimeType || '').toLowerCase();
+			if (normalized === 'image/webp') return 'webp';
+			if (normalized === 'image/png') return 'png';
+			if (normalized === 'image/jpeg' || normalized === 'image/jpg') return 'jpg';
+			if (normalized === 'image/gif') return 'gif';
+			return 'bin';
+		}
+
+		async function uploadBlobToKeepworkTempCdn(blob, fileName) {
+			const sdk = state.sdk || window.keepwork;
+			if (!sdk?.cloudDrive?.uploadTempFile) throw new Error('Keepwork CloudDrive 临时上传不可用');
+			const file = new File([blob], fileName, { type: blob.type || 'application/octet-stream' });
+			const result = await sdk.cloudDrive.uploadTempFile(file, { filename: fileName, expire: 180 });
+			if (result?.url && !isDataUrl(result.url)) return { url: result.url, remoteKey: result.url, config: null };
+			throw new Error('CloudDrive uploadTempFile 没有返回有效 URL');
+		}
+
+		async function uploadDataUrlToKeepworkTempCdn(dataUrl, sceneId = $('sceneId')?.value) {
+			const fileName = getSceneCdnFileNameForSceneId(sceneId || 'scene', mimeTypeToExtension(getDataUrlMimeType(dataUrl) || 'image/webp'));
+			return await uploadBlobToKeepworkTempCdn(await dataUrlToBlob(dataUrl), fileName);
+		}
+
+		async function ensureSceneImageUrlIsRemote(scene, { statusEl = $('saveStatus'), silent = false } = {}) {
+			const savedScene = normalizeScene(scene || defaultScene());
+			const imageUrl = String(savedScene.imageUrl || '').trim();
+			if (isDataUrl(imageUrl)) {
+				if (!silent && statusEl) setStatus(statusEl, `scene.imageUrl 是 data URL，正在上传 Keepwork 临时 CDN：${savedScene.id}...`, '');
+				const uploaded = await uploadDataUrlToKeepworkTempCdn(imageUrl, savedScene.id);
+				savedScene.imageUrl = uploaded.url;
+				if (!silent && statusEl) setStatus(statusEl, `已上传临时 CDN 并替换 imageUrl：${uploaded.url}`, 'ok');
+			}
+			savedScene.historyUrls = normalizeHistoryUrls(savedScene.historyUrls || []).filter(url => url && !isDataUrl(url) && url !== savedScene.imageUrl);
+			return savedScene;
+		}
+
+		async function sanitizeScenesBeforeSave(scenes = state.scenes) {
+			const safeScenes = [];
+			for (let index = 0; index < scenes.length; index += 1) {
+				safeScenes.push(await ensureSceneImageUrlIsRemote(scenes[index], { silent: true }));
+			}
+			return safeScenes;
+		}
+
+		async function uploadBlobToScenePreferredCdn(blob, fileName) {
+			if (getSceneCdnConfig()) return await uploadBlobToSceneCdn(blob, fileName);
+			return await uploadBlobToKeepworkTempCdn(blob, fileName);
+		}
+
 		function getSceneCdnFileNameForSceneId(sceneId, extension = 'webp') {
 			const safeSceneId = safeId(sceneId || 'scene', 'scene');
 			return `${safeSceneId}-${Date.now()}.${extension}`;
@@ -1275,12 +1354,232 @@ ${currentIndent}}`;
 			return getSceneCdnFileNameForSceneId(sceneId, extension);
 		}
 
+		async function compressSceneImageForRepair(url, maxBytes = SCENE_REPAIR_MAX_BYTES) {
+			const img = await loadImageForCanvas(url);
+			const sourceWidth = img.naturalWidth || img.width || getImageSize().width;
+			const sourceHeight = img.naturalHeight || img.height || getImageSize().height;
+			if (!sourceWidth || !sourceHeight) throw new Error('无法读取图片尺寸');
+			const sourceMaxEdge = Math.max(sourceWidth, sourceHeight);
+			const maxEdges = [...new Set([sourceMaxEdge, 1536, 1280, 1024, 896, 768, 640, 512, 384, 256, 192, 128]
+				.filter(value => value > 0 && value <= sourceMaxEdge))];
+			const formatMeta = getSceneCdnFormatMeta('webp');
+			let best = null;
+			for (const maxEdge of maxEdges) {
+				const scale = Math.min(1, maxEdge / sourceMaxEdge);
+				const width = Math.max(1, Math.round(sourceWidth * scale));
+				const height = Math.max(1, Math.round(sourceHeight * scale));
+				const canvas = document.createElement('canvas');
+				canvas.width = width;
+				canvas.height = height;
+				const ctx = canvas.getContext('2d');
+				if (!ctx) throw new Error('Canvas 不可用，无法压缩图片');
+				ctx.imageSmoothingEnabled = true;
+				ctx.imageSmoothingQuality = 'high';
+				ctx.drawImage(img, 0, 0, width, height);
+				const compressed = await canvasToTargetSizeBlob(canvas, formatMeta, SCENE_CDN_DEFAULT_COMPRESSION_RATIO, {
+					autoTargetSize: true,
+					targetMinKb: 40,
+					targetMaxKb: Math.floor(maxBytes / 1024),
+					targetMinBytes: 1,
+					targetMaxBytes: maxBytes,
+					targetIdealBytes: Math.round(maxBytes * 0.82),
+					maxAttempts: 8,
+					initialQuality: 0.32,
+				});
+				const candidate = { ...compressed, width, height, format: 'webp', extension: 'webp', formatLabel: 'WebP' };
+				if (!best || candidate.blob.size < best.blob.size) best = candidate;
+				if (candidate.blob.size <= maxBytes) return candidate;
+			}
+			if (best?.blob?.size <= maxBytes) return best;
+			throw new Error(`压缩后仍超过 120 KB：${formatBytes(best?.blob?.size || 0)}`);
+		}
+
 		async function compressAndUploadGeneratedSceneImage(url, sceneId = '', options = loadSceneCdnUploadOptions()) {
 			const compressed = await compressSceneImageForCdn(url, options);
 			const uploaded = await uploadBlobToSceneCdn(compressed.blob, getSceneCdnFileNameForSceneId(sceneId || $('sceneId')?.value || state.selectedId, compressed.extension));
 			state.imageSizeCache.set(uploaded.url, compressed.blob.size);
 			state.imageDimensionCache.set(uploaded.url, { width: compressed.width, height: compressed.height });
 			return { ...uploaded, ...compressed };
+		}
+
+		async function analyzeSceneImageForRepair(scene) {
+			const imageUrl = String(scene?.imageUrl || '').trim();
+			const sizeBytes = imageUrl ? await getImageByteSize(imageUrl).catch(() => null) : null;
+			const isWebp = isWebpImageUrl(imageUrl);
+			const needsUpload = isDataUrl(imageUrl);
+			const needsConvert = !!imageUrl && !isWebp;
+			const needsCompress = isWebp && Number.isFinite(sizeBytes) && sizeBytes > SCENE_REPAIR_MAX_BYTES;
+			const issue = {
+				scene,
+				id: scene.id,
+				title: scene.title || scene.id,
+				imageUrl,
+				sizeBytes,
+				isWebp,
+				needsUpload,
+				needsConvert,
+				needsCompress,
+				warnings: [],
+				fixes: [],
+				fixedUrl: '',
+				error: '',
+			};
+			if (!imageUrl) issue.warnings.push('缺少 imageUrl');
+			if (needsConvert) issue.warnings.push('imageUrl 不是 WebP');
+			if (needsCompress) issue.warnings.push(`WebP 超过 120 KB：${formatBytes(sizeBytes)}`);
+			if (isWebp && imageUrl && sizeBytes == null) issue.warnings.push('无法读取 WebP 大小');
+			if (needsUpload) issue.fixes.push('data URL 将上传 CDN 并替换 imageUrl');
+			if (needsConvert) issue.fixes.push('将自动转成 WebP 并上传 CDN');
+			if (needsCompress) issue.fixes.push('将自动压缩到 120 KB 以内并上传 CDN');
+			return issue.warnings.length || issue.fixes.length ? issue : null;
+		}
+
+		async function scanSceneRepairIssues({ setMainStatus = true } = {}) {
+			if (setMainStatus) setStatus($('runStatus'), `正在扫描 ${state.scenes.length} 个 scenes...`, '');
+			const issues = [];
+			for (let index = 0; index < state.scenes.length; index += 1) {
+				const scene = state.scenes[index];
+				if (setMainStatus) setStatus($('runStatus'), `正在扫描 ${index + 1}/${state.scenes.length}：${scene.title || scene.id}`, '');
+				const issue = await analyzeSceneImageForRepair(scene);
+				if (issue) issues.push(issue);
+			}
+			state.batchRepair = { ...(state.batchRepair || {}), issues, running: false };
+			if (setMainStatus) {
+				const fixableCount = issues.filter(issue => issue.fixes.length).length;
+				setStatus($('runStatus'), `扫描完成：发现 ${issues.length} 个需要关注，${fixableCount} 个可一键修复。`, issues.length ? '' : 'ok');
+			}
+			updateRepairScenesButton();
+			return issues;
+		}
+
+		function renderSceneRepairIssueList(issues = state.batchRepair?.issues || []) {
+			const root = $('repairSceneList');
+			if (!root) return;
+			if (!issues.length) {
+				root.innerHTML = '<div class="history-empty">没有发现需要修复的场景。</div>';
+				return;
+			}
+			root.innerHTML = issues.map((issue, index) => {
+				const labels = [];
+				issue.warnings.forEach(text => labels.push(`<span class="pill" style="border-color:#f59e0b;background:#fffbeb;color:#92400e">警告：${escapeHtml(text)}</span>`));
+				issue.fixes.forEach(text => labels.push(`<span class="pill" style="border-color:#7dd3fc;background:#f0f9ff;color:#075985">修复：${escapeHtml(text)}</span>`));
+				if (issue.fixedUrl) labels.push('<span class="pill" style="border-color:#6ee7b7;background:#ecfdf5;color:#065f46">已上传 CDN</span>');
+				if (issue.error) labels.push(`<span class="pill" style="border-color:#fca5a5;background:#fef2f2;color:#991b1b">失败：${escapeHtml(issue.error)}</span>`);
+				const preview = issue.imageUrl ? `${issue.imageUrl.slice(0, 150)}${issue.imageUrl.length > 150 ? '...' : ''}` : '空';
+				const fixed = issue.fixedUrl ? `<div style="margin-top:4px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font-size:11px;color:#047857">${escapeHtml(issue.fixedUrl)}</div>` : '';
+				return `<div class="section" style="background:#fff;padding:10px">
+					<div style="display:flex;align-items:center;justify-content:space-between;gap:8px"><strong style="min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font-size:13px">${index + 1}. ${escapeHtml(issue.title || issue.id)}</strong><span style="font-size:11px;color:#64748b">${escapeHtml(issue.id)}</span></div>
+					<div style="display:flex;flex-wrap:wrap;gap:6px;margin-top:6px">${labels.join('')}</div>
+					<div style="margin-top:4px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font-family:monospace;font-size:11px;color:#64748b">${escapeHtml(preview)}</div>
+					${fixed}
+				</div>`;
+			}).join('');
+		}
+
+		function closeRepairScenesDialog() {
+			$('repairScenesOverlay')?.remove();
+			updateRepairScenesButton();
+		}
+
+		async function openRepairScenesDialog() {
+			closeRepairScenesDialog();
+			const overlay = document.createElement('div');
+			overlay.className = 'modal-overlay';
+			overlay.id = 'repairScenesOverlay';
+			overlay.innerHTML = `<div class="modal-window" role="dialog" aria-modal="true" aria-label="扫描修复 scenes" style="width:min(900px,100%);height:min(760px,100%)">
+				<div class="modal-titlebar"><strong>扫描修复 · scenes.json</strong><button type="button" id="closeRepairScenes">关闭</button></div>
+				<div class="modal-body">
+					<div class="hint">扫描所有 scene.imageUrl：非 WebP、WebP 超过 120 KB、data URL 都会列出；一键修复会转成 WebP、压到 120 KB 内并上传 CDN。</div>
+					<div id="repairSceneStatus" class="status">准备扫描。</div>
+					<div id="repairSceneList" class="record-list" style="border:1px solid #cbd5e1;border-radius:6px;background:#f8fafc"><div class="hint" style="padding:10px">正在扫描...</div></div>
+					<div class="toolbar" style="justify-content:flex-end"><button id="btnRescanRepairScenes" type="button">重新扫描</button><button id="btnRunRepairScenes" class="primary" type="button" disabled>一键修复</button></div>
+				</div>
+			</div>`;
+			document.body.appendChild(overlay);
+			makeModalDraggable(overlay);
+			overlay.addEventListener('click', event => { if (event.target === overlay) closeRepairScenesDialog(); });
+			$('closeRepairScenes').onclick = closeRepairScenesDialog;
+			$('btnRescanRepairScenes').onclick = () => refreshRepairScenesDialog().catch(e => setStatus($('repairSceneStatus'), `扫描失败：${e?.message || e}`, 'error'));
+			$('btnRunRepairScenes').onclick = () => repairSceneImages().catch(e => setStatus($('repairSceneStatus'), `修复失败：${e?.message || e}`, 'error'));
+			await refreshRepairScenesDialog();
+		}
+
+		async function refreshRepairScenesDialog() {
+			setStatus($('repairSceneStatus'), '正在扫描所有场景...', '');
+			$('btnRunRepairScenes').disabled = true;
+			const issues = await scanSceneRepairIssues({ setMainStatus: false });
+			const fixableCount = issues.filter(issue => issue.fixes.length).length;
+			renderSceneRepairIssueList(issues);
+			$('btnRunRepairScenes').disabled = fixableCount <= 0;
+			setStatus($('repairSceneStatus'), `扫描完成：发现 ${issues.length} 个需要关注，${fixableCount} 个可一键修复。`, issues.length ? '' : 'ok');
+		}
+
+		async function repairSceneImages() {
+			const issues = (state.batchRepair?.issues || []).filter(issue => issue.fixes.length);
+			if (!issues.length) return setStatus($('repairSceneStatus'), '没有可修复项。', 'ok');
+			state.batchRepair = { ...(state.batchRepair || {}), running: true };
+			updateRepairScenesButton();
+			$('btnRunRepairScenes').disabled = true;
+			$('btnRescanRepairScenes').disabled = true;
+			let fixedCount = 0;
+			try {
+				for (let index = 0; index < issues.length; index += 1) {
+					const issue = issues[index];
+					setStatus($('repairSceneStatus'), `正在修复 ${index + 1}/${issues.length}：${issue.title || issue.id}`, '');
+					try {
+						const sceneIndex = state.scenes.findIndex(scene => scene.id === issue.id);
+						if (sceneIndex < 0) throw new Error('场景已不存在，请重新扫描');
+						const scene = state.scenes[sceneIndex];
+						const sourceUrl = String(scene.imageUrl || '').trim();
+						if (!sourceUrl) throw new Error('当前 imageUrl 为空，请重新扫描');
+						const currentSize = await getImageByteSize(sourceUrl).catch(() => issue.sizeBytes);
+						const shouldConvertOrCompress = !isWebpImageUrl(sourceUrl) || (Number.isFinite(currentSize) && currentSize > SCENE_REPAIR_MAX_BYTES);
+						let uploaded;
+						let detail = '';
+						if (shouldConvertOrCompress) {
+							const compressed = await compressSceneImageForRepair(sourceUrl, SCENE_REPAIR_MAX_BYTES);
+							uploaded = await uploadBlobToScenePreferredCdn(compressed.blob, getSceneCdnFileNameForSceneId(scene.id, 'webp'));
+							state.imageSizeCache.set(uploaded.url, compressed.blob.size);
+							state.imageDimensionCache.set(uploaded.url, { width: compressed.width, height: compressed.height });
+							detail = `WebP ${compressed.width}x${compressed.height} q${compressed.qualityPercent || '?'}%，${formatBytes(compressed.blob.size)}`;
+						} else if (isDataUrl(sourceUrl)) {
+							uploaded = await uploadDataUrlToKeepworkTempCdn(sourceUrl, scene.id);
+							const size = await getImageByteSize(uploaded.url).catch(() => null);
+							detail = `上传原 WebP，${formatBytes(size)}`;
+						} else {
+							throw new Error('当前记录不再需要修复，请重新扫描');
+						}
+						const historyUrls = normalizeHistoryUrls([sourceUrl, ...(scene.historyUrls || [])]).filter(url => url && !isDataUrl(url) && url !== uploaded.url);
+						const savedScene = normalizeScene({ ...scene, imageUrl: uploaded.url, historyUrls }, sceneIndex);
+						state.scenes[sceneIndex] = savedScene;
+						if (state.selectedId === savedScene.id) applySceneToForm(savedScene);
+						issue.fixedUrl = uploaded.url;
+						issue.imageUrl = uploaded.url;
+						issue.sizeBytes = state.imageSizeCache.get(uploaded.url) || null;
+						issue.isWebp = true;
+						issue.needsUpload = false;
+						issue.needsConvert = false;
+						issue.needsCompress = false;
+						issue.warnings = [];
+						issue.fixes = [];
+						issue.error = '';
+						fixedCount += 1;
+						setStatus($('saveStatus'), `已修复 ${savedScene.id}：${uploaded.remoteKey}，${detail}`, 'ok');
+					} catch (error) {
+						issue.error = error?.message || String(error);
+					}
+					renderSceneRepairIssueList(state.batchRepair.issues);
+				}
+				await saveScenesToIndex();
+				renderRecordList();
+				setStatus($('repairSceneStatus'), `修复完成：已上传并替换 ${fixedCount}/${issues.length} 个场景图片。可点击“重新扫描”确认剩余警告。`, fixedCount === issues.length ? 'ok' : 'error');
+				setStatus($('runStatus'), `修复完成：已上传并替换 ${fixedCount}/${issues.length} 个场景图片。`, fixedCount === issues.length ? 'ok' : 'error');
+			} finally {
+				state.batchRepair.running = false;
+				$('btnRescanRepairScenes').disabled = false;
+				$('btnRunRepairScenes').disabled = !(state.batchRepair.issues || []).some(issue => issue.fixes.length);
+				updateRepairScenesButton();
+			}
 		}
 
 		function normalizeImageSizeOption(option) {
@@ -1595,6 +1894,14 @@ ${currentIndent}}`;
 			button.textContent = `生成选中(${targetCount})`;
 			button.disabled = targetCount <= 0;
 			button.classList.toggle('danger', false);
+			updateRepairScenesButton();
+		}
+
+		function updateRepairScenesButton() {
+			const button = $('btnRepairScenes');
+			if (!button) return;
+			button.disabled = !!state.batchRepair?.running || !state.scenes.length;
+			button.textContent = state.batchRepair?.running ? '修复中...' : '修复';
 		}
 
 		function renderParticles(scene) {
@@ -2025,26 +2332,57 @@ ${currentIndent}}`;
 			return await res.json();
 		}
 
+		function normalizeSceneIndexData(data) {
+			return data && typeof data === 'object' ? data : { version: 1, scenes: [] };
+		}
+
+		function stripInternalScene(scene = {}) {
+			const { _source, ...cleanScene } = scene;
+			return cleanScene;
+		}
+
+		function mergeSceneIndexData(systemIndexData, workspaceIndexData) {
+			const systemIndex = normalizeSceneIndexData(systemIndexData);
+			const workspaceIndex = normalizeSceneIndexData(workspaceIndexData);
+			const mergedScenes = [];
+			const seenIds = new Set();
+			const pushScene = (scene, index, source) => {
+				const id = safeId(scene?.id, `scene_${index + 1}`);
+				if (!id || seenIds.has(id)) return;
+				seenIds.add(id);
+				mergedScenes.push({ ...(scene || {}), id, _source: source });
+			};
+			(Array.isArray(workspaceIndex.scenes) ? workspaceIndex.scenes : []).forEach((scene, index) => pushScene(scene, index, 'workspace'));
+			(Array.isArray(systemIndex.scenes) ? systemIndex.scenes : []).forEach((scene, index) => pushScene(scene, index, 'system'));
+			return {
+				indexMeta: {
+					...systemIndex,
+					...workspaceIndex,
+					version: Number(workspaceIndex.version || systemIndex.version) || 1,
+					scenes: mergedScenes.map(stripInternalScene),
+				},
+				scenes: mergedScenes.map(stripInternalScene),
+			};
+		}
+
 		async function loadRecords({ localOnly = false } = {}) {
-			setStatus($('runStatus'), '正在读取 scenes.json...', '');
+			setStatus($('runStatus'), '正在读取系统目录和 workspace scenes.json...', '');
 			const localSettings = readLocalGenerationSettings();
-			let data = null;
-			let source = 'local';
+			let systemIndexData = null;
+			let workspaceIndexData = null;
 			if (!localOnly && (state.sdk || window.keepwork)?.personalPageStore) {
 				try {
-					data = JSON.parse(await readFile(SCENE_INDEX_PATH) || '{}');
-					source = 'workspace';
+					workspaceIndexData = JSON.parse(await readFile(SCENE_INDEX_PATH) || '{}');
 				} catch (_) {}
 			}
-			if (!data?.scenes) {
-				data = await loadLocalPresetFile();
-				source = 'local preset file';
-			}
+			systemIndexData = await loadLocalPresetFile();
+			const merged = localOnly ? mergeSceneIndexData(systemIndexData, null) : mergeSceneIndexData(systemIndexData, workspaceIndexData);
+			const data = merged.indexMeta;
 			state.indexMeta = data && typeof data === 'object' ? data : {};
 			state.lastLLMModel = String(data?.lastLLMModel || data?.lastImageModel || data?.lastModel || localSettings.lastLLMModel || state.lastLLMModel || '').trim();
 			state.lastChatModel = String(data?.lastChatModel || localSettings.lastChatModel || readBatchSettings().lastChatModel || state.lastChatModel || '').trim();
 			state.lastImageSize = String(data?.lastImageSize || data?.lastSceneImageSize || data?.imageSize || localSettings.lastImageSize || state.lastImageSize || '').trim();
-			state.scenes = (Array.isArray(data?.scenes) ? data.scenes : []).map(normalizeScene);
+			state.scenes = (Array.isArray(merged.scenes) ? merged.scenes : []).map(normalizeScene);
 			selectMissingImageScenes();
 			renderImageSizeOptions(state.lastImageSize || $('imageSize').value);
 			await populateModelDropdown();
@@ -2052,7 +2390,9 @@ ${currentIndent}}`;
 			renderRecordList();
 			if (state.scenes.length && !state.selectedId) applySceneToForm(state.scenes[0]);
 			else updateOutput();
-			setStatus($('runStatus'), `已从 ${source} 加载 ${state.scenes.length} 个场景。`, 'ok');
+			const systemCount = Array.isArray(systemIndexData?.scenes) ? systemIndexData.scenes.length : 0;
+			const workspaceCount = Array.isArray(workspaceIndexData?.scenes) ? workspaceIndexData.scenes.length : 0;
+			setStatus($('runStatus'), `已加载 ${state.scenes.length} 个场景（系统 ${systemCount}，workspace ${workspaceCount}，同 ID 优先使用 workspace）。`, 'ok');
 		}
 
 		async function generateSceneImage() {
@@ -2065,7 +2405,7 @@ ${currentIndent}}`;
 			const references = getReferenceImages();
 			const { width, height } = getImageSize();
 			const opts = buildImageGenerationOptions(model, width, height);
-			if (!$('uploadResultToKeepwork').checked) opts.uploadResultToKeepwork = false;
+			opts.uploadResultToKeepwork = true;
 			if (references.length) opts.images = references.map(url => ({ url, role: 'reference' }));
 			const statusText = `正在调用 genImage...\nmodel=${model}，size=${width}x${height}，refs=${references.length}`;
 			enableSceneImageStreaming(opts, statusText);
@@ -2411,6 +2751,7 @@ ${currentIndent}}`;
 		}
 
 		async function saveScenesToIndex(statusText = '') {
+			state.scenes = await sanitizeScenesBeforeSave(state.scenes);
 			const data = JSON.stringify(buildIndexMetadataOnlyObject(), null, 2);
 			await writeFile(SCENE_INDEX_PATH, data);
 			state.indexMeta = JSON.parse(data);
@@ -2428,7 +2769,7 @@ ${currentIndent}}`;
 			const references = getReferenceImages();
 			const { width, height } = getImageSize();
 			const opts = buildImageGenerationOptions(model, width, height);
-			if (!$('uploadResultToKeepwork').checked) opts.uploadResultToKeepwork = false;
+			opts.uploadResultToKeepwork = true;
 			if (references.length) opts.images = references.map(url => ({ url, role: 'reference' }));
 			const prompt = await buildSceneImagePrompt(targetScene.prompt, targetScene.tags, references.length, targetScene.title);
 			onBeforeGenerate?.(targetId);
@@ -2656,14 +2997,18 @@ ${currentIndent}}`;
 		}
 
 		async function saveSceneToIndex() {
-			const scene = updateCurrentSceneInMemory();
+			const scene = await ensureSceneImageUrlIsRemote(updateCurrentSceneInMemory());
+			upsertSceneInMemory(scene, { select: true });
+			state.scenes = await sanitizeScenesBeforeSave(state.scenes);
 			const data = JSON.stringify(buildIndexObject(), null, 2);
 			await writeFile(SCENE_INDEX_PATH, data);
 			setStatus($('saveStatus'), `已保存场景 ${scene.id} 到 ${SCENE_INDEX_PATH}。`, 'ok');
 		}
 
 		async function saveIndexJson() {
-			updateCurrentSceneInMemory();
+			const scene = await ensureSceneImageUrlIsRemote(updateCurrentSceneInMemory());
+			upsertSceneInMemory(scene, { select: true });
+			state.scenes = await sanitizeScenesBeforeSave(state.scenes);
 			const data = JSON.stringify(buildIndexObject(), null, 2);
 			await writeFile(SCENE_INDEX_PATH, data);
 			setStatus($('saveStatus'), `已写入 ${SCENE_INDEX_PATH}，格式为 scenes.json 索引结构。`, 'ok');
@@ -3124,6 +3469,7 @@ ${currentIndent}}`;
 			$('btnWorkspace').onclick = () => openWorkspaceViewer(SCENE_INDEX_PATH);
 			$('btnOpenIndexPreview').onclick = openIndexPreviewDialog;
 			$('btnGenerateAllMissing').onclick = () => runGenerateAllMissingImages().catch(e => setStatus($('runStatus'), e?.message || String(e), 'error'));
+			$('btnRepairScenes').onclick = () => openRepairScenesDialog().catch(e => setStatus($('runStatus'), `扫描失败：${e?.message || e}`, 'error'));
 			$('btnNewScene').onclick = openBatchGenerateDialog;
 			$('btnSaveScene').onclick = () => saveSceneToIndex().catch(e => setStatus($('saveStatus'), `保存失败：${e?.message || e}`, 'error'));
 			$('btnPreviewMusic').onclick = previewBgMusic;

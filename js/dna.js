@@ -330,7 +330,7 @@ export function dnaToPrompt(dna, { name = '' } = {}) {
     return [
         `一只${t.color}的${t.species}（${elementHint}），${t.eyes}，${t.accessory}。`,
         elementalHint,
-        '艺术风格：Tamagotchi Paradise / Sanrio 风格的萌宠吉祥物，超扁平 2D 卡通插画，超大眼睛、小圆身体、二头身比例，',
+        '艺术风格：Tamagotchi Paradise / Sanrio 风格的萌宠吉祥物，超扁平 2D 卡通插画，超大眼睛、小圆身体',
         '线条柔和但有清晰的深色描边，配色明亮饱和、糖果色，单色简单上色加少量高光，避免厚重写实质感、避免3D写实渲染。',
         '正面朝向镜头，全身居中构图，可爱呆萌表情。',
         name ? `名字：${name}。` : '',

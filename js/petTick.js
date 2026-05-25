@@ -580,7 +580,7 @@ export function normalizePetPoops(pet) {
     const entries = pet.poops.map((poop, index) => ({ poop, index }));
     const groups = new Map();
     for (const entry of entries) {
-        const field = entry.poop?.field || 'land';
+        const field = entry.poop?.field || '1';
         if (!groups.has(field)) groups.set(field, []);
         groups.get(field).push(entry);
     }
@@ -607,8 +607,8 @@ function maybeProducePoop(pet) {
     if (now - last < CONFIG.poopIntervalSec * 1000) return;
     if (Math.random() > CONFIG.poopChance) return;
     // 在当前所属 field 区域内随机一个落点
-    const field = state.currentField || 'land';
-    const currentFieldPoops = pet.poops.filter(p => (p?.field || 'land') === field).length;
+    const field = state.currentField || '1';
+    const currentFieldPoops = pet.poops.filter(p => (p?.field || '1') === field).length;
     if (currentFieldPoops >= CONFIG.maxPoopsPerField) return;
     pet.poops.push({
         id: 'p' + now.toString(36) + Math.floor(Math.random() * 1000).toString(36),

@@ -140,7 +140,7 @@
             </select>
           </label>
           <div class="toolbar">
-            <label class="toggle-line"><input id="uploadResultToKeepwork" type="checkbox" checked>上传临时 CDN</label>
+            <label class="toggle-line"><input id="uploadResultToKeepwork" type="checkbox" checked disabled>上传临时 CDN</label>
             <button id="btnPetCdnConfig" type="button">设置</button>
           </div>
           <div id="petCdnStatus" class="hint">CDN folder: maisi/magichaqi/pet</div>
@@ -172,6 +172,7 @@
         <input id="recordSearch" placeholder="搜索 id / name">
         <button id="btnNewPet" class="primary" type="button">新建</button>
         <button id="btnRefreshRecords" class="primary" type="button">生成选中(0)</button>
+        <button id="btnRepairPets" type="button">修复</button>
         <button id="btnOpenIndex" type="button">打开</button>
         <label class="toggle-line col-span-2"><input id="recordSelectAll" type="checkbox"><span id="recordSelectAllLabel">全选当前列表</span></label>
       </div>
@@ -312,6 +313,8 @@
 
     const WORKSPACE = 'MagicHaqi';
     const FAMOUS_DIR = 'famous-pets';
+    const INDEX_PATH = `${FAMOUS_DIR}/index.json`;
+    const LOCAL_INDEX_URL = `../${INDEX_PATH}`;
     const PET_CDN_FOLDER = 'maisi/magichaqi/pet';
     const SETTINGS_STORAGE_KEY = 'MagicHaqi.FamousPetGenerator.generationSettings';
     const SAVED_CDN_CONFIG_STORAGE_KEY = 'keepwork_upload_cdn_config';
@@ -323,10 +326,11 @@
     const STAGE_ROW = { baby: 0, teen: 1, adult: 2, elder: 3 };
     const ANIM_COL = { idle: 0, happy: 1, sad: 2, sleep: 3 };
     const WEBP_DEFAULT_QUALITY = 0.2;
+    const WEBP_MAX_BYTES = 100 * 1024;
     const WEBP_DEFAULT_BG_OPTIONS = { seedThreshold: 60, growThreshold: 78, haloThreshold: 112, borderRatio: 0.02, gridLineWidth: 6 };
     const INDEX_ENTRY_FIELDS = ['id', 'name', 'dna', 'imageSheetUrl', 'traits', 'rarity'];
     const $ = (id) => document.getElementById(id);
-    const state = { sdk: null, referenceDataUrl: '', workspaceViewer: null, webpExport: null, records: [], selectedRecordPaths: new Set(), selectedId: '', selectedPath: '', currentPath: '', currentHistoryUrls: [], imageSizeCache: new Map(), imageSizeRequests: new Map(), imageDimensionCache: new Map(), imageDimensionRequests: new Map(), dirty: false, generationPromptsPromise: null, batchCreate: null, batchGenerate: null, lastImageModel: '', lastTextModel: '' };
+    const state = { sdk: null, referenceDataUrl: '', workspaceViewer: null, webpExport: null, records: [], selectedRecordPaths: new Set(), selectedId: '', selectedPath: '', currentPath: '', currentHistoryUrls: [], imageSizeCache: new Map(), imageSizeRequests: new Map(), imageDimensionCache: new Map(), imageDimensionRequests: new Map(), recordThumbObserver: null, dirty: false, generationPromptsPromise: null, batchCreate: null, batchGenerate: null, batchRepair: null, lastImageModel: '', lastTextModel: '' };
 
     function loadGenerationPrompts() {
       state.generationPromptsPromise ||= import('../js/generationPrompts.js');
@@ -464,6 +468,27 @@
       return !!record?.pet && !String(record.pet.imageSheetUrl || '').trim();
     }
 
+    function isDataUrl(value) {
+      return /^data:/i.test(String(value || '').trim());
+    }
+
+    function getDataUrlMimeType(value) {
+      const match = String(value || '').trim().match(/^data:([^;,]+)[;,]/i);
+      return (match?.[1] || '').toLowerCase();
+    }
+
+    function isWebpImageUrl(value) {
+      const url = String(value || '').trim();
+      if (!url) return false;
+      if (isDataUrl(url)) return getDataUrlMimeType(url) === 'image/webp';
+      try {
+        const parsed = new URL(url, window.location.href);
+        return /\.webp$/i.test(parsed.pathname);
+      } catch (_) {
+        return /\.webp(?:[?#].*)?$/i.test(url);
+      }
+    }
+
     function getUngeneratedRecords() {
       return state.records.filter(isRecordMissingImage);
     }
@@ -524,6 +549,13 @@
       return { mode: 'selected', records: getCheckedRecords() };
     }
 
+    function updateRepairPetsButton() {
+      const button = $('btnRepairPets');
+      if (!button) return;
+      button.disabled = state.batchRepair?.running || !state.records.length;
+      button.textContent = state.batchRepair?.running ? '修复中...' : '修复';
+    }
+
     function updateBatchGenerateButton() {
       const button = $('btnRefreshRecords');
       if (!button) return;
@@ -537,6 +569,7 @@
       const targetCount = getBatchGenerateTargets().records.length;
       button.textContent = `生成选中(${targetCount})`;
       button.disabled = targetCount <= 0;
+      updateRepairPetsButton();
     }
 
     function shouldRemoveHistoryUrlsOnExport() {
@@ -677,7 +710,7 @@
         rarity: 64,
         parents: null,
         stage: 'adult',
-        wishPrompt: '一只适合作为活动限定奖励的二头身萌宠，颜色明亮，外形有清晰记忆点，开心、干净、辨识度高。',
+        wishPrompt: '一只适合作为活动限定奖励的萌宠，颜色明亮，外形有清晰记忆点，开心、干净、辨识度高。',
         anim: 'happy',
         everAdult: true,
       };
@@ -924,6 +957,32 @@
       await getWorkspaceStore().createFile(path, content == null ? '' : String(content));
     }
 
+    async function readLocalJson(url, fallback) {
+      const res = await fetch(url, { cache: 'no-cache' });
+      if (!res.ok) return fallback;
+      return await res.json();
+    }
+
+    function normalizeIndexPets(data) {
+      if (Array.isArray(data)) return data;
+      if (Array.isArray(data?.pets)) return data.pets;
+      return [];
+    }
+
+    function mergePetIndexData(systemIndexData, workspaceIndexData) {
+      const mergedPets = [];
+      const seenIds = new Set();
+      const pushPet = (pet, index, source) => {
+        const id = safeId(pet?.id, `famous_pet_${index + 1}`);
+        if (!id || seenIds.has(id)) return;
+        seenIds.add(id);
+        mergedPets.push({ ...(pet || {}), id, _source: source });
+      };
+      normalizeIndexPets(workspaceIndexData).forEach((pet, index) => pushPet(pet, index, 'workspace'));
+      normalizeIndexPets(systemIndexData).forEach((pet, index) => pushPet(pet, index, 'system'));
+      return mergedPets;
+    }
+
     async function deleteFile(path) {
       const store = getWorkspaceStore();
       if (typeof store.deleteFile === 'function') return await store.deleteFile(path);
@@ -942,32 +1001,44 @@
     }
 
     async function loadRecords({ selectFirstValid = false } = {}) {
-      setStatus($('runStatus'), '正在读取 workspace famous-pets/index.json...', '');
-      let indexPets = [];
+      setStatus($('runStatus'), '正在读取系统目录和 workspace famous-pets/index.json...', '');
+      let systemIndexData = [];
+      let workspaceIndexData = [];
       try {
-        const parsed = JSON.parse(await readFile(`${FAMOUS_DIR}/index.json`) || '[]');
-        indexPets = Array.isArray(parsed) ? parsed : (Array.isArray(parsed?.pets) ? parsed.pets : []);
+        systemIndexData = await readLocalJson(LOCAL_INDEX_URL, []);
       } catch (e) {
-        setStatus($('runStatus'), `index.json 读取失败：${e?.message || e}`, 'error');
+        setStatus($('runStatus'), `系统目录 index.json 读取失败，继续尝试 workspace：${e?.message || e}`, 'error');
       }
+      if ((state.sdk || window.keepwork)?.personalPageStore) {
+        try { workspaceIndexData = JSON.parse(await readFile(INDEX_PATH) || '[]'); }
+        catch (e) { setStatus($('runStatus'), `workspace index.json 读取失败，仅使用系统目录：${e?.message || e}`, 'error'); }
+      }
+      const indexPets = mergePetIndexData(systemIndexData, workspaceIndexData);
       const records = indexPets.map((pet, index) => {
         const id = safeId(pet?.id, `famous_pet_${index + 1}`);
-        return { id, name: pet?.name || id, path: petRecordPath(id), pet: { ...(pet || {}), id }, indexPet: pet || null, fullLoaded: false };
+        const { _source, ...indexPet } = pet || {};
+        return { id, name: indexPet?.name || id, path: petRecordPath(id), pet: { ...(indexPet || {}), id }, indexPet: indexPet || null, source: _source || '', fullLoaded: false };
       });
       state.records = records;
       selectMissingPetRecords();
       $('recordCount').textContent = String(state.records.length);
       updateBatchGenerateButton();
+      updateRepairPetsButton();
       const firstValidRecord = state.records.find(record => record.pet);
       if (selectFirstValid && firstValidRecord) {
         applyPetToForm(firstValidRecord.pet, firstValidRecord.path);
-        setStatus($('runStatus'), `已从 index.json 加载 ${state.records.length} 条 famous-pets 记录，已打开 ${firstValidRecord.path}。`, 'ok');
+        const systemCount = normalizeIndexPets(systemIndexData).length;
+        const workspaceCount = normalizeIndexPets(workspaceIndexData).length;
+        setStatus($('runStatus'), `已加载 ${state.records.length} 条 famous-pets 记录（系统 ${systemCount}，workspace ${workspaceCount}，同 ID 优先使用 workspace），已打开 ${firstValidRecord.path}。`, 'ok');
         updateBatchGenerateButton();
         return;
       }
       renderRecordList();
-      setStatus($('runStatus'), `已从 index.json 加载 ${state.records.length} 条 famous-pets 记录。`, 'ok');
+      const systemCount = normalizeIndexPets(systemIndexData).length;
+      const workspaceCount = normalizeIndexPets(workspaceIndexData).length;
+      setStatus($('runStatus'), `已加载 ${state.records.length} 条 famous-pets 记录（系统 ${systemCount}，workspace ${workspaceCount}，同 ID 优先使用 workspace）。`, 'ok');
       updateBatchGenerateButton();
+      updateRepairPetsButton();
     }
 
     async function loadRecordPet(record) {
@@ -992,6 +1063,37 @@
       return record.pet;
     }
 
+    function getRecordThumbObserver() {
+      const root = $('recordList');
+      if (!root || !('IntersectionObserver' in window)) return null;
+      if (state.recordThumbObserver?.root === root) return state.recordThumbObserver.observer;
+      state.recordThumbObserver?.observer?.disconnect?.();
+      const observer = new IntersectionObserver(entries => {
+        for (const entry of entries) {
+          if (!entry.isIntersecting) continue;
+          const thumb = entry.target;
+          const url = thumb.dataset.bgUrl || '';
+          if (url) thumb.style.backgroundImage = `url(${JSON.stringify(url)})`;
+          delete thumb.dataset.bgUrl;
+          observer.unobserve(thumb);
+        }
+      }, { root, threshold: 0.01 });
+      state.recordThumbObserver = { root, observer };
+      return observer;
+    }
+
+    function observeRecordThumbs() {
+      const thumbs = $('recordList')?.querySelectorAll('.record-thumb-image[data-bg-url]') || [];
+      const observer = getRecordThumbObserver();
+      thumbs.forEach(thumb => {
+        if (observer) observer.observe(thumb);
+        else if (thumb.dataset.bgUrl) {
+          thumb.style.backgroundImage = `url(${JSON.stringify(thumb.dataset.bgUrl)})`;
+          delete thumb.dataset.bgUrl;
+        }
+      });
+    }
+
     function renderRecordList() {
       pruneSelectedRecordPaths();
       const records = getFilteredRecordList();
@@ -1002,7 +1104,7 @@
         const checkedClass = checked ? ' checked' : '';
         const checkedAttr = checked ? ' checked' : '';
         const url = pet.imageSheetUrl || '';
-        const thumb = url ? `<span style="background-image:url('${escapeHtml(url)}')"></span>` : '';
+        const thumb = url ? `<span class="record-thumb-image" data-bg-url="${escapeHtml(url)}"></span>` : '';
         return `<div class="record-item${active}${checkedClass}" data-path="${escapeHtml(record.path)}">
           <label class="record-select" title="选择后由批量生成重新生成"><input type="checkbox" data-select-path="${escapeHtml(record.path)}" aria-label="选择 ${escapeHtml(record.name || record.id)}"${checkedAttr}></label>
           <span class="record-thumb">${thumb}</span>
@@ -1029,12 +1131,14 @@
           updateBatchGenerateButton();
         };
       });
+      observeRecordThumbs();
       requestAnimationFrame(() => {
         $('recordList')?.querySelector('.record-item.active')?.scrollIntoView({ block: 'nearest' });
       });
       $('recordCount').textContent = records.length === state.records.length ? String(state.records.length) : `${records.length}/${state.records.length}`;
       updateRecordSelectAllState();
       updateBatchGenerateButton();
+      updateRepairPetsButton();
     }
 
     function handleRecordFilterChange() {
@@ -1283,7 +1387,7 @@
 
     function buildBatchPetPrompt(description, count) {
       const exampleJson = JSON.stringify(buildFormBasedPetExample(), null, 2);
-      return `你是 famous-pets JSON 配置设计助手。根据用户描述生成 ${count} 个稀有宠物配置，只生成 JSON，不要生成图片，不要输出 Markdown。\n\n最重要的是生成 Properties 表单会显示的内容：id、name、rarity、stage、anim、traits.element、traits.elementalAttribute、traits.species、traits.color、traits.eyes、traits.accessory、wishPrompt。DNA 不需要生成，工具会自动计算；如果没有必要，不要在返回 JSON 中包含 dna。\n\n你返回的内容必须是合法 JSON，外层必须包含 pets 数组。pets 数组里的每一个对象就是最终保存到 famous-pets/<id>.json 的文件对象。示例格式如下：\n${exampleJson}\n\nMagicHaqi 支持的固定选项和参考示例：\n${buildSupportedTraitPromptText()}\n\n约束：\n- id 会作为 famous-pets/<id>.json 文件名，只能用英文字母、数字、下划线或连字符，必须唯一。\n- name 必须使用非常可爱的中文名字，要有软萌、好记、像宠物昵称的感觉，例如：布布马古、瓦豆喵星星、糯糯啾啾。\n- rarity 只能是 0 到 100 的数字，数值越大表示越稀有。\n- stage 只能是 baby、teen、adult、elder；默认 adult。\n- anim 只能是 idle、happy、sad、sleep；默认 happy。\n- traits.element 和 traits.elementalAttribute 必须使用上面的固定选项。\n- traits.species、traits.color、traits.eyes、traits.accessory 可以参考上面的例子，也可以根据用户描述自由创作。\n- wishPrompt 必须写出宠物核心外观，明确包含或呼应 traits 中的物种、血统、元素属性、颜色、眼睛和配饰。\n- 每个宠物都要有鲜明但适合二头身萌宠 sprite sheet 的外观。\n\n用户描述：\n${description || '（等待输入）'}\n\n根据用户描述生成 ${count} 个稀有宠物配置，只生成 JSON`;
+      return `你是 famous-pets JSON 配置设计助手。根据用户描述生成 ${count} 个稀有宠物配置，只生成 JSON，不要生成图片，不要输出 Markdown。\n\n最重要的是生成 Properties 表单会显示的内容：id、name、rarity、stage、anim、traits.element、traits.elementalAttribute、traits.species、traits.color、traits.eyes、traits.accessory、wishPrompt。DNA 不需要生成，工具会自动计算；如果没有必要，不要在返回 JSON 中包含 dna。\n\n你返回的内容必须是合法 JSON，外层必须包含 pets 数组。pets 数组里的每一个对象就是最终保存到 famous-pets/<id>.json 的文件对象。示例格式如下：\n${exampleJson}\n\nMagicHaqi 支持的固定选项和参考示例：\n${buildSupportedTraitPromptText()}\n\n约束：\n- id 会作为 famous-pets/<id>.json 文件名，只能用英文字母、数字、下划线或连字符，必须唯一。\n- name 必须使用非常可爱的中文名字，要有软萌、好记、像宠物昵称的感觉，例如：布布马古、瓦豆喵星星、糯糯啾啾。\n- rarity 只能是 0 到 100 的数字，数值越大表示越稀有。\n- stage 只能是 baby、teen、adult、elder；默认 adult。\n- anim 只能是 idle、happy、sad、sleep；默认 happy。\n- traits.element 和 traits.elementalAttribute 必须使用上面的固定选项。\n- traits.species、traits.color、traits.eyes、traits.accessory 可以参考上面的例子，也可以根据用户描述自由创作。\n- wishPrompt 必须写出宠物核心外观，明确包含或呼应 traits 中的物种、血统、元素属性、颜色、眼睛和配饰。\n \n用户描述：\n${description || '（等待输入）'}\n\n根据用户描述生成 ${count} 个稀有宠物配置，只生成 JSON`;
     }
 
     function refreshBatchPromptPreview() {
@@ -1432,7 +1536,7 @@
         setStatus($('batchPetStatus'), `正在保存 ${pets.length} 个 pet JSON，并更新 index...`, '');
         const saved = await saveGeneratedPets(pets);
         setStatus($('runStatus'), `已生成并保存 ${saved.length} 个 pet JSON，未生成图片。`, 'ok');
-        setStatus($('saveStatus'), `已写入 ${saved.map(item => item.path).join('、')}，并更新 ${FAMOUS_DIR}/index.json`, 'ok');
+        setStatus($('saveStatus'), `已写入 ${saved.map(item => item.path).join('、')}，并更新 ${INDEX_PATH}`, 'ok');
         closeBatchCreateDialog();
       } finally {
         if ($('btnGeneratePetConfigs')) button.disabled = false;
@@ -1473,17 +1577,17 @@
 
     async function removeIndexEntry(id) {
       let list = [];
-      try { list = JSON.parse(await readFile(`${FAMOUS_DIR}/index.json`) || '[]'); } catch (_) { list = []; }
+      try { list = JSON.parse(await readFile(INDEX_PATH) || '[]'); } catch (_) { list = []; }
       if (!Array.isArray(list)) list = [];
       const next = list.filter(item => item?.id !== id);
-      if (next.length !== list.length) await writeFile(`${FAMOUS_DIR}/index.json`, JSON.stringify(next, null, 2));
+      if (next.length !== list.length) await writeFile(INDEX_PATH, JSON.stringify(next, null, 2));
       return next;
     }
 
     async function deleteRecord(path) {
       const record = state.records.find(item => item.path === path) || state.records.find(item => item.id === path);
       if (!record) return;
-      if (!window.confirm(`删除宠物 ${record.name || record.id}？\n将删除 ${record.path}，并从 ${FAMOUS_DIR}/index.json 移除。`)) return;
+      if (!window.confirm(`删除宠物 ${record.name || record.id}？\n将删除 ${record.path}，并从 ${INDEX_PATH} 移除。`)) return;
       let fileDeleted = false;
       try { fileDeleted = await deleteFile(record.path) !== false; } catch (e) { throw e; }
       await removeIndexEntry(record.id);
@@ -1549,7 +1653,7 @@
       if (!model) throw new Error('请先在本地 API Key 设置中配置 Image 模型');
       const { width, height } = getImageSize();
       const opts = buildImageGenerationOptions(model, width, height);
-      if (!$('uploadResultToKeepwork').checked) opts.uploadResultToKeepwork = false;
+      opts.uploadResultToKeepwork = true;
       if (reference) opts.images = [{ url: reference, role: 'reference' }];
       const statusText = `正在为 ${targetPet.id} 调用 genImage...\nmodel=${model}，size=${width}x${height}`;
       enablePetImageStreaming(opts, statusText);
@@ -1570,10 +1674,11 @@
           renderSheet(url);
           updateOutput();
         }
-        await savePetObject(savedPet, { path: targetPath, reload, silent: true });
-        const isDataUri = String(url).startsWith('data:');
-        setStatus($('runStatus'), isDataUri ? `生成完成：${targetPet.id}，返回 data URI (${url.length} chars)，已自动保存 pet 和 index。` : `生成完成：${targetPet.id}，已自动保存 pet 和 index。请检查 4x4 网格是否对齐。`, 'ok');
-        return { path: targetPath, pet: savedPet, url, selectedPath: startSelectedPath };
+        const saved = await savePetObject(savedPet, { path: targetPath, reload, silent: true });
+        const finalUrl = saved.pet.imageSheetUrl || url;
+        const uploadedText = isDataUrl(url) && !isDataUrl(finalUrl) ? '返回 data URI，已上传 Keepwork 临时 CDN 后保存。' : '已自动保存 pet 和 index。';
+        setStatus($('runStatus'), `生成完成：${targetPet.id}，${uploadedText}请检查 4x4 网格是否对齐。`, 'ok');
+        return { path: saved.path, pet: saved.pet, url: finalUrl, selectedPath: startSelectedPath };
       } catch (e) {
         setStatus($('runStatus'), `生成失败：${targetPet.id}：${e?.message || e}`, 'error');
         throw e;
@@ -1655,8 +1760,15 @@
 
     async function savePetObject(pet, { path = '', reload = true, silent = false, activate = false } = {}) {
       const id = safeId(pet.id, `famous_pet_${Date.now()}`);
-      const savedPet = { ...pet, id };
+      const savedPet = await ensureImageSheetUrlIsRemote({ ...pet, id }, { silent });
       const targetPath = path || getPetPath(savedPet);
+      const shouldSyncCurrentForm = activate || isCurrentPetTarget(targetPath, id);
+      if (shouldSyncCurrentForm && savedPet.imageSheetUrl && savedPet.imageSheetUrl !== pet.imageSheetUrl) {
+        $('imageSheetUrl').value = savedPet.imageSheetUrl;
+        state.currentHistoryUrls = normalizeHistoryUrls(savedPet.historyUrls || []).filter(url => url !== savedPet.imageSheetUrl);
+        renderSheet(savedPet.imageSheetUrl);
+        updateOutput();
+      }
       await writeFile(targetPath, JSON.stringify(savedPet, null, 2));
       await upsertIndexEntry(buildIndexEntry(savedPet));
       const record = { id, name: savedPet.name || id, path: targetPath, pet: savedPet };
@@ -1671,34 +1783,43 @@
       if (reload) await loadRecords();
       else renderRecordList();
       updateBatchGenerateButton();
-      if (!silent) setStatus($('saveStatus'), `已写入 ${targetPath}，并更新 ${FAMOUS_DIR}/index.json`, 'ok');
+      if (!silent) setStatus($('saveStatus'), `已写入 ${targetPath}，并更新 ${INDEX_PATH}`, 'ok');
       return { path: targetPath, pet: savedPet };
     }
 
     async function upsertIndexEntry(entry) {
+      const safeEntry = buildIndexEntry(await ensureImageSheetUrlIsRemote(entry, { silent: true }));
       let list = [];
-      try { list = JSON.parse(await readFile(`${FAMOUS_DIR}/index.json`) || '[]'); } catch (_) { list = []; }
+      try { list = JSON.parse(await readFile(INDEX_PATH) || '[]'); } catch (_) { list = []; }
       if (!Array.isArray(list)) list = [];
-      const index = list.findIndex(item => item?.id === entry.id);
-      if (index >= 0) list[index] = { ...list[index], ...entry };
-      else list.push(entry);
-      await writeFile(`${FAMOUS_DIR}/index.json`, JSON.stringify(list, null, 2));
+      const index = list.findIndex(item => item?.id === safeEntry.id);
+      if (index >= 0) list[index] = { ...list[index], ...safeEntry };
+      else list.push(safeEntry);
+      await writeFile(INDEX_PATH, JSON.stringify(list, null, 2));
       return list;
     }
 
     async function saveIndexJson() {
-      const entry = buildIndexEntry(JSON.parse($('petJson').value));
+      const rawPet = JSON.parse($('petJson').value);
+      const safePet = await ensureImageSheetUrlIsRemote(rawPet);
+      const entry = buildIndexEntry(safePet);
       await upsertIndexEntry(entry);
-      setStatus($('saveStatus'), `已更新 ${FAMOUS_DIR}/index.json：${entry.id}`, 'ok');
+      if (safePet.imageSheetUrl && safePet.imageSheetUrl !== rawPet.imageSheetUrl && isCurrentPetTarget(petRecordPath(safePet), safePet.id)) {
+        $('imageSheetUrl').value = safePet.imageSheetUrl;
+        state.currentHistoryUrls = normalizeHistoryUrls(safePet.historyUrls || []).filter(url => url !== safePet.imageSheetUrl);
+        renderSheet(safePet.imageSheetUrl);
+        updateOutput();
+      }
+      setStatus($('saveStatus'), `已更新 ${INDEX_PATH}：${entry.id}`, 'ok');
     }
 
     async function readIndexListForExport() {
       try {
-        const parsed = JSON.parse(await readFile(`${FAMOUS_DIR}/index.json`) || '[]');
+        const parsed = JSON.parse(await readFile(INDEX_PATH) || '[]');
         const list = Array.isArray(parsed) ? parsed : (Array.isArray(parsed?.pets) ? parsed.pets : []);
         return list.filter(item => item && typeof item === 'object' && item.id).map(buildIndexEntry);
       } catch (e) {
-        throw new Error(`读取 ${FAMOUS_DIR}/index.json 失败：${e?.message || e}`);
+        throw new Error(`读取 ${INDEX_PATH} 失败：${e?.message || e}`);
       }
     }
 
@@ -1747,10 +1868,13 @@
           const data = JSON.parse(await selectedFiles[0].text());
           const indexList = normalizeImportIndex(data);
           if (!indexList.length) throw new Error('未找到可导入的 famous-pets/index.json 数据');
+          const safePets = [];
           for (const pet of indexList) {
-            await writeFile(petRecordPath(pet), JSON.stringify(pet, null, 2));
+            const safePet = await ensureImageSheetUrlIsRemote(pet, { silent: true });
+            safePets.push(safePet);
+            await writeFile(petRecordPath(safePet), JSON.stringify(safePet, null, 2));
           }
-          await writeFile(`${FAMOUS_DIR}/index.json`, JSON.stringify(indexList.map(buildIndexEntry), null, 2));
+          await writeFile(INDEX_PATH, JSON.stringify(safePets.map(buildIndexEntry), null, 2));
           await loadRecords();
           setImportExportStatus(`已导入 index.json（${indexList.length} 个 pet），并写入对应 pet JSON。`, 'ok');
           setStatus($('saveStatus'), '导入完成。', 'ok');
@@ -2014,6 +2138,302 @@
       return { url: `${config.publicDomain}/${key}`, remoteKey: key, config };
     }
 
+    async function uploadBlobToPetPreferredCdn(blob, fileName) {
+      const config = getPetCdnConfig();
+      if (config) return await uploadBlobToPetCdn(blob, fileName);
+      const url = await uploadBlobToKeepworkTempCdn(blob, fileName);
+      return { url, remoteKey: url, config: null };
+    }
+
+    async function dataUrlToBlob(dataUrl) {
+      const response = await fetch(dataUrl);
+      if (!response.ok) throw new Error(`data URL 解析失败：${response.status}`);
+      return await response.blob();
+    }
+
+    function mimeTypeToExtension(mimeType) {
+      const normalized = String(mimeType || '').toLowerCase();
+      if (normalized === 'image/webp') return 'webp';
+      if (normalized === 'image/png') return 'png';
+      if (normalized === 'image/jpeg' || normalized === 'image/jpg') return 'jpg';
+      if (normalized === 'image/gif') return 'gif';
+      return 'bin';
+    }
+
+    function getRepairFileName(issue) {
+      const extension = mimeTypeToExtension(issue.mimeType || 'image/webp');
+      return getPetCdnFileName(extension, issue.id);
+    }
+
+    function getRepairWebpFileName(issue) {
+      return getPetCdnFileName('webp', issue.id);
+    }
+
+    function getTempUploadFileName(petId, dataUrl) {
+      const extension = mimeTypeToExtension(getDataUrlMimeType(dataUrl) || 'image/webp');
+      return getPetCdnFileName(extension, petId || 'famous_pet');
+    }
+
+    async function uploadBlobToKeepworkTempCdn(blob, fileName) {
+      const sdk = state.sdk || window.keepwork;
+      if (!sdk?.cloudDrive?.uploadTempFile) throw new Error('Keepwork CloudDrive 临时上传不可用');
+      const file = new File([blob], fileName, { type: blob.type || 'application/octet-stream' });
+      const result = await sdk.cloudDrive.uploadTempFile(file, { filename: fileName, expire: 180 });
+      if (result?.url && !isDataUrl(result.url)) return result.url;
+      throw new Error('CloudDrive uploadTempFile 没有返回有效 URL');
+    }
+
+    async function uploadDataUrlToKeepworkTempCdn(dataUrl, petId = $('petId')?.value) {
+      const sdk = state.sdk || window.keepwork;
+      const fileName = getTempUploadFileName(petId, dataUrl);
+      if (sdk?.cloudDrive?.uploadTempFile) return await uploadBlobToKeepworkTempCdn(await dataUrlToBlob(dataUrl), fileName);
+      if (sdk?.aiGenerators?._maybeUploadDataURI) {
+        const url = await sdk.aiGenerators._maybeUploadDataURI(dataUrl, { fileName, expire: 180 });
+        if (url && !isDataUrl(url)) return url;
+      }
+      throw new Error('无法上传 data URL 到 Keepwork 临时 CDN，请确认 SDK 已加载并可访问 CloudDrive。');
+    }
+
+    async function ensureImageSheetUrlIsRemote(pet, { statusEl = $('saveStatus'), silent = false } = {}) {
+      const savedPet = { ...(pet || {}) };
+      const id = safeId(savedPet.id || $('petId')?.value, 'famous_pet');
+      const imageSheetUrl = String(savedPet.imageSheetUrl || '').trim();
+      if (isDataUrl(imageSheetUrl)) {
+        if (!silent && statusEl) setStatus(statusEl, `imageSheetUrl 是 data URL，正在上传 Keepwork 临时 CDN：${id}...`, '');
+        const uploadedUrl = await uploadDataUrlToKeepworkTempCdn(imageSheetUrl, id);
+        savedPet.imageSheetUrl = uploadedUrl;
+        if (!silent && statusEl) setStatus(statusEl, `已上传临时 CDN 并替换 imageSheetUrl：${uploadedUrl}`, 'ok');
+      }
+      const historyUrls = normalizeHistoryUrls(savedPet.historyUrls || savedPet.imageHistoryUrls || []).filter(url => url && !isDataUrl(url) && url !== savedPet.imageSheetUrl);
+      if (historyUrls.length) savedPet.historyUrls = historyUrls;
+      else delete savedPet.historyUrls;
+      delete savedPet.imageHistoryUrls;
+      return savedPet;
+    }
+
+    async function createCompressedRepairWebpFromUrl(imageUrl, maxBytes = WEBP_MAX_BYTES) {
+      const img = await loadImageForCanvas(imageUrl);
+      const sourceWidth = img.naturalWidth || img.width;
+      const sourceHeight = img.naturalHeight || img.height;
+      if (!sourceWidth || !sourceHeight) throw new Error('无法读取图片尺寸');
+      const sourceMaxEdge = Math.max(sourceWidth, sourceHeight);
+      const maxEdges = [...new Set([sourceMaxEdge, 1536, 1280, 1024, 768, 512, 384, 256, 192, 128, 96, 64]
+        .filter(value => value > 0 && value <= sourceMaxEdge))];
+      const qualities = [0.35, 0.28, 0.22, 0.18, 0.14, 0.1, 0.07, 0.04, 0.02];
+      let best = null;
+      for (const maxEdge of maxEdges) {
+        const size = getWebpExportSize(sourceWidth, sourceHeight, String(maxEdge));
+        for (const quality of qualities) {
+          const blob = await createWebpBlob(img, size.width, size.height, quality, true, { ...WEBP_DEFAULT_BG_OPTIONS });
+          const candidate = { blob, size, quality, sourceWidth, sourceHeight };
+          if (!best || blob.size < best.blob.size) best = candidate;
+          if (blob.size <= maxBytes) return candidate;
+        }
+      }
+      if (best?.blob?.size <= maxBytes) return best;
+      throw new Error(`压缩后仍超过 100 KB：${formatBytes(best?.blob?.size || 0)}`);
+    }
+
+    async function analyzePetImageForRepair(record, pet) {
+      const imageSheetUrl = String(pet?.imageSheetUrl || '').trim();
+      const sizeBytes = imageSheetUrl ? await getImageByteSize(imageSheetUrl).catch(() => null) : null;
+      const isWebp = isWebpImageUrl(imageSheetUrl);
+      const needsUpload = isDataUrl(imageSheetUrl);
+      const needsConvert = !!imageSheetUrl && !isWebp;
+      const needsCompress = isWebp && Number.isFinite(sizeBytes) && sizeBytes > WEBP_MAX_BYTES;
+      const issue = {
+        record,
+        path: record.path,
+        id: safeId(pet?.id || record.id, record.id || 'famous_pet'),
+        name: pet?.name || record.name || record.id || '',
+        imageSheetUrl,
+        mimeType: getDataUrlMimeType(imageSheetUrl),
+        sizeBytes,
+        isWebp,
+        needsUpload,
+        needsConvert,
+        needsCompress,
+        warnings: [],
+        fixes: [],
+        fixedUrl: '',
+        error: '',
+      };
+      if (!imageSheetUrl) issue.warnings.push('缺少 imageSheetUrl');
+      if (needsConvert) issue.warnings.push('imageSheetUrl 不是 WebP');
+      if (needsCompress) issue.warnings.push(`WebP 超过 100 KB：${formatBytes(sizeBytes)}`);
+      if (isWebp && imageSheetUrl && sizeBytes == null) issue.warnings.push('无法读取 WebP 大小');
+      if (needsUpload) issue.fixes.push('data URL 将上传到 CDN 并替换 imageSheetUrl');
+      if (needsConvert) issue.fixes.push('将自动转成 WebP、去背景并上传 CDN');
+      if (needsCompress) issue.fixes.push('将自动压缩到 100 KB 以内并上传 CDN');
+      return issue.warnings.length || issue.fixes.length ? issue : null;
+    }
+
+    async function scanFamousPetRepairIssues({ setMainStatus = true } = {}) {
+      if (setMainStatus) setStatus($('runStatus'), `正在扫描 ${state.records.length} 个 famous-pets...`, '');
+      const issues = [];
+      for (let index = 0; index < state.records.length; index += 1) {
+        const record = state.records[index];
+        if (setMainStatus) setStatus($('runStatus'), `正在扫描 ${index + 1}/${state.records.length}：${record.name || record.id}`, '');
+        const pet = await loadRecordPet(record);
+        const issue = await analyzePetImageForRepair(record, pet);
+        if (issue) issues.push(issue);
+      }
+      state.batchRepair = { ...(state.batchRepair || {}), issues, results: state.batchRepair?.results || [], running: false };
+      if (setMainStatus) {
+        const fixableCount = issues.filter(issue => issue.fixes.length).length;
+        setStatus($('runStatus'), `扫描完成：发现 ${issues.length} 个需要关注，${fixableCount} 个可一键修复。`, issues.length ? '' : 'ok');
+      }
+      updateRepairPetsButton();
+      return issues;
+    }
+
+    function renderRepairIssueList(issues = state.batchRepair?.issues || []) {
+      const root = $('repairPetList');
+      if (!root) return;
+      if (!issues.length) {
+        root.innerHTML = '<div class="history-empty">没有发现需要修复的宠物。</div>';
+        return;
+      }
+      root.innerHTML = issues.map((issue, index) => {
+        const labels = [];
+        issue.warnings.forEach(text => labels.push(`<span class="pill border-amber-300 bg-amber-50 text-amber-800">警告：${escapeHtml(text)}</span>`));
+        issue.fixes.forEach(text => labels.push(`<span class="pill border-sky-300 bg-sky-50 text-sky-800">修复：${escapeHtml(text)}</span>`));
+        if (issue.fixedUrl) labels.push(`<span class="pill border-emerald-300 bg-emerald-50 text-emerald-800">已上传 CDN</span>`);
+        if (issue.error) labels.push(`<span class="pill border-red-300 bg-red-50 text-red-800">失败：${escapeHtml(issue.error)}</span>`);
+        const preview = issue.imageSheetUrl ? `${issue.imageSheetUrl.slice(0, 140)}${issue.imageSheetUrl.length > 140 ? '...' : ''}` : '空';
+        const fixed = issue.fixedUrl ? `<div class="mt-1 overflow-hidden text-ellipsis whitespace-nowrap text-[11px] text-emerald-700">${escapeHtml(issue.fixedUrl)}</div>` : '';
+        return `<div class="rounded-md border border-slate-300 bg-white p-2.5">
+          <div class="flex items-center justify-between gap-2"><strong class="min-w-0 overflow-hidden text-ellipsis whitespace-nowrap text-[13px]">${index + 1}. ${escapeHtml(issue.name || issue.id)}</strong><span class="text-[11px] text-slate-500">${escapeHtml(issue.path)}</span></div>
+          <div class="mt-1 flex flex-wrap gap-1.5">${labels.join('')}</div>
+          <div class="mt-1 overflow-hidden text-ellipsis whitespace-nowrap font-mono text-[11px] text-slate-500">${escapeHtml(preview)}</div>
+          ${fixed}
+        </div>`;
+      }).join('');
+    }
+
+    function closeRepairPetsDialog() {
+      $('repairPetsOverlay')?.remove();
+      updateRepairPetsButton();
+    }
+
+    async function openRepairPetsDialog() {
+      closeRepairPetsDialog();
+      const overlay = document.createElement('div');
+      overlay.className = 'modal-overlay';
+      overlay.id = 'repairPetsOverlay';
+      overlay.innerHTML = `<div class="modal-window max-h-[760px] max-w-[860px]" role="dialog" aria-modal="true" aria-label="扫描修复 famous-pets">
+        <div class="modal-titlebar"><strong>扫描修复 · ${FAMOUS_DIR}</strong><button type="button" id="closeRepairPets">关闭</button></div>
+        <div class="modal-body">
+          <div class="hint">扫描所有宠物的 imageSheetUrl：非 WebP、WebP 超过 100 KB、data URL 都会列出；一键修复会转成 WebP、去背景、压到 100 KB 内并上传 CDN。</div>
+          <div id="repairPetStatus" class="status">准备扫描。</div>
+          <div id="repairPetList" class="flex min-h-0 flex-1 flex-col gap-1.5 overflow-auto rounded-md border border-slate-300 bg-slate-50 p-2"><div class="hint p-2.5">正在扫描...</div></div>
+          <div class="toolbar justify-end"><button id="btnRescanRepairPets" type="button">重新扫描</button><button id="btnRunRepairPets" class="primary" type="button" disabled>一键修复</button></div>
+        </div>
+      </div>`;
+      document.body.appendChild(overlay);
+      overlay.addEventListener('click', event => { if (event.target === overlay) closeRepairPetsDialog(); });
+      $('closeRepairPets').onclick = closeRepairPetsDialog;
+      $('btnRescanRepairPets').onclick = () => refreshRepairPetsDialog().catch(e => setStatus($('repairPetStatus'), `扫描失败：${e?.message || e}`, 'error'));
+      $('btnRunRepairPets').onclick = () => repairFamousPetDataUrls().catch(e => setStatus($('repairPetStatus'), `修复失败：${e?.message || e}`, 'error'));
+      await refreshRepairPetsDialog();
+    }
+
+    async function refreshRepairPetsDialog() {
+      setStatus($('repairPetStatus'), '正在扫描所有宠物...', '');
+      $('btnRunRepairPets').disabled = true;
+      const issues = await scanFamousPetRepairIssues({ setMainStatus: false });
+      const fixableCount = issues.filter(issue => issue.fixes.length).length;
+      renderRepairIssueList(issues);
+      $('btnRunRepairPets').disabled = fixableCount <= 0;
+      setStatus($('repairPetStatus'), `扫描完成：发现 ${issues.length} 个需要关注，${fixableCount} 个可一键修复。`, issues.length ? '' : 'ok');
+    }
+
+    async function repairFamousPetDataUrls() {
+      const issues = (state.batchRepair?.issues || []).filter(issue => issue.fixes.length);
+      if (!issues.length) {
+        setStatus($('repairPetStatus'), '没有可修复项。', 'ok');
+        return;
+      }
+      state.batchRepair = { ...(state.batchRepair || {}), running: true };
+      updateRepairPetsButton();
+      $('btnRunRepairPets').disabled = true;
+      $('btnRescanRepairPets').disabled = true;
+      let fixedCount = 0;
+      try {
+        for (let index = 0; index < issues.length; index += 1) {
+          const issue = issues[index];
+          setStatus($('repairPetStatus'), `正在修复 ${index + 1}/${issues.length}：${issue.name || issue.id}`, '');
+          try {
+            const record = state.records.find(item => item.path === issue.path) || issue.record;
+            const pet = await loadRecordPet(record);
+            const sourceUrl = String(pet?.imageSheetUrl || '').trim();
+            if (!sourceUrl) throw new Error('当前 imageSheetUrl 为空，请重新扫描');
+            const currentSize = await getImageByteSize(sourceUrl).catch(() => issue.sizeBytes);
+            const currentIsWebp = isWebpImageUrl(sourceUrl);
+            const shouldConvertOrCompress = !currentIsWebp || (Number.isFinite(currentSize) && currentSize > WEBP_MAX_BYTES);
+            let blob;
+            let uploadFileName;
+            let repairDetail;
+            if (shouldConvertOrCompress) {
+              const compressed = await createCompressedRepairWebpFromUrl(sourceUrl, WEBP_MAX_BYTES);
+              blob = compressed.blob;
+              uploadFileName = getRepairWebpFileName(issue);
+              repairDetail = `WebP ${compressed.size.width}x${compressed.size.height} q${Math.round(compressed.quality * 100)}，${formatBytes(blob.size)}`;
+            } else if (isDataUrl(sourceUrl)) {
+              blob = await dataUrlToBlob(sourceUrl);
+              if (blob.size > WEBP_MAX_BYTES) {
+                const compressed = await createCompressedRepairWebpFromUrl(sourceUrl, WEBP_MAX_BYTES);
+                blob = compressed.blob;
+                uploadFileName = getRepairWebpFileName(issue);
+                repairDetail = `WebP ${compressed.size.width}x${compressed.size.height} q${Math.round(compressed.quality * 100)}，${formatBytes(blob.size)}`;
+              } else {
+                uploadFileName = getRepairFileName({ ...issue, mimeType: blob.type || issue.mimeType || 'image/webp' });
+                repairDetail = `上传原 WebP，${formatBytes(blob.size)}`;
+              }
+            } else {
+              throw new Error('当前记录不再需要修复，请重新扫描');
+            }
+            const uploaded = await uploadBlobToPetPreferredCdn(blob, uploadFileName);
+            const historyUrls = normalizeHistoryUrls(pet.historyUrls || pet.imageHistoryUrls || []).filter(url => url && !isDataUrl(url) && url !== uploaded.url);
+            const savedPet = { ...pet, imageSheetUrl: uploaded.url };
+            if (historyUrls.length) savedPet.historyUrls = historyUrls;
+            else delete savedPet.historyUrls;
+            delete savedPet.imageHistoryUrls;
+            await savePetObject(savedPet, { path: issue.path, reload: false, silent: true });
+            issue.fixedUrl = uploaded.url;
+            issue.imageSheetUrl = uploaded.url;
+            issue.sizeBytes = blob.size;
+            issue.isWebp = true;
+            issue.needsUpload = false;
+            issue.needsConvert = false;
+            issue.needsCompress = false;
+            issue.warnings = [];
+            issue.fixes = [];
+            issue.error = '';
+            fixedCount += 1;
+            if (isCurrentPetTarget(issue.path, savedPet.id)) {
+              state.currentHistoryUrls = historyUrls;
+              $('imageSheetUrl').value = uploaded.url;
+              renderSheet(uploaded.url);
+              updateOutput();
+            }
+            setStatus($('saveStatus'), `已修复 ${issue.id}：${uploaded.remoteKey}，${repairDetail}`, 'ok');
+          } catch (error) {
+            issue.error = error?.message || String(error);
+          }
+          renderRepairIssueList(state.batchRepair.issues);
+        }
+        await loadRecords();
+        setStatus($('repairPetStatus'), `修复完成：已上传并替换 ${fixedCount}/${issues.length} 个图片。可点击“重新扫描”确认剩余警告。`, fixedCount === issues.length ? 'ok' : 'error');
+        setStatus($('runStatus'), `修复完成：已上传并替换 ${fixedCount}/${issues.length} 个图片。`, fixedCount === issues.length ? 'ok' : 'error');
+      } finally {
+        state.batchRepair.running = false;
+        $('btnRescanRepairPets').disabled = false;
+        $('btnRunRepairPets').disabled = !(state.batchRepair.issues || []).some(issue => issue.fixes.length);
+        updateRepairPetsButton();
+      }
+    }
+
     function loadImageForCanvas(url) {
       return new Promise((resolve, reject) => {
         const img = new Image();
@@ -2261,8 +2681,8 @@
         nextUrl = uploaded.url;
         detail = `已上传 CDN：${uploaded.remoteKey}`;
       } else {
-        nextUrl = await blobToDataUrl(blob);
-        detail = '未配置 CDN key，已保存为 WebP data URL';
+        nextUrl = await uploadBlobToKeepworkTempCdn(blob, getPetCdnFileName('webp', targetPet.id));
+        detail = '未配置 CDN key，已上传 Keepwork 临时 CDN';
       }
       state.imageSizeCache.set(nextUrl, blob.size);
       const historyUrls = buildImageHistoryUrls(nextUrl, targetPet);
@@ -2487,8 +2907,9 @@
       $('btnPetCdnConfig').onclick = openPetCdnConfigPasteDialog;
       $('btnImportExport').onclick = openImportExportDialog;
       $('btnRefreshRecords').onclick = () => startBatchGenerateAll().catch(e => setStatus($('runStatus'), `批量生成失败：${e?.message || e}`, 'error'));
+      $('btnRepairPets').onclick = () => openRepairPetsDialog().catch(e => setStatus($('runStatus'), `扫描修复失败：${e?.message || e}`, 'error'));
       $('btnNewPet').onclick = openBatchCreateDialog;
-      $('btnOpenIndex').onclick = () => openWorkspaceViewer(`${FAMOUS_DIR}/index.json`);
+      $('btnOpenIndex').onclick = () => openWorkspaceViewer(INDEX_PATH);
       $('recordSearch').addEventListener('input', handleRecordFilterChange);
       $('recordSelectAll').addEventListener('change', () => setRenderedRecordSelection($('recordSelectAll').checked));
       $('referenceUrl').addEventListener('input', renderReferencePreview);

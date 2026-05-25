@@ -2,7 +2,7 @@
 
 import { $, $$, escapeHtml, randInt, showToast } from './utils.js';
 import { t } from './i18n.js';
-import { canPlaceItemInArea, CONFIG, DECO_VISUALS, getActiveHouseRoomIds, getPlacedItemZOrder, SHOP_ITEMS } from './config.js';
+import { canPlaceItemInArea, CONFIG, DECO_VISUALS, getActiveHouseRoomIds, getPlacedItemZOrder, getShopItemById, SHOP_ITEMS } from './config.js';
 import { isVisitingMode, notify, state } from './state.js';
 import { getLayout, loadPets } from './storage.js';
 import { displayPetName } from './dna.js';
@@ -12,7 +12,7 @@ import SoundManager from './soundManager.js';
 import { BATH_COMPLETE_FEEDBACK_MS, BATH_COMPLETE_LINES, BATH_SEQUENCE_MS, createBathSequenceOverlay, isPetVisibleInStage } from './petInteractions.js';
 import { setShopFilter, suppressShopInitialClick } from './view_shop.js';
 
-const ITEM_BY_ID = Object.fromEntries(SHOP_ITEMS.map(it => [it.id, it]));
+const ITEM_BY_ID = new Proxy({}, { get: (_, id) => getShopItemById(id) });
 const BASIC_FEED_ID = 'food_basic_feed';
 const soundManager = SoundManager.getInstance();
 const ITEM_Z_INDEX_BASE = 5;

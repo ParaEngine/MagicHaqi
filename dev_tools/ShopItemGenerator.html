@@ -1,0 +1,1347 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Shop Item Generator</title>
+  <script src="https://cdn.keepwork.com/keepwork/cdn/tailwindcss@3.4.16.js"></script>
+  <style type="text/tailwindcss">
+    @layer base {
+      :root { color-scheme: light; }
+      body { @apply m-0 min-h-screen bg-slate-100 text-slate-900 font-sans; }
+      button { @apply min-h-[34px] cursor-pointer rounded-md border border-slate-300 bg-white px-3 text-slate-900 transition hover:border-sky-300 hover:bg-slate-50 active:translate-y-px disabled:cursor-not-allowed disabled:opacity-50 disabled:active:translate-y-0; }
+      input, textarea, select { @apply w-full min-h-[34px] rounded-md border border-slate-300 bg-white px-2.5 py-1.5 text-slate-900 outline-none focus:border-sky-600 focus:ring-2 focus:ring-sky-600/15; }
+      textarea { @apply resize-y leading-normal; }
+      label { @apply flex flex-col gap-1.5 text-xs text-slate-500; }
+      h1, h2, h3 { @apply m-0 tracking-normal; }
+      h1 { @apply text-lg leading-tight font-semibold; }
+      h2 { @apply text-sm font-semibold; }
+      h3 { @apply text-xs font-normal text-slate-500; }
+    }
+    @layer components {
+      .app { @apply grid min-h-screen grid-cols-1 gap-3 p-2 lg:h-screen lg:min-h-0 lg:grid-cols-[285px_minmax(320px,1fr)] lg:overflow-hidden lg:p-3 xl:grid-cols-[285px_340px_minmax(620px,1fr)]; }
+      .panel { @apply flex min-h-0 flex-col overflow-hidden rounded-lg border border-slate-300 bg-white shadow-lg shadow-slate-300/40; }
+      .panel-head { @apply flex min-h-14 items-center justify-between gap-2.5 border-b border-slate-300 px-3.5 py-3; }
+      .panel-body { @apply flex min-h-0 flex-1 flex-col gap-3 overflow-auto p-3; }
+      .section { @apply flex flex-col gap-2.5 rounded-lg border border-slate-300 bg-slate-50 p-3; }
+      .toolbar { @apply flex flex-wrap items-center gap-2; }
+      .toolbar button { @apply flex-none; }
+      .primary { @apply border-sky-600 bg-sky-600 text-white hover:border-sky-700 hover:bg-sky-700; }
+      .success { @apply border-emerald-600 bg-emerald-600 text-white hover:border-emerald-700 hover:bg-emerald-700; }
+      .danger { @apply border-red-200 bg-red-50 text-red-700 hover:border-red-300 hover:bg-red-100; }
+      .row { @apply grid grid-cols-1 gap-2.5 md:grid-cols-2; }
+      .row-3 { @apply grid grid-cols-1 gap-2.5 md:grid-cols-3; }
+      .toggle-line { @apply flex-row items-center gap-2 text-slate-900; }
+      .toggle-line input { @apply min-h-0 h-4 w-4 accent-sky-600; }
+      .hint { @apply text-xs leading-normal text-slate-500; }
+      .pill { @apply inline-flex min-h-6 items-center whitespace-nowrap rounded-full border border-slate-300 bg-white px-2 text-xs text-slate-500; }
+      .status { @apply whitespace-pre-wrap rounded-md border border-sky-200 bg-sky-50 px-2.5 py-2 text-xs leading-normal text-sky-900; }
+      .status.ok { @apply border-emerald-200 bg-emerald-50 text-emerald-800; }
+      .status.error { @apply border-red-200 bg-red-50 text-red-800; }
+      .record-toolbar { @apply grid grid-cols-[minmax(0,1fr)_auto] gap-2 border-b border-slate-300 bg-slate-50 p-3; }
+      .record-list { @apply flex min-h-0 flex-1 flex-col gap-1.5 overflow-auto p-2; }
+      .record-item { @apply grid w-full grid-cols-[42px_minmax(0,1fr)_auto] items-center gap-2.5 rounded-md border border-slate-300 bg-white p-2.5 text-left; }
+      .record-item.active { @apply border-sky-600 bg-sky-50 ring-2 ring-sky-600/15; }
+      .record-main { @apply block min-w-0 border-0 bg-transparent p-0 text-left hover:border-transparent hover:bg-transparent; }
+      .record-emoji { @apply grid h-[42px] w-[42px] place-items-center overflow-hidden rounded-md border border-slate-300 bg-white text-2xl; }
+      .record-emoji svg, .record-emoji img { @apply block h-full w-full object-contain; }
+      .record-title { @apply block min-w-0 overflow-hidden text-ellipsis whitespace-nowrap text-[13px] font-bold; }
+      .record-meta { @apply block min-w-0 overflow-hidden text-ellipsis whitespace-nowrap text-[11px] text-slate-500; }
+      .record-actions { @apply flex gap-1.5; }
+      .record-actions button { @apply min-h-[30px] min-w-[34px] px-2 text-xs; }
+      .editor { @apply lg:col-span-2 xl:col-span-1; }
+      .stack { @apply flex min-w-0 flex-col gap-3; }
+      .output { @apply min-h-[220px] overflow-auto whitespace-pre font-mono text-xs leading-normal; }
+      .compact-output { @apply min-h-[130px]; }
+      .item-card { @apply flex items-center gap-3 rounded-lg border border-slate-300 bg-white p-3; }
+      .item-icon { @apply grid h-20 w-20 flex-none place-items-center overflow-hidden rounded-lg border border-slate-300 bg-slate-50 text-4xl; }
+      .item-icon svg, .item-icon img { @apply block h-full w-full object-contain; }
+      .item-name { @apply min-w-0 overflow-hidden text-ellipsis whitespace-nowrap text-lg font-bold; }
+      .item-meta { @apply text-xs text-slate-500; }
+      .tag-row { @apply flex flex-wrap gap-1.5; }
+      .tag-row button { @apply min-h-7 rounded-full px-2.5 text-xs; }
+      .tag-row button.active { @apply border-sky-600 bg-sky-50 font-bold text-sky-800; }
+      .json-error { @apply border-red-300 bg-red-50; }
+      .tabs { @apply grid grid-cols-2 gap-1 rounded-md border border-slate-300 bg-white p-1; }
+      .tabs button { @apply min-h-8 border-0 bg-transparent text-xs; }
+      .tabs button.active { @apply bg-sky-600 text-white hover:bg-sky-700; }
+      .ai-preview { @apply min-h-[90px] max-h-[190px] overflow-auto whitespace-pre-wrap font-mono text-xs; }
+    }
+    @media (max-width: 760px) {
+      .app { @apply min-h-screen; }
+    }
+  </style>
+</head>
+<body>
+  <main class="app">
+    <aside class="panel">
+      <div class="panel-head">
+        <div>
+          <h1>Shop Item Generator</h1>
+          <h3>#sym:SHOP_ITEMS + #sym:DECO_VISUALS</h3>
+        </div>
+        <span id="sdkState" class="pill">SDK loading</span>
+      </div>
+      <div class="panel-body">
+        <section class="section">
+          <h2>账号与 Workspace</h2>
+          <div id="loginState" class="status">正在加载 KeepworkSDK...</div>
+          <div class="toolbar">
+            <button id="btnLogin" type="button">登录</button>
+            <button id="btnLocalApi" type="button">本地 API Key</button>
+          </div>
+          <div class="hint">保存路径：MagicHaqi/famous-planets/*_shopitems.json，格式为 SHOP_ITEMS + DECO_VISUALS。</div>
+        </section>
+
+        <section class="section">
+          <h2>来源与保存</h2>
+          <div id="loadStatus" class="status">正在读取 config.js...</div>
+          <label>shopitems.json 路径
+            <input id="shopItemsPath" placeholder="famous-planets/my_planet_shopitems.json">
+          </label>
+          <label class="toggle-line"><input id="exportDiffOnly" type="checkbox" checked>导出时只保存相对 _default_shopitems.json 的差异</label>
+          <div class="toolbar">
+            <button id="btnNewShopFile" type="button">新建 shopitems 文件</button>
+            <button id="btnReloadConfig" class="primary" type="button">从 config.js 读取</button>
+            <button id="btnLoadWorkspace" type="button">读取路径</button>
+            <button id="btnSaveWorkspace" class="success" type="button">保存 shopitems.json</button>
+          </div>
+          <div class="toolbar">
+            <button id="btnCopyShopJson" type="button">复制导出 JSON</button>
+            <button id="btnCopyVisualJson" type="button">复制完整 JSON</button>
+          </div>
+        </section>
+
+        <section class="section">
+          <h2>AI 生成</h2>
+          <label>Chat 模型
+            <select id="chatModelSelect"></select>
+          </label>
+          <label>Image 模型
+            <select id="imageModelSelect"></select>
+          </label>
+          <div class="row">
+            <label>图片尺寸
+              <select id="imageSize">
+                <option value="128x128" selected>128x128 WebP</option>
+                <option value="256x256">256x256 WebP</option>
+                <option value="512x512">512x512 WebP</option>
+              </select>
+            </label>
+            <label>视觉格式
+              <select id="visualMode">
+                <option value="svg">SVG</option>
+                <option value="webp" selected>WebP image</option>
+              </select>
+            </label>
+          </div>
+          <label>需求描述
+            <textarea id="aiPrompt" rows="4" placeholder="例如：给水域生态创建一个水晶贝壳服务站，偏儿童游戏风格，可放在 water field"></textarea>
+          </label>
+          <div class="toolbar">
+            <button id="btnAiItem" class="primary" type="button">AI 生成物品+SVG</button>
+            <button id="btnAiWebp" type="button">生成 WebP</button>
+          </div>
+          <div id="aiPreview" class="status ai-preview">等待 AI 任务。</div>
+        </section>
+
+        <section class="section">
+          <h2>新建模板</h2>
+          <div class="toolbar">
+            <button type="button" data-template="food">食物</button>
+            <button type="button" data-template="toy">玩具</button>
+            <button type="button" data-template="furniture">家具</button>
+            <button type="button" data-template="house">房屋</button>
+          </div>
+          <label>快速 ID 前缀
+            <select id="idPrefix">
+              <option value="food_">food_</option>
+              <option value="toy_">toy_</option>
+              <option value="furn_">furn_</option>
+              <option value="deco_">deco_</option>
+              <option value="bed_">bed_</option>
+              <option value="kit_">kit_</option>
+              <option value="bath_">bath_</option>
+              <option value="living_">living_</option>
+              <option value="garden_">garden_</option>
+              <option value="land_">land_</option>
+              <option value="water_">water_</option>
+              <option value="sky_">sky_</option>
+              <option value="house_">house_</option>
+            </select>
+          </label>
+          <div class="toolbar">
+            <button id="btnApplyPrefix" type="button">按名称生成 ID</button>
+            <button id="btnDuplicate" type="button">复制当前</button>
+          </div>
+          <label class="toggle-line"><input id="includeHidden" type="checkbox" checked>列表显示 hidden / remote 项</label>
+        </section>
+      </div>
+    </aside>
+
+    <section class="panel records">
+      <div class="panel-head">
+        <div>
+          <h2>商店物品</h2>
+          <h3>SHOP_ITEMS + paired visual</h3>
+        </div>
+        <span id="recordCount" class="pill">0</span>
+      </div>
+      <div class="record-toolbar">
+        <input id="recordSearch" placeholder="搜索 id / name / type / fields">
+        <button id="btnNew" class="primary" type="button">新建</button>
+        <select id="typeFilter" class="col-span-2">
+          <option value="all">全部类型</option>
+          <option value="food">food</option>
+          <option value="toy">toy</option>
+          <option value="furniture">furniture</option>
+          <option value="house">house</option>
+        </select>
+      </div>
+      <div id="recordList" class="record-list"><div class="hint p-2.5">正在加载...</div></div>
+    </section>
+
+    <section class="panel editor">
+      <div class="panel-head">
+        <div>
+          <h2 id="editorTitle">商店物品编辑</h2>
+          <h3 id="editorSubtitle">结构化字段 + DECO_VISUALS</h3>
+        </div>
+        <div class="toolbar">
+          <button id="btnApplyJson" type="button">应用 JSON</button>
+          <button id="btnUpsert" class="success" type="button">加入列表</button>
+        </div>
+      </div>
+      <div class="panel-body">
+        <div id="runStatus" class="status">准备就绪。选择已有物品或新建后编辑。</div>
+        <div class="grid grid-cols-1 gap-3 xl:grid-cols-[minmax(360px,1fr)_minmax(420px,1fr)]">
+          <div class="stack">
+            <section class="section">
+              <h2>基础信息</h2>
+              <div class="row">
+                <label>ID <input id="itemId" maxlength="80" placeholder="furn_new_item"></label>
+                <label>名称 <input id="itemName" maxlength="40" placeholder="新的商店物品"></label>
+              </div>
+              <div class="row-3">
+                <label>Emoji <input id="itemEmoji" maxlength="8" placeholder="🎁"></label>
+                <label>价格 <input id="itemPrice" type="number" min="0" step="1" value="10"></label>
+                <label>类型
+                  <select id="itemType">
+                    <option value="food">food</option>
+                    <option value="toy">toy</option>
+                    <option value="furniture">furniture</option>
+                    <option value="house">house</option>
+                  </select>
+                </label>
+              </div>
+              <div class="row-3">
+                <label class="toggle-line"><input id="hiddenFromShop" type="checkbox">hiddenFromShop</label>
+                <label class="toggle-line"><input id="unlimited" type="checkbox">unlimited</label>
+                <label class="toggle-line"><input id="uniqueItem" type="checkbox">uniqueItem</label>
+                <label class="toggle-line"><input id="remoteOnly" type="checkbox">remoteOnly</label>
+              </div>
+            </section>
+
+            <section class="section">
+              <h2>数值与食物</h2>
+              <div class="row-3">
+                <label>Hunger <input id="statHunger" type="number" step="1"></label>
+                <label>Mood <input id="statMood" type="number" step="1"></label>
+                <label>Clean <input id="statClean" type="number" step="1"></label>
+                <label>Bond <input id="statBond" type="number" step="1"></label>
+                <label>foodKind
+                  <select id="foodKind">
+                    <option value="">无</option>
+                    <option value="both">both</option>
+                    <option value="vegetables">vegetables</option>
+                    <option value="meat">meat</option>
+                  </select>
+                </label>
+                <label>trait
+                  <select id="trait"><option value="">无</option></select>
+                </label>
+              </div>
+              <div class="row">
+                <label>moodPenalty <input id="moodPenalty" type="number" step="1"></label>
+                <label>moodPenaltyStages <input id="moodPenaltyStages" placeholder="teen, adult, elder"></label>
+              </div>
+            </section>
+
+            <section class="section">
+              <h2>放置与房屋</h2>
+              <div class="row-3">
+                <label>fieldSize <input id="fieldSize" type="number" min="0" step="0.05"></label>
+                <label>zorder <input id="zorder" type="number" step="1"></label>
+                <label>rooms <input id="rooms" placeholder="bedroom, kitchen"></label>
+              </div>
+              <label>fields <input id="fields" placeholder="indoor / outdoor / land / water / sky / bedroom..."></label>
+              <div id="fieldButtons" class="tag-row"></div>
+              <div id="roomButtons" class="tag-row"></div>
+            </section>
+
+            <section class="section">
+              <h2>JSON 扩展</h2>
+              <textarea id="extraJson" rows="7" spellcheck="false" placeholder='{"rewardCoins": 1}'></textarea>
+            </section>
+          </div>
+
+          <div class="stack">
+            <section class="section">
+              <h2>预览</h2>
+              <div class="item-card">
+                <div id="previewVisual" class="item-icon">🎁</div>
+                <div class="min-w-0 flex-1">
+                  <div id="previewName" class="item-name">新的商店物品</div>
+                  <div id="previewMeta" class="item-meta">type=furniture · price=10</div>
+                  <div id="previewStats" class="item-meta"></div>
+                </div>
+              </div>
+            </section>
+
+            <section class="section">
+              <h2>DECO_VISUALS 当前项</h2>
+              <div class="row-3">
+                <label>w <input id="visualW" type="number" min="0" step="0.01"></label>
+                <label>h <input id="visualH" type="number" min="0" step="0.01"></label>
+                <label>imageUrl <input id="visualImageUrl" placeholder="webp/data URL"></label>
+              </div>
+              <label>svg <textarea id="visualSvg" rows="8" spellcheck="false" placeholder="<svg ...></svg>"></textarea></label>
+              <div class="toolbar">
+                <button id="btnUseFallbackSvg" type="button">emoji SVG</button>
+                <button id="btnClearVisual" type="button">清空视觉</button>
+              </div>
+            </section>
+
+            <section class="section">
+              <div class="tabs">
+                <button id="tabItem" class="active" type="button">当前对象</button>
+                <button id="tabFiles" type="button">保存文件</button>
+              </div>
+              <textarea id="itemOutput" class="output" spellcheck="false"></textarea>
+              <textarea id="filesOutput" class="output hidden" spellcheck="false"></textarea>
+            </section>
+          </div>
+        </div>
+      </div>
+    </section>
+  </main>
+
+  <script type="module">
+    const WORKSPACE = 'MagicHaqi';
+    const DEFAULT_SHOPITEMS_PATH = 'famous-planets/_default_shopitems.json';
+    const DEFAULT_SHOPITEMS_URL = '../famous-planets/_default_shopitems.json';
+    const DEFAULT_TARGET_SHOPITEMS_PATH = 'famous-planets/new_planet_shopitems.json';
+    const LEGACY_SHOP_ITEMS_PATH = 'shopItems/shop_items.json';
+    const LEGACY_DECO_VISUALS_PATH = 'shopItems/deco_visuals.json';
+    const STORAGE_KEY = 'MagicHaqi.ShopItemGenerator.draft.v2';
+    const SETTINGS_KEY = 'MagicHaqi.ShopItemGenerator.aiSettings';
+    const CONFIG_MODULE_URL = '../js/config.js';
+    const SDK_CDN_URL = 'https://cdn.keepwork.com/sdk/keepworkSDK.iife.js?v=20260522a';
+    const $ = (id) => document.getElementById(id);
+
+    const state = {
+      sdk: null,
+      config: null,
+      initialItems: [],
+      initialVisuals: {},
+      defaultItems: [],
+      defaultVisuals: {},
+      items: [],
+      visuals: {},
+      selectedId: '',
+      targetPath: DEFAULT_TARGET_SHOPITEMS_PATH,
+      exportDiffOnly: true,
+      rooms: [],
+      fields: ['indoor', 'outdoor', 'land', 'water', 'sky', 'fire', 'ice', 'life', 'dark'],
+      traits: [],
+      activeTab: 'item',
+    };
+
+    function setStatus(el, text, kind = '') {
+      if (!el) return;
+      el.textContent = text;
+      el.classList.toggle('ok', kind === 'ok');
+      el.classList.toggle('error', kind === 'error');
+    }
+
+    function escapeHtml(value) {
+      return String(value ?? '').replace(/[&<>"']/g, char => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[char]));
+    }
+
+    function splitList(value) {
+      return String(value || '').split(/[,\n]/).map(item => item.trim()).filter(Boolean);
+    }
+
+    function unique(items) {
+      return [...new Set(items.filter(Boolean))];
+    }
+
+    function cleanId(value, fallback = 'item') {
+      const cleaned = String(value || '').trim().toLowerCase().replace(/[^a-z0-9_]+/g, '_').replace(/^_+|_+$/g, '').replace(/_{2,}/g, '_');
+      return cleaned || fallback;
+    }
+
+    function clone(value) {
+      return JSON.parse(JSON.stringify(value ?? null));
+    }
+
+    function toNumberOrBlank(value) {
+      const numberValue = Number(value);
+      return Number.isFinite(numberValue) ? numberValue : '';
+    }
+
+    function normalizeItem(item = {}) {
+      const clean = { ...item };
+      clean.id = cleanId(clean.id, `item_${Date.now()}`);
+      clean.name = String(clean.name || clean.id).trim();
+      clean.emoji = String(clean.emoji || '🎁').trim();
+      clean.price = Math.max(0, Math.round(Number(clean.price) || 0));
+      clean.type = String(clean.type || 'furniture').trim();
+      if (clean.stat && typeof clean.stat === 'object') {
+        clean.stat = Object.fromEntries(Object.entries(clean.stat).filter(([, value]) => Number.isFinite(Number(value))).map(([key, value]) => [key, Number(value)]));
+        if (!Object.keys(clean.stat).length) delete clean.stat;
+      }
+      ['fields', 'rooms', 'moodPenaltyStages'].forEach(key => {
+        if (Array.isArray(clean[key])) clean[key] = unique(clean[key].map(String));
+        else if (typeof clean[key] === 'string') clean[key] = splitList(clean[key]);
+        if (Array.isArray(clean[key]) && !clean[key].length) delete clean[key];
+      });
+      ['hiddenFromShop', 'unlimited', 'uniqueItem', 'remoteOnly'].forEach(key => {
+        if (!clean[key]) delete clean[key];
+        else clean[key] = true;
+      });
+      ['fieldSize', 'zorder', 'moodPenalty'].forEach(key => {
+        if (clean[key] === '' || clean[key] == null || !Number.isFinite(Number(clean[key]))) delete clean[key];
+        else clean[key] = Number(clean[key]);
+      });
+      ['foodKind', 'trait'].forEach(key => { if (!clean[key]) delete clean[key]; });
+      return clean;
+    }
+
+    function normalizeVisual(visual = {}) {
+      const clean = visual && typeof visual === 'object' ? { ...visual } : {};
+      ['w', 'h'].forEach(key => {
+        if (clean[key] === '' || clean[key] == null || !Number.isFinite(Number(clean[key]))) delete clean[key];
+        else clean[key] = Number(clean[key]);
+      });
+      if (clean.svg != null) clean.svg = String(clean.svg).trim();
+      if (!clean.svg) delete clean.svg;
+      if (clean.imageUrl != null) clean.imageUrl = String(clean.imageUrl).trim();
+      if (!clean.imageUrl) delete clean.imageUrl;
+      return clean;
+    }
+
+    function normalizeShopItemsPath(path) {
+      const clean = String(path || '').trim().replace(/\\/g, '/').replace(/^\/+/, '').replace(/^\.\//, '');
+      if (!clean) return DEFAULT_TARGET_SHOPITEMS_PATH;
+      return clean.endsWith('.json') ? clean : `${clean.replace(/\/+$/, '')}.json`;
+    }
+
+    function getTargetShopItemsPath() {
+      return normalizeShopItemsPath($('shopItemsPath')?.value || state.targetPath);
+    }
+
+    function isDiffExport() {
+      return !!$('exportDiffOnly')?.checked;
+    }
+
+    function parseShopItemsPayload(payload) {
+      const source = payload && typeof payload === 'object' ? payload : {};
+      const items = Array.isArray(source.SHOP_ITEMS) ? source.SHOP_ITEMS
+        : Array.isArray(source.shopItems) ? source.shopItems
+        : Array.isArray(source.items) ? source.items
+        : Array.isArray(source) ? source
+        : [];
+      const visuals = source.DECO_VISUALS && typeof source.DECO_VISUALS === 'object' ? source.DECO_VISUALS
+        : source.decoVisuals && typeof source.decoVisuals === 'object' ? source.decoVisuals
+        : source.visuals && typeof source.visuals === 'object' ? source.visuals
+        : {};
+      return {
+        items: items.map(clone).map(normalizeItem),
+        visuals: Object.fromEntries(Object.entries(visuals).map(([key, value]) => [key, normalizeVisual(value)]).filter(([, value]) => Object.keys(value).length)),
+      };
+    }
+
+    function stableJsonValue(value) {
+      if (Array.isArray(value)) return value.map(stableJsonValue);
+      if (!value || typeof value !== 'object') return value;
+      return Object.fromEntries(Object.keys(value).sort().map(key => [key, stableJsonValue(value[key])]));
+    }
+
+    function sameJsonValue(a, b) {
+      return JSON.stringify(stableJsonValue(a ?? null)) === JSON.stringify(stableJsonValue(b ?? null));
+    }
+
+    function isPlainObject(value) {
+      return !!value && typeof value === 'object' && !Array.isArray(value);
+    }
+
+    function mergeJsonObject(base = {}, override = {}) {
+      const merged = clone(base || {});
+      Object.entries(override || {}).forEach(([key, value]) => {
+        if (value === null) {
+          delete merged[key];
+          return;
+        }
+        if (isPlainObject(value) && isPlainObject(merged[key])) merged[key] = mergeJsonObject(merged[key], value);
+        else merged[key] = clone(value);
+      });
+      return merged;
+    }
+
+    function emptyOverrideValue(defaultValue) {
+      if (Array.isArray(defaultValue)) return [];
+      if (typeof defaultValue === 'boolean') return false;
+      return null;
+    }
+
+    function diffValueForExport(value, defaultValue) {
+      if (sameJsonValue(value, defaultValue)) return { changed: false };
+      if (value === undefined) return { changed: true, value: emptyOverrideValue(defaultValue) };
+      if (isPlainObject(value) && isPlainObject(defaultValue)) {
+        const diff = {};
+        const keys = unique([...Object.keys(value), ...Object.keys(defaultValue)]);
+        keys.forEach(key => {
+          const child = diffValueForExport(value[key], defaultValue[key]);
+          if (child.changed) diff[key] = child.value;
+        });
+        return Object.keys(diff).length ? { changed: true, value: diff } : { changed: false };
+      }
+      return { changed: true, value };
+    }
+
+    function diffObjectForExport(value = {}, defaultValue = {}) {
+      if (!defaultValue) return clone(value);
+      const diff = {};
+      const keys = unique([...Object.keys(value), ...Object.keys(defaultValue)]);
+      keys.forEach(key => {
+        const child = diffValueForExport(value[key], defaultValue[key]);
+        if (child.changed) diff[key] = child.value;
+      });
+      return diff;
+    }
+
+    function diffItemForExport(item, defaultItem) {
+      if (!defaultItem) return clone(item);
+      const diff = diffObjectForExport(item, defaultItem);
+      delete diff.id;
+      return Object.keys(diff).length ? { id: item.id, ...diff } : null;
+    }
+
+    function mergeItemsWithDefaults(defaultItems = [], overrideItems = []) {
+      const order = [];
+      const byId = new Map();
+      [...defaultItems, ...overrideItems].forEach(item => {
+        const id = String(item?.id || '').trim();
+        if (!id) return;
+        if (!byId.has(id)) order.push(id);
+        const existing = byId.get(id);
+        byId.set(id, existing ? mergeJsonObject(existing, { ...item, id }) : clone({ ...item, id }));
+      });
+      return order.map(id => byId.get(id));
+    }
+
+    function mergeVisualsWithDefaults(defaultVisuals = {}, overrideVisuals = {}) {
+      const merged = clone(defaultVisuals || {});
+      Object.entries(overrideVisuals || {}).forEach(([id, visual]) => {
+        merged[id] = isPlainObject(merged[id]) ? mergeJsonObject(merged[id], visual) : clone(visual);
+        if (!Object.keys(normalizeVisual(merged[id])).length) delete merged[id];
+      });
+      return merged;
+    }
+
+    function sortedVisuals(visuals = state.visuals) {
+      return Object.fromEntries(Object.entries(visuals)
+        .sort(([a], [b]) => a.localeCompare(b))
+        .map(([key, value]) => [key, normalizeVisual(value)])
+        .filter(([, value]) => Object.keys(value).length));
+    }
+
+    async function readLocalJson(url) {
+      const res = await fetch(`${url}?t=${Date.now()}`, { cache: 'no-store' });
+      if (!res.ok) throw new Error(`load ${url} failed: ${res.status}`);
+      return await res.json();
+    }
+
+    function defaultItem(type = 'furniture') {
+      const templates = {
+        food: { id: 'food_new', name: '新食物', emoji: '🍙', price: 10, type: 'food', foodKind: 'both', stat: { hunger: 12, mood: 4 } },
+        toy: { id: 'toy_new', name: '新玩具', emoji: '🎈', price: 30, type: 'toy', stat: { mood: 10 } },
+        furniture: { id: 'furn_new', name: '新家具', emoji: '🧩', price: 36, type: 'furniture', fields: ['indoor'] },
+        house: { id: 'house_new', name: '新房屋', emoji: '🏠', price: 180, type: 'house', fields: ['outdoor'], rooms: ['bedroom'], uniqueItem: true, fieldSize: 1 },
+      };
+      return clone(templates[type] || templates.furniture);
+    }
+
+    function fallbackSvg(item = buildItemFromForm()) {
+      const icon = escapeHtml(item?.emoji || '◆');
+      return `<svg viewBox="0 0 160 160" xmlns="http://www.w3.org/2000/svg"><rect x="18" y="18" width="124" height="124" rx="24" fill="#e0f7ff" stroke="#38bdf8" stroke-width="8"/><text x="80" y="100" text-anchor="middle" font-size="72">${icon}</text></svg>`;
+    }
+
+    function selectedItem() {
+      return state.items.find(item => item.id === state.selectedId) || null;
+    }
+
+    function selectedVisual() {
+      const id = state.selectedId || $('itemId')?.value;
+      return id ? normalizeVisual(state.visuals[id] || {}) : {};
+    }
+
+    function getEnabledModels(category) {
+      const sdk = state.sdk || window.keepwork;
+      return sdk?.localAPIKeySettings?.listModels ? sdk.localAPIKeySettings.listModels(category).filter(model => model.enabled !== false) : [];
+    }
+
+    function renderModelOptions(select, category, remembered = '') {
+      const models = getEnabledModels(category);
+      select.innerHTML = models.length
+        ? models.map(model => {
+            const value = model.name || model.modelId || '';
+            return `<option value="${escapeHtml(value)}">${escapeHtml(model.label || model.name || model.modelId || value)}</option>`;
+          }).join('')
+        : `<option value="">没有本地${category === 'Chat' ? '聊天' : '图片'}模型</option>`;
+      select.disabled = !models.length;
+      if (remembered && models.some(model => (model.name || model.modelId || '') === remembered)) select.value = remembered;
+      return models;
+    }
+
+    function readSettings() {
+      try { return JSON.parse(localStorage.getItem(SETTINGS_KEY) || '{}') || {}; }
+      catch (_) { return {}; }
+    }
+
+    function saveSettings() {
+      try {
+        localStorage.setItem(SETTINGS_KEY, JSON.stringify({
+          chatModel: $('chatModelSelect').value || '',
+          imageModel: $('imageModelSelect').value || '',
+          imageSize: $('imageSize').value || '128x128',
+          visualMode: $('visualMode').value || 'webp',
+        }));
+      } catch (_) {}
+    }
+
+    async function populateModelDropdowns() {
+      const sdk = state.sdk || window.keepwork;
+      if (!sdk?.localAPIKeySettings?.listModels) return;
+      await sdk.localAPIKeySettings.load?.();
+      const settings = readSettings();
+      renderModelOptions($('chatModelSelect'), 'Chat', settings.chatModel || $('chatModelSelect').value);
+      renderModelOptions($('imageModelSelect'), 'Image', settings.imageModel || $('imageModelSelect').value);
+      if (settings.imageSize) $('imageSize').value = settings.imageSize;
+      if (settings.visualMode) $('visualMode').value = settings.visualMode;
+    }
+
+    function getWorkspaceStore() {
+      const sdk = state.sdk || window.keepwork;
+      if (!sdk?.personalPageStore) throw new Error('PersonalPageStore 不可用');
+      return typeof sdk.personalPageStore.withWorkspace === 'function' ? sdk.personalPageStore.withWorkspace(WORKSPACE) : sdk.personalPageStore;
+    }
+
+    async function readWorkspaceFile(path) {
+      const store = getWorkspaceStore();
+      try { return await store.readFile(path, 1, 999999) || ''; }
+      catch (_) { return await store.readFile(path) || ''; }
+    }
+
+    async function writeWorkspaceFile(path, content) {
+      await getWorkspaceStore().createFile(path, content == null ? '' : String(content));
+    }
+
+    function getSdkCandidates() {
+      const params = new URLSearchParams(window.location.search);
+      const explicitSdk = params.get('sdk');
+      const hostname = window.location.hostname;
+      const isLocalHost = !hostname || hostname === 'localhost' || hostname === '127.0.0.1' || hostname === '::1';
+      const localCandidates = ['../../../../../keepworkSDK/index.js', '/keepworkSDK/index.js'];
+      const deployedCandidates = [SDK_CDN_URL, 'https://keepwork.com/public/resource/keepworkSDK.iife.js'];
+      return [explicitSdk, ...(isLocalHost || window.location.protocol === 'file:' ? localCandidates : []), ...deployedCandidates, ...(isLocalHost || window.location.protocol === 'file:' ? [] : localCandidates)].filter(Boolean);
+    }
+
+    function loadScript(src) {
+      return new Promise((resolve, reject) => {
+        const existing = [...document.scripts].find(script => script.src === src);
+        if (existing) {
+          existing.addEventListener('load', resolve, { once: true });
+          existing.addEventListener('error', reject, { once: true });
+          return;
+        }
+        const script = document.createElement('script');
+        script.src = src;
+        script.onload = resolve;
+        script.onerror = reject;
+        document.head.appendChild(script);
+      });
+    }
+
+    function importRuntimeModule(src) {
+      return new Function('src', 'return import(src)')(src);
+    }
+
+    async function loadSdk() {
+      let lastError = null;
+      for (const url of getSdkCandidates()) {
+        try {
+          if (/(^|\/)index\.js(?:[?#].*)?$/.test(url)) await importRuntimeModule(url);
+          else await loadScript(url);
+          if (window.keepwork) {
+            state.sdk = window.keepwork;
+            $('sdkState').textContent = 'SDK ready';
+            await populateModelDropdowns();
+            await refreshLoginState();
+            await loadWorkspaceData({ silent: true });
+            return;
+          }
+        } catch (error) { lastError = error; }
+      }
+      $('sdkState').textContent = 'SDK failed';
+      setStatus($('loginState'), `KeepworkSDK 加载失败：${lastError?.message || lastError || 'unknown'}`, 'error');
+    }
+
+    async function refreshLoginState() {
+      const sdk = state.sdk || window.keepwork;
+      if (!sdk) return;
+      let username = sdk.user?.username || '';
+      if (sdk.token && !username) {
+        try {
+          const user = typeof sdk.getUserProfile === 'function' ? await sdk.getUserProfile() : await sdk.getCurrentUser?.();
+          username = user?.username || sdk.user?.username || '';
+        } catch (_) {}
+      }
+      const loginState = $('loginState');
+      loginState.classList.toggle('ok', !!sdk.token);
+      loginState.classList.toggle('error', false);
+      loginState.textContent = sdk.token ? `已登录：${username || 'Keepwork 用户'}` : '未登录。可使用 localAPI，保存 workspace 需要登录。';
+    }
+
+    async function openLogin() {
+      const sdk = state.sdk || window.keepwork;
+      if (!sdk) return;
+      if (!sdk.token) {
+        if (sdk.loginWindow?.show) sdk.loginWindow.show({ onLogin: refreshLoginState });
+        else if (sdk.login) await sdk.login();
+        setTimeout(refreshLoginState, 600);
+      } else if (typeof sdk.showProfileWindow === 'function') {
+        await sdk.showProfileWindow();
+        await refreshLoginState();
+      }
+    }
+
+    function renderTraitOptions() {
+      $('trait').innerHTML = '<option value="">无</option>' + state.traits.map(trait => `<option value="${escapeHtml(trait.id)}">${escapeHtml(trait.name || trait.id)} (${escapeHtml(trait.id)})</option>`).join('');
+    }
+
+    function getExtraJson() {
+      const text = $('extraJson').value.trim();
+      if (!text) return {};
+      return JSON.parse(text);
+    }
+
+    function buildItemFromForm() {
+      let extra = {};
+      try {
+        $('extraJson').classList.remove('json-error');
+        extra = getExtraJson();
+      } catch (error) {
+        $('extraJson').classList.add('json-error');
+        throw new Error(`JSON 扩展解析失败：${error.message}`);
+      }
+      const stat = {};
+      [['hunger', $('statHunger').value], ['mood', $('statMood').value], ['clean', $('statClean').value], ['bond', $('statBond').value]].forEach(([key, value]) => {
+        if (value !== '') stat[key] = Number(value);
+      });
+      return normalizeItem({
+        ...extra,
+        id: $('itemId').value,
+        name: $('itemName').value,
+        emoji: $('itemEmoji').value,
+        price: Number($('itemPrice').value),
+        type: $('itemType').value,
+        ...(Object.keys(stat).length ? { stat } : {}),
+        foodKind: $('foodKind').value,
+        trait: $('trait').value,
+        fields: splitList($('fields').value),
+        rooms: splitList($('rooms').value),
+        fieldSize: $('fieldSize').value,
+        zorder: $('zorder').value,
+        moodPenalty: $('moodPenalty').value,
+        moodPenaltyStages: splitList($('moodPenaltyStages').value),
+        hiddenFromShop: $('hiddenFromShop').checked,
+        unlimited: $('unlimited').checked,
+        uniqueItem: $('uniqueItem').checked,
+        remoteOnly: $('remoteOnly').checked,
+      });
+    }
+
+    function buildVisualFromForm() {
+      return normalizeVisual({
+        w: $('visualW').value,
+        h: $('visualH').value,
+        svg: $('visualSvg').value,
+        imageUrl: $('visualImageUrl').value,
+      });
+    }
+
+    function setFormItem(item, visual = null) {
+      const clean = normalizeItem(item || defaultItem());
+      const knownKeys = new Set(['id', 'name', 'emoji', 'price', 'type', 'stat', 'foodKind', 'trait', 'fields', 'rooms', 'fieldSize', 'zorder', 'moodPenalty', 'moodPenaltyStages', 'hiddenFromShop', 'unlimited', 'uniqueItem', 'remoteOnly']);
+      const extra = Object.fromEntries(Object.entries(clean).filter(([key]) => !knownKeys.has(key)));
+      $('itemId').value = clean.id || '';
+      $('itemName').value = clean.name || '';
+      $('itemEmoji').value = clean.emoji || '';
+      $('itemPrice').value = clean.price ?? 0;
+      $('itemType').value = clean.type || 'furniture';
+      $('statHunger').value = toNumberOrBlank(clean.stat?.hunger);
+      $('statMood').value = toNumberOrBlank(clean.stat?.mood);
+      $('statClean').value = toNumberOrBlank(clean.stat?.clean);
+      $('statBond').value = toNumberOrBlank(clean.stat?.bond);
+      $('foodKind').value = clean.foodKind || '';
+      $('trait').value = clean.trait || '';
+      $('fields').value = (clean.fields || []).join(', ');
+      $('rooms').value = (clean.rooms || []).join(', ');
+      $('fieldSize').value = toNumberOrBlank(clean.fieldSize);
+      $('zorder').value = toNumberOrBlank(clean.zorder);
+      $('moodPenalty').value = toNumberOrBlank(clean.moodPenalty);
+      $('moodPenaltyStages').value = (clean.moodPenaltyStages || []).join(', ');
+      $('hiddenFromShop').checked = !!clean.hiddenFromShop;
+      $('unlimited').checked = !!clean.unlimited;
+      $('uniqueItem').checked = !!clean.uniqueItem;
+      $('remoteOnly').checked = !!clean.remoteOnly;
+      $('extraJson').value = Object.keys(extra).length ? JSON.stringify(extra, null, 2) : '';
+      const cleanVisual = normalizeVisual(visual || state.visuals[clean.id] || {});
+      $('visualW').value = toNumberOrBlank(cleanVisual.w);
+      $('visualH').value = toNumberOrBlank(cleanVisual.h);
+      $('visualSvg').value = cleanVisual.svg || '';
+      $('visualImageUrl').value = cleanVisual.imageUrl || '';
+      updateOutputs();
+    }
+
+    function upsertItems(items, item) {
+      const clean = normalizeItem(item);
+      const index = items.findIndex(existing => existing.id === clean.id);
+      if (index >= 0) return items.map((existing, itemIndex) => itemIndex === index ? clean : existing);
+      return [...items, clean];
+    }
+
+    function upsertCurrentItem({ silent = false } = {}) {
+      let item;
+      try { item = buildItemFromForm(); }
+      catch (error) { setStatus($('runStatus'), error.message, 'error'); return null; }
+      const visual = buildVisualFromForm();
+      state.items = upsertItems(state.items, item);
+      if (Object.keys(visual).length) state.visuals[item.id] = visual;
+      else delete state.visuals[item.id];
+      state.selectedId = item.id;
+      setFormItem(item, visual);
+      renderRecordList();
+      if (!silent) setStatus($('runStatus'), `已加入列表：${item.id}。`, 'ok');
+      saveDraft();
+      return { item, visual };
+    }
+
+    function selectRecord(id) {
+      const item = state.items.find(candidate => candidate.id === id);
+      if (!item) return;
+      state.selectedId = id;
+      setFormItem(item, state.visuals[id]);
+      renderRecordList();
+    }
+
+    function newItem(type = $('itemType')?.value || 'furniture') {
+      state.selectedId = '';
+      setFormItem(defaultItem(type), {});
+      renderRecordList();
+      setStatus($('runStatus'), '已创建新物品草稿。编辑后点击“加入列表”。', 'ok');
+    }
+
+    function newShopItemsFile() {
+      const stamp = new Date().toISOString().slice(0, 10).replace(/-/g, '');
+      state.targetPath = `famous-planets/new_planet_${stamp}_shopitems.json`;
+      state.exportDiffOnly = true;
+      $('shopItemsPath').value = state.targetPath;
+      $('exportDiffOnly').checked = true;
+      state.items = state.defaultItems.map(clone).map(normalizeItem);
+      state.visuals = clone(state.defaultVisuals);
+      state.selectedId = '';
+      renderRecordList();
+      newItem('furniture');
+      setActiveTab('files');
+      setStatus($('loadStatus'), `已准备新文件：${state.targetPath}\n保存时会只写入相对 ${DEFAULT_SHOPITEMS_PATH} 的差异。`, 'ok');
+    }
+
+    function nextCopyId(baseId) {
+      const base = cleanId(`${baseId || 'item'}_copy`);
+      const used = new Set(state.items.map(item => item.id));
+      if (!used.has(base)) return base;
+      for (let index = 2; index < 1000; index += 1) {
+        const candidate = `${base}_${index}`;
+        if (!used.has(candidate)) return candidate;
+      }
+      return `${base}_${Date.now()}`;
+    }
+
+    function duplicateRecord(id = state.selectedId) {
+      const source = id ? state.items.find(item => item.id === id) : buildItemFromForm();
+      if (!source) return;
+      const copy = normalizeItem({ ...clone(source), id: nextCopyId(source.id), name: `${source.name || source.id} 副本` });
+      const visual = clone(state.visuals[source.id] || buildVisualFromForm() || {});
+      state.items = upsertItems(state.items, copy);
+      if (visual && Object.keys(visual).length) state.visuals[copy.id] = visual;
+      state.selectedId = copy.id;
+      setFormItem(copy, visual);
+      renderRecordList();
+      setStatus($('runStatus'), `已复制为 ${copy.id}。`, 'ok');
+    }
+
+    function toggleListInput(inputId, value) {
+      const input = $(inputId);
+      const items = new Set(splitList(input.value));
+      if (items.has(value)) items.delete(value);
+      else items.add(value);
+      input.value = [...items].join(', ');
+      updateOutputs();
+    }
+
+    function renderListButtons() {
+      const currentFields = new Set(splitList($('fields').value));
+      $('fieldButtons').innerHTML = state.fields.map(field => `<button type="button" class="${currentFields.has(field) ? 'active' : ''}" data-field="${escapeHtml(field)}">${escapeHtml(field)}</button>`).join('');
+      $('fieldButtons').querySelectorAll('[data-field]').forEach(button => button.onclick = () => toggleListInput('fields', button.dataset.field));
+      const currentRooms = new Set(splitList($('rooms').value));
+      $('roomButtons').innerHTML = state.rooms.map(room => `<button type="button" class="${currentRooms.has(room.id) ? 'active' : ''}" data-room="${escapeHtml(room.id)}">${escapeHtml(room.name || room.id)}</button>`).join('');
+      $('roomButtons').querySelectorAll('[data-room]').forEach(button => button.onclick = () => toggleListInput('rooms', button.dataset.room));
+    }
+
+    function visualHtml(item, visual = state.visuals[item?.id] || {}) {
+      const clean = normalizeVisual(visual);
+      if (clean.svg) return clean.svg;
+      if (clean.imageUrl) return `<img alt="" src="${escapeHtml(clean.imageUrl)}">`;
+      return escapeHtml(item?.emoji || '🎁');
+    }
+
+    function renderRecordList() {
+      const query = $('recordSearch').value.trim().toLowerCase();
+      const typeFilter = $('typeFilter').value;
+      const includeHidden = $('includeHidden').checked;
+      const records = state.items.filter(item => {
+        if (typeFilter !== 'all' && item.type !== typeFilter) return false;
+        if (!includeHidden && (item.hiddenFromShop || item.remoteOnly)) return false;
+        const haystack = [item.id, item.name, item.type, item.foodKind, item.trait, ...(item.fields || []), ...(item.rooms || [])].join(' ').toLowerCase();
+        return !query || haystack.includes(query);
+      });
+      $('recordCount').textContent = records.length === state.items.length ? String(state.items.length) : `${records.length}/${state.items.length}`;
+      $('recordList').innerHTML = records.length ? records.map(item => {
+        const flags = [item.hiddenFromShop ? 'hidden' : '', item.remoteOnly ? 'remote' : '', item.uniqueItem ? 'unique' : '', item.unlimited ? 'unlimited' : '', state.visuals[item.id] ? 'visual' : ''].filter(Boolean).join(' · ');
+        const meta = [`${item.type || 'item'}`, `${item.price ?? 0} coins`, flags, (item.fields || []).join('/')].filter(Boolean).join(' · ');
+        return `<div class="record-item ${item.id === state.selectedId ? 'active' : ''}">
+          <div class="record-emoji">${visualHtml(item)}</div>
+          <button class="record-main" type="button" data-open-id="${escapeHtml(item.id)}">
+            <span class="record-title">${escapeHtml(item.name || item.id)}</span>
+            <span class="record-meta">${escapeHtml(item.id)} · ${escapeHtml(meta)}</span>
+          </button>
+          <div class="record-actions"><button type="button" data-copy-id="${escapeHtml(item.id)}">复制</button></div>
+        </div>`;
+      }).join('') : '<div class="hint p-2.5">没有匹配记录。</div>';
+      $('recordList').querySelectorAll('[data-open-id]').forEach(button => button.onclick = () => selectRecord(button.dataset.openId));
+      $('recordList').querySelectorAll('[data-copy-id]').forEach(button => button.onclick = () => duplicateRecord(button.dataset.copyId));
+    }
+
+    function updatePreview(item, visual) {
+      $('previewVisual').innerHTML = visualHtml(item, visual);
+      $('previewName').textContent = item.name || item.id || '新的商店物品';
+      const meta = [`type=${item.type || '-'}`, `price=${item.price ?? 0}`, item.foodKind ? `food=${item.foodKind}` : '', item.trait ? `trait=${item.trait}` : '', item.fields?.length ? `fields=${item.fields.join('/')}` : '', item.rooms?.length ? `rooms=${item.rooms.join('/')}` : ''].filter(Boolean);
+      $('previewMeta').textContent = meta.join(' · ');
+      $('previewStats').textContent = item.stat ? Object.entries(item.stat).map(([key, value]) => `${key} ${value > 0 ? '+' : ''}${value}`).join(' · ') : '';
+      $('editorTitle').textContent = item.name || item.id || '商店物品编辑';
+      $('editorSubtitle').textContent = item.id || '新建 shop item';
+    }
+
+    function buildExportData({ items = state.items, visuals = state.visuals, diffOnly = isDiffExport() } = {}) {
+      const normalizedItems = items.map(normalizeItem);
+      const normalizedVisuals = sortedVisuals(visuals);
+      if (!diffOnly) return { SHOP_ITEMS: normalizedItems, DECO_VISUALS: normalizedVisuals };
+
+      const defaultItemById = new Map(state.defaultItems.map(item => [item.id, normalizeItem(item)]));
+      const diffItems = normalizedItems
+        .map(item => diffItemForExport(item, defaultItemById.get(item.id)))
+        .filter(Boolean);
+      const diffVisuals = Object.fromEntries(Object.entries(normalizedVisuals)
+        .map(([id, visual]) => [id, diffObjectForExport(visual, normalizeVisual(state.defaultVisuals[id] || {}))])
+        .filter(([, visual]) => Object.keys(visual).length));
+      return { SHOP_ITEMS: diffItems, DECO_VISUALS: diffVisuals };
+    }
+
+    function formatShopItemsJson(data) {
+      const items = Array.isArray(data?.SHOP_ITEMS) ? data.SHOP_ITEMS : [];
+      const visuals = data?.DECO_VISUALS && typeof data.DECO_VISUALS === 'object' ? data.DECO_VISUALS : {};
+      const itemLines = items.map(item => `    ${JSON.stringify(item)}`);
+      const visualLines = Object.entries(visuals).map(([id, visual]) => `    ${JSON.stringify(id)}: ${JSON.stringify(visual)}`);
+      return [
+        '{',
+        '  "SHOP_ITEMS": [',
+        itemLines.map((line, index) => `${line}${index < itemLines.length - 1 ? ',' : ''}`).join('\n'),
+        '  ],',
+        '  "DECO_VISUALS": {',
+        visualLines.map((line, index) => `${line}${index < visualLines.length - 1 ? ',' : ''}`).join('\n'),
+        '  }',
+        '}',
+      ].filter((line, index, lines) => line || (index > 1 && lines[index - 1] !== '  "SHOP_ITEMS": [' && lines[index - 1] !== '  "DECO_VISUALS": {')).join('\n');
+    }
+
+    function buildShopItemsJson({ items = state.items, visuals = state.visuals, diffOnly = isDiffExport() } = {}) {
+      return formatShopItemsJson(buildExportData({ items, visuals, diffOnly }));
+    }
+
+    function updateOutputs() {
+      let item;
+      try {
+        item = buildItemFromForm();
+        setStatus($('runStatus'), state.items.some(existing => existing.id === item.id) ? `正在编辑 ${item.id}` : `新物品草稿 ${item.id}`, '');
+      } catch (error) {
+        setStatus($('runStatus'), error.message, 'error');
+        return;
+      }
+      const visual = buildVisualFromForm();
+      updatePreview(item, visual);
+      renderListButtons();
+      $('itemOutput').value = JSON.stringify({ item, visual }, null, 2);
+      const nextItems = upsertItems(state.items, item);
+      const nextVisuals = { ...state.visuals };
+      if (Object.keys(visual).length) nextVisuals[item.id] = visual;
+      else delete nextVisuals[item.id];
+      const targetPath = getTargetShopItemsPath();
+      $('filesOutput').value = `// ${targetPath}\n// export=${isDiffExport() ? 'diff with ' + DEFAULT_SHOPITEMS_PATH : 'full'}\n${buildShopItemsJson({ items: nextItems, visuals: nextVisuals })}`;
+      saveDraft();
+    }
+
+    function applyJsonToForm() {
+      try {
+        const text = $('itemOutput').value.trim();
+        const parsed = JSON.parse(text);
+        const item = parsed.item || parsed;
+        const visual = parsed.visual || parsed.decoVisual || state.visuals[item.id] || {};
+        setFormItem(item, visual);
+        setStatus($('runStatus'), '已从 JSON 应用到表单。', 'ok');
+      } catch (error) {
+        setStatus($('runStatus'), `应用 JSON 失败：${error.message}`, 'error');
+      }
+    }
+
+    async function loadConfigData({ useDraft = true } = {}) {
+      setStatus($('loadStatus'), '正在读取 config.js 的 SHOP_ITEMS 与 DECO_VISUALS...', '');
+      const module = await import(`${CONFIG_MODULE_URL}?t=${Date.now()}`);
+      state.config = module.CONFIG || {};
+      state.initialItems = Array.isArray(module.SHOP_ITEMS) ? module.SHOP_ITEMS.map(clone).map(normalizeItem) : [];
+      state.initialVisuals = module.DECO_VISUALS && typeof module.DECO_VISUALS === 'object' ? clone(module.DECO_VISUALS) : {};
+      try {
+        const defaultPayload = parseShopItemsPayload(await readLocalJson(DEFAULT_SHOPITEMS_URL));
+        state.defaultItems = defaultPayload.items;
+        state.defaultVisuals = defaultPayload.visuals;
+      } catch (_) {
+        state.defaultItems = state.initialItems.map(clone);
+        state.defaultVisuals = clone(state.initialVisuals);
+      }
+      state.rooms = Array.isArray(state.config.rooms) ? state.config.rooms.map(room => ({ id: room.id, name: room.name || room.id })) : [];
+      const configuredFields = Array.isArray(state.config.fields) ? state.config.fields.map(field => field.id).filter(Boolean) : [];
+      state.fields = unique([...state.fields, ...configuredFields, ...state.rooms.map(room => room.id)]);
+      state.traits = Array.isArray(state.config.traitDefs) ? state.config.traitDefs.map(trait => ({ id: trait.id, name: trait.name || trait.id })) : [];
+      const draft = useDraft ? loadDraft() : {};
+      state.targetPath = normalizeShopItemsPath(draft.targetPath || state.targetPath || DEFAULT_TARGET_SHOPITEMS_PATH);
+      state.exportDiffOnly = draft.exportDiffOnly !== false;
+      $('shopItemsPath').value = state.targetPath;
+      $('exportDiffOnly').checked = state.exportDiffOnly;
+      state.items = Array.isArray(draft.items) && draft.items.length ? draft.items.map(normalizeItem) : state.initialItems.map(clone);
+      state.visuals = draft.visuals && typeof draft.visuals === 'object' ? clone(draft.visuals) : clone(state.initialVisuals);
+      state.selectedId = draft.selectedId && state.items.some(item => item.id === draft.selectedId) ? draft.selectedId : (state.items[0]?.id || '');
+      renderTraitOptions();
+      renderRecordList();
+      if (state.selectedId) setFormItem(selectedItem(), state.visuals[state.selectedId]);
+      else newItem();
+      setStatus($('loadStatus'), `已读取 config.js：${state.initialItems.length} shop items，${Object.keys(state.initialVisuals).length} visuals。diff 基准：${state.defaultItems.length} items。`, 'ok');
+    }
+
+    async function loadWorkspaceData({ silent = false } = {}) {
+      if (!(state.sdk || window.keepwork)?.personalPageStore) return;
+      let loaded = false;
+      const targetPath = getTargetShopItemsPath();
+      try {
+        const text = await readWorkspaceFile(targetPath);
+        const parsed = text ? JSON.parse(text) : null;
+        const payload = parseShopItemsPayload(parsed);
+        if (payload.items.length || Object.keys(payload.visuals).length) {
+          state.items = mergeItemsWithDefaults(state.defaultItems, payload.items).map(normalizeItem);
+          state.visuals = mergeVisualsWithDefaults(state.defaultVisuals, payload.visuals);
+          state.targetPath = targetPath;
+          loaded = true;
+        }
+      } catch (_) {}
+      if (!loaded) {
+        try {
+          const text = await readWorkspaceFile(LEGACY_SHOP_ITEMS_PATH);
+          const parsed = text ? JSON.parse(text) : null;
+          if (Array.isArray(parsed)) {
+            state.items = parsed.map(normalizeItem);
+            loaded = true;
+          }
+        } catch (_) {}
+        try {
+          const text = await readWorkspaceFile(LEGACY_DECO_VISUALS_PATH);
+          const parsed = text ? JSON.parse(text) : null;
+          if (parsed && typeof parsed === 'object' && !Array.isArray(parsed)) {
+            state.visuals = Object.fromEntries(Object.entries(parsed).map(([key, value]) => [key, normalizeVisual(value)]));
+            loaded = true;
+          }
+        } catch (_) {}
+      }
+      if (loaded) {
+        if ($('shopItemsPath')) $('shopItemsPath').value = state.targetPath;
+        if ($('exportDiffOnly')) {
+          state.exportDiffOnly = $('exportDiffOnly').checked;
+        }
+        state.selectedId = state.items.some(item => item.id === state.selectedId) ? state.selectedId : (state.items[0]?.id || '');
+        renderRecordList();
+        if (state.selectedId) setFormItem(selectedItem(), state.visuals[state.selectedId]);
+        updateOutputs();
+        if (!silent) setStatus($('loadStatus'), `已读取 workspace：${targetPath}`, 'ok');
+      } else if (!silent) {
+        setStatus($('loadStatus'), `workspace 中尚未找到 ${targetPath}，将继续使用 config.js 数据。`, '');
+      }
+    }
+
+    async function saveWorkspaceData() {
+      upsertCurrentItem({ silent: true });
+      const targetPath = getTargetShopItemsPath();
+      state.targetPath = targetPath;
+      state.exportDiffOnly = isDiffExport();
+      await writeWorkspaceFile(targetPath, buildShopItemsJson());
+      setStatus($('loadStatus'), `已保存：${targetPath}\n模式：${state.exportDiffOnly ? '仅差异' : '完整'}`, 'ok');
+      setStatus($('runStatus'), 'shopitems.json 保存完成。', 'ok');
+      saveDraft();
+    }
+
+    function saveDraft() {
+      try {
+        localStorage.setItem(STORAGE_KEY, JSON.stringify({
+          items: state.items,
+          visuals: state.visuals,
+          selectedId: state.selectedId,
+          targetPath: getTargetShopItemsPath(),
+          exportDiffOnly: isDiffExport(),
+        }));
+      }
+      catch (_) {}
+    }
+
+    function loadDraft() {
+      try { return JSON.parse(localStorage.getItem(STORAGE_KEY) || '{}') || {}; }
+      catch (_) { return {}; }
+    }
+
+    function extractJsonObject(text) {
+      const value = String(text || '').trim();
+      if (!value) throw new Error('LLM 未返回内容');
+      try { return JSON.parse(value); } catch (_) {}
+      const fenced = value.match(/```(?:json)?\s*([\s\S]*?)```/i);
+      if (fenced) return JSON.parse(fenced[1]);
+      const start = value.indexOf('{');
+      const end = value.lastIndexOf('}');
+      if (start >= 0 && end > start) return JSON.parse(value.slice(start, end + 1));
+      throw new Error('LLM 返回不是 JSON');
+    }
+
+    function extractAssistantText(result) {
+      if (typeof result === 'string') return result;
+      return result?.result || result?.content || result?.message?.content || result?.choices?.[0]?.message?.content || result?.data?.content || '';
+    }
+
+    function buildAiItemPrompt() {
+      const current = buildItemFromForm();
+      const userPrompt = $('aiPrompt').value.trim();
+      const existingIds = state.items.map(item => item.id).slice(-180);
+      return [
+        'You create MagicHaqi shop item data and a matching compact decorative visual.',
+        'Return only JSON with shape: {"item": {...}, "visual": {"w": number, "h": number, "svg": "<svg ...></svg>"}}.',
+        'item fields allowed: id, name, emoji, price, type(food|toy|furniture|house), foodKind, stat, trait, fields, rooms, fieldSize, zorder, uniqueItem, hiddenFromShop, remoteOnly, unlimited, moodPenaltyStages, moodPenalty.',
+        'For visual.svg, create a self-contained SVG with viewBox="0 0 160 160" or similar. No scripts, no external images, no markdown.',
+        `Existing ids to avoid: ${existingIds.join(', ')}`,
+        `Available fields: ${state.fields.join(', ')}`,
+        `Available rooms: ${state.rooms.map(room => room.id).join(', ')}`,
+        `Available traits: ${state.traits.map(trait => trait.id).join(', ')}`,
+        `Current draft: ${JSON.stringify(current)}`,
+        userPrompt ? `User request: ${userPrompt}` : 'User request: improve the current draft into a polished game shop item.',
+      ].join('\n');
+    }
+
+    async function runAiItemGeneration() {
+      const sdk = state.sdk || window.keepwork;
+      if (!sdk?.aiGenerators?.chat && !sdk?.aiChat?.chat) throw new Error('当前 SDK 不支持文本模型调用');
+      const model = $('chatModelSelect').value.trim();
+      if (!model) throw new Error('请先配置 Chat 模型');
+      saveSettings();
+      setStatus($('aiPreview'), `正在生成物品 JSON...\nmodel=${model}`, '');
+      const messages = [{ role: 'user', content: buildAiItemPrompt() }];
+      const onMessage = (fullText, _delta, raw = {}) => {
+        const text = typeof fullText === 'string' ? fullText : extractAssistantText(raw);
+        $('aiPreview').textContent = text || '等待模型输出...';
+      };
+      let response;
+      if (sdk.aiGenerators?.chat) {
+        try {
+          response = await sdk.aiGenerators.chat({ model, stream: true, temperature: 0.75, responseFormat: 'json_object', messages, onMessage });
+        } catch (error) {
+          if (!/response.?format|json_object/i.test(error?.message || String(error))) throw error;
+          response = await sdk.aiGenerators.chat({ model, stream: true, temperature: 0.75, messages, onMessage });
+        }
+      } else {
+        response = await sdk.aiChat.chat({ model, stream: true, temperature: 0.75, messages, onMessage });
+      }
+      const parsed = extractJsonObject(extractAssistantText(response) || $('aiPreview').textContent);
+      if (!parsed?.item) throw new Error('LLM JSON 缺少 item');
+      const item = normalizeItem(parsed.item);
+      const visual = normalizeVisual(parsed.visual || {});
+      state.selectedId = item.id;
+      state.items = upsertItems(state.items, item);
+      if (Object.keys(visual).length) state.visuals[item.id] = visual;
+      setFormItem(item, visual);
+      renderRecordList();
+      setStatus($('aiPreview'), JSON.stringify({ item, visual }, null, 2), 'ok');
+      setStatus($('runStatus'), `AI 已生成并加入：${item.id}`, 'ok');
+    }
+
+    function buildImagePrompt() {
+      const item = buildItemFromForm();
+      return [
+        `Create a single cute MagicHaqi game shop item icon for: ${item.name} (${item.id}).`,
+        `Type: ${item.type}. Fields: ${(item.fields || []).join(', ') || 'general'}. Emoji hint: ${item.emoji || ''}.`,
+        $('aiPrompt').value.trim(),
+        'Style: clean 2D mobile game asset, transparent or simple light background, centered object, readable at 128x128, no text, no UI frame.',
+      ].filter(Boolean).join('\n');
+    }
+
+    function loadImage(url) {
+      return new Promise((resolve, reject) => {
+        const img = new Image();
+        img.crossOrigin = 'anonymous';
+        img.onload = () => resolve(img);
+        img.onerror = () => reject(new Error('图片加载失败'));
+        img.src = url;
+      });
+    }
+
+    function canvasToDataUrl(canvas, type = 'image/webp', quality = 0.88) {
+      return canvas.toDataURL(type, quality);
+    }
+
+    async function toSquareWebpDataUrl(url, size = 128) {
+      const img = await loadImage(url);
+      const canvas = document.createElement('canvas');
+      canvas.width = size;
+      canvas.height = size;
+      const ctx = canvas.getContext('2d');
+      if (!ctx) throw new Error('Canvas 不可用');
+      ctx.clearRect(0, 0, size, size);
+      ctx.imageSmoothingEnabled = true;
+      ctx.imageSmoothingQuality = 'high';
+      const sourceSize = Math.max(img.naturalWidth || img.width, img.naturalHeight || img.height);
+      const sx = ((img.naturalWidth || img.width) - sourceSize) / 2;
+      const sy = ((img.naturalHeight || img.height) - sourceSize) / 2;
+      ctx.drawImage(img, sx, sy, sourceSize, sourceSize, 0, 0, size, size);
+      return canvasToDataUrl(canvas, 'image/webp', 0.86);
+    }
+
+    async function runAiWebpGeneration() {
+      const sdk = state.sdk || window.keepwork;
+      if (!sdk?.aiGenerators?.genImage) throw new Error('sdk.aiGenerators.genImage 不可用');
+      const model = $('imageModelSelect').value.trim();
+      if (!model) throw new Error('请先配置 Image 模型');
+      saveSettings();
+      const [width, height] = ($('imageSize').value || '128x128').split('x').map(Number);
+      const size = Math.max(64, Math.min(1024, width || 128, height || 128));
+      const prompt = buildImagePrompt();
+      setStatus($('aiPreview'), `正在生成 WebP 图标...\nmodel=${model}\nsize=${size}x${size}`, '');
+      const url = await sdk.aiGenerators.genImage(prompt, { model, width: size, height: size, stream: true, uploadResultToKeepwork: true });
+      if (!url) throw new Error('genImage 未返回图片 URL');
+      let imageUrl = url;
+      try { imageUrl = await toSquareWebpDataUrl(url, size); }
+      catch (error) { setStatus($('aiPreview'), `图片已生成，但浏览器无法转成 data WebP，将保留返回 URL：${error.message}\n${url}`, ''); }
+      $('visualImageUrl').value = imageUrl;
+      $('visualSvg').value = '';
+      $('visualW').value = $('visualW').value || '0.12';
+      $('visualH').value = $('visualH').value || '0.12';
+      const result = upsertCurrentItem({ silent: true });
+      setStatus($('aiPreview'), `WebP 已写入 visual.imageUrl\n${result?.item?.id || ''}\n${imageUrl.slice(0, 220)}${imageUrl.length > 220 ? '...' : ''}`, 'ok');
+      setStatus($('runStatus'), 'AI WebP 视觉已生成并加入 DECO_VISUALS 草稿。', 'ok');
+    }
+
+    function generateIdFromName() {
+      const prefix = $('idPrefix').value || '';
+      const name = $('itemName').value.trim() || $('itemId').value.trim() || 'new_item';
+      $('itemId').value = cleanId(`${prefix}${name}`);
+      updateOutputs();
+    }
+
+    async function copyText(text) {
+      await navigator.clipboard.writeText(text);
+    }
+
+    function setActiveTab(tab) {
+      state.activeTab = tab;
+      $('tabItem').classList.toggle('active', tab === 'item');
+      $('tabFiles').classList.toggle('active', tab === 'files');
+      $('itemOutput').classList.toggle('hidden', tab !== 'item');
+      $('filesOutput').classList.toggle('hidden', tab !== 'files');
+    }
+
+    function wireEvents() {
+      $('btnLogin').onclick = openLogin;
+      $('btnLocalApi').onclick = async () => {
+        const settings = (state.sdk || window.keepwork)?.localAPIKeySettings;
+        if (!settings?.show) return setStatus($('loginState'), '当前 SDK 不支持本地 API Key 设置', 'error');
+        await settings.load?.();
+        settings.show({ title: '本地 API Key 设置', fullscreen: true, onSave: populateModelDropdowns });
+      };
+      $('btnReloadConfig').onclick = () => loadConfigData({ useDraft: false }).catch(error => setStatus($('loadStatus'), `读取失败：${error.message}`, 'error'));
+      $('btnLoadWorkspace').onclick = () => loadWorkspaceData().catch(error => setStatus($('loadStatus'), `workspace 读取失败：${error.message}`, 'error'));
+      $('btnSaveWorkspace').onclick = () => saveWorkspaceData().catch(error => setStatus($('loadStatus'), `保存失败：${error.message}`, 'error'));
+      $('btnNewShopFile').onclick = newShopItemsFile;
+      $('btnCopyShopJson').onclick = async () => { await copyText(buildShopItemsJson()); setStatus($('runStatus'), `已复制 ${isDiffExport() ? '差异' : '完整'} shopitems.json。`, 'ok'); };
+      $('btnCopyVisualJson').onclick = async () => { await copyText(buildShopItemsJson({ diffOnly: false })); setStatus($('runStatus'), '已复制完整 shopitems.json。', 'ok'); };
+      $('btnAiItem').onclick = () => runAiItemGeneration().catch(error => setStatus($('aiPreview'), `AI 生成失败：${error.message}`, 'error'));
+      $('btnAiWebp').onclick = () => runAiWebpGeneration().catch(error => setStatus($('aiPreview'), `WebP 生成失败：${error.message}`, 'error'));
+      $('btnNew').onclick = () => newItem();
+      $('btnDuplicate').onclick = () => duplicateRecord();
+      $('btnApplyPrefix').onclick = generateIdFromName;
+      $('btnUpsert').onclick = () => upsertCurrentItem();
+      $('btnApplyJson').onclick = applyJsonToForm;
+      $('btnUseFallbackSvg').onclick = () => { $('visualSvg').value = fallbackSvg(); $('visualImageUrl').value = ''; updateOutputs(); };
+      $('btnClearVisual').onclick = () => { $('visualSvg').value = ''; $('visualImageUrl').value = ''; $('visualW').value = ''; $('visualH').value = ''; updateOutputs(); };
+      $('tabItem').onclick = () => setActiveTab('item');
+      $('tabFiles').onclick = () => setActiveTab('files');
+      $('recordSearch').addEventListener('input', renderRecordList);
+      $('typeFilter').addEventListener('change', renderRecordList);
+      $('includeHidden').addEventListener('change', renderRecordList);
+      $('shopItemsPath').addEventListener('input', () => { state.targetPath = getTargetShopItemsPath(); updateOutputs(); });
+      $('exportDiffOnly').addEventListener('change', () => { state.exportDiffOnly = isDiffExport(); updateOutputs(); });
+      ['chatModelSelect', 'imageModelSelect', 'imageSize', 'visualMode'].forEach(id => $(id).addEventListener('change', saveSettings));
+      document.querySelectorAll('[data-template]').forEach(button => button.onclick = () => newItem(button.dataset.template));
+      ['itemId', 'itemName', 'itemEmoji', 'itemPrice', 'itemType', 'statHunger', 'statMood', 'statClean', 'statBond', 'foodKind', 'trait', 'fields', 'rooms', 'fieldSize', 'zorder', 'moodPenalty', 'moodPenaltyStages', 'extraJson', 'visualW', 'visualH', 'visualSvg', 'visualImageUrl'].forEach(id => $(id).addEventListener('input', updateOutputs));
+      ['hiddenFromShop', 'unlimited', 'uniqueItem', 'remoteOnly'].forEach(id => $(id).addEventListener('change', updateOutputs));
+    }
+
+    async function initialize() {
+      wireEvents();
+      try {
+        await loadConfigData();
+      } catch (error) {
+        setStatus($('loadStatus'), `config.js 读取失败：${error.message}\n请通过本地 dev server 打开此页面，避免 file:// module/CORS 限制。`, 'error');
+        state.items = [];
+        state.visuals = {};
+        renderRecordList();
+        newItem();
+      }
+      await loadSdk().catch(error => setStatus($('loginState'), `SDK 初始化失败：${error.message}`, 'error'));
+    }
+
+    initialize();
+  </script>
+</body>
+</html>

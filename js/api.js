@@ -14,7 +14,7 @@ export async function genPetImage(dna, name = '', stage = 'baby') {
     const stageHint = stage === 'baby' ? '宝宝形态，几乎只有一个大头，身体极小，只露出小短手小短脚' :
                       stage === 'teen' ? '青少年形态' :
                       stage === 'elder' ? '年长智慧形态' : '';
-    const prompt = stageHint ? `${promptBase}，${stageHint}，整体保持二头身萌宠比例` : `${promptBase}，整体保持二头身萌宠比例`;
+    const prompt = stageHint ? `${promptBase}，${stageHint}，整体保持萌宠比例` : `${promptBase}，整体保持萌宠比例`;
     try {
         const url = await state.sdk.aiGenerators.genImage(prompt, {
             width: CONFIG.imageWidth,

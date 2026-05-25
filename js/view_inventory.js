@@ -1,10 +1,10 @@
 // 背包视图
 import { $, $$, coinIconSvg, escapeHtml, showToast } from './utils.js';
 import { t } from './i18n.js';
-import { SHOP_ITEMS } from './config.js';
+import { getShopItemById } from './config.js';
 import { state } from './state.js';
 
-const ITEM_BY_ID = Object.fromEntries(SHOP_ITEMS.map(it => [it.id, it]));
+const ITEM_BY_ID = new Proxy({}, { get: (_, id) => getShopItemById(id) });
 
 function getInventoryItemHint(item) {
     if (item?.type === 'furniture') return `${item.name}：回到房间或星球后，点击装饰按钮再从底部选择它进行摆放。`;

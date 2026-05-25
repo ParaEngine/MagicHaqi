@@ -156,10 +156,24 @@ export function renderSettings(panel, _data, { onBack, onLogout, onClearData } =
             </div>
             <div class="card-flat" style="display:flex;justify-content:space-between;align-items:center;gap:12px">
                 <div>
+                    <div style="font-size:14px;font-weight:700">🪐 AI星球编辑器</div>
+                    <div style="font-size:11px;color:var(--text-muted)">打开 Planet Generator</div>
+                </div>
+                <button id="mhOpenPlanetGenerator" class="btn-secondary">打开</button>
+            </div>
+            <div class="card-flat" style="display:flex;justify-content:space-between;align-items:center;gap:12px">
+                <div>
                     <div style="font-size:14px;font-weight:700">🗺 AI场景编辑器</div>
                     <div style="font-size:11px;color:var(--text-muted)">打开 Scene Generator</div>
                 </div>
                 <button id="mhOpenSceneGenerator" class="btn-secondary">打开</button>
+            </div>
+            <div class="card-flat" style="display:flex;justify-content:space-between;align-items:center;gap:12px">
+                <div>
+                    <div style="font-size:14px;font-weight:700">🛒 AI商店编辑器</div>
+                    <div style="font-size:11px;color:var(--text-muted)">打开 Shop Item Generator</div>
+                </div>
+                <button id="mhOpenShopItemGenerator" class="btn-secondary">打开</button>
             </div>` : ''}
             <div class="card-flat" style="display:flex;justify-content:space-between;align-items:center;gap:12px">
                 <div>
@@ -218,7 +232,9 @@ export function renderSettings(panel, _data, { onBack, onLogout, onClearData } =
     };
     if ($('mhOpenDevPanel')) $('mhOpenDevPanel').onclick = () => openDevPanel($('mhOpenDevPanel'));
     if ($('mhOpenPetGenerator')) $('mhOpenPetGenerator').onclick = () => openDevTool('FamousPetGenerator.html', 'AI宠物编辑器');
+    if ($('mhOpenPlanetGenerator')) $('mhOpenPlanetGenerator').onclick = () => openDevTool('FamousPlanetGenertor.html', 'AI星球编辑器');
     if ($('mhOpenSceneGenerator')) $('mhOpenSceneGenerator').onclick = () => openDevTool('ScenePresetsGenerator.html', 'AI场景编辑器');
+    if ($('mhOpenShopItemGenerator')) $('mhOpenShopItemGenerator').onclick = () => openDevTool('ShopItemGenerator.html', 'AI商店编辑器');
     if ($('mhOpenLocalAPIKeySettings')) $('mhOpenLocalAPIKeySettings').onclick = () => openLocalAPIKeySettings($('mhOpenLocalAPIKeySettings'));
     if ($('mhOpenWorkspaceViewer')) $('mhOpenWorkspaceViewer').onclick = () => {
         try {

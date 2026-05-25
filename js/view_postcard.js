@@ -372,7 +372,7 @@ function addVisitingPet(postcard, pet) {
     const existing = Array.isArray(state.invitedPets) ? state.invitedPets : [];
     state.invitedPets = [record, ...existing.filter(item => item?.id !== record.id)].slice(0, 10);
     state.activeInvitedPet = record;
-    state.currentField = 'land';
+    state.currentField = '1';
     state.lastHomeZoomLevel = 1;
     return record;
 }

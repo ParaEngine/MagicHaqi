@@ -3,6 +3,7 @@
 import { CONFIG } from './config.js';
 import { debounce } from './utils.js';
 import { state } from './state.js';
+import { normalizeTerrainFieldSlotId, normalizeTerrainSlotIndex, TERRAIN_FIELD_SLOT_DEFS } from './terrain_field_slots.js';
 
 let store = null;
 
@@ -101,8 +102,11 @@ async function saveJSONNow(path, value) {
 // ---------- 文件路径约定 ----------
 const PATHS = {
     userProfile: 'user/profile.json',
+    storyProgress: 'user/story_progress.json',
     layouts:     'user/layouts.json',
     inventory:   'user/inventory.json',
+    planetVisitors: 'user/planet_visitors.json',
+    recentFriendPlanets: 'user/recent_friend_planets.json',
     postcardList: 'user/postcard_list.json',
     storyList:   'stories/index.json',
     story:      (name) => `stories/${name}.json`,
@@ -236,6 +240,69 @@ function getPersistentPlanetVisitors(value) {
         .slice(0, 12);
 }
 
+function normalizePlanetVisitorRecord(record) {
+    if (!record || typeof record !== 'object') return null;
+    const text = typeof record.text === 'string' ? record.text.trim().slice(0, 160) : '';
+    if (!text) return null;
+    return {
+        type: typeof record.type === 'string' ? record.type.trim().slice(0, 40) : '',
+        text,
+        emoji: typeof record.emoji === 'string' ? record.emoji.trim().slice(0, 8) : '',
+        at: Number.isFinite(record.at) ? record.at : Date.now(),
+    };
+}
+
+function normalizePlanetVisitors(value) {
+    if (!Array.isArray(value)) return [];
+    return value
+        .map(normalizePlanetVisitorRecord)
+        .filter(Boolean)
+        .sort((a, b) => (Number(b.at) || 0) - (Number(a.at) || 0))
+        .slice(0, 12);
+}
+
+function planetVisitorKey(record) {
+    return `${record.type || ''}\n${record.text || ''}\n${record.emoji || ''}\n${Number(record.at) || 0}`;
+}
+
+function mergePlanetVisitors(...lists) {
+    const seen = new Set();
+    const merged = [];
+    lists.flat().forEach(record => {
+        const normalized = normalizePlanetVisitorRecord(record);
+        if (!normalized) return;
+        const key = planetVisitorKey(normalized);
+        if (seen.has(key)) return;
+        seen.add(key);
+        merged.push(normalized);
+    });
+    return normalizePlanetVisitors(merged);
+}
+
+function normalizeRecentFriendPlanets(value) {
+    return (Array.isArray(value) ? value : [])
+        .map(createRecentFriendPlanetPayload)
+        .filter(Boolean)
+        .sort((a, b) => (Number(b.visitedAt) || 0) - (Number(a.visitedAt) || 0))
+        .slice(0, 3);
+}
+
+function farewellPetId(record) {
+    if (typeof record === 'string') return record.trim();
+    if (!record || typeof record !== 'object') return '';
+    return typeof record.petId === 'string' ? record.petId.trim() : '';
+}
+
+function normalizeFarewellPetIds(value) {
+    if (!Array.isArray(value)) return [];
+    const ids = [];
+    value.forEach(record => {
+        const id = farewellPetId(record);
+        if (id && !ids.includes(id)) ids.push(id);
+    });
+    return ids.slice(0, 200);
+}
+
 function normalizeInventoryData(data) {
     const inventory = {};
     const order = [];
@@ -283,38 +350,148 @@ async function saveInventoryNowInternal() {
     return await saveJSONNow(PATHS.inventory, getInventoryPayload());
 }
 
+function cloneJSON(value) {
+    return value == null ? value : JSON.parse(JSON.stringify(value));
+}
+
+function profileSlotKey(def, index) {
+    return String(def?.index || index + 1);
+}
+
+function rawProfileSlotIndex(slot) {
+    if (!slot || typeof slot !== 'object') return null;
+    return normalizeTerrainSlotIndex(slot.index ?? slot.slotIndex ?? slot.slotId ?? slot.id);
+}
+
+function profileSlotForDef(rawSlots, def, index) {
+    if (!Array.isArray(rawSlots)) return null;
+    const targetIndex = def.index;
+    const matches = rawSlots.filter(slot => rawProfileSlotIndex(slot) === targetIndex);
+    if (matches.length) return matches[0];
+    const positional = rawSlots[index];
+    return rawProfileSlotIndex(positional) == null ? positional || null : null;
+}
+
+function normalizeTerrainFieldsSettings(settings) {
+    const terrainFields = settings.terrainFields;
+    if (!terrainFields || typeof terrainFields !== 'object' || !Array.isArray(terrainFields.slots)) return;
+    settings.terrainFields = {
+        ...terrainFields,
+        slots: TERRAIN_FIELD_SLOT_DEFS.map((def, index) => {
+            const slot = profileSlotForDef(terrainFields.slots, def, index) || {};
+            return {
+                index: def.index,
+                typeId: String(slot.typeId || slot.fieldId || '').trim(),
+                name: String(slot.name || def.label).trim().slice(0, 12) || def.label,
+            };
+        }),
+    };
+}
+
+function normalizeFieldScenesSettings(settings) {
+    const fieldScenes = settings.fieldScenes;
+    if (!fieldScenes || typeof fieldScenes !== 'object' || Array.isArray(fieldScenes)) return;
+    const validKeys = new Set(TERRAIN_FIELD_SLOT_DEFS.map(profileSlotKey));
+    const normalized = {};
+    Object.entries(fieldScenes).forEach(([rawKey, config]) => {
+        const key = normalizeTerrainFieldSlotId(String(rawKey || '').replace(/^field_/, ''));
+        if (!validKeys.has(key) || !config || typeof config !== 'object' || Array.isArray(config)) return;
+        normalized[key] = { ...(normalized[key] || {}), ...cloneJSON(config) };
+    });
+    settings.fieldScenes = normalized;
+}
+
+function normalizeProfileFieldSettings(settings) {
+    if (!settings || typeof settings !== 'object') return settings;
+    normalizeTerrainFieldsSettings(settings);
+    normalizeFieldScenesSettings(settings);
+    return settings;
+}
+
+function normalizeLayoutRoomKey(roomId) {
+    const key = String(roomId || '').trim();
+    if (!key.startsWith('field_')) return key;
+    return `field_${normalizeTerrainFieldSlotId(key.slice('field_'.length))}`;
+}
+
+function normalizeLayoutsData(data) {
+    if (!data || typeof data !== 'object' || Array.isArray(data)) return {};
+    const layouts = {};
+    Object.entries(data).forEach(([rawKey, items]) => {
+        const key = normalizeLayoutRoomKey(rawKey);
+        if (!key || !Array.isArray(items)) return;
+        if (!layouts[key]) layouts[key] = items;
+        else if (!layouts[key].length) layouts[key] = items;
+    });
+    return layouts;
+}
+
+function applyHomeFieldSettingsForOfficialSettlement(settings) {
+    const settlement = settings.starSettlement;
+    if (settlement?.source !== 'official' || !settlement.homeSnapshot) return;
+    const snapshot = settlement.homeSnapshot;
+    if (Array.isArray(snapshot.terrainSlots)) {
+        settings.terrainFields = {
+            ...(settings.terrainFields && typeof settings.terrainFields === 'object' ? settings.terrainFields : {}),
+            slots: cloneJSON(snapshot.terrainSlots),
+        };
+    } else {
+        delete settings.terrainFields;
+    }
+    if (snapshot.fieldScenes && typeof snapshot.fieldScenes === 'object') {
+        settings.fieldScenes = cloneJSON(snapshot.fieldScenes) || {};
+    } else {
+        delete settings.fieldScenes;
+    }
+}
+
+function getPersistentSettingsPayload() {
+    const settings = cloneJSON(state.settings && typeof state.settings === 'object' ? state.settings : {}) || {};
+    normalizeProfileFieldSettings(settings);
+    const override = state.temporaryHomePlanetOverride;
+    if (!override) {
+        applyHomeFieldSettingsForOfficialSettlement(settings);
+        return normalizeProfileFieldSettings(settings);
+    }
+    if (override.hasTerrainFields) settings.terrainFields = cloneJSON(override.terrainFields) || {};
+    else delete settings.terrainFields;
+    if (override.hasFieldScenes) settings.fieldScenes = cloneJSON(override.fieldScenes) || {};
+    else delete settings.fieldScenes;
+    if (override.hasStarSettlement) settings.starSettlement = cloneJSON(override.starSettlement) || {};
+    else delete settings.starSettlement;
+    return normalizeProfileFieldSettings(settings);
+}
+
 function getUserProfilePayload() {
+    const temporaryHome = state.temporaryHomePlanetOverride;
     return {
         coins: state.coins,
         biofuel: Number.isFinite(state.biofuel) ? state.biofuel : 0,
         isPaid: state.isPaid,
-        settings: state.settings,
-        planetName: state.planetName || '',
+        settings: getPersistentSettingsPayload(),
+        planetName: temporaryHome ? temporaryHome.planetName : (state.planetName || ''),
         planetCreatedAt: Number.isFinite(state.planetCreatedAt) ? state.planetCreatedAt : 0,
         totalPlayMs: Number.isFinite(state.totalPlayMs) ? state.totalPlayMs : 0,
         planetWeather: state.planetWeather || null,
         planetBuff: state.planetBuff || null,
-        planetVisitors: getPersistentPlanetVisitors(state.planetVisitors),
         planetActions: state.planetActions && typeof state.planetActions === 'object' ? state.planetActions : {},
         planetInfrastructure: state.planetInfrastructure && typeof state.planetInfrastructure === 'object' ? state.planetInfrastructure : {},
         planetMining: state.planetMining && typeof state.planetMining === 'object' ? state.planetMining : {},
-        haqiIslandFarewells: Array.isArray(state.haqiIslandFarewells) ? state.haqiIslandFarewells.slice(0, 200).map(createFarewellPayload) : [],
+        haqiIslandFarewells: normalizeFarewellPetIds(state.haqiIslandFarewells),
         invitedPets: Array.isArray(state.invitedPets) ? state.invitedPets.slice(0, 10).map(createInvitedPetPayload) : [],
-        recentFriendPlanets: Array.isArray(state.recentFriendPlanets) ? state.recentFriendPlanets.slice(0, 3).map(createRecentFriendPlanetPayload).filter(Boolean) : [],
         remotePlanetDiscoveries: state.remotePlanetDiscoveries && typeof state.remotePlanetDiscoveries === 'object' ? state.remotePlanetDiscoveries : {},
         remoteElementStocks: state.remoteElementStocks && typeof state.remoteElementStocks === 'object' ? state.remoteElementStocks : {},
         lifetimeStats: state.lifetimeStats && typeof state.lifetimeStats === 'object' ? state.lifetimeStats : {},
         achievements: state.achievements && typeof state.achievements === 'object' ? state.achievements : { claimed: {} },
-        storyProgress: state.storyProgress && typeof state.storyProgress === 'object' ? state.storyProgress : { completed: {} },
         petOrder: state.petOrder || [],
         currentPetId: state.currentPetId || null,
     };
 }
 
-function createFarewellPayload(record) {
-    if (!record || typeof record !== 'object') return record;
-    const { stageName, stageEmoji, ...payload } = record;
-    return payload;
+function normalizeStoryProgressPayload(value) {
+    const progress = value && typeof value === 'object' ? value : {};
+    const completed = progress.completed && typeof progress.completed === 'object' ? progress.completed : {};
+    return { completed };
 }
 
 function createInvitedPetPayload(record) {
@@ -381,14 +558,13 @@ export async function loadUserProfile() {
     state.totalPlayMs = Number.isFinite(p.totalPlayMs) ? Math.max(0, p.totalPlayMs) : 0;
     state.planetWeather = p.planetWeather && typeof p.planetWeather === 'object' ? p.planetWeather : null;
     state.planetBuff = p.planetBuff && typeof p.planetBuff === 'object' ? p.planetBuff : null;
-    state.planetVisitors = getPersistentPlanetVisitors(p.planetVisitors);
+    resetLazyUserFileState();
     state.planetActions = p.planetActions && typeof p.planetActions === 'object' ? p.planetActions : {};
     state.planetInfrastructure = p.planetInfrastructure && typeof p.planetInfrastructure === 'object' ? p.planetInfrastructure : {};
     state.planetMining = p.planetMining && typeof p.planetMining === 'object' ? p.planetMining : {};
-    state.haqiIslandFarewells = Array.isArray(p.haqiIslandFarewells) ? p.haqiIslandFarewells.slice(0, 200) : [];
+    state.haqiIslandFarewells = normalizeFarewellPetIds(p.haqiIslandFarewells);
     state.invitedPets = Array.isArray(p.invitedPets) ? p.invitedPets.slice(0, 10).filter(item => item && typeof item === 'object') : [];
     state.activeInvitedPet = state.invitedPets[0] || null;
-    state.recentFriendPlanets = Array.isArray(p.recentFriendPlanets) ? p.recentFriendPlanets.map(createRecentFriendPlanetPayload).filter(Boolean).slice(0, 3) : [];
     state.remotePlanetDiscoveries = p.remotePlanetDiscoveries && typeof p.remotePlanetDiscoveries === 'object' ? p.remotePlanetDiscoveries : {};
     state.remoteElementStocks = p.remoteElementStocks && typeof p.remoteElementStocks === 'object' ? p.remoteElementStocks : {};
     const ls = p.lifetimeStats && typeof p.lifetimeStats === 'object' ? p.lifetimeStats : {};
@@ -399,8 +575,8 @@ export async function loadUserProfile() {
     };
     const ach = p.achievements && typeof p.achievements === 'object' ? p.achievements : {};
     state.achievements = { claimed: (ach.claimed && typeof ach.claimed === 'object') ? ach.claimed : {} };
-    const storyProgress = p.storyProgress && typeof p.storyProgress === 'object' ? p.storyProgress : {};
-    state.storyProgress = { completed: (storyProgress.completed && typeof storyProgress.completed === 'object') ? storyProgress.completed : {} };
+    _legacyStoryProgress = p.storyProgress && typeof p.storyProgress === 'object' ? p.storyProgress : null;
+    state.storyProgress = normalizeStoryProgressPayload(_legacyStoryProgress);
     state.playSessionStartedAt = 0;
     state.petOrder = Array.isArray(p.petOrder) ? p.petOrder.filter(id => typeof id === 'string' && id) : [];
     state.currentPetId = typeof p.currentPetId === 'string' && p.currentPetId ? p.currentPetId : null;
@@ -414,6 +590,113 @@ export async function saveUserProfile() {
 
 export function saveUserProfileDebounced() {
     saveJSONDebounced(PATHS.userProfile, getUserProfilePayload());
+}
+
+let _planetVisitorsLoaded = false;
+let _planetVisitorsLoading = null;
+let _recentFriendPlanetsLoaded = false;
+let _recentFriendPlanetsLoading = null;
+let _storyProgressLoaded = false;
+let _storyProgressLoading = null;
+let _legacyStoryProgress = null;
+
+function resetLazyUserFileState() {
+    state.planetVisitors = [];
+    state.recentFriendPlanets = [];
+    state.storyProgress = normalizeStoryProgressPayload(null);
+    _planetVisitorsLoaded = false;
+    _planetVisitorsLoading = null;
+    _recentFriendPlanetsLoaded = false;
+    _recentFriendPlanetsLoading = null;
+    _storyProgressLoaded = false;
+    _storyProgressLoading = null;
+    _legacyStoryProgress = null;
+}
+
+export async function loadPlanetVisitors() {
+    if (_planetVisitorsLoaded) return state.planetVisitors || [];
+    if (_planetVisitorsLoading) return _planetVisitorsLoading;
+    _planetVisitorsLoading = (async () => {
+        let stored = normalizePlanetVisitors(await readJSON(PATHS.planetVisitors, []));
+        if (!stored.length) {
+            stored = getPersistentPlanetVisitors(normalizePlanetVisitors((await readJSON(PATHS.userProfile, {}))?.planetVisitors));
+            if (stored.length) saveJSONDebounced(PATHS.planetVisitors, stored);
+        }
+        state.planetVisitors = mergePlanetVisitors(state.planetVisitors || [], stored);
+        _planetVisitorsLoaded = true;
+        return state.planetVisitors;
+    })().finally(() => { _planetVisitorsLoading = null; });
+    return _planetVisitorsLoading;
+}
+
+export function savePlanetVisitorsDebounced() {
+    saveJSONDebounced(PATHS.planetVisitors, getPersistentPlanetVisitors(state.planetVisitors));
+}
+
+export function recordPlanetVisitor(entry) {
+    const normalized = normalizePlanetVisitorRecord(entry);
+    if (!normalized) return;
+    state.planetVisitors = mergePlanetVisitors([normalized], state.planetVisitors || []);
+    if (NON_PERSISTENT_PLANET_VISITOR_TYPES.has(normalized.type)) return;
+    (async () => {
+        if (!_planetVisitorsLoaded) await loadPlanetVisitors();
+        state.planetVisitors = mergePlanetVisitors([normalized], state.planetVisitors || []);
+        savePlanetVisitorsDebounced();
+    })();
+}
+
+export async function loadRecentFriendPlanets() {
+    if (_recentFriendPlanetsLoaded) return state.recentFriendPlanets || [];
+    if (_recentFriendPlanetsLoading) return _recentFriendPlanetsLoading;
+    _recentFriendPlanetsLoading = (async () => {
+        let stored = normalizeRecentFriendPlanets(await readJSON(PATHS.recentFriendPlanets, []));
+        if (!stored.length) {
+            stored = normalizeRecentFriendPlanets((await readJSON(PATHS.userProfile, {}))?.recentFriendPlanets);
+            if (stored.length) saveJSONDebounced(PATHS.recentFriendPlanets, stored);
+        }
+        state.recentFriendPlanets = stored;
+        _recentFriendPlanetsLoaded = true;
+        return state.recentFriendPlanets;
+    })().finally(() => { _recentFriendPlanetsLoading = null; });
+    return _recentFriendPlanetsLoading;
+}
+
+export function saveRecentFriendPlanetsDebounced() {
+    saveJSONDebounced(PATHS.recentFriendPlanets, normalizeRecentFriendPlanets(state.recentFriendPlanets));
+}
+
+export async function loadStoryProgress(legacyProfileProgress = null) {
+    if (_storyProgressLoaded) return state.storyProgress || normalizeStoryProgressPayload(null);
+    if (_storyProgressLoading) return _storyProgressLoading;
+    const fallback = legacyProfileProgress && typeof legacyProfileProgress === 'object' ? legacyProfileProgress : _legacyStoryProgress;
+    _storyProgressLoading = (async () => {
+        const saved = await readJSON(PATHS.storyProgress, null);
+        state.storyProgress = saved && typeof saved === 'object'
+            ? normalizeStoryProgressPayload(saved)
+            : normalizeStoryProgressPayload(fallback);
+        _storyProgressLoaded = true;
+        return state.storyProgress;
+    })().finally(() => { _storyProgressLoading = null; });
+    return _storyProgressLoading;
+}
+
+export async function saveStoryProgress() {
+    if (!_storyProgressLoaded) {
+        const pending = normalizeStoryProgressPayload(state.storyProgress);
+        const loaded = await loadStoryProgress();
+        state.storyProgress = {
+            ...loaded,
+            completed: {
+                ...(loaded?.completed || {}),
+                ...(pending.completed || {}),
+            },
+        };
+    }
+    await saveJSONNow(PATHS.storyProgress, normalizeStoryProgressPayload(state.storyProgress));
+}
+
+export function saveStoryProgressDebounced() {
+    saveJSONDebounced(PATHS.storyProgress, normalizeStoryProgressPayload(state.storyProgress));
 }
 
 export async function loadPostcardList() {
@@ -572,7 +855,10 @@ export function ensurePetLayouts(_petId) {
     if (_layoutsLoading) return _layoutsLoading;
     _layoutsLoading = (async () => {
         const data = await readJSON(PATHS.layouts, {});
-        state.layouts = data && typeof data === 'object' ? data : {};
+        state.layouts = normalizeLayoutsData(data);
+        if (data && typeof data === 'object' && !Array.isArray(data) && Object.keys(data).some(key => key !== normalizeLayoutRoomKey(key))) {
+            saveJSONDebounced(PATHS.layouts, state.layouts);
+        }
         _layoutsLoaded = true;
         return state.layouts;
     })().finally(() => { _layoutsLoading = null; });
@@ -679,12 +965,14 @@ export async function setCurrentPetPersisted(id) {
 export async function saveLayout(petId, roomId, items, options = {}) {
     if (!_layoutsLoaded) await ensurePetLayouts(petId);
     if (!state.layouts) state.layouts = {};
-    state.layouts[roomId] = items;
-    if (options.persist !== false) saveJSONDebounced(PATHS.layouts, state.layouts);
+    const key = normalizeLayoutRoomKey(roomId);
+    state.layouts[key] = items;
+    if (key !== roomId) delete state.layouts[roomId];
+    if (options.persist !== false) saveJSONDebounced(PATHS.layouts, normalizeLayoutsData(state.layouts));
 }
 
 export function getLayout(_petId, roomId) {
-    return state.layouts?.[roomId] || [];
+    return state.layouts?.[normalizeLayoutRoomKey(roomId)] || [];
 }
 
 // ========== 背包 ==========
@@ -716,7 +1004,7 @@ export function saveInventoryDebounced() {
 export async function saveDecorDataNow(petId) {
     await Promise.all([ensurePetLayouts(petId), ensurePetInventory(petId)]);
     await Promise.all([
-        saveJSONNow(PATHS.layouts, state.layouts || {}),
+        saveJSONNow(PATHS.layouts, normalizeLayoutsData(state.layouts || {})),
         saveInventoryNowInternal(),
     ]);
 }
@@ -727,15 +1015,26 @@ export async function clearStoredData() {
         writeFileSafe(PATHS.userProfile, ''),
         writeFileSafe(PATHS.layouts, ''),
         writeFileSafe(PATHS.inventory, ''),
+        writeFileSafe(PATHS.planetVisitors, ''),
+        writeFileSafe(PATHS.recentFriendPlanets, ''),
         writeFileSafe(PATHS.postcardList, ''),
+        writeFileSafe(PATHS.storyProgress, ''),
         writeFileSafe(PATHS.storyList, ''),
         ...ids.map(id => writeFileSafe(PATHS.pet(id), '')),
     ]);
     state.layouts = {};
     state.inventory = {};
     state.inventoryOrder = [];
+    state.planetVisitors = [];
+    state.recentFriendPlanets = [];
     _layoutsLoaded = true;
     _inventoryLoaded = true;
+    _planetVisitorsLoaded = true;
+    _recentFriendPlanetsLoaded = true;
+    _storyProgressLoaded = true;
+    _storyProgressLoading = null;
+    _legacyStoryProgress = null;
+    state.storyProgress = normalizeStoryProgressPayload(null);
 }
 
 // ========== memory.md / chat.log（文本文件） ==========

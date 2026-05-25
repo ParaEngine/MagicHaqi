@@ -1,12 +1,12 @@
 // 主程序：SDK 启动 + 路由 + 全局事件
 import { $, showToast, confirm, clamp, prompt, escapeHtml } from './utils.js';
-import { canPlaceItemInArea, CONFIG, getItemZOrder, SHOP_ITEMS, findLargestHouseAcrossLayouts, getStageName } from './config.js';
+import { canPlaceItemInArea, CONFIG, getItemZOrder, getShopItemById, findLargestHouseAcrossLayouts, getStageName } from './config.js';
 import { state, notify, subscribe, setView, setCurrentPet, getCurrentPet } from './state.js';
 import {
     loadUserProfile, saveUserProfile, saveUserProfileDebounced,
     loadAllPets, loadPet, deletePet, setCurrentPetPersisted,
     saveLayout, addToInventory, removeFromInventory, savePetDebounced,
-    getLayout, ensurePetData, savePet, clearStoredData, saveDecorDataNow, saveInventoryDebounced,
+    getLayout, ensurePetData, savePet, clearStoredData, saveDecorDataNow, saveInventoryDebounced, loadStoryProgress, saveStoryProgress,
 } from './storage.js';
 import { applyDecay, applyStage, clampEnergyToMax, defaultPermanentTrauma, defaultStats, eggStats, getActiveSickness, getEffectiveSicknessSeverity, getSicknessDef, markPetCared, maybeRollDailySickness, tickOffline, startTickLoop, stopTickLoop, treatPetSicknessOneLevel } from './petTick.js';
 import { renderLogin } from './view_login.js';
@@ -17,6 +17,8 @@ import { renderShop } from './view_shop.js';
 import { renderInventory } from './view_inventory.js';
 import { renderProfile } from './view_profile.js';
 import { renderHelp } from './view_help.js';
+import { normalizeTerrainFieldSlotId, renderTerrainFields, resolveTerrainFieldTypeId } from './view_terrain_fields.js';
+import { applySettledOfficialPlanetFromProfile, applyTemporaryHomePlanetFromUrl, renderStarSettlements } from './view_star_settlements.js';
 import { hasPostcardParams } from './view_postcard.js';
 import { randomDna, decodeDna, dnaRarity, dnaToName, biasDnaForFieldId, crossover } from './dna.js';
 import { randId } from './utils.js';
@@ -45,7 +47,7 @@ import SoundManager from './soundManager.js';
 // Side-effect import: 订阅 state 并接管所有 [data-mh-pet] 占位符的渲染 + 动画
 import { canWakePet, daySleepRejectText, eatFood, isPetInteractionBlocked, isPetSleeping, petArtHtml, preloadPetAssets, say, scanAndMount, setAnim, shouldRejectDaySleep, sleepingInteractionText, startPetSleep, wakePet, wakePetForPlay } from './pet.js';
 
-const sdkCdnUrl = 'https://cdn.keepwork.com/sdk/keepworkSDK.iife.js?v=20260523a';
+const sdkCdnUrl = 'https://cdn.keepwork.com/sdk/keepworkSDK.iife.js?v=20260525a';
 
 function loadScript(src) {
     return new Promise((resolve, reject) => {
@@ -116,7 +118,7 @@ window.sdk = sdk;
 // 主面板
 const app = document.getElementById('app');
 
-const ITEM_BY_ID = Object.fromEntries(SHOP_ITEMS.map(it => [it.id, it]));
+const ITEM_BY_ID = new Proxy({}, { get: (_, id) => getShopItemById(id) });
 let planetPlaytimeTimer = null;
 let chatViewPromise = null;
 let chatViewModule = null;
@@ -296,7 +298,10 @@ function renderStoryPlayerRoute() {
         const back = $('mhBack');
         if (back) back.onclick = options.onBack;
     };
-    const renderLoaded = (mod, story) => {
+    const renderLoaded = async (mod, story) => {
+        if (state.currentView !== 'storyPlayer') return;
+        try { await loadStoryProgress(); }
+        catch (e) { console.warn('加载故事进度失败', e); }
         if (state.currentView !== 'storyPlayer') return;
         const completedPlayback = getCompletedStoryPlayback(story, pendingStoryPath);
         mod.renderStoryPlayer(app, { story }, {
@@ -315,7 +320,7 @@ function renderStoryPlayerRoute() {
     loadStoryPlayerView()
         .then(async (mod) => {
             if (!pendingStoryData) pendingStoryData = await mod.loadStoryFile(pendingStoryPath || undefined);
-            renderLoaded(mod, pendingStoryData);
+            await renderLoaded(mod, pendingStoryData);
         })
         .catch((e) => {
             console.error('加载故事失败', e);
@@ -660,6 +665,8 @@ const routes = {
     hatching:  renderHatchingRoute,
     profile:   () => renderProfile(app, { pet: getCurrentPet() }, { onBack: () => navigateToView('home') }),
     help:      () => renderHelp(app, null, { onBack: () => navigateToView('home') }),
+    terrainFields: () => renderTerrainFields(app, null, { onBack: () => navigateToView('home') }),
+    starSettlements: () => renderStarSettlements(app, null, { onBack: () => navigateToView('home') }),
     postcard:  renderPostcardRoute,
     mailbox:   renderMailboxRoute,
     email:     renderEmailRoute,
@@ -725,6 +732,8 @@ async function bootstrap() {
     // 已登录：加载数据
     try {
         await loadUserProfile();
+        await applySettledOfficialPlanetFromProfile();
+        await applyTemporaryHomePlanetFromUrl();
         await loadAllPets();
         ensurePlanetProgressStarted();
         startPlanetPlaytimePersistence();
@@ -831,7 +840,7 @@ async function createNewEgg(options = {}) {
     let dna = options.dna || randomDna();
     // 若用户已有"主屋"，新蛋更倾向于继承主屋所在领地的 DNA 特征
     const territory = findLargestHouseAcrossLayouts(state.layouts);
-    if (territory?.fieldId) dna = biasDnaForFieldId(dna, territory.fieldId);
+    if (territory?.fieldId) dna = biasDnaForFieldId(dna, resolveTerrainFieldTypeId(territory.fieldId));
     const trueName = dnaToName(dna);
     const pet = {
         id: 'pet_' + randId(8),
@@ -955,7 +964,9 @@ function getCompletedStoryPlayback(story, path = '') {
     return duplicate ? { completedAt: duplicate.bornAt || Date.now(), actorId: duplicate.sourceActorId || '' } : null;
 }
 
-function markStoryCompleted(story, actor) {
+async function markStoryCompleted(story, actor) {
+    try { await loadStoryProgress(); }
+    catch (e) { console.warn('加载故事进度失败', e); }
     const keys = storyProgressKeys(story, pendingStoryPath);
     if (!keys.length) return;
     const completed = { ...(state.storyProgress?.completed || {}) };
@@ -968,7 +979,7 @@ function markStoryCompleted(story, actor) {
         };
     });
     state.storyProgress = { ...(state.storyProgress || {}), completed };
-    saveUserProfile().catch(e => console.warn('保存故事进度失败', e));
+    saveStoryProgress().catch(e => console.warn('保存故事进度失败', e));
 }
 
 // 强制弹出命名框，直到玩家给出非空名称（不可关闭）。
@@ -1025,7 +1036,7 @@ async function handleLogin() {
     }
     if (sdk.token) {
         try { state.user = await loadCurrentUser(); } catch (_) {}
-        try { await loadUserProfile(); await loadAllPets(); } catch (e) { console.warn(e); }
+        try { await loadUserProfile(); await applySettledOfficialPlanetFromProfile(); await applyTemporaryHomePlanetFromUrl(); await loadAllPets(); } catch (e) { console.warn(e); }
         ensurePlanetProgressStarted();
         startPlanetPlaytimePersistence();
         for (const id of Object.keys(state.pets)) {
@@ -1138,7 +1149,7 @@ async function handleFindPet(id) {
     if (target.kind === 'field') {
         const home = pet?.id !== state.currentPetId ? getGeneratedPetLocation(pet)
             : getPetLocationType(pet) === 'released' ? getReleasedPetHome(pet) : null;
-        state.currentField = target.id || 'land';
+        state.currentField = normalizeTerrainFieldSlotId(target.id);
         const side = Math.random() < 0.5 ? -1 : 1;
         const activeX = home?.kind === 'field' ? clamp(home.x + side * 0.085, 0.08, 0.92) : 0;
         const activeY = home?.kind === 'field' ? clamp(home.y + 0.025 + Math.random() * 0.035, 0.36, 0.90) : 0;
@@ -1739,7 +1750,8 @@ async function handlePlaceItem(itemId, x, y, roomOverride, extra = null) {
     const treatAsUnlimited = item.unlimited || isUnique;
     if (!treatAsUnlimited && !inv[itemId]) { showToast('背包里没有此物品', 'error'); return; }
     const roomKey = roomOverride || state.currentRoom || pet.activeRoom || 'living';
-    const area = roomKey.startsWith('field_') ? roomKey.slice('field_'.length) : roomKey;
+    const rawArea = roomKey.startsWith('field_') ? roomKey.slice('field_'.length) : roomKey;
+    const area = roomKey.startsWith('field_') ? resolveTerrainFieldTypeId(rawArea) : rawArea;
     if (!canPlaceItemInArea(item, area)) {
         showToast('这个物品不能放在这里', 'error');
         return;

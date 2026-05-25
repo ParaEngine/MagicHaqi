@@ -20,6 +20,7 @@ import { CONFIG, findLargestHouseAcrossLayouts } from './config.js';
 import { applyStage, defaultTraits, gainTrait, markPetCared } from './petTick.js';
 import { getRuntimePetStats } from './petLifecycle.js';
 import { clamp, escapeHtml } from './utils.js';
+import { resolveTerrainFieldTypeId } from './view_terrain_fields.js';
 
 // 4 行 × 4 列：行=阶段（baby/teen/adult/elder），列=情绪（idle/happy/sad/sleep）
 export const SHEET_COLS = 4;
@@ -832,7 +833,7 @@ export function hatchPetFromEgg(pet) {
     // 1) 领地偏置：以孵化时玩家当前最大屋所在的 field 为准
     try {
         const territory = findLargestHouseAcrossLayouts(state.layouts);
-        if (territory?.fieldId) dna = biasDnaForFieldId(dna, territory.fieldId);
+        if (territory?.fieldId) dna = biasDnaForFieldId(dna, resolveTerrainFieldTypeId(territory.fieldId));
     } catch (_) {}
     // 2) 喂食 trait 偏置
     const dominant = _dominantFeedTrait(pet);
