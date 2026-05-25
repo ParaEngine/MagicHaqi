@@ -354,6 +354,7 @@
 		const SCENE_REPAIR_MAX_BYTES = 120 * 1024;
 		const SCENE_CDN_BATCH_TARGET_MAX_ATTEMPTS = 5;
 		const SCENE_CDN_BATCH_INITIAL_QUALITY = 0.3;
+		const WORKSPACE_FILE_READ_MAX_CHARS = 10 * 1024 * 1024;
 		let DEFAULT_SCENE_TAGS = [];
 		let PARTICLE_EFFECTS = ['sparkle', 'snow', 'rain', 'mist', 'bubbles', 'petals', 'embers'];
 		const BG_MUSIC_LABELS = { selector: '选择', square: '广场', forest: '森林', farm: '农场', mountain: '山地', park: '公园', playground: '游乐场', ship: '飞船', haqiLoop: '哈奇循环' };
@@ -700,6 +701,18 @@
 		function stringifyExportJson(value) {
 			const inlineArrayKeys = new Set(['tags', 'particles']);
 			const indentUnit = '  ';
+			const canInlineValue = (item, key = '') => {
+				if (item == null || typeof item !== 'object') return true;
+				if (Array.isArray(item)) return inlineArrayKeys.has(key) || item.every(entry => entry == null || typeof entry !== 'object');
+				return Object.entries(item).every(([entryKey, entryValue]) => canInlineValue(entryValue, entryKey));
+			};
+			const formatInlineValue = (item, key = '') => {
+				if (Array.isArray(item)) return `[${item.map(entry => formatInlineValue(entry)).join(', ')}]`;
+				if (item && typeof item === 'object') {
+					return `{ ${Object.entries(item).map(([entryKey, entryValue]) => `${JSON.stringify(entryKey)}: ${formatInlineValue(entryValue, entryKey)}`).join(', ')} }`;
+				}
+				return JSON.stringify(item);
+			};
 			const formatValue = (item, level = 0, key = '') => {
 				if (Array.isArray(item)) {
 					if (inlineArrayKeys.has(key)) return `[${item.map(entry => JSON.stringify(entry)).join(', ')}]`;
@@ -707,7 +720,7 @@
 					const childIndent = indentUnit.repeat(level + 1);
 					const currentIndent = indentUnit.repeat(level);
 					return `[
-${item.map(entry => `${childIndent}${formatValue(entry, level + 1)}`).join(',\n')}
+${item.map(entry => `${childIndent}${canInlineValue(entry) ? formatInlineValue(entry) : formatValue(entry, level + 1)}`).join(',\n')}
 ${currentIndent}]`;
 				}
 				if (item && typeof item === 'object') {
@@ -2294,9 +2307,13 @@ ${currentIndent}}`;
 			const sdk = state.sdk || window.keepwork;
 			if (!sdk) return;
 			if (!sdk.token) {
-				if (sdk.loginWindow?.show) sdk.loginWindow.show({ onLogin: refreshLoginState });
+				const refreshAfterLogin = async () => {
+					await refreshLoginState();
+					await loadRecords();
+				};
+				if (sdk.loginWindow?.show) sdk.loginWindow.show({ onLogin: refreshAfterLogin });
 				else if (sdk.login) await sdk.login();
-				setTimeout(refreshLoginState, 600);
+				setTimeout(refreshAfterLogin, 600);
 				return;
 			}
 			if (typeof sdk.showProfileWindow === 'function') {
@@ -2318,7 +2335,7 @@ ${currentIndent}}`;
 
 		async function readFile(path) {
 			const store = getWorkspaceStore();
-			try { return await store.readFile(path, 1, 99999) || ''; }
+			try { return await store.readFile(path, 1, WORKSPACE_FILE_READ_MAX_CHARS) || ''; }
 			catch (_) { return await store.readFile(path) || ''; }
 		}
 
@@ -2370,10 +2387,14 @@ ${currentIndent}}`;
 			const localSettings = readLocalGenerationSettings();
 			let systemIndexData = null;
 			let workspaceIndexData = null;
+			let workspaceReadError = null;
 			if (!localOnly && (state.sdk || window.keepwork)?.personalPageStore) {
 				try {
-					workspaceIndexData = JSON.parse(await readFile(SCENE_INDEX_PATH) || '{}');
-				} catch (_) {}
+					const workspaceText = await readFile(SCENE_INDEX_PATH);
+					workspaceIndexData = workspaceText ? JSON.parse(workspaceText) : null;
+				} catch (error) {
+					workspaceReadError = error;
+				}
 			}
 			systemIndexData = await loadLocalPresetFile();
 			const merged = localOnly ? mergeSceneIndexData(systemIndexData, null) : mergeSceneIndexData(systemIndexData, workspaceIndexData);
@@ -2392,7 +2413,8 @@ ${currentIndent}}`;
 			else updateOutput();
 			const systemCount = Array.isArray(systemIndexData?.scenes) ? systemIndexData.scenes.length : 0;
 			const workspaceCount = Array.isArray(workspaceIndexData?.scenes) ? workspaceIndexData.scenes.length : 0;
-			setStatus($('runStatus'), `已加载 ${state.scenes.length} 个场景（系统 ${systemCount}，workspace ${workspaceCount}，同 ID 优先使用 workspace）。`, 'ok');
+			const workspaceWarning = workspaceReadError ? `\nworkspace scenes.json 读取失败：${workspaceReadError?.message || workspaceReadError}` : '';
+			setStatus($('runStatus'), `已加载 ${state.scenes.length} 个场景（系统 ${systemCount}，workspace ${workspaceCount}，同 ID 优先使用 workspace）。${workspaceWarning}`, workspaceReadError ? 'error' : 'ok');
 		}
 
 		async function generateSceneImage() {

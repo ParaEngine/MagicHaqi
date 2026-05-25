@@ -55,16 +55,25 @@
       .preview-planet { @apply relative mx-auto grid h-44 w-44 place-items-center overflow-hidden rounded-full text-3xl font-black text-white shadow-xl; text-shadow: 0 1px 8px rgb(15 23 42 / .5); }
       .preview-planet:after { content:''; @apply absolute inset-0 rounded-full; background: radial-gradient(circle at 24% 20%, rgb(255 255 255 / .26), transparent 28%), radial-gradient(circle at 74% 76%, rgb(0 0 0 / .22), transparent 42%); mix-blend-mode: soft-light; }
       .field-preview-grid { @apply grid grid-cols-1 gap-2 sm:grid-cols-2; }
-      .field-preview { @apply overflow-hidden rounded-lg border border-slate-300 bg-white; }
+      .field-preview { @apply overflow-hidden rounded-lg border border-slate-300 bg-white text-left transition hover:border-sky-500 hover:bg-sky-50 focus:border-sky-600 focus:outline-none focus:ring-2 focus:ring-sky-600/20; }
       .field-preview-art { @apply relative block aspect-video overflow-hidden; }
       .field-preview-body { @apply flex flex-col gap-1 p-2; }
       .field-preview-title { @apply overflow-hidden text-ellipsis whitespace-nowrap text-xs font-bold; }
       .field-preview-meta { @apply overflow-hidden text-ellipsis whitespace-nowrap text-[11px] text-slate-500; }
+      .field-preview-action { @apply text-[11px] font-bold text-sky-700; }
       .scene-grid { @apply grid grid-cols-2 gap-2 md:grid-cols-3; }
       .scene-card { @apply overflow-hidden rounded-lg border border-slate-300 bg-white p-1.5 text-left hover:border-sky-500; }
       .scene-card.active { @apply border-sky-600 bg-sky-50 ring-2 ring-sky-600/15; }
       .scene-card-art { @apply relative block aspect-video overflow-hidden rounded-md; }
       .scene-card-title { @apply mt-1 block overflow-hidden text-ellipsis whitespace-nowrap text-[11px] font-bold; }
+      .scene-maker-window { width: min(1120px, 100%); height: min(860px, calc(100vh - 36px)); }
+      .scene-maker-body { display: flex; flex: 1; min-height: 0; padding: 0; }
+      .scene-maker-host { position: relative; min-height: 0; height: 100%; flex: 1; overflow: hidden; --text-primary: #0f172a; --text-secondary: #475569; --text-muted: #64748b; --accent: #0ea5e9; --accent-dark: #0369a1; }
+      .scene-maker-host .topbar { @apply flex min-h-12 items-center justify-between gap-2 border-b border-sky-100 bg-white/90 px-3; }
+      .scene-maker-host .btn-primary { @apply border-sky-600 bg-sky-600 text-white hover:border-sky-700 hover:bg-sky-700; }
+      .scene-maker-host .btn-secondary { @apply border-slate-300 bg-white text-slate-700 hover:border-sky-300 hover:bg-sky-50; }
+      .scene-maker-host .btn-icon { @apply grid place-items-center rounded-md border border-slate-300 bg-white text-slate-700 hover:border-sky-300 hover:bg-sky-50; }
+      .scene-maker-host .modal-input { @apply w-full rounded-md border border-slate-300 bg-white px-2.5 py-1.5 text-slate-900 outline-none focus:border-sky-600 focus:ring-2 focus:ring-sky-600/15; }
       .json-output { @apply min-h-[260px] overflow-auto whitespace-pre font-mono text-xs leading-normal; }
       .prompt-box { @apply min-h-[150px] text-xs; }
       .stream-preview { @apply min-h-[120px] max-h-[220px] overflow-auto whitespace-pre-wrap font-mono text-xs; }
@@ -96,6 +105,7 @@
           <div id="loginState" class="status">正在加载 KeepworkSDK...</div>
           <div class="toolbar">
             <button id="btnReload" class="primary" type="button">刷新</button>
+            <button id="btnWorkspace" type="button">打开</button>
             <button id="btnLogin" type="button">登录</button>
             <button id="btnLocalApi" type="button">本地 API Key</button>
           </div>
@@ -235,11 +245,9 @@
       BG_MUSIC_LABELS,
       PARTICLE_EFFECTS,
       lazySceneBackgroundAttrs,
-      loadScenePresets,
       normalizeScenePreset,
+      renderStorySceneMaker,
       renderSceneParticles,
-      sceneBackgroundStyle,
-      sceneParticleCss,
       setupLazySceneBackgrounds,
     } from '../js/view_story_scene_maker.js';
 
@@ -247,6 +255,7 @@
     const PLANET_DIR = 'famous-planets';
     const INDEX_PATH = `${PLANET_DIR}/_planet_index.json`;
     const LOCAL_INDEX_URL = `../${INDEX_PATH}`;
+    const LOCAL_SCENE_INDEX_URL = '../pet-story/presets/scenes.json';
     const SETTINGS_STORAGE_KEY = 'MagicHaqi.FamousPlanetGenerator.generationSettings';
     const FIELD_SLOTS = [
       { slotId: 'terrain_slot_4', label: '左耳' },
@@ -294,7 +303,7 @@
     };
 
     const $ = (id) => document.getElementById(id);
-    const state = { sdk: null, records: [], indexMeta: { version: 1, planets: [] }, selectedId: '', scenes: [], activeFieldIndex: 0, lastChatModel: '', newPlanetPromptDirty: false };
+    const state = { sdk: null, records: [], indexMeta: { version: 1, planets: [] }, selectedId: '', scenes: [], activeFieldIndex: 0, lastChatModel: '', newPlanetPromptDirty: false, workspaceViewer: null };
 
     function escapeHtml(value) {
       const div = document.createElement('div');
@@ -329,41 +338,81 @@
       await navigator.clipboard.writeText(text);
     }
 
-    function isKeepworkSdkScript(src = '') {
-      return /(^|\/)index\.js(?:[?#].*)?$/.test(src) || /keepworkSDK\.iife\.js(?:[?#].*)?$/.test(src);
+    const sdkCdnUrl = 'https://cdn.keepwork.com/sdk/keepworkSDK.iife.js?v=20260525a';
+    const sdkLoadTimeoutMs = 8000;
+
+    function withTimeout(promise, ms, label) {
+      let timer = null;
+      const timeout = new Promise((_, reject) => {
+        timer = setTimeout(() => reject(new Error(`${label} timed out`)), ms);
+      });
+      return Promise.race([promise, timeout]).finally(() => clearTimeout(timer));
     }
 
-    async function importRuntimeModule(src) {
+    function loadScript(src) {
+      return new Promise((resolve, reject) => {
+        let timer = null;
+        const finish = (callback, value) => {
+          clearTimeout(timer);
+          callback(value);
+        };
+        const existing = [...document.scripts].find(script => script.src === src);
+        if (existing) {
+          timer = setTimeout(() => reject(new Error(`SDK script timed out: ${src}`)), sdkLoadTimeoutMs);
+          existing.addEventListener('load', () => finish(resolve), { once: true });
+          existing.addEventListener('error', () => finish(reject, new Error(`SDK script failed: ${src}`)), { once: true });
+          if (window.keepwork || window.KeepworkSDK) finish(resolve);
+          return;
+        }
+        const script = document.createElement('script');
+        script.src = src;
+        script.onload = () => finish(resolve);
+        script.onerror = () => finish(reject, new Error(`SDK script failed: ${src}`));
+        timer = setTimeout(() => {
+          script.remove();
+          reject(new Error(`SDK script timed out: ${src}`));
+        }, sdkLoadTimeoutMs);
+        document.head.appendChild(script);
+      });
+    }
+
+    function importRuntimeModule(src) {
       return new Function('src', 'return import(src)')(src);
     }
 
-    async function ensureKeepworkSDK() {
-      if (window.keepwork || window.KeepworkSDK) return window.keepwork || null;
-      const localCandidates = ['../../../../../keepworkSDK/index.js', '/keepworkSDK/index.js'];
-      for (const src of localCandidates) {
-        try {
-          await importRuntimeModule(src);
-          if (window.keepwork || window.KeepworkSDK) return window.keepwork || null;
-        } catch (_) {}
-      }
-      const existing = [...document.scripts].find(script => isKeepworkSdkScript(script.src));
-      if (existing) {
-        await new Promise((resolve, reject) => {
-          existing.addEventListener('load', resolve, { once: true });
-          existing.addEventListener('error', reject, { once: true });
-          if (window.keepwork || window.KeepworkSDK) resolve();
-        });
-      } else {
-        await new Promise((resolve, reject) => {
-          const script = document.createElement('script');
-          script.src = 'https://cdn.keepwork.com/sdk/keepworkSDK.iife.js?v=20260525a';
-          script.onload = resolve;
-          script.onerror = reject;
-          document.head.appendChild(script);
-        });
-      }
+    function shouldLoadSdkAsModule(src) {
+      return /(^|\/)index\.js(?:[?#].*)?$/.test(src);
+    }
+
+    function normalizeKeepworkSdk() {
       if (!window.keepwork && window.KeepworkSDK) window.keepwork = new window.KeepworkSDK();
       return window.keepwork || null;
+    }
+
+    function getSdkCandidates() {
+      const params = new URLSearchParams(window.location.search);
+      const explicitSdk = params.get('sdk');
+      const hostname = window.location.hostname;
+      const isLocalHost = !hostname || hostname === 'localhost' || hostname === '127.0.0.1' || hostname === '::1';
+      const localCandidates = ['../../../../../keepworkSDK/index.js', '/keepworkSDK/index.js'];
+      const deployedCandidates = [sdkCdnUrl, 'https://keepwork.com/public/resource/keepworkSDK.iife.js'];
+      return [explicitSdk, ...(isLocalHost || window.location.protocol === 'file:' ? localCandidates : []), ...deployedCandidates, ...(isLocalHost || window.location.protocol === 'file:' ? [] : localCandidates)].filter(Boolean);
+    }
+
+    async function ensureKeepworkSDK() {
+      const existingSdk = normalizeKeepworkSdk();
+      if (existingSdk) return existingSdk;
+      let lastError = null;
+      for (const url of getSdkCandidates()) {
+        try {
+          if (shouldLoadSdkAsModule(url)) await withTimeout(importRuntimeModule(url), sdkLoadTimeoutMs, `SDK module ${url}`);
+          else await loadScript(url);
+          const sdk = normalizeKeepworkSdk();
+          if (sdk) return sdk;
+        } catch (e) { lastError = e; }
+      }
+      if (lastError) throw lastError;
+      return null;
     }
 
     function getWorkspaceStore() {
@@ -382,6 +431,54 @@
 
     async function writeFile(path, content) {
       await getWorkspaceStore().createFile(path, content == null ? '' : String(content));
+    }
+
+    function stableJsonText(value) {
+      return JSON.stringify(value ?? null);
+    }
+
+    async function writeJsonFile(path, value, { verifyEntry = null, deletedId = '' } = {}) {
+      const content = stringifyIndexJson(value);
+      await writeFile(path, content);
+      const savedText = await readFile(path);
+      const savedJson = JSON.parse(savedText || '{}');
+      if (!Array.isArray(savedJson?.planets)) throw new Error(`${path} 写入后没有读取到 planets 数组`);
+      if (verifyEntry?.id) {
+        const savedEntry = savedJson.planets.find(entry => entry?.id === verifyEntry.id);
+        if (stableJsonText(savedEntry) !== stableJsonText(verifyEntry)) throw new Error(`${path} 写入后验证失败：${verifyEntry.id} 仍不是最新内容`);
+      }
+      if (deletedId && savedJson.planets.some(entry => entry?.id === deletedId)) throw new Error(`${path} 写入后验证失败：${deletedId} 仍然存在`);
+      return savedJson;
+    }
+
+    function openWorkspaceViewer(file = INDEX_PATH) {
+      if (typeof window.createWorkspaceViewer !== 'function') {
+        setStatus($('runStatus'), 'WorkspaceViewer 不可用：当前 SDK 未导出 createWorkspaceViewer', 'error');
+        return;
+      }
+      closeWorkspaceViewer();
+      const targetFile = file || INDEX_PATH;
+      const overlay = document.createElement('div');
+      overlay.className = 'modal-overlay';
+      overlay.id = 'workspaceOverlay';
+      overlay.innerHTML = `
+        <div class="modal-window" role="dialog" aria-modal="true" aria-label="WorkspaceViewer" style="width:min(1180px,100%);height:min(780px,calc(100vh - 36px));padding:0">
+          <div class="modal-titlebar">
+            <strong>WorkspaceViewer · ${WORKSPACE}/${escapeHtml(targetFile)}</strong>
+            <button type="button" id="closeWorkspaceViewer">关闭</button>
+          </div>
+          <div id="workspaceHost" class="modal-body" style="padding:0"></div>
+        </div>`;
+      document.body.appendChild(overlay);
+      overlay.addEventListener('click', event => { if (event.target === overlay) closeWorkspaceViewer(); });
+      $('closeWorkspaceViewer').onclick = closeWorkspaceViewer;
+      state.workspaceViewer = window.createWorkspaceViewer({ container: $('workspaceHost'), sdk: state.sdk || window.keepwork, workspace: WORKSPACE, mountFolder: '', file: targetFile, compact: true, hideUserInfo: true });
+    }
+
+    function closeWorkspaceViewer() {
+      try { state.workspaceViewer?.destroy?.(); } catch (_) {}
+      state.workspaceViewer = null;
+      $('workspaceOverlay')?.remove();
     }
 
     async function readLocalJson(url, fallback) {
@@ -722,6 +819,47 @@
       return { ...(state.indexMeta || {}), version: Number(state.indexMeta?.version) || 1, planets: list };
     }
 
+    function stringifyIndexJson(value) {
+      const inlineArrayKeys = new Set(['particles']);
+      const indentUnit = '  ';
+      const canInlineValue = (item, key = '') => {
+        if (item == null || typeof item !== 'object') return true;
+        if (Array.isArray(item)) return inlineArrayKeys.has(key) || item.every(entry => entry == null || typeof entry !== 'object');
+        return Object.entries(item).every(([entryKey, entryValue]) => canInlineValue(entryValue, entryKey));
+      };
+      const formatInlineValue = (item, key = '') => {
+        if (Array.isArray(item)) return `[${item.map(entry => formatInlineValue(entry)).join(', ')}]`;
+        if (item && typeof item === 'object') return `{ ${Object.entries(item).map(([entryKey, entryValue]) => `${JSON.stringify(entryKey)}: ${formatInlineValue(entryValue, entryKey)}`).join(', ')} }`;
+        return JSON.stringify(item);
+      };
+      const formatValue = (item, level = 0, key = '') => {
+        if (Array.isArray(item)) {
+          if (inlineArrayKeys.has(key)) return `[${item.map(entry => JSON.stringify(entry)).join(', ')}]`;
+          if (!item.length) return '[]';
+          const childIndent = indentUnit.repeat(level + 1);
+          const currentIndent = indentUnit.repeat(level);
+          return `[
+${item.map(entry => `${childIndent}${canInlineValue(entry) ? formatInlineValue(entry) : formatValue(entry, level + 1)}`).join(',\n')}
+${currentIndent}]`;
+        }
+        if (item && typeof item === 'object') {
+          const entries = Object.entries(item);
+          if (!entries.length) return '{}';
+          const childIndent = indentUnit.repeat(level + 1);
+          const currentIndent = indentUnit.repeat(level);
+          return `{
+${entries.map(([entryKey, entryValue]) => `${childIndent}${JSON.stringify(entryKey)}: ${formatValue(entryValue, level + 1, entryKey)}`).join(',\n')}
+${currentIndent}}`;
+        }
+        return JSON.stringify(item);
+      };
+      return formatValue(value);
+    }
+
+    function getIndexJsonText() {
+      return stringifyIndexJson(buildIndexObject());
+    }
+
     function buildPlanetConfig() {
       return compactPlanet({
         id: safeId($('planetId').value, 'new_planet'),
@@ -840,7 +978,7 @@
           </div>`;
       }).join('') : '<div class="hint p-2.5">没有匹配的星球。</div>';
       $('recordList').querySelectorAll('[data-open-record]').forEach(btn => btn.onclick = () => selectRecord(btn.dataset.openRecord));
-      $('recordList').querySelectorAll('[data-delete-record]').forEach(btn => btn.onclick = () => deleteRecord(btn.dataset.deleteRecord));
+      $('recordList').querySelectorAll('[data-delete-record]').forEach(btn => btn.onclick = () => deleteRecord(btn.dataset.deleteRecord).catch(e => setStatus($('runStatus'), `删除失败：${e?.message || e}`, 'error')));
     }
 
     function selectRecord(id) {
@@ -877,6 +1015,16 @@
       renderPreview(planet);
     }
 
+    function fieldPreviewBackgroundAttrs(scene) {
+      const bg = scene.background || scene;
+      const imageUrl = bg.imageUrl || scene.imageUrl || '';
+      if (imageUrl) return lazySceneBackgroundAttrs(scene, scene.color);
+      const color = bg.color || scene.color || '#bae6fd';
+      const base = /gradient\s*\(/i.test(color) ? color : `linear-gradient(180deg, ${color}, #ffffff)`;
+      const style = `radial-gradient(circle at 50% 14%, rgba(255,255,255,.82), transparent 34%), ${base}`;
+      return `style="background:${escapeHtml(style)}"`;
+    }
+
     function renderPreview(planet) {
       const initial = (planet.title || planet.name || '星').slice(0, 1);
       $('planetPreview').textContent = initial;
@@ -893,29 +1041,40 @@
           particles: normalizeParticles(field.particles),
         };
         return `
-          <article class="field-preview">
-            <span class="field-preview-art" style="background:${escapeHtml(sceneBackgroundStyle(scene, scene.color))}">${renderSceneParticles(scene, { density: 'thumbnail' })}</span>
+          <button type="button" class="field-preview" data-preview-field="${index}" aria-label="为 ${escapeHtml(field.name)} 选择背景">
+            <span class="field-preview-art" ${fieldPreviewBackgroundAttrs(scene)}>${renderSceneParticles(scene, { density: 'thumbnail' })}</span>
             <div class="field-preview-body">
               <strong class="field-preview-title">${index + 1}. ${escapeHtml(field.name)}</strong>
               <span class="field-preview-meta">${escapeHtml(slot.label)} · ${escapeHtml(field.typeId)} · ${escapeHtml(field.background?.title || '')}</span>
+              <span class="field-preview-action">选择背景</span>
             </div>
-          </article>`;
+          </button>`;
       }).join('');
       setupLazySceneBackgrounds($('fieldPreviewGrid'));
+      $('fieldPreviewGrid').querySelectorAll('[data-preview-field]').forEach(btn => {
+        btn.onclick = () => openScenePicker(Number(btn.dataset.previewField) || 0);
+      });
     }
 
     async function loadRecords() {
       setStatus($('runStatus'), '正在读取系统目录和 workspace 官方星球...', '');
       let systemIndexData = null;
       let workspaceIndexData = null;
+      let workspaceReadError = null;
+      let workspaceReadSource = '';
       try {
         systemIndexData = await readLocalJson(LOCAL_INDEX_URL, { version: 1, planets: [] });
       } catch (e) {
         setStatus($('runStatus'), `系统目录 index 读取失败，继续尝试 workspace：${e?.message || e}`, 'error');
       }
       if ((state.sdk || window.keepwork)?.personalPageStore) {
-        try { workspaceIndexData = JSON.parse(await readFile(INDEX_PATH) || '{}'); }
-        catch (e) { setStatus($('runStatus'), `workspace index 读取失败，仅使用系统目录：${e?.message || e}`, 'error'); }
+        try {
+          const workspaceText = await readFile(INDEX_PATH);
+          workspaceReadSource = workspaceText ? INDEX_PATH : '';
+          workspaceIndexData = workspaceText ? JSON.parse(workspaceText) : null;
+        } catch (e) {
+          workspaceReadError = e;
+        }
       }
       const merged = mergeIndexData(systemIndexData, workspaceIndexData);
       state.indexMeta = merged.indexMeta;
@@ -933,12 +1092,16 @@
       else fillPlanetForm(defaultPlanet());
       const systemCount = Array.isArray(systemIndexData?.planets) ? systemIndexData.planets.length : 0;
       const workspaceCount = Array.isArray(workspaceIndexData?.planets) ? workspaceIndexData.planets.length : 0;
-      setStatus($('runStatus'), `已加载 ${records.length} 个官方星球（系统 ${systemCount}，workspace ${workspaceCount}，同名优先显示 workspace）。`, 'ok');
+      const workspaceWarning = workspaceReadError ? `\nworkspace index 读取失败，仅使用系统目录：${workspaceReadError?.message || workspaceReadError}` : '';
+      const workspaceSourceText = workspaceReadSource ? `，workspace 来源 ${workspaceReadSource}` : '';
+      setStatus($('runStatus'), `已加载 ${records.length} 个官方星球（系统 ${systemCount}，workspace ${workspaceCount}${workspaceSourceText}，同名优先显示 workspace）。${workspaceWarning}`, workspaceReadError ? 'error' : 'ok');
     }
 
     async function loadScenes() {
       try {
-        state.scenes = (await loadScenePresets()).map(normalizeScenePreset);
+        const data = await readLocalJson(LOCAL_SCENE_INDEX_URL, { scenes: [] });
+        const scenes = (Array.isArray(data?.scenes) ? data.scenes : (Array.isArray(data) ? data : [])).map(normalizeScenePreset);
+        state.scenes = scenes;
         setStatus($('sceneState'), `已加载 ${state.scenes.length} 个 story scene presets。`, 'ok');
       } catch (e) {
         state.scenes = [];
@@ -946,65 +1109,74 @@
       }
     }
 
-    function sceneCardHtml(scene, activePresetId) {
-      return `
-        <button type="button" class="scene-card ${scene.id === activePresetId ? 'active' : ''}" data-scene-id="${escapeHtml(scene.id)}">
-          <span class="scene-card-art" ${lazySceneBackgroundAttrs(scene, scene.color)}>${renderSceneParticles(scene, { density: 'thumbnail' })}</span>
-          <span class="scene-card-title">${escapeHtml(scene.title)}</span>
-        </button>`;
-    }
-
     function applySceneToField(fieldIndex, scene) {
       if (!scene) return;
-      $(`fieldSceneTitle${fieldIndex}`).value = scene.title || '';
-      $(`fieldPresetId${fieldIndex}`).value = scene.id || '';
-      $(`fieldColor${fieldIndex}`).value = scene.color || '#bae6fd';
-      $(`fieldImageUrl${fieldIndex}`).value = scene.imageUrl || '';
-      const particles = normalizeParticles(scene.particles);
+      const background = scene.background || {};
+      $(`fieldSceneTitle${fieldIndex}`).value = background.title || scene.title || '';
+      $(`fieldPresetId${fieldIndex}`).value = background.presetId || scene.id || '';
+      $(`fieldColor${fieldIndex}`).value = background.color || scene.color || '#bae6fd';
+      $(`fieldImageUrl${fieldIndex}`).value = background.imageUrl || scene.imageUrl || '';
+      const particles = normalizeParticles(scene.particles || scene.effects);
       if (particles.length) $(`fieldParticles${fieldIndex}`).value = particles.join(', ');
-      if (scene.bgMusic) $(`fieldMusic${fieldIndex}`).value = scene.bgMusic;
+      const bgMusic = scene.bgMusic || background.bgMusic || '';
+      if (bgMusic) $(`fieldMusic${fieldIndex}`).value = bgMusic;
       updateOutput();
     }
 
-    function openScenePicker(fieldIndex = state.activeFieldIndex) {
+    function sceneFromField(fieldIndex) {
+      const slot = FIELD_SLOTS[fieldIndex] || { label: `Field ${fieldIndex + 1}` };
+      const title = $(`fieldSceneTitle${fieldIndex}`)?.value.trim() || $(`fieldName${fieldIndex}`)?.value.trim() || slot.label;
+      const color = $(`fieldColor${fieldIndex}`)?.value.trim() || '#bae6fd';
+      const imageUrl = $(`fieldImageUrl${fieldIndex}`)?.value.trim() || '';
+      const presetId = $(`fieldPresetId${fieldIndex}`)?.value.trim() || '';
+      const tags = normalizeScenePreset({ tags: [$(`fieldType${fieldIndex}`)?.value || 'land'] }).tags;
+      return {
+        id: presetId || `planet_field_${fieldIndex + 1}`,
+        title,
+        imageUrl,
+        color,
+        tags,
+        particles: normalizeParticles($(`fieldParticles${fieldIndex}`)?.value || ''),
+        bgMusic: $(`fieldMusic${fieldIndex}`)?.value.trim() || '',
+        background: {
+          type: imageUrl ? 'image' : 'color',
+          color,
+          imageUrl,
+          presetId,
+          title,
+          tags,
+        },
+      };
+    }
+
+    async function openScenePicker(fieldIndex = state.activeFieldIndex) {
       state.activeFieldIndex = fieldIndex;
-      const currentPresetId = $(`fieldPresetId${fieldIndex}`)?.value || '';
       const overlay = document.createElement('div');
       overlay.className = 'modal-overlay';
       overlay.innerHTML = `
-        <style>${sceneParticleCss()}</style>
-        <div class="modal-window">
+        <div class="modal-window scene-maker-window">
           <div class="modal-titlebar">
-            <strong>选择场景 · ${escapeHtml(FIELD_SLOTS[fieldIndex]?.label || '')}</strong>
+            <strong>场景设置 · ${escapeHtml(FIELD_SLOTS[fieldIndex]?.label || '')}</strong>
             <button type="button" id="closeScenePicker">关闭</button>
           </div>
-          <div class="modal-body">
-            <div class="grid grid-cols-[minmax(0,1fr)_auto] gap-2 pb-3">
-              <input id="sceneSearch" placeholder="搜索 title / tags / id">
-              <button id="clearSceneSearch" type="button">清空</button>
-            </div>
-            <div id="sceneGrid" class="scene-grid"></div>
+          <div class="modal-body scene-maker-body">
+            <div id="sceneMakerHost" class="scene-maker-host"></div>
           </div>
         </div>`;
       document.body.appendChild(overlay);
-      const grid = overlay.querySelector('#sceneGrid');
-      const render = () => {
-        const query = overlay.querySelector('#sceneSearch').value.trim().toLowerCase();
-        const visible = state.scenes.filter(scene => !query || [scene.id, scene.title, (scene.tags || []).join(' ')].join(' ').toLowerCase().includes(query));
-        grid.innerHTML = visible.length ? visible.map(scene => sceneCardHtml(scene, currentPresetId)).join('') : '<div class="hint">没有匹配的场景。</div>';
-        setupLazySceneBackgrounds(grid);
-        grid.querySelectorAll('[data-scene-id]').forEach(btn => {
-          btn.onclick = () => {
-            applySceneToField(fieldIndex, state.scenes.find(scene => scene.id === btn.dataset.sceneId));
-            overlay.remove();
-          };
-        });
-      };
       overlay.querySelector('#closeScenePicker').onclick = () => overlay.remove();
       overlay.addEventListener('click', (e) => { if (e.target === overlay) overlay.remove(); });
-      overlay.querySelector('#sceneSearch').oninput = render;
-      overlay.querySelector('#clearSceneSearch').onclick = () => { overlay.querySelector('#sceneSearch').value = ''; render(); };
-      render();
+      try {
+        await renderStorySceneMaker(overlay.querySelector('#sceneMakerHost'), { scene: sceneFromField(fieldIndex), query: '' }, {
+          onBack: () => overlay.remove(),
+          onApplyScene: (scene) => {
+            applySceneToField(fieldIndex, scene);
+            overlay.remove();
+          },
+        });
+      } catch (e) {
+        overlay.querySelector('#sceneMakerHost').innerHTML = `<div class="status error m-3">场景编辑器加载失败：${escapeHtml(e?.message || e)}</div>`;
+      }
     }
 
     function closeNewPlanetDialog() {
@@ -1114,8 +1286,9 @@
       const planet = buildPlanetConfig();
       upsertLocalRecord(planet);
       const indexObject = buildIndexObject();
-      await writeFile(INDEX_PATH, JSON.stringify(indexObject, null, 2));
-      setStatus($('runStatus'), `已更新 ${INDEX_PATH}`, 'ok');
+      const savedEntry = indexObject.planets.find(entry => entry?.id === planet.id);
+      await writeJsonFile(INDEX_PATH, indexObject, { verifyEntry: savedEntry });
+      setStatus($('runStatus'), `已更新并验证 workspace ${INDEX_PATH}`, 'ok');
       await loadRecords();
       selectRecord(planet.id);
     }
@@ -1135,7 +1308,7 @@
       if (!window.confirm(`从 index 移除 ${id}？`)) return;
       state.records = state.records.filter(item => item.id !== id);
       state.indexMeta = { ...(state.indexMeta || {}), planets: (state.indexMeta.planets || []).filter(item => item?.id !== id) };
-      await writeFile(INDEX_PATH, JSON.stringify(state.indexMeta, null, 2));
+      await writeJsonFile(INDEX_PATH, state.indexMeta, { deletedId: id });
       renderRecords();
       if (state.selectedId === id) {
         const next = state.records[0];
@@ -1160,7 +1333,8 @@
         state.sdk = await ensureKeepworkSDK();
         if (state.sdk) {
           $('sdkState').textContent = 'SDK ready';
-          setStatus($('loginState'), state.sdk.user ? `已登录：${state.sdk.user.username || state.sdk.user.name || state.sdk.user.id || 'Keepwork'}` : 'SDK 已加载。可直接读取本地文件；登录后可保存到 PersonalPageStore。', state.sdk.user ? 'ok' : '');
+          const storeState = state.sdk.personalPageStore ? 'PersonalPageStore 可用' : 'PersonalPageStore 不可用';
+          setStatus($('loginState'), state.sdk.user ? `已登录：${state.sdk.user.username || state.sdk.user.name || state.sdk.user.id || 'Keepwork'}；${storeState}` : `SDK 已加载；${storeState}。登录后可保存到 PersonalPageStore。`, state.sdk.user ? 'ok' : '');
         } else {
           $('sdkState').textContent = 'local only';
           setStatus($('loginState'), '未加载 SDK，将只读取本地 JSON，保存请用复制/下载。', 'error');
@@ -1176,6 +1350,7 @@
         .forEach(id => $(id).addEventListener('input', updateOutput));
       $('recordSearch').addEventListener('input', renderRecords);
       $('btnReload').onclick = loadRecords;
+      $('btnWorkspace').onclick = () => openWorkspaceViewer(INDEX_PATH);
       $('btnLogin').onclick = async () => {
         try {
           await (state.sdk || window.keepwork)?.loginWindow?.show?.();
@@ -1198,13 +1373,13 @@
       };
       $('btnNew').onclick = newPlanet;
       $('btnDuplicate').onclick = duplicatePlanet;
-      $('btnSave').onclick = savePlanet;
-      $('btnSaveTop').onclick = savePlanet;
+      $('btnSave').onclick = () => savePlanet().catch(e => setStatus($('runStatus'), `保存失败：${e?.message || e}`, 'error'));
+      $('btnSaveTop').onclick = () => savePlanet().catch(e => setStatus($('runStatus'), `保存失败：${e?.message || e}`, 'error'));
       $('btnFormatJson').onclick = updateOutput;
       $('btnApplyJson').onclick = applyJson;
       $('btnChooseScene').onclick = () => openScenePicker(state.activeFieldIndex);
-      $('btnCopyIndex').onclick = async () => { await copyText(JSON.stringify(buildIndexObject(), null, 2)); setStatus($('runStatus'), '已复制 _planet_index.json。', 'ok'); };
-      $('btnDownloadIndex').onclick = () => downloadText('_planet_index.json', JSON.stringify(buildIndexObject(), null, 2));
+      $('btnCopyIndex').onclick = async () => { await copyText(getIndexJsonText()); setStatus($('runStatus'), '已复制 _planet_index.json。', 'ok'); };
+      $('btnDownloadIndex').onclick = () => downloadText('_planet_index.json', getIndexJsonText());
       document.querySelectorAll('[data-planet-preset]').forEach(btn => {
         btn.onclick = () => {
           const preset = PLANET_PRESETS[btn.dataset.planetPreset] || PLANET_PRESETS.maisi;
@@ -1218,14 +1393,20 @@
       $('planetId').addEventListener('change', () => { $('planetId').value = safeId($('planetId').value, 'new_planet'); updateOutput(); });
     }
 
-    document.addEventListener('DOMContentLoaded', async () => {
+    async function startFamousPlanetGenerator() {
       state.lastChatModel = String(readLocalGenerationSettings().lastChatModel || '').trim();
       bindEvents();
       renderFieldEditors(defaultPlanet().fields);
       fillPlanetForm(defaultPlanet());
       await Promise.allSettled([initSdk(), loadScenes()]);
       await loadRecords();
-    });
+    }
+
+    if (document.readyState === 'loading') {
+      document.addEventListener('DOMContentLoaded', startFamousPlanetGenerator, { once: true });
+    } else {
+      startFamousPlanetGenerator();
+    }
   </script>
 </body>
 </html>

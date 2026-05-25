@@ -40,10 +40,12 @@
       .status.error { @apply border-red-200 bg-red-50 text-red-800; }
       .record-toolbar { @apply grid grid-cols-[minmax(0,1fr)_auto] gap-2 border-b border-slate-300 bg-slate-50 p-3; }
       .record-list { @apply flex min-h-0 flex-1 flex-col gap-1.5 overflow-auto p-2; }
-      .record-item { @apply grid w-full grid-cols-[42px_minmax(0,1fr)_auto] items-center gap-2.5 rounded-md border border-slate-300 bg-white p-2.5 text-left; }
+      .record-item { @apply grid w-full grid-cols-[auto_42px_minmax(0,1fr)_auto] items-center gap-2.5 rounded-md border border-slate-300 bg-white p-2.5 text-left; }
       .record-item.active { @apply border-sky-600 bg-sky-50 ring-2 ring-sky-600/15; }
+      .record-select { @apply grid place-items-center; }
+      .record-select input { @apply h-4 w-4 min-h-0 accent-sky-600; }
       .record-main { @apply block min-w-0 border-0 bg-transparent p-0 text-left hover:border-transparent hover:bg-transparent; }
-      .record-emoji { @apply grid h-[42px] w-[42px] place-items-center overflow-hidden rounded-md border border-slate-300 bg-white text-2xl; }
+      .record-emoji { @apply grid h-[42px] w-[42px] place-items-center overflow-hidden rounded-md border border-slate-300 bg-white text-2xl; background-image: linear-gradient(45deg, #dfe6ee 25%, transparent 25%), linear-gradient(-45deg, #dfe6ee 25%, transparent 25%), linear-gradient(45deg, transparent 75%, #dfe6ee 75%), linear-gradient(-45deg, transparent 75%, #dfe6ee 75%); background-size: 12px 12px; background-position: 0 0, 0 6px, 6px -6px, -6px 0; }
       .record-emoji svg, .record-emoji img { @apply block h-full w-full object-contain; }
       .record-title { @apply block min-w-0 overflow-hidden text-ellipsis whitespace-nowrap text-[13px] font-bold; }
       .record-meta { @apply block min-w-0 overflow-hidden text-ellipsis whitespace-nowrap text-[11px] text-slate-500; }
@@ -54,8 +56,10 @@
       .output { @apply min-h-[220px] overflow-auto whitespace-pre font-mono text-xs leading-normal; }
       .compact-output { @apply min-h-[130px]; }
       .item-card { @apply flex items-center gap-3 rounded-lg border border-slate-300 bg-white p-3; }
-      .item-icon { @apply grid h-20 w-20 flex-none place-items-center overflow-hidden rounded-lg border border-slate-300 bg-slate-50 text-4xl; }
+      .item-visual-stack { @apply flex w-20 flex-none flex-col items-center gap-1; }
+      .item-icon { @apply grid h-20 w-20 flex-none place-items-center overflow-hidden rounded-lg border border-slate-300 bg-white text-4xl; background-image: linear-gradient(45deg, #dfe6ee 25%, transparent 25%), linear-gradient(-45deg, #dfe6ee 25%, transparent 25%), linear-gradient(45deg, transparent 75%, #dfe6ee 75%), linear-gradient(-45deg, transparent 75%, #dfe6ee 75%); background-size: 16px 16px; background-position: 0 0, 0 8px, 8px -8px, -8px 0; }
       .item-icon svg, .item-icon img { @apply block h-full w-full object-contain; }
+      .item-image-meta { @apply w-full overflow-hidden text-ellipsis whitespace-nowrap text-center text-[10px] leading-tight text-slate-500; }
       .item-name { @apply min-w-0 overflow-hidden text-ellipsis whitespace-nowrap text-lg font-bold; }
       .item-meta { @apply text-xs text-slate-500; }
       .tag-row { @apply flex flex-wrap gap-1.5; }
@@ -66,6 +70,22 @@
       .tabs button { @apply min-h-8 border-0 bg-transparent text-xs; }
       .tabs button.active { @apply bg-sky-600 text-white hover:bg-sky-700; }
       .ai-preview { @apply min-h-[90px] max-h-[190px] overflow-auto whitespace-pre-wrap font-mono text-xs; }
+      .svg-draft { @apply grid gap-2 rounded-md border border-slate-300 bg-white p-2; }
+      .svg-draft-preview { @apply grid min-h-[128px] place-items-center overflow-hidden rounded-md border border-slate-300 bg-white; background-image: linear-gradient(45deg, #dfe6ee 25%, transparent 25%), linear-gradient(-45deg, #dfe6ee 25%, transparent 25%), linear-gradient(45deg, transparent 75%, #dfe6ee 75%), linear-gradient(-45deg, transparent 75%, #dfe6ee 75%); background-size: 20px 20px; background-position: 0 0, 0 10px, 10px -10px, -10px 0; }
+      .svg-draft-preview.clickable { @apply cursor-pointer transition hover:border-sky-500 hover:bg-sky-50 hover:ring-2 hover:ring-sky-600/15; }
+      .svg-draft-preview svg, .svg-draft-preview img { @apply block max-h-[160px] max-w-full object-contain; }
+      .history-grid { @apply grid gap-2; grid-template-columns: repeat(auto-fill, minmax(78px, 1fr)); }
+      .history-item { @apply relative flex flex-col gap-1 overflow-hidden rounded-md border border-slate-300 bg-white p-1 hover:border-sky-600 hover:bg-sky-50; }
+      .history-select { @apply grid min-h-[70px] place-items-center overflow-hidden rounded bg-white p-1 text-xs; background-image: linear-gradient(45deg, #dfe6ee 25%, transparent 25%), linear-gradient(-45deg, #dfe6ee 25%, transparent 25%), linear-gradient(45deg, transparent 75%, #dfe6ee 75%), linear-gradient(-45deg, transparent 75%, #dfe6ee 75%); background-size: 12px 12px; background-position: 0 0, 0 6px, 6px -6px, -6px 0; }
+      .history-select svg, .history-select img { @apply block max-h-[62px] max-w-full object-contain; }
+      .history-delete { @apply absolute right-1 top-1 grid h-[22px] w-[22px] min-h-[22px] place-items-center rounded-full border border-white/90 bg-red-600/90 p-0 text-white shadow-sm hover:border-white hover:bg-red-700; }
+      .history-empty { @apply rounded-md border border-dashed border-slate-300 bg-slate-50 p-2.5 text-center text-xs text-slate-500; }
+      .modal-overlay { @apply fixed inset-0 z-[1050] flex bg-slate-950/60 p-[18px]; }
+      .modal-window { @apply m-auto flex flex-col overflow-hidden rounded-lg bg-white shadow-2xl; width: min(980px, 100%); height: min(760px, 100%); }
+      .batch-modal-window { width: min(1120px, 100%); height: min(820px, calc(100vh - 36px)); max-height: calc(100vh - 36px); }
+      .modal-titlebar { @apply flex min-h-12 items-center justify-between gap-2.5 border-b border-slate-300 bg-slate-50 px-4 py-0 select-none; }
+      .modal-body { @apply min-h-0 flex-1 overflow-auto p-3; }
+      .batch-grid { @apply grid grid-cols-1 gap-3 lg:grid-cols-[300px_minmax(0,1fr)]; }
     }
     @media (max-width: 760px) {
       .app { @apply min-h-screen; }
@@ -100,6 +120,7 @@
             <input id="shopItemsPath" placeholder="famous-planets/my_planet_shopitems.json">
           </label>
           <label class="toggle-line"><input id="exportDiffOnly" type="checkbox" checked>导出时只保存相对 _default_shopitems.json 的差异</label>
+          <label class="toggle-line"><input id="removeVisualHistoryOnExport" type="checkbox" checked>复制 / 导出时移除视觉历史</label>
           <div class="toolbar">
             <button id="btnNewShopFile" type="button">新建 shopitems 文件</button>
             <button id="btnReloadConfig" class="primary" type="button">从 config.js 读取</button>
@@ -110,39 +131,6 @@
             <button id="btnCopyShopJson" type="button">复制导出 JSON</button>
             <button id="btnCopyVisualJson" type="button">复制完整 JSON</button>
           </div>
-        </section>
-
-        <section class="section">
-          <h2>AI 生成</h2>
-          <label>Chat 模型
-            <select id="chatModelSelect"></select>
-          </label>
-          <label>Image 模型
-            <select id="imageModelSelect"></select>
-          </label>
-          <div class="row">
-            <label>图片尺寸
-              <select id="imageSize">
-                <option value="128x128" selected>128x128 WebP</option>
-                <option value="256x256">256x256 WebP</option>
-                <option value="512x512">512x512 WebP</option>
-              </select>
-            </label>
-            <label>视觉格式
-              <select id="visualMode">
-                <option value="svg">SVG</option>
-                <option value="webp" selected>WebP image</option>
-              </select>
-            </label>
-          </div>
-          <label>需求描述
-            <textarea id="aiPrompt" rows="4" placeholder="例如：给水域生态创建一个水晶贝壳服务站，偏儿童游戏风格，可放在 water field"></textarea>
-          </label>
-          <div class="toolbar">
-            <button id="btnAiItem" class="primary" type="button">AI 生成物品+SVG</button>
-            <button id="btnAiWebp" type="button">生成 WebP</button>
-          </div>
-          <div id="aiPreview" class="status ai-preview">等待 AI 任务。</div>
         </section>
 
         <section class="section">
@@ -190,6 +178,7 @@
       <div class="record-toolbar">
         <input id="recordSearch" placeholder="搜索 id / name / type / fields">
         <button id="btnNew" class="primary" type="button">新建</button>
+        <button id="btnDeleteSelected" class="danger" type="button" disabled>删除选中(0)</button>
         <select id="typeFilter" class="col-span-2">
           <option value="all">全部类型</option>
           <option value="food">food</option>
@@ -197,6 +186,7 @@
           <option value="furniture">furniture</option>
           <option value="house">house</option>
         </select>
+        <label class="toggle-line col-span-2"><input id="recordSelectAll" type="checkbox"><span id="recordSelectAllLabel">全选当前列表</span></label>
       </div>
       <div id="recordList" class="record-list"><div class="hint p-2.5">正在加载...</div></div>
     </section>
@@ -289,7 +279,10 @@
             <section class="section">
               <h2>预览</h2>
               <div class="item-card">
-                <div id="previewVisual" class="item-icon">🎁</div>
+                <div class="item-visual-stack">
+                  <div id="previewVisual" class="item-icon">🎁</div>
+                  <div id="previewImageMeta" class="item-image-meta">-</div>
+                </div>
                 <div class="min-w-0 flex-1">
                   <div id="previewName" class="item-name">新的商店物品</div>
                   <div id="previewMeta" class="item-meta">type=furniture · price=10</div>
@@ -300,6 +293,37 @@
 
             <section class="section">
               <h2>DECO_VISUALS 当前项</h2>
+              <div class="row">
+                <label>Chat 模型
+                  <select id="chatModelSelect"></select>
+                </label>
+                <label>Image 模型
+                  <select id="imageModelSelect"></select>
+                </label>
+              </div>
+              <div class="row-3">
+                <label>图片尺寸
+                  <select id="imageSize">
+                    <option value="128x128" selected>128x128 WebP</option>
+                    <option value="256x256">256x256 WebP</option>
+                    <option value="512x512">512x512 WebP</option>
+                  </select>
+                </label>
+                <label>视觉格式
+                  <select id="visualMode">
+                    <option value="svg">SVG</option>
+                    <option value="webp" selected>WebP image</option>
+                  </select>
+                </label>
+                <label class="toggle-line"><input id="uploadVisualToCdn" type="checkbox" checked>WebP 上传 CDN</label>
+              </div>
+              <div class="toolbar">
+                <button id="btnShopCdnConfig" type="button">CDN 设置</button>
+                <span id="shopCdnStatus" class="hint">CDN folder: maisi/magichaqi/shopitems</span>
+              </div>
+              <label>需求描述
+                <textarea id="aiPrompt" rows="3" placeholder="例如：给水域生态创建一个水晶贝壳服务站，偏儿童游戏风格，可放在 water field"></textarea>
+              </label>
               <div class="row-3">
                 <label>w <input id="visualW" type="number" min="0" step="0.01"></label>
                 <label>h <input id="visualH" type="number" min="0" step="0.01"></label>
@@ -307,8 +331,21 @@
               </div>
               <label>svg <textarea id="visualSvg" rows="8" spellcheck="false" placeholder="<svg ...></svg>"></textarea></label>
               <div class="toolbar">
+                <button id="btnAiItem" class="primary" type="button">AI 生成物品+SVG</button>
+                <button id="btnAiSvg" type="button">生成 SVG 预览</button>
+                <button id="btnAcceptAiSvg" class="success" type="button" disabled>接受 SVG</button>
+                <button id="btnAiWebp" type="button">生成 WebP</button>
                 <button id="btnUseFallbackSvg" type="button">emoji SVG</button>
                 <button id="btnClearVisual" type="button">清空视觉</button>
+              </div>
+              <div class="svg-draft">
+                <div id="visualAiSvgPreview" class="svg-draft-preview clickable" role="button" tabindex="0" title="点击按当前视觉格式重新生成"><span class="hint">点击这里生成 SVG / WebP 视觉</span></div>
+                <textarea id="visualAiSvgDraft" class="compact-output" rows="5" spellcheck="false" placeholder="LLM 生成的 SVG 草稿，确认后点击接受 SVG"></textarea>
+              </div>
+              <div id="aiPreview" class="status ai-preview">等待 AI 任务。点击上方预览区域可按当前视觉格式重新生成。</div>
+              <div>
+                <div class="toolbar"><span class="pill">视觉历史</span><button id="btnClearVisualHistory" type="button">清空历史</button></div>
+                <div id="visualHistoryPreview" class="history-grid"><div class="history-empty">暂无历史视觉</div></div>
               </div>
             </section>
 
@@ -325,6 +362,7 @@
       </div>
     </section>
   </main>
+  <input id="shopCdnConfigInput" type="file" accept=".yaml,.yml" hidden>
 
   <script type="module">
     const WORKSPACE = 'MagicHaqi';
@@ -335,6 +373,14 @@
     const LEGACY_DECO_VISUALS_PATH = 'shopItems/deco_visuals.json';
     const STORAGE_KEY = 'MagicHaqi.ShopItemGenerator.draft.v2';
     const SETTINGS_KEY = 'MagicHaqi.ShopItemGenerator.aiSettings';
+    const BATCH_SETTINGS_KEY = 'MagicHaqi.ShopItemGenerator.batchSettings';
+    const SAVED_CDN_CONFIG_STORAGE_KEY = 'keepwork_upload_cdn_config';
+    const SHOP_CDN_FOLDER = 'maisi/magichaqi/shopitems';
+    const SHOP_CDN_DEFAULT_BUCKET = 'haqi';
+    const SHOP_CDN_DEFAULT_DOMAIN = 'https://cdn.keepwork.com';
+    const SHOP_CDN_DEFAULT_UPLOAD_HOST = 'https://up-z2.qiniup.com';
+    const SHOP_WEBP_MAX_BYTES = 10 * 1024;
+    const SHOP_WEBP_BG_OPTIONS = { seedThreshold: 60, growThreshold: 78, haloThreshold: 112, borderRatio: 0.02, gridLineWidth: 0, sheetCols: 1, sheetRows: 1 };
     const CONFIG_MODULE_URL = '../js/config.js';
     const SDK_CDN_URL = 'https://cdn.keepwork.com/sdk/keepworkSDK.iife.js?v=20260522a';
     const $ = (id) => document.getElementById(id);
@@ -348,6 +394,7 @@
       defaultVisuals: {},
       items: [],
       visuals: {},
+      selectedItemIds: new Set(),
       selectedId: '',
       targetPath: DEFAULT_TARGET_SHOPITEMS_PATH,
       exportDiffOnly: true,
@@ -355,6 +402,10 @@
       fields: ['indoor', 'outdoor', 'land', 'water', 'sky', 'fire', 'ice', 'life', 'dark'],
       traits: [],
       activeTab: 'item',
+      aiSvgDraft: '',
+      batchAbortRequested: false,
+      imageMetaCache: new Map(),
+      previewImageMetaToken: 0,
     };
 
     function setStatus(el, text, kind = '') {
@@ -428,7 +479,336 @@
       if (!clean.svg) delete clean.svg;
       if (clean.imageUrl != null) clean.imageUrl = String(clean.imageUrl).trim();
       if (!clean.imageUrl) delete clean.imageUrl;
+      if (Array.isArray(clean.historyVisuals)) {
+        clean.historyVisuals = clean.historyVisuals.map(normalizeHistoryVisual).filter(Boolean).slice(0, 24);
+        if (!clean.historyVisuals.length) delete clean.historyVisuals;
+      } else delete clean.historyVisuals;
+      if (Array.isArray(clean.historyUrls)) {
+        clean.historyUrls = unique(clean.historyUrls.map(url => String(url || '').trim()).filter(Boolean)).slice(0, 24);
+        if (!clean.historyUrls.length) delete clean.historyUrls;
+      } else delete clean.historyUrls;
       return clean;
+    }
+
+    function normalizeHistoryVisual(entry) {
+      if (!entry || typeof entry !== 'object') return null;
+      const type = String(entry.type || (entry.svg ? 'svg' : entry.imageUrl ? 'webp' : '')).trim();
+      const clean = { type, savedAt: Number(entry.savedAt) || Date.now() };
+      if (entry.svg) clean.svg = String(entry.svg).trim();
+      if (entry.imageUrl) clean.imageUrl = String(entry.imageUrl).trim();
+      if (entry.label) clean.label = String(entry.label).trim().slice(0, 80);
+      return (clean.svg || clean.imageUrl) ? clean : null;
+    }
+
+    function visualHistoryEntryFromVisual(visual, label = '') {
+      const clean = normalizeVisual(visual || {});
+      if (clean.svg) return normalizeHistoryVisual({ type: 'svg', svg: clean.svg, label, savedAt: Date.now() });
+      if (clean.imageUrl) return normalizeHistoryVisual({ type: 'webp', imageUrl: clean.imageUrl, label, savedAt: Date.now() });
+      return null;
+    }
+
+    function visualWithoutHistory(visual = {}) {
+      const clean = normalizeVisual(visual);
+      delete clean.historyVisuals;
+      delete clean.historyUrls;
+      return clean;
+    }
+
+    function shouldRemoveVisualHistoryOnExport() {
+      return !!$('removeVisualHistoryOnExport')?.checked;
+    }
+
+    function extractSvgText(text) {
+      const value = String(text || '').trim();
+      if (!value) throw new Error('LLM 未返回 SVG');
+      const fenced = value.match(/```(?:svg|xml)?\s*([\s\S]*?)```/i);
+      const source = fenced ? fenced[1].trim() : value;
+      const match = source.match(/<svg\b[\s\S]*?<\/svg>/i);
+      if (!match) throw new Error('LLM 输出中没有找到 <svg>');
+      return match[0].trim();
+    }
+
+    function sanitizeSvg(svgText) {
+      const svg = extractSvgText(svgText);
+      const doc = new DOMParser().parseFromString(svg, 'image/svg+xml');
+      const parserError = doc.querySelector('parsererror');
+      if (parserError || !doc.documentElement || doc.documentElement.tagName.toLowerCase() !== 'svg') {
+        throw new Error('SVG 解析失败，请让模型重新生成');
+      }
+      doc.querySelectorAll('script, foreignObject, iframe, object, embed, link, meta').forEach(node => node.remove());
+      doc.querySelectorAll('*').forEach(node => {
+        [...node.attributes].forEach(attr => {
+          const name = attr.name.toLowerCase();
+          const value = attr.value.trim();
+          if (name.startsWith('on')) node.removeAttribute(attr.name);
+          if ((name === 'href' || name === 'xlink:href') && /^(?:javascript:|https?:|data:text\/html)/i.test(value)) node.removeAttribute(attr.name);
+        });
+      });
+      const root = doc.documentElement;
+      if (!root.getAttribute('xmlns')) root.setAttribute('xmlns', 'http://www.w3.org/2000/svg');
+      if (!root.getAttribute('viewBox')) root.setAttribute('viewBox', '0 0 160 160');
+      return new XMLSerializer().serializeToString(root).trim();
+    }
+
+    function parseSimpleYaml(text) {
+      const result = {};
+      String(text || '').split(/\r?\n/).forEach(line => {
+        const clean = line.replace(/#.*$/, '').trim();
+        if (!clean) return;
+        const match = clean.match(/^([\w.-]+)\s*:\s*(.*)$/);
+        if (match) result[match[1]] = match[2].replace(/^['"]|['"]$/g, '').trim();
+      });
+      return result;
+    }
+
+    function saveShopCdnConfig(config, sourceLabel) {
+      try { localStorage.setItem(SAVED_CDN_CONFIG_STORAGE_KEY, JSON.stringify({ config, configSource: sourceLabel || 'ShopItemGenerator', savedAt: Date.now() })); }
+      catch (_) {}
+    }
+
+    function getShopCdnConfig() {
+      try {
+        const saved = JSON.parse(localStorage.getItem(SAVED_CDN_CONFIG_STORAGE_KEY) || 'null');
+        const source = saved?.config || saved?.qiniu || saved;
+        if (!source?.accessKey || !source?.secretKey) return null;
+        return {
+          accessKey: source.accessKey,
+          secretKey: source.secretKey,
+          bucketName: source.bucketName || SHOP_CDN_DEFAULT_BUCKET,
+          publicDomain: (source.publicDomain || SHOP_CDN_DEFAULT_DOMAIN).replace(/\/+$/, ''),
+          uploadHost: (source.uploadHost || SHOP_CDN_DEFAULT_UPLOAD_HOST).replace(/\/+$/, ''),
+          sourceLabel: saved?.configSource || 'localStorage',
+        };
+      } catch (_) { return null; }
+    }
+
+    function shopCdnConfigToYaml(config) {
+      if (!config) return '';
+      return [
+        `accessKey: ${config.accessKey || ''}`,
+        `secretKey: ${config.secretKey || ''}`,
+        `bucketName: ${config.bucketName || SHOP_CDN_DEFAULT_BUCKET}`,
+        `publicDomain: ${config.publicDomain || SHOP_CDN_DEFAULT_DOMAIN}`,
+        `uploadHost: ${config.uploadHost || SHOP_CDN_DEFAULT_UPLOAD_HOST}`,
+      ].join('\n');
+    }
+
+    function updateShopCdnStatus() {
+      const config = getShopCdnConfig();
+      if ($('shopCdnStatus')) $('shopCdnStatus').textContent = config
+        ? `CDN folder: ${SHOP_CDN_FOLDER} · ${config.bucketName} · ${config.sourceLabel}`
+        : `CDN folder: ${SHOP_CDN_FOLDER} · 未加载 qiniu.yaml 时使用 Keepwork 临时 CDN`;
+    }
+
+    function applyShopCdnConfigFromText(text, sourceLabel) {
+      const parsed = parseSimpleYaml(text);
+      const source = parsed.qiniu || parsed;
+      if (!source.accessKey || !source.secretKey) {
+        setStatus($('runStatus'), 'CDN 配置缺少 accessKey 或 secretKey。', 'error');
+        return false;
+      }
+      const config = {
+        accessKey: source.accessKey,
+        secretKey: source.secretKey,
+        bucketName: source.bucketName || SHOP_CDN_DEFAULT_BUCKET,
+        publicDomain: (source.publicDomain || SHOP_CDN_DEFAULT_DOMAIN).replace(/\/+$/, ''),
+        uploadHost: (source.uploadHost || SHOP_CDN_DEFAULT_UPLOAD_HOST).replace(/\/+$/, ''),
+      };
+      saveShopCdnConfig(config, sourceLabel || 'qiniu.yaml');
+      updateShopCdnStatus();
+      setStatus($('runStatus'), `CDN 配置已加载：${config.bucketName} · ${sourceLabel || 'qiniu.yaml'}`, 'ok');
+      return true;
+    }
+
+    function openShopCdnConfigDialog() {
+      closeShopCdnConfigDialog();
+      const overlay = document.createElement('div');
+      overlay.className = 'modal-overlay';
+      overlay.id = 'shopCdnConfigOverlay';
+      overlay.innerHTML = `<div class="modal-window" role="dialog" aria-modal="true" aria-label="CDN Settings" style="width:min(560px,100%);height:min(470px,100%)">
+        <div class="modal-titlebar"><strong>上传设置</strong><button type="button" id="closeShopCdnConfig">关闭</button></div>
+        <div class="modal-body flex flex-col gap-3">
+          <div class="hint">选择 qiniu.yaml 文件，或直接粘贴 YAML 内容。配置保存到本浏览器，并和宠物生成器共用。</div>
+          <div class="hint">当前上传目录：${SHOP_CDN_FOLDER}</div>
+          <div class="toolbar"><button id="btnDialogPickShopCdnConfig" type="button">选择 qiniu.yaml 文件</button></div>
+          <textarea id="shopCdnConfigText" class="compact-output" spellcheck="false" placeholder="accessKey: xxx&#10;secretKey: xxx&#10;bucketName: haqi&#10;publicDomain: https://cdn.keepwork.com&#10;uploadHost: https://up-z2.qiniup.com"></textarea>
+          <div class="toolbar justify-end"><button id="btnCancelShopCdnConfig" type="button">取消</button><button id="btnApplyShopCdnConfig" class="primary" type="button">确认</button></div>
+        </div>
+      </div>`;
+      document.body.appendChild(overlay);
+      overlay.addEventListener('click', event => { if (event.target === overlay) closeShopCdnConfigDialog(); });
+      $('closeShopCdnConfig').onclick = closeShopCdnConfigDialog;
+      $('btnCancelShopCdnConfig').onclick = closeShopCdnConfigDialog;
+      $('btnDialogPickShopCdnConfig').onclick = pickShopCdnConfigFile;
+      $('btnApplyShopCdnConfig').onclick = () => {
+        const text = $('shopCdnConfigText').value.trim();
+        if (!text) return setStatus($('runStatus'), 'CDN YAML 为空。', 'error');
+        if (applyShopCdnConfigFromText(text, '手动粘贴')) closeShopCdnConfigDialog();
+      };
+      $('shopCdnConfigText').value = shopCdnConfigToYaml(getShopCdnConfig());
+      $('shopCdnConfigText').focus();
+    }
+
+    function closeShopCdnConfigDialog() { $('shopCdnConfigOverlay')?.remove(); }
+
+    function pickShopCdnConfigFile() {
+      const input = $('shopCdnConfigInput');
+      if (!input) return;
+      input.onchange = async () => {
+        try {
+          const file = input.files?.[0];
+          if (file && applyShopCdnConfigFromText(await file.text(), file.name) && $('shopCdnConfigText')) $('shopCdnConfigText').value = shopCdnConfigToYaml(getShopCdnConfig());
+        } catch (error) { setStatus($('runStatus'), `CDN 配置读取失败：${error?.message || error}`, 'error'); }
+        finally { input.value = ''; }
+      };
+      input.click();
+    }
+
+    function base64UrlSafe(buffer) {
+      const bytes = buffer instanceof ArrayBuffer ? new Uint8Array(buffer) : buffer;
+      let binary = '';
+      for (const byteValue of bytes) binary += String.fromCharCode(byteValue);
+      return btoa(binary).replace(/\+/g, '-').replace(/\//g, '_');
+    }
+
+    async function signShopCdnUploadToken(config, remoteKey) {
+      const deadline = Math.floor(Date.now() / 1000) + 3600;
+      const encodedPolicy = btoa(JSON.stringify({ scope: `${config.bucketName}:${remoteKey}`, deadline })).replace(/\+/g, '-').replace(/\//g, '_');
+      const cryptoKey = await crypto.subtle.importKey('raw', new TextEncoder().encode(config.secretKey), { name: 'HMAC', hash: 'SHA-1' }, false, ['sign']);
+      const signature = await crypto.subtle.sign('HMAC', cryptoKey, new TextEncoder().encode(encodedPolicy));
+      return `${config.accessKey}:${base64UrlSafe(signature)}:${encodedPolicy}`;
+    }
+
+    function getShopCdnFileName(extension = 'webp', itemId = $('itemId')?.value) {
+      const id = cleanId(itemId || 'shop_item', 'shop_item');
+      return `${id}_${new Date().toISOString().replace(/[-:.TZ]/g, '').slice(0, 14)}.${extension}`;
+    }
+
+    async function dataUrlToBlob(dataUrl) {
+      const response = await fetch(dataUrl);
+      if (!response.ok) throw new Error(`data URL 解析失败：${response.status}`);
+      return await response.blob();
+    }
+
+    function formatBytes(bytes) {
+      const value = Number(bytes) || 0;
+      if (value < 1024) return `${value} B`;
+      return `${(value / 1024).toFixed(value < 10240 ? 1 : 0)} KB`;
+    }
+
+    function getDataUrlByteSize(dataUrl) {
+      const value = String(dataUrl || '');
+      const commaIndex = value.indexOf(',');
+      if (commaIndex < 0) return null;
+      const meta = value.slice(0, commaIndex);
+      const payload = value.slice(commaIndex + 1);
+      if (/;base64/i.test(meta)) {
+        const padding = payload.endsWith('==') ? 2 : payload.endsWith('=') ? 1 : 0;
+        return Math.max(0, Math.floor(payload.length * 3 / 4) - padding);
+      }
+      try { return new TextEncoder().encode(decodeURIComponent(payload)).length; }
+      catch (_) { return payload.length; }
+    }
+
+    async function getImageMeta(imageUrl) {
+      const url = String(imageUrl || '').trim();
+      if (!url) return null;
+      if (state.imageMetaCache.has(url)) return state.imageMetaCache.get(url);
+      const metaPromise = (async () => {
+        const img = await loadImage(url);
+        let bytes = url.startsWith('data:') ? getDataUrlByteSize(url) : null;
+        if (bytes == null) {
+          try {
+            const response = await fetch(url, { cache: 'no-store' });
+            if (response.ok) bytes = (await response.blob()).size;
+          } catch (_) {}
+        }
+        return { width: img.naturalWidth || img.width || 0, height: img.naturalHeight || img.height || 0, bytes };
+      })();
+      state.imageMetaCache.set(url, metaPromise);
+      return metaPromise;
+    }
+
+    function imageMetaText(meta) {
+      if (!meta) return '-';
+      const sizeText = Number.isFinite(meta.bytes) ? formatBytes(meta.bytes) : '大小未知';
+      const dimensionText = meta.width && meta.height ? `${meta.width}x${meta.height}` : '尺寸未知';
+      return `${sizeText} · ${dimensionText}`;
+    }
+
+    function canvasToBlob(canvas, type = 'image/webp', quality = 0.82) {
+      return new Promise((resolve, reject) => {
+        canvas.toBlob(blob => blob ? resolve(blob) : reject(new Error('当前浏览器不支持图片导出')), type, quality);
+      });
+    }
+
+    function blobToDataUrl(blob) {
+      return new Promise((resolve, reject) => {
+        const reader = new FileReader();
+        reader.onload = () => resolve(String(reader.result || ''));
+        reader.onerror = () => reject(reader.error || new Error('WebP data URL 生成失败'));
+        reader.readAsDataURL(blob);
+      });
+    }
+
+    function processShopItemBackgroundWithWorker(blob, options = SHOP_WEBP_BG_OPTIONS) {
+      return new Promise((resolve, reject) => {
+        const worker = new Worker('../js/petSheetWorker.js');
+        const id = `shop_item_bg_${Date.now()}_${Math.random().toString(36).slice(2)}`;
+        const cleanup = () => worker.terminate();
+        worker.onmessage = event => {
+          const result = event.data || {};
+          if (result.id !== id) return;
+          cleanup();
+          if (!result.ok) {
+            reject(new Error(result.error || '去除背景失败'));
+            return;
+          }
+          if (result.direct) {
+            resolve(null);
+            return;
+          }
+          if (result.blob instanceof Blob) resolve(result.blob);
+          else reject(new Error('去除背景没有返回有效图片'));
+        };
+        worker.onerror = event => {
+          cleanup();
+          reject(new Error(event.message || 'petSheetWorker 加载失败'));
+        };
+        worker.postMessage({ id, blob, options });
+      });
+    }
+
+    async function uploadBlobToShopCdn(blob, fileName) {
+      const config = getShopCdnConfig();
+      if (!config) throw new Error('未找到 CDN 配置，请先点击“CDN 设置”加载 qiniu.yaml');
+      const remoteKey = `${SHOP_CDN_FOLDER}/${fileName}`;
+      const token = await signShopCdnUploadToken(config, remoteKey);
+      const form = new FormData();
+      form.append('token', token);
+      form.append('key', remoteKey);
+      form.append('file', blob, fileName);
+      const response = await fetch(config.uploadHost, { method: 'POST', body: form });
+      if (!response.ok) throw new Error(`CDN 上传失败：${response.status} ${await response.text()}`);
+      const result = await response.json().catch(() => ({}));
+      const key = result.key || remoteKey;
+      return { url: `${config.publicDomain}/${key}`, remoteKey: key, config };
+    }
+
+    async function uploadBlobToKeepworkTempCdn(blob, fileName) {
+      const sdk = state.sdk || window.keepwork;
+      if (!sdk?.cloudDrive?.uploadTempFile) throw new Error('Keepwork CloudDrive 临时上传不可用');
+      const file = new File([blob], fileName, { type: blob.type || 'application/octet-stream' });
+      const result = await sdk.cloudDrive.uploadTempFile(file, { filename: fileName, expire: 180 });
+      if (result?.url && !String(result.url).startsWith('data:')) return result.url;
+      throw new Error('CloudDrive uploadTempFile 没有返回有效 URL');
+    }
+
+    async function uploadBlobToShopPreferredCdn(blob, fileName) {
+      const config = getShopCdnConfig();
+      if (config) return await uploadBlobToShopCdn(blob, fileName);
+      const url = await uploadBlobToKeepworkTempCdn(blob, fileName);
+      return { url, remoteKey: url, config: null };
     }
 
     function normalizeShopItemsPath(path) {
@@ -774,7 +1154,10 @@
     }
 
     function buildVisualFromForm() {
+      const itemId = $('itemId')?.value || state.selectedId;
+      const existing = itemId ? normalizeVisual(state.visuals[itemId] || {}) : {};
       return normalizeVisual({
+        ...existing,
         w: $('visualW').value,
         h: $('visualH').value,
         svg: $('visualSvg').value,
@@ -813,6 +1196,7 @@
       $('visualH').value = toNumberOrBlank(cleanVisual.h);
       $('visualSvg').value = cleanVisual.svg || '';
       $('visualImageUrl').value = cleanVisual.imageUrl || '';
+      renderVisualHistory(cleanVisual);
       updateOutputs();
     }
 
@@ -918,6 +1302,75 @@
       return escapeHtml(item?.emoji || '🎁');
     }
 
+    function visualHistoryHtml(entry, index) {
+      const clean = normalizeHistoryVisual(entry);
+      if (!clean) return '';
+      const preview = clean.svg ? clean.svg : `<img alt="" src="${escapeHtml(clean.imageUrl)}">`;
+      const label = clean.label || clean.type || `#${index + 1}`;
+      return `<div class="history-item" title="${escapeHtml(label)}">
+        <button type="button" class="history-select" data-history-index="${index}">${preview}<span class="record-meta">${escapeHtml(label)}</span></button>
+        <button type="button" class="history-delete" data-delete-history-index="${index}" title="删除历史视觉" aria-label="删除历史视觉">×</button>
+      </div>`;
+    }
+
+    function getCurrentVisualHistory() {
+      const visual = buildVisualFromForm();
+      return Array.isArray(visual.historyVisuals) ? visual.historyVisuals.map(normalizeHistoryVisual).filter(Boolean) : [];
+    }
+
+    function setCurrentVisualHistory(historyVisuals) {
+      const id = $('itemId')?.value || state.selectedId;
+      if (!id) return;
+      const visual = normalizeVisual({ ...buildVisualFromForm(), historyVisuals });
+      state.visuals[id] = visual;
+      renderVisualHistory(visual);
+      updateOutputs();
+      saveDraft();
+    }
+
+    function renderVisualHistory(visual = buildVisualFromForm()) {
+      const root = $('visualHistoryPreview');
+      if (!root) return;
+      const history = Array.isArray(visual.historyVisuals) ? visual.historyVisuals.map(normalizeHistoryVisual).filter(Boolean) : [];
+      root.innerHTML = history.length ? history.map(visualHistoryHtml).join('') : '<div class="history-empty">暂无历史视觉</div>';
+      root.querySelectorAll('[data-history-index]').forEach(button => button.onclick = () => selectHistoryVisual(Number(button.dataset.historyIndex)));
+      root.querySelectorAll('[data-delete-history-index]').forEach(button => button.onclick = event => {
+        event.stopPropagation();
+        deleteHistoryVisual(Number(button.dataset.deleteHistoryIndex));
+      });
+    }
+
+    function addCurrentVisualToHistory(label = '') {
+      const current = buildVisualFromForm();
+      const entry = visualHistoryEntryFromVisual(current, label);
+      if (!entry) return current.historyVisuals || [];
+      const history = [entry, ...(current.historyVisuals || [])]
+        .filter((item, index, list) => index === list.findIndex(other => (other.svg || other.imageUrl) === (item.svg || item.imageUrl)))
+        .slice(0, 24);
+      return history;
+    }
+
+    function deleteHistoryVisual(index) {
+      const history = getCurrentVisualHistory();
+      if (index < 0 || index >= history.length) return;
+      history.splice(index, 1);
+      setCurrentVisualHistory(history);
+      setStatus($('runStatus'), '已删除历史视觉。保存 workspace 后生效。', 'ok');
+    }
+
+    function selectHistoryVisual(index) {
+      const history = getCurrentVisualHistory();
+      const entry = history[index];
+      if (!entry) return;
+      const nextHistory = addCurrentVisualToHistory('replaced');
+      $('visualSvg').value = entry.svg || '';
+      $('visualImageUrl').value = entry.imageUrl || '';
+      const visual = normalizeVisual({ ...buildVisualFromForm(), historyVisuals: nextHistory.filter(item => item !== entry) });
+      state.visuals[$('itemId').value || state.selectedId] = visual;
+      setFormItem(buildItemFromForm(), visual);
+      setStatus($('runStatus'), '已切换到历史视觉。', 'ok');
+    }
+
     function renderRecordList() {
       const query = $('recordSearch').value.trim().toLowerCase();
       const typeFilter = $('typeFilter').value;
@@ -933,20 +1386,85 @@
         const flags = [item.hiddenFromShop ? 'hidden' : '', item.remoteOnly ? 'remote' : '', item.uniqueItem ? 'unique' : '', item.unlimited ? 'unlimited' : '', state.visuals[item.id] ? 'visual' : ''].filter(Boolean).join(' · ');
         const meta = [`${item.type || 'item'}`, `${item.price ?? 0} coins`, flags, (item.fields || []).join('/')].filter(Boolean).join(' · ');
         return `<div class="record-item ${item.id === state.selectedId ? 'active' : ''}">
+          <label class="record-select"><input type="checkbox" data-select-id="${escapeHtml(item.id)}" ${state.selectedItemIds.has(item.id) ? 'checked' : ''} aria-label="选择 ${escapeHtml(item.name || item.id)}"></label>
           <div class="record-emoji">${visualHtml(item)}</div>
           <button class="record-main" type="button" data-open-id="${escapeHtml(item.id)}">
             <span class="record-title">${escapeHtml(item.name || item.id)}</span>
             <span class="record-meta">${escapeHtml(item.id)} · ${escapeHtml(meta)}</span>
           </button>
-          <div class="record-actions"><button type="button" data-copy-id="${escapeHtml(item.id)}">复制</button></div>
+          <div class="record-actions"><button type="button" data-copy-id="${escapeHtml(item.id)}">复制</button><button type="button" class="danger" data-delete-id="${escapeHtml(item.id)}">删</button></div>
         </div>`;
       }).join('') : '<div class="hint p-2.5">没有匹配记录。</div>';
       $('recordList').querySelectorAll('[data-open-id]').forEach(button => button.onclick = () => selectRecord(button.dataset.openId));
       $('recordList').querySelectorAll('[data-copy-id]').forEach(button => button.onclick = () => duplicateRecord(button.dataset.copyId));
+      $('recordList').querySelectorAll('[data-delete-id]').forEach(button => button.onclick = () => deleteRecords([button.dataset.deleteId]));
+      $('recordList').querySelectorAll('[data-select-id]').forEach(input => input.onchange = () => {
+        if (input.checked) state.selectedItemIds.add(input.dataset.selectId);
+        else state.selectedItemIds.delete(input.dataset.selectId);
+        updateRecordSelectionState();
+      });
+      updateRecordSelectionState();
+    }
+
+    function getRenderedRecordIds() {
+      return [...($('recordList')?.querySelectorAll('[data-select-id]') || [])].map(input => input.dataset.selectId).filter(Boolean);
+    }
+
+    function pruneSelectedItemIds() {
+      const valid = new Set(state.items.map(item => item.id));
+      for (const id of state.selectedItemIds) if (!valid.has(id)) state.selectedItemIds.delete(id);
+    }
+
+    function updateRecordSelectionState() {
+      pruneSelectedItemIds();
+      const renderedIds = getRenderedRecordIds();
+      const selectedRenderedCount = renderedIds.filter(id => state.selectedItemIds.has(id)).length;
+      const selectAll = $('recordSelectAll');
+      if (selectAll) {
+        selectAll.disabled = !renderedIds.length;
+        selectAll.checked = !!renderedIds.length && selectedRenderedCount === renderedIds.length;
+        selectAll.indeterminate = selectedRenderedCount > 0 && selectedRenderedCount < renderedIds.length;
+      }
+      if ($('recordSelectAllLabel')) $('recordSelectAllLabel').textContent = selectAll?.checked ? '全不选当前列表' : '全选当前列表';
+      if ($('btnDeleteSelected')) {
+        const count = state.selectedItemIds.size;
+        $('btnDeleteSelected').textContent = `删除选中(${count})`;
+        $('btnDeleteSelected').disabled = count <= 0;
+      }
+    }
+
+    function setRenderedRecordSelection(checked) {
+      getRenderedRecordIds().forEach(id => {
+        if (checked) state.selectedItemIds.add(id);
+        else state.selectedItemIds.delete(id);
+      });
+      renderRecordList();
+    }
+
+    function deleteRecords(ids) {
+      const targets = unique((ids || []).filter(Boolean));
+      if (!targets.length) return;
+      state.items = state.items.filter(item => !targets.includes(item.id));
+      targets.forEach(id => { delete state.visuals[id]; state.selectedItemIds.delete(id); });
+      if (targets.includes(state.selectedId)) state.selectedId = state.items[0]?.id || '';
+      renderRecordList();
+      if (state.selectedId) setFormItem(selectedItem(), state.visuals[state.selectedId]);
+      else newItem('furniture');
+      setStatus($('runStatus'), `已删除 ${targets.length} 个物品。`, 'ok');
+      saveDraft();
     }
 
     function updatePreview(item, visual) {
       $('previewVisual').innerHTML = visualHtml(item, visual);
+      const previewImageMeta = $('previewImageMeta');
+      const imageUrl = normalizeVisual(visual).imageUrl || '';
+      const token = ++state.previewImageMetaToken;
+      if (previewImageMeta) previewImageMeta.textContent = imageUrl ? '计算中...' : '-';
+      if (imageUrl && previewImageMeta) {
+        getImageMeta(imageUrl)
+          .then(meta => { if (state.previewImageMetaToken === token) previewImageMeta.textContent = imageMetaText(meta); })
+          .catch(() => { if (state.previewImageMetaToken === token) previewImageMeta.textContent = '大小未知 · 尺寸未知'; });
+      }
       $('previewName').textContent = item.name || item.id || '新的商店物品';
       const meta = [`type=${item.type || '-'}`, `price=${item.price ?? 0}`, item.foodKind ? `food=${item.foodKind}` : '', item.trait ? `trait=${item.trait}` : '', item.fields?.length ? `fields=${item.fields.join('/')}` : '', item.rooms?.length ? `rooms=${item.rooms.join('/')}` : ''].filter(Boolean);
       $('previewMeta').textContent = meta.join(' · ');
@@ -955,9 +1473,11 @@
       $('editorSubtitle').textContent = item.id || '新建 shop item';
     }
 
-    function buildExportData({ items = state.items, visuals = state.visuals, diffOnly = isDiffExport() } = {}) {
+    function buildExportData({ items = state.items, visuals = state.visuals, diffOnly = isDiffExport(), removeHistory = shouldRemoveVisualHistoryOnExport() } = {}) {
       const normalizedItems = items.map(normalizeItem);
-      const normalizedVisuals = sortedVisuals(visuals);
+      const normalizedVisuals = removeHistory
+        ? Object.fromEntries(Object.entries(sortedVisuals(visuals)).map(([id, visual]) => [id, visualWithoutHistory(visual)]))
+        : sortedVisuals(visuals);
       if (!diffOnly) return { SHOP_ITEMS: normalizedItems, DECO_VISUALS: normalizedVisuals };
 
       const defaultItemById = new Map(state.defaultItems.map(item => [item.id, normalizeItem(item)]));
@@ -987,8 +1507,8 @@
       ].filter((line, index, lines) => line || (index > 1 && lines[index - 1] !== '  "SHOP_ITEMS": [' && lines[index - 1] !== '  "DECO_VISUALS": {')).join('\n');
     }
 
-    function buildShopItemsJson({ items = state.items, visuals = state.visuals, diffOnly = isDiffExport() } = {}) {
-      return formatShopItemsJson(buildExportData({ items, visuals, diffOnly }));
+    function buildShopItemsJson({ items = state.items, visuals = state.visuals, diffOnly = isDiffExport(), removeHistory = shouldRemoveVisualHistoryOnExport() } = {}) {
+      return formatShopItemsJson(buildExportData({ items, visuals, diffOnly, removeHistory }));
     }
 
     function updateOutputs() {
@@ -1112,7 +1632,7 @@
       const targetPath = getTargetShopItemsPath();
       state.targetPath = targetPath;
       state.exportDiffOnly = isDiffExport();
-      await writeWorkspaceFile(targetPath, buildShopItemsJson());
+      await writeWorkspaceFile(targetPath, buildShopItemsJson({ removeHistory: false }));
       setStatus($('loadStatus'), `已保存：${targetPath}\n模式：${state.exportDiffOnly ? '仅差异' : '完整'}`, 'ok');
       setStatus($('runStatus'), 'shopitems.json 保存完成。', 'ok');
       saveDraft();
@@ -1153,6 +1673,52 @@
       return result?.result || result?.content || result?.message?.content || result?.choices?.[0]?.message?.content || result?.data?.content || '';
     }
 
+    async function callShopChatModel({ model, temperature = 0.75, responseFormat = '', messages, onText, onReasoning }) {
+      const sdk = state.sdk || window.keepwork;
+      if (!sdk?.aiGenerators?.chat && !sdk?.aiChat?.chat) throw new Error('当前 SDK 不支持文本模型调用');
+      if (!model) throw new Error('请先配置 Chat 模型');
+      let reasoningText = '';
+      const handleMessage = (fullText, deltaOrPayload, raw = {}) => {
+        const payload = raw && typeof raw === 'object' && Object.keys(raw).length ? raw : deltaOrPayload;
+        const text = typeof fullText === 'string' ? fullText : extractAssistantText(payload);
+        reasoningText = payload?.reasoning_content || payload?.reasoning || reasoningText;
+        onText?.(text, payload, reasoningText);
+      };
+      const handleReasoning = (fullReasoning) => {
+        reasoningText = String(fullReasoning || reasoningText || '');
+        onReasoning?.(reasoningText);
+      };
+      const options = { model, stream: true, temperature, messages, reasoning: true, onMessage: handleMessage, onReasoning: handleReasoning };
+      if (sdk.aiGenerators?.chat) {
+        try {
+          return await sdk.aiGenerators.chat(responseFormat ? { ...options, responseFormat } : options);
+        } catch (error) {
+          if (!responseFormat || !/response.?format|json_object/i.test(error?.message || String(error))) throw error;
+          return await sdk.aiGenerators.chat(options);
+        }
+      }
+      return await sdk.aiChat.chat(options);
+    }
+
+    function setOptionalElementValue(id, value) {
+      const element = $(id);
+      if (element) element.value = value;
+    }
+
+    function setOptionalElementHtml(id, html) {
+      const element = $(id);
+      if (element) element.innerHTML = html;
+    }
+
+    function setOptionalElementDisabled(id, disabled) {
+      const element = $(id);
+      if (element) element.disabled = disabled;
+    }
+
+    function readAiSvgDraftText() {
+      return $('visualAiSvgDraft')?.value || $('aiSvgDraft')?.value || state.aiSvgDraft || '';
+    }
+
     function buildAiItemPrompt() {
       const current = buildItemFromForm();
       const userPrompt = $('aiPrompt').value.trim();
@@ -1171,6 +1737,143 @@
       ].join('\n');
     }
 
+    function buildAiSvgPrompt() {
+      const item = buildItemFromForm();
+      const visual = buildVisualFromForm();
+      const userPrompt = $('aiPrompt').value.trim();
+      return [
+        'Create one compact SVG icon for a MagicHaqi mobile game shop item.',
+        'Return only the SVG markup. Do not wrap it in markdown and do not include explanations.',
+        'SVG requirements: self-contained, viewBox="0 0 160 160", no scripts, no foreignObject, no external images, no remote URLs, no text labels.',
+        'Style: cute polished 2D game asset, rounded friendly shapes, readable at 64px, centered object, transparent or simple light background.',
+        `Item JSON: ${JSON.stringify(item)}`,
+        `Current visual JSON: ${JSON.stringify(visual)}`,
+        userPrompt ? `User prompt: ${userPrompt}` : 'User prompt: make the current item visually distinct and shop-ready.',
+      ].join('\n');
+    }
+
+    function readBatchSettings() {
+      try { return JSON.parse(localStorage.getItem(BATCH_SETTINGS_KEY) || '{}') || {}; }
+      catch (_) { return {}; }
+    }
+
+    function saveBatchSettings(settings = {}) {
+      try { localStorage.setItem(BATCH_SETTINGS_KEY, JSON.stringify(settings)); }
+      catch (_) {}
+    }
+
+    function buildBatchItemPrompt() {
+      const type = $('batchItemType')?.value || 'furniture';
+      const count = Math.max(1, Math.min(30, Math.round(Number($('batchItemCount')?.value || 6))));
+      const visualMode = $('batchVisualMode')?.value || 'svg';
+      const userPrompt = $('batchUserPrompt')?.value?.trim() || '';
+      const existingIds = state.items.map(item => item.id).slice(-220);
+      return [
+        'Create multiple MagicHaqi shop items for a mobile virtual pet game.',
+        `Return only JSON with shape: {"items":[{"item": {...}, "visual": {...}}]}. Generate exactly ${count} records.`,
+        'item fields allowed: id, name, emoji, price, type(food|toy|furniture|house), foodKind, stat, trait, fields, rooms, fieldSize, zorder, uniqueItem, hiddenFromShop, remoteOnly, unlimited, moodPenaltyStages, moodPenalty.',
+        visualMode === 'svg'
+          ? 'For each visual, include self-contained visual.svg with viewBox="0 0 160 160". No scripts, no external images, no markdown.'
+          : 'For each visual, omit svg/imageUrl; keep w and h. Image generation can be run later.',
+        `Target type: ${type}`,
+        `Available fields: ${state.fields.join(', ')}`,
+        `Available rooms: ${state.rooms.map(room => room.id).join(', ')}`,
+        `Available traits: ${state.traits.map(trait => trait.id).join(', ')}`,
+        `Existing ids to avoid: ${existingIds.join(', ')}`,
+        userPrompt ? `User request: ${userPrompt}` : 'User request: create a varied balanced batch for the shop.',
+      ].join('\n');
+    }
+
+    function normalizeBatchItemsPayload(payload) {
+      const list = Array.isArray(payload?.items) ? payload.items : Array.isArray(payload) ? payload : [];
+      return list.map(entry => ({ item: normalizeItem(entry.item || entry), visual: normalizeVisual(entry.visual || {}) })).filter(entry => entry.item?.id);
+    }
+
+    async function runBatchItemGeneration() {
+      const sdk = state.sdk || window.keepwork;
+      if (!sdk?.aiGenerators?.chat && !sdk?.aiChat?.chat) throw new Error('当前 SDK 不支持文本模型调用');
+      const model = $('batchChatModel')?.value?.trim() || $('chatModelSelect').value.trim();
+      if (!model) throw new Error('请先配置 Chat 模型');
+      const prompt = buildBatchItemPrompt();
+      state.batchAbortRequested = false;
+      $('btnRunBatchItems').disabled = true;
+      $('btnStopBatchItems').disabled = false;
+      $('batchFinalPrompt').value = prompt;
+      setStatus($('batchRunStatus'), '正在生成批量物品 JSON...', '');
+      $('batchStreamPreview').textContent = '等待模型输出...';
+      saveBatchSettings({ model, type: $('batchItemType').value, count: $('batchItemCount').value, visualMode: $('batchVisualMode').value, userPrompt: $('batchUserPrompt').value });
+      try {
+        const messages = [{ role: 'user', content: prompt }];
+        const response = await callShopChatModel({
+          model,
+          temperature: 0.78,
+          responseFormat: 'json_object',
+          messages,
+          onText: (text) => { $('batchStreamPreview').textContent = text || '等待模型输出...'; },
+        });
+        const parsed = extractJsonObject(extractAssistantText(response) || $('batchStreamPreview').textContent);
+        const entries = normalizeBatchItemsPayload(parsed);
+        if (!entries.length) throw new Error('LLM 没有返回可用 items');
+        entries.forEach(({ item, visual }) => {
+          state.items = upsertItems(state.items, item);
+          if (Object.keys(visual).length) state.visuals[item.id] = visual;
+          state.selectedId = item.id;
+        });
+        renderRecordList();
+        setFormItem(selectedItem(), state.visuals[state.selectedId]);
+        setStatus($('batchRunStatus'), `批量生成完成：${entries.length} 个物品。`, 'ok');
+        setStatus($('runStatus'), `批量生成完成：${entries.length} 个物品，点击保存写入 workspace。`, 'ok');
+      } catch (error) {
+        setStatus($('batchRunStatus'), `批量生成失败：${error?.message || error}`, 'error');
+        setStatus($('runStatus'), `批量生成失败：${error?.message || error}`, 'error');
+      } finally {
+        $('btnRunBatchItems').disabled = false;
+        $('btnStopBatchItems').disabled = true;
+      }
+    }
+
+    function openBatchItemDialog() {
+      closeBatchItemDialog();
+      const settings = readBatchSettings();
+      const overlay = document.createElement('div');
+      overlay.className = 'modal-overlay';
+      overlay.id = 'batchItemOverlay';
+      overlay.innerHTML = `<div class="modal-window batch-modal-window" role="dialog" aria-modal="true" aria-label="New Shop Items">
+        <div class="modal-titlebar"><strong>New Shop Items · Batch</strong><button type="button" id="closeBatchItems">关闭</button></div>
+        <div class="modal-body">
+          <div class="batch-grid">
+            <section class="section">
+              <h2>批量参数</h2>
+              <label>Chat 模型<select id="batchChatModel"></select></label>
+              <label>类型<select id="batchItemType"><option value="furniture">furniture</option><option value="food">food</option><option value="toy">toy</option><option value="house">house</option></select></label>
+              <label>数量<input id="batchItemCount" type="number" min="1" max="30" step="1" value="${escapeHtml(settings.count || 6)}"></label>
+              <label>视觉<select id="batchVisualMode"><option value="svg">生成 SVG</option><option value="none">只生成配置</option></select></label>
+              <div class="toolbar"><button id="btnRunBatchItems" class="primary" type="button">开始批量生成</button><button id="btnStopBatchItems" type="button" disabled>停止</button></div>
+            </section>
+            <section class="section">
+              <label>用户补充要求<textarea id="batchUserPrompt" rows="5" placeholder="例如：围绕火山星球，生成 land/fire 家具和食物。">${escapeHtml(settings.userPrompt || '')}</textarea></label>
+              <label>完整 prompt<textarea id="batchFinalPrompt" class="compact-output" rows="10" spellcheck="false"></textarea></label>
+            </section>
+          </div>
+          <div id="batchRunStatus" class="status">准备批量生成。每次调用 Chat 模型生成一组 shop items。</div>
+          <div id="batchStreamPreview" class="status ai-preview">等待模型输出...</div>
+        </div>
+      </div>`;
+      document.body.appendChild(overlay);
+      overlay.addEventListener('click', event => { if (event.target === overlay && !$('btnRunBatchItems')?.disabled) closeBatchItemDialog(); });
+      $('closeBatchItems').onclick = () => closeBatchItemDialog();
+      renderModelOptions($('batchChatModel'), 'Chat', settings.model || $('chatModelSelect').value);
+      $('batchItemType').value = settings.type || $('itemType')?.value || 'furniture';
+      $('batchVisualMode').value = settings.visualMode || 'svg';
+      const refreshPrompt = () => { try { $('batchFinalPrompt').value = buildBatchItemPrompt(); } catch (_) {} };
+      ['batchItemType', 'batchItemCount', 'batchVisualMode', 'batchUserPrompt'].forEach(id => $(id).addEventListener('input', refreshPrompt));
+      $('btnRunBatchItems').onclick = () => runBatchItemGeneration();
+      $('btnStopBatchItems').onclick = () => { state.batchAbortRequested = true; setStatus($('batchRunStatus'), '将在当前请求完成后停止...', ''); };
+      refreshPrompt();
+    }
+
+    function closeBatchItemDialog() { $('batchItemOverlay')?.remove(); }
+
     async function runAiItemGeneration() {
       const sdk = state.sdk || window.keepwork;
       if (!sdk?.aiGenerators?.chat && !sdk?.aiChat?.chat) throw new Error('当前 SDK 不支持文本模型调用');
@@ -1179,21 +1882,13 @@
       saveSettings();
       setStatus($('aiPreview'), `正在生成物品 JSON...\nmodel=${model}`, '');
       const messages = [{ role: 'user', content: buildAiItemPrompt() }];
-      const onMessage = (fullText, _delta, raw = {}) => {
-        const text = typeof fullText === 'string' ? fullText : extractAssistantText(raw);
-        $('aiPreview').textContent = text || '等待模型输出...';
-      };
-      let response;
-      if (sdk.aiGenerators?.chat) {
-        try {
-          response = await sdk.aiGenerators.chat({ model, stream: true, temperature: 0.75, responseFormat: 'json_object', messages, onMessage });
-        } catch (error) {
-          if (!/response.?format|json_object/i.test(error?.message || String(error))) throw error;
-          response = await sdk.aiGenerators.chat({ model, stream: true, temperature: 0.75, messages, onMessage });
-        }
-      } else {
-        response = await sdk.aiChat.chat({ model, stream: true, temperature: 0.75, messages, onMessage });
-      }
+      const response = await callShopChatModel({
+        model,
+        temperature: 0.75,
+        responseFormat: 'json_object',
+        messages,
+        onText: (text) => { $('aiPreview').textContent = text || '等待模型输出...'; },
+      });
       const parsed = extractJsonObject(extractAssistantText(response) || $('aiPreview').textContent);
       if (!parsed?.item) throw new Error('LLM JSON 缺少 item');
       const item = normalizeItem(parsed.item);
@@ -1207,13 +1902,85 @@
       setStatus($('runStatus'), `AI 已生成并加入：${item.id}`, 'ok');
     }
 
+    function renderAiSvgDraft(svg = state.aiSvgDraft) {
+      state.aiSvgDraft = String(svg || '').trim();
+      setOptionalElementValue('aiSvgDraft', state.aiSvgDraft);
+      setOptionalElementValue('visualAiSvgDraft', state.aiSvgDraft);
+      setOptionalElementDisabled('btnAcceptAiSvg', !state.aiSvgDraft);
+      setOptionalElementDisabled('btnVisualAcceptAiSvg', !state.aiSvgDraft);
+      if (!state.aiSvgDraft) {
+        setOptionalElementHtml('aiSvgPreview', '<span class="hint">SVG 预览会显示在这里</span>');
+        setOptionalElementHtml('visualAiSvgPreview', '<span class="hint">点击这里生成 SVG / WebP 视觉</span>');
+        return;
+      }
+      try {
+        const cleanSvg = sanitizeSvg(state.aiSvgDraft);
+        state.aiSvgDraft = cleanSvg;
+        setOptionalElementValue('aiSvgDraft', cleanSvg);
+        setOptionalElementValue('visualAiSvgDraft', cleanSvg);
+        setOptionalElementHtml('aiSvgPreview', cleanSvg);
+        setOptionalElementHtml('visualAiSvgPreview', cleanSvg);
+        setOptionalElementDisabled('btnAcceptAiSvg', false);
+        setOptionalElementDisabled('btnVisualAcceptAiSvg', false);
+      } catch (error) {
+        const errorHtml = `<span class="hint text-red-700">${escapeHtml(error.message)}</span>`;
+        setOptionalElementHtml('aiSvgPreview', errorHtml);
+        setOptionalElementHtml('visualAiSvgPreview', errorHtml);
+        setOptionalElementDisabled('btnAcceptAiSvg', true);
+        setOptionalElementDisabled('btnVisualAcceptAiSvg', true);
+      }
+    }
+
+    async function runAiSvgGeneration() {
+      const sdk = state.sdk || window.keepwork;
+      if (!sdk?.aiGenerators?.chat && !sdk?.aiChat?.chat) throw new Error('当前 SDK 不支持文本模型调用');
+      const model = $('chatModelSelect').value.trim();
+      if (!model) throw new Error('请先配置 Chat 模型');
+      saveSettings();
+      renderAiSvgDraft('');
+      setStatus($('aiPreview'), `正在生成 SVG 草稿...\nmodel=${model}`, '');
+      const messages = [{ role: 'user', content: buildAiSvgPrompt() }];
+      const response = await callShopChatModel({
+        model,
+        temperature: 0.7,
+        messages,
+        onText: (text) => { $('aiPreview').textContent = text || '等待模型输出...'; },
+      });
+      const cleanSvg = sanitizeSvg(extractAssistantText(response) || $('aiPreview').textContent);
+      renderAiSvgDraft(cleanSvg);
+      setStatus($('aiPreview'), `SVG 草稿已生成。确认预览后点击“接受 SVG”。\n\n${cleanSvg}`, 'ok');
+    }
+
+    async function runVisualPreviewGeneration() {
+      const mode = $('visualMode')?.value || 'svg';
+      if (mode === 'webp') await runAiWebpGeneration();
+      else await runAiSvgGeneration();
+    }
+
+    function acceptAiSvgDraft() {
+      const cleanSvg = sanitizeSvg(readAiSvgDraftText());
+      const historyVisuals = addCurrentVisualToHistory('before svg');
+      $('visualSvg').value = cleanSvg;
+      $('visualImageUrl').value = '';
+      $('visualW').value = $('visualW').value || '0.12';
+      $('visualH').value = $('visualH').value || '0.12';
+      const id = $('itemId').value || state.selectedId;
+      if (id) state.visuals[id] = normalizeVisual({ ...buildVisualFromForm(), historyVisuals });
+      updateOutputs();
+      const result = upsertCurrentItem({ silent: true });
+      renderAiSvgDraft(cleanSvg);
+      setStatus($('runStatus'), `已接受 SVG 并加入 DECO_VISUALS：${result?.item?.id || $('itemId').value}`, 'ok');
+      setStatus($('aiPreview'), 'SVG 已写入当前视觉草稿。', 'ok');
+    }
+
     function buildImagePrompt() {
       const item = buildItemFromForm();
       return [
         `Create a single cute MagicHaqi game shop item icon for: ${item.name} (${item.id}).`,
         `Type: ${item.type}. Fields: ${(item.fields || []).join(', ') || 'general'}. Emoji hint: ${item.emoji || ''}.`,
         $('aiPrompt').value.trim(),
-        'Style: clean 2D mobile game asset, transparent or simple light background, centered object, readable at 128x128, no text, no UI frame.',
+        'Style: clean 2D mobile game asset, centered object, readable at 128x128, no text, no UI frame.',
+        'Background must be solid pure black (#000000) with the object fully separated from the image edge. Do not use shadows that blend into the black background.',
       ].filter(Boolean).join('\n');
     }
 
@@ -1231,21 +1998,48 @@
       return canvas.toDataURL(type, quality);
     }
 
-    async function toSquareWebpDataUrl(url, size = 128) {
-      const img = await loadImage(url);
+    function drawImageToBlackSquareCanvas(img, size = 128) {
       const canvas = document.createElement('canvas');
       canvas.width = size;
       canvas.height = size;
-      const ctx = canvas.getContext('2d');
+      const ctx = canvas.getContext('2d', { willReadFrequently: true });
       if (!ctx) throw new Error('Canvas 不可用');
-      ctx.clearRect(0, 0, size, size);
+      ctx.fillStyle = '#000';
+      ctx.fillRect(0, 0, size, size);
       ctx.imageSmoothingEnabled = true;
       ctx.imageSmoothingQuality = 'high';
-      const sourceSize = Math.max(img.naturalWidth || img.width, img.naturalHeight || img.height);
-      const sx = ((img.naturalWidth || img.width) - sourceSize) / 2;
-      const sy = ((img.naturalHeight || img.height) - sourceSize) / 2;
+      const sourceWidth = img.naturalWidth || img.width;
+      const sourceHeight = img.naturalHeight || img.height;
+      const sourceSize = Math.max(sourceWidth, sourceHeight);
+      const sx = (sourceWidth - sourceSize) / 2;
+      const sy = (sourceHeight - sourceSize) / 2;
       ctx.drawImage(img, sx, sy, sourceSize, sourceSize, 0, 0, size, size);
-      return canvasToDataUrl(canvas, 'image/webp', 0.86);
+      return canvas;
+    }
+
+    async function createTransparentShopWebpBlob(url, requestedSize = 128, maxBytes = SHOP_WEBP_MAX_BYTES) {
+      const img = await loadImage(url);
+      const outputSize = Math.max(24, Math.min(1024, Math.round(Number(requestedSize) || 128)));
+      const qualities = [0.84, 0.76, 0.68, 0.6, 0.52, 0.44, 0.36, 0.3, 0.24, 0.18, 0.12, 0.08];
+      let best = null;
+      const canvas = drawImageToBlackSquareCanvas(img, outputSize);
+      const sourceBlob = await canvasToBlob(canvas, 'image/png');
+      const processedBlob = await processShopItemBackgroundWithWorker(sourceBlob, SHOP_WEBP_BG_OPTIONS);
+      if (processedBlob) {
+        const processedBitmap = await createImageBitmap(processedBlob);
+        const ctx = canvas.getContext('2d');
+        if (!ctx) throw new Error('Canvas 不可用');
+        ctx.clearRect(0, 0, outputSize, outputSize);
+        ctx.drawImage(processedBitmap, 0, 0, outputSize, outputSize);
+        processedBitmap.close?.();
+      }
+      for (const quality of qualities) {
+        const blob = await canvasToBlob(canvas, 'image/webp', quality);
+        const candidate = { blob, size: outputSize, quality };
+        if (!best || candidate.blob.size < best.blob.size) best = candidate;
+        if (blob.size <= maxBytes) return candidate;
+      }
+      throw new Error(`透明 WebP 已强制为 ${outputSize}x${outputSize}，但压缩后仍超过 10 KB：${formatBytes(best?.blob?.size || 0)}`);
     }
 
     async function runAiWebpGeneration() {
@@ -1257,19 +2051,31 @@
       const [width, height] = ($('imageSize').value || '128x128').split('x').map(Number);
       const size = Math.max(64, Math.min(1024, width || 128, height || 128));
       const prompt = buildImagePrompt();
-      setStatus($('aiPreview'), `正在生成 WebP 图标...\nmodel=${model}\nsize=${size}x${size}`, '');
+      setStatus($('aiPreview'), `正在生成黑底图标...\nmodel=${model}\nsize=${size}x${size}\n随后会去黑底、转透明 WebP，并压到 10 KB 内。`, '');
       const url = await sdk.aiGenerators.genImage(prompt, { model, width: size, height: size, stream: true, uploadResultToKeepwork: true });
       if (!url) throw new Error('genImage 未返回图片 URL');
-      let imageUrl = url;
-      try { imageUrl = await toSquareWebpDataUrl(url, size); }
-      catch (error) { setStatus($('aiPreview'), `图片已生成，但浏览器无法转成 data WebP，将保留返回 URL：${error.message}\n${url}`, ''); }
+      setStatus($('aiPreview'), `黑底图已生成，正在去黑底并压缩透明 WebP...\n${url}`, '');
+      const transparentWebp = await createTransparentShopWebpBlob(url, size, SHOP_WEBP_MAX_BYTES);
+      let imageUrl = await blobToDataUrl(transparentWebp.blob);
+      if ($('uploadVisualToCdn')?.checked) {
+        try {
+          const uploaded = await uploadBlobToShopPreferredCdn(transparentWebp.blob, getShopCdnFileName('webp'));
+          imageUrl = uploaded.url;
+        } catch (error) {
+          setStatus($('aiPreview'), `透明 WebP 已生成（${transparentWebp.size}x${transparentWebp.size}, ${formatBytes(transparentWebp.blob.size)}），但上传 CDN 失败，将保留 data URL：${error?.message || error}`, '');
+        }
+      }
+      const historyVisuals = addCurrentVisualToHistory('before webp');
       $('visualImageUrl').value = imageUrl;
       $('visualSvg').value = '';
       $('visualW').value = $('visualW').value || '0.12';
       $('visualH').value = $('visualH').value || '0.12';
+      const id = $('itemId').value || state.selectedId;
+      if (id) state.visuals[id] = normalizeVisual({ ...buildVisualFromForm(), historyVisuals, historyUrls: imageUrl ? unique([imageUrl, ...(buildVisualFromForm().historyUrls || [])]) : [] });
       const result = upsertCurrentItem({ silent: true });
-      setStatus($('aiPreview'), `WebP 已写入 visual.imageUrl\n${result?.item?.id || ''}\n${imageUrl.slice(0, 220)}${imageUrl.length > 220 ? '...' : ''}`, 'ok');
-      setStatus($('runStatus'), 'AI WebP 视觉已生成并加入 DECO_VISUALS 草稿。', 'ok');
+      setOptionalElementHtml('visualAiSvgPreview', `<img alt="" src="${escapeHtml(imageUrl)}">`);
+      setStatus($('aiPreview'), `透明 WebP 已写入 visual.imageUrl\n${result?.item?.id || ''}\n${transparentWebp.size}x${transparentWebp.size} · q${Math.round(transparentWebp.quality * 100)}% · ${formatBytes(transparentWebp.blob.size)}\n${imageUrl.slice(0, 220)}${imageUrl.length > 220 ? '...' : ''}`, 'ok');
+      setStatus($('runStatus'), 'AI WebP 视觉已去黑底、压到 10 KB 内并加入 DECO_VISUALS 草稿。', 'ok');
     }
 
     function generateIdFromName() {
@@ -1303,25 +2109,40 @@
       $('btnLoadWorkspace').onclick = () => loadWorkspaceData().catch(error => setStatus($('loadStatus'), `workspace 读取失败：${error.message}`, 'error'));
       $('btnSaveWorkspace').onclick = () => saveWorkspaceData().catch(error => setStatus($('loadStatus'), `保存失败：${error.message}`, 'error'));
       $('btnNewShopFile').onclick = newShopItemsFile;
+      $('btnShopCdnConfig').onclick = openShopCdnConfigDialog;
       $('btnCopyShopJson').onclick = async () => { await copyText(buildShopItemsJson()); setStatus($('runStatus'), `已复制 ${isDiffExport() ? '差异' : '完整'} shopitems.json。`, 'ok'); };
       $('btnCopyVisualJson').onclick = async () => { await copyText(buildShopItemsJson({ diffOnly: false })); setStatus($('runStatus'), '已复制完整 shopitems.json。', 'ok'); };
       $('btnAiItem').onclick = () => runAiItemGeneration().catch(error => setStatus($('aiPreview'), `AI 生成失败：${error.message}`, 'error'));
+      $('btnAiSvg').onclick = () => runAiSvgGeneration().catch(error => setStatus($('aiPreview'), `SVG 生成失败：${error.message}`, 'error'));
+      $('btnAcceptAiSvg').onclick = () => { try { acceptAiSvgDraft(); } catch (error) { setStatus($('aiPreview'), `接受 SVG 失败：${error.message}`, 'error'); } };
       $('btnAiWebp').onclick = () => runAiWebpGeneration().catch(error => setStatus($('aiPreview'), `WebP 生成失败：${error.message}`, 'error'));
-      $('btnNew').onclick = () => newItem();
+      $('visualAiSvgPreview').onclick = () => runVisualPreviewGeneration().catch(error => setStatus($('aiPreview'), `视觉生成失败：${error.message}`, 'error'));
+      $('visualAiSvgPreview').addEventListener('keydown', event => {
+        if (event.key !== 'Enter' && event.key !== ' ') return;
+        event.preventDefault();
+        runVisualPreviewGeneration().catch(error => setStatus($('aiPreview'), `视觉生成失败：${error.message}`, 'error'));
+      });
+      $('btnNew').onclick = openBatchItemDialog;
+      $('btnDeleteSelected').onclick = () => deleteRecords([...state.selectedItemIds]);
       $('btnDuplicate').onclick = () => duplicateRecord();
       $('btnApplyPrefix').onclick = generateIdFromName;
       $('btnUpsert').onclick = () => upsertCurrentItem();
       $('btnApplyJson').onclick = applyJsonToForm;
       $('btnUseFallbackSvg').onclick = () => { $('visualSvg').value = fallbackSvg(); $('visualImageUrl').value = ''; updateOutputs(); };
       $('btnClearVisual').onclick = () => { $('visualSvg').value = ''; $('visualImageUrl').value = ''; $('visualW').value = ''; $('visualH').value = ''; updateOutputs(); };
+      $('btnClearVisualHistory').onclick = () => { setCurrentVisualHistory([]); setStatus($('runStatus'), '已清空当前视觉历史。', 'ok'); };
       $('tabItem').onclick = () => setActiveTab('item');
       $('tabFiles').onclick = () => setActiveTab('files');
       $('recordSearch').addEventListener('input', renderRecordList);
       $('typeFilter').addEventListener('change', renderRecordList);
       $('includeHidden').addEventListener('change', renderRecordList);
+      $('recordSelectAll').addEventListener('change', () => setRenderedRecordSelection($('recordSelectAll').checked));
       $('shopItemsPath').addEventListener('input', () => { state.targetPath = getTargetShopItemsPath(); updateOutputs(); });
       $('exportDiffOnly').addEventListener('change', () => { state.exportDiffOnly = isDiffExport(); updateOutputs(); });
+      $('removeVisualHistoryOnExport').addEventListener('change', updateOutputs);
       ['chatModelSelect', 'imageModelSelect', 'imageSize', 'visualMode'].forEach(id => $(id).addEventListener('change', saveSettings));
+      $('aiSvgDraft')?.addEventListener('input', () => renderAiSvgDraft($('aiSvgDraft').value));
+      $('visualAiSvgDraft').addEventListener('input', () => renderAiSvgDraft($('visualAiSvgDraft').value));
       document.querySelectorAll('[data-template]').forEach(button => button.onclick = () => newItem(button.dataset.template));
       ['itemId', 'itemName', 'itemEmoji', 'itemPrice', 'itemType', 'statHunger', 'statMood', 'statClean', 'statBond', 'foodKind', 'trait', 'fields', 'rooms', 'fieldSize', 'zorder', 'moodPenalty', 'moodPenaltyStages', 'extraJson', 'visualW', 'visualH', 'visualSvg', 'visualImageUrl'].forEach(id => $(id).addEventListener('input', updateOutputs));
       ['hiddenFromShop', 'unlimited', 'uniqueItem', 'remoteOnly'].forEach(id => $(id).addEventListener('change', updateOutputs));
@@ -1329,6 +2150,7 @@
 
     async function initialize() {
       wireEvents();
+      updateShopCdnStatus();
       try {
         await loadConfigData();
       } catch (error) {

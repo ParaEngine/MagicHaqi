@@ -174,16 +174,19 @@ export function normalizeScenePreset(scene = {}, index = 0) {
 
 export async function loadScenePresets({ force = false } = {}) {
     if (presetCache && !force) return presetCache;
+    const fromDevTool = /(^|\/)dev_tools\//.test(window.location.pathname || '');
+    const url = fromDevTool ? `../${PRESET_SCENE_PATH}` : PRESET_SCENE_PATH;
     try {
-        const res = await fetch(PRESET_SCENE_PATH, { cache: force ? 'reload' : 'no-cache' });
+        const res = await fetch(url, { cache: force ? 'reload' : 'no-cache' });
         if (!res.ok) throw new Error(`场景预设加载失败 (${res.status})`);
         const data = await res.json();
         const scenes = Array.isArray(data?.scenes) ? data.scenes : (Array.isArray(data) ? data : []);
         presetCache = scenes.map(normalizeScenePreset);
+        return presetCache;
     } catch (e) {
         console.warn('场景预设加载失败', e);
-        presetCache = [];
     }
+    presetCache = [];
     return presetCache;
 }
 
@@ -257,13 +260,15 @@ export function sceneBackgroundStyle(scene = {}, fallbackColor = '#bae6fd') {
     const color = bg.color || scene.color || fallbackColor;
     const imageUrl = bg.imageUrl || scene.imageUrl || '';
     if (imageUrl) return `linear-gradient(rgba(255,255,255,.1),rgba(255,255,255,.1)), url("${String(imageUrl).replace(/"/g, '%22')}") center/cover no-repeat`;
-    return `radial-gradient(circle at 50% 14%,rgba(255,255,255,.82),transparent 34%), linear-gradient(180deg, ${color}, #ffffff)`;
+    const base = /gradient\s*\(/i.test(color) ? color : `linear-gradient(180deg, ${color}, #ffffff)`;
+    return `radial-gradient(circle at 50% 14%,rgba(255,255,255,.82),transparent 34%), ${base}`;
 }
 
 export function sceneBackgroundPlaceholderStyle(scene = {}, fallbackColor = '#bae6fd') {
     const bg = scene.background || scene;
     const color = bg.color || scene.color || fallbackColor;
-    return `radial-gradient(circle at 50% 14%,rgba(255,255,255,.82),transparent 34%), linear-gradient(180deg, ${color}, #ffffff)`;
+    const base = /gradient\s*\(/i.test(color) ? color : `linear-gradient(180deg, ${color}, #ffffff)`;
+    return `radial-gradient(circle at 50% 14%,rgba(255,255,255,.82),transparent 34%), ${base}`;
 }
 
 export function lazySceneBackgroundAttrs(scene = {}, fallbackColor = '#bae6fd') {

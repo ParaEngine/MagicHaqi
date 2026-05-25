@@ -232,7 +232,7 @@ export function renderSettings(panel, _data, { onBack, onLogout, onClearData } =
     };
     if ($('mhOpenDevPanel')) $('mhOpenDevPanel').onclick = () => openDevPanel($('mhOpenDevPanel'));
     if ($('mhOpenPetGenerator')) $('mhOpenPetGenerator').onclick = () => openDevTool('FamousPetGenerator.html', 'AI宠物编辑器');
-    if ($('mhOpenPlanetGenerator')) $('mhOpenPlanetGenerator').onclick = () => openDevTool('FamousPlanetGenertor.html', 'AI星球编辑器');
+    if ($('mhOpenPlanetGenerator')) $('mhOpenPlanetGenerator').onclick = () => openDevTool('FamousPlanetGenerator.html', 'AI星球编辑器');
     if ($('mhOpenSceneGenerator')) $('mhOpenSceneGenerator').onclick = () => openDevTool('ScenePresetsGenerator.html', 'AI场景编辑器');
     if ($('mhOpenShopItemGenerator')) $('mhOpenShopItemGenerator').onclick = () => openDevTool('ShopItemGenerator.html', 'AI商店编辑器');
     if ($('mhOpenLocalAPIKeySettings')) $('mhOpenLocalAPIKeySettings').onclick = () => openLocalAPIKeySettings($('mhOpenLocalAPIKeySettings'));
