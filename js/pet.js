@@ -1135,6 +1135,49 @@ function applyLowMoodFoodBonus(pet, statDeltas = null) {
     return delta;
 }
 
+const SPECIAL_STAGE_ORDER = ['baby', 'teen', 'adult'];
+
+function stageMinHours(stageId) {
+    const def = CONFIG.stages.find(stage => stage.id === stageId);
+    return Math.max(0, Number(def?.minHours) || 0);
+}
+
+function setPetAgeForStage(pet, stageId) {
+    const now = Date.now();
+    const minHours = stageMinHours(stageId);
+    const nextStage = CONFIG.stages.find(stage => stage.id !== 'egg' && stageMinHours(stage.id) > minHours);
+    const nextMinHours = nextStage ? stageMinHours(nextStage.id) : minHours + 24;
+    const targetHours = nextStage ? minHours + Math.max(0.01, (nextMinHours - minHours) * 0.08) : minHours + 1;
+    pet.bornAt = now - targetHours * 3600 * 1000;
+    delete pet.hatchingCare;
+}
+
+function applySpecialStageFood(pet, foodItem) {
+    const effect = foodItem?.specialStageEffect;
+    if (!effect) return { handled: false };
+    const currentIndex = SPECIAL_STAGE_ORDER.indexOf(pet?.stage);
+    if (effect === 'grow') {
+        if (currentIndex < 0) return { handled: true, ok: false, message: pet?.stage === 'egg' ? '蛋阶段还不能使用成长药丸哦' : '已经不能再用成长药丸长大啦' };
+        const targetIndex = Math.min(SPECIAL_STAGE_ORDER.length - 1, currentIndex + 1);
+        if (targetIndex === currentIndex) return { handled: true, ok: false, message: '已经是成年阶段，不能再继续长大啦' };
+        const targetStage = SPECIAL_STAGE_ORDER[targetIndex];
+        setPetAgeForStage(pet, targetStage);
+        pet.stage = targetStage;
+        return { handled: true, ok: true, message: `${foodItem.emoji || ''} ${pet.name || '宠物'}快速长大到${CONFIG.stages.find(stage => stage.id === targetStage)?.name || targetStage}啦！` };
+    }
+    if (effect === 'rejuvenate') {
+        const safeIndex = currentIndex >= 0 ? currentIndex : (pet?.stage === 'elder' ? SPECIAL_STAGE_ORDER.length : -1);
+        if (safeIndex < 0) return { handled: true, ok: false, message: pet?.stage === 'egg' ? '蛋阶段还不能使用返老还童药丸哦' : '现在不能使用返老还童药丸' };
+        const targetIndex = Math.max(0, safeIndex - 1);
+        if (targetIndex === safeIndex) return { handled: true, ok: false, message: '已经是幼年阶段，不能再变小啦' };
+        const targetStage = SPECIAL_STAGE_ORDER[targetIndex];
+        setPetAgeForStage(pet, targetStage);
+        pet.stage = targetStage;
+        return { handled: true, ok: true, message: `${foodItem.emoji || ''} ${pet.name || '宠物'}变回${CONFIG.stages.find(stage => stage.id === targetStage)?.name || targetStage}啦！` };
+    }
+    return { handled: false };
+}
+
 export function eatFood(pet, foodItem, options = {}) {
     if (!pet || !foodItem || foodItem.type !== 'food') return false;
     if (pet.stage === 'egg') {
@@ -1144,6 +1187,40 @@ export function eatFood(pet, foodItem, options = {}) {
     if (pet.anim === 'sleep') {
         say('Zzz...醒来以后再吃吧', 2200);
         return false;
+    }
+    const specialStage = applySpecialStageFood(pet, foodItem);
+    if (specialStage.handled) {
+        if (!specialStage.ok) {
+            say(specialStage.message, 2600);
+            setAnim('sad', 900);
+            return false;
+        }
+        if (!pet.stats) pet.stats = {};
+        const statDeltas = [];
+        for (const key of Object.keys(foodItem.stat || {})) {
+            const before = pet.stats[key] || 0;
+            const after = clamp(before + foodItem.stat[key], CONFIG.statMin, CONFIG.statMax);
+            pet.stats[key] = after;
+            const delta = after - before;
+            if (delta) statDeltas.push({ key, delta });
+        }
+        pet.lastTickAt = Date.now();
+        markPetCared(pet, pet.lastTickAt);
+        applyStage(pet);
+        savePetDebounced(pet);
+        const delayMs = Math.max(0, Number(options.delayEffectsMs) || 0);
+        const sayDelayMs = Math.max(0, Number(options.sayDelayMs) || 0);
+        const playFeedback = () => {
+            _spawnFoodStatFloaters(pet, statDeltas);
+            spawnEatFoodEffects(pet, foodItem, false);
+            setAnim('happy', 2200);
+            const waitMs = Math.max(0, sayDelayMs - delayMs);
+            if (waitMs > 0) setTimeout(() => say(specialStage.message, 4200), waitMs);
+            else say(specialStage.message, 4200);
+        };
+        if (delayMs > 0) setTimeout(playFeedback, delayMs);
+        else playFeedback();
+        return true;
     }
     const ignoresFoodNegatives = pet.stage === 'baby';
     const isBasicFeed = foodItem.id === 'food_basic_feed' || foodItem.unlimited;
