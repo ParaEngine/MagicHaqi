@@ -1,6 +1,6 @@
 // Level 1 — Field：星球表面（陆 / 水 / 空 三大生态）
 
-import { $, $$, escapeHtml, renderVisualAsset, showToast } from './utils.js';
+import { $, $$, dockDisabledAttrs, escapeHtml, isDockButtonDisabled, renderVisualAsset, setDockButtonDisabled, showDockDisabledToast, showToast } from './utils.js';
 import { canPlaceItemInArea, CONFIG, DECO_VISUALS, findLargestHouseInLayout, getPlacedItemZOrder, getShopItemById, isHouseItem, SHOP_ITEMS } from './config.js';
 import { getActivePlanetWeather, isVisitingMode, notify, state, setCurrentField } from './state.js';
 import { getLayout, loadPets, savePetDebounced, saveUserProfileDebounced } from './storage.js';
@@ -453,7 +453,7 @@ function updateCleanPoopsButton(pet) {
     if (!cleanBtn) return;
     const poopCount = getPoopsInField(pet).length;
     const isUrgent = poopCount > CONFIG.poopWarningThreshold;
-    cleanBtn.disabled = poopCount === 0;
+    setDockButtonDisabled(cleanBtn, poopCount === 0, '当前场景没有需要清理的便便。便便出现后，再点击清理可花金币启动机器。');
     cleanBtn.classList.toggle('is-urgent', isUrgent && poopCount > 0);
     cleanBtn.title = isUrgent
         ? `当前场景有 ${poopCount} 坨便便，花 ${CONFIG.poopMachineCostCoins} 金币启动机器清理成生物燃料`
@@ -496,33 +496,36 @@ function renderFieldActionTray(pet) {
     const sleepAction = getPetSleepActionState(pet);
     const isEgg = pet?.stage === 'egg';
     const playDisabled = isEgg;
-    const playTitle = isEgg ? '蛋还没有孵化，无法进行此操作。' : (sleeping ? '玩耍会唤醒宠物。' : '');
+    const playTitle = isEgg ? '蛋还没有孵化，先喂食让它孵化后再玩耍。' : (sleeping ? '玩耍会唤醒宠物。' : '');
     const hatchingDisabled = sleeping || isEgg;
-    const hatchingTitle = isEgg ? '蛋还没有孵化，无法进行此操作。' : (sleeping ? sleepingInteractionText(pet) : '');
+    const hatchingTitle = isEgg ? '蛋阶段先在当前场景喂食孵化，孵化完成后再进入孵化仓。' : (sleeping ? sleepingInteractionText(pet) : '');
+    const sleepDisabled = isEgg || sleepAction.disabled;
+    const sleepTitle = isEgg ? '蛋还没有孵化，先喂食让它孵化后再睡觉。' : sleepAction.title;
     const poopCount = getPoopsInField(pet).length;
     const urgentClass = hasTooManyPoops(pet) ? ' is-urgent' : '';
     const cleanTitle = hasTooManyPoops(pet)
         ? `当前场景有 ${poopCount} 坨便便，花 ${CONFIG.poopMachineCostCoins} 金币启动机器清理成生物燃料`
         : `花 ${CONFIG.poopMachineCostCoins} 金币启动机器，清理当前场景里的便便并转成生物燃料`;
+    const cleanDisabledReason = '当前场景没有需要清理的便便。便便出现后，再点击清理可花金币启动机器。';
     return `
         <div class="mh-dock-row mh-scroll-x dock-action-row">
             <button type="button" class="btn-secondary action-btn dock-icon-btn mh-decor-action mh-field-mode-toggle" id="mhFieldDecorBtn">
                 <span class="dock-icon">🛠</span>
                 <span class="dock-label">建造</span>
             </button>
-            <button type="button" class="btn-secondary action-btn dock-icon-btn mh-field-clean-action${urgentClass}" id="mhFieldCleanPoopsBtn" ${poopCount ? '' : 'disabled'} title="${escapeHtml(cleanTitle)}">
+            <button type="button" class="btn-secondary action-btn dock-icon-btn mh-field-clean-action${urgentClass}${poopCount ? '' : ' is-sleep-disabled'}" id="mhFieldCleanPoopsBtn"${dockDisabledAttrs(!poopCount, cleanDisabledReason)} title="${escapeHtml(cleanTitle)}">
                 <span class="dock-icon">♻️</span>
                 <span class="dock-label">清理</span>
             </button>
-            <button type="button" class="btn-secondary action-btn dock-icon-btn mh-field-nav-action${playDisabled ? ' is-sleep-disabled' : ''}" data-field-nav="minigames" ${playDisabled ? 'disabled' : ''} title="${escapeHtml(playTitle)}">
+            <button type="button" class="btn-secondary action-btn dock-icon-btn mh-field-nav-action${playDisabled ? ' is-sleep-disabled' : ''}" data-field-nav="minigames"${dockDisabledAttrs(playDisabled, playTitle)} title="${escapeHtml(playTitle)}">
                 <span class="dock-icon">🎾</span>
                 <span class="dock-label">玩耍</span>
             </button>
-            <button type="button" class="btn-secondary action-btn dock-icon-btn mh-field-action" data-field-action="sleep" ${(isEgg || sleepAction.disabled) ? 'disabled' : ''} title="${escapeHtml(isEgg ? '蛋还没有孵化，无法进行此操作。' : sleepAction.title)}">
+            <button type="button" class="btn-secondary action-btn dock-icon-btn mh-field-action${sleepDisabled ? ' is-sleep-disabled' : ''}" data-field-action="sleep"${dockDisabledAttrs(sleepDisabled, sleepTitle)} title="${escapeHtml(sleepTitle)}">
                 <span class="dock-icon">${sleepAction.icon}</span>
                 <span class="dock-label">${escapeHtml(sleepAction.label)}</span>
             </button>
-            <button type="button" class="btn-secondary action-btn dock-icon-btn mh-field-nav-action${hatchingDisabled ? ' is-sleep-disabled' : ''}" data-field-nav="hatching" ${hatchingDisabled ? 'disabled' : ''} title="${escapeHtml(hatchingTitle)}">
+            <button type="button" class="btn-secondary action-btn dock-icon-btn mh-field-nav-action${hatchingDisabled ? ' is-sleep-disabled' : ''}" data-field-nav="hatching"${dockDisabledAttrs(hatchingDisabled, hatchingTitle)} title="${escapeHtml(hatchingTitle)}">
                 <span class="dock-icon">🥚</span>
                 <span class="dock-label">孵化仓</span>
             </button>
@@ -1914,20 +1917,28 @@ export const fieldLevel = {
         const activateCleanPoops = (target, event) => {
             const btn = target.closest?.('#mhFieldCleanPoopsBtn');
             if (isVisitingMode()) return false;
-            if (!btn || btn.disabled) return false;
+            if (!btn || !dock.contains(btn)) return false;
             event?.preventDefault?.();
             event?.stopPropagation?.();
             dock.__mhFieldDockTabHandledAt = Date.now();
+            if (isDockButtonDisabled(btn)) {
+                showDockDisabledToast(btn);
+                return true;
+            }
             collectPoopsInCurrentField(pet);
             return true;
         };
 
         const activateFieldAction = (target, event) => {
             const btn = target.closest?.('[data-field-action]');
-            if (!btn || btn.disabled || !dock.contains(btn)) return false;
+            if (!btn || !dock.contains(btn)) return false;
             event?.preventDefault?.();
             event?.stopPropagation?.();
             dock.__mhFieldDockTabHandledAt = Date.now();
+            if (isDockButtonDisabled(btn)) {
+                showDockDisabledToast(btn);
+                return true;
+            }
             if (isVisitingMode()) {
                 if (btn.dataset.fieldAction === 'visit-wave') showToast('你和好友宠物打了个招呼。', 'success', 1500);
                 else if (btn.dataset.fieldAction === 'visit-photo') showToast('好友星球合影已记录在这次旅程里。', 'success', 1800);
@@ -1941,10 +1952,13 @@ export const fieldLevel = {
         const activateFieldNav = (target, event) => {
             const btn = target.closest?.('[data-field-nav]');
             if (!btn || !dock.contains(btn)) return false;
-            if (btn.disabled) return false;
             event?.preventDefault?.();
             event?.stopPropagation?.();
             dock.__mhFieldDockTabHandledAt = Date.now();
+            if (isDockButtonDisabled(btn)) {
+                showDockDisabledToast(btn);
+                return true;
+            }
             ctx.callbacks.onNav?.(btn.dataset.fieldNav);
             return true;
         };
@@ -1979,7 +1993,7 @@ export const fieldLevel = {
             if (!start || start.id !== e.pointerId) return;
             const moved = Math.hypot(e.clientX - start.x, e.clientY - start.y) > 8;
             if (!moved && Date.now() - (dock.__mhFieldDockTabHandledAt || 0) >= 250) {
-                activateFieldAction(start.target, e) || activateFieldShop(start.target, e) || activateFieldBackground(start.target, e) || activateFieldEffect(start.target, e) || activateFieldMusic(start.target, e) || activateCleanPoops(start.target, e) || activateModeToggle(start.target, e) || activateBuildCategory(start.target, e) || activateFieldTab(start.target, e);
+                activateFieldAction(start.target, e) || activateFieldNav(start.target, e) || activateFieldShop(start.target, e) || activateFieldBackground(start.target, e) || activateFieldEffect(start.target, e) || activateFieldMusic(start.target, e) || activateCleanPoops(start.target, e) || activateModeToggle(start.target, e) || activateBuildCategory(start.target, e) || activateFieldTab(start.target, e);
             }
         };
         dock.addEventListener('pointerdown', dock.__mhFieldDockTabPointerDown, true);

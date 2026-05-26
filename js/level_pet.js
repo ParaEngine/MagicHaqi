@@ -1,6 +1,6 @@
 // Level 2 — 宠物 + 房间（经典电子宠物日常）
 
-import { $, $$, escapeHtml, randInt, renderVisualAsset, showToast } from './utils.js';
+import { $, $$, dockDisabledAttrs, escapeHtml, isDockButtonDisabled, randInt, renderVisualAsset, showDockDisabledToast, showToast } from './utils.js';
 import { t } from './i18n.js';
 import { canPlaceItemInArea, CONFIG, DECO_VISUALS, getActiveHouseRoomIds, getPlacedItemZOrder, getShopItemById, SHOP_ITEMS } from './config.js';
 import { isVisitingMode, notify, state } from './state.js';
@@ -1262,6 +1262,8 @@ export const petLevel = {
             if (target.closest?.('#mhDecorBtn, #mhDecorDoneBtn')) {
                 event?.preventDefault?.();
                 event?.stopPropagation?.();
+                const btn = target.closest?.('#mhDecorBtn, #mhDecorDoneBtn');
+                if (isDockButtonDisabled(btn)) { showDockDisabledToast(btn); return true; }
                 if (isPetInteractionBlocked(pet)) { showSleepingBlocked(pet); return true; }
                 dock.__mhPetDockTabHandledAt = Date.now();
                 ctx.callbacks.onToggleDecor?.(!state.isDecorMode);
@@ -1270,6 +1272,8 @@ export const petLevel = {
             if (target.closest?.('#mhFeedBtn, #mhFeedDoneBtn')) {
                 event?.preventDefault?.();
                 event?.stopPropagation?.();
+                const btn = target.closest?.('#mhFeedBtn, #mhFeedDoneBtn');
+                if (isDockButtonDisabled(btn)) { showDockDisabledToast(btn); return true; }
                 if (isPetInteractionBlocked(pet)) { showSleepingBlocked(pet); return true; }
                 dock.__mhPetDockTabHandledAt = Date.now();
                 ctx.callbacks.onToggleFeed?.(!state.isFeedMode);
@@ -1371,7 +1375,7 @@ export const petLevel = {
 
         dock.querySelectorAll('[data-action]').forEach(el => {
             el.onclick = async () => {
-                if (el.disabled) return;
+                if (isDockButtonDisabled(el)) { showDockDisabledToast(el); return; }
                 const k = el.dataset.action;
                 if (isVisitingMode()) {
                     if (k === 'visit-pet-wave') showToast('宠物和好友伙伴开心互动了一会儿。', 'success', 1600);
@@ -1792,7 +1796,7 @@ function renderActionTray(pet) {
                 const disabled = eggDisabled || sleepDisabled || (a.k === 'sleep' && sleepAction.disabled);
                 const urgentClass = a.feed && feedUrgent ? ' is-urgent' : '';
                 const title = eggDisabled
-                    ? '蛋还没有孵化，无法进行此操作。'
+                    ? (a.k === 'bath' ? '蛋还没有孵化，先喂食让它孵化后再洗澡。' : '蛋还没有孵化，先喂食让它孵化后再睡觉。')
                     : sleepDisabled
                         ? sleepingInteractionText(pet)
                         : a.k === 'sleep'
@@ -1801,7 +1805,7 @@ function renderActionTray(pet) {
                             ? `体力值 ${Math.max(0, Math.round(Number(pet?.stats?.hunger) || 0))}，需要休息或喂食。`
                             : '';
                 return `
-                <button type="button" class="btn-secondary action-btn dock-icon-btn ${a.decor || a.feed ? 'mh-decor-action mh-room-mode-toggle' : ''} ${a.feed ? 'mh-feed-action' : ''}${urgentClass} ${sleepDisabled || eggDisabled ? 'is-sleep-disabled' : ''}" ${a.decor ? 'id="mhDecorBtn"' : a.feed ? 'id="mhFeedBtn"' : `data-action="${a.k}"`} ${disabled ? 'disabled' : ''} title="${escapeHtml(title)}">
+                <button type="button" class="btn-secondary action-btn dock-icon-btn ${a.decor || a.feed ? 'mh-decor-action mh-room-mode-toggle' : ''} ${a.feed ? 'mh-feed-action' : ''}${urgentClass} ${disabled ? 'is-sleep-disabled' : ''}" ${a.decor ? 'id="mhDecorBtn"' : a.feed ? 'id="mhFeedBtn"' : `data-action="${a.k}"`}${dockDisabledAttrs(disabled, title)} title="${escapeHtml(title)}">
                     <span class="dock-icon">${a.icon}</span>
                     <span class="dock-label">${escapeHtml(a.label)}</span>
                 </button>

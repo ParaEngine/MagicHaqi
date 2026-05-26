@@ -1,5 +1,5 @@
 // 故事播放视图：加载 shareable story JSON，按场景播放对白，并 gate 互动任务。
-import { $, escapeHtml, showToast } from './utils.js';
+import { $, dockDisabledAttrs, escapeHtml, isDockButtonDisabled, showDockDisabledToast, showToast } from './utils.js';
 import { state } from './state.js';
 import { CONFIG } from './config.js';
 import { getProcessedSheet, mountPetArt, petArtHtml, scanAndMount, say, sayOnPet } from './pet.js';
@@ -907,7 +907,7 @@ function renderActionButton(activity, activityIndex, { current = false, locked =
     const title = type === 'tap' ? ACTIVITY_LABELS.tap : (activity.title || ACTIVITY_LABELS[type] || '互动');
     const badge = left <= 0 ? '✓' : String(left);
     return `
-        <button type="button" class="btn-secondary action-btn dock-icon-btn mh-story-dock-action ${type === 'feed' ? 'is-feed-action' : ''} ${current ? 'is-current' : ''} ${left <= 0 ? 'is-complete' : ''}" data-story-activity="${activityIndex}" ${locked ? 'disabled' : ''}>
+        <button type="button" class="btn-secondary action-btn dock-icon-btn mh-story-dock-action ${type === 'feed' ? 'is-feed-action' : ''} ${current ? 'is-current' : ''} ${left <= 0 ? 'is-complete' : ''}" data-story-activity="${activityIndex}"${dockDisabledAttrs(locked, '对白播放中，先点击继续看完当前对白。')}>
             <span class="mh-story-action-badge" aria-hidden="true">${badge}</span>
             <span class="dock-icon">${activityIcon(activity, activityIndex)}</span>
             <span class="dock-label">${escapeHtml(title)}</span>
@@ -955,7 +955,7 @@ function renderStoryActionDock(scene, timeline, activeItem, activeActivityIndex,
         : '<span class="mh-story-page-arrow mh-story-page-arrow-placeholder"></span>';
     return `
         <div class="mh-story-actions">
-            <button type="button" class="btn-secondary dock-icon-btn mh-story-page-arrow" data-story-prev-page ${hasPrevious ? '' : 'disabled'} aria-label="上一页" title="上一页">‹</button>
+            <button type="button" class="btn-secondary dock-icon-btn mh-story-page-arrow" data-story-prev-page${dockDisabledAttrs(!hasPrevious, '已经是第一页。')} aria-label="上一页" title="上一页">‹</button>
             <div class="mh-story-action-strip">
                 ${actionButtons || '<span class="mh-story-action-placeholder"> </span>'}
             </div>
@@ -1419,7 +1419,11 @@ export function renderStoryPlayer(panel, data = {}, options = {}) {
     if ($('mhStoryReplay')) $('mhStoryReplay').onclick = () => startUnlockedReplay(panel, options);
     if ($('mhStoryClaim')) $('mhStoryClaim').onclick = () => options.onRaisePet?.(story, selectedActor());
     panel.querySelector('[data-story-step]')?.addEventListener('click', () => continueTimelineLine(panel, options));
-    panel.querySelector('[data-story-prev-page]')?.addEventListener('click', () => goPrev(panel, options));
+    panel.querySelector('[data-story-prev-page]')?.addEventListener('click', (e) => {
+        const btn = e.currentTarget;
+        if (isDockButtonDisabled(btn)) { showDockDisabledToast(btn); return; }
+        goPrev(panel, options);
+    });
     panel.querySelector('[data-story-next-page]')?.addEventListener('click', () => goNext(panel, options));
     panel.querySelectorAll('[data-story-actor-stage]').forEach(el => {
         el.onclick = (e) => {
@@ -1460,7 +1464,8 @@ export function renderStoryPlayer(panel, data = {}, options = {}) {
         const activity = sceneActivities(currentScene())[index];
         if (activityType(activity) === 'feed') bindStoryFeedDrag(btn, activity, panel, options, index);
         btn.onclick = async () => {
-            if (btn.disabled || isDialogueActive()) return;
+            if (isDockButtonDisabled(btn)) { showDockDisabledToast(btn); return; }
+            if (isDialogueActive()) { showToast('对白播放中，先点击继续看完当前对白。', 'info', 1600); return; }
             if (Date.now() - (btn.__mhStoryFeedDragHandledAt || 0) < 350) return;
             if (!activity) return;
             const type = activityType(activity);

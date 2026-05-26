@@ -44,6 +44,34 @@ export function showToast(msg, type = 'info', duration = 3600) {
     toastTimer = setTimeout(() => el.remove(), ms);
 }
 
+export function dockDisabledAttrs(disabled, reason) {
+    if (!disabled) return '';
+    const text = String(reason || '暂时不能点击。');
+    return ` aria-disabled="true" data-disabled="true" data-disabled-reason="${escapeHtml(text)}"`;
+}
+
+export function isDockButtonDisabled(btn) {
+    return btn?.dataset?.disabled === 'true' || btn?.getAttribute?.('aria-disabled') === 'true';
+}
+
+export function setDockButtonDisabled(btn, disabled, reason) {
+    if (!btn) return;
+    btn.classList.toggle('is-sleep-disabled', !!disabled);
+    btn.setAttribute('aria-disabled', disabled ? 'true' : 'false');
+    if (disabled) {
+        btn.dataset.disabled = 'true';
+        btn.dataset.disabledReason = reason || '暂时不能点击。';
+    } else {
+        delete btn.dataset.disabled;
+        delete btn.dataset.disabledReason;
+    }
+}
+
+export function showDockDisabledToast(btn) {
+    const reason = btn?.dataset?.disabledReason || btn?.title || '暂时不能点击。';
+    showToast(reason, 'info', 2200);
+}
+
 export function randInt(min, max) {
     return Math.floor(Math.random() * (max - min + 1)) + min;
 }

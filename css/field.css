@@ -630,7 +630,7 @@
         linear-gradient(180deg, rgba(255,255,255,0.58), rgba(255,255,255,0.08)),
         linear-gradient(135deg, #ecfdf5, #bae6fd);
 }
-.mh-field-clean-action.is-urgent:not(:disabled) {
+.mh-field-clean-action.is-urgent:not(:disabled):not([aria-disabled="true"]) {
     border-color: #fbbf24;
     color: #7c2d12;
     background:
@@ -638,7 +638,8 @@
         linear-gradient(135deg, #fef3c7, #86efac 56%, #67e8f9);
     box-shadow: 0 4px 0 rgba(146,64,14,0.24), 0 0 16px rgba(251,191,36,0.62), inset 0 1px 0 rgba(255,255,255,0.92);
 }
-.mh-field-clean-action:disabled {
+.mh-field-clean-action:disabled,
+.mh-field-clean-action[aria-disabled="true"] {
     opacity: 0.48;
     cursor: not-allowed;
     filter: grayscale(0.18);
