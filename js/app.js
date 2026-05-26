@@ -148,6 +148,7 @@ let pendingStoryReturnToMaker = null;
 let pendingStoryReturnToList = false;
 let shopReturnPreserveRoomMode = false;
 let lastRenderedView = null;
+let isBootstrapping = true;
 
 const NEW_USER_STORY_PARAM = 'new_user_story';
 
@@ -695,6 +696,7 @@ function cleanupLeavingView(nextView) {
 }
 
 function render() {
+    if (isBootstrapping) return;
     cleanupLeavingView(state.currentView);
     stopHomeWalk();
     const fn = routes[state.currentView] || routes.login;
@@ -702,11 +704,19 @@ function render() {
 }
 subscribe(render);
 
+function finishBootstrap() {
+    isBootstrapping = false;
+}
+
 async function loadCurrentUser() {
     if (!sdk.token) return null;
     if (typeof sdk.getUserProfile === 'function') return await sdk.getUserProfile();
     if (typeof sdk.getCurrentUser === 'function') return await sdk.getCurrentUser();
     return sdk.user || null;
+}
+
+function currentAppTitle() {
+    return String(state.settings?.starSettlement?.appTitle || '').trim() || t('appName');
 }
 
 // ==== 启动流程 ====
@@ -726,6 +736,8 @@ async function bootstrap() {
     }
 
     if (!sdk.token) {
+        await applyTemporaryHomePlanetFromUrl();
+        finishBootstrap();
         setView('login');
         return;
     }
@@ -754,6 +766,7 @@ async function bootstrap() {
     await ensurePlanetNamed();
 
     if (!hasSelectablePets()) {
+        finishBootstrap();
         if (await maybeStartNewUserStory()) return;
         await enterDefaultEggHome();
         return;
@@ -767,6 +780,7 @@ async function bootstrap() {
         pendingStoryData = null;
         pendingStoryReturnToMaker = null;
         pendingStoryReturnToList = false;
+        finishBootstrap();
         setView('storyPlayer');
         return;
     }
@@ -776,6 +790,7 @@ async function bootstrap() {
     }
     preloadLoadedPetAssets();
     // 进入 home；首次启动为星球外层，视图间返回时由 state 恢复上次 home level。
+    finishBootstrap();
     setView(hasPostcardParams() ? 'postcard' : 'home');
 }
 
@@ -1099,7 +1114,7 @@ async function handleLogin() {
         return;
     }
     try {
-        await sdk.showLoginWindow({ title: 'Keepwork 登录' });
+        await sdk.showLoginWindow({ title: `${currentAppTitle()} 登录` });
     } catch (e) {
         const msg = e?.message || e;
         if (msg && !/cancel/i.test(String(msg))) {
@@ -2236,5 +2251,6 @@ if (typeof window !== 'undefined') {
 bootstrap().catch(err => {
     console.error(err);
     showToast('启动失败：' + (err?.message || err), 'error', 5000);
+    finishBootstrap();
     setView('login');
 });

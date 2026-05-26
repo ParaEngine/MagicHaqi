@@ -356,9 +356,31 @@ function applyRoomItemZIndex(el, pos = null) {
     el.style.zIndex = String(getRoomItemZIndex(itemPos, Number(el.dataset.zorder), el.dataset.itemType));
 }
 
-function setRoomItemDraggingLayer(el, active) {
-    const layer = el?.closest?.('#mhFurnitureLayer, #mhFoodLayer');
-    layer?.classList.toggle('has-room-dragging', !!active);
+function setRoomItemDragElevation(el, active) {
+    if (!el) return;
+    if (active) {
+        if (!el.__mhRoomDragHome) {
+            el.__mhRoomDragHome = {
+                parent: el.parentElement,
+                nextSibling: el.nextSibling,
+                zIndex: el.style.zIndex,
+            };
+        }
+        const scene = $('mhPetRoomScene');
+        if (scene && el.parentElement !== scene) scene.appendChild(el);
+        el.style.zIndex = '900020';
+        return;
+    }
+    const home = el.__mhRoomDragHome;
+    if (home?.parent && el.parentElement !== home.parent) {
+        if (home.nextSibling?.parentElement === home.parent) home.parent.insertBefore(el, home.nextSibling);
+        else home.parent.appendChild(el);
+    }
+    if (home) {
+        if (home.zIndex) el.style.zIndex = home.zIndex;
+        else applyRoomItemZIndex(el);
+    }
+    el.__mhRoomDragHome = null;
 }
 
 function applyRoomMeterLayout() {
@@ -837,8 +859,9 @@ function spawnServedFoodPieces(el, item, count = 16) {
     if (!scene || !el) return;
     const sceneRect = scene.getBoundingClientRect();
     const rect = el.getBoundingClientRect();
-    const centerX = rect.left - sceneRect.left + rect.width / 2;
-    const centerY = rect.top - sceneRect.top + rect.height / 2;
+    const scale = clientScaleForElement(scene);
+    const centerX = (rect.left - sceneRect.left + rect.width / 2) * scale.x;
+    const centerY = (rect.top - sceneRect.top + rect.height / 2) * scale.y;
     for (let i = 0; i < count; i++) {
         const piece = document.createElement('span');
         piece.className = 'mh-served-food-piece';
@@ -1580,7 +1603,7 @@ function bindRoomPan(ctx) {
         if (bathAnimationRunning) return;
         if (e.button != null && e.button !== 0) return;
         if (e.target.closest?.('button, a, input, textarea, select, [contenteditable="true"], [data-tray-item]')) return;
-        if (isRoomPlacementMode() && e.target.closest?.('.furniture')) return;
+        if (isRoomPlacementMode() && e.target.closest?.('.furniture') && getClosestDraggableRoomItem(e.clientX, e.clientY)) return;
         drag = { id: e.pointerId, x: e.clientX, y: e.clientY, pan: roomPan, active: false };
     });
     stage.addEventListener('pointermove', (e) => {
@@ -1647,7 +1670,7 @@ function bindFurnitureDrag(el, ctx) {
         };
         el.setPointerCapture?.(e.pointerId);
         targetEl.classList.add('is-dragging');
-        setRoomItemDraggingLayer(targetEl, true);
+        setRoomItemDragElevation(targetEl, true);
     });
     el.addEventListener('pointermove', (e) => {
         if (!drag || drag.id !== e.pointerId) return;
@@ -1680,7 +1703,7 @@ function bindFurnitureDrag(el, ctx) {
         el.releasePointerCapture?.(e.pointerId);
         targetEl.classList.remove('is-dragging');
         targetEl.classList.remove('will-discard');
-        setRoomItemDraggingLayer(targetEl, false);
+        setRoomItemDragElevation(targetEl, false);
         setDockDeleteTargetVisible(false);
         if (drag.moved) {
             targetEl.__mhRoomItemDraggedAt = Date.now();

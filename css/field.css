@@ -413,15 +413,13 @@
     transition: transform .15s;
     touch-action: none;
 }
-.field-item:hover { transform: translate(-50%, -50%) scale(1.15); }
 .mh-stage.zoom-field.decor-mode .field-item { cursor: grab; }
-.mh-stage.zoom-field.decor-mode .field-item:hover { transform: translate(-50%, -50%); }
 .mh-stage.zoom-field.decor-mode .field-item.selected {
     filter: drop-shadow(0 0 10px rgba(255,255,255,0.95)) drop-shadow(0 0 18px rgba(34,197,94,0.7)) drop-shadow(0 3px 4px rgba(0,0,0,0.25));
 }
 .field-item.is-dragging {
     cursor: grabbing;
-    transform: translate(-50%, -50%) scale(1.2);
+    transform: translate(-50%, -50%);
     opacity: 0.88;
 }
 .field-item.will-discard {
@@ -449,8 +447,8 @@
 /* —— 主屋旗帜（贴在房屋右下角，叠在房屋之上） —— */
 .field-house-flag {
     position: absolute;
-    right: -6px;
-    bottom: -4px;
+    right: calc(100% - var(--field-house-flag-right, 100%) - 6px);
+    bottom: calc(100% - var(--field-house-flag-bottom, 100%) - 4px);
     pointer-events: none;
     display: flex;
     flex-direction: column;
@@ -490,8 +488,8 @@
 .mh-field-drag-ghost-svg .field-house-svg img { width: 100%; height: auto; display: block; object-fit: contain; }
 .mh-field-scale-controls {
     position: absolute;
-    left: 50%;
-    top: calc(100% + 4px);
+    left: var(--mh-field-scale-controls-left, 50%);
+    top: calc(var(--mh-field-scale-controls-top, 100%) + 4px);
     transform: translateX(-50%) translateY(6px) scale(0.96);
     display: flex;
     align-items: center;
@@ -534,6 +532,7 @@
     background: transparent; border: none;
     font-size: 26px; cursor:pointer; pointer-events:auto;
     filter: drop-shadow(0 3px 3px rgba(0,0,0,0.3));
+    touch-action: none;
 }
 .poop-btn:hover { transform: translate(-50%, -50%) scale(1.2); }
 .poop-btn.field-poop-suck-source {

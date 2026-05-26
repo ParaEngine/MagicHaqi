@@ -47,6 +47,13 @@ const FIELD_ITEM_DEFAULT_SCALE = 1.15;
 const FIELD_ITEM_MIN_SCALE = 0.8;
 const FIELD_ITEM_MAX_SCALE = 3;
 const FIELD_ITEM_SCALE_STEP = 1.15;
+const FIELD_FINGER_HIT_RADIUS_PX = 18;
+const FIELD_FINGER_HIT_SAMPLE_POINTS = [
+    [0, 0], [0, -1], [1, 0], [0, 1], [-1, 0],
+    [0.72, -0.72], [0.72, 0.72], [-0.72, 0.72], [-0.72, -0.72],
+];
+const FIELD_IMAGE_ALPHA_HIT_THRESHOLD = 24;
+const FIELD_IMAGE_ALPHA_AABB_CACHE = new Map();
 const DRAG_TO_SCENE_HINT = '拖动到场景中';
 const FIELD_DRAG_EXISTING_HINT = '拖动物品可移动，拖到底部可收回';
 const FIELD_BUILD_CATEGORIES = [
@@ -79,6 +86,7 @@ let suppressFieldDockActivationUntil = 0;
 let fieldPan = 0;
 let fieldPxPerMeter = 1;
 const fieldPanById = {};
+let lastBoundFieldPanKey = '';
 let selectedFieldItem = null;
 let activePoopSweepId = 0;
 let activePoopSuckFinishAt = 0;
@@ -319,6 +327,302 @@ function moveFieldDragGhost(ghost, clientX, clientY) {
     ghost.style.top = clientY + 'px';
 }
 
+function pointInRect(clientX, clientY, rect) {
+    return !!rect && clientX >= rect.left && clientX <= rect.right && clientY >= rect.top && clientY <= rect.bottom;
+}
+
+function rectIntersectsFinger(clientX, clientY, rect, radius = FIELD_FINGER_HIT_RADIUS_PX) {
+    if (!rect) return false;
+    const nearestX = clampRange(clientX, rect.left, rect.right);
+    const nearestY = clampRange(clientY, rect.top, rect.bottom);
+    return Math.hypot(clientX - nearestX, clientY - nearestY) <= radius;
+}
+
+function svgPointFromClient(svg, clientX, clientY) {
+    const ctm = svg?.getScreenCTM?.();
+    if (!ctm) return null;
+    const point = svg.createSVGPoint();
+    point.x = clientX;
+    point.y = clientY;
+    try {
+        return point.matrixTransform(ctm.inverse());
+    } catch {
+        return null;
+    }
+}
+
+function localPointInBBox(point, node) {
+    if (!point || !node?.getBBox) return false;
+    try {
+        const box = node.getBBox();
+        return point.x >= box.x && point.x <= box.x + box.width && point.y >= box.y && point.y <= box.y + box.height;
+    } catch {
+        return false;
+    }
+}
+
+function pointOverSvgPaint(svg, clientX, clientY) {
+    const point = svgPointFromClient(svg, clientX, clientY);
+    if (!point) return null;
+    const geometryType = window.SVGGeometryElement;
+    const textType = window.SVGTextContentElement;
+    const imageType = window.SVGImageElement;
+    for (const node of svg.querySelectorAll('*')) {
+        const style = getComputedStyle(node);
+        if (style.display === 'none' || style.visibility === 'hidden' || Number(style.opacity) === 0) continue;
+        if (geometryType && node instanceof geometryType) {
+            try {
+                if (style.fill !== 'none' && node.isPointInFill(point)) return true;
+                if (style.stroke !== 'none' && node.isPointInStroke(point)) return true;
+            } catch {
+                if (localPointInBBox(point, node)) return true;
+            }
+            continue;
+        }
+        if ((textType && node instanceof textType) || (imageType && node instanceof imageType)) {
+            if (localPointInBBox(point, node)) return true;
+        }
+    }
+    return false;
+}
+
+function imageAlphaCacheKey(img) {
+    const src = img?.currentSrc || img?.src || '';
+    const width = img?.naturalWidth || 0;
+    const height = img?.naturalHeight || 0;
+    return src && width > 0 && height > 0 ? `${src}::${width}x${height}` : '';
+}
+
+function getImageOpaqueAabb(img) {
+    if (!img || !img.complete || !img.naturalWidth || !img.naturalHeight) return null;
+    const key = imageAlphaCacheKey(img);
+    if (!key) return null;
+    if (FIELD_IMAGE_ALPHA_AABB_CACHE.has(key)) return FIELD_IMAGE_ALPHA_AABB_CACHE.get(key);
+    const canvas = document.createElement('canvas');
+    canvas.width = img.naturalWidth;
+    canvas.height = img.naturalHeight;
+    try {
+        const ctx = canvas.getContext('2d', { willReadFrequently: true });
+        if (!ctx) return null;
+        ctx.drawImage(img, 0, 0);
+        const data = ctx.getImageData(0, 0, canvas.width, canvas.height).data;
+        let minX = canvas.width;
+        let minY = canvas.height;
+        let maxX = -1;
+        let maxY = -1;
+        for (let y = 0; y < canvas.height; y += 1) {
+            const row = y * canvas.width * 4;
+            for (let x = 0; x < canvas.width; x += 1) {
+                if (data[row + x * 4 + 3] <= FIELD_IMAGE_ALPHA_HIT_THRESHOLD) continue;
+                if (x < minX) minX = x;
+                if (x > maxX) maxX = x;
+                if (y < minY) minY = y;
+                if (y > maxY) maxY = y;
+            }
+        }
+        const aabb = maxX >= minX && maxY >= minY
+            ? { minX, minY, maxX: maxX + 1, maxY: maxY + 1, width: canvas.width, height: canvas.height }
+            : { empty: true, width: canvas.width, height: canvas.height };
+        FIELD_IMAGE_ALPHA_AABB_CACHE.set(key, aabb);
+        return aabb;
+    } catch {
+        return null;
+    }
+}
+
+function imageContentRect(img) {
+    const rect = img?.getBoundingClientRect?.();
+    if (!rect || rect.width <= 0 || rect.height <= 0 || !img.naturalWidth || !img.naturalHeight) return rect;
+    const boxRatio = rect.width / rect.height;
+    const imageRatio = img.naturalWidth / img.naturalHeight;
+    if (!Number.isFinite(boxRatio) || !Number.isFinite(imageRatio) || boxRatio <= 0 || imageRatio <= 0) return rect;
+    if (imageRatio > boxRatio) {
+        const height = rect.width / imageRatio;
+        const top = rect.top + (rect.height - height) / 2;
+        return { left: rect.left, right: rect.right, top, bottom: top + height, width: rect.width, height };
+    }
+    const width = rect.height * imageRatio;
+    const left = rect.left + (rect.width - width) / 2;
+    return { left, right: left + width, top: rect.top, bottom: rect.bottom, width, height: rect.height };
+}
+
+function imageOpaqueAabbClientRect(img) {
+    if (!img) return null;
+    const rect = imageContentRect(img);
+    if (!rect || rect.width <= 0 || rect.height <= 0) return null;
+    const aabb = getImageOpaqueAabb(img);
+    if (!aabb) return null;
+    if (aabb.empty) return { empty: true };
+    return {
+        left: rect.left + (aabb.minX / aabb.width) * rect.width,
+        right: rect.left + (aabb.maxX / aabb.width) * rect.width,
+        top: rect.top + (aabb.minY / aabb.height) * rect.height,
+        bottom: rect.top + (aabb.maxY / aabb.height) * rect.height,
+    };
+}
+
+function svgPaintAabbClientRect(svg) {
+    if (!svg?.getBBox || !svg.getScreenCTM) return null;
+    try {
+        const box = svg.getBBox();
+        const ctm = svg.getScreenCTM();
+        if (!ctm || box.width <= 0 || box.height <= 0) return null;
+        const point = svg.createSVGPoint();
+        const corners = [
+            [box.x, box.y],
+            [box.x + box.width, box.y],
+            [box.x + box.width, box.y + box.height],
+            [box.x, box.y + box.height],
+        ].map(([x, y]) => {
+            point.x = x;
+            point.y = y;
+            return point.matrixTransform(ctm);
+        });
+        const xs = corners.map(corner => corner.x);
+        const ys = corners.map(corner => corner.y);
+        return {
+            left: Math.min(...xs),
+            right: Math.max(...xs),
+            top: Math.min(...ys),
+            bottom: Math.max(...ys),
+        };
+    } catch {
+        return null;
+    }
+}
+
+function fieldItemVisibleAabbClientRect(el) {
+    const img = el?.querySelector?.('.field-house-img');
+    const imageAabb = imageOpaqueAabbClientRect(img);
+    if (imageAabb && !imageAabb.empty) return imageAabb;
+    const svgAabb = svgPaintAabbClientRect(el?.querySelector?.('.field-item-visual svg'));
+    if (svgAabb) return svgAabb;
+    return getFieldItemImageRect(el);
+}
+
+function pointOverImageOpaqueAabb(img, clientX, clientY) {
+    if (!img) return null;
+    const rect = imageContentRect(img);
+    if (!pointInRect(clientX, clientY, rect)) return false;
+    const aabbRect = imageOpaqueAabbClientRect(img);
+    if (!aabbRect) return true;
+    if (aabbRect.empty) return false;
+    return clientX >= aabbRect.left && clientX <= aabbRect.right && clientY >= aabbRect.top && clientY <= aabbRect.bottom;
+}
+
+function getFieldItemImageRect(el) {
+    const image = el?.querySelector?.('.field-item-visual');
+    const rect = image?.getBoundingClientRect?.();
+    return rect && rect.width > 0 && rect.height > 0 ? rect : el?.getBoundingClientRect?.();
+}
+
+function pointOverFieldScaleControls(clientX, clientY) {
+    const controls = document.getElementById('mhFieldItemScaleControls');
+    if (!controls?.classList?.contains('is-visible')) return false;
+    return Array.from(controls.querySelectorAll('.mh-field-scale-btn')).some(btn => {
+        return pointInRect(clientX, clientY, btn.getBoundingClientRect?.());
+    });
+}
+
+function pointOverFieldItemPaint(el, clientX, clientY) {
+    const imageRect = getFieldItemImageRect(el);
+    if (!pointInRect(clientX, clientY, imageRect)) return false;
+    const svg = el?.querySelector?.('.field-item-visual svg');
+    const painted = pointOverSvgPaint(svg, clientX, clientY);
+    if (painted != null) return painted;
+    const img = el?.querySelector?.('.field-house-img');
+    const imageAabbHit = pointOverImageOpaqueAabb(img, clientX, clientY);
+    if (imageAabbHit != null) return imageAabbHit;
+    return painted ?? true;
+}
+
+function fingerOverFieldItemPaint(el, clientX, clientY) {
+    const imageRect = getFieldItemImageRect(el);
+    if (!rectIntersectsFinger(clientX, clientY, imageRect)) return false;
+    return FIELD_FINGER_HIT_SAMPLE_POINTS.some(([x, y]) => {
+        const sampleX = clientX + x * FIELD_FINGER_HIT_RADIUS_PX;
+        const sampleY = clientY + y * FIELD_FINGER_HIT_RADIUS_PX;
+        return pointOverFieldItemPaint(el, sampleX, sampleY);
+    });
+}
+
+function getClosestDraggableFieldItem(clientX, clientY) {
+    if (!isFieldDecorMode() || pointOverFieldScaleControls(clientX, clientY)) return null;
+    let best = null;
+    $$('.field-item').forEach(item => {
+        if (!fingerOverFieldItemPaint(item, clientX, clientY)) return;
+        const imageRect = getFieldItemImageRect(item);
+        const centerX = imageRect.left + imageRect.width / 2;
+        const centerY = imageRect.top + imageRect.height / 2;
+        const distance = Math.hypot(clientX - centerX, clientY - centerY);
+        const zIndex = Number.parseInt(getComputedStyle(item).zIndex, 10) || 0;
+        if (!best || distance < best.distance || (distance === best.distance && zIndex > best.zIndex)) {
+            best = { item, distance, zIndex };
+        }
+    });
+    return best?.item || null;
+}
+
+function fieldItemScaleControlsAnchor(el) {
+    const itemRect = el?.getBoundingClientRect?.();
+    if (!itemRect || itemRect.width <= 0 || itemRect.height <= 0) return { leftPercent: 50, topPercent: 100 };
+    const aabbRect = fieldItemVisibleAabbClientRect(el);
+    if (!aabbRect || aabbRect.empty) return { leftPercent: 50, topPercent: 100 };
+    const leftPercent = (((aabbRect.left + aabbRect.right) / 2 - itemRect.left) / itemRect.width) * 100;
+    const topPercent = ((aabbRect.bottom - itemRect.top) / itemRect.height) * 100;
+    return {
+        leftPercent: clampRange(leftPercent, 0, 100),
+        topPercent: clampRange(topPercent, 0, 100),
+    };
+}
+
+function updateFieldItemScaleControlsAnchor(el, controls, ctx) {
+    const anchor = fieldItemScaleControlsAnchor(el);
+    controls.style.setProperty('--mh-field-scale-controls-left', `${anchor.leftPercent.toFixed(2)}%`);
+    controls.style.setProperty('--mh-field-scale-controls-top', `${anchor.topPercent.toFixed(2)}%`);
+    const img = el?.querySelector?.('.field-house-img');
+    if (img && !img.complete && !img.__mhFieldScaleControlsLoadBound) {
+        img.__mhFieldScaleControlsLoadBound = true;
+        img.addEventListener('load', () => {
+            img.__mhFieldScaleControlsLoadBound = false;
+            updateFieldItemScaleControls(ctx);
+        }, { once: true });
+        img.addEventListener('error', () => { img.__mhFieldScaleControlsLoadBound = false; }, { once: true });
+    }
+}
+
+function fieldHouseFlagAnchor(el) {
+    const itemRect = el?.getBoundingClientRect?.();
+    if (!itemRect || itemRect.width <= 0 || itemRect.height <= 0) return { rightPercent: 100, bottomPercent: 100 };
+    const aabbRect = fieldItemVisibleAabbClientRect(el);
+    if (!aabbRect || aabbRect.empty) return { rightPercent: 100, bottomPercent: 100 };
+    return {
+        rightPercent: clampRange(((aabbRect.right - itemRect.left) / itemRect.width) * 100, 0, 100),
+        bottomPercent: clampRange(((aabbRect.bottom - itemRect.top) / itemRect.height) * 100, 0, 100),
+    };
+}
+
+function updateFieldHouseFlagAnchor(el) {
+    const flag = el?.querySelector?.(':scope > .field-house-flag');
+    if (!flag) return;
+    const anchor = fieldHouseFlagAnchor(el);
+    flag.style.setProperty('--field-house-flag-right', `${anchor.rightPercent.toFixed(2)}%`);
+    flag.style.setProperty('--field-house-flag-bottom', `${anchor.bottomPercent.toFixed(2)}%`);
+    const img = el?.querySelector?.('.field-house-img');
+    if (img && !img.complete && !img.__mhFieldHouseFlagLoadBound) {
+        img.__mhFieldHouseFlagLoadBound = true;
+        img.addEventListener('load', () => {
+            img.__mhFieldHouseFlagLoadBound = false;
+            updateFieldHouseFlagAnchor(el);
+        }, { once: true });
+        img.addEventListener('error', () => { img.__mhFieldHouseFlagLoadBound = false; }, { once: true });
+    }
+}
+
+function updateFieldHouseFlagAnchors() {
+    $$('.field-item .field-house-flag').forEach(flag => updateFieldHouseFlagAnchor(flag.closest('.field-item')));
+}
+
 function getFieldItemScale(item, placedItem = null) {
     const scale = Number(placedItem?.fieldSize ?? item?.fieldSize);
     const safeScale = Number.isFinite(scale) ? scale : FIELD_ITEM_DEFAULT_SCALE;
@@ -337,15 +641,32 @@ function metersToFieldPx(value) {
     return Math.max(1, Math.round((Number(value) || 0) * fieldPxPerMeter));
 }
 
+function fieldImageBackgroundWidthPx(scene, stageWidth, stageHeight) {
+    const img = scene?.querySelector?.('.field-custom-background-image');
+    if (!img) return null;
+    if (!img.__mhFieldImageSizingBound) {
+        img.__mhFieldImageSizingBound = true;
+        img.addEventListener('load', applyFieldPan, { once: true });
+        img.addEventListener('error', applyFieldPan, { once: true });
+    }
+    const width = img.naturalWidth || 0;
+    const height = img.naturalHeight || 0;
+    if (width <= 0 || height <= 0 || stageHeight <= 0) return Math.max(1, stageWidth || 1);
+    return Math.max(1, stageWidth || 1, Math.round(stageHeight * width / height));
+}
+
 function recomputeFieldMetrics() {
     const stage = $('mhStage');
     const scene = $('mhFieldScene');
     const stageHeight = stage?.clientHeight || window.innerHeight || 540;
+    const stageWidth = stage?.clientWidth || window.innerWidth || 1;
     fieldPxPerMeter = Math.max(1, stageHeight / FIELD_HEIGHT_METERS);
     if (scene) {
-        scene.style.width = metersToFieldPx(FIELD_WIDTH_METERS) + 'px';
+        const imageWidth = fieldImageBackgroundWidthPx(scene, stageWidth, stageHeight);
+        const sceneWidth = imageWidth || metersToFieldPx(FIELD_WIDTH_METERS);
+        scene.style.width = sceneWidth + 'px';
         scene.style.setProperty('--field-viewport-height', `${stageHeight}px`);
-        scene.dataset.fieldWidthMeters = String(FIELD_WIDTH_METERS);
+        scene.dataset.fieldWidthMeters = imageWidth ? (sceneWidth / fieldPxPerMeter).toFixed(3) : String(FIELD_WIDTH_METERS);
         scene.dataset.fieldHeightMeters = String(FIELD_HEIGHT_METERS);
     }
 }
@@ -437,6 +758,29 @@ function centerFieldPet(pet, { animate = false, duration = 520, onComplete = nul
         onComplete?.();
     }
     return true;
+}
+
+function scheduleCenterFieldPet(pet, options = {}) {
+    const panKey = currentFieldPanKey();
+    const petId = pet?.id;
+    if (!petId) return;
+    const run = (nextOptions = {}) => {
+        if (currentFieldPanKey() !== panKey) return false;
+        try { return centerFieldPet(pet, { ...options, ...nextOptions }); }
+        catch (_) { return false; }
+    };
+    const recenterAfterImageSizing = () => {
+        const img = document.querySelector('#mhFieldScene .field-custom-background-image');
+        if (!img || img.complete) return;
+        const onReady = () => requestAnimationFrame(() => run({ animate: false, onComplete: null }));
+        img.addEventListener('load', onReady, { once: true });
+        img.addEventListener('error', onReady, { once: true });
+    };
+    requestAnimationFrame(() => {
+        run();
+        recenterAfterImageSizing();
+        requestAnimationFrame(() => run({ animate: false, onComplete: null }));
+    });
 }
 
 function getPoopsInField(pet, fieldId = state.currentField) {
@@ -1658,6 +2002,10 @@ export const fieldLevel = {
                 })
                 .catch(e => console.warn('加载星球表面宠物失败', e));
         }
+        const panKey = currentFieldPanKey();
+        const hadRememberedFieldPan = Number.isFinite(fieldPanById[panKey]);
+        const switchedField = lastBoundFieldPanKey !== panKey;
+        lastBoundFieldPanKey = panKey;
         setFieldEffectScale();
         applyFieldPan();
         ParticleEffects.getInstance().mountAll($('mhFieldScene'));
@@ -1710,7 +2058,8 @@ export const fieldLevel = {
         if (stage) {
             stage.addEventListener('click', (e) => {
                 if (Date.now() - (stage.__mhFieldPannedAt || 0) < 260) return;
-                if (e.target.closest('.poop-btn, .field-item, .pet-sprite, [data-tray-item], .mh-field-scale-controls, [data-field-music-toggle]')) return;
+                if (e.target.closest('.poop-btn, .pet-sprite, [data-tray-item], .mh-field-scale-controls, [data-field-music-toggle]')) return;
+                if (e.target.closest('.field-item') && getClosestDraggableFieldItem(e.clientX, e.clientY)) return;
                 clearFieldItemSelection(ctx);
                 if (!isFieldDecorMode() || !ctx.selectedTrayItem) return;
                 const pos = pointToFieldCoords(e.clientX, e.clientY, true);
@@ -1721,6 +2070,7 @@ export const fieldLevel = {
         $$('.field-item').forEach(el => {
             bindFieldItemDrag(el, ctx);
         });
+        updateFieldHouseFlagAnchors();
         ensureFieldItemScaleControls(ctx);
         restoreFieldItemSelection(ctx);
 
@@ -1752,21 +2102,16 @@ export const fieldLevel = {
         });
 
         if (state.activePetFieldPose?.fieldId === state.currentField && state.activePetFieldPose?.targetPetId) {
-            requestAnimationFrame(() => {
-                try { centerFieldPet(pet, { animate: true, duration: 420 }); } catch (_) {}
-            });
+            scheduleCenterFieldPet(pet, { animate: true, duration: 420 });
         }
         // 蛋阶段：首次进入 field 时把镜头平移到蛋的位置，然后在蛋上播放烟花特效
         else if (pet?.stage === 'egg') {
-            // 等下一帧，确保 .field-pet-current 已挂载到 DOM 上
-            requestAnimationFrame(() => {
-                try {
-                    if (centerFieldPet(pet, { animate: true, duration: 520, onComplete: () => {
-                        try { playEggWelcomeOnce(pet, 'field'); } catch (_) {}
-                    } })) return;
-                } catch (_) {}
+            scheduleCenterFieldPet(pet, { animate: true, duration: 520, onComplete: () => {
                 try { playEggWelcomeOnce(pet, 'field'); } catch (_) {}
-            });
+            } });
+        }
+        else if (switchedField || !hadRememberedFieldPan) {
+            scheduleCenterFieldPet(pet);
         }
         requestAnimationFrame(() => showCaretakerFieldNotice(pet));
     },
@@ -2058,8 +2403,9 @@ function bindFieldPan(ctx) {
     stage.addEventListener('pointerdown', (e) => {
         if (scene.classList.contains('is-machine-sweeping')) return;
         if (e.button != null && e.button !== 0) return;
-        if (e.target.closest?.('button, a, input, textarea, select, [contenteditable="true"], [data-tray-item], .poop-btn, .pet-sprite')) return;
-        if (isFieldDecorMode() && e.target.closest?.('.field-item')) return;
+        const startsOnPoop = !!e.target.closest?.('.poop-btn');
+        if (!startsOnPoop && e.target.closest?.('button, a, input, textarea, select, [contenteditable="true"], [data-tray-item], .pet-sprite')) return;
+        if (isFieldDecorMode() && e.target.closest?.('.field-item') && getClosestDraggableFieldItem(e.clientX, e.clientY)) return;
         drag = { id: e.pointerId, x: e.clientX, y: e.clientY, pan: fieldPan, active: false };
     });
     stage.addEventListener('pointermove', (e) => {
@@ -2138,6 +2484,7 @@ function updateFieldItemScaleControls(ctx) {
     }
     const scale = clampRange(Number(el.dataset.fieldSize), FIELD_ITEM_MIN_SCALE, FIELD_ITEM_MAX_SCALE);
     if (controls.parentElement !== el) el.appendChild(controls);
+    updateFieldItemScaleControlsAnchor(el, controls, ctx);
     controls.classList.add('is-visible');
     controls.querySelector('[data-field-scale="down"]')?.toggleAttribute('disabled', scale <= FIELD_ITEM_MIN_SCALE + 0.001);
     controls.querySelector('[data-field-scale="up"]')?.toggleAttribute('disabled', scale >= FIELD_ITEM_MAX_SCALE - 0.001);
@@ -2187,6 +2534,7 @@ function scaleSelectedFieldItem(ctx, direction) {
     if (Math.abs(nextScale - currentScale) < 0.001) return;
     el.dataset.fieldSize = nextScale.toFixed(3);
     el.style.fontSize = getFieldItemFontSize(def, { ...placed, fieldSize: nextScale }).toFixed(1) + 'px';
+    updateFieldHouseFlagAnchor(el);
     updateFieldItemScaleControls(ctx);
     playFieldItemDropSoundAsync();
     const movePromise = ctx.callbacks.onMoveItem?.(
@@ -2210,24 +2558,28 @@ function bindFieldItemDrag(el, ctx) {
     el.addEventListener('pointerdown', (e) => {
         if (!isFieldDecorMode()) return;
         if (e.target.closest?.('.mh-field-scale-controls')) return;
+        const targetEl = getClosestDraggableFieldItem(e.clientX, e.clientY);
+        if (!targetEl) return;
         if (e.button != null && e.button !== 0) return;
         e.preventDefault();
         e.stopPropagation();
         clearFieldItemSelection(ctx);
         drag = {
+            el: targetEl,
             id: e.pointerId,
             x: e.clientX,
             y: e.clientY,
-            startX: Number(el.dataset.x) || 0,
-            startY: Number(el.dataset.y) || 0,
+            startX: Number(targetEl.dataset.x) || 0,
+            startY: Number(targetEl.dataset.y) || 0,
             moved: false,
-            idx: parseInt(el.dataset.fidx, 10),
+            idx: parseInt(targetEl.dataset.fidx, 10),
         };
-        el.classList.add('is-dragging');
+        targetEl.classList.add('is-dragging');
         try { el.setPointerCapture?.(e.pointerId); } catch {}
     });
     el.addEventListener('pointermove', (e) => {
         if (!drag || drag.id !== e.pointerId) return;
+        const targetEl = drag.el;
         const dist = Math.hypot(e.clientX - drag.x, e.clientY - drag.y);
         if (dist < DRAG_PLACE_THRESHOLD && !drag.moved) return;
         e.preventDefault();
@@ -2237,24 +2589,25 @@ function bindFieldItemDrag(el, ctx) {
         if (!pos) return;
         const overDock = isPointOverDock(e.clientX, e.clientY);
         setFieldDockDeleteTargetVisible(overDock);
-        el.classList.toggle('will-discard', overDock);
-        el.dataset.x = String(pos.x);
-        el.dataset.y = String(pos.y);
-        el.style.left = pct(pos.x);
-        el.style.top = pct(pos.y);
+        targetEl.classList.toggle('will-discard', overDock);
+        targetEl.dataset.x = String(pos.x);
+        targetEl.dataset.y = String(pos.y);
+        targetEl.style.left = pct(pos.x);
+        targetEl.style.top = pct(pos.y);
         updateFieldItemScaleControls(ctx);
     });
     const end = async (e) => {
         if (!drag || drag.id !== e.pointerId) return;
+        const targetEl = drag.el;
         e.preventDefault();
         e.stopPropagation();
         try { el.releasePointerCapture?.(e.pointerId); } catch {}
-        el.classList.remove('is-dragging', 'will-discard');
+        targetEl.classList.remove('is-dragging', 'will-discard');
         setFieldDockDeleteTargetVisible(false);
         if (drag.moved) {
-            el.__mhFieldDraggedAt = Date.now();
+            targetEl.__mhFieldDraggedAt = Date.now();
             if (isPointOverDock(e.clientX, e.clientY)) {
-                el.remove();
+                targetEl.remove();
                 clearFieldItemSelection(ctx);
                 playFieldItemDropSoundAsync();
                 await ctx.callbacks.onRemoveItem?.(drag.idx, currentFieldKey());
@@ -2268,7 +2621,7 @@ function bindFieldItemDrag(el, ctx) {
                 clearFieldItemSelection(ctx);
             }
         } else if (e.type === 'pointerup') {
-            selectFieldItem(el, ctx);
+            selectFieldItem(targetEl, ctx);
             showToast(FIELD_DRAG_EXISTING_HINT, 'info', 1400);
         }
         drag = null;

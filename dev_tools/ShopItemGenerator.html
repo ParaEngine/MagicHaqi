@@ -167,6 +167,7 @@
         <button id="btnNew" class="primary" type="button">新建</button>
         <button id="btnDeleteSelected" class="danger" type="button" disabled>删除选中(0)</button>
         <button id="btnBatchWebpSelected" type="button" disabled>生成选中 WebP(0)</button>
+        <button id="btnSelectRepairWebp" class="col-span-2" type="button" title="选中所有非 WebP 或大于 10 KB 的图片">修复</button>
         <select id="typeFilter" class="col-span-2">
           <option value="all">全部分类</option>
           <option value="food">food</option>
@@ -403,6 +404,7 @@
       items: [],
       visuals: {},
       selectedItemIds: new Set(),
+      repairFilterIds: null,
       selectedId: '',
       targetPath: DEFAULT_SHOPITEMS_PATH,
       exportDiffOnly: true,
@@ -880,20 +882,38 @@
       catch (_) { return payload.length; }
     }
 
+    function getImageUrlMime(imageUrl) {
+      const value = String(imageUrl || '').trim();
+      const match = value.match(/^data:([^;,]+)/i);
+      return match ? match[1].toLowerCase() : '';
+    }
+
+    function isWebpImageUrl(imageUrl, mime = '') {
+      const type = String(mime || getImageUrlMime(imageUrl)).toLowerCase();
+      if (type === 'image/webp') return true;
+      const cleanUrl = String(imageUrl || '').trim().split(/[?#]/)[0].toLowerCase();
+      return cleanUrl.endsWith('.webp');
+    }
+
     async function getImageMeta(imageUrl) {
       const url = String(imageUrl || '').trim();
       if (!url) return null;
       if (state.imageMetaCache.has(url)) return state.imageMetaCache.get(url);
       const metaPromise = (async () => {
         const img = await loadImage(url);
+        let mime = getImageUrlMime(url);
         let bytes = url.startsWith('data:') ? getDataUrlByteSize(url) : null;
         if (bytes == null) {
           try {
             const response = await fetch(url, { cache: 'no-store' });
-            if (response.ok) bytes = (await response.blob()).size;
+            if (response.ok) {
+              const blob = await response.blob();
+              bytes = blob.size;
+              mime = (blob.type || mime).toLowerCase();
+            }
           } catch (_) {}
         }
-        return { width: img.naturalWidth || img.width || 0, height: img.naturalHeight || img.height || 0, bytes };
+        return { width: img.naturalWidth || img.width || 0, height: img.naturalHeight || img.height || 0, bytes, mime };
       })();
       state.imageMetaCache.set(url, metaPromise);
       return metaPromise;
@@ -1534,6 +1554,7 @@
       state.items = [];
       state.visuals = {};
       state.selectedId = '';
+      state.repairFilterIds = null;
       renderRecordList();
       newItem('furniture');
       setActiveTab('files');
@@ -1721,6 +1742,7 @@
       const fieldFilter = $('fieldFilter')?.value || 'all';
       const includeHidden = $('includeHidden').checked;
       const records = state.items.filter(item => {
+        if (state.repairFilterIds && !state.repairFilterIds.has(item.id)) return false;
         if (typeFilter !== 'all' && item.type !== typeFilter) return false;
         if (fieldFilter !== 'all' && !(item.fields || []).includes(fieldFilter)) return false;
         if (!includeHidden && (item.hiddenFromShop || item.remoteOnly)) return false;
@@ -1799,11 +1821,69 @@
       renderRecordList();
     }
 
+    function clearRepairFilter() {
+      state.repairFilterIds = null;
+      renderRecordList();
+    }
+
+    async function getWebpRepairIssue(item) {
+      const visual = normalizeVisual(state.visuals[item?.id] || {});
+      if (visual.svg) return 'SVG';
+      const imageUrl = visual.imageUrl || '';
+      if (!imageUrl) return 'Emoji';
+      let meta = null;
+      const declaredWebp = isWebpImageUrl(imageUrl);
+      if (declaredWebp || !getImageUrlMime(imageUrl)) {
+        try { meta = await getImageMeta(imageUrl); }
+        catch (_) { meta = null; }
+      }
+      if (!isWebpImageUrl(imageUrl, meta?.mime)) return '非 WebP';
+      if (Number.isFinite(meta?.bytes) && meta.bytes > SHOP_WEBP_MAX_BYTES) return `大于 ${formatBytes(SHOP_WEBP_MAX_BYTES)}`;
+      return '';
+    }
+
+    async function selectWebpRepairItems() {
+      if (state.batchWebp?.running) {
+        setStatus($('runStatus'), '批量 WebP 正在运行，结束后再扫描修复项。', 'error');
+        return;
+      }
+      const button = $('btnSelectRepairWebp');
+      if (button) button.disabled = true;
+      state.selectedItemIds.clear();
+      const reasonCounts = new Map();
+      let failed = 0;
+      try {
+        for (let index = 0; index < state.items.length; index += 1) {
+          const item = state.items[index];
+          if (index === 0 || (index + 1) % 10 === 0 || index === state.items.length - 1) {
+            setStatus($('runStatus'), `正在扫描 WebP 修复项 ${index + 1}/${state.items.length}...`, '');
+          }
+          let issue = '';
+          try { issue = await getWebpRepairIssue(item); }
+          catch (_) { failed += 1; }
+          if (!issue) continue;
+          state.selectedItemIds.add(item.id);
+          reasonCounts.set(issue, (reasonCounts.get(issue) || 0) + 1);
+        }
+      } finally {
+        if ($('recordSearch')) $('recordSearch').value = '';
+        if ($('typeFilter')) $('typeFilter').value = 'all';
+        if ($('fieldFilter')) $('fieldFilter').value = 'all';
+        state.repairFilterIds = new Set(state.selectedItemIds);
+        if (button) button.disabled = false;
+        renderRecordList();
+      }
+      const details = [...reasonCounts.entries()].map(([reason, count]) => `${reason} ${count}`).join('，');
+      const failedText = failed ? `；${failed} 个图片读取失败，未自动选中` : '';
+      setStatus($('runStatus'), `已选中 ${state.selectedItemIds.size} 个需要修复的物品${details ? `：${details}` : ''}${failedText}。可点击“生成选中 WebP”。`, state.selectedItemIds.size ? 'ok' : '');
+    }
+
     function deleteRecords(ids) {
       const targets = unique((ids || []).filter(Boolean));
       if (!targets.length) return;
       state.items = state.items.filter(item => !targets.includes(item.id));
       targets.forEach(id => { delete state.visuals[id]; state.selectedItemIds.delete(id); });
+      if (state.repairFilterIds) targets.forEach(id => state.repairFilterIds.delete(id));
       if (targets.includes(state.selectedId)) state.selectedId = state.items[0]?.id || '';
       renderRecordList();
       if (state.selectedId) setFormItem(selectedItem(), state.visuals[state.selectedId]);
@@ -1933,6 +2013,7 @@
       state.items = Array.isArray(draft.items) && draft.items.length ? draft.items.map(normalizeItem) : state.initialItems.map(clone);
       state.visuals = draft.visuals && typeof draft.visuals === 'object' ? clone(draft.visuals) : clone(state.initialVisuals);
       state.selectedId = draft.selectedId && state.items.some(item => item.id === draft.selectedId) ? draft.selectedId : (state.items[0]?.id || '');
+      state.repairFilterIds = null;
       state.userPrompt = typeof draft.userPrompt === 'string' ? draft.userPrompt : '';
       state.promptDrafts = draft.promptDrafts && typeof draft.promptDrafts === 'object' ? { svg: draft.promptDrafts.svg || '', webp: draft.promptDrafts.webp || '' } : { svg: '', webp: '' };
       state.promptEdited = draft.promptEdited && typeof draft.promptEdited === 'object' ? { svg: !!draft.promptEdited.svg, webp: !!draft.promptEdited.webp } : { svg: false, webp: false };
@@ -1962,6 +2043,7 @@
           : clone(payload.visuals);
         state.targetPath = targetPath;
         state.exportDiffOnly = false;
+        state.repairFilterIds = null;
         if ($('exportDiffOnly')) $('exportDiffOnly').checked = false;
         return true;
       };
@@ -2030,6 +2112,7 @@
       state.items = mergedPayload.items;
       state.visuals = mergedPayload.visuals;
       state.targetPath = targetPath;
+      state.repairFilterIds = null;
       if ($('shopItemsPath')) $('shopItemsPath').value = state.targetPath;
       syncShopFilePresetFromPath(state.targetPath);
       state.selectedId = state.items.some(item => item.id === state.selectedId) ? state.selectedId : (state.items[0]?.id || '');
@@ -2676,6 +2759,7 @@
           const generated = await generateTransparentWebpForItem(item, { model, size, prompt, statusPrefix: `批量 WebP ${index + 1}/${queue.length}` });
           state.visuals[item.id] = generated.visual;
           state.selectedItemIds.delete(item.id);
+          state.repairFilterIds?.delete(item.id);
           state.batchWebp.done += 1;
           setFormItem(item, generated.visual);
           renderRecordList();
@@ -2766,6 +2850,7 @@
       $('btnNew').onclick = openBatchItemDialog;
       $('btnDeleteSelected').onclick = () => deleteRecords([...state.selectedItemIds]);
       $('btnBatchWebpSelected').onclick = () => startBatchWebpSelected().catch(error => setStatus($('runStatus'), `批量 WebP 失败：${error?.message || error}`, 'error'));
+      $('btnSelectRepairWebp').onclick = () => selectWebpRepairItems().catch(error => setStatus($('runStatus'), `扫描修复项失败：${error?.message || error}`, 'error'));
       $('btnUpsert').onclick = () => upsertCurrentItem();
       $('btnApplyJson').onclick = applyJsonToForm;
       $('btnUseFallbackSvg').onclick = () => { $('visualSvg').value = fallbackSvg(); $('visualImageUrl').value = ''; updateOutputs(); };
@@ -2773,9 +2858,9 @@
       $('btnClearVisualHistory').onclick = () => { setCurrentVisualHistory([]); setStatus($('runStatus'), '已清空当前视觉历史。', 'ok'); };
       $('tabItem').onclick = () => setActiveTab('item');
       $('tabFiles').onclick = () => setActiveTab('files');
-      $('recordSearch').addEventListener('input', renderRecordList);
-      $('typeFilter').addEventListener('change', renderRecordList);
-      $('fieldFilter').addEventListener('change', renderRecordList);
+      $('recordSearch').addEventListener('input', clearRepairFilter);
+      $('typeFilter').addEventListener('change', clearRepairFilter);
+      $('fieldFilter').addEventListener('change', clearRepairFilter);
       $('includeHidden')?.addEventListener('change', renderRecordList);
       $('recordSelectAll').addEventListener('change', () => setRenderedRecordSelection($('recordSelectAll').checked));
       $('shopFilePreset').addEventListener('change', () => {

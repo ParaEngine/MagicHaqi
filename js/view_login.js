@@ -1,6 +1,7 @@
 // 登录视图
 import { $, escapeHtml } from './utils.js';
 import { t } from './i18n.js';
+import { state } from './state.js';
 
 // 装饰用的小星球（复用 planet.css 中的 .space-planet / .planet-body / .planet-ring 等样式）
 // 通过 --planet-hue 调色，通过 left/top + transform scale 控制位置与大小，避免重复 CSS。
@@ -64,6 +65,7 @@ function ensureLoginSpinnerStyle() {
 
 export function renderLogin(panel, _data, { onLogin, mode = 'login' } = {}) {
     ensureLoginSpinnerStyle();
+    const appTitle = String(state.settings?.starSettlement?.appTitle || '').trim() || t('appName');
     // 复用 level_planet 的太空背景：.mh-stage.zoom-space + .space-bg + 闪烁星点
     const stars = Array.from({ length: 82 }).map((_, i) => {
         const x = (Math.random() * 100).toFixed(2);
@@ -87,7 +89,7 @@ export function renderLogin(panel, _data, { onLogin, mode = 'login' } = {}) {
             </div>
             <div class="absolute inset-0 flex flex-col items-center justify-center px-8 text-center" style="z-index:40">
                 <div class="text-7xl floaty mb-4" style="filter:drop-shadow(0 0 18px rgba(125,225,255,0.55))">🐾</div>
-                <h1 class="text-3xl font-extrabold mb-2" style="color:#e8f7ff;text-shadow:0 0 18px rgba(84,226,255,0.55),0 2px 8px rgba(6,18,44,0.6)">${escapeHtml(t('appName'))}</h1>
+                <h1 class="text-3xl font-extrabold mb-2" style="color:#e8f7ff;text-shadow:0 0 18px rgba(84,226,255,0.55),0 2px 8px rgba(6,18,44,0.6)">${escapeHtml(appTitle)}</h1>
                 <p class="text-sm mb-8" style="color:#bde6ff;text-shadow:0 0 10px rgba(84,226,255,0.35)">${escapeHtml(t('tagline'))}</p>
                 <p class="text-xs mb-6" style="color:#9fd0eb;text-shadow:0 1px 4px rgba(6,18,44,0.6)">${escapeHtml(t('pleaseLogin'))}</p>
                 <div id="mhLoginAction" class="flex items-center justify-center" style="min-height:64px">
