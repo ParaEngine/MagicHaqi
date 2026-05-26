@@ -536,7 +536,7 @@ function renderZoomLevelBar(pet = __lastPet) {
 function renderZoomLevelBarInner(pet = __lastPet, lvl = clampLvl(state.zoomLevel ?? 0)) {
     const visible = new Set(visibleZoomLevels());
     return `
-        <span class="mh-zoom-bar-track" aria-hidden="true" style="--zoom-visible-count:${visible.size || 1}">
+        <span class="mh-zoom-bar-track" aria-hidden="true">
             ${ZOOM_BAR_STAGES.map((stage, index) => {
                 const emergency = getZoomStageEmergency(stage.id, pet);
                 return `
@@ -567,8 +567,6 @@ function syncZoomLevelBar(bar, pet = __lastPet) {
     ensureZoomLevelBarStructure(bar, pet);
     const lvl = clampLvl(state.zoomLevel ?? 0);
     const visible = new Set(visibleZoomLevels());
-    const track = bar.querySelector('.mh-zoom-bar-track');
-    if (track) track.style.setProperty('--zoom-visible-count', visible.size || 1);
     const hint = getZoomLevelHint(lvl, pet);
     bar.style.setProperty('--zoom-pos', getZoomBarProgress(visualCameraZoom || cameraZoom).toFixed(4));
     bar.title = hint;

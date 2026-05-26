@@ -100,7 +100,15 @@ function currentSelectionId() {
 
 function currentHomeName() {
     const current = settlementSettings();
-    return String(current.homeSnapshot?.planetName || current.homePlanetName || state.planetName || '我的星球').trim();
+    const savedHomeName = String(current.homeSnapshot?.planetName || current.homePlanetName || '').trim();
+    if (savedHomeName) return savedHomeName;
+    if (current.source === 'official') return '我的星球';
+    return String(state.planetName || '我的星球').trim();
+}
+
+function playerPlanetTitle() {
+    const name = currentHomeName();
+    return name && name !== '我的星球' ? `我的星球（${name}）` : '我的星球';
 }
 
 function captureHomeSnapshot() {
@@ -324,10 +332,11 @@ function renderFieldsPreview(planet) {
 }
 
 function customPreviewSlots() {
-    const snapshotSlots = settlementSettings().homeSnapshot?.terrainSlots;
+    const settings = settlementSettings();
+    const snapshotSlots = settings.homeSnapshot?.terrainSlots;
     const slots = Array.isArray(snapshotSlots) && snapshotSlots.length
         ? snapshotSlots
-        : getTerrainFieldSlots({ includeEmpty: true });
+        : (settings.source === 'official' ? [] : getTerrainFieldSlots({ includeEmpty: true }));
     return TERRAIN_FIELD_SLOT_DEFS.map((def, index) => {
         const slotKey = slotKeyForDef(def, index);
         const slot = slots.find(item => slotKeyFromField(item) === slotKey) || slots[index] || {};
@@ -346,8 +355,7 @@ function renderCustomCard() {
         <article class="star-settlement-card ${selected ? 'is-selected' : ''}" data-planet-id="custom">
             <div class="star-settlement-planet" style="${planetPreviewStyle(null)}"><span>家</span></div>
             <div class="star-settlement-card-body">
-                <div class="star-settlement-card-title"><b>${escapeHtml(currentHomeName())}</b><em>玩家星球</em></div>
-                <p>你自己创建的星球会固定排在第一位。回迁后恢复原来的地貌槽位和 field 背景配置。</p>
+                <div class="star-settlement-card-title"><b>${escapeHtml(playerPlanetTitle())}</b><em>玩家</em></div>
                 <div class="star-settlement-fields">${slots.map(slot => `<span class="star-settlement-chip">${terrainFieldIconHtml(slot.typeId)}${escapeHtml(slot.name)}</span>`).join('')}</div>
             </div>
             <button type="button" class="btn-secondary star-settlement-action" data-settle-custom>${selected ? '当前' : '回迁'}</button>
@@ -361,7 +369,7 @@ function renderOfficialCard(planet) {
             <div class="star-settlement-planet" style="${escapeHtml(planetPreviewStyle(planet))}"><span>${escapeHtml((planet.title || '?').slice(0, 1))}</span></div>
             <div class="star-settlement-card-body">
                 <div class="star-settlement-card-title"><b>${escapeHtml(planet.title)}</b><em>${escapeHtml(planet.badge || '官方')}</em></div>
-                <p>${escapeHtml(planet.summary || '官方星球的 planet 层为只读配置，field 中的摆设会保留。')}</p>
+                <p>${escapeHtml(planet.summary || '换到这个星球后，你的家具、房屋和宠物都会保留。')}</p>
                 <div class="star-settlement-fields">${renderFieldsPreview(planet)}</div>
             </div>
             <button type="button" class="btn-primary star-settlement-action" data-settle-official="${escapeHtml(planet.id)}">${selected ? '当前' : '迁移'}</button>
@@ -403,7 +411,7 @@ function bindSettlements(panel, planets, onBack) {
         btn.onclick = async () => {
             const planet = planets.find(item => item.id === btn.dataset.settleOfficial);
             if (!planet || currentSelectionId() === planet.id) return;
-            const ok = await confirm(`迁移到${planet.title}？field 里的家具和摆设会保留，官方 planet 层为只读。`, { okText: '迁移', cancelText: '取消' });
+            const ok = await confirm(`迁移到${planet.title}？你的家具、房屋和宠物都会保留。`, { okText: '迁移', cancelText: '取消' });
             if (!ok) return;
             await applyOfficialPlanet(planet);
             showToast(`已迁移到${planet.title}`, 'success', 1800);
@@ -414,7 +422,7 @@ function bindSettlements(panel, planets, onBack) {
     const customBtn = panel.querySelector('[data-settle-custom]');
     if (customBtn) customBtn.onclick = async () => {
         if (currentSelectionId() === 'custom') return;
-        const ok = await confirm('回迁到自己的原创星球？会恢复迁移前的地貌槽位和 field 背景配置。', { okText: '回迁', cancelText: '取消' });
+        const ok = await confirm('回到自己的星球？会恢复迁移前保存的地点和背景。', { okText: '回迁', cancelText: '取消' });
         if (!ok) return;
         await restoreCustomPlanet();
         showToast('已回迁到自己的星球', 'success', 1800);
@@ -431,7 +439,7 @@ export function renderStarSettlements(panel, _data, { onBack } = {}) {
             <span style="width:36px"></span>
         </div>
         <div class="absolute star-settlements-view">
-            <div class="star-settlement-note">选择新的定居星球后，planet 层会使用官方只读外观；7 个 field 会改名并套用背景配置，原来每个 field 中摆放的家具、房屋和宠物内容会继续保留。</div>
+            <div class="star-settlement-note">选择一个星球作为新家。迁移后，你的家具、房屋和宠物都会保留，只会更换星球外观和地点名字。</div>
             <div class="star-settlement-list"><div class="star-settlement-empty">正在读取可迁移星球...</div></div>
         </div>`;
     const back = panel.querySelector('#mhBack');
