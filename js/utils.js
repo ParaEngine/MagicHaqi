@@ -26,7 +26,7 @@ export function renderVisualAsset(visual, { className = '', alt = '', draggable 
     const imageUrl = String(visual.imageUrl || '').trim();
     if (imageUrl) {
         const classAttr = className ? ` class="${escapeHtml(className)}"` : '';
-        return `<img${classAttr} src="${escapeHtml(imageUrl)}" alt="${escapeHtml(alt)}" draggable="${draggable ? 'true' : 'false'}">`;
+        return `<img${classAttr} crossorigin="anonymous" referrerpolicy="no-referrer" src="${escapeHtml(imageUrl)}" alt="${escapeHtml(alt)}" draggable="${draggable ? 'true' : 'false'}">`;
     }
     return String(visual.svg || '').trim();
 }
@@ -42,6 +42,34 @@ export function showToast(msg, type = 'info', duration = 3600) {
     document.body.appendChild(el);
     const ms = Math.max(2800, Number(duration) || 3600);
     toastTimer = setTimeout(() => el.remove(), ms);
+}
+
+export function dockDisabledAttrs(disabled, reason) {
+    if (!disabled) return '';
+    const text = String(reason || '暂时不能点击。');
+    return ` aria-disabled="true" data-disabled="true" data-disabled-reason="${escapeHtml(text)}"`;
+}
+
+export function isDockButtonDisabled(btn) {
+    return btn?.dataset?.disabled === 'true' || btn?.getAttribute?.('aria-disabled') === 'true';
+}
+
+export function setDockButtonDisabled(btn, disabled, reason) {
+    if (!btn) return;
+    btn.classList.toggle('is-sleep-disabled', !!disabled);
+    btn.setAttribute('aria-disabled', disabled ? 'true' : 'false');
+    if (disabled) {
+        btn.dataset.disabled = 'true';
+        btn.dataset.disabledReason = reason || '暂时不能点击。';
+    } else {
+        delete btn.dataset.disabled;
+        delete btn.dataset.disabledReason;
+    }
+}
+
+export function showDockDisabledToast(btn) {
+    const reason = btn?.dataset?.disabledReason || btn?.title || '暂时不能点击。';
+    showToast(reason, 'info', 2200);
 }
 
 export function randInt(min, max) {

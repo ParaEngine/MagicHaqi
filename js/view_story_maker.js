@@ -1,5 +1,5 @@
 // 故事创作视图：移动端优先的轻量 AI story JSON maker。
-import { $, confirm as confirmDialog, escapeHtml, showToast } from './utils.js';
+import { $, confirm as confirmDialog, dockDisabledAttrs, escapeHtml, isDockButtonDisabled, showDockDisabledToast, showToast } from './utils.js';
 import { state } from './state.js';
 import { CONFIG } from './config.js';
 import { petArtHtml, scanAndMount } from './pet.js';
@@ -713,7 +713,7 @@ function renderReviewActionDock(story, sceneIndex, timeline, playbackState, acti
         : '<span class="mh-story-page-arrow mh-story-page-arrow-placeholder"></span>';
     return `
         <div class="mh-story-actions">
-            <button type="button" class="btn-secondary dock-icon-btn mh-story-page-arrow" data-review-prev-page ${hasPrevious ? '' : 'disabled'} aria-label="上一页" title="上一页">‹</button>
+            <button type="button" class="btn-secondary dock-icon-btn mh-story-page-arrow" data-review-prev-page${dockDisabledAttrs(!hasPrevious, '已经是第一页。')} aria-label="上一页" title="上一页">‹</button>
             <div class="mh-story-action-strip">
                 ${actionButtons || '<span class="mh-story-action-placeholder"> </span>'}
             </div>
@@ -1941,7 +1941,9 @@ export function renderStoryMaker(panel, data = {}, { onBack, onPlayStory } = {})
                 clickReviewAction(Number(reviewActionBtn.dataset.reviewAction));
                 return;
             }
-            if (e.target.closest?.('[data-review-prev-page]')) {
+            const reviewPrevBtn = e.target.closest?.('[data-review-prev-page]');
+            if (reviewPrevBtn) {
+                if (isDockButtonDisabled(reviewPrevBtn)) { showDockDisabledToast(reviewPrevBtn); return; }
                 goReviewPrevPage();
                 return;
             }

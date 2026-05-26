@@ -265,9 +265,11 @@ const DEFAULT_SHOP_ITEMS_PATH = 'famous-planets/_default_shopitems.json';
 // 商店物品 fallback（主数据在 famous-planets/_default_shopitems.json；保留内置值方便 file:// 或加载失败时启动）
 const FALLBACK_SHOP_ITEMS = [
     { id: 'food_basic_feed', name: '原始饲料', emoji: '🌿', price: 0, type: 'food', foodKind: 'both', stat: { hunger: +22 }, unlimited: true, hiddenFromShop: true, moodPenaltyStages: ['teen', 'adult', 'elder'], moodPenalty: -8 },
+    { id: 'food_growth_pill', name: '快速长大药丸', emoji: '💊', price: 1000, type: 'food', foodKind: 'both', stat: { hunger: +6, mood: +4 }, specialStageEffect: 'grow' },
+    { id: 'food_youth_pill', name: '返老还童药丸', emoji: '🧪', price: 1000, type: 'food', foodKind: 'both', stat: { hunger: +6, mood: +4 }, specialStageEffect: 'rejuvenate' },
 ];
 const FALLBACK_DECO_VISUALS = {
-    house_1: { w: 0.16, h: 0.22, svg: `<svg viewBox="0 0 240 280" xmlns="http://www.w3.org/2000/svg"><ellipse cx="120" cy="262" rx="92" ry="12" fill="#3f2415" opacity=".26"/><path d="M30 138 120 56l90 82z" fill="#b45309"/><path d="M120 56 210 138H170L120 86z" fill="#7c2d12" opacity=".55"/><rect x="50" y="138" width="140" height="108" rx="8" fill="#fde68a"/><rect x="50" y="138" width="140" height="108" rx="8" fill="none" stroke="#92400e" stroke-width="6"/><rect x="100" y="170" width="40" height="76" rx="6" fill="#7c2d12"/><circle cx="132" cy="210" r="3" fill="#fde68a"/><rect x="64" y="160" width="28" height="28" rx="4" fill="#bae6fd" stroke="#0369a1" stroke-width="3"/><rect x="150" y="160" width="28" height="28" rx="4" fill="#bae6fd" stroke="#0369a1" stroke-width="3"/></svg>` },
+    house_1: { svg: `<svg viewBox="0 0 240 280" xmlns="http://www.w3.org/2000/svg"><ellipse cx="120" cy="262" rx="92" ry="12" fill="#3f2415" opacity=".26"/><path d="M30 138 120 56l90 82z" fill="#b45309"/><path d="M120 56 210 138H170L120 86z" fill="#7c2d12" opacity=".55"/><rect x="50" y="138" width="140" height="108" rx="8" fill="#fde68a"/><rect x="50" y="138" width="140" height="108" rx="8" fill="none" stroke="#92400e" stroke-width="6"/><rect x="100" y="170" width="40" height="76" rx="6" fill="#7c2d12"/><circle cx="132" cy="210" r="3" fill="#fde68a"/><rect x="64" y="160" width="28" height="28" rx="4" fill="#bae6fd" stroke="#0369a1" stroke-width="3"/><rect x="150" y="160" width="28" height="28" rx="4" fill="#bae6fd" stroke="#0369a1" stroke-width="3"/></svg>` },
 };
 
 export const SHOP_ITEMS = [];

@@ -1,5 +1,5 @@
 // 孵化仓：离线照看与领养新蛋。
-import { $, escapeHtml } from './utils.js';
+import { $, dockDisabledAttrs, escapeHtml, isDockButtonDisabled, showDockDisabledToast } from './utils.js';
 import { displayPetName } from './dna.js';
 import { CONFIG, getStageName } from './config.js';
 import { computePlanetProgress } from './planetProgress.js';
@@ -25,6 +25,9 @@ export function renderHatching(panel, { pet, pets = [], planetName = '' } = {}, 
     const limit = getPlanetPetLimit();
     const location = getPetLocationInfo(pet, planetName || '宠物星');
     const nannyActive = hasNannyCare(pet);
+    const hireNannyDisabled = !pet || nannyActive;
+    const hireNannyDisabledReason = !pet ? '暂无可照看的宠物，先领养或选择一只宠物。' : '保姆正在照看，等待本次照看结束后可再次雇佣。';
+    const breedDisabledReason = `需要至少 2 只${CONFIG.breedableStages.map(stage => getStageName(stage)).join('、')}阶段的宠物，当前只有 ${breedReadyCount} 只。`;
     panel.innerHTML = `
         <div class="topbar">
             <button class="btn-icon" id="mhHatchingBack" title="返回" style="width:36px;height:36px;font-size:18px">‹</button>
@@ -69,7 +72,7 @@ export function renderHatching(panel, { pet, pets = [], planetName = '' } = {}, 
                     </div>
                     <span style="font-size:24px">🧸</span>
                 </div>
-                <button class="btn-primary w-full" id="mhHireNanny" ${!pet || nannyActive ? 'disabled' : ''}>${nannyActive ? '保姆正在照看' : '雇佣保姆'}</button>
+                <button class="btn-primary w-full" id="mhHireNanny"${dockDisabledAttrs(hireNannyDisabled, hireNannyDisabledReason)}>${nannyActive ? '保姆正在照看' : '雇佣保姆'}</button>
             </section>
 
             <section class="card-flat" style="background:#fffbeb;border-color:rgba(245,158,11,.24)">
@@ -88,15 +91,15 @@ export function renderHatching(panel, { pet, pets = [], planetName = '' } = {}, 
                 <div style="font-size:12px;color:var(--text-secondary);line-height:1.55;margin-bottom:10px">
                     选择两只成年宠物组合 DNA，生成一只新的宝宝。
                 </div>
-                <button class="btn-secondary w-full" id="mhBreedBaby" ${breedReady ? '' : 'disabled'}>💕 繁殖宝宝</button>
+                <button class="btn-secondary w-full" id="mhBreedBaby"${dockDisabledAttrs(!breedReady, breedDisabledReason)}>💕 繁殖宝宝</button>
             </section>
         </div>`;
 
     if ($('mhHatchingBack')) $('mhHatchingBack').onclick = () => onBack?.();
     if ($('mhHatchingAlbum')) $('mhHatchingAlbum').onclick = () => onOpenAlbum?.();
-    if ($('mhHireNanny')) $('mhHireNanny').onclick = () => showNannyCareModal(pet, onHireNanny);
+    if ($('mhHireNanny')) $('mhHireNanny').onclick = () => isDockButtonDisabled($('mhHireNanny')) ? showDockDisabledToast($('mhHireNanny')) : showNannyCareModal(pet, onHireNanny);
     if ($('mhAdoptEgg')) $('mhAdoptEgg').onclick = () => showAdoptEggModal(pet, onAdoptEgg);
-    if ($('mhBreedBaby')) $('mhBreedBaby').onclick = () => onBreed?.();
+    if ($('mhBreedBaby')) $('mhBreedBaby').onclick = () => isDockButtonDisabled($('mhBreedBaby')) ? showDockDisabledToast($('mhBreedBaby')) : onBreed?.();
 }
 
 function showAdoptEggModal(pet, onAdoptEgg) {
@@ -152,8 +155,8 @@ function showNannyCareModal(pet, onHireNanny) {
                     const cost = getNannyCareCost(days);
                     const canAfford = (state.coins | 0) >= cost;
                     const disabled = !pet || active || !eligibility.ok || !canAfford;
-                    const title = !canAfford ? `金币不足，需要 ${cost} 金币` : `支付 ${cost} 金币`;
-                    return `<button class="btn-primary" data-hire-nanny-days="${days}" ${disabled ? 'disabled' : ''} title="${escapeHtml(title)}">
+                    const title = !pet ? '暂无可照看的宠物' : active ? '保姆正在照看' : !eligibility.ok ? eligibility.reasons.join('；') : !canAfford ? `金币不足，需要 ${cost} 金币` : `支付 ${cost} 金币`;
+                    return `<button class="btn-primary" data-hire-nanny-days="${days}"${dockDisabledAttrs(disabled, title)} title="${escapeHtml(title)}">
                         ${days}天 · ${cost}金币
                     </button>`;
                 }).join('')}
@@ -166,7 +169,8 @@ function showNannyCareModal(pet, onHireNanny) {
     mask.addEventListener('click', (e) => {
         if (e.target === mask || e.target.closest('[data-nanny-cancel]')) { close(); return; }
         const btn = e.target.closest('[data-hire-nanny-days]');
-        if (!btn || btn.disabled) return;
+        if (!btn) return;
+        if (isDockButtonDisabled(btn)) { showDockDisabledToast(btn); return; }
         const days = Number(btn.dataset.hireNannyDays) || 1;
         close();
         onHireNanny?.(pet, days);

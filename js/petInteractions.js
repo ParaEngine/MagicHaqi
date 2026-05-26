@@ -37,7 +37,7 @@ export function foodEatDurationMs(item) {
 
 function preferredFoodCandidates(pet) {
     const preference = dnaDietPreference(pet?.dna || '');
-    const usable = foodItems().filter(item => !item.hiddenFromShop && !item.unlimited && item.id !== 'food_large_feed');
+    const usable = foodItems().filter(item => !item.hiddenFromShop && !item.unlimited && item.id !== 'food_large_feed' && !item.specialStageEffect);
     if (preference === 'meat') return usable.filter(item => item.foodKind === 'meat');
     if (preference === 'vegetables') return usable.filter(item => item.foodKind === 'vegetables');
     return usable.filter(item => item.foodKind === 'meat' || item.foodKind === 'vegetables' || item.foodKind === 'both');

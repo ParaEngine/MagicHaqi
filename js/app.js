@@ -10,7 +10,7 @@ import {
 } from './storage.js';
 import { applyDecay, applyStage, clampEnergyToMax, defaultPermanentTrauma, defaultStats, eggStats, getActiveSickness, getEffectiveSicknessSeverity, getSicknessDef, markPetCared, maybeRollDailySickness, tickOffline, startTickLoop, stopTickLoop, treatPetSicknessOneLevel } from './petTick.js';
 import { renderLogin } from './view_login.js';
-import { renderPetList } from './view_petList.js';
+import { loadFamousPetsIndex, renderPetList } from './view_petList.js';
 import { renderHatch } from './view_hatch.js';
 import { renderHome, stopHomeWalk } from './view_home.js';
 import { renderShop } from './view_shop.js';
@@ -601,6 +601,7 @@ async function renderPetListRoute() {
     renderPetList(app, { pets: (state.petOrder || []).map(id => state.pets[id] || { id, lazyPetRecord: true }) }, {
         onSelect: handleSelectPet,
         onFind:   handleFindPet,
+        onDelete: handleDeletePet,
         onBack:   () => setView(state.currentPetId ? 'home' : 'petList'),
         onLoadPet: async (id) => {
             if (!id || state.pets[id] || state.currentView !== 'petList') return;
@@ -838,18 +839,21 @@ async function ensureDefaultEgg() {
 async function createNewEgg(options = {}) {
     const now = Date.now();
     let dna = options.dna || randomDna();
+    const systemHatchTarget = await resolveSystemHatchTarget(options);
+    if (systemHatchTarget?.dna) dna = systemHatchTarget.dna;
     // 若用户已有"主屋"，新蛋更倾向于继承主屋所在领地的 DNA 特征
     const territory = findLargestHouseAcrossLayouts(state.layouts);
-    if (territory?.fieldId) dna = biasDnaForFieldId(dna, resolveTerrainFieldTypeId(territory.fieldId));
-    const trueName = dnaToName(dna);
+    if (!systemHatchTarget && territory?.fieldId) dna = biasDnaForFieldId(dna, resolveTerrainFieldTypeId(territory.fieldId));
+    const traits = systemHatchTarget?.traits || decodeDna(dna);
+    const trueName = systemHatchTarget?.name || dnaToName(dna);
     const pet = {
         id: 'pet_' + randId(8),
         name: trueName,
         dna,
         imageUrl: null,           // 兼容旧字段，蛋阶段不用
-        imageSheetUrl: null,      // 4x4 精灵图，破壳前由系统懒生成
-        traits: decodeDna(dna),
-        rarity: dnaRarity(dna),
+        imageSheetUrl: systemHatchTarget?.imageSheetUrl || null,      // 4x4 精灵图；免费用户蛋会在创建时预定系统宠物
+        traits,
+        rarity: Number.isFinite(systemHatchTarget?.rarity) ? systemHatchTarget.rarity : dnaRarity(dna),
         stats: eggStats(),
         permanentTrauma: defaultPermanentTrauma(),
         bornAt: now,
@@ -862,10 +866,84 @@ async function createNewEgg(options = {}) {
         eggBias: { feedTraits: {}, feedCount: 0, initialFieldId: territory?.fieldId || null },
         wishPrompt: null,
     };
+    if (systemHatchTarget) {
+        pet.hatchMode = 'system-pet';
+        pet.eggDecidedAt = now;
+        pet.eggHatchTarget = systemHatchTarget;
+        pet.source = 'famous-pets';
+        pet.sourcePetId = `famous-pets/${systemHatchTarget.id}`;
+    }
     await savePet(pet);
     await setCurrentPetPersisted(pet.id);
     setCurrentPet(pet.id);
     return pet;
+}
+
+function shouldUseSystemHatchTarget(options = {}) {
+    if (options.hatchMode === 'llm' || options.generationMode === 'llm' || options.useSystemPet === false) return false;
+    if (options.hatchTarget) return true;
+    return true;
+}
+
+function normalizeSystemHatchTarget(entry) {
+    if (!entry || typeof entry !== 'object') return null;
+    const id = String(entry.id || '').trim();
+    const dna = String(entry.dna || '').trim();
+    const imageSheetUrl = String(entry.imageSheetUrl || '').trim();
+    if (!id || !dna || !imageSheetUrl) return null;
+    return {
+        source: 'famous-pets',
+        id,
+        name: String(entry.name || id).trim(),
+        dna,
+        imageUrl: entry.imageUrl || null,
+        imageSheetUrl,
+        traits: entry.traits && typeof entry.traits === 'object' ? JSON.parse(JSON.stringify(entry.traits)) : decodeDna(dna),
+        rarity: Number.isFinite(Number(entry.rarity)) ? Number(entry.rarity) : dnaRarity(dna),
+        decidedAt: Date.now(),
+    };
+}
+
+function systemPetOwnedKeys(pet = {}) {
+    const keys = [];
+    const sourcePetId = String(pet.sourcePetId || '').trim();
+    const targetId = String(pet.eggHatchTarget?.id || '').trim();
+    const targetName = String(pet.eggHatchTarget?.name || '').trim();
+    const sourceId = sourcePetId.replace(/^famous-pets\//, '');
+    if (sourceId) keys.push(`id:${sourceId}`);
+    if (targetId) keys.push(`id:${targetId}`);
+    if (targetName) keys.push(`name:${targetName}`);
+    if (pet.source === 'famous-pets') {
+        const petId = String(pet.id || '').trim();
+        const petName = String(pet.name || '').trim();
+        if (petId) keys.push(`id:${petId}`);
+        if (petName) keys.push(`name:${petName}`);
+    }
+    return keys;
+}
+
+function getOwnedSystemPetKeySet() {
+    const owned = new Set();
+    (state.petOrder || []).forEach(id => {
+        const pet = state.pets[id];
+        if (!pet) return;
+        systemPetOwnedKeys(pet).forEach(key => owned.add(key));
+    });
+    return owned;
+}
+
+async function resolveSystemHatchTarget(options = {}) {
+    if (!shouldUseSystemHatchTarget(options)) return null;
+    if (options.hatchTarget) return normalizeSystemHatchTarget(options.hatchTarget);
+    let list = [];
+    try { list = await loadFamousPetsIndex(); }
+    catch (e) { console.warn('加载系统宠物列表失败', e); }
+    const candidates = (Array.isArray(list) ? list : []).map(normalizeSystemHatchTarget).filter(Boolean);
+    if (!candidates.length) return null;
+    const owned = getOwnedSystemPetKeySet();
+    const unowned = candidates.filter(entry => !owned.has(`id:${entry.id}`) && !owned.has(`name:${entry.name}`));
+    const pool = unowned.length ? unowned : candidates;
+    return pool[Math.floor(Math.random() * pool.length)] || null;
 }
 
 async function firstSelectablePetId(excludeId = null) {
@@ -1247,9 +1325,14 @@ async function handleDeletePet(id) {
     const p = state.pets[id];
     if (!p) return;
     const wasCurrent = state.currentPetId === id;
-    const ok = await confirm(`确定送走 ${p.name} 吗？此操作不可恢复！`);
+    const petName = p.name || '这只宠物';
+    const ok = await confirm(`是否要将 ${petName} 流放到随机星球？此操作会彻底删除，无法恢复。`, {
+        okText: '是，流放',
+        cancelText: '取消',
+    });
     if (!ok) return;
     await deletePet(id);
+    showToast(`${petName} 已流放到随机星球`, 'success', 1800);
     // 没有任何宠物：触发"获得新蛋"流程，并以首次登录星球的姿态欢迎玩家
     if (state.petOrder.length === 0) {
         const planet = (state.planetName && state.planetName.trim()) || '宠物星';
@@ -1757,6 +1840,10 @@ async function handlePlaceItem(itemId, x, y, roomOverride, extra = null) {
         return;
     }
     const { skipSound = false, ...layoutExtra } = extra && typeof extra === 'object' ? extra : {};
+    if (layoutExtra.fieldSize != null) {
+        delete layoutExtra.wMeters;
+        delete layoutExtra.hMeters;
+    }
     const persist = !state.isDecorMode && !state.isFeedMode;
 
     // uniqueItem：放置前先移除全部 layout 中同 itemId 的旧实例（跨场景）
@@ -1787,6 +1874,12 @@ async function handleMoveItem(idx, x, y, roomOverride, extra = null) {
     const layout = [...(getLayout(pet.id, roomKey) || [])];
     if (!layout[idx]) return;
     const { skipSound = false, ...layoutExtra } = extra && typeof extra === 'object' ? extra : {};
+    if (layoutExtra.fieldSize != null) {
+        delete layout[idx].wMeters;
+        delete layout[idx].hMeters;
+        delete layoutExtra.wMeters;
+        delete layoutExtra.hMeters;
+    }
     layout[idx] = {
         ...layout[idx],
         x,

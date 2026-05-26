@@ -40,6 +40,7 @@ const DAY_SLEEP_REJECT_TEXT = '我睡不着了';
 
 const _animResetTimers = new Map(); // petId -> timeoutId
 const EGG_HATCH_VISIBLE_DELAY_MS = 2000;
+const DECIDED_EGG_HATCH_DELAY_MS = 5000;
 const _readyEggHatchTimers = new Map(); // petId -> timeoutId
 const EGG_HATCH_PENDING_EMOJIS = ['✨', '💫', '🌟', '🎇', '🎆', '🧬', '🌈', '💖', '🔮', '⚡'];
 const _pendingEggEffectTimers = new Map(); // petId -> intervalId
@@ -406,6 +407,7 @@ function _finishReadyEggHatch(pet) {
     delete pet.eggHatchPending;
     delete pet.eggHatchQueuedAt;
     delete pet.eggHatchRequestedAt;
+    delete pet.eggHatchRevealDelayMs;
     _stopPendingEggEffect(pet.id || state.currentPetId);
 
     try { applyStage(pet); } catch (_) {}
@@ -437,10 +439,11 @@ function _requestReadyEggHatch(pet) {
     if (_readyEggHatchTimers.has(id)) return true;
     if (!_isWatchingPetForHatch(pet)) return true;
 
+    const revealDelayMs = Math.max(EGG_HATCH_VISIBLE_DELAY_MS, Number(pet.eggHatchRevealDelayMs) || EGG_HATCH_VISIBLE_DELAY_MS);
     const timer = setTimeout(() => {
         _readyEggHatchTimers.delete(id);
         if (!_finishReadyEggHatch(pet)) _requestReadyEggHatch(pet);
-    }, EGG_HATCH_VISIBLE_DELAY_MS);
+    }, revealDelayMs);
     _readyEggHatchTimers.set(id, timer);
     return true;
 }
@@ -778,6 +781,119 @@ function _dominantFeedTrait(pet) {
     return best;
 }
 
+function _shouldUseSystemHatchTarget(pet) {
+    if (!pet || pet.hatchMode === 'llm' || pet.generationMode === 'llm') return false;
+    if (pet.useSystemPet === false) return false;
+    if (typeof pet.wishPrompt === 'string' && pet.wishPrompt.trim()) return false;
+    if (typeof pet.wishReferenceImage === 'string' && pet.wishReferenceImage.trim()) return false;
+    return true;
+}
+
+function _normalizeSystemHatchTarget(entry) {
+    if (!entry || typeof entry !== 'object') return null;
+    const id = String(entry.id || '').trim();
+    const dna = String(entry.dna || '').trim();
+    const imageSheetUrl = String(entry.imageSheetUrl || '').trim();
+    if (!id || !dna || !imageSheetUrl) return null;
+    return {
+        source: 'famous-pets',
+        id,
+        name: String(entry.name || id).trim(),
+        dna,
+        imageUrl: entry.imageUrl || null,
+        imageSheetUrl,
+        traits: entry.traits && typeof entry.traits === 'object' ? JSON.parse(JSON.stringify(entry.traits)) : decodeDna(dna),
+        rarity: Number.isFinite(Number(entry.rarity)) ? Number(entry.rarity) : dnaRarity(dna),
+        decidedAt: Date.now(),
+    };
+}
+
+function _systemPetOwnedKeys(pet = {}) {
+    const keys = [];
+    const sourcePetId = String(pet.sourcePetId || '').trim();
+    const targetId = String(pet.eggHatchTarget?.id || '').trim();
+    const targetName = String(pet.eggHatchTarget?.name || '').trim();
+    const sourceId = sourcePetId.replace(/^famous-pets\//, '');
+    if (sourceId) keys.push(`id:${sourceId}`);
+    if (targetId) keys.push(`id:${targetId}`);
+    if (targetName) keys.push(`name:${targetName}`);
+    if (pet.source === 'famous-pets') {
+        const petId = String(pet.id || '').trim();
+        const petName = String(pet.name || '').trim();
+        if (petId) keys.push(`id:${petId}`);
+        if (petName) keys.push(`name:${petName}`);
+    }
+    return keys;
+}
+
+async function _resolveSystemHatchTargetForEgg(pet) {
+    const existing = _normalizeSystemHatchTarget(pet?.eggHatchTarget);
+    if (existing) return existing;
+    let list = [];
+    try {
+        const { loadFamousPetsIndex } = await import('./view_petList.js');
+        list = await loadFamousPetsIndex();
+    } catch (e) {
+        console.warn('[pet] 加载系统宠物列表失败，暂不调用 LLM 生成蛋形象', e);
+    }
+    const candidates = (Array.isArray(list) ? list : []).map(_normalizeSystemHatchTarget).filter(Boolean);
+    if (!candidates.length) return null;
+    const owned = new Set();
+    Object.values(state.pets || {}).forEach(item => _systemPetOwnedKeys(item).forEach(key => owned.add(key)));
+    const unowned = candidates.filter(entry => !owned.has(`id:${entry.id}`) && !owned.has(`name:${entry.name}`));
+    const pool = unowned.length ? unowned : candidates;
+    return pool[Math.floor(Math.random() * pool.length)] || null;
+}
+
+function _applySystemHatchTarget(pet, target) {
+    const normalized = _normalizeSystemHatchTarget(target);
+    if (!pet || !normalized) return false;
+    pet.hatchMode = 'system-pet';
+    pet.eggDecidedAt = pet.eggDecidedAt || normalized.decidedAt || Date.now();
+    pet.eggHatchTarget = normalized;
+    pet.dna = normalized.dna || pet.dna || '';
+    pet.traits = normalized.traits || decodeDna(pet.dna);
+    pet.rarity = Number.isFinite(Number(normalized.rarity)) ? Number(normalized.rarity) : dnaRarity(pet.dna);
+    pet.name = normalized.name || dnaToName(pet.dna);
+    pet.imageUrl = normalized.imageUrl || null;
+    pet.imageSheetUrl = normalized.imageSheetUrl;
+    pet.source = normalized.source || 'famous-pets';
+    pet.sourcePetId = `famous-pets/${normalized.id}`;
+    pet.eggHatchRequestedAt = pet.eggHatchRequestedAt || Date.now();
+    pet.lastCareAt = pet.eggHatchRequestedAt;
+    pet.lastTickAt = pet.eggHatchRequestedAt;
+    pet.eggHatchPending = true;
+    pet.eggHatchRevealDelayMs = DECIDED_EGG_HATCH_DELAY_MS;
+    delete pet.eggHatchQueuedAt;
+    _syncPendingEggEffect(pet);
+    _requestReadyEggHatch(pet);
+    savePetDebounced(pet);
+    try { import('./state.js').then(({ notify }) => notify()); } catch (_) {}
+    return true;
+}
+
+function _startSystemTargetHatch(pet) {
+    if (!_shouldUseSystemHatchTarget(pet)) return false;
+    const existing = _normalizeSystemHatchTarget(pet.eggHatchTarget);
+    if (existing) return _applySystemHatchTarget(pet, existing);
+    const now = Date.now();
+    pet.hatchMode = 'system-pet';
+    pet.eggHatchRequestedAt = pet.eggHatchRequestedAt || now;
+    pet.lastCareAt = now;
+    pet.lastTickAt = now;
+    pet.eggHatchPending = true;
+    pet.eggHatchRevealDelayMs = DECIDED_EGG_HATCH_DELAY_MS;
+    delete pet.eggHatchQueuedAt;
+    _syncPendingEggEffect(pet);
+    savePetDebounced(pet);
+    _resolveSystemHatchTargetForEgg(pet).then((target) => {
+        if (_applySystemHatchTarget(pet, target)) return;
+        say('系统宠物列表暂时没有加载好，稍后再试一次 ✨', 3200);
+    }).catch(() => {});
+    try { import('./state.js').then(({ notify }) => notify()); } catch (_) {}
+    return true;
+}
+
 function _playHatchSound() {
     try {
         // 复用 SoundManager 的"升级"动机作为孵化提示音（>=2 秒 MIDI 序列）。
@@ -826,6 +942,7 @@ function _playHatchAnimation(petId) {
 export function hatchPetFromEgg(pet) {
     if (!pet) return false;
     if (pet.stage !== 'egg') return false;
+    if (_startSystemTargetHatch(pet)) return true;
     if (_continueStartedEggHatch(pet)) {
         return true;
     }
@@ -1018,6 +1135,49 @@ function applyLowMoodFoodBonus(pet, statDeltas = null) {
     return delta;
 }
 
+const SPECIAL_STAGE_ORDER = ['baby', 'teen', 'adult'];
+
+function stageMinHours(stageId) {
+    const def = CONFIG.stages.find(stage => stage.id === stageId);
+    return Math.max(0, Number(def?.minHours) || 0);
+}
+
+function setPetAgeForStage(pet, stageId) {
+    const now = Date.now();
+    const minHours = stageMinHours(stageId);
+    const nextStage = CONFIG.stages.find(stage => stage.id !== 'egg' && stageMinHours(stage.id) > minHours);
+    const nextMinHours = nextStage ? stageMinHours(nextStage.id) : minHours + 24;
+    const targetHours = nextStage ? minHours + Math.max(0.01, (nextMinHours - minHours) * 0.08) : minHours + 1;
+    pet.bornAt = now - targetHours * 3600 * 1000;
+    delete pet.hatchingCare;
+}
+
+function applySpecialStageFood(pet, foodItem) {
+    const effect = foodItem?.specialStageEffect;
+    if (!effect) return { handled: false };
+    const currentIndex = SPECIAL_STAGE_ORDER.indexOf(pet?.stage);
+    if (effect === 'grow') {
+        if (currentIndex < 0) return { handled: true, ok: false, message: pet?.stage === 'egg' ? '蛋阶段还不能使用成长药丸哦' : '已经不能再用成长药丸长大啦' };
+        const targetIndex = Math.min(SPECIAL_STAGE_ORDER.length - 1, currentIndex + 1);
+        if (targetIndex === currentIndex) return { handled: true, ok: false, message: '已经是成年阶段，不能再继续长大啦' };
+        const targetStage = SPECIAL_STAGE_ORDER[targetIndex];
+        setPetAgeForStage(pet, targetStage);
+        pet.stage = targetStage;
+        return { handled: true, ok: true, message: `${foodItem.emoji || ''} ${pet.name || '宠物'}快速长大到${CONFIG.stages.find(stage => stage.id === targetStage)?.name || targetStage}啦！` };
+    }
+    if (effect === 'rejuvenate') {
+        const safeIndex = currentIndex >= 0 ? currentIndex : (pet?.stage === 'elder' ? SPECIAL_STAGE_ORDER.length : -1);
+        if (safeIndex < 0) return { handled: true, ok: false, message: pet?.stage === 'egg' ? '蛋阶段还不能使用返老还童药丸哦' : '现在不能使用返老还童药丸' };
+        const targetIndex = Math.max(0, safeIndex - 1);
+        if (targetIndex === safeIndex) return { handled: true, ok: false, message: '已经是幼年阶段，不能再变小啦' };
+        const targetStage = SPECIAL_STAGE_ORDER[targetIndex];
+        setPetAgeForStage(pet, targetStage);
+        pet.stage = targetStage;
+        return { handled: true, ok: true, message: `${foodItem.emoji || ''} ${pet.name || '宠物'}变回${CONFIG.stages.find(stage => stage.id === targetStage)?.name || targetStage}啦！` };
+    }
+    return { handled: false };
+}
+
 export function eatFood(pet, foodItem, options = {}) {
     if (!pet || !foodItem || foodItem.type !== 'food') return false;
     if (pet.stage === 'egg') {
@@ -1027,6 +1187,40 @@ export function eatFood(pet, foodItem, options = {}) {
     if (pet.anim === 'sleep') {
         say('Zzz...醒来以后再吃吧', 2200);
         return false;
+    }
+    const specialStage = applySpecialStageFood(pet, foodItem);
+    if (specialStage.handled) {
+        if (!specialStage.ok) {
+            say(specialStage.message, 2600);
+            setAnim('sad', 900);
+            return false;
+        }
+        if (!pet.stats) pet.stats = {};
+        const statDeltas = [];
+        for (const key of Object.keys(foodItem.stat || {})) {
+            const before = pet.stats[key] || 0;
+            const after = clamp(before + foodItem.stat[key], CONFIG.statMin, CONFIG.statMax);
+            pet.stats[key] = after;
+            const delta = after - before;
+            if (delta) statDeltas.push({ key, delta });
+        }
+        pet.lastTickAt = Date.now();
+        markPetCared(pet, pet.lastTickAt);
+        applyStage(pet);
+        savePetDebounced(pet);
+        const delayMs = Math.max(0, Number(options.delayEffectsMs) || 0);
+        const sayDelayMs = Math.max(0, Number(options.sayDelayMs) || 0);
+        const playFeedback = () => {
+            _spawnFoodStatFloaters(pet, statDeltas);
+            spawnEatFoodEffects(pet, foodItem, false);
+            setAnim('happy', 2200);
+            const waitMs = Math.max(0, sayDelayMs - delayMs);
+            if (waitMs > 0) setTimeout(() => say(specialStage.message, 4200), waitMs);
+            else say(specialStage.message, 4200);
+        };
+        if (delayMs > 0) setTimeout(playFeedback, delayMs);
+        else playFeedback();
+        return true;
     }
     const ignoresFoodNegatives = pet.stage === 'baby';
     const isBasicFeed = foodItem.id === 'food_basic_feed' || foodItem.unlimited;

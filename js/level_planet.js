@@ -3,7 +3,7 @@
 // 相机距离范围：minCamera 时已经"贴到星球表面" → 触发 zoomIn 进入 field；
 //               maxCamera 时已经"飞得很远" → 此处是最外层，无更外层可去。
 
-import { $, clamp, coinIconSvg, escapeHtml, formatTime, prompt, randId, showToast } from './utils.js';
+import { $, clamp, coinIconSvg, dockDisabledAttrs, escapeHtml, formatTime, isDockButtonDisabled, prompt, randId, showDockDisabledToast, showToast } from './utils.js';
 import { endVisitingMode, getActivePlanetBuff, getActivePlanetWeather, isVisitingMode, notify, setCurrentPet, startVisitingMode, state } from './state.js';
 import { addToInventory, getLayout, loadPet, loadPlanetVisitors, loadRecentFriendPlanets, recordPlanetVisitor, saveLayout, savePet, savePetDebounced, saveRecentFriendPlanetsDebounced, saveUserProfileDebounced, setCurrentPetPersisted } from './storage.js';
 import { clampEnergyToMax, defaultPermanentTrauma, defaultStats, dominantTraits } from './petTick.js';
@@ -1907,7 +1907,7 @@ function showPlanetActionDialog(action, pet, ctx) {
         }
         const destinationBtn = e.target.closest?.('[data-visit-destination]');
         if (destinationBtn) {
-            if (destinationBtn.disabled) return;
+            if (isDockButtonDisabled(destinationBtn)) { showDockDisabledToast(destinationBtn); return; }
             const list = destinationBtn.closest('.planet-visit-destinations');
             list?.querySelectorAll('[data-visit-destination]').forEach(item => {
                 const selected = item === destinationBtn;
@@ -2131,6 +2131,7 @@ function socialVisitDestinationItems() {
                 icon: remote.equipmentEmoji,
                 meta: full ? '储量已满' : `${socialFuelCost()}燃料 · ${remote.elementalAttribute}${stock}/${REMOTE_ELEMENT_MAX_TONS}`,
                 locked: full,
+                disabledReason: full ? `${remote.name}的${remote.elementalAttribute}储量已满，先使用一些库存后再派遣飞船。` : '',
                 selected: false,
             };
         }),
@@ -2160,7 +2161,7 @@ function socialVisitDestinationButtonsHtml(selectedDestinationId = '') {
                 return `
                 <button class="planet-visit-destination ${selected ? 'is-selected' : ''} ${destination.locked ? 'is-disabled' : ''}"
                     data-visit-destination="${escapeHtml(destination.id)}" type="button" role="option"
-                    aria-selected="${selected ? 'true' : 'false'}" ${destination.locked ? 'disabled' : ''}>
+                    aria-selected="${selected ? 'true' : 'false'}"${dockDisabledAttrs(destination.locked, destination.disabledReason || destination.meta)}>
                     <span class="planet-visit-destination-icon">${destination.kind === 'friend' ? friendVisitDestinationIconHtml(destination) : destination.remote ? smallRemotePlanetSvg(destination.remote) : destination.icon}</span>
                     <span class="planet-visit-destination-text">
                         <b>${escapeHtml(destination.name)}</b>

@@ -34,6 +34,7 @@
       .status { @apply whitespace-pre-wrap rounded-md border border-sky-200 bg-sky-50 px-2.5 py-2 text-xs leading-normal text-sky-900; }
       .status.ok { @apply border-emerald-200 bg-emerald-50 text-emerald-800; }
       .status.error { @apply border-red-200 bg-red-50 text-red-800; }
+      .status-action { @apply min-h-0 border-0 bg-transparent p-0 font-bold underline underline-offset-2 hover:border-transparent hover:bg-transparent; }
       .row { @apply grid grid-cols-1 gap-2.5 md:grid-cols-2; }
       .row-3 { @apply grid grid-cols-1 gap-2.5 md:grid-cols-3; }
       .toggle-line { @apply flex-row items-center gap-2 text-slate-900; }
@@ -42,6 +43,8 @@
       .record-item { @apply grid w-full grid-cols-[42px_minmax(0,1fr)_auto] items-center gap-2.5 rounded-md border border-slate-300 bg-white p-2.5 text-left; }
       .record-item.active { @apply border-sky-600 bg-sky-50 ring-2 ring-sky-600/15; }
       .record-main { @apply block min-w-0 border-0 bg-transparent p-0 text-left hover:border-transparent hover:bg-transparent; }
+      .record-actions { @apply flex items-center gap-1; }
+      .record-actions button { @apply min-h-[30px] px-2 text-xs; }
       .record-title { @apply block min-w-0 overflow-hidden text-ellipsis whitespace-nowrap text-[13px] font-bold; }
       .record-meta { @apply block min-w-0 overflow-hidden text-ellipsis whitespace-nowrap text-[11px] text-slate-500; }
       .record-planet { @apply grid h-[42px] w-[42px] place-items-center rounded-full text-sm font-black text-white shadow-inner; text-shadow: 0 1px 4px rgb(15 23 42 / .45); }
@@ -80,6 +83,8 @@
       .modal-overlay { @apply fixed inset-0 z-[1000] flex bg-slate-950/60 p-[18px]; }
       .modal-window { @apply m-auto flex max-h-[calc(100vh-36px)] w-[min(1040px,100%)] flex-col overflow-hidden rounded-lg bg-white shadow-2xl; }
       .modal-titlebar { @apply flex min-h-12 items-center justify-between gap-2.5 border-b border-slate-300 bg-slate-50 px-4; }
+      .modal-titlebar-actions { @apply flex items-center gap-2; }
+      .modal-link-button { @apply inline-flex min-h-[34px] items-center rounded-md border border-sky-600 bg-sky-600 px-3 text-sm text-white no-underline transition hover:border-sky-700 hover:bg-sky-700; }
       .modal-body { @apply min-h-0 flex-1 overflow-auto p-3; }
       .modal-stack { @apply flex min-h-0 flex-col gap-3; }
     }
@@ -101,19 +106,17 @@
       </div>
       <div class="panel-body">
         <section class="section">
-          <h2>账号与文件</h2>
+          <h2>账号与 Workspace</h2>
           <div id="loginState" class="status">正在加载 KeepworkSDK...</div>
           <div class="toolbar">
-            <button id="btnReload" class="primary" type="button">刷新</button>
-            <button id="btnWorkspace" type="button">打开</button>
-            <button id="btnLogin" type="button">登录</button>
             <button id="btnLocalApi" type="button">本地 API Key</button>
           </div>
-          <div class="hint">Workspace: MagicHaqi/famous-planets</div>
         </section>
         <section class="section">
           <h2>操作</h2>
           <div class="toolbar">
+            <button id="btnReload" class="primary" type="button">刷新</button>
+            <button id="btnWorkspace" type="button">打开</button>
             <button id="btnNew" class="primary" type="button">新建星球</button>
             <button id="btnDuplicate" type="button">复制</button>
             <button id="btnDownloadIndex" type="button">下载 index</button>
@@ -123,8 +126,6 @@
         <section class="section">
           <h2>场景预设</h2>
           <div id="sceneState" class="status">正在读取 story scene maker presets...</div>
-          <div class="toolbar"><button id="btnChooseScene" type="button">为当前 field 选择场景</button></div>
-          <div class="hint">场景选择复用 view_story_scene_maker.js 的 preset 解析、背景预览和粒子渲染。</div>
         </section>
       </div>
     </aside>
@@ -208,7 +209,7 @@
                 <label class="toggle-line mt-5"><input id="planetHidePlanet" type="checkbox">隐藏 planet 层</label>
               </div>
               <label class="toggle-line"><input id="planetHideCell" type="checkbox">隐藏 cell 层</label>
-              <div class="hint">默认值不会写入 JSON：default_zoom_level=planet、hide_planet=false、hide_cell=false 会自动省略。</div>
+              <div class="hint">导出 JSON 会写入 default_zoom_level；hide_planet=false、hide_cell=false 会自动省略。</div>
             </section>
 
             <section class="section">
@@ -584,7 +585,7 @@
         `particles 只能从这些值中选择，不能自造：${PARTICLE_EFFECTS.map(effect => effect.id).join(', ') || 'sparkle'}。`,
         `bgMusic 可留空；可选值：${Object.keys(BG_MUSIC_LABELS || {}).join(', ') || 'none'}。`,
         'planet.id 只能使用英文字母、数字、下划线或连字符，必须避免与已有 id 重复。name/title 用简洁可爱的中文名。summary 用一句中文描述星球主题。badge 默认“官方”。',
-        'planet.planet 需要包含 readonly:true、hue、bodyBackground、glowColor、accentColor。可选 default_zoom_level 只能是 planet/field/pet/cell；可选 hide_planet/hide_cell 为 true 时隐藏对应层。默认值 default_zoom_level=planet、hide_planet=false、hide_cell=false 不要写入 JSON。bodyBackground 用可直接放入 CSS background 的 radial-gradient 组合，颜色要明亮、童话、儿童友好。',
+        'planet.planet 需要包含 readonly:true、hue、bodyBackground、glowColor、accentColor、default_zoom_level。default_zoom_level 只能是 planet/field/pet/cell；可选 hide_planet/hide_cell 为 true 时隐藏对应层。hide_planet=false、hide_cell=false 不要写入 JSON。bodyBackground 用可直接放入 CSS background 的 radial-gradient 组合，颜色要明亮、童话、儿童友好。',
         '每个 field 的 name 要像星球上的地点名，background 至少包含 type、color、title；没有图片时不要填 imageUrl。',
         `已有 ids：${existingIds.join(', ') || 'none'}。已有 titles：${existingTitles.join('、') || 'none'}。`,
         description ? `用户最高优先级需求：${description}` : '用户需求：生成一个完整、可直接编辑的新官方星球。',
@@ -717,8 +718,7 @@
 
     function compactZoomOptions(raw = {}) {
       const options = normalizeZoomOptions(raw);
-      const compact = {};
-      if (options.default_zoom_level !== 'planet') compact.default_zoom_level = options.default_zoom_level;
+      const compact = { default_zoom_level: options.default_zoom_level };
       if (options.hide_planet) compact.hide_planet = true;
       if (options.hide_cell) compact.hide_cell = true;
       return compact;
@@ -967,6 +967,7 @@ ${currentIndent}}`;
         const planet = record.planet || defaultPlanet(record.id);
         const bg = planet.planet?.bodyBackground || PLANET_PRESETS.maisi.bodyBackground;
         const active = record.id === state.selectedId;
+        const orderIndex = state.records.findIndex(item => item.id === record.id);
         return `
           <div class="record-item ${active ? 'active' : ''}" data-record-id="${escapeHtml(record.id)}">
             <span class="record-planet" style="background:${escapeHtml(bg)}">${escapeHtml((record.title || record.id).slice(0, 1))}</span>
@@ -974,11 +975,35 @@ ${currentIndent}}`;
               <span class="record-title">${escapeHtml(record.title || record.id)}</span>
               <span class="record-meta">${escapeHtml(record.id)} · index entry</span>
             </button>
-            <button type="button" class="danger" data-delete-record="${escapeHtml(record.id)}">删</button>
+            <span class="record-actions">
+              <button type="button" title="上移" data-move-record="${escapeHtml(record.id)}" data-move-direction="-1" ${orderIndex <= 0 ? 'disabled' : ''}>上</button>
+              <button type="button" title="下移" data-move-record="${escapeHtml(record.id)}" data-move-direction="1" ${orderIndex < 0 || orderIndex >= state.records.length - 1 ? 'disabled' : ''}>下</button>
+              <button type="button" class="danger" data-delete-record="${escapeHtml(record.id)}">删</button>
+            </span>
           </div>`;
       }).join('') : '<div class="hint p-2.5">没有匹配的星球。</div>';
       $('recordList').querySelectorAll('[data-open-record]').forEach(btn => btn.onclick = () => selectRecord(btn.dataset.openRecord));
+      $('recordList').querySelectorAll('[data-move-record]').forEach(btn => btn.onclick = () => moveRecord(btn.dataset.moveRecord, Number(btn.dataset.moveDirection) || 0));
       $('recordList').querySelectorAll('[data-delete-record]').forEach(btn => btn.onclick = () => deleteRecord(btn.dataset.deleteRecord).catch(e => setStatus($('runStatus'), `删除失败：${e?.message || e}`, 'error')));
+    }
+
+    function moveRecord(id, direction) {
+      const from = state.records.findIndex(item => item.id === id);
+      const to = from + direction;
+      if (from < 0 || to < 0 || to >= state.records.length) return;
+      const records = [...state.records];
+      [records[from], records[to]] = [records[to], records[from]];
+      state.records = records;
+      const planets = Array.isArray(state.indexMeta?.planets) ? [...state.indexMeta.planets] : [];
+      const metaFrom = planets.findIndex(item => item?.id === id);
+      if (metaFrom >= 0) {
+        const metaTo = metaFrom + direction;
+        if (metaTo >= 0 && metaTo < planets.length) [planets[metaFrom], planets[metaTo]] = [planets[metaTo], planets[metaFrom]];
+      }
+      state.indexMeta = { ...(state.indexMeta || {}), version: Number(state.indexMeta?.version) || 1, planets };
+      renderRecords();
+      updateOutput();
+      setStatus($('runStatus'), `已调整 ${id} 的顺序，点击保存写入 ${INDEX_PATH}。`, 'ok');
     }
 
     function selectRecord(id) {
@@ -1157,7 +1182,10 @@ ${currentIndent}}`;
         <div class="modal-window scene-maker-window">
           <div class="modal-titlebar">
             <strong>场景设置 · ${escapeHtml(FIELD_SLOTS[fieldIndex]?.label || '')}</strong>
-            <button type="button" id="closeScenePicker">关闭</button>
+            <div class="modal-titlebar-actions">
+              <a class="modal-link-button" href="./ScenePresetsGenerator.html" target="_blank" rel="noopener">AI Scene Generator</a>
+              <button type="button" id="closeScenePicker">关闭</button>
+            </div>
           </div>
           <div class="modal-body scene-maker-body">
             <div id="sceneMakerHost" class="scene-maker-host"></div>
@@ -1333,8 +1361,7 @@ ${currentIndent}}`;
         state.sdk = await ensureKeepworkSDK();
         if (state.sdk) {
           $('sdkState').textContent = 'SDK ready';
-          const storeState = state.sdk.personalPageStore ? 'PersonalPageStore 可用' : 'PersonalPageStore 不可用';
-          setStatus($('loginState'), state.sdk.user ? `已登录：${state.sdk.user.username || state.sdk.user.name || state.sdk.user.id || 'Keepwork'}；${storeState}` : `SDK 已加载；${storeState}。登录后可保存到 PersonalPageStore。`, state.sdk.user ? 'ok' : '');
+          await refreshLoginState();
         } else {
           $('sdkState').textContent = 'local only';
           setStatus($('loginState'), '未加载 SDK，将只读取本地 JSON，保存请用复制/下载。', 'error');
@@ -1345,19 +1372,51 @@ ${currentIndent}}`;
       }
     }
 
+    async function refreshLoginState() {
+      const sdk = state.sdk || window.keepwork;
+      if (!sdk) return;
+      let username = sdk.user?.username || sdk.user?.name || sdk.user?.id || '';
+      if (sdk.token && !username) {
+        try {
+          const user = typeof sdk.getUserProfile === 'function' ? await sdk.getUserProfile() : await sdk.getCurrentUser?.();
+          username = user?.username || user?.name || user?.id || sdk.user?.username || sdk.user?.name || sdk.user?.id || '';
+        } catch (_) {}
+      }
+      const loginState = $('loginState');
+      loginState.classList.toggle('error', false);
+      loginState.classList.toggle('ok', !!sdk.token);
+      loginState.innerHTML = sdk.token
+        ? `已登录：<button id="btnProfile" class="status-action" type="button">${escapeHtml(username || 'Keepwork 用户')}</button>`
+        : '<button id="btnProfile" class="status-action" type="button">未登录</button>。可点击登录，或使用 localAPI。';
+      $('btnProfile').onclick = openLoginOrProfile;
+    }
+
+    async function openLoginOrProfile() {
+      const sdk = state.sdk || window.keepwork;
+      if (!sdk) return;
+      if (!sdk.token) {
+        if (sdk.loginWindow?.show) sdk.loginWindow.show({ onLogin: refreshLoginState });
+        else if (sdk.login) await sdk.login();
+        setTimeout(refreshLoginState, 600);
+        return;
+      }
+      if (typeof sdk.showProfileWindow === 'function') {
+        const result = await sdk.showProfileWindow();
+        if (result?.action === 'logout') await refreshLoginState();
+      } else if (sdk.profileWindow?.show) {
+        await sdk.profileWindow.show();
+      } else {
+        setStatus($('loginState'), '当前 SDK 不支持 ProfileWindow。', 'error');
+      }
+      await refreshLoginState();
+    }
+
     function bindEvents() {
       ['planetId', 'planetName', 'planetTitle', 'planetAppTitle', 'planetShopItemUrl', 'planetBadge', 'planetSummary', 'planetReadonly', 'planetHue', 'planetGlowColor', 'planetAccentColor', 'planetBodyBackground', 'planetDefaultZoomLevel', 'planetHidePlanet', 'planetHideCell']
         .forEach(id => $(id).addEventListener('input', updateOutput));
       $('recordSearch').addEventListener('input', renderRecords);
       $('btnReload').onclick = loadRecords;
       $('btnWorkspace').onclick = () => openWorkspaceViewer(INDEX_PATH);
-      $('btnLogin').onclick = async () => {
-        try {
-          await (state.sdk || window.keepwork)?.loginWindow?.show?.();
-          setStatus($('loginState'), '登录完成。', 'ok');
-          await loadRecords();
-        } catch (e) { setStatus($('loginState'), `登录失败：${e?.message || e}`, 'error'); }
-      };
       $('btnLocalApi').onclick = async () => {
         const settings = (state.sdk || window.keepwork)?.localAPIKeySettings;
         if (!settings?.show) return setStatus($('loginState'), '当前 SDK 不支持本地 API Key 设置。', 'error');
@@ -1377,7 +1436,6 @@ ${currentIndent}}`;
       $('btnSaveTop').onclick = () => savePlanet().catch(e => setStatus($('runStatus'), `保存失败：${e?.message || e}`, 'error'));
       $('btnFormatJson').onclick = updateOutput;
       $('btnApplyJson').onclick = applyJson;
-      $('btnChooseScene').onclick = () => openScenePicker(state.activeFieldIndex);
       $('btnCopyIndex').onclick = async () => { await copyText(getIndexJsonText()); setStatus($('runStatus'), '已复制 _planet_index.json。', 'ok'); };
       $('btnDownloadIndex').onclick = () => downloadText('_planet_index.json', getIndexJsonText());
       document.querySelectorAll('[data-planet-preset]').forEach(btn => {

@@ -147,7 +147,8 @@
         }
         .btn-primary:hover { transform: translateY(-2px); box-shadow: 0 7px 0 #1e3a8a, 0 16px 22px rgba(14, 116, 144, 0.28), inset 0 2px 0 rgba(255,255,255,0.5), 0 0 24px rgba(103, 232, 249, 0.36); }
         .btn-primary:active { transform: translateY(3px); box-shadow: 0 2px 0 #1e3a8a, 0 8px 12px rgba(14, 116, 144, 0.22), inset 0 2px 5px rgba(15, 23, 42, 0.22); }
-        .btn-primary:disabled { opacity: 0.5; cursor: not-allowed; box-shadow: none; }
+        .btn-primary:disabled,
+        .btn-primary[aria-disabled="true"] { opacity: 0.5; cursor: not-allowed; box-shadow: none; }
 
         .btn-secondary {
             background:
@@ -167,6 +168,8 @@
             .btn-secondary:hover { background: var(--bg-pill-hover); color: var(--text-primary); transform: translateY(-1px); }
         }
         .btn-secondary:active { transform: translateY(2px); box-shadow: 0 1px 0 rgba(14, 116, 144, 0.28), inset 0 2px 5px rgba(14,116,144,0.16); }
+        .btn-secondary:disabled,
+        .btn-secondary[aria-disabled="true"] { opacity: 0.52; cursor: not-allowed; box-shadow: none; filter: grayscale(0.18); }
 
         .btn-icon {
             width: 44px; height: 44px;
@@ -380,6 +383,8 @@
         }
         .mh-furniture-layer { z-index: 8; }
         .mh-food-layer { z-index: 18; }
+        .mh-furniture-layer.has-room-dragging,
+        .mh-food-layer.has-room-dragging { z-index: 90000; }
         .decor-mode .mh-furniture-layer,
         .decor-mode .mh-food-layer,
         .feed-mode .mh-food-layer { pointer-events: none; }
@@ -421,19 +426,19 @@
         .decor-mode .mh-room-furniture[data-item-type="furniture"].selected,
         .decor-mode .mh-room-furniture[data-item-type="food"].selected {
             filter: drop-shadow(0 12px 18px rgba(6,18,44,0.32));
-            z-index: 75 !important;
+            z-index: 900000 !important;
         }
         .mh-room-scale-controls {
             position: absolute;
-            left: 50%;
-            top: calc(100% + 4px);
+            left: var(--mh-scale-controls-left, 50%);
+            top: calc(var(--mh-scale-controls-top, 100%) + 4px);
             transform: translateX(-50%) translateY(6px) scale(0.96);
             display: flex;
             align-items: center;
-            gap: 12px;
+            gap: 10px;
             opacity: 0;
             pointer-events: none;
-            z-index: 90;
+            z-index: 900010;
             transition: opacity .18s ease, transform .18s ease;
         }
         .mh-room-scale-controls.is-visible {
@@ -442,14 +447,14 @@
             transform: translateX(-50%) translateY(0) scale(1);
         }
         .mh-room-scale-btn {
-            width: 46px;
-            height: 46px;
+            width: 40px;
+            height: 40px;
             border-radius: 50%;
             border: 2px solid rgba(255,255,255,0.9);
             background: rgba(22, 163, 74, 0.92);
             color: #fff;
             box-shadow: 0 8px 20px rgba(22, 101, 52, 0.32);
-            font-size: 30px;
+            font-size: 26px;
             font-weight: 800;
             line-height: 1;
             display: flex;
@@ -468,7 +473,7 @@
             cursor: grabbing;
             opacity: 0.92;
             transform: translate(-50%, -50%) scale(1.08);
-            z-index: 80 !important;
+            z-index: 900020 !important;
         }
         .mh-room-furniture.will-discard {
             opacity: 0.48;
@@ -1358,7 +1363,7 @@
             left: 0; right: 0; top: 7px;
             height: 12px;
             display: grid;
-            grid-template-columns: repeat(var(--zoom-visible-count, 4), 1fr);
+            grid-template-columns: repeat(4, 1fr);
             overflow: hidden;
             border: 2px solid rgba(255,255,255,0.96);
             border-radius: 999px;
@@ -1370,7 +1375,8 @@
             background: var(--stage-color);
         }
         .mh-zoom-bar-stage.is-hidden {
-            display: none;
+            visibility: hidden;
+            pointer-events: none;
         }
         .mh-zoom-bar-stage + .mh-zoom-bar-stage { border-left: 1px solid rgba(255,255,255,0.7); }
         .mh-zoom-bar-stage i {

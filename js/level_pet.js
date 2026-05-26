@@ -1,6 +1,6 @@
 // Level 2 — 宠物 + 房间（经典电子宠物日常）
 
-import { $, $$, escapeHtml, randInt, renderVisualAsset, showToast } from './utils.js';
+import { $, $$, dockDisabledAttrs, escapeHtml, isDockButtonDisabled, randInt, renderVisualAsset, showDockDisabledToast, showToast } from './utils.js';
 import { t } from './i18n.js';
 import { canPlaceItemInArea, CONFIG, DECO_VISUALS, getActiveHouseRoomIds, getPlacedItemZOrder, getShopItemById, SHOP_ITEMS } from './config.js';
 import { isVisitingMode, notify, state } from './state.js';
@@ -38,8 +38,6 @@ const PET_HEIGHT_METERS = 0.75;
 const PET_WIDTH_METERS = 0.75;
 const ROOM_PET_REPEL_MIN_X_METERS = PET_WIDTH_METERS * 0.95;
 const ROOM_PET_REPEL_MIN_Y_METERS = PET_HEIGHT_METERS * 0.72;
-const FOOD_HIT_WIDTH_METERS = 1.45;
-const FOOD_HIT_HEIGHT_METERS = 0.78;
 const PET_START_X_METERS = ROOM_WIDTH_METERS - PET_WIDTH_METERS - 1.25;
 const PET_START_Y_METERS = 1.68;
 const PET_FOLLOW_SCREEN_X = 0.72;
@@ -55,6 +53,8 @@ const FINGER_HIT_SAMPLE_POINTS = [
     [0, 0], [0, -1], [1, 0], [0, 1], [-1, 0],
     [0.72, -0.72], [0.72, 0.72], [-0.72, 0.72], [-0.72, -0.72],
 ];
+const IMAGE_ALPHA_HIT_THRESHOLD = 24;
+const IMAGE_ALPHA_AABB_CACHE = new Map();
 
 let roomPan = 0;
 let pxPerMeter = 1;
@@ -210,9 +210,15 @@ function getFurnitureVisual(item) {
         imageUrl: item?.imageUrl || custom.imageUrl,
     };
     if (item?.type === 'food') {
-        return { w: FOOD_HIT_WIDTH_METERS / ROOM_WIDTH_METERS, h: FOOD_HIT_HEIGHT_METERS / ROOM_HEIGHT_METERS, ...visual, svg: visual.svg || fallbackFoodSvg(item) };
+        return { ...visual, svg: visual.svg || fallbackFoodSvg(item) };
     }
-    return { w: 0.11, h: 0.16, ...visual, svg: visual.svg || fallbackFurnitureSvg(item) };
+    return { ...visual, svg: visual.svg || fallbackFurnitureSvg(item) };
+}
+
+function getItemFieldSize(item, placedItem = null) {
+    const rawSize = placedItem?.fieldSize ?? item?.fieldSize;
+    const size = Number(rawSize);
+    return clampRange(Number.isFinite(size) ? size : 1, 0.2, 5);
 }
 
 function fallbackFurnitureSvg(item) {
@@ -249,12 +255,12 @@ function servingFoodCutHtml(item) {
 }
 
 function normalizeRoomItem(item, def) {
-    const visual = getFurnitureVisual(def);
+    const base = getFurnitureMeters(def, item);
     return {
         x: clampRange(Number(item.x), 0, ROOM_WIDTH_METERS),
         y: clampRange(Number(item.y), 0, ROOM_HEIGHT_METERS),
-        w: clampRange(Number(item.wMeters) || visual.w * ROOM_WIDTH_METERS, 0.2, 5),
-        h: clampRange(Number(item.hMeters) || visual.h * ROOM_HEIGHT_METERS, 0.2, 2.4),
+        w: clampRange(Number(item.wMeters) || base.w, 0.2, 5),
+        h: clampRange(Number(item.hMeters) || base.h, 0.2, 2.4),
     };
 }
 
@@ -350,6 +356,11 @@ function applyRoomItemZIndex(el, pos = null) {
     el.style.zIndex = String(getRoomItemZIndex(itemPos, Number(el.dataset.zorder), el.dataset.itemType));
 }
 
+function setRoomItemDraggingLayer(el, active) {
+    const layer = el?.closest?.('#mhFurnitureLayer, #mhFoodLayer');
+    layer?.classList.toggle('has-room-dragging', !!active);
+}
+
 function applyRoomMeterLayout() {
     recomputeRoomMetrics();
     $$(ROOM_ITEM_SELECTOR).forEach(applyMeterElementStyle);
@@ -363,7 +374,8 @@ function roomItemHtml(it, index) {
     const pos = normalizeRoomItem(it, def);
     const zorder = getPlacedItemZOrder(it, def);
     const zIndex = getRoomItemZIndex(pos, zorder, def.type);
-    return `<div class="furniture mh-room-furniture" data-fidx="${index}" data-item-id="${escapeHtml(def.id)}" data-item-type="${escapeHtml(def.type || 'furniture')}" data-zorder="${zorder}" data-x-meters="${pos.x}" data-y-meters="${pos.y}" data-w-meters="${pos.w}" data-h-meters="${pos.h}" style="${meterStyle(pos)};z-index:${zIndex}" title="${escapeHtml(def.name || '')}">${furnitureHtml(def)}</div>`;
+    const fieldSize = getItemFieldSize(def, it);
+    return `<div class="furniture mh-room-furniture" data-fidx="${index}" data-item-id="${escapeHtml(def.id)}" data-item-type="${escapeHtml(def.type || 'furniture')}" data-zorder="${zorder}" data-field-size="${fieldSize}" data-x-meters="${pos.x}" data-y-meters="${pos.y}" data-w-meters="${pos.w}" data-h-meters="${pos.h}" style="${meterStyle(pos)};z-index:${zIndex}" title="${escapeHtml(def.name || '')}">${furnitureHtml(def)}</div>`;
 }
 
 function metersToPx(value) {
@@ -378,11 +390,11 @@ function roomXToScenePx(xMeters) {
     return metersToPx((Number(xMeters) || 0) + ROOM_SIDE_OVERDRAW_METERS);
 }
 
-function getFurnitureMeters(item) {
-    const visual = getFurnitureVisual(item);
+function getFurnitureMeters(item, placedItem = null) {
+    const size = getItemFieldSize(item, placedItem);
     return {
-        w: clampRange(visual.w * ROOM_WIDTH_METERS, 0.2, 5),
-        h: clampRange(visual.h * ROOM_HEIGHT_METERS, 0.2, 2.4),
+        w: clampRange(size, 0.2, 5),
+        h: clampRange(size, 0.2, 2.4),
     };
 }
 
@@ -569,11 +581,137 @@ function pointOverSvgPaint(svg, clientX, clientY) {
     return false;
 }
 
+function imageAlphaCacheKey(img) {
+    const src = img?.currentSrc || img?.src || '';
+    const width = img?.naturalWidth || 0;
+    const height = img?.naturalHeight || 0;
+    return src && width > 0 && height > 0 ? `${src}::${width}x${height}` : '';
+}
+
+function getImageOpaqueAabb(img) {
+    if (!img || !img.complete || !img.naturalWidth || !img.naturalHeight) return null;
+    const key = imageAlphaCacheKey(img);
+    if (!key) return null;
+    if (IMAGE_ALPHA_AABB_CACHE.has(key)) return IMAGE_ALPHA_AABB_CACHE.get(key);
+    const canvas = document.createElement('canvas');
+    canvas.width = img.naturalWidth;
+    canvas.height = img.naturalHeight;
+    try {
+        const ctx = canvas.getContext('2d', { willReadFrequently: true });
+        if (!ctx) return null;
+        ctx.drawImage(img, 0, 0);
+        const data = ctx.getImageData(0, 0, canvas.width, canvas.height).data;
+        let minX = canvas.width;
+        let minY = canvas.height;
+        let maxX = -1;
+        let maxY = -1;
+        for (let y = 0; y < canvas.height; y += 1) {
+            const row = y * canvas.width * 4;
+            for (let x = 0; x < canvas.width; x += 1) {
+                if (data[row + x * 4 + 3] <= IMAGE_ALPHA_HIT_THRESHOLD) continue;
+                if (x < minX) minX = x;
+                if (x > maxX) maxX = x;
+                if (y < minY) minY = y;
+                if (y > maxY) maxY = y;
+            }
+        }
+        const aabb = maxX >= minX && maxY >= minY
+            ? { minX, minY, maxX: maxX + 1, maxY: maxY + 1, width: canvas.width, height: canvas.height }
+            : { empty: true, width: canvas.width, height: canvas.height };
+        IMAGE_ALPHA_AABB_CACHE.set(key, aabb);
+        return aabb;
+    } catch {
+        return null;
+    }
+}
+
+function imageContentRect(img) {
+    const rect = img?.getBoundingClientRect?.();
+    if (!rect || rect.width <= 0 || rect.height <= 0 || !img.naturalWidth || !img.naturalHeight) return rect;
+    const boxRatio = rect.width / rect.height;
+    const imageRatio = img.naturalWidth / img.naturalHeight;
+    if (!Number.isFinite(boxRatio) || !Number.isFinite(imageRatio) || boxRatio <= 0 || imageRatio <= 0) return rect;
+    if (imageRatio > boxRatio) {
+        const height = rect.width / imageRatio;
+        const top = rect.top + (rect.height - height) / 2;
+        return { left: rect.left, right: rect.right, top, bottom: top + height, width: rect.width, height };
+    }
+    const width = rect.height * imageRatio;
+    const left = rect.left + (rect.width - width) / 2;
+    return { left, right: left + width, top: rect.top, bottom: rect.bottom, width, height: rect.height };
+}
+
+function imageOpaqueAabbClientRect(img) {
+    if (!img) return null;
+    const rect = imageContentRect(img);
+    if (!rect || rect.width <= 0 || rect.height <= 0) return null;
+    const aabb = getImageOpaqueAabb(img);
+    if (!aabb) return null;
+    if (aabb.empty) return { empty: true };
+    return {
+        left: rect.left + (aabb.minX / aabb.width) * rect.width,
+        right: rect.left + (aabb.maxX / aabb.width) * rect.width,
+        top: rect.top + (aabb.minY / aabb.height) * rect.height,
+        bottom: rect.top + (aabb.maxY / aabb.height) * rect.height,
+    };
+}
+
+function pointOverImageOpaqueAabb(img, clientX, clientY) {
+    if (!img) return null;
+    const rect = imageContentRect(img);
+    if (!pointInRect(clientX, clientY, rect)) return false;
+    const aabbRect = imageOpaqueAabbClientRect(img);
+    if (!aabbRect) return true;
+    if (aabbRect.empty) return false;
+    return clientX >= aabbRect.left && clientX <= aabbRect.right && clientY >= aabbRect.top && clientY <= aabbRect.bottom;
+}
+
+function roomItemScaleControlsAnchor(el) {
+    const itemRect = el?.getBoundingClientRect?.();
+    if (!itemRect || itemRect.width <= 0 || itemRect.height <= 0) return { leftPercent: 50, topPercent: 100 };
+    const img = el.querySelector?.('.mh-furniture-img');
+    const aabbRect = imageOpaqueAabbClientRect(img);
+    if (!aabbRect || aabbRect.empty) return { leftPercent: 50, topPercent: 100 };
+    const leftPercent = (((aabbRect.left + aabbRect.right) / 2 - itemRect.left) / itemRect.width) * 100;
+    const topPercent = ((aabbRect.bottom - itemRect.top) / itemRect.height) * 100;
+    return {
+        leftPercent: clampRange(leftPercent, 0, 100),
+        topPercent: clampRange(topPercent, 0, 100),
+    };
+}
+
+function updateRoomItemScaleControlsAnchor(el, controls, ctx) {
+    const anchor = roomItemScaleControlsAnchor(el);
+    controls.style.setProperty('--mh-scale-controls-left', `${anchor.leftPercent.toFixed(2)}%`);
+    controls.style.setProperty('--mh-scale-controls-top', `${anchor.topPercent.toFixed(2)}%`);
+    const img = el?.querySelector?.('.mh-furniture-img');
+    if (img && !img.complete && !img.__mhScaleControlsLoadBound) {
+        img.__mhScaleControlsLoadBound = true;
+        img.addEventListener('load', () => {
+            img.__mhScaleControlsLoadBound = false;
+            updateRoomItemScaleControls(ctx);
+        }, { once: true });
+        img.addEventListener('error', () => { img.__mhScaleControlsLoadBound = false; }, { once: true });
+    }
+}
+
+function pointOverRoomScaleControls(clientX, clientY) {
+    const controls = document.getElementById('mhRoomItemScaleControls');
+    if (!controls?.classList?.contains('is-visible')) return false;
+    return Array.from(controls.querySelectorAll('.mh-room-scale-btn')).some(btn => {
+        return pointInRect(clientX, clientY, btn.getBoundingClientRect?.());
+    });
+}
+
 function pointOverRoomItemPaint(el, clientX, clientY) {
     const imageRect = getRoomItemImageRect(el);
     if (!pointInRect(clientX, clientY, imageRect)) return false;
     const svg = el?.querySelector?.('.mh-furniture-svg svg');
     const painted = pointOverSvgPaint(svg, clientX, clientY);
+    if (painted != null) return painted;
+    const img = el?.querySelector?.('.mh-furniture-img');
+    const imageAabbHit = pointOverImageOpaqueAabb(img, clientX, clientY);
+    if (imageAabbHit != null) return imageAabbHit;
     return painted ?? true;
 }
 
@@ -588,6 +726,7 @@ function fingerOverRoomItemPaint(el, clientX, clientY) {
 }
 
 function getClosestDraggableRoomItem(clientX, clientY) {
+    if (pointOverRoomScaleControls(clientX, clientY)) return null;
     let best = null;
     $$(ROOM_ITEM_SELECTOR).forEach(item => {
         if (!canDragRoomItem(item)) return;
@@ -911,6 +1050,8 @@ function getSelectedRoomItemEl(ctx = null) {
 
 function getRoomItemScale(def, itemOrEl) {
     const base = getFurnitureMeters(def);
+    const fieldSize = Number(itemOrEl?.fieldSize ?? itemOrEl?.dataset?.fieldSize);
+    if (Number.isFinite(fieldSize) && fieldSize > 0) return clampRange(fieldSize / getItemFieldSize(def), ROOM_ITEM_MIN_SCALE, ROOM_ITEM_MAX_SCALE);
     const w = Number(itemOrEl?.wMeters ?? itemOrEl?.dataset?.wMeters) || base.w;
     const h = Number(itemOrEl?.hMeters ?? itemOrEl?.dataset?.hMeters) || base.h;
     const scaleW = base.w > 0 ? w / base.w : 1;
@@ -935,6 +1076,7 @@ function updateRoomItemScaleControls(ctx) {
     }
     const scale = getRoomItemScale(def, el);
     if (controls.parentElement !== el) el.appendChild(controls);
+    updateRoomItemScaleControlsAnchor(el, controls, ctx);
     controls.classList.add('is-visible');
     controls.querySelector('[data-room-scale="down"]')?.toggleAttribute('disabled', scale <= ROOM_ITEM_MIN_SCALE + 0.001);
     controls.querySelector('[data-room-scale="up"]')?.toggleAttribute('disabled', scale >= ROOM_ITEM_MAX_SCALE - 0.001);
@@ -981,6 +1123,8 @@ function scaleSelectedRoomItem(ctx, direction) {
     if (Math.abs(nextScale - currentScale) < 0.001) return;
     const nextW = clampRange(base.w * nextScale, 0.2, 5);
     const nextH = clampRange(base.h * nextScale, 0.2, 2.4);
+    const nextFieldSize = clampRange(getItemFieldSize(def) * nextScale, 0.2, 5);
+    el.dataset.fieldSize = String(nextFieldSize);
     el.dataset.wMeters = String(nextW);
     el.dataset.hMeters = String(nextH);
     applyMeterElementStyle(el);
@@ -991,7 +1135,7 @@ function scaleSelectedRoomItem(ctx, direction) {
         clampRange(Number(el.dataset.xMeters) || placed.x, 0, ROOM_WIDTH_METERS),
         clampRange(Number(el.dataset.yMeters) || placed.y, 0, ROOM_HEIGHT_METERS),
         roomKey,
-        { coord: 'roomMeters', wMeters: nextW, hMeters: nextH, skipSound: true }
+        { coord: 'roomMeters', fieldSize: nextFieldSize, skipSound: true }
     );
     if (movePromise && typeof movePromise.catch === 'function') movePromise.catch(() => {});
 }
@@ -1262,6 +1406,8 @@ export const petLevel = {
             if (target.closest?.('#mhDecorBtn, #mhDecorDoneBtn')) {
                 event?.preventDefault?.();
                 event?.stopPropagation?.();
+                const btn = target.closest?.('#mhDecorBtn, #mhDecorDoneBtn');
+                if (isDockButtonDisabled(btn)) { showDockDisabledToast(btn); return true; }
                 if (isPetInteractionBlocked(pet)) { showSleepingBlocked(pet); return true; }
                 dock.__mhPetDockTabHandledAt = Date.now();
                 ctx.callbacks.onToggleDecor?.(!state.isDecorMode);
@@ -1270,6 +1416,8 @@ export const petLevel = {
             if (target.closest?.('#mhFeedBtn, #mhFeedDoneBtn')) {
                 event?.preventDefault?.();
                 event?.stopPropagation?.();
+                const btn = target.closest?.('#mhFeedBtn, #mhFeedDoneBtn');
+                if (isDockButtonDisabled(btn)) { showDockDisabledToast(btn); return true; }
                 if (isPetInteractionBlocked(pet)) { showSleepingBlocked(pet); return true; }
                 dock.__mhPetDockTabHandledAt = Date.now();
                 ctx.callbacks.onToggleFeed?.(!state.isFeedMode);
@@ -1371,7 +1519,7 @@ export const petLevel = {
 
         dock.querySelectorAll('[data-action]').forEach(el => {
             el.onclick = async () => {
-                if (el.disabled) return;
+                if (isDockButtonDisabled(el)) { showDockDisabledToast(el); return; }
                 const k = el.dataset.action;
                 if (isVisitingMode()) {
                     if (k === 'visit-pet-wave') showToast('宠物和好友伙伴开心互动了一会儿。', 'success', 1600);
@@ -1499,6 +1647,7 @@ function bindFurnitureDrag(el, ctx) {
         };
         el.setPointerCapture?.(e.pointerId);
         targetEl.classList.add('is-dragging');
+        setRoomItemDraggingLayer(targetEl, true);
     });
     el.addEventListener('pointermove', (e) => {
         if (!drag || drag.id !== e.pointerId) return;
@@ -1531,6 +1680,7 @@ function bindFurnitureDrag(el, ctx) {
         el.releasePointerCapture?.(e.pointerId);
         targetEl.classList.remove('is-dragging');
         targetEl.classList.remove('will-discard');
+        setRoomItemDraggingLayer(targetEl, false);
         setDockDeleteTargetVisible(false);
         if (drag.moved) {
             targetEl.__mhRoomItemDraggedAt = Date.now();
@@ -1568,8 +1718,7 @@ function bindFurnitureDrag(el, ctx) {
             if (state.isDecorMode) playRoomItemDropSoundAsync();
             ctx.callbacks.onMoveItem?.(drag.idx, pos.x, pos.y, undefined, {
                 coord: 'roomMeters',
-                wMeters: Number(targetEl.dataset.wMeters) || getFurnitureMeters(def).w,
-                hMeters: Number(targetEl.dataset.hMeters) || getFurnitureMeters(def).h,
+                fieldSize: Number(targetEl.dataset.fieldSize) || getItemFieldSize(def),
                 skipSound: state.isDecorMode,
             });
             clearRoomItemSelection(ctx);
@@ -1724,10 +1873,10 @@ function bindTrayDrag(el, ctx) {
         }
         const pos = pointToRoomCoords(e.clientX, e.clientY);
         if (!pos) return;
-        const size = getFurnitureMeters(ITEM_BY_ID[current.itemId]);
+        const fieldSize = getItemFieldSize(ITEM_BY_ID[current.itemId]);
         clearRoomItemSelection(ctx);
         if (state.isDecorMode) playRoomItemDropSoundAsync();
-        ctx.callbacks.onPlaceItem?.(current.itemId, pos.x, pos.y, undefined, { coord: 'roomMeters', wMeters: size.w, hMeters: size.h, skipSound: state.isDecorMode });
+        ctx.callbacks.onPlaceItem?.(current.itemId, pos.x, pos.y, undefined, { coord: 'roomMeters', fieldSize, skipSound: state.isDecorMode });
     };
     el.addEventListener('pointerdown', (e) => {
         if (e.button != null && e.button !== 0) return;
@@ -1792,7 +1941,7 @@ function renderActionTray(pet) {
                 const disabled = eggDisabled || sleepDisabled || (a.k === 'sleep' && sleepAction.disabled);
                 const urgentClass = a.feed && feedUrgent ? ' is-urgent' : '';
                 const title = eggDisabled
-                    ? '蛋还没有孵化，无法进行此操作。'
+                    ? (a.k === 'bath' ? '蛋还没有孵化，先喂食让它孵化后再洗澡。' : '蛋还没有孵化，先喂食让它孵化后再睡觉。')
                     : sleepDisabled
                         ? sleepingInteractionText(pet)
                         : a.k === 'sleep'
@@ -1801,7 +1950,7 @@ function renderActionTray(pet) {
                             ? `体力值 ${Math.max(0, Math.round(Number(pet?.stats?.hunger) || 0))}，需要休息或喂食。`
                             : '';
                 return `
-                <button type="button" class="btn-secondary action-btn dock-icon-btn ${a.decor || a.feed ? 'mh-decor-action mh-room-mode-toggle' : ''} ${a.feed ? 'mh-feed-action' : ''}${urgentClass} ${sleepDisabled || eggDisabled ? 'is-sleep-disabled' : ''}" ${a.decor ? 'id="mhDecorBtn"' : a.feed ? 'id="mhFeedBtn"' : `data-action="${a.k}"`} ${disabled ? 'disabled' : ''} title="${escapeHtml(title)}">
+                <button type="button" class="btn-secondary action-btn dock-icon-btn ${a.decor || a.feed ? 'mh-decor-action mh-room-mode-toggle' : ''} ${a.feed ? 'mh-feed-action' : ''}${urgentClass} ${disabled ? 'is-sleep-disabled' : ''}" ${a.decor ? 'id="mhDecorBtn"' : a.feed ? 'id="mhFeedBtn"' : `data-action="${a.k}"`}${dockDisabledAttrs(disabled, title)} title="${escapeHtml(title)}">
                     <span class="dock-icon">${a.icon}</span>
                     <span class="dock-label">${escapeHtml(a.label)}</span>
                 </button>

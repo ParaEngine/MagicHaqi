@@ -325,7 +325,7 @@ function sortPetsByRecentBirthday(pets) {
     });
 }
 
-async function loadFamousPetsIndex() {
+export async function loadFamousPetsIndex() {
     if (Array.isArray(famousPetsIndex)) return famousPetsIndex;
     if (!famousPetsIndexPromise) {
         const indexUrl = new URL('../famous-pets/index.json', import.meta.url);
@@ -818,7 +818,7 @@ function setupLazyRawPetImages(root) {
     targets.forEach(el => observer.observe(el));
 }
 
-function petCardHtml(pet, isCurrent, allowSelect = false, picker = null) {
+function petCardHtml(pet, isCurrent, allowSelect = false, picker = null, canDelete = false) {
     const lazy = !!pet.lazyPetRecord;
     const isPicker = !!picker;
     const stats = lazy ? { hunger: 100, mood: 100 } : getRuntimePetStats(pet);
@@ -840,7 +840,8 @@ function petCardHtml(pet, isCurrent, allowSelect = false, picker = null) {
                          data-pet-id="${escapeHtml(pet.id)}"
                          ${lazy ? 'data-pet-lazy="1"' : ''}
                          data-selectable="${canSelect ? '1' : '0'}"
-                         style="display:flex;gap:12px;align-items:center;${isCurrent ? 'outline:2px solid var(--accent);outline-offset:-2px' : ''};${picked ? 'box-shadow:0 0 0 2px var(--accent) inset;' : ''};opacity:${selectable ? '1' : '.88'}">
+                         style="display:flex;gap:12px;align-items:center;${isCurrent ? 'outline:2px solid var(--accent);outline-offset:-2px' : ''};${picked ? 'box-shadow:0 0 0 2px var(--accent) inset;' : ''};opacity:${selectable ? '1' : '.88'};position:relative">
+            ${canDelete && !lazy ? `<button class="btn-secondary" data-delete-pet="${escapeHtml(pet.id)}" title="流放 ${escapeHtml(name)} 到随机星球" aria-label="流放 ${escapeHtml(name)} 到随机星球" style="position:absolute;top:8px;right:8px;width:24px;height:24px;padding:0;border-radius:50%;font-size:15px;line-height:1;color:#c08497;background:rgba(255,255,255,.72);border-color:rgba(244,114,182,.28);box-shadow:0 1px 3px rgba(15,23,42,.06)">×</button>` : ''}
             <div style="width:72px;height:72px;border-radius:14px;background:var(--bg-pill);overflow:hidden;flex-shrink:0">
                 ${lazy ? '<div style="width:100%;height:100%;display:flex;align-items:center;justify-content:center;color:var(--text-faint);font-size:12px">加载中</div>' : rawPetArtHtml(pet, displayPetName(pet))}
             </div>
@@ -904,7 +905,7 @@ function setupLazyPetCards(panel, onLoadPet) {
     requestAnimationFrame(check);
 }
 
-export function renderPetList(panel, { pets }, { onSelect, onBack, onFind, onLoadPet, allowSelect = false, pickerMode = false, multiple = false, selectedIds = [], onConfirm, title, confirmText } = {}) {
+export function renderPetList(panel, { pets }, { onSelect, onBack, onFind, onDelete, onLoadPet, allowSelect = false, pickerMode = false, multiple = false, selectedIds = [], onConfirm, title, confirmText } = {}) {
     ensurePetListTabStyles();
     rememberFamousPetFilterScroll(panel);
     const list = sortPetsByRecentBirthday(pets || []);
@@ -945,9 +946,9 @@ export function renderPetList(panel, { pets }, { onSelect, onBack, onFind, onLoa
                 : (list.length === 0
                 ? `<div class="card-flat text-center" style="color:var(--text-muted);padding:30px 14px">${escapeHtml(t('noPets'))}</div>`
                 : `<div style="display:flex;flex-direction:column;gap:10px" id="mhPetList">
-                    ${currentPets.map(p => petCardHtml(p, true, allowSelect, picker)).join('')}
+                    ${currentPets.map(p => petCardHtml(p, true, allowSelect, picker, false)).join('')}
                     ${isPicker ? '' : tipsHtml}
-                    ${otherPets.map(p => petCardHtml(p, false, allowSelect, picker)).join('')}
+                    ${otherPets.map(p => petCardHtml(p, false, allowSelect, picker, typeof onDelete === 'function' && !isPicker)).join('')}
                 </div>`)}
             ${!isPicker && !isRareTab && list.length === 0 ? tipsHtml : ''}
         </div>
@@ -964,19 +965,19 @@ export function renderPetList(panel, { pets }, { onSelect, onBack, onFind, onLoa
             const next = el.dataset.petListTab || 'mine';
             if (activePetListTab === next) return;
             activePetListTab = next;
-            renderPetList(panel, { pets }, { onSelect, onBack, onFind, onLoadPet, allowSelect, pickerMode, multiple, selectedIds: [...pickedIds], onConfirm, title, confirmText });
+            renderPetList(panel, { pets }, { onSelect, onBack, onFind, onDelete, onLoadPet, allowSelect, pickerMode, multiple, selectedIds: [...pickedIds], onConfirm, title, confirmText });
         };
     });
 
     if (!isPicker && !Array.isArray(famousPetsIndex)) {
         loadFamousPetsIndex().then(() => {
-            if (panel?.isConnected) renderPetList(panel, { pets }, { onSelect, onBack, onFind, onLoadPet, allowSelect, pickerMode, multiple, selectedIds: [...pickedIds], onConfirm, title, confirmText });
+            if (panel?.isConnected) renderPetList(panel, { pets }, { onSelect, onBack, onFind, onDelete, onLoadPet, allowSelect, pickerMode, multiple, selectedIds: [...pickedIds], onConfirm, title, confirmText });
         });
     }
 
     if (isRareTab && needsFamousPetFilterMetadata(famousPetsIndex) && !famousPetsFilterMetadataPromise) {
         loadFamousPetFilterMetadata().then(() => {
-            if (panel?.isConnected) renderPetList(panel, { pets }, { onSelect, onBack, onFind, onLoadPet, allowSelect, pickerMode, multiple, selectedIds: [...pickedIds], onConfirm, title, confirmText });
+            if (panel?.isConnected) renderPetList(panel, { pets }, { onSelect, onBack, onFind, onDelete, onLoadPet, allowSelect, pickerMode, multiple, selectedIds: [...pickedIds], onConfirm, title, confirmText });
         });
     }
 
@@ -985,14 +986,14 @@ export function renderPetList(panel, { pets }, { onSelect, onBack, onFind, onLoa
             const next = el.dataset.famousPetFilter || 'all';
             if (activeFamousPetFilter === next) return;
             activeFamousPetFilter = FAMOUS_PET_FILTERS.some(filter => filter.id === next) ? next : 'all';
-            renderPetList(panel, { pets }, { onSelect, onBack, onFind, onLoadPet, allowSelect, pickerMode, multiple, selectedIds: [...pickedIds], onConfirm, title, confirmText });
+            renderPetList(panel, { pets }, { onSelect, onBack, onFind, onDelete, onLoadPet, allowSelect, pickerMode, multiple, selectedIds: [...pickedIds], onConfirm, title, confirmText });
         };
     });
 
     $$('#mhRarePetList [data-rare-pet-id]', panel).forEach(el => {
         el.onclick = () => {
             const entry = rareList.find(item => item.id === el.dataset.rarePetId);
-            if (entry) openRarePetModal(entry, pets || [], () => renderPetList(panel, { pets }, { onSelect, onBack, onFind, onLoadPet, allowSelect, pickerMode, multiple, selectedIds: [...pickedIds], onConfirm, title, confirmText }));
+            if (entry) openRarePetModal(entry, pets || [], () => renderPetList(panel, { pets }, { onSelect, onBack, onFind, onDelete, onLoadPet, allowSelect, pickerMode, multiple, selectedIds: [...pickedIds], onConfirm, title, confirmText }));
         };
     });
 
@@ -1013,6 +1014,7 @@ export function renderPetList(panel, { pets }, { onSelect, onBack, onFind, onLoa
         el.onclick = (e) => {
             if (e.target.closest('[data-find]')) return;
             if (e.target.closest('[data-album]')) return;
+            if (e.target.closest('[data-delete-pet]')) return;
             if (el.dataset.selectable !== '1') return;
             const id = el.dataset.petId;
             if (isPicker) {
@@ -1042,6 +1044,12 @@ export function renderPetList(panel, { pets }, { onSelect, onBack, onFind, onLoa
             e.stopPropagation();
             const pet = petById.get(el.dataset.album);
             if (pet) openMemoryAlbum(pet);
+        };
+    });
+    $$('#mhPetList [data-delete-pet]').forEach(el => {
+        el.onclick = (e) => {
+            e.stopPropagation();
+            onDelete?.(el.dataset.deletePet);
         };
     });
     setupLazyRawPetImages(panel);
