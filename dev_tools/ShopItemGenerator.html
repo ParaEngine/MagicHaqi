@@ -145,6 +145,7 @@
             <button id="btnOpenShopFile" type="button">打开</button>
           </div>
           <div class="toolbar">
+            <button id="btnLoadSystemFile" type="button">读取系统文件</button>
             <button id="btnCopyAllShopJson" type="button">复制全部 JSON</button>
           </div>
         </section>
@@ -334,11 +335,7 @@
                 <div class="hint">WebP 生成会把参考图随请求发送给 Image 模型。</div>
                 <div id="referencePreview" class="ref-preview"><span class="hint">可选参考图预览</span></div>
               </section>
-              <div class="row-3">
-                <label>w <input id="visualW" type="number" min="0" step="0.01"></label>
-                <label>h <input id="visualH" type="number" min="0" step="0.01"></label>
-                <label>imageUrl <input id="visualImageUrl" placeholder="webp/data URL"></label>
-              </div>
+              <label>imageUrl <input id="visualImageUrl" placeholder="webp/data URL"></label>
               <label>svg <textarea id="visualSvg" rows="8" spellcheck="false" placeholder="<svg ...></svg>"></textarea></label>
               <div class="toolbar">
                 <button id="btnAiItem" class="primary" type="button">AI 生成物品+SVG</button>
@@ -644,10 +641,8 @@
 
     function normalizeVisual(visual = {}) {
       const clean = visual && typeof visual === 'object' ? { ...visual } : {};
-      ['w', 'h'].forEach(key => {
-        if (clean[key] === '' || clean[key] == null || !Number.isFinite(Number(clean[key]))) delete clean[key];
-        else clean[key] = Number(clean[key]);
-      });
+      delete clean.w;
+      delete clean.h;
       if (clean.svg != null) clean.svg = String(clean.svg).trim();
       if (!clean.svg) delete clean.svg;
       if (clean.imageUrl != null) clean.imageUrl = String(clean.imageUrl).trim();
@@ -1170,6 +1165,16 @@
       return merged;
     }
 
+    function mergeShopPayloads(basePayload = null, overridePayload = null) {
+      if (!basePayload && !overridePayload) return null;
+      if (!basePayload) return { items: (overridePayload?.items || []).map(normalizeItem), visuals: clone(overridePayload?.visuals || {}) };
+      if (!overridePayload) return { items: (basePayload?.items || []).map(normalizeItem), visuals: clone(basePayload?.visuals || {}) };
+      return {
+        items: mergeItemsWithDefaults(basePayload.items, overridePayload.items).map(normalizeItem),
+        visuals: mergeVisualsWithDefaults(basePayload.visuals, overridePayload.visuals),
+      };
+    }
+
     function sortedVisuals(visuals = state.visuals) {
       return Object.fromEntries(Object.entries(visuals)
         .sort(([a], [b]) => a.localeCompare(b))
@@ -1183,11 +1188,15 @@
       return await res.json();
     }
 
+    async function readSystemShopItemsPayload(path = getTargetShopItemsPath()) {
+      return parseShopItemsPayload(await readLocalJson(`../${normalizeShopItemsPath(path)}`));
+    }
+
     function defaultItem(type = 'furniture') {
       const templates = {
         food: { id: 'food_new', name: '新食物', emoji: '🍙', price: 10, type: 'food', foodKind: 'both', stat: { hunger: 12, mood: 4 } },
         toy: { id: 'toy_new', name: '新玩具', emoji: '🎈', price: 30, type: 'toy', stat: { mood: 10 } },
-        furniture: { id: 'furn_new', name: '新家具', emoji: '🧩', price: 36, type: 'furniture', fields: ['indoor'] },
+        furniture: { id: 'furn_new', name: '新家具', emoji: '🧩', price: 36, type: 'furniture', fields: ['indoor'], fieldSize: 1 },
         house: { id: 'house_new', name: '新房屋', emoji: '🏠', price: 180, type: 'house', fields: ['outdoor'], rooms: ['bedroom'], uniqueItem: true, fieldSize: 1 },
       };
       return clone(templates[type] || templates.furniture);
@@ -1424,8 +1433,6 @@
       const existing = itemId ? normalizeVisual(state.visuals[itemId] || {}) : {};
       return normalizeVisual({
         ...existing,
-        w: $('visualW').value,
-        h: $('visualH').value,
         svg: $('visualSvg').value,
         imageUrl: $('visualImageUrl').value,
       });
@@ -1458,8 +1465,6 @@
       $('remoteOnly').checked = !!clean.remoteOnly;
       $('extraJson').value = Object.keys(extra).length ? JSON.stringify(extra, null, 2) : '';
       const cleanVisual = normalizeVisual(visual || state.visuals[clean.id] || {});
-      $('visualW').value = toNumberOrBlank(cleanVisual.w);
-      $('visualH').value = toNumberOrBlank(cleanVisual.h);
       $('visualSvg').value = cleanVisual.svg || '';
       $('visualImageUrl').value = cleanVisual.imageUrl || '';
       syncImageSizeDefaultForItem(clean);
@@ -2012,6 +2017,29 @@
       }
     }
 
+    async function loadSystemData() {
+      upsertCurrentItem({ silent: true });
+      const targetPath = getTargetShopItemsPath();
+      const systemPayload = parseShopItemsPayload(await readSystemShopItemsPayload(targetPath));
+      if (!systemPayload.items.length && !Object.keys(systemPayload.visuals).length) {
+        setStatus($('loadStatus'), `系统文件为空：${targetPath}`, 'error');
+        return;
+      }
+      const currentPayload = { items: state.items.map(clone), visuals: clone(state.visuals) };
+      const mergedPayload = mergeShopPayloads(currentPayload, systemPayload);
+      state.items = mergedPayload.items;
+      state.visuals = mergedPayload.visuals;
+      state.targetPath = targetPath;
+      if ($('shopItemsPath')) $('shopItemsPath').value = state.targetPath;
+      syncShopFilePresetFromPath(state.targetPath);
+      state.selectedId = state.items.some(item => item.id === state.selectedId) ? state.selectedId : (state.items[0]?.id || '');
+      renderRecordList();
+      if (state.selectedId) setFormItem(selectedItem(), state.visuals[state.selectedId]);
+      updateOutputs();
+      saveDraft();
+      setStatus($('loadStatus'), `已读取系统文件并覆盖当前配置：${targetPath}\n系统 ${systemPayload.items.length} shop items，${Object.keys(systemPayload.visuals).length} visuals。`, 'ok');
+    }
+
     async function saveWorkspaceData({ auto = false } = {}) {
       upsertCurrentItem({ silent: true });
       const targetPath = getTargetShopItemsPath();
@@ -2126,8 +2154,10 @@
       const existingIds = state.items.map(item => item.id).slice(-180);
       return [
         'You create MagicHaqi shop item data and a matching compact decorative visual.',
-        'Return only JSON with shape: {"item": {...}, "visual": {"w": number, "h": number, "svg": "<svg ...></svg>"}}.',
+        'Return only JSON with shape: {"item": {...}, "visual": {"svg": "<svg ...></svg>"}}.',
+        'Use item.fieldSize for render scale in meters. Default is 1; use larger values for larger objects, such as 2 for a table-like item.',
         'item fields allowed: id, name, emoji, price, type(food|toy|furniture|house), foodKind, stat, trait, fields, rooms, fieldSize, zorder, uniqueItem, hiddenFromShop, remoteOnly, unlimited, moodPenaltyStages, moodPenalty.',
+        'Do not put w or h in visual. Visual may contain only svg, imageUrl, and historyVisuals when needed.',
         'For visual.svg, create a self-contained SVG with viewBox="0 0 160 160" or similar. No scripts, no external images, no markdown.',
         `Existing ids to avoid: ${existingIds.join(', ')}`,
         `Available fields: ${state.fields.join(', ')}`,
@@ -2220,7 +2250,7 @@
         'Create multiple MagicHaqi shop item records for a mobile virtual pet game.',
         `Return only JSON with shape: {"items":[{...}]}. Generate exactly ${count} item objects.`,
         'Each item must include an emoji field. Use emoji as the only visual representation.',
-        'Do not generate visual objects, SVG, imageUrl, w/h, base64, markdown, comments, explanations, or DECO_VISUALS.',
+        'Do not generate visual objects, SVG, imageUrl, base64, markdown, comments, explanations, or DECO_VISUALS.',
         'Allowed item fields: id, name, emoji, price, type(food|toy|furniture|house), foodKind, stat, trait, fields, rooms, fieldSize, zorder, uniqueItem, hiddenFromShop, remoteOnly, unlimited, moodPenaltyStages, moodPenalty.',
         'Use concise snake_case ids with a type prefix such as food_, toy_, furn_, house_, land_, water_, sky_, fire_, ice_, life_, or dark_.',
         'Balance prices and stats against existing shop data: cheap snacks 5-16, premium food 18-30, toys/furniture usually 24-108, houses usually 96-720.',
@@ -2457,8 +2487,6 @@
       const historyVisuals = addCurrentVisualToHistory('before svg');
       $('visualSvg').value = cleanSvg;
       $('visualImageUrl').value = '';
-      $('visualW').value = $('visualW').value || '0.12';
-      $('visualH').value = $('visualH').value || '0.12';
       const id = $('itemId').value || state.selectedId;
       if (id) state.visuals[id] = normalizeVisual({ ...buildVisualFromForm(), historyVisuals });
       updateOutputs();
@@ -2577,8 +2605,6 @@
         ...previousVisual,
         svg: '',
         imageUrl,
-        w: previousVisual.w || 0.12,
-        h: previousVisual.h || 0.12,
         historyVisuals,
       });
       state.visuals[cleanItem.id] = visual;
@@ -2602,8 +2628,6 @@
       const { imageUrl, transparentWebp, visual } = generated;
       $('visualImageUrl').value = imageUrl;
       $('visualSvg').value = '';
-      $('visualW').value = toNumberOrBlank(visual.w || 0.12);
-      $('visualH').value = toNumberOrBlank(visual.h || 0.12);
       const result = upsertCurrentItem({ silent: true });
       setOptionalElementHtml('visualAiSvgPreview', `<img alt="" src="${escapeHtml(imageUrl)}">`);
       const saved = await autoSaveAfterAi();
@@ -2724,6 +2748,7 @@
       };
       $('btnSaveWorkspace').onclick = () => saveWorkspaceData().catch(error => setStatus($('loadStatus'), `保存失败：${error.message}`, 'error'));
       $('btnCopyAllShopJson').onclick = () => copyAllShopJson().catch(error => setStatus($('runStatus'), `复制失败：${error?.message || error}`, 'error'));
+      $('btnLoadSystemFile').onclick = () => loadSystemData().catch(error => setStatus($('loadStatus'), `读取系统文件失败：${error?.message || error}`, 'error'));
       $('btnOpenShopFile').onclick = () => openWorkspaceViewer(getTargetShopItemsPath());
       $('btnNewShopFile').onclick = newShopItemsFile;
       $('btnShopCdnConfig').onclick = openShopCdnConfigDialog;
@@ -2744,7 +2769,7 @@
       $('btnUpsert').onclick = () => upsertCurrentItem();
       $('btnApplyJson').onclick = applyJsonToForm;
       $('btnUseFallbackSvg').onclick = () => { $('visualSvg').value = fallbackSvg(); $('visualImageUrl').value = ''; updateOutputs(); };
-      $('btnClearVisual').onclick = () => { $('visualSvg').value = ''; $('visualImageUrl').value = ''; $('visualW').value = ''; $('visualH').value = ''; updateOutputs(); };
+      $('btnClearVisual').onclick = () => { $('visualSvg').value = ''; $('visualImageUrl').value = ''; updateOutputs(); };
       $('btnClearVisualHistory').onclick = () => { setCurrentVisualHistory([]); setStatus($('runStatus'), '已清空当前视觉历史。', 'ok'); };
       $('tabItem').onclick = () => setActiveTab('item');
       $('tabFiles').onclick = () => setActiveTab('files');
@@ -2771,7 +2796,7 @@
       });
       $('aiSvgDraft')?.addEventListener('input', () => renderAiSvgDraft($('aiSvgDraft').value));
       $('visualAiSvgDraft').addEventListener('input', () => renderAiSvgDraft($('visualAiSvgDraft').value));
-      ['itemId', 'itemName', 'itemEmoji', 'itemPrice', 'itemType', 'statHunger', 'statMood', 'statClean', 'statBond', 'foodKind', 'trait', 'fields', 'rooms', 'fieldSize', 'zorder', 'moodPenalty', 'moodPenaltyStages', 'extraJson', 'visualW', 'visualH', 'visualSvg', 'visualImageUrl'].forEach(id => $(id).addEventListener('input', updateOutputs));
+      ['itemId', 'itemName', 'itemEmoji', 'itemPrice', 'itemType', 'statHunger', 'statMood', 'statClean', 'statBond', 'foodKind', 'trait', 'fields', 'rooms', 'fieldSize', 'zorder', 'moodPenalty', 'moodPenaltyStages', 'extraJson', 'visualSvg', 'visualImageUrl'].forEach(id => $(id).addEventListener('input', updateOutputs));
       $('itemType').addEventListener('change', () => { syncImageSizeDefaultForItem(buildItemFromForm()); saveSettings(); updateOutputs(); });
       ['hiddenFromShop', 'unlimited', 'uniqueItem', 'remoteOnly'].forEach(id => $(id).addEventListener('change', updateOutputs));
     }

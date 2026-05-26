@@ -38,8 +38,6 @@ const PET_HEIGHT_METERS = 0.75;
 const PET_WIDTH_METERS = 0.75;
 const ROOM_PET_REPEL_MIN_X_METERS = PET_WIDTH_METERS * 0.95;
 const ROOM_PET_REPEL_MIN_Y_METERS = PET_HEIGHT_METERS * 0.72;
-const FOOD_HIT_WIDTH_METERS = 1.45;
-const FOOD_HIT_HEIGHT_METERS = 0.78;
 const PET_START_X_METERS = ROOM_WIDTH_METERS - PET_WIDTH_METERS - 1.25;
 const PET_START_Y_METERS = 1.68;
 const PET_FOLLOW_SCREEN_X = 0.72;
@@ -55,7 +53,7 @@ const FINGER_HIT_SAMPLE_POINTS = [
     [0, 0], [0, -1], [1, 0], [0, 1], [-1, 0],
     [0.72, -0.72], [0.72, 0.72], [-0.72, 0.72], [-0.72, -0.72],
 ];
-const IMAGE_ALPHA_HIT_THRESHOLD = 8;
+const IMAGE_ALPHA_HIT_THRESHOLD = 24;
 const IMAGE_ALPHA_AABB_CACHE = new Map();
 
 let roomPan = 0;
@@ -212,9 +210,15 @@ function getFurnitureVisual(item) {
         imageUrl: item?.imageUrl || custom.imageUrl,
     };
     if (item?.type === 'food') {
-        return { w: FOOD_HIT_WIDTH_METERS / ROOM_WIDTH_METERS, h: FOOD_HIT_HEIGHT_METERS / ROOM_HEIGHT_METERS, ...visual, svg: visual.svg || fallbackFoodSvg(item) };
+        return { ...visual, svg: visual.svg || fallbackFoodSvg(item) };
     }
-    return { w: 0.11, h: 0.16, ...visual, svg: visual.svg || fallbackFurnitureSvg(item) };
+    return { ...visual, svg: visual.svg || fallbackFurnitureSvg(item) };
+}
+
+function getItemFieldSize(item, placedItem = null) {
+    const rawSize = placedItem?.fieldSize ?? item?.fieldSize;
+    const size = Number(rawSize);
+    return clampRange(Number.isFinite(size) ? size : 1, 0.2, 5);
 }
 
 function fallbackFurnitureSvg(item) {
@@ -251,12 +255,12 @@ function servingFoodCutHtml(item) {
 }
 
 function normalizeRoomItem(item, def) {
-    const visual = getFurnitureVisual(def);
+    const base = getFurnitureMeters(def, item);
     return {
         x: clampRange(Number(item.x), 0, ROOM_WIDTH_METERS),
         y: clampRange(Number(item.y), 0, ROOM_HEIGHT_METERS),
-        w: clampRange(Number(item.wMeters) || visual.w * ROOM_WIDTH_METERS, 0.2, 5),
-        h: clampRange(Number(item.hMeters) || visual.h * ROOM_HEIGHT_METERS, 0.2, 2.4),
+        w: clampRange(Number(item.wMeters) || base.w, 0.2, 5),
+        h: clampRange(Number(item.hMeters) || base.h, 0.2, 2.4),
     };
 }
 
@@ -352,6 +356,11 @@ function applyRoomItemZIndex(el, pos = null) {
     el.style.zIndex = String(getRoomItemZIndex(itemPos, Number(el.dataset.zorder), el.dataset.itemType));
 }
 
+function setRoomItemDraggingLayer(el, active) {
+    const layer = el?.closest?.('#mhFurnitureLayer, #mhFoodLayer');
+    layer?.classList.toggle('has-room-dragging', !!active);
+}
+
 function applyRoomMeterLayout() {
     recomputeRoomMetrics();
     $$(ROOM_ITEM_SELECTOR).forEach(applyMeterElementStyle);
@@ -365,7 +374,8 @@ function roomItemHtml(it, index) {
     const pos = normalizeRoomItem(it, def);
     const zorder = getPlacedItemZOrder(it, def);
     const zIndex = getRoomItemZIndex(pos, zorder, def.type);
-    return `<div class="furniture mh-room-furniture" data-fidx="${index}" data-item-id="${escapeHtml(def.id)}" data-item-type="${escapeHtml(def.type || 'furniture')}" data-zorder="${zorder}" data-x-meters="${pos.x}" data-y-meters="${pos.y}" data-w-meters="${pos.w}" data-h-meters="${pos.h}" style="${meterStyle(pos)};z-index:${zIndex}" title="${escapeHtml(def.name || '')}">${furnitureHtml(def)}</div>`;
+    const fieldSize = getItemFieldSize(def, it);
+    return `<div class="furniture mh-room-furniture" data-fidx="${index}" data-item-id="${escapeHtml(def.id)}" data-item-type="${escapeHtml(def.type || 'furniture')}" data-zorder="${zorder}" data-field-size="${fieldSize}" data-x-meters="${pos.x}" data-y-meters="${pos.y}" data-w-meters="${pos.w}" data-h-meters="${pos.h}" style="${meterStyle(pos)};z-index:${zIndex}" title="${escapeHtml(def.name || '')}">${furnitureHtml(def)}</div>`;
 }
 
 function metersToPx(value) {
@@ -380,11 +390,11 @@ function roomXToScenePx(xMeters) {
     return metersToPx((Number(xMeters) || 0) + ROOM_SIDE_OVERDRAW_METERS);
 }
 
-function getFurnitureMeters(item) {
-    const visual = getFurnitureVisual(item);
+function getFurnitureMeters(item, placedItem = null) {
+    const size = getItemFieldSize(item, placedItem);
     return {
-        w: clampRange(visual.w * ROOM_WIDTH_METERS, 0.2, 5),
-        h: clampRange(visual.h * ROOM_HEIGHT_METERS, 0.2, 2.4),
+        w: clampRange(size, 0.2, 5),
+        h: clampRange(size, 0.2, 2.4),
     };
 }
 
@@ -611,7 +621,6 @@ function getImageOpaqueAabb(img) {
         IMAGE_ALPHA_AABB_CACHE.set(key, aabb);
         return aabb;
     } catch {
-        IMAGE_ALPHA_AABB_CACHE.set(key, null);
         return null;
     }
 }
@@ -632,18 +641,58 @@ function imageContentRect(img) {
     return { left, right: left + width, top: rect.top, bottom: rect.bottom, width, height: rect.height };
 }
 
+function imageOpaqueAabbClientRect(img) {
+    if (!img) return null;
+    const rect = imageContentRect(img);
+    if (!rect || rect.width <= 0 || rect.height <= 0) return null;
+    const aabb = getImageOpaqueAabb(img);
+    if (!aabb) return null;
+    if (aabb.empty) return { empty: true };
+    return {
+        left: rect.left + (aabb.minX / aabb.width) * rect.width,
+        right: rect.left + (aabb.maxX / aabb.width) * rect.width,
+        top: rect.top + (aabb.minY / aabb.height) * rect.height,
+        bottom: rect.top + (aabb.maxY / aabb.height) * rect.height,
+    };
+}
+
 function pointOverImageOpaqueAabb(img, clientX, clientY) {
     if (!img) return null;
     const rect = imageContentRect(img);
     if (!pointInRect(clientX, clientY, rect)) return false;
-    const aabb = getImageOpaqueAabb(img);
-    if (!aabb) return true;
-    if (aabb.empty) return false;
-    const left = rect.left + (aabb.minX / aabb.width) * rect.width;
-    const right = rect.left + (aabb.maxX / aabb.width) * rect.width;
-    const top = rect.top + (aabb.minY / aabb.height) * rect.height;
-    const bottom = rect.top + (aabb.maxY / aabb.height) * rect.height;
-    return clientX >= left && clientX <= right && clientY >= top && clientY <= bottom;
+    const aabbRect = imageOpaqueAabbClientRect(img);
+    if (!aabbRect) return true;
+    if (aabbRect.empty) return false;
+    return clientX >= aabbRect.left && clientX <= aabbRect.right && clientY >= aabbRect.top && clientY <= aabbRect.bottom;
+}
+
+function roomItemScaleControlsAnchor(el) {
+    const itemRect = el?.getBoundingClientRect?.();
+    if (!itemRect || itemRect.width <= 0 || itemRect.height <= 0) return { leftPercent: 50, topPercent: 100 };
+    const img = el.querySelector?.('.mh-furniture-img');
+    const aabbRect = imageOpaqueAabbClientRect(img);
+    if (!aabbRect || aabbRect.empty) return { leftPercent: 50, topPercent: 100 };
+    const leftPercent = (((aabbRect.left + aabbRect.right) / 2 - itemRect.left) / itemRect.width) * 100;
+    const topPercent = ((aabbRect.bottom - itemRect.top) / itemRect.height) * 100;
+    return {
+        leftPercent: clampRange(leftPercent, 0, 100),
+        topPercent: clampRange(topPercent, 0, 100),
+    };
+}
+
+function updateRoomItemScaleControlsAnchor(el, controls, ctx) {
+    const anchor = roomItemScaleControlsAnchor(el);
+    controls.style.setProperty('--mh-scale-controls-left', `${anchor.leftPercent.toFixed(2)}%`);
+    controls.style.setProperty('--mh-scale-controls-top', `${anchor.topPercent.toFixed(2)}%`);
+    const img = el?.querySelector?.('.mh-furniture-img');
+    if (img && !img.complete && !img.__mhScaleControlsLoadBound) {
+        img.__mhScaleControlsLoadBound = true;
+        img.addEventListener('load', () => {
+            img.__mhScaleControlsLoadBound = false;
+            updateRoomItemScaleControls(ctx);
+        }, { once: true });
+        img.addEventListener('error', () => { img.__mhScaleControlsLoadBound = false; }, { once: true });
+    }
 }
 
 function pointOverRoomScaleControls(clientX, clientY) {
@@ -1001,6 +1050,8 @@ function getSelectedRoomItemEl(ctx = null) {
 
 function getRoomItemScale(def, itemOrEl) {
     const base = getFurnitureMeters(def);
+    const fieldSize = Number(itemOrEl?.fieldSize ?? itemOrEl?.dataset?.fieldSize);
+    if (Number.isFinite(fieldSize) && fieldSize > 0) return clampRange(fieldSize / getItemFieldSize(def), ROOM_ITEM_MIN_SCALE, ROOM_ITEM_MAX_SCALE);
     const w = Number(itemOrEl?.wMeters ?? itemOrEl?.dataset?.wMeters) || base.w;
     const h = Number(itemOrEl?.hMeters ?? itemOrEl?.dataset?.hMeters) || base.h;
     const scaleW = base.w > 0 ? w / base.w : 1;
@@ -1025,6 +1076,7 @@ function updateRoomItemScaleControls(ctx) {
     }
     const scale = getRoomItemScale(def, el);
     if (controls.parentElement !== el) el.appendChild(controls);
+    updateRoomItemScaleControlsAnchor(el, controls, ctx);
     controls.classList.add('is-visible');
     controls.querySelector('[data-room-scale="down"]')?.toggleAttribute('disabled', scale <= ROOM_ITEM_MIN_SCALE + 0.001);
     controls.querySelector('[data-room-scale="up"]')?.toggleAttribute('disabled', scale >= ROOM_ITEM_MAX_SCALE - 0.001);
@@ -1071,6 +1123,8 @@ function scaleSelectedRoomItem(ctx, direction) {
     if (Math.abs(nextScale - currentScale) < 0.001) return;
     const nextW = clampRange(base.w * nextScale, 0.2, 5);
     const nextH = clampRange(base.h * nextScale, 0.2, 2.4);
+    const nextFieldSize = clampRange(getItemFieldSize(def) * nextScale, 0.2, 5);
+    el.dataset.fieldSize = String(nextFieldSize);
     el.dataset.wMeters = String(nextW);
     el.dataset.hMeters = String(nextH);
     applyMeterElementStyle(el);
@@ -1081,7 +1135,7 @@ function scaleSelectedRoomItem(ctx, direction) {
         clampRange(Number(el.dataset.xMeters) || placed.x, 0, ROOM_WIDTH_METERS),
         clampRange(Number(el.dataset.yMeters) || placed.y, 0, ROOM_HEIGHT_METERS),
         roomKey,
-        { coord: 'roomMeters', wMeters: nextW, hMeters: nextH, skipSound: true }
+        { coord: 'roomMeters', fieldSize: nextFieldSize, skipSound: true }
     );
     if (movePromise && typeof movePromise.catch === 'function') movePromise.catch(() => {});
 }
@@ -1593,6 +1647,7 @@ function bindFurnitureDrag(el, ctx) {
         };
         el.setPointerCapture?.(e.pointerId);
         targetEl.classList.add('is-dragging');
+        setRoomItemDraggingLayer(targetEl, true);
     });
     el.addEventListener('pointermove', (e) => {
         if (!drag || drag.id !== e.pointerId) return;
@@ -1625,6 +1680,7 @@ function bindFurnitureDrag(el, ctx) {
         el.releasePointerCapture?.(e.pointerId);
         targetEl.classList.remove('is-dragging');
         targetEl.classList.remove('will-discard');
+        setRoomItemDraggingLayer(targetEl, false);
         setDockDeleteTargetVisible(false);
         if (drag.moved) {
             targetEl.__mhRoomItemDraggedAt = Date.now();
@@ -1662,8 +1718,7 @@ function bindFurnitureDrag(el, ctx) {
             if (state.isDecorMode) playRoomItemDropSoundAsync();
             ctx.callbacks.onMoveItem?.(drag.idx, pos.x, pos.y, undefined, {
                 coord: 'roomMeters',
-                wMeters: Number(targetEl.dataset.wMeters) || getFurnitureMeters(def).w,
-                hMeters: Number(targetEl.dataset.hMeters) || getFurnitureMeters(def).h,
+                fieldSize: Number(targetEl.dataset.fieldSize) || getItemFieldSize(def),
                 skipSound: state.isDecorMode,
             });
             clearRoomItemSelection(ctx);
@@ -1818,10 +1873,10 @@ function bindTrayDrag(el, ctx) {
         }
         const pos = pointToRoomCoords(e.clientX, e.clientY);
         if (!pos) return;
-        const size = getFurnitureMeters(ITEM_BY_ID[current.itemId]);
+        const fieldSize = getItemFieldSize(ITEM_BY_ID[current.itemId]);
         clearRoomItemSelection(ctx);
         if (state.isDecorMode) playRoomItemDropSoundAsync();
-        ctx.callbacks.onPlaceItem?.(current.itemId, pos.x, pos.y, undefined, { coord: 'roomMeters', wMeters: size.w, hMeters: size.h, skipSound: state.isDecorMode });
+        ctx.callbacks.onPlaceItem?.(current.itemId, pos.x, pos.y, undefined, { coord: 'roomMeters', fieldSize, skipSound: state.isDecorMode });
     };
     el.addEventListener('pointerdown', (e) => {
         if (e.button != null && e.button !== 0) return;

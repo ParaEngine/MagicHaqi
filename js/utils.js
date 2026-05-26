@@ -26,7 +26,7 @@ export function renderVisualAsset(visual, { className = '', alt = '', draggable 
     const imageUrl = String(visual.imageUrl || '').trim();
     if (imageUrl) {
         const classAttr = className ? ` class="${escapeHtml(className)}"` : '';
-        return `<img${classAttr} src="${escapeHtml(imageUrl)}" alt="${escapeHtml(alt)}" draggable="${draggable ? 'true' : 'false'}">`;
+        return `<img${classAttr} crossorigin="anonymous" referrerpolicy="no-referrer" src="${escapeHtml(imageUrl)}" alt="${escapeHtml(alt)}" draggable="${draggable ? 'true' : 'false'}">`;
     }
     return String(visual.svg || '').trim();
 }

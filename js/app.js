@@ -1840,6 +1840,10 @@ async function handlePlaceItem(itemId, x, y, roomOverride, extra = null) {
         return;
     }
     const { skipSound = false, ...layoutExtra } = extra && typeof extra === 'object' ? extra : {};
+    if (layoutExtra.fieldSize != null) {
+        delete layoutExtra.wMeters;
+        delete layoutExtra.hMeters;
+    }
     const persist = !state.isDecorMode && !state.isFeedMode;
 
     // uniqueItem：放置前先移除全部 layout 中同 itemId 的旧实例（跨场景）
@@ -1870,6 +1874,12 @@ async function handleMoveItem(idx, x, y, roomOverride, extra = null) {
     const layout = [...(getLayout(pet.id, roomKey) || [])];
     if (!layout[idx]) return;
     const { skipSound = false, ...layoutExtra } = extra && typeof extra === 'object' ? extra : {};
+    if (layoutExtra.fieldSize != null) {
+        delete layout[idx].wMeters;
+        delete layout[idx].hMeters;
+        delete layoutExtra.wMeters;
+        delete layoutExtra.hMeters;
+    }
     layout[idx] = {
         ...layout[idx],
         x,
