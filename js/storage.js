@@ -354,6 +354,43 @@ function cloneJSON(value) {
     return value == null ? value : JSON.parse(JSON.stringify(value));
 }
 
+function normalizePoopFieldId(fieldId) {
+    const raw = String(fieldId ?? '').trim();
+    if (raw === 'land') return '1';
+    if (raw === 'water') return '2';
+    if (raw === 'sky') return '3';
+    const match = raw.match(/^(?:field_|terrain_slot_)?([1-7])$/);
+    return match ? match[1] : (raw || '1');
+}
+
+function normalizePoopCountValue(value) {
+    return Math.max(0, Math.floor(Number(value) || 0));
+}
+
+function createPoopCountsPayload(pet) {
+    const savedCounts = pet?.poopCounts && typeof pet.poopCounts === 'object' && !Array.isArray(pet.poopCounts)
+        ? pet.poopCounts
+        : {};
+    const hasSavedCounts = Object.values(savedCounts).some(value => normalizePoopCountValue(value) > 0);
+    const counts = {};
+    if (!hasSavedCounts && Array.isArray(pet?.poops)) {
+        pet.poops.forEach((poop) => {
+            const field = normalizePoopFieldId(poop?.field || '1');
+            counts[field] = normalizePoopCountValue(counts[field]) + 1;
+        });
+    }
+    Object.entries(savedCounts).forEach(([fieldId, value]) => {
+        const field = normalizePoopFieldId(fieldId);
+        counts[field] = normalizePoopCountValue(counts[field]) + normalizePoopCountValue(value);
+    });
+    const payload = {};
+    Object.entries(counts).forEach(([field, value]) => {
+        const count = Math.min(Math.max(0, Number(CONFIG.maxPoopsPerField) || 0), normalizePoopCountValue(value));
+        if (count > 0) payload[field] = count;
+    });
+    return payload;
+}
+
 function profileSlotKey(def, index) {
     return String(def?.index || index + 1);
 }
@@ -527,14 +564,20 @@ function normalizePetRuntimeData(pet) {
     if (!pet || typeof pet !== 'object') return pet;
     delete pet.stageName;
     delete pet.stageEmoji;
+    const counts = createPoopCountsPayload(pet);
+    pet.poopCounts = counts;
+    delete pet.poops;
     return pet;
 }
 
 function createPetPayload(pet) {
     if (!pet || typeof pet !== 'object') return pet;
     const { stageName, stageEmoji, ...payload } = pet;
+    payload.poopCounts = createPoopCountsPayload(pet);
+    delete payload.poops;
     const locationType = payload.location?.type || payload.status || 'home';
     if (locationType !== 'home') {
+        delete payload.poopCounts;
         delete payload.poops;
     }
     if (locationType === 'released') {

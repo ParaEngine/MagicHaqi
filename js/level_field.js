@@ -6,7 +6,7 @@ import { getActivePlanetWeather, isVisitingMode, notify, state, setCurrentField 
 import { getLayout, loadPets, savePetDebounced, saveUserProfileDebounced } from './storage.js';
 import { displayPetName } from './dna.js';
 import { buildEggSvg, getPetSpriteCell, getPetSleepActionState, isPetInteractionBlocked, petArtHtml, playEggWelcomeOnce, playPetClickFeedback, playPetHappy, randomPetTalk, SHEET_COLS, SHEET_ROWS, sleepingInteractionText } from './pet.js';
-import { markPetCared, normalizePetPoops } from './petTick.js';
+import { getPetPoopCount, markPetCared, normalizePetPoops, setPetPoopCount } from './petTick.js';
 import { canPetAppearInField, getGeneratedPetLocation, getNannyCareRemainingMs, getPetLocationType, getReleasedPetHome, hasNannyCare, isNearActiveGeneratedPet } from './petLifecycle.js';
 import SoundManager from './soundManager.js';
 import ParticleEffects, { renderParticleCanvasHtml } from './particleEffects.js';
@@ -29,6 +29,10 @@ const POOP_MACHINE_SWEEP_MIN_MS = 10000;
 const POOP_MACHINE_SWEEP_MAX_MS = 15000;
 const POOP_MACHINE_SWEEP_SCREEN_MS = 2500;
 const POOP_MACHINE_SWEEP_RETURN_MS = 520;
+const POOP_LOCATION_SESSION_SEED = `${Date.now().toString(36)}_${Math.random().toString(36).slice(2)}`;
+const POOP_LOWER_HALF_CHANCE = 0.82;
+const POOP_PET_AVOID_X = 0.075;
+const POOP_PET_AVOID_Y = 0.14;
 const FUEL_MACHINE_VIEWBOX_TARGET_X = 0.5;
 const FUEL_MACHINE_VIEWBOX_TARGET_Y = 0.68;
 const FIELD_EFFECT_MIN_SCALE = 0.88;
@@ -93,6 +97,7 @@ let activePoopSuckFinishAt = 0;
 let activeFieldBuildCategory = 'houses';
 let fieldScenePresets = [];
 let fieldScenePresetsLoading = null;
+const fieldPoopLocationCache = new Map();
 
 const FIELD_THEMES = {
     land: {
@@ -785,7 +790,94 @@ function scheduleCenterFieldPet(pet, options = {}) {
 
 function getPoopsInField(pet, fieldId = state.currentField) {
     const targetFieldId = normalizeTerrainFieldSlotId(fieldId);
-    return (pet?.poops || []).filter(p => normalizeTerrainFieldSlotId(p?.field) === targetFieldId);
+    const count = getPetPoopCount(pet, targetFieldId);
+    return ensureRuntimePoopLocations(pet, targetFieldId, count);
+}
+
+function fieldPoopLocationKey(pet, fieldId = state.currentField) {
+    return `${pet?.id || 'pet'}::${normalizeTerrainFieldSlotId(fieldId)}`;
+}
+
+function getPoopPetAvoidanceZones(pet, fieldId) {
+    if (!pet || isVisitingMode()) return [];
+    const ids = getFieldPetIds(pet, fieldId).filter(id => state.pets[id]);
+    const activeFieldPosition = pet?.id ? petFieldPosition(pet, fieldId, 0) : null;
+    return ids.map((id, index) => {
+        const pos = id === pet?.id
+            ? activeFieldPosition
+            : petFieldPosition(state.pets[id], fieldId, index, activeFieldPosition);
+        return pos ? { x: clamp01(pos.x), y: clamp01(pos.y) } : null;
+    }).filter(Boolean);
+}
+
+function isPoopOnPet(pos, zones) {
+    return zones.some(zone => {
+        const dx = (pos.x - zone.x) / POOP_PET_AVOID_X;
+        const dy = (pos.y - zone.y) / POOP_PET_AVOID_Y;
+        return dx * dx + dy * dy < 1;
+    });
+}
+
+function makeRuntimePoopLocation(rng, zones) {
+    let fallback = null;
+    for (let attempt = 0; attempt < 40; attempt++) {
+        const lowerHalf = rng() < POOP_LOWER_HALF_CHANCE;
+        const x = 0.08 + rng() * 0.84;
+        const y = lowerHalf
+            ? 0.56 + Math.pow(rng(), 0.72) * 0.36
+            : 0.40 + rng() * 0.20;
+        const pos = { x: clampRange(x, 0.06, 0.94), y: clampRange(y, 0.38, 0.92) };
+        if (!fallback) fallback = pos;
+        if (!isPoopOnPet(pos, zones)) return pos;
+    }
+    if (!fallback) fallback = { x: 0.5, y: 0.78 };
+    for (const zone of zones) {
+        const dx = fallback.x - zone.x;
+        const dy = fallback.y - zone.y;
+        const angle = Math.atan2(dy || 0.01, dx || 0.01);
+        fallback.x = clampRange(zone.x + Math.cos(angle) * POOP_PET_AVOID_X * 1.18, 0.06, 0.94);
+        fallback.y = clampRange(zone.y + Math.sin(angle) * POOP_PET_AVOID_Y * 1.18, 0.56, 0.92);
+    }
+    return fallback;
+}
+
+function ensureRuntimePoopLocations(pet, fieldId, count) {
+    const safeCount = Math.max(0, Math.floor(Number(count) || 0));
+    const key = fieldPoopLocationKey(pet, fieldId);
+    if (safeCount <= 0) {
+        fieldPoopLocationCache.delete(key);
+        return [];
+    }
+    let record = fieldPoopLocationCache.get(key);
+    if (!record) {
+        record = { nextId: 1, locations: [] };
+        fieldPoopLocationCache.set(key, record);
+    }
+    if (record.locations.length > safeCount) record.locations.length = safeCount;
+    const zones = getPoopPetAvoidanceZones(pet, fieldId);
+    while (record.locations.length < safeCount) {
+        const index = record.nextId++;
+        const rng = makeRng(`${POOP_LOCATION_SESSION_SEED}::${key}::${index}`);
+        record.locations.push({
+            id: `poop_${normalizeTerrainFieldSlotId(fieldId)}_${index}`,
+            field: normalizeTerrainFieldSlotId(fieldId),
+            ...makeRuntimePoopLocation(rng, zones),
+        });
+    }
+    return record.locations.map(location => ({ ...location }));
+}
+
+function clearRuntimePoopLocations(pet, fieldId = state.currentField) {
+    fieldPoopLocationCache.delete(fieldPoopLocationKey(pet, fieldId));
+}
+
+function removeRuntimePoopLocation(pet, fieldId, poopId) {
+    const key = fieldPoopLocationKey(pet, fieldId);
+    const record = fieldPoopLocationCache.get(key);
+    if (!record) return;
+    record.locations = record.locations.filter(location => location.id !== poopId);
+    if (!record.locations.length) fieldPoopLocationCache.delete(key);
+    else fieldPoopLocationCache.set(key, record);
 }
 
 function hasTooManyPoops(pet, fieldId = state.currentField) {
@@ -1840,8 +1932,8 @@ function collectPoopsInCurrentField(pet) {
         updateCoinsHud();
         showToast(`使用${machineCost} 金币启动机器清理`, 'info', 1200);
     }
-    const poopIds = new Set(poops.map(p => p.id));
-    pet.poops = (pet.poops || []).filter(p => !poopIds.has(p?.id));
+    setPetPoopCount(pet, fieldId, 0);
+    clearRuntimePoopLocations(pet, fieldId);
     markPetCared(pet);
     try {
         const ls = state.lifetimeStats || (state.lifetimeStats = { feeds: 0, poopsCleaned: 0, adultsRaised: 0 });
@@ -2027,11 +2119,12 @@ export const fieldLevel = {
             el.onclick = (e) => {
                 e.stopPropagation();
                 const id = el.dataset.poop;
-                const idx = (pet.poops || []).findIndex(p => p.id === id);
-                if (idx >= 0) {
-                    const poop = pet.poops[idx];
+                const poops = getPoopsInField(pet, fld.id);
+                const poop = poops.find(p => p.id === id);
+                if (poop) {
                     const fuelGain = CONFIG.biofuelPerPoop || 1;
-                    pet.poops.splice(idx, 1);
+                    removeRuntimePoopLocation(pet, fld.id, id);
+                    setPetPoopCount(pet, fld.id, Math.max(0, getPetPoopCount(pet, fld.id) - 1));
                     markPetCared(pet);
                     try {
                         const ls = state.lifetimeStats || (state.lifetimeStats = { feeds: 0, poopsCleaned: 0, adultsRaised: 0 });

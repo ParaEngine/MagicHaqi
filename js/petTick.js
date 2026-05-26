@@ -6,6 +6,7 @@ import { clamp } from './utils.js';
 import { isAdultStage } from './dna.js';
 import { applyReleasedPetAutoCareStats, getPetLocationType, hasNannyCare, nannyGrowthRate, softenStatsToAverage } from './petLifecycle.js';
 import { isNightSleepTime, nextMorningWakeAt, normalizePetSleepState } from './pet.js';
+import { normalizeTerrainFieldSlotId } from './terrain_field_slots.js';
 
 export { canRecoverEnergyFromSleep, recoverEnergyAfterSleep } from './pet.js';
 
@@ -316,7 +317,7 @@ function traumaReasons(pet) {
     if ((stats.hunger ?? 100) < (cfg.hungerThreshold ?? 25)) reasons.push('体力低');
     if ((stats.clean ?? 100) < (cfg.cleanThreshold ?? 35)) reasons.push('肮脏环境');
     if ((stats.mood ?? 100) < (cfg.moodThreshold ?? 25)) reasons.push('低落');
-    if ((pet?.poops || []).length > CONFIG.poopWarningThreshold) reasons.push('便便堆积');
+        if (getPetPoopTotal(pet) > CONFIG.poopWarningThreshold) reasons.push('便便堆积');
     return reasons;
 }
 
@@ -563,39 +564,87 @@ export function startTickLoop() {
 }
 export function stopTickLoop() { if (_timer) { clearInterval(_timer); _timer = null; } }
 
-/** 保留每个 field 最新的 poop，避免长期离线或多次 tick 后堆满画面。 */
+function normalizePoopCountValue(value) {
+    return Math.max(0, Math.floor(Number(value) || 0));
+}
+
+function countLegacyPoopsByField(poops) {
+    const counts = {};
+    if (!Array.isArray(poops)) return counts;
+    poops.forEach((poop) => {
+        const field = normalizeTerrainFieldSlotId(poop?.field || '1');
+        counts[field] = normalizePoopCountValue(counts[field]) + 1;
+    });
+    return counts;
+}
+
+function normalizedPoopCountsFromPet(pet) {
+    const maxPerField = Math.max(0, Number(CONFIG.maxPoopsPerField) || 0);
+    const savedCounts = pet?.poopCounts && typeof pet.poopCounts === 'object' && !Array.isArray(pet.poopCounts)
+        ? pet.poopCounts
+        : {};
+    const hasSavedCounts = Object.values(savedCounts).some(value => normalizePoopCountValue(value) > 0);
+    const counts = hasSavedCounts ? {} : countLegacyPoopsByField(pet?.poops);
+    Object.entries(savedCounts).forEach(([rawField, value]) => {
+        const field = normalizeTerrainFieldSlotId(rawField || '1');
+        counts[field] = normalizePoopCountValue(counts[field]) + normalizePoopCountValue(value);
+    });
+    const normalized = {};
+    Object.entries(counts).forEach(([rawField, value]) => {
+        const field = normalizeTerrainFieldSlotId(rawField || '1');
+        const count = maxPerField > 0 ? Math.min(maxPerField, normalizePoopCountValue(value)) : 0;
+        if (count > 0) normalized[field] = count;
+    });
+    return normalized;
+}
+
+function poopCountsEqual(a, b) {
+    const aKeys = Object.keys(a || {}).sort();
+    const bKeys = Object.keys(b || {}).sort();
+    if (aKeys.length !== bKeys.length) return false;
+    return aKeys.every((key, index) => key === bKeys[index] && normalizePoopCountValue(a[key]) === normalizePoopCountValue(b[key]));
+}
+
+/** 保留每个 field 的 poop 数量；坐标只在 Field 视图运行时生成，不写入存档。 */
 export function normalizePetPoops(pet) {
     if (!pet) return 0;
-    if (!Array.isArray(pet.poops)) {
-        pet.poops = [];
-        return 0;
-    }
+    const beforeCounts = pet.poopCounts && typeof pet.poopCounts === 'object' && !Array.isArray(pet.poopCounts)
+        ? { ...pet.poopCounts }
+        : {};
+    const hadLocationPoops = Array.isArray(pet.poops) && pet.poops.length > 0;
+    const counts = normalizedPoopCountsFromPet(pet);
+    pet.poopCounts = counts;
+    delete pet.poops;
+    return hadLocationPoops || !poopCountsEqual(beforeCounts, counts) ? 1 : 0;
+}
+
+export function getPetPoopCount(pet, fieldId = state.currentField) {
+    if (!pet) return 0;
+    normalizePetPoops(pet);
+    const field = normalizeTerrainFieldSlotId(fieldId || '1');
+    return normalizePoopCountValue(pet.poopCounts?.[field]);
+}
+
+export function getPetPoopTotal(pet) {
+    if (!pet) return 0;
+    normalizePetPoops(pet);
+    return Object.values(pet.poopCounts || {}).reduce((sum, value) => sum + normalizePoopCountValue(value), 0);
+}
+
+export function setPetPoopCount(pet, fieldId = state.currentField, count = 0) {
+    if (!pet) return 0;
+    normalizePetPoops(pet);
+    const field = normalizeTerrainFieldSlotId(fieldId || '1');
     const maxPerField = Math.max(0, Number(CONFIG.maxPoopsPerField) || 0);
-    if (maxPerField <= 0) {
-        const removed = pet.poops.length;
-        pet.poops = [];
-        return removed;
-    }
+    const next = maxPerField > 0 ? Math.min(maxPerField, normalizePoopCountValue(count)) : 0;
+    if (next > 0) pet.poopCounts[field] = next;
+    else delete pet.poopCounts[field];
+    return next;
+}
 
-    const entries = pet.poops.map((poop, index) => ({ poop, index }));
-    const groups = new Map();
-    for (const entry of entries) {
-        const field = entry.poop?.field || '1';
-        if (!groups.has(field)) groups.set(field, []);
-        groups.get(field).push(entry);
-    }
-
-    const keepIndexes = new Set();
-    for (const group of groups.values()) {
-        group
-            .sort((a, b) => ((Number(a.poop?.at) || 0) - (Number(b.poop?.at) || 0)) || (a.index - b.index))
-            .slice(-maxPerField)
-            .forEach(entry => keepIndexes.add(entry.index));
-    }
-
-    const before = pet.poops.length;
-    pet.poops = entries.filter(entry => keepIndexes.has(entry.index)).map(entry => entry.poop);
-    return before - pet.poops.length;
+export function addPetPoopCount(pet, fieldId = state.currentField, delta = 1) {
+    const current = getPetPoopCount(pet, fieldId);
+    return setPetPoopCount(pet, fieldId, current + normalizePoopCountValue(delta));
 }
 
 /** 概率性产出一坨 poop，用于 Field 视图收集 → 兑换 biofuel。 */
@@ -606,21 +655,13 @@ function maybeProducePoop(pet) {
     const last = pet.lastPoopAt || 0;
     if (now - last < CONFIG.poopIntervalSec * 1000) return;
     if (Math.random() > CONFIG.poopChance) return;
-    // 在当前所属 field 区域内随机一个落点
     const field = state.currentField || '1';
-    const currentFieldPoops = pet.poops.filter(p => (p?.field || '1') === field).length;
+    const currentFieldPoops = getPetPoopCount(pet, field);
     if (currentFieldPoops >= CONFIG.maxPoopsPerField) return;
-    pet.poops.push({
-        id: 'p' + now.toString(36) + Math.floor(Math.random() * 1000).toString(36),
-        field,
-        x: Math.random() * 0.8 + 0.1,
-        y: Math.random() * 0.55 + 0.35,
-        at: now,
-    });
-    normalizePetPoops(pet);
+    setPetPoopCount(pet, field, currentFieldPoops + 1);
     pet.lastPoopAt = now;
     // poop 多了会变脏
-    if (pet.poops.length > CONFIG.poopWarningThreshold) {
+    if (getPetPoopTotal(pet) > CONFIG.poopWarningThreshold) {
         pet.stats.clean = clamp((pet.stats.clean || 0) - 4, CONFIG.statMin, CONFIG.statMax);
     }
 }
