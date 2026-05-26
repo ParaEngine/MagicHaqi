@@ -55,6 +55,8 @@ const FINGER_HIT_SAMPLE_POINTS = [
     [0, 0], [0, -1], [1, 0], [0, 1], [-1, 0],
     [0.72, -0.72], [0.72, 0.72], [-0.72, 0.72], [-0.72, -0.72],
 ];
+const IMAGE_ALPHA_HIT_THRESHOLD = 8;
+const IMAGE_ALPHA_AABB_CACHE = new Map();
 
 let roomPan = 0;
 let pxPerMeter = 1;
@@ -569,11 +571,98 @@ function pointOverSvgPaint(svg, clientX, clientY) {
     return false;
 }
 
+function imageAlphaCacheKey(img) {
+    const src = img?.currentSrc || img?.src || '';
+    const width = img?.naturalWidth || 0;
+    const height = img?.naturalHeight || 0;
+    return src && width > 0 && height > 0 ? `${src}::${width}x${height}` : '';
+}
+
+function getImageOpaqueAabb(img) {
+    if (!img || !img.complete || !img.naturalWidth || !img.naturalHeight) return null;
+    const key = imageAlphaCacheKey(img);
+    if (!key) return null;
+    if (IMAGE_ALPHA_AABB_CACHE.has(key)) return IMAGE_ALPHA_AABB_CACHE.get(key);
+    const canvas = document.createElement('canvas');
+    canvas.width = img.naturalWidth;
+    canvas.height = img.naturalHeight;
+    try {
+        const ctx = canvas.getContext('2d', { willReadFrequently: true });
+        if (!ctx) return null;
+        ctx.drawImage(img, 0, 0);
+        const data = ctx.getImageData(0, 0, canvas.width, canvas.height).data;
+        let minX = canvas.width;
+        let minY = canvas.height;
+        let maxX = -1;
+        let maxY = -1;
+        for (let y = 0; y < canvas.height; y += 1) {
+            const row = y * canvas.width * 4;
+            for (let x = 0; x < canvas.width; x += 1) {
+                if (data[row + x * 4 + 3] <= IMAGE_ALPHA_HIT_THRESHOLD) continue;
+                if (x < minX) minX = x;
+                if (x > maxX) maxX = x;
+                if (y < minY) minY = y;
+                if (y > maxY) maxY = y;
+            }
+        }
+        const aabb = maxX >= minX && maxY >= minY
+            ? { minX, minY, maxX: maxX + 1, maxY: maxY + 1, width: canvas.width, height: canvas.height }
+            : { empty: true, width: canvas.width, height: canvas.height };
+        IMAGE_ALPHA_AABB_CACHE.set(key, aabb);
+        return aabb;
+    } catch {
+        IMAGE_ALPHA_AABB_CACHE.set(key, null);
+        return null;
+    }
+}
+
+function imageContentRect(img) {
+    const rect = img?.getBoundingClientRect?.();
+    if (!rect || rect.width <= 0 || rect.height <= 0 || !img.naturalWidth || !img.naturalHeight) return rect;
+    const boxRatio = rect.width / rect.height;
+    const imageRatio = img.naturalWidth / img.naturalHeight;
+    if (!Number.isFinite(boxRatio) || !Number.isFinite(imageRatio) || boxRatio <= 0 || imageRatio <= 0) return rect;
+    if (imageRatio > boxRatio) {
+        const height = rect.width / imageRatio;
+        const top = rect.top + (rect.height - height) / 2;
+        return { left: rect.left, right: rect.right, top, bottom: top + height, width: rect.width, height };
+    }
+    const width = rect.height * imageRatio;
+    const left = rect.left + (rect.width - width) / 2;
+    return { left, right: left + width, top: rect.top, bottom: rect.bottom, width, height: rect.height };
+}
+
+function pointOverImageOpaqueAabb(img, clientX, clientY) {
+    if (!img) return null;
+    const rect = imageContentRect(img);
+    if (!pointInRect(clientX, clientY, rect)) return false;
+    const aabb = getImageOpaqueAabb(img);
+    if (!aabb) return true;
+    if (aabb.empty) return false;
+    const left = rect.left + (aabb.minX / aabb.width) * rect.width;
+    const right = rect.left + (aabb.maxX / aabb.width) * rect.width;
+    const top = rect.top + (aabb.minY / aabb.height) * rect.height;
+    const bottom = rect.top + (aabb.maxY / aabb.height) * rect.height;
+    return clientX >= left && clientX <= right && clientY >= top && clientY <= bottom;
+}
+
+function pointOverRoomScaleControls(clientX, clientY) {
+    const controls = document.getElementById('mhRoomItemScaleControls');
+    if (!controls?.classList?.contains('is-visible')) return false;
+    return Array.from(controls.querySelectorAll('.mh-room-scale-btn')).some(btn => {
+        return pointInRect(clientX, clientY, btn.getBoundingClientRect?.());
+    });
+}
+
 function pointOverRoomItemPaint(el, clientX, clientY) {
     const imageRect = getRoomItemImageRect(el);
     if (!pointInRect(clientX, clientY, imageRect)) return false;
     const svg = el?.querySelector?.('.mh-furniture-svg svg');
     const painted = pointOverSvgPaint(svg, clientX, clientY);
+    if (painted != null) return painted;
+    const img = el?.querySelector?.('.mh-furniture-img');
+    const imageAabbHit = pointOverImageOpaqueAabb(img, clientX, clientY);
+    if (imageAabbHit != null) return imageAabbHit;
     return painted ?? true;
 }
 
@@ -588,6 +677,7 @@ function fingerOverRoomItemPaint(el, clientX, clientY) {
 }
 
 function getClosestDraggableRoomItem(clientX, clientY) {
+    if (pointOverRoomScaleControls(clientX, clientY)) return null;
     let best = null;
     $$(ROOM_ITEM_SELECTOR).forEach(item => {
         if (!canDragRoomItem(item)) return;
