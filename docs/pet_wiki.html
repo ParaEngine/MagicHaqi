@@ -385,14 +385,27 @@
 			return `${pet.name} 是一只${parts.join('、')}的宠物。`;
 		}
 
-		function spriteStyle(pet, stageId = appState.previewStage, animId = appState.previewAnim) {
+		function spriteFrame(pet, stageId = appState.previewStage, animId = appState.previewAnim, backgroundColor = petBackground(pet)) {
 			const row = Math.max(0, STAGES.findIndex(stage => stage.id === stageId));
 			const col = Math.max(0, ANIMS.findIndex(anim => anim.id === animId));
 			const url = pet.imageSheetUrl || pet.imageUrl || '';
 			if (pet.imageSheetUrl) {
-				return `background-color:${petBackground(pet)};background-image:url('${cssUrl(url)}');background-size:400% 400%;background-position:${(col * 100 / 3).toFixed(3)}% ${(row * 100 / 3).toFixed(3)}%;`;
+				return {
+					url,
+					backgroundColor,
+					backgroundSize: '400% 400%',
+					backgroundPosition: `${(col * 100 / 3).toFixed(3)}% ${(row * 100 / 3).toFixed(3)}%`,
+				};
 			}
-			return `background-color:${petBackground(pet)};background-image:url('${cssUrl(url)}');background-size:contain;background-position:center;`;
+			return { url, backgroundColor, backgroundSize: 'contain', backgroundPosition: 'center' };
+		}
+
+		function spriteStyle(frame) {
+			return `background-color:${frame.backgroundColor};background-size:${frame.backgroundSize};background-position:${frame.backgroundPosition};`;
+		}
+
+		function spriteAttrs(frame) {
+			return `data-sprite-url="${escapeHtml(frame.url)}" data-sprite-size="${escapeHtml(frame.backgroundSize)}" data-sprite-position="${escapeHtml(frame.backgroundPosition)}"`;
 		}
 
 		function cssUrl(value) {
@@ -480,6 +493,7 @@
 			const stageName = STAGES.find(stage => stage.id === appState.previewStage)?.name || '成年';
 			const animName = ANIMS.find(anim => anim.id === appState.previewAnim)?.name || '待机';
 			summaryLine.textContent = `显示 ${pets.length} / ${appState.pets.length} 只宠物，当前预览：${stageName} · ${animName}`;
+			unobserveLazySprites(petGrid);
 			if (!pets.length) {
 				petGrid.innerHTML = '<div class="empty-state">没有匹配的宠物，换个分类或关键词试试。</div>';
 				return;
@@ -491,13 +505,15 @@
 					if (pet) openPetModal(pet);
 				});
 			});
+			observeLazySprites(petGrid);
 		}
 
 		function petCardHtml(pet) {
 			const t = pet.traits || {};
+			const frame = spriteFrame(pet);
 			return `
 				<button class="pet-card" data-pet-id="${escapeHtml(pet.id)}" type="button">
-					<div class="portrait"><div class="sprite-cell" style="${spriteStyle(pet)}"></div></div>
+					<div class="portrait"><div class="sprite-cell lazy-sprite" ${spriteAttrs(frame)} style="${spriteStyle(frame)}"></div></div>
 					<div class="pet-title-row">
 						<div class="pet-name">${escapeHtml(pet.name)}</div>
 						${elementEmojiHtml(t.element)}
@@ -510,6 +526,7 @@
 			const t = pet.traits || {};
 			modalTitle.textContent = pet.name;
 			modalSubtitle.textContent = `${t.element || '未知血统'} · ${t.species || '未知种类'} · 稀有度 ${pet.rarity}`;
+			unobserveLazySprites(modalBody);
 			modalBody.innerHTML = `
 				<div class="detail-layout">
 					<div class="detail-album">
@@ -522,6 +539,7 @@
 			`;
 			modal.classList.add('open');
 			document.body.style.overflow = 'hidden';
+			observeLazySprites(modalBody);
 		}
 
 		function detailInfoHtml(pet) {
@@ -573,12 +591,58 @@
 			const offsetX = (((seed >> 8) % 80) / 10 - 4).toFixed(2);
 			const offsetY = (((seed >> 12) % 60) / 10 - 3).toFixed(2);
 			const bg = ALBUM_BG_PALETTE[seed % ALBUM_BG_PALETTE.length] || petBackground(pet);
-			const style = `${spriteStyle(pet, stage.id, anim.id)}background-color:${bg};`;
+			const frame = spriteFrame(pet, stage.id, anim.id, bg);
 			return `
 				<div class="album-photo" style="transform:translate(${offsetX}px, ${offsetY}px) rotate(${rotate}deg)">
-					<div class="album-photo-image" style="${style}"></div>
+					<div class="album-photo-image lazy-sprite" ${spriteAttrs(frame)} style="${spriteStyle(frame)}"></div>
 				</div>
 			`;
+		}
+
+		const spriteObserver = 'IntersectionObserver' in window
+			? new IntersectionObserver(entries => {
+				entries.forEach(entry => {
+					const node = entry.target;
+					if (entry.isIntersecting) {
+						loadSpriteNode(node);
+					} else {
+						unloadSpriteNode(node);
+					}
+				});
+			}, { threshold: 0.01 })
+			: null;
+
+		function observeLazySprites(root) {
+			const nodes = root.querySelectorAll('.lazy-sprite[data-sprite-url]');
+			nodes.forEach(node => {
+				if (!spriteObserver) {
+					loadSpriteNode(node);
+					return;
+				}
+				spriteObserver.observe(node);
+			});
+		}
+
+		function unobserveLazySprites(root) {
+			if (!spriteObserver) return;
+			root.querySelectorAll('.lazy-sprite[data-sprite-url]').forEach(node => {
+				spriteObserver.unobserve(node);
+			});
+		}
+
+		function loadSpriteNode(node) {
+			const url = node.dataset.spriteUrl || '';
+			if (!url || node.dataset.spriteLoaded === 'true') return;
+			node.style.backgroundImage = `url('${cssUrl(url)}')`;
+			node.style.backgroundSize = node.dataset.spriteSize || node.style.backgroundSize;
+			node.style.backgroundPosition = node.dataset.spritePosition || node.style.backgroundPosition;
+			node.dataset.spriteLoaded = 'true';
+		}
+
+		function unloadSpriteNode(node) {
+			if (node.dataset.spriteLoaded !== 'true') return;
+			node.style.backgroundImage = 'none';
+			delete node.dataset.spriteLoaded;
 		}
 
 		function formatDna(dna) {
@@ -587,6 +651,7 @@
 		}
 
 		function closeModal() {
+			unobserveLazySprites(modalBody);
 			modal.classList.remove('open');
 			document.body.style.overflow = '';
 		}
