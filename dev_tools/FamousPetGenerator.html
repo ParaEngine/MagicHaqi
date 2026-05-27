@@ -179,6 +179,7 @@
         </select>
         <button id="btnNewPet" class="primary" type="button">新建</button>
         <button id="btnRefreshRecords" class="primary" type="button">生成选中(0)</button>
+        <button id="btnDeleteSelectedRecords" class="danger" type="button">删除选中(0)</button>
         <button id="btnRepairPets" type="button">修复</button>
         <button id="btnOpenIndex" type="button">打开</button>
         <label class="toggle-line col-span-2"><input id="recordSelectAll" type="checkbox"><span id="recordSelectAllLabel">全选当前列表</span></label>
@@ -334,6 +335,7 @@
     const ANIM_COL = { idle: 0, happy: 1, sad: 2, sleep: 3 };
     const WEBP_DEFAULT_QUALITY = 0.2;
     const WEBP_MAX_BYTES = 100 * 1024;
+    const BATCH_PET_MAX_COUNT = 100;
     const WEBP_DEFAULT_BG_OPTIONS = { seedThreshold: 60, growThreshold: 78, haloThreshold: 112, borderRatio: 0.02, gridLineWidth: 6 };
     const INDEX_ENTRY_FIELDS = ['id', 'name', 'dna', 'imageSheetUrl', 'traits', 'rarity'];
     const $ = (id) => document.getElementById(id);
@@ -480,11 +482,11 @@
     }
 
     function isRecordPendingSelection(record) {
-      return isRecordMissingImage(record);
+      return !!record?.pet && (isRecordMissingImage(record) || state.selectedRecordPaths.has(record.path));
     }
 
     function matchesRecordProcessFilter(record, filter) {
-      if (filter === 'pending') return isRecordMissingImage(record) || state.completedRecordPaths.has(record.path);
+      if (filter === 'pending') return isRecordPendingSelection(record) || state.completedRecordPaths.has(record.path);
       if (filter === 'processed') return hasRecordImage(record);
       return true;
     }
@@ -522,7 +524,7 @@
       const validRecords = new Map(state.records.map(record => [record.path, record]));
       for (const path of state.selectedRecordPaths) {
         const record = validRecords.get(path);
-        if (!record || !isRecordPendingSelection(record)) state.selectedRecordPaths.delete(path);
+        if (!record?.pet) state.selectedRecordPaths.delete(path);
       }
       const validPaths = new Set(validRecords.keys());
       for (const path of state.completedRecordPaths) {
@@ -547,7 +549,7 @@
     }
 
     function getRenderedRecordPaths() {
-      return [...($('recordList')?.querySelectorAll('[data-select-path]:not(:disabled)') || [])].map(input => input.dataset.selectPath).filter(Boolean);
+      return [...($('recordList')?.querySelectorAll('[data-select-path]') || [])].map(input => input.dataset.selectPath).filter(Boolean);
     }
 
     function updateRecordSelectAllState() {
@@ -566,7 +568,7 @@
       const paths = getRenderedRecordPaths();
       paths.forEach(path => {
         const record = recordsByPath.get(path);
-        if (checked && isRecordPendingSelection(record)) state.selectedRecordPaths.add(path);
+        if (checked && record?.pet) state.selectedRecordPaths.add(path);
         else state.selectedRecordPaths.delete(path);
       });
       renderRecordList();
@@ -574,7 +576,7 @@
 
     function getCheckedRecords() {
       pruneSelectedRecordPaths();
-      return state.records.filter(record => state.selectedRecordPaths.has(record.path) && record.pet && isRecordPendingSelection(record));
+      return state.records.filter(record => state.selectedRecordPaths.has(record.path) && record.pet);
     }
 
     function getBatchGenerateTargets() {
@@ -588,6 +590,14 @@
       button.textContent = state.batchRepair?.running ? '修复中...' : '修复';
     }
 
+    function updateBatchDeleteButton() {
+      const button = $('btnDeleteSelectedRecords');
+      if (!button) return;
+      const targetCount = getCheckedRecords().length;
+      button.textContent = `删除选中(${targetCount})`;
+      button.disabled = targetCount <= 0 || state.batchGenerate?.running || state.batchRepair?.running;
+    }
+
     function updateBatchGenerateButton() {
       const button = $('btnRefreshRecords');
       if (!button) return;
@@ -596,12 +606,14 @@
         const current = Math.min(batch.total, Math.max(1, batch.current || batch.done + 1));
         button.textContent = `${batch.stopRequested ? '暂停中' : '暂停'}(${current}/${batch.total})`;
         button.disabled = false;
+        updateBatchDeleteButton();
         return;
       }
       const targetCount = getBatchGenerateTargets().records.length;
       button.textContent = `生成选中(${targetCount})`;
       button.disabled = targetCount <= 0;
       updateRepairPetsButton();
+      updateBatchDeleteButton();
     }
 
     function shouldRemoveHistoryUrlsOnExport() {
@@ -1132,17 +1144,15 @@
       $('recordList').innerHTML = records.length ? records.map(record => {
         const pet = record.pet || {};
         const active = record.path === state.selectedPath ? ' active' : '';
-        const selectable = isRecordPendingSelection(record);
-        const checked = selectable && state.selectedRecordPaths.has(record.path);
+        const checked = state.selectedRecordPaths.has(record.path);
         const checkedClass = checked ? ' checked' : '';
         const checkedAttr = checked ? ' checked' : '';
-        const disabledAttr = selectable ? '' : ' disabled';
-        const selectTitle = selectable ? '选择后由批量生成重新生成' : '已处理记录不能加入待处理队列';
+        const selectTitle = '选择后由批量生成重新生成';
         const completeMark = state.completedRecordPaths.has(record.path) ? '<span class="record-complete-mark" title="本次批量生成已完成"><svg viewBox="0 0 24 24" fill="none" stroke-width="3" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M20 6 9 17l-5-5"></path></svg></span>' : '';
         const url = pet.imageSheetUrl || '';
         const thumb = url ? `<span class="record-thumb-image" data-bg-url="${escapeHtml(url)}"></span>` : '';
         return `<div class="record-item${active}${checkedClass}" data-path="${escapeHtml(record.path)}">
-          <label class="record-select" title="${escapeHtml(selectTitle)}"><input type="checkbox" data-select-path="${escapeHtml(record.path)}" aria-label="选择 ${escapeHtml(record.name || record.id)}"${checkedAttr}${disabledAttr}></label>
+          <label class="record-select" title="${escapeHtml(selectTitle)}"><input type="checkbox" data-select-path="${escapeHtml(record.path)}" aria-label="选择 ${escapeHtml(record.name || record.id)}"${checkedAttr}></label>
           <span class="record-thumb">${thumb}${completeMark}</span>
           <button type="button" class="record-main" data-open-path="${escapeHtml(record.path)}"><span class="record-title">${escapeHtml(record.name || record.id)}</span><span class="record-meta">${escapeHtml(record.path)}</span></button>
           <span class="record-actions"><button type="button" data-copy-path="${escapeHtml(record.path)}" title="复制">复制</button><button type="button" class="danger icon-button" data-delete-path="${escapeHtml(record.path)}" title="删除" aria-label="删除"><svg viewBox="0 0 24 24" fill="none" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M3 6h18"></path><path d="M8 6V4h8v2"></path><path d="M19 6l-1 14H6L5 6"></path><path d="M10 11v5"></path><path d="M14 11v5"></path></svg></button></span>
@@ -1161,13 +1171,14 @@
         input.onchange = () => {
           const path = input.dataset.selectPath;
           const record = state.records.find(item => item.path === path);
-          const checked = input.checked && isRecordPendingSelection(record);
+          const checked = input.checked && !!record?.pet;
           input.checked = checked;
           if (checked) state.selectedRecordPaths.add(path);
           else state.selectedRecordPaths.delete(path);
           input.closest('.record-item')?.classList.toggle('checked', checked);
           updateRecordSelectAllState();
           updateBatchGenerateButton();
+          updateBatchDeleteButton();
         };
       });
       observeRecordThumbs();
@@ -1178,6 +1189,7 @@
       updateRecordSelectAllState();
       updateBatchGenerateButton();
       updateRepairPetsButton();
+      updateBatchDeleteButton();
     }
 
     function handleRecordFilterChange() {
@@ -1429,11 +1441,22 @@
       return `你是 famous-pets JSON 配置设计助手。根据用户描述生成 ${count} 个稀有宠物配置，只生成 JSON，不要生成图片，不要输出 Markdown。\n\n最重要的是生成 Properties 表单会显示的内容：id、name、rarity、stage、anim、traits.element、traits.elementalAttribute、traits.species、traits.color、traits.eyes、traits.accessory、wishPrompt。DNA 不需要生成，工具会自动计算；如果没有必要，不要在返回 JSON 中包含 dna。\n\n你返回的内容必须是合法 JSON，外层必须包含 pets 数组。pets 数组里的每一个对象就是最终保存到 famous-pets/<id>.json 的文件对象。示例格式如下：\n${exampleJson}\n\nMagicHaqi 支持的固定选项和参考示例：\n${buildSupportedTraitPromptText()}\n\n约束：\n- id 会作为 famous-pets/<id>.json 文件名，只能用英文字母、数字、下划线或连字符，必须唯一。\n- name 必须使用非常可爱的中文名字，要有软萌、好记、像宠物昵称的感觉，例如：布布马古、瓦豆喵星星、糯糯啾啾。\n- rarity 只能是 0 到 100 的数字，数值越大表示越稀有。\n- stage 只能是 baby、teen、adult、elder；默认 adult。\n- anim 只能是 idle、happy、sad、sleep；默认 happy。\n- traits.element 和 traits.elementalAttribute 必须使用上面的固定选项。\n- traits.species、traits.color、traits.eyes、traits.accessory 可以参考上面的例子，也可以根据用户描述自由创作。\n- wishPrompt 必须写出宠物核心外观，明确包含或呼应 traits 中的物种、血统、元素属性、颜色、眼睛和配饰。\n \n用户描述：\n${description || '（等待输入）'}\n\n根据用户描述生成 ${count} 个稀有宠物配置，只生成 JSON`;
     }
 
+    function getBatchPetCount({ notify = false } = {}) {
+      const input = $('batchPetCount');
+      const rawCount = Number(input?.value) || 1;
+      const count = Math.max(1, Math.min(BATCH_PET_MAX_COUNT, rawCount));
+      if (rawCount > BATCH_PET_MAX_COUNT) {
+        if (input) input.value = String(BATCH_PET_MAX_COUNT);
+        if (notify) setStatus($('batchPetStatus'), `每次最多生成 ${BATCH_PET_MAX_COUNT} 个，已自动调整为 ${BATCH_PET_MAX_COUNT}。`, 'error');
+      }
+      return count;
+    }
+
     function refreshBatchPromptPreview() {
       const preview = $('batchPetPromptPreview');
       if (!preview) return;
       const description = $('batchPetDescription')?.value.trim() || '';
-      const count = Math.max(1, Math.min(20, Number($('batchPetCount')?.value) || 1));
+      const count = getBatchPetCount({ notify: true });
       preview.value = buildBatchPetPrompt(description, count);
     }
 
@@ -1520,7 +1543,7 @@
               <select id="batchTextModelSelect"></select>
             </label>
             <label>数量
-              <input id="batchPetCount" type="number" min="1" max="20" value="3">
+              <input id="batchPetCount" type="number" min="1" max="${BATCH_PET_MAX_COUNT}" value="3">
             </label>
           </div>
           <label>描述
@@ -1551,7 +1574,7 @@
 
     async function generatePetConfigsFromDialog() {
       const description = $('batchPetDescription').value.trim();
-      const count = Math.max(1, Math.min(20, Number($('batchPetCount').value) || 1));
+      const count = getBatchPetCount({ notify: true });
       const model = $('batchTextModelSelect').value.trim() || 'keepwork-pro';
       state.lastTextModel = model;
       saveLocalGenerationSettings();
@@ -1608,7 +1631,7 @@
       };
       const copiedPath = petRecordPath(id);
       state.records.push({ id, name: copied.name, path: copiedPath, pet: copied });
-      if (isRecordPendingSelection({ pet: copied })) state.selectedRecordPaths.add(copiedPath);
+      state.selectedRecordPaths.add(copiedPath);
       applyPetToForm(copied, copiedPath);
       $('recordCount').textContent = String(state.records.length);
       setStatus($('saveStatus'), `已复制 ${record.id} 为 ${id}。点击“保存”写入 workspace 和 index。`, 'ok');
@@ -1619,6 +1642,17 @@
       try { list = JSON.parse(await readFile(INDEX_PATH) || '[]'); } catch (_) { list = []; }
       if (!Array.isArray(list)) list = [];
       const next = list.filter(item => item?.id !== id);
+      if (next.length !== list.length) await writeFile(INDEX_PATH, JSON.stringify(next, null, 2));
+      return next;
+    }
+
+    async function removeIndexEntries(ids) {
+      const idSet = new Set(ids.map(id => String(id || '')).filter(Boolean));
+      if (!idSet.size) return [];
+      let list = [];
+      try { list = JSON.parse(await readFile(INDEX_PATH) || '[]'); } catch (_) { list = []; }
+      if (!Array.isArray(list)) list = [];
+      const next = list.filter(item => !idSet.has(String(item?.id || '')));
       if (next.length !== list.length) await writeFile(INDEX_PATH, JSON.stringify(next, null, 2));
       return next;
     }
@@ -1642,6 +1676,49 @@
       $('recordCount').textContent = String(state.records.length);
       const suffix = fileDeleted ? '' : '（文件删除接口返回失败，已从 index 移除）';
       setStatus($('saveStatus'), `已删除 ${record.id}${suffix}。`, fileDeleted ? 'ok' : 'error');
+    }
+
+    async function deleteSelectedRecords() {
+      const records = getCheckedRecords();
+      if (!records.length) return;
+      const preview = records.slice(0, 8).map(record => record.name || record.id).join('、');
+      const suffix = records.length > 8 ? ` 等 ${records.length} 个` : '';
+      if (!window.confirm(`删除选中的 ${records.length} 个宠物？\n${preview}${suffix}\n将删除对应 JSON 文件，并从 ${INDEX_PATH} 移除。`)) return;
+      const deleted = [];
+      const failed = [];
+      setStatus($('saveStatus'), `正在删除 ${records.length} 个 selected famous pets...`, '');
+      for (const record of records) {
+        try {
+          const fileDeleted = await deleteFile(record.path) !== false;
+          deleted.push({ record, fileDeleted });
+        } catch (error) {
+          failed.push({ record, error });
+        }
+      }
+      if (deleted.length) await removeIndexEntries(deleted.map(item => item.record.id));
+      const deletedPaths = new Set(deleted.map(item => item.record.path));
+      state.records = state.records.filter(record => !deletedPaths.has(record.path));
+      for (const path of deletedPaths) {
+        state.selectedRecordPaths.delete(path);
+        state.completedRecordPaths.delete(path);
+      }
+      if (deletedPaths.has(state.selectedPath)) {
+        const nextRecord = state.records.find(item => item.pet);
+        if (nextRecord) await selectRecord(nextRecord.path).catch(e => setStatus($('runStatus'), `打开失败：${e?.message || e}`, 'error'));
+        else newPet();
+      } else {
+        renderRecordList();
+      }
+      $('recordCount').textContent = String(state.records.length);
+      const falseDeletes = deleted.filter(item => !item.fileDeleted).length;
+      if (failed.length) {
+        const failedNames = failed.slice(0, 5).map(item => item.record.name || item.record.id).join('、');
+        setStatus($('saveStatus'), `已删除 ${deleted.length} 个，${failed.length} 个删除失败：${failedNames}`, 'error');
+      } else if (falseDeletes) {
+        setStatus($('saveStatus'), `已从 index 移除 ${deleted.length} 个，其中 ${falseDeletes} 个文件删除接口返回失败。`, 'error');
+      } else {
+        setStatus($('saveStatus'), `已删除选中的 ${deleted.length} 个 famous pets，并更新 ${INDEX_PATH}。`, 'ok');
+      }
     }
 
     function buildImageGenerationOptions(model, width, height) {
@@ -2972,6 +3049,7 @@
       $('btnPetCdnConfig').onclick = openPetCdnConfigPasteDialog;
       $('btnImportExport').onclick = openImportExportDialog;
       $('btnRefreshRecords').onclick = () => startBatchGenerateAll().catch(e => setStatus($('runStatus'), `批量生成失败：${e?.message || e}`, 'error'));
+      $('btnDeleteSelectedRecords').onclick = () => deleteSelectedRecords().catch(e => setStatus($('saveStatus'), `批量删除失败：${e?.message || e}`, 'error'));
       $('btnRepairPets').onclick = () => openRepairPetsDialog().catch(e => setStatus($('runStatus'), `扫描修复失败：${e?.message || e}`, 'error'));
       $('btnNewPet').onclick = openBatchCreateDialog;
       $('btnOpenIndex').onclick = () => openWorkspaceViewer(INDEX_PATH);
