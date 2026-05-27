@@ -520,9 +520,10 @@ async function openDevConsoleFromHome() {
 function renderZoomLevelBar(pet = __lastPet) {
     if (isZoomLevelBarSuppressed()) return '';
     const lvl = clampLvl(state.zoomLevel ?? 0);
+    const visible = new Set(visibleZoomLevels());
     const hint = getZoomLevelHint(lvl, pet);
     const progress = getZoomBarProgress(visualCameraZoom || cameraZoom);
-    const pointerConflictsWithEmergency = !!getZoomStageEmergency(ZOOM_BAR_STAGES[lvl]?.id, pet);
+    const pointerConflictsWithEmergency = visible.has(lvl) && !!getZoomStageEmergency(ZOOM_BAR_STAGES[lvl]?.id, pet);
     return `
         <button class="mh-zoom-bar ${pointerConflictsWithEmergency ? 'has-pointer-emergency-icon' : ''}" id="mhZoomLevelBar" type="button"
             style="--zoom-pos:${progress.toFixed(4)}"
@@ -546,6 +547,7 @@ function renderZoomLevelBarInner(pet = __lastPet, lvl = clampLvl(state.zoomLevel
             }).join('')}
         </span>
         ${ZOOM_BAR_STAGES.map((stage, index) => {
+            if (!visible.has(index)) return '';
             const emergency = getZoomStageEmergency(stage.id, pet);
             return emergency ? `<span class="mh-zoom-bar-emergency" data-zoom-emergency="${escapeHtml(stage.id)}" style="--stage-index:${index}" title="${escapeHtml(emergency.tip)}">${emergency.iconHtml}</span>` : '';
         }).join('')}
@@ -1154,6 +1156,7 @@ function refreshPetStateUi(pet) {
 
 function refreshZoomLevelBarEmergency(pet = __lastPet, bar = document.getElementById('mhZoomLevelBar')) {
     if (!bar) return;
+    const visible = new Set(visibleZoomLevels());
     const hint = getZoomLevelHint(state.zoomLevel, pet);
     bar.title = hint;
     bar.setAttribute('aria-label', hint);
@@ -1161,7 +1164,8 @@ function refreshZoomLevelBarEmergency(pet = __lastPet, bar = document.getElement
     let pointerConflictsWithEmergency = false;
     ZOOM_BAR_STAGES.forEach((stage, index) => {
         const stageEl = bar.querySelector(`.mh-zoom-bar-stage[data-zoom-stage="${stage.id}"]`);
-        const emergency = getZoomStageEmergency(stage.id, pet);
+        const isVisible = visible.has(index);
+        const emergency = isVisible ? getZoomStageEmergency(stage.id, pet) : null;
         if (emergency && index === clampLvl(state.zoomLevel)) pointerConflictsWithEmergency = true;
         if (stageEl) stageEl.title = emergency?.tip || stage.label;
         let marker = bar.querySelector(`.mh-zoom-bar-emergency[data-zoom-emergency="${stage.id}"]`);

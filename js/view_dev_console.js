@@ -3,12 +3,12 @@ import { SHOP_ITEMS, CONFIG, getStageName } from './config.js';
 import { state, notify, getCurrentPet, subscribe } from './state.js';
 import { addToInventory, savePet, savePetDebounced, saveUserProfileDebounced } from './storage.js';
 import { resetPetSheetImage, setAnim } from './pet.js';
-import { applyStage, curePetSickness, defaultStats, defaultTraits, getActiveSickness, getEffectiveSicknessSeverity, getPermanentTraumaCount, SICKNESS_DEFS, normalizePermanentTrauma } from './petTick.js';
+import { applyStage, curePetSickness, defaultStats, defaultTraits, getActiveSickness, getEffectiveSicknessSeverity, getPermanentTraumaCount, getPetPoopCount, SICKNESS_DEFS, normalizePermanentTrauma, setPetPoopCount } from './petTick.js';
 import { clamp, escapeHtml, showToast } from './utils.js';
 
 const DEV_CONSOLE_ID = 'mhDevConsole';
 const HOST_ALLOWLIST = new Set(['127.0.0.1', 'localhost']);
-const PET_SCALAR_EXCLUDE = new Set(['stats', 'traits', 'poops', 'parents']);
+const PET_SCALAR_EXCLUDE = new Set(['stats', 'traits', 'poops', 'poopCounts', 'parents']);
 const HOUR_MS = 60 * 60 * 1000;
 const DAY_MS = 24 * HOUR_MS;
 const STAT_LABELS = {
@@ -266,8 +266,7 @@ function addPoopsToCurrentField(amount = 5) {
     const count = normalizePositiveInt(amount) || 5;
     const field = state.currentField || '1';
     const maxPerField = Math.max(0, Number(CONFIG.maxPoopsPerField) || 0);
-    pet.poops = Array.isArray(pet.poops) ? pet.poops : [];
-    const currentCount = pet.poops.filter(poop => (poop?.field || 'land') === field).length;
+    const currentCount = getPetPoopCount(pet, field);
     const canAdd = maxPerField > 0 ? Math.max(0, maxPerField - currentCount) : 0;
     const addCount = Math.min(count, canAdd);
     if (!addCount) {
@@ -275,15 +274,7 @@ function addPoopsToCurrentField(amount = 5) {
         return 0;
     }
     const now = Date.now();
-    for (let i = 0; i < addCount; i++) {
-        pet.poops.push({
-            id: `devp${now.toString(36)}${i.toString(36)}${Math.floor(Math.random() * 1000).toString(36)}`,
-            field,
-            x: Math.random() * 0.8 + 0.1,
-            y: Math.random() * 0.55 + 0.35,
-            at: now + i,
-        });
-    }
+    setPetPoopCount(pet, field, currentCount + addCount);
     pet.lastPoopAt = now;
     savePetDebounced(pet);
     notify();
