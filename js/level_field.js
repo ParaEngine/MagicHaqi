@@ -160,6 +160,15 @@ const FIELD_THEMES = {
         path: 'rgba(107, 114, 128, 0.36)',
         remoteLandmark: true,
     },
+    thunder: {
+        className: 'field-map-thunder',
+        sky: 'linear-gradient(180deg,#312e81 0%,#4f46e5 44%,#111827 100%)',
+        terrain: ['#4f46e5', '#7c3aed', '#facc15', '#312e81'],
+        props: ['⚡', '☁️', '💎', '✨', '🪨'],
+        floaters: ['⚡', '✨', '💫'],
+        path: 'rgba(250, 204, 21, 0.34)',
+        remoteLandmark: true,
+    },
 };
 
 function availableFields() {
@@ -177,6 +186,7 @@ const SHOP_FIELD_TYPES = Object.fromEntries([
     { id: 'ice', name: '冰湖', favoriteTrait: 'fishLike' },
     { id: 'life', name: '神树', favoriteTrait: 'fruitLike' },
     { id: 'dark', name: '洞穴', favoriteTrait: 'catLike' },
+    { id: 'thunder', name: '雷云', favoriteTrait: 'birdLike' },
 ].map(field => [field.id, field]));
 
 function hashString(value) {
@@ -1285,6 +1295,7 @@ function fieldParticleEffects(fieldId) {
     if (fieldId === 'ice') return ['snow', 'sparkle'];
     if (fieldId === 'life') return ['petals', 'sparkle'];
     if (fieldId === 'dark') return ['sparkle', 'embers'];
+    if (fieldId === 'thunder') return ['sparkle', 'mist'];
     return ['petals', 'sparkle'];
 }
 

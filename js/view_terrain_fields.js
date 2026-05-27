@@ -12,6 +12,7 @@ const REMOTE_TERRAIN_TYPES = [
     { id: 'ice', name: '冰湖', emoji: '', iconClass: 'field-tab-icon-ice', discoveryId: 'ice', favoriteTrait: 'fishLike' },
     { id: 'life', name: '神树', emoji: '', iconClass: 'field-tab-icon-life', discoveryId: 'desert', favoriteTrait: 'fruitLike' },
     { id: 'dark', name: '洞穴', emoji: '', iconClass: 'field-tab-icon-dark', discoveryId: 'shadow', favoriteTrait: 'catLike' },
+    { id: 'thunder', name: '雷云', emoji: '', iconClass: 'field-tab-icon-thunder', discoveryId: 'thunder', favoriteTrait: 'birdLike' },
 ];
 
 const TERRAIN_DELETE_SAFE_DISTANCE = 56;

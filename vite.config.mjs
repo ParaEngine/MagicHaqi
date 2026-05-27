@@ -4,7 +4,7 @@ import { defineConfig } from 'vite';
 
 const rootDir = import.meta.dirname;
 const sideBySideDirs = ['minigames', 'famous-pets', 'famous-planets', 'pet-story', 'dev_tools'];
-const sideBySideFiles = ['docs/userguide.html'];
+const sideBySideFiles = ['docs/userguide.html', 'docs/pet_wiki.html'];
 
 function copySideBySideDirs() {
     return {

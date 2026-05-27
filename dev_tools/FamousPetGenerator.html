@@ -39,8 +39,10 @@
       .record-select { @apply grid place-items-center; }
       .record-select input { @apply h-4 w-4 min-h-0; }
       .record-main { @apply block min-w-0 border-0 bg-transparent p-0 text-left hover:border-transparent hover:bg-transparent; }
-      .record-thumb { @apply h-[42px] w-[42px] overflow-hidden rounded-md border border-slate-300; background-color: #fff; background-image: linear-gradient(45deg, #dfe6ee 25%, transparent 25%), linear-gradient(-45deg, #dfe6ee 25%, transparent 25%), linear-gradient(45deg, transparent 75%, #dfe6ee 75%), linear-gradient(-45deg, transparent 75%, #dfe6ee 75%); background-size: 12px 12px; background-position: 0 0, 0 6px, 6px -6px, -6px 0; }
-      .record-thumb span { @apply block h-full w-full bg-no-repeat; background-size: 400% 400%; background-position: 66.667% 33.333%; }
+      .record-thumb { @apply relative h-[42px] w-[42px] overflow-hidden rounded-md border border-slate-300; background-color: #fff; background-image: linear-gradient(45deg, #dfe6ee 25%, transparent 25%), linear-gradient(-45deg, #dfe6ee 25%, transparent 25%), linear-gradient(45deg, transparent 75%, #dfe6ee 75%), linear-gradient(-45deg, transparent 75%, #dfe6ee 75%); background-size: 12px 12px; background-position: 0 0, 0 6px, 6px -6px, -6px 0; }
+      .record-thumb-image { @apply block h-full w-full bg-no-repeat; background-size: 400% 400%; background-position: 66.667% 33.333%; }
+      .record-complete-mark { @apply pointer-events-none absolute right-0.5 top-0.5 grid h-4 w-4 place-items-center rounded-full border border-white bg-emerald-600 text-white shadow-sm; }
+      .record-complete-mark svg { @apply h-3 w-3; stroke: currentColor; }
       .record-title { @apply block min-w-0 overflow-hidden text-ellipsis whitespace-nowrap text-[13px] font-bold; }
       .record-meta { @apply block min-w-0 overflow-hidden text-ellipsis whitespace-nowrap text-[11px] text-slate-500; }
       .record-actions { @apply flex gap-1.5; }
@@ -170,6 +172,11 @@
       </div>
       <div class="grid grid-cols-[1fr_auto] gap-2 border-b border-slate-300 bg-slate-50 p-3">
         <input id="recordSearch" placeholder="搜索 id / name">
+        <select id="recordProcessFilter" aria-label="处理状态筛选">
+          <option value="all" selected>全部</option>
+          <option value="pending">待处理</option>
+          <option value="processed">已处理</option>
+        </select>
         <button id="btnNewPet" class="primary" type="button">新建</button>
         <button id="btnRefreshRecords" class="primary" type="button">生成选中(0)</button>
         <button id="btnRepairPets" type="button">修复</button>
@@ -234,7 +241,7 @@
                   <select id="element"><option>陆地</option><option>水系</option><option>天空</option></select>
                 </label>
                 <label>元素
-                  <select id="elementalAttribute"><option>自然</option><option>火</option><option>冰</option><option>生命</option><option>暗</option></select>
+                  <select id="elementalAttribute"><option>自然</option><option>火</option><option>冰</option><option>生命</option><option>暗</option><option>雷</option></select>
                 </label>
               </div>
               <div class="grid grid-cols-1 gap-2.5 md:grid-cols-2">
@@ -330,7 +337,7 @@
     const WEBP_DEFAULT_BG_OPTIONS = { seedThreshold: 60, growThreshold: 78, haloThreshold: 112, borderRatio: 0.02, gridLineWidth: 6 };
     const INDEX_ENTRY_FIELDS = ['id', 'name', 'dna', 'imageSheetUrl', 'traits', 'rarity'];
     const $ = (id) => document.getElementById(id);
-    const state = { sdk: null, referenceDataUrl: '', workspaceViewer: null, webpExport: null, records: [], selectedRecordPaths: new Set(), selectedId: '', selectedPath: '', currentPath: '', currentHistoryUrls: [], imageSizeCache: new Map(), imageSizeRequests: new Map(), imageDimensionCache: new Map(), imageDimensionRequests: new Map(), recordThumbObserver: null, dirty: false, generationPromptsPromise: null, batchCreate: null, batchGenerate: null, batchRepair: null, lastImageModel: '', lastTextModel: '' };
+    const state = { sdk: null, referenceDataUrl: '', workspaceViewer: null, webpExport: null, records: [], selectedRecordPaths: new Set(), completedRecordPaths: new Set(), selectedId: '', selectedPath: '', currentPath: '', currentHistoryUrls: [], imageSizeCache: new Map(), imageSizeRequests: new Map(), imageDimensionCache: new Map(), imageDimensionRequests: new Map(), recordThumbObserver: null, dirty: false, generationPromptsPromise: null, batchCreate: null, batchGenerate: null, batchRepair: null, lastImageModel: '', lastTextModel: '' };
 
     function loadGenerationPrompts() {
       state.generationPromptsPromise ||= import('../js/generationPrompts.js');
@@ -468,6 +475,20 @@
       return !!record?.pet && !String(record.pet.imageSheetUrl || '').trim();
     }
 
+    function hasRecordImage(record) {
+      return !!String(record?.pet?.imageSheetUrl || '').trim();
+    }
+
+    function isRecordPendingSelection(record) {
+      return isRecordMissingImage(record);
+    }
+
+    function matchesRecordProcessFilter(record, filter) {
+      if (filter === 'pending') return isRecordMissingImage(record) || state.completedRecordPaths.has(record.path);
+      if (filter === 'processed') return hasRecordImage(record);
+      return true;
+    }
+
     function isDataUrl(value) {
       return /^data:/i.test(String(value || '').trim());
     }
@@ -498,18 +519,27 @@
     }
 
     function pruneSelectedRecordPaths() {
-      const validPaths = new Set(state.records.map(record => record.path));
+      const validRecords = new Map(state.records.map(record => [record.path, record]));
       for (const path of state.selectedRecordPaths) {
-        if (!validPaths.has(path)) state.selectedRecordPaths.delete(path);
+        const record = validRecords.get(path);
+        if (!record || !isRecordPendingSelection(record)) state.selectedRecordPaths.delete(path);
+      }
+      const validPaths = new Set(validRecords.keys());
+      for (const path of state.completedRecordPaths) {
+        if (!validPaths.has(path)) state.completedRecordPaths.delete(path);
       }
     }
 
     function getFilteredRecordList() {
       const query = $('recordSearch').value.trim().toLowerCase();
-      const filteredRecords = state.records.filter(record => !query || `${record.id} ${record.name}`.toLowerCase().includes(query));
+      const processFilter = $('recordProcessFilter')?.value || 'all';
+      const filteredRecords = state.records.filter(record => {
+        const matchesQuery = !query || `${record.id} ${record.name}`.toLowerCase().includes(query);
+        return matchesQuery && matchesRecordProcessFilter(record, processFilter);
+      });
       const selectedRecord = state.selectedPath ? state.records.find(record => record.path === state.selectedPath) : null;
       const selectedInFilteredRecords = !!selectedRecord && filteredRecords.some(record => record.path === selectedRecord.path);
-      return selectedRecord && !selectedInFilteredRecords ? [selectedRecord, ...filteredRecords] : filteredRecords;
+      return selectedRecord && !selectedInFilteredRecords && matchesRecordProcessFilter(selectedRecord, processFilter) ? [selectedRecord, ...filteredRecords] : filteredRecords;
     }
 
     function selectMissingVisibleRecords() {
@@ -517,7 +547,7 @@
     }
 
     function getRenderedRecordPaths() {
-      return [...($('recordList')?.querySelectorAll('[data-select-path]') || [])].map(input => input.dataset.selectPath).filter(Boolean);
+      return [...($('recordList')?.querySelectorAll('[data-select-path]:not(:disabled)') || [])].map(input => input.dataset.selectPath).filter(Boolean);
     }
 
     function updateRecordSelectAllState() {
@@ -532,9 +562,11 @@
     }
 
     function setRenderedRecordSelection(checked) {
+      const recordsByPath = new Map(state.records.map(record => [record.path, record]));
       const paths = getRenderedRecordPaths();
       paths.forEach(path => {
-        if (checked) state.selectedRecordPaths.add(path);
+        const record = recordsByPath.get(path);
+        if (checked && isRecordPendingSelection(record)) state.selectedRecordPaths.add(path);
         else state.selectedRecordPaths.delete(path);
       });
       renderRecordList();
@@ -542,7 +574,7 @@
 
     function getCheckedRecords() {
       pruneSelectedRecordPaths();
-      return state.records.filter(record => state.selectedRecordPaths.has(record.path) && record.pet);
+      return state.records.filter(record => state.selectedRecordPaths.has(record.path) && record.pet && isRecordPendingSelection(record));
     }
 
     function getBatchGenerateTargets() {
@@ -1100,14 +1132,18 @@
       $('recordList').innerHTML = records.length ? records.map(record => {
         const pet = record.pet || {};
         const active = record.path === state.selectedPath ? ' active' : '';
-        const checked = state.selectedRecordPaths.has(record.path);
+        const selectable = isRecordPendingSelection(record);
+        const checked = selectable && state.selectedRecordPaths.has(record.path);
         const checkedClass = checked ? ' checked' : '';
         const checkedAttr = checked ? ' checked' : '';
+        const disabledAttr = selectable ? '' : ' disabled';
+        const selectTitle = selectable ? '选择后由批量生成重新生成' : '已处理记录不能加入待处理队列';
+        const completeMark = state.completedRecordPaths.has(record.path) ? '<span class="record-complete-mark" title="本次批量生成已完成"><svg viewBox="0 0 24 24" fill="none" stroke-width="3" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M20 6 9 17l-5-5"></path></svg></span>' : '';
         const url = pet.imageSheetUrl || '';
         const thumb = url ? `<span class="record-thumb-image" data-bg-url="${escapeHtml(url)}"></span>` : '';
         return `<div class="record-item${active}${checkedClass}" data-path="${escapeHtml(record.path)}">
-          <label class="record-select" title="选择后由批量生成重新生成"><input type="checkbox" data-select-path="${escapeHtml(record.path)}" aria-label="选择 ${escapeHtml(record.name || record.id)}"${checkedAttr}></label>
-          <span class="record-thumb">${thumb}</span>
+          <label class="record-select" title="${escapeHtml(selectTitle)}"><input type="checkbox" data-select-path="${escapeHtml(record.path)}" aria-label="选择 ${escapeHtml(record.name || record.id)}"${checkedAttr}${disabledAttr}></label>
+          <span class="record-thumb">${thumb}${completeMark}</span>
           <button type="button" class="record-main" data-open-path="${escapeHtml(record.path)}"><span class="record-title">${escapeHtml(record.name || record.id)}</span><span class="record-meta">${escapeHtml(record.path)}</span></button>
           <span class="record-actions"><button type="button" data-copy-path="${escapeHtml(record.path)}" title="复制">复制</button><button type="button" class="danger icon-button" data-delete-path="${escapeHtml(record.path)}" title="删除" aria-label="删除"><svg viewBox="0 0 24 24" fill="none" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M3 6h18"></path><path d="M8 6V4h8v2"></path><path d="M19 6l-1 14H6L5 6"></path><path d="M10 11v5"></path><path d="M14 11v5"></path></svg></button></span>
         </div>`;
@@ -1124,9 +1160,12 @@
       $('recordList').querySelectorAll('[data-select-path]').forEach(input => {
         input.onchange = () => {
           const path = input.dataset.selectPath;
-          if (input.checked) state.selectedRecordPaths.add(path);
+          const record = state.records.find(item => item.path === path);
+          const checked = input.checked && isRecordPendingSelection(record);
+          input.checked = checked;
+          if (checked) state.selectedRecordPaths.add(path);
           else state.selectedRecordPaths.delete(path);
-          input.closest('.record-item')?.classList.toggle('checked', input.checked);
+          input.closest('.record-item')?.classList.toggle('checked', checked);
           updateRecordSelectAllState();
           updateBatchGenerateButton();
         };
@@ -1569,7 +1608,7 @@
       };
       const copiedPath = petRecordPath(id);
       state.records.push({ id, name: copied.name, path: copiedPath, pet: copied });
-      state.selectedRecordPaths.add(copiedPath);
+      if (isRecordPendingSelection({ pet: copied })) state.selectedRecordPaths.add(copiedPath);
       applyPetToForm(copied, copiedPath);
       $('recordCount').textContent = String(state.records.length);
       setStatus($('saveStatus'), `已复制 ${record.id} 为 ${id}。点击“保存”写入 workspace 和 index。`, 'ok');
@@ -1827,15 +1866,38 @@
       return await readIndexListForExport();
     }
 
+    function stringifyJsonWithInlineTraits(value, indentSize = 2) {
+      const indentUnit = ' '.repeat(indentSize);
+      const inlineObject = (object) => JSON.stringify(object).replace(/^\{/, '{ ').replace(/\}$/, ' }').replace(/,/g, ', ').replace(/:/g, ': ');
+      const format = (item, level = 0, key = '') => {
+        if (key === 'traits' && item && typeof item === 'object' && !Array.isArray(item)) return inlineObject(item);
+        if (Array.isArray(item)) {
+          if (!item.length) return '[]';
+          const childIndent = indentUnit.repeat(level + 1);
+          const currentIndent = indentUnit.repeat(level);
+          return `[\n${item.map(child => `${childIndent}${format(child, level + 1)}`).join(',\n')}\n${currentIndent}]`;
+        }
+        if (item && typeof item === 'object') {
+          const entries = Object.entries(item).filter(([, child]) => child !== undefined);
+          if (!entries.length) return '{}';
+          const childIndent = indentUnit.repeat(level + 1);
+          const currentIndent = indentUnit.repeat(level);
+          return `{\n${entries.map(([childKey, child]) => `${childIndent}${JSON.stringify(childKey)}: ${format(child, level + 1, childKey)}`).join(',\n')}\n${currentIndent}}`;
+        }
+        return JSON.stringify(item);
+      };
+      return format(value);
+    }
+
     async function copySelectedFamousPetsExport() {
       const indexList = await buildFamousPetsExportIndex();
-      await copyText(JSON.stringify(indexList, null, 2));
+      await copyText(stringifyJsonWithInlineTraits(indexList));
       setImportExportStatus(`已复制 ${FAMOUS_DIR}/index.json（${indexList.length} 个 pet）。`, 'ok');
     }
 
     async function downloadSelectedFamousPetsExport() {
       const indexList = await buildFamousPetsExportIndex();
-      downloadText('index.json', JSON.stringify(indexList, null, 2));
+      downloadText('index.json', stringifyJsonWithInlineTraits(indexList));
       setImportExportStatus(`已下载完整 index.json（${indexList.length} 个 pet）。`, 'ok');
     }
 
@@ -2712,6 +2774,7 @@
         updateBatchGenerateButton();
         return;
       }
+      state.completedRecordPaths.clear();
       state.batchGenerate = { running: true, stopRequested: false, total: queue.length, done: 0, current: 1 };
       updateBatchGenerateButton();
       try {
@@ -2731,7 +2794,9 @@
           const generated = await generateSheet({ reload: false });
           setStatus($('runStatus'), `批量生成 ${index + 1}/${queue.length}：${record.name || record.id}\n正在生成 WebP${getPetCdnConfig() ? ' 并上传 CDN' : ''}...`, '');
           const webp = await autoGenerateWebpForCurrentPet({ pet: generated.pet, path: generated.path, sourceUrl: generated.url, selectedPath: generated.selectedPath, reload: false });
+          state.completedRecordPaths.add(record.path);
           state.selectedRecordPaths.delete(record.path);
+          state.selectedRecordPaths.delete(generated.path);
           state.batchGenerate.done += 1;
           setStatus($('saveStatus'), `已完成 ${record.id}：${webp.detail}，${webp.size.width}x${webp.size.height}，${formatBytes(webp.blob.size)}。`, 'ok');
           renderRecordList();
@@ -2911,6 +2976,7 @@
       $('btnNewPet').onclick = openBatchCreateDialog;
       $('btnOpenIndex').onclick = () => openWorkspaceViewer(INDEX_PATH);
       $('recordSearch').addEventListener('input', handleRecordFilterChange);
+      $('recordProcessFilter').addEventListener('change', handleRecordFilterChange);
       $('recordSelectAll').addEventListener('change', () => setRenderedRecordSelection($('recordSelectAll').checked));
       $('referenceUrl').addEventListener('input', renderReferencePreview);
       $('referenceSection').addEventListener('paste', event => handleReferencePaste(event));

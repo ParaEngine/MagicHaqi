@@ -1,0 +1,632 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+	<meta charset="UTF-8">
+	<meta name="viewport" content="width=device-width, initial-scale=1.0">
+	<title>蛋蛋星球宠物大百科</title>
+	<script src="https://cdn.keepwork.com/keepwork/cdn/tailwindcss@3.4.16.js"></script>
+	<style type="text/tailwindcss">
+		* { box-sizing: border-box; }
+		:root {
+			--bg-sky: #dff7ff;
+			--bg-pill: #dbeafe;
+			--bg-pill-hover: #bfdbfe;
+			--panel: rgba(239, 250, 255, 0.96);
+			--panel-solid: #ffffff;
+			--border-card: #7dd3fc;
+			--text: #0f2747;
+			--text-soft: #164e7a;
+			--text-muted: #256c97;
+			--text-faint: #0284c7;
+			--line: #7dd3fc;
+			--line-soft: #d7f4ff;
+			--blue: #0ea5e9;
+			--blue-dark: #2563eb;
+			--cyan: #67e8f9;
+			--accent: #0ea5e9;
+			--accent-light: #67e8f9;
+			--accent-dark: #2563eb;
+			--panel-edge: #1d4ed8;
+			--shadow: 0 12px 0 rgba(14, 116, 144, 0.24), 0 22px 42px rgba(6, 18, 44, 0.22);
+			--small-shadow: 0 5px 0 rgba(14, 116, 144, 0.22), 0 12px 22px rgba(6, 18, 44, 0.16);
+		}
+		html, body { min-height: 100%; margin: 0; }
+		body {
+			font-family: -apple-system, BlinkMacSystemFont, "PingFang SC", "Hiragino Sans GB", "Microsoft YaHei", sans-serif;
+			color: var(--text);
+			background:
+				radial-gradient(circle at 50% -12%, rgba(186, 230, 253, 0.92), transparent 34%),
+				radial-gradient(circle at 92% 12%, rgba(139, 92, 246, 0.2), transparent 28%),
+				linear-gradient(180deg, #dff7ff 0%, #8bdcff 48%, #1d4ed8 100%);
+			background-attachment: fixed;
+		}
+		button, input { font: inherit; }
+		button { -webkit-tap-highlight-color: transparent; }
+		.page-shell { max-width: 1180px; margin: 0 auto; padding: 14px 16px 42px; }
+		.toolbar {
+			position: sticky;
+			top: 0;
+			z-index: 10;
+			padding: 0 0 12px;
+			background: linear-gradient(180deg, rgba(223, 247, 255, 0.98), rgba(223, 247, 255, 0.88) 74%, transparent);
+			backdrop-filter: blur(10px);
+		}
+		.toolbar-inner {
+			display: grid;
+			grid-template-columns: minmax(220px, 1fr) auto;
+			gap: 10px;
+			align-items: start;
+			padding: 12px;
+			border: 1.5px solid #d7f4ff;
+			border-bottom-color: var(--panel-edge);
+			border-radius: 14px;
+			background:
+				linear-gradient(180deg, rgba(255,255,255,0.94), rgba(255,255,255,0.78)),
+				linear-gradient(135deg, #ffffff, var(--bg-sky));
+			box-shadow: var(--small-shadow), inset 0 2px 0 rgba(255,255,255,0.76);
+		}
+		.search-box {
+			height: 38px;
+			width: 100%;
+			border-radius: 12px;
+			border: 1.5px solid var(--border-card);
+			background: #effaff;
+			color: var(--text);
+			padding: 0 14px;
+			outline: none;
+			box-shadow: inset 0 2px 8px rgba(14, 116, 144, 0.12);
+		}
+		.search-box:focus { border-color: var(--cyan); box-shadow: 0 0 0 3px rgba(103, 232, 249, 0.24), inset 0 2px 8px rgba(14, 116, 144, 0.12); }
+		.button-row { display: flex; flex-wrap: wrap; gap: 8px; min-width: 0; }
+		.button-row + .button-row { margin-top: 10px; }
+		.toolbar-controls { min-width: 0; }
+		.filter-button, .mode-button {
+			min-height: 34px;
+			border-radius: 999px;
+			border: 1.5px solid var(--border-card);
+			background: #ffffff;
+			color: var(--text-soft);
+			padding: 7px 12px;
+			font-size: 12px;
+			font-weight: 900;
+			cursor: pointer;
+			box-shadow: 0 2px 0 rgba(14, 116, 144, 0.18), inset 0 1px 0 rgba(255,255,255,.8);
+			transition: transform .15s, border-color .15s, background .15s, color .15s;
+		}
+		.filter-button:hover, .mode-button:hover { transform: translateY(-1px); border-color: var(--cyan); }
+		.filter-button.active, .mode-button.active {
+			color: #fff;
+			border-color: var(--accent);
+			background: linear-gradient(135deg, var(--accent-light), var(--accent-dark));
+			text-shadow: 0 1px 0 rgba(15,23,42,.45);
+		}
+		.mode-button.stage.active { background: linear-gradient(135deg, #e0f7ff, #8edfff); color: var(--text); border-color: #38bdf8; text-shadow: none; }
+		.mode-button.anim.active { background: linear-gradient(135deg, #fff7ed, #fed7aa); color: #9a3412; border-color: #fdba74; text-shadow: none; }
+		.summary-line { margin: 10px 2px 12px; color: var(--text-muted); font-size: 13px; font-weight: 900; }
+		.pet-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(108px, 1fr)); gap: 10px; }
+		.pet-card {
+			appearance: none;
+			width: 100%;
+			border: 1.5px solid var(--line-soft);
+			border-bottom-color: var(--blue-dark);
+			border-radius: 12px;
+			padding: 8px;
+			background:
+				linear-gradient(180deg, rgba(255,255,255,0.96), rgba(255,255,255,0.84)),
+				linear-gradient(135deg, #ffffff, var(--bg-sky));
+			color: var(--text);
+			cursor: pointer;
+			text-align: center;
+			box-shadow: var(--small-shadow);
+			display: flex;
+			flex-direction: column;
+			align-items: center;
+			gap: 7px;
+			min-height: 142px;
+			transition: transform .16s, box-shadow .16s, border-color .16s;
+		}
+		.pet-card:hover { transform: translateY(-2px); border-color: var(--cyan); box-shadow: 0 10px 20px rgba(14, 116, 144, 0.22); }
+		.portrait {
+			width: min(96px, 100%);
+			aspect-ratio: 1 / 1;
+			height: auto;
+			border-radius: 14px;
+			overflow: hidden;
+			background: var(--bg-pill);
+			flex: 0 0 auto;
+			box-shadow: inset 0 2px 8px rgba(14,116,144,.18);
+		}
+		.sprite-cell {
+			width: 100%;
+			height: 100%;
+			background-repeat: no-repeat;
+			background-size: 400% 400%;
+			image-rendering: auto;
+		}
+		.pet-title-row { display: flex; align-items: center; justify-content: center; gap: 5px; width: 100%; min-width: 0; }
+		.pet-name { min-width: 0; font-size: 13px; font-weight: 950; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; color: var(--text); }
+		.element-emoji { flex: 0 0 auto; display: inline-grid; place-items: center; width: 20px; height: 20px; border-radius: 999px; background: rgba(236, 254, 255, 0.9); font-size: 13px; line-height: 1; box-shadow: inset 0 1px 0 rgba(255,255,255,.72); }
+		.empty-state, .loading-state {
+			border: 1.5px dashed rgba(125, 211, 252, 0.75);
+			border-radius: 8px;
+			padding: 32px 14px;
+			text-align: center;
+			color: var(--text-muted);
+			background: rgba(239, 250, 255, 0.72);
+		}
+		.modal-mask {
+			position: fixed;
+			inset: 0;
+			z-index: 50;
+			display: none;
+			align-items: flex-start;
+			justify-content: center;
+			padding: 12px 16px;
+			background: rgba(3, 7, 18, 0.66);
+			backdrop-filter: blur(8px);
+			overflow: hidden;
+		}
+		.modal-mask.open { display: flex; }
+		.modal-card {
+			width: min(460px, calc(100vw - 32px));
+			max-width: 460px;
+			max-height: calc(100dvh - 24px);
+			border-radius: 8px;
+			background: var(--panel-solid);
+			border: 1.5px solid #d7f4ff;
+			box-shadow: var(--shadow);
+			overflow: hidden;
+			display: flex;
+			flex-direction: column;
+		}
+		.modal-head {
+			flex: 0 0 auto;
+			display: flex;
+			justify-content: space-between;
+			gap: 12px;
+			padding: 16px 16px 12px;
+			background: linear-gradient(135deg, #effaff, #dff7ff 55%, #fff7ed);
+			border-bottom: 1px dashed #d4d4d8;
+		}
+		.modal-title { margin: 0; font-size: 18px; line-height: 1.25; font-weight: 950; }
+		.modal-subtitle { margin-top: 6px; color: var(--text-muted); font-size: 13px; font-weight: 800; }
+		.close-button {
+			flex: 0 0 auto;
+			width: 38px;
+			height: 38px;
+			border-radius: 50%;
+			border: 1.5px solid var(--line);
+			background: #fff;
+			color: var(--text);
+			font-size: 24px;
+			line-height: 1;
+			cursor: pointer;
+		}
+		.modal-body { flex: 1 1 auto; min-height: 0; overflow-y: auto; overflow-x: hidden; padding: 14px 16px 16px; }
+		.detail-layout { display: block; }
+		.album-meta { display: flex; flex-wrap: wrap; gap: 6px 10px; color: var(--text-muted); font-size: 12px; font-weight: 800; }
+		.album-meta b { color: var(--text); }
+		.album-description { margin-top: 8px; border-radius: 8px; border: 1px solid #fde68a; background: #fffbeb; color: #854d0e; padding: 8px 10px; font-size: 12px; line-height: 1.6; }
+		.album-stage { margin-top: 15px; }
+		.album-stage-title { display: flex; align-items: center; gap: 6px; margin-bottom: 8px; color: var(--text); font-size: 13px; }
+		.album-stage-title b { font-weight: 950; }
+		.album-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 14px 10px; padding: 6px 4px 10px; }
+		.album-photo { background: #ffffff; border: 1px solid #e5e7eb; border-radius: 6px; padding: 6px; box-shadow: 0 3px 8px rgba(0,0,0,0.12), 0 1px 2px rgba(0,0,0,0.08); transition: transform .2s ease; }
+		.album-photo:hover { transform: translate(0,0) rotate(0deg) scale(1.04) !important; z-index: 2; position: relative; }
+		.album-photo-image { width: 100%; aspect-ratio: 1 / 1; border-radius: 3px; overflow: hidden; background-repeat: no-repeat; background-size: 400% 400%; image-rendering: auto; }
+		.album-facts { margin-top: 16px; padding-top: 12px; border-top: 1px dashed #d4d4d8; }
+		.fact-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 8px; }
+		.fact {
+			min-height: 54px;
+			border-radius: 8px;
+			border: 1px solid #d7f4ff;
+			background: #f8fdff;
+			padding: 9px 10px;
+		}
+		.fact span { display: block; color: var(--text-muted); font-size: 11px; font-weight: 900; }
+		.fact strong { display: block; margin-top: 4px; color: var(--text); font-size: 14px; line-height: 1.35; word-break: break-word; }
+		.dna-line { margin-top: 12px; color: var(--text-muted); font-size: 12px; font-family: ui-monospace, Menlo, Consolas, monospace; word-break: break-all; }
+		@media (min-width: 900px) {
+			.modal-card { width: min(1040px, calc(100vw - 48px)); max-width: 1040px; }
+			.detail-layout { display: grid; grid-template-columns: minmax(0, 1fr) 300px; gap: 18px; align-items: start; }
+			.detail-info { position: sticky; top: 0; align-self: start; }
+			.album-grid { grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 14px 12px; }
+			.fact-grid { grid-template-columns: 1fr; }
+			.album-facts { margin-top: 0; padding-top: 0; border-top: none; }
+		}
+		@media (max-width: 760px) {
+			.page-shell { padding: 10px 10px 32px; }
+			.toolbar-inner { grid-template-columns: 1fr; }
+			.toolbar-controls { width: 100%; overflow: hidden; }
+			.button-row { flex-wrap: nowrap; overflow-x: auto; overflow-y: hidden; padding: 0 2px 4px; margin-left: -2px; margin-right: -2px; overscroll-behavior-x: contain; scrollbar-width: none; }
+			.button-row::-webkit-scrollbar { display: none; }
+			.button-row + .button-row { margin-top: 8px; }
+			.filter-button, .mode-button { flex: 0 0 auto; white-space: nowrap; }
+			.summary-line { display: none; }
+			.pet-grid { grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 8px; }
+			.pet-card { padding: 6px; min-height: 118px; border-radius: 10px; }
+			.portrait { width: 100%; border-radius: 12px; }
+			.pet-name { font-size: 12px; }
+			.element-emoji { width: 18px; height: 18px; font-size: 12px; }
+			.fact-grid { grid-template-columns: 1fr; }
+		}
+	</style>
+</head>
+<body>
+	<main class="page-shell">
+		<section class="toolbar" aria-label="筛选与预览切换">
+			<div class="toolbar-inner">
+				<input id="searchBox" class="search-box" type="search" placeholder="搜索名字、种类、颜色、属性或 DNA" autocomplete="off">
+				<div class="toolbar-controls">
+					<div id="categoryFilters" class="button-row" role="tablist" aria-label="宠物分类"></div>
+					<div id="modeButtons" class="button-row" role="group" aria-label="阶段和状态预览切换"></div>
+				</div>
+			</div>
+			<div id="summaryLine" class="summary-line">正在加载宠物资料...</div>
+		</section>
+
+		<section id="petGrid" class="pet-grid" aria-live="polite">
+			<div class="loading-state">正在打开图鉴资料...</div>
+		</section>
+	</main>
+
+	<div id="petModal" class="modal-mask" role="dialog" aria-modal="true" aria-labelledby="modalTitle">
+		<div class="modal-card">
+			<div class="modal-head">
+				<div>
+					<h2 id="modalTitle" class="modal-title"></h2>
+					<div id="modalSubtitle" class="modal-subtitle"></div>
+				</div>
+				<button id="modalClose" class="close-button" type="button" aria-label="关闭">×</button>
+			</div>
+			<div id="modalBody" class="modal-body"></div>
+		</div>
+	</div>
+
+	<script>
+		const STAGES = [
+			{ id: 'baby', name: '幼年', emoji: '🐣' },
+			{ id: 'teen', name: '青年', emoji: '🐥' },
+			{ id: 'adult', name: '成年', emoji: '🐉' },
+			{ id: 'elder', name: '长老', emoji: '🦄' },
+		];
+		const ANIMS = [
+			{ id: 'idle', name: '待机' },
+			{ id: 'happy', name: '开心' },
+			{ id: 'sad', name: '伤心' },
+			{ id: 'sleep', name: '睡觉' },
+		];
+		const ALBUM_BG_PALETTE = ['#fff7ed', '#fef3c7', '#ecfccb', '#d1fae5', '#cffafe', '#dbeafe', '#ede9fe', '#fce7f3', '#fee2e2', '#fef9c3', '#e0f2fe', '#f0fdf4', '#fdf2f8', '#f5f3ff', '#ffe4e6', '#f0fdfa'];
+		const ELEMENT_EMOJI = { '陆地': '🌱', '水系': '🌊', '天空': '☁️' };
+		const ATTRIBUTE_ORDER = ['自然', '火', '冰', '生命', '暗', '雷'];
+		const appState = {
+			pets: [],
+			category: 'all',
+			previewStage: 'baby',
+			previewAnim: 'idle',
+			query: '',
+		};
+
+		const searchBox = document.getElementById('searchBox');
+		const categoryFilters = document.getElementById('categoryFilters');
+		const modeButtons = document.getElementById('modeButtons');
+		const summaryLine = document.getElementById('summaryLine');
+		const petGrid = document.getElementById('petGrid');
+		const modal = document.getElementById('petModal');
+		const modalTitle = document.getElementById('modalTitle');
+		const modalSubtitle = document.getElementById('modalSubtitle');
+		const modalBody = document.getElementById('modalBody');
+		const modalClose = document.getElementById('modalClose');
+
+		function escapeHtml(value) {
+			return String(value ?? '').replace(/[&<>'"]/g, ch => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', "'": '&#39;', '"': '&quot;' }[ch]));
+		}
+
+		function normalizeList(data) {
+			const list = Array.isArray(data) ? data : (Array.isArray(data?.pets) ? data.pets : []);
+			return list
+				.map((item, index) => {
+					const traits = normalizeTraits(item?.traits || item || {});
+					return {
+						...item,
+						id: String(item?.id || `pet_${index}`).trim(),
+						name: String(item?.name || item?.id || `宠物 ${index + 1}`).trim(),
+						dna: String(item?.dna || '').trim(),
+						imageSheetUrl: String(item?.imageSheetUrl || '').trim(),
+						imageUrl: String(item?.imageUrl || '').trim(),
+						rarity: Math.max(0, Math.round(Number(item?.rarity) || 0)),
+						traits,
+					};
+				})
+				.filter(pet => pet.id && (pet.imageSheetUrl || pet.imageUrl))
+				.sort((a, b) => b.rarity - a.rarity || a.name.localeCompare(b.name, 'zh-CN'));
+		}
+
+		function normalizeTraits(source) {
+			const traits = source && typeof source === 'object' ? source : {};
+			return {
+				element: normalizeElement(traits.element || traits.habitat || traits.category || traits.field),
+				species: String(traits.species || '').trim(),
+				color: String(traits.color || '').trim(),
+				eyes: String(traits.eyes || '').trim(),
+				accessory: String(traits.accessory || '').trim(),
+				elementalAttribute: String(traits.elementalAttribute || traits.attribute || '').trim(),
+			};
+		}
+
+		function normalizeElement(value) {
+			const raw = String(value || '').trim();
+			const lower = raw.toLowerCase();
+			if (!raw) return '';
+			if (lower === 'sky' || raw.includes('天空')) return '天空';
+			if (lower === 'land' || raw.includes('陆地')) return '陆地';
+			if (lower === 'water' || lower === 'ocean' || raw.includes('水') || raw.includes('海')) return '水系';
+			return raw;
+		}
+
+		function traitText(pet) {
+			const t = pet.traits || {};
+			return [pet.name, pet.id, pet.dna, t.element, t.species, t.color, t.eyes, t.accessory, t.elementalAttribute]
+				.filter(Boolean)
+				.join(' ')
+				.toLowerCase();
+		}
+
+		function appearanceText(pet) {
+			const t = pet.traits || {};
+			const parts = [
+				t.color ? `${t.color}外观` : '',
+				t.species || '未知种类',
+				t.element ? `${t.element}血统` : '',
+				t.elementalAttribute ? `${t.elementalAttribute}属性` : '',
+				t.eyes || '',
+				t.accessory && t.accessory !== '没有任何配饰' ? t.accessory : '',
+			].filter(Boolean);
+			return `${pet.name} 是一只${parts.join('、')}的宠物。`;
+		}
+
+		function spriteStyle(pet, stageId = appState.previewStage, animId = appState.previewAnim) {
+			const row = Math.max(0, STAGES.findIndex(stage => stage.id === stageId));
+			const col = Math.max(0, ANIMS.findIndex(anim => anim.id === animId));
+			const url = pet.imageSheetUrl || pet.imageUrl || '';
+			if (pet.imageSheetUrl) {
+				return `background-color:${petBackground(pet)};background-image:url('${cssUrl(url)}');background-size:400% 400%;background-position:${(col * 100 / 3).toFixed(3)}% ${(row * 100 / 3).toFixed(3)}%;`;
+			}
+			return `background-color:${petBackground(pet)};background-image:url('${cssUrl(url)}');background-size:contain;background-position:center;`;
+		}
+
+		function cssUrl(value) {
+			return String(value || '').replace(/'/g, '%27').replace(/\)/g, '%29');
+		}
+
+		function hashStr(value) {
+			let hash = 2166136261;
+			const text = String(value || '');
+			for (let i = 0; i < text.length; i++) {
+				hash ^= text.charCodeAt(i);
+				hash = (hash * 16777619) >>> 0;
+			}
+			return hash >>> 0;
+		}
+
+		function petBackground(pet) {
+			const attribute = pet?.traits?.elementalAttribute || '';
+			if (attribute === '火') return '#fed7aa';
+			if (attribute === '冰') return '#bae6fd';
+			if (attribute === '生命') return '#bbf7d0';
+			if (attribute === '暗') return '#ddd6fe';
+			if (attribute === '雷') return '#fef08a';
+			return '#d9f99d';
+		}
+
+		function elementEmojiHtml(element) {
+			const emoji = ELEMENT_EMOJI[element] || '✨';
+			return `<span class="element-emoji" title="${escapeHtml(element || '未知系别')}" aria-label="${escapeHtml(element || '未知系别')}">${escapeHtml(emoji)}</span>`;
+		}
+
+		function buildCategoryFilters() {
+			const pets = appState.pets;
+			const base = [
+				{ id: 'all', label: '全部', count: pets.length },
+				...['陆地', '水系', '天空'].map(value => ({ id: `element:${value}`, label: value === '水系' ? '海洋' : value, count: pets.filter(p => p.traits.element === value).length })),
+				...ATTRIBUTE_ORDER.map(value => ({ id: `attribute:${value}`, label: value, count: pets.filter(p => p.traits.elementalAttribute === value).length })),
+			];
+			categoryFilters.innerHTML = base.map(filter => `
+				<button class="filter-button ${appState.category === filter.id ? 'active' : ''}" data-category="${escapeHtml(filter.id)}" type="button" role="tab" aria-selected="${appState.category === filter.id ? 'true' : 'false'}">
+					${escapeHtml(filter.label)} ${filter.count}
+				</button>
+			`).join('');
+			categoryFilters.querySelectorAll('[data-category]').forEach(button => {
+				button.addEventListener('click', () => {
+					appState.category = button.dataset.category || 'all';
+					render();
+				});
+			});
+		}
+
+		function buildModeButtons() {
+			modeButtons.innerHTML = [
+				...STAGES.map(stage => `<button class="mode-button stage ${appState.previewStage === stage.id ? 'active' : ''}" data-stage="${stage.id}" type="button">${stage.name}</button>`),
+				...ANIMS.map(anim => `<button class="mode-button anim ${appState.previewAnim === anim.id ? 'active' : ''}" data-anim="${anim.id}" type="button">${anim.name}</button>`),
+			].join('');
+			modeButtons.querySelectorAll('[data-stage]').forEach(button => {
+				button.addEventListener('click', () => {
+					appState.previewStage = button.dataset.stage || 'baby';
+					render();
+				});
+			});
+			modeButtons.querySelectorAll('[data-anim]').forEach(button => {
+				button.addEventListener('click', () => {
+					appState.previewAnim = button.dataset.anim || 'idle';
+					render();
+				});
+			});
+		}
+
+		function filteredPets() {
+			const query = appState.query.trim().toLowerCase();
+			return appState.pets.filter(pet => {
+				if (appState.category.startsWith('element:') && pet.traits.element !== appState.category.slice(8)) return false;
+				if (appState.category.startsWith('attribute:') && pet.traits.elementalAttribute !== appState.category.slice(10)) return false;
+				if (query && !traitText(pet).includes(query)) return false;
+				return true;
+			});
+		}
+
+		function render() {
+			buildCategoryFilters();
+			buildModeButtons();
+			const pets = filteredPets();
+			const stageName = STAGES.find(stage => stage.id === appState.previewStage)?.name || '成年';
+			const animName = ANIMS.find(anim => anim.id === appState.previewAnim)?.name || '待机';
+			summaryLine.textContent = `显示 ${pets.length} / ${appState.pets.length} 只宠物，当前预览：${stageName} · ${animName}`;
+			if (!pets.length) {
+				petGrid.innerHTML = '<div class="empty-state">没有匹配的宠物，换个分类或关键词试试。</div>';
+				return;
+			}
+			petGrid.innerHTML = pets.map(pet => petCardHtml(pet)).join('');
+			petGrid.querySelectorAll('[data-pet-id]').forEach(button => {
+				button.addEventListener('click', () => {
+					const pet = appState.pets.find(item => item.id === button.dataset.petId);
+					if (pet) openPetModal(pet);
+				});
+			});
+		}
+
+		function petCardHtml(pet) {
+			const t = pet.traits || {};
+			return `
+				<button class="pet-card" data-pet-id="${escapeHtml(pet.id)}" type="button">
+					<div class="portrait"><div class="sprite-cell" style="${spriteStyle(pet)}"></div></div>
+					<div class="pet-title-row">
+						<div class="pet-name">${escapeHtml(pet.name)}</div>
+						${elementEmojiHtml(t.element)}
+					</div>
+				</button>
+			`;
+		}
+
+		function openPetModal(pet) {
+			const t = pet.traits || {};
+			modalTitle.textContent = pet.name;
+			modalSubtitle.textContent = `${t.element || '未知血统'} · ${t.species || '未知种类'} · 稀有度 ${pet.rarity}`;
+			modalBody.innerHTML = `
+				<div class="detail-layout">
+					<div class="detail-album">
+						${STAGES.map((stage, stageIndex) => albumStageHtml(pet, stage, stageIndex)).join('')}
+					</div>
+					<aside class="detail-info">
+						${detailInfoHtml(pet)}
+					</aside>
+				</div>
+			`;
+			modal.classList.add('open');
+			document.body.style.overflow = 'hidden';
+		}
+
+		function detailInfoHtml(pet) {
+			const t = pet.traits || {};
+			return `
+				<div class="album-meta">
+					<span>🌍 血统 <b>${escapeHtml(t.element || '未记录')}</b></span>
+					<span>✨ 属性 <b>${escapeHtml(t.elementalAttribute || '未记录')}</b></span>
+					<span>⭐ 稀有度 <b>${escapeHtml(pet.rarity)}</b></span>
+				</div>
+				<div class="album-description">${escapeHtml(appearanceText(pet))}</div>
+				<section class="album-facts">
+					<div class="fact-grid">
+						${factHtml('血统分类', t.element || '未记录')}
+						${factHtml('元素属性', t.elementalAttribute || '未记录')}
+						${factHtml('宠物种类', t.species || '未记录')}
+						${factHtml('身体颜色', t.color || '未记录')}
+						${factHtml('眼睛特征', t.eyes || '未记录')}
+						${factHtml('配饰', t.accessory || '未记录')}
+						${factHtml('稀有度', String(pet.rarity))}
+						${factHtml('资料 ID', pet.id)}
+					</div>
+					${pet.dna ? `<div class="dna-line">DNA: ${escapeHtml(formatDna(pet.dna))}</div>` : ''}
+				</section>
+			`;
+		}
+
+		function factHtml(label, value) {
+			return `<div class="fact"><span>${escapeHtml(label)}</span><strong>${escapeHtml(value)}</strong></div>`;
+		}
+
+		function albumStageHtml(pet, stage, stageIndex) {
+			return `
+				<section class="album-stage">
+					<div class="album-stage-title">
+						<span style="font-size:18px">${escapeHtml(stage.emoji)}</span>
+						<b>${escapeHtml(stage.name)}</b>
+					</div>
+					<div class="album-grid">
+						${ANIMS.map((anim, animIndex) => albumPhotoHtml(pet, stage, stageIndex, anim, animIndex)).join('')}
+					</div>
+				</section>
+			`;
+		}
+
+		function albumPhotoHtml(pet, stage, stageIndex, anim, animIndex) {
+			const seed = hashStr(`${pet.id || pet.dna || ''}|album|${stageIndex}|${animIndex}`);
+			const rotate = (((seed >> 4) % 1200) / 100 - 6).toFixed(2);
+			const offsetX = (((seed >> 8) % 80) / 10 - 4).toFixed(2);
+			const offsetY = (((seed >> 12) % 60) / 10 - 3).toFixed(2);
+			const bg = ALBUM_BG_PALETTE[seed % ALBUM_BG_PALETTE.length] || petBackground(pet);
+			const style = `${spriteStyle(pet, stage.id, anim.id)}background-color:${bg};`;
+			return `
+				<div class="album-photo" style="transform:translate(${offsetX}px, ${offsetY}px) rotate(${rotate}deg)">
+					<div class="album-photo-image" style="${style}"></div>
+				</div>
+			`;
+		}
+
+		function formatDna(dna) {
+			const text = String(dna || '').replace(/[^A-Za-z0-9]/g, '').toUpperCase();
+			return text.match(/.{1,3}/g)?.join('-') || '';
+		}
+
+		function closeModal() {
+			modal.classList.remove('open');
+			document.body.style.overflow = '';
+		}
+
+		async function loadPets() {
+			const urls = [
+				'../famous-pets/index.json',
+				'https://cdn.keepwork.com/maisi/magichaqi/famous-pets/index.json',
+			];
+			let lastError = null;
+			for (const url of urls) {
+				try {
+					const response = await fetch(url, { cache: 'no-cache' });
+					if (!response.ok) throw new Error(`HTTP ${response.status}`);
+					const data = await response.json();
+					appState.pets = normalizeList(data);
+					render();
+					return;
+				} catch (error) {
+					lastError = error;
+				}
+			}
+			console.warn('宠物百科资料加载失败', lastError);
+			summaryLine.textContent = '宠物资料加载失败。请用本地开发服务器打开，或确认 famous-pets/index.json 可访问。';
+			petGrid.innerHTML = '<div class="empty-state">暂时无法加载宠物资料。</div>';
+		}
+
+		searchBox.addEventListener('input', () => {
+			appState.query = searchBox.value || '';
+			render();
+		});
+		modalClose.addEventListener('click', closeModal);
+		modal.addEventListener('click', event => {
+			if (event.target === modal) closeModal();
+		});
+		window.addEventListener('keydown', event => {
+			if (event.key === 'Escape' && modal.classList.contains('open')) closeModal();
+		});
+
+		loadPets();
+	</script>
+</body>
+</html>

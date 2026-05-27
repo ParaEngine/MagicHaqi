@@ -184,6 +184,7 @@ const ELEMENTAL_ATTRIBUTE_BACKGROUNDS = {
     '冰': '#bae6fd',
     '生命': '#bbf7d0',
     '暗': '#ddd6fe',
+    '雷': '#fef08a',
 };
 const DEFAULT_PET_ART_BACKGROUND = '#dff7ff';
 

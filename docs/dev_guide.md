@@ -483,7 +483,7 @@ famous-pets/index.json
 8. 设置阶段 `stage`。官方展示宠通常用 `adult`。
 9. 设置动作 `anim`，常用 `happy`。
 10. 填写血统 `element`：陆地、水系、天空。
-11. 填写元素 `elementalAttribute`：自然、火、冰、生命、暗。
+11. 填写元素 `elementalAttribute`：自然、火、冰、生命、暗、雷。
 12. 填写种类、颜色、眼睛、配饰。
 13. 填写核心提示词 `wishPrompt`。
 14. 点击“刷新 Prompt”，检查生成提示词是否符合预期。

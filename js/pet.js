@@ -1573,6 +1573,9 @@ function _renderTattoos(traits, stroke) {
         if (attr === '暗') {
             return `<path d="M${cx + 4} ${cy - 4} a6 6 0 1 1 -6 -2 a4 4 0 1 0 6 2 Z" fill="${color}" opacity="${opacity}"/>`;
         }
+        if (attr === '雷') {
+            return `<path d="M${cx + 1} ${cy - 8} L${cx - 5} ${cy + 1} H${cx} L${cx - 3} ${cy + 9} L${cx + 7} ${cy - 2} H${cx + 1} Z" fill="${color}" opacity="${opacity}"/>`;
+        }
         // 自然（默认）：小叶子
         return `<path d="M${cx - 5} ${cy + 4} Q${cx - 2} ${cy - 6} ${cx + 5} ${cy - 4} Q${cx + 2} ${cy + 6} ${cx - 5} ${cy + 4} Z" fill="${color}" opacity="${opacity}"/>
                 <line x1="${cx - 5}" y1="${cy + 4}" x2="${cx + 2}" y2="${cy - 2}" stroke="${color}" stroke-width="1" opacity="${opacity}"/>`;

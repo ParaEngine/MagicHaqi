@@ -8,7 +8,7 @@ const ALPHABET = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789';
 //   elementalAttribute 是宠物的元素属性，可由远程星球 DNA 信号决定。
 // 旧 12/15 位 DNA 会自动补足为 18 位（normalizeDna 内确定性补齐），element 随机派生。
 const ELEMENTS = ['陆地', '水系', '天空'];
-const ELEMENTAL_ATTRIBUTES = ['自然', '火', '冰', '生命', '暗'];
+const ELEMENTAL_ATTRIBUTES = ['自然', '火', '冰', '生命', '暗', '雷'];
 const SPECIES_BY_ELEMENT = {
     // 陆地族：毛茸茸、四脚、植物系小兽
     陆地: [
@@ -130,9 +130,9 @@ export function randomDnaForElementalAttribute(attribute) {
 }
 
 // 场景 → DNA 段位偏置映射
-// land/water/sky 影响 element 段；fire/ice/life/dark 影响 elementalAttribute 段。
+// land/water/sky 影响 element 段；fire/ice/life/dark/thunder 影响 elementalAttribute 段。
 const FIELD_TO_ELEMENT = { land: '陆地', water: '水系', sky: '天空' };
-const FIELD_TO_ATTRIBUTE = { fire: '火', ice: '冰', life: '生命', dark: '暗' };
+const FIELD_TO_ATTRIBUTE = { fire: '火', ice: '冰', life: '生命', dark: '暗', thunder: '雷' };
 
 /**
  * 将 DNA 偏置到某场景"领地"对应的特征。
