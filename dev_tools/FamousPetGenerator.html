@@ -141,6 +141,12 @@
               <option value="1024x1024">1024x1024 产品规格</option>
             </select>
           </label>
+          <label>生成背景色
+            <select id="petBackgroundColor">
+              <option value="#ffffff" selected>白色 #ffffff 默认</option>
+              <option value="#000000">黑色 #000000 旧版</option>
+            </select>
+          </label>
           <div class="toolbar">
             <label class="toggle-line"><input id="uploadResultToKeepwork" type="checkbox" checked disabled>上传临时 CDN</label>
             <button id="btnPetCdnConfig" type="button">设置</button>
@@ -339,7 +345,7 @@
     const WEBP_DEFAULT_BG_OPTIONS = { seedThreshold: 60, growThreshold: 78, haloThreshold: 112, borderRatio: 0.02, gridLineWidth: 6 };
     const INDEX_ENTRY_FIELDS = ['id', 'name', 'dna', 'imageSheetUrl', 'traits', 'rarity'];
     const $ = (id) => document.getElementById(id);
-    const state = { sdk: null, referenceDataUrl: '', workspaceViewer: null, webpExport: null, records: [], selectedRecordPaths: new Set(), completedRecordPaths: new Set(), selectedId: '', selectedPath: '', currentPath: '', currentHistoryUrls: [], imageSizeCache: new Map(), imageSizeRequests: new Map(), imageDimensionCache: new Map(), imageDimensionRequests: new Map(), recordThumbObserver: null, dirty: false, generationPromptsPromise: null, batchCreate: null, batchGenerate: null, batchRepair: null, lastImageModel: '', lastTextModel: '' };
+    const state = { sdk: null, referenceDataUrl: '', workspaceViewer: null, webpExport: null, records: [], selectedRecordPaths: new Set(), completedRecordPaths: new Set(), selectedId: '', selectedPath: '', currentPath: '', currentHistoryUrls: [], imageSizeCache: new Map(), imageSizeRequests: new Map(), imageDimensionCache: new Map(), imageDimensionRequests: new Map(), recordThumbObserver: null, dirty: false, generationPromptsPromise: null, batchCreate: null, batchGenerate: null, batchRepair: null, lastImageModel: '', lastTextModel: '', lastPetBackgroundColor: '#ffffff' };
 
     function loadGenerationPrompts() {
       state.generationPromptsPromise ||= import('../js/generationPrompts.js');
@@ -641,6 +647,15 @@
       return $('imageModelSelect').value.trim();
     }
 
+    function normalizePetBackgroundColor(value) {
+      const color = String(value || '').trim().toLowerCase();
+      return color === '#000000' ? '#000000' : '#ffffff';
+    }
+
+    function getPetBackgroundColor() {
+      return normalizePetBackgroundColor($('petBackgroundColor')?.value || state.lastPetBackgroundColor || '#ffffff');
+    }
+
     function readLocalGenerationSettings() {
       try { return JSON.parse(localStorage.getItem(SETTINGS_STORAGE_KEY) || '{}') || {}; }
       catch (_) { return {}; }
@@ -650,10 +665,12 @@
       state.lastImageModel = getSelectedImageModel() || state.lastImageModel || '';
       const textModelSelect = $('batchTextModelSelect');
       state.lastTextModel = textModelSelect?.value?.trim() || state.lastTextModel || '';
+      state.lastPetBackgroundColor = getPetBackgroundColor();
       try {
         localStorage.setItem(SETTINGS_STORAGE_KEY, JSON.stringify({
           lastImageModel: state.lastImageModel || '',
           lastTextModel: state.lastTextModel || '',
+          lastPetBackgroundColor: state.lastPetBackgroundColor || '#ffffff',
           updatedAt: new Date().toISOString(),
         }));
       } catch (_) {}
@@ -771,7 +788,7 @@
     async function buildPromptForPet(pet) {
       const reference = getReferenceImage();
       const { buildPetSheetPrompt } = await loadGenerationPrompts();
-      return buildPetSheetPrompt(pet.dna, pet.name, { customPrompt: pet.wishPrompt, referenceImage: reference, traits: pet.traits });
+      return buildPetSheetPrompt(pet.dna, pet.name, { customPrompt: pet.wishPrompt, referenceImage: reference, traits: pet.traits, backgroundColor: getPetBackgroundColor() });
     }
 
     function applyPetToForm(pet, path = '') {
@@ -3063,6 +3080,11 @@
       });
       $('referenceFile').addEventListener('change', handleReferenceFile);
       $('imageModelSelect').addEventListener('change', saveLocalGenerationSettings);
+      $('petBackgroundColor').addEventListener('change', () => {
+        state.lastPetBackgroundColor = getPetBackgroundColor();
+        saveLocalGenerationSettings();
+        buildPrompt().catch(e => setStatus($('saveStatus'), e?.message || String(e), 'error'));
+      });
       $('btnBuildPrompt').onclick = () => buildPrompt().catch(e => setStatus($('saveStatus'), e?.message || String(e), 'error'));
       if ($('btnGenerate')) $('btnGenerate').onclick = () => generateSheet().catch(e => console.error(e));
       $('btnRegenerate').onclick = () => generateSheet().catch(e => console.error(e));
@@ -3085,6 +3107,8 @@
       const localSettings = readLocalGenerationSettings();
       state.lastImageModel = String(localSettings.lastImageModel || '').trim();
       state.lastTextModel = String(localSettings.lastTextModel || '').trim();
+      state.lastPetBackgroundColor = normalizePetBackgroundColor(localSettings.lastPetBackgroundColor || '#ffffff');
+      if ($('petBackgroundColor')) $('petBackgroundColor').value = state.lastPetBackgroundColor;
       wireEvents();
       populateModelDropdown();
       applyPetToForm(defaultPet(), `${FAMOUS_DIR}/new_famous_pet.json`);
