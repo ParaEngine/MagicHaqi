@@ -11,7 +11,7 @@ import { computePlanetProgress, getPlanetDayNumber } from './planetProgress.js';
 import { decodeDna, displayPetName, dnaRarity, dnaToName, isAdultStage, randomDna, randomDnaForElementalAttribute } from './dna.js';
 import { getRuntimePetStats, isPetOnCurrentPlanet, isPetSelectable, markPetHaqiIsland, selectablePets } from './petLifecycle.js';
 import { buildEggSvg, getPetSpriteCell, petArtHtml, scanAndMount, SHEET_COLS, SHEET_ROWS } from './pet.js';
-import { CONFIG, getStageName } from './config.js';
+import { CONFIG, currentPlanetMiningHourStart, getPlanetMiningCoins, getPlanetMiningState, getPlanetMiningVisualCoinCount, getStageName } from './config.js';
 import { createSpaceTravel, spaceTravelHtml } from './spacetravel.js';
 import { defaultPostcardText, drawPetPostcardImage, hydratePetPostcardImages, normalizePostcardLayout, POSTCARD_TEXTS, randomPostcardPhotoTheme, renderPetPostcardHtml, serializePostcardLayout } from './view_postcard.js';
 import { friendDropdownLabel, friendId, friendName, friendUsername, loadFriends } from './view_email.js';
@@ -31,9 +31,6 @@ const SMALL_REMOTE_PLANET_SIZE_PER_RADIUS = 7;
 const REMOTE_ELEMENT_HAUL_TONS = 10;
 const REMOTE_ELEMENT_MAX_TONS = 100;
 const HAQI_VISIT_COIN_REWARD = 30;
-const PLANET_MINING_COIN_PER_HOUR = 5;
-const PLANET_MINING_MAX_COINS = 120;
-const PLANET_MINING_HOUR_MS = 60 * 60 * 1000;
 const PLANET_SPACECRAFT_ENABLED = true;
 const PLANET_DECOR_CANVAS_DPR = 2;
 const PLANET_DECOR_CANVAS_PADDING = 0.2;
@@ -259,37 +256,14 @@ function spendCost(cost) {
     refreshTopbarResources();
 }
 
-function currentHourStart(now = Date.now()) {
-    const d = new Date(now);
-    d.setMinutes(0, 0, 0);
-    return d.getTime();
-}
-
-function miningStartHour(now = Date.now()) {
-    const createdAt = Number.isFinite(state.planetCreatedAt) && state.planetCreatedAt > 0 ? state.planetCreatedAt : now;
-    return currentHourStart(createdAt);
-}
-
-function getPlanetMiningState(now = Date.now()) {
-    const mining = state.planetMining && typeof state.planetMining === 'object' ? state.planetMining : (state.planetMining = {});
-    if (!Number.isFinite(mining.lastCollectedHourAt) || mining.lastCollectedHourAt <= 0) {
-        mining.lastCollectedHourAt = miningStartHour(now);
-    }
-    return mining;
-}
-
 function planetMiningCoins(now = Date.now()) {
-    const mining = getPlanetMiningState(now);
-    const lastHour = currentHourStart(Number(mining.lastCollectedHourAt) || miningStartHour(now));
-    const currentHour = currentHourStart(now);
-    const elapsedHours = Math.max(0, Math.floor((currentHour - lastHour) / PLANET_MINING_HOUR_MS));
-    return Math.min(PLANET_MINING_MAX_COINS, elapsedHours * PLANET_MINING_COIN_PER_HOUR);
+    return getPlanetMiningCoins(state, now, CONFIG);
 }
 
 function planetMiningPileHtml(coins) {
     const amount = Math.max(0, Number(coins) || 0);
     if (amount <= 0) return '';
-    const coinCount = Math.max(1, Math.min(10, Math.ceil(amount / (PLANET_MINING_MAX_COINS / 10))));
+    const coinCount = getPlanetMiningVisualCoinCount(amount, CONFIG);
     const placements = [
         [-18, 4, -21, 1.02], [-6, -1, 9, 0.96], [8, 3, -9, 1.05], [20, 0, 18, 0.92],
         [-25, 13, 16, 0.88], [-10, 10, -6, 1.08], [5, 12, 24, 0.9], [18, 11, -15, 1],
@@ -346,9 +320,10 @@ function collectPlanetMiningCoins() {
     const now = Date.now();
     const reward = planetMiningCoins(now);
     if (reward <= 0) return false;
-    const mining = getPlanetMiningState(now);
-    mining.lastCollectedHourAt = currentHourStart(now);
+    const mining = getPlanetMiningState(state, now);
+    mining.lastCollectedHourAt = currentPlanetMiningHourStart(now);
     mining.lastCollectedAt = now;
+    mining.fieldCollectedCoins = 0;
     state.coins = Math.max(0, (Number(state.coins) || 0) + reward);
     addPlanetLog('mining', `星球挖矿产出 ${reward} 金币`, '🪙');
     saveUserProfileDebounced();

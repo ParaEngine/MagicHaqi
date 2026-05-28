@@ -48,6 +48,7 @@ export function getDefaultZoomLevelIndex(raw = {}) {
 
 export function resolveZoomLevelIndex(target, raw = {}, from = null) {
     const visible = getVisibleZoomLevelIndices(raw);
+    if (!visible.length) return 0;
     const clamped = Math.max(0, Math.min(ZOOM_LEVEL_IDS.length - 1, Number(target) | 0));
     if (visible.includes(clamped)) return clamped;
     const current = Number.isFinite(from) ? Math.max(0, Math.min(ZOOM_LEVEL_IDS.length - 1, Number(from) | 0)) : null;
@@ -202,6 +203,14 @@ export const CONFIG = {
     poopMachineCostCoins: 5,            // 启动清理机器消耗金币
     biofuelPerPoop: 1,
 
+    // 星球挖矿金币：planet 和 field 只是同一来源的两种领取入口。
+    planetMining: {
+        coinPerHour: 5,
+        maxCoins: 120,
+        hourMs: 60 * 60 * 1000,
+        maxScatteredCoins: 10,
+    },
+
     // 房间网格规格（与 CSS 对应）
     gridCols: 8,
     gridRows: 6,
@@ -232,6 +241,78 @@ export const CONFIG = {
     // 付费默认（开发态可在设置中切换）
     defaultIsPaid: false,
 };
+
+export function getPlanetMiningConfig(config = CONFIG) {
+    const source = config?.planetMining || {};
+    return {
+        coinPerHour: Math.max(0, Number(source.coinPerHour) || 0),
+        maxCoins: Math.max(0, Number(source.maxCoins) || 0),
+        hourMs: Math.max(1, Number(source.hourMs) || 60 * 60 * 1000),
+        maxScatteredCoins: Math.max(1, Number(source.maxScatteredCoins) || 10),
+    };
+}
+
+export function currentPlanetMiningHourStart(now = Date.now()) {
+    const d = new Date(now);
+    d.setMinutes(0, 0, 0);
+    return d.getTime();
+}
+
+export function planetMiningStartHour(gameState, now = Date.now()) {
+    const createdAt = Number.isFinite(gameState?.planetCreatedAt) && gameState.planetCreatedAt > 0 ? gameState.planetCreatedAt : now;
+    return currentPlanetMiningHourStart(createdAt);
+}
+
+export function getPlanetMiningState(gameState, now = Date.now()) {
+    const mining = gameState.planetMining && typeof gameState.planetMining === 'object' ? gameState.planetMining : (gameState.planetMining = {});
+    if (!Number.isFinite(mining.lastCollectedHourAt) || mining.lastCollectedHourAt <= 0) {
+        mining.lastCollectedHourAt = planetMiningStartHour(gameState, now);
+    }
+    return mining;
+}
+
+export function getPlanetMiningGrossCoins(gameState, now = Date.now(), config = CONFIG) {
+    const miningConfig = getPlanetMiningConfig(config);
+    const mining = getPlanetMiningState(gameState, now);
+    const lastHour = currentPlanetMiningHourStart(Number(mining.lastCollectedHourAt) || planetMiningStartHour(gameState, now));
+    const currentHour = currentPlanetMiningHourStart(now);
+    const elapsedHours = Math.max(0, Math.floor((currentHour - lastHour) / miningConfig.hourMs));
+    return Math.min(miningConfig.maxCoins, elapsedHours * miningConfig.coinPerHour);
+}
+
+export function getPlanetMiningCoins(gameState, now = Date.now(), config = CONFIG) {
+    const mining = getPlanetMiningState(gameState, now);
+    const grossCoins = getPlanetMiningGrossCoins(gameState, now, config);
+    const fieldCollectedCoins = Math.max(0, Math.min(grossCoins, Math.floor(Number(mining.fieldCollectedCoins) || 0)));
+    return Math.max(0, grossCoins - fieldCollectedCoins);
+}
+
+export function recordPlanetMiningFieldCollected(gameState, amount, now = Date.now(), config = CONFIG) {
+    const reward = Math.max(0, Math.floor(Number(amount) || 0));
+    if (reward <= 0) return 0;
+    const mining = getPlanetMiningState(gameState, now);
+    const grossCoins = getPlanetMiningGrossCoins(gameState, now, config);
+    if (grossCoins <= 0) return 0;
+    const previous = Math.max(0, Math.min(grossCoins, Math.floor(Number(mining.fieldCollectedCoins) || 0)));
+    const collected = Math.min(grossCoins, previous + reward);
+    const actual = Math.max(0, collected - previous);
+    if (actual <= 0) return 0;
+    if (collected >= grossCoins) {
+        mining.lastCollectedHourAt = currentPlanetMiningHourStart(now);
+        mining.fieldCollectedCoins = 0;
+    } else {
+        mining.fieldCollectedCoins = collected;
+    }
+    mining.lastCollectedAt = now;
+    return actual;
+}
+
+export function getPlanetMiningVisualCoinCount(amount, config = CONFIG) {
+    const miningConfig = getPlanetMiningConfig(config);
+    const safeAmount = Math.max(0, Number(amount) || 0);
+    if (safeAmount <= 0) return 0;
+    return Math.max(1, Math.min(miningConfig.maxScatteredCoins, Math.ceil(safeAmount / (Math.max(1, miningConfig.maxCoins) / miningConfig.maxScatteredCoins))));
+}
 
 export function normalizeSceneImageSizeOption(option = {}) {
     const value = String(option.value || `${option.width || ''}x${option.height || ''}` || '').trim();

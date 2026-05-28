@@ -97,7 +97,7 @@ function defaultHomeZoomLevel() {
 function visibleZoomLevels() {
     let indices = getVisibleZoomLevelIndices(currentZoomOptions());
     if (isVisitingMode()) indices = indices.filter(index => index <= 2);
-    return indices.length ? indices : [1, 2];
+    return indices.length ? indices : getVisibleZoomLevelIndices({});
 }
 
 function resolveHomeZoomLevel(target, from = state.zoomLevel) {
@@ -520,13 +520,16 @@ async function openDevConsoleFromHome() {
 function renderZoomLevelBar(pet = __lastPet) {
     if (isZoomLevelBarSuppressed()) return '';
     const lvl = clampLvl(state.zoomLevel ?? 0);
-    const visible = new Set(visibleZoomLevels());
+    const visibleList = visibleZoomLevels();
+    const visible = new Set(visibleList);
     const hint = getZoomLevelHint(lvl, pet);
     const progress = getZoomBarProgress(visualCameraZoom || cameraZoom);
     const pointerConflictsWithEmergency = visible.has(lvl) && !!getZoomStageEmergency(ZOOM_BAR_STAGES[lvl]?.id, pet);
+    const visibleCount = Math.max(1, visibleList.length);
+    const totalCount = Math.max(visibleCount, ZOOM_BAR_STAGES.length);
     return `
         <button class="mh-zoom-bar ${pointerConflictsWithEmergency ? 'has-pointer-emergency-icon' : ''}" id="mhZoomLevelBar" type="button"
-            style="--zoom-pos:${progress.toFixed(4)}"
+            style="--zoom-pos:${progress.toFixed(4)};--zoom-visible-count:${visibleCount};--zoom-total-count:${totalCount}"
             title="${escapeHtml(hint)}" aria-label="${escapeHtml(hint)}" aria-hidden="true" tabindex="-1" disabled data-tip="${escapeHtml(hint)}">
             ${renderZoomLevelBarInner(pet, lvl)}
             <span class="mh-zoom-bar-pointer" aria-hidden="true"></span>
@@ -535,21 +538,23 @@ function renderZoomLevelBar(pet = __lastPet) {
 }
 
 function renderZoomLevelBarInner(pet = __lastPet, lvl = clampLvl(state.zoomLevel ?? 0)) {
-    const visible = new Set(visibleZoomLevels());
+    const visibleList = visibleZoomLevels();
     return `
         <span class="mh-zoom-bar-track" aria-hidden="true">
-            ${ZOOM_BAR_STAGES.map((stage, index) => {
+            ${visibleList.map((index) => {
+                const stage = ZOOM_BAR_STAGES[index];
+                if (!stage) return '';
                 const emergency = getZoomStageEmergency(stage.id, pet);
                 return `
-                <span class="mh-zoom-bar-stage ${index === lvl ? 'active' : ''} ${visible.has(index) ? '' : 'is-hidden'}" data-zoom-stage="${escapeHtml(stage.id)}" style="--stage-color:${stage.color}" title="${escapeHtml(emergency?.tip || stage.label)}">
+                <span class="mh-zoom-bar-stage ${index === lvl ? 'active' : ''}" data-zoom-stage="${escapeHtml(stage.id)}" data-zoom-index="${index}" style="--stage-color:${stage.color}" title="${escapeHtml(emergency?.tip || stage.label)}">
                     <i>${escapeHtml(stage.label)}</i>
                 </span>`;
             }).join('')}
         </span>
         ${ZOOM_BAR_STAGES.map((stage, index) => {
-            if (!visible.has(index)) return '';
+            if (!visibleList.includes(index)) return '';
             const emergency = getZoomStageEmergency(stage.id, pet);
-            return emergency ? `<span class="mh-zoom-bar-emergency" data-zoom-emergency="${escapeHtml(stage.id)}" style="--stage-index:${index}" title="${escapeHtml(emergency.tip)}">${emergency.iconHtml}</span>` : '';
+            return emergency ? `<span class="mh-zoom-bar-emergency" data-zoom-emergency="${escapeHtml(stage.id)}" style="--stage-index:${visibleList.indexOf(index)};--stage-count:${visibleList.length}" title="${escapeHtml(emergency.tip)}">${emergency.iconHtml}</span>` : '';
         }).join('')}
     `;
 }
@@ -559,8 +564,11 @@ function ensureZoomLevelBarStructure(bar, pet = __lastPet) {
     const stages = bar.querySelectorAll('.mh-zoom-bar-stage');
     const pointer = bar.querySelector('.mh-zoom-bar-pointer');
     const track = bar.querySelector('.mh-zoom-bar-track');
-    if (!track || !pointer || stages.length !== ZOOM_BAR_STAGES.length) {
+    const visible = visibleZoomLevels();
+    const signature = visible.join(',');
+    if (!track || !pointer || bar.dataset.visibleZoomLevels !== signature || stages.length !== visible.length) {
         bar.innerHTML = `${renderZoomLevelBarInner(pet)}<span class="mh-zoom-bar-pointer" aria-hidden="true"></span>`;
+        bar.dataset.visibleZoomLevels = signature;
     }
 }
 
@@ -568,18 +576,21 @@ function syncZoomLevelBar(bar, pet = __lastPet) {
     if (!bar) return null;
     ensureZoomLevelBarStructure(bar, pet);
     const lvl = clampLvl(state.zoomLevel ?? 0);
-    const visible = new Set(visibleZoomLevels());
     const hint = getZoomLevelHint(lvl, pet);
+    const visibleCount = Math.max(1, visibleZoomLevels().length);
+    const totalCount = Math.max(visibleCount, ZOOM_BAR_STAGES.length);
+    bar.style.setProperty('--zoom-visible-count', visibleCount);
+    bar.style.setProperty('--zoom-total-count', totalCount);
     bar.style.setProperty('--zoom-pos', getZoomBarProgress(visualCameraZoom || cameraZoom).toFixed(4));
     bar.title = hint;
     bar.setAttribute('aria-label', hint);
     bar.dataset.tip = hint;
     bar.querySelectorAll('.mh-zoom-bar-stage').forEach((stageEl, index) => {
-        const stage = ZOOM_BAR_STAGES[index];
+        const stageIndex = Number(stageEl.dataset.zoomIndex ?? index);
+        const stage = ZOOM_BAR_STAGES[stageIndex];
         if (!stage) return;
         const emergency = getZoomStageEmergency(stage.id, pet);
-        stageEl.classList.toggle('active', index === lvl);
-        stageEl.classList.toggle('is-hidden', !visible.has(index));
+        stageEl.classList.toggle('active', stageIndex === lvl);
         stageEl.style.setProperty('--stage-color', stage.color);
         stageEl.title = emergency?.tip || stage.label;
     });
@@ -644,6 +655,8 @@ function getZoomLevelHint(lvl = state.zoomLevel, pet = __lastPet) {
 
 function getZoomBarProgress(zoom = visualCameraZoom) {
     const lvl = clampLvl(state.zoomLevel ?? 0);
+    const visible = visibleZoomLevels();
+    const visibleIndex = Math.max(0, visible.indexOf(lvl));
     const level = LEVELS[lvl] || {};
     const minCamera = level.minCamera ?? 0.5;
     const maxCamera = level.maxCamera ?? 1.5;
@@ -656,7 +669,7 @@ function getZoomBarProgress(zoom = visualCameraZoom) {
         local = 0.5 + 0.5 * ((current - bestCamera) / (maxCamera - bestCamera));
     }
     local = Math.max(0, Math.min(1, local));
-    return (lvl + local) / LEVELS.length;
+    return (visibleIndex + local) / Math.max(1, visible.length);
 }
 
 function updateZoomLevelBarPointer() {
@@ -1157,6 +1170,7 @@ function refreshPetStateUi(pet) {
 function refreshZoomLevelBarEmergency(pet = __lastPet, bar = document.getElementById('mhZoomLevelBar')) {
     if (!bar) return;
     const visible = new Set(visibleZoomLevels());
+    const visibleList = Array.from(visible);
     const hint = getZoomLevelHint(state.zoomLevel, pet);
     bar.title = hint;
     bar.setAttribute('aria-label', hint);
@@ -1173,13 +1187,14 @@ function refreshZoomLevelBarEmergency(pet = __lastPet, bar = document.getElement
             marker = document.createElement('span');
             marker.className = 'mh-zoom-bar-emergency';
             marker.dataset.zoomEmergency = stage.id;
-            marker.style.setProperty('--stage-index', index);
             bar.appendChild(marker);
         }
         if (marker) {
             if (emergency) {
                 marker.innerHTML = emergency.iconHtml;
                 marker.title = emergency.tip;
+                marker.style.setProperty('--stage-index', visibleList.indexOf(index));
+                marker.style.setProperty('--stage-count', visibleList.length);
             }
             else marker.remove();
         }

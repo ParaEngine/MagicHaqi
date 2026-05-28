@@ -476,23 +476,20 @@ function resetLayoutsLoadState() {
 }
 
 export function setActiveLayoutsPlanet(planetId = '') {
-    const current = state.settings?.starSettlement;
     const nextPlanetId = safeLayoutPlanetId(planetId);
     const nextPath = nextPlanetId ? PATHS.planetLayouts(nextPlanetId) : PATHS.layouts;
     if (currentLayoutsPath() === nextPath) return;
     const settings = state.settings || (state.settings = {});
+    // 原地变更 starSettlement 字段，避免替换对象引用——外部调用方可能已经持有旧引用。
+    const settlement = settings.starSettlement && typeof settings.starSettlement === 'object'
+        ? settings.starSettlement
+        : (settings.starSettlement = {});
     if (nextPlanetId) {
-        settings.starSettlement = {
-            ...(settings.starSettlement && typeof settings.starSettlement === 'object' ? settings.starSettlement : {}),
-            source: 'official',
-            planetId: nextPlanetId,
-        };
-    } else if (settings.starSettlement?.source === 'official') {
-        settings.starSettlement = {
-            ...settings.starSettlement,
-            source: 'custom',
-            planetId: '',
-        };
+        settlement.source = 'official';
+        settlement.planetId = nextPlanetId;
+    } else if (settlement.source === 'official') {
+        settlement.source = 'custom';
+        settlement.planetId = '';
     }
     resetLayoutsLoadState();
 }
@@ -943,14 +940,7 @@ export function ensurePetLayouts(_petId) {
     if (_layoutsLoading) return _layoutsLoading;
     _layoutsLoading = (async () => {
         const path = currentLayoutsPath();
-        let data = await readJSON(path, {});
-        if (path !== PATHS.layouts && !hasStoredLayouts(data)) {
-            const legacyData = await readJSON(PATHS.layouts, {});
-            if (hasStoredLayouts(legacyData)) {
-                data = legacyData;
-                saveJSONDebounced(path, normalizeLayoutsData(legacyData));
-            }
-        }
+        const data = await readJSON(path, {});
         state.layouts = normalizeLayoutsData(data);
         if (data && typeof data === 'object' && !Array.isArray(data) && Object.keys(data).some(key => key !== normalizeLayoutRoomKey(key))) {
             saveJSONDebounced(path, state.layouts);

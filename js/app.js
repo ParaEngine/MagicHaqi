@@ -146,6 +146,7 @@ let pendingStoryPath = null;
 let pendingStoryData = null;
 let pendingStoryReturnToMaker = null;
 let pendingStoryReturnToList = false;
+let storyMakerOrigin = null;
 let shopReturnPreserveRoomMode = false;
 let lastRenderedView = null;
 let isBootstrapping = true;
@@ -332,7 +333,11 @@ function renderStoryPlayerRoute() {
 
 function renderStoryMakerRoute() {
     const listOptions = {
-        onBack: () => navigateToView(state.currentPetId ? 'settings' : 'petList'),
+        onBack: () => {
+            const target = storyMakerOrigin || (state.currentPetId ? 'settings' : 'petList');
+            storyMakerOrigin = null;
+            navigateToView(target);
+        },
         onNewStory: () => openStoryMakerEditor(null),
         onEditStory: (story) => openStoryMakerEditor(story),
         onPlayStory: (story) => {
@@ -358,7 +363,11 @@ function renderStoryMakerRoute() {
         .catch((e) => {
             console.error('加载故事列表失败', e);
             showToast('加载故事列表失败：' + (e?.message || e), 'error');
-            if (state.currentView === 'storyMaker') navigateToView(state.currentPetId ? 'settings' : 'petList');
+            if (state.currentView === 'storyMaker') {
+                const target = storyMakerOrigin || (state.currentPetId ? 'settings' : 'petList');
+                storyMakerOrigin = null;
+                navigateToView(target);
+            }
         });
 }
 
@@ -1972,6 +1981,9 @@ async function navigateToView(target, options = {}) {
     if (target === 'home') { setView('home'); return; }
     if (target === 'petList') { setView('petList'); return; }
     if (target !== 'postcard') pendingPostcard = null;
+    if (target === 'storyMaker') {
+        storyMakerOrigin = options.origin || null;
+    }
     if (routes[target]) { setView(target); return; }
     showToast('未知导航：' + target, 'info');
 }

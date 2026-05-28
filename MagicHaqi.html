@@ -1337,7 +1337,8 @@
             left: 50%;
             bottom: 8px;
             z-index: 45;
-            width: min(270px, calc(100% - 48px));
+            /* 总宽按 4 段计算；隐藏部分按比例缩短，避免可见段被拉宽。 */
+            width: calc(min(270px, calc(100% - 48px)) * var(--zoom-visible-count, 4) / var(--zoom-total-count, 4));
             height: 24px;
             opacity: 0;
             transform: translate(-50%, 6px);
@@ -1359,8 +1360,7 @@
             position: absolute;
             left: 0; right: 0; top: 7px;
             height: 12px;
-            display: grid;
-            grid-template-columns: repeat(4, 1fr);
+            display: flex;
             overflow: hidden;
             border: 2px solid rgba(255,255,255,0.96);
             border-radius: 999px;
@@ -1368,11 +1368,12 @@
         }
         .mh-zoom-bar-stage {
             position: relative;
+            flex: 1 1 0;
             min-width: 0;
             background: var(--stage-color);
         }
         .mh-zoom-bar-stage.is-hidden {
-            visibility: hidden;
+            display: none;
             pointer-events: none;
         }
         .mh-zoom-bar-stage + .mh-zoom-bar-stage { border-left: 1px solid rgba(255,255,255,0.7); }
@@ -1394,7 +1395,7 @@
         }
         .mh-zoom-bar-emergency {
             position: absolute;
-            left: calc((var(--stage-index) + 0.5) * 25%);
+            left: calc((var(--stage-index) + 0.5) * 100% / var(--stage-count, 4));
             top: -11px;
             z-index: 8;
             width: 24px;
