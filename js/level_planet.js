@@ -1091,6 +1091,10 @@ function planetActionIconHtml(action) {
     return planetInfrastructureSvg(buildingId, Math.max(1, getActionInfrastructureLevel(action) || 1));
 }
 
+function isReadonlyPlanet() {
+    return state.settings?.starSettlement?.source === 'official' && state.settings.starSettlement.readonlyPlanet !== false;
+}
+
 function planetInfrastructureSvg(id, level) {
     const levelDots = Array.from({ length: level }).map((_, i) => `<circle cx="${16 + i * 8}" cy="54" r="2.2"/>`).join('');
     if (id === 'weatherTower') return `
@@ -1954,6 +1958,7 @@ function runPlanetAction(action, pet, ctx) {
 
 export function showPlanetResearchPanel(pet, ctx) {
     const progress = computePlanetProgress();
+    const readonlyPlanet = isReadonlyPlanet();
     if (isLocked(progress, 3)) {
         showToast(lockedTitle(3), 'info');
         return;
@@ -1961,14 +1966,15 @@ export function showPlanetResearchPanel(pet, ctx) {
     openPlanetModal(`
         <div class="planet-modal-title">🔬 星球研究</div>
         <div class="planet-modal-subtitle">建造、升级或进入设施。</div>
-        <button class="planet-terrain-editor-entry" data-research-terrain="1" type="button">
-            <span class="planet-terrain-editor-icon">🗺️</span>
-            <span class="planet-terrain-editor-body">
-                <b>星球地貌编辑器</b>
-                <i>管理天空、陆地、海洋和元素的比例。</i>
-            </span>
-            <span class="planet-terrain-editor-go">进入</span>
-        </button>
+        ${readonlyPlanet ? '' : `
+            <button class="planet-terrain-editor-entry" data-research-terrain="1" type="button">
+                <span class="planet-terrain-editor-icon">🗺️</span>
+                <span class="planet-terrain-editor-body">
+                    <b>星球地貌编辑器</b>
+                    <i>管理天空、陆地、海洋和元素的比例。</i>
+                </span>
+                <span class="planet-terrain-editor-go">进入</span>
+            </button>`}
         <button class="planet-terrain-editor-entry" data-research-settlements="1" type="button">
             <span class="planet-terrain-editor-icon">🚀</span>
             <span class="planet-terrain-editor-body">

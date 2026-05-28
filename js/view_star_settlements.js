@@ -2,7 +2,7 @@
 import { confirm, escapeHtml, showToast } from './utils.js';
 import { getDefaultZoomLevelIndex, loadPlanetShopItems, normalizePlanetZoomOptions } from './config.js';
 import { notify, state } from './state.js';
-import { saveUserProfileDebounced } from './storage.js';
+import { saveUserProfileDebounced, setActiveLayoutsPlanet } from './storage.js';
 import { getTerrainFieldSlots, getTerrainFieldType, normalizeTerrainFieldSlotId, TERRAIN_FIELD_SLOT_DEFS, terrainFieldIconHtml } from './view_terrain_fields.js';
 
 const PLANET_INDEX_PATH = 'famous-planets/_planet_index.json';
@@ -186,6 +186,7 @@ async function applyOfficialPlanet(planet, { persist = true, sourcePath = '' } =
     applyPlanetFields(planet);
     state.planetName = planet.name || planet.title;
     const settings = settlementSettings();
+    setActiveLayoutsPlanet(planet.id);
     settings.source = 'official';
     settings.planetId = planet.id;
     settings.title = planet.title;
@@ -303,6 +304,7 @@ async function restoreCustomPlanet() {
     if (snapshot?.planetName) state.planetName = snapshot.planetName;
     if (snapshot?.terrainSlots) terrainSettings().slots = clone(snapshot.terrainSlots);
     if (snapshot?.fieldScenes) state.settings.fieldScenes = clone(snapshot.fieldScenes);
+    setActiveLayoutsPlanet('');
     settings.source = 'custom';
     settings.planetId = 'custom';
     settings.title = currentHomeName();

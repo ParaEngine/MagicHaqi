@@ -342,10 +342,11 @@
     const WEBP_DEFAULT_QUALITY = 0.2;
     const WEBP_MAX_BYTES = 100 * 1024;
     const BATCH_PET_MAX_COUNT = 100;
+    const BATCH_PET_LLM_CHUNK_SIZE = 50;
     const WEBP_DEFAULT_BG_OPTIONS = { seedThreshold: 60, growThreshold: 78, haloThreshold: 112, borderRatio: 0.02, gridLineWidth: 6 };
     const INDEX_ENTRY_FIELDS = ['id', 'name', 'dna', 'imageSheetUrl', 'traits', 'rarity'];
     const $ = (id) => document.getElementById(id);
-    const state = { sdk: null, referenceDataUrl: '', workspaceViewer: null, webpExport: null, records: [], selectedRecordPaths: new Set(), completedRecordPaths: new Set(), selectedId: '', selectedPath: '', currentPath: '', currentHistoryUrls: [], imageSizeCache: new Map(), imageSizeRequests: new Map(), imageDimensionCache: new Map(), imageDimensionRequests: new Map(), recordThumbObserver: null, dirty: false, generationPromptsPromise: null, batchCreate: null, batchGenerate: null, batchRepair: null, lastImageModel: '', lastTextModel: '', lastPetBackgroundColor: '#ffffff' };
+    const state = { sdk: null, referenceDataUrl: '', workspaceViewer: null, webpExport: null, records: [], selectedRecordPaths: new Set(), completedRecordPaths: new Set(), selectedId: '', selectedPath: '', currentPath: '', currentHistoryUrls: [], imageSizeCache: new Map(), imageSizeRequests: new Map(), imageDimensionCache: new Map(), imageDimensionRequests: new Map(), recordThumbObserver: null, petSheetWorker: null, petSheetWorkerPending: new Map(), dirty: false, generationPromptsPromise: null, batchCreate: null, batchGenerate: null, batchRepair: null, lastImageModel: '', lastTextModel: '', lastPetBackgroundColor: '#ffffff' };
 
     function loadGenerationPrompts() {
       state.generationPromptsPromise ||= import('../js/generationPrompts.js');
@@ -492,7 +493,7 @@
     }
 
     function matchesRecordProcessFilter(record, filter) {
-      if (filter === 'pending') return isRecordPendingSelection(record) || state.completedRecordPaths.has(record.path);
+      if (filter === 'pending') return isRecordMissingImage(record) || state.selectedRecordPaths.has(record.path) || state.completedRecordPaths.has(record.path);
       if (filter === 'processed') return hasRecordImage(record);
       return true;
     }
@@ -551,7 +552,7 @@
     }
 
     function selectMissingVisibleRecords() {
-      selectMissingPetRecords(getFilteredRecordList());
+      getFilteredRecordList().filter(isRecordMissingImage).forEach(record => state.selectedRecordPaths.add(record.path));
     }
 
     function getRenderedRecordPaths() {
@@ -1453,12 +1454,49 @@
       };
     }
 
+    function getNonEmptyDescriptionLines(description) {
+      return String(description || '').split(/\r?\n/).map(line => line.trim()).filter(Boolean);
+    }
+
+    function shouldUseDescriptionLineCount(description) {
+      return getNonEmptyDescriptionLines(description).length > 1;
+    }
+
     function buildBatchPetPrompt(description, count) {
       const exampleJson = JSON.stringify(buildFormBasedPetExample(), null, 2);
-      return `你是 famous-pets JSON 配置设计助手。根据用户描述生成 ${count} 个稀有宠物配置，只生成 JSON，不要生成图片，不要输出 Markdown。\n\n最重要的是生成 Properties 表单会显示的内容：id、name、rarity、stage、anim、traits.element、traits.elementalAttribute、traits.species、traits.color、traits.eyes、traits.accessory、wishPrompt。DNA 不需要生成，工具会自动计算；如果没有必要，不要在返回 JSON 中包含 dna。\n\n你返回的内容必须是合法 JSON，外层必须包含 pets 数组。pets 数组里的每一个对象就是最终保存到 famous-pets/<id>.json 的文件对象。示例格式如下：\n${exampleJson}\n\nMagicHaqi 支持的固定选项和参考示例：\n${buildSupportedTraitPromptText()}\n\n约束：\n- id 会作为 famous-pets/<id>.json 文件名，只能用英文字母、数字、下划线或连字符，必须唯一。\n- name 必须使用非常可爱的中文名字，要有软萌、好记、像宠物昵称的感觉，例如：布布马古、瓦豆喵星星、糯糯啾啾。\n- rarity 只能是 0 到 100 的数字，数值越大表示越稀有。\n- stage 只能是 baby、teen、adult、elder；默认 adult。\n- anim 只能是 idle、happy、sad、sleep；默认 happy。\n- traits.element 和 traits.elementalAttribute 必须使用上面的固定选项。\n- traits.species、traits.color、traits.eyes、traits.accessory 可以参考上面的例子，也可以根据用户描述自由创作。\n- wishPrompt 必须写出宠物核心外观，明确包含或呼应 traits 中的物种、血统、元素属性、颜色、眼睛和配饰。\n \n用户描述：\n${description || '（等待输入）'}\n\n根据用户描述生成 ${count} 个稀有宠物配置，只生成 JSON`;
+      const lineRule = shouldUseDescriptionLineCount(description) ? '\n- 用户描述包含多行：必须按每一行生成 1 个 pet，并保持顺序；不要合并、跳过或额外扩展行数。' : '';
+      return `你是 famous-pets JSON 配置设计助手。根据用户描述生成 ${count} 个稀有宠物配置，只生成 JSON，不要生成图片，不要输出 Markdown。\n\n最重要的是生成 Properties 表单会显示的内容：id、name、rarity、stage、anim、traits.element、traits.elementalAttribute、traits.species、traits.color、traits.eyes、traits.accessory、wishPrompt。DNA 不需要生成，工具会自动计算；如果没有必要，不要在返回 JSON 中包含 dna。\n\n你返回的内容必须是合法 JSON，外层必须包含 pets 数组。pets 数组里的每一个对象就是最终保存到 famous-pets/<id>.json 的文件对象。示例格式如下：\n${exampleJson}\n\nMagicHaqi 支持的固定选项和参考示例：\n${buildSupportedTraitPromptText()}\n\n约束：\n- id 会作为 famous-pets/<id>.json 文件名，只能用英文字母、数字、下划线或连字符，必须唯一。\n- name 必须使用非常可爱的中文名字，要有软萌、好记、像宠物昵称的感觉，例如：布布马古、瓦豆喵星星、糯糯啾啾。\n- rarity 只能是 0 到 100 的数字，数值越大表示越稀有。\n- stage 只能是 baby、teen、adult、elder；默认 adult。\n- anim 只能是 idle、happy、sad、sleep；默认 happy。\n- traits.element 和 traits.elementalAttribute 必须使用上面的固定选项。\n- traits.species、traits.color、traits.eyes、traits.accessory 可以参考上面的例子，也可以根据用户描述自由创作。\n- wishPrompt 必须写出宠物核心外观，明确包含或呼应 traits 中的物种、血统、元素属性、颜色、眼睛和配饰。${lineRule}\n \n用户描述：\n${description || '（等待输入）'}\n\n根据用户描述生成 ${count} 个稀有宠物配置，只生成 JSON`;
+    }
+
+    function syncBatchPetCountFromDescription({ notify = false } = {}) {
+      const input = $('batchPetCount');
+      const description = $('batchPetDescription')?.value || '';
+      const lineCount = getNonEmptyDescriptionLines(description).length;
+      if (lineCount <= 1) return null;
+      if (input) {
+        input.max = String(Math.max(BATCH_PET_MAX_COUNT, lineCount));
+        input.value = String(lineCount);
+      }
+      return lineCount;
+    }
+
+    function getBatchPetGenerationChunks(description, count) {
+      const lines = getNonEmptyDescriptionLines(description);
+      if (lines.length > 1) {
+        const selectedLines = lines.slice(0, count);
+        const chunks = [];
+        for (let index = 0; index < selectedLines.length; index += BATCH_PET_LLM_CHUNK_SIZE) {
+          const chunkLines = selectedLines.slice(index, index + BATCH_PET_LLM_CHUNK_SIZE);
+          chunks.push({ description: chunkLines.join('\n'), count: chunkLines.length, startLine: index + 1, endLine: index + chunkLines.length });
+        }
+        return chunks;
+      }
+      return [{ description, count, startLine: 1, endLine: count }];
     }
 
     function getBatchPetCount({ notify = false } = {}) {
+      const lineCount = syncBatchPetCountFromDescription({ notify });
+      if (lineCount != null) return lineCount;
       const input = $('batchPetCount');
       const rawCount = Number(input?.value) || 1;
       const count = Math.max(1, Math.min(BATCH_PET_MAX_COUNT, rawCount));
@@ -1474,7 +1512,11 @@
       if (!preview) return;
       const description = $('batchPetDescription')?.value.trim() || '';
       const count = getBatchPetCount({ notify: true });
-      preview.value = buildBatchPetPrompt(description, count);
+      const chunks = getBatchPetGenerationChunks(description, count);
+      const prefix = chunks.length > 1
+        ? `检测到 ${count} 行描述，将分 ${chunks.length} 次调用 LLM，每次最多 ${BATCH_PET_LLM_CHUNK_SIZE} 个。下面预览第 1 段（第 ${chunks[0].startLine}-${chunks[0].endLine} 行）：\n\n`
+        : (shouldUseDescriptionLineCount(description) ? `检测到 ${count} 行描述，将按每行 1 个 pet 生成。\n\n` : '');
+      preview.value = `${prefix}${buildBatchPetPrompt(chunks[0]?.description || description, chunks[0]?.count || count)}`;
     }
 
     async function callPetDescriptionModel(description, count, model, onStreamUpdate) {
@@ -1569,7 +1611,7 @@
           <label>最终提示词（已自动替换用户描述）
             <textarea id="batchPetPromptPreview" class="batch-prompt-preview" rows="12" readonly spellcheck="false"></textarea>
           </label>
-          <div id="batchPetStatus" class="status">输入描述和数量后，将调用文本模型生成 pet JSON，并立即保存到 famous-pets/index.json。不会生成图片。</div>
+          <div id="batchPetStatus" class="status">输入描述和数量后，将调用文本模型生成 pet JSON，并立即保存到 famous-pets/index.json。多行描述会自动按非空行计数，超过 ${BATCH_PET_LLM_CHUNK_SIZE} 行会分批调用。不会生成图片。</div>
           <pre id="batchPetPreview" class="batch-preview hidden"></pre>
           <div class="toolbar justify-end"><button id="btnBlankPetDraft" type="button">空白新建</button><button id="btnCancelBatchPet" type="button">取消</button><button id="btnGeneratePetConfigs" class="primary" type="button">生成并保存</button></div>
         </div>
@@ -1592,24 +1634,35 @@
     async function generatePetConfigsFromDialog() {
       const description = $('batchPetDescription').value.trim();
       const count = getBatchPetCount({ notify: true });
+      const chunks = getBatchPetGenerationChunks(description, count);
       const model = $('batchTextModelSelect').value.trim() || 'keepwork-pro';
       state.lastTextModel = model;
       saveLocalGenerationSettings();
       if (!description) throw new Error('请先输入宠物描述');
       const button = $('btnGeneratePetConfigs');
       button.disabled = true;
-      setStatus($('batchPetStatus'), `正在调用文本模型生成 ${count} 个 pet JSON...`, '');
-      let streamedText = '';
+      setStatus($('batchPetStatus'), chunks.length > 1 ? `检测到 ${count} 行描述，将分 ${chunks.length} 批调用文本模型，每批最多 ${BATCH_PET_LLM_CHUNK_SIZE} 个 pet...` : `正在调用文本模型生成 ${count} 个 pet JSON...`, '');
       let streamedReasoning = '';
+      const chunkPreviews = [];
       setBatchPetStreamPreview('等待模型输出...');
       try {
-        const text = await callPetDescriptionModel(description, count, model, update => {
-          if (update.text) streamedText = update.text;
-          if (update.reasoning) streamedReasoning = update.reasoning;
-          setBatchPetStreamPreview(streamedText, streamedReasoning);
-        }) || streamedText;
-        const payload = extractJsonFromText(text);
-        let pets = normalizeGeneratedPetsPayload(payload, count);
+        const generatedPets = [];
+        for (let index = 0; index < chunks.length; index += 1) {
+          const chunk = chunks[index];
+          let streamedText = '';
+          setStatus($('batchPetStatus'), `正在调用文本模型：第 ${index + 1}/${chunks.length} 批，行 ${chunk.startLine}-${chunk.endLine}，生成 ${chunk.count} 个 pet JSON...`, '');
+          const text = await callPetDescriptionModel(chunk.description, chunk.count, model, update => {
+            if (update.text) streamedText = update.text;
+            if (update.reasoning) streamedReasoning = update.reasoning;
+            setBatchPetStreamPreview([...chunkPreviews, `Chunk ${index + 1}/${chunks.length} (lines ${chunk.startLine}-${chunk.endLine}):\n${streamedText || '等待模型输出...'}`].join('\n\n'), streamedReasoning);
+          }) || streamedText;
+          const payload = extractJsonFromText(text);
+          const chunkPets = normalizeGeneratedPetsPayload(payload, chunk.count);
+          generatedPets.push(...chunkPets);
+          chunkPreviews.push(`Chunk ${index + 1}/${chunks.length} (lines ${chunk.startLine}-${chunk.endLine}):\n${JSON.stringify(chunkPets, null, 2)}`);
+          setBatchPetStreamPreview(chunkPreviews.join('\n\n'), streamedReasoning);
+        }
+        let pets = generatedPets;
         pets = await resolveGeneratedPetIdentityDuplicates(pets, model, message => setStatus($('batchPetStatus'), message, ''));
         setBatchPetStreamPreview(JSON.stringify(pets, null, 2), streamedReasoning);
         setStatus($('batchPetStatus'), `正在保存 ${pets.length} 个 pet JSON，并更新 index...`, '');
@@ -2617,31 +2670,54 @@
       return `${(bytes / 1024 / 1024).toFixed(2)} MB`;
     }
 
+    function resetPetSheetWorker(error) {
+      if (state.petSheetWorker) {
+        try { state.petSheetWorker.terminate(); } catch (_) {}
+      }
+      state.petSheetWorker = null;
+      const pending = state.petSheetWorkerPending || new Map();
+      state.petSheetWorkerPending = new Map();
+      pending.forEach(request => request.reject(error || new Error('petSheetWorker 已重置')));
+    }
+
+    function getPetSheetWorker() {
+      if (state.petSheetWorker) return state.petSheetWorker;
+      state.petSheetWorkerPending ||= new Map();
+      const workerUrl = new URL('../js/petSheetWorker.js', window.location.href);
+      const worker = new Worker(workerUrl, { name: 'MagicHaqiPetSheetWorker' });
+      state.petSheetWorker = worker;
+      worker.onmessage = event => {
+        const result = event.data || {};
+        const request = state.petSheetWorkerPending?.get(result.id);
+        if (!request) return;
+        state.petSheetWorkerPending.delete(result.id);
+        if (!result.ok) {
+          request.reject(new Error(result.error || '去除背景失败'));
+          return;
+        }
+        if (result.direct) {
+          request.resolve(null);
+          return;
+        }
+        if (result.blob instanceof Blob) request.resolve(result.blob);
+        else request.reject(new Error('去除背景没有返回有效图片'));
+      };
+      worker.onerror = event => {
+        resetPetSheetWorker(new Error(event.message || 'petSheetWorker 加载失败'));
+      };
+      return worker;
+    }
+
     function processSheetBackgroundWithWorker(blob, options = {}) {
       return new Promise((resolve, reject) => {
-        const worker = new Worker('../js/petSheetWorker.js');
         const id = `webp_export_${Date.now()}_${Math.random().toString(36).slice(2)}`;
-        const cleanup = () => worker.terminate();
-        worker.onmessage = event => {
-          const result = event.data || {};
-          if (result.id !== id) return;
-          cleanup();
-          if (!result.ok) {
-            reject(new Error(result.error || '去除背景失败'));
-            return;
-          }
-          if (result.direct) {
-            resolve(null);
-            return;
-          }
-          if (result.blob instanceof Blob) resolve(result.blob);
-          else reject(new Error('去除背景没有返回有效图片'));
-        };
-        worker.onerror = event => {
-          cleanup();
-          reject(new Error(event.message || 'petSheetWorker 加载失败'));
-        };
-        worker.postMessage({ id, blob, options });
+        try {
+          const worker = getPetSheetWorker();
+          state.petSheetWorkerPending.set(id, { resolve, reject });
+          worker.postMessage({ id, blob, options });
+        } catch (error) {
+          reject(error);
+        }
       });
     }
 

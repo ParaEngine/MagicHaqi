@@ -17,10 +17,19 @@ const REMOTE_TERRAIN_TYPES = [
 
 const TERRAIN_DELETE_SAFE_DISTANCE = 56;
 const TERRAIN_DRAG_START_DISTANCE = 8;
+const DEFAULT_TERRAIN_RESET_ORDER = ['land', 'water', 'sky', 'fire', 'ice', 'life', 'dark'];
 
 function terrainSettings() {
     const settings = state.settings || (state.settings = {});
     return settings.terrainFields || (settings.terrainFields = {});
+}
+
+function isReadonlyPlanet() {
+    return state.settings?.starSettlement?.source === 'official' && state.settings.starSettlement.readonlyPlanet !== false;
+}
+
+function showReadonlyPlanetToast() {
+    showToast('官方星球的地貌不能修改。', 'info', 1600);
 }
 
 function baseTerrainTypes() {
@@ -151,6 +160,10 @@ function serializeSlots(slots) {
 }
 
 function saveTerrainFieldSlots(slots) {
+    if (isReadonlyPlanet()) {
+        showReadonlyPlanetToast();
+        return;
+    }
     terrainSettings().slots = serializeSlots(slots);
     const active = getTerrainFieldSlot(state.currentField);
     const nextActive = getTerrainFieldSlots()[0];
@@ -159,16 +172,62 @@ function saveTerrainFieldSlots(slots) {
     notify();
 }
 
+function defaultFieldSceneConfig(typeId) {
+    const preset = CONFIG.fieldDefaultScenes?.[typeId];
+    if (!preset) return null;
+    return {
+        background: {
+            type: preset.imageUrl ? 'image' : 'color',
+            color: preset.color || '#bae6fd',
+            imageUrl: preset.imageUrl || '',
+            presetId: preset.id || '',
+            title: preset.title || '',
+        },
+        particles: Array.isArray(preset.particles) ? [...preset.particles] : [],
+        bgMusic: preset.bgMusic || '',
+    };
+}
+
+function resetFieldScenesForSlots(slots) {
+    if (isReadonlyPlanet()) return;
+    const settings = state.settings || (state.settings = {});
+    const scenes = {};
+    slots.forEach((slot, index) => {
+        if (!slot?.typeId) return;
+        const scene = defaultFieldSceneConfig(slot.typeId);
+        if (scene) scenes[slotKey(index)] = scene;
+    });
+    settings.fieldScenes = scenes;
+}
+
+function canAutoResetTerrainType(type) {
+    if (!type) return false;
+    if (!type.discoveryId) return true;
+    return !!(state.remotePlanetDiscoveries || {})[type.discoveryId];
+}
+
 function resetTerrainFieldSlots() {
+    if (isReadonlyPlanet()) {
+        showReadonlyPlanetToast();
+        return;
+    }
     const slots = TERRAIN_FIELD_SLOT_DEFS.map((def, index) => {
-        const typeId = defaultSlotTypeId(index);
+        const orderedTypeId = DEFAULT_TERRAIN_RESET_ORDER[index] || defaultSlotTypeId(index);
+        const orderedType = getTerrainFieldType(orderedTypeId);
+        const baseTypeId = defaultSlotTypeId(index);
+        const typeId = orderedType && canAutoResetTerrainType(orderedType) ? orderedType.id : baseTypeId;
         const type = getTerrainFieldType(typeId);
         return { id: slotKey(index), index: def.index, typeId, name: type?.name || def.label };
     });
+    resetFieldScenesForSlots(slots);
     saveTerrainFieldSlots(slots);
 }
 
 function clearTerrainFieldSlot(slotIndex) {
+    if (isReadonlyPlanet()) {
+        showReadonlyPlanetToast();
+        return;
+    }
     const slots = getTerrainFieldSlots({ includeEmpty: true });
     const def = TERRAIN_FIELD_SLOT_DEFS[slotIndex];
     if (!def) return;
@@ -177,6 +236,10 @@ function clearTerrainFieldSlot(slotIndex) {
 }
 
 function moveTerrainFieldSlot(sourceIndex, targetIndex) {
+    if (isReadonlyPlanet()) {
+        showReadonlyPlanetToast();
+        return false;
+    }
     if (sourceIndex === targetIndex) return false;
     const slots = getTerrainFieldSlots({ includeEmpty: true });
     const source = slots[sourceIndex];
@@ -190,6 +253,10 @@ function moveTerrainFieldSlot(sourceIndex, targetIndex) {
 }
 
 function assignTerrainFieldSlot(slotIndex, typeId, keepName = false) {
+    if (isReadonlyPlanet()) {
+        showReadonlyPlanetToast();
+        return false;
+    }
     const type = getTerrainFieldType(typeId);
     if (!type || !isTerrainFieldTypeCollected(type)) return false;
     const slots = getTerrainFieldSlots({ includeEmpty: true });
@@ -205,6 +272,10 @@ function assignTerrainFieldSlot(slotIndex, typeId, keepName = false) {
 }
 
 function renameTerrainFieldSlot(slotIndex, name) {
+    if (isReadonlyPlanet()) {
+        showReadonlyPlanetToast();
+        return;
+    }
     const slots = getTerrainFieldSlots({ includeEmpty: true });
     const current = slots[slotIndex];
     if (!current) return;
@@ -250,18 +321,20 @@ function terrainViewStyles() {
 
 function renderSlotCard(slot, index) {
     const empty = !slot.typeId;
+    const readonly = isReadonlyPlanet();
     return `
         <div class="terrain-field-slot ${empty ? 'is-empty' : ''}" data-terrain-slot="${index}">
             <div class="terrain-slot-label">${escapeHtml(slot.positionLabel)}</div>
-            <button type="button" class="terrain-slot-drop" data-terrain-drop="${index}" title="拖入地貌类型">
+            <button type="button" class="terrain-slot-drop" data-terrain-drop="${index}" title="${readonly ? '官方星球不可修改地貌' : '拖入地貌类型'}" ${readonly ? 'disabled' : ''}>
                 ${terrainFieldIconHtml(slot.typeId)}
             </button>
         </div>`;
 }
 
 function renderPaletteItem(type) {
+    const readonly = isReadonlyPlanet();
     return `
-        <button type="button" class="terrain-palette-item" draggable="true" data-terrain-type="${escapeHtml(type.id)}" title="拖到上方格子">
+        <button type="button" class="terrain-palette-item" draggable="${readonly ? 'false' : 'true'}" data-terrain-type="${escapeHtml(type.id)}" title="${readonly ? '官方星球不可修改地貌' : '拖到上方格子'}" ${readonly ? 'disabled' : ''}>
             <span class="terrain-palette-icon">${terrainFieldIconHtml(type.id)}</span>
             <span class="terrain-palette-name">${escapeHtml(type.name)}</span>
         </button>`;
@@ -410,6 +483,7 @@ function bindTerrainPointerDrag(panel, _data, onBack) {
 export function renderTerrainFields(panel, _data, { onBack } = {}) {
     const slots = getTerrainFieldSlots({ includeEmpty: true });
     const types = collectedTerrainFieldTypes();
+    const readonly = isReadonlyPlanet();
     panel.innerHTML = `
         ${terrainViewStyles()}
         <div class="topbar">
@@ -419,8 +493,8 @@ export function renderTerrainFields(panel, _data, { onBack } = {}) {
         </div>
         <div class="absolute terrain-fields-view">
             <div class="terrain-fields-actions">
-                <div class="terrain-fields-hint">拖动已收集的地貌到 7 个位置；同一种地貌可以放进多个位置。</div>
-                <button type="button" class="btn-secondary" id="mhTerrainReset">重置</button>
+                <div class="terrain-fields-hint">${readonly ? '官方星球地貌由星球配置决定，不能修改。' : '拖动已收集的地貌到 7 个位置；同一种地貌可以放进多个位置。'}</div>
+                <button type="button" class="btn-secondary" id="mhTerrainReset" ${readonly ? 'disabled' : ''}>重置</button>
             </div>
             <div class="terrain-fields-board">
                 ${slots.map(renderSlotCard).join('')}
@@ -434,6 +508,10 @@ export function renderTerrainFields(panel, _data, { onBack } = {}) {
     if (back) back.onclick = () => onBack?.();
     const reset = panel.querySelector('#mhTerrainReset');
     if (reset) reset.onclick = () => {
+        if (readonly) {
+            showReadonlyPlanetToast();
+            return;
+        }
         resetTerrainFieldSlots();
         showToast('地貌已重置', 'success', 1000);
         renderTerrainFields(panel, _data, { onBack });
@@ -443,6 +521,10 @@ export function renderTerrainFields(panel, _data, { onBack } = {}) {
     let nativeDrag = null;
     panel.querySelectorAll('[data-terrain-type]').forEach(item => {
         item.addEventListener('dragstart', (e) => {
+            if (readonly) {
+                e.preventDefault();
+                return;
+            }
             const typeId = item.dataset.terrainType || '';
             nativeDrag = { typeId, sourceSlotIndex: null, didDrop: false, startX: e.clientX, startY: e.clientY };
             e.dataTransfer?.setData?.('text/plain', typeId);
@@ -452,6 +534,10 @@ export function renderTerrainFields(panel, _data, { onBack } = {}) {
             nativeDrag = null;
         });
         item.onclick = () => {
+            if (readonly) {
+                showReadonlyPlanetToast();
+                return;
+            }
             selectedTypeId = item.dataset.terrainType || '';
             panel.querySelectorAll('[data-terrain-type]').forEach(btn => btn.classList.toggle('is-selected', btn === item));
             showToast('点击上方格子即可放入', 'info', 900);
@@ -460,12 +546,17 @@ export function renderTerrainFields(panel, _data, { onBack } = {}) {
 
     panel.querySelectorAll('[data-terrain-slot]').forEach(slotEl => {
         slotEl.addEventListener('dragover', (e) => {
+            if (readonly) return;
             e.preventDefault();
             slotEl.classList.add('is-drop-target');
         });
         slotEl.addEventListener('dragleave', () => slotEl.classList.remove('is-drop-target'));
         slotEl.addEventListener('drop', (e) => {
             e.preventDefault();
+            if (readonly) {
+                showReadonlyPlanetToast();
+                return;
+            }
             slotEl.classList.remove('is-drop-target');
             const index = Number(slotEl.dataset.terrainSlot);
             const drag = terrainDragPayloadFromEvent(e);
@@ -480,6 +571,10 @@ export function renderTerrainFields(panel, _data, { onBack } = {}) {
         if (slot?.typeId) {
             drop.draggable = true;
             drop.addEventListener('dragstart', (e) => {
+                if (readonly) {
+                    e.preventDefault();
+                    return;
+                }
                 nativeDrag = { typeId: slot.typeId, sourceSlotIndex: index, didDrop: false, startX: e.clientX, startY: e.clientY };
                 e.dataTransfer?.setData?.('text/plain', slot.typeId);
                 e.dataTransfer?.setData?.('application/x-mh-terrain-type', slot.typeId);
@@ -495,6 +590,10 @@ export function renderTerrainFields(panel, _data, { onBack } = {}) {
             });
         }
         drop.onclick = () => {
+            if (readonly) {
+                showReadonlyPlanetToast();
+                return;
+            }
             if (!selectedTypeId) {
                 showToast('先选择或拖动一个地貌类型', 'info', 1000);
                 return;
@@ -502,5 +601,5 @@ export function renderTerrainFields(panel, _data, { onBack } = {}) {
             if (assignTerrainFieldSlot(index, selectedTypeId)) renderTerrainFields(panel, _data, { onBack });
         };
     });
-    bindTerrainPointerDrag(panel, _data, onBack);
+    if (!readonly) bindTerrainPointerDrag(panel, _data, onBack);
 }

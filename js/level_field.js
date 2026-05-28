@@ -260,6 +260,10 @@ function isFieldDecorMode() {
     return state.isDecorMode && state.zoomLevel === 1;
 }
 
+function isReadonlyPlanet() {
+    return state.settings?.starSettlement?.source === 'official' && state.settings.starSettlement.readonlyPlanet !== false;
+}
+
 function clientScaleForElement(el) {
     const rect = el?.getBoundingClientRect?.();
     if (!rect || rect.width <= 0 || rect.height <= 0) return { x: 1, y: 1 };
@@ -1047,10 +1051,30 @@ function fieldSceneSettings() {
 }
 
 function currentFieldSceneConfig(fieldId = state.currentField) {
-    return fieldSceneSettings()[normalizeTerrainFieldSlotId(fieldId)] || {};
+    const saved = fieldSceneSettings()[normalizeTerrainFieldSlotId(fieldId)] || {};
+    if (saved.background?.presetId || saved.background?.imageUrl || saved.background?.color) return saved;
+    const typeId = resolveTerrainFieldTypeId(fieldId);
+    const preset = CONFIG.fieldDefaultScenes?.[typeId];
+    if (!preset) return saved;
+    return {
+        ...saved,
+        background: {
+            type: preset.imageUrl ? 'image' : 'color',
+            color: preset.color || '#bae6fd',
+            imageUrl: preset.imageUrl || '',
+            presetId: preset.id || '',
+            title: preset.title || '',
+        },
+        particles: Array.isArray(saved.particles) ? saved.particles : (Array.isArray(preset.particles) ? [...preset.particles] : []),
+        bgMusic: saved.bgMusic || preset.bgMusic || '',
+    };
 }
 
 function saveCurrentFieldSceneConfig(fieldId, patch) {
+    if (isReadonlyPlanet()) {
+        showToast('官方星球的场景不能修改。', 'info', 1400);
+        return;
+    }
     const scenes = fieldSceneSettings();
     const slotId = normalizeTerrainFieldSlotId(fieldId);
     const next = { ...(scenes[slotId] || {}), ...(patch || {}) };
@@ -1155,6 +1179,7 @@ function fieldMusicToggleHtml(fieldId) {
 }
 
 function renderActiveFieldBuildTray(inv, currentField) {
+    if (isReadonlyPlanet() && ['backgrounds', 'effects', 'music'].includes(activeFieldBuildCategory)) activeFieldBuildCategory = 'houses';
     if (activeFieldBuildCategory === 'backgrounds') return renderFieldBackgroundTray(currentField);
     if (activeFieldBuildCategory === 'effects') return renderFieldEffectsTray(currentField);
     if (activeFieldBuildCategory === 'music') return renderFieldMusicTray(currentField);
@@ -2224,11 +2249,15 @@ export const fieldLevel = {
         const fields = availableFields();
         const currentField = fields.find(f => f.id === state.currentField) || fields[0] || CONFIG.fields[0];
         const inv = state.inventory || {};
+        const categories = isReadonlyPlanet()
+            ? FIELD_BUILD_CATEGORIES.filter(category => !['backgrounds', 'effects', 'music'].includes(category.id))
+            : FIELD_BUILD_CATEGORIES;
         if (!FIELD_BUILD_CATEGORIES.some(category => category.id === activeFieldBuildCategory)) activeFieldBuildCategory = 'houses';
+        if (!categories.some(category => category.id === activeFieldBuildCategory)) activeFieldBuildCategory = 'houses';
 
         return `
             <div class="mh-dock-row mh-scroll-x dock-tab-row ${isFieldDecorMode() ? 'has-decor-done' : ''}" id="mhFieldTabs">
-                ${isFieldDecorMode() ? FIELD_BUILD_CATEGORIES.map(category => `
+                ${isFieldDecorMode() ? categories.map(category => `
                     <button type="button" class="btn-secondary dock-tab ${category.id === activeFieldBuildCategory ? 'active' : ''}" data-field-build-category="${escapeHtml(category.id)}">
                         ${escapeHtml(category.name)}
                     </button>
@@ -2283,6 +2312,10 @@ export const fieldLevel = {
             event?.stopPropagation?.();
             const nextCategory = btn.dataset.fieldBuildCategory || 'houses';
             if (!FIELD_BUILD_CATEGORIES.some(category => category.id === nextCategory)) return false;
+            if (isReadonlyPlanet() && ['backgrounds', 'effects', 'music'].includes(nextCategory)) {
+                showToast('官方星球的场景不能修改。', 'info', 1400);
+                return true;
+            }
             dock.__mhFieldDockTabHandledAt = Date.now();
             activeFieldBuildCategory = nextCategory;
             ctx.selectedTrayItem = null;
@@ -2296,6 +2329,10 @@ export const fieldLevel = {
             if (!btn || !dock.contains(btn)) return false;
             event?.preventDefault?.();
             event?.stopPropagation?.();
+            if (isReadonlyPlanet()) {
+                showToast('官方星球的场景不能修改。', 'info', 1400);
+                return true;
+            }
             const preset = fieldScenePresets.find(scene => scene.id === btn.dataset.fieldBackground);
             if (!preset) return false;
             dock.__mhFieldDockTabHandledAt = Date.now();
@@ -2317,6 +2354,10 @@ export const fieldLevel = {
             if (!btn || !dock.contains(btn)) return false;
             event?.preventDefault?.();
             event?.stopPropagation?.();
+            if (isReadonlyPlanet()) {
+                showToast('官方星球的场景不能修改。', 'info', 1400);
+                return true;
+            }
             const id = btn.dataset.fieldEffect || '';
             dock.__mhFieldDockTabHandledAt = Date.now();
             if (!id) {
@@ -2337,6 +2378,10 @@ export const fieldLevel = {
             if (!btn || !dock.contains(btn)) return false;
             event?.preventDefault?.();
             event?.stopPropagation?.();
+            if (isReadonlyPlanet()) {
+                showToast('官方星球的场景不能修改。', 'info', 1400);
+                return true;
+            }
             const music = btn.dataset.fieldMusic || '';
             dock.__mhFieldDockTabHandledAt = Date.now();
             saveCurrentFieldSceneConfig(currentField.id, { bgMusic: music });

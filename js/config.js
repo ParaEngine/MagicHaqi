@@ -160,6 +160,16 @@ export const CONFIG = {
         { id: 'sky',   name: '天空', emoji: '☁️', iconClass: 'field-tab-icon-sky', bg: 'linear-gradient(180deg,#dbeafe 0%,#93c5fd 55%,#3b82f6 100%)', favoriteTrait: 'birdLike' },
     ],
 
+    fieldDefaultScenes: {
+        land: { id: 'blue_planet_grassland', title: '蓝星云草地', imageUrl: 'https://cdn.keepwork.com/maisi/magichaqi/scenes/blue_planet_grassland-1779950916879.webp', color: '#bae6fd', tags: ['outdoor', 'land', 'sky'], particles: ['sparkle'] },
+        water: { id: 'coral_rock_undersea_garden', title: '珊瑚岩石海底园', imageUrl: 'https://cdn.keepwork.com/maisi/magichaqi/scenes/coral_rock_undersea_garden-1779951499103.webp', color: '#67e8f9', tags: ['ocean', 'underwater'], particles: ['bubbles'] },
+        sky: { id: 'blue_sky_rainbow_planet_clouds', title: '蓝天彩虹云境', imageUrl: 'https://cdn.keepwork.com/maisi/magichaqi/scenes/blue_sky_rainbow_planet_clouds-1779952934020.webp', color: '#bae6fd', tags: ['sky', 'outdoor'], particles: ['sparkle'] },
+        fire: { id: 'blazing_fire_island', title: '烈火岛', imageUrl: 'https://cdn.keepwork.com/maisi/magichaqi/scenes/blazing_fire_island-1779952121124.webp', color: '#fb923c', tags: ['outdoor', 'land', 'ocean', 'mountain'], particles: ['embers'], bgMusic: 'mountain' },
+        ice: { id: 'crystal_ice_island', title: '寒冰岛', imageUrl: 'https://cdn.keepwork.com/maisi/magichaqi/scenes/crystal_ice_island-1779952240591.webp', color: '#bae6fd', tags: ['outdoor', 'land', 'ocean', 'winter'], particles: ['snow'], bgMusic: 'mountain' },
+        life: { id: 'golden_desert_island', title: '沙漠岛', imageUrl: 'https://cdn.keepwork.com/maisi/magichaqi/scenes/golden_desert_island-1779952223136.webp', color: '#fde68a', tags: ['outdoor', 'land', 'ocean', 'sand'], particles: [], bgMusic: 'ship' },
+        dark: { id: 'gentle_shadow_dead_island', title: '死亡岛', imageUrl: 'https://cdn.keepwork.com/maisi/magichaqi/scenes/gentle_shadow_dead_island-1779952262043.webp', color: '#c4b5fd', tags: ['outdoor', 'land', 'ocean', 'night'], particles: ['mist'] },
+    },
+
     // 12 个基础种族（用于 trait→外观 提示）
     traitDefs: [
         { id: 'catLike',    name: '猫科', emoji: '🐱', food: 'food_meat'   },

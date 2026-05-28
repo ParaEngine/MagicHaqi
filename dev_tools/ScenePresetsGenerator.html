@@ -352,8 +352,8 @@
 		const SCENE_CDN_BATCH_TARGET_MIN_KB = 80;
 		const SCENE_CDN_BATCH_TARGET_MAX_KB = 100;
 		const SCENE_REPAIR_MAX_BYTES = 120 * 1024;
-		const SCENE_CDN_BATCH_TARGET_MAX_ATTEMPTS = 5;
-		const SCENE_CDN_BATCH_INITIAL_QUALITY = 0.3;
+		const SCENE_CDN_BATCH_TARGET_MAX_ATTEMPTS = 10;
+		const SCENE_CDN_BATCH_INITIAL_QUALITY = 0.5;
 		const WORKSPACE_FILE_READ_MAX_CHARS = 10 * 1024 * 1024;
 		let DEFAULT_SCENE_TAGS = [];
 		let PARTICLE_EFFECTS = ['sparkle', 'snow', 'rain', 'mist', 'bubbles', 'petals', 'embers'];
@@ -1127,7 +1127,7 @@ ${currentIndent}}`;
 							<input id="sceneCdnTargetMaxKb" type="number" min="10" max="2048" step="1" value="${SCENE_CDN_BATCH_TARGET_MAX_KB}">
 						</label>
 					</div>
-					<div class="hint">默认 WebP，质量 30%，压缩 70%。批量生成会从 30% 质量开始，最多尝试 5 次，让文件接近目标 KB 范围。</div>
+					<div class="hint">默认 WebP，质量 50%，压缩 50%。批量生成会从 50% 质量开始，最多尝试 10 次，让文件接近目标 KB 范围。</div>
 					<div class="toolbar"><button id="btnDialogPickSceneCdnConfig" type="button">选择 qiniu.yaml 文件</button></div>
 					<textarea id="sceneCdnConfigText" class="prompt-box" spellcheck="false" placeholder="accessKey: xxx&#10;secretKey: xxx&#10;bucketName: haqi&#10;publicDomain: https://cdn.keepwork.com&#10;uploadHost: https://up-z2.qiniup.com"></textarea>
 					<div class="toolbar" style="justify-content:flex-end"><button id="btnCancelSceneCdnConfig" type="button">取消</button><button id="btnApplySceneCdnConfig" class="primary" type="button">确认</button></div>
@@ -1238,18 +1238,45 @@ ${currentIndent}}`;
 			const maxAttempts = Math.max(1, Math.round(Number(options.maxAttempts) || SCENE_CDN_BATCH_TARGET_MAX_ATTEMPTS));
 			const initialQuality = Math.max(0.05, Math.min(1, Number(options.initialQuality) || SCENE_CDN_BATCH_INITIAL_QUALITY));
 			let best = null;
-			let lowQuality = 0.05;
+			let lowQuality = 0;
 			let highQuality = 1;
-
-			for (let index = 0; index < maxAttempts; index += 1) {
-				const quality = index === 0 ? initialQuality : (lowQuality + highQuality) / 2;
-				const blob = await canvasToBlob(canvas, formatMeta.mimeType, quality);
-				const distance = blob.size >= targetMinBytes && blob.size <= targetMaxBytes ? 0 : Math.abs(blob.size - targetIdealBytes);
-				const candidate = { blob, quality, distance };
+			let attempts = 0;
+			let matchedTarget = false;
+			const testedQualities = new Set();
+			const scoreCandidate = (blob) => {
+				if (blob.size >= targetMinBytes && blob.size <= targetMaxBytes) return Math.abs(blob.size - targetIdealBytes);
+				return Math.abs(blob.size - targetIdealBytes) + (blob.size < targetMinBytes ? targetMinBytes - blob.size : blob.size - targetMaxBytes);
+			};
+			const testQuality = async (quality) => {
+				const numberQuality = Number(quality);
+				const normalizedQuality = Math.max(0.05, Math.min(1, Number.isFinite(numberQuality) ? numberQuality : initialQuality));
+				const qualityKey = normalizedQuality.toFixed(4);
+				if (testedQualities.has(qualityKey) || attempts >= maxAttempts) return null;
+				testedQualities.add(qualityKey);
+				attempts += 1;
+				const blob = await canvasToBlob(canvas, formatMeta.mimeType, normalizedQuality);
+				const distance = scoreCandidate(blob);
+				const candidate = { blob, quality: normalizedQuality, distance };
 				if (!best || candidate.distance < best.distance || (candidate.distance === best.distance && Math.abs(candidate.blob.size - targetIdealBytes) < Math.abs(best.blob.size - targetIdealBytes))) best = candidate;
-				if (blob.size >= targetMinBytes && blob.size <= targetMaxBytes) break;
-				if (blob.size > targetMaxBytes) highQuality = quality;
-				else lowQuality = quality;
+				if (blob.size >= targetMinBytes && blob.size <= targetMaxBytes) matchedTarget = true;
+				return candidate;
+			};
+
+			let candidate = await testQuality(initialQuality);
+			if (matchedTarget) {
+				// 50% quality already fits the target range.
+			} else if (candidate?.blob.size > targetMaxBytes) {
+				highQuality = candidate.quality;
+			} else if (candidate?.blob.size < targetMinBytes) {
+				lowQuality = candidate.quality;
+			}
+
+			while (!matchedTarget && best && attempts < maxAttempts && highQuality - lowQuality > 0.001) {
+				candidate = await testQuality((lowQuality + highQuality) / 2);
+				if (!candidate) break;
+				if (candidate.blob.size >= targetMinBytes && candidate.blob.size <= targetMaxBytes) break;
+				if (candidate.blob.size > targetMaxBytes) highQuality = candidate.quality;
+				else lowQuality = candidate.quality;
 			}
 
 			return {
@@ -1258,7 +1285,8 @@ ${currentIndent}}`;
 				qualityPercent: Math.max(5, Math.min(100, Math.round(best.quality * 100))),
 				targetMinBytes,
 				targetMaxBytes,
-				attempts: maxAttempts,
+				attempts,
+				targetMatched: best.blob.size >= targetMinBytes && best.blob.size <= targetMaxBytes,
 			};
 		}
 
@@ -1413,6 +1441,14 @@ ${currentIndent}}`;
 			state.imageSizeCache.set(uploaded.url, compressed.blob.size);
 			state.imageDimensionCache.set(uploaded.url, { width: compressed.width, height: compressed.height });
 			return { ...uploaded, ...compressed };
+		}
+		function getGeneratedSceneCdnUploadOptions(overrides = {}) {
+			return {
+				...loadSceneCdnUploadOptions(),
+				format: 'webp',
+				autoTargetSize: true,
+				...overrides,
+			};
 		}
 
 		async function analyzeSceneImageForRepair(scene) {
@@ -2423,43 +2459,57 @@ ${currentIndent}}`;
 			const model = getSelectedImageModel();
 			if (!model) throw new Error('请先在本地 API Key 设置中配置 Image 模型');
 			rememberGenerationSettings();
-			const prompt = $('finalPrompt')?.value?.trim() || await buildSceneImagePrompt();
+			const targetScene = compactScene(buildSceneConfig());
+			const targetId = targetScene.id;
+			const targetIsStillCurrent = () => state.selectedId === targetId && safeId($('sceneId')?.value, '') === targetId;
+			const prompt = $('finalPrompt')?.value?.trim() || await buildSceneImagePrompt(targetScene.prompt, targetScene.tags, getReferenceImages().length, targetScene.title);
 			const references = getReferenceImages();
 			const { width, height } = getImageSize();
 			const opts = buildImageGenerationOptions(model, width, height);
 			opts.uploadResultToKeepwork = true;
 			if (references.length) opts.images = references.map(url => ({ url, role: 'reference' }));
-			const statusText = `正在调用 genImage...\nmodel=${model}，size=${width}x${height}，refs=${references.length}`;
+			const statusText = `正在为 ${targetId} 调用 genImage...\nmodel=${model}，size=${width}x${height}，refs=${references.length}`;
 			enableSceneImageStreaming(opts, statusText);
 			setStatus($('runStatus'), `${statusText}\nstream=true`, '');
 			$('btnGenerate').disabled = true;
 			try {
 				const generatedUrl = await sdk.aiGenerators.genImage(prompt, opts);
 				if (!generatedUrl) throw new Error('genImage 未返回图片 URL');
-				const sceneBeforeGeneration = buildSceneConfig();
 				let finalUrl = generatedUrl;
 				let cdnUploadText = '';
-				state.currentHistoryUrls = buildImageHistoryUrls(generatedUrl, sceneBeforeGeneration);
-				$('imageUrl').value = generatedUrl;
-				updateOutput();
+				let finalScene = compactScene({ ...targetScene, imageUrl: generatedUrl, historyUrls: buildImageHistoryUrls(generatedUrl, targetScene) });
+				if (targetIsStillCurrent()) {
+					state.currentHistoryUrls = normalizeHistoryUrls(finalScene.historyUrls);
+					$('imageUrl').value = generatedUrl;
+					updateOutput();
+				}
 				if ($('uploadCompressedSceneToCdn')?.checked) {
-					await saveIndexJson();
-					setStatus($('runStatus'), `原图已写入 scenes.json，正在压缩并上传到 ${SCENE_CDN_FOLDER}...`, '');
+					upsertSceneInMemory(finalScene, { select: false });
+					await saveScenesToIndex(`原图已写入 ${targetId}，正在压缩并上传到 ${SCENE_CDN_FOLDER}...`);
+					setStatus($('runStatus'), `原图已写入 ${targetId}，正在压缩并上传到 ${SCENE_CDN_FOLDER}...`, '');
 					try {
-						const uploaded = await compressAndUploadGeneratedSceneImage(generatedUrl);
+						const uploaded = await compressAndUploadGeneratedSceneImage(generatedUrl, targetId, getGeneratedSceneCdnUploadOptions());
 						finalUrl = uploaded.url;
-						state.currentHistoryUrls = buildImageHistoryUrls(finalUrl, buildSceneConfig());
+						finalScene = compactScene({ ...finalScene, imageUrl: finalUrl, historyUrls: buildImageHistoryUrls(finalUrl, finalScene) });
 						cdnUploadText = `\n已压缩上传 CDN：${uploaded.remoteKey}\n原图已保留到 historyUrls。\n格式：${uploaded.formatLabel}，压缩比例：${uploaded.compressionRatio}%\n大小：${formatBytes(uploaded.blob.size)}，尺寸：${uploaded.width}x${uploaded.height}`;
 					} catch (uploadError) {
 						cdnUploadText = `\nCDN 压缩上传失败，已保留原图 URL：${uploadError?.message || uploadError}`;
 					}
 				}
-				$('imageUrl').value = finalUrl;
-				updateOutput();
-				await saveIndexJson();
-				setStatus($('runStatus'), String(finalUrl).startsWith('data:') ? `生成完成，返回 data URI (${finalUrl.length} chars)，已自动写入 scenes.json。${cdnUploadText}` : `生成完成，已自动写入 scenes.json。${cdnUploadText}`, cdnUploadText.includes('失败') ? 'error' : 'ok');
+				const savedScene = await ensureSceneImageUrlIsRemote(finalScene, { silent: true });
+				upsertSceneInMemory(savedScene, { select: false });
+				if (targetIsStillCurrent()) {
+					state.currentHistoryUrls = normalizeHistoryUrls(savedScene.historyUrls);
+					$('imageUrl').value = savedScene.imageUrl;
+					updateOutput();
+				} else {
+					renderRecordList();
+				}
+				await saveScenesToIndex();
+				const savedUrl = savedScene.imageUrl || finalUrl;
+				setStatus($('runStatus'), String(savedUrl).startsWith('data:') ? `生成完成：${targetId}，返回 data URI (${savedUrl.length} chars)，已按 ID 写入 scenes.json。${cdnUploadText}` : `生成完成：${targetId}，已按 ID 写入 scenes.json。${cdnUploadText}`, cdnUploadText.includes('失败') ? 'error' : 'ok');
 			} catch (e) {
-				setStatus($('runStatus'), `生成失败：${e?.message || e}`, 'error');
+				setStatus($('runStatus'), `生成失败：${targetId}：${e?.message || e}`, 'error');
 				throw e;
 			} finally {
 				$('btnGenerate').disabled = false;
@@ -2780,7 +2830,7 @@ ${currentIndent}}`;
 			if (statusText) setStatus($('saveStatus'), statusText, 'ok');
 		}
 
-		async function generateImageForSceneConfig(scene, { forceCdnUpload = false, forceCdnFormat = '', autoTargetCdnSize = false, onBeforeGenerate = null } = {}) {
+		async function generateImageForSceneConfig(scene, { forceCdnUpload = false, onBeforeGenerate = null } = {}) {
 			const sdk = state.sdk || window.keepwork;
 			if (!sdk?.aiGenerators?.genImage) throw new Error('sdk.aiGenerators.genImage 不可用');
 			const model = getSelectedImageModel();
@@ -2801,8 +2851,7 @@ ${currentIndent}}`;
 			let finalScene = compactScene({ ...targetScene, imageUrl: generatedUrl, historyUrls: normalizeHistoryUrls(targetScene.historyUrls || []) });
 			const shouldUploadToCdn = forceCdnUpload ? !!getSceneCdnConfig() : !!$('uploadCompressedSceneToCdn')?.checked;
 			if (shouldUploadToCdn) {
-				const uploadOptions = { ...loadSceneCdnUploadOptions(), ...(forceCdnFormat ? { format: forceCdnFormat } : {}), ...(autoTargetCdnSize ? { autoTargetSize: true } : {}) };
-				const uploaded = await compressAndUploadGeneratedSceneImage(generatedUrl, targetId, uploadOptions);
+				const uploaded = await compressAndUploadGeneratedSceneImage(generatedUrl, targetId, getGeneratedSceneCdnUploadOptions());
 				finalScene = compactScene({ ...finalScene, imageUrl: uploaded.url, historyUrls: normalizeHistoryUrls([generatedUrl, ...(finalScene.historyUrls || [])]) });
 			}
 			return finalScene;
@@ -2854,8 +2903,6 @@ ${currentIndent}}`;
 					setStatus($('runStatus'), progressLabel, '');
 					const generatedScene = await generateImageForSceneConfigWithBatchRetry(currentScene, {
 						forceCdnUpload: true,
-						forceCdnFormat: 'webp',
-						autoTargetCdnSize: true,
 						onBeforeGenerate: (id) => setStatus($('runStatus'), `已记录目标 ID：${id}\n正在生成图片 (${state.generateAll.completed + 1}/${state.generateAll.total})...`, ''),
 					}, progressLabel);
 					const savedScene = upsertSceneInMemory(generatedScene, { select: false });
