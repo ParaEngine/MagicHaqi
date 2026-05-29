@@ -523,9 +523,9 @@ UFO 礼物可能包括：红苹果、胡萝卜、小花、蘑菇灯、贝壳。U
 打开“宠物图鉴”后，可以在顶部切换：
 
 - 我的宠物：显示当前账号已经拥有的宠物数量。
-- 稀有宠物：显示 `已拥有 / 总数`，总数来自 `famous-pets/index.json`。
+- 稀有宠物：显示 `已拥有 / 总数`，总数来自 `famous-pets/_pet_index.json`。
 
-稀有宠物列表由 `famous-pets/index.json` 控制。每个条目至少包含：
+稀有宠物列表由 `famous-pets/_pet_index.json` 控制。每个条目至少包含：
 
 ```json
 {
@@ -583,7 +583,7 @@ MagicHaqi.html?postcardFrom=&petId=famous-pets/pink_unicorn_flyer&layout=idle,ha
 
 #### 配置与版权注意
 
-`famous-pets/` 适合放合作方商业宠物、活动宠物或已经取得授权的明星宠物。不要把未授权的受保护角色、商标形象或素材提交到公开仓库。需要公开出现在“稀有宠物”页的宠物，必须同时加入 `famous-pets/index.json`。
+`famous-pets/` 适合放合作方商业宠物、活动宠物或已经取得授权的明星宠物。不要把未授权的受保护角色、商标形象或素材提交到公开仓库。需要公开出现在“稀有宠物”页的宠物，必须同时加入 `famous-pets/_pet_index.json`。
 
 ### 9.6 哈奇岛和成人礼
 

@@ -434,8 +434,18 @@ function applyShopData({ shopItems = baseShopItems, decoVisuals = baseDecoVisual
     SHOP_BY_ID = new Map(SHOP_ITEMS.map(item => [item.id, item]));
 }
 
+// Base URL of the bundled chunk's parent directory (e.g. .../MagicHaqi/ at dev,
+// .../dist/ in the build). Resolved at runtime from a non-static base so Vite
+// does NOT statically analyze `new URL('../<path>', import.meta.url)` and slurp
+// the whole side-by-side tree into assets/ with content hashes. The referenced
+// JSON files are shipped verbatim next to the page, not as hashed assets.
+const moduleParentUrl = new URL('..', import.meta.url + '');
+function resolveSideBySideUrl(relativePath) {
+    return new URL(relativePath, moduleParentUrl).href;
+}
+
 async function fetchShopItemsJson(path, required = false) {
-    const url = path.startsWith('famous-planets/') ? new URL(`../${path}`, import.meta.url).href : path;
+    const url = path.startsWith('famous-planets/') ? resolveSideBySideUrl(path) : path;
     try {
         const res = await fetch(url, { cache: 'no-store' });
         if (!res.ok) throw new Error(`load ${path} failed: ${res.status}`);

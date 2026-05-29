@@ -563,7 +563,7 @@ moon_forest_bridge
 4. 生成 4x4 sprite sheet。
 5. 检查 16 格角色一致、透明背景、动作清楚。
 6. 保存 `famous-pets/<petId>.json`。
-7. 更新 [famous-pets/index.json](../famous-pets/index.json)。
+7. 更新 [famous-pets/_pet_index.json](../famous-pets/_pet_index.json)。
 8. 在故事或活动入口中引用该宠物。
 
 ### 3. 缺少主题星球或独立产品入口

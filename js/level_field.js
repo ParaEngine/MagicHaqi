@@ -3,9 +3,9 @@
 import { $, $$, coinIconSvg, dockDisabledAttrs, escapeHtml, isDockButtonDisabled, renderVisualAsset, setDockButtonDisabled, showDockDisabledToast, showToast } from './utils.js';
 import { canPlaceItemInArea, CONFIG, DECO_VISUALS, findLargestHouseInLayout, getPlacedItemZOrder, getPlanetMiningCoins, getPlanetMiningConfig, getPlanetMiningVisualCoinCount, getShopItemById, isHouseItem, recordPlanetMiningFieldCollected, SHOP_ITEMS } from './config.js';
 import { getActivePlanetWeather, isVisitingMode, notify, state, setCurrentField } from './state.js';
-import { getLayout, loadPets, savePetDebounced, saveUserProfileDebounced } from './storage.js';
+import { getLayout, savePetDebounced, saveUserProfileDebounced } from './storage.js';
 import { displayPetName } from './dna.js';
-import { buildEggSvg, getPetSpriteCell, getPetSleepActionState, isPetInteractionBlocked, petArtHtml, playEggWelcomeOnce, playPetClickFeedback, playPetHappy, randomPetTalk, SHEET_COLS, SHEET_ROWS, sleepingInteractionText } from './pet.js';
+import { buildEggSvg, getPet, getPetSpriteCell, getPetSleepActionState, isPetInteractionBlocked, petArtHtml, playEggWelcomeOnce, playPetClickFeedback, playPetHappy, randomPetTalk, SHEET_COLS, SHEET_ROWS, sleepingInteractionText } from './pet.js';
 import { getPetPoopCount, markPetCared, normalizePetPoops, setPetPoopCount } from './petTick.js';
 import { canPetAppearInField, getGeneratedPetLocation, getNannyCareRemainingMs, getPetLocationType, getReleasedPetHome, hasNannyCare, isNearActiveGeneratedPet } from './petLifecycle.js';
 import SoundManager from './soundManager.js';
@@ -18,7 +18,6 @@ const soundManager = SoundManager.getInstance();
 
 const ITEM_BY_ID = new Proxy({}, { get: (_, id) => getShopItemById(id) });
 const ITEM_Z_INDEX_BASE = 5;
-let fieldPetsLoadedKey = '';
 const DRAG_PLACE_THRESHOLD = 8;
 const FUEL_MACHINE_WORK_DELAY_MS = 3000;
 const FUEL_MACHINE_ANIMATION_MS = 4600;
@@ -1593,12 +1592,13 @@ function fieldPetsHtml(currentPet, fieldId) {
     const visibleIds = state.isDecorMode && currentPet?.id
         ? orderedIds.filter(id => id === currentPet.id)
         : orderedIds;
-    const renderIds = visibleIds.filter(id => state.pets[id]);
+    // 按需获取每只伴随宠物：未加载时 getPet 会在后台读取 pet.json 并在就绪后触发重渲染。
+    const renderIds = visibleIds;
     const activeFieldPosition = currentPet?.id ? petFieldPosition(currentPet, fieldId, 0) : null;
     const entries = renderIds.map((id, index) => ({
         id,
         fieldId,
-        pos: id === currentPet?.id ? activeFieldPosition : petFieldPosition(state.pets[id], fieldId, index, activeFieldPosition),
+        pos: id === currentPet?.id ? activeFieldPosition : petFieldPosition(id, fieldId, index, activeFieldPosition),
     }));
     const isFindingInField = !!currentPet?.id
         && state.activePetFieldPose?.fieldId === fieldId
@@ -1607,7 +1607,8 @@ function fieldPetsHtml(currentPet, fieldId) {
         ? fieldPetsFindRepelledPositions(entries, currentPet.id)
         : fieldPetsRepelledPositions(entries);
     const localHtml = renderIds.map((id, index) => {
-        const p = state.pets[id];
+        // pet.json 是唯一来源：未加载时返回 null，petArtHtml 先渲染蛋占位，加载完成后自动替换。
+        const p = id === currentPet?.id ? currentPet : getPet(id);
         const pos = { ...entries[index].pos, ...repelledPositions[index] };
         const isCurrent = id === currentPet?.id;
         const size = isCurrent ? 96 : 78;
@@ -2306,16 +2307,6 @@ export const fieldLevel = {
     bindStage(pet, ctx) {
         const fields = availableFields();
         const fld = fields.find(f => f.id === state.currentField) || fields[0] || CONFIG.fields[0];
-        const missingPetIds = isVisitingMode() ? [] : getFieldPetIds(pet, fld.id).filter(id => id && id !== pet?.id && !state.pets[id]);
-        const loadKey = missingPetIds.join('|');
-        if (loadKey && loadKey !== fieldPetsLoadedKey) {
-            fieldPetsLoadedKey = loadKey;
-            loadPets(missingPetIds)
-                .then(() => {
-                    if (state.zoomLevel === 1) notify();
-                })
-                .catch(e => console.warn('加载星球表面宠物失败', e));
-        }
         const panKey = currentFieldPanKey();
         const hadRememberedFieldPan = Number.isFinite(fieldPanById[panKey]);
         const switchedField = lastBoundFieldPanKey !== panKey;

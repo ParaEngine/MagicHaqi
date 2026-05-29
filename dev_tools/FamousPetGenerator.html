@@ -327,7 +327,8 @@
 
     const WORKSPACE = 'MagicHaqi';
     const FAMOUS_DIR = 'famous-pets';
-    const INDEX_PATH = `${FAMOUS_DIR}/index.json`;
+    const INDEX_FILE = '_pet_index.json';
+    const INDEX_PATH = `${FAMOUS_DIR}/${INDEX_FILE}`;
     const LOCAL_INDEX_URL = `../${INDEX_PATH}`;
     const PET_CDN_FOLDER = 'maisi/magichaqi/pet';
     const SETTINGS_STORAGE_KEY = 'MagicHaqi.FamousPetGenerator.generationSettings';
@@ -1063,17 +1064,17 @@
     }
 
     async function loadRecords({ selectFirstValid = false } = {}) {
-      setStatus($('runStatus'), '正在读取系统目录和 workspace famous-pets/index.json...', '');
+      setStatus($('runStatus'), `正在读取系统目录和 workspace ${INDEX_PATH}...`, '');
       let systemIndexData = [];
       let workspaceIndexData = [];
       try {
         systemIndexData = await readLocalJson(LOCAL_INDEX_URL, []);
       } catch (e) {
-        setStatus($('runStatus'), `系统目录 index.json 读取失败，继续尝试 workspace：${e?.message || e}`, 'error');
+        setStatus($('runStatus'), `系统目录 ${INDEX_FILE} 读取失败，继续尝试 workspace：${e?.message || e}`, 'error');
       }
       if ((state.sdk || window.keepwork)?.personalPageStore) {
         try { workspaceIndexData = JSON.parse(await readFile(INDEX_PATH) || '[]'); }
-        catch (e) { setStatus($('runStatus'), `workspace index.json 读取失败，仅使用系统目录：${e?.message || e}`, 'error'); }
+        catch (e) { setStatus($('runStatus'), `workspace ${INDEX_FILE} 读取失败，仅使用系统目录：${e?.message || e}`, 'error'); }
       }
       const indexPets = mergePetIndexData(systemIndexData, workspaceIndexData);
       const records = indexPets.map((pet, index) => {
@@ -1611,7 +1612,7 @@
           <label>最终提示词（已自动替换用户描述）
             <textarea id="batchPetPromptPreview" class="batch-prompt-preview" rows="12" readonly spellcheck="false"></textarea>
           </label>
-          <div id="batchPetStatus" class="status">输入描述和数量后，将调用文本模型生成 pet JSON，并立即保存到 famous-pets/index.json。多行描述会自动按非空行计数，超过 ${BATCH_PET_LLM_CHUNK_SIZE} 行会分批调用。不会生成图片。</div>
+          <div id="batchPetStatus" class="status">输入描述和数量后，将调用文本模型生成 pet JSON，并立即保存到 famous-pets/_pet_index.json。多行描述会自动按非空行计数，超过 ${BATCH_PET_LLM_CHUNK_SIZE} 行会分批调用。不会生成图片。</div>
           <pre id="batchPetPreview" class="batch-preview hidden"></pre>
           <div class="toolbar justify-end"><button id="btnBlankPetDraft" type="button">空白新建</button><button id="btnCancelBatchPet" type="button">取消</button><button id="btnGeneratePetConfigs" class="primary" type="button">生成并保存</button></div>
         </div>
@@ -2039,13 +2040,13 @@
     async function copySelectedFamousPetsExport() {
       const indexList = await buildFamousPetsExportIndex();
       await copyText(stringifyJsonWithInlineTraits(indexList));
-      setImportExportStatus(`已复制 ${FAMOUS_DIR}/index.json（${indexList.length} 个 pet）。`, 'ok');
+      setImportExportStatus(`已复制 ${INDEX_PATH}（${indexList.length} 个 pet）。`, 'ok');
     }
 
     async function downloadSelectedFamousPetsExport() {
       const indexList = await buildFamousPetsExportIndex();
-      downloadText('index.json', stringifyJsonWithInlineTraits(indexList));
-      setImportExportStatus(`已下载完整 index.json（${indexList.length} 个 pet）。`, 'ok');
+      downloadText(INDEX_FILE, stringifyJsonWithInlineTraits(indexList));
+      setImportExportStatus(`已下载完整 ${INDEX_FILE}（${indexList.length} 个 pet）。`, 'ok');
     }
 
     function setImportExportStatus(text, kind = '') {
@@ -2058,7 +2059,7 @@
 
     function normalizeImportIndex(data) {
       if (data?.files && typeof data.files === 'object' && !Array.isArray(data.files)) {
-        const bundledIndex = data.files[`${FAMOUS_DIR}/index.json`] || data.files['index.json'];
+        const bundledIndex = data.files[INDEX_PATH] || data.files[INDEX_FILE];
         if (bundledIndex) return normalizeImportIndex(typeof bundledIndex === 'string' ? JSON.parse(bundledIndex) : bundledIndex);
       }
       const list = Array.isArray(data) ? data : (Array.isArray(data?.pets) ? data.pets : Array.isArray(data?.index) ? data.index : []);
@@ -2076,7 +2077,7 @@
         try {
           const data = JSON.parse(await selectedFiles[0].text());
           const indexList = normalizeImportIndex(data);
-          if (!indexList.length) throw new Error('未找到可导入的 famous-pets/index.json 数据');
+          if (!indexList.length) throw new Error('未找到可导入的 famous-pets/_pet_index.json 数据');
           const safePets = [];
           for (const pet of indexList) {
             const safePet = await ensureImageSheetUrlIsRemote(pet, { silent: true });
@@ -2085,7 +2086,7 @@
           }
           await writeFile(INDEX_PATH, JSON.stringify(safePets.map(buildIndexEntry), null, 2));
           await loadRecords();
-          setImportExportStatus(`已导入 index.json（${indexList.length} 个 pet），并写入对应 pet JSON。`, 'ok');
+          setImportExportStatus(`已导入 ${INDEX_FILE}（${indexList.length} 个 pet），并写入对应 pet JSON。`, 'ok');
           setStatus($('saveStatus'), '导入完成。', 'ok');
         } catch (e) {
           setImportExportStatus(`导入失败：${e?.message || e}`, 'error');
@@ -2097,7 +2098,7 @@
     function renderImportExportPetList() {
       const root = $('exportPetList');
       if (!root) return;
-      root.innerHTML = state.records.length ? `<div class="hint">将导入或导出一个完整的 ${FAMOUS_DIR}/index.json，当前包含 ${state.records.length} 个 pet。</div>` : '<div class="hint">暂无 pet 记录。先刷新或保存当前 pet 后再导出。</div>';
+      root.innerHTML = state.records.length ? `<div class="hint">将导入或导出一个完整的 ${INDEX_PATH}，当前包含 ${state.records.length} 个 pet。</div>` : '<div class="hint">暂无 pet 记录。先刷新或保存当前 pet 后再导出。</div>';
     }
 
     function openImportExportDialog() {
@@ -2108,10 +2109,10 @@
       overlay.innerHTML = `<div class="modal-window" role="dialog" aria-modal="true" aria-label="导入导出 famous-pets">
         <div class="modal-titlebar"><strong>导入导出 · ${FAMOUS_DIR}</strong><button type="button" id="closeImportExport">关闭</button></div>
         <div class="modal-body">
-          <div class="hint">导入/导出只处理一个完整的 index.json。index 中每个条目都包含渲染和孵化所需的 pet 信息。</div>
+          <div class="hint">导入/导出只处理一个完整的 _pet_index.json。index 中每个条目都包含渲染和孵化所需的 pet 信息。</div>
           <div id="exportPetList" class="flex min-h-0 flex-1 flex-col gap-1.5 overflow-auto rounded-md border border-slate-300 bg-slate-50 p-2"></div>
           <div id="importExportStatus" class="status">准备导入/导出。</div>
-          <div class="toolbar justify-end"><button id="btnImportFamousPets" type="button">导入 index.json</button><button id="btnCopyFamousPetsExport" type="button">复制 index.json</button><button id="btnDownloadFamousPetsExport" class="primary" type="button">下载 index.json</button></div>
+          <div class="toolbar justify-end"><button id="btnImportFamousPets" type="button">导入 _pet_index.json</button><button id="btnCopyFamousPetsExport" type="button">复制 _pet_index.json</button><button id="btnDownloadFamousPetsExport" class="primary" type="button">下载 _pet_index.json</button></div>
         </div>
       </div>`;
       document.body.appendChild(overlay);

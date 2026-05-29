@@ -43,7 +43,7 @@ MagicHaqi.html?home_planet=haqi
 - 在每个 field 的 `particles` 和 `bgMusic` 中配置对应氛围。
 - 如需独立商品体系，在 `haqi.shopItemUrl` 中填 `famous-planets/haqi_shopitems.json`。
 - 用 `ShopItemGenerator.html` 维护 `haqi_shopitems.json`，添加哈奇专属家具、房屋、食物或活动道具。
-- 如需哈奇专属宠物，用 `FamousPetGenerator.html` 创建宠物，并把宠物加入 `famous-pets/index.json`。
+- 如需哈奇专属宠物，用 `FamousPetGenerator.html` 创建宠物，并把宠物加入 `famous-pets/_pet_index.json`。
 
 这样，同一个 MagicHaqi 引擎可以发布成多个产品入口：
 
@@ -155,7 +155,7 @@ MagicHaqi.html?home_planet=your_own_ip
 | 内容类型 | 主文件/目录 | 说明 |
 | --- | --- | --- |
 | 场景预设 | `pet-story/presets/scenes.json` | 所有可复用场景背景都在一个 scenes 数组里。 |
-| 官方宠物索引 | `famous-pets/index.json` | 游戏列表读取的轻量索引。 |
+| 官方宠物索引 | `famous-pets/_pet_index.json` | 游戏列表读取的轻量索引。 |
 | 官方宠物详情 | `famous-pets/<petId>.json` | 每只宠物一份完整 JSON。 |
 | 官方星球索引 | `famous-planets/_planet_index.json` | 星球全部保存在 planets 数组里，不再单独生成星球 JSON。 |
 | 默认商店物品 | `famous-planets/_default_shopitems.json` | 全局默认商店配置。 |
@@ -424,7 +424,7 @@ famous-pets/<petId>.json
 宠物索引保存到：
 
 ```text
-famous-pets/index.json
+famous-pets/_pet_index.json
 ```
 
 索引只保留轻量字段：
@@ -461,7 +461,7 @@ famous-pets/index.json
 
 中间列表：
 
-- 读取 `famous-pets/index.json` 和宠物文件。
+- 读取 `famous-pets/_pet_index.json` 和宠物文件。
 - 可搜索、选择、批量生成、修复。
 
 右侧编辑器：
@@ -490,7 +490,7 @@ famous-pets/index.json
 15. 点击生成图片，得到 4x4 sprite sheet。
 16. 检查每格是否干净透明、角色一致、动作和阶段可辨认。
 17. 保存宠物 JSON。
-18. 点击“更新 index”，同步 `famous-pets/index.json`。
+18. 点击“更新 index”，同步 `famous-pets/_pet_index.json`。
 
 ### 5. 宠物 sprite sheet 规则
 
@@ -586,7 +586,7 @@ anim col: idle=0, happy=1, sad=2, sleep=3
 
 “保存”通常保存当前宠物完整 JSON 文件。
 
-“更新 index”会把当前宠物的轻量字段写入 `famous-pets/index.json`。
+“更新 index”会把当前宠物的轻量字段写入 `famous-pets/_pet_index.json`。
 
 正式上线前必须两步都做：
 
@@ -1456,7 +1456,7 @@ famous-pets/<petId>.json
 ### 宠物
 
 - 宠物详情文件存在。
-- `famous-pets/index.json` 已更新。
+- `famous-pets/_pet_index.json` 已更新。
 - `imageSheetUrl` 是 CDN URL。
 - 4x4 sprite sheet 角色一致。
 - DNA 与 traits 已自动生成。

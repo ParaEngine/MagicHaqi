@@ -72,14 +72,16 @@ function importRuntimeModule(src) {
 async function ensureKeepworkSDK() {
     if (window.KeepworkSDK) return;
     const host = window.location.hostname;
+    const isLocalHost = host === '127.0.0.1' || host === 'localhost';
+    const useLocalIndex = isLocalHost && !window.location.pathname.includes('/dist/');
     try {
-        if (host === '127.0.0.1' || host === 'localhost') {
+        if (useLocalIndex) {
             await importRuntimeModule('/keepworkSDK/index.js');
         } else {
             await loadScript(sdkCdnUrl);
         }
     } catch (err) {
-        if (host === '127.0.0.1' || host === 'localhost') {
+        if (useLocalIndex) {
             await loadScript(sdkCdnUrl);
             return;
         }
@@ -1005,6 +1007,8 @@ async function selectFirstAvailablePet(preferredId = null) {
 
 async function enforcePlanetPetLimit(preferredKeepId = state.currentPetId) {
     const limit = getPlanetPetLimit();
+    // 总宠物数未超过上限时，星球绝不可能超载——直接跳过，避免为了计数而加载全部 pet.json。
+    if ((state.petOrder?.length || 0) <= limit) return [];
     const orderedPets = await loadOrderedPets();
     const orderIndex = new Map((state.petOrder || []).map((id, index) => [id, index]));
     let localPets = localPlanetPets(orderedPets);

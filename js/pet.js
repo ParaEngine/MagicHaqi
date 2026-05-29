@@ -13,8 +13,8 @@
 // 使用：视图层调用 petArtHtml(pet) 输出占位 HTML；本模块订阅 state，每次 notify
 // 之后扫描并接管渲染。已经处于目标状态的元素不会被重建，避免动画重置。
 
-import { state, subscribe } from './state.js';
-import { savePetDebounced } from './storage.js';
+import { state, subscribe, notify } from './state.js';
+import { loadPet, savePetDebounced } from './storage.js';
 import { biasDnaForFieldId, biasDnaForTrait, decodeDna, dietPreferenceLabel, dnaDietPreference, dnaRarity, dnaToName } from './dna.js';
 import { CONFIG, findLargestHouseAcrossLayouts } from './config.js';
 import { applyStage, defaultTraits, gainTrait, markPetCared } from './petTick.js';
@@ -30,6 +30,96 @@ const STAGE_ROW = { baby: 0, teen: 1, adult: 2, elder: 3 };
 // 列 = 情绪动作（与 api.js 里的 sprite sheet prompt 严格对齐）
 export const ANIM_COL = { idle: 0, happy: 1, sad: 2, sleep: 3 };
 export const DEFAULT_ANIM = 'idle';
+
+// ============================================================================
+// 按需读取宠物详情（pet.json 是宠物所有信息的唯一来源）
+// ----------------------------------------------------------------------------
+// getPet(idOrPet) 是获取任意宠物对象的统一入口：
+//   - 已在内存（state.pets）中 → 同步返回。
+//   - 尚未加载 → 同步返回 null，并在后台按需读取 pet.json，加载完成后触发 notify()，
+//     视图随即重渲染并显示完整信息（精灵图、属性等）。
+// 渲染层（同步构建 HTML）可直接调用 getPet(id)：未加载时 petArtHtml 会先渲染蛋占位，
+// pet.json 到位后自动替换为真正形象——无需占位 DOM、无需 IntersectionObserver。
+//
+// 用法：
+//   const pet = getPet(id);                         // 对象 或 null
+//   const name = getPetInfo(id, 'name', '伙伴');     // 任意字段，未加载时返回 fallback
+//   await getPetAsync(id);                           // 需要"一定拿到数据"时才用 await
+// ============================================================================
+
+const _petLoadInFlight = new Map(); // petId -> Promise
+
+function _petIdOf(idOrPet) {
+    return typeof idOrPet === 'string' ? idOrPet : idOrPet?.id || '';
+}
+
+/**
+ * 后台按需加载 pet.json（去重），加载完成后触发一次重渲染。
+ * @param {string} petId
+ * @returns {Promise<object|null>}
+ */
+export function ensurePetLoaded(petId) {
+    if (!petId) return Promise.resolve(null);
+    if (state.pets[petId]) return Promise.resolve(state.pets[petId]);
+    if (_petLoadInFlight.has(petId)) return _petLoadInFlight.get(petId);
+    const promise = loadPet(petId)
+        .then((pet) => {
+            if (pet) notify();
+            return pet;
+        })
+        .catch((e) => {
+            console.warn('按需加载宠物失败', petId, e);
+            return null;
+        })
+        .finally(() => { _petLoadInFlight.delete(petId); });
+    _petLoadInFlight.set(petId, promise);
+    return promise;
+}
+
+/**
+ * 获取宠物对象（唯一入口）。已加载则同步返回，否则返回 null 并在后台按需加载。
+ * @param {string|object} idOrPet 宠物 id 或宠物对象。
+ * @param {{ load?: boolean }} [opts] load=false 时不触发后台加载（纯查询缓存）。
+ * @returns {object|null}
+ */
+export function getPet(idOrPet, opts = {}) {
+    if (idOrPet && typeof idOrPet === 'object') return idOrPet;
+    const petId = _petIdOf(idOrPet);
+    if (!petId) return null;
+    const cached = state.pets[petId];
+    if (cached) return cached;
+    if (opts.load !== false) ensurePetLoaded(petId);
+    return null;
+}
+
+/**
+ * 异步获取宠物对象（确保拿到 pet.json 后再使用时调用）。
+ * @param {string|object} idOrPet
+ * @returns {Promise<object|null>}
+ */
+export function getPetAsync(idOrPet) {
+    if (idOrPet && typeof idOrPet === 'object') return Promise.resolve(idOrPet);
+    return ensurePetLoaded(_petIdOf(idOrPet));
+}
+
+/**
+ * 读取宠物的单个字段（支持点号路径，如 'stats.bond'）。未加载时返回 fallback 并后台加载。
+ * @param {string|object} idOrPet
+ * @param {string} key 字段名或点号路径。
+ * @param {*} [fallback]
+ * @returns {*}
+ */
+export function getPetInfo(idOrPet, key, fallback = undefined) {
+    const pet = getPet(idOrPet);
+    if (!pet || !key) return fallback;
+    if (key.indexOf('.') === -1) return pet[key] !== undefined ? pet[key] : fallback;
+    let cursor = pet;
+    for (const part of key.split('.')) {
+        if (cursor == null) return fallback;
+        cursor = cursor[part];
+    }
+    return cursor !== undefined ? cursor : fallback;
+}
 
 const NIGHT_SLEEP_START_HOUR = 22;
 const MORNING_WAKE_HOUR = 6;

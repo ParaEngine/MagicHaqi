@@ -78,3 +78,7 @@ MagicHaqi/
 - localStorage 仅缓存 UI 偏好
 
 更多请见 [docs/design.md](docs/design.md) 与 [docs/architecture.md](docs/architecture.md)。
+
+## Common Pitfalls to Avoid
+❌ Don't npm run build, because all games can be run directly in browser without bundling. Vite is only for distribution packaging, not development.
+❌ Don't start a server to test, just live preview in VSCode or open HTML file directly in browser
