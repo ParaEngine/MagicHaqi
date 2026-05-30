@@ -2362,7 +2362,8 @@ export function scanAndMount(root) {
         const id = el.getAttribute('data-mh-pet');
         if (!id) return;
         const visitPet = state.visitingMode?.friendPet;
-        const pet = state.pets[id] || (visitPet?.id === id ? visitPet : null);
+        const visitPlanetPet = (state.visitingMode?.planetPets || []).find(item => item?.id === id);
+        const pet = state.pets[id] || (visitPet?.id === id ? visitPet : null) || visitPlanetPet || null;
         if (pet) mountPetArt(el, pet);
     });
 }

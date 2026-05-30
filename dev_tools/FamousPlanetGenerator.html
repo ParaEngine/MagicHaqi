@@ -172,6 +172,8 @@
               </div>
               <label>APP title <input id="planetAppTitle" maxlength="40" placeholder="留空则显示蛋蛋星球"></label>
               <label>Shop item URL <input id="planetShopItemUrl" maxlength="160" placeholder="留空使用 _default_shopitems.json"></label>
+              <label>Planet pets (famous-pet ids, 最多 10 个) <textarea id="planetPets" rows="2" placeholder="dragon1, zodiac_dragon_bobo"></textarea></label>
+              <div class="hint">写入 planet_pets；留空时游戏会从 famous-pets/_pet_index.json 随机挑 5 个。</div>
               <div class="row">
                 <label>Badge <input id="planetBadge" maxlength="20" value="官方"></label>
                 <label class="toggle-line mt-5"><input id="planetReadonly" type="checkbox" checked>planet 层只读</label>
@@ -584,6 +586,7 @@
         `field.typeId 只能从这些值中选择：${FIELD_TYPES.map(type => `${type.id}=${type.name}`).join('、')}。`,
         `particles 只能从这些值中选择，不能自造：${PARTICLE_EFFECTS.map(effect => effect.id).join(', ') || 'sparkle'}。`,
         `bgMusic 可留空；可选值：${Object.keys(BG_MUSIC_LABELS || {}).join(', ') || 'none'}。`,
+        'planet_pets 是可选数组，最多 10 个，只能填写 famous-pets/_pet_index.json 中的 id；不确定时可留空数组 []。',
         'planet.id 只能使用英文字母、数字、下划线或连字符，必须避免与已有 id 重复。name/title 用简洁可爱的中文名。summary 用一句中文描述星球主题。badge 默认“官方”。',
         'planet.planet 需要包含 readonly:true、hue、bodyBackground、glowColor、accentColor、default_zoom_level。default_zoom_level 只能是 planet/field/pet/cell；可选 hide_planet/hide_cell 为 true 时隐藏对应层。hide_planet=false、hide_cell=false 不要写入 JSON。bodyBackground 用可直接放入 CSS background 的 radial-gradient 组合，颜色要明亮、童话、儿童友好。',
         '每个 field 的 name 要像星球上的地点名，background 至少包含 type、color、title；没有图片时不要填 imageUrl。',
@@ -678,6 +681,7 @@
         name: '新官方星球',
         appTitle: '',
         shopItemUrl: '',
+        planet_pets: [],
         badge: '官方',
         summary: '官方星球简介。planet 层只读，field 内容会随玩家迁移保留。',
         planet: { readonly: true, ...PLANET_PRESETS.maisi },
@@ -693,6 +697,14 @@
     function normalizeParticles(value) {
       const raw = Array.isArray(value) ? value : String(value || '').split(/[，,、\s]+/);
       return [...new Set(raw.map(item => String(item || '').trim()).filter(Boolean))];
+    }
+
+    function normalizePlanetPets(value) {
+      const raw = Array.isArray(value) ? value : String(value || '').split(/[，,、\s]+/);
+      return [...new Set(raw
+        .map(item => String(item || '').trim().replace(/^famous-pets\//, ''))
+        .filter(item => /^[a-zA-Z0-9_-]+(?:\/[a-zA-Z0-9_-]+)*$/.test(item))
+      )].slice(0, 10);
     }
 
     function boolOption(value) {
@@ -751,6 +763,7 @@
         name: String(raw.name || raw.title || id),
         appTitle: String(raw.appTitle || ''),
         shopItemUrl: String(raw.shopItemUrl || raw.shopItemsFile || raw.shopitemsFile || raw.shopFile || raw.shop_items_file || ''),
+        planet_pets: normalizePlanetPets(raw.planet_pets || raw.planetPets || raw.famousPets || raw.famous_pet_ids),
         badge: String(raw.badge || '官方'),
         summary: String(raw.summary || ''),
         planet: normalizePlanetAppearance(planet),
@@ -782,6 +795,7 @@
         title: normalized.title,
         name: normalized.name,
         appTitle: normalized.appTitle,
+        planet_pets: normalizePlanetPets(normalized.planet_pets),
         ...(normalized.shopItemUrl ? { shopItemUrl: normalized.shopItemUrl } : {}),
         badge: normalized.badge,
         summary: normalized.summary,
@@ -867,6 +881,7 @@ ${currentIndent}}`;
         name: $('planetName').value.trim() || $('planetTitle').value.trim() || '新官方星球',
         appTitle: $('planetAppTitle').value.trim(),
         shopItemUrl: $('planetShopItemUrl').value.trim(),
+        planet_pets: normalizePlanetPets($('planetPets').value),
         badge: $('planetBadge').value.trim() || '官方',
         summary: $('planetSummary').value.trim(),
         planet: {
@@ -903,6 +918,7 @@ ${currentIndent}}`;
       $('planetTitle').value = safePlanet.title;
       $('planetAppTitle').value = safePlanet.appTitle;
       $('planetShopItemUrl').value = safePlanet.shopItemUrl;
+      $('planetPets').value = normalizePlanetPets(safePlanet.planet_pets).join(', ');
       $('planetBadge').value = safePlanet.badge;
       $('planetSummary').value = safePlanet.summary;
       $('planetReadonly').checked = safePlanet.planet.readonly !== false;
@@ -1412,7 +1428,7 @@ ${currentIndent}}`;
     }
 
     function bindEvents() {
-      ['planetId', 'planetName', 'planetTitle', 'planetAppTitle', 'planetShopItemUrl', 'planetBadge', 'planetSummary', 'planetReadonly', 'planetHue', 'planetGlowColor', 'planetAccentColor', 'planetBodyBackground', 'planetDefaultZoomLevel', 'planetHidePlanet', 'planetHideCell']
+      ['planetId', 'planetName', 'planetTitle', 'planetAppTitle', 'planetShopItemUrl', 'planetPets', 'planetBadge', 'planetSummary', 'planetReadonly', 'planetHue', 'planetGlowColor', 'planetAccentColor', 'planetBodyBackground', 'planetDefaultZoomLevel', 'planetHidePlanet', 'planetHideCell']
         .forEach(id => $(id).addEventListener('input', updateOutput));
       $('recordSearch').addEventListener('input', renderRecords);
       $('btnReload').onclick = loadRecords;

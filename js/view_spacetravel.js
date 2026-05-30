@@ -5,7 +5,7 @@ import { endVisitingMode, isVisitingMode, notify, startVisitingMode, state } fro
 import { addToInventory, loadRecentFriendPlanets, saveRecentFriendPlanetsDebounced, saveUserProfileDebounced, savePetDebounced } from './storage.js';
 import { defaultStats, clampEnergyToMax } from './petTick.js';
 import { computePlanetProgress } from './planetProgress.js';
-import { displayPetName, randomDna, randomDnaForElementalAttribute } from './dna.js';
+import { decodeDna, displayPetName, dnaRarity, randomDna, randomDnaForElementalAttribute } from './dna.js';
 import { isPetOnCurrentPlanet } from './petLifecycle.js';
 import { scanAndMount } from './pet.js';
 import { friendDropdownLabel, friendId, friendName, friendUsername, loadFriends } from './view_email.js';
@@ -40,6 +40,8 @@ let __friendVisitDestinationsLoading = null;
 let __officialVisitDestinations = [];
 let __officialVisitDestinationsLoaded = false;
 let __officialVisitDestinationsLoading = null;
+let __famousPetsIndex = null;
+let __famousPetsIndexLoading = null;
 let __spaceTravelProvider = () => null;
 let __actionInfrastructureLevelProvider = () => 1;
 let __planetModalOpener = null;
@@ -145,6 +147,12 @@ function safeFriendId(value, fallback = '') {
     return String(value || fallback || 'friend')
         .replace(/[^a-zA-Z0-9_\-\u4e00-\u9fa5]/g, '_')
         .slice(0, 48) || 'friend';
+}
+
+function safeFamousPetLocalId(value) {
+    const text = String(value || '').trim().replace(/^famous-pets\//, '').replace(/\\/g, '/');
+    if (!text || text.includes('..') || text.startsWith('/') || text.endsWith('/')) return '';
+    return /^[a-zA-Z0-9_-]+(?:\/[a-zA-Z0-9_-]+)*$/.test(text) ? text : '';
 }
 
 function stringHash(value) {
@@ -294,6 +302,7 @@ function normalizeOfficialVisitDestination(entry, index) {
         label: title,
         planet,
         fields,
+        planetPets: normalizePlanetPetIds(entry.planet_pets || entry.planetPets || entry.famousPets || entry.famous_pet_ids),
         appTitle: String(entry.appTitle || '').trim(),
         summary: String(entry.summary || '').trim(),
         hue,
@@ -1068,7 +1077,108 @@ function officialVisitProfile(planet) {
     };
 }
 
-function createOfficialHostPet(planet) {
+function resolveFamousPetAssetUrl(value, baseUrl) {
+    const raw = String(value || '').trim();
+    if (!raw || /^(?:https?:|data:|blob:|\/)/i.test(raw)) return raw;
+    try { return new URL(raw, baseUrl).href; }
+    catch (_) { return raw; }
+}
+
+function normalizeFamousPetEntry(entry, baseUrl) {
+    if (!entry || typeof entry !== 'object') return null;
+    const localId = safeFamousPetLocalId(entry.id);
+    if (!localId) return null;
+    const dna = String(entry.dna || '').trim() || randomDna();
+    return {
+        id: `visit_famous_${safeFriendId(localId)}`,
+        famousPetId: localId,
+        source: 'famous-pets',
+        sourcePetId: `famous-pets/${localId}`,
+        name: String(entry.name || localId).trim() || localId,
+        stage: entry.stage === 'adult' || entry.stage === 'elder' || entry.stage === 'teen' ? entry.stage : 'baby',
+        anim: entry.anim === 'sleep' || entry.anim === 'sad' || entry.anim === 'happy' ? entry.anim : 'idle',
+        dna,
+        stats: defaultStats(),
+        traits: entry.traits && typeof entry.traits === 'object' ? { ...entry.traits } : decodeDna(dna),
+        rarity: Number.isFinite(Number(entry.rarity)) ? Number(entry.rarity) : dnaRarity(dna),
+        imageUrl: resolveFamousPetAssetUrl(entry.imageUrl, baseUrl) || null,
+        imageSheetUrl: resolveFamousPetAssetUrl(entry.imageSheetUrl, baseUrl) || null,
+        bornAt: Date.now() - 86400000,
+    };
+}
+
+async function loadFamousPetsForOfficialVisit() {
+    if (Array.isArray(__famousPetsIndex)) return __famousPetsIndex;
+    if (!__famousPetsIndexLoading) {
+        const indexUrl = new URL('../famous-pets/_pet_index.json', import.meta.url + '');
+        __famousPetsIndexLoading = fetch(indexUrl.href, { cache: 'no-cache' })
+            .then(response => response.ok ? response.json() : [])
+            .then(data => {
+                const list = Array.isArray(data) ? data : (Array.isArray(data?.pets) ? data.pets : []);
+                __famousPetsIndex = list.map(item => normalizeFamousPetEntry(item, indexUrl.href)).filter(Boolean);
+                return __famousPetsIndex;
+            })
+            .catch(e => {
+                console.warn('读取明星宠物索引失败', e);
+                __famousPetsIndex = [];
+                return __famousPetsIndex;
+            })
+            .finally(() => { __famousPetsIndexLoading = null; });
+    }
+    return __famousPetsIndexLoading;
+}
+
+function normalizePlanetPetIds(value) {
+    const raw = Array.isArray(value) ? value : String(value || '').split(/[，,、\s]+/);
+    const ids = [];
+    raw.forEach(item => {
+        const id = safeFamousPetLocalId(item);
+        if (id && !ids.includes(id)) ids.push(id);
+    });
+    return ids.slice(0, 10);
+}
+
+function seededShuffle(list, seedText) {
+    const result = [...list];
+    let seed = stringHash(seedText || 'shuffle') || 1;
+    for (let index = result.length - 1; index > 0; index -= 1) {
+        seed = Math.imul(seed ^ 0x9e3779b9, 1664525) + 1013904223;
+        const swapIndex = Math.abs(seed >>> 0) % (index + 1);
+        [result[index], result[swapIndex]] = [result[swapIndex], result[index]];
+    }
+    return result;
+}
+
+function randomVisitPetStage() {
+    const stages = ['baby', 'teen', 'adult', 'elder'];
+    return stages[Math.floor(Math.random() * stages.length)] || 'baby';
+}
+
+function withRandomVisitPetStage(pet) {
+    return pet ? { ...pet, stage: randomVisitPetStage() } : pet;
+}
+
+async function resolveOfficialPlanetPets(planet) {
+    const famousPets = await loadFamousPetsForOfficialVisit();
+    const byId = new Map(famousPets.map(pet => [pet.famousPetId, pet]));
+    let ids = normalizePlanetPetIds(planet?.planetPets || planet?.planet_pets);
+    if (!ids.length) ids = seededShuffle(famousPets.map(pet => pet.famousPetId), `${planet?.officialId || planet?.id || 'official'}:${Date.now()}:${Math.random()}`).slice(0, 5);
+    let selected = ids.map(id => byId.get(id)).filter(Boolean);
+    if (!selected.length && famousPets.length) selected = seededShuffle(famousPets, `${planet?.officialId || planet?.id || 'official'}:fallback:${Date.now()}:${Math.random()}`).slice(0, 5);
+    selected = seededShuffle(selected, `${planet?.officialId || planet?.id || 'official'}:display:${Date.now()}:${Math.random()}`);
+    selected = selected.map(withRandomVisitPetStage);
+    if (planet?.officialId === 'haqi') {
+        const farewellPets = (Array.isArray(state.haqiIslandFarewells) ? state.haqiIslandFarewells : [])
+            .map(id => state.pets?.[id])
+            .filter(Boolean);
+        return [...selected, ...farewellPets].filter((pet, index, list) => pet?.id && list.findIndex(item => item?.id === pet.id) === index).slice(0, 10);
+    }
+    return selected.slice(0, 10);
+}
+
+function createOfficialHostPet(planet, planetPets = []) {
+    const picked = planetPets[Math.floor(Math.random() * planetPets.length)];
+    if (picked) return { ...picked, id: picked.id || `visit_famous_${safeFriendId(picked.famousPetId || picked.name || randId(6))}`, anim: 'happy' };
     return {
         id: `visit_official_${safeFriendId(planet?.officialId || planet?.id || 'planet')}`,
         name: `${planet?.title || planet?.name || '官方星球'}导游`,
@@ -1098,7 +1208,8 @@ async function launchOfficialPlanetVisit(planet, pet, close) {
     close?.();
     __remoteCargoActive = true;
     const crew = getVisitCrewPets(pet);
-    const friendPet = createOfficialHostPet(planet);
+    const planetPets = await resolveOfficialPlanetPets(planet);
+    const friendPet = createOfficialHostPet(planet, planetPets);
     const previousField = state.currentField || 'land';
     try {
         soundManager.playSpacecraftTakeoff();
@@ -1124,6 +1235,7 @@ async function launchOfficialPlanetVisit(planet, pet, close) {
             remoteLayouts: officialVisitLayouts(planet),
             remoteFields: planet.fields || [],
             friendPet,
+            planetPets,
             crewPets: crew,
             crewIds: crew.map(item => item.id),
             previousField,

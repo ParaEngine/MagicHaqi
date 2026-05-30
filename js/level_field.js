@@ -1727,6 +1727,8 @@ function visitingFieldPetsHtml(currentPet, fieldId) {
         .map(id => state.pets?.[id])
         .forEach((pet, index) => addEntry(entries, pet, { current: false, index: index + 4 }));
     addEntry(entries, friendPet, { id: friendPet?.id || 'friend', host: true, current: false, index: 7 });
+    (visit.planetPets || [])
+        .forEach((pet, index) => addEntry(entries, pet, { current: false, index: index + 9, planetGuest: true }));
     const activePose = state.activePetFieldPose?.fieldId === fieldId ? state.activePetFieldPose : null;
     const hostBase = activePose && friendPet
         ? { x: activePose.targetX ?? 0.52, y: activePose.targetY ?? 0.62, delay: -0.4, dur: 10, dx: 8, dy: 4 }
@@ -1760,7 +1762,7 @@ function visitingFieldPetsHtml(currentPet, fieldId) {
         const size = entry.current ? 96 : 82;
         const zIndex = 16 + Math.round(pos.y * 18) + (entry.current ? 5 : 0);
         return `
-            <div class="pet-sprite field-pet ${entry.current ? 'field-pet-current' : `field-pet-friend ${entry.host ? 'field-pet-visit-host' : 'field-pet-visit-crew'}`}" data-field-pet="${escapeHtml(entry.id)}" ${entry.host ? 'data-visit-host-pet="1"' : ''}
+            <div class="pet-sprite field-pet ${entry.current ? 'field-pet-current' : `field-pet-friend ${entry.host ? 'field-pet-visit-host' : entry.planetGuest ? 'field-pet-visit-planet' : 'field-pet-visit-crew'}`}" data-field-pet="${escapeHtml(entry.id)}" ${entry.host ? 'data-visit-host-pet="1"' : ''}
                 style="left:${pct(pos.x)};top:${pct(pos.y)};z-index:${zIndex};--field-wander-delay:${pos.delay}s;--field-wander-dur:${pos.dur}s;--field-wander-x:${pos.dx}px;--field-wander-y:${pos.dy}px">
                 <div class="field-pet-wander" style="width:${size}px;height:${size}px">${petArtHtml(entry.pet, { alt: displayPetName(entry.pet), motion: 'walk' })}</div>
             </div>
