@@ -703,6 +703,12 @@ function cleanupLeavingView(nextView) {
     if (lastRenderedView === nextView) return;
     if (lastRenderedView === 'storyPlayer') storyPlayerViewModule?.disposeStoryPlayer?.();
     if (lastRenderedView === 'storyMaker') storyMakerViewModule?.disposeStoryMaker?.();
+    // Field scene background music only belongs to the home view. When we leave
+    // home for any other view (minigames, chat, shop, hatching, settings, ...),
+    // stop the music so it does not keep playing over a silent screen.
+    if (lastRenderedView === 'home' && nextView !== 'home') {
+        soundManager.stopBgMusic?.({ fadeMs: 360 });
+    }
     lastRenderedView = nextView;
 }
 

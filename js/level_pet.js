@@ -6,11 +6,12 @@ import { canPlaceItemInArea, CONFIG, DECO_VISUALS, getActiveHouseRoomIds, getPla
 import { isVisitingMode, notify, state } from './state.js';
 import { getLayout } from './storage.js';
 import { displayPetName } from './dna.js';
-import { getPet, getPetSleepActionState, isPetInteractionBlocked, petArtHtml, playPetClickFeedback, playPetHappy, say, scanAndMount, sleepingInteractionText } from './pet.js';
+import { getPet, getPetSleepActionState, isPetInteractionBlocked, petArtHtml, playPetClickFeedback, playPetHappy, say, sayOnPet, scanAndMount, sleepingInteractionText } from './pet.js';
 import { getGeneratedPetLocation, hasRenderablePetTexture } from './petLifecycle.js';
 import SoundManager from './soundManager.js';
 import { BATH_COMPLETE_FEEDBACK_MS, BATH_COMPLETE_LINES, BATH_SEQUENCE_MS, createBathSequenceOverlay, isPetVisibleInStage } from './petInteractions.js';
 import { setShopFilter, suppressShopInitialClick } from './view_shop.js';
+import { injectVisitAnimationStyles } from './visit_animations.js';
 
 const ITEM_BY_ID = new Proxy({}, { get: (_, id) => getShopItemById(id) });
 const BASIC_FEED_ID = 'food_basic_feed';
@@ -62,6 +63,8 @@ let roomPetMode = 'follow';
 let decorPetPose = null;
 let bathAnimationRunning = false;
 let selectedRoomItem = null;
+// 拜访好友房间时，我的宠物（访客）被瞬移到的位置。重渲染时用于保持位置。
+let visitGuestPose = null;
 
 function isRoomPlacementMode() {
     return state.isDecorMode || state.isFeedMode;
@@ -537,6 +540,18 @@ function pointOverPet(clientX, clientY) {
     return clientX >= rect.left && clientX <= rect.right && clientY >= rect.top && clientY <= rect.bottom;
 }
 
+// 返回落点下的可喂食宠物元素：#mhPet（当前/房主）或拜访时我的访客宠物。无则返回 null。
+function feedTargetPetElAt(clientX, clientY) {
+    const candidates = [$('mhPet')];
+    if (isVisitingMode()) candidates.push(...$$('.mh-released-room-pet'));
+    for (const el of candidates) {
+        if (!el) continue;
+        const rect = el.getBoundingClientRect();
+        if (clientX >= rect.left && clientX <= rect.right && clientY >= rect.top && clientY <= rect.bottom) return el;
+    }
+    return null;
+}
+
 function getRoomItemImageRect(el) {
     const image = el?.querySelector?.('.mh-furniture-svg');
     const rect = image?.getBoundingClientRect?.();
@@ -790,8 +805,17 @@ function foodEatDurationMs(item) {
     return Math.round(FOOD_EAT_MIN_MS + (FOOD_EAT_MAX_MS - FOOD_EAT_MIN_MS) * ratio);
 }
 
-function getFoodServePose(itemId) {
-    const petPose = getCurrentPetPose();
+// 读取任意宠物元素（#mhPet 或 .mh-released-room-pet）当前的房间坐标。
+function petElementRoomPose(petEl) {
+    if (!petEl) return null;
+    return {
+        x: clampRange(Number(petEl.dataset.xMeters), 0, ROOM_WIDTH_METERS),
+        y: clampRange(Number(petEl.dataset.yMeters), 0, ROOM_HEIGHT_METERS),
+    };
+}
+
+function getFoodServePose(itemId, targetPetEl = null) {
+    const petPose = petElementRoomPose(targetPetEl) || getCurrentPetPose();
     const item = ITEM_BY_ID[itemId];
     const size = getFurnitureMeters(item);
     return {
@@ -802,15 +826,15 @@ function getFoodServePose(itemId) {
     };
 }
 
-function setPetEating(isEating) {
-    const petElement = $('mhPet');
+function setPetEating(isEating, targetPetEl = null) {
+    const petElement = targetPetEl || $('mhPet');
     petElement?.classList.toggle('mh-pet-eating', !!isEating);
 }
 
-function prepareFoodServingElement(itemId, sourceEl = null) {
+function prepareFoodServingElement(itemId, sourceEl = null, targetPetEl = null) {
     const item = ITEM_BY_ID[itemId];
     if (!item) return null;
-    const pose = getFoodServePose(itemId);
+    const pose = getFoodServePose(itemId, targetPetEl);
     const foodLayer = $('mhFoodLayer');
     const el = sourceEl || document.createElement('div');
     if (!sourceEl) {
@@ -952,35 +976,64 @@ function dissolveServedFood(el, item) {
     setTimeout(() => el.remove(), 180);
 }
 
+const VISIT_FEED_LINES = [
+    '好好吃，谢谢你！😋',
+    '哇，是我最爱的味道！',
+    '嗯~ 一起分享真开心 💞',
+    '太美味啦，谢谢小客人！',
+    '吃饱啦，元气满满！✨',
+];
+
 async function runFeedServingSequence(itemId, source, ctx) {
     const item = ITEM_BY_ID[itemId];
     if (!item) return false;
+    const targetPetEl = source.targetPetEl || $('mhPet');
     const eatingMs = foodEatDurationMs(item);
     const sequenceStartedAt = Date.now();
-    const servingEl = prepareFoodServingElement(itemId, source.el);
-    const eaten = await ctx.callbacks.onFeedItem?.(itemId, {
-        ...source,
-        delayEffectsMs: 0,
-        sayDelayMs: eatingMs,
-        skipNotify: true,
-    });
+    const servingEl = prepareFoodServingElement(itemId, source.el, targetPetEl);
+    // 拜访好友房间时只播放可爱的喂食动画，不改动好友/自己的真实数值。
+    const visiting = isVisitingMode();
+    const eaten = visiting
+        ? true
+        : await ctx.callbacks.onFeedItem?.(itemId, {
+            ...source,
+            delayEffectsMs: 0,
+            sayDelayMs: eatingMs,
+            skipNotify: true,
+        });
     if (!eaten) {
         if (source.el) restoreFoodServingElement(servingEl, item);
         else servingEl?.remove();
         return false;
     }
-    setPetEating(true);
+    setPetEating(true, targetPetEl);
     soundManager.playFoodEat();
     const crumbleInterval = startServedFoodCrumble(servingEl, item, eatingMs);
     waitForServedFoodConsumed(servingEl, eatingMs).then(() => {
         if (crumbleInterval) clearInterval(crumbleInterval);
-        setPetEating(false);
+        setPetEating(false, targetPetEl);
         dissolveServedFood(servingEl, item);
+        if (visiting) {
+            const fedPet = roomPetForElement(targetPetEl);
+            try { playPetHappy(targetPetEl, fedPet, { holdAnimMs: 900 }); } catch (_) {}
+            sayOnPet(targetPetEl, VISIT_FEED_LINES[randInt(0, VISIT_FEED_LINES.length - 1)], 2400);
+            return;
+        }
         const sayVisibleAt = sequenceStartedAt + eatingMs;
         const completeDelayMs = Math.max(950, sayVisibleAt + FEED_SAY_MIN_VISIBLE_MS - Date.now());
         setTimeout(() => ctx.callbacks.onFeedComplete?.(), completeDelayMs);
     });
     return true;
+}
+
+// 由宠物元素解析出对应的宠物对象（#mhPet=好友/当前宠物；访客=我的宠物）。
+function roomPetForElement(petEl) {
+    if (!petEl) return null;
+    if (petEl.id === 'mhPet') {
+        return isVisitingMode() ? (state.visitingMode?.friendPet || null) : state.pets[state.currentPetId];
+    }
+    const id = petEl.dataset?.releasedRoomPet;
+    return id ? (state.pets[id] || null) : null;
 }
 
 function isPetVisibleForBath(petEl = $('mhPet')) {
@@ -1021,6 +1074,101 @@ async function runBathSequence(ctx) {
         }
     }, BATH_SEQUENCE_MS);
     return true;
+}
+
+// ── 拜访好友房间：互动（瞬移 + 打招呼）────────────────────────────────────
+const ROOM_GREET_HELLO_LINES = [
+    '你好呀！👋',
+    '嗨~ 很高兴来你的房间做客！',
+    '哇，你的房间真漂亮！',
+    '一起玩吧！',
+    '谢谢你邀请我来串门~',
+    '终于见到你啦！',
+];
+const ROOM_GREET_REPLY_LINES = [
+    '你也好呀！😊',
+    '嗨嗨，欢迎来我家！',
+    '我们做朋友吧！',
+    '好开心见到你！',
+    '抱抱~ 💞',
+    '随便坐随便玩呀！',
+];
+
+function findRoomGuestPetEl() {
+    return $('mhPetRoomScene')?.querySelector?.('.mh-visit-room-guest-pet')
+        || document.querySelector('.mh-visit-room-guest-pet');
+}
+
+function roomDelay(ms) {
+    return new Promise(resolve => setTimeout(resolve, ms));
+}
+
+function bounceRoomPet(petEl, pet) {
+    if (!petEl) return;
+    try { playPetHappy(petEl, pet, { holdAnimMs: 900 }); } catch (_) {}
+}
+
+function spawnRoomHeartsBetween(elA, elB) {
+    const scene = $('mhPetRoomScene');
+    if (!scene || !elA || !elB) return;
+    injectVisitAnimationStyles();
+    const sceneRect = scene.getBoundingClientRect();
+    const a = elA.getBoundingClientRect();
+    const b = elB.getBoundingClientRect();
+    const midX = (a.left + a.width / 2 + b.left + b.width / 2) / 2 - sceneRect.left;
+    const topY = Math.min(a.top, b.top) - sceneRect.top;
+    const spread = Math.max(40, Math.abs((a.left + a.width / 2) - (b.left + b.width / 2)) * 0.6);
+    const emojis = ['💖', '💕', '💗', '❤️', '💞', '✨'];
+    for (let i = 0; i < 9; i++) {
+        const heart = document.createElement('div');
+        heart.className = 'mh-visit-heart';
+        heart.textContent = emojis[i % emojis.length];
+        const offset = (Math.random() - 0.5) * spread;
+        heart.style.left = `${midX + offset}px`;
+        heart.style.top = `${topY + (Math.random() * 30)}px`;
+        heart.style.fontSize = `${16 + Math.random() * 14}px`;
+        heart.style.setProperty('--mh-heart-dx', `${(Math.random() - 0.5) * 60}px`);
+        heart.style.setProperty('--mh-heart-rot', `${(Math.random() - 0.5) * 40}deg`);
+        heart.style.setProperty('--mh-heart-delay', `${(i * 0.08).toFixed(2)}s`);
+        heart.style.setProperty('--mh-heart-dur', `${(1.3 + Math.random() * 0.6).toFixed(2)}s`);
+        scene.appendChild(heart);
+        heart.addEventListener('animationend', () => heart.remove(), { once: true });
+    }
+}
+
+// 把我的访客宠物瞬移到好友（房主）宠物身边，并重渲染场景。返回是否成功。
+function teleportGuestPetNextToHost() {
+    if (!isVisitingMode()) return false;
+    const hostEl = $('mhPet');
+    const hostPose = petElementRoomPose(hostEl) || getCurrentPetPose();
+    const side = hostPose.x > ROOM_WIDTH_METERS / 2 ? -1 : 1;
+    visitGuestPose = {
+        x: clampRange(hostPose.x + side * (PET_WIDTH_METERS * 1.05), 0, ROOM_WIDTH_METERS - PET_WIDTH_METERS),
+        y: clampRange(hostPose.y, 1.08, ROOM_HEIGHT_METERS - PET_HEIGHT_METERS),
+        face: side < 0 ? 'left' : 'right',
+    };
+    notify();
+    return true;
+}
+
+async function runRoomVisitGreeting(ctx) {
+    const friendPet = state.visitingMode?.friendPet || null;
+    const myPet = state.pets[state.currentPetId] || ctx?.pet || null;
+    teleportGuestPetNextToHost();
+    // 等待重渲染后再播放动画。
+    await roomDelay(60);
+    requestAnimationFrame(async () => {
+        const guestEl = findRoomGuestPetEl();
+        const hostEl = $('mhPet');
+        await roomDelay(160);
+        bounceRoomPet(guestEl, myPet);
+        sayOnPet(guestEl, ROOM_GREET_HELLO_LINES[randInt(0, ROOM_GREET_HELLO_LINES.length - 1)], 2400);
+        await roomDelay(820);
+        bounceRoomPet(hostEl, friendPet);
+        sayOnPet(hostEl, ROOM_GREET_REPLY_LINES[randInt(0, ROOM_GREET_REPLY_LINES.length - 1)], 2400);
+        await roomDelay(540);
+        spawnRoomHeartsBetween(guestEl, hostEl);
+    });
 }
 
 function moveDragGhost(ghost, clientX, clientY) {
@@ -1217,8 +1365,17 @@ function visitingRoomCompanionPetsHtml(currentPet, roomId, currentPose = null) {
     const hostPet = visitingRoomOwnerPet(currentPet);
     if (!currentPet || currentPet.id === hostPet?.id) return '';
     const occupied = currentPose ? [{ x: currentPose.x, y: currentPose.y }] : [];
-    const pose = repelRoomPetPose({ x: 1.15, y: PET_START_Y_METERS }, occupied, `${roomId}::visit-player-pet::${currentPet.id || 'current'}`);
-    const face = 'scaleX(1)';
+    // 若已通过"互动"瞬移过去，则使用记忆的位置，否则用默认入场位。
+    const basePose = visitGuestPose
+        ? { x: visitGuestPose.x, y: visitGuestPose.y }
+        : { x: 1.15, y: PET_START_Y_METERS };
+    const pose = visitGuestPose
+        ? {
+            x: clampRange(basePose.x, 0, ROOM_WIDTH_METERS - PET_WIDTH_METERS),
+            y: clampRange(basePose.y, 0, ROOM_HEIGHT_METERS - PET_HEIGHT_METERS),
+        }
+        : repelRoomPetPose(basePose, occupied, `${roomId}::visit-player-pet::${currentPet.id || 'current'}`);
+    const face = visitGuestPose?.face === 'left' ? 'scaleX(-1)' : 'scaleX(1)';
     const zIndex = getRoomItemZIndex({ x: pose.x, y: pose.y, w: PET_WIDTH_METERS, h: PET_HEIGHT_METERS }, 3, 'pet');
     return `
         <div class="pet-sprite mh-released-room-pet mh-visit-room-guest-pet" data-released-room-pet="${escapeHtml(currentPet.id || 'current')}" data-x-meters="${pose.x}" data-y-meters="${pose.y}" data-w-meters="${PET_WIDTH_METERS}" data-h-meters="${PET_HEIGHT_METERS}" style="${meterStyle({ x: pose.x, y: pose.y, w: PET_WIDTH_METERS, h: PET_HEIGHT_METERS })};z-index:${zIndex};transform:${face}">
@@ -1546,8 +1703,8 @@ export const petLevel = {
                 if (isDockButtonDisabled(el)) { showDockDisabledToast(el); return; }
                 const k = el.dataset.action;
                 if (isVisitingMode()) {
-                    if (k === 'visit-pet-wave') showToast('宠物和好友伙伴开心互动了一会儿。', 'success', 1600);
-                    else if (k === 'visit-pet-snack') showToast('大家分享了星球点心。', 'success', 1600);
+                    if (k === 'visit-pet-wave') runRoomVisitGreeting(ctx);
+                    else if (k === 'visit-pet-snack') ctx.callbacks.onToggleFeed?.(true);
                     else if (k === 'visit-pet-field') ctx.zoomOut?.();
                     return;
                 }
@@ -1590,6 +1747,7 @@ export const petLevel = {
     onLeave() {
         getCurrentPetPose();
         stopPetWalk();
+        visitGuestPose = null;
         window.removeEventListener('resize', applyRoomPan);
     },
 };
@@ -1723,8 +1881,9 @@ function bindFurnitureDrag(el, ctx) {
             };
             const layout = getLayout(ctx.pet.id, state.currentRoom || ctx.pet.activeRoom || 'living') || [];
             const itemId = layout[drag.idx]?.itemId || targetEl.dataset.itemId;
-            if (targetEl.dataset.itemType === 'food' && pointOverPet(e.clientX, e.clientY)) {
-                const eaten = await runFeedServingSequence(itemId, { source: 'layout', index: drag.idx, el: targetEl }, ctx);
+            const feedTargetEl = targetEl.dataset.itemType === 'food' ? feedTargetPetElAt(e.clientX, e.clientY) : null;
+            if (feedTargetEl) {
+                const eaten = await runFeedServingSequence(itemId, { source: 'layout', index: drag.idx, el: targetEl, targetPetEl: feedTargetEl }, ctx);
                 if (!eaten) {
                     targetEl.dataset.xMeters = String(drag.startXMeters);
                     targetEl.dataset.yMeters = String(drag.startYMeters);
@@ -1764,6 +1923,8 @@ function bindPetDrag(el) {
     let drag = null;
     el.addEventListener('pointerdown', (e) => {
         if (!isRoomPlacementMode()) return;
+        // 拜访好友房间时，#mhPet 是好友的宠物，不允许访客拖动它。
+        if (isVisitingMode()) return;
         if (e.button != null && e.button !== 0) return;
         e.preventDefault();
         e.stopPropagation();
@@ -1891,9 +2052,12 @@ function bindTrayDrag(el, ctx) {
         const rect = stage?.getBoundingClientRect();
         const inside = rect && e.clientX >= rect.left && e.clientX <= rect.right && e.clientY >= rect.top && e.clientY <= rect.bottom;
         if (!inside) return;
-        if (ITEM_BY_ID[current.itemId]?.type === 'food' && pointOverPet(e.clientX, e.clientY)) {
-            runFeedServingSequence(current.itemId, { source: 'dock' }, ctx);
-            return;
+        if (ITEM_BY_ID[current.itemId]?.type === 'food') {
+            const targetPetEl = feedTargetPetElAt(e.clientX, e.clientY);
+            if (targetPetEl) {
+                runFeedServingSequence(current.itemId, { source: 'dock', targetPetEl }, ctx);
+                return;
+            }
         }
         const pos = pointToRoomCoords(e.clientX, e.clientY);
         if (!pos) return;

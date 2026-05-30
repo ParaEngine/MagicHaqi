@@ -13,6 +13,8 @@ import ParticleEffects, { renderParticleCanvasHtml } from './particleEffects.js'
 import { PARTICLE_EFFECTS, bgMusicLabel, bgMusicOptions, lazySceneBackgroundAttrs, loadScenePresets, rankScenePresets, renderSceneParticles, sceneBackgroundStyle, setupLazySceneBackgrounds } from './view_story_scene_maker.js';
 import { setShopFilter, suppressShopInitialClick } from './view_shop.js';
 import { getTerrainFieldSlots, normalizeTerrainFieldSlotId, resolveTerrainFieldTypeId, terrainFieldTabIconHtml } from './view_terrain_fields.js';
+import { playFieldGreeting, playPhotoShutter } from './visit_animations.js';
+import { showTakePhotoWindow } from './view_takephoto.js';
 
 const soundManager = SoundManager.getInstance();
 
@@ -779,6 +781,27 @@ function centerFieldPet(pet, { animate = false, duration = 520, onComplete = nul
     return true;
 }
 
+// Center the camera on the pet and resolve once the pan animation has settled.
+// Used by the visit "合影" flow so the photo is only taken after the viewport
+// has finished centering (otherwise the shutter/preview is framed mid-pan).
+function centerFieldPetAndWait(pet, { duration = 420, maxWait = 900 } = {}) {
+    return new Promise(resolve => {
+        let done = false;
+        const finish = () => { if (done) return; done = true; resolve(); };
+        // Safety timeout in case centering is skipped (e.g. element not yet mounted).
+        const timer = setTimeout(finish, maxWait);
+        // Wait a frame so the re-rendered pet element is in the DOM at its new spot.
+        requestAnimationFrame(() => {
+            const centered = centerFieldPet(pet, {
+                animate: true,
+                duration,
+                onComplete: () => { clearTimeout(timer); finish(); },
+            });
+            if (!centered) { clearTimeout(timer); finish(); }
+        });
+    });
+}
+
 function scheduleCenterFieldPet(pet, options = {}) {
     const panKey = currentFieldPanKey();
     const petId = pet?.id;
@@ -1023,6 +1046,33 @@ function updateCoinsHud() {
     if (coinsValue) coinsValue.textContent = String(state.coins | 0);
 }
 
+// 把当前宠物瞬移到对方（好友）宠物身边，并重渲染场景。返回是否成功。
+function teleportCurrentPetNextToHost() {
+    const visit = state.visitingMode;
+    if (!visit?.active) return false;
+    const friendPet = visit.friendPet;
+    if (!friendPet) return false;
+    const fieldId = state.currentField;
+    const existing = state.activePetFieldPose?.fieldId === fieldId ? state.activePetFieldPose : null;
+    const targetX = clamp01(existing?.targetX ?? 0.52);
+    const targetY = clamp01(existing?.targetY ?? 0.62);
+    const side = (existing?.x ?? targetX) <= targetX ? -1 : 1;
+    state.activePetFieldPose = {
+        fieldId,
+        targetPetId: friendPet.id || 'friend',
+        targetX,
+        targetY,
+        x: clamp01(targetX + side * 0.11),
+        y: clamp01(targetY + 0.035),
+        delay: 0,
+        dur: 9,
+        dx: 0,
+        dy: 0,
+    };
+    notify();
+    return true;
+}
+
 function renderFieldActionTray(pet) {
     if (isVisitingMode()) {
         return `
@@ -1154,8 +1204,7 @@ function fieldSceneSettings() {
     return settings.fieldScenes;
 }
 
-function currentFieldSceneConfig(fieldId = state.currentField) {
-    const saved = fieldSceneSettings()[normalizeTerrainFieldSlotId(fieldId)] || {};
+function resolveFieldSceneConfigFromSaved(fieldId, saved = {}) {
     if (saved.background?.presetId || saved.background?.imageUrl || saved.background?.color) return saved;
     const typeId = resolveTerrainFieldTypeId(fieldId);
     const preset = CONFIG.fieldDefaultScenes?.[typeId];
@@ -1172,6 +1221,21 @@ function currentFieldSceneConfig(fieldId = state.currentField) {
         particles: Array.isArray(saved.particles) ? saved.particles : (Array.isArray(preset.particles) ? [...preset.particles] : []),
         bgMusic: saved.bgMusic || preset.bgMusic || '',
     };
+}
+
+function currentFieldSceneConfig(fieldId = state.currentField) {
+    const saved = fieldSceneSettings()[normalizeTerrainFieldSlotId(fieldId)] || {};
+    return resolveFieldSceneConfigFromSaved(fieldId, saved);
+}
+
+// 拜访好友星球时，优先使用对方保存的场景背景；若对方未自定义，则回退到默认的现代场景预设
+// （而不是旧的 SVG 程序化地图）。
+function visitingFieldSceneConfig(fieldId = state.currentField) {
+    const remoteScenes = state.visitingMode?.remoteProfile?.settings?.fieldScenes;
+    const saved = (remoteScenes && typeof remoteScenes === 'object' && !Array.isArray(remoteScenes))
+        ? (remoteScenes[normalizeTerrainFieldSlotId(fieldId)] || {})
+        : {};
+    return resolveFieldSceneConfigFromSaved(fieldId, saved);
 }
 
 function saveCurrentFieldSceneConfig(fieldId, patch) {
@@ -1374,9 +1438,20 @@ function generateFieldMap(fieldId) {
     return { theme, islands, props, floaters, landmarks };
 }
 
+// 返回当前 field 真实使用的背景，用于合影拍照时还原真实场景。
+// { imageUrl, gradient } —— imageUrl 优先；否则使用 gradient（CSS 渐变或纯色字符串）。
+function getCurrentFieldBackground(fieldId = state.currentField) {
+    const custom = isVisitingMode() ? visitingFieldSceneConfig(fieldId) : currentFieldSceneConfig(fieldId);
+    const customBg = custom.background;
+    if (customBg?.imageUrl) return { imageUrl: customBg.imageUrl, gradient: '' };
+    const typeId = resolveTerrainFieldTypeId(fieldId);
+    const theme = FIELD_THEMES[typeId] || FIELD_THEMES.land;
+    return { imageUrl: '', gradient: customBg?.color || theme.sky };
+}
+
 function fieldMapHtml(fieldId) {
     const typeId = resolveTerrainFieldTypeId(fieldId);
-    const custom = isVisitingMode() ? {} : currentFieldSceneConfig(fieldId);
+    const custom = isVisitingMode() ? visitingFieldSceneConfig(fieldId) : currentFieldSceneConfig(fieldId);
     const customBg = custom.background;
     const map = generateFieldMap(fieldId);
     const weather = getActivePlanetWeather();
@@ -2249,7 +2324,6 @@ export const fieldLevel = {
         const fields = availableFields();
         const fld = fields.find(f => f.id === state.currentField) || fields[0] || CONFIG.fields[0];
         const visiting = isVisitingMode();
-        const visit = state.visitingMode || {};
         const layout = visiting ? activeFieldLayout(fld.id) : (getLayout(pet.id, 'field_' + fld.id) || []);
         const removedPoops = visiting ? 0 : normalizePetPoops(pet);
         if (removedPoops > 0) savePetDebounced(pet);
@@ -2259,7 +2333,6 @@ export const fieldLevel = {
         return `
             <div id="mhFieldScene" class="mh-field-scene" style="width:${metersToFieldPx(FIELD_WIDTH_METERS)}px" data-field-width-meters="${FIELD_WIDTH_METERS}" data-field-height-meters="${FIELD_HEIGHT_METERS}">
             ${fieldMapHtml(fld.id)}
-            ${visiting ? `<div class="visit-field-banner">拜访中 · ${escapeHtml(visit.planetName || '好友星球')}</div>` : ''}
 
             <div class="field-build-overlay" aria-hidden="true"></div>
 
@@ -2315,7 +2388,13 @@ export const fieldLevel = {
         applyFieldPan();
         ParticleEffects.getInstance().mountAll($('mhFieldScene'));
         const fieldMusic = selectedFieldMusic(fld.id);
-        if (!isVisitingMode() && fieldMusic) soundManager.playBgMusic(fieldMusic, { fadeMs: 420, volume: 0.3 });
+        if (isVisitingMode() || !fieldMusic) {
+            // Scene has no background music (or we're visiting): stop any music
+            // carried over from the previous scene so we don't play silence's leftover.
+            soundManager.stopBgMusic?.({ fadeMs: 420 });
+        } else {
+            soundManager.playBgMusic(fieldMusic, { fadeMs: 420, volume: 0.3 });
+        }
         const musicToggle = document.querySelector('[data-field-music-toggle]');
         if (musicToggle) {
             musicToggle.onclick = (e) => {
@@ -2615,9 +2694,27 @@ export const fieldLevel = {
                 return true;
             }
             if (isVisitingMode()) {
-                if (btn.dataset.fieldAction === 'visit-wave') showToast('你和好友宠物打了个招呼。', 'success', 1500);
-                else if (btn.dataset.fieldAction === 'visit-photo') showToast('好友星球合影已记录在这次旅程里。', 'success', 1800);
-                else if (btn.dataset.fieldAction === 'visit-return') ctx.zoomOut?.();
+                const friendPet = state.visitingMode?.friendPet || null;
+                if (btn.dataset.fieldAction === 'visit-wave') {
+                    teleportCurrentPetNextToHost();
+                    requestAnimationFrame(() => {
+                        playFieldGreeting({ currentPet: pet, friendPet }).catch(() => {});
+                    });
+                } else if (btn.dataset.fieldAction === 'visit-photo') {
+                    teleportCurrentPetNextToHost();
+                    (async () => {
+                        // Wait until the camera/viewport has finished centering on the
+                        // pets before framing and taking the photo.
+                        await centerFieldPetAndWait(pet);
+                        await playPhotoShutter();
+                        showTakePhotoWindow({
+                            currentPet: pet,
+                            friendPet,
+                            planetName: state.visitingMode?.planetName || '',
+                            background: getCurrentFieldBackground(),
+                        });
+                    })().catch(() => {});
+                } else if (btn.dataset.fieldAction === 'visit-return') ctx.zoomOut?.();
                 return true;
             }
             ctx.callbacks.onAction?.(btn.dataset.fieldAction);

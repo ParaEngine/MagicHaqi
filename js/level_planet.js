@@ -2319,7 +2319,7 @@ async function launchFriendPlanetVisit(friend, pet, close) {
         soundManager.playSpacecraftTakeoff();
         await playVisitDeparture({ crew, destinationName: remotePlanet.planetName });
         soundManager.playSpacecraftArrive();
-        await playVisitArrival({ crew: [...crew, friendPet].filter(Boolean), destinationName: remotePlanet.planetName });
+        await playVisitArrival({ crew, destinationName: remotePlanet.planetName, welcomePet: friendPet });
         state.currentField = 'land';
         state.zoomLevel = 1;
         state.lastHomeZoomLevel = 1;

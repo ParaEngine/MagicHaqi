@@ -1,5 +1,11 @@
 # 蛋蛋星球 MagicHaqi 🐾
 
+> 🚫🚫🚫 **NEVER NEVER NEVER run `npm run build`.** 🚫🚫🚫
+> This app does **NOT** need to be built. It is pure ES Module + Vanilla JS and runs directly in the browser.
+> Do **NOT** run `npm run build`, `npm run build 2`, `vite build`, or any bundling/compile command to verify your changes.
+> To check your work, just open `MagicHaqi.html` in the browser (Live Preview) — no build, no server, no compile step.
+> `npm run build` exists **only** for distribution/CDN packaging by a human, never for development or verification.
+
 一只 AI 生成的专属虚拟宠物 —— 移动端优先 H5 游戏（灵感来自 Tamagotchi Paradise + Toca Life World），基于 [KeepworkSDK](../../../../keepworkSDK)。
 
 ## ✨ 特色
@@ -80,5 +86,5 @@ MagicHaqi/
 更多请见 [docs/design.md](docs/design.md) 与 [docs/architecture.md](docs/architecture.md)。
 
 ## Common Pitfalls to Avoid
-❌ Don't npm run build, because all games can be run directly in browser without bundling. Vite is only for distribution packaging, not development.
+❌ **NEVER NEVER NEVER run `npm run build`** (or `npm run build 2`, `vite build`, or any bundling/compile command). The app does NOT need to be built. All games run directly in the browser without bundling. Vite is ONLY for distribution packaging by a human — never for development, never for verifying your changes. After editing, just open the HTML file / use Live Preview; do not build.
 ❌ Don't start a server to test, just live preview in VSCode or open HTML file directly in browser

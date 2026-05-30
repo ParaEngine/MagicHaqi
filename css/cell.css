@@ -303,17 +303,72 @@
     z-index: 2;
     pointer-events:none;
     animation: cellFaceFloat 3.8s ease-in-out infinite;
-    filter: drop-shadow(0 14px 20px rgba(24, 62, 153, 0.28));
-    --cell-face-hi: #9bb1ff;
-    --cell-face-mid: #7272ec;
-    --cell-face-low: #7272ec;
-    --cell-face-deep: #5950c8;
+    filter: drop-shadow(0 14px 20px rgba(120, 40, 70, 0.26));
+    /* 粉白大脑基底默认值（JS 会按元素属性覆盖） */
+    --cell-face-hi: #fff1f4;
+    --cell-face-mid: #ffd9e4;
+    --cell-face-low: #ffb3c9;
+    --cell-face-deep: #f48aa6;
 }
 @keyframes cellFaceFloat {
     0%, 100% { transform: translate(-50%, -50%) rotate(-1deg); }
     50% { transform: translate(-50%, calc(-50% - 10px)) rotate(1.5deg); }
 }
 .cell-face-svg { width: 100%; height: 100%; display:block; overflow: visible; }
+
+/* 右上角元素属性角标 */
+.cell-element-deco {
+    position: absolute;
+    top: 4%;
+    right: 2%;
+    width: clamp(34px, 9vw, 46px);
+    height: clamp(34px, 9vw, 46px);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    pointer-events: auto;
+    cursor: pointer;
+    z-index: 4;
+    animation: cellElementDecoBob 3.2s ease-in-out infinite;
+    touch-action: manipulation;
+}
+.cell-element-deco-glow {
+    position: absolute;
+    inset: 0;
+    border-radius: 50%;
+    background:
+        radial-gradient(circle at 50% 42%, #ffffff 0 18%, transparent 46%),
+        radial-gradient(circle at 50% 50%, var(--cell-element-color, #f48aa6) 0 58%, transparent 74%);
+    box-shadow:
+        0 3px 8px rgba(20, 30, 70, 0.28),
+        0 0 12px var(--cell-element-color, #f48aa6),
+        inset 0 0 0 2px rgba(255, 255, 255, 0.9);
+    opacity: 0.96;
+    animation: cellElementDecoPulse 2.4s ease-in-out infinite;
+}
+.cell-element-deco-emoji {
+    position: relative;
+    font-size: clamp(17px, 4.6vw, 23px);
+    line-height: 1;
+    filter: drop-shadow(0 1px 1px rgba(0, 0, 0, 0.35));
+    transform: translateY(-0.5px);
+}
+@keyframes cellElementDecoBob {
+    0%, 100% { transform: translateY(0) rotate(-3deg); }
+    50% { transform: translateY(-4px) rotate(3deg); }
+}
+@keyframes cellElementDecoPulse {
+    0%, 100% { box-shadow: 0 3px 8px rgba(20, 30, 70, 0.28), 0 0 10px var(--cell-element-color, #f48aa6), inset 0 0 0 2px rgba(255, 255, 255, 0.9); }
+    50% { box-shadow: 0 3px 8px rgba(20, 30, 70, 0.28), 0 0 20px var(--cell-element-color, #f48aa6), inset 0 0 0 2px rgba(255, 255, 255, 0.9); }
+}
+/* 火/雷 略微更亮的脉冲节奏 */
+.cell-element-deco.element-火 .cell-element-deco-emoji,
+.cell-element-deco.element-雷 .cell-element-deco-emoji { animation: cellElementDecoFlicker 1.4s ease-in-out infinite; }
+@keyframes cellElementDecoFlicker {
+    0%, 100% { transform: translateY(-0.5px) scale(1); }
+    50% { transform: translateY(-1.5px) scale(1.08); }
+}
+
 .cell-face-hunger-lines {
     position: absolute;
     top: 14%;
@@ -344,23 +399,67 @@
     0%, 100% { transform: translateY(0); opacity: 0.78; }
     50% { transform: translateY(-3px); opacity: 1; }
 }
-.cell-face-body { fill: url(#cellFaceBody); }
-.cell-face-feeler {
+.cell-face-body {
+    fill: url(#cellFaceBody);
+    stroke: rgba(255, 255, 255, 0.55);
+    stroke-width: 3;
+    transform-origin: 100px 95px;
+    animation: cellBodyBreathe 3.4s ease-in-out infinite;
+    pointer-events: auto;
+    cursor: pointer;
+}
+@keyframes cellBodyBreathe {
+    0%, 100% { transform: scale(1); }
+    50% { transform: scale(1.035); }
+}
+.cell-face-folds {
     fill: none;
-    stroke: var(--cell-face-deep);
+    stroke: rgba(255, 255, 255, 0.32);
+    stroke-width: 3.4;
+    stroke-linecap: round;
+}
+.cell-face-sheen { fill: url(#cellFaceSheen); opacity: 0.9; pointer-events: none; }
+.cell-face-blush {
+    fill: #ff7ab5;
+    opacity: 0.62;
+    filter: blur(0.6px);
+}
+.cell-face-eye {
+    fill: none;
+    stroke: #2a2150;
+    stroke-width: 7;
+    stroke-linecap: round;
+}
+/* Cute closed/curved eye arcs (^_^ / u_u) */
+.cell-face-arc-eye {
+    fill: none;
+    stroke: #2a2150;
     stroke-width: 8;
     stroke-linecap: round;
 }
-.cell-face-tip { fill: var(--cell-face-low); stroke: var(--cell-face-deep); stroke-width: 3; }
-.cell-face-wing { fill: url(#cellWing); opacity: 0.9; transform-origin: 90px 112px; }
-.cell-face-wing.left { transform: rotate(-18deg); }
-.cell-face-wing.right { transform: rotate(18deg); }
-.cell-face-blush { fill: #ef5ea8; opacity: 0.82; }
-.cell-face-eye {
+/* Dizzy squint eyes (>_<) */
+.cell-face-squint-eye {
     fill: none;
-    stroke: #243469;
-    stroke-width: 7;
+    stroke: #2a2150;
+    stroke-width: 8;
     stroke-linecap: round;
+    stroke-linejoin: round;
+}
+.cell-face-sick-cheek {
+    fill: #ff9bbf;
+    opacity: 0.5;
+    filter: blur(0.5px);
+}
+.cell-face-shine-eye {
+    fill: #241a44;
+    stroke: rgba(255,255,255,0.25);
+    stroke-width: 1.5;
+}
+.cell-face-tongue { fill: #ff7a9a; }
+.cell-face-mouth-o {
+    fill: #5a2742;
+    stroke: #2a2150;
+    stroke-width: 2.5;
 }
 .cell-face-expression { display: none; }
 .cell-face-wrap.is-expression-happy .cell-face-expression-happy,
@@ -377,49 +476,69 @@
 .cell-face-brow,
 .cell-face-x-eye {
     fill: none;
-    stroke: #243469;
-    stroke-width: 5;
+    stroke: #2a2150;
+    stroke-width: 6;
     stroke-linecap: round;
 }
 .cell-face-expression-sad .cell-face-brow,
-.cell-face-expression-sick .cell-face-brow { stroke-width: 4.2; }
-.cell-face-weary-eye {
-    fill: none;
-    stroke: #243469;
-    stroke-width: 5.2;
-    stroke-linecap: round;
-}
-.cell-face-x-eye { stroke-width: 5.4; }
+.cell-face-expression-sick .cell-face-brow { stroke-width: 5.4; }
+.cell-face-x-eye { stroke-width: 6; }
 .cell-face-open-eye {
-    fill: #f8fbff;
-    stroke: #243469;
-    stroke-width: 3.4;
+    fill: #fbfcff;
+    stroke: #2a2150;
+    stroke-width: 3.6;
 }
 .cell-face-expression-sad .cell-face-open-eye { stroke-width: 2.8; }
-.cell-face-iris { fill: #34477d; }
-.cell-face-pupil { fill: #1c2d5f; }
+.cell-face-iris { fill: #3a2d6b; }
+.cell-face-pupil { fill: #1d143a; }
 .cell-face-eye-glint,
-.cell-face-eye-glint-small { fill: #ffffff; opacity: 0.92; }
+.cell-face-eye-glint-small { fill: #ffffff; opacity: 0.95; }
 .cell-face-sleep-z {
-    fill: #243469;
-    font: 700 13px/1 sans-serif;
-    opacity: 0.82;
+    fill: #2a2150;
+    font: 800 18px/1 'Comic Sans MS', 'Segoe UI', sans-serif;
+    opacity: 0.85;
+    animation: cellSleepZ 2.6s ease-in-out infinite;
 }
-.cell-face-sleep-z.z2 { font-size: 10px; opacity: 0.64; }
+.cell-face-sleep-z.z2 { font-size: 13px; opacity: 0.6; animation-delay: -1.3s; }
+@keyframes cellSleepZ {
+    0%, 100% { opacity: 0.2; transform: translateY(3px); }
+    50% { opacity: 0.85; transform: translateY(-2px); }
+}
 .cell-face-mouth {
     fill: none;
-    stroke: #17315f;
+    stroke: #2a2150;
     stroke-width: 7;
     stroke-linecap: round;
+    stroke-linejoin: round;
 }
 .cell-face-mouth-small { stroke-width: 5; }
 .cell-face-tear,
 .cell-face-sweat {
-    fill: #7dd3fc;
-    stroke: rgba(255,255,255,0.75);
+    fill: #8fd6ff;
+    stroke: rgba(255,255,255,0.8);
     stroke-width: 1.2;
 }
-.cell-face-spark { fill: #58dd87; opacity: 0.9; }
+.cell-face-tear {
+    transform-origin: center;
+    animation: cellTearDrop 2.4s ease-in-out infinite;
+}
+.cell-face-tear.right { animation-delay: -1.2s; }
+@keyframes cellTearDrop {
+    0%, 70%, 100% { opacity: 1; transform: translateY(0); }
+    35% { opacity: 0.85; transform: translateY(4px); }
+}
+.cell-face-sweat { animation: cellTearDrop 2.6s ease-in-out infinite; }
+.cell-face-spark {
+    fill: #fff3a0;
+    opacity: 0.9;
+    animation: cellSparkTwinkle 2.2s ease-in-out infinite;
+}
+.cell-face-spark.s2 { animation-delay: -0.7s; }
+.cell-face-spark.s3 { animation-delay: -1.4s; }
+@keyframes cellSparkTwinkle {
+    0%, 100% { opacity: 0.25; transform: scale(0.7); }
+    50% { opacity: 0.95; transform: scale(1.1); }
+}
 
 .cell-hud {
     position:absolute; top: 8px; left: 8px; right: 8px;
