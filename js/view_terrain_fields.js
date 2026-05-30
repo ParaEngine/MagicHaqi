@@ -2,7 +2,7 @@
 import { escapeHtml, showToast } from './utils.js';
 import { CONFIG } from './config.js';
 import { notify, state, setCurrentField } from './state.js';
-import { saveUserProfileDebounced } from './storage.js';
+import { saveFieldScenesDebounced, saveTerrainFieldsDebounced } from './storage.js';
 import { DEFAULT_TERRAIN_FIELD_SLOT_ID, normalizeTerrainFieldSlotId, normalizeTerrainSlotIndex, terrainFieldSlotKey, TERRAIN_FIELD_SLOT_COUNT, TERRAIN_FIELD_SLOT_DEFS } from './terrain_field_slots.js';
 
 export { DEFAULT_TERRAIN_FIELD_SLOT_ID, normalizeTerrainFieldSlotId, TERRAIN_FIELD_SLOT_COUNT, TERRAIN_FIELD_SLOT_DEFS };
@@ -168,7 +168,7 @@ function saveTerrainFieldSlots(slots) {
     const active = getTerrainFieldSlot(state.currentField);
     const nextActive = getTerrainFieldSlots()[0];
     if ((!active || !active.typeId) && nextActive) setCurrentField(nextActive.id);
-    saveUserProfileDebounced();
+    saveTerrainFieldsDebounced(terrainSettings());
     notify();
 }
 
@@ -198,6 +198,7 @@ function resetFieldScenesForSlots(slots) {
         if (scene) scenes[slotKey(index)] = scene;
     });
     settings.fieldScenes = scenes;
+    saveFieldScenesDebounced(scenes);
 }
 
 function canAutoResetTerrainType(type) {

@@ -3,19 +3,18 @@
 // 相机距离范围：minCamera 时已经"贴到星球表面" → 触发 zoomIn 进入 field；
 //               maxCamera 时已经"飞得很远" → 此处是最外层，无更外层可去。
 
-import { $, clamp, coinIconSvg, dockDisabledAttrs, escapeHtml, formatTime, isDockButtonDisabled, prompt, randId, showDockDisabledToast, showToast } from './utils.js';
-import { endVisitingMode, getActivePlanetBuff, getActivePlanetWeather, isVisitingMode, notify, setCurrentPet, startVisitingMode, state } from './state.js';
-import { addToInventory, getLayout, loadPet, loadPlanetVisitors, loadRecentFriendPlanets, recordPlanetVisitor, saveLayout, savePet, savePetDebounced, saveRecentFriendPlanetsDebounced, saveUserProfileDebounced, setCurrentPetPersisted } from './storage.js';
+import { $, clamp, coinIconSvg, escapeHtml, prompt, randId, showToast } from './utils.js';
+import { getActivePlanetBuff, getActivePlanetWeather, isVisitingMode, notify, setCurrentPet, state } from './state.js';
+import { addToInventory, getLayout, loadPet, loadPlanetVisitors, recordPlanetVisitor, saveLayout, savePet, savePetDebounced, saveUserProfileDebounced, setCurrentPetPersisted } from './storage.js';
 import { clampEnergyToMax, defaultPermanentTrauma, defaultStats, dominantTraits } from './petTick.js';
 import { computePlanetProgress, getPlanetDayNumber } from './planetProgress.js';
-import { decodeDna, displayPetName, dnaRarity, dnaToName, isAdultStage, randomDna, randomDnaForElementalAttribute } from './dna.js';
+import { decodeDna, displayPetName, dnaRarity, dnaToName, isAdultStage, randomDna } from './dna.js';
 import { getRuntimePetStats, isPetOnCurrentPlanet, isPetSelectable, markPetHaqiIsland, selectablePets } from './petLifecycle.js';
 import { buildEggSvg, getPetSpriteCell, petArtHtml, scanAndMount, SHEET_COLS, SHEET_ROWS } from './pet.js';
 import { CONFIG, currentPlanetMiningHourStart, getPlanetMiningCoins, getPlanetMiningState, getPlanetMiningVisualCoinCount, getStageName } from './config.js';
 import { createSpaceTravel, spaceTravelHtml } from './spacetravel.js';
+import { configureSpaceTravelView, getRemoteElementStock, getSocialVisitTip, handleVisitDestinationSelection, launchSocialVisit, loadOfficialVisitDestinations, remoteTravelPlanets, resetSpaceTravelViewState, showRemotePlanetPanel, showVisitReturnPrompt, SMALL_REMOTE_PLANETS, smallRemotePlanetsHtml, SOCIAL_FUEL_COST, socialVisitDestinationPickerHtml } from './view_spacetravel.js';
 import { defaultPostcardText, drawPetPostcardImage, hydratePetPostcardImages, normalizePostcardLayout, POSTCARD_TEXTS, randomPostcardPhotoTheme, renderPetPostcardHtml, serializePostcardLayout } from './view_postcard.js';
-import { friendDropdownLabel, friendId, friendName, friendUsername, loadFriends } from './view_email.js';
-import { playVisitArrival, playVisitDeparture, playVisitReturn } from './visit_animations.js';
 import SoundManager from './soundManager.js';
 import { getTerrainFieldSlots, getTerrainFieldType, TERRAIN_FIELD_SLOT_DEFS } from './view_terrain_fields.js';
 
@@ -24,13 +23,7 @@ const soundManager = SoundManager.getInstance();
 const HAQI_DOWNLOAD_URL = 'https://keepwork.com/api/raw/maisi/maisi/webgames/data/magic_haqi_download';
 const WEATHER_DURATION_MS = 30 * 60 * 1000;
 const WEATHER_COOLDOWN_MS = 8 * 60 * 1000;
-const SOCIAL_FUEL_COST = 30;
 const PLANET_INFRA_MAX_LEVEL = 3;
-const SMALL_REMOTE_PLANET_NAME_RADIUS = 8;
-const SMALL_REMOTE_PLANET_SIZE_PER_RADIUS = 7;
-const REMOTE_ELEMENT_HAUL_TONS = 10;
-const REMOTE_ELEMENT_MAX_TONS = 100;
-const HAQI_VISIT_COIN_REWARD = 30;
 const PLANET_SPACECRAFT_ENABLED = true;
 const PLANET_DECOR_CANVAS_DPR = 2;
 const PLANET_DECOR_CANVAS_PADDING = 0.2;
@@ -60,12 +53,7 @@ function getSharedAudioDestination(ctx) {
     try { return engine?.getDestination?.() || engine?.getOutputNode?.() || ctx.destination; } catch (_) { return ctx.destination; }
 }
 let __spaceTravel = null;
-let __remoteCargoActive = false;
 let __planetStarfield = null;
-let __visitReturnPromptOpen = false;
-let __friendVisitDestinations = [];
-let __friendVisitDestinationsLoaded = false;
-let __friendVisitDestinationsLoading = null;
 
 const WEATHER_OPTIONS = [
     { id: 'rain', emoji: '🌧️', name: '召雨', label: '雨云', unlock: 1, mood: -2, hunger: 4, message: '雨云覆盖星球，陆地会长出新植物，宠物更想回屋里。' },
@@ -78,16 +66,6 @@ const ASTRO_BUFFS = [
     { id: 'garden', emoji: '🌿', name: '花园星座', text: '心情衰减减慢，更适合散步。', mood: 12 },
     { id: 'clarity', emoji: '🔭', name: '明晰星轨', text: '玩耍与探索更有收获，亲密小幅提升。', bond: 4 },
     { id: 'tidal', emoji: '🌊', name: '潮汐双月', text: '清洁缓慢恢复，心情小幅提升。', clean: 10, mood: 4 },
-];
-
-const UFO_REWARDS = ['food_apple', 'food_carrot', 'field_flower', 'land_mushroom', 'water_shell'];
-
-const SMALL_REMOTE_PLANETS = [
-    { id: 'firebird', name: '火鸟岛', x: 22, y: 34, radius: 4.1, depth: 11, hue: 18, accent: '#ffd166', rotation: -18, spinDuration: 14, elementalAttribute: '火', fieldId: 'fire', equipmentId: 'fire_volcano', equipmentName: '火山', equipmentEmoji: '🌋', surfaceX: 36, surfaceY: 30, tip: '派飞船可带回火元素与火山资源，解锁火山地貌。' },
-    { id: 'ice', name: '寒冰岛', x: 11, y: 76, radius: 3.5, depth: 10, hue: 196, accent: '#b8f7ff', rotation: 31, spinDuration: 18, elementalAttribute: '冰', fieldId: 'ice', equipmentId: 'ice_lake', equipmentName: '冰湖', equipmentEmoji: '🧊', surfaceX: 62, surfaceY: 30, tip: '派飞船可带回冰元素与冰湖资源，解锁冰湖地貌。' },
-    { id: 'desert', name: '沙漠岛', x: 88, y: 29, radius: 3.8, depth: 9, hue: 42, accent: '#ffe08a', rotation: 57, spinDuration: 16, elementalAttribute: '生命', fieldId: 'life', equipmentId: 'life_sand_tree', equipmentName: '沙池生命树', equipmentEmoji: '🏝️', surfaceX: 69, surfaceY: -3, surfaceRot: 14, surfaceScale: 2, tip: '派飞船可带回生命元素与沙池生命树，解锁生命地貌。' },
-    { id: 'shadow', name: '幽暗岛', x: 8, y: 52, radius: 3.1, depth: 12, hue: 218, accent: '#9ca3af', rotation: -42, spinDuration: 22, elementalAttribute: '暗', fieldId: 'dark', equipmentId: 'dark_underground_caves', equipmentName: '地下洞穴', equipmentEmoji: '🕳️', surfaceX: 67, surfaceY: 67, tip: '派飞船可带回暗元素与地下洞穴资源，解锁幽暗地貌。' },
-    { id: 'thunder', name: '雷云岛', x: 73, y: 76, radius: 3.4, depth: 11, hue: 266, accent: '#facc15', rotation: 19, spinDuration: 13, elementalAttribute: '雷', fieldId: 'thunder', equipmentId: 'thunder_cloud_tower', equipmentName: '雷云塔', equipmentEmoji: '⚡', surfaceX: 31, surfaceY: 18, tip: '派飞船可带回雷元素与雷云塔资源，解锁雷系地貌。' },
 ];
 
 const PLANET_ACTION_DETAILS = {
@@ -111,7 +89,7 @@ const PLANET_ACTION_DETAILS = {
         title: '星际拜访',
         text: `让宠物乘飞船拜访好友星球。`,
         effect: `会消耗 ${SOCIAL_FUEL_COST} 生物燃料，宠物会获得心情与羁绊，并带回金币。`,
-        okText: '开始拜访',
+        okText: '选择星球',
         unlock: 2,
         building: 'spaceport',
     },
@@ -191,6 +169,14 @@ const PLANET_RESEARCH_ACTIONS = [
     { action: 'astro', name: '星象校准', desc: '启用今日星轨加成。' },
     { action: 'visit', name: '星际拜访', desc: '乘飞船拜访好友星球。' },
 ];
+
+configureSpaceTravelView({
+    getSpaceTravel: () => __spaceTravel,
+    getActionInfrastructureLevel,
+    openPlanetModal,
+    addPlanetLog,
+    refreshTopbarResources,
+});
 
 function todayKey(now = Date.now()) {
     const d = new Date(now);
@@ -392,31 +378,6 @@ function weatherCooldownMs() {
     return Math.max(4 * 60 * 1000, WEATHER_COOLDOWN_MS - (level - 1) * 2 * 60 * 1000);
 }
 
-function socialFuelCost() {
-    const level = getActionInfrastructureLevel('visit') || 1;
-    return Math.max(24, SOCIAL_FUEL_COST - (level - 1) * 3);
-}
-
-function socialCoinReward() {
-    return HAQI_VISIT_COIN_REWARD;
-}
-
-function socialVisitTip(destinationId = 'haqi') {
-    const fuelCost = socialFuelCost();
-    if (String(destinationId).startsWith('friend:')) {
-        const friend = friendVisitDestinationById(destinationId);
-        return `会消耗 ${fuelCost} 生物燃料，${displayPetName(friend?.pet) || '好友宠物'}会在${friend?.planetName || '好友星球'}接待你的宠物，返航时带回随机礼盒。`;
-    }
-    if (destinationId === 'haqi') {
-        return `会消耗 ${fuelCost} 生物燃料，宠物会获得心情与羁绊，带回 ${socialCoinReward()} 金币和随机礼物。`;
-    }
-    const remote = SMALL_REMOTE_PLANETS.find(item => item.id === destinationId);
-    if (!remote) return `会消耗 ${fuelCost} 生物燃料，宠物会乘飞船拜访好友星球。`;
-    const stock = getRemoteElementStock(remote);
-    const added = Math.min(REMOTE_ELEMENT_HAUL_TONS, Math.max(0, REMOTE_ELEMENT_MAX_TONS - stock));
-    return `会消耗 ${fuelCost} 生物燃料，飞船会前往${remote.name}，带回 ${added} 吨${remote.elementalAttribute}元素。`;
-}
-
 function astroMultiplier() {
     const level = getActionInfrastructureLevel('astro') || 1;
     return 1 + (level - 1) * 0.25;
@@ -427,7 +388,7 @@ function actionEffectText(action, detail, buildingId, infraLevel) {
         return `${detail.effect} 当前天气持续 ${Math.round(weatherDurationMs() / 60000)} 分钟，冷却约 ${Math.round(weatherCooldownMs() / 60000)} 分钟。`;
     }
     if (buildingId === 'spaceport') {
-        return socialVisitTip('haqi');
+        return getSocialVisitTip('haqi');
     }
     if (buildingId === 'ufoPad') {
         return `${detail.effect} 当前 Lv.${infraLevel || 1} 停机坪会让访客留下 ${Math.max(1, infraLevel || 1)} 份礼物。`;
@@ -436,289 +397,6 @@ function actionEffectText(action, detail, buildingId, infraLevel) {
         return `${detail.effect} 当前星象倍率为 ${astroMultiplier().toFixed(2)}x。`;
     }
     return detail.effect;
-}
-
-function safeFriendId(value, fallback = '') {
-    return String(value || fallback || 'friend')
-        .replace(/[^a-zA-Z0-9_\-\u4e00-\u9fa5]/g, '_')
-        .slice(0, 48) || 'friend';
-}
-
-function stringHash(value) {
-    const text = String(value || 'friend');
-    let hash = 2166136261;
-    for (let i = 0; i < text.length; i += 1) {
-        hash ^= text.charCodeAt(i);
-        hash = Math.imul(hash, 16777619);
-    }
-    return hash >>> 0;
-}
-
-function friendPlanetIconData(destination) {
-    const seedText = destination?.planetName || destination?.name || destination?.label || destination?.username || destination?.userId || '好友星球';
-    const hash = stringHash(seedText);
-    const hue = hash % 360;
-    return {
-        id: `friend-${safeFriendId(destination?.username || destination?.userId || destination?.name || hash)}`,
-        hue,
-        accent: `hsl(${(hue + 58) % 360} 86% 64%)`,
-        rotation: (hash % 70) - 35,
-        spinDuration: 26 + (hash % 24),
-    };
-}
-
-function createFallbackFriendPet(friendName = '星际好友') {
-    const id = `visit_friend_${safeFriendId(friendName)}_${randId(4)}`;
-    return {
-        id,
-        name: `${friendName}的宠物`,
-        stage: 'baby',
-        dna: randomDna(),
-        stats: defaultStats(),
-        traits: {},
-        bornAt: Date.now() - 86400000,
-    };
-}
-
-function friendVisitDestinationFromFriend(record, index) {
-    const username = safeRemoteUsername(friendUsername(record));
-    const userId = friendId(record);
-    if (!username && !userId) return null;
-    const name = friendName(record) || username || `好友${index + 1}`;
-    return {
-        id: `friend:${safeFriendId(username || userId || index)}`,
-        kind: 'friend',
-        name,
-        username,
-        userId,
-        planetName: `${name}的星球`,
-        pet: null,
-        icon: '👤',
-        meta: `${socialFuelCost()}燃料 · 读取好友星球`,
-        label: friendDropdownLabel(record),
-        rawFriend: record,
-    };
-}
-
-function recentFriendVisitDestinationFromRecord(record, index) {
-    if (!record || typeof record !== 'object') return null;
-    const username = safeRemoteUsername(record.username);
-    const userId = String(record.userId || '').trim();
-    if (!username && !userId) return null;
-    const name = String(record.name || username || `好友${index + 1}`).trim();
-    const visitedAt = Number(record.visitedAt) || 0;
-    return {
-        id: `friend:${safeFriendId(username || userId || index)}`,
-        kind: 'friend',
-        name,
-        username,
-        userId,
-        planetName: String(record.planetName || `${name}的星球`).trim(),
-        pet: null,
-        icon: '👤',
-        meta: visitedAt ? `上次访问：${formatTime(visitedAt)}` : '最近访问过',
-        label: name,
-        recent: true,
-        visitedAt,
-    };
-}
-
-function recentFriendVisitDestinations() {
-    return (Array.isArray(state.recentFriendPlanets) ? state.recentFriendPlanets : [])
-        .map(recentFriendVisitDestinationFromRecord)
-        .filter(Boolean)
-        .slice(0, 3);
-}
-
-async function rememberFriendPlanetVisit(friend, remotePlanet) {
-    const username = safeRemoteUsername(remotePlanet?.username || friend?.username || friend?.name);
-    const userId = String(friend?.userId || '').trim();
-    if (!username && !userId) return;
-    await loadRecentFriendPlanets();
-    const record = {
-        username,
-        userId,
-        name: String(friend?.name || username || '好友').trim().slice(0, 80),
-        planetName: String(remotePlanet?.planetName || friend?.planetName || '').trim().slice(0, 80),
-        visitedAt: Date.now(),
-    };
-    const sameFriend = item => {
-        const itemUsername = safeRemoteUsername(item?.username);
-        const itemUserId = String(item?.userId || '').trim();
-        return (username && itemUsername === username) || (userId && itemUserId === userId);
-    };
-    state.recentFriendPlanets = [record, ...(Array.isArray(state.recentFriendPlanets) ? state.recentFriendPlanets : []).filter(item => !sameFriend(item))].slice(0, 3);
-    saveRecentFriendPlanetsDebounced();
-}
-
-function friendVisitDestinations() {
-    return __friendVisitDestinations;
-}
-
-async function loadFriendVisitDestinations() {
-    if (__friendVisitDestinationsLoaded) return __friendVisitDestinations;
-    if (__friendVisitDestinationsLoading) return __friendVisitDestinationsLoading;
-    __friendVisitDestinationsLoading = loadFriends()
-        .then(list => {
-            __friendVisitDestinations = list
-                .map(friendVisitDestinationFromFriend)
-                .filter(Boolean)
-                .slice(0, 12);
-            __friendVisitDestinationsLoaded = true;
-            return __friendVisitDestinations;
-        })
-        .catch(e => {
-            console.warn('读取星际拜访好友列表失败', e);
-            __friendVisitDestinations = [];
-            __friendVisitDestinationsLoaded = true;
-            return [];
-        })
-        .finally(() => {
-            __friendVisitDestinationsLoading = null;
-        });
-    return __friendVisitDestinationsLoading;
-}
-
-function friendVisitDestinationById(destinationId) {
-    const destinations = [...recentFriendVisitDestinations(), ...friendVisitDestinations()];
-    return destinations.find(item => item.id === destinationId) || destinations[0];
-}
-
-function friendVisitDestinationIconHtml(destination) {
-    const planet = friendPlanetIconData(destination);
-    return `<span class="remote-mini-body planet-visit-friend-planet-icon" aria-hidden="true" style="--remote-mini-size:38px;--remote-mini-hue:${planet.hue};--remote-mini-accent:${planet.accent};--remote-mini-rotation:${planet.rotation}deg;--remote-mini-spin-duration:${planet.spinDuration}s">${smallRemotePlanetSvg(planet)}</span>`;
-}
-
-function safeRemoteUsername(value) {
-    return String(value || '').trim().replace(/^@+/, '').replace(/[^a-zA-Z0-9_\-\u4e00-\u9fa5]/g, '').slice(0, 64);
-}
-
-async function readRemoteFriendProfile(username) {
-    const safeName = safeRemoteUsername(username);
-    if (!safeName || !state.sdk?.personalPageStore?.readFile) return null;
-    const path = `//${safeName}/edunotes/store/${CONFIG.workspace}/user/profile.json`;
-    try {
-        let text = '';
-        try { text = await state.sdk.personalPageStore.readFile(path, 1, 99999); }
-        catch (_) { text = await state.sdk.personalPageStore.readFile(path); }
-        if (!text) return null;
-        return JSON.parse(text);
-    } catch (e) {
-        console.warn('读取好友星球资料失败', e);
-        return null;
-    }
-}
-
-async function readRemoteFriendPet(username, profile) {
-    const safeName = safeRemoteUsername(username);
-    const petId = String(profile?.currentPetId || '').trim();
-    if (!safeName || !petId || !state.sdk?.personalPageStore?.readFile) return null;
-    const path = `//${safeName}/edunotes/store/${CONFIG.workspace}/pets/${petId}.json`;
-    try {
-        let text = '';
-        try { text = await state.sdk.personalPageStore.readFile(path, 1, 99999); }
-        catch (_) { text = await state.sdk.personalPageStore.readFile(path); }
-        if (!text) return null;
-        return JSON.parse(text);
-    } catch (e) {
-        console.warn('读取好友当前宠物失败', e);
-        return null;
-    }
-}
-
-async function readRemoteFriendLayouts(username) {
-    const safeName = safeRemoteUsername(username);
-    if (!safeName || !state.sdk?.personalPageStore?.readFile) return {};
-    const path = `//${safeName}/edunotes/store/${CONFIG.workspace}/user/layouts.json`;
-    try {
-        let text = '';
-        try { text = await state.sdk.personalPageStore.readFile(path, 1, 99999); }
-        catch (_) { text = await state.sdk.personalPageStore.readFile(path); }
-        if (!text) return {};
-        const layouts = JSON.parse(text);
-        return layouts && typeof layouts === 'object' ? layouts : {};
-    } catch (e) {
-        console.warn('读取好友星球布局失败', e);
-        return {};
-    }
-}
-
-function hasRemoteSpaceport(profile) {
-    const spaceport = profile?.planetInfrastructure?.spaceport;
-    return !!spaceport && (Number(spaceport.level) || 0) > 0;
-}
-
-async function resolveFriendPlanetForVisit(friend) {
-    const username = safeRemoteUsername(friend?.username || friend?.name);
-    if (!username || friend?.fallback) {
-        showToast('请先从好友列表选择真实好友，再发起星际拜访。', 'info', 2600);
-        return null;
-    }
-    const profile = await readRemoteFriendProfile(username);
-    if (!profile || !profile.planetName || !hasRemoteSpaceport(profile)) {
-        showToast('对方星球没有建立航空站，无法发访问。', 'error', 3200);
-        return null;
-    }
-    const [pet, layouts] = await Promise.all([
-        readRemoteFriendPet(username, profile),
-        readRemoteFriendLayouts(username),
-    ]);
-    return {
-        username,
-        profile,
-        pet,
-        layouts,
-        planetName: profile.planetName || `${friend.name || username}的星球`,
-    };
-}
-
-function formatVisitMailContent({ recipientName, senderName, planetName, petName, message }) {
-    return [
-        `亲爱的 ${recipientName || '好友'},`,
-        '',
-        `${petName || '我的宠物'}刚刚拜访了${planetName || '你的星球'}。`,
-        message ? `留言：${message}` : '这次星际拜访很开心，期待下次再见。',
-        '',
-        `来自：${senderName || '蛋蛋星球好友'}`,
-        formatChineseDate(new Date()),
-    ].join('\n');
-}
-
-async function askAndSendVisitMessage(visit, pet) {
-    const toUsername = safeRemoteUsername(visit?.friendUsername || visit?.friendName);
-    const toUserId = visit?.friendUserId || '';
-    if ((!toUsername && !toUserId) || !state.sdk?.socialFriends?.sendMail) return;
-    const message = await prompt('给好友留言', {
-        hint: `给 ${visit?.friendName || toUsername} 留一句星球拜访后的话。留空可跳过。`,
-        placeholder: '今天的星球很漂亮，下次再来玩。',
-        okText: '发送留言',
-        cancelText: '跳过',
-        maxLength: 120,
-        dismissable: true,
-    });
-    if (!message) return;
-    const senderName = (await getShareUsername()) || state.user?.username || '蛋蛋星球好友';
-    const content = formatVisitMailContent({
-        recipientName: visit?.friendName || toUsername,
-        senderName,
-        planetName: visit?.planetName,
-        petName: displayPetName(pet),
-        message,
-    });
-    try {
-        await state.sdk.socialFriends.sendMail({
-            toUserId,
-            toUsername,
-            subject: '蛋蛋星球拜访留言',
-            title: '蛋蛋星球拜访留言',
-            content,
-            html: content,
-        });
-        showToast('拜访留言已通过邮件发送给好友。', 'success', 2200);
-    } catch (e) {
-        console.warn('发送拜访留言失败', e);
-        showToast('留言发送失败，请稍后再试。', 'error', 2600);
-    }
 }
 
 function planetInfrastructureEntries() {
@@ -996,57 +674,6 @@ async function drawPlanetDecorCanvas() {
     if (!canvas.isConnected || renderId !== planetDecorRenderId) return;
     planetDecorBitmapCache = { signature, canvas: renderCanvas };
     blitPlanetDecorBitmap(canvas);
-}
-
-function getRemoteElementStock(remote) {
-    const stocks = state.remoteElementStocks || {};
-    return Math.max(0, Math.min(REMOTE_ELEMENT_MAX_TONS, Number(stocks[remote.id]) || 0));
-}
-
-function smallRemotePlanetsHtml() {
-    return SMALL_REMOTE_PLANETS.map(planet => {
-        const showName = planet.radius >= SMALL_REMOTE_PLANET_NAME_RADIUS;
-        return `
-            <button class="remote-mini-planet remote-mini-${planet.id}" id="mhRemotePlanet-${planet.id}" type="button"
-                style="left:${planet.x}%;top:${planet.y}%;--remote-mini-size:${(planet.radius * SMALL_REMOTE_PLANET_SIZE_PER_RADIUS).toFixed(1)}px;--remote-mini-hue:${planet.hue};--remote-mini-accent:${planet.accent};--remote-mini-rotation:${planet.rotation || 0}deg;--remote-mini-spin-duration:${planet.spinDuration || 120}s"
-                title="${escapeHtml(planet.name)}" aria-label="${escapeHtml(planet.name)}" data-remote-planet="${escapeHtml(planet.id)}">
-                <span class="remote-mini-body" aria-hidden="true">${smallRemotePlanetSvg(planet)}</span>
-                ${showName ? `<span class="remote-mini-name">${escapeHtml(planet.name)}</span>` : ''}
-            </button>`;
-    }).join('');
-}
-
-function smallRemotePlanetSvg(planet) {
-    return `
-        <svg viewBox="0 0 64 64" role="img" focusable="false">
-            <defs>
-                <radialGradient id="remoteMiniCore-${planet.id}" cx="34%" cy="26%" r="72%">
-                    <stop offset="0" stop-color="#ffffff"/>
-                    <stop offset="0.26" stop-color="${planet.accent}"/>
-                    <stop offset="0.68" stop-color="hsl(${planet.hue} 78% 44%)"/>
-                    <stop offset="1" stop-color="#080b28"/>
-                </radialGradient>
-            </defs>
-            <circle class="remote-mini-core" cx="32" cy="32" r="21" fill="url(#remoteMiniCore-${planet.id})"/>
-            <path class="remote-mini-land l1" d="M16 30c7-11 19-15 32-8 2 8-5 13-13 11-8-2-12 4-19-3z"/>
-            <path class="remote-mini-land l2" d="M31 44c7-8 16-7 19 1-5 6-12 9-20 8-1-3-1-6 1-9z"/>
-            <path class="remote-mini-shine" d="M20 22c5-6 13-9 22-7"/>
-        </svg>`;
-}
-
-function remoteTravelPlanets() {
-    return [
-        { id: 'haqi', name: '哈奇岛', x: 12, y: 16, radius: 9, depth: 10, selector: '#mhHaqiIsland .remote-planet-body' },
-        ...SMALL_REMOTE_PLANETS.map(planet => ({
-            id: planet.id,
-            name: planet.name,
-            x: planet.x,
-            y: planet.y,
-            radius: planet.radius,
-            depth: planet.depth,
-            selector: `#mhRemotePlanet-${planet.id} .remote-mini-body`,
-        })),
-    ];
 }
 
 function planetActionIconHtml(action) {
@@ -1576,7 +1203,7 @@ export const planetLevel = {
         __planetStarfield = null;
         __spaceTravel?.destroy();
         __spaceTravel = null;
-        __remoteCargoActive = false;
+        resetSpaceTravelViewState();
     },
 
     // 太空层做相机缩放时的视觉调整：星球随相机缩放轻微缩放（已由 stageInner 的 transform 完成）
@@ -1856,17 +1483,18 @@ function showPlanetActionDialog(action, pet, ctx) {
             ? lockedTitle(detail.unlock)
             : actionEffectText(action, detail, buildingId, infrastructureLevel);
     const visitDestinationsHtml = action === 'visit' && !locked && !needsBuilding ? socialVisitDestinationPickerHtml() : '';
-    openPlanetModal(`
+    const modal = openPlanetModal(`
         <div class="planet-action-dialog-head">
             <span class="planet-action-dialog-icon">${detail.icon}</span>
             <div>
                 <div class="planet-modal-title">${escapeHtml(detail.title)}</div>
                 <div class="planet-modal-subtitle">${escapeHtml(detail.text)}</div>
             </div>
+            <button class="menu-close-btn haqi-download-close planet-action-close" data-act="close" type="button" aria-label="关闭">×</button>
         </div>
-        <div class="planet-action-dialog-body" ${action === 'visit' && !locked && !needsBuilding ? 'data-visit-tip' : ''}>
+        ${action === 'visit' && !locked && !needsBuilding ? '' : `<div class="planet-action-dialog-body">
             ${escapeHtml(bodyText)}
-        </div>
+        </div>`}
         ${buildingDef ? `
             <div class="planet-infra-card">
                 <span class="planet-infra-card-icon">${planetInfrastructureSvg(buildingId, Math.max(1, infrastructureLevel || 1))}</span>
@@ -1874,47 +1502,39 @@ function showPlanetActionDialog(action, pet, ctx) {
                 ${needsBuilding || canUpgrade ? `<button class="btn-secondary planet-infra-card-action" data-infra-build="${escapeHtml(buildingId)}" type="button">${needsBuilding ? '建造' : '升级'}</button>` : ''}
             </div>` : ''}
         ${visitDestinationsHtml}
-        <div class="planet-modal-actions">
-            <button class="btn-secondary" data-act="close">${locked && !needsBuilding ? '知道了' : '取消'}</button>
+        ${action === 'visit' && !locked && !needsBuilding ? '' : `<div class="planet-modal-actions">
+            ${locked && !needsBuilding ? `<button class="btn-secondary" data-act="close">知道了</button>` : ''}
             ${locked || needsBuilding ? '' : `<button class="btn-primary" data-action-confirm="${escapeHtml(action)}">${escapeHtml(detail.okText)}</button>`}
-        </div>
+        </div>`}
     `, (e, close) => {
         const buildBtn = e.target.closest?.('[data-infra-build]');
         if (buildBtn) {
             if (buildOrUpgradeInfrastructure(buildBtn.dataset.infraBuild)) close();
             return;
         }
-        const friendPickerBtn = e.target.closest?.('[data-visit-friend-picker]');
-        if (friendPickerBtn) {
-            openFriendVisitPickerModal(pet, close);
-            return;
-        }
-        const destinationBtn = e.target.closest?.('[data-visit-destination]');
-        if (destinationBtn) {
-            if (isDockButtonDisabled(destinationBtn)) { showDockDisabledToast(destinationBtn); return; }
-            const list = destinationBtn.closest('.planet-visit-destinations');
-            list?.querySelectorAll('[data-visit-destination]').forEach(item => {
-                const selected = item === destinationBtn;
-                item.classList.toggle('is-selected', selected);
-                item.setAttribute('aria-selected', selected ? 'true' : 'false');
-            });
-            const tip = e.currentTarget.querySelector?.('[data-visit-tip]');
-            if (tip) tip.textContent = socialVisitTip(destinationBtn.dataset.visitDestination || 'haqi');
-            return;
-        }
+        if (handleVisitDestinationSelection(e, pet, close)) return;
         const btn = e.target.closest?.('[data-action-confirm]');
         if (!btn) return;
         if (action === 'visit') {
-            const selected = e.currentTarget.querySelector?.('.planet-visit-destination.is-selected');
-            btn.disabled = true;
-            runSocialVisitDestination(selected?.dataset.visitDestination || 'haqi', pet, close).then(sent => {
-                if (!sent) btn.disabled = false;
-            });
             return;
         }
         close();
         runPlanetAction(action, pet, ctx);
-    });
+    }, action === 'visit' && !locked && !needsBuilding ? 'planet-action-visit-modal' : '');
+    if (action === 'visit' && !locked && !needsBuilding) {
+        const refreshOfficialDestinations = () => {
+            if (!document.body.contains(modal.mask)) {
+                window.removeEventListener('mh:officialVisitDestinationsLoaded', refreshOfficialDestinations);
+                return;
+            }
+            const destinations = modal.mask.querySelector('.planet-visit-destinations');
+            if (!destinations) return;
+            destinations.innerHTML = socialVisitDestinationPickerHtml().match(/<div[^>]*class="planet-visit-destinations"[^>]*>([\s\S]*)<\/div>\s*$/)?.[1] || destinations.innerHTML;
+            scanAndMount(destinations);
+        };
+        window.addEventListener('mh:officialVisitDestinationsLoaded', refreshOfficialDestinations);
+        loadOfficialVisitDestinations().then(refreshOfficialDestinations);
+    }
 }
 
 function runPlanetAction(action, pet, ctx) {
@@ -2080,388 +1700,6 @@ async function summonWeather(option, pet) {
     saveUserProfileDebounced();
     showToast(option.message, 'success', 2800);
     notify();
-}
-
-function launchSocialVisit(pet) {
-    const progress = computePlanetProgress();
-    if (isLocked(progress, 2)) { showToast(lockedTitle(2), 'info'); return; }
-    runSocialVisitDestination('haqi', pet);
-}
-
-function socialVisitDestinationItems() {
-    return [
-        {
-            id: 'friends',
-            kind: 'friendPicker',
-            name: '好友星球',
-            icon: '👥',
-            meta: '最近拜访 · 好友列表',
-            locked: false,
-            selected: false,
-        },
-        {
-            id: 'haqi',
-            name: '哈奇岛',
-            icon: '🏝️',
-            meta: `${socialFuelCost()}燃料 · ${socialCoinReward()}金币`,
-            locked: false,
-            selected: true,
-        },
-        ...SMALL_REMOTE_PLANETS.map(remote => {
-            const stock = getRemoteElementStock(remote);
-            const full = stock >= REMOTE_ELEMENT_MAX_TONS;
-            return {
-                id: remote.id,
-                name: remote.name,
-                remote,
-                icon: remote.equipmentEmoji,
-                meta: full ? '储量已满' : `${socialFuelCost()}燃料 · ${remote.elementalAttribute}${stock}/${REMOTE_ELEMENT_MAX_TONS}`,
-                locked: full,
-                disabledReason: full ? `${remote.name}的${remote.elementalAttribute}储量已满，先使用一些库存后再派遣飞船。` : '',
-                selected: false,
-            };
-        }),
-    ];
-}
-
-function socialVisitDestinationButtonsHtml(selectedDestinationId = '') {
-    const items = socialVisitDestinationItems();
-    const selectableItems = items.filter(item => item.kind !== 'friendPicker');
-    const selectedId = selectedDestinationId && selectableItems.some(item => item.id === selectedDestinationId)
-        ? selectedDestinationId
-        : (selectableItems.find(item => item.selected && !item.locked)?.id || selectableItems.find(item => !item.locked)?.id || '');
-    return items.map(destination => {
-                if (destination.kind === 'friendPicker') {
-                    return `
-                <button class="planet-visit-destination planet-visit-friend-picker"
-                    data-visit-friend-picker type="button" aria-haspopup="dialog">
-                    <span class="planet-visit-destination-icon">${destination.icon}</span>
-                    <span class="planet-visit-destination-text">
-                        <b>${escapeHtml(destination.name)}</b>
-                        <i>${escapeHtml(destination.meta)}</i>
-                    </span>
-                </button>
-            `;
-                }
-                const selected = destination.id === selectedId;
-                return `
-                <button class="planet-visit-destination ${selected ? 'is-selected' : ''} ${destination.locked ? 'is-disabled' : ''}"
-                    data-visit-destination="${escapeHtml(destination.id)}" type="button" role="option"
-                    aria-selected="${selected ? 'true' : 'false'}"${dockDisabledAttrs(destination.locked, destination.disabledReason || destination.meta)}>
-                    <span class="planet-visit-destination-icon">${destination.kind === 'friend' ? friendVisitDestinationIconHtml(destination) : destination.remote ? smallRemotePlanetSvg(destination.remote) : destination.icon}</span>
-                    <span class="planet-visit-destination-text">
-                        <b>${escapeHtml(destination.name)}</b>
-                        <i>${escapeHtml(destination.meta)}</i>
-                    </span>
-                </button>
-            `;
-            }).join('');
-}
-
-function socialVisitDestinationPickerHtml() {
-    return `
-        <div class="planet-visit-destinations" role="listbox" aria-label="选择拜访星球">
-            ${socialVisitDestinationButtonsHtml()}
-        </div>
-    `;
-}
-
-function friendVisitDestinationRowHtml(destination, extraClass = '') {
-    const metaHtml = destination.recent && destination.meta
-        ? `<i>${escapeHtml(destination.meta)}</i>`
-        : '';
-    return `
-        <button class="planet-option planet-friend-visit-row ${extraClass}" data-friend-visit-destination="${escapeHtml(destination.id)}" type="button">
-            <span class="planet-option-icon planet-friend-visit-icon">${friendVisitDestinationIconHtml(destination)}</span>
-            <span>
-                <b>${escapeHtml(destination.planetName || `${destination.name}的星球`)}</b>
-                ${metaHtml}
-            </span>
-        </button>
-    `;
-}
-
-function friendVisitPickerContentHtml(isLoading = false) {
-    const recent = recentFriendVisitDestinations();
-    const friends = friendVisitDestinations();
-    const recentHtml = recent.length
-        ? recent.map(destination => friendVisitDestinationRowHtml(destination, 'is-recent')).join('')
-        : `<div class="planet-friend-picker-empty">最近访问的好友星球会显示在这里。</div>`;
-    const friendsHtml = isLoading || !__friendVisitDestinationsLoaded
-        ? `<div class="planet-friend-picker-empty">正在读取好友列表...</div>`
-        : (friends.length
-            ? friends.map(destination => friendVisitDestinationRowHtml(destination)).join('')
-            : `<div class="planet-friend-picker-empty">暂无好友，请先在邮箱添加好友。</div>`);
-    return `
-        <div class="planet-friend-picker-section">
-            <div class="planet-friend-picker-heading">最近访问</div>
-            <div class="planet-option-list planet-friend-picker-list">${recentHtml}</div>
-        </div>
-        <div class="planet-friend-picker-section">
-            <div class="planet-friend-picker-heading">好友列表</div>
-            <div class="planet-option-list planet-friend-picker-list" data-friend-picker-list>${friendsHtml}</div>
-        </div>
-    `;
-}
-
-async function openFriendVisitPickerModal(pet, parentClose) {
-    await loadRecentFriendPlanets();
-    const modal = openPlanetModal(`
-        <div class="planet-action-dialog-head">
-            <span class="planet-action-dialog-icon">👥</span>
-            <div>
-                <div class="planet-modal-title">好友星球</div>
-                <div class="planet-modal-subtitle">选择一个好友星球后会立即出发。</div>
-            </div>
-        </div>
-        <div class="planet-friend-picker-body" data-friend-picker-body>
-            ${friendVisitPickerContentHtml(!__friendVisitDestinationsLoaded)}
-        </div>
-        <div class="planet-modal-actions"><button class="btn-secondary" data-act="close">取消</button></div>
-    `, async (e, close) => {
-        const btn = e.target.closest?.('[data-friend-visit-destination]');
-        if (!btn || btn.disabled) return;
-        const destination = friendVisitDestinationById(btn.dataset.friendVisitDestination);
-        if (!destination) return;
-        btn.disabled = true;
-        const closeAll = () => { close(); parentClose?.(); };
-        const sent = await launchFriendPlanetVisit(destination, pet, closeAll);
-        if (!sent && document.body.contains(btn)) btn.disabled = false;
-    }, 'planet-friend-picker-modal');
-    if (!__friendVisitDestinationsLoaded) {
-        loadFriendVisitDestinations().then(() => {
-            if (!document.body.contains(modal.mask)) return;
-            const body = modal.mask.querySelector('[data-friend-picker-body]');
-            if (!body) return;
-            body.innerHTML = friendVisitPickerContentHtml(false);
-            scanAndMount(body);
-        });
-    }
-}
-
-function refreshVisitTip(modalRoot) {
-    const tip = modalRoot?.querySelector?.('[data-visit-tip]');
-    const selected = modalRoot?.querySelector?.('.planet-visit-destination.is-selected');
-    if (tip) tip.textContent = socialVisitTip(selected?.dataset.visitDestination || 'haqi');
-}
-
-async function runSocialVisitDestination(destinationId, pet, close) {
-    if (String(destinationId).startsWith('friend:')) return launchFriendPlanetVisit(friendVisitDestinationById(destinationId), pet, close);
-    if (destinationId === 'haqi') return launchHaqiSocialVisit(pet, close);
-    const remote = SMALL_REMOTE_PLANETS.find(item => item.id === destinationId);
-    if (!remote) return false;
-    return visitRemotePlanet(remote, close);
-}
-
-function getVisitCrewPets(activePet) {
-    const seen = new Set();
-    const crew = [];
-    const add = (pet) => {
-        if (!pet?.id || seen.has(pet.id) || pet.stage === 'egg') return;
-        if (!isPetOnCurrentPlanet(pet)) return;
-        seen.add(pet.id);
-        crew.push(pet);
-    };
-    add(activePet);
-    (state.petOrder || [])
-        .map(id => state.pets[id])
-        .filter(Boolean)
-        .filter(p => p?.id !== activePet?.id)
-        .filter(p => p.stage !== 'egg' && isPetOnCurrentPlanet(p))
-        .sort((a, b) => (Number(b.bornAt) || 0) - (Number(a.bornAt) || 0))
-        .forEach(add);
-    return crew.slice(0, 3);
-}
-
-function visitLandingPose(friendPet) {
-    const hash = stringHash(friendPet?.id || friendPet?.name || 'visit-host');
-    const hostX = 0.52 + ((hash % 17) - 8) / 1000;
-    const hostY = 0.62 + (((hash >> 4) % 19) - 9) / 1000;
-    const side = hash % 2 ? -1 : 1;
-    return {
-        fieldId: 'land',
-        targetPetId: friendPet?.id || 'friend',
-        targetX: clamp(hostX, 0.34, 0.72),
-        targetY: clamp(hostY, 0.48, 0.78),
-        x: clamp(hostX + side * 0.105, 0.08, 0.92),
-        y: clamp(hostY + 0.035, 0.36, 0.90),
-        delay: 0,
-        dur: 9,
-        dx: 0,
-        dy: 0,
-    };
-}
-
-async function launchFriendPlanetVisit(friend, pet, close) {
-    const fuelCost = socialFuelCost();
-    if (!friend || !pet) return false;
-    if (__remoteCargoActive || isVisitingMode()) {
-        showToast('当前已有一段星际航程正在进行。', 'info', 2200);
-        return false;
-    }
-    showToast('正在读取好友星球资料...', 'info', 1800);
-    const remotePlanet = await resolveFriendPlanetForVisit(friend);
-    if (!remotePlanet) return false;
-    if ((state.biofuel | 0) < fuelCost) {
-        showToast(`需要 ${fuelCost} ⛽ 生物燃料才能拜访好友星球。`, 'error', 2600);
-        return false;
-    }
-    state.biofuel = Math.max(0, (state.biofuel | 0) - fuelCost);
-    refreshTopbarResources();
-    saveUserProfileDebounced();
-    notify();
-    close?.();
-    __remoteCargoActive = true;
-    const crew = getVisitCrewPets(pet);
-    const friendPet = remotePlanet.pet || friend.pet || createFallbackFriendPet(friend.name);
-    const previousField = state.currentField || 'land';
-    try {
-        soundManager.playSpacecraftTakeoff();
-        await playVisitDeparture({ crew, destinationName: remotePlanet.planetName });
-        soundManager.playSpacecraftArrive();
-        await playVisitArrival({ crew, destinationName: remotePlanet.planetName, welcomePet: friendPet });
-        state.currentField = 'land';
-        state.zoomLevel = 1;
-        state.lastHomeZoomLevel = 1;
-        state.isDecorMode = false;
-        state.isFeedMode = false;
-        state.activePetFieldPose = visitLandingPose(friendPet);
-        state.activePetRoomPose = null;
-        state.activePetRoomFocusPose = null;
-        startVisitingMode({
-            friendId: friend.id,
-            friendName: friend.name || '好友',
-            friendUsername: remotePlanet.username,
-            friendUserId: friend.userId || '',
-            planetName: remotePlanet.planetName,
-            remoteProfile: remotePlanet.profile,
-            remoteLayouts: remotePlanet.layouts || {},
-            friendPet,
-            crewPets: crew,
-            crewIds: crew.map(item => item.id),
-            previousField,
-        });
-        rememberFriendPlanetVisit(friend, remotePlanet);
-        addPlanetLog('friendVisit', `${displayPetName(pet)}抵达${remotePlanet.planetName}`, '🚀');
-        showToast(`已抵达 ${remotePlanet.planetName}，可以在表面和宠物房间活动。`, 'success', 3200);
-        notify();
-    } finally {
-        __remoteCargoActive = false;
-    }
-    return true;
-}
-
-async function completeFriendVisitReturn(pet) {
-    const visit = state.visitingMode;
-    if (!visit?.active || visit.returning) return;
-    visit.returning = true;
-    const completedVisit = { ...visit };
-    const friendPet = visit.friendPet || createFallbackFriendPet(visit.friendName || '好友');
-    const gift = UFO_REWARDS[(Date.now() + String(visit.friendId || '').length) % UFO_REWARDS.length];
-    const seenCrew = new Set();
-    const crew = [pet, ...(visit.crewPets || []), friendPet].filter((item) => {
-        const id = item?.id || displayPetName(item);
-        if (!item || seenCrew.has(id)) return false;
-        seenCrew.add(id);
-        return true;
-    });
-    soundManager.playSpacecraftTakeoff();
-    await playVisitReturn({ crew, destinationName: state.planetName || '自己的星球', giftIcon: '🎁' });
-    await addToInventory(pet.id, gift, 1);
-    clampStat(pet, 'mood', 10);
-    clampStat(pet, 'bond', 5);
-    addPlanetLog('friendReturn', `${visit.friendName || '好友'}的宠物送给${displayPetName(pet)}一个随机礼盒`, '🎁');
-    state.zoomLevel = 0;
-    state.lastHomeZoomLevel = 0;
-    state.activePetFieldPose = null;
-    state.activePetRoomPose = null;
-    state.activePetRoomFocusPose = null;
-    endVisitingMode();
-    refreshTopbarResources();
-    savePetDebounced(pet);
-    saveUserProfileDebounced();
-    soundManager.playSpacecraftArrive();
-    showToast('返航完成！好友宠物送来的随机礼盒已放入背包。', 'success', 3200);
-    notify();
-    await askAndSendVisitMessage(completedVisit, pet);
-}
-
-export function showVisitReturnPrompt(pet, ctx) {
-    if (!isVisitingMode() || __visitReturnPromptOpen) return;
-    __visitReturnPromptOpen = true;
-    const visit = state.visitingMode;
-    openPlanetModal(`
-        <div class="planet-action-dialog-head">
-            <span class="planet-action-dialog-icon">🚀</span>
-            <div>
-                <div class="planet-modal-title">准备返航吗？</div>
-                <div class="planet-modal-subtitle">你正在拜访 ${escapeHtml(visit?.planetName || '好友星球')}。</div>
-            </div>
-        </div>
-        <div class="planet-action-dialog-body">还想再逛一会儿吗？点“继续拜访”可以回到好友星球；点“登船返航”会带上好友送你的礼盒回到自己的星球。</div>
-        <div class="planet-modal-actions">
-            <button class="btn-secondary" data-visit-return="no">继续拜访</button>
-            <button class="btn-primary" data-visit-return="yes">登船返航</button>
-        </div>
-    `, async (e, close) => {
-        const btn = e.target.closest?.('[data-visit-return]');
-        if (!btn) return;
-        const answer = btn.dataset.visitReturn;
-        close();
-        __visitReturnPromptOpen = false;
-        if (answer === 'yes') {
-            await completeFriendVisitReturn(pet);
-            return;
-        }
-        state.zoomLevel = 1;
-        state.lastHomeZoomLevel = 1;
-        notify();
-    }, 'planet-visit-return-modal');
-}
-
-async function launchHaqiSocialVisit(pet, close) {
-    const fuelCost = socialFuelCost();
-    const coinReward = socialCoinReward();
-    if (__remoteCargoActive) {
-        showToast('还有一批星际资源正在自动返航，请稍等片刻。', 'info', 2600);
-        return false;
-    }
-    if ((state.biofuel | 0) < fuelCost) {
-        showToast(`需要 ${fuelCost} ⛽ 生物燃料，去星球收集便便吧。`, 'error', 2600);
-        return false;
-    }
-    state.biofuel = Math.max(0, (state.biofuel | 0) - fuelCost);
-    refreshTopbarResources();
-    saveUserProfileDebounced();
-    notify();
-    close?.();
-    __remoteCargoActive = true;
-    showToast('飞船出发！宠物正在前往哈奇岛拜访。', 'info', 2600);
-    try {
-        soundManager.playSpacecraftTakeoff();
-        if (__spaceTravel?.playMission) {
-            await __spaceTravel.playMission('haqi', { direction: 'outbound', duration: 8500, type: 'shuttle' });
-            soundManager.playSpacecraftArrive();
-            showToast('哈奇岛拜访完成，飞船正在返航。', 'info', 2200);
-            soundManager.playSpacecraftTakeoff();
-            await __spaceTravel.playMission('haqi', { direction: 'return', duration: 7500, type: 'shuttle' });
-        }
-    } finally {
-        __remoteCargoActive = false;
-    }
-    state.coins += coinReward;
-    const gift = UFO_REWARDS[(Date.now() + (state.petOrder || []).length) % UFO_REWARDS.length];
-    await addToInventory(pet.id, gift, 1);
-    clampStat(pet, 'mood', 12);
-    clampStat(pet, 'bond', 6);
-    addPlanetLog('visit', `${pet.name || '宠物'}拜访了哈奇岛，带回 ${coinReward} 金币和随机礼物`, '🚀');
-    refreshTopbarResources();
-    savePetDebounced(pet);
-    saveUserProfileDebounced();
-    soundManager.playSpacecraftArrive();
-    showToast(`航程完成！宠物拜访哈奇岛后带回了 ${coinReward} 金币和 1 份随机礼物。`, 'success', 3000);
-    notify();
-    return true;
 }
 
 async function acceptUfoVisitor(pet) {
@@ -2756,120 +1994,6 @@ async function showMilestonesPanel() {
             }
         }
     }, 'planet-milestone-card');
-}
-
-function showRemotePlanetPanel(remote) {
-    const discoveries = state.remotePlanetDiscoveries || {};
-    const discovery = discoveries[remote.id];
-    const stock = getRemoteElementStock(remote);
-    const full = stock >= REMOTE_ELEMENT_MAX_TONS;
-    openPlanetModal(`
-        <div class="haqi-island-head remote-travel-head">
-            <div>
-                <div class="planet-modal-title">${escapeHtml(remote.name)}</div>
-                <div class="planet-modal-subtitle">${escapeHtml(remote.tip)}</div>
-            </div>
-            <button class="menu-close-btn haqi-download-close" data-act="close" type="button" aria-label="关闭">×</button>
-        </div>
-        <div class="remote-travel-card">
-            <div class="remote-travel-planet" style="--remote-travel-hue:${remote.hue};--remote-travel-accent:${remote.accent};--remote-mini-hue:${remote.hue};--remote-mini-accent:${remote.accent};--remote-mini-rotation:${remote.rotation || 0}deg;--remote-mini-spin-duration:${remote.spinDuration || 120}s">${smallRemotePlanetSvg(remote)}</div>
-            <div class="remote-travel-info">
-                <div><b>资源</b><span>${escapeHtml(remote.equipmentName)} ${remote.equipmentEmoji}</span></div>
-                <div><b>DNA 信号</b><span>${escapeHtml(remote.elementalAttribute)}元素</span></div>
-                <div><b>元素储量</b><span>${stock}/${REMOTE_ELEMENT_MAX_TONS} 吨</span></div>
-            </div>
-        </div>
-        <div class="planet-action-dialog-body">
-            派出飞船会自动往返 ${escapeHtml(remote.name)}，每次补充 ${REMOTE_ELEMENT_HAUL_TONS} 吨${escapeHtml(remote.elementalAttribute)}元素。最多可储存 ${REMOTE_ELEMENT_MAX_TONS} 吨，未来在对应地貌养宠会消耗这些元素。
-        </div>
-        <div class="planet-modal-actions remote-travel-actions">
-            <button class="btn-secondary" data-act="close">关闭</button>
-            <button class="btn-primary" data-remote-visit="${escapeHtml(remote.id)}" ${full ? 'disabled' : ''}>${full ? '储量已满' : (discovery ? '再次派遣飞船' : '派遣飞船')}</button>
-        </div>
-    `, async (e, close) => {
-        const btn = e.target.closest?.('[data-remote-visit]');
-        if (!btn) return;
-        const target = SMALL_REMOTE_PLANETS.find(item => item.id === btn.dataset.remoteVisit);
-        if (!target) return;
-        btn.disabled = true;
-        const sent = await visitRemotePlanet(target, close);
-        if (!sent) btn.disabled = false;
-    }, 'remote-travel-modal');
-}
-
-async function visitRemotePlanet(remote, close) {
-    const fuelCost = socialFuelCost();
-    if (__remoteCargoActive) {
-        showToast('还有一批星际资源正在自动返航，请稍等片刻。', 'info', 2600);
-        return false;
-    }
-    if (getRemoteElementStock(remote) >= REMOTE_ELEMENT_MAX_TONS) {
-        showToast(`${remote.elementalAttribute}元素已经储存到上限 ${REMOTE_ELEMENT_MAX_TONS} 吨。`, 'info', 2600);
-        return false;
-    }
-    if ((state.biofuel | 0) < fuelCost) {
-        showToast(`需要 ${fuelCost} ⛽ 生物燃料才能派出飞船。`, 'error', 2600);
-        return false;
-    }
-    state.biofuel = Math.max(0, (state.biofuel | 0) - fuelCost);
-    refreshTopbarResources();
-    saveUserProfileDebounced();
-    notify();
-    close?.();
-    __remoteCargoActive = true;
-    showToast(`航程开始：飞船正在前往${remote.name}采集${remote.elementalAttribute}元素。`, 'info', 2600);
-    try {
-        soundManager.playSpacecraftTakeoff();
-        if (__spaceTravel?.playMission) {
-            await __spaceTravel.playMission(remote.id, { direction: 'outbound', duration: 10500, type: 'shuttle' });
-            soundManager.playSpacecraftArrive();
-            showToast(`${remote.equipmentName}装载完成，飞船正在返航。`, 'info', 2200);
-            soundManager.playSpacecraftTakeoff();
-            await __spaceTravel.playMission(remote.id, {
-                direction: 'return',
-                duration: 9500,
-                type: 'shuttle',
-                cargoClass: `planet-remote-artifact planet-remote-${remote.id}`,
-                cargoHue: remote.hue,
-            });
-        }
-        await completeRemoteElementReturn(remote);
-        soundManager.playSpacecraftArrive();
-    } finally {
-        __remoteCargoActive = false;
-    }
-    return true;
-}
-
-async function completeRemoteElementReturn(remote) {
-    state.remotePlanetDiscoveries = state.remotePlanetDiscoveries || {};
-    const existing = state.remotePlanetDiscoveries[remote.id];
-    const firstDiscovery = !existing;
-    const dna = existing?.dna || randomDnaForElementalAttribute(remote.elementalAttribute);
-    state.remotePlanetDiscoveries[remote.id] = {
-        ...(existing || {}),
-        visitedAt: Date.now(),
-        equipmentId: remote.equipmentId,
-        equipmentName: remote.equipmentName,
-        elementalAttribute: remote.elementalAttribute,
-        fieldId: remote.fieldId,
-        dna,
-    };
-    state.remoteElementStocks = state.remoteElementStocks || {};
-    const before = getRemoteElementStock(remote);
-    const added = Math.min(REMOTE_ELEMENT_HAUL_TONS, REMOTE_ELEMENT_MAX_TONS - before);
-    if (added <= 0) {
-        showToast(`${remote.elementalAttribute}元素已经储存到上限 ${REMOTE_ELEMENT_MAX_TONS} 吨。`, 'info', 2600);
-        return;
-    }
-    state.remoteElementStocks[remote.id] = before + added;
-    const itemCount = Math.max(1, Math.floor(added / REMOTE_ELEMENT_HAUL_TONS));
-    await addToInventory('remote_planet', remote.equipmentId, itemCount);
-    addPlanetLog('remoteVisit', `飞船从${remote.name}带回 ${added} 吨${remote.elementalAttribute}元素`, remote.equipmentEmoji);
-    refreshTopbarResources();
-    saveUserProfileDebounced();
-    notify();
-    showToast(`航程完成：${remote.elementalAttribute}元素 +${added} 吨，转化为 ${itemCount} 个${remote.equipmentName}（${state.remoteElementStocks[remote.id]}/${REMOTE_ELEMENT_MAX_TONS}）。${firstDiscovery ? ` 已解锁对应地貌。` : ''}`, 'success', 3800);
 }
 
 function getFarewellRecords() {

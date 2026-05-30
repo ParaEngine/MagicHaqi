@@ -3,7 +3,7 @@
 import { $, $$, coinIconSvg, dockDisabledAttrs, escapeHtml, isDockButtonDisabled, renderVisualAsset, setDockButtonDisabled, showDockDisabledToast, showToast } from './utils.js';
 import { canPlaceItemInArea, CONFIG, DECO_VISUALS, findLargestHouseInLayout, getPlacedItemZOrder, getPlanetMiningCoins, getPlanetMiningConfig, getPlanetMiningVisualCoinCount, getShopItemById, isHouseItem, recordPlanetMiningFieldCollected, SHOP_ITEMS } from './config.js';
 import { getActivePlanetWeather, isVisitingMode, notify, state, setCurrentField } from './state.js';
-import { getLayout, savePetDebounced, saveUserProfileDebounced } from './storage.js';
+import { getLayout, saveFieldScenesDebounced, savePetDebounced, saveUserProfileDebounced } from './storage.js';
 import { displayPetName } from './dna.js';
 import { buildEggSvg, getPet, getPetSpriteCell, getPetSleepActionState, isPetInteractionBlocked, petArtHtml, playEggWelcomeOnce, playPetClickFeedback, playPetHappy, randomPetTalk, SHEET_COLS, SHEET_ROWS, sleepingInteractionText } from './pet.js';
 import { getPetPoopCount, markPetCared, normalizePetPoops, setPetPoopCount } from './petTick.js';
@@ -174,7 +174,17 @@ const FIELD_THEMES = {
 };
 
 function availableFields() {
-    if (isVisitingMode()) return CONFIG.fields;
+    if (isVisitingMode()) {
+        const remoteFields = state.visitingMode?.remoteFields;
+        if (Array.isArray(remoteFields) && remoteFields.length) {
+            return remoteFields.map((field, index) => {
+                const type = SHOP_FIELD_TYPES[field.typeId] || CONFIG.fields.find(item => item.id === field.typeId) || SHOP_FIELD_TYPES.land || {};
+                const id = String(field.id || field.slotId || index + 1);
+                return { ...type, id, typeId: field.typeId || type.id || 'land', name: field.name || type.name || '陆地', positionLabel: field.positionLabel || '' };
+            });
+        }
+        return CONFIG.fields;
+    }
     const slots = getTerrainFieldSlots();
     return slots.length ? slots.map(slot => {
         const type = SHOP_FIELD_TYPES[slot.typeId] || CONFIG.fields.find(field => field.id === slot.typeId) || {};
@@ -1251,7 +1261,7 @@ function saveCurrentFieldSceneConfig(fieldId, patch) {
         next.background = background;
     }
     scenes[slotId] = next;
-    saveUserProfileDebounced();
+    saveFieldScenesDebounced(scenes);
     notify();
 }
 

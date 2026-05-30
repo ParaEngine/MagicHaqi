@@ -1,11 +1,9 @@
 // 星际移民视图
 import { confirm, escapeHtml, showToast } from './utils.js';
-import { getDefaultZoomLevelIndex, loadPlanetShopItems, normalizePlanetZoomOptions } from './config.js';
+import { getDefaultZoomLevelIndex, loadPlanetIndex, loadPlanetShopItems, normalizePlanetZoomOptions } from './config.js';
 import { notify, state } from './state.js';
-import { saveUserProfileDebounced, setActiveLayoutsPlanet } from './storage.js';
+import { saveFieldScenesDebounced, saveTerrainFieldsDebounced, saveUserProfileDebounced, setActiveLayoutsPlanet } from './storage.js';
 import { getTerrainFieldSlots, getTerrainFieldType, normalizeTerrainFieldSlotId, TERRAIN_FIELD_SLOT_DEFS, terrainFieldIconHtml } from './view_terrain_fields.js';
-
-const PLANET_INDEX_PATH = 'famous-planets/_planet_index.json';
 
 let planetCache = null;
 let planetLoadPromise = null;
@@ -73,18 +71,12 @@ function normalizeOfficialPlanet(raw, indexEntry = {}) {
     };
 }
 
-async function fetchJson(path) {
-    const res = await fetch(path, { cache: 'no-store' });
-    if (!res.ok) throw new Error(`load ${path} failed: ${res.status}`);
-    return await res.json();
-}
-
 async function loadOfficialPlanets() {
     if (planetCache) return planetCache;
     if (planetLoadPromise) return planetLoadPromise;
     planetLoadPromise = (async () => {
         try {
-            const index = await fetchJson(PLANET_INDEX_PATH);
+            const index = await loadPlanetIndex();
             const entries = Array.isArray(index?.planets) ? index.planets : [];
             planetCache = entries.map(entry => normalizeOfficialPlanet(entry, entry)).filter(Boolean);
         } catch (e) {
@@ -240,7 +232,7 @@ function planetIndexEntryKeys(entry) {
 
 async function readHomePlanetFromIndex(rawValue) {
     try {
-        const index = await fetchJson(PLANET_INDEX_PATH);
+        const index = await loadPlanetIndex();
         const entries = Array.isArray(index?.planets) ? index.planets : [];
         const lookupKeys = homePlanetLookupKeys(rawValue);
         const entry = entries.find(item => {
@@ -310,6 +302,8 @@ async function restoreCustomPlanet() {
     if (snapshot?.fieldScenes) state.settings.fieldScenes = clone(snapshot.fieldScenes);
     // setActiveLayoutsPlanet 会替换 state.settings.starSettlement 引用，必须之后再获取 settings。
     setActiveLayoutsPlanet('');
+    if (snapshot?.terrainSlots) saveTerrainFieldsDebounced({ slots: snapshot.terrainSlots });
+    if (snapshot?.fieldScenes) saveFieldScenesDebounced(snapshot.fieldScenes);
     const settings = settlementSettings();
     settings.source = 'custom';
     settings.planetId = 'custom';

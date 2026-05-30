@@ -169,6 +169,7 @@ export const CONFIG = {
         ice: { id: 'crystal_ice_island', title: '寒冰岛', imageUrl: 'https://cdn.keepwork.com/maisi/magichaqi/scenes/crystal_ice_island-1779952240591.webp', color: '#bae6fd', tags: ['outdoor', 'land', 'ocean', 'winter'], particles: ['snow'], bgMusic: 'mountain' },
         life: { id: 'golden_desert_island', title: '沙漠岛', imageUrl: 'https://cdn.keepwork.com/maisi/magichaqi/scenes/golden_desert_island-1779952223136.webp', color: '#fde68a', tags: ['outdoor', 'land', 'ocean', 'sand'], particles: [], bgMusic: 'ship' },
         dark: { id: 'gentle_shadow_dead_island', title: '死亡岛', imageUrl: 'https://cdn.keepwork.com/maisi/magichaqi/scenes/gentle_shadow_dead_island-1779952262043.webp', color: '#c4b5fd', tags: ['outdoor', 'land', 'ocean', 'night'], particles: ['mist'] },
+        thunder: { id: 'blue_sky_rainbow_planet_clouds', title: '雷云岛', imageUrl: 'https://cdn.keepwork.com/maisi/magichaqi/scenes/blue_sky_rainbow_planet_clouds-1779952934020.webp', color: '#bae6fd', tags: ['outdoor', 'land', 'sky'], particles: ['sparkle', 'mist'], bgMusic: 'mountain' },
     },
 
     // 12 个基础种族（用于 trait→外观 提示）
@@ -442,6 +443,33 @@ function applyShopData({ shopItems = baseShopItems, decoVisuals = baseDecoVisual
 const moduleParentUrl = new URL('..', import.meta.url + '');
 function resolveSideBySideUrl(relativePath) {
     return new URL(relativePath, moduleParentUrl).href;
+}
+
+export const PLANET_INDEX_PATH = 'famous-planets/_planet_index.json';
+export const PLANET_INDEX_URL = resolveSideBySideUrl(PLANET_INDEX_PATH);
+
+let planetIndexCache = null;
+let planetIndexLoadPromise = null;
+
+export async function loadPlanetIndex() {
+    if (planetIndexCache) return planetIndexCache;
+    if (planetIndexLoadPromise) return planetIndexLoadPromise;
+    planetIndexLoadPromise = fetch(PLANET_INDEX_URL, { cache: 'no-store' })
+        .then(res => {
+            if (!res.ok) throw new Error(`load ${PLANET_INDEX_PATH} failed: ${res.status}`);
+            return res.json();
+        })
+        .then(data => {
+            planetIndexCache = data && typeof data === 'object' ? data : { planets: [] };
+            return planetIndexCache;
+        })
+        .catch(e => {
+            console.warn('加载星球索引失败', e);
+            planetIndexCache = { planets: [] };
+            return planetIndexCache;
+        })
+        .finally(() => { planetIndexLoadPromise = null; });
+    return planetIndexLoadPromise;
 }
 
 async function fetchShopItemsJson(path, required = false) {

@@ -15,7 +15,8 @@ import { isVisitingMode, state, setZoomLevel as _setZoomLevelRaw } from './state
 import { savePetDebounced } from './storage.js';
 import { displayPetName } from './dna.js';
 
-import { planetLevel, showPlanetResearchPanel, showVisitReturnPrompt } from './level_planet.js';
+import { planetLevel, showPlanetResearchPanel } from './level_planet.js';
+import { showVisitReturnPrompt } from './view_spacetravel.js';
 import { fieldLevel }  from './level_field.js';
 import { petLevel, stopPetWalk } from './level_pet.js';
 import { cellLevel, stopCellGame } from './level_cell.js';

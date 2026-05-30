@@ -619,7 +619,7 @@ async function renderPetListRoute() {
             if (!id || state.pets[id] || state.currentView !== 'petList') return;
             try { await loadPet(id); }
             catch (e) { console.warn('加载宠物卡片失败', id, e); }
-            if (state.currentView === 'petList') renderPetListRoute();
+            return state.pets[id] || null;
         },
     });
 }

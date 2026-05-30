@@ -1637,8 +1637,8 @@ export function renderStoryMaker(panel, data = {}, { onBack, onPlayStory } = {})
             confirmText: '加入舞台',
             onBack: close,
             onLoadPet: async (id) => {
-                await loadPet(id).catch(() => null);
-                if (!disposed && overlay.isConnected) rerender();
+                if (disposed || !overlay.isConnected) return null;
+                return await loadPet(id).catch(() => null);
             },
             onConfirm: async (ids) => {
                 const uniqueIds = [...new Set(ids.filter(Boolean))];
