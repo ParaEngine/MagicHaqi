@@ -11,7 +11,7 @@ import { computePlanetProgress, getPlanetDayNumber } from './planetProgress.js';
 import { decodeDna, displayPetName, dnaRarity, dnaToName, isAdultStage, randomDna, randomDnaForElementalAttribute } from './dna.js';
 import { getRuntimePetStats, isPetOnCurrentPlanet, isPetSelectable, markPetHaqiIsland, selectablePets } from './petLifecycle.js';
 import { buildEggSvg, getPetSpriteCell, petArtHtml, scanAndMount, SHEET_COLS, SHEET_ROWS } from './pet.js';
-import { CONFIG, getStageName } from './config.js';
+import { CONFIG, currentPlanetMiningHourStart, getPlanetMiningCoins, getPlanetMiningState, getPlanetMiningVisualCoinCount, getStageName } from './config.js';
 import { createSpaceTravel, spaceTravelHtml } from './spacetravel.js';
 import { defaultPostcardText, drawPetPostcardImage, hydratePetPostcardImages, normalizePostcardLayout, POSTCARD_TEXTS, randomPostcardPhotoTheme, renderPetPostcardHtml, serializePostcardLayout } from './view_postcard.js';
 import { friendDropdownLabel, friendId, friendName, friendUsername, loadFriends } from './view_email.js';
@@ -31,9 +31,6 @@ const SMALL_REMOTE_PLANET_SIZE_PER_RADIUS = 7;
 const REMOTE_ELEMENT_HAUL_TONS = 10;
 const REMOTE_ELEMENT_MAX_TONS = 100;
 const HAQI_VISIT_COIN_REWARD = 30;
-const PLANET_MINING_COIN_PER_HOUR = 5;
-const PLANET_MINING_MAX_COINS = 120;
-const PLANET_MINING_HOUR_MS = 60 * 60 * 1000;
 const PLANET_SPACECRAFT_ENABLED = true;
 const PLANET_DECOR_CANVAS_DPR = 2;
 const PLANET_DECOR_CANVAS_PADDING = 0.2;
@@ -90,6 +87,7 @@ const SMALL_REMOTE_PLANETS = [
     { id: 'ice', name: '寒冰岛', x: 11, y: 76, radius: 3.5, depth: 10, hue: 196, accent: '#b8f7ff', rotation: 31, spinDuration: 18, elementalAttribute: '冰', fieldId: 'ice', equipmentId: 'ice_lake', equipmentName: '冰湖', equipmentEmoji: '🧊', surfaceX: 62, surfaceY: 30, tip: '派飞船可带回冰元素与冰湖资源，解锁冰湖地貌。' },
     { id: 'desert', name: '沙漠岛', x: 88, y: 29, radius: 3.8, depth: 9, hue: 42, accent: '#ffe08a', rotation: 57, spinDuration: 16, elementalAttribute: '生命', fieldId: 'life', equipmentId: 'life_sand_tree', equipmentName: '沙池生命树', equipmentEmoji: '🏝️', surfaceX: 69, surfaceY: -3, surfaceRot: 14, surfaceScale: 2, tip: '派飞船可带回生命元素与沙池生命树，解锁生命地貌。' },
     { id: 'shadow', name: '幽暗岛', x: 8, y: 52, radius: 3.1, depth: 12, hue: 218, accent: '#9ca3af', rotation: -42, spinDuration: 22, elementalAttribute: '暗', fieldId: 'dark', equipmentId: 'dark_underground_caves', equipmentName: '地下洞穴', equipmentEmoji: '🕳️', surfaceX: 67, surfaceY: 67, tip: '派飞船可带回暗元素与地下洞穴资源，解锁幽暗地貌。' },
+    { id: 'thunder', name: '雷云岛', x: 73, y: 76, radius: 3.4, depth: 11, hue: 266, accent: '#facc15', rotation: 19, spinDuration: 13, elementalAttribute: '雷', fieldId: 'thunder', equipmentId: 'thunder_cloud_tower', equipmentName: '雷云塔', equipmentEmoji: '⚡', surfaceX: 31, surfaceY: 18, tip: '派飞船可带回雷元素与雷云塔资源，解锁雷系地貌。' },
 ];
 
 const PLANET_ACTION_DETAILS = {
@@ -258,37 +256,14 @@ function spendCost(cost) {
     refreshTopbarResources();
 }
 
-function currentHourStart(now = Date.now()) {
-    const d = new Date(now);
-    d.setMinutes(0, 0, 0);
-    return d.getTime();
-}
-
-function miningStartHour(now = Date.now()) {
-    const createdAt = Number.isFinite(state.planetCreatedAt) && state.planetCreatedAt > 0 ? state.planetCreatedAt : now;
-    return currentHourStart(createdAt);
-}
-
-function getPlanetMiningState(now = Date.now()) {
-    const mining = state.planetMining && typeof state.planetMining === 'object' ? state.planetMining : (state.planetMining = {});
-    if (!Number.isFinite(mining.lastCollectedHourAt) || mining.lastCollectedHourAt <= 0) {
-        mining.lastCollectedHourAt = miningStartHour(now);
-    }
-    return mining;
-}
-
 function planetMiningCoins(now = Date.now()) {
-    const mining = getPlanetMiningState(now);
-    const lastHour = currentHourStart(Number(mining.lastCollectedHourAt) || miningStartHour(now));
-    const currentHour = currentHourStart(now);
-    const elapsedHours = Math.max(0, Math.floor((currentHour - lastHour) / PLANET_MINING_HOUR_MS));
-    return Math.min(PLANET_MINING_MAX_COINS, elapsedHours * PLANET_MINING_COIN_PER_HOUR);
+    return getPlanetMiningCoins(state, now, CONFIG);
 }
 
 function planetMiningPileHtml(coins) {
     const amount = Math.max(0, Number(coins) || 0);
     if (amount <= 0) return '';
-    const coinCount = Math.max(1, Math.min(10, Math.ceil(amount / (PLANET_MINING_MAX_COINS / 10))));
+    const coinCount = getPlanetMiningVisualCoinCount(amount, CONFIG);
     const placements = [
         [-18, 4, -21, 1.02], [-6, -1, 9, 0.96], [8, 3, -9, 1.05], [20, 0, 18, 0.92],
         [-25, 13, 16, 0.88], [-10, 10, -6, 1.08], [5, 12, 24, 0.9], [18, 11, -15, 1],
@@ -345,9 +320,10 @@ function collectPlanetMiningCoins() {
     const now = Date.now();
     const reward = planetMiningCoins(now);
     if (reward <= 0) return false;
-    const mining = getPlanetMiningState(now);
-    mining.lastCollectedHourAt = currentHourStart(now);
+    const mining = getPlanetMiningState(state, now);
+    mining.lastCollectedHourAt = currentPlanetMiningHourStart(now);
     mining.lastCollectedAt = now;
+    mining.fieldCollectedCoins = 0;
     state.coins = Math.max(0, (Number(state.coins) || 0) + reward);
     addPlanetLog('mining', `星球挖矿产出 ${reward} 金币`, '🪙');
     saveUserProfileDebounced();
@@ -1088,6 +1064,10 @@ function planetActionIconHtml(action) {
     const buildingId = PLANET_ACTION_DETAILS[action]?.building;
     if (!buildingId) return PLANET_ACTION_DETAILS[action]?.icon || '';
     return planetInfrastructureSvg(buildingId, Math.max(1, getActionInfrastructureLevel(action) || 1));
+}
+
+function isReadonlyPlanet() {
+    return state.settings?.starSettlement?.source === 'official' && state.settings.starSettlement.readonlyPlanet !== false;
 }
 
 function planetInfrastructureSvg(id, level) {
@@ -1953,6 +1933,7 @@ function runPlanetAction(action, pet, ctx) {
 
 export function showPlanetResearchPanel(pet, ctx) {
     const progress = computePlanetProgress();
+    const readonlyPlanet = isReadonlyPlanet();
     if (isLocked(progress, 3)) {
         showToast(lockedTitle(3), 'info');
         return;
@@ -1960,14 +1941,15 @@ export function showPlanetResearchPanel(pet, ctx) {
     openPlanetModal(`
         <div class="planet-modal-title">🔬 星球研究</div>
         <div class="planet-modal-subtitle">建造、升级或进入设施。</div>
-        <button class="planet-terrain-editor-entry" data-research-terrain="1" type="button">
-            <span class="planet-terrain-editor-icon">🗺️</span>
-            <span class="planet-terrain-editor-body">
-                <b>星球地貌编辑器</b>
-                <i>管理天空、陆地、海洋和元素的比例。</i>
-            </span>
-            <span class="planet-terrain-editor-go">进入</span>
-        </button>
+        ${readonlyPlanet ? '' : `
+            <button class="planet-terrain-editor-entry" data-research-terrain="1" type="button">
+                <span class="planet-terrain-editor-icon">🗺️</span>
+                <span class="planet-terrain-editor-body">
+                    <b>星球地貌编辑器</b>
+                    <i>管理天空、陆地、海洋和元素的比例。</i>
+                </span>
+                <span class="planet-terrain-editor-go">进入</span>
+            </button>`}
         <button class="planet-terrain-editor-entry" data-research-settlements="1" type="button">
             <span class="planet-terrain-editor-icon">🚀</span>
             <span class="planet-terrain-editor-body">

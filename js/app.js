@@ -72,14 +72,16 @@ function importRuntimeModule(src) {
 async function ensureKeepworkSDK() {
     if (window.KeepworkSDK) return;
     const host = window.location.hostname;
+    const isLocalHost = host === '127.0.0.1' || host === 'localhost';
+    const useLocalIndex = isLocalHost && !window.location.pathname.includes('/dist/');
     try {
-        if (host === '127.0.0.1' || host === 'localhost') {
+        if (useLocalIndex) {
             await importRuntimeModule('/keepworkSDK/index.js');
         } else {
             await loadScript(sdkCdnUrl);
         }
     } catch (err) {
-        if (host === '127.0.0.1' || host === 'localhost') {
+        if (useLocalIndex) {
             await loadScript(sdkCdnUrl);
             return;
         }
@@ -146,6 +148,7 @@ let pendingStoryPath = null;
 let pendingStoryData = null;
 let pendingStoryReturnToMaker = null;
 let pendingStoryReturnToList = false;
+let storyMakerOrigin = null;
 let shopReturnPreserveRoomMode = false;
 let lastRenderedView = null;
 let isBootstrapping = true;
@@ -332,7 +335,11 @@ function renderStoryPlayerRoute() {
 
 function renderStoryMakerRoute() {
     const listOptions = {
-        onBack: () => navigateToView(state.currentPetId ? 'settings' : 'petList'),
+        onBack: () => {
+            const target = storyMakerOrigin || (state.currentPetId ? 'settings' : 'petList');
+            storyMakerOrigin = null;
+            navigateToView(target);
+        },
         onNewStory: () => openStoryMakerEditor(null),
         onEditStory: (story) => openStoryMakerEditor(story),
         onPlayStory: (story) => {
@@ -358,7 +365,11 @@ function renderStoryMakerRoute() {
         .catch((e) => {
             console.error('加载故事列表失败', e);
             showToast('加载故事列表失败：' + (e?.message || e), 'error');
-            if (state.currentView === 'storyMaker') navigateToView(state.currentPetId ? 'settings' : 'petList');
+            if (state.currentView === 'storyMaker') {
+                const target = storyMakerOrigin || (state.currentPetId ? 'settings' : 'petList');
+                storyMakerOrigin = null;
+                navigateToView(target);
+            }
         });
 }
 
@@ -996,6 +1007,8 @@ async function selectFirstAvailablePet(preferredId = null) {
 
 async function enforcePlanetPetLimit(preferredKeepId = state.currentPetId) {
     const limit = getPlanetPetLimit();
+    // 总宠物数未超过上限时，星球绝不可能超载——直接跳过，避免为了计数而加载全部 pet.json。
+    if ((state.petOrder?.length || 0) <= limit) return [];
     const orderedPets = await loadOrderedPets();
     const orderIndex = new Map((state.petOrder || []).map((id, index) => [id, index]));
     let localPets = localPlanetPets(orderedPets);
@@ -1972,6 +1985,9 @@ async function navigateToView(target, options = {}) {
     if (target === 'home') { setView('home'); return; }
     if (target === 'petList') { setView('petList'); return; }
     if (target !== 'postcard') pendingPostcard = null;
+    if (target === 'storyMaker') {
+        storyMakerOrigin = options.origin || null;
+    }
     if (routes[target]) { setView(target); return; }
     showToast('未知导航：' + target, 'info');
 }

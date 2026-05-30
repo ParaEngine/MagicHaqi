@@ -553,6 +553,7 @@ export const cellLevel = {
             return `
                 <div class="mh-dock-row mh-scroll-x dock-action-row">
                     <button type="button" class="btn-secondary action-btn dock-icon-btn" data-act="wish"><span class="dock-icon">🌠</span><span class="dock-label">${hasWish ? '修改许愿' : '许愿'}</span></button>
+                    <button type="button" class="btn-secondary action-btn dock-icon-btn" data-act="storyMaker" title="打开故事创作"><span class="dock-icon">📝</span><span class="dock-label">故事创作</span></button>
                 </div>
                 <div class="mh-dock-hint">${hasWish ? '已记录你的许愿，孵化时会按这段描述生成宠物外观。' : '蛋阶段：可以为蛋的最终外观许愿，描述任何你想要的样子。'}</div>
             `;
@@ -562,6 +563,7 @@ export const cellLevel = {
             <div class="mh-dock-row mh-scroll-x dock-action-row">
                 <button type="button" class="btn-secondary action-btn dock-icon-btn ${sleeping ? 'is-sleep-disabled' : ''}" data-act="chat"${dockDisabledAttrs(sleeping, sleepingText)} title="${escapeHtml(sleepingText)}"><span class="dock-icon">💬</span><span class="dock-label">对话</span></button>
                 ${sickness ? `<button type="button" class="btn-secondary action-btn dock-icon-btn cell-treat-btn ${sleeping ? 'is-sleep-disabled' : ''}" data-act="treatSickness"${dockDisabledAttrs(sleeping, sleepingText)} title="${sleeping ? escapeHtml(sleepingText) : '启动细胞免疫塔防治疗疾病'}"><span class="dock-icon">${treatmentIconSvg()}</span><span class="dock-label">治疗</span></button>` : ''}
+                <button type="button" class="btn-secondary action-btn dock-icon-btn" data-act="storyMaker" title="打开故事创作"><span class="dock-icon">📝</span><span class="dock-label">故事创作</span></button>
             </div>
             <div class="mh-dock-hint">${escapeHtml(cellStatusText(pet))}</div>
         `;
@@ -575,6 +577,7 @@ export const cellLevel = {
                 if (isDockButtonDisabled(el)) { showDockDisabledToast(el); return; }
                 const k = el.dataset.act;
                 if (k === 'chat') { ctx.callbacks.onNav?.('chat'); return; }
+                if (k === 'storyMaker') { ctx.callbacks.onNav?.('storyMaker', { origin: 'home' }); return; }
                 if (k === 'wish') showWishModal(pet, ctx);
                 if (k === 'treatSickness') ctx.callbacks.onTreatSickness?.();
             };

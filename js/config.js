@@ -48,6 +48,7 @@ export function getDefaultZoomLevelIndex(raw = {}) {
 
 export function resolveZoomLevelIndex(target, raw = {}, from = null) {
     const visible = getVisibleZoomLevelIndices(raw);
+    if (!visible.length) return 0;
     const clamped = Math.max(0, Math.min(ZOOM_LEVEL_IDS.length - 1, Number(target) | 0));
     if (visible.includes(clamped)) return clamped;
     const current = Number.isFinite(from) ? Math.max(0, Math.min(ZOOM_LEVEL_IDS.length - 1, Number(from) | 0)) : null;
@@ -160,6 +161,16 @@ export const CONFIG = {
         { id: 'sky',   name: '天空', emoji: '☁️', iconClass: 'field-tab-icon-sky', bg: 'linear-gradient(180deg,#dbeafe 0%,#93c5fd 55%,#3b82f6 100%)', favoriteTrait: 'birdLike' },
     ],
 
+    fieldDefaultScenes: {
+        land: { id: 'blue_planet_grassland', title: '蓝星云草地', imageUrl: 'https://cdn.keepwork.com/maisi/magichaqi/scenes/blue_planet_grassland-1779950916879.webp', color: '#bae6fd', tags: ['outdoor', 'land', 'sky'], particles: ['sparkle'] },
+        water: { id: 'coral_rock_undersea_garden', title: '珊瑚岩石海底园', imageUrl: 'https://cdn.keepwork.com/maisi/magichaqi/scenes/coral_rock_undersea_garden-1779951499103.webp', color: '#67e8f9', tags: ['ocean', 'underwater'], particles: ['bubbles'] },
+        sky: { id: 'blue_sky_rainbow_planet_clouds', title: '蓝天彩虹云境', imageUrl: 'https://cdn.keepwork.com/maisi/magichaqi/scenes/blue_sky_rainbow_planet_clouds-1779952934020.webp', color: '#bae6fd', tags: ['sky', 'outdoor'], particles: ['sparkle'] },
+        fire: { id: 'blazing_fire_island', title: '烈火岛', imageUrl: 'https://cdn.keepwork.com/maisi/magichaqi/scenes/blazing_fire_island-1779952121124.webp', color: '#fb923c', tags: ['outdoor', 'land', 'ocean', 'mountain'], particles: ['embers'], bgMusic: 'mountain' },
+        ice: { id: 'crystal_ice_island', title: '寒冰岛', imageUrl: 'https://cdn.keepwork.com/maisi/magichaqi/scenes/crystal_ice_island-1779952240591.webp', color: '#bae6fd', tags: ['outdoor', 'land', 'ocean', 'winter'], particles: ['snow'], bgMusic: 'mountain' },
+        life: { id: 'golden_desert_island', title: '沙漠岛', imageUrl: 'https://cdn.keepwork.com/maisi/magichaqi/scenes/golden_desert_island-1779952223136.webp', color: '#fde68a', tags: ['outdoor', 'land', 'ocean', 'sand'], particles: [], bgMusic: 'ship' },
+        dark: { id: 'gentle_shadow_dead_island', title: '死亡岛', imageUrl: 'https://cdn.keepwork.com/maisi/magichaqi/scenes/gentle_shadow_dead_island-1779952262043.webp', color: '#c4b5fd', tags: ['outdoor', 'land', 'ocean', 'night'], particles: ['mist'] },
+    },
+
     // 12 个基础种族（用于 trait→外观 提示）
     traitDefs: [
         { id: 'catLike',    name: '猫科', emoji: '🐱', food: 'food_meat'   },
@@ -192,6 +203,14 @@ export const CONFIG = {
     poopMachineCostCoins: 5,            // 启动清理机器消耗金币
     biofuelPerPoop: 1,
 
+    // 星球挖矿金币：planet 和 field 只是同一来源的两种领取入口。
+    planetMining: {
+        coinPerHour: 5,
+        maxCoins: 120,
+        hourMs: 60 * 60 * 1000,
+        maxScatteredCoins: 10,
+    },
+
     // 房间网格规格（与 CSS 对应）
     gridCols: 8,
     gridRows: 6,
@@ -222,6 +241,78 @@ export const CONFIG = {
     // 付费默认（开发态可在设置中切换）
     defaultIsPaid: false,
 };
+
+export function getPlanetMiningConfig(config = CONFIG) {
+    const source = config?.planetMining || {};
+    return {
+        coinPerHour: Math.max(0, Number(source.coinPerHour) || 0),
+        maxCoins: Math.max(0, Number(source.maxCoins) || 0),
+        hourMs: Math.max(1, Number(source.hourMs) || 60 * 60 * 1000),
+        maxScatteredCoins: Math.max(1, Number(source.maxScatteredCoins) || 10),
+    };
+}
+
+export function currentPlanetMiningHourStart(now = Date.now()) {
+    const d = new Date(now);
+    d.setMinutes(0, 0, 0);
+    return d.getTime();
+}
+
+export function planetMiningStartHour(gameState, now = Date.now()) {
+    const createdAt = Number.isFinite(gameState?.planetCreatedAt) && gameState.planetCreatedAt > 0 ? gameState.planetCreatedAt : now;
+    return currentPlanetMiningHourStart(createdAt);
+}
+
+export function getPlanetMiningState(gameState, now = Date.now()) {
+    const mining = gameState.planetMining && typeof gameState.planetMining === 'object' ? gameState.planetMining : (gameState.planetMining = {});
+    if (!Number.isFinite(mining.lastCollectedHourAt) || mining.lastCollectedHourAt <= 0) {
+        mining.lastCollectedHourAt = planetMiningStartHour(gameState, now);
+    }
+    return mining;
+}
+
+export function getPlanetMiningGrossCoins(gameState, now = Date.now(), config = CONFIG) {
+    const miningConfig = getPlanetMiningConfig(config);
+    const mining = getPlanetMiningState(gameState, now);
+    const lastHour = currentPlanetMiningHourStart(Number(mining.lastCollectedHourAt) || planetMiningStartHour(gameState, now));
+    const currentHour = currentPlanetMiningHourStart(now);
+    const elapsedHours = Math.max(0, Math.floor((currentHour - lastHour) / miningConfig.hourMs));
+    return Math.min(miningConfig.maxCoins, elapsedHours * miningConfig.coinPerHour);
+}
+
+export function getPlanetMiningCoins(gameState, now = Date.now(), config = CONFIG) {
+    const mining = getPlanetMiningState(gameState, now);
+    const grossCoins = getPlanetMiningGrossCoins(gameState, now, config);
+    const fieldCollectedCoins = Math.max(0, Math.min(grossCoins, Math.floor(Number(mining.fieldCollectedCoins) || 0)));
+    return Math.max(0, grossCoins - fieldCollectedCoins);
+}
+
+export function recordPlanetMiningFieldCollected(gameState, amount, now = Date.now(), config = CONFIG) {
+    const reward = Math.max(0, Math.floor(Number(amount) || 0));
+    if (reward <= 0) return 0;
+    const mining = getPlanetMiningState(gameState, now);
+    const grossCoins = getPlanetMiningGrossCoins(gameState, now, config);
+    if (grossCoins <= 0) return 0;
+    const previous = Math.max(0, Math.min(grossCoins, Math.floor(Number(mining.fieldCollectedCoins) || 0)));
+    const collected = Math.min(grossCoins, previous + reward);
+    const actual = Math.max(0, collected - previous);
+    if (actual <= 0) return 0;
+    if (collected >= grossCoins) {
+        mining.lastCollectedHourAt = currentPlanetMiningHourStart(now);
+        mining.fieldCollectedCoins = 0;
+    } else {
+        mining.fieldCollectedCoins = collected;
+    }
+    mining.lastCollectedAt = now;
+    return actual;
+}
+
+export function getPlanetMiningVisualCoinCount(amount, config = CONFIG) {
+    const miningConfig = getPlanetMiningConfig(config);
+    const safeAmount = Math.max(0, Number(amount) || 0);
+    if (safeAmount <= 0) return 0;
+    return Math.max(1, Math.min(miningConfig.maxScatteredCoins, Math.ceil(safeAmount / (Math.max(1, miningConfig.maxCoins) / miningConfig.maxScatteredCoins))));
+}
 
 export function normalizeSceneImageSizeOption(option = {}) {
     const value = String(option.value || `${option.width || ''}x${option.height || ''}` || '').trim();
@@ -343,8 +434,18 @@ function applyShopData({ shopItems = baseShopItems, decoVisuals = baseDecoVisual
     SHOP_BY_ID = new Map(SHOP_ITEMS.map(item => [item.id, item]));
 }
 
+// Base URL of the bundled chunk's parent directory (e.g. .../MagicHaqi/ at dev,
+// .../dist/ in the build). Resolved at runtime from a non-static base so Vite
+// does NOT statically analyze `new URL('../<path>', import.meta.url)` and slurp
+// the whole side-by-side tree into assets/ with content hashes. The referenced
+// JSON files are shipped verbatim next to the page, not as hashed assets.
+const moduleParentUrl = new URL('..', import.meta.url + '');
+function resolveSideBySideUrl(relativePath) {
+    return new URL(relativePath, moduleParentUrl).href;
+}
+
 async function fetchShopItemsJson(path, required = false) {
-    const url = path.startsWith('famous-planets/') ? new URL(`../${path}`, import.meta.url).href : path;
+    const url = path.startsWith('famous-planets/') ? resolveSideBySideUrl(path) : path;
     try {
         const res = await fetch(url, { cache: 'no-store' });
         if (!res.ok) throw new Error(`load ${path} failed: ${res.status}`);

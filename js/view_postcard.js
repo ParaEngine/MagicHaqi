@@ -231,9 +231,9 @@ async function readFamousPetsIndexText(indexUrl) {
     const base = state.sdk?.personalPageStore;
     if (!base?.readFile) return '';
     const store = (typeof base.withWorkspace === 'function') ? base.withWorkspace(CONFIG.workspace) : base;
-    try { return (await store.readFile('famous-pets/index.json', 1, 99999)) || ''; }
+    try { return (await store.readFile('famous-pets/_pet_index.json', 1, 99999)) || ''; }
     catch (_) {
-        try { return (await store.readFile('famous-pets/index.json')) || ''; }
+        try { return (await store.readFile('famous-pets/_pet_index.json')) || ''; }
         catch (__) { return ''; }
     }
 }
@@ -262,7 +262,9 @@ async function loadFamousPetsIndex(indexUrl) {
 }
 
 async function readFamousPetFromIndex(localId, petId) {
-    const indexUrl = new URL('../famous-pets/index.json', import.meta.url);
+    // `import.meta.url + ''` keeps Vite from statically analyzing this URL and
+    // emitting a hashed copy of the verbatim-shipped famous-pets file.
+    const indexUrl = new URL('../famous-pets/_pet_index.json', import.meta.url + '');
     const list = await loadFamousPetsIndex(indexUrl);
     const entry = list.find(item => String(item?.id || '').trim() === localId);
     if (!entry) return null;
@@ -282,7 +284,7 @@ async function readFamousPet(petId) {
     if (!localId) return null;
     const indexPet = await readFamousPetFromIndex(localId, petId);
     if (indexPet) return indexPet;
-    const jsonUrl = new URL(`../famous-pets/${localId}.json`, import.meta.url);
+    const jsonUrl = new URL(`../famous-pets/${localId}.json`, import.meta.url + '');
     try {
         const text = await readFamousPetText(localId, jsonUrl);
         if (!text) return null;

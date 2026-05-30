@@ -37,6 +37,11 @@ function buildActorAppearance(actor = {}) {
     ].filter(Boolean).join('，') || pet.name || actor.name || '可爱的宠物角色';
 }
 
+function normalizePetSheetBackgroundColor(value) {
+    const color = String(value || '').trim().toLowerCase();
+    return color === '#000000' ? '#000000' : '#ffffff';
+}
+
 export function buildStoryPrompt(promptText, count, actors = [], options = {}) {
     const sceneTagPromptHint = options.sceneTagPromptHint || 'indoor, outdoor, land, sky, ocean, playground, bathroom, living room, shop, school, spring, winter, seaside, haqi, townhall, forest, sand, hospital';
     const bgMusicKeys = Array.isArray(options.bgMusicKeys) ? options.bgMusicKeys : [];
@@ -143,6 +148,8 @@ export function buildPetSheetPrompt(dna, name = '', options = {}) {
     const traits = options && options.traits && typeof options.traits === 'object' && !Array.isArray(options.traits)
         ? options.traits
         : null;
+    const backgroundColor = normalizePetSheetBackgroundColor(options?.backgroundColor);
+    const backgroundName = backgroundColor === '#000000' ? '纯黑色' : '纯白色';
     const traitPrompt = traits ? buildTraitPrompt(name, traits) : '';
     const dnaPrompt = traitPrompt ? '' : dnaToPrompt(dna, { name });
     const sheetTheme = '';
@@ -169,8 +176,8 @@ export function buildPetSheetPrompt(dna, name = '', options = {}) {
         '4 个成长阶段的宠物在各自格子中的视觉尺寸必须保持一致，不要因为年龄变化而明显变大或变小；做动作时也必须完整留在格子内，头部、身体、四肢、尾巴、耳朵、翅膀、配饰和特效都不能超出格子或被裁切。',
         '每一行代表同一只宠物的同一成长阶段（共 4 个阶段）：第 1 行=宝宝/幼年（圆圆大头，身体极小，只露出小短手小短脚，像头部占画面主体的婴儿萌宠, 不要暴漏主要生物特征和元素特征），第 2 行=青少年（圆润可爱的卡通比例，可以展示没有完全发育的主要生物特征），第 3 行=成年（仍然保持卡通萌宠比例，呈现出完整的主要生物特点），第 4 行=年长/长老（仍然保持卡通萌宠比例，增加元素特征）。',
         '每一行的 4 列代表同一阶段下的 4 种情绪/状态：第 1 列=idle（待机、自然站立、平静微笑），第 2 列=happy（开心、咧嘴大笑、雀跃姿态），第 3 列=sad（难过、眼角垂泪、垂头丧气），第 4 列=sleep（睡觉、闭眼、放松或蜷缩, 可正对，背对或侧卧等姿势皆可）。同一行的 4 个变体必须保持相同的种类、毛色、配饰，明显是同一只宠物。',
-        '严格背景要求：背景必须是**完全纯黑色 #000000** 填充整张图（每个格子内的背景也都是纯黑），16 格之间也必须连续纯黑，不能有任何分隔线；',
-        '风格要求（重要）：超扁平 2D 卡通插画，整体必须是圆润可爱的卡通萌宠比例；宝宝阶段要更夸张，几乎只有头。描边只能是清晰实线，宠物外轮廓绝对不能发光。不要3D皮克斯风格，不要复杂阴影，不要任何文字，不要超出格子,不要绘制格子。',
+        `严格背景要求：背景必须是**完全${backgroundName} ${backgroundColor}** 填充整张图（每个格子内的背景也都是${backgroundName}），16 格之间也必须连续${backgroundName}，不能有任何分隔线；`,
+        '风格要求（重要）：超扁平 2D 卡通插画，整体必须是圆润可爱的卡通萌宠比例；宝宝阶段要更夸张，几乎只有头。描边只能是清晰实线，宠物外轮廓绝对不能发光。不要3D皮克斯风格，不要阴影，不要投影，不要复杂光照，不要任何文字，不要超出格子,不要绘制格子。',
     ].filter(Boolean).join(' ');
 }
 

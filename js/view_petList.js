@@ -184,6 +184,7 @@ const ELEMENTAL_ATTRIBUTE_BACKGROUNDS = {
     '冰': '#bae6fd',
     '生命': '#bbf7d0',
     '暗': '#ddd6fe',
+    '雷': '#fef08a',
 };
 const DEFAULT_PET_ART_BACKGROUND = '#dff7ff';
 
@@ -328,7 +329,9 @@ function sortPetsByRecentBirthday(pets) {
 export async function loadFamousPetsIndex() {
     if (Array.isArray(famousPetsIndex)) return famousPetsIndex;
     if (!famousPetsIndexPromise) {
-        const indexUrl = new URL('../famous-pets/index.json', import.meta.url);
+        // `import.meta.url + ''` keeps Vite from statically analyzing this URL
+        // and emitting a hashed copy of the verbatim-shipped famous-pets file.
+        const indexUrl = new URL('../famous-pets/_pet_index.json', import.meta.url + '');
         famousPetsIndexPromise = fetch(indexUrl.href, { cache: 'no-cache' })
             .then(response => response.ok ? response.json() : [])
             .then(data => {

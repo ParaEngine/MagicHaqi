@@ -39,8 +39,10 @@
       .record-select { @apply grid place-items-center; }
       .record-select input { @apply h-4 w-4 min-h-0; }
       .record-main { @apply block min-w-0 border-0 bg-transparent p-0 text-left hover:border-transparent hover:bg-transparent; }
-      .record-thumb { @apply h-[42px] w-[42px] overflow-hidden rounded-md border border-slate-300; background-color: #fff; background-image: linear-gradient(45deg, #dfe6ee 25%, transparent 25%), linear-gradient(-45deg, #dfe6ee 25%, transparent 25%), linear-gradient(45deg, transparent 75%, #dfe6ee 75%), linear-gradient(-45deg, transparent 75%, #dfe6ee 75%); background-size: 12px 12px; background-position: 0 0, 0 6px, 6px -6px, -6px 0; }
-      .record-thumb span { @apply block h-full w-full bg-no-repeat; background-size: 400% 400%; background-position: 66.667% 33.333%; }
+      .record-thumb { @apply relative h-[42px] w-[42px] overflow-hidden rounded-md border border-slate-300; background-color: #fff; background-image: linear-gradient(45deg, #dfe6ee 25%, transparent 25%), linear-gradient(-45deg, #dfe6ee 25%, transparent 25%), linear-gradient(45deg, transparent 75%, #dfe6ee 75%), linear-gradient(-45deg, transparent 75%, #dfe6ee 75%); background-size: 12px 12px; background-position: 0 0, 0 6px, 6px -6px, -6px 0; }
+      .record-thumb-image { @apply block h-full w-full bg-no-repeat; background-size: 400% 400%; background-position: 66.667% 33.333%; }
+      .record-complete-mark { @apply pointer-events-none absolute right-0.5 top-0.5 grid h-4 w-4 place-items-center rounded-full border border-white bg-emerald-600 text-white shadow-sm; }
+      .record-complete-mark svg { @apply h-3 w-3; stroke: currentColor; }
       .record-title { @apply block min-w-0 overflow-hidden text-ellipsis whitespace-nowrap text-[13px] font-bold; }
       .record-meta { @apply block min-w-0 overflow-hidden text-ellipsis whitespace-nowrap text-[11px] text-slate-500; }
       .record-actions { @apply flex gap-1.5; }
@@ -139,6 +141,12 @@
               <option value="1024x1024">1024x1024 产品规格</option>
             </select>
           </label>
+          <label>生成背景色
+            <select id="petBackgroundColor">
+              <option value="#ffffff" selected>白色 #ffffff 默认</option>
+              <option value="#000000">黑色 #000000 旧版</option>
+            </select>
+          </label>
           <div class="toolbar">
             <label class="toggle-line"><input id="uploadResultToKeepwork" type="checkbox" checked disabled>上传临时 CDN</label>
             <button id="btnPetCdnConfig" type="button">设置</button>
@@ -170,8 +178,14 @@
       </div>
       <div class="grid grid-cols-[1fr_auto] gap-2 border-b border-slate-300 bg-slate-50 p-3">
         <input id="recordSearch" placeholder="搜索 id / name">
+        <select id="recordProcessFilter" aria-label="处理状态筛选">
+          <option value="all" selected>全部</option>
+          <option value="pending">待处理</option>
+          <option value="processed">已处理</option>
+        </select>
         <button id="btnNewPet" class="primary" type="button">新建</button>
         <button id="btnRefreshRecords" class="primary" type="button">生成选中(0)</button>
+        <button id="btnDeleteSelectedRecords" class="danger" type="button">删除选中(0)</button>
         <button id="btnRepairPets" type="button">修复</button>
         <button id="btnOpenIndex" type="button">打开</button>
         <label class="toggle-line col-span-2"><input id="recordSelectAll" type="checkbox"><span id="recordSelectAllLabel">全选当前列表</span></label>
@@ -234,7 +248,7 @@
                   <select id="element"><option>陆地</option><option>水系</option><option>天空</option></select>
                 </label>
                 <label>元素
-                  <select id="elementalAttribute"><option>自然</option><option>火</option><option>冰</option><option>生命</option><option>暗</option></select>
+                  <select id="elementalAttribute"><option>自然</option><option>火</option><option>冰</option><option>生命</option><option>暗</option><option>雷</option></select>
                 </label>
               </div>
               <div class="grid grid-cols-1 gap-2.5 md:grid-cols-2">
@@ -313,7 +327,8 @@
 
     const WORKSPACE = 'MagicHaqi';
     const FAMOUS_DIR = 'famous-pets';
-    const INDEX_PATH = `${FAMOUS_DIR}/index.json`;
+    const INDEX_FILE = '_pet_index.json';
+    const INDEX_PATH = `${FAMOUS_DIR}/${INDEX_FILE}`;
     const LOCAL_INDEX_URL = `../${INDEX_PATH}`;
     const PET_CDN_FOLDER = 'maisi/magichaqi/pet';
     const SETTINGS_STORAGE_KEY = 'MagicHaqi.FamousPetGenerator.generationSettings';
@@ -327,10 +342,12 @@
     const ANIM_COL = { idle: 0, happy: 1, sad: 2, sleep: 3 };
     const WEBP_DEFAULT_QUALITY = 0.2;
     const WEBP_MAX_BYTES = 100 * 1024;
+    const BATCH_PET_MAX_COUNT = 100;
+    const BATCH_PET_LLM_CHUNK_SIZE = 50;
     const WEBP_DEFAULT_BG_OPTIONS = { seedThreshold: 60, growThreshold: 78, haloThreshold: 112, borderRatio: 0.02, gridLineWidth: 6 };
     const INDEX_ENTRY_FIELDS = ['id', 'name', 'dna', 'imageSheetUrl', 'traits', 'rarity'];
     const $ = (id) => document.getElementById(id);
-    const state = { sdk: null, referenceDataUrl: '', workspaceViewer: null, webpExport: null, records: [], selectedRecordPaths: new Set(), selectedId: '', selectedPath: '', currentPath: '', currentHistoryUrls: [], imageSizeCache: new Map(), imageSizeRequests: new Map(), imageDimensionCache: new Map(), imageDimensionRequests: new Map(), recordThumbObserver: null, dirty: false, generationPromptsPromise: null, batchCreate: null, batchGenerate: null, batchRepair: null, lastImageModel: '', lastTextModel: '' };
+    const state = { sdk: null, referenceDataUrl: '', workspaceViewer: null, webpExport: null, records: [], selectedRecordPaths: new Set(), completedRecordPaths: new Set(), selectedId: '', selectedPath: '', currentPath: '', currentHistoryUrls: [], imageSizeCache: new Map(), imageSizeRequests: new Map(), imageDimensionCache: new Map(), imageDimensionRequests: new Map(), recordThumbObserver: null, petSheetWorker: null, petSheetWorkerPending: new Map(), dirty: false, generationPromptsPromise: null, batchCreate: null, batchGenerate: null, batchRepair: null, lastImageModel: '', lastTextModel: '', lastPetBackgroundColor: '#ffffff' };
 
     function loadGenerationPrompts() {
       state.generationPromptsPromise ||= import('../js/generationPrompts.js');
@@ -468,6 +485,20 @@
       return !!record?.pet && !String(record.pet.imageSheetUrl || '').trim();
     }
 
+    function hasRecordImage(record) {
+      return !!String(record?.pet?.imageSheetUrl || '').trim();
+    }
+
+    function isRecordPendingSelection(record) {
+      return !!record?.pet && (isRecordMissingImage(record) || state.selectedRecordPaths.has(record.path));
+    }
+
+    function matchesRecordProcessFilter(record, filter) {
+      if (filter === 'pending') return isRecordMissingImage(record) || state.selectedRecordPaths.has(record.path) || state.completedRecordPaths.has(record.path);
+      if (filter === 'processed') return hasRecordImage(record);
+      return true;
+    }
+
     function isDataUrl(value) {
       return /^data:/i.test(String(value || '').trim());
     }
@@ -498,22 +529,31 @@
     }
 
     function pruneSelectedRecordPaths() {
-      const validPaths = new Set(state.records.map(record => record.path));
+      const validRecords = new Map(state.records.map(record => [record.path, record]));
       for (const path of state.selectedRecordPaths) {
-        if (!validPaths.has(path)) state.selectedRecordPaths.delete(path);
+        const record = validRecords.get(path);
+        if (!record?.pet) state.selectedRecordPaths.delete(path);
+      }
+      const validPaths = new Set(validRecords.keys());
+      for (const path of state.completedRecordPaths) {
+        if (!validPaths.has(path)) state.completedRecordPaths.delete(path);
       }
     }
 
     function getFilteredRecordList() {
       const query = $('recordSearch').value.trim().toLowerCase();
-      const filteredRecords = state.records.filter(record => !query || `${record.id} ${record.name}`.toLowerCase().includes(query));
+      const processFilter = $('recordProcessFilter')?.value || 'all';
+      const filteredRecords = state.records.filter(record => {
+        const matchesQuery = !query || `${record.id} ${record.name}`.toLowerCase().includes(query);
+        return matchesQuery && matchesRecordProcessFilter(record, processFilter);
+      });
       const selectedRecord = state.selectedPath ? state.records.find(record => record.path === state.selectedPath) : null;
       const selectedInFilteredRecords = !!selectedRecord && filteredRecords.some(record => record.path === selectedRecord.path);
-      return selectedRecord && !selectedInFilteredRecords ? [selectedRecord, ...filteredRecords] : filteredRecords;
+      return selectedRecord && !selectedInFilteredRecords && matchesRecordProcessFilter(selectedRecord, processFilter) ? [selectedRecord, ...filteredRecords] : filteredRecords;
     }
 
     function selectMissingVisibleRecords() {
-      selectMissingPetRecords(getFilteredRecordList());
+      getFilteredRecordList().filter(isRecordMissingImage).forEach(record => state.selectedRecordPaths.add(record.path));
     }
 
     function getRenderedRecordPaths() {
@@ -532,9 +572,11 @@
     }
 
     function setRenderedRecordSelection(checked) {
+      const recordsByPath = new Map(state.records.map(record => [record.path, record]));
       const paths = getRenderedRecordPaths();
       paths.forEach(path => {
-        if (checked) state.selectedRecordPaths.add(path);
+        const record = recordsByPath.get(path);
+        if (checked && record?.pet) state.selectedRecordPaths.add(path);
         else state.selectedRecordPaths.delete(path);
       });
       renderRecordList();
@@ -556,6 +598,14 @@
       button.textContent = state.batchRepair?.running ? '修复中...' : '修复';
     }
 
+    function updateBatchDeleteButton() {
+      const button = $('btnDeleteSelectedRecords');
+      if (!button) return;
+      const targetCount = getCheckedRecords().length;
+      button.textContent = `删除选中(${targetCount})`;
+      button.disabled = targetCount <= 0 || state.batchGenerate?.running || state.batchRepair?.running;
+    }
+
     function updateBatchGenerateButton() {
       const button = $('btnRefreshRecords');
       if (!button) return;
@@ -564,12 +614,14 @@
         const current = Math.min(batch.total, Math.max(1, batch.current || batch.done + 1));
         button.textContent = `${batch.stopRequested ? '暂停中' : '暂停'}(${current}/${batch.total})`;
         button.disabled = false;
+        updateBatchDeleteButton();
         return;
       }
       const targetCount = getBatchGenerateTargets().records.length;
       button.textContent = `生成选中(${targetCount})`;
       button.disabled = targetCount <= 0;
       updateRepairPetsButton();
+      updateBatchDeleteButton();
     }
 
     function shouldRemoveHistoryUrlsOnExport() {
@@ -597,6 +649,15 @@
       return $('imageModelSelect').value.trim();
     }
 
+    function normalizePetBackgroundColor(value) {
+      const color = String(value || '').trim().toLowerCase();
+      return color === '#000000' ? '#000000' : '#ffffff';
+    }
+
+    function getPetBackgroundColor() {
+      return normalizePetBackgroundColor($('petBackgroundColor')?.value || state.lastPetBackgroundColor || '#ffffff');
+    }
+
     function readLocalGenerationSettings() {
       try { return JSON.parse(localStorage.getItem(SETTINGS_STORAGE_KEY) || '{}') || {}; }
       catch (_) { return {}; }
@@ -606,10 +667,12 @@
       state.lastImageModel = getSelectedImageModel() || state.lastImageModel || '';
       const textModelSelect = $('batchTextModelSelect');
       state.lastTextModel = textModelSelect?.value?.trim() || state.lastTextModel || '';
+      state.lastPetBackgroundColor = getPetBackgroundColor();
       try {
         localStorage.setItem(SETTINGS_STORAGE_KEY, JSON.stringify({
           lastImageModel: state.lastImageModel || '',
           lastTextModel: state.lastTextModel || '',
+          lastPetBackgroundColor: state.lastPetBackgroundColor || '#ffffff',
           updatedAt: new Date().toISOString(),
         }));
       } catch (_) {}
@@ -727,7 +790,7 @@
     async function buildPromptForPet(pet) {
       const reference = getReferenceImage();
       const { buildPetSheetPrompt } = await loadGenerationPrompts();
-      return buildPetSheetPrompt(pet.dna, pet.name, { customPrompt: pet.wishPrompt, referenceImage: reference, traits: pet.traits });
+      return buildPetSheetPrompt(pet.dna, pet.name, { customPrompt: pet.wishPrompt, referenceImage: reference, traits: pet.traits, backgroundColor: getPetBackgroundColor() });
     }
 
     function applyPetToForm(pet, path = '') {
@@ -1001,17 +1064,17 @@
     }
 
     async function loadRecords({ selectFirstValid = false } = {}) {
-      setStatus($('runStatus'), '正在读取系统目录和 workspace famous-pets/index.json...', '');
+      setStatus($('runStatus'), `正在读取系统目录和 workspace ${INDEX_PATH}...`, '');
       let systemIndexData = [];
       let workspaceIndexData = [];
       try {
         systemIndexData = await readLocalJson(LOCAL_INDEX_URL, []);
       } catch (e) {
-        setStatus($('runStatus'), `系统目录 index.json 读取失败，继续尝试 workspace：${e?.message || e}`, 'error');
+        setStatus($('runStatus'), `系统目录 ${INDEX_FILE} 读取失败，继续尝试 workspace：${e?.message || e}`, 'error');
       }
       if ((state.sdk || window.keepwork)?.personalPageStore) {
         try { workspaceIndexData = JSON.parse(await readFile(INDEX_PATH) || '[]'); }
-        catch (e) { setStatus($('runStatus'), `workspace index.json 读取失败，仅使用系统目录：${e?.message || e}`, 'error'); }
+        catch (e) { setStatus($('runStatus'), `workspace ${INDEX_FILE} 读取失败，仅使用系统目录：${e?.message || e}`, 'error'); }
       }
       const indexPets = mergePetIndexData(systemIndexData, workspaceIndexData);
       const records = indexPets.map((pet, index) => {
@@ -1103,11 +1166,13 @@
         const checked = state.selectedRecordPaths.has(record.path);
         const checkedClass = checked ? ' checked' : '';
         const checkedAttr = checked ? ' checked' : '';
+        const selectTitle = '选择后由批量生成重新生成';
+        const completeMark = state.completedRecordPaths.has(record.path) ? '<span class="record-complete-mark" title="本次批量生成已完成"><svg viewBox="0 0 24 24" fill="none" stroke-width="3" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M20 6 9 17l-5-5"></path></svg></span>' : '';
         const url = pet.imageSheetUrl || '';
         const thumb = url ? `<span class="record-thumb-image" data-bg-url="${escapeHtml(url)}"></span>` : '';
         return `<div class="record-item${active}${checkedClass}" data-path="${escapeHtml(record.path)}">
-          <label class="record-select" title="选择后由批量生成重新生成"><input type="checkbox" data-select-path="${escapeHtml(record.path)}" aria-label="选择 ${escapeHtml(record.name || record.id)}"${checkedAttr}></label>
-          <span class="record-thumb">${thumb}</span>
+          <label class="record-select" title="${escapeHtml(selectTitle)}"><input type="checkbox" data-select-path="${escapeHtml(record.path)}" aria-label="选择 ${escapeHtml(record.name || record.id)}"${checkedAttr}></label>
+          <span class="record-thumb">${thumb}${completeMark}</span>
           <button type="button" class="record-main" data-open-path="${escapeHtml(record.path)}"><span class="record-title">${escapeHtml(record.name || record.id)}</span><span class="record-meta">${escapeHtml(record.path)}</span></button>
           <span class="record-actions"><button type="button" data-copy-path="${escapeHtml(record.path)}" title="复制">复制</button><button type="button" class="danger icon-button" data-delete-path="${escapeHtml(record.path)}" title="删除" aria-label="删除"><svg viewBox="0 0 24 24" fill="none" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M3 6h18"></path><path d="M8 6V4h8v2"></path><path d="M19 6l-1 14H6L5 6"></path><path d="M10 11v5"></path><path d="M14 11v5"></path></svg></button></span>
         </div>`;
@@ -1124,11 +1189,15 @@
       $('recordList').querySelectorAll('[data-select-path]').forEach(input => {
         input.onchange = () => {
           const path = input.dataset.selectPath;
-          if (input.checked) state.selectedRecordPaths.add(path);
+          const record = state.records.find(item => item.path === path);
+          const checked = input.checked && !!record?.pet;
+          input.checked = checked;
+          if (checked) state.selectedRecordPaths.add(path);
           else state.selectedRecordPaths.delete(path);
-          input.closest('.record-item')?.classList.toggle('checked', input.checked);
+          input.closest('.record-item')?.classList.toggle('checked', checked);
           updateRecordSelectAllState();
           updateBatchGenerateButton();
+          updateBatchDeleteButton();
         };
       });
       observeRecordThumbs();
@@ -1139,6 +1208,7 @@
       updateRecordSelectAllState();
       updateBatchGenerateButton();
       updateRepairPetsButton();
+      updateBatchDeleteButton();
     }
 
     function handleRecordFilterChange() {
@@ -1385,17 +1455,69 @@
       };
     }
 
+    function getNonEmptyDescriptionLines(description) {
+      return String(description || '').split(/\r?\n/).map(line => line.trim()).filter(Boolean);
+    }
+
+    function shouldUseDescriptionLineCount(description) {
+      return getNonEmptyDescriptionLines(description).length > 1;
+    }
+
     function buildBatchPetPrompt(description, count) {
       const exampleJson = JSON.stringify(buildFormBasedPetExample(), null, 2);
-      return `你是 famous-pets JSON 配置设计助手。根据用户描述生成 ${count} 个稀有宠物配置，只生成 JSON，不要生成图片，不要输出 Markdown。\n\n最重要的是生成 Properties 表单会显示的内容：id、name、rarity、stage、anim、traits.element、traits.elementalAttribute、traits.species、traits.color、traits.eyes、traits.accessory、wishPrompt。DNA 不需要生成，工具会自动计算；如果没有必要，不要在返回 JSON 中包含 dna。\n\n你返回的内容必须是合法 JSON，外层必须包含 pets 数组。pets 数组里的每一个对象就是最终保存到 famous-pets/<id>.json 的文件对象。示例格式如下：\n${exampleJson}\n\nMagicHaqi 支持的固定选项和参考示例：\n${buildSupportedTraitPromptText()}\n\n约束：\n- id 会作为 famous-pets/<id>.json 文件名，只能用英文字母、数字、下划线或连字符，必须唯一。\n- name 必须使用非常可爱的中文名字，要有软萌、好记、像宠物昵称的感觉，例如：布布马古、瓦豆喵星星、糯糯啾啾。\n- rarity 只能是 0 到 100 的数字，数值越大表示越稀有。\n- stage 只能是 baby、teen、adult、elder；默认 adult。\n- anim 只能是 idle、happy、sad、sleep；默认 happy。\n- traits.element 和 traits.elementalAttribute 必须使用上面的固定选项。\n- traits.species、traits.color、traits.eyes、traits.accessory 可以参考上面的例子，也可以根据用户描述自由创作。\n- wishPrompt 必须写出宠物核心外观，明确包含或呼应 traits 中的物种、血统、元素属性、颜色、眼睛和配饰。\n \n用户描述：\n${description || '（等待输入）'}\n\n根据用户描述生成 ${count} 个稀有宠物配置，只生成 JSON`;
+      const lineRule = shouldUseDescriptionLineCount(description) ? '\n- 用户描述包含多行：必须按每一行生成 1 个 pet，并保持顺序；不要合并、跳过或额外扩展行数。' : '';
+      return `你是 famous-pets JSON 配置设计助手。根据用户描述生成 ${count} 个稀有宠物配置，只生成 JSON，不要生成图片，不要输出 Markdown。\n\n最重要的是生成 Properties 表单会显示的内容：id、name、rarity、stage、anim、traits.element、traits.elementalAttribute、traits.species、traits.color、traits.eyes、traits.accessory、wishPrompt。DNA 不需要生成，工具会自动计算；如果没有必要，不要在返回 JSON 中包含 dna。\n\n你返回的内容必须是合法 JSON，外层必须包含 pets 数组。pets 数组里的每一个对象就是最终保存到 famous-pets/<id>.json 的文件对象。示例格式如下：\n${exampleJson}\n\nMagicHaqi 支持的固定选项和参考示例：\n${buildSupportedTraitPromptText()}\n\n约束：\n- id 会作为 famous-pets/<id>.json 文件名，只能用英文字母、数字、下划线或连字符，必须唯一。\n- name 必须使用非常可爱的中文名字，要有软萌、好记、像宠物昵称的感觉，例如：布布马古、瓦豆喵星星、糯糯啾啾。\n- rarity 只能是 0 到 100 的数字，数值越大表示越稀有。\n- stage 只能是 baby、teen、adult、elder；默认 adult。\n- anim 只能是 idle、happy、sad、sleep；默认 happy。\n- traits.element 和 traits.elementalAttribute 必须使用上面的固定选项。\n- traits.species、traits.color、traits.eyes、traits.accessory 可以参考上面的例子，也可以根据用户描述自由创作。\n- wishPrompt 必须写出宠物核心外观，明确包含或呼应 traits 中的物种、血统、元素属性、颜色、眼睛和配饰。${lineRule}\n \n用户描述：\n${description || '（等待输入）'}\n\n根据用户描述生成 ${count} 个稀有宠物配置，只生成 JSON`;
+    }
+
+    function syncBatchPetCountFromDescription({ notify = false } = {}) {
+      const input = $('batchPetCount');
+      const description = $('batchPetDescription')?.value || '';
+      const lineCount = getNonEmptyDescriptionLines(description).length;
+      if (lineCount <= 1) return null;
+      if (input) {
+        input.max = String(Math.max(BATCH_PET_MAX_COUNT, lineCount));
+        input.value = String(lineCount);
+      }
+      return lineCount;
+    }
+
+    function getBatchPetGenerationChunks(description, count) {
+      const lines = getNonEmptyDescriptionLines(description);
+      if (lines.length > 1) {
+        const selectedLines = lines.slice(0, count);
+        const chunks = [];
+        for (let index = 0; index < selectedLines.length; index += BATCH_PET_LLM_CHUNK_SIZE) {
+          const chunkLines = selectedLines.slice(index, index + BATCH_PET_LLM_CHUNK_SIZE);
+          chunks.push({ description: chunkLines.join('\n'), count: chunkLines.length, startLine: index + 1, endLine: index + chunkLines.length });
+        }
+        return chunks;
+      }
+      return [{ description, count, startLine: 1, endLine: count }];
+    }
+
+    function getBatchPetCount({ notify = false } = {}) {
+      const lineCount = syncBatchPetCountFromDescription({ notify });
+      if (lineCount != null) return lineCount;
+      const input = $('batchPetCount');
+      const rawCount = Number(input?.value) || 1;
+      const count = Math.max(1, Math.min(BATCH_PET_MAX_COUNT, rawCount));
+      if (rawCount > BATCH_PET_MAX_COUNT) {
+        if (input) input.value = String(BATCH_PET_MAX_COUNT);
+        if (notify) setStatus($('batchPetStatus'), `每次最多生成 ${BATCH_PET_MAX_COUNT} 个，已自动调整为 ${BATCH_PET_MAX_COUNT}。`, 'error');
+      }
+      return count;
     }
 
     function refreshBatchPromptPreview() {
       const preview = $('batchPetPromptPreview');
       if (!preview) return;
       const description = $('batchPetDescription')?.value.trim() || '';
-      const count = Math.max(1, Math.min(20, Number($('batchPetCount')?.value) || 1));
-      preview.value = buildBatchPetPrompt(description, count);
+      const count = getBatchPetCount({ notify: true });
+      const chunks = getBatchPetGenerationChunks(description, count);
+      const prefix = chunks.length > 1
+        ? `检测到 ${count} 行描述，将分 ${chunks.length} 次调用 LLM，每次最多 ${BATCH_PET_LLM_CHUNK_SIZE} 个。下面预览第 1 段（第 ${chunks[0].startLine}-${chunks[0].endLine} 行）：\n\n`
+        : (shouldUseDescriptionLineCount(description) ? `检测到 ${count} 行描述，将按每行 1 个 pet 生成。\n\n` : '');
+      preview.value = `${prefix}${buildBatchPetPrompt(chunks[0]?.description || description, chunks[0]?.count || count)}`;
     }
 
     async function callPetDescriptionModel(description, count, model, onStreamUpdate) {
@@ -1481,7 +1603,7 @@
               <select id="batchTextModelSelect"></select>
             </label>
             <label>数量
-              <input id="batchPetCount" type="number" min="1" max="20" value="3">
+              <input id="batchPetCount" type="number" min="1" max="${BATCH_PET_MAX_COUNT}" value="3">
             </label>
           </div>
           <label>描述
@@ -1490,7 +1612,7 @@
           <label>最终提示词（已自动替换用户描述）
             <textarea id="batchPetPromptPreview" class="batch-prompt-preview" rows="12" readonly spellcheck="false"></textarea>
           </label>
-          <div id="batchPetStatus" class="status">输入描述和数量后，将调用文本模型生成 pet JSON，并立即保存到 famous-pets/index.json。不会生成图片。</div>
+          <div id="batchPetStatus" class="status">输入描述和数量后，将调用文本模型生成 pet JSON，并立即保存到 famous-pets/_pet_index.json。多行描述会自动按非空行计数，超过 ${BATCH_PET_LLM_CHUNK_SIZE} 行会分批调用。不会生成图片。</div>
           <pre id="batchPetPreview" class="batch-preview hidden"></pre>
           <div class="toolbar justify-end"><button id="btnBlankPetDraft" type="button">空白新建</button><button id="btnCancelBatchPet" type="button">取消</button><button id="btnGeneratePetConfigs" class="primary" type="button">生成并保存</button></div>
         </div>
@@ -1512,25 +1634,36 @@
 
     async function generatePetConfigsFromDialog() {
       const description = $('batchPetDescription').value.trim();
-      const count = Math.max(1, Math.min(20, Number($('batchPetCount').value) || 1));
+      const count = getBatchPetCount({ notify: true });
+      const chunks = getBatchPetGenerationChunks(description, count);
       const model = $('batchTextModelSelect').value.trim() || 'keepwork-pro';
       state.lastTextModel = model;
       saveLocalGenerationSettings();
       if (!description) throw new Error('请先输入宠物描述');
       const button = $('btnGeneratePetConfigs');
       button.disabled = true;
-      setStatus($('batchPetStatus'), `正在调用文本模型生成 ${count} 个 pet JSON...`, '');
-      let streamedText = '';
+      setStatus($('batchPetStatus'), chunks.length > 1 ? `检测到 ${count} 行描述，将分 ${chunks.length} 批调用文本模型，每批最多 ${BATCH_PET_LLM_CHUNK_SIZE} 个 pet...` : `正在调用文本模型生成 ${count} 个 pet JSON...`, '');
       let streamedReasoning = '';
+      const chunkPreviews = [];
       setBatchPetStreamPreview('等待模型输出...');
       try {
-        const text = await callPetDescriptionModel(description, count, model, update => {
-          if (update.text) streamedText = update.text;
-          if (update.reasoning) streamedReasoning = update.reasoning;
-          setBatchPetStreamPreview(streamedText, streamedReasoning);
-        }) || streamedText;
-        const payload = extractJsonFromText(text);
-        let pets = normalizeGeneratedPetsPayload(payload, count);
+        const generatedPets = [];
+        for (let index = 0; index < chunks.length; index += 1) {
+          const chunk = chunks[index];
+          let streamedText = '';
+          setStatus($('batchPetStatus'), `正在调用文本模型：第 ${index + 1}/${chunks.length} 批，行 ${chunk.startLine}-${chunk.endLine}，生成 ${chunk.count} 个 pet JSON...`, '');
+          const text = await callPetDescriptionModel(chunk.description, chunk.count, model, update => {
+            if (update.text) streamedText = update.text;
+            if (update.reasoning) streamedReasoning = update.reasoning;
+            setBatchPetStreamPreview([...chunkPreviews, `Chunk ${index + 1}/${chunks.length} (lines ${chunk.startLine}-${chunk.endLine}):\n${streamedText || '等待模型输出...'}`].join('\n\n'), streamedReasoning);
+          }) || streamedText;
+          const payload = extractJsonFromText(text);
+          const chunkPets = normalizeGeneratedPetsPayload(payload, chunk.count);
+          generatedPets.push(...chunkPets);
+          chunkPreviews.push(`Chunk ${index + 1}/${chunks.length} (lines ${chunk.startLine}-${chunk.endLine}):\n${JSON.stringify(chunkPets, null, 2)}`);
+          setBatchPetStreamPreview(chunkPreviews.join('\n\n'), streamedReasoning);
+        }
+        let pets = generatedPets;
         pets = await resolveGeneratedPetIdentityDuplicates(pets, model, message => setStatus($('batchPetStatus'), message, ''));
         setBatchPetStreamPreview(JSON.stringify(pets, null, 2), streamedReasoning);
         setStatus($('batchPetStatus'), `正在保存 ${pets.length} 个 pet JSON，并更新 index...`, '');
@@ -1584,6 +1717,17 @@
       return next;
     }
 
+    async function removeIndexEntries(ids) {
+      const idSet = new Set(ids.map(id => String(id || '')).filter(Boolean));
+      if (!idSet.size) return [];
+      let list = [];
+      try { list = JSON.parse(await readFile(INDEX_PATH) || '[]'); } catch (_) { list = []; }
+      if (!Array.isArray(list)) list = [];
+      const next = list.filter(item => !idSet.has(String(item?.id || '')));
+      if (next.length !== list.length) await writeFile(INDEX_PATH, JSON.stringify(next, null, 2));
+      return next;
+    }
+
     async function deleteRecord(path) {
       const record = state.records.find(item => item.path === path) || state.records.find(item => item.id === path);
       if (!record) return;
@@ -1603,6 +1747,49 @@
       $('recordCount').textContent = String(state.records.length);
       const suffix = fileDeleted ? '' : '（文件删除接口返回失败，已从 index 移除）';
       setStatus($('saveStatus'), `已删除 ${record.id}${suffix}。`, fileDeleted ? 'ok' : 'error');
+    }
+
+    async function deleteSelectedRecords() {
+      const records = getCheckedRecords();
+      if (!records.length) return;
+      const preview = records.slice(0, 8).map(record => record.name || record.id).join('、');
+      const suffix = records.length > 8 ? ` 等 ${records.length} 个` : '';
+      if (!window.confirm(`删除选中的 ${records.length} 个宠物？\n${preview}${suffix}\n将删除对应 JSON 文件，并从 ${INDEX_PATH} 移除。`)) return;
+      const deleted = [];
+      const failed = [];
+      setStatus($('saveStatus'), `正在删除 ${records.length} 个 selected famous pets...`, '');
+      for (const record of records) {
+        try {
+          const fileDeleted = await deleteFile(record.path) !== false;
+          deleted.push({ record, fileDeleted });
+        } catch (error) {
+          failed.push({ record, error });
+        }
+      }
+      if (deleted.length) await removeIndexEntries(deleted.map(item => item.record.id));
+      const deletedPaths = new Set(deleted.map(item => item.record.path));
+      state.records = state.records.filter(record => !deletedPaths.has(record.path));
+      for (const path of deletedPaths) {
+        state.selectedRecordPaths.delete(path);
+        state.completedRecordPaths.delete(path);
+      }
+      if (deletedPaths.has(state.selectedPath)) {
+        const nextRecord = state.records.find(item => item.pet);
+        if (nextRecord) await selectRecord(nextRecord.path).catch(e => setStatus($('runStatus'), `打开失败：${e?.message || e}`, 'error'));
+        else newPet();
+      } else {
+        renderRecordList();
+      }
+      $('recordCount').textContent = String(state.records.length);
+      const falseDeletes = deleted.filter(item => !item.fileDeleted).length;
+      if (failed.length) {
+        const failedNames = failed.slice(0, 5).map(item => item.record.name || item.record.id).join('、');
+        setStatus($('saveStatus'), `已删除 ${deleted.length} 个，${failed.length} 个删除失败：${failedNames}`, 'error');
+      } else if (falseDeletes) {
+        setStatus($('saveStatus'), `已从 index 移除 ${deleted.length} 个，其中 ${falseDeletes} 个文件删除接口返回失败。`, 'error');
+      } else {
+        setStatus($('saveStatus'), `已删除选中的 ${deleted.length} 个 famous pets，并更新 ${INDEX_PATH}。`, 'ok');
+      }
     }
 
     function buildImageGenerationOptions(model, width, height) {
@@ -1827,16 +2014,39 @@
       return await readIndexListForExport();
     }
 
+    function stringifyJsonWithInlineTraits(value, indentSize = 2) {
+      const indentUnit = ' '.repeat(indentSize);
+      const inlineObject = (object) => JSON.stringify(object).replace(/^\{/, '{ ').replace(/\}$/, ' }').replace(/,/g, ', ').replace(/:/g, ': ');
+      const format = (item, level = 0, key = '') => {
+        if (key === 'traits' && item && typeof item === 'object' && !Array.isArray(item)) return inlineObject(item);
+        if (Array.isArray(item)) {
+          if (!item.length) return '[]';
+          const childIndent = indentUnit.repeat(level + 1);
+          const currentIndent = indentUnit.repeat(level);
+          return `[\n${item.map(child => `${childIndent}${format(child, level + 1)}`).join(',\n')}\n${currentIndent}]`;
+        }
+        if (item && typeof item === 'object') {
+          const entries = Object.entries(item).filter(([, child]) => child !== undefined);
+          if (!entries.length) return '{}';
+          const childIndent = indentUnit.repeat(level + 1);
+          const currentIndent = indentUnit.repeat(level);
+          return `{\n${entries.map(([childKey, child]) => `${childIndent}${JSON.stringify(childKey)}: ${format(child, level + 1, childKey)}`).join(',\n')}\n${currentIndent}}`;
+        }
+        return JSON.stringify(item);
+      };
+      return format(value);
+    }
+
     async function copySelectedFamousPetsExport() {
       const indexList = await buildFamousPetsExportIndex();
-      await copyText(JSON.stringify(indexList, null, 2));
-      setImportExportStatus(`已复制 ${FAMOUS_DIR}/index.json（${indexList.length} 个 pet）。`, 'ok');
+      await copyText(stringifyJsonWithInlineTraits(indexList));
+      setImportExportStatus(`已复制 ${INDEX_PATH}（${indexList.length} 个 pet）。`, 'ok');
     }
 
     async function downloadSelectedFamousPetsExport() {
       const indexList = await buildFamousPetsExportIndex();
-      downloadText('index.json', JSON.stringify(indexList, null, 2));
-      setImportExportStatus(`已下载完整 index.json（${indexList.length} 个 pet）。`, 'ok');
+      downloadText(INDEX_FILE, stringifyJsonWithInlineTraits(indexList));
+      setImportExportStatus(`已下载完整 ${INDEX_FILE}（${indexList.length} 个 pet）。`, 'ok');
     }
 
     function setImportExportStatus(text, kind = '') {
@@ -1849,7 +2059,7 @@
 
     function normalizeImportIndex(data) {
       if (data?.files && typeof data.files === 'object' && !Array.isArray(data.files)) {
-        const bundledIndex = data.files[`${FAMOUS_DIR}/index.json`] || data.files['index.json'];
+        const bundledIndex = data.files[INDEX_PATH] || data.files[INDEX_FILE];
         if (bundledIndex) return normalizeImportIndex(typeof bundledIndex === 'string' ? JSON.parse(bundledIndex) : bundledIndex);
       }
       const list = Array.isArray(data) ? data : (Array.isArray(data?.pets) ? data.pets : Array.isArray(data?.index) ? data.index : []);
@@ -1867,7 +2077,7 @@
         try {
           const data = JSON.parse(await selectedFiles[0].text());
           const indexList = normalizeImportIndex(data);
-          if (!indexList.length) throw new Error('未找到可导入的 famous-pets/index.json 数据');
+          if (!indexList.length) throw new Error('未找到可导入的 famous-pets/_pet_index.json 数据');
           const safePets = [];
           for (const pet of indexList) {
             const safePet = await ensureImageSheetUrlIsRemote(pet, { silent: true });
@@ -1876,7 +2086,7 @@
           }
           await writeFile(INDEX_PATH, JSON.stringify(safePets.map(buildIndexEntry), null, 2));
           await loadRecords();
-          setImportExportStatus(`已导入 index.json（${indexList.length} 个 pet），并写入对应 pet JSON。`, 'ok');
+          setImportExportStatus(`已导入 ${INDEX_FILE}（${indexList.length} 个 pet），并写入对应 pet JSON。`, 'ok');
           setStatus($('saveStatus'), '导入完成。', 'ok');
         } catch (e) {
           setImportExportStatus(`导入失败：${e?.message || e}`, 'error');
@@ -1888,7 +2098,7 @@
     function renderImportExportPetList() {
       const root = $('exportPetList');
       if (!root) return;
-      root.innerHTML = state.records.length ? `<div class="hint">将导入或导出一个完整的 ${FAMOUS_DIR}/index.json，当前包含 ${state.records.length} 个 pet。</div>` : '<div class="hint">暂无 pet 记录。先刷新或保存当前 pet 后再导出。</div>';
+      root.innerHTML = state.records.length ? `<div class="hint">将导入或导出一个完整的 ${INDEX_PATH}，当前包含 ${state.records.length} 个 pet。</div>` : '<div class="hint">暂无 pet 记录。先刷新或保存当前 pet 后再导出。</div>';
     }
 
     function openImportExportDialog() {
@@ -1899,10 +2109,10 @@
       overlay.innerHTML = `<div class="modal-window" role="dialog" aria-modal="true" aria-label="导入导出 famous-pets">
         <div class="modal-titlebar"><strong>导入导出 · ${FAMOUS_DIR}</strong><button type="button" id="closeImportExport">关闭</button></div>
         <div class="modal-body">
-          <div class="hint">导入/导出只处理一个完整的 index.json。index 中每个条目都包含渲染和孵化所需的 pet 信息。</div>
+          <div class="hint">导入/导出只处理一个完整的 _pet_index.json。index 中每个条目都包含渲染和孵化所需的 pet 信息。</div>
           <div id="exportPetList" class="flex min-h-0 flex-1 flex-col gap-1.5 overflow-auto rounded-md border border-slate-300 bg-slate-50 p-2"></div>
           <div id="importExportStatus" class="status">准备导入/导出。</div>
-          <div class="toolbar justify-end"><button id="btnImportFamousPets" type="button">导入 index.json</button><button id="btnCopyFamousPetsExport" type="button">复制 index.json</button><button id="btnDownloadFamousPetsExport" class="primary" type="button">下载 index.json</button></div>
+          <div class="toolbar justify-end"><button id="btnImportFamousPets" type="button">导入 _pet_index.json</button><button id="btnCopyFamousPetsExport" type="button">复制 _pet_index.json</button><button id="btnDownloadFamousPetsExport" class="primary" type="button">下载 _pet_index.json</button></div>
         </div>
       </div>`;
       document.body.appendChild(overlay);
@@ -2461,31 +2671,54 @@
       return `${(bytes / 1024 / 1024).toFixed(2)} MB`;
     }
 
+    function resetPetSheetWorker(error) {
+      if (state.petSheetWorker) {
+        try { state.petSheetWorker.terminate(); } catch (_) {}
+      }
+      state.petSheetWorker = null;
+      const pending = state.petSheetWorkerPending || new Map();
+      state.petSheetWorkerPending = new Map();
+      pending.forEach(request => request.reject(error || new Error('petSheetWorker 已重置')));
+    }
+
+    function getPetSheetWorker() {
+      if (state.petSheetWorker) return state.petSheetWorker;
+      state.petSheetWorkerPending ||= new Map();
+      const workerUrl = new URL('../js/petSheetWorker.js', window.location.href);
+      const worker = new Worker(workerUrl, { name: 'MagicHaqiPetSheetWorker' });
+      state.petSheetWorker = worker;
+      worker.onmessage = event => {
+        const result = event.data || {};
+        const request = state.petSheetWorkerPending?.get(result.id);
+        if (!request) return;
+        state.petSheetWorkerPending.delete(result.id);
+        if (!result.ok) {
+          request.reject(new Error(result.error || '去除背景失败'));
+          return;
+        }
+        if (result.direct) {
+          request.resolve(null);
+          return;
+        }
+        if (result.blob instanceof Blob) request.resolve(result.blob);
+        else request.reject(new Error('去除背景没有返回有效图片'));
+      };
+      worker.onerror = event => {
+        resetPetSheetWorker(new Error(event.message || 'petSheetWorker 加载失败'));
+      };
+      return worker;
+    }
+
     function processSheetBackgroundWithWorker(blob, options = {}) {
       return new Promise((resolve, reject) => {
-        const worker = new Worker('../js/petSheetWorker.js');
         const id = `webp_export_${Date.now()}_${Math.random().toString(36).slice(2)}`;
-        const cleanup = () => worker.terminate();
-        worker.onmessage = event => {
-          const result = event.data || {};
-          if (result.id !== id) return;
-          cleanup();
-          if (!result.ok) {
-            reject(new Error(result.error || '去除背景失败'));
-            return;
-          }
-          if (result.direct) {
-            resolve(null);
-            return;
-          }
-          if (result.blob instanceof Blob) resolve(result.blob);
-          else reject(new Error('去除背景没有返回有效图片'));
-        };
-        worker.onerror = event => {
-          cleanup();
-          reject(new Error(event.message || 'petSheetWorker 加载失败'));
-        };
-        worker.postMessage({ id, blob, options });
+        try {
+          const worker = getPetSheetWorker();
+          state.petSheetWorkerPending.set(id, { resolve, reject });
+          worker.postMessage({ id, blob, options });
+        } catch (error) {
+          reject(error);
+        }
       });
     }
 
@@ -2712,6 +2945,7 @@
         updateBatchGenerateButton();
         return;
       }
+      state.completedRecordPaths.clear();
       state.batchGenerate = { running: true, stopRequested: false, total: queue.length, done: 0, current: 1 };
       updateBatchGenerateButton();
       try {
@@ -2731,7 +2965,9 @@
           const generated = await generateSheet({ reload: false });
           setStatus($('runStatus'), `批量生成 ${index + 1}/${queue.length}：${record.name || record.id}\n正在生成 WebP${getPetCdnConfig() ? ' 并上传 CDN' : ''}...`, '');
           const webp = await autoGenerateWebpForCurrentPet({ pet: generated.pet, path: generated.path, sourceUrl: generated.url, selectedPath: generated.selectedPath, reload: false });
+          state.completedRecordPaths.add(record.path);
           state.selectedRecordPaths.delete(record.path);
+          state.selectedRecordPaths.delete(generated.path);
           state.batchGenerate.done += 1;
           setStatus($('saveStatus'), `已完成 ${record.id}：${webp.detail}，${webp.size.width}x${webp.size.height}，${formatBytes(webp.blob.size)}。`, 'ok');
           renderRecordList();
@@ -2907,10 +3143,12 @@
       $('btnPetCdnConfig').onclick = openPetCdnConfigPasteDialog;
       $('btnImportExport').onclick = openImportExportDialog;
       $('btnRefreshRecords').onclick = () => startBatchGenerateAll().catch(e => setStatus($('runStatus'), `批量生成失败：${e?.message || e}`, 'error'));
+      $('btnDeleteSelectedRecords').onclick = () => deleteSelectedRecords().catch(e => setStatus($('saveStatus'), `批量删除失败：${e?.message || e}`, 'error'));
       $('btnRepairPets').onclick = () => openRepairPetsDialog().catch(e => setStatus($('runStatus'), `扫描修复失败：${e?.message || e}`, 'error'));
       $('btnNewPet').onclick = openBatchCreateDialog;
       $('btnOpenIndex').onclick = () => openWorkspaceViewer(INDEX_PATH);
       $('recordSearch').addEventListener('input', handleRecordFilterChange);
+      $('recordProcessFilter').addEventListener('change', handleRecordFilterChange);
       $('recordSelectAll').addEventListener('change', () => setRenderedRecordSelection($('recordSelectAll').checked));
       $('referenceUrl').addEventListener('input', renderReferencePreview);
       $('referenceSection').addEventListener('paste', event => handleReferencePaste(event));
@@ -2919,6 +3157,11 @@
       });
       $('referenceFile').addEventListener('change', handleReferenceFile);
       $('imageModelSelect').addEventListener('change', saveLocalGenerationSettings);
+      $('petBackgroundColor').addEventListener('change', () => {
+        state.lastPetBackgroundColor = getPetBackgroundColor();
+        saveLocalGenerationSettings();
+        buildPrompt().catch(e => setStatus($('saveStatus'), e?.message || String(e), 'error'));
+      });
       $('btnBuildPrompt').onclick = () => buildPrompt().catch(e => setStatus($('saveStatus'), e?.message || String(e), 'error'));
       if ($('btnGenerate')) $('btnGenerate').onclick = () => generateSheet().catch(e => console.error(e));
       $('btnRegenerate').onclick = () => generateSheet().catch(e => console.error(e));
@@ -2941,6 +3184,8 @@
       const localSettings = readLocalGenerationSettings();
       state.lastImageModel = String(localSettings.lastImageModel || '').trim();
       state.lastTextModel = String(localSettings.lastTextModel || '').trim();
+      state.lastPetBackgroundColor = normalizePetBackgroundColor(localSettings.lastPetBackgroundColor || '#ffffff');
+      if ($('petBackgroundColor')) $('petBackgroundColor').value = state.lastPetBackgroundColor;
       wireEvents();
       populateModelDropdown();
       applyPetToForm(defaultPet(), `${FAMOUS_DIR}/new_famous_pet.json`);

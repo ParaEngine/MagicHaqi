@@ -4,9 +4,9 @@ import { $, $$, dockDisabledAttrs, escapeHtml, isDockButtonDisabled, randInt, re
 import { t } from './i18n.js';
 import { canPlaceItemInArea, CONFIG, DECO_VISUALS, getActiveHouseRoomIds, getPlacedItemZOrder, getShopItemById, SHOP_ITEMS } from './config.js';
 import { isVisitingMode, notify, state } from './state.js';
-import { getLayout, loadPets } from './storage.js';
+import { getLayout } from './storage.js';
 import { displayPetName } from './dna.js';
-import { getPetSleepActionState, isPetInteractionBlocked, petArtHtml, playPetClickFeedback, playPetHappy, say, scanAndMount, sleepingInteractionText } from './pet.js';
+import { getPet, getPetSleepActionState, isPetInteractionBlocked, petArtHtml, playPetClickFeedback, playPetHappy, say, scanAndMount, sleepingInteractionText } from './pet.js';
 import { getGeneratedPetLocation, hasRenderablePetTexture } from './petLifecycle.js';
 import SoundManager from './soundManager.js';
 import { BATH_COMPLETE_FEEDBACK_MS, BATH_COMPLETE_LINES, BATH_SEQUENCE_MS, createBathSequenceOverlay, isPetVisibleInStage } from './petInteractions.js';
@@ -17,7 +17,6 @@ const BASIC_FEED_ID = 'food_basic_feed';
 const soundManager = SoundManager.getInstance();
 const ITEM_Z_INDEX_BASE = 5;
 const FOOD_Z_INDEX_BASE = 24;
-let roomCompanionPetsLoadedKey = '';
 const ROOM_Z_ORDER_STRIDE = 10000;
 const ROOM_DEPTH_Z_STEP = 100;
 const ROOM_ITEM_SELECTOR = '#mhFurnitureLayer .mh-room-furniture, #mhFoodLayer .mh-room-furniture';
@@ -1236,8 +1235,8 @@ function roomCompanionPetsHtml(currentPet, roomId, currentPose = null) {
     const petPose = currentPose || getCurrentPetPose();
     const occupied = isFindingInRoom ? [] : [{ x: petPose.x, y: petPose.y }];
     return roomCompanionPetIds(currentPet, roomId)
-        .map(id => state.pets[id])
-        .filter(Boolean)
+        // 按需获取 pet.json（唯一来源）：未加载时 getPet 后台读取并在就绪后触发重渲染。
+        .map(id => getPet(id))
         .filter((pet) => {
             if (!pet || pet.id === currentPet?.id || !hasRenderablePetTexture(pet)) return false;
             return getGeneratedPetLocation(pet).kind === 'room';
@@ -1338,14 +1337,6 @@ export const petLevel = {
     bindStage(pet, ctx) {
         const roomPet = visitingRoomOwnerPet(pet);
         const room = resolveActiveRoom(roomPet);
-        const missingPetIds = roomCompanionPetIds(pet, room.id).filter(id => id && !state.pets[id]);
-        const loadKey = `${room.id}::${missingPetIds.join('|')}`;
-        if (missingPetIds.length && loadKey !== roomCompanionPetsLoadedKey) {
-            roomCompanionPetsLoadedKey = loadKey;
-            loadPets(missingPetIds)
-                .then((loaded) => { if (loaded.length && state.currentView === 'home' && state.zoomLevel === 2) notify(); })
-                .catch((e) => console.warn('加载房间宠物失败', e));
-        }
         const petEl = $('mhPet');
         petEl?.classList.add('mh-pet-room-instant');
         applyRoomMeterLayout();

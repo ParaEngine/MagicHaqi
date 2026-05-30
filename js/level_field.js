@@ -1,11 +1,11 @@
 // Level 1 — Field：星球表面（陆 / 水 / 空 三大生态）
 
-import { $, $$, dockDisabledAttrs, escapeHtml, isDockButtonDisabled, renderVisualAsset, setDockButtonDisabled, showDockDisabledToast, showToast } from './utils.js';
-import { canPlaceItemInArea, CONFIG, DECO_VISUALS, findLargestHouseInLayout, getPlacedItemZOrder, getShopItemById, isHouseItem, SHOP_ITEMS } from './config.js';
+import { $, $$, coinIconSvg, dockDisabledAttrs, escapeHtml, isDockButtonDisabled, renderVisualAsset, setDockButtonDisabled, showDockDisabledToast, showToast } from './utils.js';
+import { canPlaceItemInArea, CONFIG, DECO_VISUALS, findLargestHouseInLayout, getPlacedItemZOrder, getPlanetMiningCoins, getPlanetMiningConfig, getPlanetMiningVisualCoinCount, getShopItemById, isHouseItem, recordPlanetMiningFieldCollected, SHOP_ITEMS } from './config.js';
 import { getActivePlanetWeather, isVisitingMode, notify, state, setCurrentField } from './state.js';
-import { getLayout, loadPets, savePetDebounced, saveUserProfileDebounced } from './storage.js';
+import { getLayout, savePetDebounced, saveUserProfileDebounced } from './storage.js';
 import { displayPetName } from './dna.js';
-import { buildEggSvg, getPetSpriteCell, getPetSleepActionState, isPetInteractionBlocked, petArtHtml, playEggWelcomeOnce, playPetClickFeedback, playPetHappy, randomPetTalk, SHEET_COLS, SHEET_ROWS, sleepingInteractionText } from './pet.js';
+import { buildEggSvg, getPet, getPetSpriteCell, getPetSleepActionState, isPetInteractionBlocked, petArtHtml, playEggWelcomeOnce, playPetClickFeedback, playPetHappy, randomPetTalk, SHEET_COLS, SHEET_ROWS, sleepingInteractionText } from './pet.js';
 import { getPetPoopCount, markPetCared, normalizePetPoops, setPetPoopCount } from './petTick.js';
 import { canPetAppearInField, getGeneratedPetLocation, getNannyCareRemainingMs, getPetLocationType, getReleasedPetHome, hasNannyCare, isNearActiveGeneratedPet } from './petLifecycle.js';
 import SoundManager from './soundManager.js';
@@ -18,7 +18,6 @@ const soundManager = SoundManager.getInstance();
 
 const ITEM_BY_ID = new Proxy({}, { get: (_, id) => getShopItemById(id) });
 const ITEM_Z_INDEX_BASE = 5;
-let fieldPetsLoadedKey = '';
 const DRAG_PLACE_THRESHOLD = 8;
 const FUEL_MACHINE_WORK_DELAY_MS = 3000;
 const FUEL_MACHINE_ANIMATION_MS = 4600;
@@ -98,6 +97,7 @@ let activeFieldBuildCategory = 'houses';
 let fieldScenePresets = [];
 let fieldScenePresetsLoading = null;
 const fieldPoopLocationCache = new Map();
+const fieldMiningCoinLocationCache = new Map();
 
 const FIELD_THEMES = {
     land: {
@@ -160,6 +160,15 @@ const FIELD_THEMES = {
         path: 'rgba(107, 114, 128, 0.36)',
         remoteLandmark: true,
     },
+    thunder: {
+        className: 'field-map-thunder',
+        sky: 'linear-gradient(180deg,#312e81 0%,#4f46e5 44%,#111827 100%)',
+        terrain: ['#4f46e5', '#7c3aed', '#facc15', '#312e81'],
+        props: ['⚡', '☁️', '💎', '✨', '🪨'],
+        floaters: ['⚡', '✨', '💫'],
+        path: 'rgba(250, 204, 21, 0.34)',
+        remoteLandmark: true,
+    },
 };
 
 function availableFields() {
@@ -177,6 +186,7 @@ const SHOP_FIELD_TYPES = Object.fromEntries([
     { id: 'ice', name: '冰湖', favoriteTrait: 'fishLike' },
     { id: 'life', name: '神树', favoriteTrait: 'fruitLike' },
     { id: 'dark', name: '洞穴', favoriteTrait: 'catLike' },
+    { id: 'thunder', name: '雷云', favoriteTrait: 'birdLike' },
 ].map(field => [field.id, field]));
 
 function hashString(value) {
@@ -248,6 +258,10 @@ function activeFieldLayout(fieldId) {
 
 function isFieldDecorMode() {
     return state.isDecorMode && state.zoomLevel === 1;
+}
+
+function isReadonlyPlanet() {
+    return state.settings?.starSettlement?.source === 'official' && state.settings.starSettlement.readonlyPlanet !== false;
 }
 
 function clientScaleForElement(el) {
@@ -880,6 +894,102 @@ function removeRuntimePoopLocation(pet, fieldId, poopId) {
     else fieldPoopLocationCache.set(key, record);
 }
 
+function fieldMiningCoins(now = Date.now()) {
+    return getPlanetMiningCoins(state, now, CONFIG);
+}
+
+function splitFieldMiningCoinValues(total, count) {
+    const maxScatteredCoins = getPlanetMiningConfig(CONFIG).maxScatteredCoins;
+    const safeTotal = Math.max(0, Math.floor(Number(total) || 0));
+    const safeCount = Math.max(0, Math.min(maxScatteredCoins, Math.floor(Number(count) || 0)));
+    if (safeTotal <= 0 || safeCount <= 0) return [];
+    const base = Math.floor(safeTotal / safeCount);
+    let remainder = safeTotal - base * safeCount;
+    return Array.from({ length: safeCount }, () => base + (remainder-- > 0 ? 1 : 0)).filter(value => value > 0);
+}
+
+function fieldMiningCoinLocationKey(fieldId = state.currentField) {
+    return `mining::${normalizeTerrainFieldSlotId(fieldId)}`;
+}
+
+function makeRuntimeFieldMiningCoin(rng, zones, fieldId, index, value) {
+    return {
+        id: `coin_${normalizeTerrainFieldSlotId(fieldId)}_${index}`,
+        field: normalizeTerrainFieldSlotId(fieldId),
+        value: Math.max(1, Math.floor(Number(value) || 1)),
+        ...makeRuntimePoopLocation(rng, zones),
+    };
+}
+
+function fieldMiningCoinHtml(coin) {
+    const value = Math.max(0, Math.floor(Number(coin?.value) || 0));
+    return `<button class="poop-btn field-coin-btn" data-poop="${escapeHtml(coin?.id || '')}" data-field-coin="${escapeHtml(coin?.id || '')}" style="left:${(clamp01(coin?.x) * 100).toFixed(2)}%;top:${(clamp01(coin?.y) * 100).toFixed(2)}%" title="收集 ${value} 金币">${coinIconSvg('field-coin-svg')}</button>`;
+}
+
+function ensureRuntimeFieldMiningCoins(fieldId, totalCoins, pet = state.pets?.[state.currentPetId]) {
+    const maxScatteredCoins = getPlanetMiningConfig(CONFIG).maxScatteredCoins;
+    const total = Math.max(0, Math.floor(Number(totalCoins) || 0));
+    const key = fieldMiningCoinLocationKey(fieldId);
+    if (total <= 0) {
+        fieldMiningCoinLocationCache.delete(key);
+        return [];
+    }
+    let record = fieldMiningCoinLocationCache.get(key);
+    if (!record) {
+        record = { nextId: 1, locations: [] };
+        const count = getPlanetMiningVisualCoinCount(total, CONFIG);
+        const zones = getPoopPetAvoidanceZones(pet, fieldId);
+        splitFieldMiningCoinValues(total, count).forEach((value) => {
+            const index = record.nextId++;
+            const rng = makeRng(`${POOP_LOCATION_SESSION_SEED}::${key}::${index}`);
+            record.locations.push(makeRuntimeFieldMiningCoin(rng, zones, fieldId, index, value));
+        });
+        fieldMiningCoinLocationCache.set(key, record);
+    }
+    let currentTotal = record.locations.reduce((sum, coin) => sum + (Number(coin.value) || 0), 0);
+    while (currentTotal > total && record.locations.length) {
+        const last = record.locations[record.locations.length - 1];
+        const reduce = Math.min(currentTotal - total, Math.max(0, Number(last.value) || 0));
+        last.value -= reduce;
+        currentTotal -= reduce;
+        if (last.value <= 0) record.locations.pop();
+    }
+    if (currentTotal < total) {
+        const diff = total - currentTotal;
+        if (record.locations.length < maxScatteredCoins) {
+            const index = record.nextId++;
+            const rng = makeRng(`${POOP_LOCATION_SESSION_SEED}::${key}::${index}`);
+            const zones = getPoopPetAvoidanceZones(pet, fieldId);
+            record.locations.push(makeRuntimeFieldMiningCoin(rng, zones, fieldId, index, diff));
+        } else if (record.locations.length) {
+            record.locations[record.locations.length - 1].value += diff;
+        }
+    }
+    if (!record.locations.length) {
+        fieldMiningCoinLocationCache.delete(key);
+        return [];
+    }
+    return record.locations.map(location => ({ ...location, kind: 'coin' }));
+}
+
+function getFieldMiningCoinsInField(fieldId = state.currentField, pet = state.pets?.[state.currentPetId]) {
+    if (isVisitingMode()) return [];
+    return ensureRuntimeFieldMiningCoins(fieldId, fieldMiningCoins(), pet);
+}
+
+function clearRuntimeFieldMiningCoins(fieldId = state.currentField) {
+    fieldMiningCoinLocationCache.delete(fieldMiningCoinLocationKey(fieldId));
+}
+
+function removeRuntimeFieldMiningCoin(fieldId, coinId) {
+    const key = fieldMiningCoinLocationKey(fieldId);
+    const record = fieldMiningCoinLocationCache.get(key);
+    if (!record) return;
+    record.locations = record.locations.filter(location => location.id !== coinId);
+    if (!record.locations.length) fieldMiningCoinLocationCache.delete(key);
+    else fieldMiningCoinLocationCache.set(key, record);
+}
+
 function hasTooManyPoops(pet, fieldId = state.currentField) {
     return getPoopsInField(pet, fieldId).length > CONFIG.poopWarningThreshold;
 }
@@ -888,12 +998,16 @@ function updateCleanPoopsButton(pet) {
     const cleanBtn = $('mhFieldCleanPoopsBtn');
     if (!cleanBtn) return;
     const poopCount = getPoopsInField(pet).length;
+    const coinCount = getFieldMiningCoinsInField(state.currentField, pet).length;
+    const totalCount = poopCount + coinCount;
     const isUrgent = poopCount > CONFIG.poopWarningThreshold;
-    setDockButtonDisabled(cleanBtn, poopCount === 0, '当前场景没有需要清理的便便。便便出现后，再点击清理可花金币启动机器。');
-    cleanBtn.classList.toggle('is-urgent', isUrgent && poopCount > 0);
+    setDockButtonDisabled(cleanBtn, totalCount === 0, '当前场景没有需要清理的便便或金币。出现后，再点击清理可统一收集。');
+    cleanBtn.classList.toggle('is-urgent', isUrgent && totalCount > 0);
     cleanBtn.title = isUrgent
         ? `当前场景有 ${poopCount} 坨便便，花 ${CONFIG.poopMachineCostCoins} 金币启动机器清理成生物燃料`
-        : `花 ${CONFIG.poopMachineCostCoins} 金币启动机器，清理当前场景里的便便并转成生物燃料`;
+        : (poopCount > 0
+            ? `花 ${CONFIG.poopMachineCostCoins} 金币启动机器，统一清理便便和散落金币`
+            : '统一收集当前场景里的散落金币');
 }
 
 function updateBiofuelHud() {
@@ -938,18 +1052,22 @@ function renderFieldActionTray(pet) {
     const sleepDisabled = isEgg || sleepAction.disabled;
     const sleepTitle = isEgg ? '蛋还没有孵化，先喂食让它孵化后再睡觉。' : sleepAction.title;
     const poopCount = getPoopsInField(pet).length;
+    const coinCount = getFieldMiningCoinsInField(state.currentField, pet).length;
+    const cleanCount = poopCount + coinCount;
     const urgentClass = hasTooManyPoops(pet) ? ' is-urgent' : '';
     const cleanTitle = hasTooManyPoops(pet)
         ? `当前场景有 ${poopCount} 坨便便，花 ${CONFIG.poopMachineCostCoins} 金币启动机器清理成生物燃料`
-        : `花 ${CONFIG.poopMachineCostCoins} 金币启动机器，清理当前场景里的便便并转成生物燃料`;
-    const cleanDisabledReason = '当前场景没有需要清理的便便。便便出现后，再点击清理可花金币启动机器。';
+        : (poopCount > 0
+            ? `花 ${CONFIG.poopMachineCostCoins} 金币启动机器，统一清理便便和散落金币`
+            : '统一收集当前场景里的散落金币');
+    const cleanDisabledReason = '当前场景没有需要清理的便便或金币。出现后，再点击清理可统一收集。';
     return `
         <div class="mh-dock-row mh-scroll-x dock-action-row">
             <button type="button" class="btn-secondary action-btn dock-icon-btn mh-decor-action mh-field-mode-toggle" id="mhFieldDecorBtn">
                 <span class="dock-icon">🛠</span>
                 <span class="dock-label">建造</span>
             </button>
-            <button type="button" class="btn-secondary action-btn dock-icon-btn mh-field-clean-action${urgentClass}${poopCount ? '' : ' is-sleep-disabled'}" id="mhFieldCleanPoopsBtn"${dockDisabledAttrs(!poopCount, cleanDisabledReason)} title="${escapeHtml(cleanTitle)}">
+            <button type="button" class="btn-secondary action-btn dock-icon-btn mh-field-clean-action${urgentClass}${cleanCount ? '' : ' is-sleep-disabled'}" id="mhFieldCleanPoopsBtn"${dockDisabledAttrs(!cleanCount, cleanDisabledReason)} title="${escapeHtml(cleanTitle)}">
                 <span class="dock-icon">♻️</span>
                 <span class="dock-label">清理</span>
             </button>
@@ -1037,10 +1155,30 @@ function fieldSceneSettings() {
 }
 
 function currentFieldSceneConfig(fieldId = state.currentField) {
-    return fieldSceneSettings()[normalizeTerrainFieldSlotId(fieldId)] || {};
+    const saved = fieldSceneSettings()[normalizeTerrainFieldSlotId(fieldId)] || {};
+    if (saved.background?.presetId || saved.background?.imageUrl || saved.background?.color) return saved;
+    const typeId = resolveTerrainFieldTypeId(fieldId);
+    const preset = CONFIG.fieldDefaultScenes?.[typeId];
+    if (!preset) return saved;
+    return {
+        ...saved,
+        background: {
+            type: preset.imageUrl ? 'image' : 'color',
+            color: preset.color || '#bae6fd',
+            imageUrl: preset.imageUrl || '',
+            presetId: preset.id || '',
+            title: preset.title || '',
+        },
+        particles: Array.isArray(saved.particles) ? saved.particles : (Array.isArray(preset.particles) ? [...preset.particles] : []),
+        bgMusic: saved.bgMusic || preset.bgMusic || '',
+    };
 }
 
 function saveCurrentFieldSceneConfig(fieldId, patch) {
+    if (isReadonlyPlanet()) {
+        showToast('官方星球的场景不能修改。', 'info', 1400);
+        return;
+    }
     const scenes = fieldSceneSettings();
     const slotId = normalizeTerrainFieldSlotId(fieldId);
     const next = { ...(scenes[slotId] || {}), ...(patch || {}) };
@@ -1145,6 +1283,7 @@ function fieldMusicToggleHtml(fieldId) {
 }
 
 function renderActiveFieldBuildTray(inv, currentField) {
+    if (isReadonlyPlanet() && ['backgrounds', 'effects', 'music'].includes(activeFieldBuildCategory)) activeFieldBuildCategory = 'houses';
     if (activeFieldBuildCategory === 'backgrounds') return renderFieldBackgroundTray(currentField);
     if (activeFieldBuildCategory === 'effects') return renderFieldEffectsTray(currentField);
     if (activeFieldBuildCategory === 'music') return renderFieldMusicTray(currentField);
@@ -1285,6 +1424,7 @@ function fieldParticleEffects(fieldId) {
     if (fieldId === 'ice') return ['snow', 'sparkle'];
     if (fieldId === 'life') return ['petals', 'sparkle'];
     if (fieldId === 'dark') return ['sparkle', 'embers'];
+    if (fieldId === 'thunder') return ['sparkle', 'mist'];
     return ['petals', 'sparkle'];
 }
 
@@ -1452,12 +1592,13 @@ function fieldPetsHtml(currentPet, fieldId) {
     const visibleIds = state.isDecorMode && currentPet?.id
         ? orderedIds.filter(id => id === currentPet.id)
         : orderedIds;
-    const renderIds = visibleIds.filter(id => state.pets[id]);
+    // 按需获取每只伴随宠物：未加载时 getPet 会在后台读取 pet.json 并在就绪后触发重渲染。
+    const renderIds = visibleIds;
     const activeFieldPosition = currentPet?.id ? petFieldPosition(currentPet, fieldId, 0) : null;
     const entries = renderIds.map((id, index) => ({
         id,
         fieldId,
-        pos: id === currentPet?.id ? activeFieldPosition : petFieldPosition(state.pets[id], fieldId, index, activeFieldPosition),
+        pos: id === currentPet?.id ? activeFieldPosition : petFieldPosition(id, fieldId, index, activeFieldPosition),
     }));
     const isFindingInField = !!currentPet?.id
         && state.activePetFieldPose?.fieldId === fieldId
@@ -1466,7 +1607,8 @@ function fieldPetsHtml(currentPet, fieldId) {
         ? fieldPetsFindRepelledPositions(entries, currentPet.id)
         : fieldPetsRepelledPositions(entries);
     const localHtml = renderIds.map((id, index) => {
-        const p = state.pets[id];
+        // pet.json 是唯一来源：未加载时返回 null，petArtHtml 先渲染蛋占位，加载完成后自动替换。
+        const p = id === currentPet?.id ? currentPet : getPet(id);
         const pos = { ...entries[index].pos, ...repelledPositions[index] };
         const isCurrent = id === currentPet?.id;
         const size = isCurrent ? 96 : 78;
@@ -1680,6 +1822,45 @@ function flyFuelNumberToHud(fuelGain, onArrive) {
         onArrive?.();
         fuel.classList.add('field-fuel-hud-pop');
         setTimeout(() => fuel.classList.remove('field-fuel-hud-pop'), 520);
+    };
+    fly.addEventListener('animationend', finish, { once: true });
+    setTimeout(finish, 1500);
+}
+
+function flyFieldCoinNumberToHud(amount, onArrive, sourceEl = null) {
+    const target = $('mhCoins');
+    const targetRect = target?.getBoundingClientRect?.();
+    const machinePoint = getFieldFuelMachinePoint();
+    const sourceRect = sourceEl?.getBoundingClientRect?.();
+    if (!targetRect) {
+        onArrive?.();
+        return;
+    }
+    const startX = machinePoint?.x ?? (sourceRect ? sourceRect.left + sourceRect.width * 0.5 : targetRect.left + targetRect.width * 0.5);
+    const startY = machinePoint?.y ? machinePoint.y - 24 : (sourceRect ? sourceRect.top + sourceRect.height * 0.5 : targetRect.top + targetRect.height * 0.5);
+    const endX = targetRect.left + targetRect.width * 0.5;
+    const endY = targetRect.top + targetRect.height * 0.5;
+    const fly = document.createElement('div');
+    fly.className = 'field-coin-fly-number';
+    fly.innerHTML = `${coinIconSvg('field-coin-fly-icon')}<span>+${Math.max(0, amount | 0)}</span>`;
+    fly.style.left = startX + 'px';
+    fly.style.top = startY + 'px';
+    const dx = endX - startX;
+    const dy = endY - startY;
+    fly.style.setProperty('--field-coin-fly-dx', dx.toFixed(1) + 'px');
+    fly.style.setProperty('--field-coin-fly-dy', dy.toFixed(1) + 'px');
+    fly.style.setProperty('--field-coin-fly-mid-x', (dx * 0.44).toFixed(1) + 'px');
+    fly.style.setProperty('--field-coin-fly-mid-y', (dy * 0.24 - 24).toFixed(1) + 'px');
+    document.body.appendChild(fly);
+
+    let done = false;
+    const finish = () => {
+        if (done) return;
+        done = true;
+        fly.remove();
+        onArrive?.();
+        target.classList.add('field-coin-hud-pop');
+        setTimeout(() => target.classList.remove('field-coin-hud-pop'), 520);
     };
     fly.addEventListener('animationend', finish, { once: true });
     setTimeout(finish, 1500);
@@ -1921,42 +2102,82 @@ function playPoopMachineSweep(poops, onComplete) {
 function collectPoopsInCurrentField(pet) {
     const fieldId = state.currentField;
     const poops = getPoopsInField(pet, fieldId);
-    if (!poops.length) return 0;
+    const fieldCoins = getFieldMiningCoinsInField(fieldId, pet);
+    const coinGain = fieldCoins.reduce((sum, coin) => sum + (Number(coin.value) || 0), 0);
+    const collectables = [...poops, ...fieldCoins];
+    if (!collectables.length) return 0;
     const machineCost = CONFIG.poopMachineCostCoins | 0;
-    if (machineCost > 0 && (state.coins | 0) < machineCost) {
+    if (poops.length > 0 && machineCost > 0 && (state.coins | 0) < machineCost) {
         showToast(`金币不足，需要 ${machineCost} 金币启动机器清理`, 'error', 1200);
         return 0;
     }
-    if (machineCost > 0) {
+    if (poops.length > 0 && machineCost > 0) {
         state.coins = Math.max(0, (state.coins | 0) - machineCost);
         updateCoinsHud();
         showToast(`使用${machineCost} 金币启动机器清理`, 'info', 1200);
     }
-    setPetPoopCount(pet, fieldId, 0);
-    clearRuntimePoopLocations(pet, fieldId);
-    markPetCared(pet);
-    try {
-        const ls = state.lifetimeStats || (state.lifetimeStats = { feeds: 0, poopsCleaned: 0, adultsRaised: 0 });
-        ls.poopsCleaned = (Number(ls.poopsCleaned) || 0) + poops.length;
-    } catch (_) {}
+    if (poops.length > 0) {
+        setPetPoopCount(pet, fieldId, 0);
+        clearRuntimePoopLocations(pet, fieldId);
+        markPetCared(pet);
+        try {
+            const ls = state.lifetimeStats || (state.lifetimeStats = { feeds: 0, poopsCleaned: 0, adultsRaised: 0 });
+            ls.poopsCleaned = (Number(ls.poopsCleaned) || 0) + poops.length;
+        } catch (_) {}
+    }
+    const collectedCoins = recordPlanetMiningFieldCollected(state, coinGain, Date.now(), CONFIG);
+    if (collectedCoins > 0) {
+        clearRuntimeFieldMiningCoins(fieldId);
+        state.coins = Math.max(0, (Number(state.coins) || 0) + collectedCoins);
+    }
     const fuelGain = poops.length * (CONFIG.biofuelPerPoop || 1);
-    state.biofuel = (state.biofuel | 0) + fuelGain;
-    savePetDebounced(pet);
+    if (fuelGain > 0) state.biofuel = (state.biofuel | 0) + fuelGain;
+    if (poops.length > 0) savePetDebounced(pet);
     saveUserProfileDebounced();
-    soundManager.playPoopClean(poops.length);
+    if (poops.length > 0) soundManager.playPoopClean(poops.length);
+    if (collectedCoins > 0) soundManager.playPointReward?.();
     const stopWind = playPoopGlitchWind({ hold: true });
-    const startFuelProcessing = playFieldFuelRoomAnimation(fuelGain, () => {
-        updateBiofuelHud();
-        showToast(`清理 ${poops.length} 坨，+${fuelGain} ⛽ 生物燃料`, 'success', 1200);
-    }, { deferProcessing: true, poopCount: poops.length });
+    const finishSettlement = () => {
+        if (fuelGain > 0) updateBiofuelHud();
+        if (collectedCoins > 0) flyFieldCoinNumberToHud(collectedCoins, updateCoinsHud);
+        const parts = [];
+        if (poops.length > 0) parts.push(`清理 ${poops.length} 坨，+${fuelGain} ⛽ 生物燃料`);
+        if (collectedCoins > 0) parts.push(`+${collectedCoins} 金币`);
+        showToast(parts.join('，'), 'success', 1400);
+    };
+    const startFuelProcessing = fuelGain > 0
+        ? playFieldFuelRoomAnimation(fuelGain, finishSettlement, { deferProcessing: true, poopCount: poops.length })
+        : finishSettlement;
     const stopPetPull = startFieldPetMachinePull();
-    playPoopMachineSweep(poops, () => {
+    playPoopMachineSweep(collectables, () => {
         stopWind();
         stopPetPull();
         startFuelProcessing();
     });
     updateCleanPoopsButton(pet);
-    return poops.length;
+    return collectables.length;
+}
+
+function collectFieldMiningCoin(pet, fieldId, coinId, sourceEl) {
+    const coin = getFieldMiningCoinsInField(fieldId, pet).find(item => item.id === coinId);
+    if (!coin) return false;
+    const collectedCoins = recordPlanetMiningFieldCollected(state, coin.value, Date.now(), CONFIG);
+    if (collectedCoins <= 0) return false;
+    removeRuntimeFieldMiningCoin(fieldId, coinId);
+    state.coins = Math.max(0, (Number(state.coins) || 0) + collectedCoins);
+    saveUserProfileDebounced();
+    soundManager.playPointReward?.();
+    playPoopGlitchWind();
+    const stopPetPull = startFieldPetMachinePull();
+    playPoopSuckToMachine([coin], () => {
+        stopPetPull();
+        flyFieldCoinNumberToHud(collectedCoins, () => {
+            updateCoinsHud();
+            showToast(`+${collectedCoins} 金币`, 'success', 900);
+        }, sourceEl);
+    });
+    updateCleanPoopsButton(pet);
+    return true;
 }
 
 function showFieldPetTalk(petEl, pet) {
@@ -2033,6 +2254,7 @@ export const fieldLevel = {
         const removedPoops = visiting ? 0 : normalizePetPoops(pet);
         if (removedPoops > 0) savePetDebounced(pet);
         const poops = visiting ? [] : getPoopsInField(pet, fld.id);
+        const fieldCoins = visiting ? [] : getFieldMiningCoinsInField(fld.id, pet);
 
         return `
             <div id="mhFieldScene" class="mh-field-scene" style="width:${metersToFieldPx(FIELD_WIDTH_METERS)}px" data-field-width-meters="${FIELD_WIDTH_METERS}" data-field-height-meters="${FIELD_HEIGHT_METERS}">
@@ -2071,6 +2293,7 @@ export const fieldLevel = {
 
             <div class="field-poops">
                 ${poops.map(p => `<button class="poop-btn" data-poop="${escapeHtml(p.id)}" style="left:${(p.x * 100).toFixed(2)}%;top:${(p.y * 100).toFixed(2)}%" title="收集 → ⛽">💩</button>`).join('')}
+                ${fieldCoins.map(fieldMiningCoinHtml).join('')}
             </div>
 
             <div class="field-pets">
@@ -2084,16 +2307,6 @@ export const fieldLevel = {
     bindStage(pet, ctx) {
         const fields = availableFields();
         const fld = fields.find(f => f.id === state.currentField) || fields[0] || CONFIG.fields[0];
-        const missingPetIds = isVisitingMode() ? [] : getFieldPetIds(pet, fld.id).filter(id => id && id !== pet?.id && !state.pets[id]);
-        const loadKey = missingPetIds.join('|');
-        if (loadKey && loadKey !== fieldPetsLoadedKey) {
-            fieldPetsLoadedKey = loadKey;
-            loadPets(missingPetIds)
-                .then(() => {
-                    if (state.zoomLevel === 1) notify();
-                })
-                .catch(e => console.warn('加载星球表面宠物失败', e));
-        }
         const panKey = currentFieldPanKey();
         const hadRememberedFieldPan = Number.isFinite(fieldPanById[panKey]);
         const switchedField = lastBoundFieldPanKey !== panKey;
@@ -2119,6 +2332,10 @@ export const fieldLevel = {
             el.onclick = (e) => {
                 e.stopPropagation();
                 const id = el.dataset.poop;
+                if (el.dataset.fieldCoin) {
+                    collectFieldMiningCoin(pet, fld.id, id, el);
+                    return;
+                }
                 const poops = getPoopsInField(pet, fld.id);
                 const poop = poops.find(p => p.id === id);
                 if (poop) {
@@ -2213,11 +2430,15 @@ export const fieldLevel = {
         const fields = availableFields();
         const currentField = fields.find(f => f.id === state.currentField) || fields[0] || CONFIG.fields[0];
         const inv = state.inventory || {};
+        const categories = isReadonlyPlanet()
+            ? FIELD_BUILD_CATEGORIES.filter(category => !['backgrounds', 'effects', 'music'].includes(category.id))
+            : FIELD_BUILD_CATEGORIES;
         if (!FIELD_BUILD_CATEGORIES.some(category => category.id === activeFieldBuildCategory)) activeFieldBuildCategory = 'houses';
+        if (!categories.some(category => category.id === activeFieldBuildCategory)) activeFieldBuildCategory = 'houses';
 
         return `
             <div class="mh-dock-row mh-scroll-x dock-tab-row ${isFieldDecorMode() ? 'has-decor-done' : ''}" id="mhFieldTabs">
-                ${isFieldDecorMode() ? FIELD_BUILD_CATEGORIES.map(category => `
+                ${isFieldDecorMode() ? categories.map(category => `
                     <button type="button" class="btn-secondary dock-tab ${category.id === activeFieldBuildCategory ? 'active' : ''}" data-field-build-category="${escapeHtml(category.id)}">
                         ${escapeHtml(category.name)}
                     </button>
@@ -2272,6 +2493,10 @@ export const fieldLevel = {
             event?.stopPropagation?.();
             const nextCategory = btn.dataset.fieldBuildCategory || 'houses';
             if (!FIELD_BUILD_CATEGORIES.some(category => category.id === nextCategory)) return false;
+            if (isReadonlyPlanet() && ['backgrounds', 'effects', 'music'].includes(nextCategory)) {
+                showToast('官方星球的场景不能修改。', 'info', 1400);
+                return true;
+            }
             dock.__mhFieldDockTabHandledAt = Date.now();
             activeFieldBuildCategory = nextCategory;
             ctx.selectedTrayItem = null;
@@ -2285,6 +2510,10 @@ export const fieldLevel = {
             if (!btn || !dock.contains(btn)) return false;
             event?.preventDefault?.();
             event?.stopPropagation?.();
+            if (isReadonlyPlanet()) {
+                showToast('官方星球的场景不能修改。', 'info', 1400);
+                return true;
+            }
             const preset = fieldScenePresets.find(scene => scene.id === btn.dataset.fieldBackground);
             if (!preset) return false;
             dock.__mhFieldDockTabHandledAt = Date.now();
@@ -2306,6 +2535,10 @@ export const fieldLevel = {
             if (!btn || !dock.contains(btn)) return false;
             event?.preventDefault?.();
             event?.stopPropagation?.();
+            if (isReadonlyPlanet()) {
+                showToast('官方星球的场景不能修改。', 'info', 1400);
+                return true;
+            }
             const id = btn.dataset.fieldEffect || '';
             dock.__mhFieldDockTabHandledAt = Date.now();
             if (!id) {
@@ -2326,6 +2559,10 @@ export const fieldLevel = {
             if (!btn || !dock.contains(btn)) return false;
             event?.preventDefault?.();
             event?.stopPropagation?.();
+            if (isReadonlyPlanet()) {
+                showToast('官方星球的场景不能修改。', 'info', 1400);
+                return true;
+            }
             const music = btn.dataset.fieldMusic || '';
             dock.__mhFieldDockTabHandledAt = Date.now();
             saveCurrentFieldSceneConfig(currentField.id, { bgMusic: music });
@@ -2497,7 +2734,8 @@ function bindFieldPan(ctx) {
         if (scene.classList.contains('is-machine-sweeping')) return;
         if (e.button != null && e.button !== 0) return;
         const startsOnPoop = !!e.target.closest?.('.poop-btn');
-        if (!startsOnPoop && e.target.closest?.('button, a, input, textarea, select, [contenteditable="true"], [data-tray-item], .pet-sprite')) return;
+        const startsOnFieldPet = !!e.target.closest?.('.field-pet');
+        if (!startsOnPoop && !startsOnFieldPet && e.target.closest?.('button, a, input, textarea, select, [contenteditable="true"], [data-tray-item], .pet-sprite')) return;
         if (isFieldDecorMode() && e.target.closest?.('.field-item') && getClosestDraggableFieldItem(e.clientX, e.clientY)) return;
         drag = { id: e.pointerId, x: e.clientX, y: e.clientY, pan: fieldPan, active: false };
     });

@@ -20,6 +20,7 @@ const REMOTE_DESTINATIONS = {
     ice: { id: 'ice', name: '寒冰岛', emoji: '🧊', field: 'ice' },
     desert: { id: 'desert', name: '沙漠岛', emoji: '🏝️', field: 'life' },
     shadow: { id: 'shadow', name: '幽暗岛', emoji: '🌙', field: 'dark' },
+    thunder: { id: 'thunder', name: '雷云岛', emoji: '⚡', field: 'thunder' },
     friend: { id: 'friend', name: '远方星球', emoji: '🪐', field: 'land' },
 };
 
@@ -28,6 +29,7 @@ const ATTRIBUTE_DESTINATION = {
     冰: REMOTE_DESTINATIONS.ice,
     生命: REMOTE_DESTINATIONS.desert,
     暗: REMOTE_DESTINATIONS.shadow,
+    雷: REMOTE_DESTINATIONS.thunder,
 };
 
 const TRAIT_DESTINATION = {
@@ -55,6 +57,7 @@ const ATTRIBUTE_FIELD_PREFS = {
     冰: ['ice', 'water'],
     生命: ['life', 'land'],
     暗: ['dark', 'land'],
+    雷: ['thunder', 'sky'],
 };
 
 const TRAIT_ROOM_PREFS = {
@@ -72,6 +75,7 @@ const ATTRIBUTE_ROOM_PREFS = {
     冰: ['bath', 'bedroom'],
     生命: ['garden', 'living'],
     暗: ['bedroom', 'living'],
+    雷: ['living', 'garden'],
 };
 
 export function getPlanetPetLimit() {

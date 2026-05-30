@@ -4,7 +4,11 @@ import { defineConfig } from 'vite';
 
 const rootDir = import.meta.dirname;
 const sideBySideDirs = ['minigames', 'famous-pets', 'famous-planets', 'pet-story', 'dev_tools'];
-const sideBySideFiles = ['docs/userguide.html'];
+const sideBySideFiles = ['docs/userguide.html', 'docs/pet_wiki.html'];
+
+// Tracks the asset/chunk file names emitted by the current build so stale files
+// left over from previous builds can be removed from the assets folder.
+const emittedBundleFiles = new Set();
 
 function copySideBySideDirs() {
     return {
@@ -25,6 +29,110 @@ function copySideBySideDirs() {
                 if (!fs.existsSync(sourceFile)) continue;
                 fs.mkdirSync(path.dirname(targetFile), { recursive: true });
                 fs.copyFileSync(sourceFile, targetFile);
+            }
+        },
+    };
+}
+
+// Files under the side-by-side dirs / files are referenced at runtime via
+// `new URL('../<dir>/...', import.meta.url)` + fetch(). A dynamic segment in
+// such a URL makes Vite slurp the whole parent tree (project root, docs, every
+// side-by-side dir, even vite.config.mjs) into assets/ with content hashes.
+// Those hashed copies are useless because the runtime fetch resolves against
+// the verbatim copies produced by copySideBySideDirs(). This plugin drops any
+// emitted asset that originated from a side-by-side location so it never ends
+// up hashed inside assets/.
+const sideBySideRoots = [
+    ...sideBySideDirs.map((dirName) => path.resolve(rootDir, dirName)),
+    ...sideBySideFiles.map((fileName) => path.resolve(rootDir, ...fileName.split('/'))),
+];
+
+function isSideBySideSource(sourcePath) {
+    if (!sourcePath) return false;
+    const resolved = path.resolve(rootDir, sourcePath.split('?')[0]);
+    return sideBySideRoots.some(
+        (root) => resolved === root || resolved.startsWith(root + path.sep),
+    );
+}
+
+// The directory-slurp pulls in files from the project root, docs/, and the
+// side-by-side dirs. None of those emitted assets are referenced by the bundle
+// via their hashed names: the game fetches them through literal runtime URLs
+// (`new URL('../<dir>/file', import.meta.url)`) that resolve against the
+// verbatim copies produced by copySideBySideDirs(). So an emitted asset is
+// "slurped" (and safe to drop) when its source originates outside the real
+// build inputs (js/ and css/).
+const bundleSourceRoots = [
+    path.resolve(rootDir, 'js'),
+    path.resolve(rootDir, 'css'),
+];
+
+function assetSourcePaths(asset) {
+    if (asset.type !== 'asset') return [];
+    if (asset.originalFileNames?.length) return asset.originalFileNames;
+    if (asset.originalFileName) return [asset.originalFileName];
+    return [];
+}
+
+function isSlurpedAsset(asset) {
+    const sources = assetSourcePaths(asset);
+    if (!sources.length) return false;
+    return sources.every((source) => {
+        const resolved = path.resolve(rootDir, source.split('?')[0]);
+        const fromBuildInput = bundleSourceRoots.some(
+            (root) => resolved === root || resolved.startsWith(root + path.sep),
+        );
+        return !fromBuildInput;
+    });
+}
+
+// Drop slurped assets from the bundle and remove stale files in dist/assets
+// that are not part of the current build.
+function cleanStaleAssets() {
+    return {
+        name: 'clean-stale-assets',
+        enforce: 'post',
+        generateBundle(_, bundle) {
+            // Collect the asset basenames that emitted chunks still reference.
+            // Vite rewrites static `new URL('../<dir>/file', import.meta.url)`
+            // calls into `new URL('<basename>-<hash>.<ext>', import.meta.url)`,
+            // so those hashed assets must be kept even though they were slurped
+            // from a side-by-side location.
+            const referencedAssetNames = new Set();
+            for (const chunk of Object.values(bundle)) {
+                if (chunk.type !== 'chunk') continue;
+                const matches = chunk.code.matchAll(
+                    /new URL\(\s*["']([^"']+\.[A-Za-z0-9]+)["']\s*,\s*import\.meta\.url\s*\)/g,
+                );
+                for (const match of matches) {
+                    referencedAssetNames.add(match[1].split('/').pop());
+                }
+            }
+
+            for (const [fileName, asset] of Object.entries(bundle)) {
+                // Always keep the real entry HTML emitted at the dist root, but
+                // drop the redundant hashed copy the directory-slurp emits into
+                // assets/.
+                if (fileName === 'MagicHaqi.html') {
+                    emittedBundleFiles.add(fileName);
+                    continue;
+                }
+                const basename = fileName.split('/').pop();
+                const slurped = isSlurpedAsset(asset) || isSideBySideSource(assetSourcePaths(asset)[0]);
+                if (slurped && !referencedAssetNames.has(basename)) {
+                    delete bundle[fileName];
+                    continue;
+                }
+                emittedBundleFiles.add(basename);
+            }
+        },
+        closeBundle() {
+            const assetsDir = path.join(rootDir, 'dist', 'assets');
+            if (!fs.existsSync(assetsDir)) return;
+            for (const entry of fs.readdirSync(assetsDir, { withFileTypes: true })) {
+                if (!entry.isFile()) continue;
+                if (emittedBundleFiles.has(entry.name)) continue;
+                fs.rmSync(path.join(assetsDir, entry.name), { force: true });
             }
         },
     };
@@ -116,7 +224,12 @@ export default defineConfig({
     root: rootDir,
     base: './',
     publicDir: false,
-    plugins: [inlinePetSheetWorker(), extractHtmlStylesToCss(), copySideBySideDirs()],
+    plugins: [
+        inlinePetSheetWorker(),
+        extractHtmlStylesToCss(),
+        cleanStaleAssets(),
+        copySideBySideDirs(),
+    ],
     build: {
         outDir: 'dist',
         emptyOutDir: true,

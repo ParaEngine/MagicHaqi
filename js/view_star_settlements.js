@@ -2,7 +2,7 @@
 import { confirm, escapeHtml, showToast } from './utils.js';
 import { getDefaultZoomLevelIndex, loadPlanetShopItems, normalizePlanetZoomOptions } from './config.js';
 import { notify, state } from './state.js';
-import { saveUserProfileDebounced } from './storage.js';
+import { saveUserProfileDebounced, setActiveLayoutsPlanet } from './storage.js';
 import { getTerrainFieldSlots, getTerrainFieldType, normalizeTerrainFieldSlotId, TERRAIN_FIELD_SLOT_DEFS, terrainFieldIconHtml } from './view_terrain_fields.js';
 
 const PLANET_INDEX_PATH = 'famous-planets/_planet_index.json';
@@ -39,13 +39,13 @@ function compactZoomOptions(raw) {
 }
 
 function applySettlementZoomOptions(settings, planet) {
-    const compact = compactZoomOptions(planet?.planet || planet || {});
+    const compact = compactZoomOptions(planet?.zoomOptions || planet?.planet || planet || {});
     if (Object.keys(compact).length) settings.zoomOptions = compact;
     else delete settings.zoomOptions;
 }
 
 function applyDefaultZoomLevel(planet) {
-    const level = getDefaultZoomLevelIndex(planet?.planet || planet || {});
+    const level = getDefaultZoomLevelIndex(planet?.zoomOptions || planet?.planet || planet || {});
     state.zoomLevel = level;
     state.lastHomeZoomLevel = level;
 }
@@ -56,6 +56,9 @@ function normalizeOfficialPlanet(raw, indexEntry = {}) {
     if (!id) return null;
     const title = String(raw.title || raw.name || indexEntry.title || id).trim();
     const fields = Array.isArray(raw.fields) ? raw.fields : [];
+    const planetOptions = raw.planet && typeof raw.planet === 'object'
+        ? { ...raw, ...raw.planet }
+        : raw;
     return {
         id,
         title,
@@ -65,7 +68,7 @@ function normalizeOfficialPlanet(raw, indexEntry = {}) {
         summary: String(raw.summary || indexEntry.summary || '').trim(),
         shopItemUrl: String(raw.shopItemUrl || indexEntry.shopItemUrl || raw.shopItemsFile || indexEntry.shopItemsFile || raw.shopitemsFile || indexEntry.shopitemsFile || raw.shopFile || indexEntry.shopFile || raw.shop_items_file || indexEntry.shop_items_file || '').trim(),
         planet: raw.planet && typeof raw.planet === 'object' ? raw.planet : {},
-        zoomOptions: normalizePlanetZoomOptions(raw.planet || raw),
+        zoomOptions: normalizePlanetZoomOptions(planetOptions),
         fields,
     };
 }
@@ -185,6 +188,9 @@ async function applyOfficialPlanet(planet, { persist = true, sourcePath = '' } =
     if (persist) captureHomeSnapshot();
     applyPlanetFields(planet);
     state.planetName = planet.name || planet.title;
+    // 注意：setActiveLayoutsPlanet 会替换 state.settings.starSettlement 引用，
+    // 所以必须在它之后再获取 settings，否则后续写入（包括 zoomOptions）会落到孤立对象上。
+    setActiveLayoutsPlanet(planet.id);
     const settings = settlementSettings();
     settings.source = 'official';
     settings.planetId = planet.id;
@@ -298,11 +304,13 @@ export async function applySettledOfficialPlanetFromProfile() {
 
 async function restoreCustomPlanet() {
     state.temporaryHomePlanetOverride = null;
-    const settings = settlementSettings();
-    const snapshot = settings.homeSnapshot || null;
+    const snapshot = settlementSettings().homeSnapshot || null;
     if (snapshot?.planetName) state.planetName = snapshot.planetName;
     if (snapshot?.terrainSlots) terrainSettings().slots = clone(snapshot.terrainSlots);
     if (snapshot?.fieldScenes) state.settings.fieldScenes = clone(snapshot.fieldScenes);
+    // setActiveLayoutsPlanet 会替换 state.settings.starSettlement 引用，必须之后再获取 settings。
+    setActiveLayoutsPlanet('');
+    const settings = settlementSettings();
     settings.source = 'custom';
     settings.planetId = 'custom';
     settings.title = currentHomeName();

@@ -104,6 +104,7 @@ const PATHS = {
     userProfile: 'user/profile.json',
     storyProgress: 'user/story_progress.json',
     layouts:     'user/layouts.json',
+    planetLayouts: (planetId) => `user/${planetId}.layouts.json`,
     inventory:   'user/inventory.json',
     planetVisitors: 'user/planet_visitors.json',
     recentFriendPlanets: 'user/recent_friend_planets.json',
@@ -449,6 +450,48 @@ function normalizeLayoutRoomKey(roomId) {
     const key = String(roomId || '').trim();
     if (!key.startsWith('field_')) return key;
     return `field_${normalizeTerrainFieldSlotId(key.slice('field_'.length))}`;
+}
+
+function safeLayoutPlanetId(value) {
+    return String(value || '').trim().replace(/[^a-zA-Z0-9_-]/g, '_').slice(0, 64);
+}
+
+function currentLayoutsPath() {
+    const settlement = state.settings?.starSettlement;
+    if (settlement?.source === 'official') {
+        const planetId = safeLayoutPlanetId(settlement.planetId);
+        if (planetId) return PATHS.planetLayouts(planetId);
+    }
+    return PATHS.layouts;
+}
+
+function hasStoredLayouts(value) {
+    return value && typeof value === 'object' && !Array.isArray(value) && Object.keys(value).length > 0;
+}
+
+function resetLayoutsLoadState() {
+    _layoutsLoaded = false;
+    _layoutsLoading = null;
+    state.layouts = {};
+}
+
+export function setActiveLayoutsPlanet(planetId = '') {
+    const nextPlanetId = safeLayoutPlanetId(planetId);
+    const nextPath = nextPlanetId ? PATHS.planetLayouts(nextPlanetId) : PATHS.layouts;
+    if (currentLayoutsPath() === nextPath) return;
+    const settings = state.settings || (state.settings = {});
+    // 原地变更 starSettlement 字段，避免替换对象引用——外部调用方可能已经持有旧引用。
+    const settlement = settings.starSettlement && typeof settings.starSettlement === 'object'
+        ? settings.starSettlement
+        : (settings.starSettlement = {});
+    if (nextPlanetId) {
+        settlement.source = 'official';
+        settlement.planetId = nextPlanetId;
+    } else if (settlement.source === 'official') {
+        settlement.source = 'custom';
+        settlement.planetId = '';
+    }
+    resetLayoutsLoadState();
 }
 
 function normalizeLayoutsData(data) {
@@ -881,9 +924,8 @@ export async function loadAllPets() {
     }
 
     // layouts / inventory 属于用户共享数据，按需加载一次
-    state.layouts = {};
+    resetLayoutsLoadState();
     state.inventory = {};
-    _layoutsLoaded = false;
     _inventoryLoaded = false;
 }
 
@@ -897,10 +939,11 @@ export function ensurePetLayouts(_petId) {
     if (_layoutsLoaded) return Promise.resolve(state.layouts || {});
     if (_layoutsLoading) return _layoutsLoading;
     _layoutsLoading = (async () => {
-        const data = await readJSON(PATHS.layouts, {});
+        const path = currentLayoutsPath();
+        const data = await readJSON(path, {});
         state.layouts = normalizeLayoutsData(data);
         if (data && typeof data === 'object' && !Array.isArray(data) && Object.keys(data).some(key => key !== normalizeLayoutRoomKey(key))) {
-            saveJSONDebounced(PATHS.layouts, state.layouts);
+            saveJSONDebounced(path, state.layouts);
         }
         _layoutsLoaded = true;
         return state.layouts;
@@ -1011,7 +1054,7 @@ export async function saveLayout(petId, roomId, items, options = {}) {
     const key = normalizeLayoutRoomKey(roomId);
     state.layouts[key] = items;
     if (key !== roomId) delete state.layouts[roomId];
-    if (options.persist !== false) saveJSONDebounced(PATHS.layouts, normalizeLayoutsData(state.layouts));
+    if (options.persist !== false) saveJSONDebounced(currentLayoutsPath(), normalizeLayoutsData(state.layouts));
 }
 
 export function getLayout(_petId, roomId) {
@@ -1047,7 +1090,7 @@ export function saveInventoryDebounced() {
 export async function saveDecorDataNow(petId) {
     await Promise.all([ensurePetLayouts(petId), ensurePetInventory(petId)]);
     await Promise.all([
-        saveJSONNow(PATHS.layouts, normalizeLayoutsData(state.layouts || {})),
+        saveJSONNow(currentLayoutsPath(), normalizeLayoutsData(state.layouts || {})),
         saveInventoryNowInternal(),
     ]);
 }
