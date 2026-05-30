@@ -1471,7 +1471,13 @@ export const petLevel = {
             dock.__mhPetDockTabPointer = null;
             if (!start || start.id !== e.pointerId) return;
             const moved = Math.hypot(e.clientX - start.x, e.clientY - start.y) > 8;
-            if (!moved && Date.now() - (dock.__mhPetDockTabHandledAt || 0) >= 250) activateDockTab(start.target, e);
+            if (!moved && Date.now() - (dock.__mhPetDockTabHandledAt || 0) >= 250) {
+                // Defer so this tap's trailing native click is swallowed by the
+                // still-mounted dock before any new window mounts.
+                const t = start.target;
+                dock.__mhPetDockTabHandledAt = Date.now();
+                setTimeout(() => activateDockTab(t, e), 0);
+            }
         };
         dock.addEventListener('pointerdown', dock.__mhPetDockTabPointerDown, true);
         dock.addEventListener('pointerup', dock.__mhPetDockTabPointerUp, true);
@@ -1504,7 +1510,11 @@ export const petLevel = {
                 start.scroller.__mhTouchScrollMoved
             );
             const moved = Math.hypot(touch.clientX - start.x, touch.clientY - start.y) > 8;
-            if (!moved && !scrolled) activateDockTab(start.target, e);
+            if (!moved && !scrolled) {
+                const t = start.target;
+                dock.__mhPetDockTabHandledAt = Date.now();
+                setTimeout(() => activateDockTab(t, e), 0);
+            }
         };
         dock.__mhPetDockTabTouchCancel = () => {
             dock.__mhPetDockTabTouch = null;

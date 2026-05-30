@@ -576,10 +576,14 @@ export const cellLevel = {
             el.onclick = () => {
                 if (isDockButtonDisabled(el)) { showDockDisabledToast(el); return; }
                 const k = el.dataset.act;
-                if (k === 'chat') { ctx.callbacks.onNav?.('chat'); return; }
-                if (k === 'storyMaker') { ctx.callbacks.onNav?.('storyMaker', { origin: 'home' }); return; }
-                if (k === 'wish') showWishModal(pet, ctx);
-                if (k === 'treatSickness') ctx.callbacks.onTreatSickness?.();
+                // Defer so this tap's trailing native click is swallowed by the
+                // still-mounted dock before any new window mounts.
+                setTimeout(() => {
+                    if (k === 'chat') { ctx.callbacks.onNav?.('chat'); return; }
+                    if (k === 'storyMaker') { ctx.callbacks.onNav?.('storyMaker', { origin: 'home' }); return; }
+                    if (k === 'wish') showWishModal(pet, ctx);
+                    if (k === 'treatSickness') ctx.callbacks.onTreatSickness?.();
+                }, 0);
             };
         });
     },

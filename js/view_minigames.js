@@ -1104,14 +1104,16 @@ function openGame(gameId, params = null, { allowLowEnergy = false } = {}) {
 }
 
 function minigameUrl(src, params = null) {
-    const query = new URLSearchParams({ t: String(Date.now()) });
+    const query = new URLSearchParams();
     if (params && typeof params === 'object') {
         Object.entries(params).forEach(([key, value]) => {
             if (value == null || value === '') return;
             query.set(key, String(value));
         });
     }
-    return `${src}${src.includes('?') ? '&' : '?'}${query.toString()}`;
+    const queryString = query.toString();
+    if (!queryString) return src;
+    return `${src}${src.includes('?') ? '&' : '?'}${queryString}`;
 }
 
 function finishCurrentGame(onGameFinished, data = {}, onFinishedPrompt = null, { forcePrompt = false } = {}) {

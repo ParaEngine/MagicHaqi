@@ -1,3 +1,4 @@
+import crypto from 'node:crypto';
 import fs from 'node:fs';
 import path from 'node:path';
 import { defineConfig } from 'vite';
@@ -5,6 +6,15 @@ import { defineConfig } from 'vite';
 const rootDir = import.meta.dirname;
 const sideBySideDirs = ['minigames', 'famous-pets', 'famous-planets', 'pet-story', 'dev_tools'];
 const sideBySideFiles = ['docs/userguide.html', 'docs/pet_wiki.html'];
+
+// CDN release configuration. The entry HTML emitted into `release/` gets a
+// `<base>` tag pointing at a content-hashed CDN folder. Because the built
+// `dist/MagicHaqi.html` references its assets with relative URLs
+// (`./assets/...`), the `<base>` tag makes every relative asset/fetch resolve
+// against the immutable CDN hash folder. Upload `dist/` to that folder and the
+// release HTML served from keepwork.com will pull everything from CDN.
+const cdnReleaseBase = 'https://cdn.keepwork.com/maisi/magichaqi/release';
+const releaseHtmlName = 'MagicHaqi_v1.html';
 
 // Tracks the asset/chunk file names emitted by the current build so stale files
 // left over from previous builds can be removed from the assets folder.
@@ -220,6 +230,64 @@ function extractHtmlStylesToCss() {
     };
 }
 
+// Compute a stable content hash for the build so each publish gets a unique,
+// immutable CDN folder. Hash the emitted JS + CSS asset bytes plus the entry
+// HTML so any change in code, styles, or markup yields a new hash.
+function computeReleaseHash(distDir) {
+    const hash = crypto.createHash('sha256');
+    const htmlPath = path.join(distDir, 'MagicHaqi.html');
+    if (fs.existsSync(htmlPath)) hash.update(fs.readFileSync(htmlPath));
+
+    const assetsDir = path.join(distDir, 'assets');
+    if (fs.existsSync(assetsDir)) {
+        const assetNames = fs
+            .readdirSync(assetsDir)
+            .filter((name) => name.endsWith('.js') || name.endsWith('.css'))
+            .sort();
+        for (const name of assetNames) {
+            hash.update(name);
+            hash.update(fs.readFileSync(path.join(assetsDir, name)));
+        }
+    }
+    return hash.digest('hex').slice(0, 12);
+}
+
+// Post-build: clone dist/MagicHaqi.html into release/MagicHaqi_v1.html with a
+// `<base>` tag pointing at the content-hashed CDN folder. The browser URL stays
+// on keepwork.com (serving release/MagicHaqi_v1.html) while all relative assets
+// load from the immutable CDN hash folder.
+function emitCdnReleaseHtml() {
+    return {
+        name: 'emit-cdn-release-html',
+        enforce: 'post',
+        closeBundle() {
+            const distDir = path.join(rootDir, 'dist');
+            const htmlPath = path.join(distDir, 'MagicHaqi.html');
+            if (!fs.existsSync(htmlPath)) return;
+
+            const releaseHash = computeReleaseHash(distDir);
+            const baseHref = `${cdnReleaseBase}/${releaseHash}/`;
+            const baseTag = `  <base href="${baseHref}">\n`;
+
+            let html = fs.readFileSync(htmlPath, 'utf8');
+            // Avoid duplicating a base tag and ensure it is the first element in
+            // <head> so it applies to every subsequent relative URL.
+            html = html.replace(/[ \t]*<base\b[^>]*>\s*\n?/i, '');
+            html = html.replace(/<head>/i, `<head>\n${baseTag}`);
+
+            const releaseDir = path.join(rootDir, 'release');
+            fs.mkdirSync(releaseDir, { recursive: true });
+            const releasePath = path.join(releaseDir, releaseHtmlName);
+            fs.writeFileSync(releasePath, html);
+
+            this.warn?.(`Emitted ${path.relative(rootDir, releasePath)} with <base href="${baseHref}">`);
+            // eslint-disable-next-line no-console
+            console.log(`\n[emit-cdn-release-html] release/${releaseHtmlName} -> <base href="${baseHref}">`);
+            console.log(`[emit-cdn-release-html] Upload dist/ contents to: ${baseHref}\n`);
+        },
+    };
+}
+
 export default defineConfig({
     root: rootDir,
     base: './',
@@ -229,6 +297,7 @@ export default defineConfig({
         extractHtmlStylesToCss(),
         cleanStaleAssets(),
         copySideBySideDirs(),
+        emitCdnReleaseHtml(),
     ],
     build: {
         outDir: 'dist',

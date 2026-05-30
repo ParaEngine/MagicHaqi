@@ -2668,7 +2668,14 @@ export const fieldLevel = {
             if (!start || start.id !== e.pointerId) return;
             const moved = Math.hypot(e.clientX - start.x, e.clientY - start.y) > 8;
             if (!moved && Date.now() - (dock.__mhFieldDockTabHandledAt || 0) >= 250) {
-                activateFieldAction(start.target, e) || activateFieldNav(start.target, e) || activateFieldShop(start.target, e) || activateFieldBackground(start.target, e) || activateFieldEffect(start.target, e) || activateFieldMusic(start.target, e) || activateCleanPoops(start.target, e) || activateModeToggle(start.target, e) || activateBuildCategory(start.target, e) || activateFieldTab(start.target, e);
+                // Defer activation so this tap's trailing native click lands on the
+                // still-present dock (swallowed) before any new window mounts.
+                const t = start.target;
+                dock.__mhFieldDockTabHandledAt = Date.now();
+                suppressFieldDockActivationUntil = Date.now() + 350;
+                setTimeout(() => {
+                    activateFieldAction(t, e) || activateFieldNav(t, e) || activateFieldShop(t, e) || activateFieldBackground(t, e) || activateFieldEffect(t, e) || activateFieldMusic(t, e) || activateCleanPoops(t, e) || activateModeToggle(t, e) || activateBuildCategory(t, e) || activateFieldTab(t, e);
+                }, 0);
             }
         };
         dock.addEventListener('pointerdown', dock.__mhFieldDockTabPointerDown, true);

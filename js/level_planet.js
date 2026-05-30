@@ -1558,11 +1558,15 @@ export const planetLevel = {
         dock.querySelectorAll('[data-act]').forEach(el => {
             el.onclick = () => {
                 const action = el.dataset.act;
-                if (action === 'visit-field') { ctx.zoomIn?.(); return; }
-                if (action === 'visit-return') { showVisitReturnPrompt(pet, ctx); return; }
-                if (action === 'milestones') showMilestonesPanel();
-                else if (action === 'mailbox') ctx.callbacks?.onNav?.('mailbox');
-                else showPlanetActionDialog(action, pet, ctx);
+                // Defer so this tap's trailing native click is swallowed by the
+                // still-mounted dock before any new window mounts.
+                setTimeout(() => {
+                    if (action === 'visit-field') { ctx.zoomIn?.(); return; }
+                    if (action === 'visit-return') { showVisitReturnPrompt(pet, ctx); return; }
+                    if (action === 'milestones') showMilestonesPanel();
+                    else if (action === 'mailbox') ctx.callbacks?.onNav?.('mailbox');
+                    else showPlanetActionDialog(action, pet, ctx);
+                }, 0);
             };
         });
     },
