@@ -31,9 +31,9 @@
   const PET_INDEX_URL = new URL('../famous-pets/_pet_index.json', location.href).href;
   const LEVEL_DISTANCE = TILE * 42;
   const DIFFICULTIES = {
-    easy: { name: '轻松', enemyRate: .7, enemyHp: .82, enemySpeed: .88, enemyDamage: .78, goal: .86, score: .86, heal: 30 },
-    normal: { name: '普通', enemyRate: 1, enemyHp: 1, enemySpeed: 1, enemyDamage: 1, goal: 1, score: 1, heal: 22 },
-    hard: { name: '挑战', enemyRate: 1.35, enemyHp: 1.22, enemySpeed: 1.15, enemyDamage: 1.25, goal: 1.16, score: 1.2, heal: 14 },
+    easy: { name: '轻松', enemyRate: .7, enemyHp: .82, enemySpeed: .88, enemyDamage: .78, goal: .86, score: .86, heal: 40 },
+    normal: { name: '普通', enemyRate: 1, enemyHp: 1, enemySpeed: 1, enemyDamage: 1, goal: 1, score: 1, heal: 20 },
+    hard: { name: '挑战', enemyRate: 1.35, enemyHp: 1.22, enemySpeed: 1.15, enemyDamage: 1.25, goal: 1.16, score: 1.2, heal: 10 },
   };
   const MONSTERS = {
     slime: { name: '绿史莱姆', element: 'nature', hp: 2, speed: 42, w: 28, h: 24, damage: 14, score: 35, color: '#84cc16', accent: '#a3e635' },
@@ -42,6 +42,8 @@
     fox: { name: '火狐', element: 'fire', hp: 3, speed: 82, w: 34, h: 24, damage: 16, score: 58, color: '#f97316', accent: '#fed7aa' },
     mushpet: { name: '菇菇兽', element: 'poison', hp: 5, speed: 35, w: 32, h: 30, damage: 22, score: 70, color: '#a3e635', accent: '#f0abfc' },
     bat: { name: '洞穴蝠', element: 'shadow', hp: 2, speed: 96, w: 30, h: 20, damage: 15, score: 50, color: '#7c3aed', accent: '#c4b5fd', flying: true },
+    // Water-element monster: only spawns in/near water.
+    frog: { name: '水蛙怪', element: 'water', hp: 3, speed: 50, w: 32, h: 26, damage: 16, score: 60, color: '#0ea5e9', accent: '#7dd3fc' },
   };
   const ELEMENTS = {
     fire: { name: '火焰', color: '#f97316', accent: '#fed7aa', icon: '🔥', speed: 170, damage: 13 },
@@ -50,7 +52,17 @@
     nature: { name: '藤蔓', color: '#22c55e', accent: '#bbf7d0', icon: '✦', speed: 145, damage: 10 },
     poison: { name: '毒孢', color: '#a3e635', accent: '#f0abfc', icon: '✹', speed: 125, damage: 12 },
     shadow: { name: '暗影', color: '#7c3aed', accent: '#ddd6fe', icon: '✦', speed: 180, damage: 12 },
+    water: { name: '水泡', color: '#0ea5e9', accent: '#bae6fd', icon: '💧', speed: 155, damage: 11 },
   };
+  // Mario-style power-ups. `power` is the player power-state granted.
+  const POWERUPS = {
+    mushroom: { name: '成长蘑菇', icon: '🍄', color: '#ef4444', accent: '#fee2e2', power: 'big', score: 100 },
+    fireflower: { name: '火焰花', icon: '🌸', color: '#f97316', accent: '#fed7aa', power: 'fire', score: 120 },
+    star: { name: '无敌星', icon: '⭐', color: '#facc15', accent: '#fef9c3', power: 'star', score: 150, duration: 8000 },
+    oneup: { name: '生命菇', icon: '💚', color: '#22c55e', accent: '#bbf7d0', power: 'life', score: 0 },
+  };
+  const PLAYER_FIRE = { speed: 560, bounce: 360, life: 1.6, r: 7, damage: 3, color: '#fb923c', accent: '#fff7ed' };
+  const STAR_COLORS = ['#facc15', '#fb7185', '#38bdf8', '#a78bfa', '#22c55e', '#fb923c'];
   const COLORS = {
     skyTop: '#9fe3f3', skyBottom: '#d6f8ff', dirt: '#9a684b', dirt2: '#7b503c', grass: '#6fd15d', grass2: '#cff27a', stone: '#7c8994', stone2: '#5f6a73', wood: '#8b5a2b', leaf: '#38a857', crystal: '#68e8ff', gold: '#facc15', heart: '#ef4444'
   };
@@ -82,6 +94,12 @@
     health: 100,
     maxHealth: 100,
     stamina: 100,
+    power: 'small',        // 'small' | 'big' | 'fire'
+    starUntil: 0,          // invincibility star timer
+    comboCount: 0,         // consecutive stomps/coins streak
+    comboUntil: 0,         // time the combo expires
+    playerShots: [],       // player-thrown fireballs
+    coins: 0,              // gold coin count (Mario-style)
     message: '探索像素世界，收集水晶，和宠物一起冒险！',
     messageUntil: 0,
     masterStyle: localStorage.getItem(STORAGE_MASTER) || 'boy',
@@ -107,6 +125,8 @@
     generatedCols: 0,
     generatingWorld: false,
     terrainHeight: 17,
+    pondLevels: {},          // region -> fixed flat water surface row
+    lastJumperX: null,       // x of the most recent cliff jumper (spacing guard)
     gameStartAt: 0,
       safeUntil: 0,
     finishPosted: false,
@@ -126,6 +146,8 @@
     wasGrounded: false,
     attackUntil: 0,
     hurtUntil: 0,
+    shootCd: 0,
+    stompChain: 0,
   };
 
   const pet = {
@@ -189,10 +211,16 @@
         box-shadow: 0 3px 0 rgba(7,48,71,.13);
       }
       .ha-bars {
-        grid-column: 1 / -1; display: grid; grid-template-columns: 1fr 1fr; gap: 6px; pointer-events: none;
+        grid-column: 1 / -1; display: flex; gap: 6px; pointer-events: none;
       }
-      .ha-bar { height: 13px; border-radius: 999px; overflow: hidden; background: rgba(7,48,71,.28); border: 2px solid rgba(248,250,252,.9); }
-      .ha-bar i { display: block; height: 100%; width: var(--pct); border-radius: inherit; background: linear-gradient(90deg, var(--c1), var(--c2)); transition: width .12s linear; }
+      .ha-hearts { display: flex; align-items: center; gap: 3px; height: 17px; }
+      .ha-heart { position: relative; width: 16px; height: 16px; font-size: 16px; line-height: 1; filter: drop-shadow(0 1px 0 rgba(7,48,71,.35)); transition: transform .12s ease; }
+      .ha-heart::before { content: '❤️'; position: absolute; inset: 0; }
+      .ha-heart.empty::before { filter: grayscale(1) opacity(.45); }
+      /* Half heart: full grey base + left-half colored overlay */
+      .ha-heart.half::before { filter: grayscale(1) opacity(.45); }
+      .ha-heart.half::after { content: '❤️'; position: absolute; inset: 0; width: 50%; overflow: hidden; }
+      .ha-heart.pop { transform: scale(1.4); }
       .ha-message {
         position: absolute; left: 50%; top: 70px; z-index: 6; transform: translateX(-50%); max-width: min(86vw, 560px);
         padding: 9px 13px; border-radius: 12px; background: rgba(248,250,252,.93); border: 2px solid rgba(7,48,71,.8);
@@ -246,6 +274,16 @@
         text-align: center; box-shadow: 0 10px 28px rgba(15,23,42,.18); animation: haToast 1.25s ease-out forwards; pointer-events: none;
       }
       .ha-confetti { position: fixed; top: -16px; z-index: 48; width: 9px; height: 15px; border-radius: 2px; background: var(--c); animation: haConfetti var(--d) ease-in forwards; pointer-events: none; }
+      .ha-combo {
+        position: absolute; left: 50%; top: 118px; z-index: 7; transform: translateX(-50%);
+        padding: 6px 16px; border-radius: 999px; font-size: 18px; font-weight: 1000; letter-spacing: .5px;
+        color: #fff; background: linear-gradient(180deg, #fb923c, #ea580c); border: 3px solid #fff;
+        box-shadow: 0 6px 18px rgba(234,88,12,.4); pointer-events: none; text-shadow: 0 2px 0 rgba(124,45,18,.6);
+        animation: haComboPop .28s ease-out;
+      }
+      .ha-power-flash { animation: haPowerFlash .5s ease-out; }
+      @keyframes haComboPop { 0% { transform: translateX(-50%) scale(.5); opacity: 0; } 60% { transform: translateX(-50%) scale(1.18); } 100% { transform: translateX(-50%) scale(1); opacity: 1; } }
+      @keyframes haPowerFlash { 0%,100% { filter: none; } 50% { filter: brightness(1.8) saturate(1.6); } }
       [hidden] { display: none !important; }
       @keyframes haJoyIn { from { opacity: 0; transform: scale(.8); } to { opacity: 1; transform: scale(1); } }
       @keyframes haToast { 0% { opacity: 0; transform: translate(-50%, -12px) scale(.9); } 18% { opacity: 1; transform: translate(-50%, 0) scale(1); } 100% { opacity: 0; transform: translate(-50%, -24px) scale(.96); } }
@@ -261,7 +299,6 @@
       @media (max-height: 520px) {
         .ha-top { grid-template-columns: 36px 1fr auto; }
         .ha-title { display: none; }
-        .ha-bars { display: none; }
         .ha-message { top: 52px; }
         .ha-pill.optional { display: none; }
         .ha-action-btn { width: 52px; height: 52px; }
@@ -278,19 +315,19 @@
         <div class="ha-title">宠物冒险 · 宠物与小主人</div>
         <div class="ha-stats" aria-label="冒险状态">
           <span class="ha-pill">🏅 LV.<b id="haLevel">1</b></span>
+          <span class="ha-pill" id="haPowerPill">🔘 <b id="haPower">小</b></span>
+          <span class="ha-pill">🪙 <b id="haCoins">0</b></span>
           <span class="ha-pill">💎 <b id="haCrystals">0</b>/<b id="haCrystalGoal">0</b></span>
-          <span class="ha-pill optional">⛏️ <b id="haMined">0</b>/<b id="haMinedGoal">0</b></span>
           <span class="ha-pill optional">⭐ <b id="haScore">0</b></span>
-          <span class="ha-pill optional">🏆 <b id="haBest">0</b></span>
         </div>
         <div class="ha-bars">
-          <div class="ha-bar" title="生命"><i id="haHp" style="--pct:100%;--c1:#fb7185;--c2:#ef4444"></i></div>
-          <div class="ha-bar" title="体力"><i id="haStamina" style="--pct:100%;--c1:#facc15;--c2:#22c55e"></i></div>
+          <div class="ha-hearts" id="haHearts" title="生命" aria-label="生命"></div>
         </div>
       </header>
       <div id="haMessage" class="ha-message">探索像素世界，收集水晶，和宠物一起冒险！</div>
+      <div id="haCombo" class="ha-combo" hidden></div>
       <footer class="ha-bottom">
-        <div class="ha-hint">WASD/方向键移动，空格跳跃，E/鼠标点击挖掘</div>
+        <div class="ha-hint">WASD/方向键移动 · 空格跳跃 · 踩头消灭怪物 · E/点击 挖掘或发射火球</div>
         <div class="ha-actions" aria-label="移动端动作按钮">
           <button id="haJump" class="ha-action-btn" type="button" aria-label="跳跃">↥</button>
           <button id="haMine" class="ha-action-btn mine" type="button" aria-label="挖掘">⛏</button>
@@ -300,8 +337,9 @@
       <div id="haOverlay" class="ha-overlay">
         <div class="ha-card">
           <h1>宠物冒险</h1>
-          <p>探索无限像素森林：小主人和当前宠物一起奔跑、跳跃、采矿，达成阶段目标就会升级，升级后自动继续生存冒险。</p>
-          <p>移动端：按住屏幕左侧会出现虚拟摇杆，松手自动隐藏；右侧按钮跳跃/挖掘。电脑：WASD 或方向键移动，空格跳跃，E 或点击挖掘。</p>
+          <p>踩怪物头消灭它们，吃 ❤️红心 回血，收集 🪙金币 和 💎水晶 赚分。</p>
+          <p>道具：🍄变大 · 🌸火球 · ⭐无敌 · 💚回满血 · 🦘弹簧垫弹高。</p>
+          <p>左侧滑动移动，右侧跳跃/挖掘；电脑用 WASD 移动、空格跳跃、E 挖掘或发射。</p>
           <div class="ha-row" aria-label="选择小主人">
             <span class="ha-label">选择小主人</span>
             <button class="ha-pick" data-master="boy" type="button">像素男孩</button>
@@ -332,8 +370,15 @@
   const knob = root.querySelector('#haKnob');
   const ui = {
     crystals: root.querySelector('#haCrystals'), crystalGoal: root.querySelector('#haCrystalGoal'), mined: root.querySelector('#haMined'), minedGoal: root.querySelector('#haMinedGoal'), level: root.querySelector('#haLevel'), score: root.querySelector('#haScore'), best: root.querySelector('#haBest'),
-    hp: root.querySelector('#haHp'), stamina: root.querySelector('#haStamina'), message: root.querySelector('#haMessage'), restart: root.querySelector('#haRestart'), start: root.querySelector('#haStart')
+    hearts: root.querySelector('#haHearts'), message: root.querySelector('#haMessage'), restart: root.querySelector('#haRestart'), start: root.querySelector('#haStart'),
+    power: root.querySelector('#haPower'), powerPill: root.querySelector('#haPowerPill'), coins: root.querySelector('#haCoins'), combo: root.querySelector('#haCombo')
   };
+  const POWER_LABELS = { small: '小', big: '大', fire: '火' };
+  const POWER_ICONS = { small: '🔘', big: '🔴', fire: '🌸' };
+  // Health is split into discrete heart segments; each heart = one HP unit.
+  const HEART_SEGMENTS = 5;
+  const HP_PER_HEART = 20;       // maxHealth (100) / HEART_SEGMENTS
+  const HALF_HEART = HP_PER_HEART / 2;  // small monsters take half a heart
 
   function post(type, data = {}) {
     try { window.parent?.postMessage({ type, data }, '*'); } catch (err) {}
@@ -385,6 +430,13 @@
       else if (name === 'level') { [523.25, 659.25, 783.99, 1046.5].forEach((f, i) => this.note(f, .16, 'triangle', .09, i * .075)); }
       else if (name === 'gameover') { [220, 185, 146.83].forEach((f, i) => this.note(f, .22, 'sawtooth', .08, i * .11)); }
       else if (name === 'boss') { this.note(98, .28, 'sawtooth', .12); this.note(196, .18, 'square', .08, .12); }
+      else if (name === 'powerup') { [392, 523.25, 659.25, 783.99, 1046.5].forEach((f, i) => this.note(f, .12, 'square', .09, i * .05)); }
+      else if (name === 'fireball') { this.note(880, .07, 'square', .06); this.note(660, .06, 'square', .05, .03); }
+      else if (name === 'stomp') { this.note(523.25, .07, 'square', .08); this.note(784, .09, 'triangle', .07, .04); }
+      else if (name === 'oneup') { [659.25, 784, 988, 1318.51, 1568].forEach((f, i) => this.note(f, .13, 'triangle', .09, i * .06)); }
+      else if (name === 'spring') { this.note(330, .06, 'square', .07); this.note(880, .14, 'sine', .07, .05); }
+      else if (name === 'shrink') { [523.25, 392, 261.63].forEach((f, i) => this.note(f, .1, 'sawtooth', .08, i * .06)); }
+      else if (name === 'combo') { const base = 523.25; [0, 4, 7, 12].forEach((s, i) => this.note(base * Math.pow(2, s / 12), .1, 'triangle', .08, i * .04)); }
     }
   };
 
@@ -494,8 +546,23 @@
     for (const e of state.enemies) if (!e.dead && typeof e.artIndex !== 'number') assignEnemyArt(e);
   }
 
+  // True if column c (or an immediate neighbor) contains a water tile.
+  function columnNearWater(c) {
+    for (let dc = -1; dc <= 1; dc++) {
+      const cc = c + dc;
+      for (let r = 0; r < WORLD_ROWS; r++) if (tileAt(cc, r) === 7) return true;
+    }
+    return false;
+  }
+
   function spawnEnemyAtColumn(c, type = pick(currentMonsterPool()), options = {}) {
     c = clamp(Math.round(c), 12, WORLD_COLS - 10);
+    // Only water-element monsters appear near water; conversely water monsters stay near water.
+    if (!options.boss) {
+      const nearWater = columnNearWater(c);
+      if (nearWater) type = 'frog';                                  // water spots → water monster
+      else if (type === 'frog') type = pick(currentMonsterPool());   // dry land → no water monster
+    }
     const def = MONSTERS[type] || MONSTERS.slime;
     c = findSafeEnemyColumn(c, def, !!options.boss);
     const minGap = def.flying ? 54 : 48;
@@ -621,6 +688,8 @@
       state.details = [];
       state.generatedCols = 0;
       state.terrainHeight = 17;
+      state.pondLevels = {};
+      state.lastJumperX = null;
       for (let c = 0; c < INITIAL_WORLD_COLS; c++) generateColumn(c);
       state.generatedCols = INITIAL_WORLD_COLS;
     } finally {
@@ -652,18 +721,72 @@
       setTile(c, r, v);
     }
     if (layerOffset && c > 12) addTerrainLayer(c, s, biome, layerOffset);
-    if (pond) addPondColumn(c, s, biome, pond);
-    for (let r = Math.max(0, s - 5); r < s; r++) setTile(c, r, 0);
+    const region = Math.floor(c / POND_REGION);
+    const inPondRegion = (biome !== 'snow') && pondRegionActive(region);
+    if (pond) {
+      addPondColumn(c, s, biome, pond);
+    } else if (inPondRegion) {
+      // Bank column beside a pond: make it solid up to the water level so it walls the water.
+      const level = pondWaterLevel(c, s);
+      for (let r = Math.max(0, level); r < (state.surface[c] || s); r++) setTile(c, r, underTileForBiome(biome));
+      if (level < (state.surface[c] || s)) { setTile(c, level, surfaceTileForBiome(biome)); state.surface[c] = level; }
+    }
+    for (let r = Math.max(0, (state.surface[c] || s) - 5); r < (state.surface[c] || s); r++) setTile(c, r, 0);
     normalizeExposedSurface(c);
     const topS = state.surface[c] || s;
     if (c > 8 && !pond && Math.random() < 0.08) state.trees.push({ c, r: topS - 1, size: Math.floor(rand(2, 5)) });
     addTerrainDetail(c, topS, pond ? 'wetland' : biome);
     if (c > 15 && Math.random() < 0.08) state.pickups.push({ type: 'coin', x: c * TILE + 12, y: (s - 1) * TILE + 3, w: 16, h: 16, bob: rand(0, 6.28), taken: false });
+    // Mario-style floating coin arcs: a short row of coins above the ground to chain for combos
+    if (c > 24 && Math.random() < 0.05) {
+      const arcLen = Math.floor(rand(3, 6));
+      for (let i = 0; i < arcLen; i++) {
+        const arch = Math.round(Math.sin((i / (arcLen - 1)) * Math.PI) * 2.4);
+        state.pickups.push({ type: 'coin', x: (c + i) * TILE + 8, y: (s - 3 - arch) * TILE + 4, w: 16, h: 16, bob: rand(0, 6.28), taken: false });
+      }
+    }
     if (c > 20 && Math.random() < 0.035) state.pickups.push({ type: 'crystal', x: c * TILE + 6, y: (s - 2) * TILE + 4, w: 22, h: 26, bob: rand(0, 6.28), taken: false });
+    // Power-up pickups (mushroom / fire flower / star / 1-up)
+    if (c > 30 && Math.random() < 0.012) {
+      const roll = Math.random();
+      const type = roll < .42 ? 'mushroom' : roll < .74 ? 'fireflower' : roll < .92 ? 'star' : 'oneup';
+      state.pickups.push({ type: 'power', power: type, x: c * TILE + 5, y: (s - 2) * TILE, w: 24, h: 24, bob: rand(0, 6.28), taken: false });
+    }
+    // Spring / bounce pads that launch the player sky-high
+    if (c > 26 && Math.random() < 0.02 && isSolid(tileAt(c, s))) {
+      state.pickups.push({ type: 'spring', x: c * TILE + 4, y: (s - 1) * TILE + 8, w: 24, h: 24, bob: 0, taken: false, cool: 0 });
+    }
+    // High cliff ahead? Drop a jumper on the lower ledge so the player can bounce over it
+    // without having to dig. (A normal jump only clears ~3 tiles.)
+    if (c > 12) ensureCliffJumper(c);
     if (c > 28 && c < INITIAL_WORLD_COLS && Math.random() < 0.025 * difficultyConfig().enemyRate) spawnEnemyAtColumn(c, Math.random() < .72 ? pick(currentMonsterPool()) : pick(monsterTypesForLevel()));
     if (c > 35 && c % Math.floor(rand(17, 29)) === 0) {
       const r = clamp(s + Math.floor(rand(4, 10)), 5, WORLD_ROWS - 4);
       if (r > s + 3 && isSolid(tileAt(c, r + 1)) && isSolid(tileAt(c + 1, r + 1))) { setTile(c, r, 4); setTile(c + 1, r, 4); normalizeExposedSurface(c); normalizeExposedSurface(c + 1); }
+    }
+    // Now that column c exists, the previous column has both neighbors — enforce water containment on it.
+    if (c > 0) containWater(c - 1);
+  }
+
+  // Water must be walled on BOTH sides (solid or water) at its row, otherwise it would
+  // spill out into open air — so remove any unsupported water and let the rest settle.
+  function containWater(c) {
+    if (c < 1 || c >= state.generatedCols) return;
+    let changed = false;
+    for (let r = 0; r < WORLD_ROWS; r++) {
+      if (tileAt(c, r) !== 7) continue;
+      const left = tileAt(c - 1, r);
+      const right = tileAt(c + 1, r);
+      const leftWall = left === 7 || isSolid(left);
+      const rightWall = right === 7 || isSolid(right);
+      const floor = tileAt(c, r + 1);
+      const floorOk = floor === 7 || isSolid(floor) || r >= WORLD_ROWS - 1;
+      // Water leaks if a side is open air, or it has nothing solid beneath it.
+      if (!leftWall || !rightWall || !floorOk) { setTile(c, r, 0); changed = true; }
+    }
+    if (changed) {
+      // recompute the visible surface for this column
+      for (let r = 0; r < WORLD_ROWS; r++) { if (tileAt(c, r) !== 0) { state.surface[c] = r; break; } }
     }
   }
 
@@ -679,17 +802,61 @@
     }
   }
 
-  function pondDepthAt(c, biome) {
-    if (biome !== 'wetland' && biome !== 'grass') return 0;
-    const wave = Math.sin(c * .037 + 2.1) + Math.sin(c * .071) * .45;
-    return wave > 1.18 ? 2 + ((c >> 2) % 2) : 0;
+  // A pond is a carved valley filled with water, bounded by solid land on both sides.
+  const POND_REGION = 7;
+  // Several pond shapes/sizes (depth per column inside a 7-wide region; 0 = solid bank).
+  // Includes shallow one-tile puddles, small bowls, wide lakes and off-center shapes.
+  // Each shape starts and ends with 0 so the pond always has solid banks at both ends.
+  const POND_SHAPES = [
+    [0, 1, 1, 1, 0, 0, 0],          // tiny shallow puddle (1 high)
+    [0, 1, 1, 1, 1, 1, 0],          // wide shallow puddle (1 high)
+    [0, 0, 1, 2, 1, 0, 0],          // small bowl
+    [0, 1, 2, 2, 2, 1, 0],          // medium pond
+    [0, 0, 2, 3, 3, 2, 0],          // deep pond
+    [0, 1, 2, 3, 4, 3, 0],          // big off-center lake
+    [0, 0, 1, 1, 2, 1, 0],          // small uneven pool
+    [0, 2, 3, 3, 2, 1, 0],          // left-leaning pond
+  ];
+
+  function pondRegionActive(region) {
+    const wave = Math.sin(region * 1.7 + 2.1) + Math.sin(region * 0.53) * 0.5;
+    return wave > 0.45;
   }
 
+  // Pick a deterministic pond shape for this region so it stays varied but stable.
+  function pondShapeForRegion(region) {
+    const h = (Math.sin(region * 12.9898) * 43758.5453);
+    const idx = Math.floor((h - Math.floor(h)) * POND_SHAPES.length) % POND_SHAPES.length;
+    return POND_SHAPES[idx];
+  }
+
+  // Returns how many tiles deep the water basin is at column c (0 = no pond / a solid bank).
+  function pondDepthAt(c, biome) {
+    if (biome === 'snow') return 0;
+    const region = Math.floor(c / POND_REGION);
+    if (!pondRegionActive(region)) return 0;
+    return pondShapeForRegion(region)[c - region * POND_REGION] || 0;
+  }
+
+  // Each pond region uses ONE flat water surface row so the water top is level and
+  // the banks are consistent. The level is locked the first time the region is seen.
+  function pondWaterLevel(c, s) {
+    const region = Math.floor(c / POND_REGION);
+    if (state.pondLevels[region] == null) state.pondLevels[region] = s + 1;
+    return state.pondLevels[region];
+  }
+
+  // Carve a flat-topped water basin: clear everything above the (region-wide) water level,
+  // fill water down to the per-column basin floor, then a solid floor under it.
   function addPondColumn(c, s, biome, depth) {
-    if (s < 8 || s > WORLD_ROWS - 5) return;
-    for (let r = s - depth; r <= s; r++) setTile(c, r, BIOME_TILES.water);
-    for (let r = s + 1; r <= s + 2; r++) setTile(c, r, biome === 'sandy' ? BIOME_TILES.sand : BIOME_TILES.dirt);
-    state.surface[c] = s - depth;
+    const waterTop = pondWaterLevel(c, s);
+    if (waterTop < 6 || waterTop > WORLD_ROWS - 6) return;
+    // water height equals `depth`, so depth 1 = a single one-tile-high puddle
+    const waterBottom = waterTop + Math.max(0, depth - 1);
+    for (let r = 0; r < waterTop; r++) setTile(c, r, 0);        // open air above the water
+    for (let r = waterTop; r <= waterBottom; r++) setTile(c, r, BIOME_TILES.water);
+    for (let r = waterBottom + 1; r <= waterBottom + 2; r++) setTile(c, r, biome === 'sandy' ? BIOME_TILES.sand : BIOME_TILES.dirt);
+    state.surface[c] = waterTop;
   }
 
   function biomeAt(c) {
@@ -716,6 +883,30 @@
     if (offset < 0) for (let r = Math.max(0, plateauTop - 5); r < plateauTop; r++) setTile(c, r, 0);
     normalizeExposedSurface(c);
     if (Math.random() < .015) state.pickups.push({ type: 'coin', x: c * TILE + 10, y: (plateauTop - 1) * TILE + 4, w: 16, h: 16, bob: rand(0, 6.28), taken: false });
+  }
+
+  // Max tiles a normal jump clears: v^2 / (2g) in pixels, converted to tiles, minus a margin.
+  const NORMAL_JUMP_TILES = Math.floor((JUMP_SPEED * JUMP_SPEED) / (2 * GRAVITY) / TILE) - 1;  // ~2-3
+
+  // If column c rises sharply above its left neighbour (a cliff the player can't jump over),
+  // put a bounce pad on the lower ledge so they can spring up without digging.
+  function ensureCliffJumper(c) {
+    const cur = state.surface[c];
+    const prev = state.surface[c - 1];
+    if (cur == null || prev == null) return;
+    const rise = prev - cur;                    // >0 means c is higher than c-1 (cliff up to the right)
+    if (rise <= NORMAL_JUMP_TILES) return;      // small enough to just jump
+    // lower ledge is the left column; make sure it's solid ground to stand a spring on
+    const lowCol = c - 1;
+    const lowTop = state.surface[lowCol];
+    if (!isSolid(tileAt(lowCol, lowTop))) return;
+    // don't stack jumpers right next to each other
+    const px = lowCol * TILE;
+    if (state.lastJumperX != null && Math.abs(px - state.lastJumperX) < TILE * 4) return;
+    const exists = state.pickups.some(p => p.type === 'spring' && Math.abs(p.x - px) < TILE * 3);
+    if (exists) return;
+    state.pickups.push({ type: 'spring', x: px + 4, y: (lowTop - 1) * TILE + 8, w: 24, h: 24, bob: 0, taken: false, cool: 0, forCliff: true });
+    state.lastJumperX = px;
   }
 
   function addTerrainDetail(c, s, biome) {
@@ -745,6 +936,10 @@
     if (rectSolid(player.x, player.y, player.w, player.h)) player.y = Math.max(0, (state.surface[spawnCol] - 5) * TILE);
     Object.assign(pet, { x: player.x - 46, y: player.y + 12, vx: 0, vy: 0, grounded: false, bob: 0 });
     state.score = 0; state.crystals = 0; state.mined = 0; state.totalCrystals = 0; state.totalMined = 0; state.level = 1; state.levelMonsterPool = selectLevelMonsterPool(1); state.projectiles = []; state.nextBossLevel = 1; state.health = state.maxHealth; state.stamina = 100; state.finished = false; state.paused = false; state.finishPosted = false;
+    state.power = 'small'; state.starUntil = 0; state.comboCount = 0; state.comboUntil = 0; state.playerShots = []; state.coins = 0;
+    player.shootCd = 0; player.stompChain = 0; player.h = 48;
+    if (ui.combo) ui.combo.hidden = true;
+    buildHearts();
     state.camera.x = 0; state.camera.y = 0; state.gameStartAt = now(); state.safeUntil = now() + 1800; state.roundId = `haqi_adventure_${Date.now()}`;
     state.nextEnemySpawn = now() + 5200;
     spawnLevelWave();
@@ -854,7 +1049,12 @@
       if (!catalog.length) return;
       for (const old of state.petBitmaps) old.bitmap?.close?.();
       state.petBitmaps = [];
-      const picked = shuffle(catalog).slice(0, 12);
+      // Make sure at least a few water/ice pets are in the mix (they swim in ponds).
+      const isAqua = p => ['water', 'ice'].includes((p?.traits?.element || '').toLowerCase());
+      const aquaPool = shuffle(catalog.filter(isAqua));
+      const otherPool = shuffle(catalog.filter(p => !isAqua(p)));
+      const wantAqua = Math.min(aquaPool.length, 3);
+      const picked = shuffle([...aquaPool.slice(0, wantAqua), ...otherPool].slice(0, 12));
       const bitmaps = await Promise.all(picked.map((entry, index) => makePixelPetBitmap(entry, index, stageForLevel(Math.min(state.level + index, 7)), true)));
       state.petBitmaps = bitmaps.filter(Boolean);
       state.petArtCursor = 0;
@@ -865,16 +1065,180 @@
     }
   }
 
+  function maxHearts() {
+    return Math.round(state.maxHealth / HP_PER_HEART);
+  }
+
+  // Returns health in heart units rounded to the nearest half (e.g. 2.5 hearts).
+  function heartUnits() {
+    const hp = clamp(state.health, 0, state.maxHealth);
+    return Math.round((hp / HP_PER_HEART) * 2) / 2;
+  }
+
+  // Build the heart row to match the current max number of segments.
+  function buildHearts() {
+    if (!ui.hearts) return;
+    const total = maxHearts();
+    ui.hearts.innerHTML = '';
+    for (let i = 0; i < total; i++) {
+      const span = document.createElement('span');
+      span.className = 'ha-heart';
+      ui.hearts.appendChild(span);
+    }
+  }
+
+  function renderHearts(animateGain = false) {
+    if (!ui.hearts) return;
+    if (ui.hearts.children.length !== maxHearts()) buildHearts();
+    const units = heartUnits();   // e.g. 2.5
+    [...ui.hearts.children].forEach((el, i) => {
+      const wasLow = el.classList.contains('empty') || el.classList.contains('half');
+      const isFull = i + 1 <= units;
+      const isHalf = !isFull && (i + 0.5) <= units;
+      el.classList.toggle('half', isHalf);
+      el.classList.toggle('empty', !isFull && !isHalf);
+      if (animateGain && wasLow && isFull) {
+        el.classList.remove('pop'); void el.offsetWidth; el.classList.add('pop');
+        setTimeout(() => el.classList.remove('pop'), 160);
+      }
+    });
+  }
+
   function updateHud() {
     ui.level.textContent = state.level;
     ui.crystals.textContent = state.crystals;
     ui.crystalGoal.textContent = levelCrystalGoal();
-    ui.mined.textContent = state.mined;
-    ui.minedGoal.textContent = levelMinedGoal();
     ui.score.textContent = state.score;
-    ui.best.textContent = state.best;
-    ui.hp.style.setProperty('--pct', `${clamp(state.health, 0, state.maxHealth) / state.maxHealth * 100}%`);
-    ui.stamina.style.setProperty('--pct', `${clamp(state.stamina, 0, 100)}%`);
+    ui.coins.textContent = state.coins;
+    if (ui.power) ui.power.textContent = POWER_LABELS[state.power] || '小';
+    if (ui.powerPill) ui.powerPill.firstChild.textContent = (POWER_ICONS[state.power] || '🔘') + ' ';
+    renderHearts();
+  }
+
+  function showCombo() {
+    if (state.comboCount < 2) { ui.combo.hidden = true; return; }
+    ui.combo.textContent = `连击 ×${state.comboCount}！`;
+    ui.combo.hidden = false;
+    ui.combo.style.animation = 'none';
+    void ui.combo.offsetWidth;
+    ui.combo.style.animation = 'haComboPop .28s ease-out';
+  }
+
+  function addCombo() {
+    state.comboCount++;
+    state.comboUntil = now() + 2200;
+    if (state.comboCount >= 2) { midi.sfx('combo'); showCombo(); }
+    return state.comboCount;
+  }
+
+  function comboMultiplier() {
+    return 1 + Math.min(state.comboCount, 8) * 0.25;
+  }
+
+  function playerInvincible() {
+    return now() < state.starUntil;
+  }
+
+  function setPower(power) {
+    if (state.power === power) return;
+    state.power = power;
+    const oldH = player.h;
+    const newH = power === 'small' ? 48 : 54;
+    // keep the feet anchored so growing/shrinking doesn't clip into the ground
+    player.y += (oldH - newH);
+    player.h = newH;
+    // nudge out if we ended up inside solid tiles after growing
+    let guard = 0;
+    while (rectSolid(player.x, player.y, player.w, player.h) && guard++ < 60) player.y -= 1;
+    ui.powerPill?.classList.remove('ha-power-flash');
+    void ui.powerPill?.offsetWidth;
+    ui.powerPill?.classList.add('ha-power-flash');
+    updateHud();
+  }
+
+  function applyPowerUp(power) {
+    if (power === 'life') { state.health = state.maxHealth; midi.sfx('oneup'); showToast('💚 生命全满！'); renderHearts(true); makeConfetti(); return; }
+    if (power === 'star') { state.starUntil = now() + (POWERUPS.star.duration || 8000); midi.sfx('powerup'); showToast('⭐ 无敌星！冲刺撞翻怪物'); return; }
+    midi.sfx('powerup');
+    if (power === 'big') {
+      if (state.power === 'small') { setPower('big'); showToast('🍄 变大了！可多扛一次伤害'); }
+      else { state.score += 60; showToast('🍄 +60'); }
+    } else if (power === 'fire') {
+      setPower('fire'); showToast('🌸 火力全开！点击/E 发射火球');
+    }
+  }
+
+  // Player takes a hit: lose a power level (Mario-style) before losing a life.
+  function playerHit(amount, source) {
+    if (playerInvincible() || now() < player.hurtUntil || now() < state.safeUntil || state.finished) return;
+    if (state.power === 'fire' || state.power === 'big') {
+      setPower('small');
+      player.hurtUntil = now() + 1100;
+      state.safeUntil = now() + 1100;
+      midi.sfx('shrink');
+      setMessage('被击中，变小了！再受伤会失去生命。', 1600);
+      spawnDust(player.x + player.w / 2, player.y + player.h / 2, 14, '#fbbf24');
+      return;
+    }
+    damage(amount);
+  }
+
+  // Falling into a pit costs one heart segment and respawns the player.
+  function respawnFromPit() {
+    state.health = Math.max(0, state.health - HP_PER_HEART);
+    state.comboCount = 0;
+    if (state.health <= 0) { endGame(false); return; }
+    state.stamina = 100;
+    state.starUntil = 0;
+    const c = findPlayerSpawnColumn(Math.max(8, Math.floor(player.x / TILE)));
+    Object.assign(player, { x: c * TILE, y: Math.max(0, (state.surface[c] - 4) * TILE), vx: 0, vy: 0, grounded: false, hurtUntil: now() + 1600 });
+    Object.assign(pet, { x: player.x - 46, y: player.y + 12, vx: 0, vy: 0 });
+    state.safeUntil = now() + 1600;
+    midi.sfx('hit');
+    showToast('💔 掉落了 · 损失一颗心');
+    setMessage('掉落扣一颗心，已回到安全位置。', 1800);
+    updateHud();
+  }
+
+  function throwFireball() {
+    if (state.power !== 'fire' || player.shootCd > 0) return;
+    player.shootCd = 0.32;
+    player.attackUntil = now() + 140;
+    const dir = player.dir || 1;
+    state.playerShots.push({
+      x: player.x + player.w / 2 + dir * 16, y: player.y + 18,
+      vx: dir * PLAYER_FIRE.speed, vy: -60, life: PLAYER_FIRE.life, r: PLAYER_FIRE.r, bounces: 3, spin: 0,
+    });
+    midi.sfx('fireball');
+    spawnDust(player.x + player.w / 2 + dir * 16, player.y + 18, 4, PLAYER_FIRE.color);
+  }
+
+  function updatePlayerShots(dt) {
+    for (const f of state.playerShots) {
+      f.life -= dt;
+      f.spin += dt * 18;
+      f.vy = clamp(f.vy + GRAVITY * 0.55 * dt, -PLAYER_FIRE.bounce, PLAYER_FIRE.bounce);
+      f.x += f.vx * dt;
+      if (rectSolid(f.x - f.r, f.y - f.r, f.r * 2, f.r * 2)) { f.vx = 0; f.life = 0; }
+      f.y += f.vy * dt;
+      // bounce off the ground like a Mario fireball
+      if (rectSolid(f.x - f.r, f.y, f.r * 2, f.r)) {
+        while (rectSolid(f.x - f.r, f.y, f.r * 2, f.r)) f.y -= 1;
+        f.vy = -PLAYER_FIRE.bounce; f.bounces--;
+        if (f.bounces <= 0) f.life = 0;
+      }
+      const box = { x: f.x - f.r, y: f.y - f.r, w: f.r * 2, h: f.r * 2 };
+      for (const e of state.enemies) {
+        if (e.dead || !intersects(box, e)) continue;
+        e.hp -= PLAYER_FIRE.damage;
+        e.hurtUntil = now() + 160;
+        spawnDust(e.x + e.w / 2, e.y + e.h / 2, 12, PLAYER_FIRE.color);
+        f.life = 0;
+        if (e.hp <= 0) { defeatEnemy(e); state.score += Math.round(15 * comboMultiplier() * difficultyConfig().score); }
+        break;
+      }
+    }
+    state.playerShots = state.playerShots.filter(f => f.life > 0);
   }
 
   function getInputAxis() {
@@ -887,10 +1251,24 @@
 
   function jump() {
     if (!state.started || state.paused || state.finished) return;
-    if (player.grounded && state.stamina >= 8) {
+    // In water you can jump only when there's a wall beside you OR you're standing on the bottom.
+    if (playerInWater()) {
+      const wall = playerWallSide();
+      const onFloor = player.grounded || actorOnGround(player);
+      if (!wall && !onFloor) { setMessage('在水里要踩到底或贴着墙才能跳！', 900); return; }
+      // Full-height jump (same as on the ground) so you can clear the pond.
+      player.vy = -JUMP_SPEED;
+      if (wall) player.vx = -wall * MOVE_SPEED * 0.9;   // kick off the wall, away from it
+      player.grounded = false;
+      // Briefly ignore water drag so the jump velocity isn't immediately cancelled.
+      player.waterJumpUntil = now() + 450;
+      midi.sfx('jump');
+      spawnDust(player.x + player.w / 2, player.y + player.h * 0.6, 8, 'rgba(224,255,255,.8)');
+      return;
+    }
+    if (player.grounded) {
       player.vy = -JUMP_SPEED;
       player.grounded = false;
-      state.stamina = Math.max(0, state.stamina - 8);
       midi.sfx('jump');
       spawnDust(player.x + player.w / 2, player.y + player.h, 8, '#e2e8f0');
     }
@@ -901,6 +1279,24 @@
     const r0 = Math.floor(y / TILE), r1 = Math.floor((y + h - 1) / TILE);
     for (let r = r0; r <= r1; r++) for (let c = c0; c <= c1; c++) if (isSolid(tileAt(c, r))) return true;
     return false;
+  }
+
+  // True when the player's body overlaps a water tile.
+  function playerInWater() {
+    const cx = Math.floor((player.x + player.w / 2) / TILE);
+    const cyTop = Math.floor((player.y + player.h * 0.35) / TILE);
+    const cyMid = Math.floor((player.y + player.h * 0.7) / TILE);
+    return tileAt(cx, cyTop) === 7 || tileAt(cx, cyMid) === 7;
+  }
+
+  // Simple wall check: look at the cell the player occupies and see if the tile
+  // immediately to its left or right is a solid block. Returns -1 (left), 1 (right), 0 (none).
+  function playerWallSide() {
+    const cx = Math.floor((player.x + player.w / 2) / TILE);
+    const cy = Math.floor((player.y + player.h / 2) / TILE);
+    if (isSolid(tileAt(cx - 1, cy))) return -1;
+    if (isSolid(tileAt(cx + 1, cy))) return 1;
+    return 0;
   }
 
   function actorOnGround(a) {
@@ -929,12 +1325,9 @@
       a.vy = 0;
     }
     if (damageOnFall && a.y > WORLD_ROWS * TILE + 200) {
-      const c = findPlayerSpawnColumn(Math.max(8, Math.floor(a.x / TILE)));
-      Object.assign(a, { x: c * TILE, y: Math.max(0, (state.surface[c] - 4) * TILE), vx: 0, vy: 0, grounded: false, hurtUntil: now() + 1600 });
-      state.health = Math.max(1, state.health - 28);
-      state.safeUntil = now() + 1600;
-      setMessage('掉落了！已回到安全位置。', 1500);
-      spawnDust(a.x + a.w / 2, a.y + a.h / 2, 12, '#fb7185');
+      // Falling into a pit costs one heart segment, then respawns.
+      spawnDust(a.x + a.w / 2, WORLD_ROWS * TILE - 40, 14, '#fb7185');
+      respawnFromPit();
     }
   }
 
@@ -944,18 +1337,20 @@
 
   function damage(amount) {
     if (now() < player.hurtUntil || now() < state.safeUntil || state.finished) return;
-    state.health -= amount;
+    state.health = Math.max(0, state.health - amount);
     player.hurtUntil = now() + 900;
     midi.sfx('hit');
-    setMessage('小心！荒野怪物会扣生命。', 1500);
+    const hearts = amount >= HP_PER_HEART ? '一颗心' : '半颗心';
+    setMessage(`小心！被击中损失${hearts}，吃红心可回血。`, 1500);
     spawnDust(player.x + player.w / 2, player.y + player.h / 2, 12, '#fb7185');
+    state.comboCount = 0;
+    renderHearts();
     if (state.health <= 0) endGame(false);
   }
 
   function mineBlock() {
-    if (!state.started || state.paused || state.finished || state.stamina < 4) return;
+    if (!state.started || state.paused || state.finished) return;
     player.attackUntil = now() + 160;
-    state.stamina = Math.max(0, state.stamina - 4);
     const reach = 45;
     const cx = Math.floor((player.x + player.w / 2 + player.dir * reach) / TILE);
     const cy = Math.floor((player.y + player.h / 2 + (input.down ? 24 : input.up ? -28 : 0)) / TILE);
@@ -971,6 +1366,8 @@
     }
     if (!best) return;
     setTile(best.c, best.r, 0);
+    // Digging out a block lets any water above flow down into the hole.
+    flowWaterInto(best.c, best.r);
     midi.sfx(best.v === 4 ? 'crystal' : 'mine');
     state.mined++;
     state.totalMined++;
@@ -982,21 +1379,92 @@
     checkMission();
   }
 
+  // After a tile at (c,r) is dug out, run a small water-flow simulation around it so water
+  // can flow DOWN into the hole and also SIDEWAYS from neighbouring water into the gap.
+  function flowWaterInto(c, r) {
+    if (tileAt(c, r) !== 0) return;
+    // Only bother if there's any water adjacent to the freshly dug cell.
+    const touchesWater =
+      tileAt(c, r - 1) === 7 || tileAt(c, r + 1) === 7 ||
+      tileAt(c - 1, r) === 7 || tileAt(c + 1, r) === 7;
+    if (!touchesWater) return;
+
+    // Local window around the hole (water settling is bounded for performance).
+    const c0 = Math.max(0, c - 24), c1 = Math.min(WORLD_COLS - 1, c + 24);
+    const r0 = Math.max(0, r - 18), r1 = Math.min(WORLD_ROWS - 1, r + 18);
+    const cols = new Set([c]);
+    let splashed = false;
+
+    for (let pass = 0; pass < 240; pass++) {
+      let moved = false;
+      // bottom-up so falling water settles in one sweep
+      for (let rr = r1; rr >= r0; rr--) {
+        for (let cc = c0; cc <= c1; cc++) {
+          if (tileAt(cc, rr) !== 7) continue;
+          // 1) fall straight down
+          if (tileAt(cc, rr + 1) === 0) {
+            setTile(cc, rr, 0); setTile(cc, rr + 1, 7);
+            moved = true; splashed = true; cols.add(cc);
+            continue;
+          }
+          // 2) can't fall: spread sideways into an adjacent empty cell so water flows into
+          //    a dug-out hole. Only move if the source has water above it (pressure) OR the
+          //    target can keep draining downward — this avoids water creeping over flat land.
+          const pressured = tileAt(cc, rr - 1) === 7;
+          for (const dc of (Math.random() < 0.5 ? [-1, 1] : [1, -1])) {
+            const tc = cc + dc;
+            if (tc < c0 || tc > c1) continue;
+            if (tileAt(tc, rr) !== 0) continue;
+            const targetFloor = tileAt(tc, rr + 1);
+            const targetDrains = targetFloor === 0;            // hole continues downward
+            const targetHolds = isSolid(targetFloor) || targetFloor === 7; // hole can pool water
+            if (targetDrains || (pressured && targetHolds)) {
+              setTile(cc, rr, 0); setTile(tc, rr, 7);
+              moved = true; splashed = true; cols.add(tc);
+              break;
+            }
+          }
+        }
+      }
+      if (!moved) break;
+    }
+
+    for (const cc of cols) normalizeExposedSurface(cc);
+    if (splashed) {
+      midi.sfx('spring');
+      spawnDust(c * TILE + 16, r * TILE + 10, 8, 'rgba(120, 210, 235, .8)');
+    }
+  }
+
   function updatePlayer(dt) {
     player.wasGrounded = player.grounded;
     const ax = getInputAxis();
     if (Math.abs(ax) > .08) player.dir = ax > 0 ? 1 : -1;
-    player.vx = ax * MOVE_SPEED;
-    if ((input.jump || input.pointerJumpQueued || input.up) && player.grounded) jump();
+    const starBoost = playerInvincible() ? 1.35 : 1;
+    player.vx = ax * MOVE_SPEED * starBoost;
+    if (player.shootCd > 0) player.shootCd = Math.max(0, player.shootCd - dt);
+    const inWater = playerInWater();
+    // Allow jumping on the ground OR in water (jump() decides if a water jump is allowed).
+    if (input.jump || input.pointerJumpQueued || input.up) {
+      if (player.grounded) jump();
+      else if (inWater && now() > (player.waterJumpUntil || 0)) jump();  // cooldown stops mid-air spam
+    }
     input.pointerJumpQueued = false;
-    if (input.action) mineBlock();
-    if (player.grounded) state.stamina = Math.min(100, state.stamina + 28 * dt); else state.stamina = Math.min(100, state.stamina + 11 * dt);
+    if (input.action) { if (state.power === 'fire') throwFireball(); mineBlock(); }
     moveActor(player, dt, true);
+    // In water you sink slowly (water drag) — but NOT right after a wall/floor jump,
+    // so the jump can actually launch you out of the pond at full height.
+    if (inWater && now() > (player.waterJumpUntil || 0)) {
+      player.vy = clamp(player.vy * 0.82, -120, 90);
+      if (input.up || input.jump) player.vy = -150;   // gentle paddle upward
+      player.vx *= 0.86;
+      if (Math.random() < 0.15) spawnDust(player.x + player.w / 2, player.y + 4, 1, 'rgba(224,255,255,.7)');
+    }
     const moving = Math.abs(player.vx) > 12;
     if (moving && player.grounded) player.animTime += dt * 11;
     else player.animTime += dt * 4;
     player.walkFrame = moving && player.grounded ? Math.floor(player.animTime) % 4 : 0;
-    if (!player.wasGrounded && player.grounded) spawnDust(player.x + player.w / 2, player.y + player.h, 5, '#e2e8f0');
+    if (!player.wasGrounded && player.grounded) { spawnDust(player.x + player.w / 2, player.y + player.h, 5, '#e2e8f0'); player.stompChain = 0; }
   }
 
   function updatePet(dt) {
@@ -1028,10 +1496,58 @@
     state.details = state.details.filter(d => d.x > minX - 180);
   }
 
+  // A water/ice enemy that is currently inside water swims freely.
+  function enemyIsAquatic(e) {
+    return ['water', 'ice'].includes(e.element || MONSTERS[e.type]?.element || '');
+  }
+  function enemyInWater(e) {
+    const cx = Math.floor((e.x + e.w / 2) / TILE);
+    const cy = Math.floor((e.y + e.h / 2) / TILE);
+    return tileAt(cx, cy) === 7;
+  }
+
+  // Swim freely in all directions, staying inside the water body. Chases the player when near.
+  function updateSwimEnemy(e, dt) {
+    e.wander += dt * 2.2;
+    const dx = (player.x + player.w / 2) - (e.x + e.w / 2);
+    const dy = (player.y + player.h / 2) - (e.y + e.h / 2);
+    const near = Math.hypot(dx, dy) < 300;
+    const sp = (MONSTERS[e.type]?.speed || 60) * difficultyConfig().enemySpeed * 1.15;
+    e.vx = near ? clamp(dx * 2.0, -sp, sp) : Math.cos(e.wander) * sp * .6;
+    e.vy = near ? clamp(dy * 2.0, -sp, sp) : Math.sin(e.wander * 1.4) * sp * .6;
+    e.facing = e.vx < 0 ? -1 : 1;
+    // try to move, but only into water or air (don't swim into solid ground); keep mostly in water
+    const nx = clamp(e.x + e.vx * dt, 0, WORLD_COLS * TILE - e.w);
+    const ny = clamp(e.y + e.vy * dt, 32, WORLD_ROWS * TILE - e.h);
+    if (!rectSolid(nx, e.y, e.w, e.h)) e.x = nx; else { e.vx *= -1; e.wander += 1.6; }
+    if (!rectSolid(e.x, ny, e.w, e.h)) e.y = ny; else { e.vy *= -1; e.wander += 1.6; }
+    // gentle pull back toward water if it drifted to the surface/air
+    if (!enemyInWater(e)) {
+      const cx = Math.floor((e.x + e.w / 2) / TILE);
+      // nudge downward back into the pond
+      if (!rectSolid(e.x, e.y + 2, e.w, e.h)) e.y += 30 * dt;
+    }
+    if (Math.random() < 0.12) spawnDust(e.x + e.w / 2, e.y + 2, 1, 'rgba(186,230,253,.7)');
+  }
+
+  // The player can stomp an enemy by landing on top of it while moving downward.
+  // In water the jump is short, so we accept a much lower downward speed there.
+  function canStomp(e) {
+    if (e.flying && !enemyIsAquatic(e)) return false;
+    const fromAbove = player.y + player.h - e.y < e.h * 0.7;     // player's feet near the enemy's top
+    const overlapX = player.x + player.w > e.x + 4 && player.x < e.x + e.w - 4;
+    const inWater = playerInWater() || enemyInWater(e);
+    const descending = player.vy > (inWater ? 20 : 120);
+    return fromAbove && overlapX && descending;
+  }
+
   function updateEnemies(dt) {
     for (const e of state.enemies) {
       if (e.dead) continue;
-      if (e.flying) {
+      const aquaticSwim = !e.boss && enemyIsAquatic(e) && enemyInWater(e);
+      if (aquaticSwim) {
+        updateSwimEnemy(e, dt);
+      } else if (e.flying) {
         e.wander += dt * 2.2;
         const dx = player.x - e.x, dy = player.y - e.y;
         const near = Math.hypot(dx, dy) < 260;
@@ -1047,13 +1563,27 @@
         if (!e.boss) keepPatrolOnPlatform(e);
       }
       if (intersects(player, e)) {
-        if (!e.flying && player.vy > 120 && player.y + player.h - e.y < 18) {
-          e.hp -= e.boss ? 1 : 1;
+        if (playerInvincible()) {
+          // Star power: barrel through enemies and instantly defeat them
+          e.hp = 0;
+          spawnDust(e.x + e.w / 2, e.y + e.h / 2, 16, pick(STAR_COLORS));
+          addCombo();
+          defeatEnemy(e);
+          state.score += Math.round((e.score || 35) * (comboMultiplier() - 1) * difficultyConfig().score);
+        } else if (canStomp(e)) {
+          // Mario-style stomp: bounce, build a chain, escalating bonus per stomp
+          e.hp -= e.boss ? 1 : 2;
           e.hurtUntil = now() + 180;
-          player.vy = -420;
+          player.stompChain = Math.min(player.stompChain + 1, 12);
+          player.vy = -(input.jump || input.pointerJumpQueued ? 640 : 460);
+          midi.sfx('stomp');
           spawnDust(e.x + e.w / 2, e.y + e.h / 2, 12, MONSTERS[e.type]?.color || '#84cc16');
+          const chainBonus = Math.round(10 * player.stompChain * comboMultiplier() * difficultyConfig().score);
+          state.score += chainBonus;
+          if (player.stompChain >= 2) showToast(`踩踏 ×${player.stompChain} +${chainBonus}`);
+          addCombo();
           if (e.hp <= 0) defeatEnemy(e);
-        } else damage((e.damage || 16) * difficultyConfig().enemyDamage);
+        } else playerHit(e.boss ? HP_PER_HEART : HALF_HEART, 'enemy');
       }
       updateEnemyShooting(e, dt);
     }
@@ -1208,8 +1738,9 @@
       const hitBox = { x: p.x - p.r, y: p.y - p.r, w: p.r * 2, h: p.r * 2 };
       if (p.life > 0 && intersects(hitBox, player)) {
         const info = ELEMENTS[p.element] || ELEMENTS.nature;
-        damage(p.damage);
-        if (info.slow) player.hurtUntil = Math.max(player.hurtUntil, now() + info.slow);
+        if (playerInvincible()) { spawnDust(p.x, p.y, 8, pick(STAR_COLORS)); p.life = 0; continue; }
+        playerHit(p.fromBoss ? HP_PER_HEART : HALF_HEART, 'projectile');
+        if (info.slow && state.power === 'small') player.hurtUntil = Math.max(player.hurtUntil, now() + info.slow);
         spawnDust(p.x, p.y, 12, info.color);
         p.life = 0;
       }
@@ -1266,7 +1797,7 @@
     if (state.score > state.best) { state.best = state.score; localStorage.setItem(STORAGE_BEST, String(state.best)); }
     spawnDust(e.x + e.w / 2, e.y + e.h / 2, 18, MONSTERS[e.type]?.color || '#84cc16');
     if (Math.random() < .28) state.pickups.push({ type: 'crystal', x: e.x + 5, y: e.y - 10, w: 22, h: 26, bob: rand(0, 6.28), taken: false });
-    if (shouldDropPotion(e)) state.pickups.push({ type: 'potion', x: e.x + e.w / 2 - 9, y: e.y - 14, w: 18, h: 24, bob: rand(0, 6.28), taken: false, heal: e.boss ? 42 : 24 });
+    if (shouldDropPotion(e)) state.pickups.push({ type: 'heart', x: e.x + e.w / 2 - 10, y: e.y - 14, w: 20, h: 18, bob: rand(0, 6.28), taken: false, heal: e.boss ? HP_PER_HEART * 2 : HP_PER_HEART });
     midi.sfx('defeat');
     showToast(`+${gain} 击退${e.name || '怪物'}`);
   }
@@ -1281,11 +1812,41 @@
     for (const p of state.pickups) {
       if (p.taken) continue;
       p.bob += dt * 4;
+      // Springs bounce the player rather than being collected.
+      if (p.type === 'spring') {
+        p.cool = Math.max(0, (p.cool || 0) - dt);
+        if (p.cool === 0 && player.vy >= 0 && intersects({ x: player.x, y: player.y, w: player.w, h: player.h + 6 }, p) && player.y + player.h <= p.y + p.h) {
+          player.vy = -1180;
+          player.grounded = false;
+          p.cool = 0.4;
+          p.squish = 0.22;
+          midi.sfx('spring');
+          spawnDust(p.x + p.w / 2, p.y + p.h, 10, '#22d3ee');
+          showToast('🦘 弹跳！');
+        }
+        continue;
+      }
       if (intersects({ x: player.x - 6, y: player.y - 6, w: player.w + 12, h: player.h + 12 }, p) || intersects({ x: pet.x - 5, y: pet.y - 5, w: pet.w + 10, h: pet.h + 10 }, p)) {
         p.taken = true;
-        if (p.type === 'crystal') { state.crystals++; state.totalCrystals++; state.score += Math.round(80 * difficultyConfig().score); midi.sfx('crystal'); showToast('💎 水晶 +1'); spawnDust(p.x + p.w / 2, p.y + p.h / 2, 18, COLORS.crystal); }
-        else if (p.type === 'potion') { const heal = Math.min(p.heal || 24, state.maxHealth - state.health); state.health = Math.min(state.maxHealth, state.health + (p.heal || 24)); state.score += Math.round(10 * difficultyConfig().score); midi.sfx('heal'); showToast(`🧪 生命 +${Math.max(0, Math.round(heal))}`); spawnDust(p.x + p.w / 2, p.y + p.h / 2, 18, COLORS.heart); }
-        else { state.score += Math.round(15 * difficultyConfig().score); midi.sfx('coin'); spawnDust(p.x + p.w / 2, p.y + p.h / 2, 10, COLORS.gold); }
+        if (p.type === 'crystal') { state.crystals++; state.totalCrystals++; state.score += Math.round(80 * comboMultiplier() * difficultyConfig().score); midi.sfx('crystal'); showToast('💎 水晶 +1'); spawnDust(p.x + p.w / 2, p.y + p.h / 2, 18, COLORS.crystal); }
+        else if (p.type === 'potion' || p.type === 'heart') {
+          // Red heart refills the health bar by one heart segment.
+          const wasFull = state.health >= state.maxHealth;
+          const heal = p.heal || HP_PER_HEART;
+          state.health = Math.min(state.maxHealth, state.health + heal);
+          if (wasFull) state.score += Math.round(20 * difficultyConfig().score);
+          midi.sfx('heal'); showToast(wasFull ? '❤️ 生命已满 +20' : '❤️ 回复一颗心'); renderHearts(true);
+          spawnDust(p.x + p.w / 2, p.y + p.h / 2, 18, COLORS.heart);
+        }
+        else if (p.type === 'power') { const def = POWERUPS[p.power] || POWERUPS.mushroom; state.score += Math.round((def.score || 0) * difficultyConfig().score); applyPowerUp(def.power); spawnDust(p.x + p.w / 2, p.y + p.h / 2, 18, def.color); }
+        else {
+          // Coins build a combo chain and add score.
+          state.coins++;
+          addCombo();
+          state.score += Math.round(15 * comboMultiplier() * difficultyConfig().score);
+          midi.sfx('coin');
+          spawnDust(p.x + p.w / 2, p.y + p.h / 2, 10, COLORS.gold);
+        }
         if (state.score > state.best) { state.best = state.score; localStorage.setItem(STORAGE_BEST, String(state.best)); }
         updateHud(); checkMission();
       }
@@ -1343,7 +1904,7 @@
       state.finishPosted = true;
       post('gameFinished', {
         earnedPoints: Math.max(0, Math.round(state.score)), score: state.score, crystals: state.crystals, mined: state.mined,
-        totalCrystals: state.totalCrystals, totalMined: state.totalMined, level: state.level, won, difficulty: state.difficulty, timeSec, roundId: state.roundId, bondBonus: won ? 28 : 12, moodBonus: won ? 12 : 5, finishedAt: Date.now()
+        totalCrystals: state.totalCrystals, totalMined: state.totalMined, coins: state.coins, level: state.level, won, difficulty: state.difficulty, timeSec, roundId: state.roundId, bondBonus: won ? 28 : 12, moodBonus: won ? 12 : 5, finishedAt: Date.now()
       });
     }
   }
@@ -1360,8 +1921,12 @@
     if (!state.started || state.paused) return;
     if (!state.finished) {
       ensureWorldGeneratedTo(Math.floor((player.x + window.innerWidth * 1.8) / TILE) + 80);
-      updatePlayer(dt); updatePet(dt); updateEnemies(dt); updateProjectiles(dt); updatePickups(dt); updateDistanceBoss();
-      if (state.health < state.maxHealth && now() > player.hurtUntil) state.health = Math.min(state.maxHealth, state.health + 1.8 * dt);
+      updatePlayer(dt); updatePet(dt); updateEnemies(dt); updateProjectiles(dt); updatePlayerShots(dt); updatePickups(dt); updateDistanceBoss();
+      // Health only changes in discrete half/full heart steps (no passive regen) so hearts stay aligned.
+      // Expire combo streak if no pickups/stomps for a while.
+      if (state.comboCount > 0 && now() > state.comboUntil) { state.comboCount = 0; ui.combo.hidden = true; }
+      // Warn when the star is about to run out.
+      if (state.starUntil && now() > state.starUntil) { state.starUntil = 0; setMessage('无敌结束了！', 1200); }
     }
     for (const c of state.clouds) { c.x += c.speed * dt; if (c.x - state.camera.x > window.innerWidth + 240) c.x -= WORLD_COLS * TILE; }
     updateParticles(dt); updateCamera(dt); updateHud();
@@ -1478,6 +2043,8 @@
   function drawTile(c, r, v) {
     const x = c * TILE - state.camera.x, y = r * TILE - state.camera.y;
     const exposedTop = tileAt(c, r - 1) === 0;
+    // Water gets a smooth, animated surface instead of a blocky texture.
+    if (v === 7) { drawWaterTile(c, r, x, y, exposedTop); return; }
     const key = exposedTop ? TILE_TEXTURE_KEYS[v] : TILE_FILL_TEXTURE_KEYS[v];
     if (key && drawTextureTile(key, x, y)) {
       if (exposedTop && (v === 1 || v === 5 || v === 6)) drawTopBlend(c, r, v, x, y);
@@ -1487,6 +2054,40 @@
     drawRect(x, y, TILE, TILE, COLORS.dirt);
   }
 
+  // Smooth, gently animated water with a wavy reflective surface (no block edges).
+  function drawWaterTile(c, r, x, y, isSurface) {
+    const t = now() / 1000;
+    // base body: soft top-to-bottom blue gradient, slightly translucent
+    const g = ctx.createLinearGradient(0, y, 0, y + TILE);
+    g.addColorStop(0, 'rgba(96, 195, 222, .9)');
+    g.addColorStop(1, 'rgba(38, 132, 184, .92)');
+    ctx.fillStyle = g;
+    ctx.fillRect(Math.round(x), Math.round(y), TILE, TILE);
+    if (isSurface) {
+      // animated wavy surface line
+      const wave = Math.sin(c * 0.7 + t * 2.2) * 2 + Math.sin(c * 1.9 - t * 1.4) * 1.2;
+      const top = Math.round(y + 3 + wave);
+      // lighter water band just under the surface
+      ctx.fillStyle = 'rgba(160, 224, 240, .55)';
+      ctx.fillRect(Math.round(x), top + 2, TILE, 5);
+      // bright crest highlight following the wave
+      ctx.fillStyle = 'rgba(255, 255, 255, .75)';
+      ctx.fillRect(Math.round(x), top, TILE, 2);
+      // small sparkle that drifts along the surface
+      const sx = Math.round(x + ((c * 11 + t * 14) % TILE));
+      ctx.fillStyle = 'rgba(255,255,255,.9)';
+      ctx.fillRect(sx, top - 1, 2, 2);
+    } else {
+      // subtle moving ripples deeper in the water
+      ctx.fillStyle = 'rgba(224, 255, 255, .18)';
+      for (let i = 0; i < 2; i++) {
+        const ry = Math.round(y + 8 + i * 12 + Math.sin(c * 0.9 + t * 1.6 + i) * 2);
+        const rx = Math.round(x + ((c * 7 + i * 13 + t * 10) % TILE) - 6);
+        ctx.fillRect(rx, ry, 12, 2);
+      }
+    }
+  }
+
   function drawTerrainSplat(c, r, v, x, y, exposedTop) {
     const neighbors = [
       { dc: -1, dr: 0, edge: 'left' }, { dc: 1, dr: 0, edge: 'right' },
@@ -1494,7 +2095,8 @@
     ];
     for (const n of neighbors) {
       const other = tileAt(c + n.dc, r + n.dr);
-      if (!other || other === v || !isSolid(other)) continue;
+      // Water (7) also bleeds its color onto adjacent solid blocks, like other tiles.
+      if (!other || other === v || (!isSolid(other) && other !== 7)) continue;
       drawSplatEdge(n.edge, splatColorForTile(other, n.edge === 'top'), x, y, exposedTop && n.edge === 'top');
     }
   }
@@ -1577,11 +2179,34 @@
     return 1;
   }
 
+  function drawStarAura() {
+    if (!playerInvincible()) return;
+    const x = Math.round(player.x - state.camera.x), y = Math.round(player.y - state.camera.y);
+    const remain = state.starUntil - now();
+    // blink faster as it runs out
+    const blinkRate = remain < 2000 ? 90 : 180;
+    ctx.save();
+    ctx.globalAlpha = 0.45 + (Math.sin(now() / 120) + 1) * 0.15;
+    ctx.fillStyle = STAR_COLORS[Math.floor(now() / blinkRate) % STAR_COLORS.length];
+    ctx.fillRect(x - 4, y - 4, player.w + 8, player.h + 8);
+    ctx.restore();
+    // sparkle particles around player
+    if (Math.random() < 0.6) state.particles.push({ x: player.x + rand(0, player.w), y: player.y + rand(0, player.h), vx: rand(-40, 40), vy: rand(-60, -10), life: .4, max: .4, size: rand(2, 4), color: pick(STAR_COLORS) });
+  }
+
   function drawMaster() {
     const x = Math.round(player.x - state.camera.x), y = Math.round(player.y - state.camera.y);
     const hurt = now() < player.hurtUntil && Math.floor(now() / 80) % 2 === 0;
+    // Star power tints the whole sprite in rotating colors
+    const starTint = playerInvincible() ? STAR_COLORS[Math.floor(now() / 120) % STAR_COLORS.length] : null;
     if (hurt) ctx.globalAlpha = .45;
-    const skin = '#f2bd7d', skinShade = '#d99a64', hair = state.masterStyle === 'girl' ? '#5b2b1d' : '#3f2418', shirt = state.masterStyle === 'girl' ? '#f472b6' : '#38bdf8', shirtShade = state.masterStyle === 'girl' ? '#db2777' : '#0284c7', pants = '#1e3a8a';
+    const skin = '#f2bd7d', skinShade = '#d99a64', hair = state.masterStyle === 'girl' ? '#5b2b1d' : '#3f2418';
+    // Fire power changes the outfit to white/red like Mario's fire form
+    let shirt = state.masterStyle === 'girl' ? '#f472b6' : '#38bdf8';
+    let shirtShade = state.masterStyle === 'girl' ? '#db2777' : '#0284c7';
+    let pants = '#1e3a8a';
+    if (state.power === 'fire') { shirt = '#fef2f2'; shirtShade = '#ef4444'; pants = '#dc2626'; }
+    if (starTint) { shirt = starTint; shirtShade = starTint; }
     const flip = player.dir < 0;
     const moving = Math.abs(player.vx) > 12 && player.grounded;
     const frame = player.walkFrame;
@@ -1589,8 +2214,12 @@
     const armSwing = moving ? [0, -3, 0, 3][frame] : 0;
     const legA = moving ? [0, 4, 0, -3][frame] : (!player.grounded ? -3 : 0);
     const legB = moving ? [0, -3, 0, 4][frame] : (!player.grounded ? 3 : 0);
+    // Big/fire forms render slightly taller so size matches the larger hitbox
+    const sy = state.power === 'small' ? 1 : (player.h / 48);
     ctx.save();
-    ctx.translate(x + player.w / 2, y + bob); if (flip) ctx.scale(-1, 1); ctx.translate(-player.w / 2, 0);
+    ctx.translate(x + player.w / 2, y + bob); if (flip) ctx.scale(-1, 1);
+    if (sy !== 1) ctx.scale(1, sy);
+    ctx.translate(-player.w / 2, 0);
     drawPixelRect(4, 1, 12, 19, hair); drawPixelRect(6, 0, 13, 6, hair); drawPixelRect(8, 5, 13, 15, skin);
     drawPixelRect(18, 10, 4, 4, skin); drawPixelRect(17, 9, 3, 3, '#0f172a'); drawPixelRect(19, 15, 2, 2, skinShade); drawPixelRect(15, 18, 5, 2, '#7f1d1d');
     drawPixelRect(5, 5, 5, 9, hair); drawPixelRect(8, 4, 11, 3, '#7c3f1d');
@@ -1664,17 +2293,85 @@
 
   function drawPickup(p) {
     if (p.taken) return;
+    if (p.type === 'spring') { drawSpring(p); return; }
     const x = Math.round(p.x - state.camera.x), y = Math.round(p.y - state.camera.y + Math.sin(p.bob) * 4);
+    if (p.type === 'power') { drawPowerUp(p, x, y); return; }
     if (p.type === 'crystal') {
       drawRect(x + 8, y, 8, 4, '#e0ffff'); drawRect(x + 4, y + 4, 16, 16, COLORS.crystal); drawRect(x + 8, y + 20, 8, 6, '#0891b2'); drawRect(x + 8, y + 5, 4, 14, '#fff');
-    } else if (p.type === 'potion') {
-      drawRect(x + 6, y, 6, 4, '#f8fafc'); drawRect(x + 5, y + 4, 8, 3, '#94a3b8');
-      drawRect(x + 2, y + 7, 14, 15, '#fee2e2'); drawRect(x + 4, y + 10, 10, 9, '#ef4444');
-      drawRect(x + 8, y + 9, 2, 11, '#fff'); drawRect(x + 4, y + 13, 10, 2, '#fff');
-      drawRect(x + 2, y + 22, 14, 2, '#991b1b');
+    } else if (p.type === 'potion' || p.type === 'heart') {
+      // Pixel-art red heart (heals one segment of the health bar)
+      drawRect(x + 2, y + 2, 6, 6, COLORS.heart); drawRect(x + 12, y + 2, 6, 6, COLORS.heart);
+      drawRect(x + 2, y + 6, 16, 6, COLORS.heart);
+      drawRect(x + 4, y + 12, 12, 3, COLORS.heart); drawRect(x + 7, y + 15, 6, 2, COLORS.heart);
+      drawRect(x + 4, y + 4, 3, 3, '#fecaca'); // shine
     } else {
       drawRect(x + 3, y + 1, 10, 14, COLORS.gold); drawRect(x + 5, y + 3, 6, 10, '#fde68a'); drawRect(x + 2, y + 5, 12, 2, '#b45309');
     }
+  }
+
+  function drawPowerUp(p, x, y) {
+    const def = POWERUPS[p.power] || POWERUPS.mushroom;
+    // pulsing glow box behind the icon
+    const pulse = (Math.sin(now() / 200) + 1) * 0.5;
+    ctx.save();
+    ctx.globalAlpha = 0.35 + pulse * 0.25;
+    drawRect(x - 2, y - 2, p.w + 4, p.h + 4, def.accent);
+    ctx.restore();
+    if (p.power === 'mushroom' || p.power === 'oneup') {
+      const cap = p.power === 'oneup' ? '#22c55e' : '#ef4444';
+      drawRect(x + 4, y + 14, p.w - 8, 10, '#fef3c7');
+      drawRect(x + 2, y + 4, p.w - 4, 12, cap);
+      drawRect(x + 6, y + 6, 4, 4, '#fff'); drawRect(x + p.w - 12, y + 7, 5, 4, '#fff');
+      drawRect(x + 8, y + 18, 3, 3, '#0f172a'); drawRect(x + p.w - 11, y + 18, 3, 3, '#0f172a');
+    } else if (p.power === 'fireflower') {
+      drawRect(x + p.w / 2 - 1, y + 12, 3, 11, '#16a34a');
+      drawRect(x + 4, y + 18, p.w - 8, 3, '#22c55e');
+      ['#f97316', '#facc15', '#ef4444'].forEach((c, i) => { drawRect(x + 4 + i * 6, y + 2 + (i % 2) * 4, 6, 6, c); });
+      drawRect(x + p.w / 2 - 3, y + 6, 6, 6, '#fff7ed');
+    } else if (p.power === 'star') {
+      ctx.save();
+      ctx.translate(x + p.w / 2, y + p.h / 2);
+      ctx.rotate(now() / 600);
+      ctx.fillStyle = '#facc15';
+      ctx.beginPath();
+      for (let i = 0; i < 10; i++) { const r = i % 2 ? 5 : 12; const a = (i / 10) * Math.PI * 2 - Math.PI / 2; ctx.lineTo(Math.cos(a) * r, Math.sin(a) * r); }
+      ctx.closePath(); ctx.fill();
+      ctx.fillStyle = '#fff7c2';
+      ctx.fillRect(-3, -3, 6, 6);
+      ctx.restore();
+    }
+  }
+
+  function drawSpring(p) {
+    const x = Math.round(p.x - state.camera.x), y = Math.round(p.y - state.camera.y);
+    const squish = p.squish ? Math.round(p.squish * 14) : 0;
+    if (p.squish) p.squish = Math.max(0, p.squish - 0.03);
+    const baseY = y + 16;
+    drawRect(x, baseY + 6, p.w, 4, '#475569');
+    // coils
+    const coilTop = baseY - 6 + squish;
+    for (let i = 0; i < 3; i++) drawRect(x + 3, coilTop + i * (3 + (squish ? 0 : 1)) + 4, p.w - 6, 2, '#94a3b8');
+    drawRect(x + 1, coilTop, p.w - 2, 6, '#cbd5e1');
+    drawRect(x + 3, coilTop - 1, p.w - 6, 3, '#f1f5f9');
+  }
+
+  function drawPlayerShots() {
+    for (const f of state.playerShots) {
+      const x = Math.round(f.x - state.camera.x), y = Math.round(f.y - state.camera.y);
+      const r = f.r;
+      ctx.save();
+      ctx.translate(x, y);
+      ctx.rotate(f.spin);
+      drawRect(-r, -r, r * 2, r * 2, PLAYER_FIRE.color);
+      drawRect(-r + 2, -r + 2, r * 2 - 4, r * 2 - 4, '#fde047');
+      drawRect(-2, -2, 4, 4, PLAYER_FIRE.accent);
+      ctx.restore();
+      spawnTrailIfNeeded(f);
+    }
+  }
+
+  function spawnTrailIfNeeded(f) {
+    if (Math.random() < 0.5) state.particles.push({ x: f.x, y: f.y, vx: rand(-30, 30), vy: rand(-20, 20), life: .25, max: .25, size: rand(2, 4), color: PLAYER_FIRE.color });
   }
 
   function drawEnemy(e) {
@@ -1712,6 +2409,14 @@
       const flap = Math.sin(now() / 90) > 0 ? 3 : -1;
       drawRect(x, y + 8 + flap, 10, 6, def.color); drawRect(x + 20, y + 8 + flap, 10, 6, def.color); drawRect(x + 10, y + 5, 10, 13, def.color);
       drawRect(x + 7, y + 4 + flap, 5, 5, def.accent); drawRect(x + 18, y + 4 + flap, 5, 5, def.accent);
+    } else if (e.type === 'frog') {
+      // round water frog with big eyes
+      drawRect(x + 3, y + 10, e.w - 6, e.h - 12, def.color);
+      drawRect(x + 6, y + 6, e.w - 12, 8, def.color);
+      drawRect(x + 5, y + 3, 7, 7, def.accent); drawRect(x + e.w - 12, y + 3, 7, 7, def.accent);  // eye bumps
+      drawRect(x + 7, y + 5, 3, 3, '#0f172a'); drawRect(x + e.w - 10, y + 5, 3, 3, '#0f172a');     // pupils
+      drawRect(x + 8, y + e.h - 6, e.w - 16, 2, '#075985');                                          // mouth
+      drawRect(x + 1, y + e.h - 4, 6, 3, def.color); drawRect(x + e.w - 7, y + e.h - 4, 6, 3, def.color); // feet
     } else {
       drawRect(x + 2, y + 8, e.w - 4, e.h - 8, def.color); drawRect(x + 6, y + 2, e.w - 12, 10, def.accent);
     }
@@ -1753,7 +2458,8 @@
     for (const p of state.pickups) drawPickup(p);
     for (const e of state.enemies) drawEnemy(e);
     for (const p of state.projectiles) drawProjectile(p);
-    drawPet(); drawMaster(); drawParticles();
+    drawPlayerShots();
+    drawPet(); drawStarAura(); drawMaster(); drawParticles();
     ctx.fillStyle = 'rgba(15,23,42,.18)';
     ctx.fillRect(0, vh - 5, vw, 5);
   }
@@ -1917,7 +2623,7 @@
     if (msg.type === 'setGameConfig' && msg.data?.difficulty && DIFFICULTIES[msg.data.difficulty]) { state.difficulty = msg.data.difficulty; updateChoiceButtons(); updateHud(); }
   });
 
-  updateChoiceButtons(); resize(); generateWorld(); updateHud(); draw(); requestPetImage();
+  updateChoiceButtons(); resize(); generateWorld(); buildHearts(); updateHud(); draw(); requestPetImage();
   if (!state.loadedPosted) { state.loadedPosted = true; post('gameLoaded', { title: '宠物冒险' }); }
   state.lastTime = performance.now(); state.rafId = requestAnimationFrame(loop);
 })();
