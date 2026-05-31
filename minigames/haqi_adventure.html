@@ -1,0 +1,1030 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+  <title>宠物冒险</title>
+  <script src="https://cdn.keepwork.com/keepwork/cdn/tailwindcss@3.4.16.js"></script>
+</head>
+
+<body></body>
+<script defer>
+(function () {
+  const STORAGE_BEST = 'haqiAdventureBestV1';
+  const STORAGE_MASTER = 'haqiAdventureMasterV1';
+  const STORAGE_DIFFICULTY = 'haqiAdventureDifficultyV1';
+  const TILE = 32;
+  const WORLD_COLS = 210;
+  const WORLD_ROWS = 30;
+  const GRAVITY = 2100;
+  const MOVE_SPEED = 245;
+  const JUMP_SPEED = 720;
+  const MAX_FALL = 920;
+  const BASE_CRYSTALS = 7;
+  const BASE_MINED = 22;
+  const DIFFICULTIES = {
+    easy: { name: '轻松', enemyRate: .7, enemyHp: .82, enemySpeed: .88, enemyDamage: .78, goal: .86, score: .86, heal: 30 },
+    normal: { name: '普通', enemyRate: 1, enemyHp: 1, enemySpeed: 1, enemyDamage: 1, goal: 1, score: 1, heal: 22 },
+    hard: { name: '挑战', enemyRate: 1.35, enemyHp: 1.22, enemySpeed: 1.15, enemyDamage: 1.25, goal: 1.16, score: 1.2, heal: 14 },
+  };
+  const MONSTERS = {
+    slime: { name: '绿史莱姆', hp: 2, speed: 42, w: 28, h: 24, damage: 14, score: 35, color: '#84cc16', accent: '#a3e635' },
+    boar: { name: '岩猪', hp: 4, speed: 58, w: 34, h: 26, damage: 18, score: 55, color: '#a16207', accent: '#facc15' },
+    wolf: { name: '夜狼', hp: 3, speed: 74, w: 36, h: 26, damage: 20, score: 62, color: '#64748b', accent: '#cbd5e1' },
+    fox: { name: '火狐', hp: 3, speed: 82, w: 34, h: 24, damage: 16, score: 58, color: '#f97316', accent: '#fed7aa' },
+    mushpet: { name: '菇菇兽', hp: 5, speed: 35, w: 32, h: 30, damage: 22, score: 70, color: '#a3e635', accent: '#f0abfc' },
+    bat: { name: '洞穴蝠', hp: 2, speed: 96, w: 30, h: 20, damage: 15, score: 50, color: '#7c3aed', accent: '#c4b5fd', flying: true },
+  };
+  const COLORS = {
+    skyTop: '#9fe3f3', skyBottom: '#d6f8ff', dirt: '#9a684b', dirt2: '#7b503c', grass: '#6fd15d', grass2: '#cff27a', stone: '#7c8994', stone2: '#5f6a73', wood: '#8b5a2b', leaf: '#38a857', crystal: '#68e8ff', gold: '#facc15', heart: '#ef4444'
+  };
+
+  const state = {
+    loadedPosted: false,
+    started: false,
+    finished: false,
+    paused: false,
+    lastTime: 0,
+    rafId: 0,
+    score: 0,
+    best: Number(localStorage.getItem(STORAGE_BEST) || 0),
+    crystals: 0,
+    mined: 0,
+    totalCrystals: 0,
+    totalMined: 0,
+    level: 1,
+    nextEnemySpawn: 0,
+    difficulty: DIFFICULTIES[localStorage.getItem(STORAGE_DIFFICULTY)] ? localStorage.getItem(STORAGE_DIFFICULTY) : 'normal',
+    health: 100,
+    maxHealth: 100,
+    stamina: 100,
+    message: '探索像素世界，收集水晶，和宠物一起冒险！',
+    messageUntil: 0,
+    masterStyle: localStorage.getItem(STORAGE_MASTER) || 'boy',
+    roundId: '',
+    petBitmap: null,
+    petMeta: null,
+    petUrl: '',
+    camera: { x: 0, y: 0 },
+    tiles: [],
+    surface: [],
+    pickups: [],
+    particles: [],
+    enemies: [],
+    clouds: [],
+    trees: [],
+    gameStartAt: 0,
+    finishPosted: false,
+  };
+
+  const player = {
+    x: TILE * 8,
+    y: TILE * 8,
+    w: 24,
+    h: 48,
+    vx: 0,
+    vy: 0,
+    dir: 1,
+    grounded: false,
+    animTime: 0,
+    walkFrame: 0,
+    wasGrounded: false,
+    attackUntil: 0,
+    hurtUntil: 0,
+  };
+
+  const pet = {
+    x: player.x - 46,
+    y: player.y + 18,
+    w: 38,
+    h: 38,
+    vx: 0,
+    vy: 0,
+    grounded: false,
+    bob: 0,
+  };
+
+  const input = {
+    left: false,
+    right: false,
+    up: false,
+    down: false,
+    jump: false,
+    action: false,
+    pointerJumpQueued: false,
+    joyActive: false,
+    joyId: null,
+    joyStartX: 0,
+    joyStartY: 0,
+    joyX: 0,
+    joyY: 0,
+    actionPointers: new Set(),
+  };
+
+  const root = document.createElement('div');
+  root.id = 'haqiAdventure';
+  root.innerHTML = `
+    <style>
+      * { box-sizing: border-box; -webkit-tap-highlight-color: transparent; }
+      html, body { width: 100%; height: 100%; margin: 0; overflow: hidden; }
+      body {
+        font-family: -apple-system, BlinkMacSystemFont, 'PingFang SC', 'Microsoft YaHei', sans-serif;
+        color: #11324a; background: #9fe3f3; user-select: none; touch-action: none;
+      }
+      .ha-shell { position: relative; width: 100vw; height: 100vh; height: 100dvh; overflow: hidden; image-rendering: pixelated; }
+      .ha-canvas { position: absolute; inset: 0; width: 100%; height: 100%; display: block; image-rendering: pixelated; }
+      .ha-top {
+        position: absolute; top: max(8px, env(safe-area-inset-top)); left: 8px; right: 8px; z-index: 5;
+        display: grid; grid-template-columns: 38px minmax(0, 1fr) auto; gap: 7px; align-items: center; pointer-events: none;
+      }
+      .ha-icon-btn, .ha-small-btn, .ha-start, .ha-pick, .ha-action-btn { border: 0; font-weight: 1000; cursor: pointer; pointer-events: auto; }
+      .ha-icon-btn {
+        width: 38px; height: 38px; border-radius: 8px; color: #073047; background: #f8fafc;
+        border: 3px solid #073047; box-shadow: inset 0 0 0 2px #bae6fd, 0 4px 0 rgba(7,48,71,.22); font-size: 19px;
+      }
+      .ha-title {
+        min-width: 0; display: flex; align-items: center; justify-content: center; gap: 6px;
+        height: 38px; padding: 0 10px; border-radius: 9px; background: rgba(248,250,252,.9); border: 3px solid rgba(7,48,71,.85);
+        font-size: 14px; font-weight: 1000; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; box-shadow: 0 4px 0 rgba(7,48,71,.13);
+      }
+      .ha-stats { display: flex; gap: 5px; align-items: center; justify-content: flex-end; flex-wrap: wrap; }
+      .ha-pill {
+        height: 28px; min-width: 52px; display: inline-flex; align-items: center; justify-content: center; gap: 3px; padding: 0 8px;
+        border-radius: 8px; background: rgba(248,250,252,.92); border: 2px solid rgba(7,48,71,.8); font-size: 12px; font-weight: 1000;
+        box-shadow: 0 3px 0 rgba(7,48,71,.13);
+      }
+      .ha-bars {
+        grid-column: 1 / -1; display: grid; grid-template-columns: 1fr 1fr; gap: 6px; pointer-events: none;
+      }
+      .ha-bar { height: 13px; border-radius: 999px; overflow: hidden; background: rgba(7,48,71,.28); border: 2px solid rgba(248,250,252,.9); }
+      .ha-bar i { display: block; height: 100%; width: var(--pct); border-radius: inherit; background: linear-gradient(90deg, var(--c1), var(--c2)); transition: width .12s linear; }
+      .ha-message {
+        position: absolute; left: 50%; top: 70px; z-index: 6; transform: translateX(-50%); max-width: min(86vw, 560px);
+        padding: 9px 13px; border-radius: 12px; background: rgba(248,250,252,.93); border: 2px solid rgba(7,48,71,.8);
+        color: #0f766e; font-size: 13px; font-weight: 1000; text-align: center; box-shadow: 0 5px 0 rgba(7,48,71,.13); pointer-events: none;
+      }
+      .ha-bottom {
+        position: absolute; left: 8px; right: 8px; bottom: max(8px, env(safe-area-inset-bottom)); z-index: 6;
+        display: flex; justify-content: space-between; align-items: flex-end; pointer-events: none;
+      }
+      .ha-hint {
+        pointer-events: none; padding: 8px 11px; border-radius: 999px; background: rgba(248,250,252,.86); border: 2px solid rgba(7,48,71,.7);
+        color: #075985; font-size: 12px; font-weight: 1000; box-shadow: 0 4px 0 rgba(7,48,71,.13);
+      }
+      .ha-actions { display: flex; gap: 8px; pointer-events: auto; }
+      .ha-action-btn {
+        width: 58px; height: 58px; border-radius: 999px; border: 3px solid rgba(248,250,252,.96); color: white; font-size: 24px;
+        background: linear-gradient(180deg, rgba(56,189,248,.82), rgba(2,132,199,.82)); box-shadow: 0 6px 0 rgba(7,89,133,.3), 0 10px 26px rgba(15,23,42,.18);
+      }
+      .ha-action-btn.mine { background: linear-gradient(180deg, rgba(251,146,60,.86), rgba(234,88,12,.86)); box-shadow: 0 6px 0 rgba(154,52,18,.3), 0 10px 26px rgba(15,23,42,.18); }
+      .ha-action-btn:active, .ha-icon-btn:active, .ha-start:active, .ha-pick:active { transform: translateY(2px); filter: brightness(.98); }
+      .ha-joystick {
+        position: fixed; z-index: 8; left: var(--x); top: var(--y); width: 126px; height: 126px; margin: -63px 0 0 -63px;
+        border-radius: 999px; background: rgba(15,39,71,.25); border: 4px solid rgba(248,250,252,.78); display: none; pointer-events: none;
+        box-shadow: inset 0 0 0 2px rgba(7,48,71,.18), 0 12px 26px rgba(15,23,42,.16);
+      }
+      .ha-joystick.show { display: block; animation: haJoyIn .12s ease-out; }
+      .ha-knob {
+        position: absolute; left: 50%; top: 50%; width: 50px; height: 50px; margin: -25px 0 0 -25px; border-radius: 999px;
+        background: rgba(248,250,252,.78); border: 3px solid rgba(7,48,71,.68); transform: translate(var(--kx), var(--ky));
+      }
+      .ha-overlay { position: fixed; inset: 0; z-index: 40; display: flex; align-items: center; justify-content: center; padding: 16px; background: rgba(15,39,71,.52); }
+      .ha-card {
+        width: min(92vw, 480px); padding: 19px; border-radius: 16px; background: linear-gradient(180deg, #f8fafc, #e0f2fe 60%, #dcfce7);
+        border: 4px solid #073047; box-shadow: 0 18px 44px rgba(15,23,42,.28), inset 0 0 0 3px rgba(255,255,255,.74); text-align: center;
+      }
+      .ha-card h1 { margin: 0 0 8px; font-size: 28px; line-height: 1.1; font-weight: 1000; color: #073047; }
+      .ha-card p { margin: 0 0 12px; color: #0f766e; font-size: 15px; font-weight: 850; line-height: 1.58; }
+      .ha-row { display: flex; flex-wrap: wrap; justify-content: center; align-items: center; gap: 8px; margin: 12px 0 15px; }
+      .ha-pick, .ha-small-btn {
+        min-height: 34px; border-radius: 10px; padding: 0 12px; background: rgba(255,255,255,.82); color: #075985; border: 2px solid rgba(7,48,71,.68); box-shadow: 0 3px 0 rgba(7,48,71,.15);
+      }
+      .ha-pick.active { color: white; background: linear-gradient(180deg, #38bdf8, #0284c7); }
+      .ha-label { width: 100%; color: #075985; font-size: 12px; font-weight: 1000; }
+      .ha-pick.difficulty { flex: 1 1 92px; min-height: 48px; display: flex; flex-direction: column; align-items: center; justify-content: center; line-height: 1.2; }
+      .ha-pick small { display: block; margin-top: 2px; font-size: 10px; font-weight: 850; opacity: .78; }
+      .ha-start { border-radius: 999px; padding: 11px 26px; color: white; background: linear-gradient(180deg, #34d399, #16a34a); box-shadow: 0 5px 0 #15803d; }
+      .ha-start.secondary { background: linear-gradient(180deg, #94a3b8, #475569); box-shadow-color: #334155; }
+      .ha-toast {
+        position: fixed; left: 50%; top: 50%; z-index: 45; transform: translate(-50%, -50%); min-width: min(310px, 84vw);
+        padding: 18px 22px; border-radius: 16px; background: #fff; border: 4px solid #86efac; color: #15803d; font-size: 22px; font-weight: 1000;
+        text-align: center; box-shadow: 0 18px 42px rgba(15,23,42,.24); animation: haToast 1.25s ease-out forwards; pointer-events: none;
+      }
+      .ha-confetti { position: fixed; top: -16px; z-index: 48; width: 9px; height: 15px; border-radius: 2px; background: var(--c); animation: haConfetti var(--d) ease-in forwards; pointer-events: none; }
+      [hidden] { display: none !important; }
+      @keyframes haJoyIn { from { opacity: 0; transform: scale(.8); } to { opacity: 1; transform: scale(1); } }
+      @keyframes haToast { 0% { opacity: 0; transform: translate(-50%, -42%) scale(.84); } 18% { opacity: 1; transform: translate(-50%, -50%) scale(1); } 100% { opacity: 0; transform: translate(-50%, -74%) scale(.94); } }
+      @keyframes haConfetti { 100% { opacity: 0; transform: translate3d(var(--x), 112vh, 0) rotate(680deg); } }
+      @media (max-width: 640px) {
+        .ha-top { grid-template-columns: 38px minmax(0, 1fr); }
+        .ha-stats { grid-column: 1 / -1; justify-content: center; }
+        .ha-title { font-size: 13px; }
+        .ha-pill { min-width: 47px; height: 27px; padding: 0 6px; }
+        .ha-message { top: 105px; font-size: 12px; }
+        .ha-hint { display: none; }
+      }
+      @media (max-height: 520px) {
+        .ha-top { grid-template-columns: 36px 1fr auto; }
+        .ha-title { display: none; }
+        .ha-bars { display: none; }
+        .ha-message { top: 52px; }
+        .ha-pill.optional { display: none; }
+        .ha-action-btn { width: 52px; height: 52px; }
+      }
+      @media (hover: hover) and (pointer: fine) {
+        .ha-actions { opacity: .24; transition: opacity .16s; }
+        .ha-actions:hover { opacity: 1; }
+      }
+    </style>
+    <div class="ha-shell" id="haShell">
+      <canvas id="haCanvas" class="ha-canvas" aria-label="宠物冒险像素世界"></canvas>
+      <header class="ha-top">
+        <button id="haHelp" class="ha-icon-btn" type="button" aria-label="玩法">?</button>
+        <div class="ha-title">宠物冒险 · 宠物与小主人</div>
+        <div class="ha-stats" aria-label="冒险状态">
+          <span class="ha-pill">🏅 LV.<b id="haLevel">1</b></span>
+          <span class="ha-pill">💎 <b id="haCrystals">0</b>/<b id="haCrystalGoal">0</b></span>
+          <span class="ha-pill optional">⛏️ <b id="haMined">0</b>/<b id="haMinedGoal">0</b></span>
+          <span class="ha-pill optional">⭐ <b id="haScore">0</b></span>
+          <span class="ha-pill optional">🏆 <b id="haBest">0</b></span>
+        </div>
+        <div class="ha-bars">
+          <div class="ha-bar" title="生命"><i id="haHp" style="--pct:100%;--c1:#fb7185;--c2:#ef4444"></i></div>
+          <div class="ha-bar" title="体力"><i id="haStamina" style="--pct:100%;--c1:#facc15;--c2:#22c55e"></i></div>
+        </div>
+      </header>
+      <div id="haMessage" class="ha-message">探索像素世界，收集水晶，和宠物一起冒险！</div>
+      <footer class="ha-bottom">
+        <div class="ha-hint">WASD/方向键移动，空格跳跃，E/鼠标点击挖掘</div>
+        <div class="ha-actions" aria-label="移动端动作按钮">
+          <button id="haJump" class="ha-action-btn" type="button" aria-label="跳跃">↥</button>
+          <button id="haMine" class="ha-action-btn mine" type="button" aria-label="挖掘">⛏</button>
+        </div>
+      </footer>
+      <div id="haJoystick" class="ha-joystick" aria-hidden="true"><div id="haKnob" class="ha-knob"></div></div>
+      <div id="haOverlay" class="ha-overlay">
+        <div class="ha-card">
+          <h1>宠物冒险</h1>
+          <p>探索无限像素森林：小主人和当前宠物一起奔跑、跳跃、采矿，达成阶段目标就会升级，升级后自动继续生存冒险。</p>
+          <p>移动端：按住屏幕左侧会出现虚拟摇杆，松手自动隐藏；右侧按钮跳跃/挖掘。电脑：WASD 或方向键移动，空格跳跃，E 或点击挖掘。</p>
+          <div class="ha-row" aria-label="选择小主人">
+            <span class="ha-label">选择小主人</span>
+            <button class="ha-pick" data-master="boy" type="button">像素男孩</button>
+            <button class="ha-pick" data-master="girl" type="button">像素女孩</button>
+          </div>
+          <div class="ha-row" aria-label="选择难度">
+            <span class="ha-label">选择难度</span>
+            <button class="ha-pick difficulty" data-difficulty="easy" type="button">轻松<small>怪少血多</small></button>
+            <button class="ha-pick difficulty" data-difficulty="normal" type="button">普通<small>标准冒险</small></button>
+            <button class="ha-pick difficulty" data-difficulty="hard" type="button">挑战<small>高分高压</small></button>
+          </div>
+          <div class="ha-row">
+            <button id="haStart" class="ha-start" type="button">开始冒险</button>
+            <button id="haRestart" class="ha-start secondary" type="button" hidden>重新开始</button>
+          </div>
+        </div>
+      </div>
+    </div>
+  `;
+  document.body.appendChild(root);
+
+  const canvas = root.querySelector('#haCanvas');
+  const ctx = canvas.getContext('2d');
+  ctx.imageSmoothingEnabled = false;
+  const shell = root.querySelector('#haShell');
+  const overlay = root.querySelector('#haOverlay');
+  const joystick = root.querySelector('#haJoystick');
+  const knob = root.querySelector('#haKnob');
+  const ui = {
+    crystals: root.querySelector('#haCrystals'), crystalGoal: root.querySelector('#haCrystalGoal'), mined: root.querySelector('#haMined'), minedGoal: root.querySelector('#haMinedGoal'), level: root.querySelector('#haLevel'), score: root.querySelector('#haScore'), best: root.querySelector('#haBest'),
+    hp: root.querySelector('#haHp'), stamina: root.querySelector('#haStamina'), message: root.querySelector('#haMessage'), restart: root.querySelector('#haRestart'), start: root.querySelector('#haStart')
+  };
+
+  function post(type, data = {}) {
+    try { window.parent?.postMessage({ type, data }, '*'); } catch (err) {}
+  }
+
+  function clamp(v, min, max) { return Math.max(min, Math.min(max, v)); }
+  function lerp(a, b, t) { return a + (b - a) * t; }
+  function rand(min, max) { return min + Math.random() * (max - min); }
+  function pick(arr) { return arr[Math.floor(Math.random() * arr.length)]; }
+  function now() { return performance.now(); }
+
+  function resize() {
+    const dpr = Math.max(1, Math.min(2, window.devicePixelRatio || 1));
+    const w = Math.max(320, Math.floor(window.innerWidth));
+    const h = Math.max(240, Math.floor(window.innerHeight));
+    canvas.width = Math.floor(w * dpr);
+    canvas.height = Math.floor(h * dpr);
+    canvas.style.width = w + 'px';
+    canvas.style.height = h + 'px';
+    ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+    ctx.imageSmoothingEnabled = false;
+  }
+
+  function updateChoiceButtons() {
+    root.querySelectorAll('[data-master]').forEach(btn => btn.classList.toggle('active', btn.dataset.master === state.masterStyle));
+    root.querySelectorAll('[data-difficulty]').forEach(btn => btn.classList.toggle('active', btn.dataset.difficulty === state.difficulty));
+  }
+
+  function difficultyConfig() {
+    return DIFFICULTIES[state.difficulty] || DIFFICULTIES.normal;
+  }
+
+  function levelCrystalGoal(level = state.level) {
+    return Math.round((BASE_CRYSTALS + (level - 1) * 3) * difficultyConfig().goal);
+  }
+
+  function levelMinedGoal(level = state.level) {
+    return Math.round((BASE_MINED + (level - 1) * 7) * difficultyConfig().goal);
+  }
+
+  function monsterTypesForLevel(level = state.level) {
+    const types = ['slime'];
+    if (level >= 2) types.push('boar');
+    if (level >= 3) types.push('fox');
+    if (level >= 4) types.push('wolf');
+    if (level >= 5) types.push('mushpet');
+    if (level >= 6) types.push('bat');
+    return types;
+  }
+
+  function makeEnemy(type, x, y) {
+    const cfg = difficultyConfig();
+    const def = MONSTERS[type] || MONSTERS.slime;
+    const levelBoost = 1 + (state.level - 1) * .16;
+    return {
+      type, name: def.name, x, y, w: def.w, h: def.h, vx: (Math.random() < 0.5 ? -1 : 1) * def.speed * cfg.enemySpeed * (1 + Math.min(.5, state.level * .03)), vy: 0,
+      hp: Math.max(1, Math.round(def.hp * cfg.enemyHp * levelBoost)), maxHp: Math.max(1, Math.round(def.hp * cfg.enemyHp * levelBoost)), damage: def.damage, score: def.score,
+      dead: false, flying: !!def.flying, squish: 0, wander: rand(0, 6.28), hurtUntil: 0,
+    };
+  }
+
+  function spawnEnemyAtColumn(c, type = pick(monsterTypesForLevel())) {
+    c = clamp(Math.round(c), 12, WORLD_COLS - 10);
+    const def = MONSTERS[type] || MONSTERS.slime;
+    const s = state.surface[c] || 17;
+    const y = def.flying ? (s - rand(3.5, 6.5)) * TILE : (s * TILE - def.h);
+    state.enemies.push(makeEnemy(type, c * TILE + rand(-8, 8), y));
+  }
+
+  function spawnLevelWave() {
+    const cfg = difficultyConfig();
+    const count = Math.round((5 + state.level * 1.45) * cfg.enemyRate);
+    const start = Math.max(18, Math.floor(player.x / TILE) - 8);
+    const end = Math.min(WORLD_COLS - 12, start + 78 + state.level * 5);
+    for (let i = 0; i < count; i++) spawnEnemyAtColumn(rand(start, end));
+  }
+
+  function setMessage(text, ms = 2300) {
+    state.message = text;
+    state.messageUntil = now() + ms;
+    ui.message.textContent = text;
+    ui.message.hidden = false;
+  }
+
+  function showToast(text) {
+    const el = document.createElement('div');
+    el.className = 'ha-toast';
+    el.textContent = text;
+    document.body.appendChild(el);
+    setTimeout(() => el.remove(), 1300);
+  }
+
+  function makeConfetti() {
+    const colors = ['#22c55e', '#38bdf8', '#facc15', '#fb7185', '#a78bfa', '#fb923c'];
+    for (let i = 0; i < 54; i++) {
+      const el = document.createElement('div');
+      el.className = 'ha-confetti';
+      el.style.left = rand(0, 100) + 'vw';
+      el.style.setProperty('--x', rand(-90, 90) + 'px');
+      el.style.setProperty('--c', colors[i % colors.length]);
+      el.style.setProperty('--d', rand(1.15, 2.25) + 's');
+      document.body.appendChild(el);
+      setTimeout(() => el.remove(), 2400);
+    }
+  }
+
+  function tileAt(c, r) {
+    if (c < 0 || c >= WORLD_COLS || r < 0 || r >= WORLD_ROWS) return 0;
+    return state.tiles[r * WORLD_COLS + c] || 0;
+  }
+
+  function setTile(c, r, v) {
+    if (c < 0 || c >= WORLD_COLS || r < 0 || r >= WORLD_ROWS) return;
+    state.tiles[r * WORLD_COLS + c] = v;
+  }
+
+  function isSolid(v) { return v === 1 || v === 2 || v === 3 || v === 4; }
+
+  function generateWorld() {
+    state.tiles = new Array(WORLD_COLS * WORLD_ROWS).fill(0);
+    state.surface = new Array(WORLD_COLS).fill(18);
+    state.pickups = [];
+    state.enemies = [];
+    state.particles = [];
+    state.clouds = [];
+    state.trees = [];
+
+    let height = 17;
+    for (let c = 0; c < WORLD_COLS; c++) {
+      height += Math.sin(c * 0.13) * 0.22 + Math.sin(c * 0.047) * 0.35 + rand(-0.35, 0.35);
+      height = clamp(height, 11, 22);
+      const s = Math.round(height);
+      state.surface[c] = s;
+      for (let r = s; r < WORLD_ROWS; r++) {
+        let v = r === s ? 1 : (r > s + 5 || Math.random() < 0.12 ? 2 : 3);
+        if (r > s + 8 && Math.random() < 0.08) v = 4;
+        setTile(c, r, v);
+      }
+      if (c > 8 && c < WORLD_COLS - 10 && Math.random() < 0.08) state.trees.push({ c, r: s - 1, size: Math.floor(rand(2, 5)) });
+      if (c > 15 && Math.random() < 0.08) state.pickups.push({ type: 'coin', x: c * TILE + 12, y: (s - 1) * TILE + 3, w: 16, h: 16, bob: rand(0, 6.28), taken: false });
+      if (c > 20 && Math.random() < 0.035) state.pickups.push({ type: 'crystal', x: c * TILE + 6, y: (s - 2) * TILE + 4, w: 22, h: 26, bob: rand(0, 6.28), taken: false });
+      if (c > 28 && Math.random() < 0.025 * difficultyConfig().enemyRate) spawnEnemyAtColumn(c, Math.random() < .72 ? 'slime' : pick(monsterTypesForLevel()));
+    }
+    for (let i = 0; i < 16; i++) state.clouds.push({ x: rand(0, WORLD_COLS * TILE), y: rand(45, 210), s: rand(.65, 1.45), speed: rand(4, 12) });
+    for (let c = 35; c < WORLD_COLS - 10; c += Math.floor(rand(17, 29))) {
+      const r = clamp(state.surface[c] + Math.floor(rand(4, 10)), 5, WORLD_ROWS - 4);
+      setTile(c, r, 4); setTile(c + 1, r, 4);
+    }
+  }
+
+  function resetGame() {
+    generateWorld();
+    Object.assign(player, { x: TILE * 8, y: (state.surface[8] - 3) * TILE, vx: 0, vy: 0, dir: 1, grounded: false, attackUntil: 0, hurtUntil: 0 });
+    Object.assign(pet, { x: player.x - 46, y: player.y + 12, vx: 0, vy: 0, grounded: false, bob: 0 });
+    state.score = 0; state.crystals = 0; state.mined = 0; state.totalCrystals = 0; state.totalMined = 0; state.level = 1; state.health = state.maxHealth; state.stamina = 100; state.finished = false; state.paused = false; state.finishPosted = false;
+    state.camera.x = 0; state.camera.y = 0; state.gameStartAt = now(); state.roundId = `haqi_adventure_${Date.now()}`;
+    state.nextEnemySpawn = now() + 5200;
+    spawnLevelWave();
+    ui.restart.hidden = true;
+    setMessage(`${difficultyConfig().name}难度开始！达成阶段目标会升级并继续冒险。`, 2900);
+    updateHud();
+  }
+
+  function startGame() {
+    if (!state.started) post('gameStarted', { title: '宠物冒险' });
+    state.started = true;
+    overlay.hidden = true;
+    resetGame();
+    requestPetImage();
+  }
+
+  function updateHud() {
+    ui.level.textContent = state.level;
+    ui.crystals.textContent = state.crystals;
+    ui.crystalGoal.textContent = levelCrystalGoal();
+    ui.mined.textContent = state.mined;
+    ui.minedGoal.textContent = levelMinedGoal();
+    ui.score.textContent = state.score;
+    ui.best.textContent = state.best;
+    ui.hp.style.setProperty('--pct', `${clamp(state.health, 0, state.maxHealth) / state.maxHealth * 100}%`);
+    ui.stamina.style.setProperty('--pct', `${clamp(state.stamina, 0, 100)}%`);
+  }
+
+  function getInputAxis() {
+    let ax = 0;
+    if (input.left) ax -= 1;
+    if (input.right) ax += 1;
+    if (input.joyActive) ax += clamp(input.joyX / 44, -1, 1);
+    return clamp(ax, -1, 1);
+  }
+
+  function jump() {
+    if (!state.started || state.paused || state.finished) return;
+    if (player.grounded && state.stamina >= 8) {
+      player.vy = -JUMP_SPEED;
+      player.grounded = false;
+      state.stamina = Math.max(0, state.stamina - 8);
+      spawnDust(player.x + player.w / 2, player.y + player.h, 8, '#e2e8f0');
+    }
+  }
+
+  function rectSolid(x, y, w, h) {
+    const c0 = Math.floor(x / TILE), c1 = Math.floor((x + w - 1) / TILE);
+    const r0 = Math.floor(y / TILE), r1 = Math.floor((y + h - 1) / TILE);
+    for (let r = r0; r <= r1; r++) for (let c = c0; c <= c1; c++) if (isSolid(tileAt(c, r))) return true;
+    return false;
+  }
+
+  function actorOnGround(a) {
+    return rectSolid(a.x, a.y + 1, a.w, a.h);
+  }
+
+  function moveActor(a, dt, damageOnFall = false) {
+    const wasGrounded = a.grounded || actorOnGround(a);
+    a.grounded = false;
+    a.x += a.vx * dt;
+    if (rectSolid(a.x, a.y, a.w, a.h)) {
+      const dir = Math.sign(a.vx) || 1;
+      while (rectSolid(a.x, a.y, a.w, a.h)) a.x -= dir;
+      a.vx = 0;
+    }
+    a.vy = clamp(a.vy + GRAVITY * dt, -9999, MAX_FALL);
+    a.y += a.vy * dt;
+    if (rectSolid(a.x, a.y, a.w, a.h)) {
+      const dir = Math.sign(a.vy) || 1;
+      while (rectSolid(a.x, a.y, a.w, a.h)) a.y -= dir;
+      if (dir > 0) a.grounded = true;
+      a.vy = 0;
+    }
+    if (!a.grounded && wasGrounded && a.vy >= 0 && actorOnGround(a)) {
+      a.grounded = true;
+      a.vy = 0;
+    }
+    if (damageOnFall && a.y > WORLD_ROWS * TILE + 200) damage(100);
+  }
+
+  function spawnDust(x, y, n, color) {
+    for (let i = 0; i < n; i++) state.particles.push({ x, y, vx: rand(-90, 90), vy: rand(-180, -35), life: rand(.35, .72), max: .72, size: rand(2, 5), color });
+  }
+
+  function damage(amount) {
+    if (now() < player.hurtUntil || state.finished) return;
+    state.health -= amount * difficultyConfig().enemyDamage;
+    player.hurtUntil = now() + 900;
+    setMessage('小心！荒野怪物会扣生命。', 1500);
+    spawnDust(player.x + player.w / 2, player.y + player.h / 2, 12, '#fb7185');
+    if (state.health <= 0) endGame(false);
+  }
+
+  function mineBlock() {
+    if (!state.started || state.paused || state.finished || state.stamina < 4) return;
+    player.attackUntil = now() + 160;
+    state.stamina = Math.max(0, state.stamina - 4);
+    const reach = 45;
+    const cx = Math.floor((player.x + player.w / 2 + player.dir * reach) / TILE);
+    const cy = Math.floor((player.y + player.h / 2 + (input.down ? 24 : input.up ? -28 : 0)) / TILE);
+    let best = null;
+    for (let r = cy - 1; r <= cy + 1; r++) {
+      for (let c = cx - 1; c <= cx + 1; c++) {
+        const v = tileAt(c, r);
+        if (!isSolid(v)) continue;
+        const tx = c * TILE + TILE / 2, ty = r * TILE + TILE / 2;
+        const d = Math.hypot(tx - (player.x + player.w / 2), ty - (player.y + player.h / 2));
+        if (d < 78 && (!best || d < best.d)) best = { c, r, v, d };
+      }
+    }
+    if (!best) return;
+    setTile(best.c, best.r, 0);
+    state.mined++;
+    state.totalMined++;
+    state.score += Math.round((best.v === 4 ? 18 : 6) * difficultyConfig().score);
+    spawnDust(best.c * TILE + 16, best.r * TILE + 16, best.v === 4 ? 18 : 10, best.v === 4 ? COLORS.crystal : COLORS.dirt);
+    if (best.v === 4 && Math.random() < 0.55) state.pickups.push({ type: 'crystal', x: best.c * TILE + 5, y: best.r * TILE - 8, w: 22, h: 26, bob: rand(0, 6.28), taken: false });
+    if (state.mined === levelMinedGoal()) setMessage('本阶段挖掘目标完成！继续寻找蓝水晶。', 2300);
+    updateHud();
+    checkMission();
+  }
+
+  function updatePlayer(dt) {
+    player.wasGrounded = player.grounded;
+    const ax = getInputAxis();
+    if (Math.abs(ax) > .08) player.dir = ax > 0 ? 1 : -1;
+    player.vx = ax * MOVE_SPEED;
+    if ((input.jump || input.pointerJumpQueued || input.up) && player.grounded) jump();
+    input.pointerJumpQueued = false;
+    if (input.action) mineBlock();
+    if (player.grounded) state.stamina = Math.min(100, state.stamina + 28 * dt); else state.stamina = Math.min(100, state.stamina + 11 * dt);
+    moveActor(player, dt, true);
+    const moving = Math.abs(player.vx) > 12;
+    if (moving && player.grounded) player.animTime += dt * 11;
+    else player.animTime += dt * 4;
+    player.walkFrame = moving && player.grounded ? Math.floor(player.animTime) % 4 : 0;
+    if (!player.wasGrounded && player.grounded) spawnDust(player.x + player.w / 2, player.y + player.h, 5, '#e2e8f0');
+  }
+
+  function updatePet(dt) {
+    pet.bob += dt * 5;
+    const targetX = player.x - player.dir * 42;
+    const targetY = player.y + 8;
+    const dx = targetX - pet.x;
+    const dy = targetY - pet.y;
+    const dist = Math.hypot(dx, dy);
+    if (dist > 420 || pet.y > player.y + 210) {
+      pet.x = player.x - player.dir * 34;
+      pet.y = player.y + 8;
+      pet.vx = 0;
+      pet.vy = 0;
+    } else {
+      pet.vx = clamp(dx * 7.5, -330, 330);
+      if (pet.grounded && (dy < -14 || Math.abs(dx) > 64)) pet.vy = -600;
+      if (!pet.grounded && Math.abs(dx) > 95) pet.vx += Math.sign(dx) * 90;
+    }
+    moveActor(pet, dt);
+  }
+
+  function updateEnemies(dt) {
+    for (const e of state.enemies) {
+      if (e.dead) continue;
+      if (e.flying) {
+        e.wander += dt * 2.2;
+        const dx = player.x - e.x, dy = player.y - e.y;
+        const near = Math.hypot(dx, dy) < 260;
+        const sp = (MONSTERS[e.type]?.speed || 90) * difficultyConfig().enemySpeed;
+        e.vx = (near ? Math.sign(dx || 1) * sp : Math.cos(e.wander) * sp * .55);
+        e.vy = (near ? clamp(dy * 2.2, -sp, sp) : Math.sin(e.wander * 1.4) * sp * .42);
+        e.x = clamp(e.x + e.vx * dt, 0, WORLD_COLS * TILE - e.w);
+        e.y = clamp(e.y + e.vy * dt, 48, (state.surface[Math.floor(e.x / TILE)] - 2) * TILE);
+      } else {
+        moveActor(e, dt);
+        const frontX = e.x + (e.vx > 0 ? e.w + 4 : -4);
+        const footY = e.y + e.h + 6;
+        if (e.vx === 0 || !isSolid(tileAt(Math.floor(frontX / TILE), Math.floor(footY / TILE)))) e.vx = (e.vx <= 0 ? 1 : -1) * (MONSTERS[e.type]?.speed || 42) * difficultyConfig().enemySpeed;
+      }
+      if (intersects(player, e)) {
+        if (!e.flying && player.vy > 120 && player.y + player.h - e.y < 18) {
+          e.hp--;
+          e.hurtUntil = now() + 180;
+          player.vy = -420;
+          spawnDust(e.x + e.w / 2, e.y + e.h / 2, 12, MONSTERS[e.type]?.color || '#84cc16');
+          if (e.hp <= 0) defeatEnemy(e);
+        } else damage(e.damage || 16);
+      }
+    }
+    state.enemies = state.enemies.filter(e => !e.dead || now() - (e.deadAt || 0) < 3000);
+    if (now() > state.nextEnemySpawn && !state.finished) {
+      const live = state.enemies.filter(e => !e.dead).length;
+      const maxLive = Math.round((8 + state.level * 2.2) * difficultyConfig().enemyRate);
+      if (live < maxLive) spawnEnemyAtColumn(Math.floor(player.x / TILE) + rand(18, 44), pick(monsterTypesForLevel()));
+      state.nextEnemySpawn = now() + rand(3600, 6500) / difficultyConfig().enemyRate;
+    }
+  }
+
+  function defeatEnemy(e) {
+    e.dead = true;
+    e.deadAt = now();
+    const gain = Math.round((e.score || 35) * difficultyConfig().score);
+    state.score += gain;
+    if (state.score > state.best) { state.best = state.score; localStorage.setItem(STORAGE_BEST, String(state.best)); }
+    spawnDust(e.x + e.w / 2, e.y + e.h / 2, 18, MONSTERS[e.type]?.color || '#84cc16');
+    if (Math.random() < .28) state.pickups.push({ type: 'crystal', x: e.x + 5, y: e.y - 10, w: 22, h: 26, bob: rand(0, 6.28), taken: false });
+    showToast(`+${gain} 击退${e.name || '怪物'}`);
+  }
+
+  function updatePickups(dt) {
+    for (const p of state.pickups) {
+      if (p.taken) continue;
+      p.bob += dt * 4;
+      if (intersects({ x: player.x - 6, y: player.y - 6, w: player.w + 12, h: player.h + 12 }, p) || intersects({ x: pet.x - 5, y: pet.y - 5, w: pet.w + 10, h: pet.h + 10 }, p)) {
+        p.taken = true;
+        if (p.type === 'crystal') { state.crystals++; state.totalCrystals++; state.score += Math.round(80 * difficultyConfig().score); showToast('💎 水晶 +1'); spawnDust(p.x + p.w / 2, p.y + p.h / 2, 18, COLORS.crystal); }
+        else { state.score += Math.round(15 * difficultyConfig().score); spawnDust(p.x + p.w / 2, p.y + p.h / 2, 10, COLORS.gold); }
+        if (state.score > state.best) { state.best = state.score; localStorage.setItem(STORAGE_BEST, String(state.best)); }
+        updateHud(); checkMission();
+      }
+    }
+  }
+
+  function updateParticles(dt) {
+    for (const p of state.particles) { p.life -= dt; p.x += p.vx * dt; p.y += p.vy * dt; p.vy += 460 * dt; }
+    state.particles = state.particles.filter(p => p.life > 0);
+  }
+
+  function intersects(a, b) { return a.x < b.x + b.w && a.x + a.w > b.x && a.y < b.y + b.h && a.y + a.h > b.y; }
+
+  function checkMission() {
+    if (!state.finished && state.crystals >= levelCrystalGoal() && state.mined >= levelMinedGoal()) levelUp();
+  }
+
+  function levelUp() {
+    state.level++;
+    const bonus = Math.round((140 + state.level * 45) * difficultyConfig().score);
+    state.score += bonus;
+    state.crystals = 0;
+    state.mined = 0;
+    state.health = Math.min(state.maxHealth, state.health + difficultyConfig().heal);
+    state.stamina = 100;
+    makeConfetti();
+    showToast(`升级到 LV.${state.level}！+${bonus}`);
+    setMessage(`阶段完成！进入 LV.${state.level}，${monsterTypesForLevel().map(t => MONSTERS[t].name).join('、')} 会陆续出现。`, 4200);
+    spawnLevelWave();
+    post('gameProgress', { title: '宠物冒险', level: state.level, score: state.score, totalCrystals: state.totalCrystals, totalMined: state.totalMined, difficulty: state.difficulty, roundId: state.roundId });
+    if (state.score > state.best) { state.best = state.score; localStorage.setItem(STORAGE_BEST, String(state.best)); }
+    updateHud();
+  }
+
+  function endGame(won) {
+    state.finished = true;
+    const timeSec = Math.max(1, Math.round((now() - state.gameStartAt) / 1000));
+    const timeBonus = 0;
+    state.score += timeBonus;
+    state.best = Math.max(state.best, state.score);
+    localStorage.setItem(STORAGE_BEST, String(state.best));
+    updateHud();
+    if (won) { makeConfetti(); showToast('冒险记录已保存！'); setMessage('本次无限冒险已暂停，重新开始可再次挑战更高等级。', 6000); }
+    else { showToast('冒险失败，再试一次！'); setMessage(`生命耗尽了，你生存到 LV.${state.level}，重新开始再挑战吧。`, 6000); }
+    ui.restart.hidden = false;
+    ui.restart.textContent = won ? '再玩一次' : '重新挑战';
+    overlay.hidden = false;
+    if (!state.finishPosted) {
+      state.finishPosted = true;
+      post('gameFinished', {
+        earnedPoints: Math.max(0, Math.round(state.score)), score: state.score, crystals: state.crystals, mined: state.mined,
+        totalCrystals: state.totalCrystals, totalMined: state.totalMined, level: state.level, won, difficulty: state.difficulty, timeSec, roundId: state.roundId, bondBonus: won ? 28 : 12, moodBonus: won ? 12 : 5, finishedAt: Date.now()
+      });
+    }
+  }
+
+  function updateCamera(dt) {
+    const vw = window.innerWidth, vh = window.innerHeight;
+    const targetX = clamp(player.x + player.w / 2 - vw * 0.42, 0, WORLD_COLS * TILE - vw);
+    const targetY = clamp(player.y + player.h / 2 - vh * 0.52, 0, WORLD_ROWS * TILE - vh);
+    state.camera.x = lerp(state.camera.x, targetX, 1 - Math.pow(0.0001, dt));
+    state.camera.y = lerp(state.camera.y, targetY, 1 - Math.pow(0.0001, dt));
+  }
+
+  function update(dt) {
+    if (!state.started || state.paused) return;
+    if (!state.finished) {
+      updatePlayer(dt); updatePet(dt); updateEnemies(dt); updatePickups(dt);
+      if (state.health < state.maxHealth && now() > player.hurtUntil) state.health = Math.min(state.maxHealth, state.health + 1.8 * dt);
+    }
+    for (const c of state.clouds) { c.x += c.speed * dt; if (c.x - state.camera.x > window.innerWidth + 240) c.x -= WORLD_COLS * TILE; }
+    updateParticles(dt); updateCamera(dt); updateHud();
+    if (now() > state.messageUntil) ui.message.hidden = true;
+  }
+
+  function drawRect(x, y, w, h, color) { ctx.fillStyle = color; ctx.fillRect(Math.round(x), Math.round(y), Math.round(w), Math.round(h)); }
+  function drawPixelRect(x, y, w, h, color) { drawRect(x, y, w, h, color); }
+
+  function drawBackground(vw, vh) {
+    const g = ctx.createLinearGradient(0, 0, 0, vh);
+    g.addColorStop(0, COLORS.skyTop); g.addColorStop(.65, COLORS.skyBottom); g.addColorStop(1, '#b9f3c9');
+    ctx.fillStyle = g; ctx.fillRect(0, 0, vw, vh);
+    ctx.fillStyle = 'rgba(67,128,153,.18)';
+    for (const m of [{ x: -180, y: vh - 180, w: 420, h: 190 }, { x: 240, y: vh - 145, w: 340, h: 160 }, { x: 620, y: vh - 205, w: 460, h: 220 }]) {
+      ctx.beginPath(); ctx.ellipse((m.x - state.camera.x * .16) % (vw + 500), m.y, m.w / 2, m.h / 2, 0, 0, Math.PI * 2); ctx.fill();
+    }
+    for (const c of state.clouds) drawCloud(c.x - state.camera.x * .28, c.y, c.s);
+  }
+
+  function drawCloud(x, y, s) {
+    x = ((x % (window.innerWidth + 220)) + window.innerWidth + 220) % (window.innerWidth + 220) - 110;
+    ctx.fillStyle = 'rgba(255,255,255,.72)';
+    ctx.fillRect(Math.round(x), Math.round(y), Math.round(74 * s), Math.round(18 * s));
+    ctx.fillRect(Math.round(x + 12 * s), Math.round(y - 13 * s), Math.round(28 * s), Math.round(16 * s));
+    ctx.fillRect(Math.round(x + 42 * s), Math.round(y - 9 * s), Math.round(23 * s), Math.round(12 * s));
+  }
+
+  function drawTile(c, r, v) {
+    const x = c * TILE - state.camera.x, y = r * TILE - state.camera.y;
+    if (v === 1) {
+      drawRect(x, y, TILE, TILE, COLORS.dirt); drawRect(x, y, TILE, 7, COLORS.grass); drawRect(x, y + 7, TILE, 3, COLORS.grass2);
+      drawRect(x + 4, y + 15, 6, 5, COLORS.dirt2); drawRect(x + 18, y + 24, 8, 4, COLORS.dirt2);
+    } else if (v === 2) {
+      drawRect(x, y, TILE, TILE, COLORS.stone); drawRect(x + 4, y + 5, 8, 6, COLORS.stone2); drawRect(x + 17, y + 18, 11, 7, COLORS.stone2); drawRect(x + 2, y + 28, 24, 3, '#a6b1ba');
+    } else if (v === 3) {
+      drawRect(x, y, TILE, TILE, COLORS.dirt); drawRect(x + 3, y + 7, 9, 4, COLORS.dirt2); drawRect(x + 19, y + 16, 8, 5, COLORS.dirt2); drawRect(x + 7, y + 26, 12, 3, '#b8825f');
+    } else if (v === 4) {
+      drawRect(x, y, TILE, TILE, '#52616d'); drawRect(x + 6, y + 6, 7, 18, COLORS.crystal); drawRect(x + 18, y + 11, 6, 13, '#22d3ee'); drawRect(x + 8, y + 6, 3, 18, '#e0ffff');
+    }
+  }
+
+  function drawTrees() {
+    for (const t of state.trees) {
+      const x = Math.round(t.c * TILE - state.camera.x), groundY = Math.round((t.r + 1) * TILE - state.camera.y);
+      if (x < -90 || x > window.innerWidth + 90) continue;
+      const trunkH = 42 + t.size * 12;
+      const trunkX = x + 11;
+      const trunkY = groundY - trunkH;
+      drawRect(trunkX, trunkY, 12, trunkH, COLORS.wood);
+      drawRect(trunkX + 8, trunkY + 10, 4, trunkH - 14, '#6f431f');
+      const crownBaseY = trunkY - 16;
+      drawRect(x - 14, crownBaseY + 22, 62, 23, '#1f8f52');
+      drawRect(x - 5, crownBaseY + 8, 45, 26, COLORS.leaf);
+      drawRect(x + 7, crownBaseY - 8, 29, 23, '#49bf63');
+      drawRect(x + 4, crownBaseY + 21, 10, 7, '#84cc16');
+    }
+  }
+
+  function drawMaster() {
+    const x = Math.round(player.x - state.camera.x), y = Math.round(player.y - state.camera.y);
+    const hurt = now() < player.hurtUntil && Math.floor(now() / 80) % 2 === 0;
+    if (hurt) ctx.globalAlpha = .45;
+    const skin = '#f2bd7d', skinShade = '#d99a64', hair = state.masterStyle === 'girl' ? '#5b2b1d' : '#3f2418', shirt = state.masterStyle === 'girl' ? '#f472b6' : '#38bdf8', shirtShade = state.masterStyle === 'girl' ? '#db2777' : '#0284c7', pants = '#1e3a8a';
+    const flip = player.dir < 0;
+    const moving = Math.abs(player.vx) > 12 && player.grounded;
+    const frame = player.walkFrame;
+    const bob = moving ? (frame === 1 || frame === 3 ? 1 : 0) : (!player.grounded ? -1 : 0);
+    const armSwing = moving ? [0, -3, 0, 3][frame] : 0;
+    const legA = moving ? [0, 4, 0, -3][frame] : (!player.grounded ? -3 : 0);
+    const legB = moving ? [0, -3, 0, 4][frame] : (!player.grounded ? 3 : 0);
+    ctx.save();
+    ctx.translate(x + player.w / 2, y + bob); if (flip) ctx.scale(-1, 1); ctx.translate(-player.w / 2, 0);
+    drawPixelRect(4, 1, 12, 19, hair); drawPixelRect(6, 0, 13, 6, hair); drawPixelRect(8, 5, 13, 15, skin);
+    drawPixelRect(18, 10, 4, 4, skin); drawPixelRect(17, 9, 3, 3, '#0f172a'); drawPixelRect(19, 15, 2, 2, skinShade); drawPixelRect(15, 18, 5, 2, '#7f1d1d');
+    drawPixelRect(5, 5, 5, 9, hair); drawPixelRect(8, 4, 11, 3, '#7c3f1d');
+    if (state.masterStyle === 'girl') { drawPixelRect(1, 7, 6, 19, hair); drawPixelRect(2, 23, 5, 7, '#7c2d12'); }
+    drawPixelRect(11, 20, 6, 4, skinShade);
+    drawPixelRect(6, 24, 14, 16, shirt); drawPixelRect(16, 26, 5, 12, shirtShade); drawPixelRect(8, 23, 9, 3, '#e0f2fe');
+    drawPixelRect(3, 25 + armSwing, 5, 13, skinShade); drawPixelRect(20, 24 - armSwing, 5, 15, skin);
+    if (now() < player.attackUntil) { drawPixelRect(24, 18, 17, 5, '#6b7280'); drawPixelRect(35, 13, 8, 8, COLORS.stone); }
+    drawPixelRect(7, 39, 7, 9 + Math.max(0, legA), pants); drawPixelRect(15, 39, 7, 9 + Math.max(0, legB), '#172554');
+    drawPixelRect(5 + Math.max(0, -legA), 47 + Math.max(0, legA), 10, 4, '#111827'); drawPixelRect(14 + Math.max(0, -legB), 47 + Math.max(0, legB), 10, 4, '#111827');
+    ctx.restore(); ctx.globalAlpha = 1;
+  }
+
+  function drawPet() {
+    const bob = Math.sin(pet.bob) * 3;
+    const x = Math.round(pet.x - state.camera.x), y = Math.round(pet.y - state.camera.y + bob);
+    if (state.petBitmap && state.petMeta?.uv) {
+      const u = state.petMeta.uv;
+      ctx.drawImage(state.petBitmap, u.x, u.y, u.width, u.height, x - 4, y - 8, pet.w + 8, pet.h + 8);
+    } else {
+      drawRect(x + 4, y + 7, 30, 26, '#f9a8d4'); drawRect(x + 9, y, 7, 9, '#f9a8d4'); drawRect(x + 22, y, 7, 9, '#f9a8d4');
+      drawRect(x + 12, y + 17, 4, 4, '#0f172a'); drawRect(x + 24, y + 17, 4, 4, '#0f172a'); drawRect(x + 18, y + 24, 5, 3, '#be185d');
+    }
+    drawRect(x + 2, y + pet.h - 2, pet.w - 4, 4, 'rgba(15,23,42,.16)');
+  }
+
+  function drawPickup(p) {
+    if (p.taken) return;
+    const x = Math.round(p.x - state.camera.x), y = Math.round(p.y - state.camera.y + Math.sin(p.bob) * 4);
+    if (p.type === 'crystal') {
+      drawRect(x + 8, y, 8, 4, '#e0ffff'); drawRect(x + 4, y + 4, 16, 16, COLORS.crystal); drawRect(x + 8, y + 20, 8, 6, '#0891b2'); drawRect(x + 8, y + 5, 4, 14, '#fff');
+    } else {
+      drawRect(x + 3, y + 1, 10, 14, COLORS.gold); drawRect(x + 5, y + 3, 6, 10, '#fde68a'); drawRect(x + 2, y + 5, 12, 2, '#b45309');
+    }
+  }
+
+  function drawEnemy(e) {
+    if (e.dead) return;
+    const x = Math.round(e.x - state.camera.x), y = Math.round(e.y - state.camera.y);
+    const def = MONSTERS[e.type] || MONSTERS.slime;
+    const hurt = now() < (e.hurtUntil || 0);
+    if (hurt) ctx.globalAlpha = .62;
+    drawRect(x + 2, y + e.h - 2, e.w - 4, 4, 'rgba(15,23,42,.14)');
+    if (e.type === 'wolf') {
+      drawRect(x + 2, y + 10, e.w - 4, 14, def.color); drawRect(x + 8, y + 2, 20, 13, def.color);
+      drawRect(x + 4, y, 7, 8, def.color); drawRect(x + 24, y, 7, 8, def.color); drawRect(x + 28, y + 12, 8, 5, def.accent);
+    } else if (e.type === 'boar') {
+      drawRect(x + 1, y + 9, e.w - 2, 16, def.color); drawRect(x + 6, y + 3, 21, 12, '#854d0e');
+      drawRect(x + 1, y + 15, 6, 4, '#fef3c7'); drawRect(x + 27, y + 15, 6, 4, '#fef3c7');
+    } else if (e.type === 'fox') {
+      drawRect(x + 3, y + 9, e.w - 7, 14, def.color); drawRect(x + 9, y + 2, 18, 12, def.color);
+      drawRect(x + 5, y, 6, 8, def.accent); drawRect(x + 23, y, 6, 8, def.accent); drawRect(x + 25, y + 12, 10, 5, '#fb923c');
+    } else if (e.type === 'mushpet') {
+      drawRect(x + 7, y + 12, e.w - 14, 16, def.color); drawRect(x + 2, y + 2, e.w - 4, 14, def.accent);
+      drawRect(x + 7, y + 5, 5, 4, '#fff'); drawRect(x + 20, y + 4, 6, 5, '#fff');
+    } else if (e.type === 'bat') {
+      const flap = Math.sin(now() / 90) > 0 ? 3 : -1;
+      drawRect(x, y + 8 + flap, 10, 6, def.color); drawRect(x + 20, y + 8 + flap, 10, 6, def.color); drawRect(x + 10, y + 5, 10, 13, def.color);
+      drawRect(x + 7, y + 4 + flap, 5, 5, def.accent); drawRect(x + 18, y + 4 + flap, 5, 5, def.accent);
+    } else {
+      drawRect(x + 2, y + 8, e.w - 4, e.h - 8, def.color); drawRect(x + 6, y + 2, e.w - 12, 10, def.accent);
+    }
+    drawRect(x + Math.max(7, e.w * .3), y + 13, 4, 4, '#0f172a'); drawRect(x + Math.min(e.w - 10, e.w * .65), y + 13, 4, 4, '#0f172a');
+    if (e.maxHp > 2) { drawRect(x + 2, y - 6, e.w - 4, 4, 'rgba(15,23,42,.35)'); drawRect(x + 3, y - 5, (e.w - 6) * clamp(e.hp / e.maxHp, 0, 1), 2, '#ef4444'); }
+    ctx.globalAlpha = 1;
+  }
+
+  function drawParticles() {
+    for (const p of state.particles) { ctx.globalAlpha = clamp(p.life / p.max, 0, 1); drawRect(p.x - state.camera.x, p.y - state.camera.y, p.size, p.size, p.color); }
+    ctx.globalAlpha = 1;
+  }
+
+  function draw() {
+    const vw = window.innerWidth, vh = window.innerHeight;
+    drawBackground(vw, vh);
+    drawTrees();
+    const c0 = clamp(Math.floor(state.camera.x / TILE) - 2, 0, WORLD_COLS - 1), c1 = clamp(Math.ceil((state.camera.x + vw) / TILE) + 2, 0, WORLD_COLS - 1);
+    const r0 = clamp(Math.floor(state.camera.y / TILE) - 2, 0, WORLD_ROWS - 1), r1 = clamp(Math.ceil((state.camera.y + vh) / TILE) + 2, 0, WORLD_ROWS - 1);
+    for (let r = r0; r <= r1; r++) for (let c = c0; c <= c1; c++) { const v = tileAt(c, r); if (v) drawTile(c, r, v); }
+    for (const p of state.pickups) drawPickup(p);
+    for (const e of state.enemies) drawEnemy(e);
+    drawPet(); drawMaster(); drawParticles();
+    ctx.fillStyle = 'rgba(15,23,42,.18)';
+    ctx.fillRect(0, vh - 5, vw, 5);
+  }
+
+  function loop(t) {
+    const dt = Math.min(0.033, Math.max(0, (t - state.lastTime) / 1000 || 0));
+    state.lastTime = t;
+    update(dt); draw();
+    state.rafId = requestAnimationFrame(loop);
+  }
+
+  async function setPetImage(data) {
+    if (!data?.imageBlob || !data?.uv) return;
+    try {
+      if (state.petUrl) URL.revokeObjectURL(state.petUrl);
+      state.petBitmap?.close?.();
+      state.petMeta = data;
+      state.petBitmap = await createImageBitmap(data.imageBlob);
+    } catch (err) {}
+  }
+
+  function requestPetImage() {
+    const requestId = `haqi_adventure_pet_${Date.now()}`;
+    try { window.parent?.postMessage({ type: 'haqi_get_pet_image', requestId, anim: 'happy' }, '*'); } catch (err) {}
+  }
+
+  function onKey(e, down) {
+    const k = e.key.toLowerCase();
+    if (['arrowleft', 'a'].includes(k)) input.left = down;
+    if (['arrowright', 'd'].includes(k)) input.right = down;
+    if (['arrowup', 'w'].includes(k)) input.up = down;
+    if (['arrowdown', 's'].includes(k)) input.down = down;
+    if (k === ' ' || k === 'spacebar') { input.jump = down; if (down) e.preventDefault(); }
+    if (k === 'e' || k === 'enter') { input.action = down; if (down) e.preventDefault(); }
+    if (k === 'escape' && down) toggleOverlay();
+  }
+
+  function setJoystickVisible(visible, x = input.joyStartX, y = input.joyStartY) {
+    joystick.classList.toggle('show', visible);
+    joystick.style.setProperty('--x', `${x}px`);
+    joystick.style.setProperty('--y', `${y}px`);
+  }
+
+  function updateJoystick(clientX, clientY) {
+    input.joyX = clamp(clientX - input.joyStartX, -46, 46);
+    input.joyY = clamp(clientY - input.joyStartY, -46, 46);
+    knob.style.setProperty('--kx', `${input.joyX}px`);
+    knob.style.setProperty('--ky', `${input.joyY}px`);
+    input.up = input.joyY < -27;
+    input.down = input.joyY > 30;
+  }
+
+  function onPointerDown(e) {
+    if (!state.started || overlay.hidden === false) return;
+    if (e.pointerType !== 'touch') return;
+    const leftSide = e.clientX < window.innerWidth * 0.55;
+    if (leftSide && input.joyId === null) {
+      input.joyId = e.pointerId; input.joyActive = true; input.joyStartX = e.clientX; input.joyStartY = e.clientY;
+      shell.setPointerCapture?.(e.pointerId); setJoystickVisible(true, e.clientX, e.clientY); updateJoystick(e.clientX, e.clientY); e.preventDefault();
+    }
+  }
+
+  function onPointerMove(e) {
+    if (e.pointerId === input.joyId) { updateJoystick(e.clientX, e.clientY); e.preventDefault(); }
+  }
+
+  function onPointerUp(e) {
+    if (e.pointerId === input.joyId) {
+      input.joyId = null; input.joyActive = false; input.joyX = 0; input.joyY = 0; input.up = false; input.down = false;
+      knob.style.setProperty('--kx', '0px'); knob.style.setProperty('--ky', '0px'); setJoystickVisible(false); e.preventDefault();
+    }
+  }
+
+  function toggleOverlay() {
+    overlay.hidden = !overlay.hidden;
+    ui.restart.hidden = !state.finished;
+  }
+
+  function releaseActionButtons() {
+    input.pointerJumpQueued = false;
+    input.actionPointers.clear();
+    input.action = false;
+  }
+
+  function releaseMinePointer(e) {
+    input.actionPointers.delete(e.pointerId);
+    input.action = input.actionPointers.size > 0;
+    e.currentTarget?.releasePointerCapture?.(e.pointerId);
+    e.currentTarget?.blur?.();
+    e.preventDefault?.();
+  }
+
+  root.querySelector('#haHelp').addEventListener('click', toggleOverlay);
+  ui.start.addEventListener('click', startGame);
+  ui.restart.addEventListener('click', () => { overlay.hidden = true; resetGame(); });
+  root.querySelectorAll('[data-master]').forEach(btn => btn.addEventListener('click', () => { state.masterStyle = btn.dataset.master; localStorage.setItem(STORAGE_MASTER, state.masterStyle); updateChoiceButtons(); }));
+  root.querySelectorAll('[data-difficulty]').forEach(btn => btn.addEventListener('click', () => { state.difficulty = btn.dataset.difficulty; localStorage.setItem(STORAGE_DIFFICULTY, state.difficulty); updateChoiceButtons(); updateHud(); }));
+  const jumpButton = root.querySelector('#haJump');
+  const mineButton = root.querySelector('#haMine');
+  jumpButton.addEventListener('pointerdown', e => { input.pointerJumpQueued = true; jumpButton.setPointerCapture?.(e.pointerId); e.preventDefault(); });
+  jumpButton.addEventListener('pointerup', e => { input.pointerJumpQueued = false; jumpButton.releasePointerCapture?.(e.pointerId); jumpButton.blur(); e.preventDefault(); });
+  jumpButton.addEventListener('pointercancel', e => { input.pointerJumpQueued = false; jumpButton.releasePointerCapture?.(e.pointerId); jumpButton.blur(); });
+  jumpButton.addEventListener('lostpointercapture', () => { input.pointerJumpQueued = false; jumpButton.blur(); });
+  mineButton.addEventListener('pointerdown', e => { input.actionPointers.add(e.pointerId); input.action = true; mineButton.setPointerCapture?.(e.pointerId); mineBlock(); e.preventDefault(); });
+  mineButton.addEventListener('pointerup', releaseMinePointer);
+  mineButton.addEventListener('pointercancel', releaseMinePointer);
+  mineButton.addEventListener('lostpointercapture', () => { input.actionPointers.clear(); input.action = false; mineButton.blur(); });
+  mineButton.addEventListener('pointerleave', e => { if (input.actionPointers.has(e.pointerId)) releaseMinePointer(e); });
+  window.addEventListener('keydown', e => onKey(e, true));
+  window.addEventListener('keyup', e => onKey(e, false));
+  window.addEventListener('blur', releaseActionButtons);
+  window.addEventListener('pointerup', releaseActionButtons);
+  window.addEventListener('pointercancel', releaseActionButtons);
+  shell.addEventListener('pointerdown', onPointerDown, { passive: false });
+  shell.addEventListener('pointermove', onPointerMove, { passive: false });
+  shell.addEventListener('pointerup', onPointerUp, { passive: false });
+  shell.addEventListener('pointercancel', onPointerUp, { passive: false });
+  canvas.addEventListener('click', e => { if (!state.started || state.finished || overlay.hidden === false) return; if (e.clientX > window.innerWidth * .38) mineBlock(); });
+  window.addEventListener('resize', resize);
+  window.addEventListener('message', event => {
+    const msg = event.data || {};
+    if (msg.type === 'haqi_pet_image' && msg.ok) setPetImage(msg.data);
+    if (msg.type === 'setGameConfig' && msg.data?.masterStyle) { state.masterStyle = msg.data.masterStyle === 'girl' ? 'girl' : 'boy'; updateChoiceButtons(); }
+    if (msg.type === 'setGameConfig' && msg.data?.difficulty && DIFFICULTIES[msg.data.difficulty]) { state.difficulty = msg.data.difficulty; updateChoiceButtons(); updateHud(); }
+  });
+
+  updateChoiceButtons(); resize(); generateWorld(); updateHud(); draw(); requestPetImage();
+  if (!state.loadedPosted) { state.loadedPosted = true; post('gameLoaded', { title: '宠物冒险' }); }
+  state.lastTime = performance.now(); state.rafId = requestAnimationFrame(loop);
+})();
+</script>
+
+</html>

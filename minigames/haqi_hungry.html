@@ -1,0 +1,1689 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+  <title>宠物荒野生存</title>
+  <script src="https://cdn.keepwork.com/keepwork/cdn/tailwindcss@3.4.16.js"></script>
+</head>
+
+<body></body>
+<script defer>
+(function () {
+  const STORAGE_BEST = 'haqiHungryBestV1';
+  const STORAGE_MASTER = 'haqiHungryMasterV1';
+  const STORAGE_DIFFICULTY = 'haqiHungryDifficultyV1';
+  const WORLD_W = 1600;
+  const WORLD_H = 2600;
+  const PLAYER_SPEED = 172;
+  const SPRINT_SPEED = 224;
+  const PET_MAX_TEAM = 3;
+  const TARGET_FOOD = 18;
+  const TARGET_DAY = 4;
+  const DAY_SECONDS = 70;
+  const ATTACK_RANGE = 72;
+  const AUTO_ATTACK_RANGE = 78;
+  const GATHER_SECONDS = 2.2;
+  const CAPTURE_SECONDS = 2.6;
+  const PET_SHEET_COLS = 4;
+  const PET_SHEET_ROWS = 4;
+  const PET_ANIM_COLS = { idle: 0, happy: 1, sad: 2, sleep: 3 };
+  const PET_SHEET_STAGES = ['baby', 'teen', 'adult', 'elder'];
+  const PET_STAGE_NAMES = { baby: '幼年', teen: '青年', adult: '成年', elder: '老年' };
+  const WATER_TILE = 8;
+  const PET_INDEX_URL = new URL('../famous-pets/_pet_index.json', location.href).href;
+  const DIFFICULTIES = {
+    easy: { name: '轻松', initialFood: 4, enemyCount: 18, enemyMin: 10, enemyHp: .82, enemySpeed: .9, enemyDamage: .78, hunger: .74, spawn: .72, score: .85 },
+    normal: { name: '普通', initialFood: 2, enemyCount: 24, enemyMin: 16, enemyHp: 1, enemySpeed: 1, enemyDamage: 1, hunger: 1, spawn: 1, score: 1 },
+    hard: { name: '挑战', initialFood: 1, enemyCount: 31, enemyMin: 22, enemyHp: 1.22, enemySpeed: 1.12, enemyDamage: 1.25, hunger: 1.18, spawn: 1.3, score: 1.2 },
+  };
+  const COLORS = {
+    grass: '#8fcb6b', grass2: '#78b65d', dark: '#274c3a', soil: '#8a6246', water: '#4fb3c8', sand: '#dbc276', berry: '#ef4444', wood: '#8b5a2b', leaf: '#2f9e50', gold: '#facc15'
+  };
+  const BIOMES = {
+    land: { base: '#8fcb6b', alt: '#83c465', detail: '#6baa53' },
+    lawn: { base: '#77c96a', alt: '#6fbd60', detail: '#4f9d4b' },
+    forest: { base: '#5ea85c', alt: '#529c55', detail: '#2f7d45' },
+    desert: { base: '#d6bd73', alt: '#caaa60', detail: '#aa8847' },
+    water: { base: '#3daec2', alt: '#2f9ab2', detail: '#73d6df' },
+    wetland: { base: '#69b989', alt: '#5aa87f', detail: '#3f8f6a' },
+  };
+
+  const state = {
+    loadedPosted: false,
+    started: false,
+    finished: false,
+    paused: false,
+    lastTime: 0,
+    rafId: 0,
+    score: 0,
+    best: Number(localStorage.getItem(STORAGE_BEST) || 0),
+    roundId: '',
+    gameStartAt: 0,
+    dayTime: 0,
+    day: 1,
+    hp: 100,
+    hunger: 100,
+    stamina: 100,
+    food: 0,
+    wood: 0,
+    captured: 0,
+    defeated: 0,
+    masterStyle: localStorage.getItem(STORAGE_MASTER) || 'boy',
+    difficulty: DIFFICULTIES[localStorage.getItem(STORAGE_DIFFICULTY)] ? localStorage.getItem(STORAGE_DIFFICULTY) : 'normal',
+    camera: { x: 0, y: 0 },
+    message: '采集食物，驯服荒野宠物，努力活过第 4 天！',
+    messageUntil: 0,
+    finishPosted: false,
+    petBitmaps: [],
+    petArtCursor: 0,
+    petCatalog: [],
+    petCatalogLoading: false,
+    objects: [],
+    enemies: [],
+    roster: [],
+    rosterOpen: false,
+    mergeSourceId: '',
+    team: [],
+    particles: [],
+    terrain: [],
+    groundDetails: [],
+    fireflies: [],
+    autoWork: { kind: '', id: '', target: null, progress: 0, needed: 1 },
+  };
+
+  const player = {
+    x: WORLD_W / 2,
+    y: WORLD_H - 340,
+    w: 26,
+    h: 34,
+    dirX: 0,
+    dirY: -1,
+    facing: 'up',
+    attackUntil: 0,
+    attackStartedAt: 0,
+    attackHitId: 0,
+    hurtUntil: 0,
+    animTime: 0,
+  };
+
+  const input = {
+    left: false,
+    right: false,
+    up: false,
+    down: false,
+    attack: false,
+    gather: false,
+    sprint: false,
+    joyActive: false,
+    joyId: null,
+    joyStartX: 0,
+    joyStartY: 0,
+    joyX: 0,
+    joyY: 0,
+    actionPointers: new Set(),
+  };
+
+  const root = document.createElement('div');
+  root.id = 'haqiHungry';
+  root.innerHTML = `
+    <style>
+      * { box-sizing: border-box; -webkit-tap-highlight-color: transparent; }
+      html, body { width: 100%; height: 100%; margin: 0; overflow: hidden; }
+      body {
+        font-family: -apple-system, BlinkMacSystemFont, 'PingFang SC', 'Microsoft YaHei', sans-serif;
+        color: #16311f; background: #0f2f2c; user-select: none; touch-action: none;
+      }
+      .hh-shell { position: relative; width: 100vw; height: 100vh; height: 100dvh; overflow: hidden; image-rendering: pixelated; background: #193a2f; }
+      .hh-canvas { position: absolute; inset: 0; width: 100%; height: 100%; display: block; image-rendering: pixelated; }
+      .hh-top {
+        position: absolute; top: max(8px, env(safe-area-inset-top)); left: 8px; right: 8px; z-index: 5;
+        display: grid; grid-template-columns: 38px minmax(0, 1fr); gap: 7px; align-items: start; pointer-events: none;
+      }
+      .hh-icon-btn, .hh-small-btn, .hh-start, .hh-pick, .hh-action-btn { border: 0; font-weight: 1000; cursor: pointer; pointer-events: auto; }
+      .hh-icon-btn {
+        width: 38px; height: 38px; border-radius: 8px; color: #06281d; background: #fef3c7;
+        border: 3px solid #06281d; box-shadow: inset 0 0 0 2px #fed7aa, 0 4px 0 rgba(6,40,29,.24); font-size: 19px;
+      }
+      .hh-title {
+        min-width: 0; height: 38px; padding: 0 10px; border-radius: 9px; display: flex; align-items: center; justify-content: center; gap: 6px;
+        background: rgba(255,247,237,.92); border: 3px solid rgba(6,40,29,.88); font-size: 14px; font-weight: 1000; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+        box-shadow: 0 4px 0 rgba(6,40,29,.13);
+      }
+      .hh-stats { grid-column: 1 / -1; display: flex; gap: 5px; align-items: center; justify-content: center; flex-wrap: wrap; padding: 0 4px; }
+      .hh-pill {
+        height: 28px; min-width: 50px; display: inline-flex; align-items: center; justify-content: center; gap: 3px; padding: 0 7px;
+        border-radius: 8px; background: rgba(255,247,237,.93); border: 2px solid rgba(6,40,29,.82); font-size: 12px; font-weight: 1000;
+        box-shadow: 0 3px 0 rgba(6,40,29,.12);
+      }
+      .hh-bars { grid-column: 1 / -1; display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 5px; pointer-events: none; padding: 0 4px; }
+      .hh-bar { height: 13px; border-radius: 999px; overflow: hidden; background: rgba(6,40,29,.38); border: 2px solid rgba(255,247,237,.9); }
+      .hh-bar i { display: block; height: 100%; width: var(--pct); border-radius: inherit; background: linear-gradient(90deg, var(--c1), var(--c2)); transition: width .12s linear; }
+      .hh-message {
+        position: absolute; left: 50%; top: 82px; z-index: 6; transform: translateX(-50%); max-width: min(88vw, 460px);
+        padding: 9px 13px; border-radius: 12px; background: rgba(255,247,237,.94); border: 2px solid rgba(6,40,29,.82);
+        color: #166534; font-size: 13px; font-weight: 1000; text-align: center; box-shadow: 0 5px 0 rgba(6,40,29,.13); pointer-events: none;
+      }
+      .hh-bottom { position: absolute; left: 8px; right: 8px; bottom: max(8px, env(safe-area-inset-bottom)); z-index: 6; display: flex; justify-content: center; align-items: flex-end; pointer-events: none; }
+      .hh-hint {
+        pointer-events: none; padding: 8px 11px; border-radius: 999px; background: rgba(255,247,237,.86); border: 2px solid rgba(6,40,29,.72);
+        color: #166534; font-size: 12px; font-weight: 1000; box-shadow: 0 4px 0 rgba(6,40,29,.13);
+      }
+      .hh-actions { display: none; }
+      .hh-action-btn {
+        width: 58px; height: 58px; border-radius: 999px; border: 3px solid rgba(255,247,237,.96); color: white; font-size: 24px;
+        background: linear-gradient(180deg, rgba(52,211,153,.9), rgba(22,163,74,.9)); box-shadow: 0 6px 0 rgba(21,128,61,.34), 0 10px 26px rgba(15,23,42,.18);
+      }
+      .hh-action-btn.attack { background: linear-gradient(180deg, rgba(251,113,133,.92), rgba(220,38,38,.92)); box-shadow: 0 6px 0 rgba(153,27,27,.34), 0 10px 26px rgba(15,23,42,.18); }
+      .hh-action-btn:active, .hh-icon-btn:active, .hh-start:active, .hh-pick:active { transform: translateY(2px); filter: brightness(.98); }
+      .hh-joystick {
+        position: fixed; z-index: 8; left: var(--x); top: var(--y); width: 126px; height: 126px; margin: -63px 0 0 -63px;
+        border-radius: 999px; background: rgba(15,39,35,.25); border: 4px solid rgba(255,247,237,.78); display: none; pointer-events: none;
+        box-shadow: inset 0 0 0 2px rgba(6,40,29,.18), 0 12px 26px rgba(15,23,42,.16);
+      }
+      .hh-joystick.show { display: block; animation: hhJoyIn .12s ease-out; }
+      .hh-knob { position: absolute; left: 50%; top: 50%; width: 50px; height: 50px; margin: -25px 0 0 -25px; border-radius: 999px; background: rgba(255,247,237,.78); border: 3px solid rgba(6,40,29,.68); transform: translate(var(--kx), var(--ky)); }
+      .hh-overlay { position: fixed; inset: 0; z-index: 40; display: flex; align-items: center; justify-content: center; padding: 16px; background: rgba(8,47,44,.64); }
+      .hh-roster-overlay { position: fixed; inset: 0; z-index: 35; display: flex; align-items: center; justify-content: center; padding: 14px; background: rgba(8,47,44,.46); pointer-events: auto; }
+      .hh-card { width: min(92vw, 456px); padding: 18px; border-radius: 16px; background: linear-gradient(180deg, #fff7ed, #dcfce7 56%, #bbf7d0); border: 4px solid #06281d; box-shadow: 0 18px 44px rgba(15,23,42,.3), inset 0 0 0 3px rgba(255,255,255,.65); text-align: center; }
+      .hh-card.roster { width: min(94vw, 520px); max-height: min(86vh, 620px); overflow: auto; }
+      .hh-card h1 { margin: 0 0 8px; font-size: 28px; line-height: 1.1; font-weight: 1000; color: #06281d; }
+      .hh-card h2 { margin: 0 0 8px; font-size: 22px; line-height: 1.1; font-weight: 1000; color: #06281d; }
+      .hh-card p { margin: 0 0 10px; color: #166534; font-size: 14px; font-weight: 850; line-height: 1.55; }
+      .hh-rule { display: grid; grid-template-columns: 1fr 1fr; gap: 6px; margin: 10px 0; text-align: left; }
+      .hh-rule span { border-radius: 10px; padding: 7px 8px; background: rgba(255,255,255,.58); border: 2px solid rgba(6,40,29,.18); color: #365314; font-size: 12px; font-weight: 900; }
+      .hh-row { display: flex; flex-wrap: wrap; justify-content: center; align-items: center; gap: 8px; margin: 12px 0 14px; }
+      .hh-label { width: 100%; color: #14532d; font-size: 12px; font-weight: 1000; }
+      .hh-pick, .hh-small-btn { min-height: 34px; border-radius: 10px; padding: 0 12px; background: rgba(255,255,255,.82); color: #166534; border: 2px solid rgba(6,40,29,.68); box-shadow: 0 3px 0 rgba(6,40,29,.15); }
+      .hh-pick.active { color: white; background: linear-gradient(180deg, #4ade80, #16a34a); }
+      .hh-pick.difficulty { flex: 1 1 92px; min-height: 48px; display: flex; flex-direction: column; align-items: center; justify-content: center; line-height: 1.2; }
+      .hh-pick small { display: block; margin-top: 2px; font-size: 10px; font-weight: 850; opacity: .78; }
+      .hh-team-row { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 8px; margin: 9px 0; }
+      .hh-roster-grid { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 8px; margin: 10px 0; max-height: 260px; overflow-y: auto; padding: 2px 2px 8px; }
+      .hh-pet-card { position: relative; min-height: 94px; border-radius: 12px; padding: 8px 6px; background: rgba(255,255,255,.72); border: 3px solid rgba(6,40,29,.28); color: #14532d; font-weight: 1000; box-shadow: 0 4px 0 rgba(6,40,29,.12); cursor: pointer; touch-action: none; }
+      .hh-pet-card.slot { min-height: 104px; background: rgba(236,253,245,.78); border-style: dashed; }
+      .hh-pet-card.active { color: #06281d; background: linear-gradient(180deg, #bbf7d0, #86efac); border-color: #16a34a; }
+      .hh-pet-card.merge-source { border-color: #f97316; box-shadow: 0 0 0 3px rgba(249,115,22,.22), 0 4px 0 rgba(6,40,29,.12); }
+      .hh-pet-card.merge-target { border-color: #a855f7; background: linear-gradient(180deg, #f3e8ff, #ddd6fe); }
+      .hh-pet-card.disabled { opacity: .5; cursor: not-allowed; filter: grayscale(.3); }
+      .hh-pet-card img, .hh-pet-card canvas { width: 50px; height: 50px; image-rendering: auto; object-fit: contain; display: block; margin: 0 auto 4px; }
+      .hh-pet-card b { display: block; font-size: 12px; line-height: 1.2; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+      .hh-pet-card small { display: block; margin-top: 3px; font-size: 10px; color: #166534; }
+      .hh-pet-level { position: absolute; right: 5px; top: 5px; padding: 1px 5px; border-radius: 999px; background: #fef3c7; border: 1px solid rgba(6,40,29,.4); color: #92400e; font-size: 10px; }
+      .hh-roster-hint { margin: 6px 0 0; font-size: 12px; color: #166534; font-weight: 900; }
+      .hh-start { border-radius: 999px; padding: 11px 26px; color: white; background: linear-gradient(180deg, #fb923c, #ea580c); box-shadow: 0 5px 0 #c2410c; }
+      .hh-start.secondary { background: linear-gradient(180deg, #94a3b8, #475569); box-shadow-color: #334155; }
+      .hh-toast { position: fixed; left: 50%; top: max(126px, calc(env(safe-area-inset-top) + 108px)); z-index: 45; transform: translate(-50%, 0); min-width: min(260px, 78vw); padding: 10px 16px; border-radius: 999px; background: #fff7ed; border: 3px solid #fdba74; color: #c2410c; font-size: 16px; font-weight: 1000; text-align: center; box-shadow: 0 10px 28px rgba(15,23,42,.22); animation: hhToast 1.25s ease-out forwards; pointer-events: none; }
+      .hh-confetti { position: fixed; top: -16px; z-index: 48; width: 9px; height: 15px; border-radius: 2px; background: var(--c); animation: hhConfetti var(--d) ease-in forwards; pointer-events: none; }
+      .hh-work-progress { position: absolute; z-index: 7; width: 74px; height: 18px; display: none; transform: translate(-50%, -100%); pointer-events: none; }
+      .hh-work-progress.show { display: block; }
+      .hh-work-progress b { position: absolute; left: 50%; top: -15px; transform: translateX(-50%); padding: 1px 5px; border-radius: 999px; color: #14532d; background: rgba(255,247,237,.92); border: 1px solid rgba(6,40,29,.45); font-size: 10px; white-space: nowrap; }
+      .hh-work-progress i { position: absolute; left: 0; right: 0; top: 3px; height: 8px; border-radius: 999px; overflow: hidden; background: rgba(15,23,42,.42); border: 1px solid rgba(255,247,237,.9); }
+      .hh-work-progress em { display: block; width: var(--pct); height: 100%; background: linear-gradient(90deg, #facc15, #22c55e); }
+      [hidden] { display: none !important; }
+      @keyframes hhJoyIn { from { opacity: 0; transform: scale(.8); } to { opacity: 1; transform: scale(1); } }
+      @keyframes hhToast { 0% { opacity: 0; transform: translate(-50%, -14px) scale(.9); } 18% { opacity: 1; transform: translate(-50%, 0) scale(1); } 100% { opacity: 0; transform: translate(-50%, -26px) scale(.96); } }
+      @keyframes hhConfetti { 100% { opacity: 0; transform: translate3d(var(--x), 112vh, 0) rotate(680deg); } }
+      @media (max-width: 640px) {
+        .hh-top { grid-template-columns: 38px minmax(0, 1fr); }
+        .hh-stats { grid-column: 1 / -1; justify-content: center; }
+        .hh-title { font-size: 13px; }
+        .hh-pill { min-width: 45px; height: 27px; padding: 0 6px; }
+        .hh-message { top: 113px; font-size: 12px; }
+        .hh-hint { display: none; }
+      }
+      @media (max-height: 600px) {
+        .hh-title { display: none; }
+        .hh-message { top: 96px; }
+        .hh-action-btn { width: 54px; height: 54px; }
+      }
+      @media (hover: hover) and (pointer: fine) { .hh-actions { opacity: .34; transition: opacity .16s; } .hh-actions:hover { opacity: 1; } }
+    </style>
+    <div class="hh-shell" id="hhShell">
+      <canvas id="hhCanvas" class="hh-canvas" aria-label="宠物荒野生存像素世界"></canvas>
+      <header class="hh-top">
+        <button id="hhHelp" class="hh-icon-btn" type="button" aria-label="玩法说明">?</button>
+        <div class="hh-title">🍖 宠物荒野生存 <span id="hhDay">第1天</span></div>
+        <div class="hh-stats">
+          <span class="hh-pill">🍖 <b id="hhFood">0</b></span>
+          <span class="hh-pill">🪵 <b id="hhWood">0</b></span>
+          <span class="hh-pill">🐾 <b id="hhPets">0/3</b></span>
+          <span class="hh-pill">⭐ <b id="hhScore">0</b></span>
+          <span class="hh-pill">🏆 <b id="hhBest">0</b></span>
+        </div>
+        <div class="hh-bars">
+          <div class="hh-bar" title="生命"><i id="hhHp" style="--pct:100%;--c1:#fb7185;--c2:#dc2626"></i></div>
+          <div class="hh-bar" title="饥饿"><i id="hhHunger" style="--pct:100%;--c1:#facc15;--c2:#f97316"></i></div>
+          <div class="hh-bar" title="体力"><i id="hhStamina" style="--pct:100%;--c1:#5eead4;--c2:#0891b2"></i></div>
+        </div>
+      </header>
+      <div id="hhMessage" class="hh-message">采集食物，驯服荒野宠物，努力活过第 4 天！</div>
+      <div id="hhWorkProgress" class="hh-work-progress"><b id="hhWorkText">采集中</b><i><em id="hhWorkBar" style="--pct:0%"></em></i></div>
+      <div class="hh-bottom">
+        <div class="hh-hint">任意位置触摸拖动移动 · 靠近自动攻击/采集/捕获 · 离开会重置进度</div>
+        <div class="hh-actions">
+          <button id="hhGather" class="hh-action-btn gather" type="button" aria-label="采集捕获">✋</button>
+          <button id="hhAttack" class="hh-action-btn attack" type="button" aria-label="攻击">⚔️</button>
+        </div>
+      </div>
+      <div id="hhJoystick" class="hh-joystick"><div id="hhKnob" class="hh-knob" style="--kx:0px;--ky:0px"></div></div>
+      <div id="hhOverlay" class="hh-overlay">
+        <div class="hh-card">
+          <h1>宠物荒野生存</h1>
+          <p>像素荒野里，饥饿会不断下降。采集浆果、蘑菇和篝火木材；击败野生宠物后靠近按 ✋ 捕获，最多带 3 只一起自动战斗。</p>
+          <div class="hh-rule">
+            <span>🍖 食物越多分数越高</span><span>🐾 3 只伙伴可组队</span>
+            <span>⚔️ 宠物会自动攻击</span><span>🌙 夜晚怪物更凶</span>
+          </div>
+          <div class="hh-row">
+            <div class="hh-label">选择主人</div>
+            <button class="hh-pick" data-master="boy" type="button">像素男孩</button>
+            <button class="hh-pick" data-master="girl" type="button">像素女孩</button>
+          </div>
+          <div class="hh-row">
+            <div class="hh-label">选择难度</div>
+            <button class="hh-pick difficulty" data-difficulty="easy" type="button">轻松<small>食物多 · 敌人少</small></button>
+            <button class="hh-pick difficulty" data-difficulty="normal" type="button">普通<small>标准生存</small></button>
+            <button class="hh-pick difficulty" data-difficulty="hard" type="button">挑战<small>更饿 · 更危险</small></button>
+          </div>
+          <div class="hh-row">
+            <button id="hhStart" class="hh-start" type="button">进入荒野</button>
+            <button id="hhRestart" class="hh-start secondary" type="button" hidden>重新开始</button>
+          </div>
+        </div>
+      </div>
+      <div id="hhRosterOverlay" class="hh-roster-overlay" hidden>
+        <div class="hh-card roster">
+          <h2>选择上阵宠物</h2>
+          <p>第一排是 3 个上阵位。点击背包宠物先选中，再点上阵空位/目标宠物；相同种类和等级可合成。</p>
+          <div id="hhTeamSlots" class="hh-team-row"></div>
+          <div id="hhRosterGrid" class="hh-roster-grid"></div>
+          <div id="hhRosterHint" class="hh-roster-hint">0/3 上阵</div>
+          <div class="hh-row">
+            <button id="hhRosterDone" class="hh-start" type="button">继续冒险</button>
+          </div>
+        </div>
+      </div>
+    </div>
+  `;
+  document.body.appendChild(root);
+
+  const canvas = root.querySelector('#hhCanvas');
+  const ctx = canvas.getContext('2d');
+  ctx.imageSmoothingEnabled = false;
+  const shell = root.querySelector('#hhShell');
+  const overlay = root.querySelector('#hhOverlay');
+  const rosterOverlay = root.querySelector('#hhRosterOverlay');
+  const teamSlots = root.querySelector('#hhTeamSlots');
+  const rosterGrid = root.querySelector('#hhRosterGrid');
+  const rosterHint = root.querySelector('#hhRosterHint');
+  const joystick = root.querySelector('#hhJoystick');
+  const knob = root.querySelector('#hhKnob');
+  const ui = {
+    day: root.querySelector('#hhDay'), food: root.querySelector('#hhFood'), wood: root.querySelector('#hhWood'), pets: root.querySelector('#hhPets'),
+    score: root.querySelector('#hhScore'), best: root.querySelector('#hhBest'), hp: root.querySelector('#hhHp'), hunger: root.querySelector('#hhHunger'), stamina: root.querySelector('#hhStamina'),
+    message: root.querySelector('#hhMessage'), start: root.querySelector('#hhStart'), restart: root.querySelector('#hhRestart'),
+    work: root.querySelector('#hhWorkProgress'), workText: root.querySelector('#hhWorkText'), workBar: root.querySelector('#hhWorkBar')
+  };
+
+  function post(type, data = {}) { try { window.parent?.postMessage({ type, data }, '*'); } catch (err) {} }
+  function clamp(v, min, max) { return Math.max(min, Math.min(max, v)); }
+  function lerp(a, b, t) { return a + (b - a) * t; }
+  function rand(min, max) { return min + Math.random() * (max - min); }
+  function now() { return performance.now(); }
+  function dist(a, b) { return Math.hypot(a.x - b.x, a.y - b.y); }
+  function pick(arr) { return arr[Math.floor(Math.random() * arr.length)]; }
+  function shuffle(arr) {
+    const copy = arr.slice();
+    for (let i = copy.length - 1; i > 0; i--) {
+      const j = Math.floor(Math.random() * (i + 1));
+      [copy[i], copy[j]] = [copy[j], copy[i]];
+    }
+    return copy;
+  }
+
+  function resize() {
+    const dpr = Math.max(1, Math.min(2, window.devicePixelRatio || 1));
+    const w = Math.max(320, Math.floor(window.innerWidth));
+    const h = Math.max(360, Math.floor(window.innerHeight));
+    canvas.width = Math.floor(w * dpr);
+    canvas.height = Math.floor(h * dpr);
+    canvas.style.width = w + 'px';
+    canvas.style.height = h + 'px';
+    ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+    ctx.imageSmoothingEnabled = false;
+  }
+
+  function setMessage(text, ms = 2400) {
+    state.message = text;
+    state.messageUntil = now() + ms;
+    ui.message.textContent = text;
+    ui.message.hidden = false;
+  }
+
+  function showToast(text) {
+    const el = document.createElement('div');
+    el.className = 'hh-toast';
+    el.textContent = text;
+    document.body.appendChild(el);
+    setTimeout(() => el.remove(), 1300);
+  }
+
+  function makeConfetti() {
+    const colors = ['#22c55e', '#38bdf8', '#facc15', '#fb7185', '#a78bfa', '#fb923c'];
+    for (let i = 0; i < 54; i++) {
+      const el = document.createElement('div');
+      el.className = 'hh-confetti';
+      el.style.left = rand(0, 100) + 'vw';
+      el.style.setProperty('--x', rand(-90, 90) + 'px');
+      el.style.setProperty('--c', colors[i % colors.length]);
+      el.style.setProperty('--d', rand(1.15, 2.25) + 's');
+      document.body.appendChild(el);
+      setTimeout(() => el.remove(), 2400);
+    }
+  }
+
+  function updateMasterButtons() {
+    root.querySelectorAll('[data-master]').forEach(btn => btn.classList.toggle('active', btn.dataset.master === state.masterStyle));
+    root.querySelectorAll('[data-difficulty]').forEach(btn => btn.classList.toggle('active', btn.dataset.difficulty === state.difficulty));
+  }
+
+  function difficultyConfig() {
+    return DIFFICULTIES[state.difficulty] || DIFFICULTIES.normal;
+  }
+
+  function generateWorld() {
+    state.objects = [];
+    state.enemies = [];
+    state.team = [];
+    state.roster = [];
+    state.rosterOpen = false;
+    state.mergeSourceId = '';
+    state.autoWork = { kind: '', id: '', target: null, progress: 0, needed: 1 };
+    state.particles = [];
+    state.terrain = [];
+    state.groundDetails = [];
+    state.fireflies = [];
+    generateBiomes();
+    for (let i = 0; i < 720; i++) {
+      const biome = biomeAt(rand(0, WORLD_W), rand(0, WORLD_H));
+      const roll = Math.random();
+      state.groundDetails.push({ x: rand(0, WORLD_W), y: rand(0, WORLD_H), biome, t: biome === 'water' ? 'ripple' : biome === 'desert' ? (roll < .7 ? 'pebble' : 'dry') : biome === 'forest' ? (roll < .55 ? 'leaf' : 'blade') : roll < .62 ? 'blade' : roll < .82 ? 'pebble' : 'flower', c: rand(0, 6.28), s: rand(.7, 1.5) });
+    }
+    for (let i = 0; i < 58; i++) addObject('tree', rand(60, WORLD_W - 60), rand(60, WORLD_H - 60));
+    for (let i = 0; i < 58; i++) addObject(Math.random() < .66 ? 'berry' : 'mushroom', rand(60, WORLD_W - 60), rand(60, WORLD_H - 60));
+    const cfg = difficultyConfig();
+    for (let i = 0; i < cfg.enemyCount; i++) spawnEnemy(rand(90, WORLD_W - 90), rand(90, WORLD_H - 120), i < 5 ? 'boar' : undefined);
+    for (let i = 0; i < 22; i++) state.fireflies.push({ x: rand(0, WORLD_W), y: rand(0, WORLD_H), t: rand(0, 6.28), s: rand(.5, 1.2) });
+  }
+
+  function generateBiomes() {
+    const specs = [
+      ['water', 9, 44, 96], ['desert', 12, 38, 96], ['forest', 18, 42, 110], ['lawn', 18, 34, 88], ['wetland', 9, 38, 82], ['land', 24, 30, 72]
+    ];
+    for (const [type, count, minR, maxR] of specs) {
+      for (let i = 0; i < count; i++) state.terrain.push({ x: rand(60, WORLD_W - 60), y: rand(60, WORLD_H - 80), r: rand(minR, maxR), type, seed: rand(0, 6.28), sx: rand(.8, 1.35), sy: rand(.45, .82) });
+    }
+  }
+
+  function biomeAt(x, y) {
+    let best = 'land', bestScore = 999;
+    for (const t of state.terrain) {
+      const rx = t.r * (t.sx || 1), ry = t.r * (t.sy || .6);
+      const score = ((x - t.x) / rx) ** 2 + ((y - t.y) / ry) ** 2;
+      if (score < 1 && score < bestScore) { bestScore = score; best = t.type; }
+    }
+    return best;
+  }
+
+  function addObject(type, x, y) {
+    const size = type === 'tree' ? rand(42, 58) : rand(22, 30);
+    state.objects.push({ id: `obj_${Date.now()}_${state.objects.length}_${Math.floor(rand(1000, 9999))}`, type, x, y, w: size, h: size, hp: type === 'tree' ? 3 : 1, taken: false, grow: rand(0, 6.28) });
+  }
+
+  function spawnEnemy(x, y, type = pick(['wolf', 'boar', 'fox', 'mushpet'])) {
+    const cfg = difficultyConfig();
+    const hp = Math.round((type === 'boar' ? 72 : type === 'wolf' ? 58 : 46) * cfg.enemyHp);
+    const enemy = {
+      id: `enemy_${Date.now()}_${state.enemies.length}_${Math.floor(rand(1000, 9999))}`,
+      type, x, y, w: 32, h: 32, hp, maxHp: hp, state: 'wild', vx: 0, vy: 0, speed: rand(44, 78) * cfg.enemySpeed, attackCd: rand(.2, 1.2), captureUntil: 0, hurtUntil: 0, wander: rand(0, 6.28), name: petName(type)
+    };
+    assignEnemyArt(enemy);
+    state.enemies.push(enemy);
+  }
+
+  function petName(type) {
+    return { wolf: '夜狼', boar: '岩猪', fox: '火狐', mushpet: '菇菇兽' }[type] || '荒野宠物';
+  }
+
+  function resetGame() {
+    generateWorld();
+    rosterOverlay.hidden = true;
+    Object.assign(player, { x: WORLD_W / 2, y: WORLD_H - 340, dirX: 0, dirY: -1, facing: 'up', attackUntil: 0, attackStartedAt: 0, attackHitId: 0, hurtUntil: 0, animTime: 0 });
+    state.score = 0; state.hp = 100; state.hunger = 100; state.stamina = 100; state.food = difficultyConfig().initialFood; state.wood = 0; state.captured = 0; state.defeated = 0;
+    state.dayTime = 0; state.day = 1; state.finished = false; state.paused = false; state.finishPosted = false; state.gameStartAt = now(); state.roundId = `haqi_hungry_${Date.now()}`;
+    ui.restart.hidden = true;
+    setMessage(`${difficultyConfig().name}难度开始！先找浆果和蘑菇，夜晚前捕获伙伴。`, 3200);
+    updateHud();
+  }
+
+  function startGame() {
+    if (!state.started) post('gameStarted', { title: '宠物荒野生存' });
+    state.started = true;
+    overlay.hidden = true;
+    resetGame();
+    loadRandomPetImages();
+  }
+
+  async function loadPetCatalog() {
+    if (state.petCatalog.length) return state.petCatalog;
+    if (state.petCatalogLoading) return [];
+    state.petCatalogLoading = true;
+    try {
+      const res = await fetch(PET_INDEX_URL, { cache: 'force-cache' });
+      if (!res.ok) throw new Error(`HTTP ${res.status}`);
+      const list = await res.json();
+      state.petCatalog = Array.isArray(list) ? list.filter(p => p?.imageSheetUrl) : [];
+    } catch (err) {
+      state.petCatalog = [];
+      requestPetImages();
+    } finally {
+      state.petCatalogLoading = false;
+    }
+    return state.petCatalog;
+  }
+
+  async function makePixelPetBitmap(entry, index, stage = PET_SHEET_STAGES[index % PET_SHEET_STAGES.length], pixelated = true, anim = 'idle') {
+    const image = new Image();
+    image.crossOrigin = 'anonymous';
+    image.decoding = 'async';
+    const loaded = new Promise((resolve, reject) => { image.onload = resolve; image.onerror = reject; });
+    image.src = entry.imageSheetUrl;
+    await loaded;
+    try { await image.decode?.(); } catch (err) {}
+    const sw = Math.floor(image.naturalWidth / PET_SHEET_COLS);
+    const sh = Math.floor(image.naturalHeight / PET_SHEET_ROWS);
+    if (!sw || !sh) return null;
+    const stageName = PET_SHEET_STAGES.includes(stage) ? stage : PET_SHEET_STAGES[0];
+    const row = PET_SHEET_STAGES.indexOf(stageName);
+    const col = PET_ANIM_COLS[anim] == null ? PET_ANIM_COLS.idle : PET_ANIM_COLS[anim];
+    const pixelSize = pixelated ? 32 : 72;
+    const displaySize = pixelated ? 40 : 72;
+    const tiny = document.createElement('canvas');
+    tiny.width = pixelSize;
+    tiny.height = pixelSize;
+    const tctx = tiny.getContext('2d', { willReadFrequently: true });
+    tctx.imageSmoothingEnabled = false;
+    tctx.clearRect(0, 0, pixelSize, pixelSize);
+    tctx.drawImage(image, col * sw, row * sh, sw, sh, 0, 0, pixelSize, pixelSize);
+    if (pixelated) posterizeCanvas(tctx, pixelSize, pixelSize);
+    const off = document.createElement('canvas');
+    off.width = displaySize;
+    off.height = displaySize;
+    const octx = off.getContext('2d');
+    octx.imageSmoothingEnabled = false;
+    octx.clearRect(0, 0, displaySize, displaySize);
+    octx.drawImage(tiny, 0, 0, displaySize, displaySize);
+    const bitmap = await createImageBitmap(off);
+    return { bitmap, uv: { x: 0, y: 0, width: displaySize, height: displaySize }, name: entry.name, sourceId: entry.id, stage: stageName, anim, imageSheetUrl: entry.imageSheetUrl, element: entry.traits?.element || '' };
+  }
+
+  function posterizeCanvas(pctx, w, h) {
+    try {
+      const img = pctx.getImageData(0, 0, w, h);
+      const d = img.data;
+      for (let i = 0; i < d.length; i += 4) {
+        const a = d[i + 3];
+        if (a < 22) { d[i + 3] = 0; continue; }
+        d[i] = Math.round(d[i] / 32) * 32;
+        d[i + 1] = Math.round(d[i + 1] / 32) * 32;
+        d[i + 2] = Math.round(d[i + 2] / 32) * 32;
+        d[i + 3] = a < 150 ? Math.max(110, Math.round(a / 48) * 48) : 255;
+      }
+      pctx.putImageData(img, 0, 0);
+    } catch (err) {}
+  }
+
+  function assignEnemyArt(enemy) {
+    if (!enemy || !state.petBitmaps.length) return;
+    const artIndex = state.petArtCursor++ % state.petBitmaps.length;
+    enemy.artIndex = artIndex;
+    enemy.name = state.petBitmaps[artIndex]?.name || enemy.name;
+    enemy.sourceId = state.petBitmaps[artIndex]?.sourceId || '';
+    enemy.imageSheetUrl = state.petBitmaps[artIndex]?.imageSheetUrl || '';
+    enemy.element = state.petBitmaps[artIndex]?.element || '';
+  }
+
+  function refreshEnemyArt() {
+    if (!state.petBitmaps.length) return;
+    for (const e of state.enemies) {
+      if (e.state === 'gone' || e.state === 'captured') continue;
+      if (typeof e.artIndex === 'number') continue;
+      assignEnemyArt(e);
+    }
+  }
+
+  async function loadRandomPetImages() {
+    try {
+      const catalog = await loadPetCatalog();
+      if (!catalog.length) return;
+      for (const old of state.petBitmaps) old.bitmap?.close?.();
+      state.petBitmaps = [];
+      const picked = shuffle(catalog).slice(0, Math.max(PET_MAX_TEAM, 10));
+      const bitmaps = await Promise.all(picked.map((entry, index) => makePixelPetBitmap(entry, index, 'baby', true)));
+      state.petBitmaps = bitmaps.filter(Boolean);
+      state.petArtCursor = 0;
+      refreshEnemyArt();
+      if (state.petBitmaps.length) setMessage(`本局随机宠物：${state.petBitmaps.slice(0, 3).map(p => p.name).join('、')} 等`, 3600);
+    } catch (err) {
+      requestPetImages();
+    }
+  }
+
+  function updateHud() {
+    ui.day.textContent = `第${state.day}天`;
+    ui.food.textContent = state.food;
+    ui.wood.textContent = state.wood;
+    ui.pets.textContent = `${state.team.length}/${PET_MAX_TEAM}(${state.roster.length})`;
+    ui.score.textContent = Math.round(state.score);
+    ui.best.textContent = state.best;
+    ui.hp.style.setProperty('--pct', `${clamp(state.hp, 0, 100)}%`);
+    ui.hunger.style.setProperty('--pct', `${clamp(state.hunger, 0, 100)}%`);
+    ui.stamina.style.setProperty('--pct', `${clamp(state.stamina, 0, 100)}%`);
+  }
+
+  function getAxis() {
+    let ax = 0, ay = 0;
+    if (input.left) ax -= 1;
+    if (input.right) ax += 1;
+    if (input.up) ay -= 1;
+    if (input.down) ay += 1;
+    if (input.joyActive) { ax += input.joyX / 46; ay += input.joyY / 46; }
+    const len = Math.hypot(ax, ay);
+    return len > 1 ? { x: ax / len, y: ay / len } : { x: ax, y: ay };
+  }
+
+  function updatePlayer(dt) {
+    const axis = getAxis();
+    const moving = Math.hypot(axis.x, axis.y) > .08;
+    const sprinting = input.sprint && state.stamina > 8 && moving;
+    const speed = sprinting ? SPRINT_SPEED : PLAYER_SPEED;
+    if (moving) {
+      const facing = Math.abs(axis.x) > Math.abs(axis.y) ? (axis.x > 0 ? 'right' : 'left') : (axis.y > 0 ? 'down' : 'up');
+      setPlayerFacing(facing);
+      player.animTime += dt * (sprinting ? 11 : 7);
+    }
+    else player.animTime += dt * 3;
+    player.x = clamp(player.x + axis.x * speed * dt, 20, WORLD_W - 20);
+    player.y = clamp(player.y + axis.y * speed * dt, 30, WORLD_H - 28);
+    state.stamina = clamp(state.stamina + (sprinting ? -18 : 16) * dt, 0, 100);
+    autoAttack();
+  }
+
+  function isWaterAt(x, y) {
+    for (const t of state.terrain) {
+      if (t.type !== 'water') continue;
+      const rx = Math.max(WATER_TILE * 2, t.r * (t.sx || 1.08));
+      const ry = Math.max(WATER_TILE, t.r * (t.sy || .58));
+      const nx = (x - screenIndependentX(t.x)) / rx;
+      const ny = (y - screenIndependentY(t.y)) / ry;
+      if (nx * nx + ny * ny <= 1) return true;
+    }
+    return false;
+  }
+
+  function screenIndependentX(x) { return x; }
+  function screenIndependentY(y) { return y; }
+
+  function canPetEnterWater(pet) {
+    return pet?.element === '水系';
+  }
+
+  function moveEntity(entity, ax, ay, step, canEnterWater = true) {
+    const nx = clamp(entity.x + ax * step, 20, WORLD_W - 20);
+    const ny = clamp(entity.y + ay * step, 26, WORLD_H - 26);
+    if (!canEnterWater && isWaterAt(nx, ny)) {
+      const tryX = clamp(entity.x + ax * step, 20, WORLD_W - 20);
+      const tryY = entity.y;
+      if (!isWaterAt(tryX, tryY)) { entity.x = tryX; return; }
+      const altY = clamp(entity.y + ay * step, 26, WORLD_H - 26);
+      if (!isWaterAt(entity.x, altY)) entity.y = altY;
+      return;
+    }
+    entity.x = nx; entity.y = ny;
+  }
+
+  function autoAttack() {
+    if (!state.started || state.finished || now() < player.attackUntil || state.stamina < 4) return;
+    let hit = null;
+    let best = 9999;
+    for (const e of state.enemies) {
+      if (e.state !== 'wild') continue;
+      const d = Math.hypot(e.x - player.x, e.y - player.y);
+      if (d < AUTO_ATTACK_RANGE && d < best) { best = d; hit = e; }
+    }
+    if (!hit) return;
+    player.attackStartedAt = now();
+    player.attackUntil = player.attackStartedAt + 420;
+    player.attackHitId++;
+    state.stamina = Math.max(0, state.stamina - 4);
+    const dx = hit.x - player.x, dy = hit.y - player.y;
+    if (Math.abs(dx) > Math.abs(dy)) setPlayerFacing(dx > 0 ? 'right' : 'left');
+    else setPlayerFacing(dy > 0 ? 'down' : 'up');
+    const dir = getFacingVector();
+    const hitX = player.x + dir.x * (ATTACK_RANGE * .58);
+    const hitY = player.y + dir.y * (ATTACK_RANGE * .58);
+    spawnParticles(hitX, hitY, 8, '#f97316');
+    damageEnemy(hit, 24, true);
+    spawnParticles(hit.x, hit.y, 16, '#fb7185');
+  }
+
+  function setPlayerFacing(facing) {
+    player.facing = facing;
+    const v = facingVector(facing);
+    player.dirX = v.x;
+    player.dirY = v.y;
+  }
+
+  function facingVector(facing = player.facing) {
+    if (facing === 'left') return { x: -1, y: 0 };
+    if (facing === 'right') return { x: 1, y: 0 };
+    if (facing === 'down') return { x: 0, y: 1 };
+    return { x: 0, y: -1 };
+  }
+
+  function getFacingVector() {
+    const v = facingVector();
+    player.dirX = v.x;
+    player.dirY = v.y;
+    return v;
+  }
+
+  function updateAutoWork(dt) {
+    if (!state.started || state.finished) return resetAutoWork();
+    const candidate = findAutoWorkTarget();
+    if (!candidate) { resetAutoWork(); return; }
+    const work = state.autoWork;
+    if (work.kind !== candidate.kind || work.id !== candidate.id) {
+      state.autoWork = { ...candidate, progress: 0 };
+    } else {
+      work.progress += dt;
+      work.target = candidate.target;
+      work.needed = candidate.needed;
+      if (work.progress >= work.needed) completeAutoWork(work);
+    }
+  }
+
+  function findAutoWorkTarget() {
+    const capturable = nearestCapturable();
+    if (capturable) return { kind: 'capture', id: capturable.id || `${capturable.type}_${capturable.x}_${capturable.y}`, target: capturable, needed: CAPTURE_SECONDS };
+    let obj = null;
+    let best = 9999;
+    for (const o of state.objects) {
+      if (o.taken) continue;
+      const d = Math.hypot(o.x - player.x, o.y - player.y);
+      if (d < (o.type === 'tree' ? 58 : 48) && d < best) { best = d; obj = o; }
+    }
+    if (!obj) return null;
+    return { kind: 'gather', id: obj.id || `${obj.type}_${obj.x}_${obj.y}`, target: obj, needed: obj.type === 'tree' ? GATHER_SECONDS + .8 : GATHER_SECONDS };
+  }
+
+  function resetAutoWork() {
+    state.autoWork = { kind: '', id: '', target: null, progress: 0, needed: 1 };
+  }
+
+  function completeAutoWork(work) {
+    const target = work.target;
+    resetAutoWork();
+    if (!target) return;
+    if (work.kind === 'capture') { capturePet(target); return; }
+    gatherObject(target);
+  }
+
+  function gatherObject(obj) {
+    if (!obj || obj.taken) return;
+    obj.hp -= obj.type === 'tree' ? 3 : 2;
+    spawnParticles(obj.x, obj.y, 10, obj.type === 'tree' ? '#8b5a2b' : '#f87171');
+    if (obj.hp <= 0) {
+      obj.taken = true;
+      if (obj.type === 'tree') { state.wood += 2; state.score += 14; showToast('🪵 木材 +2'); }
+      else {
+        const amount = obj.type === 'berry' ? 2 : 1;
+        state.food += amount;
+        state.hunger = clamp(state.hunger + amount * 9, 0, 100);
+        state.score += amount * 18;
+        showToast(`🍖 食物 +${amount}`);
+      }
+      if (state.score > state.best) { state.best = Math.round(state.score); localStorage.setItem(STORAGE_BEST, String(state.best)); }
+    }
+    updateHud();
+    checkMission();
+  }
+
+  function nearestCapturable() {
+    let result = null;
+    let best = 9999;
+    for (const e of state.enemies) {
+      if (e.state !== 'down' || now() > e.captureUntil) continue;
+      const d = Math.hypot(e.x - player.x, e.y - player.y);
+      if (d < 64 && d < best) { best = d; result = e; }
+    }
+    return result;
+  }
+
+  function capturePet(e) {
+    e.state = 'captured';
+    state.captured++;
+    const rosterIndex = state.roster.length;
+    const artIndex = typeof e.artIndex === 'number' ? e.artIndex : (rosterIndex % Math.max(1, state.petBitmaps.length));
+    const art = state.petBitmaps[artIndex];
+    const petName = art?.name || e.name;
+    const sourceId = e.sourceId || art?.sourceId || `wild_${e.type}`;
+    const pet = {
+      id: `pet_${Date.now()}_${rosterIndex}_${Math.floor(rand(1000, 9999))}`,
+      sourceId, imageSheetUrl: e.imageSheetUrl || art?.imageSheetUrl || '', element: e.element || art?.element || '', stage: stageForLevel(1), level: 1,
+      type: e.type, x: e.x, y: e.y, w: 30, h: 30, hp: 72, maxHp: 72, attackCd: rand(.08, .34), index: rosterIndex, artIndex, name: petName,
+      active: state.team.length < PET_MAX_TEAM,
+      followBack: rand(34, 54) + rosterIndex * 8,
+      followSide: (rosterIndex - 1) * rand(26, 36) + rand(-8, 8),
+      followWave: rand(5, 13),
+      speed: rand(142, 184),
+      phase: rand(0, Math.PI * 2),
+      roam: rand(0, Math.PI * 2),
+      targetOffset: rand(0, Math.PI * 2),
+      targetRadius: rand(22, 34),
+    };
+    state.roster.push(pet);
+    syncTeamFromRoster();
+    state.score += 90 + Math.min(state.roster.length, PET_MAX_TEAM) * 25;
+    showToast(`🐾 捕获 ${petName}！`);
+    setMessage(`${petName} 捕获成功！可在宠物列表中选择最多 3 只上阵。`, 2400);
+    spawnParticles(e.x, e.y, 26, '#a78bfa');
+    updateHud();
+    openRosterOverlay();
+    checkMission();
+  }
+
+  function activeRosterPets() {
+    return state.roster.filter(p => p.active).slice(0, PET_MAX_TEAM);
+  }
+
+  function syncTeamFromRoster() {
+    state.team = activeRosterPets();
+    state.team.forEach((p, i) => { p.index = i; });
+  }
+
+  function drawSheetCellToCanvas(canvasEl, imageSheetUrl, stage, pixelated = false) {
+    if (!canvasEl || !imageSheetUrl) return false;
+    const rctx = canvasEl.getContext('2d');
+    rctx.imageSmoothingEnabled = !pixelated;
+    rctx.clearRect(0, 0, canvasEl.width, canvasEl.height);
+    const image = new Image();
+    image.crossOrigin = 'anonymous';
+    image.onload = () => {
+      const sw = Math.floor(image.naturalWidth / PET_SHEET_COLS);
+      const sh = Math.floor(image.naturalHeight / PET_SHEET_ROWS);
+      if (!sw || !sh) return;
+      const row = stageIndex(stage);
+      rctx.clearRect(0, 0, canvasEl.width, canvasEl.height);
+      rctx.imageSmoothingEnabled = !pixelated;
+      rctx.drawImage(image, 0, row * sh, sw, sh, 4, 4, canvasEl.width - 8, canvasEl.height - 8);
+    };
+    image.src = imageSheetUrl;
+    return true;
+  }
+
+  function drawRosterSprite(canvasEl, pet) {
+    const rctx = canvasEl.getContext('2d');
+    rctx.imageSmoothingEnabled = true;
+    rctx.clearRect(0, 0, canvasEl.width, canvasEl.height);
+    if (drawSheetCellToCanvas(canvasEl, pet.imageSheetUrl, pet.stage, false)) return;
+    const bmp = state.petBitmaps[(typeof pet.artIndex === 'number' ? pet.artIndex : pet.index) % Math.max(1, state.petBitmaps.length)] || null;
+    if (bmp?.bitmap && bmp?.uv) {
+      const u = bmp.uv;
+      rctx.drawImage(bmp.bitmap, u.x, u.y, u.width, u.height, 4, 4, canvasEl.width - 8, canvasEl.height - 8);
+      return;
+    }
+    rctx.fillStyle = '#a3e635'; rctx.fillRect(10, 16, 28, 22);
+    rctx.fillStyle = '#0f172a'; rctx.fillRect(18, 22, 4, 4); rctx.fillRect(30, 22, 4, 4);
+  }
+
+  function stageName(stage) { return PET_STAGE_NAMES[stage] || stage || '幼年'; }
+  function stageIndex(stage) { return Math.max(0, PET_SHEET_STAGES.indexOf(stage)); }
+  function stageForLevel(level) { return PET_SHEET_STAGES[Math.min(PET_SHEET_STAGES.length - 1, Math.floor((Math.max(1, Number(level) || 1) - 1) / 2))]; }
+  function normalizePetStage(pet) { if (pet) pet.stage = stageForLevel(pet.level || 1); return pet?.stage || 'baby'; }
+  function petPower(pet) { return (Number(pet.level) || 1) + stageIndex(normalizePetStage(pet)) * 3; }
+  function canMergePets(a, b) { return !!a && !!b && a !== b && a.sourceId === b.sourceId && a.stage === b.stage && (a.level || 1) === (b.level || 1); }
+  function activeCount() { return state.roster.filter(p => p.active).length; }
+
+  function makeRosterCard(pet, options = {}) {
+    const card = document.createElement('button');
+    card.type = 'button';
+    const source = state.mergeSourceId ? state.roster.find(p => p.id === state.mergeSourceId) : null;
+    const mergeSource = source === pet;
+    const mergeTarget = source && canMergePets(source, pet);
+    card.className = `hh-pet-card${pet.active ? ' active' : ''}${mergeSource ? ' merge-source' : ''}${mergeTarget ? ' merge-target' : ''}${options.slot ? ' slot' : ''}`;
+    card.draggable = false;
+    card.dataset.petId = pet.id;
+    normalizePetStage(pet);
+    card.innerHTML = `<canvas width="64" height="64"></canvas><span class="hh-pet-level">Lv.${pet.level || 1}</span><b></b><small></small>`;
+    drawRosterSprite(card.querySelector('canvas'), pet);
+    card.querySelector('b').textContent = pet.name || '宠物';
+    card.querySelector('small').textContent = `${stageName(pet.stage)} · ${pet.active ? '上阵' : '背包'}`;
+    card.addEventListener('click', () => handlePetClick(pet, options.slotIndex));
+    return card;
+  }
+
+  function handlePetClick(pet, slotIndex = null) {
+    const source = state.mergeSourceId ? state.roster.find(p => p.id === state.mergeSourceId) : null;
+    if (source && source !== pet) {
+      if (canMergePets(source, pet)) mergePets(source, pet);
+      else if (slotIndex !== null) { putPetInSlot(source, slotIndex); state.mergeSourceId = ''; }
+      else if (!pet.active && activeRosterPets().length < PET_MAX_TEAM) { putPetInSlot(source, activeRosterPets().length); state.mergeSourceId = ''; }
+      else { state.mergeSourceId = ''; setMessage('只有相同种类、相同等级的宠物才能合并。', 1400); }
+      renderRosterOverlay(); updateHud(); return;
+    }
+    if (slotIndex !== null) { setActivePet(pet, slotIndex); renderRosterOverlay(); updateHud(); return; }
+    state.mergeSourceId = source === pet ? '' : pet.id;
+    renderRosterOverlay();
+  }
+
+  function setActivePet(pet, slotIndex = null) {
+    if (!pet) return;
+    if (pet.active) { pet.active = false; syncTeamFromRoster(); return; }
+    if (slotIndex !== null) {
+      const current = activeRosterPets()[slotIndex];
+      if (current) current.active = false;
+      pet.active = true;
+    } else if (activeCount() < PET_MAX_TEAM) pet.active = true;
+    else { setMessage('上阵位已满：点击第一排位置或先取消一只。', 1500); return; }
+    syncTeamFromRoster();
+  }
+
+  function putPetInSlot(pet, slotIndex) {
+    if (!pet) return;
+    const activePets = activeRosterPets();
+    const current = activePets[slotIndex];
+    if (current && current !== pet) current.active = false;
+    pet.active = true;
+    syncTeamFromRoster();
+  }
+
+  function mergePets(source, target) {
+    target.level = Math.max(Number(target.level) || 1, Number(source.level) || 1) + 1;
+    target.stage = stageForLevel(target.level);
+    target.hp = target.maxHp = 72 + petPower(target) * 8;
+    target.speed = (target.speed || 160) + 6;
+    if (source.active && !target.active) target.active = true;
+    state.roster = state.roster.filter(p => p !== source);
+    showToast(`✨ ${target.name} 合成升级！`);
+    setMessage(`${target.name} 合并到 ${stageName(target.stage)} Lv.${target.level}。`, 2200);
+    state.score += 120 + petPower(target) * 24;
+    state.mergeSourceId = '';
+    syncTeamFromRoster();
+  }
+
+  function renderRosterOverlay() {
+    rosterGrid.innerHTML = '';
+    teamSlots.innerHTML = '';
+    const activePets = activeRosterPets();
+    rosterHint.textContent = `${activePets.length}/${PET_MAX_TEAM} 上阵 · 背包 ${state.roster.length} 只 · ${state.mergeSourceId ? '已选中：再点上阵位或合成目标' : '点击宠物选中；再点击目标上阵/合成'}`;
+    for (let i = 0; i < PET_MAX_TEAM; i++) {
+      const pet = activePets[i];
+      if (pet) teamSlots.appendChild(makeRosterCard(pet, { slot: true, slotIndex: i }));
+      else {
+        const empty = document.createElement('button');
+        empty.type = 'button'; empty.className = 'hh-pet-card slot';
+        empty.innerHTML = '<b>空位</b><small>选中后点此上阵</small>';
+        empty.addEventListener('click', () => { const pet = state.roster.find(p => p.id === state.mergeSourceId); putPetInSlot(pet, i); state.mergeSourceId = ''; renderRosterOverlay(); updateHud(); });
+        teamSlots.appendChild(empty);
+      }
+    }
+    for (const pet of state.roster.filter(p => !p.active)) rosterGrid.appendChild(makeRosterCard(pet));
+  }
+
+  function openRosterOverlay() {
+    state.rosterOpen = true;
+    state.paused = true;
+    renderRosterOverlay();
+    rosterOverlay.hidden = false;
+  }
+
+  function closeRosterOverlay() {
+    state.rosterOpen = false;
+    state.paused = false;
+    rosterOverlay.hidden = true;
+    syncTeamFromRoster();
+    updateHud();
+  }
+
+  function damageEnemy(e, amount, fromPlayer = false) {
+    if (e.state !== 'wild') return;
+    e.hp -= amount;
+    e.hurtUntil = now() + 180;
+    spawnParticles(e.x, e.y, 9, fromPlayer ? '#fb7185' : '#38bdf8');
+    if (e.hp <= 0) {
+      e.state = 'down';
+      e.captureUntil = now() + 9000;
+      e.hp = 0;
+      state.defeated++;
+      state.score += 55;
+      if (Math.random() < .72) addObject('berry', clamp(e.x + rand(-36, 36), 40, WORLD_W - 40), clamp(e.y + rand(-36, 36), 40, WORLD_H - 40));
+      showToast('宠物被打败，靠近按 ✋ 捕获！');
+      setMessage('打败野生宠物后会短暂虚弱，快靠近捕获。', 2300);
+    }
+  }
+
+  function damagePlayer(amount) {
+    if (now() < player.hurtUntil || state.finished) return;
+    player.hurtUntil = now() + 650;
+    state.hp = clamp(state.hp - amount * difficultyConfig().enemyDamage, 0, 100);
+    spawnParticles(player.x, player.y, 14, '#ef4444');
+    setMessage('受到攻击！让伙伴帮你战斗，注意回血和饥饿。', 1500);
+    if (state.hp <= 0) endGame(false);
+  }
+
+  function updateEnemies(dt) {
+    const night = isNight();
+    for (const e of state.enemies) {
+      if (e.state === 'captured') continue;
+      if (e.state === 'down') {
+        if (now() > e.captureUntil) { e.state = 'gone'; e.taken = true; }
+        continue;
+      }
+      if (e.state === 'gone') continue;
+      const nearPlayer = Math.hypot(e.x - player.x, e.y - player.y);
+      let target = nearPlayer < (night ? 230 : 150) ? player : null;
+      for (const p of state.team) {
+        const d = Math.hypot(e.x - p.x, e.y - p.y);
+        if (d < 170 && (!target || d < Math.hypot(e.x - target.x, e.y - target.y))) target = p;
+      }
+      let ax = 0, ay = 0;
+      if (target) {
+        const dx = target.x - e.x, dy = target.y - e.y, len = Math.hypot(dx, dy) || 1;
+        ax = dx / len; ay = dy / len;
+        if (len < 34) {
+          e.attackCd -= dt;
+          if (e.attackCd <= 0) {
+            e.attackCd = night ? .68 : .92;
+            if (target === player) damagePlayer(night ? 13 : 9);
+            else { target.hp -= night ? 10 : 7; spawnParticles(target.x, target.y, 8, '#fb7185'); }
+          }
+        }
+      } else {
+        e.wander += dt * rand(.5, 1.1);
+        ax = Math.cos(e.wander) * .55;
+        ay = Math.sin(e.wander * .8) * .55;
+      }
+      const sp = e.speed * (night ? 1.18 : 1);
+      e.x = clamp(e.x + ax * sp * dt, 22, WORLD_W - 22);
+      e.y = clamp(e.y + ay * sp * dt, 26, WORLD_H - 26);
+    }
+    state.enemies = state.enemies.filter(e => e.state !== 'gone');
+    if (state.enemies.filter(e => e.state === 'wild').length < difficultyConfig().enemyMin) spawnEnemy(rand(60, WORLD_W - 60), rand(60, WORLD_H - 180));
+  }
+
+  function updateTeam(dt) {
+    const teamCount = Math.max(1, state.team.length);
+    const t = now() / 1000;
+    const dir = Math.hypot(player.dirX, player.dirY) > .1 ? { x: player.dirX, y: player.dirY } : facingVector();
+    const side = { x: -dir.y, y: dir.x };
+    for (let i = 0; i < state.team.length; i++) {
+      const p = state.team[i];
+      if (p.hp <= 0) { p.hp = p.maxHp; p.x = player.x + rand(-30, 30); p.y = player.y + rand(-30, 30); }
+      p.roam += dt * (.82 + i * .17);
+      const wave = Math.sin(t * 2.1 + p.phase) * p.followWave;
+      const driftX = Math.cos(p.roam) * 9;
+      const driftY = Math.sin(p.roam * .83) * 7;
+      const follow = {
+        x: player.x - dir.x * (p.followBack + wave) + side.x * (p.followSide + Math.sin(t * 1.4 + p.phase) * 6) + driftX,
+        y: player.y - dir.y * (p.followBack + wave) + side.y * (p.followSide + Math.cos(t * 1.25 + p.phase) * 5) + driftY,
+      };
+      let target = null;
+      let best = 9999;
+      for (const e of state.enemies) {
+        if (e.state !== 'wild') continue;
+        const d = Math.hypot(e.x - p.x, e.y - p.y);
+        const playerNear = Math.hypot(e.x - player.x, e.y - player.y) < 190;
+        if ((d < 165 || playerNear) && d + i * 4 < best) { best = d + i * 4; target = e; }
+      }
+      const approachAngle = target ? p.targetOffset + i * (Math.PI * 2 / teamCount) + Math.sin(t + p.phase) * .25 : 0;
+      const dest = target ? { x: target.x + Math.cos(approachAngle) * p.targetRadius, y: target.y + Math.sin(approachAngle) * p.targetRadius } : follow;
+      const dx = dest.x - p.x, dy = dest.y - p.y, len = Math.hypot(dx, dy) || 1;
+      let ax = len > (target ? 10 : 12) ? dx / len : 0;
+      let ay = len > (target ? 10 : 12) ? dy / len : 0;
+      for (const other of state.team) {
+        if (other === p) continue;
+        const odx = p.x - other.x, ody = p.y - other.y, od = Math.hypot(odx, ody) || 1;
+        if (od < 30) { ax += odx / od * (1 - od / 30) * 1.7; ay += ody / od * (1 - od / 30) * 1.7; }
+      }
+      const fromPlayerX = p.x - player.x, fromPlayerY = p.y - player.y, playerDist = Math.hypot(fromPlayerX, fromPlayerY) || 1;
+      if (!target && playerDist < 24) { ax += fromPlayerX / playerDist * .9; ay += fromPlayerY / playerDist * .9; }
+      const alen = Math.hypot(ax, ay) || 1;
+      const speed = (target ? p.speed + 24 : p.speed + 42) * (len > 110 ? 1.32 : 1);
+      if (Math.hypot(ax, ay) > .05) {
+        const step = Math.min(speed * dt, len + (target ? 0 : 18));
+        moveEntity(p, ax / alen, ay / alen, step, canPetEnterWater(p));
+      }
+      if (target && Math.hypot(target.x - p.x, target.y - p.y) < 42) {
+        p.attackCd -= dt;
+        if (p.attackCd <= 0) { p.attackCd = Math.max(.42, .72 - petPower(p) * .025); damageEnemy(target, 16 + petPower(p) * 3, false); }
+      } else p.attackCd = Math.max(0, p.attackCd - dt);
+    }
+  }
+
+  function updateNeeds(dt) {
+    if (state.finished) return;
+    state.dayTime += dt;
+    const nextDay = Math.floor(state.dayTime / DAY_SECONDS) + 1;
+    if (nextDay !== state.day) {
+      state.day = nextDay;
+      if (state.food > 0) { state.food--; state.hunger = clamp(state.hunger + 28, 0, 100); showToast('🍖 早餐消耗食物 -1'); }
+      setMessage(`第 ${state.day} 天！夜晚更危险，继续储备食物和伙伴。`, 2800);
+    }
+    const hungryRate = (isNight() ? 2.8 : 1.75) * difficultyConfig().hunger;
+    state.hunger = clamp(state.hunger - hungryRate * dt, 0, 100);
+    if (state.hunger <= 0) state.hp = clamp(state.hp - 8 * dt, 0, 100);
+    else if (state.hunger > 55 && state.hp < 100) state.hp = clamp(state.hp + 2.4 * dt, 0, 100);
+    if (state.hp <= 0) endGame(false);
+    if (Math.random() < dt * .26 * (2 - difficultyConfig().spawn)) addObject(Math.random() < .75 ? 'berry' : 'mushroom', rand(50, WORLD_W - 50), rand(50, WORLD_H - 100));
+  }
+
+  function updateParticles(dt) {
+    for (const p of state.particles) { p.life -= dt; p.x += p.vx * dt; p.y += p.vy * dt; p.vy += 60 * dt; }
+    state.particles = state.particles.filter(p => p.life > 0);
+    for (const f of state.fireflies) { f.t += dt * f.s; f.x += Math.cos(f.t) * 7 * dt; f.y += Math.sin(f.t * .8) * 6 * dt; }
+  }
+
+  function updateCamera(dt) {
+    const vw = window.innerWidth, vh = window.innerHeight;
+    const targetX = clamp(player.x - vw * .5, 0, WORLD_W - vw);
+    const targetY = clamp(player.y - vh * .52, 0, WORLD_H - vh);
+    state.camera.x = lerp(state.camera.x, targetX, 1 - Math.pow(0.0002, dt));
+    state.camera.y = lerp(state.camera.y, targetY, 1 - Math.pow(0.0002, dt));
+  }
+
+  function checkMission() {
+    if (state.finished) return;
+    if (state.day >= TARGET_DAY || (state.roster.length >= PET_MAX_TEAM && state.food >= TARGET_FOOD)) endGame(true);
+  }
+
+  function endGame(won) {
+    if (state.finished) return;
+    state.finished = true;
+    const timeSec = Math.max(1, Math.round((now() - state.gameStartAt) / 1000));
+    const surviveBonus = won ? Math.max(0, 260 - timeSec) : 0;
+    state.score = (state.score + surviveBonus + state.food * 12 + state.roster.length * 28 + state.team.length * 45) * difficultyConfig().score;
+    state.best = Math.max(state.best, Math.round(state.score));
+    localStorage.setItem(STORAGE_BEST, String(state.best));
+    updateHud();
+    if (won) { makeConfetti(); showToast(`荒野生存成功！+${surviveBonus}`); setMessage('你和宠物小队建立了荒野营地！', 6000); }
+    else { showToast('荒野失败，再试一次！'); setMessage('生命或饥饿耗尽了，重新挑战吧。', 6000); }
+    ui.restart.hidden = false;
+    ui.restart.textContent = won ? '再玩一次' : '重新挑战';
+    overlay.hidden = false;
+    if (!state.finishPosted) {
+      state.finishPosted = true;
+      post('gameFinished', {
+        earnedPoints: Math.max(0, Math.round(state.score)), score: Math.round(state.score), food: state.food, captured: state.captured, defeated: state.defeated, teamSize: state.team.length, rosterSize: state.roster.length,
+        won, difficulty: state.difficulty, difficultyName: difficultyConfig().name, day: state.day, timeSec, roundId: state.roundId, bondBonus: won ? 30 : 12, moodBonus: won ? 10 : 4, finishedAt: Date.now()
+      });
+    }
+  }
+
+  function update(dt) {
+    if (!state.started) return;
+    if (state.paused) { updateCamera(dt); return; }
+    if (!state.finished) {
+      updatePlayer(dt); updateAutoWork(dt); updateTeam(dt); updateEnemies(dt); updateNeeds(dt); checkMission();
+      if (state.score > state.best) { state.best = Math.round(state.score); localStorage.setItem(STORAGE_BEST, String(state.best)); }
+    }
+    updateParticles(dt); updateCamera(dt); updateHud(); updateWorkProgressUi();
+    if (now() > state.messageUntil) ui.message.hidden = true;
+  }
+
+  function isNight() {
+    const phase = (state.dayTime % DAY_SECONDS) / DAY_SECONDS;
+    return phase > .62 || phase < .12;
+  }
+
+  function spawnParticles(x, y, n, color) {
+    for (let i = 0; i < n; i++) state.particles.push({ x, y, vx: rand(-80, 80), vy: rand(-110, -20), life: rand(.32, .72), max: .72, size: rand(2, 5), color });
+  }
+
+  function drawRect(x, y, w, h, color) { ctx.fillStyle = color; ctx.fillRect(Math.round(x), Math.round(y), Math.round(w), Math.round(h)); }
+  function drawBox(x, y, w, h, color) {
+    const left = w < 0 ? x + w : x;
+    const top = h < 0 ? y + h : y;
+    drawRect(left, top, Math.abs(w), Math.abs(h), color);
+  }
+  function screenX(x) { return Math.round(x - state.camera.x); }
+  function screenY(y) { return Math.round(y - state.camera.y); }
+
+  const sheetImageCache = new Map();
+  function getSheetImage(url) {
+    if (!url) return null;
+    const cached = sheetImageCache.get(url);
+    if (cached) return cached;
+    const entry = { image: new Image(), loaded: false, error: false };
+    entry.image.crossOrigin = 'anonymous';
+    entry.image.onload = () => { entry.loaded = true; };
+    entry.image.onerror = () => { entry.error = true; };
+    entry.image.src = url;
+    sheetImageCache.set(url, entry);
+    return entry;
+  }
+
+  function drawPetSheetCell(url, stage, anim, x, y, w, h) {
+    const entry = getSheetImage(url);
+    if (!entry?.loaded || entry.error) return false;
+    const sw = Math.floor(entry.image.naturalWidth / PET_SHEET_COLS);
+    const sh = Math.floor(entry.image.naturalHeight / PET_SHEET_ROWS);
+    if (!sw || !sh) return false;
+    const row = stageIndex(stage);
+    const col = PET_ANIM_COLS[anim] == null ? PET_ANIM_COLS.idle : PET_ANIM_COLS[anim];
+    ctx.drawImage(entry.image, col * sw, row * sh, sw, sh, x, y, w, h);
+    return true;
+  }
+
+  function draw() {
+    const vw = window.innerWidth, vh = window.innerHeight;
+    drawBackground(vw, vh);
+    drawTerrain();
+    drawGroundDetails();
+    drawObjects();
+    drawEnemies();
+    drawTeam();
+    drawPlayer();
+    drawParticles();
+    drawNightOverlay(vw, vh);
+    drawMiniMap(vw, vh);
+  }
+
+  function updateWorkProgressUi() {
+    const work = state.autoWork;
+    if (!work?.kind || !work.target || state.finished || state.paused) { ui.work.classList.remove('show'); return; }
+    const pct = clamp(work.progress / work.needed * 100, 0, 100);
+    ui.workText.textContent = work.kind === 'capture' ? '捕获中' : (work.target.type === 'tree' ? '砍伐中' : '采集中');
+    ui.workBar.style.setProperty('--pct', `${pct}%`);
+    ui.work.style.left = `${screenX(work.target.x)}px`;
+    ui.work.style.top = `${screenY(work.target.y - 34)}px`;
+    ui.work.classList.add('show');
+  }
+
+  function drawBackground(vw, vh) {
+    const night = isNight();
+    const g = ctx.createLinearGradient(0, 0, 0, vh);
+    g.addColorStop(0, night ? '#12312e' : '#93d46d');
+    g.addColorStop(.62, night ? '#173a31' : '#78c562');
+    g.addColorStop(1, night ? '#0e2725' : '#66ad58');
+    ctx.fillStyle = g;
+    ctx.fillRect(0, 0, vw, vh);
+    const grid = 24;
+    ctx.fillStyle = night ? 'rgba(255,255,255,.025)' : 'rgba(255,255,255,.045)';
+    const ox = -state.camera.x % grid, oy = -state.camera.y % grid;
+    for (let x = ox; x < vw; x += grid) ctx.fillRect(Math.round(x), 0, 1, vh);
+    for (let y = oy; y < vh; y += grid) ctx.fillRect(0, Math.round(y), vw, 1);
+    const fine = 12;
+    ctx.fillStyle = night ? 'rgba(0,0,0,.04)' : 'rgba(20,83,45,.045)';
+    const fox = -state.camera.x % fine, foy = -state.camera.y % fine;
+    for (let x = fox; x < vw; x += fine) for (let y = foy; y < vh; y += fine) if (((Math.floor((x + state.camera.x) / fine) + Math.floor((y + state.camera.y) / fine)) & 3) === 0) ctx.fillRect(Math.round(x), Math.round(y), 1, 1);
+  }
+
+  function drawTerrain() {
+    for (const t of state.terrain) {
+      const x = screenX(t.x), y = screenY(t.y);
+      if (x < -140 || y < -140 || x > window.innerWidth + 140 || y > window.innerHeight + 140) continue;
+      if (t.type === 'water') drawPond(x, y, t);
+      else if (t.type === 'desert') drawSandPatch(x, y, t);
+      else if (t.type === 'forest') drawForestPatch(x, y, t);
+      else if (t.type === 'lawn') drawLawnPatch(x, y, t);
+      else if (t.type === 'wetland') drawWetlandPatch(x, y, t);
+      else drawLandPatch(x, y, t);
+    }
+    ctx.globalAlpha = 1;
+  }
+
+  function drawBiomePatch(x, y, t, palette, alpha = .34) {
+    const rx = t.r * (t.sx || 1), ry = t.r * (t.sy || .6);
+    ctx.globalAlpha = alpha;
+    ctx.fillStyle = palette.base;
+    ctx.beginPath();
+    ctx.ellipse(x, y, rx, ry, Math.sin(t.seed) * .2, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.globalAlpha = alpha * .8;
+    ctx.fillStyle = palette.alt;
+    for (let i = 0; i < 6; i++) drawRect(x - rx * .72 + i * rx * .28, y + Math.sin(t.seed + i) * ry * .45, Math.max(5, rx * .12), 2, ctx.fillStyle);
+    ctx.globalAlpha = 1;
+  }
+
+  function drawLandPatch(x, y, t) {
+    drawBiomePatch(x, y, t, BIOMES.land, .2);
+  }
+
+  function drawLawnPatch(x, y, t) {
+    drawBiomePatch(x, y, t, BIOMES.lawn, .34);
+  }
+
+  function drawForestPatch(x, y, t) {
+    drawBiomePatch(x, y, t, BIOMES.forest, .42);
+    const rx = t.r * (t.sx || 1), ry = t.r * (t.sy || .6);
+    ctx.fillStyle = 'rgba(25,83,45,.22)';
+    for (let i = 0; i < 9; i++) drawRect(x + Math.cos(t.seed + i) * rx * .72, y + Math.sin(t.seed * 1.4 + i) * ry * .56, 5, 3, ctx.fillStyle);
+  }
+
+  function drawWetlandPatch(x, y, t) {
+    drawBiomePatch(x, y, t, BIOMES.wetland, .36);
+    const rx = t.r * (t.sx || 1), ry = t.r * (t.sy || .6);
+    ctx.fillStyle = 'rgba(61,174,194,.2)';
+    for (let i = 0; i < 7; i++) drawRect(x + Math.cos(t.seed + i) * rx * .68, y + Math.sin(t.seed + i) * ry * .5, 8, 2, ctx.fillStyle);
+  }
+
+  function drawGrassPatch(x, y, t) {
+    ctx.globalAlpha = .28;
+    ctx.fillStyle = COLORS.grass2;
+    ctx.beginPath();
+    ctx.ellipse(x, y, t.r, t.r * .52, Math.sin(t.seed) * .2, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.globalAlpha = .22;
+    ctx.fillStyle = '#a7df7a';
+    for (let i = 0; i < 5; i++) drawRect(x - t.r * .65 + i * t.r * .32, y + Math.sin(t.seed + i) * 5, Math.max(5, t.r * .18), 2, ctx.fillStyle);
+    ctx.globalAlpha = 1;
+  }
+
+  function drawSandPatch(x, y, t) {
+    drawBiomePatch(x, y, t, BIOMES.desert, .5);
+    const rx = t.r * (t.sx || 1), ry = t.r * (t.sy || .6);
+    ctx.fillStyle = 'rgba(146, 109, 52, .24)';
+    for (let i = 0; i < 10; i++) drawRect(x + Math.cos(t.seed + i) * rx * .7, y + Math.sin(t.seed * 1.3 + i) * ry * .55, 2, 1, ctx.fillStyle);
+    ctx.globalAlpha = 1;
+  }
+
+  function drawFlowerPatch(x, y, t) {
+    drawGrassPatch(x, y, t);
+    const colors = ['#f472b6', '#fde047', '#c084fc', '#fb7185'];
+    for (let i = 0; i < 7; i++) {
+      const px = x + Math.cos(t.seed + i * 1.7) * t.r * .55;
+      const py = y + Math.sin(t.seed + i * 1.2) * t.r * .28;
+      drawRect(px, py, 2, 2, colors[i % colors.length]);
+      drawRect(px + 1, py - 1, 1, 1, '#fff7ed');
+    }
+  }
+
+  function drawPond(x, y, t) {
+    ctx.globalAlpha = 1;
+    const rx = Math.max(WATER_TILE * 2, t.r * (t.sx || 1.08));
+    const ry = Math.max(WATER_TILE, t.r * (t.sy || .58));
+    const left = Math.floor((t.x - rx) / WATER_TILE) * WATER_TILE;
+    const right = Math.ceil((t.x + rx) / WATER_TILE) * WATER_TILE;
+    const top = Math.floor((t.y - ry) / WATER_TILE) * WATER_TILE;
+    const bottom = Math.ceil((t.y + ry) / WATER_TILE) * WATER_TILE;
+    for (let wy = top; wy <= bottom; wy += WATER_TILE) {
+      for (let wx = left; wx <= right; wx += WATER_TILE) {
+        const sx = screenX(wx), sy = screenY(wy);
+        if (sx < -WATER_TILE || sy < -WATER_TILE || sx > window.innerWidth + WATER_TILE || sy > window.innerHeight + WATER_TILE) continue;
+        const nx = (wx + WATER_TILE * .5 - t.x) / rx;
+        const ny = (wy + WATER_TILE * .5 - t.y) / ry;
+        if (nx * nx + ny * ny > 1) continue;
+        const edge = nx * nx + ny * ny;
+        const pattern = (Math.floor(wx / WATER_TILE) * 7 + Math.floor(wy / WATER_TILE) * 3 + Math.floor(t.seed * 10)) % 9;
+        ctx.fillStyle = edge > .78 ? '#5fc3cf' : pattern === 0 ? '#73d6df' : pattern === 1 ? '#2f9ab2' : BIOMES.water.base;
+        drawRect(sx, sy, WATER_TILE, WATER_TILE, ctx.fillStyle);
+        if (pattern === 0) drawRect(sx + 1, sy + 1, WATER_TILE - 3, 1, 'rgba(255,255,255,.38)');
+      }
+    }
+    ctx.fillStyle = 'rgba(21,94,117,.28)';
+    for (let wx = left; wx <= right; wx += WATER_TILE * 2) {
+      if (Math.abs((wx - t.x) / rx) < .9) drawRect(screenX(wx), screenY(t.y + Math.sin(t.seed + wx * .03) * ry * .25), WATER_TILE, 2, ctx.fillStyle);
+    }
+    ctx.globalAlpha = 1;
+  }
+
+  function drawGroundDetails() {
+    for (const d of state.groundDetails) {
+      const x = screenX(d.x), y = screenY(d.y);
+      if (x < -12 || y < -12 || x > window.innerWidth + 12 || y > window.innerHeight + 12) continue;
+      if (d.t === 'blade') {
+        drawRect(x, y, 1, 4 * d.s, '#3f8f46');
+        if (d.s > 1.1) drawRect(x + 2, y + 1, 1, 3, '#5aa957');
+      } else if (d.t === 'pebble') {
+        drawRect(x, y, 2, 1, 'rgba(62,80,64,.35)');
+      } else {
+        drawRect(x, y, 2, 2, Math.sin(d.c) > 0 ? '#fde047' : '#f9a8d4');
+      }
+    }
+  }
+
+  function drawObjects() {
+    const items = state.objects.filter(o => !o.taken).sort((a, b) => a.y - b.y);
+    for (const o of items) {
+      const x = screenX(o.x), y = screenY(o.y);
+      if (x < -80 || y < -100 || x > window.innerWidth + 80 || y > window.innerHeight + 80) continue;
+      if (o.type === 'tree') drawTree(x, y, o);
+      else if (o.type === 'berry') drawBerry(x, y, o);
+      else drawMushroom(x, y, o);
+    }
+  }
+
+  function drawTree(x, y, o) {
+    drawRect(x - 24, y + 16, 48, 6, 'rgba(15,23,42,.16)');
+    drawRect(x - 7, y - 9, 14, 27, COLORS.wood);
+    drawRect(x - 4, y - 8, 3, 24, '#a66f3a');
+    drawRect(x + 4, y - 5, 2, 19, '#6f4428');
+    drawRect(x - 23, y - 31, 46, 24, '#2f9e50');
+    drawRect(x - 18, y - 39, 36, 25, '#35b45a');
+    drawRect(x - 12, y - 48, 24, 18, '#56c86a');
+    drawRect(x - 28, y - 24, 18, 16, '#268c47');
+    drawRect(x + 10, y - 26, 19, 17, '#2a944b');
+    drawRect(x - 9, y - 43, 5, 3, 'rgba(255,255,255,.18)');
+    drawRect(x + 7, y - 35, 6, 3, 'rgba(255,255,255,.14)');
+  }
+
+  function drawBerry(x, y, o) {
+    const bob = 0;
+    drawRect(x - 9, y - 4 + bob, 18, 13, '#2f9e50');
+    drawRect(x - 6, y - 10 + bob, 4, 8, '#248542');
+    drawRect(x + 2, y - 9 + bob, 4, 8, '#248542');
+    drawRect(x - 12, y - 10 + bob, 7, 7, COLORS.berry);
+    drawRect(x + 4, y - 11 + bob, 7, 7, '#f43f5e');
+    drawRect(x - 4, y - 16 + bob, 7, 7, '#dc2626');
+    drawRect(x - 10, y - 9 + bob, 2, 2, '#fecdd3');
+    drawRect(x + 6, y - 10 + bob, 2, 2, '#ffe4e6');
+    drawRect(x - 12, y + 12, 24, 4, 'rgba(15,23,42,.16)');
+  }
+
+  function drawMushroom(x, y, o) {
+    const bob = 0;
+    drawRect(x - 6, y - 1 + bob, 12, 14, '#fde68a');
+    drawRect(x - 3, y + 2 + bob, 6, 11, '#f9d37a');
+    drawRect(x - 15, y - 12 + bob, 30, 13, '#f97316');
+    drawRect(x - 11, y - 17 + bob, 22, 8, '#fb923c');
+    drawRect(x - 8, y - 10 + bob, 5, 4, '#fff7ed');
+    drawRect(x + 5, y - 9 + bob, 4, 3, '#fff7ed');
+    drawRect(x - 1, y - 14 + bob, 3, 3, '#ffedd5');
+    drawRect(x - 12, y + 13, 24, 4, 'rgba(15,23,42,.16)');
+  }
+
+  function drawPlayer() {
+    const x = screenX(player.x), y = screenY(player.y);
+    const upperY = y - 1;
+    const hurt = now() < player.hurtUntil;
+    const step = Math.floor(player.animTime) % 2;
+    const shirt = state.masterStyle === 'girl' ? '#f472b6' : '#38bdf8';
+    const hair = state.masterStyle === 'girl' ? '#4a2c2a' : '#1f2937';
+    if (hurt && Math.floor(now() / 80) % 2 === 0) ctx.globalAlpha = .45;
+    drawRect(x - 12, y + 13, 24, 6, 'rgba(15,23,42,.2)');
+    const legA = 13 + step * 2;
+    const legB = 13 + (1 - step) * 2;
+    if (player.facing === 'up') {
+      drawRect(x - 8, upperY - 22, 16, 14, hair);
+      drawRect(x - 11, upperY - 19, 22, 11, hair);
+      drawRect(x - 6, upperY - 24, 12, 5, '#111827');
+      drawRect(x - 5, upperY - 14, 10, 5, hair);
+      drawRect(x - 10, upperY - 8, 20, 20, shirt);
+      drawRect(x - 8, upperY - 8, 16, 4, hair);
+      drawRect(x - 15, upperY - 4, 5, 17, '#fed7aa');
+      drawRect(x + 10, upperY - 4, 5, 17, '#fed7aa');
+      drawRect(x - 8, y + 11, 6, legA, '#334155');
+      drawRect(x + 2, y + 11, 6, legB, '#334155');
+    } else if (player.facing === 'down') {
+      drawRect(x - 8, upperY - 21, 16, 13, '#fed7aa');
+      drawRect(x - 9, upperY - 24, 18, 7, hair);
+      drawRect(x - 10, upperY - 8, 20, 20, shirt);
+      drawRect(x - 14, upperY - 5, 5, 18, '#fed7aa');
+      drawRect(x + 9, upperY - 5, 5, 18, '#fed7aa');
+      drawRect(x - 8, y + 11, 6, legA, '#334155');
+      drawRect(x + 2, y + 11, 6, legB, '#334155');
+      drawRect(x - 4, upperY - 15, 3, 3, '#0f172a');
+      drawRect(x + 5, upperY - 15, 3, 3, '#0f172a');
+      drawRect(x - 2, upperY - 10, 4, 2, '#9a3412');
+    } else {
+      const faceSide = player.facing === 'left' ? -1 : 1;
+      const backSide = -faceSide;
+      drawRect(x - 8, upperY - 21, 16, 13, '#fed7aa');
+      drawRect(x - 9, upperY - 24, 18, 8, hair);
+      drawBox(x + backSide * 7, upperY - 21, backSide * 5, 13, hair);
+      drawRect(x - 10, upperY - 8, 20, 20, shirt);
+      drawRect(x + faceSide * 6 - 1, upperY - 15, 3, 3, '#0f172a');
+      drawRect(x + faceSide * 6 - 1, upperY - 10, 4, 2, '#9a3412');
+      drawBox(x + backSide * 10, upperY - 4, backSide * 5, 17, '#fed7aa');
+      drawBox(x + faceSide * 9, upperY - 4, faceSide * 5, 17, '#fed7aa');
+      drawRect(x - 8, y + 11, 6, legA, '#334155');
+      drawRect(x + 2, y + 11, 6, legB, '#334155');
+    }
+    if (now() < player.attackUntil) drawAttackSwing(x, y);
+    ctx.globalAlpha = 1;
+  }
+
+  function drawAttackSwing(x, y) {
+    const dir = getFacingVector();
+    const progress = clamp((now() - player.attackStartedAt) / 300, 0, 1);
+    const reach = 22 + Math.sin(progress * Math.PI) * 22;
+    const sx = x + dir.x * reach;
+    const sy = y + dir.y * reach;
+    const blade = '#f8fafc';
+    const edge = '#f97316';
+    if (player.facing === 'left' || player.facing === 'right') {
+      const flip = player.facing === 'left' ? -1 : 1;
+      drawBox(x + flip * 8, y - 4, flip * 12, 5, '#fed7aa');
+      drawRect(sx - 3, sy - 17, 6, 34, blade);
+      drawRect(sx + flip * 3, sy - 20, 7, 40, edge);
+      drawRect(sx - 9, sy - 12, 18, 5, 'rgba(255,237,213,.78)');
+    } else {
+      const forward = player.facing === 'up' ? -1 : 1;
+      const handY = y + (player.facing === 'up' ? -10 : 2);
+      drawRect(x - 4, handY, 8, 9, '#fed7aa');
+      drawRect(sx - 18, sy - 3, 36, 6, blade);
+      drawRect(sx - 20, sy + forward * 3, 40, 7, edge);
+      drawRect(sx - 14, sy - 9, 28, 18, 'rgba(255,237,213,.54)');
+    }
+  }
+
+  function drawTeam() {
+    for (const p of state.team.slice().sort((a, b) => a.y - b.y)) drawPetLike(p, screenX(p.x), screenY(p.y), true, p.index);
+  }
+
+  function drawEnemies() {
+    for (const e of state.enemies.slice().sort((a, b) => a.y - b.y)) {
+      if (e.state === 'captured' || e.state === 'gone') continue;
+      const x = screenX(e.x), y = screenY(e.y);
+      if (x < -80 || y < -80 || x > window.innerWidth + 80 || y > window.innerHeight + 80) continue;
+      if (e.state === 'down') ctx.globalAlpha = .68 + Math.sin(now() / 130) * .18;
+      drawPetLike(e, x, y, false, 0);
+      ctx.globalAlpha = 1;
+      if (e.state === 'wild' && !state.petBitmaps.length) drawHpBar(x, y - 28, e.hp / e.maxHp, '#ef4444');
+      if (e.state === 'down') {
+        drawRect(x - 22, y - 39, 44, 15, '#fff7ed');
+        ctx.fillStyle = '#7c2d12'; ctx.font = '10px sans-serif'; ctx.textAlign = 'center'; ctx.fillText('捕获!', x, y - 28);
+      }
+    }
+  }
+
+  function drawPetLike(p, x, y, friendly, index) {
+    drawRect(x - 15, y + 13, 30, 6, 'rgba(15,23,42,.2)');
+    const bmp = state.petBitmaps[(typeof p.artIndex === 'number' ? p.artIndex : index) % Math.max(1, state.petBitmaps.length)] || null;
+    if (bmp && bmp.bitmap && bmp.uv) {
+      try {
+        const u = bmp.uv;
+        const useSheetSleep = !friendly && p.state === 'down' && (p.imageSheetUrl || bmp.imageSheetUrl);
+        const bob = Math.sin(now() / 180 + index + (p.artIndex || 0) * .37) * (friendly ? 1.5 : 1.1);
+        const hurt = !friendly && now() < (p.hurtUntil || 0);
+        if (hurt) ctx.globalAlpha *= .62;
+        ctx.imageSmoothingEnabled = false;
+        const size = 40 + Math.min(10, petPower(p) * 1.2);
+        if (useSheetSleep && drawPetSheetCell(p.imageSheetUrl || bmp.imageSheetUrl, p.stage || bmp.stage || 'baby', 'sleep', x - size / 2, y - 27 + bob - (size - 40) * .45, size, size)) {
+          // drawPetSheetCell is async-backed via cached image; fallback may draw below on first frame.
+        } else {
+          ctx.drawImage(bmp.bitmap, u.x, u.y, u.width, u.height, x - size / 2, y - 27 + bob - (size - 40) * .45, size, size);
+        }
+        ctx.imageSmoothingEnabled = false;
+        if (hurt) ctx.globalAlpha = 1;
+        drawHpBar(x, y - 33, p.hp / p.maxHp, friendly ? '#22c55e' : '#ef4444');
+        return;
+      } catch (err) {}
+    }
+    const body = p.type === 'wolf' ? '#64748b' : p.type === 'boar' ? '#a16207' : p.type === 'fox' ? '#f97316' : '#a3e635';
+    const accent = friendly ? '#38bdf8' : '#facc15';
+    const bob = Math.sin(now() / 180 + index) * 1.5;
+    drawRect(x - 14, y - 11 + bob, 28, 23, body);
+    drawRect(x - 10, y - 20 + bob, 20, 13, body);
+    drawRect(x - 14, y - 24 + bob, 7, 8, body);
+    drawRect(x + 7, y - 24 + bob, 7, 8, body);
+    drawRect(x - 6, y - 15 + bob, 3, 3, '#0f172a');
+    drawRect(x + 4, y - 15 + bob, 3, 3, '#0f172a');
+    drawRect(x - 3, y - 10 + bob, 6, 3, '#111827');
+    drawRect(x - 15, y + 10 + bob, 6, 8, accent);
+    drawRect(x + 9, y + 10 + bob, 6, 8, accent);
+    if (friendly) drawRect(x - 18, y - 28 + bob, 36, 4, '#22c55e');
+  }
+
+  function drawHpBar(x, y, pct, color) {
+    pct = clamp(pct || 0, 0, 1);
+    drawRect(x - 17, y, 34, 5, 'rgba(15,23,42,.45)');
+    drawRect(x - 16, y + 1, 32 * pct, 3, color);
+  }
+
+  function drawParticles() {
+    for (const p of state.particles) {
+      ctx.globalAlpha = clamp(p.life / p.max, 0, 1);
+      drawRect(screenX(p.x), screenY(p.y), p.size, p.size, p.color);
+    }
+    ctx.globalAlpha = 1;
+  }
+
+  function drawNightOverlay(vw, vh) {
+    const phase = (state.dayTime % DAY_SECONDS) / DAY_SECONDS;
+    const darkness = phase > .62 ? clamp((phase - .62) / .18, 0, 1) : phase < .12 ? clamp((.12 - phase) / .12, 0, 1) : 0;
+    if (darkness > 0) {
+      ctx.fillStyle = `rgba(4, 12, 28, ${darkness * .42})`;
+      ctx.fillRect(0, 0, vw, vh);
+      for (const f of state.fireflies) {
+        const x = screenX(f.x), y = screenY(f.y);
+        if (x < 0 || y < 0 || x > vw || y > vh) continue;
+        ctx.globalAlpha = darkness * (.45 + Math.sin(f.t * 2) * .25);
+        drawRect(x, y, 3, 3, '#fde68a');
+      }
+      ctx.globalAlpha = 1;
+    }
+    const phaseX = 12 + phase * (vw - 72);
+    const phaseY = window.innerWidth <= 640 ? 112 : 84;
+    drawRect(12, phaseY, vw - 24, 5, 'rgba(255,247,237,.36)');
+    drawRect(phaseX, phaseY - 4, 12, 12, isNight() ? '#fde68a' : '#f97316');
+  }
+
+  function drawMiniMap(vw, vh) {
+    const w = 66, h = 94, x = vw - w - 10, y = vh - h - 86;
+    drawRect(x, y, w, h, 'rgba(255,247,237,.72)');
+    drawRect(x + 3, y + 3, w - 6, h - 6, 'rgba(20,83,45,.58)');
+    drawRect(x + 3 + player.x / WORLD_W * (w - 6) - 2, y + 3 + player.y / WORLD_H * (h - 6) - 2, 4, 4, '#f97316');
+    for (const p of state.team) drawRect(x + 3 + p.x / WORLD_W * (w - 6) - 1, y + 3 + p.y / WORLD_H * (h - 6) - 1, 3, 3, '#38bdf8');
+  }
+
+  function loop(t) {
+    const dt = Math.min(0.033, Math.max(0, (t - state.lastTime) / 1000 || 0));
+    state.lastTime = t;
+    update(dt); draw();
+    state.rafId = requestAnimationFrame(loop);
+  }
+
+  async function setPetImages(data) {
+    const pets = data?.pets || [];
+    if (!pets.length) return;
+    try {
+      for (const old of state.petBitmaps) old.bitmap?.close?.();
+      state.petBitmaps = [];
+      for (const pet of pets.slice(0, PET_MAX_TEAM)) {
+        if (!pet?.imageBlob || !pet?.uv) continue;
+        const bitmap = await createImageBitmap(pet.imageBlob);
+        state.petBitmaps.push({ bitmap, uv: pet.uv, name: pet.name });
+      }
+    } catch (err) {}
+  }
+
+  function requestPetImages() {
+    const requestId = `haqi_hungry_pets_${Date.now()}`;
+    try { window.parent?.postMessage({ type: 'haqi_get_pet_images', requestId, anim: 'idle' }, '*'); } catch (err) {}
+  }
+
+  function onKey(e, down) {
+    const k = e.key.toLowerCase();
+    if (['arrowleft', 'a'].includes(k)) input.left = down;
+    if (['arrowright', 'd'].includes(k)) input.right = down;
+    if (['arrowup', 'w'].includes(k)) input.up = down;
+    if (['arrowdown', 's'].includes(k)) input.down = down;
+    if (k === 'shift') input.sprint = down;
+    if (k === 'j' || k === ' ' || k === 'spacebar') { input.attack = down; if (down) e.preventDefault(); }
+    if (k === 'e' || k === 'enter') { input.gather = down; if (down) e.preventDefault(); }
+    if (k === 'escape' && down) toggleOverlay();
+  }
+
+  function setJoystickVisible(visible, x = input.joyStartX, y = input.joyStartY) {
+    joystick.classList.toggle('show', visible);
+    joystick.style.setProperty('--x', `${x}px`);
+    joystick.style.setProperty('--y', `${y}px`);
+  }
+
+  function updateJoystick(clientX, clientY) {
+    input.joyX = clamp(clientX - input.joyStartX, -46, 46);
+    input.joyY = clamp(clientY - input.joyStartY, -46, 46);
+    knob.style.setProperty('--kx', `${input.joyX}px`);
+    knob.style.setProperty('--ky', `${input.joyY}px`);
+  }
+
+  function onPointerDown(e) {
+    if (!state.started || overlay.hidden === false) return;
+    if (e.pointerType !== 'touch') return;
+    if (input.joyId === null) {
+      input.joyId = e.pointerId; input.joyActive = true; input.joyStartX = e.clientX; input.joyStartY = e.clientY;
+      shell.setPointerCapture?.(e.pointerId); setJoystickVisible(true, e.clientX, e.clientY); updateJoystick(e.clientX, e.clientY); e.preventDefault();
+    }
+  }
+
+  function onPointerMove(e) { if (e.pointerId === input.joyId) { updateJoystick(e.clientX, e.clientY); e.preventDefault(); } }
+  function onPointerUp(e) {
+    if (e.pointerId === input.joyId) {
+      input.joyId = null; input.joyActive = false; input.joyX = 0; input.joyY = 0;
+      knob.style.setProperty('--kx', '0px'); knob.style.setProperty('--ky', '0px'); setJoystickVisible(false); e.preventDefault();
+    }
+  }
+
+  function toggleOverlay() {
+    overlay.hidden = !overlay.hidden;
+    ui.restart.hidden = !state.finished;
+  }
+
+  root.querySelector('#hhHelp').addEventListener('click', toggleOverlay);
+  ui.start.addEventListener('click', startGame);
+  ui.restart.addEventListener('click', () => { overlay.hidden = true; resetGame(); });
+  root.querySelector('#hhRosterDone').addEventListener('click', closeRosterOverlay);
+  root.querySelectorAll('[data-master]').forEach(btn => btn.addEventListener('click', () => { state.masterStyle = btn.dataset.master; localStorage.setItem(STORAGE_MASTER, state.masterStyle); updateMasterButtons(); }));
+  root.querySelectorAll('[data-difficulty]').forEach(btn => btn.addEventListener('click', () => { state.difficulty = DIFFICULTIES[btn.dataset.difficulty] ? btn.dataset.difficulty : 'normal'; localStorage.setItem(STORAGE_DIFFICULTY, state.difficulty); updateMasterButtons(); }));
+  root.querySelector('#hhAttack').addEventListener('pointerdown', e => { input.attack = true; autoAttack(); e.preventDefault(); });
+  root.querySelector('#hhAttack').addEventListener('pointerup', e => { input.attack = false; e.preventDefault(); });
+  root.querySelector('#hhAttack').addEventListener('pointercancel', () => { input.attack = false; });
+  root.querySelector('#hhGather').addEventListener('pointerdown', e => { input.actionPointers.add(e.pointerId); input.gather = true; e.preventDefault(); });
+  root.querySelector('#hhGather').addEventListener('pointerup', e => { input.actionPointers.delete(e.pointerId); input.gather = input.actionPointers.size > 0; e.preventDefault(); });
+  root.querySelector('#hhGather').addEventListener('pointercancel', e => { input.actionPointers.delete(e.pointerId); input.gather = input.actionPointers.size > 0; });
+  window.addEventListener('keydown', e => onKey(e, true));
+  window.addEventListener('keyup', e => onKey(e, false));
+  shell.addEventListener('pointerdown', onPointerDown, { passive: false });
+  shell.addEventListener('pointermove', onPointerMove, { passive: false });
+  shell.addEventListener('pointerup', onPointerUp, { passive: false });
+  shell.addEventListener('pointercancel', onPointerUp, { passive: false });
+  canvas.addEventListener('click', e => { if (!state.started || state.finished || overlay.hidden === false) return; });
+  window.addEventListener('resize', resize);
+  window.addEventListener('message', event => {
+    const msg = event.data || {};
+    if (msg.type === 'haqi_pet_images' && msg.ok) setPetImages(msg.data);
+    if (msg.type === 'haqi_pet_image' && msg.ok) setPetImages({ pets: [msg.data] });
+    if (msg.type === 'setGameConfig' && msg.data?.masterStyle) { state.masterStyle = msg.data.masterStyle === 'girl' ? 'girl' : 'boy'; localStorage.setItem(STORAGE_MASTER, state.masterStyle); updateMasterButtons(); }
+  });
+
+  updateMasterButtons(); resize(); generateWorld(); updateHud(); draw(); loadPetCatalog();
+  if (!state.loadedPosted) { state.loadedPosted = true; post('gameLoaded', { title: '宠物荒野生存' }); }
+  state.lastTime = performance.now(); state.rafId = requestAnimationFrame(loop);
+})();
+</script>
+
+</html>
