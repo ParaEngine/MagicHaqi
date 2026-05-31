@@ -47,7 +47,7 @@ import SoundManager from './soundManager.js';
 // Side-effect import: 订阅 state 并接管所有 [data-mh-pet] 占位符的渲染 + 动画
 import { canWakePet, daySleepRejectText, eatFood, isPetInteractionBlocked, isPetSleeping, petArtHtml, preloadPetAssets, say, scanAndMount, setAnim, shouldRejectDaySleep, sleepingInteractionText, startPetSleep, wakePet, wakePetForPlay } from './pet.js';
 
-const sdkCdnUrl = 'https://cdn.keepwork.com/sdk/keepworkSDK.iife.js?v=20260525a';
+const sdkCdnUrl = 'https://cdn.keepwork.com/sdk/keepworkSDK.iife.js?v=20260531a';
 
 function loadScript(src) {
     return new Promise((resolve, reject) => {
@@ -619,7 +619,7 @@ async function renderPetListRoute() {
             if (!id || state.pets[id] || state.currentView !== 'petList') return;
             try { await loadPet(id); }
             catch (e) { console.warn('加载宠物卡片失败', id, e); }
-            if (state.currentView === 'petList') renderPetListRoute();
+            return state.pets[id] || null;
         },
     });
 }
@@ -703,6 +703,12 @@ function cleanupLeavingView(nextView) {
     if (lastRenderedView === nextView) return;
     if (lastRenderedView === 'storyPlayer') storyPlayerViewModule?.disposeStoryPlayer?.();
     if (lastRenderedView === 'storyMaker') storyMakerViewModule?.disposeStoryMaker?.();
+    // Field scene background music only belongs to the home view. When we leave
+    // home for any other view (minigames, chat, shop, hatching, settings, ...),
+    // stop the music so it does not keep playing over a silent screen.
+    if (lastRenderedView === 'home' && nextView !== 'home') {
+        soundManager.stopBgMusic?.({ fadeMs: 360 });
+    }
     lastRenderedView = nextView;
 }
 

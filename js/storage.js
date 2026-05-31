@@ -426,6 +426,34 @@ function normalizeTerrainFieldsSettings(settings) {
     };
 }
 
+function normalizeTerrainFieldsData(data) {
+    const payload = { terrainFields: data };
+    normalizeTerrainFieldsSettings(payload);
+    return payload.terrainFields && typeof payload.terrainFields === 'object' && Array.isArray(payload.terrainFields.slots)
+        ? payload.terrainFields
+        : {};
+}
+
+function extractLayoutsTerrainFields(layouts) {
+    if (!layouts || typeof layouts !== 'object' || Array.isArray(layouts)) return {};
+    return normalizeTerrainFieldsData(layouts.terrainFields);
+}
+
+function applyLayoutsTerrainFields(layouts, terrainFields) {
+    if (!layouts || typeof layouts !== 'object' || Array.isArray(layouts)) return layouts;
+    const normalized = normalizeTerrainFieldsData(terrainFields);
+    if (Array.isArray(normalized.slots) && normalized.slots.length) layouts.terrainFields = normalized;
+    else delete layouts.terrainFields;
+    return layouts;
+}
+
+function setActiveSettingsTerrainFields(terrainFields) {
+    const settings = state.settings || (state.settings = {});
+    const normalized = normalizeTerrainFieldsData(terrainFields);
+    if (Array.isArray(normalized.slots) && normalized.slots.length) settings.terrainFields = normalized;
+    else delete settings.terrainFields;
+}
+
 function normalizeFieldScenesSettings(settings) {
     const fieldScenes = settings.fieldScenes;
     if (!fieldScenes || typeof fieldScenes !== 'object' || Array.isArray(fieldScenes)) return;
@@ -439,10 +467,38 @@ function normalizeFieldScenesSettings(settings) {
     settings.fieldScenes = normalized;
 }
 
+function normalizeFieldScenesData(data) {
+    const payload = { fieldScenes: data };
+    normalizeFieldScenesSettings(payload);
+    return payload.fieldScenes && typeof payload.fieldScenes === 'object' && !Array.isArray(payload.fieldScenes)
+        ? payload.fieldScenes
+        : {};
+}
+
+function extractLayoutsFieldScenes(layouts) {
+    if (!layouts || typeof layouts !== 'object' || Array.isArray(layouts)) return {};
+    return normalizeFieldScenesData(layouts.fieldScenes);
+}
+
+function applyLayoutsFieldScenes(layouts, fieldScenes) {
+    if (!layouts || typeof layouts !== 'object' || Array.isArray(layouts)) return layouts;
+    const normalized = normalizeFieldScenesData(fieldScenes);
+    if (Object.keys(normalized).length) layouts.fieldScenes = normalized;
+    else delete layouts.fieldScenes;
+    return layouts;
+}
+
+function setActiveSettingsFieldScenes(fieldScenes) {
+    const settings = state.settings || (state.settings = {});
+    const normalized = normalizeFieldScenesData(fieldScenes);
+    if (Object.keys(normalized).length) settings.fieldScenes = normalized;
+    else delete settings.fieldScenes;
+}
+
 function normalizeProfileFieldSettings(settings) {
     if (!settings || typeof settings !== 'object') return settings;
-    normalizeTerrainFieldsSettings(settings);
-    normalizeFieldScenesSettings(settings);
+    delete settings.terrainFields;
+    delete settings.fieldScenes;
     return settings;
 }
 
@@ -498,11 +554,14 @@ function normalizeLayoutsData(data) {
     if (!data || typeof data !== 'object' || Array.isArray(data)) return {};
     const layouts = {};
     Object.entries(data).forEach(([rawKey, items]) => {
+        if (rawKey === 'fieldScenes' || rawKey === 'terrainFields') return;
         const key = normalizeLayoutRoomKey(rawKey);
         if (!key || !Array.isArray(items)) return;
         if (!layouts[key]) layouts[key] = items;
         else if (!layouts[key].length) layouts[key] = items;
     });
+    applyLayoutsTerrainFields(layouts, data.terrainFields);
+    applyLayoutsFieldScenes(layouts, data.fieldScenes);
     return layouts;
 }
 
@@ -942,7 +1001,12 @@ export function ensurePetLayouts(_petId) {
         const path = currentLayoutsPath();
         const data = await readJSON(path, {});
         state.layouts = normalizeLayoutsData(data);
-        if (data && typeof data === 'object' && !Array.isArray(data) && Object.keys(data).some(key => key !== normalizeLayoutRoomKey(key))) {
+        setActiveSettingsTerrainFields(extractLayoutsTerrainFields(state.layouts));
+        setActiveSettingsFieldScenes(extractLayoutsFieldScenes(state.layouts));
+        const hasLegacyKeys = data && typeof data === 'object' && !Array.isArray(data) && Object.keys(data).some(key => key !== 'fieldScenes' && key !== 'terrainFields' && key !== normalizeLayoutRoomKey(key));
+        const hasNormalizedFields = JSON.stringify(extractLayoutsTerrainFields(data)) !== JSON.stringify(extractLayoutsTerrainFields(state.layouts));
+        const hasNormalizedScenes = JSON.stringify(extractLayoutsFieldScenes(data)) !== JSON.stringify(extractLayoutsFieldScenes(state.layouts));
+        if (hasLegacyKeys || hasNormalizedFields || hasNormalizedScenes) {
             saveJSONDebounced(path, state.layouts);
         }
         _layoutsLoaded = true;
@@ -1057,6 +1121,54 @@ export async function saveLayout(petId, roomId, items, options = {}) {
     if (options.persist !== false) saveJSONDebounced(currentLayoutsPath(), normalizeLayoutsData(state.layouts));
 }
 
+export async function saveFieldScenes(fieldScenes, options = {}) {
+    const currentPetId = state.currentPetId || state.petOrder?.[0] || '';
+    if (!_layoutsLoaded) await ensurePetLayouts(currentPetId);
+    if (!state.layouts) state.layouts = {};
+    setActiveSettingsFieldScenes(fieldScenes);
+    applyLayoutsFieldScenes(state.layouts, state.settings?.fieldScenes || {});
+    if (options.persist !== false) saveJSONDebounced(currentLayoutsPath(), normalizeLayoutsData(state.layouts));
+}
+
+export async function saveTerrainFields(terrainFields, options = {}) {
+    const currentPetId = state.currentPetId || state.petOrder?.[0] || '';
+    if (!_layoutsLoaded) await ensurePetLayouts(currentPetId);
+    if (!state.layouts) state.layouts = {};
+    setActiveSettingsTerrainFields(terrainFields);
+    applyLayoutsTerrainFields(state.layouts, state.settings?.terrainFields || {});
+    if (options.persist !== false) saveJSONDebounced(currentLayoutsPath(), normalizeLayoutsData(state.layouts));
+}
+
+export function saveTerrainFieldsDebounced(terrainFields) {
+    if (!state.layouts) state.layouts = {};
+    setActiveSettingsTerrainFields(terrainFields);
+    applyLayoutsTerrainFields(state.layouts, state.settings?.terrainFields || {});
+    if (!_layoutsLoaded) {
+        const currentPetId = state.currentPetId || state.petOrder?.[0] || '';
+        ensurePetLayouts(currentPetId).then(() => {
+            applyLayoutsTerrainFields(state.layouts || {}, state.settings?.terrainFields || {});
+            saveJSONDebounced(currentLayoutsPath(), normalizeLayoutsData(state.layouts || {}));
+        });
+        return;
+    }
+    saveJSONDebounced(currentLayoutsPath(), normalizeLayoutsData(state.layouts));
+}
+
+export function saveFieldScenesDebounced(fieldScenes) {
+    if (!state.layouts) state.layouts = {};
+    setActiveSettingsFieldScenes(fieldScenes);
+    applyLayoutsFieldScenes(state.layouts, state.settings?.fieldScenes || {});
+    if (!_layoutsLoaded) {
+        const currentPetId = state.currentPetId || state.petOrder?.[0] || '';
+        ensurePetLayouts(currentPetId).then(() => {
+            applyLayoutsFieldScenes(state.layouts || {}, state.settings?.fieldScenes || {});
+            saveJSONDebounced(currentLayoutsPath(), normalizeLayoutsData(state.layouts || {}));
+        });
+        return;
+    }
+    saveJSONDebounced(currentLayoutsPath(), normalizeLayoutsData(state.layouts));
+}
+
 export function getLayout(_petId, roomId) {
     return state.layouts?.[normalizeLayoutRoomKey(roomId)] || [];
 }
@@ -1089,6 +1201,8 @@ export function saveInventoryDebounced() {
 
 export async function saveDecorDataNow(petId) {
     await Promise.all([ensurePetLayouts(petId), ensurePetInventory(petId)]);
+    applyLayoutsTerrainFields(state.layouts || {}, state.settings?.terrainFields || {});
+    applyLayoutsFieldScenes(state.layouts || {}, state.settings?.fieldScenes || {});
     await Promise.all([
         saveJSONNow(currentLayoutsPath(), normalizeLayoutsData(state.layouts || {})),
         saveInventoryNowInternal(),

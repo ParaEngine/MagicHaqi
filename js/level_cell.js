@@ -36,33 +36,81 @@ const DIET_FLOAT_EMOJIS = {
 
 const DIET_TAP_MOVE_THRESHOLD = 8;
 
-const CELL_FACE_PALETTES = {
-    '雪白色': ['#fff7ed', '#f4f8ff', '#bed6ff', '#7aa7f7'],
-    '奶白色': ['#fff7d6', '#ffeec2', '#f7c873', '#d79531'],
-    '金黄色': ['#fff176', '#ffd447', '#f59e0b', '#b45309'],
-    '焦糖色': ['#ffd7a3', '#f6ad55', '#d97706', '#92400e'],
-    '巧克力色': ['#d9a066', '#9a5b33', '#6b341f', '#3f1f14'],
-    '粉色': ['#ffc2df', '#fb8fc7', '#ec4899', '#be185d'],
-    '薄荷绿': ['#b8ffe1', '#6ee7b7', '#22c55e', '#15803d'],
-    '天蓝色': ['#b9efff', '#67d9ff', '#0ea5e9', '#0369a1'],
-    '薰衣草紫': ['#d8c7ff', '#a78bfa', '#7c3aed', '#4c1d95'],
-    '玫瑰红': ['#ffc0ca', '#fb7185', '#e11d48', '#9f1239'],
-    '彩虹色': ['#fff176', '#fb8fc7', '#60a5fa', '#7c3aed'],
-    '渐变色': ['#b8ffe1', '#93c5fd', '#a78bfa', '#ec4899'],
-    '银灰色': ['#f8fafc', '#cbd5e1', '#64748b', '#334155'],
-    '黑色': ['#a3a3a3', '#52525b', '#27272a', '#09090b'],
-    '橘色': ['#ffd0a1', '#fb923c', '#f97316', '#c2410c'],
-    '杏色': ['#ffe4c7', '#fdba74', '#f59e0b', '#b45309'],
+// 真实大脑般的粉白基底（中心主色，几乎不被元素影响）
+const CELL_BRAIN_BASE = {
+    hi: '#fff1f4',   // 高光：近白带粉
+    mid: '#ffd9e4',  // 中段：粉白
+    low: '#ffb3c9',  // 偏外：暖粉
+    deep: '#f48aa6',  // 边缘基础：玫粉
+};
+
+// 元素属性 → 代表色（用于给"外缘/深处"上色，营造元素光晕）
+const CELL_ELEMENT_COLORS = {
+    '自然': '#34c759', // 自然 · 绿
+    '火': '#ff5a3c',   // 火 · 橙红
+    '冰': '#36c5ff',   // 冰 · 冰蓝
+    '生命': '#5be38b', // 生命 · 嫩绿
+    '暗': '#7c5cff',   // 暗 · 紫
+    '雷': '#ffd23b',   // 雷 · 雷黄
+};
+const CELL_ELEMENT_DEFAULT = '#f48aa6';
+
+// 元素属性 → 角标 emoji + 中文名（贴在脸右上角的小装饰）
+const CELL_ELEMENT_DECO = {
+    '自然': { emoji: '🌿', label: '自然' },
+    '火': { emoji: '🔥', label: '火' },
+    '冰': { emoji: '❄️', label: '冰' },
+    '生命': { emoji: '🌱', label: '生命' },
+    '暗': { emoji: '🌙', label: '暗' },
+    '雷': { emoji: '⚡', label: '雷' },
 };
 
 function dietKindLabel(kind) {
     return kind === 'meat' ? '肉类' : '蔬菜';
 }
 
+function cellElementDecoHtml(pet) {
+    const traits = decodeDna(pet?.dna || '');
+    const deco = CELL_ELEMENT_DECO[traits.elementalAttribute];
+    if (!deco) return '';
+    const color = CELL_ELEMENT_COLORS[traits.elementalAttribute] || CELL_ELEMENT_DEFAULT;
+    return `
+        <span class="cell-element-deco element-${escapeHtml(traits.elementalAttribute)}" role="button" tabindex="0"
+            style="--cell-element-color:${color}" aria-label="${escapeHtml(deco.label)}属性" title="${escapeHtml(deco.label)}属性">
+            <span class="cell-element-deco-glow" aria-hidden="true"></span>
+            <span class="cell-element-deco-emoji" aria-hidden="true">${deco.emoji}</span>
+        </span>
+    `;
+}
+
+// 将 #rrggbb 解析为 [r,g,b]
+function hexToRgb(hex) {
+    const m = String(hex).replace('#', '');
+    const v = m.length === 3 ? m.split('').map(c => c + c).join('') : m;
+    const n = parseInt(v, 16);
+    return [(n >> 16) & 255, (n >> 8) & 255, n & 255];
+}
+function rgbToHex([r, g, b]) {
+    const h = (x) => Math.max(0, Math.min(255, Math.round(x))).toString(16).padStart(2, '0');
+    return `#${h(r)}${h(g)}${h(b)}`;
+}
+// 按 t∈[0,1] 把 a 向 b 混合：t=0 全 a，t=1 全 b
+function mixHex(a, b, t) {
+    const ca = hexToRgb(a), cb = hexToRgb(b);
+    return rgbToHex(ca.map((v, i) => v + (cb[i] - v) * t));
+}
+
 function cellFaceStyle(pet) {
     const traits = decodeDna(pet?.dna || '');
-    const palette = CELL_FACE_PALETTES[traits.color] || CELL_FACE_PALETTES['薰衣草紫'];
-    return `--cell-face-hi:${palette[0]};--cell-face-mid:${palette[1]};--cell-face-low:${palette[2]};--cell-face-deep:${palette[3]}`;
+    const elementColor = CELL_ELEMENT_COLORS[traits.elementalAttribute] || CELL_ELEMENT_DEFAULT;
+
+    // 中心保持粉白（大脑感）：高光/中段几乎不染色；
+    // 越往外越染上元素色，深处 50% 由元素决定。
+    const hi = CELL_BRAIN_BASE.hi;                            // 0% 元素
+    const mid = mixHex(CELL_BRAIN_BASE.mid, elementColor, 0.10); // 一丝元素
+    const low = mixHex(CELL_BRAIN_BASE.low, elementColor, 0.35); // 渐染
+    const deep = mixHex(CELL_BRAIN_BASE.deep, elementColor, 0.50); // 边缘 50% 元素
+    return `--cell-face-hi:${hi};--cell-face-mid:${mid};--cell-face-low:${low};--cell-face-deep:${deep}`;
 }
 
 function shouldShowCellHungerCue(pet) {
@@ -85,6 +133,28 @@ function cellFaceExpression(pet) {
 
 function cellFaceStateClass(pet) {
     return `is-expression-${cellFaceExpression(pet)}`;
+}
+
+// 当前心情的中文文案（点击脸时弹 toast）
+const CELL_MOOD_TEXT = {
+    sleep: { emoji: '😴', text: '正在呼呼大睡，别吵醒它～' },
+    critical: { emoji: '🤢', text: '病得很重，快治疗一下吧！' },
+    sick: { emoji: '🤒', text: '有点不舒服，需要照顾。' },
+    sad: { emoji: '😢', text: '心情很低落，陪陪它吧。' },
+    worried: { emoji: '😟', text: '有些闷闷不乐，逗逗它吧。' },
+    happy: { emoji: '😊', text: '心情很好，活力满满！' },
+    egg: { emoji: '🥚', text: '还是一颗蛋，安静地孕育着。' },
+};
+
+function cellMoodToastText(pet) {
+    if (pet?.stage === 'egg') {
+        const m = CELL_MOOD_TEXT.egg;
+        return `${m.emoji} ${m.text}`;
+    }
+    const key = isPetSleeping(pet) ? 'sleep' : cellFaceExpression(pet);
+    const m = CELL_MOOD_TEXT[key] || CELL_MOOD_TEXT.happy;
+    const mood = Math.round(pet?.stats?.mood ?? 100);
+    return `${m.emoji} ${m.text}（心情 ${mood}/100）`;
 }
 
 function cellHungerCueHtml() {
@@ -133,26 +203,50 @@ function dietFloatHtml(pet) {
     `).join('');
 }
 
+// 通用：为元素绑定"轻点不影响拖拽"的点击（移动超过阈值视为拖拽，不触发）
+function bindTapToast(el, getText) {
+    if (!el) return;
+    let start = null;
+    el.addEventListener('pointerdown', (e) => {
+        start = { id: e.pointerId, x: e.clientX, y: e.clientY };
+    });
+    el.addEventListener('pointerup', (e) => {
+        if (!start || start.id !== e.pointerId) return;
+        const moved = Math.hypot(e.clientX - start.x, e.clientY - start.y);
+        start = null;
+        if (moved > DIET_TAP_MOVE_THRESHOLD) return;
+        const text = getText();
+        if (text) showToast(text, 'info', 1800);
+    });
+    el.addEventListener('pointercancel', () => { start = null; });
+    el.addEventListener('keydown', (e) => {
+        if (e.key !== 'Enter' && e.key !== ' ') return;
+        e.preventDefault();
+        const text = getText();
+        if (text) showToast(text, 'info', 1800);
+    });
+}
+
 function bindDietFloatIcons() {
     document.querySelectorAll('.cell-float-diet[data-diet-kind]').forEach(el => {
-        let start = null;
-        el.addEventListener('pointerdown', (e) => {
-            start = { id: e.pointerId, x: e.clientX, y: e.clientY };
-        });
-        el.addEventListener('pointerup', (e) => {
-            if (!start || start.id !== e.pointerId) return;
-            const moved = Math.hypot(e.clientX - start.x, e.clientY - start.y);
-            start = null;
-            if (moved > DIET_TAP_MOVE_THRESHOLD) return;
-            showToast(dietToastText(el.dataset.dietKind, el.dataset.dietPreference), 'info', 1800);
-        });
-        el.addEventListener('pointercancel', () => { start = null; });
-        el.addEventListener('keydown', (e) => {
-            if (e.key !== 'Enter' && e.key !== ' ') return;
-            e.preventDefault();
-            showToast(dietToastText(el.dataset.dietKind, el.dataset.dietPreference), 'info', 1800);
-        });
+        bindTapToast(el, () => dietToastText(el.dataset.dietKind, el.dataset.dietPreference));
     });
+}
+
+function elementDecoToastText(pet) {
+    const traits = decodeDna(pet?.dna || '');
+    const deco = CELL_ELEMENT_DECO[traits.elementalAttribute];
+    if (!deco) return '';
+    return `${deco.emoji} 元素属性：${deco.label}系`;
+}
+
+function bindElementDeco(pet) {
+    bindTapToast(document.querySelector('.cell-element-deco'), () => elementDecoToastText(pet));
+}
+
+function bindCellFaceTap(pet) {
+    // 绑定到身体形状本体（云朵脑），点击命中区贴合脸形，不影响周围拖拽
+    bindTapToast(document.querySelector('.cell-face-body'), () => cellMoodToastText(pet));
 }
 
 function traumaLayerHtml(pet) {
@@ -455,81 +549,130 @@ export const cellLevel = {
             ${sicknessLayerHtml(pet)}
 
             <div class="cell-face-wrap ${isPetSleeping(pet) ? 'is-sleeping' : `is-awake ${cellFaceStateClass(pet)}`} ${!isPetSleeping(pet) && shouldShowCellHungerCue(pet) ? 'is-hungry' : ''}" style="${cellFaceStyle(pet)}" aria-hidden="true">
-                <svg class="cell-face-svg" viewBox="0 0 180 180" role="img" aria-label="细胞精灵">
+                <svg class="cell-face-svg" viewBox="0 0 200 190" role="img" aria-label="细胞精灵">
                     <defs>
-                        <radialGradient id="cellFaceBody" cx="35%" cy="28%" r="74%">
+                        <radialGradient id="cellFaceBody" cx="46%" cy="40%" r="72%">
                             <stop offset="0" stop-color="var(--cell-face-hi)"/>
-                            <stop offset="0.55" stop-color="var(--cell-face-low)"/>
+                            <stop offset="0.45" stop-color="var(--cell-face-hi)"/>
+                            <stop offset="0.66" stop-color="var(--cell-face-mid)"/>
+                            <stop offset="0.86" stop-color="var(--cell-face-low)"/>
                             <stop offset="1" stop-color="var(--cell-face-deep)"/>
                         </radialGradient>
-                        <linearGradient id="cellWing" x1="0" y1="0" x2="1" y2="1">
-                            <stop offset="0" stop-color="#77e7a8"/>
-                            <stop offset="1" stop-color="#2fb976"/>
-                        </linearGradient>
+                        <radialGradient id="cellFaceSheen" cx="32%" cy="20%" r="55%">
+                            <stop offset="0" stop-color="rgba(255,255,255,0.92)"/>
+                            <stop offset="0.6" stop-color="rgba(255,255,255,0.18)"/>
+                            <stop offset="1" stop-color="rgba(255,255,255,0)"/>
+                        </radialGradient>
+                        <filter id="cellFaceSoft" x="-30%" y="-30%" width="160%" height="160%">
+                            <feGaussianBlur stdDeviation="1.1"/>
+                        </filter>
                     </defs>
-                    <path class="cell-face-feeler" d="M73 54 C55 38 38 34 26 43"/>
-                    <circle class="cell-face-tip" cx="26" cy="43" r="8"/>
-                    <path class="cell-face-feeler" d="M106 55 C126 34 145 31 158 43"/>
-                    <circle class="cell-face-tip" cx="158" cy="43" r="8"/>
-                    <ellipse class="cell-face-wing left" cx="54" cy="112" rx="15" ry="25"/>
-                    <ellipse class="cell-face-wing right" cx="126" cy="112" rx="15" ry="25"/>
-                    <circle class="cell-face-body" cx="90" cy="92" r="58"/>
-                    <circle class="cell-face-blush left" cx="54" cy="93" r="7"/>
-                    <circle class="cell-face-blush right" cx="126" cy="93" r="7"/>
+
+                    <!-- cloud / brain shaped body: rounded bumpy outline -->
+                    <path class="cell-face-body" d="M100 28
+                        C120 18 150 24 158 46
+                        C176 48 186 66 178 84
+                        C188 100 180 124 160 128
+                        C156 150 130 158 112 148
+                        C104 156 90 156 84 148
+                        C64 158 40 148 38 126
+                        C18 122 12 98 24 82
+                        C16 64 28 46 46 46
+                        C54 24 82 18 100 28 Z"/>
+
+                    <!-- brain-like wrinkle lines (subtle, cute) -->
+                    <g class="cell-face-folds" filter="url(#cellFaceSoft)">
+                        <path d="M100 40 C92 52 108 60 100 74"/>
+                        <path d="M64 60 C76 66 70 80 80 86"/>
+                        <path d="M136 60 C124 66 130 80 120 86"/>
+                        <path d="M58 104 C70 102 74 114 64 122"/>
+                        <path d="M142 104 C130 102 126 114 136 122"/>
+                    </g>
+
+                    <!-- glossy highlight -->
+                    <ellipse class="cell-face-sheen" cx="74" cy="58" rx="40" ry="30"/>
+
+                    <circle class="cell-face-blush left" cx="58" cy="106" r="11"/>
+                    <circle class="cell-face-blush right" cx="142" cy="106" r="11"/>
+
+                    <!-- HAPPY: big sparkly round eyes ^o^ -->
                     <g class="cell-face-expression cell-face-expression-happy">
-                        <path class="cell-face-eye left" d="M68 83 Q74 76 81 83"/>
-                        <path class="cell-face-eye right" d="M99 83 Q106 76 113 83"/>
-                        <path class="cell-face-mouth" d="M73 101 Q90 124 110 101"/>
+                        <ellipse class="cell-face-shine-eye left" cx="74" cy="94" rx="14" ry="17"/>
+                        <ellipse class="cell-face-shine-eye right" cx="126" cy="94" rx="14" ry="17"/>
+                        <ellipse class="cell-face-eye-glint left" cx="69" cy="87" rx="5" ry="6"/>
+                        <ellipse class="cell-face-eye-glint right" cx="121" cy="87" rx="5" ry="6"/>
+                        <circle class="cell-face-eye-glint-small left" cx="79" cy="99" r="2.6"/>
+                        <circle class="cell-face-eye-glint-small right" cx="131" cy="99" r="2.6"/>
+                        <path class="cell-face-mouth" d="M84 124 Q100 142 116 124"/>
+                        <path class="cell-face-tongue" d="M93 131 Q100 139 107 131 Q100 137 93 131 Z"/>
                     </g>
+
+                    <!-- WORRIED: big eyes with raised brows -->
                     <g class="cell-face-expression cell-face-expression-worried">
-                        <path class="cell-face-brow left" d="M65 76 Q74 72 82 78"/>
-                        <path class="cell-face-brow right" d="M98 78 Q106 72 116 76"/>
-                        <ellipse class="cell-face-open-eye left" cx="74" cy="86" rx="7.2" ry="8"/>
-                        <ellipse class="cell-face-open-eye right" cx="106" cy="86" rx="7.2" ry="8"/>
-                        <circle class="cell-face-iris left" cx="74" cy="87" r="4.2"/>
-                        <circle class="cell-face-iris right" cx="106" cy="87" r="4.2"/>
-                        <circle class="cell-face-pupil left" cx="74" cy="87" r="2"/>
-                        <circle class="cell-face-pupil right" cx="106" cy="87" r="2"/>
-                        <path class="cell-face-mouth cell-face-mouth-small" d="M78 105 Q90 101 102 105"/>
+                        <path class="cell-face-brow left" d="M60 74 Q74 67 89 75"/>
+                        <path class="cell-face-brow right" d="M111 75 Q126 67 140 74"/>
+                        <ellipse class="cell-face-open-eye left" cx="74" cy="96" rx="13" ry="15"/>
+                        <ellipse class="cell-face-open-eye right" cx="126" cy="96" rx="13" ry="15"/>
+                        <circle class="cell-face-iris left" cx="74" cy="99" r="8"/>
+                        <circle class="cell-face-iris right" cx="126" cy="99" r="8"/>
+                        <circle class="cell-face-pupil left" cx="74" cy="99" r="4"/>
+                        <circle class="cell-face-pupil right" cx="126" cy="99" r="4"/>
+                        <circle class="cell-face-eye-glint left" cx="70" cy="93" r="3"/>
+                        <circle class="cell-face-eye-glint right" cx="122" cy="93" r="3"/>
+                        <path class="cell-face-mouth cell-face-mouth-small" d="M88 128 Q100 122 112 128"/>
                     </g>
+
+                    <!-- SAD: big teary puppy eyes -->
                     <g class="cell-face-expression cell-face-expression-sad">
-                        <path class="cell-face-brow left" d="M63 77 Q73 73 82 79"/>
-                        <path class="cell-face-brow right" d="M98 79 Q107 73 117 77"/>
-                        <ellipse class="cell-face-open-eye left" cx="74" cy="88" rx="7" ry="6.4"/>
-                        <ellipse class="cell-face-open-eye right" cx="106" cy="88" rx="7" ry="6.4"/>
-                        <circle class="cell-face-iris left" cx="74" cy="90" r="3.7"/>
-                        <circle class="cell-face-iris right" cx="106" cy="90" r="3.7"/>
-                        <circle class="cell-face-pupil left" cx="74" cy="90" r="1.8"/>
-                        <circle class="cell-face-pupil right" cx="106" cy="90" r="1.8"/>
-                        <circle class="cell-face-eye-glint left" cx="72" cy="87" r="1.4"/>
-                        <circle class="cell-face-eye-glint right" cx="104" cy="87" r="1.4"/>
-                        <path class="cell-face-mouth cell-face-mouth-small" d="M78 113 Q90 104 102 113"/>
-                        <path class="cell-face-tear left" d="M57 94 C52 101 53 108 59 111 C65 108 65 101 57 94Z"/>
+                        <path class="cell-face-brow left" d="M58 80 Q74 73 90 82"/>
+                        <path class="cell-face-brow right" d="M110 82 Q126 73 142 80"/>
+                        <ellipse class="cell-face-open-eye left" cx="74" cy="100" rx="14" ry="15"/>
+                        <ellipse class="cell-face-open-eye right" cx="126" cy="100" rx="14" ry="15"/>
+                        <circle class="cell-face-iris left" cx="74" cy="104" r="9"/>
+                        <circle class="cell-face-iris right" cx="126" cy="104" r="9"/>
+                        <circle class="cell-face-pupil left" cx="74" cy="104" r="4.4"/>
+                        <circle class="cell-face-pupil right" cx="126" cy="104" r="4.4"/>
+                        <circle class="cell-face-eye-glint left" cx="69" cy="99" r="3.6"/>
+                        <circle class="cell-face-eye-glint right" cx="121" cy="99" r="3.6"/>
+                        <circle class="cell-face-eye-glint-small left" cx="79" cy="107" r="2"/>
+                        <circle class="cell-face-eye-glint-small right" cx="131" cy="107" r="2"/>
+                        <path class="cell-face-mouth cell-face-mouth-small" d="M88 134 Q100 125 112 134"/>
+                        <path class="cell-face-tear left" d="M60 110 C53 119 54 128 62 131 C70 128 69 119 60 110 Z"/>
+                        <path class="cell-face-tear right" d="M140 112 C133 121 134 130 142 133 C150 130 149 121 140 112 Z"/>
                     </g>
+
+                    <!-- SICK: cozy closed ^_^ smiley arcs (still cute) -->
                     <g class="cell-face-expression cell-face-expression-sick">
-                        <path class="cell-face-brow left" d="M63 78 Q73 75 83 81"/>
-                        <path class="cell-face-brow right" d="M97 81 Q107 75 117 78"/>
-                        <path class="cell-face-weary-eye left" d="M67 88 Q74 84 82 88"/>
-                        <path class="cell-face-weary-eye right" d="M98 88 Q106 84 114 88"/>
-                        <path class="cell-face-mouth cell-face-mouth-small" d="M78 108 C84 104 88 113 94 109 C99 105 103 107 106 111"/>
-                        <path class="cell-face-sweat" d="M124 75 C118 84 118 92 124 96 C132 92 131 84 124 75Z"/>
+                        <path class="cell-face-arc-eye left" d="M60 100 Q74 88 88 100"/>
+                        <path class="cell-face-arc-eye right" d="M112 100 Q126 88 140 100"/>
+                        <path class="cell-face-mouth cell-face-mouth-small" d="M86 124 C92 120 96 129 102 125 C108 121 112 123 116 128"/>
+                        <ellipse class="cell-face-sick-cheek left" cx="58" cy="112" rx="9" ry="6"/>
+                        <ellipse class="cell-face-sick-cheek right" cx="142" cy="112" rx="9" ry="6"/>
+                        <path class="cell-face-sweat" d="M142 86 C136 94 136 102 142 106 C150 102 149 94 142 86 Z"/>
                     </g>
+
+                    <!-- CRITICAL: big dizzy >_< eyes (cute, not scary) -->
                     <g class="cell-face-expression cell-face-expression-critical">
-                        <path class="cell-face-x-eye left" d="M67 79 L81 91 M81 79 L67 91"/>
-                        <path class="cell-face-x-eye right" d="M99 79 L113 91 M113 79 L99 91"/>
-                        <path class="cell-face-mouth cell-face-mouth-small" d="M78 112 Q90 101 102 112"/>
-                        <path class="cell-face-sweat" d="M122 76 C117 84 116 91 122 94 C129 91 128 84 122 76Z"/>
+                        <path class="cell-face-squint-eye left" d="M60 92 Q74 102 60 112 M88 92 Q74 102 88 112"/>
+                        <path class="cell-face-squint-eye right" d="M112 92 Q126 102 112 112 M140 92 Q126 102 140 112"/>
+                        <ellipse class="cell-face-mouth-o" cx="100" cy="132" rx="10" ry="9"/>
+                        <path class="cell-face-sweat" d="M140 88 C134 96 134 104 140 108 C148 104 147 96 140 88 Z"/>
                     </g>
+
+                    <!-- SLEEP: closed u_u arcs + Zzz -->
                     <g class="cell-face-expression cell-face-expression-sleep">
-                        <path class="cell-face-eye left" d="M66 84 Q74 89 82 84"/>
-                        <path class="cell-face-eye right" d="M98 84 Q106 89 114 84"/>
-                        <path class="cell-face-mouth cell-face-mouth-small" d="M82 106 Q90 112 98 106"/>
-                        <text class="cell-face-sleep-z z1" x="119" y="72">Z</text>
-                        <text class="cell-face-sleep-z z2" x="130" y="58">Z</text>
+                        <path class="cell-face-arc-eye left" d="M60 102 Q74 112 88 102"/>
+                        <path class="cell-face-arc-eye right" d="M112 102 Q126 112 140 102"/>
+                        <path class="cell-face-mouth cell-face-mouth-small" d="M90 126 Q100 132 110 126"/>
+                        <text class="cell-face-sleep-z z1" x="142" y="80">Z</text>
+                        <text class="cell-face-sleep-z z2" x="158" y="62">z</text>
                     </g>
-                    <circle class="cell-face-spark s1" cx="72" cy="112" r="4"/>
-                    <circle class="cell-face-spark s2" cx="108" cy="112" r="3"/>
+
+                    <circle class="cell-face-spark s1" cx="44" cy="38" r="3.4"/>
+                    <circle class="cell-face-spark s2" cx="160" cy="44" r="2.8"/>
+                    <circle class="cell-face-spark s3" cx="100" cy="22" r="2.4"/>
                 </svg>
+                ${cellElementDecoHtml(pet)}
                 ${cellHungerCueHtml()}
             </div>
 
@@ -540,6 +683,8 @@ export const cellLevel = {
     bindStage(pet, _ctx) {
         bindDietFloatIcons();
         bindSicknessIcons();
+        bindElementDeco(pet);
+        bindCellFaceTap(pet);
         bindCellFaceTick(pet);
         updateCellFaceHealthCue(pet);
     },
@@ -576,10 +721,14 @@ export const cellLevel = {
             el.onclick = () => {
                 if (isDockButtonDisabled(el)) { showDockDisabledToast(el); return; }
                 const k = el.dataset.act;
-                if (k === 'chat') { ctx.callbacks.onNav?.('chat'); return; }
-                if (k === 'storyMaker') { ctx.callbacks.onNav?.('storyMaker', { origin: 'home' }); return; }
-                if (k === 'wish') showWishModal(pet, ctx);
-                if (k === 'treatSickness') ctx.callbacks.onTreatSickness?.();
+                // Defer so this tap's trailing native click is swallowed by the
+                // still-mounted dock before any new window mounts.
+                setTimeout(() => {
+                    if (k === 'chat') { ctx.callbacks.onNav?.('chat'); return; }
+                    if (k === 'storyMaker') { ctx.callbacks.onNav?.('storyMaker', { origin: 'home' }); return; }
+                    if (k === 'wish') showWishModal(pet, ctx);
+                    if (k === 'treatSickness') ctx.callbacks.onTreatSickness?.();
+                }, 0);
             };
         });
     },

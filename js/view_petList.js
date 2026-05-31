@@ -727,6 +727,9 @@ function ensurePetListTabStyles() {
     const style = document.createElement('style');
     style.id = 'mh-pet-list-tab-styles';
     style.textContent = `
+        .mh-pet-card-title-row { display:flex; align-items:center; gap:6px; margin-bottom:4px; flex-wrap:wrap; }
+        .mh-pet-card-name { color:var(--text-primary); min-width:0; max-width:100%; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+        .mh-pet-card-location-row { display:flex; align-items:center; gap:6px; margin-bottom:5px; }
         .mh-pet-list-tabs { display:grid; grid-template-columns:repeat(2, minmax(0, 1fr)); gap:6px; margin-bottom:12px; }
         .mh-pet-list-tab { height:34px; border-radius:999px; border:1.5px solid var(--border-card); background:#effaff; color:var(--text-secondary); font-size:13px; font-weight:900; cursor:pointer; box-shadow:inset 0 1px 0 rgba(255,255,255,0.78); }
         .mh-pet-list-tab.active { background:linear-gradient(135deg, var(--accent-light), var(--accent-dark)); color:#fff; border-color:var(--accent); text-shadow:0 1px 0 rgba(15,23,42,0.45); }
@@ -849,10 +852,12 @@ function petCardHtml(pet, isCurrent, allowSelect = false, picker = null, canDele
                 ${lazy ? '<div style="width:100%;height:100%;display:flex;align-items:center;justify-content:center;color:var(--text-faint);font-size:12px">加载中</div>' : rawPetArtHtml(pet, displayPetName(pet))}
             </div>
             <div style="flex:1;min-width:0">
-                <div style="display:flex;align-items:center;gap:6px;margin-bottom:4px;flex-wrap:wrap">
-                    <span class="text-base font-bold" style="color:var(--text-primary)">${escapeHtml(name)}</span>
+                <div class="mh-pet-card-title-row">
+                    <span class="text-base font-bold mh-pet-card-name">${escapeHtml(name)}</span>
                     ${lazy ? '<span class="stage-badge">未加载</span>' : `<span class="stage-badge">${escapeHtml(getStageName(pet.stage, pet.stage || ''))}</span>`}
                     ${isCurrent ? '<span class="stage-badge" style="background:var(--accent);color:#fff">当前</span>' : ''}
+                </div>
+                <div class="mh-pet-card-location-row">
                     <span class="stage-badge" style="background:#ecfeff;color:${escapeHtml(location.tone)}">${escapeHtml(location.label)}</span>
                 </div>
                 <div style="font-size:11px;color:var(--text-secondary);margin-bottom:5px;display:flex;gap:8px;flex-wrap:wrap">
@@ -875,15 +880,23 @@ function petCardHtml(pet, isCurrent, allowSelect = false, picker = null, canDele
         </div>`;
 }
 
-function setupLazyPetCards(panel, onLoadPet) {
+function setupLazyPetCards(panel, onLoadPet, { renderLoadedCard, onCardReady } = {}) {
     if (typeof onLoadPet !== 'function') return;
     const targets = $$('[data-pet-lazy="1"]', panel);
     if (!targets.length) return;
-    const load = (el) => {
+    const load = async (el) => {
         const id = el?.dataset?.petId;
         if (!id || el.dataset.petLazyLoading === '1') return;
         el.dataset.petLazyLoading = '1';
-        onLoadPet(id);
+        const loadedPet = await onLoadPet(id, el);
+        if (!loadedPet || !el.isConnected || typeof renderLoadedCard !== 'function') return;
+        const holder = document.createElement('div');
+        holder.innerHTML = renderLoadedCard(loadedPet);
+        const next = holder.firstElementChild;
+        if (!next) return;
+        el.replaceWith(next);
+        setupLazyRawPetImages(next);
+        onCardReady?.(next, loadedPet);
     };
     if (typeof IntersectionObserver !== 'undefined') {
         const observer = new IntersectionObserver((entries, obs) => {
@@ -1013,7 +1026,7 @@ export function renderPetList(panel, { pets }, { onSelect, onBack, onFind, onDel
         const count = panel.querySelector('[data-picker-count]');
         if (count) count.textContent = `已选择 ${pickedIds.size} 只`;
     };
-    $$('#mhPetList [data-pet-id]').forEach(el => {
+    const bindPetCardEvents = (el) => {
         el.onclick = (e) => {
             if (e.target.closest('[data-find]')) return;
             if (e.target.closest('[data-album]')) return;
@@ -1034,27 +1047,37 @@ export function renderPetList(panel, { pets }, { onSelect, onBack, onFind, onDel
             }
             onSelect?.(id);
         };
-    });
-    if ($('mhPetPickerConfirm')) $('mhPetPickerConfirm').onclick = () => onConfirm?.([...pickedIds]);
-    $$('#mhPetList [data-find]').forEach(el => {
-        el.onclick = (e) => {
+        const findButton = el.querySelector('[data-find]');
+        if (findButton) findButton.onclick = (e) => {
             e.stopPropagation();
-            onFind?.(el.dataset.find);
+            onFind?.(findButton.dataset.find);
         };
-    });
-    $$('#mhPetList [data-album]').forEach(el => {
-        el.onclick = (e) => {
+        const albumButton = el.querySelector('[data-album]');
+        if (albumButton) albumButton.onclick = (e) => {
             e.stopPropagation();
-            const pet = petById.get(el.dataset.album);
+            const pet = petById.get(albumButton.dataset.album);
             if (pet) openMemoryAlbum(pet);
         };
-    });
-    $$('#mhPetList [data-delete-pet]').forEach(el => {
-        el.onclick = (e) => {
+        const deleteButton = el.querySelector('[data-delete-pet]');
+        if (deleteButton) deleteButton.onclick = (e) => {
             e.stopPropagation();
-            onDelete?.(el.dataset.deletePet);
+            onDelete?.(deleteButton.dataset.deletePet);
         };
-    });
+    };
+    $$('#mhPetList [data-pet-id]').forEach(bindPetCardEvents);
+    if ($('mhPetPickerConfirm')) $('mhPetPickerConfirm').onclick = () => onConfirm?.([...pickedIds]);
     setupLazyRawPetImages(panel);
-    setupLazyPetCards(panel, onLoadPet);
+    setupLazyPetCards(panel, onLoadPet, {
+        renderLoadedCard: (loadedPet) => petCardHtml(
+            loadedPet,
+            loadedPet?.id === currentId,
+            allowSelect,
+            picker,
+            typeof onDelete === 'function' && !isPicker && loadedPet?.id !== currentId,
+        ),
+        onCardReady: (el, loadedPet) => {
+            if (loadedPet?.id) petById.set(loadedPet.id, loadedPet);
+            bindPetCardEvents(el);
+        },
+    });
 }

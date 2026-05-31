@@ -1554,6 +1554,15 @@
     display: flex;
     flex-direction: column;
     overflow: hidden;
+    /* The .modal-mask applies zoom: var(--mh-app-scale); vh/dvh units resolve
+       in the un-zoomed layout space, so divide by the scale to keep the card
+       inside the visible (zoomed) viewport and avoid top/bottom clipping. */
+    max-height: calc((100vh - 16px) / var(--mh-app-scale, 1));
+    max-height: calc((100dvh - 16px) / var(--mh-app-scale, 1));
+}
+.modal-card.planet-milestone-card {
+    max-height: calc((100vh - 16px) / var(--mh-app-scale, 1));
+    max-height: calc((100dvh - 16px) / var(--mh-app-scale, 1));
 }
 .planet-modal-title {
     color: var(--text-primary);
@@ -1954,11 +1963,14 @@
 }
 .planet-modal-actions { display: flex; justify-content: flex-end; gap: 8px; margin-top: 12px; flex: 0 0 auto; }
 .planet-action-dialog-head {
+    position: relative;
     display: grid;
-    grid-template-columns: 42px 1fr;
+    grid-template-columns: 42px 1fr auto;
     gap: 10px;
     align-items: start;
+    padding-right: 42px;
 }
+.planet-action-close { position: absolute; top: -2px; right: 0; }
 .planet-action-dialog-icon {
     width: 42px;
     height: 42px;
@@ -2019,20 +2031,23 @@
     white-space: nowrap;
 }
 .planet-visit-destinations {
-    display: flex;
+    display: grid;
+    grid-template-columns: repeat(3, minmax(0, 1fr));
     gap: 8px;
     margin-top: 10px;
     padding: 4px 2px 7px;
-    overflow-x: auto;
-    overflow-y: hidden;
-    scrollbar-width: none;
+    max-height: min(300px, 44vh);
+    overflow-x: hidden;
+    overflow-y: auto;
+    scrollbar-width: thin;
     -ms-overflow-style: none;
     -webkit-overflow-scrolling: touch;
-    touch-action: pan-x;
+    touch-action: pan-y;
 }
-.planet-visit-destinations::-webkit-scrollbar { display: none; }
+.planet-visit-destinations::-webkit-scrollbar { width: 6px; }
+.planet-visit-destinations::-webkit-scrollbar-thumb { border-radius: 999px; background: rgba(14, 116, 144, 0.24); }
 .planet-visit-destination {
-    flex: 0 0 96px;
+    min-width: 0;
     min-height: 82px;
     border-radius: 14px;
     border: 1.5px solid var(--border-card);
@@ -2057,13 +2072,6 @@
         linear-gradient(180deg, rgba(255,255,255,0.78), rgba(255,255,255,0.05) 48%),
         linear-gradient(180deg, #fff7ed, #dff7ff);
     border-color: #fbbf24;
-}
-.planet-visit-destination.is-selected {
-    border-color: var(--accent-dark);
-    background:
-        linear-gradient(180deg, rgba(255,255,255,0.78), rgba(255,255,255,0.08) 48%),
-        linear-gradient(180deg, #e0f7ff, #bfdbfe);
-    box-shadow: 0 4px 0 rgba(29,78,216,0.24), 0 0 0 2px rgba(103,232,249,0.28), inset 0 1px 0 rgba(255,255,255,0.86);
 }
 .planet-visit-destination.is-disabled { opacity: 0.52; cursor: not-allowed; filter: grayscale(0.28); }
 .planet-visit-destination-icon {
@@ -2102,6 +2110,38 @@
 }
 .planet-visit-destination-text b { font-size: 12px; font-weight: 900; }
 .planet-visit-destination-text i { margin-top: 2px; color: var(--text-muted); font-size: 10px; font-style: normal; font-weight: 800; }
+.planet-official-visit-modal { max-width: 460px; }
+.planet-official-visit-card {
+    display: grid;
+    grid-template-columns: 72px minmax(0, 1fr);
+    gap: 12px;
+    align-items: center;
+    margin-top: 12px;
+    padding: 12px;
+    border-radius: 16px;
+    border: 1.5px solid rgba(14, 116, 144, 0.2);
+    background: rgba(255,255,255,0.86);
+    box-shadow: 0 8px 18px rgba(15,23,42,0.08);
+}
+.planet-official-preview {
+    width: 64px;
+    height: 64px;
+    border-radius: 50%;
+    display: grid;
+    place-items: center;
+    color: #fff;
+    font-size: 22px;
+    font-weight: 900;
+    text-shadow: 0 1px 5px rgba(15,23,42,0.45);
+    overflow: hidden;
+}
+.planet-official-info { min-width: 0; display: flex; flex-direction: column; gap: 6px; }
+.planet-official-title { display: flex; align-items: center; gap: 8px; min-width: 0; }
+.planet-official-title b { color: var(--text-primary); font-size: 15px; line-height: 1.2; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.planet-official-title em { flex: 0 0 auto; max-width: 110px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; padding: 3px 7px; border-radius: 999px; background: rgba(14,165,233,0.12); color: #0369a1; font-style: normal; font-size: 11px; font-weight: 900; }
+.planet-official-info p { margin: 0; color: var(--text-muted); font-size: 12px; line-height: 1.38; }
+.planet-official-fields { display: flex; flex-wrap: wrap; gap: 5px; }
+.planet-official-field-chip { display: inline-flex; align-items: center; max-width: 96px; min-height: 22px; padding: 3px 7px; border-radius: 999px; background: rgba(15,23,42,0.06); color: #334155; font-size: 11px; font-weight: 800; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .planet-friend-picker-modal { max-width: 440px; }
 .planet-friend-picker-body {
     display: flex;

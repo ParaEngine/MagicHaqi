@@ -15,7 +15,8 @@
   const STORAGE_MASTER = 'haqiAdventureMasterV1';
   const STORAGE_DIFFICULTY = 'haqiAdventureDifficultyV1';
   const TILE = 32;
-  const WORLD_COLS = 210;
+  const WORLD_COLS = 8000;
+  const INITIAL_WORLD_COLS = 420;
   const WORLD_ROWS = 30;
   const GRAVITY = 2100;
   const MOVE_SPEED = 245;
@@ -23,22 +24,41 @@
   const MAX_FALL = 920;
   const BASE_CRYSTALS = 7;
   const BASE_MINED = 22;
+  const PET_SHEET_COLS = 4;
+  const PET_SHEET_ROWS = 4;
+  const PET_ANIM_COLS = { idle: 0, happy: 1, sad: 2, sleep: 3 };
+  const PET_SHEET_STAGES = ['baby', 'teen', 'adult', 'elder'];
+  const PET_INDEX_URL = new URL('../famous-pets/_pet_index.json', location.href).href;
+  const LEVEL_DISTANCE = TILE * 42;
   const DIFFICULTIES = {
     easy: { name: '轻松', enemyRate: .7, enemyHp: .82, enemySpeed: .88, enemyDamage: .78, goal: .86, score: .86, heal: 30 },
     normal: { name: '普通', enemyRate: 1, enemyHp: 1, enemySpeed: 1, enemyDamage: 1, goal: 1, score: 1, heal: 22 },
     hard: { name: '挑战', enemyRate: 1.35, enemyHp: 1.22, enemySpeed: 1.15, enemyDamage: 1.25, goal: 1.16, score: 1.2, heal: 14 },
   };
   const MONSTERS = {
-    slime: { name: '绿史莱姆', hp: 2, speed: 42, w: 28, h: 24, damage: 14, score: 35, color: '#84cc16', accent: '#a3e635' },
-    boar: { name: '岩猪', hp: 4, speed: 58, w: 34, h: 26, damage: 18, score: 55, color: '#a16207', accent: '#facc15' },
-    wolf: { name: '夜狼', hp: 3, speed: 74, w: 36, h: 26, damage: 20, score: 62, color: '#64748b', accent: '#cbd5e1' },
-    fox: { name: '火狐', hp: 3, speed: 82, w: 34, h: 24, damage: 16, score: 58, color: '#f97316', accent: '#fed7aa' },
-    mushpet: { name: '菇菇兽', hp: 5, speed: 35, w: 32, h: 30, damage: 22, score: 70, color: '#a3e635', accent: '#f0abfc' },
-    bat: { name: '洞穴蝠', hp: 2, speed: 96, w: 30, h: 20, damage: 15, score: 50, color: '#7c3aed', accent: '#c4b5fd', flying: true },
+    slime: { name: '绿史莱姆', element: 'nature', hp: 2, speed: 42, w: 28, h: 24, damage: 14, score: 35, color: '#84cc16', accent: '#a3e635' },
+    boar: { name: '岩猪', element: 'earth', hp: 4, speed: 58, w: 34, h: 26, damage: 18, score: 55, color: '#a16207', accent: '#facc15' },
+    wolf: { name: '夜狼', element: 'ice', hp: 3, speed: 74, w: 36, h: 26, damage: 20, score: 62, color: '#64748b', accent: '#cbd5e1' },
+    fox: { name: '火狐', element: 'fire', hp: 3, speed: 82, w: 34, h: 24, damage: 16, score: 58, color: '#f97316', accent: '#fed7aa' },
+    mushpet: { name: '菇菇兽', element: 'poison', hp: 5, speed: 35, w: 32, h: 30, damage: 22, score: 70, color: '#a3e635', accent: '#f0abfc' },
+    bat: { name: '洞穴蝠', element: 'shadow', hp: 2, speed: 96, w: 30, h: 20, damage: 15, score: 50, color: '#7c3aed', accent: '#c4b5fd', flying: true },
+  };
+  const ELEMENTS = {
+    fire: { name: '火焰', color: '#f97316', accent: '#fed7aa', icon: '🔥', speed: 170, damage: 13 },
+    ice: { name: '冰霜', color: '#38bdf8', accent: '#e0f2fe', icon: '❄', speed: 150, damage: 11, slow: 650 },
+    earth: { name: '岩石', color: '#a16207', accent: '#fde68a', icon: '◆', speed: 135, damage: 15 },
+    nature: { name: '藤蔓', color: '#22c55e', accent: '#bbf7d0', icon: '✦', speed: 145, damage: 10 },
+    poison: { name: '毒孢', color: '#a3e635', accent: '#f0abfc', icon: '✹', speed: 125, damage: 12 },
+    shadow: { name: '暗影', color: '#7c3aed', accent: '#ddd6fe', icon: '✦', speed: 180, damage: 12 },
   };
   const COLORS = {
     skyTop: '#9fe3f3', skyBottom: '#d6f8ff', dirt: '#9a684b', dirt2: '#7b503c', grass: '#6fd15d', grass2: '#cff27a', stone: '#7c8994', stone2: '#5f6a73', wood: '#8b5a2b', leaf: '#38a857', crystal: '#68e8ff', gold: '#facc15', heart: '#ef4444'
   };
+  const BIOME_TILES = { grass: 1, dirt: 3, stone: 2, gem: 4, sand: 5, snow: 6, water: 7 };
+  const TILE_TEXTURE_KEYS = { 1: 'grassTop', 2: 'stone', 3: 'dirt', 4: 'gem', 5: 'sandTop', 6: 'snowTop', 7: 'water' };
+  const TILE_FILL_TEXTURE_KEYS = { 1: 'dirt', 2: 'stone', 3: 'dirt', 4: 'gem', 5: 'sand', 6: 'snowFill', 7: 'water' };
+  const DETAIL_TEXTURE_KEYS = { grass: 'tuft', flower: 'flower', rock: 'rock', reed: 'reed', snowBush: 'snowBush' };
+  let textureAtlas = null;
 
   const state = {
     loadedPosted: false,
@@ -55,6 +75,9 @@
     totalMined: 0,
     level: 1,
     nextEnemySpawn: 0,
+    levelMonsterPool: [],
+    projectiles: [],
+    nextBossLevel: 1,
     difficulty: DIFFICULTIES[localStorage.getItem(STORAGE_DIFFICULTY)] ? localStorage.getItem(STORAGE_DIFFICULTY) : 'normal',
     health: 100,
     maxHealth: 100,
@@ -66,6 +89,12 @@
     petBitmap: null,
     petMeta: null,
     petUrl: '',
+    petRequestId: '',
+    currentPetId: '',
+    petBitmaps: [],
+    petArtCursor: 0,
+    petCatalog: [],
+    petCatalogLoading: false,
     camera: { x: 0, y: 0 },
     tiles: [],
     surface: [],
@@ -74,7 +103,12 @@
     enemies: [],
     clouds: [],
     trees: [],
+    details: [],
+    generatedCols: 0,
+    generatingWorld: false,
+    terrainHeight: 17,
     gameStartAt: 0,
+      safeUntil: 0,
     finishPosted: false,
   };
 
@@ -207,14 +241,14 @@
       .ha-start { border-radius: 999px; padding: 11px 26px; color: white; background: linear-gradient(180deg, #34d399, #16a34a); box-shadow: 0 5px 0 #15803d; }
       .ha-start.secondary { background: linear-gradient(180deg, #94a3b8, #475569); box-shadow-color: #334155; }
       .ha-toast {
-        position: fixed; left: 50%; top: 50%; z-index: 45; transform: translate(-50%, -50%); min-width: min(310px, 84vw);
-        padding: 18px 22px; border-radius: 16px; background: #fff; border: 4px solid #86efac; color: #15803d; font-size: 22px; font-weight: 1000;
-        text-align: center; box-shadow: 0 18px 42px rgba(15,23,42,.24); animation: haToast 1.25s ease-out forwards; pointer-events: none;
+        position: fixed; left: 50%; top: max(76px, calc(env(safe-area-inset-top) + 58px)); z-index: 45; transform: translate(-50%, 0); min-width: min(260px, 78vw);
+        padding: 10px 16px; border-radius: 999px; background: rgba(255,255,255,.94); border: 3px solid #86efac; color: #15803d; font-size: 16px; font-weight: 1000;
+        text-align: center; box-shadow: 0 10px 28px rgba(15,23,42,.18); animation: haToast 1.25s ease-out forwards; pointer-events: none;
       }
       .ha-confetti { position: fixed; top: -16px; z-index: 48; width: 9px; height: 15px; border-radius: 2px; background: var(--c); animation: haConfetti var(--d) ease-in forwards; pointer-events: none; }
       [hidden] { display: none !important; }
       @keyframes haJoyIn { from { opacity: 0; transform: scale(.8); } to { opacity: 1; transform: scale(1); } }
-      @keyframes haToast { 0% { opacity: 0; transform: translate(-50%, -42%) scale(.84); } 18% { opacity: 1; transform: translate(-50%, -50%) scale(1); } 100% { opacity: 0; transform: translate(-50%, -74%) scale(.94); } }
+      @keyframes haToast { 0% { opacity: 0; transform: translate(-50%, -12px) scale(.9); } 18% { opacity: 1; transform: translate(-50%, 0) scale(1); } 100% { opacity: 0; transform: translate(-50%, -24px) scale(.96); } }
       @keyframes haConfetti { 100% { opacity: 0; transform: translate3d(var(--x), 112vh, 0) rotate(680deg); } }
       @media (max-width: 640px) {
         .ha-top { grid-template-columns: 38px minmax(0, 1fr); }
@@ -305,10 +339,67 @@
     try { window.parent?.postMessage({ type, data }, '*'); } catch (err) {}
   }
 
+  const midi = {
+    ctx: null,
+    master: null,
+    enabled: true,
+    init() {
+      if (this.ctx || !this.enabled) return;
+      try {
+        const AudioCtx = window.AudioContext || window.webkitAudioContext;
+        if (!AudioCtx) { this.enabled = false; return; }
+        this.ctx = new AudioCtx();
+        this.master = this.ctx.createGain();
+        this.master.gain.value = 0.16;
+        this.master.connect(this.ctx.destination);
+      } catch (err) { this.enabled = false; }
+    },
+    resume() { this.init(); this.ctx?.resume?.(); },
+    note(freq, dur = .12, type = 'square', gain = .12, when = 0) {
+      if (!this.enabled) return;
+      this.init();
+      if (!this.ctx || !this.master) return;
+      const t = this.ctx.currentTime + when;
+      const osc = this.ctx.createOscillator();
+      const g = this.ctx.createGain();
+      osc.type = type;
+      osc.frequency.setValueAtTime(freq, t);
+      g.gain.setValueAtTime(0.0001, t);
+      g.gain.exponentialRampToValueAtTime(gain, t + .012);
+      g.gain.exponentialRampToValueAtTime(0.0001, t + dur);
+      osc.connect(g); g.connect(this.master);
+      osc.start(t); osc.stop(t + dur + .03);
+    },
+    chord(freqs, dur = .18, type = 'square', gain = .08) { freqs.forEach((f, i) => this.note(f, dur, type, gain, i * .018)); },
+    sfx(name) {
+      this.resume();
+      if (name === 'start') this.chord([523.25, 659.25, 783.99], .22, 'triangle', .08);
+      else if (name === 'jump') this.note(659.25, .11, 'square', .09);
+      else if (name === 'mine') { this.note(196, .06, 'sawtooth', .08); this.note(146.83, .08, 'square', .07, .045); }
+      else if (name === 'crystal') { [523.25, 659.25, 880].forEach((f, i) => this.note(f, .12, 'triangle', .09, i * .055)); }
+      else if (name === 'heal') { [392, 523.25, 659.25].forEach((f, i) => this.note(f, .14, 'triangle', .08, i * .06)); }
+      else if (name === 'coin') { this.note(987.77, .08, 'triangle', .08); this.note(1318.51, .1, 'triangle', .07, .055); }
+      else if (name === 'hit') { this.note(110, .12, 'sawtooth', .11); this.note(82.41, .16, 'square', .08, .055); }
+      else if (name === 'shoot') this.note(392, .08, 'square', .045);
+      else if (name === 'defeat') { [329.63, 261.63, 196].forEach((f, i) => this.note(f, .09, 'square', .08, i * .05)); }
+      else if (name === 'level') { [523.25, 659.25, 783.99, 1046.5].forEach((f, i) => this.note(f, .16, 'triangle', .09, i * .075)); }
+      else if (name === 'gameover') { [220, 185, 146.83].forEach((f, i) => this.note(f, .22, 'sawtooth', .08, i * .11)); }
+      else if (name === 'boss') { this.note(98, .28, 'sawtooth', .12); this.note(196, .18, 'square', .08, .12); }
+    }
+  };
+
   function clamp(v, min, max) { return Math.max(min, Math.min(max, v)); }
   function lerp(a, b, t) { return a + (b - a) * t; }
   function rand(min, max) { return min + Math.random() * (max - min); }
   function pick(arr) { return arr[Math.floor(Math.random() * arr.length)]; }
+  function shuffle(arr) {
+    const copy = arr.slice();
+    for (let i = copy.length - 1; i > 0; i--) {
+      const j = Math.floor(Math.random() * (i + 1));
+      [copy[i], copy[j]] = [copy[j], copy[i]];
+    }
+    return copy;
+  }
   function now() { return performance.now(); }
 
   function resize() {
@@ -350,23 +441,117 @@
     return types;
   }
 
+  function selectLevelMonsterPool(level = state.level) {
+    const all = monsterTypesForLevel(level);
+    const count = Math.min(all.length, level < 3 ? 2 : 3);
+    const anchor = all[(level - 1) % all.length];
+    const pool = [anchor];
+    for (const t of shuffle(all)) {
+      if (pool.length >= count) break;
+      if (!pool.includes(t)) pool.push(t);
+    }
+    return pool;
+  }
+
+  function currentMonsterPool() {
+    if (!state.levelMonsterPool.length) state.levelMonsterPool = selectLevelMonsterPool();
+    return state.levelMonsterPool;
+  }
+
   function makeEnemy(type, x, y) {
     const cfg = difficultyConfig();
     const def = MONSTERS[type] || MONSTERS.slime;
     const levelBoost = 1 + (state.level - 1) * .16;
+    const patrolSpeed = def.speed * cfg.enemySpeed * (1 + Math.min(.5, state.level * .03));
     return {
-      type, name: def.name, x, y, w: def.w, h: def.h, vx: (Math.random() < 0.5 ? -1 : 1) * def.speed * cfg.enemySpeed * (1 + Math.min(.5, state.level * .03)), vy: 0,
+      type, name: def.name, x, y, w: def.w, h: def.h, vx: (Math.random() < 0.5 ? -1 : 1) * patrolSpeed, vy: 0,
       hp: Math.max(1, Math.round(def.hp * cfg.enemyHp * levelBoost)), maxHp: Math.max(1, Math.round(def.hp * cfg.enemyHp * levelBoost)), damage: def.damage, score: def.score,
-      dead: false, flying: !!def.flying, squish: 0, wander: rand(0, 6.28), hurtUntil: 0,
+      element: def.element || 'nature', dead: false, flying: !!def.flying, boss: false, squish: 0, wander: rand(0, 6.28), hurtUntil: 0, shootCd: rand(1.2, 3.2), jumpCd: rand(.2, .8), levelTag: state.level,
+      patrolSpeed, fireEnabled: enemyCanFire(def.element || 'nature'), facing: Math.sign(Math.random() - .5) || 1,
     };
   }
 
-  function spawnEnemyAtColumn(c, type = pick(monsterTypesForLevel())) {
+  function assignEnemyArt(enemy) {
+    if (!enemy || !state.petBitmaps.length) return;
+    const artIndex = state.petArtCursor++ % state.petBitmaps.length;
+    const art = state.petBitmaps[artIndex];
+    enemy.artIndex = artIndex;
+    enemy.petName = art?.name || '';
+    enemy.name = art?.name || enemy.name;
+    enemy.sourceId = art?.sourceId || '';
+    enemy.imageSheetUrl = art?.imageSheetUrl || '';
+    enemy.element = art?.element || '';
+    enemy.stage = art?.stage || stageForLevel(state.level);
+    enemy.fireEnabled = enemyCanFire(enemy.element || MONSTERS[enemy.type]?.element || 'nature');
+  }
+
+  function enemyCanFire(element) {
+    return ['fire', 'ice', 'poison', 'shadow'].includes(element || '');
+  }
+
+  function refreshEnemyArt() {
+    if (!state.petBitmaps.length) return;
+    for (const e of state.enemies) if (!e.dead && typeof e.artIndex !== 'number') assignEnemyArt(e);
+  }
+
+  function spawnEnemyAtColumn(c, type = pick(currentMonsterPool()), options = {}) {
     c = clamp(Math.round(c), 12, WORLD_COLS - 10);
     const def = MONSTERS[type] || MONSTERS.slime;
+    c = findSafeEnemyColumn(c, def, !!options.boss);
+    const minGap = def.flying ? 54 : 48;
+    for (let tries = 0; tries < 18; tries++) {
+      const px = c * TILE;
+      const tooClose = state.enemies.some(e => !e.dead && Math.abs((e.x + e.w / 2) - px) < minGap && Math.abs((e.y + e.h / 2) - ((state.surface[c] || 17) * TILE)) < 76);
+      if (!tooClose) break;
+      c = clamp(c + (tries % 2 === 0 ? 1 : -1) * (2 + Math.floor(tries / 2)), 12, WORLD_COLS - 10);
+      c = findSafeEnemyColumn(c, def, !!options.boss);
+    }
     const s = state.surface[c] || 17;
     const y = def.flying ? (s - rand(3.5, 6.5)) * TILE : (s * TILE - def.h);
-    state.enemies.push(makeEnemy(type, c * TILE + rand(-8, 8), y));
+    const enemy = makeEnemy(type, c * TILE + rand(-8, 8), y);
+    if (options.boss) {
+      enemy.boss = true;
+      enemy.name = `${enemy.name}首领`;
+      enemy.w = Math.round(enemy.w * 1.55);
+      enemy.h = Math.round(enemy.h * 1.45);
+      enemy.hp = enemy.maxHp = Math.round(enemy.maxHp * 3.8 + state.level * 3);
+      enemy.damage = Math.round(enemy.damage * 1.35);
+      enemy.score = Math.round(enemy.score * 4.5);
+      enemy.shootCd = .8;
+      enemy.vx *= .72;
+    }
+    assignEnemyArt(enemy);
+    state.enemies.push(enemy);
+    if (enemy.boss) { midi.sfx('boss'); setMessage(`⚠️ ${enemy.name}出现了！注意躲避${ELEMENTS[enemy.element]?.name || '属性'}攻击。`, 3600); }
+  }
+
+  function findSafeEnemyColumn(startC, def, isBoss = false) {
+    startC = clamp(Math.round(startC), 12, WORLD_COLS - 10);
+    for (let radius = 0; radius <= 18; radius++) {
+      const dirs = radius === 0 ? [0] : [radius, -radius];
+      for (const d of dirs) {
+        const c = clamp(startC + d, 12, WORLD_COLS - 10);
+        if (isSafeEnemyColumn(c, def, isBoss)) return c;
+      }
+    }
+    return startC;
+  }
+
+  function isSafeEnemyColumn(c, def, isBoss = false) {
+    if (def.flying) return true;
+    const s = state.surface[c] || 17;
+    const halfTiles = isBoss ? 2 : 1;
+    const headroom = isBoss ? 4 : 3;
+    for (let dc = -halfTiles; dc <= halfTiles; dc++) {
+      const cc = c + dc;
+      const ss = state.surface[cc] || s;
+      if (Math.abs(ss - s) > 1) return false;
+      if (!isSolid(tileAt(cc, ss))) return false;
+      for (let r = ss - headroom; r < ss; r++) if (isSolid(tileAt(cc, r))) return false;
+    }
+    const leftWall = isSolid(tileAt(c - halfTiles - 1, s - 1)) || isSolid(tileAt(c - halfTiles - 1, s - 2));
+    const rightWall = isSolid(tileAt(c + halfTiles + 1, s - 1)) || isSolid(tileAt(c + halfTiles + 1, s - 2));
+    return !(leftWall && rightWall);
   }
 
   function spawnLevelWave() {
@@ -374,7 +559,9 @@
     const count = Math.round((5 + state.level * 1.45) * cfg.enemyRate);
     const start = Math.max(18, Math.floor(player.x / TILE) - 8);
     const end = Math.min(WORLD_COLS - 12, start + 78 + state.level * 5);
-    for (let i = 0; i < count; i++) spawnEnemyAtColumn(rand(start, end));
+    const step = Math.max(3, Math.floor((end - start) / Math.max(1, count)));
+    const pool = currentMonsterPool();
+    for (let i = 0; i < count; i++) spawnEnemyAtColumn(start + i * step + rand(-1.2, 1.2), pool[i % pool.length]);
   }
 
   function setMessage(text, ms = 2300) {
@@ -407,55 +594,158 @@
   }
 
   function tileAt(c, r) {
-    if (c < 0 || c >= WORLD_COLS || r < 0 || r >= WORLD_ROWS) return 0;
+    if (c < 0 || r < 0 || r >= WORLD_ROWS) return 0;
+    if (!state.generatingWorld && c >= state.generatedCols) ensureWorldGeneratedTo(c + 8);
     return state.tiles[r * WORLD_COLS + c] || 0;
   }
 
   function setTile(c, r, v) {
-    if (c < 0 || c >= WORLD_COLS || r < 0 || r >= WORLD_ROWS) return;
+    if (c < 0 || r < 0 || r >= WORLD_ROWS) return;
+    if (c >= WORLD_COLS) return;
     state.tiles[r * WORLD_COLS + c] = v;
   }
 
-  function isSolid(v) { return v === 1 || v === 2 || v === 3 || v === 4; }
+  function isSolid(v) { return v === 1 || v === 2 || v === 3 || v === 4 || v === 5 || v === 6; }
 
   function generateWorld() {
-    state.tiles = new Array(WORLD_COLS * WORLD_ROWS).fill(0);
-    state.surface = new Array(WORLD_COLS).fill(18);
-    state.pickups = [];
-    state.enemies = [];
-    state.particles = [];
-    state.clouds = [];
-    state.trees = [];
+    state.generatingWorld = true;
+    try {
+      state.tiles = new Array(WORLD_COLS * WORLD_ROWS).fill(0);
+      state.surface = new Array(WORLD_COLS).fill(18);
+      state.pickups = [];
+      state.enemies = [];
+      state.projectiles = [];
+      state.particles = [];
+      state.clouds = [];
+      state.trees = [];
+      state.details = [];
+      state.generatedCols = 0;
+      state.terrainHeight = 17;
+      for (let c = 0; c < INITIAL_WORLD_COLS; c++) generateColumn(c);
+      state.generatedCols = INITIAL_WORLD_COLS;
+    } finally {
+      state.generatingWorld = false;
+    }
+    for (let i = 0; i < 16; i++) state.clouds.push({ x: rand(0, INITIAL_WORLD_COLS * TILE), y: rand(45, 210), s: rand(.65, 1.45), speed: rand(4, 12) });
+  }
 
-    let height = 17;
-    for (let c = 0; c < WORLD_COLS; c++) {
-      height += Math.sin(c * 0.13) * 0.22 + Math.sin(c * 0.047) * 0.35 + rand(-0.35, 0.35);
-      height = clamp(height, 11, 22);
-      const s = Math.round(height);
-      state.surface[c] = s;
-      for (let r = s; r < WORLD_ROWS; r++) {
-        let v = r === s ? 1 : (r > s + 5 || Math.random() < 0.12 ? 2 : 3);
-        if (r > s + 8 && Math.random() < 0.08) v = 4;
-        setTile(c, r, v);
-      }
-      if (c > 8 && c < WORLD_COLS - 10 && Math.random() < 0.08) state.trees.push({ c, r: s - 1, size: Math.floor(rand(2, 5)) });
-      if (c > 15 && Math.random() < 0.08) state.pickups.push({ type: 'coin', x: c * TILE + 12, y: (s - 1) * TILE + 3, w: 16, h: 16, bob: rand(0, 6.28), taken: false });
-      if (c > 20 && Math.random() < 0.035) state.pickups.push({ type: 'crystal', x: c * TILE + 6, y: (s - 2) * TILE + 4, w: 22, h: 26, bob: rand(0, 6.28), taken: false });
-      if (c > 28 && Math.random() < 0.025 * difficultyConfig().enemyRate) spawnEnemyAtColumn(c, Math.random() < .72 ? 'slime' : pick(monsterTypesForLevel()));
+  function ensureWorldGeneratedTo(targetCol) {
+    if (targetCol < state.generatedCols || state.generatedCols > 8000) return;
+    const target = Math.min(8000, Math.max(0, Math.ceil(targetCol)));
+    for (let c = state.generatedCols; c <= target; c++) generateColumn(c);
+    state.generatedCols = target + 1;
+  }
+
+  function generateColumn(c) {
+    if (c < 0 || c >= WORLD_COLS) return;
+    state.generatedCols = Math.max(state.generatedCols, c + 1);
+    state.terrainHeight += Math.sin(c * 0.13) * 0.22 + Math.sin(c * 0.047) * 0.35 + rand(-0.35, 0.35);
+    state.terrainHeight = clamp(state.terrainHeight, 11, 22);
+    const s = Math.round(state.terrainHeight);
+    const biome = biomeAt(c);
+    const layerOffset = layerOffsetAt(c, biome);
+    state.surface[c] = s;
+    const pond = pondDepthAt(c, biome);
+    for (let r = s; r < WORLD_ROWS; r++) {
+      let v = r === s ? surfaceTileForBiome(biome) : (r > s + 5 || Math.random() < 0.12 ? 2 : underTileForBiome(biome));
+      if (r > s + 8 && Math.random() < 0.08) v = 4;
+      setTile(c, r, v);
     }
-    for (let i = 0; i < 16; i++) state.clouds.push({ x: rand(0, WORLD_COLS * TILE), y: rand(45, 210), s: rand(.65, 1.45), speed: rand(4, 12) });
-    for (let c = 35; c < WORLD_COLS - 10; c += Math.floor(rand(17, 29))) {
-      const r = clamp(state.surface[c] + Math.floor(rand(4, 10)), 5, WORLD_ROWS - 4);
-      setTile(c, r, 4); setTile(c + 1, r, 4);
+    if (layerOffset && c > 12) addTerrainLayer(c, s, biome, layerOffset);
+    if (pond) addPondColumn(c, s, biome, pond);
+    for (let r = Math.max(0, s - 5); r < s; r++) setTile(c, r, 0);
+    normalizeExposedSurface(c);
+    const topS = state.surface[c] || s;
+    if (c > 8 && !pond && Math.random() < 0.08) state.trees.push({ c, r: topS - 1, size: Math.floor(rand(2, 5)) });
+    addTerrainDetail(c, topS, pond ? 'wetland' : biome);
+    if (c > 15 && Math.random() < 0.08) state.pickups.push({ type: 'coin', x: c * TILE + 12, y: (s - 1) * TILE + 3, w: 16, h: 16, bob: rand(0, 6.28), taken: false });
+    if (c > 20 && Math.random() < 0.035) state.pickups.push({ type: 'crystal', x: c * TILE + 6, y: (s - 2) * TILE + 4, w: 22, h: 26, bob: rand(0, 6.28), taken: false });
+    if (c > 28 && c < INITIAL_WORLD_COLS && Math.random() < 0.025 * difficultyConfig().enemyRate) spawnEnemyAtColumn(c, Math.random() < .72 ? pick(currentMonsterPool()) : pick(monsterTypesForLevel()));
+    if (c > 35 && c % Math.floor(rand(17, 29)) === 0) {
+      const r = clamp(s + Math.floor(rand(4, 10)), 5, WORLD_ROWS - 4);
+      if (r > s + 3 && isSolid(tileAt(c, r + 1)) && isSolid(tileAt(c + 1, r + 1))) { setTile(c, r, 4); setTile(c + 1, r, 4); normalizeExposedSurface(c); normalizeExposedSurface(c + 1); }
     }
+  }
+
+  function normalizeExposedSurface(c) {
+    if (c < 0 || c >= state.generatedCols) return;
+    for (let r = 1; r < WORLD_ROWS; r++) {
+      const v = tileAt(c, r);
+      if (!isSolid(v)) continue;
+      if (tileAt(c, r - 1) !== 0) continue;
+      if (v === BIOME_TILES.dirt) setTile(c, r, surfaceTileForBiome(biomeAt(c)) || BIOME_TILES.grass);
+      if (v === BIOME_TILES.stone && (r < (state.surface[c] || 18) + 4 || !isSolid(tileAt(c, r + 1)))) setTile(c, r, surfaceTileForBiome(biomeAt(c)) || BIOME_TILES.grass);
+      if (v === BIOME_TILES.gem && !isSolid(tileAt(c, r + 1))) setTile(c, r, BIOME_TILES.stone);
+    }
+  }
+
+  function pondDepthAt(c, biome) {
+    if (biome !== 'wetland' && biome !== 'grass') return 0;
+    const wave = Math.sin(c * .037 + 2.1) + Math.sin(c * .071) * .45;
+    return wave > 1.18 ? 2 + ((c >> 2) % 2) : 0;
+  }
+
+  function addPondColumn(c, s, biome, depth) {
+    if (s < 8 || s > WORLD_ROWS - 5) return;
+    for (let r = s - depth; r <= s; r++) setTile(c, r, BIOME_TILES.water);
+    for (let r = s + 1; r <= s + 2; r++) setTile(c, r, biome === 'sandy' ? BIOME_TILES.sand : BIOME_TILES.dirt);
+    state.surface[c] = s - depth;
+  }
+
+  function biomeAt(c) {
+    const band = Math.floor(c / 95) % 5;
+    return ['grass', 'sandy', 'snow', 'grass', 'wetland'][band] || 'grass';
+  }
+
+  function layerOffsetAt(c, biome) {
+    if (biome === 'wetland') return 0;
+    const wave = Math.sin(c * .055) + Math.sin(c * .019 + 1.7) * .7;
+    if (wave > 1.05) return -Math.floor(3 + Math.sin(c * .13) * 2);
+    if (wave < -1.05) return Math.floor(3 + Math.cos(c * .11) * 2);
+    return 0;
+  }
+
+  function addTerrainLayer(c, s, biome, offset) {
+    const plateauTop = clamp(s + offset, 5, WORLD_ROWS - 5);
+    if (Math.abs(offset) < 2) return;
+    const start = Math.min(plateauTop, s), end = Math.max(plateauTop, s);
+    for (let r = start; r <= end; r++) {
+      const edge = r === plateauTop;
+      setTile(c, r, edge ? surfaceTileForBiome(biome) : underTileForBiome(biome));
+    }
+    if (offset < 0) for (let r = Math.max(0, plateauTop - 5); r < plateauTop; r++) setTile(c, r, 0);
+    normalizeExposedSurface(c);
+    if (Math.random() < .015) state.pickups.push({ type: 'coin', x: c * TILE + 10, y: (plateauTop - 1) * TILE + 4, w: 16, h: 16, bob: rand(0, 6.28), taken: false });
+  }
+
+  function addTerrainDetail(c, s, biome) {
+    if (Math.random() > .18) return;
+    const options = biome === 'snow' ? ['rock', 'snowBush'] : biome === 'sandy' ? ['rock', 'tuft'] : biome === 'wetland' ? ['reed', 'tuft', 'flower'] : ['tuft', 'flower', 'rock'];
+    const type = pick(options);
+    const scale = type === 'rock' ? rand(.58, .88) : rand(.8, 1.25);
+    state.details.push({ type, x: c * TILE + rand(2, 18), groundY: s * TILE, s: scale, seed: rand(0, 9999) });
+  }
+
+  function surfaceTileForBiome(biome) {
+    if (biome === 'sandy') return BIOME_TILES.sand;
+    if (biome === 'snow') return BIOME_TILES.snow;
+    return BIOME_TILES.grass;
+  }
+
+  function underTileForBiome(biome) {
+    if (biome === 'sandy') return Math.random() < .72 ? BIOME_TILES.sand : BIOME_TILES.dirt;
+    if (biome === 'snow') return Math.random() < .44 ? BIOME_TILES.stone : BIOME_TILES.dirt;
+    return BIOME_TILES.dirt;
   }
 
   function resetGame() {
     generateWorld();
-    Object.assign(player, { x: TILE * 8, y: (state.surface[8] - 3) * TILE, vx: 0, vy: 0, dir: 1, grounded: false, attackUntil: 0, hurtUntil: 0 });
+    const spawnCol = findPlayerSpawnColumn(8);
+    Object.assign(player, { x: spawnCol * TILE, y: Math.max(0, (state.surface[spawnCol] * TILE) - player.h - 2), vx: 0, vy: 0, dir: 1, grounded: false, attackUntil: 0, hurtUntil: now() + 1800 });
+    if (rectSolid(player.x, player.y, player.w, player.h)) player.y = Math.max(0, (state.surface[spawnCol] - 5) * TILE);
     Object.assign(pet, { x: player.x - 46, y: player.y + 12, vx: 0, vy: 0, grounded: false, bob: 0 });
-    state.score = 0; state.crystals = 0; state.mined = 0; state.totalCrystals = 0; state.totalMined = 0; state.level = 1; state.health = state.maxHealth; state.stamina = 100; state.finished = false; state.paused = false; state.finishPosted = false;
-    state.camera.x = 0; state.camera.y = 0; state.gameStartAt = now(); state.roundId = `haqi_adventure_${Date.now()}`;
+    state.score = 0; state.crystals = 0; state.mined = 0; state.totalCrystals = 0; state.totalMined = 0; state.level = 1; state.levelMonsterPool = selectLevelMonsterPool(1); state.projectiles = []; state.nextBossLevel = 1; state.health = state.maxHealth; state.stamina = 100; state.finished = false; state.paused = false; state.finishPosted = false;
+    state.camera.x = 0; state.camera.y = 0; state.gameStartAt = now(); state.safeUntil = now() + 1800; state.roundId = `haqi_adventure_${Date.now()}`;
     state.nextEnemySpawn = now() + 5200;
     spawnLevelWave();
     ui.restart.hidden = true;
@@ -463,12 +753,116 @@
     updateHud();
   }
 
+  function findPlayerSpawnColumn(preferred) {
+    for (let radius = 0; radius < 28; radius++) {
+      for (const d of (radius === 0 ? [0] : [radius, -radius])) {
+        const c = clamp(preferred + d, 3, WORLD_COLS - 4);
+        const s = state.surface[c] || 17;
+        if (s < 4 || s > WORLD_ROWS - 2) continue;
+        let clear = true;
+        for (let cc = c - 1; cc <= c + 1; cc++) {
+          const ss = state.surface[cc] || s;
+          if (Math.abs(ss - s) > 1) { clear = false; break; }
+          for (let r = ss - 4; r < ss; r++) if (isSolid(tileAt(cc, r))) clear = false;
+        }
+        if (clear) return c;
+      }
+    }
+    return preferred;
+  }
+
   function startGame() {
+    midi.sfx('start');
     if (!state.started) post('gameStarted', { title: '宠物冒险' });
     state.started = true;
     overlay.hidden = true;
     resetGame();
     requestPetImage();
+    loadRandomPetImages();
+  }
+
+  async function loadPetCatalog() {
+    if (state.petCatalog.length) return state.petCatalog;
+    if (state.petCatalogLoading) return [];
+    state.petCatalogLoading = true;
+    try {
+      const res = await fetch(PET_INDEX_URL, { cache: 'force-cache' });
+      if (!res.ok) throw new Error(`HTTP ${res.status}`);
+      const list = await res.json();
+      state.petCatalog = Array.isArray(list) ? list.filter(p => p?.imageSheetUrl) : [];
+    } catch (err) {
+      state.petCatalog = [];
+      requestPetImages();
+    } finally {
+      state.petCatalogLoading = false;
+    }
+    return state.petCatalog;
+  }
+
+  async function makePixelPetBitmap(entry, index, stage = PET_SHEET_STAGES[index % PET_SHEET_STAGES.length], pixelated = true, anim = 'idle') {
+    const image = new Image();
+    image.crossOrigin = 'anonymous';
+    image.decoding = 'async';
+    const loaded = new Promise((resolve, reject) => { image.onload = resolve; image.onerror = reject; });
+    image.src = entry.imageSheetUrl;
+    await loaded;
+    try { await image.decode?.(); } catch (err) {}
+    const sw = Math.floor(image.naturalWidth / PET_SHEET_COLS);
+    const sh = Math.floor(image.naturalHeight / PET_SHEET_ROWS);
+    if (!sw || !sh) return null;
+    const stageName = PET_SHEET_STAGES.includes(stage) ? stage : PET_SHEET_STAGES[0];
+    const row = PET_SHEET_STAGES.indexOf(stageName);
+    const col = PET_ANIM_COLS[anim] == null ? PET_ANIM_COLS.idle : PET_ANIM_COLS[anim];
+    const pixelSize = pixelated ? 32 : 72;
+    const displaySize = pixelated ? 44 : 72;
+    const tiny = document.createElement('canvas');
+    tiny.width = pixelSize; tiny.height = pixelSize;
+    const tctx = tiny.getContext('2d', { willReadFrequently: true });
+    tctx.imageSmoothingEnabled = false;
+    tctx.clearRect(0, 0, pixelSize, pixelSize);
+    tctx.drawImage(image, col * sw, row * sh, sw, sh, 0, 0, pixelSize, pixelSize);
+    if (pixelated) posterizeCanvas(tctx, pixelSize, pixelSize);
+    const off = document.createElement('canvas');
+    off.width = displaySize; off.height = displaySize;
+    const octx = off.getContext('2d');
+    octx.imageSmoothingEnabled = false;
+    octx.clearRect(0, 0, displaySize, displaySize);
+    octx.drawImage(tiny, 0, 0, displaySize, displaySize);
+    const bitmap = await createImageBitmap(off);
+    return { bitmap, uv: { x: 0, y: 0, width: displaySize, height: displaySize }, name: entry.name, sourceId: entry.id, stage: stageName, anim, imageSheetUrl: entry.imageSheetUrl, element: entry.traits?.element || '' };
+  }
+
+  function posterizeCanvas(pctx, w, h) {
+    try {
+      const img = pctx.getImageData(0, 0, w, h);
+      const d = img.data;
+      for (let i = 0; i < d.length; i += 4) {
+        const a = d[i + 3];
+        if (a < 22) { d[i + 3] = 0; continue; }
+        d[i] = Math.round(d[i] / 32) * 32;
+        d[i + 1] = Math.round(d[i + 1] / 32) * 32;
+        d[i + 2] = Math.round(d[i + 2] / 32) * 32;
+        d[i + 3] = a < 150 ? Math.max(110, Math.round(a / 48) * 48) : 255;
+      }
+      pctx.putImageData(img, 0, 0);
+    } catch (err) {}
+  }
+
+  async function loadRandomPetImages() {
+    try {
+      const catalog = await loadPetCatalog();
+      if (!catalog.length) return;
+      for (const old of state.petBitmaps) old.bitmap?.close?.();
+      state.petBitmaps = [];
+      const picked = shuffle(catalog).slice(0, 12);
+      const bitmaps = await Promise.all(picked.map((entry, index) => makePixelPetBitmap(entry, index, stageForLevel(Math.min(state.level + index, 7)), true)));
+      state.petBitmaps = bitmaps.filter(Boolean);
+      state.petArtCursor = 0;
+      refreshEnemyArt();
+      if (state.petBitmaps.length) setMessage(`本局野生宠物：${state.petBitmaps.slice(0, 3).map(p => p.name).join('、')} 等`, 3600);
+    } catch (err) {
+      requestPetImages();
+    }
   }
 
   function updateHud() {
@@ -497,6 +891,7 @@
       player.vy = -JUMP_SPEED;
       player.grounded = false;
       state.stamina = Math.max(0, state.stamina - 8);
+      midi.sfx('jump');
       spawnDust(player.x + player.w / 2, player.y + player.h, 8, '#e2e8f0');
     }
   }
@@ -533,7 +928,14 @@
       a.grounded = true;
       a.vy = 0;
     }
-    if (damageOnFall && a.y > WORLD_ROWS * TILE + 200) damage(100);
+    if (damageOnFall && a.y > WORLD_ROWS * TILE + 200) {
+      const c = findPlayerSpawnColumn(Math.max(8, Math.floor(a.x / TILE)));
+      Object.assign(a, { x: c * TILE, y: Math.max(0, (state.surface[c] - 4) * TILE), vx: 0, vy: 0, grounded: false, hurtUntil: now() + 1600 });
+      state.health = Math.max(1, state.health - 28);
+      state.safeUntil = now() + 1600;
+      setMessage('掉落了！已回到安全位置。', 1500);
+      spawnDust(a.x + a.w / 2, a.y + a.h / 2, 12, '#fb7185');
+    }
   }
 
   function spawnDust(x, y, n, color) {
@@ -541,9 +943,10 @@
   }
 
   function damage(amount) {
-    if (now() < player.hurtUntil || state.finished) return;
-    state.health -= amount * difficultyConfig().enemyDamage;
+    if (now() < player.hurtUntil || now() < state.safeUntil || state.finished) return;
+    state.health -= amount;
     player.hurtUntil = now() + 900;
+    midi.sfx('hit');
     setMessage('小心！荒野怪物会扣生命。', 1500);
     spawnDust(player.x + player.w / 2, player.y + player.h / 2, 12, '#fb7185');
     if (state.health <= 0) endGame(false);
@@ -568,6 +971,7 @@
     }
     if (!best) return;
     setTile(best.c, best.r, 0);
+    midi.sfx(best.v === 4 ? 'crystal' : 'mine');
     state.mined++;
     state.totalMined++;
     state.score += Math.round((best.v === 4 ? 18 : 6) * difficultyConfig().score);
@@ -613,6 +1017,15 @@
       if (!pet.grounded && Math.abs(dx) > 95) pet.vx += Math.sign(dx) * 90;
     }
     moveActor(pet, dt);
+    cleanupFarEntities();
+  }
+
+  function cleanupFarEntities() {
+    const minX = Math.max(0, player.x - window.innerWidth * 2.2);
+    state.pickups = state.pickups.filter(p => !p.taken && p.x > minX);
+    state.enemies = state.enemies.filter(e => e.x > minX || e.boss || (!e.dead && Math.abs(e.x - player.x) < window.innerWidth * 2.6));
+    state.trees = state.trees.filter(t => t.c * TILE > minX - 240);
+    state.details = state.details.filter(d => d.x > minX - 180);
   }
 
   function updateEnemies(dt) {
@@ -628,27 +1041,220 @@
         e.x = clamp(e.x + e.vx * dt, 0, WORLD_COLS * TILE - e.w);
         e.y = clamp(e.y + e.vy * dt, 48, (state.surface[Math.floor(e.x / TILE)] - 2) * TILE);
       } else {
+        if (e.boss) updateBossMovement(e, dt);
+        else updatePatrolEnemy(e);
         moveActor(e, dt);
-        const frontX = e.x + (e.vx > 0 ? e.w + 4 : -4);
-        const footY = e.y + e.h + 6;
-        if (e.vx === 0 || !isSolid(tileAt(Math.floor(frontX / TILE), Math.floor(footY / TILE)))) e.vx = (e.vx <= 0 ? 1 : -1) * (MONSTERS[e.type]?.speed || 42) * difficultyConfig().enemySpeed;
+        if (!e.boss) keepPatrolOnPlatform(e);
       }
       if (intersects(player, e)) {
         if (!e.flying && player.vy > 120 && player.y + player.h - e.y < 18) {
-          e.hp--;
+          e.hp -= e.boss ? 1 : 1;
           e.hurtUntil = now() + 180;
           player.vy = -420;
           spawnDust(e.x + e.w / 2, e.y + e.h / 2, 12, MONSTERS[e.type]?.color || '#84cc16');
           if (e.hp <= 0) defeatEnemy(e);
-        } else damage(e.damage || 16);
+        } else damage((e.damage || 16) * difficultyConfig().enemyDamage);
       }
+      updateEnemyShooting(e, dt);
     }
     state.enemies = state.enemies.filter(e => !e.dead || now() - (e.deadAt || 0) < 3000);
     if (now() > state.nextEnemySpawn && !state.finished) {
       const live = state.enemies.filter(e => !e.dead).length;
       const maxLive = Math.round((8 + state.level * 2.2) * difficultyConfig().enemyRate);
-      if (live < maxLive) spawnEnemyAtColumn(Math.floor(player.x / TILE) + rand(18, 44), pick(monsterTypesForLevel()));
+      if (live < maxLive) spawnEnemyAtColumn(Math.floor(player.x / TILE) + rand(18, 44), pick(currentMonsterPool()));
       state.nextEnemySpawn = now() + rand(3600, 6500) / difficultyConfig().enemyRate;
+    }
+  }
+
+  function updatePatrolEnemy(e) {
+    const dir = e.facing || Math.sign(e.vx) || 1;
+    const speed = e.patrolSpeed || (MONSTERS[e.type]?.speed || 42) * difficultyConfig().enemySpeed;
+    e.facing = dir;
+    e.vx = dir * speed;
+  }
+
+  function keepPatrolOnPlatform(e) {
+    const dir = e.facing || Math.sign(e.vx) || 1;
+    const frontX = e.x + (dir > 0 ? e.w + 4 : -4);
+    const frontCol = Math.floor(frontX / TILE);
+    const bodyRow = Math.floor((e.y + e.h * .52) / TILE);
+    const footRow = Math.floor((e.y + e.h + 6) / TILE);
+    const blocked = isSolid(tileAt(frontCol, bodyRow)) || isSolid(tileAt(frontCol, bodyRow - 1));
+    const groundAhead = isSolid(tileAt(frontCol, footRow));
+    if (e.vx === 0 || blocked || !groundAhead) {
+      e.facing = -dir;
+      e.vx = (e.patrolSpeed || (MONSTERS[e.type]?.speed || 42) * difficultyConfig().enemySpeed) * e.facing;
+      const away = e.facing > 0 ? -1 : 1;
+      e.x += away * 2;
+    }
+  }
+
+  function updateBossMovement(e, dt) {
+    e.jumpCd = Math.max(0, (e.jumpCd || 0) - dt);
+    let dir = bossRepositionDirection(e) || (player.x + player.w / 2 >= e.x + e.w / 2 ? 1 : -1);
+    const sp = (MONSTERS[e.type]?.speed || 52) * difficultyConfig().enemySpeed * .82;
+    e.facing = dir;
+    e.vx = dir * sp;
+    const frontX = e.x + (dir > 0 ? e.w + 6 : -6);
+    const frontCol = Math.floor(frontX / TILE);
+    const footRow = Math.floor((e.y + e.h + 2) / TILE);
+    const bodyRow = Math.floor((e.y + e.h * .55) / TILE);
+    const oneStepRow = footRow - 1;
+    const blocked = isSolid(tileAt(frontCol, bodyRow));
+    const hasGroundAhead = isSolid(tileAt(frontCol, footRow));
+    const hasOneStepGround = isSolid(tileAt(frontCol, oneStepRow));
+    const flatAhead = hasGroundAhead && !blocked;
+    const oneBlockStepUp = !hasGroundAhead && hasOneStepGround && !rectSolid(e.x + dir * 8, e.y - TILE, e.w, e.h);
+    const canStepDownOne = !hasGroundAhead && isSolid(tileAt(frontCol, footRow + 1));
+    const playerHigherUnreachable = player.y + player.h < e.y + e.h - TILE * .9 && Math.abs(player.x - e.x) < TILE * 5;
+    if (!e.grounded || e.jumpCd > 0) return;
+    if (blocked && tryBossStepUp(e, dir)) return;
+    if (canStepDownOne) return;
+    if (flatAhead) return;
+    if (oneBlockStepUp || (blocked && playerHigherUnreachable)) {
+      e.vy = -Math.max(620, JUMP_SPEED * .92);
+      e.jumpCd = rand(.75, 1.25);
+      spawnDust(e.x + e.w / 2, e.y + e.h, 8, MONSTERS[e.type]?.accent || '#fde68a');
+    }
+  }
+
+  function bossRepositionDirection(e) {
+    const px = player.x + player.w / 2;
+    const py = player.y + player.h / 2;
+    const ex = e.x + e.w / 2;
+    const ey = e.y + e.h / 2;
+    const dx = px - ex;
+    const dy = py - ey;
+    const playerMostlyAbove = player.y + player.h < e.y + e.h * .48;
+    const horizontalOverlap = player.x < e.x + e.w && player.x + player.w > e.x;
+    const tooCloseToShoot = Math.abs(dx) < Math.max(42, e.w * .72) && dy < 0;
+    if (!playerMostlyAbove || (!horizontalOverlap && !tooCloseToShoot)) return 0;
+    const leftScore = bossEscapeScore(e, -1);
+    const rightScore = bossEscapeScore(e, 1);
+    if (leftScore <= 0 && rightScore <= 0) return dx < 0 ? 1 : -1;
+    if (leftScore === rightScore) return dx < 0 ? 1 : -1;
+    return rightScore > leftScore ? 1 : -1;
+  }
+
+  function bossEscapeScore(e, dir) {
+    const speed = (MONSTERS[e.type]?.speed || 52) * difficultyConfig().enemySpeed * .82;
+    const probeX = e.x + dir * Math.max(18, speed * .22);
+    const frontX = probeX + (dir > 0 ? e.w + 6 : -6);
+    const frontCol = Math.floor(frontX / TILE);
+    const bodyRow = Math.floor((e.y + e.h * .55) / TILE);
+    const footRow = Math.floor((e.y + e.h + 2) / TILE);
+    const blocked = isSolid(tileAt(frontCol, bodyRow)) || isSolid(tileAt(frontCol, bodyRow - 1));
+    const ground = isSolid(tileAt(frontCol, footRow)) || isSolid(tileAt(frontCol, footRow + 1));
+    if (blocked || !ground || rectSolid(probeX, e.y, e.w, e.h)) return 0;
+    const nextCenter = probeX + e.w / 2;
+    const playerCenter = player.x + player.w / 2;
+    return Math.abs(nextCenter - playerCenter);
+  }
+
+  function tryBossStepUp(e, dir) {
+    const nx = e.x + dir * 7;
+    for (let step = 6; step <= TILE + 4; step += 4) {
+      if (!rectSolid(nx, e.y - step, e.w, e.h)) {
+        e.x = nx;
+        e.y -= step;
+        e.grounded = false;
+        spawnDust(e.x + e.w / 2, e.y + e.h, 5, MONSTERS[e.type]?.accent || '#fde68a');
+        return true;
+      }
+    }
+    return false;
+  }
+
+  function updateEnemyShooting(e, dt) {
+    if (!e.boss && !e.fireEnabled) return;
+    const dx = player.x + player.w / 2 - (e.x + e.w / 2);
+    const dy = player.y + player.h / 2 - (e.y + e.h / 2);
+    const dist = Math.hypot(dx, dy);
+    const range = e.boss ? 430 : 300;
+    e.shootCd -= dt;
+    const facing = e.facing || Math.sign(e.vx) || 1;
+    const playerInFront = Math.sign(dx) === facing || Math.abs(dx) < 8;
+    if (!playerInFront) return;
+    if (dist > range || dist < 42 || e.shootCd > 0) return;
+    shootProjectile(e, dx, dy);
+    e.shootCd = (e.boss ? rand(.9, 1.45) : rand(2.0, 3.5)) / difficultyConfig().enemyRate;
+  }
+
+  function shootProjectile(e, dx, dy) {
+    const element = e.element || MONSTERS[e.type]?.element || 'nature';
+    const info = ELEMENTS[element] || ELEMENTS.nature;
+    const originX = e.x + e.w / 2;
+    const originY = e.y + e.h / 2 - (e.boss ? TILE : 0);
+    dx = player.x + player.w / 2 - originX;
+    dy = player.y + player.h / 2 - originY;
+    const dirX = Math.sign(dx) || (e.vx < 0 ? -1 : 1);
+    dx = dirX * Math.max(Math.abs(dx), Math.abs(dy), 1);
+    dy = clamp(dy, -Math.abs(dx), Math.abs(dx));
+    const len = Math.hypot(dx, dy) || 1;
+    const speed = info.speed * (e.boss ? 1.08 : 1) * difficultyConfig().enemySpeed;
+    state.projectiles.push({
+      x: originX, y: originY, vx: dx / len * speed, vy: dy / len * speed,
+      r: e.boss ? 7 : 5, life: e.boss ? 3.2 : 2.4, element, damage: Math.round((info.damage + (e.boss ? 7 : 0)) * difficultyConfig().enemyDamage), fromBoss: !!e.boss,
+    });
+    if (Math.abs(originX - player.x) < window.innerWidth * 1.2) midi.sfx('shoot');
+    spawnDust(originX, originY, e.boss ? 8 : 4, info.color);
+  }
+
+  function updateProjectiles(dt) {
+    for (const p of state.projectiles) {
+      p.life -= dt;
+      p.x += p.vx * dt;
+      p.y += p.vy * dt;
+      const hitBox = { x: p.x - p.r, y: p.y - p.r, w: p.r * 2, h: p.r * 2 };
+      if (p.life > 0 && intersects(hitBox, player)) {
+        const info = ELEMENTS[p.element] || ELEMENTS.nature;
+        damage(p.damage);
+        if (info.slow) player.hurtUntil = Math.max(player.hurtUntil, now() + info.slow);
+        spawnDust(p.x, p.y, 12, info.color);
+        p.life = 0;
+      }
+      if (p.life > 0 && rectSolid(p.x - p.r, p.y - p.r, p.r * 2, p.r * 2)) {
+        spawnDust(p.x, p.y, 6, (ELEMENTS[p.element] || ELEMENTS.nature).color);
+        p.life = 0;
+      }
+    }
+    state.projectiles = state.projectiles.filter(p => p.life > 0);
+  }
+
+  function updateDistanceBoss() {
+    if (state.finished) return;
+    const distanceLevel = Math.max(1, Math.floor(player.x / LEVEL_DISTANCE) + 1);
+    while (state.nextBossLevel < distanceLevel) state.nextBossLevel++;
+    if (state.nextBossLevel !== distanceLevel) return;
+    const bossExists = state.enemies.some(e => !e.dead && e.boss && e.levelTag === distanceLevel);
+    const triggerX = state.nextBossLevel * LEVEL_DISTANCE;
+    if (!bossExists && player.x + window.innerWidth * .65 >= triggerX) {
+      const pool = currentMonsterPool();
+      spawnEnemyAtColumn(Math.floor((player.x + window.innerWidth * .82) / TILE), pool[(distanceLevel - 1) % pool.length], { boss: true });
+      state.nextBossLevel++;
+    }
+  }
+
+  function separateEnemies(dt) {
+    const live = state.enemies.filter(e => !e.dead);
+    for (let i = 0; i < live.length; i++) {
+      for (let j = i + 1; j < live.length; j++) {
+        const a = live[i], b = live[j];
+        const ax = a.x + a.w / 2, ay = a.y + a.h / 2;
+        const bx = b.x + b.w / 2, by = b.y + b.h / 2;
+        const dx = bx - ax, dy = by - ay;
+        const minX = (a.flying || b.flying) ? 46 : 42;
+        const minY = (a.flying || b.flying) ? 38 : 18;
+        if (Math.abs(dx) >= minX || Math.abs(dy) >= minY) continue;
+        const push = clamp((minX - Math.abs(dx)) * .5, 1, 14) * (dx < 0 ? -1 : 1);
+        a.x = clamp(a.x - push * dt * 7, 0, WORLD_COLS * TILE - a.w);
+        b.x = clamp(b.x + push * dt * 7, 0, WORLD_COLS * TILE - b.w);
+        if (a.flying || b.flying) {
+          const yPush = clamp((minY - Math.abs(dy)) * .35, 1, 10) * (dy < 0 ? -1 : 1);
+          if (a.flying) a.y = clamp(a.y - yPush * dt * 6, 48, WORLD_ROWS * TILE - a.h);
+          if (b.flying) b.y = clamp(b.y + yPush * dt * 6, 48, WORLD_ROWS * TILE - b.h);
+        }
+      }
     }
   }
 
@@ -660,7 +1266,15 @@
     if (state.score > state.best) { state.best = state.score; localStorage.setItem(STORAGE_BEST, String(state.best)); }
     spawnDust(e.x + e.w / 2, e.y + e.h / 2, 18, MONSTERS[e.type]?.color || '#84cc16');
     if (Math.random() < .28) state.pickups.push({ type: 'crystal', x: e.x + 5, y: e.y - 10, w: 22, h: 26, bob: rand(0, 6.28), taken: false });
+    if (shouldDropPotion(e)) state.pickups.push({ type: 'potion', x: e.x + e.w / 2 - 9, y: e.y - 14, w: 18, h: 24, bob: rand(0, 6.28), taken: false, heal: e.boss ? 42 : 24 });
+    midi.sfx('defeat');
     showToast(`+${gain} 击退${e.name || '怪物'}`);
+  }
+
+  function shouldDropPotion(e) {
+    if (e.boss) return true;
+    const base = e.type === 'mushpet' ? .34 : e.type === 'boar' ? .24 : e.type === 'wolf' ? .2 : .12;
+    return Math.random() < base && state.health < state.maxHealth * .92;
   }
 
   function updatePickups(dt) {
@@ -669,8 +1283,9 @@
       p.bob += dt * 4;
       if (intersects({ x: player.x - 6, y: player.y - 6, w: player.w + 12, h: player.h + 12 }, p) || intersects({ x: pet.x - 5, y: pet.y - 5, w: pet.w + 10, h: pet.h + 10 }, p)) {
         p.taken = true;
-        if (p.type === 'crystal') { state.crystals++; state.totalCrystals++; state.score += Math.round(80 * difficultyConfig().score); showToast('💎 水晶 +1'); spawnDust(p.x + p.w / 2, p.y + p.h / 2, 18, COLORS.crystal); }
-        else { state.score += Math.round(15 * difficultyConfig().score); spawnDust(p.x + p.w / 2, p.y + p.h / 2, 10, COLORS.gold); }
+        if (p.type === 'crystal') { state.crystals++; state.totalCrystals++; state.score += Math.round(80 * difficultyConfig().score); midi.sfx('crystal'); showToast('💎 水晶 +1'); spawnDust(p.x + p.w / 2, p.y + p.h / 2, 18, COLORS.crystal); }
+        else if (p.type === 'potion') { const heal = Math.min(p.heal || 24, state.maxHealth - state.health); state.health = Math.min(state.maxHealth, state.health + (p.heal || 24)); state.score += Math.round(10 * difficultyConfig().score); midi.sfx('heal'); showToast(`🧪 生命 +${Math.max(0, Math.round(heal))}`); spawnDust(p.x + p.w / 2, p.y + p.h / 2, 18, COLORS.heart); }
+        else { state.score += Math.round(15 * difficultyConfig().score); midi.sfx('coin'); spawnDust(p.x + p.w / 2, p.y + p.h / 2, 10, COLORS.gold); }
         if (state.score > state.best) { state.best = state.score; localStorage.setItem(STORAGE_BEST, String(state.best)); }
         updateHud(); checkMission();
       }
@@ -684,12 +1299,17 @@
 
   function intersects(a, b) { return a.x < b.x + b.w && a.x + a.w > b.x && a.y < b.y + b.h && a.y + a.h > b.y; }
 
+  function stageIndex(stage) { return Math.max(0, PET_SHEET_STAGES.indexOf(stage)); }
+  function stageForLevel(level) { return PET_SHEET_STAGES[Math.min(PET_SHEET_STAGES.length - 1, Math.floor((Math.max(1, Number(level) || 1) - 1) / 2))]; }
+
   function checkMission() {
     if (!state.finished && state.crystals >= levelCrystalGoal() && state.mined >= levelMinedGoal()) levelUp();
   }
 
   function levelUp() {
     state.level++;
+    state.levelMonsterPool = selectLevelMonsterPool(state.level);
+    state.projectiles = [];
     const bonus = Math.round((140 + state.level * 45) * difficultyConfig().score);
     state.score += bonus;
     state.crystals = 0;
@@ -697,8 +1317,9 @@
     state.health = Math.min(state.maxHealth, state.health + difficultyConfig().heal);
     state.stamina = 100;
     makeConfetti();
+    midi.sfx('level');
     showToast(`升级到 LV.${state.level}！+${bonus}`);
-    setMessage(`阶段完成！进入 LV.${state.level}，${monsterTypesForLevel().map(t => MONSTERS[t].name).join('、')} 会陆续出现。`, 4200);
+    setMessage(`阶段完成！进入 LV.${state.level}，本关主要怪物：${state.levelMonsterPool.map(t => MONSTERS[t].name).join('、')}。`, 4200);
     spawnLevelWave();
     post('gameProgress', { title: '宠物冒险', level: state.level, score: state.score, totalCrystals: state.totalCrystals, totalMined: state.totalMined, difficulty: state.difficulty, roundId: state.roundId });
     if (state.score > state.best) { state.best = state.score; localStorage.setItem(STORAGE_BEST, String(state.best)); }
@@ -714,7 +1335,7 @@
     localStorage.setItem(STORAGE_BEST, String(state.best));
     updateHud();
     if (won) { makeConfetti(); showToast('冒险记录已保存！'); setMessage('本次无限冒险已暂停，重新开始可再次挑战更高等级。', 6000); }
-    else { showToast('冒险失败，再试一次！'); setMessage(`生命耗尽了，你生存到 LV.${state.level}，重新开始再挑战吧。`, 6000); }
+    else { midi.sfx('gameover'); showToast('冒险失败，再试一次！'); setMessage(`生命耗尽了，你生存到 LV.${state.level}，重新开始再挑战吧。`, 6000); }
     ui.restart.hidden = false;
     ui.restart.textContent = won ? '再玩一次' : '重新挑战';
     overlay.hidden = false;
@@ -738,7 +1359,8 @@
   function update(dt) {
     if (!state.started || state.paused) return;
     if (!state.finished) {
-      updatePlayer(dt); updatePet(dt); updateEnemies(dt); updatePickups(dt);
+      ensureWorldGeneratedTo(Math.floor((player.x + window.innerWidth * 1.8) / TILE) + 80);
+      updatePlayer(dt); updatePet(dt); updateEnemies(dt); updateProjectiles(dt); updatePickups(dt); updateDistanceBoss();
       if (state.health < state.maxHealth && now() > player.hurtUntil) state.health = Math.min(state.maxHealth, state.health + 1.8 * dt);
     }
     for (const c of state.clouds) { c.x += c.speed * dt; if (c.x - state.camera.x > window.innerWidth + 240) c.x -= WORLD_COLS * TILE; }
@@ -748,6 +1370,91 @@
 
   function drawRect(x, y, w, h, color) { ctx.fillStyle = color; ctx.fillRect(Math.round(x), Math.round(y), Math.round(w), Math.round(h)); }
   function drawPixelRect(x, y, w, h, color) { drawRect(x, y, w, h, color); }
+
+  function createTextureAtlas() {
+    const cell = 32;
+    const keys = ['grassTop', 'dirt', 'stone', 'gem', 'sandTop', 'sand', 'snowTop', 'snowFill', 'water', 'tuft', 'flower', 'rock', 'reed', 'snowBush'];
+    const canvas = document.createElement('canvas');
+    canvas.width = cell * keys.length;
+    canvas.height = cell;
+    const t = canvas.getContext('2d');
+    t.imageSmoothingEnabled = false;
+    const rect = (x, y, w, h, color) => { t.fillStyle = color; t.fillRect(x, y, w, h); };
+    const noise = (ox, palette, count, min = 1, max = 4) => {
+      for (let i = 0; i < count; i++) {
+        const s = Math.floor(rand(min, max));
+        rect(ox + Math.floor(rand(0, cell - s)), Math.floor(rand(0, cell - s)), s, s, palette[i % palette.length]);
+      }
+    };
+    keys.forEach((key, index) => {
+      const ox = index * cell;
+      if (key === 'grassTop') {
+        rect(ox, 0, cell, cell, '#9a684b'); noise(ox, ['#7b503c', '#b77a55', '#6f4636'], 34, 2, 5);
+        rect(ox, 0, cell, 5, '#76d957'); rect(ox, 5, cell, 3, '#b9f36a'); rect(ox, 8, cell, 2, '#5ead47');
+        for (let x = 0; x < cell; x += 4) rect(ox + x, 1 + rand(0, 3), 2, rand(3, 7), pick(['#2f9e50', '#7ade57', '#d7f875']));
+        for (let x = 0; x < cell; x += 5) {
+          const h = Math.floor(rand(2, 7));
+          rect(ox + x, 9, 2, h, pick(['#6fd15d', '#56b94e', '#a2df5a']));
+          if (x % 10 === 0) rect(ox + x + 2, 10 + h, 2, 2, '#7b503c');
+        }
+      } else if (key === 'dirt') {
+        rect(ox, 0, cell, cell, '#9a684b'); noise(ox, ['#7b503c', '#b77a55', '#5f3d31', '#c28a65'], 52, 2, 5);
+        for (let y = 6; y < cell; y += 9) rect(ox + rand(0, 8), y, rand(8, 18), 2, 'rgba(92,58,43,.45)');
+      } else if (key === 'stone') {
+        rect(ox, 0, cell, cell, '#7c8994'); noise(ox, ['#5f6a73', '#9aa6ae', '#6b7680', '#aeb8bf'], 42, 2, 6);
+        for (let y = 7; y < cell; y += 9) rect(ox + (y % 2 ? 0 : 8), y, 20, 2, '#66727b');
+      } else if (key === 'gem') {
+        rect(ox, 0, cell, cell, '#52616d'); noise(ox, ['#3f4b55', '#667887'], 24, 2, 5);
+        rect(ox + 5, 6, 8, 19, '#67e8f9'); rect(ox + 17, 10, 7, 15, '#22d3ee'); rect(ox + 8, 6, 3, 18, '#ecfeff'); rect(ox + 21, 12, 2, 11, '#cffafe');
+      } else if (key === 'sandTop') {
+        rect(ox, 0, cell, cell, '#d8bd72'); noise(ox, ['#caa65e', '#e8d99a', '#b9914e', '#f4e7b0'], 58, 1, 4);
+        rect(ox, 0, cell, 4, '#ead98e'); rect(ox, 4, cell, 3, '#f4e7b0'); rect(ox, 7, cell, 2, '#caa65e');
+        for (let x = 0; x < cell; x += 6) rect(ox + x, 8, 3, rand(2, 6), pick(['#d5b66b', '#ead98e', '#caa65e']));
+        for (let y = 10; y < cell; y += 8) rect(ox + rand(0, 10), y, rand(9, 20), 1, 'rgba(170,128,66,.48)');
+      } else if (key === 'sand') {
+        rect(ox, 0, cell, cell, '#caa65e'); noise(ox, ['#b9914e', '#d8bd72', '#a8753d', '#e8d99a'], 64, 1, 4);
+        for (let y = 6; y < cell; y += 8) rect(ox + rand(0, 8), y, rand(12, 23), 1, 'rgba(146,96,45,.46)');
+        for (let y = 13; y < cell; y += 9) rect(ox + rand(0, 14), y, rand(7, 17), 2, 'rgba(235,215,154,.28)');
+      } else if (key === 'snowTop') {
+        rect(ox, 0, cell, cell, '#dce8ef'); noise(ox, ['#f8fafc', '#b9cbd8', '#c8d9e5', '#eef6fb'], 44, 2, 5);
+        rect(ox, 0, cell, 6, '#f8fafc'); rect(ox + 4, 6, 8, 3, '#e2edf5'); rect(ox + 19, 6, 10, 3, '#eef6fb');
+      } else if (key === 'snowFill') {
+        rect(ox, 0, cell, cell, '#c8d9e5'); noise(ox, ['#dce8ef', '#aebfcc', '#eaf2f7', '#b9cbd8'], 50, 2, 5);
+        for (let y = 7; y < cell; y += 9) rect(ox + rand(0, 10), y, rand(10, 21), 2, 'rgba(119,139,154,.28)');
+      } else if (key === 'water') {
+        rect(ox, 0, cell, cell, '#3db6d6'); noise(ox, ['#73d6df', '#1f9bb8', '#9be7ef'], 38, 1, 4);
+        for (let y = 6; y < cell; y += 8) rect(ox + rand(0, 8), y, rand(12, 24), 2, 'rgba(224,255,255,.5)');
+      } else if (key === 'tuft') {
+        for (let i = 0; i < 11; i++) { const x = 4 + i * 2; rect(ox + x, 24 - rand(4, 14), 2, rand(7, 15), pick(['#2f9e50', '#4ade80', '#65a30d'])); }
+      } else if (key === 'flower') {
+        rect(ox + 15, 17, 2, 12, '#15803d'); rect(ox + 9, 26, 16, 3, '#22c55e');
+        ['#f472b6', '#fde047', '#38bdf8'].forEach((c, i) => { rect(ox + 9 + i * 5, 12 + (i % 2) * 3, 4, 4, c); rect(ox + 10 + i * 5, 11 + (i % 2) * 3, 2, 7, c); });
+      } else if (key === 'rock') {
+        rect(ox + 6, 20, 20, 8, '#64748b'); rect(ox + 9, 15, 14, 7, '#7c8994'); rect(ox + 13, 13, 8, 5, '#a6b1ba'); rect(ox + 8, 24, 15, 2, '#475569');
+      } else if (key === 'reed') {
+        for (let i = 0; i < 5; i++) { const x = 8 + i * 4; rect(ox + x, 8 + i % 2 * 5, 2, 21 - i % 2 * 5, '#166534'); rect(ox + x - 1, 7 + i % 2 * 5, 4, 5, '#a16207'); }
+      } else if (key === 'snowBush') {
+        rect(ox + 5, 23, 22, 5, '#94a3b8'); rect(ox + 7, 17, 18, 8, '#e2edf5'); rect(ox + 11, 13, 11, 7, '#f8fafc'); rect(ox + 9, 20, 4, 3, '#b9cbd8');
+      }
+    });
+    return { canvas, cell, keys, map: Object.fromEntries(keys.map((k, i) => [k, i])) };
+  }
+
+  function drawTextureTile(key, x, y) {
+    if (!textureAtlas) textureAtlas = createTextureAtlas();
+    const idx = textureAtlas.map[key];
+    if (idx == null) return false;
+    ctx.drawImage(textureAtlas.canvas, idx * textureAtlas.cell, 0, textureAtlas.cell, textureAtlas.cell, Math.round(x), Math.round(y), TILE, TILE);
+    return true;
+  }
+
+  function drawAtlasSprite(key, x, y, w = TILE, h = TILE) {
+    if (!textureAtlas) textureAtlas = createTextureAtlas();
+    const idx = textureAtlas.map[key];
+    if (idx == null) return false;
+    ctx.drawImage(textureAtlas.canvas, idx * textureAtlas.cell, 0, textureAtlas.cell, textureAtlas.cell, Math.round(x), Math.round(y), Math.round(w), Math.round(h));
+    return true;
+  }
 
   function drawBackground(vw, vh) {
     const g = ctx.createLinearGradient(0, 0, 0, vh);
@@ -770,16 +1477,65 @@
 
   function drawTile(c, r, v) {
     const x = c * TILE - state.camera.x, y = r * TILE - state.camera.y;
-    if (v === 1) {
-      drawRect(x, y, TILE, TILE, COLORS.dirt); drawRect(x, y, TILE, 7, COLORS.grass); drawRect(x, y + 7, TILE, 3, COLORS.grass2);
-      drawRect(x + 4, y + 15, 6, 5, COLORS.dirt2); drawRect(x + 18, y + 24, 8, 4, COLORS.dirt2);
-    } else if (v === 2) {
-      drawRect(x, y, TILE, TILE, COLORS.stone); drawRect(x + 4, y + 5, 8, 6, COLORS.stone2); drawRect(x + 17, y + 18, 11, 7, COLORS.stone2); drawRect(x + 2, y + 28, 24, 3, '#a6b1ba');
-    } else if (v === 3) {
-      drawRect(x, y, TILE, TILE, COLORS.dirt); drawRect(x + 3, y + 7, 9, 4, COLORS.dirt2); drawRect(x + 19, y + 16, 8, 5, COLORS.dirt2); drawRect(x + 7, y + 26, 12, 3, '#b8825f');
-    } else if (v === 4) {
-      drawRect(x, y, TILE, TILE, '#52616d'); drawRect(x + 6, y + 6, 7, 18, COLORS.crystal); drawRect(x + 18, y + 11, 6, 13, '#22d3ee'); drawRect(x + 8, y + 6, 3, 18, '#e0ffff');
+    const exposedTop = tileAt(c, r - 1) === 0;
+    const key = exposedTop ? TILE_TEXTURE_KEYS[v] : TILE_FILL_TEXTURE_KEYS[v];
+    if (key && drawTextureTile(key, x, y)) {
+      if (exposedTop && (v === 1 || v === 5 || v === 6)) drawTopBlend(c, r, v, x, y);
+      drawTerrainSplat(c, r, v, x, y, exposedTop);
+      return;
     }
+    drawRect(x, y, TILE, TILE, COLORS.dirt);
+  }
+
+  function drawTerrainSplat(c, r, v, x, y, exposedTop) {
+    const neighbors = [
+      { dc: -1, dr: 0, edge: 'left' }, { dc: 1, dr: 0, edge: 'right' },
+      { dc: 0, dr: -1, edge: 'top' }, { dc: 0, dr: 1, edge: 'bottom' }
+    ];
+    for (const n of neighbors) {
+      const other = tileAt(c + n.dc, r + n.dr);
+      if (!other || other === v || !isSolid(other)) continue;
+      drawSplatEdge(n.edge, splatColorForTile(other, n.edge === 'top'), x, y, exposedTop && n.edge === 'top');
+    }
+  }
+
+  function splatColorForTile(v, top = false) {
+    if (v === 1) return top ? 'rgba(111,209,93,.46)' : 'rgba(122,80,60,.36)';
+    if (v === 2) return 'rgba(124,137,148,.34)';
+    if (v === 3) return 'rgba(154,104,75,.34)';
+    if (v === 4) return 'rgba(104,232,255,.25)';
+    if (v === 5) return top ? 'rgba(234,217,142,.42)' : 'rgba(202,166,94,.34)';
+    if (v === 6) return top ? 'rgba(248,250,252,.46)' : 'rgba(200,217,229,.34)';
+    if (v === 7) return 'rgba(61,182,214,.34)';
+    return 'rgba(15,23,42,.16)';
+  }
+
+  function drawSplatEdge(edge, color, x, y, strong = false) {
+    ctx.fillStyle = color;
+    const w = strong ? 6 : 4;
+    if (edge === 'left') ctx.fillRect(Math.round(x), Math.round(y + 3), w, TILE - 6);
+    else if (edge === 'right') ctx.fillRect(Math.round(x + TILE - w), Math.round(y + 3), w, TILE - 6);
+    else if (edge === 'top') ctx.fillRect(Math.round(x + 2), Math.round(y), TILE - 4, w);
+    else if (edge === 'bottom') ctx.fillRect(Math.round(x + 2), Math.round(y + TILE - w), TILE - 4, w);
+  }
+
+  function drawTopBlend(c, r, v, x, y) {
+    const below = tileAt(c, r + 1);
+    if (!isSolid(below)) return;
+    const seed = (c * 73856093 ^ r * 19349663) >>> 0;
+    const topPalette = v === 5 ? ['#ead98e', '#f4e7b0', '#caa65e'] : v === 6 ? ['#f8fafc', '#e2edf5', '#b9cbd8'] : ['#6fd15d', '#a2df5a', '#56b94e'];
+    const shadow = v === 5 ? '#b9914e' : v === 6 ? '#b9cbd8' : '#3f8f42';
+    for (let i = 0; i < 7; i++) {
+      const px = (seed + i * 11) % 31;
+      const h = 2 + ((seed >> (i % 12)) & 5);
+      drawRect(x + px, y + 8 + (i % 3), 2 + (i % 2), h, topPalette[i % topPalette.length]);
+    }
+    for (let i = 0; i < 4; i++) {
+      const px = (seed * (i + 3) + i * 7) % 30;
+      drawRect(x + px, y + 10 + i, 2, 2, shadow);
+    }
+    if (tileAt(c - 1, r) !== v) drawRect(x, y + 4, 2, 9, 'rgba(255,255,255,.22)');
+    if (tileAt(c + 1, r) !== v) drawRect(x + TILE - 2, y + 5, 2, 8, 'rgba(0,0,0,.12)');
   }
 
   function drawTrees() {
@@ -797,6 +1553,28 @@
       drawRect(x + 7, crownBaseY - 8, 29, 23, '#49bf63');
       drawRect(x + 4, crownBaseY + 21, 10, 7, '#84cc16');
     }
+  }
+
+  function drawTerrainDetails() {
+    for (const d of state.details) {
+      const key = DETAIL_TEXTURE_KEYS[d.type];
+      const size = TILE * (d.s || 1);
+      const x = d.x - state.camera.x;
+      const groundY = Math.round((d.groundY ?? d.y ?? 0) - state.camera.y);
+      const anchor = detailAtlasAnchor(d.type);
+      const y = groundY - Math.round(size * anchor);
+      if (x < -40 || x > window.innerWidth + 40 || y < -60 || y > window.innerHeight + 40) continue;
+      drawAtlasSprite(key, x, y, size, size);
+    }
+  }
+
+  function detailAtlasAnchor(type) {
+    if (type === 'tuft') return 29 / 32;
+    if (type === 'flower') return 29 / 32;
+    if (type === 'reed') return 29 / 32;
+    if (type === 'rock') return 28 / 32;
+    if (type === 'snowBush') return 28 / 32;
+    return 1;
   }
 
   function drawMaster() {
@@ -831,12 +1609,57 @@
     const x = Math.round(pet.x - state.camera.x), y = Math.round(pet.y - state.camera.y + bob);
     if (state.petBitmap && state.petMeta?.uv) {
       const u = state.petMeta.uv;
-      ctx.drawImage(state.petBitmap, u.x, u.y, u.width, u.height, x - 4, y - 8, pet.w + 8, pet.h + 8);
+      try {
+        ctx.drawImage(state.petBitmap, u.x, u.y, u.width, u.height, x - 4, y - 8, pet.w + 8, pet.h + 8);
+        if (state.petMeta.name) {
+          ctx.fillStyle = 'rgba(255,255,255,.86)';
+          ctx.fillRect(x - 8, y - 21, Math.min(70, Math.max(34, state.petMeta.name.length * 10)), 14);
+          ctx.fillStyle = '#075985'; ctx.font = '10px sans-serif'; ctx.textAlign = 'center';
+          ctx.fillText(state.petMeta.name.slice(0, 6), x + pet.w / 2, y - 10);
+        }
+      } catch (err) {
+        state.petBitmap = null;
+        requestPetImage();
+      }
     } else {
-      drawRect(x + 4, y + 7, 30, 26, '#f9a8d4'); drawRect(x + 9, y, 7, 9, '#f9a8d4'); drawRect(x + 22, y, 7, 9, '#f9a8d4');
-      drawRect(x + 12, y + 17, 4, 4, '#0f172a'); drawRect(x + 24, y + 17, 4, 4, '#0f172a'); drawRect(x + 18, y + 24, 5, 3, '#be185d');
+      drawDefaultPet(x, y);
     }
     drawRect(x + 2, y + pet.h - 2, pet.w - 4, 4, 'rgba(15,23,42,.16)');
+  }
+
+  function drawDefaultPet(x, y) {
+    const blink = Math.sin(now() / 260) > .86;
+    drawRect(x + 4, y + 8, 30, 25, '#f9a8d4');
+    drawRect(x + 8, y + 1, 7, 10, '#f9a8d4');
+    drawRect(x + 23, y + 1, 7, 10, '#f9a8d4');
+    drawRect(x + 6, y + 13, 26, 14, '#fbcfe8');
+    drawRect(x + 12, y + 17, 4, blink ? 1 : 4, '#0f172a');
+    drawRect(x + 24, y + 17, 4, blink ? 1 : 4, '#0f172a');
+    drawRect(x + 18, y + 24, 5, 3, '#be185d');
+  }
+
+  function drawPetBitmapArt(art, x, y, w, h, flip = false, alpha = 1) {
+    if (!art?.bitmap || !art?.uv) return false;
+    const u = art.uv;
+    ctx.save();
+    ctx.globalAlpha *= alpha;
+    ctx.imageSmoothingEnabled = false;
+    if (flip) {
+      ctx.translate(x + w / 2, y + h / 2);
+      ctx.scale(-1, 1);
+      ctx.drawImage(art.bitmap, u.x, u.y, u.width, u.height, -w / 2, -h / 2, w, h);
+    } else {
+      ctx.drawImage(art.bitmap, u.x, u.y, u.width, u.height, x, y, w, h);
+    }
+    ctx.restore();
+    ctx.imageSmoothingEnabled = false;
+    return true;
+  }
+
+  function drawHpBar(x, y, w, pct, color) {
+    pct = clamp(pct || 0, 0, 1);
+    drawRect(x, y, w, 5, 'rgba(15,23,42,.45)');
+    drawRect(x + 1, y + 1, (w - 2) * pct, 3, color);
   }
 
   function drawPickup(p) {
@@ -844,6 +1667,11 @@
     const x = Math.round(p.x - state.camera.x), y = Math.round(p.y - state.camera.y + Math.sin(p.bob) * 4);
     if (p.type === 'crystal') {
       drawRect(x + 8, y, 8, 4, '#e0ffff'); drawRect(x + 4, y + 4, 16, 16, COLORS.crystal); drawRect(x + 8, y + 20, 8, 6, '#0891b2'); drawRect(x + 8, y + 5, 4, 14, '#fff');
+    } else if (p.type === 'potion') {
+      drawRect(x + 6, y, 6, 4, '#f8fafc'); drawRect(x + 5, y + 4, 8, 3, '#94a3b8');
+      drawRect(x + 2, y + 7, 14, 15, '#fee2e2'); drawRect(x + 4, y + 10, 10, 9, '#ef4444');
+      drawRect(x + 8, y + 9, 2, 11, '#fff'); drawRect(x + 4, y + 13, 10, 2, '#fff');
+      drawRect(x + 2, y + 22, 14, 2, '#991b1b');
     } else {
       drawRect(x + 3, y + 1, 10, 14, COLORS.gold); drawRect(x + 5, y + 3, 6, 10, '#fde68a'); drawRect(x + 2, y + 5, 12, 2, '#b45309');
     }
@@ -854,6 +1682,18 @@
     const x = Math.round(e.x - state.camera.x), y = Math.round(e.y - state.camera.y);
     const def = MONSTERS[e.type] || MONSTERS.slime;
     const hurt = now() < (e.hurtUntil || 0);
+    const art = state.petBitmaps[(typeof e.artIndex === 'number' ? e.artIndex : -1)];
+    const size = e.boss ? Math.max(68, Math.min(92, 64 + state.level * 3)) : Math.max(40, Math.min(54, 38 + state.level * 2 + (e.maxHp || 1)));
+    const bob = Math.sin(now() / 180 + (e.artIndex || 0)) * (e.flying ? 4 : 1.5);
+    if (art?.bitmap && art?.uv) {
+      drawRect(x + e.w / 2 - 16, y + e.h - 2, 32, 5, 'rgba(15,23,42,.16)');
+      const drawn = drawPetBitmapArt(art, Math.round(x + e.w / 2 - size / 2), Math.round(y + e.h - size + 7 + bob), size, size, e.vx < 0, hurt ? .62 : 1);
+      if (drawn) {
+        drawHpBar(x + e.w / 2 - (e.boss ? 30 : 18), y - (e.boss ? 14 : 7), e.boss ? 60 : 36, e.hp / e.maxHp, e.boss ? '#f97316' : '#ef4444');
+        if (e.boss) { ctx.fillStyle = '#7c2d12'; ctx.font = '10px sans-serif'; ctx.textAlign = 'center'; ctx.fillText('BOSS', x + e.w / 2, y - 18); }
+        return;
+      }
+    }
     if (hurt) ctx.globalAlpha = .62;
     drawRect(x + 2, y + e.h - 2, e.w - 4, 4, 'rgba(15,23,42,.14)');
     if (e.type === 'wolf') {
@@ -876,8 +1716,24 @@
       drawRect(x + 2, y + 8, e.w - 4, e.h - 8, def.color); drawRect(x + 6, y + 2, e.w - 12, 10, def.accent);
     }
     drawRect(x + Math.max(7, e.w * .3), y + 13, 4, 4, '#0f172a'); drawRect(x + Math.min(e.w - 10, e.w * .65), y + 13, 4, 4, '#0f172a');
-    if (e.maxHp > 2) { drawRect(x + 2, y - 6, e.w - 4, 4, 'rgba(15,23,42,.35)'); drawRect(x + 3, y - 5, (e.w - 6) * clamp(e.hp / e.maxHp, 0, 1), 2, '#ef4444'); }
+    if (e.maxHp > 2) { drawRect(x + 2, y - (e.boss ? 12 : 6), e.w - 4, e.boss ? 6 : 4, 'rgba(15,23,42,.35)'); drawRect(x + 3, y - (e.boss ? 10 : 5), (e.w - 6) * clamp(e.hp / e.maxHp, 0, 1), e.boss ? 3 : 2, e.boss ? '#f97316' : '#ef4444'); }
+    if (e.boss) { ctx.fillStyle = '#7c2d12'; ctx.font = '10px sans-serif'; ctx.textAlign = 'center'; ctx.fillText('BOSS', x + e.w / 2, y - 15); }
     ctx.globalAlpha = 1;
+  }
+
+  function drawProjectile(p) {
+    const info = ELEMENTS[p.element] || ELEMENTS.nature;
+    const x = Math.round(p.x - state.camera.x), y = Math.round(p.y - state.camera.y);
+    const r = p.r || 5;
+    ctx.save();
+    ctx.globalAlpha = clamp(p.life, .35, 1);
+    drawRect(x - r, y - r, r * 2, r * 2, info.color);
+    drawRect(x - Math.max(1, r - 3), y - Math.max(1, r - 3), Math.max(2, (r - 3) * 2), Math.max(2, (r - 3) * 2), info.accent);
+    ctx.fillStyle = '#0f172a';
+    ctx.font = `${p.fromBoss ? 15 : 11}px sans-serif`;
+    ctx.textAlign = 'center';
+    ctx.fillText(info.icon, x, y + 4);
+    ctx.restore();
   }
 
   function drawParticles() {
@@ -887,13 +1743,16 @@
 
   function draw() {
     const vw = window.innerWidth, vh = window.innerHeight;
+    ensureWorldGeneratedTo(Math.ceil((state.camera.x + vw) / TILE) + 3);
     drawBackground(vw, vh);
     drawTrees();
     const c0 = clamp(Math.floor(state.camera.x / TILE) - 2, 0, WORLD_COLS - 1), c1 = clamp(Math.ceil((state.camera.x + vw) / TILE) + 2, 0, WORLD_COLS - 1);
     const r0 = clamp(Math.floor(state.camera.y / TILE) - 2, 0, WORLD_ROWS - 1), r1 = clamp(Math.ceil((state.camera.y + vh) / TILE) + 2, 0, WORLD_ROWS - 1);
     for (let r = r0; r <= r1; r++) for (let c = c0; c <= c1; c++) { const v = tileAt(c, r); if (v) drawTile(c, r, v); }
+    drawTerrainDetails();
     for (const p of state.pickups) drawPickup(p);
     for (const e of state.enemies) drawEnemy(e);
+    for (const p of state.projectiles) drawProjectile(p);
     drawPet(); drawMaster(); drawParticles();
     ctx.fillStyle = 'rgba(15,23,42,.18)';
     ctx.fillRect(0, vh - 5, vw, 5);
@@ -908,17 +1767,52 @@
 
   async function setPetImage(data) {
     if (!data?.imageBlob || !data?.uv) return;
+    if (state.currentPetId && data.petId && data.petId !== state.currentPetId) return;
     try {
+      const nextBitmap = await createImageBitmap(data.imageBlob);
+      const oldBitmap = state.petBitmap;
       if (state.petUrl) URL.revokeObjectURL(state.petUrl);
-      state.petBitmap?.close?.();
       state.petMeta = data;
-      state.petBitmap = await createImageBitmap(data.imageBlob);
+      state.currentPetId = data.petId || state.currentPetId;
+      state.petBitmap = nextBitmap;
+      oldBitmap?.close?.();
     } catch (err) {}
+  }
+
+  async function setPetImages(data) {
+    const pets = data?.pets || [];
+    if (!pets.length || state.petBitmaps.length) return;
+    if (!state.petBitmap) setFallbackPetImage(pets[0]);
+    try {
+      for (const old of state.petBitmaps) old.bitmap?.close?.();
+      state.petBitmaps = [];
+      for (const item of pets.slice(0, 12)) {
+        if (!item?.imageBlob || !item?.uv) continue;
+        const bitmap = await createImageBitmap(item.imageBlob);
+        state.petBitmaps.push({ bitmap, uv: item.uv, name: item.name || '野生宠物' });
+      }
+      state.petArtCursor = 0;
+      refreshEnemyArt();
+    } catch (err) {}
+  }
+
+  async function setFallbackPetImage(data) {
+    const lockedPetId = state.currentPetId;
+    state.currentPetId = '';
+    await setPetImage(data);
+    state.currentPetId = state.petMeta?.petId || lockedPetId || '';
   }
 
   function requestPetImage() {
     const requestId = `haqi_adventure_pet_${Date.now()}`;
-    try { window.parent?.postMessage({ type: 'haqi_get_pet_image', requestId, anim: 'happy' }, '*'); } catch (err) {}
+    state.petRequestId = requestId;
+    try { window.parent?.postMessage({ type: 'haqi_get_pet_image', requestId, anim: 'happy', currentOnly: true, petId: state.currentPetId || undefined }, '*'); } catch (err) {}
+    setTimeout(() => { if (!state.petBitmap) requestPetImages(); }, 1200);
+  }
+
+  function requestPetImages() {
+    const requestId = `haqi_adventure_wild_pets_${Date.now()}`;
+    try { window.parent?.postMessage({ type: 'haqi_get_pet_images', requestId, anim: 'idle' }, '*'); } catch (err) {}
   }
 
   function onKey(e, down) {
@@ -1016,7 +1910,9 @@
   window.addEventListener('resize', resize);
   window.addEventListener('message', event => {
     const msg = event.data || {};
-    if (msg.type === 'haqi_pet_image' && msg.ok) setPetImage(msg.data);
+    if (msg.type === 'haqi_pet_image' && msg.ok && (msg.requestId === 'active_pet_config' || !state.petRequestId || !msg.requestId || msg.requestId === state.petRequestId)) setPetImage(msg.data);
+    if (msg.type === 'haqi_pet_images' && msg.ok) setPetImages(msg.data);
+    if (msg.type === 'setGameConfig' && msg.data?.petId) { state.currentPetId = msg.data.petId; requestPetImage(); }
     if (msg.type === 'setGameConfig' && msg.data?.masterStyle) { state.masterStyle = msg.data.masterStyle === 'girl' ? 'girl' : 'boy'; updateChoiceButtons(); }
     if (msg.type === 'setGameConfig' && msg.data?.difficulty && DIFFICULTIES[msg.data.difficulty]) { state.difficulty = msg.data.difficulty; updateChoiceButtons(); updateHud(); }
   });

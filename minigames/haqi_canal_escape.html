@@ -24,9 +24,16 @@
     ['#ffffff', '#f8f5ff', '#cfc3e8'],
     ['#ffffff', '#f1fdff', '#b6d8e0'],
   ];
+  const DIFFICULTIES = [
+    { key: 'easy', name: '简单', desc: '少量船块 · 轻松上手', startLevel: 1, emoji: '🐣', color: '#22c55e', shadow: '#15803d' },
+    { key: 'normal', name: '中等', desc: '需要一些规划', startLevel: 5, emoji: '🐢', color: '#0ea5e9', shadow: '#0369a1' },
+    { key: 'hard', name: '困难', desc: '船块密集 · 烧脑挑战', startLevel: 10, emoji: '🐉', color: '#f97316', shadow: '#9a3412' },
+  ];
+  const DIFFICULTY_STORAGE_KEY = 'haqiCanalEscapeDifficulty';
 
   const state = {
     level: 1,
+    difficultyKey: localStorage.getItem(DIFFICULTY_STORAGE_KEY) || 'easy',
     bestLevel: Number(localStorage.getItem(STORAGE_KEY) || 1),
     pieces: [],
     solutionMoves: 0,
@@ -169,6 +176,19 @@
       .mh-card h1 { margin: 0 0 10px; color: #0f2747; font-size: 24px; font-weight: 1000; }
       .mh-card p { margin: 0 0 15px; color: #0f766e; font-size: 15px; font-weight: 800; line-height: 1.55; }
       .mh-start, .mh-next { border-radius: 999px; padding: 10px 22px; background: #22c55e; color: white; box-shadow: 0 5px 0 #15803d; }
+      .mh-diff-list { display: flex; flex-direction: column; gap: 10px; margin: 4px 0 6px; }
+      .mh-diff-btn {
+        display: flex; align-items: center; gap: 12px; width: 100%; padding: 11px 14px; border: 0; border-radius: 14px;
+        color: #fff; text-align: left; cursor: pointer; box-shadow: 0 5px 0 var(--ds, #15803d); transition: transform .12s ease, filter .12s ease;
+        background: var(--dc, #22c55e);
+      }
+      .mh-diff-btn:active { transform: translateY(3px); box-shadow: 0 2px 0 var(--ds, #15803d); }
+      .mh-diff-btn.current { outline: 3px solid #fde047; outline-offset: 2px; }
+      .mh-diff-emoji { font-size: 28px; line-height: 1; flex: none; }
+      .mh-diff-meta { display: flex; flex-direction: column; gap: 2px; min-width: 0; }
+      .mh-diff-name { font-size: 17px; font-weight: 1000; }
+      .mh-diff-desc { font-size: 12px; font-weight: 800; opacity: .92; }
+      .mh-diff-lv { margin-left: auto; flex: none; font-size: 12px; font-weight: 900; background: rgba(255,255,255,.28); padding: 3px 9px; border-radius: 999px; }
       .mh-generating { position: fixed; left: 50%; top: 50%; z-index: 35; transform: translate(-50%, -50%); padding: 14px 18px; border-radius: 16px; background: rgba(255,255,255,.95); color: #0f766e; font-weight: 1000; border: 2px solid #7dd3fc; box-shadow: 0 12px 30px rgba(15,23,42,.22); }
       .mh-toast { position: fixed; left: 50%; top: 50%; z-index: 45; transform: translate(-50%, -50%); padding: 18px 22px; border-radius: 18px; background: white; border: 3px solid #86efac; color: #15803d; font-size: 22px; font-weight: 1000; text-align: center; box-shadow: 0 18px 42px rgba(15,23,42,.24); animation: mhToast 1.3s ease-out forwards; pointer-events: none; }
       .mh-confetti { position: fixed; top: -16px; z-index: 48; width: 9px; height: 15px; border-radius: 3px; background: var(--c); animation: mhConfetti var(--d) ease-in forwards; pointer-events: none; }
@@ -237,7 +257,14 @@
       <div class="mh-card">
         <h1 id="mhHowToTitle">宠物运河营救</h1>
         <p>宠物坐在小船上。滑动横向或纵向船块，给小船让出上方水道。卡住时可以撤销或使用提示，通关后难度继续上升。</p>
-        <button id="mhStart" class="mh-start" type="button">开始闯关</button>
+        <button id="mhStart" class="mh-start" type="button">选择难度</button>
+      </div>
+    </div>
+    <div id="mhDiff" class="mh-overlay" role="dialog" aria-modal="true" aria-labelledby="mhDiffTitle" hidden>
+      <div class="mh-card">
+        <h1 id="mhDiffTitle">选择难度</h1>
+        <p>选择关卡难度，越难船块越多、解法越长。</p>
+        <div class="mh-diff-list" id="mhDiffList"></div>
       </div>
     </div>
     <div id="mhWin" class="mh-overlay" role="dialog" aria-modal="true" aria-labelledby="mhWinTitle" hidden>
@@ -259,7 +286,7 @@
       renderBoard();
     });
     prepareLevel(1);
-    showHowTo();
+    showDifficulty();
     post('gameLoaded');
   }
 
@@ -283,20 +310,11 @@
     byId('mhHint').onclick = useHint;
     byId('mhStart').onclick = () => {
       byId('mhHowTo').hidden = true;
-      if (!state.started) startGame();
+      showDifficulty();
     };
     byId('mhRestart').onclick = () => {
       if (state.generating) return;
-      state.finished = false;
-      state.moves = 0;
-      state.seconds = 0;
-      state.selectedId = TARGET_ID;
-      state.history = [];
-      state.hintsUsed = 0;
-      state.hint = null;
-      prepareLevel(state.level);
-      startTimer();
-      post('gameStarted');
+      showDifficulty();
     };
     byId('mhNext').onclick = () => {
       byId('mhWin').hidden = true;
@@ -310,7 +328,7 @@
     });
   }
 
-  function startGame() {
+  function startGame(startLevel) {
     state.started = true;
     state.finished = false;
     state.moves = 0;
@@ -319,6 +337,7 @@
     state.history = [];
     state.hintsUsed = 0;
     state.hint = null;
+    prepareLevel(Math.max(1, Math.round(startLevel || state.level)));
     startTimer();
     post('gameStarted');
     updateStats();
@@ -850,6 +869,43 @@
 
   function showHowTo() {
     byId('mhHowTo').hidden = false;
+  }
+
+  function renderDifficulties() {
+    const list = byId('mhDiffList');
+    list.innerHTML = '';
+    DIFFICULTIES.forEach(diff => {
+      const btn = document.createElement('button');
+      btn.type = 'button';
+      btn.className = `mh-diff-btn${diff.key === state.difficultyKey ? ' current' : ''}`;
+      btn.style.setProperty('--dc', diff.color);
+      btn.style.setProperty('--ds', diff.shadow);
+      btn.innerHTML = `
+        <span class="mh-diff-emoji">${diff.emoji}</span>
+        <span class="mh-diff-meta">
+          <span class="mh-diff-name">${diff.name}</span>
+          <span class="mh-diff-desc">${diff.desc}</span>
+        </span>
+        <span class="mh-diff-lv">Lv.${diff.startLevel}+</span>`;
+      btn.onclick = () => chooseDifficulty(diff.key);
+      list.appendChild(btn);
+    });
+  }
+
+  function showDifficulty() {
+    if (state.generating) return;
+    renderDifficulties();
+    byId('mhWin').hidden = true;
+    byId('mhHowTo').hidden = true;
+    byId('mhDiff').hidden = false;
+  }
+
+  function chooseDifficulty(key) {
+    const diff = DIFFICULTIES.find(d => d.key === key) || DIFFICULTIES[0];
+    state.difficultyKey = diff.key;
+    try { localStorage.setItem(DIFFICULTY_STORAGE_KEY, diff.key); } catch (_) {}
+    byId('mhDiff').hidden = true;
+    startGame(diff.startLevel);
   }
 
   function showToast(text) {

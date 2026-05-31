@@ -15,7 +15,8 @@ import { isVisitingMode, state, setZoomLevel as _setZoomLevelRaw } from './state
 import { savePetDebounced } from './storage.js';
 import { displayPetName } from './dna.js';
 
-import { planetLevel, showPlanetResearchPanel, showVisitReturnPrompt } from './level_planet.js';
+import { planetLevel, showPlanetResearchPanel } from './level_planet.js';
+import { showVisitReturnPrompt } from './view_spacetravel.js';
 import { fieldLevel }  from './level_field.js';
 import { petLevel, stopPetWalk } from './level_pet.js';
 import { cellLevel, stopCellGame } from './level_cell.js';
@@ -28,6 +29,13 @@ import SoundManager from './soundManager.js';
 const soundManager = SoundManager.getInstance();
 
 const LEVELS = [planetLevel, fieldLevel, petLevel, cellLevel];
+// Only the field level carries scene background music. Whenever we bind a
+// different zoom level (planet / pet / cell), stop the field music so it does
+// not bleed into a silent scene. The field level manages its own music in
+// fieldLevel.bindStage (playing it, or stopping it for music-less scenes).
+function syncBgMusicForLevel(level) {
+    if (level !== fieldLevel) soundManager.stopBgMusic?.({ fadeMs: 360 });
+}
 const DEV_HOSTS = new Set(['127.0.0.1', 'localhost']);
 const MH_DOCK_HEIGHT = 128;
 const CAMERA_SETTLE_EPSILON = 0.0004;
@@ -79,9 +87,54 @@ let __companionMoodLastAt = 0;
 const __companionMoodPendingTimers = new Map();
 let __zoomBarHideTimer = null;
 
-function currentAppTitle() {
+// 归属标签：有昵称直接显示昵称，否则回退到用户名。优先使用拜访好友信息。
+function currentOwnerLabel() {
+    if (isVisitingMode()) {
+        const visit = state.visitingMode || {};
+        const username = String(visit.friendUsername || '').trim();
+        const nickname = String(visit.friendName || '').trim();
+        return nickname || username || String(visit.planetName || '好友').trim() || '好友';
+    }
+    const user = state.user || {};
+    const username = String(user.username || '').trim();
+    const nickname = String(user.nickname || user.displayName || user.name || '').trim();
+    return nickname || username || '我';
+}
+
+// 取当前层正在展示的宠物（拜访时为好友宠物）。
+function currentDisplayPet(pet = __lastPet) {
+    if (isVisitingMode()) return state.visitingMode?.friendPet || pet;
+    return pet;
+}
+
+// 根据当前缩放层生成顶栏标题。
+//  · planet(0)：星球名 / appTitle
+//  · field(1) ：username(nickname)的星球
+//  · pet(2)   ：username(nickname)的家
+//  · cell(3)  ：当前宠物的细胞
+function currentAppTitle(lvl = state.zoomLevel, pet = __lastPet) {
+    if (lvl === 1) return `${currentOwnerLabel()}的星球`;
+    if (lvl === 2) return `${currentOwnerLabel()}的家`;
+    if (lvl === 3) {
+        const name = displayPetName(currentDisplayPet(pet)) || '宠物';
+        return `${name}的细胞`;
+    }
+    // planet 层（最外层 / 太空）
+    if (isVisitingMode()) {
+        const visitName = String(state.visitingMode?.planetName || '').trim();
+        if (visitName) return visitName;
+    }
     const title = String(state.settings?.starSettlement?.appTitle || '').trim();
     return title || t('appName');
+}
+
+// 仅更新顶栏标题文本（层切换时调用，topbar 节点不会被替换）。
+function refreshAppTitle(lvl = state.zoomLevel, pet = __lastPet) {
+    const title = currentAppTitle(lvl, pet);
+    const titleEl = document.querySelector('.mh-brand-title');
+    if (titleEl) titleEl.textContent = title;
+    const logoEl = document.querySelector('.mh-brand-logo');
+    if (logoEl) logoEl.setAttribute('aria-label', title);
 }
 
 function currentZoomOptions() {
@@ -94,15 +147,35 @@ function defaultHomeZoomLevel() {
     return getDefaultZoomLevelIndex(currentZoomOptions());
 }
 
+// 拜访的是官方 / 名人星球（而非真实好友用户）时为 true。
+// 这类星球没有真实用户账号，因此只暴露到「星球」层（不进入宠物房间 / 细胞）。
+function isNonUserPlanetVisit() {
+    if (!isVisitingMode()) return false;
+    const visit = state.visitingMode;
+    if (visit?.officialPlanetId) return true;
+    return !visit?.friendUserId && !visit?.friendUsername;
+}
+
+// 拜访时可进入的最高缩放层：好友（真实用户）到「家」(2)，官方/名人星球只到「星球」(1)。
+function maxVisitingZoomLevel() {
+    return isNonUserPlanetVisit() ? 1 : 2;
+}
+
 function visibleZoomLevels() {
     let indices = getVisibleZoomLevelIndices(currentZoomOptions());
-    if (isVisitingMode()) indices = indices.filter(index => index <= 2);
+    if (isVisitingMode()) {
+        const maxLevel = maxVisitingZoomLevel();
+        indices = indices.filter(index => index <= maxLevel);
+    }
     return indices.length ? indices : getVisibleZoomLevelIndices({});
 }
 
 function resolveHomeZoomLevel(target, from = state.zoomLevel) {
     let resolved = resolveZoomLevelIndex(target, currentZoomOptions(), from);
-    if (isVisitingMode() && resolved > 2) resolved = resolveZoomLevelIndex(2, currentZoomOptions(), from);
+    if (isVisitingMode()) {
+        const maxLevel = maxVisitingZoomLevel();
+        if (resolved > maxLevel) resolved = resolveZoomLevelIndex(maxLevel, currentZoomOptions(), from);
+    }
     return resolved;
 }
 
@@ -426,7 +499,7 @@ export function renderHome(panel, { pet }, callbacks = {}) {
 
     const zoomDef = CONFIG.zoomLevels[lvl];
     const level = LEVELS[lvl];
-    const appTitle = currentAppTitle();
+    const appTitle = currentAppTitle(lvl, pet);
     clearCameraIdleReturn();
     // 起点相机：使用该层最佳视角
     cameraZoom = getLevelBestCamera(level);
@@ -476,6 +549,7 @@ export function renderHome(panel, { pet }, callbacks = {}) {
     refreshPetStateUi(pet);
 
     const ctx = makeCtx(pet, callbacks);
+    syncBgMusicForLevel(level);
     level.bindStage(pet, ctx);
     level.bindDock(pet, ctx);
     bindDockHorizontalScroll();
@@ -1368,10 +1442,14 @@ function handleCompanionPetTouch(petEl, pet = __lastPet) {
 // =============================================================================
 function requestZoomLevel(target) {
     if (isDecorZoomLocked()) return;
+    const requested = resolveZoomLevelIndex(target, currentZoomOptions(), state.zoomLevel);
     const to = resolveHomeZoomLevel(target, state.zoomLevel);
     if (isVisitingMode()) {
-        if (to > 2) {
-            showToast('拜访好友时只能在星球表面和宠物房间活动。', 'info', 1800);
+        const maxLevel = maxVisitingZoomLevel();
+        if (requested > maxLevel) {
+            showToast(isNonUserPlanetVisit()
+                ? '参观官方星球时只能在星球表面活动。'
+                : '拜访好友时只能在星球表面和宠物房间活动。', 'info', 1800);
             forceBestCameraDistance();
             return;
         }
@@ -1516,11 +1594,13 @@ function runZoomTransition(from, to) {
         const zd = CONFIG.zoomLevels[to];
         const lab = document.getElementById('mhZoomLabel');
         if (lab) lab.innerHTML = `${zd.emoji} ${escapeHtml(zd.name)} · <i>${escapeHtml(zd.subtitle)}</i>`;
+        refreshAppTitle(to, pet);
         stage.className = `mh-stage zoom-${zd.id} ${state.isDecorMode && (to === 1 || to === 2) ? 'decor-mode' : ''} ${state.isFeedMode && to === 2 ? 'feed-mode' : ''}`;
         stage.style.touchAction = 'none';
         refreshZoomLevelBar(stage);
 
         const ctx = makeCtx(pet, __lastCallbacks);
+        syncBgMusicForLevel(newLevel);
         newLevel.bindStage(pet, ctx);
         if (to === 1) newLevel.centerPet?.(pet, { animate: false });
         stopCameraAnimation();

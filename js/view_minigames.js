@@ -27,6 +27,30 @@ const MINIGAME_ALL_PET_IMAGE_REQUESTS = new Set([
 
 const MINIGAMES = [
     {
+        id: 'adventure',
+        title: '宠物冒险',
+        icon: '⛏️',
+        src: './minigames/haqi_adventure.html',
+        statBonus: { bond: 28, mood: 12 },
+        levelReward: { coins: { min: 18, max: 90 }, label: '冒险奖励', scoreDivisor: 16, levelBonus: 5, passBonus: 18 },
+    },
+    {
+        id: 'hungry',
+        title: '宠物荒野生存',
+        icon: '🍖',
+        src: './minigames/haqi_hungry.html',
+        statBonus: { bond: 30, mood: 10 },
+        levelReward: { coins: { min: 18, max: 96 }, label: '生存奖励', scoreDivisor: 18, levelBonus: 5, passBonus: 18 },
+    },
+    {
+        id: 'thunder',
+        title: '宠物雷电',
+        icon: '🛸',
+        src: './minigames/haqi_thunder.html',
+        statBonus: { bond: 28, mood: 12 },
+        levelReward: { coins: { min: 16, max: 90 }, label: '银河奖励', scoreDivisor: 14, levelBonus: 5, passBonus: 16 },
+    },
+    {
         id: 'pet_snake',
         title: '宠物贪吃蛇大乱斗',
         icon: '🐍',
@@ -1099,19 +1123,50 @@ function openGame(gameId, params = null, { allowLowEnergy = false } = {}) {
     setMinigameLoading(true);
     if (done) done.style.display = game.manualComplete ? 'block' : 'none';
     frame.setAttribute('allow', game.allow || 'autoplay; fullscreen');
+    frame.onload = () => postGameConfig();
     frame.src = minigameUrl(game.src, params);
     showToast(`开始 ${game.title}`, 'info', 1000);
 }
 
+function postGameConfig() {
+    const frame = $('mhMinigameFrame');
+    const pet = requestedPetForMinigame({}) || currentPet;
+    if (!frame?.contentWindow || !pet) return;
+    try {
+        frame.contentWindow.postMessage({
+            type: 'setGameConfig',
+            data: {
+                petId: pet.id || '',
+                petName: displayPetName(pet),
+                masterStyle: localStorage.getItem('haqiAdventureMasterV1') || undefined,
+            },
+        }, '*');
+    } catch (_) {}
+    buildPetImagePayload(pet, { anim: 'happy', petId: pet.id })
+        .then((image) => {
+            try {
+                frame.contentWindow?.postMessage({
+                    type: 'haqi_pet_image',
+                    requestId: 'active_pet_config',
+                    ok: true,
+                    data: image,
+                }, '*');
+            } catch (_) {}
+        })
+        .catch(() => {});
+}
+
 function minigameUrl(src, params = null) {
-    const query = new URLSearchParams({ t: String(Date.now()) });
+    const query = new URLSearchParams();
     if (params && typeof params === 'object') {
         Object.entries(params).forEach(([key, value]) => {
             if (value == null || value === '') return;
             query.set(key, String(value));
         });
     }
-    return `${src}${src.includes('?') ? '&' : '?'}${query.toString()}`;
+    const queryString = query.toString();
+    if (!queryString) return src;
+    return `${src}${src.includes('?') ? '&' : '?'}${queryString}`;
 }
 
 function finishCurrentGame(onGameFinished, data = {}, onFinishedPrompt = null, { forcePrompt = false } = {}) {

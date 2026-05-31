@@ -14,13 +14,13 @@
   const STORAGE_BEST = 'haqiHungryBestV1';
   const STORAGE_MASTER = 'haqiHungryMasterV1';
   const STORAGE_DIFFICULTY = 'haqiHungryDifficultyV1';
-  const WORLD_W = 1600;
-  const WORLD_H = 2600;
+  const WORLD_W = 4800;
+  const WORLD_H = 6400;
+  const CHUNK_SIZE = 384;
+  const TERRAIN_TILE = 16;
   const PLAYER_SPEED = 172;
   const SPRINT_SPEED = 224;
   const PET_MAX_TEAM = 3;
-  const TARGET_FOOD = 18;
-  const TARGET_DAY = 4;
   const DAY_SECONDS = 70;
   const ATTACK_RANGE = 72;
   const AUTO_ATTACK_RANGE = 78;
@@ -32,11 +32,14 @@
   const PET_SHEET_STAGES = ['baby', 'teen', 'adult', 'elder'];
   const PET_STAGE_NAMES = { baby: '幼年', teen: '青年', adult: '成年', elder: '老年' };
   const WATER_TILE = 8;
+  const TERRAIN_TEXTURE_TILE = 16;
+  const TERRAIN_VARIANTS = 10;
+  const TERRAIN_TEXTURES = ['land', 'lawn', 'forest', 'water', 'desert', 'wetland', 'snow'];
   const PET_INDEX_URL = new URL('../famous-pets/_pet_index.json', location.href).href;
   const DIFFICULTIES = {
-    easy: { name: '轻松', initialFood: 4, enemyCount: 18, enemyMin: 10, enemyHp: .82, enemySpeed: .9, enemyDamage: .78, hunger: .74, spawn: .72, score: .85 },
-    normal: { name: '普通', initialFood: 2, enemyCount: 24, enemyMin: 16, enemyHp: 1, enemySpeed: 1, enemyDamage: 1, hunger: 1, spawn: 1, score: 1 },
-    hard: { name: '挑战', initialFood: 1, enemyCount: 31, enemyMin: 22, enemyHp: 1.22, enemySpeed: 1.12, enemyDamage: 1.25, hunger: 1.18, spawn: 1.3, score: 1.2 },
+    easy: { name: '轻松', initialFood: 4, enemyCount: 12, enemyMin: 7, enemyHp: .82, enemySpeed: .9, enemyDamage: .78, hunger: .74, spawn: .72, score: .85 },
+    normal: { name: '普通', initialFood: 2, enemyCount: 18, enemyMin: 10, enemyHp: 1, enemySpeed: 1, enemyDamage: 1, hunger: 1, spawn: 1, score: 1 },
+    hard: { name: '挑战', initialFood: 1, enemyCount: 26, enemyMin: 16, enemyHp: 1.22, enemySpeed: 1.12, enemyDamage: 1.25, hunger: 1.18, spawn: 1.3, score: 1.2 },
   };
   const COLORS = {
     grass: '#8fcb6b', grass2: '#78b65d', dark: '#274c3a', soil: '#8a6246', water: '#4fb3c8', sand: '#dbc276', berry: '#ef4444', wood: '#8b5a2b', leaf: '#2f9e50', gold: '#facc15'
@@ -48,7 +51,17 @@
     desert: { base: '#d6bd73', alt: '#caaa60', detail: '#aa8847' },
     water: { base: '#3daec2', alt: '#2f9ab2', detail: '#73d6df' },
     wetland: { base: '#69b989', alt: '#5aa87f', detail: '#3f8f6a' },
+    snow: { base: '#dbeafe', alt: '#f8fafc', detail: '#93c5fd' },
   };
+  const BIOME_PRIORITY = { water: 6, wetland: 5, snow: 4, desert: 3, forest: 2, lawn: 1, land: 0 };
+  const TRANSITION_COLORS = {
+    land: 'rgba(106,170,83,.62)', lawn: 'rgba(79,157,75,.58)', forest: 'rgba(31,107,58,.64)',
+    water: 'rgba(47,154,178,.68)', desert: 'rgba(170,136,71,.64)', wetland: 'rgba(63,143,106,.62)', snow: 'rgba(248,250,252,.72)',
+  };
+  let terrainAtlas = null;
+  const terrainMetaCache = new Map();
+  const terrainChunkCache = new Map();
+  const BIOME_INDEX = TERRAIN_TEXTURES.reduce((map, type, index) => (map[type] = index, map), {});
 
   const state = {
     loadedPosted: false,
@@ -66,20 +79,28 @@
     hp: 100,
     hunger: 100,
     stamina: 100,
+    movementEnergy: .5,
+    eatingUntil: 0,
+    lastAutoEatAt: 0,
     food: 0,
     wood: 0,
     captured: 0,
     defeated: 0,
+    bossesDefeated: 0,
+    campsBuilt: 0,
     masterStyle: localStorage.getItem(STORAGE_MASTER) || 'boy',
     difficulty: DIFFICULTIES[localStorage.getItem(STORAGE_DIFFICULTY)] ? localStorage.getItem(STORAGE_DIFFICULTY) : 'normal',
     camera: { x: 0, y: 0 },
-    message: '采集食物，驯服荒野宠物，努力活过第 4 天！',
+    message: '采集食物，驯服荒野宠物，在荒野中一直冒险下去！',
     messageUntil: 0,
     finishPosted: false,
     petBitmaps: [],
     petArtCursor: 0,
     petCatalog: [],
     petCatalogLoading: false,
+    worldSeed: Math.floor(Math.random() * 999999),
+    chunks: new Map(),
+    terrainSeed: 0,
     objects: [],
     enemies: [],
     roster: [],
@@ -136,6 +157,10 @@
         color: #16311f; background: #0f2f2c; user-select: none; touch-action: none;
       }
       .hh-shell { position: relative; width: 100vw; height: 100vh; height: 100dvh; overflow: hidden; image-rendering: pixelated; background: #193a2f; }
+      .hh-shell::after { content: ''; position: absolute; inset: 0; z-index: 4; pointer-events: none; opacity: 0; }
+      .hh-shell.warn-hp::after { animation: hhHpFlash .72s infinite; background: rgba(239,68,68,.22); box-shadow: inset 0 0 52px rgba(127,29,29,.5); }
+      .hh-shell.warn-hunger::after { animation: hhHungerFlash .88s infinite; background: rgba(250,204,21,.18); box-shadow: inset 0 0 52px rgba(180,83,9,.38); }
+      .hh-shell.warn-hp.warn-hunger::after { animation: hhDangerFlash .58s infinite; }
       .hh-canvas { position: absolute; inset: 0; width: 100%; height: 100%; display: block; image-rendering: pixelated; }
       .hh-top {
         position: absolute; top: max(8px, env(safe-area-inset-top)); left: 8px; right: 8px; z-index: 5;
@@ -160,8 +185,10 @@
       .hh-bars { grid-column: 1 / -1; display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 5px; pointer-events: none; padding: 0 4px; }
       .hh-bar { height: 13px; border-radius: 999px; overflow: hidden; background: rgba(6,40,29,.38); border: 2px solid rgba(255,247,237,.9); }
       .hh-bar i { display: block; height: 100%; width: var(--pct); border-radius: inherit; background: linear-gradient(90deg, var(--c1), var(--c2)); transition: width .12s linear; }
+      .hh-bar.warn { animation: hhBarFlash .48s infinite; border-color: #fff7ed; box-shadow: 0 0 0 2px rgba(255,255,255,.32), 0 0 14px var(--warn); }
+      .hh-bar.warn i { filter: brightness(1.35) saturate(1.25); }
       .hh-message {
-        position: absolute; left: 50%; top: 82px; z-index: 6; transform: translateX(-50%); max-width: min(88vw, 460px);
+        position: absolute; left: 50%; top: max(122px, calc(env(safe-area-inset-top) + 112px)); z-index: 6; transform: translateX(-50%); max-width: min(88vw, 460px);
         padding: 9px 13px; border-radius: 12px; background: rgba(255,247,237,.94); border: 2px solid rgba(6,40,29,.82);
         color: #166534; font-size: 13px; font-weight: 1000; text-align: center; box-shadow: 0 5px 0 rgba(6,40,29,.13); pointer-events: none;
       }
@@ -225,17 +252,21 @@
       @keyframes hhJoyIn { from { opacity: 0; transform: scale(.8); } to { opacity: 1; transform: scale(1); } }
       @keyframes hhToast { 0% { opacity: 0; transform: translate(-50%, -14px) scale(.9); } 18% { opacity: 1; transform: translate(-50%, 0) scale(1); } 100% { opacity: 0; transform: translate(-50%, -26px) scale(.96); } }
       @keyframes hhConfetti { 100% { opacity: 0; transform: translate3d(var(--x), 112vh, 0) rotate(680deg); } }
+      @keyframes hhHpFlash { 0%,100% { opacity: .06; } 50% { opacity: 1; } }
+      @keyframes hhHungerFlash { 0%,100% { opacity: .05; } 50% { opacity: .9; } }
+      @keyframes hhDangerFlash { 0%,100% { opacity: .1; background: rgba(239,68,68,.24); } 50% { opacity: 1; background: rgba(250,204,21,.2); } }
+      @keyframes hhBarFlash { 0%,100% { opacity: .72; transform: scaleY(.92); } 50% { opacity: 1; transform: scaleY(1.12); } }
       @media (max-width: 640px) {
         .hh-top { grid-template-columns: 38px minmax(0, 1fr); }
         .hh-stats { grid-column: 1 / -1; justify-content: center; }
         .hh-title { font-size: 13px; }
         .hh-pill { min-width: 45px; height: 27px; padding: 0 6px; }
-        .hh-message { top: 113px; font-size: 12px; }
+        .hh-message { top: max(134px, calc(env(safe-area-inset-top) + 124px)); font-size: 12px; }
         .hh-hint { display: none; }
       }
       @media (max-height: 600px) {
         .hh-title { display: none; }
-        .hh-message { top: 96px; }
+        .hh-message { top: max(112px, calc(env(safe-area-inset-top) + 102px)); }
         .hh-action-btn { width: 54px; height: 54px; }
       }
       @media (hover: hover) and (pointer: fine) { .hh-actions { opacity: .34; transition: opacity .16s; } .hh-actions:hover { opacity: 1; } }
@@ -258,10 +289,10 @@
           <div class="hh-bar" title="体力"><i id="hhStamina" style="--pct:100%;--c1:#5eead4;--c2:#0891b2"></i></div>
         </div>
       </header>
-      <div id="hhMessage" class="hh-message">采集食物，驯服荒野宠物，努力活过第 4 天！</div>
+      <div id="hhMessage" class="hh-message">采集食物，驯服荒野宠物，在荒野中一直冒险下去！</div>
       <div id="hhWorkProgress" class="hh-work-progress"><b id="hhWorkText">采集中</b><i><em id="hhWorkBar" style="--pct:0%"></em></i></div>
       <div class="hh-bottom">
-        <div class="hh-hint">任意位置触摸拖动移动 · 靠近自动攻击/采集/捕获 · 离开会重置进度</div>
+        <div id="hhHint" class="hh-hint">任意位置触摸拖动移动 · 靠近自动攻击/采集/捕获 · 离开会重置进度</div>
         <div class="hh-actions">
           <button id="hhGather" class="hh-action-btn gather" type="button" aria-label="采集捕获">✋</button>
           <button id="hhAttack" class="hh-action-btn attack" type="button" aria-label="攻击">⚔️</button>
@@ -273,7 +304,7 @@
           <h1>宠物荒野生存</h1>
           <p>像素荒野里，饥饿会不断下降。采集浆果、蘑菇和篝火木材；击败野生宠物后靠近按 ✋ 捕获，最多带 3 只一起自动战斗。</p>
           <div class="hh-rule">
-            <span>🍖 食物越多分数越高</span><span>🐾 3 只伙伴可组队</span>
+            <span>🍖 食物越多分数越高</span><span>🏕️ 满足目标会建营地奖励</span>
             <span>⚔️ 宠物会自动攻击</span><span>🌙 夜晚怪物更凶</span>
           </div>
           <div class="hh-row">
@@ -310,7 +341,7 @@
   document.body.appendChild(root);
 
   const canvas = root.querySelector('#hhCanvas');
-  const ctx = canvas.getContext('2d');
+  let ctx = canvas.getContext('2d');
   ctx.imageSmoothingEnabled = false;
   const shell = root.querySelector('#hhShell');
   const overlay = root.querySelector('#hhOverlay');
@@ -323,9 +354,12 @@
   const ui = {
     day: root.querySelector('#hhDay'), food: root.querySelector('#hhFood'), wood: root.querySelector('#hhWood'), pets: root.querySelector('#hhPets'),
     score: root.querySelector('#hhScore'), best: root.querySelector('#hhBest'), hp: root.querySelector('#hhHp'), hunger: root.querySelector('#hhHunger'), stamina: root.querySelector('#hhStamina'),
-    message: root.querySelector('#hhMessage'), start: root.querySelector('#hhStart'), restart: root.querySelector('#hhRestart'),
+    hpBar: root.querySelector('#hhHp')?.parentElement, hungerBar: root.querySelector('#hhHunger')?.parentElement,
+    message: root.querySelector('#hhMessage'), hint: root.querySelector('#hhHint'), start: root.querySelector('#hhStart'), restart: root.querySelector('#hhRestart'),
     work: root.querySelector('#hhWorkProgress'), workText: root.querySelector('#hhWorkText'), workBar: root.querySelector('#hhWorkBar')
   };
+  let hintTimer = 0;
+  const audio = { ctx: null, enabled: false, last: {} };
 
   function post(type, data = {}) { try { window.parent?.postMessage({ type, data }, '*'); } catch (err) {} }
   function clamp(v, min, max) { return Math.max(min, Math.min(max, v)); }
@@ -370,6 +404,44 @@
     setTimeout(() => el.remove(), 1300);
   }
 
+  function initAudio() {
+    try {
+      audio.ctx = audio.ctx || new (window.AudioContext || window.webkitAudioContext)();
+      audio.ctx.resume?.();
+      audio.enabled = true;
+    } catch (err) {}
+  }
+
+  function playTone(freq = 440, duration = .08, type = 'square', volume = .05, delay = 0) {
+    if (!audio.enabled || !audio.ctx) return;
+    try {
+      const t = audio.ctx.currentTime + delay;
+      const osc = audio.ctx.createOscillator();
+      const gain = audio.ctx.createGain();
+      osc.type = type;
+      osc.frequency.setValueAtTime(freq, t);
+      gain.gain.setValueAtTime(.0001, t);
+      gain.gain.exponentialRampToValueAtTime(volume, t + .01);
+      gain.gain.exponentialRampToValueAtTime(.0001, t + duration);
+      osc.connect(gain); gain.connect(audio.ctx.destination);
+      osc.start(t); osc.stop(t + duration + .02);
+    } catch (err) {}
+  }
+
+  function playSound(name) {
+    const t = now();
+    if ((audio.last[name] || 0) + 60 > t) return;
+    audio.last[name] = t;
+    if (name === 'hit') { playTone(180, .06, 'square', .045); playTone(120, .08, 'sawtooth', .025, .035); }
+    else if (name === 'hurt') { playTone(110, .16, 'sawtooth', .055); }
+    else if (name === 'gather') { playTone(520, .07, 'triangle', .04); playTone(760, .08, 'triangle', .035, .06); }
+    else if (name === 'capture') { playTone(520, .08, 'triangle', .045); playTone(780, .1, 'triangle', .045, .07); playTone(1040, .12, 'triangle', .04, .16); }
+    else if (name === 'merge') { playTone(660, .08, 'sine', .045); playTone(880, .1, 'sine', .04, .08); playTone(1320, .12, 'sine', .035, .18); }
+    else if (name === 'win') { [523, 659, 784, 1046].forEach((f, i) => playTone(f, .12, 'triangle', .045, i * .09)); }
+    else if (name === 'lose') { [260, 220, 164].forEach((f, i) => playTone(f, .16, 'sawtooth', .04, i * .12)); }
+    else if (name === 'click') { playTone(420, .04, 'square', .025); }
+  }
+
   function makeConfetti() {
     const colors = ['#22c55e', '#38bdf8', '#facc15', '#fb7185', '#a78bfa', '#fb923c'];
     for (let i = 0; i < 54; i++) {
@@ -393,6 +465,252 @@
     return DIFFICULTIES[state.difficulty] || DIFFICULTIES.normal;
   }
 
+  function hash2(x, y, seed = state.worldSeed) {
+    let n = Math.imul(x | 0, 374761393) ^ Math.imul(y | 0, 668265263) ^ Math.imul(seed | 0, 1442695041);
+    n = (n ^ (n >>> 13)) >>> 0;
+    n = Math.imul(n, 1274126177) >>> 0;
+    return ((n ^ (n >>> 16)) >>> 0) / 4294967296;
+  }
+
+  function localHash(x, y, seed = 1) {
+    let n = Math.imul(x | 0, 1597334677) ^ Math.imul(y | 0, 3812015801) ^ Math.imul(seed | 0, 958282147);
+    n = (n ^ (n >>> 15)) >>> 0;
+    n = Math.imul(n, 2246822519) >>> 0;
+    return ((n ^ (n >>> 13)) >>> 0) / 4294967296;
+  }
+
+  function createTerrainAtlas() {
+    if (terrainAtlas) return terrainAtlas;
+    terrainAtlas = document.createElement('canvas');
+    terrainAtlas.width = TERRAIN_TEXTURE_TILE * TERRAIN_VARIANTS;
+    terrainAtlas.height = TERRAIN_TEXTURE_TILE * TERRAIN_TEXTURES.length;
+    const tctx = terrainAtlas.getContext('2d');
+    tctx.imageSmoothingEnabled = false;
+    TERRAIN_TEXTURES.forEach((type, row) => {
+      for (let variant = 0; variant < TERRAIN_VARIANTS; variant++) {
+        drawTerrainTextureTile(tctx, variant * TERRAIN_TEXTURE_TILE, row * TERRAIN_TEXTURE_TILE, type, 9100 + row * 311 + variant * 97);
+      }
+    });
+    return terrainAtlas;
+  }
+
+  function colorWithLightness(hex, amount = 0) {
+    const raw = String(hex || '#000000').replace('#', '');
+    const full = raw.length === 3 ? raw.split('').map(ch => ch + ch).join('') : raw.padEnd(6, '0').slice(0, 6);
+    const n = parseInt(full, 16);
+    const r = (n >> 16) & 255, g = (n >> 8) & 255, b = n & 255;
+    const target = amount >= 0 ? 255 : 0;
+    const t = Math.min(1, Math.abs(amount));
+    const mix = c => Math.round(c + (target - c) * t);
+    return `rgb(${mix(r)},${mix(g)},${mix(b)})`;
+  }
+
+  function variantPalette(type, variant, basePalette) {
+    const wave = Math.sin((variant + 1) * 1.73 + type.length) * .035;
+    const step = (variant - (TERRAIN_VARIANTS - 1) / 2) * .012;
+    return {
+      base: colorWithLightness(basePalette.base, wave + step),
+      alt: colorWithLightness(basePalette.alt, wave + step * .75),
+      detail: colorWithLightness(basePalette.detail, wave - step * .5),
+    };
+  }
+
+  function drawTerrainTextureTile(tctx, ox, oy, type, seed) {
+    const palette = variantPalette(type, Math.floor(seed / 97) % TERRAIN_VARIANTS, BIOMES[type] || BIOMES.land);
+    tctx.fillStyle = palette.base;
+    tctx.fillRect(ox, oy, TERRAIN_TEXTURE_TILE, TERRAIN_TEXTURE_TILE);
+    for (let y = 0; y < TERRAIN_TEXTURE_TILE; y++) {
+      for (let x = 0; x < TERRAIN_TEXTURE_TILE; x++) {
+        const n = localHash(x, y, seed);
+        const band = localHash(Math.floor((x + seed) / 3), Math.floor((y - seed) / 3), seed + 19);
+        const px = ox + x, py = oy + y;
+        if (type === 'water') drawTexturePixel(tctx, px, py, n < .22 ? colorWithLightness('#2f9ab2', band > .7 ? .04 : -.03) : n > .78 ? colorWithLightness('#5fc3cf', band > .52 ? .06 : -.02) : '', x, y, 'water');
+        else if (type === 'forest') drawTexturePixel(tctx, px, py, n < .28 ? palette.detail : n > .7 ? palette.alt : band > .88 ? '#1f5f35' : '', x, y, 'forest');
+        else if (type === 'desert') drawTexturePixel(tctx, px, py, n < .18 ? colorWithLightness('#caaa60', band > .65 ? .07 : -.04) : n > .8 ? colorWithLightness('#ead48c', band > .55 ? .05 : -.02) : '', x, y, 'desert');
+        else if (type === 'snow') {
+          const snowColor = n < .12 ? '#d7e8fb' : n > .84 ? '#f3f8ff' : band < .035 ? '#c8ddf4' : '';
+          if (snowColor && ((x + y + seed) & 1) === 0) drawTexturePixel(tctx, px, py, snowColor, x, y, 'snow');
+        }
+        else if (type === 'wetland') drawTexturePixel(tctx, px, py, n < .24 ? palette.detail : n > .7 ? '#7dd3a6' : band < .1 ? 'rgba(61,174,194,.72)' : '', x, y, 'wetland');
+        else drawTexturePixel(tctx, px, py, n < .16 ? palette.alt : n > .86 ? palette.detail : band > .94 ? colorWithLightness(palette.alt, .1) : '', x, y, type);
+      }
+    }
+    drawTerrainTileMotifs(tctx, ox, oy, type, seed, palette);
+    for (let i = 0; i < 14; i++) {
+      const x = Math.floor(localHash(i, 2, seed) * TERRAIN_TEXTURE_TILE);
+      const y = Math.floor(localHash(i, 5, seed) * TERRAIN_TEXTURE_TILE);
+      if (type === 'water') { tctx.fillStyle = 'rgba(255,255,255,.38)'; tctx.fillRect(ox + x, oy + y, 5, 1); }
+      else if (type === 'desert') { tctx.fillStyle = 'rgba(120,89,45,.42)'; tctx.fillRect(ox + x, oy + y, 4, 1); }
+      else if (type === 'snow') { tctx.fillStyle = 'rgba(255,255,255,.82)'; tctx.fillRect(ox + x, oy + y, 2, 2); }
+      else if (type === 'forest') { tctx.fillStyle = '#1f5f35'; tctx.fillRect(ox + x, oy + y, 3, 2); }
+      else { tctx.fillStyle = type === 'wetland' ? '#2f8b62' : '#3f8f46'; tctx.fillRect(ox + x, oy + y, 1, 3); }
+    }
+  }
+
+  function drawTerrainTileMotifs(tctx, ox, oy, type, seed, palette) {
+    const variant = Math.floor(localHash(seed, seed >> 3, 77) * 6);
+    const dot = (x, y, w, h, color) => { tctx.fillStyle = color; tctx.fillRect(ox + x, oy + y, w, h); };
+    if (type === 'water') {
+      for (let i = 0; i < 4; i++) {
+        const y = 2 + Math.floor(localHash(i, 30, seed) * 12);
+        const x = Math.floor(localHash(i, 31, seed) * 10);
+        dot(x, y, 4 + (i % 2) * 3, 1, i === variant % 4 ? 'rgba(255,255,255,.62)' : 'rgba(188,240,245,.34)');
+        if (localHash(i, 32, seed) > .55) dot(Math.min(13, x + 2), Math.min(15, y + 2), 2, 1, 'rgba(20,83,101,.26)');
+      }
+      return;
+    }
+    if (type === 'forest') {
+      for (let i = 0; i < 5; i++) {
+        const x = Math.floor(localHash(i, 40, seed) * 14);
+        const y = Math.floor(localHash(i, 41, seed) * 14);
+        dot(x, y, 2, 3, i % 2 ? '#236a3a' : palette.detail);
+        if (localHash(i, 42, seed) > .5) dot(Math.max(0, x - 1), y + 1, 4, 1, '#1f5f35');
+      }
+      return;
+    }
+    if (type === 'desert') {
+      for (let i = 0; i < 4; i++) {
+        const x = Math.floor(localHash(i, 50, seed) * 12);
+        const y = Math.floor(localHash(i, 51, seed) * 14);
+        dot(x, y, 4, 1, i % 2 ? 'rgba(120,89,45,.5)' : 'rgba(255,237,153,.42)');
+        if (localHash(i, 52, seed) > .55) dot(x + 1, Math.min(15, y + 2), 2, 1, 'rgba(146,109,52,.36)');
+      }
+      return;
+    }
+    if (type === 'snow') {
+      for (let i = 0; i < 3; i++) {
+        const x = Math.floor(localHash(i, 60, seed) * 15);
+        const y = Math.floor(localHash(i, 61, seed) * 15);
+        dot(x, y, i % 2 === 0 ? 4 : 2, 2, i % 2 ? 'rgba(255,255,255,.42)' : 'rgba(147,197,253,.22)');
+      }
+      return;
+    }
+    if (type === 'wetland') {
+      for (let i = 0; i < 4; i++) {
+        const x = Math.floor(localHash(i, 70, seed) * 13);
+        const y = Math.floor(localHash(i, 71, seed) * 13);
+        dot(x, y, 3, 2, i % 2 ? 'rgba(45,212,191,.36)' : '#3f8f6a');
+        dot(Math.min(15, x + 3), y, 1, 4, '#2f8b62');
+      }
+      return;
+    }
+    for (let i = 0; i < 5; i++) {
+      const x = Math.floor(localHash(i, 80, seed) * 15);
+      const y = Math.floor(localHash(i, 81, seed) * 15);
+      const flower = type === 'lawn' && localHash(i, 82, seed) > .72;
+      dot(x, y, 1, 4, palette.detail);
+      if (flower) dot(Math.max(0, x - 1), Math.max(0, y - 1), 2, 2, i % 2 ? '#fde047' : '#f9a8d4');
+      else if (localHash(i, 83, seed) > .6) dot(Math.min(15, x + 1), Math.min(15, y + 2), 2, 1, palette.alt);
+    }
+  }
+
+  function drawTexturePixel(tctx, px, py, color, x, y, type) {
+    if (color) { tctx.fillStyle = color; tctx.fillRect(px, py, 1, 1); }
+    if (type === 'water' && (y === 3 || y === 10) && x > 2 && x < 13 && (x + y) % 3 !== 0) { tctx.fillStyle = 'rgba(255,255,255,.52)'; tctx.fillRect(px, py, 1, 1); }
+    if (type === 'desert' && (x * 3 + y) % 13 === 0) { tctx.fillStyle = 'rgba(120,89,45,.42)'; tctx.fillRect(px, py, 1, 1); }
+    if (type === 'wetland' && (x + y) % 9 === 0) { tctx.fillStyle = 'rgba(61,174,194,.68)'; tctx.fillRect(px, py, 1, 1); }
+  }
+
+  function terrainTextureIndex(biome) { return BIOME_INDEX[biome] ?? 0; }
+
+  function terrainTileMeta(tx, ty) {
+    if (terrainMetaCache.size > 42000) terrainMetaCache.clear();
+    const key = `${state.terrainSeed}:${tx},${ty}`;
+    const cached = terrainMetaCache.get(key);
+    if (cached) return cached;
+    const wx = tx * TERRAIN_TILE, wy = ty * TERRAIN_TILE;
+    const cx = wx + TERRAIN_TILE * .5, cy = wy + TERRAIN_TILE * .5;
+    const biome = biomeAt(cx, cy);
+    const tileSeed = Math.floor(hash2(tx, ty, state.worldSeed + 300) * 100000);
+    const variantNoise = valueNoise(cx, cy, 128, 77);
+    const variant = (tileSeed + Math.floor(variantNoise * TERRAIN_VARIANTS)) % TERRAIN_VARIANTS;
+    const n = valueNoise(cx, cy, 96, 88);
+    const fine = hash2(tx, ty, state.worldSeed + 530);
+    const accent = (n > .42 && n < .58 && fine < .72) ? '' : terrainAccentForBiome(biome, n, fine);
+    const pattern = accent ? Math.floor(hash2(tx, ty, state.worldSeed + 531) * 5) : -1;
+    const meta = {
+      biome, biomeRow: terrainTextureIndex(biome), tileSeed, variant, accent, pattern, n, fine,
+      north: biomeAt(cx, cy - TERRAIN_TILE),
+      east: biomeAt(cx + TERRAIN_TILE, cy),
+      south: biomeAt(cx, cy + TERRAIN_TILE),
+      west: biomeAt(cx - TERRAIN_TILE, cy),
+      nw: biomeAt(cx - TERRAIN_TILE, cy - TERRAIN_TILE),
+      ne: biomeAt(cx + TERRAIN_TILE, cy - TERRAIN_TILE),
+      se: biomeAt(cx + TERRAIN_TILE, cy + TERRAIN_TILE),
+      sw: biomeAt(cx - TERRAIN_TILE, cy + TERRAIN_TILE),
+    };
+    terrainMetaCache.set(key, meta);
+    return meta;
+  }
+
+  function drawInteriorTerrainVariation(wx, wy, biome, tx, ty, seed, meta = null) {
+    const n = meta?.n ?? valueNoise(wx + TERRAIN_TILE * .5, wy + TERRAIN_TILE * .5, 96, 88);
+    const fine = meta?.fine ?? hash2(tx, ty, state.worldSeed + 530);
+    if (!meta && n > .42 && n < .58 && fine < .72) return;
+    const sx = Math.round(screenX(wx)), sy = Math.round(screenY(wy));
+    const accent = meta ? meta.accent : terrainAccentForBiome(biome, n, fine);
+    if (!accent) return;
+    ctx.fillStyle = accent;
+    const pattern = meta ? meta.pattern : Math.floor(hash2(tx, ty, state.worldSeed + 531) * 5);
+    if (pattern === 0) {
+      for (let i = 0; i < 4; i++) {
+        const x = Math.floor(localHash(i, tx, seed) * 13) + 1;
+        const y = Math.floor(localHash(i, ty, seed + 1) * 13) + 1;
+        drawRect(sx + x, sy + y, 2, biome === 'water' ? 1 : 2, accent);
+      }
+    } else if (pattern === 1) {
+      const y = 3 + Math.floor(fine * 8);
+      drawRect(sx + 2, sy + y, 10, biome === 'water' ? 1 : 2, accent);
+      if (biome !== 'water') drawRect(sx + 5, sy + y + 3, 6, 1, accent);
+    } else if (pattern === 2) {
+      drawRect(sx + 3, sy + 3, 3, 2, accent);
+      drawRect(sx + 9, sy + 10, 4, 2, accent);
+      if (fine > .5) drawRect(sx + 6, sy + 7, 2, 2, accent);
+    } else if (pattern === 3) {
+      for (let y = 2; y < 15; y += 4) drawRect(sx + 2 + Math.floor(localHash(y, tx, seed) * 7), sy + y, 5, 1, accent);
+    } else {
+      drawRect(sx + 1, sy + 1, 2, 2, accent);
+      drawRect(sx + 13, sy + 3, 2, 2, accent);
+      drawRect(sx + 4, sy + 12, 3, 2, accent);
+      drawRect(sx + 10, sy + 10, 2, 3, accent);
+    }
+  }
+
+  function terrainAccentForBiome(biome, n, fine) {
+    if (biome === 'water') return n > .62 ? 'rgba(255,255,255,.36)' : n < .32 ? 'rgba(21,94,117,.28)' : '';
+    if (biome === 'desert') return n > .62 ? 'rgba(234,212,140,.36)' : n < .32 ? 'rgba(120,89,45,.28)' : '';
+    if (biome === 'forest') return n > .6 ? 'rgba(22,101,52,.34)' : n < .34 ? 'rgba(74,124,55,.28)' : '';
+    if (biome === 'wetland') return n > .62 ? 'rgba(45,212,191,.26)' : n < .34 ? 'rgba(22,101,52,.28)' : '';
+    if (biome === 'snow') return n > .68 ? 'rgba(255,255,255,.22)' : n < .24 ? 'rgba(147,197,253,.16)' : '';
+    if (biome === 'lawn') return fine > .5 ? 'rgba(236,252,203,.28)' : 'rgba(34,139,64,.24)';
+    return fine > .5 ? 'rgba(190,242,100,.24)' : 'rgba(63,143,70,.22)';
+  }
+
+  function smoothstep(t) { return t * t * (3 - 2 * t); }
+  function valueNoise(x, y, scale, seedOffset = 0) {
+    const gx = Math.floor(x / scale), gy = Math.floor(y / scale);
+    const fx = x / scale - gx, fy = y / scale - gy;
+    const sx = smoothstep(fx), sy = smoothstep(fy);
+    const a = hash2(gx, gy, state.worldSeed + seedOffset);
+    const b = hash2(gx + 1, gy, state.worldSeed + seedOffset);
+    const c = hash2(gx, gy + 1, state.worldSeed + seedOffset);
+    const d = hash2(gx + 1, gy + 1, state.worldSeed + seedOffset);
+    return lerp(lerp(a, b, sx), lerp(c, d, sx), sy);
+  }
+
+  function biomeAt(x, y) {
+    const height = valueNoise(x, y, 520, 11) * .62 + valueNoise(x, y, 160, 12) * .38;
+    const moisture = valueNoise(x, y, 620, 21) * .7 + valueNoise(x, y, 210, 22) * .3;
+    const temp = valueNoise(x, y, 760, 31);
+    if (height < .31) return 'water';
+    if (height < .38 && moisture > .48) return 'wetland';
+    if (temp < .2 && moisture > .32) return 'snow';
+    if (moisture < .28 && temp > .42) return 'desert';
+    if (moisture > .68) return 'forest';
+    if (moisture > .48) return 'lawn';
+    return 'land';
+  }
+
   function generateWorld() {
     state.objects = [];
     state.enemies = [];
@@ -401,56 +719,103 @@
     state.rosterOpen = false;
     state.mergeSourceId = '';
     state.autoWork = { kind: '', id: '', target: null, progress: 0, needed: 1 };
+    state.worldSeed = Math.floor(Math.random() * 999999);
+    state.terrainSeed = state.worldSeed;
+    terrainMetaCache.clear();
+    terrainChunkCache.clear();
+    state.chunks = new Map();
     state.particles = [];
     state.terrain = [];
     state.groundDetails = [];
     state.fireflies = [];
-    generateBiomes();
-    for (let i = 0; i < 720; i++) {
-      const biome = biomeAt(rand(0, WORLD_W), rand(0, WORLD_H));
-      const roll = Math.random();
-      state.groundDetails.push({ x: rand(0, WORLD_W), y: rand(0, WORLD_H), biome, t: biome === 'water' ? 'ripple' : biome === 'desert' ? (roll < .7 ? 'pebble' : 'dry') : biome === 'forest' ? (roll < .55 ? 'leaf' : 'blade') : roll < .62 ? 'blade' : roll < .82 ? 'pebble' : 'flower', c: rand(0, 6.28), s: rand(.7, 1.5) });
-    }
-    for (let i = 0; i < 58; i++) addObject('tree', rand(60, WORLD_W - 60), rand(60, WORLD_H - 60));
-    for (let i = 0; i < 58; i++) addObject(Math.random() < .66 ? 'berry' : 'mushroom', rand(60, WORLD_W - 60), rand(60, WORLD_H - 60));
+    ensureChunksAround(player.x, player.y);
     const cfg = difficultyConfig();
-    for (let i = 0; i < cfg.enemyCount; i++) spawnEnemy(rand(90, WORLD_W - 90), rand(90, WORLD_H - 120), i < 5 ? 'boar' : undefined);
+    for (let i = 0; i < Math.ceil(cfg.enemyCount / 4); i++) spawnEnemyPack(rand(90, WORLD_W - 90), rand(90, WORLD_H - 120), i < 2 ? 'boar' : undefined, rand(2, 5));
     for (let i = 0; i < 22; i++) state.fireflies.push({ x: rand(0, WORLD_W), y: rand(0, WORLD_H), t: rand(0, 6.28), s: rand(.5, 1.2) });
   }
 
-  function generateBiomes() {
-    const specs = [
-      ['water', 9, 44, 96], ['desert', 12, 38, 96], ['forest', 18, 42, 110], ['lawn', 18, 34, 88], ['wetland', 9, 38, 82], ['land', 24, 30, 72]
-    ];
-    for (const [type, count, minR, maxR] of specs) {
-      for (let i = 0; i < count; i++) state.terrain.push({ x: rand(60, WORLD_W - 60), y: rand(60, WORLD_H - 80), r: rand(minR, maxR), type, seed: rand(0, 6.28), sx: rand(.8, 1.35), sy: rand(.45, .82) });
+  function ensureChunksAround(x, y) {
+    const cx = Math.floor(x / CHUNK_SIZE), cy = Math.floor(y / CHUNK_SIZE);
+    for (let dy = -2; dy <= 2; dy++) for (let dx = -2; dx <= 2; dx++) ensureChunk(cx + dx, cy + dy);
+  }
+
+  function ensureChunk(cx, cy) {
+    if (cx < 0 || cy < 0 || cx * CHUNK_SIZE > WORLD_W || cy * CHUNK_SIZE > WORLD_H) return;
+    const key = `${cx},${cy}`;
+    if (state.chunks.has(key)) return;
+    state.chunks.set(key, true);
+    const x0 = cx * CHUNK_SIZE, y0 = cy * CHUNK_SIZE;
+    for (let i = 0; i < 22; i++) {
+      const x = x0 + hash2(cx * 31 + i, cy * 17 + i, state.worldSeed + 101) * CHUNK_SIZE;
+      const y = y0 + hash2(cx * 43 + i, cy * 29 + i, state.worldSeed + 102) * CHUNK_SIZE;
+      const biome = biomeAt(x, y);
+      const roll = hash2(cx * 53 + i, cy * 47 + i, state.worldSeed + 103);
+      state.groundDetails.push({ x, y, biome, t: biome === 'water' ? 'ripple' : biome === 'desert' ? (roll < .7 ? 'pebble' : 'dry') : biome === 'forest' ? (roll < .55 ? 'leaf' : 'blade') : roll < .62 ? 'blade' : roll < .82 ? 'pebble' : 'flower', c: roll * 6.28, s: .7 + roll * .8 });
+    }
+    for (let i = 0; i < 4; i++) {
+      const x = x0 + hash2(cx * 71 + i, cy * 61 + i, state.worldSeed + 201) * CHUNK_SIZE;
+      const y = y0 + hash2(cx * 83 + i, cy * 67 + i, state.worldSeed + 202) * CHUNK_SIZE;
+      const biome = biomeAt(x, y);
+      if (biome === 'forest' && hash2(cx, cy + i, state.worldSeed + 203) < .8) addObject('tree', x, y);
+      else if (biome !== 'water' && hash2(cx, cy + i, state.worldSeed + 204) < .42) addObject(hash2(cx, cy + i, state.worldSeed + 205) < .66 ? 'berry' : 'mushroom', x, y);
+    }
+    if (hash2(cx, cy, state.worldSeed + 501) < .55) {
+      const x = x0 + hash2(cx, cy, state.worldSeed + 502) * CHUNK_SIZE;
+      const y = y0 + hash2(cx, cy, state.worldSeed + 503) * CHUNK_SIZE;
+      if (biomeAt(x, y) !== 'water') spawnEnemyPack(x, y, undefined, 2 + Math.floor(hash2(cx, cy, state.worldSeed + 504) * 3));
+    }
+    if (hash2(cx, cy, state.worldSeed + 801) < .035) {
+      const x = x0 + hash2(cx, cy, state.worldSeed + 802) * CHUNK_SIZE;
+      const y = y0 + hash2(cx, cy, state.worldSeed + 803) * CHUNK_SIZE;
+      if (Math.hypot(x - player.x, y - player.y) > 360 && biomeAt(x, y) !== 'water') spawnBoss(x, y, pick(regionSpeciesAt(x, y)));
     }
   }
 
-  function biomeAt(x, y) {
-    let best = 'land', bestScore = 999;
-    for (const t of state.terrain) {
-      const rx = t.r * (t.sx || 1), ry = t.r * (t.sy || .6);
-      const score = ((x - t.x) / rx) ** 2 + ((y - t.y) / ry) ** 2;
-      if (score < 1 && score < bestScore) { bestScore = score; best = t.type; }
-    }
-    return best;
+  function regionSpeciesAt(x, y) {
+    const rx = Math.floor(x / (CHUNK_SIZE * 2));
+    const ry = Math.floor(y / (CHUNK_SIZE * 2));
+    const biome = biomeAt(x, y);
+    const base = biome === 'desert' ? ['boar', 'fox', 'mushpet'] : biome === 'forest' ? ['wolf', 'fox', 'mushpet'] : biome === 'wetland' ? ['mushpet', 'boar', 'fox'] : ['wolf', 'boar', 'fox', 'mushpet'];
+    const offset = Math.floor(hash2(rx, ry, state.worldSeed + 700) * base.length);
+    return [base[offset % base.length], base[(offset + 1) % base.length], base[(offset + 2) % base.length]].slice(0, hash2(rx, ry, state.worldSeed + 701) < .55 ? 2 : 3);
   }
 
   function addObject(type, x, y) {
-    const size = type === 'tree' ? rand(42, 58) : rand(22, 30);
+    const size = type === 'tree' ? rand(42, 58) : type === 'meat' ? rand(24, 32) : rand(22, 30);
     state.objects.push({ id: `obj_${Date.now()}_${state.objects.length}_${Math.floor(rand(1000, 9999))}`, type, x, y, w: size, h: size, hp: type === 'tree' ? 3 : 1, taken: false, grow: rand(0, 6.28) });
   }
 
-  function spawnEnemy(x, y, type = pick(['wolf', 'boar', 'fox', 'mushpet'])) {
+  function spawnEnemy(x, y, type = pick(['wolf', 'boar', 'fox', 'mushpet']), boss = false) {
     const cfg = difficultyConfig();
-    const hp = Math.round((type === 'boar' ? 72 : type === 'wolf' ? 58 : 46) * cfg.enemyHp);
+    const baseHp = type === 'boar' ? 72 : type === 'wolf' ? 58 : 46;
+    const hp = Math.round(baseHp * cfg.enemyHp * (boss ? 4.2 : 1));
     const enemy = {
-      id: `enemy_${Date.now()}_${state.enemies.length}_${Math.floor(rand(1000, 9999))}`,
-      type, x, y, w: 32, h: 32, hp, maxHp: hp, state: 'wild', vx: 0, vy: 0, speed: rand(44, 78) * cfg.enemySpeed, attackCd: rand(.2, 1.2), captureUntil: 0, hurtUntil: 0, wander: rand(0, 6.28), name: petName(type)
+      id: `${boss ? 'boss' : 'enemy'}_${Date.now()}_${state.enemies.length}_${Math.floor(rand(1000, 9999))}`,
+      type, boss, x, y, w: boss ? 48 : 32, h: boss ? 48 : 32, hp, maxHp: hp, state: 'wild', vx: 0, vy: 0,
+      speed: rand(boss ? 34 : 44, boss ? 54 : 78) * cfg.enemySpeed,
+      attackCd: rand(.2, 1.2), captureUntil: 0, hurtUntil: 0, wander: rand(0, 6.28), name: boss ? `首领${petName(type)}` : petName(type)
     };
     assignEnemyArt(enemy);
     state.enemies.push(enemy);
+  }
+
+  function spawnBoss(x, y, type = pick(['wolf', 'boar', 'fox', 'mushpet'])) {
+    spawnEnemy(x, y, type, true);
+    setMessage('⚠️ 首领怪物出现！击败它会掉落大量肉。', 3200);
+  }
+
+  function spawnEnemyPack(x, y, type, count = rand(3, 7)) {
+    const n = Math.max(2, Math.round(count));
+    const species = regionSpeciesAt(x, y);
+    const baseType = type || pick(species);
+    for (let i = 0; i < n; i++) {
+      const a = rand(0, Math.PI * 2);
+      const r = rand(8, 58);
+      const px = clamp(x + Math.cos(a) * r, 30, WORLD_W - 30);
+      const py = clamp(y + Math.sin(a) * r, 34, WORLD_H - 34);
+      if (biomeAt(px, py) === 'water') continue;
+      spawnEnemy(px, py, Math.random() < .76 ? baseType : pick(species));
+    }
   }
 
   function petName(type) {
@@ -461,9 +826,13 @@
     generateWorld();
     rosterOverlay.hidden = true;
     Object.assign(player, { x: WORLD_W / 2, y: WORLD_H - 340, dirX: 0, dirY: -1, facing: 'up', attackUntil: 0, attackStartedAt: 0, attackHitId: 0, hurtUntil: 0, animTime: 0 });
-    state.score = 0; state.hp = 100; state.hunger = 100; state.stamina = 100; state.food = difficultyConfig().initialFood; state.wood = 0; state.captured = 0; state.defeated = 0;
+    snapCameraToPlayer();
+    state.score = 0; state.hp = 100; state.hunger = 100; state.stamina = 100; state.movementEnergy = .5; state.eatingUntil = 0; state.lastAutoEatAt = 0; state.food = difficultyConfig().initialFood; state.wood = 0; state.captured = 0; state.defeated = 0; state.bossesDefeated = 0; state.campsBuilt = 0;
     state.dayTime = 0; state.day = 1; state.finished = false; state.paused = false; state.finishPosted = false; state.gameStartAt = now(); state.roundId = `haqi_hungry_${Date.now()}`;
     ui.restart.hidden = true;
+    ui.hint.hidden = false;
+    clearTimeout(hintTimer);
+    hintTimer = setTimeout(() => { ui.hint.hidden = true; }, 10000);
     setMessage(`${difficultyConfig().name}难度开始！先找浆果和蘑菇，夜晚前捕获伙伴。`, 3200);
     updateHud();
   }
@@ -591,6 +960,18 @@
     ui.hp.style.setProperty('--pct', `${clamp(state.hp, 0, 100)}%`);
     ui.hunger.style.setProperty('--pct', `${clamp(state.hunger, 0, 100)}%`);
     ui.stamina.style.setProperty('--pct', `${clamp(state.stamina, 0, 100)}%`);
+    updateWarnings();
+  }
+
+  function updateWarnings() {
+    const lowHp = state.started && !state.finished && state.hp <= 25;
+    const lowHunger = state.started && !state.finished && state.hunger <= 22;
+    shell.classList.toggle('warn-hp', lowHp);
+    shell.classList.toggle('warn-hunger', lowHunger);
+    ui.hpBar?.classList.toggle('warn', lowHp);
+    ui.hungerBar?.classList.toggle('warn', lowHunger);
+    ui.hpBar?.style.setProperty('--warn', 'rgba(239,68,68,.9)');
+    ui.hungerBar?.style.setProperty('--warn', 'rgba(250,204,21,.95)');
   }
 
   function getAxis() {
@@ -615,29 +996,43 @@
       player.animTime += dt * (sprinting ? 11 : 7);
     }
     else player.animTime += dt * 3;
+      state.movementEnergy = moving ? (sprinting ? 1.28 : 1) : .5;
     player.x = clamp(player.x + axis.x * speed * dt, 20, WORLD_W - 20);
     player.y = clamp(player.y + axis.y * speed * dt, 30, WORLD_H - 28);
+    ensureChunksAround(player.x, player.y);
     state.stamina = clamp(state.stamina + (sprinting ? -18 : 16) * dt, 0, 100);
     autoAttack();
   }
 
   function isWaterAt(x, y) {
-    for (const t of state.terrain) {
-      if (t.type !== 'water') continue;
-      const rx = Math.max(WATER_TILE * 2, t.r * (t.sx || 1.08));
-      const ry = Math.max(WATER_TILE, t.r * (t.sy || .58));
-      const nx = (x - screenIndependentX(t.x)) / rx;
-      const ny = (y - screenIndependentY(t.y)) / ry;
-      if (nx * nx + ny * ny <= 1) return true;
-    }
-    return false;
+    return biomeAt(x, y) === 'water';
   }
-
-  function screenIndependentX(x) { return x; }
-  function screenIndependentY(y) { return y; }
 
   function canPetEnterWater(pet) {
     return pet?.element === '水系';
+  }
+
+  function removePetFromRoster(pet, reason = 'defeated') {
+    if (!pet) return;
+    state.roster = state.roster.filter(item => item !== pet);
+    state.team = state.team.filter(item => item !== pet);
+    if (state.mergeSourceId === pet.id) state.mergeSourceId = '';
+    spawnParticles(pet.x, pet.y, 18, '#64748b');
+    showToast(reason === 'defeated' ? `💔 ${pet.name || '宠物'} 阵亡` : `💔 ${pet.name || '宠物'} 离队`);
+    syncTeamFromRoster();
+    updateHud();
+  }
+
+  function findPetTeleportSpot(pet) {
+    for (let i = 0; i < 16; i++) {
+      const a = i / 16 * Math.PI * 2;
+      const r = 32 + (i % 4) * 14;
+      const x = clamp(player.x + Math.cos(a) * r, 20, WORLD_W - 20);
+      const y = clamp(player.y + Math.sin(a) * r, 26, WORLD_H - 26);
+      if (!canPetEnterWater(pet) && isWaterAt(x, y)) continue;
+      return { x, y };
+    }
+    return null;
   }
 
   function moveEntity(entity, ax, ay, step, canEnterWater = true) {
@@ -656,6 +1051,7 @@
 
   function autoAttack() {
     if (!state.started || state.finished || now() < player.attackUntil || state.stamina < 4) return;
+    initAudio();
     let hit = null;
     let best = 9999;
     for (const e of state.enemies) {
@@ -675,6 +1071,7 @@
     const hitX = player.x + dir.x * (ATTACK_RANGE * .58);
     const hitY = player.y + dir.y * (ATTACK_RANGE * .58);
     spawnParticles(hitX, hitY, 8, '#f97316');
+    playSound('hit');
     damageEnemy(hit, 24, true);
     spawnParticles(hit.x, hit.y, 16, '#fb7185');
   }
@@ -748,6 +1145,13 @@
     if (obj.hp <= 0) {
       obj.taken = true;
       if (obj.type === 'tree') { state.wood += 2; state.score += 14; showToast('🪵 木材 +2'); }
+      else if (obj.type === 'meat') {
+        state.food += 4;
+        state.hunger = clamp(state.hunger + 26, 0, 100);
+        state.stamina = clamp(state.stamina + 14, 0, 100);
+        state.score += 72;
+        showToast('🥩 肉 +4');
+      }
       else {
         const amount = obj.type === 'berry' ? 2 : 1;
         state.food += amount;
@@ -756,6 +1160,7 @@
         showToast(`🍖 食物 +${amount}`);
       }
       if (state.score > state.best) { state.best = Math.round(state.score); localStorage.setItem(STORAGE_BEST, String(state.best)); }
+      playSound('gather');
     }
     updateHud();
     checkMission();
@@ -767,7 +1172,8 @@
     for (const e of state.enemies) {
       if (e.state !== 'down' || now() > e.captureUntil) continue;
       const d = Math.hypot(e.x - player.x, e.y - player.y);
-      if (d < 64 && d < best) { best = d; result = e; }
+      const range = e.boss ? 86 : 64;
+      if (d < range && d < best) { best = d; result = e; }
     }
     return result;
   }
@@ -775,15 +1181,18 @@
   function capturePet(e) {
     e.state = 'captured';
     state.captured++;
+    playSound('capture');
     const rosterIndex = state.roster.length;
     const artIndex = typeof e.artIndex === 'number' ? e.artIndex : (rosterIndex % Math.max(1, state.petBitmaps.length));
     const art = state.petBitmaps[artIndex];
     const petName = art?.name || e.name;
     const sourceId = e.sourceId || art?.sourceId || `wild_${e.type}`;
+    const level = e.boss ? Math.max(3, Math.min(8, 3 + state.day + state.bossesDefeated)) : 1;
+    const maxHp = 72 + petPower({ level, stage: stageForLevel(level) }) * 8;
     const pet = {
       id: `pet_${Date.now()}_${rosterIndex}_${Math.floor(rand(1000, 9999))}`,
-      sourceId, imageSheetUrl: e.imageSheetUrl || art?.imageSheetUrl || '', element: e.element || art?.element || '', stage: stageForLevel(1), level: 1,
-      type: e.type, x: e.x, y: e.y, w: 30, h: 30, hp: 72, maxHp: 72, attackCd: rand(.08, .34), index: rosterIndex, artIndex, name: petName,
+      sourceId, imageSheetUrl: e.imageSheetUrl || art?.imageSheetUrl || '', element: e.element || art?.element || '', stage: stageForLevel(level), level,
+      type: e.type, x: e.x, y: e.y, w: 30, h: 30, hp: maxHp, maxHp, attackCd: rand(.08, .34), index: rosterIndex, artIndex, name: petName,
       active: state.team.length < PET_MAX_TEAM,
       followBack: rand(34, 54) + rosterIndex * 8,
       followSide: (rosterIndex - 1) * rand(26, 36) + rand(-8, 8),
@@ -796,9 +1205,9 @@
     };
     state.roster.push(pet);
     syncTeamFromRoster();
-    state.score += 90 + Math.min(state.roster.length, PET_MAX_TEAM) * 25;
-    showToast(`🐾 捕获 ${petName}！`);
-    setMessage(`${petName} 捕获成功！可在宠物列表中选择最多 3 只上阵。`, 2400);
+    state.score += (e.boss ? 220 : 90) + Math.min(state.roster.length, PET_MAX_TEAM) * 25 + level * 12;
+    showToast(e.boss ? `👑 捕获首领 ${petName} Lv.${level}！` : `🐾 捕获 ${petName}！`);
+    setMessage(e.boss ? `${petName} 首领捕获成功，直接成为 Lv.${level} ${stageName(pet.stage)} 宠物！` : `${petName} 捕获成功！可在宠物列表中选择最多 3 只上阵。`, 2600);
     spawnParticles(e.x, e.y, 26, '#a78bfa');
     updateHud();
     openRosterOverlay();
@@ -918,6 +1327,7 @@
     if (source.active && !target.active) target.active = true;
     state.roster = state.roster.filter(p => p !== source);
     showToast(`✨ ${target.name} 合成升级！`);
+    playSound('merge');
     setMessage(`${target.name} 合并到 ${stageName(target.stage)} Lv.${target.level}。`, 2200);
     state.score += 120 + petPower(target) * 24;
     state.mergeSourceId = '';
@@ -963,16 +1373,34 @@
     e.hp -= amount;
     e.hurtUntil = now() + 180;
     spawnParticles(e.x, e.y, 9, fromPlayer ? '#fb7185' : '#38bdf8');
+    if (!fromPlayer) playSound('hit');
     if (e.hp <= 0) {
       e.state = 'down';
-      e.captureUntil = now() + 9000;
+      e.captureUntil = now() + (e.boss ? 12000 : 9000);
       e.hp = 0;
       state.defeated++;
-      state.score += 55;
-      if (Math.random() < .72) addObject('berry', clamp(e.x + rand(-36, 36), 40, WORLD_W - 40), clamp(e.y + rand(-36, 36), 40, WORLD_H - 40));
-      showToast('宠物被打败，靠近按 ✋ 捕获！');
-      setMessage('打败野生宠物后会短暂虚弱，快靠近捕获。', 2300);
+      state.score += e.boss ? 260 : 55;
+      if (e.boss) {
+        state.bossesDefeated++;
+        dropBossLoot(e);
+        showToast('👑 首领击败！');
+        setMessage('首领怪物掉落了肉！靠近可捕获为高等级宠物。', 3200);
+      } else {
+        if (Math.random() < .72) addObject('berry', clamp(e.x + rand(-36, 36), 40, WORLD_W - 40), clamp(e.y + rand(-36, 36), 40, WORLD_H - 40));
+        showToast('宠物被打败，靠近按 ✋ 捕获！');
+        setMessage('打败野生宠物后会短暂虚弱，快靠近捕获。', 2300);
+      }
     }
+  }
+
+  function dropBossLoot(e) {
+    const drops = 3 + Math.floor(rand(0, 3));
+    for (let i = 0; i < drops; i++) {
+      const a = i / drops * Math.PI * 2 + rand(-.35, .35);
+      const r = rand(18, 54);
+      addObject('meat', clamp(e.x + Math.cos(a) * r, 40, WORLD_W - 40), clamp(e.y + Math.sin(a) * r, 40, WORLD_H - 80));
+    }
+    if (Math.random() < .65) addObject('berry', clamp(e.x + rand(-58, 58), 40, WORLD_W - 40), clamp(e.y + rand(-58, 58), 40, WORLD_H - 80));
   }
 
   function damagePlayer(amount) {
@@ -980,8 +1408,9 @@
     player.hurtUntil = now() + 650;
     state.hp = clamp(state.hp - amount * difficultyConfig().enemyDamage, 0, 100);
     spawnParticles(player.x, player.y, 14, '#ef4444');
+    playSound('hurt');
     setMessage('受到攻击！让伙伴帮你战斗，注意回血和饥饿。', 1500);
-    if (state.hp <= 0) endGame(false);
+    if (state.hp <= 0) recoverAtCamp('生命耗尽，营地伙伴把你救了回来。');
   }
 
   function updateEnemies(dt) {
@@ -1007,8 +1436,9 @@
           e.attackCd -= dt;
           if (e.attackCd <= 0) {
             e.attackCd = night ? .68 : .92;
-            if (target === player) damagePlayer(night ? 13 : 9);
-            else { target.hp -= night ? 10 : 7; spawnParticles(target.x, target.y, 8, '#fb7185'); }
+            const bossMul = e.boss ? 1.75 : 1;
+            if (target === player) damagePlayer((night ? 13 : 9) * bossMul);
+            else { target.hp -= (night ? 10 : 7) * bossMul; spawnParticles(target.x, target.y, e.boss ? 14 : 8, '#fb7185'); }
           }
         }
       } else {
@@ -1017,11 +1447,20 @@
         ay = Math.sin(e.wander * .8) * .55;
       }
       const sp = e.speed * (night ? 1.18 : 1);
-      e.x = clamp(e.x + ax * sp * dt, 22, WORLD_W - 22);
-      e.y = clamp(e.y + ay * sp * dt, 26, WORLD_H - 26);
+      moveEntity(e, ax, ay, sp * dt, e.element === '水系');
     }
     state.enemies = state.enemies.filter(e => e.state !== 'gone');
-    if (state.enemies.filter(e => e.state === 'wild').length < difficultyConfig().enemyMin) spawnEnemy(rand(60, WORLD_W - 60), rand(60, WORLD_H - 180));
+    if (state.enemies.filter(e => e.state === 'wild' && !e.boss).length < difficultyConfig().enemyMin) {
+      const a = rand(0, Math.PI * 2), r = rand(260, 620);
+      spawnEnemyPack(clamp(player.x + Math.cos(a) * r, 60, WORLD_W - 60), clamp(player.y + Math.sin(a) * r, 60, WORLD_H - 180), undefined, rand(2, 5));
+    }
+    const bossLimit = state.day >= 4 ? 2 : 1;
+    if (state.enemies.filter(e => e.state === 'wild' && e.boss).length < bossLimit && Math.random() < dt * .018 * difficultyConfig().spawn) {
+      const a = rand(0, Math.PI * 2), r = rand(520, 860);
+      const x = clamp(player.x + Math.cos(a) * r, 80, WORLD_W - 80);
+      const y = clamp(player.y + Math.sin(a) * r, 80, WORLD_H - 160);
+      if (biomeAt(x, y) !== 'water') spawnBoss(x, y, pick(regionSpeciesAt(x, y)));
+    }
   }
 
   function updateTeam(dt) {
@@ -1031,15 +1470,11 @@
     const side = { x: -dir.y, y: dir.x };
     for (let i = 0; i < state.team.length; i++) {
       const p = state.team[i];
-      if (p.hp <= 0) { p.hp = p.maxHp; p.x = player.x + rand(-30, 30); p.y = player.y + rand(-30, 30); }
-      p.roam += dt * (.82 + i * .17);
-      const wave = Math.sin(t * 2.1 + p.phase) * p.followWave;
-      const driftX = Math.cos(p.roam) * 9;
-      const driftY = Math.sin(p.roam * .83) * 7;
-      const follow = {
-        x: player.x - dir.x * (p.followBack + wave) + side.x * (p.followSide + Math.sin(t * 1.4 + p.phase) * 6) + driftX,
-        y: player.y - dir.y * (p.followBack + wave) + side.y * (p.followSide + Math.cos(t * 1.25 + p.phase) * 5) + driftY,
-      };
+      if (p.hp <= 0) { removePetFromRoster(p, 'defeated'); i--; continue; }
+      if (Math.hypot(p.x - player.x, p.y - player.y) > 420) {
+        const spot = findPetTeleportSpot(p);
+        if (spot) { p.x = spot.x; p.y = spot.y; spawnParticles(p.x, p.y, 10, '#a78bfa'); }
+      }
       let target = null;
       let best = 9999;
       for (const e of state.enemies) {
@@ -1048,22 +1483,34 @@
         const playerNear = Math.hypot(e.x - player.x, e.y - player.y) < 190;
         if ((d < 165 || playerNear) && d + i * 4 < best) { best = d + i * 4; target = e; }
       }
+      p.roam += dt * (.42 + i * .08);
+      const movingEnergy = state.movementEnergy || .08;
+      const idleMotion = target ? 1 : clamp(movingEnergy, 0, 1);
+      const wave = Math.sin(t * 1.45 + p.phase) * p.followWave * (.18 + idleMotion * .55);
+      const driftX = Math.cos(p.roam) * 4 * idleMotion;
+      const driftY = Math.sin(p.roam * .83) * 3 * idleMotion;
+      const follow = {
+        x: player.x - dir.x * (p.followBack + wave) + side.x * (p.followSide + Math.sin(t * 1.1 + p.phase) * 2.5 * idleMotion) + driftX,
+        y: player.y - dir.y * (p.followBack + wave) + side.y * (p.followSide + Math.cos(t * 1.05 + p.phase) * 2.5 * idleMotion) + driftY,
+      };
       const approachAngle = target ? p.targetOffset + i * (Math.PI * 2 / teamCount) + Math.sin(t + p.phase) * .25 : 0;
       const dest = target ? { x: target.x + Math.cos(approachAngle) * p.targetRadius, y: target.y + Math.sin(approachAngle) * p.targetRadius } : follow;
       const dx = dest.x - p.x, dy = dest.y - p.y, len = Math.hypot(dx, dy) || 1;
       let ax = len > (target ? 10 : 12) ? dx / len : 0;
       let ay = len > (target ? 10 : 12) ? dy / len : 0;
-      for (const other of state.team) {
-        if (other === p) continue;
-        const odx = p.x - other.x, ody = p.y - other.y, od = Math.hypot(odx, ody) || 1;
-        if (od < 30) { ax += odx / od * (1 - od / 30) * 1.7; ay += ody / od * (1 - od / 30) * 1.7; }
+      if (target) {
+        for (const other of state.team) {
+          if (other === p) continue;
+          const odx = p.x - other.x, ody = p.y - other.y, od = Math.hypot(odx, ody) || 1;
+          if (od < 24) { ax += odx / od * (1 - od / 24) * .45; ay += ody / od * (1 - od / 24) * .45; }
+        }
       }
       const fromPlayerX = p.x - player.x, fromPlayerY = p.y - player.y, playerDist = Math.hypot(fromPlayerX, fromPlayerY) || 1;
       if (!target && playerDist < 24) { ax += fromPlayerX / playerDist * .9; ay += fromPlayerY / playerDist * .9; }
       const alen = Math.hypot(ax, ay) || 1;
-      const speed = (target ? p.speed + 24 : p.speed + 42) * (len > 110 ? 1.32 : 1);
+      const speed = (target ? p.speed + 24 : p.speed + 34) * (len > 120 ? 1.24 : 1);
       if (Math.hypot(ax, ay) > .05) {
-        const step = Math.min(speed * dt, len + (target ? 0 : 18));
+        const step = Math.min(speed * dt, len * (target ? 1 : .62));
         moveEntity(p, ax / alen, ay / alen, step, canPetEnterWater(p));
       }
       if (target && Math.hypot(target.x - p.x, target.y - p.y) < 42) {
@@ -1082,12 +1529,29 @@
       if (state.food > 0) { state.food--; state.hunger = clamp(state.hunger + 28, 0, 100); showToast('🍖 早餐消耗食物 -1'); }
       setMessage(`第 ${state.day} 天！夜晚更危险，继续储备食物和伙伴。`, 2800);
     }
-    const hungryRate = (isNight() ? 2.8 : 1.75) * difficultyConfig().hunger;
+    const activity = clamp(state.movementEnergy ?? .5, .5, 1.28);
+    const hungryRate = (isNight() ? 2.8 : 1.75) * difficultyConfig().hunger * activity;
     state.hunger = clamp(state.hunger - hungryRate * dt, 0, 100);
+    autoEatWhenIdle();
     if (state.hunger <= 0) state.hp = clamp(state.hp - 8 * dt, 0, 100);
     else if (state.hunger > 55 && state.hp < 100) state.hp = clamp(state.hp + 2.4 * dt, 0, 100);
-    if (state.hp <= 0) endGame(false);
+    if (state.hp <= 0) recoverAtCamp('饥饿耗尽，营地伙伴把你救了回来。');
     if (Math.random() < dt * .26 * (2 - difficultyConfig().spawn)) addObject(Math.random() < .75 ? 'berry' : 'mushroom', rand(50, WORLD_W - 50), rand(50, WORLD_H - 100));
+  }
+
+  function autoEatWhenIdle() {
+    if (state.food <= 0 || state.hunger > 72 || (state.movementEnergy ?? .5) > .55) return;
+    const t = now();
+    if (t < state.lastAutoEatAt + 1800) return;
+    state.food--;
+    state.hunger = clamp(state.hunger + 28, 0, 100);
+    state.stamina = clamp(state.stamina + 22, 0, 100);
+    state.eatingUntil = t + 760;
+    state.lastAutoEatAt = t;
+    spawnParticles(player.x, player.y - 10, 12, '#facc15');
+    showToast('🍖 自动进食');
+    playSound('gather');
+    updateHud();
   }
 
   function updateParticles(dt) {
@@ -1104,9 +1568,46 @@
     state.camera.y = lerp(state.camera.y, targetY, 1 - Math.pow(0.0002, dt));
   }
 
+  function snapCameraToPlayer() {
+    const vw = window.innerWidth, vh = window.innerHeight;
+    state.camera.x = clamp(player.x - vw * .5, 0, WORLD_W - vw);
+    state.camera.y = clamp(player.y - vh * .52, 0, WORLD_H - vh);
+  }
+
   function checkMission() {
     if (state.finished) return;
-    if (state.day >= TARGET_DAY || (state.roster.length >= PET_MAX_TEAM && state.food >= TARGET_FOOD)) endGame(true);
+    const targetFood = 12 + state.campsBuilt * 6;
+    const targetDay = 4 + state.campsBuilt * 2;
+    if (state.day >= targetDay || (state.roster.length >= PET_MAX_TEAM && state.food >= targetFood)) buildCampMilestone(targetFood, targetDay);
+  }
+
+  function buildCampMilestone(targetFood, targetDay) {
+    state.campsBuilt++;
+    const milestoneBonus = 180 + state.campsBuilt * 45 + Math.min(state.food, targetFood) * 8 + state.team.length * 30;
+    state.score += milestoneBonus;
+    state.hp = clamp(state.hp + 18, 0, 100);
+    state.hunger = clamp(state.hunger + 32, 0, 100);
+    state.stamina = 100;
+    makeConfetti();
+    showToast(`🏕️ 荒野营地 +${milestoneBonus}`);
+    setMessage(`第 ${state.campsBuilt} 个荒野营地建成！目标已刷新，继续探索更远的地方。`, 5200);
+    post('gameProgress', {
+      earnedPoints: Math.max(0, Math.round(state.score)), score: Math.round(state.score), food: state.food, captured: state.captured, defeated: state.defeated, teamSize: state.team.length, rosterSize: state.roster.length,
+      difficulty: state.difficulty, difficultyName: difficultyConfig().name, day: state.day, campsBuilt: state.campsBuilt, targetFood, targetDay, roundId: state.roundId
+    });
+  }
+
+  function recoverAtCamp(reason) {
+    state.hp = 55;
+    state.hunger = Math.max(state.hunger, 45);
+    state.stamina = 82;
+    state.food = Math.max(0, state.food - 2);
+    state.score = Math.max(0, state.score - 80);
+    player.hurtUntil = now() + 1800;
+    spawnParticles(player.x, player.y, 28, '#facc15');
+    showToast('🏕️ 营地救援');
+    setMessage(`${reason} 游戏不会结束，休整后继续探索！`, 4200);
+    updateHud();
   }
 
   function endGame(won) {
@@ -1120,6 +1621,7 @@
     updateHud();
     if (won) { makeConfetti(); showToast(`荒野生存成功！+${surviveBonus}`); setMessage('你和宠物小队建立了荒野营地！', 6000); }
     else { showToast('荒野失败，再试一次！'); setMessage('生命或饥饿耗尽了，重新挑战吧。', 6000); }
+    playSound(won ? 'win' : 'lose');
     ui.restart.hidden = false;
     ui.restart.textContent = won ? '再玩一次' : '重新挑战';
     overlay.hidden = false;
@@ -1232,17 +1734,131 @@
   }
 
   function drawTerrain() {
-    for (const t of state.terrain) {
-      const x = screenX(t.x), y = screenY(t.y);
-      if (x < -140 || y < -140 || x > window.innerWidth + 140 || y > window.innerHeight + 140) continue;
-      if (t.type === 'water') drawPond(x, y, t);
-      else if (t.type === 'desert') drawSandPatch(x, y, t);
-      else if (t.type === 'forest') drawForestPatch(x, y, t);
-      else if (t.type === 'lawn') drawLawnPatch(x, y, t);
-      else if (t.type === 'wetland') drawWetlandPatch(x, y, t);
-      else drawLandPatch(x, y, t);
+    createTerrainAtlas();
+    const visibleStartCx = Math.floor(state.camera.x / CHUNK_SIZE);
+    const visibleStartCy = Math.floor(state.camera.y / CHUNK_SIZE);
+    const visibleEndCx = Math.floor((state.camera.x + window.innerWidth) / CHUNK_SIZE);
+    const visibleEndCy = Math.floor((state.camera.y + window.innerHeight) / CHUNK_SIZE);
+    pruneTerrainChunkCache(visibleStartCx - 1, visibleStartCy - 1, visibleEndCx + 1, visibleEndCy + 1);
+    const camX = state.camera.x, camY = state.camera.y;
+    for (let cy = visibleStartCy; cy <= visibleEndCy; cy++) {
+      for (let cx = visibleStartCx; cx <= visibleEndCx; cx++) {
+        const chunk = getTerrainChunkCanvas(cx, cy);
+        if (!chunk) continue;
+        ctx.drawImage(chunk, Math.round(cx * CHUNK_SIZE - camX), Math.round(cy * CHUNK_SIZE - camY));
+      }
     }
     ctx.globalAlpha = 1;
+  }
+
+  function pruneTerrainChunkCache(minCx, minCy, maxCx, maxCy) {
+    const prefix = `${state.terrainSeed}:`;
+    for (const key of terrainChunkCache.keys()) {
+      if (!key.startsWith(prefix)) { terrainChunkCache.delete(key); continue; }
+      const comma = key.indexOf(',', prefix.length);
+      const cx = Number(key.slice(prefix.length, comma));
+      const cy = Number(key.slice(comma + 1));
+      if (cx < minCx || cx > maxCx || cy < minCy || cy > maxCy) terrainChunkCache.delete(key);
+    }
+  }
+
+  function getTerrainChunkCanvas(cx, cy) {
+    if (cx < 0 || cy < 0 || cx * CHUNK_SIZE > WORLD_W || cy * CHUNK_SIZE > WORLD_H) return null;
+    const key = `${state.terrainSeed}:${cx},${cy}`;
+    const cached = terrainChunkCache.get(key);
+    if (cached) return cached;
+    const canvasEl = document.createElement('canvas');
+    canvasEl.width = CHUNK_SIZE;
+    canvasEl.height = CHUNK_SIZE;
+    const oldCtx = ctx;
+    const cctx = canvasEl.getContext('2d');
+    cctx.imageSmoothingEnabled = false;
+    ctx = cctx;
+    const startTx = Math.floor(cx * CHUNK_SIZE / TERRAIN_TILE);
+    const startTy = Math.floor(cy * CHUNK_SIZE / TERRAIN_TILE);
+    const tileCount = Math.ceil(CHUNK_SIZE / TERRAIN_TILE);
+    const oldCameraX = state.camera.x, oldCameraY = state.camera.y;
+    state.camera.x = cx * CHUNK_SIZE;
+    state.camera.y = cy * CHUNK_SIZE;
+    const atlas = createTerrainAtlas();
+    try {
+      for (let oy = 0; oy < tileCount; oy++) {
+        const ty = startTy + oy;
+        const wy = ty * TERRAIN_TILE;
+        for (let ox = 0; ox < tileCount; ox++) {
+          const tx = startTx + ox;
+          const wx = tx * TERRAIN_TILE;
+          const meta = terrainTileMeta(tx, ty);
+          cctx.drawImage(atlas, meta.variant * TERRAIN_TEXTURE_TILE, meta.biomeRow * TERRAIN_TEXTURE_TILE, TERRAIN_TEXTURE_TILE, TERRAIN_TEXTURE_TILE, ox * TERRAIN_TILE, oy * TERRAIN_TILE, TERRAIN_TILE, TERRAIN_TILE);
+          drawInteriorTerrainVariation(wx, wy, meta.biome, tx, ty, meta.tileSeed, meta);
+          drawTerrainTransitions(wx, wy, meta.biome, tx, ty, meta);
+        }
+      }
+    } finally {
+      state.camera.x = oldCameraX;
+      state.camera.y = oldCameraY;
+      ctx = oldCtx;
+    }
+    terrainChunkCache.set(key, canvasEl);
+    return canvasEl;
+  }
+
+  function drawTerrainTransitions(wx, wy, biome, tx, ty, meta = null) {
+    const cx = wx + TERRAIN_TILE * .5, cy = wy + TERRAIN_TILE * .5;
+    const north = meta ? meta.north : biomeAt(cx, cy - TERRAIN_TILE);
+    const east = meta ? meta.east : biomeAt(cx + TERRAIN_TILE, cy);
+    const south = meta ? meta.south : biomeAt(cx, cy + TERRAIN_TILE);
+    const west = meta ? meta.west : biomeAt(cx - TERRAIN_TILE, cy);
+    drawTerrainTransitionSide(wx, wy, biome, north, 'n', tx, ty, 0, -1);
+    drawTerrainTransitionSide(wx, wy, biome, east, 'e', tx, ty, 1, 0);
+    drawTerrainTransitionSide(wx, wy, biome, south, 's', tx, ty, 0, 1);
+    drawTerrainTransitionSide(wx, wy, biome, west, 'w', tx, ty, -1, 0);
+    const nw = meta ? meta.nw : biomeAt(cx - TERRAIN_TILE, cy - TERRAIN_TILE);
+    const ne = meta ? meta.ne : biomeAt(cx + TERRAIN_TILE, cy - TERRAIN_TILE);
+    const se = meta ? meta.se : biomeAt(cx + TERRAIN_TILE, cy + TERRAIN_TILE);
+    const sw = meta ? meta.sw : biomeAt(cx - TERRAIN_TILE, cy + TERRAIN_TILE);
+    drawTerrainTransitionCorner(wx, wy, biome, nw, 'nw', tx, ty);
+    drawTerrainTransitionCorner(wx, wy, biome, ne, 'ne', tx, ty);
+    drawTerrainTransitionCorner(wx, wy, biome, se, 'se', tx, ty);
+    drawTerrainTransitionCorner(wx, wy, biome, sw, 'sw', tx, ty);
+  }
+
+  function drawTerrainTransitionSide(wx, wy, biome, otherBiome, side, tx, ty, dx, dy) {
+    if (otherBiome === biome || ((BIOME_PRIORITY[otherBiome] ?? 0) < (BIOME_PRIORITY[biome] ?? 0))) return;
+    drawBiomeSplat(wx, wy, side, otherBiome, hash2(tx + dx * 17, ty + dy * 19, state.worldSeed + 360));
+  }
+
+  function drawTerrainTransitionCorner(wx, wy, biome, otherBiome, side, tx, ty) {
+    if (otherBiome === biome || ((BIOME_PRIORITY[otherBiome] ?? 0) < (BIOME_PRIORITY[biome] ?? 0))) return;
+    drawBiomeCornerSplat(wx, wy, side, otherBiome, hash2(tx, ty, state.worldSeed + side.charCodeAt(0) * 13));
+  }
+
+  function drawBiomeSplat(wx, wy, side, biome, seed) {
+    const sx = Math.round(screenX(wx)), sy = Math.round(screenY(wy));
+    const color = TRANSITION_COLORS[biome] || 'rgba(255,255,255,.45)';
+    ctx.fillStyle = color;
+    for (let i = 0; i < TERRAIN_TILE; i += 2) {
+      const jitter = Math.floor(localHash(i, Math.floor(seed * 1000), state.worldSeed + 420) * 4);
+      const w = 1 + Math.floor(localHash(i, 7, state.worldSeed + 421) * 3);
+      if (side === 'n') drawRect(sx + i, sy, 2, 2 + jitter, color);
+      else if (side === 's') drawRect(sx + i, sy + TERRAIN_TILE - 2 - jitter, 2, 2 + jitter, color);
+      else if (side === 'e') drawRect(sx + TERRAIN_TILE - 2 - jitter, sy + i, 2 + jitter, 2, color);
+      else if (side === 'w') drawRect(sx, sy + i, 2 + jitter, 2, color);
+      if (w > 2 && localHash(i, 11, state.worldSeed + 422) > .6) {
+        if (side === 'n' || side === 's') drawRect(sx + i, sy + (side === 'n' ? 3 + jitter : TERRAIN_TILE - 5 - jitter), 2, 1, color);
+        else drawRect(sx + (side === 'w' ? 3 + jitter : TERRAIN_TILE - 5 - jitter), sy + i, 1, 2, color);
+      }
+    }
+  }
+
+  function drawBiomeCornerSplat(wx, wy, side, biome, seed) {
+    const sx = Math.round(screenX(wx)), sy = Math.round(screenY(wy));
+    const color = TRANSITION_COLORS[biome] || 'rgba(255,255,255,.35)';
+    const left = side.includes('w'), top = side.includes('n');
+    for (let y = 0; y < 6; y += 2) for (let x = 0; x < 6; x += 2) {
+      if (x + y + localHash(x, y, Math.floor(seed * 999)) * 5 > 7) continue;
+      drawRect(sx + (left ? x : TERRAIN_TILE - 2 - x), sy + (top ? y : TERRAIN_TILE - 2 - y), 2, 2, color);
+    }
   }
 
   function drawBiomePatch(x, y, t, palette, alpha = .34) {
@@ -1362,6 +1978,7 @@
       if (x < -80 || y < -100 || x > window.innerWidth + 80 || y > window.innerHeight + 80) continue;
       if (o.type === 'tree') drawTree(x, y, o);
       else if (o.type === 'berry') drawBerry(x, y, o);
+      else if (o.type === 'meat') drawMeat(x, y, o);
       else drawMushroom(x, y, o);
     }
   }
@@ -1405,10 +2022,23 @@
     drawRect(x - 12, y + 13, 24, 4, 'rgba(15,23,42,.16)');
   }
 
+  function drawMeat(x, y, o) {
+    const bob = Math.sin(now() / 220 + o.grow) * 1.5;
+    drawRect(x - 14, y + 12, 28, 5, 'rgba(15,23,42,.18)');
+    drawRect(x - 12, y - 8 + bob, 22, 15, '#b91c1c');
+    drawRect(x - 9, y - 11 + bob, 16, 7, '#ef4444');
+    drawRect(x + 7, y - 3 + bob, 8, 5, '#fee2e2');
+    drawRect(x + 13, y - 5 + bob, 5, 5, '#fff7ed');
+    drawRect(x + 13, y + 2 + bob, 5, 5, '#fff7ed');
+    drawRect(x - 7, y - 8 + bob, 5, 3, '#fecaca');
+    drawRect(x - 10, y + 2 + bob, 4, 2, '#7f1d1d');
+  }
+
   function drawPlayer() {
     const x = screenX(player.x), y = screenY(player.y);
     const upperY = y - 1;
     const hurt = now() < player.hurtUntil;
+    const eating = now() < state.eatingUntil;
     const step = Math.floor(player.animTime) % 2;
     const shirt = state.masterStyle === 'girl' ? '#f472b6' : '#38bdf8';
     const hair = state.masterStyle === 'girl' ? '#4a2c2a' : '#1f2937';
@@ -1433,6 +2063,7 @@
       drawRect(x - 10, upperY - 8, 20, 20, shirt);
       drawRect(x - 14, upperY - 5, 5, 18, '#fed7aa');
       drawRect(x + 9, upperY - 5, 5, 18, '#fed7aa');
+      if (eating) drawEatingFood(x, upperY - 10);
       drawRect(x - 8, y + 11, 6, legA, '#334155');
       drawRect(x + 2, y + 11, 6, legB, '#334155');
       drawRect(x - 4, upperY - 15, 3, 3, '#0f172a');
@@ -1449,11 +2080,20 @@
       drawRect(x + faceSide * 6 - 1, upperY - 10, 4, 2, '#9a3412');
       drawBox(x + backSide * 10, upperY - 4, backSide * 5, 17, '#fed7aa');
       drawBox(x + faceSide * 9, upperY - 4, faceSide * 5, 17, '#fed7aa');
+      if (eating) drawEatingFood(x + faceSide * 9, upperY - 11);
       drawRect(x - 8, y + 11, 6, legA, '#334155');
       drawRect(x + 2, y + 11, 6, legB, '#334155');
     }
+    if (eating && player.facing === 'up') drawEatingFood(x, upperY - 18);
     if (now() < player.attackUntil) drawAttackSwing(x, y);
     ctx.globalAlpha = 1;
+  }
+
+  function drawEatingFood(x, y) {
+    const chew = Math.floor(now() / 120) % 2;
+    drawRect(x - 3, y + chew, 7, 5, '#f97316');
+    drawRect(x - 1, y - 1 + chew, 3, 2, '#facc15');
+    drawRect(x + 3, y + 1 + chew, 2, 2, '#fff7ed');
   }
 
   function drawAttackSwing(x, y) {
@@ -1501,7 +2141,8 @@
   }
 
   function drawPetLike(p, x, y, friendly, index) {
-    drawRect(x - 15, y + 13, 30, 6, 'rgba(15,23,42,.2)');
+    const scale = p.boss ? 1.45 : 1;
+    drawRect(x - 15 * scale, y + 13, 30 * scale, 6 * scale, p.boss ? 'rgba(127,29,29,.28)' : 'rgba(15,23,42,.2)');
     const bmp = state.petBitmaps[(typeof p.artIndex === 'number' ? p.artIndex : index) % Math.max(1, state.petBitmaps.length)] || null;
     if (bmp && bmp.bitmap && bmp.uv) {
       try {
@@ -1511,7 +2152,7 @@
         const hurt = !friendly && now() < (p.hurtUntil || 0);
         if (hurt) ctx.globalAlpha *= .62;
         ctx.imageSmoothingEnabled = false;
-        const size = 40 + Math.min(10, petPower(p) * 1.2);
+        const size = (40 + Math.min(10, petPower(p) * 1.2)) * scale;
         if (useSheetSleep && drawPetSheetCell(p.imageSheetUrl || bmp.imageSheetUrl, p.stage || bmp.stage || 'baby', 'sleep', x - size / 2, y - 27 + bob - (size - 40) * .45, size, size)) {
           // drawPetSheetCell is async-backed via cached image; fallback may draw below on first frame.
         } else {
@@ -1519,6 +2160,7 @@
         }
         ctx.imageSmoothingEnabled = false;
         if (hurt) ctx.globalAlpha = 1;
+        if (p.boss) drawBossMarker(x, y - size * .72);
         drawHpBar(x, y - 33, p.hp / p.maxHp, friendly ? '#22c55e' : '#ef4444');
         return;
       } catch (err) {}
@@ -1536,6 +2178,15 @@
     drawRect(x - 15, y + 10 + bob, 6, 8, accent);
     drawRect(x + 9, y + 10 + bob, 6, 8, accent);
     if (friendly) drawRect(x - 18, y - 28 + bob, 36, 4, '#22c55e');
+    if (p.boss) drawBossMarker(x, y - 38 + bob);
+  }
+
+  function drawBossMarker(x, y) {
+    drawRect(x - 12, y - 5, 24, 5, '#facc15');
+    drawRect(x - 9, y - 9, 5, 5, '#facc15');
+    drawRect(x - 2, y - 11, 4, 7, '#fde047');
+    drawRect(x + 5, y - 9, 5, 5, '#facc15');
+    drawRect(x - 10, y, 20, 2, '#92400e');
   }
 
   function drawHpBar(x, y, pct, color) {
@@ -1654,11 +2305,11 @@
   }
 
   root.querySelector('#hhHelp').addEventListener('click', toggleOverlay);
-  ui.start.addEventListener('click', startGame);
-  ui.restart.addEventListener('click', () => { overlay.hidden = true; resetGame(); });
-  root.querySelector('#hhRosterDone').addEventListener('click', closeRosterOverlay);
-  root.querySelectorAll('[data-master]').forEach(btn => btn.addEventListener('click', () => { state.masterStyle = btn.dataset.master; localStorage.setItem(STORAGE_MASTER, state.masterStyle); updateMasterButtons(); }));
-  root.querySelectorAll('[data-difficulty]').forEach(btn => btn.addEventListener('click', () => { state.difficulty = DIFFICULTIES[btn.dataset.difficulty] ? btn.dataset.difficulty : 'normal'; localStorage.setItem(STORAGE_DIFFICULTY, state.difficulty); updateMasterButtons(); }));
+  ui.start.addEventListener('click', () => { initAudio(); playSound('click'); startGame(); });
+  ui.restart.addEventListener('click', () => { initAudio(); playSound('click'); overlay.hidden = true; resetGame(); });
+  root.querySelector('#hhRosterDone').addEventListener('click', () => { initAudio(); playSound('click'); closeRosterOverlay(); });
+  root.querySelectorAll('[data-master]').forEach(btn => btn.addEventListener('click', () => { initAudio(); playSound('click'); state.masterStyle = btn.dataset.master; localStorage.setItem(STORAGE_MASTER, state.masterStyle); updateMasterButtons(); }));
+  root.querySelectorAll('[data-difficulty]').forEach(btn => btn.addEventListener('click', () => { initAudio(); playSound('click'); state.difficulty = DIFFICULTIES[btn.dataset.difficulty] ? btn.dataset.difficulty : 'normal'; localStorage.setItem(STORAGE_DIFFICULTY, state.difficulty); updateMasterButtons(); }));
   root.querySelector('#hhAttack').addEventListener('pointerdown', e => { input.attack = true; autoAttack(); e.preventDefault(); });
   root.querySelector('#hhAttack').addEventListener('pointerup', e => { input.attack = false; e.preventDefault(); });
   root.querySelector('#hhAttack').addEventListener('pointercancel', () => { input.attack = false; });

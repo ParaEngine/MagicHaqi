@@ -55,29 +55,27 @@
 }
 
 /* ---------- 1. 宠物精灵动画：idle = 长循环混合呼吸 + 偶尔史莱姆抖动；walk = 真实跳跃 ---------- */
-/* idle: 12s 长循环，多数时间安静呼吸，中段插入一次史莱姆 squash 抖动，避免重复感 */
+/* idle: 纯呼吸动画——只做轻微缩放，不上下移动。12s 长循环里安排几次呼吸 +
+   不等长的安静停顿，避免节奏过于重复。 */
 @keyframes mhPetIdle {
-    0%   { transform: scale(1, 1)         translateY(0); }
-    8%   { transform: scale(1.012, 0.99)  translateY(0.3%); }    /* 吸气 */
-    16%  { transform: scale(1, 1)         translateY(0); }       /* 呼气 */
-    24%  { transform: scale(1.012, 0.99)  translateY(0.3%); }    /* 第二次吸气 */
-    32%  { transform: scale(1, 1)         translateY(0); }
-    /* 中段：一次轻微史莱姆抖动 */
-    40%  { transform: scale(1.06, 0.94)   translateY(1.2%); }    /* 轻蹲 */
-    46%  { transform: scale(0.97, 1.04)   translateY(-1.5%); }   /* 微跳 */
-    52%  { transform: scale(1.03, 0.98)   translateY(0.4%); }    /* 落地 */
-    58%  { transform: scale(1, 1)         translateY(0); }
-    /* 后半段：继续安静呼吸到结束 */
-    70%  { transform: scale(1.012, 0.99)  translateY(0.3%); }
-    82%  { transform: scale(1, 1)         translateY(0); }
-    92%  { transform: scale(1.008, 0.994) translateY(0.2%); }    /* 一次极轻呼吸 */
-    100% { transform: scale(1, 1)         translateY(0); }
+    0%   { transform: scale(1, 1); }            /* 呼气 */
+    7%   { transform: scale(1.03, 0.97); }       /* 第一次吸气 */
+    14%  { transform: scale(1, 1); }            /* 呼气 */
+    /* 安静停顿 */
+    30%  { transform: scale(1, 1); }
+    37%  { transform: scale(1.03, 0.97); }       /* 第二次吸气 */
+    44%  { transform: scale(1, 1); }
+    /* 较长安静停顿 */
+    66%  { transform: scale(1, 1); }
+    73%  { transform: scale(1.025, 0.975); }     /* 第三次较轻吸气 */
+    80%  { transform: scale(1, 1); }
+    /* 收尾停顿 */
+    100% { transform: scale(1, 1); }
 }
-/* walk: 单纯上下跳跃，无 slime 形变 */
+/* walk: 原地史莱姆 squash & stretch，轻微起伏，不再像跳跃那样大幅上下移动 */
 @keyframes mhPetWalk {
-    0%   { transform: translateY(0); }
-    50%  { transform: translateY(-16%); }
-    100% { transform: translateY(0); }
+    0%, 100% { transform: translateY(0) scale(1, 1); }
+    50%      { transform: translateY(-4%) scale(0.97, 1.03); }
 }
 @keyframes mhPetFlip {
     0%, 48%   { transform: scaleX(1); }
@@ -250,18 +248,19 @@
 .mh-pet-talk-bubble-pop { animation: mhPetTalkPop 0.22s ease-out both; }
 .mh-pet-talk-bubble-hide { animation: mhPetTalkHide 0.18s ease-in forwards; }
 
-/* ---------- 2. 史莱姆开心弹跳：点击时短暂覆盖 idle/walk ---------- */
+/* ---------- 2. 开心弹跳：点击时短暂覆盖 idle/walk ---------- */
+/* 连续跳两下，只用垂直关键帧（地面 / 最高点），靠缓动平滑过渡，避免卡顿。 */
 @keyframes mhPetHappy {
-    0%   { transform: scale(1, 1)        translateY(0); }
-    15%  { transform: scale(1.18, 0.78)  translateY(4%); }   /* 蓄力下蹲 */
-    35%  { transform: scale(0.82, 1.22)  translateY(-14%); } /* 跃起拉伸 */
-    55%  { transform: scale(1.12, 0.9)   translateY(-6%); }  /* 半空回弹 */
-    75%  { transform: scale(1.15, 0.82)  translateY(2%); }   /* 落地压扁 */
-    90%  { transform: scale(0.96, 1.06)  translateY(-2%); }  /* 回弹一下 */
-    100% { transform: scale(1, 1)        translateY(0); }
+    0%   { transform: translateY(0);    }   /* 地面 */
+    25%  { transform: translateY(-28%); }   /* 第一跳最高点 */
+    50%  { transform: translateY(0);    }   /* 落回地面 */
+    75%  { transform: translateY(-28%); }   /* 第二跳最高点 */
+    100% { transform: translateY(0);    }   /* 落回地面 */
 }
 .pet-sprite.mh-happy .mh-pet-art-sprite {
-    animation: mhPetHappy 0.9s cubic-bezier(0.45, 1.6, 0.4, 1) 1 !important;
+    transform-origin: 50% 100%; /* 以脚底为支点，跳跃更自然 */
+    will-change: transform;
+    animation: mhPetHappy 0.9s ease-in-out 1 !important;
 }
 
 @keyframes mhPetEatingQuick {
