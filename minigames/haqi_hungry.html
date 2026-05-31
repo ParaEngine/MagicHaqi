@@ -320,6 +320,7 @@
           </div>
           <div class="hh-row">
             <button id="hhStart" class="hh-start" type="button">进入荒野</button>
+            <button id="hhContinue" class="hh-start" type="button" hidden>继续游戏</button>
             <button id="hhRestart" class="hh-start secondary" type="button" hidden>重新开始</button>
           </div>
         </div>
@@ -355,7 +356,7 @@
     day: root.querySelector('#hhDay'), food: root.querySelector('#hhFood'), wood: root.querySelector('#hhWood'), pets: root.querySelector('#hhPets'),
     score: root.querySelector('#hhScore'), best: root.querySelector('#hhBest'), hp: root.querySelector('#hhHp'), hunger: root.querySelector('#hhHunger'), stamina: root.querySelector('#hhStamina'),
     hpBar: root.querySelector('#hhHp')?.parentElement, hungerBar: root.querySelector('#hhHunger')?.parentElement,
-    message: root.querySelector('#hhMessage'), hint: root.querySelector('#hhHint'), start: root.querySelector('#hhStart'), restart: root.querySelector('#hhRestart'),
+    message: root.querySelector('#hhMessage'), hint: root.querySelector('#hhHint'), start: root.querySelector('#hhStart'), continue: root.querySelector('#hhContinue'), restart: root.querySelector('#hhRestart'),
     work: root.querySelector('#hhWorkProgress'), workText: root.querySelector('#hhWorkText'), workBar: root.querySelector('#hhWorkBar')
   };
   let hintTimer = 0;
@@ -840,6 +841,8 @@
   function startGame() {
     if (!state.started) post('gameStarted', { title: '宠物荒野生存' });
     state.started = true;
+    ui.start.hidden = true;
+    ui.continue.hidden = true;
     overlay.hidden = true;
     resetGame();
     loadRandomPetImages();
@@ -2301,11 +2304,14 @@
 
   function toggleOverlay() {
     overlay.hidden = !overlay.hidden;
+    ui.start.hidden = state.started;
+    ui.continue.hidden = !state.started || state.finished || overlay.hidden;
     ui.restart.hidden = !state.finished;
   }
 
   root.querySelector('#hhHelp').addEventListener('click', toggleOverlay);
   ui.start.addEventListener('click', () => { initAudio(); playSound('click'); startGame(); });
+  ui.continue.addEventListener('click', () => { initAudio(); playSound('click'); overlay.hidden = true; ui.continue.hidden = true; });
   ui.restart.addEventListener('click', () => { initAudio(); playSound('click'); overlay.hidden = true; resetGame(); });
   root.querySelector('#hhRosterDone').addEventListener('click', () => { initAudio(); playSound('click'); closeRosterOverlay(); });
   root.querySelectorAll('[data-master]').forEach(btn => btn.addEventListener('click', () => { initAudio(); playSound('click'); state.masterStyle = btn.dataset.master; localStorage.setItem(STORAGE_MASTER, state.masterStyle); updateMasterButtons(); }));
