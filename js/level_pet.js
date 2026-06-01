@@ -42,9 +42,9 @@ const PET_START_X_METERS = ROOM_WIDTH_METERS - PET_WIDTH_METERS - 1.25;
 const PET_START_Y_METERS = 1.68;
 const PET_FOLLOW_SCREEN_X = 0.72;
 const DRAG_PLACE_THRESHOLD = 8;
-const ROOM_DRAG_TO_SCENE_HINT = '拖动到房间中';
-const ROOM_DRAG_EXISTING_HINT = '拖动物品可移动，拖到底部可收回';
-const ROOM_FEED_DRAG_HINT = '拖动食物到宠物身上喂食';
+const ROOM_DRAG_TO_SCENE_HINT = () => t('dragToRoom');
+const ROOM_DRAG_EXISTING_HINT = () => t('dragMoveHint');
+const ROOM_FEED_DRAG_HINT = () => t('dragFoodToPet');
 const ROOM_ITEM_MIN_SCALE = 0.65;
 const ROOM_ITEM_MAX_SCALE = 2.4;
 const ROOM_ITEM_SCALE_STEP = 1.15;
@@ -72,10 +72,10 @@ function isRoomPlacementMode() {
 
 function showRoomDragHint(itemType = 'furniture', source = 'tray') {
     if (state.isFeedMode) {
-        showToast(ROOM_FEED_DRAG_HINT, 'info', 1400);
+        showToast(ROOM_FEED_DRAG_HINT(), 'info', 1400);
         return;
     }
-    showToast(source === 'layout' ? ROOM_DRAG_EXISTING_HINT : ROOM_DRAG_TO_SCENE_HINT, 'info', 1400);
+    showToast(source === 'layout' ? ROOM_DRAG_EXISTING_HINT() : ROOM_DRAG_TO_SCENE_HINT(), 'info', 1400);
 }
 
 function showSleepingBlocked(pet) {
@@ -1044,7 +1044,7 @@ function isPetVisibleForBath(petEl = $('mhPet')) {
 async function runBathSequence(ctx) {
     if (bathAnimationRunning) return false;
     if (!isPetVisibleForBath()) {
-        showToast('宠物在画面里才可以洗澡哦', 'info', 1400);
+        showToast(t('bathNeedOnScreen'), 'info', 1400);
         return false;
     }
     const applied = await ctx.callbacks.onAction?.('bath', { skipNotify: true });
@@ -2129,13 +2129,13 @@ function renderActionTray(pet) {
                 const disabled = eggDisabled || sleepDisabled || (a.k === 'sleep' && sleepAction.disabled);
                 const urgentClass = a.feed && feedUrgent ? ' is-urgent' : '';
                 const title = eggDisabled
-                    ? (a.k === 'bath' ? '蛋还没有孵化，先喂食让它孵化后再洗澡。' : '蛋还没有孵化，先喂食让它孵化后再睡觉。')
+                    ? (a.k === 'bath' ? t('eggHatchBeforeBath') : t('eggHatchBeforeSleep'))
                     : sleepDisabled
                         ? sleepingInteractionText(pet)
                         : a.k === 'sleep'
                             ? sleepAction.title
                         : a.feed && feedUrgent
-                            ? `体力值 ${Math.max(0, Math.round(Number(pet?.stats?.hunger) || 0))}，需要休息或喂食。`
+                            ? t('feedUrgentTitle', { value: Math.max(0, Math.round(Number(pet?.stats?.hunger) || 0)) })
                             : '';
                 return `
                 <button type="button" class="btn-secondary action-btn dock-icon-btn ${a.decor || a.feed ? 'mh-decor-action mh-room-mode-toggle' : ''} ${a.feed ? 'mh-feed-action' : ''}${urgentClass} ${disabled ? 'is-sleep-disabled' : ''}" ${a.decor ? 'id="mhDecorBtn"' : a.feed ? 'id="mhFeedBtn"' : `data-action="${a.k}"`}${dockDisabledAttrs(disabled, title)} title="${escapeHtml(title)}">
@@ -2168,7 +2168,7 @@ function renderDecorTray(inv) {
     return `
         <div class="mh-dock-tray mh-scroll-x">
             ${items.length === 0
-                ? `<div class="mh-dock-hint" style="white-space:nowrap">📦 背包里还没有可放置的家具，去商店买点吧～</div>`
+                ? `<div class="mh-dock-hint" style="white-space:nowrap">${escapeHtml(t('roomNoFurniture'))}</div>`
                 : items.map(it => `
                     <div data-tray-item="${escapeHtml(it.id)}" class="shop-item" style="min-width:62px;padding:6px;flex-shrink:0">
                         <div class="emoji mh-tray-furniture-icon">${furnitureHtml(it)}</div>
@@ -2191,7 +2191,7 @@ function renderFeedTray(inv) {
     return `
         <div class="mh-dock-tray mh-scroll-x">
             ${items.length === 0
-                ? `<div class="mh-dock-hint" style="white-space:nowrap">🍽️ 背包里还没有食物，去商店买点吧～</div>`
+                ? `<div class="mh-dock-hint" style="white-space:nowrap">${escapeHtml(t('roomNoFood'))}</div>`
                 : items.map(it => `
                     <div data-tray-item="${escapeHtml(it.id)}" data-feed-tray-item="true" class="shop-item" style="min-width:76px;padding:10px 8px;flex-shrink:0">
                         <div class="emoji mh-tray-furniture-icon">${furnitureHtml(it)}</div>
@@ -2208,7 +2208,7 @@ function renderRoomShopButton(filterId, { minWidth = 62, padding = '6px' } = {})
     return `
         <button type="button" class="shop-item mh-room-shop-button" data-room-shop="${escapeHtml(filterId)}" style="min-width:${minWidth}px;padding:${escapeHtml(padding)};flex-shrink:0">
             <div class="emoji">🛒</div>
-            <div class="name" style="font-size:10px">商店</div>
+            <div class="name" style="font-size:10px">${escapeHtml(t('shop'))}</div>
         </button>`;
 }
 

@@ -20,6 +20,7 @@ import { CONFIG, findLargestHouseAcrossLayouts } from './config.js';
 import { applyStage, defaultTraits, gainTrait, markPetCared } from './petTick.js';
 import { getRuntimePetStats } from './petLifecycle.js';
 import { clamp, escapeHtml } from './utils.js';
+import { t } from './i18n.js';
 import { resolveTerrainFieldTypeId } from './view_terrain_fields.js';
 
 // 4 行 × 4 列：行=阶段（baby/teen/adult/elder），列=情绪（idle/happy/sad/sleep）
@@ -298,11 +299,11 @@ export function canWakePet(pet, now = Date.now()) {
 
 export function sleepLockText(pet, now = Date.now()) {
     if (!isPetSleepLocked(pet, now)) return '';
-    return '宠物已经进入夜间睡眠，明早 6 点才能醒来。';
+    return t('sleepLockNight');
 }
 
 export function sleepingInteractionText(pet, now = Date.now()) {
-    return sleepLockText(pet, now) || '宠物正在睡觉，醒来后再互动吧。';
+    return sleepLockText(pet, now) || t('sleepingInteract');
 }
 
 export function getPetSleepActionState(pet, now = Date.now()) {
@@ -312,10 +313,10 @@ export function getPetSleepActionState(pet, now = Date.now()) {
         sleeping,
         sleepLocked,
         icon: sleeping ? '☀️' : '😴',
-        label: sleeping ? '唤醒' : '睡觉',
+        label: sleeping ? t('dockWake') : t('dockSleep'),
         disabled: sleepLocked,
         title: sleepLocked ? sleepingInteractionText(pet, now) : '',
-        hint: sleeping ? (canWakePet(pet, now) ? '宠物正在睡觉，可轻轻唤醒。' : sleepingInteractionText(pet, now)) : '',
+        hint: sleeping ? (canWakePet(pet, now) ? t('sleepWakeHint') : sleepingInteractionText(pet, now)) : '',
     };
 }
 

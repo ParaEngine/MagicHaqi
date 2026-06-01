@@ -1,6 +1,6 @@
 // 宠物列表视图（用于浏览所有宠物）
 import { $, $$, coinIconSvg, confirm, escapeHtml, randId, showToast } from './utils.js';
-import { t } from './i18n.js';
+import { t, getAlbumCaptions } from './i18n.js';
 import { formatDna, displayPetName, dnaDietPreference, dietPreferenceLabel, decodeDna, ELEMENTAL_ATTRIBUTES } from './dna.js';
 import { buildEggSvg, getPetSpriteCell, SHEET_COLS, SHEET_ROWS } from './pet.js';
 import { defaultPermanentTrauma, defaultStats, eggStats, applyStage } from './petTick.js';
@@ -11,15 +11,15 @@ import { getStageName } from './config.js';
 
 // 阶段顺序（与 4×4 精灵图行对齐）：baby=0, teen=1, adult=2, elder=3
 const ALBUM_STAGES = [
-    { id: 'baby',  name: '幼年', emoji: '🐣' },
-    { id: 'teen',  name: '青年', emoji: '🐥' },
-    { id: 'adult', name: '成年', emoji: '🐉' },
-    { id: 'elder', name: '长老', emoji: '🦄' },
+    { id: 'baby',  nameKey: 'stageBaby', emoji: '🐣' },
+    { id: 'teen',  nameKey: 'stageTeen', emoji: '🐥' },
+    { id: 'adult', nameKey: 'stageAdult', emoji: '🐉' },
+    { id: 'elder', nameKey: 'stageElder', emoji: '🦄' },
 ];
 const ALBUM_ANIMS = ['idle', 'happy', 'sad', 'sleep'];
 const PET_LIST_TABS = [
-    { id: 'mine', label: '我的宠物' },
-    { id: 'rare', label: '稀有宠物' },
+    { id: 'mine', labelKey: 'tabMyPets' },
+    { id: 'rare', labelKey: 'tabRarePets' },
 ];
 let activePetListTab = 'mine';
 let activeFamousPetFilter = 'all';
@@ -28,151 +28,13 @@ let famousPetsIndexPromise = null;
 let famousPetsFilterMetadataPromise = null;
 let famousPetFilterTabsScrollLeft = 0;
 const FAMOUS_PET_FILTERS = [
-    { id: 'all', label: '全部', type: 'all' },
-    { id: 'element:天空', label: '天空', type: 'element', value: '天空' },
-    { id: 'element:陆地', label: '陆地', type: 'element', value: '陆地' },
-    { id: 'element:水系', label: '海洋', type: 'element', value: '水系' },
+    { id: 'all', labelKey: 'albumAll', type: 'all' },
+    { id: 'element:天空', labelKey: 'albumSky', type: 'element', value: '天空' },
+    { id: 'element:陆地', labelKey: 'albumLand', type: 'element', value: '陆地' },
+    { id: 'element:水系', labelKey: 'albumSea', type: 'element', value: '水系' },
     ...ELEMENTAL_ATTRIBUTES.map(value => ({ id: `attribute:${value}`, label: value, type: 'attribute', value })),
 ];
 // 16 个 (stage, anim) 格子，每格多条候选小标题，按 seed 选其一。
-const ALBUM_CAPTIONS = {
-    baby: [
-        // idle
-        [
-            '你呆呆望着世界的样子',
-            '第一次看见太阳的小眼神',
-            '蛋壳碎片还挂在头顶呢',
-            '你愣愣地认识这个新家',
-            '小小的你，安静得像颗糖',
-        ],
-        // happy
-        [
-            '你第一次咯咯笑出声',
-            '小爪爪举起来的瞬间',
-            '咿呀咿呀地跟我打招呼',
-            '笑得眼睛都弯成月牙啦',
-            '蹦了一下，超开心的你',
-        ],
-        // sad
-        [
-            '我心疼你委屈的小脸',
-            '你嘟着嘴看我的时候',
-            '小小的眼泪在打转',
-            '你咬着尾巴生闷气',
-            '别难过，我马上来抱你',
-        ],
-        // sleep
-        [
-            '我希望你睡觉的样子',
-            '你蜷成一小团的午觉',
-            '呼噜呼噜的奶气小鼾',
-            '梦里在追什么呀',
-            '小手抓着空气也要睡',
-        ],
-    ],
-    teen: [
-        // idle
-        [
-            '你独自散步的背影',
-            '你站在风里发呆',
-            '你认真打量新世界',
-            '青春期的你不爱说话',
-            '你偷偷望着远方',
-        ],
-        // happy
-        [
-            '你蹦蹦跳跳的青春',
-            '你笑得肆无忌惮',
-            '满世界都是你的回声',
-            '你抓住夕阳的样子',
-            '一起冒险的兴奋脸',
-        ],
-        // sad
-        [
-            '你偷偷掉眼泪的瞬间',
-            '你蹲在角落不说话',
-            '我读得懂你的失落',
-            '你说"没事"的时候',
-            '想抱你一下，可以吗',
-        ],
-        // sleep
-        [
-            '你打盹时小小的呼吸',
-            '你在树荫下睡着了',
-            '蓬松的尾巴盖住眼睛',
-            '少年的梦轻轻晃动',
-            '别醒，我替你看世界',
-        ],
-    ],
-    adult: [
-        // idle
-        [
-            '你认真凝望远方',
-            '你站成了我的依靠',
-            '风把你的鬃毛吹乱',
-            '你沉默时也很温柔',
-            '你像一座小小的山',
-        ],
-        // happy
-        [
-            '你欢呼雀跃的高光时刻',
-            '你笑起来像烟花',
-            '你转圈圈逗我开心',
-            '我们击掌的那一刻',
-            '世界因你闪闪发光',
-        ],
-        // sad
-        [
-            '想紧紧抱住难过的你',
-            '你眉头微皱的样子',
-            '成年的你也可以哭',
-            '别一个人扛着所有事',
-            '让我做你的盔甲',
-        ],
-        // sleep
-        [
-            '你梦里一定有星星',
-            '你靠在我肩上睡着了',
-            '呼吸均匀像一首歌',
-            '今晚的月亮替我守你',
-            '愿你梦里没有坏事',
-        ],
-    ],
-    elder: [
-        // idle
-        [
-            '你眼里藏着岁月',
-            '你慢慢地走，我陪你',
-            '你看着我，像看孩子',
-            '皱纹里都是温柔',
-            '你成了我的整个宇宙',
-        ],
-        // happy
-        [
-            '你笑起来还像个孩子',
-            '你眼角的皱纹也是糖',
-            '你哼起年轻时的歌',
-            '夕阳下你最美',
-            '我们一起笑到流泪',
-        ],
-        // sad
-        [
-            '陪你度过的每一次失落',
-            '你叹气时我也心疼',
-            '别担心，我都记得',
-            '把忧愁交给我吧',
-            '你哭过的事，我都会记住',
-        ],
-        // sleep
-        [
-            '愿你安稳入睡到永远',
-            '你睡得像个老小孩',
-            '我会守着你的梦',
-            '今晚的星星都属于你',
-            '晚安，我永远的伙伴',
-        ],
-    ],
-};
 const ALBUM_BG_PALETTE = [
     '#fff7ed', '#fef3c7', '#ecfccb', '#d1fae5', '#cffafe',
     '#dbeafe', '#ede9fe', '#fce7f3', '#fee2e2', '#fef9c3',
@@ -224,7 +86,7 @@ function _photoFrameHtml(pet, stageIdx, animIdx, captionText) {
 
 function _albumStageBlock(pet, stage, stageIdx) {
     const photos = ALBUM_ANIMS.map((anim, animIdx) => {
-        const options = ALBUM_CAPTIONS[stage.id]?.[animIdx] || [''];
+        const options = getAlbumCaptions()[stage.id]?.[animIdx] || [''];
         const seed = _hashStr(`${pet.id || pet.dna || ''}|cap|${stageIdx}|${animIdx}`);
         const caption = options[seed % options.length] || '';
         return _photoFrameHtml(pet, stageIdx, animIdx, caption);
@@ -233,8 +95,8 @@ function _albumStageBlock(pet, stage, stageIdx) {
         <div class="mh-album-stage">
             <div class="mh-album-stage-title">
                 <span style="font-size:18px">${stage.emoji}</span>
-                <span class="font-bold">${escapeHtml(stage.name)}</span>
-                <span class="text-xs" style="color:var(--text-muted)">的回忆</span>
+                <span class="font-bold">${escapeHtml(t(stage.nameKey))}</span>
+                <span class="text-xs" style="color:var(--text-muted)">${escapeHtml(t('stageMemories'))}</span>
             </div>
             <div class="mh-album-grid">${photos}</div>
         </div>`;
@@ -276,7 +138,7 @@ function openMemoryAlbum(pet) {
 
     let bodyHtml;
     if (reachedIdx < 0) {
-        bodyHtml = `<div class="mh-album-empty">蛋还没有破壳，相册里暂时一片空白 🥚<br/>等你陪它长大，回忆就会一页页填满。</div>`;
+        bodyHtml = `<div class="mh-album-empty">${escapeHtml(t('albumEmpty')).replace(/\n/g, '<br/>')}</div>`;
     } else {
         const blocks = ALBUM_STAGES
             .slice(0, reachedIdx + 1)
@@ -292,21 +154,21 @@ function openMemoryAlbum(pet) {
             <div class="mh-album-header">
                 <div class="flex items-center gap-2">
                     <span style="font-size:20px">📷</span>
-                    <span class="font-extrabold" style="color:var(--text-primary)">${escapeHtml(displayPetName(pet))} · 回忆相册</span>
+                    <span class="font-extrabold" style="color:var(--text-primary)">${escapeHtml(t('albumTitle', { name: displayPetName(pet) }))}</span>
                 </div>
                 <div class="mh-album-meta">
-                    <span>🎂 生日 <b>${escapeHtml(getPetBirthday(pet))}</b></span>
-                    <span>🗓️ 陪伴第 <b>${days}</b> 天</span>
-                    <span>🌱 阶段 <b>${escapeHtml(getStageName(pet.stage, pet.stage || ''))}</b></span>
-                    <span>🍽️ 喜欢 <b>${escapeHtml(dietLabel)}</b></span>
+                    <span>🎂 ${escapeHtml(t('albumBirthday', { date: getPetBirthday(pet) }))}</span>
+                    <span>🗓️ ${escapeHtml(t('albumDays', { days }))}</span>
+                    <span>🌱 ${escapeHtml(t('albumStage', { stage: getStageName(pet.stage, pet.stage || '') }))}</span>
+                    <span>🍽️ ${escapeHtml(t('albumDiet', { diet: dietLabel }))}</span>
                 </div>
-                ${wish ? `<div class="mh-album-wish">🌠 我的许愿：${escapeHtml(wish)}</div>` : ''}
+                ${wish ? `<div class="mh-album-wish">🌠 ${escapeHtml(t('albumWish', { wish }))}</div>` : ''}
             </div>
             <div class="mh-album-scroll">
                 ${bodyHtml}
             </div>
             <div class="mh-album-close-row">
-                <button class="btn-primary" data-album-close>关上相册</button>
+                <button class="btn-primary" data-album-close>${escapeHtml(t('albumClose'))}</button>
             </div>
         </div>`;
     const close = () => mask.remove();
@@ -454,7 +316,7 @@ function hasHatchedFamousPet(entry, pets) {
 function rarePetArtHtml(entry, unlocked) {
     const canShowBaby = !!(entry?.imageSheetUrl || entry?.imageUrl);
     if (!unlocked && !canShowBaby) {
-        return `<div class="mh-rare-pet-unknown" aria-label="未发现">?</div>`;
+        return `<div class="mh-rare-pet-unknown" aria-label="${escapeHtml(t('undiscovered'))}">?</div>`;
     }
     const pet = {
         id: entry.id,
@@ -480,8 +342,8 @@ function rarePetCardHtml(entry, pets) {
             <div class="mh-rare-pet-info">
                 <div class="mh-rare-pet-name">${escapeHtml(name)}</div>
                 <div class="mh-rare-pet-meta">
-                    <span class="stage-badge" style="background:${unlocked ? '#ecfeff' : '#f3f4f6'};color:${unlocked ? 'var(--accent-dark)' : '#6b7280'}">稀有度 ${rarity}</span>
-                    <span>${unlocked ? '已发现' : '未发现'}</span>
+                    <span class="stage-badge" style="background:${unlocked ? '#ecfeff' : '#f3f4f6'};color:${unlocked ? 'var(--accent-dark)' : '#6b7280'}">${escapeHtml(t('rarityLabel', { rarity }))}</span>
+                    <span>${unlocked ? escapeHtml(t('discovered')) : escapeHtml(t('undiscovered'))}</span>
                 </div>
             </div>
         </button>`;
@@ -507,13 +369,13 @@ function famousPetFilterTabsHtml(list) {
         ? safeList.length
         : safeList.filter(entry => famousPetFilterMatches(entry, filter.id)).length;
     return `
-        <div class="mh-famous-filter-tabs" role="tablist" aria-label="稀有宠物分类">
+        <div class="mh-famous-filter-tabs" role="tablist" aria-label="${escapeHtml(t('rareCategoryAria'))}">
             ${FAMOUS_PET_FILTERS.map(filter => {
                 const active = activeFamousPetFilter === filter.id;
                 const count = countFor(filter);
                 return `
                     <button class="mh-famous-filter-tab ${active ? 'active' : ''}" data-famous-pet-filter="${escapeHtml(filter.id)}" type="button" role="tab" aria-selected="${active ? 'true' : 'false'}">
-                        ${escapeHtml(filter.label)}<span>${count}</span>
+                        ${escapeHtml(filter.labelKey ? t(filter.labelKey) : filter.label)}<span>${count}</span>
                     </button>`;
             }).join('')}
         </div>`;
@@ -572,7 +434,7 @@ function rarePetPhotoGridHtml(entry, unlocked) {
             <div class="mh-rare-album-stage">
                 <div class="mh-rare-album-stage-title">
                     <span style="font-size:18px">${stage.emoji}</span>
-                    <span class="font-bold">${escapeHtml(stage.name)}</span>
+                    <span class="font-bold">${escapeHtml(t(stage.nameKey))}</span>
                 </div>
                 <div class="mh-rare-album-grid">${cells.join('')}</div>
             </div>`;
@@ -604,7 +466,7 @@ function openRarePetModal(entry, pets, refreshPetList) {
             <div class="mh-rare-modal-head">
                 <div>
                     <div class="mh-rare-modal-title">${escapeHtml(unlocked ? (entry.name || entry.id) : '???')}</div>
-                    <div class="mh-rare-modal-subtitle">稀有度 ${escapeHtml(Math.round(Number(entry.rarity) || 0))}</div>
+                    <div class="mh-rare-modal-subtitle">${escapeHtml(t('rarityLabel', { rarity: Math.round(Number(entry.rarity) || 0) }))}</div>
                 </div>
                 <button class="mh-rare-modal-close" data-rare-close type="button" aria-label="关闭">×</button>
             </div>
@@ -612,7 +474,7 @@ function openRarePetModal(entry, pets, refreshPetList) {
             <div class="mh-rare-modal-actions">
                 ${unlocked
                     ? '<button class="btn-secondary" data-rare-close type="button">已拥有</button>'
-                    : `<button class="btn-primary" data-rare-hatch type="button" ${canAfford ? '' : 'disabled'}>孵化 ${coinIconSvg()} ${price}</button>`}
+                    : `<button class="btn-primary" data-rare-hatch type="button" ${canAfford ? '' : 'disabled'}>${escapeHtml(t('hatchRareBtn'))} ${coinIconSvg()} ${price}</button>`}
             </div>
         </div>`;
     const close = () => mask.remove();
@@ -637,9 +499,9 @@ async function hatchRarePet(entry, mask, refreshPetList) {
 
     const current = state.currentPetId ? state.pets[state.currentPetId] : null;
     if (current && isPetOnCurrentPlanet(current)) {
-        const targetName = entry?.name || entry?.id || '稀有宠物';
-        const ok = await confirm(`孵化 ${targetName} 前，${current.name || '当前宠物'} 会被放养到星球中，无法重新召回；随后会扣除 ${price} 金币。确定继续吗？`, {
-            okText: '放养并孵化',
+        const targetName = entry?.name || entry?.id || t('rarePetFallback');
+        const ok = await confirm(t('hatchRareConfirm', { target: targetName, current: current.name || t('currentPetFallback'), price }), {
+            okText: t('releaseAndHatch'),
             cancelText: '再想想',
         });
         if (!ok) {
@@ -650,7 +512,7 @@ async function hatchRarePet(entry, mask, refreshPetList) {
 
     const config = await loadFamousPetConfig(entry);
     if (!config?.id) {
-        showToast('稀有宠物配置不存在', 'error', 2200);
+        showToast(t('rareConfigMissing'), 'error', 2200);
         if (button) button.disabled = false;
         return;
     }
@@ -664,7 +526,7 @@ async function hatchRarePet(entry, mask, refreshPetList) {
     const pet = {
         ...JSON.parse(JSON.stringify(config)),
         id: config.id || entry.id || `rare_${randId(8)}`,
-        name: config.name || entry.name || config.id || entry.id || '稀有宠物',
+        name: config.name || entry.name || config.id || entry.id || t('rarePetFallback'),
         imageUrl: config.imageUrl || null,
         imageSheetUrl: config.imageSheetUrl || entry.imageSheetUrl || null,
         source: 'famous-pets',
@@ -688,7 +550,7 @@ async function hatchRarePet(entry, mask, refreshPetList) {
     saveUserProfileDebounced();
     try { await ensurePetData(pet.id); } catch (_) {}
     mask.remove();
-    showToast(`${pet.name} 的蛋已经来到星球`, 'success', 1800);
+    showToast(t('eggArrived', { name: pet.name }), 'success', 1800);
     notify();
     setView('home');
 
@@ -707,7 +569,7 @@ async function hatchRarePet(entry, mask, refreshPetList) {
         try { applyStage(currentPet); } catch (_) {}
         await savePet(currentPet);
         notify();
-        showToast(`${currentPet.name || '稀有宠物'} 孵化啦`, 'success', 2000);
+        showToast(t('rareHatched', { name: currentPet.name || t('rarePetFallback') }), 'success', 2000);
         refreshPetList?.();
     }, 2000);
 }
@@ -717,7 +579,7 @@ function petListTabsHtml({ petCount = 0, rareUnlockedCount = 0, rareTotalCount =
         <div class="mh-pet-list-tabs" role="tablist" aria-label="宠物列表分类">
             ${PET_LIST_TABS.map(tab => `
                 <button class="mh-pet-list-tab ${activePetListTab === tab.id ? 'active' : ''}" data-pet-list-tab="${escapeHtml(tab.id)}" type="button" role="tab" aria-selected="${activePetListTab === tab.id ? 'true' : 'false'}">
-                    ${escapeHtml(tab.id === 'mine' ? `${tab.label}（${petCount}）` : `${tab.label}（${rareUnlockedCount}/${rareTotalCount}）`)}
+                    ${escapeHtml(tab.id === 'mine' ? t('tabCount', { label: t(tab.labelKey), count: petCount }) : t('tabCountRatio', { label: t(tab.labelKey), count: rareUnlockedCount, total: rareTotalCount }))}
                 </button>`).join('')}
         </div>`;
 }
@@ -875,7 +737,7 @@ function petCardHtml(pet, isCurrent, allowSelect = false, picker = null, canDele
             <div style="display:flex;flex-direction:column;gap:6px;align-self:center;flex-shrink:0">
                 ${isPicker && !lazy ? `<span class="stage-badge" data-picker-state style="align-self:flex-end;background:${picked ? 'var(--accent)' : '#effaff'};color:${picked ? '#fff' : 'var(--text-secondary)'}">${picked ? '已选' : '选择'}</span>` : ''}
                 ${!isPicker && findTarget ? `<button class="btn-secondary" data-find="${escapeHtml(pet.id)}" title="寻找 ${escapeHtml(name)}" style="padding:7px 10px;font-size:12px">寻找</button>` : ''}
-                ${!isPicker && !lazy ? `<button class="btn-secondary" data-album="${escapeHtml(pet.id)}" title="查看 ${escapeHtml(name)} 的回忆相册" style="padding:7px 10px;font-size:12px">相册</button>` : ''}
+                ${!isPicker && !lazy ? `<button class="btn-secondary" data-album="${escapeHtml(pet.id)}" title="${escapeHtml(t('albumBtnTitle', { name }))}" style="padding:7px 10px;font-size:12px">${escapeHtml(t('albumBtn'))}</button>` : ''}
             </div>
         </div>`;
 }

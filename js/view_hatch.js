@@ -23,7 +23,7 @@ export function renderHatch(panel, { parents } = {}, { onCreated, onCancel } = {
     const draw = () => {
         const traits = decodeDna(dna);
         const rarity = dnaRarity(dna);
-        const rarityLabel = rarity > 90 ? '🌟 传说' : rarity > 70 ? '✨ 稀有' : rarity > 40 ? '⭐ 普通' : '· 平凡';
+        const rarityLabel = rarity > 90 ? t('rarityLegend') : rarity > 70 ? t('rarityRare') : rarity > 40 ? t('rarityCommon') : t('rarityPlain');
         // 用一个临时 pet 对象给 petArtHtml 预览
         const previewPet = { dna, imageSheetUrl, stage: imageSheetUrl ? 'baby' : 'egg' };
         panel.innerHTML = `
@@ -37,12 +37,12 @@ export function renderHatch(panel, { parents } = {}, { onCreated, onCancel } = {
                     <div style="width:160px;height:160px;border-radius:20px;margin:0 auto 10px;background:var(--bg-pill);overflow:hidden">
                         ${busy
                             ? `<div style="height:100%;display:flex;align-items:center;justify-content:center"><div class="spinner"></div></div>`
-                            : petArtHtml(previewPet, { alt: '宝宝', extraClass: 'pop-in' })}
+                            : petArtHtml(previewPet, { alt: t('babyAlt'), extraClass: 'pop-in' })}
                     </div>
-                    <div class="font-mono text-xs mb-1" style="color:var(--text-muted)">DNA</div>
+                    <div class="font-mono text-xs mb-1" style="color:var(--text-muted)">${escapeHtml(t('dnaLabel'))}</div>
                     <div class="font-mono font-bold text-base mb-2" style="color:var(--accent-dark);letter-spacing:2px">${escapeHtml(formatDna(dna))}</div>
-                    <div class="text-xs mb-3" style="color:var(--accent-dark);font-weight:700">${escapeHtml(rarityLabel)} · 稀有度 ${rarity}</div>
-                    <div class="text-sm" style="color:var(--text-secondary)"><b>${escapeHtml(traits.element)}族</b> · ${escapeHtml(traits.elementalAttribute || '自然')}元素 · ${escapeHtml(traits.color)} · ${escapeHtml(traits.species)}<br>${escapeHtml(traits.eyes)}<br>${escapeHtml(traits.accessory)}</div>
+                    <div class="text-xs mb-3" style="color:var(--accent-dark);font-weight:700">${escapeHtml(t('rarityWithScore', { label: rarityLabel, score: rarity }))}</div>
+                    <div class="text-sm" style="color:var(--text-secondary)"><b>${escapeHtml(traits.element)}${escapeHtml(t('clanSuffix'))}</b> · ${escapeHtml(traits.elementalAttribute || t('natureElement'))}${escapeHtml(t('elementSuffix'))} · ${escapeHtml(traits.color)} · ${escapeHtml(traits.species)}<br>${escapeHtml(traits.eyes)}<br>${escapeHtml(traits.accessory)}</div>
                 </div>
                 ${isBreed ? `
                     <div class="card-flat mb-3 text-xs" style="color:var(--text-secondary)">
@@ -50,10 +50,10 @@ export function renderHatch(panel, { parents } = {}, { onCreated, onCancel } = {
                     </div>
                 ` : ''}
                 <div class="card-flat mb-3 text-xs" style="color:var(--text-secondary);background:#fffbeb">
-                    🔒 名字由 DNA 决定，<b>等它长大成年才会显露真名</b>～
+                    ${escapeHtml(t('nameHiddenHint'))}
                 </div>
                 <button id="mhGenBtn" class="btn-primary w-full mb-2" ${busy ? 'disabled' : ''}>
-                    ${busy ? escapeHtml(t('generating')) : (imageSheetUrl ? '🔄 重新生成 4×4 形象' : '✨ 生成 4×4 成长形象')}
+                    ${busy ? escapeHtml(t('generating')) : (imageSheetUrl ? escapeHtml(t('regenGrowthSprite')) : escapeHtml(t('genGrowthSprite')))}
                 </button>
                 ${imageSheetUrl ? `<button id="mhConfirmBtn" class="btn-primary w-full" style="background:linear-gradient(135deg,#10b981,#059669);box-shadow:0 4px 12px rgba(16,185,129,0.35)">✓ ${escapeHtml(t('confirm'))}</button>` : ''}
             </div>`;
@@ -65,18 +65,18 @@ export function renderHatch(panel, { parents } = {}, { onCreated, onCancel } = {
             const cached = getCachedSheetUrl(dna);
             if (cached) {
                 imageSheetUrl = cached;
-                showToast('已复用同 DNA 缓存形象', 'info');
+                showToast(t('reusedDnaCache'), 'info');
                 draw();
                 return;
             }
             busy = true; draw();
             try {
                 const url = await generatePetSheet({ dna });
-                if (!url) throw new Error('未获取到图片');
+                if (!url) throw new Error(t('noImageReturned'));
                 imageSheetUrl = url;
-                showToast('4×4 成长形象生成成功！', 'success');
+                showToast(t('growthSpriteSuccess'), 'success');
             } catch (e) {
-                showToast('生成失败：' + (e?.message || e), 'error');
+                showToast(t('genFailed', { error: (e?.message || e) }), 'error');
             } finally {
                 busy = false; draw();
             }
@@ -110,7 +110,7 @@ export function renderHatch(panel, { parents } = {}, { onCreated, onCancel } = {
                 const { saveUserProfileDebounced } = await import('./storage.js');
                 saveUserProfileDebounced();
             }
-            showToast('一只新宠物诞生了！等它长大就能知道名字啦～', 'success', 2500);
+            showToast(t('newPetBorn'), 'success', 2500);
             onCreated?.(pet);
         };
     };

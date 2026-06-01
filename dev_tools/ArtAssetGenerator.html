@@ -62,6 +62,14 @@
 			.preview-card { @apply overflow-hidden rounded-md border border-slate-300 bg-white; }
 			.preview-card img { @apply block aspect-square w-full object-contain; }
 			.preview-card-body { @apply flex flex-col gap-1 p-2; }
+			.history-grid { @apply grid gap-2; grid-template-columns: repeat(auto-fill, minmax(72px, 1fr)); }
+			.history-item { @apply relative flex flex-col gap-1 overflow-hidden rounded-md border border-slate-300 bg-white p-0 hover:border-sky-500 hover:bg-sky-50; }
+			.history-item.current { @apply border-sky-600 ring-2 ring-sky-600/15; }
+			.history-thumb { @apply relative block aspect-square w-full overflow-hidden bg-white; background-image: linear-gradient(45deg,#dfe6ee 25%,transparent 25%),linear-gradient(-45deg,#dfe6ee 25%,transparent 25%),linear-gradient(45deg,transparent 75%,#dfe6ee 75%),linear-gradient(-45deg,transparent 75%,#dfe6ee 75%); background-size: 12px 12px; background-position: 0 0,0 6px,6px -6px,-6px 0; }
+			.history-thumb img { @apply absolute inset-0 block h-full w-full object-contain; }
+			.history-item em { @apply overflow-hidden text-ellipsis whitespace-nowrap px-1 pb-1 text-[10px] not-italic text-slate-500; }
+			.history-delete { @apply absolute right-1 top-1 z-[2] grid h-[20px] w-[20px] min-h-[20px] place-items-center rounded-full border border-white/90 bg-red-600/90 p-0 text-[14px] leading-none text-white hover:bg-red-700; }
+			.history-empty { @apply rounded-md border border-dashed border-slate-300 bg-slate-50 p-2.5 text-center text-xs text-slate-500; }
 			.modal-overlay { @apply fixed inset-0 z-[1050] flex bg-slate-950/60 p-[18px]; }
 			.modal-window { @apply m-auto flex max-h-full w-[min(980px,100%)] flex-col overflow-hidden rounded-lg bg-white shadow-2xl; height: min(780px,100%); }
 			.modal-titlebar { @apply flex min-h-12 items-center justify-between gap-2.5 border-b border-slate-300 bg-slate-50 px-4 py-0 select-none; }
@@ -232,8 +240,9 @@
 								<label>Max edge <input id="webpMaxEdge" type="number" min="32" max="4096" value="1024"></label>
 							</div>
 							<label>Optional CDN folder <input id="cdnFolder" placeholder="artassets/my_project"></label>
+							<label class="flex-row items-center gap-2 text-slate-900"><input id="webpTransparent" class="h-4 min-h-0 w-4" type="checkbox" checked>Make transparent before WebP</label>
 							<label class="toggle-line"><input id="uploadWebpToCdn" type="checkbox">Upload converted WebP to CDN</label>
-							<div class="toolbar"><button id="btnCdnConfig" type="button">CDN Config</button><button id="btnConvertSelectedWebp" type="button" disabled>Convert selected WebP (0)</button></div>
+							<div class="toolbar"><button id="btnCdnConfig" type="button">CDN Config</button><button id="btnConvertCurrentWebp" type="button">Generate WebP</button><button id="btnConvertSelectedWebp" type="button" disabled>Convert selected WebP (0)</button></div>
 							<div id="cdnStatus" class="hint">No CDN config loaded. If upload is disabled, converted WebP is stored as data URL.</div>
 						</section>
 
@@ -253,17 +262,20 @@
 							</div>
 							<label>Image URL <input id="assetImageUrl" placeholder="https://... or data URL"></label>
 							<label>Description <textarea id="assetDescription" rows="4"></textarea></label>
-							<div class="row-3">
-								<label>Width <input id="assetWidth" type="number" min="1" step="1" value="1024"></label>
-								<label>Height <input id="assetHeight" type="number" min="1" step="1" value="1024"></label>
-								<label>Grid <input id="assetGrid" placeholder="4x4" value="1x1"></label>
-							</div>
-							<label class="flex-row items-center gap-2 text-slate-900"><input id="assetTransparent" class="h-4 min-h-0 w-4" type="checkbox">Transparent image</label>
+							<input id="assetWidth" type="hidden" value="1024">
+							<input id="assetHeight" type="hidden" value="1024">
+							<input id="assetGrid" type="hidden" value="1x1">
+							<input id="assetTransparent" type="hidden">
 							<div class="toolbar">
 								<button id="btnUpsertAsset" class="success" type="button">Upsert Asset</button>
 								<button id="btnGenerateImage" class="primary" type="button">Generate Image</button>
 								<button id="btnDeleteAsset" class="danger" type="button">Delete</button>
 							</div>
+						</section>
+
+						<section class="section">
+							<div class="flex items-center justify-between gap-2"><h2>History images</h2><span class="hint">Click to swap current image</span></div>
+							<div id="historyImages" class="history-grid"><div class="history-empty">No history images.</div></div>
 						</section>
 
 						<section class="section">
@@ -561,16 +573,19 @@
 			$('assetName').value = '';
 			$('assetImageUrl').value = '';
 			$('assetDescription').value = '';
+			$('userRequest').value = '';
 			$('assetWidth').value = size.width;
 			$('assetHeight').value = size.height;
 			$('assetGrid').value = gridToText(grid);
-			$('assetTransparent').checked = false;
+			$('assetTransparent').value = '';
 			state.selectedAssetId = '';
+			renderHistoryImages();
 			renderPreview();
 		}
 
 		function assetFromForm() {
-			const grid = parseGrid($('assetGrid').value);
+			const grid = parseGrid($('defaultGrid').value || $('assetGrid').value || '1x1');
+			const size = imageSize();
 			const prompt = $('finalPrompt').value.trim() || $('userRequest').value.trim() || $('assetDescription').value;
 			return normalizeAsset({
 				id: $('assetId').value,
@@ -579,8 +594,9 @@
 				description: $('assetDescription').value,
 				prompt,
 				imageUrl: $('assetImageUrl').value,
-				isTransparent: $('assetTransparent').checked,
-				dims: { width: Number($('assetWidth').value) || imageSize().width, height: Number($('assetHeight').value) || imageSize().height },
+				isTransparent: $('assetTransparent').value === '1',
+				historyUrls: splitList($('assetGrid').dataset.historyUrls || ''),
+				dims: { width: size.width, height: size.height },
 				grid,
 			}, state.project?.assets?.length || 0, state.tool);
 		}
@@ -596,12 +612,55 @@
 			$('assetWidth').value = clean.dims.width;
 			$('assetHeight').value = clean.dims.height;
 			$('assetGrid').value = gridToText(clean.grid);
+			$('assetGrid').dataset.historyUrls = (clean.historyUrls || []).join(',');
 			$('imageSize').value = `${clean.dims.width}x${clean.dims.height}`;
 			$('defaultGrid').value = gridToText(clean.grid);
-			$('assetTransparent').checked = !!clean.isTransparent;
+			$('assetTransparent').value = clean.isTransparent ? '1' : '';
 			$('finalPrompt').dataset.edited = '0';
 			refreshFinalPrompt({ force: true });
+			renderHistoryImages(clean);
 			renderPreview();
+		}
+
+		function renderHistoryImages(asset = getSelectedAsset()) {
+			const root = $('historyImages');
+			if (!root) return;
+			const current = $('assetImageUrl')?.value?.trim() || asset?.imageUrl || '';
+			const history = [...new Set([...(current ? [current] : []), ...(asset?.historyUrls || [])].filter(Boolean))];
+			root.innerHTML = history.length ? history.map((url, index) => {
+				const isCurrent = url === current;
+				return `<div class="history-item${isCurrent ? ' current' : ''}" title="${escapeHtml(url)}"><button type="button" class="history-thumb" data-history-url="${escapeHtml(url)}"><img alt="history ${index + 1}" src="${escapeHtml(url)}"></button><em>${isCurrent ? 'current' : `#${index}`}</em>${isCurrent ? '' : `<button type="button" class="history-delete" data-delete-history-url="${escapeHtml(url)}" title="Delete" aria-label="Delete">×</button>`}</div>`;
+			}).join('') : '<div class="history-empty">No history images.</div>';
+			root.querySelectorAll('[data-history-url]').forEach(button => button.onclick = () => swapHistoryImage(button.dataset.historyUrl || ''));
+			root.querySelectorAll('[data-delete-history-url]').forEach(button => button.onclick = event => { event.stopPropagation(); deleteHistoryImage(button.dataset.deleteHistoryUrl || ''); });
+		}
+
+		function getCurrentHistoryUrls() {
+			return splitList($('assetGrid')?.dataset.historyUrls || '');
+		}
+
+		function setCurrentHistoryUrls(urls) {
+			if ($('assetGrid')) $('assetGrid').dataset.historyUrls = [...new Set(urls.filter(Boolean))].slice(0, 24).join(',');
+		}
+
+		function swapHistoryImage(url) {
+			if (!url) return;
+			const current = $('assetImageUrl').value.trim();
+			if (url === current) return;
+			const history = getCurrentHistoryUrls().map(item => item === url ? current : item).filter(item => item && item !== url);
+			setCurrentHistoryUrls([current, ...history].filter(item => item && item !== url));
+			$('assetImageUrl').value = url;
+			const asset = upsertAsset({ silent: true });
+			autoSaveProjectAfterAssetChange();
+			setStatus($('runStatus'), `已切换当前图片：${asset.id}`, 'ok');
+		}
+
+		function deleteHistoryImage(url) {
+			if (!url) return;
+			setCurrentHistoryUrls(getCurrentHistoryUrls().filter(item => item !== url));
+			const asset = upsertAsset({ silent: true });
+			autoSaveProjectAfterAssetChange();
+			setStatus($('runStatus'), `已删除历史图片：${asset.id}`, 'ok');
 		}
 
 		function upsertAsset({ silent = false } = {}) {
@@ -758,13 +817,36 @@
 			return result?.result || result?.content || result?.message?.content || result?.choices?.[0]?.message?.content || result?.data?.choices?.[0]?.message?.content || result?.text || '';
 		}
 
+		function sanitizeGeneratedPromptText(text) {
+			return String(text || '')
+				.replace(/,?\s*transparent background\b/gi, '')
+				.replace(/\btransparent background,?\s*/gi, '')
+				.replace(/\btransparent\b/gi, '')
+				.replace(/\balpha channel\b/gi, '')
+				.replace(/\bPNG transparency\b/gi, '')
+				.replace(/\bconsistent scale\b/gi, '')
+				.replace(/\bcrisp silhouettes?\b/gi, '')
+				.replace(/\bclean pixel art\b/gi, '')
+				.replace(/\bno (?:text|labels?|watermarks?)\b/gi, '')
+				.replace(/\b(?:without|no) (?:text|labels?|watermarks?)\b/gi, '')
+				.replace(/\b\d{3,4}\s*x\s*\d{3,4}\b/gi, '')
+				.replace(/\s{2,}/g, ' ')
+				.replace(/\s+,/g, ',')
+				.replace(/,\s*,+/g, ',')
+				.replace(/^[\s,.;]+|[\s,]+$/g, '')
+				.trim();
+		}
+
+		const IMAGE_OUTPUT_REQUIREMENTS = 'Use consistent scale, crisp silhouettes, and no text or labels.';
+
 		async function generateImageForAsset(assetInput, { silent = false } = {}) {
 			const sdk = state.sdk || window.keepwork;
 			if (!sdk?.aiGenerators?.genImage) throw new Error('sdk.aiGenerators.genImage 不可用');
 			const model = $('imageModelSelect').value.trim();
 			if (!model) throw new Error('请先配置 Image 模型');
 			const asset = normalizeAsset(assetInput || upsertAsset({ silent: true }), 0, assetInput?.type || state.tool);
-			const prompt = asset.prompt || asset.description || `Create ${asset.type} art asset: ${asset.name}`;
+			const basePrompt = asset.prompt || asset.description || `Create ${asset.type} art asset: ${asset.name}`;
+			const prompt = `${basePrompt}\n\n${IMAGE_OUTPUT_REQUIREMENTS}`;
 			const opts = { model, width: asset.dims.width, height: asset.dims.height, stream: true, uploadResultToKeepwork: true };
 			let streamedText = '';
 			opts.onMessage = (fullText) => {
@@ -775,12 +857,14 @@
 			setStatus($('runStatus'), `正在生成图片：${asset.name}\n${asset.dims.width}x${asset.dims.height}`, '');
 			const url = await sdk.aiGenerators.genImage(prompt, opts);
 			if (!url) throw new Error('genImage did not return an image URL');
+			if (asset.imageUrl && asset.imageUrl !== url) asset.historyUrls = [...new Set([asset.imageUrl, ...(asset.historyUrls || [])])].filter(item => item && item !== url).slice(0, 24);
 			asset.imageUrl = url;
 			const index = state.project.assets.findIndex(item => item.id === asset.id);
 			if (index >= 0) state.project.assets[index] = asset;
 			if (asset.id === state.selectedAssetId) setAssetForm(asset);
 			renderProjectJson();
 			renderAssetList();
+			await autoSaveProjectAfterAssetChange();
 			if (!silent) setStatus($('runStatus'), `图片生成完成：${asset.id}`, 'ok');
 			return asset;
 		}
@@ -809,6 +893,7 @@
 					state.batchImage.done += 1;
 					updateSelectionControls();
 				}
+				await autoSaveProjectAfterAssetChange();
 				setStatus($('runStatus'), state.batchImage.stopRequested ? `批量生成已停止：完成 ${state.batchImage.done}/${state.batchImage.total}` : `批量生成完成：${state.batchImage.done}/${state.batchImage.total}`, 'ok');
 			} finally {
 				state.batchImage = null;
@@ -831,7 +916,7 @@
 					<div class="row"><label>Custom grid<input id="batchAssetCustomGrid" placeholder="e.g. 5*5, 6x6, 8*8" value="${GRID_OPTIONS.includes(currentGrid) ? '' : escapeHtml(currentGrid)}"></label><label>Image size<select id="batchAssetImageSize">${imageSizeOptionsHtml(currentSize)}</select></label></div>
 					<label>Custom size<input id="batchAssetCustomSize" placeholder="e.g. 1600x900" value=""></label>
 					<label>Tags<input id="batchAssetTags" placeholder="fantasy, outdoor, icon"></label>
-					<label>Description request<textarea id="batchAssetRequest" class="prompt-box" spellcheck="false" placeholder="Describe the asset items to create. This creates descriptions/prompts only; no images are generated.">${escapeHtml($('userRequest').value || '')}</textarea></label>
+					<label>Description request<textarea id="batchAssetRequest" class="prompt-box" spellcheck="false" placeholder="Describe the asset items to create. This creates descriptions/prompts only; no images are generated."></textarea></label>
 					<label>Editable prompt sent to Chat model<textarea id="batchAssetPrompt" class="prompt-box" spellcheck="false"></textarea></label>
 					<div id="batchAssetStatus" class="status">Create asset item JSON first, then select rows and batch generate images.</div>
 					<pre id="batchAssetPreview" class="status ai-preview">Waiting...</pre>
@@ -870,9 +955,7 @@
 					name: 'short name',
 					type: 'character|scene|prop',
 					description: 'short output description',
-					prompt: 'detailed image generation prompt with all grid details in prose',
-					isTransparent: true,
-					dims: { width: size.width, height: size.height },
+					prompt: 'detailed image generation prompt with all subject and grid layout details in prose',
 					grid: { cols: parsedGrid.cols, rows: parsedGrid.rows },
 					tags: ['tag'],
 				}],
@@ -881,11 +964,13 @@
 				'You create planning JSON for art asset items. Return strict JSON only, no markdown.',
 				'This step creates descriptions and image prompts only.',
 				`Generate exactly ${count} ${type} assets.`,
-				`Default dimensions: ${size.width}x${size.height}. Default grid: ${grid} (${parsedGrid.rows} rows x ${parsedGrid.cols} columns).`,
+				`Default grid: ${grid} (${parsedGrid.rows} rows x ${parsedGrid.cols} columns).`,
 				`Type guidance: ${TOOL_EXAMPLES[type]}`,
 				tags.length ? `Required tags for every asset: ${tags.join(', ')}.` : 'No required tags were specified; generate 1 or 2 concise tags for each asset.',
 				`Return shape:\n${exampleJson}`,
 				`Use grid rows=${parsedGrid.rows}, cols=${parsedGrid.cols}; put all grid details inside each asset's prompt text.`,
+				'Each prompt must only describe the specific subject and scene content of that image. Do not add generic style or output boilerplate.',
+				'Do not mention transparency, transparent background, alpha, PNG transparency, exact pixel resolution, exact image size, consistent scale, crisp silhouettes, no text, no labels, no watermark, or similar generic requirements; those are added automatically later.',
 				`User request:\n${$('batchAssetRequest')?.value?.trim() || 'Create a useful batch of assets.'}`,
 			].join('\n\n');
 		}
@@ -917,7 +1002,7 @@
 			if (!assets.length) throw new Error('No assets returned');
 			const normalized = assets.map((asset, index) => {
 				const { imageUrl, url, ...planningAsset } = asset || {};
-				return normalizeAsset({ ...planningAsset, type: planningAsset.type || targetType, tags: [...requiredTags, ...(Array.isArray(planningAsset.tags) ? planningAsset.tags : splitList(planningAsset.tags || ''))], dims: { width: targetWidth || imageSize().width, height: targetHeight || imageSize().height }, grid: { ...(planningAsset.grid || {}), cols: Number(planningAsset.grid?.cols) || targetGrid.cols, rows: Number(planningAsset.grid?.rows) || targetGrid.rows } }, index, targetType);
+				return normalizeAsset({ ...planningAsset, prompt: sanitizeGeneratedPromptText(planningAsset.prompt), type: planningAsset.type || targetType, tags: [...requiredTags, ...(Array.isArray(planningAsset.tags) ? planningAsset.tags : splitList(planningAsset.tags || ''))], dims: { width: targetWidth || imageSize().width, height: targetHeight || imageSize().height }, grid: { ...(planningAsset.grid || {}), cols: Number(planningAsset.grid?.cols) || targetGrid.cols, rows: Number(planningAsset.grid?.rows) || targetGrid.rows } }, index, targetType);
 			});
 			const existingIds = new Set((state.project.assets || []).map(asset => asset.id));
 			normalized.forEach(asset => {
@@ -1006,12 +1091,56 @@
 			updateCdnStatus();
 		}
 
+		function cdnConfigToYaml(config) {
+			if (!config) return '';
+			return [
+				`accessKey: ${config.accessKey || ''}`,
+				`secretKey: ${config.secretKey || ''}`,
+				`bucketName: ${config.bucketName || CDN_DEFAULT_BUCKET}`,
+				`publicDomain: ${config.publicDomain || CDN_DEFAULT_DOMAIN}`,
+				`uploadHost: ${config.uploadHost || CDN_DEFAULT_UPLOAD_HOST}`,
+			].join('\n');
+		}
+
+		function openCdnConfigDialog() {
+			closeCdnConfigDialog();
+			const overlay = document.createElement('div');
+			overlay.className = 'modal-overlay';
+			overlay.id = 'cdnConfigOverlay';
+			overlay.innerHTML = `<div class="modal-window" role="dialog" aria-modal="true" aria-label="CDN Settings" style="width:min(560px,100%);height:min(470px,100%)">
+				<div class="modal-titlebar"><strong>CDN Settings</strong><button type="button" id="closeCdnConfig">Close</button></div>
+				<div class="modal-body flex flex-col gap-3">
+					<div class="hint">Choose qiniu.yaml or paste YAML content. The config is saved in this browser and shared with other generators.</div>
+					<div class="toolbar"><button id="btnDialogPickCdnConfig" type="button">Choose qiniu.yaml</button></div>
+					<textarea id="cdnConfigText" class="output" spellcheck="false" placeholder="accessKey: xxx&#10;secretKey: xxx&#10;bucketName: haqi&#10;publicDomain: https://cdn.keepwork.com&#10;uploadHost: https://up-z2.qiniup.com"></textarea>
+					<div class="toolbar justify-end"><button id="btnCancelCdnConfig" type="button">Cancel</button><button id="btnApplyCdnConfig" class="primary" type="button">Apply</button></div>
+				</div>
+			</div>`;
+			document.body.appendChild(overlay);
+			overlay.addEventListener('click', event => { if (event.target === overlay) closeCdnConfigDialog(); });
+			$('closeCdnConfig').onclick = closeCdnConfigDialog;
+			$('btnCancelCdnConfig').onclick = closeCdnConfigDialog;
+			$('btnDialogPickCdnConfig').onclick = pickCdnConfigFile;
+			$('btnApplyCdnConfig').onclick = () => {
+				try {
+					applyCdnConfigFromText($('cdnConfigText').value.trim(), 'manual paste');
+					setStatus($('runStatus'), 'CDN config loaded.', 'ok');
+					closeCdnConfigDialog();
+				} catch (error) { setStatus($('runStatus'), `CDN config failed: ${error.message}`, 'error'); }
+			};
+			$('cdnConfigText').value = cdnConfigToYaml(getCdnConfig());
+			$('cdnConfigText').focus();
+		}
+
+		function closeCdnConfigDialog() { $('cdnConfigOverlay')?.remove(); }
+
 		function pickCdnConfigFile() {
 			const input = $('cdnConfigInput');
 			input.onchange = async () => {
 				try {
 					const file = input.files?.[0];
 					if (file) applyCdnConfigFromText(await file.text(), file.name);
+					if ($('cdnConfigText')) $('cdnConfigText').value = cdnConfigToYaml(getCdnConfig());
 					setStatus($('runStatus'), 'CDN config loaded.', 'ok');
 				} catch (error) { setStatus($('runStatus'), `CDN config failed: ${error.message}`, 'error'); }
 				finally { input.value = ''; }
@@ -1079,6 +1208,18 @@
 			ctx.imageSmoothingEnabled = true;
 			ctx.imageSmoothingQuality = 'high';
 			ctx.drawImage(img, 0, 0, width, height);
+			if (options.transparent) {
+				try {
+					const sourceBlob = await canvasToBlob(canvas, 'image/png');
+					const transparentBlob = await processImageBackgroundWithWorker(sourceBlob, { seedThreshold: 60, growThreshold: 78, haloThreshold: 112, borderRatio: 0.02, gridLineWidth: 0, sheetCols: 1, sheetRows: 1 });
+					if (transparentBlob) {
+						const bitmap = await createImageBitmap(transparentBlob);
+						ctx.clearRect(0, 0, width, height);
+						ctx.drawImage(bitmap, 0, 0, width, height);
+						bitmap.close?.();
+					}
+				} catch (_) {}
+			}
 			const minBytes = Math.max(1, Number(options.minKb || 0) * 1024);
 			const maxBytes = Math.max(minBytes, Number(options.maxKb || 100) * 1024);
 			const qualities = [0.92, 0.84, 0.76, 0.68, 0.6, 0.52, 0.44, 0.36, 0.28, 0.2, 0.14, 0.09, 0.05];
@@ -1094,22 +1235,50 @@
 			throw new Error(`WebP size ${formatBytes(best?.blob?.size || 0)} outside target ${options.minKb}-${options.maxKb} KB`);
 		}
 
+		function processImageBackgroundWithWorker(blob, options = {}) {
+			return new Promise((resolve) => {
+				let worker;
+				try { worker = new Worker('../js/petSheetWorker.js'); }
+				catch (_) { resolve(null); return; }
+				const id = `artasset_bg_${Date.now()}_${Math.random().toString(36).slice(2)}`;
+				const cleanup = () => { try { worker.terminate(); } catch (_) {} };
+				worker.onmessage = event => {
+					const result = event.data || {};
+					if (result.id !== id) return;
+					cleanup();
+					resolve(result.ok && result.blob instanceof Blob ? result.blob : null);
+				};
+				worker.onerror = () => { cleanup(); resolve(null); };
+				try { worker.postMessage({ id, blob, options }); }
+				catch (_) { cleanup(); resolve(null); }
+			});
+		}
+
 		async function convertAssetToWebp(assetInput, { silent = false } = {}) {
 			const asset = normalizeAsset(assetInput, 0, assetInput?.type || state.tool);
 			if (!asset.imageUrl) throw new Error(`${asset.id} has no imageUrl`);
-			const webp = await createWebpBlobFromUrl(asset.imageUrl, { minKb: $('webpMinKb').value, maxKb: $('webpMaxKb').value, maxEdge: $('webpMaxEdge').value });
+			const transparent = !!$('webpTransparent')?.checked;
+			const webp = await createWebpBlobFromUrl(asset.imageUrl, { minKb: $('webpMinKb').value, maxKb: $('webpMaxKb').value, maxEdge: $('webpMaxEdge').value, transparent });
 			const historyUrls = [asset.imageUrl, ...(asset.historyUrls || [])].filter(Boolean);
-			asset.imageUrl = $('uploadWebpToCdn').checked ? await uploadBlobToCdn(webp.blob, asset) : await blobToDataUrl(webp.blob);
+			if ($('uploadWebpToCdn').checked && getCdnConfig()) asset.imageUrl = await uploadBlobToCdn(webp.blob, asset);
+			else asset.imageUrl = await blobToDataUrl(webp.blob);
 			asset.historyUrls = [...new Set(historyUrls.filter(url => url !== asset.imageUrl))].slice(0, 24);
-			asset.isTransparent = true;
+			asset.isTransparent = transparent;
 			asset.dims = { width: webp.width, height: webp.height };
 			const index = state.project.assets.findIndex(item => item.id === asset.id);
 			if (index >= 0) state.project.assets[index] = asset;
 			if (asset.id === state.selectedAssetId) setAssetForm(asset);
 			renderProjectJson();
 			renderAssetList();
+			await autoSaveProjectAfterAssetChange();
 			if (!silent) setStatus($('runStatus'), `WebP converted: ${asset.id} · ${webp.width}x${webp.height} · ${formatBytes(webp.blob.size)}`, 'ok');
 			return asset;
+		}
+
+		async function convertCurrentAssetToWebp() {
+			const asset = upsertAsset({ silent: true });
+			const converted = await convertAssetToWebp(asset);
+			setStatus($('runStatus'), `Generate WebP complete: ${converted.id}`, 'ok');
 		}
 
 		async function batchConvertSelectedWebp() {
@@ -1132,6 +1301,7 @@
 					state.batchWebp.done += 1;
 					updateSelectionControls();
 				}
+				await autoSaveProjectAfterAssetChange();
 				setStatus($('runStatus'), state.batchWebp.stopRequested ? `WebP 批量转换已停止：完成 ${state.batchWebp.done}/${state.batchWebp.total}` : `WebP 批量转换完成：${state.batchWebp.done}/${state.batchWebp.total}`, 'ok');
 			} finally {
 				state.batchWebp = null;
@@ -1212,6 +1382,25 @@
 			setStatus($('runStatus'), `已保存项目：${WORKSPACE}/${path}`, 'ok');
 		}
 
+		async function autoSaveProjectAfterAssetChange() {
+			try {
+				if (!(state.sdk || window.keepwork)?.personalPageStore || !state.project?.project?.id) return false;
+				const data = normalizeProject(state.project);
+				state.project = data;
+				updateProjectFromForm();
+				const path = projectPath(data.project.id);
+				await writeFile(path, JSON.stringify(data, null, 2));
+				await writeProjectIndexEntry(data.project);
+				state.lastProjectPath = path;
+				saveLocalDraft();
+				setStatus($('runStatus'), `已自动保存项目：${WORKSPACE}/${path}`, 'ok');
+				return true;
+			} catch (error) {
+				setStatus($('runStatus'), `自动保存失败：${error.message}`, 'error');
+				return false;
+			}
+		}
+
 		async function loadSelectedProject(pathOverride = '') {
 			const path = pathOverride || projectPath();
 			if (!path) return;
@@ -1265,7 +1454,7 @@
 				renderProjectJson();
 			}
 			try {
-				localStorage.setItem(SETTINGS_KEY, JSON.stringify({ chatModel: $('chatModelSelect').value, imageModel: $('imageModelSelect').value, imageSize: $('imageSize').value, defaultGrid: $('defaultGrid').value }));
+				localStorage.setItem(SETTINGS_KEY, JSON.stringify({ chatModel: $('chatModelSelect').value, imageModel: $('imageModelSelect').value, imageSize: $('imageSize').value, defaultGrid: $('defaultGrid').value, webpTransparent: !!$('webpTransparent')?.checked }));
 			} catch (_) {}
 		}
 		function loadSettings() {
@@ -1373,6 +1562,7 @@
 			};
 			render($('chatModelSelect'), 'Chat', projectModels.chat || settings.chatModel);
 			render($('imageModelSelect'), 'Image', projectModels.image || settings.imageModel);
+			if (typeof settings.webpTransparent === 'boolean' && $('webpTransparent')) $('webpTransparent').checked = settings.webpTransparent;
 			if (settings.imageSize) $('imageSize').value = settings.imageSize;
 			if (settings.defaultGrid) $('defaultGrid').value = settings.defaultGrid;
 			applyToolSettings(state.tool);
@@ -1417,8 +1607,9 @@
 			$('assetSelectAll').addEventListener('change', () => setVisibleAssetSelection($('assetSelectAll').checked));
 			$('btnDeleteSelected').onclick = deleteSelectedAssets;
 			$('btnBatchGenerateImages').onclick = () => batchGenerateSelectedImages().catch(error => setStatus($('runStatus'), `批量生成失败：${error.message}`, 'error'));
+			$('btnConvertCurrentWebp').onclick = () => convertCurrentAssetToWebp().catch(error => setStatus($('runStatus'), `WebP 生成失败：${error.message}`, 'error'));
 			$('btnConvertSelectedWebp').onclick = () => batchConvertSelectedWebp().catch(error => setStatus($('runStatus'), `WebP 转换失败：${error.message}`, 'error'));
-			$('btnCdnConfig').onclick = pickCdnConfigFile;
+			$('btnCdnConfig').onclick = openCdnConfigDialog;
 			$('cdnFolder').addEventListener('input', updateCdnStatus);
 			$('btnUpsertAsset').onclick = () => { try { upsertAsset(); } catch (error) { setStatus($('runStatus'), error.message, 'error'); } };
 			$('btnGenerateImage').onclick = () => generateImageForSelectedAsset().catch(error => setStatus($('runStatus'), `图片生成失败：${error.message}`, 'error'));
@@ -1430,7 +1621,7 @@
 			$('imageSize').addEventListener('change', () => refreshFinalPrompt());
 			$('backgroundColorMode').addEventListener('change', () => refreshFinalPrompt());
 			['chatModelSelect', 'imageModelSelect', 'imageSize', 'defaultGrid', 'backgroundColorMode'].forEach(id => $(id).addEventListener('change', saveSettings));
-			['assetId', 'assetName', 'assetImageUrl', 'assetDescription', 'assetWidth', 'assetHeight', 'assetGrid'].forEach(id => $(id).addEventListener('input', () => {
+			['assetId', 'assetName', 'assetImageUrl', 'assetDescription'].forEach(id => $(id).addEventListener('input', () => {
 				try {
 					const asset = assetFromForm();
 					const index = (state.project.assets || []).findIndex(item => item.id === state.selectedAssetId || item.id === asset.id);
@@ -1438,20 +1629,11 @@
 					state.selectedAssetId = asset.id;
 					renderProjectJson();
 					renderAssetList();
+					renderHistoryImages(asset);
 					renderPreview();
 				} catch (_) {}
 			}));
-			$('assetTransparent').addEventListener('change', () => {
-				try {
-					const asset = assetFromForm();
-					const index = (state.project.assets || []).findIndex(item => item.id === state.selectedAssetId || item.id === asset.id);
-					if (index >= 0) state.project.assets[index] = asset;
-					state.selectedAssetId = asset.id;
-					renderProjectJson();
-					renderAssetList();
-					renderPreview();
-				} catch (_) {}
-			});
+			$('webpTransparent').addEventListener('change', saveSettings);
 		}
 
 		function init() {

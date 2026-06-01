@@ -1,6 +1,6 @@
 // 设置视图
 import { $, escapeHtml, showToast, confirm as confirmDialog } from './utils.js';
-import { t } from './i18n.js';
+import { t, getLang, setLang } from './i18n.js';
 import { state, notify } from './state.js';
 import { saveUserProfile } from './storage.js';
 import { CONFIG } from './config.js';
@@ -18,7 +18,7 @@ function getKeepworkUsername(user) {
 
 function getDisplayUsername() {
     const sdk = state.sdk || window.keepwork;
-    return getKeepworkUsername(state.user) || getKeepworkUsername(sdk?.user) || (sdk?.token ? '正在获取用户名...' : '未登录');
+    return getKeepworkUsername(state.user) || getKeepworkUsername(sdk?.user) || (sdk?.token ? t('fetchingUsername') : t('notLoggedIn'));
 }
 
 async function refreshSettingsUsername(panel) {
@@ -50,10 +50,10 @@ function openDevTool(fileName, title) {
     const opened = window.open(url, '_blank');
     if (opened) {
         try { opened.opener = null; } catch (_) {}
-        showToast(`${title}已打开`, 'success', 1200);
+        showToast(t('toolOpened', { title }), 'success', 1200);
         return true;
     }
-    showToast('新窗口被浏览器拦截，请允许弹出窗口', 'error', 2200);
+    showToast(t('popupBlocked'), 'error', 2200);
     return false;
 }
 
@@ -71,7 +71,7 @@ async function handleLogoTap(panel, data, options) {
     state.settings.developerMode = true;
     await saveUserProfile();
     notify();
-    showToast('开发者模式已开启', 'success', 1400);
+    showToast(t('devModeEnabled'), 'success', 1400);
     renderSettings(panel, data, options);
 }
 
@@ -87,9 +87,9 @@ export function renderSettings(panel, _data, { onBack, onLogout, onClearData } =
         try {
             const { openDevConsole } = await import('./view_dev_console.js');
             const opened = openDevConsole?.({ expanded: true });
-            showToast(opened ? '开发者面板已打开' : '开发者面板不可用', opened ? 'success' : 'error', 1200);
+            showToast(opened ? t('devPanelOpened') : t('devPanelUnavailable'), opened ? 'success' : 'error', 1200);
         } catch (e) {
-            showToast('开发者面板加载失败：' + (e?.message || e), 'error', 2200);
+            showToast(t('devPanelLoadFailed', { error: (e?.message || e) }), 'error', 2200);
         } finally {
             if (button) button.disabled = false;
         }
@@ -97,19 +97,19 @@ export function renderSettings(panel, _data, { onBack, onLogout, onClearData } =
     const openLocalAPIKeySettings = async (button = null) => {
         const localSettings = (state.sdk || window.keepwork)?.localAPIKeySettings;
         if (!localSettings?.show) {
-            showToast('当前 SDK 不支持本地 API Key 设置', 'error', 1800);
+            showToast(t('apiKeyUnsupported'), 'error', 1800);
             return;
         }
         if (button) button.disabled = true;
         try {
             await localSettings.load?.();
             localSettings.show({
-                title: '本地 API Key 设置',
+                title: t('localApiKeyTitle'),
                 fullscreen: true,
-                onSave: () => showToast('API Key 设置已保存', 'success', 1200),
+                onSave: () => showToast(t('apiKeySaved'), 'success', 1200),
             });
         } catch (e) {
-            showToast('API Key 设置打开失败：' + (e?.message || e), 'error', 2200);
+            showToast(t('apiKeyOpenFailed', { error: (e?.message || e) }), 'error', 2200);
         } finally {
             if (button) button.disabled = false;
         }
@@ -121,98 +121,107 @@ export function renderSettings(panel, _data, { onBack, onLogout, onClearData } =
             <span style="width:36px"></span>
         </div>
         <div class="absolute" style="top:52px;left:0;right:0;bottom:0;overflow-y:auto;padding:14px;display:flex;flex-direction:column;gap:10px">
+            <div class="card-flat" style="display:flex;justify-content:space-between;align-items:center;gap:12px">
+                <div>
+                    <div style="font-size:14px;font-weight:700">🌐 ${escapeHtml(t('language'))}</div>
+                </div>
+                <div style="display:flex;gap:6px;flex:0 0 auto">
+                    <button id="mhLangZh" class="btn-secondary" style="${getLang() === 'zh' ? 'background:var(--accent);color:#fff;border-color:var(--accent)' : ''}">${escapeHtml(t('languageZh'))}</button>
+                    <button id="mhLangEn" class="btn-secondary" style="${getLang() === 'en' ? 'background:var(--accent);color:#fff;border-color:var(--accent)' : ''}">${escapeHtml(t('languageEn'))}</button>
+                </div>
+            </div>
             <div class="card-flat" style="display:flex;justify-content:space-between;align-items:center">
                 <div>
                     <div style="font-size:14px;font-weight:700">👑 ${escapeHtml(t('devVip'))}</div>
-                    <div style="font-size:11px;color:var(--text-muted)">仅本机生效，用于体验付费语音</div>
+                    <div style="font-size:11px;color:var(--text-muted)">${escapeHtml(t('vipHint'))}</div>
                 </div>
                 <button id="mhVip" class="btn-secondary" style="${state.isPaid ? 'background:var(--accent);color:#fff;border-color:var(--accent)' : ''}">
-                    ${state.isPaid ? '已开启' : '开启'}
+                    ${state.isPaid ? escapeHtml(t('enabled')) : escapeHtml(t('enable'))}
                 </button>
             </div>
             ${canOpenDevPanel ? `
             <div class="card-flat" style="display:flex;justify-content:space-between;align-items:center">
                 <div>
-                    <div style="font-size:14px;font-weight:700">🛠 开发者面板</div>
-                    <div style="font-size:11px;color:var(--text-muted)">按需打开调试工具，不在游戏界面常驻</div>
+                    <div style="font-size:14px;font-weight:700">🛠 ${escapeHtml(t('settings'))}</div>
+                    <div style="font-size:11px;color:var(--text-muted)">${escapeHtml(t('devPanelHint'))}</div>
                 </div>
-                <button id="mhOpenDevPanel" class="btn-secondary">打开</button>
+                <button id="mhOpenDevPanel" class="btn-secondary">${escapeHtml(t('open'))}</button>
             </div>` : ''}
             ${canOpenDevPanel ? `
             <div class="card-flat" style="display:flex;justify-content:space-between;align-items:center">
                 <div>
-                    <div style="font-size:14px;font-weight:700">📁 工作区文件</div>
-                    <div style="font-size:11px;color:var(--text-muted)">查看 ${escapeHtml(CONFIG.workspace)} workspace 的存储文件</div>
+                    <div style="font-size:14px;font-weight:700">📁 ${escapeHtml(t('workspaceFiles'))}</div>
+                    <div style="font-size:11px;color:var(--text-muted)">${escapeHtml(t('viewWorkspaceFiles', { workspace: CONFIG.workspace }))}</div>
                 </div>
-                <button id="mhOpenWorkspaceViewer" class="btn-secondary">查看</button>
+                <button id="mhOpenWorkspaceViewer" class="btn-secondary">${escapeHtml(t('view'))}</button>
             </div>` : ''}
             ${developerMode ? `
             <div class="card-flat" style="display:flex;justify-content:space-between;align-items:center;gap:12px">
                 <div>
-                    <div style="font-size:14px;font-weight:700">🧬 AI宠物编辑器</div>
-                    <div style="font-size:11px;color:var(--text-muted)">打开 Pet Generator</div>
+                    <div style="font-size:14px;font-weight:700">🧬 Pet Generator</div>
+                    <div style="font-size:11px;color:var(--text-muted)">${escapeHtml(t('openPetGenerator'))}</div>
                 </div>
-                <button id="mhOpenPetGenerator" class="btn-secondary">打开</button>
+                <button id="mhOpenPetGenerator" class="btn-secondary">${escapeHtml(t('open'))}</button>
             </div>
             <div class="card-flat" style="display:flex;justify-content:space-between;align-items:center;gap:12px">
                 <div>
-                    <div style="font-size:14px;font-weight:700">🪐 AI星球编辑器</div>
-                    <div style="font-size:11px;color:var(--text-muted)">打开 Planet Generator</div>
+                    <div style="font-size:14px;font-weight:700">🪐 Planet Generator</div>
+                    <div style="font-size:11px;color:var(--text-muted)">${escapeHtml(t('openPlanetGenerator'))}</div>
                 </div>
-                <button id="mhOpenPlanetGenerator" class="btn-secondary">打开</button>
+                <button id="mhOpenPlanetGenerator" class="btn-secondary">${escapeHtml(t('open'))}</button>
             </div>
             <div class="card-flat" style="display:flex;justify-content:space-between;align-items:center;gap:12px">
                 <div>
-                    <div style="font-size:14px;font-weight:700">🗺 AI场景编辑器</div>
-                    <div style="font-size:11px;color:var(--text-muted)">打开 Scene Generator</div>
+                    <div style="font-size:14px;font-weight:700">🗺 Scene Generator</div>
+                    <div style="font-size:11px;color:var(--text-muted)">${escapeHtml(t('openSceneGenerator'))}</div>
                 </div>
-                <button id="mhOpenSceneGenerator" class="btn-secondary">打开</button>
+                <button id="mhOpenSceneGenerator" class="btn-secondary">${escapeHtml(t('open'))}</button>
             </div>
             <div class="card-flat" style="display:flex;justify-content:space-between;align-items:center;gap:12px">
                 <div>
-                    <div style="font-size:14px;font-weight:700">📖 AI故事生成器</div>
-                    <div style="font-size:11px;color:var(--text-muted)">打开 Pet Story Generator</div>
+                    <div style="font-size:14px;font-weight:700">📖 Pet Story Generator</div>
+                    <div style="font-size:11px;color:var(--text-muted)">${escapeHtml(t('openPetStoryGenerator'))}</div>
                 </div>
-                <button id="mhOpenStoryGenerator" class="btn-secondary">打开</button>
+                <button id="mhOpenStoryGenerator" class="btn-secondary">${escapeHtml(t('open'))}</button>
             </div>
             <div class="card-flat" style="display:flex;justify-content:space-between;align-items:center;gap:12px">
                 <div>
-                    <div style="font-size:14px;font-weight:700">🛒 AI商店编辑器</div>
-                    <div style="font-size:11px;color:var(--text-muted)">打开 Shop Item Generator</div>
+                    <div style="font-size:14px;font-weight:700">🛒 Shop Item Generator</div>
+                    <div style="font-size:11px;color:var(--text-muted)">${escapeHtml(t('openShopItemGenerator'))}</div>
                 </div>
-                <button id="mhOpenShopItemGenerator" class="btn-secondary">打开</button>
+                <button id="mhOpenShopItemGenerator" class="btn-secondary">${escapeHtml(t('open'))}</button>
             </div>` : ''}
             <div class="card-flat" style="display:flex;justify-content:space-between;align-items:center;gap:12px">
                 <div>
-                    <div style="font-size:14px;font-weight:700">🔑 本地 API Key</div>
-                    <div style="font-size:11px;color:var(--text-muted)">配置聊天、图片、视频模型的本地密钥</div>
+                    <div style="font-size:14px;font-weight:700">🔑 ${escapeHtml(t('localApiKeyTitle'))}</div>
+                    <div style="font-size:11px;color:var(--text-muted)">${escapeHtml(t('localApiKeyHint'))}</div>
                 </div>
-                <button id="mhOpenLocalAPIKeySettings" class="btn-secondary" ${hasLocalAPIKeySettings ? '' : 'disabled'}>${hasLocalAPIKeySettings ? '配置' : '不可用'}</button>
+                <button id="mhOpenLocalAPIKeySettings" class="btn-secondary" ${hasLocalAPIKeySettings ? '' : 'disabled'}>${hasLocalAPIKeySettings ? escapeHtml(t('configure')) : escapeHtml(t('notAvailable'))}</button>
             </div>
             <div class="card-flat" style="display:flex;justify-content:space-between;align-items:center;gap:12px">
                 <div>
-                    <div style="font-size:14px;font-weight:700">📏 自动显示层级条</div>
-                    <div style="font-size:11px;color:var(--text-muted)">关闭时层级条常驻；装饰或喂食时隐藏</div>
+                    <div style="font-size:14px;font-weight:700">📏 ${escapeHtml(t('levelBarTitle'))}</div>
+                    <div style="font-size:11px;color:var(--text-muted)">${escapeHtml(t('levelBarHint'))}</div>
                 </div>
                 <button id="mhAutoShowLevelBar" class="btn-secondary" style="${autoShowLevelBar ? 'background:var(--accent);color:#fff;border-color:var(--accent)' : ''}">
-                    ${autoShowLevelBar ? '已开启' : '关闭'}
+                    ${autoShowLevelBar ? escapeHtml(t('enabled')) : escapeHtml(t('disable'))}
                 </button>
             </div>
             <div class="card-flat" style="display:flex;flex-direction:column;gap:8px">
                 <div>
-                    <div style="font-size:14px;font-weight:700">🗺 星球地图种子</div>
-                    <div style="font-size:11px;color:var(--text-muted)">默认使用用户名；改动后陆地、水域、天空会生成新的固定地图</div>
+                    <div style="font-size:14px;font-weight:700">🗺 ${escapeHtml(t('mapSeedTitle'))}</div>
+                    <div style="font-size:11px;color:var(--text-muted)">${escapeHtml(t('mapSeedHint'))}</div>
                 </div>
                 <div style="display:flex;gap:6px;align-items:center">
-                    <input id="mhMapSeed" class="modal-input" maxlength="32" placeholder="默认：用户名" value="${escapeHtml(state.settings?.fieldMapSeed || '')}" style="flex:1;min-width:0">
-                    <button id="mhSaveMapSeed" class="btn-secondary" style="flex:0 0 auto">保存</button>
-                    <button id="mhResetMapSeed" class="btn-secondary" style="flex:0 0 auto">默认</button>
+                    <input id="mhMapSeed" class="modal-input" maxlength="32" placeholder="${escapeHtml(t('defaultUsername'))}" value="${escapeHtml(state.settings?.fieldMapSeed || '')}" style="flex:1;min-width:0">
+                    <button id="mhSaveMapSeed" class="btn-secondary" style="flex:0 0 auto">${escapeHtml(t('save'))}</button>
+                    <button id="mhResetMapSeed" class="btn-secondary" style="flex:0 0 auto">${escapeHtml(t('default'))}</button>
                 </div>
             </div>
             <div class="card-flat" style="display:flex;justify-content:space-between;align-items:center;gap:12px">
                 <div style="min-width:0">
                     <div id="mhUsernameText" style="font-size:14px;font-weight:700;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">👤 ${escapeHtml(username)}</div>
-                    <div style="font-size:11px;color:var(--text-muted)">已登录账号</div>
+                    <div style="font-size:11px;color:var(--text-muted)">${escapeHtml(t('loggedInAccount'))}</div>
                 </div>
                 <button id="mhLogout" class="btn-secondary">${escapeHtml(t('logout'))}</button>
             </div>
@@ -222,6 +231,14 @@ export function renderSettings(panel, _data, { onBack, onLogout, onClearData } =
             </div>
             <div id="mhSettingsLogo" class="text-center text-xs mt-4" role="button" tabindex="0" style="color:rgba(255,255,255,0.78);text-shadow:0 1px 2px rgba(15,23,42,0.28);cursor:pointer;touch-action:manipulation">${escapeHtml(t('appName'))} · v0.1</div>
         </div>`;
+    const switchLang = async (lang) => {
+        if (!setLang(lang)) return;
+        try { state.settings = state.settings || {}; state.settings.lang = lang; await saveUserProfile(); } catch (_) {}
+        showToast(t('languageSwitched'), 'success', 1000);
+        notify();
+    };
+    if ($('mhLangZh')) $('mhLangZh').onclick = () => switchLang('zh');
+    if ($('mhLangEn')) $('mhLangEn').onclick = () => switchLang('en');
     if (canOpenDevPanel) {
         panel.oncontextmenu = (e) => {
             e.preventDefault();
@@ -234,23 +251,23 @@ export function renderSettings(panel, _data, { onBack, onLogout, onClearData } =
     if ($('mhVip')) $('mhVip').onclick = async () => {
         state.isPaid = !state.isPaid;
         await saveUserProfile();
-        showToast(state.isPaid ? '已切换为 VIP' : '已关闭 VIP', 'success');
+        showToast(state.isPaid ? t('switchedToVip') : t('vipClosed'), 'success');
         renderSettings(panel, _data, { onBack, onLogout, onClearData });
     };
     if ($('mhOpenDevPanel')) $('mhOpenDevPanel').onclick = () => openDevPanel($('mhOpenDevPanel'));
-    if ($('mhOpenPetGenerator')) $('mhOpenPetGenerator').onclick = () => openDevTool('FamousPetGenerator.html', 'AI宠物编辑器');
-    if ($('mhOpenPlanetGenerator')) $('mhOpenPlanetGenerator').onclick = () => openDevTool('FamousPlanetGenerator.html', 'AI星球编辑器');
-    if ($('mhOpenSceneGenerator')) $('mhOpenSceneGenerator').onclick = () => openDevTool('ScenePresetsGenerator.html', 'AI场景编辑器');
-    if ($('mhOpenStoryGenerator')) $('mhOpenStoryGenerator').onclick = () => openDevTool('PetStoryGenerator.html', 'AI故事生成器');
-    if ($('mhOpenShopItemGenerator')) $('mhOpenShopItemGenerator').onclick = () => openDevTool('ShopItemGenerator.html', 'AI商店编辑器');
+    if ($('mhOpenPetGenerator')) $('mhOpenPetGenerator').onclick = () => openDevTool('FamousPetGenerator.html', 'Pet Generator');
+    if ($('mhOpenPlanetGenerator')) $('mhOpenPlanetGenerator').onclick = () => openDevTool('FamousPlanetGenerator.html', 'Planet Generator');
+    if ($('mhOpenSceneGenerator')) $('mhOpenSceneGenerator').onclick = () => openDevTool('ScenePresetsGenerator.html', 'Scene Generator');
+    if ($('mhOpenStoryGenerator')) $('mhOpenStoryGenerator').onclick = () => openDevTool('PetStoryGenerator.html', 'Pet Story Generator');
+    if ($('mhOpenShopItemGenerator')) $('mhOpenShopItemGenerator').onclick = () => openDevTool('ShopItemGenerator.html', 'Shop Item Generator');
     if ($('mhOpenLocalAPIKeySettings')) $('mhOpenLocalAPIKeySettings').onclick = () => openLocalAPIKeySettings($('mhOpenLocalAPIKeySettings'));
     if ($('mhOpenWorkspaceViewer')) $('mhOpenWorkspaceViewer').onclick = () => {
         try {
             const opened = openWorkspaceViewer();
-            showToast(opened ? '工作区文件已打开' : 'WorkspaceViewer 不可用', opened ? 'success' : 'error', 1400);
+            showToast(opened ? t('workspaceOpened') : t('workspaceViewerUnavailable'), opened ? 'success' : 'error', 1400);
         } catch (e) {
             closeWorkspaceViewer();
-            showToast('WorkspaceViewer 打开失败：' + (e?.message || e), 'error', 2200);
+            showToast(t('workspaceOpenFailed', { error: (e?.message || e) }), 'error', 2200);
         }
     };
     if ($('mhAutoShowLevelBar')) $('mhAutoShowLevelBar').onclick = async () => {
@@ -258,7 +275,7 @@ export function renderSettings(panel, _data, { onBack, onLogout, onClearData } =
         state.settings.autoShowLevelBar = state.settings.autoShowLevelBar !== true;
         await saveUserProfile();
         notify();
-        showToast(state.settings.autoShowLevelBar ? '层级条已改为自动显示' : '层级条已改为常驻显示', 'success');
+        showToast(state.settings.autoShowLevelBar ? t('levelBarAuto') : t('levelBarPinned'), 'success');
         renderSettings(panel, _data, { onBack, onLogout, onClearData });
     };
     if ($('mhSaveMapSeed')) $('mhSaveMapSeed').onclick = async () => {
@@ -269,7 +286,7 @@ export function renderSettings(panel, _data, { onBack, onLogout, onClearData } =
         else delete state.settings.fieldMapSeed;
         await saveUserProfile();
         notify();
-        showToast(state.settings.fieldMapSeed ? '地图种子已保存' : '已恢复用户名地图', 'success');
+        showToast(state.settings.fieldMapSeed ? t('mapSeedSaved') : t('mapRestoredUsername'), 'success');
         renderSettings(panel, _data, { onBack, onLogout, onClearData });
     };
     if ($('mhResetMapSeed')) $('mhResetMapSeed').onclick = async () => {
@@ -277,7 +294,7 @@ export function renderSettings(panel, _data, { onBack, onLogout, onClearData } =
         delete state.settings.fieldMapSeed;
         await saveUserProfile();
         notify();
-        showToast('已恢复用户名地图', 'success');
+        showToast(t('mapRestoredUsername'), 'success');
         renderSettings(panel, _data, { onBack, onLogout, onClearData });
     };
     if ($('mhLogout')) $('mhLogout').onclick = () => onLogout?.();
@@ -305,13 +322,13 @@ function openWorkspaceViewer() {
     overlay.id = 'mhWorkspaceViewerOverlay';
     overlay.className = 'mh-workspace-viewer-overlay';
     overlay.innerHTML = `
-        <div class="mh-workspace-viewer-window" role="dialog" aria-modal="true" aria-label="工作区文件">
+        <div class="mh-workspace-viewer-window" role="dialog" aria-modal="true" aria-label="${escapeHtml(t('workspaceFiles'))}">
             <div class="mh-workspace-viewer-titlebar">
                 <div>
-                    <strong>工作区文件</strong>
+                    <strong>${escapeHtml(t('workspaceFiles'))}</strong>
                     <span>${escapeHtml(CONFIG.workspace)}</span>
                 </div>
-                <button type="button" class="mh-workspace-viewer-close" aria-label="关闭工作区文件">×</button>
+                <button type="button" class="mh-workspace-viewer-close" aria-label="${escapeHtml(t('close'))}">×</button>
             </div>
             <div class="mh-workspace-viewer-host"></div>
         </div>

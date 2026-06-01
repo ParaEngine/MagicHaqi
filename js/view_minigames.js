@@ -221,6 +221,22 @@ const PLAY_ACTIVITIES = [
 
 const PLAY_ITEMS = [...MINIGAMES, ...PLAY_ACTIVITIES];
 
+// 本地化辅助：标题与奖励文案按 id 映射到 i18n
+function getMinigameTitle(game) {
+    if (!game) return t('mgDefaultName');
+    const key = 'mg_' + game.id;
+    const localized = t(key);
+    return localized !== key ? localized : (game.title || t('mgDefaultName'));
+}
+function getMinigameRewardLabel(game, levelReward) {
+    if (game?.id) {
+        const key = 'mgr_' + game.id;
+        const localized = t(key);
+        if (localized !== key) return localized;
+    }
+    return levelReward?.label || t('mgRewardDefault');
+}
+
 const PET_STAT_ITEMS = [
     { k: 'bond', labelKey: 'statBond', icon: '💛' },
     { k: 'mood', labelKey: 'statMood', icon: '😊' },
@@ -519,10 +535,10 @@ export function renderMinigames(panel, { pet }, { onBack, onGameFinished, initia
         </style>
         <div class="topbar">
             <button class="btn-icon" id="mhBack" style="width:36px;height:36px;font-size:18px">‹</button>
-            <span class="font-bold" style="color:var(--text-primary);min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">玩耍</span>
+            <span class="font-bold" style="color:var(--text-primary);min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${escapeHtml(t('mgPlay'))}</span>
             <div style="display:flex;align-items:center;justify-content:flex-end;gap:5px;max-width:min(64vw,440px);overflow:visible">
                 ${renderCoinPill('mhMinigameCoins', 'mh-minigame-coin-pill')}
-                <div id="mhMinigamePetStats" aria-label="宠物状态" style="display:flex;align-items:center;justify-content:flex-end;gap:5px;min-width:0;overflow:visible">
+                <div id="mhMinigamePetStats" aria-label="${escapeHtml(t('mgPetStatsAria'))}" style="display:flex;align-items:center;justify-content:flex-end;gap:5px;min-width:0;overflow:visible">
                     ${renderPetStatPills(pet)}
                 </div>
             </div>
@@ -532,30 +548,30 @@ export function renderMinigames(panel, { pet }, { onBack, onGameFinished, initia
                 ${PLAY_ITEMS.map(game => `
                     <button type="button" class="card-flat" data-game-id="${escapeHtml(game.id)}" style="text-align:center;min-height:118px;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:10px;border-radius:12px;cursor:pointer">
                         ${renderMinigameIcon(game)}
-                        <span style="font-weight:800;color:var(--text-primary);font-size:17px;line-height:1.2">${escapeHtml(game.title)}</span>
+                        <span style="font-weight:800;color:var(--text-primary);font-size:17px;line-height:1.2">${escapeHtml(getMinigameTitle(game))}</span>
                         ${game.desc ? `<span style="color:var(--text-muted);font-size:12px;line-height:1.35;max-width:12em">${escapeHtml(game.desc)}</span>` : ''}
                     </button>
                 `).join('')}
             </div>
             <div id="mhMinigameFrameWrap" class="${initialGameId ? 'mh-minigame-is-loading' : ''}" style="display:${initialGameId ? 'block' : 'none'};position:absolute;inset:0;background:#0f2747">
-                <iframe id="mhMinigameFrame" title="玩耍内容" style="width:100%;height:100%;border:0;background:#fff" allow="autoplay; fullscreen"></iframe>
-                <div id="mhMinigameLoading" class="mh-minigame-loading${initialGameId ? ' show' : ''}" role="status" aria-live="polite" aria-label="小游戏加载中" aria-hidden="${initialGameId ? 'false' : 'true'}">
+                <iframe id="mhMinigameFrame" title="${escapeHtml(t('mgFrameTitle'))}" style="width:100%;height:100%;border:0;background:#fff" allow="autoplay; fullscreen"></iframe>
+                <div id="mhMinigameLoading" class="mh-minigame-loading${initialGameId ? ' show' : ''}" role="status" aria-live="polite" aria-label="${escapeHtml(t('mgLoadingAria'))}" aria-hidden="${initialGameId ? 'false' : 'true'}">
                     <div class="mh-minigame-loading-card">
                         <div class="mh-minigame-loading-spinner" aria-hidden="true"></div>
                         <div class="mh-minigame-loading-title">
-                            加载中<span class="mh-minigame-loading-dots" aria-hidden="true"><span></span><span></span><span></span></span>
+                            ${escapeHtml(t('mgLoading'))}<span class="mh-minigame-loading-dots" aria-hidden="true"><span></span><span></span><span></span></span>
                         </div>
-                        <div class="mh-minigame-loading-subtitle">正在打开小游戏</div>
+                        <div class="mh-minigame-loading-subtitle">${escapeHtml(t('mgOpening'))}</div>
                     </div>
                 </div>
                 <div id="mhMinigameRewardFx" class="mh-minigame-reward-fx" aria-live="polite"></div>
                 <div id="mhMinigameCompletion" class="mh-minigame-completion" role="dialog" aria-modal="false" aria-live="polite" aria-hidden="true">
                     <div class="mh-minigame-completion-card">
-                        <div class="mh-minigame-completion-title">${escapeHtml(completionPrompt?.title || '小游戏完成啦')}</div>
-                        <div class="mh-minigame-completion-text">${escapeHtml(completionPrompt?.text || '要继续玩一会儿，还是返回？')}</div>
+                        <div class="mh-minigame-completion-title">${escapeHtml(completionPrompt?.title || t('mgCompleteTitle'))}</div>
+                        <div class="mh-minigame-completion-text">${escapeHtml(completionPrompt?.text || t('mgCompleteText'))}</div>
                         <div class="mh-minigame-completion-actions">
-                            <button type="button" class="btn-secondary" id="mhMinigameContinue">${escapeHtml(completionPrompt?.continueText || '继续玩')}</button>
-                            <button type="button" class="btn-primary" id="mhMinigameBackToStory">${escapeHtml(completionPrompt?.backText || '返回')}</button>
+                            <button type="button" class="btn-secondary" id="mhMinigameContinue">${escapeHtml(completionPrompt?.continueText || t('mgContinuePlay'))}</button>
+                            <button type="button" class="btn-primary" id="mhMinigameBackToStory">${escapeHtml(completionPrompt?.backText || t('back'))}</button>
                         </div>
                     </div>
                 </div>
@@ -668,7 +684,7 @@ export function renderMinigames(panel, { pet }, { onBack, onGameFinished, initia
     }
 
     function renderMinigameIcon(game) {
-        const label = escapeHtml(game.title || '小游戏');
+        const label = escapeHtml(getMinigameTitle(game));
         if (game.id === 'flappy_pet') {
             return `
                 <span class="mh-minigame-icon" role="img" aria-label="${label}">
@@ -936,8 +952,8 @@ function refreshCoins({ previous = null, animate = false } = {}) {
         el.textContent = String(value);
         const pill = el.closest('.mh-minigame-coin-pill');
         if (pill) {
-            pill.title = '金币：玩耍可获得，用来购买食物、家具和道具。';
-            pill.setAttribute('aria-label', `金币 ${value}`);
+            pill.title = t('mgCoinTip');
+            pill.setAttribute('aria-label', `${t('coins')} ${value}`);
             if (animate && typeof previous === 'number' && value !== previous) {
                 animateCoinPill(pill, value - previous);
             }
@@ -1106,7 +1122,7 @@ function openGame(gameId, params = null, { allowLowEnergy = false } = {}) {
     if (!game) return;
     if (!allowLowEnergy && !canPlayGame(currentPet)) {
         refreshPetStats();
-        showToast('体力不足，先休息一下吧', 'info', 1400);
+        showToast(t('mgLowEnergy'), 'info', 1400);
         return;
     }
     currentGame = game;
@@ -1125,7 +1141,7 @@ function openGame(gameId, params = null, { allowLowEnergy = false } = {}) {
     frame.setAttribute('allow', game.allow || 'autoplay; fullscreen');
     frame.onload = () => postGameConfig();
     frame.src = minigameUrl(game.src, params);
-    showToast(`开始 ${game.title}`, 'info', 1000);
+    showToast(t('mgStartGame', { title: getMinigameTitle(game) }), 'info', 1000);
 }
 
 function postGameConfig() {
@@ -1223,9 +1239,9 @@ async function showMinigameRestPrompt() {
     restPromptTimer = null;
     if (!isMinigameSessionActive() || restPromptOpen) return;
     restPromptOpen = true;
-    const keepPlaying = await confirm('已经玩了5分钟，休息一下吧。要继续玩吗？', {
-        okText: '继续玩',
-        cancelText: '退出',
+    const keepPlaying = await confirm(t('mgRestPrompt'), {
+        okText: t('mgContinuePlay'),
+        cancelText: t('mgExit'),
     });
     restPromptOpen = false;
     if (!isMinigameSessionActive()) return;
@@ -1239,15 +1255,15 @@ async function showMinigameRestPrompt() {
 function playLevelRewardAnimation(game, rewardCoins, levelReward) {
     const el = $('mhMinigameRewardFx');
     if (!el || !rewardCoins) return;
-    const label = levelReward?.label || '通关奖励';
-    const note = levelReward?.note || game?.title || '';
+    const label = getMinigameRewardLabel(game, levelReward);
+    const note = levelReward?.note || getMinigameTitle(game) || '';
     el.classList.remove('show');
     el.innerHTML = `
         <span class="mh-minigame-reward-spark">🪙</span>
         <span class="mh-minigame-reward-spark">🪙</span>
         <span class="mh-minigame-reward-spark">✨</span>
         <div class="mh-minigame-reward-title">${escapeHtml(label)}</div>
-        <div class="mh-minigame-reward-coins">${coinIconSvg('hud-coin-icon')}<span>+${escapeHtml(rewardCoins)} 金币</span></div>
+        <div class="mh-minigame-reward-coins">${coinIconSvg('hud-coin-icon')}<span>${escapeHtml(t('mgRewardCoins', { coins: rewardCoins }))}</span></div>
         ${note ? `<div class="mh-minigame-reward-note">${escapeHtml(note)}</div>` : ''}`;
     void el.offsetWidth;
     el.classList.add('show');

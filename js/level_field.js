@@ -1,6 +1,7 @@
 // Level 1 — Field：星球表面（陆 / 水 / 空 三大生态）
 
 import { $, $$, coinIconSvg, dockDisabledAttrs, escapeHtml, isDockButtonDisabled, renderVisualAsset, setDockButtonDisabled, showDockDisabledToast, showToast } from './utils.js';
+import { t } from './i18n.js';
 import { canPlaceItemInArea, CONFIG, DECO_VISUALS, findLargestHouseInLayout, getPlacedItemZOrder, getPlanetMiningCoins, getPlanetMiningConfig, getPlanetMiningVisualCoinCount, getShopItemById, isHouseItem, recordPlanetMiningFieldCollected, SHOP_ITEMS } from './config.js';
 import { getActivePlanetWeather, isVisitingMode, notify, state, setCurrentField } from './state.js';
 import { getLayout, saveFieldScenesDebounced, savePetDebounced, saveUserProfileDebounced } from './storage.js';
@@ -59,13 +60,13 @@ const FIELD_FINGER_HIT_SAMPLE_POINTS = [
 ];
 const FIELD_IMAGE_ALPHA_HIT_THRESHOLD = 24;
 const FIELD_IMAGE_ALPHA_AABB_CACHE = new Map();
-const DRAG_TO_SCENE_HINT = '拖动到场景中';
-const FIELD_DRAG_EXISTING_HINT = '拖动物品可移动，拖到底部可收回';
+const DRAG_TO_SCENE_HINT = () => t('dragToScene');
+const FIELD_DRAG_EXISTING_HINT = () => t('dragMoveHint');
 const FIELD_BUILD_CATEGORIES = [
-    { id: 'houses', name: '房屋' },
-    { id: 'backgrounds', name: '背景' },
-    { id: 'effects', name: '特效' },
-    { id: 'music', name: '音乐' },
+    { id: 'houses', nameKey: 'buildHouse' },
+    { id: 'backgrounds', nameKey: 'buildBackground' },
+    { id: 'effects', nameKey: 'buildEffect' },
+    { id: 'music', nameKey: 'buildMusic' },
 ];
 const FIELD_EFFECT_EMOJIS = {
     sparkle: '✨',
@@ -1034,13 +1035,13 @@ function updateCleanPoopsButton(pet) {
     const coinCount = getFieldMiningCoinsInField(state.currentField, pet).length;
     const totalCount = poopCount + coinCount;
     const isUrgent = poopCount > CONFIG.poopWarningThreshold;
-    setDockButtonDisabled(cleanBtn, totalCount === 0, '当前场景没有需要清理的便便或金币。出现后，再点击清理可统一收集。');
+    setDockButtonDisabled(cleanBtn, totalCount === 0, t('cleanDisabledReason'));
     cleanBtn.classList.toggle('is-urgent', isUrgent && totalCount > 0);
     cleanBtn.title = isUrgent
-        ? `当前场景有 ${poopCount} 坨便便，花 ${CONFIG.poopMachineCostCoins} 金币启动机器清理成生物燃料`
+        ? t('cleanUrgentTitle', { count: poopCount, cost: CONFIG.poopMachineCostCoins })
         : (poopCount > 0
-            ? `花 ${CONFIG.poopMachineCostCoins} 金币启动机器，统一清理便便和散落金币`
-            : '统一收集当前场景里的散落金币');
+            ? t('cleanPoopTitle', { cost: CONFIG.poopMachineCostCoins })
+            : t('cleanCoinsTitle'));
 }
 
 function updateBiofuelHud() {
@@ -1089,15 +1090,15 @@ function renderFieldActionTray(pet) {
             <div class="mh-dock-row mh-scroll-x dock-action-row visit-field-actions">
                 <button type="button" class="btn-secondary action-btn dock-icon-btn" data-field-action="visit-wave">
                     <span class="dock-icon">👋</span>
-                    <span class="dock-label">打招呼</span>
+                    <span class="dock-label">${escapeHtml(t('dockVisitWave'))}</span>
                 </button>
                 <button type="button" class="btn-secondary action-btn dock-icon-btn" data-field-action="visit-photo">
                     <span class="dock-icon">📷</span>
-                    <span class="dock-label">合影</span>
+                    <span class="dock-label">${escapeHtml(t('dockVisitPhoto'))}</span>
                 </button>
                 <button type="button" class="btn-secondary action-btn dock-icon-btn" data-field-action="visit-return">
                     <span class="dock-icon">🚀</span>
-                    <span class="dock-label">返航</span>
+                    <span class="dock-label">${escapeHtml(t('dockVisitReturn'))}</span>
                 </button>
             </div>
         `;
@@ -1106,34 +1107,34 @@ function renderFieldActionTray(pet) {
     const sleepAction = getPetSleepActionState(pet);
     const isEgg = pet?.stage === 'egg';
     const playDisabled = isEgg;
-    const playTitle = isEgg ? '蛋还没有孵化，先喂食让它孵化后再玩耍。' : (sleeping ? '玩耍会唤醒宠物。' : '');
+    const playTitle = isEgg ? t('eggHatchBeforePlay') : (sleeping ? t('playWillWake') : '');
     const hatchingDisabled = sleeping || isEgg;
-    const hatchingTitle = isEgg ? '蛋阶段先在当前场景喂食孵化，孵化完成后再进入孵化仓。' : (sleeping ? sleepingInteractionText(pet) : '');
+    const hatchingTitle = isEgg ? t('eggHatchBeforePod') : (sleeping ? sleepingInteractionText(pet) : '');
     const sleepDisabled = isEgg || sleepAction.disabled;
-    const sleepTitle = isEgg ? '蛋还没有孵化，先喂食让它孵化后再睡觉。' : sleepAction.title;
+    const sleepTitle = isEgg ? t('eggHatchBeforeSleep') : sleepAction.title;
     const poopCount = getPoopsInField(pet).length;
     const coinCount = getFieldMiningCoinsInField(state.currentField, pet).length;
     const cleanCount = poopCount + coinCount;
     const urgentClass = hasTooManyPoops(pet) ? ' is-urgent' : '';
     const cleanTitle = hasTooManyPoops(pet)
-        ? `当前场景有 ${poopCount} 坨便便，花 ${CONFIG.poopMachineCostCoins} 金币启动机器清理成生物燃料`
+        ? t('cleanUrgentTitle', { count: poopCount, cost: CONFIG.poopMachineCostCoins })
         : (poopCount > 0
-            ? `花 ${CONFIG.poopMachineCostCoins} 金币启动机器，统一清理便便和散落金币`
-            : '统一收集当前场景里的散落金币');
-    const cleanDisabledReason = '当前场景没有需要清理的便便或金币。出现后，再点击清理可统一收集。';
+            ? t('cleanPoopTitle', { cost: CONFIG.poopMachineCostCoins })
+            : t('cleanCoinsTitle'));
+    const cleanDisabledReason = t('cleanDisabledReason');
     return `
         <div class="mh-dock-row mh-scroll-x dock-action-row">
             <button type="button" class="btn-secondary action-btn dock-icon-btn mh-decor-action mh-field-mode-toggle" id="mhFieldDecorBtn">
                 <span class="dock-icon">🛠</span>
-                <span class="dock-label">建造</span>
+                <span class="dock-label">${escapeHtml(t('dockBuild'))}</span>
             </button>
             <button type="button" class="btn-secondary action-btn dock-icon-btn mh-field-clean-action${urgentClass}${cleanCount ? '' : ' is-sleep-disabled'}" id="mhFieldCleanPoopsBtn"${dockDisabledAttrs(!cleanCount, cleanDisabledReason)} title="${escapeHtml(cleanTitle)}">
                 <span class="dock-icon">♻️</span>
-                <span class="dock-label">清理</span>
+                <span class="dock-label">${escapeHtml(t('dockClean'))}</span>
             </button>
             <button type="button" class="btn-secondary action-btn dock-icon-btn mh-field-nav-action${playDisabled ? ' is-sleep-disabled' : ''}" data-field-nav="minigames"${dockDisabledAttrs(playDisabled, playTitle)} title="${escapeHtml(playTitle)}">
                 <span class="dock-icon">🎾</span>
-                <span class="dock-label">玩耍</span>
+                <span class="dock-label">${escapeHtml(t('dockPlay'))}</span>
             </button>
             <button type="button" class="btn-secondary action-btn dock-icon-btn mh-field-action${sleepDisabled ? ' is-sleep-disabled' : ''}" data-field-action="sleep"${dockDisabledAttrs(sleepDisabled, sleepTitle)} title="${escapeHtml(sleepTitle)}">
                 <span class="dock-icon">${sleepAction.icon}</span>
@@ -1141,7 +1142,7 @@ function renderFieldActionTray(pet) {
             </button>
             <button type="button" class="btn-secondary action-btn dock-icon-btn mh-field-nav-action${hatchingDisabled ? ' is-sleep-disabled' : ''}" data-field-nav="hatching"${dockDisabledAttrs(hatchingDisabled, hatchingTitle)} title="${escapeHtml(hatchingTitle)}">
                 <span class="dock-icon">🥚</span>
-                <span class="dock-label">孵化仓</span>
+                <span class="dock-label">${escapeHtml(t('dockHatchPod'))}</span>
             </button>
         </div>
     `;
@@ -1156,12 +1157,12 @@ function renderFieldDecorTray(inv, currentField) {
     const shopButton = `
         <button type="button" class="shop-item mh-field-shop-button" data-field-shop="outdoor" style="min-width:62px;padding:6px;flex-shrink:0">
             <div class="emoji shop-item-visual shop-item-emoji">🛒</div>
-            <div class="name" style="font-size:10px">商店</div>
+            <div class="name" style="font-size:10px">${escapeHtml(t('shop'))}</div>
         </button>`;
     return `
         <div class="mh-dock-tray mh-scroll-x">
             ${items.length === 0
-                ? `<div class="mh-dock-hint">📦 ${escapeHtml(currentField.name)}暂无可摆放户外物品，去商店买点吧～</div>`
+                ? `<div class="mh-dock-hint">${escapeHtml(t('fieldNoOutdoorItems', { name: currentField.name }))}</div>`
                 : items.map(it => {
                     const showCount = !it.uniqueItem && (it.unlimited || it.qty > 1);
                     const countHtml = showCount ? `<span class="shop-item-count-badge">${it.unlimited ? '∞' : escapeHtml(it.qty)}</span>` : '';
@@ -1289,7 +1290,7 @@ function renderFieldBackgroundTray(currentField) {
     const presets = fieldBackgroundPresets(currentField);
     const selectedId = selectedFieldPresetId(currentField.id);
     if (!presets.length) {
-        return `<div class="mh-dock-tray mh-scroll-x"><div class="mh-dock-hint">正在加载${escapeHtml(currentField.name)}背景...</div></div>`;
+        return `<div class="mh-dock-tray mh-scroll-x"><div class="mh-dock-hint">${escapeHtml(t('fieldLoadingBg', { name: currentField.name }))}</div></div>`;
     }
     return `
         <div class="mh-dock-tray mh-scroll-x mh-field-build-tray mh-field-background-tray">
@@ -1314,7 +1315,7 @@ function renderFieldEffectsTray(currentField) {
         <div class="mh-dock-tray mh-scroll-x mh-field-build-tray mh-field-card-tray">
             <button type="button" class="mh-field-build-card mh-field-icon-card ${active.size ? '' : 'is-active'}" data-field-effect="">
                 <span class="mh-field-build-card-art mh-field-build-card-icon">Ø</span>
-                <span class="mh-field-build-card-title">无特效</span>
+                <span class="mh-field-build-card-title">${escapeHtml(t('fieldNoEffect'))}</span>
             </button>
             ${PARTICLE_EFFECTS.map(effect => `
                 <button type="button" class="mh-field-build-card mh-field-icon-card ${active.has(effect.id) ? 'is-active' : ''}" data-field-effect="${escapeHtml(effect.id)}">
@@ -1337,7 +1338,7 @@ function renderFieldMusicTray(currentField) {
         <div class="mh-dock-tray mh-scroll-x mh-field-build-tray mh-field-card-tray">
             <button type="button" class="mh-field-build-card mh-field-icon-card ${active ? '' : 'is-active'}" data-field-music="">
                 <span class="mh-field-build-card-art mh-field-build-card-icon">🔇</span>
-                <span class="mh-field-build-card-title">无音乐</span>
+                <span class="mh-field-build-card-title">${escapeHtml(t('fieldNoMusic'))}</span>
             </button>
             ${options.map(option => `
                 <button type="button" class="mh-field-build-card mh-field-icon-card ${active === option.id ? 'is-active' : ''}" data-field-music="${escapeHtml(option.id)}">
@@ -1353,7 +1354,7 @@ function fieldMusicToggleHtml(fieldId) {
     const music = selectedFieldMusic(fieldId);
     if (!music || isVisitingMode()) return '';
     const muted = soundManager.isBgMusicMuted?.();
-    return `<button type="button" class="field-music-toggle ${muted ? 'is-muted' : ''}" data-field-music-toggle aria-label="${muted ? '开启音乐' : '静音'}" title="${muted ? '开启音乐' : '静音'}">${muted ? '♪' : '♫'}</button>`;
+    return `<button type="button" class="field-music-toggle ${muted ? 'is-muted' : ''}" data-field-music-toggle aria-label="${muted ? escapeHtml(t('fieldMusicOn')) : escapeHtml(t('fieldMute'))}" title="${muted ? escapeHtml(t('fieldMusicOn')) : escapeHtml(t('fieldMute'))}">${muted ? '♪' : '♫'}</button>`;
 }
 
 function renderActiveFieldBuildTray(inv, currentField) {
@@ -2195,13 +2196,13 @@ function collectPoopsInCurrentField(pet) {
     if (!collectables.length) return 0;
     const machineCost = CONFIG.poopMachineCostCoins | 0;
     if (poops.length > 0 && machineCost > 0 && (state.coins | 0) < machineCost) {
-        showToast(`金币不足，需要 ${machineCost} 金币启动机器清理`, 'error', 1200);
+        showToast(t('cleanNotEnough', { cost: machineCost }), 'error', 1200);
         return 0;
     }
     if (poops.length > 0 && machineCost > 0) {
         state.coins = Math.max(0, (state.coins | 0) - machineCost);
         updateCoinsHud();
-        showToast(`使用${machineCost} 金币启动机器清理`, 'info', 1200);
+        showToast(t('cleanMachineStart', { cost: machineCost }), 'info', 1200);
     }
     if (poops.length > 0) {
         setPetPoopCount(pet, fieldId, 0);
@@ -2228,9 +2229,9 @@ function collectPoopsInCurrentField(pet) {
         if (fuelGain > 0) updateBiofuelHud();
         if (collectedCoins > 0) flyFieldCoinNumberToHud(collectedCoins, updateCoinsHud);
         const parts = [];
-        if (poops.length > 0) parts.push(`清理 ${poops.length} 坨，+${fuelGain} ⛽ 生物燃料`);
-        if (collectedCoins > 0) parts.push(`+${collectedCoins} 金币`);
-        showToast(parts.join('，'), 'success', 1400);
+        if (poops.length > 0) parts.push(t('cleanResultPoop', { count: poops.length, fuel: fuelGain }));
+        if (collectedCoins > 0) parts.push(t('cleanResultCoins', { coins: collectedCoins }));
+        showToast(parts.join(t('cleanResultJoin')), 'success', 1400);
     };
     const startFuelProcessing = fuelGain > 0
         ? playFieldFuelRoomAnimation(fuelGain, finishSettlement, { deferProcessing: true, poopCount: poops.length })
@@ -2531,7 +2532,7 @@ export const fieldLevel = {
             <div class="mh-dock-row mh-scroll-x dock-tab-row ${isFieldDecorMode() ? 'has-decor-done' : ''}" id="mhFieldTabs">
                 ${isFieldDecorMode() ? categories.map(category => `
                     <button type="button" class="btn-secondary dock-tab ${category.id === activeFieldBuildCategory ? 'active' : ''}" data-field-build-category="${escapeHtml(category.id)}">
-                        ${escapeHtml(category.name)}
+                        ${escapeHtml(t(category.nameKey))}
                     </button>
                 `).join('') : fields.map(f => `
                     <button class="btn-secondary dock-tab ${f.id === state.currentField ? 'active' : ''}" data-field="${f.id}">
@@ -2617,7 +2618,7 @@ export const fieldLevel = {
                     title: preset.title || '',
                 },
             });
-            showToast(`已切换背景：${preset.title || currentField.name}`, 'success', 1200);
+            showToast(t('fieldBgSwitched', { name: preset.title || currentField.name }), 'success', 1200);
             return true;
         };
 
@@ -2634,14 +2635,14 @@ export const fieldLevel = {
             dock.__mhFieldDockTabHandledAt = Date.now();
             if (!id) {
                 saveCurrentFieldSceneConfig(currentField.id, { particles: [] });
-                showToast('已关闭场景特效', 'success', 1000);
+                showToast(t('fieldEffectOff'), 'success', 1000);
                 return true;
             }
             const current = selectedFieldParticles(currentField.id);
             const particles = current.includes(id) ? current.filter(item => item !== id) : [...current, id];
             saveCurrentFieldSceneConfig(currentField.id, { particles });
             const label = PARTICLE_EFFECTS.find(effect => effect.id === id)?.label || id;
-            showToast(`${current.includes(id) ? '已移除' : '已添加'}特效：${label}`, 'success', 1000);
+            showToast(current.includes(id) ? t('fieldEffectRemoved', { label }) : t('fieldEffectAdded', { label }), 'success', 1000);
             return true;
         };
 
@@ -2660,10 +2661,10 @@ export const fieldLevel = {
             if (music) {
                 soundManager.setBgMusicMuted?.(false, { fadeMs: 120 });
                 soundManager.playBgMusic(music, { fadeMs: 320, volume: 0.3, restart: true });
-                showToast(`已播放音乐：${bgMusicLabel(music)}`, 'success', 1000);
+                showToast(t('fieldMusicPlayed', { label: bgMusicLabel(music) }), 'success', 1000);
             } else {
                 soundManager.stopBgMusic({ fadeMs: 320 });
-                showToast('已关闭场景音乐', 'success', 1000);
+                showToast(t('fieldMusicOff'), 'success', 1000);
             }
             return true;
         };
@@ -2821,7 +2822,7 @@ export const fieldLevel = {
                 dock.querySelectorAll('[data-tray-item]').forEach(x => x.style.outline = '');
                 ctx.selectedTrayItem = el.dataset.trayItem;
                 el.style.outline = '2px solid var(--accent)';
-                if (isFieldDecorMode()) showToast(DRAG_TO_SCENE_HINT, 'info', 1400);
+                if (isFieldDecorMode()) showToast(DRAG_TO_SCENE_HINT(), 'info', 1400);
             };
             bindFieldTrayDrag(el, ctx);
         });
@@ -3069,7 +3070,7 @@ function bindFieldItemDrag(el, ctx) {
             }
         } else if (e.type === 'pointerup') {
             selectFieldItem(targetEl, ctx);
-            showToast(FIELD_DRAG_EXISTING_HINT, 'info', 1400);
+            showToast(FIELD_DRAG_EXISTING_HINT(), 'info', 1400);
         }
         drag = null;
     };

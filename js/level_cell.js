@@ -1,6 +1,7 @@
 // Level 3 — Cell：体内观察与蛋阶段许愿
 
 import { $, dockDisabledAttrs, escapeHtml, isDockButtonDisabled, showDockDisabledToast, showToast } from './utils.js';
+import { t } from './i18n.js';
 import { CONFIG } from './config.js';
 import { state } from './state.js';
 import { savePetDebounced } from './storage.js';
@@ -55,18 +56,18 @@ const CELL_ELEMENT_COLORS = {
 };
 const CELL_ELEMENT_DEFAULT = '#f48aa6';
 
-// 元素属性 → 角标 emoji + 中文名（贴在脸右上角的小装饰）
+// 元素属性 → 角标 emoji + 文案键（贴在脸右上角的小装饰）
 const CELL_ELEMENT_DECO = {
-    '自然': { emoji: '🌿', label: '自然' },
-    '火': { emoji: '🔥', label: '火' },
-    '冰': { emoji: '❄️', label: '冰' },
-    '生命': { emoji: '🌱', label: '生命' },
-    '暗': { emoji: '🌙', label: '暗' },
-    '雷': { emoji: '⚡', label: '雷' },
+    '自然': { emoji: '🌿', labelKey: 'elemNature' },
+    '火': { emoji: '🔥', labelKey: 'elemFire' },
+    '冰': { emoji: '❄️', labelKey: 'elemIce' },
+    '生命': { emoji: '🌱', labelKey: 'elemLife' },
+    '暗': { emoji: '🌙', labelKey: 'elemDark' },
+    '雷': { emoji: '⚡', labelKey: 'elemThunder' },
 };
 
 function dietKindLabel(kind) {
-    return kind === 'meat' ? '肉类' : '蔬菜';
+    return kind === 'meat' ? t('dietMeat') : t('dietVeggie');
 }
 
 function cellElementDecoHtml(pet) {
@@ -76,7 +77,7 @@ function cellElementDecoHtml(pet) {
     const color = CELL_ELEMENT_COLORS[traits.elementalAttribute] || CELL_ELEMENT_DEFAULT;
     return `
         <span class="cell-element-deco element-${escapeHtml(traits.elementalAttribute)}" role="button" tabindex="0"
-            style="--cell-element-color:${color}" aria-label="${escapeHtml(deco.label)}属性" title="${escapeHtml(deco.label)}属性">
+            style="--cell-element-color:${color}" aria-label="${escapeHtml(t('elementAttrLabel', { element: t(deco.labelKey) }))}" title="${escapeHtml(t('elementAttrLabel', { element: t(deco.labelKey) }))}">
             <span class="cell-element-deco-glow" aria-hidden="true"></span>
             <span class="cell-element-deco-emoji" aria-hidden="true">${deco.emoji}</span>
         </span>
@@ -135,26 +136,26 @@ function cellFaceStateClass(pet) {
     return `is-expression-${cellFaceExpression(pet)}`;
 }
 
-// 当前心情的中文文案（点击脸时弹 toast）
+// 当前心情文案（点击脸时弹 toast），文案走 i18n
 const CELL_MOOD_TEXT = {
-    sleep: { emoji: '😴', text: '正在呼呼大睡，别吵醒它～' },
-    critical: { emoji: '🤢', text: '病得很重，快治疗一下吧！' },
-    sick: { emoji: '🤒', text: '有点不舒服，需要照顾。' },
-    sad: { emoji: '😢', text: '心情很低落，陪陪它吧。' },
-    worried: { emoji: '😟', text: '有些闷闷不乐，逗逗它吧。' },
-    happy: { emoji: '😊', text: '心情很好，活力满满！' },
-    egg: { emoji: '🥚', text: '还是一颗蛋，安静地孕育着。' },
+    sleep: { emoji: '😴', textKey: 'cellSleeping' },
+    critical: { emoji: '🤢', textKey: 'cellVerySick' },
+    sick: { emoji: '🤒', textKey: 'cellSick' },
+    sad: { emoji: '😢', textKey: 'cellSad' },
+    worried: { emoji: '😟', textKey: 'cellGloomy' },
+    happy: { emoji: '😊', textKey: 'cellHappy' },
+    egg: { emoji: '🥚', textKey: 'cellEgg' },
 };
 
 function cellMoodToastText(pet) {
     if (pet?.stage === 'egg') {
         const m = CELL_MOOD_TEXT.egg;
-        return `${m.emoji} ${m.text}`;
+        return `${m.emoji} ${t(m.textKey)}`;
     }
     const key = isPetSleeping(pet) ? 'sleep' : cellFaceExpression(pet);
     const m = CELL_MOOD_TEXT[key] || CELL_MOOD_TEXT.happy;
     const mood = Math.round(pet?.stats?.mood ?? 100);
-    return `${m.emoji} ${m.text}（心情 ${mood}/100）`;
+    return `${m.emoji} ${t(m.textKey)}${t('cellMoodSuffix', { mood })}`;
 }
 
 function cellHungerCueHtml() {
@@ -237,7 +238,7 @@ function elementDecoToastText(pet) {
     const traits = decodeDna(pet?.dna || '');
     const deco = CELL_ELEMENT_DECO[traits.elementalAttribute];
     if (!deco) return '';
-    return `${deco.emoji} 元素属性：${deco.label}系`;
+    return t('elementAttrLine', { emoji: deco.emoji, element: t(deco.labelKey) });
 }
 
 function bindElementDeco(pet) {
@@ -317,10 +318,10 @@ function treatmentIconSvg() {
 
 function cellStatusText(pet) {
     const sickness = getActiveSickness(pet);
-    if (sickness) return `当前状态：${sickness.def.name} ${getEffectiveSicknessSeverity(pet)}/10`;
+    if (sickness) return t('cellStatusSick', { sickness: sickness.def.name, level: getEffectiveSicknessSeverity(pet) });
     const traumaCount = getPermanentTraumaCount(pet);
-    if (traumaCount) return `当前状态：永久精神伤害 ${traumaCount}/${CONFIG.trauma.max}`;
-    return '当前状态：体内正常';
+    if (traumaCount) return t('cellStatusTrauma', { count: traumaCount, max: CONFIG.trauma.max });
+    return t('cellStatusNormal');
 }
 
 function stopCellGame() {

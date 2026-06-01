@@ -600,13 +600,13 @@ function renderSettingsRoute() {
         })
         .catch((e) => {
             console.error('加载设置视图失败', e);
-            showToast('加载设置失败：' + (e?.message || e), 'error');
+            showToast(t('loadSettingsFailed', { error: (e?.message || e) }), 'error');
             if (state.currentView === 'settings') navigateToView(state.currentPetId ? 'home' : 'petList');
         });
 }
 
 async function renderPetListRoute() {
-    app.innerHTML = '<div class="topbar"><button class="btn-icon" id="mhPetListBack" style="width:36px;height:36px;font-size:18px">‹</button><span class="font-bold" style="color:var(--text-primary)">宠物图鉴</span><span style="width:36px;height:36px"></span></div><div style="padding:18px;color:var(--text-muted)">正在加载宠物图鉴...</div>';
+    app.innerHTML = `<div class="topbar"><button class="btn-icon" id="mhPetListBack" style="width:36px;height:36px;font-size:18px">‹</button><span class="font-bold" style="color:var(--text-primary)">${escapeHtml(t('petList'))}</span><span style="width:36px;height:36px"></span></div><div style="padding:18px;color:var(--text-muted)">${escapeHtml(t('petListLoading'))}</div>`;
     const back = $('mhPetListBack');
     if (back) back.onclick = () => setView(state.currentPetId ? 'home' : 'petList');
     if (state.currentView !== 'petList') return;
@@ -670,7 +670,7 @@ const routes = {
             state.isDecorMode = true;
             state.isFeedMode = false;
             setView('home');
-            showToast(`已进入装饰模式，请在底部选择 ${item.name} 后点击房间格子`, 'info');
+            showToast(t('enterDecorPlace', { name: item.name }), 'info');
         },
     }),
     chat:      renderChatRoute,
@@ -717,7 +717,7 @@ function render() {
     cleanupLeavingView(state.currentView);
     stopHomeWalk();
     const fn = routes[state.currentView] || routes.login;
-    try { fn(); } catch (e) { console.error('render 失败', e); app.innerHTML = '<div style="padding:30px;color:#b91c1c">渲染错误：' + (e?.message || e) + '</div>'; }
+    try { fn(); } catch (e) { console.error('render 失败', e); app.innerHTML = '<div style="padding:30px;color:#b91c1c">' + escapeHtml(t('renderError', { error: (e?.message || e) })) + '</div>'; }
 }
 subscribe(render);
 
