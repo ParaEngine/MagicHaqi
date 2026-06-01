@@ -1,0 +1,1474 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+	<meta charset="utf-8">
+	<meta name="viewport" content="width=device-width, initial-scale=1">
+	<title>Art Asset Generator</title>
+	<script src="https://cdn.keepwork.com/keepwork/cdn/tailwindcss@3.4.16.js"></script>
+	<style type="text/tailwindcss">
+		@layer base {
+			:root { color-scheme: light; }
+			body { @apply m-0 min-h-screen bg-slate-100 text-slate-900 font-sans; }
+			button { @apply min-h-[34px] cursor-pointer rounded-md border border-slate-300 bg-white px-3 text-slate-900 transition hover:border-sky-300 hover:bg-slate-50 active:translate-y-px disabled:cursor-not-allowed disabled:opacity-50 disabled:active:translate-y-0; }
+			input, textarea, select { @apply w-full min-h-[34px] rounded-md border border-slate-300 bg-white px-2.5 py-1.5 text-slate-900 outline-none focus:border-sky-600 focus:ring-2 focus:ring-sky-600/15; }
+			textarea { @apply resize-y leading-normal; }
+			label { @apply flex flex-col gap-1.5 text-xs text-slate-500; }
+			h1, h2, h3 { @apply m-0 tracking-normal; }
+			h1 { @apply text-lg leading-tight font-semibold; }
+			h2 { @apply text-sm font-semibold; }
+			h3 { @apply text-xs font-normal text-slate-500; }
+		}
+		@layer components {
+			.app { @apply grid min-h-screen grid-cols-1 gap-3 p-2 lg:h-screen lg:min-h-0 lg:grid-cols-[290px_minmax(360px,1fr)] lg:overflow-hidden lg:p-3 xl:grid-cols-[290px_360px_minmax(520px,1fr)]; }
+			.panel { @apply flex min-h-0 flex-col overflow-hidden rounded-lg border border-slate-300 bg-white shadow-lg shadow-slate-300/40; }
+			.panel-head { @apply flex min-h-14 items-center justify-between gap-2.5 border-b border-slate-300 px-3.5 py-3; }
+			.panel-body { @apply flex min-h-0 flex-1 flex-col gap-3 overflow-auto p-3; }
+			.section { @apply flex flex-col gap-2.5 rounded-lg border border-slate-300 bg-slate-50 p-3; }
+			.toolbar { @apply flex flex-wrap items-center gap-2; }
+			.toolbar button { @apply flex-none; }
+			.primary { @apply border-sky-600 bg-sky-600 text-white hover:border-sky-700 hover:bg-sky-700; }
+			.success { @apply border-emerald-600 bg-emerald-600 text-white hover:border-emerald-700 hover:bg-emerald-700; }
+			.danger { @apply border-red-200 bg-red-50 text-red-700 hover:border-red-300 hover:bg-red-100; }
+			.hint { @apply text-xs leading-normal text-slate-500; }
+			.pill { @apply inline-flex min-h-6 items-center whitespace-nowrap rounded-full border border-slate-300 bg-white px-2 text-xs text-slate-500; }
+			.status { @apply whitespace-pre-wrap rounded-md border border-sky-200 bg-sky-50 px-2.5 py-2 text-xs leading-normal text-sky-900; }
+			.status.ok { @apply border-emerald-200 bg-emerald-50 text-emerald-800; }
+			.status.error { @apply border-red-200 bg-red-50 text-red-800; }
+			.status-action { @apply min-h-0 border-0 bg-transparent p-0 font-bold underline underline-offset-2 hover:border-transparent hover:bg-transparent; }
+			.tool-tabs { @apply grid grid-cols-3 gap-1 rounded-md border border-slate-300 bg-white p-1; }
+			.tool-tabs button { @apply min-h-9 border-0 bg-transparent text-xs font-semibold; }
+			.tool-tabs button.active { @apply bg-sky-600 text-white hover:bg-sky-700; }
+			.record-toolbar { @apply grid grid-cols-[minmax(0,1fr)_auto] gap-2 border-b border-slate-300 bg-slate-50 p-3; }
+			.record-list { @apply flex min-h-0 flex-1 flex-col gap-1.5 overflow-auto p-2; }
+			.record-item { @apply grid w-full grid-cols-[18px_56px_minmax(0,1fr)_auto] items-center gap-2.5 rounded-md border border-slate-300 bg-white p-2.5 text-left; }
+			.record-item.active { @apply border-sky-600 bg-sky-50 ring-2 ring-sky-600/15; }
+			.record-item.checked { @apply border-sky-400 bg-sky-50/70; }
+			.record-select { @apply grid place-items-center; }
+			.record-select input { @apply h-4 min-h-0 w-4 accent-sky-600; }
+			.record-thumb { @apply grid h-14 w-14 place-items-center overflow-hidden rounded-md border border-slate-300 bg-white text-xl; background-image: linear-gradient(45deg,#dfe6ee 25%,transparent 25%),linear-gradient(-45deg,#dfe6ee 25%,transparent 25%),linear-gradient(45deg,transparent 75%,#dfe6ee 75%),linear-gradient(-45deg,transparent 75%,#dfe6ee 75%); background-size: 12px 12px; background-position: 0 0,0 6px,6px -6px,-6px 0; }
+			.record-thumb img { @apply block h-full w-full object-contain; }
+			.record-main { @apply block min-w-0 border-0 bg-transparent p-0 text-left hover:border-transparent hover:bg-transparent; }
+			.record-title { @apply block min-w-0 overflow-hidden text-ellipsis whitespace-nowrap text-[13px] font-bold; }
+			.record-meta { @apply block min-w-0 overflow-hidden text-ellipsis whitespace-nowrap text-[11px] text-slate-500; }
+			.record-actions { @apply flex flex-col gap-1.5; }
+			.record-actions button { @apply min-h-[28px] px-2 text-xs; }
+			.editor { @apply lg:col-span-2 xl:col-span-1; }
+			.stack { @apply flex min-w-0 flex-col gap-3; }
+			.row { @apply grid grid-cols-1 gap-2.5 md:grid-cols-2; }
+			.row-3 { @apply grid grid-cols-1 gap-2.5 md:grid-cols-3; }
+			.output { @apply min-h-[260px] overflow-auto whitespace-pre font-mono text-xs leading-normal; }
+			.prompt-box { @apply min-h-[180px] text-xs; }
+			.preview-grid { @apply grid grid-cols-2 gap-2 md:grid-cols-3; }
+			.preview-card { @apply overflow-hidden rounded-md border border-slate-300 bg-white; }
+			.preview-card img { @apply block aspect-square w-full object-contain; }
+			.preview-card-body { @apply flex flex-col gap-1 p-2; }
+			.modal-overlay { @apply fixed inset-0 z-[1050] flex bg-slate-950/60 p-[18px]; }
+			.modal-window { @apply m-auto flex max-h-full w-[min(980px,100%)] flex-col overflow-hidden rounded-lg bg-white shadow-2xl; height: min(780px,100%); }
+			.modal-titlebar { @apply flex min-h-12 items-center justify-between gap-2.5 border-b border-slate-300 bg-slate-50 px-4 py-0 select-none; }
+			.modal-body { @apply min-h-0 flex-1 overflow-auto p-3; }
+			.start-screen { @apply fixed inset-0 z-[1200] flex bg-slate-100 p-3; }
+			.start-window { @apply m-auto grid h-[min(760px,100%)] w-[min(980px,100%)] grid-cols-1 overflow-hidden rounded-2xl border border-slate-300 bg-white shadow-2xl shadow-slate-400/40 lg:grid-cols-[320px_minmax(0,1fr)]; }
+			.start-hero { @apply flex flex-col justify-between gap-6 bg-gradient-to-br from-sky-700 to-indigo-700 p-6 text-white; }
+			.start-body { @apply flex min-h-0 flex-col gap-3 overflow-hidden p-4; }
+			.project-file-list { @apply flex min-h-0 flex-1 flex-col gap-1.5 overflow-auto rounded-lg border border-slate-300 bg-slate-50 p-2; }
+			.project-file-item { @apply grid grid-cols-[minmax(0,1fr)_auto] items-center gap-2 rounded-md border border-slate-300 bg-white p-2.5 text-left hover:border-sky-500 hover:bg-sky-50; }
+			.project-file-item strong { @apply block min-w-0 overflow-hidden text-ellipsis whitespace-nowrap text-sm; }
+			.project-file-item span { @apply block min-w-0 overflow-hidden text-ellipsis whitespace-nowrap text-xs text-slate-500; }
+			.toggle-line { @apply flex-row items-center gap-2 text-slate-900; }
+			.toggle-line input { @apply h-4 min-h-0 w-4 accent-sky-600; }
+			.workspace-overlay { @apply fixed inset-0 z-[1100] flex bg-slate-950/60 p-[18px]; }
+			.workspace-window { @apply m-auto flex h-[min(780px,100%)] w-[min(1180px,100%)] flex-col overflow-hidden rounded-lg bg-white shadow-2xl; }
+			.workspace-titlebar { @apply flex min-h-12 items-center justify-between gap-2.5 border-b border-slate-300 bg-slate-50 px-4 py-0 select-none; }
+			.workspace-host { @apply min-h-0 flex-1; }
+		}
+		@media (max-width: 760px) {
+			.app { @apply min-h-screen; }
+			.modal-overlay { @apply p-0; }
+			.modal-window { @apply h-full w-full rounded-none; }
+			.workspace-overlay { @apply p-0; }
+			.workspace-window { @apply h-full w-full rounded-none; }
+		}
+	</style>
+</head>
+<body>
+	<div id="startScreen" class="start-screen">
+		<div class="start-window" role="dialog" aria-modal="true" aria-label="Select Art Asset Project">
+			<section class="start-hero">
+				<div class="flex flex-col gap-3">
+					<div class="inline-flex w-fit rounded-full bg-white/15 px-3 py-1 text-xs font-semibold ring-1 ring-white/20">Workspace: ArtAssets</div>
+					<div>
+						<h1 class="text-3xl font-black leading-tight">Art Asset Generator</h1>
+						<p class="mt-3 text-sm leading-6 text-sky-50">Open an existing project file or create a new character, scene, or prop asset project before entering the editor.</p>
+					</div>
+				</div>
+				<div id="startSdkState" class="rounded-lg bg-white/10 p-3 text-xs leading-5 text-sky-50">Loading KeepworkSDK...</div>
+			</section>
+			<section class="start-body">
+				<div class="flex items-center justify-between gap-2">
+					<div>
+						<h2>Projects</h2>
+						<h3>Only filenames are listed at this stage.</h3>
+					</div>
+					<div class="toolbar"><button id="btnStartRefresh" type="button">Refresh</button><button id="btnStartClose" type="button">Close</button></div>
+				</div>
+				<div id="startProjectList" class="project-file-list"><div class="hint p-2.5">Loading project files...</div></div>
+				<div class="section">
+					<h2>Create new project</h2>
+					<label>File / Project ID <input id="startNewProjectId" placeholder="my_art_project"></label>
+					<label>Name <input id="startNewProjectName" placeholder="My Art Project"></label>
+					<div class="toolbar justify-end"><button id="btnStartCreate" class="primary" type="button">Create Project</button></div>
+				</div>
+				<div id="startStatus" class="status">Preparing project list...</div>
+			</section>
+		</div>
+	</div>
+
+	<main class="app">
+		<aside class="panel">
+			<div class="panel-head">
+				<div>
+					<h1>Art Asset Generator</h1>
+					<h3>Characters · Scenes · Props</h3>
+				</div>
+				<span id="sdkState" class="pill">SDK loading</span>
+			</div>
+			<div class="panel-body">
+				<section class="section">
+					<h2>File</h2>
+					<div class="toolbar">
+						<button id="btnFileOpen" type="button">Open...</button>
+						<button id="btnFileNew" type="button">New</button>
+						<button id="btnFileSave" class="success" type="button">Save</button>
+					</div>
+					<button id="currentFileLabel" class="hint min-h-0 max-w-full overflow-hidden text-ellipsis whitespace-nowrap border-0 bg-transparent p-0 text-left text-sky-700 underline underline-offset-2 hover:border-transparent hover:bg-transparent hover:text-sky-900 disabled:no-underline disabled:text-slate-400" type="button">No project file loaded.</button>
+				</section>
+
+				<section class="section">
+					<h2>Tool</h2>
+					<div class="tool-tabs" role="tablist" aria-label="Asset tool">
+						<button type="button" class="active" data-tool="character">Char</button>
+						<button type="button" data-tool="scene">Scene</button>
+						<button type="button" data-tool="prop">Prop</button>
+					</div>
+					<div id="toolHint" class="hint">Character sheets: pets, avatars, NPCs, skins, expression grids.</div>
+				</section>
+
+				<section class="section">
+					<h2>Account & Workspace</h2>
+					<div id="loginState" class="status">正在加载 KeepworkSDK...</div>
+					<div class="toolbar">
+						<button id="btnLocalApi" type="button">本地 API Key</button>
+						<button id="btnRefreshProjects" type="button">刷新</button>
+					</div>
+					<div class="hint">PersonalPageStore workspace: <strong>ArtAssets</strong></div>
+				</section>
+
+				<section class="section">
+					<h2>Models</h2>
+					<label>Chat model <select id="chatModelSelect"><option value="">等待 SDK</option></select></label>
+					<label>Image model <select id="imageModelSelect"><option value="">等待 SDK</option></select></label>
+					<div class="toolbar">
+						<button id="btnBuildPrompt" type="button">Build Prompt</button>
+					</div>
+				</section>
+			</div>
+		</aside>
+
+		<section class="panel records">
+			<div class="panel-head">
+				<div>
+					<h2>Assets</h2>
+					<h3 id="assetListSubtitle">Generated or manually authored entries</h3>
+				</div>
+				<span id="assetCount" class="pill">0</span>
+			</div>
+			<div class="record-toolbar">
+				<input id="assetSearch" placeholder="Search id / name / tags / description">
+				<button id="btnAddAsset" class="primary" type="button">Add</button>
+				<button id="btnDeleteSelected" class="danger" type="button" disabled>Delete selected (0)</button>
+				<button id="btnBatchGenerateImages" type="button" disabled>Generate selected (0)</button>
+				<label class="toggle-line col-span-2"><input id="assetSelectAll" type="checkbox"><span id="assetSelectAllLabel">Select all visible</span></label>
+			</div>
+			<div id="assetList" class="record-list"><div class="hint p-2.5">No assets yet.</div></div>
+		</section>
+
+		<section class="panel editor">
+			<div class="panel-head">
+				<div>
+					<h2 id="editorTitle">Asset Pack</h2>
+					<h3 id="editorSubtitle">Workspace JSON + export output format</h3>
+				</div>
+				<div class="toolbar">
+					<button id="btnApplyJson" type="button">Apply JSON</button>
+					<button id="btnCopyJson" type="button">Copy</button>
+					<button id="btnDownloadJson" type="button">Download</button>
+				</div>
+			</div>
+			<div class="panel-body">
+				<div id="runStatus" class="status">准备就绪。选择工具类型，手写 JSON 或让 LLM 生成资产列表。</div>
+				<div class="grid grid-cols-1 items-start gap-3 xl:grid-cols-[minmax(360px,1fr)_minmax(380px,1fr)]">
+					<div class="stack">
+						<section class="section">
+							<h2>Generation Request</h2>
+							<label>Prompt for selected image
+								<textarea id="userRequest" class="prompt-box" spellcheck="false" placeholder="Select an asset or batch-create assets to edit the image prompt here."></textarea>
+							</label>
+							<div class="row-3">
+								<label>Image size <select id="imageSize"><option>1024x1024</option><option>1536x1024</option><option>1024x1536</option><option>2048x2048</option></select></label>
+								<label>Default grid <input id="defaultGrid" value="1x1" placeholder="4x4"></label>
+								<label>背景色<select id="backgroundColorMode"><option value="any">随意</option><option value="black">黑色</option><option value="white">白色</option></select></label>
+							</div>
+							<label>Final image prompt
+								<textarea id="finalPrompt" class="prompt-box" spellcheck="false"></textarea>
+							</label>
+							<div class="hint">This is per selected asset. Batch new fills this from LLM results; Generate Image sends this exact prompt to the image model.</div>
+						</section>
+
+						<section class="section">
+							<h2>WebP / CDN</h2>
+							<div class="row-3">
+								<label>Min KB <input id="webpMinKb" type="number" min="1" max="4096" value="20"></label>
+								<label>Max KB <input id="webpMaxKb" type="number" min="1" max="4096" value="100"></label>
+								<label>Max edge <input id="webpMaxEdge" type="number" min="32" max="4096" value="1024"></label>
+							</div>
+							<label>Optional CDN folder <input id="cdnFolder" placeholder="artassets/my_project"></label>
+							<label class="toggle-line"><input id="uploadWebpToCdn" type="checkbox">Upload converted WebP to CDN</label>
+							<div class="toolbar"><button id="btnCdnConfig" type="button">CDN Config</button><button id="btnConvertSelectedWebp" type="button" disabled>Convert selected WebP (0)</button></div>
+							<div id="cdnStatus" class="hint">No CDN config loaded. If upload is disabled, converted WebP is stored as data URL.</div>
+						</section>
+
+						<section class="section">
+							<h2>Project JSON</h2>
+							<div class="hint">Workspace JSON can store project metadata, prompts, tags, historyUrls, and other working data. Copy / download always exports the output JSON array format: <code>{id,imageUrl,rows,columns,isTransparent,description,imageWidth,imageHeight}</code>.</div>
+							<textarea id="projectJson" class="output" spellcheck="false"></textarea>
+						</section>
+					</div>
+
+					<div class="stack">
+						<section class="section">
+							<h2>Selected Asset</h2>
+							<div class="row">
+								<label>ID <input id="assetId" placeholder="asset_001"></label>
+								<label>Name <input id="assetName" placeholder="Asset name"></label>
+							</div>
+							<label>Image URL <input id="assetImageUrl" placeholder="https://... or data URL"></label>
+							<label>Description <textarea id="assetDescription" rows="4"></textarea></label>
+							<div class="row-3">
+								<label>Width <input id="assetWidth" type="number" min="1" step="1" value="1024"></label>
+								<label>Height <input id="assetHeight" type="number" min="1" step="1" value="1024"></label>
+								<label>Grid <input id="assetGrid" placeholder="4x4" value="1x1"></label>
+							</div>
+							<label class="flex-row items-center gap-2 text-slate-900"><input id="assetTransparent" class="h-4 min-h-0 w-4" type="checkbox">Transparent image</label>
+							<div class="toolbar">
+								<button id="btnUpsertAsset" class="success" type="button">Upsert Asset</button>
+								<button id="btnGenerateImage" class="primary" type="button">Generate Image</button>
+								<button id="btnDeleteAsset" class="danger" type="button">Delete</button>
+							</div>
+						</section>
+
+						<section class="section">
+							<h2>Preview</h2>
+							<div id="assetPreview" class="preview-grid"><div class="hint">No image assets yet.</div></div>
+						</section>
+					</div>
+				</div>
+			</div>
+		</section>
+	</main>
+	<input id="cdnConfigInput" type="file" accept=".yaml,.yml" hidden>
+
+	<script type="module">
+		const WORKSPACE = 'ArtAssets';
+		const PROJECT_DIR = 'projects';
+		const INDEX_PATH = `${PROJECT_DIR}/_index.json`;
+		const SDK_CDN_URL = 'https://cdn.keepwork.com/sdk/keepworkSDK.iife.js?v=20260522a';
+		const STORAGE_KEY = 'ArtAssetGenerator.localDraft.v1';
+		const SETTINGS_KEY = 'ArtAssetGenerator.settings.v1';
+		const CDN_CONFIG_KEY = 'keepwork_upload_cdn_config';
+		const CDN_DEFAULT_BUCKET = 'haqi';
+		const CDN_DEFAULT_DOMAIN = 'https://cdn.keepwork.com';
+		const CDN_DEFAULT_UPLOAD_HOST = 'https://up-z2.qiniup.com';
+		const TOOL_HINTS = {
+			character: 'Character sheets: pets, avatars, NPCs, skins, expression grids.',
+			scene: 'Scene backgrounds: story presets, locations, lighting variants, parallax layers.',
+			prop: 'Props and item icons: shop items, furniture, food, toys, inventory icons.',
+		};
+		const TOOL_EXAMPLES = {
+			character: 'Create character assets such as pets, avatars, NPCs, costumes, expression sheets, or 4x4 sprite sheets. Include rows/columns and short descriptions for each cell.',
+			scene: 'Create scene/background assets such as outdoor locations, rooms, story backgrounds, or layerable parallax scenes. Include dimensions, prompt, tags, and scene notes.',
+			prop: 'Create prop assets such as furniture, food, toys, tools, icons, and decorative objects. Include icon dimensions, item role, usage notes, and optional placement grid.',
+		};
+		const IMAGE_SIZE_OPTIONS = [
+			{ value: '1024x1024', label: '1:1 · 1K · 1024x1024' },
+			{ value: '2048x2048', label: '1:1 · 2K · 2048x2048' },
+			{ value: '1344x768', label: '16:9 · 1K wide · 1344x768' },
+			{ value: '1792x1024', label: '16:9 · 2K wide · 1792x1024' },
+			{ value: '1344x576', label: '超宽 21:9 · 1344x576' },
+			{ value: '1792x768', label: '超宽 21:9 · 1792x768' },
+			{ value: '2560x1080', label: '超宽 21:9 · 2560x1080' },
+			{ value: '768x1344', label: '9:16 · 1K portrait · 768x1344' },
+			{ value: '1024x1792', label: '9:16 · 2K portrait · 1024x1792' },
+			{ value: '1536x1024', label: '3:2 · 1536x1024' },
+			{ value: '1024x1536', label: '2:3 · 1024x1536' },
+		];
+		const GRID_OPTIONS = ['1x1', '2x2', '3x3', '4x4', '5x5', '6x6', '8x8', '1x4', '4x1', '2x4', '4x2', '3x4', '4x3'];
+		const $ = (id) => document.getElementById(id);
+		const state = { sdk: null, tool: 'character', projects: [], project: null, selectedAssetId: '', selectedAssetIds: new Set(), lastProjectPath: '', appStarted: false, workspaceViewer: null, batchImage: null, batchWebp: null };
+
+		function nowIso() { return new Date().toISOString(); }
+		function setStatus(el, text, kind = '') {
+			if (!el) return;
+			el.textContent = text;
+			el.classList.toggle('ok', kind === 'ok');
+			el.classList.toggle('error', kind === 'error');
+		}
+		function setStartStatus(text, kind = '') { setStatus($('startStatus'), text, kind); }
+		function showStartScreen() { $('startScreen').classList.remove('hidden'); state.appStarted = false; }
+		function hideStartScreen() { $('startScreen').classList.add('hidden'); state.appStarted = true; }
+		function escapeHtml(value) {
+			return String(value ?? '').replace(/[&<>"']/g, char => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[char]));
+		}
+		function safeId(value, fallback = 'project') {
+			return String(value || '').trim().toLowerCase().replace(/[^a-z0-9_-]+/g, '_').replace(/^_+|_+$/g, '').slice(0, 80) || fallback;
+		}
+		function splitList(value) {
+			return String(value || '').split(/[\n,，、；;|]+/).map(item => item.trim()).filter(Boolean);
+		}
+		function parseGrid(value = '1x1') {
+			const [cols, rows] = String(value || '1x1').toLowerCase().split(/[x*×]/).map(Number);
+			return { cols: Math.max(1, Math.min(24, cols || 1)), rows: Math.max(1, Math.min(24, rows || 1)) };
+		}
+		function normalizeGridText(value = '1x1') {
+			const grid = parseGrid(value);
+			return `${grid.cols}x${grid.rows}`;
+		}
+		function gridToText(grid = {}) { return `${grid.cols || 1}x${grid.rows || 1}`; }
+		function imageSize() {
+			const [width, height] = String($('imageSize').value || '1024x1024').split('x').map(Number);
+			return { width: width || 1024, height: height || 1024 };
+		}
+		function clone(value) { return JSON.parse(JSON.stringify(value ?? null)); }
+		function normalizeProjectSettings(settings = {}) {
+			const result = { character: {}, scene: {}, prop: {} };
+			['character', 'scene', 'prop'].forEach(type => {
+				const source = settings?.[type] || {};
+				result[type] = {
+					imageSize: String(source.imageSize || ''),
+					grid: String(source.grid || ''),
+					backgroundColor: ['black', 'white'].includes(source.backgroundColor) ? source.backgroundColor : 'any',
+					assetCount: Number(source.assetCount) || 0,
+				};
+			});
+			return result;
+		}
+		function currentToolSettings() {
+			if (!state.project?.project) return {};
+			state.project.project.settings = normalizeProjectSettings(state.project.project.settings);
+			return state.project.project.settings[state.tool] || {};
+		}
+		function applyToolSettings(type = state.tool) {
+			const settings = state.project?.project?.settings?.[type] || {};
+			if (settings.imageSize && $('imageSize')) $('imageSize').value = settings.imageSize;
+			if (settings.grid && $('defaultGrid')) $('defaultGrid').value = settings.grid;
+			if ($('backgroundColorMode')) $('backgroundColorMode').value = ['black', 'white'].includes(settings.backgroundColor) ? settings.backgroundColor : 'any';
+		}
+		function rememberToolSettings() {
+			if (!state.project?.project) return;
+			state.project.project.settings = normalizeProjectSettings(state.project.project.settings);
+			state.project.project.settings[state.tool] = {
+				imageSize: $('imageSize')?.value || currentToolSettings().imageSize || '',
+				grid: $('defaultGrid')?.value || currentToolSettings().grid || '',
+				backgroundColor: $('backgroundColorMode')?.value || currentToolSettings().backgroundColor || 'any',
+			};
+		}
+		function imageSizeOptionsHtml(selected = '') {
+			const value = String(selected || '').trim();
+			const hasCustom = value && !IMAGE_SIZE_OPTIONS.some(option => option.value === value);
+			return `${hasCustom ? `<option value="${escapeHtml(value)}">${escapeHtml(value)} · custom</option>` : ''}${IMAGE_SIZE_OPTIONS.map(option => `<option value="${escapeHtml(option.value)}" ${option.value === value ? 'selected' : ''}>${escapeHtml(option.label)}</option>`).join('')}`;
+		}
+		function gridOptionsHtml(selected = '') {
+			const value = String(selected || '1x1').trim() || '1x1';
+			const hasCustom = value && !GRID_OPTIONS.includes(value);
+			return `${hasCustom ? `<option value="${escapeHtml(value)}">${escapeHtml(value)} · custom</option>` : ''}${GRID_OPTIONS.map(option => `<option value="${escapeHtml(option)}" ${option === value ? 'selected' : ''}>${escapeHtml(option)}</option>`).join('')}<option value="custom">Custom...</option>`;
+		}
+
+		function defaultProject() {
+			const id = safeId(`art_project_${new Date().toISOString().slice(0, 10)}`, 'art_project');
+			return {
+				schemaVersion: 1,
+				project: { id, name: 'Art Asset Project', description: '', createdAt: nowIso(), updatedAt: nowIso(), models: { chat: '', image: '' }, settings: { character: {}, scene: {}, prop: {} } },
+				assets: [],
+			};
+		}
+
+		function normalizeAsset(asset = {}, index = 0, type = state.tool) {
+			const grid = asset.grid && typeof asset.grid === 'object'
+				? { cols: Number(asset.grid.cols ?? asset.grid.columns ?? asset.columns) || 1, rows: Number(asset.grid.rows ?? asset.rows) || 1 }
+				: parseGrid(asset.grid || asset.gridSize || $('defaultGrid')?.value || '1x1');
+			const dims = asset.dims && typeof asset.dims === 'object'
+				? { width: Number(asset.dims.width ?? asset.dims.imageWidth) || imageSize().width, height: Number(asset.dims.height ?? asset.dims.imageHeight) || imageSize().height }
+				: { width: Number(asset.width ?? asset.imageWidth) || imageSize().width, height: Number(asset.height ?? asset.imageHeight) || imageSize().height };
+			return {
+				id: safeId(asset.id || asset.name || `${type}_asset_${index + 1}`, `${type}_asset_${index + 1}`),
+				name: String(asset.name || asset.title || asset.id || `${type} asset ${index + 1}`).trim(),
+				type: asset.type || type,
+				description: String(asset.description || asset.shortDescription || asset.prompt || '').trim(),
+				prompt: String(asset.prompt || asset.imagePrompt || asset.description || '').trim(),
+				imageUrl: String(asset.imageUrl || asset.url || '').trim(),
+				isTransparent: !!asset.isTransparent,
+				dims,
+				grid: { cols: grid.cols, rows: grid.rows },
+				tags: Array.isArray(asset.tags) ? asset.tags.map(String) : splitList(asset.tags || ''),
+				historyUrls: Array.isArray(asset.historyUrls) ? asset.historyUrls.map(String).filter(Boolean) : splitList(asset.historyUrls || ''),
+			};
+		}
+
+		function normalizeProject(data = defaultProject()) {
+			const source = data && typeof data === 'object' ? data : defaultProject();
+			const project = { ...defaultProject().project, ...(source.project || {}) };
+			project.id = safeId(project.id || source.id, 'art_project');
+			project.name = String(project.name || project.id);
+			project.description = String(project.description || '');
+			project.models = project.models && typeof project.models === 'object' ? { chat: String(project.models.chat || ''), image: String(project.models.image || '') } : { chat: '', image: '' };
+			project.settings = normalizeProjectSettings(project.settings);
+			project.updatedAt = nowIso();
+			const assets = Array.isArray(source.assets) ? source.assets : Array.isArray(source.images) ? source.images : [];
+			return { schemaVersion: Number(source.schemaVersion) || 1, project, assets: assets.map((asset, index) => normalizeAsset(asset, index, asset.type || state.tool)) };
+		}
+
+		function applyProjectToForm(projectData = state.project) {
+			state.project = normalizeProject(projectData || defaultProject());
+			document.querySelectorAll('[data-tool]').forEach(button => button.classList.toggle('active', button.dataset.tool === state.tool));
+			$('toolHint').textContent = TOOL_HINTS[state.tool];
+			$('editorTitle').textContent = state.project.project.name || state.project.project.id;
+			$('editorSubtitle').textContent = `${WORKSPACE}/${projectPath(state.project.project.id)}`;
+			updateCurrentFileLabel();
+			$('assetListSubtitle').textContent = `${state.project.assets.length} ${state.tool} assets`;
+			renderProjectJson();
+			renderAssetList();
+			if (state.project.assets.length) selectAsset(state.selectedAssetId || state.project.assets[0].id);
+			else clearAssetForm();
+			saveLocalDraft();
+		}
+
+		function updateProjectFromForm() {
+			if (!state.project) state.project = defaultProject();
+			state.project.project.id = safeId(state.project.project.id, 'art_project');
+			state.project.project.name = String(state.project.project.name || state.project.project.id).trim() || state.project.project.id;
+			state.project.project.description = String(state.project.project.description || '').trim();
+			state.project.project.models = state.project.project.models && typeof state.project.project.models === 'object' ? state.project.project.models : { chat: '', image: '' };
+			if ($('chatModelSelect')) state.project.project.models.chat = $('chatModelSelect').value || state.project.project.models.chat || '';
+			if ($('imageModelSelect')) state.project.project.models.image = $('imageModelSelect').value || state.project.project.models.image || '';
+			rememberToolSettings();
+			state.project.project.updatedAt = nowIso();
+			$('editorTitle').textContent = state.project.project.name;
+			$('editorSubtitle').textContent = `${WORKSPACE}/${projectPath(state.project.project.id)}`;
+			updateCurrentFileLabel();
+		}
+
+		function updateCurrentFileLabel() {
+			const path = state.project?.project?.id ? projectPath(state.project.project.id) : '';
+			if ($('currentFileLabel')) {
+				$('currentFileLabel').textContent = path ? `${WORKSPACE}/${path}` : 'No project file loaded.';
+				$('currentFileLabel').disabled = !path;
+			}
+		}
+
+		function getSelectedAssets() {
+			const validIds = new Set((state.project?.assets || []).map(asset => asset.id));
+			for (const id of [...state.selectedAssetIds]) if (!validIds.has(id)) state.selectedAssetIds.delete(id);
+			return (state.project?.assets || []).filter(asset => state.selectedAssetIds.has(asset.id));
+		}
+
+		function updateSelectionControls() {
+			const selectedCount = getSelectedAssets().length;
+			const renderedIds = [...($('assetList')?.querySelectorAll('[data-select-asset]') || [])].map(input => input.dataset.selectAsset).filter(Boolean);
+			const selectedRenderedCount = renderedIds.filter(id => state.selectedAssetIds.has(id)).length;
+			if ($('assetSelectAll')) {
+				$('assetSelectAll').disabled = !renderedIds.length;
+				$('assetSelectAll').checked = !!renderedIds.length && selectedRenderedCount === renderedIds.length;
+				$('assetSelectAll').indeterminate = selectedRenderedCount > 0 && selectedRenderedCount < renderedIds.length;
+			}
+			if ($('assetSelectAllLabel')) $('assetSelectAllLabel').textContent = $('assetSelectAll')?.checked ? 'Unselect all visible' : 'Select all visible';
+			if ($('btnDeleteSelected')) {
+				$('btnDeleteSelected').textContent = `Delete selected (${selectedCount})`;
+				$('btnDeleteSelected').disabled = selectedCount <= 0 || !!state.batchImage?.running || !!state.batchWebp?.running;
+			}
+			if ($('btnBatchGenerateImages')) {
+				const batch = state.batchImage;
+				$('btnBatchGenerateImages').textContent = batch?.running ? `${batch.stopRequested ? 'Stopping' : 'Stop'} generate (${Math.min(batch.total, batch.done + 1)}/${batch.total})` : `Generate selected (${selectedCount})`;
+				$('btnBatchGenerateImages').disabled = selectedCount <= 0 && !batch?.running;
+			}
+			if ($('btnConvertSelectedWebp')) {
+				const batch = state.batchWebp;
+				$('btnConvertSelectedWebp').textContent = batch?.running ? `${batch.stopRequested ? 'Stopping' : 'Stop'} WebP (${Math.min(batch.total, batch.done + 1)}/${batch.total})` : `Convert selected WebP (${selectedCount})`;
+				$('btnConvertSelectedWebp').disabled = selectedCount <= 0 && !batch?.running;
+			}
+		}
+
+		function openWorkspaceViewer(file = projectPath()) {
+			if (typeof window.createWorkspaceViewer !== 'function') {
+				setStatus($('runStatus'), 'WorkspaceViewer 不可用：当前 SDK 未导出 createWorkspaceViewer', 'error');
+				return;
+			}
+			closeWorkspaceViewer();
+			const targetFile = String(file || projectPath()).replace(/^\/+/, '');
+			const overlay = document.createElement('div');
+			overlay.className = 'workspace-overlay';
+			overlay.id = 'workspaceOverlay';
+			overlay.innerHTML = `<div class="workspace-window" role="dialog" aria-modal="true" aria-label="WorkspaceViewer"><div class="workspace-titlebar"><strong>WorkspaceViewer · ${WORKSPACE}/${escapeHtml(targetFile)}</strong><button type="button" id="closeWorkspaceViewer">关闭</button></div><div class="workspace-host" id="workspaceHost"></div></div>`;
+			document.body.appendChild(overlay);
+			overlay.addEventListener('click', event => { if (event.target === overlay) closeWorkspaceViewer(); });
+			$('closeWorkspaceViewer').onclick = closeWorkspaceViewer;
+			state.workspaceViewer = window.createWorkspaceViewer({ container: $('workspaceHost'), sdk: state.sdk || window.keepwork, workspace: WORKSPACE, mountFolder: '', file: targetFile, compact: true, hideUserInfo: true });
+		}
+
+		function closeWorkspaceViewer() {
+			try { state.workspaceViewer?.destroy?.(); } catch (_) {}
+			state.workspaceViewer = null;
+			$('workspaceOverlay')?.remove();
+		}
+
+		function renderProjectJson() {
+			updateProjectFromForm();
+			$('projectJson').value = JSON.stringify(state.project, null, 2);
+			saveLocalDraft();
+		}
+
+		function assetToOutputJson(asset = {}) {
+			const clean = normalizeAsset(asset, 0, asset.type || state.tool);
+			return {
+				id: clean.id,
+				imageUrl: clean.imageUrl || '',
+				rows: Number(clean.grid?.rows) || 1,
+				columns: Number(clean.grid?.cols) || 1,
+				isTransparent: !!clean.isTransparent,
+				description: clean.description || '',
+				imageWidth: Number(clean.dims?.width) || imageSize().width,
+				imageHeight: Number(clean.dims?.height) || imageSize().height,
+			};
+		}
+
+		function buildOutputJson() {
+			const project = normalizeProject(JSON.parse($('projectJson').value || '{}'));
+			return project.assets.map(assetToOutputJson);
+		}
+
+		function clearAssetForm() {
+			const grid = parseGrid($('defaultGrid').value || '1x1');
+			const size = imageSize();
+			$('assetId').value = '';
+			$('assetName').value = '';
+			$('assetImageUrl').value = '';
+			$('assetDescription').value = '';
+			$('assetWidth').value = size.width;
+			$('assetHeight').value = size.height;
+			$('assetGrid').value = gridToText(grid);
+			$('assetTransparent').checked = false;
+			state.selectedAssetId = '';
+			renderPreview();
+		}
+
+		function assetFromForm() {
+			const grid = parseGrid($('assetGrid').value);
+			const prompt = $('finalPrompt').value.trim() || $('userRequest').value.trim() || $('assetDescription').value;
+			return normalizeAsset({
+				id: $('assetId').value,
+				name: $('assetName').value,
+				type: state.tool,
+				description: $('assetDescription').value,
+				prompt,
+				imageUrl: $('assetImageUrl').value,
+				isTransparent: $('assetTransparent').checked,
+				dims: { width: Number($('assetWidth').value) || imageSize().width, height: Number($('assetHeight').value) || imageSize().height },
+				grid,
+			}, state.project?.assets?.length || 0, state.tool);
+		}
+
+		function setAssetForm(asset) {
+			const clean = normalizeAsset(asset || {}, 0, state.tool);
+			state.selectedAssetId = clean.id;
+			$('assetId').value = clean.id;
+			$('assetName').value = clean.name;
+			$('assetImageUrl').value = clean.imageUrl || '';
+			$('assetDescription').value = clean.description || clean.prompt || '';
+			$('userRequest').value = clean.prompt || clean.description || '';
+			$('assetWidth').value = clean.dims.width;
+			$('assetHeight').value = clean.dims.height;
+			$('assetGrid').value = gridToText(clean.grid);
+			$('imageSize').value = `${clean.dims.width}x${clean.dims.height}`;
+			$('defaultGrid').value = gridToText(clean.grid);
+			$('assetTransparent').checked = !!clean.isTransparent;
+			$('finalPrompt').dataset.edited = '0';
+			refreshFinalPrompt({ force: true });
+			renderPreview();
+		}
+
+		function upsertAsset({ silent = false } = {}) {
+			const asset = assetFromForm();
+			const list = state.project.assets || [];
+			const index = list.findIndex(item => item.id === asset.id);
+			if (index >= 0) list[index] = asset;
+			else list.push(asset);
+			state.selectedAssetId = asset.id;
+			renderProjectJson();
+			renderAssetList();
+			setAssetForm(asset);
+			if (!silent) setStatus($('runStatus'), `已更新资产：${asset.id}`, 'ok');
+			return asset;
+		}
+
+		function renderAssetList() {
+			const query = $('assetSearch').value.trim().toLowerCase();
+			const assets = (state.project?.assets || []).filter(asset => !query || [asset.id, asset.name, asset.type, asset.description, ...(asset.tags || [])].join(' ').toLowerCase().includes(query));
+			$('assetCount').textContent = assets.length === (state.project?.assets || []).length ? String(assets.length) : `${assets.length}/${state.project.assets.length}`;
+			$('assetList').innerHTML = assets.length ? assets.map(asset => {
+				const image = asset.imageUrl ? `<img alt="" src="${escapeHtml(asset.imageUrl)}">` : escapeHtml(asset.type === 'scene' ? '🏞️' : asset.type === 'prop' ? '🎁' : '🐾');
+				const active = asset.id === state.selectedAssetId ? ' active' : '';
+				const checked = state.selectedAssetIds.has(asset.id);
+				return `<div class="record-item${active}${checked ? ' checked' : ''}">
+					<label class="record-select"><input type="checkbox" data-select-asset="${escapeHtml(asset.id)}" ${checked ? 'checked' : ''} aria-label="Select ${escapeHtml(asset.name || asset.id)}"></label>
+					<div class="record-thumb">${image}</div>
+					<button class="record-main" type="button" data-open-asset="${escapeHtml(asset.id)}"><span class="record-title">${escapeHtml(asset.name || asset.id)}</span><span class="record-meta">${escapeHtml(asset.id)} · ${escapeHtml(asset.type)} · ${asset.dims.width}x${asset.dims.height} · ${gridToText(asset.grid)}</span></button>
+					<div class="record-actions"><button type="button" data-copy-asset="${escapeHtml(asset.id)}">Copy</button><button type="button" class="danger" data-delete-asset="${escapeHtml(asset.id)}">Del</button></div>
+				</div>`;
+			}).join('') : '<div class="hint p-2.5">No matching assets. Add manually or ask the LLM to generate JSON.</div>';
+			$('assetList').querySelectorAll('[data-select-asset]').forEach(input => input.onchange = () => {
+				if (input.checked) state.selectedAssetIds.add(input.dataset.selectAsset);
+				else state.selectedAssetIds.delete(input.dataset.selectAsset);
+				renderAssetList();
+			});
+			$('assetList').querySelectorAll('[data-open-asset]').forEach(button => button.onclick = () => selectAsset(button.dataset.openAsset));
+			$('assetList').querySelectorAll('[data-copy-asset]').forEach(button => button.onclick = () => copyAsset(button.dataset.copyAsset));
+			$('assetList').querySelectorAll('[data-delete-asset]').forEach(button => button.onclick = () => deleteAsset(button.dataset.deleteAsset));
+			$('assetListSubtitle').textContent = `${state.project?.assets?.length || 0} ${state.tool} assets`;
+			updateSelectionControls();
+		}
+
+		function selectAsset(id) {
+			const asset = (state.project?.assets || []).find(item => item.id === id);
+			if (!asset) return;
+			setAssetForm(asset);
+			renderAssetList();
+			setStatus($('runStatus'), `已选择资产：${asset.id}`, 'ok');
+		}
+
+		function copyAsset(id) {
+			const asset = (state.project?.assets || []).find(item => item.id === id);
+			if (!asset) return;
+			const copied = normalizeAsset({ ...clone(asset), id: `${asset.id}_copy`, name: `${asset.name} Copy` }, state.project.assets.length, state.tool);
+			state.project.assets.push(copied);
+			state.selectedAssetId = copied.id;
+			setAssetForm(copied);
+			renderProjectJson();
+			renderAssetList();
+			setStatus($('runStatus'), `已复制资产：${copied.id}`, 'ok');
+		}
+
+		function deleteAsset(id = state.selectedAssetId) {
+			if (!id) return;
+			state.project.assets = (state.project.assets || []).filter(asset => asset.id !== id);
+			state.selectedAssetIds.delete(id);
+			if (state.selectedAssetId === id) state.selectedAssetId = state.project.assets[0]?.id || '';
+			renderProjectJson();
+			renderAssetList();
+			if (state.selectedAssetId) setAssetForm(state.project.assets.find(asset => asset.id === state.selectedAssetId));
+			else clearAssetForm();
+			setStatus($('runStatus'), `已删除资产：${id}`, 'ok');
+		}
+
+		function deleteSelectedAssets() {
+			const selected = getSelectedAssets();
+			if (!selected.length) return;
+			const ids = new Set(selected.map(asset => asset.id));
+			state.project.assets = (state.project.assets || []).filter(asset => !ids.has(asset.id));
+			ids.forEach(id => state.selectedAssetIds.delete(id));
+			if (ids.has(state.selectedAssetId)) state.selectedAssetId = state.project.assets[0]?.id || '';
+			renderProjectJson();
+			renderAssetList();
+			if (state.selectedAssetId) setAssetForm(state.project.assets.find(asset => asset.id === state.selectedAssetId));
+			else clearAssetForm();
+			setStatus($('runStatus'), `已删除 ${ids.size} 个选中资产。`, 'ok');
+		}
+
+		function setVisibleAssetSelection(checked) {
+			[...($('assetList')?.querySelectorAll('[data-select-asset]') || [])].forEach(input => {
+				if (checked) state.selectedAssetIds.add(input.dataset.selectAsset);
+				else state.selectedAssetIds.delete(input.dataset.selectAsset);
+			});
+			renderAssetList();
+		}
+
+		function renderPreview() {
+			const assets = state.project?.assets || [];
+			const selected = state.selectedAssetId ? assets.filter(asset => asset.id === state.selectedAssetId) : assets;
+			const list = selected.length ? selected : assets.slice(0, 12);
+			$('assetPreview').innerHTML = list.length ? list.map(asset => {
+				const transparent = asset.isTransparent ? ' · transparent' : '';
+				const image = asset.imageUrl ? `<img alt="${escapeHtml(asset.name)}" src="${escapeHtml(asset.imageUrl)}">` : '<div class="grid aspect-square place-items-center bg-slate-50 text-4xl">🎨</div>';
+				return `<div class="preview-card">
+					${image}
+					<div class="preview-card-body"><strong class="text-sm">${escapeHtml(asset.name || asset.id)}</strong><span class="hint">${escapeHtml(asset.dims.width)}x${escapeHtml(asset.dims.height)} · ${escapeHtml(gridToText(asset.grid))}${transparent}</span><p class="m-0 text-xs text-slate-600">${escapeHtml(asset.description || '')}</p></div>
+				</div>`;
+			}).join('') : '<div class="hint">No assets yet.</div>';
+		}
+
+		function buildSelectedImagePrompt(asset = getSelectedAsset()) {
+			const clean = normalizeAsset(asset || {}, 0, asset?.type || state.tool);
+			const grid = parseGrid($('defaultGrid')?.value || gridToText(clean.grid));
+			const bgMode = $('backgroundColorMode')?.value || 'any';
+			const bgPrompt = bgMode === 'black'
+				? 'Background: solid pure black (#000000). Keep the subject clearly separated from the background.'
+				: bgMode === 'white'
+					? 'Background: solid pure white (#ffffff). Keep the subject clearly separated from the background.'
+					: '';
+			return [
+				clean.prompt || $('userRequest')?.value?.trim() || clean.description || `Create ${clean.type || state.tool} art asset: ${clean.name || clean.id}`,
+				`Output size: ${$('imageSize')?.value || `${clean.dims.width}x${clean.dims.height}`}.`,
+				`Grid: ${grid.rows} rows x ${grid.cols} columns. Include grid/cell details in the image composition.`,
+				bgPrompt,
+			].filter(Boolean).join('\n\n');
+		}
+
+		function getSelectedAsset() {
+			return (state.project?.assets || []).find(asset => asset.id === state.selectedAssetId) || null;
+		}
+
+		function refreshFinalPrompt({ force = false } = {}) {
+			if (!$('finalPrompt')) return;
+			if (!force && $('finalPrompt').dataset.edited === '1') return;
+			$('finalPrompt').value = buildSelectedImagePrompt();
+			$('finalPrompt').dataset.edited = '0';
+		}
+
+		function extractJsonObject(text) {
+			const raw = String(text || '').trim();
+			if (!raw) throw new Error('LLM returned empty content');
+			try { return JSON.parse(raw); } catch (_) {}
+			const fenced = raw.match(/```(?:json)?\s*([\s\S]*?)```/i);
+			if (fenced) return JSON.parse(fenced[1]);
+			const first = raw.indexOf('{');
+			const last = raw.lastIndexOf('}');
+			if (first >= 0 && last > first) return JSON.parse(raw.slice(first, last + 1));
+			throw new Error('LLM response was not valid JSON');
+		}
+
+		function extractAssistantText(result) {
+			if (typeof result === 'string') return result;
+			return result?.result || result?.content || result?.message?.content || result?.choices?.[0]?.message?.content || result?.data?.choices?.[0]?.message?.content || result?.text || '';
+		}
+
+		async function generateImageForAsset(assetInput, { silent = false } = {}) {
+			const sdk = state.sdk || window.keepwork;
+			if (!sdk?.aiGenerators?.genImage) throw new Error('sdk.aiGenerators.genImage 不可用');
+			const model = $('imageModelSelect').value.trim();
+			if (!model) throw new Error('请先配置 Image 模型');
+			const asset = normalizeAsset(assetInput || upsertAsset({ silent: true }), 0, assetInput?.type || state.tool);
+			const prompt = asset.prompt || asset.description || `Create ${asset.type} art asset: ${asset.name}`;
+			const opts = { model, width: asset.dims.width, height: asset.dims.height, stream: true, uploadResultToKeepwork: true };
+			let streamedText = '';
+			opts.onMessage = (fullText) => {
+				streamedText = String(fullText || streamedText || '');
+				setStatus($('runStatus'), `正在生成图片：${asset.name}\nmodel=${model}\n${streamedText.slice(-500)}`, '');
+			};
+			opts.onImage = (url) => setStatus($('runStatus'), `已收到图片数据：${String(url || '').slice(0, 160)}`, '');
+			setStatus($('runStatus'), `正在生成图片：${asset.name}\n${asset.dims.width}x${asset.dims.height}`, '');
+			const url = await sdk.aiGenerators.genImage(prompt, opts);
+			if (!url) throw new Error('genImage did not return an image URL');
+			asset.imageUrl = url;
+			const index = state.project.assets.findIndex(item => item.id === asset.id);
+			if (index >= 0) state.project.assets[index] = asset;
+			if (asset.id === state.selectedAssetId) setAssetForm(asset);
+			renderProjectJson();
+			renderAssetList();
+			if (!silent) setStatus($('runStatus'), `图片生成完成：${asset.id}`, 'ok');
+			return asset;
+		}
+
+		async function generateImageForSelectedAsset() {
+			return await generateImageForAsset(upsertAsset({ silent: true }));
+		}
+
+		async function batchGenerateSelectedImages() {
+			if (state.batchImage?.running) {
+				state.batchImage.stopRequested = true;
+				updateSelectionControls();
+				setStatus($('runStatus'), '收到停止请求，当前图片完成后停止。', '');
+				return;
+			}
+			const queue = getSelectedAssets().map(asset => clone(asset));
+			if (!queue.length) return;
+			state.batchImage = { running: true, stopRequested: false, total: queue.length, done: 0 };
+			updateSelectionControls();
+			try {
+				for (const asset of queue) {
+					if (state.batchImage.stopRequested) break;
+					setStatus($('runStatus'), `批量生成图片 ${state.batchImage.done + 1}/${queue.length}：${asset.name || asset.id}`, '');
+					const generated = await generateImageForAsset(asset, { silent: true });
+					state.selectedAssetIds.delete(generated.id);
+					state.batchImage.done += 1;
+					updateSelectionControls();
+				}
+				setStatus($('runStatus'), state.batchImage.stopRequested ? `批量生成已停止：完成 ${state.batchImage.done}/${state.batchImage.total}` : `批量生成完成：${state.batchImage.done}/${state.batchImage.total}`, 'ok');
+			} finally {
+				state.batchImage = null;
+				renderAssetList();
+				updateSelectionControls();
+			}
+		}
+
+		function openBatchAssetDialog() {
+			closeBatchAssetDialog();
+			const currentGrid = normalizeGridText($('defaultGrid').value || '1x1');
+			const currentSize = $('imageSize').value || '1024x1024';
+			const overlay = document.createElement('div');
+			overlay.className = 'modal-overlay';
+			overlay.id = 'batchAssetOverlay';
+			overlay.innerHTML = `<div class="modal-window" role="dialog" aria-modal="true" aria-label="Batch create assets">
+				<div class="modal-titlebar"><strong>Batch create asset items</strong><button type="button" id="closeBatchAsset">Close</button></div>
+				<div class="modal-body flex flex-col gap-3">
+					<div class="row-3"><label>Type<select id="batchAssetType"><option value="character">Character</option><option value="scene">Scene</option><option value="prop">Prop</option></select></label><label>Count<input id="batchAssetCount" type="number" min="1" max="100" value="8"></label><label>Grid<select id="batchAssetGrid">${gridOptionsHtml(currentGrid)}</select></label></div>
+					<div class="row"><label>Custom grid<input id="batchAssetCustomGrid" placeholder="e.g. 5*5, 6x6, 8*8" value="${GRID_OPTIONS.includes(currentGrid) ? '' : escapeHtml(currentGrid)}"></label><label>Image size<select id="batchAssetImageSize">${imageSizeOptionsHtml(currentSize)}</select></label></div>
+					<label>Custom size<input id="batchAssetCustomSize" placeholder="e.g. 1600x900" value=""></label>
+					<label>Tags<input id="batchAssetTags" placeholder="fantasy, outdoor, icon"></label>
+					<label>Description request<textarea id="batchAssetRequest" class="prompt-box" spellcheck="false" placeholder="Describe the asset items to create. This creates descriptions/prompts only; no images are generated.">${escapeHtml($('userRequest').value || '')}</textarea></label>
+					<label>Editable prompt sent to Chat model<textarea id="batchAssetPrompt" class="prompt-box" spellcheck="false"></textarea></label>
+					<div id="batchAssetStatus" class="status">Create asset item JSON first, then select rows and batch generate images.</div>
+					<pre id="batchAssetPreview" class="status ai-preview">Waiting...</pre>
+					<div class="toolbar justify-end"><button id="btnCancelBatchAsset" type="button">Cancel</button><button id="btnRunBatchAsset" class="primary" type="button">Generate asset items</button></div>
+				</div>
+			</div>`;
+			document.body.appendChild(overlay);
+			overlay.addEventListener('click', event => { if (event.target === overlay) closeBatchAssetDialog(); });
+			$('closeBatchAsset').onclick = closeBatchAssetDialog;
+			$('btnCancelBatchAsset').onclick = closeBatchAssetDialog;
+			$('batchAssetType').value = state.tool;
+			const refresh = () => { $('batchAssetPrompt').value = buildBatchAssetPrompt(); };
+			['batchAssetCount', 'batchAssetRequest', 'batchAssetCustomSize', 'batchAssetCustomGrid', 'batchAssetTags'].forEach(id => $(id).addEventListener('input', refresh));
+			['batchAssetType', 'batchAssetGrid', 'batchAssetImageSize'].forEach(id => $(id).addEventListener('change', () => {
+				if ($('batchAssetGrid').value !== 'custom') $('batchAssetCustomGrid').value = '';
+				refresh();
+			}));
+			$('btnRunBatchAsset').onclick = () => runBatchAssetGeneration().catch(error => setStatus($('batchAssetStatus'), `Batch failed: ${error.message}`, 'error'));
+			refresh();
+		}
+
+		function closeBatchAssetDialog() { $('batchAssetOverlay')?.remove(); }
+
+		function buildBatchAssetPrompt() {
+			const type = $('batchAssetType')?.value || state.tool;
+			const count = Math.max(1, Math.min(100, Number($('batchAssetCount')?.value) || 8));
+			const grid = normalizeGridText(String($('batchAssetCustomGrid')?.value || '').trim() || ($('batchAssetGrid')?.value === 'custom' ? '' : $('batchAssetGrid')?.value) || $('defaultGrid').value || '1x1');
+			const parsedGrid = parseGrid(grid);
+			const sizeValue = String($('batchAssetCustomSize')?.value || '').trim() || $('batchAssetImageSize')?.value || $('imageSize').value || '1024x1024';
+			const [width, height] = sizeValue.split('x').map(Number);
+			const size = { width: width || imageSize().width, height: height || imageSize().height };
+			const tags = splitList($('batchAssetTags')?.value || '');
+			const exampleJson = JSON.stringify({
+				assets: [{
+					id: 'snake_case_id',
+					name: 'short name',
+					type: 'character|scene|prop',
+					description: 'short output description',
+					prompt: 'detailed image generation prompt with all grid details in prose',
+					isTransparent: true,
+					dims: { width: size.width, height: size.height },
+					grid: { cols: parsedGrid.cols, rows: parsedGrid.rows },
+					tags: ['tag'],
+				}],
+			}, null, 2);
+			return [
+				'You create planning JSON for art asset items. Return strict JSON only, no markdown.',
+				'This step creates descriptions and image prompts only.',
+				`Generate exactly ${count} ${type} assets.`,
+				`Default dimensions: ${size.width}x${size.height}. Default grid: ${grid} (${parsedGrid.rows} rows x ${parsedGrid.cols} columns).`,
+				`Type guidance: ${TOOL_EXAMPLES[type]}`,
+				tags.length ? `Required tags for every asset: ${tags.join(', ')}.` : 'No required tags were specified; generate 1 or 2 concise tags for each asset.',
+				`Return shape:\n${exampleJson}`,
+				`Use grid rows=${parsedGrid.rows}, cols=${parsedGrid.cols}; put all grid details inside each asset's prompt text.`,
+				`User request:\n${$('batchAssetRequest')?.value?.trim() || 'Create a useful batch of assets.'}`,
+			].join('\n\n');
+		}
+
+		async function runBatchAssetGeneration() {
+			const sdk = state.sdk || window.keepwork;
+			if (!sdk?.aiGenerators?.chat && !sdk?.aiChat?.chat) throw new Error('当前 SDK 不支持 Chat 模型调用');
+			const model = $('chatModelSelect').value.trim();
+			if (!model) throw new Error('请先配置 Chat 模型');
+			const prompt = $('batchAssetPrompt').value.trim() || buildBatchAssetPrompt();
+			const targetType = $('batchAssetType').value || state.tool;
+			const targetGrid = parseGrid(String($('batchAssetCustomGrid')?.value || '').trim() || ($('batchAssetGrid').value === 'custom' ? '' : $('batchAssetGrid').value) || '1x1');
+			const sizeValue = String($('batchAssetCustomSize')?.value || '').trim() || $('batchAssetImageSize')?.value || $('imageSize').value || '1024x1024';
+			const [targetWidth, targetHeight] = sizeValue.split('x').map(Number);
+			const requiredTags = splitList($('batchAssetTags')?.value || '');
+			let streamedText = '';
+			setStatus($('batchAssetStatus'), `Calling Chat model: ${model}`, '');
+			const messages = [{ role: 'system', content: 'Return strict JSON only. No markdown.' }, { role: 'user', content: prompt }];
+			const onMessage = (fullText) => { streamedText = String(fullText || streamedText || ''); $('batchAssetPreview').textContent = streamedText || 'Waiting...'; };
+			let result;
+			const options = { model, stream: true, temperature: 0.78, messages, onMessage };
+			try { result = sdk.aiGenerators?.chat ? await sdk.aiGenerators.chat({ ...options, responseFormat: 'json_object' }) : await sdk.aiChat.chat(options); }
+			catch (error) {
+				if (!/response.?format|json_object/i.test(error?.message || String(error))) throw error;
+				result = sdk.aiGenerators?.chat ? await sdk.aiGenerators.chat(options) : await sdk.aiChat.chat(options);
+			}
+			const payload = extractJsonObject(extractAssistantText(result) || streamedText);
+			const assets = Array.isArray(payload.assets) ? payload.assets : Array.isArray(payload.images) ? payload.images : Array.isArray(payload) ? payload : [];
+			if (!assets.length) throw new Error('No assets returned');
+			const normalized = assets.map((asset, index) => {
+				const { imageUrl, url, ...planningAsset } = asset || {};
+				return normalizeAsset({ ...planningAsset, type: planningAsset.type || targetType, tags: [...requiredTags, ...(Array.isArray(planningAsset.tags) ? planningAsset.tags : splitList(planningAsset.tags || ''))], dims: { width: targetWidth || imageSize().width, height: targetHeight || imageSize().height }, grid: { ...(planningAsset.grid || {}), cols: Number(planningAsset.grid?.cols) || targetGrid.cols, rows: Number(planningAsset.grid?.rows) || targetGrid.rows } }, index, targetType);
+			});
+			const existingIds = new Set((state.project.assets || []).map(asset => asset.id));
+			normalized.forEach(asset => {
+				let id = asset.id;
+				for (let suffix = 2; existingIds.has(id); suffix += 1) id = `${asset.id}_${suffix}`;
+				asset.id = id;
+				existingIds.add(id);
+				state.project.assets.push(asset);
+				state.selectedAssetIds.add(id);
+			});
+			state.selectedAssetId = normalized[0]?.id || state.selectedAssetId;
+			renderProjectJson();
+			renderAssetList();
+			if (state.selectedAssetId) setAssetForm(state.project.assets.find(asset => asset.id === state.selectedAssetId));
+			$('batchAssetPreview').textContent = JSON.stringify(normalized, null, 2);
+			setStatus($('batchAssetStatus'), `Created ${normalized.length} asset item(s). They are selected for batch image generation.`, 'ok');
+			setStatus($('runStatus'), `批量新建完成：${normalized.length} 个资产描述，已自动选中，可点击 Generate selected。`, 'ok');
+		}
+
+		function projectPath(id = state.project?.project?.id) { return `${PROJECT_DIR}/${safeId(id, 'art_project')}.json`; }
+		function getWorkspaceStore() {
+			const sdk = state.sdk || window.keepwork;
+			if (!sdk?.personalPageStore) throw new Error('PersonalPageStore 不可用');
+			return typeof sdk.personalPageStore.withWorkspace === 'function' ? sdk.personalPageStore.withWorkspace(WORKSPACE) : sdk.personalPageStore;
+		}
+		async function readFile(path) {
+			const store = getWorkspaceStore();
+			try { return await store.readFile(path, 1, 10 * 1024 * 1024) || ''; }
+			catch (_) { return await store.readFile(path) || ''; }
+		}
+		async function writeFile(path, content) { await getWorkspaceStore().createFile(path, content == null ? '' : String(content)); }
+
+		async function readProjectIndex() {
+			try {
+				const parsed = JSON.parse(await readFile(INDEX_PATH) || '[]');
+				return Array.isArray(parsed) ? parsed : [];
+			} catch (_) { return []; }
+		}
+		async function writeProjectIndexEntry(project = state.project.project) {
+			const entry = { id: project.id, name: project.name, description: project.description, path: projectPath(project.id), updatedAt: nowIso() };
+			const list = await readProjectIndex();
+			const index = list.findIndex(item => item.id === entry.id);
+			if (index >= 0) list[index] = { ...list[index], ...entry };
+			else list.push(entry);
+			list.sort((a, b) => String(b.updatedAt || '').localeCompare(String(a.updatedAt || '')));
+			await writeFile(INDEX_PATH, JSON.stringify(list, null, 2));
+			return list;
+		}
+
+		function parseSimpleYaml(text) {
+			const result = {};
+			String(text || '').split(/\r?\n/).forEach(line => {
+				const clean = line.replace(/#.*$/, '').trim();
+				if (!clean) return;
+				const match = clean.match(/^([\w.-]+)\s*:\s*(.*)$/);
+				if (match) result[match[1]] = match[2].replace(/^['"]|['"]$/g, '').trim();
+			});
+			return result;
+		}
+
+		function saveCdnConfig(config, sourceLabel) {
+			try { localStorage.setItem(CDN_CONFIG_KEY, JSON.stringify({ config, configSource: sourceLabel || 'ArtAssetGenerator', savedAt: Date.now() })); }
+			catch (_) {}
+		}
+
+		function getCdnConfig() {
+			try {
+				const saved = JSON.parse(localStorage.getItem(CDN_CONFIG_KEY) || 'null');
+				const source = saved?.config || saved?.qiniu || saved;
+				if (!source?.accessKey || !source?.secretKey) return null;
+				return { accessKey: source.accessKey, secretKey: source.secretKey, bucketName: source.bucketName || CDN_DEFAULT_BUCKET, publicDomain: (source.publicDomain || CDN_DEFAULT_DOMAIN).replace(/\/+$/, ''), uploadHost: (source.uploadHost || CDN_DEFAULT_UPLOAD_HOST).replace(/\/+$/, ''), sourceLabel: saved?.configSource || 'localStorage' };
+			} catch (_) { return null; }
+		}
+
+		function updateCdnStatus() {
+			const config = getCdnConfig();
+			const folder = getCdnFolder();
+			if ($('cdnStatus')) $('cdnStatus').textContent = config ? `CDN folder: ${folder} · ${config.bucketName} · ${config.sourceLabel}` : `No CDN config loaded. Folder: ${folder}. If upload is disabled, converted WebP is stored as data URL.`;
+		}
+
+		function applyCdnConfigFromText(text, sourceLabel) {
+			const parsed = parseSimpleYaml(text);
+			const source = parsed.qiniu || parsed;
+			if (!source.accessKey || !source.secretKey) throw new Error('CDN config missing accessKey or secretKey');
+			saveCdnConfig({ accessKey: source.accessKey, secretKey: source.secretKey, bucketName: source.bucketName || CDN_DEFAULT_BUCKET, publicDomain: source.publicDomain || CDN_DEFAULT_DOMAIN, uploadHost: source.uploadHost || CDN_DEFAULT_UPLOAD_HOST }, sourceLabel || 'qiniu.yaml');
+			updateCdnStatus();
+		}
+
+		function pickCdnConfigFile() {
+			const input = $('cdnConfigInput');
+			input.onchange = async () => {
+				try {
+					const file = input.files?.[0];
+					if (file) applyCdnConfigFromText(await file.text(), file.name);
+					setStatus($('runStatus'), 'CDN config loaded.', 'ok');
+				} catch (error) { setStatus($('runStatus'), `CDN config failed: ${error.message}`, 'error'); }
+				finally { input.value = ''; }
+			};
+			input.click();
+		}
+
+		function getCdnFolder() { return String($('cdnFolder')?.value || `artassets/${safeId(state.project?.project?.id || 'project')}`).trim().replace(/^\/+|\/+$/g, '') || 'artassets'; }
+		function base64UrlSafe(buffer) {
+			const bytes = buffer instanceof ArrayBuffer ? new Uint8Array(buffer) : buffer;
+			let binary = '';
+			for (const byteValue of bytes) binary += String.fromCharCode(byteValue);
+			return btoa(binary).replace(/\+/g, '-').replace(/\//g, '_');
+		}
+		async function signCdnUploadToken(config, remoteKey) {
+			const deadline = Math.floor(Date.now() / 1000) + 3600;
+			const encodedPolicy = btoa(JSON.stringify({ scope: `${config.bucketName}:${remoteKey}`, deadline })).replace(/\+/g, '-').replace(/\//g, '_');
+			const cryptoKey = await crypto.subtle.importKey('raw', new TextEncoder().encode(config.secretKey), { name: 'HMAC', hash: 'SHA-1' }, false, ['sign']);
+			const signature = await crypto.subtle.sign('HMAC', cryptoKey, new TextEncoder().encode(encodedPolicy));
+			return `${config.accessKey}:${base64UrlSafe(signature)}:${encodedPolicy}`;
+		}
+		function getCdnFileName(asset, extension = 'webp') { return `${safeId(asset?.id || 'asset')}_${new Date().toISOString().replace(/[-:.TZ]/g, '').slice(0, 14)}.${extension}`; }
+		async function uploadBlobToCdn(blob, asset) {
+			const config = getCdnConfig();
+			if (!config) throw new Error('No CDN config loaded');
+			const remoteKey = `${getCdnFolder()}/${getCdnFileName(asset, 'webp')}`;
+			const token = await signCdnUploadToken(config, remoteKey);
+			const form = new FormData();
+			form.append('token', token);
+			form.append('key', remoteKey);
+			form.append('file', blob, remoteKey.split('/').pop());
+			const response = await fetch(config.uploadHost, { method: 'POST', body: form });
+			if (!response.ok) throw new Error(`CDN upload failed: ${response.status} ${await response.text()}`);
+			const result = await response.json().catch(() => ({}));
+			const key = result.key || remoteKey;
+			return `${config.publicDomain}/${key}`;
+		}
+
+		function loadImage(url) {
+			return new Promise((resolve, reject) => {
+				const img = new Image();
+				if (!String(url).startsWith('data:')) img.crossOrigin = 'anonymous';
+				img.onload = () => resolve(img);
+				img.onerror = () => reject(new Error('Image load failed'));
+				img.src = url;
+			});
+		}
+		function canvasToBlob(canvas, type = 'image/webp', quality = 0.82) { return new Promise((resolve, reject) => canvas.toBlob(blob => blob ? resolve(blob) : reject(new Error('Canvas export failed')), type, quality)); }
+		function blobToDataUrl(blob) { return new Promise((resolve, reject) => { const reader = new FileReader(); reader.onload = () => resolve(String(reader.result || '')); reader.onerror = () => reject(reader.error || new Error('Data URL conversion failed')); reader.readAsDataURL(blob); }); }
+		function formatBytes(bytes) { const value = Number(bytes) || 0; return value < 1024 ? `${value} B` : `${(value / 1024).toFixed(value < 10240 ? 1 : 0)} KB`; }
+		async function createWebpBlobFromUrl(url, options = {}) {
+			const img = await loadImage(url);
+			const sourceWidth = img.naturalWidth || img.width;
+			const sourceHeight = img.naturalHeight || img.height;
+			const maxEdge = Math.max(32, Number(options.maxEdge) || Math.max(sourceWidth, sourceHeight));
+			const scale = Math.min(1, maxEdge / Math.max(sourceWidth, sourceHeight));
+			const width = Math.max(1, Math.round(sourceWidth * scale));
+			const height = Math.max(1, Math.round(sourceHeight * scale));
+			const canvas = document.createElement('canvas');
+			canvas.width = width;
+			canvas.height = height;
+			const ctx = canvas.getContext('2d');
+			if (!ctx) throw new Error('Canvas unavailable');
+			ctx.clearRect(0, 0, width, height);
+			ctx.imageSmoothingEnabled = true;
+			ctx.imageSmoothingQuality = 'high';
+			ctx.drawImage(img, 0, 0, width, height);
+			const minBytes = Math.max(1, Number(options.minKb || 0) * 1024);
+			const maxBytes = Math.max(minBytes, Number(options.maxKb || 100) * 1024);
+			const qualities = [0.92, 0.84, 0.76, 0.68, 0.6, 0.52, 0.44, 0.36, 0.28, 0.2, 0.14, 0.09, 0.05];
+			let best = null;
+			for (const quality of qualities) {
+				const blob = await canvasToBlob(canvas, 'image/webp', quality);
+				const candidate = { blob, width, height, quality };
+				if (!best || Math.abs(blob.size - maxBytes) < Math.abs(best.blob.size - maxBytes)) best = candidate;
+				if (blob.size <= maxBytes && blob.size >= minBytes) return candidate;
+				if (blob.size <= maxBytes && !best.withinMax) best = { ...candidate, withinMax: true };
+			}
+			if (best?.blob?.size <= maxBytes || !minBytes) return best;
+			throw new Error(`WebP size ${formatBytes(best?.blob?.size || 0)} outside target ${options.minKb}-${options.maxKb} KB`);
+		}
+
+		async function convertAssetToWebp(assetInput, { silent = false } = {}) {
+			const asset = normalizeAsset(assetInput, 0, assetInput?.type || state.tool);
+			if (!asset.imageUrl) throw new Error(`${asset.id} has no imageUrl`);
+			const webp = await createWebpBlobFromUrl(asset.imageUrl, { minKb: $('webpMinKb').value, maxKb: $('webpMaxKb').value, maxEdge: $('webpMaxEdge').value });
+			const historyUrls = [asset.imageUrl, ...(asset.historyUrls || [])].filter(Boolean);
+			asset.imageUrl = $('uploadWebpToCdn').checked ? await uploadBlobToCdn(webp.blob, asset) : await blobToDataUrl(webp.blob);
+			asset.historyUrls = [...new Set(historyUrls.filter(url => url !== asset.imageUrl))].slice(0, 24);
+			asset.isTransparent = true;
+			asset.dims = { width: webp.width, height: webp.height };
+			const index = state.project.assets.findIndex(item => item.id === asset.id);
+			if (index >= 0) state.project.assets[index] = asset;
+			if (asset.id === state.selectedAssetId) setAssetForm(asset);
+			renderProjectJson();
+			renderAssetList();
+			if (!silent) setStatus($('runStatus'), `WebP converted: ${asset.id} · ${webp.width}x${webp.height} · ${formatBytes(webp.blob.size)}`, 'ok');
+			return asset;
+		}
+
+		async function batchConvertSelectedWebp() {
+			if (state.batchWebp?.running) {
+				state.batchWebp.stopRequested = true;
+				updateSelectionControls();
+				setStatus($('runStatus'), '收到停止请求，当前 WebP 转换完成后停止。', '');
+				return;
+			}
+			const queue = getSelectedAssets().map(asset => clone(asset));
+			if (!queue.length) return;
+			state.batchWebp = { running: true, stopRequested: false, total: queue.length, done: 0 };
+			updateSelectionControls();
+			try {
+				for (const asset of queue) {
+					if (state.batchWebp.stopRequested) break;
+					setStatus($('runStatus'), `批量转换 WebP ${state.batchWebp.done + 1}/${queue.length}：${asset.name || asset.id}`, '');
+					const converted = await convertAssetToWebp(asset, { silent: true });
+					state.selectedAssetIds.delete(converted.id);
+					state.batchWebp.done += 1;
+					updateSelectionControls();
+				}
+				setStatus($('runStatus'), state.batchWebp.stopRequested ? `WebP 批量转换已停止：完成 ${state.batchWebp.done}/${state.batchWebp.total}` : `WebP 批量转换完成：${state.batchWebp.done}/${state.batchWebp.total}`, 'ok');
+			} finally {
+				state.batchWebp = null;
+				renderAssetList();
+				updateSelectionControls();
+			}
+		}
+
+		async function refreshProjects() {
+			if (!(state.sdk || window.keepwork)?.personalPageStore) return;
+			const list = await readProjectIndex();
+			state.projects = list;
+			renderStartProjectList(list);
+			setStatus($('runStatus'), `项目列表已刷新：${list.length} projects in ${WORKSPACE}.`, 'ok');
+			setStartStatus(`Found ${list.length} project file(s).`, 'ok');
+		}
+
+		async function autoOpenLastProject() {
+			const draft = loadLocalDraft();
+			const path = draft.lastProjectPath || '';
+			if (!path) return false;
+			try {
+				setStartStatus(`Opening last project: ${fileNameFromPath(path)}...`, '');
+				await loadSelectedProject(path);
+				hideStartScreen();
+				setStartStatus(`Opened ${fileNameFromPath(path)}.`, 'ok');
+				return true;
+			} catch (error) {
+				setStartStatus(`Could not auto-open last project (${fileNameFromPath(path)}): ${error.message}`, 'error');
+				return false;
+			}
+		}
+
+		function fileNameFromPath(path = '') {
+			return String(path || '').replace(/\\/g, '/').split('/').pop() || String(path || '');
+		}
+
+		function renderStartProjectList(list = state.projects) {
+			const root = $('startProjectList');
+			if (!root) return;
+			root.innerHTML = list.length ? list.map(item => {
+				const path = item.path || projectPath(item.id);
+				return `<button type="button" class="project-file-item" data-start-open-path="${escapeHtml(path)}"><span><strong>${escapeHtml(fileNameFromPath(path))}</strong><span>${escapeHtml(path)}</span></span><span class="pill">Open</span></button>`;
+			}).join('') : '<div class="hint p-2.5">No saved project files yet. Create a new one below.</div>';
+			root.querySelectorAll('[data-start-open-path]').forEach(button => button.onclick = () => openProjectFromStart(button.dataset.startOpenPath));
+		}
+
+		async function openProjectFromStart(path) {
+			try {
+				setStartStatus(`Loading ${fileNameFromPath(path)}...`, '');
+				await loadSelectedProject(path);
+				hideStartScreen();
+			} catch (error) {
+				setStartStatus(`Load failed: ${error.message}`, 'error');
+			}
+		}
+
+		function createProjectFromStart() {
+			const id = safeId($('startNewProjectId').value, 'art_project');
+			const project = defaultProject();
+			project.project.id = id;
+			project.project.name = $('startNewProjectName').value.trim() || id;
+			applyProjectToForm(project);
+			hideStartScreen();
+			setStatus($('runStatus'), `已创建新项目草稿：${project.project.id}。点击 File > Save 保存到 ${WORKSPACE}.`, 'ok');
+		}
+
+		async function saveProject() {
+			const data = normalizeProject(JSON.parse($('projectJson').value || '{}'));
+			state.project = data;
+			updateProjectFromForm();
+			const path = projectPath(data.project.id);
+			await writeFile(path, JSON.stringify(data, null, 2));
+			await writeProjectIndexEntry(data.project);
+			state.lastProjectPath = path;
+			await refreshProjects();
+			applyProjectToForm(data);
+			setStatus($('runStatus'), `已保存项目：${WORKSPACE}/${path}`, 'ok');
+		}
+
+		async function loadSelectedProject(pathOverride = '') {
+			const path = pathOverride || projectPath();
+			if (!path) return;
+			const text = await readFile(path);
+			if (!text) throw new Error(`Project file is empty or missing: ${path}`);
+			applyProjectToForm(JSON.parse(text));
+			state.lastProjectPath = path;
+			saveLocalDraft();
+			setStatus($('runStatus'), `已加载项目：${WORKSPACE}/${path}`, 'ok');
+		}
+
+		function applyJson() {
+			try {
+				const data = normalizeProject(JSON.parse($('projectJson').value || '{}'));
+				applyProjectToForm(data);
+				setStatus($('runStatus'), 'JSON 已应用到项目。', 'ok');
+			} catch (error) { setStatus($('runStatus'), `JSON 应用失败：${error.message}`, 'error'); }
+		}
+
+		async function copyJson() {
+			await navigator.clipboard.writeText(JSON.stringify(buildOutputJson(), null, 2));
+			setStatus($('runStatus'), '已复制输出 JSON（id,imageUrl,rows,columns,isTransparent,description,imageWidth,imageHeight）。', 'ok');
+		}
+		function downloadJson() {
+			const blob = new Blob([JSON.stringify(buildOutputJson(), null, 2)], { type: 'application/json;charset=utf-8' });
+			const url = URL.createObjectURL(blob);
+			const a = document.createElement('a');
+			a.href = url;
+			a.download = `${safeId(state.project?.project?.id || 'art_project')}_output.json`;
+			document.body.appendChild(a);
+			a.click();
+			a.remove();
+			setTimeout(() => URL.revokeObjectURL(url), 500);
+		}
+
+		function saveLocalDraft() {
+			try {
+				localStorage.setItem(STORAGE_KEY, JSON.stringify({ project: state.project, tool: state.tool, selectedAssetId: state.selectedAssetId, lastProjectPath: state.lastProjectPath || projectPath() }));
+			} catch (_) {}
+		}
+		function loadLocalDraft() {
+			try { return JSON.parse(localStorage.getItem(STORAGE_KEY) || '{}') || {}; }
+			catch (_) { return {}; }
+		}
+		function saveSettings() {
+			if (state.project?.project) {
+				state.project.project.models = state.project.project.models && typeof state.project.project.models === 'object' ? state.project.project.models : { chat: '', image: '' };
+				state.project.project.models.chat = $('chatModelSelect').value || '';
+				state.project.project.models.image = $('imageModelSelect').value || '';
+				rememberToolSettings();
+				renderProjectJson();
+			}
+			try {
+				localStorage.setItem(SETTINGS_KEY, JSON.stringify({ chatModel: $('chatModelSelect').value, imageModel: $('imageModelSelect').value, imageSize: $('imageSize').value, defaultGrid: $('defaultGrid').value }));
+			} catch (_) {}
+		}
+		function loadSettings() {
+			try { return JSON.parse(localStorage.getItem(SETTINGS_KEY) || '{}') || {}; }
+			catch (_) { return {}; }
+		}
+
+		function getSdkCandidates() {
+			const params = new URLSearchParams(window.location.search);
+			const explicitSdk = params.get('sdk');
+			const hostname = window.location.hostname;
+			const isLocalHost = !hostname || hostname === 'localhost' || hostname === '127.0.0.1' || hostname === '::1';
+			const localCandidates = ['../../../../../keepworkSDK/index.js', '/keepworkSDK/index.js'];
+			const deployedCandidates = [SDK_CDN_URL, 'https://keepwork.com/public/resource/keepworkSDK.iife.js'];
+			return [explicitSdk, ...(isLocalHost || window.location.protocol === 'file:' ? localCandidates : []), ...deployedCandidates, ...(isLocalHost || window.location.protocol === 'file:' ? [] : localCandidates)].filter(Boolean);
+		}
+		function loadScript(src) {
+			return new Promise((resolve, reject) => {
+				const existing = [...document.scripts].find(script => script.src === src);
+				if (existing) {
+					existing.addEventListener('load', resolve, { once: true });
+					existing.addEventListener('error', reject, { once: true });
+					return;
+				}
+				const script = document.createElement('script');
+				script.src = src;
+				script.onload = resolve;
+				script.onerror = reject;
+				document.head.appendChild(script);
+			});
+		}
+		function importRuntimeModule(src) { return new Function('src', 'return import(src)')(src); }
+		async function loadSdk() {
+			let lastError = null;
+			for (const url of getSdkCandidates()) {
+				try {
+					if (/(^|\/)index\.js(?:[?#].*)?$/.test(url)) await importRuntimeModule(url);
+					else await loadScript(url);
+					if (window.keepwork) {
+						state.sdk = window.keepwork;
+						$('sdkState').textContent = 'SDK ready';
+						await populateModelDropdowns();
+						await refreshLoginState();
+						await refreshProjects().catch(() => {});
+						await autoOpenLastProject();
+						if ($('startProjectList')?.textContent.includes('Loading project files')) renderStartProjectList(state.projects);
+						return;
+					}
+				} catch (error) { lastError = error; }
+			}
+			$('sdkState').textContent = 'SDK failed';
+			if ($('startSdkState')) $('startSdkState').textContent = `SDK failed: ${lastError?.message || lastError || 'unknown'}`;
+			renderStartProjectList([]);
+			setStartStatus('SDK failed. You can still create a local draft, but saving requires KeepworkSDK.', 'error');
+			setStatus($('loginState'), `KeepworkSDK 加载失败：${lastError?.message || lastError || 'unknown'}`, 'error');
+		}
+
+		async function refreshLoginState() {
+			const sdk = state.sdk || window.keepwork;
+			if (!sdk) return;
+			let username = sdk.user?.username || '';
+			if (sdk.token && !username) {
+				try {
+					const user = typeof sdk.getUserProfile === 'function' ? await sdk.getUserProfile() : await sdk.getCurrentUser?.();
+					username = user?.username || sdk.user?.username || '';
+				} catch (_) {}
+			}
+			const loginState = $('loginState');
+			loginState.classList.toggle('error', false);
+			loginState.classList.toggle('ok', !!sdk.token);
+			loginState.innerHTML = sdk.token
+				? `已登录：<button id="btnProfile" class="status-action" type="button">${escapeHtml(username || 'Keepwork 用户')}</button>`
+				: '<button id="btnProfile" class="status-action" type="button">未登录</button>。可点击登录，或使用 localAPI。';
+			if ($('startSdkState')) $('startSdkState').textContent = sdk.token ? `SDK ready. Logged in as ${username || 'Keepwork user'}.` : 'SDK ready. You can still use local API settings, or log in to sync projects.';
+			$('btnProfile').onclick = openLoginOrProfile;
+		}
+		async function openLoginOrProfile() {
+			const sdk = state.sdk || window.keepwork;
+			if (!sdk) return;
+			if (!sdk.token) {
+				if (sdk.loginWindow?.show) sdk.loginWindow.show({ onLogin: refreshLoginState });
+				else if (sdk.login) await sdk.login();
+				setTimeout(refreshLoginState, 600);
+				return;
+			}
+			if (typeof sdk.showProfileWindow === 'function') await sdk.showProfileWindow();
+			else if (sdk.profileWindow?.show) await sdk.profileWindow.show();
+			await refreshLoginState();
+		}
+		async function populateModelDropdowns() {
+			const sdk = state.sdk || window.keepwork;
+			if (!sdk?.localAPIKeySettings?.listModels) return;
+			await sdk.localAPIKeySettings.load?.();
+			const settings = loadSettings();
+			const projectModels = state.project?.project?.models || {};
+			const render = (select, category, remembered) => {
+				const models = sdk.localAPIKeySettings.listModels(category).filter(model => model.enabled !== false);
+				select.innerHTML = models.length ? models.map(model => {
+					const value = model.name || model.modelId || '';
+					const label = model.modelId && model.modelId !== value ? `${value} (${model.modelId})` : value;
+					return `<option value="${escapeHtml(value)}">${escapeHtml(label)}</option>`;
+				}).join('') : `<option value="">No ${category} models</option>`;
+				select.disabled = !models.length;
+				if (remembered && models.some(model => (model.name || model.modelId || '') === remembered)) select.value = remembered;
+			};
+			render($('chatModelSelect'), 'Chat', projectModels.chat || settings.chatModel);
+			render($('imageModelSelect'), 'Image', projectModels.image || settings.imageModel);
+			if (settings.imageSize) $('imageSize').value = settings.imageSize;
+			if (settings.defaultGrid) $('defaultGrid').value = settings.defaultGrid;
+			applyToolSettings(state.tool);
+		}
+
+		function setTool(tool) {
+			rememberToolSettings();
+			state.tool = tool;
+			applyToolSettings(tool);
+			document.querySelectorAll('[data-tool]').forEach(button => button.classList.toggle('active', button.dataset.tool === tool));
+			$('toolHint').textContent = TOOL_HINTS[tool];
+			$('userRequest').placeholder = TOOL_EXAMPLES[tool];
+			renderProjectJson();
+			renderAssetList();
+			refreshFinalPrompt();
+		}
+
+		function wireEvents() {
+			document.querySelectorAll('[data-tool]').forEach(button => button.onclick = () => setTool(button.dataset.tool));
+			$('btnStartRefresh').onclick = () => refreshProjects().catch(error => setStartStatus(`Refresh failed: ${error.message}`, 'error'));
+			$('btnStartClose').onclick = () => {
+				if (state.project) hideStartScreen();
+				else createProjectFromStart();
+			};
+			$('btnStartCreate').onclick = createProjectFromStart;
+			$('btnFileOpen').onclick = () => showStartScreen();
+			$('btnFileNew').onclick = () => showStartScreen();
+			$('btnFileSave').onclick = () => saveProject().catch(error => setStatus($('runStatus'), `保存失败：${error.message}`, 'error'));
+			$('currentFileLabel').onclick = () => openWorkspaceViewer(projectPath());
+			$('btnLocalApi').onclick = async () => {
+				const settings = (state.sdk || window.keepwork)?.localAPIKeySettings;
+				if (!settings?.show) return setStatus($('loginState'), '当前 SDK 不支持本地 API Key 设置。', 'error');
+				await settings.load?.();
+				settings.show({ title: '本地 API Key 设置', fullscreen: true, onSave: populateModelDropdowns });
+			};
+			$('btnRefreshProjects').onclick = () => refreshProjects().catch(error => setStatus($('runStatus'), `刷新失败：${error.message}`, 'error'));
+			$('btnBuildPrompt').onclick = () => { refreshFinalPrompt({ force: true }); setStatus($('runStatus'), '已构建 LLM prompt。', 'ok'); };
+			$('btnApplyJson').onclick = applyJson;
+			$('btnCopyJson').onclick = () => copyJson().catch(error => setStatus($('runStatus'), `复制失败：${error.message}`, 'error'));
+			$('btnDownloadJson').onclick = downloadJson;
+			$('btnAddAsset').onclick = openBatchAssetDialog;
+			$('assetSelectAll').addEventListener('change', () => setVisibleAssetSelection($('assetSelectAll').checked));
+			$('btnDeleteSelected').onclick = deleteSelectedAssets;
+			$('btnBatchGenerateImages').onclick = () => batchGenerateSelectedImages().catch(error => setStatus($('runStatus'), `批量生成失败：${error.message}`, 'error'));
+			$('btnConvertSelectedWebp').onclick = () => batchConvertSelectedWebp().catch(error => setStatus($('runStatus'), `WebP 转换失败：${error.message}`, 'error'));
+			$('btnCdnConfig').onclick = pickCdnConfigFile;
+			$('cdnFolder').addEventListener('input', updateCdnStatus);
+			$('btnUpsertAsset').onclick = () => { try { upsertAsset(); } catch (error) { setStatus($('runStatus'), error.message, 'error'); } };
+			$('btnGenerateImage').onclick = () => generateImageForSelectedAsset().catch(error => setStatus($('runStatus'), `图片生成失败：${error.message}`, 'error'));
+			$('btnDeleteAsset').onclick = () => deleteAsset();
+			$('assetSearch').addEventListener('input', renderAssetList);
+			$('projectJson').addEventListener('input', saveLocalDraft);
+			$('finalPrompt').addEventListener('input', () => { $('finalPrompt').dataset.edited = '1'; });
+			['userRequest', 'defaultGrid'].forEach(id => $(id).addEventListener('input', () => refreshFinalPrompt()));
+			$('imageSize').addEventListener('change', () => refreshFinalPrompt());
+			$('backgroundColorMode').addEventListener('change', () => refreshFinalPrompt());
+			['chatModelSelect', 'imageModelSelect', 'imageSize', 'defaultGrid', 'backgroundColorMode'].forEach(id => $(id).addEventListener('change', saveSettings));
+			['assetId', 'assetName', 'assetImageUrl', 'assetDescription', 'assetWidth', 'assetHeight', 'assetGrid'].forEach(id => $(id).addEventListener('input', () => {
+				try {
+					const asset = assetFromForm();
+					const index = (state.project.assets || []).findIndex(item => item.id === state.selectedAssetId || item.id === asset.id);
+					if (index >= 0) state.project.assets[index] = asset;
+					state.selectedAssetId = asset.id;
+					renderProjectJson();
+					renderAssetList();
+					renderPreview();
+				} catch (_) {}
+			}));
+			$('assetTransparent').addEventListener('change', () => {
+				try {
+					const asset = assetFromForm();
+					const index = (state.project.assets || []).findIndex(item => item.id === state.selectedAssetId || item.id === asset.id);
+					if (index >= 0) state.project.assets[index] = asset;
+					state.selectedAssetId = asset.id;
+					renderProjectJson();
+					renderAssetList();
+					renderPreview();
+				} catch (_) {}
+			});
+		}
+
+		function init() {
+			wireEvents();
+			updateCdnStatus();
+			const draft = loadLocalDraft();
+			state.tool = draft.tool || 'character';
+			state.lastProjectPath = draft.lastProjectPath || '';
+			applyProjectToForm(draft.project || defaultProject());
+			if (draft.selectedAssetId) state.selectedAssetId = draft.selectedAssetId;
+			setTool(state.tool);
+			$('userRequest').placeholder = TOOL_EXAMPLES[state.tool];
+			refreshFinalPrompt({ force: true });
+			loadSdk();
+		}
+
+		init();
+	</script>
+</body>
+</html>
