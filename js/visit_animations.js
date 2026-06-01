@@ -11,6 +11,7 @@ let stylesInjected = false;
 // so the hand-off reads as a continuous zoom from take-off straight into landing.
 let _visitBlackout = null;
 let _visitBlackoutTimer = 0;
+let _visitSkipArrivalAfterDeparture = false;
 
 function showVisitBlackout() {
     if (!_visitBlackout) {
@@ -636,6 +637,11 @@ function welcomeLineupHtml(members = []) {
 
 function playVisitAnimation({ kind, title, subtitle, caption, pets = [], gift = '', welcomePet = null } = {}) {
     injectVisitAnimationStyles();
+    if (kind === 'arrival' && _visitSkipArrivalAfterDeparture) {
+        _visitSkipArrivalAfterDeparture = false;
+        hideVisitBlackout();
+        return Promise.resolve();
+    }
     // Arrival shows everyone: our crew (welcoming guests) + the friend's pet (host).
     const welcomeMembers = kind === 'arrival'
         ? [
@@ -667,9 +673,13 @@ function playVisitAnimation({ kind, title, subtitle, caption, pets = [], gift = 
                 ${kind === 'departure' || kind === 'arrival' ? '<div class="visit-iris" aria-hidden="true"></div>' : ''}
             </div>`;
             let done = false;
+            let skipButtonClicked = false;
             const finish = () => {
                 if (done) return;
                 done = true;
+                if (kind === 'departure' && skipButtonClicked) {
+                    _visitSkipArrivalAfterDeparture = true;
+                }
                 // Departure is always followed by arrival. Drop a full-screen black cover
                 // BEFORE removing this mask so the planet/home background never flashes
                 // through during the hand-off; arrival removes it once its zoom reveal runs.
@@ -677,7 +687,10 @@ function playVisitAnimation({ kind, title, subtitle, caption, pets = [], gift = 
                 mask.remove();
                 resolve();
             };
-            mask.querySelector('[data-skip-visit-animation]')?.addEventListener('click', finish);
+            mask.querySelector('[data-skip-visit-animation]')?.addEventListener('click', () => {
+                skipButtonClicked = true;
+                finish();
+            });
             const card = mask.querySelector('.visit-animation-card');
             // Suppress transforms while we measure true layout positions.
             if (kind === 'departure') card?.classList.add('visit-measuring');

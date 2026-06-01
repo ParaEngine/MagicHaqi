@@ -528,65 +528,6 @@ async function resolveFriendPlanetForVisit(friend) {
     };
 }
 
-function formatChineseDate(date) {
-    return `${date.getFullYear()}年${date.getMonth() + 1}月${date.getDate()}日`;
-}
-
-function formatVisitMailContent({ recipientName, senderName, planetName, petName, message }) {
-    return [
-        `亲爱的 ${recipientName || '好友'},`,
-        '',
-        `${petName || '我的宠物'}刚刚拜访了${planetName || '你的星球'}。`,
-        message ? `留言：${message}` : '这次星际拜访很开心，期待下次再见。',
-        '',
-        `来自：${senderName || '蛋蛋星球好友'}`,
-        formatChineseDate(new Date()),
-    ].join('\n');
-}
-
-function getShareUsername() {
-    const direct = state.user?.username || state.sdk?.user?.username;
-    if (direct) return Promise.resolve(direct);
-    return state.sdk?.getUsername?.().catch?.(() => '') || Promise.resolve('');
-}
-
-async function askAndSendVisitMessage(visit, pet) {
-    const toUsername = safeRemoteUsername(visit?.friendUsername || visit?.friendName);
-    const toUserId = visit?.friendUserId || '';
-    if ((!toUsername && !toUserId) || !state.sdk?.socialFriends?.sendMail) return;
-    const message = await prompt('给好友留言', {
-        hint: `给 ${visit?.friendName || toUsername} 留一句星球拜访后的话。留空可跳过。`,
-        placeholder: '今天的星球很漂亮，下次再来玩。',
-        okText: '发送留言',
-        cancelText: '跳过',
-        maxLength: 120,
-        dismissable: true,
-    });
-    if (!message) return;
-    const senderName = (await getShareUsername()) || state.user?.username || '蛋蛋星球好友';
-    const content = formatVisitMailContent({
-        recipientName: visit?.friendName || toUsername,
-        senderName,
-        planetName: visit?.planetName,
-        petName: displayPetName(pet),
-        message,
-    });
-    try {
-        await state.sdk.socialFriends.sendMail({
-            toUserId,
-            toUsername,
-            subject: '蛋蛋星球拜访留言',
-            title: '蛋蛋星球拜访留言',
-            content,
-            html: content,
-        });
-        showToast('拜访留言已通过邮件发送给好友。', 'success', 2200);
-    } catch (e) {
-        console.warn('发送拜访留言失败', e);
-        showToast('留言发送失败，请稍后再试。', 'error', 2600);
-    }
-}
-
 export function getRemoteElementStock(remote) {
     const stocks = state.remoteElementStocks || {};
     return Math.max(0, Math.min(REMOTE_ELEMENT_MAX_TONS, Number(stocks[remote.id]) || 0));
@@ -939,7 +880,6 @@ async function completeFriendVisitReturn(pet) {
     const visit = state.visitingMode;
     if (!visit?.active || visit.returning) return;
     visit.returning = true;
-    const completedVisit = { ...visit };
     const friendPet = visit.friendPet || createFallbackFriendPet(visit.friendName || '好友');
     const gift = UFO_REWARDS[(Date.now() + String(visit.friendId || '').length) % UFO_REWARDS.length];
     const seenCrew = new Set();
@@ -967,7 +907,6 @@ async function completeFriendVisitReturn(pet) {
     soundManager.playSpacecraftArrive();
     showToast('返航完成！好友宠物送来的随机礼盒已放入背包。', 'success', 3200);
     notify();
-    await askAndSendVisitMessage(completedVisit, pet);
 }
 
 export function showVisitReturnPrompt(pet, ctx) {

@@ -1554,6 +1554,15 @@
     display: flex;
     flex-direction: column;
     overflow: hidden;
+    /* The .modal-mask applies zoom: var(--mh-app-scale); vh/dvh units resolve
+       in the un-zoomed layout space, so divide by the scale to keep the card
+       inside the visible (zoomed) viewport and avoid top/bottom clipping. */
+    max-height: calc((100vh - 16px) / var(--mh-app-scale, 1));
+    max-height: calc((100dvh - 16px) / var(--mh-app-scale, 1));
+}
+.modal-card.planet-milestone-card {
+    max-height: calc((100vh - 16px) / var(--mh-app-scale, 1));
+    max-height: calc((100dvh - 16px) / var(--mh-app-scale, 1));
 }
 .planet-modal-title {
     color: var(--text-primary);

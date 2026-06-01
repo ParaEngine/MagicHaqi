@@ -147,15 +147,35 @@ function defaultHomeZoomLevel() {
     return getDefaultZoomLevelIndex(currentZoomOptions());
 }
 
+// 拜访的是官方 / 名人星球（而非真实好友用户）时为 true。
+// 这类星球没有真实用户账号，因此只暴露到「星球」层（不进入宠物房间 / 细胞）。
+function isNonUserPlanetVisit() {
+    if (!isVisitingMode()) return false;
+    const visit = state.visitingMode;
+    if (visit?.officialPlanetId) return true;
+    return !visit?.friendUserId && !visit?.friendUsername;
+}
+
+// 拜访时可进入的最高缩放层：好友（真实用户）到「家」(2)，官方/名人星球只到「星球」(1)。
+function maxVisitingZoomLevel() {
+    return isNonUserPlanetVisit() ? 1 : 2;
+}
+
 function visibleZoomLevels() {
     let indices = getVisibleZoomLevelIndices(currentZoomOptions());
-    if (isVisitingMode()) indices = indices.filter(index => index <= 2);
+    if (isVisitingMode()) {
+        const maxLevel = maxVisitingZoomLevel();
+        indices = indices.filter(index => index <= maxLevel);
+    }
     return indices.length ? indices : getVisibleZoomLevelIndices({});
 }
 
 function resolveHomeZoomLevel(target, from = state.zoomLevel) {
     let resolved = resolveZoomLevelIndex(target, currentZoomOptions(), from);
-    if (isVisitingMode() && resolved > 2) resolved = resolveZoomLevelIndex(2, currentZoomOptions(), from);
+    if (isVisitingMode()) {
+        const maxLevel = maxVisitingZoomLevel();
+        if (resolved > maxLevel) resolved = resolveZoomLevelIndex(maxLevel, currentZoomOptions(), from);
+    }
     return resolved;
 }
 
@@ -1422,10 +1442,14 @@ function handleCompanionPetTouch(petEl, pet = __lastPet) {
 // =============================================================================
 function requestZoomLevel(target) {
     if (isDecorZoomLocked()) return;
+    const requested = resolveZoomLevelIndex(target, currentZoomOptions(), state.zoomLevel);
     const to = resolveHomeZoomLevel(target, state.zoomLevel);
     if (isVisitingMode()) {
-        if (to > 2) {
-            showToast('拜访好友时只能在星球表面和宠物房间活动。', 'info', 1800);
+        const maxLevel = maxVisitingZoomLevel();
+        if (requested > maxLevel) {
+            showToast(isNonUserPlanetVisit()
+                ? '参观官方星球时只能在星球表面活动。'
+                : '拜访好友时只能在星球表面和宠物房间活动。', 'info', 1800);
             forceBestCameraDistance();
             return;
         }
