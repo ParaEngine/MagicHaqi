@@ -398,6 +398,13 @@ export const zhCN = {
     fieldTree: '神树',
     fieldCave: '洞穴',
     fieldThunder: '雷云',
+
+    // 房间名称
+    roomBedroom: '卧室',
+    roomKitchen: '厨房',
+    roomBath: '浴室',
+    roomLiving: '客厅',
+    roomGarden: '花园',
     terrainTitle: '星球地貌', terrainReset: '重置', terrainResetDone: '地貌已重置', terrainReadonly: '官方星球的地貌不能修改。',
     terrainTapToPlace: '点击上方格子即可放入', terrainSelectFirst: '先选择或拖动一个地貌类型',
     // 星际移民（view_star_settlements）
@@ -548,6 +555,38 @@ export const zhCN = {
     cellStatusTrauma: '当前状态：永久精神伤害 {count}/{max}',
     cellStatusNormal: '当前状态：体内正常',
     cellStatus: '当前状态：{sickness} {level}/10',
+    cellDietHintBoth: 'DNA 提示：这只宠物是杂食，{kind}也喜欢。',
+    cellDietHintPref: 'DNA 提示：这只宠物偏爱{preference}食物。',
+    cellDietFloatAria: '{label} DNA 食物提示',
+    cellWishOnlyEgg: '许愿只在蛋阶段可用',
+    cellWishTitle: '🌠 为这颗蛋许愿',
+    cellWishPlaceholder: '例如：龙宝宝,眼睛是星星眼…（最多 {max} 字)',
+    cellWishRefEmpty: '可选：添加一张参考图片，让孵化外观更接近你的想法。',
+    cellWishRefAlt: '参考图片预览',
+    cellWishPickImage: '参考图片',
+    cellWishRemoveImage: '移除图片',
+    cellWishClear: '清除',
+    cellWishSave: '保存许愿',
+    cellWishRefAdded: '已添加参考图片',
+    cellWishRefFailed: '添加参考图片失败',
+    cellWishSaved: '已记录你的许愿 ✨',
+    cellWishCleared: '已清除许愿',
+    cellWishSelectImage: '请选择图片文件',
+    cellWishReadFailed: '读取图片失败',
+    cellWishPreviewFailed: '图片格式无法预览',
+    cellWishCompressFailed: '无法压缩图片',
+    cellDockChat: '对话',
+    cellDockTreat: '治疗',
+    cellDockTreatTitle: '启动细胞免疫塔防治疗疾病',
+    cellDockWish: '许愿',
+    cellDockWishEdit: '修改许愿',
+    cellDockWishHintYes: '已记录你的许愿，孵化时会按这段描述生成宠物外观。',
+    cellDockWishHintNo: '蛋阶段：可以为蛋的最终外观许愿，描述任何你想要的样子。',
+    cellDockStoryTitle: '打开故事创作',
+    cellSicknessToast: '{name}：病情 {level}/10',
+    cellWhiteCell: '白细胞',
+    cellTraumaAria: '永久精神伤害 {count} / {max}',
+    cellTraumaTitle: '永久精神伤害 {index}/{max}',
 
     // 行星 / Planet
     weatherRain: '召雨',
@@ -1152,6 +1191,13 @@ export const enUS = {
     fieldTree: 'Sacred Tree',
     fieldCave: 'Cave',
     fieldThunder: 'Thundercloud',
+
+    // Room names
+    roomBedroom: 'Bedroom',
+    roomKitchen: 'Kitchen',
+    roomBath: 'Bathroom',
+    roomLiving: 'Living Room',
+    roomGarden: 'Garden',
     terrainTitle: 'Planet Terrain', terrainReset: 'Reset', terrainResetDone: 'Terrain reset', terrainReadonly: 'Official planet terrain cannot be modified.',
     terrainTapToPlace: 'Tap a cell above to place it', terrainSelectFirst: 'Select or drag a terrain type first',
     // Interstellar migration (view_star_settlements)
@@ -1302,6 +1348,38 @@ export const enUS = {
     cellStatusTrauma: 'Status: permanent trauma {count}/{max}',
     cellStatusNormal: 'Status: healthy inside',
     cellStatus: 'Status: {sickness} {level}/10',
+    cellDietHintBoth: 'DNA hint: This pet is omnivore, also likes {kind}.',
+    cellDietHintPref: 'DNA hint: This pet prefers {preference} food.',
+    cellDietFloatAria: '{label} DNA diet hint',
+    cellWishOnlyEgg: 'Wishing is only available in the egg stage',
+    cellWishTitle: '🌠 Make a Wish for This Egg',
+    cellWishPlaceholder: 'e.g. dragon baby, starry eyes… (up to {max} chars)',
+    cellWishRefEmpty: 'Optional: add a reference image so the hatched look is closer to your idea.',
+    cellWishRefAlt: 'Reference image preview',
+    cellWishPickImage: 'Reference Image',
+    cellWishRemoveImage: 'Remove Image',
+    cellWishClear: 'Clear',
+    cellWishSave: 'Save Wish',
+    cellWishRefAdded: 'Reference image added',
+    cellWishRefFailed: 'Failed to add reference image',
+    cellWishSaved: 'Your wish has been recorded ✨',
+    cellWishCleared: 'Wish cleared',
+    cellWishSelectImage: 'Please select an image file',
+    cellWishReadFailed: 'Failed to read image',
+    cellWishPreviewFailed: 'Image format cannot be previewed',
+    cellWishCompressFailed: 'Unable to compress image',
+    cellDockChat: 'Chat',
+    cellDockTreat: 'Treat',
+    cellDockTreatTitle: 'Start cell immune defense to treat illness',
+    cellDockWish: 'Wish',
+    cellDockWishEdit: 'Edit Wish',
+    cellDockWishHintYes: 'Your wish is recorded. The pet\'s appearance will follow this description when hatched.',
+    cellDockWishHintNo: 'Egg stage: you can wish for the final appearance — describe any look you want.',
+    cellDockStoryTitle: 'Open Story Maker',
+    cellSicknessToast: '{name}: severity {level}/10',
+    cellWhiteCell: 'White blood cell',
+    cellTraumaAria: 'Permanent trauma {count} / {max}',
+    cellTraumaTitle: 'Permanent trauma {index}/{max}',
 
     // Planet
     weatherRain: 'Call Rain',
@@ -1637,6 +1715,40 @@ export function t(key, vars) {
         str = str.replace(/\{(\w+)\}/g, (m, name) => (vars[name] != null ? String(vars[name]) : m));
     }
     return str;
+}
+
+// ---- Shared name localization helpers ----
+
+const FIELD_NAME_I18N = {
+    land: 'fieldLand',
+    water: 'fieldWater',
+    sky: 'fieldSky',
+    fire: 'fieldVolcano',
+    ice: 'fieldIce',
+    life: 'fieldTree',
+    dark: 'fieldCave',
+    thunder: 'fieldThunder',
+};
+
+const ROOM_NAME_I18N = {
+    bedroom: 'roomBedroom',
+    kitchen: 'roomKitchen',
+    bath: 'roomBath',
+    living: 'roomLiving',
+    garden: 'roomGarden',
+};
+
+/** Localize a field/type object using its typeId or id. Fallback to .name. */
+export function localizeFieldName(field) {
+    const typeId = field?.typeId || field?.id || '';
+    const key = FIELD_NAME_I18N[typeId];
+    return key ? t(key) : (field?.name || '');
+}
+
+/** Localize a room object using its id. Fallback to .name. */
+export function localizeRoomName(room) {
+    const key = ROOM_NAME_I18N[room?.id];
+    return key ? t(key) : (room?.name || '');
 }
 
 // 初始化 <html lang>

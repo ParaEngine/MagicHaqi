@@ -1,7 +1,7 @@
 // Level 2 — 宠物 + 房间（经典电子宠物日常）
 
 import { $, $$, dockDisabledAttrs, escapeHtml, isDockButtonDisabled, randInt, renderVisualAsset, showDockDisabledToast, showToast } from './utils.js';
-import { t } from './i18n.js';
+import { t, localizeRoomName } from './i18n.js';
 import { canPlaceItemInArea, CONFIG, DECO_VISUALS, getActiveHouseRoomIds, getPlacedItemZOrder, getShopItemById, SHOP_ITEMS } from './config.js';
 import { isVisitingMode, notify, state } from './state.js';
 import { getLayout } from './storage.js';
@@ -1550,7 +1550,7 @@ export const petLevel = {
             <div class="mh-dock-row mh-scroll-x dock-tab-row ${isRoomPlacementMode() ? 'has-decor-done' : ''}" id="mhRoomTabs">
                 ${visibleRooms.map(r => `
                     <button type="button" class="btn-secondary dock-tab ${r.id === room.id ? 'active' : ''}" data-room="${r.id}">
-                        ${r.emoji} ${escapeHtml(r.name)}
+                        ${r.emoji} ${escapeHtml(localizeRoomName(r))}
                     </button>
                 `).join('')}
             </div>

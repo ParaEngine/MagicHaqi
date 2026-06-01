@@ -1,7 +1,7 @@
 // Level 1 — Field：星球表面（陆 / 水 / 空 三大生态）
 
 import { $, $$, coinIconSvg, dockDisabledAttrs, escapeHtml, isDockButtonDisabled, renderVisualAsset, setDockButtonDisabled, showDockDisabledToast, showToast } from './utils.js';
-import { t } from './i18n.js';
+import { t, localizeFieldName } from './i18n.js';
 import { canPlaceItemInArea, CONFIG, DECO_VISUALS, findLargestHouseInLayout, getPlacedItemZOrder, getPlanetMiningCoins, getPlanetMiningConfig, getPlanetMiningVisualCoinCount, getShopItemById, isHouseItem, recordPlanetMiningFieldCollected, SHOP_ITEMS } from './config.js';
 import { getActivePlanetWeather, isVisitingMode, notify, state, setCurrentField } from './state.js';
 import { getLayout, saveFieldScenesDebounced, savePetDebounced, saveUserProfileDebounced } from './storage.js';
@@ -1162,7 +1162,7 @@ function renderFieldDecorTray(inv, currentField) {
     return `
         <div class="mh-dock-tray mh-scroll-x">
             ${items.length === 0
-                ? `<div class="mh-dock-hint">${escapeHtml(t('fieldNoOutdoorItems', { name: currentField.name }))}</div>`
+                ? `<div class="mh-dock-hint">${escapeHtml(t('fieldNoOutdoorItems', { name: localizeFieldName(currentField) }))}</div>`
                 : items.map(it => {
                     const showCount = !it.uniqueItem && (it.unlimited || it.qty > 1);
                     const countHtml = showCount ? `<span class="shop-item-count-badge">${it.unlimited ? '∞' : escapeHtml(it.qty)}</span>` : '';
@@ -1290,7 +1290,7 @@ function renderFieldBackgroundTray(currentField) {
     const presets = fieldBackgroundPresets(currentField);
     const selectedId = selectedFieldPresetId(currentField.id);
     if (!presets.length) {
-        return `<div class="mh-dock-tray mh-scroll-x"><div class="mh-dock-hint">${escapeHtml(t('fieldLoadingBg', { name: currentField.name }))}</div></div>`;
+        return `<div class="mh-dock-tray mh-scroll-x"><div class="mh-dock-hint">${escapeHtml(t('fieldLoadingBg', { name: localizeFieldName(currentField) }))}</div></div>`;
     }
     return `
         <div class="mh-dock-tray mh-scroll-x mh-field-build-tray mh-field-background-tray">
@@ -2536,7 +2536,7 @@ export const fieldLevel = {
                     </button>
                 `).join('') : fields.map(f => `
                     <button class="btn-secondary dock-tab ${f.id === state.currentField ? 'active' : ''}" data-field="${f.id}">
-                        ${terrainFieldTabIconHtml(f)} ${escapeHtml(f.name)}
+                        ${terrainFieldTabIconHtml(f)} ${escapeHtml(localizeFieldName(f))}
                     </button>
                 `).join('')}
             </div>
@@ -2618,7 +2618,7 @@ export const fieldLevel = {
                     title: preset.title || '',
                 },
             });
-            showToast(t('fieldBgSwitched', { name: preset.title || currentField.name }), 'success', 1200);
+            showToast(t('fieldBgSwitched', { name: preset.title || localizeFieldName(currentField) }), 'success', 1200);
             return true;
         };
 

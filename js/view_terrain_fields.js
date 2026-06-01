@@ -1,6 +1,6 @@
 // 星球地貌管理视图
 import { escapeHtml, showToast } from './utils.js';
-import { t } from './i18n.js';
+import { t, localizeFieldName } from './i18n.js';
 import { CONFIG } from './config.js';
 import { notify, state, setCurrentField } from './state.js';
 import { saveFieldScenesDebounced, saveTerrainFieldsDebounced } from './storage.js';
@@ -327,7 +327,7 @@ function renderSlotCard(slot, index) {
     return `
         <div class="terrain-field-slot ${empty ? 'is-empty' : ''}" data-terrain-slot="${index}">
             <div class="terrain-slot-label">${escapeHtml(slot.positionLabel)}</div>
-            <button type="button" class="terrain-slot-drop" data-terrain-drop="${index}" title="${readonly ? '官方星球不可修改地貌' : '拖入地貌类型'}" ${readonly ? 'disabled' : ''}>
+            <button type="button" class="terrain-slot-drop" data-terrain-drop="${index}" title="${readonly ? escapeHtml(t('terrainReadonly')) : escapeHtml(t('terrainTapToPlace'))}" ${readonly ? 'disabled' : ''}>
                 ${terrainFieldIconHtml(slot.typeId)}
             </button>
         </div>`;
@@ -336,9 +336,9 @@ function renderSlotCard(slot, index) {
 function renderPaletteItem(type) {
     const readonly = isReadonlyPlanet();
     return `
-        <button type="button" class="terrain-palette-item" draggable="${readonly ? 'false' : 'true'}" data-terrain-type="${escapeHtml(type.id)}" title="${readonly ? '官方星球不可修改地貌' : '拖到上方格子'}" ${readonly ? 'disabled' : ''}>
+        <button type="button" class="terrain-palette-item" draggable="${readonly ? 'false' : 'true'}" data-terrain-type="${escapeHtml(type.id)}" title="${readonly ? escapeHtml(t('terrainReadonly')) : escapeHtml(t('terrainSelectFirst'))}" ${readonly ? 'disabled' : ''}>
             <span class="terrain-palette-icon">${terrainFieldIconHtml(type.id)}</span>
-            <span class="terrain-palette-name">${escapeHtml(type.name)}</span>
+            <span class="terrain-palette-name">${escapeHtml(localizeFieldName(type))}</span>
         </button>`;
 }
 
