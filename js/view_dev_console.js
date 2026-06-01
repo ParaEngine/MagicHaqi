@@ -5,6 +5,7 @@ import { addToInventory, savePet, savePetDebounced, saveUserProfileDebounced } f
 import { resetPetSheetImage, setAnim } from './pet.js';
 import { applyStage, curePetSickness, defaultStats, defaultTraits, getActiveSickness, getEffectiveSicknessSeverity, getPermanentTraumaCount, getPetPoopCount, SICKNESS_DEFS, normalizePermanentTrauma, setPetPoopCount } from './petTick.js';
 import { clamp, escapeHtml, showToast } from './utils.js';
+import { t } from './i18n.js';
 
 const DEV_CONSOLE_ID = 'mhDevConsole';
 const HOST_ALLOWLIST = new Set(['127.0.0.1', 'localhost']);
@@ -12,10 +13,10 @@ const PET_SCALAR_EXCLUDE = new Set(['stats', 'traits', 'poops', 'poopCounts', 'p
 const HOUR_MS = 60 * 60 * 1000;
 const DAY_MS = 24 * HOUR_MS;
 const STAT_LABELS = {
-    hunger: '体力',
-    mood: '心情',
-    clean: '清洁',
-    bond: '亲密',
+    get hunger() { return t('statEnergy'); },
+    get mood() { return t('statMood'); },
+    get clean() { return t('statClean'); },
+    get bond() { return t('statBond'); },
 };
 
 export function openDevConsole({ expanded = true } = {}) {
@@ -72,63 +73,63 @@ function renderConsoleHtml() {
         <div class="mh-dev-window">
             <div class="mh-dev-titlebar">
                 <div class="mh-dev-title">
-                    <strong>开发者面板</strong>
-                    <span>开发者模式</span>
+                    <strong>${escapeHtml(t('dcPanel'))}</strong>
+                    <span>${escapeHtml(t('dcMode'))}</span>
                 </div>
-                <button class="mh-dev-close" type="button" data-dev-action="close" aria-label="关闭开发者面板">×</button>
+                <button class="mh-dev-close" type="button" data-dev-action="close" aria-label="${escapeHtml(t('dcClose'))}">×</button>
             </div>
             <div class="mh-dev-vip-row">
                 <div class="mh-dev-vip-copy">
-                    <strong>👑 VIP 模式</strong>
-                    <span>用于体验付费语音</span>
+                    <strong>${escapeHtml(t('dcVipMode'))}</strong>
+                    <span>${escapeHtml(t('dcVipDesc'))}</span>
                 </div>
                 <button class="mh-dev-vip" type="button" data-dev-action="vip"></button>
             </div>
             <div class="mh-dev-row mh-dev-meters">
-                <span>金币 <b data-dev-coins>0</b></span>
-                <span>燃料 <b data-dev-biofuel>0</b></span>
+                <span>${escapeHtml(t('dcCoins'))} <b data-dev-coins>0</b></span>
+                <span>${escapeHtml(t('dcFuel'))} <b data-dev-biofuel>0</b></span>
             </div>
             <div class="mh-dev-grid">
-                <button type="button" data-dev-action="coins" data-amount="100">+100 金币</button>
-                <button type="button" data-dev-action="coins" data-amount="1000">+1000 金币</button>
-                <button type="button" data-dev-action="biofuel" data-amount="10">+10 燃料</button>
-                <button type="button" data-dev-action="stats">状态拉满</button>
-                <button type="button" data-dev-action="poops" data-amount="5">+5 便便</button>
+                <button type="button" data-dev-action="coins" data-amount="100">${escapeHtml(t('dcAddCoins', { n: 100 }))}</button>
+                <button type="button" data-dev-action="coins" data-amount="1000">${escapeHtml(t('dcAddCoins', { n: 1000 }))}</button>
+                <button type="button" data-dev-action="biofuel" data-amount="10">${escapeHtml(t('dcAddFuel', { n: 10 }))}</button>
+                <button type="button" data-dev-action="stats">${escapeHtml(t('dcFillStats'))}</button>
+                <button type="button" data-dev-action="poops" data-amount="5">${escapeHtml(t('dcAddPoops', { n: 5 }))}</button>
             </div>
             <div class="mh-dev-row mh-dev-mining-row">
                 <label class="mh-dev-mining-field">
-                    <span>挖矿小时</span>
+                    <span>${escapeHtml(t('dcMiningHours'))}</span>
                     <input type="number" min="0" max="24" step="1" value="24" data-dev-mining-hours>
                 </label>
-                <button type="button" data-dev-action="mining-reset">设置领取时间</button>
+                <button type="button" data-dev-action="mining-reset">${escapeHtml(t('dcSetClaimTime'))}</button>
             </div>
             <div class="mh-dev-row">
                 <select data-dev-item>${itemOptions}</select>
-                <button type="button" data-dev-action="item">+1 物品</button>
+                <button type="button" data-dev-action="item">${escapeHtml(t('dcAddItem'))}</button>
             </div>
             <div class="mh-dev-row mh-dev-exiled-stage-row">
                 <label class="mh-dev-bulk-stage-field">
-                    <span>其他宠物</span>
+                    <span>${escapeHtml(t('dcOtherPets'))}</span>
                     <select data-dev-exiled-stage>${stageOptions}</select>
                 </label>
-                <button type="button" data-dev-action="exiled-stage">改阶段</button>
+                <button type="button" data-dev-action="exiled-stage">${escapeHtml(t('dcChangeStage'))}</button>
             </div>
-            <div class="mh-dev-subtle" data-dev-exiled-count>其他宠物 0 只</div>
+            <div class="mh-dev-subtle" data-dev-exiled-count>${escapeHtml(t('dcOtherPetsCount', { n: 0 }))}</div>
             <div class="mh-dev-section">
                 <div class="mh-dev-section-head">
-                    <strong>当前宠物属性</strong>
-                    <span data-dev-pet-title>未选择</span>
+                    <strong>${escapeHtml(t('dcCurrentPetAttrs'))}</strong>
+                    <span data-dev-pet-title>${escapeHtml(t('dcNotSelected'))}</span>
                 </div>
                 <div class="mh-dev-row">
-                    <button type="button" class="mh-dev-sleep-toggle" data-dev-action="pet-sleep-toggle" data-dev-pet-sleep-toggle>睡眠：未选择宠物</button>
+                    <button type="button" class="mh-dev-sleep-toggle" data-dev-action="pet-sleep-toggle" data-dev-pet-sleep-toggle>${escapeHtml(t('dcSleepNoPet'))}</button>
                 </div>
                 <div class="mh-dev-row">
-                    <button type="button" class="mh-dev-egg-reset" data-dev-action="pet-reset-egg">重置为蛋 · 饥饿 0</button>
+                    <button type="button" class="mh-dev-egg-reset" data-dev-action="pet-reset-egg">${escapeHtml(t('dcResetEgg'))}</button>
                 </div>
                 <div class="mh-dev-pet-editor" data-dev-pet-editor></div>
                 <div class="mh-dev-row">
-                    <button type="button" data-dev-action="pet-save">保存属性</button>
-                    <button type="button" data-dev-action="pet-refresh">刷新</button>
+                    <button type="button" data-dev-action="pet-save">${escapeHtml(t('dcSaveAttrs'))}</button>
+                    <button type="button" data-dev-action="pet-refresh">${escapeHtml(t('dcRefresh'))}</button>
                 </div>
             </div>
         </div>
@@ -229,13 +230,13 @@ async function setAllExiledPetsStage(root, stageId = null) {
     if (!stage) return 0;
     const pets = getExiledPets();
     if (!pets.length) {
-        showToast('开发者：没有其他宠物', 'info', 1400);
+        showToast(t('dcNoOtherPets'), 'info', 1400);
         return 0;
     }
     pets.forEach(pet => setPetStageForDev(pet, stage));
     await Promise.all(pets.map(pet => savePet(pet)));
     notify();
-    showToast(`开发者：其他宠物 ${pets.length} 只已改为${stage.name}`, 'success', 1600);
+    showToast(t('dcOtherPetsChanged', { n: pets.length, stage: stage.name }), 'success', 1600);
     return pets.length;
 }
 
@@ -245,7 +246,7 @@ function addCoins(amount) {
     state.coins = Math.max(0, (Number(state.coins) || 0) + delta);
     saveUserProfileDebounced();
     notify();
-    showToast(`开发者：金币 +${delta}`, 'success', 1200);
+    showToast(t('dcCoinsAdded', { n: delta }), 'success', 1200);
 }
 
 function addBiofuel(amount) {
@@ -254,13 +255,13 @@ function addBiofuel(amount) {
     state.biofuel = Math.max(0, (Number(state.biofuel) || 0) + delta);
     saveUserProfileDebounced();
     notify();
-    showToast(`开发者：燃料 +${delta}`, 'success', 1200);
+    showToast(t('dcFuelAdded', { n: delta }), 'success', 1200);
 }
 
 function addPoopsToCurrentField(amount = 5) {
     const pet = getCurrentPet();
     if (!pet) {
-        showToast('请先选择宠物', 'error', 1400);
+        showToast(t('dcSelectPet'), 'error', 1400);
         return 0;
     }
     const count = normalizePositiveInt(amount) || 5;
@@ -270,7 +271,7 @@ function addPoopsToCurrentField(amount = 5) {
     const canAdd = maxPerField > 0 ? Math.max(0, maxPerField - currentCount) : 0;
     const addCount = Math.min(count, canAdd);
     if (!addCount) {
-        showToast('开发者：当前场景便便已满', 'info', 1400);
+        showToast(t('dcFieldPoopFull'), 'info', 1400);
         return 0;
     }
     const now = Date.now();
@@ -278,7 +279,7 @@ function addPoopsToCurrentField(amount = 5) {
     pet.lastPoopAt = now;
     savePetDebounced(pet);
     notify();
-    showToast(`开发者：${field} 场景便便 +${addCount}`, 'success', 1200);
+    showToast(t('dcFieldPoopAdded', { field, n: addCount }), 'success', 1200);
     return addCount;
 }
 
@@ -297,20 +298,20 @@ function resetPlanetMining(hours = 24) {
     state.planetMining.lastCollectedAt = now;
     saveUserProfileDebounced();
     notify();
-    showToast(`开发者：挖矿领取时间已重置为 ${hourCount} 小时前`, 'success', 1600);
+    showToast(t('dcMiningReset', { n: hourCount }), 'success', 1600);
 }
 
 function setVip(enabled) {
     state.isPaid = !!enabled;
     saveUserProfileDebounced();
     notify();
-    showToast(state.isPaid ? '开发者：VIP 已开启' : '开发者：VIP 已关闭', 'success', 1200);
+    showToast(state.isPaid ? t('dcVipOn') : t('dcVipOff'), 'success', 1200);
 }
 
 function fillCurrentPetStats() {
     const pet = getCurrentPet();
     if (!pet) {
-        showToast('请先选择宠物', 'error', 1400);
+        showToast(t('dcSelectPet'), 'error', 1400);
         return;
     }
     const baseStats = defaultStats();
@@ -322,13 +323,13 @@ function fillCurrentPetStats() {
     applyStage(pet);
     savePetDebounced(pet);
     notify();
-    showToast('开发者：宠物状态已拉满', 'success', 1200);
+    showToast(t('dcStatsFilled'), 'success', 1200);
 }
 
 async function resetCurrentPetToEgg() {
     const pet = getCurrentPet();
     if (!pet) {
-        showToast('请先选择宠物', 'error', 1400);
+        showToast(t('dcSelectPet'), 'error', 1400);
         return false;
     }
     const now = Date.now();
@@ -348,59 +349,59 @@ async function resetCurrentPetToEgg() {
     delete pet.sleepLockedUntil;
     await savePet(pet);
     notify();
-    showToast('开发者：当前宠物已重置为蛋，喂食后会重新孵化', 'success', 1800);
+    showToast(t('dcResetEggDone'), 'success', 1800);
     return true;
 }
 
 function forceCurrentPetSleep(sleeping = true) {
     const pet = getCurrentPet();
     if (!pet) {
-        showToast('请先选择宠物', 'error', 1400);
+        showToast(t('dcSelectPet'), 'error', 1400);
         return false;
     }
     setAnim(sleeping ? 'sleep' : 'idle', 0);
     notify();
-    showToast(sleeping ? '开发者：宠物已强制睡觉' : '开发者：宠物已强制唤醒', 'success', 1200);
+    showToast(sleeping ? t('dcForceSleep') : t('dcForceWake'), 'success', 1200);
     return true;
 }
 
 async function recoverCurrentPetSickness() {
     const pet = getCurrentPet();
     if (!pet) {
-        showToast('请先选择宠物', 'error', 1400);
+        showToast(t('dcSelectPet'), 'error', 1400);
         return false;
     }
     curePetSickness(pet);
     await savePet(pet);
     notify();
-    showToast('开发者：宠物疾病已康复，并进入 24 小时免疫期', 'success', 1600);
+    showToast(t('dcSicknessCured'), 'success', 1600);
     return true;
 }
 
 function setCurrentPetSickness(type = 'flu', level = 1) {
     const pet = getCurrentPet();
     if (!pet) {
-        showToast('请先选择宠物', 'error', 1400);
+        showToast(t('dcSelectPet'), 'error', 1400);
         return false;
     }
     setPetSicknessForDev(pet, type, level);
     savePetDebounced(pet);
     notify();
-    showToast(type ? `开发者：疾病已设为 ${type} Lv.${level}` : '开发者：疾病已清除', 'success', 1400);
+    showToast(type ? t('dcSicknessSet', { type, level }) : t('dcSicknessCleared'), 'success', 1400);
     return true;
 }
 
 async function addSelectedItem(root) {
     const pet = getCurrentPet();
     if (!pet) {
-        showToast('请先选择宠物', 'error', 1400);
+        showToast(t('dcSelectPet'), 'error', 1400);
         return;
     }
     const itemId = root.querySelector('[data-dev-item]')?.value;
     const item = SHOP_ITEMS.find(candidate => candidate.id === itemId);
     if (!item) return;
     await addItem(item.id, 1);
-    showToast(`开发者：${item.name} +1`, 'success', 1200);
+    showToast(t('dcItemAdded', { name: item.name }), 'success', 1200);
 }
 
 async function addItem(itemId, qty = 1) {
@@ -415,7 +416,7 @@ async function addItem(itemId, qty = 1) {
 function saveCurrentPetAttributes(root, { toast = true } = {}) {
     const pet = getCurrentPet();
     if (!pet) {
-        showToast('请先选择宠物', 'error', 1400);
+        showToast(t('dcSelectPet'), 'error', 1400);
         return false;
     }
     const oldId = pet.id;
@@ -425,12 +426,12 @@ function saveCurrentPetAttributes(root, { toast = true } = {}) {
         try {
             edited = JSON.parse(rawEditor.value || '{}');
         } catch (e) {
-            showToast('宠物 JSON 格式不正确', 'error', 1800);
+            showToast(t('dcJsonInvalid'), 'error', 1800);
             return false;
         }
     }
     if (!edited || typeof edited !== 'object' || Array.isArray(edited)) {
-        showToast('宠物属性必须是对象', 'error', 1800);
+        showToast(t('dcMustBeObject'), 'error', 1800);
         return false;
     }
 
@@ -444,7 +445,7 @@ function saveCurrentPetAttributes(root, { toast = true } = {}) {
     applyStage(pet);
     savePetDebounced(pet);
     notify();
-    if (toast) showToast('开发者：宠物属性已保存', 'success', 1200);
+    if (toast) showToast(t('dcAttrsSaved'), 'success', 1200);
     return true;
 }
 
@@ -490,7 +491,7 @@ function setPermanentTraumaCount(pet, value) {
             id: `dev_trauma_${now.toString(36)}_${traumas.length + 1}`,
             type: 'dev',
             at: now,
-            reasons: ['开发者面板设置'],
+            reasons: [t('dcPanelSetting')],
         });
     }
     pet.permanentTrauma = traumas;
@@ -537,7 +538,7 @@ function setPetSicknessForDev(pet, type, level = 1) {
 }
 
 function renderPetEditorHtml(pet) {
-    if (!pet) return '<div class="mh-dev-empty">请先选择宠物</div>';
+    if (!pet) return `<div class="mh-dev-empty">${escapeHtml(t('dcSelectPet'))}</div>`;
     const stats = { ...defaultStats(), ...(pet.stats || {}) };
     const statRows = Object.keys(stats).map(key => renderNumberField({
         label: STAT_LABELS[key] || key,
@@ -551,7 +552,7 @@ function renderPetEditorHtml(pet) {
     const traitKeys = getEditableTraitKeys(pet);
     const traitRows = traitKeys.map(key => renderTraitField(key, pet.traits?.[key])).join('');
     const traumaRow = renderNumberField({
-        label: '永久精神伤害',
+        label: t('dcTrauma'),
         value: getPermanentTraumaCount(pet),
         min: 0,
         max: CONFIG.trauma?.max || 6,
@@ -564,20 +565,20 @@ function renderPetEditorHtml(pet) {
     return `
         <div class="mh-dev-editor-group">
             <div class="mh-dev-editor-caption-row">
-                <div class="mh-dev-editor-caption">基础属性</div>
+                <div class="mh-dev-editor-caption">${escapeHtml(t('dcBaseAttrs'))}</div>
             </div>
             <div class="mh-dev-field-grid">${statRows}</div>
         </div>
         <div class="mh-dev-editor-group">
-            <div class="mh-dev-editor-caption">外观 / 血统</div>
-            <div class="mh-dev-field-grid">${traitRows || '<div class="mh-dev-empty">暂无 trait</div>'}</div>
+            <div class="mh-dev-editor-caption">${escapeHtml(t('dcAppearance'))}</div>
+            <div class="mh-dev-field-grid">${traitRows || `<div class="mh-dev-empty">${escapeHtml(t('dcNoTrait'))}</div>`}</div>
         </div>
         <div class="mh-dev-editor-group">
-            <div class="mh-dev-editor-caption">常用字段</div>
+            <div class="mh-dev-editor-caption">${escapeHtml(t('dcCommonFields'))}</div>
             <div class="mh-dev-field-grid">${traumaRow}${sicknessControls}${scalarRows || ''}</div>
         </div>
         <details class="mh-dev-json-wrap">
-            <summary>完整 JSON</summary>
+            <summary>${escapeHtml(t('dcFullJson'))}</summary>
             <textarea data-dev-pet-json spellcheck="false">${rawJson}</textarea>
         </details>
     `;
@@ -693,18 +694,18 @@ function refreshConsole(root, { preserveEditorFocus = false } = {}) {
     root.querySelector('[data-dev-biofuel]').textContent = String(Number(state.biofuel) || 0);
     const vipButton = root.querySelector('[data-dev-action="vip"]');
     if (vipButton) {
-        vipButton.textContent = state.isPaid ? '已开启' : '开启';
+        vipButton.textContent = state.isPaid ? t('dcEnabled') : t('dcEnable');
         vipButton.classList.toggle('enabled', !!state.isPaid);
     }
     const exiledCount = getExiledPets().length;
     const exiledCountEl = root.querySelector('[data-dev-exiled-count]');
-    if (exiledCountEl) exiledCountEl.textContent = `其他宠物 ${exiledCount} 只`;
+    if (exiledCountEl) exiledCountEl.textContent = t('dcOtherPetsCount', { n: exiledCount });
     const exiledStageButton = root.querySelector('[data-dev-action="exiled-stage"]');
     if (exiledStageButton) exiledStageButton.disabled = exiledCount === 0;
     const pet = getCurrentPet();
     const petTitle = root.querySelector('[data-dev-pet-title]');
     if (petTitle) {
-        const titleText = pet ? `${pet.name || pet.id || '未命名'} · ${getStageName(pet.stage, pet.stage || '')}` : '未选择';
+        const titleText = pet ? `${pet.name || pet.id || t('dcUnnamed')} · ${getStageName(pet.stage, pet.stage || '')}` : t('dcNotSelected');
         petTitle.textContent = titleText;
         petTitle.title = titleText;
     }
@@ -712,8 +713,8 @@ function refreshConsole(root, { preserveEditorFocus = false } = {}) {
     const sleeping = isPetSleeping(pet);
     if (sleepToggle) {
         sleepToggle.textContent = pet
-            ? `睡眠：${sleeping ? '开' : '关'} · ${sleeping ? '点击唤醒' : '点击睡觉'}`
-            : '睡眠：未选择宠物';
+            ? t('dcSleepState', { state: sleeping ? t('dcOn') : t('dcOff'), action: sleeping ? t('dcTapWake') : t('dcTapSleep') })
+            : t('dcSleepNoPet');
         sleepToggle.disabled = !pet;
         sleepToggle.classList.toggle('enabled', sleeping);
     }
@@ -1061,16 +1062,16 @@ function renderSicknessControls(pet) {
         ? Math.ceil((Number(pet.sicknessCooldownUntil) - Date.now()) / HOUR_MS)
         : 0;
     const options = [
-        `<option value="" ${activeType ? '' : 'selected'}>无疾病</option>`,
+        `<option value="" ${activeType ? '' : 'selected'}>${escapeHtml(t('dcNoSickness'))}</option>`,
         ...SICKNESS_DEFS.map(def => `<option value="${escapeHtml(def.id)}" ${def.id === activeType ? 'selected' : ''}>${escapeHtml(def.name)}</option>`),
     ].join('');
     return `
         <label class="mh-dev-field">
-            <span title="疾病类型">疾病</span>
+            <span title="${escapeHtml(t('dcSicknessType'))}">${escapeHtml(t('dcSickness'))}</span>
             <select data-dev-pet-sickness-type>${options}</select>
         </label>
         ${renderNumberField({
-            label: '病情等级',
+            label: t('dcSicknessLevel'),
             value: level,
             min: 1,
             max: 10,

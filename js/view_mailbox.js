@@ -1,5 +1,6 @@
 // 邮箱视图：收到的明信片、好友申请、邮件入口。
 import { escapeHtml, formatTime, prompt, showToast } from './utils.js';
+import { t } from './i18n.js';
 import { getCurrentPet, state } from './state.js';
 import { loadPostcardList } from './storage.js';
 import { postcardSourceLabel, renderPetPostcardHtml } from './view_postcard.js';
@@ -8,9 +9,9 @@ import { showPetSharePanel } from './level_planet.js';
 const FRIEND_APPLY_RECENT_DAYS = 14;
 const FRIEND_APPLY_RECENT_MS = FRIEND_APPLY_RECENT_DAYS * 24 * 60 * 60 * 1000;
 const MAILBOX_TABS = [
-    { id: 'mails', label: '邮件' },
-    { id: 'applies', label: '好友请求' },
-    { id: 'postcards', label: '明信片' },
+    { id: 'mails', labelKey: 'mbTabMails' },
+    { id: 'applies', labelKey: 'mbTabApplies' },
+    { id: 'postcards', labelKey: 'mbTabPostcards' },
 ];
 let showAllFriendApplies = false;
 let activeMailboxTab = 'mails';
@@ -76,11 +77,11 @@ function normalizeRewardRows(value, fallback = []) {
 }
 
 function rewardLabel(item) {
-    return item.name || `奖励 ${item.id}`;
+    return item.name || t('mbReward', { id: item.id });
 }
 
 function rewardTitle(item) {
-    return [item.name || `奖励 ${item.id}`, item.desc].filter(Boolean).join('：');
+    return [item.name || t('mbReward', { id: item.id }), item.desc].filter(Boolean).join('：');
 }
 
 function firstOwnValue(source, keys, fallback) {
@@ -95,7 +96,7 @@ function normalizeMail(item, fallback = {}) {
     const raw = unwrapMailPayload(item) || {};
     const base = fallback && typeof fallback === 'object' ? fallback : {};
     const id = raw.id || raw.mailId || raw.emailId || base.id || '';
-    const title = raw.title || raw.subject || base.title || `邮件 ${id || ''}`.trim() || '无主题';
+    const title = raw.title || raw.subject || base.title || t('mbMailNum', { id: id || '' }).trim() || t('mbNoSubject');
     const createdAt = raw.createdAt || raw.created_at || raw.createTime || raw.updatedAt || base.createdAt || '';
     const rawRead = raw.read ?? raw.isRead ?? base.read ?? 0;
     const rawRewards = firstOwnValue(raw, ['rewards', 'reward'], base.rewards ?? 0);
@@ -106,7 +107,7 @@ function normalizeMail(item, fallback = {}) {
     const rewards = Number(rawRewards) === 1 || rawRewards === true || rewardRows.length > 0;
     const content = pickMailContent(raw) || base.content || '';
     const username = raw.username || raw.fromUsername || raw.senderUsername || base.username || '';
-    const from = raw.from || raw.fromEmail || raw.sender || raw.senderName || raw.fromName || base.from || '系统邮件';
+    const from = raw.from || raw.fromEmail || raw.sender || raw.senderName || raw.fromName || base.from || t('mbSystemMail');
     return { raw, id, title, username, createdAt, read, rewards, rewardRows, rewardReceived, content, from };
 }
 
@@ -141,10 +142,10 @@ function timestampOf(item) {
     return Number.isFinite(parsed) ? parsed : 0;
 }
 
-function formatChineseDate(timestamp = Date.now()) {
+function formatLocalDate(timestamp = Date.now()) {
     const date = new Date(timestamp || Date.now());
     if (Number.isNaN(date.getTime())) return '';
-    return `${date.getFullYear()}年${date.getMonth() + 1}月${date.getDate()}日`;
+    return t('lpDate', { y: date.getFullYear(), m: date.getMonth() + 1, d: date.getDate() });
 }
 
 function isRecentApply(item, now = Date.now()) {
@@ -198,33 +199,33 @@ async function resolveUserId(username) {
 }
 
 async function requestFriendByName() {
-    const username = await prompt('添加好友', {
+    const username = await prompt(t('mbAddFriendTitle'), {
         hint: '输入对方 KeepWork 用户名。',
-        placeholder: '好友用户名',
+        placeholder: t('mbFriendUsernamePlaceholder'),
         okText: '发送申请',
         maxLength: 32,
         validate: (value) => value ? '' : '请输入用户名',
     });
     if (!username) return;
     if (!state.sdk?.socialFriends?.applyFriend) {
-        showToast('当前 SDK 不支持好友申请', 'error');
+        showToast(t('mbNoFriendSdk'), 'error');
         return;
     }
     const userId = await resolveUserId(username);
     if (!userId) {
-        showToast('没有找到这个用户', 'error');
+        showToast(t('mbUserNotFound'), 'error');
         return;
     }
     try {
-        await state.sdk.socialFriends.applyFriend(userId, '来自魔法哈奇的好友申请');
-        showToast('好友申请已发送', 'success');
+        await state.sdk.socialFriends.applyFriend(userId, t('mbApplyMessage'));
+        showToast(t('mbApplySent'), 'success');
     } catch (e) {
-        showToast('发送失败：' + (e?.message || e), 'error');
+        showToast(t('mbSendFailed', { error: (e?.message || e) }), 'error');
     }
 }
 
 function postcardCardHtml(item, index) {
-    const sourceLabel = postcardSourceLabel(item) || item.fromUsername || '好友';
+    const sourceLabel = postcardSourceLabel(item) || item.fromUsername || t('mbFriendFallback');
     const pet = {
         id: `postcard_${index}`,
         name: `${sourceLabel}的宠物`,
@@ -236,14 +237,14 @@ function postcardCardHtml(item, index) {
         <button class="mailbox-card mailbox-postcard-card" data-open-postcard="${index}" type="button">
             <div class="mailbox-card-kicker">明信片 · ${escapeHtml(formatTime(item.dateReceived))}</div>
             ${renderPetPostcardHtml(pet, { layout: item.layout, text: item.text, photoTheme: item.photoTheme || item.theme })}
-            <div class="mailbox-card-foot">来自 ${escapeHtml(sourceLabel)}</div>
+            <div class="mailbox-card-foot">${escapeHtml(t('mbFrom'))}${escapeHtml(sourceLabel)}</div>
         </button>`;
 }
 
 function friendApplyCardHtml(item, index) {
     const user = applyFromUser(item);
-    const name = userNameOf(user) || `用户 ${item.friendId || item.userId || ''}`.trim() || '新的好友';
-    const remark = item.remark || item.message || item.content || '想和你成为好友';
+    const name = userNameOf(user) || t('mbUserNum', { id: item.friendId || item.userId || '' }).trim() || t('mbNewFriend');
+    const remark = item.remark || item.message || item.content || t('mbWantFriend');
     const timestamp = timestampOf(item);
     return `
         <div class="mailbox-card mailbox-apply-card mailbox-art-card">
@@ -251,8 +252,8 @@ function friendApplyCardHtml(item, index) {
             <div class="mailbox-title">${escapeHtml(name)}</div>
             <div class="mailbox-text">${escapeHtml(remark)}</div>
             <div class="mailbox-inline-actions">
-                <button class="mailbox-icon-btn mailbox-icon-reject" data-reject-apply="${index}" type="button" title="拒绝" aria-label="拒绝">${rejectIconSvg}</button>
-                <button class="mailbox-icon-btn mailbox-icon-accept" data-accept-apply="${index}" type="button" title="同意" aria-label="同意">${acceptIconSvg}</button>
+                <button class="mailbox-icon-btn mailbox-icon-reject" data-reject-apply="${index}" type="button" title="${escapeHtml(t('mbReject'))}" aria-label="${escapeHtml(t('mbReject'))}">${rejectIconSvg}</button>
+                <button class="mailbox-icon-btn mailbox-icon-accept" data-accept-apply="${index}" type="button" title="${escapeHtml(t('mbAccept'))}" aria-label="${escapeHtml(t('mbAccept'))}">${acceptIconSvg}</button>
             </div>
         </div>`;
 }
@@ -262,8 +263,8 @@ function mailCardHtml(item, index = 0) {
     const timestamp = timestampOf({ createdAt: mail.createdAt });
     const mailTypeLabel = mail.username ? `邮件(${mail.username})` : '邮件';
     const readStamp = mail.read
-        ? '<div class="mailbox-read-stamp" aria-label="已读">已读</div>'
-        : '<div class="mailbox-read-stamp mailbox-unread-stamp" aria-label="未读">未读</div>';
+        ? `<div class="mailbox-read-stamp" aria-label="${escapeHtml(t('mbRead'))}">${escapeHtml(t('mbRead'))}</div>`
+        : `<div class="mailbox-read-stamp mailbox-unread-stamp" aria-label="${escapeHtml(t('mbUnread'))}">${escapeHtml(t('mbUnread'))}</div>`;
     return `
         <button class="mailbox-card mailbox-mail-card mailbox-art-card${mail.read ? ' is-read' : ' is-unread'}" data-open-mail-index="${index}" type="button">
             <div class="mailbox-card-kicker"><span>${escapeHtml(mailTypeLabel)}</span>${timestamp ? `<i>${escapeHtml(formatTime(timestamp))}</i>` : ''}</div>
@@ -285,20 +286,20 @@ function mailContentText(content) {
 
 function parseMailLetter(content, mail) {
     const text = mailContentText(content).replace(/\r\n?/g, '\n').trim();
-    const match = text.match(/^亲爱的\s+(.+?),\s*\n+([\s\S]*?)\n+来自：\s*(.+?)(?:\n+(.+))?$/);
-    const fallbackDate = formatChineseDate(timestampOf({ createdAt: mail.createdAt }));
+    const match = text.match(/^(?:亲爱的|Dear)\s+(.+?),\s*\n+([\s\S]*?)\n+(?:来自：|From:)\s*(.+?)(?:\n+(.+))?$/);
+    const fallbackDate = formatLocalDate(timestampOf({ createdAt: mail.createdAt }));
     if (match) {
         return {
-            recipient: match[1].trim() || userNameOf(state.user) || '你',
-            body: match[2].trim() || '暂无邮件正文',
-            sender: match[3].trim() || mail.from || '系统邮件',
+            recipient: match[1].trim() || userNameOf(state.user) || t('mbYou'),
+            body: match[2].trim() || t('mbNoBody'),
+            sender: match[3].trim() || mail.from || t('mbSystemMail'),
             date: (match[4] || '').trim() || fallbackDate,
         };
     }
     return {
-        recipient: userNameOf(state.user) || '你',
-        body: text || '暂无邮件正文',
-        sender: mail.from || '系统邮件',
+        recipient: userNameOf(state.user) || t('mbYou'),
+        body: text || t('mbNoBody'),
+        sender: mail.from || t('mbSystemMail'),
         date: fallbackDate,
     };
 }
@@ -307,21 +308,21 @@ function mailContentHtml(content, mail) {
     const letter = parseMailLetter(content, mail);
     return `
         <div class="mailbox-letter-paper">
-            <span class="mailbox-letter-watermark">蛋蛋星球</span>
+            <span class="mailbox-letter-watermark">${escapeHtml(t('mbWatermark'))}</span>
             <div class="email-paper-head mailbox-letter-head">
                 ${letter.date ? `<span class="email-paper-date">${escapeHtml(letter.date)}</span>` : ''}
             </div>
-            <div class="email-letter-greeting">亲爱的 ${escapeHtml(letter.recipient)},</div>
+            <div class="email-letter-greeting">${escapeHtml(t('emGreeting'))}${escapeHtml(letter.recipient)},</div>
             <div class="mailbox-letter-body">${escapeHtml(letter.body).replace(/\n/g, '<br>')}</div>
             <div class="email-letter-signature mailbox-letter-signature">
-                <div>来自：${escapeHtml(letter.sender)}</div>
+                <div>${escapeHtml(t('mbFromColon'))}${escapeHtml(letter.sender)}</div>
                 ${letter.date ? `<div>${escapeHtml(letter.date)}</div>` : ''}
             </div>
         </div>`;
 }
 
 function rewardHtml(mail) {
-    if (!mail.rewardRows.length) return mail.rewards ? '<div class="mailbox-mail-rewards">有奖励</div>' : '';
+    if (!mail.rewardRows.length) return mail.rewards ? `<div class="mailbox-mail-rewards">${escapeHtml(t('mbHasReward'))}</div>` : '';
     return `<div class="mailbox-mail-rewards">${mail.rewardRows.map(item => `<span title="${escapeHtml(rewardTitle(item))}">${escapeHtml(rewardLabel(item))} x${escapeHtml(item.amount)}</span>`).join('')}</div>`;
 }
 
@@ -336,14 +337,14 @@ function showMailDetailModal(mail, detail = null, { onMarkRead, onDelete } = {})
                 <div>
                     <div class="mailbox-mail-detail-title">${escapeHtml(data.title)}</div>
                 </div>
-                <button class="mailbox-mail-close" data-mail-close type="button" aria-label="关闭">×</button>
+                <button class="mailbox-mail-close" data-mail-close type="button" aria-label="${escapeHtml(t('close'))}">×</button>
             </div>
             ${rewardHtml(data)}
-            ${data.rewardReceived ? '<div class="mailbox-claimed-stamp mailbox-claimed-stamp-detail" aria-label="奖励已领取">已领取</div>' : ''}
+            ${data.rewardReceived ? `<div class="mailbox-claimed-stamp mailbox-claimed-stamp-detail" aria-label="${escapeHtml(t('mbClaimed'))}">${escapeHtml(t('mbClaimed'))}</div>` : ''}
             <div class="mailbox-mail-content">${mailContentHtml(data.content, data)}</div>
             <div class="mailbox-mail-detail-actions">
-                <button class="mailbox-mail-action mailbox-mail-action-delete" data-mail-delete type="button">删除</button>
-                <button class="mailbox-mail-action mailbox-mail-action-read" data-mail-mark-read type="button" ${data.read ? 'disabled' : ''}>${data.read ? '已读' : '标记已读'}</button>
+                <button class="mailbox-mail-action mailbox-mail-action-delete" data-mail-delete type="button">${escapeHtml(t('mbDelete'))}</button>
+                <button class="mailbox-mail-action mailbox-mail-action-read" data-mail-mark-read type="button" ${data.read ? 'disabled' : ''}>${data.read ? escapeHtml(t('mbRead')) : escapeHtml(t('mbMarkRead'))}</button>
             </div>
         </div>`;
     mask.addEventListener('click', (e) => {
@@ -367,23 +368,23 @@ function markMailObjectRead(item) {
 }
 
 function friendApplySectionHtml(applies) {
-    if (!applies.length) return mailboxEmptyHtml('最近14天无请求。');
+    if (!applies.length) return mailboxEmptyHtml(t('mbNoApply14'));
     const recentApplies = applies.filter(item => isRecentApply(item));
     const olderApplies = applies.filter(item => !isRecentApply(item));
     const visibleApplies = showAllFriendApplies ? [...recentApplies, ...olderApplies] : recentApplies;
     return `
         <section class="mailbox-friend-section">
             <div class="mailbox-section-head">
-                <span>${showAllFriendApplies ? '全部未处理请求' : '最近14天'}</span>
+                <span>${showAllFriendApplies ? escapeHtml(t('mbAllPending')) : escapeHtml(t('mbRecent14'))}</span>
                 <b>${visibleApplies.length}</b>
             </div>
-            ${!recentApplies.length && !showAllFriendApplies ? mailboxEmptyHtml('最近14天无请求。') : ''}
+            ${!recentApplies.length && !showAllFriendApplies ? mailboxEmptyHtml(t('mbNoApply14')) : ''}
             <div class="mailbox-friend-row">
                 ${visibleApplies.map((item) => friendApplyCardHtml(item, applies.indexOf(item))).join('')}
             </div>
             ${olderApplies.length && !showAllFriendApplies ? `
                 <button class="mailbox-history-card" data-mailbox-more-applies type="button">
-                    <span>查看更多（${olderApplies.length}个）</span>
+                    <span>${escapeHtml(t('mbViewMore', { n: olderApplies.length }))}</span>
                 </button>` : ''}
         </section>`;
 }
@@ -396,7 +397,7 @@ function mailboxTabsHtml({ postcards, applies, mails }) {
     const counts = { mails: mails.length, applies: applies.filter(item => isPendingApply(item) && isRecentApply(item)).length, postcards: postcards.length };
     return MAILBOX_TABS.map(tab => `
         <button class="mailbox-tab${activeMailboxTab === tab.id ? ' is-active' : ''}" data-mailbox-tab="${tab.id}" type="button">
-            <span>${tab.label}</span>${counts[tab.id] ? `<b>${counts[tab.id]}</b>` : ''}
+            <span>${escapeHtml(t(tab.labelKey))}</span>${counts[tab.id] ? `<b>${counts[tab.id]}</b>` : ''}
         </button>`).join('');
 }
 
@@ -405,36 +406,36 @@ function renderMailboxItems({ postcards, applies, mails }) {
         return friendApplySectionHtml(applies.filter(isPendingApply));
     }
     if (activeMailboxTab === 'postcards') {
-        return postcards.length ? postcards.map(postcardCardHtml).join('') : mailboxEmptyHtml('暂时没有明信片。');
+        return postcards.length ? postcards.map(postcardCardHtml).join('') : mailboxEmptyHtml(t('mbNoPostcards'));
     }
-    return mails.length ? mails.map(mailCardHtml).join('') : mailboxEmptyHtml('暂时没有邮件。');
+    return mails.length ? mails.map(mailCardHtml).join('') : mailboxEmptyHtml(t('mbNoMails'));
 }
 
 export function renderMailbox(panel, _data = {}, { onBack, onOpenPostcard, onEmail } = {}) {
     panel.innerHTML = `
         <div class="topbar">
             <button class="btn-icon" id="mhBack" style="width:36px;height:36px;font-size:18px">‹</button>
-            <span class="font-bold" style="color:var(--text-primary)">邮箱</span>
+            <span class="font-bold" style="color:var(--text-primary)">${escapeHtml(t('mbTitle'))}</span>
             <span style="width:36px;height:36px"></span>
         </div>
         <div class="mailbox-view">
             <div class="mailbox-tabs" data-mailbox-tabs>
-                ${MAILBOX_TABS.map(tab => `<button class="mailbox-tab${activeMailboxTab === tab.id ? ' is-active' : ''}" data-mailbox-tab="${tab.id}" type="button"><span>${tab.label}</span></button>`).join('')}
+                ${MAILBOX_TABS.map(tab => `<button class="mailbox-tab${activeMailboxTab === tab.id ? ' is-active' : ''}" data-mailbox-tab="${tab.id}" type="button"><span>${escapeHtml(t(tab.labelKey))}</span></button>`).join('')}
             </div>
             <div class="mailbox-scroll" data-mailbox-list>
-                <div class="card-flat" style="color:var(--text-muted);text-align:center">正在收取邮件...</div>
+                <div class="card-flat" style="color:var(--text-muted);text-align:center">${escapeHtml(t('mbReceiving'))}</div>
             </div>
             <div class="mailbox-actions">
-                <button class="btn-secondary" data-mailbox-email>发邮件</button>
-                <button class="btn-secondary" data-mailbox-add-friend>加好友</button>
-                <button class="btn-primary" data-mailbox-share>制作明信片</button>
+                <button class="btn-secondary" data-mailbox-email>${escapeHtml(t('mbEmail'))}</button>
+                <button class="btn-secondary" data-mailbox-add-friend>${escapeHtml(t('mbAddFriend'))}</button>
+                <button class="btn-primary" data-mailbox-share>${escapeHtml(t('mbMakePostcard'))}</button>
             </div>
         </div>`;
     const back = panel.querySelector('#mhBack');
     if (back) back.onclick = () => onBack?.();
     panel.querySelector('[data-mailbox-share]').onclick = () => {
         const pet = getCurrentPet();
-        if (!pet) { showToast('请先选择宠物', 'info'); return; }
+        if (!pet) { showToast(t('mbSelectPetFirst'), 'info'); return; }
         showPetSharePanel(pet);
     };
     panel.querySelector('[data-mailbox-add-friend]').onclick = () => requestFriendByName();
@@ -493,7 +494,7 @@ export function renderMailbox(panel, _data = {}, { onBack, onOpenPostcard, onEma
                             onMarkRead: async (detailMail, { button }) => {
                                 const mailId = normalizeMail(detailMail || mail).id;
                                 if (!mailId || !state.sdk?.socialFriends?.setMailRead) {
-                                    showToast('当前 SDK 不支持标记已读', 'error');
+                                    showToast(t('mbNoMarkSdk'), 'error');
                                     return;
                                 }
                                 button.disabled = true;
@@ -503,16 +504,16 @@ export function renderMailbox(panel, _data = {}, { onBack, onOpenPostcard, onEma
                                     bindTabs(data, renderCurrentList);
                                     renderCurrentList();
                                     button.textContent = '已读';
-                                    showToast('已标记为已读', 'success');
+                                    showToast(t('mbMarkedRead'), 'success');
                                 } catch (e) {
-                                    showToast('标记失败：' + (e?.message || e), 'error');
+                                    showToast(t('mbMarkFailed', { error: (e?.message || e) }), 'error');
                                     button.disabled = false;
                                 }
                             },
                             onDelete: async (detailMail, { mask, button }) => {
                                 const mailId = normalizeMail(detailMail || mail).id;
                                 if (!mailId || !state.sdk?.socialFriends?.deleteMail) {
-                                    showToast('当前 SDK 不支持删除邮件', 'error');
+                                    showToast(t('mbNoDeleteSdk'), 'error');
                                     return;
                                 }
                                 button.disabled = true;
@@ -522,9 +523,9 @@ export function renderMailbox(panel, _data = {}, { onBack, onOpenPostcard, onEma
                                     bindTabs(data, renderCurrentList);
                                     renderCurrentList();
                                     mask.remove();
-                                    showToast('邮件已删除', 'success');
+                                    showToast(t('mbDeleted'), 'success');
                                 } catch (e) {
-                                    showToast('删除失败：' + (e?.message || e), 'error');
+                                    showToast(t('mbDeleteFailed', { error: (e?.message || e) }), 'error');
                                     button.disabled = false;
                                 }
                             },
@@ -540,8 +541,8 @@ export function renderMailbox(panel, _data = {}, { onBack, onOpenPostcard, onEma
                     const applyId = applyIdOf(item);
                     if (!applyId || !state.sdk?.socialFriends?.acceptApply) return;
                     btn.disabled = true;
-                    try { await state.sdk.socialFriends.acceptApply(applyId); showToast('已同意好友请求', 'success'); renderMailbox(panel, _data, { onBack, onOpenPostcard, onEmail }); }
-                    catch (e) { showToast('处理失败：' + (e?.message || e), 'error'); btn.disabled = false; }
+                    try { await state.sdk.socialFriends.acceptApply(applyId); showToast(t('mbAccepted'), 'success'); renderMailbox(panel, _data, { onBack, onOpenPostcard, onEmail }); }
+                    catch (e) { showToast(t('mbHandleFailed', { error: (e?.message || e) }), 'error'); btn.disabled = false; }
                 };
             });
             listEl.querySelectorAll('[data-reject-apply]').forEach(btn => {
@@ -550,8 +551,8 @@ export function renderMailbox(panel, _data = {}, { onBack, onOpenPostcard, onEma
                     const applyId = applyIdOf(item);
                     if (!applyId || !state.sdk?.socialFriends?.rejectApply) return;
                     btn.disabled = true;
-                    try { await state.sdk.socialFriends.rejectApply(applyId); showToast('已拒绝好友请求', 'info'); renderMailbox(panel, _data, { onBack, onOpenPostcard, onEmail }); }
-                    catch (e) { showToast('处理失败：' + (e?.message || e), 'error'); btn.disabled = false; }
+                    try { await state.sdk.socialFriends.rejectApply(applyId); showToast(t('mbRejected'), 'info'); renderMailbox(panel, _data, { onBack, onOpenPostcard, onEmail }); }
+                    catch (e) { showToast(t('mbHandleFailed', { error: (e?.message || e) }), 'error'); btn.disabled = false; }
                 };
             });
         };

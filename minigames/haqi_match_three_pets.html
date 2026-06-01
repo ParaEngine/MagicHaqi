@@ -10,6 +10,141 @@
 <body></body>
 <script defer>
 (function () {
+	// ---- i18n ----
+	const I18N = {
+		zhCN: {
+			title: '宠物三消',
+			lvEasy: '轻松',
+			lvCollect: '收集',
+			lvGarden: '花园',
+			lvChain: '连锁',
+			lvChallenge: '挑战',
+			objApple: '苹果',
+			objBanana: '香蕉',
+			objBerry: '草莓',
+			objCherry: '樱桃',
+			objCookie: '饼干',
+			petStar: '星星',
+			petFlower: '花花',
+			petSun: '太阳',
+			petMoon: '月亮',
+			petRainbow: '彩虹',
+			petCrystal: '水晶',
+			headerTitle: '🍎 宠物三消',
+			levelSelectLabel: '关卡难度',
+			hintBtn: '提示',
+			helpBtn: '玩法',
+			movesAriaLabel: '剩余步数',
+			boardAriaLabel: '宠物三消棋盘',
+			defaultTip: '交换相邻食物能量，连成 3 个以上，帮助宠物捕捉食物。',
+			restartBtn: '重新开始',
+			howToTitle: '宠物三消',
+			howToText: '交换相邻格子，让 3 个或更多相同食物能量排成一行或一列。4 连会产生横竖技能，5 连会产生爆破技能，两个技能互换会触发更强连锁。',
+			startBtn: '开始玩',
+			resultTitle: '完成',
+			retryBtn: '再玩一次',
+			closeBtn: '关闭',
+			defaultPetName: '宠物',
+			defaultDifficulty: '难度',
+			boardShuffled: '棋盘重新排列啦',
+			noMovesTip: '没有合适的交换，已经帮你重新排列棋盘。',
+			hintTip: '试试交换发光的两个格子。4 连和 5 连会产生技能。',
+			vineBlockTip: '藤蔓缠住了这个格子，先在旁边消除来解开它。',
+			noMatchTip: '这一步没有连成 3 个，换个方向试试。',
+			skillCombo: '技能组合!',
+			bigClear: '大消除!',
+			comboTip: '漂亮，触发 {combo} 连锁！',
+			keepLooking: '继续寻找下一组宠物。',
+			goalReached: '目标达成！',
+			noMovesLeft: '步数用完啦',
+			done: '完成!',
+			tryAgain: '再试一次',
+			moodGain: '心情 +{points}',
+			resultScore: '得分 {score}，剩余 {moves} 步',
+			resultBest: '最佳 {score} 分，最高 {stars} 星',
+			specialRow: ' 行消除',
+			specialCol: ' 列消除',
+			specialBomb: ' 爆破',
+			levelUpdated: '关卡难度已更新',
+			startLevelTip: '{level}：交换相邻宠物，完成本关目标。',
+			comboBanner: '{combo} 连锁!',
+		},
+		enUS: {
+			title: 'Pet Match Three',
+			lvEasy: 'Easy',
+			lvCollect: 'Collect',
+			lvGarden: 'Garden',
+			lvChain: 'Chain',
+			lvChallenge: 'Challenge',
+			objApple: 'Apple',
+			objBanana: 'Banana',
+			objBerry: 'Strawberry',
+			objCherry: 'Cherry',
+			objCookie: 'Cookie',
+			petStar: 'Star',
+			petFlower: 'Flower',
+			petSun: 'Sun',
+			petMoon: 'Moon',
+			petRainbow: 'Rainbow',
+			petCrystal: 'Crystal',
+			headerTitle: '🍎 Pet Match Three',
+			levelSelectLabel: 'Level difficulty',
+			hintBtn: 'Hint',
+			helpBtn: 'How to Play',
+			movesAriaLabel: 'Moves remaining',
+			boardAriaLabel: 'Pet Match Three board',
+			defaultTip: 'Swap adjacent food energies to match 3 or more and help pets collect food.',
+			restartBtn: 'Restart',
+			howToTitle: 'Pet Match Three',
+			howToText: 'Swap adjacent tiles to line up 3 or more of the same food energy in a row or column. Match 4 to create row/column power-ups, match 5 for a bomb. Swapping two power-ups triggers an even bigger chain.',
+			startBtn: 'Start Playing',
+			resultTitle: 'Done',
+			retryBtn: 'Play Again',
+			closeBtn: 'Close',
+			defaultPetName: 'Pet',
+			defaultDifficulty: 'Difficulty',
+			boardShuffled: 'Board reshuffled!',
+			noMovesTip: 'No valid moves — the board has been reshuffled for you.',
+			hintTip: 'Try swapping the two glowing tiles. Match 4 or 5 to create power-ups.',
+			vineBlockTip: 'Vines are blocking this tile. Clear nearby matches to free it.',
+			noMatchTip: 'No match of 3 here. Try a different direction.',
+			skillCombo: 'Skill Combo!',
+			bigClear: 'Big Clear!',
+			comboTip: 'Nice! Triggered a {combo} chain!',
+			keepLooking: 'Keep looking for the next match.',
+			goalReached: 'Goal Reached!',
+			noMovesLeft: 'Out of Moves',
+			done: 'Done!',
+			tryAgain: 'Try Again',
+			moodGain: 'Mood +{points}',
+			resultScore: 'Score {score}, {moves} moves left',
+			resultBest: 'Best {score} pts, {stars} stars',
+			specialRow: ' Row Clear',
+			specialCol: ' Col Clear',
+			specialBomb: ' Bomb',
+			levelUpdated: 'Level difficulty updated',
+			startLevelTip: '{level}: Swap adjacent pets to complete the level goal.',
+			comboBanner: '{combo} Chain!',
+		},
+	};
+	function detectLang() {
+		try {
+			const params = new URLSearchParams(window.location.search);
+			const lang = params.get('lang');
+			if (lang && I18N[lang]) return lang;
+		} catch (_) {}
+		return 'zhCN';
+	}
+	const LANG = detectLang();
+	const L = I18N[LANG];
+	function t(key, vars) {
+		let str = L[key] || I18N.zhCN[key] || key;
+		if (vars) str = str.replace(/\{(\w+)\}/g, (m, n) => vars[n] != null ? String(vars[n]) : m);
+		return str;
+	}
+	try { document.documentElement.setAttribute('lang', LANG === 'enUS' ? 'en' : 'zh-CN'); } catch (_) {}
+	try { document.title = t('title'); } catch (_) {}
+
 	const BOARD_SIZE = 8;
 	const TYPE_COUNT = 6;
 	const MAX_MOVES = 28;
@@ -20,26 +155,26 @@
 	const SPECIAL_KIND = { ROW: 0, COL: 1, BOMB: 2 };
 	const MAP_TERRAINS = ['grass', 'water', 'mud', 'stone'];
 	const MAP_OBJECTS = [
-		{ id: 'apple', icon: '🍎', name: '苹果' },
-		{ id: 'banana', icon: '🍌', name: '香蕉' },
-		{ id: 'berry', icon: '🍓', name: '草莓' },
-		{ id: 'cherry', icon: '🍒', name: '樱桃' },
-		{ id: 'cookie', icon: '🍪', name: '饼干' },
+		{ id: 'apple', icon: '🍎', name: t('objApple') },
+		{ id: 'banana', icon: '🍌', name: t('objBanana') },
+		{ id: 'berry', icon: '🍓', name: t('objBerry') },
+		{ id: 'cherry', icon: '🍒', name: t('objCherry') },
+		{ id: 'cookie', icon: '🍪', name: t('objCookie') },
 	];
 	const LEVEL_PRESETS = [
-		{ id: 'story1', title: 'Lv.1 轻松', moves: 30, targetScore: 620, goalType: null, goalCount: 0, tileCount: 0, glassCount: 0, vineCount: 0, objectCount: 0, special: true },
-		{ id: 'story2', title: 'Lv.2 收集', moves: 30, targetScore: 860, goalType: 0, goalCount: 7, tileCount: 0, glassCount: 0, vineCount: 0, objectCount: 2, special: true },
-		{ id: 'story3', title: 'Lv.3 花园', moves: 29, targetScore: 1080, goalType: 2, goalCount: 8, tileCount: 12, glassCount: 4, vineCount: 0, objectCount: 3, special: true },
-		{ id: 'story4', title: 'Lv.4 连锁', moves: 28, targetScore: 1320, goalType: 4, goalCount: 10, tileCount: 16, glassCount: 6, vineCount: 5, objectCount: 4, special: true },
-		{ id: 'story5', title: 'Lv.5 挑战', moves: 28, targetScore: 1580, goalType: 5, goalCount: 12, tileCount: 20, glassCount: 8, vineCount: 7, objectCount: 5, special: true },
+		{ id: 'story1', title: `Lv.1 ${t('lvEasy')}`, moves: 30, targetScore: 620, goalType: null, goalCount: 0, tileCount: 0, glassCount: 0, vineCount: 0, objectCount: 0, special: true },
+		{ id: 'story2', title: `Lv.2 ${t('lvCollect')}`, moves: 30, targetScore: 860, goalType: 0, goalCount: 7, tileCount: 0, glassCount: 0, vineCount: 0, objectCount: 2, special: true },
+		{ id: 'story3', title: `Lv.3 ${t('lvGarden')}`, moves: 29, targetScore: 1080, goalType: 2, goalCount: 8, tileCount: 12, glassCount: 4, vineCount: 0, objectCount: 3, special: true },
+		{ id: 'story4', title: `Lv.4 ${t('lvChain')}`, moves: 28, targetScore: 1320, goalType: 4, goalCount: 10, tileCount: 16, glassCount: 6, vineCount: 5, objectCount: 4, special: true },
+		{ id: 'story5', title: `Lv.5 ${t('lvChallenge')}`, moves: 28, targetScore: 1580, goalType: 5, goalCount: 12, tileCount: 20, glassCount: 8, vineCount: 7, objectCount: 5, special: true },
 	];
 	const FALLBACK_PETS = [
-		{ name: '星星', emoji: '⭐' },
-		{ name: '花花', emoji: '🌸' },
-		{ name: '太阳', emoji: '☀️' },
-		{ name: '月亮', emoji: '🌙' },
-		{ name: '彩虹', emoji: '🌈' },
-		{ name: '水晶', emoji: '💎' },
+		{ name: t('petStar'), emoji: '⭐' },
+		{ name: t('petFlower'), emoji: '🌸' },
+		{ name: t('petSun'), emoji: '☀️' },
+		{ name: t('petMoon'), emoji: '🌙' },
+		{ name: t('petRainbow'), emoji: '🌈' },
+		{ name: t('petCrystal'), emoji: '💎' },
 	];
 	const JELLY_COLORS = [
 		{ from: '#ff5a5f', to: '#b91c1c', shine: 'rgba(255,255,255,.74)' },
@@ -392,40 +527,40 @@
 		</style>
 		<div class="mh-shell">
 			<div class="mh-top">
-				<div class="mh-title">🍎 宠物三消</div>
+				<div class="mh-title">${t('headerTitle')}</div>
 				<div class="mh-stats">
-					<select class="mh-select" id="mhLevelSelect" aria-label="关卡难度"></select>
-					<button class="mh-help mh-hint-btn" id="mhHint" type="button">提示</button>
-					<button class="mh-help" id="mhHelp" type="button">玩法</button>
+					<select class="mh-select" id="mhLevelSelect" aria-label="${t('levelSelectLabel')}"></select>
+					<button class="mh-help mh-hint-btn" id="mhHint" type="button">${t('hintBtn')}</button>
+					<button class="mh-help" id="mhHelp" type="button">${t('helpBtn')}</button>
 				</div>
 			</div>
 			<main class="mh-stage">
 				<div class="mh-game-area">
 					<div class="mh-game-hud">
-						<div class="mh-move-countdown" id="mhMoveCountdown" aria-label="剩余步数"><b id="mhMovesBig">${MAX_MOVES}</b></div>
+						<div class="mh-move-countdown" id="mhMoveCountdown" aria-label="${t('movesAriaLabel')}"><b id="mhMovesBig">${MAX_MOVES}</b></div>
 						<div class="mh-objectives" id="mhObjectives"></div>
 					</div>
-					<div class="mh-board-wrap"><div id="mhBoard" class="mh-board" aria-label="宠物三消棋盘"></div></div>
+					<div class="mh-board-wrap"><div id="mhBoard" class="mh-board" aria-label="${t('boardAriaLabel')}"></div></div>
 				</div>
 			</main>
-			<div class="mh-bottom"><span class="mh-tip" id="mhTip">交换相邻食物能量，连成 3 个以上，帮助宠物捕捉食物。</span><button class="mh-restart" id="mhRestart" type="button">重新开始</button></div>
+			<div class="mh-bottom"><span class="mh-tip" id="mhTip">${t('defaultTip')}</span><button class="mh-restart" id="mhRestart" type="button">${t('restartBtn')}</button></div>
 		</div>
 		<div class="mh-overlay" id="mhHowTo" role="dialog" aria-modal="true" aria-labelledby="mhHowToTitle" hidden>
 			<div class="mh-card">
-				<h1 id="mhHowToTitle">宠物三消</h1>
-				<p>交换相邻格子，让 3 个或更多相同食物能量排成一行或一列。4 连会产生横竖技能，5 连会产生爆破技能，两个技能互换会触发更强连锁。</p>
+				<h1 id="mhHowToTitle">${t('howToTitle')}</h1>
+				<p>${t('howToText')}</p>
 				<div class="mh-pet-preview" id="mhPetPreview"></div>
-				<button class="mh-start" id="mhStart" type="button">开始玩</button>
+				<button class="mh-start" id="mhStart" type="button">${t('startBtn')}</button>
 			</div>
 		</div>
 		<div class="mh-overlay" id="mhResult" role="dialog" aria-modal="true" aria-labelledby="mhResultTitle" hidden>
 			<div class="mh-card">
-				<h1 id="mhResultTitle">完成</h1>
+				<h1 id="mhResultTitle">${t('resultTitle')}</h1>
 				<div class="mh-stars" id="mhResultStars"></div>
 				<div class="mh-result-detail" id="mhResultDetail"></div>
 				<div class="mh-card-actions">
-					<button class="mh-start" id="mhResultRetry" type="button">再玩一次</button>
-					<button class="mh-restart" id="mhResultClose" type="button">关闭</button>
+					<button class="mh-start" id="mhResultRetry" type="button">${t('retryBtn')}</button>
+					<button class="mh-restart" id="mhResultClose" type="button">${t('closeBtn')}</button>
 				</div>
 			</div>
 	`;
@@ -531,7 +666,7 @@
 		state.objectUrls.push(url);
 		return {
 			kind: 'pet',
-			name: pet.name || '宠物',
+			name: pet.name || t('defaultPetName'),
 			url,
 			uv: pet.uv,
 			imageWidth: pet.imageWidth || 0,
@@ -566,7 +701,7 @@
 		updateStats();
 		updateObjectives();
 		renderBoard();
-		setTip(`${difficultyLabel(activeConfig())}：交换相邻宠物，完成本关目标。`);
+		setTip(t('startLevelTip', { level: difficultyLabel(activeConfig()) }));
 		if (activeConfig().id === 'story1') setTimeout(() => {
 			if (state.started && !state.finished && !state.locked && !state.selected) showHint();
 		}, 650);
@@ -643,15 +778,15 @@
 			ensurePlayableBoard({ reshuffleExisting: true });
 			renderBoard();
 			pulseShuffle();
-			showToast('棋盘重新排列啦');
-			setTip('没有合适的交换，已经帮你重新排列棋盘。');
+			showToast(t('boardShuffled'));
+			setTip(t('noMovesTip'));
 			setTimeout(() => { state.locked = false; renderBoard(); }, 480);
 			return;
 		}
 		state.hintCells.add(key(move.first.row, move.first.col));
 		state.hintCells.add(key(move.second.row, move.second.col));
 		renderBoard();
-		setTip('试试交换发光的两个格子。4 连和 5 连会产生技能。');
+		setTip(t('hintTip'));
 		setTimeout(() => {
 			state.hintCells.clear();
 			if (!state.locked && !state.finished) renderBoard();
@@ -760,7 +895,7 @@
 		state.levelConfig = getLevelConfig(selectedId) || state.levelConfigs[0];
 		renderLevelSelect();
 		saveSettings();
-		showToast('关卡难度已更新');
+		showToast(t('levelUpdated'));
 		post('levelConfigSaved', { selectedLevelId: state.levelConfig.id, count: state.levelConfigs.length });
 	}
 
@@ -784,7 +919,7 @@
 	}
 
 	function difficultyLabel(config) {
-		const title = String(config?.title || config?.name || '难度');
+		const title = String(config?.title || config?.name || t('defaultDifficulty'));
 		return title.replace(/^Lv\.?\s*\d+\s*/i, '').trim() || title;
 	}
 
@@ -824,7 +959,7 @@
 				if (state.vines[row]?.[col]) cell.classList.add('blocked');
 				const value = state.board[row][col];
 				const type = baseType(value);
-				cell.setAttribute('aria-label', `${state.pets[type]?.name || '宠物'}${specialLabel(value)} ${row + 1}-${col + 1}`);
+				cell.setAttribute('aria-label', `${state.pets[type]?.name || t('defaultPetName')}${specialLabel(value)} ${row + 1}-${col + 1}`);
 				cell.appendChild(createToken(state.pets[type], value));
 				appendMapLayers(cell, row, col);
 				cell.addEventListener('pointerdown', (event) => handlePointerDown(event, row, col));
@@ -887,7 +1022,7 @@
 		if (state.vines[row]?.[col]) {
 			playSound('invalid');
 			showInvalidSwap([{ row, col }]);
-			setTip('藤蔓缠住了这个格子，先在旁边消除来解开它。');
+			setTip(t('vineBlockTip'));
 			return;
 		}
 		playSound('tap');
@@ -1130,7 +1265,7 @@
 		if (state.vines[row]?.[col]) {
 			playSound('invalid');
 			showInvalidSwap([{ row, col }]);
-			setTip('藤蔓缠住了这个格子，先在旁边消除来解开它。');
+			setTip(t('vineBlockTip'));
 			return;
 		}
 		const current = { row, col };
@@ -1178,7 +1313,7 @@
 			playSound('invalid');
 			showInvalidSwap([first, second]);
 			state.locked = false;
-			setTip('这一步没有连成 3 个，换个方向试试。');
+			setTip(t('noMatchTip'));
 			return;
 		}
 
@@ -1188,7 +1323,7 @@
 		state.moves--;
 		state.combo = 0;
 		updateStats();
-		if (specialCombo.length) showComboBanner('技能组合!');
+		if (specialCombo.length) showComboBanner(t('skillCombo'));
 		await resolveMatches(matches);
 		state.locked = false;
 		renderBoard();
@@ -1216,7 +1351,7 @@
 			updateObjectives();
 			showScoreFloat(gained, cells);
 			if (state.combo > 1) showComboBanner(state.combo);
-			if (cells.length >= 8) showComboBanner('大消除!');
+			if (cells.length >= 8) showComboBanner(t('bigClear'));
 			pulseBoard();
 			await delay(260);
 			clearCells(cells);
@@ -1230,10 +1365,10 @@
 			state.hintCells.clear();
 			renderBoard();
 			pulseShuffle();
-			showToast('棋盘重新排列啦');
+			showToast(t('boardShuffled'));
 			await delay(260);
 		}
-		setTip(state.combo > 1 ? `漂亮，触发 ${state.combo} 连锁！` : '继续寻找下一组宠物。');
+		setTip(state.combo > 1 ? t('comboTip', { combo: state.combo }) : t('keepLooking'));
 	}
 
 	function findMatches() {
@@ -1515,7 +1650,7 @@
 	function showComboBanner(combo) {
 		const banner = document.createElement('div');
 		banner.className = 'mh-combo-banner';
-		banner.textContent = typeof combo === 'number' ? `${combo} 连锁!` : combo;
+		banner.textContent = typeof combo === 'number' ? t('comboBanner', { combo }) : combo;
 		document.body.appendChild(banner);
 		setTimeout(() => banner.remove(), 980);
 	}
@@ -1611,10 +1746,10 @@
 		const vinesDone = config.vineCount <= 0 || state.vinesCleared >= config.vineCount;
 		const objectsDone = config.objectCount <= 0 || state.objectsCollected >= config.objectCount;
 		if (scoreDone && goalDone && tilesDone && glassDone && vinesDone && objectsDone) {
-			finish(true, '目标达成！');
+			finish(true, t('goalReached'));
 			return;
 		}
-		if (state.moves <= 0) finish(false, '步数用完啦');
+		if (state.moves <= 0) finish(false, t('noMovesLeft'));
 	}
 
 	function finish(won, text) {
@@ -1628,8 +1763,8 @@
 		const earnedPoints = won ? Math.max(60, Math.round(state.score / 10)) : Math.max(20, Math.round(state.score / 18));
 		playSound(won ? 'win' : 'lose');
 		if (won) launchConfetti();
-		showComboBanner(won ? '完成!' : '再试一次');
-		showToast(`${text}<br>心情 +${earnedPoints}`);
+		showComboBanner(won ? t('done') : t('tryAgain'));
+		showToast(`${text}<br>${t('moodGain', { points: earnedPoints })}`);
 		showResultPanel(won, text, earnedPoints, stars, best);
 		post('gameFinished', {
 			earnedPoints,
@@ -1675,12 +1810,12 @@
 	}
 
 	function showResultPanel(won, text, earnedPoints, stars, best) {
-		byId('mhResultTitle').textContent = won ? '目标达成！' : text;
+		byId('mhResultTitle').textContent = won ? t('goalReached') : text;
 		byId('mhResultStars').textContent = won ? `${'★'.repeat(stars)}${'☆'.repeat(3 - stars)}` : '☆☆☆';
 		byId('mhResultDetail').innerHTML = [
-			`得分 ${state.score}，剩余 ${state.moves} 步`,
-			`最佳 ${best.score} 分，最高 ${best.stars} 星`,
-			`心情 +${earnedPoints}`,
+			t('resultScore', { score: state.score, moves: state.moves }),
+			t('resultBest', { score: best.score, stars: best.stars }),
+			t('moodGain', { points: earnedPoints }),
 		].join('<br>');
 		setTimeout(() => {
 			byId('mhResult').hidden = false;
@@ -1923,9 +2058,9 @@
 	function specialLabel(value) {
 		if (!isSpecial(value)) return '';
 		const kind = specialKind(value);
-		if (kind === SPECIAL_KIND.ROW) return ' 行消除';
-		if (kind === SPECIAL_KIND.COL) return ' 列消除';
-		return ' 爆破';
+		if (kind === SPECIAL_KIND.ROW) return t('specialRow');
+		if (kind === SPECIAL_KIND.COL) return t('specialCol');
+		return t('specialBomb');
 	}
 
 	function shuffle(items) {

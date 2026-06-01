@@ -1,5 +1,6 @@
 // 星球地貌管理视图
 import { escapeHtml, showToast } from './utils.js';
+import { t } from './i18n.js';
 import { CONFIG } from './config.js';
 import { notify, state, setCurrentField } from './state.js';
 import { saveFieldScenesDebounced, saveTerrainFieldsDebounced } from './storage.js';
@@ -8,11 +9,11 @@ import { DEFAULT_TERRAIN_FIELD_SLOT_ID, normalizeTerrainFieldSlotId, normalizeTe
 export { DEFAULT_TERRAIN_FIELD_SLOT_ID, normalizeTerrainFieldSlotId, TERRAIN_FIELD_SLOT_COUNT, TERRAIN_FIELD_SLOT_DEFS };
 
 const REMOTE_TERRAIN_TYPES = [
-    { id: 'fire', name: '火山', emoji: '', iconClass: 'field-tab-icon-fire', discoveryId: 'firebird', favoriteTrait: 'dragonLike' },
-    { id: 'ice', name: '冰湖', emoji: '', iconClass: 'field-tab-icon-ice', discoveryId: 'ice', favoriteTrait: 'fishLike' },
-    { id: 'life', name: '神树', emoji: '', iconClass: 'field-tab-icon-life', discoveryId: 'desert', favoriteTrait: 'fruitLike' },
-    { id: 'dark', name: '洞穴', emoji: '', iconClass: 'field-tab-icon-dark', discoveryId: 'shadow', favoriteTrait: 'catLike' },
-    { id: 'thunder', name: '雷云', emoji: '', iconClass: 'field-tab-icon-thunder', discoveryId: 'thunder', favoriteTrait: 'birdLike' },
+    { id: 'fire', get name() { return t('fieldVolcano'); }, emoji: '', iconClass: 'field-tab-icon-fire', discoveryId: 'firebird', favoriteTrait: 'dragonLike' },
+    { id: 'ice', get name() { return t('fieldIce'); }, emoji: '', iconClass: 'field-tab-icon-ice', discoveryId: 'ice', favoriteTrait: 'fishLike' },
+    { id: 'life', get name() { return t('fieldTree'); }, emoji: '', iconClass: 'field-tab-icon-life', discoveryId: 'desert', favoriteTrait: 'fruitLike' },
+    { id: 'dark', get name() { return t('fieldCave'); }, emoji: '', iconClass: 'field-tab-icon-dark', discoveryId: 'shadow', favoriteTrait: 'catLike' },
+    { id: 'thunder', get name() { return t('fieldThunder'); }, emoji: '', iconClass: 'field-tab-icon-thunder', discoveryId: 'thunder', favoriteTrait: 'birdLike' },
 ];
 
 const TERRAIN_DELETE_SAFE_DISTANCE = 56;
@@ -29,7 +30,7 @@ function isReadonlyPlanet() {
 }
 
 function showReadonlyPlanetToast() {
-    showToast('官方星球的地貌不能修改。', 'info', 1600);
+    showToast(t('terrainReadonly'), 'info', 1600);
 }
 
 function baseTerrainTypes() {
@@ -489,13 +490,13 @@ export function renderTerrainFields(panel, _data, { onBack } = {}) {
         ${terrainViewStyles()}
         <div class="topbar">
             <button class="btn-icon" id="mhBack" style="width:36px;height:36px;font-size:18px">‹</button>
-            <span class="font-bold" style="color:var(--text-primary)">星球地貌</span>
+            <span class="font-bold" style="color:var(--text-primary)">${escapeHtml(t('terrainTitle'))}</span>
             <span style="width:36px"></span>
         </div>
         <div class="absolute terrain-fields-view">
             <div class="terrain-fields-actions">
                 <div class="terrain-fields-hint">${readonly ? '官方星球地貌由星球配置决定，不能修改。' : '拖动已收集的地貌到 7 个位置；同一种地貌可以放进多个位置。'}</div>
-                <button type="button" class="btn-secondary" id="mhTerrainReset" ${readonly ? 'disabled' : ''}>重置</button>
+                <button type="button" class="btn-secondary" id="mhTerrainReset" ${readonly ? 'disabled' : ''}>${escapeHtml(t('terrainReset'))}</button>
             </div>
             <div class="terrain-fields-board">
                 ${slots.map(renderSlotCard).join('')}
@@ -514,7 +515,7 @@ export function renderTerrainFields(panel, _data, { onBack } = {}) {
             return;
         }
         resetTerrainFieldSlots();
-        showToast('地貌已重置', 'success', 1000);
+        showToast(t('terrainResetDone'), 'success', 1000);
         renderTerrainFields(panel, _data, { onBack });
     };
 
@@ -541,7 +542,7 @@ export function renderTerrainFields(panel, _data, { onBack } = {}) {
             }
             selectedTypeId = item.dataset.terrainType || '';
             panel.querySelectorAll('[data-terrain-type]').forEach(btn => btn.classList.toggle('is-selected', btn === item));
-            showToast('点击上方格子即可放入', 'info', 900);
+            showToast(t('terrainTapToPlace'), 'info', 900);
         };
     });
 
@@ -596,7 +597,7 @@ export function renderTerrainFields(panel, _data, { onBack } = {}) {
                 return;
             }
             if (!selectedTypeId) {
-                showToast('先选择或拖动一个地貌类型', 'info', 1000);
+                showToast(t('terrainSelectFirst'), 'info', 1000);
                 return;
             }
             if (assignTerrainFieldSlot(index, selectedTypeId)) renderTerrainFields(panel, _data, { onBack });

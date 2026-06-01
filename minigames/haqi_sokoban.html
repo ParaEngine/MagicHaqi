@@ -11,6 +11,92 @@
 <body></body>
 <script defer>
 (function () {
+  // ---- i18n ----
+  const I18N = {
+    zhCN: {
+      title: '宠物推箱子',
+      menuAria: '玩法',
+      gameStatusAria: '游戏状态',
+      difficultyLabel: '难度',
+      pushesLabel: '推动',
+      movesLabel: '步数',
+      boardAria: '宠物推箱子棋盘',
+      selectDiffAria: '选择难度',
+      helpBtn: '玩法',
+      restartBtn: '重开',
+      newLevelBtn: '新关卡',
+      dirControlAria: '方向控制',
+      dirUp: '上',
+      dirLeft: '左',
+      dirDown: '下',
+      dirRight: '右',
+      howToTitle: '宠物推箱子',
+      howToText: '用当前宠物推动木箱，把所有木箱推到绿色标记上。每个 AI 关卡都会先由求解器验证可解；选择难度后会自动记住，下次继续使用。',
+      startGame: '开始游戏',
+      winTitle: '完成！',
+      winTextDefault: '所有箱子都到位了。',
+      nextLevel: '下一关',
+      generating: 'AI 正在生成可解关卡...',
+      diffEasy: '轻松',
+      diffNormal: '标准',
+      diffHard: '困难',
+      diffExpert: '专家',
+      winText: 'Lv.{level} {label}完成，推动 {pushes} 次，AI最少 {solution} 次。',
+      toastWin: '通关!',
+      crateDone: '已到位木箱',
+      crate: '木箱',
+    },
+    enUS: {
+      title: 'Pet Sokoban',
+      menuAria: 'How to Play',
+      gameStatusAria: 'Game status',
+      difficultyLabel: 'Difficulty',
+      pushesLabel: 'Pushes',
+      movesLabel: 'Moves',
+      boardAria: 'Pet Sokoban board',
+      selectDiffAria: 'Select difficulty',
+      helpBtn: 'How to Play',
+      restartBtn: 'Restart',
+      newLevelBtn: 'New Level',
+      dirControlAria: 'Direction controls',
+      dirUp: 'Up',
+      dirLeft: 'Left',
+      dirDown: 'Down',
+      dirRight: 'Right',
+      howToTitle: 'Pet Sokoban',
+      howToText: 'Push crates with your pet to place every crate on a green marker. Each AI-generated level is verified solvable by a solver; your difficulty choice is saved and reused next time.',
+      startGame: 'Start Game',
+      winTitle: 'Complete!',
+      winTextDefault: 'All crates are in place.',
+      nextLevel: 'Next Level',
+      generating: 'AI is generating a solvable level...',
+      diffEasy: 'Easy',
+      diffNormal: 'Normal',
+      diffHard: 'Hard',
+      diffExpert: 'Expert',
+      winText: 'Lv.{level} {label} complete, {pushes} pushes, AI minimum {solution}.',
+      toastWin: 'Cleared!',
+      crateDone: 'Crate in place',
+      crate: 'Crate',
+    },
+  };
+  function detectLang() {
+    try {
+      const params = new URLSearchParams(window.location.search);
+      const lang = params.get('lang');
+      if (lang && I18N[lang]) return lang;
+    } catch (_) {}
+    return 'zhCN';
+  }
+  const LANG = detectLang();
+  const L = I18N[LANG];
+  function t(key, vars) {
+    let str = L[key] || I18N.zhCN[key] || key;
+    if (vars) str = str.replace(/\{(\w+)\}/g, (m, n) => vars[n] != null ? String(vars[n]) : m);
+    return str;
+  }
+  try { document.documentElement.setAttribute('lang', LANG === 'enUS' ? 'en' : 'zh-CN'); } catch (_) {}
+  try { document.title = t('title'); } catch (_) {}
   const STORAGE_KEY_DIFFICULTY = 'haqiSokobanLastDifficulty';
   const STORAGE_KEY_BEST = 'haqiSokobanBestLevel';
   const FALLBACK_PET = '🐾';
@@ -21,10 +107,10 @@
     { key: 'left', dr: 0, dc: -1, label: '←' },
   ];
   const DIFFICULTIES = {
-    easy: { id: 'easy', label: '轻松', size: 7, boxes: 2, walls: 5, minPushes: 4, attempts: 60, maxNodes: 6000, timeBudget: 260, reward: 70 },
-    normal: { id: 'normal', label: '标准', size: 8, boxes: 3, walls: 8, minPushes: 8, attempts: 80, maxNodes: 10000, timeBudget: 420, reward: 95 },
-    hard: { id: 'hard', label: '困难', size: 8, boxes: 3, walls: 12, minPushes: 12, attempts: 105, maxNodes: 14000, timeBudget: 620, reward: 125 },
-    expert: { id: 'expert', label: '专家', size: 9, boxes: 4, walls: 14, minPushes: 16, attempts: 130, maxNodes: 18000, timeBudget: 850, reward: 160 },
+    easy: { id: 'easy', label: t('diffEasy'), size: 7, boxes: 2, walls: 5, minPushes: 4, attempts: 60, maxNodes: 6000, timeBudget: 260, reward: 70 },
+    normal: { id: 'normal', label: t('diffNormal'), size: 8, boxes: 3, walls: 8, minPushes: 8, attempts: 80, maxNodes: 10000, timeBudget: 420, reward: 95 },
+    hard: { id: 'hard', label: t('diffHard'), size: 8, boxes: 3, walls: 12, minPushes: 12, attempts: 105, maxNodes: 14000, timeBudget: 620, reward: 125 },
+    expert: { id: 'expert', label: t('diffExpert'), size: 9, boxes: 4, walls: 14, minPushes: 16, attempts: 130, maxNodes: 18000, timeBudget: 850, reward: 160 },
   };
   const DIFFICULTY_ORDER = ['easy', 'normal', 'hard', 'expert'];
 
@@ -210,50 +296,50 @@
     <div class="mh-bg" aria-hidden="true"></div>
     <div class="mh-shell">
       <header class="mh-top">
-        <button id="mhMenu" class="mh-icon-btn" type="button" aria-label="玩法">?</button>
-        <div class="mh-title">宠物推箱子 Lv.<span id="mhLevel">1</span></div>
-        <div class="mh-stats" aria-label="游戏状态">
-          <span class="mh-pill">难度 <b id="mhDifficultyLabel">标准</b></span>
-          <span class="mh-pill">推动 <b id="mhPushes">0</b></span>
-          <span class="mh-pill">步数 <b id="mhMoves">0</b></span>
+        <button id="mhMenu" class="mh-icon-btn" type="button" aria-label="${t('menuAria')}">?</button>
+        <div class="mh-title">${t('title')} Lv.<span id="mhLevel">1</span></div>
+        <div class="mh-stats" aria-label="${t('gameStatusAria')}">
+          <span class="mh-pill">${t('difficultyLabel')} <b id="mhDifficultyLabel">${t('diffNormal')}</b></span>
+          <span class="mh-pill">${t('pushesLabel')} <b id="mhPushes">0</b></span>
+          <span class="mh-pill">${t('movesLabel')} <b id="mhMoves">0</b></span>
           <span class="mh-pill"><b id="mhTime">0</b>s</span>
         </div>
       </header>
       <main class="mh-stage">
         <div class="mh-board-wrap">
-          <div id="mhBoard" class="mh-board" aria-label="宠物推箱子棋盘"></div>
+          <div id="mhBoard" class="mh-board" aria-label="${t('boardAria')}"></div>
         </div>
       </main>
       <footer class="mh-bottom">
         <div class="mh-controls">
-          <div class="mh-difficulties" id="mhDifficulties" aria-label="选择难度"></div>
-          <button id="mhHelp" class="mh-action help" type="button">玩法</button>
-          <button id="mhRestart" class="mh-action" type="button">重开</button>
-          <button id="mhNew" class="mh-action" type="button">新关卡</button>
+          <div class="mh-difficulties" id="mhDifficulties" aria-label="${t('selectDiffAria')}"></div>
+          <button id="mhHelp" class="mh-action help" type="button">${t('helpBtn')}</button>
+          <button id="mhRestart" class="mh-action" type="button">${t('restartBtn')}</button>
+          <button id="mhNew" class="mh-action" type="button">${t('newLevelBtn')}</button>
         </div>
-        <div class="mh-dpad" aria-label="方向控制">
-          <button class="mh-dir up" type="button" data-dir="up" aria-label="上">↑</button>
-          <button class="mh-dir left" type="button" data-dir="left" aria-label="左">←</button>
-          <button class="mh-dir down" type="button" data-dir="down" aria-label="下">↓</button>
-          <button class="mh-dir right" type="button" data-dir="right" aria-label="右">→</button>
+        <div class="mh-dpad" aria-label="${t('dirControlAria')}">
+          <button class="mh-dir up" type="button" data-dir="up" aria-label="${t('dirUp')}">↑</button>
+          <button class="mh-dir left" type="button" data-dir="left" aria-label="${t('dirLeft')}">←</button>
+          <button class="mh-dir down" type="button" data-dir="down" aria-label="${t('dirDown')}">↓</button>
+          <button class="mh-dir right" type="button" data-dir="right" aria-label="${t('dirRight')}">→</button>
         </div>
       </footer>
     </div>
     <div id="mhHowTo" class="mh-overlay" role="dialog" aria-modal="true" aria-labelledby="mhHowToTitle" hidden>
       <div class="mh-card">
-        <h1 id="mhHowToTitle">宠物推箱子</h1>
-        <p>用当前宠物推动木箱，把所有木箱推到绿色标记上。每个 AI 关卡都会先由求解器验证可解；选择难度后会自动记住，下次继续使用。</p>
-        <button id="mhStart" class="mh-start" type="button">开始游戏</button>
+        <h1 id="mhHowToTitle">${t('howToTitle')}</h1>
+        <p>${t('howToText')}</p>
+        <button id="mhStart" class="mh-start" type="button">${t('startGame')}</button>
       </div>
     </div>
     <div id="mhWin" class="mh-overlay" role="dialog" aria-modal="true" aria-labelledby="mhWinTitle" hidden>
       <div class="mh-card">
-        <h1 id="mhWinTitle">完成！</h1>
-        <p id="mhWinText">所有箱子都到位了。</p>
-        <button id="mhNext" class="mh-next" type="button">下一关</button>
+        <h1 id="mhWinTitle">${t('winTitle')}</h1>
+        <p id="mhWinText">${t('winTextDefault')}</p>
+        <button id="mhNext" class="mh-next" type="button">${t('nextLevel')}</button>
       </div>
     </div>
-    <div id="mhGenerating" class="mh-generating" hidden>AI 正在生成可解关卡...</div>
+    <div id="mhGenerating" class="mh-generating" hidden>${t('generating')}</div>
   `;
 
   function boot() {
@@ -557,7 +643,7 @@
       : { top: '#f7c88f', mid: '#d9863f', low: '#8f451d', rail: '#ffe0b0', railShadow: '#8a3f17', metal: '#d38a45', shine: '#fff1c7' };
     const glow = done ? `<rect x="4" y="4" width="92" height="92" rx="10" fill="none" stroke="#86efac" stroke-width="5" opacity=".75"/>` : '';
     return `
-      <svg viewBox="0 0 100 100" role="img" aria-label="${done ? '已到位木箱' : '木箱'}" xmlns="http://www.w3.org/2000/svg">
+      <svg viewBox="0 0 100 100" role="img" aria-label="${done ? t('crateDone') : t('crate')}" xmlns="http://www.w3.org/2000/svg">
         <defs>
           <linearGradient id="${suffix}_face" x1="0" y1="0" x2="1" y2="1">
             <stop offset="0" stop-color="${palette.top}"/>
@@ -631,9 +717,9 @@
     const difficulty = DIFFICULTIES[state.difficulty];
     const efficiency = Math.max(0, state.solutionPushes ? state.solutionPushes - state.pushes : 0);
     const earnedPoints = difficulty.reward + state.level * 8 + efficiency * 4;
-    byId('mhWinText').textContent = `Lv.${state.level} ${difficulty.label}完成，推动 ${state.pushes} 次，AI最少 ${state.solutionPushes} 次。`;
+    byId('mhWinText').textContent = t('winText', { level: state.level, label: difficulty.label, pushes: state.pushes, solution: state.solutionPushes });
     byId('mhWin').hidden = false;
-    showToast('通关!');
+    showToast(t('toastWin'));
     launchConfetti();
     post('gameFinished', {
       earnedPoints,

@@ -11,6 +11,97 @@
 <body></body>
 <script defer>
 (function () {
+  // ---- i18n ----
+  const I18N = {
+    zhCN: {
+      title: '宠物运河营救',
+      diffEasy: '简单',
+      diffEasyDesc: '少量船块 · 轻松上手',
+      diffNormal: '中等',
+      diffNormalDesc: '需要一些规划',
+      diffHard: '困难',
+      diffHardDesc: '船块密集 · 烧脑挑战',
+      menu: '菜单',
+      titleLevel: '宠物运河营救 Lv.{level}',
+      levelProgress: '关卡进度',
+      boardAria: '宠物运河营救棋盘',
+      moves: '步数',
+      shortest: '最短',
+      undo: '撤销',
+      hint: '提示',
+      help: '玩法',
+      restart: '重开',
+      howToTitle: '宠物运河营救',
+      howToText: '宠物坐在小船上。滑动横向或纵向船块，给小船让出上方水道。卡住时可以撤销或使用提示，通关后难度继续上升。',
+      chooseDiff: '选择难度',
+      diffTitle: '选择难度',
+      diffText: '选择关卡难度，越难船块越多、解法越长。',
+      winTitle: '通过！',
+      winDefault: '小船成功离开运河。',
+      nextLevel: '下一关',
+      generating: 'AI 正在生成新水道...',
+      noUndo: '还没有可撤销的步数',
+      nearExit: '小船快到出口了',
+      hintAuto: '提示帮你走一步',
+      hintGlow: '先移动发光的船块',
+      hintDir: '沿黄色方向移动',
+      winText: 'Lv.{level} 完成，{starsOn}{starsOff} 用了 {moves} 步，最短 {best} 步。',
+      toastWin: '通关!',
+    },
+    enUS: {
+      title: 'Canal Escape',
+      diffEasy: 'Easy',
+      diffEasyDesc: 'Few blocks · Beginner friendly',
+      diffNormal: 'Normal',
+      diffNormalDesc: 'Needs some planning',
+      diffHard: 'Hard',
+      diffHardDesc: 'Dense blocks · Brain burner',
+      menu: 'Menu',
+      titleLevel: 'Canal Escape Lv.{level}',
+      levelProgress: 'Level progress',
+      boardAria: 'Canal Escape board',
+      moves: 'Moves',
+      shortest: 'Best',
+      undo: 'Undo',
+      hint: 'Hint',
+      help: 'Help',
+      restart: 'Restart',
+      howToTitle: 'Canal Escape',
+      howToText: 'Your pet sits on the boat. Slide horizontal or vertical blocks to clear a path upward. Use undo or hints when stuck — difficulty keeps rising after each level.',
+      chooseDiff: 'Choose Difficulty',
+      diffTitle: 'Choose Difficulty',
+      diffText: 'Pick a difficulty — harder levels have more blocks and longer solutions.',
+      winTitle: 'Cleared!',
+      winDefault: 'The boat escaped the canal!',
+      nextLevel: 'Next Level',
+      generating: 'AI is generating a new canal...',
+      noUndo: 'Nothing to undo',
+      nearExit: 'The boat is almost at the exit',
+      hintAuto: 'Hint moves one step for you',
+      hintGlow: 'Move the glowing block first',
+      hintDir: 'Move in the yellow direction',
+      winText: 'Lv.{level} cleared! {starsOn}{starsOff} Used {moves} moves, best {best}.',
+      toastWin: 'Cleared!',
+    },
+  };
+  function detectLang() {
+    try {
+      const params = new URLSearchParams(window.location.search);
+      const lang = params.get('lang');
+      if (lang && I18N[lang]) return lang;
+    } catch (_) {}
+    return 'zhCN';
+  }
+  const LANG = detectLang();
+  const L = I18N[LANG];
+  function t(key, vars) {
+    let str = L[key] || I18N.zhCN[key] || key;
+    if (vars) str = str.replace(/\{(\w+)\}/g, (m, n) => vars[n] != null ? String(vars[n]) : m);
+    return str;
+  }
+  try { document.documentElement.setAttribute('lang', LANG === 'enUS' ? 'en' : 'zh-CN'); } catch (_) {}
+  try { document.title = t('title'); } catch (_) {}
+
   const GRID = 5;
   const TARGET_ID = 'haqiBoat';
   const STORAGE_KEY = 'haqiCanalEscapeBestLevel';
@@ -25,9 +116,9 @@
     ['#ffffff', '#f1fdff', '#b6d8e0'],
   ];
   const DIFFICULTIES = [
-    { key: 'easy', name: '简单', desc: '少量船块 · 轻松上手', startLevel: 1, emoji: '🐣', color: '#22c55e', shadow: '#15803d' },
-    { key: 'normal', name: '中等', desc: '需要一些规划', startLevel: 5, emoji: '🐢', color: '#0ea5e9', shadow: '#0369a1' },
-    { key: 'hard', name: '困难', desc: '船块密集 · 烧脑挑战', startLevel: 10, emoji: '🐉', color: '#f97316', shadow: '#9a3412' },
+    { key: 'easy', name: t('diffEasy'), desc: t('diffEasyDesc'), startLevel: 1, emoji: '🐣', color: '#22c55e', shadow: '#15803d' },
+    { key: 'normal', name: t('diffNormal'), desc: t('diffNormalDesc'), startLevel: 5, emoji: '🐢', color: '#0ea5e9', shadow: '#0369a1' },
+    { key: 'hard', name: t('diffHard'), desc: t('diffHardDesc'), startLevel: 10, emoji: '🐉', color: '#f97316', shadow: '#9a3412' },
   ];
   const DIFFICULTY_STORAGE_KEY = 'haqiCanalEscapeDifficulty';
 
@@ -226,18 +317,18 @@
     </div>
     <div class="mh-shell">
       <header class="mh-top">
-        <button id="mhMenu" class="mh-menu" type="button" aria-label="菜单">☰</button>
-        <div class="mh-title">宠物运河营救 Lv.<span id="mhLevel">1</span></div>
+        <button id="mhMenu" class="mh-menu" type="button" aria-label="${t('menu')}">☰</button>
+        <div class="mh-title">${t('title')} Lv.<span id="mhLevel">1</span></div>
         <div class="mh-time"><span id="mhTime">0</span>s</div>
       </header>
-      <section class="mh-stats" aria-label="关卡进度">
+      <section class="mh-stats" aria-label="${t('levelProgress')}">
         <div class="mh-energy"><span class="mh-play">▶</span><span id="mhEnergy">600</span></div>
         <div class="mh-progress"><span class="mh-star">★</span><div class="mh-bar"><span id="mhProgress"></span></div></div>
       </section>
       <main class="mh-stage">
         <div class="mh-board-wrap">
           <div class="mh-exit" aria-hidden="true"></div>
-          <div class="mh-board" id="mhBoard" aria-label="宠物运河营救棋盘">
+          <div class="mh-board" id="mhBoard" aria-label="${t('boardAria')}">
             <div class="mh-cell-grid" id="mhCells"></div>
             <div class="mh-piece-layer" id="mhPieces"></div>
             <div class="mh-arrows" id="mhArrows"></div>
@@ -245,36 +336,36 @@
         </div>
       </main>
       <footer class="mh-bottom">
-        <span class="mh-pill">步数 <b id="mhMoves">0</b></span>
-        <span class="mh-pill">最短 <b id="mhDifficulty">1</b></span>
-        <button id="mhUndo" class="mh-undo" type="button">撤销</button>
-        <button id="mhHint" class="mh-hint" type="button">提示</button>
-        <button id="mhHelp" class="mh-help" type="button">玩法</button>
-        <button id="mhRestart" class="mh-restart" type="button">重开</button>
+        <span class="mh-pill">${t('moves')} <b id="mhMoves">0</b></span>
+        <span class="mh-pill">${t('shortest')} <b id="mhDifficulty">1</b></span>
+        <button id="mhUndo" class="mh-undo" type="button">${t('undo')}</button>
+        <button id="mhHint" class="mh-hint" type="button">${t('hint')}</button>
+        <button id="mhHelp" class="mh-help" type="button">${t('help')}</button>
+        <button id="mhRestart" class="mh-restart" type="button">${t('restart')}</button>
       </footer>
     </div>
     <div id="mhHowTo" class="mh-overlay" role="dialog" aria-modal="true" aria-labelledby="mhHowToTitle" hidden>
       <div class="mh-card">
-        <h1 id="mhHowToTitle">宠物运河营救</h1>
-        <p>宠物坐在小船上。滑动横向或纵向船块，给小船让出上方水道。卡住时可以撤销或使用提示，通关后难度继续上升。</p>
-        <button id="mhStart" class="mh-start" type="button">选择难度</button>
+        <h1 id="mhHowToTitle">${t('howToTitle')}</h1>
+        <p>${t('howToText')}</p>
+        <button id="mhStart" class="mh-start" type="button">${t('chooseDiff')}</button>
       </div>
     </div>
     <div id="mhDiff" class="mh-overlay" role="dialog" aria-modal="true" aria-labelledby="mhDiffTitle" hidden>
       <div class="mh-card">
-        <h1 id="mhDiffTitle">选择难度</h1>
-        <p>选择关卡难度，越难船块越多、解法越长。</p>
+        <h1 id="mhDiffTitle">${t('diffTitle')}</h1>
+        <p>${t('diffText')}</p>
         <div class="mh-diff-list" id="mhDiffList"></div>
       </div>
     </div>
     <div id="mhWin" class="mh-overlay" role="dialog" aria-modal="true" aria-labelledby="mhWinTitle" hidden>
       <div class="mh-card">
-        <h1 id="mhWinTitle">通过！</h1>
-        <p id="mhWinText">小船成功离开运河。</p>
-        <button id="mhNext" class="mh-next" type="button">下一关</button>
+        <h1 id="mhWinTitle">${t('winTitle')}</h1>
+        <p id="mhWinText">${t('winDefault')}</p>
+        <button id="mhNext" class="mh-next" type="button">${t('nextLevel')}</button>
       </div>
     </div>
-    <div id="mhGenerating" class="mh-generating" hidden>AI 正在生成新水道...</div>
+    <div id="mhGenerating" class="mh-generating" hidden>${t('generating')}</div>
   `;
 
   function boot() {
@@ -731,7 +822,7 @@
     if (state.finished || state.generating) return;
     const snapshot = state.history.pop();
     if (!snapshot) {
-      showToast('还没有可撤销的步数');
+      showToast(t('noUndo'));
       return;
     }
     state.pieces = normalizePieces(snapshot.pieces);
@@ -746,18 +837,18 @@
     if (state.finished || state.generating) return;
     const move = findBestNextMove(state.pieces);
     if (!move) {
-      showToast('小船快到出口了');
+      showToast(t('nearExit'));
       return;
     }
     state.hintsUsed += 1;
     state.selectedId = move.id;
     state.hint = { ...move, level: Math.min(3, state.hintsUsed) };
     if (state.hint.level >= 3) {
-      showToast('提示帮你走一步');
+      showToast(t('hintAuto'));
       movePiece(move.id, move.dr, move.dc, 1);
       return;
     }
-    showToast(state.hint.level === 1 ? '先移动发光的船块' : '沿黄色方向移动');
+    showToast(state.hint.level === 1 ? t('hintGlow') : t('hintDir'));
     updateStats();
     renderBoard();
   }
@@ -812,10 +903,10 @@
     localStorage.setItem(STORAGE_KEY, String(state.bestLevel));
     const stars = calculateStars();
     const earnedPoints = calculateScore(stars);
-    byId('mhWinText').textContent = `Lv.${state.level} 完成，${'★'.repeat(stars)}${'☆'.repeat(3 - stars)} 用了 ${state.moves} 步，最短 ${state.solutionMoves} 步。`;
+    byId('mhWinText').textContent = t('winText', { level: state.level, starsOn: '★'.repeat(stars), starsOff: '☆'.repeat(3 - stars), moves: state.moves, best: state.solutionMoves });
     byId('mhWin').hidden = false;
     launchConfetti();
-    showToast('通关!');
+    showToast(t('toastWin'));
     post('gameFinished', {
       earnedPoints,
       score: earnedPoints,

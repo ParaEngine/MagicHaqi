@@ -1,5 +1,6 @@
 // 星际移民视图
 import { confirm, escapeHtml, showToast } from './utils.js';
+import { t } from './i18n.js';
 import { getDefaultZoomLevelIndex, loadPlanetIndex, loadPlanetShopItems, normalizePlanetZoomOptions } from './config.js';
 import { notify, state } from './state.js';
 import { saveFieldScenesDebounced, saveTerrainFieldsDebounced, saveUserProfileDebounced, setActiveLayoutsPlanet } from './storage.js';
@@ -62,7 +63,7 @@ function normalizeOfficialPlanet(raw, indexEntry = {}) {
         title,
         name: String(raw.name || title).trim(),
         appTitle: String(raw.appTitle || indexEntry.appTitle || '').trim(),
-        badge: String(raw.badge || indexEntry.badge || '官方').trim(),
+        badge: String(raw.badge || indexEntry.badge || t('ssBadgeOfficial')).trim(),
         summary: String(raw.summary || indexEntry.summary || '').trim(),
         shopItemUrl: String(raw.shopItemUrl || indexEntry.shopItemUrl || raw.shopItemsFile || indexEntry.shopItemsFile || raw.shopitemsFile || indexEntry.shopitemsFile || raw.shopFile || indexEntry.shopFile || raw.shop_items_file || indexEntry.shop_items_file || '').trim(),
         planet: raw.planet && typeof raw.planet === 'object' ? raw.planet : {},
@@ -97,20 +98,20 @@ function currentHomeName() {
     const current = settlementSettings();
     const savedHomeName = String(current.homeSnapshot?.planetName || current.homePlanetName || '').trim();
     if (savedHomeName) return savedHomeName;
-    if (current.source === 'official') return '我的星球';
-    return String(state.planetName || '我的星球').trim();
+    if (current.source === 'official') return t('ssMyPlanet');
+    return String(state.planetName || t('ssMyPlanet')).trim();
 }
 
 function playerPlanetTitle() {
     const name = currentHomeName();
-    return name && name !== '我的星球' ? `我的星球（${name}）` : '我的星球';
+    return name && name !== t('ssMyPlanet') ? t('ssMyPlanetNamed', { name }) : t('ssMyPlanet');
 }
 
 function captureHomeSnapshot() {
     const settings = settlementSettings();
     if (settings.homeSnapshot) return;
     settings.homeSnapshot = {
-        planetName: String(state.planetName || '我的星球').trim(),
+        planetName: String(state.planetName || t('ssMyPlanet')).trim(),
         terrainSlots: clone(getTerrainFieldSlots({ includeEmpty: true }).map(slot => ({ index: slot.index, typeId: slot.typeId, name: slot.name }))),
         fieldScenes: clone(state.settings?.fieldScenes || {}),
     };
@@ -260,7 +261,7 @@ export async function applyTemporaryHomePlanetFromUrl() {
         return true;
     } catch (e) {
         console.warn('临时家园星球加载失败', e);
-        showToast('临时星球加载失败，已使用原家园', 'error', 1800);
+        showToast(t('ssTempLoadFailed'), 'error', 1800);
         return false;
     }
 }
@@ -357,10 +358,10 @@ function renderCustomCard() {
         <article class="star-settlement-card ${selected ? 'is-selected' : ''}" data-planet-id="custom">
             <div class="star-settlement-planet" style="${planetPreviewStyle(null)}"><span>家</span></div>
             <div class="star-settlement-card-body">
-                <div class="star-settlement-card-title"><b>${escapeHtml(playerPlanetTitle())}</b><em>玩家</em></div>
+                <div class="star-settlement-card-title"><b>${escapeHtml(playerPlanetTitle())}</b><em>${escapeHtml(t('ssBadgePlayer'))}</em></div>
                 <div class="star-settlement-fields">${slots.map(slot => `<span class="star-settlement-chip">${terrainFieldIconHtml(slot.typeId)}${escapeHtml(slot.name)}</span>`).join('')}</div>
             </div>
-            <button type="button" class="btn-secondary star-settlement-action" data-settle-custom>${selected ? '当前' : '回迁'}</button>
+            <button type="button" class="btn-secondary star-settlement-action" data-settle-custom>${selected ? escapeHtml(t('ssCurrent')) : escapeHtml(t('ssReturnHome'))}</button>
         </article>`;
 }
 
@@ -370,11 +371,11 @@ function renderOfficialCard(planet) {
         <article class="star-settlement-card ${selected ? 'is-selected' : ''}" data-planet-id="${escapeHtml(planet.id)}">
             <div class="star-settlement-planet" style="${escapeHtml(planetPreviewStyle(planet))}"><span>${escapeHtml((planet.title || '?').slice(0, 1))}</span></div>
             <div class="star-settlement-card-body">
-                <div class="star-settlement-card-title"><b>${escapeHtml(planet.title)}</b><em>${escapeHtml(planet.badge || '官方')}</em></div>
+                <div class="star-settlement-card-title"><b>${escapeHtml(planet.title)}</b><em>${escapeHtml(planet.badge || t('ssBadgeOfficial'))}</em></div>
                 <p>${escapeHtml(planet.summary || '换到这个星球后，你的家具、房屋和宠物都会保留。')}</p>
                 <div class="star-settlement-fields">${renderFieldsPreview(planet)}</div>
             </div>
-            <button type="button" class="btn-primary star-settlement-action" data-settle-official="${escapeHtml(planet.id)}">${selected ? '当前' : '迁移'}</button>
+            <button type="button" class="btn-primary star-settlement-action" data-settle-official="${escapeHtml(planet.id)}">${selected ? escapeHtml(t('ssCurrent')) : escapeHtml(t('ssMigrate'))}</button>
         </article>`;
 }
 
@@ -413,10 +414,10 @@ function bindSettlements(panel, planets, onBack) {
         btn.onclick = async () => {
             const planet = planets.find(item => item.id === btn.dataset.settleOfficial);
             if (!planet || currentSelectionId() === planet.id) return;
-            const ok = await confirm(`迁移到${planet.title}？你的家具、房屋和宠物都会保留。`, { okText: '迁移', cancelText: '取消' });
+            const ok = await confirm(t('ssMigrateConfirm', { name: planet.title }), { okText: t('ssMigrate'), cancelText: t('cancel') });
             if (!ok) return;
             await applyOfficialPlanet(planet);
-            showToast(`已迁移到${planet.title}`, 'success', 1800);
+            showToast(t('ssMigrated', { name: planet.title }), 'success', 1800);
             renderStarSettlements(panel, null, { onBack });
         };
     });
@@ -424,10 +425,10 @@ function bindSettlements(panel, planets, onBack) {
     const customBtn = panel.querySelector('[data-settle-custom]');
     if (customBtn) customBtn.onclick = async () => {
         if (currentSelectionId() === 'custom') return;
-        const ok = await confirm('回到自己的星球？会恢复迁移前保存的地点和背景。', { okText: '回迁', cancelText: '取消' });
+        const ok = await confirm(t('ssReturnConfirm'), { okText: t('ssReturnHome'), cancelText: t('cancel') });
         if (!ok) return;
         await restoreCustomPlanet();
-        showToast('已回迁到自己的星球', 'success', 1800);
+        showToast(t('ssReturned'), 'success', 1800);
         renderStarSettlements(panel, null, { onBack });
     };
 }
@@ -437,12 +438,12 @@ export function renderStarSettlements(panel, _data, { onBack } = {}) {
         ${starSettlementStyles()}
         <div class="topbar">
             <button class="btn-icon" id="mhBack" style="width:36px;height:36px;font-size:18px">‹</button>
-            <span class="font-bold" style="color:var(--text-primary)">星际移民</span>
+            <span class="font-bold" style="color:var(--text-primary)">${escapeHtml(t('ssTitle'))}</span>
             <span style="width:36px"></span>
         </div>
         <div class="absolute star-settlements-view">
-            <div class="star-settlement-note">选择一个星球作为新家。迁移后，你的家具、房屋和宠物都会保留，只会更换星球外观和地点名字。</div>
-            <div class="star-settlement-list"><div class="star-settlement-empty">正在读取可迁移星球...</div></div>
+            <div class="star-settlement-note">${escapeHtml(t('ssNote'))}</div>
+            <div class="star-settlement-list"><div class="star-settlement-empty">${escapeHtml(t('ssLoading'))}</div></div>
         </div>`;
     const back = panel.querySelector('#mhBack');
     if (back) back.onclick = () => onBack?.();

@@ -1,6 +1,6 @@
 // 玩耍视图：小游戏列表 + iframe 容器
 import { $, clamp, coinIconSvg, confirm, escapeHtml, showToast } from './utils.js';
-import { t } from './i18n.js';
+import { getLang, t } from './i18n.js';
 import { CONFIG } from './config.js';
 import { state } from './state.js';
 import { displayPetName } from './dna.js';
@@ -1174,6 +1174,8 @@ function postGameConfig() {
 
 function minigameUrl(src, params = null) {
     const query = new URLSearchParams();
+    const lang = getLang();
+    query.set('lang', lang === 'en' ? 'enUS' : 'zhCN');
     if (params && typeof params === 'object') {
         Object.entries(params).forEach(([key, value]) => {
             if (value == null || value === '') return;

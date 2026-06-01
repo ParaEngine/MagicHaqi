@@ -11,6 +11,195 @@
 <body></body>
 <script defer>
 (function () {
+  // ---- i18n ----
+  const I18N = {
+    zhCN: {
+      title: '宠物冒险',
+      canvasAria: '宠物冒险像素世界',
+      helpBtn: '玩法',
+      titleBar: '宠物冒险 · 宠物与小主人',
+      statsAria: '冒险状态',
+      powerSmall: '小',
+      powerBig: '大',
+      powerFire: '火',
+      health: '生命',
+      defaultMessage: '探索像素世界，收集水晶，和宠物一起冒险！',
+      hint: 'WASD/方向键移动 · 空格跳跃 · 踩头消灭怪物 · E/点击 挖掘或发射火球',
+      mobileActions: '移动端动作按钮',
+      mineBtn: '挖掘',
+      jumpBtn: '跳跃',
+      overlayTitle: '宠物冒险',
+      overlayP1: '踩怪物头消灭它们，吃 ❤️红心 回血，收集 🪙金币 和 💎水晶 赚分。',
+      overlayP2: '道具：🍄变大 · 🌸火球 · ⭐无敌 · 💚回满血 · 🦘弹簧垫弹高。',
+      overlayP3: '手机：屏幕任意位置按住拖动来移动，右下角大按钮跳跃、旁边按钮挖掘/发射。电脑：WASD 移动、空格跳跃、E 挖掘或发射。',
+      selectMaster: '选择小主人',
+      masterBoy: '像素男孩',
+      masterGirl: '像素女孩',
+      selectDifficulty: '选择难度',
+      diffEasy: '轻松',
+      diffEasyDesc: '怪少血多',
+      diffNormal: '普通',
+      diffNormalDesc: '标准冒险',
+      diffHard: '挑战',
+      diffHardDesc: '高分高压',
+      startBtn: '开始冒险',
+      restartBtn: '重新开始',
+      monsterSlime: '绿史莱姆',
+      monsterBoar: '岩猪',
+      monsterWolf: '夜狼',
+      monsterFox: '火狐',
+      monsterMushpet: '菇菇兽',
+      monsterBat: '洞穴蝠',
+      monsterFrog: '水蛙怪',
+      elementFire: '火焰',
+      elementIce: '冰霜',
+      elementEarth: '岩石',
+      elementNature: '藤蔓',
+      elementPoison: '毒孢',
+      elementShadow: '暗影',
+      elementWater: '水泡',
+      powerMushroom: '成长蘑菇',
+      powerFireflower: '火焰花',
+      powerStar: '无敌星',
+      powerOneup: '生命菇',
+      bossSuffix: '首领',
+      bossAppeared: '⚠️ {name}出现了！注意躲避{element}攻击。',
+      elementDefault: '属性',
+      diffStarted: '{diff}难度开始！达成阶段目标会升级并继续冒险。',
+      wildPets: '本局野生宠物：{names} 等',
+      wildPetDefault: '野生宠物',
+      lifeFull: '💚 生命全满！',
+      starPower: '⭐ 无敌星！冲刺撞翻怪物',
+      grewBig: '🍄 变大了！可多扛一次伤害',
+      firePower: '🌸 火力全开！点击/E 发射火球',
+      hitShrink: '被击中，变小了！再受伤会失去生命。',
+      fellLostHeart: '💔 掉落了 · 损失一颗心',
+      fellSafe: '掉落扣一颗心，已回到安全位置。',
+      waterJump: '在水里要踩到底或贴着墙才能跳！',
+      heartFull: '一颗心',
+      heartHalf: '半颗心',
+      hitDamage: '小心！被击中损失{hearts}，吃红心可回血。',
+      minedGoal: '本阶段挖掘目标完成！继续寻找蓝水晶。',
+      stompChain: '踩踏 ×{count} +{bonus}',
+      defeatEnemy: '+{gain} 击退{name}',
+      enemyDefault: '怪物',
+      spring: '🦘 弹跳！',
+      crystalGot: '💎 水晶 +1',
+      healFull: '❤️ 生命已满 +20',
+      healHeart: '❤️ 回复一颗心',
+      levelUp: '升级到 LV.{level}！+{bonus}',
+      stageComplete: '阶段完成！进入 LV.{level}，本关主要怪物：{monsters}。',
+      recordSaved: '冒险记录已保存！',
+      adventurePaused: '本次无限冒险已暂停，重新开始可再次挑战更高等级。',
+      adventureFailed: '冒险失败，再试一次！',
+      gameOver: '生命耗尽了，你生存到 LV.{level}，重新开始再挑战吧。',
+      playAgain: '再玩一次',
+      retryChallenge: '重新挑战',
+      starEnded: '无敌结束了！',
+    },
+    enUS: {
+      title: 'Pet Adventure',
+      canvasAria: 'Pet Adventure pixel world',
+      helpBtn: 'Help',
+      titleBar: 'Pet Adventure · Pet & Owner',
+      statsAria: 'Adventure status',
+      powerSmall: 'S',
+      powerBig: 'B',
+      powerFire: 'F',
+      health: 'Health',
+      defaultMessage: 'Explore the pixel world, collect crystals, and adventure with your pet!',
+      hint: 'WASD/Arrows to move · Space to jump · Stomp enemies · E/Click to dig or shoot',
+      mobileActions: 'Mobile action buttons',
+      mineBtn: 'Dig',
+      jumpBtn: 'Jump',
+      overlayTitle: 'Pet Adventure',
+      overlayP1: 'Stomp enemies to defeat them, eat ❤️hearts to heal, collect 🪙coins and 💎crystals for points.',
+      overlayP2: 'Power-ups: 🍄Grow · 🌸Fireball · ⭐Invincible · 💚Full heal · 🦘Spring pad.',
+      overlayP3: 'Mobile: Touch and drag anywhere to move, big button to jump, side button to dig/shoot. PC: WASD to move, Space to jump, E to dig or shoot.',
+      selectMaster: 'Select owner',
+      masterBoy: 'Pixel Boy',
+      masterGirl: 'Pixel Girl',
+      selectDifficulty: 'Select difficulty',
+      diffEasy: 'Easy',
+      diffEasyDesc: 'Fewer enemies, more HP',
+      diffNormal: 'Normal',
+      diffNormalDesc: 'Standard adventure',
+      diffHard: 'Hard',
+      diffHardDesc: 'High score, high pressure',
+      startBtn: 'Start Adventure',
+      restartBtn: 'Restart',
+      monsterSlime: 'Green Slime',
+      monsterBoar: 'Rock Boar',
+      monsterWolf: 'Night Wolf',
+      monsterFox: 'Fire Fox',
+      monsterMushpet: 'Mushroom Beast',
+      monsterBat: 'Cave Bat',
+      monsterFrog: 'Water Frog',
+      elementFire: 'Fire',
+      elementIce: 'Ice',
+      elementEarth: 'Earth',
+      elementNature: 'Nature',
+      elementPoison: 'Poison',
+      elementShadow: 'Shadow',
+      elementWater: 'Water',
+      powerMushroom: 'Growth Mushroom',
+      powerFireflower: 'Fire Flower',
+      powerStar: 'Invincible Star',
+      powerOneup: 'Life Mushroom',
+      bossSuffix: 'Boss',
+      bossAppeared: '⚠️ {name} appeared! Watch out for {element} attacks.',
+      elementDefault: 'elemental',
+      diffStarted: '{diff} difficulty started! Reach stage goals to level up and continue.',
+      wildPets: 'Wild pets this round: {names} etc.',
+      wildPetDefault: 'Wild Pet',
+      lifeFull: '💚 Full health!',
+      starPower: '⭐ Invincible! Dash through enemies',
+      grewBig: '🍄 Grew bigger! Can take one more hit',
+      firePower: '🌸 Fire power! Click/E to shoot fireballs',
+      hitShrink: 'Hit! Shrunk down. One more hit and you lose a life.',
+      fellLostHeart: '💔 Fell · Lost one heart',
+      fellSafe: 'Lost one heart from falling. Back to safety.',
+      waterJump: 'In water, stand on bottom or touch wall to jump!',
+      heartFull: 'one heart',
+      heartHalf: 'half a heart',
+      hitDamage: 'Careful! Lost {hearts}. Eat hearts to heal.',
+      minedGoal: 'Mining goal complete! Keep looking for blue crystals.',
+      stompChain: 'Stomp ×{count} +{bonus}',
+      defeatEnemy: '+{gain} Defeated {name}',
+      enemyDefault: 'enemy',
+      spring: '🦘 Bounce!',
+      crystalGot: '💎 Crystal +1',
+      healFull: '❤️ Full health +20',
+      healHeart: '❤️ Healed one heart',
+      levelUp: 'Level up to LV.{level}! +{bonus}',
+      stageComplete: 'Stage complete! Entering LV.{level}. Main enemies: {monsters}.',
+      recordSaved: 'Adventure record saved!',
+      adventurePaused: 'Adventure paused. Restart to challenge higher levels.',
+      adventureFailed: 'Adventure failed. Try again!',
+      gameOver: 'Out of health. You survived to LV.{level}. Restart to try again.',
+      playAgain: 'Play Again',
+      retryChallenge: 'Retry',
+      starEnded: 'Invincibility ended!',
+    },
+  };
+  function detectLang() {
+    try {
+      const params = new URLSearchParams(window.location.search);
+      const lang = params.get('lang');
+      if (lang && I18N[lang]) return lang;
+    } catch (_) {}
+    return 'zhCN';
+  }
+  const LANG = detectLang();
+  const L = I18N[LANG];
+  function t(key, vars) {
+    let str = L[key] || I18N.zhCN[key] || key;
+    if (vars) str = str.replace(/\{(\w+)\}/g, (m, n) => vars[n] != null ? String(vars[n]) : m);
+    return str;
+  }
+  try { document.documentElement.setAttribute('lang', LANG === 'enUS' ? 'en' : 'zh-CN'); } catch (_) {}
+  try { document.title = t('title'); } catch (_) {}
+
   const STORAGE_BEST = 'haqiAdventureBestV1';
   const STORAGE_MASTER = 'haqiAdventureMasterV1';
   const STORAGE_DIFFICULTY = 'haqiAdventureDifficultyV1';
@@ -31,35 +220,35 @@
   const PET_INDEX_URL = new URL('../famous-pets/_pet_index.json', location.href).href;
   const LEVEL_DISTANCE = TILE * 42;
   const DIFFICULTIES = {
-    easy: { name: '轻松', enemyRate: .7, enemyHp: .82, enemySpeed: .88, enemyDamage: .78, goal: .86, score: .86, heal: 40 },
-    normal: { name: '普通', enemyRate: 1, enemyHp: 1, enemySpeed: 1, enemyDamage: 1, goal: 1, score: 1, heal: 20 },
-    hard: { name: '挑战', enemyRate: 1.35, enemyHp: 1.22, enemySpeed: 1.15, enemyDamage: 1.25, goal: 1.16, score: 1.2, heal: 10 },
+    easy: { name: t('diffEasy'), enemyRate: .7, enemyHp: .82, enemySpeed: .88, enemyDamage: .78, goal: .86, score: .86, heal: 40 },
+    normal: { name: t('diffNormal'), enemyRate: 1, enemyHp: 1, enemySpeed: 1, enemyDamage: 1, goal: 1, score: 1, heal: 20 },
+    hard: { name: t('diffHard'), enemyRate: 1.35, enemyHp: 1.22, enemySpeed: 1.15, enemyDamage: 1.25, goal: 1.16, score: 1.2, heal: 10 },
   };
   const MONSTERS = {
-    slime: { name: '绿史莱姆', element: 'nature', hp: 2, speed: 42, w: 28, h: 24, damage: 14, score: 35, color: '#84cc16', accent: '#a3e635' },
-    boar: { name: '岩猪', element: 'earth', hp: 4, speed: 58, w: 34, h: 26, damage: 18, score: 55, color: '#a16207', accent: '#facc15' },
-    wolf: { name: '夜狼', element: 'ice', hp: 3, speed: 74, w: 36, h: 26, damage: 20, score: 62, color: '#64748b', accent: '#cbd5e1' },
-    fox: { name: '火狐', element: 'fire', hp: 3, speed: 82, w: 34, h: 24, damage: 16, score: 58, color: '#f97316', accent: '#fed7aa' },
-    mushpet: { name: '菇菇兽', element: 'poison', hp: 5, speed: 35, w: 32, h: 30, damage: 22, score: 70, color: '#a3e635', accent: '#f0abfc' },
-    bat: { name: '洞穴蝠', element: 'shadow', hp: 2, speed: 96, w: 30, h: 20, damage: 15, score: 50, color: '#7c3aed', accent: '#c4b5fd', flying: true },
+    slime: { name: t('monsterSlime'), element: 'nature', hp: 2, speed: 42, w: 28, h: 24, damage: 14, score: 35, color: '#84cc16', accent: '#a3e635' },
+    boar: { name: t('monsterBoar'), element: 'earth', hp: 4, speed: 58, w: 34, h: 26, damage: 18, score: 55, color: '#a16207', accent: '#facc15' },
+    wolf: { name: t('monsterWolf'), element: 'ice', hp: 3, speed: 74, w: 36, h: 26, damage: 20, score: 62, color: '#64748b', accent: '#cbd5e1' },
+    fox: { name: t('monsterFox'), element: 'fire', hp: 3, speed: 82, w: 34, h: 24, damage: 16, score: 58, color: '#f97316', accent: '#fed7aa' },
+    mushpet: { name: t('monsterMushpet'), element: 'poison', hp: 5, speed: 35, w: 32, h: 30, damage: 22, score: 70, color: '#a3e635', accent: '#f0abfc' },
+    bat: { name: t('monsterBat'), element: 'shadow', hp: 2, speed: 96, w: 30, h: 20, damage: 15, score: 50, color: '#7c3aed', accent: '#c4b5fd', flying: true },
     // Water-element monster: only spawns in/near water.
-    frog: { name: '水蛙怪', element: 'water', hp: 3, speed: 50, w: 32, h: 26, damage: 16, score: 60, color: '#0ea5e9', accent: '#7dd3fc' },
+    frog: { name: t('monsterFrog'), element: 'water', hp: 3, speed: 50, w: 32, h: 26, damage: 16, score: 60, color: '#0ea5e9', accent: '#7dd3fc' },
   };
   const ELEMENTS = {
-    fire: { name: '火焰', color: '#f97316', accent: '#fed7aa', icon: '🔥', speed: 170, damage: 13 },
-    ice: { name: '冰霜', color: '#38bdf8', accent: '#e0f2fe', icon: '❄', speed: 150, damage: 11, slow: 650 },
-    earth: { name: '岩石', color: '#a16207', accent: '#fde68a', icon: '◆', speed: 135, damage: 15 },
-    nature: { name: '藤蔓', color: '#22c55e', accent: '#bbf7d0', icon: '✦', speed: 145, damage: 10 },
-    poison: { name: '毒孢', color: '#a3e635', accent: '#f0abfc', icon: '✹', speed: 125, damage: 12 },
-    shadow: { name: '暗影', color: '#7c3aed', accent: '#ddd6fe', icon: '✦', speed: 180, damage: 12 },
-    water: { name: '水泡', color: '#0ea5e9', accent: '#bae6fd', icon: '💧', speed: 155, damage: 11 },
+    fire: { name: t('elementFire'), color: '#f97316', accent: '#fed7aa', icon: '🔥', speed: 170, damage: 13 },
+    ice: { name: t('elementIce'), color: '#38bdf8', accent: '#e0f2fe', icon: '❄', speed: 150, damage: 11, slow: 650 },
+    earth: { name: t('elementEarth'), color: '#a16207', accent: '#fde68a', icon: '◆', speed: 135, damage: 15 },
+    nature: { name: t('elementNature'), color: '#22c55e', accent: '#bbf7d0', icon: '✦', speed: 145, damage: 10 },
+    poison: { name: t('elementPoison'), color: '#a3e635', accent: '#f0abfc', icon: '✹', speed: 125, damage: 12 },
+    shadow: { name: t('elementShadow'), color: '#7c3aed', accent: '#ddd6fe', icon: '✦', speed: 180, damage: 12 },
+    water: { name: t('elementWater'), color: '#0ea5e9', accent: '#bae6fd', icon: '💧', speed: 155, damage: 11 },
   };
   // Mario-style power-ups. `power` is the player power-state granted.
   const POWERUPS = {
-    mushroom: { name: '成长蘑菇', icon: '🍄', color: '#ef4444', accent: '#fee2e2', power: 'big', score: 100 },
-    fireflower: { name: '火焰花', icon: '🌸', color: '#f97316', accent: '#fed7aa', power: 'fire', score: 120 },
-    star: { name: '无敌星', icon: '⭐', color: '#facc15', accent: '#fef9c3', power: 'star', score: 150, duration: 8000 },
-    oneup: { name: '生命菇', icon: '💚', color: '#22c55e', accent: '#bbf7d0', power: 'life', score: 0 },
+    mushroom: { name: t('powerMushroom'), icon: '🍄', color: '#ef4444', accent: '#fee2e2', power: 'big', score: 100 },
+    fireflower: { name: t('powerFireflower'), icon: '🌸', color: '#f97316', accent: '#fed7aa', power: 'fire', score: 120 },
+    star: { name: t('powerStar'), icon: '⭐', color: '#facc15', accent: '#fef9c3', power: 'star', score: 150, duration: 8000 },
+    oneup: { name: t('powerOneup'), icon: '💚', color: '#22c55e', accent: '#bbf7d0', power: 'life', score: 0 },
   };
   const PLAYER_FIRE = { speed: 560, bounce: 360, life: 1.6, r: 7, damage: 3, color: '#fb923c', accent: '#fff7ed' };
   const STAR_COLORS = ['#facc15', '#fb7185', '#38bdf8', '#a78bfa', '#22c55e', '#fb923c'];
@@ -100,7 +289,7 @@
     comboUntil: 0,         // time the combo expires
     playerShots: [],       // player-thrown fireballs
     coins: 0,              // gold coin count (Mario-style)
-    message: '探索像素世界，收集水晶，和宠物一起冒险！',
+    message: t('defaultMessage'),
     messageUntil: 0,
     masterStyle: localStorage.getItem(STORAGE_MASTER) || 'boy',
     roundId: '',
@@ -360,51 +549,51 @@
       }
     </style>
     <div class="ha-shell" id="haShell">
-      <canvas id="haCanvas" class="ha-canvas" aria-label="宠物冒险像素世界"></canvas>
+      <canvas id="haCanvas" class="ha-canvas" aria-label="${t('canvasAria')}"></canvas>
       <header class="ha-top">
-        <button id="haHelp" class="ha-icon-btn" type="button" aria-label="玩法">?</button>
-        <div class="ha-title">宠物冒险 · 宠物与小主人</div>
-        <div class="ha-stats" aria-label="冒险状态">
+        <button id="haHelp" class="ha-icon-btn" type="button" aria-label="${t('helpBtn')}">?</button>
+        <div class="ha-title">${t('titleBar')}</div>
+        <div class="ha-stats" aria-label="${t('statsAria')}">
           <span class="ha-pill">🏅 LV.<b id="haLevel">1</b></span>
-          <span class="ha-pill" id="haPowerPill">🔘 <b id="haPower">小</b></span>
+          <span class="ha-pill" id="haPowerPill">🔘 <b id="haPower">${t('powerSmall')}</b></span>
           <span class="ha-pill">🪙 <b id="haCoins">0</b></span>
           <span class="ha-pill">💎 <b id="haCrystals">0</b>/<b id="haCrystalGoal">0</b></span>
           <span class="ha-pill optional">⭐ <b id="haScore">0</b></span>
         </div>
         <div class="ha-bars">
-          <div class="ha-hearts" id="haHearts" title="生命" aria-label="生命"></div>
+          <div class="ha-hearts" id="haHearts" title="${t('health')}" aria-label="${t('health')}"></div>
         </div>
       </header>
-      <div id="haMessage" class="ha-message">探索像素世界，收集水晶，和宠物一起冒险！</div>
+      <div id="haMessage" class="ha-message">${t('defaultMessage')}</div>
       <div id="haCombo" class="ha-combo" hidden></div>
       <footer class="ha-bottom">
-        <div id="haHint" class="ha-hint">WASD/方向键移动 · 空格跳跃 · 踩头消灭怪物 · E/点击 挖掘或发射火球</div>
-        <div class="ha-actions" aria-label="移动端动作按钮">
-          <button id="haMine" class="ha-action-btn mine" type="button" aria-label="挖掘"><span class="ico"></span></button>
-          <button id="haJump" class="ha-action-btn jump" type="button" aria-label="跳跃"><span class="ico"></span></button>
+        <div id="haHint" class="ha-hint">${t('hint')}</div>
+        <div class="ha-actions" aria-label="${t('mobileActions')}">
+          <button id="haMine" class="ha-action-btn mine" type="button" aria-label="${t('mineBtn')}"><span class="ico"></span></button>
+          <button id="haJump" class="ha-action-btn jump" type="button" aria-label="${t('jumpBtn')}"><span class="ico"></span></button>
         </div>
       </footer>
       <div id="haJoystick" class="ha-joystick" aria-hidden="true"><div id="haKnob" class="ha-knob"></div></div>
       <div id="haOverlay" class="ha-overlay">
         <div class="ha-card">
-          <h1>宠物冒险</h1>
-          <p>踩怪物头消灭它们，吃 ❤️红心 回血，收集 🪙金币 和 💎水晶 赚分。</p>
-          <p>道具：🍄变大 · 🌸火球 · ⭐无敌 · 💚回满血 · 🦘弹簧垫弹高。</p>
-          <p>手机：屏幕任意位置按住拖动来移动，右下角大按钮跳跃、旁边按钮挖掘/发射。电脑：WASD 移动、空格跳跃、E 挖掘或发射。</p>
-          <div class="ha-row" aria-label="选择小主人">
-            <span class="ha-label">选择小主人</span>
-            <button class="ha-pick" data-master="boy" type="button">像素男孩</button>
-            <button class="ha-pick" data-master="girl" type="button">像素女孩</button>
+          <h1>${t('overlayTitle')}</h1>
+          <p>${t('overlayP1')}</p>
+          <p>${t('overlayP2')}</p>
+          <p>${t('overlayP3')}</p>
+          <div class="ha-row" aria-label="${t('selectMaster')}">
+            <span class="ha-label">${t('selectMaster')}</span>
+            <button class="ha-pick" data-master="boy" type="button">${t('masterBoy')}</button>
+            <button class="ha-pick" data-master="girl" type="button">${t('masterGirl')}</button>
           </div>
-          <div class="ha-row" aria-label="选择难度">
-            <span class="ha-label">选择难度</span>
-            <button class="ha-pick difficulty" data-difficulty="easy" type="button">轻松<small>怪少血多</small></button>
-            <button class="ha-pick difficulty" data-difficulty="normal" type="button">普通<small>标准冒险</small></button>
-            <button class="ha-pick difficulty" data-difficulty="hard" type="button">挑战<small>高分高压</small></button>
+          <div class="ha-row" aria-label="${t('selectDifficulty')}">
+            <span class="ha-label">${t('selectDifficulty')}</span>
+            <button class="ha-pick difficulty" data-difficulty="easy" type="button">${t('diffEasy')}<small>${t('diffEasyDesc')}</small></button>
+            <button class="ha-pick difficulty" data-difficulty="normal" type="button">${t('diffNormal')}<small>${t('diffNormalDesc')}</small></button>
+            <button class="ha-pick difficulty" data-difficulty="hard" type="button">${t('diffHard')}<small>${t('diffHardDesc')}</small></button>
           </div>
           <div class="ha-row">
-            <button id="haStart" class="ha-start" type="button">开始冒险</button>
-            <button id="haRestart" class="ha-start secondary" type="button" hidden>重新开始</button>
+            <button id="haStart" class="ha-start" type="button">${t('startBtn')}</button>
+            <button id="haRestart" class="ha-start secondary" type="button" hidden>${t('restartBtn')}</button>
           </div>
         </div>
       </div>
@@ -424,7 +613,7 @@
     hearts: root.querySelector('#haHearts'), message: root.querySelector('#haMessage'), restart: root.querySelector('#haRestart'), start: root.querySelector('#haStart'),
     power: root.querySelector('#haPower'), powerPill: root.querySelector('#haPowerPill'), coins: root.querySelector('#haCoins'), combo: root.querySelector('#haCombo')
   };
-  const POWER_LABELS = { small: '小', big: '大', fire: '火' };
+  const POWER_LABELS = { small: t('powerSmall'), big: t('powerBig'), fire: t('powerFire') };
   const POWER_ICONS = { small: '🔘', big: '🔴', fire: '🌸' };
   // Health is split into discrete heart segments; each heart = one HP unit.
   const HEART_SEGMENTS = 5;
@@ -629,7 +818,7 @@
     const enemy = makeEnemy(type, c * TILE + rand(-8, 8), y);
     if (options.boss) {
       enemy.boss = true;
-      enemy.name = `${enemy.name}首领`;
+      enemy.name = `${enemy.name}${t('bossSuffix')}`;
       enemy.w = Math.round(enemy.w * 1.55);
       enemy.h = Math.round(enemy.h * 1.45);
       enemy.hp = enemy.maxHp = Math.round(enemy.maxHp * 3.8 + state.level * 3);
@@ -640,7 +829,7 @@
     }
     assignEnemyArt(enemy);
     state.enemies.push(enemy);
-    if (enemy.boss) { midi.sfx('boss'); setMessage(`⚠️ ${enemy.name}出现了！注意躲避${ELEMENTS[enemy.element]?.name || '属性'}攻击。`, 3600); }
+    if (enemy.boss) { midi.sfx('boss'); setMessage(t('bossAppeared', { name: enemy.name, element: ELEMENTS[enemy.element]?.name || t('elementDefault') }), 3600); }
   }
 
   function findSafeEnemyColumn(startC, def, isBoss = false) {
@@ -995,7 +1184,7 @@
     state.nextEnemySpawn = now() + 5200;
     spawnLevelWave();
     ui.restart.hidden = true;
-    setMessage(`${difficultyConfig().name}难度开始！达成阶段目标会升级并继续冒险。`, 2900);
+    setMessage(t('diffStarted', { diff: difficultyConfig().name }), 2900);
     updateHud();
   }
 
@@ -1019,7 +1208,7 @@
 
   function startGame() {
     midi.sfx('start');
-    if (!state.started) post('gameStarted', { title: '宠物冒险' });
+    if (!state.started) post('gameStarted', { title: t('title') });
     state.started = true;
     overlay.hidden = true;
     resetGame();
@@ -1117,7 +1306,7 @@
       state.petBitmaps = bitmaps.filter(Boolean);
       state.petArtCursor = 0;
       refreshEnemyArt();
-      if (state.petBitmaps.length) setMessage(`本局野生宠物：${state.petBitmaps.slice(0, 3).map(p => p.name).join('、')} 等`, 3600);
+      if (state.petBitmaps.length) setMessage(t('wildPets', { names: state.petBitmaps.slice(0, 3).map(p => p.name).join('、') }), 3600);
     } catch (err) {
       requestPetImages();
     }
@@ -1215,14 +1404,14 @@
   }
 
   function applyPowerUp(power) {
-    if (power === 'life') { state.health = state.maxHealth; midi.sfx('oneup'); showToast('💚 生命全满！'); renderHearts(true); makeConfetti(); return; }
-    if (power === 'star') { state.starUntil = now() + (POWERUPS.star.duration || 8000); midi.sfx('powerup'); showToast('⭐ 无敌星！冲刺撞翻怪物'); return; }
+    if (power === 'life') { state.health = state.maxHealth; midi.sfx('oneup'); showToast(t('lifeFull')); renderHearts(true); makeConfetti(); return; }
+    if (power === 'star') { state.starUntil = now() + (POWERUPS.star.duration || 8000); midi.sfx('powerup'); showToast(t('starPower')); return; }
     midi.sfx('powerup');
     if (power === 'big') {
-      if (state.power === 'small') { setPower('big'); showToast('🍄 变大了！可多扛一次伤害'); }
+      if (state.power === 'small') { setPower('big'); showToast(t('grewBig')); }
       else { state.score += 60; showToast('🍄 +60'); }
     } else if (power === 'fire') {
-      setPower('fire'); showToast('🌸 火力全开！点击/E 发射火球');
+      setPower('fire'); showToast(t('firePower'));
     }
   }
 
@@ -1234,7 +1423,7 @@
       player.hurtUntil = now() + 1100;
       state.safeUntil = now() + 1100;
       midi.sfx('shrink');
-      setMessage('被击中，变小了！再受伤会失去生命。', 1600);
+      setMessage(t('hitShrink'), 1600);
       spawnDust(player.x + player.w / 2, player.y + player.h / 2, 14, '#fbbf24');
       return;
     }
@@ -1253,8 +1442,8 @@
     Object.assign(pet, { x: player.x - 46, y: player.y + 12, vx: 0, vy: 0 });
     state.safeUntil = now() + 1600;
     midi.sfx('hit');
-    showToast('💔 掉落了 · 损失一颗心');
-    setMessage('掉落扣一颗心，已回到安全位置。', 1800);
+    showToast(t('fellLostHeart'));
+    setMessage(t('fellSafe'), 1800);
     updateHud();
   }
 
@@ -1313,7 +1502,7 @@
     if (playerInWater()) {
       const wall = playerWallSide();
       const onFloor = player.grounded || actorOnGround(player);
-      if (!wall && !onFloor) { setMessage('在水里要踩到底或贴着墙才能跳！', 900); return; }
+      if (!wall && !onFloor) { setMessage(t('waterJump'), 900); return; }
       // Full-height jump (same as on the ground) so you can clear the pond.
       player.vy = -JUMP_SPEED;
       if (wall) player.vx = -wall * MOVE_SPEED * 0.9;   // kick off the wall, away from it
@@ -1398,8 +1587,8 @@
     state.health = Math.max(0, state.health - amount);
     player.hurtUntil = now() + 900;
     midi.sfx('hit');
-    const hearts = amount >= HP_PER_HEART ? '一颗心' : '半颗心';
-    setMessage(`小心！被击中损失${hearts}，吃红心可回血。`, 1500);
+    const hearts = amount >= HP_PER_HEART ? t('heartFull') : t('heartHalf');
+    setMessage(t('hitDamage', { hearts }), 1500);
     spawnDust(player.x + player.w / 2, player.y + player.h / 2, 12, '#fb7185');
     state.comboCount = 0;
     renderHearts();
@@ -1432,7 +1621,7 @@
     state.score += Math.round((best.v === 4 ? 18 : 6) * difficultyConfig().score);
     spawnDust(best.c * TILE + 16, best.r * TILE + 16, best.v === 4 ? 18 : 10, best.v === 4 ? COLORS.crystal : COLORS.dirt);
     if (best.v === 4 && Math.random() < 0.55) state.pickups.push({ type: 'crystal', x: best.c * TILE + 5, y: best.r * TILE - 8, w: 22, h: 26, bob: rand(0, 6.28), taken: false });
-    if (state.mined === levelMinedGoal()) setMessage('本阶段挖掘目标完成！继续寻找蓝水晶。', 2300);
+    if (state.mined === levelMinedGoal()) setMessage(t('minedGoal'), 2300);
     updateHud();
     checkMission();
   }
@@ -1638,7 +1827,7 @@
           spawnDust(e.x + e.w / 2, e.y + e.h / 2, 12, MONSTERS[e.type]?.color || '#84cc16');
           const chainBonus = Math.round(10 * player.stompChain * comboMultiplier() * difficultyConfig().score);
           state.score += chainBonus;
-          if (player.stompChain >= 2) showToast(`踩踏 ×${player.stompChain} +${chainBonus}`);
+          if (player.stompChain >= 2) showToast(t('stompChain', { count: player.stompChain, bonus: chainBonus }));
           addCombo();
           if (e.hp <= 0) defeatEnemy(e);
         } else playerHit(e.boss ? HP_PER_HEART : HALF_HEART, 'enemy');
@@ -1857,7 +2046,7 @@
     if (Math.random() < .28) state.pickups.push({ type: 'crystal', x: e.x + 5, y: e.y - 10, w: 22, h: 26, bob: rand(0, 6.28), taken: false });
     if (shouldDropPotion(e)) state.pickups.push({ type: 'heart', x: e.x + e.w / 2 - 10, y: e.y - 14, w: 20, h: 18, bob: rand(0, 6.28), taken: false, heal: e.boss ? HP_PER_HEART * 2 : HP_PER_HEART });
     midi.sfx('defeat');
-    showToast(`+${gain} 击退${e.name || '怪物'}`);
+    showToast(t('defeatEnemy', { gain, name: e.name || t('enemyDefault') }));
   }
 
   function shouldDropPotion(e) {
@@ -1880,20 +2069,20 @@
           p.squish = 0.22;
           midi.sfx('spring');
           spawnDust(p.x + p.w / 2, p.y + p.h, 10, '#22d3ee');
-          showToast('🦘 弹跳！');
+          showToast(t('spring'));
         }
         continue;
       }
       if (intersects({ x: player.x - 6, y: player.y - 6, w: player.w + 12, h: player.h + 12 }, p) || intersects({ x: pet.x - 5, y: pet.y - 5, w: pet.w + 10, h: pet.h + 10 }, p)) {
         p.taken = true;
-        if (p.type === 'crystal') { state.crystals++; state.totalCrystals++; state.score += Math.round(80 * comboMultiplier() * difficultyConfig().score); midi.sfx('crystal'); showToast('💎 水晶 +1'); spawnDust(p.x + p.w / 2, p.y + p.h / 2, 18, COLORS.crystal); }
+        if (p.type === 'crystal') { state.crystals++; state.totalCrystals++; state.score += Math.round(80 * comboMultiplier() * difficultyConfig().score); midi.sfx('crystal'); showToast(t('crystalGot')); spawnDust(p.x + p.w / 2, p.y + p.h / 2, 18, COLORS.crystal); }
         else if (p.type === 'potion' || p.type === 'heart') {
           // Red heart refills the health bar by one heart segment.
           const wasFull = state.health >= state.maxHealth;
           const heal = p.heal || HP_PER_HEART;
           state.health = Math.min(state.maxHealth, state.health + heal);
           if (wasFull) state.score += Math.round(20 * difficultyConfig().score);
-          midi.sfx('heal'); showToast(wasFull ? '❤️ 生命已满 +20' : '❤️ 回复一颗心'); renderHearts(true);
+          midi.sfx('heal'); showToast(wasFull ? t('healFull') : t('healHeart')); renderHearts(true);
           spawnDust(p.x + p.w / 2, p.y + p.h / 2, 18, COLORS.heart);
         }
         else if (p.type === 'power') { const def = POWERUPS[p.power] || POWERUPS.mushroom; state.score += Math.round((def.score || 0) * difficultyConfig().score); applyPowerUp(def.power); spawnDust(p.x + p.w / 2, p.y + p.h / 2, 18, def.color); }
@@ -1937,10 +2126,10 @@
     state.stamina = 100;
     makeConfetti();
     midi.sfx('level');
-    showToast(`升级到 LV.${state.level}！+${bonus}`);
-    setMessage(`阶段完成！进入 LV.${state.level}，本关主要怪物：${state.levelMonsterPool.map(t => MONSTERS[t].name).join('、')}。`, 4200);
+    showToast(t('levelUp', { level: state.level, bonus }));
+    setMessage(t('stageComplete', { level: state.level, monsters: state.levelMonsterPool.map(t => MONSTERS[t].name).join('、') }), 4200);
     spawnLevelWave();
-    post('gameProgress', { title: '宠物冒险', level: state.level, score: state.score, totalCrystals: state.totalCrystals, totalMined: state.totalMined, difficulty: state.difficulty, roundId: state.roundId });
+    post('gameProgress', { title: t('title'), level: state.level, score: state.score, totalCrystals: state.totalCrystals, totalMined: state.totalMined, difficulty: state.difficulty, roundId: state.roundId });
     if (state.score > state.best) { state.best = state.score; localStorage.setItem(STORAGE_BEST, String(state.best)); }
     updateHud();
   }
@@ -1953,10 +2142,10 @@
     state.best = Math.max(state.best, state.score);
     localStorage.setItem(STORAGE_BEST, String(state.best));
     updateHud();
-    if (won) { makeConfetti(); showToast('冒险记录已保存！'); setMessage('本次无限冒险已暂停，重新开始可再次挑战更高等级。', 6000); }
-    else { midi.sfx('gameover'); showToast('冒险失败，再试一次！'); setMessage(`生命耗尽了，你生存到 LV.${state.level}，重新开始再挑战吧。`, 6000); }
+    if (won) { makeConfetti(); showToast(t('recordSaved')); setMessage(t('adventurePaused'), 6000); }
+    else { midi.sfx('gameover'); showToast(t('adventureFailed')); setMessage(t('gameOver', { level: state.level }), 6000); }
     ui.restart.hidden = false;
-    ui.restart.textContent = won ? '再玩一次' : '重新挑战';
+    ui.restart.textContent = won ? t('playAgain') : t('retryChallenge');
     overlay.hidden = false;
     if (!state.finishPosted) {
       state.finishPosted = true;
@@ -1984,7 +2173,7 @@
       // Expire combo streak if no pickups/stomps for a while.
       if (state.comboCount > 0 && now() > state.comboUntil) { state.comboCount = 0; ui.combo.hidden = true; }
       // Warn when the star is about to run out.
-      if (state.starUntil && now() > state.starUntil) { state.starUntil = 0; setMessage('无敌结束了！', 1200); }
+      if (state.starUntil && now() > state.starUntil) { state.starUntil = 0; setMessage(t('starEnded'), 1200); }
     }
     for (const c of state.clouds) { c.x += c.speed * dt; if (c.x - state.camera.x > window.innerWidth + 240) c.x -= WORLD_COLS * TILE; }
     updateParticles(dt); updateCamera(dt); updateHud();

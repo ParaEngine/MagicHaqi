@@ -48,7 +48,7 @@
     .board.isThinking { cursor: wait; }
     .board.isResult, .board.isIntro { cursor: default; }
     .board.isThinking::after {
-      content: "宠物思考中"; position: absolute; left: 50%; top: 12px; z-index: 4; transform: translateX(-50%);
+      content: attr(data-thinking-text); position: absolute; left: 50%; top: 12px; z-index: 4; transform: translateX(-50%);
       border-radius: 999px; background: rgba(139,92,246,.9); color: #fff; padding: 6px 12px; font-size: 13px; font-weight: 1000;
       box-shadow: 0 5px 12px rgba(15,23,42,.2); pointer-events: none;
     }
@@ -139,10 +139,10 @@
     <div class="top">
       <div class="title">宠物五子棋</div>
       <div class="stats">
-        <span class="pill">手数 <b id="steps">0</b></span>
-        <span class="pill">得分 <b id="score">0</b></span>
+        <span class="pill"><span id="stepsLabel">手数</span> <b id="steps">0</b></span>
+        <span class="pill"><span id="scoreLabel">得分</span> <b id="score">0</b></span>
         <span class="pill turnBadge" id="turnBadge">准备</span>
-        <label class="selectWrap">难度
+        <label class="selectWrap"><span id="diffLabel">难度</span>
           <select id="difficulty" aria-label="难度">
             <option value="easy">轻松</option>
             <option value="normal" selected>普通</option>
@@ -183,10 +183,10 @@
       <h1 id="resultTitle">本局结束</h1>
       <p id="resultText">亲密度提升</p>
       <div class="resultStats">
-        <div class="resultStat">手数<b id="resultSteps">0</b></div>
-        <div class="resultStat">得分<b id="resultScore">0</b></div>
-        <div class="resultStat">难度<b id="resultDifficulty">普通</b></div>
-        <div class="resultStat">奖励<b id="resultReward">0</b></div>
+        <div class="resultStat"><span id="rStepsLabel">手数</span><b id="resultSteps">0</b></div>
+        <div class="resultStat"><span id="rScoreLabel">得分</span><b id="resultScore">0</b></div>
+        <div class="resultStat"><span id="rDiffLabel">难度</span><b id="resultDifficulty">普通</b></div>
+        <div class="resultStat"><span id="rRewardLabel">奖励</span><b id="resultReward">0</b></div>
       </div>
       <div class="cardActions">
         <button id="again" class="btn btn-orange" type="button">再来一局</button>
@@ -196,15 +196,174 @@
   </div>
 
   <script>
+    // ---- i18n ----
+    const I18N = {
+      zhCN: {
+        title: '宠物五子棋',
+        stepsLabel: '手数',
+        scoreLabel: '得分',
+        ready: '准备',
+        difficultyLabel: '难度',
+        diffEasy: '轻松',
+        diffNormal: '普通',
+        diffHard: '挑战',
+        boardAria: '五子棋棋盘',
+        petPlaysWhite: '宠物执白棋',
+        petFallbackChar: '五',
+        introBubble: '你执黑棋先走，我们来连成五子吧。',
+        initialStatus: '点击开始后，你先落黑棋',
+        helpBtn: '玩法',
+        hintBtn: '提示',
+        undoBtn: '悔棋',
+        restartBtn: '重新开始',
+        introTitle: '宠物五子棋',
+        introText: '你执黑棋先手，宠物执白棋。点击棋盘交叉点落子，横、竖或斜线任意方向先连成五子即可获胜。完成一局会提升亲密度。',
+        startGame: '开始对弈',
+        continueGame: '继续对弈',
+        resultTitle: '本局结束',
+        resultDefault: '亲密度提升',
+        resultStepsLabel: '手数',
+        resultScoreLabel: '得分',
+        resultDiffLabel: '难度',
+        resultRewardLabel: '奖励',
+        playAgain: '再来一局',
+        viewBoard: '查看棋盘',
+        thinkingOverlay: '宠物思考中',
+        blackName: '黑棋',
+        whiteName: '白棋',
+        occupied: '这里已经有棋子了',
+        niceLineToast: '漂亮连线<br>+{gain} 分',
+        petThinking: '宠物正在思考...',
+        dangerousMove: '这一步很危险，我得认真挡住。',
+        letMeSee: '我看看哪里最关键。',
+        boardFull: '棋盘已满',
+        yourTurnBlack: '轮到你落黑棋',
+        petThinkingBadge: '宠物思考',
+        gameOverBadge: '本局结束',
+        yourTurnBadge: '你的回合',
+        hideHint: '收起提示',
+        fiveInRow: '{side}连成五子',
+        hintWin: '金色提示能直接连成五子。',
+        hintDefense: '蓝色提示适合防守我的连线。',
+        hintAttack: '绿色提示适合继续进攻。',
+        hintPenalty: '已显示提示，使用提示扣 3 分',
+        hintHidden: '提示收起来啦，试试自己的判断。',
+        petThreat: '我也连出威胁了，看看你能不能挡住。',
+        strongLine: '你已经有很强的连线了。',
+        yourTurn: '轮到你啦。',
+        youGoFirst: '你先走，我执白棋。',
+        undone: '已悔棋，轮到你落黑棋',
+        noWorries: '没关系，我们再想一次。',
+        youWin: '你赢啦！',
+        draw: '平局',
+        petWins: '宠物获胜',
+        bondIncreased: '亲密度提升',
+        greatLine: '好厉害！这条连线太漂亮了。',
+        fullBoardGreat: '下满一盘也很棒。',
+        iWon: '这局我赢啦，我们再来。',
+        gameComplete: '本局完成',
+        resultTextFmt: '{reason}，亲密度提升。',
+        petNameWhite: '{name}执白棋',
+        pet: '宠物',
+        diffSwitched: '难度切换为{name}。',
+      },
+      enUS: {
+        title: 'Pet Gomoku',
+        stepsLabel: 'Moves',
+        scoreLabel: 'Score',
+        ready: 'Ready',
+        difficultyLabel: 'Level',
+        diffEasy: 'Easy',
+        diffNormal: 'Normal',
+        diffHard: 'Hard',
+        boardAria: 'Gomoku board',
+        petPlaysWhite: 'Pet plays White',
+        petFallbackChar: 'G',
+        introBubble: 'You play Black first. Let\'s connect five in a row!',
+        initialStatus: 'After starting, you place Black first',
+        helpBtn: 'Help',
+        hintBtn: 'Hint',
+        undoBtn: 'Undo',
+        restartBtn: 'Restart',
+        introTitle: 'Pet Gomoku',
+        introText: 'You play Black first, Pet plays White. Tap an intersection to place a stone. Connect five in a row horizontally, vertically, or diagonally to win. Completing a game increases bond.',
+        startGame: 'Start Game',
+        continueGame: 'Continue Game',
+        resultTitle: 'Game Over',
+        resultDefault: 'Bond increased',
+        resultStepsLabel: 'Moves',
+        resultScoreLabel: 'Score',
+        resultDiffLabel: 'Level',
+        resultRewardLabel: 'Reward',
+        playAgain: 'Play Again',
+        viewBoard: 'View Board',
+        thinkingOverlay: 'Pet is thinking\u2026',
+        blackName: 'Black',
+        whiteName: 'White',
+        occupied: 'There is already a stone here',
+        niceLineToast: 'Nice line<br>+{gain} pts',
+        petThinking: 'Pet is thinking...',
+        dangerousMove: 'This move is dangerous. I need to block it carefully.',
+        letMeSee: 'Let me see where it matters most.',
+        boardFull: 'Board is full',
+        yourTurnBlack: 'Your turn to place Black',
+        petThinkingBadge: 'Pet thinking',
+        gameOverBadge: 'Game Over',
+        yourTurnBadge: 'Your Turn',
+        hideHint: 'Hide Hint',
+        fiveInRow: '{side} connected five',
+        hintWin: 'The gold hint connects five directly.',
+        hintDefense: 'The blue hint is good for defending my line.',
+        hintAttack: 'The green hint is good for continuing the attack.',
+        hintPenalty: 'Hints shown. -3 points for using hints',
+        hintHidden: 'Hints hidden. Try your own judgment.',
+        petThreat: 'I\'ve created a threat too. Let\'s see if you can block it.',
+        strongLine: 'You already have a strong line.',
+        yourTurn: 'Your turn.',
+        youGoFirst: 'You go first. I\'ll play White.',
+        undone: 'Undone. Your turn to place Black',
+        noWorries: 'No worries. Let\'s think again.',
+        youWin: 'You Win!',
+        draw: 'Draw',
+        petWins: 'Pet Wins',
+        bondIncreased: 'Bond increased',
+        greatLine: 'Amazing! That line is beautiful.',
+        fullBoardGreat: 'Filling the whole board is great too.',
+        iWon: 'I won this round. Let\'s play again.',
+        gameComplete: 'Game complete',
+        resultTextFmt: '{reason}. Bond increased.',
+        petNameWhite: '{name} plays White',
+        pet: 'Pet',
+        diffSwitched: 'Difficulty switched to {name}.',
+      },
+    };
+    function detectLang() {
+      try {
+        const params = new URLSearchParams(window.location.search);
+        const lang = params.get('lang');
+        if (lang && I18N[lang]) return lang;
+      } catch (_) {}
+      return 'zhCN';
+    }
+    const LANG = detectLang();
+    const L = I18N[LANG];
+    function t(key, vars) {
+      let str = L[key] || I18N.zhCN[key] || key;
+      if (vars) str = str.replace(/\{(\w+)\}/g, (m, n) => vars[n] != null ? String(vars[n]) : m);
+      return str;
+    }
+    try { document.documentElement.setAttribute('lang', LANG === 'enUS' ? 'en' : 'zh-CN'); } catch (_) {}
+    try { document.title = t('title'); } catch (_) {}
+
     const SIZE = 15;
     const EMPTY = '';
     const BLACK = 'black';
     const WHITE = 'white';
     const DIRECTIONS = [[1, 0], [0, 1], [1, 1], [1, -1]];
     const DIFFICULTIES = {
-      easy: { level: 0, name: '轻松', own: .82, block: .66, noise: 80, missBlock: .28, reward: 24 },
-      normal: { level: 1, name: '普通', own: 1.12, block: 1.02, noise: 8, missBlock: 0, reward: 32 },
-      hard: { level: 2, name: '挑战', own: 1.22, block: 1.18, noise: 2, missBlock: 0, reward: 46 },
+      easy: { level: 0, name: t('diffEasy'), own: .82, block: .66, noise: 80, missBlock: .28, reward: 24 },
+      normal: { level: 1, name: t('diffNormal'), own: 1.12, block: 1.02, noise: 8, missBlock: 0, reward: 32 },
+      hard: { level: 2, name: t('diffHard'), own: 1.22, block: 1.18, noise: 2, missBlock: 0, reward: 46 },
     };
     const els = {
       board: document.getElementById('board'),
@@ -230,6 +389,37 @@
       restart: document.getElementById('restart'),
     };
 
+    // Apply i18n to static HTML
+    document.querySelector('.title').textContent = t('title');
+    document.getElementById('stepsLabel').textContent = t('stepsLabel');
+    document.getElementById('scoreLabel').textContent = t('scoreLabel');
+    document.getElementById('diffLabel').textContent = t('difficultyLabel');
+    document.getElementById('difficulty').setAttribute('aria-label', t('difficultyLabel'));
+    document.querySelector('#difficulty option[value="easy"]').textContent = t('diffEasy');
+    document.querySelector('#difficulty option[value="normal"]').textContent = t('diffNormal');
+    document.querySelector('#difficulty option[value="hard"]').textContent = t('diffHard');
+    document.getElementById('board').setAttribute('aria-label', t('boardAria'));
+    document.getElementById('board').dataset.thinkingText = t('thinkingOverlay');
+    document.getElementById('petName').textContent = t('petPlaysWhite');
+    document.querySelector('.petFallback').textContent = t('petFallbackChar');
+    document.getElementById('petTalk').textContent = t('introBubble');
+    document.getElementById('status').textContent = t('initialStatus');
+    document.getElementById('help').textContent = t('helpBtn');
+    document.getElementById('hint').textContent = t('hintBtn');
+    document.getElementById('undo').textContent = t('undoBtn');
+    document.getElementById('restart').textContent = t('restartBtn');
+    document.getElementById('introTitle').textContent = t('introTitle');
+    document.querySelector('#intro .card p').textContent = t('introText');
+    document.getElementById('start').textContent = t('startGame');
+    document.getElementById('resultTitle').textContent = t('resultTitle');
+    document.getElementById('resultText').textContent = t('resultDefault');
+    document.getElementById('rStepsLabel').textContent = t('resultStepsLabel');
+    document.getElementById('rScoreLabel').textContent = t('resultScoreLabel');
+    document.getElementById('rDiffLabel').textContent = t('resultDiffLabel');
+    document.getElementById('rRewardLabel').textContent = t('resultRewardLabel');
+    document.getElementById('again').textContent = t('playAgain');
+    document.getElementById('closeResult').textContent = t('viewBoard');
+
     let board = createBoard();
     let phase = 'intro';
     let turn = BLACK;
@@ -248,7 +438,7 @@
     function cloneBoard(source) { return source.map(row => row.slice()); }
     function inside(x, y) { return x >= 0 && x < SIZE && y >= 0 && y < SIZE; }
     function keyOf(x, y) { return `${x},${y}`; }
-    function sideName(side) { return side === BLACK ? '黑棋' : '白棋'; }
+    function sideName(side) { return side === BLACK ? t('blackName') : t('whiteName'); }
     function post(type, data = {}, extra = {}) { try { window.parent.postMessage({ type, data, ...extra }, '*'); } catch (e) {} }
     function setStatus(text) { els.status.textContent = text; updateControls(); }
     function setPetTalk(text) { els.petTalk.textContent = text; }
@@ -314,7 +504,7 @@
       const pad = 0.6, total = 15.2;
       const x = clamp(Math.round(((event.clientX - rect.left) / rect.width) * total - pad), 0, SIZE - 1);
       const y = clamp(Math.round(((event.clientY - rect.top) / rect.height) * total - pad), 0, SIZE - 1);
-      if (board[y][x]) { setStatus('这里已经有棋子了'); return; }
+      if (board[y][x]) { setStatus(t('occupied')); return; }
       hintVisible = false;
       commitMove(x, y, BLACK);
     }
@@ -326,7 +516,7 @@
         steps++;
         const gain = scoreForMove(x, y, BLACK);
         score += gain;
-        if (gain >= 40) toast(`漂亮连线<br>+${gain} 分`);
+        if (gain >= 40) toast(t('niceLineToast', { gain }));
       }
       render();
       const result = checkResult(x, y, side);
@@ -334,11 +524,11 @@
       turn = side === BLACK ? WHITE : BLACK;
       if (turn === WHITE) {
         phase = 'thinking';
-        setStatus('宠物正在思考...');
-        setPetTalk(nearThreat(BLACK) ? '这一步很危险，我得认真挡住。' : '我看看哪里最关键。');
+        setStatus(t('petThinking'));
+        setPetTalk(nearThreat(BLACK) ? t('dangerousMove') : t('letMeSee'));
         setTimeout(() => {
           const move = chooseAIMove();
-          if (!move) finish('draw', '棋盘已满', []);
+          if (!move) finish('draw', t('boardFull'), []);
           else {
             hintVisible = false;
             commitMove(move.x, move.y, WHITE);
@@ -346,7 +536,7 @@
         }, 420);
       } else {
         phase = 'playing';
-        setStatus('轮到你落黑棋');
+        setStatus(t('yourTurnBlack'));
         setPetTalk(reactionAfterPetMove());
         render();
       }
@@ -354,20 +544,20 @@
 
     function updateControls() {
       const isPlaying = phase === 'playing' && turn === BLACK;
-      els.turnBadge.textContent = phase === 'thinking' ? '宠物思考' : phase === 'result' ? '本局结束' : phase === 'playing' ? '你的回合' : '准备';
+      els.turnBadge.textContent = phase === 'thinking' ? t('petThinkingBadge') : phase === 'result' ? t('gameOverBadge') : phase === 'playing' ? t('yourTurnBadge') : t('ready');
       els.turnBadge.classList.toggle('thinking', phase === 'thinking');
       els.turnBadge.classList.toggle('result', phase === 'result');
       els.hint.disabled = !isPlaying || finished;
-      els.hint.textContent = hintVisible ? '收起提示' : '提示';
+      els.hint.textContent = hintVisible ? t('hideHint') : t('hintBtn');
       els.undo.disabled = phase === 'thinking' || finished || history.length < 2;
       els.difficulty.disabled = phase === 'thinking';
-      els.restart.textContent = phase === 'result' ? '再来一局' : '重新开始';
+      els.restart.textContent = phase === 'result' ? t('playAgain') : t('restartBtn');
     }
 
     function checkResult(x, y, side) {
       const line = findFiveLine(x, y, side);
-      if (line.length >= 5) return { ended: true, winner: side, reason: `${sideName(side)}连成五子`, line };
-      if (!emptyCells().length) return { ended: true, winner: 'draw', reason: '棋盘已满', line: [] };
+      if (line.length >= 5) return { ended: true, winner: side, reason: t('fiveInRow', { side: sideName(side) }), line };
+      if (!emptyCells().length) return { ended: true, winner: 'draw', reason: t('boardFull'), line: [] };
       return { ended: false };
     }
     function findFiveLine(x, y, side) {
@@ -482,18 +672,18 @@
       if (hintVisible) {
         score = Math.max(0, score - 3);
         const best = Array.from(getHintCells().values())[0];
-        if (best?.type === 'win') setPetTalk('金色提示能直接连成五子。');
-        else if (best?.type === 'defense') setPetTalk('蓝色提示适合防守我的连线。');
-        else setPetTalk('绿色提示适合继续进攻。');
-        setStatus('已显示提示，使用提示扣 3 分');
+        if (best?.type === 'win') setPetTalk(t('hintWin'));
+        else if (best?.type === 'defense') setPetTalk(t('hintDefense'));
+        else setPetTalk(t('hintAttack'));
+        setStatus(t('hintPenalty'));
       } else {
-        setStatus('轮到你落黑棋');
-        setPetTalk('提示收起来啦，试试自己的判断。');
+        setStatus(t('yourTurnBlack'));
+        setPetTalk(t('hintHidden'));
       }
       render();
     }
     function openHelp() {
-      els.start.textContent = phase === 'intro' ? '开始对弈' : '继续对弈';
+      els.start.textContent = phase === 'intro' ? t('startGame') : t('continueGame');
       els.intro.hidden = false;
     }
     function closeIntroOrStart() {
@@ -501,9 +691,9 @@
       if (phase === 'intro') resetGame();
     }
     function reactionAfterPetMove() {
-      if (nearThreat(WHITE)) return '我也连出威胁了，看看你能不能挡住。';
-      if (nearThreat(BLACK)) return '你已经有很强的连线了。';
-      return '轮到你啦。';
+      if (nearThreat(WHITE)) return t('petThreat');
+      if (nearThreat(BLACK)) return t('strongLine');
+      return t('yourTurn');
     }
 
     function resetGame() {
@@ -522,8 +712,8 @@
       finished = false;
       hintVisible = false;
       els.result.hidden = true;
-      setStatus('轮到你落黑棋');
-      setPetTalk('你先走，我执白棋。');
+      setStatus(t('yourTurnBlack'));
+      setPetTalk(t('youGoFirst'));
       render();
       post('gameStarted');
     }
@@ -541,8 +731,8 @@
       finished = previous.finished;
       hintVisible = previous.hintVisible || false;
       phase = 'playing';
-      setStatus('已悔棋，轮到你落黑棋');
-      setPetTalk('没关系，我们再想一次。');
+      setStatus(t('undone'));
+      setPetTalk(t('noWorries'));
       render();
     }
     function finish(winner, reason, line) {
@@ -556,11 +746,11 @@
       const draw = winner === 'draw';
       const config = DIFFICULTIES[difficulty] || DIFFICULTIES.normal;
       const earnedPoints = (won ? 106 : draw ? 82 : 64) + config.reward;
-      const title = won ? '你赢啦！' : draw ? '平局' : '宠物获胜';
-      setStatus(`${title} ${reason || ''} 亲密度提升`);
-      setPetTalk(won ? '好厉害！这条连线太漂亮了。' : draw ? '下满一盘也很棒。' : '这局我赢啦，我们再来。');
+      const title = won ? t('youWin') : draw ? t('draw') : t('petWins');
+      setStatus(`${title} ${reason || ''} ${t('bondIncreased')}`);
+      setPetTalk(won ? t('greatLine') : draw ? t('fullBoardGreat') : t('iWon'));
       pulsePet();
-      toast(`${title}<br>亲密度提升`);
+      toast(`${title}<br>${t('bondIncreased')}`);
       resultTimer = setTimeout(() => {
         resultTimer = 0;
         if (finished && phase === 'result') showResult(title, reason, earnedPoints, config.name);
@@ -569,7 +759,7 @@
     }
     function showResult(title, reason, earnedPoints, difficultyName) {
       els.resultTitle.textContent = title;
-      els.resultText.textContent = `${reason || '本局完成'}，亲密度提升。`;
+      els.resultText.textContent = t('resultTextFmt', { reason: reason || t('gameComplete') });
       els.resultSteps.textContent = steps;
       els.resultScore.textContent = score;
       els.resultDifficulty.textContent = difficultyName;
@@ -617,7 +807,7 @@
         el.style.backgroundSize = 'contain'; el.style.backgroundPosition = 'center';
       }
       els.petAvatar.innerHTML = ''; els.petAvatar.appendChild(el);
-      els.petName.textContent = `${pet.name || '宠物'}执白棋`;
+      els.petName.textContent = t('petNameWhite', { name: pet.name || t('pet') });
     }
 
     els.board.onclick = handleBoardClick;
@@ -625,7 +815,7 @@
     els.restart.onclick = resetGame;
     els.undo.onclick = undo;
     els.hint.onclick = showHint;
-    els.difficulty.onchange = () => { difficulty = els.difficulty.value; setPetTalk(`难度切换为${DIFFICULTIES[difficulty].name}。`); updateControls(); };
+    els.difficulty.onchange = () => { difficulty = els.difficulty.value; setPetTalk(t('diffSwitched', { name: DIFFICULTIES[difficulty].name })); updateControls(); };
     document.getElementById('again').onclick = resetGame;
     document.getElementById('closeResult').onclick = () => { els.result.hidden = true; };
     document.getElementById('help').onclick = openHelp;

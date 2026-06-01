@@ -11,37 +11,162 @@
 <body></body>
 <script defer>
 (function () {
+  // ---- i18n ----
+  const I18N = {
+    zhCN: {
+      title: '宠物食物叠叠消',
+      gameStatusAria: '游戏状态',
+      boardAria: '食物叠叠消棋盘',
+      trayAria: '暂存槽',
+      levelsAria: '关卡选择',
+      remaining: '剩余',
+      score: '得分',
+      best: '最佳',
+      helpBtn: '玩法',
+      hintBtn: '提示',
+      restartBtn: '重开',
+      menuAria: '玩法',
+      overlayTitle: '食物叠叠消',
+      overlayText: '点击没有被压住的食物，它会进入下方7格暂存槽。暂存槽里凑齐3个相同食物会自动消除；7格塞满还没消掉就失败。',
+      startChallenge: '开始挑战',
+      continueGame: '继续游戏',
+      foodApple: '苹果', foodCarrot: '胡萝卜', foodCorn: '玉米', foodGrape: '葡萄',
+      foodCake: '蛋糕', foodFries: '薯条', foodRice: '饭团', foodMelon: '西瓜',
+      foodCookie: '饼干', foodBread: '面包', foodCheese: '奶酪', foodBerry: '草莓',
+      foodBurger: '汉堡', foodPizza: '披萨', foodTaco: '塔可', foodSushi: '寿司',
+      foodKiwi: '猕猴桃', foodAvocado: '牛油果', foodPretzel: '椒盐卷饼', foodDumpling: '饺子',
+      diffEasy: '轻松', diffChallenge: '挑战', diffNightmare: '噩梦', diffAbyss: '炼狱',
+      levelTutorial: '新手草地', levelCliff: '断崖挑战', levelFeast: '魔法餐桌', levelAbyss: '深层餐塔',
+      noteTutorial: '先感受规则：点亮的食物可以拿，下方凑够3个会消除。',
+      noteCliff: '开始进入策略局：先凑对子，再清上层，别让7格暂存槽被塞满。',
+      noteFeast: '食物更多，遮挡更密，尽量优先清理能打开局面的上层。',
+      noteAbyss: '最难档：同类食物会被拆散到不同深度，必须规划暂存槽。',
+      levelTitle: '{label} Lv.{tier}',
+      levelScaledNote: '{label}基础难度已通关 {extra} 次，本局会增加食物数量、图案种类和叠放层数。',
+      tileOpen: '{label}，可拿取',
+      tileLocked: '{label}，被压住',
+      resultWin: '清空了所有食物，获得 {points} 分。{cleanPlay}{pressure} {label}难度已升到 Lv.{nextLevel}。',
+      resultCleanNoHint: '没有使用提示，',
+      resultCleanWithHint: '使用了 {count} 次提示，',
+      resultPressureGood: '暂存槽控制得很稳。',
+      resultPressureHigh: '最高占用 {max}/7 格。',
+      resultLoseManyTypes: '还剩 {left} 个食物。暂存槽里最多同时出现 {types} 种食物，下一局优先把已有对子凑成3个。',
+      resultLoseTrayFull: '还剩 {left} 个食物。暂存槽一度只剩1格，看到同类食物时先清掉最安全。',
+      resultLoseDefault: '还剩 {left} 个食物。试着先清理上层，打开更多可拿的食物。',
+      winTitle: '挑战成功', winButton: '继续挑战',
+      loseTitle: '暂存槽满了', loseButton: '再试一次',
+      toastRemoveAbove: '先拿开上面的食物',
+      toastCannotPick: '这个食物暂时拿不了',
+      toastNoOpen: '没有可拿的食物了',
+      hintMatch3: '这个可以凑成3个',
+      hintMatch2: '先把同类凑成对子',
+      hintAvoidClog: '先选不容易堵槽的上层',
+      hintClearTop: '先清理上层打开局面',
+      menuOverlayText: '点击没有被压住的食物放入下方7格。3个相同食物会消除；可以随时切换轻松、挑战、噩梦、炼狱基础难度，每次通关会让当前基础难度继续升级。',
+      gameLoadedTitle: '宠物食物叠叠消',
+    },
+    enUS: {
+      title: 'Pet Food Stack Match',
+      gameStatusAria: 'Game status',
+      boardAria: 'Food stack match board',
+      trayAria: 'Tray',
+      levelsAria: 'Level selection',
+      remaining: 'Left',
+      score: 'Score',
+      best: 'Best',
+      helpBtn: 'Help',
+      hintBtn: 'Hint',
+      restartBtn: 'Restart',
+      menuAria: 'Help',
+      overlayTitle: 'Food Stack Match',
+      overlayText: 'Tap uncovered food to add it to the 7-slot tray below. Three matching foods clear automatically; if the tray fills up without a match, you lose.',
+      startChallenge: 'Start',
+      continueGame: 'Continue',
+      foodApple: 'Apple', foodCarrot: 'Carrot', foodCorn: 'Corn', foodGrape: 'Grape',
+      foodCake: 'Cake', foodFries: 'Fries', foodRice: 'Rice Ball', foodMelon: 'Watermelon',
+      foodCookie: 'Cookie', foodBread: 'Bread', foodCheese: 'Cheese', foodBerry: 'Strawberry',
+      foodBurger: 'Burger', foodPizza: 'Pizza', foodTaco: 'Taco', foodSushi: 'Sushi',
+      foodKiwi: 'Kiwi', foodAvocado: 'Avocado', foodPretzel: 'Pretzel', foodDumpling: 'Dumpling',
+      diffEasy: 'Easy', diffChallenge: 'Challenge', diffNightmare: 'Nightmare', diffAbyss: 'Abyss',
+      levelTutorial: 'Beginner Meadow', levelCliff: 'Cliff Challenge', levelFeast: 'Magic Table', levelAbyss: 'Deep Meal Tower',
+      noteTutorial: 'Learn the rules: tap lit food to pick it up. Match 3 in the tray to clear them.',
+      noteCliff: 'Think strategically: match pairs first, clear top layers, and keep the 7-slot tray from filling up.',
+      noteFeast: 'More food, denser stacks — prioritize clearing top layers to open up the board.',
+      noteAbyss: 'Hardest mode: matching foods are scattered across depths — plan your tray carefully.',
+      levelTitle: '{label} Lv.{tier}',
+      levelScaledNote: '{label} base difficulty cleared {extra} times. This round adds more food, types, and layers.',
+      tileOpen: '{label}, available',
+      tileLocked: '{label}, covered',
+      resultWin: 'Cleared all food for {points} points. {cleanPlay}{pressure} {label} difficulty is now Lv.{nextLevel}.',
+      resultCleanNoHint: 'No hints used. ',
+      resultCleanWithHint: 'Used {count} hints. ',
+      resultPressureGood: 'Tray stayed under control.',
+      resultPressureHigh: 'Peak tray usage: {max}/7 slots.',
+      resultLoseManyTypes: '{left} food left. The tray held up to {types} types at once — next time, prioritize matching existing pairs.',
+      resultLoseTrayFull: '{left} food left. The tray was down to 1 slot — clear matching food as soon as you see it.',
+      resultLoseDefault: '{left} food left. Try clearing top layers first to uncover more options.',
+      winTitle: 'Challenge Clear!', winButton: 'Next Challenge',
+      loseTitle: 'Tray Full', loseButton: 'Try Again',
+      toastRemoveAbove: 'Remove the food on top first',
+      toastCannotPick: 'This food is covered',
+      toastNoOpen: 'No food available to pick',
+      hintMatch3: 'This completes a set of 3',
+      hintMatch2: 'Build a pair first',
+      hintAvoidClog: 'Pick from upper layers to avoid clogging',
+      hintClearTop: 'Clear top layers to open up the board',
+      menuOverlayText: 'Tap uncovered food to place it in the 7-slot tray. Three matching foods are cleared. Switch between Easy, Challenge, Nightmare, and Abyss difficulty anytime. Each clear raises the base difficulty level.',
+      gameLoadedTitle: 'Pet Food Stack Match',
+    },
+  };
+  function detectLang() {
+    try {
+      const params = new URLSearchParams(window.location.search);
+      const lang = params.get('lang');
+      if (lang && I18N[lang]) return lang;
+    } catch (_) {}
+    return 'zhCN';
+  }
+  const LANG = detectLang();
+  const L = I18N[LANG];
+  function t(key, vars) {
+    let str = L[key] || I18N.zhCN[key] || key;
+    if (vars) str = str.replace(/\{(\w+)\}/g, (m, n) => vars[n] != null ? String(vars[n]) : m);
+    return str;
+  }
+  try { document.documentElement.setAttribute('lang', LANG === 'enUS' ? 'en' : 'zh-CN'); } catch (_) {}
+  try { document.title = t('title'); } catch (_) {}
+
   const STORAGE_KEY = 'haqiFoodStackMatchBestV1';
   const PROGRESS_KEY = 'haqiFoodStackMatchProgressV1';
   const DIFFICULTY_KEY = 'haqiFoodStackMatchDifficultyV1';
   const TRAY_SIZE = 7;
   const TILE_TYPES = [
-    { id: 'apple', icon: '🍎', label: '苹果' },
-    { id: 'carrot', icon: '🥕', label: '胡萝卜' },
-    { id: 'corn', icon: '🌽', label: '玉米' },
-    { id: 'grape', icon: '🍇', label: '葡萄' },
-    { id: 'cake', icon: '🍰', label: '蛋糕' },
-    { id: 'fries', icon: '🍟', label: '薯条' },
-    { id: 'rice', icon: '🍙', label: '饭团' },
-    { id: 'melon', icon: '🍉', label: '西瓜' },
-    { id: 'cookie', icon: '🍪', label: '饼干' },
-    { id: 'bread', icon: '🥐', label: '面包' },
-    { id: 'cheese', icon: '🧀', label: '奶酪' },
-    { id: 'berry', icon: '🍓', label: '草莓' },
-    { id: 'burger', icon: '🍔', label: '汉堡' },
-    { id: 'pizza', icon: '🍕', label: '披萨' },
-    { id: 'taco', icon: '🌮', label: '塔可' },
-    { id: 'sushi', icon: '🍣', label: '寿司' },
-    { id: 'kiwi', icon: '🥝', label: '猕猴桃' },
-    { id: 'avocado', icon: '🥑', label: '牛油果' },
-    { id: 'pretzel', icon: '🥨', label: '椒盐卷饼' },
-    { id: 'dumpling', icon: '🥟', label: '饺子' },
+    { id: 'apple', icon: '🍎', labelKey: 'foodApple' },
+    { id: 'carrot', icon: '🥕', labelKey: 'foodCarrot' },
+    { id: 'corn', icon: '🌽', labelKey: 'foodCorn' },
+    { id: 'grape', icon: '🍇', labelKey: 'foodGrape' },
+    { id: 'cake', icon: '🍰', labelKey: 'foodCake' },
+    { id: 'fries', icon: '🍟', labelKey: 'foodFries' },
+    { id: 'rice', icon: '🍙', labelKey: 'foodRice' },
+    { id: 'melon', icon: '🍉', labelKey: 'foodMelon' },
+    { id: 'cookie', icon: '🍪', labelKey: 'foodCookie' },
+    { id: 'bread', icon: '🥐', labelKey: 'foodBread' },
+    { id: 'cheese', icon: '🧀', labelKey: 'foodCheese' },
+    { id: 'berry', icon: '🍓', labelKey: 'foodBerry' },
+    { id: 'burger', icon: '🍔', labelKey: 'foodBurger' },
+    { id: 'pizza', icon: '🍕', labelKey: 'foodPizza' },
+    { id: 'taco', icon: '🌮', labelKey: 'foodTaco' },
+    { id: 'sushi', icon: '🍣', labelKey: 'foodSushi' },
+    { id: 'kiwi', icon: '🥝', labelKey: 'foodKiwi' },
+    { id: 'avocado', icon: '🥑', labelKey: 'foodAvocado' },
+    { id: 'pretzel', icon: '🥨', labelKey: 'foodPretzel' },
+    { id: 'dumpling', icon: '🥟', labelKey: 'foodDumpling' },
   ];
   const LEVELS = [
-    { id: 'tutorial', label: '轻松', title: '新手草地', groups: 6, typeCount: 4, layers: 2, cols: 4, rows: 3, reward: 80, challengeRank: 0, note: '先感受规则：点亮的食物可以拿，下方凑够3个会消除。' },
-    { id: 'cliff', label: '挑战', title: '断崖挑战', groups: 24, typeCount: 7, layers: 5, cols: 6, rows: 4, reward: 170, challengeRank: 2, note: '开始进入策略局：先凑对子，再清上层，别让7格暂存槽被塞满。' },
-    { id: 'feast', label: '噩梦', title: '魔法餐桌', groups: 36, typeCount: 12, layers: 7, cols: 7, rows: 5, reward: 240, challengeRank: 3, note: '食物更多，遮挡更密，尽量优先清理能打开局面的上层。' },
-    { id: 'abyss', label: '炼狱', title: '深层餐塔', groups: 50, typeCount: 16, layers: 9, cols: 8, rows: 6, reward: 340, challengeRank: 4, note: '最难档：同类食物会被拆散到不同深度，必须规划暂存槽。' },
+    { id: 'tutorial', labelKey: 'diffEasy', titleKey: 'levelTutorial', groups: 6, typeCount: 4, layers: 2, cols: 4, rows: 3, reward: 80, challengeRank: 0, noteKey: 'noteTutorial' },
+    { id: 'cliff', labelKey: 'diffChallenge', titleKey: 'levelCliff', groups: 24, typeCount: 7, layers: 5, cols: 6, rows: 4, reward: 170, challengeRank: 2, noteKey: 'noteCliff' },
+    { id: 'feast', labelKey: 'diffNightmare', titleKey: 'levelFeast', groups: 36, typeCount: 12, layers: 7, cols: 7, rows: 5, reward: 240, challengeRank: 3, noteKey: 'noteFeast' },
+    { id: 'abyss', labelKey: 'diffAbyss', titleKey: 'levelAbyss', groups: 50, typeCount: 16, layers: 9, cols: 8, rows: 6, reward: 340, challengeRank: 4, noteKey: 'noteAbyss' },
   ];
 
   const state = {
@@ -177,35 +302,35 @@
     </div>
     <div class="mh-shell">
       <header class="mh-top">
-        <button id="mhMenu" class="mh-icon-btn" type="button" aria-label="玩法">?</button>
-        <div class="mh-title" id="mhTitle">宠物食物叠叠消</div>
-        <div class="mh-stats" aria-label="游戏状态">
-          <span class="mh-pill">剩余 <b id="mhLeft">0</b></span>
-          <span class="mh-pill">得分 <b id="mhScore">0</b></span>
-          <span class="mh-pill optional">最佳 <b id="mhBest">0</b></span>
+        <button id="mhMenu" class="mh-icon-btn" type="button" aria-label="${t('menuAria')}">?</button>
+        <div class="mh-title" id="mhTitle">${t('title')}</div>
+        <div class="mh-stats" aria-label="${t('gameStatusAria')}">
+          <span class="mh-pill">${t('remaining')} <b id="mhLeft">0</b></span>
+          <span class="mh-pill">${t('score')} <b id="mhScore">0</b></span>
+          <span class="mh-pill optional">${t('best')} <b id="mhBest">0</b></span>
           <span class="mh-pill optional"><b id="mhTime">0</b>s</span>
         </div>
       </header>
       <main class="mh-stage">
         <div class="mh-board-wrap">
-          <div id="mhLevels" class="mh-levels" aria-label="关卡选择"></div>
-          <div id="mhBoard" class="mh-board" aria-label="食物叠叠消棋盘"></div>
+          <div id="mhLevels" class="mh-levels" aria-label="${t('levelsAria')}"></div>
+          <div id="mhBoard" class="mh-board" aria-label="${t('boardAria')}"></div>
         </div>
       </main>
       <footer class="mh-tray-wrap">
-        <div id="mhTray" class="mh-tray" aria-label="暂存槽"></div>
+        <div id="mhTray" class="mh-tray" aria-label="${t('trayAria')}"></div>
         <div class="mh-controls">
-          <button id="mhHelp" class="mh-action help" type="button">玩法</button>
-          <button id="mhHint" class="mh-action" type="button">提示</button>
-          <button id="mhRestart" class="mh-action" type="button">重开</button>
+          <button id="mhHelp" class="mh-action help" type="button">${t('helpBtn')}</button>
+          <button id="mhHint" class="mh-action" type="button">${t('hintBtn')}</button>
+          <button id="mhRestart" class="mh-action" type="button">${t('restartBtn')}</button>
         </div>
       </footer>
     </div>
     <div id="mhOverlay" class="mh-overlay" role="dialog" aria-modal="true" aria-labelledby="mhOverlayTitle">
       <div class="mh-card">
-        <h1 id="mhOverlayTitle">食物叠叠消</h1>
-        <p id="mhOverlayText">点击没有被压住的食物，它会进入下方7格暂存槽。暂存槽里凑齐3个相同食物会自动消除；7格塞满还没消掉就失败。</p>
-        <button id="mhStart" class="mh-start" type="button">开始挑战</button>
+        <h1 id="mhOverlayTitle">${t('overlayTitle')}</h1>
+        <p id="mhOverlayText">${t('overlayText')}</p>
+        <button id="mhStart" class="mh-start" type="button">${t('startChallenge')}</button>
       </div>
     </div>
   `;
@@ -277,6 +402,7 @@
     const rank = Number(base.challengeRank) || 0;
     const groupStep = base.id === 'tutorial' ? 2 : rank >= 4 ? 4 : rank >= 3 ? 3 : 2;
     const scaledGroups = base.groups + Math.min(rank >= 4 ? 28 : 20, extra * groupStep);
+    const label = t(base.labelKey);
     return {
       ...base,
       baseId: base.id,
@@ -287,10 +413,10 @@
       cols: Math.min(8, base.cols + Math.floor(extra / 4)),
       rows: Math.min(7, base.rows + Math.floor(extra / 5)),
       reward: base.reward + extra * 28,
-      title: `${base.label} Lv.${tier}`,
+      title: t('levelTitle', { label, tier }),
       note: extra > 0
-        ? `${base.label}基础难度已通关 ${extra} 次，本局会增加食物数量、图案种类和叠放层数。`
-        : base.note,
+        ? t('levelScaledNote', { label, extra })
+        : t(base.noteKey),
     };
   }
 
@@ -649,11 +775,11 @@
     ];
     bottomGroups.flatMap(type => [type, type, type]).forEach((type, index) => {
       const [x, y] = bottomPositions[index];
-      tiles.push({ uid: `tutorial_bottom_${index}`, typeId: type.id, icon: type.icon, label: type.label, layer: 0, x, y, w: parseFloat(size.w), removed: false });
+      tiles.push({ uid: `tutorial_bottom_${index}`, typeId: type.id, icon: type.icon, labelKey: type.labelKey, layer: 0, x, y, w: parseFloat(size.w), removed: false });
     });
     topGroups.flatMap(type => [type, type, type]).forEach((type, index) => {
       const [x, y] = topPositions[index];
-      tiles.push({ uid: `tutorial_top_${index}`, typeId: type.id, icon: type.icon, label: type.label, layer: 1, x, y, w: parseFloat(size.w), removed: false });
+      tiles.push({ uid: `tutorial_top_${index}`, typeId: type.id, icon: type.icon, labelKey: type.labelKey, layer: 1, x, y, w: parseFloat(size.w), removed: false });
     });
     return tiles;
   }
@@ -676,7 +802,7 @@
           uid: `tile_${layer}_${i}_${index}`,
           typeId: type.id,
           icon: type.icon,
-          label: type.label,
+          labelKey: type.labelKey,
           layer,
           x: point.x,
           y: point.y,
@@ -696,7 +822,7 @@
         uid: `tile_extra_${index}`,
         typeId: type.id,
         icon: type.icon,
-        label: type.label,
+        labelKey: type.labelKey,
         layer,
         x: safePoint.x,
         y: safePoint.y,
@@ -729,11 +855,11 @@
   function copyTileFood(target, source) {
     target.typeId = source.typeId;
     target.icon = source.icon;
-    target.label = source.label;
+    target.labelKey = source.labelKey;
   }
 
   function swapTileFood(a, b) {
-    const saved = { typeId: a.typeId, icon: a.icon, label: a.label };
+    const saved = { typeId: a.typeId, icon: a.icon, labelKey: a.labelKey };
     copyTileFood(a, b);
     copyTileFood(b, saved);
   }
@@ -804,7 +930,7 @@
     state.roundId = `${state.level.id}_${Date.now()}`;
     renderLevels();
     renderAll();
-    showOverlay(state.level.title, state.level.note, '开始挑战');
+    showOverlay(state.level.title, state.level.note, t('startChallenge'));
   }
 
   function startGame() {
@@ -824,7 +950,8 @@
   function renderLevels() {
     levelsEl.innerHTML = LEVELS.map((level, index) => {
       const tier = (state.clears[level.id] || 0) + 1;
-      return `<button type="button" class="mh-level-btn${index === state.levelIndex ? ' active' : ''}" data-level="${index}">${level.label} Lv.${tier}</button>`;
+      const label = t(level.labelKey);
+      return `<button type="button" class="mh-level-btn${index === state.levelIndex ? ' active' : ''}" data-level="${index}">${t('levelTitle', { label, tier })}</button>`;
     }).join('');
     levelsEl.querySelectorAll('[data-level]').forEach((btn) => {
       btn.onclick = () => setupLevel(Number(btn.dataset.level));
@@ -855,7 +982,8 @@
       button.style.zIndex = 10 + tile.layer;
       button.dataset.uid = tile.uid;
       button.disabled = state.finished;
-      button.setAttribute('aria-label', `${tile.label}${open ? '，可拿取' : '，被压住'}`);
+      const label = t(tile.labelKey);
+      button.setAttribute('aria-label', open ? t('tileOpen', { label }) : t('tileLocked', { label }));
       button.innerHTML = `<span class="mh-food">${tile.icon}</span>`;
       button.onclick = () => pickTile(tile.uid, button);
       setTimeout(() => button.classList.add('entered'), 280);
@@ -874,7 +1002,7 @@
       const tile = state.tray[i];
       const slot = document.createElement('div');
       slot.className = `mh-slot${tile ? ' filled' : ''}${tile && tile.typeId === clearingType ? ' clearing' : ''}`;
-      if (tile) slot.innerHTML = `<span class="mh-food" aria-label="${tile.label}">${tile.icon}</span>`;
+      if (tile) slot.innerHTML = `<span class="mh-food" aria-label="${t(tile.labelKey)}">${tile.icon}</span>`;
       fragment.appendChild(slot);
     }
     trayEl.appendChild(fragment);
@@ -889,7 +1017,8 @@
       const open = isTileOpen(tile);
       el.classList.toggle('locked', !open);
       el.classList.toggle('open', open);
-      el.setAttribute('aria-label', `${tile.label}${open ? '，可拿取' : '，被压住'}`);
+      const label = t(tile.labelKey);
+      el.setAttribute('aria-label', open ? t('tileOpen', { label }) : t('tileLocked', { label }));
       if (wasLocked && open) {
         el.classList.remove('entered');
         el.classList.add('blocker-pulse');
@@ -1002,13 +1131,15 @@
 
   function resultSummary(passed, earnedPoints, left) {
     if (passed) {
-      const cleanPlay = state.hintUses === 0 ? '没有使用提示，' : `使用了 ${state.hintUses} 次提示，`;
-      const pressure = state.maxTray <= 4 ? '暂存槽控制得很稳。' : `最高占用 ${state.maxTray}/7 格。`;
-      return `清空了所有食物，获得 ${earnedPoints} 分。${cleanPlay}${pressure} ${state.level.label}难度已升到 Lv.${state.clears[state.level.baseId] + 1}。`;
+      const cleanPlay = state.hintUses === 0 ? t('resultCleanNoHint') : t('resultCleanWithHint', { count: state.hintUses });
+      const pressure = state.maxTray <= 4 ? t('resultPressureGood') : t('resultPressureHigh', { max: state.maxTray });
+      const label = t(state.level.labelKey);
+      const nextLevel = state.clears[state.level.baseId] + 1;
+      return t('resultWin', { points: earnedPoints, cleanPlay, pressure, label, nextLevel });
     }
-    if (state.maxTrayTypes >= 6) return `还剩 ${left} 个食物。暂存槽里最多同时出现 ${state.maxTrayTypes} 种食物，下一局优先把已有对子凑成3个。`;
-    if (state.maxTray >= 6) return `还剩 ${left} 个食物。暂存槽一度只剩1格，看到同类食物时先清掉最安全。`;
-    return `还剩 ${left} 个食物。试着先清理上层，打开更多可拿的食物。`;
+    if (state.maxTrayTypes >= 6) return t('resultLoseManyTypes', { left, types: state.maxTrayTypes });
+    if (state.maxTray >= 6) return t('resultLoseTrayFull', { left });
+    return t('resultLoseDefault', { left });
   }
 
   function finish(passed) {
@@ -1028,10 +1159,10 @@
       renderLevels();
       launchConfetti();
       playWinSound();
-      showOverlay('挑战成功', resultSummary(true, earnedPoints, left), '继续挑战');
+      showOverlay(t('winTitle'), resultSummary(true, earnedPoints, left), t('winButton'));
     } else {
       playFailSound();
-      showOverlay('暂存槽满了', resultSummary(false, earnedPoints, left), '再试一次');
+      showOverlay(t('loseTitle'), resultSummary(false, earnedPoints, left), t('loseButton'));
     }
     post('gameFinished', {
       completed: passed,
@@ -1082,7 +1213,7 @@
         el.classList.add('entered');
       }, 760);
     });
-    showToast(blockers.length ? '先拿开上面的食物' : '这个食物暂时拿不了');
+    showToast(blockers.length ? t('toastRemoveAbove') : t('toastCannotPick'));
   }
 
   function pulseBoard(className) {
@@ -1132,7 +1263,7 @@
     const openTiles = state.tiles.filter(isTileOpen);
     boardEl.querySelectorAll('.mh-tile.hint').forEach(el => el.classList.remove('hint'));
     if (!openTiles.length) {
-      showToast('没有可拿的食物了');
+      showToast(t('toastNoOpen'));
       return;
     }
     const preferred = openTiles
@@ -1159,10 +1290,10 @@
 
   function hintReason(tile, trayCounts) {
     const trayCount = trayCounts[tile.typeId] || 0;
-    if (trayCount === 2) return '这个可以凑成3个';
-    if (trayCount === 1) return '先把同类凑成对子';
-    if (state.tray.length >= 5) return '先选不容易堵槽的上层';
-    return '先清理上层打开局面';
+    if (trayCount === 2) return t('hintMatch3');
+    if (trayCount === 1) return t('hintMatch2');
+    if (state.tray.length >= 5) return t('hintAvoidClog');
+    return t('hintClearTop');
   }
 
   function launchConfetti() {
@@ -1198,14 +1329,14 @@
     if (Number.isFinite(nextLevel)) setupLevel(Math.max(0, Math.min(LEVELS.length - 1, nextLevel - 1)));
   });
 
-  document.getElementById('mhMenu').onclick = () => showOverlay('食物叠叠消', '点击没有被压住的食物放入下方7格。3个相同食物会消除；可以随时切换轻松、挑战、噩梦、炼狱基础难度，每次通关会让当前基础难度继续升级。', state.started && !state.finished ? '继续游戏' : '开始挑战');
+  document.getElementById('mhMenu').onclick = () => showOverlay(t('overlayTitle'), t('menuOverlayText'), state.started && !state.finished ? t('continueGame') : t('startChallenge'));
   document.getElementById('mhHelp').onclick = () => document.getElementById('mhMenu').click();
   document.getElementById('mhRestart').onclick = () => setupLevel(state.levelIndex);
   document.getElementById('mhHint').onclick = showHint;
   startBtn.onclick = handleOverlayAction;
 
   setupLevel(state.levelIndex);
-  post('gameLoaded', { title: '宠物食物叠叠消' });
+  post('gameLoaded', { title: t('gameLoadedTitle') });
 })();
 </script>
 

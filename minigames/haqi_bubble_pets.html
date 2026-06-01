@@ -11,6 +11,103 @@
 <body></body>
 <script defer>
 (function () {
+  // ---- i18n ----
+  const I18N = {
+    zhCN: {
+      title: '宠物泡泡龙',
+      canvasAria: '宠物泡泡龙游戏画面',
+      gameStatusAria: '游戏状态',
+      levelLabel: '关卡',
+      foodLabel: '食物',
+      shotsLabel: '发射',
+      scoreLabel: '分数',
+      hint: '拖动瞄准，松手发射；点下个泡泡可交换一次',
+      swapBtn: '交换',
+      helpBtn: '玩法',
+      restartBtn: '重开',
+      overlayTitle: '宠物泡泡龙',
+      overlayText: '选个难度就开玩。拖动瞄准，松手发射泡泡；点"交换"或点下个泡泡，每一发都能换一次。三个或更多同色泡泡连在一起就会爆开，收集够藏在泡泡里的表情食物就能过关。',
+      startChallenge: '开始挑战',
+      diffEasy: '轻松',
+      diffNormal: '标准',
+      diffHard: '挑战',
+      combo: '连击 x{combo}',
+      bigDrop: '大片掉落',
+      collectFood: '收集食物 +{count}',
+      difficultyUp: '难度上升',
+      swapped: '已交换',
+      winTitle: '通关成功！',
+      winText: '第 {level} 关完成，收集了 {foods}/{target} 份食物。',
+      nextLevel: '下一关',
+      loseTitle: '挑战失败',
+      loseText: '泡泡快压到发射台了，优先消除带食物的同色泡泡会更稳。',
+      retry: '再来一次',
+      dangerLine: '危险线',
+      nextBubble: '下个',
+      swappedShort: '已换',
+      signMatch: '连三',
+      signCollect: '收集',
+      menuTitle: '宠物泡泡龙',
+      menuText: t('menuText'),
+      continueGame: '继续游戏',
+    },
+    enUS: {
+      title: 'Bubble Pets',
+      canvasAria: 'Bubble Pets game canvas',
+      gameStatusAria: 'Game status',
+      levelLabel: 'Level',
+      foodLabel: 'Food',
+      shotsLabel: 'Shots',
+      scoreLabel: 'Score',
+      hint: 'Drag to aim, release to shoot; tap next bubble to swap once',
+      swapBtn: 'Swap',
+      helpBtn: 'Help',
+      restartBtn: 'Restart',
+      overlayTitle: 'Bubble Pets',
+      overlayText: 'Pick a difficulty to start. Drag to aim and release to shoot bubbles; tap "Swap" or the next bubble to switch once per shot. Three or more same-color bubbles pop together. Collect enough emoji food hidden in bubbles to clear the level.',
+      startChallenge: 'Start Challenge',
+      diffEasy: 'Easy',
+      diffNormal: 'Normal',
+      diffHard: 'Hard',
+      combo: 'Combo x{combo}',
+      bigDrop: 'Big Drop',
+      collectFood: 'Food +{count}',
+      difficultyUp: 'Difficulty Up',
+      swapped: 'Swapped',
+      winTitle: 'Level Clear!',
+      winText: 'Level {level} complete — collected {foods}/{target} food.',
+      nextLevel: 'Next Level',
+      loseTitle: 'Challenge Failed',
+      loseText: 'The bubbles nearly reached the launcher. Prioritize popping same-color bubbles with food for a steadier run.',
+      retry: 'Try Again',
+      dangerLine: 'Danger',
+      nextBubble: 'Next',
+      swappedShort: 'Used',
+      signMatch: 'Match 3',
+      signCollect: 'Collect',
+      menuTitle: 'Bubble Pets',
+      menuText: 'Hold to aim, release to shoot bubbles. Tap "Swap" or the next bubble to switch once. Three or more same-color bubbles pop on contact — chain combos and big drops for higher scores.',
+      continueGame: 'Continue',
+    },
+  };
+  function detectLang() {
+    try {
+      const params = new URLSearchParams(window.location.search);
+      const lang = params.get('lang');
+      if (lang && I18N[lang]) return lang;
+    } catch (_) {}
+    return 'zhCN';
+  }
+  const LANG = detectLang();
+  const L = I18N[LANG];
+  function t(key, vars) {
+    let str = L[key] || I18N.zhCN[key] || key;
+    if (vars) str = str.replace(/\{(\w+)\}/g, (m, n) => vars[n] != null ? String(vars[n]) : m);
+    return str;
+  }
+  try { document.documentElement.setAttribute('lang', LANG === 'enUS' ? 'en' : 'zh-CN'); } catch (_) {}
+  try { document.title = t('title'); } catch (_) {}
+
   const STORAGE_DIFFICULTY = 'haqiBubblePetsDifficultyV1';
   const STORAGE_BEST_LEVEL = 'haqiBubblePetsBestLevelV1';
   const STORAGE_BEST_SCORE = 'haqiBubblePetsBestScoreV1';
@@ -25,9 +122,9 @@
     { id: 5, name: 'coral', from: '#fdba74', to: '#f97316', glow: 'rgba(249,115,22,.34)' },
   ];
   const DIFFICULTIES = {
-    easy: { id: 'easy', label: '轻松', colorCount: 4, rows: 5, foods: 6, shots: 38, speed: 0.82, score: 90, riseEvery: 8 },
-    normal: { id: 'normal', label: '标准', colorCount: 5, rows: 6, foods: 8, shots: 32, speed: 0.95, score: 130, riseEvery: 7 },
-    hard: { id: 'hard', label: '挑战', colorCount: 6, rows: 7, foods: 10, shots: 27, speed: 1.08, score: 180, riseEvery: 6 },
+    easy: { id: 'easy', label: t('diffEasy'), colorCount: 4, rows: 5, foods: 6, shots: 38, speed: 0.82, score: 90, riseEvery: 8 },
+    normal: { id: 'normal', label: t('diffNormal'), colorCount: 5, rows: 6, foods: 8, shots: 32, speed: 0.95, score: 130, riseEvery: 7 },
+    hard: { id: 'hard', label: t('diffHard'), colorCount: 6, rows: 7, foods: 10, shots: 27, speed: 1.08, score: 180, riseEvery: 6 },
   };
   const DIFFICULTY_ORDER = ['easy', 'normal', 'hard'];
   const COLS = 9;
@@ -150,32 +247,32 @@
       }
     </style>
     <div class="mh-shell">
-      <canvas id="mhCanvas" class="mh-canvas" aria-label="宠物泡泡龙游戏画面"></canvas>
+      <canvas id="mhCanvas" class="mh-canvas" aria-label="${t('canvasAria')}"></canvas>
       <header class="mh-top">
-        <button id="mhMenu" class="mh-icon-btn" type="button" aria-label="玩法">?</button>
-        <div class="mh-title">宠物泡泡龙</div>
-        <div class="mh-stats" aria-label="游戏状态">
-          <span class="mh-pill">关卡 <b id="mhLevel">1</b></span>
-          <span class="mh-pill">食物 <b id="mhFood">0</b>/<b id="mhTarget">0</b></span>
-          <span id="mhShotsPill" class="mh-pill">发射 <b id="mhShots">0</b></span>
-          <span class="mh-pill optional">分数 <b id="mhScore">0</b></span>
+        <button id="mhMenu" class="mh-icon-btn" type="button" aria-label="${t('helpBtn')}">?</button>
+        <div class="mh-title">${t('title')}</div>
+        <div class="mh-stats" aria-label="${t('gameStatusAria')}">
+          <span class="mh-pill">${t('levelLabel')} <b id="mhLevel">1</b></span>
+          <span class="mh-pill">${t('foodLabel')} <b id="mhFood">0</b>/<b id="mhTarget">0</b></span>
+          <span id="mhShotsPill" class="mh-pill">${t('shotsLabel')} <b id="mhShots">0</b></span>
+          <span class="mh-pill optional">${t('scoreLabel')} <b id="mhScore">0</b></span>
         </div>
       </header>
       <footer class="mh-bottom">
-        <div class="mh-hint">拖动瞄准，松手发射；点下个泡泡可交换一次</div>
+        <div class="mh-hint">${t('hint')}</div>
         <div class="mh-controls">
           <div id="mhDifficulties" class="mh-difficulties" aria-label="选择难度"></div>
-          <button id="mhSwap" class="mh-action" type="button">交换</button>
-          <button id="mhHelp" class="mh-action help" type="button">玩法</button>
-          <button id="mhRestart" class="mh-action" type="button">重开</button>
+          <button id="mhSwap" class="mh-action" type="button">${t('swapBtn')}</button>
+          <button id="mhHelp" class="mh-action help" type="button">${t('helpBtn')}</button>
+          <button id="mhRestart" class="mh-action" type="button">${t('restartBtn')}</button>
         </div>
       </footer>
       <div id="mhOverlay" class="mh-overlay">
         <div class="mh-card">
-          <h1 id="mhOverlayTitle">宠物泡泡龙</h1>
-          <p id="mhOverlayText">选个难度就开玩。拖动瞄准，松手发射泡泡；点“交换”或点下个泡泡，每一发都能换一次。三个或更多同色泡泡连在一起就会爆开，收集够藏在泡泡里的表情食物就能过关。</p>
+          <h1 id="mhOverlayTitle">${t('overlayTitle')}</h1>
+          <p id="mhOverlayText">${t('overlayText')}</p>
           <div id="mhOverlayDifficulties" class="mh-card-row"></div>
-          <button id="mhStart" class="mh-start" type="button">开始挑战</button>
+          <button id="mhStart" class="mh-start" type="button">${t('startChallenge')}</button>
         </div>
       </div>
     </div>`;
@@ -443,10 +540,10 @@
       const points = cluster.length * 12 + floating.length * 18 + gainedFood * 55 + state.combo * 8;
       state.score += points;
       showFloatingText(`+${points}`, cellCenter(row, col).x, cellCenter(row, col).y, '#16a34a');
-      if (state.combo >= 2) showFloatingText(`连击 x${state.combo}`, cellCenter(row, col).x, cellCenter(row, col).y - radius * 1.4, '#f97316');
-      if (floating.length >= 4) showFloatingText('大片掉落', cellCenter(row, col).x, cellCenter(row, col).y + radius * 1.35, '#0284c7');
+      if (state.combo >= 2) showFloatingText(t('combo', { combo: state.combo }), cellCenter(row, col).x, cellCenter(row, col).y - radius * 1.4, '#f97316');
+      if (floating.length >= 4) showFloatingText(t('bigDrop'), cellCenter(row, col).x, cellCenter(row, col).y + radius * 1.35, '#0284c7');
       playMatchSound(cluster.length, gainedFood, floating.length);
-      if (gainedFood) showToast(`收集食物 +${gainedFood}`);
+      if (gainedFood) showToast(t('collectFood', { count: gainedFood }));
     } else {
       state.combo = 0;
       playSound('stick');
@@ -499,7 +596,7 @@
     items.forEach(bubble => {
       if (bubble.row + 1 < MAX_ROWS) setBubble(bubble.row + 1, bubble.col, { ...bubble, row: bubble.row + 1 });
     });
-    showFloatingText('难度上升', width / 2, boardTop + radius * 2, '#ea580c');
+    showFloatingText(t('difficultyUp'), width / 2, boardTop + radius * 2, '#ea580c');
     playSound('drop');
   }
 
@@ -527,7 +624,7 @@
     [state.currentType, state.nextType] = [state.nextType, state.currentType];
     state.swappedThisShot = true;
     state.aiming = false;
-    showFloatingText('已交换', shooterX, shooterY - radius * 2.4, '#0284c7');
+    showFloatingText(t('swapped'), shooterX, shooterY - radius * 2.4, '#0284c7');
     updateHud();
     playSound('select');
     draw(performance.now());
@@ -548,7 +645,7 @@
       updateHud();
       burstConfetti();
       playSound('win');
-      showResult('通关成功！', `第 ${state.level} 关完成，收集了 ${state.foods}/${state.targetFoods} 份食物。`, '下一关', nextLevel);
+      showResult(t('winTitle'), t('winText', { level: state.level, foods: state.foods, target: state.targetFoods }), t('nextLevel'), nextLevel);
       post('gameFinished', {
         completed: true,
         passed: true,
@@ -567,7 +664,7 @@
     } else {
       playSound('hit');
       shakeScreen();
-      showResult('挑战失败', '泡泡快压到发射台了，优先消除带食物的同色泡泡会更稳。', '再来一次', () => startGame({ keepLevel: true }));
+      showResult(t('loseTitle'), t('loseText'), t('retry'), () => startGame({ keepLevel: true }));
     }
   }
 
@@ -620,8 +717,8 @@
     drawSideTree(width - (width - rightEdge) * 0.34, baseY, treeSize, 1);
     drawSideBush(leftEdge * 0.62, height - treeSize * 0.4, treeSize * 0.55);
     drawSideBush(width - (width - rightEdge) * 0.62, height - treeSize * 0.36, treeSize * 0.55);
-    drawSideSign(leftEdge * 0.62, height * 0.56, treeSize * 0.72, '连三');
-    drawSideSign(width - (width - rightEdge) * 0.62, height * 0.5, treeSize * 0.72, '收集');
+    drawSideSign(leftEdge * 0.62, height * 0.56, treeSize * 0.72, t('signMatch'));
+    drawSideSign(width - (width - rightEdge) * 0.62, height * 0.5, treeSize * 0.72, t('signCollect'));
     drawSideBubbles(leftEdge * 0.48, height * 0.26, treeSize, now, -1);
     drawSideBubbles(width - (width - rightEdge) * 0.48, height * 0.29, treeSize, now, 1);
   }
@@ -780,8 +877,8 @@
     ctx.fillStyle = danger ? '#b91c1c' : '#ea580c';
     ctx.strokeStyle = 'rgba(255,255,255,.86)';
     ctx.lineWidth = 3;
-    ctx.strokeText('危险线', playRight - radius, lineY - 4);
-    ctx.fillText('危险线', playRight - radius, lineY - 4);
+    ctx.strokeText(t('dangerLine'), playRight - radius, lineY - 4);
+    ctx.fillText(t('dangerLine'), playRight - radius, lineY - 4);
     ctx.restore();
   }
 
@@ -874,7 +971,7 @@
     ctx.textAlign = 'center';
     ctx.textBaseline = 'middle';
     ctx.fillStyle = '#0f766e';
-    ctx.fillText(state.swappedThisShot ? '已换' : '下个', shooterX + radius * 2.25, shooterY + radius * 1.2);
+    ctx.fillText(state.swappedThisShot ? t('swappedShort') : t('nextBubble'), shooterX + radius * 2.25, shooterY + radius * 1.2);
   }
 
   function drawLauncherBase(now) {
@@ -1584,7 +1681,7 @@
   });
   window.addEventListener('beforeunload', cleanupPetImage);
 
-  document.getElementById('mhMenu').onclick = () => showResult('宠物泡泡龙', '拖住屏幕来瞄准，松手就发射泡泡。点“交换”或点下个泡泡可换一次。三个或更多同色泡泡碰到一起就会爆开，越会连击和打掉大片泡泡，得分越高。', state.started && !state.finished ? '继续游戏' : '开始挑战', () => {
+  document.getElementById('mhMenu').onclick = () => showResult(t('menuTitle'), '拖住屏幕来瞄准，松手就发射泡泡。点“交换”或点下个泡泡可换一次。三个或更多同色泡泡碰到一起就会爆开，越会连击和打掉大片泡泡，得分越高。', state.started && !state.finished ? t('continueGame') : t('startChallenge'), () => {
     if (state.started && !state.finished) {
       state.paused = false;
       hideOverlay();

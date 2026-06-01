@@ -9,14 +9,179 @@
 <body></body>
 <script defer>
 (function () {
+  // ---- i18n ----
+  const I18N = {
+    zhCN: {
+      title: '宠物雷电',
+      canvasAria: '宠物雷电游戏画面',
+      helpBtn: '玩法',
+      level: '关卡',
+      combo: '连击',
+      score: '分数',
+      best: '最佳',
+      muteAria: '音效开关',
+      restartBtn: '重新开始',
+      overlayTitle: '宠物雷电',
+      overlayText: '宠物坐上星球飞碟，从银河底部出击！新增冲刺、僚机、擦弹、连击倍率、危险事件和更多敌人。拾取激光、导弹、星环、磁吸、超载等道具；每 3 关会出现不同 Boss。',
+      startBtn: '开始出击',
+      diffCruise: '巡航',
+      diffThunder: '雷电',
+      diffAce: '王牌',
+      diffInferno: '炼狱',
+      gameLoadedTitle: '宠物雷电',
+      meteorWarning: '小行星撞击预警！',
+      ionStorm: '离子风暴：子弹加速！',
+      asteroidImpact: '小行星撞击！离开红圈',
+      activePulse: '主动脉冲！',
+      droneSupport: '僚机支援！',
+      aceCombo: '王牌连击 x2！',
+      bossDefeated: 'Boss 击破！火力升级',
+      shieldBlock: '护盾抵挡！',
+      ufoHit: '飞碟受击！',
+      item: '道具',
+      bossMothership: '母舰',
+      bossSpinner: '旋翼堡垒',
+      bossCarrier: '蜂群航母',
+      bossLaser: '棱镜巨像',
+      bossAsteroid: '陨星泰坦',
+      bossIncoming: '{name} 来袭！',
+      bossRage: '{name} 进入狂暴阶段！',
+      bossSwarm: 'Boss 释放蜂群！',
+      prismBeam: '棱镜光束！',
+      bossMeteorImpact: 'Boss 召唤陨星撞击！',
+      powerFire: '火力升级',
+      powerShield: '护盾 +1',
+      powerRapid: '高速连射',
+      powerSpread: '散射模式',
+      powerHeal: '修复 +1',
+      powerLaser: '激光炮',
+      powerMissile: '追踪导弹',
+      powerOrbit: '星环护卫',
+      powerBomb: '清屏脉冲',
+      powerMagnet: '磁吸力场',
+      powerOverdrive: '武器超载',
+      powerScore: '双倍积分',
+      waveAsteroid: '小行星回廊',
+      waveIon: '离子风暴',
+      waveSwarm: '蜂群突袭',
+      waveElite: '精英舰队',
+      enterLevel: '进入第 {level} 关：{wave}',
+      winTitle: '银河通关！',
+      loseTitle: '任务结束',
+      finishText: '得分 {score}，到达第 {level} 关。{message}',
+      winMessage: '宠物和飞碟成为银河王牌！',
+      loseMessage: '升级火力，再挑战 Boss 关卡吧。',
+      playAgain: '再来一局',
+      clickToStart: '点击开始出击',
+      skillDash: '冲刺',
+      skillBomb: '炸弹',
+      skillDrone: '僚机',
+      introTip1: '拖动移动，双击/Shift 冲刺',
+      introTip2: '空格脉冲炸弹，E 召唤僚机，靠近敌弹可擦弹加分',
+      grazeText: '擦弹 +12',
+      helpTitle: '宠物雷电',
+      helpText: '拖动任意位置控制飞碟，或使用 WASD / 方向键移动。双击屏幕或 Shift 冲刺，空格释放主动脉冲，E 召唤僚机。擦过敌弹会加连击，道具包含火力、散射、激光、追踪导弹、星环、磁吸、超载、双倍积分和护盾。',
+      continueGame: '继续游戏',
+    },
+    enUS: {
+      title: 'Pet Thunder',
+      canvasAria: 'Pet Thunder game canvas',
+      helpBtn: 'Help',
+      level: 'Level',
+      combo: 'Combo',
+      score: 'Score',
+      best: 'Best',
+      muteAria: 'Sound toggle',
+      restartBtn: 'Restart',
+      overlayTitle: 'Pet Thunder',
+      overlayText: 'Your pet boards a planet saucer and launches from the bottom of the galaxy! Features dash, wingmen, graze, combo multipliers, hazard events and more enemies. Collect laser, missile, orbit, magnet, overdrive power-ups; a different Boss appears every 3 levels.',
+      startBtn: 'Launch',
+      diffCruise: 'Cruise',
+      diffThunder: 'Thunder',
+      diffAce: 'Ace',
+      diffInferno: 'Inferno',
+      gameLoadedTitle: 'Pet Thunder',
+      meteorWarning: 'Asteroid impact warning!',
+      ionStorm: 'Ion storm: bullets accelerated!',
+      asteroidImpact: 'Asteroid impact! Leave the red zone',
+      activePulse: 'Active pulse!',
+      droneSupport: 'Wingman support!',
+      aceCombo: 'Ace combo x2!',
+      bossDefeated: 'Boss destroyed! Firepower upgraded',
+      shieldBlock: 'Shield blocked!',
+      ufoHit: 'Saucer hit!',
+      item: 'Item',
+      bossMothership: 'Mothership',
+      bossSpinner: 'Spinner Fortress',
+      bossCarrier: 'Swarm Carrier',
+      bossLaser: 'Prism Colossus',
+      bossAsteroid: 'Meteor Titan',
+      bossIncoming: '{name} incoming!',
+      bossRage: '{name} enters rage mode!',
+      bossSwarm: 'Boss releases swarm!',
+      prismBeam: 'Prism beam!',
+      bossMeteorImpact: 'Boss summons meteor impact!',
+      powerFire: 'Firepower up',
+      powerShield: 'Shield +1',
+      powerRapid: 'Rapid fire',
+      powerSpread: 'Spread mode',
+      powerHeal: 'Repair +1',
+      powerLaser: 'Laser cannon',
+      powerMissile: 'Homing missile',
+      powerOrbit: 'Orbit guard',
+      powerBomb: 'Screen pulse',
+      powerMagnet: 'Magnet field',
+      powerOverdrive: 'Overdrive',
+      powerScore: 'Double score',
+      waveAsteroid: 'Asteroid Corridor',
+      waveIon: 'Ion Storm',
+      waveSwarm: 'Swarm Assault',
+      waveElite: 'Elite Fleet',
+      enterLevel: 'Entering level {level}: {wave}',
+      winTitle: 'Galaxy Clear!',
+      loseTitle: 'Mission Over',
+      finishText: 'Score {score}, reached level {level}. {message}',
+      winMessage: 'Pet and saucer became galaxy aces!',
+      loseMessage: 'Upgrade firepower and challenge the Boss again.',
+      playAgain: 'Play Again',
+      clickToStart: 'Tap to launch',
+      skillDash: 'Dash',
+      skillBomb: 'Bomb',
+      skillDrone: 'Wingman',
+      introTip1: 'Drag to move, double-tap/Shift to dash',
+      introTip2: 'Space for pulse bomb, E for wingman, graze bullets for bonus',
+      grazeText: 'Graze +12',
+      helpTitle: 'Pet Thunder',
+      helpText: 'Drag anywhere to control the saucer, or use WASD / arrow keys. Double-tap or Shift to dash, Space for pulse bomb, E for wingman. Grazing enemy bullets adds combo. Power-ups include fire, spread, laser, homing missiles, orbit, magnet, overdrive, double score and shield.',
+      continueGame: 'Continue',
+    },
+  };
+  function detectLang() {
+    try {
+      const params = new URLSearchParams(window.location.search);
+      const lang = params.get('lang');
+      if (lang && I18N[lang]) return lang;
+    } catch (_) {}
+    return 'zhCN';
+  }
+  const LANG = detectLang();
+  const L = I18N[LANG];
+  function t(key, vars) {
+    let str = L[key] || I18N.zhCN[key] || key;
+    if (vars) str = str.replace(/\{(\w+)\}/g, (m, n) => vars[n] != null ? String(vars[n]) : m);
+    return str;
+  }
+  try { document.documentElement.setAttribute('lang', LANG === 'enUS' ? 'en' : 'zh-CN'); } catch (_) {}
+  try { document.title = t('title'); } catch (_) {}
+
   const STORAGE_KEY_BEST = 'haqiThunderBest';
   const STORAGE_KEY_DIFFICULTY = 'haqiThunderDifficulty';
   const FALLBACK_PET = '🐾';
   const DIFFICULTIES = {
-    easy: { id: 'easy', label: '巡航', playerHp: 5, enemyRate: 1.04, enemySpeed: 0.78, bulletSpeed: 1.0, bossHp: 90, scoreScale: 1 },
-    normal: { id: 'normal', label: '雷电', playerHp: 4, enemyRate: 0.86, enemySpeed: 1.0, bulletSpeed: 1.12, bossHp: 130, scoreScale: 1.25 },
-    hard: { id: 'hard', label: '王牌', playerHp: 3, enemyRate: 0.7, enemySpeed: 1.22, bulletSpeed: 1.22, bossHp: 180, scoreScale: 1.55 },
-    insane: { id: 'insane', label: '炼狱', playerHp: 2, enemyRate: 0.58, enemySpeed: 1.42, bulletSpeed: 1.36, bossHp: 240, scoreScale: 1.9 },
+    easy: { id: 'easy', label: t('diffCruise'), playerHp: 5, enemyRate: 1.04, enemySpeed: 0.78, bulletSpeed: 1.0, bossHp: 90, scoreScale: 1 },
+    normal: { id: 'normal', label: t('diffThunder'), playerHp: 4, enemyRate: 0.86, enemySpeed: 1.0, bulletSpeed: 1.12, bossHp: 130, scoreScale: 1.25 },
+    hard: { id: 'hard', label: t('diffAce'), playerHp: 3, enemyRate: 0.7, enemySpeed: 1.22, bulletSpeed: 1.22, bossHp: 180, scoreScale: 1.55 },
+    insane: { id: 'insane', label: t('diffInferno'), playerHp: 2, enemyRate: 0.58, enemySpeed: 1.42, bulletSpeed: 1.36, bossHp: 240, scoreScale: 1.9 },
   };
   const DIFFICULTY_ORDER = ['easy', 'normal', 'hard', 'insane'];
   const COLORS = ['#38bdf8', '#a78bfa', '#fb7185', '#facc15', '#34d399'];
@@ -167,30 +332,30 @@
       @media (max-height: 520px) { .ht-top { padding: 5px 7px; } .ht-stats .optional { display: none; } }
     </style>
     <div class="ht-shell">
-      <canvas id="htCanvas" class="ht-canvas" aria-label="宠物雷电游戏画面"></canvas>
+      <canvas id="htCanvas" class="ht-canvas" aria-label="${t('canvasAria')}"></canvas>
       <header class="ht-top">
-        <button id="htMenu" class="ht-icon-btn" type="button" aria-label="玩法">?</button>
-        <div class="ht-title">宠物雷电</div>
+        <button id="htMenu" class="ht-icon-btn" type="button" aria-label="${t('helpBtn')}">?</button>
+        <div class="ht-title">${t('title')}</div>
         <div class="ht-stats">
           <span class="ht-pill">❤️ <b id="htHp">0</b></span>
-          <span class="ht-pill">关卡 <b id="htLevel">1</b></span>
-          <span class="ht-pill optional">连击 <b id="htCombo">0</b></span>
-          <span class="ht-pill optional">分数 <b id="htScore">0</b></span>
-          <span class="ht-pill optional">最佳 <b id="htBest">0</b></span>
-          <button id="htMute" class="ht-pill ht-mute" type="button" aria-label="音效开关">🔊</button>
+          <span class="ht-pill">${t('level')} <b id="htLevel">1</b></span>
+          <span class="ht-pill optional">${t('combo')} <b id="htCombo">0</b></span>
+          <span class="ht-pill optional">${t('score')} <b id="htScore">0</b></span>
+          <span class="ht-pill optional">${t('best')} <b id="htBest">0</b></span>
+          <button id="htMute" class="ht-pill ht-mute" type="button" aria-label="${t('muteAria')}">🔊</button>
         </div>
       </header>
       <footer class="ht-bottom">
         <div class="ht-controls">
-          <button id="htRestart" class="ht-action" type="button">重新开始</button>
+          <button id="htRestart" class="ht-action" type="button">${t('restartBtn')}</button>
         </div>
       </footer>
       <div id="htOverlay" class="ht-overlay">
         <div class="ht-card">
-          <h1 id="htOverlayTitle">宠物雷电</h1>
-          <p id="htOverlayText">宠物坐上星球飞碟，从银河底部出击！新增冲刺、僚机、擦弹、连击倍率、危险事件和更多敌人。拾取激光、导弹、星环、磁吸、超载等道具；每 3 关会出现不同 Boss。</p>
+          <h1 id="htOverlayTitle">${t('overlayTitle')}</h1>
+          <p id="htOverlayText">${t('overlayText')}</p>
           <div id="htOverlayDifficulties" class="ht-card-row"></div>
-          <button id="htStart" class="ht-start" type="button">开始出击</button>
+          <button id="htStart" class="ht-start" type="button">${t('startBtn')}</button>
         </div>
       </div>
     </div>`;
@@ -217,7 +382,7 @@
   function ensureLoadedPosted() {
     if (state.loadedPosted) return;
     state.loadedPosted = true;
-    post('gameLoaded', { title: '宠物雷电' });
+    post('gameLoaded', { title: t('gameLoadedTitle') });
   }
 
   function difficulty() { return DIFFICULTIES[state.difficulty] || DIFFICULTIES.normal; }
@@ -441,7 +606,7 @@
     if (state.hazardTimer <= 0 && state.level >= 2) {
       state.hazardKind = Math.random() > .52 ? 'meteor' : 'ion';
       state.hazardTimer = rand(10, 16);
-      toast(state.hazardKind === 'meteor' ? '小行星撞击预警！' : '离子风暴：子弹加速！');
+      toast(state.hazardKind === 'meteor' ? t('meteorWarning') : t('ionStorm'));
       for (let i = 0; i < (state.hazardKind === 'meteor' ? 6 : 3); i++) spawnHazard(w, h, i);
     }
     state.impactWarningTimer -= dt;
@@ -449,7 +614,7 @@
       state.impactWarningTimer = rand(7, 12);
       const count = state.level >= 7 ? 3 : state.level >= 5 ? 2 : 1;
       for (let i = 0; i < count; i++) spawnImpactWarning(w, h, i);
-      toast('小行星撞击！离开红圈');
+      toast(t('asteroidImpact'));
     }
   }
 
@@ -466,14 +631,14 @@
     if (!state.started || state.gameOver || state.elapsed < state.bombCooldownUntil) return;
     state.bombCooldownUntil = state.elapsed + SKILLS.bomb.cooldown;
     pulseBomb();
-    toast('主动脉冲！');
+    toast(t('activePulse'));
   }
 
   function activateDrone() {
     if (!state.started || state.gameOver || state.elapsed < state.droneCooldownUntil) return;
     state.droneUntil = state.elapsed + SKILLS.drone.duration;
     state.droneCooldownUntil = state.elapsed + SKILLS.drone.cooldown;
-    toast('僚机支援！');
+    toast(t('droneSupport'));
     beep(660, .08, 'square', .04);
   }
 
@@ -541,16 +706,16 @@
     state.bossWarning = 2.6;
     const hp = difficulty().bossHp * 1.75 + state.level * 42;
     const variants = [
-      { id: 'mothership', name: '母舰', color: '#fb7185', core: '#facc15', r: 58, hpScale: 1.28, attack: 'fan' },
-      { id: 'spinner', name: '旋翼堡垒', color: '#a78bfa', core: '#67e8f9', r: 52, hpScale: 1.08, attack: 'spiral' },
-      { id: 'carrier', name: '蜂群航母', color: '#34d399', core: '#f97316', r: 62, hpScale: 1.42, attack: 'summon' },
-      { id: 'laser', name: '棱镜巨像', color: '#38bdf8', core: '#fb7185', r: 56, hpScale: 1.22, attack: 'beam' },
-      { id: 'asteroid', name: '陨星泰坦', color: '#fb923c', core: '#fef3c7', r: 64, hpScale: 1.5, attack: 'impact' },
+      { id: 'mothership', name: t('bossMothership'), color: '#fb7185', core: '#facc15', r: 58, hpScale: 1.28, attack: 'fan' },
+      { id: 'spinner', name: t('bossSpinner'), color: '#a78bfa', core: '#67e8f9', r: 52, hpScale: 1.08, attack: 'spiral' },
+      { id: 'carrier', name: t('bossCarrier'), color: '#34d399', core: '#f97316', r: 62, hpScale: 1.42, attack: 'summon' },
+      { id: 'laser', name: t('bossLaser'), color: '#38bdf8', core: '#fb7185', r: 56, hpScale: 1.22, attack: 'beam' },
+      { id: 'asteroid', name: t('bossAsteroid'), color: '#fb923c', core: '#fef3c7', r: 64, hpScale: 1.5, attack: 'impact' },
     ];
     const variant = variants[Math.min(variants.length - 1, Math.floor(state.level / 3) - 1) % variants.length];
     state.boss = { ...variant, x: w / 2, y: -92, hp: Math.round(hp * variant.hpScale), maxHp: Math.round(hp * variant.hpScale), phase: 0, shootAt: 1.1, specialAt: 2.2, rageAt: .5, value: 680 + state.level * 120 };
     state.bossSpawnedThisLevel = true;
-    toast(`${variant.name} 来袭！`);
+    toast(t('bossIncoming', { name: variant.name }));
   }
 
   function spawnPowerups(dt, w, h) {
@@ -665,7 +830,7 @@
     b.specialAt = b.attack === 'summon' ? (rage ? 3.2 : 4.4) : b.attack === 'beam' ? (rage ? 2.7 : 3.6) : b.attack === 'impact' ? (rage ? 2.8 : 3.7) : (rage ? 2.45 : 3.1);
     if (hpPct < b.rageAt) {
       b.rageAt -= .25;
-      toast(`${b.name} 进入狂暴阶段！`);
+      toast(t('bossRage', { name: b.name }));
       for (let i = 0; i < 12; i++) {
         const a = i * Math.PI * 2 / 12;
         state.enemyBullets.push({ x: b.x, y: b.y + 18, vx: Math.cos(a) * 160, vy: Math.sin(a) * 160 + 65, r: 5.5, color: b.core });
@@ -677,7 +842,7 @@
         const type = rage && i % 2 ? 'sniper' : 'drone';
         spawnEnemy(type, clamp(b.x + (i - (count - 1) / 2) * 50, 30, w - 30), b.y + 44, 1.25);
       }
-      toast('Boss 释放蜂群！');
+      toast(t('bossSwarm'));
       return;
     }
     if (b.attack === 'beam') {
@@ -686,13 +851,13 @@
         state.enemyBullets.push({ type: 'beam', x: b.x - 56, y: b.y + 36, vx: -45, vy: 285, r: 10, color: '#67e8f9' });
         state.enemyBullets.push({ type: 'beam', x: b.x + 56, y: b.y + 36, vx: 45, vy: 285, r: 10, color: '#67e8f9' });
       }
-      toast('棱镜光束！');
+      toast(t('prismBeam'));
       return;
     }
     if (b.attack === 'impact') {
       for (let i = 0; i < (rage ? 3 : 2); i++) spawnImpactWarning(w, h, i);
       for (let i = 0; i < 2; i++) spawnHazard(w, h, i);
-      toast('Boss 召唤陨星撞击！');
+      toast(t('bossMeteorImpact'));
       return;
     }
     if (b.attack === 'fan' && rage && Math.random() > .45) {
@@ -814,7 +979,7 @@
         }
         state.combo += 1;
         state.perfectKills += 1;
-        if (state.perfectKills > 0 && state.perfectKills % 12 === 0) { state.scoreMultiplierUntil = state.elapsed + 8; toast('王牌连击 x2！'); }
+        if (state.perfectKills > 0 && state.perfectKills % 12 === 0) { state.scoreMultiplierUntil = state.elapsed + 8; toast(t('aceCombo')); }
         state.score += (e.value * difficulty().scoreScale + Math.min(100, state.combo * 3.5)) * scoreMultiplier();
         beep(170, .055, 'sawtooth', .04);
         continue;
@@ -831,7 +996,7 @@
       state.boss = null;
       state.combo += 10;
       state.fireLevel = Math.min(4, state.fireLevel + 1);
-      toast('Boss 击破！火力升级');
+      toast(t('bossDefeated'));
       beep(90, .18, 'square', .08);
       arpeggio([72, 76, 79, 84, 88], 'square', .07, .08);
     } else if (state.boss && player.invuln <= 0 && dist2(player, state.boss) < (state.boss.r + playerHitRadius(22)) ** 2) {
@@ -875,10 +1040,10 @@
     state.perfectKills = 0;
     if (state.shield > 0) {
       state.shield -= 1;
-      toast('护盾抵挡！');
+      toast(t('shieldBlock'));
     } else {
       state.playerHp -= 1;
-      toast('飞碟受击！');
+      toast(t('ufoHit'));
     }
     destroyAt(x, y, '#f97316', 16);
     vibrate(80);
@@ -887,7 +1052,7 @@
   }
 
   function applyPowerup(type) {
-    const labels = { fire: '火力升级', shield: '护盾 +1', rapid: '高速连射', spread: '散射模式', heal: '修复 +1', laser: '激光炮', missile: '追踪导弹', orbit: '星环护卫', bomb: '清屏脉冲', magnet: '磁吸力场', overdrive: '武器超载', score: '双倍积分' };
+    const labels = { fire: t('powerFire'), shield: t('powerShield'), rapid: t('powerRapid'), spread: t('powerSpread'), heal: t('powerHeal'), laser: t('powerLaser'), missile: t('powerMissile'), orbit: t('powerOrbit'), bomb: t('powerBomb'), magnet: t('powerMagnet'), overdrive: t('powerOverdrive'), score: t('powerScore') };
     if (type === 'fire') state.fireLevel = Math.min(4, state.fireLevel + 1);
     if (type === 'shield') state.shield = Math.min(3, state.shield + 1);
     if (type === 'rapid') state.rapidUntil = state.elapsed + 7;
@@ -901,7 +1066,7 @@
     if (type === 'overdrive') state.overdriveUntil = state.elapsed + 7;
     if (type === 'score') state.scoreMultiplierUntil = state.elapsed + 10;
     state.score += 60 * scoreMultiplier();
-    toast(labels[type] || '道具');
+    toast(labels[type] || t('item'));
     spark(player.x, player.y - 20, 18, '#67e8f9');
     arpeggio([72, 79, 84], 'triangle', .05, .06);
   }
@@ -940,9 +1105,9 @@
       state.enemyBullets.length = 0;
       state.nextEnemyAt = .6;
       state.nextPowerAt = Math.min(state.nextPowerAt, 2.5);
-      state.waveName = ['小行星回廊', '离子风暴', '蜂群突袭', '精英舰队'][state.level % 4];
+      state.waveName = [t('waveAsteroid'), t('waveIon'), t('waveSwarm'), t('waveElite')][state.level % 4];
       state.waveTimer = 3;
-      toast(`进入第 ${state.level} 关：${state.waveName}`);
+      toast(t('enterLevel', { level: state.level, wave: state.waveName }));
       arpeggio([67, 72, 76, 79], 'square', .06, .07);
     }
   }
@@ -965,7 +1130,7 @@
       earnedPoints, score, best, difficulty: state.difficulty, difficultyName: difficulty().label,
       level: state.level, won, bossLevels: Math.floor((state.level - 1) / 3), roundId: state.roundId, finishedAt: Date.now()
     });
-    showOverlay(won ? '银河通关！' : '任务结束', `得分 ${score}，到达第 ${state.level} 关。${won ? '宠物和飞碟成为银河王牌！' : '升级火力，再挑战 Boss 关卡吧。'}`, '再来一局');
+    showOverlay(won ? t('winTitle') : t('loseTitle'), t('finishText', { score, level: state.level, message: won ? t('winMessage') : t('loseMessage') }), t('playAgain'));
   }
 
   function draw() {
@@ -988,7 +1153,7 @@
     if (state.nearMissTimer > 0) drawGrazeText(w, h);
     if (state.waveTimer > 0) drawWaveBanner(w, h);
     if (state.bossWarning > 0) drawWarning(w, h);
-    if (!state.started && !state.gameOver && overlayEl.hidden) drawCenterText(w, h, '点击开始出击');
+    if (!state.started && !state.gameOver && overlayEl.hidden) drawCenterText(w, h, t('clickToStart'));
   }
 
   function drawGalaxy(w, h) {
@@ -1096,14 +1261,14 @@
   function drawHazard(z) { ctx.save(); ctx.translate(z.x, z.y); ctx.rotate(z.phase); ctx.shadowBlur = 15; ctx.shadowColor = z.type === 'ion' ? '#22d3ee' : '#fb923c'; ctx.fillStyle = z.type === 'ion' ? 'rgba(34,211,238,.34)' : '#92400e'; ctx.strokeStyle = z.type === 'ion' ? '#67e8f9' : '#fed7aa'; ctx.lineWidth = 2; ctx.beginPath(); ctx.arc(0, 0, z.r, 0, Math.PI * 2); ctx.fill(); ctx.stroke(); if (z.type === 'meteor') { ctx.fillStyle = '#fb923c'; ctx.beginPath(); ctx.arc(-z.r*.25, -z.r*.2, z.r*.35, 0, Math.PI*2); ctx.fill(); } ctx.restore(); }
   function drawImpactWarning(mark) { const pct = clamp(mark.timer / mark.maxTimer, 0, 1); ctx.save(); ctx.globalAlpha = .95; ctx.strokeStyle = `rgba(251,113,133,${.35 + .45 * (1 - pct)})`; ctx.fillStyle = `rgba(127,29,29,${.08 + .18 * (1 - pct)})`; ctx.lineWidth = 3; ctx.beginPath(); ctx.arc(mark.x, mark.y, mark.r, 0, Math.PI * 2); ctx.fill(); ctx.stroke(); ctx.strokeStyle = '#fed7aa'; ctx.beginPath(); ctx.arc(mark.x, mark.y, mark.r * (1 - pct), 0, Math.PI * 2); ctx.stroke(); ctx.font = '900 18px sans-serif'; ctx.textAlign = 'center'; ctx.fillStyle = '#fecdd3'; ctx.fillText('☄', mark.x, mark.y + 6); ctx.restore(); }
   function drawAllyDrone(d) { ctx.save(); ctx.translate(d.x, d.y); ctx.fillStyle = '#34d399'; ctx.shadowColor = '#34d399'; ctx.shadowBlur = 12; ctx.beginPath(); ctx.ellipse(0, 0, 15, 9, 0, 0, Math.PI * 2); ctx.fill(); ctx.fillStyle = '#ecfeff'; ctx.beginPath(); ctx.arc(0, -2, 4, 0, Math.PI * 2); ctx.fill(); ctx.restore(); }
-  function drawSkillHud(w, h) { if (!state.started || state.gameOver) return; const items = [['冲刺', state.dashCooldownUntil, SKILLS.dash.cooldown], ['炸弹', state.bombCooldownUntil, SKILLS.bomb.cooldown], ['僚机', state.droneCooldownUntil, SKILLS.drone.cooldown]]; ctx.save(); ctx.font = '800 11px sans-serif'; ctx.textAlign = 'left'; items.forEach((it, i) => { const x = 12 + i * 68, y = h - 54, ready = state.elapsed >= it[1], pct = ready ? 1 : 1 - (it[1] - state.elapsed) / it[2]; ctx.fillStyle = 'rgba(15,23,42,.68)'; roundRect(x, y, 58, 22, 11); ctx.fill(); ctx.fillStyle = ready ? '#67e8f9' : '#475569'; roundRect(x + 3, y + 16, 52 * clamp(pct, 0, 1), 2.5, 2); ctx.fill(); ctx.fillStyle = ready ? '#e0f2fe' : '#94a3b8'; ctx.fillText(it[0], x + 8, y + 13); }); ctx.restore(); }
+  function drawSkillHud(w, h) { if (!state.started || state.gameOver) return; const items = [[t('skillDash'), state.dashCooldownUntil, SKILLS.dash.cooldown], [t('skillBomb'), state.bombCooldownUntil, SKILLS.bomb.cooldown], [t('skillDrone'), state.droneCooldownUntil, SKILLS.drone.cooldown]]; ctx.save(); ctx.font = '800 11px sans-serif'; ctx.textAlign = 'left'; items.forEach((it, i) => { const x = 12 + i * 68, y = h - 54, ready = state.elapsed >= it[1], pct = ready ? 1 : 1 - (it[1] - state.elapsed) / it[2]; ctx.fillStyle = 'rgba(15,23,42,.68)'; roundRect(x, y, 58, 22, 11); ctx.fill(); ctx.fillStyle = ready ? '#67e8f9' : '#475569'; roundRect(x + 3, y + 16, 52 * clamp(pct, 0, 1), 2.5, 2); ctx.fill(); ctx.fillStyle = ready ? '#e0f2fe' : '#94a3b8'; ctx.fillText(it[0], x + 8, y + 13); }); ctx.restore(); }
   function drawWaveBanner(w, h) { ctx.save(); ctx.globalAlpha = Math.min(1, state.waveTimer); ctx.fillStyle = '#e0f2fe'; ctx.font = '1000 22px sans-serif'; ctx.textAlign = 'center'; ctx.shadowColor = '#38bdf8'; ctx.shadowBlur = 12; ctx.fillText(state.waveName, w / 2, h * .25); ctx.restore(); }
-  function drawIntroTip(w, h) { const left = Math.max(0, state.introTipUntil - state.elapsed); ctx.save(); ctx.globalAlpha = Math.min(1, left / .8); ctx.fillStyle = 'rgba(8,13,31,.72)'; ctx.strokeStyle = 'rgba(125,211,252,.45)'; ctx.lineWidth = 1.5; const boxW = Math.min(w - 34, 420), boxH = 74, x = (w - boxW) / 2, y = h * .43 - boxH / 2; roundRect(x, y, boxW, boxH, 18); ctx.fill(); ctx.stroke(); ctx.fillStyle = '#e0f2fe'; ctx.font = `900 ${Math.max(13, Math.min(16, w / 24))}px sans-serif`; ctx.textAlign = 'center'; ctx.fillText('拖动移动，双击/Shift 冲刺', w / 2, y + 29); ctx.fillStyle = '#bae6fd'; ctx.font = `800 ${Math.max(11, Math.min(13, w / 29))}px sans-serif`; ctx.fillText('空格脉冲炸弹，E 召唤僚机，靠近敌弹可擦弹加分', w / 2, y + 53); ctx.restore(); }
+  function drawIntroTip(w, h) { const left = Math.max(0, state.introTipUntil - state.elapsed); ctx.save(); ctx.globalAlpha = Math.min(1, left / .8); ctx.fillStyle = 'rgba(8,13,31,.72)'; ctx.strokeStyle = 'rgba(125,211,252,.45)'; ctx.lineWidth = 1.5; const boxW = Math.min(w - 34, 420), boxH = 74, x = (w - boxW) / 2, y = h * .43 - boxH / 2; roundRect(x, y, boxW, boxH, 18); ctx.fill(); ctx.stroke(); ctx.fillStyle = '#e0f2fe'; ctx.font = `900 ${Math.max(13, Math.min(16, w / 24))}px sans-serif`; ctx.textAlign = 'center'; ctx.fillText(t('introTip1'), w / 2, y + 29); ctx.fillStyle = '#bae6fd'; ctx.font = `800 ${Math.max(11, Math.min(13, w / 29))}px sans-serif`; ctx.fillText(t('introTip2'), w / 2, y + 53); ctx.restore(); }
   function roundRect(x, y, w, h, r) { ctx.beginPath(); ctx.moveTo(x + r, y); ctx.lineTo(x + w - r, y); ctx.quadraticCurveTo(x + w, y, x + w, y + r); ctx.lineTo(x + w, y + h - r); ctx.quadraticCurveTo(x + w, y + h, x + w - r, y + h); ctx.lineTo(x + r, y + h); ctx.quadraticCurveTo(x, y + h, x, y + h - r); ctx.lineTo(x, y + r); ctx.quadraticCurveTo(x, y, x + r, y); }
   function drawParticles() { for (const p of state.particles) { ctx.globalAlpha = Math.max(0, p.life / p.maxLife); ctx.fillStyle = p.color; ctx.beginPath(); ctx.arc(p.x, p.y, p.r, 0, Math.PI * 2); ctx.fill(); ctx.globalAlpha = 1; } }
   function drawWarning(w, h) { ctx.save(); ctx.fillStyle = `rgba(251,113,133,${.18 + Math.sin(performance.now()/80)*.08})`; ctx.fillRect(0, 0, w, h); ctx.fillStyle = '#fecdd3'; ctx.font = '900 28px sans-serif'; ctx.textAlign = 'center'; ctx.fillText('⚠ BOSS WAVE ⚠', w/2, h*.34); ctx.restore(); }
   function drawCenterText(w, h, text) { ctx.save(); ctx.fillStyle = 'rgba(224,242,254,.9)'; ctx.font = '900 20px sans-serif'; ctx.textAlign = 'center'; ctx.fillText(text, w / 2, h / 2); ctx.restore(); }
-  function drawGrazeText(w, h) { ctx.save(); ctx.globalAlpha = Math.min(1, state.nearMissTimer / .25); ctx.fillStyle = '#facc15'; ctx.font = '900 16px sans-serif'; ctx.textAlign = 'right'; ctx.textBaseline = 'bottom'; ctx.shadowColor = 'rgba(0,0,0,.8)'; ctx.shadowBlur = 4; ctx.fillText('擦弹 +12', w - 14, h - 16); ctx.restore(); }
+  function drawGrazeText(w, h) { ctx.save(); ctx.globalAlpha = Math.min(1, state.nearMissTimer / .25); ctx.fillStyle = '#facc15'; ctx.font = '900 16px sans-serif'; ctx.textAlign = 'right'; ctx.textBaseline = 'bottom'; ctx.shadowColor = 'rgba(0,0,0,.8)'; ctx.shadowBlur = 4; ctx.fillText(t('grazeText'), w - 14, h - 16); ctx.restore(); }
 
   function spark(x, y, n, color) { for (let i = 0; i < n; i++) state.particles.push({ x, y, vx: rand(-130,130), vy: rand(-130,80), r: rand(1.5,4), life: rand(.18,.48), maxLife: .48, color, gravity: 120 }); }
   function destroyAt(x, y, color, n = 18) { spark(x, y, n, color); }
@@ -1224,7 +1389,7 @@
     });
     const openHelp = () => {
       if (state.started && !state.gameOver) state.paused = true;
-      showOverlay('宠物雷电', '拖动任意位置控制飞碟，或使用 WASD / 方向键移动。双击屏幕或 Shift 冲刺，空格释放主动脉冲，E 召唤僚机。擦过敌弹会加连击，道具包含火力、散射、激光、追踪导弹、星环、磁吸、超载、双倍积分和护盾。', state.gameOver ? '再来一局' : (state.started ? '继续游戏' : '开始出击'));
+      showOverlay(t('helpTitle'), t('helpText'), state.gameOver ? t('playAgain') : (state.started ? t('continueGame') : t('startBtn')));
     };
     document.getElementById('htMenu').onclick = openHelp;
     document.getElementById('htRestart').onclick = () => resetGame(true);

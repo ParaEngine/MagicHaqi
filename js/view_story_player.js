@@ -1,5 +1,6 @@
 // 故事播放视图：加载 shareable story JSON，按场景播放对白，并 gate 互动任务。
 import { $, dockDisabledAttrs, escapeHtml, isDockButtonDisabled, showDockDisabledToast, showToast } from './utils.js';
+import { t } from './i18n.js';
 import { state } from './state.js';
 import { CONFIG } from './config.js';
 import { getProcessedSheet, mountPetArt, petArtHtml, scanAndMount, say, sayOnPet } from './pet.js';
@@ -20,11 +21,11 @@ const soundManager = SoundManager.getInstance();
 const storySceneImageMeta = new Map();
 
 const ACTIVITY_LABELS = {
-    feed: '喂养',
-    bath: '清洁',
-    clean: '清洁',
-    tap: '轻拍',
-    minigame: '小游戏',
+    get feed() { return t('spFeed'); },
+    get bath() { return t('spClean'); },
+    get clean() { return t('spClean'); },
+    get tap() { return t('spTap'); },
+    get minigame() { return t('spMinigame'); },
 };
 
 function wait(ms) {
@@ -465,7 +466,7 @@ function normalizeStory(story, sourcePath) {
     const scenes = Array.isArray(story?.scenes) ? story.scenes : [];
     return {
         id: story?.id || sourcePath,
-        title: story?.title || '宠物故事',
+        title: story?.title || t('spStoryTitle'),
         sourcePath,
         version: story?.version || 1,
         actors: Array.isArray(story?.actors) ? story.actors : [],
@@ -554,7 +555,7 @@ function sceneBgMusic(scene) {
 function renderMusicToggleButton(track) {
     if (!track) return '';
     const muted = soundManager.isBgMusicMuted?.();
-    return `<button type="button" class="mh-story-music-toggle ${muted ? 'is-muted' : ''}" data-story-music-toggle aria-label="${muted ? '开启音乐' : '静音'}" title="${muted ? '开启音乐' : '静音'}">${muted ? '♪' : '♫'}</button>`;
+    return `<button type="button" class="mh-story-music-toggle ${muted ? 'is-muted' : ''}" data-story-music-toggle aria-label="${muted ? escapeHtml(t('spMusicOn')) : escapeHtml(t('spMute'))}" title="${muted ? escapeHtml(t('spMusicOn')) : escapeHtml(t('spMute'))}">${muted ? '♪' : '♫'}</button>`;
 }
 
 function syncSceneBgMusic(scene, { paused = false } = {}) {
@@ -693,7 +694,7 @@ function storyPetForActor(actor) {
     if (!template) return null;
     return {
         id: template.id || actor.sourcePetId || actor.petId || actor.id || 'story_pet',
-        name: actor.name || template.name || '抱抱龙',
+        name: actor.name || template.name || t('spDragonName'),
         stage: template.stage || 'adult',
         imageSheetUrl: template.imageSheetUrl || '',
         dna: template.dna || '',
@@ -811,7 +812,7 @@ function renderStageActors(timeline, activeItemIndex) {
             <div class="mh-story-stage-actor pet-sprite ${speaking ? 'is-speaking' : ''} ${activeActorId && !speaking ? 'is-listening' : ''} ${style.mood ? `is-${style.mood}` : ''}" data-story-actor-stage="${escapeHtml(actor.id)}" style="left:${style.left}%;bottom:${style.bottom}%;--stage-scale:${style.scale}">
                 ${speaking ? `<div class="mh-story-speech-bubble"><span data-story-speech-text>${escapeHtml(speechText)}</span></div>` : ''}
                 ${petArtHtml(pet, { alt: actor.name || pet.name || '', extraClass: speaking ? 'pop-in' : 'floaty', requireProcessedTexture: true })}
-                <div class="mh-story-actor-foot-name">${escapeHtml(actor.name || pet.name || '角色')}</div>
+                <div class="mh-story-actor-foot-name">${escapeHtml(actor.name || pet.name || t('spRole'))}</div>
             </div>`;
     }).join('');
     const focusPan = storyCastFocusPanPx(layoutItems);
@@ -823,7 +824,7 @@ function actorCard(actor, selected = false) {
     return `
         <button type="button" class="mh-story-actor ${selected ? 'is-selected' : ''}" data-story-actor="${escapeHtml(actor.id)}">
             <span class="mh-story-actor-art">${pet ? petArtHtml(pet, { alt: actor.name || '', requireProcessedTexture: false }) : '<span class="mh-story-fallback-art">?</span>'}</span>
-            <span class="mh-story-actor-name">${escapeHtml(actor.name || '角色')}</span>
+            <span class="mh-story-actor-name">${escapeHtml(actor.name || t('spRole'))}</span>
             ${actor.color ? `<span class="mh-story-actor-sub">${escapeHtml(actor.color)}</span>` : ''}
         </button>`;
 }
@@ -852,7 +853,7 @@ function mountStoryActorPets(root) {
 
 function renderLine(line, revealedChars = Infinity) {
     const actor = line.actor || null;
-    const name = actor?.name || line.actorName || '旁白';
+    const name = actor?.name || line.actorName || t('spNarrator');
     const text = revealText(visibleLineText(line.text || line.say || ''), revealedChars);
     return `
         <div class="mh-story-line ${actor ? '' : 'is-narrator'}">
@@ -866,17 +867,17 @@ function renderActivity(activity, index) {
     const done = activityProgress(activity, index);
     const total = activityCount(activity);
     const complete = done >= total;
-    const title = activity.title || ACTIVITY_LABELS[type] || '互动';
+    const title = activity.title || ACTIVITY_LABELS[type] || t('spActivity');
     const detail = type === 'minigame'
-        ? (activity.gameTitle || activity.gameId || '小游戏')
-        : (activity.hint || ACTIVITY_LABELS[type] || '和宠物完成互动');
+        ? (activity.gameTitle || activity.gameId || t('spMinigame'))
+        : (activity.hint || ACTIVITY_LABELS[type] || t('spDoActivity'));
     return `
         <div class="mh-story-task ${complete ? 'is-complete' : ''}">
             <div>
                 <strong>${escapeHtml(title)} × ${total}</strong>
                 <small>${escapeHtml(detail)} · ${Math.min(done, total)}/${total}</small>
             </div>
-            <span class="mh-story-task-state">${complete ? '完成' : '进行中'}</span>
+            <span class="mh-story-task-state">${complete ? escapeHtml(t('spComplete')) : escapeHtml(t('spInProgress'))}</span>
         </div>`;
 }
 
@@ -904,10 +905,10 @@ function renderActionButton(activity, activityIndex, { current = false, locked =
     const done = activityProgress(activity, activityIndex);
     const total = activityCount(activity);
     const left = Math.max(0, total - done);
-    const title = type === 'tap' ? ACTIVITY_LABELS.tap : (activity.title || ACTIVITY_LABELS[type] || '互动');
+    const title = type === 'tap' ? ACTIVITY_LABELS.tap : (activity.title || ACTIVITY_LABELS[type] || t('spActivity'));
     const badge = left <= 0 ? '✓' : String(left);
     return `
-        <button type="button" class="btn-secondary action-btn dock-icon-btn mh-story-dock-action ${type === 'feed' ? 'is-feed-action' : ''} ${current ? 'is-current' : ''} ${left <= 0 ? 'is-complete' : ''}" data-story-activity="${activityIndex}"${dockDisabledAttrs(locked, '对白播放中，先点击继续看完当前对白。')}>
+        <button type="button" class="btn-secondary action-btn dock-icon-btn mh-story-dock-action ${type === 'feed' ? 'is-feed-action' : ''} ${current ? 'is-current' : ''} ${left <= 0 ? 'is-complete' : ''}" data-story-activity="${activityIndex}"${dockDisabledAttrs(locked, t('spLineFirst'))}>
             <span class="mh-story-action-badge" aria-hidden="true">${badge}</span>
             <span class="dock-icon">${activityIcon(activity, activityIndex)}</span>
             <span class="dock-label">${escapeHtml(title)}</span>
@@ -917,7 +918,7 @@ function renderActionButton(activity, activityIndex, { current = false, locked =
 function renderHeroContinue(activeItem, canContinue, isLastScene) {
     if (isTimelineActivity(activeItem)) return '';
     const isLine = !!activeItem;
-    const label = isLine ? '点击继续' : '';
+    const label = isLine ? t('spTapContinue') : '';
     if (!label) return '';
     const id = isLine ? 'mhStoryContinue' : 'mhStoryNext';
     return `
@@ -935,7 +936,7 @@ function renderStepButton(activeItem) {
     return `
         <button type="button" class="btn-secondary action-btn dock-icon-btn mh-story-step-action ${animating ? 'is-highlight' : ''}" data-story-step>
             <span class="dock-icon">›</span>
-            <span class="dock-label">下一步</span>
+            <span class="dock-label">${escapeHtml(t('spNext'))}</span>
         </button>`;
 }
 
@@ -949,13 +950,13 @@ function renderStoryActionDock(scene, timeline, activeItem, activeActivityIndex,
         .join('');
     const hasPrevious = runtime.sceneIndex > 0;
     const isLastScene = runtime.sceneIndex >= runtime.story.scenes.length - 1;
-    const nextLabel = isLastScene ? '完成故事' : '下一页';
+    const nextLabel = isLastScene ? t('spFinishStory') : t('spNextPage');
     const rightControl = canContinue
         ? `<button type="button" class="btn-primary dock-icon-btn mh-story-page-arrow is-next" data-story-next-page aria-label="${nextLabel}" title="${nextLabel}">›</button>`
         : '<span class="mh-story-page-arrow mh-story-page-arrow-placeholder"></span>';
     return `
         <div class="mh-story-actions">
-            <button type="button" class="btn-secondary dock-icon-btn mh-story-page-arrow" data-story-prev-page${dockDisabledAttrs(!hasPrevious, '已经是第一页。')} aria-label="上一页" title="上一页">‹</button>
+            <button type="button" class="btn-secondary dock-icon-btn mh-story-page-arrow" data-story-prev-page${dockDisabledAttrs(!hasPrevious, t('spFirstPage'))} aria-label="${escapeHtml(t('spPrevPage'))}" title="${escapeHtml(t('spPrevPage'))}">‹</button>
             <div class="mh-story-action-strip">
                 ${actionButtons || '<span class="mh-story-action-placeholder"> </span>'}
             </div>
@@ -966,7 +967,7 @@ function renderStoryActionDock(scene, timeline, activeItem, activeActivityIndex,
 function activeLineText(item) {
     if (!item || isTimelineActivity(item)) return '';
     const line = resolveLine(item);
-    const name = line?.actor?.name || line?.actorName || '旁白';
+    const name = line?.actor?.name || line?.actorName || t('spNarrator');
     return `${name}：${visibleLineText(line?.text || line?.say || '')}`;
 }
 
@@ -988,7 +989,7 @@ function isNarratorLine(item) {
 
 function activeSubtitle(story, scene, timeline) {
     const item = timeline[runtime.timelineIndex] || null;
-    if (!item) return '这一幕完成啦。';
+    if (!item) return t('spSceneDone');
     if (isTimelineActivity(item)) {
         return '';
     }
@@ -1193,7 +1194,7 @@ async function runPetActivity(activity, panel, options, index, interactionOption
         ok = false;
     }
     if (ok) {
-        const line = activity.successText || (type === 'feed' ? '好吃！' : type === 'clean' || type === 'bath' ? '香香的！' : type === 'tap' ? '我收到你的轻拍啦！' : '我感觉好多啦');
+        const line = activity.successText || (type === 'feed' ? t('spFeedYum') : type === 'clean' || type === 'bath' ? t('spCleanNice') : type === 'tap' ? t('spTapGot') : t('spFeelBetter'));
         const lineDuration = type === 'tap' ? STORY_TAP_FEEDBACK_MS : 2200;
         requestAnimationFrame(() => sayOnPet(petEl, line, lineDuration));
         if (type === 'feed') await wait(foodEatDurationMs(feedFoodItem) + 160);
@@ -1205,14 +1206,14 @@ async function runPetActivity(activity, panel, options, index, interactionOption
 async function runFeedStoryActivity(activity, panel, options, index, { actor = null, showDragHint = false } = {}) {
     const targetActor = actor || actorForActivity(activity) || selectedActor();
     if (!isActorAllowedForActivity(activity, targetActor)) {
-        showStoryCenterPrompt('换一个目标试试');
+        showStoryCenterPrompt(t('spTryAnother'));
         return;
     }
     const targetPet = storyPetForFeedActor(targetActor);
     const targetPetEl = petElementForActor(targetActor, panel) || petElementForActivity(activity, panel);
     const foodItem = storyFeedFood(activity, index, targetPet);
     const shouldApplyToMainPet = targetActor?.id === selectedActor()?.id && targetPet?.id === state.currentPetId;
-    if (showDragHint) showToast('拖动可喂食', 'info', 1500);
+    if (showDragHint) showToast(t('spDragToFeed'), 'info', 1500);
     await runPetActivity(activity, panel, options, index, {
         targetPet,
         targetPetEl,
@@ -1227,7 +1228,7 @@ export function completeStoryMinigameActivity(result = {}) {
     const { index } = runtime.pendingMinigame;
     runtime.pendingMinigame = null;
     if (result.completed === false || result.passed === false) {
-        showToast('小游戏还没有完成，再试一次吧', 'info', 1800);
+        showToast(t('spMinigameIncomplete'), 'info', 1800);
         return false;
     }
     completeActivity(index, runtime.panel, runtime.options || {});
@@ -1284,8 +1285,8 @@ export function renderStoryPlayer(panel, data = {}, options = {}) {
     const activeItem = timeline[runtime.timelineIndex] || null;
     const activeActivityIndex = isTimelineActivity(activeItem) ? timelineActivityIndex(timeline, runtime.timelineIndex) : -1;
     const canContinue = scene ? isSceneComplete(scene) : true;
-    const progressText = scene ? `${runtime.sceneIndex + 1}/${story.scenes.length}` : '完成';
-    const endingText = story.ending?.subtitle || '故事完成啦。';
+    const progressText = scene ? `${runtime.sceneIndex + 1}/${story.scenes.length}` : t('spDone');
+    const endingText = story.ending?.subtitle || t('spEndingDefault');
 
     panel.innerHTML = `
         <style>
@@ -1374,9 +1375,9 @@ export function renderStoryPlayer(panel, data = {}, options = {}) {
             <div class="mh-story-stage">
                 ${runtime.finished ? `
                     <div class="mh-story-hero">${mainPet ? `<div class="mh-story-pet">${petArtHtml(mainPet, { alt: mainPet.name || '', extraClass: 'pop-in', requireProcessedTexture: false })}</div>` : ''}<div class="mh-story-subtitle">${escapeHtml(endingText)}</div></div>
-                    <div class="mh-story-line is-narrator"><b>故事完成</b><span>${escapeHtml(story.ending?.text || '你们的冒险已经写进星球记忆。')}</span></div>
+                    <div class="mh-story-line is-narrator"><b>${escapeHtml(t('spStoryComplete'))}</b><span>${escapeHtml(story.ending?.text || t('spEndingText'))}</span></div>
                 ` : needsActorSelect ? `
-                    <div class="mh-story-line is-narrator"><b>选择主角</b><span>${escapeHtml(story.selectionPrompt || '选择一只抱抱龙，故事结束后它会来到你的星球。')}</span></div>
+                    <div class="mh-story-line is-narrator"><b>${escapeHtml(t('spSelectHero'))}</b><span>${escapeHtml(story.selectionPrompt || t('spSelectHeroPrompt'))}</span></div>
                     <div class="mh-story-actors">${selectableActors.map(actor => actorCard(actor, actor.id === runtime.selectedActorId)).join('')}</div>
                 ` : `
                     <div class="mh-story-hero ${isTimelineActivity(activeItem) ? 'has-action' : ''}" data-story-hero style="--mh-story-hero-bg:${escapeHtml(sceneFallbackColor(scene))}">
@@ -1392,13 +1393,13 @@ export function renderStoryPlayer(panel, data = {}, options = {}) {
             </div>
             ${runtime.finished || needsActorSelect ? `<div class="mh-story-actions">
                 ${runtime.finished ? `
-                    <button type="button" class="btn-secondary dock-icon-btn mh-story-page-arrow" data-story-prev-page aria-label="上一页" title="上一页">‹</button>
+                    <button type="button" class="btn-secondary dock-icon-btn mh-story-page-arrow" data-story-prev-page aria-label="${escapeHtml(t('spPrevPage'))}" title="${escapeHtml(t('spPrevPage'))}">‹</button>
                     <div class="mh-story-finished-action-strip">
-                        ${options.allowUnlockedReplay ? `<button class="btn-secondary" id="mhStoryReplay">重玩故事</button>` : ''}
-                        <button class="btn-primary" id="mhStoryClaim">带它回家</button>
+                        ${options.allowUnlockedReplay ? `<button class="btn-secondary" id="mhStoryReplay">${escapeHtml(t('spReplay'))}</button>` : ''}
+                        <button class="btn-primary" id="mhStoryClaim">${escapeHtml(t('spTakeHome'))}</button>
                     </div>
                     <span class="mh-story-page-arrow mh-story-page-arrow-placeholder"></span>
-                ` : `<button class="btn-primary" id="mhStoryStart">开始故事</button>`}
+                ` : `<button class="btn-primary" id="mhStoryStart">${escapeHtml(t('spStartStory'))}</button>`}
             </div>` : renderStoryActionDock(scene, timeline, activeItem, activeActivityIndex, canContinue)}
         </div>`;
 
@@ -1465,12 +1466,12 @@ export function renderStoryPlayer(panel, data = {}, options = {}) {
         if (activityType(activity) === 'feed') bindStoryFeedDrag(btn, activity, panel, options, index);
         btn.onclick = async () => {
             if (isDockButtonDisabled(btn)) { showDockDisabledToast(btn); return; }
-            if (isDialogueActive()) { showToast('对白播放中，先点击继续看完当前对白。', 'info', 1600); return; }
+            if (isDialogueActive()) { showToast(t('spLineFirst'), 'info', 1600); return; }
             if (Date.now() - (btn.__mhStoryFeedDragHandledAt || 0) < 350) return;
             if (!activity) return;
             const type = activityType(activity);
             if (type === 'minigame') {
-                if (!activity.gameId) { showToast('小游戏缺少 gameId', 'error'); return; }
+                if (!activity.gameId) { showToast(t('spMissingGameId'), 'error'); return; }
                 runtime.pendingMinigame = { index, activity };
                 options.onLaunchMinigame?.(activity);
                 return;

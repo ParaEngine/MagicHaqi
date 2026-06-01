@@ -1,4 +1,5 @@
 import { escapeHtml } from './utils.js';
+import { t } from './i18n.js';
 import { displayPetName } from './dna.js';
 import { petArtHtml, playPetHappy, preloadPetAssets, scanAndMount, mountPetArt } from './pet.js';
 
@@ -658,7 +659,7 @@ function playVisitAnimation({ kind, title, subtitle, caption, pets = [], gift = 
             <div class="visit-animation-card visit-${escapeHtml(kind || 'departure')}">
                 <div class="visit-animation-title">
                     <span><b>${escapeHtml(title || '星际拜访')}</b><i>${escapeHtml(subtitle || '')}</i></span>
-                    <button class="visit-skip-btn" type="button" data-skip-visit-animation>跳过</button>
+                    <button class="visit-skip-btn" type="button" data-skip-visit-animation>${escapeHtml(t('skip'))}</button>
                 </div>
                 <div class="visit-planet" aria-hidden="true"></div>
                 <div class="visit-ground" aria-hidden="true"></div>

@@ -4,13 +4,250 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-  <title>宠物荒野生存</title>
+  <title>宠物荒野生存</title><!-- dynamic -->
   <script src="https://cdn.keepwork.com/keepwork/cdn/tailwindcss@3.4.16.js"></script>
 </head>
 
 <body></body>
 <script defer>
 (function () {
+  // ---- i18n ----
+  const I18N = {
+    zhCN: {
+      title: '宠物荒野生存',
+      canvasAria: '宠物荒野生存像素世界',
+      helpAria: '玩法说明',
+      dayN: '第{n}天',
+      hpTitle: '生命',
+      hungerTitle: '饥饿',
+      defaultMessage: '采集食物，驯服荒野宠物，在荒野中一直冒险下去！',
+      gathering: '采集中',
+      buildTent: '🏕️ 搭建安全帐篷',
+      buildTentCost: '消耗 {n} 木材 · 夜晚火把保护',
+      hint: '任意位置触摸拖动移动 · 靠近自动攻击/采集/捕获 · 离开会重置进度',
+      gatherAria: '采集捕获',
+      attackAria: '攻击',
+      overlayTitle: '宠物荒野生存',
+      overlayDesc: '像素荒野里，饥饿会不断下降。采集浆果、蘑菇和篝火木材；击败野生宠物后靠近按 ✋ 捕获，最多带 3 只一起自动战斗。',
+      ruleFood: '🍖 食物越多分数越高',
+      ruleCamp: '🏕️ 满足目标会建营地奖励',
+      ruleAutoAttack: '⚔️ 宠物会自动攻击',
+      ruleNight: '🌙 夜晚怪物更凶',
+      selectMaster: '选择主人',
+      pixelBoy: '像素男孩',
+      pixelGirl: '像素女孩',
+      selectDifficulty: '选择难度',
+      diffEasy: '轻松',
+      diffEasyDesc: '食物多 · 敌人少',
+      diffNormal: '普通',
+      diffNormalDesc: '标准生存',
+      diffHard: '挑战',
+      diffHardDesc: '更饿 · 更危险',
+      enterWild: '进入荒野',
+      continueGame: '继续游戏',
+      restartGame: '重新开始',
+      selectTeamPet: '选择上阵宠物',
+      rosterDesc: '第一排是 3 个上阵位。点击背包宠物先选中，再点上阵空位/目标宠物；相同种类和等级可合成。',
+      continueAdventure: '继续冒险',
+      stageBaby: '幼年',
+      stageTeen: '青年',
+      stageAdult: '成年',
+      stageElder: '老年',
+      petWolf: '夜狼',
+      petBoar: '岩猪',
+      petFox: '火狐',
+      petMushpet: '菇菇兽',
+      petWild: '荒野宠物',
+      bossPrefix: '首领',
+      bossAppear: '⚠️ 首领怪物出现！击败它会掉落大量肉。',
+      diffStart: '{name}难度开始！先找浆果和蘑菇，夜晚前捕获伙伴。',
+      randomPets: '本局随机宠物：{names} 等',
+      woodPlus2: '🪵 木材 +2',
+      branchPlus1: '🪵 树枝 +1',
+      meatPlus4: '🥩 肉 +4',
+      foodPlusN: '🍖 食物 +{n}',
+      captureBoss: '👑 捕获首领 {name} Lv.{level}！',
+      capturePetMsg: '🐾 捕获 {name}！',
+      captureBossSuccess: '{name} 首领捕获成功，直接成为 Lv.{level} {stage} 宠物！',
+      captureSuccess: '{name} 捕获成功！可在宠物列表中选择最多 3 只上阵。',
+      petDefaultName: '宠物',
+      onTeam: '上阵',
+      inBag: '背包',
+      mergeOnlySame: '只有相同种类、相同等级的宠物才能合并。',
+      teamFull: '上阵位已满：点击第一排位置或先取消一只。',
+      mergeUpgrade: '✨ {name} 合成升级！',
+      mergeResult: '{name} 合并到 {stage} Lv.{level}。',
+      rosterFullHint: '{n}/{max} 上阵 · 背包 {total} 只 · {action}',
+      rosterActionSelected: '已选中：再点上阵位或合成目标',
+      rosterActionDefault: '点击宠物选中；再点击目标上阵/合成',
+      emptySlot: '空位',
+      slotHint: '选中后点此上阵',
+      bossDefeated: '👑 首领击败！',
+      bossLoot: '首领怪物掉落了肉！靠近可捕获为高等级宠物。',
+      petDownCapture: '宠物被打败，靠近按 ✋ 捕获！',
+      petDownHint: '打败野生宠物后会短暂虚弱，快靠近捕获。',
+      playerHurt: '受到攻击！让伙伴帮你战斗，注意回血和饥饿。',
+      hpDepleted: '生命耗尽，营地伙伴把你救了回来。',
+      breakfastFood: '🍖 早餐消耗食物 -1',
+      dayNMsg: '第 {n} 天！夜晚更危险，继续储备食物和伙伴。',
+      duskWarning: '黄昏来了，天色正在变暗！准备火把或靠近帐篷。',
+      hungerDepleted: '饥饿耗尽，营地伙伴把你救了回来。',
+      autoEat: '🍖 自动进食',
+      campBonus: '🏕️ 荒野营地 +{bonus}',
+      campBuilt: '第 {n} 个荒野营地建成！目标已刷新，继续探索更远的地方。',
+      campRescue: '🏕️ 营地救援',
+      recoverMsg: '{reason} 游戏不会结束，休整后继续探索！',
+      winToast: '荒野生存成功！+{bonus}',
+      winMsg: '你和宠物小队建立了荒野营地！',
+      loseToast: '荒野失败，再试一次！',
+      loseMsg: '生命或饥饿耗尽了，重新挑战吧。',
+      playAgain: '再玩一次',
+      retryChallenge: '重新挑战',
+      capturing: '捕获中',
+      chopping: '砍伐中',
+      gatheringWork: '采集中',
+      captureMark: '捕获!',
+      safeLight: '🔥 光圈安全',
+      noLightDanger: '☠️ 无光危险',
+      nightDarkness: '黑夜吞没了你，营地伙伴把你救了回来。',
+      torchAuto: '🔥 自动点燃火把 -1 木材',
+      nightTorch: '夜晚降临！火把会消耗木材，没有光会持续百分比掉血。',
+      nightDanger: '黑夜太危险了！没有火把或小屋光圈会按百分比快速掉血。',
+      waterBuild: '水面上不能建房子，先走到陆地。',
+      tentBuilt: '🏕️ 安全帐篷搭好了！',
+      tentProtect: '帐篷夜晚会点亮火把，光圈内不会被怪物攻击。',
+      houseCostInfo: '消耗 {n} 木材 · 已搭 {count} 顶 · 夜晚安全光圈',
+      petDefeated: '💔 {name} 阵亡',
+      petLeft: '💔 {name} 离队',
+      waterElement: '水系',
+    },
+    enUS: {
+      title: 'Pet Wilderness Survival',
+      canvasAria: 'Pet Wilderness Survival pixel world',
+      helpAria: 'How to play',
+      dayN: 'Day {n}',
+      hpTitle: 'HP',
+      hungerTitle: 'Hunger',
+      defaultMessage: 'Gather food, tame wild pets, and keep adventuring in the wilderness!',
+      gathering: 'Gathering',
+      buildTent: '🏕️ Build Safe Tent',
+      buildTentCost: 'Costs {n} wood · Torch protection at night',
+      hint: 'Touch & drag anywhere to move · Auto-attack/gather/capture nearby · Moving away resets progress',
+      gatherAria: 'Gather & Capture',
+      attackAria: 'Attack',
+      overlayTitle: 'Pet Wilderness Survival',
+      overlayDesc: 'In this pixel wilderness, hunger keeps dropping. Gather berries, mushrooms and campfire wood; defeat wild pets then press ✋ nearby to capture — bring up to 3 along for auto-battle.',
+      ruleFood: '🍖 More food = higher score',
+      ruleCamp: '🏕️ Reach goals to build camps',
+      ruleAutoAttack: '⚔️ Pets auto-attack',
+      ruleNight: '🌙 Monsters are fiercer at night',
+      selectMaster: 'Choose Character',
+      pixelBoy: 'Pixel Boy',
+      pixelGirl: 'Pixel Girl',
+      selectDifficulty: 'Choose Difficulty',
+      diffEasy: 'Easy',
+      diffEasyDesc: 'More food · Fewer enemies',
+      diffNormal: 'Normal',
+      diffNormalDesc: 'Standard survival',
+      diffHard: 'Hard',
+      diffHardDesc: 'Hungrier · More dangerous',
+      enterWild: 'Enter Wilderness',
+      continueGame: 'Continue',
+      restartGame: 'Restart',
+      selectTeamPet: 'Select Team Pets',
+      rosterDesc: 'Top row has 3 team slots. Tap a backpack pet to select, then tap an empty slot or target pet; same species & level can merge.',
+      continueAdventure: 'Continue Adventure',
+      stageBaby: 'Baby',
+      stageTeen: 'Teen',
+      stageAdult: 'Adult',
+      stageElder: 'Elder',
+      petWolf: 'Night Wolf',
+      petBoar: 'Rock Boar',
+      petFox: 'Fire Fox',
+      petMushpet: 'Shroomie',
+      petWild: 'Wild Pet',
+      bossPrefix: 'Boss ',
+      bossAppear: '⚠️ A boss monster appeared! Defeat it for lots of meat.',
+      diffStart: '{name} difficulty started! Find berries and mushrooms first, capture companions before nightfall.',
+      randomPets: 'Random pets this round: {names} etc.',
+      woodPlus2: '🪵 Wood +2',
+      branchPlus1: '🪵 Branch +1',
+      meatPlus4: '🥩 Meat +4',
+      foodPlusN: '🍖 Food +{n}',
+      captureBoss: '👑 Captured Boss {name} Lv.{level}!',
+      capturePetMsg: '🐾 Captured {name}!',
+      captureBossSuccess: '{name} boss captured — now a Lv.{level} {stage} pet!',
+      captureSuccess: '{name} captured! Choose up to 3 pets for your team.',
+      petDefaultName: 'Pet',
+      onTeam: 'Active',
+      inBag: 'Backpack',
+      mergeOnlySame: 'Only pets of the same species and level can merge.',
+      teamFull: 'Team is full: tap a top-row slot or remove a pet first.',
+      mergeUpgrade: '✨ {name} merged & leveled up!',
+      mergeResult: '{name} merged to {stage} Lv.{level}.',
+      rosterFullHint: '{n}/{max} active · Backpack {total} · {action}',
+      rosterActionSelected: 'Selected: tap a slot or merge target',
+      rosterActionDefault: 'Tap a pet to select, then tap a slot or merge target',
+      emptySlot: 'Empty',
+      slotHint: 'Tap here to deploy',
+      bossDefeated: '👑 Boss Defeated!',
+      bossLoot: 'The boss dropped meat! Get close to capture a high-level pet.',
+      petDownCapture: 'Pet defeated — get close and press ✋ to capture!',
+      petDownHint: 'Defeated wild pets are weakened — hurry and capture them.',
+      playerHurt: 'Under attack! Let your pets fight, and watch your HP and hunger.',
+      hpDepleted: 'HP depleted — your camp companions rescued you.',
+      breakfastFood: '🍖 Breakfast consumed -1 food',
+      dayNMsg: 'Day {n}! Nights get more dangerous — keep stocking food and companions.',
+      duskWarning: 'Dusk is here, it\'s getting dark! Prepare torches or stay near a tent.',
+      hungerDepleted: 'Starvation — your camp companions rescued you.',
+      autoEat: '🍖 Auto-eating',
+      campBonus: '🏕️ Wilderness Camp +{bonus}',
+      campBuilt: 'Camp #{n} built! Goals refreshed — explore further!',
+      campRescue: '🏕️ Camp Rescue',
+      recoverMsg: '{reason} The game continues — rest up and keep exploring!',
+      winToast: 'Survival Success! +{bonus}',
+      winMsg: 'You and your pet squad built a wilderness camp!',
+      loseToast: 'Wilderness failed — try again!',
+      loseMsg: 'HP or hunger ran out. Give it another shot!',
+      playAgain: 'Play Again',
+      retryChallenge: 'Retry',
+      capturing: 'Capturing',
+      chopping: 'Chopping',
+      gatheringWork: 'Gathering',
+      captureMark: 'Capture!',
+      safeLight: '🔥 Light Safe',
+      noLightDanger: '☠️ No Light — Danger',
+      nightDarkness: 'The darkness consumed you — your camp companions saved you.',
+      torchAuto: '🔥 Auto-lit torch -1 wood',
+      nightTorch: 'Night has fallen! Torches consume wood; without light you take % HP damage.',
+      nightDanger: 'Night is too dangerous! Without a torch or cabin light you take heavy % HP damage.',
+      waterBuild: 'Can\'t build on water — walk to land first.',
+      tentBuilt: '🏕️ Safe tent built!',
+      tentProtect: 'The tent lights a torch at night — the light circle keeps monsters away.',
+      houseCostInfo: 'Costs {n} wood · {count} built · Safe light circle at night',
+      petDefeated: '💔 {name} defeated',
+      petLeft: '💔 {name} left the team',
+      waterElement: 'Water',
+    },
+  };
+  function detectLang() {
+    try {
+      const params = new URLSearchParams(window.location.search);
+      const lang = params.get('lang');
+      if (lang && I18N[lang]) return lang;
+    } catch (_) {}
+    return 'zhCN';
+  }
+  const LANG = detectLang();
+  const L = I18N[LANG];
+  function t(key, vars) {
+    let str = L[key] || I18N.zhCN[key] || key;
+    if (vars) str = str.replace(/\{(\w+)\}/g, (m, n) => vars[n] != null ? String(vars[n]) : m);
+    return str;
+  }
+  try { document.documentElement.setAttribute('lang', LANG === 'enUS' ? 'en' : 'zh-CN'); } catch (_) {}
+  try { document.title = t('title'); } catch (_) {}
+
   const STORAGE_BEST = 'haqiHungryBestV1';
   const STORAGE_MASTER = 'haqiHungryMasterV1';
   const STORAGE_DIFFICULTY = 'haqiHungryDifficultyV1';
@@ -36,16 +273,16 @@
   const PET_SHEET_ROWS = 4;
   const PET_ANIM_COLS = { idle: 0, happy: 1, sad: 2, sleep: 3 };
   const PET_SHEET_STAGES = ['baby', 'teen', 'adult', 'elder'];
-  const PET_STAGE_NAMES = { baby: '幼年', teen: '青年', adult: '成年', elder: '老年' };
+  const PET_STAGE_NAMES = { baby: t('stageBaby'), teen: t('stageTeen'), adult: t('stageAdult'), elder: t('stageElder') };
   const WATER_TILE = 8;
   const TERRAIN_TEXTURE_TILE = 16;
   const TERRAIN_VARIANTS = 10;
   const TERRAIN_TEXTURES = ['land', 'lawn', 'forest', 'water', 'desert', 'wetland', 'snow'];
   const PET_INDEX_URL = new URL('../famous-pets/_pet_index.json', location.href).href;
   const DIFFICULTIES = {
-    easy: { name: '轻松', initialFood: 4, enemyCount: 12, enemyMin: 7, enemyHp: .82, enemySpeed: .9, enemyDamage: .78, hunger: .74, spawn: .72, score: .85 },
-    normal: { name: '普通', initialFood: 2, enemyCount: 18, enemyMin: 10, enemyHp: 1, enemySpeed: 1, enemyDamage: 1, hunger: 1, spawn: 1, score: 1 },
-    hard: { name: '挑战', initialFood: 1, enemyCount: 26, enemyMin: 16, enemyHp: 1.22, enemySpeed: 1.12, enemyDamage: 1.25, hunger: 1.18, spawn: 1.3, score: 1.2 },
+    easy: { name: t('diffEasy'), initialFood: 4, enemyCount: 12, enemyMin: 7, enemyHp: .82, enemySpeed: .9, enemyDamage: .78, hunger: .74, spawn: .72, score: .85 },
+    normal: { name: t('diffNormal'), initialFood: 2, enemyCount: 18, enemyMin: 10, enemyHp: 1, enemySpeed: 1, enemyDamage: 1, hunger: 1, spawn: 1, score: 1 },
+    hard: { name: t('diffHard'), initialFood: 1, enemyCount: 26, enemyMin: 16, enemyHp: 1.22, enemySpeed: 1.12, enemyDamage: 1.25, hunger: 1.18, spawn: 1.3, score: 1.2 },
   };
   const COLORS = {
     grass: '#8fcb6b', grass2: '#78b65d', dark: '#274c3a', soil: '#8a6246', water: '#4fb3c8', sand: '#dbc276', berry: '#ef4444', wood: '#8b5a2b', leaf: '#2f9e50', gold: '#facc15'
@@ -102,7 +339,7 @@
     masterStyle: localStorage.getItem(STORAGE_MASTER) || 'boy',
     difficulty: DIFFICULTIES[localStorage.getItem(STORAGE_DIFFICULTY)] ? localStorage.getItem(STORAGE_DIFFICULTY) : 'normal',
     camera: { x: 0, y: 0 },
-    message: '采集食物，驯服荒野宠物，在荒野中一直冒险下去！',
+    message: t('defaultMessage'),
     messageUntil: 0,
     finishPosted: false,
     petBitmaps: [],
@@ -307,10 +544,10 @@
       @media (hover: hover) and (pointer: fine) { .hh-actions { opacity: .34; transition: opacity .16s; } .hh-actions:hover { opacity: 1; } }
     </style>
     <div class="hh-shell" id="hhShell">
-      <canvas id="hhCanvas" class="hh-canvas" aria-label="宠物荒野生存像素世界"></canvas>
+      <canvas id="hhCanvas" class="hh-canvas" aria-label="${t('canvasAria')}"></canvas>
       <header class="hh-top">
-        <button id="hhHelp" class="hh-icon-btn" type="button" aria-label="玩法说明">?</button>
-        <div class="hh-title">🍖 宠物荒野生存 <span id="hhDay">第1天</span></div>
+        <button id="hhHelp" class="hh-icon-btn" type="button" aria-label="${t('helpAria')}">?</button>
+        <div class="hh-title">🍖 ${t('title')} <span id="hhDay">${t('dayN', {n: 1})}</span></div>
         <div class="hh-stats">
           <span class="hh-pill">🍖 <b id="hhFood">0</b></span>
           <span class="hh-pill">🪵 <b id="hhWood">0</b></span>
@@ -319,56 +556,56 @@
           <span class="hh-pill">🏆 <b id="hhBest">0</b></span>
         </div>
         <div class="hh-bars">
-          <div class="hh-bar" title="生命"><i id="hhHp" style="--pct:100%;--c1:#fb7185;--c2:#dc2626"></i></div>
-          <div class="hh-bar" title="饥饿"><i id="hhHunger" style="--pct:100%;--c1:#facc15;--c2:#f97316"></i></div>
+          <div class="hh-bar" title="${t('hpTitle')}"><i id="hhHp" style="--pct:100%;--c1:#fb7185;--c2:#dc2626"></i></div>
+          <div class="hh-bar" title="${t('hungerTitle')}"><i id="hhHunger" style="--pct:100%;--c1:#facc15;--c2:#f97316"></i></div>
         </div>
       </header>
-      <div id="hhMessage" class="hh-message">采集食物，驯服荒野宠物，在荒野中一直冒险下去！</div>
-      <div id="hhWorkProgress" class="hh-work-progress"><b id="hhWorkText">采集中</b><i><em id="hhWorkBar" style="--pct:0%"></em></i></div>
-      <button id="hhBuildHouse" class="hh-build-house" type="button" hidden>🏕️ 搭建安全帐篷<small>消耗 ${HOUSE_WOOD_COST} 木材 · 夜晚火把保护</small></button>
+      <div id="hhMessage" class="hh-message">${t('defaultMessage')}</div>
+      <div id="hhWorkProgress" class="hh-work-progress"><b id="hhWorkText">${t('gathering')}</b><i><em id="hhWorkBar" style="--pct:0%"></em></i></div>
+      <button id="hhBuildHouse" class="hh-build-house" type="button" hidden>${t('buildTent')}<small>${t('buildTentCost', {n: HOUSE_WOOD_COST})}</small></button>
       <div class="hh-bottom">
-        <div id="hhHint" class="hh-hint">任意位置触摸拖动移动 · 靠近自动攻击/采集/捕获 · 离开会重置进度</div>
+        <div id="hhHint" class="hh-hint">${t('hint')}</div>
         <div class="hh-actions">
-          <button id="hhGather" class="hh-action-btn gather" type="button" aria-label="采集捕获">✋</button>
-          <button id="hhAttack" class="hh-action-btn attack" type="button" aria-label="攻击">⚔️</button>
+          <button id="hhGather" class="hh-action-btn gather" type="button" aria-label="${t('gatherAria')}">✋</button>
+          <button id="hhAttack" class="hh-action-btn attack" type="button" aria-label="${t('attackAria')}">⚔️</button>
         </div>
       </div>
       <div id="hhJoystick" class="hh-joystick"><div id="hhKnob" class="hh-knob" style="--kx:0px;--ky:0px"></div></div>
       <div id="hhOverlay" class="hh-overlay">
         <div class="hh-card">
-          <h1>宠物荒野生存</h1>
-          <p>像素荒野里，饥饿会不断下降。采集浆果、蘑菇和篝火木材；击败野生宠物后靠近按 ✋ 捕获，最多带 3 只一起自动战斗。</p>
+          <h1>${t('overlayTitle')}</h1>
+          <p>${t('overlayDesc')}</p>
           <div class="hh-rule">
-            <span>🍖 食物越多分数越高</span><span>🏕️ 满足目标会建营地奖励</span>
-            <span>⚔️ 宠物会自动攻击</span><span>🌙 夜晚怪物更凶</span>
+            <span>${t('ruleFood')}</span><span>${t('ruleCamp')}</span>
+            <span>${t('ruleAutoAttack')}</span><span>${t('ruleNight')}</span>
           </div>
           <div class="hh-row">
-            <div class="hh-label">选择主人</div>
-            <button class="hh-pick" data-master="boy" type="button">像素男孩</button>
-            <button class="hh-pick" data-master="girl" type="button">像素女孩</button>
+            <div class="hh-label">${t('selectMaster')}</div>
+            <button class="hh-pick" data-master="boy" type="button">${t('pixelBoy')}</button>
+            <button class="hh-pick" data-master="girl" type="button">${t('pixelGirl')}</button>
           </div>
           <div class="hh-row">
-            <div class="hh-label">选择难度</div>
-            <button class="hh-pick difficulty" data-difficulty="easy" type="button">轻松<small>食物多 · 敌人少</small></button>
-            <button class="hh-pick difficulty" data-difficulty="normal" type="button">普通<small>标准生存</small></button>
-            <button class="hh-pick difficulty" data-difficulty="hard" type="button">挑战<small>更饿 · 更危险</small></button>
+            <div class="hh-label">${t('selectDifficulty')}</div>
+            <button class="hh-pick difficulty" data-difficulty="easy" type="button">${t('diffEasy')}<small>${t('diffEasyDesc')}</small></button>
+            <button class="hh-pick difficulty" data-difficulty="normal" type="button">${t('diffNormal')}<small>${t('diffNormalDesc')}</small></button>
+            <button class="hh-pick difficulty" data-difficulty="hard" type="button">${t('diffHard')}<small>${t('diffHardDesc')}</small></button>
           </div>
           <div class="hh-row">
-            <button id="hhStart" class="hh-start" type="button">进入荒野</button>
-            <button id="hhContinue" class="hh-start" type="button" hidden>继续游戏</button>
-            <button id="hhRestart" class="hh-start secondary" type="button" hidden>重新开始</button>
+            <button id="hhStart" class="hh-start" type="button">${t('enterWild')}</button>
+            <button id="hhContinue" class="hh-start" type="button" hidden>${t('continueGame')}</button>
+            <button id="hhRestart" class="hh-start secondary" type="button" hidden>${t('restartGame')}</button>
           </div>
         </div>
       </div>
       <div id="hhRosterOverlay" class="hh-roster-overlay" hidden>
         <div class="hh-card roster">
-          <h2>选择上阵宠物</h2>
-          <p>第一排是 3 个上阵位。点击背包宠物先选中，再点上阵空位/目标宠物；相同种类和等级可合成。</p>
+          <h2>${t('selectTeamPet')}</h2>
+          <p>${t('rosterDesc')}</p>
           <div id="hhTeamSlots" class="hh-team-row"></div>
           <div id="hhRosterGrid" class="hh-roster-grid"></div>
           <div id="hhRosterHint" class="hh-roster-hint">0/3 上阵</div>
           <div class="hh-row">
-            <button id="hhRosterDone" class="hh-start" type="button">继续冒险</button>
+            <button id="hhRosterDone" class="hh-start" type="button">${t('continueAdventure')}</button>
           </div>
         </div>
       </div>
@@ -848,7 +1085,7 @@
 
   function spawnBoss(x, y, type = pick(['wolf', 'boar', 'fox', 'mushpet'])) {
     spawnEnemy(x, y, type, true);
-    setMessage('⚠️ 首领怪物出现！击败它会掉落大量肉。', 3200);
+    setMessage(t('bossAppear'), 3200);
   }
 
   function spawnEnemyPack(x, y, type, count = rand(3, 7)) {
@@ -866,7 +1103,7 @@
   }
 
   function petName(type) {
-    return { wolf: '夜狼', boar: '岩猪', fox: '火狐', mushpet: '菇菇兽' }[type] || '荒野宠物';
+    return { wolf: t('petWolf'), boar: t('petBoar'), fox: t('petFox'), mushpet: t('petMushpet') }[type] || t('petWild');
   }
 
   function resetGame() {
@@ -880,12 +1117,12 @@
     ui.hint.hidden = false;
     clearTimeout(hintTimer);
     hintTimer = setTimeout(() => { ui.hint.hidden = true; }, 10000);
-    setMessage(`${difficultyConfig().name}难度开始！先找浆果和蘑菇，夜晚前捕获伙伴。`, 3200);
+    setMessage(t('diffStart', { name: difficultyConfig().name }), 3200);
     updateHud();
   }
 
   function startGame() {
-    if (!state.started) post('gameStarted', { title: '宠物荒野生存' });
+    if (!state.started) post('gameStarted', { title: t('title') });
     state.started = true;
     ui.start.hidden = true;
     ui.continue.hidden = true;
@@ -993,14 +1230,14 @@
       state.petBitmaps = bitmaps.filter(Boolean);
       state.petArtCursor = 0;
       refreshEnemyArt();
-      if (state.petBitmaps.length) setMessage(`本局随机宠物：${state.petBitmaps.slice(0, 3).map(p => p.name).join('、')} 等`, 3600);
+      if (state.petBitmaps.length) setMessage(t('randomPets', { names: state.petBitmaps.slice(0, 3).map(p => p.name).join(', ') }), 3600);
     } catch (err) {
       requestPetImages();
     }
   }
 
   function updateHud() {
-    ui.day.textContent = `第${state.day}天`;
+    ui.day.textContent = t('dayN', { n: state.day });
     ui.food.textContent = state.food;
     ui.wood.textContent = state.wood;
     ui.pets.textContent = `${state.team.length}/${PET_MAX_TEAM}(${state.roster.length})`;
@@ -1017,20 +1254,20 @@
     if (!ui.buildHouse) return;
     const canBuild = state.started && !state.finished && !state.paused && overlay.hidden !== false && state.wood >= HOUSE_WOOD_COST;
     ui.buildHouse.hidden = !canBuild;
-    if (canBuild) ui.buildHouse.querySelector('small').textContent = `消耗 ${HOUSE_WOOD_COST} 木材 · 已搭 ${state.houses.length} 顶 · 夜晚安全光圈`;
+    if (canBuild) ui.buildHouse.querySelector('small').textContent = t('houseCostInfo', { n: HOUSE_WOOD_COST, count: state.houses.length });
   }
 
   function buildHouse() {
     if (!state.started || state.finished || state.wood < HOUSE_WOOD_COST) return;
-    if (isWaterAt(player.x, player.y)) { setMessage('水面上不能建房子，先走到陆地。', 1800); return; }
+    if (isWaterAt(player.x, player.y)) { setMessage(t('waterBuild'), 1800); return; }
     state.wood -= HOUSE_WOOD_COST;
     const house = { id: `house_${Date.now()}_${state.houses.length}`, x: player.x, y: player.y + 18, builtAt: now() };
     state.houses.push(house);
     state.score += 160 + state.houses.length * 35;
     spawnParticles(house.x, house.y, 36, '#facc15');
     playSound('win');
-    showToast('🏕️ 安全帐篷搭好了！');
-    setMessage('帐篷夜晚会点亮火把，光圈内不会被怪物攻击。', 4200);
+    showToast(t('tentBuilt'));
+    setMessage(t('tentProtect'), 4200);
     updateHud();
   }
 
@@ -1057,8 +1294,8 @@
       state.torchUntil = t + TORCH_SECONDS * 1000;
       state.lastTorchNoticeAt = t;
       spawnParticles(player.x, player.y - 16, 14, '#f59e0b');
-      showToast('🔥 自动点燃火把 -1 木材');
-      setMessage('夜晚降临！火把会消耗木材，没有光会持续百分比掉血。', 3600);
+      showToast(t('torchAuto'));
+      setMessage(t('nightTorch'), 3600);
       playSound('gather');
     }
     if (isPlayerProtectedAtNight()) return;
@@ -1072,9 +1309,9 @@
       state.lastNightUnsafeAt = t;
       spawnParticles(player.x, player.y, 12, '#7f1d1d');
       playSound('hurt');
-      setMessage('黑夜太危险了！没有火把或小屋光圈会按百分比快速掉血。', 2100);
+      setMessage(t('nightDanger'), 2100);
     }
-    if (state.hp <= 0) recoverAtCamp('黑夜吞没了你，营地伙伴把你救了回来。');
+    if (state.hp <= 0) recoverAtCamp(t('nightDarkness'));
   }
 
   function updateWarnings() {
@@ -1126,7 +1363,7 @@
   }
 
   function canPetEnterWater(pet) {
-    return pet?.element === '水系';
+    return pet?.element === t('waterElement');
   }
 
   function removePetFromRoster(pet, reason = 'defeated') {
@@ -1135,7 +1372,7 @@
     state.team = state.team.filter(item => item !== pet);
     if (state.mergeSourceId === pet.id) state.mergeSourceId = '';
     spawnParticles(pet.x, pet.y, 18, '#64748b');
-    showToast(reason === 'defeated' ? `💔 ${pet.name || '宠物'} 阵亡` : `💔 ${pet.name || '宠物'} 离队`);
+    showToast(reason === 'defeated' ? t('petDefeated', { name: pet.name || t('petDefaultName') }) : t('petLeft', { name: pet.name || t('petDefaultName') }));
     syncTeamFromRoster();
     updateHud();
   }
@@ -1263,21 +1500,21 @@
     spawnParticles(obj.x, obj.y, 10, obj.type === 'tree' ? '#8b5a2b' : '#f87171');
     if (obj.hp <= 0) {
       obj.taken = true;
-      if (obj.type === 'tree') { state.wood += 2; state.score += 14; showToast('🪵 木材 +2'); }
-      else if (obj.type === 'branch') { state.wood += 1; state.score += 8; showToast('🪵 树枝 +1'); }
+      if (obj.type === 'tree') { state.wood += 2; state.score += 14; showToast(t('woodPlus2')); }
+      else if (obj.type === 'branch') { state.wood += 1; state.score += 8; showToast(t('branchPlus1')); }
       else if (obj.type === 'meat') {
         state.food += 4;
         state.hunger = clamp(state.hunger + 26, 0, 100);
         state.stamina = clamp(state.stamina + 14, 0, 100);
         state.score += 72;
-        showToast('🥩 肉 +4');
+        showToast(t('meatPlus4'));
       }
       else {
         const amount = obj.type === 'berry' ? 2 : 1;
         state.food += amount;
         state.hunger = clamp(state.hunger + amount * 9, 0, 100);
         state.score += amount * 18;
-        showToast(`🍖 食物 +${amount}`);
+        showToast(t('foodPlusN', { n: amount }));
       }
       if (state.score > state.best) { state.best = Math.round(state.score); localStorage.setItem(STORAGE_BEST, String(state.best)); }
       playSound('gather');
@@ -1326,8 +1563,8 @@
     state.roster.push(pet);
     syncTeamFromRoster();
     state.score += (e.boss ? 220 : 90) + Math.min(state.roster.length, PET_MAX_TEAM) * 25 + level * 12;
-    showToast(e.boss ? `👑 捕获首领 ${petName} Lv.${level}！` : `🐾 捕获 ${petName}！`);
-    setMessage(e.boss ? `${petName} 首领捕获成功，直接成为 Lv.${level} ${stageName(pet.stage)} 宠物！` : `${petName} 捕获成功！可在宠物列表中选择最多 3 只上阵。`, 2600);
+    showToast(e.boss ? t('captureBoss', { name: petName, level }) : t('capturePetMsg', { name: petName }));
+    setMessage(e.boss ? t('captureBossSuccess', { name: petName, level, stage: stageName(pet.stage) }) : t('captureSuccess', { name: petName }), 2600);
     spawnParticles(e.x, e.y, 26, '#a78bfa');
     updateHud();
     openRosterOverlay();
@@ -1398,8 +1635,8 @@
     normalizePetStage(pet);
     card.innerHTML = `<canvas width="64" height="64"></canvas><span class="hh-pet-level">Lv.${pet.level || 1}</span><b></b><small></small>`;
     drawRosterSprite(card.querySelector('canvas'), pet);
-    card.querySelector('b').textContent = pet.name || '宠物';
-    card.querySelector('small').textContent = `${stageName(pet.stage)} · ${pet.active ? '上阵' : '背包'}`;
+    card.querySelector('b').textContent = pet.name || t('petDefaultName');
+    card.querySelector('small').textContent = `${stageName(pet.stage)} · ${pet.active ? t('onTeam') : t('inBag')}`;
     card.addEventListener('click', () => handlePetClick(pet, options.slotIndex));
     return card;
   }
@@ -1410,7 +1647,7 @@
       if (canMergePets(source, pet)) mergePets(source, pet);
       else if (slotIndex !== null) { putPetInSlot(source, slotIndex); state.mergeSourceId = ''; }
       else if (!pet.active && activeRosterPets().length < PET_MAX_TEAM) { putPetInSlot(source, activeRosterPets().length); state.mergeSourceId = ''; }
-      else { state.mergeSourceId = ''; setMessage('只有相同种类、相同等级的宠物才能合并。', 1400); }
+      else { state.mergeSourceId = ''; setMessage(t('mergeOnlySame'), 1400); }
       renderRosterOverlay(); updateHud(); return;
     }
     if (slotIndex !== null) { setActivePet(pet, slotIndex); renderRosterOverlay(); updateHud(); return; }
@@ -1446,9 +1683,9 @@
     target.speed = (target.speed || 160) + 6;
     if (source.active && !target.active) target.active = true;
     state.roster = state.roster.filter(p => p !== source);
-    showToast(`✨ ${target.name} 合成升级！`);
+    showToast(t('mergeUpgrade', { name: target.name }));
     playSound('merge');
-    setMessage(`${target.name} 合并到 ${stageName(target.stage)} Lv.${target.level}。`, 2200);
+    setMessage(t('mergeResult', { name: target.name, stage: stageName(target.stage), level: target.level }), 2200);
     state.score += 120 + petPower(target) * 24;
     state.mergeSourceId = '';
     syncTeamFromRoster();
@@ -1458,14 +1695,14 @@
     rosterGrid.innerHTML = '';
     teamSlots.innerHTML = '';
     const activePets = activeRosterPets();
-    rosterHint.textContent = `${activePets.length}/${PET_MAX_TEAM} 上阵 · 背包 ${state.roster.length} 只 · ${state.mergeSourceId ? '已选中：再点上阵位或合成目标' : '点击宠物选中；再点击目标上阵/合成'}`;
+    rosterHint.textContent = t('rosterFullHint', { n: activePets.length, max: PET_MAX_TEAM, total: state.roster.length, action: state.mergeSourceId ? t('rosterActionSelected') : t('rosterActionDefault') });
     for (let i = 0; i < PET_MAX_TEAM; i++) {
       const pet = activePets[i];
       if (pet) teamSlots.appendChild(makeRosterCard(pet, { slot: true, slotIndex: i }));
       else {
         const empty = document.createElement('button');
         empty.type = 'button'; empty.className = 'hh-pet-card slot';
-        empty.innerHTML = '<b>空位</b><small>选中后点此上阵</small>';
+        empty.innerHTML = `<b>${t('emptySlot')}</b><small>${t('slotHint')}</small>`;
         empty.addEventListener('click', () => { const pet = state.roster.find(p => p.id === state.mergeSourceId); putPetInSlot(pet, i); state.mergeSourceId = ''; renderRosterOverlay(); updateHud(); });
         teamSlots.appendChild(empty);
       }
@@ -1503,12 +1740,12 @@
       if (e.boss) {
         state.bossesDefeated++;
         dropBossLoot(e);
-        showToast('👑 首领击败！');
-        setMessage('首领怪物掉落了肉！靠近可捕获为高等级宠物。', 3200);
+        showToast(t('bossDefeated'));
+        setMessage(t('bossLoot'), 3200);
       } else {
         if (Math.random() < .72) addObject('berry', clamp(e.x + rand(-36, 36), 40, WORLD_W - 40), clamp(e.y + rand(-36, 36), 40, WORLD_H - 40));
-        showToast('宠物被打败，靠近按 ✋ 捕获！');
-        setMessage('打败野生宠物后会短暂虚弱，快靠近捕获。', 2300);
+        showToast(t('petDownCapture'));
+        setMessage(t('petDownHint'), 2300);
       }
     }
   }
@@ -1529,8 +1766,8 @@
     state.hp = clamp(state.hp - amount * difficultyConfig().enemyDamage, 0, 100);
     spawnParticles(player.x, player.y, 14, '#ef4444');
     playSound('hurt');
-    setMessage('受到攻击！让伙伴帮你战斗，注意回血和饥饿。', 1500);
-    if (state.hp <= 0) recoverAtCamp('生命耗尽，营地伙伴把你救了回来。');
+    setMessage(t('playerHurt'), 1500);
+    if (state.hp <= 0) recoverAtCamp(t('hpDepleted'));
   }
 
   function updateEnemies(dt) {
@@ -1655,12 +1892,12 @@
     const nextDay = Math.floor(state.dayTime / DAY_SECONDS) + 1;
     if (nextDay !== state.day) {
       state.day = nextDay;
-      if (state.food > 0) { state.food--; state.hunger = clamp(state.hunger + 28, 0, 100); showToast('🍖 早餐消耗食物 -1'); }
-      setMessage(`第 ${state.day} 天！夜晚更危险，继续储备食物和伙伴。`, 2800);
+      if (state.food > 0) { state.food--; state.hunger = clamp(state.hunger + 28, 0, 100); showToast(t('breakfastFood')); }
+      setMessage(t('dayNMsg', { n: state.day }), 2800);
     }
     if (isDusk() && state.lastDuskNoticeDay !== state.day) {
       state.lastDuskNoticeDay = state.day;
-      setMessage('黄昏来了，天色正在变暗！准备火把或靠近帐篷。', 3200);
+      setMessage(t('duskWarning'), 3200);
     }
     const activity = clamp(state.movementEnergy ?? .5, .5, 1.28);
     const hungryRate = (isNight() ? 2.8 : 1.75) * difficultyConfig().hunger * activity;
@@ -1669,7 +1906,7 @@
     autoEatWhenIdle();
     if (state.hunger <= 0) state.hp = clamp(state.hp - 8 * dt, 0, 100);
     else if (state.hunger > 55 && state.hp < 100) state.hp = clamp(state.hp + 2.4 * dt, 0, 100);
-    if (state.hp <= 0) recoverAtCamp('饥饿耗尽，营地伙伴把你救了回来。');
+    if (state.hp <= 0) recoverAtCamp(t('hungerDepleted'));
     if (Math.random() < dt * .26 * (2 - difficultyConfig().spawn)) addObject(Math.random() < .75 ? 'berry' : 'mushroom', rand(50, WORLD_W - 50), rand(50, WORLD_H - 100));
   }
 
@@ -1683,7 +1920,7 @@
     state.eatingUntil = t + 760;
     state.lastAutoEatAt = t;
     spawnParticles(player.x, player.y - 10, 12, '#facc15');
-    showToast('🍖 自动进食');
+    showToast(t('autoEat'));
     playSound('gather');
     updateHud();
   }
@@ -1723,8 +1960,8 @@
     state.hunger = clamp(state.hunger + 32, 0, 100);
     state.stamina = 100;
     makeConfetti();
-    showToast(`🏕️ 荒野营地 +${milestoneBonus}`);
-    setMessage(`第 ${state.campsBuilt} 个荒野营地建成！目标已刷新，继续探索更远的地方。`, 5200);
+    showToast(t('campBonus', { bonus: milestoneBonus }));
+    setMessage(t('campBuilt', { n: state.campsBuilt }), 5200);
     post('gameProgress', {
       earnedPoints: Math.max(0, Math.round(state.score)), score: Math.round(state.score), food: state.food, captured: state.captured, defeated: state.defeated, teamSize: state.team.length, rosterSize: state.roster.length,
       difficulty: state.difficulty, difficultyName: difficultyConfig().name, day: state.day, campsBuilt: state.campsBuilt, targetFood, targetDay, roundId: state.roundId
@@ -1739,8 +1976,8 @@
     state.score = Math.max(0, state.score - 80);
     player.hurtUntil = now() + 1800;
     spawnParticles(player.x, player.y, 28, '#facc15');
-    showToast('🏕️ 营地救援');
-    setMessage(`${reason} 游戏不会结束，休整后继续探索！`, 4200);
+    showToast(t('campRescue'));
+    setMessage(t('recoverMsg', { reason }), 4200);
     updateHud();
   }
 
@@ -1753,11 +1990,11 @@
     state.best = Math.max(state.best, Math.round(state.score));
     localStorage.setItem(STORAGE_BEST, String(state.best));
     updateHud();
-    if (won) { makeConfetti(); showToast(`荒野生存成功！+${surviveBonus}`); setMessage('你和宠物小队建立了荒野营地！', 6000); }
-    else { showToast('荒野失败，再试一次！'); setMessage('生命或饥饿耗尽了，重新挑战吧。', 6000); }
+    if (won) { makeConfetti(); showToast(t('winToast', { bonus: surviveBonus })); setMessage(t('winMsg'), 6000); }
+    else { showToast(t('loseToast')); setMessage(t('loseMsg'), 6000); }
     playSound(won ? 'win' : 'lose');
     ui.restart.hidden = false;
-    ui.restart.textContent = won ? '再玩一次' : '重新挑战';
+    ui.restart.textContent = won ? t('playAgain') : t('retryChallenge');
     overlay.hidden = false;
     if (!state.finishPosted) {
       state.finishPosted = true;
@@ -1848,7 +2085,7 @@
     const work = state.autoWork;
     if (!work?.kind || !work.target || state.finished || state.paused) { ui.work.classList.remove('show'); return; }
     const pct = clamp(work.progress / work.needed * 100, 0, 100);
-    ui.workText.textContent = work.kind === 'capture' ? '捕获中' : (work.target.type === 'tree' ? '砍伐中' : '采集中');
+    ui.workText.textContent = work.kind === 'capture' ? t('capturing') : (work.target.type === 'tree' ? t('chopping') : t('gatheringWork'));
     ui.workBar.style.setProperty('--pct', `${pct}%`);
     ui.work.style.left = `${screenX(work.target.x)}px`;
     ui.work.style.top = `${screenY(work.target.y - 34)}px`;
@@ -2363,7 +2600,7 @@
       if (e.state === 'wild' && !state.petBitmaps.length) drawHpBar(x, y - 28, e.hp / e.maxHp, '#ef4444');
       if (e.state === 'down') {
         drawRect(x - 22, y - 39, 44, 15, '#fff7ed');
-        ctx.fillStyle = '#7c2d12'; ctx.font = '10px sans-serif'; ctx.textAlign = 'center'; ctx.fillText('捕获!', x, y - 28);
+        ctx.fillStyle = '#7c2d12'; ctx.font = '10px sans-serif'; ctx.textAlign = 'center'; ctx.fillText(t('captureMark'), x, y - 28);
       }
     }
   }
@@ -2481,7 +2718,7 @@
     drawDayNightClock(phase);
     if (isNight() && state.started) {
       const safe = isPlayerProtectedAtNight();
-      const text = safe ? '🔥 光圈安全' : '☠️ 无光危险';
+      const text = safe ? t('safeLight') : t('noLightDanger');
       const phaseY = window.innerWidth <= 640 ? 128 : 128;
       ctx.fillStyle = safe ? 'rgba(254,243,199,.86)' : 'rgba(127,29,29,.82)';
       ctx.fillRect(48, phaseY - 8, 88, 18);
@@ -2695,7 +2932,7 @@
   });
 
   updateMasterButtons(); resize(); generateWorld(); updateHud(); draw(); loadPetCatalog();
-  if (!state.loadedPosted) { state.loadedPosted = true; post('gameLoaded', { title: '宠物荒野生存' }); }
+  if (!state.loadedPosted) { state.loadedPosted = true; post('gameLoaded', { title: t('title') }); }
   state.lastTime = performance.now(); state.rafId = requestAnimationFrame(loop);
 })();
 </script>

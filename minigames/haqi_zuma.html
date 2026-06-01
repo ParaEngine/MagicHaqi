@@ -4,13 +4,104 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-  <title>宠物祖玛</title>
+  <title>Pet Zuma</title>
   <script src="https://cdn.keepwork.com/keepwork/cdn/tailwindcss@3.4.16.js"></script>
 </head>
 
 <body></body>
 <script defer>
 (function () {
+  // ---- i18n ----
+  const I18N = {
+    zhCN: {
+      title: '宠物祖玛',
+      canvasAria: '宠物祖玛游戏画面',
+      gameStatusAria: '游戏状态',
+      level: '关卡',
+      food: '食物',
+      score: '分数',
+      best: '最佳',
+      hint: '拖动瞄准，松手发射；需要时可交换当前球和下一个球',
+      helpBtn: '玩法',
+      restartBtn: '重开',
+      swapAria: '交换当前球和下一个球',
+      menuAria: '玩法',
+      overlayTitle: '宠物祖玛',
+      overlayText: '你的当前宠物会站在中间发射彩球。拖动瞄准，松手发射；把彩球插进轨道球链，三个或更多同色连在一起就会爆开。收集够藏在球里的食物就能进入随机生成的下一关。',
+      startChallenge: '开始挑战',
+      diffEasy: '轻松',
+      diffNormal: '标准',
+      diffHard: '挑战',
+      comboText: '连击 x{streak}',
+      collectFood: '收集食物 +{count}',
+      winTitle: '通关成功！',
+      winText: '第 {level} 关完成，收集了 {foods}/{target} 份食物。',
+      nextLevel: '下一关',
+      loseTitle: '挑战失败',
+      loseText: '球链快进入终点了，优先打断最前面的同色球会更稳。',
+      retry: '再来一次',
+      startMarker: '起',
+      endMarker: '终点',
+      nextBall: '下个',
+      menuTitle: '宠物祖玛',
+      menuText: '拖住屏幕来瞄准，松手发射彩球。彩球碰到轨道球链后会插入当前位置；三个或更多同色相连会爆开。收集够藏在球里的食物就能过关，交换按钮可以调换当前球和下一个球。',
+      continueGame: '继续游戏',
+      difficultiesAria: '选择难度',
+    },
+    enUS: {
+      title: 'Pet Zuma',
+      canvasAria: 'Pet Zuma game canvas',
+      gameStatusAria: 'Game status',
+      level: 'Level',
+      food: 'Food',
+      score: 'Score',
+      best: 'Best',
+      hint: 'Drag to aim, release to shoot; swap current and next ball when needed',
+      helpBtn: 'Help',
+      restartBtn: 'Restart',
+      swapAria: 'Swap current and next ball',
+      menuAria: 'Help',
+      overlayTitle: 'Pet Zuma',
+      overlayText: 'Your current pet stands in the center and shoots colored balls. Drag to aim, release to fire; insert balls into the chain on the track. Three or more same-colored balls in a row will pop. Collect enough food hidden in the balls to advance to the next randomly generated level.',
+      startChallenge: 'Start Challenge',
+      diffEasy: 'Easy',
+      diffNormal: 'Normal',
+      diffHard: 'Hard',
+      comboText: 'Combo x{streak}',
+      collectFood: 'Food +{count}',
+      winTitle: 'Level Clear!',
+      winText: 'Level {level} complete — collected {foods}/{target} food.',
+      nextLevel: 'Next Level',
+      loseTitle: 'Challenge Failed',
+      loseText: 'The chain is nearing the end — focus on popping the front same-colored balls first.',
+      retry: 'Try Again',
+      startMarker: 'S',
+      endMarker: 'End',
+      nextBall: 'Next',
+      menuTitle: 'Pet Zuma',
+      menuText: 'Drag to aim and release to shoot colored balls. Balls insert into the chain on contact; three or more same-colored balls in a row will pop. Collect enough food hidden in the balls to clear the level. Use the swap button to exchange the current and next ball.',
+      continueGame: 'Continue',
+      difficultiesAria: 'Select difficulty',
+    },
+  };
+  function detectLang() {
+    try {
+      const params = new URLSearchParams(window.location.search);
+      const lang = params.get('lang');
+      if (lang && I18N[lang]) return lang;
+    } catch (_) {}
+    return 'zhCN';
+  }
+  const LANG = detectLang();
+  const L = I18N[LANG];
+  function t(key, vars) {
+    let str = L[key] || I18N.zhCN[key] || key;
+    if (vars) str = str.replace(/\{(\w+)\}/g, (m, n) => vars[n] != null ? String(vars[n]) : m);
+    return str;
+  }
+  try { document.documentElement.setAttribute('lang', LANG === 'enUS' ? 'en' : 'zh-CN'); } catch (_) {}
+  try { document.title = t('title'); } catch (_) {}
+
   const STORAGE_DIFFICULTY = 'haqiZumaDifficultyV1';
   const STORAGE_BEST_SCORE = 'haqiZumaBestScoreV1';
   const STORAGE_BEST_LEVEL = 'haqiZumaBestLevelV1';
@@ -25,9 +116,9 @@
     { name: 'coral', from: '#fdba74', to: '#f97316', glow: 'rgba(249,115,22,.36)' },
   ];
   const DIFFICULTIES = {
-    easy: { id: 'easy', label: '轻松', colorCount: 4, balls: 34, speed: 18, targetFoods: 5, score: 100, slowAfterPop: 980 },
-    normal: { id: 'normal', label: '标准', colorCount: 5, balls: 44, speed: 25, targetFoods: 7, score: 150, slowAfterPop: 720 },
-    hard: { id: 'hard', label: '挑战', colorCount: 6, balls: 56, speed: 34, targetFoods: 9, score: 210, slowAfterPop: 480 },
+    easy: { id: 'easy', label: t('diffEasy'), colorCount: 4, balls: 34, speed: 18, targetFoods: 5, score: 100, slowAfterPop: 980 },
+    normal: { id: 'normal', label: t('diffNormal'), colorCount: 5, balls: 44, speed: 25, targetFoods: 7, score: 150, slowAfterPop: 720 },
+    hard: { id: 'hard', label: t('diffHard'), colorCount: 6, balls: 56, speed: 34, targetFoods: 9, score: 210, slowAfterPop: 480 },
   };
   const DIFFICULTY_ORDER = ['easy', 'normal', 'hard'];
 
@@ -159,32 +250,32 @@
       }
     </style>
     <div class="mh-shell">
-      <canvas id="mhCanvas" class="mh-canvas" aria-label="宠物祖玛游戏画面"></canvas>
+      <canvas id="mhCanvas" class="mh-canvas" aria-label="${t('canvasAria')}"></canvas>
       <header class="mh-top">
-        <button id="mhMenu" class="mh-icon-btn" type="button" aria-label="玩法">?</button>
-        <div class="mh-title">宠物祖玛</div>
-        <div class="mh-stats" aria-label="游戏状态">
-          <span class="mh-pill">关卡 <b id="mhLevel">1</b></span>
-          <span id="mhDangerPill" class="mh-pill mh-food-pill"><span>食物</span> <b id="mhFood">0</b>/<b id="mhTarget">0</b><i id="mhFoodFill" class="mh-food-fill"></i></span>
-          <span class="mh-pill optional">分数 <b id="mhScore">0</b></span>
-          <span class="mh-pill optional">最佳 <b id="mhBest">0</b></span>
+        <button id="mhMenu" class="mh-icon-btn" type="button" aria-label="${t('menuAria')}">?</button>
+        <div class="mh-title">${t('title')}</div>
+        <div class="mh-stats" aria-label="${t('gameStatusAria')}">
+          <span class="mh-pill">${t('level')} <b id="mhLevel">1</b></span>
+          <span id="mhDangerPill" class="mh-pill mh-food-pill"><span>${t('food')}</span> <b id="mhFood">0</b>/<b id="mhTarget">0</b><i id="mhFoodFill" class="mh-food-fill"></i></span>
+          <span class="mh-pill optional">${t('score')} <b id="mhScore">0</b></span>
+          <span class="mh-pill optional">${t('best')} <b id="mhBest">0</b></span>
         </div>
       </header>
       <footer class="mh-bottom">
-        <div class="mh-hint">拖动瞄准，松手发射；需要时可交换当前球和下一个球</div>
+        <div class="mh-hint">${t('hint')}</div>
         <div class="mh-controls">
-          <div id="mhDifficulties" class="mh-difficulties" aria-label="选择难度"></div>
-          <button id="mhSwap" class="mh-action swap" type="button" aria-label="交换当前球和下一个球">⇄</button>
-          <button id="mhHelp" class="mh-action help" type="button">玩法</button>
-          <button id="mhRestart" class="mh-action" type="button">重开</button>
+          <div id="mhDifficulties" class="mh-difficulties" aria-label="${t('difficultiesAria')}"></div>
+          <button id="mhSwap" class="mh-action swap" type="button" aria-label="${t('swapAria')}">⇄</button>
+          <button id="mhHelp" class="mh-action help" type="button">${t('helpBtn')}</button>
+          <button id="mhRestart" class="mh-action" type="button">${t('restartBtn')}</button>
         </div>
       </footer>
       <div id="mhOverlay" class="mh-overlay">
         <div class="mh-card">
-          <h1 id="mhOverlayTitle">宠物祖玛</h1>
-          <p id="mhOverlayText">你的当前宠物会站在中间发射彩球。拖动瞄准，松手发射；把彩球插进轨道球链，三个或更多同色连在一起就会爆开。收集够藏在球里的食物就能进入随机生成的下一关。</p>
+          <h1 id="mhOverlayTitle">${t('overlayTitle')}</h1>
+          <p id="mhOverlayText">${t('overlayText')}</p>
           <div id="mhOverlayDifficulties" class="mh-card-row"></div>
-          <button id="mhStart" class="mh-start" type="button">开始挑战</button>
+          <button id="mhStart" class="mh-start" type="button">${t('startChallenge')}</button>
         </div>
       </div>
     </div>`;
@@ -616,8 +707,8 @@
     state.pendingInsert = null;
     beginGapMotion(start, count);
     showFloatingText(`+${points}`, basePoint.x, basePoint.y, foods ? '#f59e0b' : '#16a34a');
-    if (state.comboStreak > 1) showFloatingText(`连击 x${state.comboStreak}`, basePoint.x, basePoint.y - state.radius * 1.45, '#7c3aed');
-    if (foods) showToast(`收集食物 +${foods}`);
+    if (state.comboStreak > 1) showFloatingText(t('comboText', { streak: state.comboStreak }), basePoint.x, basePoint.y - state.radius * 1.45, '#7c3aed');
+    if (foods) showToast(t('collectFood', { count: foods }));
     playSound(foods ? 'food' : 'pop');
     reflowChain();
     updateHud();
@@ -687,7 +778,7 @@
       updateHud();
       burstConfetti();
       playSound('win');
-      showResult('通关成功！', `第 ${state.level} 关完成，收集了 ${state.foods}/${state.targetFoods} 份食物。`, '下一关', nextLevel);
+      showResult(t('winTitle'), t('winText', { level: state.level, foods: state.foods, target: state.targetFoods }), t('nextLevel'), nextLevel);
       post('gameFinished', {
         completed: true,
         passed: true,
@@ -704,7 +795,7 @@
     } else {
       playSound('hit');
       shakeScreen();
-      showResult('挑战失败', '球链快进入终点了，优先打断最前面的同色球会更稳。', '再来一次', () => startGame({ keepLevel: true }));
+      showResult(t('loseTitle'), t('loseText'), t('retry'), () => startGame({ keepLevel: true }));
     }
   }
 
@@ -790,7 +881,7 @@
     ctx.font = `900 ${Math.round(state.radius * 0.62)}px sans-serif`;
     ctx.textAlign = 'center';
     ctx.textBaseline = 'middle';
-    ctx.fillText('起', start.x, start.y + Math.sin(now * 0.006) * 1.5);
+    ctx.fillText(t('startMarker'), start.x, start.y + Math.sin(now * 0.006) * 1.5);
     ctx.restore();
   }
 
@@ -820,7 +911,7 @@
     ctx.font = `900 ${Math.round(state.radius * 0.72)}px sans-serif`;
     ctx.textAlign = 'center';
     ctx.textBaseline = 'middle';
-    ctx.fillText('终点', 0, -state.radius * 2.45);
+    ctx.fillText(t('endMarker'), 0, -state.radius * 2.45);
     ctx.restore();
   }
 
@@ -935,7 +1026,7 @@
     ctx.textAlign = 'center';
     ctx.textBaseline = 'middle';
     ctx.fillStyle = '#0f766e';
-    ctx.fillText('下个', shooterX + state.radius * 2.18, shooterY + state.radius * 1.62);
+    ctx.fillText(t('nextBall'), shooterX + state.radius * 2.18, shooterY + state.radius * 1.62);
   }
 
   function drawProjectile() {
@@ -1482,7 +1573,7 @@
   });
   window.addEventListener('beforeunload', cleanupPetImage);
 
-  document.getElementById('mhMenu').onclick = () => showResult('宠物祖玛', '拖住屏幕来瞄准，松手发射彩球。彩球碰到轨道球链后会插入当前位置；三个或更多同色相连会爆开。收集够藏在球里的食物就能过关，交换按钮可以调换当前球和下一个球。', state.started && !state.finished ? '继续游戏' : '开始挑战', () => {
+  document.getElementById('mhMenu').onclick = () => showResult(t('menuTitle'), t('menuText'), state.started && !state.finished ? t('continueGame') : t('startChallenge'), () => {
     if (state.started && !state.finished) {
       state.paused = false;
       hideOverlay();

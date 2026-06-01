@@ -1,5 +1,6 @@
 // 宠物明信片渲染：分享弹窗、收件箱和明信片查看页共用。
 import { escapeHtml, showToast } from './utils.js';
+import { t } from './i18n.js';
 import { displayPetName } from './dna.js';
 import { CONFIG } from './config.js';
 import { notify, state } from './state.js';
@@ -7,7 +8,9 @@ import { addPostcardRecord, saveUserProfile } from './storage.js';
 import { buildEggSvg, getPetSpriteCell, getProcessedSheet, SHEET_COLS, SHEET_ROWS } from './pet.js';
 
 export const POSTCARD_ANIMS = ['idle', 'happy', 'sad', 'sleep'];
-export const POSTCARD_TEXTS = ['宠物寻找好友', '寻宠启示', '来我的星球做客吧', '一起认识我的宠物', '星际好友邀请'];
+export function getPostcardTexts() {
+    return [t('pcText1'), t('pcText2'), t('pcText3'), t('pcText4'), t('pcText5')];
+}
 export const POSTCARD_PHOTO_THEMES = [
     { id: 'candy', colors: ['#ffe4f1', '#dff7ff', '#fff3bf', '#e9d5ff'], canvas: [['#ffe4f1', '#dff7ff'], ['#fff7c8', '#ffd6e7'], ['#dff7ff', '#d9f99d'], ['#f5d0fe', '#bae6fd']] },
     { id: 'aurora', colors: ['#ccfbf1', '#dbeafe', '#fef3c7', '#fce7f3'], canvas: [['#ccfbf1', '#dbeafe'], ['#e0f2fe', '#fef3c7'], ['#dcfce7', '#bae6fd'], ['#fce7f3', '#ddd6fe']] },
@@ -38,14 +41,14 @@ function postcardSourceId(postcard) {
 
 export function postcardSourceLabel(postcard) {
     const source = postcardSourceId(postcard);
-    if (source === 'famous-pets') return '明星宠物';
+    if (source === 'famous-pets') return t('pcFamousPet');
     return source;
 }
 
 export function defaultPostcardText(pet) {
-    const name = displayPetName(pet) || '我的宠物';
-    if (pet?.anim === 'sleep') return `${name}正在睡觉，醒来想认识新朋友。`;
-    return `${name}正在寻找星际好友，来我的宠物星做客吧。`;
+    const name = displayPetName(pet) || t('pcMyPet');
+    if (pet?.anim === 'sleep') return t('pcSleeping', { name });
+    return t('pcSeeking', { name });
 }
 
 export function normalizePostcardLayout(layout, pet = null) {
@@ -138,18 +141,18 @@ export function renderPetPostcardHtml(pet, { layout = 1, text = '', interactive 
     const safeText = text || defaultPostcardText(pet);
     const theme = normalizePostcardPhotoTheme(photoTheme);
     const actionAttrs = interactive
-        ? ' role="button" tabindex="0" title="点击切换照片" data-postcard-image-toggle="1"'
+        ? ` role="button" tabindex="0" title="${escapeHtml(t('pcSwitchPhoto'))}" data-postcard-image-toggle="1"`
         : '';
     const textAttrs = interactive
-        ? ' role="button" tabindex="0" title="点击切换文字" data-postcard-text-toggle="1"'
+        ? ` role="button" tabindex="0" title="${escapeHtml(t('pcSwitchText'))}" data-postcard-text-toggle="1"`
         : '';
     const editButton = interactive
-        ? '<button class="pet-postcard-edit-btn" data-share-edit-text type="button" title="编辑文字" aria-label="编辑文字">✏️</button>'
+        ? `<button class="pet-postcard-edit-btn" data-share-edit-text type="button" title="${escapeHtml(t('pcEditText'))}" aria-label="${escapeHtml(t('pcEditText'))}">✏️</button>`
         : '';
     return `
         <div class="pet-postcard pet-postcard-count-${anims.length}" data-postcard-layout="${escapeHtml(serializePostcardLayout(anims, pet))}" data-postcard-photo-theme="${escapeHtml(theme)}" style="${postcardThemeStyle(theme)}">
-            <div class="pet-postcard-stamp">好友邀请</div>
-            <div class="pet-postcard-title">${escapeHtml(displayPetName(pet) || '我的宠物')}</div>
+            <div class="pet-postcard-stamp">${escapeHtml(t('pcFriendInvite'))}</div>
+            <div class="pet-postcard-title">${escapeHtml(displayPetName(pet) || t('pcMyPet'))}</div>
             <div class="pet-postcard-photo-grid"${actionAttrs}>
                 ${anims.map(anim => photoHtml(pet, anim)).join('')}
             </div>
@@ -165,7 +168,7 @@ export function parsePostcardParams() {
     const postcardFrom = (url.searchParams.get('postcardFrom') || url.searchParams.get('inviteFrom') || '').trim();
     const petId = (url.searchParams.get('petId') || '').trim();
     const layout = (url.searchParams.get('layout') || 'idle').trim();
-    const text = (url.searchParams.get('text') || '宠物寻找好友').trim();
+    const text = (url.searchParams.get('text') || t('pcText1')).trim();
     const photoTheme = normalizePostcardPhotoTheme(url.searchParams.get('photoTheme') || url.searchParams.get('theme') || '');
     return { fromUsername: postcardFrom, petId, layout, text, photoTheme };
 }
@@ -306,10 +309,10 @@ async function readFamousPet(petId) {
 }
 
 function fallbackPostcardPet(postcard) {
-    const source = postcardSourceId(postcard) || '好友';
+    const source = postcardSourceId(postcard) || t('pcFriendFallback');
     return {
         id: `invite_${safeIdPart(source)}_${safeIdPart(postcard.petId)}`,
-        name: `${postcardSourceLabel(postcard) || '好友'}的宠物`,
+        name: t('pcFriendPetOf', { name: postcardSourceLabel(postcard) || t('pcFriendFallback') }),
         stage: 'egg',
         anim: 'idle',
         bornAt: Date.now(),
@@ -341,7 +344,7 @@ async function applyFriend(fromUsername, text) {
     try {
         const userId = await resolveUserId(fromUsername);
         if (!userId) return 'user-not-found';
-        await state.sdk.socialFriends.applyFriend(userId, text || '来自魔法哈奇的宠物好友申请');
+        await state.sdk.socialFriends.applyFriend(userId, text || t('pcApplyMessage'));
         return 'requested';
     } catch (e) {
         const msg = String(e?.message || e || '');
@@ -352,11 +355,11 @@ async function applyFriend(fromUsername, text) {
 }
 
 function friendStatusText(status) {
-    if (status === 'requested') return '已发送好友申请';
-    if (status === 'already') return '已经是好友';
-    if (status === 'user-not-found') return '没有找到这个用户';
-    if (status === 'failed') return '好友申请失败，请稍后再试';
-    return '暂时无法发送好友申请';
+    if (status === 'requested') return t('pcStatusRequested');
+    if (status === 'already') return t('pcStatusAlready');
+    if (status === 'user-not-found') return t('pcStatusNotFound');
+    if (status === 'failed') return t('pcStatusFailed');
+    return t('pcStatusUnavailable');
 }
 
 function addVisitingPet(postcard, pet) {
@@ -393,7 +396,7 @@ export function renderPostcard(panel, data = {}, { onBack, onPlay } = {}) {
     const sourceLabel = postcardSourceLabel(postcard);
     if (!postcard.petId || (!postcard.fromUsername && !isFamousPet)) {
         panel.innerHTML = `
-            <div class="topbar"><button class="btn-icon" id="mhBack" style="width:36px;height:36px;font-size:18px">‹</button><span class="font-bold" style="color:var(--text-primary)">明信片</span><span style="width:36px;height:36px"></span></div>
+            <div class="topbar"><button class="btn-icon" id="mhBack" style="width:36px;height:36px;font-size:18px">‹</button><span class="font-bold" style="color:var(--text-primary)">${escapeHtml(t('pcTitle'))}</span><span style="width:36px;height:36px"></span></div>
             <div class="invite-view"><div class="card-flat text-center" style="padding:24px;color:var(--text-muted)">明信片链接不完整。</div></div>`;
         const back = document.getElementById('mhBack');
         if (back) back.onclick = () => onBack?.();
@@ -403,7 +406,7 @@ export function renderPostcard(panel, data = {}, { onBack, onPlay } = {}) {
     panel.innerHTML = `
         <div class="topbar">
             <button class="btn-icon" id="mhBack" style="width:36px;height:36px;font-size:18px">‹</button>
-            <span class="font-bold" style="color:var(--text-primary)">来自 ${escapeHtml(sourceLabel)} 的明信片</span>
+            <span class="font-bold" style="color:var(--text-primary)">${escapeHtml(t('pcFromTitle', { name: sourceLabel }))}</span>
             <span style="width:36px;height:36px"></span>
         </div>
         <div class="invite-view mh-postcard-view">
@@ -411,8 +414,8 @@ export function renderPostcard(panel, data = {}, { onBack, onPlay } = {}) {
                 <div class="invite-status" data-postcard-status>正在读取宠物资料...</div>
                 <div data-postcard-preview></div>
                 <div class="invite-actions mh-postcard-actions">
-                    <button class="btn-secondary" data-postcard-friend disabled>加好友</button>
-                    <button class="btn-primary" data-postcard-play disabled>一起玩</button>
+                    <button class="btn-secondary" data-postcard-friend disabled>${escapeHtml(t('pcAddFriend'))}</button>
+                    <button class="btn-primary" data-postcard-play disabled>${escapeHtml(t('pcPlayTogether'))}</button>
                 </div>
             </div>
         </div>`;
@@ -454,7 +457,7 @@ export function renderPostcard(panel, data = {}, { onBack, onPlay } = {}) {
         };
     })().catch((e) => {
         console.error('处理明信片失败', e);
-        if (statusEl) statusEl.textContent = '处理明信片失败，请稍后再试。';
+        if (statusEl) statusEl.textContent = t('pcHandleFailed');
     });
 }
 
@@ -475,7 +478,7 @@ export async function drawPetPostcardImage(pet, layout, text, photoTheme = '') {
     ctx.stroke();
     ctx.fillStyle = '#0f2d4d';
     ctx.font = '800 40px sans-serif';
-    ctx.fillText(displayPetName(pet) || '我的宠物', 104, 140);
+    ctx.fillText(displayPetName(pet) || t('pcMyPet'), 104, 140);
     ctx.fillStyle = '#fef3c7';
     roundRect(ctx, canvas.width - 250, 92, 144, 48, 14);
     ctx.fill();

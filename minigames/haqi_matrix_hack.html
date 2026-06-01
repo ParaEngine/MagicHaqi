@@ -11,33 +11,150 @@
 <body></body>
 <script defer>
 (function () {
+  // ---- i18n ----
+  const I18N = {
+    zhCN: {
+      title: '宠物矩阵破解',
+      diffEasy: '入门', diffNormal: '普通', diffHard: '困难', diffExpert: '专家', diffNightmare: '噩梦',
+      powerPulse: '脉冲', powerPulseDesc: '清除周围 8 格全部可清除障碍。',
+      powerCross: '十字', powerCrossDesc: '净化上下左右各两格内的可清除障碍。',
+      powerRow: '横切', powerRowDesc: '打通当前整行上的可清除障碍。',
+      powerCol: '纵切', powerColDesc: '打通当前整列上的可清除障碍。',
+      powerRotate: '顺旋', powerRotateDesc: '将周围 8 格的所有节点顺时针旋转。',
+      powerRotateCcw: '逆旋', powerRotateCcwDesc: '将周围 8 格的所有节点逆时针旋转。',
+      powerPurify: '净化', powerPurifyDesc: '获得一次突破能力，可直接穿过下一个普通障碍，对不可净化障碍无效。',
+      guideStart: '起点', guideStartDesc: '固定在矩阵左上角，路径必须从这里开始。',
+      guideEnd: '终点', guideEndDesc: '接入全部破解点后，到达这里即可通关。',
+      guideCheckpoint: '破解点', guideCheckpointDesc: '必须全部经过，顺序不限。',
+      guideObstacle: '障碍点', guideObstacleDesc: '默认不可通过，可通过清除型道具移除，也可通过净化状态临时突破。',
+      guideHardObstacle: '不可净化障碍', guideHardObstacleDesc: '不可通过，不能被净化突破，也不能被清除型道具移除。',
+      headerTitle: '宠物矩阵破解', roundPrefix: '第 ', roundSuffix: ' 局',
+      statCheckpoints: '必经', statSteps: '步数',
+      boardAria: '矩阵破解面板', panelAria: '破解信息',
+      panelStatus: '破解状态', panelHeld: '当前持有',
+      btnNodes: '节点', btnUndo: '倒退', btnAutoSolve: '自动破解', btnRestart: '重开', btnNext: '下一局',
+      diffAria: '难度选择',
+      overlayTitle: '宠物矩阵破解',
+      overlayP1: '从左上角起点开始破解，向上下左右相邻节点移动，路径不能交叉回绕。',
+      overlayP2: '经过全部破解点后到达终点即可通关。障碍默认不可通过，需要绕行，或利用道具清除、净化突破。',
+      btnStart: '开始破解',
+      guideTitle: '节点说明', guideText: '选择一个已知节点查看作用。', gotIt: '知道了',
+      newGuideTitle: '发现新节点', newGuideNextMore: '下一个',
+      rewindTitle: '选择倒退时间点',
+      rewindText: '显示最近记录的矩阵状态。选择后会恢复该状态，并清除之后的状态点。',
+      rewindCancel: '取消',
+      errorBuildLevel: '无法生成有效{label}矩阵',
+      purifyActive: '净化：下一次障碍突破有效', purifyInactive: '净化：未生效',
+      noActivePower: '主动道具：无', btnRelease: '释放',
+      statusFinished: '破解完成，得分 {score}。', statusStart: '从左上角起点开始连接路径。',
+      statusPurify: '净化生效中：下一次普通障碍突破有效。',
+      statusHeld: '当前持有 {count} 个主动道具，可选择合适时机释放。',
+      statusContinue: '继续连接破解点，并判断哪些道具值得获取。',
+      toastPurifyActive: '净化生效', toastGotPower: '获得{label}',
+      toastRotateCcw: '周围节点已逆旋', toastRotateCw: '周围节点已顺旋',
+      toastCleared: '清除 {count} 个障碍', toastReleased: '道具已释放',
+      rewindThumbAlt: '{step} 步状态缩略图', rewindSteps: '{step} 步',
+      rewindPowers: '{count} 道具', rewindCheckpoints: '{visited}/{total} 必经',
+      toastRewind: '已倒退到 {step} 步', toastWin: '破解成功 {score}分',
+      toastAutoStart: '自动破解启动', errorAutoStart: '无法进入起点',
+      errorAutoBlocked: '路线被当前矩阵状态阻断', errorAutoIncomplete: '未能完成全部破解点',
+      errorAutoInterrupted: '自动破解中断', errorLivePreviewOnly: '仅 vscode-livepreview=true 可用',
+      newGuideMulti: '连续查看本局新出现的节点。', newGuideSingle: '查看这个节点的作用。',
+    },
+    enUS: {
+      title: 'Pet Matrix Hack',
+      diffEasy: 'Beginner', diffNormal: 'Normal', diffHard: 'Hard', diffExpert: 'Expert', diffNightmare: 'Nightmare',
+      powerPulse: 'Pulse', powerPulseDesc: 'Clear all clearable obstacles in the surrounding 8 cells.',
+      powerCross: 'Cross', powerCrossDesc: 'Purify clearable obstacles within 2 cells in all 4 directions.',
+      powerRow: 'Row Cut', powerRowDesc: 'Clear all clearable obstacles in the current row.',
+      powerCol: 'Col Cut', powerColDesc: 'Clear all clearable obstacles in the current column.',
+      powerRotate: 'Rotate CW', powerRotateDesc: 'Rotate all surrounding 8 cells clockwise.',
+      powerRotateCcw: 'Rotate CCW', powerRotateCcwDesc: 'Rotate all surrounding 8 cells counter-clockwise.',
+      powerPurify: 'Purify', powerPurifyDesc: 'Gain a breakthrough to pass through the next normal obstacle. Ineffective against non-purifiable obstacles.',
+      guideStart: 'Start', guideStartDesc: 'Fixed at the top-left corner. The path must begin here.',
+      guideEnd: 'End', guideEndDesc: 'Reach here after visiting all hack points to clear the level.',
+      guideCheckpoint: 'Hack Point', guideCheckpointDesc: 'Must visit all of them, in any order.',
+      guideObstacle: 'Obstacle', guideObstacleDesc: 'Impassable by default. Can be removed with clearing tools or temporarily bypassed with Purify.',
+      guideHardObstacle: 'Hard Obstacle', guideHardObstacleDesc: 'Impassable. Cannot be bypassed with Purify or removed by clearing tools.',
+      headerTitle: 'Pet Matrix Hack', roundPrefix: 'Round ', roundSuffix: '',
+      statCheckpoints: 'Checkpoints', statSteps: 'Steps',
+      boardAria: 'Matrix hack board', panelAria: 'Hack info',
+      panelStatus: 'Status', panelHeld: 'Held Items',
+      btnNodes: 'Nodes', btnUndo: 'Rewind', btnAutoSolve: 'Auto Solve', btnRestart: 'Restart', btnNext: 'Next',
+      diffAria: 'Difficulty selection',
+      overlayTitle: 'Pet Matrix Hack',
+      overlayP1: 'Start from the top-left corner and move to adjacent nodes (up, down, left, right). The path cannot cross itself.',
+      overlayP2: 'Visit all hack points and reach the end to clear the level. Obstacles are impassable by default — detour around them, or use tools to clear or purify a path through.',
+      btnStart: 'Start Hacking',
+      guideTitle: 'Node Guide', guideText: 'Select a known node to see its effect.', gotIt: 'Got it',
+      newGuideTitle: 'New Node Discovered', newGuideNextMore: 'Next',
+      rewindTitle: 'Select Rewind Point',
+      rewindText: 'Shows recently recorded matrix states. Selecting one restores that state and removes later snapshots.',
+      rewindCancel: 'Cancel',
+      errorBuildLevel: 'Cannot generate a valid {label} matrix',
+      purifyActive: 'Purify: next obstacle breakthrough active', purifyInactive: 'Purify: inactive',
+      noActivePower: 'Active items: none', btnRelease: 'Use',
+      statusFinished: 'Hack complete, score {score}.', statusStart: 'Connect a path from the top-left start.',
+      statusPurify: 'Purify active: next normal obstacle breakthrough will succeed.',
+      statusHeld: 'Holding {count} active item(s). Use them at the right moment.',
+      statusContinue: 'Keep connecting hack points and decide which items are worth picking up.',
+      toastPurifyActive: 'Purify active', toastGotPower: 'Got {label}',
+      toastRotateCcw: 'Surrounding nodes rotated CCW', toastRotateCw: 'Surrounding nodes rotated CW',
+      toastCleared: 'Cleared {count} obstacle(s)', toastReleased: 'Item used',
+      rewindThumbAlt: '{step}-step state thumbnail', rewindSteps: '{step} steps',
+      rewindPowers: '{count} items', rewindCheckpoints: '{visited}/{total} checkpoints',
+      toastRewind: 'Rewound to step {step}', toastWin: 'Hack complete! {score} pts',
+      toastAutoStart: 'Auto-solve started', errorAutoStart: 'Cannot enter start',
+      errorAutoBlocked: 'Route blocked by current matrix state', errorAutoIncomplete: 'Failed to complete all hack points',
+      errorAutoInterrupted: 'Auto-solve interrupted', errorLivePreviewOnly: 'Only available with vscode-livepreview=true',
+      newGuideMulti: 'Browse all new nodes in this round.', newGuideSingle: 'See what this node does.',
+    },
+  };
+  function detectLang() {
+    try {
+      const params = new URLSearchParams(window.location.search);
+      const lang = params.get('lang');
+      if (lang && I18N[lang]) return lang;
+    } catch (_) {}
+    return 'zhCN';
+  }
+  const LANG = detectLang();
+  const L = I18N[LANG];
+  function t(key, vars) {
+    let str = L[key] || I18N.zhCN[key] || key;
+    if (vars) str = str.replace(/\{(\w+)\}/g, (m, n) => vars[n] != null ? String(vars[n]) : m);
+    return str;
+  }
+  try { document.documentElement.setAttribute('lang', LANG === 'enUS' ? 'en' : 'zh-CN'); } catch (_) {}
+  try { document.title = t('title'); } catch (_) {}
+
   const STORAGE_KEY_DIFFICULTY = 'haqiMatrixHackDifficulty';
   const STORAGE_KEY_KNOWN_POWERUPS = 'haqiMatrixHackKnownPowerups';
   const STORAGE_KEY_KNOWN_GUIDES = 'haqiMatrixHackKnownGuides';
   const DIRS = [[1, 0], [-1, 0], [0, 1], [0, -1]];
   const DIFFICULTY_ORDER = ['easy', 'normal', 'hard', 'expert', 'nightmare'];
   const DIFFICULTIES = {
-    easy: { id: 'easy', label: '入门', size: 5, pathMin: 10, pathMax: 15, checkpoints: 2, powerups: 1, obstacleRate: .28, hardRate: 0, baseScore: 80, pool: ['pulse', 'purify'] },
-    normal: { id: 'normal', label: '普通', size: 6, pathMin: 16, pathMax: 24, checkpoints: 3, powerups: 3, obstacleRate: .34, hardRate: 0, baseScore: 110, pool: ['pulse', 'cross', 'row', 'col', 'purify'] },
-    hard: { id: 'hard', label: '困难', size: 8, pathMin: 28, pathMax: 40, checkpoints: 4, powerups: 5, obstacleRate: .42, hardRate: 0, baseScore: 150, pool: ['pulse', 'cross', 'row', 'col', 'rotate', 'rotateCcw', 'purify'] },
-    expert: { id: 'expert', label: '专家', size: 9, pathMin: 46, pathMax: 68, checkpoints: 5, powerups: 7, obstacleRate: .54, hardRate: .2, baseScore: 190, pool: ['pulse', 'cross', 'row', 'col', 'rotate', 'rotateCcw', 'purify'] },
-    nightmare: { id: 'nightmare', label: '噩梦', size: 11, pathMin: 74, pathMax: 104, checkpoints: 7, powerups: 9, obstacleRate: .62, hardRate: .3, baseScore: 240, pool: ['pulse', 'cross', 'row', 'col', 'rotate', 'rotateCcw', 'purify'] },
+    easy: { id: 'easy', label: t('diffEasy'), size: 5, pathMin: 10, pathMax: 15, checkpoints: 2, powerups: 1, obstacleRate: .28, hardRate: 0, baseScore: 80, pool: ['pulse', 'purify'] },
+    normal: { id: 'normal', label: t('diffNormal'), size: 6, pathMin: 16, pathMax: 24, checkpoints: 3, powerups: 3, obstacleRate: .34, hardRate: 0, baseScore: 110, pool: ['pulse', 'cross', 'row', 'col', 'purify'] },
+    hard: { id: 'hard', label: t('diffHard'), size: 8, pathMin: 28, pathMax: 40, checkpoints: 4, powerups: 5, obstacleRate: .42, hardRate: 0, baseScore: 150, pool: ['pulse', 'cross', 'row', 'col', 'rotate', 'rotateCcw', 'purify'] },
+    expert: { id: 'expert', label: t('diffExpert'), size: 9, pathMin: 46, pathMax: 68, checkpoints: 5, powerups: 7, obstacleRate: .54, hardRate: .2, baseScore: 190, pool: ['pulse', 'cross', 'row', 'col', 'rotate', 'rotateCcw', 'purify'] },
+    nightmare: { id: 'nightmare', label: t('diffNightmare'), size: 11, pathMin: 74, pathMax: 104, checkpoints: 7, powerups: 9, obstacleRate: .62, hardRate: .3, baseScore: 240, pool: ['pulse', 'cross', 'row', 'col', 'rotate', 'rotateCcw', 'purify'] },
   };
   const POWERUPS = {
-    pulse: { label: '脉冲', type: 'active', desc: '清除周围 8 格全部可清除障碍。', cls: 'power-pulse' },
-    cross: { label: '十字', type: 'active', desc: '净化上下左右各两格内的可清除障碍。', cls: 'power-cross' },
-    row: { label: '横切', type: 'active', desc: '打通当前整行上的可清除障碍。', cls: 'power-row' },
-    col: { label: '纵切', type: 'active', desc: '打通当前整列上的可清除障碍。', cls: 'power-col' },
-    rotate: { label: '顺旋', type: 'active', desc: '将周围 8 格的所有节点顺时针旋转。', cls: 'power-rotate' },
-    rotateCcw: { label: '逆旋', type: 'active', desc: '将周围 8 格的所有节点逆时针旋转。', cls: 'power-rotate-ccw' },
-    purify: { label: '净化', type: 'status', desc: '获得一次突破能力，可直接穿过下一个普通障碍，对不可净化障碍无效。', cls: 'power-purify' },
+    pulse: { label: t('powerPulse'), type: 'active', desc: t('powerPulseDesc'), cls: 'power-pulse' },
+    cross: { label: t('powerCross'), type: 'active', desc: t('powerCrossDesc'), cls: 'power-cross' },
+    row: { label: t('powerRow'), type: 'active', desc: t('powerRowDesc'), cls: 'power-row' },
+    col: { label: t('powerCol'), type: 'active', desc: t('powerColDesc'), cls: 'power-col' },
+    rotate: { label: t('powerRotate'), type: 'active', desc: t('powerRotateDesc'), cls: 'power-rotate' },
+    rotateCcw: { label: t('powerRotateCcw'), type: 'active', desc: t('powerRotateCcwDesc'), cls: 'power-rotate-ccw' },
+    purify: { label: t('powerPurify'), type: 'status', desc: t('powerPurifyDesc'), cls: 'power-purify' },
   };
   const CORE_GUIDES = {
-    start: { label: '起点', desc: '固定在矩阵左上角，路径必须从这里开始。' },
-    end: { label: '终点', desc: '接入全部破解点后，到达这里即可通关。' },
-    checkpoint: { label: '破解点', desc: '必须全部经过，顺序不限。' },
-    obstacle: { label: '障碍点', desc: '默认不可通过，可通过清除型道具移除，也可通过净化状态临时突破。' },
-    hardObstacle: { label: '不可净化障碍', desc: '不可通过，不能被净化突破，也不能被清除型道具移除。' },
+    start: { label: t('guideStart'), desc: t('guideStartDesc') },
+    end: { label: t('guideEnd'), desc: t('guideEndDesc') },
+    checkpoint: { label: t('guideCheckpoint'), desc: t('guideCheckpointDesc') },
+    obstacle: { label: t('guideObstacle'), desc: t('guideObstacleDesc') },
+    hardObstacle: { label: t('guideHardObstacle'), desc: t('guideHardObstacleDesc') },
   };
   const IS_LIVE_PREVIEW = new URLSearchParams(window.location.search).get('vscode-livepreview') === 'true';
   const AUTO_STEP_DELAY = 170;
@@ -243,72 +360,72 @@
     </style>
     <div class="mh-shell">
       <header class="mh-top">
-        <div class="mh-title">宠物矩阵破解 · <span id="mhDifficultyTitle"></span> · 第 <span id="mhRound">1</span> 局</div>
+        <div class="mh-title">${t('headerTitle')} · <span id="mhDifficultyTitle"></span> · ${t('roundPrefix')}<span id="mhRound">1</span>${t('roundSuffix')}</div>
         <div class="mh-stats">
-          <span class="mh-pill">必经 <b id="mhCheckpoints">0</b>/<b id="mhCheckpointTotal">0</b></span>
-          <span class="mh-pill">步数 <b id="mhSteps">0</b></span>
+          <span class="mh-pill">${t('statCheckpoints')} <b id="mhCheckpoints">0</b>/<b id="mhCheckpointTotal">0</b></span>
+          <span class="mh-pill">${t('statSteps')} <b id="mhSteps">0</b></span>
           <span class="mh-pill optional"><b id="mhTime">0</b>s</span>
         </div>
       </header>
       <main class="mh-stage">
         <div id="mhBoardWrap" class="mh-board-wrap">
           <svg id="mhLines" class="mh-lines" aria-hidden="true"></svg>
-          <div id="mhBoard" class="mh-board" aria-label="矩阵破解面板"></div>
+          <div id="mhBoard" class="mh-board" aria-label="${t('boardAria')}"></div>
         </div>
-        <aside class="mh-panel" aria-label="破解信息">
+        <aside class="mh-panel" aria-label="${t('panelAria')}">
           <section class="mh-panel-section">
-            <h2 class="mh-panel-title">破解状态</h2>
+            <h2 class="mh-panel-title">${t('panelStatus')}</h2>
             <div id="mhStatus" class="mh-status"></div>
           </section>
           <section class="mh-panel-section">
-            <h2 class="mh-panel-title">当前持有</h2>
+            <h2 class="mh-panel-title">${t('panelHeld')}</h2>
             <div id="mhHeld" class="mh-held"></div>
           </section>
         </aside>
       </main>
       <footer class="mh-bottom-bar">
         <div class="mh-controls">
-          <button id="mhGuide" class="mh-action" type="button">节点</button>
-          <button id="mhUndo" class="mh-action" type="button">倒退</button>
-          <button id="mhAutoSolve" class="mh-action" type="button" hidden>自动破解</button>
-          <button id="mhRestart" class="mh-action warn" type="button">重开</button>
-          <button id="mhNext" class="mh-action" type="button" hidden>下一局</button>
+          <button id="mhGuide" class="mh-action" type="button">${t('btnNodes')}</button>
+          <button id="mhUndo" class="mh-action" type="button">${t('btnUndo')}</button>
+          <button id="mhAutoSolve" class="mh-action" type="button" hidden>${t('btnAutoSolve')}</button>
+          <button id="mhRestart" class="mh-action warn" type="button">${t('btnRestart')}</button>
+          <button id="mhNext" class="mh-action" type="button" hidden>${t('btnNext')}</button>
         </div>
-        <div id="mhDifficulties" class="mh-difficulties" aria-label="难度选择"></div>
+        <div id="mhDifficulties" class="mh-difficulties" aria-label="${t('diffAria')}"></div>
       </footer>
     </div>
     <div id="mhOverlay" class="mh-overlay">
       <div class="mh-card">
-        <h1>宠物矩阵破解</h1>
-        <p>从左上角起点开始破解，向上下左右相邻节点移动，路径不能交叉回绕。</p>
-        <p>经过全部破解点后到达终点即可通关。障碍默认不可通过，需要绕行，或利用道具清除、净化突破。</p>
-        <button id="mhStart" class="mh-start" type="button">开始破解</button>
+        <h1>${t('overlayTitle')}</h1>
+        <p>${t('overlayP1')}</p>
+        <p>${t('overlayP2')}</p>
+        <button id="mhStart" class="mh-start" type="button">${t('btnStart')}</button>
       </div>
     </div>
     <div id="mhGuideOverlay" class="mh-guide-overlay" hidden>
       <div class="mh-guide-card">
-        <h1>节点说明</h1>
-        <p>选择一个已知节点查看作用。</p>
+        <h1>${t('guideTitle')}</h1>
+        <p>${t('guideText')}</p>
         <div id="mhGuideList" class="mh-guide-list"></div>
         <div id="mhGuideDetail" class="mh-guide-detail"></div>
-        <button id="mhGuideClose" class="mh-guide-close" type="button">知道了</button>
+        <button id="mhGuideClose" class="mh-guide-close" type="button">${t('gotIt')}</button>
       </div>
     </div>
     <div id="mhNewGuideOverlay" class="mh-new-guide-overlay" hidden>
       <div class="mh-new-guide-card">
-        <h1>发现新节点</h1>
+        <h1>${t('newGuideTitle')}</h1>
         <p id="mhNewGuidePrompt"></p>
         <div id="mhNewGuideDetail" class="mh-new-guide-detail"></div>
         <div id="mhNewGuideProgress" class="mh-new-guide-progress"></div>
-        <button id="mhNewGuideNext" class="mh-new-guide-next" type="button">知道了</button>
+        <button id="mhNewGuideNext" class="mh-new-guide-next" type="button">${t('gotIt')}</button>
       </div>
     </div>
     <div id="mhRewindOverlay" class="mh-rewind-overlay" hidden>
       <div class="mh-rewind-card">
-        <h1>选择倒退时间点</h1>
-        <p>显示最近记录的矩阵状态。选择后会恢复该状态，并清除之后的状态点。</p>
+        <h1>${t('rewindTitle')}</h1>
+        <p>${t('rewindText')}</p>
         <div id="mhRewindList" class="mh-rewind-list"></div>
-        <button id="mhRewindClose" class="mh-rewind-close" type="button">取消</button>
+        <button id="mhRewindClose" class="mh-rewind-close" type="button">${t('rewindCancel')}</button>
       </div>
     </div>
   `;
@@ -669,7 +786,7 @@
       break;
     }
     if (!level) {
-      throw new Error(`无法生成有效${config.label}矩阵`);
+      throw new Error(t('errorBuildLevel', { label: config.label }));
     }
     state.grid = level.grid;
     state.route = level.route;
@@ -1032,9 +1149,9 @@
   }
 
   function renderHeld() {
-    const purifyText = state.purifyReady ? '<div class="mh-token done">净化：下一次障碍突破有效</div>' : '<div class="mh-token">净化：未生效</div>';
+    const purifyText = state.purifyReady ? `<div class="mh-token done">${t('purifyActive')}</div>` : `<div class="mh-token">${t('purifyInactive')}</div>`;
     if (!state.heldPowers.length) {
-      els.held.innerHTML = `<div class="mh-held-card"><span>主动道具：无</span><button class="mh-use" disabled>释放</button></div>${purifyText}`;
+      els.held.innerHTML = `<div class="mh-held-card"><span>${t('noActivePower')}</span><button class="mh-use" disabled>${t('btnRelease')}</button></div>${purifyText}`;
       return;
     }
     const grouped = [];
@@ -1045,7 +1162,7 @@
     });
     const items = grouped.map(({ power, count }) => {
       const item = POWERUPS[power];
-      return `<div class="mh-held-card"><span>${nodeIcon(power, 'mh-held-icon')} ${item.label}<b class="mh-held-count">×${count}</b></span><button class="mh-use" type="button" data-power-id="${power}">释放</button></div>`;
+      return `<div class="mh-held-card"><span>${nodeIcon(power, 'mh-held-icon')} ${item.label}<b class="mh-held-count">×${count}</b></span><button class="mh-use" type="button" data-power-id="${power}">${t('btnRelease')}</button></div>`;
     });
     els.held.innerHTML = `${items.join('')}${purifyText}`;
     els.held.querySelectorAll('[data-power-id]').forEach((button) => {
@@ -1073,15 +1190,15 @@
 
   function renderStatus() {
     if (state.finished) {
-      els.status.textContent = `破解完成，得分 ${state.score}。`;
+      els.status.textContent = t('statusFinished', { score: state.score });
     } else if (!state.path.length) {
-      els.status.textContent = '从左上角起点开始连接路径。';
+      els.status.textContent = t('statusStart');
     } else if (state.purifyReady) {
-      els.status.textContent = '净化生效中：下一次普通障碍突破有效。';
+      els.status.textContent = t('statusPurify');
     } else if (state.heldPowers.length) {
-      els.status.textContent = `当前持有 ${state.heldPowers.length} 个主动道具，可选择合适时机释放。`;
+      els.status.textContent = t('statusHeld', { count: state.heldPowers.length });
     } else {
-      els.status.textContent = '继续连接破解点，并判断哪些道具值得获取。';
+      els.status.textContent = t('statusContinue');
     }
   }
 
@@ -1155,10 +1272,10 @@
     if (power.type === 'status') {
       state.purifyReady = true;
       animatePurify(cell);
-      toast('净化生效');
+      toast(t('toastPurifyActive'));
     } else {
       state.heldPowers.push(powerId);
-      toast(`获得${power.label}`);
+      toast(t('toastGotPower', { label: power.label }));
     }
   }
 
@@ -1178,7 +1295,7 @@
         syncCheckpointsFromGrid();
         animatePower(power, origin, moved);
         state.animating = false;
-        toast(power === 'rotateCcw' ? '周围节点已逆旋' : '周围节点已顺旋');
+        toast(power === 'rotateCcw' ? t('toastRotateCcw') : t('toastRotateCw'));
         renderAll();
         recordTimelineSnapshot(true);
       });
@@ -1193,7 +1310,7 @@
         targets.forEach((cell) => {
           cell.type = 'normal';
         });
-        toast(targets.length ? `清除 ${targets.length} 个障碍` : '道具已释放');
+        toast(targets.length ? t('toastCleared', { count: targets.length }) : t('toastReleased'));
         renderAll();
         recordTimelineSnapshot(true);
       }, 320);
@@ -1202,7 +1319,7 @@
         cell.type = 'normal';
         animateFlash(cell);
       });
-      toast(targets.length ? `清除 ${targets.length} 个障碍` : '道具已释放');
+      toast(targets.length ? t('toastCleared', { count: targets.length }) : t('toastReleased'));
       renderAll();
       recordTimelineSnapshot(true);
     }
@@ -1301,8 +1418,8 @@
     const newestFirst = state.timeline.map((snapshot, index) => ({ snapshot, index })).slice().reverse();
     els.rewindList.innerHTML = newestFirst.map(({ snapshot, index }) => `
       <button class="mh-rewind-item" type="button" data-timeline-index="${index}">
-        <img src="${snapshot.thumb}" alt="${snapshot.step} 步状态缩略图">
-        <span class="mh-rewind-meta"><b>${snapshot.step} 步</b><span>${snapshot.seconds}s · ${snapshot.heldPowers.length} 道具 · ${snapshot.visitedCheckpoints.length}/${snapshot.checkpoints.length} 必经</span></span>
+        <img src="${snapshot.thumb}" alt="${t('rewindThumbAlt', { step: snapshot.step })}">
+        <span class="mh-rewind-meta"><b>${t('rewindSteps', { step: snapshot.step })}</b><span>${snapshot.seconds}s · ${t('rewindPowers', { count: snapshot.heldPowers.length })} · ${t('rewindCheckpoints', { visited: snapshot.visitedCheckpoints.length, total: snapshot.checkpoints.length })}</span></span>
       </button>
     `).join('');
     els.rewindList.querySelectorAll('[data-timeline-index]').forEach((button) => {
@@ -1331,7 +1448,7 @@
     els.rewindOverlay.hidden = true;
     syncVisitedCheckpoints();
     renderAll();
-    toast(`已倒退到 ${snapshot.step} 步`);
+    toast(t('toastRewind', { step: snapshot.step }));
   }
 
   function renderTimelineThumb(snapshot) {
@@ -1385,7 +1502,7 @@
     stopTimer();
     const config = DIFFICULTIES[state.difficulty];
     state.score = Math.max(10, config.baseScore + state.checkpoints.size * 20 - state.seconds * 2);
-    toast(`破解成功 ${state.score}分`);
+    toast(t('toastWin', { score: state.score }));
     window.parent?.postMessage({ type: 'gameFinished', data: { earnedPoints: state.score, difficulty: config.label } }, '*');
   }
 
@@ -1581,10 +1698,10 @@
     const total = Number(els.newGuideOverlay.dataset.total || state.pendingGuide.length || 1);
     const index = total - state.pendingGuide.length + 1;
     els.newGuideOverlay.dataset.total = total;
-    els.newGuidePrompt.textContent = state.pendingGuide.length > 1 ? '连续查看本局新出现的节点。' : '查看这个节点的作用。';
+    els.newGuidePrompt.textContent = state.pendingGuide.length > 1 ? t('newGuideMulti') : t('newGuideSingle');
     els.newGuideDetail.innerHTML = `<div class="mh-guide-icon">${nodeIcon(id)}</div><div><h2>${data.label}</h2><div>${data.desc}</div></div>`;
     els.newGuideProgress.textContent = `${index}/${total}`;
-    els.newGuideNext.textContent = state.pendingGuide.length > 1 ? '下一个' : '知道了';
+    els.newGuideNext.textContent = state.pendingGuide.length > 1 ? t('newGuideNextMore') : t('gotIt');
     els.newGuideOverlay.hidden = false;
   }
 
@@ -1682,23 +1799,23 @@
     els.rewindOverlay.hidden = true;
     startTimer();
     renderAll();
-    toast('自动破解启动');
+    toast(t('toastAutoStart'));
     try {
       if (!state.path.length) {
         const movedToStart = await autoAttemptMove(state.route[0], token);
-        if (!movedToStart) throw new Error('无法进入起点');
+        if (!movedToStart) throw new Error(t('errorAutoStart'));
       }
       for (let guard = 0; guard < state.route.length * 3 && token === state.autoToken && !state.finished; guard += 1) {
         const routeIndex = routeIndexForCurrent();
         if (routeIndex < 0 || routeIndex >= state.route.length - 1) break;
         const moved = await autoAttemptMove(state.route[routeIndex + 1], token);
-        if (!moved) throw new Error('路线被当前矩阵状态阻断');
+        if (!moved) throw new Error(t('errorAutoBlocked'));
       }
-      if (!state.finished && token === state.autoToken) throw new Error('未能完成全部破解点');
+      if (!state.finished && token === state.autoToken) throw new Error(t('errorAutoIncomplete'));
       return state.finished;
     } catch (error) {
       if (token === state.autoToken) {
-        toast(error.message || '自动破解中断');
+        toast(error.message || t('errorAutoInterrupted'));
         return false;
       }
       return false;
@@ -1712,7 +1829,7 @@
   }
 
   function runAutoSolveStressTest(options = {}) {
-    if (!IS_LIVE_PREVIEW) return { ok: false, error: '仅 vscode-livepreview=true 可用' };
+    if (!IS_LIVE_PREVIEW) return { ok: false, error: t('errorLivePreviewOnly') };
     const count = Math.max(1, Number(options.count || 500));
     const difficulty = normalizeDifficulty(options.difficulty || 'nightmare');
     const previousDifficulty = state.difficulty;
@@ -1756,7 +1873,7 @@
   }
 
   function runAllDifficultyStressTest(options = {}) {
-    if (!IS_LIVE_PREVIEW) return { ok: false, error: '仅 vscode-livepreview=true 可用' };
+    if (!IS_LIVE_PREVIEW) return { ok: false, error: t('errorLivePreviewOnly') };
     const count = Math.max(1, Number(options.count || 200));
     const results = DIFFICULTY_ORDER.map((difficulty) => runAutoSolveStressTest({ count, difficulty }));
     const result = { ok: results.every((item) => item.ok), count, results };

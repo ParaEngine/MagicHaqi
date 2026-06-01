@@ -70,6 +70,21 @@
 			.history-item em { @apply overflow-hidden text-ellipsis whitespace-nowrap px-1 pb-1 text-[10px] not-italic text-slate-500; }
 			.history-delete { @apply absolute right-1 top-1 z-[2] grid h-[20px] w-[20px] min-h-[20px] place-items-center rounded-full border border-white/90 bg-red-600/90 p-0 text-[14px] leading-none text-white hover:bg-red-700; }
 			.history-empty { @apply rounded-md border border-dashed border-slate-300 bg-slate-50 p-2.5 text-center text-xs text-slate-500; }
+			.webp-preview-overlay { @apply fixed inset-0 z-[1100] flex bg-slate-950/60 p-[18px]; }
+			.webp-preview-window { @apply m-auto flex max-h-full w-[min(1180px,100%)] flex-col overflow-hidden rounded-lg bg-white shadow-2xl; height: min(860px,100%); }
+			.webp-preview-titlebar { @apply flex min-h-12 items-center justify-between gap-2.5 border-b border-slate-300 bg-slate-50 px-4 py-0 select-none; }
+			.webp-preview-body { @apply grid min-h-0 flex-1 grid-cols-[minmax(520px,1fr)_240px] gap-3 overflow-hidden p-3; }
+			.webp-preview-box { @apply relative grid h-full min-h-0 place-items-center overflow-hidden rounded-lg border border-slate-300 bg-slate-950 p-2; }
+			.webp-preview-box.transparent { background-color: #fff; background-image: linear-gradient(45deg, #dfe6ee 25%, transparent 25%), linear-gradient(-45deg, #dfe6ee 25%, transparent 25%), linear-gradient(45deg, transparent 75%, #dfe6ee 75%), linear-gradient(-45deg, transparent 75%, #dfe6ee 75%); background-size: 20px 20px; background-position: 0 0, 0 10px, 10px -10px, -10px 0; }
+			.webp-preview-box img { @apply block h-auto max-h-full min-h-0 w-auto max-w-full min-w-0 object-contain object-center; }
+			.webp-preview-badge { @apply pointer-events-none absolute left-2.5 top-2.5 rounded-full bg-white/90 px-2 py-1 text-[11px] text-slate-900; }
+			.webp-controls { @apply flex flex-col gap-2; }
+			.webp-controls label { @apply gap-1; }
+			.webp-controls select, .webp-controls input { @apply min-h-[30px] py-1; }
+			.webp-controls input[type="range"] { @apply p-0; }
+			.webp-compact-grid { @apply grid grid-cols-2 gap-x-2 gap-y-1.5; }
+			.webp-control-head { @apply flex items-center justify-between gap-1.5 leading-tight; }
+			.webp-control-value { @apply font-bold text-slate-900; }
 			.modal-overlay { @apply fixed inset-0 z-[1050] flex bg-slate-950/60 p-[18px]; }
 			.modal-window { @apply m-auto flex max-h-full w-[min(980px,100%)] flex-col overflow-hidden rounded-lg bg-white shadow-2xl; height: min(780px,100%); }
 			.modal-titlebar { @apply flex min-h-12 items-center justify-between gap-2.5 border-b border-slate-300 bg-slate-50 px-4 py-0 select-none; }
@@ -1281,6 +1296,166 @@
 			setStatus($('runStatus'), `Generate WebP complete: ${converted.id}`, 'ok');
 		}
 
+		function openWebpPreviewDialog() {
+			const asset = upsertAsset({ silent: true });
+			if (!asset.imageUrl) {
+				setStatus($('runStatus'), 'No image to convert', 'error');
+				return;
+			}
+
+			const overlay = document.createElement('div');
+			overlay.className = 'webp-preview-overlay';
+			overlay.innerHTML = `
+				<div class="webp-preview-window">
+					<div class="webp-preview-titlebar">
+						<h2>WebP Preview & Settings</h2>
+						<button type="button" class="btn-close" onclick="this.closest('.webp-preview-overlay').remove()">×</button>
+					</div>
+					<div class="webp-preview-body">
+						<div class="webp-preview-box ${$('webpTransparent').checked ? 'transparent' : ''}">
+							<img id="webpPreviewImage" src="${escapeHtml(asset.imageUrl)}" alt="Preview">
+							<div class="webp-preview-badge" id="webpPreviewBadge">Loading...</div>
+						</div>
+						<div class="webp-controls">
+							<label class="toggle-line">
+								<input type="checkbox" id="webpPreviewTransparent" ${$('webpTransparent').checked ? 'checked' : ''}>
+								<span>Transparent background</span>
+							</label>
+							<label>
+								<div class="webp-control-head">
+									<span>Max edge</span>
+									<span class="webp-control-value" id="webpPreviewMaxEdgeValue">${$('webpMaxEdge').value}px</span>
+								</div>
+								<input type="range" id="webpPreviewMaxEdge" min="64" max="2048" step="64" value="${$('webpMaxEdge').value}">
+							</label>
+							<label>
+								<div class="webp-control-head">
+									<span>Min KB</span>
+									<span class="webp-control-value" id="webpPreviewMinKbValue">${$('webpMinKb').value}</span>
+								</div>
+								<input type="range" id="webpPreviewMinKb" min="1" max="500" step="1" value="${$('webpMinKb').value}">
+							</label>
+							<label>
+								<div class="webp-control-head">
+									<span>Max KB</span>
+									<span class="webp-control-value" id="webpPreviewMaxKbValue">${$('webpMaxKb').value}</span>
+								</div>
+								<input type="range" id="webpPreviewMaxKb" min="10" max="1000" step="10" value="${$('webpMaxKb').value}">
+							</label>
+							<div class="webp-compact-grid">
+								<button type="button" id="webpPreviewRegenerate" class="btn-primary">Regenerate</button>
+								<button type="button" id="webpPreviewUpload" class="btn-primary">Upload to CDN</button>
+								<button type="button" id="webpPreviewSave" class="btn-primary">Save as Data URL</button>
+								<button type="button" id="webpPreviewCancel" class="btn-secondary">Cancel</button>
+							</div>
+						</div>
+					</div>
+				</div>
+			`;
+			document.body.appendChild(overlay);
+
+			const previewImage = overlay.querySelector('#webpPreviewImage');
+			const previewBadge = overlay.querySelector('#webpPreviewBadge');
+			const previewBox = overlay.querySelector('.webp-preview-box');
+			const transparentCheckbox = overlay.querySelector('#webpPreviewTransparent');
+			const maxEdgeSlider = overlay.querySelector('#webpPreviewMaxEdge');
+			const maxEdgeValue = overlay.querySelector('#webpPreviewMaxEdgeValue');
+			const minKbSlider = overlay.querySelector('#webpPreviewMinKb');
+			const minKbValue = overlay.querySelector('#webpPreviewMinKbValue');
+			const maxKbSlider = overlay.querySelector('#webpPreviewMaxKb');
+			const maxKbValue = overlay.querySelector('#webpPreviewMaxKbValue');
+
+			let currentBlob = null;
+
+			async function regeneratePreview() {
+				previewBadge.textContent = 'Generating...';
+				try {
+					const webp = await createWebpBlobFromUrl(asset.imageUrl, {
+						minKb: minKbSlider.value,
+						maxKb: maxKbSlider.value,
+						maxEdge: maxEdgeSlider.value,
+						transparent: transparentCheckbox.checked
+					});
+					currentBlob = webp.blob;
+					const url = URL.createObjectURL(webp.blob);
+					previewImage.src = url;
+					previewBadge.textContent = `${webp.width}×${webp.height} · ${formatBytes(webp.blob.size)}`;
+					previewBox.classList.toggle('transparent', transparentCheckbox.checked);
+				} catch (error) {
+					previewBadge.textContent = `Error: ${error.message}`;
+				}
+			}
+
+			transparentCheckbox.addEventListener('change', regeneratePreview);
+			maxEdgeSlider.addEventListener('input', () => {
+				maxEdgeValue.textContent = `${maxEdgeSlider.value}px`;
+				regeneratePreview();
+			});
+			minKbSlider.addEventListener('input', () => {
+				minKbValue.textContent = minKbSlider.value;
+				regeneratePreview();
+			});
+			maxKbSlider.addEventListener('input', () => {
+				maxKbValue.textContent = maxKbSlider.value;
+				regeneratePreview();
+			});
+
+			overlay.querySelector('#webpPreviewRegenerate').addEventListener('click', regeneratePreview);
+			overlay.querySelector('#webpPreviewUpload').addEventListener('click', async () => {
+				if (!currentBlob) {
+					setStatus($('runStatus'), 'No preview generated', 'error');
+					return;
+				}
+				if (!$('uploadWebpToCdn').checked || !getCdnConfig()) {
+					setStatus($('runStatus'), 'CDN upload not configured', 'error');
+					return;
+				}
+				try {
+					const uploadedUrl = await uploadBlobToCdn(currentBlob, asset);
+					const historyUrls = [asset.imageUrl, ...(asset.historyUrls || [])].filter(Boolean);
+					asset.imageUrl = uploadedUrl;
+					asset.historyUrls = [...new Set(historyUrls.filter(url => url !== asset.imageUrl))].slice(0, 24);
+					asset.isTransparent = transparentCheckbox.checked;
+					const index = state.project.assets.findIndex(item => item.id === asset.id);
+					if (index >= 0) state.project.assets[index] = asset;
+					if (asset.id === state.selectedAssetId) setAssetForm(asset);
+					renderProjectJson();
+					renderAssetList();
+					await autoSaveProjectAfterAssetChange();
+					setStatus($('runStatus'), `WebP uploaded to CDN: ${asset.id}`, 'ok');
+					overlay.remove();
+				} catch (error) {
+					setStatus($('runStatus'), `Upload failed: ${error.message}`, 'error');
+				}
+			});
+			overlay.querySelector('#webpPreviewSave').addEventListener('click', async () => {
+				if (!currentBlob) {
+					setStatus($('runStatus'), 'No preview generated', 'error');
+					return;
+				}
+				try {
+					const dataUrl = await blobToDataUrl(currentBlob);
+					const historyUrls = [asset.imageUrl, ...(asset.historyUrls || [])].filter(Boolean);
+					asset.imageUrl = dataUrl;
+					asset.historyUrls = [...new Set(historyUrls.filter(url => url !== asset.imageUrl))].slice(0, 24);
+					asset.isTransparent = transparentCheckbox.checked;
+					const index = state.project.assets.findIndex(item => item.id === asset.id);
+					if (index >= 0) state.project.assets[index] = asset;
+					if (asset.id === state.selectedAssetId) setAssetForm(asset);
+					renderProjectJson();
+					renderAssetList();
+					await autoSaveProjectAfterAssetChange();
+					setStatus($('runStatus'), `WebP saved as data URL: ${asset.id}`, 'ok');
+					overlay.remove();
+				} catch (error) {
+					setStatus($('runStatus'), `Save failed: ${error.message}`, 'error');
+				}
+			});
+			overlay.querySelector('#webpPreviewCancel').addEventListener('click', () => overlay.remove());
+
+			regeneratePreview();
+		}
+
 		async function batchConvertSelectedWebp() {
 			if (state.batchWebp?.running) {
 				state.batchWebp.stopRequested = true;
@@ -1607,7 +1782,7 @@
 			$('assetSelectAll').addEventListener('change', () => setVisibleAssetSelection($('assetSelectAll').checked));
 			$('btnDeleteSelected').onclick = deleteSelectedAssets;
 			$('btnBatchGenerateImages').onclick = () => batchGenerateSelectedImages().catch(error => setStatus($('runStatus'), `批量生成失败：${error.message}`, 'error'));
-			$('btnConvertCurrentWebp').onclick = () => convertCurrentAssetToWebp().catch(error => setStatus($('runStatus'), `WebP 生成失败：${error.message}`, 'error'));
+			$('btnConvertCurrentWebp').onclick = () => openWebpPreviewDialog();
 			$('btnConvertSelectedWebp').onclick = () => batchConvertSelectedWebp().catch(error => setStatus($('runStatus'), `WebP 转换失败：${error.message}`, 'error'));
 			$('btnCdnConfig').onclick = openCdnConfigDialog;
 			$('cdnFolder').addEventListener('input', updateCdnStatus);

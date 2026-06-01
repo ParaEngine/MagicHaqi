@@ -11,28 +11,125 @@
 <body></body>
 <script defer>
 (function () {
+  // ---- i18n ----
+  const I18N = {
+    zhCN: {
+      title: '飞翔宠物',
+      canvasAria: '飞翔宠物游戏画面',
+      gameStatusAria: '游戏状态',
+      food: '食物',
+      score: '分数',
+      best: '最佳',
+      hint: '点击、空格或触屏让宠物向上飞',
+      helpBtn: '玩法',
+      restartBtn: '重开',
+      overlayTitle: '飞翔宠物',
+      overlayText: '点按让宠物穿过空隙，收集中间的食物。高难度要收集更多食物，飞行速度也会更快。道具会临时改变体型或速度。',
+      startFly: '开始飞行',
+      continueFly: '继续飞行',
+      flyAgain: '再飞一次',
+      retry: '再来一次',
+      restart: '重新开始',
+      countdownFly: '飞',
+      winTitle: '通关成功！',
+      winText: '收集了 {collected} 份食物，宠物飞得很稳。',
+      loseTitle: '碰到了障碍',
+      loseText: '点按节奏放轻一点，先拿变小或减速道具会更容易。',
+      attractText: '选择难度后开始飞行',
+      switchDiffTitle: '切换难度',
+      switchDiffText: '难度已更新，重新开始后生效。',
+      menuTitle: '飞翔宠物',
+      menuText: '点按让宠物上升，穿过绿色障碍的空隙并收集食物。收集够目标食物即可通关；道具有变大、变小、加速、减速，难度会随进度逐步提高。',
+      diffEasy: '轻松',
+      diffNormal: '标准',
+      diffHard: '挑战',
+      powerGrow: '变大',
+      powerShrink: '变小',
+      powerSpeed: '加速',
+      powerSlow: '减速',
+      themeSpring: '春日花园',
+      themeBerry: '莓果云路',
+      themeHoney: '蜂蜜山谷',
+    },
+    enUS: {
+      title: 'Flappy Pet',
+      canvasAria: 'Flappy Pet game canvas',
+      gameStatusAria: 'Game status',
+      food: 'Food',
+      score: 'Score',
+      best: 'Best',
+      hint: 'Tap, press Space or touch to fly up',
+      helpBtn: 'Help',
+      restartBtn: 'Restart',
+      overlayTitle: 'Flappy Pet',
+      overlayText: 'Tap to fly through gaps and collect food in between. Higher difficulty needs more food and flies faster. Power-ups temporarily change size or speed.',
+      startFly: 'Start Flying',
+      continueFly: 'Keep Flying',
+      flyAgain: 'Fly Again',
+      retry: 'Try Again',
+      restart: 'Restart',
+      countdownFly: 'Go',
+      winTitle: 'Level Clear!',
+      winText: 'Collected {collected} food — steady flight!',
+      loseTitle: 'Hit an Obstacle',
+      loseText: 'Tap more gently — grab the shrink or slow power-up first for an easier run.',
+      attractText: 'Pick a difficulty to start flying',
+      switchDiffTitle: 'Difficulty Changed',
+      switchDiffText: 'Difficulty updated. Restart to apply.',
+      menuTitle: 'Flappy Pet',
+      menuText: 'Tap to fly up, pass through gaps and collect food. Reach the food target to clear the level. Power-ups: grow, shrink, speed up, slow down. Difficulty ramps up as you progress.',
+      diffEasy: 'Easy',
+      diffNormal: 'Normal',
+      diffHard: 'Hard',
+      powerGrow: 'Grow',
+      powerShrink: 'Shrink',
+      powerSpeed: 'Speed',
+      powerSlow: 'Slow',
+      themeSpring: 'Spring Garden',
+      themeBerry: 'Berry Cloud Path',
+      themeHoney: 'Honey Valley',
+    },
+  };
+  function detectLang() {
+    try {
+      const params = new URLSearchParams(window.location.search);
+      const lang = params.get('lang');
+      if (lang && I18N[lang]) return lang;
+    } catch (_) {}
+    return 'zhCN';
+  }
+  const LANG = detectLang();
+  const L = I18N[LANG];
+  function t(key, vars) {
+    let str = L[key] || I18N.zhCN[key] || key;
+    if (vars) str = str.replace(/\{(\w+)\}/g, (m, n) => vars[n] != null ? String(vars[n]) : m);
+    return str;
+  }
+  try { document.documentElement.setAttribute('lang', LANG === 'enUS' ? 'en' : 'zh-CN'); } catch (_) {}
+  try { document.title = t('title'); } catch (_) {}
+
   const STORAGE_KEY_DIFFICULTY = 'haqiFlappyPetDifficulty';
   const STORAGE_KEY_BEST = 'haqiFlappyPetBest';
   const STORAGE_KEY_BESTS = 'haqiFlappyPetBests';
   const FALLBACK_PET = '🐾';
   const FOOD_ICONS = ['🍎', '🍌', '🍓', '🍇', '🥕', '🍪', '🍯', '🥛', '🍰'];
   const POWERUPS = {
-    grow: { id: 'grow', icon: '🔍', label: '变大', duration: 5200 },
-    shrink: { id: 'shrink', icon: '🫧', label: '变小', duration: 6200 },
-    speed: { id: 'speed', icon: '⚡', label: '加速', duration: 4200 },
-    slow: { id: 'slow', icon: '❄️', label: '减速', duration: 5600 },
+    grow: { id: 'grow', icon: '🔍', label: t('powerGrow'), duration: 5200 },
+    shrink: { id: 'shrink', icon: '🫧', label: t('powerShrink'), duration: 6200 },
+    speed: { id: 'speed', icon: '⚡', label: t('powerSpeed'), duration: 4200 },
+    slow: { id: 'slow', icon: '❄️', label: t('powerSlow'), duration: 5600 },
   };
   const POWERUP_LIST = Object.values(POWERUPS);
   const DIFFICULTIES = {
-    easy: { id: 'easy', label: '轻松', target: 8, gap: 0.39, speed: 0.22, gravity: 0.82, flap: 0.34, pipeInterval: 0.96, score: 100 },
-    normal: { id: 'normal', label: '标准', target: 12, gap: 0.34, speed: 0.26, gravity: 0.92, flap: 0.37, pipeInterval: 0.9, score: 130 },
-    hard: { id: 'hard', label: '挑战', target: 18, gap: 0.3, speed: 0.3, gravity: 1.02, flap: 0.4, pipeInterval: 0.84, score: 170 },
+    easy: { id: 'easy', label: t('diffEasy'), target: 8, gap: 0.39, speed: 0.22, gravity: 0.82, flap: 0.34, pipeInterval: 0.96, score: 100 },
+    normal: { id: 'normal', label: t('diffNormal'), target: 12, gap: 0.34, speed: 0.26, gravity: 0.92, flap: 0.37, pipeInterval: 0.9, score: 130 },
+    hard: { id: 'hard', label: t('diffHard'), target: 18, gap: 0.3, speed: 0.3, gravity: 1.02, flap: 0.4, pipeInterval: 0.84, score: 170 },
   };
   const DIFFICULTY_ORDER = ['easy', 'normal', 'hard'];
   const LEVEL_THEMES = [
-    { name: '春日花园', sky: ['#bae6fd', '#dcfce7', '#fef3c7'], pipe: ['#22c55e', '#14b8a6', '#84cc16'], accent: '#f97316', deco: ['🌼', '🌷', '🍃'] },
-    { name: '莓果云路', sky: ['#bfdbfe', '#fbcfe8', '#dcfce7'], pipe: ['#38bdf8', '#a78bfa', '#fb7185'], accent: '#db2777', deco: ['🍓', '🫐', '✨'] },
-    { name: '蜂蜜山谷', sky: ['#fde68a', '#bbf7d0', '#bae6fd'], pipe: ['#f59e0b', '#84cc16', '#10b981'], accent: '#d97706', deco: ['🍯', '🌿', '⭐'] },
+    { name: t('themeSpring'), sky: ['#bae6fd', '#dcfce7', '#fef3c7'], pipe: ['#22c55e', '#14b8a6', '#84cc16'], accent: '#f97316', deco: ['🌼', '🌷', '🍃'] },
+    { name: t('themeBerry'), sky: ['#bfdbfe', '#fbcfe8', '#dcfce7'], pipe: ['#38bdf8', '#a78bfa', '#fb7185'], accent: '#db2777', deco: ['🍓', '🫐', '✨'] },
+    { name: t('themeHoney'), sky: ['#fde68a', '#bbf7d0', '#bae6fd'], pipe: ['#f59e0b', '#84cc16', '#10b981'], accent: '#d97706', deco: ['🍯', '🌿', '⭐'] },
   ];
 
   const state = {
@@ -202,33 +299,33 @@
       }
     </style>
     <div class="mh-shell">
-      <canvas id="mhCanvas" class="mh-canvas" aria-label="飞翔宠物游戏画面"></canvas>
+      <canvas id="mhCanvas" class="mh-canvas" aria-label="${t('canvasAria')}"></canvas>
       <header class="mh-top">
-        <button id="mhMenu" class="mh-icon-btn" type="button" aria-label="玩法">?</button>
-        <div class="mh-title">飞翔宠物</div>
-        <div class="mh-stats" aria-label="游戏状态">
-          <span class="mh-pill">食物 <b id="mhFood">0</b>/<b id="mhTarget">0</b></span>
-          <span class="mh-pill optional">分数 <b id="mhScore">0</b></span>
-          <span class="mh-pill optional">最佳 <b id="mhBest">0</b></span>
+        <button id="mhMenu" class="mh-icon-btn" type="button" aria-label="${t('helpBtn')}">?</button>
+        <div class="mh-title">${t('title')}</div>
+        <div class="mh-stats" aria-label="${t('gameStatusAria')}">
+          <span class="mh-pill">${t('food')} <b id="mhFood">0</b>/<b id="mhTarget">0</b></span>
+          <span class="mh-pill optional">${t('score')} <b id="mhScore">0</b></span>
+          <span class="mh-pill optional">${t('best')} <b id="mhBest">0</b></span>
         </div>
         <div class="mh-progress" aria-hidden="true"><div id="mhProgressBar" class="mh-progress-bar"></div></div>
       </header>
       <div id="mhPower" class="mh-power" aria-live="polite"></div>
       <div id="mhCountdown" class="mh-countdown" hidden aria-live="polite">3</div>
       <footer class="mh-bottom">
-        <div class="mh-hint">点击、空格或触屏让宠物向上飞</div>
+        <div class="mh-hint">${t('hint')}</div>
         <div class="mh-controls">
-          <div id="mhDifficulties" class="mh-difficulties" aria-label="选择难度"></div>
-          <button id="mhHelp" class="mh-action help" type="button">玩法</button>
-          <button id="mhRestart" class="mh-action" type="button">重开</button>
+          <div id="mhDifficulties" class="mh-difficulties" aria-label="${t('diffNormal')}"></div>
+          <button id="mhHelp" class="mh-action help" type="button">${t('helpBtn')}</button>
+          <button id="mhRestart" class="mh-action" type="button">${t('restartBtn')}</button>
         </div>
       </footer>
       <div id="mhOverlay" class="mh-overlay">
         <div class="mh-card">
-          <h1 id="mhOverlayTitle">飞翔宠物</h1>
-          <p id="mhOverlayText">点按让宠物穿过空隙，收集中间的食物。高难度要收集更多食物，飞行速度也会更快。道具会临时改变体型或速度。</p>
+          <h1 id="mhOverlayTitle">${t('overlayTitle')}</h1>
+          <p id="mhOverlayText">${t('overlayText')}</p>
           <div id="mhOverlayDifficulties" class="mh-card-row"></div>
-          <button id="mhStart" class="mh-start" type="button">开始飞行</button>
+          <button id="mhStart" class="mh-start" type="button">${t('startFly')}</button>
         </div>
       </div>
     </div>`;
@@ -387,7 +484,7 @@
 
   function updateCountdown(now) {
     const elapsed = now - state.countdownStart;
-    const nextValue = elapsed < 900 ? '3' : elapsed < 1800 ? '2' : elapsed < 2700 ? '1' : elapsed < 3200 ? '飞' : '';
+    const nextValue = elapsed < 900 ? '3' : elapsed < 1800 ? '2' : elapsed < 2700 ? '1' : elapsed < 3200 ? t('countdownFly') : '';
     if (nextValue !== state.countdownValue) {
       state.countdownValue = nextValue;
       countdownEl.textContent = nextValue;
@@ -653,7 +750,7 @@
     if (won) {
       playSound('win');
       burstConfetti();
-      showResult('通关成功！', `收集了 ${state.collected} 份食物，宠物飞得很稳。`, '再飞一次', () => startGame());
+      showResult(t('winTitle'), t('winText', { collected: state.collected }), t('flyAgain'), () => startGame());
       post('gameFinished', {
         completed: true,
         passed: true,
@@ -671,7 +768,7 @@
     } else {
       playSound('hit');
       shakeScreen();
-      showResult('碰到了障碍', '点按节奏放轻一点，先拿变小或减速道具会更容易。', '再来一次', () => startGame());
+      showResult(t('loseTitle'), t('loseText'), t('retry'), () => startGame());
     }
   }
 
@@ -867,7 +964,7 @@
     ctx.textBaseline = 'middle';
     ctx.fillStyle = 'rgba(15,118,110,.82)';
     ctx.font = '900 18px sans-serif';
-    ctx.fillText('选择难度后开始飞行', width / 2, height * 0.52);
+    ctx.fillText(t('attractText'), width / 2, height * 0.52);
     ctx.restore();
   }
 
@@ -942,7 +1039,7 @@
     state.difficulty = id;
     state.best = state.bests[id] || 0;
     localStorage.setItem(STORAGE_KEY_DIFFICULTY, id);
-    if (state.started && !state.finished) showOverlay('切换难度', '难度已更新，重新开始后生效。', '重新开始', () => startGame());
+    if (state.started && !state.finished) showOverlay(t('switchDiffTitle'), t('switchDiffText'), t('restart'), () => startGame());
     updateHud();
   }
 
@@ -1151,7 +1248,7 @@
   });
   window.addEventListener('beforeunload', cleanupPetImage);
 
-  document.getElementById('mhMenu').onclick = () => showOverlay('飞翔宠物', '点按让宠物上升，穿过绿色障碍的空隙并收集食物。收集够目标食物即可通关；道具有变大、变小、加速、减速，难度会随进度逐步提高。', state.started && !state.finished ? '继续飞行' : '开始飞行', () => {
+  document.getElementById('mhMenu').onclick = () => showOverlay(t('menuTitle'), t('menuText'), state.started && !state.finished ? t('continueFly') : t('startFly'), () => {
     if (state.started && !state.finished) {
       state.paused = false;
       hideOverlay();

@@ -11,15 +11,116 @@
 <body></body>
 <script defer>
 (function () {
+  // ---- i18n ----
+  const I18N = {
+    zhCN: {
+      title: '萌宠爱洗澡',
+      canvasAria: '萌宠爱洗澡游戏画面',
+      introPrompt: '宠物弄脏啦，要洗澡了！<br>点击任意位置查看水路',
+      helpBtn: '玩法',
+      gameTitle: '萌宠爱洗澡',
+      gameStatusAria: '游戏状态',
+      levelLabel: '关卡',
+      waterLabel: '水量',
+      toyLabel: '玩具',
+      scoreLabel: '分数',
+      hintInitial: '先观察水源和浴缸，第一次挖开后清水才会流出',
+      difficultiesAria: '选择难度',
+      restartBtn: '重开',
+      overlayTitle: '萌宠爱洗澡',
+      overlayText: '选择难度后开始。像经典挖水路玩法一样，拖动挖开棕色泥土，让水绕开石头流进浴缸；顺路冲到玩具会加分。每一关都会随机生成。',
+      startBath: '开始洗澡',
+      diffEasy: '轻松',
+      diffNormal: '标准',
+      diffHard: '挑战',
+      toastWaterStart: '清水开始流啦',
+      toastStuck: '水堵住啦，挖低一点试试',
+      toastWaterLow: '水量不多啦',
+      toastWaterDanger: '最后一点水了',
+      toastToy: '玩具 +1',
+      winTitle: '洗澡完成！',
+      winText: '第 {level} 关完成，收集了 {collected}/{total} 个玩具，评价：{stars}星。',
+      nextLevel: '下一关',
+      loseTitle: '水不够啦',
+      retry: '再来一次',
+      failStuck: '水被堵住了。下一次从堵住的位置下方挖开一点，让水能继续往浴缸方向流。',
+      failMissed: '水路偏离浴缸了。先从水源到浴缸上方规划一条主路，再少量打开旁边泥土。',
+      failClose: '差一点就够了。试着少挖分岔路，把更多水集中送进浴缸。',
+      failDefault: '试着先挖一条连续的水路，再打开更多泥土。石头不能挖，绕过去会更稳。',
+      helpTitle: '萌宠爱洗澡',
+      helpText: '按住屏幕拖动，就能把棕色泥土挖开。清水会受重力往下流，碰到石头会被挡住；把足够多的水引到浴缸里即可通关，顺路冲到玩具会加分。',
+      continueGame: '继续游戏',
+      hintDigging: '按住并滑动挖开泥土，把清水引到浴缸里',
+      hintPlan: '先规划水路，第一次挖开泥土后清水才会流出',
+    },
+    enUS: {
+      title: 'Pet Bath Time',
+      canvasAria: 'Pet Bath game canvas',
+      introPrompt: 'Your pet is dirty — time for a bath!<br>Tap anywhere to see the water path',
+      helpBtn: 'Help',
+      gameTitle: 'Pet Bath Time',
+      gameStatusAria: 'Game status',
+      levelLabel: 'Level',
+      waterLabel: 'Water',
+      toyLabel: 'Toys',
+      scoreLabel: 'Score',
+      hintInitial: 'Observe the water source and tub — water flows after the first dig',
+      difficultiesAria: 'Select difficulty',
+      restartBtn: 'Restart',
+      overlayTitle: 'Pet Bath Time',
+      overlayText: 'Pick a difficulty to start. Drag to dig through brown dirt, let water flow around rocks into the tub; rinse toys along the way for bonus points. Each level is randomly generated.',
+      startBath: 'Start Bath',
+      diffEasy: 'Easy',
+      diffNormal: 'Normal',
+      diffHard: 'Hard',
+      toastWaterStart: 'Water is flowing!',
+      toastStuck: 'Water is blocked — try digging lower',
+      toastWaterLow: 'Water is running low',
+      toastWaterDanger: 'Last bit of water!',
+      toastToy: 'Toy +1',
+      winTitle: 'Bath Complete!',
+      winText: 'Level {level} done, collected {collected}/{total} toys, rating: {stars} stars.',
+      nextLevel: 'Next Level',
+      loseTitle: 'Not Enough Water',
+      retry: 'Try Again',
+      failStuck: 'Water got blocked. Next time, dig a bit below the blockage so water can keep flowing toward the tub.',
+      failMissed: 'The water path missed the tub. Plan a main route from the source to above the tub first, then open side paths sparingly.',
+      failClose: 'Almost there! Try digging fewer branches and funnel more water into the tub.',
+      failDefault: 'Try digging one continuous path first, then open more dirt. Rocks can\'t be dug — go around them for a steadier route.',
+      helpTitle: 'Pet Bath Time',
+      helpText: 'Press and drag on the screen to dig through the brown dirt. Water flows downward by gravity and is blocked by rocks. Guide enough water into the tub to clear the level; rinse toys along the way for bonus points.',
+      continueGame: 'Continue',
+      hintDigging: 'Press and drag to dig dirt and guide water to the tub',
+      hintPlan: 'Plan the water path first — water flows after the first dig',
+    },
+  };
+  function detectLang() {
+    try {
+      const params = new URLSearchParams(window.location.search);
+      const lang = params.get('lang');
+      if (lang && I18N[lang]) return lang;
+    } catch (_) {}
+    return 'zhCN';
+  }
+  const LANG = detectLang();
+  const L = I18N[LANG];
+  function t(key, vars) {
+    let str = L[key] || I18N.zhCN[key] || key;
+    if (vars) str = str.replace(/\{(\w+)\}/g, (m, n) => vars[n] != null ? String(vars[n]) : m);
+    return str;
+  }
+  try { document.documentElement.setAttribute('lang', LANG === 'enUS' ? 'en' : 'zh-CN'); } catch (_) {}
+  try { document.title = t('title'); } catch (_) {}
+
   const STORAGE_DIFFICULTY = 'haqiPetBathDifficultyV1';
   const STORAGE_BEST_SCORE = 'haqiPetBathBestScoreV1';
   const STORAGE_BEST_LEVEL = 'haqiPetBathBestLevelV1';
   const TILE = { DIRT: 0, EMPTY: 1, ROCK: 2 };
   const DIG_SUBDIV = 4;
   const DIFFICULTIES = {
-    easy: { id: 'easy', label: '轻松', cols: 14, rows: 15, mobileRows: 24, rocks: 18, mobileRocks: 32, ducks: 2, mobileDucks: 3, water: 145, mobileWater: 190, score: 110, leak: 0.18, carve: 1 },
-    normal: { id: 'normal', label: '标准', cols: 16, rows: 16, mobileRows: 32, rocks: 30, mobileRocks: 54, ducks: 3, mobileDucks: 4, water: 125, mobileWater: 250, score: 150, leak: 0.28, carve: 1 },
-    hard: { id: 'hard', label: '挑战', cols: 18, rows: 17, mobileRows: 42, rocks: 48, mobileRocks: 84, ducks: 4, mobileDucks: 6, water: 108, mobileWater: 330, score: 210, leak: 0.38, carve: 0 },
+    easy: { id: 'easy', label: t('diffEasy'), cols: 14, rows: 15, mobileRows: 24, rocks: 18, mobileRocks: 32, ducks: 2, mobileDucks: 3, water: 145, mobileWater: 190, score: 110, leak: 0.18, carve: 1 },
+    normal: { id: 'normal', label: t('diffNormal'), cols: 16, rows: 16, mobileRows: 32, rocks: 30, mobileRocks: 54, ducks: 3, mobileDucks: 4, water: 125, mobileWater: 250, score: 150, leak: 0.28, carve: 1 },
+    hard: { id: 'hard', label: t('diffHard'), cols: 18, rows: 17, mobileRows: 42, rocks: 48, mobileRocks: 84, ducks: 4, mobileDucks: 6, water: 108, mobileWater: 330, score: 210, leak: 0.38, carve: 0 },
   };
   const DIFFICULTY_ORDER = ['easy', 'normal', 'hard'];
   const COLORS = ['#facc15', '#f97316', '#22c55e', '#38bdf8', '#ec4899'];
@@ -235,35 +336,35 @@
     </style>
     <div class="mh-shell">
       <div id="mhStage" class="mh-stage">
-        <canvas id="mhCanvas" class="mh-canvas" aria-label="萌宠爱洗澡游戏画面"></canvas>
+        <canvas id="mhCanvas" class="mh-canvas" aria-label="${t('canvasAria')}"></canvas>
       </div>
       <i id="mhScrollLeft" class="mh-scroll-button left" aria-hidden="true"></i>
       <i id="mhScrollRight" class="mh-scroll-button right" aria-hidden="true"></i>
-      <div id="mhIntroPrompt" class="mh-intro-prompt" aria-hidden="true">宠物弄脏啦，要洗澡了！<br>点击任意位置查看水路</div>
+      <div id="mhIntroPrompt" class="mh-intro-prompt" aria-hidden="true">${t('introPrompt')}</div>
       <header class="mh-top">
-        <button id="mhMenu" class="mh-icon-btn" type="button" aria-label="玩法">?</button>
-        <div class="mh-title">萌宠爱洗澡</div>
-        <div class="mh-stats" aria-label="游戏状态">
-          <span class="mh-pill">关卡 <b id="mhLevel">1</b></span>
-          <span id="mhWaterPill" class="mh-pill">水量 <b id="mhWater">0</b>%</span>
-          <span class="mh-pill">玩具 <b id="mhDucks">0</b>/<b id="mhDuckTarget">0</b></span>
-          <span class="mh-pill optional">分数 <b id="mhScore">0</b></span>
+        <button id="mhMenu" class="mh-icon-btn" type="button" aria-label="${t('helpBtn')}">?</button>
+        <div class="mh-title">${t('gameTitle')}</div>
+        <div class="mh-stats" aria-label="${t('gameStatusAria')}">
+          <span class="mh-pill">${t('levelLabel')} <b id="mhLevel">1</b></span>
+          <span id="mhWaterPill" class="mh-pill">${t('waterLabel')} <b id="mhWater">0</b>%</span>
+          <span class="mh-pill">${t('toyLabel')} <b id="mhDucks">0</b>/<b id="mhDuckTarget">0</b></span>
+          <span class="mh-pill optional">${t('scoreLabel')} <b id="mhScore">0</b></span>
         </div>
       </header>
       <footer class="mh-bottom">
-        <div id="mhHint" class="mh-hint">先观察水源和浴缸，第一次挖开后清水才会流出</div>
+        <div id="mhHint" class="mh-hint">${t('hintInitial')}</div>
         <div class="mh-controls">
-          <div id="mhDifficulties" class="mh-difficulties" aria-label="选择难度"></div>
-          <button id="mhHelp" class="mh-action help" type="button">玩法</button>
-          <button id="mhRestart" class="mh-action" type="button">重开</button>
+          <div id="mhDifficulties" class="mh-difficulties" aria-label="${t('difficultiesAria')}"></div>
+          <button id="mhHelp" class="mh-action help" type="button">${t('helpBtn')}</button>
+          <button id="mhRestart" class="mh-action" type="button">${t('restartBtn')}</button>
         </div>
       </footer>
       <div id="mhOverlay" class="mh-overlay">
         <div class="mh-card">
-          <h1 id="mhOverlayTitle">萌宠爱洗澡</h1>
-          <p id="mhOverlayText">选择难度后开始。像经典挖水路玩法一样，拖动挖开棕色泥土，让水绕开石头流进浴缸；顺路冲到玩具会加分。每一关都会随机生成。</p>
+          <h1 id="mhOverlayTitle">${t('overlayTitle')}</h1>
+          <p id="mhOverlayText">${t('overlayText')}</p>
           <div id="mhOverlayDifficulties" class="mh-card-row"></div>
-          <button id="mhStart" class="mh-start" type="button">开始洗澡</button>
+          <button id="mhStart" class="mh-start" type="button">${t('startBath')}</button>
         </div>
       </div>
     </div>`;
@@ -738,7 +839,7 @@
     state.waterStarted = true;
     state.stuckTime = 0;
     releaseAcc = 0;
-    showToast('清水开始流啦');
+    showToast(t('toastWaterStart'));
     playTone(420, 720, 0.1, 'triangle', 0.025);
     updateHud();
   }
@@ -816,7 +917,7 @@
     state.stuckTime = stuckRatio > 0.45 && active.length > 8 ? state.stuckTime + dt : Math.max(0, state.stuckTime - dt * 0.8);
     if (!state.stuckHinted && state.stuckTime > 2600) {
       state.stuckHinted = true;
-      showToast('水堵住啦，挖低一点试试');
+      showToast(t('toastStuck'));
     }
 
     const remainingRatio = 1 - state.waterReleased / Math.max(1, state.waterBudget);
@@ -824,8 +925,8 @@
     if (level !== state.waterWarningLevel) {
       state.waterWarningLevel = level;
       updateHud();
-      if (level === 'warning') showToast('水量不多啦');
-      if (level === 'danger') showToast('最后一点水了');
+      if (level === 'warning') showToast(t('toastWaterLow'));
+      if (level === 'danger') showToast(t('toastWaterDanger'));
     }
   }
 
@@ -991,7 +1092,7 @@
         duck.hit = true;
         state.collectedDucks += 1;
         state.score += 55;
-        showToast('玩具 +1');
+        showToast(t('toastToy'));
         playTone(740, 1180, 0.11, 'triangle', 0.03);
         updateHud();
       }
@@ -1016,7 +1117,7 @@
       burstConfetti();
       playWinSound();
       const stars = scoreStars();
-      showResult('洗澡完成！', `第 ${state.level} 关完成，收集了 ${state.collectedDucks}/${state.ducks.length} 个玩具，评价：${stars}星。`, '下一关', nextLevel);
+      showResult(t('winTitle'), t('winText', { level: state.level, collected: state.collectedDucks, total: state.ducks.length, stars }), t('nextLevel'), nextLevel);
       post('gameFinished', {
         completed: true,
         passed: true,
@@ -1034,7 +1135,7 @@
       });
     } else {
       playTone(180, 110, 0.18, 'sawtooth', 0.03);
-      showResult('水不够啦', failAdvice(), '再来一次', () => startGame({ keepLevel: true }));
+      showResult(t('loseTitle'), failAdvice(), t('retry'), () => startGame({ keepLevel: true }));
     }
   }
 
@@ -1046,10 +1147,10 @@
   }
 
   function failAdvice() {
-    if (state.failureReason === 'stuck') return '水被堵住了。下一次从堵住的位置下方挖开一点，让水能继续往浴缸方向流。';
-    if (state.failureReason === 'missed') return '水路偏离浴缸了。先从水源到浴缸上方规划一条主路，再少量打开旁边泥土。';
-    if (state.waterSaved > state.requiredWater * 0.65) return '差一点就够了。试着少挖分岔路，把更多水集中送进浴缸。';
-    return '试着先挖一条连续的水路，再打开更多泥土。石头不能挖，绕过去会更稳。';
+    if (state.failureReason === 'stuck') return t('failStuck');
+    if (state.failureReason === 'missed') return t('failMissed');
+    if (state.waterSaved > state.requiredWater * 0.65) return t('failClose');
+    return t('failDefault');
   }
 
   function draw(now) {
@@ -1840,7 +1941,7 @@
     hud.ducks.textContent = String(state.collectedDucks);
     hud.duckTarget.textContent = String(state.ducks.length);
     hud.score.textContent = String(state.score);
-    hud.hint.textContent = state.waterStarted ? '按住并滑动挖开泥土，把清水引到浴缸里' : '先规划水路，第一次挖开泥土后清水才会流出';
+    hud.hint.textContent = state.waterStarted ? t('hintDigging') : t('hintPlan');
   }
 
   function showResult(title, text, buttonText, action) {
@@ -1858,7 +1959,7 @@
   function showHelp() {
     const wasRunning = state.started && !state.finished;
     if (wasRunning) state.paused = true;
-    showResult('萌宠爱洗澡', '按住屏幕拖动，就能把棕色泥土挖开。清水会受重力往下流，碰到石头会被挡住；把足够多的水引到浴缸里即可通关，顺路冲到玩具会加分。', wasRunning ? '继续游戏' : '开始洗澡', () => {
+    showResult(t('helpTitle'), t('helpText'), wasRunning ? t('continueGame') : t('startBath'), () => {
       if (wasRunning) {
         state.paused = false;
         hideOverlay();

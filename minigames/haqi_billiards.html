@@ -12,6 +12,191 @@
 <body></body>
 <script defer>
 (function () {
+  // ---- i18n ----
+  const I18N = {
+    zhCN: {
+      title: '宠物台球对战',
+      helpAria: '玩法',
+      modeAria: '模式',
+      diffAria: '难度',
+      modeEight: '花球',
+      modeSnooker: '斯诺克',
+      modeEightTitle: '花球对战',
+      modeSnookerTitle: '斯诺克练习赛',
+      diffEasy: '轻松',
+      diffNormal: '标准',
+      diffHard: '困难',
+      diffExpert: '专家',
+      playerYou: '你',
+      playerPotsAria: '你的进球记录',
+      petOpponent: '宠物对手',
+      petPotsAria: '宠物的进球记录',
+      readyBreak: '准备开球',
+      selectModeStart: '选择模式和难度，点击开始',
+      cancelSwing: '点击取消挥杆',
+      swingAria: '挥杆击球点',
+      rerack: '重摆',
+      start: '开始',
+      settingsAria: '设置',
+      rulesTitle: '宠物台球对战',
+      rulesP1: '和宠物轮流击球。轮到你时先拖动调整视角，然后拖动或点击下面白色球挥杆；再拖动蓄力，松手击球，球停稳后结算回合。',
+      rulesP2: '斯诺克开局可拖动白球摆位。难度会影响宠物瞄准精度和力度，双指可缩放和平移球台。',
+      eightMode: '花球模式',
+      snookerMode: '斯诺克模式',
+      startGame: '开始游戏',
+      settingsTitle: '设置',
+      qualityLabel: '画质',
+      qualityAuto: '自动',
+      qualityHigh: '高画质',
+      qualityLow: '低画质',
+      thinking: '思考中',
+      snookerPlaceCue: '斯诺克开局：拖动白球摆位',
+      dragAdjustAim: '拖动调整视角，然后拖动或点击下面白色球挥杆',
+      reracked: '已重摆，点击开始',
+      cuePottedPlace: '白球进袋：拖动白球摆位，然后点击下面白色球确认',
+      dragOrClickCue: '拖动调整视角，或点击白球/下面白色球挥杆',
+      petAiming: '宠物正在瞄准',
+      cuePottedOpponentScores: '白球进袋，对手得分',
+      foulEightOpponentScores: '误进黑八，对手得分',
+      pottedContinue: '进球，继续',
+      pottedSwitch: '进球后换人',
+      noPotSwitch: '没有进球，换人',
+      cuePottedOpponentPlus4: '白球进袋，对手加4分',
+      wrongTarget: '打错目标，对手得分',
+      redBall: '红球',
+      blackEight: '黑八',
+      pointsBall: '{points}分球',
+      numberBall: '{label}号球',
+      pottedBall: '进球',
+      youWin: '你赢啦',
+      petWins: '宠物赢了',
+      victory: '胜利！',
+      matchOver: '对局结束',
+      hitPointAdjusted: '击球点已调整，松手进入挥杆',
+      swingMode: '挥杆模式：拖动蓄力，松手击球',
+      swingCancelled: '已取消挥杆，可继续调整视角',
+      dragCueFreePlace: '拖动白球自由摆位，然后点击下面白色球确认',
+      dragCuePlace: '拖动白球摆位，然后点击下面白色球确认',
+      cuePlaced: '白球已摆好，点击下面白色球开始瞄准',
+      cueBlocked: '这个角度球杆被挡住了，换个方向试试',
+      powerTooLow: '力度太小，再拖远一点',
+      dragRotatePinch: '拖动旋转视角，双指缩放/平移',
+      dragAdjustPinch: '拖动调整视角，双指缩放/平移',
+      ballsMoving: '球在运动中',
+      clickStartAgain: '点击开始再来一局',
+      ready: '准备',
+      targetRed: '目标红球',
+      targetColor: '目标彩球',
+      targetSmall: '目标小号',
+      targetBig: '目标大号',
+      targetAny: '目标任意',
+      dragHereCancel: '拖到这里取消挥杆',
+      difficultyToast: '难度：{label}',
+      qualityToast: '画质：{label}',
+      pet: '宠物',
+      swingAriaDetail: '挥杆击球点，左右 {side}，上下 {vertical}',
+    },
+    enUS: {
+      title: 'Pet Billiards',
+      helpAria: 'Help',
+      modeAria: 'Mode',
+      diffAria: 'Difficulty',
+      modeEight: '8-Ball',
+      modeSnooker: 'Snooker',
+      modeEightTitle: '8-Ball Match',
+      modeSnookerTitle: 'Snooker Practice',
+      diffEasy: 'Easy',
+      diffNormal: 'Normal',
+      diffHard: 'Hard',
+      diffExpert: 'Expert',
+      playerYou: 'You',
+      playerPotsAria: 'Your potted balls',
+      petOpponent: 'Pet Opponent',
+      petPotsAria: "Pet's potted balls",
+      readyBreak: 'Ready to break',
+      selectModeStart: 'Select mode & difficulty, then start',
+      cancelSwing: 'Tap to cancel swing',
+      swingAria: 'Cue hit point',
+      rerack: 'Rerack',
+      start: 'Start',
+      settingsAria: 'Settings',
+      rulesTitle: 'Pet Billiards',
+      rulesP1: 'Take turns with your pet. When it\'s your turn, drag to adjust the camera, then drag or tap the white ball below to swing; drag again to charge power, release to shoot. The turn settles once all balls stop.',
+      rulesP2: 'In Snooker you can drag the cue ball to place it at the start. Difficulty affects the pet\'s aim accuracy and power. Pinch to zoom and pan the table.',
+      eightMode: '8-Ball Mode',
+      snookerMode: 'Snooker Mode',
+      startGame: 'Start Game',
+      settingsTitle: 'Settings',
+      qualityLabel: 'Graphics',
+      qualityAuto: 'Auto',
+      qualityHigh: 'High',
+      qualityLow: 'Low',
+      thinking: 'Thinking',
+      snookerPlaceCue: 'Snooker opening: drag the cue ball to place it',
+      dragAdjustAim: 'Drag to adjust camera, then drag or tap the white ball below to swing',
+      reracked: 'Reracked — tap Start',
+      cuePottedPlace: 'Cue ball potted: drag it to place, then tap the white ball below to confirm',
+      dragOrClickCue: 'Drag to adjust camera, or tap the cue ball / white ball below to swing',
+      petAiming: 'Pet is aiming',
+      cuePottedOpponentScores: 'Cue ball potted — opponent scores',
+      foulEightOpponentScores: '8-ball potted early — opponent scores',
+      pottedContinue: 'Potted — continue',
+      pottedSwitch: 'Potted — switch turns',
+      noPotSwitch: 'No pot — switch turns',
+      cuePottedOpponentPlus4: 'Cue ball potted — opponent +4',
+      wrongTarget: 'Wrong target — opponent scores',
+      redBall: 'Red',
+      blackEight: '8-Ball',
+      pointsBall: '{points}-pt ball',
+      numberBall: 'Ball {label}',
+      pottedBall: 'Potted',
+      youWin: 'You win!',
+      petWins: 'Pet wins',
+      victory: 'Victory!',
+      matchOver: 'Match Over',
+      hitPointAdjusted: 'Hit point adjusted — release to swing',
+      swingMode: 'Swing mode: drag to charge, release to shoot',
+      swingCancelled: 'Swing cancelled — adjust camera',
+      dragCueFreePlace: 'Drag the cue ball to place it, then tap the white ball below to confirm',
+      dragCuePlace: 'Drag the cue ball to place it, then tap the white ball below to confirm',
+      cuePlaced: 'Cue ball placed — tap the white ball below to aim',
+      cueBlocked: 'Cue stick is blocked at this angle — try another direction',
+      powerTooLow: 'Too little power — drag further',
+      dragRotatePinch: 'Drag to rotate, pinch to zoom/pan',
+      dragAdjustPinch: 'Drag to adjust camera, pinch to zoom/pan',
+      ballsMoving: 'Balls in motion',
+      clickStartAgain: 'Tap Start to play again',
+      ready: 'Ready',
+      targetRed: 'Target: Red',
+      targetColor: 'Target: Color',
+      targetSmall: 'Target: Solids',
+      targetBig: 'Target: Stripes',
+      targetAny: 'Target: Any',
+      dragHereCancel: 'Drag here to cancel swing',
+      difficultyToast: 'Difficulty: {label}',
+      qualityToast: 'Graphics: {label}',
+      pet: 'Pet',
+      swingAriaDetail: 'Hit point: horizontal {side}, vertical {vertical}',
+    },
+  };
+  function detectLang() {
+    try {
+      const params = new URLSearchParams(window.location.search);
+      const lang = params.get('lang');
+      if (lang && I18N[lang]) return lang;
+    } catch (_) {}
+    return 'zhCN';
+  }
+  const LANG = detectLang();
+  const L = I18N[LANG];
+  function t(key, vars) {
+    let str = L[key] || I18N.zhCN[key] || key;
+    if (vars) str = str.replace(/\{(\w+)\}/g, (m, n) => vars[n] != null ? String(vars[n]) : m);
+    return str;
+  }
+  try { document.documentElement.setAttribute('lang', LANG === 'enUS' ? 'en' : 'zh-CN'); } catch (_) {}
+  try { document.title = t('title'); } catch (_) {}
+
   const STORAGE_KEY = 'haqiBilliardsSettingsV1';
   const BEST_KEY = 'haqiBilliardsBestScoreV1';
   const TABLE = { width: 10.4, height: 5.8, rail: .48, pocket: .36 };
@@ -51,7 +236,7 @@
       { id: 'balanced', pixelRatio: 1.6, shadows: true, shadowMapSize: 1024 },
       { id: 'low', pixelRatio: 1.25, shadows: false, shadowMapSize: 0 },
     ];
-  const GRAPHICS_MODE_LABELS = { auto: '自动', high: '高画质', low: '低画质' };
+  const GRAPHICS_MODE_LABELS = { auto: t('qualityAuto'), high: t('qualityHigh'), low: t('qualityLow') };
   const GRAPHICS_FPS_SAMPLE_MS = 3600;
   const GRAPHICS_LOW_FPS = IS_MOBILE ? 42 : 48;
   const GRAPHICS_DOWNGRADE_COOLDOWN_MS = 6500;
@@ -95,14 +280,14 @@
   const CUE_STICK_PULLBACK = .82;
   const CUE_STICK_EDGE_BLOCK_GAP = BALL_RADIUS * .95;
   const MODES = {
-    eight: { id: 'eight', label: '花球', title: '花球对战', target: 7 },
-    snooker: { id: 'snooker', label: '斯诺克', title: '斯诺克练习赛', target: 32 },
+    eight: { id: 'eight', label: t('modeEight'), title: t('modeEightTitle'), target: 7 },
+    snooker: { id: 'snooker', label: t('modeSnooker'), title: t('modeSnookerTitle'), target: 32 },
   };
   const DIFFICULTIES = {
-    easy: { id: 'easy', label: '轻松', aiNoise: .22, aiPower: .82, aimHelp: .62, targetScore: 5, reward: 42 },
-    normal: { id: 'normal', label: '标准', aiNoise: .11, aiPower: .94, aimHelp: .38, targetScore: 7, reward: 56 },
-    hard: { id: 'hard', label: '困难', aiNoise: .045, aiPower: 1.05, aimHelp: .2, targetScore: 9, reward: 72 },
-    expert: { id: 'expert', label: '专家', aiNoise: .018, aiPower: 1.14, aimHelp: .08, targetScore: 11, reward: 88 },
+    easy: { id: 'easy', label: t('diffEasy'), aiNoise: .22, aiPower: .82, aimHelp: .62, targetScore: 5, reward: 42 },
+    normal: { id: 'normal', label: t('diffNormal'), aiNoise: .11, aiPower: .94, aimHelp: .38, targetScore: 7, reward: 56 },
+    hard: { id: 'hard', label: t('diffHard'), aiNoise: .045, aiPower: 1.05, aimHelp: .2, targetScore: 9, reward: 72 },
+    expert: { id: 'expert', label: t('diffExpert'), aiNoise: .018, aiPower: 1.14, aimHelp: .08, targetScore: 11, reward: 88 },
   };
   const EIGHT_COLORS = ['#f8fafc', '#facc15', '#2563eb', '#dc2626', '#7c3aed', '#f97316', '#16a34a', '#7f1d1d', '#111827', '#facc15', '#2563eb', '#dc2626', '#7c3aed', '#f97316', '#16a34a', '#7f1d1d'];
   const SNOOKER_COLORS = { cue: '#f8fafc', red: '#dc2626', yellow: '#facc15', green: '#16a34a', brown: '#92400e', blue: '#2563eb', pink: '#ec4899', black: '#111827' };
@@ -119,7 +304,7 @@
     playerScore: 0,
     petScore: 0,
     turnPots: [],
-    message: '拖动调整视角，然后拖动或点击下面白色球挥杆',
+    message: t('dragAdjustAim'),
     balls: [],
     ballMeshes: new Map(),
     pocketed: [[], []],
@@ -291,69 +476,69 @@
     </style>
     <div class="mh-shell">
       <div class="mh-top">
-        <button class="mh-icon-btn" id="helpBtn" type="button" aria-label="玩法">?</button>
-        <div class="mh-title">宠物台球对战</div>
+        <button class="mh-icon-btn" id="helpBtn" type="button" aria-label="${t('helpAria')}">?</button>
+        <div class="mh-title">${t('title')}</div>
         <div class="mh-stats">
           <span class="mh-pill">🏆 <b id="bestScore">0</b></span>
-          <select class="mh-select" id="modeSelect" aria-label="模式">
-            <option value="eight">花球</option>
-            <option value="snooker">斯诺克</option>
+          <select class="mh-select" id="modeSelect" aria-label="${t('modeAria')}">
+            <option value="eight">${t('modeEight')}</option>
+            <option value="snooker">${t('modeSnooker')}</option>
           </select>
-          <select class="mh-select" id="difficultySelect" aria-label="难度">
-            <option value="easy">轻松</option>
-            <option value="normal">标准</option>
-            <option value="hard">困难</option>
-            <option value="expert">专家</option>
+          <select class="mh-select" id="difficultySelect" aria-label="${t('diffAria')}">
+            <option value="easy">${t('diffEasy')}</option>
+            <option value="normal">${t('diffNormal')}</option>
+            <option value="hard">${t('diffHard')}</option>
+            <option value="expert">${t('diffExpert')}</option>
           </select>
         </div>
       </div>
       <main class="mh-stage" id="stage">
         <div class="mh-hud">
           <div class="mh-player" id="playerHud">
-            <div class="mh-player-meta"><span class="mh-name">你</span><span class="mh-score" id="playerScore">0</span></div>
-            <div class="mh-pot-strip" id="playerPots" aria-label="你的进球记录"></div>
+            <div class="mh-player-meta"><span class="mh-name">${t('playerYou')}</span><span class="mh-score" id="playerScore">0</span></div>
+            <div class="mh-pot-strip" id="playerPots" aria-label="${t('playerPotsAria')}"></div>
           </div>
-          <div class="mh-center-note" id="centerNote">准备开球</div>
+          <div class="mh-center-note" id="centerNote">${t('readyBreak')}</div>
           <div class="mh-player pet" id="petHud">
-            <div class="mh-pot-strip pet" id="petPots" aria-label="宠物的进球记录"></div>
-            <div class="mh-player-meta" style="text-align:right"><span class="mh-name" id="petName">宠物对手</span><span class="mh-score" id="petScore">0</span></div>
+            <div class="mh-pot-strip pet" id="petPots" aria-label="${t('petPotsAria')}"></div>
+            <div class="mh-player-meta" style="text-align:right"><span class="mh-name" id="petName">${t('petOpponent')}</span><span class="mh-score" id="petScore">0</span></div>
           </div>
         </div>
         <div class="mh-power-wrap"><div class="mh-power" id="powerBar"></div></div>
-        <div class="mh-guide" id="guideText">选择模式和难度，点击开始</div>
+        <div class="mh-guide" id="guideText">${t('selectModeStart')}</div>
       </main>
       <div class="mh-bottom">
-        <div class="mh-cancel-zone" id="cancelZone" hidden>点击取消挥杆</div>
+        <div class="mh-cancel-zone" id="cancelZone" hidden>${t('cancelSwing')}</div>
         <div class="mh-swing-zone">
-          <button class="mh-swing" id="swingBtn" type="button" aria-label="挥杆击球点" hidden><span class="mh-hit-dot" id="hitDot"></span></button>
+          <button class="mh-swing" id="swingBtn" type="button" aria-label="${t('swingAria')}" hidden><span class="mh-hit-dot" id="hitDot"></span></button>
         </div>
         <div class="mh-actions">
-          <button class="mh-restart" id="restartBtn" type="button">重摆</button>
-          <button class="mh-start" id="startBtn" type="button">开始</button>
-          <button class="mh-settings-btn" id="settingsBtn" type="button" aria-label="设置">&#9881;</button>
+          <button class="mh-restart" id="restartBtn" type="button">${t('rerack')}</button>
+          <button class="mh-start" id="startBtn" type="button">${t('start')}</button>
+          <button class="mh-settings-btn" id="settingsBtn" type="button" aria-label="${t('settingsAria')}">&#9881;</button>
         </div>
       </div>
     </div>
     <div class="mh-overlay" id="rulesOverlay">
       <div class="mh-card">
-        <h1>宠物台球对战</h1>
-        <p>和宠物轮流击球。轮到你时先拖动调整视角，然后拖动或点击下面白色球挥杆；再拖动蓄力，松手击球，球停稳后结算回合。</p>
-        <p>斯诺克开局可拖动白球摆位。难度会影响宠物瞄准精度和力度，双指可缩放和平移球台。</p>
+        <h1>${t('rulesTitle')}</h1>
+        <p>${t('rulesP1')}</p>
+        <p>${t('rulesP2')}</p>
         <div class="mh-card-grid">
-          <button class="mh-mode" data-card-mode="eight" type="button">花球模式</button>
-          <button class="mh-mode" data-card-mode="snooker" type="button">斯诺克模式</button>
+          <button class="mh-mode" data-card-mode="eight" type="button">${t('eightMode')}</button>
+          <button class="mh-mode" data-card-mode="snooker" type="button">${t('snookerMode')}</button>
         </div>
-        <button class="mh-start" id="rulesStartBtn" type="button">开始游戏</button>
+        <button class="mh-start" id="rulesStartBtn" type="button">${t('startGame')}</button>
       </div>
     </div>
     <div class="mh-overlay" id="settingsOverlay" hidden>
       <div class="mh-settings-card">
-        <h2>设置</h2>
-        <div class="mh-setting-label">画质</div>
+        <h2>${t('settingsTitle')}</h2>
+        <div class="mh-setting-label">${t('qualityLabel')}</div>
         <div class="mh-quality-grid" id="qualityOptions">
-          <button class="mh-quality-btn" data-quality="auto" type="button">自动</button>
-          <button class="mh-quality-btn" data-quality="high" type="button">高画质</button>
-          <button class="mh-quality-btn" data-quality="low" type="button">低画质</button>
+          <button class="mh-quality-btn" data-quality="auto" type="button">${t('qualityAuto')}</button>
+          <button class="mh-quality-btn" data-quality="high" type="button">${t('qualityHigh')}</button>
+          <button class="mh-quality-btn" data-quality="low" type="button">${t('qualityLow')}</button>
         </div>
       </div>
     </div>`;
@@ -498,7 +683,7 @@
     saveSettings();
     applyGraphicsMode();
     updateQualityUI();
-    toast(`画质：${GRAPHICS_MODE_LABELS[nextMode]}`);
+    toast(t('qualityToast', { label: GRAPHICS_MODE_LABELS[nextMode] }));
   }
 
   function applyGraphicsMode() {
@@ -1253,7 +1438,7 @@
     ctx.font = '900 24px Arial';
     ctx.textAlign = 'center';
     ctx.textBaseline = 'middle';
-    ctx.fillText('思考中', 89, 36);
+    ctx.fillText(t('thinking'), 89, 36);
     ctx.fillStyle = 'rgba(255,255,255,.94)';
     [[52, 70, 10], [36, 82, 6]].forEach(([x, y, r]) => {
       ctx.beginPath();
@@ -1326,7 +1511,7 @@
       window.parent.postMessage({ type: 'gameStarted' }, '*');
     }
     els.overlay.hidden = true;
-    state.message = state.cuePlacement.active ? '斯诺克开局：拖动白球摆位' : '拖动调整视角，然后拖动或点击下面白色球挥杆';
+    state.message = state.cuePlacement.active ? t('snookerPlaceCue') : t('dragAdjustAim');
     updateUI();
     startLoop();
   }
@@ -1351,7 +1536,7 @@
     hidePetActor(true);
     stopTimer();
     rackBalls();
-    state.message = fromButton ? '已重摆，点击开始' : '准备开球';
+    state.message = fromButton ? t('reracked') : t('readyBreak');
     updateUI();
   }
 
@@ -1731,10 +1916,10 @@
     }
     if (state.currentPlayer === 0) resetHitPoint();
     const nextAction = state.cuePlacement.active
-      ? '白球进袋：拖动白球摆位，然后点击下面白色球确认'
+      ? t('cuePottedPlace')
       : state.currentPlayer === 0
-        ? '拖动调整视角，或点击白球/下面白色球挥杆'
-        : '宠物正在瞄准';
+        ? t('dragOrClickCue')
+        : t('petAiming');
     state.message = state.turnSummary ? `${state.turnSummary} · ${nextAction}` : nextAction;
     updateUI();
     if (state.currentPlayer === 1) scheduleAIShot();
@@ -1777,15 +1962,15 @@
     if (cuePotted) {
       keepTurn = false;
       addScore(state.currentPlayer ? 0 : 1, 1);
-      state.turnSummary = '白球进袋，对手得分';
+      state.turnSummary = t('cuePottedOpponentScores');
     }
     if (foulEight) {
       addScore(state.currentPlayer ? 0 : 1, 4);
-      state.turnSummary = '误进黑八，对手得分';
+      state.turnSummary = t('foulEightOpponentScores');
     }
     if (!state.turnSummary) {
-      if (scoringPots.length) state.turnSummary = keepTurn ? '进球，继续' : '进球后换人';
-      else state.turnSummary = '没有进球，换人';
+      if (scoringPots.length) state.turnSummary = keepTurn ? t('pottedContinue') : t('pottedSwitch');
+      else state.turnSummary = t('noPotSwitch');
     }
     return keepTurn && !foulEight;
   }
@@ -1795,7 +1980,7 @@
     let illegalPot = false;
     if (cuePotted) {
       addScore(state.currentPlayer ? 0 : 1, 4);
-      state.turnSummary = '白球进袋，对手加4分';
+      state.turnSummary = t('cuePottedOpponentPlus4');
     }
     scoringPots.forEach(ball => {
       const expectedRed = state.snookerNext === 'red';
@@ -1815,9 +2000,9 @@
     });
     if (!redsRemaining()) state.snookerNext = 'color';
     if (!state.turnSummary) {
-      if (illegalPot) state.turnSummary = '打错目标，对手得分';
-      else if (scoringPots.length) state.turnSummary = keepTurn ? '进球，继续' : '进球后换人';
-      else state.turnSummary = '没有进球，换人';
+      if (illegalPot) state.turnSummary = t('wrongTarget');
+      else if (scoringPots.length) state.turnSummary = keepTurn ? t('pottedContinue') : t('pottedSwitch');
+      else state.turnSummary = t('noPotSwitch');
     }
     return keepTurn;
   }
@@ -1862,10 +2047,10 @@
   }
 
   function potBallTitle(ball) {
-    if (ball.type === 'red') return '红球';
-    if (ball.type === 'eight') return '黑八';
-    if (state.mode === 'snooker' && ball.points) return `${ball.points}分球`;
-    return ball.label ? `${ball.label}号球` : '进球';
+    if (ball.type === 'red') return t('redBall');
+    if (ball.type === 'eight') return t('blackEight');
+    if (state.mode === 'snooker' && ball.points) return t('pointsBall', { points: ball.points });
+    return ball.label ? t('numberBall', { label: ball.label }) : t('pottedBall');
   }
 
   function playerGroup(player) {
@@ -1898,9 +2083,9 @@
     const earnedPoints = Math.max(1, state.playerScore * 10 + (won ? 30 : 8) - Math.floor(state.seconds / 9));
     state.best = Math.max(state.best, earnedPoints);
     localStorage.setItem(BEST_KEY, String(state.best));
-    state.message = won ? '你赢啦' : '宠物赢了';
+    state.message = won ? t('youWin') : t('petWins');
     updateUI();
-    toast(won ? '胜利！' : '对局结束');
+    toast(won ? t('victory') : t('matchOver'));
     playFinishSound(won);
     window.parent.postMessage({
       type: 'gameFinished',
@@ -1977,7 +2162,7 @@
       control.moved = true;
       state.hitPoint = hitPointFromEvent(event);
       updateHitPointUI();
-      state.message = '击球点已调整，松手进入挥杆';
+      state.message = t('hitPointAdjusted');
       updateUI();
     }
     event.preventDefault();
@@ -2019,7 +2204,7 @@
     els.hitDot.style.top = `${50 + state.hitPoint.y * 32}%`;
     const side = Math.round(state.hitPoint.x * 100);
     const vertical = Math.round(-state.hitPoint.y * 100);
-    els.swing.setAttribute('aria-label', `挥杆击球点，左右 ${side}，上下 ${vertical}`);
+    els.swing.setAttribute('aria-label', t('swingAriaDetail', { side, vertical }));
   }
 
   function resetHitPoint() {
@@ -2034,11 +2219,11 @@
     state.inputMode = 'swing';
     state.aim.dir = cameraShotDirection();
     state.aim.power = 0;
-    state.message = '挥杆模式：拖动蓄力，松手击球';
+    state.message = t('swingMode');
     updateUI();
   }
 
-  function exitSwingMode(message = '拖动调整视角，然后拖动或点击下面白色球挥杆') {
+  function exitSwingMode(message = t('dragAdjustAim')) {
     cancelAim();
     state.inputMode = 'view';
     state.message = message;
@@ -2051,7 +2236,7 @@
       event.stopPropagation();
     }
     if (state.inputMode !== 'swing') return;
-    exitSwingMode('已取消挥杆，可继续调整视角');
+    exitSwingMode(t('swingCancelled'));
   }
 
   function canPlaceCue() {
@@ -2088,7 +2273,7 @@
       els.stage.setPointerCapture?.(event.pointerId);
       state.cuePlacement.pointer = event.pointerId;
       placeCueBall(point);
-      state.message = state.cuePlacement.afterScratch ? '拖动白球自由摆位，然后点击下面白色球确认' : '拖动白球摆位，然后点击下面白色球确认';
+      state.message = state.cuePlacement.afterScratch ? t('dragCueFreePlace') : t('dragCuePlace');
       updateUI();
       event.preventDefault();
       return;
@@ -2166,7 +2351,7 @@
   function onPointerUp(event) {
     if (state.cuePlacement.pointer === event.pointerId) {
       state.cuePlacement.pointer = null;
-      state.message = '白球已摆好，点击下面白色球开始瞄准';
+      state.message = t('cuePlaced');
       updateUI();
       event.preventDefault();
       return;
@@ -2176,7 +2361,7 @@
       return;
     }
     if (isPointOverElement(event, els.cancelZone)) {
-      exitSwingMode('已取消挥杆，可继续调整视角');
+      exitSwingMode(t('swingCancelled'));
       event.preventDefault();
       return;
     }
@@ -2185,13 +2370,13 @@
     const blocked = state.aim.blocked;
     cancelAim();
     if (blocked) {
-      state.message = '这个角度球杆被挡住了，换个方向试试';
+      state.message = t('cueBlocked');
       state.inputMode = 'swing';
       updateUI();
       return;
     }
     if (power < .055) {
-      state.message = '力度太小，再拖远一点';
+      state.message = t('powerTooLow');
       updateUI();
       return;
     }
@@ -2226,7 +2411,7 @@
     state.cameraControl.pointers.set(event.pointerId, { x: event.clientX, y: event.clientY });
     resetCameraGesture();
     if (!state.running && !state.aiThinking) {
-      state.message = state.started ? '拖动旋转视角，双指缩放/平移' : '拖动调整视角，双指缩放/平移';
+      state.message = state.started ? t('dragRotatePinch') : t('dragAdjustPinch');
       updateUI();
     }
     event.preventDefault();
@@ -2246,7 +2431,7 @@
     control.pointers.delete(pointerId);
     resetCameraGesture();
     if (!control.pointers.size && state.started && !state.running && !state.aiThinking) {
-      state.message = state.currentPlayer === 0 ? (state.cuePlacement.active ? '拖动白球摆位，然后点击下面白色球确认' : '拖动调整视角，然后拖动或点击下面白色球挥杆') : '宠物正在瞄准';
+      state.message = state.currentPlayer === 0 ? (state.cuePlacement.active ? t('dragCuePlace') : t('dragAdjustAim')) : t('petAiming');
       updateUI();
     }
   }
@@ -2370,7 +2555,7 @@
     cue.spinDirY = dir.y;
     state.running = true;
     state.shotCount += 1;
-    state.message = '球在运动中';
+    state.message = t('ballsMoving');
     updateUI();
   }
 
@@ -2616,7 +2801,7 @@
       three.targetLine.visible = false;
       if (three.pocketLine) three.pocketLine.visible = false;
       if (three.ghostBall) three.ghostBall.visible = false;
-      els.guideText.textContent = '这个角度球杆被挡住了，换个方向试试';
+      els.guideText.textContent = t('cueBlocked');
       return;
     }
     els.guideText.textContent = state.message;
@@ -2903,7 +3088,7 @@
     renderPottedBalls();
     const targetHint = currentTargetHint();
     els.centerNote.textContent = `${MODES[state.mode].label} · ${targetHint} · ${formatTime(state.seconds)}`;
-    els.guideText.textContent = state.finished ? '点击开始再来一局' : state.started ? state.message : '选择模式和难度，点击开始';
+    els.guideText.textContent = state.finished ? t('clickStartAgain') : state.started ? state.message : t('selectModeStart');
     els.playerHud.classList.toggle('active', state.currentPlayer === 0 && state.started && !state.running);
     els.petHud.classList.toggle('active', state.currentPlayer === 1 && state.started && !state.running);
     const swingAvailable = canHumanShoot();
@@ -2913,7 +3098,7 @@
     els.swing.disabled = !swingAvailable;
     updateHitPointUI();
     els.start.hidden = state.started && !state.finished;
-    els.start.textContent = state.finished ? '开始' : '开始';
+    els.start.textContent = t('start');
     document.querySelectorAll('[data-card-mode]').forEach(btn => btn.classList.toggle('active', btn.dataset.cardMode === state.mode));
     updateQualityUI();
     els.modeSelect.value = state.mode;
@@ -2925,12 +3110,12 @@
   }
 
   function currentTargetHint() {
-    if (!state.started || state.finished) return '准备';
-    if (state.mode === 'snooker') return state.snookerNext === 'red' && redsRemaining() ? '目标红球' : '目标彩球';
+    if (!state.started || state.finished) return t('ready');
+    if (state.mode === 'snooker') return state.snookerNext === 'red' && redsRemaining() ? t('targetRed') : t('targetColor');
     const group = playerGroup(state.currentPlayer);
-    if (group === 'solid') return '目标小号';
-    if (group === 'stripe') return '目标大号';
-    return '目标任意';
+    if (group === 'solid') return t('targetSmall');
+    if (group === 'stripe') return t('targetBig');
+    return t('targetAny');
   }
 
   function isPointOverElement(event, element) {
@@ -2940,7 +3125,7 @@
   }
 
   function updateCancelZoneText() {
-    els.cancelZone.textContent = state.aim.active && state.aim.intentReady ? '拖到这里取消挥杆' : '点击取消挥杆';
+    els.cancelZone.textContent = state.aim.active && state.aim.intentReady ? t('dragHereCancel') : t('cancelSwing');
   }
 
   function normalizeHitPoint(point) {
@@ -2967,7 +3152,7 @@
   function setDifficulty(difficulty, silent) {
     state.difficulty = normalizeDifficulty(difficulty);
     saveSettings();
-    if (!silent) toast(`难度：${DIFFICULTIES[state.difficulty].label}`);
+    if (!silent) toast(t('difficultyToast', { label: DIFFICULTIES[state.difficulty].label }));
     updateUI();
   }
 
@@ -3001,12 +3186,12 @@
     const currentPet = state.petAssets[0]?.pet;
     if (currentPet) {
       setPetBillboard(currentPet);
-      els.petName.textContent = currentPet.name || '宠物';
+      els.petName.textContent = currentPet.name || t('pet');
     }
   }
 
   function applyFallbackPets() {
-    els.petName.textContent = '宠物';
+    els.petName.textContent = t('pet');
   }
 
   function setPetBillboard(pet) {

@@ -8,13 +8,14 @@ import { getActivePlanetBuff, getActivePlanetWeather, isVisitingMode, notify, se
 import { addToInventory, getLayout, loadPet, loadPlanetVisitors, recordPlanetVisitor, saveLayout, savePet, savePetDebounced, saveUserProfileDebounced, setCurrentPetPersisted } from './storage.js';
 import { clampEnergyToMax, defaultPermanentTrauma, defaultStats, dominantTraits } from './petTick.js';
 import { computePlanetProgress, getPlanetDayNumber } from './planetProgress.js';
+import { t } from './i18n.js';
 import { decodeDna, displayPetName, dnaRarity, dnaToName, isAdultStage, randomDna } from './dna.js';
 import { getRuntimePetStats, isPetOnCurrentPlanet, isPetSelectable, markPetHaqiIsland, selectablePets } from './petLifecycle.js';
 import { buildEggSvg, getPetSpriteCell, petArtHtml, scanAndMount, SHEET_COLS, SHEET_ROWS } from './pet.js';
 import { CONFIG, currentPlanetMiningHourStart, getPlanetMiningCoins, getPlanetMiningState, getPlanetMiningVisualCoinCount, getStageName } from './config.js';
 import { createSpaceTravel, spaceTravelHtml } from './spacetravel.js';
 import { configureSpaceTravelView, getRemoteElementStock, getSocialVisitTip, handleVisitDestinationSelection, launchSocialVisit, loadOfficialVisitDestinations, remoteTravelPlanets, resetSpaceTravelViewState, showRemotePlanetPanel, showVisitReturnPrompt, SMALL_REMOTE_PLANETS, smallRemotePlanetsHtml, SOCIAL_FUEL_COST, socialVisitDestinationPickerHtml } from './view_spacetravel.js';
-import { defaultPostcardText, drawPetPostcardImage, hydratePetPostcardImages, normalizePostcardLayout, POSTCARD_TEXTS, randomPostcardPhotoTheme, renderPetPostcardHtml, serializePostcardLayout } from './view_postcard.js';
+import { defaultPostcardText, drawPetPostcardImage, getPostcardTexts, hydratePetPostcardImages, normalizePostcardLayout, randomPostcardPhotoTheme, renderPetPostcardHtml, serializePostcardLayout } from './view_postcard.js';
 import SoundManager from './soundManager.js';
 import { getTerrainFieldSlots, getTerrainFieldType, TERRAIN_FIELD_SLOT_DEFS } from './view_terrain_fields.js';
 
@@ -56,118 +57,114 @@ let __spaceTravel = null;
 let __planetStarfield = null;
 
 const WEATHER_OPTIONS = [
-    { id: 'rain', emoji: '🌧️', name: '召雨', label: '雨云', unlock: 1, mood: -2, hunger: 4, message: '雨云覆盖星球，陆地会长出新植物，宠物更想回屋里。' },
-    { id: 'sunny', emoji: '☀️', name: '晴光', label: '晴光', unlock: 2, mood: 7, message: '晴光照亮星球，宠物心情变好了。' },
-    { id: 'breeze', emoji: '🍃', name: '季风', label: '季风', unlock: 4, clean: 5, mood: 3, message: '轻风穿过星球，大气变得清爽。' },
+    { id: 'rain', emoji: '🌧️', nameKey: 'lpWeatherRainName', labelKey: 'lpWeatherRainLabel', unlock: 1, mood: -2, hunger: 4, messageKey: 'lpWeatherRainMsg' },
+    { id: 'sunny', emoji: '☀️', nameKey: 'lpWeatherSunName', labelKey: 'lpWeatherSunLabel', unlock: 2, mood: 7, messageKey: 'lpWeatherSunMsg' },
+    { id: 'breeze', emoji: '🍃', nameKey: 'lpWeatherBreezeName', labelKey: 'lpWeatherBreezeLabel', unlock: 4, clean: 5, mood: 3, messageKey: 'lpWeatherBreezeMsg' },
 ];
 
 const ASTRO_BUFFS = [
-    { id: 'gluttony', emoji: '🌕', name: '贪食之月', text: '体力下降更快，但今天喂食与照顾更有仪式感。', hunger: -8, mood: 4 },
-    { id: 'garden', emoji: '🌿', name: '花园星座', text: '心情衰减减慢，更适合散步。', mood: 12 },
-    { id: 'clarity', emoji: '🔭', name: '明晰星轨', text: '玩耍与探索更有收获，亲密小幅提升。', bond: 4 },
-    { id: 'tidal', emoji: '🌊', name: '潮汐双月', text: '清洁缓慢恢复，心情小幅提升。', clean: 10, mood: 4 },
+    { id: 'gluttony', emoji: '🌕', nameKey: 'lpBuffGluttonyName', textKey: 'lpBuffGluttonyText', hunger: -8, mood: 4 },
+    { id: 'garden', emoji: '🌿', nameKey: 'lpBuffGardenName', textKey: 'lpBuffGardenText', mood: 12 },
+    { id: 'clarity', emoji: '🔭', nameKey: 'lpBuffClarityName', textKey: 'lpBuffClarityText', bond: 4 },
+    { id: 'tidal', emoji: '🌊', nameKey: 'lpBuffTidalName', textKey: 'lpBuffTidalText', clean: 10, mood: 4 },
 ];
 
 const PLANET_ACTION_DETAILS = {
     info: {
         icon: '🛰️',
-        title: '星球档案',
-        text: '查看当前宠物与星球的详细状态。',
-        effect: '会打开详情面板，不会消耗任何资源。',
-        okText: '查看详情',
+        titleKey: 'lpActInfoTitle', textKey: 'lpActInfoText', effectKey: 'lpActInfoEffect', okTextKey: 'lpActInfoOk',
     },
     weather: {
         icon: '🌧️',
-        title: '气候稳定',
-        text: '打开天气控制面板，选择雨云、晴光或季风等气候效果。',
-        effect: '天气会影响星球上的植物和宠物状态，使用后会进入冷却。',
-        okText: '打开天气塔',
+        titleKey: 'lpActWeatherTitle', textKey: 'lpActWeatherText', effectKey: 'lpActWeatherEffect', okTextKey: 'lpActWeatherOk',
         building: 'weatherTower',
     },
     visit: {
         icon: '🚀',
-        title: '星际拜访',
-        text: `让宠物乘飞船拜访好友星球。`,
-        effect: `会消耗 ${SOCIAL_FUEL_COST} 生物燃料，宠物会获得心情与羁绊，并带回金币。`,
-        okText: '选择星球',
+        titleKey: 'lpActVisitTitle', textKey: 'lpActVisitText', effectKey: 'lpActVisitEffect', okTextKey: 'lpActVisitOk',
         unlock: 2,
         building: 'spaceport',
     },
     ufo: {
         icon: '🛸',
-        title: '接待 UFO',
-        text: '接待今天路过的星际旅行商人。',
-        effect: '每天只能接待一次，成功后会获得一份星际礼物。',
-        okText: '接待访客',
+        titleKey: 'lpActUfoTitle', textKey: 'lpActUfoText', effectKey: 'lpActUfoEffect', okTextKey: 'lpActUfoOk',
         unlock: 3,
         building: 'ufoPad',
     },
     astro: {
         icon: '🔭',
-        title: '星象校准',
-        text: '校准今日星象，为宠物和星球启用当天的星轨加成。',
-        effect: '每天只能校准一次，可能改善心情、清洁、亲密等状态。',
-        okText: '校准星象',
+        titleKey: 'lpActAstroTitle', textKey: 'lpActAstroText', effectKey: 'lpActAstroEffect', okTextKey: 'lpActAstroOk',
         unlock: 1,
         building: 'observatory',
     },
     milestones: {
         icon: '🏆',
-        title: '里程碑',
-        text: '查看星球等级、成长进度、解锁目标和最近事件。',
-        effect: '只是查看记录，不会消耗资源或改变状态。',
-        okText: '查看里程碑',
+        titleKey: 'lpActMilestonesTitle', textKey: 'lpActMilestonesText', effectKey: 'lpActMilestonesEffect', okTextKey: 'lpActMilestonesOk',
     },
 };
 
 const PLANET_INFRASTRUCTURE = {
     weatherTower: {
-        name: '天气塔',
+        nameKey: 'lpInfraWeatherName',
         action: 'weather',
         x: 24,
         y: 23,
         scale: 1,
         buildCost: { coins: 60 },
         upgradeCosts: [{ coins: 90 }, { coins: 140 }],
-        guide: '先在星球表面建造天气塔，才能调度雨云、晴光和季风。升级后天气持续更久，冷却更短。',
+        guideKey: 'lpInfraWeatherGuide',
     },
     spaceport: {
-        name: '航天站',
+        nameKey: 'lpInfraSpaceportName',
         action: 'visit',
         x: 68,
         y: 30,
         scale: 1,
         buildCost: { coins: 120 },
         upgradeCosts: [{ coins: 180 }, { coins: 260 }],
-        guide: '星际拜访需要航天站发射飞船。升级后航线更稳定，出访燃料更省、带回金币更多。',
+        guideKey: 'lpInfraSpaceportGuide',
     },
     ufoPad: {
-        name: 'UFO停机坪',
+        nameKey: 'lpInfraUfoName',
         action: 'ufo',
         x: 41,
         y: 18,
         scale: 1,
         buildCost: { coins: 150 },
         upgradeCosts: [{ coins: 220 }, { coins: 320 }],
-        guide: '接待 UFO 需要安全停机坪。升级后旅行商人更愿意留下额外礼物。',
+        guideKey: 'lpInfraUfoGuide',
     },
     observatory: {
-        name: '观星台',
+        nameKey: 'lpInfraObservatoryName',
         action: 'astro',
         x: 65,
         y: -3,
         scale: 1,
         buildCost: { coins: 90 },
         upgradeCosts: [{ coins: 140 }, { coins: 210 }],
-        guide: '星象校准需要观星台锁定星轨。升级后每日星象加成更强。',
+        guideKey: 'lpInfraObservatoryGuide',
     },
 };
 
+// Helpers to resolve localized fields from the constant objects above.
+const infraName = (def) => def ? (def.nameKey ? t(def.nameKey) : def.name || '') : '';
+const actionTitle = (d) => d ? (d.titleKey ? t(d.titleKey) : d.title || '') : '';
+const buffName = (b) => b ? (b.nameKey ? t(b.nameKey) : b.name || '') : '';
+const buffText = (b) => b ? (b.textKey ? t(b.textKey) : b.text || '') : '';
+const weatherLabel = (w) => w ? (w.labelKey ? t(w.labelKey) : w.label || '') : '';
+const weatherMessage = (w) => w ? (w.messageKey ? t(w.messageKey) : w.message || '') : '';
+// 当前生效天气/星象的本地化名称（按 id 反查，避免依赖持久化的中文 name）。
+function activeWeatherLabel(active) {
+    if (!active) return '';
+    const opt = WEATHER_OPTIONS.find(w => w.id === active.id);
+    return opt ? weatherLabel(opt) : (active.name || '');
+}
+
 const PLANET_RESEARCH_ACTIONS = [
-    { action: 'weather', name: '调天气', desc: '选择雨云、晴光或季风。' },
-    { action: 'ufo', name: '接待 UFO', desc: '接待路过的星际访客。' },
-    { action: 'astro', name: '星象校准', desc: '启用今日星轨加成。' },
-    { action: 'visit', name: '星际拜访', desc: '乘飞船拜访好友星球。' },
+    { action: 'weather', nameKey: 'lpResWeatherName', descKey: 'lpResWeatherDesc' },
+    { action: 'ufo', nameKey: 'lpResUfoName', descKey: 'lpResUfoDesc' },
+    { action: 'astro', nameKey: 'lpResAstroName', descKey: 'lpResAstroDesc' },
+    { action: 'visit', nameKey: 'lpResVisitName', descKey: 'lpResVisitDesc' },
 ];
 
 configureSpaceTravelView({
@@ -227,9 +224,9 @@ function infrastructureCost(buildingId, currentLevel = 0) {
 function formatCost(cost) {
     if (!cost) return '';
     const parts = [];
-    if (cost.coins) parts.push(`${cost.coins} 金币`);
-    if (cost.biofuel) parts.push(`${cost.biofuel} 生物燃料`);
-    return parts.join(' + ') || '免费';
+    if (cost.coins) parts.push(t('lpCostCoins', { n: cost.coins }));
+    if (cost.biofuel) parts.push(t('lpCostBiofuel', { n: cost.biofuel }));
+    return parts.join(' + ') || t('lpCostFree');
 }
 
 function canAfford(cost) {
@@ -255,7 +252,7 @@ function planetMiningPileHtml(coins) {
         [-25, 13, 16, 0.88], [-10, 10, -6, 1.08], [5, 12, 24, 0.9], [18, 11, -15, 1],
         [-2, 20, 6, 0.94], [12, 20, -24, 0.86],
     ];
-    return `<div class="planet-coin-pile" data-planet-mining-pile title="可领取 ${amount} 金币" aria-label="星球挖矿产出 ${amount} 金币">
+    return `<div class="planet-coin-pile" data-planet-mining-pile title="${escapeHtml(t('lpMiningTitle', { amount }))}" aria-label="${escapeHtml(t('lpMiningAria', { amount }))}">
         ${Array.from({ length: coinCount }).map((_, index) => {
             const [x, y, rot, scale] = placements[index] || [0, 0, 0, 1];
             return `<span class="planet-coin-piece" style="--coin-x:${x}px;--coin-y:${y}px;--coin-rot:${rot}deg;--coin-scale:${scale}"></span>`;
@@ -311,11 +308,11 @@ function collectPlanetMiningCoins() {
     mining.lastCollectedAt = now;
     mining.fieldCollectedCoins = 0;
     state.coins = Math.max(0, (Number(state.coins) || 0) + reward);
-    addPlanetLog('mining', `星球挖矿产出 ${reward} 金币`, '🪙');
+    addPlanetLog('mining', t('lpMiningLog', { reward }), '🪙');
     saveUserProfileDebounced();
     soundManager.playPointReward();
     animatePlanetMiningCoinsToHud(reward, refreshTopbarResources);
-    showToast(`星球挖矿产出了 ${reward} 金币。`, 'success', 2600);
+    showToast(t('lpMiningToast', { reward }), 'success', 2600);
     notify();
     return true;
 }
@@ -326,12 +323,12 @@ function buildOrUpgradeInfrastructure(buildingId) {
     const current = getInfrastructure(buildingId);
     const currentLevel = current?.level || 0;
     if (currentLevel >= PLANET_INFRA_MAX_LEVEL) {
-        showToast(`${def.name} 已满级。`, 'info');
+        showToast(t('lpInfraMaxed', { name: infraName(def) }), 'info');
         return false;
     }
     const cost = infrastructureCost(buildingId, currentLevel);
     if (!canAfford(cost)) {
-        showToast(`资源不足：需要 ${formatCost(cost)}。`, 'error', 2600);
+        showToast(t('lpInfraNotEnough', { cost: formatCost(cost) }), 'error', 2600);
         return false;
     }
     spendCost(cost);
@@ -342,12 +339,12 @@ function buildOrUpgradeInfrastructure(buildingId) {
         builtAt: current?.builtAt || Date.now(),
         upgradedAt: Date.now(),
     };
-    addPlanetLog(currentLevel ? 'upgrade' : 'build', `${def.name} 升至 Lv.${nextLevel}`, '🏗️');
+    addPlanetLog(currentLevel ? 'upgrade' : 'build', t('lpInfraUpLog', { name: infraName(def), level: nextLevel }), '🏗️');
     saveUserProfileDebounced();
     notify();
     if (currentLevel) soundManager.playBuildLevelUp();
     else soundManager.playBuildCreated();
-    showToast(currentLevel ? `${def.name} 已升级到 Lv.${nextLevel}。` : `${def.name} 建造完成。`, 'success', 2200);
+    showToast(currentLevel ? t('lpInfraUpToast', { name: infraName(def), level: nextLevel }) : t('lpInfraBuiltToast', { name: infraName(def) }), 'success', 2200);
     return true;
 }
 
@@ -356,7 +353,7 @@ function isLocked(progress, unlockLevel) {
 }
 
 function lockedTitle(unlockLevel) {
-    return `星球 Lv.${unlockLevel} 解锁`;
+    return t('lpLockedTitle', { level: unlockLevel });
 }
 
 function weatherById(id) {
@@ -383,20 +380,26 @@ function astroMultiplier() {
     return 1 + (level - 1) * 0.25;
 }
 
+function actionEffect(detail) {
+    if (!detail) return '';
+    return detail.effectKey ? t(detail.effectKey, { fuel: SOCIAL_FUEL_COST }) : (detail.effect || '');
+}
+
 function actionEffectText(action, detail, buildingId, infraLevel) {
+    const effect = actionEffect(detail);
     if (buildingId === 'weatherTower') {
-        return `${detail.effect} 当前天气持续 ${Math.round(weatherDurationMs() / 60000)} 分钟，冷却约 ${Math.round(weatherCooldownMs() / 60000)} 分钟。`;
+        return `${effect} ${t('lpWeatherDurInfo', { dur: Math.round(weatherDurationMs() / 60000), cd: Math.round(weatherCooldownMs() / 60000) })}`;
     }
     if (buildingId === 'spaceport') {
         return getSocialVisitTip('haqi');
     }
     if (buildingId === 'ufoPad') {
-        return `${detail.effect} 当前 Lv.${infraLevel || 1} 停机坪会让访客留下 ${Math.max(1, infraLevel || 1)} 份礼物。`;
+        return `${effect} ${t('lpUfoGiftInfo', { level: infraLevel || 1, gifts: Math.max(1, infraLevel || 1) })}`;
     }
     if (buildingId === 'observatory') {
-        return `${detail.effect} 当前星象倍率为 ${astroMultiplier().toFixed(2)}x。`;
+        return `${effect} ${t('lpAstroMultInfo', { mult: astroMultiplier().toFixed(2) })}`;
     }
-    return detail.effect;
+    return effect;
 }
 
 function planetInfrastructureEntries() {
@@ -942,15 +945,15 @@ export const planetLevel = {
         const moons = '';
         const remoteLocked = progress.canVisitHaqiIsland ? '' : ' locked';
         const remoteTitle = progress.canVisitHaqiIsland
-            ? '前往哈奇岛下载蛋蛋星球客户端'
-            : '孵化一只宠物且星球等级达到 Lv.3 后解锁';
+            ? t('lpHaqiUnlocked')
+            : t('lpHaqiLocked');
         return `
             <div class="space-camera-layer">
                 <div class="space-bg"><canvas class="space-star-canvas" id="mhPlanetStarCanvas" aria-hidden="true"></canvas></div>
                 ${PLANET_SPACECRAFT_ENABLED ? spaceTravelHtml() : ''}
                 ${activeWeather ? planetWeatherSpaceHtml(activeWeather) : ''}
                 ${visiting ? '' : smallRemotePlanetsHtml()}
-                <div class="space-planet user-planet ${visiting ? 'visiting-friend-planet' : ''} ${settlementStyle ? 'has-settlement-style' : ''} planet-expression-${planetExpression} ${miningCoins > 0 ? 'has-mining-coins' : ''}" id="mhPlanet" data-planet-expression="${planetExpression}" style="${escapeHtml(settlementStyleText)}" title="${visiting ? '好友星球返航确认' : miningCoins > 0 ? `领取 ${miningCoins} 金币` : '星球'}">
+                <div class="space-planet user-planet ${visiting ? 'visiting-friend-planet' : ''} ${settlementStyle ? 'has-settlement-style' : ''} planet-expression-${planetExpression} ${miningCoins > 0 ? 'has-mining-coins' : ''}" id="mhPlanet" data-planet-expression="${planetExpression}" style="${escapeHtml(settlementStyleText)}" title="${visiting ? escapeHtml(t('lpVisitReturnTip')) : miningCoins > 0 ? escapeHtml(t('lpMiningTitle', { amount: miningCoins })) : escapeHtml(t('lpPlanetTip'))}">
                     ${planetMiningPileHtml(miningCoins)}
                     <div class="planet-moons">${moons}</div>
                     <div class="planet-ring"></div>
@@ -976,12 +979,12 @@ export const planetLevel = {
                 </div>
             <div class="planet-status-panel">
                 <div class="planet-status-date">${escapeHtml(formatChineseDate(new Date()))}</div>
-                <div class="planet-status-main">${escapeHtml(planetName)}${visiting ? '' : '星'} · ${visiting ? '拜访中' : `第${progress.planetDays}天`}</div>
-                <div class="planet-status-level">${visiting ? '太空层仅用于返航确认' : `Lv.${progress.level} 星轨稳定`}</div>
-                ${activeWeather ? `<div class="planet-status-chip">${activeWeather.emoji} ${escapeHtml(activeWeather.name)} · ${formatTimeLeft(activeWeather.until)}</div>` : ''}
-                ${activeBuff ? `<div class="planet-status-chip">${activeBuff.emoji} ${escapeHtml(activeBuff.name)}</div>` : ''}
+                <div class="planet-status-main">${escapeHtml(planetName)}${visiting ? '' : escapeHtml(t('lpPlanetSuffix'))} · ${visiting ? escapeHtml(t('lpVisiting')) : escapeHtml(t('lpDayNumber', { n: progress.planetDays }))}</div>
+                <div class="planet-status-level">${visiting ? escapeHtml(t('lpVisitSpaceOnly')) : escapeHtml(t('lpLevelStable', { level: progress.level }))}</div>
+                ${activeWeather ? `<div class="planet-status-chip">${activeWeather.emoji} ${escapeHtml(activeWeatherLabel(activeWeather))} · ${formatTimeLeft(activeWeather.until)}</div>` : ''}
+                ${activeBuff ? `<div class="planet-status-chip">${activeBuff.emoji} ${escapeHtml(buffName(activeBuff))}</div>` : ''}
             </div>
-            ${visiting ? '' : `<button class="remote-planet${remoteLocked}" id="mhHaqiIsland" type="button" title="${escapeHtml(remoteTitle)}" aria-label="哈奇岛">
+            ${visiting ? '' : `<button class="remote-planet${remoteLocked}" id="mhHaqiIsland" type="button" title="${escapeHtml(remoteTitle)}" aria-label="${escapeHtml(t('lpHaqiIsland'))}">
                 <span class="remote-magic-hat" aria-hidden="true">
                     <svg viewBox="0 0 96 84" role="img" focusable="false">
                         <defs>
@@ -1121,7 +1124,7 @@ export const planetLevel = {
             }
             if (collectPlanetMiningCoins()) return;
             const isTouch = window.matchMedia && window.matchMedia('(pointer: coarse)').matches;
-            const msg = isTouch ? '上滑屏幕即可放大登陆星球 ✨' : '滚动鼠标滚轮即可放大登陆星球 ✨';
+            const msg = isTouch ? t('lpScrollUpHint') : t('lpWheelHint');
             showToast(msg, 'info');
         };
         if (isVisitingMode()) {
@@ -1133,7 +1136,7 @@ export const planetLevel = {
             e.stopPropagation();
             const progress = computePlanetProgress();
             if (!progress.canVisitHaqiIsland) {
-                showToast('哈奇岛需要孵化至少 1 只宠物，并让星球等级达到 Lv.3 后开启。', 'info', 3200);
+                showToast(t('lpHaqiLockedHint'), 'info', 3200);
                 return;
             }
             showHaqiIslandPanel(0);
@@ -1152,11 +1155,11 @@ export const planetLevel = {
         if (isVisitingMode()) {
             return `
                 <div class="mh-dock-row planet-dock-actions planet-visit-dock">
-                    <button class="btn-secondary dock-icon-btn" data-act="visit-field" title="继续在好友星球表面活动">
-                        <span class="dock-icon planet-dock-svg-icon planet-dock-emoji-icon">🪐</span><span class="dock-label">继续拜访</span>
+                    <button class="btn-secondary dock-icon-btn" data-act="visit-field" title="${escapeHtml(t('lpDockContinueVisitTip'))}">
+                        <span class="dock-icon planet-dock-svg-icon planet-dock-emoji-icon">🪐</span><span class="dock-label">${escapeHtml(t('lpDockContinueVisit'))}</span>
                     </button>
-                    <button class="btn-primary dock-icon-btn" data-act="visit-return" title="登船返航并领取好友礼盒">
-                        <span class="dock-icon planet-dock-svg-icon planet-dock-emoji-icon">🎁</span><span class="dock-label">返航</span>
+                    <button class="btn-primary dock-icon-btn" data-act="visit-return" title="${escapeHtml(t('lpDockReturnTip'))}">
+                        <span class="dock-icon planet-dock-svg-icon planet-dock-emoji-icon">🎁</span><span class="dock-label">${escapeHtml(t('lpDockReturn'))}</span>
                     </button>
                 </div>
             `;
@@ -1166,14 +1169,14 @@ export const planetLevel = {
         const visitInfraMissing = !getInfrastructure('spaceport');
         return `
             <div class="mh-dock-row planet-dock-actions">
-                <button class="btn-secondary dock-icon-btn ${socialLocked || visitInfraMissing ? 'planet-action-locked' : ''}" data-act="visit" title="${socialLocked ? lockedTitle(2) : `消耗 ${SOCIAL_FUEL_COST} 生物燃料拜访好友星球`}">
-                    <span class="dock-icon planet-dock-svg-icon">${planetActionIconHtml('visit')}</span><span class="dock-label">星际拜访</span>
+                <button class="btn-secondary dock-icon-btn ${socialLocked || visitInfraMissing ? 'planet-action-locked' : ''}" data-act="visit" title="${socialLocked ? escapeHtml(lockedTitle(2)) : escapeHtml(t('lpDockVisitTip', { fuel: SOCIAL_FUEL_COST }))}">
+                    <span class="dock-icon planet-dock-svg-icon">${planetActionIconHtml('visit')}</span><span class="dock-label">${escapeHtml(t('lpDockVisit'))}</span>
                 </button>
-                ${pet?.stage !== 'egg' ? `<button class="btn-secondary dock-icon-btn" data-act="mailbox" title="打开邮箱">
-                    <span class="dock-icon planet-dock-svg-icon planet-dock-emoji-icon">💌</span><span class="dock-label">邮箱</span>
+                ${pet?.stage !== 'egg' ? `<button class="btn-secondary dock-icon-btn" data-act="mailbox" title="${escapeHtml(t('lpDockMailboxTip'))}">
+                    <span class="dock-icon planet-dock-svg-icon planet-dock-emoji-icon">💌</span><span class="dock-label">${escapeHtml(t('lpDockMailbox'))}</span>
                 </button>` : ''}
-                <button class="btn-secondary dock-icon-btn" data-act="milestones" title="查看星球里程碑">
-                    <span class="dock-icon planet-dock-svg-icon">${planetActionIconHtml('milestones')}</span><span class="dock-label">里程碑</span>
+                <button class="btn-secondary dock-icon-btn" data-act="milestones" title="${escapeHtml(t('lpDockMilestonesTip'))}">
+                    <span class="dock-icon planet-dock-svg-icon">${planetActionIconHtml('milestones')}</span><span class="dock-label">${escapeHtml(t('lpDockMilestones'))}</span>
                 </button>
             </div>
         `;
@@ -1211,7 +1214,7 @@ export const planetLevel = {
 };
 
 function formatChineseDate(date) {
-    return `${date.getFullYear()}年${date.getMonth() + 1}月${date.getDate()}日`;
+    return t('lpDate', { y: date.getFullYear(), m: date.getMonth() + 1, d: date.getDate() });
 }
 
 function formatLogDate(timestamp) {
@@ -1236,19 +1239,19 @@ function formatFarewellDate(timestamp) {
 function formatPetAge(petOrRecord, now = Date.now()) {
     const bornAt = Number(petOrRecord?.bornAt) || now;
     const hours = Math.max(0, Math.floor((now - bornAt) / 3600000));
-    if (hours < 1) return '刚刚出生';
-    if (hours < 24) return `${hours}小时`;
+    if (hours < 1) return t('lpJustBorn');
+    if (hours < 24) return t('lpAgeHours', { h: hours });
     const days = Math.floor(hours / 24);
     const restHours = hours % 24;
-    return restHours ? `${days}天${restHours}小时` : `${days}天`;
+    return restHours ? t('lpAgeDaysHours', { d: days, h: restHours }) : t('lpAgeDays', { d: days });
 }
 
 function formatTimeLeft(until, now = Date.now()) {
     const ms = Math.max(0, (Number(until) || 0) - now);
     const minutes = Math.ceil(ms / 60000);
-    if (minutes <= 0) return '即将结束';
-    if (minutes < 60) return `${minutes}分钟`;
-    return `${Math.ceil(minutes / 60)}小时`;
+    if (minutes <= 0) return t('lpEndingSoon');
+    if (minutes < 60) return t('lpMinutes', { n: minutes });
+    return t('lpHours', { n: Math.ceil(minutes / 60) });
 }
 
 function planetWeatherSpaceHtml(weather) {
@@ -1322,12 +1325,12 @@ function fitPetSharePostcard(root) {
 }
 
 function shareTextOptions(pet) {
-    const name = displayPetName(pet) || '我的宠物';
+    const name = displayPetName(pet) || t('pcMyPet');
     return [
         defaultPostcardText(pet),
-        `${name}想认识新的星际好友。`,
-        `${name}在星球上等你来做客。`,
-        ...POSTCARD_TEXTS,
+        t('pcShareWant', { name }),
+        t('pcShareWaiting', { name }),
+        ...getPostcardTexts(),
     ].filter((text, index, arr) => text && arr.indexOf(text) === index);
 }
 
@@ -1352,7 +1355,7 @@ async function copyText(text, okMessage = '已复制') {
         showToast(okMessage, 'success', 1600);
         return true;
     } catch (_) {
-        showToast('复制失败，请手动复制链接。', 'error', 2200);
+        showToast(t('lpShareCopyFailed'), 'error', 2200);
         return false;
     }
 }
@@ -1360,12 +1363,12 @@ async function copyText(text, okMessage = '已复制') {
 async function sharePetImage(pet, layout, text, url, photoTheme) {
     const blob = await drawPetPostcardImage(pet, layout, text, photoTheme);
     if (!blob) {
-        await copyText(url, '图片生成失败，已复制链接');
+        await copyText(url, t('lpImageFailedCopied'));
         return;
     }
     const file = new File([blob], `${pet?.id || 'pet'}-invite.png`, { type: 'image/png' });
     if (navigator.canShare?.({ files: [file] }) && navigator.share) {
-        try { await navigator.share({ title: '宠物邀请', text, url, files: [file] }); return; } catch (_) {}
+        try { await navigator.share({ title: t('lpShareInvite'), text, url, files: [file] }); return; } catch (_) {}
     }
     const a = document.createElement('a');
     a.href = URL.createObjectURL(blob);
@@ -1373,13 +1376,13 @@ async function sharePetImage(pet, layout, text, url, photoTheme) {
     document.body.appendChild(a);
     a.click();
     setTimeout(() => { URL.revokeObjectURL(a.href); a.remove(); }, 800);
-    showToast('分享图片已生成。', 'success', 1600);
+    showToast(t('lpShareImageDone'), 'success', 1600);
 }
 
 export function showPetSharePanel(pet) {
     if (!pet) return;
     if (pet.stage === 'egg') {
-        showToast('宠物破壳后才能分享。', 'info', 1800);
+        showToast(t('lpShareEggFirst'), 'info', 1800);
         return;
     }
     const textOptions = shareTextOptions(pet);
@@ -1392,15 +1395,15 @@ export function showPetSharePanel(pet) {
     };
     openPlanetModal(`
         <div class="pet-share-head">
-            <div class="planet-modal-title">分享 ${escapeHtml(displayPetName(pet))}</div>
-            <div class="planet-modal-subtitle">点击照片切换张数，点击文字切换文案。</div>
+            <div class="planet-modal-title">${escapeHtml(t('lpShareTitle', { name: displayPetName(pet) }))}</div>
+            <div class="planet-modal-subtitle">${escapeHtml(t('lpShareSub'))}</div>
         </div>
         <div data-share-preview-host>${renderPetPostcardHtml(pet, { layout: shareState.layout, text: shareState.text, photoTheme: shareState.photoTheme, interactive: true })}</div>
         <div class="planet-modal-actions pet-share-actions">
-            <button class="btn-secondary" data-act="close">关闭</button>
-            <button class="btn-secondary" data-share-method="url">复制链接</button>
-            <button class="btn-secondary" data-share-method="wechat">微信</button>
-            <button class="btn-primary" data-share-method="image">图片</button>
+            <button class="btn-secondary" data-act="close">${escapeHtml(t('close'))}</button>
+            <button class="btn-secondary" data-share-method="url">${escapeHtml(t('lpShareCopyLink'))}</button>
+            <button class="btn-secondary" data-share-method="wechat">${escapeHtml(t('lpShareWechat'))}</button>
+            <button class="btn-primary" data-share-method="image">${escapeHtml(t('lpShareImage'))}</button>
         </div>
     `, async (e) => {
         const root = e.currentTarget;
@@ -1412,12 +1415,12 @@ export function showPetSharePanel(pet) {
             return;
         }
         if (e.target.closest?.('[data-share-edit-text]')) {
-            const customText = await prompt('编辑明信片文字', {
+            const customText = await prompt(t('lpShareEditTitle'), {
                 defaultValue: shareState.text,
-                placeholder: '写一句邀请好友的话',
-                okText: '保存',
+                placeholder: t('lpShareEditPlaceholder'),
+                okText: t('save'),
                 maxLength: SHARE_POSTCARD_MAX_TEXT,
-                validate: (value) => value ? '' : '请输入邀请文字',
+                validate: (value) => value ? '' : t('lpShareEditRequired'),
             });
             if (customText) {
                 shareState.text = customText;
@@ -1440,11 +1443,11 @@ export function showPetSharePanel(pet) {
         const url = buildPetShareUrl(pet, username, shareState.layout, shareState.text, shareState.photoTheme);
         if (methodBtn.dataset.shareMethod === 'url') {
             if (navigator.share) {
-                try { await navigator.share({ title: '宠物邀请', text: shareState.text, url }); return; } catch (_) {}
+                try { await navigator.share({ title: t('lpShareInvite'), text: shareState.text, url }); return; } catch (_) {}
             }
-            await copyText(url, '分享链接已复制');
+            await copyText(url, t('lpShareLinkCopied'));
         } else if (methodBtn.dataset.shareMethod === 'wechat') {
-            await copyText(`${shareState.text}\n${url}`, '已复制微信分享内容');
+            await copyText(`${shareState.text}\n${url}`, t('lpShareWechatCopied'));
         } else if (methodBtn.dataset.shareMethod === 'image') {
             methodBtn.disabled = true;
             try { await sharePetImage(pet, shareState.layout, shareState.text, url, shareState.photoTheme); }
@@ -1478,7 +1481,7 @@ function showPlanetActionDialog(action, pet, ctx) {
     const canUpgrade = buildingDef && infrastructureLevel > 0 && infrastructureLevel < PLANET_INFRA_MAX_LEVEL;
     const cost = buildingDef ? infrastructureCost(buildingId, infrastructureLevel) : null;
     const bodyText = needsBuilding
-            ? buildingDef.guide
+            ? (buildingDef.guideKey ? t(buildingDef.guideKey) : buildingDef.guide)
         : locked
             ? lockedTitle(detail.unlock)
             : actionEffectText(action, detail, buildingId, infrastructureLevel);
@@ -1487,10 +1490,10 @@ function showPlanetActionDialog(action, pet, ctx) {
         <div class="planet-action-dialog-head">
             <span class="planet-action-dialog-icon">${detail.icon}</span>
             <div>
-                <div class="planet-modal-title">${escapeHtml(detail.title)}</div>
-                <div class="planet-modal-subtitle">${escapeHtml(detail.text)}</div>
+                <div class="planet-modal-title">${escapeHtml(actionTitle(detail))}</div>
+                <div class="planet-modal-subtitle">${escapeHtml(detail.textKey ? t(detail.textKey) : detail.text || '')}</div>
             </div>
-            <button class="menu-close-btn haqi-download-close planet-action-close" data-act="close" type="button" aria-label="关闭">×</button>
+            <button class="menu-close-btn haqi-download-close planet-action-close" data-act="close" type="button" aria-label="${escapeHtml(t('close'))}">×</button>
         </div>
         ${action === 'visit' && !locked && !needsBuilding ? '' : `<div class="planet-action-dialog-body">
             ${escapeHtml(bodyText)}
@@ -1498,13 +1501,13 @@ function showPlanetActionDialog(action, pet, ctx) {
         ${buildingDef ? `
             <div class="planet-infra-card">
                 <span class="planet-infra-card-icon">${planetInfrastructureSvg(buildingId, Math.max(1, infrastructureLevel || 1))}</span>
-                <span><b>${escapeHtml(buildingDef.name)} ${infrastructureLevel ? `Lv.${infrastructureLevel}` : '未建造'}</b><i>${escapeHtml(infrastructureLevel ? (canUpgrade ? `升级费用：${formatCost(cost)}` : '已满级') : `建造费用：${formatCost(cost)}`)}</i></span>
-                ${needsBuilding || canUpgrade ? `<button class="btn-secondary planet-infra-card-action" data-infra-build="${escapeHtml(buildingId)}" type="button">${needsBuilding ? '建造' : '升级'}</button>` : ''}
+                <span><b>${escapeHtml(infraName(buildingDef))} ${infrastructureLevel ? `Lv.${infrastructureLevel}` : escapeHtml(t('lpNotBuilt'))}</b><i>${escapeHtml(infrastructureLevel ? (canUpgrade ? t('lpUpgradeCost', { cost: formatCost(cost) }) : t('lpMaxed')) : t('lpBuildCost', { cost: formatCost(cost) }))}</i></span>
+                ${needsBuilding || canUpgrade ? `<button class="btn-secondary planet-infra-card-action" data-infra-build="${escapeHtml(buildingId)}" type="button">${needsBuilding ? escapeHtml(t('lpBuild')) : escapeHtml(t('lpUpgrade'))}</button>` : ''}
             </div>` : ''}
         ${visitDestinationsHtml}
         ${action === 'visit' && !locked && !needsBuilding ? '' : `<div class="planet-modal-actions">
-            ${locked && !needsBuilding ? `<button class="btn-secondary" data-act="close">知道了</button>` : ''}
-            ${locked || needsBuilding ? '' : `<button class="btn-primary" data-action-confirm="${escapeHtml(action)}">${escapeHtml(detail.okText)}</button>`}
+            ${locked && !needsBuilding ? `<button class="btn-secondary" data-act="close">${escapeHtml(t('lpGotIt'))}</button>` : ''}
+            ${locked || needsBuilding ? '' : `<button class="btn-primary" data-action-confirm="${escapeHtml(action)}">${escapeHtml(detail.okTextKey ? t(detail.okTextKey) : detail.okText || '')}</button>`}
         </div>`}
     `, (e, close) => {
         const buildBtn = e.target.closest?.('[data-infra-build]');
@@ -1563,24 +1566,24 @@ export function showPlanetResearchPanel(pet, ctx) {
         return;
     }
     openPlanetModal(`
-        <div class="planet-modal-title">🔬 星球研究</div>
-        <div class="planet-modal-subtitle">建造、升级或进入设施。</div>
+        <div class="planet-modal-title">${escapeHtml(t('lpResearchTitle'))}</div>
+        <div class="planet-modal-subtitle">${escapeHtml(t('lpResearchSub'))}</div>
         ${readonlyPlanet ? '' : `
             <button class="planet-terrain-editor-entry" data-research-terrain="1" type="button">
                 <span class="planet-terrain-editor-icon">🗺️</span>
                 <span class="planet-terrain-editor-body">
-                    <b>星球地貌编辑器</b>
-                    <i>管理天空、陆地、海洋和元素的比例。</i>
+                    <b>${escapeHtml(t('lpTerrainEditorName'))}</b>
+                    <i>${escapeHtml(t('lpTerrainEditorDesc'))}</i>
                 </span>
-                <span class="planet-terrain-editor-go">进入</span>
+                <span class="planet-terrain-editor-go">${escapeHtml(t('lpEnter'))}</span>
             </button>`}
         <button class="planet-terrain-editor-entry" data-research-settlements="1" type="button">
             <span class="planet-terrain-editor-icon">🚀</span>
             <span class="planet-terrain-editor-body">
-                <b>星际移民</b>
-                <i>把家迁移到官方星球。</i>
+                <b>${escapeHtml(t('lpMigrationName'))}</b>
+                <i>${escapeHtml(t('lpMigrationDesc'))}</i>
             </span>
-            <span class="planet-terrain-editor-go">进入</span>
+            <span class="planet-terrain-editor-go">${escapeHtml(t('lpEnter'))}</span>
         </button>
         <div class="planet-option-list planet-research-list">
             ${PLANET_RESEARCH_ACTIONS.map(item => {
@@ -1592,21 +1595,21 @@ export function showPlanetResearchPanel(pet, ctx) {
                 const locked = detail?.unlock && isLocked(progress, detail.unlock);
                 const cost = buildingId ? infrastructureCost(buildingId, infraLevel) : null;
                 const canBuildOrUpgrade = !locked && cost && infraLevel < PLANET_INFRA_MAX_LEVEL;
-                const levelText = !buildingId ? '管理' : (locked ? lockedTitle(detail.unlock) : infraLevel ? `Lv.${infraLevel}` : '未建造');
-                const actionText = infraLevel <= 0 ? '建造' : '升级';
+                const levelText = !buildingId ? t('lpManage') : (locked ? lockedTitle(detail.unlock) : infraLevel ? `Lv.${infraLevel}` : t('lpNotBuilt'));
+                const actionText = infraLevel <= 0 ? t('lpBuild') : t('lpUpgrade');
                 return `
                     <div class="planet-option planet-research-card ${locked ? 'locked' : ''}" data-research-action="${escapeHtml(action)}" role="button" tabindex="0">
                         <span class="planet-option-icon planet-research-icon">${planetActionIconHtml(action)}</span>
                         <span class="planet-research-body">
-                            <b>${escapeHtml(item.name)} <em>${escapeHtml(levelText)}</em></b>
-                            <i>${escapeHtml(item.desc)}</i>
+                            <b>${escapeHtml(item.nameKey ? t(item.nameKey) : item.name)} <em>${escapeHtml(levelText)}</em></b>
+                            <i>${escapeHtml(item.descKey ? t(item.descKey) : item.desc)}</i>
                         </span>
-                        <span class="planet-research-cost">${buildingId ? (cost ? `<span class="planet-research-coin-icon">${coinIconSvg()}</span>${cost.coins}` : '满级') : '进入'}</span>
+                        <span class="planet-research-cost">${buildingId ? (cost ? `<span class="planet-research-coin-icon">${coinIconSvg()}</span>${cost.coins}` : t('lpMaxed')) : t('lpEnter')}</span>
                         ${canBuildOrUpgrade ? `<button class="btn-secondary planet-research-build" data-research-build="${escapeHtml(buildingId)}" type="button">${actionText}</button>` : ''}
                     </div>`;
             }).join('')}
         </div>
-        <div class="planet-modal-actions"><button class="btn-secondary" data-act="close">关闭</button></div>
+        <div class="planet-modal-actions"><button class="btn-secondary" data-act="close">${escapeHtml(t('close'))}</button></div>
     `, (e, close) => {
         if (e.target.closest?.('[data-research-terrain]')) {
             close();
@@ -1645,20 +1648,20 @@ function showWeatherPanel(pet) {
     const now = Date.now();
     const activeWeather = getActivePlanetWeather(now);
     openPlanetModal(`
-        <div class="planet-modal-title">🌦️ 星球天气控制</div>
-        <div class="planet-modal-subtitle">改变气候会传导到 星球与宠物日常状态。</div>
-        ${activeWeather ? `<div class="planet-current-card">${activeWeather.emoji} ${escapeHtml(activeWeather.name)} 还会持续 ${formatTimeLeft(activeWeather.until, now)}</div>` : ''}
+        <div class="planet-modal-title">${escapeHtml(t('lpWeatherPanelTitle'))}</div>
+        <div class="planet-modal-subtitle">${escapeHtml(t('lpWeatherPanelSub'))}</div>
+        ${activeWeather ? `<div class="planet-current-card">${escapeHtml(t('lpWeatherActive', { emoji: activeWeather.emoji, name: activeWeatherLabel(activeWeather), time: formatTimeLeft(activeWeather.until, now) }))}</div>` : ''}
         <div class="planet-option-list">
             ${WEATHER_OPTIONS.map(w => {
                 const locked = isLocked(progress, w.unlock);
                 return `
                     <button class="planet-option ${locked ? 'locked' : ''}" data-weather-choice="${w.id}" type="button">
                         <span class="planet-option-icon">${w.emoji}</span>
-                        <span><b>${escapeHtml(w.label)}</b><i>${locked ? lockedTitle(w.unlock) : escapeHtml(w.message)}</i></span>
+                        <span><b>${escapeHtml(weatherLabel(w))}</b><i>${locked ? lockedTitle(w.unlock) : escapeHtml(weatherMessage(w))}</i></span>
                     </button>`;
             }).join('')}
         </div>
-        <div class="planet-modal-actions"><button class="btn-secondary" data-act="close">关闭</button></div>
+        <div class="planet-modal-actions"><button class="btn-secondary" data-act="close">${escapeHtml(t('close'))}</button></div>
     `, async (e, close) => {
         const btn = e.target.closest?.('[data-weather-choice]');
         if (!btn) return;
@@ -1677,13 +1680,13 @@ async function summonWeather(option, pet) {
     const actions = state.planetActions || (state.planetActions = {});
     const cooldownMs = weatherCooldownMs();
     if (actions.weatherAt && now - actions.weatherAt < cooldownMs) {
-        showToast(`天气塔冷却中，还需 ${formatTimeLeft(actions.weatherAt + cooldownMs, now)}`, 'info');
+        showToast(t('lpWeatherCooldown', { time: formatTimeLeft(actions.weatherAt + cooldownMs, now) }), 'info');
         return;
     }
     state.planetWeather = {
         id: option.id,
         emoji: option.emoji,
-        name: option.label,
+        name: weatherLabel(option),
         startedAt: now,
         until: now + weatherDurationMs(),
     };
@@ -1692,13 +1695,13 @@ async function summonWeather(option, pet) {
     if (option.id === 'rain') {
         const grown = await growRainPlants(pet);
         state.currentRoom = pet.activeRoom = 'living';
-        addPlanetLog('weather', `雨云催生了 ${grown} 株 植物`, option.emoji);
+        addPlanetLog('weather', t('lpRainGrew', { n: grown }), option.emoji);
     } else {
-        addPlanetLog('weather', `${option.label}调整了星球气候`, option.emoji);
+        addPlanetLog('weather', t('lpWeatherAdjusted', { label: weatherLabel(option) }), option.emoji);
     }
     savePetDebounced(pet);
     saveUserProfileDebounced();
-    showToast(option.message, 'success', 2800);
+    showToast(weatherMessage(option), 'success', 2800);
     notify();
 }
 
@@ -1708,7 +1711,7 @@ async function acceptUfoVisitor(pet) {
     const actions = state.planetActions || (state.planetActions = {});
     const key = todayKey();
     if (actions.ufoDay === key) {
-        showToast('今日 UFO 已经接待过了，明天再观察星轨吧。', 'info', 2600);
+        showToast(t('lpUfoDone'), 'info', 2600);
         return;
     }
     actions.ufoDay = key;
@@ -1720,7 +1723,7 @@ async function acceptUfoVisitor(pet) {
     savePetDebounced(pet);
     saveUserProfileDebounced();
     soundManager.playSpacecraftArrive();
-    showToast(`UFO 旅行商人留下了 ${count} 份礼物，已放入背包。`, 'success', 2600);
+    showToast(t('lpUfoGift', { count }), 'success', 2600);
     notify();
 }
 
@@ -1730,7 +1733,7 @@ function alignConstellations(pet) {
     const actions = state.planetActions || (state.planetActions = {});
     const key = todayKey();
     if (actions.astroDay === key && getActivePlanetBuff()) {
-        showToast('今日星象已经校准。', 'info');
+        showToast(t('lpAstroDone'), 'info');
         return;
     }
     const buff = dailyBuffForToday();
@@ -1738,10 +1741,10 @@ function alignConstellations(pet) {
     state.planetBuff = { ...buff, day: key, until: untilTomorrow() };
     const multiplier = astroMultiplier();
     ['hunger', 'mood', 'clean', 'bond'].forEach(stat => clampStat(pet, stat, (buff[stat] || 0) * multiplier));
-    addPlanetLog('astro', `星象校准：${buff.name}`, buff.emoji);
+    addPlanetLog('astro', t('lpAstroLog', { name: buffName(buff) }), buff.emoji);
     savePetDebounced(pet);
     saveUserProfileDebounced();
-    showToast(`${buff.name} 已升起：${buff.text}`, 'success', 3200);
+    showToast(t('lpAstroRisen', { name: buffName(buff), text: buffText(buff) }), 'success', 3200);
     notify();
 }
 
@@ -1851,8 +1854,8 @@ function getAchievementsView() {
         return {
             id: def.id,
             emoji: def.emoji,
-            name: def.name,
-            desc: def.desc,
+            name: def.nameKey ? t(def.nameKey) : def.name,
+            desc: def.descKey ? t(def.descKey) : def.desc,
             current: Math.min(current, goal),
             goal,
             percent: Math.max(0, Math.min(100, Math.round((current / goal) * 100))),
@@ -1866,9 +1869,9 @@ function getAchievementsView() {
 function renderAchievementRow(a) {
     const stateClass = a.claimed ? 'claimed' : a.canClaim ? 'claimable' : a.completed ? 'done' : '';
     const btnHtml = a.claimed
-        ? `<span class="planet-achievement-claimed">已领取</span>`
+        ? `<span class="planet-achievement-claimed">${escapeHtml(t('lpClaimed'))}</span>`
         : a.canClaim
-            ? `<button class="btn-primary planet-achievement-claim" data-claim-achievement="${escapeHtml(a.id)}" title="领取 ${ACHIEVEMENT_REWARD_COINS} 金币">领取 +${ACHIEVEMENT_REWARD_COINS}🪙</button>`
+            ? `<button class="btn-primary planet-achievement-claim" data-claim-achievement="${escapeHtml(a.id)}" title="${escapeHtml(t('lpClaimTitle', { coins: ACHIEVEMENT_REWARD_COINS }))}">${escapeHtml(t('lpClaim', { coins: ACHIEVEMENT_REWARD_COINS }))}</button>`
             : `<span class="planet-achievement-progress-label">${a.current}/${a.goal}</span>`;
     return `
         <div class="planet-achievement ${stateClass}">
@@ -1888,22 +1891,22 @@ function claimAchievement(id) {
     if (!def) return false;
     const ach = ensureAchievementsState();
     if (ach.claimed[id]) {
-        showToast('该成就已经领取过了。', 'info', 1500);
+        showToast(t('lpAchAlreadyClaimed'), 'info', 1500);
         return false;
     }
     let current = 0;
     try { current = Number(def.progress()) || 0; } catch (_) { current = 0; }
     if (current < def.goal) {
-        showToast('成就尚未完成，无法领取。', 'info', 1500);
+        showToast(t('lpAchNotDone'), 'info', 1500);
         return false;
     }
     ach.claimed[id] = Date.now();
     state.coins = Math.max(0, (Number(state.coins) || 0) + ACHIEVEMENT_REWARD_COINS);
-    addPlanetLog('achievement', `领取成就：${def.name} +${ACHIEVEMENT_REWARD_COINS} 金币`, def.emoji);
+    addPlanetLog('achievement', t('lpAchClaimLog', { name: def.nameKey ? t(def.nameKey) : def.name, coins: ACHIEVEMENT_REWARD_COINS }), def.emoji);
     saveUserProfileDebounced();
     refreshTopbarResources();
     soundManager.playPointReward?.();
-    showToast(`${def.emoji} ${def.name} 完成！+${ACHIEVEMENT_REWARD_COINS} 金币`, 'success', 2400);
+    showToast(t('lpAchClaimToast', { emoji: def.emoji, name: def.nameKey ? t(def.nameKey) : def.name, coins: ACHIEVEMENT_REWARD_COINS }), 'success', 2400);
     notify();
     return true;
 }
@@ -1921,11 +1924,11 @@ function claimAllAchievements() {
     ready.forEach(def => { ach.claimed[def.id] = now; });
     const totalCoins = ready.length * ACHIEVEMENT_REWARD_COINS;
     state.coins = Math.max(0, (Number(state.coins) || 0) + totalCoins);
-    addPlanetLog('achievement', `一键领取 ${ready.length} 项成就 +${totalCoins} 金币`, '🏆');
+    addPlanetLog('achievement', t('lpClaimAllToast', { count: ready.length, coins: totalCoins }), '🏆');
     saveUserProfileDebounced();
     refreshTopbarResources();
     soundManager.playPointReward?.();
-    showToast(`领取 ${ready.length} 项成就，+${totalCoins} 金币`, 'success', 2600);
+    showToast(t('lpClaimAllToast', { count: ready.length, coins: totalCoins }), 'success', 2600);
     notify();
     return ready.length;
 }
@@ -1938,43 +1941,43 @@ async function showMilestonesPanel() {
         .sort((a, b) => (Number(b?.at) || 0) - (Number(a?.at) || 0))
         .slice(0, 5);
     const rows = [
-        { level: 1, icon: '🌦️', text: '解锁天气控制与每日星象' },
-        { level: 2, icon: '🚀', text: '解锁好友星球拜访' },
-        { level: 3, icon: '🛸', text: '解锁 UFO 访客与哈奇岛入口' },
-        { level: 4, icon: '🍃', text: '解锁季风气候' },
-        { level: 6, icon: '💫', text: '星球环带更稳定，卫星成长更明显' },
+        { level: 1, icon: '🌦️', text: t('lpMile1') },
+        { level: 2, icon: '🚀', text: t('lpMile2') },
+        { level: 3, icon: '🛸', text: t('lpMile3') },
+        { level: 4, icon: '🍃', text: t('lpMile4') },
+        { level: 6, icon: '💫', text: t('lpMile6') },
     ].reverse();
     const achievements = getAchievementsView(progress);
     const claimableCount = achievements.filter(a => a.canClaim).length;
     const claimAllBtn = claimableCount > 1
-        ? `<button class="btn-primary" data-act="claim-all-achievements" title="一次性领取全部已完成成就">一键领取 (${claimableCount})</button>`
+        ? `<button class="btn-primary" data-act="claim-all-achievements" title="${escapeHtml(t('lpClaimAllTitle'))}">${escapeHtml(t('lpClaimAll', { count: claimableCount }))}</button>`
         : '';
     openPlanetModal(`
-        <div class="planet-modal-title">🏆 星球里程碑</div>
+        <div class="planet-modal-title">${escapeHtml(t('lpMilestoneTitle'))}</div>
         <div class="planet-milestone-scroll">
             <div class="planet-progress-card">
-                <div><b>Lv.${progress.level}</b><span>下一级 ${Math.round(progress.progressToNext * 100)}%</span></div>
+                <div><b>Lv.${progress.level}</b><span>${escapeHtml(t('lpNextLevel', { percent: Math.round(progress.progressToNext * 100) }))}</span></div>
                 <div class="planet-dock-meter"><span style="width:${Math.round(progress.progressToNext * 100)}%"></span></div>
-                <p>第 ${progress.planetDays} 天 · ${progress.petCount} 只宠物 · ${progress.grownUpPetCount} 颗卫星</p>
+                <p>${escapeHtml(t('lpProgressSummary', { days: progress.planetDays, pets: progress.petCount, moons: progress.grownUpPetCount }))}</p>
             </div>
             <div class="planet-achievements-head">
-                <b>🏅 成就</b>
-                <span>${achievements.filter(a => a.claimed).length}/${achievements.length} 已领取</span>
+                <b>${escapeHtml(t('lpAchSection'))}</b>
+                <span>${escapeHtml(t('lpAchClaimedRatio', { claimed: achievements.filter(a => a.claimed).length, total: achievements.length }))}</span>
             </div>
             <div class="planet-achievement-list">
                 ${achievements.map(a => renderAchievementRow(a)).join('')}
             </div>
-            <div class="planet-achievements-head"><b>🗺️ 等级解锁</b></div>
+            <div class="planet-achievements-head"><b>${escapeHtml(t('lpLevelUnlockSection'))}</b></div>
             <div class="planet-milestone-list">
                 ${rows.map(row => `<div class="planet-milestone ${progress.level >= row.level ? 'done' : ''}"><span>${row.icon}</span><span class="planet-milestone-body"><b>Lv.${row.level}</b><i>${escapeHtml(row.text)}</i></span></div>`).join('')}
             </div>
             <div class="planet-log-list">
-                ${logs.length ? logs.map(log => `<div><span>${log.emoji || '•'}</span><b>${escapeHtml(formatLogDate(log.at))}</b><i>${escapeHtml(log.text || '')}</i></div>`).join('') : '<div><span>✨</span><i>还没有星球事件记录</i></div>'}
+                ${logs.length ? logs.map(log => `<div><span>${log.emoji || '•'}</span><b>${escapeHtml(formatLogDate(log.at))}</b><i>${escapeHtml(log.text || '')}</i></div>`).join('') : `<div><span>✨</span><i>${escapeHtml(t('lpNoLogs'))}</i></div>`}
             </div>
         </div>
         <div class="planet-modal-actions">
             ${claimAllBtn}
-            <button class="btn-primary" data-act="close">完成</button>
+            <button class="btn-primary" data-act="close">${escapeHtml(t('lpDone'))}</button>
         </div>
     `, (e, close) => {
         const claimBtn = e.target.closest?.('[data-claim-achievement]');
@@ -2028,7 +2031,7 @@ function createDisplayFarewellRecord(record) {
     return {
         id: `farewell_${petId}`,
         petId,
-        name: displayPetName(pet) || pet?.name || '哈奇伙伴',
+        name: displayPetName(pet) || pet?.name || t('lpHaqiPartner'),
         trueName: pet?.name || '',
         dna: pet?.dna || '',
         stage: pet?.stage || '',
@@ -2057,8 +2060,8 @@ function createFarewellRecord(pet) {
     const bestStat = ['bond', 'mood', 'clean', 'hunger']
         .map(key => ({ key, value: Math.round(Number(stats[key]) || 0) }))
         .sort((a, b) => b.value - a.value)[0];
-    const statNames = { bond: '羁绊', mood: '心情', clean: '清洁', hunger: '体力' };
-    const name = displayPetName(pet) || pet?.name || '哈奇伙伴';
+    const statNames = { bond: t('statBond'), mood: t('statMood'), clean: t('statClean'), hunger: t('statEnergy') };
+    const name = displayPetName(pet) || pet?.name || t('lpHaqiPartner');
     return {
         id: 'farewell_' + randId(10),
         petId: pet.id,
@@ -2079,9 +2082,9 @@ function createFarewellRecord(pet) {
             bond: Math.round(Number(stats.bond) || 0),
         },
         handbook: [
-            `在${(state.planetName && state.planetName.trim()) || '宠物星'}生活了${formatPetAge(pet, now)}。`,
-            topTraits.length ? `身上最亮的特征是${topTraits.map(item => item.emoji + item.name).join('、')}。` : '把自己的独特气息留在了星球风里。',
-            bestStat ? `${statNames[bestStat.key] || bestStat.key}达到${bestStat.value}，这是你们共同照顾出的光。` : '带着被照顾过的记忆出发。',
+            t('lpHandbookLived', { planet: (state.planetName && state.planetName.trim()) || t('planetFallback'), age: formatPetAge(pet, now) }),
+            topTraits.length ? t('lpHandbookTraits', { traits: topTraits.map(item => item.emoji + item.name).join(t('stageSeparator')) }) : t('lpHandbookTraitsNone'),
+            bestStat ? t('lpHandbookBest', { stat: statNames[bestStat.key] || bestStat.key, value: bestStat.value }) : t('lpHandbookBestNone'),
         ],
     };
 }
@@ -2099,7 +2102,7 @@ function farewellPortraitHtml(record) {
 
 function staticFarewellPetIconHtml(pet, record) {
     const source = pet || record || {};
-    const alt = escapeHtml(displayPetName(source) || record?.name || '哈奇伙伴');
+    const alt = escapeHtml(displayPetName(source) || record?.name || t('lpHaqiPartner'));
     const url = source.imageSheetUrl || source.imageUrl || record?.imageSheetUrl || record?.imageUrl || '';
     const cell = source.imageSheetUrl ? getPetSpriteCell(source) : null;
 
@@ -2127,7 +2130,7 @@ function farewellRecordHtml(record) {
         <article class="haqi-farewell-card" draggable="false">
             <div class="haqi-farewell-portrait">${portrait}</div>
             <div class="haqi-farewell-body">
-                <div class="haqi-farewell-name">${escapeHtml(record.name || '哈奇伙伴')}</div>
+                <div class="haqi-farewell-name">${escapeHtml(record.name || t('lpHaqiPartner'))}</div>
                 <div class="haqi-farewell-meta">${escapeHtml(formatFarewellDate(record.farewellAt))}</div>
             </div>
         </article>`;
@@ -2172,21 +2175,21 @@ async function showHaqiIslandPanel() {
     const modal = openPlanetModal(`
         <div class="haqi-island-head">
             <div>
-                <div class="planet-modal-title">哈奇岛</div>
-                <div class="planet-modal-subtitle">成年宠物可以被送到《哈奇小镇》和哈奇们一起生活。如果你想念他们，可以到《哈奇小镇》探望。</div>
+                <div class="planet-modal-title">${escapeHtml(t('lpHaqiIsland'))}</div>
+                <div class="planet-modal-subtitle">${escapeHtml(t('lpHaqiPanelSub'))}</div>
             </div>
-            <button class="menu-close-btn haqi-download-close" data-act="close" type="button" aria-label="关闭">×</button>
+            <button class="menu-close-btn haqi-download-close" data-act="close" type="button" aria-label="${escapeHtml(t('close'))}">×</button>
         </div>
         <div class="haqi-island-memory">
             ${records.length ? records.map(farewellRecordHtml).join('') : `
                 <div class="haqi-empty-memory">
-                    <b>还没有告别记录</b>
-                    <span>等宠物长大成年后，可以为它举行成人礼，让它居住在哈奇岛。</span>
+                    <b>${escapeHtml(t('lpHaqiNoRecords'))}</b>
+                    <span>${escapeHtml(t('lpHaqiNoRecordsSub'))}</span>
                 </div>`}
         </div>
         <div class="planet-modal-actions haqi-island-actions">
-            <button class="btn-secondary" data-haqi-farewell="1">告别宠物</button>
-            <button class="btn-primary" data-haqi-download="1">登录《哈奇小镇》</button>
+            <button class="btn-secondary" data-haqi-farewell="1">${escapeHtml(t('lpHaqiFarewellBtn'))}</button>
+            <button class="btn-primary" data-haqi-download="1">${escapeHtml(t('lpHaqiDownloadBtn'))}</button>
         </div>
     `, (e, close) => {
         if (e.target.closest?.('[data-haqi-download]')) {
@@ -2212,23 +2215,23 @@ function showFarewellPetIntro() {
     const candidates = getFarewellCandidates();
     if (!candidates.length) {
         openPlanetModal(`
-            <div class="planet-modal-title">告别宠物</div>
-            <div class="planet-action-dialog-body">只有成年或长老阶段的宠物才能举行成人礼。继续照顾它，等它真正长大后再来哈奇岛吧。</div>
-            <div class="planet-modal-actions"><button class="btn-primary" data-act="close">知道了</button></div>
+            <div class="planet-modal-title">${escapeHtml(t('lpFarewellPetTitle'))}</div>
+            <div class="planet-action-dialog-body">${escapeHtml(t('lpFarewellNoneBody'))}</div>
+            <div class="planet-modal-actions"><button class="btn-primary" data-act="close">${escapeHtml(t('lpGotIt'))}</button></div>
         `);
         return;
     }
     openPlanetModal(`
-        <div class="planet-modal-title">告别宠物（成人礼）</div>
-        <div class="planet-modal-subtitle">一旦放飞，它不可召回，只能去《哈奇小镇》探望。请选择要举行成人礼的宠物。</div>
+        <div class="planet-modal-title">${escapeHtml(t('lpFarewellTitle'))}</div>
+        <div class="planet-modal-subtitle">${escapeHtml(t('lpFarewellSub'))}</div>
         <div class="haqi-candidate-list">
             ${candidates.map(pet => `
                 <button class="planet-option" data-farewell-pet="${escapeHtml(pet.id)}" type="button">
                     <span class="planet-option-icon planet-option-pet-icon">${petArtHtml(pet, { alt: displayPetName(pet) })}</span>
-                    <span><b>${escapeHtml(displayPetName(pet))}</b><i>${escapeHtml(getStageName(pet.stage, '成年'))} · 已陪伴 ${escapeHtml(formatPetAge(pet))}</i></span>
+                    <span><b>${escapeHtml(displayPetName(pet))}</b><i>${escapeHtml(t('lpFarewellCompanion', { stage: getStageName(pet.stage, t('lpStageAdultFallback')), age: formatPetAge(pet) }))}</i></span>
                 </button>`).join('')}
         </div>
-        <div class="planet-modal-actions"><button class="btn-secondary" data-act="close">取消</button></div>
+        <div class="planet-modal-actions"><button class="btn-secondary" data-act="close">${escapeHtml(t('cancel'))}</button></div>
     `, (e, close) => {
         const btn = e.target.closest?.('[data-farewell-pet]');
         if (!btn) return;
@@ -2247,18 +2250,18 @@ function showFarewellCeremony(pet) {
             <div class="haqi-ceremony-hero">
                 <div class="haqi-ceremony-pet-icon">${petArtHtml(pet, { alt: displayPetName(pet) })}</div>
                 <div>
-                    <div class="planet-modal-title">${escapeHtml(record.name)} 的成人礼</div>
-                    <div class="planet-modal-subtitle">音乐响起后，它会带着手帐飞回哈奇岛。此操作不可召回。</div>
+                    <div class="planet-modal-title">${escapeHtml(t('lpCeremonyTitle', { name: record.name }))}</div>
+                    <div class="planet-modal-subtitle">${escapeHtml(t('lpCeremonySub'))}</div>
                 </div>
             </div>
             <div class="haqi-handbook-preview">
                 ${record.handbook.map(line => `<p>${escapeHtml(line)}</p>`).join('')}
             </div>
-            <div class="haqi-ceremony-warning">确认后，${escapeHtml(record.name)} 会离开当前星球，只能去《哈奇小镇》探望。</div>
+            <div class="haqi-ceremony-warning">${escapeHtml(t('lpCeremonyWarning', { name: record.name }))}</div>
         </div>
         <div class="planet-modal-actions">
-            <button class="btn-secondary" data-act="close">再陪一会儿</button>
-            <button class="btn-primary" data-farewell-confirm="${escapeHtml(pet.id)}">放飞回哈奇岛</button>
+            <button class="btn-secondary" data-act="close">${escapeHtml(t('lpStayLonger'))}</button>
+            <button class="btn-primary" data-farewell-confirm="${escapeHtml(pet.id)}">${escapeHtml(t('lpReleaseToHaqi'))}</button>
         </div>
     `, async (e, close) => {
         const btn = e.target.closest?.('[data-farewell-confirm]');
@@ -2270,12 +2273,12 @@ function showFarewellCeremony(pet) {
 
 async function completeFarewellPet(petId, close) {
     const pet = state.pets[petId];
-    if (!pet) { showToast('这只宠物已经不在星球上。', 'info'); return; }
-    if (!isAdultStage(pet.stage)) { showToast('只有成年宠物才能举行成人礼。', 'info'); return; }
+    if (!pet) { showToast(t('lpPetNotOnPlanet'), 'info'); return; }
+    if (!isAdultStage(pet.stage)) { showToast(t('lpOnlyAdultCeremony'), 'info'); return; }
     const record = createFarewellRecord(pet);
     playFarewellChime();
     state.haqiIslandFarewells = [pet.id, ...farewellPetIds()].filter((id, index, ids) => ids.indexOf(id) === index).slice(0, 200);
-    addPlanetLog('farewell', `${record.name}完成成人礼，飞回哈奇岛`, '🪄');
+    addPlanetLog('farewell', t('lpFarewellLog', { name: record.name }), '🪄');
     markPetHaqiIsland(pet);
     await savePet(pet);
     const activePets = selectablePets((state.petOrder || []).map(id => state.pets[id]).filter(Boolean));
@@ -2288,7 +2291,7 @@ async function completeFarewellPet(petId, close) {
     }
     notify();
     close?.();
-    showToast(`${record.name} 已飞回哈奇岛。`, 'success', 2600);
+    showToast(t('lpFarewellDone', { name: record.name }), 'success', 2600);
     setTimeout(() => showHaqiIslandPanel(0), 260);
 }
 
@@ -2352,16 +2355,16 @@ function showHaqiDownloadPopup() {
         <div class="modal-card haqi-download-card">
             <div class="haqi-download-head">
                 <div>
-                    <div class="haqi-download-title">《哈奇小镇》APP 下载</div>
-                    <div class="haqi-download-subtitle">选择当前可用的 PC 或 Android 版本继续</div>
+                    <div class="haqi-download-title">${escapeHtml(t('lpDownloadTitle'))}</div>
+                    <div class="haqi-download-subtitle">${escapeHtml(t('lpDownloadSub'))}</div>
                 </div>
-                <button class="menu-close-btn haqi-download-close" data-act="close" type="button" aria-label="关闭">×</button>
+                <button class="menu-close-btn haqi-download-close" data-act="close" type="button" aria-label="${escapeHtml(t('close'))}">×</button>
             </div>
             <div class="haqi-download-actions">
-                <a class="btn-primary" href="${HAQI_DOWNLOAD_URL}" target="_blank" rel="noopener">PC 下载</a>
-                <a class="btn-secondary" href="${HAQI_DOWNLOAD_URL}" target="_blank" rel="noopener">Android 下载</a>
+                <a class="btn-primary" href="${HAQI_DOWNLOAD_URL}" target="_blank" rel="noopener">${escapeHtml(t('lpDownloadPC'))}</a>
+                <a class="btn-secondary" href="${HAQI_DOWNLOAD_URL}" target="_blank" rel="noopener">${escapeHtml(t('lpDownloadAndroid'))}</a>
             </div>
-            <div class="haqi-download-note">下载页将在新窗口打开，可在页面中选择对应客户端版本。</div>
+            <div class="haqi-download-note">${escapeHtml(t('lpDownloadNote'))}</div>
         </div>`;
     const close = () => mask.remove();
     mask.addEventListener('click', (e) => {
