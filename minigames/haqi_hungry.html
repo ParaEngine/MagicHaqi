@@ -136,6 +136,8 @@
     attackUntil: 0,
     attackStartedAt: 0,
     attackHitId: 0,
+    workAnimUntil: 0,
+    workAnimKind: '',
     hurtUntil: 0,
     animTime: 0,
   };
@@ -193,7 +195,7 @@
         border-radius: 8px; background: rgba(255,247,237,.93); border: 2px solid rgba(6,40,29,.82); font-size: 12px; font-weight: 1000;
         box-shadow: 0 3px 0 rgba(6,40,29,.12);
       }
-      .hh-bars { grid-column: 1 / -1; display: grid; grid-template-columns: 1fr 1fr; gap: 5px; pointer-events: none; padding: 0 4px; }
+      .hh-bars { grid-column: 1 / -1; display: grid; grid-template-columns: 1fr 1fr; gap: 8px; pointer-events: none; padding: 0 44px; }
       .hh-bar { height: 13px; border-radius: 999px; overflow: hidden; background: rgba(6,40,29,.38); border: 2px solid rgba(255,247,237,.9); }
       .hh-bar i { display: block; height: 100%; width: var(--pct); border-radius: inherit; background: linear-gradient(90deg, var(--c1), var(--c2)); transition: width .12s linear; }
       .hh-bar.warn { animation: hhBarFlash .48s infinite; border-color: #fff7ed; box-shadow: 0 0 0 2px rgba(255,255,255,.32), 0 0 14px var(--warn); }
@@ -229,9 +231,9 @@
       }
       .hh-joystick.show { display: block; animation: hhJoyIn .12s ease-out; }
       .hh-knob { position: absolute; left: 50%; top: 50%; width: 50px; height: 50px; margin: -25px 0 0 -25px; border-radius: 999px; background: rgba(255,247,237,.78); border: 3px solid rgba(6,40,29,.68); transform: translate(var(--kx), var(--ky)); }
-      .hh-overlay { position: fixed; inset: 0; z-index: 40; display: flex; align-items: center; justify-content: center; padding: 16px; background: rgba(8,47,44,.64); overflow: auto; }
+      .hh-overlay { position: fixed; inset: 0; z-index: 40; display: flex; align-items: center; justify-content: center; padding: 16px; background: rgba(8,47,44,.64); }
       .hh-roster-overlay { position: fixed; inset: 0; z-index: 35; display: flex; align-items: center; justify-content: center; padding: 14px; background: rgba(8,47,44,.46); pointer-events: auto; }
-      .hh-card { width: min(92vw, 456px); max-height: calc(100vh - 32px); overflow: auto; padding: 18px; border-radius: 16px; background: linear-gradient(180deg, #fff7ed, #dcfce7 56%, #bbf7d0); border: 4px solid #06281d; box-shadow: 0 18px 44px rgba(15,23,42,.3), inset 0 0 0 3px rgba(255,255,255,.65); text-align: center; }
+      .hh-card { width: min(92vw, 456px); padding: 18px; border-radius: 16px; background: linear-gradient(180deg, #fff7ed, #dcfce7 56%, #bbf7d0); border: 4px solid #06281d; box-shadow: 0 18px 44px rgba(15,23,42,.3), inset 0 0 0 3px rgba(255,255,255,.65); text-align: center; }
       .hh-card.roster { width: min(94vw, 520px); max-height: min(86vh, 620px); overflow: auto; }
       .hh-card h1 { margin: 0 0 8px; font-size: 28px; line-height: 1.1; font-weight: 1000; color: #06281d; }
       .hh-card h2 { margin: 0 0 8px; font-size: 22px; line-height: 1.1; font-weight: 1000; color: #06281d; }
@@ -280,26 +282,14 @@
         .hh-stats { grid-column: 1 / -1; justify-content: center; }
         .hh-title { font-size: 13px; }
         .hh-pill { min-width: 45px; height: 27px; padding: 0 6px; }
+        .hh-bars { padding: 0 4px; gap: 5px; }
         .hh-message { top: max(134px, calc(env(safe-area-inset-top) + 124px)); font-size: 12px; }
         .hh-hint { display: none; }
       }
       @media (max-height: 600px) {
-        .hh-top { grid-template-columns: 38px minmax(120px, .72fr) minmax(0, 1fr); align-items: center; }
-        .hh-title { display: flex; height: 34px; font-size: 12px; padding: 0 8px; }
-        .hh-stats { grid-column: 3; justify-content: flex-end; flex-wrap: nowrap; overflow: hidden; padding: 0; }
-        .hh-pill { min-width: 44px; height: 26px; padding: 0 6px; font-size: 11px; }
-        .hh-bars { grid-column: 1 / -1; grid-template-columns: 1fr 1fr; padding: 0 18px; margin-top: 3px; }
+        .hh-title { display: none; }
         .hh-message { top: max(112px, calc(env(safe-area-inset-top) + 102px)); }
         .hh-action-btn { width: 54px; height: 54px; }
-        .hh-overlay { align-items: flex-start; padding: 6px 12px; }
-        .hh-card { width: min(94vw, 700px); max-height: calc(100vh - 12px); padding: 10px 14px; border-radius: 12px; }
-        .hh-card h1 { font-size: 20px; margin-bottom: 4px; }
-        .hh-card p { font-size: 12px; line-height: 1.35; margin-bottom: 6px; }
-        .hh-rule { grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 5px; margin: 6px 0; }
-        .hh-rule span { padding: 5px 6px; font-size: 11px; text-align: center; }
-        .hh-row { margin: 7px 0; gap: 6px; }
-        .hh-pick.difficulty { min-height: 40px; }
-        .hh-start { padding: 9px 23px; }
       }
       @media (hover: hover) and (pointer: fine) { .hh-actions { opacity: .34; transition: opacity .16s; } .hh-actions:hover { opacity: 1; } }
     </style>
@@ -790,12 +780,18 @@
       const roll = hash2(cx * 53 + i, cy * 47 + i, state.worldSeed + 103);
       state.groundDetails.push({ x, y, biome, t: biome === 'water' ? 'ripple' : biome === 'desert' ? (roll < .7 ? 'pebble' : 'dry') : biome === 'forest' ? (roll < .55 ? 'leaf' : 'blade') : roll < .62 ? 'blade' : roll < .82 ? 'pebble' : 'flower', c: roll * 6.28, s: .7 + roll * .8 });
     }
-    for (let i = 0; i < 4; i++) {
+    for (let i = 0; i < 7; i++) {
       const x = x0 + hash2(cx * 71 + i, cy * 61 + i, state.worldSeed + 201) * CHUNK_SIZE;
       const y = y0 + hash2(cx * 83 + i, cy * 67 + i, state.worldSeed + 202) * CHUNK_SIZE;
       const biome = biomeAt(x, y);
-      if (biome === 'forest' && hash2(cx, cy + i, state.worldSeed + 203) < .8) addObject('tree', x, y);
+      if (['forest', 'land', 'lawn'].includes(biome) && hash2(cx, cy + i, state.worldSeed + 203) < (biome === 'forest' ? .9 : .32)) addObject('tree', x, y);
       else if (biome !== 'water' && hash2(cx, cy + i, state.worldSeed + 204) < .42) addObject(hash2(cx, cy + i, state.worldSeed + 205) < .66 ? 'berry' : 'mushroom', x, y);
+    }
+    for (let i = 0; i < 3; i++) {
+      const x = x0 + hash2(cx * 97 + i, cy * 89 + i, state.worldSeed + 206) * CHUNK_SIZE;
+      const y = y0 + hash2(cx * 109 + i, cy * 101 + i, state.worldSeed + 207) * CHUNK_SIZE;
+      const biome = biomeAt(x, y);
+      if (['land', 'lawn', 'forest'].includes(biome) && hash2(cx + i, cy, state.worldSeed + 208) < .38) addObject('branch', x, y);
     }
     if (hash2(cx, cy, state.worldSeed + 501) < .55) {
       const x = x0 + hash2(cx, cy, state.worldSeed + 502) * CHUNK_SIZE;
@@ -819,7 +815,7 @@
   }
 
   function addObject(type, x, y) {
-    const size = type === 'tree' ? rand(42, 58) : type === 'meat' ? rand(24, 32) : rand(22, 30);
+    const size = type === 'tree' ? rand(42, 58) : type === 'meat' ? rand(24, 32) : type === 'branch' ? rand(18, 26) : rand(22, 30);
     state.objects.push({ id: `obj_${Date.now()}_${state.objects.length}_${Math.floor(rand(1000, 9999))}`, type, x, y, w: size, h: size, hp: type === 'tree' ? 3 : 1, taken: false, grow: rand(0, 6.28) });
   }
 
@@ -863,7 +859,7 @@
   function resetGame() {
     generateWorld();
     rosterOverlay.hidden = true;
-    Object.assign(player, { x: WORLD_W / 2, y: WORLD_H - 340, dirX: 0, dirY: -1, facing: 'up', attackUntil: 0, attackStartedAt: 0, attackHitId: 0, hurtUntil: 0, animTime: 0 });
+    Object.assign(player, { x: WORLD_W / 2, y: WORLD_H - 340, dirX: 0, dirY: -1, facing: 'up', attackUntil: 0, attackStartedAt: 0, attackHitId: 0, workAnimUntil: 0, workAnimKind: '', hurtUntil: 0, animTime: 0 });
     snapCameraToPlayer();
     state.score = 0; state.hp = 100; state.hunger = 100; state.stamina = 100; state.movementEnergy = .5; state.eatingUntil = 0; state.lastAutoEatAt = 0; state.food = difficultyConfig().initialFood; state.wood = 0; state.captured = 0; state.defeated = 0; state.bossesDefeated = 0; state.campsBuilt = 0; state.torchUntil = 0;
     state.dayTime = 0; state.day = 1; state.finished = false; state.paused = false; state.finishPosted = false; state.gameStartAt = now(); state.roundId = `haqi_hungry_${Date.now()}`;
@@ -1102,8 +1098,11 @@
     }
     else player.animTime += dt * 3;
       state.movementEnergy = moving ? (sprinting ? 1.28 : 1) : .5;
-    player.x = clamp(player.x + axis.x * speed * dt, 20, WORLD_W - 20);
-    player.y = clamp(player.y + axis.y * speed * dt, 30, WORLD_H - 28);
+    const nx = clamp(player.x + axis.x * speed * dt, 20, WORLD_W - 20);
+    const ny = clamp(player.y + axis.y * speed * dt, 30, WORLD_H - 28);
+    if (!isWaterAt(nx, ny)) { player.x = nx; player.y = ny; }
+    else if (!isWaterAt(nx, player.y)) player.x = nx;
+    else if (!isWaterAt(player.x, ny)) player.y = ny;
     ensureChunksAround(player.x, player.y);
     state.stamina = clamp(state.stamina + (sprinting ? -18 : 16) * dt, 0, 100);
     autoAttack();
@@ -1240,6 +1239,8 @@
     resetAutoWork();
     if (!target) return;
     if (work.kind === 'capture') { capturePet(target); return; }
+    player.workAnimUntil = now() + 380;
+    player.workAnimKind = target.type === 'tree' ? 'chop' : 'gather';
     gatherObject(target);
   }
 
@@ -1250,6 +1251,7 @@
     if (obj.hp <= 0) {
       obj.taken = true;
       if (obj.type === 'tree') { state.wood += 2; state.score += 14; showToast('🪵 木材 +2'); }
+      else if (obj.type === 'branch') { state.wood += 1; state.score += 8; showToast('🪵 树枝 +1'); }
       else if (obj.type === 'meat') {
         state.food += 4;
         state.hunger = clamp(state.hunger + 26, 0, 100);
@@ -2104,6 +2106,7 @@
       const x = screenX(o.x), y = screenY(o.y);
       if (x < -80 || y < -100 || x > window.innerWidth + 80 || y > window.innerHeight + 80) continue;
       if (o.type === 'tree') drawTree(x, y, o);
+      else if (o.type === 'branch') drawBranch(x, y, o);
       else if (o.type === 'berry') drawBerry(x, y, o);
       else if (o.type === 'meat') drawMeat(x, y, o);
       else drawMushroom(x, y, o);
@@ -2184,6 +2187,19 @@
     drawRect(x + 7, y - 35, 6, 3, 'rgba(255,255,255,.14)');
   }
 
+  function drawBranch(x, y, o) {
+    const a = Math.sin(o.grow) * .45;
+    ctx.save();
+    ctx.translate(Math.round(x), Math.round(y));
+    ctx.rotate(a);
+    drawRect(-12, 3, 24, 5, '#8b5a2b');
+    drawRect(-9, 1, 14, 3, '#a66f3a');
+    drawRect(0, -5, 4, 10, '#6f4428');
+    drawRect(6, -2, 7, 3, '#5b341c');
+    drawRect(-14, 8, 28, 3, 'rgba(15,23,42,.14)');
+    ctx.restore();
+  }
+
   function drawBerry(x, y, o) {
     const bob = 0;
     drawRect(x - 9, y - 4 + bob, 18, 13, '#2f9e50');
@@ -2226,6 +2242,10 @@
     const upperY = y - 1;
     const hurt = now() < player.hurtUntil;
     const eating = now() < state.eatingUntil;
+    const activeWorkKind = state.autoWork?.kind === 'capture' ? 'gather' : (state.autoWork?.kind === 'gather' ? (state.autoWork.target?.type === 'tree' ? 'chop' : 'gather') : '');
+    const working = now() < player.workAnimUntil || !!activeWorkKind;
+    const workKind = activeWorkKind || player.workAnimKind;
+    const workPulse = working ? Math.sin(now() / 42) : 0;
     const step = Math.floor(player.animTime) % 2;
     const shirt = state.masterStyle === 'girl' ? '#f472b6' : '#38bdf8';
     const hair = state.masterStyle === 'girl' ? '#4a2c2a' : '#1f2937';
@@ -2240,16 +2260,16 @@
       drawRect(x - 5, upperY - 14, 10, 5, hair);
       drawRect(x - 10, upperY - 8, 20, 20, shirt);
       drawRect(x - 8, upperY - 8, 16, 4, hair);
-      drawRect(x - 15, upperY - 4, 5, 17, '#fed7aa');
-      drawRect(x + 10, upperY - 4, 5, 17, '#fed7aa');
+      drawRect(x - 15, upperY - 4 + (working ? workPulse * 2 : 0), 5, 17, '#fed7aa');
+      drawRect(x + 10, upperY - 4 - (working ? workPulse * 2 : 0), 5, 17, '#fed7aa');
       drawRect(x - 8, y + 11, 6, legA, '#334155');
       drawRect(x + 2, y + 11, 6, legB, '#334155');
     } else if (player.facing === 'down') {
       drawRect(x - 8, upperY - 21, 16, 13, '#fed7aa');
       drawRect(x - 9, upperY - 24, 18, 7, hair);
       drawRect(x - 10, upperY - 8, 20, 20, shirt);
-      drawRect(x - 14, upperY - 5, 5, 18, '#fed7aa');
-      drawRect(x + 9, upperY - 5, 5, 18, '#fed7aa');
+      drawRect(x - 14, upperY - 5 + (working ? workPulse * 2 : 0), 5, 18, '#fed7aa');
+      drawRect(x + 9, upperY - 5 - (working ? workPulse * 2 : 0), 5, 18, '#fed7aa');
       if (eating) drawEatingFood(x, upperY - 10);
       drawRect(x - 8, y + 11, 6, legA, '#334155');
       drawRect(x + 2, y + 11, 6, legB, '#334155');
@@ -2265,14 +2285,15 @@
       drawRect(x - 10, upperY - 8, 20, 20, shirt);
       drawRect(x + faceSide * 6 - 1, upperY - 15, 3, 3, '#0f172a');
       drawRect(x + faceSide * 6 - 1, upperY - 10, 4, 2, '#9a3412');
-      drawBox(x + backSide * 10, upperY - 4, backSide * 5, 17, '#fed7aa');
-      drawBox(x + faceSide * 9, upperY - 4, faceSide * 5, 17, '#fed7aa');
+      drawBox(x + backSide * 10, upperY - 4 - (working ? workPulse * 2 : 0), backSide * 5, 17, '#fed7aa');
+      drawBox(x + faceSide * 9, upperY - 4 + (working ? workPulse * 3 : 0), faceSide * 5, 17, '#fed7aa');
       if (eating) drawEatingFood(x + faceSide * 9, upperY - 11);
       drawRect(x - 8, y + 11, 6, legA, '#334155');
       drawRect(x + 2, y + 11, 6, legB, '#334155');
     }
     if (eating && player.facing === 'up') drawEatingFood(x, upperY - 18);
     if (now() < player.attackUntil) drawAttackSwing(x, y);
+    else if (working && workKind === 'chop') drawAttackSwing(x, y, .68, (now() / 260) % 1);
     ctx.globalAlpha = 1;
   }
 
@@ -2283,28 +2304,35 @@
     drawRect(x + 3, y + 1 + chew, 2, 2, '#fff7ed');
   }
 
-  function drawAttackSwing(x, y) {
+  function drawAttackSwing(x, y, scaleMul = 1, overrideProgress = null) {
     const dir = getFacingVector();
-    const progress = clamp((now() - player.attackStartedAt) / 300, 0, 1);
-    const reach = 22 + Math.sin(progress * Math.PI) * 22;
-    const sx = x + dir.x * reach;
-    const sy = y + dir.y * reach;
-    const blade = '#f8fafc';
-    const edge = '#f97316';
-    if (player.facing === 'left' || player.facing === 'right') {
-      const flip = player.facing === 'left' ? -1 : 1;
-      drawBox(x + flip * 8, y - 4, flip * 12, 5, '#fed7aa');
-      drawRect(sx - 3, sy - 17, 6, 34, blade);
-      drawRect(sx + flip * 3, sy - 20, 7, 40, edge);
-      drawRect(sx - 9, sy - 12, 18, 5, 'rgba(255,237,213,.78)');
-    } else {
-      const forward = player.facing === 'up' ? -1 : 1;
-      const handY = y + (player.facing === 'up' ? -10 : 2);
-      drawRect(x - 4, handY, 8, 9, '#fed7aa');
-      drawRect(sx - 18, sy - 3, 36, 6, blade);
-      drawRect(sx - 20, sy + forward * 3, 40, 7, edge);
-      drawRect(sx - 14, sy - 9, 28, 18, 'rgba(255,237,213,.54)');
-    }
+    const progress = overrideProgress == null ? clamp((now() - player.attackStartedAt) / 300, 0, 1) : clamp(overrideProgress, 0, 1);
+    const swing = Math.sin(progress * Math.PI);
+    const baseAngle = player.facing === 'right' ? 0 : player.facing === 'left' ? Math.PI : player.facing === 'down' ? Math.PI / 2 : -Math.PI / 2;
+    const angle = baseAngle + (progress - .5) * 1.35;
+    const reach = (18 + swing * 14) * scaleMul;
+    const handX = x + dir.x * 10;
+    const handY = y - 3 + dir.y * 8;
+    const axeX = x + dir.x * reach;
+    const axeY = y - 8 + dir.y * reach;
+    drawRect(handX - 4, handY - 4, 8, 8, '#fed7aa');
+    ctx.save();
+    ctx.translate(Math.round(axeX), Math.round(axeY));
+    ctx.rotate(angle);
+    ctx.imageSmoothingEnabled = false;
+    ctx.globalAlpha = .28 + swing * .28;
+    drawRect(-13, -15, 26, 30, 'rgba(255,237,213,.42)');
+    ctx.globalAlpha = 1;
+    drawRect(-13, -2, 25, 5, '#7c4a2d');
+    drawRect(-7, -1, 17, 2, '#a16207');
+    drawRect(6, -8, 11, 16, '#cbd5e1');
+    drawRect(10, -12, 7, 8, '#f8fafc');
+    drawRect(10, 4, 7, 8, '#94a3b8');
+    drawRect(16, -7, 3, 14, '#64748b');
+    drawRect(5, -3, 4, 6, '#78350f');
+    drawRect(18, -10, 2, 20, '#f97316');
+    ctx.restore();
+    ctx.imageSmoothingEnabled = false;
   }
 
   function drawTeam() {
@@ -2394,7 +2422,9 @@
     const phase = (state.dayTime % DAY_SECONDS) / DAY_SECONDS;
     const duskAmount = phase >= DUSK_START && phase < NIGHT_START ? clamp((phase - DUSK_START) / (NIGHT_START - DUSK_START), 0, 1) : 0;
     if (duskAmount > 0 && !isNight()) {
-      ctx.fillStyle = `rgba(92, 54, 24, ${duskAmount * .24})`;
+      const quickDrop = clamp((phase - DUSK_START) / .018, 0, 1);
+      const duskOpacity = quickDrop * (.22 + duskAmount * .08);
+      ctx.fillStyle = `rgba(92, 54, 24, ${duskOpacity})`;
       ctx.fillRect(0, 0, vw, vh);
     }
     const darkness = phase >= NIGHT_START ? clamp((phase - NIGHT_START) / .055, 0, 1) : 0;
@@ -2439,7 +2469,7 @@
     if (isNight() && state.started) {
       const safe = isPlayerProtectedAtNight();
       const text = safe ? '🔥 光圈安全' : '☠️ 无光危险';
-      const phaseY = window.innerWidth <= 640 ? 128 : 116;
+      const phaseY = window.innerWidth <= 640 ? 128 : 128;
       ctx.fillStyle = safe ? 'rgba(254,243,199,.86)' : 'rgba(127,29,29,.82)';
       ctx.fillRect(48, phaseY - 8, 88, 18);
       ctx.fillStyle = safe ? '#78350f' : '#fee2e2';
@@ -2449,7 +2479,7 @@
 
   function drawDayNightClock(phase) {
     const x = 24;
-    const y = window.innerWidth <= 640 ? 128 : 116;
+    const y = window.innerWidth <= 640 ? 128 : 128;
     const r = 15;
     const cx = Math.round(x) + .5;
     const cy = Math.round(y) + .5;
@@ -2506,6 +2536,13 @@
     const w = 66, h = 94, x = vw - w - 10, y = vh - h - 86;
     drawRect(x, y, w, h, 'rgba(255,247,237,.72)');
     drawRect(x + 3, y + 3, w - 6, h - 6, 'rgba(20,83,45,.58)');
+    for (const hse of state.houses) {
+      const hx = x + 3 + hse.x / WORLD_W * (w - 6);
+      const hy = y + 3 + hse.y / WORLD_H * (h - 6);
+      drawRect(hx - 3, hy - 3, 6, 6, '#facc15');
+      drawRect(hx - 2, hy - 1, 4, 4, '#92400e');
+      drawRect(hx - 1, hy - 4, 2, 2, '#fde68a');
+    }
     drawRect(x + 3 + player.x / WORLD_W * (w - 6) - 2, y + 3 + player.y / WORLD_H * (h - 6) - 2, 4, 4, '#f97316');
     for (const p of state.team) drawRect(x + 3 + p.x / WORLD_W * (w - 6) - 1, y + 3 + p.y / WORLD_H * (h - 6) - 1, 3, 3, '#38bdf8');
   }
@@ -2578,31 +2615,6 @@
     }
   }
 
-  function touchJoyId(touch) { return `touch_${touch.identifier}`; }
-  function findJoyTouch(list) {
-    if (typeof input.joyId !== 'string' || !input.joyId.startsWith('touch_')) return null;
-    for (const touch of list) if (touchJoyId(touch) === input.joyId) return touch;
-    return null;
-  }
-  function onTouchStart(e) {
-    if (!state.started || overlay.hidden === false || input.joyId !== null) return;
-    const touch = e.changedTouches?.[0];
-    if (!touch) return;
-    input.joyId = touchJoyId(touch); input.joyActive = true; input.joyStartX = touch.clientX; input.joyStartY = touch.clientY;
-    setJoystickVisible(true, touch.clientX, touch.clientY); updateJoystick(touch.clientX, touch.clientY); e.preventDefault();
-  }
-  function onTouchMove(e) {
-    const touch = findJoyTouch(e.changedTouches || e.touches || []);
-    if (!touch) return;
-    updateJoystick(touch.clientX, touch.clientY); e.preventDefault();
-  }
-  function onTouchEnd(e) {
-    const touch = findJoyTouch(e.changedTouches || []);
-    if (!touch) return;
-    input.joyId = null; input.joyActive = false; input.joyX = 0; input.joyY = 0;
-    knob.style.setProperty('--kx', '0px'); knob.style.setProperty('--ky', '0px'); setJoystickVisible(false); e.preventDefault();
-  }
-
   function toggleOverlay() {
     overlay.hidden = !overlay.hidden;
     ui.start.hidden = state.started;
@@ -2631,10 +2643,6 @@
   shell.addEventListener('pointermove', onPointerMove, { passive: false });
   shell.addEventListener('pointerup', onPointerUp, { passive: false });
   shell.addEventListener('pointercancel', onPointerUp, { passive: false });
-  shell.addEventListener('touchstart', onTouchStart, { passive: false });
-  shell.addEventListener('touchmove', onTouchMove, { passive: false });
-  shell.addEventListener('touchend', onTouchEnd, { passive: false });
-  shell.addEventListener('touchcancel', onTouchEnd, { passive: false });
   canvas.addEventListener('click', e => { if (!state.started || state.finished || overlay.hidden === false) return; });
   window.addEventListener('resize', resize);
   window.addEventListener('message', event => {
