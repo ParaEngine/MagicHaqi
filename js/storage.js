@@ -944,6 +944,102 @@ export async function deleteWorkspaceStory(pathOrName) {
     return true;
 }
 
+// ========== 我创造的小游戏（pet-games/ 下以 HTML 文件存储） ==========
+// 游戏正文存为 pet-games/<name>.html，索引摘要存为 pet-games/index.json。
+const PET_GAME_DIR = 'pet-games';
+const PET_GAME_INDEX = `${PET_GAME_DIR}/index.json`;
+
+function safePetGameName(name) {
+    const text = String(name || '').trim().replace(/\.html?$/i, '');
+    return (text || 'game_' + Date.now())
+        .replace(/[^a-zA-Z0-9_\-\u4e00-\u9fa5]/g, '_')
+        .slice(0, 64) || ('game_' + Date.now());
+}
+
+function petGamePath(name) {
+    return `${PET_GAME_DIR}/${safePetGameName(name)}.html`;
+}
+
+function normalizePetGameRecord(record) {
+    if (!record || typeof record !== 'object') return null;
+    const path = String(record.path || '').trim().replace(/^\/+/, '');
+    if (!path || !/\.html?$/i.test(path)) return null;
+    const id = String(record.id || path).slice(0, 120);
+    return {
+        path,
+        id,
+        title: String(record.title || record.id || '我的小游戏').slice(0, 80),
+        icon: String(record.icon || '🎮').slice(0, 8),
+        desc: String(record.desc || '').slice(0, 200),
+        updatedAt: Number.isFinite(record.updatedAt) ? record.updatedAt : 0,
+    };
+}
+
+function petGameTitleFromPath(path) {
+    const filename = String(path || '').split('/').pop() || '';
+    return filename.replace(/\.html?$/i, '').replace(/[_-]+/g, ' ').trim() || '我的小游戏';
+}
+
+// 仅依据 pet-games/index.json 列出我创造的小游戏（不再 listDir 扫描目录）。
+export async function loadPetGameList() {
+    const list = await readJSON(PET_GAME_INDEX, []);
+    const byPath = new Map();
+    (Array.isArray(list) ? list : [])
+        .map(normalizePetGameRecord)
+        .filter(Boolean)
+        .forEach(record => {
+            if (!record?.path) return;
+            const prev = byPath.get(record.path);
+            byPath.set(record.path, !prev || (record.updatedAt || 0) >= (prev.updatedAt || 0) ? record : prev);
+        });
+    return [...byPath.values()].sort((a, b) => (b.updatedAt || 0) - (a.updatedAt || 0));
+}
+
+async function savePetGameList(list) {
+    const normalized = (Array.isArray(list) ? list : [])
+        .map(normalizePetGameRecord)
+        .filter(Boolean)
+        .slice(0, 300);
+    await writeJSON(PET_GAME_INDEX, normalized);
+    return normalized;
+}
+
+export async function loadPetGameHtml(pathOrName) {
+    const raw = String(pathOrName || '').trim();
+    if (!raw) return '';
+    const path = (raw.includes('/') ? raw : petGamePath(raw)).replace(/^\/+/, '');
+    return await readFileSafe(path);
+}
+
+// 保存游戏：html 必填，meta 可包含 { title, icon, desc, name }。返回 { path, record, index }。
+export async function savePetGame(html, meta = {}) {
+    const baseName = safePetGameName(meta.name || meta.id || meta.title || 'game');
+    const path = petGamePath(baseName);
+    await writeFileSafe(path, html == null ? '' : String(html));
+    const record = normalizePetGameRecord({
+        path,
+        id: meta.id || baseName,
+        title: meta.title || petGameTitleFromPath(path),
+        icon: meta.icon || '🎮',
+        desc: meta.desc || '',
+        updatedAt: Date.now(),
+    });
+    const existing = await loadPetGameList();
+    const nextIndex = [record, ...existing.filter(item => item.path !== path)];
+    await savePetGameList(nextIndex);
+    return { path, record, index: nextIndex };
+}
+
+export async function deletePetGame(pathOrName) {
+    const raw = String(pathOrName || '').trim();
+    if (!raw) return false;
+    const path = (raw.includes('/') ? raw : petGamePath(raw)).replace(/^\/+/, '');
+    const existing = await loadPetGameList();
+    await savePetGameList(existing.filter(item => item.path !== path));
+    await deleteFileSafe(path);
+    return true;
+}
+
 // ========== 宠物 ==========
 export async function loadPet(petId) {
     if (!petId) return null;

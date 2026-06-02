@@ -252,6 +252,8 @@
     const STORY_DIR = 'pet-story';
     const STORY_INDEX_PATH = `${STORY_DIR}/_story_index.json`;
     const LOCAL_STORY_INDEX_URL = `../${STORY_INDEX_PATH}`;
+    const MINIGAME_INDEX_PATH = 'minigames/_minigame_index.json';
+    const LOCAL_MINIGAME_INDEX_URL = `../${MINIGAME_INDEX_PATH}`;
     const SETTINGS_STORAGE_KEY = 'MagicHaqi.PetStoryGenerator.generationSettings';
     const MAX_FILE_READ = 999999;
     const STAGES = [
@@ -268,24 +270,23 @@
     ];
     const ELEMENT_EMOJI = { '陆地': '🌱', '水系': '🌊', '天空': '☁️' };
     const ATTRIBUTE_ORDER = ['自然', '火', '冰', '生命', '暗', '雷'];
-    const MINIGAMES = [
-      { id: 'pet_tower_defense', title: '细胞免疫塔防' },
-      { id: 'pet_bath', title: '萌宠爱洗澡' },
-      { id: 'pet_snake', title: '宠物贪吃蛇大乱斗' },
-      { id: 'bubble_pets', title: '宠物泡泡龙' },
-      { id: 'match_three_pets', title: '宠物三消' },
-      { id: 'food_stack_match', title: '宠物食物叠叠消' },
-      { id: 'zuma', title: '宠物祖玛' },
-      { id: 'food_hexcells', title: '宠物寻食蜂巢' },
-      { id: 'canal_escape', title: '宠物运河营救' },
-      { id: 'sokoban', title: '宠物推箱子' },
-      { id: 'laser_maze', title: '宠物激光迷宫' },
-      { id: 'lightbot', title: '宠物猎人编程' },
-      { id: 'flappy_pet', title: '飞翔宠物' },
-      { id: 'xiangqi', title: '宠物象棋' },
-      { id: 'gomoku', title: '宠物五子棋' },
-      { id: 'matrix_hack', title: '宠物矩阵破解' },
-    ];
+    const DEFAULT_MINIGAME_ID = 'pet_tower_defense';
+    // 小游戏清单以 minigames/_minigame_index.json 为唯一数据源，按需加载一次后缓存。
+    let MINIGAMES = [];
+    let minigameIndexPromise = null;
+    function loadMinigameIndex() {
+      if (minigameIndexPromise) return minigameIndexPromise;
+      minigameIndexPromise = (async () => {
+        let data = [];
+        if ((state.sdk || window.keepwork)?.personalPageStore) {
+          try { data = JSON.parse(await readFile(MINIGAME_INDEX_PATH) || '[]'); } catch (_) { data = []; }
+        }
+        if (!Array.isArray(data) || !data.length) data = await readLocalJson(LOCAL_MINIGAME_INDEX_URL, []);
+        MINIGAMES = (Array.isArray(data) ? data : []).map(item => ({ id: item?.id, title: item?.title || item?.id }));
+        return MINIGAMES;
+      })().catch((e) => { console.error('加载小游戏清单失败', e); minigameIndexPromise = null; MINIGAMES = []; return MINIGAMES; });
+      return minigameIndexPromise;
+    }
     const SCENE_TAG_PROMPT_HINT = 'indoor, outdoor, land, sky, ocean, playground, bathroom, living room, shop, school, spring, winter, seaside, haqi, townhall, forest, sand, hospital, mountain, dream, farm, library';
     const DEFAULT_SCENE_BG_COLORS = ['#bae6fd', '#fde68a', '#bbf7d0', '#fecdd3', '#ddd6fe', '#fed7aa', '#ccfbf1', '#e0e7ff'];
     const $ = (id) => document.getElementById(id);
@@ -621,7 +622,7 @@
     }
 
     async function loadAllData() {
-      await Promise.all([loadPets(), loadRecords()]);
+      await Promise.all([loadPets(), loadRecords(), loadMinigameIndex()]);
       renderActorList();
       renderRecords();
       refreshFullStoryPrompt();
@@ -630,6 +631,7 @@
     async function loadLocalFallbacks() {
       state.pets = normalizePets(await readLocalJson(LOCAL_PET_INDEX_URL, []));
       state.records = normalizeStoryIndex(await readLocalJson(LOCAL_STORY_INDEX_URL, []));
+      await loadMinigameIndex();
       renderActorList();
       renderRecords();
       refreshFullStoryPrompt();
@@ -774,7 +776,7 @@
       const type = rawType === 'clean' ? 'bath' : ['feed', 'bath', 'tap', 'minigame'].includes(rawType) ? rawType : 'tap';
       const result = { kind: 'activity', type, title: activity.title || activity.gameTitle || '互动', count: Math.max(1, Number(activity.count ?? activity.times ?? 1) || 1), successText: activity.successText || '' };
       if (type === 'minigame') {
-        const game = MINIGAMES.find(item => item.id === (activity.gameId || 'pet_tower_defense')) || MINIGAMES[0];
+        const game = MINIGAMES.find(item => item.id === (activity.gameId || DEFAULT_MINIGAME_ID)) || MINIGAMES[0] || { id: DEFAULT_MINIGAME_ID, title: DEFAULT_MINIGAME_ID };
         result.gameId = game.id;
         result.gameTitle = activity.gameTitle || game.title;
       } else if (activity.target || activity.actor || activity.actorId) {

@@ -1,6 +1,6 @@
 // 故事创作视图：移动端优先的轻量 AI story JSON maker。
 import { $, confirm as confirmDialog, dockDisabledAttrs, escapeHtml, isDockButtonDisabled, showDockDisabledToast, showToast } from './utils.js';
-import { t } from './i18n.js';
+import { t, getLang } from './i18n.js';
 import { state } from './state.js';
 import { CONFIG } from './config.js';
 import { petArtHtml, scanAndMount } from './pet.js';
@@ -9,6 +9,7 @@ import { loadPet, saveWorkspaceStory } from './storage.js';
 import { renderPetList } from './view_petList.js';
 import { assignPresetScenesToStory, renderSceneParticles, renderStorySceneMaker, sceneParticleCss, SCENE_TAG_PROMPT_HINT } from './view_story_scene_maker.js';
 import { buildStoryPrompt } from './generationPrompts.js';
+import { loadMinigameIndex } from './view_minigames.js';
 import SoundManager from './soundManager.js';
 import ParticleEffects from './particleEffects.js';
 
@@ -20,8 +21,27 @@ const ACTIVITY_TYPES = [
     { value: 'tap', get label() { return t('mkTap'); } },
     { value: 'minigame', get label() { return t('mkMinigame'); } },
 ];
-const MINIGAME_IDS = ['pet_tower_defense', 'pet_bath', 'pet_snake', 'bubble_pets', 'match_three_pets', 'food_stack_match', 'zuma', 'food_hexcells', 'canal_escape', 'sokoban', 'laser_maze', 'lightbot', 'flappy_pet', 'xiangqi', 'gomoku', 'matrix_hack'];
-const MINIGAMES = MINIGAME_IDS.map(id => ({ id, get title() { return t('mg_' + id); } }));
+// 小游戏清单以 minigames/_minigame_index.json 为唯一数据源，按需加载一次后缓存（复用 view_minigames 的加载函数）。
+// 标题优先走 i18n（mg_<id>），未命中时回退到索引里的 title。
+const DEFAULT_MINIGAME_ID = 'pet_tower_defense';
+let MINIGAMES = [];
+
+function minigameTitle(id, fallback = '') {
+    const key = 'mg_' + id;
+    const localized = t(key);
+    return localized !== key ? localized : (fallback || id);
+}
+
+async function ensureMinigamesLoaded() {
+    if (MINIGAMES.length) return MINIGAMES;
+    const list = await loadMinigameIndex().catch(() => []);
+    MINIGAMES = (Array.isArray(list) ? list : []).map(item => {
+        const id = item?.id;
+        const fallback = item?.title || id;
+        return { id, get title() { return minigameTitle(id, fallback); } };
+    });
+    return MINIGAMES;
+}
 const REVIEW_LINE_REVEAL_MS = 38;
 const soundManager = SoundManager.getInstance();
 let activeStoryMakerCleanup = null;
@@ -43,13 +63,13 @@ function normalizeActivity(activity = {}) {
     const rawType = String(activity.type || '').trim().toLowerCase();
     const type = rawType === 'clean' ? 'bath' : ['feed', 'bath', 'tap', 'minigame'].includes(rawType) ? rawType : 'tap';
     const def = ACTIVITY_TYPES.find(item => item.value === type) || ACTIVITY_TYPES[2];
-    const gameId = activity.gameId || 'pet_tower_defense';
+    const gameId = activity.gameId || DEFAULT_MINIGAME_ID;
     const game = MINIGAMES.find(item => item.id === gameId);
     const target = String(activity.target || activity.actor || activity.actorId || '').trim();
     const result = {
         kind: 'activity',
         type: def.value,
-        title: activity.title || (def.value === 'minigame' ? game?.title : def.label) || '互动',
+        title: activity.title || (def.value === 'minigame' ? game?.title : def.label) || t('mkDefaultActivity'),
         count: Math.max(1, Number(activity.count ?? activity.times ?? 1) || 1),
         successText: activity.successText || '',
     };
@@ -139,13 +159,13 @@ function fallbackStory(promptText, count, actors) {
     scenes.forEach((scene, index) => Object.assign(scene, sceneFromTimeline(scene, index)));
     return {
         id: `story_${Date.now()}`,
-        title: promptText ? promptText.slice(0, 18) : '我的宠物故事',
+        title: promptText ? promptText.slice(0, 18) : t('mkDefaultTitle'),
         version: 1,
-        selectionPrompt: '选择一位主角进入故事。',
+        selectionPrompt: t('mkSelectMainActor'),
         actors,
         startSceneId: scenes[0]?.id || 'scene_1',
         scenes,
-        ending: { subtitle: '故事完成，宠物回到星球。', text: '这段冒险已经准备好分享给朋友。' },
+        ending: { subtitle: t('mkEndingSubtitle'), text: t('mkEndingText') },
     };
 }
 
@@ -226,13 +246,13 @@ function normalizeStoryForSave(story, actors) {
     const mergedActors = mergeStoryActors(story?.actors, actors);
     return {
         id: story?.id || `story_${Date.now()}`,
-        title: story?.title || '我的宠物故事',
+        title: story?.title || t('mkDefaultTitle'),
         version: 1,
-        selectionPrompt: story?.selectionPrompt || '选择一位主角进入故事。',
+        selectionPrompt: story?.selectionPrompt || t('mkSelectMainActor'),
         actors: mergedActors,
         startSceneId: story?.startSceneId || scenes[0]?.id || 'scene_1',
         scenes: scenes.map(sceneFromTimeline),
-        ending: story?.ending || { subtitle: '故事完成。', text: '新的故事已经可以分享。' },
+        ending: story?.ending || { subtitle: t('mkEndingSubtitle'), text: t('mkEndingText') },
     };
 }
 
@@ -275,10 +295,12 @@ function textFromStreamPayload(value, payload) {
 
 async function generateStoryWithAI(promptText, count, actors, { onChunk, signal, abortController } = {}) {
     const sdk = state.sdk || window.keepwork;
+    await ensureMinigamesLoaded();
     const userPrompt = buildStoryPrompt(promptText, count, actors, {
         sceneTagPromptHint: SCENE_TAG_PROMPT_HINT,
         bgMusicKeys: Object.keys(CONFIG.assets?.bgSounds || {}),
         minigames: MINIGAMES,
+        lang: getLang(),
     });
     let text = '';
     const appendChunk = (delta) => {
@@ -351,7 +373,7 @@ function optionList(items, selected, { valueKey = 'value', labelKey = 'label' } 
 }
 
 function actorOptions(actors, selected) {
-    const opts = [{ id: '$selected', name: '玩家选择的主角' }, { id: '$narrator', name: '旁白' }, ...actors];
+    const opts = [{ id: '$selected', name: t('mkPlayerHero') }, { id: '$narrator', name: t('mkNarrator') }, ...actors];
     return optionList(opts.map(actor => ({ value: actor.id, label: actor.name || actor.id })), selected || '$selected');
 }
 
@@ -392,7 +414,7 @@ function renderLineEditor(line, itemIndex, actors) {
     return `
         <div class="mh-scene-row" data-timeline-index="${itemIndex}" data-timeline-kind="line">
             <div class="mh-scene-row-head">
-                <span class="mh-scene-row-kind">${itemIndex + 1}. 对白</span>
+                <span class="mh-scene-row-kind">${itemIndex + 1}. ${escapeHtml(t('mkLineKind'))}</span>
                 <div class="mh-scene-row-actions">
                     ${renderTimelineMoveButtons(itemIndex)}
                     <button type="button" class="mh-maker-mini danger" data-remove-timeline="${itemIndex}">${escapeHtml(t('mkRemove'))}</button>
@@ -411,7 +433,7 @@ function renderActivityEditor(activity, itemIndex, actors) {
     return `
         <div class="mh-scene-row is-activity" data-timeline-index="${itemIndex}" data-timeline-kind="activity">
             <div class="mh-scene-row-head">
-                <span class="mh-scene-row-kind">${itemIndex + 1}. 互动 · ${escapeHtml(def.label)}</span>
+                <span class="mh-scene-row-kind">${itemIndex + 1}. ${escapeHtml(t('mkActivityKind'))} · ${escapeHtml(def.label)}</span>
                 <div class="mh-scene-row-actions">
                     ${renderTimelineMoveButtons(itemIndex)}
                     <button type="button" class="mh-maker-mini danger" data-remove-timeline="${itemIndex}">${escapeHtml(t('mkRemove'))}</button>
@@ -426,7 +448,7 @@ function renderActivityEditor(activity, itemIndex, actors) {
                 <select class="modal-input" data-activity-target>${activityTargetOptions(actors, target)}</select>
             </div>
             <div class="mh-maker-game-fields" style="display:${type === 'minigame' ? 'grid' : 'none'};gap:8px">
-                <select class="modal-input" data-activity-game>${optionList(MINIGAMES.map(game => ({ value: game.id, label: game.title })), activity?.gameId || 'pet_tower_defense')}</select>
+                <select class="modal-input" data-activity-game>${optionList(MINIGAMES.map(game => ({ value: game.id, label: game.title })), activity?.gameId || DEFAULT_MINIGAME_ID)}</select>
             </div>
             <input class="modal-input" data-activity-success placeholder="${escapeHtml(t('mkSuccessHint'))}" value="${escapeHtml(activity?.successText || '')}">
         </div>`;
@@ -434,7 +456,7 @@ function renderActivityEditor(activity, itemIndex, actors) {
 
 function renderSceneEditorHtml(story, { onlySceneIndex = null } = {}) {
     if (!story?.scenes?.length) {
-        return '<div class="mh-maker-empty">生成或粘贴故事 JSON 后，这里会出现每一幕的详细时间轴编辑器。</div>';
+        return `<div class="mh-maker-empty">${escapeHtml(t('mkTimelineEmptyHint'))}</div>`;
     }
     const actors = Array.isArray(story.actors) ? story.actors : [];
     return story.scenes.map((scene, sceneIndex) => ({ scene, sceneIndex }))
@@ -443,12 +465,12 @@ function renderSceneEditorHtml(story, { onlySceneIndex = null } = {}) {
         <section class="mh-scene-card" data-scene-index="${sceneIndex}">
             <div class="mh-scene-titlebar">
                 <div>
-                    <strong>第${sceneIndex + 1}幕</strong>
+                    <strong>${escapeHtml(t('mkSceneN', { n: sceneIndex + 1 }))}</strong>
                 </div>
                 <div class="mh-scene-actions">
                     <button type="button" class="mh-maker-mini" data-open-scene-maker>${escapeHtml(t('mkBackground'))}</button>
-                    <button type="button" class="mh-maker-mini" data-add-line>+对白</button>
-                    <button type="button" class="mh-maker-mini" data-add-activity>+互动</button>
+                    <button type="button" class="mh-maker-mini" data-add-line>${escapeHtml(t('mkAddLine'))}</button>
+                    <button type="button" class="mh-maker-mini" data-add-activity>${escapeHtml(t('mkAddActivity'))}</button>
                 </div>
             </div>
             <div class="mh-maker-row-2" style="grid-template-columns:88px minmax(0,1fr)">
@@ -554,9 +576,9 @@ function mainStoryActor(story) {
 }
 
 function actorNameForTimeline(story, actorId) {
-    if (actorId === '$narrator') return '旁白';
+    if (actorId === '$narrator') return t('mkNarrator');
     const actor = actorId === '$selected' ? mainStoryActor(story) : story?.actors?.find(item => item.id === actorId);
-    return actor?.name || '主角';
+    return actor?.name || t('mkMainRole');
 }
 
 function isTimelineActivity(item) {
@@ -628,18 +650,18 @@ function storyStats(story) {
 }
 
 function renderStoryHealthHtml(story, titleText = null) {
-    if (!story) return '<div class="mh-maker-empty">写一句故事想法，选择演员，然后生成第一版。</div>';
+    if (!story) return `<div class="mh-maker-empty">${escapeHtml(t('mkHealthEmpty'))}</div>`;
     const stats = storyStats(story);
     const ready = stats.scenes > 0 && stats.actors > 0 && stats.lines > 0;
-    const title = titleText || (ready ? '可以试玩' : '需要补充');
+    const title = titleText || (ready ? t('mkReady') : t('mkNeedMore'));
     return `
         <div class="mh-maker-health">
             <div class="mh-maker-health-title">${escapeHtml(t('mkHealthTitle', { title, n: stats.scenes }))}</div>
             <div class="mh-maker-health-grid">
-                <span>${stats.actors} 位演员</span>
-                <span>${stats.lines} 句对白</span>
-                <span>${stats.activities} 个互动</span>
-                <span>${stats.minigames} 个小游戏</span>
+                <span>${escapeHtml(t('mkStatActors', { n: stats.actors }))}</span>
+                <span>${escapeHtml(t('mkStatLines', { n: stats.lines }))}</span>
+                <span>${escapeHtml(t('mkStatActivities', { n: stats.activities }))}</span>
+                <span>${escapeHtml(t('mkStatMinigames', { n: stats.minigames }))}</span>
             </div>
         </div>`;
 }
@@ -658,13 +680,13 @@ function renderBeatHtml(story, item, itemIndex, active = false) {
         return `
             <button type="button" class="mh-review-beat is-activity ${active ? 'is-active' : ''}" data-edit-scene data-edit-item="${itemIndex}">
                 <span class="mh-review-beat-icon">${item.type === 'minigame' ? '🎮' : '✨'}</span>
-                <span><b>${escapeHtml(title)} × ${activityTotal(item)}</b><small>${escapeHtml(active ? '等待互动' : typeDef.label)}</small></span>
+                <span><b>${escapeHtml(title)} × ${activityTotal(item)}</b><small>${escapeHtml(active ? t('mkWaitingInteraction') : typeDef.label)}</small></span>
             </button>`;
     }
     return `
         <button type="button" class="mh-review-beat ${active ? 'is-active' : ''}" data-edit-scene data-edit-item="${itemIndex}">
             <span class="mh-review-beat-icon">💬</span>
-            <span><b>${escapeHtml(actorNameForTimeline(story, item.actor))}</b><small>${escapeHtml(visibleLineText(item.text || '新的对白'))}</small></span>
+            <span><b>${escapeHtml(actorNameForTimeline(story, item.actor))}</b><small>${escapeHtml(visibleLineText(item.text || t('mkNewLine')))}</small></span>
         </button>`;
 }
 
@@ -743,7 +765,7 @@ function renderReviewLayoutToggle(layout) {
 function renderReviewSceneBadge(sceneIndex) {
     return `
         <div class="mh-review-scene-badge">
-            <span>第${sceneIndex + 1}幕</span>
+            <span>${escapeHtml(t('mkSceneN', { n: sceneIndex + 1 }))}</span>
         </div>`;
 }
 
@@ -777,11 +799,11 @@ function renderReviewHtml(story, sceneIndex = 0, layout = defaultReviewLayout(),
                         ${pet ? `<div class="mh-review-pet">${petArtHtml(pet, { alt: pet.name || '', extraClass: 'floaty', requireProcessedTexture: false })}</div>` : ''}
                     </div>
                     <div class="mh-review-cover-info">
-                        <div class="mh-review-cover-title">${escapeHtml(story.title || '我的宠物故事')}</div>
-                        <div class="mh-review-cover-subtitle">${escapeHtml(story.selectionPrompt || '选择一位主角进入故事。')}</div>
+                        <div class="mh-review-cover-title">${escapeHtml(story.title || t('mkDefaultTitle'))}</div>
+                        <div class="mh-review-cover-subtitle">${escapeHtml(story.selectionPrompt || t('mkSelectMainActor'))}</div>
                     </div>
                 </div>
-                ${renderStoryHealthHtml(story, '故事概要')}
+                ${renderStoryHealthHtml(story, t('mkStorySummary'))}
                 <button type="button" class="btn-primary" data-review-scene="0">${escapeHtml(t('mkEnterScene1'))}</button>
             </section>
             <div class="mh-review-ai">
@@ -820,7 +842,7 @@ function renderReviewHtml(story, sceneIndex = 0, layout = defaultReviewLayout(),
             </div>
             <div class="mh-review-scene-detail">
                 <div class="mh-review-beats">
-                    ${timeline.length ? timeline.map((item, itemIndex) => renderBeatHtml(story, item, itemIndex, itemIndex === activeItemIndex)).join('') : '<div class="mh-maker-empty">这一幕还没有对白或互动。</div>'}
+                    ${timeline.length ? timeline.map((item, itemIndex) => renderBeatHtml(story, item, itemIndex, itemIndex === activeItemIndex)).join('') : `<div class="mh-maker-empty">${escapeHtml(t('mkSceneNoBeats'))}</div>`}
                 </div>
             </div>
         </section>
@@ -1391,7 +1413,7 @@ export function renderStoryMaker(panel, data = {}, { onBack, onPlayStory } = {})
                     target: row.querySelector('[data-activity-target]')?.value || '',
                     title: row.querySelector('[data-activity-title]')?.value || def.label,
                     count: Math.max(1, Number(row.querySelector('[data-activity-count]')?.value) || 1),
-                    gameId: row.querySelector('[data-activity-game]')?.value || 'pet_tower_defense',
+                    gameId: row.querySelector('[data-activity-game]')?.value || DEFAULT_MINIGAME_ID,
                     successText: row.querySelector('[data-activity-success]')?.value || '',
                 });
             }).filter(item => item.kind === 'activity' || (item.text || '').trim());
@@ -1425,7 +1447,7 @@ export function renderStoryMaker(panel, data = {}, { onBack, onPlayStory } = {})
         sheet.innerHTML = `
             <div class="mh-maker-sheet-panel">
                 <div class="mh-maker-sheet-head">
-                    <strong>第${sceneIndex + 1}幕</strong>
+                    <strong>${escapeHtml(t('mkSceneN', { n: sceneIndex + 1 }))}</strong>
                     <button type="button" class="mh-maker-mini" data-close-edit-sheet>${escapeHtml(t('mkFinish'))}</button>
                 </div>
                 <div class="mh-maker-sheet-body"><div class="mh-scene-stack">${renderSceneEditorHtml(currentStory, { onlySceneIndex: sceneIndex })}</div></div>
@@ -1510,9 +1532,9 @@ export function renderStoryMaker(panel, data = {}, { onBack, onPlayStory } = {})
         const isFullRegenerate = !tweakText;
         const hasGeneratedStory = !!currentStory || !!(($('mhMakerJson')?.value || '').trim());
         if (isFullRegenerate && hasGeneratedStory) {
-            const ok = await confirmDialog('重新生成会覆盖当前已经生成的故事、场景、对白和互动内容。确定要继续吗？', {
-                okText: '重新生成',
-                cancelText: '取消',
+            const ok = await confirmDialog(t('mkRegenConfirm'), {
+                okText: t('mkRegenOk'),
+                cancelText: t('cancel'),
             });
             if (!ok) return;
         }
@@ -1697,7 +1719,7 @@ export function renderStoryMaker(panel, data = {}, { onBack, onPlayStory } = {})
         const scene = currentStory?.scenes?.[sceneIndex];
         if (!scene) return;
         scene.timeline = sceneTimeline(scene);
-        scene.timeline.push({ kind: 'line', actor: '$selected', text: '新的对白。' });
+        scene.timeline.push({ kind: 'line', actor: '$selected', text: t('mkNewLineText') });
         Object.assign(scene, sceneFromTimeline(scene, sceneIndex));
         refreshStoryPanels();
         syncJsonFromStory();
@@ -1708,7 +1730,7 @@ export function renderStoryMaker(panel, data = {}, { onBack, onPlayStory } = {})
         const scene = currentStory?.scenes?.[sceneIndex];
         if (!scene) return;
         scene.timeline = sceneTimeline(scene);
-        scene.timeline.push(normalizeActivity({ type: 'tap', title: '轻拍互动', count: 1, successText: '完成啦。' }));
+        scene.timeline.push(normalizeActivity({ type: 'tap', title: t('mkNewActivityTitle'), count: 1, successText: t('mkNewActivityDone') }));
         Object.assign(scene, sceneFromTimeline(scene, sceneIndex));
         refreshStoryPanels();
         syncJsonFromStory();
@@ -1988,5 +2010,8 @@ export function renderStoryMaker(panel, data = {}, { onBack, onPlayStory } = {})
     draw();
     ensureActorPetsLoaded().then(() => {
         if (!disposed && panel?.isConnected) renderActorCards();
+    });
+    ensureMinigamesLoaded().then(() => {
+        if (!disposed && panel?.isConnected) refreshStoryPanels();
     });
 }

@@ -6,6 +6,7 @@ import { state } from './state.js';
 import { displayPetName } from './dna.js';
 import { getPet, getPetAsync, getPetImagePayload } from './pet.js';
 import { isPetOnCurrentPlanet } from './petLifecycle.js';
+import { deletePetGame, loadPetGameHtml, loadPetGameList } from './storage.js';
 import SoundManager from './soundManager.js';
 
 const soundManager = SoundManager.getInstance();
@@ -24,167 +25,33 @@ const MINIGAME_ALL_PET_IMAGE_REQUESTS = new Set([
     'haqiGetPetImages',
 ]);
 
-const MINIGAMES = [
-    {
-        id: 'adventure',
-        title: '宠物冒险',
-        icon: '⛏️',
-        src: './minigames/haqi_adventure.html',
-        statBonus: { bond: 28, mood: 12 },
-        levelReward: { coins: { min: 18, max: 90 }, label: '冒险奖励', scoreDivisor: 16, levelBonus: 5, passBonus: 18 },
-    },
-    {
-        id: 'hungry',
-        title: '宠物荒野生存',
-        icon: '🍖',
-        src: './minigames/haqi_hungry.html',
-        statBonus: { bond: 30, mood: 10 },
-        levelReward: { coins: { min: 18, max: 96 }, label: '生存奖励', scoreDivisor: 18, levelBonus: 5, passBonus: 18 },
-    },
-    {
-        id: 'thunder',
-        title: '宠物雷电',
-        icon: '🛸',
-        src: './minigames/haqi_thunder.html',
-        statBonus: { bond: 28, mood: 12 },
-        levelReward: { coins: { min: 16, max: 90 }, label: '银河奖励', scoreDivisor: 14, levelBonus: 5, passBonus: 16 },
-    },
-    {
-        id: 'pet_snake',
-        title: '宠物贪吃蛇大乱斗',
-        icon: '🐍',
-        src: './minigames/haqi_pet_snake.html',
-        statBonus: { bond: 26, mood: 12 },
-        levelReward: { coins: { min: 14, max: 78 }, label: '大乱斗奖励', scoreDivisor: 14, levelBonus: 4, passBonus: 12 },
-    },
-    {
-        id: 'zuma',
-        title: '宠物祖玛',
-        icon: '🟠',
-        src: './minigames/haqi_zuma.html',
-        statBonus: { bond: 24, mood: 10 },
-        levelReward: { coins: { min: 12, max: 70 }, label: '祖玛奖励', scoreDivisor: 15, levelBonus: 4, passBonus: 12 },
-    },
-    {
-        id: 'bubble_pets',
-        title: '宠物泡泡龙',
-        icon: '💦',
-        src: './minigames/haqi_bubble_pets.html',
-        statBonus: { bond: 22, mood: 10 },
-        levelReward: { coins: { min: 12, max: 64 }, label: '泡泡奖励', scoreDivisor: 16, levelBonus: 4, passBonus: 10 },
-    },
-    {
-        id: 'pet_tower_defense',
-        title: '细胞免疫塔防',
-        icon: '🏰',
-        src: './minigames/haqi_pet_tower_defense.html',
-        statBonus: { bond: 26, mood: 10 },
-        levelReward: { coins: { min: 14, max: 74 }, label: '守护奖励', scoreDivisor: 18, levelBonus: 4, passBonus: 14 },
-    },
-    {
-        id: 'pet_bath',
-        title: '萌宠爱洗澡',
-        icon: '🛁',
-        src: './minigames/haqi_pet_bath.html',
-        statBonus: { bond: 24, mood: 12 },
-        levelReward: { coins: { min: 12, max: 68 }, label: '洗澡奖励', scoreDivisor: 14, levelBonus: 4, passBonus: 12 },
-    },
-    {
-        id: 'match_three_pets',
-        title: '宠物三消',
-        icon: '🐾',
-        src: './minigames/haqi_match_three_pets.html',
-        levelReward: { coins: { min: 10, max: 50 }, label: '通关奖励', scoreDivisor: 18, passBonus: 12 },
-    },
-    {
-        id: 'food_hexcells',
-        title: '宠物寻食蜂巢',
-        icon: '🍯',
-        src: './minigames/haqi_food_hexcells.html',
-        statBonus: { bond: 20, mood: 9 },
-        levelReward: { coins: { min: 10, max: 55 }, label: '寻食奖励', scoreDivisor: 14, levelBonus: 3, passBonus: 10 },
-    },
-    {
-        id: 'food_stack_match',
-        title: '宠物食物叠叠消',
-        icon: '🍱',
-        src: './minigames/haqi_food_stack_match.html',
-        statBonus: { bond: 22, mood: 10 },
-        levelReward: { coins: { min: 12, max: 66 }, label: '叠叠消奖励', scoreDivisor: 16, levelBonus: 4, passBonus: 12 },
-    },
-    {
-        id: 'canal_escape',
-        title: '宠物运河营救',
-        icon: '🚤',
-        src: './minigames/haqi_canal_escape.html',
-        statBonus: { bond: 18, mood: 10 },
-        levelReward: { coins: { min: 10, max: 50 }, label: '通关奖励', scoreDivisor: 14, levelBonus: 3, passBonus: 10 },
-    },
-    {
-        id: 'billiards',
-        title: '宠物台球对战',
-        icon: '🎱',
-        src: './minigames/haqi_billiards.html',
-        statBonus: { bond: 30, mood: 9 },
-        levelReward: { coins: { min: 18, max: 88 }, label: '对战奖励', scoreDivisor: 12, levelBonus: 4, passBonus: 12 },
-    },
-    {
-        id: 'sokoban',
-        title: '宠物推箱子',
-        icon: '📦',
-        src: './minigames/haqi_sokoban.html',
-        statBonus: { bond: 24, mood: 8 },
-        levelReward: { coins: { min: 10, max: 50 }, label: '通关奖励', scoreDivisor: 12, levelBonus: 3, passBonus: 10 },
-    },
-    {
-        id: 'laser_maze',
-        title: '宠物激光迷宫',
-        icon: '⚡',
-        src: './minigames/haqi_laser_maze.html',
-        statBonus: { bond: 26, mood: 10 },
-        levelReward: { coins: { min: 14, max: 72 }, label: '解谜奖励', scoreDivisor: 12, levelBonus: 4, passBonus: 12 },
-    },
-    {
-        id: 'lightbot',
-        title: '宠物猎人编程',
-        icon: '💡',
-        src: './minigames/haqi_lightbot.html',
-        statBonus: { bond: 28, mood: 8 },
-        levelReward: { coins: { min: 12, max: 60 }, label: '编程奖励', scoreDivisor: 12, levelBonus: 4, passBonus: 12 },
-    },
-    {
-        id: 'flappy_pet',
-        title: '飞翔宠物',
-        icon: '🐦',
-        src: './minigames/haqi_flappy_pet.html',
-        statBonus: { bond: 18, mood: 10 },
-        levelReward: { coins: { min: 10, max: 55 }, label: '飞行奖励', scoreDivisor: 15, levelBonus: 3, passBonus: 10 },
-    },
-    {
-        id: 'xiangqi',
-        title: '宠物象棋',
-        icon: '♟️',
-        src: './minigames/haqi_xiangqi.html',
-        statBonus: { bond: 32, mood: 8 },
-        levelReward: { coins: { min: 20, max: 80 }, label: '对局奖励', scoreDivisor: 10, levelBonus: 4, passBonus: 8 },
-    },
-    {
-        id: 'gomoku',
-        title: '宠物五子棋',
-        icon: '⚫⚪',
-        src: './minigames/haqi_gomoku.html',
-        statBonus: { bond: 32, mood: 8 },
-        levelReward: { coins: { min: 20, max: 80 }, label: '对局奖励', scoreDivisor: 10, levelBonus: 4, passBonus: 8 },
-    },
-    {
-        id: 'matrix_hack',
-        title: '宠物矩阵破解',
-        icon: '⌘',
-        src: './minigames/haqi_matrix_hack.html',
-        statBonus: { bond: 26, mood: 9 },
-        levelReward: { coins: { min: 12, max: 72 }, label: '破解奖励', scoreDivisor: 12, levelBonus: 4, passBonus: 12 },
-    },
-];
+// 小游戏清单从 side-by-side 的 minigames/_minigame_index.json 按需加载一次并缓存。
+// `import.meta.url + ''` 阻止 Vite 静态分析把整个父目录树打包进 assets/（见 config.js 同款写法 / magichaqi-vite-build 记录）。
+const MINIGAME_INDEX_PATH = 'minigames/_minigame_index.json';
+const MINIGAME_INDEX_URL = new URL(MINIGAME_INDEX_PATH, new URL('..', import.meta.url + '')).href;
+let MINIGAMES = [];
+let minigameIndexPromise = null;
+
+// 导出供其它视图（如 view_story_maker）按需复用，保证 _minigame_index.json 是唯一数据源。
+export function loadMinigameIndex() {
+    if (minigameIndexPromise) return minigameIndexPromise;
+    minigameIndexPromise = fetch(MINIGAME_INDEX_URL, { cache: 'no-store' })
+        .then((res) => {
+            if (!res.ok) throw new Error(`HTTP ${res.status}`);
+            return res.json();
+        })
+        .then((list) => {
+            MINIGAMES = Array.isArray(list) ? list : [];
+            return MINIGAMES;
+        })
+        .catch((e) => {
+            console.error('加载小游戏清单失败', e);
+            minigameIndexPromise = null; // 允许下次重试
+            MINIGAMES = [];
+            return MINIGAMES;
+        });
+    return minigameIndexPromise;
+}
 
 const PLAY_ACTIVITIES = [
     /*
@@ -218,7 +85,34 @@ const PLAY_ACTIVITIES = [
     */
 ];
 
-const PLAY_ITEMS = [...MINIGAMES, ...PLAY_ACTIVITIES];
+function getPlayItems() {
+    return [...MINIGAMES, ...PLAY_ACTIVITIES];
+}
+
+// 单色 SVG 图标（fill/stroke 用 currentColor，跟随标签文字颜色：未选灰、选中蓝）。
+const MINIGAME_TAB_ICONS = {
+    // 推荐：五角星轮廓
+    recommend: '<svg viewBox="0 0 24 24" aria-hidden="true" focusable="false"><path d="M12 3.5l2.6 5.27 5.82.85-4.21 4.1.99 5.8L12 16.9l-5.2 2.62.99-5.8-4.21-4.1 5.82-.85z" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linejoin="round"/></svg>',
+    // 创造：加号
+    create: '<svg viewBox="0 0 24 24" aria-hidden="true" focusable="false"><path d="M12 5v14M5 12h14" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"/></svg>',
+    // 我的：方框（盒子轮廓）
+    mine: '<svg viewBox="0 0 24 24" aria-hidden="true" focusable="false"><rect x="4.5" y="6.5" width="15" height="13" rx="2" fill="none" stroke="currentColor" stroke-width="1.8"/><path d="M4.5 10h15" fill="none" stroke="currentColor" stroke-width="1.8"/></svg>',
+};
+
+const MINIGAME_TABS = [
+    { id: 'recommend', labelKey: 'mgTabRecommend' },
+    { id: 'create', labelKey: 'mgTabCreate' },
+    { id: 'mine', labelKey: 'mgTabMine' },
+];
+
+function renderMinigameTabButtons() {
+    return MINIGAME_TABS.map(tab => `
+        <button type="button" class="mh-minigame-tab-btn${tab.id === activeMinigameTab ? ' active' : ''}" data-mh-minigame-tab="${tab.id}" aria-pressed="${tab.id === activeMinigameTab}">
+            <span class="mh-minigame-tab-ico" aria-hidden="true">${MINIGAME_TAB_ICONS[tab.id] || ''}</span>
+            <span>${escapeHtml(t(tab.labelKey))}</span>
+        </button>
+    `).join('');
+}
 
 // 本地化辅助：标题与奖励文案按 id 映射到 i18n
 function getMinigameTitle(game) {
@@ -250,13 +144,16 @@ let currentGameStartedAt = 0;
 let restPromptTimer = null;
 let restPromptOpen = false;
 let suppressCurrentRewards = false;
+// 底部标签：'recommend' 官方推荐 | 'create' 创造 | 'mine' 我的
+let activeMinigameTab = 'recommend';
 
-export function renderMinigames(panel, { pet }, { onBack, onGameFinished, initialGameId = null, initialGameParams = null, allowPlayWhenLowEnergy = false, suppressRewards = false, exitGameToBack = false, completionPrompt = null, deferGameFinishedUntilCompletionExit = false } = {}) {
+export function renderMinigames(panel, { pet }, { onBack, onGameFinished, initialGameId = null, initialGameParams = null, allowPlayWhenLowEnergy = false, suppressRewards = false, exitGameToBack = false, completionPrompt = null, deferGameFinishedUntilCompletionExit = false, initialTab = null, onCreateGame = null, onEditGame = null } = {}) {
     cleanupMessageListener?.();
     currentGame = null;
     rewardedRounds = new Set();
     currentPet = pet || null;
     suppressCurrentRewards = !!suppressRewards;
+    activeMinigameTab = (initialTab && MINIGAME_TABS.some(tab => tab.id === initialTab)) ? initialTab : 'recommend';
     const ignoreListClicksUntil = initialGameId ? 0 : Date.now() + MINIGAME_ENTRY_CLICK_GUARD_MS;
     let deferredCompletion = null;
     panel.innerHTML = `
@@ -316,6 +213,81 @@ export function renderMinigames(panel, { pet }, { onBack, onGameFinished, initia
             .mh-minigame-stat-pill {
                 cursor: pointer;
             }
+            .mh-minigame-tab-btn {
+                flex: 1;
+                min-width: 0;
+                display: flex;
+                flex-direction: column;
+                align-items: center;
+                justify-content: center;
+                gap: 2px;
+                border: 0;
+                background: transparent;
+                color: #64748b;
+                font-size: 12px;
+                font-weight: 900;
+                cursor: pointer;
+                padding: 4px 0;
+                box-shadow: none;
+            }
+            .mh-minigame-tab-btn .mh-minigame-tab-ico { display: inline-flex; line-height: 1; }
+            .mh-minigame-tab-btn .mh-minigame-tab-ico svg { width: 22px; height: 22px; display: block; }
+            .mh-minigame-tab-btn.active { color: #0ea5e9; }
+            .mh-minigame-tab-btn.active .mh-minigame-tab-ico { transform: translateY(-1px); }
+            .mh-minigame-mine-grid {
+                padding: 14px;
+                display: grid;
+                grid-template-columns: repeat(auto-fit, minmax(168px, 1fr));
+                gap: 12px;
+                align-content: start;
+            }
+            .mh-minigame-mine-empty {
+                grid-column: 1 / -1;
+                border: 1.5px dashed rgba(14,165,233,.4);
+                border-radius: 14px;
+                background: rgba(255,255,255,.6);
+                color: var(--text-muted);
+                padding: 14px;
+                font-size: 13px;
+                line-height: 1.45;
+                font-weight: 800;
+                text-align: center;
+            }
+            .mh-minigame-mine-card {
+                position: relative;
+                border: 1.5px solid rgba(125,211,252,.78);
+                border-radius: 14px;
+                background: rgba(255,255,255,.92);
+                padding: 12px 10px 10px;
+                display: flex;
+                flex-direction: column;
+                align-items: center;
+                gap: 8px;
+                min-height: 150px;
+            }
+            .mh-minigame-mine-card .mh-minigame-mine-del {
+                position: absolute;
+                top: 6px;
+                right: 6px;
+                width: 24px;
+                height: 24px;
+                border-radius: 999px;
+                border: 1.5px solid rgba(148,163,184,.45);
+                background: rgba(255,255,255,.78);
+                color: rgba(100,116,139,.78);
+                font-size: 16px;
+                font-weight: 900;
+                line-height: 1;
+                display: grid;
+                place-items: center;
+                padding: 0;
+                box-shadow: none;
+            }
+            .mh-minigame-mine-ico { font-size: 40px; line-height: 1; }
+            .mh-minigame-mine-title { font-weight: 800; color: var(--text-primary); font-size: 16px; line-height: 1.2; text-align: center; }
+            .mh-minigame-mine-desc { color: var(--text-muted); font-size: 12px; line-height: 1.35; text-align: center; max-width: 14em; }
+            .mh-minigame-mine-actions { margin-top: auto; display: flex; gap: 6px; width: 100%; }
+            .mh-minigame-mine-actions button { flex: 1; min-width: 0; padding: 7px 6px; font-size: 12px; }
             .mh-minigame-icon {
                 width: 58px;
                 height: 58px;
@@ -542,16 +514,16 @@ export function renderMinigames(panel, { pet }, { onBack, onGameFinished, initia
             </div>
         </div>
         <div class="absolute" style="top:52px;left:0;right:0;bottom:0;overflow:hidden;background:linear-gradient(180deg,#e0f7ff 0%,#bae6fd 46%,#d9f99d 100%)">
-            <div id="mhMinigameList" style="height:100%;overflow:auto;padding:14px;display:${initialGameId ? 'none' : 'grid'};grid-template-columns:repeat(auto-fit,minmax(168px,1fr));gap:12px;align-content:start">
-                ${PLAY_ITEMS.map(game => `
-                    <button type="button" class="card-flat" data-game-id="${escapeHtml(game.id)}" style="text-align:center;min-height:118px;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:10px;border-radius:12px;cursor:pointer">
-                        ${renderMinigameIcon(game)}
-                        <span style="font-weight:800;color:var(--text-primary);font-size:17px;line-height:1.2">${escapeHtml(getMinigameTitle(game))}</span>
-                        ${game.desc ? `<span style="color:var(--text-muted);font-size:12px;line-height:1.35;max-width:12em">${escapeHtml(game.desc)}</span>` : ''}
-                    </button>
-                `).join('')}
+            <div id="mhMinigameTabContent" style="position:absolute;inset:0 0 ${initialGameId ? '0' : '58px'} 0;overflow:hidden;display:${initialGameId ? 'none' : 'block'}">
+                <div id="mhMinigameList" class="mh-minigame-tab-pane" data-mh-tab-pane="recommend" style="height:100%;overflow:auto;padding:14px;display:${activeMinigameTab === 'recommend' ? 'grid' : 'none'};grid-template-columns:repeat(auto-fit,minmax(168px,1fr));gap:12px;align-content:start">
+                    ${renderGameCards(getPlayItems())}
+                </div>
+                <div id="mhMinigameMine" class="mh-minigame-tab-pane" data-mh-tab-pane="mine" style="position:absolute;inset:0;overflow:auto;display:${activeMinigameTab === 'mine' ? 'block' : 'none'}"></div>
             </div>
-            <div id="mhMinigameFrameWrap" class="${initialGameId ? 'mh-minigame-is-loading' : ''}" style="display:${initialGameId ? 'block' : 'none'};position:absolute;inset:0;background:#0f2747">
+            <div id="mhMinigameTabs" style="position:absolute;left:0;right:0;bottom:0;height:58px;display:${initialGameId ? 'none' : 'flex'};align-items:stretch;background:rgba(255,255,255,.92);border-top:1px solid rgba(14,116,144,.18);box-shadow:0 -2px 10px rgba(15,39,71,.08);z-index:5">
+                ${renderMinigameTabButtons()}
+            </div>
+            <div id="mhMinigameFrameWrap" class="${initialGameId ? 'mh-minigame-is-loading' : ''}" style="display:${initialGameId ? 'block' : 'none'};position:absolute;inset:0;background:#0f2747;z-index:6">
                 <iframe id="mhMinigameFrame" title="${escapeHtml(t('mgFrameTitle'))}" style="width:100%;height:100%;border:0;background:#fff" allow="autoplay; fullscreen"></iframe>
                 <div id="mhMinigameLoading" class="mh-minigame-loading${initialGameId ? ' show' : ''}" role="status" aria-live="polite" aria-label="${escapeHtml(t('mgLoadingAria'))}" aria-hidden="${initialGameId ? 'false' : 'true'}">
                     <div class="mh-minigame-loading-card">
@@ -592,16 +564,22 @@ export function renderMinigames(panel, { pet }, { onBack, onGameFinished, initia
         onBack?.();
     };
 
-    panel.querySelectorAll('[data-game-id]').forEach(btn => {
-        btn.onclick = (e) => {
-            if (e?.isTrusted && Date.now() < ignoreListClicksUntil) {
-                e.preventDefault();
-                e.stopPropagation();
-                return;
-            }
-            openGame(btn.dataset.gameId);
-        };
-    });
+    function renderGameList() {
+        const list = $('mhMinigameList');
+        if (!list) return;
+        list.innerHTML = renderGameCards(getPlayItems());
+        list.querySelectorAll('[data-game-id]').forEach(btn => {
+            btn.onclick = (e) => {
+                if (e?.isTrusted && Date.now() < ignoreListClicksUntil) {
+                    e.preventDefault();
+                    e.stopPropagation();
+                    return;
+                }
+                openGame(btn.dataset.gameId);
+            };
+        });
+    }
+    renderGameList();
     const showCompletionAfterFinish = completionPrompt ? showGameCompletionPrompt : null;
     $('mhMinigameDone').onclick = () => finishCurrentGame(onGameFinished);
     $('mhMinigameContinue')?.addEventListener('click', () => {
@@ -615,6 +593,133 @@ export function renderMinigames(panel, { pet }, { onBack, onGameFinished, initia
         onBack?.();
     });
     bindStatTips(panel);
+
+    // ---------- 底部标签（推荐 / 创造 / 我的） ----------
+    function setTabButtonsActive() {
+        document.querySelectorAll('[data-mh-minigame-tab]').forEach(btn => {
+            const active = btn.dataset.mhMinigameTab === activeMinigameTab;
+            btn.classList.toggle('active', active);
+            btn.setAttribute('aria-pressed', active ? 'true' : 'false');
+        });
+    }
+
+    function switchTab(tabId) {
+        if (!MINIGAME_TABS.some(tab => tab.id === tabId)) return;
+        // "创造"是全屏 AI 创作工坊（独立路由），不在本视图内切换，直接跳转。
+        if (tabId === 'create') {
+            onCreateGame?.();
+            return;
+        }
+        activeMinigameTab = tabId;
+        setTabButtonsActive();
+        const list = $('mhMinigameList');
+        const mine = $('mhMinigameMine');
+        if (list) list.style.display = tabId === 'recommend' ? 'grid' : 'none';
+        if (mine) mine.style.display = tabId === 'mine' ? 'block' : 'none';
+        if (tabId === 'mine') renderMineList();
+    }
+
+    function bindTabButtons() {
+        document.querySelectorAll('[data-mh-minigame-tab]').forEach(btn => {
+            btn.onclick = () => switchTab(btn.dataset.mhMinigameTab);
+        });
+    }
+    bindTabButtons();
+
+    async function renderMineList() {
+        const mine = $('mhMinigameMine');
+        if (!mine) return;
+        const token = cleanupMessageListener;
+        mine.innerHTML = `<div class="mh-minigame-mine-grid"><div class="mh-minigame-mine-empty">${escapeHtml(t('mgMineLoading'))}</div></div>`;
+        let records = [];
+        try {
+            records = await loadPetGameList();
+        } catch (e) {
+            if (cleanupMessageListener !== token || !$('mhMinigameMine')) return;
+            mine.innerHTML = `<div class="mh-minigame-mine-grid"><div class="mh-minigame-mine-empty">${escapeHtml(t('mgMineLoadFailed'))}</div></div>`;
+            return;
+        }
+        if (cleanupMessageListener !== token || !$('mhMinigameMine') || activeMinigameTab !== 'mine') return;
+        mine.innerHTML = `<div class="mh-minigame-mine-grid">${renderMineCards(records)}</div>`;
+        bindMineCards(records);
+    }
+
+    function renderMineCards(records) {
+        if (!records.length) {
+            return `<div class="mh-minigame-mine-empty">${escapeHtml(t('mgMineEmpty'))}</div>`;
+        }
+        return records.map(record => `
+            <article class="mh-minigame-mine-card" data-mh-mine-path="${escapeHtml(record.path)}">
+                <button type="button" class="mh-minigame-mine-del" data-mh-mine-delete="${escapeHtml(record.path)}" aria-label="${escapeHtml(t('mgMineDelete'))}" title="${escapeHtml(t('mgMineDelete'))}">×</button>
+                <span class="mh-minigame-mine-ico" aria-hidden="true">${escapeHtml(record.icon || '🎮')}</span>
+                <span class="mh-minigame-mine-title">${escapeHtml(record.title || t('mgDefaultName'))}</span>
+                ${record.desc ? `<span class="mh-minigame-mine-desc">${escapeHtml(record.desc)}</span>` : ''}
+                <div class="mh-minigame-mine-actions">
+                    <button type="button" class="btn-secondary" data-mh-mine-edit="${escapeHtml(record.path)}">${escapeHtml(t('slEdit'))}</button>
+                    <button type="button" class="btn-primary" data-mh-mine-play="${escapeHtml(record.path)}">${escapeHtml(t('slPlay'))}</button>
+                </div>
+            </article>
+        `).join('');
+    }
+
+    function bindMineCards(records) {
+        const mine = $('mhMinigameMine');
+        if (!mine) return;
+        mine.onclick = async (e) => {
+            const delBtn = e.target.closest?.('[data-mh-mine-delete]');
+            if (delBtn) {
+                const path = delBtn.dataset.mhMineDelete;
+                const record = records.find(r => r.path === path);
+                const title = record?.title || t('mgDefaultName');
+                const ok = await confirm(t('mgMineDeleteConfirm', { title }), { okText: t('delete'), cancelText: t('cancel') });
+                if (!ok) return;
+                delBtn.disabled = true;
+                try {
+                    await deletePetGame(path);
+                    showToast(t('mgMineDeleted'), 'success', 1400);
+                    renderMineList();
+                } catch (err) {
+                    delBtn.disabled = false;
+                    showToast(t('mgMineDeleteFailed', { error: (err?.message || err) }), 'error', 2400);
+                }
+                return;
+            }
+            const editBtn = e.target.closest?.('[data-mh-mine-edit]');
+            if (editBtn) {
+                openMineGameMaker(editBtn.dataset.mhMineEdit, records);
+                return;
+            }
+            const playBtn = e.target.closest?.('[data-mh-mine-play]');
+            if (playBtn) {
+                openMineGame(playBtn.dataset.mhMinePlay, records);
+            }
+        };
+    }
+
+    async function openMineGameMaker(path, records) {
+        const record = records.find(r => r.path === path);
+        if (!record) { showToast(t('mgMineMissing'), 'error'); return; }
+        let html = '';
+        try {
+            html = await loadPetGameHtml(path);
+        } catch (_) { html = ''; }
+        // 进入全屏 AI 创作工坊编辑（独立路由）。
+        onEditGame?.(record, html);
+    }
+
+    async function openMineGame(path, records) {
+        const record = records.find(r => r.path === path);
+        if (!record) { showToast(t('mgMineMissing'), 'error'); return; }
+        let html = '';
+        try {
+            html = await loadPetGameHtml(path);
+        } catch (e) {
+            showToast(t('mgMineLoadFailed'), 'error');
+            return;
+        }
+        if (!html || !html.trim()) { showToast(t('mgMineMissing'), 'error'); return; }
+        openGame(record.id || record.path, null, { html, game: { id: record.id || record.path, title: record.title, icon: record.icon } });
+    }
 
     const onMessage = (event) => {
         const frame = $('mhMinigameFrame');
@@ -651,7 +756,22 @@ export function renderMinigames(panel, { pet }, { onBack, onGameFinished, initia
         clearMinigameRestPrompt();
         cleanupMessageListener = null;
     };
-    if (initialGameId && !currentGame) openGame(initialGameId, initialGameParams, { allowLowEnergy: allowPlayWhenLowEnergy });
+    // 若初始标签为"我的"（从创作工坊返回），加载列表。
+    // 必须在 cleanupMessageListener 赋值之后调用，否则 renderMineList 捕获的 token 过期会丢弃结果。
+    if (activeMinigameTab === 'mine') renderMineList();
+    // 按需加载小游戏清单（只 fetch 一次并缓存），加载完成后渲染列表 / 启动初始游戏。
+    const renderToken = cleanupMessageListener;
+    if (MINIGAMES.length) {
+        renderGameList();
+        if (initialGameId && !currentGame) openGame(initialGameId, initialGameParams, { allowLowEnergy: allowPlayWhenLowEnergy });
+    } else {
+        loadMinigameIndex().then(() => {
+            // 视图在加载期间被销毁/重渲染时丢弃过期回调。
+            if (cleanupMessageListener !== renderToken || !$('mhMinigameList')) return;
+            renderGameList();
+            if (initialGameId && !currentGame) openGame(initialGameId, initialGameParams, { allowLowEnergy: allowPlayWhenLowEnergy });
+        });
+    }
 
     function showGameCompletionPrompt() {
         if (!completionPrompt) return;
@@ -679,6 +799,17 @@ export function renderMinigames(panel, { pet }, { onBack, onGameFinished, initia
     function postGameContinue() {
         const frame = $('mhMinigameFrame');
         try { frame?.contentWindow?.postMessage({ type: 'gameContinue' }, '*'); } catch (_) {}
+    }
+
+    function renderGameCards(items) {
+        if (!items.length) return '';
+        return items.map(game => `
+            <button type="button" class="card-flat" data-game-id="${escapeHtml(game.id)}" style="text-align:center;min-height:118px;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:10px;border-radius:12px;cursor:pointer">
+                ${renderMinigameIcon(game)}
+                <span style="font-weight:800;color:var(--text-primary);font-size:17px;line-height:1.2">${escapeHtml(getMinigameTitle(game))}</span>
+                ${game.desc ? `<span style="color:var(--text-muted);font-size:12px;line-height:1.35;max-width:12em">${escapeHtml(game.desc)}</span>` : ''}
+            </button>
+        `).join('');
     }
 
     function renderMinigameIcon(game) {
@@ -1018,8 +1149,10 @@ function animateStatPill(pill, delta) {
     }, STAT_REWARD_ANIMATION_MS);
 }
 
-function openGame(gameId, params = null, { allowLowEnergy = false } = {}) {
-    const game = PLAY_ITEMS.find(item => item.id === gameId);
+// html / game：玩家自创小游戏会直接传入 HTML 正文 + 合成 game 对象，通过 srcdoc 加载；
+// 官方游戏走 game.src + minigameUrl。
+function openGame(gameId, params = null, { allowLowEnergy = false, html = null, game: providedGame = null } = {}) {
+    const game = providedGame || getPlayItems().find(item => item.id === gameId);
     if (!game) return;
     if (!allowLowEnergy && !canPlayGame(currentPet)) {
         refreshPetStats();
@@ -1030,18 +1163,26 @@ function openGame(gameId, params = null, { allowLowEnergy = false } = {}) {
     rewardedRounds = new Set();
     currentGameStartedAt = Date.now();
     scheduleMinigameRestPrompt();
-    const list = $('mhMinigameList');
+    const tabContent = $('mhMinigameTabContent');
+    const tabs = $('mhMinigameTabs');
     const wrap = $('mhMinigameFrameWrap');
     const frame = $('mhMinigameFrame');
     const done = $('mhMinigameDone');
-    if (!list || !wrap || !frame) return;
-    list.style.display = 'none';
+    if (!wrap || !frame) return;
+    if (tabContent) tabContent.style.display = 'none';
+    if (tabs) tabs.style.display = 'none';
     wrap.style.display = 'block';
     setMinigameLoading(true);
     if (done) done.style.display = game.manualComplete ? 'block' : 'none';
     frame.setAttribute('allow', game.allow || 'autoplay; fullscreen');
     frame.onload = () => postGameConfig();
-    frame.src = minigameUrl(game.src, params);
+    if (html != null) {
+        frame.removeAttribute('src');
+        frame.srcdoc = String(html);
+    } else {
+        frame.removeAttribute('srcdoc');
+        frame.src = minigameUrl(game.src, params);
+    }
     showToast(t('mgStartGame', { title: getMinigameTitle(game) }), 'info', 1000);
 }
 
@@ -1186,6 +1327,7 @@ function resetMinigameIframe() {
     if (!frame) return;
     setMinigameLoading(false);
     try {
+        frame.removeAttribute('srcdoc');
         frame.src = 'about:blank';
     } catch (_) {}
 }
@@ -1194,6 +1336,7 @@ function destroyMinigameIframe() {
     const frame = $('mhMinigameFrame');
     if (!frame) return;
     try {
+        frame.removeAttribute('srcdoc');
         frame.src = 'about:blank';
         frame.removeAttribute('src');
     } catch (_) {}
@@ -1201,14 +1344,16 @@ function destroyMinigameIframe() {
 }
 
 function showList() {
-    const list = $('mhMinigameList');
+    const tabContent = $('mhMinigameTabContent');
+    const tabs = $('mhMinigameTabs');
     const wrap = $('mhMinigameFrameWrap');
     const done = $('mhMinigameDone');
     resetMinigameIframe();
     clearMinigameRestPrompt();
     if (done) done.style.display = 'none';
     if (wrap) wrap.style.display = 'none';
-    if (list) list.style.display = 'grid';
+    if (tabContent) tabContent.style.display = 'block';
+    if (tabs) tabs.style.display = 'flex';
     currentGame = null;
     rewardedRounds = new Set();
     currentGameStartedAt = 0;

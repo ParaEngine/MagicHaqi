@@ -41,12 +41,14 @@ function isDeveloperMode() {
 
 function getDevToolUrl(fileName) {
     if (typeof window === 'undefined') return '';
-    // Resolve against document.baseURI so a <base href="..."> tag (e.g. the
-    // CDN base used in release builds) is honored just like the browser does
-    // for regular relative links. Falls back to location.href when baseURI
-    // is unavailable.
-    const base = (typeof document !== 'undefined' && document.baseURI) || window.location.href;
-    return new URL(`./dev_tools/${fileName}`, base).href;
+    // Dev tools live under the game's Keepwork page directory. Build an
+    // absolute Keepwork raw-API URL so the tools open from the canonical
+    // source regardless of how the game itself was loaded (CDN base, iframe,
+    // local server, etc.), e.g.
+    //   https://keepwork.com/api/raw/maisi/maisi/webgames/MagicHaqi/dev_tools/FamousPetGenerator.html
+    const origin = 'https://keepwork.com'; 
+    const pagePath = 'maisi/maisi/webgames/MagicHaqi';
+    return `${origin}/api/raw/${pagePath}/dev_tools/${fileName}`;
 }
 
 function openDevTool(fileName, title) {

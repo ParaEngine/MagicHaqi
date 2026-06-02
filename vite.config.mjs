@@ -4,7 +4,7 @@ import path from 'node:path';
 import { defineConfig } from 'vite';
 
 const rootDir = import.meta.dirname;
-const sideBySideDirs = ['minigames', 'famous-pets', 'famous-planets', 'pet-story', 'dev_tools'];
+const sideBySideDirs = ['minigames', 'famous-pets', 'famous-planets', 'pet-story'];
 const sideBySideFiles = ['docs/userguide.html', 'docs/pet_wiki.html'];
 
 

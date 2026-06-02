@@ -127,6 +127,7 @@ let chatViewModule = null;
 let minigamesViewPromise = null;
 let minigamesViewModule = null;
 let pendingMinigameLaunch = null;
+let pendingMinigameTab = null;
 let hatchingViewPromise = null;
 let hatchingViewModule = null;
 let settingsViewPromise = null;
@@ -143,6 +144,9 @@ let storyListViewPromise = null;
 let storyListViewModule = null;
 let storyMakerViewPromise = null;
 let storyMakerViewModule = null;
+let gameMakerViewPromise = null;
+let gameMakerViewModule = null;
+let pendingGameMakerEdit = null;
 let pendingPostcard = null;
 let pendingStoryPath = null;
 let pendingStoryData = null;
@@ -263,6 +267,17 @@ function loadStoryMakerView() {
         });
     }
     return storyMakerViewPromise;
+}
+
+function loadGameMakerView() {
+    if (gameMakerViewModule) return Promise.resolve(gameMakerViewModule);
+    if (!gameMakerViewPromise) {
+        gameMakerViewPromise = import('./view_game_maker.js').then((mod) => {
+            gameMakerViewModule = mod;
+            return mod;
+        });
+    }
+    return gameMakerViewPromise;
 }
 
 function storyRouteOptions() {
@@ -403,6 +418,41 @@ function openStoryMakerEditor(story = null) {
         });
 }
 
+function renderGameMakerRoute() {
+    const editTarget = pendingGameMakerEdit;
+    const options = {
+        onBack: () => {
+            pendingGameMakerEdit = null;
+            pendingMinigameTab = 'mine';
+            navigateToView('minigames');
+        },
+        // 保存后停留在创作页（可继续编辑/迭代）。
+        onSaved: () => {},
+        onPlaySaved: () => {
+            pendingGameMakerEdit = null;
+            pendingMinigameTab = 'mine';
+            navigateToView('minigames');
+        },
+    };
+    if (gameMakerViewModule) {
+        gameMakerViewModule.renderGameMaker(app, { game: editTarget }, options);
+        return;
+    }
+    app.innerHTML = '<div class="topbar"><button class="btn-icon" id="mhBack" style="width:36px;height:36px;font-size:18px">‹</button><span class="font-bold" style="color:var(--text-primary)">创造小游戏</span><span style="width:36px;height:36px"></span></div><div style="padding:18px;color:var(--text-muted)">正在打开创作工坊...</div>';
+    const back = $('mhBack');
+    if (back) back.onclick = options.onBack;
+    loadGameMakerView()
+        .then(({ renderGameMaker }) => {
+            if (state.currentView !== 'gameMaker') return;
+            renderGameMaker(app, { game: editTarget }, options);
+        })
+        .catch((e) => {
+            console.error('加载创作工坊失败', e);
+            showToast('加载创作工坊失败：' + (e?.message || e), 'error');
+            if (state.currentView === 'gameMaker') navigateToView('minigames');
+        });
+}
+
 function renderPostcardRoute() {
     const options = { onBack: () => navigateToView('mailbox'), onPlay: () => navigateToView('home') };
     const data = pendingPostcard ? { postcard: pendingPostcard } : null;
@@ -529,6 +579,16 @@ function renderMinigamesRoute() {
             continueText: '继续玩',
             backText: '回到故事',
         } : null,
+        // "创造"标签跳转到全屏 AI 创作工坊；"我的"里的编辑同样进入全屏工坊。
+        initialTab: (() => { const t = pendingMinigameTab; pendingMinigameTab = null; return t; })(),
+        onCreateGame: () => {
+            pendingGameMakerEdit = null;
+            navigateToView('gameMaker');
+        },
+        onEditGame: (record, html) => {
+            pendingGameMakerEdit = (record || html) ? { record: record || null, html: html || '' } : null;
+            navigateToView('gameMaker');
+        },
     };
     if (minigamesViewModule) {
         minigamesViewModule.renderMinigames(app, { pet }, renderOptions);
@@ -685,6 +745,7 @@ const routes = {
     email:     renderEmailRoute,
     storyPlayer: renderStoryPlayerRoute,
     storyMaker:  renderStoryMakerRoute,
+    gameMaker:   renderGameMakerRoute,
     settings:  renderSettingsRoute,
 };
 
@@ -703,6 +764,7 @@ function cleanupLeavingView(nextView) {
     if (lastRenderedView === nextView) return;
     if (lastRenderedView === 'storyPlayer') storyPlayerViewModule?.disposeStoryPlayer?.();
     if (lastRenderedView === 'storyMaker') storyMakerViewModule?.disposeStoryMaker?.();
+    if (lastRenderedView === 'gameMaker') gameMakerViewModule?.disposeGameMaker?.();
     // Field scene background music only belongs to the home view. When we leave
     // home for any other view (minigames, chat, shop, hatching, settings, ...),
     // stop the music so it does not keep playing over a silent screen.
