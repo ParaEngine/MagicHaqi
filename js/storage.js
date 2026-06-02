@@ -44,6 +44,18 @@ async function writeFileSafe(path, content) {
     }
 }
 
+async function clearLocalDiskSafe(path) {
+    try {
+        const s = ensureStore();
+        if (typeof s.clearLocalDisk !== 'function') return false;
+        await s.clearLocalDisk(path);
+        return true;
+    } catch (e) {
+        console.warn('clearLocalDisk 失败', path, e);
+        return false;
+    }
+}
+
 async function deleteFileSafe(path) {
     try {
         const s = ensureStore();
@@ -1001,8 +1013,17 @@ export function ensurePetLayouts(_petId) {
         const path = currentLayoutsPath();
         const data = await readJSON(path, {});
         state.layouts = normalizeLayoutsData(data);
-        setActiveSettingsTerrainFields(extractLayoutsTerrainFields(state.layouts));
-        setActiveSettingsFieldScenes(extractLayoutsFieldScenes(state.layouts));
+        const loadedTerrainFields = extractLayoutsTerrainFields(state.layouts);
+        const loadedFieldScenes = extractLayoutsFieldScenes(state.layouts);
+        const officialPlanet = state.settings?.starSettlement?.source === 'official';
+        const fallbackTerrainFields = officialPlanet ? state.settings?.terrainFields : null;
+        const fallbackFieldScenes = officialPlanet ? state.settings?.fieldScenes : null;
+        setActiveSettingsTerrainFields(officialPlanet && Array.isArray(fallbackTerrainFields?.slots) && fallbackTerrainFields.slots.length
+            ? fallbackTerrainFields
+            : loadedTerrainFields);
+        setActiveSettingsFieldScenes(officialPlanet && fallbackFieldScenes && typeof fallbackFieldScenes === 'object' && Object.keys(fallbackFieldScenes).length
+            ? fallbackFieldScenes
+            : loadedFieldScenes);
         const hasLegacyKeys = data && typeof data === 'object' && !Array.isArray(data) && Object.keys(data).some(key => key !== 'fieldScenes' && key !== 'terrainFields' && key !== normalizeLayoutRoomKey(key));
         const hasNormalizedFields = JSON.stringify(extractLayoutsTerrainFields(data)) !== JSON.stringify(extractLayoutsTerrainFields(state.layouts));
         const hasNormalizedScenes = JSON.stringify(extractLayoutsFieldScenes(data)) !== JSON.stringify(extractLayoutsFieldScenes(state.layouts));
@@ -1212,15 +1233,15 @@ export async function saveDecorDataNow(petId) {
 export async function clearStoredData() {
     const ids = [...(state.petOrder || [])];
     await Promise.all([
-        writeFileSafe(PATHS.userProfile, ''),
-        writeFileSafe(PATHS.layouts, ''),
-        writeFileSafe(PATHS.inventory, ''),
-        writeFileSafe(PATHS.planetVisitors, ''),
-        writeFileSafe(PATHS.recentFriendPlanets, ''),
-        writeFileSafe(PATHS.postcardList, ''),
-        writeFileSafe(PATHS.storyProgress, ''),
-        writeFileSafe(PATHS.storyList, ''),
-        ...ids.map(id => writeFileSafe(PATHS.pet(id), '')),
+        clearLocalDiskSafe(PATHS.userProfile),
+        clearLocalDiskSafe(PATHS.layouts),
+        clearLocalDiskSafe(PATHS.inventory),
+        clearLocalDiskSafe(PATHS.planetVisitors),
+        clearLocalDiskSafe(PATHS.recentFriendPlanets),
+        clearLocalDiskSafe(PATHS.postcardList),
+        clearLocalDiskSafe(PATHS.storyProgress),
+        clearLocalDiskSafe(PATHS.storyList),
+        ...ids.map(id => clearLocalDiskSafe(PATHS.pet(id))),
     ]);
     state.layouts = {};
     state.inventory = {};

@@ -4,13 +4,12 @@ import { getLang, t } from './i18n.js';
 import { CONFIG } from './config.js';
 import { state } from './state.js';
 import { displayPetName } from './dna.js';
-import { generatePetSheet, getEggDataUrl, getPetSpriteCell, getProcessedSheet, SHEET_COLS, SHEET_ROWS } from './pet.js';
+import { getPet, getPetAsync, getPetImagePayload } from './pet.js';
 import { isPetOnCurrentPlanet } from './petLifecycle.js';
 import SoundManager from './soundManager.js';
 
 const soundManager = SoundManager.getInstance();
 const STAT_REWARD_ANIMATION_MS = 1600;
-const EGG_IMAGE_SIZE = 256;
 const DEFAULT_MINIGAME_STAT_BONUS = { bond: 12, mood: 6 };
 const MINIGAME_REST_PROMPT_MS = 5 * 60 * 1000;
 const MINIGAME_ENTRY_CLICK_GUARD_MS = 520;
@@ -248,7 +247,6 @@ let currentGame = null;
 let rewardedRounds = new Set();
 let currentPet = null;
 let currentGameStartedAt = 0;
-let defaultEggBlobPromise = null;
 let restPromptTimer = null;
 let restPromptOpen = false;
 let suppressCurrentRewards = false;
@@ -731,7 +729,7 @@ async function handlePetImageRequest(frame, msg) {
 
     try {
         if (MINIGAME_ALL_PET_IMAGE_REQUESTS.has(type)) {
-            const pets = currentPlanetPetsForMinigame();
+            const pets = await currentPlanetPetsForMinigame();
             const results = await Promise.allSettled(pets.map(pet => buildPetImagePayload(pet, msg)));
             const images = results.filter(result => result.status === 'fulfilled' && result.value).map(result => result.value);
             const errors = results
@@ -753,7 +751,7 @@ async function handlePetImageRequest(frame, msg) {
             return;
         }
 
-        const pet = requestedPetForMinigame(msg);
+        const pet = await requestedPetForMinigame(msg);
         const image = await buildPetImagePayload(pet, msg);
         sourceWindow.postMessage({
             type: 'haqi_pet_image',
@@ -771,139 +769,42 @@ async function handlePetImageRequest(frame, msg) {
     }
 }
 
-function requestedPetForMinigame(msg) {
+async function requestedPetForMinigame(msg) {
+    // 1) 显式指定的 petId（来自 setGameConfig 等）。
     const petId = msg?.petId || msg?.data?.petId;
-    if (petId && state.pets?.[petId]) return state.pets[petId];
-    if (currentPet?.id && state.pets?.[currentPet.id]) return state.pets[currentPet.id];
-    if (currentPet) return currentPet;
-    return state.currentPetId ? state.pets?.[state.currentPetId] : null;
+    if (petId) {
+        const pet = state.pets?.[petId] || await getPetAsync(petId);
+        if (pet) return pet;
+    }
+    // 2) 当前激活宠物（按其当前阶段渲染形象）。视图打开时已缓存的 currentPet 优先，
+    //    其次回退到全局 currentPetId —— 两者都通过按需加载器确保 pet.json 已就绪。
+    const activeId = currentPet?.id || state.currentPetId || null;
+    if (activeId) {
+        const pet = state.pets?.[activeId] || await getPetAsync(activeId);
+        if (pet) return pet;
+    }
+    // 3) 兜底：渲染时传入的临时 pet 对象（如孵化预览，可能没有 id / 未入 state.pets）。
+    return currentPet || null;
 }
 
-function currentPlanetPetsForMinigame() {
+async function currentPlanetPetsForMinigame() {
     const ids = state.petOrder || [];
-    const ordered = ids.map(id => state.pets?.[id]).filter(pet => pet && isPetOnCurrentPlanet(pet));
-    if (currentPet?.id) {
-        const current = state.pets?.[currentPet.id] || currentPet;
-        return [current, ...ordered.filter(pet => pet.id !== currentPet.id)].slice(0, 10);
+    const ordered = ids.map(id => getPet(id)).filter(pet => pet && isPetOnCurrentPlanet(pet));
+    const activeId = currentPet?.id || state.currentPetId || null;
+    if (activeId) {
+        const current = state.pets?.[activeId] || currentPet || await getPetAsync(activeId);
+        if (current) {
+            return [current, ...ordered.filter(pet => pet.id !== activeId)].slice(0, 10);
+        }
     }
     return ordered.slice(0, 10);
 }
 
-async function buildPetImagePayload(pet, msg = {}) {
-    if (!pet) throw new Error('pet not found');
-    if (pet.stage === 'egg') return await buildEggImagePayload(pet);
-
-    let sheetUrl = pet.imageSheetUrl || '';
-    if (!sheetUrl) sheetUrl = await generatePetSheet(pet) || '';
-    if (!sheetUrl) throw new Error(`pet image is not available: ${pet.id || 'unknown'}`);
-
+// 宠物图像数据（blob + uv）由 pet.js 统一提供（单一来源），这里只做转发。
+// anim 兼容 msg.anim / msg.data.anim 两种调用约定。
+function buildPetImagePayload(pet, msg = {}) {
     const anim = msg?.anim || msg?.data?.anim;
-    const originalAnim = pet.anim;
-    if (anim) pet.anim = anim;
-    const cell = getPetSpriteCell(pet);
-    if (anim) pet.anim = originalAnim;
-    if (!cell) return await buildEggImagePayload(pet);
-
-    const processed = getProcessedSheet(sheetUrl);
-    await processed?.promise;
-    if (!(processed?.status === 'loaded' && processed.dataBlob && processed.width && processed.height)) {
-        throw new Error(`pet image is still unavailable after processing: ${pet.id || 'unknown'}`);
-    }
-
-    const uv = petSpriteUv(cell, processed.width, processed.height);
-    return {
-        petId: pet.id || '',
-        name: displayPetName(pet),
-        stage: pet.stage || '',
-        anim: anim || pet.anim || 'idle',
-        imageBlob: processed.dataBlob,
-        imageType: processed.dataBlob.type || 'image/png',
-        imageWidth: processed.width,
-        imageHeight: processed.height,
-        uv,
-    };
-}
-
-async function buildEggImagePayload(pet) {
-    const imageBlob = await getDefaultEggBlob();
-    return {
-        petId: pet.id || '',
-        name: displayPetName(pet),
-        stage: pet.stage || 'egg',
-        anim: 'egg',
-        imageBlob,
-        imageType: imageBlob.type || 'image/png',
-        imageWidth: EGG_IMAGE_SIZE,
-        imageHeight: EGG_IMAGE_SIZE,
-        uv: {
-            x: 0,
-            y: 0,
-            width: EGG_IMAGE_SIZE,
-            height: EGG_IMAGE_SIZE,
-            row: 0,
-            col: 0,
-            cols: 1,
-            rows: 1,
-            u0: 0,
-            v0: 0,
-            u1: 1,
-            v1: 1,
-        },
-    };
-}
-
-function getDefaultEggBlob() {
-    if (defaultEggBlobPromise) return defaultEggBlobPromise;
-    defaultEggBlobPromise = new Promise((resolve, reject) => {
-        try {
-            const img = new Image();
-            img.onload = () => {
-                try {
-                    const canvas = document.createElement('canvas');
-                    canvas.width = EGG_IMAGE_SIZE;
-                    canvas.height = EGG_IMAGE_SIZE;
-                    const ctx = canvas.getContext('2d');
-                    if (!ctx) throw new Error('canvas context is not available');
-                    ctx.clearRect(0, 0, EGG_IMAGE_SIZE, EGG_IMAGE_SIZE);
-                    ctx.drawImage(img, 0, 0, EGG_IMAGE_SIZE, EGG_IMAGE_SIZE);
-                    canvas.toBlob((blob) => {
-                        if (blob) resolve(blob);
-                        else reject(new Error('failed to create egg image blob'));
-                    }, 'image/png');
-                } catch (e) {
-                    reject(e);
-                }
-            };
-            img.onerror = () => reject(new Error('failed to load egg image'));
-            img.src = getEggDataUrl();
-        } catch (e) {
-            reject(e);
-        }
-    });
-    return defaultEggBlobPromise;
-}
-
-function petSpriteUv(cell, imageWidth, imageHeight) {
-    const x = Math.floor(cell.col * imageWidth / SHEET_COLS);
-    const y = Math.floor(cell.row * imageHeight / SHEET_ROWS);
-    const nextX = Math.floor((cell.col + 1) * imageWidth / SHEET_COLS);
-    const nextY = Math.floor((cell.row + 1) * imageHeight / SHEET_ROWS);
-    const width = Math.max(1, nextX - x);
-    const height = Math.max(1, nextY - y);
-    return {
-        x,
-        y,
-        width,
-        height,
-        row: cell.row,
-        col: cell.col,
-        cols: SHEET_COLS,
-        rows: SHEET_ROWS,
-        u0: x / imageWidth,
-        v0: y / imageHeight,
-        u1: (x + width) / imageWidth,
-        v1: (y + height) / imageHeight,
-    };
+    return getPetImagePayload(pet, { anim });
 }
 
 function statValue(pet, key) {
@@ -1144,9 +1045,10 @@ function openGame(gameId, params = null, { allowLowEnergy = false } = {}) {
     showToast(t('mgStartGame', { title: getMinigameTitle(game) }), 'info', 1000);
 }
 
-function postGameConfig() {
+async function postGameConfig() {
     const frame = $('mhMinigameFrame');
-    const pet = requestedPetForMinigame({}) || currentPet;
+    if (!frame?.contentWindow) return;
+    const pet = await requestedPetForMinigame({});
     if (!frame?.contentWindow || !pet) return;
     try {
         frame.contentWindow.postMessage({
@@ -1158,18 +1060,15 @@ function postGameConfig() {
             },
         }, '*');
     } catch (_) {}
-    buildPetImagePayload(pet, { anim: 'happy', petId: pet.id })
-        .then((image) => {
-            try {
-                frame.contentWindow?.postMessage({
-                    type: 'haqi_pet_image',
-                    requestId: 'active_pet_config',
-                    ok: true,
-                    data: image,
-                }, '*');
-            } catch (_) {}
-        })
-        .catch(() => {});
+    try {
+        const image = await buildPetImagePayload(pet, { anim: 'happy', petId: pet.id });
+        frame.contentWindow?.postMessage({
+            type: 'haqi_pet_image',
+            requestId: 'active_pet_config',
+            ok: true,
+            data: image,
+        }, '*');
+    } catch (_) {}
 }
 
 function minigameUrl(src, params = null) {

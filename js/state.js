@@ -4,6 +4,7 @@ import { CONFIG } from './config.js';
 export const state = {
     sdk: null,
     user: null,                 // { id, username, ... }
+    offlineMode: false,
     isPaid: CONFIG.defaultIsPaid,
     coins: CONFIG.initialCoins,
     pets: {},                   // id -> pet 对象

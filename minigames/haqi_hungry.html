@@ -2924,8 +2924,11 @@
   window.addEventListener('resize', resize);
   window.addEventListener('message', event => {
     const msg = event.data || {};
-    if (msg.type === 'haqi_pet_images' && msg.ok) setPetImages(msg.data);
-    if (msg.type === 'haqi_pet_image' && msg.ok) setPetImages({ pets: [msg.data] });
+    // 本游戏自带随机宠物图库（famous-pets/_pet_index.json），父窗口的宠物图只作为图库加载失败时的兜底。
+    // 注意：父窗口在 iframe 载入时会主动推送一张“当前激活宠物”(requestId='active_pet_config')，
+    // 不能让它覆盖已经加载好的随机图库，否则就只剩 1 只宠物。
+    if (msg.type === 'haqi_pet_images' && msg.ok) { if (state.petBitmaps.length < PET_MAX_TEAM) setPetImages(msg.data); }
+    if (msg.type === 'haqi_pet_image' && msg.ok && msg.requestId !== 'active_pet_config') { if (!state.petBitmaps.length) setPetImages({ pets: [msg.data] }); }
     if (msg.type === 'setGameConfig' && msg.data?.masterStyle) { state.masterStyle = msg.data.masterStyle === 'girl' ? 'girl' : 'boy'; localStorage.setItem(STORAGE_MASTER, state.masterStyle); updateMasterButtons(); }
   });
 

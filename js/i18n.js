@@ -45,6 +45,8 @@ export const zhCN = {
     pleaseLogin: '请先登录开始领养第一只宠物蛋',
     loggingIn: '登录中…',
     loginButton: '🔑 登录',
+    offlineMode: '离线体验',
+    offlineHint: '不推荐：进度可能只保存在本机，无法同步或跨设备继续。',
 
     // 宠物列表 / 图鉴
     myPets: '宠物图鉴',
@@ -499,7 +501,7 @@ export const zhCN = {
     tpMyPet: '我的宠物', tpFriendPet: '好友宠物', tpPhotoOf: '{me} 和 {friend} 的合影',
     tpPosePlay: '{name}（点击换姿势・双击翻转）', tpNeedTwo: '合影需要两只宠物。',
     tpDragHintBg: '可拖动宠物或背景调整位置，点击换姿势、双击左右翻转，', tpDragHint: '可拖动宠物调整位置，点击换姿势、双击左右翻转，', tpTapTextEdit: '点击文字可编辑。',
-    tpTitle: '📸 合影', tpShare: '分享', tpSaveLocal: '保存到本地',
+    tpTitle: '📸 合影', tpShare: '分享', tpSaveLocal: '保存到本地', tpReset: '复位',
     tpEditTitle: '编辑合影文字', tpEditPlaceholder: '写一句合影的话', tpFileName: '合影', tpShareTitle: '宠物合影',
     tpGenFailed: '照片生成失败，请稍后再试。', tpImageDone: '已生成合影图片。', tpSavedLocal: '合影已保存到本地。',
     // 开发者面板（view_dev_console）
@@ -907,6 +909,8 @@ export const enUS = {
     pleaseLogin: 'Log in first to adopt your first pet egg',
     loggingIn: 'Logging in…',
     loginButton: '🔑 Log In',
+    offlineMode: 'Continue Offline',
+    offlineHint: 'Not recommended: progress may stay on this device and will not sync across devices.',
 
     // Pet list / album
     myPets: 'Pet Album',
@@ -1282,6 +1286,8 @@ export const enUS = {
     "五间豪宅": "Five-Room Mansion",
 
     // Official planet names/titles (Chinese names are used directly as i18n keys)
+    "官方": "Official",
+    "远航": "Voyage",
     "哈奇星球": "Haqi Planet",
     "麦思星球": "Maisi Planet",
     "火鸟岛": "Firebird Island",
@@ -1504,7 +1510,7 @@ export const enUS = {
     tpMyPet: 'My Pet', tpFriendPet: 'Friend Pet', tpPhotoOf: '{me} & {friend} photo',
     tpPosePlay: '{name} (tap to change pose · double-tap to flip)', tpNeedTwo: 'A group photo needs two pets.',
     tpDragHintBg: 'Drag pets or background to reposition, tap to change pose, double-tap to flip, ', tpDragHint: 'Drag pets to reposition, tap to change pose, double-tap to flip, ', tpTapTextEdit: 'Tap the text to edit.',
-    tpTitle: '📸 Group Photo', tpShare: 'Share', tpSaveLocal: 'Save Locally',
+    tpTitle: '📸 Group Photo', tpShare: 'Share', tpSaveLocal: 'Save Locally', tpReset: 'Reset',
     tpEditTitle: 'Edit photo text', tpEditPlaceholder: 'Write a line for the photo', tpFileName: 'photo', tpShareTitle: 'Pet Photo',
     tpGenFailed: 'Photo generation failed, try again later.', tpImageDone: 'Group photo generated.', tpSavedLocal: 'Group photo saved locally.',
     // Developer panel (view_dev_console)
@@ -2029,8 +2035,15 @@ const ROOM_NAME_I18N = {
     garden: 'roomGarden',
 };
 
-/** Localize a field/type object using its typeId or id. Fallback to .name. */
+/** Localize a field/type object using explicit slot names first, then type i18n. */
 export function localizeFieldName(field) {
+    if (field && typeof field === 'object') {
+        const name = String(field.name || '').trim();
+        const id = String(field.id || '').trim();
+        const typeId = String(field.typeId || field.fieldId || '').trim();
+        const isNamedSlot = !!typeId && (!id || id !== typeId || field.index != null || field.slotId != null || field.positionLabel);
+        if (name && isNamedSlot) return name;
+    }
     const typeId = field?.typeId || field?.id || '';
     const key = FIELD_NAME_I18N[typeId];
     return key ? t(key) : (field?.name || '');

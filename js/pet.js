@@ -15,7 +15,7 @@
 
 import { state, subscribe, notify } from './state.js';
 import { loadPet, savePetDebounced } from './storage.js';
-import { biasDnaForFieldId, biasDnaForTrait, decodeDna, dietPreferenceLabel, dnaDietPreference, dnaRarity, dnaToName } from './dna.js';
+import { biasDnaForFieldId, biasDnaForTrait, decodeDna, dietPreferenceLabel, displayPetName, dnaDietPreference, dnaRarity, dnaToName } from './dna.js';
 import { CONFIG, findLargestHouseAcrossLayouts } from './config.js';
 import { applyStage, defaultTraits, gainTrait, markPetCared } from './petTick.js';
 import { getRuntimePetStats } from './petLifecycle.js';
@@ -1041,7 +1041,7 @@ export function eggHungryHint(pet) {
     const key = pet?.id || '__anon__';
     const idx = _eggTalkCursor.get(key) || 0;
     _eggTalkCursor.set(key, (idx + 1) % lines.length);
-    return lines[idx];
+    return t(lines[idx]);
 }
 
 // 每只蛋的"首次进入 field"欢迎是否已经播放过（in-memory，刷新即重置）
@@ -2368,4 +2368,210 @@ if (typeof MutationObserver !== 'undefined' && typeof document !== 'undefined') 
     } else {
         startObserver();
     }
+}
+
+// ============================================================================
+// 宠物图像 Blob 负载（跨窗口/iframe 传输的唯一来源）
+// ----------------------------------------------------------------------------
+// 任何需要“拿到某只宠物某个阶段的图片数据（blob + uv 裁剪信息）”的消费方
+// （如小游戏 iframe 通过 postMessage 请求），都应统一调用 getPetImagePayload()。
+// 这样 sprite sheet 的生成、透明化、原始图回退、蛋图兜底、UV 计算等逻辑只存在于 pet.js，
+// 视图层（view_minigames.js 等）不再各自处理图片。
+// ============================================================================
+
+const EGG_IMAGE_SIZE = 256;
+let _defaultEggBlobPromise = null;
+const _rawSheetBlobCache = new Map(); // url -> Promise<{ blob, width, height } | null>
+
+/**
+ * 计算 sprite sheet 中某个格子的 UV 裁剪信息（像素 + 归一化坐标 + 行列数）。
+ * @param {{row:number, col:number}} cell
+ * @param {number} imageWidth
+ * @param {number} imageHeight
+ */
+function petSpriteUv(cell, imageWidth, imageHeight) {
+    const x = Math.floor(cell.col * imageWidth / SHEET_COLS);
+    const y = Math.floor(cell.row * imageHeight / SHEET_ROWS);
+    const nextX = Math.floor((cell.col + 1) * imageWidth / SHEET_COLS);
+    const nextY = Math.floor((cell.row + 1) * imageHeight / SHEET_ROWS);
+    const width = Math.max(1, nextX - x);
+    const height = Math.max(1, nextY - y);
+    return {
+        x,
+        y,
+        width,
+        height,
+        row: cell.row,
+        col: cell.col,
+        cols: SHEET_COLS,
+        rows: SHEET_ROWS,
+        u0: x / imageWidth,
+        v0: y / imageHeight,
+        u1: (x + width) / imageWidth,
+        v1: (y + height) / imageHeight,
+    };
+}
+
+// 默认蛋图 blob（缓存，所有蛋阶段/兜底共用）。
+function _getDefaultEggBlob() {
+    if (_defaultEggBlobPromise) return _defaultEggBlobPromise;
+    _defaultEggBlobPromise = new Promise((resolve, reject) => {
+        try {
+            const img = new Image();
+            img.onload = () => {
+                try {
+                    const canvas = document.createElement('canvas');
+                    canvas.width = EGG_IMAGE_SIZE;
+                    canvas.height = EGG_IMAGE_SIZE;
+                    const cctx = canvas.getContext('2d');
+                    if (!cctx) throw new Error('canvas context is not available');
+                    cctx.clearRect(0, 0, EGG_IMAGE_SIZE, EGG_IMAGE_SIZE);
+                    cctx.drawImage(img, 0, 0, EGG_IMAGE_SIZE, EGG_IMAGE_SIZE);
+                    canvas.toBlob((blob) => {
+                        if (blob) resolve(blob);
+                        else reject(new Error('failed to create egg image blob'));
+                    }, 'image/png');
+                } catch (e) {
+                    reject(e);
+                }
+            };
+            img.onerror = () => reject(new Error('failed to load egg image'));
+            img.src = getEggDataUrl();
+        } catch (e) {
+            reject(e);
+        }
+    });
+    return _defaultEggBlobPromise;
+}
+
+// 拉取原始 sheet 为 blob 并测量像素尺寸（worker 透明化不可用时的回退路径）。
+function _fetchRawSheetBlob(url) {
+    if (!url) return Promise.resolve(null);
+    if (_rawSheetBlobCache.has(url)) return _rawSheetBlobCache.get(url);
+    const promise = (async () => {
+        try {
+            const resp = await fetch(url, { mode: 'cors' });
+            if (!resp.ok) throw new Error(`fetch sheet failed: ${resp.status}`);
+            const blob = await resp.blob();
+            const dims = await _measureBlobImage(blob);
+            if (!dims) return null;
+            return { blob, width: dims.width, height: dims.height };
+        } catch (e) {
+            console.warn('[pet] 拉取原始 sheet 失败', url, e);
+            return null;
+        }
+    })();
+    _rawSheetBlobCache.set(url, promise);
+    return promise;
+}
+
+function _measureBlobImage(blob) {
+    return new Promise((resolve) => {
+        const objectUrl = URL.createObjectURL(blob);
+        const img = new Image();
+        img.onload = () => {
+            const width = img.naturalWidth || img.width || 0;
+            const height = img.naturalHeight || img.height || 0;
+            URL.revokeObjectURL(objectUrl);
+            resolve(width && height ? { width, height } : null);
+        };
+        img.onerror = () => {
+            URL.revokeObjectURL(objectUrl);
+            resolve(null);
+        };
+        img.src = objectUrl;
+    });
+}
+
+/**
+ * 蛋图负载（蛋阶段 / 形象尚未就绪时的统一兜底）。
+ * @param {object} pet
+ */
+export async function getPetEggImagePayload(pet) {
+    const imageBlob = await _getDefaultEggBlob();
+    return {
+        petId: pet?.id || '',
+        name: displayPetName(pet),
+        stage: pet?.stage || 'egg',
+        anim: 'egg',
+        imageBlob,
+        imageType: imageBlob.type || 'image/png',
+        imageWidth: EGG_IMAGE_SIZE,
+        imageHeight: EGG_IMAGE_SIZE,
+        uv: {
+            x: 0,
+            y: 0,
+            width: EGG_IMAGE_SIZE,
+            height: EGG_IMAGE_SIZE,
+            row: 0,
+            col: 0,
+            cols: 1,
+            rows: 1,
+            u0: 0,
+            v0: 0,
+            u1: 1,
+            v1: 1,
+        },
+    };
+}
+
+/**
+ * 获取某只宠物“当前阶段”可传输的图像负载（blob + uv + 元信息），用于 iframe/跨窗口渲染。
+ * 这是宠物图像数据的唯一来源——sprite sheet 生成、透明化、原始图回退、蛋图兜底都在这里完成。
+ *
+ * @param {object} pet 宠物对象（至少需要 id 或 dna/stage）。
+ * @param {{ anim?: string }} [opts] anim 指定情绪列（idle/happy/sad/sleep），默认按 pet.anim。
+ * @returns {Promise<object>} { petId, name, stage, anim, imageBlob, imageType, imageWidth, imageHeight, uv }
+ */
+export async function getPetImagePayload(pet, opts = {}) {
+    if (!pet) throw new Error('pet not found');
+    // 确保拿到 pet.json 完整数据（dna / imageSheetUrl / stage），避免按需加载未就绪导致空白。
+    if (pet.id) pet = (await getPetAsync(pet.id)) || pet;
+    if (pet.stage === 'egg') return await getPetEggImagePayload(pet);
+
+    let sheetUrl = pet.imageSheetUrl || '';
+    if (!sheetUrl) sheetUrl = await generatePetSheet(pet) || '';
+    // 形象尚未生成完成时，先回退到蛋图，而不是抛错导致消费方什么都不显示。
+    if (!sheetUrl) return await getPetEggImagePayload(pet);
+
+    const anim = opts?.anim;
+    const originalAnim = pet.anim;
+    if (anim) pet.anim = anim;
+    const cell = getPetSpriteCell(pet);
+    if (anim) pet.anim = originalAnim;
+    if (!cell) return await getPetEggImagePayload(pet);
+
+    // 透明化处理后的精灵图（与首页/野外渲染同源）。
+    const processed = getProcessedSheet(sheetUrl);
+    await processed?.promise;
+
+    let imageBlob = null;
+    let imageWidth = 0;
+    let imageHeight = 0;
+    if (processed?.status === 'loaded' && processed.dataBlob && processed.width && processed.height) {
+        imageBlob = processed.dataBlob;
+        imageWidth = processed.width;
+        imageHeight = processed.height;
+    } else {
+        // worker 透明化不可用时（status='raw' 或 direct 模式无 blob），首页会回退到原始 sheet，
+        // 这里同样拉取原始 sheet 为 blob 并测量尺寸，避免抛错导致什么都不显示。
+        const raw = await _fetchRawSheetBlob(sheetUrl);
+        if (!raw) return await getPetEggImagePayload(pet);
+        imageBlob = raw.blob;
+        imageWidth = raw.width;
+        imageHeight = raw.height;
+    }
+
+    const uv = petSpriteUv(cell, imageWidth, imageHeight);
+    return {
+        petId: pet.id || '',
+        name: displayPetName(pet),
+        stage: pet.stage || '',
+        anim: anim || pet.anim || 'idle',
+        imageBlob,
+        imageType: imageBlob.type || 'image/png',
+        imageWidth,
+        imageHeight,
+        uv,
+    };
 }

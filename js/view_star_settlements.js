@@ -258,9 +258,9 @@ async function readHomePlanetFromIndex(rawValue) {
 export async function applyTemporaryHomePlanetFromUrl() {
     let rawValue = '';
     try {
-        const url = new URL(window.location.href);
-        rawValue = String(url.searchParams.get('home_planet') || '').trim();
+        rawValue = String(new URL(window.location.href).searchParams.get('home_planet') || '').trim();
     } catch (_) {}
+    if (!rawValue) rawValue = String(window.__homePlanet || '').trim();
     if (!rawValue) return false;
     try {
         const planet = await readHomePlanetFromIndex(rawValue);

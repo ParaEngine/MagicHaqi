@@ -1,6 +1,6 @@
 // 登录视图
-import { $, escapeHtml } from './utils.js';
-import { t } from './i18n.js';
+import { $, escapeHtml, showToast } from './utils.js';
+import { getLang, setLang, t } from './i18n.js';
 import { state } from './state.js';
 
 // 装饰用的小星球（复用 planet.css 中的 .space-planet / .planet-body / .planet-ring 等样式）
@@ -45,6 +45,42 @@ function actionAreaHtml(mode) {
         </button>`;
 }
 
+function languageSelectorHtml() {
+    const lang = getLang();
+    const btnStyle = (active) => [
+        'min-width:72px',
+        'padding:7px 12px',
+        'border-radius:999px',
+        'font-size:12px',
+        'font-weight:800',
+        'letter-spacing:.01em',
+        'border:1px solid ' + (active ? 'rgba(152,239,255,0.88)' : 'rgba(157,208,235,0.38)'),
+        'color:' + (active ? '#e8f7ff' : '#9fd0eb'),
+        'background:' + (active ? 'linear-gradient(135deg,rgba(42,207,255,0.34),rgba(31,96,255,0.28))' : 'rgba(8,24,62,0.28)'),
+        'box-shadow:' + (active ? '0 0 16px rgba(84,226,255,0.26), inset 0 1px 0 rgba(255,255,255,0.28)' : 'inset 0 1px 0 rgba(255,255,255,0.10)'),
+        'text-shadow:0 1px 3px rgba(6,18,44,0.72)',
+        'cursor:pointer',
+        'touch-action:manipulation',
+    ].join(';');
+    return `
+        <div class="mt-6 flex flex-col items-center gap-2" aria-label="${escapeHtml(t('language'))}">
+            <div class="text-[11px] font-bold uppercase tracking-[0.16em]" style="color:#7fc8ee;text-shadow:0 1px 4px rgba(6,18,44,0.7)">${escapeHtml(t('language'))}</div>
+            <div class="flex items-center justify-center gap-2">
+                <button id="mhLoginLangZh" type="button" aria-pressed="${lang === 'zh' ? 'true' : 'false'}" style="${btnStyle(lang === 'zh')}">${escapeHtml(t('languageZh'))}</button>
+                <button id="mhLoginLangEn" type="button" aria-pressed="${lang === 'en' ? 'true' : 'false'}" style="${btnStyle(lang === 'en')}">${escapeHtml(t('languageEn'))}</button>
+            </div>
+        </div>`;
+}
+
+function offlineOptionHtml() {
+    return `
+        <div class="mt-3 flex flex-col items-center gap-1" style="max-width:260px">
+            <button id="mhOfflineBtn" type="button" style="padding:7px 14px;border-radius:999px;border:1px solid rgba(157,208,235,0.28);background:rgba(8,24,62,0.18);color:#9fd0eb;font-size:12px;font-weight:700;text-shadow:0 1px 3px rgba(6,18,44,0.72);cursor:pointer;touch-action:manipulation">
+                ${escapeHtml(t('offlineMode'))}
+            </button>
+        </div>`;
+}
+
 // 一次性注入 spinner 样式
 function ensureLoginSpinnerStyle() {
     if (document.getElementById('mhLoginSpinnerStyle')) return;
@@ -63,7 +99,7 @@ function ensureLoginSpinnerStyle() {
     document.head.appendChild(style);
 }
 
-export function renderLogin(panel, _data, { onLogin, mode = 'login' } = {}) {
+export function renderLogin(panel, _data, { onLogin, onOffline, mode = 'login' } = {}) {
     ensureLoginSpinnerStyle();
     const appTitle = String(state.settings?.starSettlement?.appTitle || '').trim() || t('appName');
     // 复用 level_planet 的太空背景：.mh-stage.zoom-space + .space-bg + 闪烁星点
@@ -95,6 +131,8 @@ export function renderLogin(panel, _data, { onLogin, mode = 'login' } = {}) {
                 <div id="mhLoginAction" class="flex items-center justify-center" style="min-height:64px">
                     ${actionAreaHtml(mode)}
                 </div>
+                ${mode === 'loggingIn' ? '' : offlineOptionHtml()}
+                ${languageSelectorHtml()}
             </div>
         </div>`;
     const btn = $('mhLoginBtn');
@@ -106,4 +144,16 @@ export function renderLogin(panel, _data, { onLogin, mode = 'login' } = {}) {
             onLogin?.();
         };
     }
+    const switchLanguage = (lang) => {
+        if (setLang(lang)) renderLogin(panel, _data, { onLogin, onOffline, mode });
+    };
+    const langZh = $('mhLoginLangZh');
+    const langEn = $('mhLoginLangEn');
+    if (langZh) langZh.onclick = () => switchLanguage('zh');
+    if (langEn) langEn.onclick = () => switchLanguage('en');
+    const offlineBtn = $('mhOfflineBtn');
+    if (offlineBtn) offlineBtn.onclick = () => {
+        showToast(t('offlineHint'), 'info', 2800);
+        onOffline?.();
+    };
 }

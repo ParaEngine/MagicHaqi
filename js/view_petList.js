@@ -153,7 +153,6 @@ function openMemoryAlbum(pet) {
         <div class="modal-card">
             <div class="mh-album-header">
                 <div class="flex items-center gap-2">
-                    <span style="font-size:20px">📷</span>
                     <span class="font-extrabold" style="color:var(--text-primary)">${escapeHtml(t('albumTitle', { name: displayPetName(pet) }))}</span>
                 </div>
                 <div class="mh-album-meta">

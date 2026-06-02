@@ -326,6 +326,7 @@ function normalizeOfficialVisitDestination(entry, index) {
         planet,
         fields,
         planetPets: normalizePlanetPetIds(entry.planet_pets || entry.planetPets || entry.famousPets || entry.famous_pet_ids),
+        badge: String(entry.badge || '').trim(),
         appTitle: String(entry.appTitle || '').trim(),
         summary: String(entry.summary || '').trim(),
         hue,
@@ -438,8 +439,7 @@ function showOfficialVisitConfirmModal(planet, pet, parentClose) {
         <div class="planet-official-visit-card">
             <div class="planet-official-preview" style="${escapeHtml(officialVisitPlanetPreviewStyle(planet))}"><span>${escapeHtml((title || '?').slice(0, 1))}</span></div>
             <div class="planet-official-info">
-                <div class="planet-official-title"><b>${escapeHtml(title)}</b><em>${escapeHtml(planet.appTitle || t('stOfficialPlanetFallback'))}</em></div>
-                <p>${escapeHtml(planet.summary || t('stOfficialVisitSummary'))}</p>
+                <div class="planet-official-title"><b>${escapeHtml(title)}</b><em>${escapeHtml(planet.badge ? t(planet.badge) : t('stOfficialPlanetFallback'))}</em></div>
                 <div class="planet-official-fields">${officialVisitFieldChipsHtml(planet)}</div>
             </div>
         </div>

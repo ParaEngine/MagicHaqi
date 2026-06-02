@@ -626,7 +626,7 @@ async function renderPetListRoute() {
 
 // ==== 路由 ====
 const routes = {
-    login:     () => renderLogin(app, null, { onLogin: handleLogin }),
+    login:     () => renderLogin(app, null, { onLogin: handleLogin, onOffline: handleOfflineMode }),
     petList:   renderPetListRoute,
     hatch:     () => {
         const pet = getCurrentPet();
@@ -714,9 +714,11 @@ function cleanupLeavingView(nextView) {
 
 function render() {
     if (isBootstrapping) return;
-    cleanupLeavingView(state.currentView);
+    const currentView = (sdk.token || state.offlineMode) ? state.currentView : 'login';
+    if (state.currentView !== currentView) state.currentView = currentView;
+    cleanupLeavingView(currentView);
     stopHomeWalk();
-    const fn = routes[state.currentView] || routes.login;
+    const fn = routes[currentView] || routes.login;
     try { fn(); } catch (e) { console.error('render 失败', e); app.innerHTML = '<div style="padding:30px;color:#b91c1c">' + escapeHtml(t('renderError', { error: (e?.message || e) })) + '</div>'; }
 }
 subscribe(render);
@@ -732,6 +734,13 @@ async function loadCurrentUser() {
     return sdk.user || null;
 }
 
+function clearUnauthenticatedSession() {
+    try { sdk.logout?.(); } catch (_) {}
+    sdk.token = null;
+    state.user = null;
+    state.offlineMode = false;
+}
+
 function currentAppTitle() {
     return String(state.settings?.starSettlement?.appTitle || '').trim() || t('appName');
 }
@@ -745,14 +754,15 @@ async function bootstrap() {
         if (tok) sdk.token = tok;
     } catch (_) {}
 
-    // 已有 token 则尝试拉取用户
+    // 已有 token 则尝试拉取用户。若 token 失效或取不到用户，仍视为未登录。
     if (sdk.token) {
         try {
             state.user = await loadCurrentUser();
         } catch (_) { state.user = null; }
     }
 
-    if (!sdk.token) {
+    if (!sdk.token || !state.user) {
+        if (sdk.token && !state.user) clearUnauthenticatedSession();
         await applyTemporaryHomePlanetFromUrl();
         finishBootstrap();
         setView('login');
@@ -1127,6 +1137,7 @@ async function ensurePlanetNamed() {
 
 // ==== handlers ====
 async function handleLogin() {
+    state.offlineMode = false;
     if (!sdk.showLoginWindow) {
         showToast('未找到登录入口', 'error');
         setView('login');
@@ -1148,6 +1159,11 @@ async function handleLogin() {
     }
     if (sdk.token) {
         try { state.user = await loadCurrentUser(); } catch (_) {}
+        if (!state.user) {
+            clearUnauthenticatedSession();
+            setView('login');
+            return;
+        }
         try { await loadUserProfile(); await applySettledOfficialPlanetFromProfile(); await applyTemporaryHomePlanetFromUrl(); await loadAllPets(); } catch (e) { console.warn(e); }
         ensurePlanetProgressStarted();
         startPlanetPlaytimePersistence();
@@ -1183,10 +1199,46 @@ async function handleLogin() {
     }
 }
 
+async function handleOfflineMode() {
+    try {
+        state.offlineMode = true;
+        state.user = { id: 'offline', username: 'offline', name: 'Offline', offline: true };
+        await loadUserProfile();
+        await applyTemporaryHomePlanetFromUrl();
+        await loadAllPets();
+        for (const id of Object.keys(state.pets)) {
+            const pet = state.pets[id];
+            tickOffline(pet);
+            if (maybeRollDailySickness(pet)) savePetDebounced(pet);
+        }
+        startTickLoop();
+        await ensurePlanetNamed();
+        if (!hasSelectablePets()) {
+            await enterDefaultEggHome();
+            return;
+        } else if (state.currentPetId && !isPetSelectable(state.pets[state.currentPetId])) {
+            await selectFirstAvailablePet();
+        }
+        await enforcePlanetPetLimit(state.currentPetId);
+        if (state.currentPetId) {
+            try { await ensurePetData(state.currentPetId); } catch (_) {}
+        }
+        preloadLoadedPetAssets();
+        setView(hasPostcardParams() ? 'postcard' : 'home');
+    } catch (e) {
+        console.warn('离线模式启动失败', e);
+        state.offlineMode = false;
+        state.user = null;
+        showToast('离线模式启动失败：' + (e?.message || e), 'error');
+        setView('login');
+    }
+}
+
 function handleLogout() {
     try { sdk.logout?.(); } catch (_) {}
     sdk.token = null;
     state.user = null;
+    state.offlineMode = false;
     persistPlanetPlaytimeNow();
     stopTickLoop();
     stopPlanetPlaytimePersistence();
@@ -1196,27 +1248,17 @@ function handleLogout() {
 async function handleClearData() {
     try {
         await clearStoredData();
-        state.pets = {}; state.petOrder = []; state.currentPetId = null; state.layouts = {}; state.inventory = {}; state.inventoryOrder = [];
+        await loadUserProfile();
+        await applySettledOfficialPlanetFromProfile();
+        await applyTemporaryHomePlanetFromUrl();
+        await loadAllPets();
+        state.layouts = {};
+        state.inventory = {};
+        state.inventoryOrder = [];
         state.isDecorMode = false;
         state.isFeedMode = false;
-        state.coins = CONFIG.initialCoins; state.isPaid = false;
-        state.planetName = '';
-        state.planetCreatedAt = Date.now();
-        state.totalPlayMs = 0;
-        state.playSessionStartedAt = Date.now();
-        state.planetWeather = null;
-        state.planetBuff = null;
-        state.planetVisitors = [];
-        state.planetActions = {};
-        state.planetInfrastructure = {};
-        state.planetMining = {};
-        state.haqiIslandFarewells = [];
-        state.invitedPets = [];
-        state.activeInvitedPet = null;
-        state.remotePlanetDiscoveries = {};
-        state.remoteElementStocks = {};
-        await saveUserProfile();
         showToast('已清除', 'success');
+        await ensurePlanetNamed();
         if (await maybeStartNewUserStory()) return;
         await enterDefaultEggHome();
     } catch (e) {

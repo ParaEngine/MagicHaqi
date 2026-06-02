@@ -46,6 +46,7 @@ const FIELD_PET_BASE_SIZE_PX = 96;
 const FIELD_PET_REPEL_MIN_X = 0.058;
 const FIELD_PET_REPEL_MIN_Y = 0.155;
 const FIELD_PET_REPEL_MIN_GAP = 0.018;
+const VISIT_FIELD_MAX_PLANET_GUEST_PETS = 3;
 const NEAR_ACTIVE_PET_MIN_RADIUS = 0.055;
 const NEAR_ACTIVE_PET_RANDOM_RADIUS = 0.065;
 const NEAR_ACTIVE_PET_Y_SCALE = 0.82;
@@ -1669,6 +1670,38 @@ function fieldPetsFindRepelledPositions(entries, currentPetId) {
     return entries.map(entry => entry.id === currentPetId ? activePos : fixedById.get(entry.id));
 }
 
+function selectVisitFieldPlanetGuestPets(planetPets, visit, fieldId) {
+    if (!Array.isArray(planetPets) || planetPets.length <= VISIT_FIELD_MAX_PLANET_GUEST_PETS) return planetPets || [];
+    const seedBase = `${visit?.officialPlanetId || visit?.planetName || 'visit'}::${visit?.startedAt || Date.now()}::${fieldId}::planet-field-guests`;
+    return planetPets
+        .map((pet, index) => ({ pet, index, rank: hashString(`${seedBase}::${pet?.id || pet?.famousPetId || index}`) }))
+        .sort((a, b) => a.rank - b.rank)
+        .slice(0, VISIT_FIELD_MAX_PLANET_GUEST_PETS)
+        .sort((a, b) => a.index - b.index)
+        .map(item => item.pet);
+}
+
+function gaussianRandom(rng) {
+    const u1 = Math.max(0.000001, rng());
+    const u2 = rng();
+    return Math.sqrt(-2 * Math.log(u1)) * Math.cos(2 * Math.PI * u2);
+}
+
+function visitPlanetGuestFieldPosition(entry, fieldId, visit, index) {
+    const seed = `${visit?.officialPlanetId || visit?.planetName || 'visit'}::${visit?.startedAt || Date.now()}::${fieldId}::planet-guest-pos::${entry?.id || index}`;
+    const rng = makeRng(seed);
+    const x = clampRange(0.5 + gaussianRandom(rng) * 0.22, 0.08, 0.92);
+    const y = clampRange(0.75 + gaussianRandom(rng) * 0.105, 0.50, 0.90);
+    return {
+        x,
+        y,
+        delay: -(rng() * 5).toFixed(2),
+        dur: (9 + rng() * 5).toFixed(2),
+        dx: (-18 + rng() * 36).toFixed(1),
+        dy: (-10 + rng() * 20).toFixed(1),
+    };
+}
+
 function fieldPetsHtml(currentPet, fieldId) {
     if (isVisitingMode()) return visitingFieldPetsHtml(currentPet, fieldId);
     const petIds = getFieldPetIds(currentPet, fieldId);
@@ -1728,7 +1761,12 @@ function visitingFieldPetsHtml(currentPet, fieldId) {
         .map(id => state.pets?.[id])
         .forEach((pet, index) => addEntry(entries, pet, { current: false, index: index + 4 }));
     addEntry(entries, friendPet, { id: friendPet?.id || 'friend', host: true, current: false, index: 7 });
-    (visit.planetPets || [])
+    const planetGuestPets = selectVisitFieldPlanetGuestPets(
+        (visit.planetPets || []).filter(pet => pet?.id && !seen.has(pet.id)),
+        visit,
+        fieldId
+    );
+    planetGuestPets
         .forEach((pet, index) => addEntry(entries, pet, { current: false, index: index + 9, planetGuest: true }));
     const activePose = state.activePetFieldPose?.fieldId === fieldId ? state.activePetFieldPose : null;
     const hostBase = activePose && friendPet
@@ -1744,6 +1782,7 @@ function visitingFieldPetsHtml(currentPet, fieldId) {
     const positions = entries.map((entry, index) => {
         if (entry.host && hostBase) return hostBase;
         if (entry.current) return petFieldPosition({ ...entry.pet, id: entry.id }, fieldId, entry.index);
+        if (entry.planetGuest) return visitPlanetGuestFieldPosition(entry, fieldId, visit, index);
         if (hostBase) {
             const offset = clusterOffsets[index % clusterOffsets.length];
             return {

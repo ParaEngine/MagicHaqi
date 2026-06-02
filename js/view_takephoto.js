@@ -551,7 +551,7 @@ export function showTakePhotoWindow({ currentPet = null, friendPet = null, plane
         <div data-photo-preview-host>${buildPhotoPreviewHtml(currentPet, friendPet, photoState.text, photoState.themeId, resolvedPlanet, photoState.background, photoState.petAnims, photoState.petFlips)}</div>
         <div class="mh-photo-actions">
             <button class="btn-secondary" data-act="close">${escapeHtml(t('close'))}</button>
-            <button class="btn-secondary" data-photo-act="reset">↺ 复位</button>
+            <button class="btn-secondary" data-photo-act="reset">↺ ${escapeHtml(t('tpReset'))}</button>
             <button class="btn-secondary" data-photo-act="share">${escapeHtml(t('tpShare'))}</button>
             <button class="btn-primary" data-photo-act="save">${escapeHtml(t('tpSaveLocal'))}</button>
         </div>
