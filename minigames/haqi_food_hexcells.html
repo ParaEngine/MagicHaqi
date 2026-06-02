@@ -11,14 +11,115 @@
 <body></body>
 <script defer>
 (function () {
+  // ---- i18n ----
+  const I18N = {
+    zhCN: {
+      title: '宠物寻食蜂巢',
+      menuAria: '玩法',
+      gameTitle: '宠物寻食蜂巢',
+      gameStatusAria: '游戏状态',
+      food: '食物',
+      traps: '陷阱',
+      best: '最佳',
+      boardAria: '寻找食物蜂巢棋盘',
+      gestureHint: '点击清理，拖动标记陷阱',
+      clear: '清理',
+      help: '玩法',
+      restart: '重开',
+      nextRound: '下一局',
+      diffChoiceAria: '难度选择',
+      overlayTitle: '寻找食物',
+      overlayText: '黑色蜂巢上的数字表示周围有几个陷阱。点击黄色空地清理并寻找食物；拖动可疑格子可标记陷阱，电脑也可右键标记。每局收集到目标数量的食物就胜利。',
+      startSearch: '开始寻找',
+      continueBtn: '继续',
+      diffEasy: '轻松',
+      diffNormal: '标准',
+      diffHard: '挑战',
+      clueLabel: '线索，附近 {n} 个陷阱',
+      flagged: '已标记为陷阱',
+      unexplored: '未探索空地',
+      trap: '陷阱',
+      foodCell: '食物',
+      collectedCell: '已收集食物的空地',
+      safeCell: '安全空地',
+      nearMiss: '好险！周围陷阱很多',
+      correctCall: '判断正确',
+      winTitle: '收集成功！',
+      winText: '找到了 {collected} 份食物，没有让宠物踩进陷阱。',
+      loseTitle: '踩到陷阱了',
+      loseText: '黑色数字会告诉你周围陷阱数量，再试一次就更稳。',
+      retry: '再来一次',
+      flag: '标记',
+      menuTitle: '寻找食物',
+      menuText: '数字表示相邻陷阱数量，可用它判断哪些黄色格子安全。点击黄色格子清理，拖动可疑格子可标记陷阱，电脑也可右键标记；收集到目标数量的食物即可过关。',
+    },
+    enUS: {
+      title: 'Pet Food Hexcells',
+      menuAria: 'Help',
+      gameTitle: 'Pet Food Hexcells',
+      gameStatusAria: 'Game status',
+      food: 'Food',
+      traps: 'Traps',
+      best: 'Best',
+      boardAria: 'Food hexcells board',
+      gestureHint: 'Tap to clear, drag to flag traps',
+      clear: 'Clear',
+      help: 'Help',
+      restart: 'Restart',
+      nextRound: 'Next Round',
+      diffChoiceAria: 'Difficulty selection',
+      overlayTitle: 'Find Food',
+      overlayText: 'Numbers on dark cells show how many traps are nearby. Tap yellow cells to clear them and find food; drag suspicious cells to flag traps (right-click on desktop). Collect the target amount of food to win each round.',
+      startSearch: 'Start Searching',
+      continueBtn: 'Continue',
+      diffEasy: 'Easy',
+      diffNormal: 'Normal',
+      diffHard: 'Hard',
+      clueLabel: 'Clue, {n} traps nearby',
+      flagged: 'Flagged as trap',
+      unexplored: 'Unexplored cell',
+      trap: 'Trap',
+      foodCell: 'Food',
+      collectedCell: 'Collected food cell',
+      safeCell: 'Safe cell',
+      nearMiss: 'Close call! Many traps nearby',
+      correctCall: 'Good call!',
+      winTitle: 'Collection Complete!',
+      winText: 'Found {collected} food without stepping on any traps.',
+      loseTitle: 'Stepped on a Trap',
+      loseText: 'The dark numbers tell you how many traps are nearby. Try again more carefully.',
+      retry: 'Try Again',
+      flag: 'Flag',
+      menuTitle: 'Find Food',
+      menuText: 'Numbers show adjacent trap counts — use them to judge which yellow cells are safe. Tap yellow cells to clear, drag suspicious cells to flag traps (right-click on desktop); collect the target amount of food to pass.',
+    },
+  };
+  function detectLang() {
+    try {
+      const params = new URLSearchParams(window.location.search);
+      const lang = params.get('lang');
+      if (lang && I18N[lang]) return lang;
+    } catch (_) {}
+    return 'zhCN';
+  }
+  const LANG = detectLang();
+  const L = I18N[LANG];
+  function t(key, vars) {
+    let str = L[key] || I18N.zhCN[key] || key;
+    if (vars) str = str.replace(/\{(\w+)\}/g, (m, n) => vars[n] != null ? String(vars[n]) : m);
+    return str;
+  }
+  try { document.documentElement.setAttribute('lang', LANG === 'enUS' ? 'en' : 'zh-CN'); } catch (_) {}
+  try { document.title = t('title'); } catch (_) {}
+
   const STORAGE_KEY_LEVEL = 'haqiFoodHexcellsLevel';
   const STORAGE_KEY_BEST = 'haqiFoodHexcellsBest';
   const FALLBACK_PET = '🐾';
   const FOOD_ICONS = ['🍎', '🍓', '🥕', '🍪', '🍯'];
   const DIFFICULTIES = {
-    easy: { id: 'easy', label: '轻松', radius: 4, maxRadius: 5, traps: 7, foods: 11, target: 6, clues: 14, emptyCells: 2, reward: 90 },
-    normal: { id: 'normal', label: '标准', radius: 4, maxRadius: 5, traps: 10, foods: 14, target: 8, clues: 13, emptyCells: 3, reward: 115 },
-    hard: { id: 'hard', label: '挑战', radius: 5, maxRadius: 6, traps: 15, foods: 19, target: 12, clues: 18, emptyCells: 5, reward: 150 },
+    easy: { id: 'easy', label: t('diffEasy'), radius: 4, maxRadius: 5, traps: 7, foods: 11, target: 6, clues: 14, emptyCells: 2, reward: 90 },
+    normal: { id: 'normal', label: t('diffNormal'), radius: 4, maxRadius: 5, traps: 10, foods: 14, target: 8, clues: 13, emptyCells: 3, reward: 115 },
+    hard: { id: 'hard', label: t('diffHard'), radius: 5, maxRadius: 6, traps: 15, foods: 19, target: 12, clues: 18, emptyCells: 5, reward: 150 },
   };
   const DIFFICULTY_ORDER = ['easy', 'normal', 'hard'];
   const NEIGHBORS = [
@@ -44,6 +145,7 @@
     seconds: 0,
     timer: null,
     petAsset: null,
+    petRequestId: '',
     objectUrls: [],
     longPressTimer: null,
     skipNextClick: false,
@@ -216,38 +318,38 @@
     <div class="mh-bg" aria-hidden="true"></div>
     <div class="mh-shell">
       <header class="mh-top">
-        <button id="mhMenu" class="mh-icon-btn" type="button" aria-label="玩法">?</button>
-        <div class="mh-title">宠物寻食蜂巢 Lv.<span id="mhLevel">1</span></div>
-        <div class="mh-stats" aria-label="游戏状态">
-          <span class="mh-pill food-goal">食物 <b id="mhFood">0</b>/<b id="mhTarget">0</b></span>
-          <span class="mh-pill optional">陷阱 <b id="mhTraps">0</b></span>
+        <button id="mhMenu" class="mh-icon-btn" type="button" aria-label="${t('menuAria')}">?</button>
+        <div class="mh-title">${t('gameTitle')} Lv.<span id="mhLevel">1</span></div>
+        <div class="mh-stats" aria-label="${t('gameStatusAria')}">
+          <span class="mh-pill food-goal">${t('food')} <b id="mhFood">0</b>/<b id="mhTarget">0</b></span>
+          <span class="mh-pill optional">${t('traps')} <b id="mhTraps">0</b></span>
           <span class="mh-pill optional"><b id="mhTime">0</b>s</span>
-          <span class="mh-pill optional">最佳 <b id="mhBest">0</b></span>
+          <span class="mh-pill optional">${t('best')} <b id="mhBest">0</b></span>
         </div>
       </header>
       <main class="mh-stage">
         <div class="mh-board-wrap">
-          <div id="mhBoard" class="mh-board" aria-label="寻找食物蜂巢棋盘"></div>
+          <div id="mhBoard" class="mh-board" aria-label="${t('boardAria')}"></div>
           <div id="mhPet" class="mh-pet" aria-hidden="true"><div class="fallback">${FALLBACK_PET}</div></div>
           <div class="mh-progress" aria-hidden="true"><div id="mhProgressFill" class="mh-progress-fill"></div></div>
         </div>
       </main>
       <footer class="mh-bottom">
         <div class="mh-controls">
-          <span class="mh-gesture-hint">点击清理，拖动标记陷阱</span>
-          <button id="mhFlagToggle" class="mh-flag-toggle" type="button" aria-pressed="false">清理</button>
-          <button id="mhHelp" class="mh-action help" type="button">玩法</button>
-          <button id="mhRestart" class="mh-action" type="button">重开</button>
-          <button id="mhNext" class="mh-action" type="button" hidden>下一局</button>
+          <span class="mh-gesture-hint">${t('gestureHint')}</span>
+          <button id="mhFlagToggle" class="mh-flag-toggle" type="button" aria-pressed="false">${t('clear')}</button>
+          <button id="mhHelp" class="mh-action help" type="button">${t('help')}</button>
+          <button id="mhRestart" class="mh-action" type="button">${t('restart')}</button>
+          <button id="mhNext" class="mh-action" type="button" hidden>${t('nextRound')}</button>
         </div>
-        <div id="mhDifficulties" class="mh-difficulties" aria-label="难度选择"></div>
+        <div id="mhDifficulties" class="mh-difficulties" aria-label="${t('diffChoiceAria')}"></div>
       </footer>
     </div>
     <div id="mhOverlay" class="mh-overlay" role="dialog" aria-modal="true" aria-labelledby="mhOverlayTitle">
       <div class="mh-card">
-        <h1 id="mhOverlayTitle">寻找食物</h1>
-        <p id="mhOverlayText">黑色蜂巢上的数字表示周围有几个陷阱。点击黄色空地清理并寻找食物；拖动可疑格子可标记陷阱，电脑也可右键标记。每局收集到目标数量的食物就胜利。</p>
-        <button id="mhStart" class="mh-start" type="button">开始寻找</button>
+        <h1 id="mhOverlayTitle">${t('overlayTitle')}</h1>
+        <p id="mhOverlayText">${t('overlayText')}</p>
+        <button id="mhStart" class="mh-start" type="button">${t('startSearch')}</button>
       </div>
     </div>
   `;
@@ -680,13 +782,13 @@
   }
 
   function cellLabel(cell) {
-    if (cell.clue) return `线索，附近 ${cell.n} 个陷阱`;
-    if (cell.flagged) return '已标记为陷阱';
-    if (!cell.open) return '未探索空地';
-    if (cell.trap) return '陷阱';
-    if (cell.food) return '食物';
-    if (cell.collectedFood) return '已收集食物的空地';
-    return '安全空地';
+    if (cell.clue) return t('clueLabel', { n: cell.n });
+    if (cell.flagged) return t('flagged');
+    if (!cell.open) return t('unexplored');
+    if (cell.trap) return t('trap');
+    if (cell.food) return t('foodCell');
+    if (cell.collectedFood) return t('collectedCell');
+    return t('safeCell');
   }
 
   function refreshCell(cell) {
@@ -826,7 +928,7 @@
   }
 
   function maybeNearMiss(cell) {
-    if (cell.n >= 3) popToast('好险！周围陷阱很多');
+    if (cell.n >= 3) popToast(t('nearMiss'));
   }
 
   function toggleFlag(cell) {
@@ -835,7 +937,7 @@
     state.flags += cell.flagged ? 1 : -1;
     playSound(cell.flagged ? 'flag' : 'unflag');
     refreshCell(cell);
-    if (cell.flagged && cell.trap && state.difficulty === 'easy') popToast('判断正确');
+    if (cell.flagged && cell.trap && state.difficulty === 'easy') popToast(t('correctCall'));
     updateHud();
   }
 
@@ -845,7 +947,7 @@
     state.flags++;
     playSound('flag');
     refreshCell(cell);
-    if (cell.trap && state.difficulty === 'easy') popToast('判断正确');
+    if (cell.trap && state.difficulty === 'easy') popToast(t('correctCall'));
     updateHud();
   }
 
@@ -877,9 +979,9 @@
       localStorage.setItem(STORAGE_KEY_BEST, String(state.best));
       localStorage.setItem(STORAGE_KEY_LEVEL, String(state.level));
       document.getElementById('mhNext').hidden = false;
-      showResult('收集成功！', `找到了 ${state.collected} 份食物，没有让宠物踩进陷阱。`, '下一局', () => startGame());
+      showResult(t('winTitle'), t('winText', { collected: state.collected }), t('nextRound'), () => startGame());
     } else {
-      showResult('踩到陷阱了', '黑色数字会告诉你周围陷阱数量，再试一次就更稳。', '再来一次', () => startGame());
+      showResult(t('loseTitle'), t('loseText'), t('retry'), () => startGame());
     }
     if (won) {
       post('gameFinished', {
@@ -910,7 +1012,7 @@
     document.getElementById('mhBest').textContent = String(state.best);
     document.getElementById('mhProgressFill').style.width = `${Math.min(100, Math.round(state.collected / Math.max(1, cfg.target) * 100))}%`;
     const flagToggle = document.getElementById('mhFlagToggle');
-    flagToggle.textContent = state.flagMode ? '标记' : '清理';
+    flagToggle.textContent = state.flagMode ? t('flag') : t('clear');
     flagToggle.classList.toggle('active', state.flagMode);
     flagToggle.setAttribute('aria-pressed', String(state.flagMode));
     document.querySelectorAll('[data-difficulty]').forEach(btn => btn.classList.toggle('active', btn.dataset.difficulty === state.difficulty));
@@ -956,9 +1058,14 @@
 
   function requestPetImage() {
     const requestId = `food_hex_pet_${Date.now()}`;
+    state.petRequestId = requestId;
     try {
       window.parent.postMessage({ type: 'haqi_get_pet_image', requestId, anim: 'happy' }, '*');
     } catch (_) {}
+    setTimeout(() => {
+      if (state.objectUrls.length) return;
+      try { window.parent.postMessage({ type: 'haqi_get_pet_images', requestId: `food_hex_pets_${Date.now()}`, anim: 'happy' }, '*'); } catch (_) {}
+    }, 900);
   }
 
   async function setPetImage(pet) {
@@ -985,14 +1092,19 @@
   window.addEventListener('message', event => {
     const msg = event.data || {};
     if (msg.type === 'gameContinue') startGame();
-    if (msg.type === 'haqi_pet_image' && msg.ok) setPetImage(msg.data);
+    if (msg.type === 'haqi_pet_image' && msg.ok && (!state.petRequestId || !msg.requestId || msg.requestId === state.petRequestId || msg.requestId === 'active_pet_config')) setPetImage(msg.data);
+    if (msg.type === 'haqi_pet_images' && msg.ok) {
+      const firstPet = Array.isArray(msg.data?.pets) ? msg.data.pets[0] : null;
+      if (firstPet) setPetImage(firstPet);
+    }
+    if (msg.type === 'setGameConfig' && msg.data?.petId) requestPetImage(msg.data.petId);
     if (msg.type === 'setGameConfig' && msg.data?.difficulty && DIFFICULTIES[msg.data.difficulty]) {
       state.difficulty = msg.data.difficulty;
       startGame();
     }
   });
 
-  document.getElementById('mhMenu').onclick = () => showOverlay('寻找食物', '数字表示相邻陷阱数量，可用它判断哪些黄色格子安全。点击黄色格子清理，拖动可疑格子可标记陷阱，电脑也可右键标记；收集到目标数量的食物即可过关。', state.started ? '继续' : '开始寻找', () => state.started ? hideOverlay() : startGame());
+  document.getElementById('mhMenu').onclick = () => showOverlay(t('menuTitle'), t('menuText'), state.started ? t('continueBtn') : t('startSearch'), () => state.started ? hideOverlay() : startGame());
   document.getElementById('mhHelp').onclick = document.getElementById('mhMenu').onclick;
   document.getElementById('mhFlagToggle').onclick = () => {
     if (!state.started || state.finished) return;

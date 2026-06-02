@@ -1,5 +1,6 @@
 // 故事创作视图：移动端优先的轻量 AI story JSON maker。
 import { $, confirm as confirmDialog, dockDisabledAttrs, escapeHtml, isDockButtonDisabled, showDockDisabledToast, showToast } from './utils.js';
+import { t, getLang } from './i18n.js';
 import { state } from './state.js';
 import { CONFIG } from './config.js';
 import { petArtHtml, scanAndMount } from './pet.js';
@@ -8,35 +9,39 @@ import { loadPet, saveWorkspaceStory } from './storage.js';
 import { renderPetList } from './view_petList.js';
 import { assignPresetScenesToStory, renderSceneParticles, renderStorySceneMaker, sceneParticleCss, SCENE_TAG_PROMPT_HINT } from './view_story_scene_maker.js';
 import { buildStoryPrompt } from './generationPrompts.js';
+import { loadMinigameIndex } from './view_minigames.js';
 import SoundManager from './soundManager.js';
 import ParticleEffects from './particleEffects.js';
 
 const DEFAULT_SCENE_COUNT = 5;
 const SCENE_BG_COLORS = ['#bae6fd', '#fde68a', '#bbf7d0', '#fecdd3', '#ddd6fe', '#fed7aa', '#ccfbf1', '#e0e7ff'];
 const ACTIVITY_TYPES = [
-    { value: 'feed', label: '喂养' },
-    { value: 'bath', label: '洗澡/清洁' },
-    { value: 'tap', label: '轻拍互动' },
-    { value: 'minigame', label: '小游戏' },
+    { value: 'feed', get label() { return t('mkFeed'); } },
+    { value: 'bath', get label() { return t('mkBath'); } },
+    { value: 'tap', get label() { return t('mkTap'); } },
+    { value: 'minigame', get label() { return t('mkMinigame'); } },
 ];
-const MINIGAMES = [
-    { id: 'pet_tower_defense', title: '细胞免疫塔防' },
-    { id: 'pet_bath', title: '萌宠爱洗澡' },
-    { id: 'pet_snake', title: '宠物贪吃蛇大乱斗' },
-    { id: 'bubble_pets', title: '宠物泡泡龙' },
-    { id: 'match_three_pets', title: '宠物三消' },
-    { id: 'food_stack_match', title: '宠物食物叠叠消' },
-    { id: 'zuma', title: '宠物祖玛' },
-    { id: 'food_hexcells', title: '宠物寻食蜂巢' },
-    { id: 'canal_escape', title: '宠物运河营救' },
-    { id: 'sokoban', title: '宠物推箱子' },
-    { id: 'laser_maze', title: '宠物激光迷宫' },
-    { id: 'lightbot', title: '宠物猎人编程' },
-    { id: 'flappy_pet', title: '飞翔宠物' },
-    { id: 'xiangqi', title: '宠物象棋' },
-    { id: 'gomoku', title: '宠物五子棋' },
-    { id: 'matrix_hack', title: '宠物矩阵破解' },
-];
+// 小游戏清单以 minigames/_minigame_index.json 为唯一数据源，按需加载一次后缓存（复用 view_minigames 的加载函数）。
+// 标题优先走 i18n（mg_<id>），未命中时回退到索引里的 title。
+const DEFAULT_MINIGAME_ID = 'pet_tower_defense';
+let MINIGAMES = [];
+
+function minigameTitle(id, fallback = '') {
+    const key = 'mg_' + id;
+    const localized = t(key);
+    return localized !== key ? localized : (fallback || id);
+}
+
+async function ensureMinigamesLoaded() {
+    if (MINIGAMES.length) return MINIGAMES;
+    const list = await loadMinigameIndex().catch(() => []);
+    MINIGAMES = (Array.isArray(list) ? list : []).map(item => {
+        const id = item?.id;
+        const fallback = item?.title || id;
+        return { id, get title() { return minigameTitle(id, fallback); } };
+    });
+    return MINIGAMES;
+}
 const REVIEW_LINE_REVEAL_MS = 38;
 const soundManager = SoundManager.getInstance();
 let activeStoryMakerCleanup = null;
@@ -58,13 +63,13 @@ function normalizeActivity(activity = {}) {
     const rawType = String(activity.type || '').trim().toLowerCase();
     const type = rawType === 'clean' ? 'bath' : ['feed', 'bath', 'tap', 'minigame'].includes(rawType) ? rawType : 'tap';
     const def = ACTIVITY_TYPES.find(item => item.value === type) || ACTIVITY_TYPES[2];
-    const gameId = activity.gameId || 'pet_tower_defense';
+    const gameId = activity.gameId || DEFAULT_MINIGAME_ID;
     const game = MINIGAMES.find(item => item.id === gameId);
     const target = String(activity.target || activity.actor || activity.actorId || '').trim();
     const result = {
         kind: 'activity',
         type: def.value,
-        title: activity.title || (def.value === 'minigame' ? game?.title : def.label) || '互动',
+        title: activity.title || (def.value === 'minigame' ? game?.title : def.label) || t('mkDefaultActivity'),
         count: Math.max(1, Number(activity.count ?? activity.times ?? 1) || 1),
         successText: activity.successText || '',
     };
@@ -143,7 +148,7 @@ function fallbackStory(promptText, count, actors) {
         subtitle: '',
         background: sceneBg(index),
         timeline: [
-            { kind: 'line', actor: '$narrator', text: index === 0 ? '新的故事从星光下开始。' : `第${index + 1}幕：伙伴们继续前进。` },
+            { kind: 'line', actor: '$narrator', text: index === 0 ? t('mkStoryStart') : t('mkSceneAdvance', { n: index + 1 }) },
             { kind: 'line', actor: mainActor?.id || '$selected', text: index === 0 ? (promptText || '我们一起出发吧。') : '我会勇敢一点。' },
             index % 2 === 0
                 ? normalizeActivity({ type: 'tap', title: '轻拍鼓励', count: 3, successText: '谢谢你陪着我。' })
@@ -154,13 +159,13 @@ function fallbackStory(promptText, count, actors) {
     scenes.forEach((scene, index) => Object.assign(scene, sceneFromTimeline(scene, index)));
     return {
         id: `story_${Date.now()}`,
-        title: promptText ? promptText.slice(0, 18) : '我的宠物故事',
+        title: promptText ? promptText.slice(0, 18) : t('mkDefaultTitle'),
         version: 1,
-        selectionPrompt: '选择一位主角进入故事。',
+        selectionPrompt: t('mkSelectMainActor'),
         actors,
         startSceneId: scenes[0]?.id || 'scene_1',
         scenes,
-        ending: { subtitle: '故事完成，宠物回到星球。', text: '这段冒险已经准备好分享给朋友。' },
+        ending: { subtitle: t('mkEndingSubtitle'), text: t('mkEndingText') },
     };
 }
 
@@ -224,7 +229,7 @@ function mergeStoryActors(storyActors, selectedActors) {
         return {
             ...baseActor,
             id: actor?.id || matched?.id || `actor_${index + 1}`,
-            name: actor?.name || matched?.name || `角色${index + 1}`,
+            name: actor?.name || matched?.name || t('mkRoleN', { n: index + 1 }),
             sourcePetId,
             petTemplate: baseActor.petTemplate || baseActor.pet || petTemplateFromPet(matchedPet),
         };
@@ -241,13 +246,13 @@ function normalizeStoryForSave(story, actors) {
     const mergedActors = mergeStoryActors(story?.actors, actors);
     return {
         id: story?.id || `story_${Date.now()}`,
-        title: story?.title || '我的宠物故事',
+        title: story?.title || t('mkDefaultTitle'),
         version: 1,
-        selectionPrompt: story?.selectionPrompt || '选择一位主角进入故事。',
+        selectionPrompt: story?.selectionPrompt || t('mkSelectMainActor'),
         actors: mergedActors,
         startSceneId: story?.startSceneId || scenes[0]?.id || 'scene_1',
         scenes: scenes.map(sceneFromTimeline),
-        ending: story?.ending || { subtitle: '故事完成。', text: '新的故事已经可以分享。' },
+        ending: story?.ending || { subtitle: t('mkEndingSubtitle'), text: t('mkEndingText') },
     };
 }
 
@@ -290,10 +295,12 @@ function textFromStreamPayload(value, payload) {
 
 async function generateStoryWithAI(promptText, count, actors, { onChunk, signal, abortController } = {}) {
     const sdk = state.sdk || window.keepwork;
+    await ensureMinigamesLoaded();
     const userPrompt = buildStoryPrompt(promptText, count, actors, {
         sceneTagPromptHint: SCENE_TAG_PROMPT_HINT,
         bgMusicKeys: Object.keys(CONFIG.assets?.bgSounds || {}),
         minigames: MINIGAMES,
+        lang: getLang(),
     });
     let text = '';
     const appendChunk = (delta) => {
@@ -366,12 +373,12 @@ function optionList(items, selected, { valueKey = 'value', labelKey = 'label' } 
 }
 
 function actorOptions(actors, selected) {
-    const opts = [{ id: '$selected', name: '玩家选择的主角' }, { id: '$narrator', name: '旁白' }, ...actors];
+    const opts = [{ id: '$selected', name: t('mkPlayerHero') }, { id: '$narrator', name: t('mkNarrator') }, ...actors];
     return optionList(opts.map(actor => ({ value: actor.id, label: actor.name || actor.id })), selected || '$selected');
 }
 
 function activityTargetOptions(actors, selected) {
-    const opts = [{ value: '', label: '任意角色' }, { value: '$selected', label: '玩家选择的主角' }, ...actors.map(actor => ({ value: actor.id, label: actor.name || actor.id }))];
+    const opts = [{ value: '', label: t('mkAnyRole') }, { value: '$selected', label: t('mkPlayerHero') }, ...actors.map(actor => ({ value: actor.id, label: actor.name || actor.id }))];
     return optionList(opts, selected || '');
 }
 
@@ -397,9 +404,9 @@ function moveIcon(direction) {
 
 function renderTimelineMoveButtons(itemIndex) {
     return `
-        <div class="mh-scene-row-tools" aria-label="调整顺序">
-            <button type="button" class="mh-maker-icon-btn" data-move-timeline="up" data-timeline-move-index="${itemIndex}" aria-label="上移" title="上移">${moveIcon('up')}</button>
-            <button type="button" class="mh-maker-icon-btn" data-move-timeline="down" data-timeline-move-index="${itemIndex}" aria-label="下移" title="下移">${moveIcon('down')}</button>
+        <div class="mh-scene-row-tools" aria-label="${escapeHtml(t('mkReorder'))}">
+            <button type="button" class="mh-maker-icon-btn" data-move-timeline="up" data-timeline-move-index="${itemIndex}" aria-label="${escapeHtml(t('mkMoveUp'))}" title="${escapeHtml(t('mkMoveUp'))}">${moveIcon('up')}</button>
+            <button type="button" class="mh-maker-icon-btn" data-move-timeline="down" data-timeline-move-index="${itemIndex}" aria-label="${escapeHtml(t('mkMoveDown'))}" title="${escapeHtml(t('mkMoveDown'))}">${moveIcon('down')}</button>
         </div>`;
 }
 
@@ -407,14 +414,14 @@ function renderLineEditor(line, itemIndex, actors) {
     return `
         <div class="mh-scene-row" data-timeline-index="${itemIndex}" data-timeline-kind="line">
             <div class="mh-scene-row-head">
-                <span class="mh-scene-row-kind">${itemIndex + 1}. 对白</span>
+                <span class="mh-scene-row-kind">${itemIndex + 1}. ${escapeHtml(t('mkLineKind'))}</span>
                 <div class="mh-scene-row-actions">
                     ${renderTimelineMoveButtons(itemIndex)}
-                    <button type="button" class="mh-maker-mini danger" data-remove-timeline="${itemIndex}">删除</button>
+                    <button type="button" class="mh-maker-mini danger" data-remove-timeline="${itemIndex}">${escapeHtml(t('mkRemove'))}</button>
                 </div>
             </div>
             <select class="modal-input" data-line-actor>${actorOptions(actors, line?.actor)}</select>
-            <textarea class="modal-input" data-line-text placeholder="角色台词">${escapeHtml(line?.text || line?.say || '')}</textarea>
+            <textarea class="modal-input" data-line-text placeholder="${escapeHtml(t('mkLinePlaceholder'))}">${escapeHtml(line?.text || line?.say || '')}</textarea>
         </div>`;
 }
 
@@ -426,30 +433,30 @@ function renderActivityEditor(activity, itemIndex, actors) {
     return `
         <div class="mh-scene-row is-activity" data-timeline-index="${itemIndex}" data-timeline-kind="activity">
             <div class="mh-scene-row-head">
-                <span class="mh-scene-row-kind">${itemIndex + 1}. 互动 · ${escapeHtml(def.label)}</span>
+                <span class="mh-scene-row-kind">${itemIndex + 1}. ${escapeHtml(t('mkActivityKind'))} · ${escapeHtml(def.label)}</span>
                 <div class="mh-scene-row-actions">
                     ${renderTimelineMoveButtons(itemIndex)}
-                    <button type="button" class="mh-maker-mini danger" data-remove-timeline="${itemIndex}">删除</button>
+                    <button type="button" class="mh-maker-mini danger" data-remove-timeline="${itemIndex}">${escapeHtml(t('mkRemove'))}</button>
                 </div>
             </div>
             <div class="mh-maker-row-2">
                 <select class="modal-input" data-activity-type>${optionList(ACTIVITY_TYPES, type)}</select>
-                <input class="modal-input" data-activity-count type="number" min="1" max="20" value="${Math.max(1, Number(activity?.count ?? activity?.times ?? 1) || 1)}" aria-label="次数">
+                <input class="modal-input" data-activity-count type="number" min="1" max="20" value="${Math.max(1, Number(activity?.count ?? activity?.times ?? 1) || 1)}" aria-label="${escapeHtml(t('mkCount'))}">
             </div>
-            <input class="modal-input" data-activity-title placeholder="互动标题" value="${escapeHtml(activity?.title || activity?.gameTitle || '')}">
+            <input class="modal-input" data-activity-title placeholder="${escapeHtml(t('mkActivityTitle'))}" value="${escapeHtml(activity?.title || activity?.gameTitle || '')}">
             <div class="mh-maker-target-fields" style="display:${type === 'minigame' ? 'none' : 'grid'};gap:8px">
                 <select class="modal-input" data-activity-target>${activityTargetOptions(actors, target)}</select>
             </div>
             <div class="mh-maker-game-fields" style="display:${type === 'minigame' ? 'grid' : 'none'};gap:8px">
-                <select class="modal-input" data-activity-game>${optionList(MINIGAMES.map(game => ({ value: game.id, label: game.title })), activity?.gameId || 'pet_tower_defense')}</select>
+                <select class="modal-input" data-activity-game>${optionList(MINIGAMES.map(game => ({ value: game.id, label: game.title })), activity?.gameId || DEFAULT_MINIGAME_ID)}</select>
             </div>
-            <input class="modal-input" data-activity-success placeholder="完成提示" value="${escapeHtml(activity?.successText || '')}">
+            <input class="modal-input" data-activity-success placeholder="${escapeHtml(t('mkSuccessHint'))}" value="${escapeHtml(activity?.successText || '')}">
         </div>`;
 }
 
 function renderSceneEditorHtml(story, { onlySceneIndex = null } = {}) {
     if (!story?.scenes?.length) {
-        return '<div class="mh-maker-empty">生成或粘贴故事 JSON 后，这里会出现每一幕的详细时间轴编辑器。</div>';
+        return `<div class="mh-maker-empty">${escapeHtml(t('mkTimelineEmptyHint'))}</div>`;
     }
     const actors = Array.isArray(story.actors) ? story.actors : [];
     return story.scenes.map((scene, sceneIndex) => ({ scene, sceneIndex }))
@@ -458,23 +465,23 @@ function renderSceneEditorHtml(story, { onlySceneIndex = null } = {}) {
         <section class="mh-scene-card" data-scene-index="${sceneIndex}">
             <div class="mh-scene-titlebar">
                 <div>
-                    <strong>第${sceneIndex + 1}幕</strong>
+                    <strong>${escapeHtml(t('mkSceneN', { n: sceneIndex + 1 }))}</strong>
                 </div>
                 <div class="mh-scene-actions">
-                    <button type="button" class="mh-maker-mini" data-open-scene-maker>背景</button>
-                    <button type="button" class="mh-maker-mini" data-add-line>+对白</button>
-                    <button type="button" class="mh-maker-mini" data-add-activity>+互动</button>
+                    <button type="button" class="mh-maker-mini" data-open-scene-maker>${escapeHtml(t('mkBackground'))}</button>
+                    <button type="button" class="mh-maker-mini" data-add-line>${escapeHtml(t('mkAddLine'))}</button>
+                    <button type="button" class="mh-maker-mini" data-add-activity>${escapeHtml(t('mkAddActivity'))}</button>
                 </div>
             </div>
             <div class="mh-maker-row-2" style="grid-template-columns:88px minmax(0,1fr)">
-                <label class="mh-maker-label" style="margin:0;align-self:center">背景色</label>
-                <input class="modal-input mh-scene-color-input" data-scene-bg-color type="color" value="${escapeHtml(sceneBg(sceneIndex, scene.background).color || SCENE_BG_COLORS[sceneIndex % SCENE_BG_COLORS.length])}" aria-label="背景色">
+                <label class="mh-maker-label" style="margin:0;align-self:center">${escapeHtml(t('mkBgColor'))}</label>
+                <input class="modal-input mh-scene-color-input" data-scene-bg-color type="color" value="${escapeHtml(sceneBg(sceneIndex, scene.background).color || SCENE_BG_COLORS[sceneIndex % SCENE_BG_COLORS.length])}" aria-label="${escapeHtml(t('mkBgColor'))}">
             </div>
-            <input class="modal-input" data-scene-bg-image placeholder="背景图 URL（未来 AI 生成后填入）" value="${escapeHtml(sceneBg(sceneIndex, scene.background).imageUrl || '')}">
-            <input class="modal-input" data-scene-tags placeholder="场景标签，例如 forest, spring, haqi" value="${escapeHtml((scene.sceneTags || scene.tags || []).join(', '))}">
-            <input class="modal-input" data-scene-particles placeholder="粒子效果，例如 sparkle, snow, bubbles" value="${escapeHtml((scene.particles || []).join(', '))}">
+            <input class="modal-input" data-scene-bg-image placeholder="${escapeHtml(t('mkBgImagePlaceholder'))}" value="${escapeHtml(sceneBg(sceneIndex, scene.background).imageUrl || '')}">
+            <input class="modal-input" data-scene-tags placeholder="${escapeHtml(t('mkSceneTagsPlaceholder'))}" value="${escapeHtml((scene.sceneTags || scene.tags || []).join(', '))}">
+            <input class="modal-input" data-scene-particles placeholder="${escapeHtml(t('mkParticlesPlaceholder'))}" value="${escapeHtml((scene.particles || []).join(', '))}">
             <input type="hidden" data-scene-bg-music value="${escapeHtml(scene.bgMusic || scene.background?.bgMusic || '')}">
-            <div class="mh-scene-preview" style="background:${escapeHtml(sceneBg(sceneIndex, scene.background).color || '#bae6fd')};color:#0f2747">${renderSceneParticles(scene)}<span>背景预览</span></div>
+            <div class="mh-scene-preview" style="background:${escapeHtml(sceneBg(sceneIndex, scene.background).color || '#bae6fd')};color:#0f2747">${renderSceneParticles(scene)}<span>${escapeHtml(t('mkBgPreview'))}</span></div>
             <div class="mh-scene-timeline">
                 ${sceneTimeline(scene).map((item, itemIndex) => item.kind === 'activity'
                     ? renderActivityEditor(item, itemIndex, actors)
@@ -569,9 +576,9 @@ function mainStoryActor(story) {
 }
 
 function actorNameForTimeline(story, actorId) {
-    if (actorId === '$narrator') return '旁白';
+    if (actorId === '$narrator') return t('mkNarrator');
     const actor = actorId === '$selected' ? mainStoryActor(story) : story?.actors?.find(item => item.id === actorId);
-    return actor?.name || '主角';
+    return actor?.name || t('mkMainRole');
 }
 
 function isTimelineActivity(item) {
@@ -606,7 +613,7 @@ function sceneBgMusic(scene) {
 function renderMusicToggleButton(track, className = 'mh-review-music-toggle') {
     if (!track) return '';
     const muted = soundManager.isBgMusicMuted?.();
-    return `<button type="button" class="${className} ${muted ? 'is-muted' : ''}" data-review-music-toggle aria-label="${muted ? '开启音乐' : '静音'}" title="${muted ? '开启音乐' : '静音'}">${muted ? '♪' : '♫'}</button>`;
+    return `<button type="button" class="${className} ${muted ? 'is-muted' : ''}" data-review-music-toggle aria-label="${muted ? escapeHtml(t('mkMusicOn')) : escapeHtml(t('mkMute'))}" title="${muted ? escapeHtml(t('mkMusicOn')) : escapeHtml(t('mkMute'))}">${muted ? '♪' : '♫'}</button>`;
 }
 
 function reviewActivityProgressKey(sceneIndex, itemIndex, activity) {
@@ -643,18 +650,18 @@ function storyStats(story) {
 }
 
 function renderStoryHealthHtml(story, titleText = null) {
-    if (!story) return '<div class="mh-maker-empty">写一句故事想法，选择演员，然后生成第一版。</div>';
+    if (!story) return `<div class="mh-maker-empty">${escapeHtml(t('mkHealthEmpty'))}</div>`;
     const stats = storyStats(story);
     const ready = stats.scenes > 0 && stats.actors > 0 && stats.lines > 0;
-    const title = titleText || (ready ? '可以试玩' : '需要补充');
+    const title = titleText || (ready ? t('mkReady') : t('mkNeedMore'));
     return `
         <div class="mh-maker-health">
-            <div class="mh-maker-health-title">${escapeHtml(`${title}（${stats.scenes}幕）`)}</div>
+            <div class="mh-maker-health-title">${escapeHtml(t('mkHealthTitle', { title, n: stats.scenes }))}</div>
             <div class="mh-maker-health-grid">
-                <span>${stats.actors} 位演员</span>
-                <span>${stats.lines} 句对白</span>
-                <span>${stats.activities} 个互动</span>
-                <span>${stats.minigames} 个小游戏</span>
+                <span>${escapeHtml(t('mkStatActors', { n: stats.actors }))}</span>
+                <span>${escapeHtml(t('mkStatLines', { n: stats.lines }))}</span>
+                <span>${escapeHtml(t('mkStatActivities', { n: stats.activities }))}</span>
+                <span>${escapeHtml(t('mkStatMinigames', { n: stats.minigames }))}</span>
             </div>
         </div>`;
 }
@@ -673,13 +680,13 @@ function renderBeatHtml(story, item, itemIndex, active = false) {
         return `
             <button type="button" class="mh-review-beat is-activity ${active ? 'is-active' : ''}" data-edit-scene data-edit-item="${itemIndex}">
                 <span class="mh-review-beat-icon">${item.type === 'minigame' ? '🎮' : '✨'}</span>
-                <span><b>${escapeHtml(title)} × ${activityTotal(item)}</b><small>${escapeHtml(active ? '等待互动' : typeDef.label)}</small></span>
+                <span><b>${escapeHtml(title)} × ${activityTotal(item)}</b><small>${escapeHtml(active ? t('mkWaitingInteraction') : typeDef.label)}</small></span>
             </button>`;
     }
     return `
         <button type="button" class="mh-review-beat ${active ? 'is-active' : ''}" data-edit-scene data-edit-item="${itemIndex}">
             <span class="mh-review-beat-icon">💬</span>
-            <span><b>${escapeHtml(actorNameForTimeline(story, item.actor))}</b><small>${escapeHtml(visibleLineText(item.text || '新的对白'))}</small></span>
+            <span><b>${escapeHtml(actorNameForTimeline(story, item.actor))}</b><small>${escapeHtml(visibleLineText(item.text || t('mkNewLine')))}</small></span>
         </button>`;
 }
 
@@ -713,7 +720,7 @@ function renderReviewActionDock(story, sceneIndex, timeline, playbackState, acti
         : '<span class="mh-story-page-arrow mh-story-page-arrow-placeholder"></span>';
     return `
         <div class="mh-story-actions">
-            <button type="button" class="btn-secondary dock-icon-btn mh-story-page-arrow" data-review-prev-page${dockDisabledAttrs(!hasPrevious, '已经是第一页。')} aria-label="上一页" title="上一页">‹</button>
+            <button type="button" class="btn-secondary dock-icon-btn mh-story-page-arrow" data-review-prev-page${dockDisabledAttrs(!hasPrevious, t('mkFirstPage'))} aria-label="${escapeHtml(t('mkPrevPage'))}" title="${escapeHtml(t('mkPrevPage'))}">‹</button>
             <div class="mh-story-action-strip">
                 ${actionButtons || '<span class="mh-story-action-placeholder"> </span>'}
             </div>
@@ -725,8 +732,8 @@ function renderReviewContinueButton(activeItem) {
     if (!activeItem || isTimelineActivity(activeItem)) return '';
     return `
         <div class="mh-story-hero-continue">
-            <button type="button" class="mh-story-continue-hit" data-review-continue aria-label="点击继续" title="点击继续">
-                <span>点击继续</span>
+            <button type="button" class="mh-story-continue-hit" data-review-continue aria-label="${escapeHtml(t('mkTapContinue'))}" title="${escapeHtml(t('mkTapContinue'))}">
+                <span>${escapeHtml(t('mkTapContinue'))}</span>
             </button>
         </div>`;
 }
@@ -750,7 +757,7 @@ function renderReviewLayoutToggle(layout) {
         ? '<rect x="8" y="3" width="8" height="18" rx="2.4"></rect><path d="M11 18h2"></path>'
         : '<rect x="3" y="8" width="18" height="8" rx="2.4"></rect><path d="M18 11v2"></path>';
     return `
-        <button type="button" class="mh-review-layout-icon" data-review-layout-toggle="${next}" aria-label="切换预览布局" title="切换预览布局">
+        <button type="button" class="mh-review-layout-icon" data-review-layout-toggle="${next}" aria-label="${escapeHtml(t('mkToggleLayout'))}" title="${escapeHtml(t('mkToggleLayout'))}">
             <svg viewBox="0 0 24 24" aria-hidden="true" focusable="false">${iconPath}</svg>
         </button>`;
 }
@@ -758,12 +765,12 @@ function renderReviewLayoutToggle(layout) {
 function renderReviewSceneBadge(sceneIndex) {
     return `
         <div class="mh-review-scene-badge">
-            <span>第${sceneIndex + 1}幕</span>
+            <span>${escapeHtml(t('mkSceneN', { n: sceneIndex + 1 }))}</span>
         </div>`;
 }
 
 function renderReviewBgEditButton(sceneIndex) {
-    return `<button type="button" class="mh-review-bg-edit" data-open-scene-maker data-scene-maker-index="${sceneIndex}" aria-label="编辑第${sceneIndex + 1}幕背景" title="编辑背景">背景</button>`;
+    return `<button type="button" class="mh-review-bg-edit" data-open-scene-maker data-scene-maker-index="${sceneIndex}" aria-label="${escapeHtml(t('mkEditSceneBg', { n: sceneIndex + 1 }))}" title="${escapeHtml(t('mkEditBg'))}">${escapeHtml(t('mkBackground'))}</button>`;
 }
 
 function renderReviewHtml(story, sceneIndex = 0, layout = defaultReviewLayout(), playback = null) {
@@ -771,9 +778,9 @@ function renderReviewHtml(story, sceneIndex = 0, layout = defaultReviewLayout(),
     if (!story?.scenes?.length) {
         return `
             <div class="mh-maker-empty">
-                生成故事后，这里会变成可滑看的故事预览。你可以先像试玩一样检查每一幕，再点某一幕微调细节。
+                ${escapeHtml(t('mkReviewEmptyHint'))}
             </div>
-            <button type="button" class="btn-primary" data-maker-mode-to="draft">去生成故事</button>`;
+            <button type="button" class="btn-primary" data-maker-mode-to="draft">${escapeHtml(t('mkGoGenerate'))}</button>`;
     }
     if (sceneIndex < 0) {
         const actor = mainStoryActor(story);
@@ -781,7 +788,7 @@ function renderReviewHtml(story, sceneIndex = 0, layout = defaultReviewLayout(),
         return `
             <div class="mh-review-nav">
                 <div class="mh-review-pager">
-                    <button type="button" class="is-active mh-review-cover-tab" data-review-scene="-1">封面</button>
+                    <button type="button" class="is-active mh-review-cover-tab" data-review-scene="-1">${escapeHtml(t('mkCover'))}</button>
                     ${story.scenes.map((item, index) => `<button type="button" data-review-scene="${index}">${index + 1}</button>`).join('')}
                 </div>
                 ${renderReviewLayoutToggle(reviewLayout)}
@@ -792,18 +799,18 @@ function renderReviewHtml(story, sceneIndex = 0, layout = defaultReviewLayout(),
                         ${pet ? `<div class="mh-review-pet">${petArtHtml(pet, { alt: pet.name || '', extraClass: 'floaty', requireProcessedTexture: false })}</div>` : ''}
                     </div>
                     <div class="mh-review-cover-info">
-                        <div class="mh-review-cover-title">${escapeHtml(story.title || '我的宠物故事')}</div>
-                        <div class="mh-review-cover-subtitle">${escapeHtml(story.selectionPrompt || '选择一位主角进入故事。')}</div>
+                        <div class="mh-review-cover-title">${escapeHtml(story.title || t('mkDefaultTitle'))}</div>
+                        <div class="mh-review-cover-subtitle">${escapeHtml(story.selectionPrompt || t('mkSelectMainActor'))}</div>
                     </div>
                 </div>
-                ${renderStoryHealthHtml(story, '故事概要')}
-                <button type="button" class="btn-primary" data-review-scene="0">进入第一幕</button>
+                ${renderStoryHealthHtml(story, t('mkStorySummary'))}
+                <button type="button" class="btn-primary" data-review-scene="0">${escapeHtml(t('mkEnterScene1'))}</button>
             </section>
             <div class="mh-review-ai">
-                <button type="button" class="mh-maker-mini" data-ai-tweak="让故事更短、更适合手机快速游玩。">变短</button>
-                <button type="button" class="mh-maker-mini" data-ai-tweak="让故事更温暖，增加照顾宠物的情绪。">更温暖</button>
-                <button type="button" class="mh-maker-mini" data-ai-tweak="至少加入一个合适的小游戏互动。">加小游戏</button>
-                <button type="button" class="mh-maker-mini" data-ai-tweak="让对白更有趣，但保持儿童友好。">更有趣</button>
+                <button type="button" class="mh-maker-mini" data-ai-tweak="让故事更短、更适合手机快速游玩。">${escapeHtml(t('mkShorter'))}</button>
+                <button type="button" class="mh-maker-mini" data-ai-tweak="让故事更温暖，增加照顾宠物的情绪。">${escapeHtml(t('mkWarmer'))}</button>
+                <button type="button" class="mh-maker-mini" data-ai-tweak="至少加入一个合适的小游戏互动。">${escapeHtml(t('mkAddGame'))}</button>
+                <button type="button" class="mh-maker-mini" data-ai-tweak="让对白更有趣，但保持儿童友好。">${escapeHtml(t('mkFunnier'))}</button>
             </div>`;
     }
     const safeIndex = Math.max(0, Math.min(story.scenes.length - 1, sceneIndex));
@@ -815,7 +822,7 @@ function renderReviewHtml(story, sceneIndex = 0, layout = defaultReviewLayout(),
     return `
         <div class="mh-review-nav">
             <div class="mh-review-pager">
-                <button type="button" class="mh-review-cover-tab" data-review-scene="-1">封面</button>
+                <button type="button" class="mh-review-cover-tab" data-review-scene="-1">${escapeHtml(t('mkCover'))}</button>
                 ${story.scenes.map((item, index) => `<button type="button" class="${index === safeIndex ? 'is-active' : ''}" data-review-scene="${index}">${index + 1}</button>`).join('')}
             </div>
             ${renderReviewLayoutToggle(reviewLayout)}
@@ -835,15 +842,15 @@ function renderReviewHtml(story, sceneIndex = 0, layout = defaultReviewLayout(),
             </div>
             <div class="mh-review-scene-detail">
                 <div class="mh-review-beats">
-                    ${timeline.length ? timeline.map((item, itemIndex) => renderBeatHtml(story, item, itemIndex, itemIndex === activeItemIndex)).join('') : '<div class="mh-maker-empty">这一幕还没有对白或互动。</div>'}
+                    ${timeline.length ? timeline.map((item, itemIndex) => renderBeatHtml(story, item, itemIndex, itemIndex === activeItemIndex)).join('') : `<div class="mh-maker-empty">${escapeHtml(t('mkSceneNoBeats'))}</div>`}
                 </div>
             </div>
         </section>
         <div class="mh-review-ai">
-            <button type="button" class="mh-maker-mini" data-ai-tweak="让故事更短、更适合手机快速游玩。">变短</button>
-            <button type="button" class="mh-maker-mini" data-ai-tweak="让故事更温暖，增加照顾宠物的情绪。">更温暖</button>
-            <button type="button" class="mh-maker-mini" data-ai-tweak="至少加入一个合适的小游戏互动。">加小游戏</button>
-            <button type="button" class="mh-maker-mini" data-ai-tweak="让对白更有趣，但保持儿童友好。">更有趣</button>
+            <button type="button" class="mh-maker-mini" data-ai-tweak="让故事更短、更适合手机快速游玩。">${escapeHtml(t('mkShorter'))}</button>
+            <button type="button" class="mh-maker-mini" data-ai-tweak="让故事更温暖，增加照顾宠物的情绪。">${escapeHtml(t('mkWarmer'))}</button>
+            <button type="button" class="mh-maker-mini" data-ai-tweak="至少加入一个合适的小游戏互动。">${escapeHtml(t('mkAddGame'))}</button>
+            <button type="button" class="mh-maker-mini" data-ai-tweak="让对白更有趣，但保持儿童友好。">${escapeHtml(t('mkFunnier'))}</button>
         </div>`;
 }
 
@@ -898,14 +905,14 @@ export function renderStoryMaker(panel, data = {}, { onBack, onPlayStory } = {})
             const isMain = !!actorSettings.get(pet.id)?.main || (!hasMain && index === 0);
             return `
             <div class="mh-maker-pet ${isMain ? 'mh-maker-pet-main' : ''}" data-maker-pet="${escapeHtml(pet.id)}" data-maker-main="${isMain ? '1' : '0'}">
-                <button type="button" class="mh-maker-delete" data-maker-delete-actor="${escapeHtml(pet.id)}" aria-label="删除演员" title="删除演员">×</button>
-                <span class="mh-maker-main-badge" style="display:${isMain ? 'block' : 'none'}">主角</span>
+                <button type="button" class="mh-maker-delete" data-maker-delete-actor="${escapeHtml(pet.id)}" aria-label="${escapeHtml(t('mkDeleteActor'))}" title="${escapeHtml(t('mkDeleteActor'))}">×</button>
+                <span class="mh-maker-main-badge" style="display:${isMain ? 'block' : 'none'}">${escapeHtml(t('mkMainRole'))}</span>
                 <div class="mh-maker-art">${petArtHtml(pet, { alt: displayPetName(pet), requireProcessedTexture: false })}</div>
-                <input class="mh-maker-name-input" data-maker-name maxlength="24" aria-label="演员名字" value="${escapeHtml(actorSettings.get(pet.id)?.name || displayPetName(pet))}">
+                <input class="mh-maker-name-input" data-maker-name maxlength="24" aria-label="${escapeHtml(t('mkActorName'))}" value="${escapeHtml(actorSettings.get(pet.id)?.name || displayPetName(pet))}">
             </div>`;
         }).join('') : '';
         return `${cards}
-            <button type="button" class="mh-maker-pet mh-maker-add-card" data-maker-add-actor aria-label="添加演员" title="添加演员">
+            <button type="button" class="mh-maker-pet mh-maker-add-card" data-maker-add-actor aria-label="${escapeHtml(t('mkAddActor'))}" title="${escapeHtml(t('mkAddActor'))}">
                 <span>+</span>
             </button>`;
     };
@@ -1022,7 +1029,7 @@ export function renderStoryMaker(panel, data = {}, { onBack, onPlayStory } = {})
             startReviewScenePlayback(reviewSceneIndex + 1);
             return;
         }
-        showToast('预览完成', 'success');
+        showToast(t('mkPreviewDone'), 'success');
     };
 
     const draw = () => {
@@ -1187,36 +1194,36 @@ export function renderStoryMaker(panel, data = {}, { onBack, onPlayStory } = {})
                 <div class="mh-maker-header">
                 <div class="topbar">
                     <button class="btn-icon" id="mhMakerBack" style="width:36px;height:36px;font-size:18px">‹</button>
-                    <span class="font-bold" style="color:var(--text-primary)">故事创作</span>
-                    <button id="mhMakerSave" class="btn-primary mh-maker-save-top">保存</button>
+                    <span class="font-bold" style="color:var(--text-primary)">${escapeHtml(t('mkStoryMaker'))}</span>
+                    <button id="mhMakerSave" class="btn-primary mh-maker-save-top">${escapeHtml(t('mkSave'))}</button>
                 </div>
                 <div class="mh-maker-tabs">
-                    <button type="button" data-maker-mode="draft">创作</button>
-                    <button type="button" data-maker-mode="review">预览</button>
-                    <button type="button" data-maker-play>试玩</button>
-                    <button type="button" data-maker-mode="advanced">高级</button>
+                    <button type="button" data-maker-mode="draft">${escapeHtml(t('mkCreate'))}</button>
+                    <button type="button" data-maker-mode="review">${escapeHtml(t('mkReview'))}</button>
+                    <button type="button" data-maker-play>${escapeHtml(t('mkPlay'))}</button>
+                    <button type="button" data-maker-mode="advanced">${escapeHtml(t('mkAdvanced'))}</button>
                 </div>
                 </div>
                 <div class="mh-maker-body">
                     <section class="mh-maker-panel" data-maker-panel="draft">
                     <div class="card-flat">
                         <div style="display:flex;align-items:center;justify-content:space-between;gap:8px;margin-bottom:8px">
-                            <div style="font-size:14px;font-weight:900">选择演员</div>
+                            <div style="font-size:14px;font-weight:900">${escapeHtml(t('mkSelectActors'))}</div>
                         </div>
                         <div class="mh-maker-pets" id="mhMakerActorList">
                             ${actorCardsHtml()}
                         </div>
                     </div>
                     <div class="card-flat" style="display:flex;flex-direction:column;gap:9px">
-                        <label style="font-size:13px;font-weight:900;color:var(--text-primary)">故事提示词</label>
-                        <textarea id="mhMakerPrompt" class="modal-input" style="min-height:92px" placeholder="例如：抱抱龙在星球上发现一颗会唱歌的水晶，需要照顾伙伴并完成小游戏。"></textarea>
+                        <label style="font-size:13px;font-weight:900;color:var(--text-primary)">${escapeHtml(t('mkStoryPrompt'))}</label>
+                        <textarea id="mhMakerPrompt" class="modal-input" style="min-height:92px" placeholder="${escapeHtml(t('mkStoryPromptPlaceholder'))}"></textarea>
                         <input id="mhMakerSceneCount" type="hidden" value="${DEFAULT_SCENE_COUNT}">
                         <div class="mh-maker-presets">
-                            <button type="button" data-scene-count="3">短故事</button>
-                            <button type="button" class="is-active" data-scene-count="5">标准</button>
-                            <button type="button" data-scene-count="8">长故事</button>
+                            <button type="button" data-scene-count="3">${escapeHtml(t('mkShortStory'))}</button>
+                            <button type="button" class="is-active" data-scene-count="5">${escapeHtml(t('mkStandard'))}</button>
+                            <button type="button" data-scene-count="8">${escapeHtml(t('mkLongStory'))}</button>
                         </div>
-                        <button id="mhMakerGenerate" class="btn-primary" ${busy ? 'disabled' : ''}>${busy ? '生成中...' : 'AI 生成故事'}</button>
+                        <button id="mhMakerGenerate" class="btn-primary" ${busy ? 'disabled' : ''}>${busy ? escapeHtml(t('mkGenerating')) : escapeHtml(t('mkAiGenerate'))}</button>
                         <div id="mhMakerStatus" class="mh-maker-status">等待生成。</div>
                     </div>
                     <div id="mhMakerDraftSummary">${renderStoryHealthHtml(currentStory)}</div>
@@ -1225,12 +1232,12 @@ export function renderStoryMaker(panel, data = {}, { onBack, onPlayStory } = {})
                         <div id="mhMakerReview">${renderReviewHtml(currentStory, reviewSceneIndex, reviewLayout)}</div>
                     </section>
                     <section class="mh-maker-panel" data-maker-panel="advanced">
-                    <div class="mh-advanced-tabs" aria-label="高级编辑模式">
-                        <button type="button" class="${advancedTab === 'visual' ? 'is-active' : ''}" data-advanced-tab="visual">可视化编辑</button>
+                    <div class="mh-advanced-tabs" aria-label="${escapeHtml(t('mkAdvancedTabs'))}">
+                        <button type="button" class="${advancedTab === 'visual' ? 'is-active' : ''}" data-advanced-tab="visual">${escapeHtml(t('mkVisualEdit'))}</button>
                         <button type="button" class="${advancedTab === 'json' ? 'is-active' : ''}" data-advanced-tab="json">JSON文本</button>
                     </div>
                     <div class="card-flat mh-advanced-panel ${advancedTab === 'visual' ? 'is-active' : ''}" data-advanced-panel="visual">
-                        <div style="font-size:14px;font-weight:900">详细时间轴</div>
+                        <div style="font-size:14px;font-weight:900">${escapeHtml(t('mkDetailTimeline'))}</div>
                         <div id="mhMakerSceneEditor" class="mh-scene-stack">${renderSceneEditorHtml(currentStory)}</div>
                     </div>
                     <div class="card-flat mh-advanced-panel ${advancedTab === 'json' ? 'is-active' : ''}" data-advanced-panel="json">
@@ -1239,7 +1246,7 @@ export function renderStoryMaker(panel, data = {}, { onBack, onPlayStory } = {})
                                 <div style="font-size:14px;font-weight:900">JSON 数据</div>
                                 <div class="mh-maker-status">完整故事 JSON，可直接编辑、粘贴后保存。</div>
                             </div>
-                            <button id="mhMakerFormat" class="btn-primary">保存</button>
+                            <button id="mhMakerFormat" class="btn-primary">${escapeHtml(t('mkSave'))}</button>
                         </div>
                         <textarea id="mhMakerJson" class="modal-input mh-maker-output" spellcheck="false" placeholder="AI 输出会同步到这里；也可以粘贴故事 JSON 后保存。">${currentStory ? escapeHtml(JSON.stringify(currentStory, null, 2)) : ''}</textarea>
                     </div>
@@ -1303,7 +1310,7 @@ export function renderStoryMaker(panel, data = {}, { onBack, onPlayStory } = {})
                 renderSceneEditor();
                 refreshStoryPanels();
             } else if (($('mhMakerJson')?.value || '').trim()) {
-                showToast('JSON 格式错误，暂时停留在文本编辑', 'error');
+                showToast(t('mkJsonStayText'), 'error');
                 advancedTab = 'json';
                 return;
             }
@@ -1364,12 +1371,12 @@ export function renderStoryMaker(panel, data = {}, { onBack, onPlayStory } = {})
     function parseJsonEditor({ quiet = false } = {}) {
         const text = $('mhMakerJson')?.value || '';
         if (!text.trim()) {
-            if (!quiet) showToast('请先生成或粘贴故事 JSON', 'info');
+            if (!quiet) showToast(t('mkPasteFirst'), 'info');
             return null;
         }
         const parsed = extractJson(text);
         if (!parsed) {
-            if (!quiet) showToast('JSON 格式错误，无法解析', 'error');
+            if (!quiet) showToast(t('mkJsonParseFail'), 'error');
             return null;
         }
         return normalizeStoryForSave(parsed, selectedActorsFromPanel(panel));
@@ -1406,7 +1413,7 @@ export function renderStoryMaker(panel, data = {}, { onBack, onPlayStory } = {})
                     target: row.querySelector('[data-activity-target]')?.value || '',
                     title: row.querySelector('[data-activity-title]')?.value || def.label,
                     count: Math.max(1, Number(row.querySelector('[data-activity-count]')?.value) || 1),
-                    gameId: row.querySelector('[data-activity-game]')?.value || 'pet_tower_defense',
+                    gameId: row.querySelector('[data-activity-game]')?.value || DEFAULT_MINIGAME_ID,
                     successText: row.querySelector('[data-activity-success]')?.value || '',
                 });
             }).filter(item => item.kind === 'activity' || (item.text || '').trim());
@@ -1440,8 +1447,8 @@ export function renderStoryMaker(panel, data = {}, { onBack, onPlayStory } = {})
         sheet.innerHTML = `
             <div class="mh-maker-sheet-panel">
                 <div class="mh-maker-sheet-head">
-                    <strong>第${sceneIndex + 1}幕</strong>
-                    <button type="button" class="mh-maker-mini" data-close-edit-sheet>完成</button>
+                    <strong>${escapeHtml(t('mkSceneN', { n: sceneIndex + 1 }))}</strong>
+                    <button type="button" class="mh-maker-mini" data-close-edit-sheet>${escapeHtml(t('mkFinish'))}</button>
                 </div>
                 <div class="mh-maker-sheet-body"><div class="mh-scene-stack">${renderSceneEditorHtml(currentStory, { onlySceneIndex: sceneIndex })}</div></div>
             </div>`;
@@ -1466,7 +1473,7 @@ export function renderStoryMaker(panel, data = {}, { onBack, onPlayStory } = {})
         renderReviewPanel();
     }
 
-    function openGenerationModal(title = 'AI 正在生成故事') {
+    function openGenerationModal(title = t('mkGenModalTitle')) {
         document.getElementById('mhMakerStreamModal')?.remove();
         const modal = document.createElement('div');
         modal.id = 'mhMakerStreamModal';
@@ -1475,12 +1482,12 @@ export function renderStoryMaker(panel, data = {}, { onBack, onPlayStory } = {})
             <div class="mh-maker-stream-panel">
                 <div class="mh-maker-stream-head">
                     <strong>${escapeHtml(title)}</strong>
-                    <button type="button" class="mh-maker-mini danger" data-abort-generation>终止</button>
+                    <button type="button" class="mh-maker-mini danger" data-abort-generation>${escapeHtml(t('mkAbort'))}</button>
                 </div>
                 <div class="mh-maker-stream-hint">请耐心等待，AI 会把内容实时写到下面。生成完成后会自动关闭。</div>
                 <div id="mhMakerStreamOutput" class="mh-maker-stream-output is-empty">等待 AI 返回内容...</div>
                 <div class="mh-maker-stream-actions">
-                    <button type="button" class="btn-secondary" data-abort-generation>终止生成</button>
+                    <button type="button" class="btn-secondary" data-abort-generation>${escapeHtml(t('mkAbortGen'))}</button>
                 </div>
             </div>`;
         panel.appendChild(modal);
@@ -1514,20 +1521,20 @@ export function renderStoryMaker(panel, data = {}, { onBack, onPlayStory } = {})
         if (!generationController || generationController.signal.aborted) return;
         generationController.abort();
         setStatus('已终止生成。');
-        showToast('已终止生成', 'info', 1600);
+        showToast(t('mkAborted'), 'info', 1600);
         closeGenerationModal();
     }
 
     async function runGenerate(tweakText = '') {
         if (busy) return;
         const actors = selectedActorsFromPanel(panel);
-        if (!actors.length) { showToast('请至少选择一只宠物演员', 'info'); return; }
+        if (!actors.length) { showToast(t('mkPickActor'), 'info'); return; }
         const isFullRegenerate = !tweakText;
         const hasGeneratedStory = !!currentStory || !!(($('mhMakerJson')?.value || '').trim());
         if (isFullRegenerate && hasGeneratedStory) {
-            const ok = await confirmDialog('重新生成会覆盖当前已经生成的故事、场景、对白和互动内容。确定要继续吗？', {
-                okText: '重新生成',
-                cancelText: '取消',
+            const ok = await confirmDialog(t('mkRegenConfirm'), {
+                okText: t('mkRegenOk'),
+                cancelText: t('cancel'),
             });
             if (!ok) return;
         }
@@ -1535,19 +1542,19 @@ export function renderStoryMaker(panel, data = {}, { onBack, onPlayStory } = {})
         const generateBtn = $('mhMakerGenerate');
         if (generateBtn) {
             generateBtn.disabled = true;
-            generateBtn.textContent = tweakText ? '调整中...' : '生成中...';
+            generateBtn.textContent = tweakText ? t('mkAdjusting') : t('mkGenerating');
         }
         generationController = new AbortController();
-        openGenerationModal(tweakText ? 'AI 正在调整故事' : 'AI 正在生成故事');
+        openGenerationModal(tweakText ? t('mkGenAdjustTitle') : t('mkGenModalTitle'));
         const previousStory = currentStory;
         const previousStoryJson = tweakText && currentStory ? JSON.stringify(currentStory) : '';
         clearGeneratedStoryForRegenerate();
-        setStatus(tweakText ? 'AI 正在重新调整故事...' : 'AI 正在流式生成故事...');
+        setStatus(tweakText ? t('mkGenReadjust') : t('mkGenStreaming'));
         try {
             const count = Math.max(1, Math.min(12, Number($('mhMakerSceneCount')?.value) || DEFAULT_SCENE_COUNT));
             const basePrompt = $('mhMakerPrompt')?.value || '';
             const prompt = tweakText
-                ? `${basePrompt || '温暖的宠物冒险'}\n调整要求：${tweakText}\n请基于当前故事继续修改，不要丢失原有演员和可玩结构。\n当前故事 JSON：${previousStoryJson}`
+                ? `${basePrompt || t('mkWarmAdventure')}\n调整要求：${tweakText}\n请基于当前故事继续修改，不要丢失原有演员和可玩结构。\n当前故事 JSON：${previousStoryJson}`
                 : basePrompt;
             try {
                 const result = await generateStoryWithAI(prompt, count, actors, {
@@ -1556,7 +1563,7 @@ export function renderStoryMaker(panel, data = {}, { onBack, onPlayStory } = {})
                     onChunk: (_delta, fullText) => {
                         setJsonText(fullText);
                         setGenerationModalText(fullText);
-                        setStatus(`AI 正在生成... ${fullText.length} 字`);
+                        setStatus(t('mkGenProgress', { n: fullText.length }));
                     },
                 });
                 currentStory = await assignPresetScenesToStory(normalizeStoryForSave(result.story, actors));
@@ -1573,21 +1580,21 @@ export function renderStoryMaker(panel, data = {}, { onBack, onPlayStory } = {})
                     setJsonText('');
                     refreshStoryPanels();
                     setStatus('重新生成失败，请稍后再试。');
-                    showToast('重新生成失败：' + (e?.message || e), 'error', 2600);
+                    showToast(t('mkRegenFailed', { error: (e?.message || e) }), 'error', 2600);
                     return;
                 }
                 currentStory = await assignPresetScenesToStory(fallbackStory(prompt, count, actors));
-                showToast('AI 生成不可用，已创建可编辑草稿', 'info', 2200);
+                showToast(t('mkAiUnavailable'), 'info', 2200);
             }
             reviewSceneIndex = -1;
             syncJsonFromStory();
             refreshStoryPanels();
             setMode('review');
-            setStatus(`已生成 ${currentStory.scenes.length} 幕，正在自动保存...`);
+            setStatus(t('mkGenSavedAuto', { n: currentStory.scenes.length }));
             const saved = await persistStory(currentStory);
             setStatus(saved
-                ? `已生成 ${currentStory.scenes.length} 幕，并已自动保存到 ${saved.path}。`
-                : `已生成 ${currentStory.scenes.length} 幕，但自动保存失败，请手动保存。`);
+                ? t('mkGenSavedTo', { n: currentStory.scenes.length, path: saved.path })
+                : t('mkGenSaveFailed', { n: currentStory.scenes.length }));
             showToast(saved ? '故事已生成并自动保存' : '故事已生成，自动保存失败', saved ? 'success' : 'error', 1800);
         } finally {
             generationController = null;
@@ -1595,7 +1602,7 @@ export function renderStoryMaker(panel, data = {}, { onBack, onPlayStory } = {})
             busy = false;
             if (generateBtn) {
                 generateBtn.disabled = false;
-                generateBtn.textContent = 'AI 生成故事';
+                generateBtn.textContent = t('mkAiGenerate');
             }
         }
     }
@@ -1642,12 +1649,12 @@ export function renderStoryMaker(panel, data = {}, { onBack, onPlayStory } = {})
             },
             onConfirm: async (ids) => {
                 const uniqueIds = [...new Set(ids.filter(Boolean))];
-                if (!uniqueIds.length) { showToast('请至少选择一只宠物演员', 'info'); return; }
+                if (!uniqueIds.length) { showToast(t('mkPickActor'), 'info'); return; }
                 await ensureActorPetsLoaded(uniqueIds);
                 if (disposed || !overlay.isConnected) return;
                 readActorSettings();
                 actorPetIds = uniqueIds.filter(id => state.pets?.[id]);
-                if (!actorPetIds.length) { showToast('选择的宠物资料还没有加载完成', 'info'); return; }
+                if (!actorPetIds.length) { showToast(t('mkActorsLoading'), 'info'); return; }
                 close();
                 renderActorCards();
                 syncStoryActorsAfterPicker();
@@ -1663,7 +1670,7 @@ export function renderStoryMaker(panel, data = {}, { onBack, onPlayStory } = {})
             currentStory = parsed;
             renderSceneEditor();
             syncJsonFromStory();
-            setStatus(`已解析 ${currentStory.scenes.length} 幕，可继续编辑。`);
+            setStatus(t('mkParsedScenes', { n: currentStory.scenes.length }));
             return currentStory;
         }
         if (currentStory) {
@@ -1675,7 +1682,7 @@ export function renderStoryMaker(panel, data = {}, { onBack, onPlayStory } = {})
         currentStory = parsed;
         renderSceneEditor();
         syncJsonFromStory();
-        setStatus(`已解析 ${currentStory.scenes.length} 幕，可继续编辑。`);
+        setStatus(t('mkParsedScenes', { n: currentStory.scenes.length }));
         return currentStory;
     }
 
@@ -1689,13 +1696,13 @@ export function renderStoryMaker(panel, data = {}, { onBack, onPlayStory } = {})
         try {
             const result = await saveWorkspaceStory(story, story.id || story.title);
             const saved = $('mhMakerSaved');
-            if (saved) saved.textContent = `已保存到 ${result.path}，已写入故事索引，分享参数：?story=${result.path}`;
+            if (saved) saved.textContent = t('mkSavedTo', { path: result.path });
             currentStory = result.story || story;
             syncJsonFromStory();
-            if (toast) showToast('故事已保存', 'success');
+            if (toast) showToast(t('mkSaved'), 'success');
             return result;
         } catch (e) {
-            showToast('保存失败：' + (e?.message || e), 'error');
+            showToast(t('mkSaveFailed', { error: (e?.message || e) }), 'error');
             return null;
         }
     }
@@ -1712,7 +1719,7 @@ export function renderStoryMaker(panel, data = {}, { onBack, onPlayStory } = {})
         const scene = currentStory?.scenes?.[sceneIndex];
         if (!scene) return;
         scene.timeline = sceneTimeline(scene);
-        scene.timeline.push({ kind: 'line', actor: '$selected', text: '新的对白。' });
+        scene.timeline.push({ kind: 'line', actor: '$selected', text: t('mkNewLineText') });
         Object.assign(scene, sceneFromTimeline(scene, sceneIndex));
         refreshStoryPanels();
         syncJsonFromStory();
@@ -1723,7 +1730,7 @@ export function renderStoryMaker(panel, data = {}, { onBack, onPlayStory } = {})
         const scene = currentStory?.scenes?.[sceneIndex];
         if (!scene) return;
         scene.timeline = sceneTimeline(scene);
-        scene.timeline.push(normalizeActivity({ type: 'tap', title: '轻拍互动', count: 1, successText: '完成啦。' }));
+        scene.timeline.push(normalizeActivity({ type: 'tap', title: t('mkNewActivityTitle'), count: 1, successText: t('mkNewActivityDone') }));
         Object.assign(scene, sceneFromTimeline(scene, sceneIndex));
         refreshStoryPanels();
         syncJsonFromStory();
@@ -1773,7 +1780,7 @@ export function renderStoryMaker(panel, data = {}, { onBack, onPlayStory } = {})
             },
         }).catch(e => {
             console.error('打开场景素材失败', e);
-            showToast('打开场景素材失败：' + (e?.message || e), 'error');
+            showToast(t('mkOpenSceneFailed', { error: (e?.message || e) }), 'error');
             close();
         });
     }
@@ -2003,5 +2010,8 @@ export function renderStoryMaker(panel, data = {}, { onBack, onPlayStory } = {})
     draw();
     ensureActorPetsLoaded().then(() => {
         if (!disposed && panel?.isConnected) renderActorCards();
+    });
+    ensureMinigamesLoaded().then(() => {
+        if (!disposed && panel?.isConnected) refreshStoryPanels();
     });
 }

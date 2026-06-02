@@ -1,22 +1,459 @@
 <!DOCTYPE html>
-<html lang="zh-CN">
+<html lang="en">
 
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-  <title>细胞免疫塔防</title>
+  <title>Cell Immune Defense</title>
   <script src="https://cdn.keepwork.com/keepwork/cdn/tailwindcss@3.4.16.js"></script>
 </head>
 
 <body></body>
 <script defer>
 (function () {
+  // ---- i18n ----
+  const I18N = {
+    zhCN: {
+      title: '细胞免疫塔防',
+      petFallback: '宠物',
+      canvasAria: '细胞免疫塔防游戏画面',
+      helpBtn: '玩法',
+      restartBtn: '重开',
+      selectDiffAria: '选择难度',
+      gameStatusAria: '游戏状态',
+      pillWave: '🧫 波次',
+      pillBase: '❤ 基地',
+      pillGlucose: '🍬 葡萄糖',
+      pillScore: '⭐ 分数',
+      pillMutation: '🧬 变异',
+      stable: '稳定',
+      hintDefault: '点击空白加号部署防御单元；点击宠物释放白细胞',
+      deleteTower: '删除',
+      towerAcornAria: '抗生素胶囊 65 葡萄糖',
+      towerBubbleAria: '抗体针剂 90 葡萄糖',
+      towerFlowerAria: '单抗靶向药 115 葡萄糖',
+      upgradeBtn: '升级',
+      branchBtn: '分支',
+      downgradeBtn: '降级',
+      towerOpsAria: '防御装置操作',
+      clickHere: '点击这里',
+      sceneLabel: '场景',
+      selectSceneAria: '选择治疗场景',
+      selectScene: '选择场景',
+      startGuard: '开始守护',
+      continueGuard: '继续守护',
+      spawnFab: '生成',
+      testPanelTitle: '生成',
+      testPath: '路径',
+      testEnemy: '敌人',
+      testMutation: '变异',
+      testCount: '数量',
+      testProgress: '位置%',
+      testGap: '间隔',
+      testFrozen: '静止不动',
+      testSpawn: '生成敌人',
+      testRandomSpawn: '随机生成',
+      testClearEnemies: '清空敌人',
+      testNote: '敌人、防御和变异数值来自正式配置。点击生成敌人后面板会自动关闭。',
+      testMutLabel: '当前变异：{label}',
+      sceneBlood: '血管',
+      sceneBloodTissue: '血管免疫基地',
+      sceneBloodHelp: '血管有多条入口，病原体会分路靠近宠物基地。适合细菌感染和中毒类病情：部署抗生素胶囊、抗体针剂和单抗靶向药，击败病原体会转化成葡萄糖能量。',
+      sceneIntestine: '肠道',
+      sceneIntestineTissue: '肠道绒毛基地',
+      sceneIntestineHelp: '这里是肠道场景，肠壁绒毛会保护吸收通道。适合拉肚子和肠胃不适：沿肠道通路布置防御，阻止病原体冲向免疫基地。',
+      sceneBrain: '大脑神经',
+      sceneBrainTissue: '神经元守护区',
+      sceneBrainHelp: '这里是大脑神经元场景，突触信号需要保持稳定。适合抑郁和情绪低落：守住神经通路，避免负面信号侵入宠物基地。',
+      sceneLung: '肺泡',
+      sceneLungTissue: '肺泡呼吸区',
+      sceneLungHelp: '这里是肺泡场景，气泡状肺泡正在交换新鲜空气。适合肺炎、流感和过敏：保护呼吸通路，清除靠近肺泡基地的病原体。',
+      sceneStomach: '胃部',
+      sceneStomachTissue: '胃壁防线',
+      sceneStomachHelp: '这里是胃部场景，胃壁褶皱和胃酸泡泡正在工作。适合恶心呕吐和胃部不适：在胃壁通路旁部署防御，稳定胃部基地。',
+      phantomScene: '幻影装置',
+      phantomTissue: '幻影测试装置',
+      phantomHelp: '幻影装置是 Live Preview 专用测试场景。可以切换短路线、指定病原体、使用 0 花费建造和升级，并手动调整免疫进化。',
+      routeStraight: '直线',
+      routeLoop: '环形',
+      routeCross: '交叉',
+      towerAcorn: '抗生素胶囊',
+      towerAcornShort: '胶囊',
+      towerBubble: '抗体针剂',
+      towerBubbleShort: '针剂',
+      towerFlower: '单抗靶向药',
+      towerFlowerShort: '单抗',
+      branchSteady: '稳态校准',
+      branchSteadyShort: '稳态',
+      branchSteadyText: '射程小幅提高',
+      branchRange2: '远端感知',
+      branchRange2Short: '射程',
+      branchRange2Text: '攻击范围额外提高',
+      branchMulti: '分裂弹幕',
+      branchMultiShort: '分裂',
+      branchMultiText: '60% 追加第二发',
+      branchRate: '代谢加速',
+      branchRateShort: '加速',
+      branchRateText: '攻速提升 60%',
+      branchRange3: '广域感知',
+      branchRange3Short: '广域',
+      branchRange3Text: '攻击范围额外提高',
+      branchFire: '热灼反应',
+      branchFireShort: '热灼',
+      branchFireText: '持续伤害并软化外壳',
+      branchToxin: '毒素标记',
+      branchToxinShort: '标记',
+      branchToxinText: '持续伤害并绕过护膜',
+      statusFire: '热灼',
+      statusToxin: '标记',
+      diffEasy: '轻松',
+      diffNormal: '标准',
+      diffHard: '挑战',
+      enemyBacteria: '细菌',
+      enemyVirus: '病毒',
+      enemySpore: '孢子',
+      enemyFastVirus: '速毒',
+      enemyElite: '精英',
+      weakAcorn: '怕抗生素',
+      weakBubble: '怕抗体',
+      weakFlower: '怕单抗',
+      weakSyringe: '怕针剂',
+      mutSwarm: '病毒复制',
+      mutSwarmText: '数量增多，血量降低',
+      mutSpeed: '急性发作',
+      mutSpeedText: '移动更快，奖励更高',
+      mutHardy: '耐药菌群',
+      mutHardyText: '生命提高，减速变弱',
+      mutGlucose: '营养补给',
+      mutGlucoseText: '葡萄糖掉落提高',
+      overlayDefaultText: '血管里出现了细菌和病毒。让你的宠物守住免疫基地，部署抗生素胶囊、抗体针剂和单抗靶向药。击败病原体会转化成葡萄糖能量，能量会飞到右上角。',
+      sceneSwitched: '已切换到{label}场景',
+      hintTutorialSpot: '先点击一个空白加号，再在底部选择防御单元',
+      hintPhantomStart: '幻影装置已启动：建造和升级 0 花费，可生成移动或静止敌人',
+      toastStart: '守护开始！',
+      waveText: '第 {wave} 波：{label}',
+      waveSimple: '第 {wave} 波',
+      hintStableWave: '稳定波次，按克制关系布置防御',
+      hintSelectDefense: '选择要部署的防御单元',
+      toastNoGlucose: '葡萄糖不够',
+      hintTowerBuilt: '{label}部署好了，点防御单元可以升级',
+      hintTowerReplaced: '已替换为{label} lv1',
+      hintTowerMaxed: '{short}已满级：{route}；自身伤害 {dmg}%；{boost}',
+      hintTowerBranch: '{short}可选分支；路线：{route}；自身伤害 {dmg}%；{boost}',
+      hintTowerSelected: '{short}已选中；路线：{route}；自身伤害 {dmg}%；{boost}',
+      hintTowerMaxSimple: '这座塔已经满级，范围会显示出来',
+      hintTowerUpgraded: '{short}升级到 lv{level}{branch}；{boost}',
+      hintNeedGlucose: '升级需要 {cost} 葡萄糖',
+      toastSelectTower: '先选择一座塔',
+      toastAlreadyLv1: '已经是 1 级',
+      hintTowerDowngraded: '{short}降级到 lv{level}',
+      hintTowerDeleted: '已删除选中的测试塔',
+      routeUndiff: '未分化',
+      evoNone: '进化：无',
+      evoPrefix: '进化：',
+      evoCapsule: '胶囊 +{pct}%',
+      evoSlow: '减速 +{ms}ms',
+      evoSplash: '溅射 +{val}',
+      evoHeroRate: '宠物攻速 +{pct}%',
+      evoGlobalRange: '全域 +{val}',
+      specialReady: '出击',
+      specialTroop: '白细胞部队出击！',
+      hintSpecialCooldown: '白细胞冷却中 {sec} 秒，准备好后才能再次出击',
+      hintSpecialCharge: '白细胞蓄能 {pct}%，击败病原体继续积攒',
+      floatWeakHit: '克制!',
+      floatShield: '护膜',
+      floatGlucose: '葡萄糖 +{coins}',
+      floatWaveClear: '守住了！选择免疫进化',
+      winTitle: '免疫防线成功！',
+      winText: '你的宠物主角守住了 {waves} 波病原体。得分 {score}。',
+      loseTitle: '宠物基地需要支援',
+      loseText: '这次守到第 {wave} 波，得分 {score}。调整塔的位置，再来一次会更稳。',
+      playAgain: '再玩一次',
+      evoTitle: '免疫进化',
+      evoPrompt: '第 {prev} 波已守住。选择一种进化，准备迎接第 {wave} 波。',
+      evoActive: '{title} 生效；{boost}；下一波即将到来',
+      evoActivated: '{title} 已激活',
+      evoAcornTitle: '抗生素增效',
+      evoAcornDesc: '抗生素胶囊伤害 +18%',
+      evoBubbleTitle: '长效针剂',
+      evoBubbleDesc: '抗体针剂减速时间 +0.45秒',
+      evoFlowerTitle: '单抗扩散',
+      evoFlowerDesc: '单抗溅射范围 +18',
+      evoHeroTitle: '宠物专注',
+      evoHeroDesc: '宠物主角攻速 +16%',
+      evoRangeTitle: '免疫感知',
+      evoRangeDesc: '全部防御范围 +10',
+      evoRepairTitle: '组织修复',
+      evoRepairDesc: '立即恢复 2 点基地生命',
+      evoCoinsTitle: '葡萄糖爆发',
+      evoCoinsDesc: '立即获得 90 葡萄糖',
+      toastPhantomStart: '幻影装置已启动',
+      toastRouteSwitched: '路线已切换',
+      toastPlacedFrozen: '已放置静止敌人',
+      toastSpawned: '已生成敌人',
+      toastCleared: '敌人已清空',
+      eliteShield: '精英（护盾）',
+      eliteArmor: '精英（护甲）',
+      treatmentDone: '治疗完成，等待你的选择',
+      treatmentAutoHint: '第 {prev} 波已守住，正在自动准备第 {wave} 波',
+      testFreeLabel: ' · 测试 0G',
+      towerInfoMaxed: '满级',
+      towerInfoUpgrade: '升级 {cost}G',
+      towerInfoDmg: '伤害',
+      towerInfoRange: '射程',
+      statusIconBurn: '灼',
+      statusIconPoison: '毒',
+      gapOverlap: '重叠',
+      gapTight: '紧密',
+      gapNormal: '标准',
+      gapWide: '宽',
+      gapVeryWide: '很宽',
+      pathLabel: '路径 {n}',
+      deleteTowerAria: '删除选中塔',
+      upgradeTowerAria: '升级防御单元',
+      downgradeTowerAria: '降级防御单元',
+      branchAria: '{label}，{text}，需要 {cost} 葡萄糖',
+      phantomEntryBtn: '幻影装置',
+      testCloseAria: '关闭生成面板',
+      testFabAria: '打开敌人生成面板',
+      testRoutesAria: '幻影装置路线切换',
+      testBuffsAria: '幻影装置炮塔增益',
+      testPanelAria: '幻影装置生成面板',
+      phantomHint: '幻影装置：{boost}',
+    },
+    enUS: {
+      title: 'Cell Immune Defense',
+      petFallback: 'Pet',
+      canvasAria: 'Cell Immune Defense game canvas',
+      helpBtn: 'Help',
+      restartBtn: 'Restart',
+      selectDiffAria: 'Select difficulty',
+      gameStatusAria: 'Game status',
+      pillWave: '🧫 Wave',
+      pillBase: '❤ Base',
+      pillGlucose: '🍬 Glucose',
+      pillScore: '⭐ Score',
+      pillMutation: '🧬 Mutation',
+      stable: 'Stable',
+      hintDefault: 'Tap an empty + to deploy; tap the pet to release white cells',
+      deleteTower: 'Delete',
+      towerAcornAria: 'Antibiotic Capsule 65 glucose',
+      towerBubbleAria: 'Antibody Syringe 90 glucose',
+      towerFlowerAria: 'Monoclonal Targeted Drug 115 glucose',
+      upgradeBtn: 'Upgrade',
+      branchBtn: 'Branch',
+      downgradeBtn: 'Downgrade',
+      towerOpsAria: 'Tower operations',
+      clickHere: 'Tap here',
+      sceneLabel: 'Scene',
+      selectSceneAria: 'Select treatment scene',
+      selectScene: 'Select scene',
+      startGuard: 'Start Defense',
+      continueGuard: 'Continue Defense',
+      spawnFab: 'Spawn',
+      testPanelTitle: 'Spawn',
+      testPath: 'Path',
+      testEnemy: 'Enemy',
+      testMutation: 'Mutation',
+      testCount: 'Count',
+      testProgress: 'Position %',
+      testGap: 'Spacing',
+      testFrozen: 'Frozen',
+      testSpawn: 'Spawn Enemies',
+      testRandomSpawn: 'Random Spawn',
+      testClearEnemies: 'Clear Enemies',
+      testNote: 'Enemy, defense and mutation values come from the live config. The panel closes after spawning.',
+      testMutLabel: 'Current mutation: {label}',
+      sceneBlood: 'Blood Vessel',
+      sceneBloodTissue: 'Blood Vessel Immune Base',
+      sceneBloodHelp: 'Multiple entry points in the blood vessel — pathogens advance along separate routes toward the pet base. Ideal for bacterial infections and poisoning: deploy antibiotic capsules, antibody syringes and monoclonal targeted drugs. Defeated pathogens convert into glucose energy.',
+      sceneIntestine: 'Intestine',
+      sceneIntestineTissue: 'Intestinal Villi Base',
+      sceneIntestineHelp: 'The intestinal scene — villi protect the absorption channels. Ideal for diarrhea and stomach discomfort: set up defenses along the intestinal pathways to stop pathogens from reaching the immune base.',
+      sceneBrain: 'Brain Neural',
+      sceneBrainTissue: 'Neuron Guardian Zone',
+      sceneBrainHelp: 'The brain neuron scene — synaptic signals must stay stable. Ideal for depression and low mood: guard neural pathways and keep negative signals from invading the pet base.',
+      sceneLung: 'Alveoli',
+      sceneLungTissue: 'Alveolar Breathing Zone',
+      sceneLungHelp: 'The alveoli scene — bubble-shaped alveoli are exchanging fresh air. Ideal for pneumonia, flu and allergies: protect the breathing pathways and clear pathogens near the alveolar base.',
+      sceneStomach: 'Stomach',
+      sceneStomachTissue: 'Stomach Wall Defense',
+      sceneStomachHelp: 'The stomach scene — stomach folds and acid bubbles are at work. Ideal for nausea, vomiting and stomach discomfort: deploy defenses along the stomach wall pathways to stabilize the stomach base.',
+      phantomScene: 'Phantom Device',
+      phantomTissue: 'Phantom Test Device',
+      phantomHelp: 'The Phantom Device is a Live Preview test scene. Switch short routes, specify pathogens, build and upgrade at zero cost, and manually adjust immune evolution.',
+      routeStraight: 'Straight',
+      routeLoop: 'Loop',
+      routeCross: 'Cross',
+      towerAcorn: 'Antibiotic Capsule',
+      towerAcornShort: 'Capsule',
+      towerBubble: 'Antibody Syringe',
+      towerBubbleShort: 'Syringe',
+      towerFlower: 'Monoclonal Targeted Drug',
+      towerFlowerShort: 'Monoclonal',
+      branchSteady: 'Steady Calibration',
+      branchSteadyShort: 'Steady',
+      branchSteadyText: 'Slight range boost',
+      branchRange2: 'Far Sense',
+      branchRange2Short: 'Range',
+      branchRange2Text: 'Extra attack range',
+      branchMulti: 'Split Barrage',
+      branchMultiShort: 'Split',
+      branchMultiText: '60% chance for a second shot',
+      branchRate: 'Metabolic Boost',
+      branchRateShort: 'Speed',
+      branchRateText: 'Attack speed +60%',
+      branchRange3: 'Wide Sense',
+      branchRange3Short: 'Wide',
+      branchRange3Text: 'Extra attack range',
+      branchFire: 'Thermal Burn',
+      branchFireShort: 'Burn',
+      branchFireText: 'Continuous damage, softens armor',
+      branchToxin: 'Toxin Mark',
+      branchToxinShort: 'Mark',
+      branchToxinText: 'Continuous damage, bypasses shield',
+      statusFire: 'Burn',
+      statusToxin: 'Mark',
+      diffEasy: 'Easy',
+      diffNormal: 'Normal',
+      diffHard: 'Hard',
+      enemyBacteria: 'Bacteria',
+      enemyVirus: 'Virus',
+      enemySpore: 'Spore',
+      enemyFastVirus: 'Fast Toxin',
+      enemyElite: 'Elite',
+      weakAcorn: 'Weak to antibiotic',
+      weakBubble: 'Weak to antibody',
+      weakFlower: 'Weak to monoclonal',
+      weakSyringe: 'Weak to syringe',
+      mutSwarm: 'Viral Replication',
+      mutSwarmText: 'More enemies, lower HP',
+      mutSpeed: 'Acute Outbreak',
+      mutSpeedText: 'Faster movement, higher reward',
+      mutHardy: 'Resistant Strain',
+      mutHardyText: 'Higher HP, slower debuffs',
+      mutGlucose: 'Nutrient Supply',
+      mutGlucoseText: 'Higher glucose drops',
+      overlayDefaultText: 'Bacteria and viruses have appeared in the blood vessel. Let your pet guard the immune base — deploy antibiotic capsules, antibody syringes and monoclonal targeted drugs. Defeated pathogens convert into glucose energy that flies to the top-right.',
+      sceneSwitched: 'Switched to {label} scene',
+      hintTutorialSpot: 'Tap an empty + first, then pick a defense unit at the bottom',
+      hintPhantomStart: 'Phantom Device active: build & upgrade at 0 cost, spawn moving or frozen enemies',
+      toastStart: 'Defense begins!',
+      waveText: 'Wave {wave}: {label}',
+      waveSimple: 'Wave {wave}',
+      hintStableWave: 'Stable wave — set up counters by weakness',
+      hintSelectDefense: 'Select a defense unit to deploy',
+      toastNoGlucose: 'Not enough glucose',
+      hintTowerBuilt: '{label} deployed — tap a tower to upgrade',
+      hintTowerReplaced: 'Replaced with {label} lv1',
+      hintTowerMaxed: '{short} maxed: {route}; self damage {dmg}%; {boost}',
+      hintTowerBranch: '{short} branch available; route: {route}; self damage {dmg}%; {boost}',
+      hintTowerSelected: '{short} selected; route: {route}; self damage {dmg}%; {boost}',
+      hintTowerMaxSimple: 'This tower is maxed — its range is shown',
+      hintTowerUpgraded: '{short} upgraded to lv{level}{branch}; {boost}',
+      hintNeedGlucose: 'Upgrade costs {cost} glucose',
+      toastSelectTower: 'Select a tower first',
+      toastAlreadyLv1: 'Already level 1',
+      hintTowerDowngraded: '{short} downgraded to lv{level}',
+      hintTowerDeleted: 'Selected test tower deleted',
+      routeUndiff: 'Undifferentiated',
+      evoNone: 'Evolution: none',
+      evoPrefix: 'Evolution: ',
+      evoCapsule: 'Capsule +{pct}%',
+      evoSlow: 'Slow +{ms}ms',
+      evoSplash: 'Splash +{val}',
+      evoHeroRate: 'Pet speed +{pct}%',
+      evoGlobalRange: 'Global +{val}',
+      specialReady: 'Go',
+      specialTroop: 'White cell squad deployed!',
+      hintSpecialCooldown: 'White cell cooling down {sec}s — wait until ready',
+      hintSpecialCharge: 'White cell charge {pct}% — defeat pathogens to keep charging',
+      floatWeakHit: 'Counter!',
+      floatShield: 'Shield',
+      floatGlucose: 'Glucose +{coins}',
+      floatWaveClear: 'Defended! Choose immune evolution',
+      winTitle: 'Immune Line Success!',
+      winText: 'Your pet held off {waves} waves of pathogens. Score: {score}.',
+      loseTitle: 'Pet Base Needs Support',
+      loseText: 'Reached wave {wave} this time, score {score}. Adjust your towers and try again.',
+      playAgain: 'Play Again',
+      evoTitle: 'Immune Evolution',
+      evoPrompt: 'Wave {prev} defended. Choose an evolution to prepare for wave {wave}.',
+      evoActive: '{title} active; {boost}; next wave incoming',
+      evoActivated: '{title} activated',
+      evoAcornTitle: 'Antibiotic Boost',
+      evoAcornDesc: 'Antibiotic capsule damage +18%',
+      evoBubbleTitle: 'Long-Lasting Syringe',
+      evoBubbleDesc: 'Antibody syringe slow duration +0.45s',
+      evoFlowerTitle: 'Monoclonal Spread',
+      evoFlowerDesc: 'Monoclonal splash range +18',
+      evoHeroTitle: 'Pet Focus',
+      evoHeroDesc: 'Pet hero attack speed +16%',
+      evoRangeTitle: 'Immune Sense',
+      evoRangeDesc: 'All defense range +10',
+      evoRepairTitle: 'Tissue Repair',
+      evoRepairDesc: 'Restore 2 base HP now',
+      evoCoinsTitle: 'Glucose Burst',
+      evoCoinsDesc: 'Gain 90 glucose now',
+      toastPhantomStart: 'Phantom Device activated',
+      toastRouteSwitched: 'Route switched',
+      toastPlacedFrozen: 'Placed frozen enemies',
+      toastSpawned: 'Enemies spawned',
+      toastCleared: 'Enemies cleared',
+      eliteShield: 'Elite (Shield)',
+      eliteArmor: 'Elite (Armor)',
+      treatmentDone: 'Treatment complete — awaiting your choice',
+      treatmentAutoHint: 'Wave {prev} defended, auto-preparing wave {wave}',
+      testFreeLabel: ' · Test 0G',
+      towerInfoMaxed: 'Maxed',
+      towerInfoUpgrade: 'Upgrade {cost}G',
+      towerInfoDmg: 'DMG',
+      towerInfoRange: 'Range',
+      statusIconBurn: 'Brn',
+      statusIconPoison: 'Psn',
+      gapOverlap: 'Overlap',
+      gapTight: 'Tight',
+      gapNormal: 'Normal',
+      gapWide: 'Wide',
+      gapVeryWide: 'Very Wide',
+      pathLabel: 'Path {n}',
+      deleteTowerAria: 'Delete selected tower',
+      upgradeTowerAria: 'Upgrade tower',
+      downgradeTowerAria: 'Downgrade tower',
+      branchAria: '{label}, {text}, costs {cost} glucose',
+      phantomEntryBtn: 'Phantom Device',
+      testCloseAria: 'Close spawn panel',
+      testFabAria: 'Open enemy spawn panel',
+      testRoutesAria: 'Phantom device route switch',
+      testBuffsAria: 'Phantom device tower buffs',
+      testPanelAria: 'Phantom device spawn panel',
+      phantomHint: 'Phantom Device: {boost}',
+    },
+  };
+  function detectLang() {
+    try {
+      const params = new URLSearchParams(window.location.search);
+      const lang = params.get('lang');
+      if (lang && I18N[lang]) return lang;
+    } catch (_) {}
+    return 'enUS';
+  }
+  const LANG = detectLang();
+  const L = I18N[LANG];
+  function t(key, vars) {
+    let str = L[key] || I18N.zhCN[key] || key;
+    if (vars) str = str.replace(/\{(\w+)\}/g, (m, n) => vars[n] != null ? String(vars[n]) : m);
+    return str;
+  }
+  try { document.documentElement.setAttribute('lang', LANG === 'enUS' ? 'en' : 'zh-CN'); } catch (_) {}
+  try { document.title = t('title'); } catch (_) {}
+
   const STORAGE_DIFFICULTY = 'haqiPetTowerDefenseDifficultyV1';
   const STORAGE_BEST_SCORE = 'haqiPetTowerDefenseBestScoreV1';
   const STORAGE_BEST_WAVE = 'haqiPetTowerDefenseBestWaveV1';
   const SVG_NS = 'http://www.w3.org/2000/svg';
   const XLINK_NS = 'http://www.w3.org/1999/xlink';
-  const PET_FALLBACK = '宠物';
+  const PET_FALLBACK = t('petFallback');
   const MAX_WAVE = 8;
   const MAX_TOWER_LEVEL = 4;
   const IS_LIVE_PREVIEW = readLivePreviewMode();
@@ -42,41 +479,41 @@
   const SPECIAL_TROOP_COUNT = 6;
   const SCENE_DEFS = {
     blood: {
-      id: 'blood', label: '血管', tissue: '血管免疫基地',
+      id: 'blood', label: t('sceneBlood'), tissue: t('sceneBloodTissue'),
       match: ['bacterial', 'poison', 'toxin', '中毒', '细菌'],
       bg: ['#10183d', '#202153', '#081524'], path: ['#fb7185', '#f43f5e', '#67e8f9'], soft: '#3b1232', accent: '#fb7185', spot: '#38bdf8', body: 'radial-gradient(circle at 50% 18%, rgba(244,63,94,.28), transparent 34%), linear-gradient(180deg, #10183d 0%, #202153 48%, #081524 100%)',
-      help: '血管有多条入口，病原体会分路靠近宠物基地。适合细菌感染和中毒类病情：部署抗生素胶囊、抗体针剂和单抗靶向药，击败病原体会转化成葡萄糖能量。'
+      help: t('sceneBloodHelp')
     },
     intestine: {
-      id: 'intestine', label: '肠道', tissue: '肠道绒毛基地',
+      id: 'intestine', label: t('sceneIntestine'), tissue: t('sceneIntestineTissue'),
       match: ['diarrhea', '拉肚子', '腹泻', '肠'],
       bg: ['#111827', '#3b1d35', '#081524'], path: ['#fbbf24', '#fb923c', '#22d3ee'], soft: '#41210f', accent: '#fb923c', spot: '#2dd4bf', body: 'radial-gradient(circle at 48% 18%, rgba(251,146,60,.24), transparent 35%), linear-gradient(180deg, #111827 0%, #3b1d35 50%, #081524 100%)',
-      help: '这里是肠道场景，肠壁绒毛会保护吸收通道。适合拉肚子和肠胃不适：沿肠道通路布置防御，阻止病原体冲向免疫基地。'
+      help: t('sceneIntestineHelp')
     },
     brain: {
-      id: 'brain', label: '大脑神经', tissue: '神经元守护区',
+      id: 'brain', label: t('sceneBrain'), tissue: t('sceneBrainTissue'),
       match: ['depression', '抑郁', '情绪', '神经', '大脑'],
       bg: ['#11143a', '#25134c', '#07111f'], path: ['#a78bfa', '#7c3aed', '#22d3ee'], soft: '#2e1a55', accent: '#a78bfa', spot: '#67e8f9', body: 'radial-gradient(circle at 50% 18%, rgba(124,58,237,.28), transparent 34%), linear-gradient(180deg, #11143a 0%, #25134c 48%, #07111f 100%)',
-      help: '这里是大脑神经元场景，突触信号需要保持稳定。适合抑郁和情绪低落：守住神经通路，避免负面信号侵入宠物基地。'
+      help: t('sceneBrainHelp')
     },
     lung: {
-      id: 'lung', label: '肺泡', tissue: '肺泡呼吸区',
+      id: 'lung', label: t('sceneLung'), tissue: t('sceneLungTissue'),
       match: ['pneumonia', 'flu', 'allergy', '肺炎', '流感', '过敏', '肺', '呼吸'],
       bg: ['#071827', '#10334b', '#07111f'], path: ['#7dd3fc', '#0ea5e9', '#5eead4'], soft: '#0d3140', accent: '#38bdf8', spot: '#99f6e4', body: 'radial-gradient(circle at 50% 18%, rgba(14,165,233,.28), transparent 35%), linear-gradient(180deg, #071827 0%, #10334b 48%, #07111f 100%)',
-      help: '这里是肺泡场景，气泡状肺泡正在交换新鲜空气。适合肺炎、流感和过敏：保护呼吸通路，清除靠近肺泡基地的病原体。'
+      help: t('sceneLungHelp')
     },
     stomach: {
-      id: 'stomach', label: '胃部', tissue: '胃壁防线',
+      id: 'stomach', label: t('sceneStomach'), tissue: t('sceneStomachTissue'),
       match: ['nausea', 'vomit', 'stomach', '恶心', '呕吐', '胃'],
       bg: ['#17112c', '#3b1232', '#081524'], path: ['#f9a8d4', '#ec4899', '#67e8f9'], soft: '#421126', accent: '#ec4899', spot: '#f0abfc', body: 'radial-gradient(circle at 50% 18%, rgba(236,72,153,.26), transparent 36%), linear-gradient(180deg, #17112c 0%, #3b1232 48%, #081524 100%)',
-      help: '这里是胃部场景，胃壁褶皱和胃酸泡泡正在工作。适合恶心呕吐和胃部不适：在胃壁通路旁部署防御，稳定胃部基地。'
+      help: t('sceneStomachHelp')
     }
   };
   const SCENE_ORDER = ['blood', 'intestine', 'brain', 'lung', 'stomach'];
   const TEST_SCENE_DEF = {
-    id: TEST_SCENE_ID, label: '幻影装置', tissue: '幻影测试装置', match: [],
+    id: TEST_SCENE_ID, label: t('phantomScene'), tissue: t('phantomTissue'), match: [],
     bg: ['#061a22', '#102a42', '#080f1d'], path: ['#5eead4', '#22d3ee', '#a78bfa'], soft: '#0f2c2c', accent: '#22d3ee', spot: '#99f6e4', body: 'radial-gradient(circle at 50% 18%, rgba(34,211,238,.24), transparent 34%), linear-gradient(180deg, #061a22 0%, #102a42 48%, #080f1d 100%)',
-    help: '幻影装置是 Live Preview 专用测试场景。可以切换短路线、指定病原体、使用 0 花费建造和升级，并手动调整免疫进化。'
+    help: t('phantomHelp')
   };
   const LAYOUTS = {
     landscape: {
@@ -198,17 +635,17 @@
   };
   const TEST_ROUTE_TEMPLATES = {
     straight: {
-      label: '直线',
+      label: t('routeStraight'),
       landscape: { paths: [[{ x: -70, y: 310 }, { x: 900, y: 310 }]], spots: [{ x: 110, y: 150 }, { x: 310, y: 150 }, { x: 510, y: 150 }, { x: 710, y: 150 }, { x: 110, y: 470 }, { x: 310, y: 470 }, { x: 510, y: 470 }, { x: 710, y: 470 }], gate: { x: 900, y: 310 }, hero: { x: 820, y: 350 } },
       portrait: { paths: [[{ x: 82, y: -70 }, { x: 520, y: 870 }]], spots: [{ x: 70, y: 150 }, { x: 120, y: 290 }, { x: 190, y: 430 }, { x: 250, y: 570 }, { x: 320, y: 710 }, { x: 420, y: 390 }, { x: 480, y: 540 }, { x: 540, y: 690 }], gate: { x: 520, y: 870 }, hero: { x: 452, y: 850 } }
     },
     loop: {
-      label: '环形',
+      label: t('routeLoop'),
       landscape: { paths: [[{ x: -70, y: 310 }, { x: 240, y: 310 }, { x: 240, y: 190 }, { x: 640, y: 190 }, { x: 640, y: 430 }, { x: 240, y: 430 }, { x: 240, y: 310 }, { x: 900, y: 310 }]], spots: [{ x: 110, y: 70 }, { x: 380, y: 70 }, { x: 760, y: 70 }, { x: 880, y: 170 }, { x: 110, y: 550 }, { x: 380, y: 550 }, { x: 760, y: 550 }, { x: 880, y: 450 }], gate: { x: 900, y: 310 }, hero: { x: 820, y: 350 } },
       portrait: { paths: [[{ x: 95, y: -70 }, { x: 95, y: 220 }, { x: 440, y: 220 }, { x: 440, y: 620 }, { x: 170, y: 620 }, { x: 170, y: 390 }, { x: 360, y: 390 }, { x: 520, y: 870 }]], spots: [{ x: 220, y: 80 }, { x: 520, y: 80 }, { x: 560, y: 340 }, { x: 560, y: 520 }, { x: 70, y: 380 }, { x: 70, y: 520 }, { x: 240, y: 760 }, { x: 380, y: 760 }], gate: { x: 520, y: 870 }, hero: { x: 452, y: 850 } }
     },
     cross: {
-      label: '交叉',
+      label: t('routeCross'),
       landscape: { paths: [[{ x: -70, y: 180 }, { x: 250, y: 180 }, { x: 500, y: 310 }, { x: 900, y: 310 }], [{ x: -70, y: 440 }, { x: 250, y: 440 }, { x: 500, y: 310 }, { x: 900, y: 310 }]], spots: [{ x: 110, y: 70 }, { x: 340, y: 70 }, { x: 660, y: 70 }, { x: 880, y: 150 }, { x: 110, y: 550 }, { x: 340, y: 550 }, { x: 660, y: 550 }, { x: 880, y: 470 }], gate: { x: 900, y: 310 }, hero: { x: 820, y: 350 } },
       portrait: { paths: [[{ x: 100, y: -70 }, { x: 100, y: 340 }, { x: 310, y: 520 }, { x: 520, y: 870 }], [{ x: 520, y: -70 }, { x: 520, y: 340 }, { x: 310, y: 520 }, { x: 520, y: 870 }]], spots: [{ x: 215, y: 165 }, { x: 215, y: 285 }, { x: 405, y: 285 }, { x: 70, y: 430 }, { x: 550, y: 430 }, { x: 300, y: 700 }, { x: 360, y: 820 }, { x: 480, y: 600 }], gate: { x: 520, y: 870 }, hero: { x: 452, y: 850 } }
     }
@@ -297,28 +734,28 @@
   };
   const layoutCache = new Map();
   const TOWER_TYPES = {
-    acorn: { id: 'acorn', label: '抗生素胶囊', short: '胶囊', cost: 65, range: 196, damage: 22, rate: 760, color: '#ea580c', glow: '#fed7aa', projectile: '#fb923c', splash: 0 },
-    bubble: { id: 'bubble', label: '抗体针剂', short: '针剂', cost: 90, range: 176, damage: 12, rate: 1080, color: '#0ea5e9', glow: '#bae6fd', projectile: '#38bdf8', slow: 0.48, slowMs: 1500 },
-    flower: { id: 'flower', label: '单抗靶向药', short: '单抗', cost: 115, range: 186, damage: 18, rate: 980, color: '#16a34a', glow: '#bbf7d0', projectile: '#22c55e', splash: 48 }
+    acorn: { id: 'acorn', label: t('towerAcorn'), short: t('towerAcornShort'), cost: 65, range: 196, damage: 22, rate: 760, color: '#ea580c', glow: '#fed7aa', projectile: '#fb923c', splash: 0 },
+    bubble: { id: 'bubble', label: t('towerBubble'), short: t('towerBubbleShort'), cost: 90, range: 176, damage: 12, rate: 1080, color: '#0ea5e9', glow: '#bae6fd', projectile: '#38bdf8', slow: 0.48, slowMs: 1500 },
+    flower: { id: 'flower', label: t('towerFlower'), short: t('towerFlowerShort'), cost: 115, range: 186, damage: 18, rate: 980, color: '#16a34a', glow: '#bbf7d0', projectile: '#22c55e', splash: 48 }
   };
   const TOWER_BRANCHES = {
     tier2: {
-      steady: { id: 'steady', tier: 2, label: '稳态校准', short: '稳态', text: '射程小幅提高', extraRange: 0, color: '#a78bfa' },
-      range: { id: 'range', tier: 2, label: '远端感知', short: '射程', text: '攻击范围额外提高', extraRange: 30, color: '#14b8a6' }
+      steady: { id: 'steady', tier: 2, label: t('branchSteady'), short: t('branchSteadyShort'), text: t('branchSteadyText'), extraRange: 0, color: '#a78bfa' },
+      range: { id: 'range', tier: 2, label: t('branchRange2'), short: t('branchRange2Short'), text: t('branchRange2Text'), extraRange: 30, color: '#14b8a6' }
     },
     tier3: {
-      multi: { id: 'multi', tier: 3, label: '分裂弹幕', short: '分裂', text: '60% 追加第二发', chance: .6, secondDamage: .78, color: '#f59e0b' },
-      rate: { id: 'rate', tier: 3, label: '代谢加速', short: '加速', text: '攻速提升 60%', interval: .625, color: '#0ea5e9' },
-      range: { id: 'range', tier: 3, label: '广域感知', short: '广域', text: '攻击范围额外提高', extraRange: 42, color: '#14b8a6' }
+      multi: { id: 'multi', tier: 3, label: t('branchMulti'), short: t('branchMultiShort'), text: t('branchMultiText'), chance: .6, secondDamage: .78, color: '#f59e0b' },
+      rate: { id: 'rate', tier: 3, label: t('branchRate'), short: t('branchRateShort'), text: t('branchRateText'), interval: .625, color: '#0ea5e9' },
+      range: { id: 'range', tier: 3, label: t('branchRange3'), short: t('branchRange3Short'), text: t('branchRange3Text'), extraRange: 42, color: '#14b8a6' }
     },
     tier4: {
-      fire: { id: 'fire', tier: 4, label: '热灼反应', short: '热灼', text: '持续伤害并软化外壳', color: '#f97316' },
-      toxin: { id: 'toxin', tier: 4, label: '毒素标记', short: '标记', text: '持续伤害并绕过护膜', color: '#22c55e' }
+      fire: { id: 'fire', tier: 4, label: t('branchFire'), short: t('branchFireShort'), text: t('branchFireText'), color: '#f97316' },
+      toxin: { id: 'toxin', tier: 4, label: t('branchToxin'), short: t('branchToxinShort'), text: t('branchToxinText'), color: '#22c55e' }
     }
   };
   const STATUS_EFFECTS = {
-    fire: { id: 'fire', label: '热灼', duration: 4200, tickEvery: 500, maxStacks: 3, dpsBase: 7, dpsWave: 1.4, armorBreakRatio: .35, minArmorBreak: 4, color: '#f97316' },
-    toxin: { id: 'toxin', label: '标记', duration: 5200, tickEvery: 500, maxStacks: 3, dpsBase: 5, dpsWave: 1.1, shieldBypass: true, color: '#22c55e' }
+    fire: { id: 'fire', label: t('statusFire'), duration: 4200, tickEvery: 500, maxStacks: 3, dpsBase: 7, dpsWave: 1.4, armorBreakRatio: .35, minArmorBreak: 4, color: '#f97316' },
+    toxin: { id: 'toxin', label: t('statusToxin'), duration: 5200, tickEvery: 500, maxStacks: 3, dpsBase: 5, dpsWave: 1.1, shieldBypass: true, color: '#22c55e' }
   };
   const ENEMY_DEFENSE = {
     waveHpBonus: 19,
@@ -341,23 +778,23 @@
     { kind: 'fastVirus', color: '#67e8f9', stroke: '#0369a1', hp: 48, speed: 95, reward: 11 }
   ];
   const DIFFICULTIES = {
-    easy: { id: 'easy', label: '轻松', coins: 160, lives: 17, enemyHp: 0.92, enemySpeed: 0.88, reward: 22, score: 70 },
-    normal: { id: 'normal', label: '标准', coins: 130, lives: 14, enemyHp: 1.08, enemySpeed: 1.04, reward: 20, score: 95 },
-    hard: { id: 'hard', label: '挑战', coins: 115, lives: 11, enemyHp: 1.28, enemySpeed: 1.17, reward: 18, score: 130 }
+    easy: { id: 'easy', label: t('diffEasy'), coins: 160, lives: 17, enemyHp: 0.92, enemySpeed: 0.88, reward: 22, score: 70 },
+    normal: { id: 'normal', label: t('diffNormal'), coins: 130, lives: 14, enemyHp: 1.08, enemySpeed: 1.04, reward: 20, score: 95 },
+    hard: { id: 'hard', label: t('diffHard'), coins: 115, lives: 11, enemyHp: 1.28, enemySpeed: 1.17, reward: 18, score: 130 }
   };
   const DIFFICULTY_ORDER = ['easy', 'normal', 'hard'];
   const ENEMY_TRAITS = {
-    bacteria: { label: '细菌', weak: 'acorn', weakText: '怕抗生素', weakFactor: 1.32 },
-    virus: { label: '病毒', weak: 'bubble', weakText: '怕抗体', weakFactor: 1.22 },
-    spore: { label: '孢子', weak: 'flower', weakText: '怕单抗', weakFactor: 1.3 },
-    fastVirus: { label: '速毒', weak: 'bubble', weakText: '怕针剂', weakFactor: 1.28 },
-    eliteVirus: { label: '精英', weak: 'acorn', weakText: '怕抗生素', weakFactor: 1.18 }
+    bacteria: { label: t('enemyBacteria'), weak: 'acorn', weakText: t('weakAcorn'), weakFactor: 1.32 },
+    virus: { label: t('enemyVirus'), weak: 'bubble', weakText: t('weakBubble'), weakFactor: 1.22 },
+    spore: { label: t('enemySpore'), weak: 'flower', weakText: t('weakFlower'), weakFactor: 1.3 },
+    fastVirus: { label: t('enemyFastVirus'), weak: 'bubble', weakText: t('weakSyringe'), weakFactor: 1.28 },
+    eliteVirus: { label: t('enemyElite'), weak: 'acorn', weakText: t('weakAcorn'), weakFactor: 1.18 }
   };
   const MUTATION_TYPES = [
-    { id: 'swarm', label: '病毒复制', text: '数量增多，血量降低', countBonus: 4, hp: .82, speed: 1, reward: 2, spawnGap: .78, color: '#16a34a' },
-    { id: 'speed', label: '急性发作', text: '移动更快，奖励更高', countBonus: 1, hp: .96, speed: 1.22, reward: 5, spawnGap: .86, color: '#dc2626' },
-    { id: 'hardy', label: '耐药菌群', text: '生命提高，减速变弱', countBonus: 0, hp: 1.24, speed: .94, reward: 8, spawnGap: 1, slowResist: .72, color: '#7c3aed' },
-    { id: 'glucose', label: '营养补给', text: '葡萄糖掉落提高', countBonus: 2, hp: 1.05, speed: 1.02, reward: 10, spawnGap: .95, color: '#d97706' }
+    { id: 'swarm', label: t('mutSwarm'), text: t('mutSwarmText'), countBonus: 4, hp: .82, speed: 1, reward: 2, spawnGap: .78, color: '#16a34a' },
+    { id: 'speed', label: t('mutSpeed'), text: t('mutSpeedText'), countBonus: 1, hp: .96, speed: 1.22, reward: 5, spawnGap: .86, color: '#dc2626' },
+    { id: 'hardy', label: t('mutHardy'), text: t('mutHardyText'), countBonus: 0, hp: 1.24, speed: .94, reward: 8, spawnGap: 1, slowResist: .72, color: '#7c3aed' },
+    { id: 'glucose', label: t('mutGlucose'), text: t('mutGlucoseText'), countBonus: 2, hp: 1.05, speed: 1.02, reward: 10, spawnGap: .95, color: '#d97706' }
   ];
 
   const state = {
@@ -395,7 +832,9 @@
     whiteCells: [],
     petUrl: '',
     petMeta: null,
+    petBitmap: null,
     petImage: null,
+    petRequestId: '',
     sceneId: readInitialSceneId(),
     testRouteId: TEST_ROUTE_DEFAULT,
     testSpawnKind: 'bacteria',
@@ -693,7 +1132,7 @@
       }
     </style>
     <div class="mh-shell">
-      <svg id="mhSvg" class="mh-svg" viewBox="0 0 ${LAYOUTS.landscape.view.width} ${LAYOUTS.landscape.view.height}" preserveAspectRatio="xMidYMid meet" aria-label="细胞免疫塔防游戏画面">
+      <svg id="mhSvg" class="mh-svg" viewBox="0 0 ${LAYOUTS.landscape.view.width} ${LAYOUTS.landscape.view.height}" preserveAspectRatio="xMidYMid meet" aria-label="${t('canvasAria')}">
         <defs>
           <linearGradient id="bgSky" x1="0" y1="0" x2="0" y2="1"><stop id="bgSkyA" offset="0" stop-color="#ffe4e6"/><stop id="bgSkyB" offset=".52" stop-color="#fecdd3"/><stop id="bgSkyC" offset="1" stop-color="#fff7ed"/></linearGradient>
           <linearGradient id="pathGrad" x1="0" y1="0" x2="1" y2="1"><stop id="pathGradA" offset="0" stop-color="#fb7185"/><stop id="pathGradB" offset=".5" stop-color="#e11d48"/><stop id="pathGradC" offset="1" stop-color="#be123c"/></linearGradient>
@@ -709,79 +1148,79 @@
       <canvas id="mhWorldCanvas" class="mh-canvas" aria-hidden="true"></canvas>
       <header class="mh-top">
         <div class="mh-title-row">
-          <button id="mhMenu" class="mh-icon-btn" type="button" aria-label="玩法">?</button>
-          <div class="mh-title">细胞免疫塔防</div>
+          <button id="mhMenu" class="mh-icon-btn" type="button" aria-label="${t('helpBtn')}">?</button>
+          <div class="mh-title">${t('title')}</div>
           <div class="mh-top-actions">
-            <div id="mhTopDifficulties" class="mh-top-difficulties" aria-label="选择难度"></div>
-            <button id="mhRestart" class="mh-restart-mini" type="button" aria-label="重开">↻</button>
+            <div id="mhTopDifficulties" class="mh-top-difficulties" aria-label="${t('selectDiffAria')}"></div>
+            <button id="mhRestart" class="mh-restart-mini" type="button" aria-label="${t('restartBtn')}">↻</button>
           </div>
         </div>
-        <div class="mh-stats" aria-label="游戏状态">
-          <span class="mh-pill"><span class="mh-pill-label">🧫 波次</span><b id="mhWave" class="mh-pill-value">1</b></span>
-          <span class="mh-pill"><span class="mh-pill-label">❤ 基地</span><b id="mhLives" class="mh-pill-value">0</b></span>
-          <span id="mhEnergyPill" class="mh-pill mh-energy-pill"><span class="mh-pill-label">🍬 葡萄糖</span><b id="mhCoins" class="mh-pill-value">0</b></span>
-          <span class="mh-pill"><span class="mh-pill-label">⭐ 分数</span><b id="mhScore" class="mh-pill-value">0</b></span>
-          <span class="mh-pill"><span class="mh-pill-label">🧬 变异</span><b id="mhMutation" class="mh-pill-value">稳定</b></span>
+        <div class="mh-stats" aria-label="${t('gameStatusAria')}">
+          <span class="mh-pill"><span class="mh-pill-label">${t('pillWave')}</span><b id="mhWave" class="mh-pill-value">1</b></span>
+          <span class="mh-pill"><span class="mh-pill-label">${t('pillBase')}</span><b id="mhLives" class="mh-pill-value">0</b></span>
+          <span id="mhEnergyPill" class="mh-pill mh-energy-pill"><span class="mh-pill-label">${t('pillGlucose')}</span><b id="mhCoins" class="mh-pill-value">0</b></span>
+          <span class="mh-pill"><span class="mh-pill-label">${t('pillScore')}</span><b id="mhScore" class="mh-pill-value">0</b></span>
+          <span class="mh-pill"><span class="mh-pill-label">${t('pillMutation')}</span><b id="mhMutation" class="mh-pill-value">${t('stable')}</b></span>
         </div>
       </header>
       <footer class="mh-bottom">
-        <div id="mhHint" class="mh-hint">点击空白加号部署防御单元；点击宠物释放白细胞</div>
+        <div id="mhHint" class="mh-hint">${t('hintDefault')}</div>
         <div id="mhBuildPanel" class="mh-control-panel mh-build-panel" hidden>
-          <button id="mhDeleteTower" class="mh-action mh-delete-tower" type="button" hidden aria-label="删除选中塔">
+          <button id="mhDeleteTower" class="mh-action mh-delete-tower" type="button" hidden aria-label="${t('deleteTowerAria')}">
             <svg class="mh-tower-icon" viewBox="0 0 64 64" aria-hidden="true"><circle cx="32" cy="32" r="24" fill="#fee2e2" stroke="#be123c" stroke-width="5"/><path d="M22 24h20M27 24v24m10-24v24M25 20h14" stroke="#be123c" stroke-width="5" stroke-linecap="round"/></svg>
-            <span class="mh-tower-price">删除</span>
+            <span class="mh-tower-price">${t('deleteTower')}</span>
           </button>
-          <button class="mh-tower-btn" data-type="acorn" style="--from:#fdba74;--to:#ea580c" type="button" aria-label="抗生素胶囊 65 葡萄糖">
+          <button class="mh-tower-btn" data-type="acorn" style="--from:#fdba74;--to:#ea580c" type="button" aria-label="${t('towerAcornAria')}">
             <svg class="mh-tower-icon" viewBox="0 0 64 64" aria-hidden="true"><g transform="rotate(-24 32 32)"><rect x="8" y="19" width="48" height="26" rx="13" fill="#fff7ed" stroke="#9a3412" stroke-width="4"/><path d="M32 19v26" stroke="#fed7aa" stroke-width="4"/><path d="M32 19h11a13 13 0 0 1 13 13v0a13 13 0 0 1-13 13H32z" fill="#ea580c" stroke="#9a3412" stroke-width="4"/></g><path d="M20 32h10M25 27v10" stroke="#9a3412" stroke-width="4" stroke-linecap="round"/></svg>
-            <span class="mh-tower-price">胶囊 65</span>
+            <span class="mh-tower-price">${t('towerAcornShort')} 65</span>
           </button>
-          <button class="mh-tower-btn" data-type="bubble" style="--from:#7dd3fc;--to:#0284c7" type="button" aria-label="抗体针剂 90 葡萄糖">
+          <button class="mh-tower-btn" data-type="bubble" style="--from:#7dd3fc;--to:#0284c7" type="button" aria-label="${t('towerBubbleAria')}">
             <svg class="mh-tower-icon" viewBox="0 0 64 64" aria-hidden="true"><g transform="rotate(-40 32 32)"><line x1="44" y1="19" x2="58" y2="19" stroke="#0f172a" stroke-width="3" stroke-linecap="round"/><line x1="58" y1="19" x2="61" y2="16" stroke="#0f172a" stroke-width="2.5" stroke-linecap="round"/><rect x="18" y="10" width="26" height="18" rx="5" fill="#eff6ff" stroke="#0f172a" stroke-width="3"/><rect x="25" y="13" width="12" height="12" rx="3" fill="#38bdf8" opacity=".82"/><line x1="10" y1="19" x2="18" y2="19" stroke="#94a3b8" stroke-width="5" stroke-linecap="round"/><line x1="7" y1="11" x2="7" y2="27" stroke="#94a3b8" stroke-width="4" stroke-linecap="round"/><line x1="44" y1="12" x2="44" y2="26" stroke="#cbd5e1" stroke-width="3" stroke-linecap="round"/></g><circle cx="50" cy="46" r="6" fill="#bae6fd" stroke="#0284c7" stroke-width="3"/></svg>
-            <span class="mh-tower-price">针剂 90</span>
+            <span class="mh-tower-price">${t('towerBubbleShort')} 90</span>
           </button>
-          <button class="mh-tower-btn" data-type="flower" style="--from:#bbf7d0;--to:#16a34a" type="button" aria-label="单抗靶向药 115 葡萄糖">
+          <button class="mh-tower-btn" data-type="flower" style="--from:#bbf7d0;--to:#16a34a" type="button" aria-label="${t('towerFlowerAria')}">
             <svg class="mh-tower-icon" viewBox="0 0 64 64" aria-hidden="true"><rect x="20" y="16" width="24" height="34" rx="8" fill="#dcfce7" stroke="#166534" stroke-width="4"/><rect x="24" y="9" width="16" height="9" rx="3" fill="#bbf7d0" stroke="#166534" stroke-width="4"/><rect x="26" y="5" width="12" height="5" rx="2" fill="#14532d"/><circle cx="32" cy="33" r="9" fill="#ecfdf5" stroke="#15803d" stroke-width="3"/><circle cx="32" cy="33" r="4" fill="#22c55e" stroke="#166534" stroke-width="2"/><path d="M18 25h8M46 25h8M32 42v8" stroke="#16a34a" stroke-width="3" stroke-linecap="round"/><circle cx="14" cy="34" r="4" fill="#bbf7d0" stroke="#15803d" stroke-width="2"/><circle cx="50" cy="44" r="4" fill="#bbf7d0" stroke="#15803d" stroke-width="2"/></svg>
-            <span class="mh-tower-price">单抗 115</span>
+            <span class="mh-tower-price">${t('towerFlowerShort')} 115</span>
           </button>
         </div>
         <div id="mhTowerPanel" class="mh-control-panel mh-tower-panel" hidden>
           <div id="mhTowerInfo" class="mh-tower-info" aria-live="polite"></div>
-          <div class="mh-tower-actions" aria-label="防御装置操作">
-          <button id="mhUpgrade" class="mh-action upgrade" type="button" hidden aria-label="升级防御单元">
+          <div class="mh-tower-actions" aria-label="${t('towerOpsAria')}">
+          <button id="mhUpgrade" class="mh-action upgrade" type="button" hidden aria-label="${t('upgradeTowerAria')}">
             <span class="mh-action-icon" aria-hidden="true"></span>
-            <span id="mhUpgradeLabel" class="mh-tower-price">升级</span>
+            <span id="mhUpgradeLabel" class="mh-tower-price">${t('upgradeBtn')}</span>
           </button>
-          <button id="mhBranchA" class="mh-action branch" type="button" hidden aria-label="分支一">
+          <button id="mhBranchA" class="mh-action branch" type="button" hidden aria-label="${t('branchBtn')} A">
             <span class="mh-action-icon" aria-hidden="true"></span>
-            <span id="mhBranchALabel" class="mh-tower-price">分支</span>
+            <span id="mhBranchALabel" class="mh-tower-price">${t('branchBtn')}</span>
           </button>
-          <button id="mhBranchB" class="mh-action branch" type="button" hidden aria-label="分支二">
+          <button id="mhBranchB" class="mh-action branch" type="button" hidden aria-label="${t('branchBtn')} B">
             <span class="mh-action-icon" aria-hidden="true"></span>
-            <span id="mhBranchBLabel" class="mh-tower-price">分支</span>
+            <span id="mhBranchBLabel" class="mh-tower-price">${t('branchBtn')}</span>
           </button>
-          <button id="mhBranchC" class="mh-action branch" type="button" hidden aria-label="分支三">
+          <button id="mhBranchC" class="mh-action branch" type="button" hidden aria-label="${t('branchBtn')} C">
             <span class="mh-action-icon" aria-hidden="true"></span>
-            <span id="mhBranchCLabel" class="mh-tower-price">分支</span>
+            <span id="mhBranchCLabel" class="mh-tower-price">${t('branchBtn')}</span>
           </button>
-          <button id="mhDowngrade" class="mh-action mh-downgrade-tower" type="button" hidden aria-label="降级防御单元">
+          <button id="mhDowngrade" class="mh-action mh-downgrade-tower" type="button" hidden aria-label="${t('downgradeTowerAria')}">
             <span class="mh-action-icon" aria-hidden="true"></span>
-            <span id="mhDowngradeLabel" class="mh-tower-price">降级</span>
+            <span id="mhDowngradeLabel" class="mh-tower-price">${t('downgradeBtn')}</span>
           </button>
           </div>
         </div>
       </footer>
       <div id="mhTutorialPointer" class="mh-tutorial-pointer" hidden>
-        <div id="mhTutorialLabel" class="mh-guide-label">点击这里</div>
+        <div id="mhTutorialLabel" class="mh-guide-label">${t('clickHere')}</div>
       </div>
       <div id="mhOverlay" class="mh-overlay">
         <div class="mh-card">
-          <h1 id="mhOverlayTitle">细胞免疫塔防</h1>
-          <p id="mhOverlayText">血管里出现了细菌和病毒。让你的宠物守住免疫基地，部署抗生素胶囊、抗体针剂和单抗靶向药。击败病原体会转化成葡萄糖能量，能量会飞到右上角。</p>
+          <h1 id="mhOverlayTitle">${t('title')}</h1>
+          <p id="mhOverlayText">${t('overlayDefaultText')}</p>
           <div class="mh-card-row mh-scene-row">
-            <label class="mh-scene-label">场景
-              <input id="mhSceneSelect" class="mh-native-select" type="hidden" value="${state.sceneId}" aria-label="选择治疗场景">
-              <div class="mh-select" data-select-input="mhSceneSelect" data-placeholder="选择场景">
-                <button class="mh-select-button" type="button"><span class="mh-select-value">选择场景</span><span class="mh-select-caret">⌄</span></button>
+            <label class="mh-scene-label">${t('sceneLabel')}
+              <input id="mhSceneSelect" class="mh-native-select" type="hidden" value="${state.sceneId}" aria-label="${t('selectSceneAria')}">
+              <div class="mh-select" data-select-input="mhSceneSelect" data-placeholder="${t('selectScene')}">
+                <button class="mh-select-button" type="button"><span class="mh-select-value">${t('selectScene')}</span><span class="mh-select-caret">⌄</span></button>
                 <div class="mh-select-menu" hidden></div>
               </div>
             </label>
@@ -789,57 +1228,57 @@
           <div id="mhOverlayDifficulties" class="mh-card-row"></div>
           <div id="mhEvolutionChoices" class="mh-evolution-row" hidden></div>
           <div id="mhPhantomEntryRow" class="mh-card-row" hidden>
-            <button id="mhEnterPhantom" class="mh-start test" type="button">幻影装置</button>
+            <button id="mhEnterPhantom" class="mh-start test" type="button">${t('phantomEntryBtn')}</button>
           </div>
-          <button id="mhStart" class="mh-start" type="button">开始守护</button>
+          <button id="mhStart" class="mh-start" type="button">${t('startGuard')}</button>
         </div>
       </div>
-      <button id="mhTestFab" class="mh-test-fab" type="button" hidden aria-label="打开敌人生成面板">生成</button>
-      <div id="mhTestRoutes" class="mh-test-routes" hidden aria-label="幻影装置路线切换">
+      <button id="mhTestFab" class="mh-test-fab" type="button" hidden aria-label="${t('testFabAria')}">${t('spawnFab')}</button>
+      <div id="mhTestRoutes" class="mh-test-routes" hidden aria-label="${t('testRoutesAria')}">
         ${Object.entries(TEST_ROUTE_TEMPLATES).map(([id, item]) => `<button class="mh-test-route-btn" data-route="${id}" type="button">${item.label}</button>`).join('')}
       </div>
-      <div id="mhTestMutationLabel" class="mh-test-mutation-label" hidden>当前变异：稳定</div>
-      <div id="mhTestBuffs" class="mh-test-buffs" hidden aria-label="幻影装置炮塔增益"></div>
-      <aside id="mhTestPanel" class="mh-test-panel" hidden aria-label="幻影装置生成面板">
+      <div id="mhTestMutationLabel" class="mh-test-mutation-label" hidden>${t('testMutLabel', { label: t('stable') })}</div>
+      <div id="mhTestBuffs" class="mh-test-buffs" hidden aria-label="${t('testBuffsAria')}"></div>
+      <aside id="mhTestPanel" class="mh-test-panel" hidden aria-label="${t('testPanelAria')}">
         <div class="mh-test-card">
-        <div class="mh-test-title-row"><h2>生成</h2><button id="mhTestClose" class="mh-test-close" type="button" aria-label="关闭生成面板">×</button></div>
+        <div class="mh-test-title-row"><h2>${t('testPanelTitle')}</h2><button id="mhTestClose" class="mh-test-close" type="button" aria-label="${t('testCloseAria')}">×</button></div>
         <div class="mh-test-grid">
           <div class="mh-test-field">
-            <label for="mhTestPath">路径</label>
+            <label for="mhTestPath">${t('testPath')}</label>
             <input id="mhTestPath" class="mh-native-select" type="hidden" value="0">
-            <div class="mh-select" data-select-input="mhTestPath" data-placeholder="路径 1"><button class="mh-select-button" type="button"><span class="mh-select-value">路径 1</span><span class="mh-select-caret">⌄</span></button><div class="mh-select-menu" hidden></div></div>
+            <div class="mh-select" data-select-input="mhTestPath" data-placeholder="${t('pathLabel', { n: 1 })}"><button class="mh-select-button" type="button"><span class="mh-select-value">${t('pathLabel', { n: 1 })}</span><span class="mh-select-caret">⌄</span></button><div class="mh-select-menu" hidden></div></div>
           </div>
           <div class="mh-test-field">
-            <label for="mhTestEnemy">敌人</label>
+            <label for="mhTestEnemy">${t('testEnemy')}</label>
             <input id="mhTestEnemy" class="mh-native-select" type="hidden" value="bacteria">
-            <div class="mh-select" data-select-input="mhTestEnemy" data-placeholder="细菌"><button class="mh-select-button" type="button"><span class="mh-select-value">细菌</span><span class="mh-select-caret">⌄</span></button><div class="mh-select-menu" hidden></div></div>
+            <div class="mh-select" data-select-input="mhTestEnemy" data-placeholder="${t('enemyBacteria')}"><button class="mh-select-button" type="button"><span class="mh-select-value">${t('enemyBacteria')}</span><span class="mh-select-caret">⌄</span></button><div class="mh-select-menu" hidden></div></div>
           </div>
           <div class="mh-test-field">
-            <label for="mhTestMutation">变异</label>
+            <label for="mhTestMutation">${t('testMutation')}</label>
             <input id="mhTestMutation" class="mh-native-select" type="hidden" value="">
-            <div class="mh-select" data-select-input="mhTestMutation" data-placeholder="稳定"><button class="mh-select-button" type="button"><span class="mh-select-value">稳定</span><span class="mh-select-caret">⌄</span></button><div class="mh-select-menu" hidden></div></div>
+            <div class="mh-select" data-select-input="mhTestMutation" data-placeholder="${t('stable')}"><button class="mh-select-button" type="button"><span class="mh-select-value">${t('stable')}</span><span class="mh-select-caret">⌄</span></button><div class="mh-select-menu" hidden></div></div>
           </div>
           <div class="mh-test-field">
-            <label for="mhTestCount">数量</label>
+            <label for="mhTestCount">${t('testCount')}</label>
             <input id="mhTestCount" type="number" min="1" max="40" value="6">
           </div>
           <div class="mh-test-field">
-            <label for="mhTestProgress">位置%</label>
+            <label for="mhTestProgress">${t('testProgress')}</label>
             <input id="mhTestProgress" type="number" min="0" max="98" value="18">
           </div>
           <div class="mh-test-field">
-            <label for="mhTestGap">间隔</label>
+            <label for="mhTestGap">${t('testGap')}</label>
             <input id="mhTestGap" class="mh-native-select" type="hidden" value="18">
-            <div class="mh-select" data-select-input="mhTestGap" data-placeholder="紧密"><button class="mh-select-button" type="button"><span class="mh-select-value">紧密</span><span class="mh-select-caret">⌄</span></button><div class="mh-select-menu" hidden></div></div>
+            <div class="mh-select" data-select-input="mhTestGap" data-placeholder="${t('gapTight')}"><button class="mh-select-button" type="button"><span class="mh-select-value">${t('gapTight')}</span><span class="mh-select-caret">⌄</span></button><div class="mh-select-menu" hidden></div></div>
           </div>
-          <label class="mh-test-check"><input id="mhTestFrozen" type="checkbox">静止不动</label>
+          <label class="mh-test-check"><input id="mhTestFrozen" type="checkbox">${t('testFrozen')}</label>
         </div>
         <div class="mh-test-actions">
-          <button id="mhTestSpawn" class="mh-test-btn" type="button">生成敌人</button>
-          <button id="mhTestRandomSpawn" class="mh-test-btn" type="button">随机生成</button>
-          <button id="mhTestClearEnemies" class="mh-test-btn warn" type="button">清空敌人</button>
+          <button id="mhTestSpawn" class="mh-test-btn" type="button">${t('testSpawn')}</button>
+          <button id="mhTestRandomSpawn" class="mh-test-btn" type="button">${t('testRandomSpawn')}</button>
+          <button id="mhTestClearEnemies" class="mh-test-btn warn" type="button">${t('testClearEnemies')}</button>
         </div>
-        <p class="mh-test-note">敌人、防御和变异数值来自正式配置。点击生成敌人后面板会自动关闭。</p>
+        <p class="mh-test-note">${t('testNote')}</p>
         </div>
       </aside>
     </div>`;
@@ -982,13 +1421,13 @@
     state.sceneId = id;
     applyResponsiveLayout(true);
     markRenderDirty('spots', 'hero', 'hud');
-    overlayTitleEl.textContent = `细胞免疫塔防 · ${currentScene().label}`;
+    overlayTitleEl.textContent = `${t('title')} · ${currentScene().label}`;
     overlayTextEl.textContent = helpText();
     if (sceneSelectEl && SCENE_DEFS[id]) setCustomSelectValue(sceneSelectEl, id, { silent: true });
     refreshTestPanelVisibility();
     layoutSvgStage();
     renderAll();
-    if (!silent) showToast(`已切换到${currentScene().label}场景`);
+    if (!silent) showToast(t('sceneSwitched', { label: currentScene().label }));
   }
 
   function applySceneStyle() {
@@ -1452,7 +1891,7 @@
   }
 
   function drawTowerStatLabel(tower) {
-    const text = `lv${tower.level} 伤害${towerSelfDamagePercent(tower)}%`;
+    const text = `lv${tower.level} ${t('towerInfoDmg')} ${towerSelfDamagePercent(tower)}%`;
     drawRoundRect(-44, 48, 88, 18, 9, 'rgba(8,21,36,.84)', 'rgba(103,232,249,.56)', 2);
     drawTextCanvas(text, 0, 57, 11, '#e0f2fe', 'rgba(2,6,23,.75)', 2);
   }
@@ -1613,8 +2052,8 @@
 
   function drawEnemyStatusIcons(enemy, now) {
     const icons = [];
-    if (enemy.effects?.fire?.until > now) icons.push({ label: '灼', fill: STATUS_EFFECTS.fire.color, stroke: '#fff7ed' });
-    if (enemy.effects?.toxin?.until > now) icons.push({ label: '毒', fill: STATUS_EFFECTS.toxin.color, stroke: '#dcfce7' });
+    if (enemy.effects?.fire?.until > now) icons.push({ label: t('statusIconBurn'), fill: STATUS_EFFECTS.fire.color, stroke: '#fff7ed' });
+    if (enemy.effects?.toxin?.until > now) icons.push({ label: t('statusIconPoison'), fill: STATUS_EFFECTS.toxin.color, stroke: '#dcfce7' });
     if (!icons.length) return;
     const y = enemy.maxShield > 0 ? -63 : -54;
     const startX = -icons.length * 8 + 8;
@@ -1809,13 +2248,18 @@
     ctx.bezierCurveTo(-42, 56, 42, 56, 62, 26);
     ctx.stroke();
     ctx.restore();
-    if (state.petImage && state.petImage.complete && state.petMeta) {
+    if ((state.petBitmap || state.petImage?.complete) && state.petMeta?.uv) {
       const meta = state.petMeta;
+      const source = state.petBitmap || state.petImage;
       ctx.save();
       ctx.beginPath();
       ctx.arc(0, -8, 53, 0, Math.PI * 2);
       ctx.clip();
-      ctx.drawImage(state.petImage, meta.uv.x, meta.uv.y, meta.uv.width, meta.uv.height, -56, -64, 112, 112);
+      if (state.petBitmap) {
+        ctx.drawImage(source, -56, -64, 112, 112);
+      } else {
+        ctx.drawImage(source, meta.uv.x, meta.uv.y, meta.uv.width, meta.uv.height, -56, -64, 112, 112);
+      }
       ctx.restore();
       drawCircle(0, -8, 54, null, 'rgba(224,242,254,.62)', 3);
     } else {
@@ -1839,7 +2283,7 @@
     const y = -58;
     const radius = 20;
     const coolingDown = cooldownRemaining > 0;
-    const badgeLabel = ready ? '出击' : coolingDown ? `${(cooldownRemaining / 1000).toFixed(1)}s` : `${Math.floor(chargeRatio * 100)}%`;
+    const badgeLabel = ready ? t('specialReady') : coolingDown ? `${(cooldownRemaining / 1000).toFixed(1)}s` : `${Math.floor(chargeRatio * 100)}%`;
     ctx.save();
     ctx.translate(x, y);
     if (ready) {
@@ -2119,7 +2563,7 @@
       lives: String(state.lives),
       coins: String(state.coins),
       score: String(state.score),
-      mutation: state.currentMutation ? state.currentMutation.label : '稳定',
+      mutation: state.currentMutation ? state.currentMutation.label : t('stable'),
       mutationActive: !!state.currentMutation && state.started && !state.finished,
       buildPanelHidden: !showBuildPanel,
       towerPanelHidden: !showTowerPanel,
@@ -2167,11 +2611,11 @@
     let label = '';
     let disabled = !state.started || state.finished;
     if (tower.level >= MAX_TOWER_LEVEL) {
-      label = '已满级';
+      label = t('towerInfoMaxed');
       disabled = true;
     } else if (showUpgrade) {
       const cost = upgradeCost(tower);
-      label = `升级: ${testFreeBuildActive() ? 0 : cost}`;
+      label = `${t('upgradeBtn')}: ${testFreeBuildActive() ? 0 : cost}`;
     }
     if (showUpgrade && hudCache.upgradeLabel !== label) {
       hudEls.upgradeLabel.textContent = label;
@@ -2199,7 +2643,7 @@
         btn.dataset.branch = branch.id;
         btn.className = `mh-action branch ${branch.id}`;
         syncActionIcon(btn, branchIconSvg(branch));
-        btn.setAttribute('aria-label', `${branch.label}，${branch.text}，需要 ${cost} 葡萄糖`);
+        btn.setAttribute('aria-label', t('branchAria', { label: branch.label, text: branch.text, cost }));
         btn.disabled = disabled;
       });
       hudCache.branchDisabled = disabled;
@@ -2239,9 +2683,9 @@
     const type = TOWER_TYPES[tower.type];
     if (!type) return '';
     const cost = tower.level >= MAX_TOWER_LEVEL ? 0 : upgradeCost(tower);
-    const upgradeText = tower.level >= MAX_TOWER_LEVEL ? '满级' : `升级 ${cost}G`;
-    const testText = testFreeBuildActive() && tower.level < MAX_TOWER_LEVEL ? ' · 测试 0G' : '';
-    return `<b>${type.label} lv${tower.level}</b><span>伤害 ${towerSelfDamagePercent(tower)}% · 射程 ${Math.round(towerRange(tower))}</span><span>${towerRouteText(tower)} · ${upgradeText}${testText}</span>`;
+    const upgradeText = tower.level >= MAX_TOWER_LEVEL ? t('towerInfoMaxed') : t('towerInfoUpgrade', { cost });
+    const testText = testFreeBuildActive() && tower.level < MAX_TOWER_LEVEL ? t('testFreeLabel') : '';
+    return `<b>${type.label} lv${tower.level}</b><span>${t('towerInfoDmg')} ${towerSelfDamagePercent(tower)}% · ${t('towerInfoRange')} ${Math.round(towerRange(tower))}</span><span>${towerRouteText(tower)} · ${upgradeText}${testText}</span>`;
   }
 
   function testFreeBuildActive() {
@@ -2255,7 +2699,7 @@
   function startTutorialGuide() {
     if (!state.started || state.finished || state.towers.length > 0) return;
     tutorialStep = 'spot';
-    hintEl.textContent = '先点击一个空白加号，再在底部选择防御单元';
+    hintEl.textContent = t('hintTutorialSpot');
     requestAnimationFrame(updateTutorialGuide);
   }
 
@@ -2279,7 +2723,7 @@
     const top = rect.top + rect.height / 2;
     tutorialPointerEl.style.left = `${left}px`;
     tutorialPointerEl.style.top = `${top}px`;
-    tutorialLabelEl.textContent = '点击这里';
+    tutorialLabelEl.textContent = t('clickHere');
     tutorialPointerEl.classList.toggle('tower-step', tutorialStep === 'tower');
     tutorialPointerEl.hidden = false;
   }
@@ -2349,10 +2793,10 @@
     sparkIdSeq = 1;
     renderAll();
     overlayEl.hidden = true;
-    hintEl.textContent = isPhantomDeviceActive() ? '幻影装置已启动：建造和升级 0 花费，可生成移动或静止敌人' : '点击空白加号部署防御单元；点击宠物释放白细胞';
+    hintEl.textContent = isPhantomDeviceActive() ? t('hintPhantomStart') : t('hintDefault');
     if (!isPhantomDeviceActive()) startTutorialGuide();
     postParent('gameStarted', { difficulty: state.difficulty, scene: state.sceneId, roundId: state.roundId });
-    showToast('守护开始！');
+    showToast(t('toastStart'));
     playSound('start');
     startLoop();
   }
@@ -2362,9 +2806,9 @@
     state.enemiesToSpawn = 7 + state.wave * 3 + Math.floor(state.wave / 3) + (state.currentMutation?.countBonus || 0);
     state.spawnTimer = 1;
     state.waveDelay = 0;
-    const waveText = state.currentMutation ? `第 ${state.wave} 波：${state.currentMutation.label}` : `第 ${state.wave} 波`;
+    const waveText = state.currentMutation ? t('waveText', { wave: state.wave, label: state.currentMutation.label }) : t('waveSimple', { wave: state.wave });
     floatText(view.width * .5, 90, waveText, state.currentMutation?.color || '#0f766e', 28);
-    hintEl.textContent = state.currentMutation ? `${state.currentMutation.label}：${state.currentMutation.text}` : '稳定波次，按克制关系布置防御';
+    hintEl.textContent = state.currentMutation ? `${state.currentMutation.label}: ${state.currentMutation.text}` : t('hintStableWave');
     if (state.currentMutation) {
       paths.forEach((_, pathIndex) => {
         const p = pointAt(36, pathIndex);
@@ -2742,7 +3186,7 @@
     }
     if (shot.weakHit) {
       burstAt(p.x, p.y, '#fef08a', '#f97316', 29);
-      floatText(p.x, p.y - 38, '克制!', '#ea580c', 18);
+      floatText(p.x, p.y - 38, t('floatWeakHit'), '#ea580c', 18);
       spawnSparkBurst(p.x, p.y, '#facc15', 7, 620, 150);
       playSound('weakHit');
     }
@@ -2785,7 +3229,7 @@
       remaining -= absorbed;
       if (absorbed > 0 && now - (enemy.shieldFloatAt || 0) > 520) {
         const p = enemy.x == null || enemy.y == null ? updateEnemyPosition(enemy) : enemy;
-        floatText(p.x, p.y - 52, '护膜', '#0284c7', 16);
+        floatText(p.x, p.y - 52, t('floatShield'), '#0284c7', 16);
         enemy.shieldFloatAt = now;
       }
     }
@@ -2820,7 +3264,7 @@
     animateEnergyPill();
     state.score += conf.score + state.wave * 12;
     state.specialCharge = Math.min(100, state.specialCharge + Math.min(7, 4 + state.wave * .2));
-    floatText(p.x, p.y - 18, `葡萄糖 +${coins}`, '#d97706', 20);
+    floatText(p.x, p.y - 18, t('floatGlucose', { coins }), '#d97706', 20);
     spawnGlucoseFly(p.x, p.y, coins);
     burstAt(p.x, p.y, '#fef3c7', '#f59e0b', 32);
     playSound('kill');
@@ -2850,7 +3294,7 @@
     state.coins += cfg().reward + state.wave * 8;
     animateEnergyPill();
     state.waveDelay = 0;
-    floatText(view.width * .5, 110, '守住了！选择免疫进化', '#16a34a', 25);
+    floatText(view.width * .5, 110, t('floatWaveClear'), '#16a34a', 25);
     playSound('waveClear');
     if (treatmentMode) {
       scheduleTreatmentAutoEvolution();
@@ -2881,7 +3325,7 @@
     state.awaitingEvolution = true;
     state.paused = true;
     const choice = evolutionChoices()[0];
-    hintEl.textContent = `第 ${state.wave - 1} 波已守住，正在自动准备第 ${state.wave} 波`;
+    hintEl.textContent = t('treatmentAutoHint', { prev: state.wave - 1, wave: state.wave });
     treatmentAutoEvolutionTimer = setTimeout(() => {
       treatmentAutoEvolutionTimer = 0;
       if (!state.started || state.finished || !state.awaitingEvolution) return;
@@ -2904,11 +3348,11 @@
     localStorage.setItem(STORAGE_BEST_SCORE, String(state.bestScore));
     localStorage.setItem(STORAGE_BEST_WAVE, String(state.bestWave));
     renderAll();
-    overlayTitleEl.textContent = won ? '免疫防线成功！' : '宠物基地需要支援';
+    overlayTitleEl.textContent = won ? t('winTitle') : t('loseTitle');
     overlayTextEl.textContent = won
-      ? `你的宠物主角守住了 ${MAX_WAVE} 波病原体。得分 ${state.score}。`
-      : `这次守到第 ${state.wave} 波，得分 ${state.score}。调整塔的位置，再来一次会更稳。`;
-    startBtn.textContent = '再玩一次';
+      ? t('winText', { waves: MAX_WAVE, score: state.score })
+      : t('loseText', { wave: state.wave, score: state.score });
+    startBtn.textContent = t('playAgain');
     if (sceneSelectEl) setCustomSelectValue(sceneSelectEl, state.sceneId, { silent: true });
     if (sceneRowEl) sceneRowEl.hidden = false;
     overlayEl.hidden = false;
@@ -2938,7 +3382,7 @@
     }
     state.selectedSpotIndex = index;
     state.selectedTowerId = null;
-    hintEl.textContent = '选择要部署的防御单元';
+    hintEl.textContent = t('hintSelectDefense');
     playSound('select');
     markRenderDirty('spots', 'hud');
     renderAll();
@@ -2955,7 +3399,7 @@
     const type = TOWER_TYPES[typeId];
     if (!type) return;
     if (!testFreeBuildActive() && state.coins < type.cost) {
-      showToast('葡萄糖不够');
+      showToast(t('toastNoGlucose'));
       playSound('invalid');
       return;
     }
@@ -2965,7 +3409,7 @@
     state.selectedSpotIndex = null;
     state.selectedTowerId = null;
     markRenderDirty('spots', 'hud');
-    hintEl.textContent = `${type.label}部署好了，点防御单元可以升级`;
+    hintEl.textContent = t('hintTowerBuilt', { label: type.label });
     if (tutorialStep === 'tower') completeTutorialGuide();
     burstAt(buildSpots[index].x, buildSpots[index].y, type.glow, type.color, 42);
     playSound('build');
@@ -2990,7 +3434,7 @@
       burstAt(spot.x, spot.y, type.glow, type.color, 42);
       floatText(spot.x, spot.y - 54, type.short, type.color, 22);
     }
-    hintEl.textContent = `已替换为${type.label} lv1`;
+    hintEl.textContent = t('hintTowerReplaced', { label: type.label });
     playSound('build');
     markRenderDirty('spots', 'hud');
     renderAll();
@@ -3004,11 +3448,11 @@
     state.selectedTowerId = tower.id;
     state.selectedSpotIndex = null;
     if (tower.level >= MAX_TOWER_LEVEL) {
-      hintEl.textContent = `${TOWER_TYPES[tower.type].short}已满级：${towerRouteText(tower)}；自身伤害 ${towerSelfDamagePercent(tower)}%；${globalBoostText()}`;
+      hintEl.textContent = t('hintTowerMaxed', { short: TOWER_TYPES[tower.type].short, route: towerRouteText(tower), dmg: towerSelfDamagePercent(tower), boost: globalBoostText() });
     } else if (branchTierForUpgrade(tower)) {
-      hintEl.textContent = `${TOWER_TYPES[tower.type].short}可选分支；路线：${towerRouteText(tower)}；自身伤害 ${towerSelfDamagePercent(tower)}%；${globalBoostText()}`;
+      hintEl.textContent = t('hintTowerBranch', { short: TOWER_TYPES[tower.type].short, route: towerRouteText(tower), dmg: towerSelfDamagePercent(tower), boost: globalBoostText() });
     } else {
-      hintEl.textContent = `${TOWER_TYPES[tower.type].short}已选中；路线：${towerRouteText(tower)}；自身伤害 ${towerSelfDamagePercent(tower)}%；${globalBoostText()}`;
+      hintEl.textContent = t('hintTowerSelected', { short: TOWER_TYPES[tower.type].short, route: towerRouteText(tower), dmg: towerSelfDamagePercent(tower), boost: globalBoostText() });
     }
     playSound('select');
     markRenderDirty('spots', 'hud');
@@ -3021,7 +3465,7 @@
     if (!tower) return;
     const cost = upgradeCost(tower);
     if (tower.level >= MAX_TOWER_LEVEL) {
-      hintEl.textContent = '这座塔已经满级，范围会显示出来';
+      hintEl.textContent = t('hintTowerMaxSimple');
       renderAll();
       return;
     }
@@ -3037,12 +3481,12 @@
       if (branchTier === 3) tower.tier3Branch = branch.id;
       if (branchTier === 4) tower.tier4Branch = branch.id;
       const branchText = branch ? ` · ${branch.label}` : '';
-      hintEl.textContent = `${TOWER_TYPES[tower.type].short}升级到 lv${tower.level}${branchText}；${globalBoostText()}`;
+      hintEl.textContent = t('hintTowerUpgraded', { short: TOWER_TYPES[tower.type].short, level: tower.level, branch: branchText, boost: globalBoostText() });
       burstAt(spot.x, spot.y, '#fef3c7', branch?.color || '#f59e0b', 48);
       floatText(spot.x, spot.y - 54, branch?.short || `lv${tower.level}`, branch?.color || '#0f766e', 22);
       playSound('upgrade');
     } else {
-      hintEl.textContent = `升级需要 ${cost} 葡萄糖`;
+      hintEl.textContent = t('hintNeedGlucose', { cost });
       playSound('invalid');
     }
     renderAll();
@@ -3052,11 +3496,11 @@
     if (!isPhantomDeviceActive()) return;
     const tower = selectedTower();
     if (!tower) {
-      showToast('先选择一座塔');
+      showToast(t('toastSelectTower'));
       return;
     }
     if (tower.level <= 1) {
-      showToast('已经是 1 级');
+      showToast(t('toastAlreadyLv1'));
       return;
     }
     if (tower.level === 4) delete tower.tier4Branch;
@@ -3065,7 +3509,7 @@
     tower.level--;
     const spot = buildSpots[tower.spotIndex];
     if (spot) floatText(spot.x, spot.y - 54, `lv${tower.level}`, '#0f766e', 20);
-    hintEl.textContent = `${TOWER_TYPES[tower.type].short}降级到 lv${tower.level}`;
+    hintEl.textContent = t('hintTowerDowngraded', { short: TOWER_TYPES[tower.type].short, level: tower.level });
     markRenderDirty('spots', 'hud');
     renderAll();
   }
@@ -3074,7 +3518,7 @@
     if (!isPhantomDeviceActive()) return;
     const tower = selectedTower();
     if (!tower) {
-      showToast('先选择一座塔');
+      showToast(t('toastSelectTower'));
       return;
     }
     const spot = buildSpots[tower.spotIndex];
@@ -3082,7 +3526,7 @@
     state.selectedTowerId = null;
     state.selectedSpotIndex = null;
     if (spot) burstAt(spot.x, spot.y, '#ccfbf1', '#0f766e', 38);
-    hintEl.textContent = '已删除选中的测试塔';
+    hintEl.textContent = t('hintTowerDeleted');
     markRenderDirty('spots', 'hud');
     renderAll();
   }
@@ -3091,7 +3535,7 @@
     if (!state.selectedTowerId && state.selectedSpotIndex == null) return;
     state.selectedTowerId = null;
     state.selectedSpotIndex = null;
-    hintEl.textContent = '点击空白加号部署防御单元；点击宠物释放白细胞';
+    hintEl.textContent = t('hintDefault');
     markRenderDirty('spots', 'hud');
     renderAll();
     if (tutorialStep === 'tower') {
@@ -3138,19 +3582,19 @@
     if (tier2) parts.push(tier2);
     if (tier3) parts.push(tier3);
     if (tier4) parts.push(tier4);
-    return parts.length ? parts.join(' / ') : '未分化';
+    return parts.length ? parts.join(' / ') : t('routeUndiff');
   }
 
   function globalBoostText() {
     const evo = state.evolutions;
-    if (!evo) return '进化：无';
+    if (!evo) return t('evoNone');
     const parts = [];
-    if (evo.acornDamage > 0) parts.push(`胶囊 +${Math.round(evo.acornDamage * 100)}%`);
-    if (evo.bubbleSlowMs > 0) parts.push(`减速 +${evo.bubbleSlowMs}ms`);
-    if (evo.flowerSplash > 0) parts.push(`溅射 +${evo.flowerSplash}`);
-    if (evo.heroRate > 1) parts.push(`宠物攻速 +${Math.round((evo.heroRate - 1) * 100)}%`);
-    if (evo.globalRange > 0) parts.push(`全域 +${evo.globalRange}`);
-    return parts.length ? `进化：${parts.join(' / ')}` : '进化：无';
+    if (evo.acornDamage > 0) parts.push(t('evoCapsule', { pct: Math.round(evo.acornDamage * 100) }));
+    if (evo.bubbleSlowMs > 0) parts.push(t('evoSlow', { ms: evo.bubbleSlowMs }));
+    if (evo.flowerSplash > 0) parts.push(t('evoSplash', { val: evo.flowerSplash }));
+    if (evo.heroRate > 1) parts.push(t('evoHeroRate', { pct: Math.round((evo.heroRate - 1) * 100) }));
+    if (evo.globalRange > 0) parts.push(t('evoGlobalRange', { val: evo.globalRange }));
+    return parts.length ? `${t('evoPrefix')}${parts.join(' / ')}` : t('evoNone');
   }
 
   function towerFireInterval(tower) {
@@ -3248,7 +3692,7 @@
     state.specialCooldown = performance.now() + SPECIAL_COOLDOWN_MS;
     spawnWhiteCellTroop();
     burstAt(currentLayout.hero.x, currentLayout.hero.y, '#e0f2fe', '#7c3aed', 118);
-    floatText(currentLayout.hero.x, currentLayout.hero.y - 77, '白细胞部队出击！', '#7c3aed', 25);
+    floatText(currentLayout.hero.x, currentLayout.hero.y - 77, t('specialTroop'), '#7c3aed', 25);
     playSound('special');
     renderAll();
   }
@@ -3261,8 +3705,8 @@
       return;
     }
     hintEl.textContent = cooldownRemaining
-      ? `白细胞冷却中 ${(cooldownRemaining / 1000).toFixed(1)} 秒，准备好后才能再次出击`
-      : `白细胞蓄能 ${Math.floor(state.specialCharge)}%，击败病原体继续积攒`;
+      ? t('hintSpecialCooldown', { sec: (cooldownRemaining / 1000).toFixed(1) })
+      : t('hintSpecialCharge', { pct: Math.floor(state.specialCharge) });
     burstAt(currentLayout.gate.x, currentLayout.gate.y, '#ede9fe', '#7c3aed', 62);
     playSound('specialHint');
     renderAll();
@@ -3412,13 +3856,13 @@
 
   function evolutionPool() {
     return [
-      { id: 'acornDamage', title: '抗生素增效', desc: '抗生素胶囊伤害 +18%' },
-      { id: 'bubbleSlow', title: '长效针剂', desc: '抗体针剂减速时间 +0.45秒' },
-      { id: 'flowerSplash', title: '单抗扩散', desc: '单抗溅射范围 +18' },
-      { id: 'heroRate', title: '宠物专注', desc: '宠物主角攻速 +16%' },
-      { id: 'globalRange', title: '免疫感知', desc: '全部防御范围 +10' },
-      { id: 'repair', title: '组织修复', desc: '立即恢复 2 点基地生命' },
-      { id: 'coins', title: '葡萄糖爆发', desc: '立即获得 90 葡萄糖' }
+      { id: 'acornDamage', title: t('evoAcornTitle'), desc: t('evoAcornDesc') },
+      { id: 'bubbleSlow', title: t('evoBubbleTitle'), desc: t('evoBubbleDesc') },
+      { id: 'flowerSplash', title: t('evoFlowerTitle'), desc: t('evoFlowerDesc') },
+      { id: 'heroRate', title: t('evoHeroTitle'), desc: t('evoHeroDesc') },
+      { id: 'globalRange', title: t('evoRangeTitle'), desc: t('evoRangeDesc') },
+      { id: 'repair', title: t('evoRepairTitle'), desc: t('evoRepairDesc') },
+      { id: 'coins', title: t('evoCoinsTitle'), desc: t('evoCoinsDesc') }
     ];
   }
 
@@ -3453,8 +3897,8 @@
       btn.onclick = () => chooseEvolution(choice.id, choice.title);
       evolutionChoicesEl.appendChild(btn);
     });
-    overlayTitleEl.textContent = '免疫进化';
-    overlayTextEl.textContent = `第 ${state.wave - 1} 波已守住。选择一种进化，准备迎接第 ${state.wave} 波。`;
+    overlayTitleEl.textContent = t('evoTitle');
+    overlayTextEl.textContent = t('evoPrompt', { prev: state.wave - 1, wave: state.wave });
     document.getElementById('mhOverlayDifficulties').hidden = true;
     if (sceneRowEl) sceneRowEl.hidden = true;
     if (phantomEntryRowEl) phantomEntryRowEl.hidden = true;
@@ -3476,9 +3920,9 @@
     document.getElementById('mhOverlayDifficulties').hidden = false;
     if (sceneRowEl) sceneRowEl.hidden = false;
     refreshTestPanelVisibility();
-    hintEl.textContent = `${title} 生效；${globalBoostText()}；下一波即将到来`;
+    hintEl.textContent = t('evoActive', { title, boost: globalBoostText() });
     markRenderDirty('hero', 'hud');
-    showToast(`${title} 已激活`);
+    showToast(t('evoActivated', { title }));
     playSound('evolution');
     renderAll();
     startLoop();
@@ -3504,9 +3948,9 @@
     document.getElementById('mhOverlayDifficulties').hidden = false;
     if (sceneSelectEl) setCustomSelectValue(sceneSelectEl, state.sceneId, { silent: true });
     if (sceneRowEl) sceneRowEl.hidden = false;
-    overlayTitleEl.textContent = `细胞免疫塔防 · ${currentScene().label}`;
+    overlayTitleEl.textContent = `${t('title')} · ${currentScene().label}`;
     overlayTextEl.textContent = helpText();
-    startBtn.textContent = state.started && !state.finished ? '继续守护' : '开始守护';
+    startBtn.textContent = state.started && !state.finished ? t('continueGuard') : t('startGuard');
     refreshTestPanelVisibility();
     overlayEl.hidden = false;
     if (helpOnly && state.started && !state.finished) state.paused = true;
@@ -3567,11 +4011,11 @@
     document.addEventListener('pointerdown', closeCustomSelects);
     setCustomSelectOptions(sceneSelectEl, SCENE_ORDER.map(id => ({ value: id, label: SCENE_DEFS[id].label })), { value: state.sceneId, silent: true });
     setCustomSelectOptions(testGapEl, [
-      { value: '0', label: '重叠' },
-      { value: '18', label: '紧密' },
-      { value: '36', label: '标准' },
-      { value: '72', label: '宽' },
-      { value: '120', label: '很宽' }
+      { value: '0', label: t('gapOverlap') },
+      { value: '18', label: t('gapTight') },
+      { value: '36', label: t('gapNormal') },
+      { value: '72', label: t('gapWide') },
+      { value: '120', label: t('gapVeryWide') }
     ], { value: String(state.testSpawnGap), silent: true });
   }
 
@@ -3663,11 +4107,11 @@
   function bindTestControls() {
     if (!IS_LIVE_PREVIEW) return;
     if (testEnemyEl) {
-      setCustomSelectOptions(testEnemyEl, ENEMY_TYPES.map(enemy => ({ value: enemy.kind, label: ENEMY_TRAITS[enemy.kind]?.label || enemy.kind })).concat([{ value: 'eliteShield', label: '精英（护盾）' }, { value: 'eliteArmor', label: '精英（护甲）' }]), { value: state.testSpawnKind, silent: true });
+      setCustomSelectOptions(testEnemyEl, ENEMY_TYPES.map(enemy => ({ value: enemy.kind, label: ENEMY_TRAITS[enemy.kind]?.label || enemy.kind })).concat([{ value: 'eliteShield', label: t('eliteShield') }, { value: 'eliteArmor', label: t('eliteArmor') }]), { value: state.testSpawnKind, silent: true });
       testEnemyEl.onchange = () => { state.testSpawnKind = testEnemyEl.value; };
     }
     if (testMutationEl) {
-      setCustomSelectOptions(testMutationEl, [{ value: '', label: '稳定' }].concat(MUTATION_TYPES.map(mutation => ({ value: mutation.id, label: mutation.label }))), { value: state.testMutationId, silent: true });
+      setCustomSelectOptions(testMutationEl, [{ value: '', label: t('stable') }].concat(MUTATION_TYPES.map(mutation => ({ value: mutation.id, label: mutation.label }))), { value: state.testMutationId, silent: true });
       testMutationEl.onchange = () => { state.testMutationId = testMutationEl.value; };
     }
     root.querySelectorAll('.mh-test-route-btn').forEach((btn) => {
@@ -3697,7 +4141,7 @@
     layoutSvgStage();
     applyResponsiveLayout(true);
     startGame({ testMode: true });
-    showToast('幻影装置已启动');
+    showToast(t('toastPhantomStart'));
   }
 
   function refreshTestPanelVisibility() {
@@ -3727,7 +4171,7 @@
   function updateTestMutationLabel() {
     if (!testMutationLabelEl) return;
     const mutation = MUTATION_TYPES.find(item => item.id === state.testMutationId) || state.currentMutation;
-    testMutationLabelEl.textContent = `当前变异：${mutation ? mutation.label : '稳定'}`;
+    testMutationLabelEl.textContent = t('testMutLabel', { label: mutation ? mutation.label : t('stable') });
   }
 
   function openTestSpawnPanel() {
@@ -3756,14 +4200,14 @@
     refreshTestPathOptions();
     markRenderDirty('spots', 'hero', 'hud');
     renderAll();
-    showToast('路线已切换');
+    showToast(t('toastRouteSwitched'));
   }
 
   function refreshTestPathOptions() {
     if (!testPathEl) return;
     const count = Math.max(1, pathInfos?.length || 1);
     const selected = Math.max(0, Math.min(count - 1, Number(state.testSpawnPathIndex || 0)));
-    setCustomSelectOptions(testPathEl, Array.from({ length: count }, (_, index) => ({ value: String(index), label: `路径 ${index + 1}` })), { value: String(selected), silent: true });
+    setCustomSelectOptions(testPathEl, Array.from({ length: count }, (_, index) => ({ value: String(index), label: t('pathLabel', { n: index + 1 }) })), { value: String(selected), silent: true });
     state.testSpawnPathIndex = selected;
   }
 
@@ -3800,7 +4244,7 @@
     closeTestSpawnPanel();
     markRenderDirty('hud');
     renderAll();
-    showToast(frozen ? '已放置静止敌人' : '已生成敌人');
+    showToast(frozen ? t('toastPlacedFrozen') : t('toastSpawned'));
   }
 
   function randomSpawnTestEnemies() {
@@ -3825,7 +4269,7 @@
     state.shots = [];
     enemyById.clear();
     renderAll();
-    showToast('敌人已清空');
+    showToast(t('toastCleared'));
   }
 
   function renderTestBuffControls() {
@@ -3850,7 +4294,7 @@
     } else {
       removeTestEvolution(id);
     }
-    hintEl.textContent = `幻影装置：${globalBoostText()}`;
+    hintEl.textContent = t('phantomHint', { boost: globalBoostText() });
     markRenderDirty('spots', 'hero', 'hud');
     refreshTestBuffControls();
     renderAll();
@@ -3925,36 +4369,61 @@
     if (msg.type === 'setGameConfig' && msg.data) {
       if (msg.data.difficulty) setDifficulty(msg.data.difficulty);
       if (msg.data.scene) setScene(msg.data.scene, { silent: true });
+      if (msg.data.petId) requestPetImage(msg.data.petId);
       return;
     }
-    if (msg.type === 'haqi_pet_image' && msg.ok && msg.data) {
+    if (msg.type === 'haqi_pet_image' && msg.ok && msg.data && (!state.petRequestId || !msg.requestId || msg.requestId === state.petRequestId || msg.requestId === 'active_pet_config')) {
       await setPetImage(msg.data);
+    }
+    if (msg.type === 'haqi_pet_images' && msg.ok) {
+      const firstPet = Array.isArray(msg.data?.pets) ? msg.data.pets[0] : null;
+      if (firstPet) await setPetImage(firstPet);
     }
   }
 
-  async function requestPetImage() {
+  async function requestPetImage(petId = '') {
+    const requestId = `pet_td_${Date.now()}`;
+    state.petRequestId = requestId;
     try {
-      window.parent.postMessage({ type: 'haqi_get_pet_image', requestId: `pet_td_${Date.now()}`, anim: 'happy' }, '*');
+      window.parent.postMessage({ type: 'haqi_get_pet_image', requestId, anim: 'happy', petId: petId || undefined }, '*');
     } catch (_) {}
+    setTimeout(() => {
+      if (state.petBitmap || state.petImage) return;
+      try {
+        window.parent.postMessage({ type: 'haqi_get_pet_images', requestId: `pet_td_all_${Date.now()}`, anim: 'happy' }, '*');
+      } catch (_) {}
+    }, 900);
   }
 
   async function setPetImage(pet) {
+    cleanupPetImage();
+    if (!pet?.imageBlob || !pet?.uv) return;
     try {
-      if (state.petUrl) URL.revokeObjectURL(state.petUrl);
       state.petUrl = URL.createObjectURL(pet.imageBlob);
       state.petMeta = pet;
-      state.petImage = new Image();
-      state.petImage.onload = () => renderAll();
-      state.petImage.src = state.petUrl;
+      if (window.createImageBitmap) {
+        state.petBitmap = await createImageBitmap(pet.imageBlob, pet.uv.x, pet.uv.y, pet.uv.width, pet.uv.height);
+      } else {
+        state.petImage = new Image();
+        state.petImage.onload = () => renderAll();
+        state.petImage.src = state.petUrl;
+      }
       markRenderDirty('hero');
       renderAll();
     } catch (_) {
-      state.petUrl = '';
-      state.petMeta = null;
-      state.petImage = null;
+      cleanupPetImage();
       markRenderDirty('hero');
       renderAll();
     }
+  }
+
+  function cleanupPetImage() {
+    if (state.petBitmap?.close) state.petBitmap.close();
+    state.petBitmap = null;
+    state.petImage = null;
+    state.petMeta = null;
+    if (state.petUrl) URL.revokeObjectURL(state.petUrl);
+    state.petUrl = '';
   }
 
   function postParent(type, data = {}) {
@@ -3999,7 +4468,7 @@
       clearTreatmentAutoEvolution();
       state.awaitingEvolution = true;
       state.paused = true;
-      hintEl.textContent = '治疗完成，等待你的选择';
+      hintEl.textContent = t('treatmentDone');
       return;
     }
     if (msg.type === 'treatmentContinue' && state.started && !state.finished && state.awaitingEvolution) {

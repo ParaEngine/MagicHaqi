@@ -23,7 +23,7 @@ export function renderChat(panel, { pet }, { onBack } = {}) {
                 ${petArtHtml(pet, { alt: '', motion: 'idle' })}
             </div>
             <div id="mhChatScroll" class="absolute" style="inset:0;overflow-y:auto;padding:12px;display:flex;flex-direction:column;gap:8px;position:absolute;z-index:1">
-                <div class="chat-bubble pet">${escapeHtml(displayPetName(pet))} 摇着尾巴跑过来啦 ✨</div>
+                <div class="chat-bubble pet">${escapeHtml(t('petGreeting', { name: displayPetName(pet) }))}</div>
             </div>
         </div>
         <div style="position:absolute;left:0;right:0;bottom:0;padding:8px;display:flex;gap:6px;background:var(--topbar-bg);border-top:1px solid var(--border)">
@@ -66,18 +66,18 @@ export function renderChat(panel, { pet }, { onBack } = {}) {
                 scroll.scrollTop = scroll.scrollHeight;
             });
             if (!full) {
-                replyEl.textContent = '（喵？我有点没听清~）';
-                full = '（沉默）';
+                replyEl.textContent = t('petConfused');
+                full = t('petSilent');
             } else if (replyEl.textContent === t('petThinking')) {
                 replyEl.textContent = full;
             }
             replyEl.style.opacity = '1';
             // 异步写入 log + memory，不阻塞 UI
-            appendChatLog(pet.id, '主人', text).catch(()=>{});
+            appendChatLog(pet.id, t('chatSenderOwner'), text).catch(()=>{});
             appendChatLog(pet.id, pet.name, full).catch(()=>{});
             summarizeAndAppendMemory(pet, text, full).catch(()=>{});
         } catch (e) {
-            replyEl.textContent = '（出错了：' + (e?.message || e) + '）';
+            replyEl.textContent = t('chatError', { error: (e?.message || e) });
             replyEl.style.opacity = '1';
         } finally {
             busy = false;
@@ -100,7 +100,7 @@ export function renderChat(panel, { pet }, { onBack } = {}) {
 
 async function launchVoice(pet) {
     if (typeof window.DigitalHuman !== 'function') {
-        showToast('数字人模块未加载', 'error');
+        showToast(t('digitalHumanMissing'), 'error');
         return;
     }
     teardownVoice();
@@ -134,9 +134,9 @@ async function launchVoice(pet) {
         } else if (typeof dhInstance.setActive === 'function') {
             await dhInstance.setActive(true);
         }
-        showToast('语音对话已开启', 'success');
+        showToast(t('voiceStarted'), 'success');
     } catch (e) {
-        showToast('启动语音失败：' + (e?.message || e), 'error');
+        showToast(t('voiceStartFailed', { error: (e?.message || e) }), 'error');
         teardownVoice();
     }
 }

@@ -11,8 +11,9 @@
 //   <prefix>/assets/...
 //   <prefix>/minigames/... etc.
 //
-// Run `npm run build` first so dist/ and release/MagicHaqi_v1.html exist.
+// Run `npm run build` first so dist/ exists.
 
+import crypto from 'node:crypto';
 import { spawnSync } from 'node:child_process';
 import fs from 'node:fs';
 import path from 'node:path';
@@ -22,7 +23,9 @@ const projectRoot = path.dirname(fileURLToPath(import.meta.url));
 const repoRoot = path.resolve(projectRoot, '..', '..', '..', '..');
 
 const distDir = path.join(projectRoot, 'dist');
-const releaseHtmlPath = path.join(projectRoot, 'release', 'MagicHaqi_v1.html');
+const releaseDir = path.join(projectRoot, 'release');
+const releaseHtmlName = 'MagicHaqi_v1.html';
+const releaseHtmlPath = path.join(releaseDir, releaseHtmlName);
 const uploaderPath = path.join(
     repoRoot,
     '.github',
@@ -30,6 +33,23 @@ const uploaderPath = path.join(
     'upload-deploy-cdn-files',
     'qiniu_upload_local_files.py',
 );
+
+// CDN release configuration. The entry HTML emitted into `release/` gets a
+// `<base>` tag pointing at a content-hashed CDN folder. Because the built
+// `dist/MagicHaqi.html` references its assets with relative URLs
+// (`./assets/...`), the `<base>` tag makes every relative asset/fetch resolve
+// against the immutable CDN hash folder. Upload `dist/` to that folder and the
+// release HTML served from keepwork.com will pull everything from CDN.
+const cdnReleaseBase = 'https://cdn.keepwork.com/maisi/magichaqi/release';
+
+// Planet-specific release HTML variants. Each gets an inline script that sets
+// `window.__homePlanet` before the app boots, so the game loads the matching
+// star-settlement planet automatically.
+const planetReleaseVariants = [
+    { name: 'MagicHaqi_haqi.html', homePlanet: 'haqi' },
+    { name: 'MagicHaqi_maisi.html', homePlanet: 'maisi' },
+    { name: 'MagicHaqi_pixlet.html', homePlanet: 'pixlet' },
+];
 
 function fail(message) {
     console.error(`\n[uploadRelease] ${message}\n`);
@@ -39,20 +59,73 @@ function fail(message) {
 if (!fs.existsSync(distDir)) {
     fail("dist/ not found. Run `npm run build` first.");
 }
-if (!fs.existsSync(releaseHtmlPath)) {
-    fail("release/MagicHaqi_v1.html not found. Run `npm run build` first.");
-}
 if (!fs.existsSync(uploaderPath)) {
     fail(`Uploader script not found: ${uploaderPath}`);
 }
 
-// Extract the <base href="..."> from the release HTML.
-const releaseHtml = fs.readFileSync(releaseHtmlPath, 'utf8');
-const baseMatch = releaseHtml.match(/<base\b[^>]*\bhref=["']([^"']+)["']/i);
-if (!baseMatch) {
-    fail('No <base href> tag found in release/MagicHaqi_v1.html.');
+// Compute a stable content hash for the build so each publish gets a unique,
+// immutable CDN folder. Hash the emitted JS + CSS asset bytes plus the entry
+// HTML so any change in code, styles, or markup yields a new hash.
+function computeReleaseHash() {
+    const hash = crypto.createHash('sha256');
+    const htmlPath = path.join(distDir, 'MagicHaqi.html');
+    if (fs.existsSync(htmlPath)) hash.update(fs.readFileSync(htmlPath));
+
+    const assetsDir = path.join(distDir, 'assets');
+    if (fs.existsSync(assetsDir)) {
+        const assetNames = fs
+            .readdirSync(assetsDir)
+            .filter((name) => name.endsWith('.js') || name.endsWith('.css'))
+            .sort();
+        for (const name of assetNames) {
+            hash.update(name);
+            hash.update(fs.readFileSync(path.join(assetsDir, name)));
+        }
+    }
+    return hash.digest('hex').slice(0, 12);
 }
-const baseHref = baseMatch[1];
+
+// Generate release HTML files with the content-hashed CDN base tag.
+function generateReleaseHtml() {
+    const htmlPath = path.join(distDir, 'MagicHaqi.html');
+    if (!fs.existsSync(htmlPath)) {
+        fail('dist/MagicHaqi.html not found. Run `npm run build` first.');
+    }
+
+    const releaseHash = computeReleaseHash();
+    const baseHref = `${cdnReleaseBase}/${releaseHash}/`;
+    const baseTag = `  <base href="${baseHref}">\n`;
+
+    let html = fs.readFileSync(htmlPath, 'utf8');
+    // Avoid duplicating a base tag and ensure it is the first element in
+    // <head> so it applies to every subsequent relative URL.
+    html = html.replace(/[ \t]*<base\b[^>]*>\s*\n?/i, '');
+    html = html.replace(/<head>/i, `<head>\n${baseTag}`);
+
+    fs.mkdirSync(releaseDir, { recursive: true });
+    fs.writeFileSync(releaseHtmlPath, html);
+    console.log(`[uploadRelease] Generated release/${releaseHtmlName} -> <base href="${baseHref}">`);
+
+    // Generate planet-specific variants with an inline script that sets
+    // `window.__homePlanet` before the app boots.
+    for (const variant of planetReleaseVariants) {
+        const planetScript = `  <script>window.__homePlanet='${variant.homePlanet}';</script>\n`;
+        let planetHtml = html;
+        // Insert the planet script in <head> so it runs before the app
+        // module initializes.
+        planetHtml = planetHtml.replace(
+            /<\/head>/i,
+            `${planetScript}</head>`,
+        );
+        const variantPath = path.join(releaseDir, variant.name);
+        fs.writeFileSync(variantPath, planetHtml);
+        console.log(`[uploadRelease] Generated release/${variant.name} -> home_planet=${variant.homePlanet}`);
+    }
+
+    return baseHref;
+}
+
+const baseHref = generateReleaseHtml();
 
 // Derive the remote prefix: strip scheme + host, keep the path, ensure a single
 // trailing slash and no leading slash (the Python uploader expects a prefix

@@ -1,6 +1,7 @@
 // Level 1 — Field：星球表面（陆 / 水 / 空 三大生态）
 
 import { $, $$, coinIconSvg, dockDisabledAttrs, escapeHtml, isDockButtonDisabled, renderVisualAsset, setDockButtonDisabled, showDockDisabledToast, showToast } from './utils.js';
+import { itemName, t, localizeFieldName } from './i18n.js';
 import { canPlaceItemInArea, CONFIG, DECO_VISUALS, findLargestHouseInLayout, getPlacedItemZOrder, getPlanetMiningCoins, getPlanetMiningConfig, getPlanetMiningVisualCoinCount, getShopItemById, isHouseItem, recordPlanetMiningFieldCollected, SHOP_ITEMS } from './config.js';
 import { getActivePlanetWeather, isVisitingMode, notify, state, setCurrentField } from './state.js';
 import { getLayout, saveFieldScenesDebounced, savePetDebounced, saveUserProfileDebounced } from './storage.js';
@@ -45,6 +46,7 @@ const FIELD_PET_BASE_SIZE_PX = 96;
 const FIELD_PET_REPEL_MIN_X = 0.058;
 const FIELD_PET_REPEL_MIN_Y = 0.155;
 const FIELD_PET_REPEL_MIN_GAP = 0.018;
+const VISIT_FIELD_MAX_PLANET_GUEST_PETS = 3;
 const NEAR_ACTIVE_PET_MIN_RADIUS = 0.055;
 const NEAR_ACTIVE_PET_RANDOM_RADIUS = 0.065;
 const NEAR_ACTIVE_PET_Y_SCALE = 0.82;
@@ -59,13 +61,13 @@ const FIELD_FINGER_HIT_SAMPLE_POINTS = [
 ];
 const FIELD_IMAGE_ALPHA_HIT_THRESHOLD = 24;
 const FIELD_IMAGE_ALPHA_AABB_CACHE = new Map();
-const DRAG_TO_SCENE_HINT = '拖动到场景中';
-const FIELD_DRAG_EXISTING_HINT = '拖动物品可移动，拖到底部可收回';
+const DRAG_TO_SCENE_HINT = () => t('dragToScene');
+const FIELD_DRAG_EXISTING_HINT = () => t('dragMoveHint');
 const FIELD_BUILD_CATEGORIES = [
-    { id: 'houses', name: '房屋' },
-    { id: 'backgrounds', name: '背景' },
-    { id: 'effects', name: '特效' },
-    { id: 'music', name: '音乐' },
+    { id: 'houses', nameKey: 'buildHouse' },
+    { id: 'backgrounds', nameKey: 'buildBackground' },
+    { id: 'effects', nameKey: 'buildEffect' },
+    { id: 'music', nameKey: 'buildMusic' },
 ];
 const FIELD_EFFECT_EMOJIS = {
     sparkle: '✨',
@@ -1034,13 +1036,13 @@ function updateCleanPoopsButton(pet) {
     const coinCount = getFieldMiningCoinsInField(state.currentField, pet).length;
     const totalCount = poopCount + coinCount;
     const isUrgent = poopCount > CONFIG.poopWarningThreshold;
-    setDockButtonDisabled(cleanBtn, totalCount === 0, '当前场景没有需要清理的便便或金币。出现后，再点击清理可统一收集。');
+    setDockButtonDisabled(cleanBtn, totalCount === 0, t('cleanDisabledReason'));
     cleanBtn.classList.toggle('is-urgent', isUrgent && totalCount > 0);
     cleanBtn.title = isUrgent
-        ? `当前场景有 ${poopCount} 坨便便，花 ${CONFIG.poopMachineCostCoins} 金币启动机器清理成生物燃料`
+        ? t('cleanUrgentTitle', { count: poopCount, cost: CONFIG.poopMachineCostCoins })
         : (poopCount > 0
-            ? `花 ${CONFIG.poopMachineCostCoins} 金币启动机器，统一清理便便和散落金币`
-            : '统一收集当前场景里的散落金币');
+            ? t('cleanPoopTitle', { cost: CONFIG.poopMachineCostCoins })
+            : t('cleanCoinsTitle'));
 }
 
 function updateBiofuelHud() {
@@ -1089,15 +1091,15 @@ function renderFieldActionTray(pet) {
             <div class="mh-dock-row mh-scroll-x dock-action-row visit-field-actions">
                 <button type="button" class="btn-secondary action-btn dock-icon-btn" data-field-action="visit-wave">
                     <span class="dock-icon">👋</span>
-                    <span class="dock-label">打招呼</span>
+                    <span class="dock-label">${escapeHtml(t('dockVisitWave'))}</span>
                 </button>
                 <button type="button" class="btn-secondary action-btn dock-icon-btn" data-field-action="visit-photo">
                     <span class="dock-icon">📷</span>
-                    <span class="dock-label">合影</span>
+                    <span class="dock-label">${escapeHtml(t('dockVisitPhoto'))}</span>
                 </button>
                 <button type="button" class="btn-secondary action-btn dock-icon-btn" data-field-action="visit-return">
                     <span class="dock-icon">🚀</span>
-                    <span class="dock-label">返航</span>
+                    <span class="dock-label">${escapeHtml(t('dockVisitReturn'))}</span>
                 </button>
             </div>
         `;
@@ -1106,34 +1108,34 @@ function renderFieldActionTray(pet) {
     const sleepAction = getPetSleepActionState(pet);
     const isEgg = pet?.stage === 'egg';
     const playDisabled = isEgg;
-    const playTitle = isEgg ? '蛋还没有孵化，先喂食让它孵化后再玩耍。' : (sleeping ? '玩耍会唤醒宠物。' : '');
+    const playTitle = isEgg ? t('eggHatchBeforePlay') : (sleeping ? t('playWillWake') : '');
     const hatchingDisabled = sleeping || isEgg;
-    const hatchingTitle = isEgg ? '蛋阶段先在当前场景喂食孵化，孵化完成后再进入孵化仓。' : (sleeping ? sleepingInteractionText(pet) : '');
+    const hatchingTitle = isEgg ? t('eggHatchBeforePod') : (sleeping ? sleepingInteractionText(pet) : '');
     const sleepDisabled = isEgg || sleepAction.disabled;
-    const sleepTitle = isEgg ? '蛋还没有孵化，先喂食让它孵化后再睡觉。' : sleepAction.title;
+    const sleepTitle = isEgg ? t('eggHatchBeforeSleep') : sleepAction.title;
     const poopCount = getPoopsInField(pet).length;
     const coinCount = getFieldMiningCoinsInField(state.currentField, pet).length;
     const cleanCount = poopCount + coinCount;
     const urgentClass = hasTooManyPoops(pet) ? ' is-urgent' : '';
     const cleanTitle = hasTooManyPoops(pet)
-        ? `当前场景有 ${poopCount} 坨便便，花 ${CONFIG.poopMachineCostCoins} 金币启动机器清理成生物燃料`
+        ? t('cleanUrgentTitle', { count: poopCount, cost: CONFIG.poopMachineCostCoins })
         : (poopCount > 0
-            ? `花 ${CONFIG.poopMachineCostCoins} 金币启动机器，统一清理便便和散落金币`
-            : '统一收集当前场景里的散落金币');
-    const cleanDisabledReason = '当前场景没有需要清理的便便或金币。出现后，再点击清理可统一收集。';
+            ? t('cleanPoopTitle', { cost: CONFIG.poopMachineCostCoins })
+            : t('cleanCoinsTitle'));
+    const cleanDisabledReason = t('cleanDisabledReason');
     return `
         <div class="mh-dock-row mh-scroll-x dock-action-row">
             <button type="button" class="btn-secondary action-btn dock-icon-btn mh-decor-action mh-field-mode-toggle" id="mhFieldDecorBtn">
                 <span class="dock-icon">🛠</span>
-                <span class="dock-label">建造</span>
+                <span class="dock-label">${escapeHtml(t('dockBuild'))}</span>
             </button>
             <button type="button" class="btn-secondary action-btn dock-icon-btn mh-field-clean-action${urgentClass}${cleanCount ? '' : ' is-sleep-disabled'}" id="mhFieldCleanPoopsBtn"${dockDisabledAttrs(!cleanCount, cleanDisabledReason)} title="${escapeHtml(cleanTitle)}">
                 <span class="dock-icon">♻️</span>
-                <span class="dock-label">清理</span>
+                <span class="dock-label">${escapeHtml(t('dockClean'))}</span>
             </button>
             <button type="button" class="btn-secondary action-btn dock-icon-btn mh-field-nav-action${playDisabled ? ' is-sleep-disabled' : ''}" data-field-nav="minigames"${dockDisabledAttrs(playDisabled, playTitle)} title="${escapeHtml(playTitle)}">
                 <span class="dock-icon">🎾</span>
-                <span class="dock-label">玩耍</span>
+                <span class="dock-label">${escapeHtml(t('dockPlay'))}</span>
             </button>
             <button type="button" class="btn-secondary action-btn dock-icon-btn mh-field-action${sleepDisabled ? ' is-sleep-disabled' : ''}" data-field-action="sleep"${dockDisabledAttrs(sleepDisabled, sleepTitle)} title="${escapeHtml(sleepTitle)}">
                 <span class="dock-icon">${sleepAction.icon}</span>
@@ -1141,7 +1143,7 @@ function renderFieldActionTray(pet) {
             </button>
             <button type="button" class="btn-secondary action-btn dock-icon-btn mh-field-nav-action${hatchingDisabled ? ' is-sleep-disabled' : ''}" data-field-nav="hatching"${dockDisabledAttrs(hatchingDisabled, hatchingTitle)} title="${escapeHtml(hatchingTitle)}">
                 <span class="dock-icon">🥚</span>
-                <span class="dock-label">孵化仓</span>
+                <span class="dock-label">${escapeHtml(t('dockHatchPod'))}</span>
             </button>
         </div>
     `;
@@ -1156,19 +1158,19 @@ function renderFieldDecorTray(inv, currentField) {
     const shopButton = `
         <button type="button" class="shop-item mh-field-shop-button" data-field-shop="outdoor" style="min-width:62px;padding:6px;flex-shrink:0">
             <div class="emoji shop-item-visual shop-item-emoji">🛒</div>
-            <div class="name" style="font-size:10px">商店</div>
+            <div class="name" style="font-size:10px">${escapeHtml(t('shop'))}</div>
         </button>`;
     return `
         <div class="mh-dock-tray mh-scroll-x">
             ${items.length === 0
-                ? `<div class="mh-dock-hint">📦 ${escapeHtml(currentField.name)}暂无可摆放户外物品，去商店买点吧～</div>`
+                ? `<div class="mh-dock-hint">${escapeHtml(t('trayEmpty'))}</div>`
                 : items.map(it => {
                     const showCount = !it.uniqueItem && (it.unlimited || it.qty > 1);
                     const countHtml = showCount ? `<span class="shop-item-count-badge">${it.unlimited ? '∞' : escapeHtml(it.qty)}</span>` : '';
                     return `
                     <div data-tray-item="${escapeHtml(it.id)}" class="shop-item" style="min-width:62px;padding:6px;flex-shrink:0">
                         ${renderFieldTrayIcon(it)}
-                        <div class="name" style="font-size:10px">${escapeHtml(it.name)}</div>
+                        <div class="name" style="font-size:10px">${escapeHtml(itemName(it.name))}</div>
                         ${countHtml}
                     </div>`;
                 }).join('')}
@@ -1289,7 +1291,7 @@ function renderFieldBackgroundTray(currentField) {
     const presets = fieldBackgroundPresets(currentField);
     const selectedId = selectedFieldPresetId(currentField.id);
     if (!presets.length) {
-        return `<div class="mh-dock-tray mh-scroll-x"><div class="mh-dock-hint">正在加载${escapeHtml(currentField.name)}背景...</div></div>`;
+        return `<div class="mh-dock-tray mh-scroll-x"><div class="mh-dock-hint">${escapeHtml(t('fieldLoadingBg', { name: localizeFieldName(currentField) }))}</div></div>`;
     }
     return `
         <div class="mh-dock-tray mh-scroll-x mh-field-build-tray mh-field-background-tray">
@@ -1314,7 +1316,7 @@ function renderFieldEffectsTray(currentField) {
         <div class="mh-dock-tray mh-scroll-x mh-field-build-tray mh-field-card-tray">
             <button type="button" class="mh-field-build-card mh-field-icon-card ${active.size ? '' : 'is-active'}" data-field-effect="">
                 <span class="mh-field-build-card-art mh-field-build-card-icon">Ø</span>
-                <span class="mh-field-build-card-title">无特效</span>
+                <span class="mh-field-build-card-title">${escapeHtml(t('fieldNoEffect'))}</span>
             </button>
             ${PARTICLE_EFFECTS.map(effect => `
                 <button type="button" class="mh-field-build-card mh-field-icon-card ${active.has(effect.id) ? 'is-active' : ''}" data-field-effect="${escapeHtml(effect.id)}">
@@ -1337,7 +1339,7 @@ function renderFieldMusicTray(currentField) {
         <div class="mh-dock-tray mh-scroll-x mh-field-build-tray mh-field-card-tray">
             <button type="button" class="mh-field-build-card mh-field-icon-card ${active ? '' : 'is-active'}" data-field-music="">
                 <span class="mh-field-build-card-art mh-field-build-card-icon">🔇</span>
-                <span class="mh-field-build-card-title">无音乐</span>
+                <span class="mh-field-build-card-title">${escapeHtml(t('fieldNoMusic'))}</span>
             </button>
             ${options.map(option => `
                 <button type="button" class="mh-field-build-card mh-field-icon-card ${active === option.id ? 'is-active' : ''}" data-field-music="${escapeHtml(option.id)}">
@@ -1353,7 +1355,7 @@ function fieldMusicToggleHtml(fieldId) {
     const music = selectedFieldMusic(fieldId);
     if (!music || isVisitingMode()) return '';
     const muted = soundManager.isBgMusicMuted?.();
-    return `<button type="button" class="field-music-toggle ${muted ? 'is-muted' : ''}" data-field-music-toggle aria-label="${muted ? '开启音乐' : '静音'}" title="${muted ? '开启音乐' : '静音'}">${muted ? '♪' : '♫'}</button>`;
+    return `<button type="button" class="field-music-toggle ${muted ? 'is-muted' : ''}" data-field-music-toggle aria-label="${muted ? escapeHtml(t('fieldMusicOn')) : escapeHtml(t('fieldMute'))}" title="${muted ? escapeHtml(t('fieldMusicOn')) : escapeHtml(t('fieldMute'))}">${muted ? '♪' : '♫'}</button>`;
 }
 
 function renderActiveFieldBuildTray(inv, currentField) {
@@ -1668,6 +1670,38 @@ function fieldPetsFindRepelledPositions(entries, currentPetId) {
     return entries.map(entry => entry.id === currentPetId ? activePos : fixedById.get(entry.id));
 }
 
+function selectVisitFieldPlanetGuestPets(planetPets, visit, fieldId) {
+    if (!Array.isArray(planetPets) || planetPets.length <= VISIT_FIELD_MAX_PLANET_GUEST_PETS) return planetPets || [];
+    const seedBase = `${visit?.officialPlanetId || visit?.planetName || 'visit'}::${visit?.startedAt || Date.now()}::${fieldId}::planet-field-guests`;
+    return planetPets
+        .map((pet, index) => ({ pet, index, rank: hashString(`${seedBase}::${pet?.id || pet?.famousPetId || index}`) }))
+        .sort((a, b) => a.rank - b.rank)
+        .slice(0, VISIT_FIELD_MAX_PLANET_GUEST_PETS)
+        .sort((a, b) => a.index - b.index)
+        .map(item => item.pet);
+}
+
+function gaussianRandom(rng) {
+    const u1 = Math.max(0.000001, rng());
+    const u2 = rng();
+    return Math.sqrt(-2 * Math.log(u1)) * Math.cos(2 * Math.PI * u2);
+}
+
+function visitPlanetGuestFieldPosition(entry, fieldId, visit, index) {
+    const seed = `${visit?.officialPlanetId || visit?.planetName || 'visit'}::${visit?.startedAt || Date.now()}::${fieldId}::planet-guest-pos::${entry?.id || index}`;
+    const rng = makeRng(seed);
+    const x = clampRange(0.5 + gaussianRandom(rng) * 0.22, 0.08, 0.92);
+    const y = clampRange(0.75 + gaussianRandom(rng) * 0.105, 0.50, 0.90);
+    return {
+        x,
+        y,
+        delay: -(rng() * 5).toFixed(2),
+        dur: (9 + rng() * 5).toFixed(2),
+        dx: (-18 + rng() * 36).toFixed(1),
+        dy: (-10 + rng() * 20).toFixed(1),
+    };
+}
+
 function fieldPetsHtml(currentPet, fieldId) {
     if (isVisitingMode()) return visitingFieldPetsHtml(currentPet, fieldId);
     const petIds = getFieldPetIds(currentPet, fieldId);
@@ -1727,7 +1761,12 @@ function visitingFieldPetsHtml(currentPet, fieldId) {
         .map(id => state.pets?.[id])
         .forEach((pet, index) => addEntry(entries, pet, { current: false, index: index + 4 }));
     addEntry(entries, friendPet, { id: friendPet?.id || 'friend', host: true, current: false, index: 7 });
-    (visit.planetPets || [])
+    const planetGuestPets = selectVisitFieldPlanetGuestPets(
+        (visit.planetPets || []).filter(pet => pet?.id && !seen.has(pet.id)),
+        visit,
+        fieldId
+    );
+    planetGuestPets
         .forEach((pet, index) => addEntry(entries, pet, { current: false, index: index + 9, planetGuest: true }));
     const activePose = state.activePetFieldPose?.fieldId === fieldId ? state.activePetFieldPose : null;
     const hostBase = activePose && friendPet
@@ -1743,6 +1782,7 @@ function visitingFieldPetsHtml(currentPet, fieldId) {
     const positions = entries.map((entry, index) => {
         if (entry.host && hostBase) return hostBase;
         if (entry.current) return petFieldPosition({ ...entry.pet, id: entry.id }, fieldId, entry.index);
+        if (entry.planetGuest) return visitPlanetGuestFieldPosition(entry, fieldId, visit, index);
         if (hostBase) {
             const offset = clusterOffsets[index % clusterOffsets.length];
             return {
@@ -2195,13 +2235,13 @@ function collectPoopsInCurrentField(pet) {
     if (!collectables.length) return 0;
     const machineCost = CONFIG.poopMachineCostCoins | 0;
     if (poops.length > 0 && machineCost > 0 && (state.coins | 0) < machineCost) {
-        showToast(`金币不足，需要 ${machineCost} 金币启动机器清理`, 'error', 1200);
+        showToast(t('cleanNotEnough', { cost: machineCost }), 'error', 1200);
         return 0;
     }
     if (poops.length > 0 && machineCost > 0) {
         state.coins = Math.max(0, (state.coins | 0) - machineCost);
         updateCoinsHud();
-        showToast(`使用${machineCost} 金币启动机器清理`, 'info', 1200);
+        showToast(t('cleanMachineStart', { cost: machineCost }), 'info', 1200);
     }
     if (poops.length > 0) {
         setPetPoopCount(pet, fieldId, 0);
@@ -2228,9 +2268,9 @@ function collectPoopsInCurrentField(pet) {
         if (fuelGain > 0) updateBiofuelHud();
         if (collectedCoins > 0) flyFieldCoinNumberToHud(collectedCoins, updateCoinsHud);
         const parts = [];
-        if (poops.length > 0) parts.push(`清理 ${poops.length} 坨，+${fuelGain} ⛽ 生物燃料`);
-        if (collectedCoins > 0) parts.push(`+${collectedCoins} 金币`);
-        showToast(parts.join('，'), 'success', 1400);
+        if (poops.length > 0) parts.push(t('cleanResultPoop', { count: poops.length, fuel: fuelGain }));
+        if (collectedCoins > 0) parts.push(t('cleanResultCoins', { coins: collectedCoins }));
+        showToast(parts.join(t('cleanResultJoin')), 'success', 1400);
     };
     const startFuelProcessing = fuelGain > 0
         ? playFieldFuelRoomAnimation(fuelGain, finishSettlement, { deferProcessing: true, poopCount: poops.length })
@@ -2475,10 +2515,13 @@ export const fieldLevel = {
         ensureFieldItemScaleControls(ctx);
         restoreFieldItemSelection(ctx);
 
-        // 点击宠物 → 播放开心动画（粒子 + 弹跳）
+        // 点击宠物 → 播放开心动画（粒子 + 弹跳）；装扮模式下当前宠物可拖动
         $$('.field-pet').forEach(petEl => {
+            bindFieldPetDrag(petEl, pet, ctx);
             petEl.onclick = (e) => {
                 e.stopPropagation();
+                // 刚刚发生过拖动时，吞掉随之而来的 click，避免误触发互动。
+                if (Date.now() - (petEl.__mhFieldPetDraggedAt || 0) < 260) return;
                 if (petEl.dataset.visitHostPet === '1') {
                     const hostPet = state.visitingMode?.friendPet;
                     showToast(`${displayPetName(hostPet)} 欢迎你来到好友星球。`, 'info', 2200);
@@ -2531,16 +2574,16 @@ export const fieldLevel = {
             <div class="mh-dock-row mh-scroll-x dock-tab-row ${isFieldDecorMode() ? 'has-decor-done' : ''}" id="mhFieldTabs">
                 ${isFieldDecorMode() ? categories.map(category => `
                     <button type="button" class="btn-secondary dock-tab ${category.id === activeFieldBuildCategory ? 'active' : ''}" data-field-build-category="${escapeHtml(category.id)}">
-                        ${escapeHtml(category.name)}
+                        ${escapeHtml(t(category.nameKey))}
                     </button>
                 `).join('') : fields.map(f => `
                     <button class="btn-secondary dock-tab ${f.id === state.currentField ? 'active' : ''}" data-field="${f.id}">
-                        ${terrainFieldTabIconHtml(f)} ${escapeHtml(f.name)}
+                        ${terrainFieldTabIconHtml(f)} ${escapeHtml(localizeFieldName(f))}
                     </button>
                 `).join('')}
             </div>
-            ${isFieldDecorMode() ? `<button type="button" class="mh-decor-done-btn mh-field-mode-toggle" id="mhFieldDecorDoneBtn">完成</button>` : ''}
-            ${isFieldDecorMode() ? `<button type="button" class="mh-room-dock-delete-target" id="mhFieldDockDeleteTarget" aria-hidden="true" tabindex="-1">🗑️ 收回背包</button>` : ''}
+            ${isFieldDecorMode() ? `<button type="button" class="mh-decor-done-btn mh-field-mode-toggle" id="mhFieldDecorDoneBtn">${escapeHtml(t('exitDecor'))}</button>` : ''}
+            ${isFieldDecorMode() ? `<button type="button" class="mh-room-dock-delete-target" id="mhFieldDockDeleteTarget" aria-hidden="true" tabindex="-1">🗑️ ${escapeHtml(t('putAwayBag'))}</button>` : ''}
             ${isFieldDecorMode() ? renderActiveFieldBuildTray(inv, currentField) : renderFieldActionTray(pet)}
         `;
     },
@@ -2617,7 +2660,7 @@ export const fieldLevel = {
                     title: preset.title || '',
                 },
             });
-            showToast(`已切换背景：${preset.title || currentField.name}`, 'success', 1200);
+            showToast(t('fieldBgSwitched', { name: preset.title || localizeFieldName(currentField) }), 'success', 1200);
             return true;
         };
 
@@ -2634,14 +2677,14 @@ export const fieldLevel = {
             dock.__mhFieldDockTabHandledAt = Date.now();
             if (!id) {
                 saveCurrentFieldSceneConfig(currentField.id, { particles: [] });
-                showToast('已关闭场景特效', 'success', 1000);
+                showToast(t('fieldEffectOff'), 'success', 1000);
                 return true;
             }
             const current = selectedFieldParticles(currentField.id);
             const particles = current.includes(id) ? current.filter(item => item !== id) : [...current, id];
             saveCurrentFieldSceneConfig(currentField.id, { particles });
             const label = PARTICLE_EFFECTS.find(effect => effect.id === id)?.label || id;
-            showToast(`${current.includes(id) ? '已移除' : '已添加'}特效：${label}`, 'success', 1000);
+            showToast(current.includes(id) ? t('fieldEffectRemoved', { label }) : t('fieldEffectAdded', { label }), 'success', 1000);
             return true;
         };
 
@@ -2660,10 +2703,10 @@ export const fieldLevel = {
             if (music) {
                 soundManager.setBgMusicMuted?.(false, { fadeMs: 120 });
                 soundManager.playBgMusic(music, { fadeMs: 320, volume: 0.3, restart: true });
-                showToast(`已播放音乐：${bgMusicLabel(music)}`, 'success', 1000);
+                showToast(t('fieldMusicPlayed', { label: bgMusicLabel(music) }), 'success', 1000);
             } else {
                 soundManager.stopBgMusic({ fadeMs: 320 });
-                showToast('已关闭场景音乐', 'success', 1000);
+                showToast(t('fieldMusicOff'), 'success', 1000);
             }
             return true;
         };
@@ -2821,7 +2864,7 @@ export const fieldLevel = {
                 dock.querySelectorAll('[data-tray-item]').forEach(x => x.style.outline = '');
                 ctx.selectedTrayItem = el.dataset.trayItem;
                 el.style.outline = '2px solid var(--accent)';
-                if (isFieldDecorMode()) showToast(DRAG_TO_SCENE_HINT, 'info', 1400);
+                if (isFieldDecorMode()) showToast(DRAG_TO_SCENE_HINT(), 'info', 1400);
             };
             bindFieldTrayDrag(el, ctx);
         });
@@ -3069,7 +3112,7 @@ function bindFieldItemDrag(el, ctx) {
             }
         } else if (e.type === 'pointerup') {
             selectFieldItem(targetEl, ctx);
-            showToast(FIELD_DRAG_EXISTING_HINT, 'info', 1400);
+            showToast(FIELD_DRAG_EXISTING_HINT(), 'info', 1400);
         }
         drag = null;
     };
@@ -3085,6 +3128,80 @@ function fieldDragDeltaToCoords(drag, clientX, clientY) {
         x: clamp01(drag.startX + (clientX - drag.x) / rect.width),
         y: clamp01(drag.startY + (clientY - drag.y) / rect.height),
     };
+}
+
+// 装扮模式下让当前宠物可以像房间内家具一样被拖动到任意位置（仅本地姿态，不持久化）。
+// 使用 window 级别的 move/up 监听，避免拖到模型上方时指针事件落到其它元素而中断拖动。
+function bindFieldPetDrag(el, pet, ctx) {
+    if (!el || el.__mhFieldPetDragBound) return;
+    el.__mhFieldPetDragBound = true;
+    // 仅当前宠物可拖动；好友/受邀/拜访宠物不可拖动。
+    if (!el.classList.contains('field-pet-current')) return;
+    if (el.dataset.invitedFieldPet === '1' || el.dataset.visitHostPet === '1') return;
+    let drag = null;
+    const cleanup = () => {
+        window.removeEventListener('pointermove', onMove, true);
+        window.removeEventListener('pointerup', onEnd, true);
+        window.removeEventListener('pointercancel', onEnd, true);
+    };
+    const onMove = (e) => {
+        if (!drag || drag.id !== e.pointerId) return;
+        const dist = Math.hypot(e.clientX - drag.x, e.clientY - drag.y);
+        if (dist < DRAG_PLACE_THRESHOLD && !drag.moved) return;
+        e.preventDefault();
+        e.stopPropagation();
+        drag.moved = true;
+        const pos = fieldDragDeltaToCoords(drag, e.clientX, e.clientY);
+        if (!pos) return;
+        el.style.left = pct(pos.x);
+        el.style.top = pct(pos.y);
+    };
+    const onEnd = (e) => {
+        if (!drag || drag.id !== e.pointerId) return;
+        e.preventDefault();
+        e.stopPropagation();
+        cleanup();
+        try { el.releasePointerCapture?.(e.pointerId); } catch {}
+        el.classList.remove('is-dragging');
+        if (drag.moved) {
+            el.__mhFieldPetDraggedAt = Date.now();
+            const pos = fieldDragDeltaToCoords(drag, e.clientX, e.clientY);
+            if (pos) {
+                // 记录当前宠物在该场景的本地姿态，使重渲染后位置保持不变。
+                state.activePetFieldPose = {
+                    fieldId: state.currentField,
+                    x: clamp01(pos.x),
+                    y: clamp01(pos.y),
+                    delay: -1,
+                    dur: 10,
+                    dx: 0,
+                    dy: 0,
+                };
+            }
+        }
+        drag = null;
+    };
+    el.addEventListener('pointerdown', (e) => {
+        if (!isFieldDecorMode() || isVisitingMode()) return;
+        if (e.button != null && e.button !== 0) return;
+        e.preventDefault();
+        e.stopPropagation();
+        const startPos = pointToFieldCoords(e.clientX, e.clientY) || { x: 0.5, y: 0.6 };
+        drag = {
+            id: e.pointerId,
+            x: e.clientX,
+            y: e.clientY,
+            startX: Number.isFinite(parseFloat(el.style.left)) ? parseFloat(el.style.left) / 100 : startPos.x,
+            startY: Number.isFinite(parseFloat(el.style.top)) ? parseFloat(el.style.top) / 100 : startPos.y,
+            moved: false,
+        };
+        el.classList.add('is-dragging');
+        try { el.setPointerCapture?.(e.pointerId); } catch {}
+        cleanup();
+        window.addEventListener('pointermove', onMove, true);
+        window.addEventListener('pointerup', onEnd, true);
+        window.addEventListener('pointercancel', onEnd, true);
+    });
 }
 
 function bindFieldTrayDrag(el, ctx) {

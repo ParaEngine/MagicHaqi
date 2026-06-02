@@ -46,6 +46,11 @@ export function buildStoryPrompt(promptText, count, actors = [], options = {}) {
     const sceneTagPromptHint = options.sceneTagPromptHint || 'indoor, outdoor, land, sky, ocean, playground, bathroom, living room, shop, school, spring, winter, seaside, haqi, townhall, forest, sand, hospital';
     const bgMusicKeys = Array.isArray(options.bgMusicKeys) ? options.bgMusicKeys : [];
     const minigames = Array.isArray(options.minigames) ? options.minigames : [];
+    const lang = options.lang === 'en' ? 'en' : 'zh';
+    const langName = lang === 'en' ? 'English' : '简体中文';
+    const languageInstruction = lang === 'en'
+        ? `Output language: ALL player-facing text (title, selectionPrompt, every timeline line text, activity title/successText, ending subtitle/text) MUST be written in English, unless the story theme explicitly requests another language. Do NOT use Chinese for player-facing text. JSON keys and enum values (kind, type, sceneTags, gameId, bgMusic, etc.) stay in English as defined.`
+        : `输出语言：所有面向玩家的文字（title、selectionPrompt、每条 timeline line 的 text、activity 的 title/successText、ending 的 subtitle/text）都必须使用简体中文，除非故事主题明确要求使用其他语言。JSON 的 key 和枚举值（kind、type、sceneTags、gameId、bgMusic 等）保持英文不变。`;
     const promptActors = actors.map((actor, index) => ({
         id: `actor_${index + 1}`,
         name: actor.name,
@@ -111,12 +116,16 @@ export function buildStoryPrompt(promptText, count, actors = [], options = {}) {
         ],
         ending: { subtitle: '大家学会了分工。', text: '一个人推给别人，水桶会空；大家各尽一份力，清水就会回来。' },
     };
+    const childAudienceLine = lang === 'en'
+        ? 'For children: short warm sentences, vivid and visual; avoid long preachy paragraphs, hide the moral in the actions and the ending.'
+        : '面向儿童：短句、温暖、有画面感；避免说教长段落，把寓意藏在行动和结尾里。';
     return [
         '你是儿童互动故事设计师。请为一个移动端虚拟宠物游戏生成高质量互动故事 JSON。只返回合法 JSON，不要 markdown，不要解释。',
+        languageInstruction,
         `故事主题：${promptText || '温暖的宠物冒险'}`,
         `必须生成 ${count} 个 scenes，不能少也不能多。`,
         '故事质量要求：有清晰开端、问题升级、一次可玩的互动选择、角色合作解决、结尾点出寓意；不要流水账；每幕都要推动剧情。',
-        '面向儿童：中文短句、温暖、有画面感；避免说教长段落，把寓意藏在行动和结尾里。',
+        childAudienceLine,
         '顶层字段必须包含：id, title, version, selectionPrompt, actors, startSceneId, scenes, ending。',
         'actors 字段必须基于下面的输入演员数组，保留 sourcePetId/allowUserSelection/isMainActor，不要删角色、不要改 sourcePetId、不要发明新演员。id 是故事内角色 id，可以保留 actor_1/actor_2/actor_3，也可以根据剧情需要改成更有意义的 id；name 可以保留，也可以根据故事改动。appearance 只作为外观参考，不要求输出。',
         `输入演员数组：${JSON.stringify(promptActors)}`,

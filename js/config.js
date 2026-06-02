@@ -1,4 +1,5 @@
 // 全局常量配置
+import { t } from './i18n.js';
 export const CDN_ROOT = 'https://cdn.keepwork.com/maisi/magichaqi/';
 
 export const ZOOM_LEVEL_IDS = ['planet', 'field', 'pet', 'cell'];
@@ -349,7 +350,8 @@ export function getStageDef(stageId) {
 
 export function getStageName(stageId, fallback = '') {
     const def = getStageDef(stageId);
-    return def?.name || fallback || stageId || '';
+    const keyMap = { egg: 'eggBadge', baby: 'stageBaby', teen: 'stageTeen', adult: 'stageAdult', elder: 'stageElder' };
+    return keyMap[stageId] ? t(keyMap[stageId]) : (def?.name || fallback || stageId || '');
 }
 
 const DEFAULT_SHOP_ITEMS_PATH = 'famous-planets/_default_shopitems.json';

@@ -1,10 +1,11 @@
 // Level 3 — Cell：体内观察与蛋阶段许愿
 
 import { $, dockDisabledAttrs, escapeHtml, isDockButtonDisabled, showDockDisabledToast, showToast } from './utils.js';
+import { t } from './i18n.js';
 import { CONFIG } from './config.js';
 import { state } from './state.js';
 import { savePetDebounced } from './storage.js';
-import { getActiveSickness, getEffectiveSicknessSeverity, getPermanentTraumaCount } from './petTick.js';
+import { getActiveSickness, getEffectiveSicknessSeverity, getPermanentTraumaCount, sicknessName } from './petTick.js';
 import { decodeDna, dietPreferenceIcons, dietPreferenceLabel, dnaDietPreference } from './dna.js';
 import { isPetInteractionBlocked, isPetSleeping, sleepingInteractionText } from './pet.js';
 
@@ -55,18 +56,18 @@ const CELL_ELEMENT_COLORS = {
 };
 const CELL_ELEMENT_DEFAULT = '#f48aa6';
 
-// 元素属性 → 角标 emoji + 中文名（贴在脸右上角的小装饰）
+// 元素属性 → 角标 emoji + 文案键（贴在脸右上角的小装饰）
 const CELL_ELEMENT_DECO = {
-    '自然': { emoji: '🌿', label: '自然' },
-    '火': { emoji: '🔥', label: '火' },
-    '冰': { emoji: '❄️', label: '冰' },
-    '生命': { emoji: '🌱', label: '生命' },
-    '暗': { emoji: '🌙', label: '暗' },
-    '雷': { emoji: '⚡', label: '雷' },
+    '自然': { emoji: '🌿', labelKey: 'elemNature' },
+    '火': { emoji: '🔥', labelKey: 'elemFire' },
+    '冰': { emoji: '❄️', labelKey: 'elemIce' },
+    '生命': { emoji: '🌱', labelKey: 'elemLife' },
+    '暗': { emoji: '🌙', labelKey: 'elemDark' },
+    '雷': { emoji: '⚡', labelKey: 'elemThunder' },
 };
 
 function dietKindLabel(kind) {
-    return kind === 'meat' ? '肉类' : '蔬菜';
+    return kind === 'meat' ? t('dietMeat') : t('dietVeggie');
 }
 
 function cellElementDecoHtml(pet) {
@@ -76,7 +77,7 @@ function cellElementDecoHtml(pet) {
     const color = CELL_ELEMENT_COLORS[traits.elementalAttribute] || CELL_ELEMENT_DEFAULT;
     return `
         <span class="cell-element-deco element-${escapeHtml(traits.elementalAttribute)}" role="button" tabindex="0"
-            style="--cell-element-color:${color}" aria-label="${escapeHtml(deco.label)}属性" title="${escapeHtml(deco.label)}属性">
+            style="--cell-element-color:${color}" aria-label="${escapeHtml(t('elementAttrLabel', { element: t(deco.labelKey) }))}" title="${escapeHtml(t('elementAttrLabel', { element: t(deco.labelKey) }))}">
             <span class="cell-element-deco-glow" aria-hidden="true"></span>
             <span class="cell-element-deco-emoji" aria-hidden="true">${deco.emoji}</span>
         </span>
@@ -135,26 +136,26 @@ function cellFaceStateClass(pet) {
     return `is-expression-${cellFaceExpression(pet)}`;
 }
 
-// 当前心情的中文文案（点击脸时弹 toast）
+// 当前心情文案（点击脸时弹 toast），文案走 i18n
 const CELL_MOOD_TEXT = {
-    sleep: { emoji: '😴', text: '正在呼呼大睡，别吵醒它～' },
-    critical: { emoji: '🤢', text: '病得很重，快治疗一下吧！' },
-    sick: { emoji: '🤒', text: '有点不舒服，需要照顾。' },
-    sad: { emoji: '😢', text: '心情很低落，陪陪它吧。' },
-    worried: { emoji: '😟', text: '有些闷闷不乐，逗逗它吧。' },
-    happy: { emoji: '😊', text: '心情很好，活力满满！' },
-    egg: { emoji: '🥚', text: '还是一颗蛋，安静地孕育着。' },
+    sleep: { emoji: '😴', textKey: 'cellSleeping' },
+    critical: { emoji: '🤢', textKey: 'cellVerySick' },
+    sick: { emoji: '🤒', textKey: 'cellSick' },
+    sad: { emoji: '😢', textKey: 'cellSad' },
+    worried: { emoji: '😟', textKey: 'cellGloomy' },
+    happy: { emoji: '😊', textKey: 'cellHappy' },
+    egg: { emoji: '🥚', textKey: 'cellEgg' },
 };
 
 function cellMoodToastText(pet) {
     if (pet?.stage === 'egg') {
         const m = CELL_MOOD_TEXT.egg;
-        return `${m.emoji} ${m.text}`;
+        return `${m.emoji} ${t(m.textKey)}`;
     }
     const key = isPetSleeping(pet) ? 'sleep' : cellFaceExpression(pet);
     const m = CELL_MOOD_TEXT[key] || CELL_MOOD_TEXT.happy;
     const mood = Math.round(pet?.stats?.mood ?? 100);
-    return `${m.emoji} ${m.text}（心情 ${mood}/100）`;
+    return `${m.emoji} ${t(m.textKey)}${t('cellMoodSuffix', { mood })}`;
 }
 
 function cellHungerCueHtml() {
@@ -187,8 +188,8 @@ function bindCellFaceTick(pet) {
 }
 
 function dietToastText(kind, preference) {
-    if (preference === 'both') return `DNA 提示：这只宠物是杂食，${dietKindLabel(kind)}也喜欢。`;
-    return `DNA 提示：这只宠物偏爱${dietPreferenceLabel(preference)}食物。`;
+    if (preference === 'both') return t('cellDietHintBoth', { kind: dietKindLabel(kind) });
+    return t('cellDietHintPref', { preference: dietPreferenceLabel(preference) });
 }
 
 function dietFloatHtml(pet) {
@@ -196,7 +197,7 @@ function dietFloatHtml(pet) {
     const label = dietPreferenceLabel(preference);
     return dietPreferenceIcons(preference).map((kind, index) => `
         <span class="cell-float cell-float-diet diet-${kind} diet-${index + 1}" role="button" tabindex="0"
-            aria-label="${escapeHtml(label)} DNA 食物提示" title="${escapeHtml(label)} DNA"
+            aria-label="${escapeHtml(t('cellDietFloatAria', { label }))}" title="${escapeHtml(label)} DNA"
             data-diet-kind="${escapeHtml(kind)}" data-diet-preference="${escapeHtml(preference)}">
             ${DIET_FLOAT_EMOJIS[kind] || ''}
         </span>
@@ -237,7 +238,7 @@ function elementDecoToastText(pet) {
     const traits = decodeDna(pet?.dna || '');
     const deco = CELL_ELEMENT_DECO[traits.elementalAttribute];
     if (!deco) return '';
-    return `${deco.emoji} 元素属性：${deco.label}系`;
+    return t('elementAttrLine', { emoji: deco.emoji, element: t(deco.labelKey) });
 }
 
 function bindElementDeco(pet) {
@@ -253,8 +254,8 @@ function traumaLayerHtml(pet) {
     const count = getPermanentTraumaCount(pet);
     if (!count) return '';
     return `
-        <div class="cell-trauma-layer" aria-label="永久精神伤害 ${count} / ${CONFIG.trauma.max}">
-            ${Array.from({ length: count }, (_, index) => `<span class="cell-trauma-mark t${index + 1}" title="永久精神伤害 ${index + 1}/${CONFIG.trauma.max}"><span></span></span>`).join('')}
+        <div class="cell-trauma-layer" aria-label="${escapeHtml(t('cellTraumaAria', { count, max: CONFIG.trauma.max }))}">
+            ${Array.from({ length: count }, (_, index) => `<span class="cell-trauma-mark t${index + 1}" title="${escapeHtml(t('cellTraumaTitle', { index: index + 1, max: CONFIG.trauma.max }))}"><span></span></span>`).join('')}
         </div>
     `;
 }
@@ -276,11 +277,12 @@ function sicknessLayerHtml(pet) {
     if (!sickness) return '';
     const count = getEffectiveSicknessSeverity(pet);
     if (!count) return '';
-    const label = `${sickness.def.name} ${count}/10`;
+    const name = sicknessName(sickness.def);
+    const label = t('cellSicknessLabel', { name, level: count });
     return `
         <div class="cell-sickness-layer" aria-label="${escapeHtml(label)}">
-            ${Array.from({ length: count }, (_, index) => `<span class="cell-sickness-icon s${index + 1}" role="button" tabindex="0" title="${escapeHtml(label)}" data-sickness-name="${escapeHtml(sickness.def.name)}" data-sickness-level="${count}">${sicknessIconSvg(sickness.type)}</span>`).join('')}
-            ${Array.from({ length: Math.min(6, Math.max(3, count)) }, (_, index) => `<span class="cell-white-cell w${index + 1}" title="白细胞"></span>`).join('')}
+            ${Array.from({ length: count }, (_, index) => `<span class="cell-sickness-icon s${index + 1}" role="button" tabindex="0" title="${escapeHtml(label)}" data-sickness-name="${escapeHtml(name)}" data-sickness-level="${count}">${sicknessIconSvg(sickness.type)}</span>`).join('')}
+            ${Array.from({ length: Math.min(6, Math.max(3, count)) }, (_, index) => `<span class="cell-white-cell w${index + 1}" title="${escapeHtml(t('cellWhiteCell'))}"></span>`).join('')}
         </div>
     `;
 }
@@ -290,7 +292,7 @@ function bindSicknessIcons() {
         let start = null;
         const showName = (event) => {
             event?.stopPropagation?.();
-            showToast(`${el.dataset.sicknessName}：病情 ${el.dataset.sicknessLevel}/10`, 'info', 1600);
+            showToast(t('cellSicknessToast', { name: el.dataset.sicknessName, level: el.dataset.sicknessLevel }), 'info', 1600);
         };
         el.addEventListener('pointerdown', (e) => {
             start = { id: e.pointerId, x: e.clientX, y: e.clientY };
@@ -317,10 +319,10 @@ function treatmentIconSvg() {
 
 function cellStatusText(pet) {
     const sickness = getActiveSickness(pet);
-    if (sickness) return `当前状态：${sickness.def.name} ${getEffectiveSicknessSeverity(pet)}/10`;
+    if (sickness) return t('cellStatusSick', { sickness: sicknessName(sickness.def), level: getEffectiveSicknessSeverity(pet) });
     const traumaCount = getPermanentTraumaCount(pet);
-    if (traumaCount) return `当前状态：永久精神伤害 ${traumaCount}/${CONFIG.trauma.max}`;
-    return '当前状态：体内正常';
+    if (traumaCount) return t('cellStatusTrauma', { count: traumaCount, max: CONFIG.trauma.max });
+    return t('cellStatusNormal');
 }
 
 function stopCellGame() {
@@ -330,9 +332,9 @@ function stopCellGame() {
 
 function wishReferencePreviewHtml(src) {
     if (!src) {
-        return `<div class="wish-ref-empty">可选：添加一张参考图片，让孵化外观更接近你的想法。</div>`;
+        return `<div class="wish-ref-empty">${escapeHtml(t('cellWishRefEmpty'))}</div>`;
     }
-    return `<img class="wish-ref-img" src="${escapeHtml(src)}" alt="参考图片预览">`;
+    return `<img class="wish-ref-img" src="${escapeHtml(src)}" alt="${escapeHtml(t('cellWishRefAlt'))}">`;
 }
 
 function setWishReferencePreview(box, src) {
@@ -361,7 +363,7 @@ function canvasToReferenceDataUrl(img, width, height, quality) {
     canvas.width = width;
     canvas.height = height;
     const ctx = canvas.getContext('2d');
-    if (!ctx) throw new Error('无法压缩图片');
+    if (!ctx) throw new Error(t('cellWishCompressFailed'));
     ctx.drawImage(img, 0, 0, width, height);
     return canvas.toDataURL('image/jpeg', quality);
 }
@@ -402,7 +404,7 @@ function compressWishReferenceDataUrl(dataUrl, maxBytes = WISH_REF_IMAGE_MAX_BYT
                 reject(e);
             }
         };
-        img.onerror = () => reject(new Error('图片格式无法预览'));
+        img.onerror = () => reject(new Error(t('cellWishPreviewFailed')));
         img.src = dataUrl;
     });
 }
@@ -410,14 +412,14 @@ function compressWishReferenceDataUrl(dataUrl, maxBytes = WISH_REF_IMAGE_MAX_BYT
 function readWishReferenceImage(file) {
     return new Promise((resolve, reject) => {
         if (!file || !/^image\//i.test(file.type || '')) {
-            reject(new Error('请选择图片文件'));
+            reject(new Error(t('cellWishSelectImage')));
             return;
         }
         const reader = new FileReader();
-        reader.onerror = () => reject(new Error('读取图片失败'));
+        reader.onerror = () => reject(new Error(t('cellWishReadFailed')));
         reader.onload = () => {
             const dataUrl = String(reader.result || '');
-            if (!dataUrl) { reject(new Error('读取图片失败')); return; }
+            if (!dataUrl) { reject(new Error(t('cellWishReadFailed'))); return; }
             compressWishReferenceDataUrl(dataUrl).then(resolve).catch(reject);
         };
         reader.readAsDataURL(file);
@@ -427,7 +429,7 @@ function readWishReferenceImage(file) {
 function showWishModal(pet, ctx) {
     if (!pet) return;
     if (pet.stage !== 'egg') {
-        showToast('许愿只在蛋阶段可用', 'info', 1800);
+        showToast(t('cellWishOnlyEgg'), 'info', 1800);
         return;
     }
     const current = String(pet.wishPrompt || '').slice(0, WISH_MAX_LEN);
@@ -436,9 +438,9 @@ function showWishModal(pet, ctx) {
     mask.className = 'modal-mask';
     mask.innerHTML = `
         <div class="modal-card wish-modal-card">
-            <div class="text-base font-bold mb-3" style="color:var(--text-primary)">🌠 为这颗蛋许愿</div>
+            <div class="text-base font-bold mb-3" style="color:var(--text-primary)">${escapeHtml(t('cellWishTitle'))}</div>
             <textarea data-wish-input maxlength="${WISH_MAX_LEN}" rows="5"
-                placeholder="例如：龙宝宝,眼睛是星星眼…（最多 ${WISH_MAX_LEN} 字)"
+                placeholder="${escapeHtml(t('cellWishPlaceholder', { max: WISH_MAX_LEN }))}"
                 style="width:100%;padding:10px;border-radius:12px;border:1.5px solid var(--border-card);background:var(--input-bg);color:var(--text-primary);font-size:14px;line-height:1.5;resize:vertical">${escapeHtml(current)}</textarea>
             <div class="text-xs mt-1" style="color:var(--text-muted);text-align:right">
                 <span data-wish-count>${current.length}</span> / ${WISH_MAX_LEN}
@@ -447,14 +449,14 @@ function showWishModal(pet, ctx) {
                 <div class="wish-ref-preview ${referenceImage ? 'has-image' : ''}" data-wish-ref-preview>${wishReferencePreviewHtml(referenceImage)}</div>
                 <input data-wish-ref-input type="file" accept="image/*" hidden>
                 <div class="wish-ref-actions">
-                    <button class="btn-secondary" data-wish-act="pick-image">参考图片</button>
-                    <button class="btn-secondary" data-wish-act="remove-image" ${referenceImage ? '' : 'disabled'}>移除图片</button>
+                    <button class="btn-secondary" data-wish-act="pick-image">${escapeHtml(t('cellWishPickImage'))}</button>
+                    <button class="btn-secondary" data-wish-act="remove-image" ${referenceImage ? '' : 'disabled'}>${escapeHtml(t('cellWishRemoveImage'))}</button>
                 </div>
             </div>
             <div class="flex gap-2 justify-end mt-3">
-                <button class="btn-secondary" data-wish-act="clear">清除</button>
-                <button class="btn-secondary" data-wish-act="cancel">取消</button>
-                <button class="btn-primary" data-wish-act="ok">保存许愿</button>
+                <button class="btn-secondary" data-wish-act="clear">${escapeHtml(t('cellWishClear'))}</button>
+                <button class="btn-secondary" data-wish-act="cancel">${escapeHtml(t('cancel'))}</button>
+                <button class="btn-primary" data-wish-act="ok">${escapeHtml(t('cellWishSave'))}</button>
             </div>
         </div>`;
     const input = mask.querySelector('[data-wish-input]');
@@ -476,9 +478,9 @@ function showWishModal(pet, ctx) {
         if (!file) return;
         try {
             updateReferenceImage(await readWishReferenceImage(file));
-            showToast('已添加参考图片', 'success', 1400);
+            showToast(t('cellWishRefAdded'), 'success', 1400);
         } catch (e) {
-            showToast(e?.message || '添加参考图片失败', 'error', 1800);
+            showToast(e?.message || t('cellWishRefFailed'), 'error', 1800);
         } finally {
             refInput.value = '';
         }
@@ -496,7 +498,7 @@ function showWishModal(pet, ctx) {
             pet.wishPrompt = txt || null;
             pet.wishReferenceImage = referenceImage || null;
             savePetDebounced(pet);
-            showToast(txt || referenceImage ? '已记录你的许愿 ✨' : '已清除许愿', 'success', 1600);
+            showToast(txt || referenceImage ? t('cellWishSaved') : t('cellWishCleared'), 'success', 1600);
             close();
             // 刷新 dock 文本
             try { refreshCellDock(pet, ctx); } catch (_) {}
@@ -651,11 +653,11 @@ export const cellLevel = {
                         <path class="cell-face-sweat" d="M142 86 C136 94 136 102 142 106 C150 102 149 94 142 86 Z"/>
                     </g>
 
-                    <!-- CRITICAL: big dizzy >_< eyes (cute, not scary) -->
+                    <!-- CRITICAL: simple dizzy X eyes; avoid crescent blobs on small screens -->
                     <g class="cell-face-expression cell-face-expression-critical">
-                        <path class="cell-face-squint-eye left" d="M60 92 Q74 102 60 112 M88 92 Q74 102 88 112"/>
-                        <path class="cell-face-squint-eye right" d="M112 92 Q126 102 112 112 M140 92 Q126 102 140 112"/>
-                        <ellipse class="cell-face-mouth-o" cx="100" cy="132" rx="10" ry="9"/>
+                        <path class="cell-face-squint-eye left" d="M62 91 L86 113 M86 91 L62 113"/>
+                        <path class="cell-face-squint-eye right" d="M114 91 L138 113 M138 91 L114 113"/>
+                        <ellipse class="cell-face-mouth-o" cx="100" cy="131" rx="9" ry="8"/>
                         <path class="cell-face-sweat" d="M140 88 C134 96 134 104 140 108 C148 104 147 96 140 88 Z"/>
                     </g>
 
@@ -697,18 +699,18 @@ export const cellLevel = {
             const hasWish = !!(pet?.wishPrompt && String(pet.wishPrompt).trim());
             return `
                 <div class="mh-dock-row mh-scroll-x dock-action-row">
-                    <button type="button" class="btn-secondary action-btn dock-icon-btn" data-act="wish"><span class="dock-icon">🌠</span><span class="dock-label">${hasWish ? '修改许愿' : '许愿'}</span></button>
-                    <button type="button" class="btn-secondary action-btn dock-icon-btn" data-act="storyMaker" title="打开故事创作"><span class="dock-icon">📝</span><span class="dock-label">故事创作</span></button>
+                    <button type="button" class="btn-secondary action-btn dock-icon-btn" data-act="wish"><span class="dock-icon">🌠</span><span class="dock-label">${hasWish ? escapeHtml(t('cellDockWishEdit')) : escapeHtml(t('cellDockWish'))}</span></button>
+                    <button type="button" class="btn-secondary action-btn dock-icon-btn" data-act="storyMaker" title="${escapeHtml(t('cellDockStoryTitle'))}"><span class="dock-icon">📝</span><span class="dock-label">${escapeHtml(t('storyMaker'))}</span></button>
                 </div>
-                <div class="mh-dock-hint">${hasWish ? '已记录你的许愿，孵化时会按这段描述生成宠物外观。' : '蛋阶段：可以为蛋的最终外观许愿，描述任何你想要的样子。'}</div>
+                <div class="mh-dock-hint">${hasWish ? escapeHtml(t('cellDockWishHintYes')) : escapeHtml(t('cellDockWishHintNo'))}</div>
             `;
         }
         const sleepingText = sleeping ? sleepingInteractionText(pet) : '';
         return `
             <div class="mh-dock-row mh-scroll-x dock-action-row">
-                <button type="button" class="btn-secondary action-btn dock-icon-btn ${sleeping ? 'is-sleep-disabled' : ''}" data-act="chat"${dockDisabledAttrs(sleeping, sleepingText)} title="${escapeHtml(sleepingText)}"><span class="dock-icon">💬</span><span class="dock-label">对话</span></button>
-                ${sickness ? `<button type="button" class="btn-secondary action-btn dock-icon-btn cell-treat-btn ${sleeping ? 'is-sleep-disabled' : ''}" data-act="treatSickness"${dockDisabledAttrs(sleeping, sleepingText)} title="${sleeping ? escapeHtml(sleepingText) : '启动细胞免疫塔防治疗疾病'}"><span class="dock-icon">${treatmentIconSvg()}</span><span class="dock-label">治疗</span></button>` : ''}
-                <button type="button" class="btn-secondary action-btn dock-icon-btn" data-act="storyMaker" title="打开故事创作"><span class="dock-icon">📝</span><span class="dock-label">故事创作</span></button>
+                <button type="button" class="btn-secondary action-btn dock-icon-btn ${sleeping ? 'is-sleep-disabled' : ''}" data-act="chat"${dockDisabledAttrs(sleeping, sleepingText)} title="${escapeHtml(sleepingText)}"><span class="dock-icon">💬</span><span class="dock-label">${escapeHtml(t('cellDockChat'))}</span></button>
+                ${sickness ? `<button type="button" class="btn-secondary action-btn dock-icon-btn cell-treat-btn ${sleeping ? 'is-sleep-disabled' : ''}" data-act="treatSickness"${dockDisabledAttrs(sleeping, sleepingText)} title="${sleeping ? escapeHtml(sleepingText) : escapeHtml(t('cellDockTreatTitle'))}"><span class="dock-icon">${treatmentIconSvg()}</span><span class="dock-label">${escapeHtml(t('cellDockTreat'))}</span></button>` : ''}
+                <button type="button" class="btn-secondary action-btn dock-icon-btn" data-act="storyMaker" title="${escapeHtml(t('cellDockStoryTitle'))}"><span class="dock-icon">📝</span><span class="dock-label">${escapeHtml(t('storyMaker'))}</span></button>
             </div>
             <div class="mh-dock-hint">${escapeHtml(cellStatusText(pet))}</div>
         `;
@@ -721,13 +723,44 @@ export const cellLevel = {
             el.onclick = () => {
                 if (isDockButtonDisabled(el)) { showDockDisabledToast(el); return; }
                 const k = el.dataset.act;
+                console.log('[Cell Dock] Button clicked:', k);
                 // Defer so this tap's trailing native click is swallowed by the
                 // still-mounted dock before any new window mounts.
                 setTimeout(() => {
-                    if (k === 'chat') { ctx.callbacks.onNav?.('chat'); return; }
-                    if (k === 'storyMaker') { ctx.callbacks.onNav?.('storyMaker', { origin: 'home' }); return; }
-                    if (k === 'wish') showWishModal(pet, ctx);
-                    if (k === 'treatSickness') ctx.callbacks.onTreatSickness?.();
+                    try {
+                        console.log('[Cell Dock] Executing action:', k, 'callbacks:', !!ctx.callbacks, 'onNav:', !!ctx.callbacks?.onNav);
+                        if (k === 'chat') { 
+                            if (ctx.callbacks?.onNav) {
+                                ctx.callbacks.onNav('chat');
+                            } else {
+                                console.warn('[Cell Dock] onNav callback not available for chat');
+                                showToast(t('cellNavUnavailable'), 'error', 1800);
+                            }
+                            return; 
+                        }
+                        if (k === 'storyMaker') { 
+                            if (ctx.callbacks?.onNav) {
+                                console.log('[Cell Dock] Calling onNav for storyMaker');
+                                ctx.callbacks.onNav('storyMaker', { origin: 'home' });
+                            } else {
+                                console.warn('[Cell Dock] onNav callback not available for storyMaker');
+                                showToast(t('cellNavUnavailable'), 'error', 1800);
+                            }
+                            return; 
+                        }
+                        if (k === 'wish') showWishModal(pet, ctx);
+                        if (k === 'treatSickness') {
+                            if (ctx.callbacks?.onTreatSickness) {
+                                ctx.callbacks.onTreatSickness();
+                            } else {
+                                console.warn('[Cell Dock] onTreatSickness callback not available');
+                                showToast(t('cellTreatUnavailable'), 'error', 1800);
+                            }
+                        }
+                    } catch (e) {
+                        console.error('[Cell Dock] Action failed:', k, e);
+                        showToast(t('cellActionFailed', { error: (e?.message || e) }), 'error', 2000);
+                    }
                 }, 0);
             };
         });

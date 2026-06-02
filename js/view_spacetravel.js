@@ -1,6 +1,7 @@
 // 星际拜访与偏远星球航线逻辑
 
 import { $, clamp, dockDisabledAttrs, escapeHtml, formatTime, isDockButtonDisabled, prompt, randId, showDockDisabledToast, showToast } from './utils.js';
+import { planetName, t } from './i18n.js';
 import { endVisitingMode, isVisitingMode, notify, startVisitingMode, state } from './state.js';
 import { addToInventory, loadRecentFriendPlanets, saveRecentFriendPlanetsDebounced, saveUserProfileDebounced, savePetDebounced } from './storage.js';
 import { defaultStats, clampEnergyToMax } from './petTick.js';
@@ -23,14 +24,23 @@ export const SMALL_REMOTE_PLANET_NAME_RADIUS = 8;
 export const SMALL_REMOTE_PLANET_SIZE_PER_RADIUS = 7;
 
 const UFO_REWARDS = ['food_apple', 'food_carrot', 'field_flower', 'land_mushroom', 'water_shell'];
+const OFFICIAL_PLACEHOLDER_FIELD_NAMES = new Set(['左耳', '左眉', '右眉', '右耳', '左胡子', '中胡子', '右胡子']);
 
 export const SMALL_REMOTE_PLANETS = [
-    { id: 'firebird', name: '火鸟岛', x: 22, y: 34, radius: 4.1, depth: 11, hue: 18, accent: '#ffd166', rotation: -18, spinDuration: 14, elementalAttribute: '火', fieldId: 'fire', equipmentId: 'fire_volcano', equipmentName: '火山', equipmentEmoji: '🌋', surfaceX: 36, surfaceY: 30, tip: '派飞船可带回火元素与火山资源，解锁火山地貌。' },
-    { id: 'ice', name: '寒冰岛', x: 11, y: 76, radius: 3.5, depth: 10, hue: 196, accent: '#b8f7ff', rotation: 31, spinDuration: 18, elementalAttribute: '冰', fieldId: 'ice', equipmentId: 'ice_lake', equipmentName: '冰湖', equipmentEmoji: '🧊', surfaceX: 62, surfaceY: 30, tip: '派飞船可带回冰元素与冰湖资源，解锁冰湖地貌。' },
-    { id: 'desert', name: '沙漠岛', x: 88, y: 29, radius: 3.8, depth: 9, hue: 42, accent: '#ffe08a', rotation: 57, spinDuration: 16, elementalAttribute: '生命', fieldId: 'life', equipmentId: 'life_sand_tree', equipmentName: '沙池生命树', equipmentEmoji: '🏝️', surfaceX: 69, surfaceY: -3, surfaceRot: 14, surfaceScale: 2, tip: '派飞船可带回生命元素与沙池生命树，解锁生命地貌。' },
-    { id: 'shadow', name: '幽暗岛', x: 8, y: 52, radius: 3.1, depth: 12, hue: 218, accent: '#9ca3af', rotation: -42, spinDuration: 22, elementalAttribute: '暗', fieldId: 'dark', equipmentId: 'dark_underground_caves', equipmentName: '地下洞穴', equipmentEmoji: '🕳️', surfaceX: 67, surfaceY: 67, tip: '派飞船可带回暗元素与地下洞穴资源，解锁幽暗地貌。' },
-    { id: 'thunder', name: '雷云岛', x: 73, y: 76, radius: 3.4, depth: 11, hue: 266, accent: '#facc15', rotation: 19, spinDuration: 13, elementalAttribute: '雷', fieldId: 'thunder', equipmentId: 'thunder_cloud_tower', equipmentName: '雷云塔', equipmentEmoji: '⚡', surfaceX: 31, surfaceY: 18, tip: '派飞船可带回雷元素与雷云塔资源，解锁雷系地貌。' },
+    { id: 'firebird', nameKey: 'stFirebirdName', x: 22, y: 34, radius: 4.1, depth: 11, hue: 18, accent: '#ffd166', rotation: -18, spinDuration: 14, elementalAttribute: '火', fieldId: 'fire', equipmentId: 'fire_volcano', equipmentNameKey: 'stEquipVolcano', equipmentEmoji: '🌋', surfaceX: 36, surfaceY: 30, tipKey: 'stFirebirdTip' },
+    { id: 'ice', nameKey: 'stIceName', x: 11, y: 76, radius: 3.5, depth: 10, hue: 196, accent: '#b8f7ff', rotation: 31, spinDuration: 18, elementalAttribute: '冰', fieldId: 'ice', equipmentId: 'ice_lake', equipmentNameKey: 'stEquipIce', equipmentEmoji: '🧊', surfaceX: 62, surfaceY: 30, tipKey: 'stIceTip' },
+    { id: 'desert', nameKey: 'stDesertName', x: 88, y: 29, radius: 3.8, depth: 9, hue: 42, accent: '#ffe08a', rotation: 57, spinDuration: 16, elementalAttribute: '生命', fieldId: 'life', equipmentId: 'life_sand_tree', equipmentNameKey: 'stEquipLifeTree', equipmentEmoji: '🏝️', surfaceX: 69, surfaceY: -3, surfaceRot: 14, surfaceScale: 2, tipKey: 'stDesertTip' },
+    { id: 'shadow', nameKey: 'stShadowName', x: 8, y: 52, radius: 3.1, depth: 12, hue: 218, accent: '#9ca3af', rotation: -42, spinDuration: 22, elementalAttribute: '暗', fieldId: 'dark', equipmentId: 'dark_underground_caves', equipmentNameKey: 'stEquipCave', equipmentEmoji: '🕳️', surfaceX: 67, surfaceY: 67, tipKey: 'stShadowTip' },
+    { id: 'thunder', nameKey: 'stThunderName', x: 73, y: 76, radius: 3.4, depth: 11, hue: 266, accent: '#facc15', rotation: 19, spinDuration: 13, elementalAttribute: '雷', fieldId: 'thunder', equipmentId: 'thunder_cloud_tower', equipmentNameKey: 'stEquipThunderTower', equipmentEmoji: '⚡', surfaceX: 31, surfaceY: 18, tipKey: 'stThunderTip' },
 ];
+// 远程星球本地化字段解析
+export const remotePlanetName = (p) => p ? (p.nameKey ? t(p.nameKey) : p.name || '') : '';
+export const remotePlanetTip = (p) => p ? (p.tipKey ? t(p.tipKey) : p.tip || '') : '';
+export const remoteEquipmentName = (p) => p ? (p.equipmentNameKey ? t(p.equipmentNameKey) : p.equipmentName || '') : '';
+
+function officialPlanetTitle(planet) {
+    return planetName(planet?.title || planet?.name) || t('stOfficialPlanetFallback');
+}
 
 let __remoteCargoActive = false;
 let __visitReturnPromptOpen = false;
@@ -112,20 +122,20 @@ export function getSocialVisitTip(destinationId = 'haqi') {
     const fuelCost = socialFuelCost();
     if (String(destinationId).startsWith('friend:')) {
         const friend = friendVisitDestinationById(destinationId);
-        return `会消耗 ${fuelCost} 生物燃料，${displayPetName(friend?.pet) || '好友宠物'}会在${friend?.planetName || '好友星球'}接待你的宠物，返航时带回随机礼盒。`;
+        return t('stTipFriend', { fuel: fuelCost, pet: displayPetName(friend?.pet) || t('stFriendPetFallback'), planet: friend?.planetName || t('stFriendPlanetFallback') });
     }
     if (String(destinationId).startsWith('official:')) {
         const planet = officialVisitDestinations().find(item => item.id === destinationId);
-        return `会消耗 ${fuelCost} 生物燃料，宠物会乘飞船前往${planet?.title || '官方星球'}参观，返航时带回随机礼物。`;
+        return t('stTipOfficial', { fuel: fuelCost, planet: officialPlanetTitle(planet) });
     }
     if (destinationId === 'haqi') {
-        return `会消耗 ${fuelCost} 生物燃料，宠物会获得心情与羁绊，带回 ${socialCoinReward()} 金币和随机礼物。`;
+        return t('stTipHaqi', { fuel: fuelCost, coins: socialCoinReward() });
     }
     const remote = SMALL_REMOTE_PLANETS.find(item => item.id === destinationId);
-    if (!remote) return `会消耗 ${fuelCost} 生物燃料，宠物会乘飞船拜访好友星球。`;
+    if (!remote) return t('stTipFallback', { fuel: fuelCost });
     const stock = getRemoteElementStock(remote);
     const added = Math.min(REMOTE_ELEMENT_HAUL_TONS, Math.max(0, REMOTE_ELEMENT_MAX_TONS - stock));
-    return `会消耗 ${fuelCost} 生物燃料，飞船会前往${remote.name}，带回 ${added} 吨${remote.elementalAttribute}元素。`;
+    return t('stTipRemote', { fuel: fuelCost, name: remotePlanetName(remote), tons: added, attr: remote.elementalAttribute });
 }
 
 function clampStat(pet, key, delta) {
@@ -140,7 +150,7 @@ function isLocked(progress, unlockLevel) {
 }
 
 function lockedTitle(unlockLevel) {
-    return `星球 Lv.${unlockLevel} 解锁`;
+    return t('lpLockedTitle', { level: unlockLevel });
 }
 
 function safeFriendId(value, fallback = '') {
@@ -166,7 +176,7 @@ function stringHash(value) {
 }
 
 function friendPlanetIconData(destination) {
-    const seedText = destination?.planetName || destination?.name || destination?.label || destination?.username || destination?.userId || '好友星球';
+    const seedText = destination?.planetName || destination?.name || destination?.label || destination?.username || destination?.userId || t('stFriendPlanetFallback');
     const hash = stringHash(seedText);
     const hue = hash % 360;
     return {
@@ -178,11 +188,11 @@ function friendPlanetIconData(destination) {
     };
 }
 
-function createFallbackFriendPet(friendName = '星际好友') {
+function createFallbackFriendPet(friendName = t('stFriendDefault')) {
     const id = `visit_friend_${safeFriendId(friendName)}_${randId(4)}`;
     return {
         id,
-        name: `${friendName}的宠物`,
+        name: t('stFriendPetOf', { name: friendName }),
         stage: 'baby',
         dna: randomDna(),
         stats: defaultStats(),
@@ -195,17 +205,17 @@ function friendVisitDestinationFromFriend(record, index) {
     const username = safeRemoteUsername(friendUsername(record));
     const userId = friendId(record);
     if (!username && !userId) return null;
-    const name = friendName(record) || username || `好友${index + 1}`;
+    const name = friendName(record) || username || t('stFriendNumbered', { n: index + 1 });
     return {
         id: `friend:${safeFriendId(username || userId || index)}`,
         kind: 'friend',
         name,
         username,
         userId,
-        planetName: `${name}的星球`,
+        planetName: t('stFriendPlanetOf', { name }),
         pet: null,
         icon: '👤',
-        meta: `${socialFuelCost()}燃料 · 读取好友星球`,
+        meta: t('stReadFriendPlanet', { fuel: socialFuelCost() }),
         label: friendDropdownLabel(record),
         rawFriend: record,
     };
@@ -216,7 +226,7 @@ function recentFriendVisitDestinationFromRecord(record, index) {
     const username = safeRemoteUsername(record.username);
     const userId = String(record.userId || '').trim();
     if (!username && !userId) return null;
-    const name = String(record.name || username || `好友${index + 1}`).trim();
+    const name = String(record.name || username || t('stFriendNumbered', { n: index + 1 })).trim();
     const visitedAt = Number(record.visitedAt) || 0;
     return {
         id: `friend:${safeFriendId(username || userId || index)}`,
@@ -224,10 +234,10 @@ function recentFriendVisitDestinationFromRecord(record, index) {
         name,
         username,
         userId,
-        planetName: String(record.planetName || `${name}的星球`).trim(),
+        planetName: String(record.planetName || t('stFriendPlanetOf', { name })).trim(),
         pet: null,
         icon: '👤',
-        meta: visitedAt ? `上次访问：${formatTime(visitedAt)}` : '最近访问过',
+        meta: visitedAt ? t('stLastVisit', { time: formatTime(visitedAt) }) : t('stVisitedRecently'),
         label: name,
         recent: true,
         visitedAt,
@@ -249,7 +259,7 @@ async function rememberFriendPlanetVisit(friend, remotePlanet) {
     const record = {
         username,
         userId,
-        name: String(friend?.name || username || '好友').trim().slice(0, 80),
+        name: String(friend?.name || username || t('stFriendShort')).trim().slice(0, 80),
         planetName: String(remotePlanet?.planetName || friend?.planetName || '').trim().slice(0, 80),
         visitedAt: Date.now(),
     };
@@ -273,11 +283,22 @@ function normalizeOfficialVisitField(field, index) {
         id: slotId || String(index + 1),
         slotId: slotId || String(index + 1),
         typeId,
-        name: String(field?.name || field?.title || '陆地').trim() || '陆地',
+        name: String(field?.name || field?.title || t('stLandFallback')).trim() || t('stLandFallback'),
         background: field?.background && typeof field.background === 'object' ? { ...field.background } : null,
         particles: Array.isArray(field?.particles) ? field.particles.slice(0, 6) : [],
         bgMusic: typeof field?.bgMusic === 'string' ? field.bgMusic : '',
     };
+}
+
+function isOfficialPlaceholderField(field) {
+    const name = String(field?.name || field?.title || '').trim();
+    const background = field?.background || {};
+    const hasImage = !!String(background.imageUrl || background.url || '').trim();
+    const hasPreset = !!String(background.presetId || '').trim();
+    const hasEffects = Array.isArray(field?.particles) && field.particles.length > 0;
+    const hasMusic = !!String(field?.bgMusic || '').trim();
+    const colorOnly = !background.type || background.type === 'color';
+    return OFFICIAL_PLACEHOLDER_FIELD_NAMES.has(name) && colorOnly && !hasImage && !hasPreset && !hasEffects && !hasMusic;
 }
 
 function normalizeOfficialVisitDestination(entry, index) {
@@ -285,24 +306,27 @@ function normalizeOfficialVisitDestination(entry, index) {
     const planetId = String(entry.id || '').trim();
     if (!planetId) return null;
     const title = String(entry.title || entry.name || planetId).trim();
+    const localizedTitle = planetName(title) || title;
+    const localizedName = planetName(entry.name || title) || localizedTitle;
     const planet = entry.planet && typeof entry.planet === 'object' ? entry.planet : {};
     const fields = (Array.isArray(entry.fields) ? entry.fields : [])
         .map(normalizeOfficialVisitField)
-        .filter(field => field.id);
+        .filter(field => field.id && !isOfficialPlaceholderField(field));
     const hue = Number(planet.hue) || (stringHash(planetId) % 360);
     const accent = String(planet.accentColor || planet.accent || '').trim() || `hsl(${(hue + 54) % 360} 86% 64%)`;
     return {
         id: `official:${planetId}`,
         kind: 'official',
         officialId: planetId,
-        name: title,
-        title,
+        name: localizedName,
+        title: localizedTitle,
         icon: '🪐',
         meta: `${socialFuelCost()}燃料 · 官方星球`,
-        label: title,
+        label: localizedTitle,
         planet,
         fields,
         planetPets: normalizePlanetPetIds(entry.planet_pets || entry.planetPets || entry.famousPets || entry.famous_pet_ids),
+        badge: String(entry.badge || '').trim(),
         appTitle: String(entry.appTitle || '').trim(),
         summary: String(entry.summary || '').trim(),
         hue,
@@ -395,34 +419,34 @@ function officialVisitPlanetPreviewStyle(planet) {
 
 function officialVisitFieldChipsHtml(planet) {
     const fields = Array.isArray(planet?.fields) ? planet.fields : [];
-    if (!fields.length) return `<span class="planet-official-field-chip">🌳 陆地</span>`;
-    return fields.map(field => `<span class="planet-official-field-chip">${escapeHtml(field.name || field.typeId || '陆地')}</span>`).join('');
+    if (!fields.length) return `<span class="planet-official-field-chip">${escapeHtml(t('stFieldChipLand'))}</span>`;
+    return fields.map(field => `<span class="planet-official-field-chip">${escapeHtml(field.name || field.typeId || t('stLandFallback'))}</span>`).join('');
 }
 
 function showOfficialVisitConfirmModal(planet, pet, parentClose) {
     if (!planet || !pet) return false;
     const fuelCost = socialFuelCost();
+    const title = officialPlanetTitle(planet);
     const modal = openPlanetModal(`
         <div class="planet-action-dialog-head">
             <span class="planet-action-dialog-icon">🪐</span>
             <div>
-                <div class="planet-modal-title">${escapeHtml(planet.title || planet.name || '官方星球')}</div>
-                <div class="planet-modal-subtitle">${escapeHtml(planet.summary || '准备前往这个官方星球参观。')}</div>
+                <div class="planet-modal-title">${escapeHtml(title)}</div>
+                <div class="planet-modal-subtitle">${escapeHtml(planet.summary || t('stOfficialDefaultSummary'))}</div>
             </div>
-            <button class="menu-close-btn haqi-download-close planet-action-close" data-act="close" type="button" aria-label="关闭">×</button>
+            <button class="menu-close-btn haqi-download-close planet-action-close" data-act="close" type="button" aria-label="${escapeHtml(t('close'))}">×</button>
         </div>
         <div class="planet-official-visit-card">
-            <div class="planet-official-preview" style="${escapeHtml(officialVisitPlanetPreviewStyle(planet))}"><span>${escapeHtml((planet.title || '?').slice(0, 1))}</span></div>
+            <div class="planet-official-preview" style="${escapeHtml(officialVisitPlanetPreviewStyle(planet))}"><span>${escapeHtml((title || '?').slice(0, 1))}</span></div>
             <div class="planet-official-info">
-                <div class="planet-official-title"><b>${escapeHtml(planet.title || planet.name || '官方星球')}</b><em>${escapeHtml(planet.appTitle || '官方星球')}</em></div>
-                <p>${escapeHtml(planet.summary || '宠物会乘飞船抵达这里，可以参观星球场景，返航时带回随机礼物。')}</p>
+                <div class="planet-official-title"><b>${escapeHtml(title)}</b><em>${escapeHtml(planet.badge ? t(planet.badge) : t('stOfficialPlanetFallback'))}</em></div>
                 <div class="planet-official-fields">${officialVisitFieldChipsHtml(planet)}</div>
             </div>
         </div>
-        <div class="planet-action-dialog-body">会消耗 ${fuelCost} 生物燃料，确认后立即乘飞船前往${escapeHtml(planet.title || '官方星球')}。</div>
+        <div class="planet-action-dialog-body">${escapeHtml(t('stOfficialVisitBody', { fuel: fuelCost, name: title }))}</div>
         <div class="planet-modal-actions">
-            <button class="btn-secondary" data-act="close" type="button">取消</button>
-            <button class="btn-primary" data-official-visit-confirm type="button">传送拜访</button>
+            <button class="btn-secondary" data-act="close" type="button">${escapeHtml(t('cancel'))}</button>
+            <button class="btn-primary" data-official-visit-confirm type="button">${escapeHtml(t('stTeleportVisit'))}</button>
         </div>
     `, async (e, close) => {
         const btn = e.target.closest?.('[data-official-visit-confirm]');
@@ -498,12 +522,12 @@ function hasRemoteSpaceport(profile) {
 async function resolveFriendPlanetForVisit(friend) {
     const username = safeRemoteUsername(friend?.username || friend?.name);
     if (!username || friend?.fallback) {
-        showToast('请先从好友列表选择真实好友，再发起星际拜访。', 'info', 2600);
+        showToast(t('stNeedRealFriend'), 'info', 2600);
         return null;
     }
     const profile = await readRemoteFriendProfile(username);
     if (!profile || !profile.planetName || !hasRemoteSpaceport(profile)) {
-        showToast('对方星球没有建立航空站，无法发访问。', 'error', 3200);
+        showToast(t('stNoSpaceport'), 'error', 3200);
         return null;
     }
     const [pet, layouts] = await Promise.all([
@@ -524,7 +548,7 @@ async function resolveFriendPlanetForVisit(friend) {
         pet,
         layouts,
         fields: remoteFields,
-        planetName: profile.planetName || `${friend.name || username}的星球`,
+        planetName: profile.planetName || t('stFriendPlanetOf', { name: friend.name || username }),
     };
 }
 
@@ -539,9 +563,9 @@ export function smallRemotePlanetsHtml() {
         return `
             <button class="remote-mini-planet remote-mini-${planet.id}" id="mhRemotePlanet-${planet.id}" type="button"
                 style="left:${planet.x}%;top:${planet.y}%;--remote-mini-size:${(planet.radius * SMALL_REMOTE_PLANET_SIZE_PER_RADIUS).toFixed(1)}px;--remote-mini-hue:${planet.hue};--remote-mini-accent:${planet.accent};--remote-mini-rotation:${planet.rotation || 0}deg;--remote-mini-spin-duration:${planet.spinDuration || 120}s"
-                title="${escapeHtml(planet.name)}" aria-label="${escapeHtml(planet.name)}" data-remote-planet="${escapeHtml(planet.id)}">
+                title="${escapeHtml(remotePlanetName(planet))}" aria-label="${escapeHtml(remotePlanetName(planet))}" data-remote-planet="${escapeHtml(planet.id)}">
                 <span class="remote-mini-body" aria-hidden="true">${smallRemotePlanetSvg(planet)}</span>
-                ${showName ? `<span class="remote-mini-name">${escapeHtml(planet.name)}</span>` : ''}
+                ${showName ? `<span class="remote-mini-name">${escapeHtml(remotePlanetName(planet))}</span>` : ''}
             </button>`;
     }).join('');
 }
@@ -583,7 +607,7 @@ export function socialVisitDestinationItems() {
     const officialItems = officialVisitDestinations().map(planet => ({
         id: planet.id,
         kind: 'official',
-        name: planet.title || planet.name,
+        name: officialPlanetTitle(planet),
         planet,
         icon: '🪐',
         meta: `${socialFuelCost()}燃料 · 官方星球`,
@@ -592,9 +616,9 @@ export function socialVisitDestinationItems() {
     const planetItems = officialItems.length ? officialItems : [
         {
             id: 'haqi',
-            name: '哈奇岛',
+            name: t('lpHaqiIsland'),
             icon: '🏝️',
-            meta: `${socialFuelCost()}燃料 · ${socialCoinReward()}金币`,
+            meta: t('stHaqiMeta', { fuel: socialFuelCost(), coins: socialCoinReward() }),
             locked: false,
         },
         ...SMALL_REMOTE_PLANETS.map(remote => {
@@ -602,12 +626,12 @@ export function socialVisitDestinationItems() {
             const full = stock >= REMOTE_ELEMENT_MAX_TONS;
             return {
                 id: remote.id,
-                name: remote.name,
+                name: remotePlanetName(remote),
                 remote,
                 icon: remote.equipmentEmoji,
-                meta: full ? '储量已满' : `${socialFuelCost()}燃料 · ${remote.elementalAttribute}${stock}/${REMOTE_ELEMENT_MAX_TONS}`,
+                meta: full ? t('stStockFull') : t('stStockMeta', { fuel: socialFuelCost(), attr: remote.elementalAttribute, stock, max: REMOTE_ELEMENT_MAX_TONS }),
                 locked: full,
-                disabledReason: full ? `${remote.name}的${remote.elementalAttribute}储量已满，先使用一些库存后再派遣飞船。` : '',
+                disabledReason: full ? t('stStockFullReason', { name: remotePlanetName(remote), attr: remote.elementalAttribute }) : '',
             };
         }),
     ];
@@ -615,9 +639,9 @@ export function socialVisitDestinationItems() {
         {
             id: 'friends',
             kind: 'friendPicker',
-            name: '好友星球',
+            name: t('stFriendPlanetTitle'),
             icon: '👥',
-            meta: '最近拜访 · 好友列表',
+            meta: t('stFriendPlanetMeta'),
             locked: false,
         },
         ...planetItems,
@@ -634,7 +658,6 @@ function socialVisitDestinationButtonsHtml() {
                     <span class="planet-visit-destination-icon">${destination.icon}</span>
                     <span class="planet-visit-destination-text">
                         <b>${escapeHtml(destination.name)}</b>
-                        <i>${escapeHtml(destination.meta)}</i>
                     </span>
                 </button>
             `;
@@ -645,7 +668,6 @@ function socialVisitDestinationButtonsHtml() {
                     <span class="planet-visit-destination-icon">${destination.kind === 'friend' ? friendVisitDestinationIconHtml(destination) : destination.kind === 'official' ? officialVisitDestinationIconHtml(destination.planet || destination) : destination.remote ? smallRemotePlanetSvg(destination.remote) : destination.icon}</span>
                     <span class="planet-visit-destination-text">
                         <b>${escapeHtml(destination.name)}</b>
-                        <i>${escapeHtml(destination.meta)}</i>
                     </span>
                 </button>
             `;
@@ -654,7 +676,7 @@ function socialVisitDestinationButtonsHtml() {
 
 export function socialVisitDestinationPickerHtml() {
     return `
-        <div class="planet-visit-destinations" role="listbox" aria-label="选择拜访星球">
+        <div class="planet-visit-destinations" role="listbox" aria-label="${escapeHtml(t('stPickPlanetAria'))}">
             ${socialVisitDestinationButtonsHtml()}
         </div>
     `;
@@ -668,7 +690,7 @@ function friendVisitDestinationRowHtml(destination, extraClass = '') {
         <button class="planet-option planet-friend-visit-row ${extraClass}" data-friend-visit-destination="${escapeHtml(destination.id)}" type="button">
             <span class="planet-option-icon planet-friend-visit-icon">${friendVisitDestinationIconHtml(destination)}</span>
             <span>
-                <b>${escapeHtml(destination.planetName || `${destination.name}的星球`)}</b>
+                <b>${escapeHtml(destination.planetName || t('stFriendPlanetOf', { name: destination.name }))}</b>
                 ${metaHtml}
             </span>
         </button>
@@ -680,19 +702,19 @@ function friendVisitPickerContentHtml(isLoading = false) {
     const friends = friendVisitDestinations();
     const recentHtml = recent.length
         ? recent.map(destination => friendVisitDestinationRowHtml(destination, 'is-recent')).join('')
-        : `<div class="planet-friend-picker-empty">最近访问的好友星球会显示在这里。</div>`;
+        : `<div class="planet-friend-picker-empty">${escapeHtml(t('stRecentEmpty'))}</div>`;
     const friendsHtml = isLoading || !__friendVisitDestinationsLoaded
-        ? `<div class="planet-friend-picker-empty">正在读取好友列表...</div>`
+        ? `<div class="planet-friend-picker-empty">${escapeHtml(t('stLoadingFriends'))}</div>`
         : (friends.length
             ? friends.map(destination => friendVisitDestinationRowHtml(destination)).join('')
-            : `<div class="planet-friend-picker-empty">暂无好友，请先在邮箱添加好友。</div>`);
+            : `<div class="planet-friend-picker-empty">${escapeHtml(t('stNoFriends'))}</div>`);
     return `
         <div class="planet-friend-picker-section">
-            <div class="planet-friend-picker-heading">最近访问</div>
+            <div class="planet-friend-picker-heading">${escapeHtml(t('stRecentVisit'))}</div>
             <div class="planet-option-list planet-friend-picker-list">${recentHtml}</div>
         </div>
         <div class="planet-friend-picker-section">
-            <div class="planet-friend-picker-heading">好友列表</div>
+            <div class="planet-friend-picker-heading">${escapeHtml(t('stFriendList'))}</div>
             <div class="planet-option-list planet-friend-picker-list" data-friend-picker-list>${friendsHtml}</div>
         </div>
     `;
@@ -704,14 +726,14 @@ export async function openFriendVisitPickerModal(pet, parentClose) {
         <div class="planet-action-dialog-head">
             <span class="planet-action-dialog-icon">👥</span>
             <div>
-                <div class="planet-modal-title">好友星球</div>
-                <div class="planet-modal-subtitle">选择一个好友星球后会立即出发。</div>
+                <div class="planet-modal-title">${escapeHtml(t('stFriendPlanetTitle'))}</div>
+                <div class="planet-modal-subtitle">${escapeHtml(t('stFriendPickerSub'))}</div>
             </div>
         </div>
         <div class="planet-friend-picker-body" data-friend-picker-body>
             ${friendVisitPickerContentHtml(!__friendVisitDestinationsLoaded)}
         </div>
-        <div class="planet-modal-actions"><button class="btn-secondary" data-act="close">取消</button></div>
+        <div class="planet-modal-actions"><button class="btn-secondary" data-act="close">${escapeHtml(t('cancel'))}</button></div>
     `, async (e, close) => {
         const btn = e.target.closest?.('[data-friend-visit-destination]');
         if (!btn || btn.disabled) return;
@@ -827,7 +849,7 @@ async function launchFriendPlanetVisit(friend, pet, close) {
     const remotePlanet = await resolveFriendPlanetForVisit(friend);
     if (!remotePlanet) return false;
     if ((state.biofuel | 0) < fuelCost) {
-        showToast(`需要 ${fuelCost} ⛽ 生物燃料才能拜访好友星球。`, 'error', 2600);
+        showToast(t('stNeedFuelFriend', { fuel: fuelCost }), 'error', 2600);
         return false;
     }
     state.biofuel = Math.max(0, (state.biofuel | 0) - fuelCost);
@@ -868,7 +890,7 @@ async function launchFriendPlanetVisit(friend, pet, close) {
         });
         rememberFriendPlanetVisit(friend, remotePlanet);
         addPlanetLog('friendVisit', `${displayPetName(pet)}抵达${remotePlanet.planetName}`, '🚀');
-        showToast(`已抵达 ${remotePlanet.planetName}，可以在表面和宠物房间活动。`, 'success', 3200);
+        showToast(t('stArrivedFriend', { planet: remotePlanet.planetName }), 'success', 3200);
         notify();
     } finally {
         __remoteCargoActive = false;
@@ -905,7 +927,7 @@ async function completeFriendVisitReturn(pet) {
     savePetDebounced(pet);
     saveUserProfileDebounced();
     soundManager.playSpacecraftArrive();
-    showToast('返航完成！好友宠物送来的随机礼盒已放入背包。', 'success', 3200);
+    showToast(t('stReturnDone'), 'success', 3200);
     notify();
 }
 
@@ -913,18 +935,19 @@ export function showVisitReturnPrompt(pet, ctx) {
     if (!isVisitingMode() || __visitReturnPromptOpen) return;
     __visitReturnPromptOpen = true;
     const visit = state.visitingMode;
+    const planetName = visit?.planetName || t('stFriendPlanetFallback');
     openPlanetModal(`
         <div class="planet-action-dialog-head">
             <span class="planet-action-dialog-icon">🚀</span>
             <div>
-                <div class="planet-modal-title">准备返航吗？</div>
-                <div class="planet-modal-subtitle">你正在拜访 ${escapeHtml(visit?.planetName || '好友星球')}。</div>
+                <div class="planet-modal-title">${escapeHtml(t('stReturnPromptTitle'))}</div>
+                <div class="planet-modal-subtitle">${escapeHtml(t('stReturnPromptSubtitle', { planetName }))}</div>
             </div>
         </div>
-        <div class="planet-action-dialog-body">还想再逛一会儿吗？点“继续拜访”可以回到好友星球；点“登船返航”会带上好友送你的礼盒回到自己的星球。</div>
+        <div class="planet-action-dialog-body">${escapeHtml(t('stReturnPromptBody'))}</div>
         <div class="planet-modal-actions">
-            <button class="btn-secondary" data-visit-return="no">继续拜访</button>
-            <button class="btn-primary" data-visit-return="yes">登船返航</button>
+            <button class="btn-secondary" data-visit-return="no">${escapeHtml(t('stContinueVisit'))}</button>
+            <button class="btn-primary" data-visit-return="yes">${escapeHtml(t('stBoardReturn'))}</button>
         </div>
     `, async (e, close) => {
         const btn = e.target.closest?.('[data-visit-return]');
@@ -959,14 +982,14 @@ async function launchHaqiSocialVisit(pet, close) {
     notify();
     close?.();
     __remoteCargoActive = true;
-    showToast('飞船出发！宠物正在前往哈奇岛拜访。', 'info', 2600);
+    showToast(t('stShipDepartHaqi'), 'info', 2600);
     try {
         soundManager.playSpacecraftTakeoff();
         const spaceTravel = getSpaceTravel();
         if (spaceTravel?.playMission) {
             await spaceTravel.playMission('haqi', { direction: 'outbound', duration: 8500, type: 'shuttle' });
             soundManager.playSpacecraftArrive();
-            showToast('哈奇岛拜访完成，飞船正在返航。', 'info', 2200);
+            showToast(t('stHaqiVisitDone'), 'info', 2200);
             soundManager.playSpacecraftTakeoff();
             await spaceTravel.playMission('haqi', { direction: 'return', duration: 7500, type: 'shuttle' });
         }
@@ -983,7 +1006,7 @@ async function launchHaqiSocialVisit(pet, close) {
     savePetDebounced(pet);
     saveUserProfileDebounced();
     soundManager.playSpacecraftArrive();
-    showToast(`航程完成！宠物拜访哈奇岛后带回了 ${coinReward} 金币和 1 份随机礼物。`, 'success', 3000);
+    showToast(t('stHaqiVoyageDone', { coins: coinReward }), 'success', 3000);
     notify();
     return true;
 }
@@ -1010,7 +1033,7 @@ function officialVisitProfile(planet) {
         if (field.typeId) fieldScenes[field.typeId] = { ...scene, background: scene.background ? { ...scene.background } : scene.background };
     });
     return {
-        planetName: planet?.title || planet?.name || '官方星球',
+        planetName: officialPlanetTitle(planet),
         currentPetId: '',
         settings: { fieldScenes },
     };
@@ -1120,7 +1143,7 @@ function createOfficialHostPet(planet, planetPets = []) {
     if (picked) return { ...picked, id: picked.id || `visit_famous_${safeFriendId(picked.famousPetId || picked.name || randId(6))}`, anim: 'happy' };
     return {
         id: `visit_official_${safeFriendId(planet?.officialId || planet?.id || 'planet')}`,
-        name: `${planet?.title || planet?.name || '官方星球'}导游`,
+        name: t('stOfficialGuideName', { name: officialPlanetTitle(planet) }),
         stage: 'baby',
         dna: randomDna(),
         stats: defaultStats(),
@@ -1133,11 +1156,11 @@ async function launchOfficialPlanetVisit(planet, pet, close) {
     const fuelCost = socialFuelCost();
     if (!planet || !pet) return false;
     if (__remoteCargoActive || isVisitingMode()) {
-        showToast('当前已有一段星际航程正在进行。', 'info', 2200);
+        showToast(t('stVoyageBusy'), 'info', 2200);
         return false;
     }
     if ((state.biofuel | 0) < fuelCost) {
-        showToast(`需要 ${fuelCost} ⛽ 生物燃料才能拜访${planet.title || '官方星球'}。`, 'error', 2600);
+        showToast(t('stNeedFuelOfficial', { fuel: fuelCost, name: officialPlanetTitle(planet) }), 'error', 2600);
         return false;
     }
     state.biofuel = Math.max(0, (state.biofuel | 0) - fuelCost);
@@ -1152,9 +1175,9 @@ async function launchOfficialPlanetVisit(planet, pet, close) {
     const previousField = state.currentField || 'land';
     try {
         soundManager.playSpacecraftTakeoff();
-        await playVisitDeparture({ crew, destinationName: planet.title || '官方星球' });
+        await playVisitDeparture({ crew, destinationName: officialPlanetTitle(planet) });
         soundManager.playSpacecraftArrive();
-        await playVisitArrival({ crew, destinationName: planet.title || '官方星球', welcomePet: friendPet });
+        await playVisitArrival({ crew, destinationName: officialPlanetTitle(planet), welcomePet: friendPet });
         const firstField = planet.fields?.[0];
         state.currentField = firstField?.id || firstField?.typeId || 'land';
         state.zoomLevel = 1;
@@ -1166,10 +1189,10 @@ async function launchOfficialPlanetVisit(planet, pet, close) {
         state.activePetRoomFocusPose = null;
         startVisitingMode({
             friendId: planet.id,
-            friendName: planet.title || '官方星球',
+            friendName: officialPlanetTitle(planet),
             friendUsername: '',
             friendUserId: '',
-            planetName: planet.title || '官方星球',
+            planetName: officialPlanetTitle(planet),
             remoteProfile: officialVisitProfile(planet),
             remoteLayouts: officialVisitLayouts(planet),
             remoteFields: planet.fields || [],
@@ -1180,8 +1203,8 @@ async function launchOfficialPlanetVisit(planet, pet, close) {
             previousField,
             officialPlanetId: planet.officialId,
         });
-        addPlanetLog('officialVisit', `${displayPetName(pet)}抵达${planet.title || '官方星球'}`, '🚀');
-        showToast(`已抵达 ${planet.title || '官方星球'}，可以参观星球场景。`, 'success', 3200);
+        addPlanetLog('officialVisit', t('stOfficialVisitLog', { pet: displayPetName(pet), planet: officialPlanetTitle(planet) }), '🚀');
+        showToast(t('stArrivedOfficial', { name: officialPlanetTitle(planet) }), 'success', 3200);
         notify();
     } finally {
         __remoteCargoActive = false;
@@ -1197,25 +1220,25 @@ export function showRemotePlanetPanel(remote) {
     openPlanetModal(`
         <div class="haqi-island-head remote-travel-head">
             <div>
-                <div class="planet-modal-title">${escapeHtml(remote.name)}</div>
-                <div class="planet-modal-subtitle">${escapeHtml(remote.tip)}</div>
+                <div class="planet-modal-title">${escapeHtml(remotePlanetName(remote))}</div>
+                <div class="planet-modal-subtitle">${escapeHtml(remotePlanetTip(remote))}</div>
             </div>
-            <button class="menu-close-btn haqi-download-close" data-act="close" type="button" aria-label="关闭">×</button>
+            <button class="menu-close-btn haqi-download-close" data-act="close" type="button" aria-label="${escapeHtml(t('close'))}">×</button>
         </div>
         <div class="remote-travel-card">
             <div class="remote-travel-planet" style="--remote-travel-hue:${remote.hue};--remote-travel-accent:${remote.accent};--remote-mini-hue:${remote.hue};--remote-mini-accent:${remote.accent};--remote-mini-rotation:${remote.rotation || 0}deg;--remote-mini-spin-duration:${remote.spinDuration || 120}s">${smallRemotePlanetSvg(remote)}</div>
             <div class="remote-travel-info">
-                <div><b>资源</b><span>${escapeHtml(remote.equipmentName)} ${remote.equipmentEmoji}</span></div>
-                <div><b>DNA 信号</b><span>${escapeHtml(remote.elementalAttribute)}元素</span></div>
-                <div><b>元素储量</b><span>${stock}/${REMOTE_ELEMENT_MAX_TONS} 吨</span></div>
+                <div><b>${escapeHtml(t('stRemoteResource'))}</b><span>${escapeHtml(remoteEquipmentName(remote))} ${remote.equipmentEmoji}</span></div>
+                <div><b>${escapeHtml(t('stDnaSignal'))}</b><span>${escapeHtml(t('stElementUnit', { attr: remote.elementalAttribute }))}</span></div>
+                <div><b>${escapeHtml(t('stRemoteStock'))}</b><span>${escapeHtml(t('stRemoteTons', { stock, max: REMOTE_ELEMENT_MAX_TONS }))}</span></div>
             </div>
         </div>
         <div class="planet-action-dialog-body">
-            派出飞船会自动往返 ${escapeHtml(remote.name)}，每次补充 ${REMOTE_ELEMENT_HAUL_TONS} 吨${escapeHtml(remote.elementalAttribute)}元素。最多可储存 ${REMOTE_ELEMENT_MAX_TONS} 吨，未来在对应地貌养宠会消耗这些元素。
+            ${escapeHtml(t('stRemoteDispatchInfo', { name: remotePlanetName(remote), haul: REMOTE_ELEMENT_HAUL_TONS, attr: remote.elementalAttribute, max: REMOTE_ELEMENT_MAX_TONS }))}
         </div>
         <div class="planet-modal-actions remote-travel-actions">
-            <button class="btn-secondary" data-act="close">关闭</button>
-            <button class="btn-primary" data-remote-visit="${escapeHtml(remote.id)}" ${full ? 'disabled' : ''}>${full ? '储量已满' : (discovery ? '再次派遣飞船' : '派遣飞船')}</button>
+            <button class="btn-secondary" data-act="close">${escapeHtml(t('close'))}</button>
+            <button class="btn-primary" data-remote-visit="${escapeHtml(remote.id)}" ${full ? 'disabled' : ''}>${full ? escapeHtml(t('stStockFull')) : (discovery ? escapeHtml(t('stDispatchAgain')) : escapeHtml(t('stDispatch')))}</button>
         </div>
     `, async (e, close) => {
         const btn = e.target.closest?.('[data-remote-visit]');
@@ -1231,15 +1254,15 @@ export function showRemotePlanetPanel(remote) {
 async function visitRemotePlanet(remote, close) {
     const fuelCost = socialFuelCost();
     if (__remoteCargoActive) {
-        showToast('还有一批星际资源正在自动返航，请稍等片刻。', 'info', 2600);
+        showToast(t('stResourceReturning'), 'info', 2600);
         return false;
     }
     if (getRemoteElementStock(remote) >= REMOTE_ELEMENT_MAX_TONS) {
-        showToast(`${remote.elementalAttribute}元素已经储存到上限 ${REMOTE_ELEMENT_MAX_TONS} 吨。`, 'info', 2600);
+        showToast(t('stStockMaxed', { attr: remote.elementalAttribute, max: REMOTE_ELEMENT_MAX_TONS }), 'info', 2600);
         return false;
     }
     if ((state.biofuel | 0) < fuelCost) {
-        showToast(`需要 ${fuelCost} ⛽ 生物燃料才能派出飞船。`, 'error', 2600);
+        showToast(t('stNeedFuelShip', { fuel: fuelCost }), 'error', 2600);
         return false;
     }
     state.biofuel = Math.max(0, (state.biofuel | 0) - fuelCost);
@@ -1248,14 +1271,14 @@ async function visitRemotePlanet(remote, close) {
     notify();
     close?.();
     __remoteCargoActive = true;
-    showToast(`航程开始：飞船正在前往${remote.name}采集${remote.elementalAttribute}元素。`, 'info', 2600);
+    showToast(t('stVoyageStart', { name: remotePlanetName(remote), attr: remote.elementalAttribute }), 'info', 2600);
     try {
         soundManager.playSpacecraftTakeoff();
         const spaceTravel = getSpaceTravel();
         if (spaceTravel?.playMission) {
             await spaceTravel.playMission(remote.id, { direction: 'outbound', duration: 10500, type: 'shuttle' });
             soundManager.playSpacecraftArrive();
-            showToast(`${remote.equipmentName}装载完成，飞船正在返航。`, 'info', 2200);
+            showToast(t('stLoadedReturning', { equip: remoteEquipmentName(remote) }), 'info', 2200);
             soundManager.playSpacecraftTakeoff();
             await spaceTravel.playMission(remote.id, {
                 direction: 'return',
@@ -1282,7 +1305,7 @@ async function completeRemoteElementReturn(remote) {
         ...(existing || {}),
         visitedAt: Date.now(),
         equipmentId: remote.equipmentId,
-        equipmentName: remote.equipmentName,
+        equipmentName: remoteEquipmentName(remote),
         elementalAttribute: remote.elementalAttribute,
         fieldId: remote.fieldId,
         dna,
@@ -1291,15 +1314,15 @@ async function completeRemoteElementReturn(remote) {
     const before = getRemoteElementStock(remote);
     const added = Math.min(REMOTE_ELEMENT_HAUL_TONS, REMOTE_ELEMENT_MAX_TONS - before);
     if (added <= 0) {
-        showToast(`${remote.elementalAttribute}元素已经储存到上限 ${REMOTE_ELEMENT_MAX_TONS} 吨。`, 'info', 2600);
+        showToast(t('stStockMaxed', { attr: remote.elementalAttribute, max: REMOTE_ELEMENT_MAX_TONS }), 'info', 2600);
         return;
     }
     state.remoteElementStocks[remote.id] = before + added;
     const itemCount = Math.max(1, Math.floor(added / REMOTE_ELEMENT_HAUL_TONS));
     await addToInventory('remote_planet', remote.equipmentId, itemCount);
-    addPlanetLog('remoteVisit', `飞船从${remote.name}带回 ${added} 吨${remote.elementalAttribute}元素`, remote.equipmentEmoji);
+    addPlanetLog('remoteVisit', t('stRemoteHaulLog', { name: remotePlanetName(remote), tons: added, attr: remote.elementalAttribute }), remote.equipmentEmoji);
     refreshTopbarResources();
     saveUserProfileDebounced();
     notify();
-    showToast(`航程完成：${remote.elementalAttribute}元素 +${added} 吨，转化为 ${itemCount} 个${remote.equipmentName}（${state.remoteElementStocks[remote.id]}/${REMOTE_ELEMENT_MAX_TONS}）。${firstDiscovery ? ` 已解锁对应地貌。` : ''}`, 'success', 3800);
+    showToast(t('stRemoteVoyageDone', { attr: remote.elementalAttribute, tons: added, count: itemCount, equip: remoteEquipmentName(remote), stock: state.remoteElementStocks[remote.id], max: REMOTE_ELEMENT_MAX_TONS, unlock: firstDiscovery ? t('stUnlockedTerrain') : '' }), 'success', 3800);
 }

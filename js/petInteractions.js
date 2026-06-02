@@ -1,5 +1,6 @@
 import { CONFIG, getShopItemsByType } from './config.js';
 import { dnaDietPreference } from './dna.js';
+import { t } from './i18n.js';
 import { escapeHtml, randInt, showToast } from './utils.js';
 import { eatFood, playPetClickFeedback, playPetHappy, sayOnPet, scanAndMount } from './pet.js';
 import SoundManager from './soundManager.js';
@@ -7,10 +8,14 @@ import SoundManager from './soundManager.js';
 export const BATH_SEQUENCE_MS = 10000;
 export const BATH_COMPLETE_FEEDBACK_MS = 3000;
 export const BATH_COMPLETE_LINES = [
-    '洗好啦，香香的！',
-    '泡泡浴完成，感觉闪闪发光！',
-    '干干净净，心情也亮起来啦！',
+    'petBathDone1',
+    'petBathDone2',
+    'petBathDone3',
 ];
+
+export function randomBathCompleteLine() {
+    return t(BATH_COMPLETE_LINES[randInt(0, BATH_COMPLETE_LINES.length - 1)]);
+}
 
 const soundManager = SoundManager.getInstance();
 const FOOD_EAT_MIN_MS = 3000;

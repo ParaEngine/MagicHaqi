@@ -1,5 +1,6 @@
 // 故事场景创作视图：为 story maker 选择预设背景、粒子效果，或由 VIP 生成背景图。
 import { escapeHtml, showToast } from './utils.js';
+import { t } from './i18n.js';
 import { state } from './state.js';
 import { CONFIG, getDefaultSceneImageSize, getSceneImageSizes } from './config.js';
 import SoundManager from './soundManager.js';
@@ -14,56 +15,56 @@ export const DEFAULT_SCENE_TAGS = [
 export const SCENE_TAG_PROMPT_HINT = DEFAULT_SCENE_TAGS.join(', ');
 
 export const SCENE_TAG_LABELS = {
-    indoor: '室内',
-    outdoor: '户外',
-    land: '陆地',
-    sky: '天空',
-    ocean: '海洋',
-    playground: '操场',
-    bathroom: '浴室',
-    'living room': '客厅',
-    shop: '商店',
-    school: '学校',
-    spring: '春天',
-    winter: '冬天',
-    seaside: '海边',
-    haqi: '哈奇',
-    townhall: '镇大厅',
-    forest: '森林',
-    sand: '沙滩',
-    hospital: '医院',
-    night: '夜晚',
-    mountain: '山地',
-    spaceship: '飞船',
-    castle: '城堡',
-    farm: '农场',
-    park: '公园',
-    zoo: '动物园',
-    underwater: '海底',
-    jungle: '丛林',
-    candy: '糖果',
+    indoor: 'smTagIndoor',
+    outdoor: 'smTagOutdoor',
+    land: 'catLand',
+    sky: 'catSky',
+    ocean: 'albumSea',
+    playground: 'smTagPlayground',
+    bathroom: 'roomBath',
+    'living room': 'roomLiving',
+    shop: 'shop',
+    school: 'smTagSchool',
+    spring: 'smTagSpring',
+    winter: 'smTagWinter',
+    seaside: 'smTagSeaside',
+    haqi: 'smTagHaqi',
+    townhall: 'smTagTownhall',
+    forest: 'smTagForest',
+    sand: 'smTagSand',
+    hospital: 'smTagHospital',
+    night: 'smTagNight',
+    mountain: 'smTagMountain',
+    spaceship: 'smTagSpaceship',
+    castle: 'smTagCastle',
+    farm: 'smTagFarm',
+    park: 'smTagPark',
+    zoo: 'smTagZoo',
+    underwater: 'smTagUnderwater',
+    jungle: 'smTagJungle',
+    candy: 'smTagCandy',
 };
 
 export const PARTICLE_EFFECTS = [
-    { id: 'sparkle', label: '星光' },
-    { id: 'snow', label: '雪花' },
-    { id: 'rain', label: '细雨' },
-    { id: 'mist', label: '薄雾' },
-    { id: 'bubbles', label: '泡泡' },
-    { id: 'petals', label: '花瓣' },
-    { id: 'embers', label: '暖光' },
+    { id: 'sparkle', labelKey: 'smParticleSparkle' },
+    { id: 'snow', labelKey: 'smParticleSnow' },
+    { id: 'rain', labelKey: 'smParticleRain' },
+    { id: 'mist', labelKey: 'smParticleMist' },
+    { id: 'bubbles', labelKey: 'smParticleBubbles' },
+    { id: 'petals', labelKey: 'smParticlePetals' },
+    { id: 'embers', labelKey: 'smParticleEmbers' },
 ];
 
 export const BG_MUSIC_LABELS = {
-    selector: '选择',
-    square: '广场',
-    forest: '森林',
-    farm: '农场',
-    mountain: '山地',
-    park: '公园',
-    playground: '游乐场',
-    ship: '飞船',
-    haqiLoop: '哈奇循环',
+    selector: 'smMusicSelector',
+    square: 'smMusicSquare',
+    forest: 'smTagForest',
+    farm: 'smTagFarm',
+    mountain: 'smTagMountain',
+    park: 'smTagPark',
+    playground: 'smTagPlayground',
+    ship: 'smTagSpaceship',
+    haqiLoop: 'smMusicHaqiLoop',
 };
 
 export const TAG_ALIASES = {
@@ -141,7 +142,7 @@ function normalizeHistoryUrls(value) {
 export function bgMusicOptions() {
     return Object.keys(CONFIG.assets?.bgSounds || {}).map(key => ({
         id: key,
-        label: BG_MUSIC_LABELS[key] || key,
+        label: BG_MUSIC_LABELS[key] ? t(BG_MUSIC_LABELS[key]) : key,
     }));
 }
 
@@ -153,15 +154,15 @@ export function normalizeBgMusic(value) {
 
 export function bgMusicLabel(value) {
     const music = normalizeBgMusic(value);
-    if (!music) return '无音乐';
-    return BG_MUSIC_LABELS[music] || music;
+    if (!music) return t('smNoMusic');
+    return BG_MUSIC_LABELS[music] ? t(BG_MUSIC_LABELS[music]) : music;
 }
 
 export function normalizeScenePreset(scene = {}, index = 0) {
     const tags = normalizeSceneTags(scene.tags || scene.sceneTags || scene.keywords || []);
     return {
         id: String(scene.id || `scene_preset_${index + 1}`),
-        title: String(scene.title || scene.name || `场景 ${index + 1}`),
+        title: String(scene.title || scene.name || t('smPresetFallbackTitle', { index: index + 1 })),
         imageUrl: String(scene.imageUrl || scene.url || scene.src || ''),
         historyUrls: normalizeHistoryUrls(scene.historyUrls || scene.historyUrl || scene.imageHistoryUrls || []),
         color: String(scene.color || scene.bgColor || '#bae6fd'),
@@ -178,13 +179,13 @@ export async function loadScenePresets({ force = false } = {}) {
     const url = fromDevTool ? `../${PRESET_SCENE_PATH}` : PRESET_SCENE_PATH;
     try {
         const res = await fetch(url, { cache: force ? 'reload' : 'no-cache' });
-        if (!res.ok) throw new Error(`场景预设加载失败 (${res.status})`);
+        if (!res.ok) throw new Error(t('smPresetLoadFailed', { status: res.status }));
         const data = await res.json();
         const scenes = Array.isArray(data?.scenes) ? data.scenes : (Array.isArray(data) ? data : []);
         presetCache = scenes.map(normalizeScenePreset);
         return presetCache;
     } catch (e) {
-        console.warn('场景预设加载失败', e);
+        console.warn(t('smPresetFetchFailed'), e);
     }
     presetCache = [];
     return presetCache;
@@ -339,8 +340,8 @@ export async function buildSceneImagePrompt(promptText, tags = [], referenceCoun
 }
 
 export async function generateSceneBackgroundImage({ promptText = '', tags = [], referenceImages = [], imageSize = '' } = {}) {
-    if (!state.isPaid) throw new Error('只有 VIP 用户可以生成自定义背景图');
-    if (!state.sdk?.aiGenerators?.genImage) throw new Error('AI 图片生成不可用');
+    if (!state.isPaid) throw new Error(t('smVipOnlyError'));
+    if (!state.sdk?.aiGenerators?.genImage) throw new Error(t('smAiUnavailableError'));
     const images = referenceImages
         .map(url => String(url || '').trim())
         .filter(Boolean)
@@ -357,7 +358,7 @@ export async function generateSceneBackgroundImage({ promptText = '', tags = [],
 
 function tagButtonsHtml(tags, selected) {
     const active = new Set(normalizeSceneTags(selected));
-    return tags.map(tag => `<button type="button" class="${active.has(tag) ? 'is-active' : ''}" data-scene-tag="${escapeHtml(tag)}">${escapeHtml(SCENE_TAG_LABELS[tag] || tag)}</button>`).join('');
+    return tags.map(tag => `<button type="button" class="${active.has(tag) ? 'is-active' : ''}" data-scene-tag="${escapeHtml(tag)}">${escapeHtml(SCENE_TAG_LABELS[tag] ? t(SCENE_TAG_LABELS[tag]) : tag)}</button>`).join('');
 }
 
 function presetCardHtml(scene, selectedId) {
@@ -433,7 +434,7 @@ export async function renderStorySceneMaker(panel, data = {}, { onBack, onApplyS
                 bgMusic: draftScene.bgMusic || '',
             },
         });
-        showToast('已应用场景', 'success', 1400);
+        showToast(t('smApplied'), 'success', 1400);
     };
 
     function applyPresetToDraft(preset) {
@@ -457,7 +458,7 @@ export async function renderStorySceneMaker(panel, data = {}, { onBack, onApplyS
 
     function particleButtonHtml(effect) {
         const active = draftScene.particles.includes(effect.id);
-        return `<button type="button" class="${active ? 'is-active' : ''}" data-particle-id="${escapeHtml(effect.id)}">${escapeHtml(effect.label)}</button>`;
+        return `<button type="button" class="${active ? 'is-active' : ''}" data-particle-id="${escapeHtml(effect.id)}">${escapeHtml(effect.labelKey ? t(effect.labelKey) : effect.label || effect.id)}</button>`;
     }
 
     function musicButtonHtml(option) {
@@ -468,7 +469,8 @@ export async function renderStorySceneMaker(panel, data = {}, { onBack, onApplyS
     function musicToggleButtonHtml(track) {
         if (!track) return '';
         const muted = soundManager.isBgMusicMuted?.();
-        return `<button type="button" class="mh-scene-music-toggle ${muted ? 'is-muted' : ''}" data-scene-music-toggle aria-label="${muted ? '开启音乐' : '静音'}" title="${muted ? '开启音乐' : '静音'}">${muted ? '♪' : '♫'}</button>`;
+        const label = muted ? t('smEnableMusic') : t('smMuteMusic');
+        return `<button type="button" class="mh-scene-music-toggle ${muted ? 'is-muted' : ''}" data-scene-music-toggle aria-label="${escapeHtml(label)}" title="${escapeHtml(label)}">${muted ? '♪' : '♫'}</button>`;
     }
 
     function imageSizeOptionsHtml() {
@@ -481,7 +483,7 @@ export async function renderStorySceneMaker(panel, data = {}, { onBack, onApplyS
             const swatches = ['#bae6fd', '#fef3c7', '#bbf7d0', '#fde68a', '#f9a8d4', '#c4b5fd', '#fed7aa', '#e0f2fe'];
             return `
                 <div class="mh-scene-tool-panel">
-                    <label class="mh-scene-tool-row"><span>背景色</span><input id="mhSceneBgColor" type="color" value="${escapeHtml(color)}"></label>
+                    <label class="mh-scene-tool-row"><span>${escapeHtml(t('smBgColor'))}</span><input id="mhSceneBgColor" type="color" value="${escapeHtml(color)}"></label>
                     <div class="mh-scene-chip-grid">${swatches.map(item => `<button type="button" class="mh-color-chip ${item.toLowerCase() === color.toLowerCase() ? 'is-active' : ''}" style="--chip:${escapeHtml(item)}" data-bg-color="${escapeHtml(item)}"></button>`).join('')}</div>
                 </div>`;
         }
@@ -489,7 +491,7 @@ export async function renderStorySceneMaker(panel, data = {}, { onBack, onApplyS
             return `
                 <div class="mh-scene-tool-panel">
                     <div class="mh-scene-chip-grid">${PARTICLE_EFFECTS.map(particleButtonHtml).join('')}</div>
-                    <button type="button" class="btn-secondary" id="mhSceneClearParticles">清空粒子</button>
+                    <button type="button" class="btn-secondary" id="mhSceneClearParticles">${escapeHtml(t('smClearParticles'))}</button>
                 </div>`;
         }
         if (activeTool === 'music') {
@@ -497,7 +499,7 @@ export async function renderStorySceneMaker(panel, data = {}, { onBack, onApplyS
             return `
                 <div class="mh-scene-tool-panel">
                     <div class="mh-scene-chip-grid">
-                        <button type="button" class="${draftScene.bgMusic ? '' : 'is-active'}" data-bg-music="">无音乐</button>
+                        <button type="button" class="${draftScene.bgMusic ? '' : 'is-active'}" data-bg-music="">${escapeHtml(t('smNoMusic'))}</button>
                         ${options.map(musicButtonHtml).join('')}
                     </div>
                 </div>`;
@@ -505,27 +507,27 @@ export async function renderStorySceneMaker(panel, data = {}, { onBack, onApplyS
         const imageTools = imageMode === 'generate'
             ? `
                 <div class="mh-scene-generator">
-                    <textarea id="mhScenePrompt" class="modal-input" placeholder="冬天的哈奇学校操场，有柔软积雪和远处彩旗。">${escapeHtml(promptText)}</textarea>
-                    <textarea id="mhSceneRefs" class="modal-input" placeholder="参考图 URL，每行一个（可选）">${escapeHtml(referenceText)}</textarea>
-                    <label class="mh-scene-tool-row"><span>尺寸</span><select id="mhSceneImageSize" class="modal-input">${imageSizeOptionsHtml()}</select></label>
-                    <button type="button" class="btn-primary" id="mhSceneGenerate" ${state.isPaid && !generating ? '' : 'disabled'}>${generating ? '生成中...' : state.isPaid ? 'AI 生成背景' : 'VIP 可生成'}</button>
+                    <textarea id="mhScenePrompt" class="modal-input" placeholder="${escapeHtml(t('smPromptPlaceholder'))}">${escapeHtml(promptText)}</textarea>
+                    <textarea id="mhSceneRefs" class="modal-input" placeholder="${escapeHtml(t('smRefsPlaceholder'))}">${escapeHtml(referenceText)}</textarea>
+                    <label class="mh-scene-tool-row"><span>${escapeHtml(t('smSize'))}</span><select id="mhSceneImageSize" class="modal-input">${imageSizeOptionsHtml()}</select></label>
+                    <button type="button" class="btn-primary" id="mhSceneGenerate" ${state.isPaid && !generating ? '' : 'disabled'}>${escapeHtml(generating ? t('smGenerating') : state.isPaid ? t('smGenerateBg') : t('smVipGenerate'))}</button>
                 </div>`
             : `
                 <div class="mh-scene-maker-search">
                     <div class="mh-scene-search-box">
-                        <input id="mhSceneSearch" class="modal-input" value="${escapeHtml(query)}" placeholder="搜索：forest, school, 海边, 浴室...">
-                        <button type="button" id="mhSceneSearchClear" class="mh-scene-search-clear ${query ? '' : 'is-hidden'}">清空</button>
+                        <input id="mhSceneSearch" class="modal-input" value="${escapeHtml(query)}" placeholder="${escapeHtml(t('smSearchPlaceholder'))}">
+                        <button type="button" id="mhSceneSearchClear" class="mh-scene-search-clear ${query ? '' : 'is-hidden'}">${escapeHtml(t('smClear'))}</button>
                     </div>
                     <div class="mh-scene-tag-row">${tagButtonsHtml(DEFAULT_SCENE_TAGS, filterTags)}</div>
                 </div>
                 <div class="mh-scene-preset-scroll">
-                    <div class="mh-scene-preset-grid">${visible.length ? visible.map(scene => presetCardHtml(scene, selectedPresetId)).join('') : '<div class="mh-scene-empty">没有匹配的场景。</div>'}</div>
+                    <div class="mh-scene-preset-grid">${visible.length ? visible.map(scene => presetCardHtml(scene, selectedPresetId)).join('') : `<div class="mh-scene-empty">${escapeHtml(t('smNoMatch'))}</div>`}</div>
                 </div>`;
         return `
             <div class="mh-scene-tool-panel">
                 <div class="mh-scene-mode-row">
-                    ${imageModeButtonHtml('presets', '选择预设')}
-                    ${imageModeButtonHtml('generate', 'AI 生成')}
+                    ${imageModeButtonHtml('presets', t('smPresets'))}
+                    ${imageModeButtonHtml('generate', t('smGenerateMode'))}
                 </div>
                 ${imageTools}
             </div>`;
@@ -535,8 +537,11 @@ export async function renderStorySceneMaker(panel, data = {}, { onBack, onApplyS
         const visible = visiblePresets();
         const previewScene = sceneForPreview();
         const bg = draftScene.background || {};
-        const imageName = bg.imageUrl ? (bg.title || bg.presetId || '自定义图片') : '无图片';
-        const particlesText = draftScene.particles.length ? draftScene.particles.map(id => PARTICLE_EFFECTS.find(item => item.id === id)?.label || id).join('、') : '无粒子';
+        const imageName = bg.imageUrl ? (bg.title || bg.presetId || t('smCustomImage')) : t('smNoImage');
+        const particlesText = draftScene.particles.length ? draftScene.particles.map(id => {
+            const effect = PARTICLE_EFFECTS.find(item => item.id === id);
+            return effect?.labelKey ? t(effect.labelKey) : effect?.label || id;
+        }).join(t('smParticleJoin')) : t('smNoParticles');
         panel.innerHTML = `
             <style>
                 ${sceneParticleCss()}
@@ -585,28 +590,28 @@ export async function renderStorySceneMaker(panel, data = {}, { onBack, onApplyS
             <div class="mh-scene-maker-root">
                 <div class="topbar">
                     <button class="btn-icon" id="mhSceneMakerBack" style="width:36px;height:36px;font-size:18px">‹</button>
-                    <span class="font-bold" style="color:var(--text-primary)">场景设置</span>
-                    <button id="mhSceneMakerApply" class="btn-primary" style="width:64px;height:34px;padding:0 10px;border-radius:12px;font-size:13px">应用</button>
+                    <span class="font-bold" style="color:var(--text-primary)">${escapeHtml(t('smTitle'))}</span>
+                    <button id="mhSceneMakerApply" class="btn-primary" style="width:64px;height:34px;padding:0 10px;border-radius:12px;font-size:13px">${escapeHtml(t('smApply'))}</button>
                 </div>
                 <div class="mh-scene-maker-body">
                     <div class="mh-scene-preview-card">
                         <div class="mh-scene-preview-art" style="--mh-scene-preview-bg:${escapeHtml(sceneBackgroundStyle(previewScene, bg.color || '#bae6fd'))}">${renderSceneParticles(previewScene)}${musicToggleButtonHtml(draftScene.bgMusic)}</div>
                         <div class="mh-scene-preview-meta">
-                            <strong>${escapeHtml(bg.title || '当前场景')}</strong>
+                            <strong>${escapeHtml(bg.title || t('smCurrentScene'))}</strong>
                         </div>
                         <div class="mh-scene-status-grid">
-                            <span>图片：${escapeHtml(imageName)}</span>
-                            <span>颜色：${escapeHtml(bg.color || '#bae6fd')}</span>
-                            <span>粒子：${escapeHtml(particlesText)}</span>
-                            <span>音乐：${escapeHtml(bgMusicLabel(draftScene.bgMusic))}</span>
+                            <span>${escapeHtml(t('smImageLabel', { name: imageName }))}</span>
+                            <span>${escapeHtml(t('smColorLabel', { color: bg.color || '#bae6fd' }))}</span>
+                            <span>${escapeHtml(t('smParticlesLabel', { particles: particlesText }))}</span>
+                            <span>${escapeHtml(t('smMusicLabel', { music: bgMusicLabel(draftScene.bgMusic) }))}</span>
                         </div>
                     </div>
                     <div style="display:flex;flex-direction:column;gap:12px;min-width:0">
                         <div class="mh-scene-tool-tabs">
-                            ${toolButtonHtml('image', '图片')}
-                            ${toolButtonHtml('color', '颜色')}
-                            ${toolButtonHtml('particles', '粒子')}
-                            ${toolButtonHtml('music', '音乐')}
+                            ${toolButtonHtml('image', t('smImage'))}
+                            ${toolButtonHtml('color', t('smColor'))}
+                            ${toolButtonHtml('particles', t('smParticles'))}
+                            ${toolButtonHtml('music', t('smMusic'))}
                         </div>
                         ${toolPanelHtml(visible)}
                     </div>
@@ -622,7 +627,7 @@ export async function renderStorySceneMaker(panel, data = {}, { onBack, onApplyS
         promptText = panel.querySelector('#mhScenePrompt')?.value || '';
         referenceText = panel.querySelector('#mhSceneRefs')?.value || '';
         selectedImageSize = panel.querySelector('#mhSceneImageSize')?.value || selectedImageSize;
-        if (!promptText.trim()) { showToast('先写一句场景描述', 'info'); return; }
+        if (!promptText.trim()) { showToast(t('smWritePrompt'), 'info'); return; }
         generating = true;
         draw();
         try {
@@ -630,7 +635,7 @@ export async function renderStorySceneMaker(panel, data = {}, { onBack, onApplyS
             const imageUrl = await generateSceneBackgroundImage({ promptText, tags: filterTags, referenceImages, imageSize: selectedImageSize });
             const custom = normalizeScenePreset({
                 id: `custom_scene_${Date.now()}`,
-                title: promptText.slice(0, 24) || '自定义场景',
+                title: promptText.slice(0, 24) || t('smCustomScene'),
                 imageUrl,
                 color: draftScene.background?.color || currentPreset()?.color || '#bae6fd',
                 tags: filterTags.length ? filterTags : sceneTagsFromText(promptText),
@@ -640,9 +645,9 @@ export async function renderStorySceneMaker(panel, data = {}, { onBack, onApplyS
             presets = [custom, ...presets];
             selectedPresetId = custom.id;
             applyPresetToDraft(custom);
-            showToast('场景已生成', 'success');
+            showToast(t('smGenerated'), 'success');
         } catch (e) {
-            showToast('生成失败：' + (e?.message || e), 'error');
+            showToast(t('smGenFailed', { error: (e?.message || e) }), 'error');
         } finally {
             generating = false;
             draw();
@@ -653,7 +658,7 @@ export async function renderStorySceneMaker(panel, data = {}, { onBack, onApplyS
         const grid = panel.querySelector('.mh-scene-preset-grid');
         if (!grid) return;
         const visible = visiblePresets();
-        grid.innerHTML = visible.length ? visible.map(scene => presetCardHtml(scene, selectedPresetId)).join('') : '<div class="mh-scene-empty">没有匹配的场景。</div>';
+        grid.innerHTML = visible.length ? visible.map(scene => presetCardHtml(scene, selectedPresetId)).join('') : `<div class="mh-scene-empty">${escapeHtml(t('smNoMatch'))}</div>`;
         setupLazySceneBackgrounds(grid);
         bindPresetEvents();
     }

@@ -1,5 +1,6 @@
 // 好友邮件视图：从好友列表选择收件人并发送 KeepWork 邮件。
 import { escapeHtml, showToast } from './utils.js';
+import { t } from './i18n.js';
 import { state } from './state.js';
 
 const EMAIL_BODY_MAX_WORDS = 200;
@@ -18,7 +19,7 @@ export function friendUser(item) {
 
 export function friendName(item) {
     const user = friendUser(item);
-    return user?.nickname || user?.displayName || user?.name || user?.username || item?.nickname || item?.username || item?.comment || '好友';
+    return user?.nickname || user?.displayName || user?.name || user?.username || item?.nickname || item?.username || item?.comment || t('emFriendFallback');
 }
 
 export function friendDropdownLabel(item) {
@@ -26,7 +27,7 @@ export function friendDropdownLabel(item) {
     const nickname = user?.nickname || user?.displayName || user?.name || item?.nickname || item?.comment || '';
     const username = user?.username || item?.username || item?.friendUsername || '';
     if (nickname && username && nickname !== username) return `${nickname}(${username})`;
-    return nickname || username || '好友';
+    return nickname || username || t('emFriendFallback');
 }
 
 export function senderName(user) {
@@ -60,11 +61,11 @@ function textToHtml(text) {
 }
 
 function formatChineseDate(date = new Date()) {
-    return `${date.getFullYear()}年${date.getMonth() + 1}月${date.getDate()}日`;
+    return t('lpDate', { y: date.getFullYear(), m: date.getMonth() + 1, d: date.getDate() });
 }
 
 function letterPlainText({ recipientName, body, senderName, dateText }) {
-    return `亲爱的 ${recipientName},\n\n${body}\n\n来自：${senderName}\n${dateText}`;
+    return t('emLetterGreeting', { name: recipientName, body, sender: senderName, date: dateText });
 }
 
 function countEmailWords(text) {
@@ -73,39 +74,39 @@ function countEmailWords(text) {
 }
 
 export function renderEmail(panel, _data = {}, { onBack } = {}) {
-    const currentSenderName = senderName(state.user) || senderName(state.sdk?.user) || '我';
-    const fixedSubject = `来自${currentSenderName}的信`;
+    const currentSenderName = senderName(state.user) || senderName(state.sdk?.user) || t('emSenderMe');
+    const fixedSubject = t('emSubjectFrom', { name: currentSenderName });
     panel.innerHTML = `
         <div class="topbar">
             <button class="btn-icon" id="mhBack" style="width:36px;height:36px;font-size:18px">‹</button>
-            <span class="font-bold" style="color:var(--text-primary)">发邮件</span>
+            <span class="font-bold" style="color:var(--text-primary)">${escapeHtml(t('emTitle'))}</span>
             <span style="width:36px;height:36px"></span>
         </div>
         <div class="email-view">
             <div class="email-compose-shell">
                 <div class="email-paper-controls">
                     <div class="email-control-field">
-                        <label class="email-label" for="mhEmailFriend">收信好友</label>
-                        <select class="email-paper-input" id="mhEmailFriend" data-email-friend><option value="">正在读取好友...</option></select>
+                        <label class="email-label" for="mhEmailFriend">${escapeHtml(t('emRecipient'))}</label>
+                        <select class="email-paper-input" id="mhEmailFriend" data-email-friend><option value="">${escapeHtml(t('emLoadingFriends'))}</option></select>
                     </div>
                 </div>
                 <div class="email-paper-card">
                     <div class="email-paper-head">
-                        <span class="email-paper-mark">星球信纸</span>
+                        <span class="email-paper-mark">${escapeHtml(t('emPaperMark'))}</span>
                         <span class="email-paper-date" data-email-date>${escapeHtml(formatChineseDate())}</span>
                     </div>
-                    <div class="email-letter-greeting">亲爱的 <span data-email-greeting-name>XXX</span>,</div>
+                    <div class="email-letter-greeting">${escapeHtml(t('emGreeting'))}<span data-email-greeting-name>${escapeHtml(t('emGreetingPlaceholder'))}</span>,</div>
                     <div class="email-paper-writing-area">
-                        <textarea class="email-paper-textarea" id="mhEmailText" data-email-text maxlength="1800" placeholder="把今天想说的话写在这里..." spellcheck="false"></textarea>
+                        <textarea class="email-paper-textarea" id="mhEmailText" data-email-text maxlength="1800" placeholder="${escapeHtml(t('emWritePlaceholder'))}" spellcheck="false"></textarea>
                     </div>
                     <div class="email-letter-signature">
-                        <div>来自：<span data-email-sender>${escapeHtml(currentSenderName)}</span></div>
+                        <div>${escapeHtml(t('emFrom'))}<span data-email-sender>${escapeHtml(currentSenderName)}</span></div>
                         <div data-email-sign-date>${escapeHtml(formatChineseDate())}</div>
                     </div>
                 </div>
                 <div class="email-compose-actions">
-                    <span class="email-word-count" data-email-word-count>0/${EMAIL_BODY_MAX_WORDS} 词</span>
-                    <button class="btn-primary" data-email-send>发送</button>
+                    <span class="email-word-count" data-email-word-count>${escapeHtml(t('emWordCount', { count: 0, max: EMAIL_BODY_MAX_WORDS }))}</span>
+                    <button class="btn-primary" data-email-send>${escapeHtml(t('emSend'))}</button>
                 </div>
             </div>
         </div>`;
@@ -124,12 +125,12 @@ export function renderEmail(panel, _data = {}, { onBack } = {}) {
     const updateLetterNames = () => {
         const selectedIndex = select.value;
         const friend = selectedIndex === '' ? null : friends[Number(selectedIndex)];
-        greetingName.textContent = friend ? friendName(friend) : 'XXX';
+        greetingName.textContent = friend ? friendName(friend) : t('emGreetingPlaceholder');
     };
 
     const updateWordCount = () => {
         const count = countEmailWords(textInput.value);
-        wordCount.textContent = `${count}/${EMAIL_BODY_MAX_WORDS} 词`;
+        wordCount.textContent = t('emWordCount', { count, max: EMAIL_BODY_MAX_WORDS });
         wordCount.classList.toggle('is-over', count > EMAIL_BODY_MAX_WORDS);
         sendBtn.disabled = isSending || count > EMAIL_BODY_MAX_WORDS;
     };
@@ -140,8 +141,8 @@ export function renderEmail(panel, _data = {}, { onBack } = {}) {
     loadFriends().then(list => {
         friends = list;
         select.innerHTML = friends.length
-            ? '<option value="">选择好友</option>' + friends.map((item, index) => `<option value="${index}">${escapeHtml(friendDropdownLabel(item))}</option>`).join('')
-            : '<option value="">暂无好友，请先加好友</option>';
+            ? `<option value="">${escapeHtml(t('emSelectFriend'))}</option>` + friends.map((item, index) => `<option value="${index}">${escapeHtml(friendDropdownLabel(item))}</option>`).join('')
+            : `<option value="">${escapeHtml(t('emNoFriends'))}</option>`;
         updateLetterNames();
     });
     sendBtn.onclick = async (e) => {
@@ -151,14 +152,14 @@ export function renderEmail(panel, _data = {}, { onBack } = {}) {
         const userId = friendId(friend);
         const username = friendUsername(friend);
         const text = (textInput.value || '').trim();
-        const recipientName = friend ? friendName(friend) : 'XXX';
+        const recipientName = friend ? friendName(friend) : t('emGreetingPlaceholder');
         const fullLetterText = letterPlainText({ recipientName, body: text, senderName: currentSenderName, dateText });
         const textWordCount = countEmailWords(text);
-        if (!friend) { showToast('请选择好友', 'error'); return; }
-        if (!userId && !username) { showToast('没有找到好友账号信息', 'error'); return; }
-        if (!text) { showToast('请输入邮件内容', 'error'); return; }
-        if (textWordCount > EMAIL_BODY_MAX_WORDS) { showToast(`邮件正文最多 ${EMAIL_BODY_MAX_WORDS} 词`, 'error'); return; }
-        if (!state.sdk?.socialFriends?.sendMail) { showToast('当前 SDK 不支持站内邮件', 'error'); return; }
+        if (!friend) { showToast(t('emPickFriend'), 'error'); return; }
+        if (!userId && !username) { showToast(t('emNoAccount'), 'error'); return; }
+        if (!text) { showToast(t('emEmptyBody'), 'error'); return; }
+        if (textWordCount > EMAIL_BODY_MAX_WORDS) { showToast(t('emTooManyWords', { max: EMAIL_BODY_MAX_WORDS }), 'error'); return; }
+        if (!state.sdk?.socialFriends?.sendMail) { showToast(t('emNoMailSdk'), 'error'); return; }
         isSending = true;
         btn.disabled = true;
         try {
@@ -170,10 +171,10 @@ export function renderEmail(panel, _data = {}, { onBack } = {}) {
                 content: fullLetterText,
                 html: textToHtml(fullLetterText),
             });
-            showToast('邮件已发送', 'success');
+            showToast(t('emSent'), 'success');
             onBack?.();
         } catch (err) {
-            showToast('发送失败：' + (err?.message || err), 'error');
+            showToast(t('emSendFailed', { error: (err?.message || err) }), 'error');
         } finally {
             isSending = false;
             updateWordCount();

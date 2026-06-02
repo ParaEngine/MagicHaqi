@@ -5,6 +5,7 @@
 //   - 允许用户手动编辑照片文字，默认文字为"谁和谁的合影"。
 import { escapeHtml, prompt, showToast } from './utils.js';
 import { displayPetName, dnaToName } from './dna.js';
+import { t } from './i18n.js';
 import { state } from './state.js';
 import { buildEggSvg, getPetSpriteCell, getProcessedSheet, SHEET_COLS, SHEET_ROWS } from './pet.js';
 
@@ -35,9 +36,9 @@ function petPhotoName(pet, fallback = '宠物') {
 }
 
 export function defaultTakePhotoText(currentPet, friendPet) {
-    const me = petPhotoName(currentPet, '我的宠物');
-    const friend = petPhotoName(friendPet, '好友宠物');
-    return `${me} 和 ${friend} 的合影`;
+    const me = petPhotoName(currentPet, t('tpMyPet'));
+    const friend = petPhotoName(friendPet, t('tpFriendPet'));
+    return t('tpPhotoOf', { me, friend });
 }
 
 function randomPhotoTheme() {
@@ -319,8 +320,8 @@ export async function drawTakePhotoImage(currentPet, friendPet, text, themeId = 
 
 function buildPhotoPreviewHtml(currentPet, friendPet, text, themeId, planetName, background = null, petAnims = [PHOTO_ANIM, PHOTO_ANIM], petFlips = [false, false]) {
     const theme = getPhotoTheme(themeId);
-    const me = petPhotoName(currentPet, '我的宠物');
-    const friend = petPhotoName(friendPet, '好友宠物');
+    const me = petPhotoName(currentPet, t('tpMyPet'));
+    const friend = petPhotoName(friendPet, t('tpFriendPet'));
     const petArt = (pet, anim, flip) => {
         const flipStyle = flip ? 'transform:scaleX(-1);' : '';
         const cell = getPetSpriteCell({ ...pet, anim });
@@ -345,9 +346,9 @@ function buildPhotoPreviewHtml(currentPet, friendPet, text, themeId, planetName,
             <div class="mh-photo-scene${draggableBg ? ' mh-photo-bg-draggable' : ''}" data-photo-scene${draggableBg ? ' data-photo-bg-draggable="1"' : ''}${sceneStyle ? ` style="${sceneStyle}"` : ''}>
                 ${hasRealBg ? '' : '<div class="mh-photo-planet" aria-hidden="true"></div><div class="mh-photo-ground" aria-hidden="true"></div>'}
                 <div class="mh-photo-pets">
-                    <div class="mh-photo-pet" data-photo-pet-index="0" title="${escapeHtml(me)}（点击换姿势・双击翻转）">${petArt(currentPet, petAnims[0] || PHOTO_ANIM, !!petFlips[0])}</div>
+                    <div class="mh-photo-pet" data-photo-pet-index="0" title="${escapeHtml(t('tpPosePlay', { name: me }))}">${petArt(currentPet, petAnims[0] || PHOTO_ANIM, !!petFlips[0])}</div>
                     <div class="mh-photo-hearts" aria-hidden="true">💖</div>
-                    <div class="mh-photo-pet" data-photo-pet-index="1" title="${escapeHtml(friend)}（点击换姿势・双击翻转）">${petArt(friendPet, petAnims[1] || PHOTO_ANIM, !!petFlips[1])}</div>
+                    <div class="mh-photo-pet" data-photo-pet-index="1" title="${escapeHtml(t('tpPosePlay', { name: friend }))}">${petArt(friendPet, petAnims[1] || PHOTO_ANIM, !!petFlips[1])}</div>
                 </div>
             </div>
             <div class="mh-photo-caption" data-photo-caption>${escapeHtml(text)}</div>
@@ -509,7 +510,7 @@ function bindPhotoDrag(root, photoState, onPetTap, onPetDoubleTap) {
  */
 export function showTakePhotoWindow({ currentPet = null, friendPet = null, planetName = '', background = null } = {}) {
     if (!currentPet || !friendPet) {
-        showToast('合影需要两只宠物。', 'info', 1800);
+        showToast(t('tpNeedTwo'), 'info', 1800);
         return;
     }
     injectTakePhotoStyles();
@@ -524,7 +525,7 @@ export function showTakePhotoWindow({ currentPet = null, friendPet = null, plane
         petFlips: [false, false],
     };
     const canDragBg = !!photoState.background?.imageUrl;
-    const dragHint = canDragBg ? '可拖动宠物或背景调整位置，点击换姿势、双击左右翻转，' : '可拖动宠物调整位置，点击换姿势、双击左右翻转，';
+    const dragHint = canDragBg ? t('tpDragHintBg') : t('tpDragHint');
     // 单击（未拖动）宠物时循环切换姿态。
     const cyclePetAnim = (root, idx) => {
         photoState.petAnims[idx] = nextPhotoPetAnim(photoState.petAnims[idx] || PHOTO_ANIM);
@@ -544,23 +545,23 @@ export function showTakePhotoWindow({ currentPet = null, friendPet = null, plane
     };
     const { mask } = openPhotoModal(`
         <div class="mh-photo-head">
-            <div class="planet-modal-title">📸 合影</div>
-            <div class="planet-modal-subtitle">${dragHint}点击文字可编辑。</div>
+            <div class="planet-modal-title">${escapeHtml(t('tpTitle'))}</div>
+            <div class="planet-modal-subtitle">${dragHint}${escapeHtml(t('tpTapTextEdit'))}</div>
         </div>
         <div data-photo-preview-host>${buildPhotoPreviewHtml(currentPet, friendPet, photoState.text, photoState.themeId, resolvedPlanet, photoState.background, photoState.petAnims, photoState.petFlips)}</div>
         <div class="mh-photo-actions">
-            <button class="btn-secondary" data-act="close">关闭</button>
-            <button class="btn-secondary" data-photo-act="reset">↺ 复位</button>
-            <button class="btn-secondary" data-photo-act="share">分享</button>
-            <button class="btn-primary" data-photo-act="save">保存到本地</button>
+            <button class="btn-secondary" data-act="close">${escapeHtml(t('close'))}</button>
+            <button class="btn-secondary" data-photo-act="reset">↺ ${escapeHtml(t('tpReset'))}</button>
+            <button class="btn-secondary" data-photo-act="share">${escapeHtml(t('tpShare'))}</button>
+            <button class="btn-primary" data-photo-act="save">${escapeHtml(t('tpSaveLocal'))}</button>
         </div>
     `, async (e) => {
         const root = e.currentTarget;
         if (e.target.closest?.('[data-photo-caption]')) {
-            const custom = await prompt('编辑合影文字', {
+            const custom = await prompt(t('tpEditTitle'), {
                 defaultValue: photoState.text,
-                placeholder: '写一句合影的话',
-                okText: '保存',
+                placeholder: t('tpEditPlaceholder'),
+                okText: t('save'),
                 maxLength: TAKEPHOTO_MAX_TEXT,
             });
             if (custom != null && custom !== '') {
@@ -589,18 +590,18 @@ export function showTakePhotoWindow({ currentPet = null, friendPet = null, plane
                     petAnims: photoState.petAnims,
                     petFlips: photoState.petFlips,
                 });
-                if (!blob) { showToast('照片生成失败，请稍后再试。', 'error', 2200); return; }
-                const fileName = `${currentPet?.id || 'pet'}-合影.png`;
+                if (!blob) { showToast(t('tpGenFailed'), 'error', 2200); return; }
+                const fileName = `${currentPet?.id || 'pet'}-${t('tpFileName')}.png`;
                 if (act === 'share') {
                     const file = new File([blob], fileName, { type: 'image/png' });
                     if (navigator.canShare?.({ files: [file] }) && navigator.share) {
-                        try { await navigator.share({ title: '宠物合影', text: photoState.text, files: [file] }); return; } catch (_) {}
+                        try { await navigator.share({ title: t('tpShareTitle'), text: photoState.text, files: [file] }); return; } catch (_) {}
                     }
                     await savePhotoToDisk(blob, fileName);
-                    showToast('已生成合影图片。', 'success', 1600);
+                    showToast(t('tpImageDone'), 'success', 1600);
                 } else {
                     await savePhotoToDisk(blob, fileName);
-                    showToast('合影已保存到本地。', 'success', 1600);
+                    showToast(t('tpSavedLocal'), 'success', 1600);
                 }
             } finally {
                 actBtn.disabled = false;

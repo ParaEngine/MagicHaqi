@@ -11,20 +11,199 @@
 <body></body>
 <script defer>
 (function () {
+	// ---- i18n ----
+	const I18N = {
+		zhCN: {
+			title: '宠物激光迷宫',
+			helpLabel: '玩法',
+			boardAria: '激光迷宫棋盘',
+			dirUp: '上',
+			dirRight: '右',
+			dirDown: '下',
+			dirLeft: '左',
+			diffEasy: '轻松',
+			diffNormal: '标准',
+			diffHard: '困难',
+			diffExpert: '专家',
+			levelPrefix: '宠物激光迷宫 Lv.',
+			statDifficulty: '难度',
+			statMoves: '步数',
+			statTools: '工具',
+			statLaser: '激光',
+			btnWait: '等待',
+			btnUndo: '撤销',
+			btnFanDir: '风扇方向',
+			btnRestart: '重开',
+			footerHint: '镜子反射激光，激光可引爆炸弹，风扇吹散毒雾。',
+			statBest: '最高',
+			overlayTitle: '宠物激光迷宫',
+			overlayP1: '参考 Dweep 的规划玩法：先布置镜子、炸弹、水桶、风扇和锤子，再点击地面让宠物沿最短路径前进。激光、火焰、熔岩、地雷和毒雾都会让宠物立刻失败。',
+			overlayP2: '动态激光会闪烁，移动过程中也能继续放工具。抵达右上角餐盘就过关。',
+			btnStart: '开始解谜',
+			toolMirrorSlash: '镜子/',
+			toolMirrorBack: '镜子\\',
+			toolWrench: '扳手',
+			toolBomb: '炸弹',
+			toolFan: '风扇',
+			toolBucket: '水桶',
+			toolHammer: '锤子',
+			statusInit: '选择难度后开始。点击空地移动，选工具后点格子布置机关。',
+			statusCantWalk: '这里不能走。先用工具改变环境，或换一个目标点。',
+			statusNoRoute: '找不到安全路线。也许要先处理挡路机关。',
+			statusRouteDanger: '路线已预览，但会穿过危险格。再次点击仍可出发，建议先处理机关。',
+			statusRouteSafe: '路线已预览。再次点击终点确认出发。',
+			laserSafe: '安全',
+			laserAllOff: '全关',
+			laserOn: '{active}/{total}开',
+			toolMirrorPlaced: '镜子已经放好。激光会被它转向，别忘了观察红色光路。',
+			toolRotated: '机关旋转完成。这个小转角可能就是生路。',
+			toolBombPlaced: '炸弹已放置。把激光引过来会引爆它，并清掉周围石块与火焰。',
+			toolFanPlaced: '风扇开始吹风。它会沿箭头方向吹散毒雾。',
+			toolBucketUsed: '水桶奏效了，危险地形已经冷却。',
+			toolHammerUsed: '障碍被敲碎了，新的路线打开了。',
+			toolUndoDone: '已撤销上一次工具操作。',
+			hintMirrorSlash: '选择一个空格放置 / 镜子，让激光转弯。',
+			hintMirrorBack: '选择一个空格放置 \\ 镜子，让激光转弯。',
+			hintWrench: '点击已有镜子、风扇或激光器来旋转。',
+			hintBomb: '把炸弹放在空地上，再用激光引爆它清障。',
+			hintFan: '点击箭头切换风向，再把风扇放到空地吹散毒雾。',
+			hintBucket: '点击火焰或熔岩，把它浇灭或冷却。',
+			hintHammer: '点击冰块或石块，直接敲开道路。',
+			hintDefault: '点击空地移动，或选择工具处理危险机关。',
+			invalidMirror: '镜子只能放在空地，不能覆盖宠物、起点或餐盘。',
+			invalidWrench: '扳手只能旋转镜子、风扇或激光器。',
+			invalidBomb: '炸弹只能放在空地，之后可用激光引爆。',
+			invalidFan: '风扇只能放在空地，箭头方向可先用方向按钮调整。',
+			invalidBucket: '水桶只能处理火焰或熔岩。',
+			invalidHammer: '锤子只能敲碎冰块或石块。',
+			chainBoom: '连锁爆破！',
+			statusWalking: '宠物正在前进。可以继续布置工具，注意激光闪烁节奏。',
+			failLaser: '宠物碰到了激光。',
+			failFire: '宠物踩进火焰。',
+			failLava: '宠物掉进熔岩。',
+			failGas: '宠物吸入了毒雾。',
+			failMine: '宠物踩中了地雷。',
+			failRetry: '{reason} 点击重开再试。',
+			toastFail: '挑战失败',
+			toastReachDish: '抵达餐盘 +{points}',
+			statusNextLevel: '美食到手啦！已自动生成下一关。',
+			statusNewMaze: '新迷宫已生成。先看激光线路，再规划工具顺序。',
+			statusStartPlay: '点击地面移动；选工具后点格子使用。先到达右上角的餐盘。',
+			statusWaitBeat: '等待了一个节拍。观察激光开关，再决定什么时候出发。',
+			statusFanDir: '风扇方向：{dir}',
+		},
+		enUS: {
+			title: 'Pet Laser Maze',
+			helpLabel: 'Help',
+			boardAria: 'Laser maze board',
+			dirUp: 'Up',
+			dirRight: 'Right',
+			dirDown: 'Down',
+			dirLeft: 'Left',
+			diffEasy: 'Easy',
+			diffNormal: 'Normal',
+			diffHard: 'Hard',
+			diffExpert: 'Expert',
+			levelPrefix: 'Pet Laser Maze Lv.',
+			statDifficulty: 'Diff',
+			statMoves: 'Moves',
+			statTools: 'Tools',
+			statLaser: 'Laser',
+			btnWait: 'Wait',
+			btnUndo: 'Undo',
+			btnFanDir: 'Fan Dir',
+			btnRestart: 'Restart',
+			footerHint: 'Mirrors reflect lasers; lasers detonate bombs; fans blow away gas.',
+			statBest: 'Best',
+			overlayTitle: 'Pet Laser Maze',
+			overlayP1: 'Inspired by Dweep: place mirrors, bombs, buckets, fans and hammers first, then tap the ground to move your pet along the shortest path. Lasers, fire, lava, mines and gas will end the run instantly.',
+			overlayP2: 'Dynamic lasers blink — you can still place tools while moving. Reach the dish in the top-right corner to clear the level.',
+			btnStart: 'Start Puzzle',
+			toolMirrorSlash: 'Mirror /',
+			toolMirrorBack: 'Mirror \\',
+			toolWrench: 'Wrench',
+			toolBomb: 'Bomb',
+			toolFan: 'Fan',
+			toolBucket: 'Bucket',
+			toolHammer: 'Hammer',
+			statusInit: 'Pick a difficulty to start. Tap floor to move; select a tool then tap a cell to place it.',
+			statusCantWalk: "Can't go there. Use tools to clear the way or pick another target.",
+			statusNoRoute: 'No safe route found. Try clearing obstacles first.',
+			statusRouteDanger: 'Route previewed but crosses danger. Tap again to go, or handle hazards first.',
+			statusRouteSafe: 'Route previewed. Tap the destination again to confirm.',
+			laserSafe: 'Safe',
+			laserAllOff: 'All off',
+			laserOn: '{active}/{total} on',
+			toolMirrorPlaced: 'Mirror placed. It redirects lasers — watch the red beam path.',
+			toolRotated: 'Mechanism rotated. That small turn might open a way out.',
+			toolBombPlaced: 'Bomb placed. Guide a laser to detonate it and clear nearby rocks and fire.',
+			toolFanPlaced: 'Fan is blowing. It clears gas in the arrow direction.',
+			toolBucketUsed: 'Bucket worked — the hazardous terrain has cooled down.',
+			toolHammerUsed: 'Obstacle smashed — a new path is open.',
+			toolUndoDone: 'Last tool action undone.',
+			hintMirrorSlash: 'Select an empty cell to place a / mirror and redirect lasers.',
+			hintMirrorBack: 'Select an empty cell to place a \\ mirror and redirect lasers.',
+			hintWrench: 'Tap an existing mirror, fan or emitter to rotate it.',
+			hintBomb: 'Place a bomb on open ground, then guide a laser to detonate it.',
+			hintFan: 'Tap the arrow to change direction, then place the fan on open ground to blow gas away.',
+			hintBucket: 'Tap fire or lava to extinguish or cool it.',
+			hintHammer: 'Tap ice or rock to smash a path through.',
+			hintDefault: 'Tap floor to move, or select a tool to deal with hazards.',
+			invalidMirror: 'Mirrors can only be placed on empty floor — not on the pet, start or dish.',
+			invalidWrench: 'The wrench can only rotate mirrors, fans or emitters.',
+			invalidBomb: 'Bombs can only be placed on empty floor, then detonated by a laser.',
+			invalidFan: 'Fans can only be placed on empty floor. Adjust the arrow direction first.',
+			invalidBucket: 'Buckets can only handle fire or lava.',
+			invalidHammer: 'Hammers can only break ice or rock.',
+			chainBoom: 'Chain explosion!',
+			statusWalking: 'Pet is moving. You can still place tools — watch the laser blink rhythm.',
+			failLaser: 'Pet hit a laser.',
+			failFire: 'Pet stepped into fire.',
+			failLava: 'Pet fell into lava.',
+			failGas: 'Pet inhaled toxic gas.',
+			failMine: 'Pet stepped on a mine.',
+			failRetry: '{reason} Tap restart to try again.',
+			toastFail: 'Challenge Failed',
+			toastReachDish: 'Reached the dish +{points}',
+			statusNextLevel: 'Got the food! Next level generated automatically.',
+			statusNewMaze: 'New maze generated. Study the laser paths first, then plan your tool order.',
+			statusStartPlay: 'Tap the ground to move; select a tool then tap a cell to use it. Reach the dish in the top-right.',
+			statusWaitBeat: 'Waited one beat. Watch the laser timing before deciding when to go.',
+			statusFanDir: 'Fan direction: {dir}',
+		},
+	};
+	function detectLang() {
+		try {
+			const params = new URLSearchParams(window.location.search);
+			const lang = params.get('lang');
+			if (lang && I18N[lang]) return lang;
+		} catch (_) {}
+		return 'zhCN';
+	}
+	const LANG = detectLang();
+	const L = I18N[LANG];
+	function t(key, vars) {
+		let str = L[key] || I18N.zhCN[key] || key;
+		if (vars) str = str.replace(/\{(\w+)\}/g, (m, n) => vars[n] != null ? String(vars[n]) : m);
+		return str;
+	}
+	try { document.documentElement.setAttribute('lang', LANG === 'enUS' ? 'en' : 'zh-CN'); } catch (_) {}
+	try { document.title = t('title'); } catch (_) {}
+
 	const STORAGE_DIFFICULTY = 'haqiLaserMazeDifficultyV1';
 	const STORAGE_BEST = 'haqiLaserMazeBestScoreV1';
 	const FALLBACK_PET = '●';
 	const DIRS = [
-		{ id: 0, name: '上', dr: -1, dc: 0, arrow: '↑' },
-		{ id: 1, name: '右', dr: 0, dc: 1, arrow: '→' },
-		{ id: 2, name: '下', dr: 1, dc: 0, arrow: '↓' },
-		{ id: 3, name: '左', dr: 0, dc: -1, arrow: '←' },
+		{ id: 0, name: t('dirUp'), dr: -1, dc: 0, arrow: '↑' },
+		{ id: 1, name: t('dirRight'), dr: 0, dc: 1, arrow: '→' },
+		{ id: 2, name: t('dirDown'), dr: 1, dc: 0, arrow: '↓' },
+		{ id: 3, name: t('dirLeft'), dr: 0, dc: -1, arrow: '←' },
 	];
 	const DIFFICULTIES = {
-		easy: { id: 'easy', label: '轻松', size: 8, blockers: 3, lasers: 1, clutter: 7, mines: 1, reward: 80, period: 6 },
-		normal: { id: 'normal', label: '标准', size: 9, blockers: 4, lasers: 2, clutter: 12, mines: 2, reward: 110, period: 5 },
-		hard: { id: 'hard', label: '困难', size: 10, blockers: 5, lasers: 3, clutter: 18, mines: 3, reward: 145, period: 4 },
-		expert: { id: 'expert', label: '专家', size: 11, blockers: 7, lasers: 4, clutter: 24, mines: 4, reward: 190, period: 4 },
+		easy: { id: 'easy', label: t('diffEasy'), size: 8, blockers: 3, lasers: 1, clutter: 7, mines: 1, reward: 80, period: 6 },
+		normal: { id: 'normal', label: t('diffNormal'), size: 9, blockers: 4, lasers: 2, clutter: 12, mines: 2, reward: 110, period: 5 },
+		hard: { id: 'hard', label: t('diffHard'), size: 10, blockers: 5, lasers: 3, clutter: 18, mines: 3, reward: 145, period: 4 },
+		expert: { id: 'expert', label: t('diffExpert'), size: 11, blockers: 7, lasers: 4, clutter: 24, mines: 4, reward: 190, period: 4 },
 	};
 	const DIFFICULTY_ORDER = ['easy', 'normal', 'hard', 'expert'];
 	const BLOCKER_TYPES = ['fire', 'lava', 'rock', 'ice', 'gas'];
@@ -60,6 +239,7 @@
 		laserCells: new Map(),
 		inventory: {},
 		petAsset: null,
+		petRequestId: '',
 		objectUrls: [],
 	};
 
@@ -213,18 +393,18 @@
 		</style>
 		<div class="mh-shell">
 			<header class="mh-top">
-				<button id="mhHelp" class="mh-icon-btn" type="button" aria-label="玩法">?</button>
-				<div class="mh-title">宠物激光迷宫 Lv.<span id="mhLevel">1</span></div>
+				<button id="mhHelp" class="mh-icon-btn" type="button" aria-label="${t('helpLabel')}">?</button>
+				<div class="mh-title">${t('levelPrefix')}<span id="mhLevel">1</span></div>
 				<div class="mh-stats">
-					<span class="mh-pill">难度 <b id="mhDifficultyLabel">标准</b></span>
-					<span class="mh-pill">步数 <b id="mhMoves">0</b></span>
-					<span class="mh-pill">工具 <b id="mhToolsUsed">0</b></span>
-					<span class="mh-pill">激光 <b id="mhPulse">--</b></span>
+					<span class="mh-pill">${t('statDifficulty')} <b id="mhDifficultyLabel">${t('diffNormal')}</b></span>
+					<span class="mh-pill">${t('statMoves')} <b id="mhMoves">0</b></span>
+					<span class="mh-pill">${t('statTools')} <b id="mhToolsUsed">0</b></span>
+					<span class="mh-pill">${t('statLaser')} <b id="mhPulse">--</b></span>
 					<span class="mh-pill"><b id="mhTime">0</b>s</span>
 				</div>
 			</header>
 			<main class="mh-main">
-				<section class="mh-stage" aria-label="激光迷宫棋盘">
+				<section class="mh-stage" aria-label="${t('boardAria')}">
 					<div class="mh-board-wrap">
 						<div id="mhBoard" class="mh-board"></div>
 						<div id="mhLaserLayer" class="mh-laser-layer"></div>
@@ -232,28 +412,28 @@
 					</div>
 				</section>
 				<aside class="mh-panel">
-					<div id="mhStatus" class="mh-status">选择难度后开始。点击空地移动，选工具后点格子布置机关。</div>
+					<div id="mhStatus" class="mh-status">${t('statusInit')}</div>
 					<div id="mhTools" class="mh-tools"></div>
 					<div class="mh-actions">
 						<div class="mh-difficulties" id="mhDifficulties"></div>
-						<button id="mhWait" class="mh-action soft" type="button">等待</button>
-						<button id="mhUndo" class="mh-action soft" type="button">撤销</button>
-						<button id="mhFanDir" class="mh-dir" type="button" title="风扇方向">→</button>
-						<button id="mhReset" class="mh-action orange" type="button">重开</button>
+						<button id="mhWait" class="mh-action soft" type="button">${t('btnWait')}</button>
+						<button id="mhUndo" class="mh-action soft" type="button">${t('btnUndo')}</button>
+						<button id="mhFanDir" class="mh-dir" type="button" title="${t('btnFanDir')}">→</button>
+						<button id="mhReset" class="mh-action orange" type="button">${t('btnRestart')}</button>
 					</div>
 				</aside>
 			</main>
 			<footer class="mh-actions">
-				<span class="mh-pill">镜子反射激光，激光可引爆炸弹，风扇吹散毒雾。</span>
-				<span class="mh-pill">最高 <b id="mhBest">0</b></span>
+				<span class="mh-pill">${t('footerHint')}</span>
+				<span class="mh-pill">${t('statBest')} <b id="mhBest">0</b></span>
 			</footer>
 		</div>
 		<div id="mhOverlay" class="mh-overlay">
 			<div class="mh-card">
-				<h1>宠物激光迷宫</h1>
-				<p>参考 Dweep 的规划玩法：先布置镜子、炸弹、水桶、风扇和锤子，再点击地面让宠物沿最短路径前进。激光、火焰、熔岩、地雷和毒雾都会让宠物立刻失败。</p>
-				<p>动态激光会闪烁，移动过程中也能继续放工具。抵达右上角餐盘就过关。</p>
-				<button id="mhStart" class="mh-start" type="button">开始解谜</button>
+				<h1>${t('overlayTitle')}</h1>
+				<p>${t('overlayP1')}</p>
+				<p>${t('overlayP2')}</p>
+				<button id="mhStart" class="mh-start" type="button">${t('btnStart')}</button>
 			</div>
 		</div>
 	`;
@@ -283,13 +463,13 @@
 	};
 
 	const TOOL_DEFS = [
-		{ id: 'mirrorSlash', label: '镜子/', icon: mirrorSvg('/') },
-		{ id: 'mirrorBack', label: '镜子\\', icon: mirrorSvg('\\') },
-		{ id: 'wrench', label: '扳手', icon: wrenchSvg() },
-		{ id: 'bomb', label: '炸弹', icon: bombSvg() },
-		{ id: 'fan', label: '风扇', icon: fanSvg() },
-		{ id: 'bucket', label: '水桶', icon: bucketSvg() },
-		{ id: 'hammer', label: '锤子', icon: hammerSvg() },
+		{ id: 'mirrorSlash', label: t('toolMirrorSlash'), icon: mirrorSvg('/') },
+		{ id: 'mirrorBack', label: t('toolMirrorBack'), icon: mirrorSvg('\\') },
+		{ id: 'wrench', label: t('toolWrench'), icon: wrenchSvg() },
+		{ id: 'bomb', label: t('toolBomb'), icon: bombSvg() },
+		{ id: 'fan', label: t('toolFan'), icon: fanSvg() },
+		{ id: 'bucket', label: t('toolBucket'), icon: bucketSvg() },
+		{ id: 'hammer', label: t('toolHammer'), icon: hammerSvg() },
 	];
 
 	function normalizeDifficulty(value) {
@@ -623,14 +803,14 @@
 		if (state.moving) return;
 		if (!PASSABLE.has(cell.type) || cell.item) {
 			clearPlannedRoute();
-			setStatus('这里不能走。先用工具改变环境，或换一个目标点。');
+			setStatus(t('statusCantWalk'));
 			render();
 			return;
 		}
 		const route = findPath(state.pet, { r, c });
 		if (!route.length) {
 			clearPlannedRoute();
-			setStatus('找不到安全路线。也许要先处理挡路机关。');
+			setStatus(t('statusNoRoute'));
 			render();
 			return;
 		}
@@ -643,7 +823,7 @@
 		state.plannedRoute = route;
 		state.plannedTarget = { r, c };
 		const danger = routeHasDanger(route);
-		setStatus(danger ? '路线已预览，但会穿过危险格。再次点击仍可出发，建议先处理机关。' : '路线已预览。再次点击终点确认出发。');
+		setStatus(danger ? t('statusRouteDanger') : t('statusRouteSafe'));
 		render();
 	}
 
@@ -675,9 +855,9 @@
 	}
 
 	function laserPulseLabel() {
-		if (!state.lasers.length) return '安全';
+		if (!state.lasers.length) return t('laserSafe');
 		const active = state.lasers.filter(isLaserActive).length;
-		return active ? `${active}/${state.lasers.length}开` : '全关';
+		return active ? t('laserOn', { active, total: state.lasers.length }) : t('laserAllOff');
 	}
 
 	function useTool(tool, cell) {
@@ -692,32 +872,32 @@
 			cell.item = 'mirror';
 			cell.mirror = tool === 'mirrorSlash' ? '/' : '\\';
 			used = true;
-			setStatus('镜子已经放好。激光会被它转向，别忘了观察红色光路。');
+			setStatus(t('toolMirrorPlaced'));
 		} else if (tool === 'wrench' && (cell.item === 'mirror' || cell.item === 'fan' || cell.type === 'emitter')) {
 			if (cell.item === 'mirror') cell.mirror = cell.mirror === '/' ? '\\' : '/';
 			if (cell.item === 'fan') cell.dir = (cell.dir + 1) % 4;
 			if (cell.type === 'emitter') cell.dir = (cell.dir + 1) % 4;
 			state.lasers.forEach(laser => { if (laser.r === cell.r && laser.c === cell.c) laser.dir = cell.dir; });
 			used = true;
-			setStatus('机关旋转完成。这个小转角可能就是生路。');
+			setStatus(t('toolRotated'));
 		} else if (tool === 'bomb' && canPlaceOn(cell)) {
 			cell.item = 'bomb';
 			used = true;
-			setStatus('炸弹已放置。把激光引过来会引爆它，并清掉周围石块与火焰。');
+			setStatus(t('toolBombPlaced'));
 		} else if (tool === 'fan' && canPlaceOn(cell)) {
 			cell.item = 'fan';
 			cell.dir = state.selectedFanDir;
 			blowFan(cell);
 			used = true;
-			setStatus('风扇开始吹风。它会沿箭头方向吹散毒雾。');
+			setStatus(t('toolFanPlaced'));
 		} else if (tool === 'bucket' && (cell.type === 'fire' || cell.type === 'lava')) {
 			cell.type = cell.type === 'lava' ? 'water' : 'floor';
 			used = true;
-			setStatus('水桶奏效了，危险地形已经冷却。');
+			setStatus(t('toolBucketUsed'));
 		} else if (tool === 'hammer' && (cell.type === 'ice' || cell.type === 'rock')) {
 			cell.type = 'floor';
 			used = true;
-			setStatus('障碍被敲碎了，新的路线打开了。');
+			setStatus(t('toolHammerUsed'));
 		}
 		if (!used) {
 			setStatus(toolHint(tool));
@@ -776,26 +956,26 @@
 
 	function toolHint(tool) {
 		const hints = {
-			mirrorSlash: '选择一个空格放置 / 镜子，让激光转弯。',
-			mirrorBack: '选择一个空格放置 \\ 镜子，让激光转弯。',
-			wrench: '点击已有镜子、风扇或激光器来旋转。',
-			bomb: '把炸弹放在空地上，再用激光引爆它清障。',
-			fan: '点击箭头切换风向，再把风扇放到空地吹散毒雾。',
-			bucket: '点击火焰或熔岩，把它浇灭或冷却。',
-			hammer: '点击冰块或石块，直接敲开道路。',
+			mirrorSlash: t('hintMirrorSlash'),
+			mirrorBack: t('hintMirrorBack'),
+			wrench: t('hintWrench'),
+			bomb: t('hintBomb'),
+			fan: t('hintFan'),
+			bucket: t('hintBucket'),
+			hammer: t('hintHammer'),
 		};
-		return hints[tool] || '点击空地移动，或选择工具处理危险机关。';
+		return hints[tool] || t('hintDefault');
 	}
 
 	function invalidToolHint(tool) {
 		const hints = {
-			mirrorSlash: '镜子只能放在空地，不能覆盖宠物、起点或餐盘。',
-			mirrorBack: '镜子只能放在空地，不能覆盖宠物、起点或餐盘。',
-			wrench: '扳手只能旋转镜子、风扇或激光器。',
-			bomb: '炸弹只能放在空地，之后可用激光引爆。',
-			fan: '风扇只能放在空地，箭头方向可先用方向按钮调整。',
-			bucket: '水桶只能处理火焰或熔岩。',
-			hammer: '锤子只能敲碎冰块或石块。',
+			mirrorSlash: t('invalidMirror'),
+			mirrorBack: t('invalidMirror'),
+			wrench: t('invalidWrench'),
+			bomb: t('invalidBomb'),
+			fan: t('invalidFan'),
+			bucket: t('invalidBucket'),
+			hammer: t('invalidHammer'),
 		};
 		return hints[tool] || toolHint(tool);
 	}
@@ -824,7 +1004,7 @@
 			bombsToExplode.forEach(cell => explodeBomb(cell));
 			state.laserCells = new Map();
 			state.lasers.forEach(laser => { if (isLaserActive(laser)) traceLaser(laser, []); });
-			showToast('连锁爆破！');
+			showToast(t('chainBoom'));
 		}
 	}
 
@@ -923,7 +1103,7 @@
 		state.route = route.slice();
 		state.moving = state.route.length > 0;
 		els.pet.classList.toggle('walking', state.moving);
-		setStatus('宠物正在前进。可以继续布置工具，注意激光闪烁节奏。');
+		setStatus(t('statusWalking'));
 		state.routeTimer = setInterval(() => {
 			if (!state.route.length || state.dead || state.finished) {
 				clearInterval(state.routeTimer);
@@ -945,11 +1125,11 @@
 
 	function checkPetDanger() {
 		const cell = cellAt(state.pet.r, state.pet.c);
-		if (state.laserCells.has(key(state.pet.r, state.pet.c))) return failLevel('宠物碰到了激光。');
-		if (cell.type === 'fire') return failLevel('宠物踩进火焰。');
-		if (cell.type === 'lava') return failLevel('宠物掉进熔岩。');
-		if (cell.type === 'gas') return failLevel('宠物吸入了毒雾。');
-		if (cell.type === 'mine') return failLevel('宠物踩中了地雷。');
+		if (state.laserCells.has(key(state.pet.r, state.pet.c))) return failLevel(t('failLaser'));
+		if (cell.type === 'fire') return failLevel(t('failFire'));
+		if (cell.type === 'lava') return failLevel(t('failLava'));
+		if (cell.type === 'gas') return failLevel(t('failGas'));
+		if (cell.type === 'mine') return failLevel(t('failMine'));
 	}
 
 	function failLevel(reason) {
@@ -957,8 +1137,8 @@
 		state.moving = false;
 		clearInterval(state.routeTimer);
 		state.routeTimer = null;
-		setStatus(`${reason} 点击重开再试。`);
-		showToast('挑战失败');
+		setStatus(t('failRetry', { reason }));
+		showToast(t('toastFail'));
 		renderPet();
 	}
 
@@ -981,9 +1161,9 @@
 			toolsUsed: state.toolsUsed,
 			time: state.seconds,
 		});
-		showToast(`抵达餐盘 +${earnedPoints}`);
+		showToast(t('toastReachDish', { points: earnedPoints }));
 		confetti();
-		setStatus('美食到手啦！已自动生成下一关。');
+		setStatus(t('statusNextLevel'));
 		setTimeout(() => {
 			state.level += 1;
 			generateLevel();
@@ -1025,7 +1205,7 @@
 		generateLevel();
 		render();
 		if (state.started) startTimers();
-		setStatus('新迷宫已生成。先看激光线路，再规划工具顺序。');
+		setStatus(t('statusNewMaze'));
 	}
 
 	function setDifficulty(id) {
@@ -1082,21 +1262,26 @@
 		return wrap;
 	}
 
-	function requestPetImage() {
+	function requestPetImage(petId = '') {
 		const requestId = `laser_pet_${Date.now()}_${Math.random().toString(16).slice(2)}`;
-		const onMessage = event => {
-			const msg = event.data || {};
-			if (msg.type !== 'haqi_pet_image' || msg.requestId !== requestId) return;
-			window.removeEventListener('message', onMessage);
-			if (!msg.ok || !msg.data?.imageBlob) return;
-			const url = URL.createObjectURL(msg.data.imageBlob);
-			state.objectUrls.push(url);
-			state.petAsset = { ...msg.data, url };
-			render();
-		};
-		window.addEventListener('message', onMessage);
-		try { window.parent?.postMessage({ type: 'haqi_get_pet_image', requestId, anim: 'idle' }, '*'); } catch (err) {}
-		setTimeout(() => window.removeEventListener('message', onMessage), 3500);
+		state.petRequestId = requestId;
+		try { window.parent?.postMessage({ type: 'haqi_get_pet_image', requestId, anim: 'idle', petId: petId || undefined }, '*'); } catch (err) {}
+		setTimeout(() => {
+			if (state.petAsset?.url) return;
+			try { window.parent?.postMessage({ type: 'haqi_get_pet_images', requestId: `laser_pets_${Date.now()}`, anim: 'idle' }, '*'); } catch (err) {}
+		}, 900);
+	}
+
+	function setPetImage(pet) {
+		if (!pet?.imageBlob || !pet?.uv) return;
+		if (state.petAsset?.url) {
+			URL.revokeObjectURL(state.petAsset.url);
+			state.objectUrls = state.objectUrls.filter(url => url !== state.petAsset.url);
+		}
+		const url = URL.createObjectURL(pet.imageBlob);
+		state.objectUrls.push(url);
+		state.petAsset = { ...pet, url };
+		render();
 	}
 
 	function initDifficulties() {
@@ -1117,7 +1302,7 @@
 		els.start.addEventListener('click', () => {
 			els.overlay.hidden = true;
 			startGame();
-			setStatus('点击地面移动；选工具后点格子使用。先到达右上角的餐盘。');
+			setStatus(t('statusStartPlay'));
 		});
 		els.reset.addEventListener('click', resetLevel);
 		els.undo.addEventListener('click', undoLastTool);
@@ -1125,17 +1310,23 @@
 			if (!state.started) startGame();
 			clearPlannedRoute();
 			tick();
-			setStatus('等待了一个节拍。观察激光开关，再决定什么时候出发。');
+			setStatus(t('statusWaitBeat'));
 			render();
 		});
 		els.fanDir.addEventListener('click', () => {
 			state.selectedFanDir = (state.selectedFanDir + 1) % 4;
 			updateHud();
-			setStatus(`风扇方向：${DIRS[state.selectedFanDir].name}`);
+			setStatus(t('statusFanDir', { dir: DIRS[state.selectedFanDir].name }));
 		});
 		window.addEventListener('message', event => {
 			const msg = event.data || {};
 			if (msg.type === 'setGameConfig' && msg.data?.difficulty) setDifficulty(msg.data.difficulty);
+			if (msg.type === 'setGameConfig' && msg.data?.petId) requestPetImage(msg.data.petId);
+			if (msg.type === 'haqi_pet_image' && msg.ok && msg.data && (!state.petRequestId || !msg.requestId || msg.requestId === state.petRequestId || msg.requestId === 'active_pet_config')) setPetImage(msg.data);
+			if (msg.type === 'haqi_pet_images' && msg.ok) {
+				const firstPet = Array.isArray(msg.data?.pets) ? msg.data.pets[0] : null;
+				if (firstPet) setPetImage(firstPet);
+			}
 		});
 		window.addEventListener('beforeunload', () => {
 			state.objectUrls.forEach(url => URL.revokeObjectURL(url));
@@ -1226,7 +1417,7 @@
 	generateLevel();
 	render();
 	requestPetImage();
-	post('gameLoaded', { title: '宠物激光迷宫' });
+	post('gameLoaded', { title: t('title') });
 })();
 </script>
 

@@ -65,12 +65,53 @@ Request the current pet:
 
 ```javascript
 const requestId = `pet_${Date.now()}`;
+let activePetRequestId = requestId;
 window.parent.postMessage({
   type: 'haqi_get_pet_image',
   requestId,
   // Optional: anim can be 'idle', 'happy', 'sad', or 'sleep'. Defaults to the pet's current anim.
-  anim: 'idle'
+  anim: 'idle',
+  // Optional: pass petId when received from setGameConfig.
+  petId: currentPetId || undefined
 }, '*');
+```
+
+Robust loading pattern for games that display the active pet:
+
+- Keep one persistent `message` listener for pet payloads. Do **not** rely only on a short-lived exact-`requestId` listener.
+- Accept parent-pushed active pet payloads with `requestId: 'active_pet_config'`; the MagicHaqi host may send this without a matching request from the mini game.
+- When `setGameConfig` includes `data.petId`, re-request `haqi_get_pet_image` with that `petId`.
+- If the single-pet request does not produce an image after about 900ms, request `haqi_get_pet_images` and use the first returned pet, because the current active pet is first.
+- Revoke replaced `ObjectURL`s and close replaced `ImageBitmap`s to avoid leaks.
+
+Example robust handler:
+
+```javascript
+let petRequestId = '';
+let petObjectUrl = '';
+
+function requestPetImage(petId = '') {
+  const requestId = `pet_${Date.now()}`;
+  petRequestId = requestId;
+  window.parent.postMessage({ type: 'haqi_get_pet_image', requestId, anim: 'happy', petId: petId || undefined }, '*');
+  setTimeout(() => {
+    if (petObjectUrl) return;
+    window.parent.postMessage({ type: 'haqi_get_pet_images', requestId: `pets_${Date.now()}`, anim: 'happy' }, '*');
+  }, 900);
+}
+
+window.addEventListener('message', (event) => {
+  const msg = event.data || {};
+  if (msg.type === 'setGameConfig' && msg.data?.petId) requestPetImage(msg.data.petId);
+  if (msg.type === 'haqi_pet_image' && msg.ok && msg.data &&
+      (!petRequestId || !msg.requestId || msg.requestId === petRequestId || msg.requestId === 'active_pet_config')) {
+    setPetImage(msg.data);
+  }
+  if (msg.type === 'haqi_pet_images' && msg.ok) {
+    const firstPet = Array.isArray(msg.data?.pets) ? msg.data.pets[0] : null;
+    if (firstPet) setPetImage(firstPet);
+  }
+});
 ```
 
 Request all pets on the current planet, with the current pet first and at most 10 pets:

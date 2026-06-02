@@ -1,5 +1,6 @@
 // 故事列表视图：先展示已有故事卡片，第一个卡片用于新建故事。
 import { $, confirm as confirmDialog, escapeHtml, showToast } from './utils.js';
+import { t } from './i18n.js';
 import { deleteWorkspaceStory, loadWorkspaceStory, loadWorkspaceStoryList, loadWorkspaceStoryRecord } from './storage.js';
 import { petArtHtml, scanAndMount } from './pet.js';
 import { state } from './state.js';
@@ -10,7 +11,7 @@ function storyPetForRecord(record) {
     if (!template) return null;
     return {
         id: template.id || actor.id || 'story_pet',
-        name: template.name || actor.name || '抱抱龙',
+        name: template.name || actor.name || t('slDragonName'),
         stage: template.stage || 'adult',
         imageSheetUrl: template.imageSheetUrl || '',
         dna: template.dna || '',
@@ -21,22 +22,22 @@ function storyPetForRecord(record) {
 
 function formatDate(ts) {
     const time = Number(ts) || 0;
-    if (!time) return '未保存时间';
+    if (!time) return t('slNoTime');
     try {
         const date = new Date(time);
         return `${date.getMonth() + 1}/${date.getDate()} ${String(date.getHours()).padStart(2, '0')}:${String(date.getMinutes()).padStart(2, '0')}`;
     } catch (_) {
-        return '未保存时间';
+        return t('slNoTime');
     }
 }
 
 function renderStoryStats(record) {
     return `
         <div class="mh-story-list-stats">
-            <span>${Math.max(0, Number(record.sceneCount) || 0)} 幕</span>
-            <span>${Math.max(0, Number(record.actorCount) || 0)} 演员</span>
-            <span>${Math.max(0, Number(record.lineCount) || 0)} 对白</span>
-            <span>${Math.max(0, Number(record.activityCount) || 0)} 互动</span>
+            <span>${escapeHtml(t('slScenes', { n: Math.max(0, Number(record.sceneCount) || 0) }))}</span>
+            <span>${escapeHtml(t('slActors', { n: Math.max(0, Number(record.actorCount) || 0) }))}</span>
+            <span>${escapeHtml(t('slLines', { n: Math.max(0, Number(record.lineCount) || 0) }))}</span>
+            <span>${escapeHtml(t('slActivities', { n: Math.max(0, Number(record.activityCount) || 0) }))}</span>
         </div>`;
 }
 
@@ -60,10 +61,10 @@ function buildStoryShareUrl(path, username) {
 }
 
 function storyShareText(title) {
-    return `来试玩我创作的故事《${title || '我的宠物故事'}》吧。`;
+    return t('slShareStory', { title: title || t('slDefaultTitle') });
 }
 
-async function copyText(text, okMessage = '已复制') {
+async function copyText(text, okMessage = t('slCopied')) {
     try {
         if (navigator.clipboard?.writeText) await navigator.clipboard.writeText(text);
         else {
@@ -79,7 +80,7 @@ async function copyText(text, okMessage = '已复制') {
         showToast(okMessage, 'success', 1600);
         return true;
     } catch (_) {
-        showToast('复制失败，请手动复制链接。', 'error', 2200);
+        showToast(t('slCopyFailed'), 'error', 2200);
         return false;
     }
 }
@@ -88,11 +89,11 @@ async function openStorySharePanel({ path, title }) {
     if (!path) return;
     const username = await getStoryShareUsername();
     if (!username) {
-        showToast('请先登录后再分享故事。', 'error', 2200);
+        showToast(t('slLoginToShare'), 'error', 2200);
         return;
     }
     document.querySelector('.mh-story-share-mask')?.remove();
-    const safeTitle = title || '我的宠物故事';
+    const safeTitle = title || t('slDefaultTitle');
     const url = buildStoryShareUrl(path, username);
     const text = storyShareText(safeTitle);
     const mask = document.createElement('div');
@@ -101,7 +102,7 @@ async function openStorySharePanel({ path, title }) {
         <div class="modal-card mh-story-share-card">
             <div class="mh-story-share-head">
                 <div>
-                    <div class="mh-story-share-title">分享故事</div>
+                    <div class="mh-story-share-title">${escapeHtml(t('slShareTitle'))}</div>
                     <div class="mh-story-share-subtitle">${escapeHtml(safeTitle)}</div>
                 </div>
                 <button type="button" class="mh-story-share-close" data-story-share-close aria-label="关闭">×</button>
@@ -109,9 +110,9 @@ async function openStorySharePanel({ path, title }) {
             <div class="mh-story-share-preview">${escapeHtml(text)}</div>
             <input class="modal-input mh-story-share-link" readonly value="${escapeHtml(url)}" aria-label="分享链接">
             <div class="mh-story-share-actions">
-                <button type="button" class="btn-secondary" data-story-share-method="copy">复制链接</button>
-                <button type="button" class="btn-secondary" data-story-share-method="wechat">微信</button>
-                <button type="button" class="btn-primary" data-story-share-method="system">系统分享</button>
+                <button type="button" class="btn-secondary" data-story-share-method="copy">${escapeHtml(t('slCopyLink'))}</button>
+                <button type="button" class="btn-secondary" data-story-share-method="wechat">${escapeHtml(t('slWechat'))}</button>
+                <button type="button" class="btn-primary" data-story-share-method="system">${escapeHtml(t('slSystemShare'))}</button>
             </div>
         </div>`;
     const close = () => mask.remove();
@@ -121,14 +122,14 @@ async function openStorySharePanel({ path, title }) {
         if (!methodBtn) return;
         const method = methodBtn.dataset.storyShareMethod;
         if (method === 'copy') {
-            await copyText(url, '故事链接已复制');
+            await copyText(url, t('slLinkCopied'));
         } else if (method === 'wechat') {
-            await copyText(`${text}\n${url}`, '已复制微信分享内容');
+            await copyText(`${text}\n${url}`, t('slWechatCopied'));
         } else if (method === 'system') {
             if (navigator.share) {
                 try { await navigator.share({ title: safeTitle, text, url }); return; } catch (_) {}
             }
-            await copyText(`${text}\n${url}`, '已复制分享内容');
+            await copyText(`${text}\n${url}`, t('slShareCopied'));
         }
     });
     document.body.appendChild(mask);
@@ -138,18 +139,18 @@ function renderStoryCard(record) {
     const pet = storyPetForRecord(record);
     return `
         <article class="mh-story-card" data-story-path="${escapeHtml(record.path)}">
-            <button type="button" class="mh-story-card-delete" data-story-delete="${escapeHtml(record.path)}" aria-label="删除故事" title="删除故事">×</button>
+            <button type="button" class="mh-story-card-delete" data-story-delete="${escapeHtml(record.path)}" aria-label="${escapeHtml(t('slDeleteStory'))}" title="${escapeHtml(t('slDeleteStory'))}">×</button>
             <div class="mh-story-card-art">
-                ${pet ? `<div class="mh-story-card-pet">${petArtHtml(pet, { alt: pet.name || '', extraClass: 'floaty', requireProcessedTexture: false })}</div>` : '<span class="mh-story-card-placeholder">故事</span>'}
+                ${pet ? `<div class="mh-story-card-pet">${petArtHtml(pet, { alt: pet.name || '', extraClass: 'floaty', requireProcessedTexture: false })}</div>` : `<span class="mh-story-card-placeholder">${escapeHtml(t('slStory'))}</span>`}
             </div>
             <div class="mh-story-card-body">
-                <div class="mh-story-card-title">${escapeHtml(record.title || '我的宠物故事')}</div>
+                <div class="mh-story-card-title">${escapeHtml(record.title || t('slDefaultTitle'))}</div>
                 <div class="mh-story-card-time">${escapeHtml(formatDate(record.updatedAt))}</div>
                 ${renderStoryStats(record)}
                 <div class="mh-story-card-actions">
-                    <button type="button" class="btn-secondary mh-story-play-btn" data-story-play="${escapeHtml(record.path)}">试玩</button>
-                    <button type="button" class="btn-secondary" data-story-share="${escapeHtml(record.path)}">分享</button>
-                    <button type="button" class="btn-primary" data-story-edit="${escapeHtml(record.path)}">编辑</button>
+                    <button type="button" class="btn-secondary mh-story-play-btn" data-story-play="${escapeHtml(record.path)}">${escapeHtml(t('slPlay'))}</button>
+                    <button type="button" class="btn-secondary" data-story-share="${escapeHtml(record.path)}">${escapeHtml(t('slShare'))}</button>
+                    <button type="button" class="btn-primary" data-story-edit="${escapeHtml(record.path)}">${escapeHtml(t('slEdit'))}</button>
                 </div>
             </div>
         </article>`;
@@ -160,7 +161,7 @@ function renderListHtml(records) {
         <div class="mh-story-list-grid">
             <button type="button" class="mh-story-new-card" id="mhStoryNewCard">
                 <span class="mh-story-new-plus">+</span>
-                <strong>新建故事</strong>
+                <strong>${escapeHtml(t('slNewStory'))}</strong>
             </button>
             ${records.length ? records.map(renderStoryCard).join('') : '<div class="mh-story-list-empty">还没有保存的故事。新建一个，保存后会出现在这里。</div>'}
         </div>`;
@@ -280,7 +281,7 @@ export async function renderStoryList(panel, _data = {}, { onBack, onNewStory, o
         <div class="mh-story-list-root">
             <div class="topbar">
                 <button class="btn-icon" id="mhStoryListBack" style="width:36px;height:36px;font-size:18px">‹</button>
-                <span class="font-bold" style="color:var(--text-primary)">故事创作</span>
+                <span class="font-bold" style="color:var(--text-primary)">${escapeHtml(t('slStoryMaker'))}</span>
                 <span style="width:36px"></span>
             </div>
             <div class="mh-story-list-body">
@@ -300,7 +301,7 @@ export async function renderStoryList(panel, _data = {}, { onBack, onNewStory, o
         setupVisibleStoryLoading(content, records);
     } catch (e) {
         if (content) content.innerHTML = '<div class="mh-story-list-empty">故事列表加载失败。</div>';
-        showToast('故事列表加载失败：' + (e?.message || e), 'error');
+        showToast(t('slListLoadFailed', { error: (e?.message || e) }), 'error');
     }
 
     panel.onclick = async (e) => {
@@ -310,9 +311,9 @@ export async function renderStoryList(panel, _data = {}, { onBack, onNewStory, o
         if (deleteBtn) {
             const card = deleteBtn.closest?.('[data-story-path]');
             const path = deleteBtn.dataset.storyDelete || card?.dataset.storyPath || '';
-            const title = card?.querySelector?.('.mh-story-card-title')?.textContent?.trim() || '这个故事';
+            const title = card?.querySelector?.('.mh-story-card-title')?.textContent?.trim() || t('slThisStory');
             if (!path) return;
-            const confirmed = await confirmDialog(`确定要删除《${title}》吗？删除后不能恢复。`, { okText: '删除', cancelText: '取消' });
+            const confirmed = await confirmDialog(t('slDeleteConfirm', { title }), { okText: t('delete'), cancelText: t('cancel') });
             if (!confirmed) return;
             deleteBtn.disabled = true;
             try {
@@ -320,10 +321,10 @@ export async function renderStoryList(panel, _data = {}, { onBack, onNewStory, o
                 records = records.filter(item => item.path !== path);
                 card?.remove();
                 if (content && !content.querySelector('[data-story-path]')) content.innerHTML = renderListHtml(records);
-                showToast('故事已删除', 'success', 1600);
+                showToast(t('slDeleted'), 'success', 1600);
             } catch (err) {
                 deleteBtn.disabled = false;
-                showToast('删除故事失败：' + (err?.message || err), 'error');
+                showToast(t('slDeleteFailed', { error: (err?.message || err) }), 'error');
             }
             return;
         }
@@ -343,11 +344,11 @@ export async function renderStoryList(panel, _data = {}, { onBack, onNewStory, o
         if (!path) return;
         try {
             const story = await loadWorkspaceStory(path);
-            if (!story) { showToast('故事文件不存在', 'error'); return; }
+            if (!story) { showToast(t('slStoryMissing'), 'error'); return; }
             if (playBtn) onPlayStory?.(story, path);
             else onEditStory?.(story, path);
         } catch (err) {
-            showToast('打开故事失败：' + (err?.message || err), 'error');
+            showToast(t('slOpenFailed', { error: (err?.message || err) }), 'error');
         }
     };
 }

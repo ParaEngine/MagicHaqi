@@ -12,6 +12,175 @@
 <body></body>
 <script defer>
 (function () {
+  // ---- i18n ----
+  const I18N = {
+    zhCN: {
+      title: '宠物飞船寻宝',
+      menuAria: '玩法',
+      levelTitle: '宠物飞船寻宝 Lv.',
+      gameStatusAria: '游戏状态',
+      diffLabel: '难度',
+      diffSelectAria: '选择难度',
+      foodLabel: '食物',
+      stepLabel: '步',
+      dirNorth: '北', dirEast: '东', dirSouth: '南', dirWest: '西',
+      cmdForward: '前进', cmdForwardShort: '前',
+      cmdLeft: '左转', cmdLeftShort: '左',
+      cmdRight: '右转', cmdRightShort: '右',
+      cmdJump: '跳跃', cmdJumpShort: '跳',
+      cmdLight: '收集', cmdLightShort: '食',
+      cmdP1: '调用P1', cmdP2: '调用P2',
+      cmdRepeat2: '重复下一步2次', cmdRepeat3: '重复下一步3次',
+      diffEasy: '轻松', diffNormal: '标准', diffHard: '困难', diffExpert: '专家',
+      progMain: '主程序', progP1: 'P1函数', progP2: 'P2函数',
+      speedSlow: '慢速', speedNormal: '中速', speedFast: '快速',
+      tut1Title: '跳跃收集', tut1Tip: '食物悬在格子上方，第一关只要跳到食物所在格。',
+      tut2Title: '先走再跳', tut2Tip: '没有食物的平地用前进，最后一步用跳跃收集。',
+      tut3Title: '转向路线', tut3Tip: '飞船只会朝面向的方向移动，先转向再前进。',
+      tut4Title: '高低台阶', tut4Tip: '前方更高时必须跳跃，跳跃也能顺手收集食物。',
+      tut5Title: '重复节奏', tut5Tip: '这关可以直接完成，也可以试试用重复指令压缩程序。',
+      stageAria: '等距地图', runBtn: '运行', resetBtn: '重置',
+      panelAria: '编程面板', paletteAria: '指令库', programTabsAria: '选择程序',
+      defaultStatus: '把指令拖到程序槽里，然后点击运行。',
+      stepBtn: '单步', hintBtn: '提示', undoBtn: '撤销', clearBtn: '清空',
+      skipTutorialBtn: '跳过教程', speedAria: '运行速度',
+      howToTitle: '宠物飞船寻宝',
+      howToText: '把前进、转向和跳跃指令排进程序槽，让飞船跳起收集悬浮在方块上方的食物。食物用虚线连到所属格子中心，只有跳跃到食物所在格才算收集。',
+      startGame: '开始游戏', skipIntro: '跳过教程',
+      winTitle: '食物收集完成！', winDefaultText: '你完成了这一关。',
+      nextLevel: '下一关',
+      slotFull: '{name} 已经满了',
+      noUndo: '没有可撤销的操作',
+      clearConfirm: '再点一次清空当前程序',
+      needMainCmd: '先放入主程序指令',
+      petRunning: '宠物正在执行程序...',
+      stepDebug: '单步调试中：继续点击单步。',
+      paused: '已暂停，点击单步继续调试，或点重置回到起点。',
+      progEnd: '程序结束了，还有食物没有收集。',
+      executing: '{stack} 正在执行：{cmd}',
+      stepDone: '{stack} 已执行一步，继续点击单步。',
+      progLabel: '程序',
+      foodNeedJump: '食物悬在高处，需要用跳跃触碰。',
+      noFoodHere: '这里没有可收集的食物。',
+      noCmdInFn: '{name} 还没有指令。',
+      callTooDeep: '函数调用太深了。',
+      needActionAfterRepeat: '重复指令后面需要再放一个动作。',
+      noRoad: '前面没有路，程序停下来了。试试先左转或右转。',
+      needJump: '前面更高，需要使用跳跃。把这一步换成跳跃再试试。',
+      tooHigh: '太高了，跳不过去。找一条只升高一层的路线。',
+      flatJumpWaste: '平地也可以跳，但会浪费一步。',
+      jumpCollect: '跳跃收集到 {food}！',
+      resetToStart: '已重置到起点。',
+      newLevel: '新关卡已生成，跳起来收集悬浮食物吧。',
+      tutorialSkipped: '已跳过教程，之后会直接进入正式关卡。',
+      allCollected: '食物全部收集，通关成功。',
+      clickToDelete: '点击删除 {label}',
+      dragIn: '拖入指令',
+      slotsUnit: '{n} 槽',
+      hintObserve: '先观察飞船朝向，再决定转向、前进或跳跃。',
+      hintTryNext: '下一步可以试试：{cmd}。',
+      hintRefStart: '参考开头：{sample}{more}',
+      hintCompress: '完整路线不一定最短，试着把重复片段放进 P1 或用重复指令。',
+      hintRepeat: '发现重复片段：{seq}，可以试试重复指令或 P1。',
+      hintP1Overflow: '如果主程序放不下，把一小段常用动作放进 P1，再在主程序调用 P1。',
+      speechLeft: '左转', speechRight: '右转', speechJump: '跳跃',
+      winText: 'Lv.{level} {diff}完成，用了 {steps} 步，生成路线约 {solution} 步。',
+      toastCollect: '食物收集完成!',
+      facing: '面向{dir}',
+    },
+    enUS: {
+      title: 'Pet Spaceship Treasure Hunt',
+      menuAria: 'Help',
+      levelTitle: 'Pet Spaceship Treasure Hunt Lv.',
+      gameStatusAria: 'Game status',
+      diffLabel: 'Difficulty',
+      diffSelectAria: 'Select difficulty',
+      foodLabel: 'Food',
+      stepLabel: 'Steps',
+      dirNorth: 'N', dirEast: 'E', dirSouth: 'S', dirWest: 'W',
+      cmdForward: 'Forward', cmdForwardShort: 'Fwd',
+      cmdLeft: 'Turn Left', cmdLeftShort: 'Left',
+      cmdRight: 'Turn Right', cmdRightShort: 'Right',
+      cmdJump: 'Jump', cmdJumpShort: 'Jump',
+      cmdLight: 'Collect', cmdLightShort: 'Eat',
+      cmdP1: 'Call P1', cmdP2: 'Call P2',
+      cmdRepeat2: 'Repeat next step ×2', cmdRepeat3: 'Repeat next step ×3',
+      diffEasy: 'Easy', diffNormal: 'Normal', diffHard: 'Hard', diffExpert: 'Expert',
+      progMain: 'Main', progP1: 'P1 Function', progP2: 'P2 Function',
+      speedSlow: 'Slow', speedNormal: 'Medium', speedFast: 'Fast',
+      tut1Title: 'Jump & Collect', tut1Tip: 'Food floats above a tile — just jump onto it to collect.',
+      tut2Title: 'Walk then Jump', tut2Tip: 'Use Forward on flat ground, then Jump on the last step to collect.',
+      tut3Title: 'Turn & Go', tut3Tip: 'The ship only moves in the direction it faces — turn first, then move.',
+      tut4Title: 'Stairs', tut4Tip: 'Jump when the path goes up — jumping also collects food along the way.',
+      tut5Title: 'Repeat Rhythm', tut5Tip: 'You can finish this level directly, or try compressing with repeat commands.',
+      stageAria: 'Isometric map', runBtn: 'Run', resetBtn: 'Reset',
+      panelAria: 'Coding panel', paletteAria: 'Command library', programTabsAria: 'Select program',
+      defaultStatus: 'Drag commands into program slots, then press Run.',
+      stepBtn: 'Step', hintBtn: 'Hint', undoBtn: 'Undo', clearBtn: 'Clear',
+      skipTutorialBtn: 'Skip Tutorial', speedAria: 'Run speed',
+      howToTitle: 'Pet Spaceship Treasure Hunt',
+      howToText: 'Place forward, turn, and jump commands into program slots to make the ship jump and collect food floating above the blocks. Food is connected to its tile center with a dashed line — only jumping onto the food tile counts as collecting.',
+      startGame: 'Start Game', skipIntro: 'Skip Tutorial',
+      winTitle: 'All Food Collected!', winDefaultText: 'You completed this level.',
+      nextLevel: 'Next Level',
+      slotFull: '{name} is full',
+      noUndo: 'Nothing to undo',
+      clearConfirm: 'Tap again to clear current program',
+      needMainCmd: 'Add commands to the main program first',
+      petRunning: 'Pet is running the program...',
+      stepDebug: 'Step debugging: keep tapping Step to continue.',
+      paused: 'Paused — tap Step to continue debugging, or Reset to go back.',
+      progEnd: 'Program ended — some food is still uncollected.',
+      executing: '{stack} executing: {cmd}',
+      stepDone: '{stack} executed one step — keep tapping Step.',
+      progLabel: 'Program',
+      foodNeedJump: 'Food is up high — you need to jump to reach it.',
+      noFoodHere: 'There is no food to collect here.',
+      noCmdInFn: '{name} has no commands yet.',
+      callTooDeep: 'Function calls are too deep.',
+      needActionAfterRepeat: 'Place an action command after the repeat command.',
+      noRoad: 'No road ahead — the program stopped. Try turning left or right first.',
+      needJump: 'It\'s higher ahead — use Jump instead. Try replacing this step with Jump.',
+      tooHigh: 'Too high to jump over. Find a route that only goes up one level.',
+      flatJumpWaste: 'You can jump on flat ground, but it wastes a step.',
+      jumpCollect: 'Jumped and collected {food}!',
+      resetToStart: 'Reset to start.',
+      newLevel: 'New level generated — jump to collect the floating food!',
+      tutorialSkipped: 'Tutorial skipped — you\'ll go straight to the main levels.',
+      allCollected: 'All food collected — level clear!',
+      clickToDelete: 'Click to remove {label}',
+      dragIn: 'Drop command',
+      slotsUnit: '{n} slots',
+      hintObserve: 'Observe the ship\'s direction first, then decide to turn, move, or jump.',
+      hintTryNext: 'Try this next: {cmd}.',
+      hintRefStart: 'Reference start: {sample}{more}',
+      hintCompress: 'The shortest path may not fit — try putting repeated segments in P1 or using repeat commands.',
+      hintRepeat: 'Found a repeated segment: {seq} — try a repeat command or P1.',
+      hintP1Overflow: 'If the main program is too long, put common moves in P1 and call P1 from main.',
+      speechLeft: 'Turn left', speechRight: 'Turn right', speechJump: 'Jump',
+      winText: 'Lv.{level} {diff} complete in {steps} steps (solution ≈ {solution} steps).',
+      toastCollect: 'All food collected!',
+      facing: 'Facing {dir}',
+    },
+  };
+  function detectLang() {
+    try {
+      const params = new URLSearchParams(window.location.search);
+      const lang = params.get('lang');
+      if (lang && I18N[lang]) return lang;
+    } catch (_) {}
+    return 'zhCN';
+  }
+  const LANG = detectLang();
+  const L = I18N[LANG];
+  function t(key, vars) {
+    let str = L[key] || I18N.zhCN[key] || key;
+    if (vars) str = str.replace(/\{(\w+)\}/g, (m, n) => vars[n] != null ? String(vars[n]) : m);
+    return str;
+  }
+  try { document.documentElement.setAttribute('lang', LANG === 'enUS' ? 'en' : 'zh-CN'); } catch (_) {}
+  try { document.title = t('title'); } catch (_) {}
+
   const STORAGE_DIFFICULTY = 'haqiLightbotDifficultyV1';
   const STORAGE_BEST = 'haqiLightbotBestLevelV1';
   const STORAGE_SPEED = 'haqiLightbotSpeedV1';
@@ -19,72 +188,72 @@
   const FALLBACK_PET = '🐾';
   const FOOD_ITEMS = ['🍎', '🍓', '🍇', '🍌', '🥕', '🍒', '🥝', '🍪'];
   const DIRS = [
-    { id: 0, dr: -1, dc: 0, arrow: '↑', name: '北' },
-    { id: 1, dr: 0, dc: 1, arrow: '→', name: '东' },
-    { id: 2, dr: 1, dc: 0, arrow: '↓', name: '南' },
-    { id: 3, dr: 0, dc: -1, arrow: '←', name: '西' },
+    { id: 0, dr: -1, dc: 0, arrow: '↑', name: t('dirNorth') },
+    { id: 1, dr: 0, dc: 1, arrow: '→', name: t('dirEast') },
+    { id: 2, dr: 1, dc: 0, arrow: '↓', name: t('dirSouth') },
+    { id: 3, dr: 0, dc: -1, arrow: '←', name: t('dirWest') },
   ];
   const COMMANDS = {
-    forward: { id: 'forward', icon: '↥', label: '前进', short: '前' },
-    left: { id: 'left', icon: '↺', label: '左转', short: '左' },
-    right: { id: 'right', icon: '↻', label: '右转', short: '右' },
-    jump: { id: 'jump', icon: '⤴', label: '跳跃', short: '跳' },
-    light: { id: 'light', icon: '🍎', label: '收集', short: '食' },
-    p1: { id: 'p1', icon: 'P1', label: '调用P1', short: 'P1' },
-    p2: { id: 'p2', icon: 'P2', label: '调用P2', short: 'P2' },
-    repeat2: { id: 'repeat2', icon: '×2', label: '重复下一步2次', short: '×2' },
-    repeat3: { id: 'repeat3', icon: '×3', label: '重复下一步3次', short: '×3' },
+    forward: { id: 'forward', icon: '↥', label: t('cmdForward'), short: t('cmdForwardShort') },
+    left: { id: 'left', icon: '↺', label: t('cmdLeft'), short: t('cmdLeftShort') },
+    right: { id: 'right', icon: '↻', label: t('cmdRight'), short: t('cmdRightShort') },
+    jump: { id: 'jump', icon: '⤴', label: t('cmdJump'), short: t('cmdJumpShort') },
+    light: { id: 'light', icon: '🍎', label: t('cmdLight'), short: t('cmdLightShort') },
+    p1: { id: 'p1', icon: 'P1', label: t('cmdP1'), short: 'P1' },
+    p2: { id: 'p2', icon: 'P2', label: t('cmdP2'), short: 'P2' },
+    repeat2: { id: 'repeat2', icon: '×2', label: t('cmdRepeat2'), short: '×2' },
+    repeat3: { id: 'repeat3', icon: '×3', label: t('cmdRepeat3'), short: '×3' },
   };
   const DIFFICULTIES = {
-    easy: { id: 'easy', label: '轻松', size: 5, basePath: 5, pathGrow: .55, goals: 2, mainSlots: 14, p1Slots: 4, p2Slots: 0, reward: 70, heightChance: .14, turnBias: .28 },
-    normal: { id: 'normal', label: '标准', size: 6, basePath: 8, pathGrow: .75, goals: 3, mainSlots: 12, p1Slots: 7, p2Slots: 0, reward: 95, heightChance: .28, turnBias: .4 },
-    hard: { id: 'hard', label: '困难', size: 7, basePath: 11, pathGrow: .95, goals: 4, mainSlots: 11, p1Slots: 8, p2Slots: 6, reward: 125, heightChance: .42, turnBias: .5 },
-    expert: { id: 'expert', label: '专家', size: 8, basePath: 14, pathGrow: 1.08, goals: 5, mainSlots: 10, p1Slots: 8, p2Slots: 8, reward: 160, heightChance: .5, turnBias: .62 },
+    easy: { id: 'easy', label: t('diffEasy'), size: 5, basePath: 5, pathGrow: .55, goals: 2, mainSlots: 14, p1Slots: 4, p2Slots: 0, reward: 70, heightChance: .14, turnBias: .28 },
+    normal: { id: 'normal', label: t('diffNormal'), size: 6, basePath: 8, pathGrow: .75, goals: 3, mainSlots: 12, p1Slots: 7, p2Slots: 0, reward: 95, heightChance: .28, turnBias: .4 },
+    hard: { id: 'hard', label: t('diffHard'), size: 7, basePath: 11, pathGrow: .95, goals: 4, mainSlots: 11, p1Slots: 8, p2Slots: 6, reward: 125, heightChance: .42, turnBias: .5 },
+    expert: { id: 'expert', label: t('diffExpert'), size: 8, basePath: 14, pathGrow: 1.08, goals: 5, mainSlots: 10, p1Slots: 8, p2Slots: 8, reward: 160, heightChance: .5, turnBias: .62 },
   };
   const DIFFICULTY_ORDER = ['easy', 'normal', 'hard', 'expert'];
   const PROGRAMS = ['main', 'p1', 'p2'];
-  const PROGRAM_LABELS = { main: '主程序', p1: 'P1函数', p2: 'P2函数' };
+  const PROGRAM_LABELS = { main: t('progMain'), p1: t('progP1'), p2: t('progP2') };
   const RUN_SPEEDS = {
-    slow: { id: 'slow', label: '慢速', interval: 620 },
-    normal: { id: 'normal', label: '中速', interval: 430 },
-    fast: { id: 'fast', label: '快速', interval: 230 },
+    slow: { id: 'slow', label: t('speedSlow'), interval: 620 },
+    normal: { id: 'normal', label: t('speedNormal'), interval: 430 },
+    fast: { id: 'fast', label: t('speedFast'), interval: 230 },
   };
   const TUTORIAL_LEVELS = [
     {
-      title: '跳跃收集',
-      tip: '食物悬在格子上方，第一关只要跳到食物所在格。',
+      title: t('tut1Title'),
+      tip: t('tut1Tip'),
       size: 5,
       start: { row: 2, col: 1, dir: 1 },
       path: [{ row: 2, col: 1, height: 0 }, { row: 2, col: 2, height: 0 }],
       goals: [[2, 2]],
     },
     {
-      title: '先走再跳',
-      tip: '没有食物的平地用前进，最后一步用跳跃收集。',
+      title: t('tut2Title'),
+      tip: t('tut2Tip'),
       size: 5,
       start: { row: 2, col: 1, dir: 1 },
       path: [{ row: 2, col: 1, height: 0 }, { row: 2, col: 2, height: 0 }, { row: 2, col: 3, height: 0 }],
       goals: [[2, 3]],
     },
     {
-      title: '转向路线',
-      tip: '飞船只会朝面向的方向移动，先转向再前进。',
+      title: t('tut3Title'),
+      tip: t('tut3Tip'),
       size: 5,
       start: { row: 3, col: 1, dir: 1 },
       path: [{ row: 3, col: 1, height: 0 }, { row: 3, col: 2, height: 0 }, { row: 2, col: 2, height: 0 }],
       goals: [[2, 2]],
     },
     {
-      title: '高低台阶',
-      tip: '前方更高时必须跳跃，跳跃也能顺手收集食物。',
+      title: t('tut4Title'),
+      tip: t('tut4Tip'),
       size: 5,
       start: { row: 3, col: 1, dir: 1 },
       path: [{ row: 3, col: 1, height: 0 }, { row: 3, col: 2, height: 1 }, { row: 2, col: 2, height: 1 }, { row: 2, col: 3, height: 0 }],
       goals: [[3, 2], [2, 3]],
     },
     {
-      title: '重复节奏',
-      tip: '这关可以直接完成，也可以试试用重复指令压缩程序。',
+      title: t('tut5Title'),
+      tip: t('tut5Tip'),
       size: 5,
       start: { row: 2, col: 0, dir: 1 },
       path: [{ row: 2, col: 0, height: 0 }, { row: 2, col: 1, height: 0 }, { row: 2, col: 2, height: 0 }, { row: 2, col: 3, height: 0 }, { row: 2, col: 4, height: 0 }],
@@ -119,6 +288,7 @@
     stack: [],
     trace: [],
     petAsset: null,
+    petRequestId: '',
     objectUrls: [],
     three: null,
     petTextureKey: '',
@@ -299,53 +469,53 @@
     </style>
     <div class="mh-shell">
       <header class="mh-top">
-        <button id="mhMenu" class="mh-icon-btn" type="button" aria-label="玩法">?</button>
-        <div class="mh-title">宠物飞船寻宝 Lv.<span id="mhLevel">1</span></div>
-        <div class="mh-stats" aria-label="游戏状态">
-          <label class="mh-pill">难度 <select id="mhDifficultySelect" class="mh-difficulty-select" aria-label="选择难度"></select></label>
-          <span class="mh-pill">食物 <b id="mhGoalCount">0/0</b></span>
-          <span class="mh-pill">步 <b id="mhSteps">0</b></span>
+        <button id="mhMenu" class="mh-icon-btn" type="button" aria-label="${t('menuAria')}">?</button>
+        <div class="mh-title">${t('levelTitle')}<span id="mhLevel">1</span></div>
+        <div class="mh-stats" aria-label="${t('gameStatusAria')}">
+          <label class="mh-pill">${t('diffLabel')} <select id="mhDifficultySelect" class="mh-difficulty-select" aria-label="${t('diffSelectAria')}"></select></label>
+          <span class="mh-pill">${t('foodLabel')} <b id="mhGoalCount">0/0</b></span>
+          <span class="mh-pill">${t('stepLabel')} <b id="mhSteps">0</b></span>
           <span class="mh-pill"><b id="mhTime">0</b>s</span>
         </div>
       </header>
       <main class="mh-main">
-        <section class="mh-stage" aria-label="等距地图">
-          <button id="mhRun" class="mh-run-float orange" type="button">运行</button>
+        <section class="mh-stage" aria-label="${t('stageAria')}">
+          <button id="mhRun" class="mh-run-float orange" type="button">${t('runBtn')}</button>
           <div class="mh-board-wrap"><div id="mhBoard" class="mh-iso-board"></div></div>
         </section>
-        <aside class="mh-panel" aria-label="编程面板">
-          <div class="mh-palette" id="mhPalette" aria-label="指令库"></div>
-          <div class="mh-program-tabs" id="mhProgramTabs" aria-label="选择程序"></div>
+        <aside class="mh-panel" aria-label="${t('panelAria')}">
+          <div class="mh-palette" id="mhPalette" aria-label="${t('paletteAria')}"></div>
+          <div class="mh-program-tabs" id="mhProgramTabs" aria-label="${t('programTabsAria')}"></div>
           <div class="mh-programs" id="mhPrograms"></div>
         </aside>
       </main>
       <footer class="mh-bottom">
-        <div id="mhStatus" class="mh-status">把指令拖到程序槽里，然后点击运行。</div>
+        <div id="mhStatus" class="mh-status">${t('defaultStatus')}</div>
         <div class="mh-actions">
-          <button id="mhStep" class="mh-action soft" type="button">单步</button>
-          <button id="mhHint" class="mh-action soft" type="button">提示</button>
-          <button id="mhUndo" class="mh-action soft" type="button">撤销</button>
-          <button id="mhClear" class="mh-action soft" type="button">清空</button>
-          <button id="mhSkipTutorial" class="mh-action soft" type="button" hidden>跳过教程</button>
-          <select id="mhSpeedSelect" class="mh-speed-select" aria-label="运行速度"></select>
+          <button id="mhStep" class="mh-action soft" type="button">${t('stepBtn')}</button>
+          <button id="mhHint" class="mh-action soft" type="button">${t('hintBtn')}</button>
+          <button id="mhUndo" class="mh-action soft" type="button">${t('undoBtn')}</button>
+          <button id="mhClear" class="mh-action soft" type="button">${t('clearBtn')}</button>
+          <button id="mhSkipTutorial" class="mh-action soft" type="button" hidden>${t('skipTutorialBtn')}</button>
+          <select id="mhSpeedSelect" class="mh-speed-select" aria-label="${t('speedAria')}"></select>
         </div>
       </footer>
     </div>
     <div id="mhHowTo" class="mh-overlay" role="dialog" aria-modal="true" aria-labelledby="mhHowToTitle" hidden>
       <div class="mh-card">
-        <h1 id="mhHowToTitle">宠物飞船寻宝</h1>
-        <p>把前进、转向和跳跃指令排进程序槽，让飞船跳起收集悬浮在方块上方的食物。食物用虚线连到所属格子中心，只有跳跃到食物所在格才算收集。</p>
+        <h1 id="mhHowToTitle">${t('howToTitle')}</h1>
+        <p>${t('howToText')}</p>
         <div class="mh-card-actions">
-          <button id="mhStart" class="mh-start" type="button">开始游戏</button>
-          <button id="mhSkipIntro" class="mh-action soft" type="button">跳过教程</button>
+          <button id="mhStart" class="mh-start" type="button">${t('startGame')}</button>
+          <button id="mhSkipIntro" class="mh-action soft" type="button">${t('skipIntro')}</button>
         </div>
       </div>
     </div>
     <div id="mhWin" class="mh-overlay" role="dialog" aria-modal="true" aria-labelledby="mhWinTitle" hidden>
       <div class="mh-card">
-        <h1 id="mhWinTitle">食物收集完成！</h1>
-        <p id="mhWinText">你完成了这一关。</p>
-        <button id="mhNext" class="mh-next" type="button">下一关</button>
+        <h1 id="mhWinTitle">${t('winTitle')}</h1>
+        <p id="mhWinText">${t('winDefaultText')}</p>
+        <button id="mhNext" class="mh-next" type="button">${t('nextLevel')}</button>
       </div>
     </div>
   `;
@@ -356,10 +526,7 @@
     renderDifficultySelect();
     renderSpeedSelect();
     renderPalette();
-    requestPetImage().then((asset) => {
-      state.petAsset = asset;
-      renderBoard();
-    });
+    requestPetImage();
     prepareLevel(1);
     showHowTo();
     post('gameLoaded');
@@ -389,7 +556,14 @@
       if (state.puzzle && state.actor) renderBoard();
     });
     window.addEventListener('message', (event) => {
-      if (event.data?.type === 'gameContinue' && !state.started) startGame();
+      const msg = event.data || {};
+      if (msg.type === 'gameContinue' && !state.started) startGame();
+      if (msg.type === 'setGameConfig' && msg.data?.petId) requestPetImage(msg.data.petId);
+      if (msg.type === 'haqi_pet_image' && msg.ok && msg.data && (!state.petRequestId || !msg.requestId || msg.requestId === state.petRequestId || msg.requestId === 'active_pet_config')) setPetImage(msg.data);
+      if (msg.type === 'haqi_pet_images' && msg.ok) {
+        const firstPet = Array.isArray(msg.data?.pets) ? msg.data.pets[0] : null;
+        if (firstPet) setPetImage(firstPet);
+      }
     });
   }
 
@@ -429,7 +603,7 @@
     renderBoard();
     updateStats();
     updateTutorialSkipButton();
-    setStatus(puzzle.tip || '新关卡已生成，跳起来收集悬浮食物吧。');
+    setStatus(puzzle.tip || t('newLevel'));
   }
 
   function skipTutorial(startAfterSkip = false) {
@@ -439,7 +613,7 @@
     stopRun('');
     prepareLevel(1);
     updateTutorialSkipButton();
-    setStatus('已跳过教程，之后会直接进入正式关卡。');
+    setStatus(t('tutorialSkipped'));
     if (state.started) startTimer();
     else if (startAfterSkip) startGame();
   }
@@ -706,7 +880,7 @@
         <section class="mh-program${state.selectedProgram === id ? ' selected' : ''}" data-program="${id}">
           <div class="mh-program-head">
             <span class="mh-program-name">${PROGRAM_LABELS[id]}</span>
-            <span class="mh-program-tip">${commands.length}/${slots[id]} 槽</span>
+            <span class="mh-program-tip">${commands.length}/${t('slotsUnit', { n: slots[id] })}</span>
           </div>
           <div class="mh-slots">
             ${Array.from({ length: slots[id] }, (_, index) => renderSlot(id, index, commands[index], active)).join('')}
@@ -754,14 +928,14 @@
   function renderSlot(program, index, command, active) {
     const cmd = COMMANDS[command];
     const isActive = active && active.program === program && active.index === index;
-    return `<button class="mh-slot${cmd ? ' filled' : ''}${isActive ? ' active-step' : ''}" type="button" data-program="${program}" data-index="${index}"${cmd ? ` data-command="${cmd.id}" title="点击删除 ${cmd.label}"` : ' title="拖入指令"'}>${cmd ? cmd.short : index + 1}</button>`;
+    return `<button class="mh-slot${cmd ? ' filled' : ''}${isActive ? ' active-step' : ''}" type="button" data-program="${program}" data-index="${index}"${cmd ? ` data-command="${cmd.id}" title="${t('clickToDelete', { label: cmd.label })}"` : ` title="${t('dragIn')}"`}>${cmd ? cmd.short : index + 1}</button>`;
   }
 
   function addCommand(command) {
     const slots = programSlots()[state.selectedProgram] || 0;
     if (!slots || state.running) return;
     if (state.programs[state.selectedProgram].length >= slots) {
-      showToast(`${PROGRAM_LABELS[state.selectedProgram]} 已经满了`);
+      showToast(t('slotFull', { name: PROGRAM_LABELS[state.selectedProgram] }));
       return;
     }
     recordUndo();
@@ -789,7 +963,7 @@
     if (state.running) return;
     const previous = state.undoStack.pop();
     if (!previous) {
-      showToast('没有可撤销的操作');
+      showToast(t('noUndo'));
       return;
     }
     state.programs = clonePrograms(previous.programs);
@@ -804,7 +978,7 @@
     const now = performance.now();
     if (state.programs[state.selectedProgram].length && now - state.clearConfirmAt > 1600) {
       state.clearConfirmAt = now;
-      showToast('再点一次清空当前程序');
+      showToast(t('clearConfirm'));
       return;
     }
     recordUndo();
@@ -825,7 +999,7 @@
   function runProgram() {
     if (!state.puzzle || state.running) return;
     if (!state.programs.main.length) {
-      showToast('先放入主程序指令');
+      showToast(t('needMainCmd'));
       return;
     }
     ensureAudioContext();
@@ -835,14 +1009,14 @@
     state.runMode = 'auto';
     updateRunButton();
     state.stack = [{ program: 'main', commands: state.programs.main.slice(), index: 0, depth: 0 }];
-    setStatus('宠物正在执行程序...');
+    setStatus(t('petRunning'));
     restartRunner();
   }
 
   function startStepRun() {
     if (!state.puzzle) return false;
     if (!state.programs.main.length) {
-      showToast('先放入主程序指令');
+      showToast(t('needMainCmd'));
       return false;
     }
     ensureAudioContext();
@@ -852,7 +1026,7 @@
     state.runMode = 'step';
     state.stack = [{ program: 'main', commands: state.programs.main.slice(), index: 0, depth: 0 }];
     updateRunButton();
-    setStatus('单步调试中：继续点击单步。');
+    setStatus(t('stepDebug'));
     return true;
   }
 
@@ -864,7 +1038,7 @@
       state.runMode = 'step';
       state.awaitingReset = true;
       updateRunButton();
-      setStatus('已暂停，点击单步继续调试，或点重置回到起点。');
+      setStatus(t('paused'));
     }
     if (!state.running && !startStepRun()) return;
     stepProgram(true);
@@ -879,7 +1053,7 @@
     if (!state.running) return;
     const frame = state.stack[state.stack.length - 1];
     if (!frame) {
-      stopRun('程序结束了，还有食物没有收集。');
+      stopRun(t('progEnd'));
       return;
     }
     if (frame.index >= frame.commands.length) {
@@ -890,15 +1064,15 @@
     const command = frame.commands[frame.index++];
     state.activeStep = { program: frame.program, index };
     renderPrograms(state.activeStep);
-    setStatus(`${callStackLabel()} 正在执行：${COMMANDS[command]?.label || command}`);
+    setStatus(t('executing', { stack: callStackLabel(), cmd: COMMANDS[command]?.label || command }));
     executeCommand(command, frame.depth);
     updateStats();
     if (state.litGoals.size >= state.puzzle.goals.size) winLevel();
-    else if (manual && state.running) setStatus(`${callStackLabel()} 已执行一步，继续点击单步。`);
+    else if (manual && state.running) setStatus(t('stepDone', { stack: callStackLabel() }));
   }
 
   function callStackLabel() {
-    if (!state.stack.length) return '程序';
+    if (!state.stack.length) return t('progLabel');
     return state.stack.map(frame => PROGRAM_LABELS[frame.program]).join(' > ');
   }
 
@@ -926,9 +1100,9 @@
     if (command === 'light') {
       const key = cellKey(state.actor.row, state.actor.col);
       if (state.puzzle.goals.has(key) && !state.litGoals.has(key)) {
-        setStatus('食物悬在高处，需要用跳跃触碰。');
+        setStatus(t('foodNeedJump'));
       } else {
-        setStatus('这里没有可收集的食物。');
+        setStatus(t('noFoodHere'));
       }
       state.steps++;
       renderBoard();
@@ -937,11 +1111,11 @@
     if (command === 'p1' || command === 'p2') {
       const commands = (state.programs[command] || []).filter(Boolean);
       if (!commands.length) {
-        setStatus(`${PROGRAM_LABELS[command]} 还没有指令。`);
+        setStatus(t('noCmdInFn', { name: PROGRAM_LABELS[command] }));
         return;
       }
       if (depth >= 5 || state.stack.length > 12) {
-        stopRun('函数调用太深了。');
+        stopRun(t('callTooDeep'));
         return;
       }
       state.stack.push({ program: command, commands: commands.slice(), index: 0, depth: depth + 1 });
@@ -952,7 +1126,7 @@
       const count = command === 'repeat2' ? 2 : 3;
       const next = state.stack[state.stack.length - 1]?.commands[state.stack[state.stack.length - 1].index];
       if (!next) {
-        setStatus('重复指令后面需要再放一个动作。');
+        setStatus(t('needActionAfterRepeat'));
         return;
       }
       state.stack[state.stack.length - 1].index++;
@@ -968,20 +1142,20 @@
     const from = cellAt(state.actor.row, state.actor.col);
     const to = cellAt(nr, nc);
     if (!to || to.blocked) {
-      stopRun('前面没有路，程序停下来了。试试先左转或右转。');
+      stopRun(t('noRoad'));
       return;
     }
     const climb = (to.height || 0) - (from.height || 0);
     if (!isJump && climb > 0) {
-      stopRun('前面更高，需要使用跳跃。把这一步换成跳跃再试试。');
+      stopRun(t('needJump'));
       return;
     }
     if (isJump && climb > 1) {
-      stopRun('太高了，跳不过去。找一条只升高一层的路线。');
+      stopRun(t('tooHigh'));
       return;
     }
     if (isJump && climb <= 0 && !state.puzzle.goals.has(cellKey(nr, nc))) {
-      setStatus('平地也可以跳，但会浪费一步。');
+      setStatus(t('flatJumpWaste'));
     }
     state.actor.row = nr;
     state.actor.col = nc;
@@ -989,7 +1163,7 @@
     if (isJump) {
       const collected = collectFoodAt(nr, nc);
       playCommandCue('jump');
-      if (collected) setStatus(`跳跃收集到 ${collected}！`);
+      if (collected) setStatus(t('jumpCollect', { food: collected }));
     }
     renderBoard({ jump: isJump, dash: true });
   }
@@ -1033,7 +1207,7 @@
   }
 
   function handleRunButton() {
-    if (state.running || state.awaitingReset) resetActor('已重置到起点。');
+    if (state.running || state.awaitingReset) resetActor(t('resetToStart'));
     else runProgram();
   }
 
@@ -1041,7 +1215,7 @@
     const run = byId('mhRun');
     if (!run) return;
     const shouldReset = state.running || state.awaitingReset;
-    run.textContent = shouldReset ? '重置' : '运行';
+    run.textContent = shouldReset ? t('resetBtn') : t('runBtn');
     run.classList.toggle('orange', !shouldReset);
   }
 
@@ -1758,22 +1932,22 @@
       ? `<span class="mh-sprite" style="background-image:url('${state.petAsset.url}');background-size:${spriteBackgroundSize(state.petAsset.uv)};background-position:${spriteBackgroundPosition(state.petAsset.uv)}"></span>`
       : `<span class="mh-fallback">${FALLBACK_PET}</span>`;
     const turnClass = effect?.turn === 'left' ? ' turn-left' : effect?.turn === 'right' ? ' turn-right' : '';
-    return `<div class="mh-actor${effect?.jump ? ' jump' : ''}${effect?.dash ? ' dash' : ''}${turnClass}" style="left:${point.x}px;top:${point.y - 8}px;z-index:${point.z + 50}">${sprite}<span class="mh-dir-badge" title="面向${dir.name}">${dir.arrow}</span></div>`;
+    return `<div class="mh-actor${effect?.jump ? ' jump' : ''}${effect?.dash ? ' dash' : ''}${turnClass}" style="left:${point.x}px;top:${point.y - 8}px;z-index:${point.z + 50}">${sprite}<span class="mh-dir-badge" title="${t('facing', { dir: dir.name })}">${dir.arrow}</span></div>`;
   }
 
   function winLevel() {
     if (state.finished) return;
     state.finished = true;
-    stopRun('食物全部收集，通关成功。');
+    stopRun(t('allCollected'));
     clearInterval(state.timer);
     state.bestLevel = Math.max(state.bestLevel, state.level + 1);
     localStorage.setItem(STORAGE_BEST, String(state.bestLevel));
     const difficulty = DIFFICULTIES[state.difficulty] || DIFFICULTIES.normal;
     const efficiency = Math.max(0, state.puzzle.solution.length - state.steps);
     const earnedPoints = difficulty.reward + state.level * 9 + efficiency * 3;
-    byId('mhWinText').textContent = `Lv.${state.level} ${difficulty.label}完成，用了 ${state.steps} 步，生成路线约 ${state.puzzle.solution.length} 步。`;
+    byId('mhWinText').textContent = t('winText', { level: state.level, diff: difficulty.label, steps: state.steps, solution: state.puzzle.solution.length });
     byId('mhWin').hidden = false;
-    showToast('食物收集完成!');
+    showToast(t('toastCollect'));
     launchConfetti();
     post('gameFinished', {
       earnedPoints,
@@ -1794,19 +1968,19 @@
     state.hintLevel = Math.min(state.hintLevel + 1, 4);
     const nextAction = nextHelpfulCommand();
     if (state.hintLevel === 1) {
-      setStatus(state.puzzle.tip || '先观察飞船朝向，再决定转向、前进或跳跃。');
+      setStatus(state.puzzle.tip || t('hintObserve'));
       return;
     }
     if (state.hintLevel === 2 && nextAction) {
-      setStatus(`下一步可以试试：${COMMANDS[nextAction]?.label || nextAction}。`);
+      setStatus(t('hintTryNext', { cmd: COMMANDS[nextAction]?.label || nextAction }));
       return;
     }
     if (state.hintLevel === 3) {
       const sample = state.puzzle.solution.slice(0, 4).map(id => COMMANDS[id]?.short || id).join(' ');
-      setStatus(`参考开头：${sample}${state.puzzle.solution.length > 4 ? ' ...' : ''}`);
+      setStatus(t('hintRefStart', { sample, more: state.puzzle.solution.length > 4 ? ' ...' : '' }));
       return;
     }
-    setStatus(compressionHint() || '完整路线不一定最短，试着把重复片段放进 P1 或用重复指令。');
+    setStatus(compressionHint() || t('hintCompress'));
   }
 
   function nextHelpfulCommand() {
@@ -1826,10 +2000,10 @@
       for (let start = 0; start + size * 2 <= solution.length; start++) {
         const chunk = solution.slice(start, start + size).join(',');
         const next = solution.slice(start + size, start + size * 2).join(',');
-        if (chunk === next) return `发现重复片段：${solution.slice(start, start + size).map(id => COMMANDS[id]?.short || id).join(' ')}，可以试试重复指令或 P1。`;
+        if (chunk === next) return t('hintRepeat', { seq: solution.slice(start, start + size).map(id => COMMANDS[id]?.short || id).join(' ') });
       }
     }
-    return slots.p1 > 0 ? '如果主程序放不下，把一小段常用动作放进 P1，再在主程序调用 P1。' : '';
+    return slots.p1 > 0 ? t('hintP1Overflow') : '';
   }
 
   function ensureAudioContext() {
@@ -1841,7 +2015,7 @@
   }
 
   function playCommandCue(command) {
-    const labels = { left: '左转', right: '右转', jump: '跳跃' };
+    const labels = { left: t('speechLeft'), right: t('speechRight'), jump: t('speechJump') };
     speakCommand(labels[command]);
     playCommandTone(command);
   }
@@ -1900,29 +2074,29 @@
     }
   }
 
-  function requestPetImage() {
-    return new Promise((resolve) => {
-      const requestId = `lightbot_pet_${Date.now()}_${Math.floor(Math.random() * 1000)}`;
-      let settled = false;
-      const timer = setTimeout(() => finish(null), 1400);
-      function finish(asset) {
-        if (settled) return;
-        settled = true;
-        clearTimeout(timer);
-        window.removeEventListener('message', onMessage);
-        resolve(asset);
-      }
-      function onMessage(event) {
-        const msg = event.data || {};
-        if (msg.type !== 'haqi_pet_image' || msg.requestId !== requestId) return;
-        if (!msg.ok || !msg.data?.imageBlob || !msg.data?.uv) return finish(null);
-        const url = URL.createObjectURL(msg.data.imageBlob);
-        state.objectUrls.push(url);
-        finish({ url, uv: msg.data.uv });
-      }
-      window.addEventListener('message', onMessage);
-      post('haqi_get_pet_image', { requestId, anim: 'idle' }, { requestId, anim: 'idle' });
-    });
+  function requestPetImage(petId = '') {
+    const requestId = `lightbot_pet_${Date.now()}_${Math.floor(Math.random() * 1000)}`;
+    state.petRequestId = requestId;
+    post('haqi_get_pet_image', { requestId, anim: 'idle', petId: petId || undefined }, { requestId, anim: 'idle', petId: petId || undefined });
+    setTimeout(() => {
+      if (state.petAsset?.url) return;
+      const fallbackId = `lightbot_pets_${Date.now()}_${Math.floor(Math.random() * 1000)}`;
+      post('haqi_get_pet_images', { requestId: fallbackId, anim: 'idle' }, { requestId: fallbackId, anim: 'idle' });
+    }, 900);
+  }
+
+  function setPetImage(pet) {
+    if (!pet?.imageBlob || !pet?.uv) return;
+    if (state.petAsset?.url) {
+      URL.revokeObjectURL(state.petAsset.url);
+      state.objectUrls = state.objectUrls.filter(url => url !== state.petAsset.url);
+    }
+    const url = URL.createObjectURL(pet.imageBlob);
+    state.objectUrls.push(url);
+    state.petAsset = { url, uv: pet.uv };
+    state.petTextureKey = '';
+    state.petTexture = null;
+    renderBoard();
   }
 
   function programSlots() {

@@ -1,4 +1,5 @@
 // DNA 算法：编码 / 解码 / 父母交叉 / 突变 / DNA→prompt
+import { t } from './i18n.js';
 const ALPHABET = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789';
 
 // DNA = 18 字符 = 6 段 × 3 字符
@@ -287,9 +288,9 @@ export function dnaDietPreference(dna) {
 }
 
 export function dietPreferenceLabel(preference) {
-    if (preference === 'meat') return '肉食';
-    if (preference === 'vegetables') return '素食';
-    return '杂食';
+    if (preference === 'meat') return t('dietMeat');
+    if (preference === 'vegetables') return t('dietVegetables');
+    return t('dietBoth');
 }
 
 export function dietPreferenceIcons(preference) {

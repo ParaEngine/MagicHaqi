@@ -46,18 +46,18 @@ const WHEEL_DELTA_LIMIT = 300;
 const WHEEL_CONSUME_RATE = 0.38;
 const PRE_RENDER_FALLBACK_DELAY = 900;
 const ZOOM_BAR_STAGES = [
-    { id: 'planet', label: '星球', color: '#172554', hint: '上下滑动 / 双指放大 → 登陆星球' },
-    { id: 'field', label: '表面', color: '#65a30d', hint: '上下滑动 / 双指缩放 → 太空 / 宠物房间' },
-    { id: 'pet', label: '日常', color: '#facc15', hint: '上下滑动 / 双指缩放 → 星球表面 / 细胞' },
-    { id: 'cell', label: '体内', color: '#f9a8d4', hint: '上下滑动 / 双指缩小 → 返回宠物房间' },
+    { id: 'planet', labelKey: 'zoomPlanet', color: '#172554', hintKey: 'hintToPlanet' },
+    { id: 'field', labelKey: 'zoomField', color: '#65a30d', hintKey: 'hintToField' },
+    { id: 'pet', labelKey: 'zoomPet', color: '#facc15', hintKey: 'hintToPet' },
+    { id: 'cell', labelKey: 'zoomCell', color: '#f9a8d4', hintKey: 'hintToCell' },
 ];
 
 const CARE_STAT_KEYS = ['hunger', 'mood', 'clean', 'bond'];
 const PET_STAT_ITEMS = [
-    { k: 'hunger', labelKey: 'statEnergy', icon: '⚡', color: '#84cc16', lowText: '需要休息或进食' },
-    { k: 'mood',   labelKey: 'statMood',   icon: '😊', color: '#ec4899', lowText: '想要玩耍和陪伴' },
-    { k: 'clean',  labelKey: 'statClean',  icon: '🛁', color: '#06b6d4', lowText: '需要清洁' },
-    { k: 'bond',   labelKey: 'statBond',   icon: '💛', color: '#a855f7', lowText: '想更亲近' },
+    { k: 'hunger', labelKey: 'statEnergy', icon: '⚡', color: '#84cc16', lowTextKey: 'needRestFood' },
+    { k: 'mood',   labelKey: 'statMood',   icon: '😊', color: '#ec4899', lowTextKey: 'wantPlayCompany' },
+    { k: 'clean',  labelKey: 'statClean',  icon: '🛁', color: '#06b6d4', lowTextKey: 'needClean' },
+    { k: 'bond',   labelKey: 'statBond',   icon: '💛', color: '#a855f7', lowTextKey: 'wantCloser' },
 ];
 const TOPBAR_ITEMS_BY_LEVEL = Object.freeze({
     planet: [{ type: 'resource', key: 'biofuel' }, { type: 'resource', key: 'coins' }],
@@ -113,11 +113,11 @@ function currentDisplayPet(pet = __lastPet) {
 //  · pet(2)   ：username(nickname)的家
 //  · cell(3)  ：当前宠物的细胞
 function currentAppTitle(lvl = state.zoomLevel, pet = __lastPet) {
-    if (lvl === 1) return `${currentOwnerLabel()}的星球`;
-    if (lvl === 2) return `${currentOwnerLabel()}的家`;
+    if (lvl === 1) return t('ownerPlanet', { owner: currentOwnerLabel() });
+    if (lvl === 2) return t('ownerHome', { owner: currentOwnerLabel() });
     if (lvl === 3) {
-        const name = displayPetName(currentDisplayPet(pet)) || '宠物';
-        return `${name}的细胞`;
+        const name = displayPetName(currentDisplayPet(pet)) || t('petFallback');
+        return t('petCell', { name });
     }
     // planet 层（最外层 / 太空）
     if (isVisitingMode()) {
@@ -482,7 +482,7 @@ function restoreDockScrollPositions(root = document) {
 // =============================================================================
 export function renderHome(panel, { pet }, callbacks = {}) {
     if (!pet) {
-        panel.innerHTML = `<div class="absolute inset-0 flex items-center justify-center" style="color:var(--text-muted)">没有选中的宠物</div>`;
+        panel.innerHTML = `<div class="absolute inset-0 flex items-center justify-center" style="color:var(--text-muted)">${escapeHtml(t('noSelectedPet'))}</div>`;
         return;
     }
     rememberDockScrollPositions(panel);
@@ -512,7 +512,7 @@ export function renderHome(panel, { pet }, callbacks = {}) {
             </div>
             <div class="home-hud">
                 <span class="home-hud-stats" id="mhTopbarStats">${renderTopbarHudItems(pet, lvl)}</span>
-                <button class="btn-icon" id="mhMenuBtn" title="菜单" style="width:36px;height:36px;font-size:18px">☰</button>
+                <button class="btn-icon" id="mhMenuBtn" title="${escapeHtml(t('menu'))}" style="width:36px;height:36px;font-size:18px">☰</button>
             </div>
         </div>
 
@@ -620,8 +620,8 @@ function renderZoomLevelBarInner(pet = __lastPet, lvl = clampLvl(state.zoomLevel
                 if (!stage) return '';
                 const emergency = getZoomStageEmergency(stage.id, pet);
                 return `
-                <span class="mh-zoom-bar-stage ${index === lvl ? 'active' : ''}" data-zoom-stage="${escapeHtml(stage.id)}" data-zoom-index="${index}" style="--stage-color:${stage.color}" title="${escapeHtml(emergency?.tip || stage.label)}">
-                    <i>${escapeHtml(stage.label)}</i>
+                <span class="mh-zoom-bar-stage ${index === lvl ? 'active' : ''}" data-zoom-stage="${escapeHtml(stage.id)}" data-zoom-index="${index}" style="--stage-color:${stage.color}" title="${escapeHtml(emergency?.tip || t(stage.labelKey))}">
+                    <i>${escapeHtml(t(stage.labelKey))}</i>
                 </span>`;
             }).join('')}
         </span>
@@ -666,7 +666,7 @@ function syncZoomLevelBar(bar, pet = __lastPet) {
         const emergency = getZoomStageEmergency(stage.id, pet);
         stageEl.classList.toggle('active', stageIndex === lvl);
         stageEl.style.setProperty('--stage-color', stage.color);
-        stageEl.title = emergency?.tip || stage.label;
+        stageEl.title = emergency?.tip || t(stage.labelKey);
     });
     refreshZoomLevelBarEmergency(pet, bar);
     updateZoomLevelBarPointer();
@@ -718,13 +718,14 @@ function getZoomLevelHint(lvl = state.zoomLevel, pet = __lastPet) {
     const visible = new Set(visibleZoomLevels());
     if (!visible.has(clampLvl(lvl))) return '这个缩放层在当前星球配置中已隐藏。';
     if (isVisitingMode()) {
-        if (lvl <= 0) return '好友星球太空层只用于返航确认。';
-        if (lvl >= 3) return '拜访好友时只能在星球表面和宠物房间活动。';
+        if (lvl <= 0) return t('visitSpaceHint');
+        if (lvl >= 3) return t('visitLimitHint');
     }
     const stage = ZOOM_BAR_STAGES[clampLvl(lvl)];
     const emergency = getZoomStageEmergency(stage?.id, pet);
-    if (emergency) return `${emergency.tip} ${stage?.hint || '滚动 / 双指缩放视角'}`;
-    return stage?.hint || '滚动 / 双指缩放视角';
+    const stageHint = stage?.hintKey ? t(stage.hintKey) : t('zoomDefaultHint');
+    if (emergency) return `${emergency.tip} ${stageHint}`;
+    return stageHint;
 }
 
 function getZoomBarProgress(zoom = visualCameraZoom) {
@@ -1085,15 +1086,15 @@ function resourceValue(key) {
 function resourceInfo(key) {
     if (key === 'biofuel') {
         return {
-            label: '生物燃料',
+            label: t('biofuel'),
             icon: '⛽',
-            description: '收集宠物便便可获得，用于星球旅行。也可以打开商店准备更多照顾宠物的物品。',
+            description: t('biofuelDesc'),
         };
     }
     return {
-        label: '金币',
+        label: t('coins'),
         icon: coinIconSvg(),
-        description: '照顾和玩耍可获得，用来购买食物、家具和道具。',
+        description: t('coinsDesc'),
     };
 }
 
@@ -1120,7 +1121,7 @@ function renderTopbarStatPill(pet, key) {
     const value = statValue(pet, key);
     const level = stateLevel(value);
     const label = t(item.labelKey);
-    const tip = `${label}：${value} · ${item.lowText}`;
+    const tip = `${label}：${value} · ${t(item.lowTextKey)}`;
     return `
         <button type="button" class="hud-pill hud-pill-stacked topbar-stat-pill state-${level.key}" data-topbar-stat="${escapeHtml(key)}" data-tip="${escapeHtml(tip)}" title="${escapeHtml(tip)}" aria-label="${escapeHtml(tip)}">
             <span class="hud-pill-icon">${item.icon}</span>
@@ -1132,7 +1133,7 @@ function renderTopbarResourcePill(key) {
     if (key === 'biofuel') {
         const tip = '生物燃料：收集宠物便便可获得，用于星球旅行。';
         return `
-            <span class="hud-pill hud-pill-stacked topbar-resource-pill" id="mhBiofuel" tabindex="0" title="${escapeHtml(tip)}" data-topbar-resource="biofuel" data-tip="${escapeHtml(tip)}" aria-label="打开商店">
+            <span class="hud-pill hud-pill-stacked topbar-resource-pill" id="mhBiofuel" tabindex="0" title="${escapeHtml(tip)}" data-topbar-resource="biofuel" data-tip="${escapeHtml(tip)}" aria-label="${escapeHtml(t('openShop'))}">
                 <span class="hud-pill-icon">⛽</span>
                 <span class="hud-pill-value" data-hud-value="biofuel">${state.biofuel | 0}</span>
             </span>`;
@@ -1140,7 +1141,7 @@ function renderTopbarResourcePill(key) {
     if (key === 'coins') {
         const tip = '金币：照顾和玩耍可获得，用来购买食物、家具和道具。';
         return `
-            <span class="hud-pill hud-pill-stacked hud-pill-coin topbar-resource-pill" id="mhCoins" tabindex="0" title="${escapeHtml(tip)}" data-topbar-resource="coins" data-tip="${escapeHtml(tip)}" aria-label="打开商店">
+            <span class="hud-pill hud-pill-stacked hud-pill-coin topbar-resource-pill" id="mhCoins" tabindex="0" title="${escapeHtml(tip)}" data-topbar-resource="coins" data-tip="${escapeHtml(tip)}" aria-label="${escapeHtml(t('openShop'))}">
                 <span class="hud-pill-icon">${coinIconSvg()}</span>
                 <span class="hud-pill-value" data-hud-value="coins">${state.coins}</span>
             </span>`;
@@ -1188,7 +1189,7 @@ function refreshTopbarStatPills(pet = __lastPet) {
         valueEl.textContent = String(value);
         if (!pill || !item) return;
         const level = stateLevel(value);
-        const tip = `${t(item.labelKey)}：${value} · ${item.lowText}`;
+        const tip = `${t(item.labelKey)}：${value} · ${t(item.lowTextKey)}`;
         pill.classList.remove('state-good', 'state-warn', 'state-danger');
         pill.classList.add(`state-${level.key}`);
         pill.title = tip;
@@ -1207,9 +1208,9 @@ function getLowestCareStat(pet) {
 }
 
 function stateLevel(value) {
-    if (value < 25) return { key: 'danger', label: '紧急' };
-    if (value < 50) return { key: 'warn', label: '注意' };
-    return { key: 'good', label: '良好' };
+    if (value < 25) return { key: 'danger', label: t('stateDanger') };
+    if (value < 50) return { key: 'warn', label: t('stateWarn') };
+    return { key: 'good', label: t('stateGood') };
 }
 
 function refreshPetStateUi(pet) {
@@ -1230,7 +1231,7 @@ function refreshPetStateUi(pet) {
             const level = stateLevel(v);
             pill.classList.remove('state-good', 'state-warn', 'state-danger', 'topbar-stat-pop');
             pill.classList.add(`state-${level.key}`);
-            pill.title = `${t(it.labelKey)}：${v} · ${it.lowText}`;
+            pill.title = `${t(it.labelKey)}：${v} · ${t(it.lowTextKey)}`;
             pill.setAttribute('aria-label', pill.title);
             pill.dataset.tip = pill.title;
             void pill.offsetWidth;
@@ -1424,7 +1425,7 @@ function scheduleCompanionMoodReward(pet, reward, petEl, now = Date.now()) {
 
 function showCompanionMoodReward(gained, now = Date.now()) {
     if (gained <= 0) return;
-    showToast(`陪伴让心情 +${gained}`, 'success', 1400);
+    showToast(t('companyMoodGain', { gained }), 'success', 1400);
     try { window.dispatchEvent(new CustomEvent('mh:tick', { detail: { at: now, companionMood: gained } })); } catch (_) {}
 }
 
@@ -2065,8 +2066,8 @@ function showTopbarResourceConfirm(key, callbacks = __lastCallbacks) {
             <div style="color:var(--text-secondary);font-size:14px;font-weight:700;line-height:1.55">${escapeHtml(info.description)}</div>
         </div>
         <div style="display:flex;justify-content:flex-end;gap:10px;margin-top:16px">
-            <button class="btn-secondary" data-act="close">关闭</button>
-            <button class="btn-primary" data-act="open-shop">打开商店</button>
+            <button class="btn-secondary" data-act="close">${escapeHtml(t('close'))}</button>
+            <button class="btn-primary" data-act="open-shop">${escapeHtml(t('openShop'))}</button>
         </div>
     `, (e, close) => {
         if (e.target.closest?.('[data-act="close"]')) { close(); return; }
@@ -2085,7 +2086,7 @@ function showTopbarStatConfirm(key, pet = __lastPet) {
     const value = statValue(current, key);
     const label = t(item.labelKey);
     const level = stateLevel(value);
-    const message = `${label}：${value}，${item.lowText}。当前状态：${level.label}。`;
+    const message = t('statMessage', { label, value, low: t(item.lowTextKey), state: level.label });
     openModal(`
         <div style="text-align:left">
             <div style="display:flex;align-items:center;gap:9px;margin-bottom:8px;color:var(--text-primary);font-size:18px;font-weight:900">
@@ -2095,8 +2096,8 @@ function showTopbarStatConfirm(key, pet = __lastPet) {
             <div style="color:var(--text-secondary);font-size:14px;font-weight:700;line-height:1.55">${escapeHtml(message)}</div>
         </div>
         <div style="display:flex;justify-content:flex-end;gap:10px;margin-top:16px">
-            <button class="btn-secondary" data-act="close">关闭</button>
-            <button class="btn-primary" data-act="open-stats">查看更多属性</button>
+            <button class="btn-secondary" data-act="close">${escapeHtml(t('close'))}</button>
+            <button class="btn-primary" data-act="open-stats">${escapeHtml(t('viewMoreStats'))}</button>
         </div>
     `, (e, close) => {
         if (e.target.closest?.('[data-act="close"]')) { close(); return; }
@@ -2110,7 +2111,7 @@ function showTopbarStatConfirm(key, pet = __lastPet) {
 
 function showPetDetailsModal(pet) {
     const lowest = getLowestCareStat(pet);
-    const summary = lowest ? `${lowest.icon} ${t(lowest.labelKey)} ${lowest.value} · ${lowest.lowText}` : '宠物状态';
+    const summary = lowest ? `${lowest.icon} ${t(lowest.labelKey)} ${lowest.value} · ${t(lowest.lowTextKey)}` : t('petStatusFallback');
     const rows = PET_STAT_ITEMS.map(it => {
         const v = statValue(pet, it.k);
         const level = stateLevel(v);
@@ -2129,7 +2130,7 @@ function showPetDetailsModal(pet) {
         </div>
         <div class="pet-state-list">${rows}</div>
         <div style="text-align:center;margin-top:14px">
-            <button class="btn-primary" data-act="close">关闭</button>
+            <button class="btn-primary" data-act="close">${escapeHtml(t('close'))}</button>
         </div>
     `, (e, close) => {
         if (e.target.closest?.('[data-act="close"]')) close();
@@ -2143,8 +2144,8 @@ function showMenuModal(callbacks) {
         { k: 'petList',   icon: '🐾', label: t('petList') },
         { k: 'shop',      icon: '🛒', label: t('shop') },
         { k: 'inventory', icon: '🎒', label: t('inventory') },
-        ...(progress.level >= 3 ? [{ k: 'research', icon: '🔬', label: '研究' }] : []),
-        { k: 'mailbox',   icon: '💌', label: '邮箱' },
+        ...(progress.level >= 3 ? [{ k: 'research', icon: '🔬', label: t('research') }] : []),
+        { k: 'mailbox',   icon: '💌', label: t('mailbox') },
         { k: 'storyMaker', icon: '📖', label: t('storyMaker') },
         { k: 'help',      icon: '❔', label: t('help') },
         { k: 'profile',   icon: '📋', label: t('profile') },
@@ -2159,7 +2160,7 @@ function showMenuModal(callbacks) {
         <div class="menu-modal">
             <div class="menu-status-bar">
                 <span class="menu-local-time">${escapeHtml(formatMenuTime())}</span>
-                <button class="menu-close-btn" data-act="close" type="button" aria-label="关闭菜单">×</button>
+                <button class="menu-close-btn" data-act="close" type="button" aria-label="${escapeHtml(t('closeMenu'))}">×</button>
             </div>
             <div class="menu-app-grid">
                 ${items.map(it => `
@@ -2188,7 +2189,7 @@ function showMenuModal(callbacks) {
 function openResearchFromMenu(callbacks = __lastCallbacks) {
     if (!__lastPet) return;
     if (!visibleZoomLevels().includes(0)) {
-        showToast('当前星球隐藏了 planet 层，无法进入研究。', 'info', 2200);
+        showToast(t('researchPlanetHidden'), 'info', 2200);
         return;
     }
     const openResearch = () => showPlanetResearchPanel(__lastPet, makeCtx(__lastPet, callbacks));
@@ -2197,7 +2198,7 @@ function openResearchFromMenu(callbacks = __lastCallbacks) {
         return;
     }
     if (isDecorZoomLocked()) {
-        showToast('请先退出当前操作模式，再进入研究。', 'info', 2200);
+        showToast(t('researchExitMode'), 'info', 2200);
         return;
     }
     requestZoomLevel(0);

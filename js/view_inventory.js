@@ -1,15 +1,16 @@
 // 背包视图
 import { $, $$, coinIconSvg, escapeHtml, showToast } from './utils.js';
-import { t } from './i18n.js';
+import { itemName, t } from './i18n.js';
 import { getShopItemById } from './config.js';
 import { state } from './state.js';
 
 const ITEM_BY_ID = new Proxy({}, { get: (_, id) => getShopItemById(id) });
 
 function getInventoryItemHint(item) {
-    if (item?.type === 'furniture') return `${item.name}：回到房间或星球后，点击装饰按钮再从底部选择它进行摆放。`;
-    if (item?.type === 'food') return `${item.name}：回到宠物房间后，点击喂食按钮再从底部选择它。`;
-    return `${item?.name || '这个物品'}：回到宠物房间后，在合适的互动中使用。`;
+    const name = itemName(item?.name) || t('invHintThisItem');
+    if (item?.type === 'furniture') return t('invHintFurniture', { name });
+    if (item?.type === 'food') return t('invHintFood', { name });
+    return t('invHintDefault', { name });
 }
 
 export function renderInventory(panel, _data, { onBack, onSell, onReorder } = {}) {
@@ -32,12 +33,12 @@ export function renderInventory(panel, _data, { onBack, onSell, onReorder } = {}
         </div>
         <div class="absolute" style="top:52px;left:0;right:0;bottom:0;overflow-y:auto;padding:14px">
             ${entries.length === 0
-                ? `<div class="card-flat text-center" style="color:var(--text-muted);padding:30px">背包空空，去商店逛逛吧～</div>`
+                ? `<div class="card-flat text-center" style="color:var(--text-muted);padding:30px">${escapeHtml(t('inventoryEmpty'))}</div>`
                 : `<div class="grid grid-cols-3 gap-2" id="mhInvGrid">
                     ${entries.map(it => `
                         <div class="shop-item mh-inv-item" draggable="true" data-iid="${escapeHtml(it.id)}" data-type="${escapeHtml(it.type)}">
                             <div class="emoji">${it.emoji}</div>
-                            <div class="name">${escapeHtml(it.name)} ×${(it.unlimited || it.uniqueItem) ? '∞' : it.qty}</div>
+                            <div class="name">${escapeHtml(itemName(it.name))} ×${(it.unlimited || it.uniqueItem) ? '∞' : it.qty}</div>
                         </div>
                     `).join('')}
                 </div>`}
@@ -220,27 +221,28 @@ function showSellConfirm(item, onSell) {
     const maxQty = Math.max(1, owned);
     const unitPrice = Math.floor((item.price || 0) * 0.9);
     let qty = 1;
+    const name = itemName(item.name);
 
     const mask = document.createElement('div');
     mask.className = 'modal-mask';
     mask.innerHTML = `
         <div class="modal-card text-center">
             <div class="text-4xl mb-2">${item.emoji}</div>
-            <div class="text-base font-bold mb-1" style="color:var(--text-primary)">${escapeHtml(item.name)}</div>
-            <div class="text-xs mb-1" style="color:var(--text-muted)">原价 ${item.price} / 回收价 ${unitPrice}（90%）</div>
-            <div class="text-xs mb-4" style="color:var(--text-muted)">持有 ${owned} 个，最多可出售 ${maxQty} 个</div>
+            <div class="text-base font-bold mb-1" style="color:var(--text-primary)">${escapeHtml(name)}</div>
+            <div class="text-xs mb-1" style="color:var(--text-muted)">${escapeHtml(t('sellPriceInfo', { price: item.price, unit: unitPrice }))}</div>
+            <div class="text-xs mb-4" style="color:var(--text-muted)">${escapeHtml(t('sellQtyInfo', { owned, max: maxQty }))}</div>
             <div class="flex items-center justify-center gap-1 mb-3" style="flex-wrap:wrap">
-                <button class="btn-secondary" type="button" data-sell-step="min" title="最少">&lt;&lt;</button>
-                <button class="btn-secondary" type="button" data-sell-step="dec" title="减少">&lt;</button>
+                <button class="btn-secondary" type="button" data-sell-step="min" title="${escapeHtml(t('qtyMin'))}">&lt;&lt;</button>
+                <button class="btn-secondary" type="button" data-sell-step="dec" title="${escapeHtml(t('qtyDec'))}">&lt;</button>
                 <div style="min-width:72px;padding:9px 12px;border-radius:14px;background:var(--input-bg);border:1.5px solid var(--border-card);font-size:20px;font-weight:900;color:var(--text-primary)" data-sell-qty>1</div>
-                <button class="btn-secondary" type="button" data-sell-step="inc" title="增加">&gt;</button>
-                <button class="btn-secondary" type="button" data-sell-step="double" title="翻倍">&gt;&gt;</button>
-                <button class="btn-secondary" type="button" data-sell-step="max" title="全部">全部</button>
+                <button class="btn-secondary" type="button" data-sell-step="inc" title="${escapeHtml(t('qtyInc'))}">&gt;</button>
+                <button class="btn-secondary" type="button" data-sell-step="double" title="${escapeHtml(t('qtyDouble'))}">&gt;&gt;</button>
+                <button class="btn-secondary" type="button" data-sell-step="max" title="${escapeHtml(t('qtyMax'))}">${escapeHtml(t('qtyMax'))}</button>
             </div>
             <div class="font-bold mh-coin-amount mb-4" style="justify-content:center;color:var(--accent-dark)" data-sell-total>${coinIconSvg()} ${unitPrice}</div>
             <div class="flex gap-2 justify-center">
                 <button class="btn-secondary" type="button" data-sell-act="cancel">${escapeHtml(t('cancel'))}</button>
-                <button class="btn-primary" type="button" data-sell-act="ok">出售</button>
+                <button class="btn-primary" type="button" data-sell-act="ok">${escapeHtml(t('sell'))}</button>
             </div>
         </div>`;
 

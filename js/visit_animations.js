@@ -1,4 +1,5 @@
 import { escapeHtml } from './utils.js';
+import { t } from './i18n.js';
 import { displayPetName } from './dna.js';
 import { petArtHtml, playPetHappy, preloadPetAssets, scanAndMount, mountPetArt } from './pet.js';
 
@@ -357,11 +358,12 @@ export function injectVisitAnimationStyles() {
         }
         .visit-progress-steps {
             position: absolute;
-            left: 22px;
-            bottom: 48px;
+            left: 50%;
+            bottom: 56px;
             z-index: 4;
             display: flex;
             gap: 8px;
+            transform: translateX(-50%);
         }
         .visit-progress-steps i {
             width: 26px;
@@ -392,6 +394,7 @@ export function injectVisitAnimationStyles() {
             font-weight: 900;
             color: #fff7cc;
             text-shadow: 0 2px 10px rgba(0,0,0,0.4);
+            line-height: 1.25;
         }
         @keyframes visitPetBoard {
             /* Two distinct phases so it reads clearly:
@@ -657,8 +660,8 @@ function playVisitAnimation({ kind, title, subtitle, caption, pets = [], gift = 
             mask.innerHTML = `
             <div class="visit-animation-card visit-${escapeHtml(kind || 'departure')}">
                 <div class="visit-animation-title">
-                    <span><b>${escapeHtml(title || '星际拜访')}</b><i>${escapeHtml(subtitle || '')}</i></span>
-                    <button class="visit-skip-btn" type="button" data-skip-visit-animation>跳过</button>
+                    <span><b>${escapeHtml(title || t('visitAnimationDefaultTitle'))}</b><i>${escapeHtml(subtitle || '')}</i></span>
+                    <button class="visit-skip-btn" type="button" data-skip-visit-animation>${escapeHtml(t('skip'))}</button>
                 </div>
                 <div class="visit-planet" aria-hidden="true"></div>
                 <div class="visit-ground" aria-hidden="true"></div>
@@ -748,34 +751,34 @@ function playVisitAnimation({ kind, title, subtitle, caption, pets = [], gift = 
     })();
 }
 
-export function playVisitDeparture({ crew = [], destinationName = '好友星球' } = {}) {
+export function playVisitDeparture({ crew = [], destinationName = t('visitDefaultFriendPlanet') } = {}) {
     return playVisitAnimation({
         kind: 'departure',
-        title: '飞船出发',
-        subtitle: `目的地：${destinationName}`,
-        caption: '宠物们陆续登船，飞船随即从星球表面升空。',
+        title: t('visitDepartureTitle'),
+        subtitle: t('visitDepartureSubtitle', { destinationName }),
+        caption: t('visitDepartureCaption'),
         pets: crew,
     });
 }
 
-export function playVisitArrival({ crew = [], destinationName = '好友星球', welcomePet = null } = {}) {
+export function playVisitArrival({ crew = [], destinationName = t('visitDefaultFriendPlanet'), welcomePet = null } = {}) {
     const welcomeName = welcomePet ? displayPetName(welcomePet) : '';
     return playVisitAnimation({
         kind: 'arrival',
-        title: '抵达好友星球',
+        title: t('visitArrivalTitle'),
         subtitle: destinationName,
-        caption: welcomeName ? `飞船降落，${welcomeName} 出来迎接大家！` : '飞船降落，好友的宠物出来迎接。',
+        caption: welcomeName ? t('visitArrivalCaptionWithPet', { welcomeName }) : t('visitArrivalCaption'),
         pets: crew,
         welcomePet,
     });
 }
 
-export function playVisitReturn({ crew = [], destinationName = '自己的星球', giftIcon = '🎁' } = {}) {
+export function playVisitReturn({ crew = [], destinationName = t('visitDefaultHomePlanet'), giftIcon = '🎁' } = {}) {
     return playVisitAnimation({
         kind: 'return',
-        title: '礼盒与返航',
-        subtitle: `返回：${destinationName}`,
-        caption: '好友的宠物送出随机礼盒，大家登船返航。',
+        title: t('visitReturnTitle'),
+        subtitle: t('visitReturnSubtitle', { destinationName }),
+        caption: t('visitReturnCaption'),
         pets: crew,
         gift: giftIcon,
     });
@@ -784,27 +787,28 @@ export function playVisitReturn({ crew = [], destinationName = '自己的星球'
 /* ===== In-field social interactions: greeting & group photo ===== */
 
 const GREET_HELLO_LINES = [
-    '你好呀！👋',
-    '嗨~ 很高兴见到你！',
-    '哇，是新朋友！',
-    '一起玩吧！',
-    '欢迎来我的星球串门~',
-    '你好你好！',
-    '终于见到你啦！',
+    'visitGreetHello1',
+    'visitGreetHello2',
+    'visitGreetHello3',
+    'visitGreetHello4',
+    'visitGreetHello5',
+    'visitGreetHello6',
+    'visitGreetHello7',
 ];
 
 const GREET_REPLY_LINES = [
-    '你也好呀！😊',
-    '嗨嗨，欢迎！',
-    '我们做朋友吧！',
-    '好开心见到你！',
-    '一起去探险呀！',
-    '你来啦，太棒了！',
-    '抱抱~ 💞',
+    'visitGreetReply1',
+    'visitGreetReply2',
+    'visitGreetReply3',
+    'visitGreetReply4',
+    'visitGreetReply5',
+    'visitGreetReply6',
+    'visitGreetReply7',
 ];
 
 function pickLine(list) {
-    return list[Math.floor(Math.random() * list.length)] || '';
+    const key = list[Math.floor(Math.random() * list.length)] || '';
+    return key ? t(key) : '';
 }
 
 function delay(ms) {
