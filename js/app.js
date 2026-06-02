@@ -22,7 +22,7 @@ import { applySettledOfficialPlanetFromProfile, applyTemporaryHomePlanetFromUrl,
 import { hasPostcardParams } from './view_postcard.js';
 import { randomDna, decodeDna, dnaRarity, dnaToName, biasDnaForFieldId, crossover } from './dna.js';
 import { randId } from './utils.js';
-import { t } from './i18n.js';
+import { itemName, t } from './i18n.js';
 import { ensurePlanetProgressStarted, flushPlanetPlaytime } from './planetProgress.js';
 import {
     getPetLocationInfo,
@@ -670,7 +670,7 @@ const routes = {
             state.isDecorMode = true;
             state.isFeedMode = false;
             setView('home');
-            showToast(t('enterDecorPlace', { name: item.name }), 'info');
+            showToast(t('enterDecorPlace', { name: itemName(item.name) }), 'info');
         },
     }),
     chat:      renderChatRoute,
@@ -2205,7 +2205,7 @@ function handleUseItem(item) {
             pet.stats[k] = clamp((pet.stats[k] || 0) + item.stat[k], CONFIG.statMin, CONFIG.statMax);
         }
     }
-    showToast(`${item.emoji} 使用了 ${item.name}`, 'success', 1000);
+    showToast(t('itemUsedToast', { emoji: item.emoji, name: itemName(item.name) }), 'success', 1000);
     removeFromInventory(pet.id, item.id, 1);
     pet.lastTickAt = Date.now();
     markPetCared(pet, pet.lastTickAt);
@@ -2223,7 +2223,7 @@ async function handleBuy(item, quantity = 1) {
     state.coins -= totalPrice;
     await addToInventory(pet.id, item.id, qty);
     saveUserProfileDebounced();
-    showToast(`${item.emoji} ${item.name} +${qty}`, 'success');
+    showToast(t('itemAddedToast', { emoji: item.emoji, name: itemName(item.name), qty }), 'success');
     notify();
 }
 
@@ -2241,7 +2241,7 @@ async function handleSell(item, quantity = 1) {
     await removeFromInventory(pet.id, item.id, qty);
     state.coins += totalGain;
     saveUserProfileDebounced();
-    showToast(`卖出 ${item.emoji} ${item.name} ×${qty}，+${totalGain} 金币`, 'success');
+    showToast(t('itemSoldToast', { emoji: item.emoji, name: itemName(item.name), qty, coins: totalGain }), 'success');
     notify();
 }
 

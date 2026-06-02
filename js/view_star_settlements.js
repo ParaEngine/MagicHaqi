@@ -1,6 +1,6 @@
 // 星际移民视图
 import { confirm, escapeHtml, showToast } from './utils.js';
-import { t } from './i18n.js';
+import { planetName, t } from './i18n.js';
 import { getDefaultZoomLevelIndex, loadPlanetIndex, loadPlanetShopItems, normalizePlanetZoomOptions } from './config.js';
 import { notify, state } from './state.js';
 import { saveFieldScenesDebounced, saveTerrainFieldsDebounced, saveUserProfileDebounced, setActiveLayoutsPlanet } from './storage.js';
@@ -70,6 +70,14 @@ function normalizeOfficialPlanet(raw, indexEntry = {}) {
         zoomOptions: normalizePlanetZoomOptions(planetOptions),
         fields,
     };
+}
+
+function officialPlanetTitle(planet) {
+    return planetName(planet?.title || planet?.name) || t('stOfficialPlanetFallback');
+}
+
+function officialPlanetName(planet) {
+    return planetName(planet?.name || planet?.title) || officialPlanetTitle(planet);
 }
 
 async function loadOfficialPlanets() {
@@ -180,14 +188,14 @@ async function applyOfficialPlanet(planet, { persist = true, sourcePath = '' } =
     if (persist) state.temporaryHomePlanetOverride = null;
     if (persist) captureHomeSnapshot();
     applyPlanetFields(planet);
-    state.planetName = planet.name || planet.title;
+    state.planetName = officialPlanetName(planet);
     // 注意：setActiveLayoutsPlanet 会替换 state.settings.starSettlement 引用，
     // 所以必须在它之后再获取 settings，否则后续写入（包括 zoomOptions）会落到孤立对象上。
     setActiveLayoutsPlanet(planet.id);
     const settings = settlementSettings();
     settings.source = 'official';
     settings.planetId = planet.id;
-    settings.title = planet.title;
+    settings.title = officialPlanetTitle(planet);
     settings.appTitle = planet.appTitle || '';
     settings.temporaryHomePlanet = persist ? null : sourcePath || planet.id;
     settings.readonlyPlanet = planet.planet?.readonly !== false;
@@ -274,8 +282,8 @@ export async function applySettledOfficialPlanetFromProfile() {
         const planet = planets.find(item => item.id === settings.planetId);
         if (!planet) return false;
         applyPlanetFields(planet);
-        state.planetName = planet.name || planet.title;
-        settings.title = planet.title;
+        state.planetName = officialPlanetName(planet);
+        settings.title = officialPlanetTitle(planet);
         settings.appTitle = planet.appTitle || '';
         settings.readonlyPlanet = planet.planet?.readonly !== false;
         settings.planetStyle = {
@@ -367,11 +375,12 @@ function renderCustomCard() {
 
 function renderOfficialCard(planet) {
     const selected = currentSelectionId() === planet.id;
+    const title = officialPlanetTitle(planet);
     return `
         <article class="star-settlement-card ${selected ? 'is-selected' : ''}" data-planet-id="${escapeHtml(planet.id)}">
-            <div class="star-settlement-planet" style="${escapeHtml(planetPreviewStyle(planet))}"><span>${escapeHtml((planet.title || '?').slice(0, 1))}</span></div>
+            <div class="star-settlement-planet" style="${escapeHtml(planetPreviewStyle(planet))}"><span>${escapeHtml((title || '?').slice(0, 1))}</span></div>
             <div class="star-settlement-card-body">
-                <div class="star-settlement-card-title"><b>${escapeHtml(planet.title)}</b><em>${escapeHtml(planet.badge || t('ssBadgeOfficial'))}</em></div>
+                <div class="star-settlement-card-title"><b>${escapeHtml(title)}</b><em>${escapeHtml(planet.badge || t('ssBadgeOfficial'))}</em></div>
                 <p>${escapeHtml(planet.summary || '换到这个星球后，你的家具、房屋和宠物都会保留。')}</p>
                 <div class="star-settlement-fields">${renderFieldsPreview(planet)}</div>
             </div>
@@ -414,10 +423,10 @@ function bindSettlements(panel, planets, onBack) {
         btn.onclick = async () => {
             const planet = planets.find(item => item.id === btn.dataset.settleOfficial);
             if (!planet || currentSelectionId() === planet.id) return;
-            const ok = await confirm(t('ssMigrateConfirm', { name: planet.title }), { okText: t('ssMigrate'), cancelText: t('cancel') });
+            const ok = await confirm(t('ssMigrateConfirm', { name: officialPlanetTitle(planet) }), { okText: t('ssMigrate'), cancelText: t('cancel') });
             if (!ok) return;
             await applyOfficialPlanet(planet);
-            showToast(t('ssMigrated', { name: planet.title }), 'success', 1800);
+            showToast(t('ssMigrated', { name: officialPlanetTitle(planet) }), 'success', 1800);
             renderStarSettlements(panel, null, { onBack });
         };
     });

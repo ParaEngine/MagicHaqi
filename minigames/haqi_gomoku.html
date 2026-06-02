@@ -433,6 +433,7 @@
     let hintVisible = false;
     let resultTimer = 0;
     let petObjectUrl = '';
+    let petRequestId = '';
 
     function createBoard() { return Array.from({ length: SIZE }, () => Array(SIZE).fill(EMPTY)); }
     function cloneBoard(source) { return source.map(row => row.slice()); }
@@ -779,18 +780,15 @@
       setTimeout(() => box.remove(), 1700);
     }
 
-    function requestPetImage() {
+    function requestPetImage(petId = '') {
       const requestId = `gomoku_pet_${Date.now()}`;
-      const timer = setTimeout(() => window.removeEventListener('message', onMessage), 1400);
-      function onMessage(event) {
-        const msg = event.data || {};
-        if (msg.type !== 'haqi_pet_image' || msg.requestId !== requestId) return;
-        clearTimeout(timer); window.removeEventListener('message', onMessage);
-        if (!msg.ok || !msg.data) return;
-        mountPet(msg.data);
-      }
-      window.addEventListener('message', onMessage);
-      post('haqi_get_pet_image', { requestId, anim: 'idle' }, { requestId, anim: 'idle' });
+      petRequestId = requestId;
+      post('haqi_get_pet_image', { requestId, anim: 'idle', petId: petId || undefined }, { requestId, anim: 'idle', petId: petId || undefined });
+      setTimeout(() => {
+        if (petObjectUrl) return;
+        const fallbackId = `gomoku_pets_${Date.now()}`;
+        post('haqi_get_pet_images', { requestId: fallbackId, anim: 'idle' }, { requestId: fallbackId, anim: 'idle' });
+      }, 900);
     }
     function mountPet(pet) {
       if (!pet?.imageBlob || !pet?.uv) return;
@@ -819,7 +817,16 @@
     document.getElementById('again').onclick = resetGame;
     document.getElementById('closeResult').onclick = () => { els.result.hidden = true; };
     document.getElementById('help').onclick = openHelp;
-    window.addEventListener('message', e => { if (e.data?.type === 'gameContinue') resetGame(); });
+    window.addEventListener('message', e => {
+      const msg = e.data || {};
+      if (msg.type === 'gameContinue') resetGame();
+      if (msg.type === 'setGameConfig' && msg.data?.petId) requestPetImage(msg.data.petId);
+      if (msg.type === 'haqi_pet_image' && msg.ok && msg.data && (!petRequestId || !msg.requestId || msg.requestId === petRequestId || msg.requestId === 'active_pet_config')) mountPet(msg.data);
+      if (msg.type === 'haqi_pet_images' && msg.ok) {
+        const firstPet = Array.isArray(msg.data?.pets) ? msg.data.pets[0] : null;
+        if (firstPet) mountPet(firstPet);
+      }
+    });
     window.addEventListener('beforeunload', () => { if (petObjectUrl) URL.revokeObjectURL(petObjectUrl); });
     render(); requestPetImage(); post('gameLoaded');
   </script>

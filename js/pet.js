@@ -688,56 +688,14 @@ export function sayOnPet(petEl, text, duration = 4500) {
 }
 
 const PET_TALK_LINES = {
-    egg: [
-        '好饿呀，给我吃点东西，我就长大了 🥚',
-        '嗒嗒嗒…蛋里有点闷，主人来喂我嘛 🍼',
-        '我能感觉到你在看我，快喂喂我吧 ✨',
-        '主人，去 🧬 细胞里许个愿吧，决定我长什么样～',
-    ],
-    sleeping: [
-        '嘘...我正在做糖果云的梦 😴',
-        'Zzz...再陪我睡一小会儿 💤',
-        '梦里有好多星星饼干 ✨',
-        '轻轻摸摸就好，我快醒啦 🌙',
-    ],
-    hungry: [
-        '肚子咕噜咕噜叫啦 🍎',
-        '可以给我一点好吃的吗？🍰',
-        '我闻到食物的味道了！🥕',
-        '补充能量时间到～🍖',
-    ],
-    dirty: [
-        '身上灰扑扑的，想洗澡 🛁',
-        '泡泡在哪里？我想变香香 🫧',
-        '洗完澡我会闪闪发光 ✨',
-        '毛毛有点乱，需要整理一下啦 🧼',
-    ],
-    tired: [
-        '眼皮越来越重了...🥱',
-        '今天玩累啦，想躺一躺 🛏️',
-        '充电中，请轻拍我一下 ⚡',
-        '我需要一点休息时间 🌙',
-    ],
-    sad: [
-        '陪我玩一会儿嘛 🥺',
-        '今天想要更多关注 💛',
-        '摸摸我，心情会变好一点 ✨',
-        '我有点小失落，但见到你就好多啦 🌈',
-    ],
-    happy: [
-        '嘿嘿，我现在超开心！😄',
-        '你来啦！一起冒险吧 ✨',
-        '被点到会冒爱心哦 💖',
-        '今天也是闪亮亮的一天 ⭐',
-        '我喜欢和你待在一起 🎵',
-    ],
-    normal: [
-        '哈奇哈奇，收到你的摸摸啦 🐾',
-        '要不要一起去看看星球？🪐',
-        '我正在观察这个世界 👀',
-        '今天会发生什么好玩的事呢？✨',
-        '叮！宠物回应了你 💬',
-    ],
+    egg: ['petTalkEgg1', 'petTalkEgg2', 'petTalkEgg3', 'petTalkEgg4'],
+    sleeping: ['petTalkSleeping1', 'petTalkSleeping2', 'petTalkSleeping3', 'petTalkSleeping4'],
+    hungry: ['petTalkHungry1', 'petTalkHungry2', 'petTalkHungry3', 'petTalkHungry4'],
+    dirty: ['petTalkDirty1', 'petTalkDirty2', 'petTalkDirty3', 'petTalkDirty4'],
+    tired: ['petTalkTired1', 'petTalkTired2', 'petTalkTired3', 'petTalkTired4'],
+    sad: ['petTalkSad1', 'petTalkSad2', 'petTalkSad3', 'petTalkSad4'],
+    happy: ['petTalkHappy1', 'petTalkHappy2', 'petTalkHappy3', 'petTalkHappy4', 'petTalkHappy5'],
+    normal: ['petTalkNormal1', 'petTalkNormal2', 'petTalkNormal3', 'petTalkNormal4', 'petTalkNormal5'],
 };
 
 function _pick(arr) {
@@ -758,7 +716,7 @@ function _petTalkState(pet) {
 export function randomPetTalk(pet) {
     const talkState = _petTalkState(pet);
     if (talkState === 'egg') return { state: 'egg', text: eggHungryHint(pet) };
-    return { state: talkState, text: _pick(PET_TALK_LINES[talkState] || PET_TALK_LINES.normal) };
+    return { state: talkState, text: t(_pick(PET_TALK_LINES[talkState] || PET_TALK_LINES.normal)) };
 }
 
 export function playPetClickFeedback(petEl, pet) {

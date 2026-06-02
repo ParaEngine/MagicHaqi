@@ -2507,12 +2507,6 @@
       const u = state.petMeta.uv;
       try {
         ctx.drawImage(state.petBitmap, u.x, u.y, u.width, u.height, x - 4, y - 8, pet.w + 8, pet.h + 8);
-        if (state.petMeta.name) {
-          ctx.fillStyle = 'rgba(255,255,255,.86)';
-          ctx.fillRect(x - 8, y - 21, Math.min(70, Math.max(34, state.petMeta.name.length * 10)), 14);
-          ctx.fillStyle = '#075985'; ctx.font = '10px sans-serif'; ctx.textAlign = 'center';
-          ctx.fillText(state.petMeta.name.slice(0, 6), x + pet.w / 2, y - 10);
-        }
       } catch (err) {
         state.petBitmap = null;
         requestPetImage();

@@ -260,6 +260,7 @@
     petBitmap: null,
     petUrl: '',
     petMeta: null,
+    petRequestId: '',
     rafId: 0,
     roundId: '',
   };
@@ -1350,16 +1351,26 @@
 
   function requestPetImage() {
     const requestId = 'thunder_pet_' + Date.now();
+    state.petRequestId = requestId;
     window.parent?.postMessage({ type: 'haqi_get_pet_image', requestId, anim: 'idle' }, '*');
+    setTimeout(() => {
+      if (state.petBitmap) return;
+      window.parent?.postMessage({ type: 'haqi_get_pet_images', requestId: `thunder_pets_${Date.now()}`, anim: 'idle' }, '*');
+    }, 900);
   }
-  async function handlePetImage(msg) {
-    if (!msg?.ok || !msg.data?.imageBlob) return;
+  async function setPetImage(pet) {
+    if (!pet?.imageBlob) return;
     try {
       if (state.petBitmap?.close) state.petBitmap.close();
       if (state.petUrl) URL.revokeObjectURL(state.petUrl);
-      state.petMeta = msg.data;
-      state.petBitmap = await createImageBitmap(msg.data.imageBlob);
+      state.petMeta = pet;
+      state.petUrl = URL.createObjectURL(pet.imageBlob);
+      state.petBitmap = await createImageBitmap(pet.imageBlob);
     } catch (_) {}
+  }
+  async function handlePetImage(msg) {
+    if (!msg?.ok || !msg.data?.imageBlob) return;
+    await setPetImage(msg.data);
   }
 
   function bindEvents() {
@@ -1385,7 +1396,12 @@
         state.difficulty = msg.data.difficulty; setupDifficultyButtons(); resetGame(false);
       }
       if (msg.type === 'gameContinue') { resetGame(true); }
-      if (msg.type === 'haqi_pet_image') handlePetImage(msg);
+      if (msg.type === 'haqi_pet_image' && (!state.petRequestId || !msg.requestId || msg.requestId === state.petRequestId || msg.requestId === 'active_pet_config')) handlePetImage(msg);
+      if (msg.type === 'haqi_pet_images' && msg.ok) {
+        const firstPet = Array.isArray(msg.data?.pets) ? msg.data.pets[0] : null;
+        if (firstPet) setPetImage(firstPet);
+      }
+      if (msg.type === 'setGameConfig' && msg.data?.petId) requestPetImage(msg.data.petId);
     });
     const openHelp = () => {
       if (state.started && !state.gameOver) state.paused = true;

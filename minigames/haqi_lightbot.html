@@ -288,6 +288,7 @@
     stack: [],
     trace: [],
     petAsset: null,
+    petRequestId: '',
     objectUrls: [],
     three: null,
     petTextureKey: '',
@@ -525,10 +526,7 @@
     renderDifficultySelect();
     renderSpeedSelect();
     renderPalette();
-    requestPetImage().then((asset) => {
-      state.petAsset = asset;
-      renderBoard();
-    });
+    requestPetImage();
     prepareLevel(1);
     showHowTo();
     post('gameLoaded');
@@ -558,7 +556,14 @@
       if (state.puzzle && state.actor) renderBoard();
     });
     window.addEventListener('message', (event) => {
-      if (event.data?.type === 'gameContinue' && !state.started) startGame();
+      const msg = event.data || {};
+      if (msg.type === 'gameContinue' && !state.started) startGame();
+      if (msg.type === 'setGameConfig' && msg.data?.petId) requestPetImage(msg.data.petId);
+      if (msg.type === 'haqi_pet_image' && msg.ok && msg.data && (!state.petRequestId || !msg.requestId || msg.requestId === state.petRequestId || msg.requestId === 'active_pet_config')) setPetImage(msg.data);
+      if (msg.type === 'haqi_pet_images' && msg.ok) {
+        const firstPet = Array.isArray(msg.data?.pets) ? msg.data.pets[0] : null;
+        if (firstPet) setPetImage(firstPet);
+      }
     });
   }
 
@@ -2069,29 +2074,29 @@
     }
   }
 
-  function requestPetImage() {
-    return new Promise((resolve) => {
-      const requestId = `lightbot_pet_${Date.now()}_${Math.floor(Math.random() * 1000)}`;
-      let settled = false;
-      const timer = setTimeout(() => finish(null), 1400);
-      function finish(asset) {
-        if (settled) return;
-        settled = true;
-        clearTimeout(timer);
-        window.removeEventListener('message', onMessage);
-        resolve(asset);
-      }
-      function onMessage(event) {
-        const msg = event.data || {};
-        if (msg.type !== 'haqi_pet_image' || msg.requestId !== requestId) return;
-        if (!msg.ok || !msg.data?.imageBlob || !msg.data?.uv) return finish(null);
-        const url = URL.createObjectURL(msg.data.imageBlob);
-        state.objectUrls.push(url);
-        finish({ url, uv: msg.data.uv });
-      }
-      window.addEventListener('message', onMessage);
-      post('haqi_get_pet_image', { requestId, anim: 'idle' }, { requestId, anim: 'idle' });
-    });
+  function requestPetImage(petId = '') {
+    const requestId = `lightbot_pet_${Date.now()}_${Math.floor(Math.random() * 1000)}`;
+    state.petRequestId = requestId;
+    post('haqi_get_pet_image', { requestId, anim: 'idle', petId: petId || undefined }, { requestId, anim: 'idle', petId: petId || undefined });
+    setTimeout(() => {
+      if (state.petAsset?.url) return;
+      const fallbackId = `lightbot_pets_${Date.now()}_${Math.floor(Math.random() * 1000)}`;
+      post('haqi_get_pet_images', { requestId: fallbackId, anim: 'idle' }, { requestId: fallbackId, anim: 'idle' });
+    }, 900);
+  }
+
+  function setPetImage(pet) {
+    if (!pet?.imageBlob || !pet?.uv) return;
+    if (state.petAsset?.url) {
+      URL.revokeObjectURL(state.petAsset.url);
+      state.objectUrls = state.objectUrls.filter(url => url !== state.petAsset.url);
+    }
+    const url = URL.createObjectURL(pet.imageBlob);
+    state.objectUrls.push(url);
+    state.petAsset = { url, uv: pet.uv };
+    state.petTextureKey = '';
+    state.petTexture = null;
+    renderBoard();
   }
 
   function programSlots() {

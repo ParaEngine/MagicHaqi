@@ -145,6 +145,7 @@
     seconds: 0,
     timer: null,
     petAsset: null,
+    petRequestId: '',
     objectUrls: [],
     longPressTimer: null,
     skipNextClick: false,
@@ -1057,9 +1058,14 @@
 
   function requestPetImage() {
     const requestId = `food_hex_pet_${Date.now()}`;
+    state.petRequestId = requestId;
     try {
       window.parent.postMessage({ type: 'haqi_get_pet_image', requestId, anim: 'happy' }, '*');
     } catch (_) {}
+    setTimeout(() => {
+      if (state.objectUrls.length) return;
+      try { window.parent.postMessage({ type: 'haqi_get_pet_images', requestId: `food_hex_pets_${Date.now()}`, anim: 'happy' }, '*'); } catch (_) {}
+    }, 900);
   }
 
   async function setPetImage(pet) {
@@ -1086,7 +1092,12 @@
   window.addEventListener('message', event => {
     const msg = event.data || {};
     if (msg.type === 'gameContinue') startGame();
-    if (msg.type === 'haqi_pet_image' && msg.ok) setPetImage(msg.data);
+    if (msg.type === 'haqi_pet_image' && msg.ok && (!state.petRequestId || !msg.requestId || msg.requestId === state.petRequestId || msg.requestId === 'active_pet_config')) setPetImage(msg.data);
+    if (msg.type === 'haqi_pet_images' && msg.ok) {
+      const firstPet = Array.isArray(msg.data?.pets) ? msg.data.pets[0] : null;
+      if (firstPet) setPetImage(firstPet);
+    }
+    if (msg.type === 'setGameConfig' && msg.data?.petId) requestPetImage(msg.data.petId);
     if (msg.type === 'setGameConfig' && msg.data?.difficulty && DIFFICULTIES[msg.data.difficulty]) {
       state.difficulty = msg.data.difficulty;
       startGame();

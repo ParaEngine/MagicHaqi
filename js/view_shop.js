@@ -1,6 +1,6 @@
 // 商店视图
 import { $, $$, coinIconSvg, escapeHtml, renderVisualAsset, showToast } from './utils.js';
-import { t } from './i18n.js';
+import { itemName, t } from './i18n.js';
 import { canPlaceItemInArea, CONFIG, DECO_VISUALS, SHOP_ITEMS } from './config.js';
 import { state } from './state.js';
 
@@ -93,10 +93,11 @@ function renderShopItems(onBuy) {
     const inv = state.inventory || {};
     grid.innerHTML = items.length ? items.map(item => {
         const owned = item.uniqueItem && (inv[item.id] || 0) > 0;
+        const name = itemName(item.name);
         return `
         <div class="shop-item${owned ? ' is-owned' : ''}" data-buy="${escapeHtml(item.id)}"${owned ? ' data-owned="1"' : ''}>
             ${renderShopItemIcon(item)}
-            <div class="name">${escapeHtml(item.name)}</div>
+            <div class="name">${escapeHtml(name)}</div>
             <div class="price mh-coin-amount">${owned ? escapeHtml(t('owned')) : `${coinIconSvg()} ${item.price}`}</div>
         </div>`;
     }).join('') : `<div class="shop-empty col-span-3">${escapeHtml(t('shopEmpty'))}</div>`;
@@ -123,7 +124,7 @@ function getShopItemVisual(item) {
 }
 
 function renderShopItemIcon(item) {
-    const visualHtml = renderVisualAsset(getShopItemVisual(item), { className: 'shop-item-img', alt: item?.name || '' });
+    const visualHtml = renderVisualAsset(getShopItemVisual(item), { className: 'shop-item-img', alt: itemName(item?.name) || '' });
     return visualHtml
         ? `<div class="emoji shop-item-visual">${visualHtml}</div>`
         : `<div class="emoji">${escapeHtml(item?.emoji || '')}</div>`;
@@ -135,12 +136,13 @@ function showBuyConfirm(item, onBuy) {
     if (maxQty < 1) { showToast(t('notEnoughCoins'), 'error'); return; }
 
     let qty = 1;
+    const name = itemName(item.name);
     const mask = document.createElement('div');
     mask.className = 'modal-mask';
     mask.innerHTML = `
         <div class="modal-card text-center">
             <div class="text-4xl mb-2">${item.emoji}</div>
-            <div class="text-base font-bold mb-1" style="color:var(--text-primary)">${escapeHtml(item.name)}</div>
+            <div class="text-base font-bold mb-1" style="color:var(--text-primary)">${escapeHtml(name)}</div>
             <div class="text-xs mb-4" style="color:var(--text-muted)">${escapeHtml(t('maxBuyQty', { max: maxQty }))}</div>
             <div class="flex items-center justify-center gap-1 mb-3" style="flex-wrap:wrap">
                 <button class="btn-secondary" type="button" data-buy-step="min" title="${escapeHtml(t('qtyMin'))}">&lt;&lt;</button>

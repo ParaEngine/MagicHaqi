@@ -239,6 +239,7 @@
 		laserCells: new Map(),
 		inventory: {},
 		petAsset: null,
+		petRequestId: '',
 		objectUrls: [],
 	};
 
@@ -1261,21 +1262,26 @@
 		return wrap;
 	}
 
-	function requestPetImage() {
+	function requestPetImage(petId = '') {
 		const requestId = `laser_pet_${Date.now()}_${Math.random().toString(16).slice(2)}`;
-		const onMessage = event => {
-			const msg = event.data || {};
-			if (msg.type !== 'haqi_pet_image' || msg.requestId !== requestId) return;
-			window.removeEventListener('message', onMessage);
-			if (!msg.ok || !msg.data?.imageBlob) return;
-			const url = URL.createObjectURL(msg.data.imageBlob);
-			state.objectUrls.push(url);
-			state.petAsset = { ...msg.data, url };
-			render();
-		};
-		window.addEventListener('message', onMessage);
-		try { window.parent?.postMessage({ type: 'haqi_get_pet_image', requestId, anim: 'idle' }, '*'); } catch (err) {}
-		setTimeout(() => window.removeEventListener('message', onMessage), 3500);
+		state.petRequestId = requestId;
+		try { window.parent?.postMessage({ type: 'haqi_get_pet_image', requestId, anim: 'idle', petId: petId || undefined }, '*'); } catch (err) {}
+		setTimeout(() => {
+			if (state.petAsset?.url) return;
+			try { window.parent?.postMessage({ type: 'haqi_get_pet_images', requestId: `laser_pets_${Date.now()}`, anim: 'idle' }, '*'); } catch (err) {}
+		}, 900);
+	}
+
+	function setPetImage(pet) {
+		if (!pet?.imageBlob || !pet?.uv) return;
+		if (state.petAsset?.url) {
+			URL.revokeObjectURL(state.petAsset.url);
+			state.objectUrls = state.objectUrls.filter(url => url !== state.petAsset.url);
+		}
+		const url = URL.createObjectURL(pet.imageBlob);
+		state.objectUrls.push(url);
+		state.petAsset = { ...pet, url };
+		render();
 	}
 
 	function initDifficulties() {
@@ -1315,6 +1321,12 @@
 		window.addEventListener('message', event => {
 			const msg = event.data || {};
 			if (msg.type === 'setGameConfig' && msg.data?.difficulty) setDifficulty(msg.data.difficulty);
+			if (msg.type === 'setGameConfig' && msg.data?.petId) requestPetImage(msg.data.petId);
+			if (msg.type === 'haqi_pet_image' && msg.ok && msg.data && (!state.petRequestId || !msg.requestId || msg.requestId === state.petRequestId || msg.requestId === 'active_pet_config')) setPetImage(msg.data);
+			if (msg.type === 'haqi_pet_images' && msg.ok) {
+				const firstPet = Array.isArray(msg.data?.pets) ? msg.data.pets[0] : null;
+				if (firstPet) setPetImage(firstPet);
+			}
 		});
 		window.addEventListener('beforeunload', () => {
 			state.objectUrls.forEach(url => URL.revokeObjectURL(url));

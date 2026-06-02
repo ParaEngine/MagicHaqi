@@ -96,7 +96,7 @@ function normalizeMail(item, fallback = {}) {
     const raw = unwrapMailPayload(item) || {};
     const base = fallback && typeof fallback === 'object' ? fallback : {};
     const id = raw.id || raw.mailId || raw.emailId || base.id || '';
-    const title = raw.title || raw.subject || base.title || t('mbMailNum', { id: id || '' }).trim() || t('mbNoSubject');
+    let title = raw.title || raw.subject || base.title || t('mbMailNum', { id: id || '' }).trim() || t('mbNoSubject');
     const createdAt = raw.createdAt || raw.created_at || raw.createTime || raw.updatedAt || base.createdAt || '';
     const rawRead = raw.read ?? raw.isRead ?? base.read ?? 0;
     const rawRewards = firstOwnValue(raw, ['rewards', 'reward'], base.rewards ?? 0);
@@ -108,6 +108,7 @@ function normalizeMail(item, fallback = {}) {
     const content = pickMailContent(raw) || base.content || '';
     const username = raw.username || raw.fromUsername || raw.senderUsername || base.username || '';
     const from = raw.from || raw.fromEmail || raw.sender || raw.senderName || raw.fromName || base.from || t('mbSystemMail');
+    if (username && /^(?:来自).+(?:的信)$/.test(title)) title = t('mbLetterFromTitle', { name: username });
     return { raw, id, title, username, createdAt, read, rewards, rewardRows, rewardReceived, content, from };
 }
 
@@ -146,6 +147,12 @@ function formatLocalDate(timestamp = Date.now()) {
     const date = new Date(timestamp || Date.now());
     if (Number.isNaN(date.getTime())) return '';
     return t('lpDate', { y: date.getFullYear(), m: date.getMonth() + 1, d: date.getDate() });
+}
+
+function formatMailboxDate(value) {
+    const timestamp = typeof value === 'number' ? value : Date.parse(value || '');
+    if (!Number.isFinite(timestamp)) return value || '';
+    return formatLocalDate(timestamp);
 }
 
 function isRecentApply(item, now = Date.now()) {
@@ -200,11 +207,11 @@ async function resolveUserId(username) {
 
 async function requestFriendByName() {
     const username = await prompt(t('mbAddFriendTitle'), {
-        hint: '输入对方 KeepWork 用户名。',
+        hint: t('mbAddFriendHint'),
         placeholder: t('mbFriendUsernamePlaceholder'),
-        okText: '发送申请',
+        okText: t('mbAddFriendOk'),
         maxLength: 32,
-        validate: (value) => value ? '' : '请输入用户名',
+        validate: (value) => value ? '' : t('mbAddFriendValidate'),
     });
     if (!username) return;
     if (!state.sdk?.socialFriends?.applyFriend) {
@@ -228,7 +235,7 @@ function postcardCardHtml(item, index) {
     const sourceLabel = postcardSourceLabel(item) || item.fromUsername || t('mbFriendFallback');
     const pet = {
         id: `postcard_${index}`,
-        name: `${sourceLabel}的宠物`,
+        name: t('mbPetOf', { name: sourceLabel }),
         stage: 'egg',
         anim: 'idle',
         bornAt: item.dateReceived,
@@ -261,7 +268,7 @@ function friendApplyCardHtml(item, index) {
 function mailCardHtml(item, index = 0) {
     const mail = normalizeMail(item);
     const timestamp = timestampOf({ createdAt: mail.createdAt });
-    const mailTypeLabel = mail.username ? `邮件(${mail.username})` : '邮件';
+    const mailTypeLabel = mail.username ? `${t('mbTabMails')}(${mail.username})` : t('mbTabMails');
     const readStamp = mail.read
         ? `<div class="mailbox-read-stamp" aria-label="${escapeHtml(t('mbRead'))}">${escapeHtml(t('mbRead'))}</div>`
         : `<div class="mailbox-read-stamp mailbox-unread-stamp" aria-label="${escapeHtml(t('mbUnread'))}">${escapeHtml(t('mbUnread'))}</div>`;
@@ -274,14 +281,14 @@ function mailCardHtml(item, index = 0) {
 }
 
 function mailContentText(content) {
-    const value = typeof content === 'string' ? content : (content ? JSON.stringify(content, null, 2) : '暂无邮件正文');
+    const value = typeof content === 'string' ? content : (content ? JSON.stringify(content, null, 2) : t('mbNoBody'));
     if (!/<([a-z][\w:-]*)(\s|>|\/)/i.test(value)) return value;
     const html = value
         .replace(/<br\s*\/?>/gi, '\n')
         .replace(/<\/(p|div|li|h[1-6])>/gi, '\n');
     const box = document.createElement('div');
     box.innerHTML = html;
-    return box.textContent || '暂无邮件正文';
+    return box.textContent || t('mbNoBody');
 }
 
 function parseMailLetter(content, mail) {
@@ -293,7 +300,7 @@ function parseMailLetter(content, mail) {
             recipient: match[1].trim() || userNameOf(state.user) || t('mbYou'),
             body: match[2].trim() || t('mbNoBody'),
             sender: match[3].trim() || mail.from || t('mbSystemMail'),
-            date: (match[4] || '').trim() || fallbackDate,
+            date: formatMailboxDate((match[4] || '').trim()) || fallbackDate,
         };
     }
     return {
@@ -312,7 +319,7 @@ function mailContentHtml(content, mail) {
             <div class="email-paper-head mailbox-letter-head">
                 ${letter.date ? `<span class="email-paper-date">${escapeHtml(letter.date)}</span>` : ''}
             </div>
-            <div class="email-letter-greeting">${escapeHtml(t('emGreeting'))}${escapeHtml(letter.recipient)},</div>
+            <div class="email-letter-greeting">${escapeHtml(t('mbLetterDear', { name: letter.recipient }))}</div>
             <div class="mailbox-letter-body">${escapeHtml(letter.body).replace(/\n/g, '<br>')}</div>
             <div class="email-letter-signature mailbox-letter-signature">
                 <div>${escapeHtml(t('mbFromColon'))}${escapeHtml(letter.sender)}</div>
@@ -503,7 +510,7 @@ export function renderMailbox(panel, _data = {}, { onBack, onOpenPostcard, onEma
                                     markMailReadLocally(detailMail || mail);
                                     bindTabs(data, renderCurrentList);
                                     renderCurrentList();
-                                    button.textContent = '已读';
+                                    button.textContent = t('mbRead');
                                     showToast(t('mbMarkedRead'), 'success');
                                 } catch (e) {
                                     showToast(t('mbMarkFailed', { error: (e?.message || e) }), 'error');
@@ -560,6 +567,6 @@ export function renderMailbox(panel, _data = {}, { onBack, onOpenPostcard, onEma
         renderCurrentList();
     })().catch((e) => {
         console.error('邮箱加载失败', e);
-        listEl.innerHTML = '<div class="card-flat mailbox-empty">邮箱加载失败，请稍后再试。</div>';
+        listEl.innerHTML = `<div class="card-flat mailbox-empty">${escapeHtml(t('mbLoadFailed'))}</div>`;
     });
 }

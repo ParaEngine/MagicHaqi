@@ -5,7 +5,7 @@ import { t } from './i18n.js';
 import { CONFIG } from './config.js';
 import { state } from './state.js';
 import { savePetDebounced } from './storage.js';
-import { getActiveSickness, getEffectiveSicknessSeverity, getPermanentTraumaCount } from './petTick.js';
+import { getActiveSickness, getEffectiveSicknessSeverity, getPermanentTraumaCount, sicknessName } from './petTick.js';
 import { decodeDna, dietPreferenceIcons, dietPreferenceLabel, dnaDietPreference } from './dna.js';
 import { isPetInteractionBlocked, isPetSleeping, sleepingInteractionText } from './pet.js';
 
@@ -277,10 +277,11 @@ function sicknessLayerHtml(pet) {
     if (!sickness) return '';
     const count = getEffectiveSicknessSeverity(pet);
     if (!count) return '';
-    const label = `${sickness.def.name} ${count}/10`;
+    const name = sicknessName(sickness.def);
+    const label = t('cellSicknessLabel', { name, level: count });
     return `
         <div class="cell-sickness-layer" aria-label="${escapeHtml(label)}">
-            ${Array.from({ length: count }, (_, index) => `<span class="cell-sickness-icon s${index + 1}" role="button" tabindex="0" title="${escapeHtml(label)}" data-sickness-name="${escapeHtml(sickness.def.name)}" data-sickness-level="${count}">${sicknessIconSvg(sickness.type)}</span>`).join('')}
+            ${Array.from({ length: count }, (_, index) => `<span class="cell-sickness-icon s${index + 1}" role="button" tabindex="0" title="${escapeHtml(label)}" data-sickness-name="${escapeHtml(name)}" data-sickness-level="${count}">${sicknessIconSvg(sickness.type)}</span>`).join('')}
             ${Array.from({ length: Math.min(6, Math.max(3, count)) }, (_, index) => `<span class="cell-white-cell w${index + 1}" title="${escapeHtml(t('cellWhiteCell'))}"></span>`).join('')}
         </div>
     `;
@@ -318,7 +319,7 @@ function treatmentIconSvg() {
 
 function cellStatusText(pet) {
     const sickness = getActiveSickness(pet);
-    if (sickness) return t('cellStatusSick', { sickness: sickness.def.name, level: getEffectiveSicknessSeverity(pet) });
+    if (sickness) return t('cellStatusSick', { sickness: sicknessName(sickness.def), level: getEffectiveSicknessSeverity(pet) });
     const traumaCount = getPermanentTraumaCount(pet);
     if (traumaCount) return t('cellStatusTrauma', { count: traumaCount, max: CONFIG.trauma.max });
     return t('cellStatusNormal');
@@ -652,11 +653,11 @@ export const cellLevel = {
                         <path class="cell-face-sweat" d="M142 86 C136 94 136 102 142 106 C150 102 149 94 142 86 Z"/>
                     </g>
 
-                    <!-- CRITICAL: big dizzy >_< eyes (cute, not scary) -->
+                    <!-- CRITICAL: simple dizzy X eyes; avoid crescent blobs on small screens -->
                     <g class="cell-face-expression cell-face-expression-critical">
-                        <path class="cell-face-squint-eye left" d="M60 92 Q74 102 60 112 M88 92 Q74 102 88 112"/>
-                        <path class="cell-face-squint-eye right" d="M112 92 Q126 102 112 112 M140 92 Q126 102 140 112"/>
-                        <ellipse class="cell-face-mouth-o" cx="100" cy="132" rx="10" ry="9"/>
+                        <path class="cell-face-squint-eye left" d="M62 91 L86 113 M86 91 L62 113"/>
+                        <path class="cell-face-squint-eye right" d="M114 91 L138 113 M138 91 L114 113"/>
+                        <ellipse class="cell-face-mouth-o" cx="100" cy="131" rx="9" ry="8"/>
                         <path class="cell-face-sweat" d="M140 88 C134 96 134 104 140 108 C148 104 147 96 140 88 Z"/>
                     </g>
 
@@ -733,7 +734,7 @@ export const cellLevel = {
                                 ctx.callbacks.onNav('chat');
                             } else {
                                 console.warn('[Cell Dock] onNav callback not available for chat');
-                                showToast('导航不可用', 'error', 1800);
+                                showToast(t('cellNavUnavailable'), 'error', 1800);
                             }
                             return; 
                         }
@@ -743,7 +744,7 @@ export const cellLevel = {
                                 ctx.callbacks.onNav('storyMaker', { origin: 'home' });
                             } else {
                                 console.warn('[Cell Dock] onNav callback not available for storyMaker');
-                                showToast('导航不可用', 'error', 1800);
+                                showToast(t('cellNavUnavailable'), 'error', 1800);
                             }
                             return; 
                         }
@@ -753,12 +754,12 @@ export const cellLevel = {
                                 ctx.callbacks.onTreatSickness();
                             } else {
                                 console.warn('[Cell Dock] onTreatSickness callback not available');
-                                showToast('治疗功能不可用', 'error', 1800);
+                                showToast(t('cellTreatUnavailable'), 'error', 1800);
                             }
                         }
                     } catch (e) {
                         console.error('[Cell Dock] Action failed:', k, e);
-                        showToast('操作失败：' + (e?.message || e), 'error', 2000);
+                        showToast(t('cellActionFailed', { error: (e?.message || e) }), 'error', 2000);
                     }
                 }, 0);
             };

@@ -1288,11 +1288,11 @@
 
   function updateNightSurvival(dt) {
     if (!isNight() || state.finished) return;
-    const t = now();
-    if (t >= state.torchUntil && !isInHouseLight(player) && state.wood >= TORCH_WOOD_COST) {
+    const currentTime = now();
+    if (currentTime >= state.torchUntil && !isInHouseLight(player) && state.wood >= TORCH_WOOD_COST) {
       state.wood -= TORCH_WOOD_COST;
-      state.torchUntil = t + TORCH_SECONDS * 1000;
-      state.lastTorchNoticeAt = t;
+      state.torchUntil = currentTime + TORCH_SECONDS * 1000;
+      state.lastTorchNoticeAt = currentTime;
       spawnParticles(player.x, player.y - 16, 14, '#f59e0b');
       showToast(t('torchAuto'));
       setMessage(t('nightTorch'), 3600);
@@ -1305,8 +1305,8 @@
     const danger = (nearbyEnemies + 1) * deepNight;
     const percentDamage = (1.9 + state.day * .28) * danger * difficultyConfig().enemyDamage;
     state.hp = clamp(state.hp - state.hp * (percentDamage / 100) * dt, 0, 100);
-    if (t > state.lastNightUnsafeAt + 2200) {
-      state.lastNightUnsafeAt = t;
+    if (currentTime > state.lastNightUnsafeAt + 2200) {
+      state.lastNightUnsafeAt = currentTime;
       spawnParticles(player.x, player.y, 12, '#7f1d1d');
       playSound('hurt');
       setMessage(t('nightDanger'), 2100);
@@ -1912,13 +1912,13 @@
 
   function autoEatWhenIdle() {
     if (state.food <= 0 || state.hunger > 72 || (state.movementEnergy ?? .5) > .55) return;
-    const t = now();
-    if (t < state.lastAutoEatAt + 1800) return;
+    const currentTime = now();
+    if (currentTime < state.lastAutoEatAt + 1800) return;
     state.food--;
     state.hunger = clamp(state.hunger + 28, 0, 100);
     state.stamina = clamp(state.stamina + 22, 0, 100);
-    state.eatingUntil = t + 760;
-    state.lastAutoEatAt = t;
+    state.eatingUntil = currentTime + 760;
+    state.lastAutoEatAt = currentTime;
     spawnParticles(player.x, player.y - 10, 12, '#facc15');
     showToast(t('autoEat'));
     playSound('gather');
@@ -2599,8 +2599,6 @@
       ctx.globalAlpha = 1;
       if (e.state === 'wild' && !state.petBitmaps.length) drawHpBar(x, y - 28, e.hp / e.maxHp, '#ef4444');
       if (e.state === 'down') {
-        drawRect(x - 22, y - 39, 44, 15, '#fff7ed');
-        ctx.fillStyle = '#7c2d12'; ctx.font = '10px sans-serif'; ctx.textAlign = 'center'; ctx.fillText(t('captureMark'), x, y - 28);
       }
     }
   }

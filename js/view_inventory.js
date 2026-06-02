@@ -1,15 +1,16 @@
 // 背包视图
 import { $, $$, coinIconSvg, escapeHtml, showToast } from './utils.js';
-import { t } from './i18n.js';
+import { itemName, t } from './i18n.js';
 import { getShopItemById } from './config.js';
 import { state } from './state.js';
 
 const ITEM_BY_ID = new Proxy({}, { get: (_, id) => getShopItemById(id) });
 
 function getInventoryItemHint(item) {
-    if (item?.type === 'furniture') return t('invHintFurniture', { name: item.name });
-    if (item?.type === 'food') return t('invHintFood', { name: item.name });
-    return t('invHintDefault', { name: item?.name || t('invHintThisItem') });
+    const name = itemName(item?.name) || t('invHintThisItem');
+    if (item?.type === 'furniture') return t('invHintFurniture', { name });
+    if (item?.type === 'food') return t('invHintFood', { name });
+    return t('invHintDefault', { name });
 }
 
 export function renderInventory(panel, _data, { onBack, onSell, onReorder } = {}) {
@@ -37,7 +38,7 @@ export function renderInventory(panel, _data, { onBack, onSell, onReorder } = {}
                     ${entries.map(it => `
                         <div class="shop-item mh-inv-item" draggable="true" data-iid="${escapeHtml(it.id)}" data-type="${escapeHtml(it.type)}">
                             <div class="emoji">${it.emoji}</div>
-                            <div class="name">${escapeHtml(it.name)} ×${(it.unlimited || it.uniqueItem) ? '∞' : it.qty}</div>
+                            <div class="name">${escapeHtml(itemName(it.name))} ×${(it.unlimited || it.uniqueItem) ? '∞' : it.qty}</div>
                         </div>
                     `).join('')}
                 </div>`}
@@ -220,13 +221,14 @@ function showSellConfirm(item, onSell) {
     const maxQty = Math.max(1, owned);
     const unitPrice = Math.floor((item.price || 0) * 0.9);
     let qty = 1;
+    const name = itemName(item.name);
 
     const mask = document.createElement('div');
     mask.className = 'modal-mask';
     mask.innerHTML = `
         <div class="modal-card text-center">
             <div class="text-4xl mb-2">${item.emoji}</div>
-            <div class="text-base font-bold mb-1" style="color:var(--text-primary)">${escapeHtml(item.name)}</div>
+            <div class="text-base font-bold mb-1" style="color:var(--text-primary)">${escapeHtml(name)}</div>
             <div class="text-xs mb-1" style="color:var(--text-muted)">${escapeHtml(t('sellPriceInfo', { price: item.price, unit: unitPrice }))}</div>
             <div class="text-xs mb-4" style="color:var(--text-muted)">${escapeHtml(t('sellQtyInfo', { owned, max: maxQty }))}</div>
             <div class="flex items-center justify-center gap-1 mb-3" style="flex-wrap:wrap">

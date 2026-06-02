@@ -1,7 +1,7 @@
 // Level 2 — 宠物 + 房间（经典电子宠物日常）
 
 import { $, $$, dockDisabledAttrs, escapeHtml, isDockButtonDisabled, randInt, renderVisualAsset, showDockDisabledToast, showToast } from './utils.js';
-import { t, localizeRoomName } from './i18n.js';
+import { itemName, t, localizeRoomName } from './i18n.js';
 import { canPlaceItemInArea, CONFIG, DECO_VISUALS, getActiveHouseRoomIds, getPlacedItemZOrder, getShopItemById, SHOP_ITEMS } from './config.js';
 import { isVisitingMode, notify, state } from './state.js';
 import { getLayout } from './storage.js';
@@ -9,7 +9,7 @@ import { displayPetName } from './dna.js';
 import { getPet, getPetSleepActionState, isPetInteractionBlocked, petArtHtml, playPetClickFeedback, playPetHappy, say, sayOnPet, scanAndMount, sleepingInteractionText } from './pet.js';
 import { getGeneratedPetLocation, hasRenderablePetTexture } from './petLifecycle.js';
 import SoundManager from './soundManager.js';
-import { BATH_COMPLETE_FEEDBACK_MS, BATH_COMPLETE_LINES, BATH_SEQUENCE_MS, createBathSequenceOverlay, isPetVisibleInStage } from './petInteractions.js';
+import { BATH_COMPLETE_FEEDBACK_MS, BATH_SEQUENCE_MS, createBathSequenceOverlay, isPetVisibleInStage, randomBathCompleteLine } from './petInteractions.js';
 import { setShopFilter, suppressShopInitialClick } from './view_shop.js';
 import { injectVisitAnimationStyles } from './visit_animations.js';
 
@@ -399,7 +399,7 @@ function roomItemHtml(it, index) {
     const zorder = getPlacedItemZOrder(it, def);
     const zIndex = getRoomItemZIndex(pos, zorder, def.type);
     const fieldSize = getItemFieldSize(def, it);
-    return `<div class="furniture mh-room-furniture" data-fidx="${index}" data-item-id="${escapeHtml(def.id)}" data-item-type="${escapeHtml(def.type || 'furniture')}" data-zorder="${zorder}" data-field-size="${fieldSize}" data-x-meters="${pos.x}" data-y-meters="${pos.y}" data-w-meters="${pos.w}" data-h-meters="${pos.h}" style="${meterStyle(pos)};z-index:${zIndex}" title="${escapeHtml(def.name || '')}">${furnitureHtml(def)}</div>`;
+    return `<div class="furniture mh-room-furniture" data-fidx="${index}" data-item-id="${escapeHtml(def.id)}" data-item-type="${escapeHtml(def.type || 'furniture')}" data-zorder="${zorder}" data-field-size="${fieldSize}" data-x-meters="${pos.x}" data-y-meters="${pos.y}" data-w-meters="${pos.w}" data-h-meters="${pos.h}" style="${meterStyle(pos)};z-index:${zIndex}" title="${escapeHtml(itemName(def.name) || '')}">${furnitureHtml(def)}</div>`;
 }
 
 function metersToPx(value) {
@@ -977,11 +977,11 @@ function dissolveServedFood(el, item) {
 }
 
 const VISIT_FEED_LINES = [
-    '好好吃，谢谢你！😋',
-    '哇，是我最爱的味道！',
-    '嗯~ 一起分享真开心 💞',
-    '太美味啦，谢谢小客人！',
-    '吃饱啦，元气满满！✨',
+    'visitFeedLine1',
+    'visitFeedLine2',
+    'visitFeedLine3',
+    'visitFeedLine4',
+    'visitFeedLine5',
 ];
 
 async function runFeedServingSequence(itemId, source, ctx) {
@@ -1016,7 +1016,7 @@ async function runFeedServingSequence(itemId, source, ctx) {
         if (visiting) {
             const fedPet = roomPetForElement(targetPetEl);
             try { playPetHappy(targetPetEl, fedPet, { holdAnimMs: 900 }); } catch (_) {}
-            sayOnPet(targetPetEl, VISIT_FEED_LINES[randInt(0, VISIT_FEED_LINES.length - 1)], 2400);
+            sayOnPet(targetPetEl, t(VISIT_FEED_LINES[randInt(0, VISIT_FEED_LINES.length - 1)]), 2400);
             return;
         }
         const sayVisibleAt = sequenceStartedAt + eatingMs;
@@ -1070,7 +1070,7 @@ async function runBathSequence(ctx) {
         const currentPetEl = $('mhPet');
         if (currentPetEl && isPetVisibleForBath(currentPetEl)) {
             playPetHappy(currentPetEl, bathedPet, { holdAnimMs: BATH_COMPLETE_FEEDBACK_MS });
-            say(BATH_COMPLETE_LINES[randInt(0, BATH_COMPLETE_LINES.length - 1)], BATH_COMPLETE_FEEDBACK_MS);
+            say(randomBathCompleteLine(), BATH_COMPLETE_FEEDBACK_MS);
         }
     }, BATH_SEQUENCE_MS);
     return true;
@@ -1078,20 +1078,20 @@ async function runBathSequence(ctx) {
 
 // ── 拜访好友房间：互动（瞬移 + 打招呼）────────────────────────────────────
 const ROOM_GREET_HELLO_LINES = [
-    '你好呀！👋',
-    '嗨~ 很高兴来你的房间做客！',
-    '哇，你的房间真漂亮！',
-    '一起玩吧！',
-    '谢谢你邀请我来串门~',
-    '终于见到你啦！',
+    'roomGreetHello1',
+    'roomGreetHello2',
+    'roomGreetHello3',
+    'roomGreetHello4',
+    'roomGreetHello5',
+    'roomGreetHello6',
 ];
 const ROOM_GREET_REPLY_LINES = [
-    '你也好呀！😊',
-    '嗨嗨，欢迎来我家！',
-    '我们做朋友吧！',
-    '好开心见到你！',
-    '抱抱~ 💞',
-    '随便坐随便玩呀！',
+    'roomGreetReply1',
+    'roomGreetReply2',
+    'roomGreetReply3',
+    'roomGreetReply4',
+    'roomGreetReply5',
+    'roomGreetReply6',
 ];
 
 function findRoomGuestPetEl() {
@@ -1162,10 +1162,10 @@ async function runRoomVisitGreeting(ctx) {
         const hostEl = $('mhPet');
         await roomDelay(160);
         bounceRoomPet(guestEl, myPet);
-        sayOnPet(guestEl, ROOM_GREET_HELLO_LINES[randInt(0, ROOM_GREET_HELLO_LINES.length - 1)], 2400);
+        sayOnPet(guestEl, t(ROOM_GREET_HELLO_LINES[randInt(0, ROOM_GREET_HELLO_LINES.length - 1)]), 2400);
         await roomDelay(820);
         bounceRoomPet(hostEl, friendPet);
-        sayOnPet(hostEl, ROOM_GREET_REPLY_LINES[randInt(0, ROOM_GREET_REPLY_LINES.length - 1)], 2400);
+        sayOnPet(hostEl, t(ROOM_GREET_REPLY_LINES[randInt(0, ROOM_GREET_REPLY_LINES.length - 1)]), 2400);
         await roomDelay(540);
         spawnRoomHeartsBetween(guestEl, hostEl);
     });
@@ -1314,7 +1314,18 @@ function isPointOverDock(clientX, clientY) {
     if (!isRoomPlacementMode()) return false;
     const dock = $('mhDock');
     const rect = dock?.getBoundingClientRect?.();
-    return pointInRect(clientX, clientY, rect);
+    if (pointInRect(clientX, clientY, rect)) return true;
+    const target = $('mhRoomDockDeleteTarget');
+    const targetRect = target?.getBoundingClientRect?.();
+    if (pointInRect(clientX, clientY, targetRect)) return true;
+    const stage = $('mhStage');
+    const stageRect = stage?.getBoundingClientRect?.();
+    if (!rect || !stageRect) return false;
+    const dockOverlapTolerance = Math.max(18, FINGER_HIT_RADIUS_PX);
+    return clientX >= stageRect.left
+        && clientX <= stageRect.right
+        && clientY >= rect.top - dockOverlapTolerance
+        && clientY <= rect.bottom;
 }
 
 function setDockDeleteTargetVisible(visible) {
@@ -1555,7 +1566,7 @@ export const petLevel = {
                 `).join('')}
             </div>
             ${isRoomPlacementMode() ? `<button type="button" class="mh-decor-done-btn mh-room-mode-toggle" id="${state.isFeedMode ? 'mhFeedDoneBtn' : 'mhDecorDoneBtn'}">${escapeHtml(t('exitDecor'))}</button>` : ''}
-            ${isRoomPlacementMode() ? `<button type="button" class="mh-room-dock-delete-target" id="mhRoomDockDeleteTarget" aria-hidden="true" tabindex="-1">🗑️ 收回背包</button>` : ''}
+            ${isRoomPlacementMode() ? `<button type="button" class="mh-room-dock-delete-target" id="mhRoomDockDeleteTarget" aria-hidden="true" tabindex="-1">🗑️ ${escapeHtml(t('putAwayBag'))}</button>` : ''}
             ${state.isDecorMode ? renderDecorTray(inv) : state.isFeedMode ? renderFeedTray(inv) : renderActionTray(pet)}
         `;
     },
@@ -1579,7 +1590,6 @@ export const petLevel = {
                 event?.stopPropagation?.();
                 const btn = target.closest?.('#mhDecorBtn, #mhDecorDoneBtn');
                 if (isDockButtonDisabled(btn)) { showDockDisabledToast(btn); return true; }
-                if (isPetInteractionBlocked(pet)) { showSleepingBlocked(pet); return true; }
                 dock.__mhPetDockTabHandledAt = Date.now();
                 ctx.callbacks.onToggleDecor?.(!state.isDecorMode);
                 return true;
@@ -1803,7 +1813,20 @@ function bindRoomPan(ctx) {
 }
 
 function bindFurnitureDrag(el, ctx) {
+    if (!el || el.__mhRoomFurnitureDragBound) return;
+    el.__mhRoomFurnitureDragBound = true;
     let drag = null;
+    const cleanupWindowDrag = () => {
+        window.removeEventListener('pointermove', onMove, true);
+        window.removeEventListener('pointerup', end, true);
+        window.removeEventListener('pointercancel', end, true);
+    };
+    const clearDragFeedback = (targetEl) => {
+        targetEl?.classList.remove('is-dragging');
+        targetEl?.classList.remove('will-discard');
+        setRoomItemDragElevation(targetEl, false);
+        setDockDeleteTargetVisible(false);
+    };
     el.addEventListener('click', () => {
         if (isRoomPlacementMode()) return;
         if (Date.now() - (ctx.stage?.__mhPetRoomPannedAt || 0) < 260) return;
@@ -1827,15 +1850,20 @@ function bindFurnitureDrag(el, ctx) {
             moved: false,
             idx: parseInt(targetEl.dataset.fidx, 10),
         };
-        el.setPointerCapture?.(e.pointerId);
+        cleanupWindowDrag();
+        window.addEventListener('pointermove', onMove, true);
+        window.addEventListener('pointerup', end, true);
+        window.addEventListener('pointercancel', end, true);
         targetEl.classList.add('is-dragging');
         setRoomItemDragElevation(targetEl, true);
     });
-    el.addEventListener('pointermove', (e) => {
+    const onMove = (e) => {
         if (!drag || drag.id !== e.pointerId) return;
         const targetEl = drag.el;
         const dist = Math.hypot(e.clientX - drag.x, e.clientY - drag.y);
         if (dist < DRAG_PLACE_THRESHOLD && !drag.moved) return;
+        e.preventDefault();
+        e.stopPropagation();
         drag.moved = true;
         const overDock = isPointOverDock(e.clientX, e.clientY);
         setDockDeleteTargetVisible(overDock);
@@ -1853,53 +1881,53 @@ function bindFurnitureDrag(el, ctx) {
             ...pos,
             h: Number(targetEl.dataset.hMeters) || 0,
         });
-    });
+    };
     const end = async (e) => {
         if (!drag || drag.id !== e.pointerId) return;
-        const targetEl = drag.el;
+        const currentDrag = drag;
+        drag = null;
+        cleanupWindowDrag();
         e.preventDefault();
         e.stopPropagation();
-        el.releasePointerCapture?.(e.pointerId);
-        targetEl.classList.remove('is-dragging');
-        targetEl.classList.remove('will-discard');
-        setRoomItemDragElevation(targetEl, false);
-        setDockDeleteTargetVisible(false);
-        if (drag.moved) {
+        const targetEl = currentDrag.el;
+        clearDragFeedback(targetEl);
+        if (currentDrag.moved) {
             targetEl.__mhRoomItemDraggedAt = Date.now();
             if (isPointOverDock(e.clientX, e.clientY)) {
                 targetEl.remove();
                 clearRoomItemSelection(ctx);
                 if (state.isDecorMode) playRoomItemDropSoundAsync();
-                await ctx.callbacks.onRemoveItem?.(drag.idx);
-                drag = null;
+                const removePromise = ctx.callbacks.onRemoveItem?.(currentDrag.idx, currentRoomKey(ctx));
+                if (removePromise && typeof removePromise.catch === 'function') {
+                    removePromise.catch(() => {});
+                }
                 return;
             }
-            const delta = clientDeltaToRoomMeters(e.clientX - drag.x, e.clientY - drag.y);
+            const delta = clientDeltaToRoomMeters(e.clientX - currentDrag.x, e.clientY - currentDrag.y);
             const pos = {
-                x: clampRange(drag.startXMeters + delta.x, 0, ROOM_WIDTH_METERS),
-                y: clampRange(drag.startYMeters + delta.y, 0, ROOM_HEIGHT_METERS),
+                x: clampRange(currentDrag.startXMeters + delta.x, 0, ROOM_WIDTH_METERS),
+                y: clampRange(currentDrag.startYMeters + delta.y, 0, ROOM_HEIGHT_METERS),
             };
             const layout = getLayout(ctx.pet.id, state.currentRoom || ctx.pet.activeRoom || 'living') || [];
-            const itemId = layout[drag.idx]?.itemId || targetEl.dataset.itemId;
+            const itemId = layout[currentDrag.idx]?.itemId || targetEl.dataset.itemId;
             const feedTargetEl = targetEl.dataset.itemType === 'food' ? feedTargetPetElAt(e.clientX, e.clientY) : null;
             if (feedTargetEl) {
-                const eaten = await runFeedServingSequence(itemId, { source: 'layout', index: drag.idx, el: targetEl, targetPetEl: feedTargetEl }, ctx);
+                const eaten = await runFeedServingSequence(itemId, { source: 'layout', index: currentDrag.idx, el: targetEl, targetPetEl: feedTargetEl }, ctx);
                 if (!eaten) {
-                    targetEl.dataset.xMeters = String(drag.startXMeters);
-                    targetEl.dataset.yMeters = String(drag.startYMeters);
-                    targetEl.style.left = roomXToScenePx(drag.startXMeters) + 'px';
-                    targetEl.style.top = metersToPx(drag.startYMeters) + 'px';
+                    targetEl.dataset.xMeters = String(currentDrag.startXMeters);
+                    targetEl.dataset.yMeters = String(currentDrag.startYMeters);
+                    targetEl.style.left = roomXToScenePx(currentDrag.startXMeters) + 'px';
+                    targetEl.style.top = metersToPx(currentDrag.startYMeters) + 'px';
                     applyRoomItemZIndex(targetEl, {
-                        y: drag.startYMeters,
+                        y: currentDrag.startYMeters,
                         h: Number(targetEl.dataset.hMeters) || 0,
                     });
                 }
-                drag = null;
                 return;
             }
             const def = ITEM_BY_ID[itemId];
             if (state.isDecorMode) playRoomItemDropSoundAsync();
-            ctx.callbacks.onMoveItem?.(drag.idx, pos.x, pos.y, undefined, {
+            ctx.callbacks.onMoveItem?.(currentDrag.idx, pos.x, pos.y, undefined, {
                 coord: 'roomMeters',
                 fieldSize: Number(targetEl.dataset.fieldSize) || getItemFieldSize(def),
                 skipSound: state.isDecorMode,
@@ -1911,8 +1939,8 @@ function bindFurnitureDrag(el, ctx) {
         } else if (e.type === 'pointerup' && state.isFeedMode && targetEl.dataset.itemType === 'food') {
             showRoomDragHint(targetEl.dataset.itemType, 'layout');
         }
-        drag = null;
     };
+    el.addEventListener('pointermove', onMove);
     el.addEventListener('pointerup', end);
     el.addEventListener('pointercancel', end);
 }
@@ -2125,7 +2153,7 @@ function renderActionTray(pet) {
         <div class="mh-dock-row mh-scroll-x dock-action-row">
             ${actions.map(a => {
                 const eggDisabled = isEgg && eggDisabledKeys.has(a.k);
-                const sleepDisabled = sleeping && a.k !== 'sleep';
+                const sleepDisabled = sleeping && a.k !== 'sleep' && a.k !== 'decor';
                 const disabled = eggDisabled || sleepDisabled || (a.k === 'sleep' && sleepAction.disabled);
                 const urgentClass = a.feed && feedUrgent ? ' is-urgent' : '';
                 const title = eggDisabled
@@ -2172,7 +2200,7 @@ function renderDecorTray(inv) {
                 : items.map(it => `
                     <div data-tray-item="${escapeHtml(it.id)}" class="shop-item" style="min-width:62px;padding:6px;flex-shrink:0">
                         <div class="emoji mh-tray-furniture-icon">${furnitureHtml(it)}</div>
-                        <div class="name" style="font-size:10px">${escapeHtml(it.name)}</div>
+                        <div class="name" style="font-size:10px">${escapeHtml(itemName(it.name))}</div>
                         ${it.qty > 1 ? `<span class="shop-item-count-badge">${escapeHtml(it.qty)}</span>` : ''}
                     </div>
                 `).join('')}
@@ -2195,7 +2223,7 @@ function renderFeedTray(inv) {
                 : items.map(it => `
                     <div data-tray-item="${escapeHtml(it.id)}" data-feed-tray-item="true" class="shop-item" style="min-width:76px;padding:10px 8px;flex-shrink:0">
                         <div class="emoji mh-tray-furniture-icon">${furnitureHtml(it)}</div>
-                        <div class="name" style="font-size:10px">${escapeHtml(it.name)}</div>
+                        <div class="name" style="font-size:10px">${escapeHtml(itemName(it.name))}</div>
                         ${(it.unlimited || it.qty > 1) ? `<span class="shop-item-count-badge">${it.unlimited ? '∞' : escapeHtml(it.qty)}</span>` : ''}
                     </div>
                 `).join('')}

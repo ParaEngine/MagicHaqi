@@ -1,7 +1,7 @@
 // 星际拜访与偏远星球航线逻辑
 
 import { $, clamp, dockDisabledAttrs, escapeHtml, formatTime, isDockButtonDisabled, prompt, randId, showDockDisabledToast, showToast } from './utils.js';
-import { t } from './i18n.js';
+import { planetName, t } from './i18n.js';
 import { endVisitingMode, isVisitingMode, notify, startVisitingMode, state } from './state.js';
 import { addToInventory, loadRecentFriendPlanets, saveRecentFriendPlanetsDebounced, saveUserProfileDebounced, savePetDebounced } from './storage.js';
 import { defaultStats, clampEnergyToMax } from './petTick.js';
@@ -24,6 +24,7 @@ export const SMALL_REMOTE_PLANET_NAME_RADIUS = 8;
 export const SMALL_REMOTE_PLANET_SIZE_PER_RADIUS = 7;
 
 const UFO_REWARDS = ['food_apple', 'food_carrot', 'field_flower', 'land_mushroom', 'water_shell'];
+const OFFICIAL_PLACEHOLDER_FIELD_NAMES = new Set(['左耳', '左眉', '右眉', '右耳', '左胡子', '中胡子', '右胡子']);
 
 export const SMALL_REMOTE_PLANETS = [
     { id: 'firebird', nameKey: 'stFirebirdName', x: 22, y: 34, radius: 4.1, depth: 11, hue: 18, accent: '#ffd166', rotation: -18, spinDuration: 14, elementalAttribute: '火', fieldId: 'fire', equipmentId: 'fire_volcano', equipmentNameKey: 'stEquipVolcano', equipmentEmoji: '🌋', surfaceX: 36, surfaceY: 30, tipKey: 'stFirebirdTip' },
@@ -36,6 +37,10 @@ export const SMALL_REMOTE_PLANETS = [
 export const remotePlanetName = (p) => p ? (p.nameKey ? t(p.nameKey) : p.name || '') : '';
 export const remotePlanetTip = (p) => p ? (p.tipKey ? t(p.tipKey) : p.tip || '') : '';
 export const remoteEquipmentName = (p) => p ? (p.equipmentNameKey ? t(p.equipmentNameKey) : p.equipmentName || '') : '';
+
+function officialPlanetTitle(planet) {
+    return planetName(planet?.title || planet?.name) || t('stOfficialPlanetFallback');
+}
 
 let __remoteCargoActive = false;
 let __visitReturnPromptOpen = false;
@@ -121,7 +126,7 @@ export function getSocialVisitTip(destinationId = 'haqi') {
     }
     if (String(destinationId).startsWith('official:')) {
         const planet = officialVisitDestinations().find(item => item.id === destinationId);
-        return t('stTipOfficial', { fuel: fuelCost, planet: planet?.title || t('stOfficialPlanetFallback') });
+        return t('stTipOfficial', { fuel: fuelCost, planet: officialPlanetTitle(planet) });
     }
     if (destinationId === 'haqi') {
         return t('stTipHaqi', { fuel: fuelCost, coins: socialCoinReward() });
@@ -285,26 +290,39 @@ function normalizeOfficialVisitField(field, index) {
     };
 }
 
+function isOfficialPlaceholderField(field) {
+    const name = String(field?.name || field?.title || '').trim();
+    const background = field?.background || {};
+    const hasImage = !!String(background.imageUrl || background.url || '').trim();
+    const hasPreset = !!String(background.presetId || '').trim();
+    const hasEffects = Array.isArray(field?.particles) && field.particles.length > 0;
+    const hasMusic = !!String(field?.bgMusic || '').trim();
+    const colorOnly = !background.type || background.type === 'color';
+    return OFFICIAL_PLACEHOLDER_FIELD_NAMES.has(name) && colorOnly && !hasImage && !hasPreset && !hasEffects && !hasMusic;
+}
+
 function normalizeOfficialVisitDestination(entry, index) {
     if (!entry || typeof entry !== 'object') return null;
     const planetId = String(entry.id || '').trim();
     if (!planetId) return null;
     const title = String(entry.title || entry.name || planetId).trim();
+    const localizedTitle = planetName(title) || title;
+    const localizedName = planetName(entry.name || title) || localizedTitle;
     const planet = entry.planet && typeof entry.planet === 'object' ? entry.planet : {};
     const fields = (Array.isArray(entry.fields) ? entry.fields : [])
         .map(normalizeOfficialVisitField)
-        .filter(field => field.id);
+        .filter(field => field.id && !isOfficialPlaceholderField(field));
     const hue = Number(planet.hue) || (stringHash(planetId) % 360);
     const accent = String(planet.accentColor || planet.accent || '').trim() || `hsl(${(hue + 54) % 360} 86% 64%)`;
     return {
         id: `official:${planetId}`,
         kind: 'official',
         officialId: planetId,
-        name: title,
-        title,
+        name: localizedName,
+        title: localizedTitle,
         icon: '🪐',
         meta: `${socialFuelCost()}燃料 · 官方星球`,
-        label: title,
+        label: localizedTitle,
         planet,
         fields,
         planetPets: normalizePlanetPetIds(entry.planet_pets || entry.planetPets || entry.famousPets || entry.famous_pet_ids),
@@ -407,24 +425,25 @@ function officialVisitFieldChipsHtml(planet) {
 function showOfficialVisitConfirmModal(planet, pet, parentClose) {
     if (!planet || !pet) return false;
     const fuelCost = socialFuelCost();
+    const title = officialPlanetTitle(planet);
     const modal = openPlanetModal(`
         <div class="planet-action-dialog-head">
             <span class="planet-action-dialog-icon">🪐</span>
             <div>
-                <div class="planet-modal-title">${escapeHtml(planet.title || planet.name || t('stOfficialPlanetFallback'))}</div>
+                <div class="planet-modal-title">${escapeHtml(title)}</div>
                 <div class="planet-modal-subtitle">${escapeHtml(planet.summary || t('stOfficialDefaultSummary'))}</div>
             </div>
             <button class="menu-close-btn haqi-download-close planet-action-close" data-act="close" type="button" aria-label="${escapeHtml(t('close'))}">×</button>
         </div>
         <div class="planet-official-visit-card">
-            <div class="planet-official-preview" style="${escapeHtml(officialVisitPlanetPreviewStyle(planet))}"><span>${escapeHtml((planet.title || '?').slice(0, 1))}</span></div>
+            <div class="planet-official-preview" style="${escapeHtml(officialVisitPlanetPreviewStyle(planet))}"><span>${escapeHtml((title || '?').slice(0, 1))}</span></div>
             <div class="planet-official-info">
-                <div class="planet-official-title"><b>${escapeHtml(planet.title || planet.name || t('stOfficialPlanetFallback'))}</b><em>${escapeHtml(planet.appTitle || t('stOfficialPlanetFallback'))}</em></div>
+                <div class="planet-official-title"><b>${escapeHtml(title)}</b><em>${escapeHtml(planet.appTitle || t('stOfficialPlanetFallback'))}</em></div>
                 <p>${escapeHtml(planet.summary || t('stOfficialVisitSummary'))}</p>
                 <div class="planet-official-fields">${officialVisitFieldChipsHtml(planet)}</div>
             </div>
         </div>
-        <div class="planet-action-dialog-body">${escapeHtml(t('stOfficialVisitBody', { fuel: fuelCost, name: planet.title || t('stOfficialPlanetFallback') }))}</div>
+        <div class="planet-action-dialog-body">${escapeHtml(t('stOfficialVisitBody', { fuel: fuelCost, name: title }))}</div>
         <div class="planet-modal-actions">
             <button class="btn-secondary" data-act="close" type="button">${escapeHtml(t('cancel'))}</button>
             <button class="btn-primary" data-official-visit-confirm type="button">${escapeHtml(t('stTeleportVisit'))}</button>
@@ -588,7 +607,7 @@ export function socialVisitDestinationItems() {
     const officialItems = officialVisitDestinations().map(planet => ({
         id: planet.id,
         kind: 'official',
-        name: planet.title || planet.name,
+        name: officialPlanetTitle(planet),
         planet,
         icon: '🪐',
         meta: `${socialFuelCost()}燃料 · 官方星球`,
@@ -639,7 +658,6 @@ function socialVisitDestinationButtonsHtml() {
                     <span class="planet-visit-destination-icon">${destination.icon}</span>
                     <span class="planet-visit-destination-text">
                         <b>${escapeHtml(destination.name)}</b>
-                        <i>${escapeHtml(destination.meta)}</i>
                     </span>
                 </button>
             `;
@@ -650,7 +668,6 @@ function socialVisitDestinationButtonsHtml() {
                     <span class="planet-visit-destination-icon">${destination.kind === 'friend' ? friendVisitDestinationIconHtml(destination) : destination.kind === 'official' ? officialVisitDestinationIconHtml(destination.planet || destination) : destination.remote ? smallRemotePlanetSvg(destination.remote) : destination.icon}</span>
                     <span class="planet-visit-destination-text">
                         <b>${escapeHtml(destination.name)}</b>
-                        <i>${escapeHtml(destination.meta)}</i>
                     </span>
                 </button>
             `;
@@ -918,15 +935,16 @@ export function showVisitReturnPrompt(pet, ctx) {
     if (!isVisitingMode() || __visitReturnPromptOpen) return;
     __visitReturnPromptOpen = true;
     const visit = state.visitingMode;
+    const planetName = visit?.planetName || t('stFriendPlanetFallback');
     openPlanetModal(`
         <div class="planet-action-dialog-head">
             <span class="planet-action-dialog-icon">🚀</span>
             <div>
-                <div class="planet-modal-title">准备返航吗？</div>
-                <div class="planet-modal-subtitle">你正在拜访 ${escapeHtml(visit?.planetName || '好友星球')}。</div>
+                <div class="planet-modal-title">${escapeHtml(t('stReturnPromptTitle'))}</div>
+                <div class="planet-modal-subtitle">${escapeHtml(t('stReturnPromptSubtitle', { planetName }))}</div>
             </div>
         </div>
-        <div class="planet-action-dialog-body">还想再逛一会儿吗？点“继续拜访”可以回到好友星球；点“登船返航”会带上好友送你的礼盒回到自己的星球。</div>
+        <div class="planet-action-dialog-body">${escapeHtml(t('stReturnPromptBody'))}</div>
         <div class="planet-modal-actions">
             <button class="btn-secondary" data-visit-return="no">${escapeHtml(t('stContinueVisit'))}</button>
             <button class="btn-primary" data-visit-return="yes">${escapeHtml(t('stBoardReturn'))}</button>
@@ -1015,7 +1033,7 @@ function officialVisitProfile(planet) {
         if (field.typeId) fieldScenes[field.typeId] = { ...scene, background: scene.background ? { ...scene.background } : scene.background };
     });
     return {
-        planetName: planet?.title || planet?.name || '官方星球',
+        planetName: officialPlanetTitle(planet),
         currentPetId: '',
         settings: { fieldScenes },
     };
@@ -1125,7 +1143,7 @@ function createOfficialHostPet(planet, planetPets = []) {
     if (picked) return { ...picked, id: picked.id || `visit_famous_${safeFriendId(picked.famousPetId || picked.name || randId(6))}`, anim: 'happy' };
     return {
         id: `visit_official_${safeFriendId(planet?.officialId || planet?.id || 'planet')}`,
-        name: `${planet?.title || planet?.name || '官方星球'}导游`,
+        name: t('stOfficialGuideName', { name: officialPlanetTitle(planet) }),
         stage: 'baby',
         dna: randomDna(),
         stats: defaultStats(),
@@ -1142,7 +1160,7 @@ async function launchOfficialPlanetVisit(planet, pet, close) {
         return false;
     }
     if ((state.biofuel | 0) < fuelCost) {
-        showToast(t('stNeedFuelOfficial', { fuel: fuelCost, name: planet.title || t('stOfficialPlanetFallback') }), 'error', 2600);
+        showToast(t('stNeedFuelOfficial', { fuel: fuelCost, name: officialPlanetTitle(planet) }), 'error', 2600);
         return false;
     }
     state.biofuel = Math.max(0, (state.biofuel | 0) - fuelCost);
@@ -1157,9 +1175,9 @@ async function launchOfficialPlanetVisit(planet, pet, close) {
     const previousField = state.currentField || 'land';
     try {
         soundManager.playSpacecraftTakeoff();
-        await playVisitDeparture({ crew, destinationName: planet.title || '官方星球' });
+        await playVisitDeparture({ crew, destinationName: officialPlanetTitle(planet) });
         soundManager.playSpacecraftArrive();
-        await playVisitArrival({ crew, destinationName: planet.title || '官方星球', welcomePet: friendPet });
+        await playVisitArrival({ crew, destinationName: officialPlanetTitle(planet), welcomePet: friendPet });
         const firstField = planet.fields?.[0];
         state.currentField = firstField?.id || firstField?.typeId || 'land';
         state.zoomLevel = 1;
@@ -1171,10 +1189,10 @@ async function launchOfficialPlanetVisit(planet, pet, close) {
         state.activePetRoomFocusPose = null;
         startVisitingMode({
             friendId: planet.id,
-            friendName: planet.title || '官方星球',
+            friendName: officialPlanetTitle(planet),
             friendUsername: '',
             friendUserId: '',
-            planetName: planet.title || '官方星球',
+            planetName: officialPlanetTitle(planet),
             remoteProfile: officialVisitProfile(planet),
             remoteLayouts: officialVisitLayouts(planet),
             remoteFields: planet.fields || [],
@@ -1185,8 +1203,8 @@ async function launchOfficialPlanetVisit(planet, pet, close) {
             previousField,
             officialPlanetId: planet.officialId,
         });
-        addPlanetLog('officialVisit', `${displayPetName(pet)}抵达${planet.title || '官方星球'}`, '🚀');
-        showToast(t('stArrivedOfficial', { name: planet.title || t('stOfficialPlanetFallback') }), 'success', 3200);
+        addPlanetLog('officialVisit', t('stOfficialVisitLog', { pet: displayPetName(pet), planet: officialPlanetTitle(planet) }), '🚀');
+        showToast(t('stArrivedOfficial', { name: officialPlanetTitle(planet) }), 'success', 3200);
         notify();
     } finally {
         __remoteCargoActive = false;

@@ -1,6 +1,7 @@
 // 宠物生命周期与位置记录：当前星球、放养、哈奇岛、其它星球。
 import { CONFIG } from './config.js';
 import { decodeDna } from './dna.js';
+import { localizeFieldName, localizeRoomName, t } from './i18n.js';
 import { state } from './state.js';
 
 export const MAX_PLANET_PETS = 10;
@@ -301,16 +302,16 @@ export function getPetLocationInfo(pet, planetName = '宠物星') {
             const field = CONFIG.fields.find(item => item.id === home.id);
             return {
                 type: 'generatedField',
-                label: `${planetName || '宠物星'} · ${field?.name || '表面'}`,
-                detail: '位置已在本次进入时生成，资料进入视野后再加载',
+                label: t('petLocationGeneratedField', { planet: planetName || t('planetFallback'), field: field ? localizeFieldName(field.id) : t('zoomField') }),
+                detail: t('petLocationGeneratedDetail'),
                 tone: '#0f766e',
             };
         }
         const room = CONFIG.rooms.find(item => item.id === home.id);
         return {
             type: 'generatedRoom',
-            label: room?.name || '房间',
-            detail: '位置已在本次进入时生成，资料进入视野后再加载',
+            label: room ? localizeRoomName(room.id) : t('rooms'),
+            detail: t('petLocationGeneratedDetail'),
             tone: '#d97706',
         };
     }
@@ -319,31 +320,31 @@ export function getPetLocationInfo(pet, planetName = '宠物星') {
     if (type === 'released') {
         return {
             type,
-            label: location.name || `${planetName} · 放养区`,
-            detail: '放养后不可召回，会继续在星球中成长',
+            label: location.name || t('petLocationReleased', { planet: planetName || t('planetFallback') }),
+            detail: t('petLocationReleasedDetail'),
             tone: '#0f766e',
         };
     }
     if (type === 'haqiIsland') {
         return {
             type,
-            label: '哈奇岛',
-            detail: '已完成成人礼，可在哈奇岛手帐中回看',
+            label: t('lpHaqiIsland'),
+            detail: t('petLocationHaqiDetail'),
             tone: '#7c3aed',
         };
     }
     if (type === 'remotePlanet') {
         return {
             type,
-            label: location.name || '其它星球',
-            detail: location.reason === 'capacity' ? '星球容量已满，系统自动流放' : '正在其它星球生活',
+            label: location.name || t('petLocationRemote'),
+            detail: location.reason === 'capacity' ? t('petLocationRemoteCapacity') : t('petLocationRemoteLiving'),
             tone: '#2563eb',
         };
     }
     return {
         type: 'home',
-        label: planetName || '宠物星',
-        detail: '可照看与切换',
+        label: planetName || t('planetFallback'),
+        detail: t('petLocationHomeDetail'),
         tone: '#d97706',
     };
 }
@@ -356,7 +357,7 @@ export function markPetReleased(pet, planetName = '宠物星') {
     pet.location = {
         type: 'released',
         planetId: 'user',
-        name: `${planetName || '宠物星'} · 放养区`,
+        name: t('petLocationReleased', { planet: planetName || t('planetFallback') }),
         releasedAt: now,
         canRecall: false,
     };
@@ -372,7 +373,7 @@ export function markPetHaqiIsland(pet) {
     pet.location = {
         type: 'haqiIsland',
         planetId: 'haqi',
-        name: '哈奇岛',
+        name: t('lpHaqiIsland'),
         movedAt: now,
         canRecall: false,
     };

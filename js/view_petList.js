@@ -157,12 +157,12 @@ function openMemoryAlbum(pet) {
                     <span class="font-extrabold" style="color:var(--text-primary)">${escapeHtml(t('albumTitle', { name: displayPetName(pet) }))}</span>
                 </div>
                 <div class="mh-album-meta">
-                    <span>🎂 ${escapeHtml(t('albumBirthday', { date: getPetBirthday(pet) }))}</span>
-                    <span>🗓️ ${escapeHtml(t('albumDays', { days }))}</span>
-                    <span>🌱 ${escapeHtml(t('albumStage', { stage: getStageName(pet.stage, pet.stage || '') }))}</span>
-                    <span>🍽️ ${escapeHtml(t('albumDiet', { diet: dietLabel }))}</span>
+                    <span>${escapeHtml(t('albumBirthday', { date: getPetBirthday(pet) }))}</span>
+                    <span>${escapeHtml(t('albumDays', { days }))}</span>
+                    <span>${escapeHtml(t('albumStage', { stage: getStageName(pet.stage, pet.stage || '') }))}</span>
+                    <span>${escapeHtml(t('albumDiet', { diet: dietLabel }))}</span>
                 </div>
-                ${wish ? `<div class="mh-album-wish">🌠 ${escapeHtml(t('albumWish', { wish }))}</div>` : ''}
+                ${wish ? `<div class="mh-album-wish">${escapeHtml(t('albumWish', { wish }))}</div>` : ''}
             </div>
             <div class="mh-album-scroll">
                 ${bodyHtml}
@@ -699,9 +699,9 @@ function petCardHtml(pet, isCurrent, allowSelect = false, picker = null, canDele
     const canSelect = (allowSelect || isPicker) && selectable;
     const picked = isPicker && picker.selectedIds?.has?.(pet.id);
     const findTarget = getPetFindTarget(pet);
-    const name = lazy ? `宠物 ${String(pet.id || '').slice(0, 6)}` : displayPetName(pet);
+    const name = lazy ? t('petLazyName', { id: String(pet.id || '').slice(0, 6) }) : displayPetName(pet);
     const hint = pet.stage === 'egg'
-        ? (sheetReady ? '即将破壳…' : '正在孕育中…')
+        ? (sheetReady ? t('eggAlmostHatched') : t('eggGrowing'))
         : '';
         return `
                 <div class="card-flat fade-in ${canSelect ? 'cursor-pointer' : ''} ${isCurrent ? 'mh-pet-card-current' : ''} ${picked ? 'mh-pet-card-picked' : ''}"
@@ -709,21 +709,21 @@ function petCardHtml(pet, isCurrent, allowSelect = false, picker = null, canDele
                          ${lazy ? 'data-pet-lazy="1"' : ''}
                          data-selectable="${canSelect ? '1' : '0'}"
                          style="display:flex;gap:12px;align-items:center;${isCurrent ? 'outline:2px solid var(--accent);outline-offset:-2px' : ''};${picked ? 'box-shadow:0 0 0 2px var(--accent) inset;' : ''};opacity:${selectable ? '1' : '.88'};position:relative">
-            ${canDelete && !lazy ? `<button class="btn-secondary" data-delete-pet="${escapeHtml(pet.id)}" title="流放 ${escapeHtml(name)} 到随机星球" aria-label="流放 ${escapeHtml(name)} 到随机星球" style="position:absolute;top:8px;right:8px;width:24px;height:24px;padding:0;border-radius:50%;font-size:15px;line-height:1;color:#c08497;background:rgba(255,255,255,.72);border-color:rgba(244,114,182,.28);box-shadow:0 1px 3px rgba(15,23,42,.06)">×</button>` : ''}
+            ${canDelete && !lazy ? `<button class="btn-secondary" data-delete-pet="${escapeHtml(pet.id)}" title="${escapeHtml(t('exilePetTitle', { name }))}" aria-label="${escapeHtml(t('exilePetTitle', { name }))}" style="position:absolute;top:8px;right:8px;width:24px;height:24px;padding:0;border-radius:50%;font-size:15px;line-height:1;color:#c08497;background:rgba(255,255,255,.72);border-color:rgba(244,114,182,.28);box-shadow:0 1px 3px rgba(15,23,42,.06)">×</button>` : ''}
             <div style="width:72px;height:72px;border-radius:14px;background:var(--bg-pill);overflow:hidden;flex-shrink:0">
-                ${lazy ? '<div style="width:100%;height:100%;display:flex;align-items:center;justify-content:center;color:var(--text-faint);font-size:12px">加载中</div>' : rawPetArtHtml(pet, displayPetName(pet))}
+                ${lazy ? `<div style="width:100%;height:100%;display:flex;align-items:center;justify-content:center;color:var(--text-faint);font-size:12px">${escapeHtml(t('petLazyLoading'))}</div>` : rawPetArtHtml(pet, displayPetName(pet))}
             </div>
             <div style="flex:1;min-width:0">
                 <div class="mh-pet-card-title-row">
                     <span class="text-base font-bold mh-pet-card-name">${escapeHtml(name)}</span>
-                    ${lazy ? '<span class="stage-badge">未加载</span>' : `<span class="stage-badge">${escapeHtml(getStageName(pet.stage, pet.stage || ''))}</span>`}
-                    ${isCurrent ? '<span class="stage-badge" style="background:var(--accent);color:#fff">当前</span>' : ''}
+                    ${lazy ? `<span class="stage-badge">${escapeHtml(t('petLazyBadge'))}</span>` : `<span class="stage-badge">${escapeHtml(getStageName(pet.stage, pet.stage || ''))}</span>`}
+                    ${isCurrent ? `<span class="stage-badge" style="background:var(--accent);color:#fff">${escapeHtml(t('currentBadge'))}</span>` : ''}
                 </div>
                 <div class="mh-pet-card-location-row">
                     <span class="stage-badge" style="background:#ecfeff;color:${escapeHtml(location.tone)}">${escapeHtml(location.label)}</span>
                 </div>
                 <div style="font-size:11px;color:var(--text-secondary);margin-bottom:5px;display:flex;gap:8px;flex-wrap:wrap">
-                    ${lazy ? '<span>进入视野后加载资料</span>' : `<span>生日 ${escapeHtml(getPetBirthday(pet))}</span><span>陪伴第 ${getCompanionDays(pet)} 天</span>`}
+                    ${lazy ? `<span>${escapeHtml(t('petLazyHint'))}</span>` : `${escapeHtml(t('birthdayDays', { date: getPetBirthday(pet), days: getCompanionDays(pet) }))}`.split(' · ').map(text => `<span>${escapeHtml(text)}</span>`).join('')}
                 </div>
                 ${lazy || isPicker ? '' : `<div style="font-size:11px;color:var(--text-muted);margin-bottom:6px;font-family:ui-monospace,Menlo,monospace">
                     DNA: ${escapeHtml(formatDna(pet.dna || ''))}
@@ -735,8 +735,8 @@ function petCardHtml(pet, isCurrent, allowSelect = false, picker = null, canDele
                 </div>`}
             </div>
             <div style="display:flex;flex-direction:column;gap:6px;align-self:center;flex-shrink:0">
-                ${isPicker && !lazy ? `<span class="stage-badge" data-picker-state style="align-self:flex-end;background:${picked ? 'var(--accent)' : '#effaff'};color:${picked ? '#fff' : 'var(--text-secondary)'}">${picked ? '已选' : '选择'}</span>` : ''}
-                ${!isPicker && findTarget ? `<button class="btn-secondary" data-find="${escapeHtml(pet.id)}" title="寻找 ${escapeHtml(name)}" style="padding:7px 10px;font-size:12px">寻找</button>` : ''}
+                ${isPicker && !lazy ? `<span class="stage-badge" data-picker-state style="align-self:flex-end;background:${picked ? 'var(--accent)' : '#effaff'};color:${picked ? '#fff' : 'var(--text-secondary)'}">${escapeHtml(picked ? t('pickerSelected') : t('pickerSelect'))}</span>` : ''}
+                ${!isPicker && findTarget ? `<button class="btn-secondary" data-find="${escapeHtml(pet.id)}" title="${escapeHtml(t('findPetTitle', { name }))}" style="padding:7px 10px;font-size:12px">${escapeHtml(t('findPet'))}</button>` : ''}
                 ${!isPicker && !lazy ? `<button class="btn-secondary" data-album="${escapeHtml(pet.id)}" title="${escapeHtml(t('albumBtnTitle', { name }))}" style="padding:7px 10px;font-size:12px">${escapeHtml(t('albumBtn'))}</button>` : ''}
             </div>
         </div>`;
@@ -800,11 +800,11 @@ export function renderPetList(panel, { pets }, { onSelect, onBack, onFind, onDel
     const otherPets = currentId ? list.filter(p => p.id !== currentId) : list;
     const tipsHtml = `
             <div class="card-flat mt-3 text-xs" style="color:var(--text-muted);background:#fffbeb">
-                💡 领养新蛋请前往孵化仓。放养、哈奇岛和其它星球的宠物会保留在画册里，但不能被召回。
+                ${escapeHtml(t('petListTip'))}
             </div>`;
     panel.innerHTML = `
         <div class="topbar">
-            <button class="btn-icon" id="mhPetListBack" title="返回" style="width:36px;height:36px;font-size:18px">‹</button>
+            <button class="btn-icon" id="mhPetListBack" title="${escapeHtml(t('back'))}" style="width:36px;height:36px;font-size:18px">‹</button>
             <div class="flex items-center gap-2">
                 <span style="font-size:22px">🐾</span>
                 <span class="font-extrabold" style="color:var(--text-primary)">${escapeHtml(title || t('myPets'))}</span>
@@ -816,11 +816,11 @@ export function renderPetList(panel, { pets }, { onSelect, onBack, onFind, onDel
             ${isRareTab
                 ? (Array.isArray(famousPetsIndex)
                     ? (rareList.length === 0
-                        ? `<div class="card-flat text-center" style="color:var(--text-muted);padding:30px 14px">暂无稀有宠物记录。</div>`
+                        ? `<div class="card-flat text-center" style="color:var(--text-muted);padding:30px 14px">${escapeHtml(t('rareEmpty'))}</div>`
                         : `${famousPetFilterTabsHtml(rareList)}${rareFilteredList.length === 0
-                            ? `<div class="card-flat text-center" style="color:var(--text-muted);padding:30px 14px">这个分类里暂时没有稀有宠物。</div>`
+                            ? `<div class="card-flat text-center" style="color:var(--text-muted);padding:30px 14px">${escapeHtml(t('rareCategoryEmpty'))}</div>`
                             : `<div class="mh-rare-pet-list" id="mhRarePetList">${rareFilteredList.map(item => rarePetCardHtml(item, pets || [])).join('')}</div>`}`)
-                    : `<div class="card-flat text-center" style="color:var(--text-muted);padding:30px 14px">正在加载稀有宠物...</div>`)
+                    : `<div class="card-flat text-center" style="color:var(--text-muted);padding:30px 14px">${escapeHtml(t('rareLoading'))}</div>`)
                 : (list.length === 0
                 ? `<div class="card-flat text-center" style="color:var(--text-muted);padding:30px 14px">${escapeHtml(t('noPets'))}</div>`
                 : `<div style="display:flex;flex-direction:column;gap:10px" id="mhPetList">
@@ -831,7 +831,7 @@ export function renderPetList(panel, { pets }, { onSelect, onBack, onFind, onDel
             ${!isPicker && !isRareTab && list.length === 0 ? tipsHtml : ''}
         </div>
         ${isPicker && multiple ? `<div class="absolute" style="left:0;right:0;bottom:0;padding:10px 14px max(12px,env(safe-area-inset-bottom));background:rgba(239,250,255,.95);border-top:1px solid rgba(125,211,252,.58);display:flex;gap:8px;align-items:center">
-            <div data-picker-count style="flex:1;color:var(--text-muted);font-size:12px;font-weight:800">已选择 ${pickedIds.size} 只</div>
+            <div data-picker-count style="flex:1;color:var(--text-muted);font-size:12px;font-weight:800">${escapeHtml(t('pickerSelectedCount', { count: pickedIds.size }))}</div>
             <button class="btn-primary" id="mhPetPickerConfirm" type="button">${escapeHtml(confirmText || '确定')}</button>
         </div>` : ''}`;
 
@@ -881,12 +881,12 @@ export function renderPetList(panel, { pets }, { onSelect, onBack, onFind, onDel
         el.style.boxShadow = picked ? '0 0 0 2px var(--accent) inset' : '';
         const badge = el.querySelector('[data-picker-state]');
         if (badge) {
-            badge.textContent = picked ? '已选' : '选择';
+            badge.textContent = picked ? t('pickerSelected') : t('pickerSelect');
             badge.style.background = picked ? 'var(--accent)' : '#effaff';
             badge.style.color = picked ? '#fff' : 'var(--text-secondary)';
         }
         const count = panel.querySelector('[data-picker-count]');
-        if (count) count.textContent = `已选择 ${pickedIds.size} 只`;
+        if (count) count.textContent = t('pickerSelectedCount', { count: pickedIds.size });
     };
     const bindPetCardEvents = (el) => {
         el.onclick = (e) => {

@@ -1,7 +1,7 @@
 // Level 1 — Field：星球表面（陆 / 水 / 空 三大生态）
 
 import { $, $$, coinIconSvg, dockDisabledAttrs, escapeHtml, isDockButtonDisabled, renderVisualAsset, setDockButtonDisabled, showDockDisabledToast, showToast } from './utils.js';
-import { t, localizeFieldName } from './i18n.js';
+import { itemName, t, localizeFieldName } from './i18n.js';
 import { canPlaceItemInArea, CONFIG, DECO_VISUALS, findLargestHouseInLayout, getPlacedItemZOrder, getPlanetMiningCoins, getPlanetMiningConfig, getPlanetMiningVisualCoinCount, getShopItemById, isHouseItem, recordPlanetMiningFieldCollected, SHOP_ITEMS } from './config.js';
 import { getActivePlanetWeather, isVisitingMode, notify, state, setCurrentField } from './state.js';
 import { getLayout, saveFieldScenesDebounced, savePetDebounced, saveUserProfileDebounced } from './storage.js';
@@ -1169,7 +1169,7 @@ function renderFieldDecorTray(inv, currentField) {
                     return `
                     <div data-tray-item="${escapeHtml(it.id)}" class="shop-item" style="min-width:62px;padding:6px;flex-shrink:0">
                         ${renderFieldTrayIcon(it)}
-                        <div class="name" style="font-size:10px">${escapeHtml(it.name)}</div>
+                        <div class="name" style="font-size:10px">${escapeHtml(itemName(it.name))}</div>
                         ${countHtml}
                     </div>`;
                 }).join('')}
@@ -2540,8 +2540,8 @@ export const fieldLevel = {
                     </button>
                 `).join('')}
             </div>
-            ${isFieldDecorMode() ? `<button type="button" class="mh-decor-done-btn mh-field-mode-toggle" id="mhFieldDecorDoneBtn">完成</button>` : ''}
-            ${isFieldDecorMode() ? `<button type="button" class="mh-room-dock-delete-target" id="mhFieldDockDeleteTarget" aria-hidden="true" tabindex="-1">🗑️ 收回背包</button>` : ''}
+            ${isFieldDecorMode() ? `<button type="button" class="mh-decor-done-btn mh-field-mode-toggle" id="mhFieldDecorDoneBtn">${escapeHtml(t('exitDecor'))}</button>` : ''}
+            ${isFieldDecorMode() ? `<button type="button" class="mh-room-dock-delete-target" id="mhFieldDockDeleteTarget" aria-hidden="true" tabindex="-1">🗑️ ${escapeHtml(t('putAwayBag'))}</button>` : ''}
             ${isFieldDecorMode() ? renderActiveFieldBuildTray(inv, currentField) : renderFieldActionTray(pet)}
         `;
     },

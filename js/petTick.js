@@ -1,5 +1,6 @@
 // 状态衰减 + 阶段升级
 import { CONFIG } from './config.js';
+import { t } from './i18n.js';
 import { notify, state } from './state.js';
 import { savePetDebounced } from './storage.js';
 import { clamp } from './utils.js';
@@ -14,13 +15,23 @@ const DAY_MS = 24 * 60 * 60 * 1000;
 const sicknessTreatmentReductions = new Map();
 
 export const SICKNESS_DEFS = [
-    { id: 'flu', name: '流感', label: '发热乏力', stats: ['hunger', 'mood'], baseWeight: 1.1, lowBias: 2.1, color: '#ef4444' },
-    { id: 'diarrhea', name: '拉肚子', label: '肠胃不适', stats: ['hunger', 'clean'], baseWeight: 1, lowBias: 2.4, color: '#f97316' },
-    { id: 'bacterial', name: '细菌感染', label: '环境感染', stats: ['clean'], baseWeight: 0.9, lowBias: 3.1, color: '#16a34a' },
-    { id: 'depression', name: '抑郁', label: '情绪低落', stats: ['mood', 'bond'], baseWeight: 0.9, lowBias: 2.9, color: '#6366f1' },
-    { id: 'fatigue', name: '过劳虚弱', label: '体力透支', stats: ['hunger', 'bond'], baseWeight: 0.75, lowBias: 2.2, color: '#0ea5e9' },
-    { id: 'allergy', name: '过敏', label: '免疫反应', stats: ['clean', 'mood'], baseWeight: 0.7, lowBias: 1.8, color: '#ec4899' },
+    { id: 'flu', nameKey: 'sicknessFlu', labelKey: 'sicknessFluLabel', stats: ['hunger', 'mood'], baseWeight: 1.1, lowBias: 2.1, color: '#ef4444' },
+    { id: 'diarrhea', nameKey: 'sicknessDiarrhea', labelKey: 'sicknessDiarrheaLabel', stats: ['hunger', 'clean'], baseWeight: 1, lowBias: 2.4, color: '#f97316' },
+    { id: 'bacterial', nameKey: 'sicknessBacterial', labelKey: 'sicknessBacterialLabel', stats: ['clean'], baseWeight: 0.9, lowBias: 3.1, color: '#16a34a' },
+    { id: 'depression', nameKey: 'sicknessDepression', labelKey: 'sicknessDepressionLabel', stats: ['mood', 'bond'], baseWeight: 0.9, lowBias: 2.9, color: '#6366f1' },
+    { id: 'fatigue', nameKey: 'sicknessFatigue', labelKey: 'sicknessFatigueLabel', stats: ['hunger', 'bond'], baseWeight: 0.75, lowBias: 2.2, color: '#0ea5e9' },
+    { id: 'allergy', nameKey: 'sicknessAllergy', labelKey: 'sicknessAllergyLabel', stats: ['clean', 'mood'], baseWeight: 0.7, lowBias: 1.8, color: '#ec4899' },
 ];
+
+export function sicknessName(defOrType) {
+    const def = typeof defOrType === 'string' ? getSicknessDef(defOrType) : defOrType;
+    return def?.nameKey ? t(def.nameKey) : (def?.name || '');
+}
+
+export function sicknessLabel(defOrType) {
+    const def = typeof defOrType === 'string' ? getSicknessDef(defOrType) : defOrType;
+    return def?.labelKey ? t(def.labelKey) : (def?.label || '');
+}
 
 export function defaultStats() {
     return { hunger: 80, mood: 80, clean: 80, bond: 30 };

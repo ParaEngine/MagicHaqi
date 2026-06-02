@@ -163,6 +163,7 @@
     petBitmap: null,
     petUrl: '',
     petMeta: null,
+    petRequestId: '',
     objectUrls: [],
   };
   const sound = { ctx: null, master: null };
@@ -1504,11 +1505,17 @@
 
   function requestPetImage() {
     try {
+      const requestId = `bubble_pet_${Date.now()}`;
+      state.petRequestId = requestId;
       window.parent.postMessage({
         type: 'haqi_get_pet_image',
-        requestId: `bubble_pet_${Date.now()}`,
+        requestId,
         anim: 'happy',
       }, '*');
+      setTimeout(() => {
+        if (state.petBitmap) return;
+        window.parent.postMessage({ type: 'haqi_get_pet_images', requestId: `bubble_pets_${Date.now()}`, anim: 'happy' }, '*');
+      }, 900);
     } catch (_) {}
   }
 
@@ -1673,7 +1680,12 @@
         startGame();
       }
     }
-    if (msg.type === 'haqi_pet_image' && msg.ok) setPetImage(msg.data);
+    if (msg.type === 'haqi_pet_image' && msg.ok && (!state.petRequestId || !msg.requestId || msg.requestId === state.petRequestId || msg.requestId === 'active_pet_config')) setPetImage(msg.data);
+    if (msg.type === 'haqi_pet_images' && msg.ok) {
+      const firstPet = Array.isArray(msg.data?.pets) ? msg.data.pets[0] : null;
+      if (firstPet) setPetImage(firstPet);
+    }
+    if (msg.type === 'setGameConfig' && msg.data?.petId) requestPetImage(msg.data.petId);
     if (msg.type === 'setGameConfig' && msg.data?.difficulty && DIFFICULTIES[msg.data.difficulty]) {
       setDifficulty(msg.data.difficulty);
       startGame();
