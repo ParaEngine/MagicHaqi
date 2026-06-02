@@ -1163,7 +1163,7 @@ function renderFieldDecorTray(inv, currentField) {
     return `
         <div class="mh-dock-tray mh-scroll-x">
             ${items.length === 0
-                ? `<div class="mh-dock-hint">${escapeHtml(t('fieldNoOutdoorItems', { name: localizeFieldName(currentField) }))}</div>`
+                ? `<div class="mh-dock-hint">${escapeHtml(t('trayEmpty'))}</div>`
                 : items.map(it => {
                     const showCount = !it.uniqueItem && (it.unlimited || it.qty > 1);
                     const countHtml = showCount ? `<span class="shop-item-count-badge">${it.unlimited ? '∞' : escapeHtml(it.qty)}</span>` : '';
@@ -2515,10 +2515,13 @@ export const fieldLevel = {
         ensureFieldItemScaleControls(ctx);
         restoreFieldItemSelection(ctx);
 
-        // 点击宠物 → 播放开心动画（粒子 + 弹跳）
+        // 点击宠物 → 播放开心动画（粒子 + 弹跳）；装扮模式下当前宠物可拖动
         $$('.field-pet').forEach(petEl => {
+            bindFieldPetDrag(petEl, pet, ctx);
             petEl.onclick = (e) => {
                 e.stopPropagation();
+                // 刚刚发生过拖动时，吞掉随之而来的 click，避免误触发互动。
+                if (Date.now() - (petEl.__mhFieldPetDraggedAt || 0) < 260) return;
                 if (petEl.dataset.visitHostPet === '1') {
                     const hostPet = state.visitingMode?.friendPet;
                     showToast(`${displayPetName(hostPet)} 欢迎你来到好友星球。`, 'info', 2200);
@@ -3125,6 +3128,80 @@ function fieldDragDeltaToCoords(drag, clientX, clientY) {
         x: clamp01(drag.startX + (clientX - drag.x) / rect.width),
         y: clamp01(drag.startY + (clientY - drag.y) / rect.height),
     };
+}
+
+// 装扮模式下让当前宠物可以像房间内家具一样被拖动到任意位置（仅本地姿态，不持久化）。
+// 使用 window 级别的 move/up 监听，避免拖到模型上方时指针事件落到其它元素而中断拖动。
+function bindFieldPetDrag(el, pet, ctx) {
+    if (!el || el.__mhFieldPetDragBound) return;
+    el.__mhFieldPetDragBound = true;
+    // 仅当前宠物可拖动；好友/受邀/拜访宠物不可拖动。
+    if (!el.classList.contains('field-pet-current')) return;
+    if (el.dataset.invitedFieldPet === '1' || el.dataset.visitHostPet === '1') return;
+    let drag = null;
+    const cleanup = () => {
+        window.removeEventListener('pointermove', onMove, true);
+        window.removeEventListener('pointerup', onEnd, true);
+        window.removeEventListener('pointercancel', onEnd, true);
+    };
+    const onMove = (e) => {
+        if (!drag || drag.id !== e.pointerId) return;
+        const dist = Math.hypot(e.clientX - drag.x, e.clientY - drag.y);
+        if (dist < DRAG_PLACE_THRESHOLD && !drag.moved) return;
+        e.preventDefault();
+        e.stopPropagation();
+        drag.moved = true;
+        const pos = fieldDragDeltaToCoords(drag, e.clientX, e.clientY);
+        if (!pos) return;
+        el.style.left = pct(pos.x);
+        el.style.top = pct(pos.y);
+    };
+    const onEnd = (e) => {
+        if (!drag || drag.id !== e.pointerId) return;
+        e.preventDefault();
+        e.stopPropagation();
+        cleanup();
+        try { el.releasePointerCapture?.(e.pointerId); } catch {}
+        el.classList.remove('is-dragging');
+        if (drag.moved) {
+            el.__mhFieldPetDraggedAt = Date.now();
+            const pos = fieldDragDeltaToCoords(drag, e.clientX, e.clientY);
+            if (pos) {
+                // 记录当前宠物在该场景的本地姿态，使重渲染后位置保持不变。
+                state.activePetFieldPose = {
+                    fieldId: state.currentField,
+                    x: clamp01(pos.x),
+                    y: clamp01(pos.y),
+                    delay: -1,
+                    dur: 10,
+                    dx: 0,
+                    dy: 0,
+                };
+            }
+        }
+        drag = null;
+    };
+    el.addEventListener('pointerdown', (e) => {
+        if (!isFieldDecorMode() || isVisitingMode()) return;
+        if (e.button != null && e.button !== 0) return;
+        e.preventDefault();
+        e.stopPropagation();
+        const startPos = pointToFieldCoords(e.clientX, e.clientY) || { x: 0.5, y: 0.6 };
+        drag = {
+            id: e.pointerId,
+            x: e.clientX,
+            y: e.clientY,
+            startX: Number.isFinite(parseFloat(el.style.left)) ? parseFloat(el.style.left) / 100 : startPos.x,
+            startY: Number.isFinite(parseFloat(el.style.top)) ? parseFloat(el.style.top) / 100 : startPos.y,
+            moved: false,
+        };
+        el.classList.add('is-dragging');
+        try { el.setPointerCapture?.(e.pointerId); } catch {}
+        cleanup();
+        window.addEventListener('pointermove', onMove, true);
+        window.addEventListener('pointerup', onEnd, true);
+        window.addEventListener('pointercancel', onEnd, true);
+    });
 }
 
 function bindFieldTrayDrag(el, ctx) {

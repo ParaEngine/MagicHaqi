@@ -3,7 +3,7 @@ import { SHOP_ITEMS, CONFIG, getStageName } from './config.js';
 import { state, notify, getCurrentPet, subscribe } from './state.js';
 import { addToInventory, savePet, savePetDebounced, saveUserProfileDebounced } from './storage.js';
 import { resetPetSheetImage, setAnim } from './pet.js';
-import { applyStage, curePetSickness, defaultStats, defaultTraits, getActiveSickness, getEffectiveSicknessSeverity, getPermanentTraumaCount, getPetPoopCount, SICKNESS_DEFS, normalizePermanentTrauma, setPetPoopCount } from './petTick.js';
+import { applyStage, curePetSickness, defaultStats, defaultTraits, getActiveSickness, getEffectiveSicknessSeverity, getPermanentTraumaCount, getPetPoopCount, SICKNESS_DEFS, sicknessName, normalizePermanentTrauma, setPetPoopCount } from './petTick.js';
 import { clamp, escapeHtml, showToast } from './utils.js';
 import { t } from './i18n.js';
 
@@ -1063,7 +1063,7 @@ function renderSicknessControls(pet) {
         : 0;
     const options = [
         `<option value="" ${activeType ? '' : 'selected'}>${escapeHtml(t('dcNoSickness'))}</option>`,
-        ...SICKNESS_DEFS.map(def => `<option value="${escapeHtml(def.id)}" ${def.id === activeType ? 'selected' : ''}>${escapeHtml(def.name)}</option>`),
+        ...SICKNESS_DEFS.map(def => `<option value="${escapeHtml(def.id)}" ${def.id === activeType ? 'selected' : ''}>${escapeHtml(sicknessName(def) || def.id)}</option>`),
     ].join('');
     return `
         <label class="mh-dev-field">

@@ -41,7 +41,12 @@ function isDeveloperMode() {
 
 function getDevToolUrl(fileName) {
     if (typeof window === 'undefined') return '';
-    return new URL(`./dev_tools/${fileName}`, window.location.href).href;
+    // Resolve against document.baseURI so a <base href="..."> tag (e.g. the
+    // CDN base used in release builds) is honored just like the browser does
+    // for regular relative links. Falls back to location.href when baseURI
+    // is unavailable.
+    const base = (typeof document !== 'undefined' && document.baseURI) || window.location.href;
+    return new URL(`./dev_tools/${fileName}`, base).href;
 }
 
 function openDevTool(fileName, title) {

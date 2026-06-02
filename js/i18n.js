@@ -437,6 +437,7 @@ export const zhCN = {
     roomGreetReply1: '你也好呀！😊', roomGreetReply2: '嗨嗨，欢迎来我家！', roomGreetReply3: '我们做朋友吧！', roomGreetReply4: '好开心见到你！', roomGreetReply5: '抱抱~ 💞', roomGreetReply6: '随便坐随便玩呀！',
     roomNoFurniture: '📦 背包里还没有可放置的家具，去商店买点吧～',
     roomNoFood: '🍽️ 背包里还没有食物，去商店买点吧～',
+    trayEmpty: '（空）',
 
     // 场地 / Field
     buildHouse: '房屋',
@@ -1446,6 +1447,7 @@ export const enUS = {
     roomGreetReply1: 'Hello to you too! 😊', roomGreetReply2: 'Hi hi, welcome to my home!', roomGreetReply3: 'Let’s be friends!', roomGreetReply4: 'I’m so happy to see you!', roomGreetReply5: 'Hug~ 💞', roomGreetReply6: 'Make yourself at home!',
     roomNoFurniture: '📦 No furniture to place in your bag yet — buy some at the shop~',
     roomNoFood: '🍽️ No food in your bag yet — buy some at the shop~',
+    trayEmpty: '(empty)',
 
     // Field
     buildHouse: 'House',

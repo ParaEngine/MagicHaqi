@@ -407,6 +407,7 @@
 .mh-stage.zoom-field.decor-mode .field-item { cursor: grab; }
 .mh-stage.zoom-field.decor-mode .field-item.selected {
     filter: drop-shadow(0 0 10px rgba(255,255,255,0.95)) drop-shadow(0 0 18px rgba(34,197,94,0.7)) drop-shadow(0 3px 4px rgba(0,0,0,0.25));
+    z-index: 900000 !important;
 }
 .field-item.is-dragging {
     cursor: grabbing;
@@ -890,6 +891,10 @@
     transition: none;
     pointer-events:auto;
 }
+/* 装扮模式下当前宠物可拖动，与房间内一致 */
+.mh-stage.zoom-field.decor-mode .field-pet-current { cursor: grab; touch-action: none; }
+.mh-stage.zoom-field.decor-mode .field-pet-current.is-dragging { cursor: grabbing; z-index: 940 !important; }
+.field-pet.is-dragging .field-pet-wander { animation: none !important; transform: none !important; }
 .field-pet-wander {
     position: relative;
     animation: fieldPetWander var(--field-wander-dur, 12s) ease-in-out infinite;

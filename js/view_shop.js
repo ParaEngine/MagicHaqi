@@ -130,6 +130,11 @@ function renderShopItemIcon(item) {
         : `<div class="emoji">${escapeHtml(item?.emoji || '')}</div>`;
 }
 
+function renderBuyConfirmIcon(item) {
+    const visualHtml = renderVisualAsset(getShopItemVisual(item), { className: 'shop-item-img', alt: itemName(item?.name) || '' });
+    return visualHtml || escapeHtml(item?.emoji || '');
+}
+
 function showBuyConfirm(item, onBuy) {
     let maxQty = item.price > 0 ? Math.floor(state.coins / item.price) : 99;
     if (item.uniqueItem) maxQty = 1;
@@ -141,7 +146,7 @@ function showBuyConfirm(item, onBuy) {
     mask.className = 'modal-mask';
     mask.innerHTML = `
         <div class="modal-card text-center">
-            <div class="text-4xl mb-2">${item.emoji}</div>
+            <div class="text-4xl mb-2" style="display:flex;align-items:center;justify-content:center">${renderBuyConfirmIcon(item)}</div>
             <div class="text-base font-bold mb-1" style="color:var(--text-primary)">${escapeHtml(name)}</div>
             <div class="text-xs mb-4" style="color:var(--text-muted)">${escapeHtml(t('maxBuyQty', { max: maxQty }))}</div>
             <div class="flex items-center justify-center gap-1 mb-3" style="flex-wrap:wrap">

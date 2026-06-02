@@ -2196,7 +2196,7 @@ function renderDecorTray(inv) {
     return `
         <div class="mh-dock-tray mh-scroll-x">
             ${items.length === 0
-                ? `<div class="mh-dock-hint" style="white-space:nowrap">${escapeHtml(t('roomNoFurniture'))}</div>`
+                ? `<div class="mh-dock-hint" style="white-space:nowrap">${escapeHtml(t('trayEmpty'))}</div>`
                 : items.map(it => `
                     <div data-tray-item="${escapeHtml(it.id)}" class="shop-item" style="min-width:62px;padding:6px;flex-shrink:0">
                         <div class="emoji mh-tray-furniture-icon">${furnitureHtml(it)}</div>
@@ -2219,7 +2219,7 @@ function renderFeedTray(inv) {
     return `
         <div class="mh-dock-tray mh-scroll-x">
             ${items.length === 0
-                ? `<div class="mh-dock-hint" style="white-space:nowrap">${escapeHtml(t('roomNoFood'))}</div>`
+                ? `<div class="mh-dock-hint" style="white-space:nowrap">${escapeHtml(t('trayEmpty'))}</div>`
                 : items.map(it => `
                     <div data-tray-item="${escapeHtml(it.id)}" data-feed-tray-item="true" class="shop-item" style="min-width:76px;padding:10px 8px;flex-shrink:0">
                         <div class="emoji mh-tray-furniture-icon">${furnitureHtml(it)}</div>
