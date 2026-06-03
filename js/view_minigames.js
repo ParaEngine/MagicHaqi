@@ -15,6 +15,7 @@ const DEFAULT_MINIGAME_STAT_BONUS = { bond: 12, mood: 6 };
 const MINIGAME_REST_PROMPT_MS = 5 * 60 * 1000;
 const MINIGAME_ENTRY_CLICK_GUARD_MS = 520;
 const MINIGAME_COMPLETION_PROMPT_MIN_SECONDS = 60;
+const MINIGAME_LOADING_MAX_MS = 5000;
 const MINIGAME_PET_IMAGE_REQUESTS = new Set([
     'haqi_get_pet_image',
     'haqiGetPetImage',
@@ -144,6 +145,7 @@ let currentGameStartedAt = 0;
 let restPromptTimer = null;
 let restPromptOpen = false;
 let suppressCurrentRewards = false;
+let minigameLoadingTimer = null;
 // 底部标签：'recommend' 官方推荐 | 'create' 创造 | 'mine' 我的
 let activeMinigameTab = 'recommend';
 
@@ -255,39 +257,43 @@ export function renderMinigames(panel, { pet }, { onBack, onGameFinished, initia
             }
             .mh-minigame-mine-card {
                 position: relative;
-                border: 1.5px solid rgba(125,211,252,.78);
-                border-radius: 14px;
-                background: rgba(255,255,255,.92);
-                padding: 12px 10px 10px;
+                text-align: center;
+                min-height: 118px;
                 display: flex;
                 flex-direction: column;
                 align-items: center;
-                gap: 8px;
-                min-height: 150px;
+                justify-content: center;
+                gap: 10px;
+                border-radius: 12px;
+                cursor: default;
             }
             .mh-minigame-mine-card .mh-minigame-mine-del {
                 position: absolute;
-                top: 6px;
-                right: 6px;
-                width: 24px;
-                height: 24px;
+                top: 4px;
+                right: 4px;
+                width: 22px;
+                height: 22px;
                 border-radius: 999px;
-                border: 1.5px solid rgba(148,163,184,.45);
-                background: rgba(255,255,255,.78);
-                color: rgba(100,116,139,.78);
-                font-size: 16px;
+                border: 0;
+                background: rgba(0,0,0,.06);
+                color: rgba(100,116,139,.72);
+                font-size: 15px;
                 font-weight: 900;
                 line-height: 1;
                 display: grid;
                 place-items: center;
                 padding: 0;
                 box-shadow: none;
+                opacity: 0;
+                transition: opacity .18s ease;
             }
-            .mh-minigame-mine-ico { font-size: 40px; line-height: 1; }
-            .mh-minigame-mine-title { font-weight: 800; color: var(--text-primary); font-size: 16px; line-height: 1.2; text-align: center; }
-            .mh-minigame-mine-desc { color: var(--text-muted); font-size: 12px; line-height: 1.35; text-align: center; max-width: 14em; }
-            .mh-minigame-mine-actions { margin-top: auto; display: flex; gap: 6px; width: 100%; }
-            .mh-minigame-mine-actions button { flex: 1; min-width: 0; padding: 7px 6px; font-size: 12px; }
+            .mh-minigame-mine-card:hover .mh-minigame-mine-del,
+            .mh-minigame-mine-card:focus-within .mh-minigame-mine-del { opacity: 1; }
+            .mh-minigame-mine-ico { font-size: 48px; line-height: 1; }
+            .mh-minigame-mine-title { font-weight: 800; color: var(--text-primary); font-size: 17px; line-height: 1.2; text-align: center; }
+            .mh-minigame-mine-desc { color: var(--text-muted); font-size: 12px; line-height: 1.35; text-align: center; max-width: 12em; }
+            .mh-minigame-mine-actions { display: flex; gap: 6px; width: 100%; }
+            .mh-minigame-mine-actions button { flex: 1; min-width: 0; padding: 6px 6px; font-size: 12px; }
             .mh-minigame-icon {
                 width: 58px;
                 height: 58px;
@@ -518,7 +524,7 @@ export function renderMinigames(panel, { pet }, { onBack, onGameFinished, initia
                 <div id="mhMinigameList" class="mh-minigame-tab-pane" data-mh-tab-pane="recommend" style="height:100%;overflow:auto;padding:14px;display:${activeMinigameTab === 'recommend' ? 'grid' : 'none'};grid-template-columns:repeat(auto-fit,minmax(168px,1fr));gap:12px;align-content:start">
                     ${renderGameCards(getPlayItems())}
                 </div>
-                <div id="mhMinigameMine" class="mh-minigame-tab-pane" data-mh-tab-pane="mine" style="position:absolute;inset:0;overflow:auto;display:${activeMinigameTab === 'mine' ? 'block' : 'none'}"></div>
+                <div id="mhMinigameMine" class="mh-minigame-tab-pane" data-mh-tab-pane="mine" style="height:100%;overflow:auto;padding:14px;display:${activeMinigameTab === 'mine' ? 'grid' : 'none'};grid-template-columns:repeat(auto-fill,minmax(140px,1fr));gap:12px;align-content:start"></div>
             </div>
             <div id="mhMinigameTabs" style="position:absolute;left:0;right:0;bottom:0;height:58px;display:${initialGameId ? 'none' : 'flex'};align-items:stretch;background:rgba(255,255,255,.92);border-top:1px solid rgba(14,116,144,.18);box-shadow:0 -2px 10px rgba(15,39,71,.08);z-index:5">
                 ${renderMinigameTabButtons()}
@@ -615,7 +621,7 @@ export function renderMinigames(panel, { pet }, { onBack, onGameFinished, initia
         const list = $('mhMinigameList');
         const mine = $('mhMinigameMine');
         if (list) list.style.display = tabId === 'recommend' ? 'grid' : 'none';
-        if (mine) mine.style.display = tabId === 'mine' ? 'block' : 'none';
+        if (mine) mine.style.display = tabId === 'mine' ? 'grid' : 'none';
         if (tabId === 'mine') renderMineList();
     }
 
@@ -630,17 +636,17 @@ export function renderMinigames(panel, { pet }, { onBack, onGameFinished, initia
         const mine = $('mhMinigameMine');
         if (!mine) return;
         const token = cleanupMessageListener;
-        mine.innerHTML = `<div class="mh-minigame-mine-grid"><div class="mh-minigame-mine-empty">${escapeHtml(t('mgMineLoading'))}</div></div>`;
+        mine.innerHTML = `<div class="mh-minigame-mine-empty">${escapeHtml(t('mgMineLoading'))}</div>`;
         let records = [];
         try {
             records = await loadPetGameList();
         } catch (e) {
             if (cleanupMessageListener !== token || !$('mhMinigameMine')) return;
-            mine.innerHTML = `<div class="mh-minigame-mine-grid"><div class="mh-minigame-mine-empty">${escapeHtml(t('mgMineLoadFailed'))}</div></div>`;
+            mine.innerHTML = `<div class="mh-minigame-mine-empty">${escapeHtml(t('mgMineLoadFailed'))}</div>`;
             return;
         }
         if (cleanupMessageListener !== token || !$('mhMinigameMine') || activeMinigameTab !== 'mine') return;
-        mine.innerHTML = `<div class="mh-minigame-mine-grid">${renderMineCards(records)}</div>`;
+        mine.innerHTML = renderMineCards(records);
         bindMineCards(records);
     }
 
@@ -649,16 +655,16 @@ export function renderMinigames(panel, { pet }, { onBack, onGameFinished, initia
             return `<div class="mh-minigame-mine-empty">${escapeHtml(t('mgMineEmpty'))}</div>`;
         }
         return records.map(record => `
-            <article class="mh-minigame-mine-card" data-mh-mine-path="${escapeHtml(record.path)}">
+            <div class="card-flat mh-minigame-mine-card" data-mh-mine-path="${escapeHtml(record.path)}" style="text-align:center;min-height:118px;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:10px;border-radius:12px">
                 <button type="button" class="mh-minigame-mine-del" data-mh-mine-delete="${escapeHtml(record.path)}" aria-label="${escapeHtml(t('mgMineDelete'))}" title="${escapeHtml(t('mgMineDelete'))}">×</button>
                 <span class="mh-minigame-mine-ico" aria-hidden="true">${escapeHtml(record.icon || '🎮')}</span>
-                <span class="mh-minigame-mine-title">${escapeHtml(record.title || t('mgDefaultName'))}</span>
-                ${record.desc ? `<span class="mh-minigame-mine-desc">${escapeHtml(record.desc)}</span>` : ''}
-                <div class="mh-minigame-mine-actions">
-                    <button type="button" class="btn-secondary" data-mh-mine-edit="${escapeHtml(record.path)}">${escapeHtml(t('slEdit'))}</button>
-                    <button type="button" class="btn-primary" data-mh-mine-play="${escapeHtml(record.path)}">${escapeHtml(t('slPlay'))}</button>
+                <span class="mh-minigame-mine-title" style="font-weight:800;color:var(--text-primary);font-size:17px;line-height:1.2">${escapeHtml(record.title || t('mgDefaultName'))}</span>
+                ${record.desc ? `<span class="mh-minigame-mine-desc" style="color:var(--text-muted);font-size:12px;line-height:1.35;max-width:12em">${escapeHtml(record.desc)}</span>` : ''}
+                <div class="mh-minigame-mine-actions" style="display:flex;gap:6px;width:100%">
+                    <button type="button" class="btn-secondary" data-mh-mine-edit="${escapeHtml(record.path)}" style="flex:1;min-width:0;padding:6px 6px;font-size:12px">${escapeHtml(t('slEdit'))}</button>
+                    <button type="button" class="btn-primary" data-mh-mine-play="${escapeHtml(record.path)}" style="flex:1;min-width:0;padding:6px 6px;font-size:12px">${escapeHtml(t('slPlay'))}</button>
                 </div>
-            </article>
+            </div>
         `).join('');
     }
 
@@ -1334,6 +1340,10 @@ function resetMinigameIframe() {
 
 function destroyMinigameIframe() {
     const frame = $('mhMinigameFrame');
+    if (minigameLoadingTimer) {
+        clearTimeout(minigameLoadingTimer);
+        minigameLoadingTimer = null;
+    }
     if (!frame) return;
     try {
         frame.removeAttribute('srcdoc');
@@ -1363,8 +1373,18 @@ function setMinigameLoading(isLoading) {
     const loading = $('mhMinigameLoading');
     const wrap = $('mhMinigameFrameWrap');
     const active = !!isLoading;
+    if (minigameLoadingTimer) {
+        clearTimeout(minigameLoadingTimer);
+        minigameLoadingTimer = null;
+    }
     if (wrap) wrap.classList.toggle('mh-minigame-is-loading', active);
     if (!loading) return;
     loading.classList.toggle('show', active);
     loading.setAttribute('aria-hidden', isLoading ? 'false' : 'true');
+    if (active) {
+        minigameLoadingTimer = setTimeout(() => {
+            minigameLoadingTimer = null;
+            setMinigameLoading(false);
+        }, MINIGAME_LOADING_MAX_MS);
+    }
 }

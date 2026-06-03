@@ -945,11 +945,11 @@ export async function deleteWorkspaceStory(pathOrName) {
 }
 
 // ========== 我创造的小游戏（pet-games/ 下以 HTML 文件存储） ==========
-// 游戏正文存为 pet-games/<name>.html，索引摘要存为 pet-games/index.json。
+// 游戏正文存为 pet-games/<系统生成文件名>.html，索引摘要存为 pet-games/index.json。
 const PET_GAME_DIR = 'pet-games';
 const PET_GAME_INDEX = `${PET_GAME_DIR}/index.json`;
 
-function safePetGameName(name) {
+function safePetGameBaseName(name) {
     const text = String(name || '').trim().replace(/\.html?$/i, '');
     return (text || 'game_' + Date.now())
         .replace(/[^a-zA-Z0-9_\-\u4e00-\u9fa5]/g, '_')
@@ -957,7 +957,25 @@ function safePetGameName(name) {
 }
 
 function petGamePath(name) {
-    return `${PET_GAME_DIR}/${safePetGameName(name)}.html`;
+    return `${PET_GAME_DIR}/${safePetGameBaseName(name)}.html`;
+}
+
+function petGamePathFromMetaPath(path) {
+    const clean = String(path || '').trim().replace(/^\/+/, '');
+    return clean && /^pet-games\/[^/]+\.html?$/i.test(clean) ? clean : '';
+}
+
+function randomPetGameLetters(length = 6) {
+    const alphabet = 'abcdefghijklmnopqrstuvwxyz';
+    let text = '';
+    for (let i = 0; i < length; i++) text += alphabet[Math.floor(Math.random() * alphabet.length)];
+    return text;
+}
+
+function generatedPetGameBaseName(date = new Date()) {
+    const pad = (n) => String(n).padStart(2, '0');
+    const stamp = `${date.getFullYear()}${pad(date.getMonth() + 1)}${pad(date.getDate())}`;
+    return `game-${stamp}-${randomPetGameLetters()}`;
 }
 
 function normalizePetGameRecord(record) {
@@ -978,6 +996,19 @@ function normalizePetGameRecord(record) {
 function petGameTitleFromPath(path) {
     const filename = String(path || '').split('/').pop() || '';
     return filename.replace(/\.html?$/i, '').replace(/[_-]+/g, ' ').trim() || '我的小游戏';
+}
+
+function normalizePetGameHtml(content) {
+    const raw = String(content == null ? '' : content).trim();
+    if (!raw) return '';
+    const fence = raw.match(/```(?:html)?\s*([\s\S]*?)```/i);
+    const candidate = (fence ? fence[1] : raw).trim();
+    const docMatch = candidate.match(/<!DOCTYPE[\s\S]*<\/html>/i) || candidate.match(/<html[\s\S]*<\/html>/i);
+    if (docMatch) return docMatch[0].trim();
+    if (/<(canvas|div|script|style|svg|body)/i.test(candidate)) {
+        return `<!DOCTYPE html><html><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"></head><body>${candidate}</body></html>`;
+    }
+    return candidate;
 }
 
 // 仅依据 pet-games/index.json 列出我创造的小游戏（不再 listDir 扫描目录）。
@@ -1008,14 +1039,21 @@ export async function loadPetGameHtml(pathOrName) {
     const raw = String(pathOrName || '').trim();
     if (!raw) return '';
     const path = (raw.includes('/') ? raw : petGamePath(raw)).replace(/^\/+/, '');
-    return await readFileSafe(path);
+    return normalizePetGameHtml(await readFileSafe(path));
 }
 
-// 保存游戏：html 必填，meta 可包含 { title, icon, desc, name }。返回 { path, record, index }。
+// 保存游戏：html 必填，meta 可包含 { title, icon, desc, path }。首次保存使用系统生成文件名；再次保存沿用 path。
 export async function savePetGame(html, meta = {}) {
-    const baseName = safePetGameName(meta.name || meta.id || meta.title || 'game');
-    const path = petGamePath(baseName);
-    await writeFileSafe(path, html == null ? '' : String(html));
+    const existing = await loadPetGameList();
+    const existingPath = petGamePathFromMetaPath(meta.path);
+    const usedPaths = new Set(existing.map(item => item.path));
+    let path = existingPath;
+    while (!path) {
+        const candidate = petGamePath(generatedPetGameBaseName());
+        if (!usedPaths.has(candidate)) path = candidate;
+    }
+    const baseName = path.split('/').pop().replace(/\.html?$/i, '');
+    await writeFileSafe(path, normalizePetGameHtml(html));
     const record = normalizePetGameRecord({
         path,
         id: meta.id || baseName,
@@ -1024,7 +1062,6 @@ export async function savePetGame(html, meta = {}) {
         desc: meta.desc || '',
         updatedAt: Date.now(),
     });
-    const existing = await loadPetGameList();
     const nextIndex = [record, ...existing.filter(item => item.path !== path)];
     await savePetGameList(nextIndex);
     return { path, record, index: nextIndex };

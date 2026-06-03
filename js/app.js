@@ -438,7 +438,7 @@ function renderGameMakerRoute() {
         gameMakerViewModule.renderGameMaker(app, { game: editTarget }, options);
         return;
     }
-    app.innerHTML = '<div class="topbar"><button class="btn-icon" id="mhBack" style="width:36px;height:36px;font-size:18px">‹</button><span class="font-bold" style="color:var(--text-primary)">创造小游戏</span><span style="width:36px;height:36px"></span></div><div style="padding:18px;color:var(--text-muted)">正在打开创作工坊...</div>';
+    app.innerHTML = `<div class="topbar"><button class="btn-icon" id="mhBack" style="width:36px;height:36px;font-size:18px">‹</button><span class="font-bold" style="color:var(--text-primary)">${escapeHtml(t('mgGameMakerTitle'))}</span><span style="width:36px;height:36px"></span></div><div style="padding:18px;color:var(--text-muted)">${escapeHtml(t('mgGameMakerOpening'))}</div>`;
     const back = $('mhBack');
     if (back) back.onclick = options.onBack;
     loadGameMakerView()
@@ -448,7 +448,7 @@ function renderGameMakerRoute() {
         })
         .catch((e) => {
             console.error('加载创作工坊失败', e);
-            showToast('加载创作工坊失败：' + (e?.message || e), 'error');
+            showToast(t('mgGameMakerLoadFailed', { error: (e?.message || e) }), 'error');
             if (state.currentView === 'gameMaker') navigateToView('minigames');
         });
 }
