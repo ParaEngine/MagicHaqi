@@ -20,6 +20,33 @@ export function zoomLevelIdToIndex(value, fallback = 'planet') {
     return Math.max(0, ZOOM_LEVEL_IDS.indexOf(id));
 }
 
+// Forced-entry view support. Like `home_planet`, the boot view can be forced via
+// the `view` URL query parameter (e.g. `?view=field`) or a global JS variable
+// `window.__view` set before the app boots. Supported values:
+//   field | planet | pet | cell -> force the home view at that zoom level
+//   game                        -> force the minigames (mini-game) view
+export const FORCE_VIEW_IDS = ['planet', 'field', 'pet', 'cell', 'game'];
+const FORCE_VIEW_ALIASES = {
+    space: 'planet', planet: 'planet', field: 'field', pet: 'pet', cell: 'cell',
+    game: 'game', games: 'game', minigame: 'game', minigames: 'game',
+};
+
+export function normalizeForceViewId(value) {
+    const key = String(value || '').trim().toLowerCase();
+    return FORCE_VIEW_ALIASES[key] || '';
+}
+
+export function getForcedView() {
+    let raw = '';
+    try {
+        raw = String(new URL(window.location.href).searchParams.get('view') || '').trim();
+    } catch (_) {}
+    if (!raw) {
+        try { raw = String(window.__view || '').trim(); } catch (_) {}
+    }
+    return normalizeForceViewId(raw);
+}
+
 export function normalizePlanetZoomOptions(raw = {}) {
     const source = raw && typeof raw === 'object' ? raw : {};
     const hidePlanet = boolOption(source.hide_planet ?? source.hidePlanet);
@@ -539,13 +566,14 @@ export function getActiveShopItemsPath() {
 
 await initializeDefaultShopItems();
 
-const OUTDOOR_FIELD_IDS = ['land', 'water', 'sky'];
+export const OUTDOOR_FIELD_IDS = ['land', 'water', 'sky', 'fire', 'ice', 'life', 'dark', 'thunder'];
 const ROOM_AREA_IDS = CONFIG.rooms.map(room => room.id);
 
 export function canPlaceItemInArea(item, area) {
     const fields = Array.isArray(item?.fields) ? item.fields : null;
     if (!fields || fields.length === 0) return true;
     if (fields.includes(area)) return true;
+    if (OUTDOOR_FIELD_IDS.includes(area) && (fields.includes('outdoor') || fields.includes('land'))) return true;
     if (ROOM_AREA_IDS.includes(area) && fields.includes('indoor')) return true;
     return OUTDOOR_FIELD_IDS.includes(area) && fields.includes('outdoor');
 }

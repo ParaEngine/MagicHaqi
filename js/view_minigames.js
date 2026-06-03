@@ -131,6 +131,25 @@ function getMinigameRewardLabel(game, levelReward) {
     return levelReward?.label || t('mgRewardDefault');
 }
 
+// 相对时间：把时间戳格式化成“刚刚 / N 分钟前 / N 小时前 / N 天前…”。
+function formatRelativeTime(ts) {
+    const value = Number(ts);
+    if (!Number.isFinite(value) || value <= 0) return '';
+    const diff = Date.now() - value;
+    if (diff < 0) return t('timeJustNow');
+    const minute = 60 * 1000;
+    const hour = 60 * minute;
+    const day = 24 * hour;
+    const month = 30 * day;
+    const year = 365 * day;
+    if (diff < minute) return t('timeJustNow');
+    if (diff < hour) return t('timeMinutesAgo', { n: Math.floor(diff / minute) });
+    if (diff < day) return t('timeHoursAgo', { n: Math.floor(diff / hour) });
+    if (diff < month) return t('timeDaysAgo', { n: Math.floor(diff / day) });
+    if (diff < year) return t('timeMonthsAgo', { n: Math.floor(diff / month) });
+    return t('timeYearsAgo', { n: Math.floor(diff / year) });
+}
+
 const PET_STAT_ITEMS = [
     { k: 'bond', labelKey: 'statBond', icon: '💛' },
     { k: 'mood', labelKey: 'statMood', icon: '😊' },
@@ -258,14 +277,15 @@ export function renderMinigames(panel, { pet }, { onBack, onGameFinished, initia
             .mh-minigame-mine-card {
                 position: relative;
                 text-align: center;
-                min-height: 118px;
+                box-sizing: border-box;
+                min-height: 184px;
                 display: flex;
                 flex-direction: column;
                 align-items: center;
-                justify-content: center;
-                gap: 10px;
+                justify-content: flex-start;
+                gap: 8px;
                 border-radius: 12px;
-                cursor: default;
+                cursor: pointer;
             }
             .mh-minigame-mine-card .mh-minigame-mine-del {
                 position: absolute;
@@ -284,16 +304,14 @@ export function renderMinigames(panel, { pet }, { onBack, onGameFinished, initia
                 place-items: center;
                 padding: 0;
                 box-shadow: none;
-                opacity: 0;
-                transition: opacity .18s ease;
+                opacity: 1;
             }
-            .mh-minigame-mine-card:hover .mh-minigame-mine-del,
-            .mh-minigame-mine-card:focus-within .mh-minigame-mine-del { opacity: 1; }
-            .mh-minigame-mine-ico { font-size: 48px; line-height: 1; }
-            .mh-minigame-mine-title { font-weight: 800; color: var(--text-primary); font-size: 17px; line-height: 1.2; text-align: center; }
-            .mh-minigame-mine-desc { color: var(--text-muted); font-size: 12px; line-height: 1.35; text-align: center; max-width: 12em; }
-            .mh-minigame-mine-actions { display: flex; gap: 6px; width: 100%; }
-            .mh-minigame-mine-actions button { flex: 1; min-width: 0; padding: 6px 6px; font-size: 12px; }
+            .mh-minigame-mine-ico { font-size: 44px; line-height: 1; flex: 0 0 auto; }
+            .mh-minigame-mine-title { font-weight: 800; color: var(--text-primary); font-size: 16px; line-height: 1.2; text-align: center; width: 100%; min-height: 2.4em; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; word-break: break-word; }
+            .mh-minigame-mine-desc { color: var(--text-muted); font-size: 12px; line-height: 1.35; text-align: center; max-width: 12em; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; }
+            .mh-minigame-mine-time { color: var(--text-muted); font-size: 11px; font-weight: 800; line-height: 1.2; opacity: .82; }
+            .mh-minigame-mine-actions { display: flex; gap: 6px; width: 100%; margin-top: auto; flex: 0 0 auto; }
+            .mh-minigame-mine-actions button { flex: 1; min-width: 0; padding: 7px 6px; font-size: 12px; min-height: 32px; }
             .mh-minigame-icon {
                 width: 58px;
                 height: 58px;
@@ -551,7 +569,7 @@ export function renderMinigames(panel, { pet }, { onBack, onGameFinished, initia
                         </div>
                     </div>
                 </div>
-                <button type="button" class="btn-primary" id="mhMinigameDone" style="display:none;position:absolute;right:12px;bottom:12px;z-index:3;padding:8px 14px;font-size:13px">完成玩耍</button>
+                <button type="button" class="btn-primary" id="mhMinigameDone" style="display:none;position:absolute;right:12px;bottom:12px;z-index:3;padding:8px 14px;font-size:13px">${escapeHtml(t('mgDonePlay'))}</button>
             </div>
         </div>`;
 
@@ -654,18 +672,21 @@ export function renderMinigames(panel, { pet }, { onBack, onGameFinished, initia
         if (!records.length) {
             return `<div class="mh-minigame-mine-empty">${escapeHtml(t('mgMineEmpty'))}</div>`;
         }
-        return records.map(record => `
-            <div class="card-flat mh-minigame-mine-card" data-mh-mine-path="${escapeHtml(record.path)}" style="text-align:center;min-height:118px;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:10px;border-radius:12px">
+        return records.map(record => {
+            const updatedLabel = formatRelativeTime(record.updatedAt);
+            return `
+            <div class="card-flat mh-minigame-mine-card" data-mh-mine-path="${escapeHtml(record.path)}">
                 <button type="button" class="mh-minigame-mine-del" data-mh-mine-delete="${escapeHtml(record.path)}" aria-label="${escapeHtml(t('mgMineDelete'))}" title="${escapeHtml(t('mgMineDelete'))}">×</button>
                 <span class="mh-minigame-mine-ico" aria-hidden="true">${escapeHtml(record.icon || '🎮')}</span>
-                <span class="mh-minigame-mine-title" style="font-weight:800;color:var(--text-primary);font-size:17px;line-height:1.2">${escapeHtml(record.title || t('mgDefaultName'))}</span>
-                ${record.desc ? `<span class="mh-minigame-mine-desc" style="color:var(--text-muted);font-size:12px;line-height:1.35;max-width:12em">${escapeHtml(record.desc)}</span>` : ''}
-                <div class="mh-minigame-mine-actions" style="display:flex;gap:6px;width:100%">
-                    <button type="button" class="btn-secondary" data-mh-mine-edit="${escapeHtml(record.path)}" style="flex:1;min-width:0;padding:6px 6px;font-size:12px">${escapeHtml(t('slEdit'))}</button>
-                    <button type="button" class="btn-primary" data-mh-mine-play="${escapeHtml(record.path)}" style="flex:1;min-width:0;padding:6px 6px;font-size:12px">${escapeHtml(t('slPlay'))}</button>
+                <span class="mh-minigame-mine-title">${escapeHtml(record.title || t('mgDefaultName'))}</span>
+                ${record.desc ? `<span class="mh-minigame-mine-desc">${escapeHtml(record.desc)}</span>` : ''}
+                ${updatedLabel ? `<span class="mh-minigame-mine-time">${escapeHtml(t('mgMineUpdatedAt', { time: updatedLabel }))}</span>` : ''}
+                <div class="mh-minigame-mine-actions">
+                    <button type="button" class="btn-secondary" data-mh-mine-edit="${escapeHtml(record.path)}">${escapeHtml(t('slEdit'))}</button>
                 </div>
             </div>
-        `).join('');
+        `;
+        }).join('');
     }
 
     function bindMineCards(records) {
@@ -695,9 +716,10 @@ export function renderMinigames(panel, { pet }, { onBack, onGameFinished, initia
                 openMineGameMaker(editBtn.dataset.mhMineEdit, records);
                 return;
             }
-            const playBtn = e.target.closest?.('[data-mh-mine-play]');
-            if (playBtn) {
-                openMineGame(playBtn.dataset.mhMinePlay, records);
+            // 点击卡片任意非按钮区域即试玩。
+            const card = e.target.closest?.('[data-mh-mine-path]');
+            if (card) {
+                openMineGame(card.dataset.mhMinePath, records);
             }
         };
     }
@@ -858,6 +880,45 @@ function isPetImageRequest(msg) {
     return MINIGAME_PET_IMAGE_REQUESTS.has(type) || MINIGAME_ALL_PET_IMAGE_REQUESTS.has(type);
 }
 
+// 供其它内嵌游戏 iframe 的视图（如创作工坊预览 view_game_maker）复用宠物形象请求处理：
+// 让「创作工坊里预览的小游戏」也能像正式 minigame 一样拿到宠物图像，
+// 而不必各自重复实现 haqi_get_pet_image(s) 协议。
+// 返回 true 表示这条消息是宠物形象请求并已处理（调用方可据此短路）。
+// 宠物解析回退到 state.currentPetId，因此即便 minigame 视图未打开也能工作。
+export function handleMinigamePetMessage(frame, msg) {
+    if (!isPetImageRequest(msg)) return false;
+    handlePetImageRequest(frame, msg);
+    return true;
+}
+
+// 主动向某个内嵌游戏 iframe 推送当前宠物配置（setGameConfig + active_pet_config 形象）。
+// 与 minigame 正式播放时一致：iframe 加载后立刻推送一次，无需等待游戏先发请求。
+// 供 view_game_maker 预览复用，使预览里的游戏与正式 minigame 行为一致。
+export async function pushActivePetConfigToFrame(frame) {
+    if (!frame?.contentWindow) return;
+    const pet = await requestedPetForMinigame({});
+    if (!frame?.contentWindow || !pet) return;
+    try {
+        frame.contentWindow.postMessage({
+            type: 'setGameConfig',
+            data: {
+                petId: pet.id || '',
+                petName: displayPetName(pet),
+                masterStyle: localStorage.getItem('haqiAdventureMasterV1') || undefined,
+            },
+        }, '*');
+    } catch (_) {}
+    try {
+        const image = await buildPetImagePayload(pet, { anim: 'happy', petId: pet.id });
+        frame.contentWindow?.postMessage({
+            type: 'haqi_pet_image',
+            requestId: 'active_pet_config',
+            ok: true,
+            data: image,
+        }, '*');
+    } catch (_) {}
+}
+
 async function handlePetImageRequest(frame, msg) {
     const type = String(msg?.type || '');
     const requestId = msg.requestId || msg.id || null;
@@ -976,7 +1037,7 @@ function coinValue() {
 
 function renderCoinPill(id, className) {
     return `
-        <span class="${className} mh-coin-amount" id="${id}" title="金币：玩耍可获得，用来购买食物、家具和道具。" aria-label="金币 ${coinValue()}"
+        <span class="${className} mh-coin-amount" id="${id}" title="${escapeHtml(t('mgCoinTip'))}" aria-label="${escapeHtml(t('coins'))} ${coinValue()}"
             style="position:relative;height:30px;min-width:46px;padding:0 7px;border-radius:999px;background:rgba(255,255,255,.86);border:1px solid rgba(217,119,6,.24);display:inline-flex;align-items:center;justify-content:center;gap:3px;font-weight:900;font-size:12px;color:var(--accent-dark);box-shadow:0 2px 0 rgba(217,119,6,.12)">
             ${coinIconSvg()}
             <span data-mh-minigame-coins>${coinValue()}</span>
@@ -1076,8 +1137,8 @@ function canPlayGame(pet) {
 }
 
 function petStatTip(key, label, value, delta) {
-    const effect = delta > 0 ? `完成玩耍后 +${delta}` : `完成玩耍后 ${delta}`;
-    return `${label} ${value}，${effect}`;
+    const effect = delta > 0 ? t('mgStatAfterPlay', { delta }) : t('mgStatAfterPlayNeg', { delta });
+    return `${label} ${value} · ${effect}`;
 }
 
 function bindStatTips(root) {

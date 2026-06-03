@@ -1143,10 +1143,12 @@ export const planetLevel = {
                 showVisitReturnPrompt(pet, ctx);
                 return;
             }
-            if (collectPlanetMiningCoins()) return;
-            const isTouch = window.matchMedia && window.matchMedia('(pointer: coarse)').matches;
-            const msg = isTouch ? t('lpScrollUpHint') : t('lpWheelHint');
-            showToast(msg, 'info');
+            const collected = collectPlanetMiningCoins();
+            if (collected) {
+                setTimeout(() => ctx.zoomIn?.(), 2000);
+            } else {
+                ctx.zoomIn?.();
+            }
         };
         if (isVisitingMode()) {
             setTimeout(() => { if (state.zoomLevel === 0) showVisitReturnPrompt(pet, ctx); }, 260);

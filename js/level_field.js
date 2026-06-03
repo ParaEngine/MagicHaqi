@@ -1151,10 +1151,14 @@ function renderFieldActionTray(pet) {
 
 function renderFieldDecorTray(inv, currentField) {
     const areaId = currentField.typeId || resolveTerrainFieldTypeId(currentField.id);
-    const items = SHOP_ITEMS
-        .filter(it => (it.type === 'furniture' || it.type === 'house') && canPlaceItemInArea(it, areaId))
-        .map(it => ({ ...it, qty: it.unlimited ? Infinity : (inv[it.id] || 0) }))
-        .filter(it => it.qty > 0 || it.unlimited);
+    const ownedItems = Object.entries(inv || {})
+        .map(([id, qty]) => ({ ...ITEM_BY_ID[id], qty }))
+        .filter(it => it && it.id && (it.type === 'furniture' || it.type === 'house') && canPlaceItemInArea(it, areaId));
+    const ownedIds = new Set(ownedItems.map(item => item.id));
+    const unlimitedItems = SHOP_ITEMS
+        .filter(it => it.unlimited && !ownedIds.has(it.id) && (it.type === 'furniture' || it.type === 'house') && canPlaceItemInArea(it, areaId))
+        .map(it => ({ ...it, qty: Infinity }));
+    const items = [...ownedItems, ...unlimitedItems];
     const shopButton = `
         <button type="button" class="shop-item mh-field-shop-button" data-field-shop="outdoor" style="min-width:62px;padding:6px;flex-shrink:0">
             <div class="emoji shop-item-visual shop-item-emoji">🛒</div>

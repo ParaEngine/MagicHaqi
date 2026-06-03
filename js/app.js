@@ -1,6 +1,6 @@
 // 主程序：SDK 启动 + 路由 + 全局事件
 import { $, showToast, confirm, clamp, prompt, escapeHtml } from './utils.js';
-import { canPlaceItemInArea, CONFIG, getItemZOrder, getShopItemById, findLargestHouseAcrossLayouts, getStageName } from './config.js';
+import { canPlaceItemInArea, CONFIG, getItemZOrder, getShopItemById, findLargestHouseAcrossLayouts, getStageName, getForcedView, zoomLevelIdToIndex } from './config.js';
 import { state, notify, subscribe, setView, setCurrentPet, getCurrentPet } from './state.js';
 import {
     loadUserProfile, saveUserProfile, saveUserProfileDebounced,
@@ -47,7 +47,7 @@ import SoundManager from './soundManager.js';
 // Side-effect import: 订阅 state 并接管所有 [data-mh-pet] 占位符的渲染 + 动画
 import { canWakePet, daySleepRejectText, eatFood, isPetInteractionBlocked, isPetSleeping, petArtHtml, preloadPetAssets, say, scanAndMount, setAnim, shouldRejectDaySleep, sleepingInteractionText, startPetSleep, wakePet, wakePetForPlay } from './pet.js';
 
-const sdkCdnUrl = 'https://cdn.keepwork.com/sdk/keepworkSDK.iife.js?v=20260602a';
+const sdkCdnUrl = 'https://cdn.keepwork.com/sdk/keepworkSDK.iife.js?v=20260603a';
 
 function loadScript(src) {
     return new Promise((resolve, reject) => {
@@ -807,6 +807,43 @@ function currentAppTitle() {
     return String(state.settings?.starSettlement?.appTitle || '').trim() || t('appName');
 }
 
+// Resolve the boot landing view, honoring a forced `view` URL param / `window.__view`
+// global (see config.getForcedView). For the zoom-level views (planet/field/pet/cell)
+// we land on `home` and pin the zoom dial; `game` lands on the minigames view.
+// Returns the natural fallback view when nothing is forced.
+function resolveForcedBootView(fallbackView) {
+    const forced = getForcedView();
+    if (!forced) return fallbackView;
+    if (forced === 'game') return 'minigames';
+    const lv = zoomLevelIdToIndex(forced);
+    state.zoomLevel = lv;
+    state.lastHomeZoomLevel = lv;
+    return 'home';
+}
+
+// If a view is forced via `?view=` / `window.__view`, ensure a usable pet context
+// exists and navigate straight to the requested view. Returns true when it took
+// over the boot flow so callers can early-return. Shared by bootstrap / login /
+// offline entry paths.
+async function enterForcedViewIfAny() {
+    if (!getForcedView()) return false;
+    if (!hasSelectablePets()) {
+        await prepareDefaultEggHome();
+    } else {
+        if (state.currentPetId && !isPetSelectable(state.pets[state.currentPetId])) {
+            await selectFirstAvailablePet();
+        }
+        await enforcePlanetPetLimit(state.currentPetId);
+        if (state.currentPetId) {
+            try { await ensurePetData(state.currentPetId); } catch (_) {}
+        }
+        preloadLoadedPetAssets();
+    }
+    finishBootstrap();
+    setView(resolveForcedBootView('home'));
+    return true;
+}
+
 // ==== 启动流程 ====
 async function bootstrap() {
     // URL token
@@ -853,6 +890,10 @@ async function bootstrap() {
 
     // 进入游戏前必须先给"星球"命名（每位用户只有一个星球）
     await ensurePlanetNamed();
+
+    // 强制进入指定视图（?view= 参数 / window.__view 全局变量）。优先级高于
+    // 新手故事、URL story 路径与默认蛋流程，但仍保证存在可用宠物作为上下文。
+    if (await enterForcedViewIfAny()) return;
 
     if (!hasSelectablePets()) {
         finishBootstrap();
@@ -922,7 +963,9 @@ async function maybeStartNewUserStory() {
     return true;
 }
 
-async function enterDefaultEggHome() {
+// Prepare a default-egg home context (create the egg, load assets) WITHOUT
+// committing the final view. Returns nothing; callers decide which view to show.
+async function prepareDefaultEggHome() {
     const newPet = await ensureDefaultEgg();
     try { await ensurePetData(state.currentPetId); } catch (_) {}
     state.currentRoom = newPet?.activeRoom || 'living';
@@ -930,6 +973,10 @@ async function enterDefaultEggHome() {
     state.isFeedMode = false;
     await enforcePlanetPetLimit(newPet?.id || state.currentPetId);
     preloadLoadedPetAssets();
+}
+
+async function enterDefaultEggHome() {
+    await prepareDefaultEggHome();
     setView(hasPostcardParams() ? 'postcard' : 'home');
 }
 
@@ -1236,6 +1283,7 @@ async function handleLogin() {
         }
         startTickLoop();
         await ensurePlanetNamed();
+        if (await enterForcedViewIfAny()) return;
         if (!hasSelectablePets()) {
             if (await maybeStartNewUserStory()) return;
             await enterDefaultEggHome();
@@ -1275,6 +1323,7 @@ async function handleOfflineMode() {
         }
         startTickLoop();
         await ensurePlanetNamed();
+        if (await enterForcedViewIfAny()) return;
         if (!hasSelectablePets()) {
             await enterDefaultEggHome();
             return;
