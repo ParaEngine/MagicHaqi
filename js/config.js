@@ -148,7 +148,7 @@ export const CONFIG = {
         { id: 'baby',   name: '幼年', minHours: 0.05, emoji: '🐣' },
         { id: 'teen',   name: '青年', minHours: 4,   emoji: '🐥' },
         { id: 'adult',  name: '成年', minHours: 24,  emoji: '🐉' },
-        { id: 'elder',  name: '长老', minHours: 168, emoji: '🦄' },
+        { id: 'elder',  name: '隐藏形态', minHours: 168, emoji: '🦄' },
     ],
     breedableStages: ['adult', 'elder'],
     breedCost: 30,
@@ -499,6 +499,77 @@ export async function loadPlanetIndex() {
         })
         .finally(() => { planetIndexLoadPromise = null; });
     return planetIndexLoadPromise;
+}
+
+// 默认主星球（蛋蛋星球）的 id。其完整配置（标题 / 外观 / fields / 新手指引）现在统一
+// 由 famous-planets/_planet_index.json 中 id 为 'default' 的条目管理；下面的内置常量仅作
+// 为 file:// 或索引加载失败时的兜底。
+export const DEFAULT_PLANET_ID = 'default';
+
+// 内置兜底外观（与 _planet_index.json 中 default 条目保持一致）。
+export const FALLBACK_DEFAULT_PLANET_STYLE = {
+    hue: 188,
+    bodyBackground: 'radial-gradient(circle at 32% 22%, rgba(255,255,255,.82) 0%, rgba(255,255,255,.22) 18%, transparent 33%), radial-gradient(circle at 66% 72%, rgba(52,211,153,.36), transparent 34%), radial-gradient(circle at 50% 43%, #a7f3d0 0%, #38bdf8 48%, #2563eb 100%)',
+    glowColor: 'rgba(56, 189, 248, 0.58)',
+    accentColor: '#38bdf8',
+};
+
+function findPlanetEntry(index, id) {
+    const entries = Array.isArray(index?.planets) ? index.planets : [];
+    const target = String(id || '').trim();
+    return entries.find(entry => String(entry?.id || '').trim() === target) || null;
+}
+
+/** 取得默认主星球（蛋蛋星球）的索引条目，加载失败时返回 null。 */
+export async function getDefaultPlanetEntry() {
+    try {
+        const index = await loadPlanetIndex();
+        return findPlanetEntry(index, DEFAULT_PLANET_ID);
+    } catch (_) {
+        return null;
+    }
+}
+
+/** 默认主星球外观；索引中没有 default 条目时回退到内置兜底值。 */
+export async function getDefaultPlanetStyle() {
+    const entry = await getDefaultPlanetEntry();
+    const planet = entry?.planet && typeof entry.planet === 'object' ? entry.planet : {};
+    return {
+        hue: Number(planet.hue) || FALLBACK_DEFAULT_PLANET_STYLE.hue,
+        bodyBackground: String(planet.bodyBackground || '').trim() || FALLBACK_DEFAULT_PLANET_STYLE.bodyBackground,
+        glowColor: String(planet.glowColor || '').trim() || FALLBACK_DEFAULT_PLANET_STYLE.glowColor,
+        accentColor: String(planet.accentColor || '').trim() || FALLBACK_DEFAULT_PLANET_STYLE.accentColor,
+    };
+}
+
+// ===== 新手指引（onboarding）配置 =====
+// 每个星球索引条目可带一个 onboarding 对象，决定首次进入该星球时的引导方式：
+//   { mode: 'pet-story' | 'minigames' | 'none', storyPath?, minigame?, progressKey? }
+export const ONBOARDING_MODES = ['pet-story', 'minigames', 'none'];
+
+export function normalizeOnboardingConfig(raw = {}, planetId = '') {
+    const source = raw && typeof raw === 'object' ? raw : {};
+    let mode = String(source.mode || '').trim().toLowerCase();
+    if (mode === 'story' || mode === 'petstory') mode = 'pet-story';
+    if (mode === 'minigame' || mode === 'game' || mode === 'games') mode = 'minigames';
+    if (!ONBOARDING_MODES.includes(mode)) mode = 'none';
+    const storyPath = String(source.storyPath || source.story || '').trim().replace(/^\/+/, '');
+    const minigame = String(source.minigame || source.game || '').trim();
+    const progressKey = String(source.progressKey || planetId || '').trim() || String(planetId || '').trim();
+    return { mode, storyPath, minigame, progressKey };
+}
+
+/** 取得某个星球的新手指引配置；planetIdOrEntry 可传 id 或已解析的条目对象。 */
+export async function getPlanetOnboardingConfig(planetIdOrEntry = DEFAULT_PLANET_ID) {
+    let entry = planetIdOrEntry && typeof planetIdOrEntry === 'object' ? planetIdOrEntry : null;
+    const planetId = entry ? String(entry.id || '').trim() : String(planetIdOrEntry || '').trim();
+    if (!entry) {
+        try {
+            const index = await loadPlanetIndex();
+            entry = findPlanetEntry(index, planetId || DEFAULT_PLANET_ID);
+        } catch (_) { entry = null; }
+    }
+    return normalizeOnboardingConfig(entry?.onboarding, planetId || DEFAULT_PLANET_ID);
 }
 
 async function fetchShopItemsJson(path, required = false) {

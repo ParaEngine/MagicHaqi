@@ -5,7 +5,7 @@ import { notify, state } from './state.js';
 import { savePetDebounced } from './storage.js';
 import { clamp } from './utils.js';
 import { isAdultStage } from './dna.js';
-import { applyReleasedPetAutoCareStats, getPetLocationType, hasNannyCare, nannyGrowthRate, softenStatsToAverage } from './petLifecycle.js';
+import { applyPlanetSelfCareStats, applyReleasedPetAutoCareStats, currentPlanetDecayMultiplier, getPetLocationType, hasNannyCare, isCurrentPlanetSelfCare, nannyGrowthRate, softenStatsToAverage } from './petLifecycle.js';
 import { isNightSleepTime, nextMorningWakeAt, normalizePetSleepState } from './pet.js';
 import { normalizeTerrainFieldSlotId } from './terrain_field_slots.js';
 
@@ -201,6 +201,12 @@ export function maybeRollDailySickness(pet, now = Date.now()) {
     if (!pet) return false;
     if (!isActivePet(pet)) return false;
     normalizePetStats(pet);
+    // 自我照料星球（selfCare === 1）：宠物永不生病，并清除既有病症。
+    if (isCurrentPlanetSelfCare()) {
+        const hadSickness = !!pet.sickness;
+        if (hadSickness) curePetSickness(pet, now);
+        return hadSickness;
+    }
     if (pet.stage === 'egg') {
         const hadSickness = !!pet.sickness;
         if (hadSickness) delete pet.sickness;
@@ -212,7 +218,8 @@ export function maybeRollDailySickness(pet, now = Date.now()) {
     const day = localDayKey(now);
     if (pet.lastSicknessCheckDay === day) return false;
     pet.lastSicknessCheckDay = day;
-    const probability = calculateSicknessProbability(pet);
+    // selfCare ∈ (0,1) 时按倍率降低生病概率（与衰减放慢同步）。
+    const probability = calculateSicknessProbability(pet) * currentPlanetDecayMultiplier();
     if (Math.random() >= probability) return true;
     pet.sickness = {
         type: chooseSicknessType(pet),
@@ -334,6 +341,9 @@ function traumaReasons(pet) {
 
 export function maybeApplyPermanentTrauma(pet, now = Date.now()) {
     if (!pet) return 0;
+    // 自我照料星球（selfCare === 1）：宠物不会因疏于照顾而形成创伤。
+    // selfCare ∈ (0,1) 时数值维持得更高，触发创伤的条件本就更难满足，沿用常规逻辑。
+    if (isCurrentPlanetSelfCare()) return 0;
     const traumas = normalizePermanentTrauma(pet);
     const max = Math.max(0, Number(CONFIG.trauma?.max) || 6);
     if (traumas.length >= max) return 0;
@@ -371,8 +381,16 @@ export function applyDecay(pet, ticks = 1) {
         normalizeReleasedPetAutoCare(pet);
         return;
     }
+    // 自我照料星球（selfCare === 1，零压力）：数值锁定在 ~80%，不衰减、不生病、不形成创伤。
+    if (isCurrentPlanetSelfCare()) {
+        applyPlanetSelfCareStats(pet);
+        return;
+    }
     // 蛋阶段（hunger=0 休眠）不衰减，也不会形成创伤。
     if (pet.stage === 'egg' && (pet.stats?.hunger ?? 0) <= 0) return;
+    // selfCare ∈ (0,1) 时按倍率放慢衰减（越大照料间隔越长）。
+    const decayMult = currentPlanetDecayMultiplier();
+    if (decayMult <= 0) { clampEnergyToMax(pet); return; }
     const decay = CONFIG.statDecayPerTick;
     const buff = state.planetBuff && state.planetBuff.until > Date.now() ? state.planetBuff : null;
     for (const k of Object.keys(decay)) {
@@ -380,6 +398,7 @@ export function applyDecay(pet, ticks = 1) {
         if (buff?.id === 'gluttony' && k === 'hunger') delta *= 1.5;
         if (buff?.id === 'garden' && k === 'mood') delta *= 0.65;
         if (buff?.id === 'tidal' && k === 'clean') delta += 0.25 * ticks;
+        delta *= decayMult;
         pet.stats[k] = clamp((pet.stats[k] || 0) + delta, CONFIG.statMin, CONFIG.statMax);
     }
     clampEnergyToMax(pet);
@@ -395,7 +414,15 @@ export function applyOfflineDecay(pet, elapsedMs, now = Date.now()) {
         normalizeReleasedPetAutoCare(pet, now);
         return;
     }
+    // 自我照料星球（selfCare === 1）：离线期间同样维持 ~80%，不发生任何衰减。
+    if (isCurrentPlanetSelfCare()) {
+        applyPlanetSelfCareStats(pet);
+        return;
+    }
     if (pet.stage === 'egg' && (pet.stats?.hunger ?? 0) <= 0) return;
+    // selfCare ∈ (0,1) 时按倍率放慢离线衰减。
+    const decayMult = currentPlanetDecayMultiplier();
+    if (decayMult <= 0) { clampEnergyToMax(pet); return; }
     const maxHours = Math.max(0, Number(CONFIG.maxOfflineHours) || 0);
     const elapsedHours = Math.max(0, Number(elapsedMs) || 0) / 3600 / 1000;
     const hours = maxHours > 0 ? Math.min(elapsedHours, maxHours) : elapsedHours;
@@ -405,7 +432,7 @@ export function applyOfflineDecay(pet, elapsedMs, now = Date.now()) {
     const caps = CONFIG.offlineDecayDailyCap || {};
     const dayFactor = Math.max(1, hours / 24);
     for (const k of Object.keys(decay)) {
-        let delta = Number(decay[k]) * hours;
+        let delta = Number(decay[k]) * hours * decayMult;
         const dailyCap = Number(caps[k]);
         if (Number.isFinite(dailyCap)) {
             const cap = dailyCap * dayFactor;

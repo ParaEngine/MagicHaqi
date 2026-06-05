@@ -9,6 +9,14 @@ import { getTerrainFieldSlots, getTerrainFieldType, normalizeTerrainFieldSlotId,
 let planetCache = null;
 let planetLoadPromise = null;
 
+// 默认主星球（蛋蛋星球）的 id：玩家的自定义家园即基于这颗星球，
+// 因此列表里要隐藏它，标题显示为「家园名（默认星球名）」。
+const DEFAULT_PLANET_ID = 'default';
+
+function defaultOfficialPlanet() {
+    return Array.isArray(planetCache) ? planetCache.find(p => p.id === DEFAULT_PLANET_ID) || null : null;
+}
+
 function clone(value) {
     return value == null ? value : JSON.parse(JSON.stringify(value));
 }
@@ -67,9 +75,19 @@ function normalizeOfficialPlanet(raw, indexEntry = {}) {
         summary: String(raw.summary || indexEntry.summary || '').trim(),
         shopItemUrl: String(raw.shopItemUrl || indexEntry.shopItemUrl || raw.shopItemsFile || indexEntry.shopItemsFile || raw.shopitemsFile || indexEntry.shopitemsFile || raw.shopFile || indexEntry.shopFile || raw.shop_items_file || indexEntry.shop_items_file || '').trim(),
         planet: raw.planet && typeof raw.planet === 'object' ? raw.planet : {},
+        audience: raw.audience && typeof raw.audience === 'object' ? raw.audience : (indexEntry.audience && typeof indexEntry.audience === 'object' ? indexEntry.audience : {}),
         zoomOptions: normalizePlanetZoomOptions(planetOptions),
         fields,
     };
+}
+
+// 星球「自我照料能力」selfCare ∈ [0,1]：越大宠物越能照顾自己，养成数值衰减越慢。
+//   0 = 几乎每天都要照料（默认）；0.7 ≈ 一周照料一次；1 = 完全自给自足（零压力，
+//   数值锁定 ~80%、不生病、不创伤）。规范化到 [0,1]，缺省 0。
+function planetSelfCareValue(planet) {
+    const raw = Number(planet?.audience?.selfCare);
+    if (!Number.isFinite(raw)) return 0;
+    return Math.max(0, Math.min(1, raw));
 }
 
 function officialPlanetTitle(planet) {
@@ -102,6 +120,18 @@ function currentSelectionId() {
     return current.source === 'official' ? current.planetId : 'custom';
 }
 
+// 是否处于 ?home_planet= 临时家园（仅 URL 覆盖，未真正迁移）。
+function isTemporaryHomeActive() {
+    const current = settlementSettings();
+    return current.source === 'official' && !!String(current.temporaryHomePlanet || '').trim();
+}
+
+// 顶部「我的家园」卡片是否就是玩家当前所在星球：
+// 自定义家园，或处于 ?home_planet= 临时家园时都算「当前」。
+function isHomeCurrent() {
+    return currentSelectionId() === 'custom' || isTemporaryHomeActive();
+}
+
 function currentHomeName() {
     const current = settlementSettings();
     const savedHomeName = String(current.homeSnapshot?.planetName || current.homePlanetName || '').trim();
@@ -110,9 +140,47 @@ function currentHomeName() {
     return String(state.planetName || t('ssMyPlanet')).trim();
 }
 
+function currentUsername() {
+    return String(state.user?.username || state.sdk?.user?.username || '').trim();
+}
+
+// 当前家园所基于的官方星球：
+// - 已迁移 / ?home_planet= 临时家园（source==='official'）→ 该官方星球本身；
+// - 自定义家园（source==='custom'）→ 默认主星球（蛋蛋星球）。
+function currentBasePlanet() {
+    const settings = settlementSettings();
+    if (settings.source === 'official') {
+        const byId = Array.isArray(planetCache) ? planetCache.find(p => p.id === settings.planetId) : null;
+        if (byId) return byId;
+        const tempHome = String(settings.temporaryHomePlanet || '').trim();
+        if (tempHome && Array.isArray(planetCache)) {
+            const keys = homePlanetLookupKeys(tempHome);
+            const byTemp = planetCache.find(p => Array.from(keys).some(key => planetIndexEntryKeys(p).has(key)));
+            if (byTemp) return byTemp;
+        }
+    }
+    return defaultOfficialPlanet();
+}
+
 function playerPlanetTitle() {
     const name = currentHomeName();
-    return name && name !== t('ssMyPlanet') ? t('ssMyPlanetNamed', { name }) : t('ssMyPlanet');
+    const user = currentUsername();
+    // 标题显示为「家园名（所基于的星球名）」，家园名优先用玩家星球名，缺省时回退到用户名。
+    const base = currentBasePlanet();
+    const baseName = base ? officialPlanetName(base) : '';
+    const homeName = (name && name !== t('ssMyPlanet')) ? name : user;
+    if (homeName && baseName) return t('ssMyPlanetWithUser', { name: homeName, user: baseName });
+    if (homeName) return homeName;
+    return user ? t('ssMyPlanetNamed', { name: user }) : t('ssMyPlanet');
+}
+
+function playerPlanetDesc() {
+    const settings = settlementSettings();
+    const saved = String(settings.homeSnapshot?.summary || settings.homeSummary || '').trim();
+    if (saved) return saved;
+    // 描述沿用所基于星球（含 ?home_planet= 临时家园）的简介，缺省时回退到默认家园描述。
+    const base = currentBasePlanet();
+    return String(base?.summary || '').trim() || t('ssMyHomeDesc');
 }
 
 function captureHomeSnapshot() {
@@ -199,6 +267,7 @@ async function applyOfficialPlanet(planet, { persist = true, sourcePath = '' } =
     settings.appTitle = planet.appTitle || '';
     settings.temporaryHomePlanet = persist ? null : sourcePath || planet.id;
     settings.readonlyPlanet = planet.planet?.readonly !== false;
+    settings.selfCare = planetSelfCareValue(planet);
     settings.planetStyle = {
         hue: Number(planet.planet?.hue) || 188,
         bodyBackground: String(planet.planet?.bodyBackground || '').trim(),
@@ -286,6 +355,7 @@ export async function applySettledOfficialPlanetFromProfile() {
         settings.title = officialPlanetTitle(planet);
         settings.appTitle = planet.appTitle || '';
         settings.readonlyPlanet = planet.planet?.readonly !== false;
+        settings.selfCare = planetSelfCareValue(planet);
         settings.planetStyle = {
             hue: Number(planet.planet?.hue) || 188,
             bodyBackground: String(planet.planet?.bodyBackground || '').trim(),
@@ -319,6 +389,7 @@ async function restoreCustomPlanet() {
     settings.title = currentHomeName();
     settings.appTitle = '';
     settings.readonlyPlanet = false;
+    settings.selfCare = 0;
     settings.planetStyle = null;
     delete settings.zoomOptions;
     await loadPlanetShopItems(null);
@@ -338,6 +409,7 @@ function renderFieldsPreview(planet) {
     return TERRAIN_FIELD_SLOT_DEFS.map((def, index) => {
         const field = fieldAtSlot(fields, def, index) || {};
         const typeId = field.typeId || '';
+        if (!typeId) return '';
         return `<span class="star-settlement-chip" title="${escapeHtml(def.label)}">${terrainFieldIconHtml(typeId)}${escapeHtml(field.name || def.label)}</span>`;
     }).join('');
 }
@@ -360,31 +432,36 @@ function customPreviewSlots() {
 }
 
 function renderCustomCard() {
-    const selected = currentSelectionId() === 'custom';
-    const slots = customPreviewSlots();
+    const selected = isHomeCurrent();
+    const slots = customPreviewSlots().filter(slot => slot.typeId);
+    // 当前家园：去掉「回迁」按钮，改用醒目的当前样式与「当前」标记；
+    // 仅当玩家此刻已真正迁移到官方星球时，才保留「回迁」按钮。
     return `
-        <article class="star-settlement-card ${selected ? 'is-selected' : ''}" data-planet-id="custom">
+        <article class="star-settlement-card ${selected ? 'is-current is-no-action' : ''}" data-planet-id="custom">
             <div class="star-settlement-planet" style="${planetPreviewStyle(null)}"><span>家</span></div>
             <div class="star-settlement-card-body">
-                <div class="star-settlement-card-title"><b>${escapeHtml(playerPlanetTitle())}</b><em>${escapeHtml(t('ssBadgePlayer'))}</em></div>
-                <div class="star-settlement-fields">${slots.map(slot => `<span class="star-settlement-chip">${terrainFieldIconHtml(slot.typeId)}${escapeHtml(slot.name)}</span>`).join('')}</div>
+                <div class="star-settlement-card-title"><b>${escapeHtml(playerPlanetTitle())}</b><em class="${selected ? 'is-current-tag' : ''}">${escapeHtml(selected ? t('ssCurrent') : t('ssBadgePlayer'))}</em></div>
+                <p>${escapeHtml(playerPlanetDesc())}</p>
+                ${slots.length ? `<div class="star-settlement-fields">${slots.map(slot => `<span class="star-settlement-chip">${terrainFieldIconHtml(slot.typeId)}${escapeHtml(slot.name)}</span>`).join('')}</div>` : ''}
             </div>
-            <button type="button" class="btn-secondary star-settlement-action" data-settle-custom>${selected ? escapeHtml(t('ssCurrent')) : escapeHtml(t('ssReturnHome'))}</button>
+            ${selected ? '' : `<button type="button" class="btn-secondary star-settlement-action" data-settle-custom>${escapeHtml(t('ssReturnHome'))}</button>`}
         </article>`;
 }
 
 function renderOfficialCard(planet) {
-    const selected = currentSelectionId() === planet.id;
+    // 仅已真正迁移（非 ?home_planet= 临时家园）时，官方卡片才算「当前」。
+    const selected = currentSelectionId() === planet.id && !isTemporaryHomeActive();
     const title = officialPlanetTitle(planet);
+    // 已迁移到该官方星球时：醒目的当前样式 + 「当前」标记，去掉迁移按钮。
     return `
-        <article class="star-settlement-card ${selected ? 'is-selected' : ''}" data-planet-id="${escapeHtml(planet.id)}">
+        <article class="star-settlement-card ${selected ? 'is-current is-no-action' : ''}" data-planet-id="${escapeHtml(planet.id)}">
             <div class="star-settlement-planet" style="${escapeHtml(planetPreviewStyle(planet))}"><span>${escapeHtml((title || '?').slice(0, 1))}</span></div>
             <div class="star-settlement-card-body">
-                <div class="star-settlement-card-title"><b>${escapeHtml(title)}</b><em>${escapeHtml(planet.badge || t('ssBadgeOfficial'))}</em></div>
+                <div class="star-settlement-card-title"><b>${escapeHtml(title)}</b><em class="${selected ? 'is-current-tag' : ''}">${escapeHtml(selected ? t('ssCurrent') : (planet.badge || t('ssBadgeOfficial')))}</em></div>
                 <p>${escapeHtml(planet.summary || '换到这个星球后，你的家具、房屋和宠物都会保留。')}</p>
-                <div class="star-settlement-fields">${renderFieldsPreview(planet)}</div>
+                ${(() => { const chips = renderFieldsPreview(planet); return chips ? `<div class="star-settlement-fields">${chips}</div>` : ''; })()}
             </div>
-            <button type="button" class="btn-primary star-settlement-action" data-settle-official="${escapeHtml(planet.id)}">${selected ? escapeHtml(t('ssCurrent')) : escapeHtml(t('ssMigrate'))}</button>
+            ${selected ? '' : `<button type="button" class="btn-primary star-settlement-action" data-settle-official="${escapeHtml(planet.id)}">${escapeHtml(t('ssMigrate'))}</button>`}
         </article>`;
 }
 
@@ -396,6 +473,11 @@ function starSettlementStyles() {
         .star-settlement-list { display:flex; flex-direction:column; gap:10px; }
         .star-settlement-card { display:grid; grid-template-columns:72px minmax(0,1fr) auto; gap:10px; align-items:center; padding:10px; border-radius:16px; border:1.5px solid rgba(14,116,144,.2); background:rgba(255,255,255,.86); box-shadow:0 8px 18px rgba(15,23,42,.08); }
         .star-settlement-card.is-selected { border-color:#0ea5e9; background:#ecfeff; }
+        .star-settlement-card.is-no-action { grid-template-columns:72px minmax(0,1fr); }
+        .star-settlement-card.is-current { border:2px solid #0ea5e9; background:linear-gradient(135deg,#ecfeff 0%,#e0f2fe 100%); box-shadow:0 10px 26px rgba(14,165,233,.28), 0 0 0 4px rgba(14,165,233,.12); }
+        .star-settlement-card.is-current .star-settlement-planet { box-shadow:inset -10px -16px 32px rgba(10,70,108,.32),0 0 0 3px rgba(255,255,255,.9),0 0 20px rgba(14,165,233,.55); }
+        .star-settlement-card.is-current .star-settlement-card-title b { color:#0c4a6e; }
+        .star-settlement-card-title em.is-current-tag { background:#0ea5e9; color:#fff; }
         .star-settlement-planet { width:64px; height:64px; border-radius:50%; display:grid; place-items:center; color:white; font-weight:900; text-shadow:0 1px 5px rgba(15,23,42,.45); overflow:hidden; }
         .star-settlement-card-body { min-width:0; display:flex; flex-direction:column; gap:6px; }
         .star-settlement-card-title { display:flex; align-items:center; gap:8px; min-width:0; }
@@ -460,7 +542,23 @@ export function renderStarSettlements(panel, _data, { onBack } = {}) {
     loadOfficialPlanets().then(planets => {
         const list = panel.querySelector('.star-settlement-list');
         if (!list) return;
-        list.innerHTML = `${renderCustomCard()}${planets.map(renderOfficialCard).join('')}`;
+        // 当前已迁移到某个官方星球（含 ?home_planet= 临时家园）时，隐藏该星球自身的卡片，
+        // 避免列表里出现「当前」重复项。
+        const activeId = currentSelectionId();
+        // 玩家的自定义家园（source==='custom'）即基于默认主星球，因此也要隐藏默认星球。
+        const hideDefault = activeId === 'custom';
+        const tempHome = String(settlementSettings().temporaryHomePlanet || '').trim();
+        const tempHomeKeys = tempHome ? homePlanetLookupKeys(tempHome) : null;
+        const visiblePlanets = planets.filter(planet => {
+            if (planet.id === activeId) return false;
+            if (hideDefault && planet.id === DEFAULT_PLANET_ID) return false;
+            if (tempHomeKeys) {
+                const entryKeys = planetIndexEntryKeys(planet);
+                if (Array.from(tempHomeKeys).some(key => entryKeys.has(key))) return false;
+            }
+            return true;
+        });
+        list.innerHTML = `${renderCustomCard()}${visiblePlanets.map(renderOfficialCard).join('')}`;
         bindSettlements(panel, planets, onBack);
     }).catch((e) => {
         console.warn('渲染星际移民失败', e);

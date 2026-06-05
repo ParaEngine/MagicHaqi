@@ -46,6 +46,9 @@ const FIELD_PET_BASE_SIZE_PX = 96;
 const FIELD_PET_REPEL_MIN_X = 0.058;
 const FIELD_PET_REPEL_MIN_Y = 0.155;
 const FIELD_PET_REPEL_MIN_GAP = 0.018;
+// 宠物在地表层的纵向落点上限（归一化 0=顶 1=底）。
+// 底部预留空间，避免与底部的等级条 UI（level bar）重叠。
+const FIELD_PET_MAX_Y = 0.82;
 const VISIT_FIELD_MAX_PLANET_GUEST_PETS = 3;
 const NEAR_ACTIVE_PET_MIN_RADIUS = 0.055;
 const NEAR_ACTIVE_PET_RANDOM_RADIUS = 0.065;
@@ -1593,9 +1596,9 @@ function petFieldPosition(pet, fieldId, index, activeFieldPosition = null) {
         const sideGap    = houseHalfW + 0.08 + rng() * 0.04;
         const sideY      = hy + houseHalfH * 0.4 + (rng() - 0.5) * 0.04;
         const candidates = [
-            { x: clamp01(hx + frontJitterX),   y: Math.min(0.92, hy + frontGap) },     // 门前下方
-            { x: Math.min(0.94, hx + sideGap), y: Math.min(0.90, sideY) },             // 右侧
-            { x: Math.max(0.06, hx - sideGap), y: Math.min(0.90, sideY) },             // 左侧
+            { x: clamp01(hx + frontJitterX),   y: Math.min(FIELD_PET_MAX_Y, hy + frontGap) },     // 门前下方
+            { x: Math.min(0.94, hx + sideGap), y: Math.min(FIELD_PET_MAX_Y, sideY) },             // 右侧
+            { x: Math.max(0.06, hx - sideGap), y: Math.min(FIELD_PET_MAX_Y, sideY) },             // 左侧
         ];
         const chosen = candidates.find(c => isFieldPositionFree(c.x, c.y, fieldLayout, rallyHouse.idx)) || candidates[0];
         return {
@@ -1610,7 +1613,7 @@ function petFieldPosition(pet, fieldId, index, activeFieldPosition = null) {
     const rng = makeRng(`${getUserSeedBase()}::${fieldId}::pet::${pet?.id || index}`);
     return {
         x: 0.18 + rng() * 0.64,
-        y: 0.38 + rng() * 0.38,
+        y: Math.min(FIELD_PET_MAX_Y, 0.38 + rng() * 0.38),
         delay: -(rng() * 8).toFixed(2),
         dur: (9 + rng() * 7).toFixed(2),
         dx: (-26 + rng() * 52).toFixed(1),
@@ -1628,7 +1631,7 @@ function anchorNearActiveGeneratedPet(home, petId, fieldId, activeFieldPosition)
     const xOffset = Math.cos(angle) * radius;
     const yOffset = Math.sin(angle) * radius * NEAR_ACTIVE_PET_Y_SCALE;
     home.x = clampRange(activeFieldPosition.x + xOffset, 0.08, 0.92);
-    home.y = clampRange(activeFieldPosition.y + yOffset, 0.36, 0.90);
+    home.y = clampRange(activeFieldPosition.y + yOffset, 0.36, FIELD_PET_MAX_Y);
     home.nearActiveAnchored = true;
 }
 
@@ -1653,7 +1656,7 @@ function repelFieldPetPosition(entry, placed, index = 0) {
             const angle = Math.atan2(dy || (rng() - 0.5), dx || (rng() - 0.5));
             const strength = (1 - dist) * 0.55 + FIELD_PET_REPEL_MIN_GAP;
             pos.x = clampRange(pos.x + Math.cos(angle) * FIELD_PET_REPEL_MIN_X * strength, 0.08, 0.92);
-            pos.y = clampRange(pos.y + Math.sin(angle) * FIELD_PET_REPEL_MIN_Y * strength, 0.36, 0.90);
+            pos.y = clampRange(pos.y + Math.sin(angle) * FIELD_PET_REPEL_MIN_Y * strength, 0.36, FIELD_PET_MAX_Y);
             moved = true;
         }
         if (!moved) break;

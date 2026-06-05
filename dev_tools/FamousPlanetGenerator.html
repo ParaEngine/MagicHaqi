@@ -215,6 +215,23 @@
             </section>
 
             <section class="section">
+              <h2>新手指引 onboarding</h2>
+              <div class="row">
+                <label>引导模式
+                  <select id="onboardingMode">
+                    <option value="none">none · 不引导</option>
+                    <option value="pet-story">pet-story · 新手故事</option>
+                    <option value="minigames">minigames · 新手小游戏</option>
+                  </select>
+                </label>
+                <label>进度 key（progressKey）<input id="onboardingProgressKey" maxlength="64" placeholder="留空则用星球 id"></label>
+              </div>
+              <label>故事路径 storyPath（pet-story 模式）<input id="onboardingStoryPath" maxlength="160" placeholder="pet-story/story_of_dragons.json"></label>
+              <label>小游戏 minigame（minigames 模式）<input id="onboardingMinigame" maxlength="96" placeholder="adventure 或 haqi_adventure.html"></label>
+              <div class="hint">首次进入该星球时触发；完成进度写在 user/&lt;planetId&gt;.layouts.json 的 onboarding 字段。mode=none 时导出 JSON 会省略 onboarding。</div>
+            </section>
+
+            <section class="section">
               <h2>7 个 Fields</h2>
               <div id="fieldList" class="field-list"></div>
             </section>
@@ -384,7 +401,7 @@
     }
 
     function shouldLoadSdkAsModule(src) {
-      return /(^|\/)index\.js(?:[?#].*)?$/.test(src);
+      return /(^|\/)index\.(?:ts|mjs|js)(?:[?#].*)?$/.test(src);
     }
 
     function normalizeKeepworkSdk() {
@@ -397,7 +414,7 @@
       const explicitSdk = params.get('sdk');
       const hostname = window.location.hostname;
       const isLocalHost = !hostname || hostname === 'localhost' || hostname === '127.0.0.1' || hostname === '::1';
-      const localCandidates = ['../../../../../keepworkSDK/index.js', '/keepworkSDK/index.js'];
+      const localCandidates = ['http://127.0.0.1:5001/index.ts'];
       const deployedCandidates = [sdkCdnUrl, 'https://keepwork.com/public/resource/keepworkSDK.iife.js'];
       return [explicitSdk, ...(isLocalHost || window.location.protocol === 'file:' ? localCandidates : []), ...deployedCandidates, ...(isLocalHost || window.location.protocol === 'file:' ? [] : localCandidates)].filter(Boolean);
     }
@@ -590,6 +607,7 @@
         'planet.id 只能使用英文字母、数字、下划线或连字符，必须避免与已有 id 重复。name/title 用简洁可爱的中文名。summary 用一句中文描述星球主题。badge 默认“官方”。',
         'planet.planet 需要包含 readonly:true、hue、bodyBackground、glowColor、accentColor、default_zoom_level。default_zoom_level 只能是 planet/field/pet/cell；可选 hide_planet/hide_cell 为 true 时隐藏对应层。hide_planet=false、hide_cell=false 不要写入 JSON。bodyBackground 用可直接放入 CSS background 的 radial-gradient 组合，颜色要明亮、童话、儿童友好。',
         '每个 field 的 name 要像星球上的地点名，background 至少包含 type、color、title；没有图片时不要填 imageUrl。',
+        'onboarding 是可选对象，描述首次进入该星球的新手指引：{ mode, storyPath?, minigame?, progressKey? }。mode 只能是 none/pet-story/minigames；pet-story 时填 storyPath（如 pet-story/story_of_dragons.json），minigames 时填 minigame（如 adventure）。不需要新手指引时省略 onboarding 或用 mode:"none"。',
         `已有 ids：${existingIds.join(', ') || 'none'}。已有 titles：${existingTitles.join('、') || 'none'}。`,
         description ? `用户最高优先级需求：${description}` : '用户需求：生成一个完整、可直接编辑的新官方星球。',
       ].join('\n');
@@ -685,6 +703,7 @@
         badge: '官方',
         summary: '官方星球简介。planet 层只读，field 内容会随玩家迁移保留。',
         planet: { readonly: true, ...PLANET_PRESETS.maisi },
+        onboarding: { mode: 'none', storyPath: '', minigame: '', progressKey: '' },
         fields: FIELD_SLOTS.map((slot, index) => ({
           name: ['左环', '海湾', '云台', '右环', '山谷', '主地', '码头'][index] || slot.label,
           typeId: ['life', 'water', 'sky', 'land', 'land', 'land', 'sky'][index] || 'land',
@@ -736,6 +755,34 @@
       return compact;
     }
 
+    const ONBOARDING_MODES = ['none', 'pet-story', 'minigames'];
+
+    function normalizeOnboarding(raw = {}, planetId = '') {
+      const source = raw && typeof raw === 'object' ? raw : {};
+      let mode = String(source.mode || '').trim().toLowerCase();
+      if (mode === 'story' || mode === 'petstory') mode = 'pet-story';
+      if (mode === 'minigame' || mode === 'game' || mode === 'games') mode = 'minigames';
+      if (!ONBOARDING_MODES.includes(mode)) mode = 'none';
+      return {
+        mode,
+        storyPath: String(source.storyPath || source.story || '').trim().replace(/^\/+/, ''),
+        minigame: String(source.minigame || source.game || '').trim(),
+        progressKey: String(source.progressKey || '').trim() || String(planetId || '').trim(),
+      };
+    }
+
+    // 导出时：mode=none 直接省略 onboarding；其余只保留对应模式有意义的字段。
+    function compactOnboarding(raw = {}, planetId = '') {
+      const onboarding = normalizeOnboarding(raw, planetId);
+      if (onboarding.mode === 'none') return null;
+      const compact = { mode: onboarding.mode };
+      if (onboarding.mode === 'pet-story' && onboarding.storyPath) compact.storyPath = onboarding.storyPath;
+      if (onboarding.mode === 'minigames' && onboarding.minigame) compact.minigame = onboarding.minigame;
+      const progressKey = onboarding.progressKey || String(planetId || '').trim();
+      if (progressKey) compact.progressKey = progressKey;
+      return compact;
+    }
+
     function normalizePlanetAppearance(raw = {}) {
       return {
         readonly: raw.readonly !== false,
@@ -767,6 +814,7 @@
         badge: String(raw.badge || '官方'),
         summary: String(raw.summary || ''),
         planet: normalizePlanetAppearance(planet),
+        onboarding: normalizeOnboarding(raw.onboarding, id),
         fields: FIELD_SLOTS.map((slot, fieldIndex) => {
           const field = fieldAt(slot, fieldIndex);
           const background = field.background && typeof field.background === 'object' ? field.background : {};
@@ -790,6 +838,7 @@
     function compactPlanet(planet = buildPlanetConfig()) {
       const normalized = normalizePlanet(planet);
       const planetAppearance = normalizePlanetAppearance(normalized.planet);
+      const onboarding = compactOnboarding(normalized.onboarding, normalized.id);
       return {
         id: normalized.id,
         title: normalized.title,
@@ -800,6 +849,7 @@
         badge: normalized.badge,
         summary: normalized.summary,
         planet: planetAppearance,
+        ...(onboarding ? { onboarding } : {}),
         fields: normalized.fields.map(field => {
           const result = {
             name: field.name,
@@ -894,6 +944,12 @@ ${currentIndent}}`;
           hide_planet: $('planetHidePlanet').checked,
           hide_cell: $('planetHideCell').checked,
         },
+        onboarding: {
+          mode: $('onboardingMode').value,
+          storyPath: $('onboardingStoryPath').value.trim(),
+          minigame: $('onboardingMinigame').value.trim(),
+          progressKey: $('onboardingProgressKey').value.trim(),
+        },
         fields: FIELD_SLOTS.map((slot, index) => ({
           name: $(`fieldName${index}`).value.trim() || slot.label,
           typeId: $(`fieldType${index}`).value || 'land',
@@ -930,6 +986,11 @@ ${currentIndent}}`;
       $('planetDefaultZoomLevel').value = zoomOptions.default_zoom_level;
       $('planetHidePlanet').checked = zoomOptions.hide_planet;
       $('planetHideCell').checked = zoomOptions.hide_cell;
+      const onboarding = normalizeOnboarding(safePlanet.onboarding, safePlanet.id);
+      $('onboardingMode').value = onboarding.mode;
+      $('onboardingStoryPath').value = onboarding.storyPath;
+      $('onboardingMinigame').value = onboarding.minigame;
+      $('onboardingProgressKey').value = onboarding.progressKey === safePlanet.id ? '' : onboarding.progressKey;
       renderFieldEditors(safePlanet.fields);
       updateOutput();
     }
@@ -1428,7 +1489,7 @@ ${currentIndent}}`;
     }
 
     function bindEvents() {
-      ['planetId', 'planetName', 'planetTitle', 'planetAppTitle', 'planetShopItemUrl', 'planetPets', 'planetBadge', 'planetSummary', 'planetReadonly', 'planetHue', 'planetGlowColor', 'planetAccentColor', 'planetBodyBackground', 'planetDefaultZoomLevel', 'planetHidePlanet', 'planetHideCell']
+      ['planetId', 'planetName', 'planetTitle', 'planetAppTitle', 'planetShopItemUrl', 'planetPets', 'planetBadge', 'planetSummary', 'planetReadonly', 'planetHue', 'planetGlowColor', 'planetAccentColor', 'planetBodyBackground', 'planetDefaultZoomLevel', 'planetHidePlanet', 'planetHideCell', 'onboardingMode', 'onboardingStoryPath', 'onboardingMinigame', 'onboardingProgressKey']
         .forEach(id => $(id).addEventListener('input', updateOutput));
       $('recordSearch').addEventListener('input', renderRecords);
       $('btnReload').onclick = loadRecords;

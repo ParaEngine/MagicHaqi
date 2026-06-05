@@ -1,0 +1,435 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Game Generator · MagicHaqi 小游戏工坊</title>
+  <script src="https://cdn.keepwork.com/keepwork/cdn/tailwindcss@3.4.16.js"></script>
+  <style type="text/tailwindcss">
+    @layer base {
+      :root { color-scheme: light; }
+      button { @apply min-h-[34px] cursor-pointer rounded-md border border-slate-300 bg-white px-3 text-slate-900 transition hover:border-sky-300 hover:bg-slate-50 active:translate-y-px disabled:cursor-not-allowed disabled:opacity-50 disabled:active:translate-y-0; }
+      input, textarea, select { @apply w-full min-h-[34px] rounded-md border border-slate-300 bg-white px-2.5 py-1.5 text-slate-900 outline-none focus:border-sky-600 focus:ring-2 focus:ring-sky-600/15; }
+      label { @apply flex flex-col gap-1.5 text-xs text-slate-500; }
+      h1, h2, h3 { @apply m-0 tracking-normal; }
+      h1 { @apply text-lg leading-tight font-semibold; }
+      h2 { @apply text-sm font-semibold; }
+      h3 { @apply text-xs font-normal text-slate-500; }
+    }
+    @layer components {
+      .toolbar { @apply flex flex-wrap items-center gap-2; }
+      .toolbar button { @apply flex-none; }
+      .primary { @apply border-sky-600 bg-sky-600 text-white hover:border-sky-700 hover:bg-sky-700; }
+      .success { @apply border-emerald-600 bg-emerald-600 text-white hover:border-emerald-700 hover:bg-emerald-700; }
+      .danger { @apply border-red-200 bg-red-50 text-red-700; }
+      .hint { @apply text-xs leading-normal text-slate-500; }
+      .status { @apply whitespace-pre-wrap rounded-md border border-sky-200 bg-sky-50 px-2.5 py-2 text-xs leading-normal text-sky-900; }
+      .status.ok { @apply border-emerald-200 bg-emerald-50 text-emerald-800; }
+      .status.error { @apply border-red-200 bg-red-50 text-red-800; }
+      .status-action { @apply min-h-0 border-0 bg-transparent p-0 font-bold underline underline-offset-2 hover:border-transparent hover:bg-transparent; }
+      .pill { @apply inline-flex min-h-6 items-center whitespace-nowrap rounded-full border border-slate-300 bg-white px-2 text-xs text-slate-500; }
+      .record-list { @apply flex min-h-0 flex-1 flex-col gap-1.5 overflow-auto p-2; }
+      .record-item { @apply grid w-full min-w-0 flex-none grid-cols-[40px_minmax(0,1fr)_auto] items-center gap-2.5 overflow-hidden rounded-md border border-slate-300 bg-white p-2.5 text-left transition; }
+      .record-item.active { @apply border-sky-600 bg-sky-50 ring-2 ring-sky-600/15; }
+      .record-icon { @apply grid h-10 w-10 place-items-center rounded-md border border-slate-200 bg-slate-50 text-2xl; }
+      .record-main { @apply block min-w-0 border-0 bg-transparent p-0 text-left hover:border-transparent hover:bg-transparent; }
+      .record-title { @apply block min-w-0 overflow-hidden text-ellipsis whitespace-nowrap text-[13px] font-bold; }
+      .record-meta { @apply block min-w-0 overflow-hidden text-ellipsis whitespace-nowrap text-[11px] text-slate-500; }
+      .record-actions { @apply flex gap-1.5; }
+      .record-actions button { @apply min-h-[30px] min-w-[34px] px-2 text-xs; }
+      .empty-list { @apply rounded-md border border-dashed border-slate-300 bg-slate-50 p-4 text-center text-xs text-slate-500; }
+      /* 编辑器宿主：view_game_maker.js 用 position:absolute; inset:0 填满此容器 */
+      .maker-host { @apply relative min-h-0 flex-1 overflow-hidden rounded-lg border border-slate-300 bg-slate-900; }
+      .maker-empty { @apply absolute inset-0 grid place-items-center p-6 text-center text-sm text-slate-400; }
+    }
+  </style>
+  <style>
+    @keyframes ggSpin { to { transform: rotate(360deg); } }
+    .gg-spinner { width: 34px; height: 34px; border: 3px solid rgba(148,163,184,.35); border-top-color: #0ea5e9; border-radius: 50%; animation: ggSpin .9s linear infinite; }
+  </style>
+</head>
+<body class="m-0 h-screen overflow-hidden bg-slate-100 text-slate-900 font-sans">
+  <main class="grid h-screen grid-cols-1 gap-3 p-3 lg:grid-cols-[280px_minmax(520px,1fr)] lg:overflow-hidden">
+    <!-- 侧栏：账号 + 项目列表 -->
+    <aside class="sidebar flex min-h-0 flex-col overflow-hidden rounded-lg border border-slate-300 bg-white shadow-lg shadow-slate-300/40">
+      <div class="flex min-h-14 items-center justify-between gap-2.5 border-b border-slate-300 px-3.5 py-3">
+        <div>
+          <h1>Game Generator</h1>
+          <h3>MagicHaqi 小游戏工坊</h3>
+        </div>
+        <span id="sdkState" class="pill">SDK loading</span>
+      </div>
+
+      <div class="flex flex-col gap-2.5 border-b border-slate-300 bg-slate-50 p-3">
+        <h2>账号与工具</h2>
+        <div id="loginState" class="status">正在加载 KeepworkSDK...</div>
+        <div class="toolbar">
+          <button id="btnLocalApi" type="button">本地 API Key</button>
+        </div>
+      </div>
+
+      <div class="flex items-center justify-between gap-2 border-b border-slate-300 bg-white px-3 py-2.5">
+        <div>
+          <h2>我的小游戏</h2>
+          <h3>Workspace: MagicHaqi/pet-games</h3>
+        </div>
+        <span id="recordCount" class="pill">0</span>
+      </div>
+      <div class="grid grid-cols-2 gap-2 border-b border-slate-300 bg-slate-50 p-3">
+        <button id="btnNewGame" class="primary col-span-2" type="button">＋ 新建小游戏</button>
+        <button id="btnRefresh" type="button">刷新列表</button>
+        <button id="btnReloadSelected" type="button">重新打开</button>
+      </div>
+      <div id="recordList" class="record-list">
+        <div class="hint p-2.5">加载 SDK 并登录后，会列出你创造的小游戏。</div>
+      </div>
+    </aside>
+
+    <!-- 主区：小游戏制作工坊（view_game_maker.js） -->
+    <section class="editor flex min-h-0 flex-col overflow-hidden rounded-lg border border-slate-300 bg-white shadow-lg shadow-slate-300/40">
+      <div class="flex min-h-14 items-center justify-between gap-2.5 border-b border-slate-300 px-3.5 py-3">
+        <div>
+          <h2 id="editorTitle">小游戏制作工坊</h2>
+          <h3 id="editorSubtitle">从左侧选择小游戏编辑，或新建一个。</h3>
+        </div>
+        <div class="toolbar">
+          <button id="btnCloseMaker" type="button">关闭工坊</button>
+        </div>
+      </div>
+      <div class="flex min-h-0 flex-1 flex-col gap-3 p-3">
+        <div id="makerHost" class="maker-host">
+          <div class="maker-empty" id="makerEmpty">
+            <div class="flex flex-col items-center gap-3">
+              <div class="gg-spinner" id="bootSpinner"></div>
+              <div id="bootHint">正在加载 KeepworkSDK 与制作工坊…</div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </section>
+  </main>
+
+  <script type="module">
+    // ============================================================
+    // GameGenerator 独立工具：
+    //   - 布局参考 Pet Generator（侧栏账号 + 项目列表 + 主编辑区）
+    //   - 项目管理逻辑参考 view_minigames.js「我的」标签（pet-games/index.json）
+    //   - 编辑器使用 view_game_maker.js（renderGameMaker），不再使用 view_minigames.js
+    // ============================================================
+    const $ = (id) => document.getElementById(id);
+
+    const state = {
+      sdk: null,
+      records: [],
+      activePath: '',
+      makerOpen: false,
+    };
+
+    function setStatus(el, text, kind = '') {
+      if (!el) return;
+      el.textContent = text;
+      el.classList.toggle('error', kind === 'error');
+      el.classList.toggle('ok', kind === 'ok');
+    }
+
+    function escapeHtml(value) {
+      const div = document.createElement('div');
+      div.textContent = value == null ? '' : String(value);
+      return div.innerHTML;
+    }
+
+    function formatTime(ts) {
+      const value = Number(ts);
+      if (!Number.isFinite(value) || value <= 0) return '';
+      try { return new Date(value).toLocaleString(); } catch (_) { return ''; }
+    }
+
+    // -------- KeepworkSDK 加载（本地源码优先，CDN 兜底） --------
+    const sdkCdnUrl = 'https://cdn.keepwork.com/sdk/keepworkSDK.iife.js?v=20260603a';
+    const sdkLoadTimeoutMs = 8000;
+
+    function withTimeout(promise, ms, label) {
+      let timer = null;
+      const timeout = new Promise((_, reject) => { timer = setTimeout(() => reject(new Error(`${label} timed out`)), ms); });
+      return Promise.race([promise, timeout]).finally(() => clearTimeout(timer));
+    }
+    function loadScript(src) {
+      return new Promise((resolve, reject) => {
+        const existing = [...document.scripts].find(s => s.src === src);
+        if (existing) {
+          existing.addEventListener('load', () => resolve(), { once: true });
+          existing.addEventListener('error', () => reject(new Error(`SDK script failed: ${src}`)), { once: true });
+          if (window.keepwork || window.KeepworkSDK) resolve();
+          return;
+        }
+        const script = document.createElement('script');
+        script.src = src;
+        script.onload = () => resolve();
+        script.onerror = () => reject(new Error(`SDK script failed: ${src}`));
+        document.head.appendChild(script);
+      });
+    }
+    function importRuntimeModule(src) { return new Function('src', 'return import(src)')(src); }
+    function shouldLoadSdkAsModule(src) { return /(^|\/)index\.(?:ts|mjs|js)(?:[?#].*)?$/.test(src); }
+    function getSdkCandidates() {
+      const params = new URLSearchParams(window.location.search);
+      const explicitSdk = params.get('sdk');
+      const host = window.location.hostname;
+      const isLocalHost = !host || host === 'localhost' || host === '127.0.0.1' || host === '::1';
+      const isFile = window.location.protocol === 'file:';
+      const localCandidates = ['http://127.0.0.1:5001/index.ts'];
+      const deployedCandidates = [sdkCdnUrl, 'https://keepwork.com/public/resource/keepworkSDK.iife.js'];
+      return [
+        explicitSdk,
+        ...((isLocalHost || isFile) ? localCandidates : []),
+        ...deployedCandidates,
+        ...((isLocalHost || isFile) ? [] : localCandidates),
+      ].filter(Boolean);
+    }
+
+    let stateMod, storageMod, gameMakerMod, i18nMod, configMod;
+
+    async function ensureKeepworkSDK() {
+      if (window.keepwork || window.KeepworkSDK) return;
+      let lastError = null;
+      for (const url of getSdkCandidates()) {
+        try {
+          if (shouldLoadSdkAsModule(url)) await withTimeout(importRuntimeModule(url), sdkLoadTimeoutMs, `SDK module ${url}`);
+          else await loadScript(url);
+          if (window.keepwork || window.KeepworkSDK) return;
+        } catch (e) { lastError = e; }
+      }
+      throw lastError || new Error('无法加载 KeepworkSDK');
+    }
+
+    async function loadSdk() {
+      try {
+        $('bootHint').textContent = '正在加载 KeepworkSDK…';
+        await ensureKeepworkSDK();
+      } catch (err) {
+        $('sdkState').textContent = 'SDK failed';
+        setStatus($('loginState'), `KeepworkSDK 加载失败：${err?.message || err}`, 'error');
+        showMakerEmpty('KeepworkSDK 加载失败，请检查网络后刷新。', false);
+        throw err;
+      }
+
+      const sdk = window.keepwork || new window.KeepworkSDK({ timeout: 30000 });
+      window.keepwork = sdk;
+      window.sdk = sdk;
+      state.sdk = sdk;
+      if (sdk.setUserApiKey && window.KeepworkSDK?.API_KEYS?.maisi) {
+        sdk.setUserApiKey(window.KeepworkSDK.API_KEYS.maisi);
+      }
+      try { await sdk.localAPIKeySettings?.load?.(); } catch (e) { console.warn('Local API Key settings load failed:', e); }
+
+      // 加载 MagicHaqi 运行时模块（共享 state 让 storage / game_maker 正常工作）。
+      $('bootHint').textContent = '正在加载制作工坊…';
+      [stateMod, storageMod, gameMakerMod, i18nMod, configMod] = await Promise.all([
+        import('../js/state.js'),
+        import('../js/storage.js'),
+        import('../js/view_game_maker.js'),
+        import('../js/i18n.js'),
+        import('../js/config.js'),
+      ]);
+      // 把 SDK 注入共享 state，storage.js / view_game_maker.js 都从这里取 sdk。
+      stateMod.state.sdk = sdk;
+      window.MH_state = stateMod.state;
+
+      $('sdkState').textContent = 'SDK ready';
+      await refreshLoginState();
+      await loadRecords();
+      showMakerEmpty('从左侧选择小游戏编辑，或点「新建小游戏」开始创作。', false);
+    }
+
+    // -------- 登录状态 --------
+    async function refreshLoginState() {
+      const sdk = state.sdk || window.keepwork;
+      if (!sdk) return;
+      let username = sdk.user?.username || '';
+      if (sdk.token && !username) {
+        try {
+          const user = typeof sdk.getUserProfile === 'function' ? await sdk.getUserProfile() : await sdk.getCurrentUser?.();
+          username = user?.username || sdk.user?.username || '';
+        } catch (_) {}
+      }
+      const loginState = $('loginState');
+      loginState.classList.toggle('error', false);
+      loginState.classList.toggle('ok', !!sdk.token);
+      loginState.innerHTML = sdk.token
+        ? `已登录：<button id="btnProfile" class="status-action" type="button">${escapeHtml(username || 'Keepwork 用户')}</button>`
+        : '<button id="btnProfile" class="status-action" type="button">未登录</button>。点击登录后即可管理 / 保存小游戏。';
+      const btn = $('btnProfile');
+      if (btn) btn.onclick = openLoginOrProfile;
+    }
+
+    async function openLoginOrProfile() {
+      const sdk = state.sdk || window.keepwork;
+      if (!sdk) return;
+      if (!sdk.token) {
+        if (sdk.loginWindow?.show) sdk.loginWindow.show({ onLogin: async () => { await refreshLoginState(); await loadRecords(); } });
+        else if (sdk.login) await sdk.login();
+        setTimeout(async () => { await refreshLoginState(); await loadRecords(); }, 800);
+        return;
+      }
+      if (typeof sdk.showProfileWindow === 'function') {
+        const result = await sdk.showProfileWindow();
+        if (result?.action === 'logout') { await refreshLoginState(); await loadRecords(); return; }
+      } else if (sdk.profileWindow?.show) {
+        await sdk.profileWindow.show();
+      }
+      await refreshLoginState();
+    }
+
+    // -------- 项目列表（pet-games/index.json） --------
+    async function loadRecords() {
+      const sdk = state.sdk || window.keepwork;
+      if (!sdk?.token) {
+        state.records = [];
+        $('recordCount').textContent = '0';
+        $('recordList').innerHTML = '<div class="empty-list">登录后查看你创造的小游戏。</div>';
+        return;
+      }
+      try {
+        state.records = await storageMod.loadPetGameList();
+      } catch (e) {
+        console.error('加载小游戏列表失败', e);
+        state.records = [];
+        $('recordList').innerHTML = `<div class="empty-list">加载失败：${escapeHtml(e?.message || e)}</div>`;
+        $('recordCount').textContent = '0';
+        return;
+      }
+      renderRecords();
+    }
+
+    function renderRecords() {
+      const list = $('recordList');
+      $('recordCount').textContent = String(state.records.length);
+      if (!state.records.length) {
+        list.innerHTML = '<div class="empty-list">还没有小游戏。点「新建小游戏」开始创作吧。</div>';
+        return;
+      }
+      list.innerHTML = state.records.map(rec => {
+        const active = rec.path === state.activePath;
+        return `
+          <div class="record-item${active ? ' active' : ''}" data-path="${escapeHtml(rec.path)}">
+            <div class="record-icon">${escapeHtml(rec.icon || '🎮')}</div>
+            <button class="record-main" type="button" data-act="open" data-path="${escapeHtml(rec.path)}">
+              <span class="record-title">${escapeHtml(rec.title || rec.id || '未命名小游戏')}</span>
+              <span class="record-meta">${escapeHtml(formatTime(rec.updatedAt) || rec.path)}</span>
+            </button>
+            <div class="record-actions">
+              <button type="button" data-act="open" data-path="${escapeHtml(rec.path)}" title="编辑">✏️</button>
+              <button type="button" class="danger" data-act="delete" data-path="${escapeHtml(rec.path)}" title="删除">🗑</button>
+            </div>
+          </div>`;
+      }).join('');
+    }
+
+    // 事件委托：打开 / 删除
+    $('recordList').addEventListener('click', async (e) => {
+      const btn = e.target.closest('button[data-act]');
+      if (!btn) return;
+      const path = btn.getAttribute('data-path');
+      const act = btn.getAttribute('data-act');
+      const rec = state.records.find(r => r.path === path);
+      if (!rec) return;
+      if (act === 'open') {
+        await openGameMaker(rec);
+      } else if (act === 'delete') {
+        if (!confirm(`删除小游戏「${rec.title || rec.id || path}」？此操作不可撤销。`)) return;
+        try {
+          await storageMod.deletePetGame(path);
+          if (state.activePath === path) { state.activePath = ''; closeMaker(); }
+          await loadRecords();
+        } catch (err) {
+          alert('删除失败：' + (err?.message || err));
+        }
+      }
+    });
+
+    // -------- 制作工坊（view_game_maker.js） --------
+    function showMakerEmpty(text, spinner = false) {
+      const host = $('makerHost');
+      host.innerHTML = `<div class="maker-empty"><div class="flex flex-col items-center gap-3">${spinner ? '<div class="gg-spinner"></div>' : ''}<div>${escapeHtml(text)}</div></div></div>`;
+    }
+
+    function closeMaker() {
+      try { gameMakerMod?.disposeGameMaker?.(); } catch (_) {}
+      state.makerOpen = false;
+      state.activePath = '';
+      renderRecords();
+      $('editorTitle').textContent = '小游戏制作工坊';
+      $('editorSubtitle').textContent = '从左侧选择小游戏编辑，或新建一个。';
+      showMakerEmpty('从左侧选择小游戏编辑，或点「新建小游戏」开始创作。', false);
+    }
+
+    async function openGameMaker(rec) {
+      const sdk = state.sdk || window.keepwork;
+      if (!sdk?.token) {
+        if (!confirm('管理 / 保存小游戏需要先登录，现在登录吗？')) return;
+        await openLoginOrProfile();
+        if (!sdk?.token) return;
+      }
+      // 新建：rec 为 null；编辑：读取既有 HTML 再传入。
+      let game = null;
+      if (rec) {
+        let html = '';
+        try { html = await storageMod.loadPetGameHtml(rec.path); }
+        catch (e) { console.warn('读取小游戏 HTML 失败', e); }
+        game = { record: rec, html };
+        state.activePath = rec.path;
+        $('editorTitle').textContent = rec.title || rec.id || '编辑小游戏';
+        $('editorSubtitle').textContent = `编辑中 · ${rec.path}`;
+      } else {
+        state.activePath = '';
+        $('editorTitle').textContent = '新建小游戏';
+        $('editorSubtitle').textContent = '与 AI 对话生成你的小游戏。';
+      }
+      renderRecords();
+
+      const host = $('makerHost');
+      host.innerHTML = '';
+      state.makerOpen = true;
+      gameMakerMod.renderGameMaker(host, { game }, {
+        // 工坊内置返回按钮：回到空闲态。
+        onBack: () => { closeMaker(); },
+        // 保存后：刷新项目列表，并把当前项目标记为已保存路径。
+        onSaved: async (result) => {
+          if (result?.path) {
+            state.activePath = result.path;
+            const r = result.record;
+            if (r) { $('editorTitle').textContent = r.title || r.id || '编辑小游戏'; $('editorSubtitle').textContent = `已保存 · ${result.path}`; }
+          }
+          await loadRecords();
+        },
+      });
+    }
+
+    // -------- 顶部按钮 --------
+    $('btnNewGame').onclick = () => openGameMaker(null);
+    $('btnRefresh').onclick = () => loadRecords();
+    $('btnReloadSelected').onclick = () => {
+      const rec = state.records.find(r => r.path === state.activePath);
+      if (rec) openGameMaker(rec);
+      else alert('请先在列表中打开一个小游戏。');
+    };
+    $('btnCloseMaker').onclick = () => closeMaker();
+    $('btnLocalApi').onclick = async () => {
+      const sdk = state.sdk || window.keepwork;
+      const settings = sdk?.localAPIKeySettings;
+      if (!settings?.show) return setStatus($('loginState'), '当前 SDK 不支持本地 API Key 设置。', 'error');
+      settings.show({
+        title: '本地 API Key 设置',
+        fullscreen: true,
+        onSave: async () => { setStatus($('loginState'), '本地 API Key 设置已保存。', 'ok'); await refreshLoginState(); },
+      });
+    };
+
+    // 暴露给控制台调试
+    window.MH_GameGenerator = { state, loadRecords, openGameMaker, closeMaker };
+
+    // 启动
+    loadSdk().catch(err => console.error('GameGenerator 启动失败', err));
+  </script>
+</body>
+</html>

@@ -485,14 +485,14 @@
     }
 
     function importRuntimeModule(src) { return new Function('src', 'return import(src)')(src); }
-    function shouldLoadSdkAsModule(src) { return /(^|\/)index\.js(?:[?#].*)?$/.test(src); }
+    function shouldLoadSdkAsModule(src) { return /(^|\/)index\.(?:ts|mjs|js)(?:[?#].*)?$/.test(src); }
 
     function getSdkCandidates() {
       const params = new URLSearchParams(window.location.search);
       const explicitSdk = params.get('sdk');
       const hostname = window.location.hostname;
       const isLocalHost = !hostname || hostname === 'localhost' || hostname === '127.0.0.1' || hostname === '::1';
-      const localCandidates = ['../../../../../keepworkSDK/index.js', '/keepworkSDK/index.js'];
+      const localCandidates = ['http://127.0.0.1:5001/index.ts'];
       const deployedCandidates = [sdkCdnUrl, 'https://keepwork.com/public/resource/keepworkSDK.iife.js'];
       return [explicitSdk, ...(isLocalHost || window.location.protocol === 'file:' ? localCandidates : []), ...deployedCandidates, ...(isLocalHost || window.location.protocol === 'file:' ? [] : localCandidates)].filter(Boolean);
     }

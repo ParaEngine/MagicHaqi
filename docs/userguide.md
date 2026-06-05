@@ -938,3 +938,64 @@ UFO 每天只能接待一次。每日限制按本地日期记录。
 | `pets/<petId>.chat.log` | 单只宠物聊天历史 |
 
 写入通常会做短暂合并保存，避免频繁写入。刷新页面后，游戏会重新加载这些文件，并按离线追溯逻辑补算宠物状态。
+
+## 13. URL 参数与全局变量参考
+
+这一节集中列出《蛋蛋星球》入口页 `MagicHaqi.html` 支持的所有 URL 查询参数（`?key=value`）以及对应的启动期全局变量（在加载脚本前通过 `window.__xxx` 设置）。这些参数主要用于分享、嵌入、调试和定向发行场景。
+
+> 用法示例：`MagicHaqi.html?view=field&skip_onboarding=1`
+> 多个参数用 `&` 连接；中文等内容需做 URL 编码。
+
+### 13.1 启动与登录
+
+| 参数 | 全局变量 | 取值 | 作用 |
+| --- | --- | --- | --- |
+| `token` | — | KeepWork token 字符串 | 启动时直接注入登录态，跳过手动登录（多用于嵌入/免登场景） |
+
+### 13.2 强制进入视图
+
+| 参数 | 全局变量 | 取值 | 作用 |
+| --- | --- | --- | --- |
+| `view` | `window.__view` | `planet` / `field` / `pet` / `cell` / `game` | 强制启动落地视图。`planet`/`field`/`pet`/`cell` 对应四个 Zoom 倍率层；`game` 直接进入小游戏视图。优先级高于新手指引和默认流程 |
+
+### 13.3 新手指引（onboarding）
+
+| 参数 | 全局变量 | 取值 | 作用 |
+| --- | --- | --- | --- |
+| `new_user_story` | — | 故事路径或文件名 | 强制把指定故事作为“新用户故事”播放，优先级高于星球自带的 onboarding 配置 |
+| `skip_onboarding` | — | `1` / `true` / `yes` / `on` | 跳过当前星球的新手指引（pet-story 或 minigames），直接进入家园。便于调试或分享落地 |
+
+> 新手指引的具体模式（`pet-story` / `minigames`）由当前星球在 `famous-planets/_planet_index.json` 中的 `onboarding` 字段决定；是否已完成则记录在该星球的 `user/<planetId>.layouts.json` 的 `onboarding` 字段中。
+
+### 13.4 星球与发行入口
+
+| 参数 | 全局变量 | 取值 | 作用 |
+| --- | --- | --- | --- |
+| `home_planet` | `window.__homePlanet` | 官方星球 id 或 `famous-planets/<id>.json` | 临时以指定官方星球作为家园载入（不写入存档），用于多星球发行入口或预览 |
+
+### 13.5 分享小游戏
+
+| 参数 | 取值 | 作用 |
+| --- | --- | --- |
+| `gameFrom` | 对方 KeepWork 用户名 | 与 `game` 搭配，自动试玩对方 workspace 里的小游戏 |
+| `game` | 小游戏文件名 | 指定要试玩的小游戏；需与 `gameFrom` 同时提供 |
+
+### 13.6 分享故事
+
+| 参数 | 取值 | 作用 |
+| --- | --- | --- |
+| `story` | 故事路径或文件名 | 启动时直接播放指定故事（如 `pet-story/story_of_dragons.json`） |
+| `storyFrom` | 对方 KeepWork 用户名 | 与 `story` 搭配，播放对方 workspace `stories/` 下的分享故事 |
+
+### 13.7 明信片 / 邀请
+
+| 参数 | 取值 | 作用 |
+| --- | --- | --- |
+| `postcardFrom` / `inviteFrom` | 对方 KeepWork 用户名 | 进入明信片落地页，展示对方宠物 |
+| `petId` | 宠物 id，或 `famous-pets/<petId>` | 指定明信片中展示的宠物配置 |
+| `layout` | 动作名（可用逗号分隔，如 `idle,happy`） | 指定宠物展示的动作/姿态 |
+| `text` | 文本 | 明信片上的祝福文字 |
+| `photoTheme` / `theme` | 主题名 | 明信片的拍照主题样式 |
+
+> 明信片完整示例：
+> `MagicHaqi.html?postcardFrom=&petId=famous-pets/pink_unicorn_flyer&layout=idle,happy&text=欢迎来我的星球`

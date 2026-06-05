@@ -78,6 +78,48 @@ MagicHaqi.html?home_planet=your_own_ip
 
 配置独立产品入口时，最重要的不是 URL 本身，而是保证这个 ID 对应的星球数据完整：星球 entry 要存在，7 个 fields 要完整，图片 URL 要可访问，`shopItemUrl` 指向的商店文件要存在，`appTitle` 要符合该产品的品牌名。
 
+### 星球面向人群配置（audience）
+
+为了让同一套引擎适配不同人群，每颗星球可以在 `_planet_index.json` 的星球 entry 里增加一个 `audience` 对象，用来描述目标用户与养成压力。当前支持以下字段：
+
+```json
+"audience": {
+  "targetUser": "想零压力陪伴的大人与全年龄玩家",
+  "ageRange": "6-99",
+  "petPersona": "童趣治愈、永远开心",
+  "selfCare": 1
+}
+```
+
+| 字段 | 含义 | 取值 |
+| --- | --- | --- |
+| `targetUser` | 目标用户，一句话描述 | 文本 |
+| `ageRange` | 适合年龄段（可解析区间） | 文本，格式 `min-max`，例如 `8-12` |
+| `petPersona` | 宠物人格基调 | 文本 |
+| `selfCare` | 宠物自我照料能力 | `[0,1]` 之间的小数 |
+
+**`selfCare` 行为说明（取值区间 `[0,1]`）**
+
+`selfCare` 是一个连续值，描述这颗星球的宠物有多能照顾自己，直接决定养成数值衰减得有多慢——值越大，需要照料的间隔越长：
+
+| selfCare | 衰减倍率 | 大致照料间隔 | 体验 |
+| --- | --- | --- | --- |
+| `0`（默认） | 1.000 | ~1 天 | 常规养成，几乎每天都要照料 |
+| `0.3` | 0.573 | ~1.7 天 | 偶尔疏忽也没关系 |
+| `0.5` | 0.330 | ~3 天 | 几天照料一次 |
+| `0.7` | 0.143 | ~7 天 | 大约一周照料一次 |
+| `0.9` | 0.025 | ~40 天 | 几乎免照料 |
+| `1` | 0.000 | 永不 | 完全自给自足（零压力） |
+
+- 衰减倍率曲线为 `decayMultiplier = (1 - selfCare) ** 1.6`，使「照料间隔 ≈ 1 / 衰减倍率 天」。该倍率同时按比例缩放生病概率（`selfCare` 越大越不容易生病）。
+- `selfCare` 取整数 `1` 时为**完全自给自足 / 零压力**：宠物不会饿、不会脏、一直开心，所有养成数值统一锁定在 **80% 左右**，在线 / 离线都不衰减、**永不生病、不会形成创伤**。适合给大人做的轻松陪伴型星球（例如像素乐星）。
+- `selfCare` 取 `0`（或缺省）时为常规养成，适合给孩子的养成型星球。
+
+实现位置：
+
+- 配置读取：`view_star_settlements.js` 在切换/恢复星球时，用 `planetSelfCareValue()` 把 `audience.selfCare` 规范化到 `[0,1]` 后写入 `state.settings.starSettlement.selfCare`。
+- 行为生效：`petTick.js` 的 `applyDecay` / `applyOfflineDecay` / `maybeRollDailySickness` 调用 `petLifecycle.js` 的 `currentPlanetDecayMultiplier()` 按倍率放慢衰减与降低生病概率；当 `selfCare === 1` 时走 `isCurrentPlanetSelfCare()` 分支，用 `applyPlanetSelfCareStats()` 把数值锁定在 `PLANET_SELF_CARE_STATS`（默认 `{ hunger: 80, mood: 80, clean: 80, bond: 80 }`），并跳过生病 / 创伤。
+
 本文档面向负责维护 MagicHaqi 官方内容的策划、设计和开发同学，详细说明 `dev_tools/` 目录下 4 个内部生成器的使用方式、数据保存位置、字段含义以及它们之间的逻辑关系。
 
 4 个工具分别是：

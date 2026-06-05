@@ -1,12 +1,13 @@
 // 主程序：SDK 启动 + 路由 + 全局事件
 import { $, showToast, confirm, clamp, prompt, escapeHtml } from './utils.js';
-import { canPlaceItemInArea, CONFIG, getItemZOrder, getShopItemById, findLargestHouseAcrossLayouts, getStageName, getForcedView, zoomLevelIdToIndex } from './config.js';
+import { canPlaceItemInArea, CONFIG, getItemZOrder, getShopItemById, findLargestHouseAcrossLayouts, getStageName, getForcedView, zoomLevelIdToIndex, DEFAULT_PLANET_ID, getPlanetOnboardingConfig } from './config.js';
 import { state, notify, subscribe, setView, setCurrentPet, getCurrentPet } from './state.js';
 import {
     loadUserProfile, saveUserProfile, saveUserProfileDebounced,
     loadAllPets, loadPet, deletePet, setCurrentPetPersisted,
     saveLayout, addToInventory, removeFromInventory, savePetDebounced,
     getLayout, ensurePetData, savePet, clearStoredData, saveDecorDataNow, saveInventoryDebounced, loadStoryProgress, saveStoryProgress,
+    isOnboardingCompleted, saveOnboardingProgress, markOnboardingCompleted,
 } from './storage.js';
 import { applyDecay, applyStage, clampEnergyToMax, defaultPermanentTrauma, defaultStats, eggStats, getActiveSickness, getEffectiveSicknessSeverity, getSicknessDef, markPetCared, maybeRollDailySickness, tickOffline, startTickLoop, stopTickLoop, treatPetSicknessOneLevel } from './petTick.js';
 import { renderLogin } from './view_login.js';
@@ -47,7 +48,7 @@ import SoundManager from './soundManager.js';
 // Side-effect import: 订阅 state 并接管所有 [data-mh-pet] 占位符的渲染 + 动画
 import { canWakePet, daySleepRejectText, eatFood, isPetInteractionBlocked, isPetSleeping, petArtHtml, preloadPetAssets, say, scanAndMount, setAnim, shouldRejectDaySleep, sleepingInteractionText, startPetSleep, wakePet, wakePetForPlay } from './pet.js';
 
-const sdkCdnUrl = 'https://cdn.keepwork.com/sdk/keepworkSDK.iife.js?v=20260603a';
+const sdkCdnUrl = 'https://cdn.keepwork.com/sdk/keepworkSDK.iife.js?v=20260604b';
 
 function loadScript(src) {
     return new Promise((resolve, reject) => {
@@ -76,7 +77,7 @@ async function ensureKeepworkSDK() {
     const useLocalIndex = isLocalHost && !window.location.pathname.includes('/dist/');
     try {
         if (useLocalIndex) {
-            await importRuntimeModule('/keepworkSDK/index.js');
+            await importRuntimeModule('http://127.0.0.1:5001/index.ts');
         } else {
             await loadScript(sdkCdnUrl);
         }
@@ -128,6 +129,8 @@ let minigamesViewPromise = null;
 let minigamesViewModule = null;
 let pendingMinigameLaunch = null;
 let pendingMinigameTab = null;
+// 分享链接进入的小游戏（?gameFrom=&game=），引导进入 minigames 视图并自动试玩。
+let pendingSharedGame = null;
 let hatchingViewPromise = null;
 let hatchingViewModule = null;
 let settingsViewPromise = null;
@@ -158,6 +161,40 @@ let lastRenderedView = null;
 let isBootstrapping = true;
 
 const NEW_USER_STORY_PARAM = 'new_user_story';
+
+// 分享小游戏链接：?gameFrom=<username>&game=<filename>
+function parseSharedGameParams() {
+    try {
+        const url = new URL(window.location.href);
+        const fromUsername = (url.searchParams.get('gameFrom') || '').trim();
+        const game = (url.searchParams.get('game') || '').trim();
+        return { fromUsername, game };
+    } catch (_) {
+        return { fromUsername: '', game: '' };
+    }
+}
+
+function hasSharedGameParams() {
+    const { fromUsername, game } = parseSharedGameParams();
+    return !!(fromUsername && game);
+}
+
+// 启动落地视图：分享小游戏 > 明信片 > home。分享小游戏会记下待试玩参数。
+function resolveLandingView() {
+    if (hasSharedGameParams()) {
+        pendingSharedGame = parseSharedGameParams();
+        return 'minigames';
+    }
+    return hasPostcardParams() ? 'postcard' : 'home';
+}
+
+function cleanupSharedGameUrl() {
+    try {
+        const url = new URL(window.location.href);
+        ['gameFrom', 'game'].forEach(key => url.searchParams.delete(key));
+        window.history.replaceState({}, '', url.toString());
+    } catch (_) {}
+}
 
 function loadChatView() {
     if (chatViewModule) return Promise.resolve(chatViewModule);
@@ -589,6 +626,13 @@ function renderMinigamesRoute() {
             pendingGameMakerEdit = (record || html) ? { record: record || null, html: html || '' } : null;
             navigateToView('gameMaker');
         },
+        // 分享链接进入：自动试玩别人 workspace 里的小游戏；消费后清掉 URL 参数与待办。
+        sharedGame: (() => {
+            const shared = pendingSharedGame;
+            pendingSharedGame = null;
+            if (shared) cleanupSharedGameUrl();
+            return shared;
+        })(),
     };
     if (minigamesViewModule) {
         minigamesViewModule.renderMinigames(app, { pet }, renderOptions);
@@ -897,7 +941,11 @@ async function bootstrap() {
 
     if (!hasSelectablePets()) {
         finishBootstrap();
+        // URL 指定的新手故事优先级最高。
         if (await maybeStartNewUserStory()) return;
+        // 没有宠物时，pet-story 模式的新手指引本身就是“领养仪式”，应优先于默认蛋流程；
+        // minigames 模式因为需要可用宠物，会在 maybeStartOnboarding 内返回 false 而落到默认蛋。
+        if (await maybeStartOnboarding()) return;
         await enterDefaultEggHome();
         return;
     } else if (state.currentPetId && !isPetSelectable(state.pets[state.currentPetId])) {
@@ -919,9 +967,14 @@ async function bootstrap() {
         try { await ensurePetData(state.currentPetId); } catch (_) {}
     }
     preloadLoadedPetAssets();
+    // 已有宠物：进入家园前，按当前星球的 onboarding 配置触发一次新手指引。
+    if (await maybeStartOnboarding()) {
+        finishBootstrap();
+        return;
+    }
     // 进入 home；首次启动为星球外层，视图间返回时由 state 恢复上次 home level。
     finishBootstrap();
-    setView(hasPostcardParams() ? 'postcard' : 'home');
+    setView(resolveLandingView());
 }
 
 async function getInitialStoryPath() {
@@ -963,6 +1016,85 @@ async function maybeStartNewUserStory() {
     return true;
 }
 
+// ===== 新手指引（onboarding） =====
+// 当前激活星球的 id：official 星球用其 planetId，否则视为默认主星球（蛋蛋星球）。
+function getActivePlanetId() {
+    const settlement = state.settings?.starSettlement;
+    if (settlement?.source === 'official' && settlement.planetId) return String(settlement.planetId);
+    return DEFAULT_PLANET_ID;
+}
+
+// 是否禁用新手指引：URL 带 ?skip_onboarding=1 时跳过（便于调试/分享场景）。
+function onboardingDisabledByUrl() {
+    try {
+        const url = new URL(window.location.href);
+        const raw = String(url.searchParams.get('skip_onboarding') || '').trim().toLowerCase();
+        return /^(1|true|yes|on)$/.test(raw);
+    } catch (_) { return false; }
+}
+
+// 解析 onboarding.minigame（可填 gameId 或 html 文件名）为 minigames 视图的 gameId。
+function resolveOnboardingMinigameId(minigame) {
+    const raw = String(minigame || '').trim();
+    if (!raw) return '';
+    // 形如 haqi_adventure.html -> adventure；haqi_pet_snake.html -> pet_snake。
+    const file = raw.replace(/^\.?\/?(minigames\/)?/i, '').replace(/\.html?$/i, '');
+    return file.replace(/^haqi_/i, '') || raw;
+}
+
+// 进入星球时按其 onboarding 配置触发新手指引；已完成则跳过。
+// 返回 true 表示已接管视图（调用方应直接 return）。
+// 注意：URL 参数 new_user_story 优先级更高，由 maybeStartNewUserStory 单独处理。
+async function maybeStartOnboarding() {
+    if (onboardingDisabledByUrl()) return false;
+    const planetId = getActivePlanetId();
+    let config;
+    try {
+        config = await getPlanetOnboardingConfig(planetId);
+    } catch (_) { return false; }
+    if (!config || config.mode === 'none') return false;
+    const progressKey = config.progressKey || planetId;
+    let completed = false;
+    try { completed = await isOnboardingCompleted(progressKey); } catch (_) { completed = false; }
+    if (completed) return false;
+
+    if (config.mode === 'pet-story') {
+        if (!config.storyPath) return false;
+        let storyPath = config.storyPath;
+        try {
+            const { normalizeStoryPath } = await loadStoryPlayerView();
+            storyPath = normalizeStoryPath(config.storyPath) || config.storyPath;
+        } catch (_) {}
+        pendingStoryPath = storyPath;
+        pendingStoryData = null;
+        pendingStoryReturnToMaker = null;
+        pendingStoryReturnToList = false;
+        // 标记为已完成，避免下次进入重复触发（“走过一次即视为完成新手指引”）。
+        try { await markOnboardingCompleted(progressKey, 'pet-story'); } catch (_) {}
+        setView('storyPlayer');
+        return true;
+    }
+
+    if (config.mode === 'minigames') {
+        const gameId = resolveOnboardingMinigameId(config.minigame);
+        if (!gameId) return false;
+        if (!getCurrentPet()) {
+            // 没有可用宠物时不强行进入小游戏，交回默认流程。
+            return false;
+        }
+        pendingMinigameLaunch = {
+            mode: 'onboarding',
+            gameId,
+            allowLowEnergy: true,
+        };
+        try { await markOnboardingCompleted(progressKey, 'minigames'); } catch (_) {}
+        setView('minigames');
+        return true;
+    }
+
+    return false;
+}
+
 // Prepare a default-egg home context (create the egg, load assets) WITHOUT
 // committing the final view. Returns nothing; callers decide which view to show.
 async function prepareDefaultEggHome() {
@@ -977,7 +1109,7 @@ async function prepareDefaultEggHome() {
 
 async function enterDefaultEggHome() {
     await prepareDefaultEggHome();
-    setView(hasPostcardParams() ? 'postcard' : 'home');
+    setView(resolveLandingView());
 }
 
 /** 系统默认蛋：当玩家没有任何宠物时（首次进入 / 删光宠物后）静默创建。 */
@@ -1305,7 +1437,7 @@ async function handleLogin() {
             try { await ensurePetData(state.currentPetId); } catch (_) {}
         }
         preloadLoadedPetAssets();
-        setView(hasPostcardParams() ? 'postcard' : 'home');
+        setView(resolveLandingView());
     }
 }
 
@@ -1335,7 +1467,7 @@ async function handleOfflineMode() {
             try { await ensurePetData(state.currentPetId); } catch (_) {}
         }
         preloadLoadedPetAssets();
-        setView(hasPostcardParams() ? 'postcard' : 'home');
+        setView(resolveLandingView());
     } catch (e) {
         console.warn('离线模式启动失败', e);
         state.offlineMode = false;

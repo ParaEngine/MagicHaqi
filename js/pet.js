@@ -1544,39 +1544,42 @@ function _eggHashFromDna(dna) {
 }
 
 // 一对眼睛（左右镜像位置）。color 是虹膜色。
+// 参考 chibi 软体生物：又大又圆的瞳孔 + 双层闪亮高光，超治愈。
 function _renderEyes(traits, stroke) {
     const eye = EGG_EYE_STYLE[traits.eyes] || EGG_EYE_STYLE['圆圆的大眼睛'];
-    const lx = 46, rx = 74, ey = 78;
+    const lx = 41, rx = 79, ey = 72;
     const renderOne = (cx, iris) => {
         if (eye.style === 'crescent') {
-            return `<path d="M${cx - 8} ${ey + 2} Q${cx} ${ey - 8} ${cx + 8} ${ey + 2}" fill="none" stroke="${stroke}" stroke-width="2.6" stroke-linecap="round"/>`;
+            // 弯弯的笑眼（^ ^）
+            return `<path d="M${cx - 13} ${ey + 4} Q${cx} ${ey - 13} ${cx + 13} ${ey + 4}" fill="none" stroke="${stroke}" stroke-width="3.6" stroke-linecap="round"/>`;
         }
         if (eye.style === 'squint') {
-            return `<path d="M${cx - 7} ${ey} Q${cx} ${ey + 2} ${cx + 7} ${ey}" fill="none" stroke="${stroke}" stroke-width="2.6" stroke-linecap="round"/>`;
+            return `<path d="M${cx - 12} ${ey} Q${cx} ${ey + 3} ${cx + 12} ${ey}" fill="none" stroke="${stroke}" stroke-width="3.6" stroke-linecap="round"/>`;
         }
         if (eye.style === 'star') {
             const pts = [];
             for (let i = 0; i < 10; i++) {
-                const r = i % 2 === 0 ? 7 : 3;
+                const r = i % 2 === 0 ? 12 : 5.5;
                 const a = -Math.PI / 2 + (i * Math.PI) / 5;
                 pts.push(`${(cx + Math.cos(a) * r).toFixed(1)},${(ey + Math.sin(a) * r).toFixed(1)}`);
             }
             return `<polygon points="${pts.join(' ')}" fill="${iris}" stroke="${stroke}" stroke-width="1.2"/>`;
         }
         if (eye.style === 'heart') {
-            return `<path d="M${cx} ${ey + 6} C${cx - 9} ${ey - 2} ${cx - 8} ${ey - 8} ${cx - 3} ${ey - 6} Q${cx} ${ey - 4} ${cx + 3} ${ey - 6} C${cx + 8} ${ey - 8} ${cx + 9} ${ey - 2} ${cx} ${ey + 6} Z" fill="${iris}" stroke="${stroke}" stroke-width="1.2"/>`;
+            return `<path d="M${cx} ${ey + 11} C${cx - 15} ${ey - 3} ${cx - 13} ${ey - 14} ${cx - 4} ${ey - 11} Q${cx} ${ey - 8} ${cx + 4} ${ey - 11} C${cx + 13} ${ey - 14} ${cx + 15} ${ey - 3} ${cx} ${ey + 11} Z" fill="${iris}" stroke="${stroke}" stroke-width="1.2"/>`;
         }
-        // round / sparkle / rainbow / hetero 都基于圆形眼白 + 虹膜
+        // round / sparkle / rainbow / hetero 都基于"实心大瞳孔 + 双高光"——这是 chibi 生物最萌的关键。
         const irisFill = eye.style === 'rainbow' ? 'url(#mhEggIrisRainbow)' : iris;
-        const sparkles = eye.style === 'sparkle'
-            ? `<circle cx="${cx + 5}" cy="${ey - 4}" r="1.2" fill="#ffffff" opacity="0.9"/>
-               <circle cx="${cx - 6}" cy="${ey + 3}" r="0.9" fill="#ffffff" opacity="0.7"/>`
+        const extraSparkle = eye.style === 'sparkle'
+            ? `<circle cx="${cx + 6}" cy="${ey + 6}" r="1.5" fill="#ffffff" opacity="0.85"/>`
             : '';
         return `
-            <ellipse cx="${cx}" cy="${ey}" rx="7" ry="8" fill="#ffffff" stroke="${stroke}" stroke-width="1.6"/>
-            <circle cx="${cx + 0.5}" cy="${ey + 1}" r="3.6" fill="${irisFill}"/>
-            <circle cx="${cx - 1.2}" cy="${ey - 1.2}" r="1.4" fill="#ffffff"/>
-            ${sparkles}`;
+            <!-- 瞳孔外圈细描边，让大眼更立体 -->
+            <ellipse cx="${cx}" cy="${ey}" rx="11.5" ry="13.5" fill="${irisFill}" stroke="${stroke}" stroke-width="1.6"/>
+            <!-- 大块主高光（左上）+ 小高光（右下），双高光是萌点 -->
+            <ellipse cx="${cx - 3.5}" cy="${ey - 4}" rx="4.4" ry="5.2" fill="#ffffff"/>
+            <circle cx="${cx + 4}" cy="${ey + 4.5}" r="2.2" fill="#ffffff" opacity="0.92"/>
+            ${extraSparkle}`;
     };
     if (eye.style === 'hetero') {
         return renderOne(lx, eye.iris) + renderOne(rx, eye.iris2 || eye.iris);
@@ -1584,16 +1587,20 @@ function _renderEyes(traits, stroke) {
     return renderOne(lx, eye.iris) + renderOne(rx, eye.iris);
 }
 
-// 嘴巴：根据眼睛风格挑一个匹配表情；月牙眼/桃心眼用大笑，其他用呆萌小嘴。
+// 嘴巴：默认就是 chibi 生物标志性的"大张嘴笑"，又圆又开心；眯眯眼用小弧嘴。
 function _renderMouth(traits, stroke) {
     const eye = EGG_EYE_STYLE[traits.eyes] || EGG_EYE_STYLE['圆圆的大眼睛'];
-    if (eye.style === 'crescent' || eye.style === 'heart') {
-        // 张嘴大笑
-        return `<path d="M54 94 Q60 102 66 94 Z" fill="#f43f5e" stroke="${stroke}" stroke-width="1.4" stroke-linejoin="round"/>
-                <path d="M54 94 Q60 98 66 94" fill="none" stroke="${stroke}" stroke-width="1.4" stroke-linecap="round"/>`;
+    // 大张嘴开心笑：上缘平、下缘圆，里面一小块舌头。位于眼睛正下方居中。
+    const openHappyMouth = `
+        <path d="M50 90 Q60 90 70 90 Q70 104 60 105 Q50 104 50 90 Z"
+              fill="#9d2b3a" stroke="${stroke}" stroke-width="1.8" stroke-linejoin="round"/>
+        <path d="M53 98 Q60 95 67 98 Q66 104 60 104.5 Q54 104 53 98 Z" fill="#fb7185"/>
+        <path d="M50 90 Q60 92 70 90" fill="none" stroke="#ffffff" stroke-width="1.6" stroke-linecap="round" opacity="0.5"/>`;
+    if (eye.style === 'squint') {
+        // 眯眯眼配一个软软的小微笑
+        return `<path d="M53 93 Q60 99 67 93" fill="none" stroke="${stroke}" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"/>`;
     }
-    // 默认: w 形小嘴
-    return `<path d="M55 94 Q57.5 97 60 94 Q62.5 97 65 94" fill="none" stroke="${stroke}" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/>`;
+    return openHappyMouth;
 }
 
 // 元素属性 → 蛋身上的小纹身（左右各一个）
@@ -1667,31 +1674,33 @@ export function buildEggSvg(pet) {
       <stop offset="100%" stop-color="${palette.dark}"/>
     </radialGradient>
     <radialGradient id="mhEggShine" cx="50%" cy="50%" r="50%">
-      <stop offset="0%" stop-color="#ffffff" stop-opacity="0.85"/>
+      <stop offset="0%" stop-color="#ffffff" stop-opacity="0.9"/>
       <stop offset="100%" stop-color="#ffffff" stop-opacity="0"/>
     </radialGradient>
+    <linearGradient id="mhEggTopGloss" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0%" stop-color="#ffffff" stop-opacity="0.55"/>
+      <stop offset="100%" stop-color="#ffffff" stop-opacity="0"/>
+    </linearGradient>
     ${rainbowDefs}
     ${irisRainbowDefs}
   </defs>
-  <ellipse cx="60" cy="125" rx="36" ry="6" fill="#000" opacity="0.12"/>
-  <path d="M60 12 C90 12 104 56 104 86 C104 114 84 132 60 132 C36 132 16 114 16 86 C16 56 30 12 60 12 Z"
+  <ellipse cx="60" cy="121" rx="42" ry="6.5" fill="#000" opacity="0.12"/>
+  <!-- 圆滚滚的身体：几乎是正圆，仅顶部极轻微收一点点，保留"蛋"的暗示 -->
+  <path d="M60 14 C90 14 108 40 108 73 C108 106 89 126 60 126 C31 126 12 106 12 73 C12 40 30 14 60 14 Z"
         fill="${bodyFill}" stroke="${stroke}" stroke-width="2"/>
-  <!-- 蛋身波纹（保留原有"蛋"的视觉） -->
-  <path d="M28 60 q8 -5 16 0 t16 0 t16 0 t12 0" fill="none" stroke="${stroke}" stroke-width="2"
-        stroke-linecap="round" opacity="0.45"/>
-  <path d="M26 116 q9 -5 18 0 t18 0 t18 0 t8 0" fill="none" stroke="${stroke}" stroke-width="2"
-        stroke-linecap="round" opacity="0.35"/>
+  <!-- 顶部软光泽带：让身体像果冻/软糖一样反光 -->
+  <path d="M30 36 C42 24 78 24 90 36 C80 46 40 46 30 36 Z" fill="url(#mhEggTopGloss)"/>
   <!-- 纹身（元素属性图案） -->
   ${_renderTattoos(safeTraits, stroke)}
-  <!-- 腮红 -->
-  <ellipse cx="${40 + cheekDx}" cy="90" rx="5" ry="3" fill="#fb7185" opacity="0.55"/>
-  <ellipse cx="${80 + cheekDx}" cy="90" rx="5" ry="3" fill="#fb7185" opacity="0.55"/>
+  <!-- 腮红（紧贴大眼睛下外侧，更显婴儿肥） -->
+  <ellipse cx="${27 + cheekDx}" cy="86" rx="8" ry="4.4" fill="#fb7185" opacity="0.55"/>
+  <ellipse cx="${93 + cheekDx}" cy="86" rx="8" ry="4.4" fill="#fb7185" opacity="0.55"/>
   <!-- 眼睛 -->
   ${_renderEyes(safeTraits, stroke)}
   <!-- 嘴巴 -->
   ${_renderMouth(safeTraits, stroke)}
-  <!-- 高光 -->
-  <ellipse cx="44" cy="44" rx="13" ry="18" fill="url(#mhEggShine)"/>
+  <!-- 左上大高光（软糖光感） -->
+  <ellipse cx="40" cy="44" rx="14" ry="17" fill="url(#mhEggShine)"/>
 </svg>`;
 }
 

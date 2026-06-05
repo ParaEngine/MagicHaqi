@@ -423,7 +423,9 @@ function rarePetPhotoCellHtml(entry, stageIdx, animIdx, unlocked) {
 }
 
 function rarePetPhotoGridHtml(entry, unlocked) {
-    const stages = unlocked ? ALBUM_STAGES : ALBUM_STAGES.slice(0, 1);
+    // 始终展示全部 4 个阶段：未解锁阶段也会显示阶段名字 + ？ 占位，
+    // 让玩家提前看到这只稀有宠物有哪些形态。
+    const stages = ALBUM_STAGES;
     const blocks = stages.map((stage, stageIdx) => {
         const cells = [];
         for (let animIdx = 0; animIdx < SHEET_COLS; animIdx++) {

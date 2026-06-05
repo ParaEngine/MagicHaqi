@@ -121,6 +121,7 @@ const PATHS = {
     planetVisitors: 'user/planet_visitors.json',
     recentFriendPlanets: 'user/recent_friend_planets.json',
     postcardList: 'user/postcard_list.json',
+    likedGames:  'user/list_liked_games.json',
     storyList:   'stories/index.json',
     story:      (name) => `stories/${name}.json`,
     pet:        (id) => `pets/${id}.json`,
@@ -562,11 +563,39 @@ export function setActiveLayoutsPlanet(planetId = '') {
     resetLayoutsLoadState();
 }
 
+// 新手指引完成进度：每个星球的 layouts 文件里保留一个 `onboarding` 对象，
+// 用来判断该星球是否已经走过新手故事 / 新手小游戏。结构：
+//   { completed: boolean, mode: 'pet-story'|'minigames'|..., completedAt: number, version: number }
+function normalizeOnboardingProgress(value) {
+    if (!value || typeof value !== 'object' || Array.isArray(value)) return null;
+    const progress = {};
+    progress.completed = !!value.completed;
+    if (typeof value.mode === 'string' && value.mode) progress.mode = value.mode.slice(0, 32);
+    if (Number.isFinite(value.completedAt)) progress.completedAt = Number(value.completedAt);
+    if (Number.isFinite(value.startedAt)) progress.startedAt = Number(value.startedAt);
+    if (Number.isFinite(value.version)) progress.version = Number(value.version);
+    // 只有有意义的进度才保留，避免写入空对象。
+    return (progress.completed || progress.mode || progress.startedAt || progress.completedAt) ? progress : null;
+}
+
+function extractLayoutsOnboarding(layouts) {
+    if (!layouts || typeof layouts !== 'object' || Array.isArray(layouts)) return null;
+    return normalizeOnboardingProgress(layouts.onboarding);
+}
+
+function applyLayoutsOnboarding(layouts, onboarding) {
+    if (!layouts || typeof layouts !== 'object' || Array.isArray(layouts)) return layouts;
+    const normalized = normalizeOnboardingProgress(onboarding);
+    if (normalized) layouts.onboarding = normalized;
+    else delete layouts.onboarding;
+    return layouts;
+}
+
 function normalizeLayoutsData(data) {
     if (!data || typeof data !== 'object' || Array.isArray(data)) return {};
     const layouts = {};
     Object.entries(data).forEach(([rawKey, items]) => {
-        if (rawKey === 'fieldScenes' || rawKey === 'terrainFields') return;
+        if (rawKey === 'fieldScenes' || rawKey === 'terrainFields' || rawKey === 'onboarding') return;
         const key = normalizeLayoutRoomKey(rawKey);
         if (!key || !Array.isArray(items)) return;
         if (!layouts[key]) layouts[key] = items;
@@ -574,6 +603,7 @@ function normalizeLayoutsData(data) {
     });
     applyLayoutsTerrainFields(layouts, data.terrainFields);
     applyLayoutsFieldScenes(layouts, data.fieldScenes);
+    applyLayoutsOnboarding(layouts, data.onboarding);
     return layouts;
 }
 
@@ -1077,6 +1107,214 @@ export async function deletePetGame(pathOrName) {
     return true;
 }
 
+// 读取别人 workspace 下分享的小游戏 HTML（用于分享链接 / 收藏的他人作品试玩）。
+function safeShareUsername(value) {
+    return String(value || '').trim().replace(/[^a-zA-Z0-9_-]/g, '').slice(0, 64);
+}
+
+export async function loadRemotePetGameHtml(fromUsername, pathOrName) {
+    const username = safeShareUsername(fromUsername);
+    const raw = String(pathOrName || '').trim().replace(/^\/+/, '').replace(/\\/g, '/');
+    if (!username || !raw || raw.includes('..')) return '';
+    const relPath = raw.includes('/') ? raw : petGamePath(raw);
+    if (!/^pet-games\/[^/]+\.html?$/i.test(relPath)) return '';
+    if (!state.sdk?.personalPageStore?.readFile) return '';
+    const absolutePath = `//${username}/edunotes/store/${CONFIG.workspace}/${relPath}`;
+    try {
+        const text = await state.sdk.personalPageStore.readFile(absolutePath, 1, 99999);
+        return normalizePetGameHtml(text || '');
+    } catch (e) {
+        console.warn('读取分享小游戏失败', e);
+        return '';
+    }
+}
+
+// 读取别人 workspace 下的小游戏清单（pet-games/index.json），用于"某用户的全部小游戏"列表。
+export async function loadRemotePetGameList(fromUsername) {
+    const username = safeShareUsername(fromUsername);
+    if (!username || !state.sdk?.personalPageStore?.readFile) return [];
+    const absolutePath = `//${username}/edunotes/store/${CONFIG.workspace}/${PET_GAME_INDEX}`;
+    try {
+        const text = await state.sdk.personalPageStore.readFile(absolutePath, 1, 99999);
+        if (!text) return [];
+        const list = JSON.parse(text);
+        const byPath = new Map();
+        (Array.isArray(list) ? list : [])
+            .map(normalizePetGameRecord)
+            .filter(Boolean)
+            .forEach(record => {
+                if (!record?.path) return;
+                const prev = byPath.get(record.path);
+                byPath.set(record.path, !prev || (record.updatedAt || 0) >= (prev.updatedAt || 0) ? record : prev);
+            });
+        return [...byPath.values()].sort((a, b) => (b.updatedAt || 0) - (a.updatedAt || 0));
+    } catch (e) {
+        console.warn('读取用户小游戏清单失败', e);
+        return [];
+    }
+}
+
+// ========== 收藏的小游戏（list_liked_games.json，与明信片同在 user/ 目录） ==========
+// 既可收藏官方小游戏（owner 为空），也可收藏自己/别人创造的小游戏（owner 为作者 username）。
+// 文件里只保存 id / owner / title / icon 四个字段；其余信息（path/src/official）由 id+owner 在内存推导。
+function likedGameKey(record) {
+    const owner = safeShareUsername(record?.owner || '');
+    const id = String(record?.id || '').trim().replace(/^\/+/, '');
+    return `${owner}::${id}`;
+}
+
+// 仅保留 id / owner / title / icon 四个字段写入磁盘。
+function normalizeLikedGameRecord(record) {
+    if (!record || typeof record !== 'object') return null;
+    // id 统一为不含目录、不含扩展名的基础名（与 pet-games 文件基础名一致）。
+    let id = String(record.id || record.path || record.src || '').trim().replace(/^\/+/, '');
+    id = id.split('/').pop().replace(/\.html?$/i, '');
+    if (!id) return null;
+    return {
+        id: id.slice(0, 200),
+        owner: safeShareUsername(record.owner || ''),
+        title: String(record.title || id).slice(0, 80),
+        icon: String(record.icon || '🎮').slice(0, 8),
+    };
+}
+
+export async function loadLikedGames() {
+    const list = await readJSON(PATHS.likedGames, []);
+    // 文件顺序即收藏顺序（新收藏在前），不再依赖 likedAt 排序。
+    return (Array.isArray(list) ? list : [])
+        .map(normalizeLikedGameRecord)
+        .filter(Boolean)
+        .slice(0, 300);
+}
+
+// 紧凑写入：整体为 JSON 数组，但每条记录单独占一行。
+function writeLikedGamesCompact(records) {
+    const body = records.map(r => JSON.stringify(r)).join(',\n  ');
+    const text = records.length ? `[\n  ${body}\n]` : '[]';
+    return writeFileSafe(PATHS.likedGames, text);
+}
+
+export async function saveLikedGames(list) {
+    const normalized = (Array.isArray(list) ? list : [])
+        .map(normalizeLikedGameRecord)
+        .filter(Boolean)
+        .slice(0, 300);
+    await writeLikedGamesCompact(normalized);
+    return normalized;
+}
+
+export async function addLikedGame(record) {
+    const normalized = normalizeLikedGameRecord(record);
+    if (!normalized) return null;
+    const existing = await loadLikedGames();
+    const key = likedGameKey(normalized);
+    const next = [normalized, ...existing.filter(item => likedGameKey(item) !== key)].slice(0, 300);
+    await saveLikedGames(next);
+    return normalized;
+}
+
+export async function removeLikedGame(record) {
+    const key = likedGameKey(normalizeLikedGameRecord(record) || record);
+    const existing = await loadLikedGames();
+    const next = existing.filter(item => likedGameKey(item) !== key);
+    await saveLikedGames(next);
+    return next;
+}
+
+// ========== 最近玩过的小游戏（本地 IndexedDB，仅当前设备，不同步） ==========
+// 用于"推荐"标签按最近游玩时间排序，并在卡片上显示"N 天前"。
+const RECENT_GAMES_DB = 'MagicHaqiRecentGames';
+const RECENT_GAMES_STORE = 'recent';
+const RECENT_GAMES_MAX = 200;
+let _recentGamesDbPromise = null;
+
+function openRecentGamesDb() {
+    if (_recentGamesDbPromise) return _recentGamesDbPromise;
+    _recentGamesDbPromise = new Promise((resolve, reject) => {
+        if (typeof indexedDB === 'undefined') { reject(new Error('IndexedDB 不可用')); return; }
+        const req = indexedDB.open(RECENT_GAMES_DB, 1);
+        req.onupgradeneeded = () => {
+            const db = req.result;
+            if (!db.objectStoreNames.contains(RECENT_GAMES_STORE)) {
+                db.createObjectStore(RECENT_GAMES_STORE, { keyPath: 'key' });
+            }
+        };
+        req.onsuccess = () => resolve(req.result);
+        req.onerror = () => reject(req.error || new Error('打开 IndexedDB 失败'));
+    }).catch((e) => { _recentGamesDbPromise = null; throw e; });
+    return _recentGamesDbPromise;
+}
+
+// 记录某个游戏的最近游玩时间。key 由调用方按 owner::id 等规则生成。
+// meta（可选 { id, owner, title, icon }）用于历史游戏在"推荐"里重建可渲染 / 可重玩的条目。
+export async function recordRecentGame(key, meta = {}) {
+    const k = String(key || '').trim();
+    if (!k) return false;
+    try {
+        const db = await openRecentGamesDb();
+        await new Promise((resolve, reject) => {
+            const tx = db.transaction(RECENT_GAMES_STORE, 'readwrite');
+            tx.objectStore(RECENT_GAMES_STORE).put({
+                key: k,
+                playedAt: Date.now(),
+                id: String(meta.id || '').slice(0, 200),
+                owner: String(meta.owner || '').slice(0, 64),
+                title: String(meta.title || '').slice(0, 80),
+                icon: String(meta.icon || '🎮').slice(0, 8),
+            });
+            tx.oncomplete = resolve;
+            tx.onerror = () => reject(tx.error);
+        });
+        return true;
+    } catch (e) {
+        console.warn('记录最近游玩失败', e);
+        return false;
+    }
+}
+
+// 返回最近游玩记录数组 [{ key, playedAt, id, owner, title, icon }]，按最近游玩时间倒序。
+// 供"推荐"排序、历史游戏重建与"N 天前"显示。
+export async function loadRecentGames() {
+    try {
+        const db = await openRecentGamesDb();
+        const rows = await new Promise((resolve, reject) => {
+            const tx = db.transaction(RECENT_GAMES_STORE, 'readonly');
+            const req = tx.objectStore(RECENT_GAMES_STORE).getAll();
+            req.onsuccess = () => resolve(Array.isArray(req.result) ? req.result : []);
+            req.onerror = () => reject(req.error);
+        });
+        // 超出上限时裁剪最旧的（异步清理，不阻塞返回）。
+        if (rows.length > RECENT_GAMES_MAX) pruneRecentGames(db, rows).catch(() => {});
+        return rows
+            .filter(r => r?.key)
+            .map(r => ({
+                key: r.key,
+                playedAt: Number(r.playedAt) || 0,
+                id: r.id || '',
+                owner: r.owner || '',
+                title: r.title || '',
+                icon: r.icon || '🎮',
+            }))
+            .sort((a, b) => (b.playedAt || 0) - (a.playedAt || 0));
+    } catch (e) {
+        console.warn('读取最近游玩失败', e);
+        return [];
+    }
+}
+
+async function pruneRecentGames(db, rows) {
+    const sorted = [...rows].sort((a, b) => (b.playedAt || 0) - (a.playedAt || 0));
+    const toDelete = sorted.slice(RECENT_GAMES_MAX);
+    if (!toDelete.length) return;
+    await new Promise((resolve) => {
+        const tx = db.transaction(RECENT_GAMES_STORE, 'readwrite');
+        const store = tx.objectStore(RECENT_GAMES_STORE);
+        toDelete.forEach(r => { if (r?.key) store.delete(r.key); });
+        tx.oncomplete = resolve;
+        tx.onerror = resolve;
+    });
+}
+
 // ========== 宠物 ==========
 export async function loadPet(petId) {
     if (!petId) return null;
@@ -1325,6 +1563,57 @@ export function saveFieldScenesDebounced(fieldScenes) {
 
 export function getLayout(_petId, roomId) {
     return state.layouts?.[normalizeLayoutRoomKey(roomId)] || [];
+}
+
+// ========== 新手指引完成进度 ==========
+// 进度写在“当前星球”的 layouts 文件里（official -> user/<planetId>.layouts.json，
+// 否则 user/layouts.json）。通过 progressKey 显式指定星球，避免在启动早期受
+// state.layouts 是否已加载影响；progressKey 为空时回退到当前激活的 layouts 文件。
+function onboardingLayoutsPath(progressKey = '') {
+    const planetId = safeLayoutPlanetId(progressKey);
+    if (planetId && planetId !== 'default') return PATHS.planetLayouts(planetId);
+    // default / custom 主星球使用通用 layouts 文件。
+    if (planetId === 'default') return PATHS.layouts;
+    return currentLayoutsPath();
+}
+
+/** 读取某个星球的新手指引完成进度（不修改 state.layouts，直接读文件）。 */
+export async function loadOnboardingProgress(progressKey = '') {
+    const path = onboardingLayoutsPath(progressKey);
+    try {
+        const data = await readJSON(path, {});
+        return extractLayoutsOnboarding(normalizeLayoutsData(data));
+    } catch (_) {
+        return null;
+    }
+}
+
+/** 判断某个星球的新手指引是否已完成。 */
+export async function isOnboardingCompleted(progressKey = '') {
+    const progress = await loadOnboardingProgress(progressKey);
+    return !!progress?.completed;
+}
+
+/** 写入/合并某个星球的新手指引进度（completed / startedAt / mode 等）。 */
+export async function saveOnboardingProgress(progressKey = '', patch = {}) {
+    const path = onboardingLayoutsPath(progressKey);
+    let data;
+    try { data = await readJSON(path, {}); } catch (_) { data = {}; }
+    const layouts = normalizeLayoutsData(data);
+    const prev = extractLayoutsOnboarding(layouts) || {};
+    const next = normalizeOnboardingProgress({ version: 1, ...prev, ...patch }) || { version: 1, ...patch };
+    applyLayoutsOnboarding(layouts, next);
+    // 若该文件正是当前激活的 layouts，则同步内存 state，避免后续覆盖。
+    if (_layoutsLoaded && path === currentLayoutsPath() && state.layouts && typeof state.layouts === 'object') {
+        applyLayoutsOnboarding(state.layouts, next);
+    }
+    await saveJSONNow(path, layouts);
+    return next;
+}
+
+/** 标记某个星球的新手指引为已完成。 */
+export async function markOnboardingCompleted(progressKey = '', mode = '') {
+    return saveOnboardingProgress(progressKey, { completed: true, mode, completedAt: Date.now() });
 }
 
 // ========== 背包 ==========
