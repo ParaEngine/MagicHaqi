@@ -8,6 +8,7 @@ import { getPet, getPetAsync, getPetImagePayload } from './pet.js';
 import { isPetOnCurrentPlanet } from './petLifecycle.js';
 import { addLikedGame, deletePetGame, loadLikedGames, loadPetGameHtml, loadPetGameList, loadRecentGames, loadRemotePetGameHtml, loadRemotePetGameList, recordRecentGame, removeLikedGame, saveUserProfileDebounced } from './storage.js';
 import SoundManager from './soundManager.js';
+import { isMiniProgramWebView, isWechatBrowser, navigateToSharePage, postShareToMiniProgram, setWxShareData } from './wxShare.js';
 
 const soundManager = SoundManager.getInstance();
 const STAT_REWARD_ANIMATION_MS = 1600;
@@ -380,6 +381,31 @@ async function copyMinigameText(text, okMessage) {
     }
 }
 
+// 微信内置浏览器分享引导：JS-SDK 无法主动弹出分享面板，只能引导用户点右上角「···」。
+function showWxShareGuide() {
+    document.querySelector('.mh-wx-share-guide')?.remove();
+    const mask = document.createElement('div');
+    mask.className = 'mh-wx-share-guide';
+    mask.setAttribute('style', [
+        'position:fixed', 'inset:0', 'z-index:99999',
+        'background:rgba(0,0,0,0.78)', 'backdrop-filter:blur(2px)',
+        'display:flex', 'flex-direction:column', 'align-items:flex-end',
+        'padding:18px 22px', 'box-sizing:border-box', 'color:#fff',
+    ].join(';'));
+    mask.innerHTML = `
+        <svg width="72" height="86" viewBox="0 0 72 86" fill="none" style="margin-right:10px" aria-hidden="true">
+            <path d="M18 80 C 22 52, 28 28, 52 16" stroke="#FFD54A" stroke-width="4" fill="none" stroke-linecap="round" stroke-dasharray="0.5 9"/>
+            <path d="M40 12 L 56 14 L 49 29" stroke="#FFD54A" stroke-width="4" fill="none" stroke-linecap="round" stroke-linejoin="round"/>
+        </svg>
+        <div style="max-width:280px;text-align:right;margin-right:6px">
+            <div style="font-size:18px;font-weight:700;line-height:1.4">${escapeHtml(t('mgShareWxGuideTitle'))}</div>
+            <div style="font-size:14px;opacity:0.85;margin-top:6px;line-height:1.5">${escapeHtml(t('mgShareWxGuideDesc'))}</div>
+        </div>
+        <button type="button" style="margin:28px auto 0;padding:10px 28px;border:1px solid rgba(255,255,255,0.5);border-radius:22px;background:transparent;color:#fff;font-size:15px">${escapeHtml(t('mgShareWxGuideDismiss'))}</button>`;
+    mask.addEventListener('click', () => mask.remove());
+    document.body.appendChild(mask);
+}
+
 // 分享弹窗（参照 view_story_list 的故事分享样式）。
 async function openMinigameSharePanel(record) {
     if (!record?.path) return;
@@ -388,7 +414,10 @@ async function openMinigameSharePanel(record) {
     document.querySelector('.mh-minigame-share-mask')?.remove();
     const safeTitle = record.title || t('mgDefaultName');
     const url = buildMinigameShareUrl(record, username);
+    const gameFilename = String(record?.path || '').trim().replace(/^\/+/, '').split('/').pop() || '';
     const text = t('mgShareText', { title: safeTitle });
+    const isWxBrowser = isWechatBrowser();
+    const isMP = isMiniProgramWebView();
     const mask = document.createElement('div');
     mask.className = 'modal-mask mh-story-share-mask mh-minigame-share-mask';
     mask.innerHTML = `
@@ -417,8 +446,33 @@ async function openMinigameSharePanel(record) {
         if (method === 'copy') {
             await copyMinigameText(url, t('mgShareLinkCopied'));
         } else if (method === 'wechat') {
-            await copyMinigameText(`${text}\n${url}`, t('mgShareWechatCopied'));
+            if (isMP) {
+                // 小程序 web-view：navigateTo 实时跳转到宿主原生分享页，由用户点原生按钮拉起转发
+                const ok = await navigateToSharePage({ title: safeTitle, desc: text, gameFrom: username, game: gameFilename, icon: record.icon });
+                if (ok) { showToast(t('mgShareNavOpening'), 'info', 1200); close(); } else {
+                    await copyMinigameText(`${text}\n${url}`, t('mgShareWechatCopied'));
+                }
+            } else if (isWxBrowser) {
+                // 微信内置浏览器：JS-SDK 预设分享数据（best-effort），再引导用户点右上角「···」分享
+                await setWxShareData({ title: safeTitle, desc: text, url });
+                close();
+                showWxShareGuide();
+            } else {
+                await copyMinigameText(`${text}\n${url}`, t('mgShareWechatCopied'));
+            }
         } else if (method === 'system') {
+            if (isMP) {
+                // 小程序里没有系统分享，同样跳转到宿主原生分享页
+                const ok = await navigateToSharePage({ title: safeTitle, desc: text, gameFrom: username, game: gameFilename, icon: record.icon });
+                if (ok) { showToast(t('mgShareNavOpening'), 'info', 1200); close(); return; }
+            }
+            if (isWxBrowser) {
+                // 微信内置浏览器没有系统分享：预设 JS-SDK 数据并引导点右上角「···」
+                await setWxShareData({ title: safeTitle, desc: text, url });
+                close();
+                showWxShareGuide();
+                return;
+            }
             if (navigator.share) {
                 try { await navigator.share({ title: safeTitle, text, url }); return; } catch (_) {}
             }
