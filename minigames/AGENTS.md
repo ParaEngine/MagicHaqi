@@ -75,7 +75,7 @@ Rules:
 2. **No custom CSS/font files** - Use only Tailwind utility classes and inline styles
 3. **Three.js** (when needed): Use CDN for 3D games like `guess_cubes.html`
    ```html
-   <script src="https://cdnproxy.keepwork.com/jsdelivr/npm/three@0.128.0/build/three.min.js"></script>
+   <script src="https://cdn.keepwork.com/npm/three%400.128.0/build/three.min.js"></script>
    ```
 
 ### UI/UX Design Patterns
@@ -262,7 +262,7 @@ If a response has `ok: false`, read `error` and fall back to a local placeholder
 When games need server-side features (data storage, TTS, LLM chat), include:
 
 ```html
-<script src="https://cdn.keepwork.com/sdk/keepworkSDK.iife.js?v=20260515"></script>
+<script src="https://cdn.keepwork.com/sdk/keepworkSDK.iife.js?v=20260607a"></script>
 ```
 
 Initialize the SDK:

@@ -114,6 +114,48 @@ function segmentForTraitIndex(index, listLength) {
     return ALPHABET[0] + ALPHABET[0] + ALPHABET[target % ALPHABET.length];
 }
 
+// ---------- diet 编码（寄生在 element 段位上）----------
+// element 段位有 3 个字符（每字符 0-31），但 decode 时只用 sum_e % 3 取 element。
+// 这里复用其剩余熵存放 diet：用一个与 element 互不相关的哈希 sum_d % 3 表示 diet。
+//   sum_e = c0*7 + c1*3 + c2   →  element 索引（保持原有解码不变）
+//   sum_d = c0*5 + c1*2 + c2   →  diet 索引（DIET_PREFS）
+// 由于两个哈希线性无关，遍历 32^3 一定能同时满足任意 (element, diet) 组合，
+// 因此可以在不改变 element 解码结果的前提下，向 element 段写入任意 diet。
+// 旧 DNA 没有"刻意写入"diet，但 sum_d % 3 仍是确定值，于是会确定地解码出某个 diet——
+// diet 一直是从 DNA 派生的（从不单独存储），所以这完全向后兼容。
+const ELEMENT_SEG_START = SEGMENT_KEYS.indexOf('element') * SEGMENT_LEN;
+
+function elementSegSumE(c0, c1, c2) { return c0 * 7 + c1 * 3 + c2; }
+function elementSegSumD(c0, c1, c2) { return c0 * 5 + c1 * 2 + c2; }
+
+/** 从 element 段位读取 diet 索引（0..DIET_PREFS.length-1）。 */
+function dietIndexFromElementSeg(seg) {
+    const c0 = ch2idx(seg[0]);
+    const c1 = ch2idx(seg[1]);
+    const c2 = ch2idx(seg[2]);
+    return elementSegSumD(c0, c1, c2) % DIET_PREFS.length;
+}
+
+/** 构造一个同时满足指定 element 索引与 diet 索引的 element 段位（3 字符）。 */
+function elementSegForElementAndDiet(elementIndex, dietIndex) {
+    const eSize = ELEMENTS.length;
+    const dSize = DIET_PREFS.length;
+    const eTarget = ((Number(elementIndex) || 0) % eSize + eSize) % eSize;
+    const dTarget = ((Number(dietIndex) || 0) % dSize + dSize) % dSize;
+    for (let a = 0; a < ALPHABET.length; a++) {
+        for (let b = 0; b < ALPHABET.length; b++) {
+            for (let c = 0; c < ALPHABET.length; c++) {
+                if (elementSegSumE(a, b, c) % eSize === eTarget &&
+                    elementSegSumD(a, b, c) % dSize === dTarget) {
+                    return ALPHABET[a] + ALPHABET[b] + ALPHABET[c];
+                }
+            }
+        }
+    }
+    // 理论上不会到达：两个哈希线性无关，组合一定存在。退化为只保 element。
+    return segmentForTraitIndex(eTarget, eSize);
+}
+
 export function randomDna() {
     let s = '';
     for (let i = 0; i < SEGMENT_KEYS.length * SEGMENT_LEN; i++) s += randomChar();
@@ -128,6 +170,20 @@ export function randomDnaForElementalAttribute(attribute) {
     const start = SEGMENT_KEYS.indexOf('elementalAttribute') * SEGMENT_LEN;
     dna = dna.slice(0, start) + forcedSegment + dna.slice(start + SEGMENT_LEN);
     return dna;
+}
+
+/**
+ * 仅改写已有 DNA 的 elementalAttribute 段位，使其解码为指定元素属性，
+ * 其余段位（element / species / color / eyes / accessory）保持不变。
+ * 用于"性格决定元素属性"：领养仪式选定性格后，把对应属性写入蛋的 DNA。
+ */
+export function biasDnaForElementalAttribute(dna, attribute) {
+    let s = normalizeDna(dna);
+    if (!ELEMENTAL_ATTRIBUTES.includes(attribute)) return s;
+    const index = ELEMENTAL_ATTRIBUTES.indexOf(attribute);
+    const forcedSegment = segmentForTraitIndex(index, ELEMENTAL_ATTRIBUTES.length);
+    const start = SEGMENT_KEYS.indexOf('elementalAttribute') * SEGMENT_LEN;
+    return s.slice(0, start) + forcedSegment + s.slice(start + SEGMENT_LEN);
 }
 
 // 场景 → DNA 段位偏置映射
@@ -149,16 +205,12 @@ export function biasDnaForFieldId(dna, fieldId, { probability = 0.75 } = {}) {
     if (FIELD_TO_ELEMENT[fieldId]) {
         const idx = ELEMENTS.indexOf(FIELD_TO_ELEMENT[fieldId]);
         if (idx >= 0) {
-            const start = SEGMENT_KEYS.indexOf('element') * SEGMENT_LEN;
-            // 强制段位首字符让 decode 选中目标 element：sum % ELEMENTS.length === idx
-            // sum = ch2idx(c0)*7 + ch2idx(c1)*3 + ch2idx(c2)
-            // 简单办法：c1=A、c2=A，则 sum = ch2idx(c0)*7；找到一个让 (c0*7) % 3 === idx 的 c0。
-            for (let i = 0; i < ALPHABET.length; i++) {
-                if ((i * 7) % ELEMENTS.length === idx) {
-                    s = s.slice(0, start) + ALPHABET[i] + ALPHABET[0] + ALPHABET[0] + s.slice(start + SEGMENT_LEN);
-                    break;
-                }
-            }
+            const start = ELEMENT_SEG_START;
+            // 改写 element 段位时保留原有 diet（diet 寄生在该段位上）。
+            const seg = s.slice(start, start + SEGMENT_LEN);
+            const dietIndex = dietIndexFromElementSeg(seg);
+            const forced = elementSegForElementAndDiet(idx, dietIndex);
+            s = s.slice(0, start) + forced + s.slice(start + SEGMENT_LEN);
         }
     } else if (FIELD_TO_ATTRIBUTE[fieldId]) {
         const idx = ELEMENTAL_ATTRIBUTES.indexOf(FIELD_TO_ATTRIBUTE[fieldId]);
@@ -194,13 +246,12 @@ export function biasDnaForTrait(dna, traitId, { probability = 1 } = {}) {
     if (Math.random() > probability) return s;
     const idx = ELEMENTS.indexOf(element);
     if (idx < 0) return s;
-    const start = SEGMENT_KEYS.indexOf('element') * SEGMENT_LEN;
-    for (let i = 0; i < ALPHABET.length; i++) {
-        if ((i * 7) % ELEMENTS.length === idx) {
-            s = s.slice(0, start) + ALPHABET[i] + ALPHABET[0] + ALPHABET[0] + s.slice(start + SEGMENT_LEN);
-            break;
-        }
-    }
+    const start = ELEMENT_SEG_START;
+    // 改写 element 段位时保留原有 diet（diet 寄生在该段位上）。
+    const seg = s.slice(start, start + SEGMENT_LEN);
+    const dietIndex = dietIndexFromElementSeg(seg);
+    const forced = elementSegForElementAndDiet(idx, dietIndex);
+    s = s.slice(0, start) + forced + s.slice(start + SEGMENT_LEN);
     return s;
 }
 
@@ -271,20 +322,41 @@ export function traitsToDna(traits = {}) {
         accessory: bestTraitIndex(source.accessory, TRAIT_TABLE.accessory),
         elementalAttribute: bestTraitIndex(source.elementalAttribute, ELEMENTAL_ATTRIBUTES),
     };
-    return SEGMENT_KEYS.map(key => {
+    let dna = SEGMENT_KEYS.map(key => {
         const list = key === 'species'
             ? speciesList
             : (key === 'element' ? ELEMENTS : TRAIT_TABLE[key]);
         return segmentForTraitIndex(indexes[key], list.length);
     }).join('');
+    // 若 traits 显式给出 diet 偏好，则写入 element 段位（不影响 element 解码）。
+    const dietPref = source.diet || source.dietPreference;
+    if (dietPref != null && DIET_PREFS.includes(dietPref)) {
+        dna = biasDnaForDiet(dna, dietPref);
+    }
+    return dna;
 }
 
 export function dnaDietPreference(dna) {
     const s = normalizeDna(dna);
-    const speciesStart = SEGMENT_KEYS.indexOf('species') * SEGMENT_LEN;
-    const seg = s.slice(speciesStart, speciesStart + SEGMENT_LEN);
-    const score = ch2idx(seg[0]) * 5 + ch2idx(seg[1]) * 2 + ch2idx(seg[2]);
-    return DIET_PREFS[score % DIET_PREFS.length];
+    // diet 现在寄生在 element 段位（见上方说明），与 element 解码互不干扰。
+    const seg = s.slice(ELEMENT_SEG_START, ELEMENT_SEG_START + SEGMENT_LEN);
+    return DIET_PREFS[dietIndexFromElementSeg(seg)];
+}
+
+/**
+ * 在保持 element 解码不变的前提下，把指定的 diet 偏好写入 element 段位。
+ * preference ∈ DIET_PREFS（'meat' | 'vegetables' | 'both'）。
+ * 用于让"领地 / 食物选择"等显式决定宠物的饮食偏好，且不影响外观血统。
+ */
+export function biasDnaForDiet(dna, preference) {
+    let s = normalizeDna(dna);
+    const dietIndex = DIET_PREFS.indexOf(preference);
+    if (dietIndex < 0) return s;
+    const seg = s.slice(ELEMENT_SEG_START, ELEMENT_SEG_START + SEGMENT_LEN);
+    // 保持当前 element 不变（用原 sum_e % 3），仅改写 diet 维度。
+    const elementIndex = elementSegSumE(ch2idx(seg[0]), ch2idx(seg[1]), ch2idx(seg[2])) % ELEMENTS.length;
+    const forced = elementSegForElementAndDiet(elementIndex, dietIndex);
+    return s.slice(0, ELEMENT_SEG_START) + forced + s.slice(ELEMENT_SEG_START + SEGMENT_LEN);
 }
 
 export function dietPreferenceLabel(preference) {

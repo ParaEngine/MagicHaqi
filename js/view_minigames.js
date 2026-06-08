@@ -2,11 +2,11 @@
 import { $, clamp, coinIconSvg, confirm, escapeHtml, showToast } from './utils.js';
 import { getLang, t } from './i18n.js';
 import { CONFIG } from './config.js';
-import { state } from './state.js';
+import { state, setPlanetName } from './state.js';
 import { displayPetName } from './dna.js';
 import { getPet, getPetAsync, getPetImagePayload } from './pet.js';
 import { isPetOnCurrentPlanet } from './petLifecycle.js';
-import { addLikedGame, deletePetGame, loadLikedGames, loadPetGameHtml, loadPetGameList, loadRecentGames, loadRemotePetGameHtml, loadRemotePetGameList, recordRecentGame, removeLikedGame } from './storage.js';
+import { addLikedGame, deletePetGame, loadLikedGames, loadPetGameHtml, loadPetGameList, loadRecentGames, loadRemotePetGameHtml, loadRemotePetGameList, recordRecentGame, removeLikedGame, saveUserProfileDebounced } from './storage.js';
 import SoundManager from './soundManager.js';
 
 const soundManager = SoundManager.getInstance();
@@ -26,6 +26,16 @@ const MINIGAME_ALL_PET_IMAGE_REQUESTS = new Set([
     'haqi_get_pet_images',
     'haqi_get_all_pet_images',
     'haqiGetPetImages',
+]);
+// 小游戏（如新手领养仪式 haqi_planet_boarding）请求用户档案：星球名、昵称、性别等。
+const MINIGAME_USER_PROFILE_REQUESTS = new Set([
+    'haqi_get_user_profile',
+    'haqiGetUserProfile',
+]);
+// 小游戏回写用户档案（重命名星球 / 修改昵称）。
+const MINIGAME_USER_PROFILE_UPDATES = new Set([
+    'haqi_set_user_profile',
+    'haqiSetUserProfile',
 ]);
 
 // 小游戏清单从 side-by-side 的 minigames/_minigame_index.json 按需加载一次并缓存。
@@ -90,6 +100,10 @@ const PLAY_ACTIVITIES = [
 
 function getPlayItems() {
     return [...MINIGAMES, ...PLAY_ACTIVITIES];
+}
+
+function getVisiblePlayItems() {
+    return getPlayItems().filter(item => !item?.hidden);
 }
 
 // ---------- 收藏（list_liked_games.json） ----------
@@ -200,6 +214,7 @@ function recentRecordToPlayItem(record) {
     const owner = String(record.owner || '').trim();
     if (!owner) {
         const builtin = getPlayItems().find(item => item.src && item.id === record.id);
+        if (builtin?.hidden) return null;
         if (builtin) return { ...builtin, __likeMeta: likeMetaForGame(builtin, { official: true }) };
         // 官方游戏已下架且无快照 src，无法重玩，跳过。
         if (!record.id) return null;
@@ -240,6 +255,7 @@ function likedRecordToPlayItem(record) {
     if (!owner) {
         // 官方游戏：优先用内置定义（保留 allow / manualComplete / 自定义图标 SVG），否则用收藏快照。
         const builtin = getPlayItems().find(item => item.src && item.id === record.id);
+        if (builtin?.hidden) return null;
         if (builtin) return { ...builtin, __liked: true, __likeMeta: likeMetaForGame(builtin, { official: true }) };
         return {
             id: record.id,
@@ -281,7 +297,7 @@ function ownerTagLabel(owner) {
 //  组2 = 历史玩过但不在组1里的游戏（最多 200，本地 IndexedDB），按最近游玩时间倒序，整体接在组1之后。
 function getRecommendItems() {
     const playedMap = recentPlayedMap();
-    const official = getPlayItems().map(game => ({
+    const official = getVisiblePlayItems().map(game => ({
         ...game,
         __likeMeta: likeMetaForGame(game, { official: true }),
         __liked: isGameLikedSync(likeMetaForGame(game, { official: true })),
@@ -544,14 +560,18 @@ let currentGameLikeMeta = null;
 let currentRenderGameList = null;
 // 底部标签：'recommend' 官方推荐 | 'create' 创造 | 'mine' 我的
 let activeMinigameTab = 'recommend';
+let hideTopbarActionsForRoute = false;
 
-export function renderMinigames(panel, { pet }, { onBack, onGameFinished, initialGameId = null, initialGameParams = null, allowPlayWhenLowEnergy = false, suppressRewards = false, exitGameToBack = false, completionPrompt = null, deferGameFinishedUntilCompletionExit = false, initialTab = null, onCreateGame = null, onEditGame = null, sharedGame = null } = {}) {
+export function renderMinigames(panel, { pet }, { onBack, onGameFinished, initialGameId = null, initialGameParams = null, allowPlayWhenLowEnergy = false, suppressRewards = false, hideTopbarActions = false, exitGameToBack = false, completionPrompt = null, deferGameFinishedUntilCompletionExit = false, initialTab = null, onCreateGame = null, onEditGame = null, sharedGame = null } = {}) {
     cleanupMessageListener?.();
     currentGame = null;
     rewardedRounds = new Set();
     currentPet = pet || null;
     suppressCurrentRewards = !!suppressRewards;
+    hideTopbarActionsForRoute = !!hideTopbarActions;
     activeMinigameTab = (initialTab && MINIGAME_TABS.some(tab => tab.id === initialTab)) ? initialTab : 'recommend';
+    const initialGameConfig = initialGameId ? getPlayItems().find(item => item.id === initialGameId) : null;
+    const hideInitialTopbarActions = hideTopbarActionsForRoute || !!initialGameConfig?.hidden;
     const ignoreListClicksUntil = (initialGameId || sharedGame) ? 0 : Date.now() + MINIGAME_ENTRY_CLICK_GUARD_MS;
     let deferredCompletion = null;
     panel.innerHTML = `
@@ -1002,8 +1022,8 @@ export function renderMinigames(panel, { pet }, { onBack, onGameFinished, initia
         </style>
         <div class="topbar">
             <button class="btn-icon" id="mhBack" style="width:36px;height:36px;font-size:18px">‹</button>
-            <span id="mhMinigameTitle" class="font-bold" style="color:var(--text-primary);min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${escapeHtml(t('mgPlay'))}</span>
-            <div style="display:flex;align-items:center;justify-content:flex-end;gap:5px;max-width:min(64vw,440px);overflow:visible">
+            <span id="mhMinigameTitle" class="font-bold" style="color:var(--text-primary);flex:1;min-width:0;text-align:left;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${escapeHtml(t('mgPlay'))}</span>
+            <div id="mhMinigameTopActions" style="display:${hideInitialTopbarActions ? 'none' : 'flex'};align-items:center;justify-content:flex-end;gap:5px;max-width:min(64vw,440px);overflow:visible">
                 ${renderCoinPill('mhMinigameCoins', 'mh-minigame-coin-pill')}
                 <button type="button" id="mhMinigameLikeBtn" class="mh-minigame-topbar-like" style="display:none" aria-pressed="false">
                     <span class="mh-minigame-topbar-like-ico" aria-hidden="true">${minigameHeartIcon(false)}</span>
@@ -1380,6 +1400,14 @@ export function renderMinigames(panel, { pet }, { onBack, onGameFinished, initia
             handlePetImageRequest(frame, msg);
             return;
         }
+        if (isUserProfileRequest(msg)) {
+            handleUserProfileRequest(frame, msg);
+            return;
+        }
+        if (isUserProfileUpdate(msg)) {
+            handleUserProfileUpdate(frame, msg);
+            return;
+        }
         if (msg.type === 'gameLoaded') {
             setMinigameLoading(false);
             return;
@@ -1406,6 +1434,7 @@ export function renderMinigames(panel, { pet }, { onBack, onGameFinished, initia
         currentPet = null;
         currentGameStartedAt = 0;
         suppressCurrentRewards = false;
+        hideTopbarActionsForRoute = false;
         clearMinigameRestPrompt();
         clearRecentPlayTimer();
         cleanupMessageListener = null;
@@ -1561,6 +1590,104 @@ function isPetImageRequest(msg) {
     return MINIGAME_PET_IMAGE_REQUESTS.has(type) || MINIGAME_ALL_PET_IMAGE_REQUESTS.has(type);
 }
 
+function isUserProfileRequest(msg) {
+    return MINIGAME_USER_PROFILE_REQUESTS.has(String(msg?.type || ''));
+}
+
+function isUserProfileUpdate(msg) {
+    return MINIGAME_USER_PROFILE_UPDATES.has(String(msg?.type || ''));
+}
+
+// 收集可暴露给小游戏的用户档案：星球名、昵称、用户名、性别、头像。
+// 仅暴露展示用字段，绝不包含 token / id 等敏感信息。
+function buildUserProfilePayload() {
+    const user = state.user && typeof state.user === 'object' ? state.user : {};
+    const nickname = (user.nickname || user.name || user.displayName || user.username || '').toString().trim();
+    const username = (user.username || '').toString().trim();
+    // keepwork 用户性别字段历史上可能是 sex / gender，0/1/2 或字符串，统一归一化。
+    let gender = '';
+    const rawGender = user.gender != null ? user.gender : user.sex;
+    if (rawGender === 1 || rawGender === '1' || rawGender === 'male' || rawGender === 'm') gender = 'male';
+    else if (rawGender === 2 || rawGender === '2' || rawGender === 'female' || rawGender === 'f') gender = 'female';
+    else if (typeof rawGender === 'string' && rawGender.trim()) gender = rawGender.trim();
+    return {
+        planetName: (state.planetName || '').toString(),
+        nickname,
+        username,
+        gender,
+        portrait: (user.portrait || user.avatar || '').toString(),
+    };
+}
+
+// 处理小游戏的 haqi_get_user_profile 请求，回传当前用户档案。
+function handleUserProfileRequest(frame, msg) {
+    const sourceWindow = frame?.contentWindow;
+    if (!sourceWindow) return;
+    const requestId = msg.requestId || msg.id || null;
+    try {
+        sourceWindow.postMessage({
+            type: 'haqi_user_profile',
+            requestId,
+            ok: true,
+            data: buildUserProfilePayload(),
+        }, '*');
+    } catch (e) {
+        try {
+            sourceWindow.postMessage({
+                type: 'haqi_user_profile',
+                requestId,
+                ok: false,
+                error: e?.message || String(e),
+            }, '*');
+        } catch (_) {}
+    }
+}
+
+// 处理小游戏的 haqi_set_user_profile 回写：目前支持重命名星球与昵称。
+// 昵称变更仅写入内存中的 state.user（用于本会话称呼），不强制同步到 keepwork 账号资料；
+// 星球名通过 setPlanetName + 防抖落盘持久化。
+function handleUserProfileUpdate(frame, msg) {
+    const data = (msg && typeof msg.data === 'object' && msg.data) || {};
+    let changed = false;
+
+    if (typeof data.planetName === 'string') {
+        const next = data.planetName.trim().slice(0, 80);
+        if (next && next !== state.planetName) {
+            setPlanetName(next);
+            changed = true;
+        }
+    }
+
+    if (typeof data.nickname === 'string') {
+        const nick = data.nickname.trim().slice(0, 40);
+        if (nick) {
+            if (!state.user || typeof state.user !== 'object') state.user = {};
+            // 仅更新展示昵称，保留 username / id 等账号标识不变。
+            if (state.user.nickname !== nick) {
+                state.user.nickname = nick;
+                changed = true;
+            }
+        }
+    }
+
+    if (changed) {
+        try { saveUserProfileDebounced(); } catch (_) {}
+    }
+
+    // 回执最新档案，便于小游戏确认写入结果。
+    const sourceWindow = frame?.contentWindow;
+    if (sourceWindow) {
+        try {
+            sourceWindow.postMessage({
+                type: 'haqi_user_profile',
+                requestId: msg.requestId || msg.id || null,
+                ok: true,
+                data: buildUserProfilePayload(),
+            }, '*');
+        } catch (_) {}
+    }
+}
+
 // 供其它内嵌游戏 iframe 的视图（如创作工坊预览 view_game_maker）复用宠物形象请求处理：
 // 让「创作工坊里预览的小游戏」也能像正式 minigame 一样拿到宠物图像，
 // 而不必各自重复实现 haqi_get_pet_image(s) 协议。
@@ -1586,6 +1713,8 @@ export async function pushActivePetConfigToFrame(frame) {
                 petId: pet.id || '',
                 petName: displayPetName(pet),
                 masterStyle: localStorage.getItem('haqiAdventureMasterV1') || undefined,
+                // 一并附带用户档案，便于新手领养类小游戏预填星球名 / 称呼。
+                ...buildUserProfilePayload(),
             },
         }, '*');
     } catch (_) {}
@@ -1910,9 +2039,12 @@ function openGame(gameId, params = null, { allowLowEnergy = false, html = null, 
     currentGame = game;
     rewardedRounds = new Set();
     currentGameStartedAt = Date.now();
+    const hideTopbarActions = shouldHideTopbarActionsForGame(game);
+    setTopbarActionsVisible(!hideTopbarActions);
     // 顶栏收藏按钮：优先用调用方传入的 like-meta（作品/收藏项），否则按官方游戏推断。
     const playLikeMeta = likeMeta || likeMetaForGame(game, { official: !!game.src && !game.path });
-    showPlayLikeButton(playLikeMeta);
+    if (hideTopbarActions) hidePlayLikeButton();
+    else showPlayLikeButton(playLikeMeta);
     // 最近游玩历史：满 15 秒才记入（官方 / 自己 / 别人的游戏都计入），中途退出或换游戏则取消。
     scheduleRecentPlay(game, playLikeMeta);
     scheduleMinigameRestPrompt();
@@ -1954,6 +2086,8 @@ async function postGameConfig() {
                 petId: pet.id || '',
                 petName: displayPetName(pet),
                 masterStyle: localStorage.getItem('haqiAdventureMasterV1') || undefined,
+                // 一并附带用户档案，便于新手领养类小游戏预填星球名 / 称呼。
+                ...buildUserProfilePayload(),
             },
         }, '*');
     } catch (_) {}
@@ -2121,9 +2255,19 @@ function showList() {
     currentGameLikeMeta = null;
     rewardedRounds = new Set();
     currentGameStartedAt = 0;
+    setTopbarActionsVisible(!hideTopbarActionsForRoute);
     hidePlayLikeButton();
     // 退出游戏回到列表：刷新"推荐"，让刚玩过的游戏排到最前并更新"最近游玩"标签。
     if (activeMinigameTab === 'recommend') currentRenderGameList?.();
+}
+
+function shouldHideTopbarActionsForGame(game) {
+    return hideTopbarActionsForRoute || !!game?.hidden;
+}
+
+function setTopbarActionsVisible(visible) {
+    const actions = $('mhMinigameTopActions');
+    if (actions) actions.style.display = visible ? 'flex' : 'none';
 }
 
 // 顶栏收藏按钮：仅游玩中显示，已收藏时按钮高亮并显示"已收藏"。

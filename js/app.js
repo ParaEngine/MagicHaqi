@@ -46,9 +46,9 @@ import {
 } from './petLifecycle.js';
 import SoundManager from './soundManager.js';
 // Side-effect import: 订阅 state 并接管所有 [data-mh-pet] 占位符的渲染 + 动画
-import { canWakePet, daySleepRejectText, eatFood, isPetInteractionBlocked, isPetSleeping, petArtHtml, preloadPetAssets, say, scanAndMount, setAnim, shouldRejectDaySleep, sleepingInteractionText, startPetSleep, wakePet, wakePetForPlay } from './pet.js';
+import { canWakePet, daySleepRejectText, eatFood, hatchPetFromBoarding, isPetInteractionBlocked, isPetSleeping, petArtHtml, preloadPetAssets, say, scanAndMount, setAnim, shouldRejectDaySleep, sleepingInteractionText, startPetSleep, wakePet, wakePetForPlay } from './pet.js';
 
-const sdkCdnUrl = 'https://cdn.keepwork.com/sdk/keepworkSDK.iife.js?v=20260604b';
+const sdkCdnUrl = 'https://cdn.keepwork.com/sdk/keepworkSDK.iife.js?v=20260607a';
 
 function loadScript(src) {
     return new Promise((resolve, reject) => {
@@ -157,6 +157,7 @@ let pendingStoryReturnToMaker = null;
 let pendingStoryReturnToList = false;
 let storyMakerOrigin = null;
 let shopReturnPreserveRoomMode = false;
+let pendingOnboardingProgress = null;
 let lastRenderedView = null;
 let isBootstrapping = true;
 
@@ -591,6 +592,12 @@ function renderMinigamesRoute() {
                 returnToCellLevel();
                 return;
             }
+            if (launch?.mode === 'adopt') {
+                // 玩家中途退出领养仪式：不替换 / 放养当前宠物。
+                // 只有小游戏真正发出 gameFinished 后，才会创建新蛋并处理当前宠物。
+                navigateToView('home');
+                return;
+            }
             navigateToView('home');
         },
         onGameFinished: (game, data) => {
@@ -602,13 +609,22 @@ function renderMinigamesRoute() {
                 handleSicknessTreatmentResult(game, data);
                 return;
             }
+            if (launch?.mode === 'adopt') {
+                handleAdoptMinigameResult(game, data);
+                return;
+            }
+            if (launch?.mode === 'onboarding' && isBoardingGame(game, launch)) {
+                handleBoardingOnboardingResult(game, data);
+                return;
+            }
             rewardPetAction('play', `${game?.title || '玩耍'}完成啦，亲密度提升！`, data);
         },
         initialGameId: launch?.gameId || null,
         initialGameParams: launch?.params || null,
         allowPlayWhenLowEnergy: !!launch?.allowLowEnergy,
         suppressRewards: !!launch?.suppressRewards,
-        exitGameToBack: launch?.mode === 'sickness' || launch?.mode === 'story',
+        hideTopbarActions: launch?.mode === 'adopt' || launch?.mode === 'onboarding',
+        exitGameToBack: launch?.mode === 'sickness' || launch?.mode === 'story' || launch?.mode === 'adopt',
         deferGameFinishedUntilCompletionExit: launch?.mode === 'story',
         completionPrompt: launch?.mode === 'story' ? {
             title: '小游戏完成啦',
@@ -1079,15 +1095,21 @@ async function maybeStartOnboarding() {
         const gameId = resolveOnboardingMinigameId(config.minigame);
         if (!gameId) return false;
         if (!getCurrentPet()) {
-            // 没有可用宠物时不强行进入小游戏，交回默认流程。
-            return false;
+            // boarding 类小游戏本身会完成领养/孵化；没有当前宠物时先创建一颗默认蛋作为 iframe 上下文。
+            if (isBoardingGame({ id: gameId })) {
+                await prepareDefaultEggHome();
+            } else {
+                // 其它 minigame 需要已有宠物才能玩，交回默认流程。
+                return false;
+            }
         }
         pendingMinigameLaunch = {
             mode: 'onboarding',
             gameId,
             allowLowEnergy: true,
         };
-        try { await markOnboardingCompleted(progressKey, 'minigames'); } catch (_) {}
+        pendingOnboardingProgress = { progressKey, mode: 'minigames' };
+        finishBootstrap();
         setView('minigames');
         return true;
     }
@@ -1619,25 +1641,62 @@ async function handleHireNanny(pet, days = 1) {
 }
 
 async function handleAdoptEgg(pet) {
-    const current = pet || getCurrentPet();
-    if (current && isPetOnCurrentPlanet(current)) {
-        const ok = await confirm(`领养新蛋后，${current.name || '当前宠物'} 会被放养到星球中，无法重新召回。确定继续吗？`, {
-            okText: '放养并领养',
-            cancelText: '再想想',
-        });
-        if (!ok) return;
-        markPetReleased(current, state.planetName || '宠物星');
-        await savePet(current);
+    // 领养确认（含放养警告）已由 showAdoptEggModal 弹出，这里不再重复弹窗，
+    // 但此时只启动仪式；放逐旧宠物 / 替换当前蛋 / 生成新宠物必须等 gameFinished 后，
+    // 再统一交给 pet.js 的 hatchPetFromBoarding()。
+    // 领养仪式：先进入"星球诞生"小游戏（haqi_planet_boarding），
+    // 在仪式里命名星球 / 选性格 / 喂第一口 / 许愿，游戏结束后回传 DNA 相关信息，
+    // 据此创建新蛋（系别 / 食性 / 元素属性）。游戏需要一只"当前宠物"才能进入。
+    if (getCurrentPet()) {
+        pendingMinigameLaunch = {
+            mode: 'adopt',
+            gameId: 'planet_boarding',
+            allowLowEnergy: true,
+            suppressRewards: true,
+        };
+        navigateToView('minigames', { preserveMinigameLaunch: true });
+        return;
     }
-    const newPet = await createNewEgg();
-    try { await ensurePetData(newPet.id); } catch (_) {}
-    state.currentRoom = newPet.activeRoom || 'living';
+    // 兜底：没有可用宠物（理论上不会发生）时直接创建新蛋。
+    await finalizeAdoptedEgg(null);
+}
+
+function isBoardingGame(game, launch = {}) {
+    const id = String(game?.id || launch?.gameId || '').trim().toLowerCase();
+    const src = String(game?.src || launch?.src || '').trim().toLowerCase();
+    return id.includes('boarding') || src.includes('boarding');
+}
+
+async function finishBoardingHatch(data = {}, { stage = 'baby' } = {}) {
+    const pet = await hatchPetFromBoarding(data || {}, { stage, planetName: state.planetName || '宠物星' });
+    try { await ensurePetData(pet.id); } catch (_) {}
+    state.currentRoom = pet.activeRoom || 'living';
     state.isDecorMode = false;
     state.isFeedMode = false;
-    const exiled = await enforcePlanetPetLimit(newPet.id);
+    const exiled = await enforcePlanetPetLimit(pet.id);
     const exileText = exiled.length ? ` ${exiled.map(item => `${item.pet.name || '一只宠物'}去了${item.location.name}`).join('，')}。` : '';
-    showToast(`已领养新的蛋。${exileText}`, exiled.length ? 'info' : 'success', exiled.length ? 3600 : 2200);
+    showToast(stage === 'egg' ? `已领养新的蛋。${exileText}` : `${pet.name || '新宠物'} 已在星球上孵化。${exileText}`, exiled.length ? 'info' : 'success', exiled.length ? 3600 : 2200);
     setView('home');
+}
+
+// 完成领养：走统一 boarding 孵化逻辑；领养入口保留为蛋阶段。
+async function finalizeAdoptedEgg(data) {
+    await finishBoardingHatch(data || {}, { stage: 'egg' });
+}
+
+// 领养仪式（planet_boarding）结束：用回传数据创建新蛋。
+async function handleAdoptMinigameResult(_game, data = {}) {
+    pendingMinigameLaunch = null;
+    await finalizeAdoptedEgg(data || {});
+}
+
+async function handleBoardingOnboardingResult(_game, data = {}) {
+    pendingMinigameLaunch = null;
+    await finishBoardingHatch(data || {}, { stage: 'baby' });
+    if (pendingOnboardingProgress) {
+        try { await markOnboardingCompleted(pendingOnboardingProgress.progressKey, pendingOnboardingProgress.mode || 'minigames'); } catch (_) {}
+        pendingOnboardingProgress = null;
+    }
 }
 
 async function handleDeletePet(id) {
@@ -1935,9 +1994,9 @@ async function completeBreedWithParents(parentA, parentB, closePicker) {
     if (state.coins < CONFIG.breedCost) return;
     const current = getCurrentPet();
     if (current && isPetOnCurrentPlanet(current)) {
-        const ok = await confirm(`繁殖宝宝前，${current.name || '当前宠物'} 会被放养到星球中，无法重新召回。确定继续吗？`, {
-            okText: '放养并孵化',
-            cancelText: '再想想',
+        const ok = await confirm(t('breedReleaseConfirm', { current: current.name || t('currentPetFallback') }), {
+            okText: t('releaseAndBreed'),
+            cancelText: t('rethink'),
         });
         if (!ok) return;
         markPetReleased(current, state.planetName || '宠物星');

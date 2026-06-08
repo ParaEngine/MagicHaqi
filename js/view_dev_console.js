@@ -1,7 +1,7 @@
 // 由设置页在本机开发环境或隐藏开发者模式中按需加载。
-import { SHOP_ITEMS, CONFIG, getStageName } from './config.js';
+import { SHOP_ITEMS, CONFIG, DEFAULT_PLANET_ID, getPlanetOnboardingConfig, getStageName } from './config.js';
 import { state, notify, getCurrentPet, subscribe } from './state.js';
-import { addToInventory, savePet, savePetDebounced, saveUserProfileDebounced } from './storage.js';
+import { addToInventory, clearCurrentOnboardingProgress, clearOnboardingProgress, savePet, savePetDebounced, saveUserProfileDebounced } from './storage.js';
 import { resetPetSheetImage, setAnim } from './pet.js';
 import { applyStage, curePetSickness, defaultStats, defaultTraits, getActiveSickness, getEffectiveSicknessSeverity, getPermanentTraumaCount, getPetPoopCount, SICKNESS_DEFS, sicknessName, normalizePermanentTrauma, setPetPoopCount } from './petTick.js';
 import { clamp, escapeHtml, showToast } from './utils.js';
@@ -56,6 +56,7 @@ function mountDevConsole() {
         setAllReleasedPetsStage: (stageId = 'adult') => setAllExiledPetsStage(null, stageId),
         setAllExiledPetsStage: (stageId = 'adult') => setAllExiledPetsStage(null, stageId),
         resetCurrentPetToEgg,
+        resetOnboardingProgress,
         forceCurrentPetSleep,
         recoverCurrentPetSickness,
         setCurrentPetSickness,
@@ -95,6 +96,7 @@ function renderConsoleHtml() {
                 <button type="button" data-dev-action="biofuel" data-amount="10">${escapeHtml(t('dcAddFuel', { n: 10 }))}</button>
                 <button type="button" data-dev-action="stats">${escapeHtml(t('dcFillStats'))}</button>
                 <button type="button" data-dev-action="poops" data-amount="5">${escapeHtml(t('dcAddPoops', { n: 5 }))}</button>
+                <button type="button" data-dev-action="onboarding-reset">${escapeHtml(t('dcResetOnboarding'))}</button>
             </div>
             <div class="mh-dev-row mh-dev-mining-row">
                 <label class="mh-dev-mining-field">
@@ -152,6 +154,7 @@ function bindConsole(root) {
         if (action === 'coins') addCoins(Number(actionEl.dataset.amount) || 0);
         if (action === 'biofuel') addBiofuel(Number(actionEl.dataset.amount) || 0);
         if (action === 'poops') addPoopsToCurrentField(Number(actionEl.dataset.amount) || 0);
+        if (action === 'onboarding-reset') await resetOnboardingProgress();
         if (action === 'mining-reset') resetPlanetMining(root.querySelector('[data-dev-mining-hours]')?.value);
         if (action === 'stats') fillCurrentPetStats();
         if (action === 'item') await addSelectedItem(root);
@@ -306,6 +309,27 @@ function setVip(enabled) {
     saveUserProfileDebounced();
     notify();
     showToast(state.isPaid ? t('dcVipOn') : t('dcVipOff'), 'success', 1200);
+}
+
+function getActiveDevPlanetId() {
+    const settlement = state.settings?.starSettlement;
+    if (settlement?.source === 'official' && settlement.planetId) return String(settlement.planetId);
+    return DEFAULT_PLANET_ID;
+}
+
+async function resetOnboardingProgress(progressKey = '') {
+    const planetId = progressKey || getActiveDevPlanetId();
+    let config = null;
+    try { config = await getPlanetOnboardingConfig(planetId); } catch (_) {}
+    const key = config?.progressKey || planetId;
+    await Promise.all([
+        clearOnboardingProgress(key),
+        clearOnboardingProgress(DEFAULT_PLANET_ID),
+        clearCurrentOnboardingProgress(),
+    ]);
+    notify();
+    showToast(t('dcOnboardingReset', { key }), 'success', 1800);
+    return true;
 }
 
 function fillCurrentPetStats() {
@@ -617,6 +641,15 @@ function renderTraitField(key, value) {
 }
 
 function renderScalarField(key, value) {
+    if (key === 'stage') {
+        const options = CONFIG.stages.map(stage => `<option value="${escapeHtml(stage.id)}" ${stage.id === value ? 'selected' : ''}>${escapeHtml(stage.emoji)} ${escapeHtml(stage.name)}</option>`).join('');
+        return `
+            <label class="mh-dev-field">
+                <span title="${escapeHtml(key)}">${escapeHtml(key)}</span>
+                <select data-dev-pet-scalar="${escapeHtml(key)}" data-dev-value-type="string">${options}</select>
+            </label>
+        `;
+    }
     if (typeof value === 'number') {
         return renderNumberField({
             label: key,

@@ -1616,6 +1616,34 @@ export async function markOnboardingCompleted(progressKey = '', mode = '') {
     return saveOnboardingProgress(progressKey, { completed: true, mode, completedAt: Date.now() });
 }
 
+/** 清除某个星球的新手指引完成进度，供开发调试时重新触发 onboarding。 */
+export async function clearOnboardingProgress(progressKey = '') {
+    const path = onboardingLayoutsPath(progressKey);
+    let data;
+    try { data = await readJSON(path, {}); } catch (_) { data = {}; }
+    const layouts = normalizeLayoutsData(data);
+    applyLayoutsOnboarding(layouts, null);
+    if (_layoutsLoaded && path === currentLayoutsPath() && state.layouts && typeof state.layouts === 'object') {
+        applyLayoutsOnboarding(state.layouts, null);
+    }
+    await saveJSONNow(path, layouts);
+    return true;
+}
+
+/** 清除当前激活 layouts 文件里的新手指引进度。 */
+export async function clearCurrentOnboardingProgress() {
+    const path = currentLayoutsPath();
+    let data;
+    try { data = await readJSON(path, {}); } catch (_) { data = {}; }
+    const layouts = normalizeLayoutsData(data);
+    applyLayoutsOnboarding(layouts, null);
+    if (_layoutsLoaded && state.layouts && typeof state.layouts === 'object') {
+        applyLayoutsOnboarding(state.layouts, null);
+    }
+    await saveJSONNow(path, layouts);
+    return true;
+}
+
 // ========== 背包 ==========
 export async function addToInventory(petId, itemId, qty = 1, options = {}) {
     if (!_inventoryLoaded) await ensurePetInventory(petId);

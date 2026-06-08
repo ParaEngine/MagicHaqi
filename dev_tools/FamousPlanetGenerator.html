@@ -119,6 +119,7 @@
             <button id="btnWorkspace" type="button">打开</button>
             <button id="btnNew" class="primary" type="button">新建星球</button>
             <button id="btnDuplicate" type="button">复制</button>
+            <button id="btnLoadFromSystem" type="button">读取</button>
             <button id="btnDownloadIndex" type="button">下载 index</button>
             <button id="btnCopyIndex" type="button">复制 index</button>
           </div>
@@ -358,7 +359,7 @@
       await navigator.clipboard.writeText(text);
     }
 
-    const sdkCdnUrl = 'https://cdn.keepwork.com/sdk/keepworkSDK.iife.js?v=20260525a';
+    const sdkCdnUrl = 'https://cdn.keepwork.com/sdk/keepworkSDK.iife.js?v=20260607a';
     const sdkLoadTimeoutMs = 8000;
 
     function withTimeout(promise, ms, label) {
@@ -1409,6 +1410,20 @@ ${currentIndent}}`;
       setStatus($('runStatus'), `已复制为 ${id}，保存后写入 ${INDEX_PATH}。`, 'ok');
     }
 
+    async function loadFromSystem() {
+      const id = safeId(buildPlanetConfig().id, '');
+      if (!id) { setStatus($('runStatus'), '当前没有选中星球，无法从系统目录读取。', 'error'); return; }
+      setStatus($('runStatus'), `正在从系统目录读取 ${id}...`, '');
+      const systemIndexData = normalizeIndexData(await readLocalJson(LOCAL_INDEX_URL, { version: 1, planets: [] }));
+      const systemEntry = (Array.isArray(systemIndexData.planets) ? systemIndexData.planets : [])
+        .find(entry => safeId(entry?.id, '') === id);
+      if (!systemEntry) { setStatus($('runStatus'), `系统目录 ${INDEX_PATH} 中没有同名星球 ${id}，无法覆盖。`, 'error'); return; }
+      if (!window.confirm(`用系统目录中的 ${id} 覆盖当前编辑内容？\n（保存后才会写入 workspace 用户文件）`)) return;
+      fillPlanetForm(normalizePlanet({ ...systemEntry, id }));
+      state.selectedId = id;
+      setStatus($('runStatus'), `已用系统目录内容覆盖 ${id}，确认无误后点击保存写入 ${INDEX_PATH}。`, 'ok');
+    }
+
     async function deleteRecord(id) {
       if (!window.confirm(`从 index 移除 ${id}？`)) return;
       state.records = state.records.filter(item => item.id !== id);
@@ -1509,6 +1524,7 @@ ${currentIndent}}`;
       };
       $('btnNew').onclick = newPlanet;
       $('btnDuplicate').onclick = duplicatePlanet;
+      $('btnLoadFromSystem').onclick = () => loadFromSystem().catch(e => setStatus($('runStatus'), `读取失败：${e?.message || e}`, 'error'));
       $('btnSave').onclick = () => savePlanet().catch(e => setStatus($('runStatus'), `保存失败：${e?.message || e}`, 'error'));
       $('btnSaveTop').onclick = () => savePlanet().catch(e => setStatus($('runStatus'), `保存失败：${e?.message || e}`, 'error'));
       $('btnFormatJson').onclick = updateOutput;

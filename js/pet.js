@@ -13,13 +13,13 @@
 // 使用：视图层调用 petArtHtml(pet) 输出占位 HTML；本模块订阅 state，每次 notify
 // 之后扫描并接管渲染。已经处于目标状态的元素不会被重建，避免动画重置。
 
-import { state, subscribe, notify } from './state.js';
-import { loadPet, savePetDebounced } from './storage.js';
-import { biasDnaForFieldId, biasDnaForTrait, decodeDna, dietPreferenceLabel, displayPetName, dnaDietPreference, dnaRarity, dnaToName } from './dna.js';
+import { state, subscribe, notify, setCurrentPet } from './state.js';
+import { loadPet, savePet, savePetDebounced, setCurrentPetPersisted } from './storage.js';
+import { biasDnaForDiet, biasDnaForElementalAttribute, biasDnaForFieldId, biasDnaForTrait, decodeDna, dietPreferenceLabel, displayPetName, dnaDietPreference, dnaRarity, dnaToName, randomDna } from './dna.js';
 import { CONFIG, findLargestHouseAcrossLayouts } from './config.js';
-import { applyStage, defaultTraits, gainTrait, markPetCared } from './petTick.js';
-import { getRuntimePetStats } from './petLifecycle.js';
-import { clamp, escapeHtml } from './utils.js';
+import { applyStage, defaultPermanentTrauma, defaultStats, eggStats, defaultTraits, gainTrait, markPetCared } from './petTick.js';
+import { getRuntimePetStats, markPetReleased } from './petLifecycle.js';
+import { clamp, escapeHtml, randId } from './utils.js';
 import { t } from './i18n.js';
 import { resolveTerrainFieldTypeId } from './view_terrain_fields.js';
 
@@ -875,6 +875,16 @@ function _systemPetOwnedKeys(pet = {}) {
     return keys;
 }
 
+export function systemPetOwnedKeys(pet = {}) {
+    return _systemPetOwnedKeys(pet);
+}
+
+function _getOwnedSystemPetKeySet() {
+    const owned = new Set();
+    Object.values(state.pets || {}).forEach(item => _systemPetOwnedKeys(item).forEach(key => owned.add(key)));
+    return owned;
+}
+
 async function _resolveSystemHatchTargetForEgg(pet) {
     const existing = _normalizeSystemHatchTarget(pet?.eggHatchTarget);
     if (existing) return existing;
@@ -887,11 +897,232 @@ async function _resolveSystemHatchTargetForEgg(pet) {
     }
     const candidates = (Array.isArray(list) ? list : []).map(_normalizeSystemHatchTarget).filter(Boolean);
     if (!candidates.length) return null;
-    const owned = new Set();
-    Object.values(state.pets || {}).forEach(item => _systemPetOwnedKeys(item).forEach(key => owned.add(key)));
+    const owned = _getOwnedSystemPetKeySet();
     const unowned = candidates.filter(entry => !owned.has(`id:${entry.id}`) && !owned.has(`name:${entry.name}`));
     const pool = unowned.length ? unowned : candidates;
     return pool[Math.floor(Math.random() * pool.length)] || null;
+}
+
+const BOARDING_ELEMENT_MAP = { land: '陆地', water: '水系', sky: '天空' };
+const BOARDING_DIET_MAP = {
+    omnivore: 'both',
+    both: 'both',
+    carnivore: 'meat',
+    meat: 'meat',
+    herbivore: 'vegetables',
+    vegetables: 'vegetables',
+    veggie: 'vegetables',
+};
+
+function _boardingElement(data = {}) {
+    const raw = String(data.element || data.wishElement || '').trim().toLowerCase();
+    return BOARDING_ELEMENT_MAP[raw] || '';
+}
+
+function _boardingDietPreference(data = {}) {
+    const raw = String(data.diet || data.firstFood || '').trim().toLowerCase();
+    return BOARDING_DIET_MAP[raw] || '';
+}
+
+function _buildBoardingDna(data = {}) {
+    let dna = randomDna();
+    const element = String(data.element || data.wishElement || '').toLowerCase();
+    if (element && element !== 'random') dna = biasDnaForFieldId(dna, element, { probability: 1 });
+    if (data.elementalAttribute) dna = biasDnaForElementalAttribute(dna, data.elementalAttribute);
+    const dietPreference = _boardingDietPreference(data);
+    if (dietPreference) dna = biasDnaForDiet(dna, dietPreference);
+    return dna;
+}
+
+function _scoreBoardingTarget(target, data = {}) {
+    if (!target) return 0;
+    const traits = target.traits && typeof target.traits === 'object' ? target.traits : decodeDna(target.dna || '');
+    const wantedElement = _boardingElement(data);
+    const wantedAttribute = String(data.elementalAttribute || '').trim();
+    const wantedDiet = _boardingDietPreference(data);
+    let score = 0;
+    if (wantedElement && traits.element === wantedElement) score += 4;
+    if (wantedAttribute && traits.elementalAttribute === wantedAttribute) score += 3;
+    if (wantedDiet && target.dna && dnaDietPreference(target.dna) === wantedDiet) score += 2;
+    return score;
+}
+
+function _normalizeBoardingReturnedPet(data = {}) {
+    const source = data?.pet || data?.petInfo || data?.petConfig || data?.hatchedPet || data?.rewardPet || null;
+    const raw = source && typeof source === 'object' ? source : null;
+    if (!raw) return null;
+    const dna = String(raw.dna || raw.petDna || '').trim();
+    const imageSheetUrl = String(raw.imageSheetUrl || raw.petImageSheetUrl || raw.spriteSheetUrl || raw.spriteUrl || '').trim();
+    const imageUrl = String(raw.imageUrl || raw.petImageUrl || '').trim();
+    const name = String(raw.name || raw.petName || '').trim();
+    const id = String(raw.id || raw.petId || raw.sourcePetId || '').replace(/^famous-pets\//, '').trim();
+    const traits = raw.traits && typeof raw.traits === 'object'
+        ? JSON.parse(JSON.stringify(raw.traits))
+        : (dna ? decodeDna(dna) : null);
+    if (!dna && !imageSheetUrl && !imageUrl && !name && !traits) return null;
+    const normalizedDna = dna || _buildBoardingDna(data);
+    return {
+        source: raw.source || 'boarding',
+        id,
+        name: name || dnaToName(normalizedDna),
+        dna: normalizedDna,
+        imageUrl: imageUrl || null,
+        imageSheetUrl: imageSheetUrl || null,
+        traits: traits || decodeDna(normalizedDna),
+        rarity: Number.isFinite(Number(raw.rarity)) ? Number(raw.rarity) : dnaRarity(normalizedDna),
+        decidedAt: Date.now(),
+    };
+}
+
+function _applyBoardingChoices(pet, data = {}) {
+    if (!pet || !data) return pet;
+    const dietPreference = _boardingDietPreference(data);
+    pet.boardingChoices = {
+        planetName: data.planetName || '',
+        ownerNickname: data.ownerNickname || '',
+        personality: data.personality || '',
+        petId: data.petId || '',
+        dragonColor: data.dragon_color || data.dragonColor || '',
+        elementalAttribute: data.elementalAttribute || '',
+        diet: data.diet || '',
+        dietPreference: dietPreference || '',
+        wish: data.wish || data.wish_type || '',
+        element: data.element || data.wishElement || '',
+        firstSentence: data.firstSentence || '',
+        birthday: data.birthday || '',
+        completedAt: Date.now(),
+    };
+    if (data.diet) pet.adoptDiet = data.diet;
+    if (data.firstSentence) pet.firstSentence = data.firstSentence;
+    return pet;
+}
+
+// 按明确的 petId 从 famous-pets 索引解析孵化目标。
+// boarding 小游戏会根据用户选择（抱抱龙颜色）回传 petId（dragon_green / dragon_orange / dragon_purple）。
+// 命中时直接以该系统宠物为准：其 dna / imageSheetUrl / traits 会覆盖用户的食性 / 元素属性等选择。
+async function _resolveFamousPetById(petId) {
+    const id = String(petId || '').replace(/^famous-pets\//, '').trim();
+    if (!id) return null;
+    let list = [];
+    try {
+        const { loadFamousPetsIndex } = await import('./view_petList.js');
+        list = await loadFamousPetsIndex();
+    } catch (e) {
+        console.warn('[pet] 加载 PetList 失败，无法按 petId 选择系统宠物', petId, e);
+        return null;
+    }
+    const entry = (Array.isArray(list) ? list : []).find(item => String(item?.id || '').trim() === id);
+    if (!entry) {
+        console.warn('[pet] 未在 famous-pets 索引中找到 petId', petId);
+        return null;
+    }
+    return _normalizeSystemHatchTarget(entry);
+}
+
+async function _resolveBoardingHatchTarget(data = {}) {
+    // 1) 优先：用户明确选择的 petId（孵化以此为准，覆盖食性 / 元素属性等其它选择）。
+    const explicitPetId = String(data.petId || '').trim();
+    if (explicitPetId) {
+        const byId = await _resolveFamousPetById(explicitPetId);
+        if (byId) return byId;
+    }
+    // 2) 其次：父级直接回传了完整宠物信息。
+    const explicit = _normalizeBoardingReturnedPet(data);
+    if (explicit) return explicit;
+    let list = [];
+    try {
+        const { loadFamousPetsIndex } = await import('./view_petList.js');
+        list = await loadFamousPetsIndex();
+    } catch (e) {
+        console.warn('[pet] 加载 PetList 失败，无法按 boarding 选择系统宠物', e);
+    }
+    const candidates = (Array.isArray(list) ? list : []).map(_normalizeSystemHatchTarget).filter(Boolean);
+    if (!candidates.length) return null;
+    const owned = _getOwnedSystemPetKeySet();
+    const unowned = candidates.filter(entry => !owned.has(`id:${entry.id}`) && !owned.has(`name:${entry.name}`));
+    const pool = unowned.length ? unowned : candidates;
+    const scored = pool.map(target => ({ target, score: _scoreBoardingTarget(target, data) }));
+    const bestScore = Math.max(...scored.map(item => item.score));
+    const best = bestScore > 0 ? scored.filter(item => item.score === bestScore) : scored;
+    return best[Math.floor(Math.random() * best.length)]?.target || null;
+}
+
+function _clearEggRuntimeFields(pet) {
+    delete pet.hatchMode;
+    delete pet.eggDecidedAt;
+    delete pet.eggHatchTarget;
+    delete pet.eggHatchPending;
+    delete pet.eggHatchQueuedAt;
+    delete pet.eggHatchRequestedAt;
+    delete pet.eggHatchRevealDelayMs;
+    delete pet.eggBias;
+}
+
+export async function hatchPetFromBoarding(data = {}, options = {}) {
+    const now = Date.now();
+    const current = options.currentPet || (state.currentPetId ? state.pets[state.currentPetId] : null);
+    if (current && current.stage !== 'egg') {
+        markPetReleased(current, options.planetName || state.planetName || '宠物星');
+        await savePet(current);
+    }
+    const target = await _resolveBoardingHatchTarget(data || {});
+    // petId 作为基础模板：保留其外观（imageSheetUrl）与基础 DNA，
+    // 但把用户在仪式里选择的食性 / 元素属性「覆盖」到这条 DNA 上（仅改对应段位，不动外观）。
+    let dna = target?.dna || _buildBoardingDna(data || {});
+    if (target) {
+        if (data && data.elementalAttribute) dna = biasDnaForElementalAttribute(dna, data.elementalAttribute);
+        const dietPreference = _boardingDietPreference(data || {});
+        if (dietPreference) dna = biasDnaForDiet(dna, dietPreference);
+    }
+    // DNA 被覆盖后，traits 需同步：
+    // - 有 petId 模板时，保留模板原本的外观特征（species / color / element 等，例如「dragon / 绿」），
+    //   仅把被覆盖的 elementalAttribute 用新 DNA 解码出来同步上去（食性不在 traits 里，靠 DNA 决定）。
+    // - 无模板时，整体按新 DNA 解码。
+    const traits = target
+        ? {
+            ...(target.traits || {}),
+            ...(data && data.elementalAttribute
+                ? { elementalAttribute: decodeDna(dna).elementalAttribute }
+                : {}),
+        }
+        : decodeDna(dna);
+    const pet = {
+        ...(current?.stage === 'egg' ? current : {}),
+        id: current?.stage === 'egg' ? current.id : `pet_${randId(8)}`,
+        name: target?.name || dnaToName(dna),
+        dna,
+        imageUrl: target?.imageUrl || null,
+        imageSheetUrl: target?.imageSheetUrl || null,
+        traits,
+        rarity: Number.isFinite(Number(target?.rarity)) ? Number(target.rarity) : dnaRarity(dna),
+        stats: options.stage === 'egg' ? eggStats() : defaultStats(),
+        permanentTrauma: current?.permanentTrauma || defaultPermanentTrauma(),
+        bornAt: now,
+        lastTickAt: now,
+        lastCareAt: now,
+        parents: current?.stage === 'egg' ? (current.parents || null) : null,
+        stage: options.stage === 'egg' ? 'egg' : 'baby',
+        anim: options.stage === 'egg' ? 'idle' : 'happy',
+        activeRoom: current?.activeRoom || 'living',
+        source: target?.source || 'boarding',
+        sourcePetId: target?.id ? `famous-pets/${target.id}` : (target?.sourcePetId || ''),
+    };
+    _clearEggRuntimeFields(pet);
+    if (options.stage === 'egg' && target) {
+        pet.hatchMode = 'system-pet';
+        pet.eggDecidedAt = now;
+        // 蛋阶段：破壳时会用 eggHatchTarget 还原宠物。
+        // 这里必须使用「已覆盖食性 / 元素属性」后的 dna + traits，
+        // 否则破壳会把用户的选择还原回 petId 模板的原始 DNA。
+        pet.eggHatchTarget = { ...target, dna, traits, name: pet.name, rarity: pet.rarity };
+    }
+    _applyBoardingChoices(pet, data || {});
+    try { applyStage(pet); } catch (_) {}
+    await savePet(pet);
+    await setCurrentPetPersisted(pet.id);
+    setCurrentPet(pet.id);
+    notify();
+    return pet;
 }
 
 function _applySystemHatchTarget(pet, target) {
