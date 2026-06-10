@@ -1736,3 +1736,41 @@ export async function appendChatLog(petId, role, text) {
     }
     await writeFileSafe(PATHS.chatLog(petId), next);
 }
+
+// ---------- Agent 运营层文件 IO ----------
+// 通用、带前缀白名单的文件读写，供 agentBridge / agentAudit / haqi-operator 复用。
+// 仅允许写 `agent/` 与 `pets/` 前缀，避免 agent 越权写其它工作区文件。
+const AGENT_WRITE_PREFIXES = ['agent/', 'pets/'];
+
+function isAgentWritablePath(path) {
+    const p = String(path || '');
+    return AGENT_WRITE_PREFIXES.some(prefix => p.startsWith(prefix));
+}
+
+// 读取工作区任意文件（缺失返回 ''）。读不设前缀限制（只读安全）。
+export async function agentReadFile(path) {
+    return await readFileSafe(String(path || ''));
+}
+
+// 覆盖写文件。仅允许 agent/ 与 pets/ 前缀，否则抛错（越权保护）。
+export async function agentWriteFile(path, content) {
+    if (!isAgentWritablePath(path)) {
+        throw new Error(`agentWriteFile: path "${path}" not allowed (only agent/ and pets/)`);
+    }
+    return await writeFileSafe(String(path), content);
+}
+
+// 追加一行到文件，超过 maxBytes 时从头部轮转（保留头 200 字节 + 尾部）。
+export async function agentAppendFile(path, line, maxBytes = 64 * 1024) {
+    if (!isAgentWritablePath(path)) {
+        throw new Error(`agentAppendFile: path "${path}" not allowed (only agent/ and pets/)`);
+    }
+    const cur = await readFileSafe(String(path));
+    let next = (cur || '') + String(line == null ? '' : line);
+    if (next.length > maxBytes) {
+        const head = next.slice(0, 200);
+        const tail = next.slice(-(maxBytes - 300));
+        next = head + '\n... (旧记录已归档) ...\n' + tail;
+    }
+    return await writeFileSafe(String(path), next);
+}

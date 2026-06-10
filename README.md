@@ -85,6 +85,8 @@ Publishing a new build creates a new hash folder; pointing
 - `js/` - game state, views, pet logic, storage, AI/API wrappers, and zoom-level modules
 - `css/` - level-specific styles
 - `minigames/` - standalone pet minigames
+- `agents/` - agent layer: `pet-master` (OpenClaw co-parent skill for all users) and `haqi-operator` (24/7 ops agent for the developer)
+- `site/` - English landing page ("AI pets for humans and agents")
 - `docs/` - design, architecture, QA, and planning notes
 - `dev_tools/` - helper generators for pets, planets, scenes, and shop items
 - `vite.config.mjs` - build config + post-build CDN release HTML emitter
@@ -93,6 +95,20 @@ Publishing a new build creates a new hash folder; pointing
 ## Main Flow
 
 Log in, hatch a pet, then move through the four zoom levels: space, planet field, pet rooms, and cell view. From the home view, players can also visit the shop, inventory, chat, profile, stories, and minigames.
+
+## Agent layer (page-as-API, no backend)
+
+MagicHaqi can be operated by AI agents (co-parents) by driving the live website — there is
+**no MagicHaqi REST backend**. Three shortcuts: KeepWork login REST → URL navigation →
+a hidden in-page command interface.
+
+- **Command interface** (`js/agentBridge.js`): `window.MagicHaqiAgent.exec(cmd)` / `getState()`;
+  hidden nodes `#mh-agent-cmd` (in), `#mh-agent-result` (out), `#mh-agent-state` (live snapshot).
+- **Login**: `POST https://api.keepwork.com/core/v0/users/login` → token → `MagicHaqi.html?token=`.
+- **Deep links**: `?adopt=1`, `?agent=<id>` (binds a two-owner `agentOwner`), `?cmd=`, `?view=ops`.
+- **Audit** (`js/agentAudit.js`): writes go to `agent/audit.log`.
+- **Ops Console**: `MagicHaqi.html?view=ops` — human dashboard / fallback.
+- **Agent packages** (`agents/`): `pet-master/` (all users) and `haqi-operator/` (developer 24/7 ops).
 
 ## Tech
 

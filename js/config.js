@@ -25,10 +25,12 @@ export function zoomLevelIdToIndex(value, fallback = 'planet') {
 // `window.__view` set before the app boots. Supported values:
 //   field | planet | pet | cell -> force the home view at that zoom level
 //   game                        -> force the minigames (mini-game) view
-export const FORCE_VIEW_IDS = ['planet', 'field', 'pet', 'cell', 'game'];
+export const FORCE_VIEW_IDS = ['planet', 'field', 'pet', 'cell', 'game', 'ops'];
 const FORCE_VIEW_ALIASES = {
     space: 'planet', planet: 'planet', field: 'field', pet: 'pet', cell: 'cell',
     game: 'game', games: 'game', minigame: 'game', minigames: 'game',
+    // 运营控制台（开发者 / 一人公司兜底面板），仅 ?view=ops 进入
+    ops: 'ops', console: 'ops', operator: 'ops',
 };
 
 export function normalizeForceViewId(value) {
@@ -45,6 +47,22 @@ export function getForcedView() {
         try { raw = String(window.__view || '').trim(); } catch (_) {}
     }
     return normalizeForceViewId(raw);
+}
+
+// ---------------------------------------------------------------------------
+// Agent 深链解析：?agent=<id> / ?adopt=1 / ?cmd=<urlencoded command>
+// 供 app.js 在启动时读取，驱动「页面即 API」的一步到位入口。
+// ---------------------------------------------------------------------------
+export function getAgentParams() {
+    const out = { agent: '', adopt: false, cmd: '' };
+    try {
+        const sp = new URL(window.location.href).searchParams;
+        out.agent = String(sp.get('agent') || '').trim();
+        const adoptRaw = String(sp.get('adopt') || '').trim().toLowerCase();
+        out.adopt = adoptRaw === '1' || adoptRaw === 'true' || adoptRaw === 'yes';
+        out.cmd = String(sp.get('cmd') || '').trim();
+    } catch (_) {}
+    return out;
 }
 
 export function normalizePlanetZoomOptions(raw = {}) {

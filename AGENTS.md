@@ -81,9 +81,22 @@ MagicHaqi/
 - 用户共享数据：`user/profile.json`（含当前宠物）、`user/inventory.json`、`user/layouts.json`
 - 宠物配置：`pets/<petId>.json`
 - 宠物文本：`pets/<petId>.memory.md`、`pets/<petId>.chat.log`
+- 运营层：`agent/audit.log`（agent 写操作审计）、`agent/ops-*.{json,log}`（运营 agent 状态）
 - localStorage 仅缓存 UI 偏好
 
 更多请见 [docs/design.md](docs/design.md) 与 [docs/architecture.md](docs/architecture.md)。
+
+## 🤖 Agent 运营层（页面即 API，无后端）
+
+MagicHaqi 可由 AI agent（co-parent）通过**打开真实网站 + 登录 + URL 导航 + 隐藏命令接口**操作，无需 REST 后端。
+
+- **隐藏命令接口** [`js/agentBridge.js`](js/agentBridge.js)：`window.MagicHaqiAgent.exec(cmd)` / `getState()`；隐藏节点 `#mh-agent-cmd`（入）、`#mh-agent-result`（出）、`#mh-agent-state`（机读状态，随 render 刷新）。命令注册表复用现有 view 回调 / `handleAction` / `storage` / `api`，不改玩法。
+- **登录捷径**：KeepWork login REST `POST https://api.keepwork.com/core/v0/users/login` 换 token，再 `MagicHaqi.html?token=<token>` 进入。
+- **深链**：`?adopt=1`、`?agent=<id>`（写入 `agentOwner` 双主人）、`?cmd=<urlencoded>`、`?view=ops`。
+- **审计** [`js/agentAudit.js`](js/agentAudit.js)：写操作落 `agent/audit.log`。
+- **运营控制台** [`js/view_ops_console.js`](js/view_ops_console.js)：`?view=ops`，人工兜底面板。
+- **官网** [`site/index.html`](site/index.html)：英文对外站，含领养 CTA 与 agent 接入说明。
+- **agent 包** [`agents/`](agents/README.md)：`agents/pet-master/`（装在所有用户电脑的 OpenClaw 宠物管家 skill）、`agents/haqi-operator/`（开发者用的 24h 一人公司运营 agent）。
 
 ## Common Pitfalls to Avoid
 ❌ **NEVER NEVER NEVER run `npm run build`** (or `npm run build 2`, `vite build`, or any bundling/compile command). The app does NOT need to be built. All games run directly in the browser without bundling. Vite is ONLY for distribution packaging by a human — never for development, never for verifying your changes. After editing, just open the HTML file / use Live Preview; do not build.

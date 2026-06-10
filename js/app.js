@@ -1,6 +1,6 @@
 // 主程序：SDK 启动 + 路由 + 全局事件
 import { $, showToast, confirm, clamp, prompt, escapeHtml } from './utils.js';
-import { canPlaceItemInArea, CONFIG, getItemZOrder, getShopItemById, findLargestHouseAcrossLayouts, getStageName, getForcedView, zoomLevelIdToIndex, DEFAULT_PLANET_ID, getPlanetOnboardingConfig } from './config.js';
+import { canPlaceItemInArea, CONFIG, getItemZOrder, getShopItemById, findLargestHouseAcrossLayouts, getStageName, getForcedView, getAgentParams, zoomLevelIdToIndex, DEFAULT_PLANET_ID, getPlanetOnboardingConfig } from './config.js';
 import { state, notify, subscribe, setView, setCurrentPet, getCurrentPet } from './state.js';
 import {
     loadUserProfile, saveUserProfile, saveUserProfileDebounced,
@@ -45,6 +45,7 @@ import {
     selectablePets,
 } from './petLifecycle.js';
 import SoundManager from './soundManager.js';
+import { initAgentBridge } from './agentBridge.js';
 // Side-effect import: 订阅 state 并接管所有 [data-mh-pet] 占位符的渲染 + 动画
 import { canWakePet, daySleepRejectText, eatFood, hatchPetFromBoarding, isPetInteractionBlocked, isPetSleeping, petArtHtml, preloadPetAssets, say, scanAndMount, setAnim, shouldRejectDaySleep, sleepingInteractionText, startPetSleep, wakePet, wakePetForPlay } from './pet.js';
 
@@ -807,7 +808,28 @@ const routes = {
     storyMaker:  renderStoryMakerRoute,
     gameMaker:   renderGameMakerRoute,
     settings:  renderSettingsRoute,
+    ops:       renderOpsConsoleRoute,
 };
+
+// 运营控制台（?view=ops，开发者 / 一人公司兜底面板）—— 懒加载
+let opsConsoleModule = null;
+function renderOpsConsoleRoute() {
+    if (opsConsoleModule) {
+        opsConsoleModule.renderOpsConsole(app, null, { onBack: () => navigateToView('home') });
+        return;
+    }
+    app.innerHTML = '<div style="padding:24px;color:var(--text-muted)">Loading ops console…</div>';
+    import('./view_ops_console.js')
+        .then((mod) => {
+            opsConsoleModule = mod;
+            if (state.currentView !== 'ops') return;
+            mod.renderOpsConsole(app, null, { onBack: () => navigateToView('home') });
+        })
+        .catch((e) => {
+            console.error('加载运营控制台失败', e);
+            app.innerHTML = '<div style="padding:24px;color:#b91c1c">Ops console load failed: ' + escapeHtml(String(e?.message || e)) + '</div>';
+        });
+}
 
 let hatchCtx = {};
 
@@ -875,6 +897,7 @@ function resolveForcedBootView(fallbackView) {
     const forced = getForcedView();
     if (!forced) return fallbackView;
     if (forced === 'game') return 'minigames';
+    if (forced === 'ops') return 'ops';
     const lv = zoomLevelIdToIndex(forced);
     state.zoomLevel = lv;
     state.lastHomeZoomLevel = lv;
@@ -2614,7 +2637,107 @@ if (typeof window !== 'undefined') {
     window.addEventListener('pagehide', () => { try { persistPlanetPlaytimeNow(); } catch (_) {} });
 }
 
-bootstrap().catch(err => {
+// ============================================================================
+// Agent 命令接口接线（见 js/agentBridge.js / docs/agent plan）
+// 把 agent 命令映射到现有应用动作；不暴露 REST 后端，纯前端「页面即 API」。
+// ============================================================================
+const agentHandlers = {
+    // 照顾类：复用中央动作分发器
+    handleAction: (actionKey, args) => handleAction(actionKey, args || {}),
+
+    // 对宠物说话：复用 api.js 的 chatWithPet + 记忆摘要
+    say: async (args) => {
+        const pet = getCurrentPet();
+        if (!pet) throw new Error('no current pet');
+        const text = String(args?.text || args?.message || '').trim();
+        if (!text) throw new Error('say requires args.text');
+        const api = await import('./api.js');
+        const reply = await api.chatWithPet(pet, text);
+        try { say(reply, 4500); } catch (_) {}
+        try { api.summarizeAndAppendMemory(pet, text, reply); } catch (_) {}
+        return { said: text, reply };
+    },
+
+    // 领养 / 孵化：导航到孵化流（由现有 UI 完成余下步骤）
+    adopt: async (args) => {
+        if (args?.agent) await bindAgentOwnerToCurrentPet(String(args.agent));
+        hatchCtx = {};
+        setView('hatch');
+        return { navigatedTo: 'hatch', agentOwner: args?.agent || null };
+    },
+    hatch: async () => { hatchCtx = {}; setView('hatch'); return { navigatedTo: 'hatch' }; },
+
+    // 导航
+    switchView: async (args) => {
+        const target = String(args?.view || args?.target || '').trim();
+        if (!target) throw new Error('switchView requires args.view');
+        navigateToView(target);
+        return { view: target };
+    },
+    switchRoom: async (args) => {
+        const id = String(args?.room || args?.id || '').trim();
+        if (!id) throw new Error('switchRoom requires args.room');
+        state.currentRoom = id;
+        const p = getCurrentPet(); if (p) { p.activeRoom = id; savePetDebounced(p); }
+        render();
+        return { room: id };
+    },
+
+    // 商店
+    openShop: async () => { navigateToView('shop'); return { view: 'shop' }; },
+    buy: async (args) => {
+        const itemId = String(args?.itemId || args?.id || '').trim();
+        if (!itemId) throw new Error('buy requires args.itemId');
+        const item = getShopItemById(itemId);
+        if (!item) throw new Error('unknown shop item: ' + itemId);
+        await handleBuy(item);
+        return { bought: itemId };
+    },
+
+    // 分享 / 物料：跳到明信片视图（可截图 / 复制链接）
+    share: async () => { navigateToView('postcard'); return { view: 'postcard' }; },
+};
+
+// 把 agentOwner（双主人）写到当前宠物。
+async function bindAgentOwnerToCurrentPet(agentId, platform = 'openclaw') {
+    const pet = getCurrentPet();
+    if (!pet) return null;
+    pet.agentOwner = { agentId: String(agentId), platform, boundAt: Date.now() };
+    savePetDebounced(pet);
+    notify();
+    return pet.agentOwner;
+}
+
+// 处理 agent 深链：?agent= / ?adopt=1 / ?cmd=<urlencoded>
+async function applyAgentDeepLinks() {
+    let params;
+    try { params = getAgentParams(); } catch (_) { return; }
+    if (!params) return;
+    if (params.agent && window.MagicHaqiAgent?.setActor) {
+        window.MagicHaqiAgent.setActor(params.agent);
+        await bindAgentOwnerToCurrentPet(params.agent);
+    }
+    if (params.adopt) {
+        try { await agentHandlers.adopt({ agent: params.agent }); } catch (e) { console.warn('agent adopt 深链失败', e); }
+    }
+    if (params.cmd && window.MagicHaqiAgent?.exec) {
+        try { await window.MagicHaqiAgent.exec(decodeURIComponent(params.cmd)); }
+        catch (e) { console.warn('agent cmd 深链失败', e); }
+    }
+}
+
+// 初始化 agent 桥（注入隐藏节点 + window.MagicHaqiAgent + 状态镜像订阅）
+try {
+    const agentInit = getAgentParams();
+    initAgentBridge({ handlers: agentHandlers, actor: agentInit?.agent || '', subscribe });
+} catch (e) {
+    console.warn('agentBridge 初始化失败', e);
+}
+
+bootstrap().then(() => {
+    // 启动完成后处理 agent 深链（此时已登录 / 已有宠物上下文）
+    applyAgentDeepLinks().catch(e => console.warn('agent 深链处理失败', e));
+}).catch(err => {
     console.error(err);
     showToast('启动失败：' + (err?.message || err), 'error', 5000);
     finishBootstrap();
