@@ -73,11 +73,12 @@
 			.history-item em { @apply overflow-hidden text-ellipsis whitespace-nowrap px-1 pb-1 text-[10px] not-italic text-slate-500; }
 			.history-delete { @apply absolute right-1 top-1 z-[2] grid h-[20px] w-[20px] min-h-[20px] place-items-center rounded-full border border-white/90 bg-red-600/90 p-0 text-[14px] leading-none text-white hover:bg-red-700; }
 			.history-empty { @apply rounded-md border border-dashed border-slate-300 bg-slate-50 p-2.5 text-center text-xs text-slate-500; }
-			.ref-grid { @apply grid grid-cols-2 gap-2; }
+			.ref-grid { @apply flex flex-wrap gap-2; }
 			.reference-dropzone { @apply border-dashed outline-none focus:border-sky-500 focus:ring-2 focus:ring-sky-600/15; }
 			.reference-dropzone.is-pasting { @apply border-sky-500 bg-sky-50; }
-			.ref-preview { @apply relative grid min-h-[78px] place-items-center overflow-hidden rounded-lg border border-dashed border-slate-300 bg-slate-50; }
-			.ref-preview img { @apply block h-24 w-full object-cover; }
+			.ref-preview { @apply relative grid aspect-square w-24 place-items-center overflow-hidden rounded-lg border border-dashed border-slate-300 bg-slate-50; }
+			.ref-preview.ref-empty { @apply aspect-auto min-h-[78px] w-full; }
+			.ref-preview img { @apply absolute inset-0 block h-full w-full object-contain; }
 			.reference-delete { @apply absolute right-1 top-1 z-[2] grid h-[24px] w-[24px] min-h-[24px] place-items-center rounded-full border border-white/90 bg-red-600/90 p-0 text-[16px] leading-none text-white hover:bg-red-700; }
 			.history-hover-popup { @apply pointer-events-none fixed z-[1300] hidden overflow-hidden rounded-lg border border-slate-300 bg-white shadow-2xl shadow-slate-500/40; width: min(420px, 46vw); }
 			.history-hover-popup.visible { @apply block; }
@@ -258,6 +259,19 @@
 							</div>
 						</section>
 
+						<section id="referenceSection" class="section reference-dropzone" tabindex="0" aria-label="参考图，可粘贴剪贴板图片">
+							<h2>Reference Images</h2>
+							<div class="hint">Per-asset reference images, used only for this session's image generation — they are <strong>not saved</strong> to the project. Add URLs / data URLs (one per line) or paste / upload images.</div>
+							<label>参考图 URL（一行一个）
+								<textarea id="referenceUrls" class="prompt-box" style="min-height:78px" spellcheck="false" placeholder="https://...&#10;data:image/...&#10;也可在此区域按 Ctrl+V 粘贴图片"></textarea>
+							</label>
+							<label>上传参考图
+								<input id="referenceFiles" type="file" accept="image/*" multiple>
+							</label>
+							<div id="referencePasteHint" class="hint">点击此区域后按 Ctrl+V，可将剪贴板图片作为 base64 参考图加入（最多 4 张）。</div>
+							<div id="referencePreview" class="ref-grid"><div class="ref-preview ref-empty"><span class="hint">可选参考图预览</span></div></div>
+						</section>
+
 						<section class="section">
 							<div class="flex items-center justify-between gap-2"><h2>Selected Asset JSON</h2><button id="btnApplyJson" type="button">Apply JSON</button></div>
 							<div class="hint">Workspace JSON for the selected asset (id, prompt, tags, historyUrls, grid...). Edit and click Apply JSON to update the asset. Use Export (top right) for output formats.</div>
@@ -283,19 +297,6 @@
 								<button id="btnConvertCurrentWebp" type="button">Generate WebP</button>
 								<button id="btnDeleteAsset" class="danger" type="button">Delete</button>
 							</div>
-						</section>
-
-						<section id="referenceSection" class="section reference-dropzone" tabindex="0" aria-label="参考图，可粘贴剪贴板图片">
-							<h2>Reference Images</h2>
-							<div class="hint">Per-asset reference images, used only for this session's image generation — they are <strong>not saved</strong> to the project. Add URLs / data URLs (one per line) or paste / upload images.</div>
-							<label>参考图 URL（一行一个）
-								<textarea id="referenceUrls" class="prompt-box" style="min-height:78px" spellcheck="false" placeholder="https://...&#10;data:image/...&#10;也可在此区域按 Ctrl+V 粘贴图片"></textarea>
-							</label>
-							<label>上传参考图
-								<input id="referenceFiles" type="file" accept="image/*" multiple>
-							</label>
-							<div id="referencePasteHint" class="hint">点击此区域后按 Ctrl+V，可将剪贴板图片作为 base64 参考图加入（最多 4 张）。</div>
-							<div id="referencePreview" class="ref-grid"><div class="ref-preview"><span class="hint">可选参考图预览</span></div></div>
 						</section>
 
 						<section class="section">
@@ -1027,11 +1028,11 @@
 			if (!root) return;
 			root.innerHTML = '';
 			if (!refs.length) {
-				root.innerHTML = '<div class="ref-preview"><span class="hint">可选参考图预览</span></div>';
+				root.innerHTML = '<div class="ref-preview ref-empty"><span class="hint">可选参考图预览</span></div>';
 				refreshFinalPrompt();
 				return;
 			}
-			refs.forEach(url => {
+			refs.forEach((url, index) => {
 				const frame = document.createElement('div');
 				frame.className = 'ref-preview';
 				const image = document.createElement('img');
@@ -1046,6 +1047,8 @@
 				button.textContent = '×';
 				button.onclick = () => deleteReferenceImage(url);
 				frame.appendChild(button);
+				frame.addEventListener('mouseenter', () => showHistoryHoverPopup(url, `参考图 #${index + 1}`, frame));
+				frame.addEventListener('mouseleave', hideHistoryHoverPopup);
 				root.appendChild(frame);
 			});
 			refreshFinalPrompt();
