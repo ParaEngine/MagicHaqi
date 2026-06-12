@@ -214,21 +214,15 @@ function loadKeepworkModels() {
 }
 
 // 读取当前可选的 Chat 模型列表（按名称排序）：
-// - 本地 API key 已启用：取 localAPIKeySettings 中已启用且配置了 key 的模型
-//   （通过 aiGenerators.filterUsableModels 过滤掉不可能可用的）。
+// - 本地 API key 已启用：取 localAPIKeySettings.listModels('Chat')。
+//   该 API 默认只返回「已启用且可用」的模型（不可用的已在 SDK 内部过滤）。
 // - 本地 API key 未启用：取 Keepwork 服务端全量模型列表（loadKeepworkModels 缓存）。
 function listChatModels() {
     const sdk = state.sdk || window.keepwork;
     try {
-        let models;
-        if (isLocalApiKeyEnabled()) {
-            models = (sdk?.localAPIKeySettings?.listModels?.('Chat') || []).filter((m) => m && m.enabled !== false);
-            if (sdk?.aiGenerators?.filterUsableModels) {
-                models = sdk.aiGenerators.filterUsableModels(models);
-            }
-        } else {
-            models = (keepworkModelsCache || []).slice();
-        }
+        const models = isLocalApiKeyEnabled()
+            ? (sdk?.localAPIKeySettings?.listModels?.('Chat') || [])
+            : (keepworkModelsCache || []).slice();
         return models.sort((a, b) => modelValue(a).localeCompare(modelValue(b)));
     } catch (_) { return []; }
 }

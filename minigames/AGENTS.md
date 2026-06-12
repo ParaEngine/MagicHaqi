@@ -262,7 +262,7 @@ If a response has `ok: false`, read `error` and fall back to a local placeholder
 When games need server-side features (data storage, TTS, LLM chat), include:
 
 ```html
-<script src="https://cdn.keepwork.com/sdk/keepworkSDK.iife.js?v=20260607a"></script>
+<script src="https://cdn.keepwork.com/sdk/keepworkSDK.iife.js?v=20260612a"></script>
 ```
 
 Initialize the SDK:
