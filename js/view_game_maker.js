@@ -190,17 +190,60 @@ function savePreferredModel(model) {
     } catch (_) {}
 }
 
-// 从 SDK 读取本地配置的可用 Chat 模型（已启用的）。
+// 本地 API key 功能是否开启（全局开关）。
+function isLocalApiKeyEnabled() {
+    const sdk = state.sdk || window.keepwork;
+    try { return !!sdk?.localAPIKeySettings?.enabled; } catch (_) { return false; }
+}
+
+// 本地 API key 关闭时，从 Keepwork 服务端拉取的全量可用模型列表（会话级缓存）。
+let keepworkModelsCache = null;
+let keepworkModelsPromise = null;
+function loadKeepworkModels() {
+    if (keepworkModelsCache) return Promise.resolve(keepworkModelsCache);
+    if (keepworkModelsPromise) return keepworkModelsPromise;
+    const sdk = state.sdk || window.keepwork;
+    if (!sdk?.aiGenerators?.getAllModels) { keepworkModelsCache = []; return Promise.resolve(keepworkModelsCache); }
+    keepworkModelsPromise = sdk.aiGenerators.getAllModels()
+        .then((list) => (Array.isArray(list) ? list : [])
+            .filter((m) => m && m.name)
+            .map((m) => ({ name: m.name, displayName: m.displayName || '' })))
+        .catch(() => [])
+        .then((models) => { keepworkModelsCache = models; keepworkModelsPromise = null; return models; });
+    return keepworkModelsPromise;
+}
+
+// 读取当前可选的 Chat 模型列表（按名称排序）：
+// - 本地 API key 已启用：取 localAPIKeySettings 中已启用且配置了 key 的模型
+//   （通过 aiGenerators.filterUsableModels 过滤掉不可能可用的）。
+// - 本地 API key 未启用：取 Keepwork 服务端全量模型列表（loadKeepworkModels 缓存）。
 function listChatModels() {
     const sdk = state.sdk || window.keepwork;
     try {
-        const models = sdk?.localAPIKeySettings?.listModels?.('Chat') || [];
-        return models.filter((m) => m && m.enabled !== false);
+        let models;
+        if (isLocalApiKeyEnabled()) {
+            models = (sdk?.localAPIKeySettings?.listModels?.('Chat') || []).filter((m) => m && m.enabled !== false);
+            if (sdk?.aiGenerators?.filterUsableModels) {
+                models = sdk.aiGenerators.filterUsableModels(models);
+            }
+        } else {
+            models = (keepworkModelsCache || []).slice();
+        }
+        return models.sort((a, b) => modelValue(a).localeCompare(modelValue(b)));
     } catch (_) { return []; }
+}
+// 「默认模型」（model 留空，由 SDK 选缺省）是否可用。SDK 不支持检测时视为可用。
+function isDefaultModelUsable() {
+    const sdk = state.sdk || window.keepwork;
+    try {
+        if (sdk?.aiGenerators?.isModelUsable) return sdk.aiGenerators.isModelUsable('');
+    } catch (_) {}
+    return true;
 }
 function modelValue(model) { return model?.name || model?.modelId || ''; }
 function modelLabel(model) {
     const value = modelValue(model);
+    if (model?.displayName && model.displayName !== value) return `${model.displayName} (${value})`;
     return model?.modelId && model.modelId !== value ? `${value} (${model.modelId})` : value;
 }
 
@@ -518,6 +561,21 @@ function renderBasicMarkdown(text) {
 function toolChipLabel(tool) {
     const name = tool?.name || 'tool';
     const a = (tool && typeof tool.argsObj === 'object' && tool.argsObj) ? tool.argsObj : null;
+    // 流式接收中：arguments JSON 还不完整（如 create_file 正在逐步传输整页代码），
+    // 从原始片段里提取文件名，并实时显示已接收的数据量，让用户看到进展而不是“卡死”。
+    if (tool?.status === 'streaming' && !a) {
+        const raw = String(tool.args || '');
+        const m = raw.match(/"filePath"\s*:\s*"([^"]+)"/);
+        const file0 = toolFileName(m ? m[1] : '');
+        const size = raw.length >= 1024 ? `${(raw.length / 1024).toFixed(1)} KB` : `${raw.length} B`;
+        const fileHtml0 = file0
+            ? `<span class="mh-gm-tc-file" data-mh-gm-tc-file="${escapeHtml(file0)}" role="button" tabindex="0" title="${escapeHtml(`查看 ${file0} 内容`)}">[${escapeHtml(file0)}]</span>`
+            : '';
+        return {
+            text: `${name} ${file0 ? `[${file0}] ` : ''}${size}`,
+            html: `${escapeHtml(name)}${fileHtml0 ? ` ${fileHtml0}` : ''} <span class="mh-gm-tc-muted">${escapeHtml(size)}</span>`,
+        };
+    }
     const file = toolFileName(a?.filePath || a?.path);
     const fileTag = file ? `[${file}]` : '';
     // 文件名渲染成可点击的“按钮”，点击后弹窗显示当前游戏文件完整内容。
@@ -1121,12 +1179,27 @@ export function renderGameMaker(panel, { game = null } = {}, { onBack, onSaved }
         if (!modelBtn) return;
         const models = listChatModels();
         const match = models.find((m) => modelValue(m) === selectedModel);
-        modelBtn.textContent = match ? modelLabel(match) : t('mgGameModelDefault');
+        if (match) { modelBtn.textContent = modelLabel(match); return; }
+        modelBtn.textContent = !selectedModel && models.length && !isDefaultModelUsable()
+            ? (modelLabel(models[0]) || t('mgGameModelDefault'))
+            : t('mgGameModelDefault');
     }
     function populateModelSelect() {
         if (!modelList) return;
+        // 本地 API key 关闭时使用 Keepwork 服务端模型列表；未加载完成则异步加载后重新渲染。
+        if (!isLocalApiKeyEnabled() && !keepworkModelsCache) {
+            loadKeepworkModels().then(() => { populateModelSelect(); });
+        }
         const models = listChatModels();
-        const items = [`<button type="button" class="mh-gm-model-item${!selectedModel ? ' active' : ''}" data-mh-gm-model-val="">${escapeHtml(t('mgGameModelDefault'))}</button>`];
+        // 默认模型不可用时从列表移除，并把当前的「默认」选择切到第一个可用模型。
+        const defaultUsable = isDefaultModelUsable() || !models.length;
+        if (!defaultUsable && !selectedModel) {
+            selectedModel = modelValue(models[0]);
+            savePreferredModel(selectedModel);
+        }
+        const items = defaultUsable
+            ? [`<button type="button" class="mh-gm-model-item${!selectedModel ? ' active' : ''}" data-mh-gm-model-val="">${escapeHtml(t('mgGameModelDefault'))}</button>`]
+            : [];
         for (const m of models) {
             const value = modelValue(m);
             const active = value === selectedModel ? ' active' : '';
@@ -1543,8 +1616,8 @@ export function renderGameMaker(panel, { game = null } = {}, { onBack, onSaved }
             const live = !!(m.pending || m.streaming);
             const renderToolChip = (tool) => {
                 const status = tool?.status || 'running';
-                const icon = status === 'error' ? '⚠️' : (status === 'done' ? '✅' : '🔧');
-                const label = status === 'error' ? 'failed' : (status === 'done' ? 'done' : 'running');
+                const icon = status === 'error' ? '⚠️' : (status === 'done' ? '✅' : (status === 'streaming' ? '📥' : '🔧'));
+                const label = status === 'error' ? 'failed' : (status === 'done' ? 'done' : (status === 'streaming' ? 'receiving…' : 'running'));
                 const human = toolChipLabel(tool);
                 // 用工具自身的 id 定位（点击详情时回到 m.toolCalls 里查找），避免下标错位。
                 const toolIdx = Array.isArray(m.toolCalls) ? m.toolCalls.findIndex(c => c === tool || (tool?.id && c?.id === tool.id)) : -1;
@@ -1671,6 +1744,7 @@ export function renderGameMaker(panel, { game = null } = {}, { onBack, onSaved }
             }
         });
         updateStreamPopup();
+        updateToolPopup();
         scrollMsgsToEnd();
     }
 
@@ -1741,27 +1815,77 @@ export function renderGameMaker(panel, { game = null } = {}, { onBack, onSaved }
         $('mhGmStreamPopup')?.remove();
     }
 
+    // 当前打开的工具详情弹窗（持有 tool 引用，流式接收新 chunk 时实时刷新内容）。
+    let activeToolPopup = null; // { tool, overlay }
+
+    function toolPopupStatusText(tool) {
+        if (tool.status === 'error') return 'failed';
+        if (tool.status === 'done') return 'done';
+        if (tool.status === 'streaming') return 'receiving…';
+        return 'running';
+    }
+
+    // 刷新已打开的工具详情弹窗：Arguments / Result / 状态随流式 chunk 实时更新。
+    // 由 renderMessages()（流式期间每 ~120ms 触发一次）驱动，无需独立定时器。
+    function updateToolPopup() {
+        if (!activeToolPopup) return;
+        const { tool, overlay } = activeToolPopup;
+        if (!overlay.isConnected) { activeToolPopup = null; return; }
+        const head = overlay.querySelector('[data-mh-gm-tp-head]');
+        if (head) head.textContent = `🔧 ${tool.name || 'tool'} · ${toolPopupStatusText(tool)}`;
+        const argsPre = overlay.querySelector('[data-mh-gm-tp-args]');
+        if (argsPre) {
+            const next = fullToolDetail(tool.args || '');
+            if (argsPre.textContent !== next) {
+                // 用户未向上滚动时跟随尾部（与流式文本弹窗一致）。
+                const nearBottom = argsPre.scrollHeight - argsPre.scrollTop - argsPre.clientHeight < 24;
+                argsPre.textContent = next;
+                if (nearBottom || !argsPre.dataset.userScrolled) argsPre.scrollTop = argsPre.scrollHeight;
+            }
+        }
+        const resultPre = overlay.querySelector('[data-mh-gm-tp-result]');
+        if (resultPre) {
+            const nextResult = tool.error || tool.detailResult || tool.result || '';
+            if (resultPre.textContent !== nextResult) resultPre.textContent = nextResult;
+        }
+    }
+
     function showToolPopup(tool) {
         if (!tool) return;
         document.getElementById('mhGmToolPopup')?.remove();
+        activeToolPopup = null;
         const overlay = document.createElement('div');
         overlay.id = 'mhGmToolPopup';
         overlay.className = 'mh-gm-tool-popup-overlay';
-        const statusText = tool.status === 'error' ? 'failed' : (tool.status === 'done' ? 'done' : 'running');
         overlay.innerHTML = `
             <div class="mh-gm-tool-popup" role="dialog" aria-modal="true">
                 <div class="mh-gm-tool-popup-head">
-                    <span>🔧 ${escapeHtml(tool.name || 'tool')} · ${escapeHtml(statusText)}</span>
+                    <span data-mh-gm-tp-head>🔧 ${escapeHtml(tool.name || 'tool')} · ${escapeHtml(toolPopupStatusText(tool))}</span>
                     <button type="button" class="mh-gm-tool-popup-close" aria-label="关闭">×</button>
                 </div>
                 <div class="mh-gm-tool-popup-body">
-                    <div class="mh-gm-tool-popup-section"><strong>Arguments</strong><pre>${escapeHtml(fullToolDetail(tool.args || ''))}</pre></div>
-                    <div class="mh-gm-tool-popup-section"><strong>Result</strong><pre>${escapeHtml(tool.error || tool.detailResult || tool.result || '')}</pre></div>
+                    <div class="mh-gm-tool-popup-section"><strong>Arguments</strong><pre data-mh-gm-tp-args>${escapeHtml(fullToolDetail(tool.args || ''))}</pre></div>
+                    <div class="mh-gm-tool-popup-section"><strong>Result</strong><pre data-mh-gm-tp-result>${escapeHtml(tool.error || tool.detailResult || tool.result || '')}</pre></div>
                 </div>
             </div>`;
         panel.appendChild(overlay);
+        // 记录用户是否主动向上滚动（向上则停止自动跟随尾部）。
+        const argsPre = overlay.querySelector('[data-mh-gm-tp-args]');
+        argsPre?.addEventListener('scroll', () => {
+            const nearBottom = argsPre.scrollHeight - argsPre.scrollTop - argsPre.clientHeight < 24;
+            if (nearBottom) delete argsPre.dataset.userScrolled;
+            else argsPre.dataset.userScrolled = '1';
+        });
+        // 流式接收中打开时，初始滚动到末尾（最新内容）。
+        if (argsPre && (tool.status === 'streaming' || tool.status === 'running')) {
+            argsPre.scrollTop = argsPre.scrollHeight;
+        }
+        activeToolPopup = { tool, overlay };
         overlay.addEventListener('click', (e) => {
-            if (e.target === overlay || e.target.closest('.mh-gm-tool-popup-close')) overlay.remove();
+            if (e.target === overlay || e.target.closest('.mh-gm-tool-popup-close')) {
+                overlay.remove();
+                activeToolPopup = null;
+            }
         });
     }
 
@@ -2330,15 +2454,27 @@ export function renderGameMaker(panel, { game = null } = {}, { onBack, onSaved }
             const content = await sdk.copilotTools.execute('read_file', { filePath: GAME_MAKER_FILE_PATH, startLine: 1, endLine: lines }, { workspace });
             return typeof content === 'string' && !content.startsWith('Failed:') ? content : '';
         };
-        const recordToolCall = (toolCall) => {
-            const args = toolCall?.function?.arguments || '';
-            const argsObj = safeJsonParse(args, null);
+        // 按 toolCall 找到（或创建）对应的事件对象。
+        // 流式 arguments 阶段（onToolCallChunk）先创建 status='streaming' 的占位 chip，
+        // 之后正式 onToolCall / onToolResult 复用同一条目，避免重复。
+        const findToolEvent = (toolCall) => {
+            if (!aiMsg || !Array.isArray(aiMsg.toolCalls)) return null;
+            const id = toolCall?.id;
+            if (id) {
+                const byId = aiMsg.toolCalls.find(c => c.id === id);
+                if (byId) return byId;
+            }
+            // id 还没流出来时，回退到「同名且仍在 streaming」的最后一条。
+            const name = toolCall?.function?.name;
+            return [...aiMsg.toolCalls].reverse().find(c => c.name === name && c.status === 'streaming') || null;
+        };
+        const createToolEvent = (toolCall, status) => {
             const event = {
                 id: toolCall?.id || `tool-${Date.now()}-${Math.random().toString(16).slice(2)}`,
                 name: toolCall?.function?.name || 'tool',
-                status: 'running',
-                args: fullToolDetail(argsObj != null ? argsObj : args),
-                argsObj: (argsObj && typeof argsObj === 'object') ? argsObj : null,
+                status,
+                args: '',
+                argsObj: null,
                 result: '',
                 ts: Date.now(),
             };
@@ -2350,13 +2486,81 @@ export function renderGameMaker(panel, { game = null } = {}, { onBack, onSaved }
                 // 按真实流式顺序把工具调用插入交错段落（紧跟在此前已生成的正文之后）。
                 if (!Array.isArray(aiMsg.segments)) aiMsg.segments = [];
                 aiMsg.segments.push({ type: 'tool', tool: event });
-                renderMessages();
             }
+            return event;
+        };
+        // 流式 tool-call 进度：arguments（可能是几十 KB 的整页代码）逐步累积时实时更新 chip，
+        // 让用户看到「正在接收 X KB」而不是一分钟无反应。
+        // 性能关键：高频 chunk 期间【不要】整体 renderMessages()——重建整个聊天 innerHTML 会销毁/重建
+        // 所有 DOM 节点，CSS 动画（三点 dots、📥 chip）每 120ms 被重置回第 0 帧，看起来像「冻结」，
+        // 且大量重排占用主线程。这里改为「原位补丁」：只更新该 chip 的标签文本；仅首个 chunk
+        // （chip 尚不存在时）做一次全量渲染。工具详情弹窗打开时同步刷新其 Arguments 区。
+        let lastChunkRenderTs = 0;
+        let pendingToolChunkEvent = null;
+        let toolChunkRenderScheduled = false;
+        const patchToolChipInPlace = (event) => {
+            if (!msgsEl || !aiMsg) return false;
+            const msgIdx = messages.indexOf(aiMsg);
+            const toolIdx = Array.isArray(aiMsg.toolCalls) ? aiMsg.toolCalls.indexOf(event) : -1;
+            if (msgIdx < 0 || toolIdx < 0) return false;
+            const chip = msgsEl.querySelector(`[data-mh-gm-tool-msg="${msgIdx}"][data-mh-gm-tool-idx="${toolIdx}"]`);
+            if (!chip) return false;
+            const human = toolChipLabel(event);
+            const nameEl2 = chip.querySelector('.mh-gm-toolchip-name');
+            if (nameEl2) nameEl2.innerHTML = human.html;
+            chip.title = human.text;
+            return true;
+        };
+        const flushToolChunkRender = () => {
+            toolChunkRenderScheduled = false;
+            const event = pendingToolChunkEvent;
+            pendingToolChunkEvent = null;
+            if (!event) return;
+            lastChunkRenderTs = Date.now();
+            // 原位补丁成功则跳过全量渲染（保住 CSS 动画与滚动状态）；chip 还没渲染时退回全量。
+            if (!patchToolChipInPlace(event)) renderMessages();
+            else updateToolPopup(); // 弹窗打开时跟随刷新 Arguments 流式内容
+        };
+        const scheduleToolChunkRender = (event) => {
+            pendingToolChunkEvent = event;
+            if (toolChunkRenderScheduled) return;
+            const elapsed = Date.now() - lastChunkRenderTs;
+            const delay = lastChunkRenderTs && elapsed < 160 ? (160 - elapsed) : 0;
+            toolChunkRenderScheduled = true;
+            setTimeout(() => {
+                if (typeof requestAnimationFrame === 'function') requestAnimationFrame(flushToolChunkRender);
+                else flushToolChunkRender();
+            }, delay);
+        };
+        const recordToolCallChunk = (toolCall) => {
+            if (!aiMsg) return;
+            let event = findToolEvent(toolCall);
+            if (!event) event = createToolEvent(toolCall, 'streaming');
+            if (toolCall?.id) event.id = toolCall.id;
+            if (toolCall?.function?.name) event.name = toolCall.function.name;
+            event.args = toolCall?.function?.arguments || event.args;
+            event.status = 'streaming';
+            // 高频 tool-call delta 不要同步改 DOM；合并到下一帧/定时刷新，避免主线程被
+            // create_file 的超长 arguments 流拖满，导致三点动画看起来停止。
+            scheduleToolChunkRender(event);
+        };
+        const recordToolCall = (toolCall) => {
+            const args = toolCall?.function?.arguments || '';
+            const argsObj = safeJsonParse(args, null);
+            // 优先复用流式阶段创建的占位条目，没有再新建。
+            let event = findToolEvent(toolCall);
+            if (!event) event = createToolEvent(toolCall, 'running');
+            if (toolCall?.id) event.id = toolCall.id;
+            if (toolCall?.function?.name) event.name = toolCall.function.name;
+            event.status = 'running';
+            event.args = fullToolDetail(argsObj != null ? argsObj : args);
+            event.argsObj = (argsObj && typeof argsObj === 'object') ? argsObj : null;
+            renderMessages();
         };
         const recordToolResult = ({ name, toolCallId, result }) => {
             if (!aiMsg) return;
             const calls = Array.isArray(aiMsg.toolCalls) ? aiMsg.toolCalls : (aiMsg.toolCalls = []);
-            const event = calls.find(c => c.id === toolCallId) || [...calls].reverse().find(c => c.name === name && c.status === 'running') || null;
+            const event = calls.find(c => c.id === toolCallId) || [...calls].reverse().find(c => c.name === name && (c.status === 'running' || c.status === 'streaming')) || null;
             const target = event || { id: toolCallId || `tool-${Date.now()}`, name: name || 'tool', args: '', ts: Date.now() };
             target.status = stringifyToolDetail(result).startsWith('Failed:') ? 'error' : 'done';
             target.result = summarizeToolResult(result);
@@ -2427,7 +2631,7 @@ export function renderGameMaker(panel, { game = null } = {}, { onBack, onSaved }
                 session.messages.splice(insertAt, 0, ...priorHistory);
             }
             try {
-                const p = session.send(userContent, { stream: true, abortController, onMessage, onChunk, onReasoning, onToolCall: recordToolCall, onToolResult: recordToolResult, systemPrompt, model, enableTools: fileToolCategories, enabledCategories: fileToolCategories, maxIterations: 8 });
+                const p = session.send(userContent, { stream: true, abortController, onMessage, onChunk, onReasoning, onToolCall: recordToolCall, onToolCallChunk: recordToolCallChunk, onToolResult: recordToolResult, systemPrompt, model, enableTools: fileToolCategories, enabledCategories: fileToolCategories, maxIterations: 8 });
                 p.catch(() => {});
                 const result = await waitWithAbort(p, signal);
                 if (!text) text = (result?.text || result?.result || result || '').toString();
@@ -2436,7 +2640,7 @@ export function renderGameMaker(panel, { game = null } = {}, { onBack, onSaved }
             }
         } else if (sdk?.aiChat?.chat) {
             // 文件内容已附在 systemPrompt 末尾，普通消息即可；priorHistory 携带之前的对话上下文。
-            const p = sdk.aiChat.chat({ messages: [{ role: 'system', content: systemPrompt }, ...priorHistory, { role: 'user', content: userContent }], modId: GAME_MAKER_MOD_ID, model, stream: true, abortController, onMessage, onChunk, onReasoning, onToolCall: recordToolCall, onToolResult: recordToolResult, enableTools: fileToolCategories, enabledCategories: fileToolCategories, workspace, maxIterations: 8 });
+            const p = sdk.aiChat.chat({ messages: [{ role: 'system', content: systemPrompt }, ...priorHistory, { role: 'user', content: userContent }], modId: GAME_MAKER_MOD_ID, model, stream: true, abortController, onMessage, onChunk, onReasoning, onToolCall: recordToolCall, onToolCallChunk: recordToolCallChunk, onToolResult: recordToolResult, enableTools: fileToolCategories, enabledCategories: fileToolCategories, workspace, maxIterations: 8 });
             p.catch(() => {});
             const result = await waitWithAbort(p, signal);
             if (!text) text = (result?.text || result?.result || result || '').toString();
@@ -2555,6 +2759,12 @@ export function renderGameMaker(panel, { game = null } = {}, { onBack, onSaved }
             abortController = null;
             hideStreamPopup(true);
             updateGenerationControls();
+            // 收尾：仍停留在 streaming/running 的工具调用（如中途停止）标记为终态，避免 chip 永远显示「receiving…」。
+            if (Array.isArray(aiMsg.toolCalls)) {
+                for (const tc of aiMsg.toolCalls) {
+                    if (tc.status === 'streaming' || tc.status === 'running') tc.status = 'error';
+                }
+            }
             renderMessages();
             // 本轮是否真的改了代码：与本轮开始前的 HTML 比较。
             const codeChanged = (currentHtml || '') !== htmlBefore;
@@ -3070,6 +3280,15 @@ export function renderGameMaker(panel, { game = null } = {}, { onBack, onSaved }
             listChatModels,
             modelValue,
             modelLabel,
+            // 本地 API Key 全局开关（绿色/灰色切换），改动后立即刷新模型下拉。
+            // 关闭本地 key 时需要等 Keepwork 服务端模型列表加载完，调用方可 await 后再刷新自己的 UI。
+            isLocalApiKeyEnabled,
+            setLocalApiKeyEnabled: async (v) => {
+                const sdk = state.sdk || window.keepwork;
+                try { if (sdk?.localAPIKeySettings) sdk.localAPIKeySettings.enabled = !!v; } catch (_) {}
+                if (!v) { try { await loadKeepworkModels(); } catch (_) {} }
+                populateModelSelect();
+            },
             showEmojiDialog,
             // 设置里改了标题/图标/模型后，同步刷新工坊顶栏与模型下拉。
             onApplyMeta: () => {
@@ -3077,14 +3296,17 @@ export function renderGameMaker(panel, { game = null } = {}, { onBack, onSaved }
                 if (iconBtn) iconBtn.textContent = gameIcon || '🎮';
                 populateModelSelect();
             },
-            // 打开本地 API Key 设置（与原行为一致），关闭后刷新模型列表。
-            openLocalApiSettings: async () => {
+            // 打开本地 API Key 设置（与原行为一致），保存/关闭后刷新模型列表。
+            // onChange: 设置窗内有改动（含启用开关）保存/关闭后回调，供调用方刷新自身 UI（如全局页开关）。
+            openLocalApiSettings: async (onChange) => {
                 const sdk = state.sdk || window.keepwork;
+                const refresh = () => { populateModelSelect(); try { onChange?.(); } catch (_) {} };
                 if (sdk?.localAPIKeySettings?.show) {
-                    await sdk.localAPIKeySettings.show({
+                    sdk.localAPIKeySettings.show({
                         title: t('mgGameConfigTitle'),
                         fullscreen: true,
-                        onSave: () => populateModelSelect(),
+                        onSave: refresh,
+                        onClose: refresh,
                     });
                 } else {
                     showToast(t('mgGameAiUnavailable'), 'info', 1600);

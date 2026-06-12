@@ -435,6 +435,27 @@ function applyRoomPan() {
     if (!isRoomPlacementMode()) updateFollowPetPosition();
 }
 
+// 平移拖拽的快速路径：家具/宠物的米制坐标在拖拽期间不变，无需整间房重排
+// （recomputeRoomMetrics + 全量 applyMeterElementStyle）。只写 transform 与地板偏移。
+// 完整重排仍由 applyRoomPan 在拖拽结束 / resize 时执行一次。
+function getRoomPanFastBounds() {
+    const scene = $('mhPetRoomScene');
+    const stage = $('mhStage');
+    if (!scene || !stage) return null;
+    return {
+        scene,
+        floor: $('mhPetRoomFloor'),
+        maxPan: Math.max(0, scene.offsetWidth - stage.clientWidth),
+    };
+}
+
+function applyRoomPanFast(bounds) {
+    roomPan = Math.max(-bounds.maxPan, Math.min(0, roomPan));
+    bounds.scene.style.transform = `translate3d(${roomPan.toFixed(1)}px,0,0)`;
+    if (bounds.floor) bounds.floor.style.setProperty('--floor-ox', roomPan.toFixed(1) + 'px');
+    if (!isRoomPlacementMode()) updateFollowPetPosition();
+}
+
 function getCurrentPetPose() {
     if (state.activePetRoomPose?.roomId === (state.currentRoom || 'living')) {
         const pose = state.activePetRoomPose;
@@ -504,9 +525,8 @@ function clientScaleForElement(el) {
     };
 }
 
-function clientDeltaToRoomMeters(deltaX, deltaY) {
-    const scene = $('mhPetRoomScene');
-    const scale = clientScaleForElement(scene);
+function clientDeltaToRoomMeters(deltaX, deltaY, cachedScale = null) {
+    const scale = cachedScale || clientScaleForElement($('mhPetRoomScene'));
     return {
         x: (Number(deltaX) || 0) * scale.x / pxPerMeter,
         y: (Number(deltaY) || 0) * scale.y / pxPerMeter,
@@ -739,10 +759,37 @@ function pointOverRoomScaleControls(clientX, clientY) {
     });
 }
 
-function pointOverRoomItemPaint(el, clientX, clientY) {
-    const imageRect = getRoomItemImageRect(el);
+// 按 itemId 缓存 SVG 画面内容的外接框（SVG 用户坐标系，含 stroke 外扩余量）。
+// 命中测试先用它做廉价的负向预筛：落点在外接框外 → 必然没有画面，直接返回 false，
+// 避免对每个采样点都遍历全部 SVG 节点（getComputedStyle + isPointInFill 很贵）。
+const SVG_PAINT_BBOX_CACHE = new Map();
+
+function svgPaintUserBBox(svg, cacheKey) {
+    if (cacheKey && SVG_PAINT_BBOX_CACHE.has(cacheKey)) return SVG_PAINT_BBOX_CACHE.get(cacheKey);
+    let box = null;
+    try {
+        const bbox = svg.getBBox();
+        if (bbox && bbox.width > 0 && bbox.height > 0) {
+            const pad = Math.max(bbox.width, bbox.height) * 0.06 + 6;
+            box = { x0: bbox.x - pad, y0: bbox.y - pad, x1: bbox.x + bbox.width + pad, y1: bbox.y + bbox.height + pad };
+        }
+    } catch {
+        box = null;
+    }
+    if (cacheKey && box) SVG_PAINT_BBOX_CACHE.set(cacheKey, box);
+    return box;
+}
+
+function pointOverRoomItemPaint(el, clientX, clientY, imageRect = getRoomItemImageRect(el)) {
     if (!pointInRect(clientX, clientY, imageRect)) return false;
     const svg = el?.querySelector?.('.mh-furniture-svg svg');
+    if (svg) {
+        const box = svgPaintUserBBox(svg, el?.dataset?.itemId || '');
+        if (box) {
+            const point = svgPointFromClient(svg, clientX, clientY);
+            if (point && (point.x < box.x0 || point.x > box.x1 || point.y < box.y0 || point.y > box.y1)) return false;
+        }
+    }
     const painted = pointOverSvgPaint(svg, clientX, clientY);
     if (painted != null) return painted;
     const img = el?.querySelector?.('.mh-furniture-img');
@@ -757,7 +804,7 @@ function fingerOverRoomItemPaint(el, clientX, clientY) {
     return FINGER_HIT_SAMPLE_POINTS.some(([x, y]) => {
         const sampleX = clientX + x * FINGER_HIT_RADIUS_PX;
         const sampleY = clientY + y * FINGER_HIT_RADIUS_PX;
-        return pointOverRoomItemPaint(el, sampleX, sampleY);
+        return pointOverRoomItemPaint(el, sampleX, sampleY, imageRect);
     });
 }
 
@@ -771,7 +818,9 @@ function getClosestDraggableRoomItem(clientX, clientY) {
         const centerX = imageRect.left + imageRect.width / 2;
         const centerY = imageRect.top + imageRect.height / 2;
         const distance = Math.hypot(clientX - centerX, clientY - centerY);
-        const zIndex = Number.parseInt(getComputedStyle(item).zIndex, 10) || 0;
+        // z-index 总是以内联样式写入（roomItemHtml / applyRoomItemZIndex），
+        // 直接读内联值，避免 getComputedStyle 触发样式重算。
+        const zIndex = Number.parseInt(item.style.zIndex, 10) || 0;
         if (!best || distance < best.distance || (distance === best.distance && zIndex > best.zIndex)) {
             best = { item, distance, zIndex };
         }
@@ -1778,6 +1827,7 @@ function bindRoomPan(ctx) {
     stage.addEventListener('pointermove', (e) => {
         if (!drag || drag.id !== e.pointerId) return;
         if (bathAnimationRunning) {
+            if (drag.raf) cancelAnimationFrame(drag.raf);
             drag = null;
             try { stage.releasePointerCapture?.(e.pointerId); } catch {}
             return;
@@ -1789,17 +1839,31 @@ function bindRoomPan(ctx) {
             drag.active = true;
             clearRoomItemSelection(ctx);
             stage.setPointerCapture?.(e.pointerId);
+            // 拖拽开始时一次性缓存缩放比例与平移边界，pointermove 不再做布局读取
+            drag.scaleX = clientScaleForElement(stage).x;
+            drag.bounds = getRoomPanFastBounds();
         }
         e.preventDefault();
-        const scale = clientScaleForElement(stage);
-        roomPan = drag.pan + dx * scale.x;
-        applyRoomPan();
+        drag.pendingPan = drag.pan + dx * drag.scaleX;
+        if (drag.raf) return;
+        const current = drag;
+        current.raf = requestAnimationFrame(() => {
+            current.raf = 0;
+            if (!current.active || !current.bounds) return;
+            roomPan = current.pendingPan;
+            applyRoomPanFast(current.bounds);
+        });
     });
     const end = (e) => {
         if (!drag || drag.id !== e.pointerId) return;
         if (drag.active) {
+            if (drag.raf) cancelAnimationFrame(drag.raf);
+            if (Number.isFinite(drag.pendingPan)) roomPan = drag.pendingPan;
+            drag.active = false;
             stage.releasePointerCapture?.(e.pointerId);
             stage.__mhPetRoomPannedAt = Date.now();
+            // 结束时做一次完整重排，校正拖拽期间可能发生的尺寸变化
+            applyRoomPan();
         }
         drag = null;
     };
@@ -1849,6 +1913,8 @@ function bindFurnitureDrag(el, ctx) {
             startYMeters: Number(targetEl.dataset.yMeters) || 0,
             moved: false,
             idx: parseInt(targetEl.dataset.fidx, 10),
+            // 拖拽开始时缓存场景缩放，pointermove 不再每帧 getBoundingClientRect
+            sceneScale: clientScaleForElement($('mhPetRoomScene')),
         };
         cleanupWindowDrag();
         window.addEventListener('pointermove', onMove, true);
@@ -1868,7 +1934,7 @@ function bindFurnitureDrag(el, ctx) {
         const overDock = isPointOverDock(e.clientX, e.clientY);
         setDockDeleteTargetVisible(overDock);
         targetEl.classList.toggle('will-discard', overDock);
-        const delta = clientDeltaToRoomMeters(e.clientX - drag.x, e.clientY - drag.y);
+        const delta = clientDeltaToRoomMeters(e.clientX - drag.x, e.clientY - drag.y, drag.sceneScale);
         const pos = {
             x: clampRange(drag.startXMeters + delta.x, 0, ROOM_WIDTH_METERS),
             y: clampRange(drag.startYMeters + delta.y, 0, ROOM_HEIGHT_METERS),
@@ -1965,6 +2031,7 @@ function bindPetDrag(el) {
             y: e.clientY,
             startXMeters: Number(el.dataset.xMeters) || PET_START_X_METERS,
             startYMeters: Number(el.dataset.yMeters) || PET_START_Y_METERS,
+            sceneScale: clientScaleForElement($('mhPetRoomScene')),
         };
         el.classList.add('mh-pet-room-instant');
         try { el.setPointerCapture?.(e.pointerId); } catch {}
@@ -1973,7 +2040,7 @@ function bindPetDrag(el) {
         if (!drag || drag.id !== e.pointerId) return;
         e.preventDefault();
         e.stopPropagation();
-        const delta = clientDeltaToRoomMeters(e.clientX - drag.x, e.clientY - drag.y);
+        const delta = clientDeltaToRoomMeters(e.clientX - drag.x, e.clientY - drag.y, drag.sceneScale);
         const x = clampRange(drag.startXMeters + delta.x, 0, ROOM_WIDTH_METERS - PET_WIDTH_METERS);
         const y = clampRange(drag.startYMeters + delta.y, 0, ROOM_HEIGHT_METERS - PET_HEIGHT_METERS);
         el.dataset.xMeters = String(x);

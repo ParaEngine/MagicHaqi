@@ -617,6 +617,26 @@ let activeMinigameTab = 'recommend';
 let hideTopbarActionsForRoute = false;
 
 export function renderMinigames(panel, { pet }, { onBack, onGameFinished, initialGameId = null, initialGameParams = null, allowPlayWhenLowEnergy = false, suppressRewards = false, hideTopbarActions = false, exitGameToBack = false, completionPrompt = null, deferGameFinishedUntilCompletionExit = false, initialTab = null, onCreateGame = null, onEditGame = null, sharedGame = null } = {}) {
+    // 守护：玩耍视图订阅了全局 state（subscribe(render)），任何 notify() 都会重跑本路由。
+    // 若此时已有一局游戏正在进行（iframe 已挂载），重建整个面板会销毁运行中的 iframe，
+    // 表现为"首次点开游戏秒退、第二次正常"——典型触发是小游戏加载即请求宠物图（如台球
+    // haqi_billiards 的 requestPets），首次宠物未缓存 → 后台 loadPet 完成后 notify() → 本路由
+    // 重渲染 → iframe 被销毁；二次宠物已缓存、不再 notify，故正常。
+    // 这里在"当前正在游玩同一局（iframe 已挂载）且本次不是切换到另一个游戏"时跳过破坏性重建，
+    // 只刷新动态数据（宠物状态 / 金币），保住运行中的游戏。
+    // 仅当 initialGameId 指向另一个游戏（真正的切换）或带 sharedGame 时才放行重建。
+    const reentrantSameGame = currentGame
+        && !sharedGame
+        && (!initialGameId || initialGameId === currentGame.id);
+    if (reentrantSameGame) {
+        const liveFrame = $('mhMinigameFrame');
+        if (liveFrame?.isConnected && panel?.contains?.(liveFrame)) {
+            if (pet) currentPet = pet;
+            try { refreshPetStats(); } catch (_) {}
+            try { refreshCoins(); } catch (_) {}
+            return;
+        }
+    }
     cleanupMessageListener?.();
     currentGame = null;
     rewardedRounds = new Set();

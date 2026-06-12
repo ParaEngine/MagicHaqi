@@ -220,6 +220,7 @@ const ART_SOURCE_LOADERS = {
 //   getName(), setName(v), getIcon(), setIcon(v),
 //   getModel(), setModel(v), getHtml(), setHtml(v),
 //   listChatModels(), modelValue(m), modelLabel(m),
+//   isLocalApiKeyEnabled(), setLocalApiKeyEnabled(v),  // 本地 API Key 全局开关
 //   showEmojiDialog(), openLocalApiSettings(),
 //   onApplyMeta()  // 标题/图标/模型变更后回调（刷新工坊顶栏与下拉）
 //   persistHtml(html)  // 写回 game.html 并预览/持久化；返回 Promise
@@ -228,7 +229,7 @@ export function openGameMakerSettings(host, ctx = {}) {
     if (!host) return;
     closeGameMakerSettings(host);
 
-    let activeTab = 'art'; // 'global' | 'config' | 'art'（默认打开美术资源）
+    let activeTab = 'global'; // 'global' | 'config' | 'art'（默认打开全局）
 
     const overlay = document.createElement('div');
     overlay.className = 'mh-gms-overlay';
@@ -272,6 +273,15 @@ export function openGameMakerSettings(host, ctx = {}) {
             .mh-gms-btn-secondary { background:rgba(255,255,255,.08); color:#cbd5e1; border:1px solid rgba(148,163,184,.24); }
             .mh-gms-btn-secondary:hover { border-color:#6366f1; color:#a5b4fc; }
             .mh-gms-hint { font-size:12px; color:#64748b; line-height:1.5; }
+            /* 绿色/灰色滑动开关（与本地 API Key 设置窗一致的样式） */
+            .mh-gms-switch-row { display:flex; align-items:center; gap:10px; }
+            .mh-gms-switch-row .mh-gms-btn { flex:1; }
+            .mh-gms-switch { position:relative; display:inline-block; width:44px; height:24px; flex:0 0 44px; cursor:pointer; }
+            .mh-gms-switch input { position:absolute; opacity:0; width:0; height:0; }
+            .mh-gms-switch-slider { position:absolute; inset:0; border-radius:24px; background:#475569; transition:background .18s; }
+            .mh-gms-switch-slider::before { content:''; position:absolute; left:3px; top:3px; width:18px; height:18px; border-radius:50%; background:#fff; transition:transform .18s; }
+            .mh-gms-switch input:checked + .mh-gms-switch-slider { background:#22c55e; }
+            .mh-gms-switch input:checked + .mh-gms-switch-slider::before { transform:translateX(20px); }
             .mh-gms-code { width:100%; min-height:200px; resize:vertical; background:rgba(0,0,0,.25); border:1px solid rgba(148,163,184,.24); border-radius:10px; color:#e2e8f0; font-family:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace; font-size:12.5px; line-height:1.5; padding:11px; outline:none; box-sizing:border-box; white-space:pre; }
             .mh-gms-code:focus { border-color:#6366f1; }
             .mh-gms-actions { display:flex; gap:8px; flex-wrap:wrap; }
@@ -348,14 +358,14 @@ export function openGameMakerSettings(host, ctx = {}) {
                 <button type="button" class="mh-gms-close" data-mh-gms-close aria-label="${escapeHtml(t('close'))}">×</button>
             </div>
             <div class="mh-gms-tabs">
-                <button type="button" class="mh-gms-tab" data-mh-gms-tab="global">${escapeHtml(t('mgGameSettingsTabGlobal'))}</button>
+                <button type="button" class="mh-gms-tab active" data-mh-gms-tab="global">${escapeHtml(t('mgGameSettingsTabGlobal'))}</button>
                 <button type="button" class="mh-gms-tab" data-mh-gms-tab="config">${escapeHtml(t('mgGameSettingsTabConfig'))}</button>
-                <button type="button" class="mh-gms-tab active" data-mh-gms-tab="art">${escapeHtml(t('mgGameSettingsTabArt'))}</button>
+                <button type="button" class="mh-gms-tab" data-mh-gms-tab="art">${escapeHtml(t('mgGameSettingsTabArt'))}</button>
             </div>
             <div class="mh-gms-body">
-                <div class="mh-gms-pane" data-mh-gms-pane="global"></div>
+                <div class="mh-gms-pane active" data-mh-gms-pane="global"></div>
                 <div class="mh-gms-pane" data-mh-gms-pane="config"></div>
-                <div class="mh-gms-pane active" data-mh-gms-pane="art"></div>
+                <div class="mh-gms-pane" data-mh-gms-pane="art"></div>
             </div>
         </div>`;
     host.appendChild(overlay);
@@ -389,7 +399,13 @@ export function openGameMakerSettings(host, ctx = {}) {
             </div>
             <div class="mh-gms-field">
                 <span class="mh-gms-label">${escapeHtml(t('mgGameSettingsApiLabel'))}</span>
-                <button type="button" class="mh-gms-btn mh-gms-btn-secondary" data-mh-gms-api>${escapeHtml(t('mgGameConfigTitle'))}</button>
+                <div class="mh-gms-switch-row">
+                    <label class="mh-gms-switch" title="${escapeHtml(t('mgGameSettingsApiToggle'))}">
+                        <input type="checkbox" data-mh-gms-api-toggle${ctx.isLocalApiKeyEnabled?.() ? ' checked' : ''}>
+                        <span class="mh-gms-switch-slider"></span>
+                    </label>
+                    <button type="button" class="mh-gms-btn mh-gms-btn-secondary" data-mh-gms-api>${escapeHtml(t('mgGameConfigTitle'))}</button>
+                </div>
                 <span class="mh-gms-hint">${escapeHtml(t('mgGameSettingsApiHint'))}</span>
             </div>`;
 
@@ -409,8 +425,16 @@ export function openGameMakerSettings(host, ctx = {}) {
             if (ctx.onApplyMeta) ctx.onApplyMeta();
         });
         paneGlobal.querySelector('[data-mh-gms-api]')?.addEventListener('click', async () => {
-            if (ctx.openLocalApiSettings) await ctx.openLocalApiSettings();
-            renderGlobal(); // 重新读取可用模型刷新下拉。
+            // onChange 在 API Key 设置窗保存/关闭时触发：重新渲染全局页，
+            // 同步启用开关状态与可用模型下拉（窗内可能改了全局开关或模型配置）。
+            const onChange = () => { if (overlay.isConnected && activeTab === 'global') renderGlobal(); };
+            if (ctx.openLocalApiSettings) await ctx.openLocalApiSettings(onChange);
+            onChange();
+        });
+        // 本地 API Key 全局开关：切换后刷新模型下拉（可用模型来源会变化）。
+        paneGlobal.querySelector('[data-mh-gms-api-toggle]')?.addEventListener('change', async (e) => {
+            if (ctx.setLocalApiKeyEnabled) await ctx.setLocalApiKeyEnabled(e.target.checked);
+            if (activeTab === 'global') renderGlobal();
         });
     }
 
@@ -988,8 +1012,8 @@ export function openGameMakerSettings(host, ctx = {}) {
     overlay.addEventListener('click', (e) => { if (e.target === overlay) closeGameMakerSettings(host); });
     win?.addEventListener('click', (e) => e.stopPropagation());
 
-    // 初始渲染默认标签页（美术资源）。
-    renderArt();
+    // 初始渲染默认标签页（全局）。
+    renderGlobal();
 }
 
 export function closeGameMakerSettings(host) {

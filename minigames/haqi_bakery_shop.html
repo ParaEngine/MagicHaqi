@@ -1,0 +1,586 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+<title>森林面包店</title>
+<script src="https://cdn.keepwork.com/keepwork/cdn/tailwindcss@3.4.16.js"></script>
+<style>
+  html,body{margin:0;padding:0;width:100%;height:100%;overflow:hidden;-webkit-tap-highlight-color:transparent;touch-action:manipulation;user-select:none;-webkit-user-select:none;}
+  body{font-family:"PingFang SC","Microsoft YaHei",sans-serif;}
+  .customer-enter{animation:slideIn .5s ease-out;}
+  @keyframes slideIn{from{transform:translateY(-30px);opacity:0;}to{transform:translateY(0);opacity:1;}}
+  .customer-leave{animation:slideOut .4s ease-in forwards;}
+  @keyframes slideOut{to{transform:translateY(30px);opacity:0;}}
+  .bounce-soft{animation:bounceSoft 1.2s ease-in-out infinite;}
+  @keyframes bounceSoft{0%,100%{transform:translateY(0);}50%{transform:translateY(-6px);}}
+  .shake{animation:shake .4s;}
+  @keyframes shake{0%,100%{transform:translateX(0);}25%{transform:translateX(-5px);}75%{transform:translateX(5px);}}
+  .pop{animation:pop .3s ease-out;}
+  @keyframes pop{0%{transform:scale(.4);}70%{transform:scale(1.15);}100%{transform:scale(1);}}
+  .float-up{animation:floatUp 1s ease-out forwards;}
+  @keyframes floatUp{0%{transform:translateY(0);opacity:1;}100%{transform:translateY(-50px);opacity:0;}}
+  .smoke{animation:smokeUp 1.6s ease-in-out infinite;}
+  @keyframes smokeUp{0%{transform:translateY(0);opacity:.7;}100%{transform:translateY(-14px);opacity:0;}}
+  .ready-glow{box-shadow:0 0 14px 4px rgba(255,200,60,.8);}
+</style>
+</head>
+<body class="bg-gradient-to-b from-emerald-200 via-amber-100 to-amber-200">
+
+<script>
+game_config = {
+    difficulty: "normal",
+    gameDuration: 90,            // 游戏总时长(秒)
+    maxCustomers: 3,             // 同时排队顾客数
+    trayCapacity: 4,             // 展示托盘容量
+    ovenSlots: 2,                // 烤炉格子数
+    difficulties: {
+        easy:   { spawnInterval: 5000, patience: 28, bakeSpeed: 0.8 },
+        normal: { spawnInterval: 4000, patience: 22, bakeSpeed: 1.0 },
+        hard:   { spawnInterval: 3000, patience: 16, bakeSpeed: 1.2 }
+    },
+    breads: [
+        { id: "croissant", emoji: "🥐", name: "牛角包", bakeTime: 2000, price: 10 },
+        { id: "loaf",      emoji: "🍞", name: "吐司",   bakeTime: 2500, price: 12 },
+        { id: "baguette",  emoji: "🥖", name: "法棍",   bakeTime: 3000, price: 15 },
+        { id: "pretzel",   emoji: "🥨", name: "椒盐卷", bakeTime: 3500, price: 18 },
+        { id: "cupcake",   emoji: "🧁", name: "纸杯糕", bakeTime: 4000, price: 22 }
+    ],
+    animals: ["🐰","🦊","🐻","🐿️","🦔","🦉","🐭","🦝"]
+};
+</script>
+
+<script>
+art_assets = [];
+</script>
+
+<div id="gameRoot" class="w-full h-full flex flex-col relative" style="height:100dvh;">
+
+  <!-- 顶部状态栏 -->
+  <div class="flex items-center justify-between px-3 py-2 bg-amber-800/90 text-amber-50 shadow-md z-10 shrink-0">
+    <div class="flex items-center gap-1 text-sm sm:text-base font-bold">⏰ <span id="timeLabel">90</span><span id="timeSuffix">s</span></div>
+    <div id="appTitle" class="text-base sm:text-lg font-bold tracking-wide">🌲 森林面包店 🥐</div>
+    <div class="flex items-center gap-2">
+      <div class="flex items-center gap-1 text-sm sm:text-base font-bold">🪙 <span id="coinLabel">0</span></div>
+      <button id="helpBtn" class="w-7 h-7 rounded-full bg-amber-600 hover:bg-amber-500 text-white text-sm font-bold">❓</button>
+    </div>
+  </div>
+
+  <!-- 顾客区 -->
+  <div class="shrink-0 px-2 pt-2">
+    <div class="bg-emerald-700/20 rounded-2xl p-2 border-2 border-emerald-700/30">
+      <div id="queueTitle" class="text-center text-emerald-900 text-xs font-bold mb-1">🌳 排队的小动物 🌳</div>
+      <div id="customerRow" class="flex justify-center gap-2 min-h-[92px]"></div>
+    </div>
+  </div>
+
+  <!-- 中部：烤炉 + 助手 -->
+  <div class="flex-1 flex items-center justify-center gap-3 px-2 min-h-0">
+    <!-- 宠物助手 -->
+    <div class="flex flex-col items-center shrink-0">
+      <div id="petBox" class="w-20 h-20 sm:w-24 sm:h-24 bounce-soft flex items-center justify-center text-5xl">🐾</div>
+      <div id="petLabel" class="text-[10px] sm:text-xs text-amber-900 font-bold bg-amber-100/80 rounded-full px-2 py-0.5 mt-1">店长助手</div>
+      <div id="petSay" class="text-[10px] sm:text-xs text-amber-800 mt-1 h-4 text-center"></div>
+    </div>
+    <!-- 烤炉 -->
+    <div class="bg-stone-700 rounded-2xl p-2 sm:p-3 shadow-lg border-4 border-stone-800">
+      <div id="ovenTitle" class="text-center text-amber-200 text-xs font-bold mb-1">🔥 烤炉</div>
+      <div id="ovenRow" class="flex gap-2"></div>
+    </div>
+  </div>
+
+  <!-- 托盘 -->
+  <div class="shrink-0 px-2 pb-1">
+    <div class="bg-amber-300/70 rounded-2xl p-2 border-2 border-amber-500/50">
+      <div id="trayTitle" class="text-center text-amber-900 text-xs font-bold mb-1">🧺 展示托盘（点击面包卖给第一位顾客）</div>
+      <div id="trayRow" class="flex justify-center gap-2 min-h-[56px]"></div>
+    </div>
+  </div>
+
+  <!-- 面包货架 -->
+  <div class="shrink-0 px-2 pb-2">
+    <div class="bg-amber-800/90 rounded-2xl p-2 shadow-inner">
+      <div id="shelfRow" class="flex justify-center gap-1.5 sm:gap-3"></div>
+    </div>
+  </div>
+
+  <!-- 飘字层 -->
+  <div id="fxLayer" class="absolute inset-0 pointer-events-none z-30"></div>
+
+  <!-- 规则弹窗 -->
+  <div id="rulesModal" class="absolute inset-0 z-40 bg-black/50 flex items-center justify-center p-4">
+    <div class="bg-amber-50 rounded-3xl p-5 max-w-sm w-full text-center shadow-2xl border-4 border-amber-300">
+      <div class="text-3xl mb-2">🌲🥐🐰</div>
+      <h1 id="rulesTitle" class="text-xl font-extrabold text-amber-900 mb-2">森林面包店</h1>
+      <div class="text-sm text-amber-800 text-left space-y-1.5 mb-4">
+        <p id="rule1">1️⃣ 小动物们会排队点面包，看清气泡里的订单！</p>
+        <p id="rule2">2️⃣ 点击下方<b>货架</b>上的面包放进烤炉烘烤。</p>
+        <p id="rule3">3️⃣ 烤好的面包会放到<b>托盘</b>，点击它卖给<b>第一位</b>顾客。</p>
+        <p id="rule4">4️⃣ 卖对了赚金币 🪙，连续卖对有连击加成！</p>
+        <p id="rule5">5️⃣ 小心耐心条，别让小动物等太久哦～</p>
+      </div>
+      <button id="startBtn" class="w-full py-3 rounded-2xl bg-gradient-to-b from-amber-400 to-amber-600 text-white text-lg font-extrabold shadow-lg active:scale-95 transition">🔥 开店营业！</button>
+    </div>
+  </div>
+
+  <!-- 结算弹窗 -->
+  <div id="endModal" class="absolute inset-0 z-40 bg-black/50 hidden items-center justify-center p-4">
+    <div class="bg-amber-50 rounded-3xl p-5 max-w-sm w-full text-center shadow-2xl border-4 border-amber-300">
+      <div class="text-4xl mb-2">🌙</div>
+      <h2 id="endTitle" class="text-xl font-extrabold text-amber-900 mb-2">打烊啦！</h2>
+      <div class="text-amber-800 space-y-1 mb-1">
+        <p><span id="endRevenue">今日营业额：</span><b class="text-lg">🪙 <span id="endCoins">0</span></b></p>
+        <p class="text-sm"><span id="endServedPrefix">服务顾客：</span><span id="endServed">0</span><span id="endServedSuffix"> 位</span> ｜ <span id="endComboPrefix">最高连击：</span><span id="endCombo">0</span></p>
+        <p class="text-sm"><span id="endBestPrefix">历史最佳：🏆 </span><span id="endBest">0</span></p>
+      </div>
+      <div id="endComment" class="text-sm text-emerald-700 font-bold mb-4"></div>
+      <button id="restartBtn" class="w-full py-3 rounded-2xl bg-gradient-to-b from-emerald-400 to-emerald-600 text-white text-lg font-extrabold shadow-lg active:scale-95 transition">🌞 再开一天！</button>
+    </div>
+  </div>
+</div>
+
+<script>
+// ================= i18n =================
+const I18N = {
+  zhCN: {
+    timeSuffix: 's',
+    appTitle: '🌲 森林面包店 🥐',
+    queueTitle: '🌳 排队的小动物 🌳',
+    ovenTitle: '🔥 烤炉',
+    petLabel: '店长助手',
+    trayTitle: '🧺 展示托盘（点击面包卖给第一位顾客）',
+    ovenEmpty: '空',
+    breads: {
+      croissant: '牛角包', loaf: '吐司', baguette: '法棍', pretzel: '椒盐卷', cupcake: '纸杯糕'
+    },
+    rulesTitle: '森林面包店',
+    rule1: '1️⃣ 小动物们会排队点面包，看清气泡里的订单！',
+    rule2: '2️⃣ 点击下方<b>货架</b>上的面包放进烤炉烘烤。',
+    rule3: '3️⃣ 烤好的面包会放到<b>托盘</b>，点击它卖给<b>第一位</b>顾客。',
+    rule4: '4️⃣ 卖对了赚金币 🪙，连续卖对有连击加成！',
+    rule5: '5️⃣ 小心耐心条，别让小动物等太久哦～',
+    startBtn: '🔥 开店营业！',
+    endTitle: '打烊啦！',
+    endRevenue: '今日营业额：',
+    endServedPrefix: '服务顾客：', endServedSuffix: ' 位',
+    endComboPrefix: '最高连击：',
+    endBestPrefix: '历史最佳：🏆 ',
+    restartBtn: '🌞 再开一天！',
+    ovenFull: '烤炉满了！',
+    baked: '烤好啦！',
+    noCustomer: '没有顾客~',
+    wrongBread: '点的不是这个！',
+    impatient: '等不及啦…',
+    petWaitFaster: '呜，下次快一点…',
+    petGood: ['好耶！', '棒棒哒~', '真香！'],
+    comboLabel: ' 连击x',
+    endComment200: '🌟 森林第一面包师！小动物们都爱你！',
+    endComment120: '👍 生意红火，香味飘满森林~',
+    endComment60: '🙂 不错的一天，继续加油！',
+    endComment0: '🌱 慢慢来，面包店会越开越好的！'
+  },
+  enUS: {
+    timeSuffix: 's',
+    appTitle: '🌲 Forest Bakery 🥐',
+    queueTitle: '🌳 Waiting Critters 🌳',
+    ovenTitle: '🔥 Oven',
+    petLabel: 'Shop Helper',
+    trayTitle: '🧺 Display Tray (tap a bread to serve the first customer)',
+    ovenEmpty: 'empty',
+    breads: {
+      croissant: 'Croissant', loaf: 'Loaf', baguette: 'Baguette', pretzel: 'Pretzel', cupcake: 'Cupcake'
+    },
+    rulesTitle: 'Forest Bakery',
+    rule1: '1️⃣ Critters line up to order bread — check the bubble for their order!',
+    rule2: '2️⃣ Tap the bread on the <b>shelf</b> below to bake it in the oven.',
+    rule3: '3️⃣ Baked bread goes to the <b>tray</b>. Tap it to sell to the <b>first</b> customer.',
+    rule4: '4️⃣ Correct sales earn coins 🪙, with combo bonuses for streaks!',
+    rule5: '5️⃣ Watch the patience bar — don\'t keep the critters waiting too long~',
+    startBtn: '🔥 Open Shop!',
+    endTitle: 'Closing Time!',
+    endRevenue: 'Today\'s revenue: ',
+    endServedPrefix: 'Customers served: ', endServedSuffix: '',
+    endComboPrefix: 'Best combo: ',
+    endBestPrefix: 'Best ever: 🏆 ',
+    restartBtn: '🌞 Open Another Day!',
+    ovenFull: 'Oven is full!',
+    baked: 'is ready!',
+    noCustomer: 'No customers~',
+    wrongBread: 'Not what they ordered!',
+    impatient: 'Can\'t wait…',
+    petWaitFaster: 'Aww, faster next time…',
+    petGood: ['Yay!', 'Awesome~', 'Yummy!'],
+    comboLabel: ' Combo x',
+    endComment200: '🌟 Best baker in the forest! Everyone loves you!',
+    endComment120: '👍 Business is booming, aroma fills the forest~',
+    endComment60: '🙂 A good day, keep it up!',
+    endComment0: '🌱 Take it slow, the bakery will grow!'
+  }
+};
+const lang = (navigator.language || 'zh-CN').toLowerCase().startsWith('zh') ? 'zhCN' : 'enUS';
+const t = (key) => I18N[lang][key];
+
+// ================= 工具与状态 =================
+const $ = id => document.getElementById(id);
+const cfg = game_config;
+let diff = cfg.difficulties[cfg.difficulty] || cfg.difficulties.normal;
+
+let running = false;
+let timeLeft = cfg.gameDuration;
+let coins = 0, served = 0, combo = 0, maxCombo = 0;
+let customers = [];        // {id, animal, breadId, patience, maxPatience, el}
+let ovens = [];            // {breadId|null, doneAt, el}
+let tray = [];             // breadId 数组
+let custSeq = 0;
+let timerInt = null, spawnInt = null, tickInt = null;
+let gameLoadedSent = false;
+
+const breadById = id => cfg.breads.find(b => b.id === id);
+const breadName = id => (I18N[lang].breads && I18N[lang].breads[id]) || (breadById(id) && breadById(id).name) || id;
+
+// ================= 宠物助手 =================
+let petRequestId = '';
+let petObjectUrl = '';
+let currentPetId = '';
+
+function setPetImage(pet) {
+  try {
+    const url = URL.createObjectURL(pet.imageBlob);
+    if (petObjectUrl) URL.revokeObjectURL(petObjectUrl);
+    petObjectUrl = url;
+    const box = $('petBox');
+    box.textContent = '';
+    const multi = pet.uv.cols > 1 || pet.uv.rows > 1;
+    box.style.backgroundImage = `url("${url}")`;
+    box.style.backgroundRepeat = 'no-repeat';
+    box.style.backgroundSize = multi ? `${pet.uv.cols * 100}% ${pet.uv.rows * 100}%` : 'contain';
+    box.style.backgroundPosition = multi
+      ? `${pet.uv.col * 100 / (pet.uv.cols - 1)}% ${pet.uv.row * 100 / (pet.uv.rows - 1)}%`
+      : 'center';
+  } catch (e) { /* 保留 emoji 占位 */ }
+}
+
+function requestPetImage(petId = '') {
+  const requestId = `pet_${Date.now()}`;
+  petRequestId = requestId;
+  window.parent.postMessage({ type: 'haqi_get_pet_image', requestId, anim: 'happy', petId: petId || undefined }, '*');
+  setTimeout(() => {
+    if (petObjectUrl) return;
+    window.parent.postMessage({ type: 'haqi_get_pet_images', requestId: `pets_${Date.now()}`, anim: 'happy' }, '*');
+  }, 900);
+}
+
+function petSay(text) {
+  $('petSay').textContent = text;
+  setTimeout(() => { if ($('petSay').textContent === text) $('petSay').textContent = ''; }, 1500);
+}
+
+// ================= 父窗口消息 =================
+window.addEventListener('message', (event) => {
+  const msg = event.data || {};
+  if (msg.type === 'setGameConfig') {
+    if (msg.data && typeof msg.data === 'object') {
+      if (msg.data.difficulty && cfg.difficulties[msg.data.difficulty]) {
+        cfg.difficulty = msg.data.difficulty;
+        diff = cfg.difficulties[cfg.difficulty];
+      }
+      if (msg.data.petId) { currentPetId = msg.data.petId; requestPetImage(currentPetId); }
+    }
+  }
+  if (msg.type === 'haqi_pet_image' && msg.ok && msg.data &&
+      (!petRequestId || !msg.requestId || msg.requestId === petRequestId || msg.requestId === 'active_pet_config')) {
+    setPetImage(msg.data);
+  }
+  if (msg.type === 'haqi_pet_images' && msg.ok) {
+    const firstPet = Array.isArray(msg.data?.pets) ? msg.data.pets[0] : null;
+    if (firstPet) setPetImage(firstPet);
+  }
+});
+
+// ================= 飘字特效 =================
+function floatText(text, x, y, color = '#16a34a') {
+  const el = document.createElement('div');
+  el.className = 'absolute float-up font-extrabold text-lg';
+  el.style.left = x + 'px'; el.style.top = y + 'px';
+  el.style.color = color; el.style.transform = 'translateX(-50%)';
+  el.textContent = text;
+  $('fxLayer').appendChild(el);
+  setTimeout(() => el.remove(), 1000);
+}
+function floatAt(el, text, color) {
+  const r = el.getBoundingClientRect();
+  floatText(text, r.left + r.width / 2, r.top, color);
+}
+
+// ================= 货架 =================
+function buildShelf() {
+  const row = $('shelfRow');
+  row.innerHTML = '';
+  cfg.breads.forEach(b => {
+    const btn = document.createElement('button');
+    btn.className = 'flex flex-col items-center bg-amber-100 hover:bg-amber-50 rounded-xl px-2 py-1.5 sm:px-3 shadow active:scale-90 transition border-2 border-amber-400/60';
+    btn.innerHTML = `<span class="text-2xl sm:text-3xl">${b.emoji}</span>
+      <span class="text-[10px] sm:text-xs font-bold text-amber-900">${breadName(b.id)}</span>
+      <span class="text-[10px] text-amber-700">🪙${b.price}</span>`;
+    btn.addEventListener('click', () => bakeBread(b.id, btn));
+    row.appendChild(btn);
+  });
+}
+
+// ================= 烤炉 =================
+function buildOvens() {
+  const row = $('ovenRow');
+  row.innerHTML = '';
+  ovens = [];
+  for (let i = 0; i < cfg.ovenSlots; i++) {
+    const el = document.createElement('div');
+    el.className = 'relative w-16 h-16 sm:w-20 sm:h-20 bg-stone-900 rounded-xl flex items-center justify-center text-3xl border-2 border-stone-600';
+    el.innerHTML = `<span class="text-stone-500 text-sm">${t('ovenEmpty')}</span>`;
+    row.appendChild(el);
+    ovens.push({ breadId: null, doneAt: 0, el });
+  }
+}
+
+function bakeBread(breadId, btn) {
+  if (!running) return;
+  const oven = ovens.find(o => !o.breadId);
+  if (!oven) {
+    floatAt(btn, t('ovenFull'), '#dc2626');
+    btn.classList.add('shake'); setTimeout(() => btn.classList.remove('shake'), 400);
+    return;
+  }
+  const b = breadById(breadId);
+  oven.breadId = breadId;
+  oven.doneAt = Date.now() + b.bakeTime / diff.bakeSpeed;
+  renderOven(oven);
+}
+
+function renderOven(oven) {
+  if (!oven.breadId) { oven.el.innerHTML = `<span class="text-stone-500 text-sm">${t('ovenEmpty')}</span>`; return; }
+  const b = breadById(oven.breadId);
+  const total = b.bakeTime / diff.bakeSpeed;
+  const left = Math.max(0, oven.doneAt - Date.now());
+  const pct = Math.min(100, 100 - left / total * 100);
+  oven.el.innerHTML = `
+    <span class="opacity-80">${b.emoji}</span>
+    <span class="smoke absolute -top-3 text-xs">💨</span>
+    <div class="absolute bottom-1 left-1 right-1 h-1.5 bg-stone-700 rounded-full overflow-hidden">
+      <div class="h-full bg-orange-500" style="width:${pct}%"></div>
+    </div>
+    <span class="absolute top-0 right-1 text-xs">🔥</span>`;
+}
+
+function checkOvens() {
+  ovens.forEach(oven => {
+    if (oven.breadId && Date.now() >= oven.doneAt) {
+      if (tray.length >= cfg.trayCapacity) return; // 托盘满，留在炉中
+      const b = breadById(oven.breadId);
+      tray.push(oven.breadId);
+      oven.breadId = null;
+      renderOven(oven);
+      renderTray();
+      petSay(`${b.emoji} ${t('baked')}`);
+    } else if (oven.breadId) {
+      renderOven(oven);
+    }
+  });
+}
+
+// ================= 托盘 =================
+function renderTray() {
+  const row = $('trayRow');
+  row.innerHTML = '';
+  for (let i = 0; i < cfg.trayCapacity; i++) {
+    const breadId = tray[i];
+    const cell = document.createElement(breadId ? 'button' : 'div');
+    cell.className = 'w-12 h-12 sm:w-14 sm:h-14 rounded-xl flex items-center justify-center text-3xl ' +
+      (breadId ? 'bg-amber-50 border-2 border-amber-400 shadow active:scale-90 transition pop ready-glow' : 'bg-amber-200/40 border-2 border-dashed border-amber-400/40');
+    if (breadId) {
+      cell.textContent = breadById(breadId).emoji;
+      cell.addEventListener('click', () => serveBread(i, cell));
+    }
+    row.appendChild(cell);
+  }
+}
+
+function serveBread(trayIndex, cellEl) {
+  if (!running) return;
+  const breadId = tray[trayIndex];
+  if (!breadId) return;
+  const customer = customers[0];
+  if (!customer) {
+    floatAt(cellEl, t('noCustomer'), '#92400e');
+    return;
+  }
+  if (customer.breadId === breadId) {
+    // 卖对了！
+    tray.splice(trayIndex, 1);
+    combo++;
+    maxCombo = Math.max(maxCombo, combo);
+    const b = breadById(breadId);
+    const bonus = combo >= 3 ? Math.floor(b.price * 0.5) : 0;
+    const gain = b.price + bonus;
+    coins += gain;
+    served++;
+    $('coinLabel').textContent = coins;
+    floatAt(customer.el, `+${gain}🪙${combo >= 3 ? t('comboLabel') + combo : ''}`, '#16a34a');
+    petSay(t('petGood')[served % 3]);
+    removeCustomer(customer, true);
+    renderTray();
+  } else {
+    // 卖错了
+    combo = 0;
+    customer.patience = Math.max(0, customer.patience - 4);
+    floatAt(cellEl, t('wrongBread'), '#dc2626');
+    customer.el.classList.add('shake');
+    setTimeout(() => customer.el.classList.remove('shake'), 400);
+  }
+}
+
+// ================= 顾客 =================
+function spawnCustomer() {
+  if (!running || customers.length >= cfg.maxCustomers) return;
+  const animal = cfg.animals[Math.floor(Math.random() * cfg.animals.length)];
+  const bread = cfg.breads[Math.floor(Math.random() * cfg.breads.length)];
+  const c = {
+    id: ++custSeq, animal, breadId: bread.id,
+    patience: diff.patience, maxPatience: diff.patience, el: null
+  };
+  const el = document.createElement('div');
+  el.className = 'customer-enter flex flex-col items-center bg-amber-50/90 rounded-2xl px-2 py-1.5 border-2 border-amber-300 shadow w-[88px]';
+  el.innerHTML = `
+    <div class="bg-white rounded-full px-2 py-0.5 text-lg shadow border border-amber-200 mb-0.5">💭${bread.emoji}</div>
+    <div class="text-3xl">${animal}</div>
+    <div class="w-full h-1.5 bg-stone-200 rounded-full mt-1 overflow-hidden">
+      <div class="patience-bar h-full bg-emerald-500 rounded-full" style="width:100%"></div>
+    </div>`;
+  c.el = el;
+  $('customerRow').appendChild(el);
+  customers.push(c);
+  markFirstCustomer();
+}
+
+function markFirstCustomer() {
+  customers.forEach((c, i) => {
+    c.el.style.outline = i === 0 ? '3px solid #f59e0b' : 'none';
+    c.el.style.outlineOffset = '2px';
+  });
+}
+
+function removeCustomer(c, happy) {
+  customers = customers.filter(x => x !== c);
+  c.el.querySelector('.text-3xl').textContent = happy ? '😋' : '😢';
+  c.el.classList.add('customer-leave');
+  setTimeout(() => c.el.remove(), 400);
+  markFirstCustomer();
+}
+
+function tickCustomers(dt) {
+  [...customers].forEach(c => {
+    c.patience -= dt;
+    const pct = Math.max(0, c.patience / c.maxPatience * 100);
+    const bar = c.el.querySelector('.patience-bar');
+    bar.style.width = pct + '%';
+    bar.className = 'patience-bar h-full rounded-full ' + (pct > 50 ? 'bg-emerald-500' : pct > 25 ? 'bg-yellow-500' : 'bg-red-500');
+    if (c.patience <= 0) {
+      combo = 0;
+      floatAt(c.el, t('impatient'), '#dc2626');
+      petSay(t('petWaitFaster'));
+      removeCustomer(c, false);
+    }
+  });
+}
+
+// ================= 游戏流程 =================
+function startGame() {
+  $('rulesModal').classList.add('hidden');
+  $('endModal').classList.add('hidden');
+  $('endModal').classList.remove('flex');
+  running = true;
+  timeLeft = cfg.gameDuration;
+  coins = 0; served = 0; combo = 0; maxCombo = 0;
+  customers.forEach(c => c.el.remove());
+  customers = []; tray = [];
+  $('coinLabel').textContent = '0';
+  $('timeLabel').textContent = timeLeft;
+  buildOvens();
+  renderTray();
+  spawnCustomer();
+
+  clearInterval(timerInt); clearInterval(spawnInt); clearInterval(tickInt);
+  timerInt = setInterval(() => {
+    timeLeft--;
+    $('timeLabel').textContent = timeLeft;
+    if (timeLeft <= 0) endGame();
+  }, 1000);
+  spawnInt = setInterval(spawnCustomer, diff.spawnInterval);
+  tickInt = setInterval(() => { tickCustomers(0.2); checkOvens(); }, 200);
+
+  window.parent.postMessage({ type: 'gameStarted' }, '*');
+}
+
+function endGame() {
+  running = false;
+  clearInterval(timerInt); clearInterval(spawnInt); clearInterval(tickInt);
+  const best = Math.max(coins, parseInt(localStorage.getItem('forestBakeryBest') || '0', 10));
+  localStorage.setItem('forestBakeryBest', String(best));
+  $('endCoins').textContent = coins;
+  $('endServed').textContent = served;
+  $('endCombo').textContent = maxCombo;
+  $('endBest').textContent = best;
+  $('endComment').textContent =
+    coins >= 200 ? t('endComment200') :
+    coins >= 120 ? t('endComment120') :
+    coins >= 60  ? t('endComment60') :
+                   t('endComment0');
+  $('endModal').classList.remove('hidden');
+  $('endModal').classList.add('flex');
+  window.parent.postMessage({ type: 'gameFinished', data: { score: coins, served, maxCombo, difficulty: cfg.difficulty } }, '*');
+}
+
+// ================= 静态文本本地化 =================
+function applyI18n() {
+  document.documentElement.lang = (lang === 'zhCN') ? 'zh-CN' : 'en';
+  document.title = t('rulesTitle');
+  $('appTitle').textContent = t('appTitle');
+  $('queueTitle').textContent = t('queueTitle');
+  $('ovenTitle').textContent = t('ovenTitle');
+  $('petLabel').textContent = t('petLabel');
+  $('trayTitle').textContent = t('trayTitle');
+  $('rulesTitle').textContent = t('rulesTitle');
+  $('rule1').innerHTML = t('rule1');
+  $('rule2').innerHTML = t('rule2');
+  $('rule3').innerHTML = t('rule3');
+  $('rule4').innerHTML = t('rule4');
+  $('rule5').innerHTML = t('rule5');
+  $('startBtn').textContent = t('startBtn');
+  $('endTitle').textContent = t('endTitle');
+  $('endRevenue').textContent = t('endRevenue');
+  $('endServedPrefix').textContent = t('endServedPrefix');
+  $('endServedSuffix').textContent = t('endServedSuffix');
+  $('endComboPrefix').textContent = t('endComboPrefix');
+  $('endBestPrefix').textContent = t('endBestPrefix');
+  $('restartBtn').textContent = t('restartBtn');
+  $('timeSuffix').textContent = t('timeSuffix');
+}
+
+// ================= 初始化 =================
+$('startBtn').addEventListener('click', startGame);
+$('restartBtn').addEventListener('click', startGame);
+$('helpBtn').addEventListener('click', () => {
+  $('rulesModal').classList.remove('hidden');
+});
+
+applyI18n();
+buildShelf();
+buildOvens();
+renderTray();
+requestPetImage();
+
+if (!gameLoadedSent) {
+  gameLoadedSent = true;
+  window.parent.postMessage({ type: 'gameLoaded' }, '*');
+}
+</script>
+</body>
+</html>

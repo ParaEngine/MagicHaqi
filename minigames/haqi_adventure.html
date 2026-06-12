@@ -337,6 +337,7 @@
     hurtUntil: 0,
     shootCd: 0,
     stompChain: 0,
+    landTime: 0,
   };
 
   const pet = {
@@ -1564,7 +1565,11 @@
     if (rectSolid(a.x, a.y, a.w, a.h)) {
       const dir = Math.sign(a.vy) || 1;
       while (rectSolid(a.x, a.y, a.w, a.h)) a.y -= dir;
-      if (dir > 0) a.grounded = true;
+      // Snap to a whole pixel so the resting y doesn't oscillate sub-pixel
+      // between frames (caused visible high-frequency jitter). Floor moves UP
+      // into free space — never back into the ground (ceil could re-embed and
+      // trigger the horizontal push-out, teleporting the actor).
+      if (dir > 0) { a.grounded = true; a.y = Math.floor(a.y); }
       a.vy = 0;
     }
     if (!a.grounded && wasGrounded && a.vy >= 0 && actorOnGround(a)) {
@@ -1686,7 +1691,14 @@
   function updatePlayer(dt) {
     player.wasGrounded = player.grounded;
     const ax = getInputAxis();
-    if (Math.abs(ax) > .08) player.dir = ax > 0 ? 1 : -1;
+    if (Math.abs(ax) > .08) {
+      const newDir = ax > 0 ? 1 : -1;
+      // quick turn while running on the ground kicks up a little skid dust
+      if (newDir !== player.dir && player.grounded && Math.abs(player.vx) > MOVE_SPEED * .5) {
+        spawnDust(player.x + player.w / 2 - newDir * 10, player.y + player.h - 3, 5, 'rgba(203,213,225,.85)');
+      }
+      player.dir = newDir;
+    }
     const starBoost = playerInvincible() ? 1.35 : 1;
     player.vx = ax * MOVE_SPEED * starBoost;
     if (player.shootCd > 0) player.shootCd = Math.max(0, player.shootCd - dt);
@@ -1698,6 +1710,7 @@
     }
     input.pointerJumpQueued = false;
     if (input.action) { if (state.power === 'fire') throwFireball(); mineBlock(); }
+    const fallVy = player.vy;                                   // fall speed before collision resolution
     moveActor(player, dt, true);
     // In water you sink slowly (water drag) — but NOT right after a wall/floor jump,
     // so the jump can actually launch you out of the pond at full height.
@@ -1708,10 +1721,20 @@
       if (Math.random() < 0.15) spawnDust(player.x + player.w / 2, player.y + 4, 1, 'rgba(224,255,255,.7)');
     }
     const moving = Math.abs(player.vx) > 12;
-    if (moving && player.grounded) player.animTime += dt * 11;
+    if (moving && player.grounded) player.animTime += dt * 13;
     else player.animTime += dt * 4;
-    player.walkFrame = moving && player.grounded ? Math.floor(player.animTime) % 4 : 0;
-    if (!player.wasGrounded && player.grounded) { spawnDust(player.x + player.w / 2, player.y + player.h, 5, '#e2e8f0'); player.stompChain = 0; }
+    const prevFrame = player.walkFrame;
+    player.walkFrame = moving && player.grounded ? Math.floor(player.animTime) % 6 : 0;
+    // little dust puffs at each footfall while running
+    if (moving && player.grounded && player.walkFrame !== prevFrame && (player.walkFrame === 1 || player.walkFrame === 4)) {
+      spawnDust(player.x + player.w / 2 - player.dir * 9, player.y + player.h - 2, 2, 'rgba(148,163,184,.6)');
+    }
+    if (!player.wasGrounded && player.grounded) {
+      player.stompChain = 0;
+      // Only squash/dust on a real fall — tiny ground-state flickers on bumpy
+      // terrain used to retrigger the squash and read as vertical jerking.
+      if (fallVy > 260) { spawnDust(player.x + player.w / 2, player.y + player.h, 6, '#e2e8f0'); player.landTime = now(); }
+    }
   }
 
   function updatePet(dt) {
@@ -2467,36 +2490,156 @@
     // Star power tints the whole sprite in rotating colors
     const starTint = playerInvincible() ? STAR_COLORS[Math.floor(now() / 120) % STAR_COLORS.length] : null;
     if (hurt) ctx.globalAlpha = .45;
-    const skin = '#f2bd7d', skinShade = '#d99a64', hair = state.masterStyle === 'girl' ? '#5b2b1d' : '#3f2418';
+    const girl = state.masterStyle === 'girl';
+    const skin = '#f6c98e', skinShade = '#dda36b', cheek = '#f59e8b';
+    const hair = girl ? '#6b3320' : '#43281a', hairHi = girl ? '#8f4a2c' : '#5d3a26';
     // Fire power changes the outfit to white/red like Mario's fire form
-    let shirt = state.masterStyle === 'girl' ? '#f472b6' : '#38bdf8';
-    let shirtShade = state.masterStyle === 'girl' ? '#db2777' : '#0284c7';
-    let pants = '#1e3a8a';
-    if (state.power === 'fire') { shirt = '#fef2f2'; shirtShade = '#ef4444'; pants = '#dc2626'; }
-    if (starTint) { shirt = starTint; shirtShade = starTint; }
+    let shirt = girl ? '#f472b6' : '#38bdf8';
+    let shirtShade = girl ? '#db2777' : '#0284c7';
+    let shirtHi = girl ? '#fbb6da' : '#7dd3fc';
+    let pants = '#1e3a8a', pantsShade = '#172554';
+    let capColor = girl ? '#ec4899' : '#0ea5e9';
+    if (state.power === 'fire') { shirt = '#fef2f2'; shirtShade = '#ef4444'; shirtHi = '#ffffff'; pants = '#dc2626'; pantsShade = '#991b1b'; capColor = '#ef4444'; }
+    if (starTint) { shirt = starTint; shirtShade = starTint; shirtHi = '#ffffff'; }
     const flip = player.dir < 0;
     const moving = Math.abs(player.vx) > 12 && player.grounded;
     const frame = player.walkFrame;
-    const bob = moving ? (frame === 1 || frame === 3 ? 1 : 0) : (!player.grounded ? -1 : 0);
-    const armSwing = moving ? [0, -3, 0, 3][frame] : 0;
-    const legA = moving ? [0, 4, 0, -3][frame] : (!player.grounded ? -3 : 0);
-    const legB = moving ? [0, -3, 0, 4][frame] : (!player.grounded ? 3 : 0);
+    const tNow = now();
+    // ---- pose / secondary motion ----
+    const breathe = (!moving && player.grounded) ? Math.sin(tNow / 420) : 0;     // idle breathing
+    // Smooth, continuous bob (two beats per walk cycle) instead of per-frame steps,
+    // which read as high-frequency jerking at 13fps.
+    const walkPhase = (player.animTime % 6) / 6 * Math.PI * 2;
+    const bob = moving ? (0.5 - Math.cos(walkPhase * 2) * 0.5) * 1.6 : (!player.grounded ? -1 : breathe * 1.1);
+    const armSwing = moving ? [0, -4, -2, 0, 4, 2][frame] : (!player.grounded ? -5 : breathe);
+    const legA = moving ? [0, 5, 2, 0, -4, -2][frame] : (!player.grounded ? -4 : 0);
+    const legB = moving ? [0, -4, -2, 0, 5, 2][frame] : (!player.grounded ? 4 : 0);
+    const lean = moving ? player.dir * 1.5 : 0;                                  // forward lean while running
+    // ---- squash & stretch ----
+    let sx = 1, syPose = 1;
+    const sinceLand = tNow - (player.landTime || 0);
+    if (sinceLand < 130 && player.grounded) { const k = 1 - sinceLand / 130; sx = 1 + .18 * k; syPose = 1 - .16 * k; }   // landing squash
+    else if (!player.grounded) { const v = clamp(Math.abs(player.vy) / JUMP_SPEED, 0, 1); sx = 1 - .08 * v; syPose = 1 + .1 * v; } // air stretch
+    const blink = !moving && player.grounded && Math.sin(tNow / 1400) > .96;
     // Big/fire forms render slightly taller so size matches the larger hitbox
-    const sy = state.power === 'small' ? 1 : (player.h / 48);
+    const sy = (state.power === 'small' ? 1 : (player.h / 48)) * syPose;
+    // The sprite is drawn on a 2x-resolution sub-pixel grid (units of half a game pixel)
+    // for finer detail; the final scale(0.5) maps it back to the 25x52 hitbox size.
+    const A = armSwing * 2, LA = legA * 2, LB = legB * 2;
+    const skinHi = '#ffe0b1', outline = 'rgba(30,27,40,.55)';
+    const hairDk = girl ? '#4a2114' : '#2d1a10';
+    const pantsHi = state.power === 'fire' ? '#f87171' : '#3756c4';
+    const irisCol = girl ? '#7c3aed' : '#1d4ed8';
     ctx.save();
-    ctx.translate(x + player.w / 2, y + bob); if (flip) ctx.scale(-1, 1);
-    if (sy !== 1) ctx.scale(1, sy);
-    ctx.translate(-player.w / 2, 0);
-    drawPixelRect(4, 1, 12, 19, hair); drawPixelRect(6, 0, 13, 6, hair); drawPixelRect(8, 5, 13, 15, skin);
-    drawPixelRect(18, 10, 4, 4, skin); drawPixelRect(17, 9, 3, 3, '#0f172a'); drawPixelRect(19, 15, 2, 2, skinShade); drawPixelRect(15, 18, 5, 2, '#7f1d1d');
-    drawPixelRect(5, 5, 5, 9, hair); drawPixelRect(8, 4, 11, 3, '#7c3f1d');
-    if (state.masterStyle === 'girl') { drawPixelRect(1, 7, 6, 19, hair); drawPixelRect(2, 23, 5, 7, '#7c2d12'); }
-    drawPixelRect(11, 20, 6, 4, skinShade);
-    drawPixelRect(6, 24, 14, 16, shirt); drawPixelRect(16, 26, 5, 12, shirtShade); drawPixelRect(8, 23, 9, 3, '#e0f2fe');
-    drawPixelRect(3, 25 + armSwing, 5, 13, skinShade); drawPixelRect(20, 24 - armSwing, 5, 15, skin);
-    if (now() < player.attackUntil) { drawPixelRect(24, 18, 17, 5, '#6b7280'); drawPixelRect(35, 13, 8, 8, COLORS.stone); }
-    drawPixelRect(7, 39, 7, 9 + Math.max(0, legA), pants); drawPixelRect(15, 39, 7, 9 + Math.max(0, legB), '#172554');
-    drawPixelRect(5 + Math.max(0, -legA), 47 + Math.max(0, legA), 10, 4, '#111827'); drawPixelRect(14 + Math.max(0, -legB), 47 + Math.max(0, legB), 10, 4, '#111827');
+    ctx.translate(x + player.w / 2, y + player.h);            // anchor at the feet so squash keeps feet planted
+    if (flip) ctx.scale(-1, 1);
+    ctx.scale(sx, sy);
+    if (moving) ctx.rotate(lean * Math.PI / 180);
+    ctx.scale(.5, .5);                                        // hi-res half-pixel grid
+    ctx.translate(-25, -96 + bob * 2);
+    // soft contact shadow (two layers for softness)
+    drawPixelRect(4, 98, 42, 5, 'rgba(15,23,42,.14)');
+    drawPixelRect(9, 99, 32, 3, 'rgba(15,23,42,.16)');
+    // ---- back arm (drawn behind body) ----
+    drawPixelRect(5, 50 + A, 10, 26, skinShade);
+    drawPixelRect(5, 50 + A, 3, 26, '#c98c55');               // arm core shadow
+    drawPixelRect(5, 72 + A, 10, 6, '#c98c55');               // back hand
+    drawPixelRect(6, 51 + A, 8, 4, shirtShade);               // sleeve
+    // ---- hair back / ponytail (girl) ----
+    if (girl) {
+      const sway = (moving ? [0, 1, 2, 0, -1, -2][frame] : Math.round(Math.sin(tNow / 360) * 1.5)) * 2;
+      drawPixelRect(-1 - sway, 14, 12, 38, hair);
+      drawPixelRect(0 - sway, 46, 10, 18, '#7c2d12');
+      drawPixelRect(1 - sway, 60, 8, 5, hairDk);              // tail tip
+      drawPixelRect(1 - sway, 18, 3, 26, hairHi);
+      drawPixelRect(2 - sway, 50, 6, 3, '#fbbf24');           // hair tie
+    }
+    // ---- head: outline + hair ----
+    drawPixelRect(7, 0, 28, 42, outline);                     // head silhouette outline
+    drawPixelRect(8, 2, 24, 38, hair); drawPixelRect(12, 0, 26, 12, hair);
+    drawPixelRect(14, 2, 18, 3, hairHi); drawPixelRect(10, 8, 4, 20, hairHi);   // shine band
+    drawPixelRect(9, 30, 22, 10, hairDk);                     // hair underside
+    // jagged fringe over the forehead
+    for (let i = 0; i < 5; i++) drawPixelRect(15 + i * 4, 9 + (i % 2) * 3, 4, 6 - (i % 2) * 2, hair);
+    // ---- face ----
+    drawPixelRect(16, 10, 26, 30, skin);
+    drawPixelRect(16, 34, 26, 6, skinShade);                  // jaw shading
+    drawPixelRect(17, 11, 6, 8, skinHi);                      // forehead light
+    drawPixelRect(36, 20, 8, 8, skin); drawPixelRect(40, 24, 4, 4, skinShade); // nose + tip
+    // eye: big expressive eye with colored iris, blinks at idle
+    if (blink) { drawPixelRect(31, 21, 11, 2, '#1e293b'); }
+    else {
+      drawPixelRect(31, 17, 11, 9, '#ffffff');
+      drawPixelRect(35, 18, 6, 8, irisCol);                   // iris
+      drawPixelRect(37, 20, 4, 5, '#0f172a');                 // pupil
+      drawPixelRect(35, 18, 2, 2, '#ffffff');                 // big glint
+      drawPixelRect(40, 23, 1, 1, '#e2e8f0');                 // small glint
+      drawPixelRect(31, 16, 11, 2, hairDk);                   // upper lash line
+    }
+    drawPixelRect(31, 12, 11, 3, hair);                       // eyebrow
+    drawPixelRect(29, 29, 7, 4, cheek);                       // blush
+    drawPixelRect(30, 30, 2, 1, '#ffd7c2');                   // blush highlight
+    const smile = moving ? 1 : 0;
+    drawPixelRect(31, 36 + smile, 8, 2, '#b4304a');           // mouth
+    drawPixelRect(30, 35 + smile, 2, 2, '#b4304a');           // smile corner
+    drawPixelRect(32, 38 + smile, 6, 1, '#fda4af');           // lower lip light
+    drawPixelRect(10, 10, 10, 18, hair); drawPixelRect(16, 8, 22, 5, hairHi);
+    // ---- cap with brim, button and stripe (power-colored) ----
+    drawPixelRect(11, -1, 30, 7, capColor);
+    drawPixelRect(13, 0, 24, 2, '#ffffff');                   // cap stripe
+    drawPixelRect(32, 3, 16, 4, capColor);                    // brim
+    drawPixelRect(33, 6, 14, 1, 'rgba(15,23,42,.3)');         // brim underside
+    drawPixelRect(22, -3, 6, 4, '#fde047');                   // cap button
+    // ---- neck + scarf ----
+    drawPixelRect(22, 40, 12, 9, skinShade);
+    drawPixelRect(16, 44, 22, 6, shirtShade);                 // collar/scarf
+    drawPixelRect(17, 44, 20, 2, shirtHi);                    // scarf top light
+    // scarf tail flutters when moving / airborne
+    const flutter = (moving || !player.grounded) ? Math.round(Math.sin(tNow / 90) * 4) : 0;
+    drawPixelRect(4, 46 + flutter, 12, 6, shirtShade);
+    drawPixelRect(4, 50 + flutter, 6, 3, shirtHi);            // tail tip
+    // ---- torso (3-tone + stitching) ----
+    drawPixelRect(11, 47, 30, 34, outline);
+    drawPixelRect(12, 48, 28, 32, shirt);
+    drawPixelRect(32, 52, 8, 24, shirtShade);                 // side shade
+    drawPixelRect(14, 50, 6, 27, shirtHi);                    // front highlight
+    drawPixelRect(16, 46, 18, 6, '#e0f2fe');                  // chest panel
+    drawPixelRect(24, 52, 2, 22, shirtShade);                 // zipper line
+    drawPixelRect(15, 62, 8, 6, shirtShade);                  // pocket
+    drawPixelRect(15, 62, 8, 2, shirtHi);                     // pocket flap
+    // belt + buckle
+    drawPixelRect(12, 74, 28, 6, pantsShade);
+    drawPixelRect(23, 74, 7, 6, '#facc15');
+    drawPixelRect(25, 76, 3, 2, '#a16207');                   // buckle pin
+    // ---- front arm ----
+    drawPixelRect(40, 48 - A, 10, 30, skin);
+    drawPixelRect(40, 48 - A, 10, 4, shirtShade);             // sleeve
+    drawPixelRect(47, 50 - A, 3, 26, skinShade);              // arm side shade
+    drawPixelRect(40, 72 - A, 10, 6, skinShade);              // hand
+    drawPixelRect(41, 73 - A, 4, 3, skinHi);                  // knuckle light
+    if (now() < player.attackUntil) {
+      drawPixelRect(48, 36, 34, 10, '#6b7280'); drawPixelRect(70, 26, 16, 16, COLORS.stone);
+      drawPixelRect(50, 38, 28, 2, '#9ca3af');                // pick handle glint
+      drawPixelRect(72, 28, 5, 5, '#cbd5e1');                 // pick head light
+    }
+    // ---- legs (3-tone with knee patches) ----
+    drawPixelRect(14, 78, 14, 18 + Math.max(0, LA), pants);
+    drawPixelRect(14, 78, 4, 18 + Math.max(0, LA), pantsShade);
+    drawPixelRect(24, 80, 3, 14 + Math.max(0, LA), pantsHi);
+    drawPixelRect(16, 86 + Math.max(0, LA) / 2, 9, 4, pantsHi);   // knee patch
+    drawPixelRect(30, 78, 14, 18 + Math.max(0, LB), pantsShade);
+    drawPixelRect(40, 80, 3, 14 + Math.max(0, LB), pants);
+    drawPixelRect(32, 86 + Math.max(0, LB) / 2, 9, 4, pants);     // knee patch
+    // ---- shoes: 3-tone sneakers with laces ----
+    const shA = Math.max(0, LA), shB = Math.max(0, LB), bkA = Math.max(0, -LA), bkB = Math.max(0, -LB);
+    drawPixelRect(10 + bkA, 94 + shA, 20, 8, '#b91c1c');
+    drawPixelRect(10 + bkA, 94 + shA, 20, 2, '#ef4444');      // shoe top light
+    drawPixelRect(14 + bkA, 96 + shA, 6, 2, '#f8fafc');       // lace
+    drawPixelRect(10 + bkA, 100 + shA, 22, 3, '#f8fafc');     // sole
+    drawPixelRect(28 + bkB, 94 + shB, 20, 8, '#b91c1c');
+    drawPixelRect(28 + bkB, 94 + shB, 20, 2, '#ef4444');
+    drawPixelRect(32 + bkB, 96 + shB, 6, 2, '#f8fafc');
+    drawPixelRect(28 + bkB, 100 + shB, 22, 3, '#f8fafc');
     ctx.restore(); ctx.globalAlpha = 1;
   }
 
