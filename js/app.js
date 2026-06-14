@@ -810,97 +810,7 @@ const routes = {
     gameMaker:   renderGameMakerRoute,
     settings:  renderSettingsRoute,
     ops:       renderOpsConsoleRoute,
-    encyclopedia: renderEncyclopediaRoute,
 };
-
-// 动物园动物图鉴（仅当前星球配置了 encyclopediaUrl 时可进入）—— 懒加载
-let encyclopediaViewModule = null;
-function renderEncyclopediaRoute() {
-    const callbacks = {
-        onBack: () => navigateToView('home'),
-        onAdoptAnimal: handleAdoptZooAnimal,
-    };
-    if (encyclopediaViewModule) {
-        encyclopediaViewModule.renderEncyclopedia(app, null, callbacks);
-        return;
-    }
-    app.innerHTML = '<div style="padding:24px;color:var(--text-muted)">' + escapeHtml(t('loading')) + '</div>';
-    import('./view_encyclopedia.js')
-        .then((mod) => {
-            encyclopediaViewModule = mod;
-            if (state.currentView !== 'encyclopedia') return;
-            mod.renderEncyclopedia(app, null, callbacks);
-        })
-        .catch((e) => {
-            console.error('加载动物图鉴失败', e);
-            app.innerHTML = '<div style="padding:24px;color:#b91c1c">' + escapeHtml(t('encLoadFailed')) + '</div>';
-        });
-}
-
-// 图鉴领养：按 famousPetId 把对应官方宠物直接带回星球（不替换当前宠物，仿故事领养逻辑）。
-async function handleAdoptZooAnimal(animal = {}) {
-    const famousPetId = String(animal.famousPetId || '').trim();
-    if (!famousPetId) {
-        showToast(t('encNoPetConfigured'), 'error', 2200);
-        throw new Error('no famousPetId');
-    }
-    // 已拥有同款官方宠物：切换过去即可，不重复领养。
-    const owned = getOwnedSystemPetKeySet();
-    if (owned.has(`id:${famousPetId}`)) {
-        const existing = (state.petOrder || []).map(id => state.pets[id])
-            .find(p => p && systemPetOwnedKeys(p).includes(`id:${famousPetId}`));
-        if (existing && isPetSelectable(existing)) {
-            await setCurrentPetPersisted(existing.id);
-            setCurrentPet(existing.id);
-        }
-        showToast(t('encAlreadyOwned', { name: existing?.name || '' }), 'info', 3000);
-        setView('home');
-        return;
-    }
-    let list = [];
-    try { list = await loadFamousPetsIndex(); } catch (_) {}
-    const entry = (Array.isArray(list) ? list : []).find(item => String(item?.id || '').trim() === famousPetId);
-    const target = entry ? normalizeSystemHatchTarget(entry) : null;
-    if (!target) {
-        showToast(t('encNoPetConfigured'), 'error', 2200);
-        throw new Error(`famous pet not found: ${famousPetId}`);
-    }
-    const now = Date.now();
-    const pet = {
-        id: 'pet_' + randId(8),
-        name: target.name,
-        dna: target.dna,
-        imageUrl: target.imageUrl || null,
-        imageSheetUrl: target.imageSheetUrl,
-        traits: target.traits,
-        rarity: target.rarity,
-        stats: { ...defaultStats(), hunger: 100, mood: 100, clean: 100, bond: 60 },
-        permanentTrauma: defaultPermanentTrauma(),
-        bornAt: now,
-        lastTickAt: now,
-        lastCareAt: now,
-        parents: null,
-        stage: 'baby',
-        anim: 'happy',
-        activeRoom: 'living',
-        source: 'famous-pets',
-        sourcePetId: `famous-pets/${target.id}`,
-        adoptedFromZoo: String(state.settings?.starSettlement?.planetId || ''),
-        adoptedFromAnimal: String(animal.id || ''),
-    };
-    applyStage(pet);
-    await savePet(pet);
-    await setCurrentPetPersisted(pet.id);
-    setCurrentPet(pet.id);
-    try { await ensurePetData(pet.id); } catch (_) {}
-    const exiled = await enforcePlanetPetLimit(pet.id);
-    preloadLoadedPetAssets();
-    const exileText = exiled.length
-        ? ` ${exiled.map(item => `${item.pet.name || '一只宠物'}去了${item.location.name}`).join('，')}。`
-        : '';
-    showToast(t('encAdoptSuccess', { name: pet.name }) + exileText, exiled.length ? 'info' : 'success', exiled.length ? 4200 : 2600);
-    setView('home');
-}
 
 // 运营控制台（?view=ops，开发者 / 一人公司兜底面板）—— 懒加载
 let opsConsoleModule = null;
@@ -990,7 +900,6 @@ function resolveForcedBootView(fallbackView) {
     if (!forced) return fallbackView;
     if (forced === 'game') return 'minigames';
     if (forced === 'ops') return 'ops';
-    if (forced === 'encyclopedia') return 'encyclopedia';
     const lv = zoomLevelIdToIndex(forced);
     state.zoomLevel = lv;
     state.lastHomeZoomLevel = lv;

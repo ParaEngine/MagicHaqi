@@ -25,14 +25,12 @@ export function zoomLevelIdToIndex(value, fallback = 'planet') {
 // `window.__view` set before the app boots. Supported values:
 //   field | planet | pet | cell -> force the home view at that zoom level
 //   game                        -> force the minigames (mini-game) view
-export const FORCE_VIEW_IDS = ['planet', 'field', 'pet', 'cell', 'game', 'ops', 'encyclopedia'];
+export const FORCE_VIEW_IDS = ['planet', 'field', 'pet', 'cell', 'game', 'ops'];
 const FORCE_VIEW_ALIASES = {
     space: 'planet', planet: 'planet', field: 'field', pet: 'pet', cell: 'cell',
     game: 'game', games: 'game', minigame: 'game', minigames: 'game',
     // 运营控制台（开发者 / 一人公司兜底面板），仅 ?view=ops 进入
     ops: 'ops', console: 'ops', operator: 'ops',
-    // 动物园动物图鉴（?view=encyclopedia / ?view=tujian）
-    encyclopedia: 'encyclopedia', tujian: 'encyclopedia', zoo: 'encyclopedia',
 };
 
 export function normalizeForceViewId(value) {

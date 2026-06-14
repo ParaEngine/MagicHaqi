@@ -269,7 +269,6 @@ async function applyOfficialPlanet(planet, { persist = true, sourcePath = '' } =
     settings.temporaryHomePlanet = persist ? null : sourcePath || planet.id;
     settings.readonlyPlanet = planet.planet?.readonly !== false;
     settings.selfCare = planetSelfCareValue(planet);
-    settings.encyclopediaUrl = String(planet.encyclopediaUrl || '').trim();
     settings.planetStyle = {
         hue: Number(planet.planet?.hue) || 188,
         bodyBackground: String(planet.planet?.bodyBackground || '').trim(),
@@ -358,7 +357,6 @@ export async function applySettledOfficialPlanetFromProfile() {
         settings.appTitle = planet.appTitle || '';
         settings.readonlyPlanet = planet.planet?.readonly !== false;
         settings.selfCare = planetSelfCareValue(planet);
-        settings.encyclopediaUrl = String(planet.encyclopediaUrl || '').trim();
         settings.planetStyle = {
             hue: Number(planet.planet?.hue) || 188,
             bodyBackground: String(planet.planet?.bodyBackground || '').trim(),
@@ -393,7 +391,6 @@ async function restoreCustomPlanet() {
     settings.appTitle = '';
     settings.readonlyPlanet = false;
     settings.selfCare = 0;
-    settings.encyclopediaUrl = '';
     settings.planetStyle = null;
     delete settings.zoomOptions;
     await loadPlanetShopItems(null);

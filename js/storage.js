@@ -1617,57 +1617,6 @@ export async function markOnboardingCompleted(progressKey = '', mode = '') {
     return saveOnboardingProgress(progressKey, { completed: true, mode, completedAt: Date.now() });
 }
 
-// ========== 动物园图鉴学习/领养进度 ==========
-// 每颗带图鉴的星球一个独立文件：user/<planetId>.encyclopedia.json
-// 结构：{ version: 1, animals: { <animalId>: { learned, learnedAt, adopted, adoptedAt } } }
-function encyclopediaProgressPath(planetId = '') {
-    const safeId = safeLayoutPlanetId(planetId);
-    return PATHS.planetEncyclopedia(safeId || 'default');
-}
-
-function normalizeEncyclopediaProgress(raw) {
-    const data = raw && typeof raw === 'object' ? raw : {};
-    const animals = data.animals && typeof data.animals === 'object' ? data.animals : {};
-    const normalized = {};
-    Object.entries(animals).forEach(([id, entry]) => {
-        if (!id || !entry || typeof entry !== 'object') return;
-        normalized[id] = {
-            learned: !!entry.learned,
-            learnedAt: Number(entry.learnedAt) || 0,
-            adopted: !!entry.adopted,
-            adoptedAt: Number(entry.adoptedAt) || 0,
-        };
-    });
-    return { version: 1, animals: normalized };
-}
-
-/** 读取某颗星球的图鉴进度（learned / adopted 标记）。 */
-export async function loadEncyclopediaProgress(planetId = '') {
-    try {
-        const data = await readJSON(encyclopediaProgressPath(planetId), {});
-        return normalizeEncyclopediaProgress(data);
-    } catch (_) {
-        return normalizeEncyclopediaProgress(null);
-    }
-}
-
-/** 合并写入某颗星球某只动物的图鉴进度（patch: { learned?, adopted? }）。 */
-export async function saveEncyclopediaProgress(planetId = '', animalId = '', patch = {}) {
-    const id = String(animalId || '').trim();
-    if (!id) return null;
-    const path = encyclopediaProgressPath(planetId);
-    let data;
-    try { data = await readJSON(path, {}); } catch (_) { data = {}; }
-    const progress = normalizeEncyclopediaProgress(data);
-    const prev = progress.animals[id] || { learned: false, learnedAt: 0, adopted: false, adoptedAt: 0 };
-    const next = { ...prev };
-    if (patch.learned && !prev.learned) { next.learned = true; next.learnedAt = Date.now(); }
-    if (patch.adopted && !prev.adopted) { next.adopted = true; next.adoptedAt = Date.now(); }
-    progress.animals[id] = next;
-    await saveJSONNow(path, progress);
-    return progress;
-}
-
 /** 清除某个星球的新手指引完成进度，供开发调试时重新触发 onboarding。 */
 export async function clearOnboardingProgress(progressKey = '') {
     const path = onboardingLayoutsPath(progressKey);
