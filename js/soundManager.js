@@ -23,6 +23,7 @@ const FOOD_EAT_GAP_MS = 560;
 const BATH_CUE_GAP_MS = 900;
 const DEFAULT_BG_MUSIC_VOLUME = 0.36;
 const DEFAULT_BG_MUSIC_FADE_MS = 900;
+const BG_MUSIC_MUTED_STORAGE_KEY = 'haqiBgMusicMuted';
 
 let singletonInstance = null;
 
@@ -54,7 +55,7 @@ export default class SoundManager {
         this.lastFoodEatAt = 0;
         this.lastBathCueAt = 0;
         this.currentBgMusic = null;
-        this.bgMusicMuted = false;
+        this.bgMusicMuted = this._loadBgMusicMuted();
         this.bgMusicToken = 0;
         this.audioEngine = getSharedAudioEngine();
         singletonInstance = this;
@@ -185,6 +186,7 @@ export default class SoundManager {
 
     setBgMusicMuted(muted, { fadeMs = 260 } = {}) {
         this.bgMusicMuted = !!muted;
+        this._saveBgMusicMuted();
         const active = this.currentBgMusic;
         if (active?.audio) {
             if (!active.audio.paused && active.shouldPlay) {
@@ -198,6 +200,21 @@ export default class SoundManager {
 
     toggleBgMusicMuted(options = {}) {
         return this.setBgMusicMuted(!this.bgMusicMuted, options);
+    }
+
+    _loadBgMusicMuted() {
+        try {
+            const saved = localStorage.getItem(BG_MUSIC_MUTED_STORAGE_KEY);
+            return saved === 'true';
+        } catch (_) {
+            return false;
+        }
+    }
+
+    _saveBgMusicMuted() {
+        try {
+            localStorage.setItem(BG_MUSIC_MUTED_STORAGE_KEY, String(this.bgMusicMuted));
+        } catch (_) {}
     }
 
     createBgAudio(src) {

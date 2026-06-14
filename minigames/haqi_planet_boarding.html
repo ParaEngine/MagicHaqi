@@ -1,0 +1,1971 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+  <title>一颗蛋降落在你的夜晚</title>
+  <script src="https://cdn.keepwork.com/keepwork/cdn/tailwindcss@3.4.16.js"></script>
+  <style>
+    * { margin: 0; padding: 0; box-sizing: border-box; }
+    /* 与主游戏 zoom-space 层一致的宇宙渐变背景（见 css/planet.css） */
+    html, body {
+      width: 100%; height: 100%; overflow: hidden;
+      font-family: 'PingFang SC', 'Hiragino Sans GB', 'Microsoft YaHei', sans-serif;
+      background:
+        radial-gradient(ellipse at 77% 62%, rgba(40, 190, 255, 0.18) 0%, transparent 34%),
+        radial-gradient(ellipse at 24% 18%, rgba(179, 92, 255, 0.24) 0%, transparent 30%),
+        radial-gradient(ellipse at 42% 78%, rgba(255, 184, 91, 0.10) 0%, transparent 28%),
+        radial-gradient(ellipse at 50% 40%, #1a1e63 0%, #0a1137 48%, #020617 100%);
+      background-attachment: fixed;
+    }
+
+    /* ---- nebula glow layer (mirrors .space-bg::before) ---- */
+    #nebula {
+      position: fixed; inset: -18%; z-index: 0; pointer-events: none;
+      background:
+        radial-gradient(ellipse at 22% 38%, rgba(77, 221, 255, 0.20), transparent 32%),
+        radial-gradient(ellipse at 62% 18%, rgba(255, 222, 138, 0.14), transparent 26%),
+        radial-gradient(ellipse at 78% 74%, rgba(168, 112, 255, 0.22), transparent 34%),
+        radial-gradient(ellipse at 42% 58%, rgba(35, 252, 184, 0.08), transparent 30%);
+      filter: blur(14px);
+      animation: nebulaDrift 24s ease-in-out infinite alternate;
+    }
+    @keyframes nebulaDrift {
+      0% { transform: translate(0, 0) scale(1); }
+      100% { transform: translate(2%, -2%) scale(1.05); }
+    }
+
+    /* ---- star field ---- */
+    #starfield { position: fixed; inset: 0; z-index: 1; }
+    /* 星点配色与主游戏一致：白 / 金(hue44) / 青(hue190)，叠加 lighter 发光 */
+    .star { position: absolute; border-radius: 50%; mix-blend-mode: lighter; animation: twinkle var(--dur) ease-in-out infinite alternate; }
+    @keyframes twinkle { 0% { opacity: var(--o1); transform: scale(1); } 100% { opacity: var(--o2); transform: scale(1.35); } }
+
+    /* ---- floating egg ---- */
+    .egg-float { animation: eggFloat 3s ease-in-out infinite; }
+    @keyframes eggFloat { 0%,100% { transform: translateY(0) rotate(-2deg); } 50% { transform: translateY(-18px) rotate(2deg); } }
+
+    .egg-wobble { animation: eggWobble 0.5s ease-in-out; }
+    @keyframes eggWobble { 0% { transform: rotate(0); } 20% { transform: rotate(-12deg); } 40% { transform: rotate(10deg); } 60% { transform: rotate(-6deg); } 80% { transform: rotate(4deg); } 100% { transform: rotate(0); } }
+
+    .egg-glow { filter: drop-shadow(0 0 24px rgba(255,220,150,0.6)); }
+
+    /* ---- 星球缓慢自转：仅旋转陆地纹理层（高光/阴影固定不动）---- */
+    .mh-planet-spin { animation: mhPlanetSpin 48s linear infinite; }
+    @keyframes mhPlanetSpin { from { transform: rotate(0deg); } to { transform: rotate(360deg); } }
+
+    /* ---- 转场：蛋变小、身后星球变大（一小一大，同时进行）---- */
+    .push-layer {
+      position: absolute; inset: 0; z-index: 20;
+      display: flex; align-items: center; justify-content: center;
+      overflow: hidden; pointer-events: none;
+    }
+    .push-from, .push-to {
+      position: absolute; left: 50%; top: 50%;
+      display: flex; align-items: center; justify-content: center;
+      will-change: transform, opacity;
+    }
+    /* FROM = 前景的蛋：由正常大小逐渐缩小，露出身后的星球。停在前面（z 更高）。 */
+    .push-from {
+      z-index: 2;
+      transform: translate(-50%, -50%) scale(1);
+      animation: pushFromShrink var(--push-dur, 2s) cubic-bezier(.4, 0, .25, 1) forwards;
+    }
+    @keyframes pushFromShrink {
+      0%   { transform: translate(-50%, -50%) scale(1); opacity: 1; }
+      70%  { opacity: 1; }
+      100% { transform: translate(-50%, -50%) scale(var(--push-from-end, 0.18)); opacity: 0; }
+    }
+    /* TO = 蛋身后的星球：由很小逐渐变大，到正常大小。在后面（z 更低）。 */
+    .push-to {
+      z-index: 1;
+      transform: translate(-50%, -50%) scale(var(--push-to-start, 0.1));
+      opacity: 0;
+      animation: pushToGrow var(--push-dur, 2s) cubic-bezier(.22, .6, .25, 1) forwards;
+    }
+    @keyframes pushToGrow {
+      0%   { transform: translate(-50%, -50%) scale(var(--push-to-start, 0.1)); opacity: 0; }
+      25%  { opacity: 1; }
+      100% { transform: translate(-50%, -50%) scale(1); opacity: 1; }
+    }
+    /* 转场后新场景主体从小放大入场，承接"星球继续变大"的惯性。 */
+    @keyframes pushArrive {
+      0%   { transform: scale(0.7); opacity: 0; }
+      100% { transform: scale(1); opacity: 1; }
+    }
+    /* 镜头落定后，UI 面板从底部飞入；离场时飞出底部。不重建视觉。 */
+    .push-ui-panel {
+      position: absolute;
+      left: 0; right: 0; bottom: 0;
+      z-index: 5;
+      display: flex; flex-direction: column; align-items: center;
+      padding: 0 24px 7%;
+      gap: 10px;
+      opacity: 0;
+      transform: translateY(120%);
+      transition: opacity 0.45s ease, transform 0.55s cubic-bezier(.22,1,.36,1);
+    }
+    .push-ui-panel.is-in { opacity: 1; transform: translateY(0); }
+
+    /* ---- hatch animation ---- */
+    .hatch-crack { animation: hatchShake 0.8s ease-in-out; }
+    @keyframes hatchShake {
+      0% { transform: rotate(0) scale(1); } 15% { transform: rotate(-8deg) scale(1.02); }
+      30% { transform: rotate(6deg) scale(1.04); } 45% { transform: rotate(-4deg) scale(1.06); }
+      60% { transform: rotate(3deg) scale(1.08); } 75% { transform: rotate(-2deg) scale(1.05); }
+      100% { transform: rotate(0) scale(1); }
+    }
+
+    .hatch-burst { animation: hatchBurst 1.2s ease-out forwards; }
+    @keyframes hatchBurst {
+      0% { transform: scale(1); opacity: 1; filter: brightness(1); }
+      40% { transform: scale(1.3); opacity: 1; filter: brightness(2.5); }
+      100% { transform: scale(0.2); opacity: 0; filter: brightness(4); }
+    }
+
+    .pet-appear { animation: petAppear 1s ease-out forwards; }
+    @keyframes petAppear {
+      0% { transform: scale(0) rotate(-10deg); opacity: 0; filter: brightness(3); }
+      60% { transform: scale(1.15) rotate(3deg); opacity: 1; filter: brightness(1.5); }
+      100% { transform: scale(1) rotate(0); opacity: 1; filter: brightness(1); }
+    }
+
+    /* ---- scene transitions ---- */
+    .scene-enter { animation: sceneIn 0.8s ease-out forwards; }
+    @keyframes sceneIn { 0% { opacity: 0; transform: translateY(30px); } 100% { opacity: 1; transform: translateY(0); } }
+
+    .scene-exit { animation: sceneOut 0.5s ease-in forwards; }
+    @keyframes sceneOut { 0% { opacity: 1; transform: translateY(0); } 100% { opacity: 0; transform: translateY(-20px); } }
+
+    /* ---- typewriter cursor ---- */
+    .typewriter-cursor::after { content: '▍'; animation: blink 0.8s step-end infinite; color: rgba(255,220,150,0.8); }
+    @keyframes blink { 0%,100% { opacity: 1; } 50% { opacity: 0; } }
+
+    /* ---- option buttons ---- */
+    .opt-btn {
+      transition: all 0.3s ease;
+      border: 1.5px solid rgba(255,255,255,0.15);
+      backdrop-filter: blur(8px);
+    }
+    .opt-btn:hover, .opt-btn:active {
+      border-color: rgba(255,220,150,0.6);
+      background: rgba(255,220,150,0.12) !important;
+      transform: scale(1.04);
+      box-shadow: 0 0 20px rgba(255,220,150,0.2);
+    }
+    .opt-btn.selected {
+      border-color: rgba(255,220,150,0.8);
+      background: rgba(255,220,150,0.18) !important;
+      box-shadow: 0 0 24px rgba(255,220,150,0.3);
+    }
+
+    /* ---- input ---- */
+    .planet-input {
+      background: rgba(255,255,255,0.06);
+      border: 1.5px solid rgba(255,220,150,0.3);
+      color: #ffdc96;
+      caret-color: #ffdc96;
+      outline: none;
+      transition: all 0.3s;
+    }
+    .planet-input:focus {
+      border-color: rgba(255,220,150,0.7);
+      box-shadow: 0 0 20px rgba(255,220,150,0.15);
+    }
+    .planet-input::placeholder { color: rgba(255,220,150,0.3); }
+
+    /* ---- confirm button ---- */
+    .confirm-btn {
+      background: linear-gradient(135deg, rgba(255,220,150,0.25), rgba(255,180,100,0.2));
+      border: 1.5px solid rgba(255,220,150,0.5);
+      color: #ffdc96;
+      transition: all 0.3s;
+    }
+    .confirm-btn:hover, .confirm-btn:active {
+      background: linear-gradient(135deg, rgba(255,220,150,0.4), rgba(255,180,100,0.35));
+      box-shadow: 0 0 24px rgba(255,220,150,0.3);
+      transform: scale(1.03);
+    }
+    .confirm-btn:disabled {
+      opacity: 0.35;
+      pointer-events: none;
+    }
+
+    /* ---- touch ripple ---- */
+    .touch-ripple {
+      position: absolute; border-radius: 50%;
+      border: 2px solid rgba(255,220,150,0.6);
+      animation: rippleOut 1s ease-out forwards;
+      pointer-events: none;
+    }
+    @keyframes rippleOut {
+      0% { width: 0; height: 0; opacity: 1; }
+      100% { width: 200px; height: 200px; opacity: 0; margin-left: -100px; margin-top: -100px; }
+    }
+
+    /* ---- warmth glow on touch ---- */
+    .warmth-glow {
+      animation: warmthPulse 1.5s ease-in-out;
+    }
+    @keyframes warmthPulse {
+      0% { filter: drop-shadow(0 0 12px rgba(255,180,100,0.3)); }
+      50% { filter: drop-shadow(0 0 40px rgba(255,180,100,0.8)); }
+      100% { filter: drop-shadow(0 0 20px rgba(255,180,100,0.5)); }
+    }
+
+    /* ---- DNA helix ---- */
+    .dna-strand { animation: dnaRotate 4s linear infinite; }
+    @keyframes dnaRotate { 0% { transform: rotateY(0); } 100% { transform: rotateY(360deg); } }
+
+    /* ---- memorial card：底色取自主游戏宇宙渐变（#1a1e63 / #0a1137 / #020617） ---- */
+    .card-shimmer {
+      background:
+        radial-gradient(ellipse at 22% 16%, rgba(168, 112, 255, 0.18), transparent 40%),
+        radial-gradient(ellipse at 80% 84%, rgba(77, 221, 255, 0.14), transparent 42%),
+        linear-gradient(135deg, #1a1e63 0%, #0a1137 45%, #14163f 60%, #0a1137 100%);
+      background-size: 100% 100%, 100% 100%, 200% 200%;
+      animation: shimmer 7s ease-in-out infinite;
+    }
+    @keyframes shimmer {
+      0%,100% { background-position: 0% 0%, 100% 100%, 0% 50%; }
+      50% { background-position: 0% 0%, 100% 100%, 100% 50%; }
+    }
+
+    /* ---- particles ---- */
+    .particle {
+      position: absolute; border-radius: 50%; pointer-events: none;
+      animation: particleFly var(--pdur) ease-out forwards;
+    }
+    @keyframes particleFly {
+      0% { opacity: 1; transform: translate(0,0) scale(1); }
+      100% { opacity: 0; transform: translate(var(--px), var(--py)) scale(0); }
+    }
+
+    /* ---- progress dots ---- */
+    .progress-dot { transition: all 0.4s ease; }
+    .progress-dot.active { background: rgba(255,220,150,0.9); box-shadow: 0 0 8px rgba(255,220,150,0.5); }
+    .progress-dot.done { background: rgba(255,220,150,0.4); }
+
+    /* ---- scrollbar hide ---- */
+    ::-webkit-scrollbar { display: none; }
+
+    /* ---- food bounce ---- */
+    .food-bounce { animation: foodBounce 0.6s ease-out; }
+    @keyframes foodBounce {
+      0% { transform: scale(0.5) translateY(20px); opacity: 0; }
+      60% { transform: scale(1.15) translateY(-8px); opacity: 1; }
+      100% { transform: scale(1) translateY(0); opacity: 1; }
+    }
+
+    .food-absorb { animation: foodAbsorb 0.8s ease-in forwards; }
+    @keyframes foodAbsorb {
+      0% { transform: scale(1); opacity: 1; }
+      50% { transform: scale(0.6) translateY(-30px); opacity: 0.6; }
+      100% { transform: scale(0) translateY(-60px); opacity: 0; }
+    }
+  </style>
+</head>
+
+<body>
+  <!-- universe background (consistent with main game space view) -->
+  <div id="nebula"></div>
+  <!-- star field background -->
+  <div id="starfield"></div>
+
+  <!-- progress dots -->
+  <div id="progressBar" class="fixed top-4 left-1/2 -translate-x-1/2 z-50 flex gap-2 items-center" style="display:none;">
+    <div class="progress-dot w-2 h-2 rounded-full bg-white/20" data-scene="1"></div>
+    <div class="progress-dot w-2 h-2 rounded-full bg-white/20" data-scene="2"></div>
+    <div class="progress-dot w-2 h-2 rounded-full bg-white/20" data-scene="3"></div>
+    <div class="progress-dot w-2 h-2 rounded-full bg-white/20" data-scene="4"></div>
+    <div class="progress-dot w-2 h-2 rounded-full bg-white/20" data-scene="5"></div>
+    <div class="progress-dot w-2 h-2 rounded-full bg-white/20" data-scene="6"></div>
+    <div class="progress-dot w-2 h-2 rounded-full bg-white/20" data-scene="7"></div>
+  </div>
+
+  <!-- main scene container -->
+  <div id="sceneContainer" class="fixed inset-0 z-10 flex items-center justify-center">
+  </div>
+
+  <!-- 音乐开关（右上角）：宇宙氛围音乐的静音 / 开启 -->
+  <button id="musicToggle" class="fixed top-3 right-3 z-50 w-9 h-9 rounded-full flex items-center justify-center text-base"
+          style="background:rgba(255,255,255,0.06);border:1px solid rgba(255,220,150,0.25);color:#ffdc96;backdrop-filter:blur(6px);transition:all .25s;"
+          title="音乐开关" aria-label="music toggle">🔊</button>
+</body>
+
+<script>
+game_config = {
+  difficulty: "normal",
+  scenes: [
+    { id: 1, name: "深夜信号", type: "narration" },
+    { id: 2, name: "给星球命名", type: "input" },
+    { id: 3, name: "选择性格", type: "choice" },
+    { id: 4, name: "第一次喂食", type: "choice" },
+    { id: 5, name: "第一次触碰", type: "interaction" },
+    { id: 6, name: "看见DNA", type: "choice" },
+    { id: 7, name: "第一次破壳", type: "narration" }
+  ],
+  // 6 个性格各自决定一种元素属性（对应 dna.js 的 ELEMENTAL_ATTRIBUTES）。
+  personalities: ["温柔", "元气", "傲娇", "佛系", "好奇", "神秘"],
+  // 性格 → 元素属性映射：['自然', '火', '冰', '生命', '暗', '雷']
+  //   温柔 = 生命（温暖治愈）
+  //   元气 = 雷  （活泼带电的能量）
+  //   傲娇 = 火  （一点就着的火气）
+  //   佛系 = 冰  （清冷淡定）
+  //   好奇 = 自然（爱探索、亲近自然）
+  //   神秘 = 暗  （藏着秘密的暗影）
+  personalityToAttribute: {
+    "温柔": "生命",
+    "元气": "雷",
+    "傲娇": "火",
+    "佛系": "冰",
+    "好奇": "自然",
+    "神秘": "暗"
+  },
+  // 食性：宠物分杂食 / 肉食 / 素食，各用一个代表食物。
+  foods: [
+    { id: "omnivore", diet: "omnivore", name: "杂食", desc: "什么都吃", emoji: "🍪" },
+    { id: "carnivore", diet: "carnivore", name: "肉食", desc: "爱吃肉", emoji: "🍖" },
+    { id: "herbivore", diet: "herbivore", name: "素食", desc: "只吃菜", emoji: "🥬" }
+  ],
+  // 许愿 = 选择宠物的血统倾向，对应 dna.js 的 ELEMENTS（'陆地','水系','天空'）+ 随机。
+  // element 字段供父级游戏据此偏置蛋的 DNA：land=陆地 / water=水系 / sky=天空 / random=随机。
+  wishes: [
+    { id: "sky", element: "sky", textKey: "wish_sky", emoji: "🕊️" },
+    { id: "land", element: "land", textKey: "wish_land", emoji: "🌿" },
+    { id: "water", element: "water", textKey: "wish_water", emoji: "💧" },
+    { id: "random", element: "random", textKey: "wish_random", emoji: "✨" }
+  ],
+  firstSentences: {
+    "温柔": "你好，{ownerName}。我刚刚来到这个星球，但好像已经认识你很久了。",
+    "元气": "哇！这里就是我们的星球吗？我宣布，从今天开始，我负责可爱，你负责来看我！",
+    "傲娇": "先说好，我不是因为喜欢你才破壳的。只是……这里还不赖。",
+    "佛系": "嗯……这里挺舒服的。我就慢慢待着吧，你也别急。",
+    "好奇": "这是什么？那是什么？你就是我的主人吗？你叫什么？你几岁？你吃什么？",
+    "神秘": "我身上藏着一点连自己都看不清的影子……不过有你在，好像没那么怕黑了。"
+  },
+  // 随机名字素材：真正的新用户（无星球名 / 昵称）可一键获得有趣的默认名。
+  randomNames: {
+    zhCN: {
+      // 星球名 = 形容词 + 名词 组合，营造梦幻星球感。
+      planetAdj: ["微光", "梦境", "甜橙", "薄荷", "星尘", "云絮", "晚风", "蜜糖", "极光", "棉花", "暖阳", "银河", "夜莺", "琥珀", "雪松"],
+      planetNoun: ["星球", "小星", "之星", "乐园", "星岛", "星屿", "星海", "星城", "之境", "星原"],
+      // 称呼 = 单词亲昵称呼。
+      owner: ["小太阳", "小月亮", "船长", "星之子", "守望者", "小光点", "旅人", "造梦师", "小行星", "拓荒者", "暖暖", "小星探", "守护者", "追光人"]
+    },
+    enUS: {
+      planetAdj: ["Glimmer", "Dreamy", "Mellow", "Minty", "Stardust", "Cloudy", "Twilight", "Honey", "Aurora", "Cotton", "Sunny", "Cosmic", "Lyric", "Amber", "Cedar"],
+      planetNoun: ["Planet", "Star", "Haven", "Isle", "World", "Orbit", "Realm", "Cove", "Reach", "Field"],
+      owner: ["Sunbeam", "Moonling", "Captain", "Starchild", "Watcher", "Spark", "Wanderer", "Dreamweaver", "Comet", "Pioneer", "Sunny", "Scout", "Guardian", "Lightseeker"]
+    }
+  }
+};
+</script>
+
+<script>
+art_assets = [];
+</script>
+
+<script defer>
+(function () {
+  // ---- i18n ----
+  const I18N = {
+    zhCN: {
+      title: '一颗蛋降落在你的夜晚',
+      scene1Narration: '今天，宇宙没有发生什么大事。\n只是有一颗小小的蛋，偏偏降落到了你这里。',
+      scene1Hint: '点击漂浮的蛋',
+      scene2PetSays: '这里……是哪里？\n我好像听见了你的声音。',
+      scene2Prompt: '给这个星球起个名字吧',
+      scene2RenamePrompt: '这颗星球，你想叫它什么名字？',
+      scene2RenameHint: '在新生命眼里，这里是全新的。你可以沿用旧名，也可以重新命名。',
+      scene2RandomHint: '已经帮你想好了一个名字，喜欢就直接用，或点 🎲 换一个。',
+      scene2Placeholder: '输入星球的名字……',
+      scene2Confirm: '点亮星球',
+      rerollName: '换一个名字',
+      scene2Feedback: '从今天起，这里叫「{name}」。\n宇宙地图上，多了一颗只有你能点亮的星球。',
+      sceneOwnerPetSays: '那……我应该怎么称呼你呢？\n我想记住你的名字。',
+      sceneOwnerPrompt: '你希望它怎么称呼你？',
+      sceneOwnerPlaceholder: '输入你的名字 / 昵称……',
+      sceneOwnerHint: '这是宠物对你的专属称呼，之后也可以更改。',
+      sceneOwnerRandomHint: '先用这个称呼也可以，点 🎲 能换一个，之后还能改。',
+      sceneOwnerConfirm: '就这么叫我',
+      scene3PetSays: '在我破壳之前……\n你觉得我会是什么样的呢？',
+      scene3PersonalityPrompt: '它看起来像是什么样的性格？',
+      scene3Confirm: '就是它了',
+      scene4Narration: '第一口食物，会决定它的食性，被蛋悄悄记住。',
+      scene4Prompt: '你想先喂它尝尝什么？',
+      diet_omnivore: '杂食',
+      diet_carnivore: '肉食',
+      diet_herbivore: '素食',
+      dietDesc_omnivore: '什么都吃',
+      dietDesc_carnivore: '爱吃肉',
+      dietDesc_herbivore: '只吃菜',
+      scene5PetSays: '你可以碰碰我吗？\n我想确认，这不是梦。',
+      scene5Hint: '轻轻点击蛋壳',
+      scene5Touch1: '蛋壳变暖了……',
+      scene5Touch2: '它好像轻轻动了一下。',
+      scene5Touch3: '它认得你了，主人。',
+      scene5Feedback: '蛋壳变暖了。亲密度增加了一点点。\n但更重要的是，它开始认得你了。',
+      scene6Narration: '我不是被设定好的。\n我会记住吃过的东西、去过的地方，\n也会因为有你陪着，慢慢变得不一样。',
+      scene6Prompt: '在它破壳之前，许一个愿望吧',
+      wish_sky: '愿它有一天能飞',
+      wish_land: '愿它脚下总有归处',
+      wish_water: '愿它温柔如水',
+      wish_random: '愿它成为它自己',
+      scene7Hatching: '蛋壳好像要裂开了……',
+      scene7Calling: '主人，快来找我吧！',
+      scene8Title: '领养纪念卡',
+      scene8PlanetLabel: '星球',
+      scene8PetLabel: '宠物',
+      scene8BirthdayLabel: '生日',
+      scene8FoodLabel: '食性',
+      scene8PersonalityLabel: '性格',
+      scene8WishLabel: '主人的愿望',
+      scene8FirstWordsLabel: '第一句话',
+      scene8Footer: '在某一天，{planet} 星球被点亮。\n一颗蛋记住了你的声音。',
+      scene8Save: '保存纪念卡',
+      scene8Enter: '进入星球',
+      nextBtn: '继续',
+      skipBtn: '跳过',
+      // 性格标签（内部以中文为键，这里仅作展示文案）
+      pers_温柔: '温柔',
+      pers_元气: '元气',
+      pers_傲娇: '傲娇',
+      pers_佛系: '佛系',
+      pers_好奇: '好奇',
+      pers_神秘: '神秘',
+      // 宠物第一句话（按性格，{ownerName} 会被替换为称呼）
+      firstSentence_温柔: '你好，{ownerName}。我刚刚来到这个星球，但好像已经认识你很久了。',
+      firstSentence_元气: '哇！这里就是我们的星球吗？我宣布，从今天开始，我负责可爱，你负责来看我！',
+      firstSentence_傲娇: '先说好，我不是因为喜欢你才破壳的。只是……这里还不赖。',
+      firstSentence_佛系: '嗯……这里挺舒服的。我就慢慢待着吧，你也别急。',
+      firstSentence_好奇: '这是什么？那是什么？你就是我的主人吗？你叫什么？你几岁？你吃什么？',
+      firstSentence_神秘: '我身上藏着一点连自己都看不清的影子……不过有你在，好像没那么怕黑了。',
+    },
+    enUS: {
+      title: 'An Egg Landed on Your Night',
+      scene1Narration: 'Today, nothing big happened in the universe.\nJust a tiny egg that happened to land right here, with you.',
+      scene1Hint: 'Tap the floating egg',
+      scene2PetSays: 'Where... is this?\nI think I heard your voice.',
+      scene2Prompt: 'Give this planet a name',
+      scene2RenamePrompt: 'What would you like to call this planet?',
+      scene2RenameHint: 'To a newborn, everything here is brand new. Keep the old name, or rename it.',
+      scene2RandomHint: 'We picked a name for you — keep it, or tap 🎲 for another.',
+      scene2Placeholder: 'Enter planet name...',
+      scene2Confirm: 'Light Up Planet',
+      rerollName: 'Shuffle name',
+      scene2Feedback: 'From today, this place is called "{name}".\nOn the universe map, one more star only you can light up.',
+      sceneOwnerPetSays: 'So... what should I call you?\nI want to remember your name.',
+      sceneOwnerPrompt: 'What would you like it to call you?',
+      sceneOwnerPlaceholder: 'Enter your name / nickname...',
+      sceneOwnerHint: 'This is how your pet will address you. You can change it later.',
+      sceneOwnerRandomHint: 'Use this for now, tap 🎲 for another, or change it anytime.',
+      sceneOwnerConfirm: 'Call Me This',
+      scene3PetSays: 'Before I hatch...\nwhat do you think I\'ll be like?',
+      scene3PersonalityPrompt: 'What kind of personality does it seem to have?',
+      scene3Confirm: 'That\'s the one',
+      scene4Narration: 'The first bite decides its diet, quietly remembered by the egg.',
+      scene4Prompt: 'What would you like to feed it first?',
+      diet_omnivore: 'Omnivore',
+      diet_carnivore: 'Carnivore',
+      diet_herbivore: 'Herbivore',
+      dietDesc_omnivore: 'Eats anything',
+      dietDesc_carnivore: 'Loves meat',
+      dietDesc_herbivore: 'Greens only',
+      scene5PetSays: 'Can you touch me?\nI want to make sure this isn\'t a dream.',
+      scene5Hint: 'Gently tap the eggshell',
+      scene5Touch1: 'The eggshell grew warm...',
+      scene5Touch2: 'It seems to have stirred a little.',
+      scene5Touch3: 'It recognizes you now.',
+      scene5Feedback: 'The eggshell grew warm. Intimacy increased a little.\nBut more importantly, it started to recognize you.',
+      scene6Narration: "I'm not pre-programmed.\nI'll remember what I eat and where I go,\nand slowly become a different me, because you're with me.",
+      scene6Prompt: 'Before it hatches, make a wish',
+      wish_sky: 'May it one day take flight',
+      wish_land: 'May it always find its way home',
+      wish_water: 'May it stay gentle as water',
+      wish_random: 'May it become its own self',
+      scene7Hatching: 'The shell seems about to crack...',
+      scene7Calling: 'Come find me, my friend!',
+      scene8Title: 'Adoption Memorial Card',
+      scene8PlanetLabel: 'Planet',
+      scene8PetLabel: 'Pet',
+      scene8BirthdayLabel: 'Birthday',
+      scene8FoodLabel: 'Diet',
+      scene8PersonalityLabel: 'Personality',
+      scene8WishLabel: 'Owner\'s Wish',
+      scene8FirstWordsLabel: 'First Words',
+      scene8Footer: 'On a certain day, planet {planet} was lit up.\nAn egg remembered your voice.',
+      scene8Save: 'Save Card',
+      scene8Enter: 'Enter Planet',
+      nextBtn: 'Continue',
+      skipBtn: 'Skip',
+      // Personality labels (keyed by the internal Chinese id, display text only)
+      pers_温柔: 'Gentle',
+      pers_元气: 'Bubbly',
+      pers_傲娇: 'Tsundere',
+      pers_佛系: 'Easygoing',
+      pers_好奇: 'Curious',
+      pers_神秘: 'Mysterious',
+      // Pet's first words (by personality, {ownerName} is replaced with the nickname)
+      firstSentence_温柔: 'Hello, {ownerName}. I just arrived on this planet, but it feels like I\'ve known you for a long time.',
+      firstSentence_元气: 'Wow! Is this our planet? I hereby declare: from today on, I\'ll be in charge of being adorable, and you\'ll be in charge of visiting me!',
+      firstSentence_傲娇: 'Just so we\'re clear, I didn\'t hatch because I like you. It\'s just... this place isn\'t so bad.',
+      firstSentence_佛系: 'Mmm... it\'s pretty cozy here. I\'ll just take my time. No need to rush, okay?',
+      firstSentence_好奇: 'What\'s this? What\'s that? Are you my owner? What\'s your name? How old are you? What do you eat?',
+      firstSentence_神秘: 'There\'s a shadow within me that even I can\'t quite make out... but with you here, the dark doesn\'t feel so scary.',
+    },
+  };
+
+  function detectLang() {
+    try {
+      const params = new URLSearchParams(window.location.search);
+      const lang = params.get('lang');
+      if (lang && I18N[lang]) return lang;
+    } catch (_) {}
+    return 'zhCN';
+  }
+  const LANG = detectLang();
+  const L = I18N[LANG];
+  function t(key, vars) {
+    let str = L[key] || I18N.zhCN[key] || key;
+    if (vars) str = str.replace(/\{(\w+)\}/g, (m, n) => vars[n] != null ? String(vars[n]) : m);
+    return str;
+  }
+  try { document.documentElement.setAttribute('lang', LANG === 'enUS' ? 'en' : 'zh-CN'); } catch (_) {}
+  try { document.title = t('title'); } catch (_) {}
+
+  // ---- state ----
+  const state = {
+    currentScene: 0,
+    planetName: '',
+    petName: '',
+    personality: '',
+    elementalAttribute: '',   // 性格决定的元素属性（自然 / 火 / 冰 / 生命 / 暗 / 雷）
+    firstFood: null,
+    wish: null,
+    firstSentence: '',
+    birthday: '',
+    touchCount: 0,
+    gameStarted: false,
+    // ---- user profile (from parent view_minigames) ----
+    ownerNickname: '',     // 用户希望被宠物称呼的名字（默认取账号昵称）
+    profileUsername: '',
+    profileGender: '',
+    profileRequestId: '',
+    profileLoaded: false,
+    // 真正的新用户：账号既无星球名也无昵称。此时主动给随机默认名，降低输入门槛。
+    isNewPlanet: true,    // 账号无星球名
+    isNewOwner: true,     // 账号无昵称
+  };
+
+  // ---- helpers ----
+  function post(type, data = {}) {
+    try { window.parent.postMessage({ type, data }, '*'); } catch (_) {}
+  }
+
+  // ======== 宇宙氛围音乐（Web Audio 程序化合成，无需外部文件）========
+  // 风格：没有任何持续底噪 —— 只有偶尔、极轻的钟铃音，像从遥远星辰传来的回声。
+  // 浏览器要求用户手势后才能播放音频，因此在首次点击（蛋）时启动。
+  const Music = (function () {
+    let ctx = null;          // AudioContext
+    let master = null;       // 总输出增益
+    let echoSend = null;     // 远星回声（延迟）发送节点
+    let started = false;     // 是否已启动
+    let echoTimer = null;    // 星辰回声定时器
+    let muted = false;
+
+    // MIDI 音高 → 频率（A4 = 69 = 440Hz）。
+    function midiToFreq(m) { return 440 * Math.pow(2, (m - 69) / 12); }
+
+    // 确保 AudioContext 存在并已 resume（须在用户手势后调用）。
+    function ensureCtx() {
+      if (!ctx) {
+        const AC = window.AudioContext || window.webkitAudioContext;
+        if (!AC) return null;
+        ctx = new AC();
+        master = ctx.createGain();
+        // 整体很安静：作为"遥远"的回声，总音量压低。
+        master.gain.value = muted ? 0 : 0.0001;
+        master.connect(ctx.destination);
+        const now = ctx.currentTime;
+        master.gain.cancelScheduledValues(now);
+        master.gain.setValueAtTime(master.gain.value, now);
+        master.gain.linearRampToValueAtTime(muted ? 0 : 0.32, now + 2.5);
+
+        // ---- 远星回声：长延迟 + 反馈 + 低通，让每个音像在虚空里反复回荡后渐隐 ----
+        echoSend = ctx.createGain();
+        echoSend.gain.value = 1;
+        const delay = ctx.createDelay(2.0);
+        delay.delayTime.value = 0.42;
+        const fb = ctx.createGain();
+        fb.gain.value = 0.55;                 // 多次回声逐渐衰减
+        const echoLP = ctx.createBiquadFilter();
+        echoLP.type = 'lowpass';
+        echoLP.frequency.value = 1800;        // 回声越远越闷
+        echoSend.connect(delay);
+        delay.connect(echoLP);
+        echoLP.connect(fb);
+        fb.connect(delay);                    // 反馈回路
+        echoLP.connect(master);               // 回声进入总线
+      }
+      if (ctx.state === 'suspended') { ctx.resume().catch(() => {}); }
+      return ctx;
+    }
+
+    // ---- 一颗远星的回声：极轻的纯正弦钟音，缓起、长衰减，并送入回声延迟 ----
+    // 五声音阶，偏高音区，听起来纤细、遥远。
+    const PENTA = [72, 74, 76, 79, 81, 84, 86, 88];
+    function star(midi, when, vel) {
+      if (!ctx) return;
+      const t0 = when != null ? when : ctx.currentTime;
+      const osc = ctx.createOscillator();
+      osc.type = 'sine';                       // 纯净，无谐波杂音
+      osc.frequency.value = midiToFreq(midi);
+
+      const g = ctx.createGain();
+      const peak = (vel != null ? vel : 0.05); // 很轻
+      g.gain.setValueAtTime(0.0001, t0);
+      g.gain.linearRampToValueAtTime(peak, t0 + 0.08);            // 柔和淡入
+      g.gain.exponentialRampToValueAtTime(0.0001, t0 + 3.6);      // 很长的余韵
+
+      osc.connect(g);
+      g.connect(master);                       // 直达声（很轻）
+      if (echoSend) g.connect(echoSend);       // 同时送入远星回声
+
+      osc.start(t0);
+      osc.stop(t0 + 3.8);
+    }
+
+    // 偶尔、随机地点亮一颗远星回声 —— 间隔很长、很稀疏，毫不喧闹。
+    function scheduleEchoes() {
+      if (echoTimer) clearTimeout(echoTimer);
+      function step() {
+        if (ctx && !muted && Math.random() < 0.85) {
+          const midi = PENTA[Math.floor(Math.random() * PENTA.length)];
+          star(midi, ctx.currentTime, 0.035 + Math.random() * 0.03);
+        }
+        // 4 ~ 9 秒才有一声，像偶尔传来的遥远信号。
+        echoTimer = setTimeout(step, 4000 + Math.random() * 5000);
+      }
+      echoTimer = setTimeout(step, 2500 + Math.random() * 2500);
+    }
+
+    // 公开：启动（首次用户手势调用）。无持续底噪，仅开始稀疏的星辰回声。
+    function start() {
+      if (started) { ensureCtx(); return; }
+      if (!ensureCtx()) return;
+      started = true;
+      scheduleEchoes();
+    }
+
+    // 公开：UI 飞入时——两三声很轻的远星回声，似有若无。
+    function flyIn() {
+      if (!ensureCtx() || muted) return;
+      const base = ctx.currentTime + 0.02;
+      const notes = [79, 84, 88]; // 高音区上行，纤细
+      notes.forEach((m, i) => star(m, base + i * 0.16, 0.05 - i * 0.01));
+    }
+
+    // 公开：破壳 / 庆祝——稍密一点的远星回声，但依旧轻柔。
+    function sparkle() {
+      if (!ensureCtx() || muted) return;
+      const base = ctx.currentTime + 0.02;
+      const notes = [76, 81, 84, 88, 91];
+      notes.forEach((m, i) => star(m, base + i * 0.12, 0.055 - i * 0.008));
+    }
+
+    // ---- 点击专用回声：与氛围星音不同——更清脆、更短促的"水滴/信号"声，带快速下滑音 ----
+    function clickBlip(rootMidi, vel) {
+      if (!ctx) return;
+      const t0 = ctx.currentTime + 0.005;
+      const osc = ctx.createOscillator();
+      osc.type = 'triangle';                   // 比纯正弦更有"质感"，区别于氛围星音
+      const f0 = midiToFreq(rootMidi);
+      osc.frequency.setValueAtTime(f0 * 1.5, t0);            // 起音偏高
+      osc.frequency.exponentialRampToValueAtTime(f0, t0 + 0.12); // 快速下滑，像一颗信号落定
+
+      const g = ctx.createGain();
+      const peak = (vel != null ? vel : 0.09);
+      g.gain.setValueAtTime(0.0001, t0);
+      g.gain.linearRampToValueAtTime(peak, t0 + 0.012);      // 干脆的起音
+      g.gain.exponentialRampToValueAtTime(0.0001, t0 + 0.9); // 短促衰减（比星音短得多）
+
+      osc.connect(g);
+      g.connect(master);                       // 直达声更清晰
+      if (echoSend) g.connect(echoSend);       // 仍送入回声，余韵飘向远方
+
+      osc.start(t0);
+      osc.stop(t0 + 1.0);
+    }
+
+    // 公开：点击蛋的回声（较低、较实，"咚—"带回响）。
+    function clickEgg() {
+      if (!ensureCtx() || muted) return;
+      clickBlip(67, 0.11);     // G4 左右
+    }
+
+    // 公开：点击按钮 / 选项的回声（较高、轻快，"叮—"带回响）。
+    function clickButton() {
+      if (!ensureCtx() || muted) return;
+      clickBlip(74 + Math.floor(Math.random() * 4), 0.08); // 高音区轻微随机，避免单调
+    }
+
+    function setMuted(v) {
+      muted = !!v;
+      if (master && ctx) {
+        const now = ctx.currentTime;
+        master.gain.cancelScheduledValues(now);
+        master.gain.setValueAtTime(master.gain.value, now);
+        master.gain.linearRampToValueAtTime(muted ? 0 : 0.32, now + 0.6);
+      }
+    }
+    function isMuted() { return muted; }
+
+    return { start, flyIn, sparkle, clickEgg, clickButton, setMuted, isMuted };
+  })();
+
+  // ---- 随机名字生成（仅给真正的新用户做默认建议） ----
+  function pick(arr) { return arr[Math.floor(Math.random() * arr.length)]; }
+
+  function randomPlanetName() {
+    const pool = (game_config.randomNames && game_config.randomNames[LANG]) || game_config.randomNames.zhCN;
+    const adj = pick(pool.planetAdj);
+    const noun = pick(pool.planetNoun);
+    return LANG === 'enUS' ? `${adj} ${noun}` : `${adj}${noun}`;
+  }
+
+  function randomOwnerName() {
+    const pool = (game_config.randomNames && game_config.randomNames[LANG]) || game_config.randomNames.zhCN;
+    return pick(pool.owner);
+  }
+
+  // 向父级 view_minigames 请求用户档案：星球名、昵称、性别等。
+  function requestUserProfile() {
+    try {
+      const requestId = `profile_boarding_${Date.now()}`;
+      state.profileRequestId = requestId;
+      window.parent.postMessage({ type: 'haqi_get_user_profile', requestId }, '*');
+    } catch (_) {}
+  }
+
+  // 应用父级返回的用户档案，用于预填星球名 / 称呼。
+  function applyUserProfile(data) {
+    if (!data || typeof data !== 'object') return;
+    state.profileLoaded = true;
+    const accountPlanet = (typeof data.planetName === 'string') ? data.planetName.trim() : '';
+    const accountNick = (typeof data.nickname === 'string') ? data.nickname.trim() : '';
+    // 记录是否为真正的新用户（账号无星球名 / 无昵称）。
+    state.isNewPlanet = !accountPlanet;
+    state.isNewOwner = !accountNick;
+    // 仅当本局尚未让用户改名时，用账号档案做默认值。
+    if (!state.planetName && accountPlanet) state.planetName = accountPlanet;
+    if (!state.ownerNickname && accountNick) state.ownerNickname = accountNick;
+    // 新用户：没有任何已有名字时，主动生成一个随机默认名作为建议。
+    if (!state.planetName) state.planetName = randomPlanetName();
+    if (!state.ownerNickname) state.ownerNickname = randomOwnerName();
+    if (typeof data.username === 'string') state.profileUsername = data.username;
+    if (typeof data.gender === 'string') state.profileGender = data.gender;
+    // 若当前停留在星球命名 / 称呼场景，刷新输入框默认值。
+    prefillProfileInputs();
+  }
+
+  // 把已知的星球名 / 称呼回填到当前可见的输入框（若存在）。
+  // 当输入框为空，或仍是未编辑的随机建议（data-random）且账号有真实名字时，覆盖之。
+  function fillInputValue(el, value, stillRandom) {
+    el.value = value;
+    el.dataset.random = stillRandom ? '1' : '';
+    // 直接启用对应确认按钮（用 closest 容器内的 .confirm-btn），避免触发会清除 random 标记的 input 监听。
+    const wrap = el.closest('.scene-enter') || document;
+    const confirmBtn = wrap.querySelector('.confirm-btn');
+    if (confirmBtn) confirmBtn.disabled = !el.value.trim();
+  }
+
+  function prefillProfileInputs() {
+    const planetInput = document.getElementById('planetNameInput');
+    if (planetInput && state.planetName) {
+      const isRandom = planetInput.dataset.random === '1';
+      if (!planetInput.value || (isRandom && !state.isNewPlanet)) {
+        fillInputValue(planetInput, state.planetName, state.isNewPlanet);
+      }
+    }
+    const nickInput = document.getElementById('ownerNickInput');
+    if (nickInput && state.ownerNickname) {
+      const isRandom = nickInput.dataset.random === '1';
+      if (!nickInput.value || (isRandom && !state.isNewOwner)) {
+        fillInputValue(nickInput, state.ownerNickname, state.isNewOwner);
+      }
+    }
+  }
+
+  // 把用户在本局确认的星球名 / 称呼回写父级（重命名星球 + 昵称）。
+  function pushUserProfile() {
+    try {
+      window.parent.postMessage({
+        type: 'haqi_set_user_profile',
+        requestId: `profile_set_boarding_${Date.now()}`,
+        data: {
+          planetName: state.planetName || undefined,
+          nickname: state.ownerNickname || undefined,
+        },
+      }, '*');
+    } catch (_) {}
+  }
+
+  // 这是「领养新蛋」的诞生仪式：蛋此刻还没有形象，始终只用内置的金黄色蛋。
+  // 故意不提供（也不接受）任何宠物形象，避免蛋被错误地换成上一只激活宠物的图。
+
+  // ---- star field ----
+  function createStarfield() {
+    const container = document.getElementById('starfield');
+    const count = Math.min(120, Math.floor(window.innerWidth * window.innerHeight / 6000));
+    for (let i = 0; i < count; i++) {
+      const star = document.createElement('div');
+      star.className = 'star';
+      const size = Math.random() * 2.5 + 0.5;
+      star.style.width = size + 'px';
+      star.style.height = size + 'px';
+      star.style.left = Math.random() * 100 + '%';
+      star.style.top = Math.random() * 100 + '%';
+      // 与主游戏 createPlanetStarfield 一致的星点配色：白 / 金(hue44) / 青(hue190)。
+      let color = '#fff';
+      if (i % 5 === 0) color = 'hsl(44 100% 82%)';
+      else if (i % 3 === 0) color = 'hsl(190 100% 82%)';
+      star.style.background = color;
+      star.style.boxShadow = `0 0 ${(2 + size * 1.5).toFixed(1)}px ${color}`;
+      star.style.setProperty('--dur', (2 + Math.random() * 4) + 's');
+      star.style.setProperty('--o1', (0.2 + Math.random() * 0.3).toFixed(2));
+      star.style.setProperty('--o2', (0.58 + Math.random() * 0.4).toFixed(2));
+      star.style.animationDelay = (Math.random() * 4) + 's';
+      container.appendChild(star);
+    }
+  }
+
+  // ---- typewriter ----
+  function typewrite(element, text, speed = 45) {
+    return new Promise(resolve => {
+      element.textContent = '';
+      element.classList.add('typewriter-cursor');
+      const lines = text.split('\n');
+      let lineIdx = 0, charIdx = 0;
+      function render() {
+        let html = '';
+        for (let l = 0; l <= lineIdx && l < lines.length; l++) {
+          const line = l < lineIdx ? lines[l] : lines[l].substring(0, charIdx);
+          html += (l > 0 ? '<br>' : '') + line;
+        }
+        element.innerHTML = html;
+      }
+      function tick() {
+        if (lineIdx >= lines.length) {
+          element.classList.remove('typewriter-cursor');
+          resolve();
+          return;
+        }
+        if (charIdx <= lines[lineIdx].length) {
+          render();
+          if (charIdx < lines[lineIdx].length) {
+            charIdx++;
+            setTimeout(tick, speed);
+          } else {
+            lineIdx++;
+            charIdx = 0;
+            setTimeout(tick, speed * 3);
+          }
+        }
+      }
+      tick();
+    });
+  }
+
+  // ---- particles ----
+  function spawnParticles(x, y, count, color) {
+    const container = document.getElementById('sceneContainer');
+    for (let i = 0; i < count; i++) {
+      const p = document.createElement('div');
+      p.className = 'particle';
+      const size = 3 + Math.random() * 5;
+      p.style.width = size + 'px';
+      p.style.height = size + 'px';
+      p.style.background = color || 'rgba(255,220,150,0.8)';
+      p.style.left = x + 'px';
+      p.style.top = y + 'px';
+      const angle = Math.random() * Math.PI * 2;
+      const dist = 40 + Math.random() * 80;
+      p.style.setProperty('--px', Math.cos(angle) * dist + 'px');
+      p.style.setProperty('--py', Math.sin(angle) * dist + 'px');
+      p.style.setProperty('--pdur', (0.6 + Math.random() * 0.8) + 's');
+      container.appendChild(p);
+      setTimeout(() => p.remove(), 1500);
+    }
+  }
+
+  // ---- progress bar ----
+  function updateProgress(sceneNum) {
+    const bar = document.getElementById('progressBar');
+    bar.style.display = 'flex';
+    bar.querySelectorAll('.progress-dot').forEach(dot => {
+      const s = parseInt(dot.dataset.scene);
+      dot.classList.remove('active', 'done');
+      if (s === sceneNum) dot.classList.add('active');
+      else if (s < sceneNum) dot.classList.add('done');
+    });
+  }
+
+  // ---- egg SVG (fallback when no pet image) ----
+  // 家园星球形象：与主游戏 .user-planet .planet-body 的青绿色星球一致。
+  function homePlanetSVG() {
+    return `
+<svg viewBox="0 0 200 200" xmlns="http://www.w3.org/2000/svg" style="width:100%;height:100%;display:block;overflow:visible">
+  <defs>
+    <radialGradient id="mhHomePlanet" cx="50%" cy="42%" r="62%">
+      <stop offset="0%" stop-color="#8ff5dc"/>
+      <stop offset="44%" stop-color="#43d6cd"/>
+      <stop offset="100%" stop-color="#1488a9"/>
+    </radialGradient>
+    <radialGradient id="mhHomeHi" cx="34%" cy="24%" r="40%">
+      <stop offset="0%" stop-color="rgba(255,255,255,0.74)"/>
+      <stop offset="60%" stop-color="rgba(255,255,255,0.12)"/>
+      <stop offset="100%" stop-color="rgba(255,255,255,0)"/>
+    </radialGradient>
+    <radialGradient id="mhHomeShade" cx="70%" cy="76%" r="44%">
+      <stop offset="0%" stop-color="rgba(10,70,108,0.42)"/>
+      <stop offset="100%" stop-color="rgba(10,70,108,0)"/>
+    </radialGradient>
+  </defs>
+  <circle cx="100" cy="100" r="78" fill="url(#mhHomePlanet)"/>
+  <!-- 缓慢旋转的陆地斑块（裁剪在星球圆内），营造星球自转感 -->
+  <clipPath id="mhHomeClip"><circle cx="100" cy="100" r="78"/></clipPath>
+  <g clip-path="url(#mhHomeClip)">
+    <g class="mh-planet-spin" style="transform-origin:100px 100px">
+      <ellipse cx="74" cy="84" rx="20" ry="13" fill="rgba(255,255,255,0.16)" transform="rotate(-12 74 84)"/>
+      <ellipse cx="128" cy="118" rx="16" ry="10" fill="rgba(8,70,90,0.22)" transform="rotate(8 128 118)"/>
+      <ellipse cx="112" cy="70" rx="9" ry="6" fill="rgba(255,255,255,0.12)"/>
+      <!-- 复制一组斑块错开角度，旋转时画面更连续 -->
+      <ellipse cx="60" cy="132" rx="15" ry="9" fill="rgba(255,255,255,0.10)" transform="rotate(160 60 132)"/>
+      <ellipse cx="140" cy="74" rx="12" ry="8" fill="rgba(8,70,90,0.18)" transform="rotate(200 140 74)"/>
+    </g>
+  </g>
+  <!-- 高光 / 阴影固定不动（光源方向不变），叠在旋转的陆地之上 -->
+  <circle cx="100" cy="100" r="78" fill="url(#mhHomeShade)"/>
+  <circle cx="100" cy="100" r="78" fill="url(#mhHomeHi)"/>
+</svg>`;
+  }
+
+  // 蛋形象：与主游戏 buildEggSvg() 默认金黄色蛋一致（圆滚滚、果冻质感、带表情）。
+  function eggSVG() {
+    return `
+<svg viewBox="0 0 120 140" xmlns="http://www.w3.org/2000/svg" style="width:100%;height:100%;display:block;overflow:visible">
+  <defs>
+    <radialGradient id="mhEggBody" cx="40%" cy="35%" r="75%">
+      <stop offset="0%" stop-color="#fff7d6"/>
+      <stop offset="55%" stop-color="#ffd86b"/>
+      <stop offset="100%" stop-color="#e8a93a"/>
+    </radialGradient>
+    <radialGradient id="mhEggShine" cx="50%" cy="50%" r="50%">
+      <stop offset="0%" stop-color="#ffffff" stop-opacity="0.9"/>
+      <stop offset="100%" stop-color="#ffffff" stop-opacity="0"/>
+    </radialGradient>
+    <linearGradient id="mhEggTopGloss" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0%" stop-color="#ffffff" stop-opacity="0.55"/>
+      <stop offset="100%" stop-color="#ffffff" stop-opacity="0"/>
+    </linearGradient>
+  </defs>
+  <ellipse cx="60" cy="121" rx="42" ry="6.5" fill="#000" opacity="0.12"/>
+  <!-- 圆滚滚的身体 -->
+  <path d="M60 14 C90 14 108 40 108 73 C108 106 89 126 60 126 C31 126 12 106 12 73 C12 40 30 14 60 14 Z"
+        fill="url(#mhEggBody)" stroke="#caa23a" stroke-width="2"/>
+  <!-- 顶部软光泽带 -->
+  <path d="M30 36 C42 24 78 24 90 36 C80 46 40 46 30 36 Z" fill="url(#mhEggTopGloss)"/>
+  <!-- 腮红 -->
+  <ellipse cx="27" cy="86" rx="8" ry="4.4" fill="#fb7185" opacity="0.55"/>
+  <ellipse cx="93" cy="86" rx="8" ry="4.4" fill="#fb7185" opacity="0.55"/>
+  <!-- 眼睛 -->
+  <ellipse cx="44" cy="74" rx="9" ry="11" fill="#fff"/>
+  <ellipse cx="76" cy="74" rx="9" ry="11" fill="#fff"/>
+  <circle cx="45.5" cy="76" r="5.4" fill="#3a2a1a"/>
+  <circle cx="77.5" cy="76" r="5.4" fill="#3a2a1a"/>
+  <circle cx="43.5" cy="73.5" r="1.8" fill="#fff"/>
+  <circle cx="75.5" cy="73.5" r="1.8" fill="#fff"/>
+  <!-- 嘴巴 -->
+  <path d="M54 92 Q60 98 66 92" fill="none" stroke="#caa23a" stroke-width="2.2" stroke-linecap="round"/>
+  <!-- 左上大高光 -->
+  <ellipse cx="40" cy="44" rx="14" ry="17" fill="url(#mhEggShine)"/>
+</svg>`;
+  }
+
+  // 合成画面：一颗小小的蛋停在家园星球的顶部表面（参考用户示意图：红点=蛋，停在星球顶上）。
+  // 用于"给星球起名字"场景，呈现星球全貌 + 蛋落点的位置关系。
+  function buildPlanetWithEggDot(size) {
+    const sz = size || 150;
+    const box = document.createElement('div');
+    box.style.position = 'relative';
+    box.style.width = sz + 'px';
+    box.style.height = (sz * 1.12) + 'px';
+
+    // 星球本体（占据下方主体）。
+    const planet = document.createElement('div');
+    planet.style.position = 'absolute';
+    planet.style.left = '50%';
+    planet.style.bottom = '0';
+    planet.style.width = sz + 'px';
+    planet.style.height = sz + 'px';
+    planet.style.transform = 'translateX(-50%)';
+    planet.style.filter = 'drop-shadow(0 0 26px rgba(92,236,228,0.5))';
+    planet.innerHTML = homePlanetSVG();
+
+    // 蛋：一颗小蛋，停在星球的顶部弧面上（轻轻浮动），用 createPetVisual 以便后续宠物图就位。
+    const egg = document.createElement('div');
+    egg.className = 'egg-float';
+    egg.style.position = 'absolute';
+    egg.style.left = '50%';
+    // 让蛋底部正好坐在星球顶部弧线上：星球顶 ≈ box 高度 - sz。
+    egg.style.top = (sz * 0.12 - sz * 0.28) + 'px';
+    egg.style.transform = 'translateX(-50%)';
+    egg.style.zIndex = '2';
+    const eggSize = Math.round(sz * 0.34); // 小蛋（示意图里的小红点）
+    egg.appendChild(createPetVisual(eggSize));
+
+    box.appendChild(planet);
+    box.appendChild(egg);
+    return box;
+  }
+
+  // 合成画面：蛋停在星球地表（近景）——一段向上拱起的绿色地表 + 其上的蛋。
+  // 用于继续推镜头后的"宠物命名"近景：镜头已贴近星球表面，看到蛋和地表。
+  function buildEggOnGround(eggSize) {
+    const es = eggSize || 110;
+    const box = document.createElement('div');
+    box.style.position = 'relative';
+    box.style.width = 'min(86vw, 360px)';
+    box.style.height = (es * 1.7) + 'px';
+
+    // 拱形地表（参考主游戏 visit-ground / field-horizon 的青绿色弧面）。
+    const ground = document.createElement('div');
+    ground.style.position = 'absolute';
+    ground.style.left = '-10%';
+    ground.style.right = '-10%';
+    ground.style.bottom = '0';
+    ground.style.height = '46%';
+    ground.style.borderRadius = '50% 50% 0 0';
+    ground.style.background = 'linear-gradient(180deg, rgba(143,245,220,0.85), rgba(20,136,169,0.8))';
+    ground.style.boxShadow = 'inset 0 14px 22px rgba(255,255,255,0.22), 0 -6px 20px rgba(92,236,228,0.22)';
+
+    // 地表上的小高光草点，增加质感。
+    const speck = document.createElement('div');
+    speck.style.position = 'absolute';
+    speck.style.left = '0'; speck.style.right = '0'; speck.style.bottom = '0';
+    speck.style.height = '46%';
+    speck.style.borderRadius = '50% 50% 0 0';
+    speck.style.pointerEvents = 'none';
+    speck.style.background = 'radial-gradient(circle at 30% 30%, rgba(255,255,255,0.28) 0 4px, transparent 6px), radial-gradient(circle at 68% 22%, rgba(255,255,255,0.2) 0 3px, transparent 5px)';
+
+    // 蛋坐在地表上（轻轻浮动 + 落地阴影）。
+    const egg = document.createElement('div');
+    egg.className = 'egg-float';
+    egg.style.position = 'absolute';
+    egg.style.left = '50%';
+    egg.style.bottom = '30%';
+    egg.style.transform = 'translateX(-50%)';
+    egg.style.zIndex = '2';
+    egg.appendChild(createPetVisual(es));
+
+    box.appendChild(ground);
+    box.appendChild(speck);
+    box.appendChild(egg);
+    return box;
+  }
+
+  // ---- pet visual element ----
+  // 诞生仪式中蛋还没有形象，这里始终渲染内置的蛋 SVG。
+  function createPetVisual(size, extraClass) {
+    const sz = size || 140;
+    const div = document.createElement('div');
+    div.id = 'petVisual';
+    div.style.width = sz + 'px';
+    // 与 buildEggSvg viewBox(120x140) 一致的纵横比，避免蛋被拉伸。
+    div.style.height = (sz * 140 / 120) + 'px';
+    div.style.filter = 'drop-shadow(0 6px 16px rgba(255,200,100,0.28))';
+    div.innerHTML = eggSVG();
+    if (extraClass) div.className = extraClass;
+    return div;
+  }
+
+  // ---- scene container ----
+  const sceneContainer = document.getElementById('sceneContainer');
+
+  function clearScene(instant) {
+    return new Promise(resolve => {
+      const children = sceneContainer.children;
+      if (children.length === 0) { resolve(); return; }
+      // instant=true：立即清空（用于推镜头转场前，避免淡出空档打断连续镜头）。
+      if (instant) {
+        sceneContainer.innerHTML = '';
+        resolve();
+        return;
+      }
+      Array.from(children).forEach(child => {
+        if (child.id === 'progressBar') return;
+        child.classList.add('scene-exit');
+      });
+      setTimeout(() => {
+        sceneContainer.innerHTML = '';
+        resolve();
+      }, 500);
+    });
+  }
+
+  function addScene(html) {
+    const div = document.createElement('div');
+    div.className = 'scene-enter w-full h-full flex flex-col items-center justify-center px-6';
+    div.innerHTML = html;
+    sceneContainer.appendChild(div);
+    return div;
+  }
+
+  // ======== 转场：前景的蛋变小、身后的目标画面变大（一小一大，同时发生）========
+  // 镜头移动结束后【不刷新场景】：保留落定的目标画面（toNode），由调用方在其周围补充 UI。
+  // buildFrom() 构建前景（蛋）：从正常大小逐渐缩小、淡出。
+  // buildTo()   构建背景（星球 / 蛋+地表）：从很小逐渐变大到正常大小并停住。
+  // 返回 { layer, toEl, toNode }：layer 作为持久化场景容器；toNode 是落定后的视觉主体。
+  function pushTransition(buildFrom, buildTo, opts = {}) {
+    return new Promise((resolve) => {
+      const dur = opts.duration || 2000;
+      const layer = document.createElement('div');
+      layer.className = 'push-layer';
+      layer.style.setProperty('--push-dur', (dur / 1000) + 's');
+
+      // FROM：前景的蛋 —— 逐渐缩小并淡出，结束后移除。
+      const fromEl = document.createElement('div');
+      fromEl.className = 'push-from';
+      fromEl.style.setProperty('--push-from-end', String(opts.fromEnd != null ? opts.fromEnd : 0.18));
+      const fromNode = buildFrom();
+      if (fromNode) fromEl.appendChild(fromNode);
+
+      // TO：目标画面 —— 由小逐渐变大并停住（保留）。
+      const toEl = document.createElement('div');
+      toEl.className = 'push-to';
+      toEl.style.setProperty('--push-to-start', String(opts.toStart != null ? opts.toStart : 0.1));
+      const toNode = buildTo();
+      if (toNode) toEl.appendChild(toNode);
+
+      layer.appendChild(fromEl);
+      layer.appendChild(toEl);
+      sceneContainer.appendChild(layer);
+
+      // 过程中撒一点星屑点缀。
+      const dust = setInterval(() => {
+        spawnParticles(
+          window.innerWidth * (0.3 + Math.random() * 0.4),
+          window.innerHeight * (0.3 + Math.random() * 0.4),
+          3, 'rgba(255,255,255,0.5)'
+        );
+      }, 200);
+
+      setTimeout(() => {
+        clearInterval(dust);
+        // 镜头停住：移除前景蛋，保留目标画面，不刷新/重建场景。
+        fromEl.remove();
+        resolve({ layer, toEl, toNode });
+      }, dur);
+    });
+  }
+
+  // ======== 转场（scene1 → scene2）：复用同一颗蛋，蛋缩小并飞向星球右上角 ========
+  // 不重建蛋：把 scene1 点击的那颗蛋节点接管过来，星球在其身后由小变大，
+  // 同时这颗蛋缩小并平移到星球的右上角弧面处，最后停在那里（不刷新、不再造蛋/星球）。
+  // 参数：eggNode = 复用的蛋元素（来自 scene1），eggStartRect = 蛋当前在视口中的位置。
+  // 返回 { layer, planetEl, eggEl, planetSize }：planetEl 为落定的星球容器，eggEl 为停驻的蛋。
+  function pushEggToPlanet(eggNode, eggStartRect, opts = {}) {
+    return new Promise((resolve) => {
+      const dur = opts.duration || 2000;
+      const planetSize = opts.planetSize || 180;
+      const eggEndScale = opts.eggEndScale != null ? opts.eggEndScale : 0.34; // 蛋停驻时的相对缩放
+
+      const layer = document.createElement('div');
+      layer.className = 'push-layer';
+      layer.style.pointerEvents = 'none';
+
+      const vw = window.innerWidth, vh = window.innerHeight;
+
+      // ---- 身后的星球：从很小（中心）逐渐变大到正常大小并停住 ----
+      const planetEl = document.createElement('div');
+      planetEl.style.position = 'absolute';
+      planetEl.style.left = '50%';
+      planetEl.style.top = '50%';
+      planetEl.style.width = planetSize + 'px';
+      planetEl.style.height = planetSize + 'px';
+      planetEl.style.zIndex = '1';
+      planetEl.style.filter = 'drop-shadow(0 0 26px rgba(92,236,228,0.5))';
+      planetEl.style.transformOrigin = 'center center';
+      planetEl.style.transform = 'translate(-50%, -50%) scale(0.08)';
+      planetEl.style.opacity = '0';
+      planetEl.style.transition = `transform ${dur}ms cubic-bezier(.22,.6,.25,1), opacity ${dur * 0.3}ms ease`;
+      planetEl.innerHTML = homePlanetSVG();
+
+      // ---- 复用的蛋：接管 scene1 的蛋节点，从其当前位置缩小并平移到星球右上角 ----
+      // 计算蛋起始位置（视口坐标 → 相对 layer 的居中坐标）。
+      const startCX = eggStartRect.left + eggStartRect.width / 2;
+      const startCY = eggStartRect.top + eggStartRect.height / 2;
+      const startW = eggStartRect.width;
+      const startH = eggStartRect.height;
+
+      // 星球落定后中心在视口正中：(vw/2, vh/2)，半径 planetSize/2。
+      // 蛋的终点：星球右上角弧面外侧（约 45° 方向，蛋坐在表面之上，露出在星球右上边缘）。
+      const R = planetSize / 2;
+      const ang = -Math.PI / 4; // 右上方向
+      const endCX = vw / 2 + Math.cos(ang) * R * 1.02;
+      const endCY = vh / 2 + Math.sin(ang) * R * 1.02;
+
+      const eggHolder = document.createElement('div');
+      eggHolder.style.position = 'fixed';
+      eggHolder.style.left = '0';
+      eggHolder.style.top = '0';
+      eggHolder.style.zIndex = '3';
+      eggHolder.style.width = startW + 'px';
+      // 保持蛋自身纵横比，用 transform 做缩放/平移，transformOrigin 设为中心。
+      eggHolder.style.transformOrigin = 'center center';
+      eggHolder.style.willChange = 'transform';
+      // 初始：把蛋放到它在 scene1 的位置（以中心对齐）。
+      eggHolder.style.transform =
+        `translate(${startCX - startW / 2}px, ${startCY - startH / 2}px) scale(1)`;
+      eggHolder.style.transition = `transform ${dur}ms cubic-bezier(.4,0,.25,1)`;
+      // 接管蛋节点本身（保留其内容 / 宠物图），去掉浮动动画避免与平移冲突。
+      eggNode.classList.remove('egg-float', 'egg-glow', 'egg-wobble');
+      eggNode.style.width = startW + 'px';
+      eggHolder.appendChild(eggNode);
+
+      layer.appendChild(planetEl);
+      layer.appendChild(eggHolder);
+      sceneContainer.appendChild(layer);
+
+      // 触发动画（下一帧）。
+      requestAnimationFrame(() => {
+        planetEl.style.opacity = '1';
+        planetEl.style.transform = 'translate(-50%, -50%) scale(1)';
+        // 蛋：缩小 + 平移到星球右上角。transformOrigin 为中心，scale 围绕中心。
+        // 先 translate 使盒子中心对齐到 (endCX, endCY)，再缩放（中心不变）。
+        const tx = endCX - startW / 2;
+        const ty = endCY - startH / 2;
+        eggHolder.style.transform = `translate(${tx}px, ${ty}px) scale(${eggEndScale})`;
+      });
+
+      // 过程中撒一点星屑点缀。
+      const dust = setInterval(() => {
+        spawnParticles(
+          vw * (0.3 + Math.random() * 0.4),
+          vh * (0.3 + Math.random() * 0.4),
+          3, 'rgba(255,255,255,0.5)'
+        );
+      }, 200);
+
+      setTimeout(() => {
+        clearInterval(dust);
+        // 停住：蛋恢复轻微浮动，停在星球右上角。不刷新 / 不重建。
+        eggNode.classList.add('egg-float');
+        layer.style.pointerEvents = 'auto';
+        resolve({ layer, planetEl, eggEl: eggHolder, eggNode, planetSize });
+      }, dur);
+    });
+  }
+
+  // 在"镜头落定"的持久层里，让目标视觉从居中漂浮位上移到顶部，并淡入一段 UI 面板，
+  // 不重建视觉、不清场景。返回填充 UI 的容器（一个底部对齐的面板）。
+  function settleSceneUI(layer, toEl, opts = {}) {
+    // 目标视觉：从画面中央过渡到上半区，给下方 UI 留出空间。
+    toEl.style.transition = 'top 0.6s cubic-bezier(.4,0,.2,1), transform 0.6s cubic-bezier(.4,0,.2,1)';
+    toEl.style.top = opts.visualTop || '30%';
+    // UI 面板：底部对齐，淡入上移。
+    const panel = document.createElement('div');
+    panel.className = 'push-ui-panel';
+    layer.appendChild(panel);
+    // 让被保留的层可以接收点击（转场时是 none）。
+    layer.style.pointerEvents = 'auto';
+    requestAnimationFrame(() => panel.classList.add('is-in'));
+    return panel;
+  }
+
+  // 针对 pushEggToPlanet 落定结果（星球 + 右上角的蛋）补充 UI：
+  // 星球与蛋保持原位不动，仅淡入一段底部 UI 面板（从底部飞入）。不重建、不刷新。
+  function settlePlanetUI(settled, opts = {}) {
+    const { layer } = settled;
+    // UI 面板：底部对齐，从底部飞入。星球 / 蛋保持原位。
+    const panel = document.createElement('div');
+    panel.className = 'push-ui-panel';
+    layer.appendChild(panel);
+    layer.style.pointerEvents = 'auto';
+    requestAnimationFrame(() => { panel.classList.add('is-in'); Music.flyIn(); });
+    return panel;
+  }
+
+  // ======== SCENE 1: Deep Night Signal ========
+  async function scene1() {
+    state.currentScene = 1;
+    updateProgress(1);
+    await clearScene();
+
+    const wrapper = document.createElement('div');
+    wrapper.className = 'scene-enter w-full h-full flex flex-col items-center justify-center px-6 relative';
+
+    // narration
+    const narration = document.createElement('div');
+    narration.className = 'text-center text-white/80 text-lg leading-relaxed mb-12 max-w-md';
+    narration.style.fontSize = 'clamp(15px, 3.5vw, 20px)';
+
+    // egg
+    const eggWrap = document.createElement('div');
+    eggWrap.className = 'egg-float egg-glow cursor-pointer relative';
+    eggWrap.style.transition = 'all 0.5s';
+    const petEl = createPetVisual(130);
+    eggWrap.appendChild(petEl);
+
+    // hint
+    const hint = document.createElement('div');
+    hint.className = 'text-white/40 text-sm mt-8';
+    hint.textContent = t('scene1Hint');
+
+    wrapper.appendChild(narration);
+    wrapper.appendChild(eggWrap);
+    wrapper.appendChild(hint);
+    sceneContainer.appendChild(wrapper);
+
+    await typewrite(narration, t('scene1Narration'), 55);
+
+    // 点击蛋 → 复用同一颗蛋：星球在身后由小变大，这颗蛋缩小并飞到星球右上角并停住。
+    let clicked = false;
+    eggWrap.addEventListener('click', function onEggClick(e) {
+      if (clicked) return;
+      clicked = true;
+      // 启动音乐（若尚未启动）并发出"点击蛋"的专属回声（较低、较实）。
+      Music.start();
+      Music.clickEgg();
+      eggWrap.classList.remove('egg-float');
+      eggWrap.classList.add('egg-wobble');
+      spawnParticles(e.clientX, e.clientY, 12, 'rgba(255,220,150,0.7)');
+      hint.style.opacity = '0';
+      narration.style.transition = 'opacity 0.4s';
+      narration.style.opacity = '0';
+      setTimeout(async () => {
+        // 记录蛋当前在视口中的位置，之后复用同一颗蛋做缩小 + 平移动画。
+        const eggRect = eggWrap.getBoundingClientRect();
+        // 把蛋节点从当前 wrapper 中取出，交给转场复用（不重建蛋）。
+        eggWrap.classList.remove('egg-wobble');
+        if (eggWrap.parentNode) eggWrap.parentNode.removeChild(eggWrap);
+        // 清空 scene1 其余内容（旁白 / 提示），但蛋已被取出保留。
+        await clearScene(true);
+        // 转场：复用这颗蛋，星球由小变大，蛋缩小并飞到星球右上角停住。
+        const settled = await pushEggToPlanet(eggWrap, eggRect, {
+          planetSize: 180,
+          eggEndScale: 0.34,
+          duration: 2000,
+        });
+        // 镜头停住后【不刷新场景】，直接在持久层里补充"给星球起名字"的 UI。
+        scene2(settled);
+      }, 700);
+    }, { once: false });
+  }
+
+  // ======== SCENE 2: Name the Planet ========
+  // settled = { layer, planetEl, eggEl, eggNode, planetSize } 来自 pushEggToPlanet；
+  // 复用其落定的星球 + 右上角的蛋，不重建。
+  async function scene2(settled) {
+    state.currentScene = 2;
+    updateProgress(2);
+
+    const layer = settled.layer;
+    const wrapper = settlePlanetUI(settled);
+
+    // pet says
+    const petSays = document.createElement('div');
+    petSays.className = 'text-center text-amber-200/90 leading-relaxed max-w-sm';
+    petSays.style.fontSize = 'clamp(14px, 3.2vw, 18px)';
+
+    // 真正的新用户：没有星球名时确保有一个随机建议（即便档案还没返回）。
+    if (!state.planetName) state.planetName = randomPlanetName();
+
+    // input
+    const prompt = document.createElement('div');
+    prompt.className = 'text-white/60 text-sm';
+    // 新用户用"起名"语气；老用户用"重命名"语气。
+    prompt.textContent = state.isNewPlanet ? t('scene2Prompt') : t('scene2RenamePrompt');
+
+    // 输入框 + 骰子（换一个随机名）按钮。
+    const inputRow = document.createElement('div');
+    inputRow.className = 'flex items-center gap-2';
+
+    const input = document.createElement('input');
+    input.id = 'planetNameInput';
+    input.type = 'text';
+    input.className = 'planet-input w-56 max-w-[68vw] px-4 py-3 rounded-xl text-center text-lg';
+    input.placeholder = t('scene2Placeholder');
+    input.maxLength = 12;
+    // 预填星球名（账号档案或随机建议），用户可直接沿用或改名。
+    input.value = state.planetName;
+    // 标记：当前值是否为"未编辑的随机建议"，用于晚到的真实档案覆盖判断。
+    input.dataset.random = state.isNewPlanet ? '1' : '';
+
+    const diceBtn = document.createElement('button');
+    diceBtn.type = 'button';
+    diceBtn.className = 'opt-btn px-3 py-3 rounded-xl text-xl bg-white/5';
+    diceBtn.title = t('rerollName');
+    diceBtn.textContent = '🎲';
+
+    inputRow.appendChild(input);
+    inputRow.appendChild(diceBtn);
+
+    // 提示：新用户告诉"已为你想了个名字"；老用户提示可沿用旧名。
+    const renameHint = document.createElement('div');
+    renameHint.className = 'text-white/30 text-xs';
+    renameHint.style.minHeight = '14px';
+    renameHint.textContent = state.isNewPlanet ? t('scene2RandomHint') : t('scene2RenameHint');
+
+    const btn = document.createElement('button');
+    btn.className = 'confirm-btn mt-2 px-8 py-3 rounded-xl text-base font-medium';
+    btn.textContent = t('scene2Confirm');
+    btn.disabled = !input.value.trim();
+
+    input.addEventListener('input', () => { input.dataset.random = ''; btn.disabled = !input.value.trim(); });
+    input.addEventListener('keydown', (e) => { if (e.key === 'Enter' && input.value.trim()) btn.click(); });
+    diceBtn.addEventListener('click', () => {
+      const name = randomPlanetName();
+      input.value = name;
+      input.dataset.random = '';
+      btn.disabled = false;
+      diceBtn.style.transform = 'rotate(360deg)';
+      diceBtn.style.transition = 'transform 0.4s';
+      setTimeout(() => { diceBtn.style.transform = ''; diceBtn.style.transition = ''; }, 420);
+    });
+
+    btn.addEventListener('click', async () => {
+      const name = input.value.trim();
+      if (!name) return;
+      state.planetName = name;
+      // 星球名确定后回写父级（重命名星球）。不再要求主人 / 宠物起名。
+      pushUserProfile();
+
+      // 点亮瞬间的青绿色光爆（在保留的星球视觉上）。
+      const pr = settled.planetEl.getBoundingClientRect();
+      spawnParticles(pr.left + pr.width / 2, pr.top + pr.height / 2, 22, 'rgba(92,236,228,0.6)');
+
+      // UI 面板淡出，星球 + 蛋视觉【保留不重建】。
+      wrapper.classList.remove('is-in');
+      await new Promise(r => setTimeout(r, 480));
+      // 移除旧的 UI 面板，进入下一场景（只需选性格）。
+      if (wrapper.parentNode) wrapper.parentNode.removeChild(wrapper);
+      scene3();
+    });
+
+    wrapper.appendChild(petSays);
+    wrapper.appendChild(prompt);
+    wrapper.appendChild(inputRow);
+    wrapper.appendChild(renameHint);
+    wrapper.appendChild(btn);
+
+    await typewrite(petSays, t('scene2PetSays'), 55);
+    // 不自动聚焦：避免移动端键盘立弹出遮挡场景，新用户已有现成随机名可直接确认。
+  }
+
+  // ======== SCENE 3: Choose Personality（只选性格，不再起名）========
+  async function scene3() {
+    state.currentScene = 3;
+    updateProgress(3);
+    await clearScene();
+
+    const wrapper = document.createElement('div');
+    wrapper.className = 'scene-enter w-full h-full flex flex-col items-center justify-center px-6 overflow-y-auto py-8';
+
+    // pet says
+    const petSays = document.createElement('div');
+    petSays.className = 'text-center text-amber-200/90 text-lg leading-relaxed mb-6 max-w-sm';
+    petSays.style.fontSize = 'clamp(14px, 3.2vw, 18px)';
+
+    // egg
+    const eggWrap = document.createElement('div');
+    eggWrap.className = 'egg-float mb-6';
+    eggWrap.appendChild(createPetVisual(90));
+
+    // personality
+    const persPrompt = document.createElement('div');
+    persPrompt.className = 'text-white/60 text-sm mb-3';
+    persPrompt.textContent = t('scene3PersonalityPrompt');
+
+    const persGrid = document.createElement('div');
+    persGrid.className = 'flex flex-wrap justify-center gap-3 mb-6 max-w-sm';
+
+    const personalities = game_config.personalities;
+    const persBtns = [];
+    let chosen = false;
+
+    personalities.forEach(p => {
+      const btn = document.createElement('button');
+      btn.className = 'opt-btn px-5 py-2.5 rounded-xl text-white/80 text-sm bg-white/5';
+      // \u663e\u793a\u672c\u5730\u5316\u6807\u7b7e\uff08\u5185\u90e8\u4ecd\u4ee5\u4e2d\u6587 p \u4f5c\u4e3a\u6027\u683c\u8eab\u4efd\uff09\u3002
+      btn.textContent = t('pers_' + p);
+      btn.addEventListener('click', () => {
+        if (chosen) return;
+        chosen = true;
+        persBtns.forEach(b => b.classList.remove('selected'));
+        btn.classList.add('selected');
+        state.personality = p;
+        // 性格决定元素属性（自然 / 火 / 冰 / 生命 / 暗 / 雷）。
+        state.elementalAttribute = (game_config.personalityToAttribute || {})[p] || '自然';
+        const rect = btn.getBoundingClientRect();
+        spawnParticles(rect.left + rect.width / 2, rect.top, 14, 'rgba(255,220,150,0.6)');
+        setTimeout(() => scene4(), 600);
+      });
+      persBtns.push(btn);
+      persGrid.appendChild(btn);
+    });
+
+    wrapper.appendChild(petSays);
+    wrapper.appendChild(eggWrap);
+    wrapper.appendChild(persPrompt);
+    wrapper.appendChild(persGrid);
+    sceneContainer.appendChild(wrapper);
+
+    await typewrite(petSays, t('scene3PetSays'), 55);
+  }
+
+  // ======== SCENE 4: First Feeding ========
+  async function scene4() {
+    state.currentScene = 4;
+    updateProgress(4);
+    await clearScene();
+
+    const wrapper = document.createElement('div');
+    wrapper.className = 'scene-enter w-full h-full flex flex-col items-center justify-center px-6';
+
+    // narration
+    const narration = document.createElement('div');
+    narration.className = 'text-center text-white/70 text-base leading-relaxed mb-6 max-w-sm';
+    narration.style.fontSize = 'clamp(14px, 3.2vw, 17px)';
+
+    // egg
+    const eggWrap = document.createElement('div');
+    eggWrap.className = 'egg-float mb-6 relative';
+    eggWrap.appendChild(createPetVisual(100));
+
+    // prompt
+    const prompt = document.createElement('div');
+    prompt.className = 'text-white/60 text-sm mb-4';
+    prompt.textContent = t('scene4Prompt');
+
+    // food options
+    const foodRow = document.createElement('div');
+    foodRow.className = 'flex gap-5 mb-4';
+
+    game_config.foods.forEach(food => {
+      const btn = document.createElement('button');
+      btn.className = 'opt-btn flex flex-col items-center gap-1.5 px-5 py-4 rounded-2xl bg-white/5';
+      btn.innerHTML = `<span class="text-3xl food-bounce">${food.emoji}</span>`;
+      btn.addEventListener('click', async () => {
+        state.firstFood = food;
+        // absorb animation
+        const emoji = btn.querySelector('span');
+        emoji.classList.remove('food-bounce');
+        emoji.classList.add('food-absorb');
+        btn.classList.add('selected');
+        // egg wobble
+        eggWrap.classList.remove('egg-float');
+        eggWrap.classList.add('egg-wobble');
+        const rect = eggWrap.getBoundingClientRect();
+        spawnParticles(rect.left + rect.width / 2, rect.top + rect.height / 2, 10, 'rgba(255,180,100,0.6)');
+        setTimeout(() => {
+          eggWrap.classList.remove('egg-wobble');
+          eggWrap.classList.add('egg-float');
+        }, 600);
+        setTimeout(() => scene5(), 1400);
+      });
+      foodRow.appendChild(btn);
+    });
+
+    wrapper.appendChild(narration);
+    wrapper.appendChild(eggWrap);
+    wrapper.appendChild(prompt);
+    wrapper.appendChild(foodRow);
+    sceneContainer.appendChild(wrapper);
+
+    await typewrite(narration, t('scene4Narration'), 50);
+  }
+
+  // ======== SCENE 5: First Touch ========
+  async function scene5() {
+    state.currentScene = 5;
+    updateProgress(5);
+    await clearScene();
+
+    const wrapper = document.createElement('div');
+    wrapper.className = 'scene-enter w-full h-full flex flex-col items-center justify-center px-6';
+
+    // pet says
+    const petSays = document.createElement('div');
+    petSays.className = 'text-center text-amber-200/90 text-lg leading-relaxed mb-6 max-w-sm';
+    petSays.style.fontSize = 'clamp(14px, 3.2vw, 18px)';
+
+    // egg (interactive)
+    const eggWrap = document.createElement('div');
+    eggWrap.className = 'egg-float egg-glow cursor-pointer relative mb-4';
+    eggWrap.style.transition = 'all 0.3s';
+    eggWrap.appendChild(createPetVisual(120));
+
+    const hint = document.createElement('div');
+    hint.className = 'text-white/40 text-sm mb-4';
+    hint.textContent = t('scene5Hint');
+
+    // touch counter
+    const touchIndicator = document.createElement('div');
+    touchIndicator.className = 'flex gap-2 mb-4';
+    for (let i = 0; i < 3; i++) {
+      const dot = document.createElement('div');
+      dot.className = 'w-3 h-3 rounded-full bg-white/15 transition-all duration-500';
+      dot.dataset.idx = i;
+      touchIndicator.appendChild(dot);
+    }
+
+    // 每次触碰后显示的一句话（替换提示文字位置上方）。
+    const touchLine = document.createElement('div');
+    touchLine.className = 'text-center text-amber-200/90 text-base leading-relaxed max-w-sm mb-2';
+    touchLine.style.fontSize = 'clamp(13px, 3vw, 16px)';
+    touchLine.style.minHeight = '22px';
+    touchLine.style.transition = 'opacity 0.3s';
+    touchLine.style.opacity = '0';
+
+    wrapper.appendChild(petSays);
+    wrapper.appendChild(eggWrap);
+    wrapper.appendChild(touchLine);
+    wrapper.appendChild(hint);
+    wrapper.appendChild(touchIndicator);
+    sceneContainer.appendChild(wrapper);
+
+    await typewrite(petSays, t('scene5PetSays'), 55);
+
+    let touches = 0;
+    const neededTouches = 3;
+    const touchTexts = [t('scene5Touch1'), t('scene5Touch2'), t('scene5Touch3')];
+
+    eggWrap.addEventListener('click', function onTouch(e) {
+      if (touches >= neededTouches) return;
+      touches++;
+      state.touchCount = touches;
+      // 触碰蛋的专属回声（较低、较实）。
+      Music.clickEgg();
+
+      // ripple
+      const rect = eggWrap.getBoundingClientRect();
+      const ripple = document.createElement('div');
+      ripple.className = 'touch-ripple';
+      ripple.style.left = (e.clientX - rect.left) + 'px';
+      ripple.style.top = (e.clientY - rect.top) + 'px';
+      eggWrap.appendChild(ripple);
+      setTimeout(() => ripple.remove(), 1000);
+
+      // wobble
+      eggWrap.classList.remove('egg-float');
+      eggWrap.classList.add('egg-wobble');
+      setTimeout(() => {
+        eggWrap.classList.remove('egg-wobble');
+        if (touches < neededTouches) eggWrap.classList.add('egg-float');
+      }, 500);
+
+      // light up dot
+      const dots = touchIndicator.querySelectorAll('div');
+      if (touches <= neededTouches) {
+        dots[touches - 1].style.background = 'rgba(255,220,150,0.8)';
+        dots[touches - 1].style.boxShadow = '0 0 8px rgba(255,220,150,0.5)';
+      }
+
+      spawnParticles(e.clientX, e.clientY, 6, 'rgba(255,200,120,0.6)');
+
+      // 每点一下，下面出现对应的一句话。
+      touchLine.style.opacity = '0';
+      setTimeout(() => {
+        touchLine.textContent = touchTexts[touches - 1] || '';
+        touchLine.style.opacity = '1';
+      }, 120);
+
+      if (touches >= neededTouches) {
+        eggWrap.removeEventListener('click', onTouch);
+        hint.style.opacity = '0';
+        eggWrap.classList.add('warmth-glow');
+        // 第 3 次触碰：立即进入下一步。
+        setTimeout(() => scene6(), 700);
+      }
+    });
+  }
+
+  // ======== SCENE 6: See DNA + Wish ========
+  async function scene6() {
+    state.currentScene = 6;
+    updateProgress(6);
+    await clearScene();
+
+    const wrapper = document.createElement('div');
+    wrapper.className = 'scene-enter w-full h-full flex flex-col items-center justify-center px-6 overflow-y-auto py-8';
+
+    // narration
+    const narration = document.createElement('div');
+    narration.className = 'text-center text-white/70 text-base leading-relaxed mb-6 max-w-md';
+    narration.style.fontSize = 'clamp(14px, 3.2vw, 17px)';
+
+    // DNA visual (simple animated helix)
+    const dnaWrap = document.createElement('div');
+    dnaWrap.className = 'mb-6 relative';
+    dnaWrap.style.perspective = '400px';
+    const dnaCanvas = document.createElement('canvas');
+    dnaCanvas.width = 120;
+    dnaCanvas.height = 160;
+    dnaWrap.appendChild(dnaCanvas);
+    drawDNA(dnaCanvas);
+
+    // prompt
+    const prompt = document.createElement('div');
+    prompt.className = 'text-white/60 text-sm mb-4';
+    prompt.textContent = t('scene6Prompt');
+
+    // wish options
+    const wishGrid = document.createElement('div');
+    wishGrid.className = 'flex flex-wrap justify-center gap-3 max-w-sm';
+
+    game_config.wishes.forEach(w => {
+      const btn = document.createElement('button');
+      btn.className = 'opt-btn flex items-center gap-2 px-5 py-3 rounded-xl bg-white/5 text-white/80 text-sm';
+      const wishText = w.textKey ? t(w.textKey) : (w.text || '');
+      btn.innerHTML = `<span class="text-lg">${w.emoji}</span><span>${wishText}</span>`;
+      btn.addEventListener('click', () => {
+        state.wish = w;
+        wishGrid.querySelectorAll('.opt-btn').forEach(b => b.classList.remove('selected'));
+        btn.classList.add('selected');
+        const rect = btn.getBoundingClientRect();
+        spawnParticles(rect.left + rect.width / 2, rect.top, 15, 'rgba(255,220,150,0.6)');
+        setTimeout(() => scene7(), 1200);
+      });
+      wishGrid.appendChild(btn);
+    });
+
+    wrapper.appendChild(narration);
+    wrapper.appendChild(dnaWrap);
+    wrapper.appendChild(prompt);
+    wrapper.appendChild(wishGrid);
+    sceneContainer.appendChild(wrapper);
+
+    await typewrite(narration, t('scene6Narration'), 48);
+  }
+
+  function drawDNA(canvas) {
+    const ctx = canvas.getContext('2d');
+    const w = canvas.width, h = canvas.height;
+    let frame = 0;
+
+    function render() {
+      ctx.clearRect(0, 0, w, h);
+      const cx = w / 2;
+      const points = 20;
+      for (let i = 0; i < points; i++) {
+        const y = 10 + (h - 20) * i / (points - 1);
+        const phase = frame * 0.03 + i * 0.4;
+        const x1 = cx + Math.sin(phase) * 30;
+        const x2 = cx - Math.sin(phase) * 30;
+        const alpha = 0.3 + 0.4 * Math.abs(Math.sin(phase));
+
+        // connecting bar
+        ctx.strokeStyle = `rgba(255,220,150,${alpha * 0.3})`;
+        ctx.lineWidth = 1;
+        ctx.beginPath();
+        ctx.moveTo(x1, y);
+        ctx.lineTo(x2, y);
+        ctx.stroke();
+
+        // left node
+        ctx.fillStyle = `rgba(255,180,100,${alpha})`;
+        ctx.beginPath();
+        ctx.arc(x1, y, 3, 0, Math.PI * 2);
+        ctx.fill();
+
+        // right node
+        ctx.fillStyle = `rgba(150,200,255,${alpha})`;
+        ctx.beginPath();
+        ctx.arc(x2, y, 3, 0, Math.PI * 2);
+        ctx.fill();
+      }
+      frame++;
+      if (state.currentScene === 6) requestAnimationFrame(render);
+    }
+    render();
+  }
+
+  // ======== SCENE 7: First Hatching ========
+  // 结束游戏：回写最新档案并向父级发送 gameFinished（含 DNA 相关：系别 / diet / 元素属性）。
+  let gameFinishedSent = false;
+  function finishGame() {
+    if (gameFinishedSent) return;
+    gameFinishedSent = true;
+    // 记录生日（原由纪念卡场景设置，纪念卡已移除，这里兜底设置）。
+    if (!state.birthday) {
+      state.birthday = new Date().toLocaleDateString(LANG === 'enUS' ? 'en-US' : 'zh-CN', {
+        year: 'numeric', month: 'long', day: 'numeric'
+      });
+    }
+    // 进入星球前再回写一次最新的星球名 / 称呼，确保父级已持久化。
+    pushUserProfile();
+    post('gameFinished', {
+      earnedPoints: 10,
+      planetName: state.planetName,
+      ownerNickname: state.ownerNickname,
+      petName: state.petName,
+      personality: state.personality,
+      // ---- DNA 相关：游戏收到后据此生成 / 偏置宠物 DNA ----
+      elementalAttribute: state.elementalAttribute || '', // 元素属性（自然 / 火 / 冰 / 生命 / 暗 / 雷），由性格决定
+      diet: state.firstFood?.diet || state.firstFood?.id || '', // 食性：omnivore / carnivore / herbivore
+      firstFood: state.firstFood?.id || '',
+      wish: state.wish?.id || '',
+      element: state.wish?.element || '', // 系别（血统倾向）：sky / land / water / random（对应 dna.js ELEMENTS）
+      wishElement: state.wish?.element || '', // 兼容旧字段名
+      firstSentence: state.firstSentence,
+      birthday: state.birthday,
+    });
+  }
+
+  // ======== SCENE 7（最后一幕）: 蛋将破壳 + 呼唤主人，结束游戏 ========
+  async function scene7() {
+    state.currentScene = 7;
+    updateProgress(7);
+    await clearScene();
+
+    const wrapper = document.createElement('div');
+    wrapper.className = 'scene-enter w-full h-full flex flex-col items-center justify-center px-6';
+
+    // hatching text
+    const hatchText = document.createElement('div');
+    hatchText.className = 'text-center text-white/60 text-base mb-8';
+    hatchText.style.fontSize = 'clamp(14px, 3.2vw, 17px)';
+
+    // egg that will hatch
+    const eggWrap = document.createElement('div');
+    eggWrap.className = 'relative mb-8';
+    eggWrap.appendChild(createPetVisual(130));
+
+    wrapper.appendChild(hatchText);
+    wrapper.appendChild(eggWrap);
+    sceneContainer.appendChild(wrapper);
+
+    await typewrite(hatchText, t('scene7Hatching'), 80);
+
+    // 蛋轻轻抖动 + 出现裂纹（不破壳、不显形宠物，留作悬念）。
+    await new Promise(r => setTimeout(r, 500));
+    eggWrap.classList.add('hatch-crack');
+    Music.sparkle();
+    const rect = eggWrap.getBoundingClientRect();
+    spawnParticles(rect.left + rect.width / 2, rect.top + rect.height / 2, 14, 'rgba(255,220,150,0.7)');
+    await new Promise(r => setTimeout(r, 1100));
+
+    // 兜底默认宠物名（供父级使用）。
+    if (!state.petName) {
+      state.petName = LANG === 'enUS' ? 'Haqi' : '哈奇';
+    }
+    // 记录第一句话（按性格选取，替换 {ownerName}），供纪念卡（scene8）展示。
+    // 使用本地化的 firstSentence_<性格键>，并按当前语言替换称呼，避免英文模式下显示中文。
+    if (!state.firstSentence && state.personality) {
+      const ownerName = state.ownerNickname || (LANG === 'enUS' ? 'friend' : '主人');
+      state.firstSentence = t('firstSentence_' + state.personality, { ownerName });
+    }
+
+    // 呼唤主人：「主人，快来找我吧！」
+    const calling = document.createElement('div');
+    calling.className = 'scene-enter text-center text-amber-200 text-lg leading-relaxed max-w-sm mt-4';
+    calling.style.fontSize = 'clamp(15px, 3.5vw, 20px)';
+    wrapper.appendChild(calling);
+    // 引号：中文用「」，英文用普通引号。
+    const callQuote = LANG === 'enUS' ? `“${t('scene7Calling')}”` : `「${t('scene7Calling')}」`;
+    await typewrite(calling, callQuote, 60);
+
+    // 继续按钮 → 直接结束游戏（不再展示领养纪念卡 scene8）。
+    await new Promise(r => setTimeout(r, 1200));
+    const nextBtn = document.createElement('button');
+    nextBtn.className = 'scene-enter confirm-btn mt-8 px-8 py-3 rounded-xl text-base font-medium';
+    nextBtn.textContent = t('scene8Enter');
+    nextBtn.addEventListener('click', () => finishGame());
+    wrapper.appendChild(nextBtn);
+  }
+
+  // ---- message listener ----
+  window.addEventListener('message', event => {
+    const msg = event.data || {};
+    // 诞生仪式始终显示通用蛋：忽略父级推送的宠物形象（含 active_pet_config / setGameConfig.petId），
+    // 否则蛋会被错误地替换成当前激活宠物的图（诞生仪式始终只用内置蛋）。
+    // 父级返回用户档案：星球名、昵称、性别等。
+    if (msg.type === 'haqi_user_profile' && msg.ok && msg.data &&
+        (!state.profileRequestId || !msg.requestId || msg.requestId.indexOf('profile_') === 0 || msg.requestId === state.profileRequestId)) {
+      applyUserProfile(msg.data);
+    }
+    // 父级也可能在 setGameConfig 里直接附带档案字段。
+    if (msg.type === 'setGameConfig' && msg.data && (msg.data.planetName != null || msg.data.nickname != null)) {
+      applyUserProfile({
+        planetName: msg.data.planetName,
+        nickname: msg.data.nickname,
+        username: msg.data.username,
+        gender: msg.data.gender,
+      });
+    }
+    if (msg.type === 'gameContinue') {
+      // no-op for onboarding
+    }
+  });
+
+  // ---- 音乐开关 ----
+  (function initMusicToggle() {
+    const btn = document.getElementById('musicToggle');
+    if (!btn) return;
+    btn.addEventListener('click', () => {
+      // 若尚未启动（用户还没点过蛋），点开关也算一次手势，可直接启动音乐。
+      Music.start();
+      const next = !Music.isMuted();
+      Music.setMuted(next);
+      btn.textContent = next ? '🔇' : '🔊';
+      btn.style.color = next ? 'rgba(255,255,255,0.4)' : '#ffdc96';
+    });
+  })();
+
+  // ---- 音乐：从一开始就尝试启动稀疏星辰回声 ----
+  // 浏览器通常要求用户手势后才出声，所以：先尝试直接启动；若被拦截，
+  // 在首次任意交互（指针 / 键盘 / 触摸）时再启动一次（仅一次）。
+  function bootMusic() { try { Music.start(); } catch (_) {} }
+  bootMusic();
+  (function armFirstGestureAutostart() {
+    let armed = true;
+    function onFirst() {
+      if (!armed) return;
+      armed = false;
+      bootMusic();
+      window.removeEventListener('pointerdown', onFirst, true);
+      window.removeEventListener('keydown', onFirst, true);
+      window.removeEventListener('touchstart', onFirst, true);
+    }
+    window.addEventListener('pointerdown', onFirst, true);
+    window.addEventListener('keydown', onFirst, true);
+    window.addEventListener('touchstart', onFirst, true);
+  })();
+
+  // ---- 全局按钮点击回声：所有 <button> 点击都发出"按钮回声"（蛋有自己的回声，单独处理） ----
+  document.addEventListener('click', (e) => {
+    const btn = e.target.closest && e.target.closest('button');
+    if (!btn) return;
+    if (btn.id === 'musicToggle') return;     // 开关自己不发声，避免与静音冲突
+    Music.clickButton();
+  }, true);
+
+  // ---- init ----
+  createStarfield();
+  requestUserProfile();
+  post('gameLoaded');
+
+  // start scene 1（看到蛋）。点击蛋后镜头继续推进，依次展示星球、蛋+星球。
+  scene1();
+
+  if (!state.gameStarted) {
+    state.gameStarted = true;
+    post('gameStarted');
+  }
+})();
+</script>
+
+</html>

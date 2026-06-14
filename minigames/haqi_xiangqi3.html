@@ -1,0 +1,1387 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
+<title>三国象棋 - 三人对弈</title>
+<script src="https://cdn.keepwork.com/keepwork/cdn/tailwindcss@3.4.16.js"></script>
+<script src="https://cdn.keepwork.com/npm/three%400.128.0/build/three.min.js"></script>
+<style>
+  html, body { margin: 0; padding: 0; overflow: hidden; width: 100%; height: 100%; background: #1a1208; }
+  #c3d { position: absolute; inset: 0; touch-action: none; }
+  .petIcon {
+    width: 3.6rem; height: 3.6rem; border-radius: 50%;
+    background: rgba(255,248,230,.92); box-shadow: 0 2px 10px rgba(0,0,0,.45);
+    border: 3px solid; overflow: hidden; position: relative;
+    display: grid; place-items: center; font-size: 1.8rem;
+  }
+  .petSprite { width: 100%; height: 100%; background-repeat: no-repeat; }
+</style>
+</head>
+<body>
+<div id="c3d"></div>
+
+<!-- HUD: turn indicator -->
+<div id="hud" class="absolute top-2 left-1/2 -translate-x-1/2 flex gap-3 items-center pointer-events-none z-10">
+  <div id="turnBadge" class="px-4 py-1.5 rounded-full text-white font-bold text-sm shadow-lg bg-red-700">红方回合</div>
+</div>
+
+<!-- 两只宠物对手头像：左上曹魏(蓝) / 右上东吴(绿) -->
+<div class="absolute top-2 left-2 z-10 flex flex-col items-center gap-0.5 pointer-events-none">
+  <div id="petIconBlue" class="petIcon" style="border-color:#2471b5">🐱</div>
+  <div class="text-xs font-bold" style="color:#7db6e8">曹魏</div>
+</div>
+<div class="absolute top-2 right-2 z-10 flex flex-col items-center gap-0.5 pointer-events-none">
+  <div id="petIconGreen" class="petIcon" style="border-color:#1e8a4c">🐶</div>
+  <div class="text-xs font-bold" style="color:#7fd6a4">东吴</div>
+</div>
+
+<!-- Toast 提示 -->
+<div id="toast" class="hidden absolute top-14 left-1/2 -translate-x-1/2 px-5 py-2 rounded-xl text-white font-bold text-sm shadow-xl z-20 transition-opacity duration-700 pointer-events-none"></div>
+
+<!-- 重新开始 -->
+<div id="restartBar" class="hidden absolute bottom-6 left-1/2 -translate-x-1/2 z-20">
+  <button id="restartBtn" class="px-8 py-2.5 rounded-xl bg-amber-600 hover:bg-amber-500 text-white font-bold text-lg shadow-xl">再来一局</button>
+</div>
+
+<!-- Rules modal -->
+<div id="rulesModal" class="absolute inset-0 z-30 flex items-center justify-center bg-black/60">
+  <div class="bg-amber-50 rounded-2xl p-6 max-w-md mx-4 shadow-2xl text-amber-950">
+    <h1 class="text-2xl font-bold mb-3 text-center">♟️ 三国象棋</h1>
+    <ul class="text-sm leading-6 mb-4 list-disc pl-5">
+      <li>三方对弈：<b class="text-red-700">红</b>、<b class="text-emerald-700">绿</b>、<b class="text-sky-700">蓝</b>，棋盘中央为三角形河界。</li>
+      <li>每方棋盘的河岸与另外两方相连，棋子过河可进入任一邻方领地。</li>
+      <li>规则同中国象棋；<b>先吃掉某方主帅者，接管其全部剩余棋子！</b></li>
+      <li>最后存活主帅的一方获胜。你执红，先行。</li>
+    </ul>
+    <div class="flex items-center justify-center gap-2 mb-4">
+      <span class="text-sm font-bold">AI 难度：</span>
+      <div id="diffGroup" class="flex gap-1.5">
+        <button data-diff="easy" class="diffBtn px-4 py-1.5 rounded-lg text-sm font-bold border-2 border-amber-700 text-amber-800">简单</button>
+        <button data-diff="normal" class="diffBtn px-4 py-1.5 rounded-lg text-sm font-bold border-2 border-amber-700 bg-amber-700 text-white">普通</button>
+        <button data-diff="hard" class="diffBtn px-4 py-1.5 rounded-lg text-sm font-bold border-2 border-amber-700 text-amber-800">困难</button>
+      </div>
+    </div>
+    <button id="startBtn" class="w-full py-2.5 rounded-xl bg-red-700 hover:bg-red-600 text-white font-bold text-lg">开始对弈</button>
+  </div>
+</div>
+<button id="helpBtn" class="absolute bottom-3 right-3 z-20 w-10 h-10 rounded-full bg-amber-700/80 text-white text-xl shadow-lg hidden">❓</button>
+
+<script>
+game_config = {
+  difficulty: "normal",          // easy | normal | hard  (AI 搜索强度)
+  humanPlayers: [0],             // 哪些座位由人类控制（0=红 1=绿 2=蓝），其余为 AI
+  aiMoveDelay: 800               // AI 落子延迟(ms)
+};
+</script>
+<script>
+art_assets = [];
+</script>
+
+<script>
+// ============ 基础 3D 场景 ============
+const PLAYER_COLORS = [0xc0392b, 0x1e8a4c, 0x2471b5];
+const PLAYER_NAMES = ['红', '绿', '蓝'];
+
+let scene, camera, renderer;
+const container = document.getElementById('c3d');
+
+function initScene() {
+  scene = new THREE.Scene();
+  scene.background = new THREE.Color(0x1a1208);
+  scene.fog = new THREE.Fog(0x1a1208, 60, 140);
+
+  camera = new THREE.PerspectiveCamera(45, innerWidth / innerHeight, 0.1, 200);
+  camera.position.set(0, 18, 14);
+  camera.lookAt(0, 0, 0);
+
+  renderer = new THREE.WebGLRenderer({ antialias: true });
+  renderer.setPixelRatio(Math.min(devicePixelRatio, 2));
+  renderer.setSize(innerWidth, innerHeight);
+  renderer.shadowMap.enabled = true;
+  renderer.shadowMap.type = THREE.PCFSoftShadowMap;
+  container.appendChild(renderer.domElement);
+
+  const amb = new THREE.AmbientLight(0xffffff, 0.55);
+  scene.add(amb);
+  const sun = new THREE.DirectionalLight(0xfff2dd, 0.9);
+  sun.position.set(8, 20, 10);
+  sun.castShadow = true;
+  sun.shadow.mapSize.set(2048, 2048);
+  sun.shadow.camera.left = -15; sun.shadow.camera.right = 15;
+  sun.shadow.camera.top = 15; sun.shadow.camera.bottom = -15;
+  scene.add(sun);
+  const fill = new THREE.DirectionalLight(0xaaccff, 0.25);
+  fill.position.set(-10, 8, -8);
+  scene.add(fill);
+}
+
+window.addEventListener('resize', () => {
+  camera.aspect = innerWidth / innerHeight;
+  camera.updateProjectionMatrix();
+  renderer.setSize(innerWidth, innerHeight);
+  if (typeof userZoomed !== 'undefined') userZoomed = false;  // 尺寸变化后重新适配整桌
+  if (typeof updateCamera === 'function') updateCamera();
+});
+
+let lastFrameT = performance.now();
+function animate() {
+  requestAnimationFrame(animate);
+  const nowT = performance.now();
+  const dt = Math.min(0.05, (nowT - lastFrameT) / 1000);
+  lastFrameT = nowT;
+  if (typeof updateFX === 'function') updateFX(dt);
+  renderer.render(scene, camera);
+}
+
+// ============ 启动 ============
+let gameStarted = false;
+initScene();
+animate();
+window.parent.postMessage({ type: 'gameLoaded' }, '*');
+
+document.getElementById('startBtn').addEventListener('click', () => {
+  document.getElementById('rulesModal').classList.add('hidden');
+  document.getElementById('helpBtn').classList.remove('hidden');
+  if (!gameStarted) {
+    gameStarted = true;
+    window.parent.postMessage({ type: 'gameStarted' }, '*');
+  }
+});
+document.getElementById('helpBtn').addEventListener('click', () => {
+  document.getElementById('rulesModal').classList.remove('hidden');
+});
+
+window.addEventListener('message', (e) => {
+  const msg = e.data || {};
+  if (msg.type === 'setGameConfig' && msg.data && typeof msg.data === 'object') {
+    Object.assign(game_config, msg.data);
+    if (msg.data.petId) requestPetIcons();
+  }
+  if (msg.type === 'haqi_pet_images' && msg.ok) {
+    const pets = Array.isArray(msg.data?.pets) ? msg.data.pets : [];
+    if (pets[0]) mountPetIcon('petIconBlue', pets[0]);
+    if (pets[1]) mountPetIcon('petIconGreen', pets[1]);
+    else if (pets[0]) mountPetIcon('petIconGreen', pets[0]);
+  }
+});
+
+// 难度选择
+document.querySelectorAll('.diffBtn').forEach(btn => {
+  btn.addEventListener('click', () => {
+    game_config.difficulty = btn.dataset.diff;
+    document.querySelectorAll('.diffBtn').forEach(b => {
+      const on = b === btn;
+      b.classList.toggle('bg-amber-700', on);
+      b.classList.toggle('text-white', on);
+      b.classList.toggle('text-amber-800', !on);
+    });
+  });
+});
+
+// 宠物头像：请求当前星球宠物列表，取前两只作为蓝/绿对手
+const petUrls = {};
+function requestPetIcons() {
+  window.parent.postMessage({ type: 'haqi_get_pet_images', requestId: `xq3_pets_${Date.now()}`, anim: 'happy' }, '*');
+}
+function mountPetIcon(elId, pet) {
+  if (!pet?.imageBlob || !pet?.uv) return;
+  if (petUrls[elId]) URL.revokeObjectURL(petUrls[elId]);
+  const url = URL.createObjectURL(pet.imageBlob);
+  petUrls[elId] = url;
+  const uv = pet.uv;
+  const el = document.createElement('div');
+  el.className = 'petSprite';
+  el.style.backgroundImage = `url("${url}")`;
+  if (uv.cols > 1 || uv.rows > 1) {
+    el.style.backgroundSize = `${uv.cols * 100}% ${uv.rows * 100}%`;
+    el.style.backgroundPosition =
+      `${uv.cols > 1 ? uv.col * 100 / (uv.cols - 1) : 50}% ${uv.rows > 1 ? uv.row * 100 / (uv.rows - 1) : 50}%`;
+  } else {
+    el.style.backgroundSize = 'contain';
+    el.style.backgroundPosition = 'center';
+  }
+  const host = document.getElementById(elId);
+  host.textContent = '';
+  host.appendChild(el);
+}
+requestPetIcons();
+</script>
+
+<script>
+// ============ 棋盘拓扑 ============
+// 三个半盘（zone 0/1/2），每盘 5 行(r:0后排..4河岸) x 9 列(c:0..8)，绕中心 120° 旋转。
+// 中央三角形为河界；河岸点经"过河桥"与相邻两盘的河岸相连，c=4 经中心点 C 连通三方。
+const INRADIUS = 3;                       // 三角形内切圆半径（河岸到中心距离）
+const nodes = new Map();                  // key -> { key, p, r, c, pos }
+const orth  = new Map();                  // key -> [相邻 key]（直线方向邻居）
+const cont  = new Map();                  // "a|b" -> [c...]  a->b 直线延伸到 c
+const diag  = new Map();                  // key -> [相邻 key]（九宫斜线）
+
+function NK(p, r, c) { return p + ',' + r + ',' + c; }
+
+function zoneAngle(p) { return p * Math.PI * 2 / 3; }
+
+function nodeWorldPos(p, r, c) {
+  const x = c - 4, zl = INRADIUS + (4 - r);
+  const th = zoneAngle(p);
+  return new THREE.Vector3(
+    x * Math.cos(th) + zl * Math.sin(th), 0,
+    -x * Math.sin(th) + zl * Math.cos(th)
+  );
+}
+
+function addOrth(a, b) {
+  if (!orth.get(a).includes(b)) orth.get(a).push(b);
+  if (!orth.get(b).includes(a)) orth.get(b).push(a);
+}
+function addCont(a, b, c2) {  // a->b 延伸 c2；同时反向 c2->b 延伸 a
+  const k1 = a + '|' + b, k2 = c2 + '|' + b;
+  (cont.get(k1) || cont.set(k1, []).get(k1)).push(c2);
+  (cont.get(k2) || cont.set(k2, []).get(k2)).push(a);
+}
+function addDiag(a, b) {
+  if (!diag.get(a).includes(b)) diag.get(a).push(b);
+  if (!diag.get(b).includes(a)) diag.get(b).push(a);
+}
+
+function buildTopology() {
+  // 节点
+  for (let p = 0; p < 3; p++)
+    for (let r = 0; r <= 4; r++)
+      for (let c = 0; c <= 8; c++) {
+        const key = NK(p, r, c);
+        nodes.set(key, { key, p, r, c, pos: nodeWorldPos(p, r, c) });
+      }
+  for (const k of nodes.keys()) { orth.set(k, []); diag.set(k, []); }
+
+  for (let p = 0; p < 3; p++) {
+    // 行（横线）
+    for (let r = 0; r <= 4; r++)
+      for (let c = 0; c < 8; c++) {
+        addOrth(NK(p, r, c), NK(p, r, c + 1));
+        if (c < 7) addCont(NK(p, r, c), NK(p, r, c + 1), NK(p, r, c + 2));
+      }
+    // 列（纵线）
+    for (let c = 0; c <= 8; c++)
+      for (let r = 0; r < 4; r++) {
+        addOrth(NK(p, r, c), NK(p, r + 1, c));
+        if (r < 3) addCont(NK(p, r, c), NK(p, r + 1, c), NK(p, r + 2, c));
+      }
+    // 九宫斜线（r0..2, c3..5）
+    addDiag(NK(p, 0, 3), NK(p, 1, 4)); addDiag(NK(p, 0, 5), NK(p, 1, 4));
+    addDiag(NK(p, 1, 4), NK(p, 2, 3)); addDiag(NK(p, 1, 4), NK(p, 2, 5));
+  }
+
+  // 过河桥：zone p 右半 (c=5..8) <-> 邻盘 q 左半 (8-c=3..0)，镜像连接
+  for (let p = 0; p < 3; p++) {
+    const q = crossZoneFor(p);
+    for (let c = 5; c <= 8; c++) {
+      const A = NK(p, 4, c), B = NK(q, 4, 8 - c);
+      addOrth(A, B);
+      addCont(NK(p, 3, c), A, B);          // 直行过桥
+      addCont(A, B, NK(q, 3, 8 - c));      // 过桥后继续直行深入
+    }
+  }
+  // 中央三角：三方 c=4 河岸点两两直连（无中心点）
+  for (let p = 0; p < 3; p++)
+    addOrth(NK(p, 4, 4), NK((p + 1) % 3, 4, 4));
+  // 直线延续：p 中线 → 三角边 → q 中线（在 p44 处向两邻分叉）
+  for (let p = 0; p < 3; p++)
+    for (let q = 0; q < 3; q++) {
+      if (q === p) continue;
+      addCont(NK(p, 3, 4), NK(p, 4, 4), NK(q, 4, 4));
+    }
+}
+
+// 选择与 zone p 右端角(c=8)最近的邻盘（其 c=0 端）
+function crossZoneFor(p) {
+  const a = nodeWorldPos(p, 4, 8);
+  let best = (p + 1) % 3, bd = Infinity;
+  for (const q of [(p + 1) % 3, (p + 2) % 3]) {
+    const d = a.distanceTo(nodeWorldPos(q, 4, 0));
+    if (d < bd) { bd = d; best = q; }
+  }
+  return best;
+}
+
+function continuationsOf(a, b) { return cont.get(a + '|' + b) || []; }
+
+buildTopology();
+console.log('topology nodes:', nodes.size);
+</script>
+
+<script>
+// ============ 棋盘渲染 ============
+const boardGroup = new THREE.Group();
+scene.add(boardGroup);
+
+function buildBoardMesh() {
+  // 木质底座：六边形，旋转使六条边与三个半盘的后排平行对齐
+  const baseGeo = new THREE.CylinderGeometry(8.9, 9.4, 0.6, 6);
+  const baseMat = new THREE.MeshStandardMaterial({ color: 0x8a5a2b, roughness: 0.85 });
+  const base = new THREE.Mesh(baseGeo, baseMat);
+  base.position.y = -0.32;
+  base.rotation.y = Math.PI / 6;   // 边中点朝向 ±z，与棋盘三方对齐
+  base.receiveShadow = true;
+  boardGroup.add(base);
+
+  // 统一黄色棋面：取三个半盘 6 个外角组成的六边形包络（含中央三角）
+  // 注意：ShapeGeometry 绕 X 轴 -90° 旋转后 shape(x,y) → world(x,-y)，故用 -z
+  const hull = [];
+  for (let p = 0; p < 3; p++) {
+    hull.push(nodeWorldPos(p, 0, 0), nodeWorldPos(p, 0, 8));
+  }
+  hull.sort((a, b) => Math.atan2(a.z, a.x) - Math.atan2(b.z, b.x));
+  const yShape = new THREE.Shape();
+  hull.forEach((v, i) => {
+    const s = 1.06;  // 略外扩
+    if (i === 0) yShape.moveTo(v.x * s, -v.z * s); else yShape.lineTo(v.x * s, -v.z * s);
+  });
+  yShape.closePath();
+  const yMesh = new THREE.Mesh(
+    new THREE.ShapeGeometry(yShape),
+    new THREE.MeshStandardMaterial({ color: 0xb8924f, roughness: 0.85 })
+  );
+  yMesh.rotation.x = -Math.PI / 2;
+  yMesh.position.y = 0.005;
+  yMesh.receiveShadow = true;
+  boardGroup.add(yMesh);
+
+  // 中央河界（楚河汉界）：边界严格跟随三条弧线棋盘线（p44 → q44 的二次贝塞尔）
+  const tri = new THREE.Shape();
+  const a0 = nodeWorldPos(0, 4, 4);
+  tri.moveTo(a0.x, -a0.z);
+  for (let p = 0; p < 3; p++) {
+    const a = nodeWorldPos(p, 4, 4), b = nodeWorldPos((p + 1) % 3, 4, 4);
+    const ctrl = a.clone().add(b).multiplyScalar(0.5).multiplyScalar(0.45); // 与 buildBoardLines 同一控制点
+    tri.quadraticCurveTo(ctrl.x, -ctrl.z, b.x, -b.z);
+  }
+  tri.closePath();
+  const triGeo = new THREE.ShapeGeometry(tri, 16);
+  const triMat = new THREE.MeshStandardMaterial({ color: 0xa67e44, roughness: 0.9 });
+  const water = new THREE.Mesh(triGeo, triMat);
+  water.rotation.x = -Math.PI / 2;
+  water.position.y = 0.012;
+  boardGroup.add(water);
+
+  buildFactionLabels();
+}
+
+// 中央区域三国名号：红→蜀汉，绿→东吴，蓝→曹魏；文字随相机保持屏幕水平
+const PLAYER_FACTIONS = ['蜀汉', '东吴', '曹魏'];
+const factionLabels = [];
+function buildFactionLabels() {
+  for (let p = 0; p < 3; p++) {
+    const cv = document.createElement('canvas');
+    cv.width = 256; cv.height = 128;
+    const ctx = cv.getContext('2d');
+    ctx.fillStyle = '#' + PLAYER_COLORS[p].toString(16).padStart(6, '0');
+    ctx.globalAlpha = 0.82;
+    ctx.font = 'bold 88px "KaiTi","STKaiti",serif';
+    ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+    ctx.fillText(PLAYER_FACTIONS[p], 128, 70);
+    const tex = new THREE.CanvasTexture(cv);
+    const mat = new THREE.MeshBasicMaterial({ map: tex, transparent: true });
+    const label = new THREE.Mesh(new THREE.PlaneGeometry(2.4, 1.2), mat);
+    // 位置：从中心向本方河岸中点 p44 方向偏移
+    const bank = nodeWorldPos(p, 4, 4);
+    label.position.set(bank.x * 0.52, 0.015, bank.z * 0.52);
+    label.rotation.x = -Math.PI / 2;
+    boardGroup.add(label);
+    factionLabels.push(label);
+  }
+  applyLabelFacing();
+}
+function applyLabelFacing() {
+  const yaw = (typeof camTheta === 'number') ? camTheta : 0;
+  for (const l of factionLabels) l.rotation.z = yaw;   // 与屏幕水平对齐
+}
+
+// 三角形角点：zone p 河岸 c=8 端与其桥接邻盘 c=0 端的中点再外推
+function cornerPoint(p) {
+  const q = crossZoneFor(p);
+  const a = nodeWorldPos(p, 4, 8), b = nodeWorldPos(q, 4, 0);
+  return a.clone().add(b).multiplyScalar(0.5);
+}
+
+// 棋盘线
+function buildBoardLines() {
+  const mat = new THREE.LineBasicMaterial({ color: 0x4a2c10 });
+  const pts = [];
+  const Y = 0.02;
+  function seg(a, b) {
+    pts.push(a.x, Y, a.z, b.x, Y, b.z);
+  }
+  for (let p = 0; p < 3; p++) {
+    // 横线
+    for (let r = 0; r <= 4; r++)
+      seg(nodeWorldPos(p, r, 0), nodeWorldPos(p, r, 8));
+    // 纵线
+    for (let c = 0; c <= 8; c++)
+      seg(nodeWorldPos(p, 0, c), nodeWorldPos(p, 4, c));
+    // 九宫斜线
+    seg(nodeWorldPos(p, 0, 3), nodeWorldPos(p, 2, 5));
+    seg(nodeWorldPos(p, 0, 5), nodeWorldPos(p, 2, 3));
+    // 过河桥线（到邻盘）
+    const q = crossZoneFor(p);
+    for (let c = 5; c <= 8; c++)
+      seg(nodeWorldPos(p, 4, c), nodeWorldPos(q, 4, 8 - c));
+    // 中央三角连线：p44 → 下一盘 q44，向中心微弯的弧线
+    const a = nodeWorldPos(p, 4, 4), b = nodeWorldPos((p + 1) % 3, 4, 4);
+    const ctrl = a.clone().add(b).multiplyScalar(0.5).multiplyScalar(0.45); // 控制点拉向中心
+    let prev = a;
+    for (let i = 1; i <= 12; i++) {
+      const t = i / 12, it = 1 - t;
+      const pt = new THREE.Vector3(
+        it * it * a.x + 2 * it * t * ctrl.x + t * t * b.x, 0,
+        it * it * a.z + 2 * it * t * ctrl.z + t * t * b.z);
+      seg(prev, pt);
+      prev = pt;
+    }
+  }
+  const geo = new THREE.BufferGeometry();
+  geo.setAttribute('position', new THREE.Float32BufferAttribute(pts, 3));
+  boardGroup.add(new THREE.LineSegments(geo, mat));
+
+  // 交叉点小圆点（中心点高亮）
+  const dotGeo = new THREE.CircleGeometry(0.07, 12);
+  const dotMat = new THREE.MeshBasicMaterial({ color: 0x4a2c10 });
+  const inst = new THREE.InstancedMesh(dotGeo, dotMat, nodes.size);
+  const m4 = new THREE.Matrix4(), rot = new THREE.Matrix4().makeRotationX(-Math.PI / 2);
+  let i = 0;
+  for (const n of nodes.values()) {
+    m4.makeTranslation(n.pos.x, Y + 0.002, n.pos.z).multiply(rot);
+    inst.setMatrixAt(i++, m4);
+  }
+  boardGroup.add(inst);
+}
+
+buildBoardMesh();
+buildBoardLines();
+</script>
+
+<script>
+// ============ 棋子数据与渲染 ============
+// type: K帅 A士 E相 H马 R车 C炮 P兵
+const PIECE_CHARS = {
+  K: ['帅', '将', '将'], A: ['仕', '士', '士'], E: ['相', '象', '象'],
+  H: ['马', '马', '马'], R: ['车', '车', '车'], C: ['炮', '炮', '炮'], P: ['兵', '卒', '卒']
+};
+
+let pieces = [];                 // { id, type, owner(当前控制方), home(初始方), nodeKey, mesh, alive }
+const pieceAt = new Map();       // nodeKey -> piece
+let pieceIdSeq = 0;
+
+function initialSetup() {
+  pieces = []; pieceAt.clear(); pieceIdSeq = 0;
+  const back = ['R','H','E','A','K','A','E','H','R'];
+  for (let p = 0; p < 3; p++) {
+    back.forEach((t, c) => spawnPiece(t, p, NK(p, 0, c)));
+    spawnPiece('C', p, NK(p, 2, 1));
+    spawnPiece('C', p, NK(p, 2, 7));
+    for (let c = 0; c <= 8; c += 2) spawnPiece('P', p, NK(p, 3, c));
+  }
+}
+
+function spawnPiece(type, owner, nodeKey) {
+  const pc = { id: ++pieceIdSeq, type, owner, home: owner, nodeKey, alive: true, mesh: null };
+  pieces.push(pc);
+  pieceAt.set(nodeKey, pc);
+  return pc;
+}
+
+// --- 棋子贴图（canvas 画字）---
+const texCache = new Map();
+function pieceTexture(type, owner) {
+  const key = type + owner;
+  if (texCache.has(key)) return texCache.get(key);
+  const cv = document.createElement('canvas');
+  cv.width = cv.height = 128;
+  const ctx = cv.getContext('2d');
+  ctx.fillStyle = '#f5e6c8';
+  ctx.beginPath(); ctx.arc(64, 64, 64, 0, Math.PI * 2); ctx.fill();
+  const col = '#' + PLAYER_COLORS[owner].toString(16).padStart(6, '0');
+  ctx.strokeStyle = col; ctx.lineWidth = 6;
+  ctx.beginPath(); ctx.arc(64, 64, 54, 0, Math.PI * 2); ctx.stroke();
+  ctx.fillStyle = col;
+  ctx.font = 'bold 78px "KaiTi","STKaiti",serif';
+  ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+  ctx.fillText(PIECE_CHARS[type][owner], 64, 68);
+  const tex = new THREE.CanvasTexture(cv);
+  texCache.set(key, tex);
+  return tex;
+}
+
+const pieceGroup = new THREE.Group();
+scene.add(pieceGroup);
+const PIECE_R = 0.42, PIECE_H = 0.22;
+// 棋子文字面向：统一相机方位角（CircleGeometry 顶面贴图无需额外偏转）
+function applyPieceFacing() {
+  const yaw = (typeof camTheta === 'number') ? camTheta : 0;
+  for (const pc of pieces) {
+    if (pc.alive && pc.mesh) pc.mesh.rotation.y = yaw;
+  }
+}
+
+// 圆角棋子：侧面用 Lathe 旋转体（带圆角过渡）+ 顶面贴图圆片
+let pieceSideGeo = null, pieceTopGeo = null;
+function ensurePieceGeo() {
+  if (pieceSideGeo) return;
+  const R = PIECE_R, H = PIECE_H, F = 0.07;   // F = 圆角半径
+  const pts = [];
+  pts.push(new THREE.Vector2(0, 0));
+  pts.push(new THREE.Vector2(R - F, 0));
+  // 底部圆角
+  for (let i = 1; i <= 4; i++) {
+    const a = (i / 4) * Math.PI / 2;
+    pts.push(new THREE.Vector2(R - F + F * Math.sin(a), F - F * Math.cos(a)));
+  }
+  // 顶部圆角
+  for (let i = 0; i <= 4; i++) {
+    const a = (i / 4) * Math.PI / 2;
+    pts.push(new THREE.Vector2(R - F + F * Math.cos(a), H - F + F * Math.sin(a)));
+  }
+  pts.push(new THREE.Vector2(0, H));
+  pieceSideGeo = new THREE.LatheGeometry(pts, 32);
+  pieceTopGeo = new THREE.CircleGeometry(R - F * 0.6, 32);
+}
+
+function buildPieceMesh(pc) {
+  ensurePieceGeo();
+  const sideMat = new THREE.MeshStandardMaterial({ color: 0xe9d9b5, roughness: 0.55 });
+  const body = new THREE.Mesh(pieceSideGeo, sideMat);
+  body.castShadow = true;
+  body.receiveShadow = true;
+  const topMat = new THREE.MeshStandardMaterial({ map: pieceTexture(pc.type, pc.owner), roughness: 0.5, transparent: true });
+  const top = new THREE.Mesh(pieceTopGeo, topMat);
+  top.rotation.x = -Math.PI / 2;
+  top.position.y = PIECE_H + 0.004;
+  body.add(top);
+  body.userData.pieceId = pc.id;
+  return body;
+}
+
+function renderAllPieces() {
+  while (pieceGroup.children.length) pieceGroup.remove(pieceGroup.children[0]);
+  for (const pc of pieces) {
+    if (!pc.alive) continue;
+    pc.mesh = buildPieceMesh(pc);
+    const n = nodes.get(pc.nodeKey);
+    pc.mesh.position.set(n.pos.x, 0.02, n.pos.z);   // Lathe 从 y=0 起
+    pieceGroup.add(pc.mesh);
+  }
+  applyPieceFacing();
+}
+
+// 棋子被接管后换贴图颜色（顶面是子 mesh）
+function refreshPieceFace(pc) {
+  if (pc.mesh && pc.mesh.children[0]) pc.mesh.children[0].material.map = pieceTexture(pc.type, pc.owner);
+}
+
+initialSetup();
+renderAllPieces();
+</script>
+
+<script>
+// ============ 走法生成 ============
+// 直线行走（车/炮/兵/帅用）：沿 a->b 方向利用 cont 表延伸
+function* rayFrom(start, dir) {  // 产出依次的格子 key
+  let prev = start, cur = dir;
+  while (cur) {
+    yield cur;
+    const nexts = continuationsOf(prev, cur);
+    prev = cur;
+    cur = nexts.length ? nexts[0] : null;   // 中心点分叉：直行取第一条，其余由调用方枚举
+  }
+}
+
+function allRays(start) {  // 返回 [[key,...], ...] 每个方向一条射线（中心分叉则裂成多条）
+  const rays = [];
+  for (const d of orth.get(start)) {
+    expandRay(start, d, [], rays);
+  }
+  return rays;
+}
+function expandRay(prev, cur, acc, out) {
+  const path = acc.concat(cur);
+  const nexts = continuationsOf(prev, cur);
+  if (!nexts.length) { out.push(path); return; }
+  for (const nx of nexts) expandRay(cur, nx, path, out);
+}
+
+function inPalace(p, key) {
+  const n = nodes.get(key);
+  return n && n.p === p && n.r <= 2 && n.c >= 3 && n.c <= 5;
+}
+function inHomeHalf(pc, key) {
+  const n = nodes.get(key);
+  return n && n.p === pc.home;     // 本方半盘（按出生方算）
+}
+function crossedRiver(pc) {
+  return !inHomeHalf(pc, pc.nodeKey);
+}
+
+// 马腿/象眼：取几何中点最近的节点
+function midNode(aKey, bKey) {
+  const a = nodes.get(aKey).pos, b = nodes.get(bKey).pos;
+  const mid = a.clone().add(b).multiplyScalar(0.5);
+  let best = null, bd = 0.35;
+  for (const n of nodes.values()) {
+    const d = n.pos.distanceTo(mid);
+    if (d < bd) { bd = d; best = n.key; }
+  }
+  return best;
+}
+
+// 马（日字）：直一步到马腿 leg（须无子），再沿该方向延伸到 leg2，
+// 最后从 leg2 横向一步（排除继续直行）→ 即 (2,1) 偏移，符合中国象棋规则
+function knightMoves(pc) {
+  const res = [];
+  const start = pc.nodeKey;
+  for (const leg of orth.get(start)) {
+    if (pieceAt.get(leg)) continue;          // 蹩马腿（仅紧邻直步点判断）
+    for (const leg2 of continuationsOf(start, leg)) {
+      for (const dst of orth.get(leg2)) {
+        if (dst === leg) continue;                              // 退回
+        if (continuationsOf(leg, leg2).includes(dst)) continue; // 直线第三步
+        pushMove(pc, dst, res);
+      }
+    }
+  }
+  return dedup(res);
+}
+
+// 象：田字 = 两步斜线（沿 diag 不可用，象走的是 2x2 对角）— 用几何法：距离≈2√2 且象眼空
+function elephantMoves(pc) {
+  const res = [], start = pc.nodeKey, sp = nodes.get(start).pos;
+  const n0 = nodes.get(start);
+  for (const n of nodes.values()) {
+    if (n.p !== n0.p) continue;                       // 象不过河
+    const dr = Math.abs(n.r - n0.r), dc = Math.abs(n.c - n0.c);
+    if (dr !== 2 || dc !== 2) continue;
+    const eye = NK(n0.p, (n.r + n0.r) / 2, (n.c + n0.c) / 2);
+    if (pieceAt.get(eye)) continue;                   // 塞象眼
+    pushMove(pc, n.key, res);
+  }
+  return res;
+}
+
+function advisorMoves(pc) {
+  const res = [];
+  for (const d of diag.get(pc.nodeKey)) {
+    if (inPalace(pc.home, d)) pushMove(pc, d, res);
+  }
+  return res;
+}
+
+function kingMoves(pc) {
+  const res = [];
+  for (const d of orth.get(pc.nodeKey)) {
+    if (inPalace(pc.home, d)) pushMove(pc, d, res);
+  }
+  return res;
+}
+
+function rookMoves(pc) {
+  const res = [];
+  for (const ray of allRays(pc.nodeKey)) {
+    for (const k of ray) {
+      const occ = pieceAt.get(k);
+      if (!occ) { pushMove(pc, k, res); continue; }
+      if (occ.owner !== pc.owner) pushMove(pc, k, res);
+      break;
+    }
+  }
+  return dedup(res);
+}
+
+function cannonMoves(pc) {
+  const res = [];
+  for (const ray of allRays(pc.nodeKey)) {
+    let jumped = false;
+    for (const k of ray) {
+      const occ = pieceAt.get(k);
+      if (!jumped) {
+        if (!occ) { pushMove(pc, k, res); continue; }
+        jumped = true;
+      } else if (occ) {
+        if (occ.owner !== pc.owner) pushMove(pc, k, res);
+        break;
+      }
+    }
+  }
+  return dedup(res);
+}
+
+// 兵：未过河只能向前（r 增大方向）；过河后可走桥邻/横向/继续"前进"（任何远离本方后排方向）
+function pawnMoves(pc) {
+  const res = [], n0 = nodes.get(pc.nodeKey);
+  const crossed = crossedRiver(pc);
+  for (const d of orth.get(pc.nodeKey)) {
+    const n = nodes.get(d);
+    if (!crossed) {
+      // 本方半盘：前进 = r+1，或 r=4 河岸时过桥进入邻盘
+      const fwd = (n.p === n0.p && n.r === n0.r + 1) ||
+                  (n0.r === 4 && n.p !== n0.p);
+      if (fwd) pushMove(pc, d, res);
+    } else {
+      // 过河后：不允许退回让自己更接近本方后排
+      if (!movesTowardHome(pc, n0, n)) pushMove(pc, d, res);
+    }
+  }
+  return res;
+}
+// 判断 n0->n 是否朝向 pc.home 的后排（即"后退"）
+function movesTowardHome(pc, n0, n) {
+  const homeBack = nodeWorldPos(pc.home, 0, 4);
+  return n.pos.distanceTo(homeBack) < n0.pos.distanceTo(homeBack) - 0.01;
+}
+
+function pushMove(pc, dstKey, out) {
+  if (dstKey === undefined || dstKey === null) return;
+  const occ = pieceAt.get(dstKey);
+  if (occ && occ.owner === pc.owner) return;
+  out.push(dstKey);
+}
+function dedup(arr) { return [...new Set(arr)]; }
+
+function legalMoves(pc) {
+  switch (pc.type) {
+    case 'R': return rookMoves(pc);
+    case 'C': return cannonMoves(pc);
+    case 'H': return knightMoves(pc);
+    case 'E': return elephantMoves(pc);
+    case 'A': return advisorMoves(pc);
+    case 'K': return kingMoves(pc);
+    case 'P': return pawnMoves(pc);
+  }
+  return [];
+}
+</script>
+
+<script>
+// ============ 交互与回合 ============
+let curPlayer = 0;                 // 0红 1绿 2蓝
+let alivePlayers = [true, true, true];
+let gameOver = false;
+let selected = null;               // 选中的 piece
+let hintMeshes = [];               // 高亮提示
+
+const raycaster = new THREE.Raycaster();
+const pointer = new THREE.Vector2();
+const groundPlane = new THREE.Plane(new THREE.Vector3(0, 1, 0), 0);
+
+function isHuman(p) { return (game_config.humanPlayers || [0]).includes(p); }
+
+function clearHints() {
+  for (const m of hintMeshes) scene.remove(m);
+  hintMeshes = [];
+  if (selected && selected.mesh) selected.mesh.position.y = 0.02;
+}
+
+function showHints(pc, moves) {
+  if (pc.mesh) pc.mesh.position.y = 0.25;   // 抬起选中棋子
+  const geo = new THREE.RingGeometry(0.22, 0.34, 24);
+  for (const k of moves) {
+    const occ = pieceAt.get(k);
+    const mat = new THREE.MeshBasicMaterial({
+      color: occ ? 0xff4444 : 0x55ff88, transparent: true, opacity: 0.85, side: THREE.DoubleSide
+    });
+    const ring = new THREE.Mesh(geo, mat);
+    const n = nodes.get(k);
+    ring.rotation.x = -Math.PI / 2;
+    ring.position.set(n.pos.x, 0.04, n.pos.z);
+    ring.userData.targetKey = k;
+    scene.add(ring);
+    hintMeshes.push(ring);
+  }
+}
+
+function pickNode(clientX, clientY) {
+  pointer.x = (clientX / innerWidth) * 2 - 1;
+  pointer.y = -(clientY / innerHeight) * 2 + 1;
+  raycaster.setFromCamera(pointer, camera);
+  // 先试棋子（递归：顶面是子 mesh）
+  const hits = raycaster.intersectObjects(pieceGroup.children, true);
+  if (hits.length) {
+    let obj = hits[0].object;
+    while (obj && obj.userData.pieceId === undefined) obj = obj.parent;
+    const pc = obj && pieces.find(x => x.id === obj.userData.pieceId);
+    if (pc) return { type: 'piece', piece: pc };
+  }
+  // 再投射地面取最近节点
+  const pt = new THREE.Vector3();
+  if (raycaster.ray.intersectPlane(groundPlane, pt)) {
+    let best = null, bd = 0.55;
+    for (const n of nodes.values()) {
+      const d = Math.hypot(n.pos.x - pt.x, n.pos.z - pt.z);
+      if (d < bd) { bd = d; best = n; }
+    }
+    if (best) return { type: 'node', key: best.key };
+  }
+  return null;
+}
+
+function onTap(e) {
+  if (gameOver || !gameStarted || animating) return;
+  if (!isHuman(curPlayer)) return;
+  const x = e.touches ? e.changedTouches[0].clientX : e.clientX;
+  const y = e.touches ? e.changedTouches[0].clientY : e.clientY;
+  const hit = pickNode(x, y);
+  if (!hit) { clearHints(); selected = null; return; }
+
+  const dstKey = hit.type === 'piece' ? hit.piece.nodeKey : hit.key;
+  if (selected) {
+    const moves = legalMoves(selected);
+    if (moves.includes(dstKey)) {
+      doMove(selected, dstKey);
+      clearHints(); selected = null;
+      return;
+    }
+  }
+  // （重新）选择己方棋子
+  if (hit.type === 'piece' && hit.piece.owner === curPlayer) {
+    clearHints();
+    selected = hit.piece;
+    showHints(selected, legalMoves(selected));
+    if (typeof playSound === 'function') playSound('select');
+  } else {
+    clearHints(); selected = null;
+  }
+}
+renderer.domElement.addEventListener('pointerdown', onTap);
+
+let animating = false;
+function doMove(pc, dstKey) {
+  const fromPos = nodes.get(pc.nodeKey).pos.clone();
+  const victim = pieceAt.get(dstKey);
+  pieceAt.delete(pc.nodeKey);
+  pc.nodeKey = dstKey;
+  pieceAt.set(dstKey, pc);
+  const n = nodes.get(dstKey);
+  setLastMoveMarkers(fromPos, n.pos);
+  playSound('move');
+  // 被吃棋子：先剥离 mesh 交给动画，逻辑立即结算
+  let victimMesh = null;
+  if (victim) { victimMesh = victim.mesh; victim.mesh = null; }
+  animating = true;
+  animatePieceHop(pc, fromPos, n.pos, () => {
+    animating = false;
+    if (victim) {
+      playSound(victim.type === 'K' ? 'absorb' : 'capture');
+      spawnBurst(n.pos, PLAYER_COLORS[victim.owner]);
+      if (victimMesh) animateCaptureOut(victimMesh);
+      capturePiece(victim, pc.owner);
+    }
+    applyPieceFacing();
+    if (!gameOver) nextTurn();
+  });
+}
+
+function nextTurn() {
+  do {
+    curPlayer = (curPlayer + 1) % 3;
+  } while (!alivePlayers[curPlayer]);
+  updateTurnBadge();
+  if (!isHuman(curPlayer)) scheduleAI();
+}
+
+function updateTurnBadge() {
+  const badge = document.getElementById('turnBadge');
+  const colors = ['bg-red-700', 'bg-emerald-700', 'bg-sky-700'];
+  badge.classList.remove(...colors);
+  badge.classList.add(colors[curPlayer]);
+  badge.textContent = PLAYER_NAMES[curPlayer] + '方回合' + (isHuman(curPlayer) ? '（你）' : '');
+}
+
+updateTurnBadge();
+</script>
+
+<script>
+// ============ 吃子 / 接管 / 胜负 ============
+function capturePiece(victim, byOwner) {
+  victim.alive = false;
+  // 只删除属于 victim 自己的占位（避免误删刚落在同格的吃子方）
+  if (pieceAt.get(victim.nodeKey) === victim) pieceAt.delete(victim.nodeKey);
+  if (victim.mesh) { pieceGroup.remove(victim.mesh); victim.mesh = null; }
+
+  if (victim.type === 'K') {
+    absorbPlayer(victim.owner, byOwner);
+  }
+}
+
+// 某方主帅被吃：其剩余棋子全部归吃方所有
+function absorbPlayer(loser, winner) {
+  alivePlayers[loser] = false;
+  let count = 0;
+  for (const pc of pieces) {
+    if (pc.alive && pc.owner === loser) {
+      pc.owner = winner;
+      refreshPieceFace(pc);
+      count++;
+    }
+  }
+  toast(`${PLAYER_NAMES[winner]}方击杀${PLAYER_NAMES[loser]}方主帅，接管 ${count} 枚棋子！`,
+        PLAYER_COLORS[winner]);
+
+  const remaining = alivePlayers.filter(Boolean).length;
+  if (remaining === 1) endGame(winner);
+}
+
+function endGame(winner) {
+  gameOver = true;
+  clearHints(); selected = null;
+  const human = isHuman(winner);
+  if (typeof playSound === 'function') playSound(human ? 'win' : 'lose');
+  if (typeof spawnBurst === 'function') {
+    const c = new THREE.Vector3(0, 0, 0);
+    [PLAYER_COLORS[winner], 0xffd54a, 0xffffff].forEach((col, i) =>
+      setTimeout(() => spawnBurst(c, col, 22), i * 220));
+  }
+  toast(human ? `🎉 你（${PLAYER_NAMES[winner]}方）一统天下！` : `${PLAYER_NAMES[winner]}方获胜！`,
+        PLAYER_COLORS[winner], 0);
+  const myPieces = pieces.filter(p => p.alive && isHuman(p.owner)).length;
+  const earnedPoints = human ? 100 + myPieces * 5 : Math.min(40, myPieces * 3);
+  window.parent.postMessage({
+    type: 'gameFinished',
+    data: { earnedPoints, won: human, difficulty: game_config.difficulty }
+  }, '*');
+  setTimeout(() => document.getElementById('restartBar').classList.remove('hidden'), 1200);
+}
+
+// 浮动提示
+function toast(text, colorHex, ms = 2600) {
+  const el = document.getElementById('toast');
+  el.textContent = text;
+  el.style.background = '#' + colorHex.toString(16).padStart(6, '0');
+  el.classList.remove('hidden', 'opacity-0');
+  if (toast._t) clearTimeout(toast._t);
+  if (ms > 0) toast._t = setTimeout(() => el.classList.add('opacity-0'), ms);
+}
+</script>
+
+<script>
+// ============ AI（Paranoid 多层搜索 + alpha-beta 剪枝，参考 haqi_xiangqi.html）============
+// 三人棋适配：本方为 max 层，其余两方一律按 min 层处理（paranoid 假设：都针对我），
+// 配合吃子优先排序、分支截断与时间预算，深度可达 4 层仍保持流畅。
+const PIECE_VALUE = { K: 10000, R: 90, C: 50, H: 45, E: 22, A: 22, P: 12 };
+const WIN_SCORE = 60000;
+
+// depth = 总搜索层数（含 AI 自己这步）；limit = 每层候选走法上限（0 不限）；
+// deadline = 单次搜索时间预算(ms)，超时节点退化为静态评估，保证不卡死；
+// topK = 从前 K 个最优中随机挑选（制造低难度的"失误"）
+const AI_DIFF = {
+  easy:   { depth: 1, limit: 0,  noise: 26, deadline: 200,  topK: 4 },
+  normal: { depth: 3, limit: 12, noise: 5,  deadline: 900,  topK: 1 },
+  hard:   { depth: 4, limit: 9,  noise: 0,  deadline: 1400, topK: 1 }
+};
+
+// 临时执行/撤销一步（仅数据层，不动渲染），返回 undo 闭包
+function simMove(pc, dst) {
+  const fromKey = pc.nodeKey;
+  const victim = pieceAt.get(dst) || null;
+  pieceAt.delete(fromKey);
+  if (victim) { victim.alive = false; pieceAt.delete(dst); }
+  pieceAt.set(dst, pc);
+  pc.nodeKey = dst;
+  return () => {
+    pc.nodeKey = fromKey;
+    pieceAt.delete(dst);
+    pieceAt.set(fromKey, pc);
+    if (victim) { victim.alive = true; pieceAt.set(dst, victim); }
+  };
+}
+
+// 节点是否被任一敌方攻击（提早退出，供评估函数使用）
+function isAttacked(nodeKey, defenderOwner) {
+  for (const en of pieces) {
+    if (!en.alive || en.owner === defenderOwner) continue;
+    if (legalMoves(en).includes(nodeKey)) return true;
+  }
+  return false;
+}
+
+// 静态评估（以 player 视角）：子力 + 兵过河 + 本方主帅安全
+function evalFor(player) {
+  let score = 0;
+  let king = null;
+  for (const pc of pieces) {
+    if (!pc.alive) continue;
+    const sign = pc.owner === player ? 1 : -1;
+    score += sign * PIECE_VALUE[pc.type];
+    if (pc.type === 'P' && !inHomeHalf(pc, pc.nodeKey)) score += sign * 8;
+    if (pc.type === 'K' && pc.owner === player) king = pc;
+  }
+  if (!king) return -WIN_SCORE;
+  if (isAttacked(king.nodeKey, player)) score -= 160;
+  return score;
+}
+
+// 走法生成 + 排序：吃子优先（按被吃子价值降序，利于剪枝），可按 limit 截断
+function orderedMovesOf(player, limit) {
+  const moves = [];
+  for (const pc of pieces) {
+    if (!pc.alive || pc.owner !== player) continue;
+    for (const dst of legalMoves(pc)) {
+      const v = pieceAt.get(dst);
+      moves.push({ pc, dst, cap: v ? PIECE_VALUE[v.type] : 0 });
+    }
+  }
+  moves.sort((a, b) => b.cap - a.cap);
+  return limit > 0 && moves.length > limit ? moves.slice(0, limit) : moves;
+}
+
+function nextAliveOf(p) {
+  let q = p;
+  do { q = (q + 1) % 3; } while (!alivePlayers[q] && q !== p);
+  return q;
+}
+
+// Paranoid alpha-beta：turnPlayer === player 时取 max，否则取 min
+let aiDeadline = 0;
+function paranoid(player, turnPlayer, depth, alpha, beta, limit) {
+  if (depth <= 0 || performance.now() > aiDeadline) return evalFor(player);
+  const moves = orderedMovesOf(turnPlayer, limit);
+  if (!moves.length)   // 无子可动：跳过该方
+    return paranoid(player, nextAliveOf(turnPlayer), depth - 1, alpha, beta, limit);
+  const maximizing = turnPlayer === player;
+  let best = maximizing ? -Infinity : Infinity;
+  for (const { pc, dst } of moves) {
+    const victim = pieceAt.get(dst);
+    let score;
+    if (victim && victim.type === 'K') {
+      if (victim.owner === player) {
+        score = -(WIN_SCORE + depth * 100);          // 我方主帅被吃：致命
+      } else if (maximizing) {
+        score = WIN_SCORE + depth * 100;             // 吃掉敌帅并接管其棋子：必胜级
+      } else {
+        // 敌方互吃主帅：对方阵营合并变强，近似为轻微不利，不再深搜
+        const undo = simMove(pc, dst);
+        score = evalFor(player) - 120;
+        undo();
+      }
+    } else {
+      const undo = simMove(pc, dst);
+      score = paranoid(player, nextAliveOf(turnPlayer), depth - 1, alpha, beta, limit);
+      undo();
+    }
+    if (maximizing) {
+      if (score > best) best = score;
+      if (best > alpha) alpha = best;
+    } else {
+      if (score < best) best = score;
+      if (best < beta) beta = best;
+    }
+    if (alpha >= beta) break;                        // 剪枝
+  }
+  return best;
+}
+
+// 最近走法记忆（防原地往返循环）
+const aiRecentMoves = [[], [], []];
+
+function aiPickMove(player) {
+  const cfg = AI_DIFF[game_config.difficulty] || AI_DIFF.normal;
+  aiDeadline = performance.now() + cfg.deadline;
+  const moves = orderedMovesOf(player, 0);
+  if (!moves.length) return null;
+  const recent = aiRecentMoves[player];
+  const scored = [];
+  let alphaRoot = -Infinity;
+
+  for (const { pc, dst } of moves) {
+    const victim = pieceAt.get(dst);
+    if (victim && victim.type === 'K') return { pc, dst };   // 必杀：直接吃帅接管
+
+    const undo = simMove(pc, dst);
+    let score = paranoid(player, nextAliveOf(player), cfg.depth - 1,
+                         cfg.topK > 1 ? -Infinity : alphaRoot, Infinity, cfg.limit);
+    undo();
+
+    if (recent.includes(pc.id + '>' + dst)) score -= 30;     // 重复走法惩罚
+    if (cfg.noise) score += Math.random() * cfg.noise;
+    scored.push({ pc, dst, score });
+    if (score > alphaRoot) alphaRoot = score;
+  }
+
+  scored.sort((a, b) => b.score - a.score);
+  const k = Math.min(cfg.topK || 1, scored.length);
+  const pick = scored[k > 1 ? Math.floor(Math.random() * k) : 0];
+  recent.push(pick.pc.id + '>' + pick.dst);
+  if (recent.length > 6) recent.shift();
+  return { pc: pick.pc, dst: pick.dst };
+}
+
+function scheduleAI() {
+  // AI 超过 300ms 未落子时显示"思考中..."
+  const thinkTimer = setTimeout(() => {
+    if (gameOver || isHuman(curPlayer)) return;
+    const badge = document.getElementById('turnBadge');
+    if (badge) badge.textContent = PLAYER_NAMES[curPlayer] + '方思考中...';
+  }, 300);
+  setTimeout(() => {
+    if (gameOver || isHuman(curPlayer)) { clearTimeout(thinkTimer); return; }
+    const mv = aiPickMove(curPlayer);
+    clearTimeout(thinkTimer);
+    if (mv) {
+      doMove(mv.pc, mv.dst);
+    } else {
+      nextTurn();   // 无子可动，跳过
+    }
+  }, game_config.aiMoveDelay || 800);
+}
+</script>
+
+<script>
+// ============ 相机环绕 & 重开 ============
+let camTheta = 0, camPhi = 1.25, camDist = 19;   // 默认近俯视
+let userZoomed = false;
+let dragging = false, dragMoved = false, lastX = 0, lastY = 0;
+
+// 自适应距离：纵向保证整张桌子可见；横向只需保证棋盘格可见——
+// 窄屏（手机竖屏）允许桌子左右两角被裁切，从而让棋盘显示更大
+function fitCamDist() {
+  const R_TABLE = 10.4;   // 桌面外接半径+余量（纵向必须完整）
+  const R_BOARD = 8.3;    // 棋盘格外接半径（横向最低要求）
+  const vHalf = THREE.MathUtils.degToRad(camera.fov / 2);
+  const hHalf = Math.atan(Math.tan(vHalf) * camera.aspect);
+  return Math.max(R_TABLE / Math.tan(vHalf), R_BOARD / Math.tan(hHalf));
+}
+
+function updateCamera() {
+  if (!userZoomed) camDist = fitCamDist();
+  camera.position.set(
+    camDist * Math.sin(camTheta) * Math.cos(camPhi),
+    camDist * Math.sin(camPhi),
+    camDist * Math.cos(camTheta) * Math.cos(camPhi)
+  );
+  camera.lookAt(0, 0, 0);
+  // 棋子与标签文字始终与屏幕水平对齐
+  applyPieceFacing();
+  if (typeof applyLabelFacing === 'function') applyLabelFacing();
+}
+updateCamera();
+
+renderer.domElement.addEventListener('pointerdown', (e) => {
+  dragging = true; dragMoved = false;
+  lastX = e.clientX; lastY = e.clientY;
+});
+window.addEventListener('pointermove', (e) => {
+  if (!dragging) return;
+  const dx = e.clientX - lastX, dy = e.clientY - lastY;
+  if (Math.abs(dx) + Math.abs(dy) > 6) dragMoved = true;   // 仅用于区分点击/拖动，不再旋转相机
+  lastX = e.clientX; lastY = e.clientY;
+});
+window.addEventListener('pointerup', () => { dragging = false; });
+renderer.domElement.addEventListener('wheel', (e) => {
+  userZoomed = true;
+  camDist = Math.min(fitCamDist() * 1.4, Math.max(9, camDist + e.deltaY * 0.02));
+  updateCamera();
+}, { passive: true });
+
+// 双指捏合缩放
+let pinchDist = 0;
+renderer.domElement.addEventListener('touchmove', (e) => {
+  if (e.touches.length === 2) {
+    const d = Math.hypot(e.touches[0].clientX - e.touches[1].clientX,
+                         e.touches[0].clientY - e.touches[1].clientY);
+    if (pinchDist) {
+      userZoomed = true;
+      camDist = Math.min(fitCamDist() * 1.4, Math.max(9, camDist - (d - pinchDist) * 0.05));
+      updateCamera();
+    }
+    pinchDist = d;
+  }
+}, { passive: true });
+renderer.domElement.addEventListener('touchend', () => { pinchDist = 0; });
+
+// 拖拽视角时不触发选子：包装 onTap
+renderer.domElement.removeEventListener('pointerdown', onTap);
+renderer.domElement.addEventListener('pointerup', (e) => {
+  if (!dragMoved) onTap(e);
+});
+
+function restartGame() {
+  gameOver = false;
+  curPlayer = 0;
+  alivePlayers = [true, true, true];
+  selected = null;
+  animating = false;
+  if (typeof clearAllFX === 'function') clearAllFX();
+  clearHints();
+  document.getElementById('restartBar').classList.add('hidden');
+  document.getElementById('toast').classList.add('hidden');
+  initialSetup();
+  renderAllPieces();
+  updateTurnBadge();
+  if (!isHuman(curPlayer)) scheduleAI();
+}
+document.getElementById('restartBtn').addEventListener('click', restartGame);
+</script>
+
+<script>
+// ============ 动画 / 粒子特效 / 音效 ============
+const fxTweens = [];
+const fxParticles = [];
+let fxTime = 0;
+let lastMoveMarkers = [];
+
+function addTween(dur, onUpdate, onDone) {
+  const tw = { t: 0, dur, onUpdate, onDone };
+  fxTweens.push(tw);
+  // \u540e\u53f0\u6807\u7b7e RAF \u88ab\u9650\u6d41\u65f6\u7684\u4fdd\u5e95\uff1a\u8d85\u65f6\u5f3a\u5236\u5b8c\u6210\uff0c\u907f\u514d\u5361\u56de\u5408
+  setTimeout(() => {
+    const i = fxTweens.indexOf(tw);
+    if (i < 0) return;
+    fxTweens.splice(i, 1);
+    tw.onUpdate(1);
+    if (tw.onDone) tw.onDone();
+  }, dur * 1000 + 250);
+}
+
+function updateFX(dt) {
+  fxTime += dt;
+  for (let i = fxTweens.length - 1; i >= 0; i--) {
+    const tw = fxTweens[i];
+    tw.t += dt;
+    const k = Math.min(1, tw.t / tw.dur);
+    tw.onUpdate(k);
+    if (k >= 1) { fxTweens.splice(i, 1); if (tw.onDone) tw.onDone(); }
+  }
+  for (let i = fxParticles.length - 1; i >= 0; i--) {
+    const p = fxParticles[i];
+    p.life += dt;
+    const k = p.life / p.maxLife;
+    if (k >= 1) { scene.remove(p.mesh); fxParticles.splice(i, 1); continue; }
+    p.mesh.position.addScaledVector(p.vel, dt);
+    p.vel.y -= 2.4 * dt;
+    p.mesh.material.opacity = 0.9 * (1 - k);
+    p.mesh.scale.setScalar(Math.max(0.05, 1 - k * 0.6));
+  }
+  // 选中棋子轻柔浮动
+  if (selected && selected.mesh && !animating) {
+    selected.mesh.position.y = 0.25 + Math.sin(fxTime * 5) * 0.05;
+  }
+  // 上一手标记脉冲
+  for (const m of lastMoveMarkers) {
+    m.material.opacity = 0.5 + Math.sin(fxTime * 4) * 0.22;
+  }
+}
+
+// 棋子跳跃移动（抛物线 + easeInOut）
+function animatePieceHop(pc, from, to, onDone) {
+  const dist = from.distanceTo(to);
+  const hop = Math.min(1.0, 0.35 + dist * 0.05);
+  const dur = Math.min(0.5, 0.22 + dist * 0.025);
+  const mesh = pc.mesh;
+  addTween(dur, (k) => {
+    const e = k < 0.5 ? 2 * k * k : 1 - Math.pow(-2 * k + 2, 2) / 2;
+    mesh.position.x = from.x + (to.x - from.x) * e;
+    mesh.position.z = from.z + (to.z - from.z) * e;
+    mesh.position.y = 0.02 + Math.sin(Math.PI * e) * hop;
+  }, () => {
+    mesh.position.set(to.x, 0.02, to.z);
+    if (onDone) onDone();
+  });
+}
+
+// 被吃棋子：弹起旋转缩小飞出
+function animateCaptureOut(mesh) {
+  const dir = Math.random() * Math.PI * 2;
+  addTween(0.5, (k) => {
+    mesh.position.x += Math.cos(dir) * 0.03;
+    mesh.position.z += Math.sin(dir) * 0.03;
+    mesh.position.y = 0.02 + Math.sin(Math.PI * Math.min(1, k * 1.2)) * 1.4;
+    mesh.rotation.x = k * 5;
+    mesh.scale.setScalar(Math.max(0.01, 1 - k));
+  }, () => { pieceGroup.remove(mesh); });
+}
+
+// 粒子爆炸
+function spawnBurst(pos, colorHex, count = 14) {
+  const geo = new THREE.CircleGeometry(0.09, 8);
+  for (let i = 0; i < count; i++) {
+    const mat = new THREE.MeshBasicMaterial({ color: colorHex, transparent: true, opacity: 0.9, side: THREE.DoubleSide });
+    const m = new THREE.Mesh(geo, mat);
+    m.position.set(pos.x, 0.25, pos.z);
+    m.rotation.x = -Math.PI / 2;
+    const a = Math.random() * Math.PI * 2;
+    const sp = 1.2 + Math.random() * 1.8;
+    fxParticles.push({
+      mesh: m, life: 0, maxLife: 0.6 + Math.random() * 0.5,
+      vel: new THREE.Vector3(Math.cos(a) * sp, 1.4 + Math.random() * 1.6, Math.sin(a) * sp)
+    });
+    scene.add(m);
+  }
+}
+
+// 上一手起点/终点金色标记
+function setLastMoveMarkers(from, to) {
+  clearLastMoveMarkers();
+  const geo = new THREE.RingGeometry(0.3, 0.42, 24);
+  for (const p of [from, to]) {
+    const mat = new THREE.MeshBasicMaterial({ color: 0xffd54a, transparent: true, opacity: 0.6, side: THREE.DoubleSide });
+    const ring = new THREE.Mesh(geo, mat);
+    ring.rotation.x = -Math.PI / 2;
+    ring.position.set(p.x, 0.034, p.z);
+    scene.add(ring);
+    lastMoveMarkers.push(ring);
+  }
+}
+function clearLastMoveMarkers() {
+  for (const m of lastMoveMarkers) scene.remove(m);
+  lastMoveMarkers = [];
+}
+function clearAllFX() {
+  fxTweens.length = 0;
+  for (const p of fxParticles) scene.remove(p.mesh);
+  fxParticles.length = 0;
+  clearLastMoveMarkers();
+}
+
+// ---- WebAudio 合成音效（无需外部资源）----
+let audioCtx = null;
+function ac() {
+  if (!audioCtx) {
+    try { audioCtx = new (window.AudioContext || window.webkitAudioContext)(); } catch (e) { return null; }
+  }
+  if (audioCtx.state === 'suspended') audioCtx.resume();
+  return audioCtx;
+}
+function tone(freq, dur, type = 'sine', vol = 0.2, when = 0) {
+  const ctx = ac(); if (!ctx) return;
+  const t0 = ctx.currentTime + when;
+  const o = ctx.createOscillator(), g = ctx.createGain();
+  o.type = type; o.frequency.value = freq;
+  g.gain.setValueAtTime(vol, t0);
+  g.gain.exponentialRampToValueAtTime(0.001, t0 + dur);
+  o.connect(g); g.connect(ctx.destination);
+  o.start(t0); o.stop(t0 + dur + 0.02);
+}
+function noiseBurst(dur = 0.08, vol = 0.25, cutoff = 700, when = 0) {
+  const ctx = ac(); if (!ctx) return;
+  const t0 = ctx.currentTime + when;
+  const len = Math.max(1, Math.floor(ctx.sampleRate * dur));
+  const buf = ctx.createBuffer(1, len, ctx.sampleRate);
+  const d = buf.getChannelData(0);
+  for (let i = 0; i < len; i++) d[i] = (Math.random() * 2 - 1) * (1 - i / len);
+  const src = ctx.createBufferSource(); src.buffer = buf;
+  const f = ctx.createBiquadFilter(); f.type = 'lowpass'; f.frequency.value = cutoff;
+  const g = ctx.createGain(); g.gain.value = vol;
+  src.connect(f); f.connect(g); g.connect(ctx.destination);
+  src.start(t0);
+}
+function playSound(type) {
+  switch (type) {
+    case 'select':  tone(880, 0.06, 'triangle', 0.12); break;
+    case 'move':    noiseBurst(0.07, 0.32, 900); tone(180, 0.08, 'sine', 0.22); break;
+    case 'capture': noiseBurst(0.12, 0.4, 500); tone(110, 0.18, 'sine', 0.32); tone(70, 0.22, 'sine', 0.26, 0.03); break;
+    case 'absorb':  [523, 659, 784, 1047].forEach((f, i) => tone(f, 0.18, 'triangle', 0.2, i * 0.09)); break;
+    case 'win':     [523, 659, 784, 1047, 1319].forEach((f, i) => tone(f, 0.3, 'triangle', 0.22, i * 0.13)); break;
+    case 'lose':    [392, 330, 262, 196].forEach((f, i) => tone(f, 0.28, 'sawtooth', 0.1, i * 0.14)); break;
+  }
+}
+</script>
+</body>
+</html>

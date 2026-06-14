@@ -391,7 +391,7 @@
     const SHOP_WEBP_MAX_BYTES = 10 * 1024;
     const SHOP_WEBP_BG_OPTIONS = { seedThreshold: 60, growThreshold: 78, haloThreshold: 112, borderRatio: 0.02, gridLineWidth: 0, sheetCols: 1, sheetRows: 1 };
     const CONFIG_MODULE_URL = '../js/config.js';
-    const SDK_CDN_URL = 'https://cdn.keepwork.com/sdk/keepworkSDK.iife.js?v=20260522a';
+    const SDK_CDN_URL = 'https://cdn.keepwork.com/sdk/keepworkSDK.iife.js?v=20260612a';
     const $ = (id) => document.getElementById(id);
 
     const state = {
@@ -1317,7 +1317,7 @@
       const explicitSdk = params.get('sdk');
       const hostname = window.location.hostname;
       const isLocalHost = !hostname || hostname === 'localhost' || hostname === '127.0.0.1' || hostname === '::1';
-      const localCandidates = ['../../../../../keepworkSDK/index.js', '/keepworkSDK/index.js'];
+      const localCandidates = ['http://127.0.0.1:5001/index.ts'];
       const deployedCandidates = [SDK_CDN_URL, 'https://keepwork.com/public/resource/keepworkSDK.iife.js'];
       return [explicitSdk, ...(isLocalHost || window.location.protocol === 'file:' ? localCandidates : []), ...deployedCandidates, ...(isLocalHost || window.location.protocol === 'file:' ? [] : localCandidates)].filter(Boolean);
     }
@@ -1346,7 +1346,7 @@
       let lastError = null;
       for (const url of getSdkCandidates()) {
         try {
-          if (/(^|\/)index\.js(?:[?#].*)?$/.test(url)) await importRuntimeModule(url);
+          if (/(^|\/)index\.(?:ts|mjs|js)(?:[?#].*)?$/.test(url)) await importRuntimeModule(url);
           else await loadScript(url);
           if (window.keepwork) {
             state.sdk = window.keepwork;

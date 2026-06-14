@@ -4,8 +4,35 @@ import path from 'node:path';
 import { defineConfig } from 'vite';
 
 const rootDir = import.meta.dirname;
-const sideBySideDirs = ['minigames', 'famous-pets', 'famous-planets', 'pet-story'];
+const sideBySideDirs = ['minigames', 'dev_tools', 'famous-pets', 'famous-planets', 'pet-story'];
 const sideBySideFiles = ['docs/userguide.html', 'docs/pet_wiki.html'];
+const sdkCdnPattern = /https:\/\/cdn\.keepwork\.com\/sdk\/keepworkSDK\.iife\.js(?:\?v=[^'"\s<)]*)?/g;
+
+function appSdkCdnUrl() {
+    const appJs = fs.readFileSync(path.join(rootDir, 'js', 'app.js'), 'utf8');
+    const match = appJs.match(/const\s+sdkCdnUrl\s*=\s*['"]([^'"]+)['"]/);
+    if (!match) throw new Error('Unable to find sdkCdnUrl in js/app.js');
+    return match[1];
+}
+
+function syncSdkCdnVersionInHtml(targetPath, sdkUrl) {
+    if (!targetPath.toLowerCase().endsWith('.html') || !fs.existsSync(targetPath)) return;
+    const html = fs.readFileSync(targetPath, 'utf8');
+    const nextHtml = html.replace(sdkCdnPattern, sdkUrl);
+    if (nextHtml !== html) fs.writeFileSync(targetPath, nextHtml);
+}
+
+function syncSdkCdnVersionInHtmlTree(targetPath, sdkUrl) {
+    if (!fs.existsSync(targetPath)) return;
+    const stat = fs.statSync(targetPath);
+    if (stat.isFile()) {
+        syncSdkCdnVersionInHtml(targetPath, sdkUrl);
+        return;
+    }
+    for (const entry of fs.readdirSync(targetPath, { withFileTypes: true })) {
+        syncSdkCdnVersionInHtmlTree(path.join(targetPath, entry.name), sdkUrl);
+    }
+}
 
 
 
@@ -18,12 +45,14 @@ function copySideBySideDirs() {
         name: 'copy-side-by-side-dirs',
         closeBundle() {
             const distDir = path.join(rootDir, 'dist');
+            const sdkUrl = appSdkCdnUrl();
             for (const dirName of sideBySideDirs) {
                 const sourceDir = path.join(rootDir, dirName);
                 const targetDir = path.join(distDir, dirName);
                 if (!fs.existsSync(sourceDir)) continue;
                 fs.rmSync(targetDir, { recursive: true, force: true });
                 fs.cpSync(sourceDir, targetDir, { recursive: true });
+                syncSdkCdnVersionInHtmlTree(targetDir, sdkUrl);
             }
             for (const fileName of sideBySideFiles) {
                 const pathParts = fileName.split('/');
@@ -32,6 +61,7 @@ function copySideBySideDirs() {
                 if (!fs.existsSync(sourceFile)) continue;
                 fs.mkdirSync(path.dirname(targetFile), { recursive: true });
                 fs.copyFileSync(sourceFile, targetFile);
+                syncSdkCdnVersionInHtml(targetFile, sdkUrl);
             }
         },
     };

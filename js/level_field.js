@@ -41,11 +41,13 @@ const FIELD_EFFECT_MIN_SCALE = 0.88;
 const FIELD_EFFECT_MAX_SCALE = 1.7;
 const FIELD_WIDTH_METERS = 10;
 const FIELD_HEIGHT_METERS = 3;
-const FIELD_BACKGROUND_CHUNKS = Math.max(1, Math.ceil(FIELD_WIDTH_METERS / FIELD_HEIGHT_METERS));
 const FIELD_PET_BASE_SIZE_PX = 96;
 const FIELD_PET_REPEL_MIN_X = 0.058;
 const FIELD_PET_REPEL_MIN_Y = 0.155;
 const FIELD_PET_REPEL_MIN_GAP = 0.018;
+// 宠物在地表层的纵向落点上限（归一化 0=顶 1=底）。
+// 底部预留空间，避免与底部的等级条 UI（level bar）重叠。
+const FIELD_PET_MAX_Y = 0.82;
 const VISIT_FIELD_MAX_PLANET_GUEST_PETS = 3;
 const NEAR_ACTIVE_PET_MIN_RADIUS = 0.055;
 const NEAR_ACTIVE_PET_RANDOM_RADIUS = 0.065;
@@ -103,76 +105,17 @@ let fieldScenePresetsLoading = null;
 const fieldPoopLocationCache = new Map();
 const fieldMiningCoinLocationCache = new Map();
 
+// 场景背景已全面改用静态场景图（CONFIG.fieldDefaultScenes / 用户自定义背景）。
+// FIELD_THEMES 仅保留主题 class（天气等 CSS 选择器依赖）与天空渐变（图片加载前的底色 / 拍照回退）。
 const FIELD_THEMES = {
-    land: {
-        className: 'field-map-land',
-        sky: 'linear-gradient(180deg,#b7f2ff 0%,#e2ffe2 42%,#8bd05d 100%)',
-        terrain: ['#4fb06b', '#79c75d', '#a3d95b', '#7ec850'],
-        props: ['🌳', '🌲', '🌸', '🍄', '🪨', '🌼', '🌿'],
-        floaters: ['🦋', '✨', '🍃'],
-        path: 'rgba(255, 238, 180, 0.62)',
-    },
-    water: {
-        className: 'field-map-water',
-        sky: 'linear-gradient(180deg,#baf0ff 0%,#6ed2f7 44%,#1789ce 100%)',
-        terrain: ['#38bdf8', '#22c5d7', '#0ea5e9', '#2dd4bf'],
-        props: ['🪸', '🐚', '🪨', '🌾', '🫧', '⭐', '🌊'],
-        floaters: ['🐟', '🫧', '✨'],
-        path: 'rgba(224, 250, 255, 0.4)',
-    },
-    sky: {
-        className: 'field-map-sky',
-        sky: 'linear-gradient(180deg,#dbeafe 0%,#93c5fd 50%,#60a5fa 100%)',
-        terrain: ['#ffffff', '#e0f2fe', '#bfdbfe', '#fde68a'],
-        props: ['☁️', '🌈', '⭐', '🪁', '🎈', '✨', '💫'],
-        floaters: ['☁️', '🪁', '✨'],
-        path: 'rgba(255, 255, 255, 0.52)',
-    },
-    fire: {
-        className: 'field-map-fire',
-        sky: 'linear-gradient(180deg,#2b163d 0%,#7f1d1d 48%,#1f0f13 100%)',
-        terrain: ['#7f1d1d', '#b45309', '#ef4444', '#431407'],
-        props: ['🌋', '🔥', '🪨', '🌶️', '✨', '💥'],
-        floaters: ['🔥', '✨', '💫'],
-        path: 'rgba(251, 146, 60, 0.38)',
-        remoteLandmark: true,
-    },
-    ice: {
-        className: 'field-map-ice',
-        sky: 'linear-gradient(180deg,#e0f7ff 0%,#93c5fd 48%,#155e75 100%)',
-        terrain: ['#dffbff', '#bae6fd', '#7dd3fc', '#a5f3fc'],
-        props: ['🧊', '❄️', '🐚', '🪨', '✨'],
-        floaters: ['❄️', '✨', '🫧'],
-        path: 'rgba(224, 250, 255, 0.48)',
-        remoteLandmark: true,
-    },
-    life: {
-        className: 'field-map-life',
-        sky: 'linear-gradient(180deg,#fde68a 0%,#d9f99d 42%,#84cc16 100%)',
-        terrain: ['#facc15', '#bef264', '#65a30d', '#fef3c7'],
-        props: ['🏝️', '🌳', '🌸', '🌵', '🍄', '✨'],
-        floaters: ['🍃', '✨', '🦋'],
-        path: 'rgba(253, 230, 138, 0.62)',
-        remoteLandmark: true,
-    },
-    dark: {
-        className: 'field-map-dark',
-        sky: 'linear-gradient(180deg,#111827 0%,#374151 48%,#030712 100%)',
-        terrain: ['#111827', '#374151', '#4b5563', '#1f2937'],
-        props: ['🕳️', '🪨', '💎', '✨', '🌙'],
-        floaters: ['✨', '🌙', '💫'],
-        path: 'rgba(107, 114, 128, 0.36)',
-        remoteLandmark: true,
-    },
-    thunder: {
-        className: 'field-map-thunder',
-        sky: 'linear-gradient(180deg,#312e81 0%,#4f46e5 44%,#111827 100%)',
-        terrain: ['#4f46e5', '#7c3aed', '#facc15', '#312e81'],
-        props: ['⚡', '☁️', '💎', '✨', '🪨'],
-        floaters: ['⚡', '✨', '💫'],
-        path: 'rgba(250, 204, 21, 0.34)',
-        remoteLandmark: true,
-    },
+    land: { className: 'field-map-land', sky: 'linear-gradient(180deg,#b7f2ff 0%,#e2ffe2 42%,#8bd05d 100%)' },
+    water: { className: 'field-map-water', sky: 'linear-gradient(180deg,#baf0ff 0%,#6ed2f7 44%,#1789ce 100%)' },
+    sky: { className: 'field-map-sky', sky: 'linear-gradient(180deg,#dbeafe 0%,#93c5fd 50%,#60a5fa 100%)' },
+    fire: { className: 'field-map-fire', sky: 'linear-gradient(180deg,#2b163d 0%,#7f1d1d 48%,#1f0f13 100%)' },
+    ice: { className: 'field-map-ice', sky: 'linear-gradient(180deg,#e0f7ff 0%,#93c5fd 48%,#155e75 100%)' },
+    life: { className: 'field-map-life', sky: 'linear-gradient(180deg,#fde68a 0%,#d9f99d 42%,#84cc16 100%)' },
+    dark: { className: 'field-map-dark', sky: 'linear-gradient(180deg,#111827 0%,#374151 48%,#030712 100%)' },
+    thunder: { className: 'field-map-thunder', sky: 'linear-gradient(180deg,#312e81 0%,#4f46e5 44%,#111827 100%)' },
 };
 
 function availableFields() {
@@ -219,10 +162,6 @@ function makeRng(seedText) {
         seed = (Math.imul(seed, 1664525) + 1013904223) >>> 0;
         return seed / 4294967296;
     };
-}
-
-function pick(rng, arr) {
-    return arr[Math.floor(rng() * arr.length) % arr.length];
 }
 
 function pct(value) {
@@ -557,10 +496,43 @@ function pointOverFieldScaleControls(clientX, clientY) {
     });
 }
 
-function pointOverFieldItemPaint(el, clientX, clientY) {
-    const imageRect = getFieldItemImageRect(el);
+// 按物品 id 缓存 SVG 画面的外接框（SVG 用户坐标系，含 stroke 外扩余量）。
+// 命中测试先用它做廉价的负向预筛，避免每个采样点都遍历全部 SVG 节点
+//（getComputedStyle + isPointInFill 很贵）。
+const FIELD_SVG_PAINT_BBOX_CACHE = new Map();
+
+function fieldSvgPaintUserBBox(svg, cacheKey) {
+    if (cacheKey && FIELD_SVG_PAINT_BBOX_CACHE.has(cacheKey)) return FIELD_SVG_PAINT_BBOX_CACHE.get(cacheKey);
+    let box = null;
+    try {
+        const bbox = svg.getBBox();
+        if (bbox && bbox.width > 0 && bbox.height > 0) {
+            const pad = Math.max(bbox.width, bbox.height) * 0.06 + 6;
+            box = { x0: bbox.x - pad, y0: bbox.y - pad, x1: bbox.x + bbox.width + pad, y1: bbox.y + bbox.height + pad };
+        }
+    } catch {
+        box = null;
+    }
+    if (cacheKey && box) FIELD_SVG_PAINT_BBOX_CACHE.set(cacheKey, box);
+    return box;
+}
+
+function fieldItemCacheKey(el) {
+    const layout = activeFieldLayout(state.currentField);
+    const idx = Number.parseInt(el?.dataset?.fidx, 10);
+    return layout[idx]?.itemId || '';
+}
+
+function pointOverFieldItemPaint(el, clientX, clientY, imageRect = getFieldItemImageRect(el)) {
     if (!pointInRect(clientX, clientY, imageRect)) return false;
     const svg = el?.querySelector?.('.field-item-visual svg');
+    if (svg) {
+        const box = fieldSvgPaintUserBBox(svg, fieldItemCacheKey(el));
+        if (box) {
+            const point = svgPointFromClient(svg, clientX, clientY);
+            if (point && (point.x < box.x0 || point.x > box.x1 || point.y < box.y0 || point.y > box.y1)) return false;
+        }
+    }
     const painted = pointOverSvgPaint(svg, clientX, clientY);
     if (painted != null) return painted;
     const img = el?.querySelector?.('.field-house-img');
@@ -575,7 +547,7 @@ function fingerOverFieldItemPaint(el, clientX, clientY) {
     return FIELD_FINGER_HIT_SAMPLE_POINTS.some(([x, y]) => {
         const sampleX = clientX + x * FIELD_FINGER_HIT_RADIUS_PX;
         const sampleY = clientY + y * FIELD_FINGER_HIT_RADIUS_PX;
-        return pointOverFieldItemPaint(el, sampleX, sampleY);
+        return pointOverFieldItemPaint(el, sampleX, sampleY, imageRect);
     });
 }
 
@@ -588,7 +560,8 @@ function getClosestDraggableFieldItem(clientX, clientY) {
         const centerX = imageRect.left + imageRect.width / 2;
         const centerY = imageRect.top + imageRect.height / 2;
         const distance = Math.hypot(clientX - centerX, clientY - centerY);
-        const zIndex = Number.parseInt(getComputedStyle(item).zIndex, 10) || 0;
+        // z-index 总以内联样式写入（stageHtml），直接读内联值避免 getComputedStyle
+        const zIndex = Number.parseInt(item.style.zIndex, 10) || 0;
         if (!best || distance < best.distance || (distance === best.distance && zIndex > best.zIndex)) {
             best = { item, distance, zIndex };
         }
@@ -749,6 +722,16 @@ function setFieldPanValue(value) {
     fieldPan = clampRange(value, -bounds.maxPan, 0);
     fieldPanById[currentFieldPanKey()] = fieldPan;
     updateFieldViewportParticleFrame(bounds.stage, bounds.scene);
+    bounds.scene.style.transform = `translate3d(${fieldPan.toFixed(1)}px,0,0)`;
+}
+
+// 平移拖拽的快速路径：拖拽期间场景尺寸不变，跳过 recomputeFieldMetrics 的
+// 布局读写，只写 transform 与粒子视口中心。完整重排由拖拽结束时的 applyFieldPan 补足。
+function applyFieldPanFast(bounds, value) {
+    fieldPan = clampRange(value, -bounds.maxPan, 0);
+    fieldPanById[bounds.panKey] = fieldPan;
+    const centerX = -fieldPan + bounds.stageWidth / 2;
+    bounds.scene.style.setProperty('--field-viewport-center-x', `${centerX.toFixed(1)}px`);
     bounds.scene.style.transform = `translate3d(${fieldPan.toFixed(1)}px,0,0)`;
 }
 
@@ -1137,6 +1120,11 @@ function renderFieldActionTray(pet) {
                 <span class="dock-icon">🎾</span>
                 <span class="dock-label">${escapeHtml(t('dockPlay'))}</span>
             </button>
+            ${String(state.settings?.starSettlement?.encyclopediaUrl || '').trim() ? `
+            <button type="button" class="btn-secondary action-btn dock-icon-btn mh-field-nav-action" data-field-nav="encyclopedia" title="${escapeHtml(t('encTitle'))}">
+                <span class="dock-icon">📖</span>
+                <span class="dock-label">${escapeHtml(t('dockEncyclopedia'))}</span>
+            </button>` : ''}
             <button type="button" class="btn-secondary action-btn dock-icon-btn mh-field-action${sleepDisabled ? ' is-sleep-disabled' : ''}" data-field-action="sleep"${dockDisabledAttrs(sleepDisabled, sleepTitle)} title="${escapeHtml(sleepTitle)}">
                 <span class="dock-icon">${sleepAction.icon}</span>
                 <span class="dock-label">${escapeHtml(sleepAction.label)}</span>
@@ -1151,10 +1139,14 @@ function renderFieldActionTray(pet) {
 
 function renderFieldDecorTray(inv, currentField) {
     const areaId = currentField.typeId || resolveTerrainFieldTypeId(currentField.id);
-    const items = SHOP_ITEMS
-        .filter(it => (it.type === 'furniture' || it.type === 'house') && canPlaceItemInArea(it, areaId))
-        .map(it => ({ ...it, qty: it.unlimited ? Infinity : (inv[it.id] || 0) }))
-        .filter(it => it.qty > 0 || it.unlimited);
+    const ownedItems = Object.entries(inv || {})
+        .map(([id, qty]) => ({ ...ITEM_BY_ID[id], qty }))
+        .filter(it => it && it.id && (it.type === 'furniture' || it.type === 'house') && canPlaceItemInArea(it, areaId));
+    const ownedIds = new Set(ownedItems.map(item => item.id));
+    const unlimitedItems = SHOP_ITEMS
+        .filter(it => it.unlimited && !ownedIds.has(it.id) && (it.type === 'furniture' || it.type === 'house') && canPlaceItemInArea(it, areaId))
+        .map(it => ({ ...it, qty: Infinity }));
+    const items = [...ownedItems, ...unlimitedItems];
     const shopButton = `
         <button type="button" class="shop-item mh-field-shop-button" data-field-shop="outdoor" style="min-width:62px;padding:6px;flex-shrink:0">
             <div class="emoji shop-item-visual shop-item-emoji">🛒</div>
@@ -1372,84 +1364,6 @@ function getUserSeedBase() {
     return state.user?.username || state.user?.name || state.user?.id || 'guest';
 }
 
-function generateFieldMap(fieldId) {
-    const typeId = resolveTerrainFieldTypeId(fieldId);
-    const theme = FIELD_THEMES[typeId] || FIELD_THEMES.land;
-    const isRemoteLandmark = !!theme.remoteLandmark;
-    const rng = makeRng(`${getUserSeedBase()}::${fieldId}`);
-    const islands = [];
-    const chunks = FIELD_BACKGROUND_CHUNKS;
-    const propCountPerChunk = isRemoteLandmark ? 12 : (fieldId === 'sky' ? 18 : 26);
-    const patchCountPerChunk = fieldId === 'sky' ? 13 : 16;
-    const floaterCountPerChunk = isRemoteLandmark ? 6 : (fieldId === 'water' ? 11 : 8);
-
-    for (let chunk = 0; chunk < chunks; chunk++) {
-        const chunkLeft = chunk / chunks;
-        const chunkWidth = 1 / chunks;
-        for (let i = 0; i < patchCountPerChunk; i++) {
-            const w = (0.16 + rng() * 0.24) * chunkWidth;
-            const h = 0.08 + rng() * 0.16;
-            islands.push({
-                x: chunkLeft + (0.06 + rng() * 0.88) * chunkWidth,
-                y: 0.18 + rng() * 0.7,
-                w,
-                h,
-                rot: -16 + rng() * 32,
-                color: pick(rng, theme.terrain),
-                opacity: 0.54 + rng() * 0.34,
-                chunk,
-            });
-        }
-    }
-
-    const props = [];
-    for (let chunk = 0; chunk < chunks; chunk++) {
-        const chunkIslands = islands.filter(island => island.chunk === chunk);
-        for (let i = 0; i < propCountPerChunk; i++) {
-            const anchor = pick(rng, chunkIslands);
-            const x = Math.max(0.01, Math.min(0.99, anchor.x + (rng() - 0.5) * anchor.w * 1.3));
-            const y = Math.max(0.12, Math.min(0.9, anchor.y + (rng() - 0.5) * anchor.h * 1.8));
-            props.push({
-                x, y,
-                emoji: pick(rng, theme.props),
-                size: 17 + Math.floor(rng() * 19),
-                rot: -12 + rng() * 24,
-                opacity: 0.75 + rng() * 0.2,
-                z: Math.round(1 + y * 8),
-            });
-        }
-    }
-
-    const floaters = [];
-    for (let chunk = 0; chunk < chunks; chunk++) {
-        const chunkLeft = chunk / chunks;
-        const chunkWidth = 1 / chunks;
-        for (let i = 0; i < floaterCountPerChunk; i++) {
-            floaters.push({
-                x: chunkLeft + (0.05 + rng() * 0.9) * chunkWidth,
-                y: 0.08 + rng() * 0.58,
-                emoji: pick(rng, theme.floaters),
-                size: 13 + Math.floor(rng() * 15),
-                delay: -(rng() * 6).toFixed(2),
-                dur: (5 + rng() * 5).toFixed(2),
-                drift: (-18 + rng() * 36).toFixed(1),
-            });
-        }
-    }
-
-    const landmarks = [];
-    if (isRemoteLandmark) {
-        landmarks.push({
-            x: 0.5,
-            y: 0.16,
-            scale: 1,
-            z: 3,
-        });
-    }
-
-    return { theme, islands, props, floaters, landmarks };
-}
-
 // 返回当前 field 真实使用的背景，用于合影拍照时还原真实场景。
 // { imageUrl, gradient } —— imageUrl 优先；否则使用 gradient（CSS 渐变或纯色字符串）。
 function getCurrentFieldBackground(fieldId = state.currentField) {
@@ -1463,42 +1377,28 @@ function getCurrentFieldBackground(fieldId = state.currentField) {
 
 function fieldMapHtml(fieldId) {
     const typeId = resolveTerrainFieldTypeId(fieldId);
+    const theme = FIELD_THEMES[typeId] || FIELD_THEMES.land;
     const custom = isVisitingMode() ? visitingFieldSceneConfig(fieldId) : currentFieldSceneConfig(fieldId);
-    const customBg = custom.background;
-    const map = generateFieldMap(fieldId);
+    const customBg = custom.background || {};
     const weather = getActivePlanetWeather();
     const weatherClass = weather ? ` weather-${weather.id}` : '';
     const weatherOverlay = weather ? planetWeatherOverlayHtml(weather) : '';
-    if (customBg?.imageUrl || customBg?.color) {
-        const scene = {
-            id: customBg.presetId || `field-${fieldId}-custom`,
-            title: customBg.title || '',
-            background: customBg,
-            particles: Array.isArray(custom.particles) ? custom.particles : [],
-        };
-        const imageHtml = customBg.imageUrl
-            ? `<img class="field-custom-background-image" src="${escapeHtml(customBg.imageUrl)}" alt="" draggable="false">`
-            : '';
-        return `
-            <div class="field-bg ${map.theme.className} field-bg-custom${weatherClass}" style="background:${escapeHtml(customBg.color || map.theme.sky)}">
-                ${imageHtml}
-                <div class="field-custom-background-particles field-viewport-particles">${renderSceneParticles(scene, { density: 'field' })}</div>
-                ${weatherOverlay}
-            </div>
-        `;
-    }
+    // 背景统一为静态场景图 / 纯色；无配置时回退主题天空渐变 + 默认粒子。
+    const scene = {
+        id: customBg.presetId || `field-${fieldId}-custom`,
+        title: customBg.title || '',
+        background: customBg,
+        particles: Array.isArray(custom.particles) && custom.particles.length
+            ? custom.particles
+            : (customBg.imageUrl || customBg.color ? [] : fieldParticleEffects(typeId)),
+    };
+    const imageHtml = customBg.imageUrl
+        ? `<img class="field-custom-background-image" src="${escapeHtml(customBg.imageUrl)}" alt="" draggable="false">`
+        : '';
     return `
-        <div class="field-bg ${map.theme.className}${weatherClass}" style="background:${map.theme.sky}">
-            <div class="field-horizon"></div>
-            <div class="field-map-path" style="--field-path-color:${map.theme.path}"></div>
-            ${map.landmarks.map((p) => `<div class="field-remote-landmark field-remote-${escapeHtml(typeId)}" aria-hidden="true" style="left:${pct(p.x)};bottom:${pct(p.y)};transform:translateX(-50%) scale(${p.scale.toFixed(2)});z-index:${p.z}"></div>`).join('')}
-            <div class="field-terrain-layer">
-                ${map.islands.map((p, idx) => `<span class="field-terrain-patch" style="left:${pct(p.x)};top:${pct(p.y)};width:${pct(p.w)};height:${pct(p.h)};background:${p.color};opacity:${p.opacity.toFixed(2)};transform:translate(-50%,-50%) rotate(${p.rot.toFixed(1)}deg);z-index:${idx % 3}"></span>`).join('')}
-            </div>
-            <div class="field-prop-layer">
-                ${map.props.map((p) => `<span class="field-map-prop" style="left:${pct(p.x)};top:${pct(p.y)};font-size:${p.size}px;opacity:${p.opacity.toFixed(2)};transform:translate(-50%,-50%) rotate(${p.rot.toFixed(1)}deg);z-index:${p.z}">${p.emoji}</span>`).join('')}
-            </div>
-            <div class="field-floater-layer field-viewport-particles">${renderParticleCanvasHtml(custom.particles?.length ? custom.particles : fieldParticleEffects(typeId), { className: 'field-map-particles', density: 'field', seed: `field-${fieldId}-${(custom.particles || []).join('-')}` })}</div>
+        <div class="field-bg ${theme.className} field-bg-custom${weatherClass}" style="background:${escapeHtml(customBg.color || theme.sky)}">
+            ${imageHtml}
+            <div class="field-custom-background-particles field-viewport-particles">${renderSceneParticles(scene, { density: 'field' })}</div>
             ${weatherOverlay}
         </div>
     `;
@@ -1589,9 +1489,9 @@ function petFieldPosition(pet, fieldId, index, activeFieldPosition = null) {
         const sideGap    = houseHalfW + 0.08 + rng() * 0.04;
         const sideY      = hy + houseHalfH * 0.4 + (rng() - 0.5) * 0.04;
         const candidates = [
-            { x: clamp01(hx + frontJitterX),   y: Math.min(0.92, hy + frontGap) },     // 门前下方
-            { x: Math.min(0.94, hx + sideGap), y: Math.min(0.90, sideY) },             // 右侧
-            { x: Math.max(0.06, hx - sideGap), y: Math.min(0.90, sideY) },             // 左侧
+            { x: clamp01(hx + frontJitterX),   y: Math.min(FIELD_PET_MAX_Y, hy + frontGap) },     // 门前下方
+            { x: Math.min(0.94, hx + sideGap), y: Math.min(FIELD_PET_MAX_Y, sideY) },             // 右侧
+            { x: Math.max(0.06, hx - sideGap), y: Math.min(FIELD_PET_MAX_Y, sideY) },             // 左侧
         ];
         const chosen = candidates.find(c => isFieldPositionFree(c.x, c.y, fieldLayout, rallyHouse.idx)) || candidates[0];
         return {
@@ -1606,7 +1506,7 @@ function petFieldPosition(pet, fieldId, index, activeFieldPosition = null) {
     const rng = makeRng(`${getUserSeedBase()}::${fieldId}::pet::${pet?.id || index}`);
     return {
         x: 0.18 + rng() * 0.64,
-        y: 0.38 + rng() * 0.38,
+        y: Math.min(FIELD_PET_MAX_Y, 0.38 + rng() * 0.38),
         delay: -(rng() * 8).toFixed(2),
         dur: (9 + rng() * 7).toFixed(2),
         dx: (-26 + rng() * 52).toFixed(1),
@@ -1624,7 +1524,7 @@ function anchorNearActiveGeneratedPet(home, petId, fieldId, activeFieldPosition)
     const xOffset = Math.cos(angle) * radius;
     const yOffset = Math.sin(angle) * radius * NEAR_ACTIVE_PET_Y_SCALE;
     home.x = clampRange(activeFieldPosition.x + xOffset, 0.08, 0.92);
-    home.y = clampRange(activeFieldPosition.y + yOffset, 0.36, 0.90);
+    home.y = clampRange(activeFieldPosition.y + yOffset, 0.36, FIELD_PET_MAX_Y);
     home.nearActiveAnchored = true;
 }
 
@@ -1649,7 +1549,7 @@ function repelFieldPetPosition(entry, placed, index = 0) {
             const angle = Math.atan2(dy || (rng() - 0.5), dx || (rng() - 0.5));
             const strength = (1 - dist) * 0.55 + FIELD_PET_REPEL_MIN_GAP;
             pos.x = clampRange(pos.x + Math.cos(angle) * FIELD_PET_REPEL_MIN_X * strength, 0.08, 0.92);
-            pos.y = clampRange(pos.y + Math.sin(angle) * FIELD_PET_REPEL_MIN_Y * strength, 0.36, 0.90);
+            pos.y = clampRange(pos.y + Math.sin(angle) * FIELD_PET_REPEL_MIN_Y * strength, 0.36, FIELD_PET_MAX_Y);
             moved = true;
         }
         if (!moved) break;
@@ -2907,17 +2807,33 @@ function bindFieldPan(ctx) {
             drag.active = true;
             clearFieldItemSelection(ctx);
             try { stage.setPointerCapture?.(e.pointerId); } catch {}
+            // 拖拽开始时一次性缓存边界，pointermove 不再做布局读取
+            const bounds = getFieldPanBounds();
+            drag.bounds = bounds ? { ...bounds, panKey: currentFieldPanKey() } : null;
         }
         e.preventDefault();
-        fieldPan = drag.pan + dx;
-        fieldPanById[currentFieldPanKey()] = fieldPan;
-        applyFieldPan();
+        drag.pendingPan = drag.pan + dx;
+        if (drag.raf || !drag.bounds) return;
+        const current = drag;
+        current.raf = requestAnimationFrame(() => {
+            current.raf = 0;
+            if (!current.active) return;
+            applyFieldPanFast(current.bounds, current.pendingPan);
+        });
     });
     const end = (e) => {
         if (!drag || drag.id !== e.pointerId) return;
         if (drag.active) {
+            if (drag.raf) cancelAnimationFrame(drag.raf);
+            if (Number.isFinite(drag.pendingPan)) {
+                fieldPan = drag.pendingPan;
+                fieldPanById[currentFieldPanKey()] = fieldPan;
+            }
+            drag.active = false;
             try { stage.releasePointerCapture?.(e.pointerId); } catch {}
             stage.__mhFieldPannedAt = Date.now();
+            // 结束时做一次完整重排（含 clamp / 粒子视口高度）
+            applyFieldPan();
         }
         drag = null;
     };
@@ -3084,7 +3000,8 @@ function bindFieldItemDrag(el, ctx) {
         targetEl.dataset.y = String(pos.y);
         targetEl.style.left = pct(pos.x);
         targetEl.style.top = pct(pos.y);
-        updateFieldItemScaleControls(ctx);
+        // 拖拽开始时选中态已清除（pointerdown 里 clearFieldItemSelection），
+        // 缩放控件必然隐藏，无需每帧重新定位。
     });
     const end = async (e) => {
         if (!drag || drag.id !== e.pointerId) return;
@@ -3121,9 +3038,13 @@ function bindFieldItemDrag(el, ctx) {
 }
 
 function fieldDragDeltaToCoords(drag, clientX, clientY) {
-    const scene = $('mhFieldScene');
-    const rect = scene?.getBoundingClientRect?.();
-    if (!rect || rect.width <= 0 || rect.height <= 0) return null;
+    // 拖拽期间场景尺寸不变：首次调用时缓存 rect，后续 pointermove 免去 forced reflow。
+    let rect = drag.sceneRect;
+    if (!rect) {
+        rect = $('mhFieldScene')?.getBoundingClientRect?.();
+        if (!rect || rect.width <= 0 || rect.height <= 0) return null;
+        drag.sceneRect = rect;
+    }
     return {
         x: clamp01(drag.startX + (clientX - drag.x) / rect.width),
         y: clamp01(drag.startY + (clientY - drag.y) / rect.height),

@@ -2,12 +2,13 @@
 import { $, clamp, coinIconSvg, confirm, escapeHtml, showToast } from './utils.js';
 import { getLang, t } from './i18n.js';
 import { CONFIG } from './config.js';
-import { state } from './state.js';
+import { state, setPlanetName } from './state.js';
 import { displayPetName } from './dna.js';
 import { getPet, getPetAsync, getPetImagePayload } from './pet.js';
 import { isPetOnCurrentPlanet } from './petLifecycle.js';
-import { deletePetGame, loadPetGameHtml, loadPetGameList } from './storage.js';
+import { addLikedGame, deletePetGame, loadLikedGames, loadPetGameHtml, loadPetGameList, loadRecentGames, loadRemotePetGameHtml, loadRemotePetGameList, recordRecentGame, removeLikedGame, saveUserProfileDebounced } from './storage.js';
 import SoundManager from './soundManager.js';
+import { isMiniProgramWebView, isWechatBrowser, navigateToSharePage, postShareToMiniProgram, setWxShareData } from './wxShare.js';
 
 const soundManager = SoundManager.getInstance();
 const STAT_REWARD_ANIMATION_MS = 1600;
@@ -15,6 +16,9 @@ const DEFAULT_MINIGAME_STAT_BONUS = { bond: 12, mood: 6 };
 const MINIGAME_REST_PROMPT_MS = 5 * 60 * 1000;
 const MINIGAME_ENTRY_CLICK_GUARD_MS = 520;
 const MINIGAME_COMPLETION_PROMPT_MIN_SECONDS = 60;
+const MINIGAME_LOADING_MAX_MS = 5000;
+// 至少游玩 15 秒才记入"最近玩过"历史（避免误点 / 秒退污染推荐列表）。
+const MINIGAME_RECENT_MIN_PLAY_MS = 15000;
 const MINIGAME_PET_IMAGE_REQUESTS = new Set([
     'haqi_get_pet_image',
     'haqiGetPetImage',
@@ -23,6 +27,16 @@ const MINIGAME_ALL_PET_IMAGE_REQUESTS = new Set([
     'haqi_get_pet_images',
     'haqi_get_all_pet_images',
     'haqiGetPetImages',
+]);
+// 小游戏（如新手领养仪式 haqi_planet_boarding）请求用户档案：星球名、昵称、性别等。
+const MINIGAME_USER_PROFILE_REQUESTS = new Set([
+    'haqi_get_user_profile',
+    'haqiGetUserProfile',
+]);
+// 小游戏回写用户档案（重命名星球 / 修改昵称）。
+const MINIGAME_USER_PROFILE_UPDATES = new Set([
+    'haqi_set_user_profile',
+    'haqiSetUserProfile',
 ]);
 
 // 小游戏清单从 side-by-side 的 minigames/_minigame_index.json 按需加载一次并缓存。
@@ -89,6 +103,434 @@ function getPlayItems() {
     return [...MINIGAMES, ...PLAY_ACTIVITIES];
 }
 
+function getVisiblePlayItems() {
+    return getPlayItems().filter(item => !item?.hidden);
+}
+
+// ---------- 收藏（list_liked_games.json） ----------
+// 收藏列表只加载一次并缓存到内存；切换标签 / 切换收藏状态时复用 / 更新这份缓存。
+let likedGamesCache = null;
+let likedGamesPromise = null;
+
+function ensureLikedGames() {
+    if (likedGamesCache) return Promise.resolve(likedGamesCache);
+    if (!likedGamesPromise) {
+        likedGamesPromise = loadLikedGames()
+            .then((list) => { likedGamesCache = Array.isArray(list) ? list : []; return likedGamesCache; })
+            .catch(() => { likedGamesPromise = null; likedGamesCache = []; return likedGamesCache; });
+    }
+    return likedGamesPromise;
+}
+
+// 收藏的唯一键：owner + id（id 统一为不含目录、不含扩展名的基础名）。
+// 与 storage.likedGameKey 保持一致，保证内存 / 磁盘 / 卡片三处判断同一把键。
+function likedBaseId(meta) {
+    const raw = String(meta?.id || meta?.path || meta?.src || '').trim().replace(/^\/+/, '');
+    return raw.split('/').pop().replace(/\.html?$/i, '');
+}
+function likeKeyFor(meta) {
+    if (!meta) return '';
+    const owner = String(meta.owner || '').trim();
+    return `${owner}::${likedBaseId(meta)}`;
+}
+
+function isGameLikedSync(meta) {
+    const key = likeKeyFor(meta);
+    if (!key || !likedGamesCache) return false;
+    return likedGamesCache.some(item => likeKeyFor(item) === key);
+}
+
+// ---------- 最近玩过（本地 IndexedDB） ----------
+// recentGamesCache: { recencyKey -> playedAt }，"推荐"据此排序并显示"N 天前"。
+let recentGamesCache = null;
+let recentGamesPromise = null;
+
+function ensureRecentGames() {
+    if (recentGamesCache) return Promise.resolve(recentGamesCache);
+    if (!recentGamesPromise) {
+        recentGamesPromise = loadRecentGames()
+            .then((list) => { recentGamesCache = Array.isArray(list) ? list : []; return recentGamesCache; })
+            .catch(() => { recentGamesPromise = null; recentGamesCache = []; return recentGamesCache; });
+    }
+    return recentGamesPromise;
+}
+
+// 由最近游玩记录数组构建 { key -> playedAt } 映射，用于排序与"N 天前"显示。
+function recentPlayedMap() {
+    const map = {};
+    (recentGamesCache || []).forEach(r => { if (r?.key) map[r.key] = Number(r.playedAt) || 0; });
+    return map;
+}
+
+// 游戏的"最近游玩"唯一键：与收藏一致（owner::基础名），保证官方 / 作品都稳定可识别。
+function recencyKeyForGame(game) {
+    if (!game) return '';
+    if (game.__likeMeta) return likeKeyFor(game.__likeMeta);
+    // 官方内置游戏：owner 为空，id 即官方游戏 id。
+    if (game.src && !game.path && !game.__owner) return `::${likedBaseId({ id: game.id })}`;
+    const owner = String(game.__owner || '').trim();
+    return `${owner}::${likedBaseId(game)}`;
+}
+
+function recordRecentPlay(game, meta = null) {
+    const m = meta || game?.__likeMeta || null;
+    const key = recencyKeyForGame(m ? { __likeMeta: m } : game);
+    if (!key) return;
+    const now = Date.now();
+    const record = {
+        key,
+        playedAt: now,
+        id: String(m?.id || game?.id || '').split('/').pop().replace(/\.html?$/i, ''),
+        owner: String(m?.owner || game?.__owner || '').trim(),
+        title: m?.title || getMinigameTitle(game),
+        icon: m?.icon || game?.icon || '🎮',
+    };
+    // 更新内存缓存（移到最前），并持久化到 IndexedDB。
+    if (!Array.isArray(recentGamesCache)) recentGamesCache = [];
+    recentGamesCache = [record, ...recentGamesCache.filter(r => r.key !== key)];
+    recordRecentGame(key, record);
+}
+
+// 取消尚未触发的"记入最近玩过"延时（中途退出 / 切换游戏 / 视图销毁时调用）。
+function clearRecentPlayTimer() {
+    if (recentRecordTimer) { clearTimeout(recentRecordTimer); recentRecordTimer = null; }
+}
+
+// 满 15 秒仍在玩同一个游戏，才真正记入最近游玩历史。
+function scheduleRecentPlay(game, meta) {
+    clearRecentPlayTimer();
+    if (!game) return;
+    const sessionGame = game;
+    recentRecordTimer = setTimeout(() => {
+        recentRecordTimer = null;
+        // 仍在玩同一个游戏才记录（避免中途已退出 / 已换别的游戏）。
+        if (currentGame !== sessionGame) return;
+        recordRecentPlay(game, meta);
+    }, MINIGAME_RECENT_MIN_PLAY_MS);
+}
+
+// 历史游玩记录转"待玩条目"：owner 为空 → 官方游戏（按 id 匹配内置）；否则 → 用户作品。
+function recentRecordToPlayItem(record) {
+    if (!record) return null;
+    const owner = String(record.owner || '').trim();
+    if (!owner) {
+        const builtin = getPlayItems().find(item => item.src && item.id === record.id);
+        if (builtin?.hidden) return null;
+        if (builtin) return { ...builtin, __likeMeta: likeMetaForGame(builtin, { official: true }) };
+        // 官方游戏已下架且无快照 src，无法重玩，跳过。
+        if (!record.id) return null;
+        return null;
+    }
+    const path = `pet-games/${record.id}.html`;
+    return {
+        id: record.id,
+        title: record.title,
+        icon: record.icon,
+        __likedGame: { owner, path },
+        __owner: owner,
+        __likeMeta: { id: record.id, owner, title: record.title, icon: record.icon, path },
+    };
+}
+
+// 把"待玩条目"（官方游戏 / 我的作品 / 别人的作品）规范化为收藏记录。
+function likeMetaForGame(game, { owner = '', official = false } = {}) {
+    if (!game) return null;
+    const isOfficial = official || (!!game.src && !game.path && !owner);
+    return {
+        id: game.id || game.path || game.src || '',
+        path: isOfficial ? '' : (game.path || ''),
+        src: isOfficial ? (game.src || '') : '',
+        owner: isOfficial ? '' : String(owner || ''),
+        title: getMinigameTitle(game),
+        icon: game.icon || '🎮',
+        desc: game.desc || '',
+        official: isOfficial,
+    };
+}
+
+// 把收藏记录（只含 id/owner/title/icon）转回"待玩条目"，使"推荐"里能直接渲染并打开。
+// 其余信息由 id + owner 推导：owner 为空 → 官方游戏（按 id 匹配内置）；否则 → 用户作品（path = pet-games/<id>.html）。
+function likedRecordToPlayItem(record) {
+    if (!record) return null;
+    const owner = String(record.owner || '').trim();
+    if (!owner) {
+        // 官方游戏：优先用内置定义（保留 allow / manualComplete / 自定义图标 SVG），否则用收藏快照。
+        const builtin = getPlayItems().find(item => item.src && item.id === record.id);
+        if (builtin?.hidden) return null;
+        if (builtin) return { ...builtin, __liked: true, __likeMeta: likeMetaForGame(builtin, { official: true }) };
+        return {
+            id: record.id,
+            title: record.title,
+            icon: record.icon,
+            src: '',
+            __liked: true,
+            __likeMeta: { id: record.id, owner: '', title: record.title, icon: record.icon, official: true },
+        };
+    }
+    // 用户作品（自己或别人）：path 由 id 推导，在打开时拉取 HTML。
+    const path = `pet-games/${record.id}.html`;
+    return {
+        id: record.id,
+        title: record.title,
+        icon: record.icon,
+        __likedGame: { owner, path },
+        __owner: owner,
+        __liked: true,
+        __likeMeta: { id: record.id, owner, title: record.title, icon: record.icon, path },
+    };
+}
+
+// 当前登录用户名（用于"是否是自己的游戏"判断与 [我] 标签）。
+function currentUsername() {
+    return String(state.user?.username || state.sdk?.user?.username || '').trim();
+}
+
+// 作者标签文案：自己的游戏显示 [我]/[me]，否则取用户名前几位字母。
+function ownerTagLabel(owner) {
+    const name = String(owner || '').trim();
+    if (!name) return '';
+    if (name === currentUsername()) return t('mgOwnerMe');
+    return name.length > 4 ? name.slice(0, 4) : name;
+}
+
+// "推荐"标签内容分两组：
+//  组1 = 官方内置游戏 + 已收藏游戏，按最近游玩时间倒序（没玩过的排在本组末尾，保持原顺序）。
+//  组2 = 历史玩过但不在组1里的游戏（最多 200，本地 IndexedDB），按最近游玩时间倒序，整体接在组1之后。
+function getRecommendItems() {
+    const playedMap = recentPlayedMap();
+    const official = getVisiblePlayItems().map(game => ({
+        ...game,
+        __likeMeta: likeMetaForGame(game, { official: true }),
+        __liked: isGameLikedSync(likeMetaForGame(game, { official: true })),
+    }));
+    const officialKeys = new Set(official.map(item => likeKeyFor(item.__likeMeta)));
+    const liked = (likedGamesCache || [])
+        .filter(record => !officialKeys.has(likeKeyFor(record)))
+        .map(likedRecordToPlayItem)
+        .filter(Boolean);
+
+    // 组1：官方 + 收藏，附最近游玩时间后稳定排序（玩过的在前、按时间倒序；其余保持插入顺序）。
+    const group1 = [...official, ...liked];
+    group1.forEach((item) => { item.__playedAt = playedMap[recencyKeyForGame(item)] || 0; });
+    const group1Sorted = group1
+        .map((item, index) => ({ item, index }))
+        .sort((a, b) => {
+            const pa = a.item.__playedAt || 0;
+            const pb = b.item.__playedAt || 0;
+            if (pa !== pb) return pb - pa;
+            return a.index - b.index;
+        })
+        .map(entry => entry.item);
+
+    // 组2：历史游玩里不在组1的游戏（recentGamesCache 已按时间倒序），重建为可玩条目。
+    const group1Keys = new Set(group1Sorted.map(item => recencyKeyForGame(item)));
+    const group2 = (recentGamesCache || [])
+        .filter(record => record?.key && !group1Keys.has(record.key))
+        .map((record) => {
+            const item = recentRecordToPlayItem(record);
+            if (item) item.__playedAt = record.playedAt || 0;
+            return item;
+        })
+        .filter(Boolean);
+
+    return [...group1Sorted, ...group2];
+}
+
+// ---------- 分享 / 收藏 图标 SVG ----------
+const MINIGAME_SHARE_ICON = '<svg viewBox="0 0 24 24" aria-hidden="true" focusable="false" style="width:16px;height:16px;display:block"><circle cx="18" cy="5" r="3" fill="none" stroke="currentColor" stroke-width="1.9"/><circle cx="6" cy="12" r="3" fill="none" stroke="currentColor" stroke-width="1.9"/><circle cx="18" cy="19" r="3" fill="none" stroke="currentColor" stroke-width="1.9"/><path d="M8.6 10.6l6.8-3.9M8.6 13.4l6.8 3.9" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round"/></svg>';
+// 收藏图标改用 emoji 爱心：已收藏红色 ❤️；未收藏灰色（用 grayscale 滤镜把红心变灰）。
+function minigameHeartIcon(filled) {
+    return filled
+        ? '<span class="mh-minigame-heart-emoji liked" role="img" aria-hidden="true">❤️</span>'
+        : '<span class="mh-minigame-heart-emoji" role="img" aria-hidden="true">❤️</span>';
+}
+
+// ---------- 分享链接 ----------
+function getMinigameShareUsername() {
+    const direct = state.user?.username || state.sdk?.user?.username;
+    if (direct) return Promise.resolve(direct);
+    return state.sdk?.getUsername?.().catch?.(() => '') || Promise.resolve('');
+}
+
+function buildMinigameShareUrl(record, username) {
+    const url = new URL('MagicHaqi.html', window.location.href);
+    url.searchParams.set('gameFrom', username || '');
+    const filename = String(record?.path || '').trim().replace(/^\/+/, '').split('/').pop() || '';
+    url.searchParams.set('game', filename);
+    return url.href;
+}
+
+async function copyMinigameText(text, okMessage) {
+    try {
+        if (navigator.clipboard?.writeText) await navigator.clipboard.writeText(text);
+        else {
+            const input = document.createElement('textarea');
+            input.value = text;
+            input.style.position = 'fixed';
+            input.style.opacity = '0';
+            document.body.appendChild(input);
+            input.select();
+            document.execCommand('copy');
+            input.remove();
+        }
+        showToast(okMessage, 'success', 1600);
+        return true;
+    } catch (_) {
+        showToast(t('mgShareFailed'), 'error', 2200);
+        return false;
+    }
+}
+
+// 微信内置浏览器分享引导：JS-SDK 无法主动弹出分享面板，只能引导用户点右上角「···」。
+function showWxShareGuide() {
+    document.querySelector('.mh-wx-share-guide')?.remove();
+    const mask = document.createElement('div');
+    mask.className = 'mh-wx-share-guide';
+    mask.setAttribute('style', [
+        'position:fixed', 'inset:0', 'z-index:99999',
+        'background:rgba(0,0,0,0.78)', 'backdrop-filter:blur(2px)',
+        'display:flex', 'flex-direction:column', 'align-items:flex-end',
+        'padding:18px 22px', 'box-sizing:border-box', 'color:#fff',
+    ].join(';'));
+    mask.innerHTML = `
+        <svg width="72" height="86" viewBox="0 0 72 86" fill="none" style="margin-right:10px" aria-hidden="true">
+            <path d="M18 80 C 22 52, 28 28, 52 16" stroke="#FFD54A" stroke-width="4" fill="none" stroke-linecap="round" stroke-dasharray="0.5 9"/>
+            <path d="M40 12 L 56 14 L 49 29" stroke="#FFD54A" stroke-width="4" fill="none" stroke-linecap="round" stroke-linejoin="round"/>
+        </svg>
+        <div style="max-width:280px;text-align:right;margin-right:6px">
+            <div style="font-size:18px;font-weight:700;line-height:1.4">${escapeHtml(t('mgShareWxGuideTitle'))}</div>
+            <div style="font-size:14px;opacity:0.85;margin-top:6px;line-height:1.5">${escapeHtml(t('mgShareWxGuideDesc'))}</div>
+        </div>
+        <button type="button" style="margin:28px auto 0;padding:10px 28px;border:1px solid rgba(255,255,255,0.5);border-radius:22px;background:transparent;color:#fff;font-size:15px">${escapeHtml(t('mgShareWxGuideDismiss'))}</button>`;
+    mask.addEventListener('click', () => mask.remove());
+    document.body.appendChild(mask);
+}
+
+// 分享弹窗（参照 view_story_list 的故事分享样式）。
+async function openMinigameSharePanel(record) {
+    if (!record?.path) return;
+    const username = await getMinigameShareUsername();
+    if (!username) { showToast(t('mgShareLoginFirst'), 'error', 2200); return; }
+    document.querySelector('.mh-minigame-share-mask')?.remove();
+    const safeTitle = record.title || t('mgDefaultName');
+    const url = buildMinigameShareUrl(record, username);
+    const gameFilename = String(record?.path || '').trim().replace(/^\/+/, '').split('/').pop() || '';
+    const text = t('mgShareText', { title: safeTitle });
+    const isWxBrowser = isWechatBrowser();
+    const isMP = isMiniProgramWebView();
+    const mask = document.createElement('div');
+    mask.className = 'modal-mask mh-story-share-mask mh-minigame-share-mask';
+    mask.innerHTML = `
+        <div class="modal-card mh-story-share-card">
+            <div class="mh-story-share-head">
+                <div>
+                    <div class="mh-story-share-title">${escapeHtml(t('mgShareTitle'))}</div>
+                    <div class="mh-story-share-subtitle">${escapeHtml(safeTitle)}</div>
+                </div>
+                <button type="button" class="mh-story-share-close" data-mg-share-close aria-label="${escapeHtml(t('mgShareClose'))}">×</button>
+            </div>
+            <div class="mh-story-share-preview">${escapeHtml(text)}</div>
+            <input class="modal-input mh-story-share-link" readonly value="${escapeHtml(url)}" aria-label="${escapeHtml(t('mgShareLink'))}">
+            <div class="mh-story-share-actions">
+                <button type="button" class="btn-secondary" data-mg-share-method="copy">${escapeHtml(t('mgShareCopyLink'))}</button>
+                <button type="button" class="btn-secondary" data-mg-share-method="wechat">${escapeHtml(t('mgShareWechat'))}</button>
+                <button type="button" class="btn-primary" data-mg-share-method="system">${escapeHtml(t('mgShareSystem'))}</button>
+            </div>
+        </div>`;
+    const close = () => mask.remove();
+    mask.addEventListener('click', async (e) => {
+        if (e.target === mask || e.target.closest?.('[data-mg-share-close]')) { close(); return; }
+        const methodBtn = e.target.closest?.('[data-mg-share-method]');
+        if (!methodBtn) return;
+        const method = methodBtn.dataset.mgShareMethod;
+        if (method === 'copy') {
+            await copyMinigameText(url, t('mgShareLinkCopied'));
+        } else if (method === 'wechat') {
+            if (isMP) {
+                // 小程序 web-view：navigateTo 实时跳转到宿主原生分享页，由用户点原生按钮拉起转发
+                const ok = await navigateToSharePage({ title: safeTitle, desc: text, gameFrom: username, game: gameFilename, icon: record.icon });
+                if (ok) { showToast(t('mgShareNavOpening'), 'info', 1200); close(); } else {
+                    await copyMinigameText(`${text}\n${url}`, t('mgShareWechatCopied'));
+                }
+            } else if (isWxBrowser) {
+                // 微信内置浏览器：JS-SDK 预设分享数据（best-effort），再引导用户点右上角「···」分享
+                await setWxShareData({ title: safeTitle, desc: text, url });
+                close();
+                showWxShareGuide();
+            } else {
+                await copyMinigameText(`${text}\n${url}`, t('mgShareWechatCopied'));
+            }
+        } else if (method === 'system') {
+            if (isMP) {
+                // 小程序里没有系统分享，同样跳转到宿主原生分享页
+                const ok = await navigateToSharePage({ title: safeTitle, desc: text, gameFrom: username, game: gameFilename, icon: record.icon });
+                if (ok) { showToast(t('mgShareNavOpening'), 'info', 1200); close(); return; }
+            }
+            if (isWxBrowser) {
+                // 微信内置浏览器没有系统分享：预设 JS-SDK 数据并引导点右上角「···」
+                await setWxShareData({ title: safeTitle, desc: text, url });
+                close();
+                showWxShareGuide();
+                return;
+            }
+            if (navigator.share) {
+                try { await navigator.share({ title: safeTitle, text, url }); return; } catch (_) {}
+            }
+            await copyMinigameText(`${text}\n${url}`, t('mgShareCopied'));
+        }
+    });
+    document.body.appendChild(mask);
+}
+
+// 切换收藏：成功后更新内存缓存，调用方负责刷新对应卡片 UI。
+async function toggleLikeGame(meta) {
+    if (!meta) return null;
+    const username = state.user?.username || state.sdk?.user?.username;
+    if (!username) { showToast(t('mgLikeLoginFirst'), 'error', 2000); return null; }
+    await ensureLikedGames();
+    const liked = isGameLikedSync(meta);
+    try {
+        if (liked) {
+            await removeLikedGame(meta);
+            likedGamesCache = (likedGamesCache || []).filter(item => likeKeyFor(item) !== likeKeyFor(meta));
+            showToast(t('mgUnliked'), 'info', 1200);
+            return false;
+        }
+        const record = await addLikedGame({ ...meta, likedAt: Date.now() });
+        if (record) likedGamesCache = [record, ...(likedGamesCache || []).filter(item => likeKeyFor(item) !== likeKeyFor(record))];
+        showToast(t('mgLiked'), 'success', 1200);
+        return true;
+    } catch (err) {
+        showToast(t('mgLikeFailed', { error: (err?.message || err) }), 'error', 2400);
+        return null;
+    }
+}
+
+// ---------- 分享链接进入：从 ?gameFrom=&game= 解析 ----------
+export function parseSharedGameParams() {
+    try {
+        const url = new URL(window.location.href);
+        const fromUsername = (url.searchParams.get('gameFrom') || '').trim();
+        const game = (url.searchParams.get('game') || '').trim();
+        return { fromUsername, game };
+    } catch (_) {
+        return { fromUsername: '', game: '' };
+    }
+}
+
+export function hasSharedGameParams() {
+    const { fromUsername, game } = parseSharedGameParams();
+    return !!(fromUsername && game);
+}
+
+function cleanupSharedGameUrl() {
+    try {
+        const url = new URL(window.location.href);
+        ['gameFrom', 'game'].forEach(key => url.searchParams.delete(key));
+        window.history.replaceState({}, '', url.toString());
+    } catch (_) {}
+}
+
 // 单色 SVG 图标（fill/stroke 用 currentColor，跟随标签文字颜色：未选灰、选中蓝）。
 const MINIGAME_TAB_ICONS = {
     // 推荐：五角星轮廓
@@ -130,6 +572,25 @@ function getMinigameRewardLabel(game, levelReward) {
     return levelReward?.label || t('mgRewardDefault');
 }
 
+// 相对时间：把时间戳格式化成“刚刚 / N 分钟前 / N 小时前 / N 天前…”。
+function formatRelativeTime(ts) {
+    const value = Number(ts);
+    if (!Number.isFinite(value) || value <= 0) return '';
+    const diff = Date.now() - value;
+    if (diff < 0) return t('timeJustNow');
+    const minute = 60 * 1000;
+    const hour = 60 * minute;
+    const day = 24 * hour;
+    const month = 30 * day;
+    const year = 365 * day;
+    if (diff < minute) return t('timeJustNow');
+    if (diff < hour) return t('timeMinutesAgo', { n: Math.floor(diff / minute) });
+    if (diff < day) return t('timeHoursAgo', { n: Math.floor(diff / hour) });
+    if (diff < month) return t('timeDaysAgo', { n: Math.floor(diff / day) });
+    if (diff < year) return t('timeMonthsAgo', { n: Math.floor(diff / month) });
+    return t('timeYearsAgo', { n: Math.floor(diff / year) });
+}
+
 const PET_STAT_ITEMS = [
     { k: 'bond', labelKey: 'statBond', icon: '💛' },
     { k: 'mood', labelKey: 'statMood', icon: '😊' },
@@ -144,17 +605,48 @@ let currentGameStartedAt = 0;
 let restPromptTimer = null;
 let restPromptOpen = false;
 let suppressCurrentRewards = false;
+let minigameLoadingTimer = null;
+// 满 15 秒后记入"最近玩过"的延时定时器（中途退出 / 换游戏会取消）。
+let recentRecordTimer = null;
+// 当前游玩中游戏的收藏元数据（顶栏收藏按钮据此显示 / 切换收藏状态）。
+let currentGameLikeMeta = null;
+// 当前"推荐"列表的重渲染函数引用（showList 退出游戏后刷新最近游玩排序 / 时间标签）。
+let currentRenderGameList = null;
 // 底部标签：'recommend' 官方推荐 | 'create' 创造 | 'mine' 我的
 let activeMinigameTab = 'recommend';
+let hideTopbarActionsForRoute = false;
 
-export function renderMinigames(panel, { pet }, { onBack, onGameFinished, initialGameId = null, initialGameParams = null, allowPlayWhenLowEnergy = false, suppressRewards = false, exitGameToBack = false, completionPrompt = null, deferGameFinishedUntilCompletionExit = false, initialTab = null, onCreateGame = null, onEditGame = null } = {}) {
+export function renderMinigames(panel, { pet }, { onBack, onGameFinished, initialGameId = null, initialGameParams = null, allowPlayWhenLowEnergy = false, suppressRewards = false, hideTopbarActions = false, exitGameToBack = false, completionPrompt = null, deferGameFinishedUntilCompletionExit = false, initialTab = null, onCreateGame = null, onEditGame = null, sharedGame = null } = {}) {
+    // 守护：玩耍视图订阅了全局 state（subscribe(render)），任何 notify() 都会重跑本路由。
+    // 若此时已有一局游戏正在进行（iframe 已挂载），重建整个面板会销毁运行中的 iframe，
+    // 表现为"首次点开游戏秒退、第二次正常"——典型触发是小游戏加载即请求宠物图（如台球
+    // haqi_billiards 的 requestPets），首次宠物未缓存 → 后台 loadPet 完成后 notify() → 本路由
+    // 重渲染 → iframe 被销毁；二次宠物已缓存、不再 notify，故正常。
+    // 这里在"当前正在游玩同一局（iframe 已挂载）且本次不是切换到另一个游戏"时跳过破坏性重建，
+    // 只刷新动态数据（宠物状态 / 金币），保住运行中的游戏。
+    // 仅当 initialGameId 指向另一个游戏（真正的切换）或带 sharedGame 时才放行重建。
+    const reentrantSameGame = currentGame
+        && !sharedGame
+        && (!initialGameId || initialGameId === currentGame.id);
+    if (reentrantSameGame) {
+        const liveFrame = $('mhMinigameFrame');
+        if (liveFrame?.isConnected && panel?.contains?.(liveFrame)) {
+            if (pet) currentPet = pet;
+            try { refreshPetStats(); } catch (_) {}
+            try { refreshCoins(); } catch (_) {}
+            return;
+        }
+    }
     cleanupMessageListener?.();
     currentGame = null;
     rewardedRounds = new Set();
     currentPet = pet || null;
     suppressCurrentRewards = !!suppressRewards;
+    hideTopbarActionsForRoute = !!hideTopbarActions;
     activeMinigameTab = (initialTab && MINIGAME_TABS.some(tab => tab.id === initialTab)) ? initialTab : 'recommend';
-    const ignoreListClicksUntil = initialGameId ? 0 : Date.now() + MINIGAME_ENTRY_CLICK_GUARD_MS;
+    const initialGameConfig = initialGameId ? getPlayItems().find(item => item.id === initialGameId) : null;
+    const hideInitialTopbarActions = hideTopbarActionsForRoute || !!initialGameConfig?.hidden;
+    const ignoreListClicksUntil = (initialGameId || sharedGame) ? 0 : Date.now() + MINIGAME_ENTRY_CLICK_GUARD_MS;
     let deferredCompletion = null;
     panel.innerHTML = `
         <style>
@@ -255,39 +747,42 @@ export function renderMinigames(panel, { pet }, { onBack, onGameFinished, initia
             }
             .mh-minigame-mine-card {
                 position: relative;
-                border: 1.5px solid rgba(125,211,252,.78);
-                border-radius: 14px;
-                background: rgba(255,255,255,.92);
-                padding: 12px 10px 10px;
+                text-align: center;
+                box-sizing: border-box;
+                min-height: 184px;
                 display: flex;
                 flex-direction: column;
                 align-items: center;
+                justify-content: flex-start;
                 gap: 8px;
-                min-height: 150px;
+                border-radius: 12px;
+                cursor: pointer;
             }
             .mh-minigame-mine-card .mh-minigame-mine-del {
                 position: absolute;
-                top: 6px;
-                right: 6px;
-                width: 24px;
-                height: 24px;
+                top: 4px;
+                right: 4px;
+                width: 22px;
+                height: 22px;
                 border-radius: 999px;
-                border: 1.5px solid rgba(148,163,184,.45);
-                background: rgba(255,255,255,.78);
-                color: rgba(100,116,139,.78);
-                font-size: 16px;
+                border: 0;
+                background: rgba(0,0,0,.06);
+                color: rgba(100,116,139,.72);
+                font-size: 15px;
                 font-weight: 900;
                 line-height: 1;
                 display: grid;
                 place-items: center;
                 padding: 0;
                 box-shadow: none;
+                opacity: 1;
             }
-            .mh-minigame-mine-ico { font-size: 40px; line-height: 1; }
-            .mh-minigame-mine-title { font-weight: 800; color: var(--text-primary); font-size: 16px; line-height: 1.2; text-align: center; }
-            .mh-minigame-mine-desc { color: var(--text-muted); font-size: 12px; line-height: 1.35; text-align: center; max-width: 14em; }
-            .mh-minigame-mine-actions { margin-top: auto; display: flex; gap: 6px; width: 100%; }
-            .mh-minigame-mine-actions button { flex: 1; min-width: 0; padding: 7px 6px; font-size: 12px; }
+            .mh-minigame-mine-ico { font-size: 44px; line-height: 1; flex: 0 0 auto; }
+            .mh-minigame-mine-title { font-weight: 800; color: var(--text-primary); font-size: 16px; line-height: 1.2; text-align: center; width: 100%; min-height: 2.4em; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; word-break: break-word; }
+            .mh-minigame-mine-desc { color: var(--text-muted); font-size: 12px; line-height: 1.35; text-align: center; max-width: 12em; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; }
+            .mh-minigame-mine-time { color: var(--text-muted); font-size: 11px; font-weight: 800; line-height: 1.2; opacity: .82; }
+            .mh-minigame-mine-actions { display: flex; gap: 6px; width: 100%; margin-top: auto; flex: 0 0 auto; }
+            .mh-minigame-mine-actions button { flex: 1; min-width: 0; padding: 7px 6px; font-size: 12px; min-height: 32px; }
             .mh-minigame-icon {
                 width: 58px;
                 height: 58px;
@@ -490,6 +985,102 @@ export function renderMinigames(panel, { pet }, { onBack, onGameFinished, initia
                 border-right: 5px solid transparent;
                 border-bottom: 5px solid rgba(15, 39, 71, .94);
             }
+            /* 顶栏收藏按钮：仅在游戏游玩中显示，已收藏时显示"已收藏"文案 */
+            .mh-minigame-topbar-like {
+                height: 30px;
+                padding: 0 10px 0 7px;
+                border-radius: 999px;
+                border: 1px solid rgba(100,116,139,.3);
+                background: rgba(255,255,255,.9);
+                color: #64748b;
+                display: inline-flex;
+                align-items: center;
+                gap: 4px;
+                font-weight: 900;
+                font-size: 12px;
+                line-height: 1;
+                cursor: pointer;
+                box-shadow: 0 2px 0 rgba(100,116,139,.12);
+                white-space: nowrap;
+            }
+            .mh-minigame-topbar-like .mh-minigame-topbar-like-ico { display: inline-flex; line-height: 1; }
+            .mh-minigame-topbar-like.liked { background: #fff0f0; border-color: rgba(239,68,68,.5); color: #ef4444; box-shadow: 0 2px 0 rgba(239,68,68,.12); }
+            /* emoji 爱心：未收藏灰色（grayscale）；已收藏红色原色 */
+            .mh-minigame-heart-emoji { font-size: 16px; line-height: 1; display: inline-block; filter: grayscale(1) opacity(.6); }
+            .mh-minigame-heart-emoji.liked { filter: none; }
+            /* 分享按钮（我的卡片操作区，emoji 图标） */
+            .mh-minigame-mine-actions .mh-minigame-share-btn {
+                flex: 0 0 38px;
+                display: inline-flex;
+                align-items: center;
+                justify-content: center;
+                color: var(--text-secondary);
+                font-size: 16px;
+                line-height: 1;
+            }
+            /* 分享弹窗（复用故事分享样式，本视图未注入 view_story_list 的 style，需自带） */
+            .mh-minigame-share-mask { zoom:1 !important; align-items:flex-end; padding:14px 12px max(14px,env(safe-area-inset-bottom)); }
+            .mh-minigame-share-mask .mh-story-share-card { width:min(420px, calc(100vw - 24px)); display:flex; flex-direction:column; gap:12px; border-radius:20px 20px 16px 16px; }
+            .mh-minigame-share-mask .mh-story-share-head { display:flex; align-items:flex-start; justify-content:space-between; gap:12px; }
+            .mh-minigame-share-mask .mh-story-share-title { color:var(--text-primary); font-size:18px; font-weight:900; }
+            .mh-minigame-share-mask .mh-story-share-subtitle { color:var(--text-secondary); font-size:13px; font-weight:800; margin-top:3px; line-height:1.35; word-break:break-word; }
+            .mh-minigame-share-mask .mh-story-share-close { width:34px; height:34px; border-radius:999px; border:1.5px solid var(--border-card); background:#fff; color:var(--text-primary); font-size:22px; line-height:1; display:grid; place-items:center; padding:0; }
+            .mh-minigame-share-mask .mh-story-share-preview { border:1.5px solid rgba(14,165,233,.28); border-radius:14px; background:#f8fdff; color:var(--text-primary); padding:10px; font-size:13px; font-weight:900; line-height:1.45; }
+            .mh-minigame-share-mask .mh-story-share-link { font-size:12px; color:var(--text-secondary); }
+            .mh-minigame-share-mask .mh-story-share-actions { display:grid; grid-template-columns:repeat(3,minmax(0,1fr)); gap:8px; }
+            .mh-minigame-share-mask .mh-story-share-actions button { padding:8px 6px; font-size:12px; }
+            /* 推荐卡片右上角作者标签 */
+            .mh-minigame-owner-tag {
+                position: absolute;
+                top: 6px;
+                right: 6px;
+                z-index: 3;
+                max-width: 60%;
+                padding: 2px 8px;
+                border-radius: 999px;
+                background: rgba(14,165,233,.14);
+                border: 1px solid rgba(14,165,233,.3);
+                color: #0369a1;
+                font-size: 11px;
+                font-weight: 900;
+                line-height: 1.5;
+                white-space: nowrap;
+                overflow: hidden;
+                text-overflow: ellipsis;
+                cursor: pointer;
+            }
+            .mh-minigame-owner-tag.me { background: rgba(34,197,94,.16); border-color: rgba(34,197,94,.36); color: #15803d; }
+            /* 推荐卡片左上角"最近玩过"时间标签 */
+            .mh-minigame-played-tag {
+                position: absolute;
+                top: 6px;
+                left: 6px;
+                z-index: 3;
+                max-width: 56%;
+                padding: 2px 7px;
+                border-radius: 999px;
+                background: rgba(100,116,139,.12);
+                color: #64748b;
+                font-size: 10px;
+                font-weight: 900;
+                line-height: 1.5;
+                white-space: nowrap;
+                overflow: hidden;
+                text-overflow: ellipsis;
+            }
+            /* 用户小游戏弹窗 */
+            .mh-minigame-user-mask { zoom:1 !important; align-items:flex-end; padding:14px 12px max(14px,env(safe-area-inset-bottom)); }
+            .mh-minigame-user-card { width:min(440px, calc(100vw - 24px)); max-height:min(70vh, 560px); display:flex; flex-direction:column; gap:10px; border-radius:20px 20px 16px 16px; }
+            .mh-minigame-user-head { display:flex; align-items:center; justify-content:space-between; gap:12px; }
+            .mh-minigame-user-title { color:var(--text-primary); font-size:18px; font-weight:900; min-width:0; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+            .mh-minigame-user-close { width:34px; height:34px; border-radius:999px; border:1.5px solid var(--border-card); background:#fff; color:var(--text-primary); font-size:22px; line-height:1; display:grid; place-items:center; padding:0; flex:0 0 auto; }
+            .mh-minigame-user-body { overflow:auto; display:flex; flex-direction:column; gap:8px; }
+            .mh-minigame-user-empty { color:var(--text-muted); font-size:13px; font-weight:800; text-align:center; padding:18px 8px; }
+            .mh-minigame-user-item { display:flex; align-items:center; gap:10px; width:100%; text-align:left; padding:10px; border-radius:14px; border:1.5px solid rgba(14,165,233,.22); background:#f8fdff; cursor:pointer; }
+            .mh-minigame-user-item-ico { font-size:28px; line-height:1; flex:0 0 auto; }
+            .mh-minigame-user-item-text { min-width:0; display:flex; flex-direction:column; gap:2px; }
+            .mh-minigame-user-item-title { color:var(--text-primary); font-size:15px; font-weight:900; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+            .mh-minigame-user-item-desc { color:var(--text-muted); font-size:12px; line-height:1.35; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
             @media (prefers-reduced-motion: reduce) {
                 .mh-minigame-stat-pill.stat-up,
                 .mh-minigame-stat-pill.stat-down,
@@ -505,20 +1096,21 @@ export function renderMinigames(panel, { pet }, { onBack, onGameFinished, initia
         </style>
         <div class="topbar">
             <button class="btn-icon" id="mhBack" style="width:36px;height:36px;font-size:18px">‹</button>
-            <span class="font-bold" style="color:var(--text-primary);min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${escapeHtml(t('mgPlay'))}</span>
-            <div style="display:flex;align-items:center;justify-content:flex-end;gap:5px;max-width:min(64vw,440px);overflow:visible">
+            <span id="mhMinigameTitle" class="font-bold" style="color:var(--text-primary);flex:1;min-width:0;text-align:left;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${escapeHtml(t('mgPlay'))}</span>
+            <div id="mhMinigameTopActions" style="display:${hideInitialTopbarActions ? 'none' : 'flex'};align-items:center;justify-content:flex-end;gap:5px;max-width:min(64vw,440px);overflow:visible">
                 ${renderCoinPill('mhMinigameCoins', 'mh-minigame-coin-pill')}
-                <div id="mhMinigamePetStats" aria-label="${escapeHtml(t('mgPetStatsAria'))}" style="display:flex;align-items:center;justify-content:flex-end;gap:5px;min-width:0;overflow:visible">
-                    ${renderPetStatPills(pet)}
-                </div>
+                <button type="button" id="mhMinigameLikeBtn" class="mh-minigame-topbar-like" style="display:none" aria-pressed="false">
+                    <span class="mh-minigame-topbar-like-ico" aria-hidden="true">${minigameHeartIcon(false)}</span>
+                    <span class="mh-minigame-topbar-like-txt">${escapeHtml(t('mgLike'))}</span>
+                </button>
             </div>
         </div>
         <div class="absolute" style="top:52px;left:0;right:0;bottom:0;overflow:hidden;background:linear-gradient(180deg,#e0f7ff 0%,#bae6fd 46%,#d9f99d 100%)">
             <div id="mhMinigameTabContent" style="position:absolute;inset:0 0 ${initialGameId ? '0' : '58px'} 0;overflow:hidden;display:${initialGameId ? 'none' : 'block'}">
                 <div id="mhMinigameList" class="mh-minigame-tab-pane" data-mh-tab-pane="recommend" style="height:100%;overflow:auto;padding:14px;display:${activeMinigameTab === 'recommend' ? 'grid' : 'none'};grid-template-columns:repeat(auto-fit,minmax(168px,1fr));gap:12px;align-content:start">
-                    ${renderGameCards(getPlayItems())}
+                    ${renderGameCards(getRecommendItems())}
                 </div>
-                <div id="mhMinigameMine" class="mh-minigame-tab-pane" data-mh-tab-pane="mine" style="position:absolute;inset:0;overflow:auto;display:${activeMinigameTab === 'mine' ? 'block' : 'none'}"></div>
+                <div id="mhMinigameMine" class="mh-minigame-tab-pane" data-mh-tab-pane="mine" style="height:100%;overflow:auto;padding:14px;display:${activeMinigameTab === 'mine' ? 'grid' : 'none'};grid-template-columns:repeat(auto-fill,minmax(140px,1fr));gap:12px;align-content:start"></div>
             </div>
             <div id="mhMinigameTabs" style="position:absolute;left:0;right:0;bottom:0;height:58px;display:${initialGameId ? 'none' : 'flex'};align-items:stretch;background:rgba(255,255,255,.92);border-top:1px solid rgba(14,116,144,.18);box-shadow:0 -2px 10px rgba(15,39,71,.08);z-index:5">
                 ${renderMinigameTabButtons()}
@@ -531,7 +1123,7 @@ export function renderMinigames(panel, { pet }, { onBack, onGameFinished, initia
                         <div class="mh-minigame-loading-title">
                             ${escapeHtml(t('mgLoading'))}<span class="mh-minigame-loading-dots" aria-hidden="true"><span></span><span></span><span></span></span>
                         </div>
-                        <div class="mh-minigame-loading-subtitle">${escapeHtml(t('mgOpening'))}</div>
+                        <div class="mh-minigame-loading-subtitle" id="mhMinigameLoadingName">${escapeHtml(t('mgOpening'))}</div>
                     </div>
                 </div>
                 <div id="mhMinigameRewardFx" class="mh-minigame-reward-fx" aria-live="polite"></div>
@@ -545,7 +1137,7 @@ export function renderMinigames(panel, { pet }, { onBack, onGameFinished, initia
                         </div>
                     </div>
                 </div>
-                <button type="button" class="btn-primary" id="mhMinigameDone" style="display:none;position:absolute;right:12px;bottom:12px;z-index:3;padding:8px 14px;font-size:13px">完成玩耍</button>
+                <button type="button" class="btn-primary" id="mhMinigameDone" style="display:none;position:absolute;right:12px;bottom:12px;z-index:3;padding:8px 14px;font-size:13px">${escapeHtml(t('mgDonePlay'))}</button>
             </div>
         </div>`;
 
@@ -564,19 +1156,142 @@ export function renderMinigames(panel, { pet }, { onBack, onGameFinished, initia
         onBack?.();
     };
 
+    // 顶栏收藏按钮（仅游玩中显示）：切换当前游戏收藏状态。
+    const likeBtnEl = $('mhMinigameLikeBtn');
+    if (likeBtnEl) likeBtnEl.onclick = () => handlePlayLikeToggle();
+
+    // 推荐标签当前条目（官方 + 收藏）按 id 索引，供点击时取回 like-meta 与作品来源。
+    let recommendItemsById = new Map();
+
     function renderGameList() {
         const list = $('mhMinigameList');
         if (!list) return;
-        list.innerHTML = renderGameCards(getPlayItems());
-        list.querySelectorAll('[data-game-id]').forEach(btn => {
-            btn.onclick = (e) => {
+        const items = getRecommendItems();
+        recommendItemsById = new Map(items.map(item => [String(item.id), item]));
+        list.innerHTML = renderGameCards(items);
+        currentRenderGameList = renderGameList;
+        list.querySelectorAll('[data-game-id]').forEach(card => {
+            card.onclick = (e) => {
+                // 作者标签：点击查看该用户的全部小游戏，不进入游戏。
+                const ownerTag = e.target.closest?.('[data-mh-owner]');
+                if (ownerTag) {
+                    e.preventDefault();
+                    e.stopPropagation();
+                    openUserGamesPanel(ownerTag.dataset.mhOwner);
+                    return;
+                }
                 if (e?.isTrusted && Date.now() < ignoreListClicksUntil) {
                     e.preventDefault();
                     e.stopPropagation();
                     return;
                 }
-                openGame(btn.dataset.gameId);
+                openRecommendGame(card.dataset.gameId);
             };
+        });
+    }
+
+    // 打开推荐列表里的条目：官方游戏走 src；收藏的用户作品按 owner+path 拉 HTML。
+    // 同时把该条目的 like-meta 传给 openGame，游玩中顶栏收藏按钮据此显示收藏状态。
+    async function openRecommendGame(gameId) {
+        const item = recommendItemsById.get(String(gameId));
+        if (!item) { openGame(gameId); return; }
+        if (item.__likedGame) {
+            const { owner, path } = item.__likedGame;
+            let html = '';
+            try {
+                const myUsername = state.user?.username || state.sdk?.user?.username;
+                html = (owner && owner !== myUsername)
+                    ? await loadRemotePetGameHtml(owner, path)
+                    : await loadPetGameHtml(path);
+            } catch (_) { html = ''; }
+            if (!html || !html.trim()) { showToast(t('mgSharedGameMissing'), 'error'); return; }
+            openGame(item.id, null, { html, game: { id: item.id, title: item.title, icon: item.icon }, likeMeta: item.__likeMeta });
+            return;
+        }
+        openGame(gameId, null, { likeMeta: item.__likeMeta });
+    }
+
+    // 弹窗：展示某个用户创作的全部小游戏，标题为"XXX 的小游戏"。点击即试玩。
+    async function openUserGamesPanel(owner) {
+        const username = String(owner || '').trim();
+        if (!username) return;
+        const myUsername = currentUsername();
+        const isMe = username === myUsername;
+        const panelTitle = isMe ? t('mgMyGamesTitle') : t('mgOwnerGamesTitle', { name: username });
+        document.querySelector('.mh-minigame-user-mask')?.remove();
+        const mask = document.createElement('div');
+        mask.className = 'modal-mask mh-minigame-user-mask';
+        mask.innerHTML = `
+            <div class="modal-card mh-minigame-user-card">
+                <div class="mh-minigame-user-head">
+                    <div class="mh-minigame-user-title">${escapeHtml(panelTitle)}</div>
+                    <button type="button" class="mh-minigame-user-close" data-mh-user-close aria-label="${escapeHtml(t('mgShareClose'))}">×</button>
+                </div>
+                <div class="mh-minigame-user-body" data-mh-user-body>
+                    <div class="mh-minigame-user-empty">${escapeHtml(t('mgMineLoading'))}</div>
+                </div>
+            </div>`;
+        const close = () => mask.remove();
+        mask.addEventListener('click', (e) => {
+            if (e.target === mask || e.target.closest?.('[data-mh-user-close]')) { close(); return; }
+            const card = e.target.closest?.('[data-mh-user-game]');
+            if (card) {
+                const path = card.dataset.mhUserGame;
+                const title = card.dataset.mhUserTitle || '';
+                const icon = card.dataset.mhUserIcon || '🎮';
+                close();
+                playUserGame(username, path, { title, icon });
+            }
+        });
+        document.body.appendChild(mask);
+
+        let records = [];
+        try {
+            records = isMe ? await loadPetGameList() : await loadRemotePetGameList(username);
+        } catch (_) { records = []; }
+        const body = mask.querySelector('[data-mh-user-body]');
+        if (!body) return;
+        if (!records.length) {
+            body.innerHTML = `<div class="mh-minigame-user-empty">${escapeHtml(t('mgOwnerGamesEmpty'))}</div>`;
+            return;
+        }
+        body.innerHTML = records.map(record => `
+            <button type="button" class="mh-minigame-user-item" data-mh-user-game="${escapeHtml(record.path)}" data-mh-user-title="${escapeHtml(record.title || '')}" data-mh-user-icon="${escapeHtml(record.icon || '🎮')}">
+                <span class="mh-minigame-user-item-ico" aria-hidden="true">${escapeHtml(record.icon || '🎮')}</span>
+                <span class="mh-minigame-user-item-text">
+                    <span class="mh-minigame-user-item-title">${escapeHtml(record.title || t('mgDefaultName'))}</span>
+                    ${record.desc ? `<span class="mh-minigame-user-item-desc">${escapeHtml(record.desc)}</span>` : ''}
+                </span>
+            </button>
+        `).join('');
+    }
+
+    // 试玩某用户的小游戏（自己的走本地，别人的走远程拉取 HTML）。
+    async function playUserGame(owner, path, { title = '', icon = '🎮' } = {}) {
+        const username = String(owner || '').trim();
+        const myUsername = currentUsername();
+        const isMe = username === myUsername;
+        let html = '';
+        try {
+            html = isMe ? await loadPetGameHtml(path) : await loadRemotePetGameHtml(username, path);
+        } catch (_) { html = ''; }
+        if (!html || !html.trim()) { showToast(t('mgSharedGameMissing'), 'error'); return; }
+        const gameTitle = title || t('mgDefaultName');
+        const gameIcon = icon || '🎮';
+        const baseName = String(path).replace(/\.html?$/i, '').split('/').pop();
+        const gameId = `user:${username}:${baseName}`;
+        openGame(gameId, null, {
+            allowLowEnergy: true,
+            html,
+            game: { id: gameId, title: gameTitle, icon: gameIcon },
+            // 收藏键以 owner + 基础名（baseName）为准，与"我的"卡片收藏保持一致。
+            likeMeta: {
+                id: baseName,
+                path: String(path).replace(/^\/+/, ''),
+                owner: username,
+                title: gameTitle,
+                icon: gameIcon,
+            },
         });
     }
     renderGameList();
@@ -615,7 +1330,7 @@ export function renderMinigames(panel, { pet }, { onBack, onGameFinished, initia
         const list = $('mhMinigameList');
         const mine = $('mhMinigameMine');
         if (list) list.style.display = tabId === 'recommend' ? 'grid' : 'none';
-        if (mine) mine.style.display = tabId === 'mine' ? 'block' : 'none';
+        if (mine) mine.style.display = tabId === 'mine' ? 'grid' : 'none';
         if (tabId === 'mine') renderMineList();
     }
 
@@ -630,36 +1345,54 @@ export function renderMinigames(panel, { pet }, { onBack, onGameFinished, initia
         const mine = $('mhMinigameMine');
         if (!mine) return;
         const token = cleanupMessageListener;
-        mine.innerHTML = `<div class="mh-minigame-mine-grid"><div class="mh-minigame-mine-empty">${escapeHtml(t('mgMineLoading'))}</div></div>`;
+        mine.innerHTML = `<div class="mh-minigame-mine-empty">${escapeHtml(t('mgMineLoading'))}</div>`;
         let records = [];
         try {
             records = await loadPetGameList();
         } catch (e) {
             if (cleanupMessageListener !== token || !$('mhMinigameMine')) return;
-            mine.innerHTML = `<div class="mh-minigame-mine-grid"><div class="mh-minigame-mine-empty">${escapeHtml(t('mgMineLoadFailed'))}</div></div>`;
+            mine.innerHTML = `<div class="mh-minigame-mine-empty">${escapeHtml(t('mgMineLoadFailed'))}</div>`;
             return;
         }
         if (cleanupMessageListener !== token || !$('mhMinigameMine') || activeMinigameTab !== 'mine') return;
-        mine.innerHTML = `<div class="mh-minigame-mine-grid">${renderMineCards(records)}</div>`;
+        mine.innerHTML = renderMineCards(records);
         bindMineCards(records);
+    }
+
+    // 我的作品收藏记录：owner = 当前用户名，path = 文件路径。
+    function mineGameLikeMeta(record, myUsername) {
+        return {
+            id: record.id || record.path,
+            path: record.path || '',
+            src: '',
+            owner: String(myUsername || ''),
+            title: record.title || t('mgDefaultName'),
+            icon: record.icon || '🎮',
+            desc: record.desc || '',
+            official: false,
+        };
     }
 
     function renderMineCards(records) {
         if (!records.length) {
             return `<div class="mh-minigame-mine-empty">${escapeHtml(t('mgMineEmpty'))}</div>`;
         }
-        return records.map(record => `
-            <article class="mh-minigame-mine-card" data-mh-mine-path="${escapeHtml(record.path)}">
+        return records.map(record => {
+            const updatedLabel = formatRelativeTime(record.updatedAt);
+            return `
+            <div class="card-flat mh-minigame-mine-card" data-mh-mine-path="${escapeHtml(record.path)}">
                 <button type="button" class="mh-minigame-mine-del" data-mh-mine-delete="${escapeHtml(record.path)}" aria-label="${escapeHtml(t('mgMineDelete'))}" title="${escapeHtml(t('mgMineDelete'))}">×</button>
                 <span class="mh-minigame-mine-ico" aria-hidden="true">${escapeHtml(record.icon || '🎮')}</span>
                 <span class="mh-minigame-mine-title">${escapeHtml(record.title || t('mgDefaultName'))}</span>
                 ${record.desc ? `<span class="mh-minigame-mine-desc">${escapeHtml(record.desc)}</span>` : ''}
+                ${updatedLabel ? `<span class="mh-minigame-mine-time">${escapeHtml(updatedLabel)}</span>` : ''}
                 <div class="mh-minigame-mine-actions">
-                    <button type="button" class="btn-secondary" data-mh-mine-edit="${escapeHtml(record.path)}">${escapeHtml(t('slEdit'))}</button>
-                    <button type="button" class="btn-primary" data-mh-mine-play="${escapeHtml(record.path)}">${escapeHtml(t('slPlay'))}</button>
+                    <button type="button" class="btn-secondary mh-minigame-share-btn" data-mh-mine-share="${escapeHtml(record.path)}" aria-label="${escapeHtml(t('mgShare'))}" title="${escapeHtml(t('mgShare'))}"><span aria-hidden="true">🔗</span></button>
+                    <button type="button" class="btn-primary" data-mh-mine-edit="${escapeHtml(record.path)}">${escapeHtml(t('slEdit'))}</button>
                 </div>
-            </article>
-        `).join('');
+            </div>
+        `;
+        }).join('');
     }
 
     function bindMineCards(records) {
@@ -689,9 +1422,16 @@ export function renderMinigames(panel, { pet }, { onBack, onGameFinished, initia
                 openMineGameMaker(editBtn.dataset.mhMineEdit, records);
                 return;
             }
-            const playBtn = e.target.closest?.('[data-mh-mine-play]');
-            if (playBtn) {
-                openMineGame(playBtn.dataset.mhMinePlay, records);
+            const shareBtn = e.target.closest?.('[data-mh-mine-share]');
+            if (shareBtn) {
+                const record = records.find(r => r.path === shareBtn.dataset.mhMineShare);
+                if (record) openMinigameSharePanel(record);
+                return;
+            }
+            // 点击卡片任意非按钮区域即试玩。
+            const card = e.target.closest?.('[data-mh-mine-path]');
+            if (card) {
+                openMineGame(card.dataset.mhMinePath, records);
             }
         };
     }
@@ -718,7 +1458,12 @@ export function renderMinigames(panel, { pet }, { onBack, onGameFinished, initia
             return;
         }
         if (!html || !html.trim()) { showToast(t('mgMineMissing'), 'error'); return; }
-        openGame(record.id || record.path, null, { html, game: { id: record.id || record.path, title: record.title, icon: record.icon } });
+        const myUsername = state.user?.username || state.sdk?.user?.username || '';
+        openGame(record.id || record.path, null, {
+            html,
+            game: { id: record.id || record.path, title: record.title, icon: record.icon },
+            likeMeta: mineGameLikeMeta(record, myUsername),
+        });
     }
 
     const onMessage = (event) => {
@@ -727,6 +1472,14 @@ export function renderMinigames(panel, { pet }, { onBack, onGameFinished, initia
         const msg = event.data || {};
         if (isPetImageRequest(msg)) {
             handlePetImageRequest(frame, msg);
+            return;
+        }
+        if (isUserProfileRequest(msg)) {
+            handleUserProfileRequest(frame, msg);
+            return;
+        }
+        if (isUserProfileUpdate(msg)) {
+            handleUserProfileUpdate(frame, msg);
             return;
         }
         if (msg.type === 'gameLoaded') {
@@ -749,11 +1502,15 @@ export function renderMinigames(panel, { pet }, { onBack, onGameFinished, initia
         window.removeEventListener('mh:tick', refreshPetStats);
         destroyMinigameIframe();
         currentGame = null;
+        currentGameLikeMeta = null;
+        currentRenderGameList = null;
         rewardedRounds = new Set();
         currentPet = null;
         currentGameStartedAt = 0;
         suppressCurrentRewards = false;
+        hideTopbarActionsForRoute = false;
         clearMinigameRestPrompt();
+        clearRecentPlayTimer();
         cleanupMessageListener = null;
     };
     // 若初始标签为"我的"（从创作工坊返回），加载列表。
@@ -770,6 +1527,46 @@ export function renderMinigames(panel, { pet }, { onBack, onGameFinished, initia
             if (cleanupMessageListener !== renderToken || !$('mhMinigameList')) return;
             renderGameList();
             if (initialGameId && !currentGame) openGame(initialGameId, initialGameParams, { allowLowEnergy: allowPlayWhenLowEnergy });
+        });
+    }
+    // 收藏列表 + 最近游玩记录异步加载完成后刷新"推荐"，让收藏作品、爱心状态、最近游玩排序与时间标签显示出来。
+    Promise.all([ensureLikedGames(), ensureRecentGames()]).then(() => {
+        if (cleanupMessageListener !== renderToken) return;
+        if (activeMinigameTab === 'recommend' && $('mhMinigameList')) renderGameList();
+    });
+    // 分享链接进入：从别人 workspace 拉取小游戏 HTML 并直接试玩。
+    if (sharedGame && !initialGameId && !currentGame) {
+        openSharedGame(sharedGame);
+    }
+
+    async function openSharedGame({ fromUsername, game } = {}) {
+        const username = String(fromUsername || '').trim();
+        const filename = String(game || '').trim();
+        if (!username || !filename) return;
+        let html = '';
+        try {
+            const myUsername = state.user?.username || state.sdk?.user?.username;
+            html = (username === myUsername)
+                ? await loadPetGameHtml(filename)
+                : await loadRemotePetGameHtml(username, filename);
+        } catch (_) { html = ''; }
+        if (cleanupMessageListener !== renderToken || !$('mhMinigameFrameWrap')) return;
+        if (!html || !html.trim()) { showToast(t('mgSharedGameMissing'), 'error', 2400); return; }
+        const baseName = filename.replace(/\.html?$/i, '').split('/').pop();
+        const sharedId = `shared:${username}:${baseName}`;
+        const sharedPath = String(filename).replace(/^\/+/, '').includes('/') ? filename : `pet-games/${filename}`;
+        openGame(sharedId, null, {
+            allowLowEnergy: true,
+            html,
+            game: { id: sharedId, title: t('mgSharedGameTitle'), icon: '🎮' },
+            // 收藏键以 owner + 基础名（baseName）为准。
+            likeMeta: {
+                id: baseName,
+                path: sharedPath,
+                owner: username,
+                title: t('mgSharedGameTitle'),
+                icon: '🎮',
+            },
         });
     }
 
@@ -803,13 +1600,28 @@ export function renderMinigames(panel, { pet }, { onBack, onGameFinished, initia
 
     function renderGameCards(items) {
         if (!items.length) return '';
-        return items.map(game => `
-            <button type="button" class="card-flat" data-game-id="${escapeHtml(game.id)}" style="text-align:center;min-height:118px;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:10px;border-radius:12px;cursor:pointer">
+        return items.map(game => {
+            const owner = String(game.__owner || '').trim();
+            const tag = owner ? ownerTagLabel(owner) : '';
+            const isMe = owner && owner === currentUsername();
+            const tagTitle = isMe ? t('mgMyGamesTitle') : t('mgOwnerGamesTitle', { name: owner });
+            const ownerTag = tag
+                ? `<span class="mh-minigame-owner-tag${isMe ? ' me' : ''}" data-mh-owner="${escapeHtml(owner)}" role="button" tabindex="0" title="${escapeHtml(tagTitle)}" aria-label="${escapeHtml(tagTitle)}">${escapeHtml(tag)}</span>`
+                : '';
+            // 最近游玩时间（左上角，如"1 天前"）。
+            const playedLabel = game.__playedAt ? formatRelativeTime(game.__playedAt) : '';
+            const playedTag = playedLabel
+                ? `<span class="mh-minigame-played-tag" title="${escapeHtml(t('mgLastPlayed', { time: playedLabel }))}">${escapeHtml(playedLabel)}</span>`
+                : '';
+            return `
+            <button type="button" class="card-flat" data-game-id="${escapeHtml(game.id)}" style="position:relative;text-align:center;min-height:118px;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:10px;border-radius:12px;cursor:pointer">
+                ${playedTag}
+                ${ownerTag}
                 ${renderMinigameIcon(game)}
                 <span style="font-weight:800;color:var(--text-primary);font-size:17px;line-height:1.2">${escapeHtml(getMinigameTitle(game))}</span>
                 ${game.desc ? `<span style="color:var(--text-muted);font-size:12px;line-height:1.35;max-width:12em">${escapeHtml(game.desc)}</span>` : ''}
-            </button>
-        `).join('');
+            </button>`;
+        }).join('');
     }
 
     function renderMinigameIcon(game) {
@@ -850,6 +1662,145 @@ export function renderMinigames(panel, { pet }, { onBack, onGameFinished, initia
 function isPetImageRequest(msg) {
     const type = String(msg?.type || '');
     return MINIGAME_PET_IMAGE_REQUESTS.has(type) || MINIGAME_ALL_PET_IMAGE_REQUESTS.has(type);
+}
+
+function isUserProfileRequest(msg) {
+    return MINIGAME_USER_PROFILE_REQUESTS.has(String(msg?.type || ''));
+}
+
+function isUserProfileUpdate(msg) {
+    return MINIGAME_USER_PROFILE_UPDATES.has(String(msg?.type || ''));
+}
+
+// 收集可暴露给小游戏的用户档案：星球名、昵称、用户名、性别、头像。
+// 仅暴露展示用字段，绝不包含 token / id 等敏感信息。
+function buildUserProfilePayload() {
+    const user = state.user && typeof state.user === 'object' ? state.user : {};
+    const nickname = (user.nickname || user.name || user.displayName || user.username || '').toString().trim();
+    const username = (user.username || '').toString().trim();
+    // keepwork 用户性别字段历史上可能是 sex / gender，0/1/2 或字符串，统一归一化。
+    let gender = '';
+    const rawGender = user.gender != null ? user.gender : user.sex;
+    if (rawGender === 1 || rawGender === '1' || rawGender === 'male' || rawGender === 'm') gender = 'male';
+    else if (rawGender === 2 || rawGender === '2' || rawGender === 'female' || rawGender === 'f') gender = 'female';
+    else if (typeof rawGender === 'string' && rawGender.trim()) gender = rawGender.trim();
+    return {
+        planetName: (state.planetName || '').toString(),
+        nickname,
+        username,
+        gender,
+        portrait: (user.portrait || user.avatar || '').toString(),
+    };
+}
+
+// 处理小游戏的 haqi_get_user_profile 请求，回传当前用户档案。
+function handleUserProfileRequest(frame, msg) {
+    const sourceWindow = frame?.contentWindow;
+    if (!sourceWindow) return;
+    const requestId = msg.requestId || msg.id || null;
+    try {
+        sourceWindow.postMessage({
+            type: 'haqi_user_profile',
+            requestId,
+            ok: true,
+            data: buildUserProfilePayload(),
+        }, '*');
+    } catch (e) {
+        try {
+            sourceWindow.postMessage({
+                type: 'haqi_user_profile',
+                requestId,
+                ok: false,
+                error: e?.message || String(e),
+            }, '*');
+        } catch (_) {}
+    }
+}
+
+// 处理小游戏的 haqi_set_user_profile 回写：目前支持重命名星球与昵称。
+// 昵称变更仅写入内存中的 state.user（用于本会话称呼），不强制同步到 keepwork 账号资料；
+// 星球名通过 setPlanetName + 防抖落盘持久化。
+function handleUserProfileUpdate(frame, msg) {
+    const data = (msg && typeof msg.data === 'object' && msg.data) || {};
+    let changed = false;
+
+    if (typeof data.planetName === 'string') {
+        const next = data.planetName.trim().slice(0, 80);
+        if (next && next !== state.planetName) {
+            setPlanetName(next);
+            changed = true;
+        }
+    }
+
+    if (typeof data.nickname === 'string') {
+        const nick = data.nickname.trim().slice(0, 40);
+        if (nick) {
+            if (!state.user || typeof state.user !== 'object') state.user = {};
+            // 仅更新展示昵称，保留 username / id 等账号标识不变。
+            if (state.user.nickname !== nick) {
+                state.user.nickname = nick;
+                changed = true;
+            }
+        }
+    }
+
+    if (changed) {
+        try { saveUserProfileDebounced(); } catch (_) {}
+    }
+
+    // 回执最新档案，便于小游戏确认写入结果。
+    const sourceWindow = frame?.contentWindow;
+    if (sourceWindow) {
+        try {
+            sourceWindow.postMessage({
+                type: 'haqi_user_profile',
+                requestId: msg.requestId || msg.id || null,
+                ok: true,
+                data: buildUserProfilePayload(),
+            }, '*');
+        } catch (_) {}
+    }
+}
+
+// 供其它内嵌游戏 iframe 的视图（如创作工坊预览 view_game_maker）复用宠物形象请求处理：
+// 让「创作工坊里预览的小游戏」也能像正式 minigame 一样拿到宠物图像，
+// 而不必各自重复实现 haqi_get_pet_image(s) 协议。
+// 返回 true 表示这条消息是宠物形象请求并已处理（调用方可据此短路）。
+// 宠物解析回退到 state.currentPetId，因此即便 minigame 视图未打开也能工作。
+export function handleMinigamePetMessage(frame, msg) {
+    if (!isPetImageRequest(msg)) return false;
+    handlePetImageRequest(frame, msg);
+    return true;
+}
+
+// 主动向某个内嵌游戏 iframe 推送当前宠物配置（setGameConfig + active_pet_config 形象）。
+// 与 minigame 正式播放时一致：iframe 加载后立刻推送一次，无需等待游戏先发请求。
+// 供 view_game_maker 预览复用，使预览里的游戏与正式 minigame 行为一致。
+export async function pushActivePetConfigToFrame(frame) {
+    if (!frame?.contentWindow) return;
+    const pet = await requestedPetForMinigame({});
+    if (!frame?.contentWindow || !pet) return;
+    try {
+        frame.contentWindow.postMessage({
+            type: 'setGameConfig',
+            data: {
+                petId: pet.id || '',
+                petName: displayPetName(pet),
+                masterStyle: localStorage.getItem('haqiAdventureMasterV1') || undefined,
+                // 一并附带用户档案，便于新手领养类小游戏预填星球名 / 称呼。
+                ...buildUserProfilePayload(),
+            },
+        }, '*');
+    } catch (_) {}
+    try {
+        const image = await buildPetImagePayload(pet, { anim: 'happy', petId: pet.id });
+        frame.contentWindow?.postMessage({
+            type: 'haqi_pet_image',
+            requestId: 'active_pet_config',
+            ok: true,
+            data: image,
+        }, '*');
+    } catch (_) {}
 }
 
 async function handlePetImageRequest(frame, msg) {
@@ -970,7 +1921,7 @@ function coinValue() {
 
 function renderCoinPill(id, className) {
     return `
-        <span class="${className} mh-coin-amount" id="${id}" title="金币：玩耍可获得，用来购买食物、家具和道具。" aria-label="金币 ${coinValue()}"
+        <span class="${className} mh-coin-amount" id="${id}" title="${escapeHtml(t('mgCoinTip'))}" aria-label="${escapeHtml(t('coins'))} ${coinValue()}"
             style="position:relative;height:30px;min-width:46px;padding:0 7px;border-radius:999px;background:rgba(255,255,255,.86);border:1px solid rgba(217,119,6,.24);display:inline-flex;align-items:center;justify-content:center;gap:3px;font-weight:900;font-size:12px;color:var(--accent-dark);box-shadow:0 2px 0 rgba(217,119,6,.12)">
             ${coinIconSvg()}
             <span data-mh-minigame-coins>${coinValue()}</span>
@@ -1070,8 +2021,8 @@ function canPlayGame(pet) {
 }
 
 function petStatTip(key, label, value, delta) {
-    const effect = delta > 0 ? `完成玩耍后 +${delta}` : `完成玩耍后 ${delta}`;
-    return `${label} ${value}，${effect}`;
+    const effect = delta > 0 ? t('mgStatAfterPlay', { delta }) : t('mgStatAfterPlayNeg', { delta });
+    return `${label} ${value} · ${effect}`;
 }
 
 function bindStatTips(root) {
@@ -1151,7 +2102,7 @@ function animateStatPill(pill, delta) {
 
 // html / game：玩家自创小游戏会直接传入 HTML 正文 + 合成 game 对象，通过 srcdoc 加载；
 // 官方游戏走 game.src + minigameUrl。
-function openGame(gameId, params = null, { allowLowEnergy = false, html = null, game: providedGame = null } = {}) {
+function openGame(gameId, params = null, { allowLowEnergy = false, html = null, game: providedGame = null, likeMeta = null } = {}) {
     const game = providedGame || getPlayItems().find(item => item.id === gameId);
     if (!game) return;
     if (!allowLowEnergy && !canPlayGame(currentPet)) {
@@ -1162,6 +2113,14 @@ function openGame(gameId, params = null, { allowLowEnergy = false, html = null, 
     currentGame = game;
     rewardedRounds = new Set();
     currentGameStartedAt = Date.now();
+    const hideTopbarActions = shouldHideTopbarActionsForGame(game);
+    setTopbarActionsVisible(!hideTopbarActions);
+    // 顶栏收藏按钮：优先用调用方传入的 like-meta（作品/收藏项），否则按官方游戏推断。
+    const playLikeMeta = likeMeta || likeMetaForGame(game, { official: !!game.src && !game.path });
+    if (hideTopbarActions) hidePlayLikeButton();
+    else showPlayLikeButton(playLikeMeta);
+    // 最近游玩历史：满 15 秒才记入（官方 / 自己 / 别人的游戏都计入），中途退出或换游戏则取消。
+    scheduleRecentPlay(game, playLikeMeta);
     scheduleMinigameRestPrompt();
     const tabContent = $('mhMinigameTabContent');
     const tabs = $('mhMinigameTabs');
@@ -1172,7 +2131,11 @@ function openGame(gameId, params = null, { allowLowEnergy = false, html = null, 
     if (tabContent) tabContent.style.display = 'none';
     if (tabs) tabs.style.display = 'none';
     wrap.style.display = 'block';
-    setMinigameLoading(true);
+    // 加载界面与顶栏标题都展示游戏名（替代原先的"开始 xxx"toast）；标题过长自动省略。
+    const gameTitle = getMinigameTitle(game);
+    setMinigameLoading(true, gameTitle);
+    const titleEl = $('mhMinigameTitle');
+    if (titleEl) { titleEl.textContent = gameTitle; titleEl.title = gameTitle; }
     if (done) done.style.display = game.manualComplete ? 'block' : 'none';
     frame.setAttribute('allow', game.allow || 'autoplay; fullscreen');
     frame.onload = () => postGameConfig();
@@ -1183,7 +2146,6 @@ function openGame(gameId, params = null, { allowLowEnergy = false, html = null, 
         frame.removeAttribute('srcdoc');
         frame.src = minigameUrl(game.src, params);
     }
-    showToast(t('mgStartGame', { title: getMinigameTitle(game) }), 'info', 1000);
 }
 
 async function postGameConfig() {
@@ -1198,6 +2160,8 @@ async function postGameConfig() {
                 petId: pet.id || '',
                 petName: displayPetName(pet),
                 masterStyle: localStorage.getItem('haqiAdventureMasterV1') || undefined,
+                // 一并附带用户档案，便于新手领养类小游戏预填星球名 / 称呼。
+                ...buildUserProfilePayload(),
             },
         }, '*');
     } catch (_) {}
@@ -1334,6 +2298,10 @@ function resetMinigameIframe() {
 
 function destroyMinigameIframe() {
     const frame = $('mhMinigameFrame');
+    if (minigameLoadingTimer) {
+        clearTimeout(minigameLoadingTimer);
+        minigameLoadingTimer = null;
+    }
     if (!frame) return;
     try {
         frame.removeAttribute('srcdoc');
@@ -1350,21 +2318,89 @@ function showList() {
     const done = $('mhMinigameDone');
     resetMinigameIframe();
     clearMinigameRestPrompt();
+    clearRecentPlayTimer();
     if (done) done.style.display = 'none';
     if (wrap) wrap.style.display = 'none';
     if (tabContent) tabContent.style.display = 'block';
     if (tabs) tabs.style.display = 'flex';
+    const titleEl = $('mhMinigameTitle');
+    if (titleEl) { titleEl.textContent = t('mgPlay'); titleEl.removeAttribute('title'); }
     currentGame = null;
+    currentGameLikeMeta = null;
     rewardedRounds = new Set();
     currentGameStartedAt = 0;
+    setTopbarActionsVisible(!hideTopbarActionsForRoute);
+    hidePlayLikeButton();
+    // 退出游戏回到列表：刷新"推荐"，让刚玩过的游戏排到最前并更新"最近游玩"标签。
+    if (activeMinigameTab === 'recommend') currentRenderGameList?.();
 }
 
-function setMinigameLoading(isLoading) {
+function shouldHideTopbarActionsForGame(game) {
+    return hideTopbarActionsForRoute || !!game?.hidden;
+}
+
+function setTopbarActionsVisible(visible) {
+    const actions = $('mhMinigameTopActions');
+    if (actions) actions.style.display = visible ? 'flex' : 'none';
+}
+
+// 顶栏收藏按钮：仅游玩中显示，已收藏时按钮高亮并显示"已收藏"。
+function hidePlayLikeButton() {
+    const btn = $('mhMinigameLikeBtn');
+    if (btn) btn.style.display = 'none';
+}
+
+function renderPlayLikeButton() {
+    const btn = $('mhMinigameLikeBtn');
+    if (!btn) return;
+    if (!currentGameLikeMeta) { btn.style.display = 'none'; return; }
+    const liked = isGameLikedSync(currentGameLikeMeta);
+    btn.style.display = 'inline-flex';
+    btn.classList.toggle('liked', liked);
+    btn.setAttribute('aria-pressed', liked ? 'true' : 'false');
+    const ico = btn.querySelector('.mh-minigame-topbar-like-ico');
+    const txt = btn.querySelector('.mh-minigame-topbar-like-txt');
+    if (ico) ico.innerHTML = minigameHeartIcon(liked);
+    if (txt) txt.textContent = liked ? t('mgLiked') : t('mgLike');
+}
+
+function showPlayLikeButton(meta) {
+    currentGameLikeMeta = meta || null;
+    renderPlayLikeButton();
+}
+
+async function handlePlayLikeToggle() {
+    if (!currentGameLikeMeta) return;
+    const btn = $('mhMinigameLikeBtn');
+    if (btn) btn.disabled = true;
+    await ensureLikedGames();
+    const result = await toggleLikeGame(currentGameLikeMeta);
+    if (btn) btn.disabled = false;
+    if (result === null) return;
+    renderPlayLikeButton();
+}
+
+function setMinigameLoading(isLoading, gameName = '') {
     const loading = $('mhMinigameLoading');
     const wrap = $('mhMinigameFrameWrap');
     const active = !!isLoading;
+    if (minigameLoadingTimer) {
+        clearTimeout(minigameLoadingTimer);
+        minigameLoadingTimer = null;
+    }
     if (wrap) wrap.classList.toggle('mh-minigame-is-loading', active);
     if (!loading) return;
+    // 加载副标题：开始加载时展示游戏名，否则回到默认"正在打开小游戏"。
+    if (active) {
+        const nameEl = $('mhMinigameLoadingName');
+        if (nameEl) nameEl.textContent = gameName || t('mgOpening');
+    }
     loading.classList.toggle('show', active);
     loading.setAttribute('aria-hidden', isLoading ? 'false' : 'true');
+    if (active) {
+        minigameLoadingTimer = setTimeout(() => {
+            minigameLoadingTimer = null;
+            setMinigameLoading(false);
+        }, MINIGAME_LOADING_MAX_MS);
+    }
 }

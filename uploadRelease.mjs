@@ -49,7 +49,47 @@ const planetReleaseVariants = [
     { name: 'MagicHaqi_haqi.html', homePlanet: 'haqi' },
     { name: 'MagicHaqi_maisi.html', homePlanet: 'maisi' },
     { name: 'MagicHaqi_pixlet.html', homePlanet: 'pixlet' },
+    { name: 'MagicHaqi_szzoo.html', homePlanet: 'shenzhen_zoo' },
 ];
+
+// View-forcing release HTML variants. Each gets an inline script that sets
+// `window.__view` before the app boots, forcing the game to open directly in the
+// given view (see js/config.js getForcedView). `MagicHaqi_games.html` opens the
+// minigames view.
+const viewReleaseVariants = [
+    { name: 'MagicHaqi_games.html', view: 'game', title: '魔法哈奇 小游戏' },
+];
+
+// Default document title shipped in dist/MagicHaqi.html. Variants replace this
+// with a per-planet appTitle (from _planet_index.json) or a custom title.
+const DEFAULT_RELEASE_TITLE = '蛋蛋星球 MagicHaqi';
+
+// Read the per-planet `appTitle` map from the famous-planets index so planet
+// variants can override the document <title>.
+function loadPlanetAppTitles() {
+    const indexPath = path.join(projectRoot, 'famous-planets', '_planet_index.json');
+    const map = {};
+    try {
+        const data = JSON.parse(fs.readFileSync(indexPath, 'utf8'));
+        const planets = Array.isArray(data?.planets) ? data.planets : [];
+        for (const planet of planets) {
+            const id = String(planet?.id || '').trim();
+            const appTitle = String(planet?.appTitle || '').trim();
+            if (id && appTitle) map[id] = appTitle;
+        }
+    } catch (e) {
+        console.warn(`[uploadRelease] Could not read planet appTitles: ${e.message}`);
+    }
+    return map;
+}
+
+// Replace the document <title> in an HTML string. Falls back to a no-op when the
+// title element is missing.
+function replaceHtmlTitle(html, newTitle) {
+    if (!newTitle) return html;
+    const escaped = newTitle.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+    return html.replace(/<title>[\s\S]*?<\/title>/i, `<title>${escaped}</title>`);
+}
 
 function fail(message) {
     console.error(`\n[uploadRelease] ${message}\n`);
@@ -107,10 +147,14 @@ function generateReleaseHtml() {
     console.log(`[uploadRelease] Generated release/${releaseHtmlName} -> <base href="${baseHref}">`);
 
     // Generate planet-specific variants with an inline script that sets
-    // `window.__homePlanet` before the app boots.
+    // `window.__homePlanet` before the app boots. The document <title> is
+    // overridden with the planet's appTitle from _planet_index.json (falling
+    // back to the default title when no appTitle is configured).
+    const planetAppTitles = loadPlanetAppTitles();
     for (const variant of planetReleaseVariants) {
         const planetScript = `  <script>window.__homePlanet='${variant.homePlanet}';</script>\n`;
-        let planetHtml = html;
+        const variantTitle = planetAppTitles[variant.homePlanet] || DEFAULT_RELEASE_TITLE;
+        let planetHtml = replaceHtmlTitle(html, variantTitle);
         // Insert the planet script in <head> so it runs before the app
         // module initializes.
         planetHtml = planetHtml.replace(
@@ -119,7 +163,22 @@ function generateReleaseHtml() {
         );
         const variantPath = path.join(releaseDir, variant.name);
         fs.writeFileSync(variantPath, planetHtml);
-        console.log(`[uploadRelease] Generated release/${variant.name} -> home_planet=${variant.homePlanet}`);
+        console.log(`[uploadRelease] Generated release/${variant.name} -> home_planet=${variant.homePlanet}, title="${variantTitle}"`);
+    }
+
+    // Generate view-forcing variants with an inline script that sets
+    // `window.__view` before the app boots (e.g. MagicHaqi_games.html -> game).
+    for (const variant of viewReleaseVariants) {
+        const viewScript = `  <script>window.__view='${variant.view}';</script>\n`;
+        const variantTitle = variant.title || DEFAULT_RELEASE_TITLE;
+        let viewHtml = replaceHtmlTitle(html, variantTitle);
+        viewHtml = viewHtml.replace(
+            /<\/head>/i,
+            `${viewScript}</head>`,
+        );
+        const variantPath = path.join(releaseDir, variant.name);
+        fs.writeFileSync(variantPath, viewHtml);
+        console.log(`[uploadRelease] Generated release/${variant.name} -> view=${variant.view}, title="${variantTitle}"`);
     }
 
     return baseHref;

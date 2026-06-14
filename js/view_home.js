@@ -2140,8 +2140,10 @@ function showPetDetailsModal(pet) {
 
 function showMenuModal(callbacks) {
     const progress = computePlanetProgress();
+    const hasEncyclopedia = !!String(state.settings?.starSettlement?.encyclopediaUrl || '').trim();
     const items = [
         { k: 'petList',   icon: '🐾', label: t('petList') },
+        ...(hasEncyclopedia ? [{ k: 'encyclopedia', icon: '📖', label: t('encTitle') }] : []),
         { k: 'shop',      icon: '🛒', label: t('shop') },
         { k: 'inventory', icon: '🎒', label: t('inventory') },
         ...(progress.level >= 3 ? [{ k: 'research', icon: '🔬', label: t('research') }] : []),

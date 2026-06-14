@@ -462,8 +462,10 @@ function svgToDataUrl(svgMarkup) {
     return `data:image/svg+xml;charset=utf-8,${encodeURIComponent(markup)}`;
 }
 
+const cssBackgroundImageUrlCache = new Map();
 function cssBackgroundImageUrl(className) {
     if (!className || typeof document === 'undefined') return '';
+    if (cssBackgroundImageUrlCache.has(className)) return cssBackgroundImageUrlCache.get(className);
     const el = document.createElement('span');
     el.className = `field-tab-svg-icon ${className}`;
     el.style.cssText = 'position:absolute;left:-9999px;top:-9999px;width:28px;height:28px;pointer-events:none';
@@ -471,7 +473,9 @@ function cssBackgroundImageUrl(className) {
     const bg = getComputedStyle(el).backgroundImage || '';
     el.remove();
     const match = bg.match(/^url\(["']?(.*?)["']?\)$/);
-    return match ? match[1] : '';
+    const result = match ? match[1] : '';
+    cssBackgroundImageUrlCache.set(className, result);
+    return result;
 }
 
 function drawRotatedImage(ctx, image, x, y, width, height, rotationDeg = 0) {
@@ -491,9 +495,11 @@ function drawTerrainEmoji(ctx, emoji, x, y, size, rotationDeg = 0) {
     ctx.font = `900 ${size}px "Apple Color Emoji", "Segoe UI Emoji", "Noto Color Emoji", sans-serif`;
     ctx.textAlign = 'center';
     ctx.textBaseline = 'middle';
-    ctx.shadowColor = 'rgba(0, 0, 0, 0.45)';
-    ctx.shadowBlur = 4;
-    ctx.shadowOffsetY = 2;
+    // Draw outline for depth (cheaper than shadowBlur)
+    ctx.strokeStyle = 'rgba(0, 0, 0, 0.35)';
+    ctx.lineWidth = Math.max(1, size * 0.08);
+    ctx.lineJoin = 'round';
+    ctx.strokeText(emoji, 0, 1);
     ctx.fillText(emoji, 0, 1);
     ctx.restore();
 }
@@ -557,9 +563,6 @@ function drawTreeSprout(ctx, sprout, size) {
     ctx.translate(baseX, baseY);
     ctx.rotate(sprout.rotation * Math.PI / 180);
     ctx.scale(sprout.scale, sprout.scale);
-    ctx.shadowColor = 'rgba(12, 73, 64, 0.3)';
-    ctx.shadowBlur = 3;
-    ctx.shadowOffsetY = 2;
 
     const stemGradient = ctx.createLinearGradient(0, -height * 0.52, 0, 0);
     stemGradient.addColorStop(0, '#8b5a2b');
@@ -790,7 +793,7 @@ function createPlanetStarfield(canvas) {
     if (!canvas) return null;
     const ctx = canvas.getContext('2d', { alpha: true });
     if (!ctx) return null;
-    const stars = Array.from({ length: 96 }).map((_, index) => ({
+    const stars = Array.from({ length: 72 }).map((_, index) => ({
         x: Math.random(),
         y: Math.random(),
         r: Math.random() * 1.35 + 0.45,
@@ -801,6 +804,28 @@ function createPlanetStarfield(canvas) {
     let resizeObserver = null;
     let width = 0;
     let height = 0;
+
+    // Pre-render glow sprites for each unique star color to avoid per-star shadowBlur
+    const glowSprites = new Map();
+    const getGlowSprite = (color, dpr) => {
+        const key = `${color}_${dpr}`;
+        if (glowSprites.has(key)) return glowSprites.get(key);
+        const spriteSize = Math.ceil(24 * dpr);
+        const spriteCanvas = document.createElement('canvas');
+        spriteCanvas.width = spriteSize;
+        spriteCanvas.height = spriteSize;
+        const spriteCtx = spriteCanvas.getContext('2d');
+        const center = spriteSize / 2;
+        const radius = 1.8 * dpr;
+        spriteCtx.fillStyle = color;
+        spriteCtx.shadowColor = color;
+        spriteCtx.shadowBlur = 8 * dpr;
+        spriteCtx.beginPath();
+        spriteCtx.arc(center, center, radius, 0, Math.PI * 2);
+        spriteCtx.fill();
+        glowSprites.set(key, spriteCanvas);
+        return spriteCanvas;
+    };
 
     const draw = () => {
         const rect = canvas.getBoundingClientRect();
@@ -817,15 +842,11 @@ function createPlanetStarfield(canvas) {
         for (const star of stars) {
             const x = star.x * width;
             const y = star.y * height;
-            const radius = star.r * dpr;
             const color = star.hue ? `hsl(${star.hue} 100% 82%)` : '#fff';
+            const sprite = getGlowSprite(color, dpr);
+            const spriteSize = sprite.width;
             ctx.globalAlpha = star.alpha;
-            ctx.fillStyle = color;
-            ctx.shadowColor = color;
-            ctx.shadowBlur = 8 * dpr;
-            ctx.beginPath();
-            ctx.arc(x, y, radius, 0, Math.PI * 2);
-            ctx.fill();
+            ctx.drawImage(sprite, x - spriteSize / 2, y - spriteSize / 2);
         }
         ctx.restore();
     };
@@ -1122,10 +1143,12 @@ export const planetLevel = {
                 showVisitReturnPrompt(pet, ctx);
                 return;
             }
-            if (collectPlanetMiningCoins()) return;
-            const isTouch = window.matchMedia && window.matchMedia('(pointer: coarse)').matches;
-            const msg = isTouch ? t('lpScrollUpHint') : t('lpWheelHint');
-            showToast(msg, 'info');
+            const collected = collectPlanetMiningCoins();
+            if (collected) {
+                setTimeout(() => ctx.zoomIn?.(), 2000);
+            } else {
+                ctx.zoomIn?.();
+            }
         };
         if (isVisitingMode()) {
             setTimeout(() => { if (state.zoomLevel === 0) showVisitReturnPrompt(pet, ctx); }, 260);

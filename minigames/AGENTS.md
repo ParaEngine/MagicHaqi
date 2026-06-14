@@ -6,9 +6,66 @@ This repository contains a collection of single-page HTML5 educational games and
 ## Core Architecture Principles
 
 ### Single-File Structure
-- **Every game is a standalone `.html` or `.md` file**
+- **Every game is a standalone `.html` file**
 - games are added to view_minigames.js
 
+### Required Declarative Data Sections
+Every game **must** include two dedicated `<script>` data sections **before the real game script**. These are plain data declarations (not game logic) so that the host tooling and AI agents can read, edit, and regenerate them independently of the game code.
+
+Order them like this in the HTML, after any CDN/library `<script>` tags and before the main game logic `<script>`:
+
+1. `game_config` — gameplay configuration
+2. `art_assets` — the art asset manifest
+3. the real game script
+
+#### 1. `game_config` section
+A single global object that holds tunable gameplay parameters such as difficulty and levels. It **must** begin with `game_config =`.
+
+```html
+<script>
+game_config = {
+    difficulty: "normal",        // e.g. "easy" | "normal" | "hard"
+    levels: [
+        { id: 1, name: "Level 1", target: 10, time: 60 },
+        { id: 2, name: "Level 2", target: 20, time: 45 }
+    ]
+    // add any other game-specific config keys here
+};
+</script>
+```
+
+Rules:
+- Declare it as a global (no `const`/`let`/`var`), so the main game script and host tooling can read and overwrite it.
+- Keep it pure data only — no functions, no DOM access, no side effects.
+- The main game script reads `game_config` to drive difficulty, level definitions, scoring, timers, etc.
+- A `setGameConfig` message from the parent may override values in `game_config` at runtime.
+
+#### 2. `art_assets` section
+A single global array describing every image asset the game uses. It **must** begin with `art_assets =`. 
+
+```html
+<script>
+art_assets = [
+    {
+        id: "pet_dog",              // snake_case unique id
+        imageUrl: "https://cdn.keepwork.com/.../pet_dog.webp", // CDN url or data URL
+        rows: 4,                     // sprite-sheet rows (1 for a single image)
+        columns: 4,                  // sprite-sheet columns (1 for a single image)
+        isTransparent: true,         // true if the image has a transparent background
+        description: "Pet dog sprite sheet",
+        imageWidth: 1024,            // full image width in pixels
+        imageHeight: 1024            // full image height in pixels
+    }
+];
+</script>
+```
+
+Rules:
+- Declare it as a global (no `const`/`let`/`var`).
+- Each entry follows the ArtAssetGenerator output shape exactly: `{ id, imageUrl, rows, columns, isTransparent, description, imageWidth, imageHeight }`.
+- `rows`/`columns` describe sprite-sheet grids; use `1`/`1` for a single, non-tiled image.
+- The main game script looks up assets from `art_assets` by `id` instead of hard-coding image URLs inline.
+- it can be empty if the game doesn't use any external images, but the section must still be present.
 
 ### Standard Technology Stack
 1. **Tailwind CSS**: Always use CDN version for styling
@@ -18,7 +75,7 @@ This repository contains a collection of single-page HTML5 educational games and
 2. **No custom CSS/font files** - Use only Tailwind utility classes and inline styles
 3. **Three.js** (when needed): Use CDN for 3D games like `guess_cubes.html`
    ```html
-   <script src="https://cdnproxy.keepwork.com/jsdelivr/npm/three@0.128.0/build/three.min.js"></script>
+   <script src="https://cdn.keepwork.com/npm/three%400.128.0/build/three.min.js"></script>
    ```
 
 ### UI/UX Design Patterns
@@ -205,7 +262,7 @@ If a response has `ok: false`, read `error` and fall back to a local placeholder
 When games need server-side features (data storage, TTS, LLM chat), include:
 
 ```html
-<script src="https://cdn.keepwork.com/sdk/keepworkSDK.iife.js?v=20260515"></script>
+<script src="https://cdn.keepwork.com/sdk/keepworkSDK.iife.js?v=20260612a"></script>
 ```
 
 Initialize the SDK:

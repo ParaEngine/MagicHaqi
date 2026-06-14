@@ -1,10 +1,10 @@
 // 商店视图
 import { $, $$, coinIconSvg, escapeHtml, renderVisualAsset, showToast } from './utils.js';
 import { itemName, t } from './i18n.js';
-import { canPlaceItemInArea, CONFIG, DECO_VISUALS, SHOP_ITEMS } from './config.js';
+import { canPlaceItemInArea, CONFIG, DECO_VISUALS, OUTDOOR_FIELD_IDS, SHOP_ITEMS } from './config.js';
 import { state } from './state.js';
 
-const OUTDOOR_AREAS = ['land', 'water', 'sky'];
+const OUTDOOR_AREAS = OUTDOOR_FIELD_IDS;
 const INDOOR_AREAS = CONFIG.rooms.map(room => room.id);
 
 const SHOP_FILTERS = [
@@ -131,7 +131,7 @@ function renderShopItemIcon(item) {
 }
 
 function renderBuyConfirmIcon(item) {
-    const visualHtml = renderVisualAsset(getShopItemVisual(item), { className: 'shop-item-img', alt: itemName(item?.name) || '' });
+    const visualHtml = renderVisualAsset(getShopItemVisual(item), { className: 'shop-buy-confirm-img', alt: itemName(item?.name) || '' });
     return visualHtml || escapeHtml(item?.emoji || '');
 }
 
@@ -143,13 +143,13 @@ function showBuyConfirm(item, onBuy) {
     let qty = 1;
     const name = itemName(item.name);
     const mask = document.createElement('div');
-    mask.className = 'modal-mask';
+    mask.className = 'modal-mask mh-buy-modal-mask';
     mask.innerHTML = `
-        <div class="modal-card text-center">
-            <div class="text-4xl mb-2" style="display:flex;align-items:center;justify-content:center">${renderBuyConfirmIcon(item)}</div>
+        <div class="modal-card text-center mh-buy-modal-card">
+            <div class="text-4xl mb-2 mh-buy-confirm-icon" style="display:flex;align-items:center;justify-content:center">${renderBuyConfirmIcon(item)}</div>
             <div class="text-base font-bold mb-1" style="color:var(--text-primary)">${escapeHtml(name)}</div>
             <div class="text-xs mb-4" style="color:var(--text-muted)">${escapeHtml(t('maxBuyQty', { max: maxQty }))}</div>
-            <div class="flex items-center justify-center gap-1 mb-3" style="flex-wrap:wrap">
+            <div class="flex items-center justify-center gap-1 mb-3 mh-buy-qty-row" style="flex-wrap:wrap">
                 <button class="btn-secondary" type="button" data-buy-step="min" title="${escapeHtml(t('qtyMin'))}">&lt;&lt;</button>
                 <button class="btn-secondary" type="button" data-buy-step="dec" title="${escapeHtml(t('qtyDec'))}">&lt;</button>
                 <div style="min-width:72px;padding:9px 12px;border-radius:14px;background:var(--input-bg);border:1.5px solid var(--border-card);font-size:20px;font-weight:900;color:var(--text-primary)" data-buy-qty>1</div>
@@ -158,7 +158,7 @@ function showBuyConfirm(item, onBuy) {
                 <button class="btn-secondary" type="button" data-buy-step="max" title="${escapeHtml(t('qtyMax'))}">${escapeHtml(t('qtyMax'))}</button>
             </div>
             <div class="font-bold mh-coin-amount mb-4" style="justify-content:center;color:var(--accent-dark)" data-buy-total>${coinIconSvg()} ${item.price}</div>
-            <div class="flex gap-2 justify-center">
+            <div class="flex gap-2 justify-center mh-buy-actions">
                 <button class="btn-secondary" type="button" data-buy-act="cancel">${escapeHtml(t('cancel'))}</button>
                 <button class="btn-primary" type="button" data-buy-act="ok">${escapeHtml(t('confirm'))}</button>
             </div>

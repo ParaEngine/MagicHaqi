@@ -1,0 +1,885 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+  <title>宠物方块爆破</title>
+  <script src="https://cdn.keepwork.com/keepwork/cdn/tailwindcss@3.4.16.js"></script>
+</head>
+
+<body class="bg-slate-950 overflow-hidden select-none" style="touch-action:none;"></body>
+
+<script>
+game_config = {
+  difficulty: "normal",        // "easy" | "normal" | "hard"
+  boardSize: 8,                // 8x8 grid, classic Block Blast
+  trayCount: 3,                // pieces offered per round
+  basePlaceScore: 1,           // points per cell placed
+  lineClearScore: 10,          // points per cell cleared
+  comboBonus: 10,              // extra points per combo step
+  multiLineBonus: 20,          // extra points per extra line in one move
+  difficulties: {
+    easy:   { bigPieceWeight: 0.6, rescueRolls: 2, label: "easy" },
+    normal: { bigPieceWeight: 1.0, rescueRolls: 1, label: "normal" },
+    hard:   { bigPieceWeight: 1.5, rescueRolls: 0, label: "hard" }
+  }
+};
+</script>
+
+<script>
+art_assets = [];
+</script>
+
+<script defer>
+(function () {
+  'use strict';
+
+  // ---- i18n ----
+  const I18N = {
+    zhCN: {
+      title: '宠物方块爆破',
+      score: '得分',
+      best: '最佳',
+      combo: '连击',
+      helpBtn: '玩法',
+      restartBtn: '重开',
+      overlayTitle: '方块爆破',
+      overlayText: '把下方的方块拖到 8×8 棋盘上。填满整行或整列就会爆破消除！连续消除可以触发连击，获得更高分数。当所有方块都放不下时游戏结束。',
+      startBtn: '开始游戏',
+      continueBtn: '继续游戏',
+      diffEasy: '轻松', diffNormal: '经典', diffHard: '困难',
+      gameOverTitle: '棋盘满了',
+      gameOverText: '本局得分 {score} 分，最高连击 x{combo}，共消除 {lines} 行/列。',
+      newBestText: '🎉 刷新了最佳纪录！',
+      playAgain: '再来一局',
+      comboToast: '连击 x{n}！',
+      clearToast: ['漂亮！', '太棒了！', '爆破！', '完美消除！', '势不可挡！'],
+      allClearToast: '✨ 全清奖励 +300！',
+      streakLabel: '🔥 x{n}',
+      petCheer: '宠物为你加油！',
+    },
+    enUS: {
+      title: 'Pet Block Blast',
+      score: 'Score',
+      best: 'Best',
+      combo: 'Combo',
+      helpBtn: 'Help',
+      restartBtn: 'Restart',
+      overlayTitle: 'Block Blast',
+      overlayText: 'Drag the blocks below onto the 8×8 board. Fill a full row or column to blast it away! Consecutive clears build combos for higher scores. The game ends when no piece fits.',
+      startBtn: 'Start',
+      continueBtn: 'Continue',
+      diffEasy: 'Easy', diffNormal: 'Classic', diffHard: 'Hard',
+      gameOverTitle: 'Board Full',
+      gameOverText: 'You scored {score} points, max combo x{combo}, cleared {lines} lines.',
+      newBestText: '🎉 New best score!',
+      playAgain: 'Play Again',
+      comboToast: 'Combo x{n}!',
+      clearToast: ['Nice!', 'Great!', 'Blast!', 'Perfect Clear!', 'Unstoppable!'],
+      allClearToast: '✨ All Clear +300!',
+      streakLabel: '🔥 x{n}',
+      petCheer: 'Your pet cheers for you!',
+    },
+  };
+  const lang = (navigator.language || 'zh-CN').toLowerCase().startsWith('zh') ? 'zhCN' : 'enUS';
+  const t = (key, vars) => {
+    let s = I18N[lang][key];
+    if (Array.isArray(s)) s = s[Math.floor(Math.random() * s.length)];
+    if (vars) for (const k of Object.keys(vars)) s = s.replaceAll(`{${k}}`, vars[k]);
+    return s;
+  };
+
+  // ---- piece shapes (classic Block Blast set) ----
+  // Each shape: array of [row, col] cells. weight: relative spawn weight. big: counts as large piece.
+  const SHAPES = [
+    { cells: [[0,0]], weight: 2.2 },
+    { cells: [[0,0],[0,1]], weight: 2.0 },
+    { cells: [[0,0],[1,0]], weight: 2.0 },
+    { cells: [[0,0],[0,1],[0,2]], weight: 1.8 },
+    { cells: [[0,0],[1,0],[2,0]], weight: 1.8 },
+    { cells: [[0,0],[0,1],[1,0],[1,1]], weight: 1.9 },
+    { cells: [[0,0],[0,1],[0,2],[0,3]], weight: 1.2, big: true },
+    { cells: [[0,0],[1,0],[2,0],[3,0]], weight: 1.2, big: true },
+    { cells: [[0,0],[0,1],[0,2],[0,3],[0,4]], weight: 0.8, big: true },
+    { cells: [[0,0],[1,0],[2,0],[3,0],[4,0]], weight: 0.8, big: true },
+    { cells: [[0,0],[1,0],[1,1]], weight: 1.6 },           // small L
+    { cells: [[0,1],[1,0],[1,1]], weight: 1.6 },
+    { cells: [[0,0],[0,1],[1,0]], weight: 1.6 },
+    { cells: [[0,0],[0,1],[1,1]], weight: 1.6 },
+    { cells: [[0,0],[1,0],[2,0],[2,1]], weight: 1.1, big: true },   // L
+    { cells: [[0,1],[1,1],[2,0],[2,1]], weight: 1.1, big: true },   // J
+    { cells: [[0,0],[0,1],[1,0],[2,0]], weight: 1.1, big: true },
+    { cells: [[0,0],[0,1],[1,1],[2,1]], weight: 1.1, big: true },
+    { cells: [[0,0],[0,1],[0,2],[1,1]], weight: 1.2, big: true },   // T
+    { cells: [[0,1],[1,0],[1,1],[1,2]], weight: 1.2, big: true },
+    { cells: [[0,0],[1,0],[1,1],[2,0]], weight: 1.2, big: true },
+    { cells: [[0,1],[1,0],[1,1],[2,1]], weight: 1.2, big: true },
+    { cells: [[0,1],[0,2],[1,0],[1,1]], weight: 1.0, big: true },   // S
+    { cells: [[0,0],[0,1],[1,1],[1,2]], weight: 1.0, big: true },   // Z
+    { cells: [[0,0],[0,1],[0,2],[1,0],[1,1],[1,2]], weight: 0.7, big: true }, // 2x3
+    { cells: [[0,0],[0,1],[1,0],[1,1],[2,0],[2,1]], weight: 0.7, big: true }, // 3x2
+    { cells: [[0,0],[0,1],[0,2],[1,0],[1,1],[1,2],[2,0],[2,1],[2,2]], weight: 0.45, big: true }, // 3x3
+    { cells: [[0,0],[1,0],[2,0],[2,1],[2,2]], weight: 0.6, big: true },  // big corner
+    { cells: [[0,0],[0,1],[0,2],[1,0],[2,0]], weight: 0.6, big: true },
+    { cells: [[0,0],[0,1],[0,2],[1,2],[2,2]], weight: 0.6, big: true },
+    { cells: [[0,2],[1,2],[2,0],[2,1],[2,2]], weight: 0.6, big: true },
+  ];
+  SHAPES.forEach(s => {
+    s.rows = 1 + Math.max(...s.cells.map(c => c[0]));
+    s.cols = 1 + Math.max(...s.cells.map(c => c[1]));
+  });
+
+  const COLORS = [
+    { base: '#f97316', light: '#fdba74', dark: '#c2410c' }, // orange
+    { base: '#3b82f6', light: '#93c5fd', dark: '#1d4ed8' }, // blue
+    { base: '#22c55e', light: '#86efac', dark: '#15803d' }, // green
+    { base: '#eab308', light: '#fde047', dark: '#a16207' }, // yellow
+    { base: '#a855f7', light: '#d8b4fe', dark: '#7e22ce' }, // purple
+    { base: '#ef4444', light: '#fca5a5', dark: '#b91c1c' }, // red
+    { base: '#06b6d4', light: '#67e8f9', dark: '#0e7490' }, // cyan
+    { base: '#ec4899', light: '#f9a8d4', dark: '#be185d' }, // pink
+  ];
+
+  // ---- state ----
+  const SIZE = game_config.boardSize || 8;
+  const BEST_KEY = 'haqi_block_blast_best';
+  const state = {
+    board: [],              // SIZE x SIZE, 0 = empty, otherwise colorIndex + 1
+    tray: [],               // up to trayCount piece objects { shape, colorIdx, used }
+    score: 0,
+    best: Number(localStorage.getItem(BEST_KEY) || 0),
+    combo: 0,               // current combo streak (consecutive placements with a clear)
+    maxCombo: 0,
+    linesCleared: 0,
+    difficulty: (game_config.difficulty in game_config.difficulties) ? game_config.difficulty : 'normal',
+    started: false,
+    over: false,
+    roundId: 0,
+    placedSinceClear: 0,
+    drag: null,             // { piece, trayIdx, px, py, valid, row, col }
+    clearAnim: [],          // [{r, c, color, t0}]
+    particles: [],
+    floatTexts: [],
+    shakeUntil: 0,
+    petBitmap: null,
+    petUV: null,
+  };
+
+  function makeEmptyBoard() {
+    return Array.from({ length: SIZE }, () => new Array(SIZE).fill(0));
+  }
+
+  // ---- audio (WebAudio beeps, no external files) ----
+  let audioCtx = null;
+  function ac() {
+    if (!audioCtx) {
+      try { audioCtx = new (window.AudioContext || window.webkitAudioContext)(); } catch (e) { /* ignore */ }
+    }
+    if (audioCtx && audioCtx.state === 'suspended') audioCtx.resume().catch(() => {});
+    return audioCtx;
+  }
+  function tone(freq, dur, type, gainVal, when) {
+    const ctx2 = ac();
+    if (!ctx2) return;
+    const o = ctx2.createOscillator();
+    const g = ctx2.createGain();
+    o.type = type || 'sine';
+    o.frequency.value = freq;
+    const t0 = ctx2.currentTime + (when || 0);
+    g.gain.setValueAtTime(0.0001, t0);
+    g.gain.exponentialRampToValueAtTime(gainVal || 0.12, t0 + 0.012);
+    g.gain.exponentialRampToValueAtTime(0.0001, t0 + dur);
+    o.connect(g); g.connect(ctx2.destination);
+    o.start(t0); o.stop(t0 + dur + 0.02);
+  }
+  const sounds = {
+    pick:  () => tone(420, 0.08, 'triangle', 0.08),
+    place: () => { tone(300, 0.09, 'square', 0.07); tone(450, 0.07, 'triangle', 0.06, 0.03); },
+    bad:   () => tone(140, 0.16, 'sawtooth', 0.06),
+    clear: (n) => { for (let i = 0; i < Math.min(n + 2, 6); i++) tone(520 + i * 110, 0.14, 'triangle', 0.1, i * 0.05); },
+    combo: (c) => { for (let i = 0; i < 3; i++) tone(660 + c * 60 + i * 120, 0.12, 'sine', 0.1, i * 0.06); },
+    over:  () => { tone(330, 0.25, 'sine', 0.1); tone(247, 0.3, 'sine', 0.1, 0.18); tone(165, 0.45, 'sine', 0.1, 0.38); },
+  };
+
+  // ---- core logic ----
+  function diffCfg() {
+    return game_config.difficulties[state.difficulty] || game_config.difficulties.normal;
+  }
+
+  function randomShape() {
+    const bigW = diffCfg().bigPieceWeight;
+    let total = 0;
+    const weights = SHAPES.map(s => {
+      const w = s.weight * (s.big ? bigW : 1);
+      total += w;
+      return w;
+    });
+    let r = Math.random() * total;
+    for (let i = 0; i < SHAPES.length; i++) {
+      r -= weights[i];
+      if (r <= 0) return SHAPES[i];
+    }
+    return SHAPES[0];
+  }
+
+  function canPlaceAt(board, shape, row, col) {
+    for (const [dr, dc] of shape.cells) {
+      const r = row + dr, c = col + dc;
+      if (r < 0 || c < 0 || r >= SIZE || c >= SIZE || board[r][c]) return false;
+    }
+    return true;
+  }
+
+  function shapeFitsSomewhere(board, shape) {
+    for (let r = 0; r <= SIZE - shape.rows; r++) {
+      for (let c = 0; c <= SIZE - shape.cols; c++) {
+        if (canPlaceAt(board, shape, r, c)) return true;
+      }
+    }
+    return false;
+  }
+
+  function refillTray() {
+    // Rescue rolls: on easier difficulties, reroll the tray a few times if no piece fits.
+    const rolls = 1 + (diffCfg().rescueRolls || 0);
+    for (let attempt = 0; attempt < rolls; attempt++) {
+      const tray = [];
+      for (let i = 0; i < (game_config.trayCount || 3); i++) {
+        tray.push({ shape: randomShape(), colorIdx: Math.floor(Math.random() * COLORS.length), used: false });
+      }
+      state.tray = tray;
+      if (attempt === rolls - 1) break;
+      if (tray.some(p => shapeFitsSomewhere(state.board, p.shape))) break;
+    }
+  }
+
+  function activePieces() {
+    return state.tray.filter(p => !p.used);
+  }
+
+  function anyMoveLeft() {
+    return activePieces().some(p => shapeFitsSomewhere(state.board, p.shape));
+  }
+
+  function findFullLines(board) {
+    const rows = [], cols = [];
+    for (let r = 0; r < SIZE; r++) {
+      if (board[r].every(v => v)) rows.push(r);
+    }
+    for (let c = 0; c < SIZE; c++) {
+      let full = true;
+      for (let r = 0; r < SIZE; r++) if (!board[r][c]) { full = false; break; }
+      if (full) cols.push(c);
+    }
+    return { rows, cols };
+  }
+
+  function placePiece(piece, row, col) {
+    const colorVal = piece.colorIdx + 1;
+    for (const [dr, dc] of piece.shape.cells) {
+      state.board[row + dr][col + dc] = colorVal;
+    }
+    piece.used = true;
+    let gained = piece.shape.cells.length * (game_config.basePlaceScore || 1);
+
+    const { rows, cols } = findFullLines(state.board);
+    const lineCount = rows.length + cols.length;
+    if (lineCount > 0) {
+      state.combo += 1;
+      state.maxCombo = Math.max(state.maxCombo, state.combo);
+      state.linesCleared += lineCount;
+      state.placedSinceClear = 0;
+      // collect cleared cells for animation, then clear board
+      const now = performance.now();
+      const seen = new Set();
+      const collect = (r, c) => {
+        const key = r * SIZE + c;
+        if (seen.has(key) || !state.board[r][c]) return;
+        seen.add(key);
+        state.clearAnim.push({ r, c, color: state.board[r][c] - 1, t0: now });
+      };
+      rows.forEach(r => { for (let c = 0; c < SIZE; c++) collect(r, c); });
+      cols.forEach(c => { for (let r = 0; r < SIZE; r++) collect(r, c); });
+      rows.forEach(r => { for (let c = 0; c < SIZE; c++) state.board[r][c] = 0; });
+      cols.forEach(c => { for (let r = 0; r < SIZE; r++) state.board[r][c] = 0; });
+
+      const cells = seen.size;
+      gained += cells * (game_config.lineClearScore || 10);
+      if (lineCount > 1) gained += (lineCount - 1) * (game_config.multiLineBonus || 20);
+      if (state.combo > 1) gained += state.combo * (game_config.comboBonus || 10);
+
+      // all clear bonus
+      const empty = state.board.every(rowArr => rowArr.every(v => !v));
+      if (empty) {
+        gained += 300;
+        spawnFloatText(t('allClearToast'), boardGeom().cx, boardGeom().cy, '#fef08a', 26);
+      }
+
+      spawnClearEffects(rows, cols, lineCount);
+      sounds.clear(lineCount);
+      if (state.combo > 1) {
+        sounds.combo(state.combo);
+        spawnFloatText(t('comboToast', { n: state.combo }), boardGeom().cx, boardGeom().cy - boardGeom().cell * 1.6, '#fbbf24', 24);
+      } else {
+        spawnFloatText(t('clearToast'), boardGeom().cx, boardGeom().cy - boardGeom().cell * 1.6, '#fff', 22);
+      }
+      state.shakeUntil = performance.now() + 180;
+      petCheer();
+    } else {
+      state.placedSinceClear += 1;
+      if (state.placedSinceClear >= 3) state.combo = 0; // combo expires after 3 non-clearing placements
+      sounds.place();
+    }
+
+    state.score += gained;
+    if (state.score > state.best) {
+      state.best = state.score;
+      localStorage.setItem(BEST_KEY, String(state.best));
+    }
+    updateHud();
+
+    if (activePieces().length === 0) refillTray();
+    if (!anyMoveLeft()) endGame();
+  }
+
+  function startGame() {
+    state.board = makeEmptyBoard();
+    state.score = 0;
+    state.combo = 0;
+    state.maxCombo = 0;
+    state.linesCleared = 0;
+    state.over = false;
+    state.placedSinceClear = 0;
+    state.drag = null;
+    state.clearAnim = [];
+    state.particles = [];
+    state.floatTexts = [];
+    state.roundId += 1;
+    refillTray();
+    updateHud();
+    hideOverlay();
+    if (!state.started) {
+      state.started = true;
+      post('gameStarted');
+    }
+  }
+
+  function endGame() {
+    if (state.over) return;
+    state.over = true;
+    sounds.over();
+    const isNewBest = state.score >= state.best && state.score > 0;
+    setTimeout(() => {
+      showGameOver(isNewBest);
+    }, 650);
+    post('gameFinished', {
+      completed: true,
+      passed: state.score > 0,
+      earnedPoints: Math.max(5, Math.round(state.score / 4)),
+      score: state.score,
+      maxCombo: state.maxCombo,
+      linesCleared: state.linesCleared,
+      difficulty: state.difficulty === 'easy' ? 1 : state.difficulty === 'hard' ? 3 : 2,
+      difficultyId: state.difficulty,
+      finishedAt: Date.now(),
+      roundId: state.roundId,
+    });
+  }
+
+  // ---- DOM ----
+  document.body.innerHTML = `
+    <div id="app" class="fixed inset-0 flex flex-col items-center" style="background:radial-gradient(120% 100% at 50% 0%,#1e3a8a 0%,#0f172a 52%,#020617 100%);">
+      <div id="hud" class="w-full max-w-xl flex items-center justify-between px-3 pt-2 gap-2" style="z-index:5;">
+        <div class="flex items-center gap-2">
+          <div class="rounded-xl px-3 py-1.5 bg-white/10 backdrop-blur text-white text-center shadow">
+            <div class="text-[10px] uppercase tracking-wide opacity-70">${t('score')}</div>
+            <div id="scoreVal" class="text-xl font-black leading-none">0</div>
+          </div>
+          <div class="rounded-xl px-3 py-1.5 bg-white/10 backdrop-blur text-amber-300 text-center shadow">
+            <div class="text-[10px] uppercase tracking-wide opacity-70">👑 ${t('best')}</div>
+            <div id="bestVal" class="text-xl font-black leading-none">0</div>
+          </div>
+          <div id="comboBadge" class="rounded-xl px-3 py-1.5 bg-orange-500/80 text-white text-center shadow hidden">
+            <div class="text-[10px] uppercase tracking-wide opacity-80">${t('combo')}</div>
+            <div id="comboVal" class="text-xl font-black leading-none">x1</div>
+          </div>
+        </div>
+        <div class="flex items-center gap-2">
+          <div id="petBox" class="w-12 h-12 rounded-full bg-white/10 shadow overflow-hidden hidden"></div>
+          <button id="helpBtn" class="rounded-xl px-3 py-2 bg-white/10 text-white text-sm font-bold shadow active:scale-95 transition" aria-label="${t('helpBtn')}">❓</button>
+          <button id="restartBtn" class="rounded-xl px-3 py-2 bg-white/10 text-white text-sm font-bold shadow active:scale-95 transition" aria-label="${t('restartBtn')}">🔄</button>
+        </div>
+      </div>
+      <canvas id="game" class="flex-1 w-full" style="touch-action:none;"></canvas>
+      <div id="overlay" class="fixed inset-0 flex items-center justify-center p-4" style="background:rgba(2,6,23,.78);backdrop-filter:blur(6px);z-index:20;">
+        <div class="w-full max-w-sm rounded-3xl p-6 text-center shadow-2xl" style="background:linear-gradient(165deg,#1d4ed8,#0f172a);border:1px solid rgba(255,255,255,.14);">
+          <div class="text-5xl mb-2">🧱</div>
+          <h1 id="ovTitle" class="text-2xl font-black text-white mb-2">${t('overlayTitle')}</h1>
+          <p id="ovText" class="text-sm text-blue-100/90 leading-relaxed mb-4">${t('overlayText')}</p>
+          <div id="ovExtra" class="text-amber-300 font-bold text-sm mb-3 hidden"></div>
+          <div id="diffRow" class="flex justify-center gap-2 mb-4">
+            <button data-diff="easy" class="diffBtn rounded-xl px-3 py-1.5 text-sm font-bold text-white bg-white/10">${t('diffEasy')}</button>
+            <button data-diff="normal" class="diffBtn rounded-xl px-3 py-1.5 text-sm font-bold text-white bg-white/10">${t('diffNormal')}</button>
+            <button data-diff="hard" class="diffBtn rounded-xl px-3 py-1.5 text-sm font-bold text-white bg-white/10">${t('diffHard')}</button>
+          </div>
+          <button id="ovBtn" class="w-full rounded-2xl py-3 text-lg font-black text-slate-900 shadow-lg active:scale-95 transition" style="background:linear-gradient(180deg,#fde047,#f59e0b);">${t('startBtn')}</button>
+        </div>
+      </div>
+    </div>`;
+
+  const canvas = document.getElementById('game');
+  const ctx = canvas.getContext('2d');
+  const scoreEl = document.getElementById('scoreVal');
+  const bestEl = document.getElementById('bestVal');
+  const comboBadge = document.getElementById('comboBadge');
+  const comboEl = document.getElementById('comboVal');
+  const overlayEl = document.getElementById('overlay');
+  const ovTitle = document.getElementById('ovTitle');
+  const ovText = document.getElementById('ovText');
+  const ovExtra = document.getElementById('ovExtra');
+  const ovBtn = document.getElementById('ovBtn');
+  const petBox = document.getElementById('petBox');
+
+  // ---- layout / geometry ----
+  let geom = null;
+  function boardGeom() { return geom; }
+  function computeGeom() {
+    const dpr = Math.min(window.devicePixelRatio || 1, 2);
+    const rect = canvas.getBoundingClientRect();
+    canvas.width = Math.round(rect.width * dpr);
+    canvas.height = Math.round(rect.height * dpr);
+    ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+    const W = rect.width, H = rect.height;
+    const trayH = Math.max(86, Math.min(130, H * 0.2));
+    const pad = 10;
+    const boardArea = Math.min(W - pad * 2, H - trayH - pad * 3);
+    const cell = Math.floor(boardArea / SIZE);
+    const bw = cell * SIZE;
+    const bx = (W - bw) / 2;
+    const by = Math.max(pad, (H - trayH - pad - bw) / 2);
+    geom = {
+      W, H, cell, bx, by, bw,
+      cx: bx + bw / 2, cy: by + bw / 2,
+      trayY: by + bw + pad,
+      trayH: H - (by + bw + pad) - pad,
+      canvasTop: rect.top, canvasLeft: rect.left,
+    };
+  }
+
+  // ---- drawing helpers ----
+  function roundRect(x, y, w, h, r) {
+    ctx.beginPath();
+    ctx.moveTo(x + r, y);
+    ctx.arcTo(x + w, y, x + w, y + h, r);
+    ctx.arcTo(x + w, y + h, x, y + h, r);
+    ctx.arcTo(x, y + h, x, y, r);
+    ctx.arcTo(x, y, x + w, y, r);
+    ctx.closePath();
+  }
+
+  function drawBlock(x, y, size, colorIdx, alpha) {
+    const col = COLORS[colorIdx % COLORS.length];
+    const g = size * 0.08;
+    ctx.save();
+    if (alpha != null) ctx.globalAlpha = alpha;
+    const grad = ctx.createLinearGradient(x, y, x, y + size);
+    grad.addColorStop(0, col.light);
+    grad.addColorStop(0.35, col.base);
+    grad.addColorStop(1, col.dark);
+    ctx.fillStyle = grad;
+    roundRect(x + g, y + g, size - g * 2, size - g * 2, size * 0.18);
+    ctx.fill();
+    // top highlight
+    ctx.fillStyle = 'rgba(255,255,255,.35)';
+    roundRect(x + g + size * 0.1, y + g + size * 0.08, size - g * 2 - size * 0.2, size * 0.18, size * 0.09);
+    ctx.fill();
+    ctx.restore();
+  }
+
+  function trayPieceGeom(i) {
+    const slotW = geom.W / (game_config.trayCount || 3);
+    const piece = state.tray[i];
+    if (!piece) return null;
+    const maxDim = Math.max(piece.shape.rows, piece.shape.cols);
+    const cs = Math.min(geom.trayH * 0.82 / maxDim, slotW * 0.8 / maxDim, geom.cell * 0.62);
+    const pw = piece.shape.cols * cs, ph = piece.shape.rows * cs;
+    const cx = slotW * i + slotW / 2;
+    const cy = geom.trayY + geom.trayH / 2;
+    return { x: cx - pw / 2, y: cy - ph / 2, w: pw, h: ph, cs, cx, cy };
+  }
+
+  function spawnClearEffects(rows, cols, lineCount) {
+    const now = performance.now();
+    const add = (r, c) => {
+      const x = geom.bx + c * geom.cell + geom.cell / 2;
+      const y = geom.by + r * geom.cell + geom.cell / 2;
+      for (let i = 0; i < 3; i++) {
+        state.particles.push({
+          x, y,
+          vx: (Math.random() - 0.5) * 240,
+          vy: (Math.random() - 0.7) * 260,
+          r: 2 + Math.random() * 3.5,
+          color: COLORS[Math.floor(Math.random() * COLORS.length)].light,
+          t0: now, life: 600 + Math.random() * 400,
+        });
+      }
+    };
+    rows.forEach(r => { for (let c = 0; c < SIZE; c += 2) add(r, c); });
+    cols.forEach(c => { for (let r = 0; r < SIZE; r += 2) add(r, c); });
+  }
+
+  function spawnFloatText(text, x, y, color, size) {
+    state.floatTexts.push({ text, x, y, color, size: size || 20, t0: performance.now(), life: 1100 });
+  }
+
+  // ---- main render loop ----
+  function render(now) {
+    // Tailwind CDN applies styles asynchronously, so re-check canvas size every frame.
+    const rect = canvas.getBoundingClientRect();
+    if (!geom || Math.abs(rect.width - geom.W) > 1 || Math.abs(rect.height - geom.H) > 1) computeGeom();
+    const { W, H, cell, bx, by, bw } = geom;
+    ctx.clearRect(0, 0, W, H);
+
+    ctx.save();
+    if (now < state.shakeUntil) {
+      const m = (state.shakeUntil - now) / 180 * 4;
+      ctx.translate((Math.random() - 0.5) * m, (Math.random() - 0.5) * m);
+    }
+
+    // board background
+    ctx.fillStyle = 'rgba(15,23,42,.85)';
+    roundRect(bx - 8, by - 8, bw + 16, bw + 16, 18);
+    ctx.fill();
+    ctx.strokeStyle = 'rgba(96,165,250,.25)';
+    ctx.lineWidth = 2;
+    roundRect(bx - 8, by - 8, bw + 16, bw + 16, 18);
+    ctx.stroke();
+
+    // cells
+    for (let r = 0; r < SIZE; r++) {
+      for (let c = 0; c < SIZE; c++) {
+        const x = bx + c * cell, y = by + r * cell;
+        const v = state.board[r] ? state.board[r][c] : 0;
+        if (v) {
+          drawBlock(x, y, cell, v - 1);
+        } else {
+          ctx.fillStyle = 'rgba(255,255,255,.05)';
+          roundRect(x + cell * 0.07, y + cell * 0.07, cell * 0.86, cell * 0.86, cell * 0.14);
+          ctx.fill();
+        }
+      }
+    }
+
+    // drag ghost preview
+    if (state.drag && state.drag.row != null) {
+      const { piece, row, col, valid } = state.drag;
+      // preview which lines would clear
+      if (valid) {
+        const sim = state.board.map(r2 => r2.slice());
+        for (const [dr, dc] of piece.shape.cells) sim[row + dr][col + dc] = 1;
+        const { rows, cols } = findFullLines(sim);
+        ctx.fillStyle = 'rgba(253,224,71,.18)';
+        rows.forEach(r2 => ctx.fillRect(bx, by + r2 * cell, bw, cell));
+        cols.forEach(c2 => ctx.fillRect(bx + c2 * cell, by, cell, bw));
+      }
+      for (const [dr, dc] of piece.shape.cells) {
+        const x = bx + (col + dc) * cell, y = by + (row + dr) * cell;
+        if (valid) {
+          drawBlock(x, y, cell, piece.colorIdx, 0.45);
+        } else {
+          ctx.fillStyle = 'rgba(239,68,68,.3)';
+          roundRect(x + cell * 0.07, y + cell * 0.07, cell * 0.86, cell * 0.86, cell * 0.14);
+          ctx.fill();
+        }
+      }
+    }
+
+    // clearing animation (blocks shrinking out)
+    state.clearAnim = state.clearAnim.filter(a => now - a.t0 < 320);
+    for (const a of state.clearAnim) {
+      const p = 1 - (now - a.t0) / 320;
+      const s = cell * p;
+      const x = bx + a.c * cell + (cell - s) / 2;
+      const y = by + a.r * cell + (cell - s) / 2;
+      drawBlock(x, y, s, a.color, p);
+    }
+
+    // tray
+    for (let i = 0; i < state.tray.length; i++) {
+      const piece = state.tray[i];
+      if (!piece || piece.used) continue;
+      if (state.drag && state.drag.trayIdx === i) continue;
+      const tg = trayPieceGeom(i);
+      const fits = shapeFitsSomewhere(state.board, piece.shape);
+      for (const [dr, dc] of piece.shape.cells) {
+        drawBlock(tg.x + dc * tg.cs, tg.y + dr * tg.cs, tg.cs, piece.colorIdx, fits ? 1 : 0.28);
+      }
+    }
+
+    // dragged piece follows finger (cells at full board size, lifted above finger)
+    if (state.drag) {
+      const { piece, px, py } = state.drag;
+      const lift = cell * 1.4;
+      const ox = px - piece.shape.cols * cell / 2;
+      const oy = py - lift - piece.shape.rows * cell;
+      ctx.save();
+      ctx.shadowColor = 'rgba(0,0,0,.45)';
+      ctx.shadowBlur = 16;
+      ctx.shadowOffsetY = 8;
+      for (const [dr, dc] of piece.shape.cells) {
+        drawBlock(ox + dc * cell, oy + dr * cell, cell, piece.colorIdx);
+      }
+      ctx.restore();
+    }
+
+    // particles
+    state.particles = state.particles.filter(p => now - p.t0 < p.life);
+    for (const p of state.particles) {
+      const age = (now - p.t0) / 1000;
+      const lifeP = 1 - (now - p.t0) / p.life;
+      ctx.globalAlpha = lifeP;
+      ctx.fillStyle = p.color;
+      ctx.beginPath();
+      ctx.arc(p.x + p.vx * age, p.y + p.vy * age + 200 * age * age, p.r * lifeP, 0, Math.PI * 2);
+      ctx.fill();
+      ctx.globalAlpha = 1;
+    }
+
+    // floating texts
+    state.floatTexts = state.floatTexts.filter(f => now - f.t0 < f.life);
+    for (const f of state.floatTexts) {
+      const p = (now - f.t0) / f.life;
+      ctx.globalAlpha = p < 0.15 ? p / 0.15 : 1 - Math.max(0, (p - 0.6) / 0.4);
+      ctx.fillStyle = f.color;
+      ctx.font = `900 ${f.size}px system-ui, sans-serif`;
+      ctx.textAlign = 'center';
+      ctx.strokeStyle = 'rgba(0,0,0,.5)';
+      ctx.lineWidth = 4;
+      ctx.strokeText(f.text, f.x, f.y - p * 46);
+      ctx.fillText(f.text, f.x, f.y - p * 46);
+      ctx.globalAlpha = 1;
+    }
+
+    ctx.restore();
+    requestAnimationFrame(render);
+  }
+
+  // ---- input (pointer events drag & drop) ----
+  function canvasPos(e) {
+    const rect = canvas.getBoundingClientRect();
+    return { x: e.clientX - rect.left, y: e.clientY - rect.top };
+  }
+
+  function updateDragTarget() {
+    const d = state.drag;
+    if (!d) return;
+    const { cell, bx, by } = geom;
+    const lift = cell * 1.4;
+    const ox = d.px - d.piece.shape.cols * cell / 2;
+    const oy = d.py - lift - d.piece.shape.rows * cell;
+    const col = Math.round((ox - bx) / cell);
+    const row = Math.round((oy - by) / cell);
+    if (row > -d.piece.shape.rows && row < SIZE && col > -d.piece.shape.cols && col < SIZE) {
+      d.row = Math.max(0, Math.min(SIZE - d.piece.shape.rows, row));
+      d.col = Math.max(0, Math.min(SIZE - d.piece.shape.cols, col));
+      // only snap-clamp if reasonably close to original position
+      if (Math.abs(d.row - row) > 1 || Math.abs(d.col - col) > 1) { d.row = null; d.col = null; d.valid = false; return; }
+      d.valid = canPlaceAt(state.board, d.piece.shape, d.row, d.col);
+    } else {
+      d.row = null; d.col = null; d.valid = false;
+    }
+  }
+
+  canvas.addEventListener('pointerdown', e => {
+    if (state.over || !overlayEl.classList.contains('hidden')) return;
+    const pos = canvasPos(e);
+    for (let i = 0; i < state.tray.length; i++) {
+      const piece = state.tray[i];
+      if (!piece || piece.used) continue;
+      const tg = trayPieceGeom(i);
+      const m = 18; // touch margin
+      if (pos.x >= tg.x - m && pos.x <= tg.x + tg.w + m && pos.y >= tg.y - m && pos.y <= tg.y + tg.h + m) {
+        state.drag = { piece, trayIdx: i, px: pos.x, py: pos.y, row: null, col: null, valid: false };
+        sounds.pick();
+        canvas.setPointerCapture(e.pointerId);
+        updateDragTarget();
+        e.preventDefault();
+        return;
+      }
+    }
+  });
+
+  canvas.addEventListener('pointermove', e => {
+    if (!state.drag) return;
+    const pos = canvasPos(e);
+    state.drag.px = pos.x;
+    state.drag.py = pos.y;
+    updateDragTarget();
+    e.preventDefault();
+  });
+
+  function endDrag(e) {
+    const d = state.drag;
+    if (!d) return;
+    state.drag = null;
+    try { canvas.releasePointerCapture(e.pointerId); } catch (err) { /* ignore */ }
+    if (d.valid && d.row != null) {
+      placePiece(d.piece, d.row, d.col);
+    } else if (d.row != null) {
+      sounds.bad();
+    }
+  }
+  canvas.addEventListener('pointerup', endDrag);
+  canvas.addEventListener('pointercancel', endDrag);
+
+  // ---- HUD / overlay ----
+  function updateHud() {
+    scoreEl.textContent = String(state.score);
+    bestEl.textContent = String(state.best);
+    if (state.combo > 1) {
+      comboBadge.classList.remove('hidden');
+      comboEl.textContent = 'x' + state.combo;
+    } else {
+      comboBadge.classList.add('hidden');
+    }
+  }
+
+  function refreshDiffButtons() {
+    document.querySelectorAll('.diffBtn').forEach(btn => {
+      const active = btn.dataset.diff === state.difficulty;
+      btn.style.background = active ? 'linear-gradient(180deg,#60a5fa,#2563eb)' : 'rgba(255,255,255,.1)';
+      btn.style.boxShadow = active ? '0 4px 14px rgba(37,99,235,.5)' : 'none';
+    });
+  }
+
+  function showOverlay(opts) {
+    ovTitle.textContent = opts.title;
+    ovText.textContent = opts.text;
+    if (opts.extra) {
+      ovExtra.textContent = opts.extra;
+      ovExtra.classList.remove('hidden');
+    } else {
+      ovExtra.classList.add('hidden');
+    }
+    ovBtn.textContent = opts.button;
+    refreshDiffButtons();
+    overlayEl.classList.remove('hidden');
+  }
+
+  function hideOverlay() {
+    overlayEl.classList.add('hidden');
+  }
+
+  function showGameOver(isNewBest) {
+    showOverlay({
+      title: t('gameOverTitle'),
+      text: t('gameOverText', { score: state.score, combo: Math.max(1, state.maxCombo), lines: state.linesCleared }),
+      extra: isNewBest ? t('newBestText') : '',
+      button: t('playAgain'),
+    });
+  }
+
+  ovBtn.addEventListener('click', () => { ac(); startGame(); });
+  document.querySelectorAll('.diffBtn').forEach(btn => {
+    btn.addEventListener('click', () => {
+      state.difficulty = btn.dataset.diff;
+      refreshDiffButtons();
+    });
+  });
+  document.getElementById('helpBtn').addEventListener('click', () => {
+    showOverlay({
+      title: t('overlayTitle'),
+      text: t('overlayText'),
+      button: state.over ? t('startBtn') : t('continueBtn'),
+    });
+  });
+  document.getElementById('restartBtn').addEventListener('click', () => startGame());
+  overlayEl.addEventListener('click', e => {
+    // resume when clicking outside the card if a game is in progress
+    if (e.target === overlayEl && state.started && !state.over) hideOverlay();
+  });
+
+  // ---- pet integration (MagicHaqi parent) ----
+  let petRequestId = '';
+  let petObjectUrl = '';
+  let petCheerUntil = 0;
+
+  function requestPetImage(petId) {
+    const requestId = `pet_${Date.now()}`;
+    petRequestId = requestId;
+    window.parent.postMessage({ type: 'haqi_get_pet_image', requestId, anim: 'happy', petId: petId || undefined }, '*');
+    setTimeout(() => {
+      if (petObjectUrl) return;
+      window.parent.postMessage({ type: 'haqi_get_pet_images', requestId: `pets_${Date.now()}`, anim: 'happy' }, '*');
+    }, 900);
+  }
+
+  function setPetImage(pet) {
+    if (!pet || !pet.imageBlob) return;
+    const url = URL.createObjectURL(pet.imageBlob);
+    if (petObjectUrl) URL.revokeObjectURL(petObjectUrl);
+    petObjectUrl = url;
+    const uv = pet.uv || { cols: 1, rows: 1, col: 0, row: 0 };
+    petBox.style.backgroundImage = `url("${url}")`;
+    petBox.style.backgroundRepeat = 'no-repeat';
+    if (uv.cols > 1 || uv.rows > 1) {
+      petBox.style.backgroundSize = `${uv.cols * 100}% ${uv.rows * 100}%`;
+      petBox.style.backgroundPosition = `${uv.col * 100 / Math.max(1, uv.cols - 1)}% ${uv.row * 100 / Math.max(1, uv.rows - 1)}%`;
+    } else {
+      petBox.style.backgroundSize = 'contain';
+      petBox.style.backgroundPosition = 'center';
+    }
+    petBox.classList.remove('hidden');
+  }
+
+  function petCheer() {
+    const now = performance.now();
+    if (now < petCheerUntil) return;
+    petCheerUntil = now + 1200;
+    petBox.style.transition = 'transform .18s ease';
+    petBox.style.transform = 'scale(1.25) rotate(-8deg)';
+    setTimeout(() => { petBox.style.transform = 'scale(1) rotate(0deg)'; }, 240);
+  }
+
+  // ---- parent messaging ----
+  function post(type, data) {
+    try { window.parent.postMessage(data ? { type, data } : { type }, '*'); } catch (e) { /* ignore */ }
+  }
+
+  window.addEventListener('message', event => {
+    const msg = event.data || {};
+    if (msg.type === 'setGameConfig' && msg.data) {
+      if (msg.data.difficulty && game_config.difficulties[msg.data.difficulty]) {
+        state.difficulty = msg.data.difficulty;
+        refreshDiffButtons();
+      }
+      if (msg.data.petId) requestPetImage(msg.data.petId);
+    }
+    if (msg.type === 'haqi_pet_image' && msg.ok && msg.data &&
+        (!petRequestId || !msg.requestId || msg.requestId === petRequestId || msg.requestId === 'active_pet_config')) {
+      setPetImage(msg.data);
+    }
+    if (msg.type === 'haqi_pet_images' && msg.ok) {
+      const firstPet = Array.isArray(msg.data && msg.data.pets) ? msg.data.pets[0] : null;
+      if (firstPet) setPetImage(firstPet);
+    }
+  });
+
+  // ---- init ----
+  state.board = makeEmptyBoard();
+  updateHud();
+  computeGeom();
+  window.addEventListener('resize', () => { computeGeom(); });
+  refreshDiffButtons();
+  showOverlay({ title: t('overlayTitle'), text: t('overlayText'), button: t('startBtn') });
+  requestAnimationFrame(render);
+  requestPetImage('');
+  post('gameLoaded');
+
+  // debug hook (used by automated tests; harmless in production)
+  window.__blockBlastDebug = { state, placePiece, findFullLines, SHAPES };
+})();
+</script>
+
+</html>

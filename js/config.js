@@ -20,6 +20,53 @@ export function zoomLevelIdToIndex(value, fallback = 'planet') {
     return Math.max(0, ZOOM_LEVEL_IDS.indexOf(id));
 }
 
+// Forced-entry view support. Like `home_planet`, the boot view can be forced via
+// the `view` URL query parameter (e.g. `?view=field`) or a global JS variable
+// `window.__view` set before the app boots. Supported values:
+//   field | planet | pet | cell -> force the home view at that zoom level
+//   game                        -> force the minigames (mini-game) view
+export const FORCE_VIEW_IDS = ['planet', 'field', 'pet', 'cell', 'game', 'ops', 'encyclopedia'];
+const FORCE_VIEW_ALIASES = {
+    space: 'planet', planet: 'planet', field: 'field', pet: 'pet', cell: 'cell',
+    game: 'game', games: 'game', minigame: 'game', minigames: 'game',
+    // 运营控制台（开发者 / 一人公司兜底面板），仅 ?view=ops 进入
+    ops: 'ops', console: 'ops', operator: 'ops',
+    // 动物园动物图鉴（?view=encyclopedia / ?view=tujian）
+    encyclopedia: 'encyclopedia', tujian: 'encyclopedia', zoo: 'encyclopedia',
+};
+
+export function normalizeForceViewId(value) {
+    const key = String(value || '').trim().toLowerCase();
+    return FORCE_VIEW_ALIASES[key] || '';
+}
+
+export function getForcedView() {
+    let raw = '';
+    try {
+        raw = String(new URL(window.location.href).searchParams.get('view') || '').trim();
+    } catch (_) {}
+    if (!raw) {
+        try { raw = String(window.__view || '').trim(); } catch (_) {}
+    }
+    return normalizeForceViewId(raw);
+}
+
+// ---------------------------------------------------------------------------
+// Agent 深链解析：?agent=<id> / ?adopt=1 / ?cmd=<urlencoded command>
+// 供 app.js 在启动时读取，驱动「页面即 API」的一步到位入口。
+// ---------------------------------------------------------------------------
+export function getAgentParams() {
+    const out = { agent: '', adopt: false, cmd: '' };
+    try {
+        const sp = new URL(window.location.href).searchParams;
+        out.agent = String(sp.get('agent') || '').trim();
+        const adoptRaw = String(sp.get('adopt') || '').trim().toLowerCase();
+        out.adopt = adoptRaw === '1' || adoptRaw === 'true' || adoptRaw === 'yes';
+        out.cmd = String(sp.get('cmd') || '').trim();
+    } catch (_) {}
+    return out;
+}
+
 export function normalizePlanetZoomOptions(raw = {}) {
     const source = raw && typeof raw === 'object' ? raw : {};
     const hidePlanet = boolOption(source.hide_planet ?? source.hidePlanet);
@@ -121,7 +168,7 @@ export const CONFIG = {
         { id: 'baby',   name: '幼年', minHours: 0.05, emoji: '🐣' },
         { id: 'teen',   name: '青年', minHours: 4,   emoji: '🐥' },
         { id: 'adult',  name: '成年', minHours: 24,  emoji: '🐉' },
-        { id: 'elder',  name: '长老', minHours: 168, emoji: '🦄' },
+        { id: 'elder',  name: '隐藏形态', minHours: 168, emoji: '🦄' },
     ],
     breedableStages: ['adult', 'elder'],
     breedCost: 30,
@@ -474,6 +521,77 @@ export async function loadPlanetIndex() {
     return planetIndexLoadPromise;
 }
 
+// 默认主星球（蛋蛋星球）的 id。其完整配置（标题 / 外观 / fields / 新手指引）现在统一
+// 由 famous-planets/_planet_index.json 中 id 为 'default' 的条目管理；下面的内置常量仅作
+// 为 file:// 或索引加载失败时的兜底。
+export const DEFAULT_PLANET_ID = 'default';
+
+// 内置兜底外观（与 _planet_index.json 中 default 条目保持一致）。
+export const FALLBACK_DEFAULT_PLANET_STYLE = {
+    hue: 188,
+    bodyBackground: 'radial-gradient(circle at 32% 22%, rgba(255,255,255,.82) 0%, rgba(255,255,255,.22) 18%, transparent 33%), radial-gradient(circle at 66% 72%, rgba(52,211,153,.36), transparent 34%), radial-gradient(circle at 50% 43%, #a7f3d0 0%, #38bdf8 48%, #2563eb 100%)',
+    glowColor: 'rgba(56, 189, 248, 0.58)',
+    accentColor: '#38bdf8',
+};
+
+function findPlanetEntry(index, id) {
+    const entries = Array.isArray(index?.planets) ? index.planets : [];
+    const target = String(id || '').trim();
+    return entries.find(entry => String(entry?.id || '').trim() === target) || null;
+}
+
+/** 取得默认主星球（蛋蛋星球）的索引条目，加载失败时返回 null。 */
+export async function getDefaultPlanetEntry() {
+    try {
+        const index = await loadPlanetIndex();
+        return findPlanetEntry(index, DEFAULT_PLANET_ID);
+    } catch (_) {
+        return null;
+    }
+}
+
+/** 默认主星球外观；索引中没有 default 条目时回退到内置兜底值。 */
+export async function getDefaultPlanetStyle() {
+    const entry = await getDefaultPlanetEntry();
+    const planet = entry?.planet && typeof entry.planet === 'object' ? entry.planet : {};
+    return {
+        hue: Number(planet.hue) || FALLBACK_DEFAULT_PLANET_STYLE.hue,
+        bodyBackground: String(planet.bodyBackground || '').trim() || FALLBACK_DEFAULT_PLANET_STYLE.bodyBackground,
+        glowColor: String(planet.glowColor || '').trim() || FALLBACK_DEFAULT_PLANET_STYLE.glowColor,
+        accentColor: String(planet.accentColor || '').trim() || FALLBACK_DEFAULT_PLANET_STYLE.accentColor,
+    };
+}
+
+// ===== 新手指引（onboarding）配置 =====
+// 每个星球索引条目可带一个 onboarding 对象，决定首次进入该星球时的引导方式：
+//   { mode: 'pet-story' | 'minigames' | 'none', storyPath?, minigame?, progressKey? }
+export const ONBOARDING_MODES = ['pet-story', 'minigames', 'none'];
+
+export function normalizeOnboardingConfig(raw = {}, planetId = '') {
+    const source = raw && typeof raw === 'object' ? raw : {};
+    let mode = String(source.mode || '').trim().toLowerCase();
+    if (mode === 'story' || mode === 'petstory') mode = 'pet-story';
+    if (mode === 'minigame' || mode === 'game' || mode === 'games') mode = 'minigames';
+    if (!ONBOARDING_MODES.includes(mode)) mode = 'none';
+    const storyPath = String(source.storyPath || source.story || '').trim().replace(/^\/+/, '');
+    const minigame = String(source.minigame || source.game || '').trim();
+    const progressKey = String(source.progressKey || planetId || '').trim() || String(planetId || '').trim();
+    return { mode, storyPath, minigame, progressKey };
+}
+
+/** 取得某个星球的新手指引配置；planetIdOrEntry 可传 id 或已解析的条目对象。 */
+export async function getPlanetOnboardingConfig(planetIdOrEntry = DEFAULT_PLANET_ID) {
+    let entry = planetIdOrEntry && typeof planetIdOrEntry === 'object' ? planetIdOrEntry : null;
+    const planetId = entry ? String(entry.id || '').trim() : String(planetIdOrEntry || '').trim();
+    if (!entry) {
+        try {
+            const index = await loadPlanetIndex();
+            entry = findPlanetEntry(index, planetId || DEFAULT_PLANET_ID);
+        } catch (_) { entry = null; }
+    }
+    return normalizeOnboardingConfig(entry?.onboarding, planetId || DEFAULT_PLANET_ID);
+}
+
 async function fetchShopItemsJson(path, required = false) {
     const url = path.startsWith('famous-planets/') ? resolveSideBySideUrl(path) : path;
     try {
@@ -537,15 +655,56 @@ export function getActiveShopItemsPath() {
     return activeShopItemsPath;
 }
 
+// ===== 动物园图鉴（encyclopedia）配置 =====
+// 星球索引条目可带 encyclopediaUrl（仿 shopItemUrl 的解析规则）：
+// 非 URL / 非绝对路径的值会补成 famous-planets/<file>。
+export function normalizeEncyclopediaPath(path) {
+    const text = String(path || '').trim().replace(/\\/g, '/').replace(/^\.\//, '');
+    if (!text) return '';
+    if (/^(https?:)?\/\//i.test(text) || text.startsWith('/') || text.startsWith('../')) return text;
+    return text.startsWith('famous-planets/') ? text : `famous-planets/${text}`;
+}
+
+/** 从星球条目（或已 normalize 的对象）提取图鉴文件路径，没有时返回 ''。 */
+export function planetEncyclopediaPath(planetOrEntry) {
+    const planet = planetOrEntry && typeof planetOrEntry === 'object' ? planetOrEntry : null;
+    return normalizeEncyclopediaPath(
+        planet?.encyclopediaUrl || planet?.encyclopediaFile || planet?.encyclopedia_url || ''
+    );
+}
+
+const encyclopediaCache = new Map();
+
+/** 加载并缓存一个图鉴 JSON 文件；失败时返回 null。 */
+export async function loadEncyclopediaData(path) {
+    const normalized = normalizeEncyclopediaPath(path);
+    if (!normalized) return null;
+    if (encyclopediaCache.has(normalized)) return encyclopediaCache.get(normalized);
+    const url = normalized.startsWith('famous-planets/') ? resolveSideBySideUrl(normalized) : normalized;
+    try {
+        const res = await fetch(url, { cache: 'no-store' });
+        if (!res.ok) throw new Error(`load ${normalized} failed: ${res.status}`);
+        const data = await res.json();
+        const payload = data && typeof data === 'object' && Array.isArray(data.animals) ? data : null;
+        encyclopediaCache.set(normalized, payload);
+        return payload;
+    } catch (e) {
+        console.warn('加载动物图鉴失败', normalized, e);
+        encyclopediaCache.set(normalized, null);
+        return null;
+    }
+}
+
 await initializeDefaultShopItems();
 
-const OUTDOOR_FIELD_IDS = ['land', 'water', 'sky'];
+export const OUTDOOR_FIELD_IDS = ['land', 'water', 'sky', 'fire', 'ice', 'life', 'dark', 'thunder'];
 const ROOM_AREA_IDS = CONFIG.rooms.map(room => room.id);
 
 export function canPlaceItemInArea(item, area) {
     const fields = Array.isArray(item?.fields) ? item.fields : null;
     if (!fields || fields.length === 0) return true;
     if (fields.includes(area)) return true;
+    if (OUTDOOR_FIELD_IDS.includes(area) && (fields.includes('outdoor') || fields.includes('land'))) return true;
     if (ROOM_AREA_IDS.includes(area) && fields.includes('indoor')) return true;
     return OUTDOOR_FIELD_IDS.includes(area) && fields.includes('outdoor');
 }

@@ -117,10 +117,12 @@ const PATHS = {
     storyProgress: 'user/story_progress.json',
     layouts:     'user/layouts.json',
     planetLayouts: (planetId) => `user/${planetId}.layouts.json`,
+    planetEncyclopedia: (planetId) => `user/${planetId}.encyclopedia.json`,
     inventory:   'user/inventory.json',
     planetVisitors: 'user/planet_visitors.json',
     recentFriendPlanets: 'user/recent_friend_planets.json',
     postcardList: 'user/postcard_list.json',
+    likedGames:  'user/list_liked_games.json',
     storyList:   'stories/index.json',
     story:      (name) => `stories/${name}.json`,
     pet:        (id) => `pets/${id}.json`,
@@ -562,11 +564,39 @@ export function setActiveLayoutsPlanet(planetId = '') {
     resetLayoutsLoadState();
 }
 
+// 新手指引完成进度：每个星球的 layouts 文件里保留一个 `onboarding` 对象，
+// 用来判断该星球是否已经走过新手故事 / 新手小游戏。结构：
+//   { completed: boolean, mode: 'pet-story'|'minigames'|..., completedAt: number, version: number }
+function normalizeOnboardingProgress(value) {
+    if (!value || typeof value !== 'object' || Array.isArray(value)) return null;
+    const progress = {};
+    progress.completed = !!value.completed;
+    if (typeof value.mode === 'string' && value.mode) progress.mode = value.mode.slice(0, 32);
+    if (Number.isFinite(value.completedAt)) progress.completedAt = Number(value.completedAt);
+    if (Number.isFinite(value.startedAt)) progress.startedAt = Number(value.startedAt);
+    if (Number.isFinite(value.version)) progress.version = Number(value.version);
+    // 只有有意义的进度才保留，避免写入空对象。
+    return (progress.completed || progress.mode || progress.startedAt || progress.completedAt) ? progress : null;
+}
+
+function extractLayoutsOnboarding(layouts) {
+    if (!layouts || typeof layouts !== 'object' || Array.isArray(layouts)) return null;
+    return normalizeOnboardingProgress(layouts.onboarding);
+}
+
+function applyLayoutsOnboarding(layouts, onboarding) {
+    if (!layouts || typeof layouts !== 'object' || Array.isArray(layouts)) return layouts;
+    const normalized = normalizeOnboardingProgress(onboarding);
+    if (normalized) layouts.onboarding = normalized;
+    else delete layouts.onboarding;
+    return layouts;
+}
+
 function normalizeLayoutsData(data) {
     if (!data || typeof data !== 'object' || Array.isArray(data)) return {};
     const layouts = {};
     Object.entries(data).forEach(([rawKey, items]) => {
-        if (rawKey === 'fieldScenes' || rawKey === 'terrainFields') return;
+        if (rawKey === 'fieldScenes' || rawKey === 'terrainFields' || rawKey === 'onboarding') return;
         const key = normalizeLayoutRoomKey(rawKey);
         if (!key || !Array.isArray(items)) return;
         if (!layouts[key]) layouts[key] = items;
@@ -574,6 +604,7 @@ function normalizeLayoutsData(data) {
     });
     applyLayoutsTerrainFields(layouts, data.terrainFields);
     applyLayoutsFieldScenes(layouts, data.fieldScenes);
+    applyLayoutsOnboarding(layouts, data.onboarding);
     return layouts;
 }
 
@@ -945,11 +976,11 @@ export async function deleteWorkspaceStory(pathOrName) {
 }
 
 // ========== 我创造的小游戏（pet-games/ 下以 HTML 文件存储） ==========
-// 游戏正文存为 pet-games/<name>.html，索引摘要存为 pet-games/index.json。
+// 游戏正文存为 pet-games/<系统生成文件名>.html，索引摘要存为 pet-games/index.json。
 const PET_GAME_DIR = 'pet-games';
 const PET_GAME_INDEX = `${PET_GAME_DIR}/index.json`;
 
-function safePetGameName(name) {
+function safePetGameBaseName(name) {
     const text = String(name || '').trim().replace(/\.html?$/i, '');
     return (text || 'game_' + Date.now())
         .replace(/[^a-zA-Z0-9_\-\u4e00-\u9fa5]/g, '_')
@@ -957,7 +988,25 @@ function safePetGameName(name) {
 }
 
 function petGamePath(name) {
-    return `${PET_GAME_DIR}/${safePetGameName(name)}.html`;
+    return `${PET_GAME_DIR}/${safePetGameBaseName(name)}.html`;
+}
+
+function petGamePathFromMetaPath(path) {
+    const clean = String(path || '').trim().replace(/^\/+/, '');
+    return clean && /^pet-games\/[^/]+\.html?$/i.test(clean) ? clean : '';
+}
+
+function randomPetGameLetters(length = 6) {
+    const alphabet = 'abcdefghijklmnopqrstuvwxyz';
+    let text = '';
+    for (let i = 0; i < length; i++) text += alphabet[Math.floor(Math.random() * alphabet.length)];
+    return text;
+}
+
+function generatedPetGameBaseName(date = new Date()) {
+    const pad = (n) => String(n).padStart(2, '0');
+    const stamp = `${date.getFullYear()}${pad(date.getMonth() + 1)}${pad(date.getDate())}`;
+    return `game-${stamp}-${randomPetGameLetters()}`;
 }
 
 function normalizePetGameRecord(record) {
@@ -978,6 +1027,19 @@ function normalizePetGameRecord(record) {
 function petGameTitleFromPath(path) {
     const filename = String(path || '').split('/').pop() || '';
     return filename.replace(/\.html?$/i, '').replace(/[_-]+/g, ' ').trim() || '我的小游戏';
+}
+
+function normalizePetGameHtml(content) {
+    const raw = String(content == null ? '' : content).trim();
+    if (!raw) return '';
+    const fence = raw.match(/```(?:html)?\s*([\s\S]*?)```/i);
+    const candidate = (fence ? fence[1] : raw).trim();
+    const docMatch = candidate.match(/<!DOCTYPE[\s\S]*<\/html>/i) || candidate.match(/<html[\s\S]*<\/html>/i);
+    if (docMatch) return docMatch[0].trim();
+    if (/<(canvas|div|script|style|svg|body)/i.test(candidate)) {
+        return `<!DOCTYPE html><html><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"></head><body>${candidate}</body></html>`;
+    }
+    return candidate;
 }
 
 // 仅依据 pet-games/index.json 列出我创造的小游戏（不再 listDir 扫描目录）。
@@ -1008,14 +1070,21 @@ export async function loadPetGameHtml(pathOrName) {
     const raw = String(pathOrName || '').trim();
     if (!raw) return '';
     const path = (raw.includes('/') ? raw : petGamePath(raw)).replace(/^\/+/, '');
-    return await readFileSafe(path);
+    return normalizePetGameHtml(await readFileSafe(path));
 }
 
-// 保存游戏：html 必填，meta 可包含 { title, icon, desc, name }。返回 { path, record, index }。
+// 保存游戏：html 必填，meta 可包含 { title, icon, desc, path }。首次保存使用系统生成文件名；再次保存沿用 path。
 export async function savePetGame(html, meta = {}) {
-    const baseName = safePetGameName(meta.name || meta.id || meta.title || 'game');
-    const path = petGamePath(baseName);
-    await writeFileSafe(path, html == null ? '' : String(html));
+    const existing = await loadPetGameList();
+    const existingPath = petGamePathFromMetaPath(meta.path);
+    const usedPaths = new Set(existing.map(item => item.path));
+    let path = existingPath;
+    while (!path) {
+        const candidate = petGamePath(generatedPetGameBaseName());
+        if (!usedPaths.has(candidate)) path = candidate;
+    }
+    const baseName = path.split('/').pop().replace(/\.html?$/i, '');
+    await writeFileSafe(path, normalizePetGameHtml(html));
     const record = normalizePetGameRecord({
         path,
         id: meta.id || baseName,
@@ -1024,7 +1093,6 @@ export async function savePetGame(html, meta = {}) {
         desc: meta.desc || '',
         updatedAt: Date.now(),
     });
-    const existing = await loadPetGameList();
     const nextIndex = [record, ...existing.filter(item => item.path !== path)];
     await savePetGameList(nextIndex);
     return { path, record, index: nextIndex };
@@ -1038,6 +1106,214 @@ export async function deletePetGame(pathOrName) {
     await savePetGameList(existing.filter(item => item.path !== path));
     await deleteFileSafe(path);
     return true;
+}
+
+// 读取别人 workspace 下分享的小游戏 HTML（用于分享链接 / 收藏的他人作品试玩）。
+function safeShareUsername(value) {
+    return String(value || '').trim().replace(/[^a-zA-Z0-9_-]/g, '').slice(0, 64);
+}
+
+export async function loadRemotePetGameHtml(fromUsername, pathOrName) {
+    const username = safeShareUsername(fromUsername);
+    const raw = String(pathOrName || '').trim().replace(/^\/+/, '').replace(/\\/g, '/');
+    if (!username || !raw || raw.includes('..')) return '';
+    const relPath = raw.includes('/') ? raw : petGamePath(raw);
+    if (!/^pet-games\/[^/]+\.html?$/i.test(relPath)) return '';
+    if (!state.sdk?.personalPageStore?.readFile) return '';
+    const absolutePath = `//${username}/edunotes/store/${CONFIG.workspace}/${relPath}`;
+    try {
+        const text = await state.sdk.personalPageStore.readFile(absolutePath, 1, 99999);
+        return normalizePetGameHtml(text || '');
+    } catch (e) {
+        console.warn('读取分享小游戏失败', e);
+        return '';
+    }
+}
+
+// 读取别人 workspace 下的小游戏清单（pet-games/index.json），用于"某用户的全部小游戏"列表。
+export async function loadRemotePetGameList(fromUsername) {
+    const username = safeShareUsername(fromUsername);
+    if (!username || !state.sdk?.personalPageStore?.readFile) return [];
+    const absolutePath = `//${username}/edunotes/store/${CONFIG.workspace}/${PET_GAME_INDEX}`;
+    try {
+        const text = await state.sdk.personalPageStore.readFile(absolutePath, 1, 99999);
+        if (!text) return [];
+        const list = JSON.parse(text);
+        const byPath = new Map();
+        (Array.isArray(list) ? list : [])
+            .map(normalizePetGameRecord)
+            .filter(Boolean)
+            .forEach(record => {
+                if (!record?.path) return;
+                const prev = byPath.get(record.path);
+                byPath.set(record.path, !prev || (record.updatedAt || 0) >= (prev.updatedAt || 0) ? record : prev);
+            });
+        return [...byPath.values()].sort((a, b) => (b.updatedAt || 0) - (a.updatedAt || 0));
+    } catch (e) {
+        console.warn('读取用户小游戏清单失败', e);
+        return [];
+    }
+}
+
+// ========== 收藏的小游戏（list_liked_games.json，与明信片同在 user/ 目录） ==========
+// 既可收藏官方小游戏（owner 为空），也可收藏自己/别人创造的小游戏（owner 为作者 username）。
+// 文件里只保存 id / owner / title / icon 四个字段；其余信息（path/src/official）由 id+owner 在内存推导。
+function likedGameKey(record) {
+    const owner = safeShareUsername(record?.owner || '');
+    const id = String(record?.id || '').trim().replace(/^\/+/, '');
+    return `${owner}::${id}`;
+}
+
+// 仅保留 id / owner / title / icon 四个字段写入磁盘。
+function normalizeLikedGameRecord(record) {
+    if (!record || typeof record !== 'object') return null;
+    // id 统一为不含目录、不含扩展名的基础名（与 pet-games 文件基础名一致）。
+    let id = String(record.id || record.path || record.src || '').trim().replace(/^\/+/, '');
+    id = id.split('/').pop().replace(/\.html?$/i, '');
+    if (!id) return null;
+    return {
+        id: id.slice(0, 200),
+        owner: safeShareUsername(record.owner || ''),
+        title: String(record.title || id).slice(0, 80),
+        icon: String(record.icon || '🎮').slice(0, 8),
+    };
+}
+
+export async function loadLikedGames() {
+    const list = await readJSON(PATHS.likedGames, []);
+    // 文件顺序即收藏顺序（新收藏在前），不再依赖 likedAt 排序。
+    return (Array.isArray(list) ? list : [])
+        .map(normalizeLikedGameRecord)
+        .filter(Boolean)
+        .slice(0, 300);
+}
+
+// 紧凑写入：整体为 JSON 数组，但每条记录单独占一行。
+function writeLikedGamesCompact(records) {
+    const body = records.map(r => JSON.stringify(r)).join(',\n  ');
+    const text = records.length ? `[\n  ${body}\n]` : '[]';
+    return writeFileSafe(PATHS.likedGames, text);
+}
+
+export async function saveLikedGames(list) {
+    const normalized = (Array.isArray(list) ? list : [])
+        .map(normalizeLikedGameRecord)
+        .filter(Boolean)
+        .slice(0, 300);
+    await writeLikedGamesCompact(normalized);
+    return normalized;
+}
+
+export async function addLikedGame(record) {
+    const normalized = normalizeLikedGameRecord(record);
+    if (!normalized) return null;
+    const existing = await loadLikedGames();
+    const key = likedGameKey(normalized);
+    const next = [normalized, ...existing.filter(item => likedGameKey(item) !== key)].slice(0, 300);
+    await saveLikedGames(next);
+    return normalized;
+}
+
+export async function removeLikedGame(record) {
+    const key = likedGameKey(normalizeLikedGameRecord(record) || record);
+    const existing = await loadLikedGames();
+    const next = existing.filter(item => likedGameKey(item) !== key);
+    await saveLikedGames(next);
+    return next;
+}
+
+// ========== 最近玩过的小游戏（本地 IndexedDB，仅当前设备，不同步） ==========
+// 用于"推荐"标签按最近游玩时间排序，并在卡片上显示"N 天前"。
+const RECENT_GAMES_DB = 'MagicHaqiRecentGames';
+const RECENT_GAMES_STORE = 'recent';
+const RECENT_GAMES_MAX = 200;
+let _recentGamesDbPromise = null;
+
+function openRecentGamesDb() {
+    if (_recentGamesDbPromise) return _recentGamesDbPromise;
+    _recentGamesDbPromise = new Promise((resolve, reject) => {
+        if (typeof indexedDB === 'undefined') { reject(new Error('IndexedDB 不可用')); return; }
+        const req = indexedDB.open(RECENT_GAMES_DB, 1);
+        req.onupgradeneeded = () => {
+            const db = req.result;
+            if (!db.objectStoreNames.contains(RECENT_GAMES_STORE)) {
+                db.createObjectStore(RECENT_GAMES_STORE, { keyPath: 'key' });
+            }
+        };
+        req.onsuccess = () => resolve(req.result);
+        req.onerror = () => reject(req.error || new Error('打开 IndexedDB 失败'));
+    }).catch((e) => { _recentGamesDbPromise = null; throw e; });
+    return _recentGamesDbPromise;
+}
+
+// 记录某个游戏的最近游玩时间。key 由调用方按 owner::id 等规则生成。
+// meta（可选 { id, owner, title, icon }）用于历史游戏在"推荐"里重建可渲染 / 可重玩的条目。
+export async function recordRecentGame(key, meta = {}) {
+    const k = String(key || '').trim();
+    if (!k) return false;
+    try {
+        const db = await openRecentGamesDb();
+        await new Promise((resolve, reject) => {
+            const tx = db.transaction(RECENT_GAMES_STORE, 'readwrite');
+            tx.objectStore(RECENT_GAMES_STORE).put({
+                key: k,
+                playedAt: Date.now(),
+                id: String(meta.id || '').slice(0, 200),
+                owner: String(meta.owner || '').slice(0, 64),
+                title: String(meta.title || '').slice(0, 80),
+                icon: String(meta.icon || '🎮').slice(0, 8),
+            });
+            tx.oncomplete = resolve;
+            tx.onerror = () => reject(tx.error);
+        });
+        return true;
+    } catch (e) {
+        console.warn('记录最近游玩失败', e);
+        return false;
+    }
+}
+
+// 返回最近游玩记录数组 [{ key, playedAt, id, owner, title, icon }]，按最近游玩时间倒序。
+// 供"推荐"排序、历史游戏重建与"N 天前"显示。
+export async function loadRecentGames() {
+    try {
+        const db = await openRecentGamesDb();
+        const rows = await new Promise((resolve, reject) => {
+            const tx = db.transaction(RECENT_GAMES_STORE, 'readonly');
+            const req = tx.objectStore(RECENT_GAMES_STORE).getAll();
+            req.onsuccess = () => resolve(Array.isArray(req.result) ? req.result : []);
+            req.onerror = () => reject(req.error);
+        });
+        // 超出上限时裁剪最旧的（异步清理，不阻塞返回）。
+        if (rows.length > RECENT_GAMES_MAX) pruneRecentGames(db, rows).catch(() => {});
+        return rows
+            .filter(r => r?.key)
+            .map(r => ({
+                key: r.key,
+                playedAt: Number(r.playedAt) || 0,
+                id: r.id || '',
+                owner: r.owner || '',
+                title: r.title || '',
+                icon: r.icon || '🎮',
+            }))
+            .sort((a, b) => (b.playedAt || 0) - (a.playedAt || 0));
+    } catch (e) {
+        console.warn('读取最近游玩失败', e);
+        return [];
+    }
+}
+
+async function pruneRecentGames(db, rows) {
+    const sorted = [...rows].sort((a, b) => (b.playedAt || 0) - (a.playedAt || 0));
+    const toDelete = sorted.slice(RECENT_GAMES_MAX);
+    if (!toDelete.length) return;
+    await new Promise((resolve) => {
+        const tx = db.transaction(RECENT_GAMES_STORE, 'readwrite');
+        const store = tx.objectStore(RECENT_GAMES_STORE);
+        toDelete.forEach(r => { if (r?.key) store.delete(r.key); });
+        tx.oncomplete = resolve;
+        tx.onerror = resolve;
+    });
 }
 
 // ========== 宠物 ==========
@@ -1290,6 +1566,136 @@ export function getLayout(_petId, roomId) {
     return state.layouts?.[normalizeLayoutRoomKey(roomId)] || [];
 }
 
+// ========== 新手指引完成进度 ==========
+// 进度写在“当前星球”的 layouts 文件里（official -> user/<planetId>.layouts.json，
+// 否则 user/layouts.json）。通过 progressKey 显式指定星球，避免在启动早期受
+// state.layouts 是否已加载影响；progressKey 为空时回退到当前激活的 layouts 文件。
+function onboardingLayoutsPath(progressKey = '') {
+    const planetId = safeLayoutPlanetId(progressKey);
+    if (planetId && planetId !== 'default') return PATHS.planetLayouts(planetId);
+    // default / custom 主星球使用通用 layouts 文件。
+    if (planetId === 'default') return PATHS.layouts;
+    return currentLayoutsPath();
+}
+
+/** 读取某个星球的新手指引完成进度（不修改 state.layouts，直接读文件）。 */
+export async function loadOnboardingProgress(progressKey = '') {
+    const path = onboardingLayoutsPath(progressKey);
+    try {
+        const data = await readJSON(path, {});
+        return extractLayoutsOnboarding(normalizeLayoutsData(data));
+    } catch (_) {
+        return null;
+    }
+}
+
+/** 判断某个星球的新手指引是否已完成。 */
+export async function isOnboardingCompleted(progressKey = '') {
+    const progress = await loadOnboardingProgress(progressKey);
+    return !!progress?.completed;
+}
+
+/** 写入/合并某个星球的新手指引进度（completed / startedAt / mode 等）。 */
+export async function saveOnboardingProgress(progressKey = '', patch = {}) {
+    const path = onboardingLayoutsPath(progressKey);
+    let data;
+    try { data = await readJSON(path, {}); } catch (_) { data = {}; }
+    const layouts = normalizeLayoutsData(data);
+    const prev = extractLayoutsOnboarding(layouts) || {};
+    const next = normalizeOnboardingProgress({ version: 1, ...prev, ...patch }) || { version: 1, ...patch };
+    applyLayoutsOnboarding(layouts, next);
+    // 若该文件正是当前激活的 layouts，则同步内存 state，避免后续覆盖。
+    if (_layoutsLoaded && path === currentLayoutsPath() && state.layouts && typeof state.layouts === 'object') {
+        applyLayoutsOnboarding(state.layouts, next);
+    }
+    await saveJSONNow(path, layouts);
+    return next;
+}
+
+/** 标记某个星球的新手指引为已完成。 */
+export async function markOnboardingCompleted(progressKey = '', mode = '') {
+    return saveOnboardingProgress(progressKey, { completed: true, mode, completedAt: Date.now() });
+}
+
+// ========== 动物园图鉴学习/领养进度 ==========
+// 每颗带图鉴的星球一个独立文件：user/<planetId>.encyclopedia.json
+// 结构：{ version: 1, animals: { <animalId>: { learned, learnedAt, adopted, adoptedAt } } }
+function encyclopediaProgressPath(planetId = '') {
+    const safeId = safeLayoutPlanetId(planetId);
+    return PATHS.planetEncyclopedia(safeId || 'default');
+}
+
+function normalizeEncyclopediaProgress(raw) {
+    const data = raw && typeof raw === 'object' ? raw : {};
+    const animals = data.animals && typeof data.animals === 'object' ? data.animals : {};
+    const normalized = {};
+    Object.entries(animals).forEach(([id, entry]) => {
+        if (!id || !entry || typeof entry !== 'object') return;
+        normalized[id] = {
+            learned: !!entry.learned,
+            learnedAt: Number(entry.learnedAt) || 0,
+            adopted: !!entry.adopted,
+            adoptedAt: Number(entry.adoptedAt) || 0,
+        };
+    });
+    return { version: 1, animals: normalized };
+}
+
+/** 读取某颗星球的图鉴进度（learned / adopted 标记）。 */
+export async function loadEncyclopediaProgress(planetId = '') {
+    try {
+        const data = await readJSON(encyclopediaProgressPath(planetId), {});
+        return normalizeEncyclopediaProgress(data);
+    } catch (_) {
+        return normalizeEncyclopediaProgress(null);
+    }
+}
+
+/** 合并写入某颗星球某只动物的图鉴进度（patch: { learned?, adopted? }）。 */
+export async function saveEncyclopediaProgress(planetId = '', animalId = '', patch = {}) {
+    const id = String(animalId || '').trim();
+    if (!id) return null;
+    const path = encyclopediaProgressPath(planetId);
+    let data;
+    try { data = await readJSON(path, {}); } catch (_) { data = {}; }
+    const progress = normalizeEncyclopediaProgress(data);
+    const prev = progress.animals[id] || { learned: false, learnedAt: 0, adopted: false, adoptedAt: 0 };
+    const next = { ...prev };
+    if (patch.learned && !prev.learned) { next.learned = true; next.learnedAt = Date.now(); }
+    if (patch.adopted && !prev.adopted) { next.adopted = true; next.adoptedAt = Date.now(); }
+    progress.animals[id] = next;
+    await saveJSONNow(path, progress);
+    return progress;
+}
+
+/** 清除某个星球的新手指引完成进度，供开发调试时重新触发 onboarding。 */
+export async function clearOnboardingProgress(progressKey = '') {
+    const path = onboardingLayoutsPath(progressKey);
+    let data;
+    try { data = await readJSON(path, {}); } catch (_) { data = {}; }
+    const layouts = normalizeLayoutsData(data);
+    applyLayoutsOnboarding(layouts, null);
+    if (_layoutsLoaded && path === currentLayoutsPath() && state.layouts && typeof state.layouts === 'object') {
+        applyLayoutsOnboarding(state.layouts, null);
+    }
+    await saveJSONNow(path, layouts);
+    return true;
+}
+
+/** 清除当前激活 layouts 文件里的新手指引进度。 */
+export async function clearCurrentOnboardingProgress() {
+    const path = currentLayoutsPath();
+    let data;
+    try { data = await readJSON(path, {}); } catch (_) { data = {}; }
+    const layouts = normalizeLayoutsData(data);
+    applyLayoutsOnboarding(layouts, null);
+    if (_layoutsLoaded && state.layouts && typeof state.layouts === 'object') {
+        applyLayoutsOnboarding(state.layouts, null);
+    }
+    await saveJSONNow(path, layouts);
+    return true;
+}
+
 // ========== 背包 ==========
 export async function addToInventory(petId, itemId, qty = 1, options = {}) {
     if (!_inventoryLoaded) await ensurePetInventory(petId);
@@ -1381,4 +1787,42 @@ export async function appendChatLog(petId, role, text) {
         next = next.slice(-CONFIG.chatHistoryMaxBytes);
     }
     await writeFileSafe(PATHS.chatLog(petId), next);
+}
+
+// ---------- Agent 运营层文件 IO ----------
+// 通用、带前缀白名单的文件读写，供 agentBridge / agentAudit / haqi-operator 复用。
+// 仅允许写 `agent/` 与 `pets/` 前缀，避免 agent 越权写其它工作区文件。
+const AGENT_WRITE_PREFIXES = ['agent/', 'pets/'];
+
+function isAgentWritablePath(path) {
+    const p = String(path || '');
+    return AGENT_WRITE_PREFIXES.some(prefix => p.startsWith(prefix));
+}
+
+// 读取工作区任意文件（缺失返回 ''）。读不设前缀限制（只读安全）。
+export async function agentReadFile(path) {
+    return await readFileSafe(String(path || ''));
+}
+
+// 覆盖写文件。仅允许 agent/ 与 pets/ 前缀，否则抛错（越权保护）。
+export async function agentWriteFile(path, content) {
+    if (!isAgentWritablePath(path)) {
+        throw new Error(`agentWriteFile: path "${path}" not allowed (only agent/ and pets/)`);
+    }
+    return await writeFileSafe(String(path), content);
+}
+
+// 追加一行到文件，超过 maxBytes 时从头部轮转（保留头 200 字节 + 尾部）。
+export async function agentAppendFile(path, line, maxBytes = 64 * 1024) {
+    if (!isAgentWritablePath(path)) {
+        throw new Error(`agentAppendFile: path "${path}" not allowed (only agent/ and pets/)`);
+    }
+    const cur = await readFileSafe(String(path));
+    let next = (cur || '') + String(line == null ? '' : line);
+    if (next.length > maxBytes) {
+        const head = next.slice(0, 200);
+        const tail = next.slice(-(maxBytes - 300));
+        next = head + '\n... (旧记录已归档) ...\n' + tail;
+    }
+    return await writeFileSafe(String(path), next);
 }

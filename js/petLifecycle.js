@@ -7,6 +7,61 @@ import { state } from './state.js';
 export const MAX_PLANET_PETS = 10;
 export const RELEASED_PET_FIELD_CHANCE = 0.9;
 export const RELEASED_AUTO_CARE_STATS = { hunger: 85, mood: 85, clean: 90, bond: 85 };
+
+// ===== 星球「自我照料能力」selfCare（取值区间 [0,1]）=====
+// selfCare 描述这颗星球的宠物有多能照顾自己，决定养成数值衰减得有多慢：
+//   0    —— 常规养成，几乎每天都要照料（当前默认行为）。
+//   0.7  —— 大约一周照料一次即可。
+//   1    —— 完全自给自足：永不衰减，数值锁定在 ~80%，永不生病、不形成创伤
+//           （给大人玩的零压力星球）。
+// 衰减倍率采用 decayMultiplier = (1 - selfCare) ** SELF_CARE_DECAY_EXP 曲线，
+// 使「照料间隔 ≈ 1 / decayMultiplier 天」：
+//   selfCare 0   → 倍率 1.000 → ~1 天
+//   selfCare 0.3 → 倍率 0.573 → ~1.7 天
+//   selfCare 0.5 → 倍率 0.330 → ~3 天
+//   selfCare 0.7 → 倍率 0.143 → ~7 天
+//   selfCare 0.9 → 倍率 0.025 → ~40 天
+//   selfCare 1   → 倍率 0     → 永不衰减
+export const PLANET_SELF_CARE_STATS = { hunger: 80, mood: 80, clean: 80, bond: 80 };
+const SELF_CARE_DECAY_EXP = 1.6;
+
+/** 读取当前所在星球的 selfCare 值，规范化到 [0,1]，缺省为 0。 */
+export function getCurrentPlanetSelfCare() {
+    const raw = Number(state?.settings?.starSettlement?.selfCare);
+    if (!Number.isFinite(raw)) return 0;
+    return Math.max(0, Math.min(1, raw));
+}
+
+/** selfCare === 1 时为完全自给自足（零压力）：永不衰减、锁定数值、不生病不创伤。 */
+export function isCurrentPlanetSelfCare() {
+    return getCurrentPlanetSelfCare() >= 1;
+}
+
+/**
+ * 当前星球的衰减倍率（0~1）：1 表示常规速度，0 表示完全不衰减。
+ * 同时用作生病 / 创伤等负面效果的概率缩放系数。
+ */
+export function currentPlanetDecayMultiplier() {
+    const selfCare = getCurrentPlanetSelfCare();
+    if (selfCare <= 0) return 1;
+    if (selfCare >= 1) return 0;
+    return Math.pow(1 - selfCare, SELF_CARE_DECAY_EXP);
+}
+
+/** 把宠物所有养成数值锁定在自我照料星球的目标值（~80%）。返回是否有变化。 */
+export function applyPlanetSelfCareStats(pet) {
+    const stats = pet?.stats && typeof pet.stats === 'object' ? pet.stats : (pet ? (pet.stats = {}) : null);
+    if (!stats) return false;
+    let changed = false;
+    for (const [key, targetValue] of Object.entries(PLANET_SELF_CARE_STATS)) {
+        const target = clampStatValue(targetValue);
+        if (stats[key] !== target) {
+            stats[key] = target;
+            changed = true;
+        }
+    }
+    return changed;
+}
 const RELEASED_PET_RELOCATE_MS = 10 * 60 * 1000;
 const DAY_MS = 24 * 60 * 60 * 1000;
 const SESSION_PLACEMENT_SEED = `${Date.now().toString(36)}_${Math.random().toString(36).slice(2)}`;
@@ -223,7 +278,8 @@ export function getGeneratedPetLocation(petOrId, now = Date.now()) {
             kind: 'field',
             id: fieldId,
             x: round3(0.14 + rng() * 0.72),
-            y: round3(0.42 + rng() * 0.32),
+            // 底部预留空间，避免与底部等级条 UI 重叠（max y ≈ 0.68）。
+            y: round3(0.40 + rng() * 0.28),
             delay: round2(-(rng() * 8)),
             dur: round2(9 + rng() * 7),
             dx: round1(-28 + rng() * 56),

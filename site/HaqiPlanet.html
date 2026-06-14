@@ -1,0 +1,963 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title data-i18n="docTitle">HaqiPlanet 哈奇星球 — 3D虚拟宠物养成与AI创造宇宙</title>
+<meta name="description" data-i18n="metaDesc" data-i18n-attr="content" content="哈奇星球（HaqiPlanet）是一款温暖治愈的虚拟宠物养成游戏。你将拥有一个属于自己的星球，从一颗神秘的宠物蛋开始，陪伴它一路成长为幼年、青年、成年乃至神秘形态。" />
+<script src="https://cdn.keepwork.com/keepwork/cdn/tailwindcss@3.4.16.js"></script>
+<style>
+  :root {
+    --accent: #3b82f6; /* cosmic blue */
+    --accent2: #10b981; /* emerald green */
+    --accent-warm: #f59e0b; /* amber */
+    --accent-rose: #fb7185; /* rose */
+    --bg: #060818; 
+    --bg2: #0c0f2d;
+    --card: #141943; 
+    --text: #f1f5f9; 
+    --muted: #94a3b8; 
+    --line: rgba(255, 255, 255, 0.08);
+  }
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  html { -webkit-text-size-adjust: 100%; scroll-behavior: smooth; }
+  body {
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, "PingFang SC", "Hiragino Sans GB", "Microsoft YaHei", sans-serif;
+    background: radial-gradient(1200px 600px at 50% -10%, #1e1b4b 0%, var(--bg) 70%);
+    color: var(--text);
+    line-height: 1.6;
+    overflow-x: hidden;
+  }
+  img { max-width: 100%; height: auto; }
+  .wrap { max-width: 1040px; margin: 0 auto; padding: 0 clamp(16px, 4vw, 20px); }
+  a { color: var(--accent-warm); text-decoration: none; transition: color 0.2s; }
+  a:hover { color: var(--accent-rose); }
+  
+  /* Buttons */
+  .btn {
+    display: inline-block;
+    padding: 12px 24px;
+    border-radius: 999px;
+    font-weight: 800;
+    cursor: pointer;
+    border: 0;
+    font-size: 15px;
+    line-height: 1.2;
+    text-align: center;
+    transition: all 0.2s ease;
+  }
+  .btn-primary {
+    background: linear-gradient(135deg, var(--accent-warm), var(--accent-rose));
+    color: #1e1b4b;
+    box-shadow: 0 8px 24px rgba(245, 158, 11, 0.3);
+  }
+  .btn-primary:hover {
+    transform: translateY(-2px);
+    box-shadow: 0 12px 28px rgba(245, 158, 11, 0.45);
+  }
+  .btn-ghost {
+    background: rgba(255, 255, 255, 0.05);
+    color: var(--text);
+    border: 1px solid var(--line);
+  }
+  .btn-ghost:hover {
+    background: rgba(255, 255, 255, 0.1);
+    transform: translateY(-2px);
+  }
+
+  /* Header */
+  header {
+    padding: 14px 0;
+    position: sticky;
+    top: 0;
+    backdrop-filter: blur(12px);
+    background: rgba(6, 8, 24, 0.75);
+    z-index: 50;
+    border-bottom: 1px solid var(--line);
+  }
+  header .wrap {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 12px;
+    flex-wrap: wrap;
+  }
+  .brand {
+    font-weight: 900;
+    font-size: 22px;
+    letter-spacing: 0.02em;
+    white-space: nowrap;
+    display: flex;
+    align-items: center;
+    gap: 8px;
+  }
+  .brand span:not(.brand-icon):not(.brand-text) {
+    background: linear-gradient(135deg, var(--accent-warm), var(--accent-rose));
+    -webkit-background-clip: text;
+    background-clip: text;
+    color: transparent;
+  }
+  header nav {
+    display: flex;
+    align-items: center;
+    gap: 10px 20px;
+    flex-wrap: wrap;
+    justify-content: flex-end;
+  }
+  header nav .sep {
+    color: var(--muted);
+    opacity: 0.3;
+  }
+  header nav a:not(.btn) {
+    font-size: 14px;
+    color: var(--muted);
+    font-weight: 700;
+  }
+  header nav a:not(.btn):hover {
+    color: var(--text);
+  }
+
+  /* Hero Section */
+  .hero {
+    padding: clamp(40px, 8vw, 80px) 0 clamp(30px, 6vw, 60px);
+    text-align: center;
+    position: relative;
+  }
+  .hero h1 {
+    font-size: clamp(32px, 5.5vw, 54px);
+    line-height: 1.15;
+    font-weight: 900;
+    letter-spacing: -0.02em;
+  }
+  .hero h1 .grad {
+    background: linear-gradient(135deg, var(--accent-warm), var(--accent-rose));
+    -webkit-background-clip: text;
+    background-clip: text;
+    color: transparent;
+  }
+  .hero .intro-box {
+    max-width: 720px;
+    margin: 24px auto 32px;
+    background: rgba(20, 25, 67, 0.4);
+    border: 1px solid var(--line);
+    border-radius: 20px;
+    padding: 24px clamp(16px, 4vw, 32px);
+    backdrop-filter: blur(8px);
+    box-shadow: 0 10px 30px rgba(0, 0, 0, 0.2);
+  }
+  .hero .intro-text {
+    color: #e2e8f0;
+    font-size: clamp(15px, 2.2vw, 17px);
+    line-height: 1.7;
+    text-align: justify;
+  }
+  .cta-row {
+    display: flex;
+    gap: 14px;
+    justify-content: center;
+    flex-wrap: wrap;
+  }
+
+  /* Sections */
+  section {
+    padding: clamp(40px, 7vw, 64px) 0;
+    border-top: 1px solid var(--line);
+  }
+  h2 {
+    font-size: clamp(24px, 3.5vw, 32px);
+    font-weight: 900;
+    margin-bottom: 8px;
+    text-align: center;
+  }
+  h2 .grad {
+    background: linear-gradient(135deg, var(--accent-warm), var(--accent-rose));
+    -webkit-background-clip: text;
+    background-clip: text;
+    color: transparent;
+  }
+  .lead {
+    color: var(--muted);
+    margin-bottom: 36px;
+    max-width: 720px;
+    margin-left: auto;
+    margin-right: auto;
+    text-align: center;
+    font-size: clamp(14px, 2vw, 16px);
+  }
+  
+  /* Grid & Cards */
+  .grid {
+    display: grid;
+    gap: 20px;
+    grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
+  }
+  .card {
+    background: var(--card);
+    border: 1px solid var(--line);
+    border-radius: 20px;
+    padding: 24px;
+    transition: transform 0.25s, box-shadow 0.25s;
+  }
+  .card:hover {
+    transform: translateY(-4px);
+    box-shadow: 0 12px 30px rgba(0, 0, 0, 0.3);
+    border-color: rgba(255, 255, 255, 0.15);
+  }
+  .card h3 {
+    font-size: 18px;
+    font-weight: 800;
+    margin-bottom: 10px;
+    display: flex;
+    align-items: center;
+    gap: 8px;
+  }
+  .card p {
+    color: var(--muted);
+    font-size: 14px;
+    line-height: 1.6;
+  }
+
+  /* Zoom Levels Section */
+  .zoom-levels {
+    display: flex;
+    flex-direction: column;
+    gap: 16px;
+    margin-top: 24px;
+  }
+  .zoom-level-card {
+    display: flex;
+    align-items: center;
+    gap: 20px;
+    background: rgba(20, 25, 67, 0.5);
+    border: 1px solid var(--line);
+    border-radius: 16px;
+    padding: 16px 20px;
+    transition: all 0.2s;
+  }
+  .zoom-level-card:hover {
+    background: rgba(20, 25, 67, 0.8);
+    border-color: rgba(255, 255, 255, 0.15);
+  }
+  .zoom-badge {
+    width: 54px;
+    height: 54px;
+    border-radius: 12px;
+    background: linear-gradient(135deg, rgba(59, 130, 246, 0.2), rgba(16, 185, 129, 0.2));
+    border: 1px solid rgba(59, 130, 246, 0.3);
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    flex-shrink: 0;
+  }
+  .zoom-num {
+    font-size: 18px;
+    font-weight: 900;
+    color: var(--accent-warm);
+    line-height: 1;
+  }
+  .zoom-label {
+    font-size: 10px;
+    font-weight: 700;
+    color: var(--muted);
+    text-transform: uppercase;
+  }
+  .zoom-info h4 {
+    font-size: 16px;
+    font-weight: 800;
+    margin-bottom: 4px;
+  }
+  .zoom-info p {
+    color: var(--muted);
+    font-size: 13px;
+    line-height: 1.5;
+  }
+
+  /* ===== Pet marquee gallery (two scrolling rows, JS-driven) ===== */
+  .gallery { position: relative; margin-top: 8px; }
+  .marquee {
+    position: relative;
+    overflow: hidden;
+    padding: 8px 0;
+    -webkit-mask-image: linear-gradient(90deg, transparent, #000 8%, #000 92%, transparent);
+    mask-image: linear-gradient(90deg, transparent, #000 8%, #000 92%, transparent);
+  }
+  .marquee + .marquee { margin-top: 14px; }
+  .marquee-track { display: flex; width: max-content; gap: 16px; will-change: transform; }
+  .pet-icon {
+    position: relative;
+    width: clamp(74px, 13vw, 96px);
+    height: clamp(74px, 13vw, 96px);
+    flex: 0 0 auto;
+    border-radius: 18px;
+    background-repeat: no-repeat;
+    background-size: 400% 400%;
+    image-rendering: pixelated;
+    border: 1px solid rgba(255, 255, 255, 0.12);
+    box-shadow: 0 8px 22px rgba(0, 0, 0, 0.32);
+    transition: transform 0.25s;
+  }
+  .pet-icon:hover { transform: translateY(-4px) scale(1.05); z-index: 2; }
+  .pet-icon-next {
+    position: absolute;
+    inset: 0;
+    border-radius: inherit;
+    background-repeat: no-repeat;
+    background-size: 400% 400%;
+    image-rendering: pixelated;
+    opacity: 0;
+    transition: opacity 0.5s ease;
+    pointer-events: none;
+  }
+  .pet-icon-next.show { opacity: 1; }
+  .pet-icon.grow { animation: pet-grow 0.9s ease-out; }
+  @keyframes pet-grow {
+    0% { transform: scale(1); }
+    40% { transform: scale(1.06); }
+    100% { transform: scale(1); }
+  }
+  @media(prefers-reduced-motion: reduce) {
+    .pet-icon.grow { animation: none; }
+    .pet-icon-next { transition: none; }
+  }
+  .gallery-state { text-align: center; color: var(--muted); padding: 46px 0; }
+  .gallery-actions { display: flex; justify-content: center; margin-top: 24px; }
+  .shuffle-btn {
+    display: inline-flex;
+    align-items: center;
+    gap: 8px;
+    padding: 11px 24px;
+    border-radius: 999px;
+    font-weight: 800;
+    font-size: 15px;
+    cursor: pointer;
+    color: #1e1b4b;
+    border: 0;
+    background: linear-gradient(135deg, var(--accent-warm), var(--accent-rose));
+    box-shadow: 0 8px 22px rgba(245, 158, 11, 0.32);
+    transition: transform 0.15s, box-shadow 0.15s;
+  }
+  .shuffle-btn:hover { transform: translateY(-2px); box-shadow: 0 12px 28px rgba(245, 158, 11, 0.42); }
+  .shuffle-btn:active { transform: translateY(0); }
+  .shuffle-btn .ico { font-size: 17px; transition: transform 0.5s; }
+  .shuffle-btn.spin .ico { transform: rotate(360deg); }
+
+  /* App Icon / Dragon Sprite */
+  .dragon-icon {
+    background-image: url('https://cdn.keepwork.com/maisi/magichaqi/pet/dragon_green_20260528090748.webp');
+    background-size: 400% 400%;
+    background-position: 33.333% 0%; /* baby stage, happy frame */
+    background-repeat: no-repeat;
+  }
+  .app-icon {
+    width: clamp(100px, 20vw, 140px);
+    height: clamp(100px, 20vw, 140px);
+    margin: 0 auto 20px;
+    filter: drop-shadow(0 14px 30px rgba(0, 0, 0, 0.45));
+    animation: appIconFloat 4s ease-in-out infinite;
+  }
+  @keyframes appIconFloat { 0%, 100% { transform: translateY(0); } 50% { transform: translateY(-8px); } }
+  @media(prefers-reduced-motion: reduce) { .app-icon { animation: none; } }
+  .brand-icon { display: inline-block; width: 28px; height: 28px; vertical-align: -6px; margin-right: 4px; }
+
+  /* Pill */
+  .pill {
+    display: inline-block;
+    font-size: 12px;
+    font-weight: 800;
+    padding: 4px 14px;
+    border-radius: 999px;
+    background: rgba(245, 158, 11, 0.12);
+    color: var(--accent-warm);
+    border: 1px solid rgba(245, 158, 11, 0.25);
+    margin-bottom: 16px;
+  }
+
+  /* Footer */
+  footer {
+    padding: 40px 0;
+    color: var(--muted);
+    text-align: center;
+    border-top: 1px solid var(--line);
+    font-size: 14px;
+    background: #040510;
+  }
+
+  /* Responsive Breakpoints */
+  @media(max-width: 480px) {
+    .brand { font-size: 19px; }
+    header nav { gap: 8px 12px; }
+    header nav a:not(.btn) { font-size: 13px; }
+    .btn { padding: 11px 20px; font-size: 14px; }
+    .cta-row { flex-direction: column; align-items: stretch; }
+    .cta-row .btn { width: 100%; }
+    .zoom-level-card { gap: 12px; padding: 12px 16px; }
+    .zoom-badge { width: 46px; height: 46px; }
+    .zoom-num { font-size: 16px; }
+    .zoom-label { font-size: 9px; }
+  }
+</style>
+</head>
+<body>
+
+<header><div class="wrap">
+  <div class="brand"><span class="brand-icon dragon-icon"></span><span class="brand-text" data-i18n="brandText" data-i18n-html="1">Haqi<span>Planet</span></span></div>
+  <nav>
+    <a href="#features" data-i18n="navFeatures">核心特色</a>
+    <span class="sep">·</span>
+    <a href="#zoom" data-i18n="navZoom">微观宇宙</a>
+    <span class="sep">·</span>
+    <a href="#gallery" data-i18n="navGallery">宠物图鉴</a>
+    <span class="sep">·</span>
+    <a href="#" id="langToggle" data-i18n="langToggle">English</a>
+  </nav>
+</div></header>
+
+<div class="hero"><div class="wrap">
+  <div class="app-icon dragon-icon" role="img" aria-label="HaqiPlanet baby dragon"></div>
+  <div class="pill" data-i18n="heroPill">3D虚拟宠物养成与AI创造宇宙</div>
+  <h1 data-i18n="heroTitle" data-i18n-html="1">欢迎来到 <span class="grad">哈奇星球</span></h1>
+  
+  <!-- 200-character Chinese introduction box (First Screen) -->
+  <div class="intro-box">
+    <p class="intro-text" data-i18n="heroIntro" data-i18n-html="1">
+      《哈奇星球》（HaqiPlanet）是一款温暖治愈的虚拟宠物养成游戏。你将拥有一个属于自己的星球，从一颗神秘的宠物蛋开始，陪伴它一路成长为幼年、青年、成年乃至神秘形态。通过独特的“宇宙-星球-宠物-细胞”四级缩放视角，你可以悉心照料宠物的体力、心情与清洁，还能在细胞层为它许下 DNA 心愿、守护它的健康。用自然语言就能创造专属的小游戏与宠物故事，清理便便转化为生物燃料，派遣飞船进行星际拜访，开启属于你的奇幻宇宙之旅！
+    </p>
+  </div>
+
+  <div class="cta-row">
+    <a class="btn btn-primary" href="../release/MagicHaqi_haqi.html" data-i18n="heroCtaPlay">🪐 进入星球</a>
+    <a class="btn btn-ghost" href="#features" data-i18n="heroCtaLearn">✨ 了解更多</a>
+  </div>
+</div></div>
+
+<section id="features"><div class="wrap">
+  <h2 data-i18n="featuresTitle">核心特色</h2>
+  <p class="lead" data-i18n="featuresLead">在哈奇星球，宠物不仅是你的伙伴，更是你与 AI 共同创造、探索宇宙的纽带。</p>
+  <div class="grid">
+    <div class="card">
+      <h3 data-i18n="feat1Title">🧬 DNA 许愿与后天演化</h3>
+      <p data-i18n="feat1Desc">宠物拥有18位标准DNA，决定其族系、物种、食性与稀有度。在蛋阶段，你可以通过领地选择、第一口食物倾向以及细胞层“许愿”来改写DNA，亲手塑造宠物的外观与未来。</p>
+    </div>
+    <div class="card">
+      <h3 data-i18n="feat2Title">🤖 AI 小游戏与故事创造</h3>
+      <p data-i18n="feat2Desc">内置“小游戏创造工坊”与“故事创作器”。只需用自然语言描述，AI 即可为你生成专属的 HTML5 互动小游戏与宠物冒险故事，支持实时预览、可视化配置与一键分享。</p>
+    </div>
+    <div class="card">
+      <h3 data-i18n="feat3Title">💩 生态循环与生物燃料</h3>
+      <p data-i18n="feat3Desc">宠物在线会产生便便，使用清理机器或手动清理便便可将其转化为宝贵的“生物燃料”。生物燃料是派遣飞船前往火鸟岛、寒冰岛等远程星球采集元素资源的核心动力。</p>
+    </div>
+    <div class="card">
+      <h3 data-i18n="feat4Title">🏥 细胞层观察与免疫塔防</h3>
+      <p data-i18n="feat4Desc">当宠物因状态过低生病时，你可以缩放到细胞层进行体内观察。通过游玩“细胞免疫塔防”小游戏，消灭病毒与细菌，降低病情等级，帮助宠物恢复健康。</p>
+    </div>
+    <div class="card">
+      <h3 data-i18n="feat5Title">🪐 星球经营与设施升级</h3>
+      <p data-i18n="feat5Desc">随着星球等级提升，你可以在宇宙层建造并升级天气塔、航天站、UFO停机坪和观星台。调度天气、校准每日星象、接待外星UFO，让你的星球日益繁荣。</p>
+    </div>
+    <div class="card">
+      <h3 data-i18n="feat6Title">🏝️ 明星宠物与哈奇岛</h3>
+      <p data-i18n="feat6Desc">在宠物图鉴中收集稀有与明星宠物，或通过繁殖诞生下一代。当宠物成年后，你可以为它们举行庄严的“成人礼”，送往神秘的哈奇岛，留下永恒的手帐记录。</p>
+    </div>
+  </div>
+</div></section>
+
+<section id="zoom"><div class="wrap">
+  <h2 data-i18n="zoomTitle">微观宇宙：四级缩放视图</h2>
+  <p class="lead" data-i18n="zoomLead">通过捏合或滚动滚轮，在四个不同尺度的微观世界中自由穿梭，体验全方位的养成乐趣。</p>
+  
+  <div class="zoom-levels">
+    <div class="zoom-level-card">
+      <div class="zoom-badge">
+        <span class="zoom-num">0</span>
+        <span class="zoom-label">Zoom</span>
+      </div>
+      <div class="zoom-info">
+        <h4 data-i18n="zoom0Title">宇宙层 (Universe)</h4>
+        <p data-i18n="zoom0Desc">俯瞰你的宠物星球，领取离线挖矿金币，进行星际拜访，或进入“研究”面板建造与升级天气塔、航天站等核心设施。</p>
+      </div>
+    </div>
+    
+    <div class="zoom-level-card">
+      <div class="zoom-badge">
+        <span class="zoom-num">1</span>
+        <span class="zoom-label">Zoom</span>
+      </div>
+      <div class="zoom-info">
+        <h4 data-i18n="zoom1Title">星球层 (Planet)</h4>
+        <p data-i18n="zoom1Desc">在陆地、水域、天空三大生态中游玩，摆放户外装饰，清理宠物便便并将其转化为星际探索所需的生物燃料。</p>
+      </div>
+    </div>
+    
+    <div class="zoom-level-card">
+      <div class="zoom-badge">
+        <span class="zoom-num">2</span>
+        <span class="zoom-label">Zoom</span>
+      </div>
+      <div class="zoom-info">
+        <h4 data-i18n="zoom2Title">宠物层 (Pet)</h4>
+        <p data-i18n="zoom2Desc">在卧室、厨房、浴室、客厅、花园中悉心照顾宠物。喂食、洗澡、玩耍、睡觉，或用精美家具装扮温馨的室内房间。</p>
+      </div>
+    </div>
+    
+    <div class="zoom-level-card">
+      <div class="zoom-badge">
+        <span class="zoom-num">3</span>
+        <span class="zoom-label">Zoom</span>
+      </div>
+      <div class="zoom-info">
+        <h4 data-i18n="zoom3Title">细胞层 (Cell)</h4>
+        <p data-i18n="zoom3Desc">进入宠物身体内部，查看DNA食性提示，在蛋阶段写下外观许愿，或在宠物生病时启动免疫塔防进行体内治疗。</p>
+      </div>
+    </div>
+  </div>
+</div></section>
+
+<section id="gallery"><div class="wrap">
+  <h2 data-i18n="galleryTitle">在外闯荡的宠物们</h2>
+  <p class="lead" data-i18n="galleryLead">看看其他伙伴们领养、养育的宠物——它们漂过画面时，会从幼年成长到暮年。</p>
+  <div class="gallery" id="gallery">
+    <div class="gallery-state" id="galState" data-i18n="galHatching">🥚 宠物孵化中…</div>
+    <div class="marquee" id="galRow1" hidden><div class="marquee-track"></div></div>
+    <div class="marquee" id="galRow2" hidden><div class="marquee-track"></div></div>
+  </div>
+  <div class="gallery-actions">
+    <button class="shuffle-btn" id="galShuffle" type="button" data-i18n="galShuffle">换一批看看</button>
+  </div>
+</div></section>
+
+<footer><div class="wrap" data-i18n="footer">
+  🐾 HaqiPlanet 哈奇星球 — 温暖治愈的虚拟宠物养成游戏
+</div></footer>
+
+<script>
+  /* ===== i18n (English / 中文) ===== */
+  const I18N = {
+    zh: {
+      htmlLang: 'zh-CN',
+      langToggle: 'English',
+      brandText: '<span>哈奇星球</span>',
+      docTitle: 'HaqiPlanet 哈奇星球 — 3D虚拟宠物养成与AI创造宇宙',
+      metaDesc: '哈奇星球（HaqiPlanet）是一款温暖治愈的虚拟宠物养成游戏。你将拥有一个属于自己的星球，从一颗神秘的宠物蛋开始，陪伴它一路成长为幼年、青年、成年乃至神秘形态。',
+      navFeatures: '核心特色',
+      navZoom: '微观宇宙',
+      navGallery: '宠物图鉴',
+      heroPill: '3D虚拟宠物养成与AI创造宇宙',
+      heroTitle: '欢迎来到 <span class="grad">哈奇星球</span>',
+      heroIntro: '《哈奇星球》（HaqiPlanet）是一款温暖治愈的虚拟宠物养成游戏。你将拥有一个属于自己的星球，从一颗神秘的宠物蛋开始，陪伴它一路成长为幼年、青年、成年乃至神秘形态。通过独特的“宇宙-星球-宠物-细胞”四级缩放视角，你可以悉心照料宠物的体力、心情与清洁，还能在细胞层为它许下 DNA 心愿、守护它的健康。用自然语言就能创造专属的小游戏与宠物故事，清理便便转化为生物燃料，派遣飞船进行星际拜访，开启属于你的奇幻宇宙之旅！',
+      heroCtaPlay: '🪐 进入星球',
+      heroCtaLearn: '✨ 了解更多',
+      featuresTitle: '核心特色',
+      featuresLead: '在哈奇星球，宠物不仅是你的伙伴，更是你与 AI 共同创造、探索宇宙的纽带。',
+      feat1Title: '🧬 DNA 许愿与后天演化',
+      feat1Desc: '宠物拥有18位标准DNA，决定其族系、物种、食性与稀有度。在蛋阶段，你可以通过领地选择、第一口食物倾向以及细胞层“许愿”来改写DNA，亲手塑造宠物的外观与未来。',
+      feat2Title: '🤖 AI 小游戏与故事创造',
+      feat2Desc: '内置“小游戏创造工坊”与“故事创作器”。只需用自然语言描述，AI 即可为你生成专属的 HTML5 互动小游戏与宠物冒险故事，支持实时预览、可视化配置与一键分享。',
+      feat3Title: '💩 生态循环与生物燃料',
+      feat3Desc: '宠物在线会产生便便，使用清理机器或手动清理便便可将其转化为宝贵的“生物燃料”。生物燃料是派遣飞船前往火鸟岛、寒冰岛等远程星球采集元素资源的核心动力。',
+      feat4Title: '🏥 细胞层观察与免疫塔防',
+      feat4Desc: '当宠物因状态过低生病时，你可以缩放到细胞层进行体内观察。通过游玩“细胞免疫塔防”小游戏，消灭病毒与细菌，降低病情等级，帮助宠物恢复健康。',
+      feat5Title: '🪐 星球经营与设施升级',
+      feat5Desc: '随着星球等级提升，你可以在宇宙层建造并升级天气塔、航天站、UFO停机坪和观星台。调度天气、校准每日星象、接待外星UFO，让你的星球日益繁荣。',
+      feat6Title: '🏝️ 明星宠物与哈奇岛',
+      feat6Desc: '在宠物图鉴中收集稀有与明星宠物，或通过繁殖诞生下一代。当宠物成年后，你可以为它们举行庄严的“成人礼”，送往神秘的哈奇岛，留下永恒的手帐记录。',
+      zoomTitle: '微观宇宙：四级缩放视图',
+      zoomLead: '通过捏合或滚动滚轮，在四个不同尺度的微观世界中自由穿梭，体验全方位的养成乐趣。',
+      zoom0Title: '宇宙层 (Universe)',
+      zoom0Desc: '俯瞰你的宠物星球，领取离线挖矿金币，进行星际拜访，或进入“研究”面板建造与升级天气塔、航天站等核心设施。',
+      zoom1Title: '星球层 (Planet)',
+      zoom1Desc: '在陆地、水域、天空三大生态中游玩，摆放户外装饰，清理宠物便便并将其转化为星际探索所需的生物燃料。',
+      zoom2Title: '宠物层 (Pet)',
+      zoom2Desc: '在卧室、厨房、浴室、客厅、花园中悉心照顾宠物。喂食、洗澡、玩耍、睡觉，或用精美家具装扮温馨的室内房间。',
+      zoom3Title: '细胞层 (Cell)',
+      zoom3Desc: '进入宠物身体内部，查看DNA食性提示，在蛋阶段写下外观许愿，或在宠物生病时启动免疫塔防进行体内治疗。',
+      galleryTitle: '在外闯荡的宠物们',
+      galleryLead: '看看其他伙伴们领养、养育的宠物——它们漂过画面时，会从幼年成长到暮年。',
+      galHatching: '🥚 宠物孵化中…',
+      galShuffle: '换一批看看',
+      galEmpty: '还没有宠物可展示——快来成为第一个领养者！',
+      galError: '暂时无法加载宠物。领养一只来填满这个展示墙吧！',
+      footer: '🐾 HaqiPlanet 哈奇星球 — 一款温暖治愈的虚拟宠物养成游戏',
+    },
+    en: {
+      htmlLang: 'en',
+      langToggle: '中文',
+      brandText: 'Haqi<span>Planet</span>',
+      docTitle: 'HaqiPlanet — 3D Virtual Pet Raising & AI Creation Universe',
+      metaDesc: 'HaqiPlanet is a warm and healing virtual pet raising game. Own a planet of your very own, start from a mysterious pet egg, and accompany it as it grows into baby, teen, adult, and even mysterious forms.',
+      navFeatures: 'Features',
+      navZoom: 'Micro-Universe',
+      navGallery: 'Gallery',
+      heroPill: '3D Virtual Pet Raising & AI Creation Universe',
+      heroTitle: 'Welcome to <span class="grad">HaqiPlanet</span>',
+      heroIntro: 'HaqiPlanet is a warm and healing virtual pet raising game. You will own a planet of your very own, starting from a mysterious pet egg and accompanying it as it grows into baby, teen, adult, and even mysterious forms. With the unique four-level zoom view (Universe, Planet, Pet, Cell), you can care for your pet\'s stamina, mood, and cleanliness, make DNA wishes for it, and guard its health in the cell layer. Use natural language to create your own mini-games and pet stories, clean poop to produce biofuel, launch spaceships to visit other planets, and start your magical cosmic journey!',
+      heroCtaPlay: '🪐 Enter Planet',
+      heroCtaLearn: '✨ Learn More',
+      featuresTitle: 'Core Features',
+      featuresLead: 'On HaqiPlanet, pets are not just your companions, but also the bond for you and AI to co-create and explore the universe.',
+      feat1Title: '🧬 DNA Wishing & Evolution',
+      feat1Desc: 'Pets have an 18-digit standard DNA determining their family, species, diet, and rarity. In the egg stage, you can reshape their DNA through territory choice, first food, and cell-layer "wishing" to customize their appearance.',
+      feat2Title: '🤖 AI Game & Story Maker',
+      feat2Desc: 'Built-in "Game Maker" and "Story Maker". Describe your ideas in natural language, and AI will generate custom HTML5 interactive mini-games and pet adventure stories with real-time preview and easy sharing.',
+      feat3Title: '💩 Eco-Cycle & Biofuel',
+      feat3Desc: 'Pets produce poop while online. Use the cleaning machine or clean manually to convert poop into valuable "biofuel", which powers spaceships to explore remote planets like Firebird Island and Ice Island.',
+      feat4Title: '🏥 Cell Observation & Tower Defense',
+      feat4Desc: 'When pets fall sick due to low stats, zoom into the cell layer for internal observation. Play the "Cell Immune Tower Defense" mini-game to eliminate viruses and bacteria, lowering sickness levels to restore health.',
+      feat5Title: '🪐 Planet Management & Upgrades',
+      feat5Desc: 'As your planet levels up, build and upgrade Weather Towers, Space Stations, UFO Landing Pads, and Observatories in the Universe layer. Schedule weather, calibrate daily horoscopes, and welcome alien UFOs.',
+      feat6Title: '🏝️ Famous Pets & Haqi Island',
+      feat6Desc: 'Collect rare and famous pets in the Pet Index, or breed next-generation pets. When pets reach adulthood, hold a solemn "Coming-of-Age Ceremony" to send them to the mysterious Haqi Island, leaving eternal journal records.',
+      zoomTitle: 'Micro-Universe: 4-Level Zoom View',
+      zoomLead: 'Pinch or scroll to travel freely across four micro-worlds of different scales, experiencing all-round raising fun.',
+      zoom0Title: 'Universe Level (Zoom 0)',
+      zoom0Desc: 'Overlook your pet planet, collect offline mining gold, perform interstellar visits, or enter the "Research" panel to build and upgrade core facilities like Weather Towers and Space Stations.',
+      zoom1Title: 'Planet Level (Zoom 1)',
+      zoom1Desc: 'Play in Land, Water, and Sky ecosystems, place outdoor decorations, and clean pet poop to convert it into biofuel for interstellar exploration.',
+      zoom2Title: 'Pet Level (Zoom 2)',
+      zoom2Desc: 'Care for your pet in the Bedroom, Kitchen, Bathroom, Living Room, and Garden. Feed, bathe, play, sleep, or decorate cozy indoor rooms with exquisite furniture.',
+      zoom3Title: 'Cell Level (Zoom 3)',
+      zoom3Desc: 'Enter your pet\'s body, view DNA diet tips, write appearance wishes in the egg stage, or launch immune tower defense for internal treatment when the pet is sick.',
+      galleryTitle: 'Pets Out in the Wild',
+      galleryLead: 'A glimpse of pets other players have adopted and raised — watch them grow from baby to elder as they drift across.',
+      galHatching: '🥚 Hatching pets…',
+      galShuffle: 'Show Another Batch',
+      galEmpty: 'No pets to show yet — be the first to adopt!',
+      galError: 'Could not load pets right now. Adopt one to fill this gallery!',
+      footer: '🐾 HaqiPlanet — A Warm & Healing Virtual Pet Raising Game',
+    }
+  };
+
+  function detectLang() {
+    try {
+      const p = new URLSearchParams(location.search).get('lang');
+      if (p) {
+        const v = p.toLowerCase();
+        if (I18N[v]) return v;
+        if (v.startsWith('zh')) return 'zh';
+        if (v.startsWith('en')) return 'en';
+      }
+      const saved = localStorage.getItem('haqiplanet_lang');
+      if (saved && I18N[saved]) return saved;
+    } catch (_) {}
+    try { if ((navigator.language || '').toLowerCase().startsWith('zh')) return 'zh'; } catch (_) {}
+    return 'en';
+  }
+
+  let currentLang = detectLang();
+
+  function applyI18n(lang) {
+    const dict = I18N[lang] || I18N.zh;
+    currentLang = lang;
+    try { document.documentElement.setAttribute('lang', dict.htmlLang || lang); } catch (_) {}
+    document.querySelectorAll('[data-i18n]').forEach(el => {
+      const key = el.getAttribute('data-i18n');
+      const val = dict[key];
+      if (val == null) return;
+      const attr = el.getAttribute('data-i18n-attr');
+      if (attr) { el.setAttribute(attr, val); return; }
+      if (el.hasAttribute('data-i18n-html')) { el.innerHTML = val; return; }
+      el.textContent = val;
+    });
+    try { document.title = dict.docTitle; } catch (_) {}
+    try { localStorage.setItem('haqiplanet_lang', lang); } catch (_) {}
+    // notify gallery to refresh its dynamic state strings
+    try { window.dispatchEvent(new CustomEvent('mh-lang-change', { detail: { lang } })); } catch (_) {}
+  }
+
+  function getStr(key) { return (I18N[currentLang] || I18N.zh)[key]; }
+
+  applyI18n(currentLang);
+
+  // Language toggle in the header
+  document.getElementById('langToggle')?.addEventListener('click', (e) => {
+    e.preventDefault();
+    applyI18n(currentLang === 'zh' ? 'en' : 'zh');
+  });
+</script>
+
+<script>
+  /* ===== Pet marquee gallery (JS-driven, stage grows by position) ===== */
+  (function () {
+    const ROW_SIZE = 8;          // icons shown per row
+    const PALETTE = ['#1d2a5c', '#0f3d4d', '#3a2358', '#0f3a2a', '#4a2330', '#2a3450'];
+    // Anim columns on the 4x4 sheet: 0 idle, 1 happy, 2 sad, 3 sleep.
+    // Cycle through all four states: idle -> happy -> sad -> sleep.
+    const ANIM_STATES = [0, 1, 2, 3];
+    // Constant, slow scroll speed in pixels per second (same on any screen width).
+    const SCROLL_SPEED = 28;     // px/s — slow and steady
+
+    const galState = document.getElementById('galState');
+    const shuffleBtn = document.getElementById('galShuffle');
+    const rows = [
+      { el: document.getElementById('galRow1'), dir: 1, offset: 0, width: 0 },   // left -> right
+      { el: document.getElementById('galRow2'), dir: -1, offset: 0, width: 0 },  // right -> left
+    ];
+
+    let allPets = [];
+    let rafId = null;
+    let lastTs = 0;
+    let paused = false;
+    // current gallery state-message key, re-applied when language changes ('empty' | 'error' | null)
+    let stateMsgKey = null;
+
+    // Re-render the gallery state text in the active language when the user toggles language.
+    window.addEventListener('mh-lang-change', () => {
+      if (stateMsgKey === 'empty') galState.textContent = getStr('galEmpty');
+      else if (stateMsgKey === 'error') galState.textContent = getStr('galError');
+    });
+
+    const esc = v => String(v ?? '').replace(/[&<>'"]/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', "'": '&#39;', '"': '&quot;' }[c]));
+
+    function shuffleArray(arr) {
+      const a = arr.slice();
+      for (let i = a.length - 1; i > 0; i--) {
+        const j = Math.floor(Math.random() * (i + 1));
+        [a[i], a[j]] = [a[j], a[i]];
+      }
+      return a;
+    }
+
+    function iconHtml(pet, i) {
+      const url = (pet.imageSheetUrl || pet.imageUrl || '').replace(/'/g, "%27");
+      const sheet = !!pet.imageSheetUrl;
+      // Start at baby (row 0); anim column is randomized per icon below.
+      const bgSize = sheet ? '400% 400%' : 'contain';
+      const bgPos = sheet ? '0% 0%' : 'center';
+      // sprite-sheet icons get an overlay layer for cross-fading between stages
+      const overlay = sheet
+        ? `<span class="pet-icon-next" style="background-image:url('${url}')"></span>`
+        : '';
+      return `<div class="pet-icon" data-sheet="${sheet ? 1 : 0}"
+        style="background-image:url('${url}');background-size:${bgSize};background-position:${bgPos};background-color:${PALETTE[i % PALETTE.length]}"
+        title="${esc(pet.name)}">${overlay}</div>`;
+    }
+
+    // Duplicate icons so the strip can loop seamlessly.
+    function fillRow(row, pets) {
+      const track = row.el.querySelector('.marquee-track');
+      const html = pets.map(iconHtml).join('');
+      track.innerHTML = html + html; // doubled for seamless loop
+      row.el.hidden = pets.length === 0;
+      row.offset = 0;
+      track.style.transform = 'translateX(0)';
+      // First appearance: each icon randomly picks an anim state (idle/happy/sad/sleep).
+      Array.from(track.children).forEach(icon => {
+        if (icon.dataset.sheet === '1') {
+          icon._animIdx = Math.floor(Math.random() * ANIM_STATES.length);
+          icon._anim = ANIM_STATES[icon._animIdx];
+        }
+      });
+      // width of one copy = half the full doubled strip
+      row.width = track.scrollWidth / 2;
+    }
+
+    function renderBatch() {
+      const pool = allPets;
+      if (!pool.length) {
+        rows.forEach(r => { r.el.hidden = true; });
+        galState.hidden = false;
+        stateMsgKey = 'empty';
+        galState.textContent = getStr('galEmpty');
+        return;
+      }
+      const picked = shuffleArray(pool).slice(0, ROW_SIZE * 2);
+      const half = Math.ceil(picked.length / 2);
+      galState.hidden = true;
+      stateMsgKey = null;
+      fillRow(rows[0], picked.slice(0, half));
+      fillRow(rows[1], picked.slice(half).length ? picked.slice(half) : picked.slice(0, half));
+      // recompute widths after layout settles
+      requestAnimationFrame(() => rows.forEach(r => {
+        const t = r.el.querySelector('.marquee-track');
+        if (t) r.width = t.scrollWidth / 2;
+      }));
+    }
+
+    // Map an icon's horizontal screen fraction (0=left .. 1=right) to a sprite stage row 0..3.
+    function stageRowFor(frac) {
+      const stage = Math.min(3, Math.max(0, Math.floor(frac * 4)));
+      return stage; // 0 baby, 1 teen, 2 adult, 3 elder
+    }
+
+    // True cross-fade: the overlay holds the OLD stage at full opacity, the base is
+    // switched to the NEW stage underneath, then the overlay fades out — so the old
+    // frame visibly fades away (alpha) while the new one shows through.
+    function setStageWithFade(icon, overlay, newPos) {
+      const oldPos = icon.style.backgroundPosition || '0% 0%';
+      clearTimeout(icon._fadeTimer);
+
+      // 1) overlay = OLD frame, fully opaque (no transition while we set it up)
+      overlay.style.transition = 'none';
+      overlay.style.backgroundPosition = oldPos;
+      overlay.style.opacity = '1';
+
+      // 2) base immediately becomes the NEW frame (hidden behind the opaque overlay)
+      icon.style.backgroundPosition = newPos;
+
+      // 3) next frame: enable the transition and fade the OLD overlay out → new shows through
+      requestAnimationFrame(() => {
+        overlay.style.transition = 'opacity .5s ease';
+        overlay.style.opacity = '0';
+      });
+
+      icon._fadeTimer = setTimeout(() => {
+        overlay.style.opacity = '0';
+      }, 520);
+    }
+
+    function tick(ts) {
+      if (!lastTs) lastTs = ts;
+      const dt = (ts - lastTs) / 1000;
+      lastTs = ts;
+
+      if (!paused) {
+        const speed = SCROLL_SPEED; // constant px/s, independent of screen width
+
+        rows.forEach(row => {
+          if (row.el.hidden || !row.width) return;
+          const track = row.el.querySelector('.marquee-track');
+          if (!track) return;
+          // Advance offset by direction; keep it within [-width, 0) for a seamless loop.
+          // dir = 1  -> icons drift left->right (offset increases)
+          // dir = -1 -> icons drift right->left (offset decreases)
+          row.offset += row.dir * speed * dt;
+          let wrapped = false;
+          while (row.offset <= -row.width) { row.offset += row.width; wrapped = true; }
+          while (row.offset > 0) { row.offset -= row.width; wrapped = true; }
+
+          // On wrap the strip resets — every icon "appears again", so loop to the next
+          // anim state (idle -> happy -> sad -> sleep -> idle) and let its stage recompute.
+          if (wrapped) {
+            Array.from(track.children).forEach(icon => {
+              if (icon.dataset.sheet !== '1') return;
+              icon._animIdx = (((icon._animIdx || 0) + 1) % ANIM_STATES.length);
+              icon._anim = ANIM_STATES[icon._animIdx];
+              icon._stage = undefined; // recompute from current position without growth pop
+            });
+          }
+
+          track.style.transform = `translateX(${row.offset}px)`;
+
+          // Update each visible icon's stage based on where it is on screen.
+          const stageRect = row.el.getBoundingClientRect();
+          const icons = track.children;
+          for (let i = 0; i < icons.length; i++) {
+            const icon = icons[i];
+            if (icon.dataset.sheet !== '1') continue;
+            const r = icon.getBoundingClientRect();
+            const cx = r.left + r.width / 2;
+            let frac = (cx - stageRect.left) / stageRect.width;
+            // For right->left rows, flip so the entering side (right) is "baby" and exiting side is "elder".
+            if (row.dir === -1) frac = 1 - frac;
+            frac = Math.min(1, Math.max(0, frac));
+            const stage = stageRowFor(frac);
+            if (icon._stage !== stage) {
+              const hadStage = icon._stage !== undefined; // skip the very first assignment
+              const isGrowth = hadStage && stage > icon._stage; // only animate when ageing up
+              icon._stage = stage;
+              const col = icon._anim || 0; // current anim state (0 idle,1 happy,2 sad,3 sleep)
+              const newPos = `${(col * 100 / 3).toFixed(2)}% ${(stage * 100 / 3).toFixed(2)}%`;
+              const overlay = icon.firstElementChild; // .pet-icon-next
+              if (isGrowth && overlay) {
+                setStageWithFade(icon, overlay, newPos);
+                icon.classList.remove('grow');
+                void icon.offsetWidth; // restart animation
+                icon.classList.add('grow');
+              } else {
+                // first paint / non-growth (e.g. recycled to baby): swap instantly
+                if (overlay) {
+                  clearTimeout(icon._fadeTimer);
+                  overlay.style.transition = 'none';
+                  overlay.style.opacity = '0';
+                }
+                icon.style.backgroundPosition = newPos;
+              }
+            }
+          }
+        });
+      }
+      rafId = requestAnimationFrame(tick);
+    }
+
+    function startLoop() {
+      if (rafId) return;
+      lastTs = 0;
+      rafId = requestAnimationFrame(tick);
+    }
+
+    // Pause only while pressed (mouse or touch); also pause when off-screen to save work.
+    const gallery = document.getElementById('gallery');
+    let pressed = false;
+    const press = () => { pressed = true; paused = true; };
+    const release = () => { pressed = false; paused = false; lastTs = 0; };
+    gallery.addEventListener('mousedown', press);
+    gallery.addEventListener('touchstart', press, { passive: true });
+    window.addEventListener('mouseup', release);
+    window.addEventListener('touchend', release);
+    window.addEventListener('touchcancel', release);
+    if ('IntersectionObserver' in window) {
+      new IntersectionObserver(entries => {
+        entries.forEach(e => {
+          // keep paused while pressed, even if it scrolls back into view
+          paused = pressed || !e.isIntersecting;
+          if (!paused) lastTs = 0;
+        });
+      }, { threshold: 0 }).observe(gallery);
+    }
+
+    // Shuffle
+    shuffleBtn.addEventListener('click', () => {
+      if (!allPets.length) return;
+      shuffleBtn.classList.remove('spin');
+      void shuffleBtn.offsetWidth; // restart spin animation
+      shuffleBtn.classList.add('spin');
+      renderBatch();
+    });
+
+    window.addEventListener('resize', () => {
+      rows.forEach(r => {
+        const t = r.el.querySelector('.marquee-track');
+        if (t && !r.el.hidden) r.width = t.scrollWidth / 2;
+      });
+    });
+
+    function normalize(data) {
+      const list = Array.isArray(data) ? data : (Array.isArray(data?.pets) ? data.pets : []);
+      return list
+        .filter(p => p && (p.imageSheetUrl || p.imageUrl))
+        .map((p, i) => ({
+          id: p.id || `pet_${i}`,
+          name: p.name || p.id || `Pet ${i + 1}`,
+          imageSheetUrl: p.imageSheetUrl || '',
+          imageUrl: p.imageUrl || '',
+        }));
+    }
+
+    async function load() {
+      const urls = [
+        '../famous-pets/_pet_index.json',
+        'https://cdn.keepwork.com/maisi/magichaqi/famous-pets/_pet_index.json',
+      ];
+      for (const url of urls) {
+        try {
+          const res = await fetch(url, { cache: 'no-cache' });
+          if (!res.ok) throw new Error('HTTP ' + res.status);
+          const data = await res.json();
+          const list = normalize(data);
+          if (list.length) {
+            allPets = list;
+            renderBatch();
+            startLoop();
+            return;
+          }
+        } catch (e) { /* try next */ }
+      }
+      stateMsgKey = 'error';
+      galState.textContent = getStr('galError');
+    }
+
+    load();
+  })();
+</script>
+</body>
+</html>
