@@ -25,12 +25,14 @@ export function zoomLevelIdToIndex(value, fallback = 'planet') {
 // `window.__view` set before the app boots. Supported values:
 //   field | planet | pet | cell -> force the home view at that zoom level
 //   game                        -> force the minigames (mini-game) view
-export const FORCE_VIEW_IDS = ['planet', 'field', 'pet', 'cell', 'game', 'ops'];
+export const FORCE_VIEW_IDS = ['planet', 'field', 'pet', 'cell', 'game', 'ops', 'encyclopedia'];
 const FORCE_VIEW_ALIASES = {
     space: 'planet', planet: 'planet', field: 'field', pet: 'pet', cell: 'cell',
     game: 'game', games: 'game', minigame: 'game', minigames: 'game',
     // 运营控制台（开发者 / 一人公司兜底面板），仅 ?view=ops 进入
     ops: 'ops', console: 'ops', operator: 'ops',
+    // 动物园动物图鉴（?view=encyclopedia / ?view=tujian）
+    encyclopedia: 'encyclopedia', tujian: 'encyclopedia', zoo: 'encyclopedia',
 };
 
 export function normalizeForceViewId(value) {
@@ -651,6 +653,46 @@ export function getShopItemsByType(type) {
 
 export function getActiveShopItemsPath() {
     return activeShopItemsPath;
+}
+
+// ===== 动物园图鉴（encyclopedia）配置 =====
+// 星球索引条目可带 encyclopediaUrl（仿 shopItemUrl 的解析规则）：
+// 非 URL / 非绝对路径的值会补成 famous-planets/<file>。
+export function normalizeEncyclopediaPath(path) {
+    const text = String(path || '').trim().replace(/\\/g, '/').replace(/^\.\//, '');
+    if (!text) return '';
+    if (/^(https?:)?\/\//i.test(text) || text.startsWith('/') || text.startsWith('../')) return text;
+    return text.startsWith('famous-planets/') ? text : `famous-planets/${text}`;
+}
+
+/** 从星球条目（或已 normalize 的对象）提取图鉴文件路径，没有时返回 ''。 */
+export function planetEncyclopediaPath(planetOrEntry) {
+    const planet = planetOrEntry && typeof planetOrEntry === 'object' ? planetOrEntry : null;
+    return normalizeEncyclopediaPath(
+        planet?.encyclopediaUrl || planet?.encyclopediaFile || planet?.encyclopedia_url || ''
+    );
+}
+
+const encyclopediaCache = new Map();
+
+/** 加载并缓存一个图鉴 JSON 文件；失败时返回 null。 */
+export async function loadEncyclopediaData(path) {
+    const normalized = normalizeEncyclopediaPath(path);
+    if (!normalized) return null;
+    if (encyclopediaCache.has(normalized)) return encyclopediaCache.get(normalized);
+    const url = normalized.startsWith('famous-planets/') ? resolveSideBySideUrl(normalized) : normalized;
+    try {
+        const res = await fetch(url, { cache: 'no-store' });
+        if (!res.ok) throw new Error(`load ${normalized} failed: ${res.status}`);
+        const data = await res.json();
+        const payload = data && typeof data === 'object' && Array.isArray(data.animals) ? data : null;
+        encyclopediaCache.set(normalized, payload);
+        return payload;
+    } catch (e) {
+        console.warn('加载动物图鉴失败', normalized, e);
+        encyclopediaCache.set(normalized, null);
+        return null;
+    }
 }
 
 await initializeDefaultShopItems();

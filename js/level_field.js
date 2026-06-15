@@ -1120,6 +1120,11 @@ function renderFieldActionTray(pet) {
                 <span class="dock-icon">🎾</span>
                 <span class="dock-label">${escapeHtml(t('dockPlay'))}</span>
             </button>
+            ${String(state.settings?.starSettlement?.encyclopediaUrl || '').trim() ? `
+            <button type="button" class="btn-secondary action-btn dock-icon-btn mh-field-nav-action" data-field-nav="encyclopedia" title="${escapeHtml(t('encTitle'))}">
+                <span class="dock-icon">📖</span>
+                <span class="dock-label">${escapeHtml(t('dockEncyclopedia'))}</span>
+            </button>` : ''}
             <button type="button" class="btn-secondary action-btn dock-icon-btn mh-field-action${sleepDisabled ? ' is-sleep-disabled' : ''}" data-field-action="sleep"${dockDisabledAttrs(sleepDisabled, sleepTitle)} title="${escapeHtml(sleepTitle)}">
                 <span class="dock-icon">${sleepAction.icon}</span>
                 <span class="dock-label">${escapeHtml(sleepAction.label)}</span>

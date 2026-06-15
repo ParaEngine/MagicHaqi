@@ -49,6 +49,7 @@ const planetReleaseVariants = [
     { name: 'MagicHaqi_haqi.html', homePlanet: 'haqi' },
     { name: 'MagicHaqi_maisi.html', homePlanet: 'maisi' },
     { name: 'MagicHaqi_pixlet.html', homePlanet: 'pixlet' },
+    { name: 'MagicHaqi_szzoo.html', homePlanet: 'shenzhen_zoo' },
 ];
 
 // View-forcing release HTML variants. Each gets an inline script that sets

@@ -394,6 +394,24 @@
 			const [width, height] = String($('imageSize').value || '1024x1024').split('x').map(Number);
 			return { width: width || 1024, height: height || 1024 };
 		}
+		// Image providers (OpenRouter / Gemini) only accept a fixed set of aspect-ratio
+		// tokens. Reducing pixels by GCD can yield rejected ratios (e.g. 768x1344 → "4:7"),
+		// so snap to the nearest supported token (768x1344 → "9:16").
+		const SUPPORTED_ASPECT_RATIOS = ['1:1', '2:3', '3:2', '3:4', '4:3', '4:5', '5:4', '9:16', '16:9', '21:9', '9:21'];
+		function nearestAspectRatio(width, height) {
+			const w = Number(width) || 0;
+			const h = Number(height) || 0;
+			if (!w || !h) return '';
+			const target = w / h;
+			let best = SUPPORTED_ASPECT_RATIOS[0];
+			let bestDiff = Infinity;
+			for (const token of SUPPORTED_ASPECT_RATIOS) {
+				const [tw, th] = token.split(':').map(Number);
+				const diff = Math.abs((tw / th) - target);
+				if (diff < bestDiff) { bestDiff = diff; best = token; }
+			}
+			return best;
+		}
 		function clone(value) { return JSON.parse(JSON.stringify(value ?? null)); }
 		function normalizeProjectSettings(settings = {}) {
 			const result = { character: {}, scene: {}, prop: {} };
@@ -1108,7 +1126,7 @@
 			const isSelected = asset.id === state.selectedAssetId;
 			const composedPrompt = (isSelected && $('finalPrompt')?.value?.trim()) || buildSelectedImagePrompt(asset);
 			const prompt = `${composedPrompt}\n\n${IMAGE_OUTPUT_REQUIREMENTS}`;
-			const opts = { model, width: asset.dims.width, height: asset.dims.height, stream: true, uploadResultToKeepwork: true };
+			const opts = { model, width: asset.dims.width, height: asset.dims.height, aspectRatio: nearestAspectRatio(asset.dims.width, asset.dims.height), stream: true, uploadResultToKeepwork: true };
 			const references = unique([...(state.referenceUrlsByAsset.get(asset.id) || []), ...(isSelected ? getReferenceImages() : [])]).slice(0, 4);
 			if (references.length) opts.images = references.map(url => ({ url, role: 'reference' }));
 			let streamedText = '';

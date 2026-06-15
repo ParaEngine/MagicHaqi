@@ -74,6 +74,7 @@ function normalizeOfficialPlanet(raw, indexEntry = {}) {
         badge: String(raw.badge || indexEntry.badge || t('ssBadgeOfficial')).trim(),
         summary: String(raw.summary || indexEntry.summary || '').trim(),
         shopItemUrl: String(raw.shopItemUrl || indexEntry.shopItemUrl || raw.shopItemsFile || indexEntry.shopItemsFile || raw.shopitemsFile || indexEntry.shopitemsFile || raw.shopFile || indexEntry.shopFile || raw.shop_items_file || indexEntry.shop_items_file || '').trim(),
+        encyclopediaUrl: String(raw.encyclopediaUrl || indexEntry.encyclopediaUrl || raw.encyclopediaFile || indexEntry.encyclopediaFile || raw.encyclopedia_url || indexEntry.encyclopedia_url || '').trim(),
         planet: raw.planet && typeof raw.planet === 'object' ? raw.planet : {},
         audience: raw.audience && typeof raw.audience === 'object' ? raw.audience : (indexEntry.audience && typeof indexEntry.audience === 'object' ? indexEntry.audience : {}),
         zoomOptions: normalizePlanetZoomOptions(planetOptions),
@@ -268,6 +269,7 @@ async function applyOfficialPlanet(planet, { persist = true, sourcePath = '' } =
     settings.temporaryHomePlanet = persist ? null : sourcePath || planet.id;
     settings.readonlyPlanet = planet.planet?.readonly !== false;
     settings.selfCare = planetSelfCareValue(planet);
+    settings.encyclopediaUrl = String(planet.encyclopediaUrl || '').trim();
     settings.planetStyle = {
         hue: Number(planet.planet?.hue) || 188,
         bodyBackground: String(planet.planet?.bodyBackground || '').trim(),
@@ -356,6 +358,7 @@ export async function applySettledOfficialPlanetFromProfile() {
         settings.appTitle = planet.appTitle || '';
         settings.readonlyPlanet = planet.planet?.readonly !== false;
         settings.selfCare = planetSelfCareValue(planet);
+        settings.encyclopediaUrl = String(planet.encyclopediaUrl || '').trim();
         settings.planetStyle = {
             hue: Number(planet.planet?.hue) || 188,
             bodyBackground: String(planet.planet?.bodyBackground || '').trim(),
@@ -390,6 +393,7 @@ async function restoreCustomPlanet() {
     settings.appTitle = '';
     settings.readonlyPlanet = false;
     settings.selfCare = 0;
+    settings.encyclopediaUrl = '';
     settings.planetStyle = null;
     delete settings.zoomOptions;
     await loadPlanetShopItems(null);
