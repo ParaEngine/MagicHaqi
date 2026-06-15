@@ -657,7 +657,10 @@
 
 		function buildOutputJson(typeFilter = 'all') {
 			const project = normalizeProject(state.project);
-			const assets = typeFilter === 'all' ? project.assets : project.assets.filter(asset => (asset.type || 'character') === typeFilter);
+			let assets;
+			if (typeFilter === 'all') assets = project.assets;
+			else if (typeFilter === 'selected') assets = project.assets.filter(asset => state.selectedAssetIds.has(asset.id));
+			else assets = project.assets.filter(asset => (asset.type || 'character') === typeFilter);
 			return assets.map(assetToOutputJson);
 		}
 
@@ -1900,6 +1903,7 @@
 		}
 
 		const EXPORT_FILTERS = [
+			{ value: 'selected', label: 'Selected' },
 			{ value: 'all', label: 'Full project' },
 			{ value: 'character', label: 'Characters' },
 			{ value: 'scene', label: 'Scenes' },
@@ -1912,13 +1916,16 @@
 
 		function openExportDialog() {
 			closeExportDialog();
+			const hasSelection = getSelectedAssets().length > 0;
+			const filters = EXPORT_FILTERS.filter(filter => filter.value !== 'selected' || hasSelection);
 			const overlay = document.createElement('div');
 			overlay.className = 'modal-overlay';
 			overlay.id = 'exportOverlay';
+			let currentFilter = hasSelection ? 'selected' : 'all';
 			overlay.innerHTML = `<div class="modal-window" role="dialog" aria-modal="true" aria-label="Export assets">
 				<div class="modal-titlebar"><strong>Export assets</strong><button type="button" id="closeExport">Close</button></div>
 				<div class="modal-body flex flex-col gap-3">
-					<div class="toolbar" id="exportFilterTabs">${EXPORT_FILTERS.map(filter => `<button type="button" data-export-filter="${filter.value}" class="${filter.value === 'all' ? 'primary' : ''}">${filter.label} (<span data-export-count="${filter.value}">0</span>)</button>`).join('')}</div>
+					<div class="toolbar" id="exportFilterTabs">${filters.map(filter => `<button type="button" data-export-filter="${filter.value}" class="${filter.value === currentFilter ? 'primary' : ''}">${filter.label} (<span data-export-count="${filter.value}">0</span>)</button>`).join('')}</div>
 					<div class="hint">Output array format: <code>{id,imageUrl,rows,columns,isTransparent,description,imageWidth,imageHeight}</code></div>
 					<textarea id="exportText" class="output min-h-0 flex-1" spellcheck="false" readonly></textarea>
 					<div class="toolbar justify-end"><button id="btnExportCopy" type="button">Copy to clipboard</button><button id="btnExportSave" class="primary" type="button">Save to file</button></div>
@@ -1927,9 +1934,8 @@
 			document.body.appendChild(overlay);
 			overlay.addEventListener('click', event => { if (event.target === overlay) closeExportDialog(); });
 			$('closeExport').onclick = closeExportDialog;
-			let currentFilter = 'all';
 			const refresh = () => {
-				EXPORT_FILTERS.forEach(filter => {
+				filters.forEach(filter => {
 					const countEl = overlay.querySelector(`[data-export-count="${filter.value}"]`);
 					if (countEl) countEl.textContent = String(buildOutputJson(filter.value).length);
 				});

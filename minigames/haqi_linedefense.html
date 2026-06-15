@@ -8,8 +8,17 @@
   <script src="https://cdn.keepwork.com/keepwork/cdn/tailwindcss@3.4.16.js"></script>
   <style>
     html, body { margin: 0; padding: 0; height: 100%; overflow: hidden; background: #000; }
-    /* 固定游戏画面比例：root 由 JS 计算成固定 ratio 的居中盒子，四周以黑色填充(letterbox/pillarbox) */
-    body { display: flex; align-items: center; justify-content: center; }
+    /* 固定游戏画面比例：root 由 JS 计算成固定 ratio 的居中盒子。
+       四周留白(letterbox/pillarbox)区域使用古墓主题装饰背景图填充(宽屏/大屏更明显)，加载失败回退到纯黑。 */
+    body {
+      display: flex; align-items: center; justify-content: center;
+      background-color: #000;
+      background-image: url('https://cdn.keepwork.com/artassets/my_project/ancient_tomb_ui_background_20260615021246.webp');
+      background-size: cover;
+      background-position: center;
+      background-repeat: no-repeat;
+      background-attachment: fixed;
+    }
     #root { box-shadow: 0 0 40px rgba(0,0,0,.8); }
     * { -webkit-tap-highlight-color: transparent; user-select: none; box-sizing: border-box; }
     #gameCanvas { display: block; touch-action: none; }
@@ -45,9 +54,9 @@
     .cbubble-right .cbubble-box::before { content:''; position:absolute; right:-13px; bottom:14px; width:0;height:0; border-top:9px solid transparent; border-bottom:9px solid transparent; border-left:13px solid #1a1208; }
     .cbubble-right .cbubble-box::after  { content:''; position:absolute; right:-8px;  bottom:16px; width:0;height:0; border-top:6px solid transparent; border-bottom:6px solid transparent; border-left:9px solid #eee8de; }
     /* 重点居中：大字 + 头像在上方 */
-    .cbubble-center { left:50%; transform:translateX(-50%); flex-direction:column; align-items:center; gap:6px; max-width:80%; animation: bubblePopC .28s ease both; }
+    .cbubble-center { left:50%; transform:translateX(-50%); flex-direction:column; align-items:center; gap:6px; max-width:92%; animation: bubblePopC .28s ease both; }
     .cbubble-center .cbubble-av { width:72px; height:72px; }
-    .cbubble-center .cbubble-box { font-size:19px; padding:16px 26px 28px; text-align:center; }
+    .cbubble-center .cbubble-box { font-size:19px; padding:16px 30px 28px; text-align:center; min-width:240px; }
     .cbubble-center .cbubble-name { position:static; margin-bottom:2px; }
     .cbubble-center .cbubble-box::before, .cbubble-center .cbubble-box::after { content:none; }
     /* 点击继续提示 */
@@ -55,10 +64,11 @@
     @keyframes tapBlink { 0%,100% { opacity:.35; } 50% { opacity:1; } }
     /* 战斗中登场冒泡 (头顶小对话框，自动消失，不挡操作) */
     @keyframes debutPop { 0% { opacity:0; transform:translate(-50%,8px) scale(.8);} 18% { opacity:1; transform:translate(-50%,0) scale(1.05);} 30% { transform:translate(-50%,0) scale(1);} 82% { opacity:1; } 100% { opacity:0; transform:translate(-50%,-10px) scale(.96);} }
-    .debut-bubble { position:absolute; transform:translate(-50%,0); pointer-events:none; z-index:25; max-width:160px;
-      background:#eee8de; color:#1a1208; border:2px solid #1a1208; border-radius:10px; padding:5px 10px;
-      font-size:12px; font-weight:800; line-height:1.3; text-align:center; box-shadow:0 4px 12px rgba(0,0,0,.5);
-      animation: debutPop 2.4s ease both; }
+    .debut-bubble { position:absolute; transform:translate(-50%,0); pointer-events:none; z-index:25;
+      min-width:160px; max-width:280px; width:max-content;
+      background:#eee8de; color:#1a1208; border:2px solid #1a1208; border-radius:10px; padding:6px 12px;
+      font-size:13px; font-weight:800; line-height:1.35; text-align:center; white-space:normal; box-shadow:0 4px 12px rgba(0,0,0,.5);
+      animation: debutPop 4.2s ease both; }
     .debut-bubble::after { content:''; position:absolute; bottom:-9px; left:50%; transform:translateX(-50%); width:0;height:0;
       border-left:7px solid transparent; border-right:7px solid transparent; border-top:9px solid #1a1208; }
     .debut-bubble .debut-name { font-size:10px; font-weight:900; margin-bottom:1px; }
@@ -233,7 +243,8 @@
     //   tag          → HUD 上显示的波次提示语
     // bg: 引用 art_assets 里的场景 id，作为首页与战斗背景图
     levels: [
-      { id: 1, name: "St.1-荒废校墓", diff: "简单", cost: 5,  enemyHp: 16, enemySpeed: 24, spawnGap: 1300, restGap: 2800, bg: "abandoned_school_courtyard",
+      // maxSquad: 本关允许出战角色数(含主角)，1~5，缺省=game_config.maxSquad(5)；开战时自动 trim/补齐到此值。
+      { id: 1, name: "St.1-荒废校墓", diff: "简单", cost: 5,  enemyHp: 16, enemySpeed: 24, spawnGap: 1300, restGap: 2800, bg: "abandoned_school_courtyard", maxSquad: 3,
         waves: [
           { count: 10 },
           { count: 14, swarm: true, tag: "尸潮涌动" },
@@ -383,6 +394,16 @@
   </script>
   <script>
   art_assets = [
+  {
+    "id": "ancient_tomb_ui_background",
+    "imageUrl": "https://cdn.keepwork.com/artassets/my_project/ancient_tomb_ui_background_20260615021246.webp",
+    "rows": 1,
+    "columns": 1,
+    "isTransparent": false,
+    "description": "Pixel-art ancient tomb UI filler background with decorative stone textures at the top and bottom.",
+    "imageWidth": 1344,
+    "imageHeight": 768
+  },
   {
     "id": "abandoned_school_courtyard",
     "imageUrl": "https://cdn.keepwork.com/artassets/my_project/abandoned_school_courtyard_20260614153724.webp",
@@ -746,7 +767,11 @@
     // shared accessor used by other chunks
     window.__GD = { G, heroDef, curLevel, el, get W() { return W; }, get H() { return H; }, ctx, canvas, ui, root,
       PET, drawSheetCell, getSheetImg, pickPetForElement, pickPetById, ELEMENT_KEYS, saveProgress, loadPetCatalog,
-      petAvatarHTML, hydratePetCanvases, bgUrlForLevel, getBgImg, drawBgCover, ART };
+      petAvatarHTML, hydratePetCanvases, bgUrlForLevel, getBgImg, drawBgCover, ART,
+      // squad helpers (defined later in this chunk) — exposed for chunk 3's startBattle
+      ensureLeaderInSquad: (...a) => ensureLeaderInSquad(...a),
+      levelSquadCap: (...a) => levelSquadCap(...a),
+      fitSquadToLevel: (...a) => fitSquadToLevel(...a) };
 
     // ================= SCREEN ROUTER =================
     // 统一根据当前屏幕控制 canvas / ui 的显隐，避免战斗画面(HUD 文字)透出到子界面造成重叠
@@ -780,8 +805,27 @@
       const wrap = el('div', 'screen absolute inset-0 flex flex-col');
       wrap.style.background = 'linear-gradient(160deg,#2a1c18 0%,#1a1310 55%,#0d0908 100%)';
 
+      // ===== 全屏关卡场景背景图 (9:16 美术尽量铺满整个竖屏) =====
+      // 作为整页底图，UI 元素叠加其上；object-cover 让 9:16 图横向铺满、纵向尽量占满。
+      const bgLayer = el('div', 'absolute inset-0 z-0 pointer-events-none overflow-hidden');
+      bgLayer.innerHTML = `
+        <img id="homeStageBg" src="${bgUrlForLevel(lv)}" alt="" class="absolute inset-0 w-full h-full object-cover"
+             style="object-position:center top;" onerror="this.style.display='none'">
+        <!-- 顶/底渐变叠层：保证顶部状态栏与底部按钮/导航文字可读 -->
+        <div class="absolute inset-x-0 top-0 h-40" style="background:linear-gradient(180deg,rgba(10,7,5,.78),rgba(10,7,5,0));"></div>
+        <div class="absolute inset-x-0 bottom-0 h-72" style="background:linear-gradient(0deg,rgba(10,7,5,.92),rgba(10,7,5,.55) 45%,rgba(10,7,5,0));"></div>
+        <!-- 困难模式：跨场景斜拉的 STOP 警戒封条 (仅 hardMode 显示) -->
+        <div id="homeDanger" class="absolute inset-0 danger-overlay ${G.hardMode ? '' : 'hidden'}">
+          <div class="absolute inset-0" style="background:radial-gradient(circle at 50% 40%,rgba(180,20,10,.0),rgba(120,10,5,.35));"></div>
+          <div class="danger-skull">☠️</div>
+          <div class="danger-tape danger-tape-1"><span>STOP · 危险 · STOP · 危险 · STOP · 危险 · STOP · 危险</span></div>
+          <div class="danger-tape danger-tape-2"><span>STOP · 禁止入内 · STOP · 禁止入内 · STOP · 禁止入内</span></div>
+          <div class="danger-tape danger-tape-3"><span>STOP · 危险 · STOP · 危险 · STOP · 危险 · STOP · 危险</span></div>
+        </div>`;
+      wrap.appendChild(bgLayer);
+
       const leaderForAvatar = heroDef(G.leader) || {};
-      const top = el('div', 'flex items-center gap-2 px-3 pt-3');
+      const top = el('div', 'relative z-10 flex items-center gap-2 px-3 pt-3');
       top.innerHTML = `
         <div class="relative flex items-center gap-2 bg-black/40 rounded-full pr-3 border border-amber-900/50">
           <div class="w-11 h-11 rounded-full flex items-center justify-center overflow-hidden"
@@ -798,7 +842,7 @@
       wrap.appendChild(top);
       hydratePetCanvases(top);
 
-      const head = el('div', 'text-center mt-2');
+      const head = el('div', 'relative z-10 text-center mt-2');
       const diffStyle = G.hardMode
         ? 'background:linear-gradient(#e0402a,#9a1a10);box-shadow:0 2px 0 #5c1008;'
         : 'background:linear-gradient(#36c45a,#1e8a3a);box-shadow:0 2px 0 #115221;';
@@ -811,34 +855,21 @@
         </div>`;
       wrap.appendChild(head);
 
-      const stage = el('div', 'relative flex-1 mx-3 mt-2 rounded-xl overflow-hidden');
-      stage.style.background = 'linear-gradient(180deg,#3a4a3a,#222018)';
+      // 中部交互层：占据剩余高度 (透明，让全屏背景图透出)，承载左右切换箭头与长明灯进度
+      const stage = el('div', 'relative z-10 flex-1 mt-2');
       stage.innerHTML = `
-        <!-- 关卡背景图 (盗墓题材场景，引用 art_assets) -->
-        <img id="homeStageBg" src="${bgUrlForLevel(lv)}" alt="" class="absolute inset-0 w-full h-full object-cover"
-             style="object-position:center;" onerror="this.style.display='none'">
-        <!-- 暗角渐变叠层，保证文字/角标可读 -->
-        <div class="absolute inset-0" style="background:linear-gradient(180deg,rgba(10,7,5,.15),rgba(10,7,5,.55));"></div>
-        <!-- 困难模式：跨场景斜拉的 STOP 警戒封条 (仅 hardMode 显示) -->
-        <div id="homeDanger" class="absolute inset-0 z-[5] danger-overlay ${G.hardMode ? '' : 'hidden'}">
-          <div class="absolute inset-0" style="background:radial-gradient(circle at 50% 40%,rgba(180,20,10,.0),rgba(120,10,5,.35));"></div>
-          <div class="danger-skull">☠️</div>
-          <div class="danger-tape danger-tape-1"><span>STOP · 危险 · STOP · 危险 · STOP · 危险 · STOP · 危险</span></div>
-          <div class="danger-tape danger-tape-2"><span>STOP · 禁止入内 · STOP · 禁止入内 · STOP · 禁止入内</span></div>
-          <div class="danger-tape danger-tape-3"><span>STOP · 危险 · STOP · 危险 · STOP · 危险 · STOP · 危险</span></div>
-        </div>
-        <div class="absolute left-3 right-3 bottom-12 flex justify-around text-center">
+        <div class="absolute left-3 right-3 bottom-3 flex justify-around text-center">
           ${[['1%','🔦','✅'],['50%','🏮','✅'],['100%','⚱️','']].map(([p,e,c])=>`
             <div class="flex flex-col items-center">
               <div class="text-2xl drop-shadow-lg">${e}${c?(' '+c):''}</div>
-              <div class="text-[10px] text-stone-200 mt-1">长明灯 ${p}</div>
+              <div class="text-[10px] text-stone-200 mt-1" style="text-shadow:0 1px 3px #000;">长明灯 ${p}</div>
             </div>`).join('')}
         </div>
         <button id="prevStage" class="absolute left-1 top-1/2 -translate-y-1/2 w-9 h-9 rounded-full bg-black/50 text-white text-lg">‹</button>
         <button id="nextStage" class="absolute right-1 top-1/2 -translate-y-1/2 w-9 h-9 rounded-full bg-black/50 text-white text-lg">›</button>`;
       wrap.appendChild(stage);
 
-      const startWrap = el('div', 'px-6 mt-2');
+      const startWrap = el('div', 'relative z-10 px-6 mt-2');
       startWrap.innerHTML = `
         <button id="startBtn" class="startbtn w-full rounded-2xl p-[3px]">
           <div class="startbtn-inner rounded-2xl py-3 text-center">
@@ -852,7 +883,7 @@
         </div>`;
       wrap.appendChild(startWrap);
 
-      const nav = el('div', 'grid grid-cols-5 gap-1 px-2 py-2 mt-2');
+      const nav = el('div', 'relative z-10 grid grid-cols-5 gap-1 px-2 py-2 mt-2');
       const navItems = [
         { k: 'shop',   e: '🏪', t: '商店' },
         { k: 'bag',    e: '🎒', t: '背包' },
@@ -963,7 +994,7 @@
             <div class="text-[9px] text-stone-300">${G.profileName}</div>
           </div>
         </div>
-        <div class="flex-1 text-center text-base font-black text-white" style="text-shadow:0 2px 4px #000;">${title || ''}</div>
+        <div class="flex-1 text-center text-base font-black text-white whitespace-nowrap overflow-hidden text-ellipsis" style="text-shadow:0 2px 4px #000;">${title || ''}</div>
         <div class="flex items-center gap-1 bg-black/40 rounded-full px-2 py-1 text-[11px]"><span>🪙</span><span class="text-amber-300 font-bold">${(G.coins/1000).toFixed(1)}K</span></div>
         <div class="flex items-center gap-1 bg-black/40 rounded-full px-2 py-1 text-[11px]"><span>💎</span><span class="text-sky-300 font-bold">${G.gems}</span></div>`;
       setTimeout(() => hydratePetCanvases(top), 0);
@@ -985,6 +1016,42 @@
         if (firstUnlocked) G.leader = firstUnlocked.key;
       }
       if (!G.squad.includes(G.leader)) G.squad.unshift(G.leader);
+    }
+
+    // 关卡允许的出战角色数(含主角)：取关卡 lv.maxSquad，未配置则回退到 game_config.maxSquad，最终封顶 5、保底 1。
+    function levelSquadCap(lv) {
+      const HARD_CAP = 5;
+      const raw = (lv && typeof lv.maxSquad === 'number') ? lv.maxSquad
+                : (typeof game_config.maxSquad === 'number') ? game_config.maxSquad
+                : HARD_CAP;
+      return Math.max(1, Math.min(HARD_CAP, raw));
+    }
+
+    // 关卡启动时把出战阵容(含主角)对齐到 target 个：
+    //  - 多了 → trim 掉末尾的候补(主角永远保留)
+    //  - 少了 → 按「已解锁伙伴优先，其次任意伙伴」自动补齐
+    function fitSquadToLevel(target) {
+      ensureLeaderInSquad();
+      const want = Math.max(1, target || 1);
+
+      // 1) 多了就裁剪：保留主角 + 前面的候补，按当前顺序砍掉多余的末尾候补
+      if (G.squad.length > want) {
+        const reserves = G.squad.filter(k => k !== G.leader);
+        const keep = reserves.slice(0, want - 1);            // 主角占 1 个名额
+        G.squad = [G.leader, ...keep];
+      }
+
+      // 2) 少了就补齐：候选池先取已解锁、未在阵容里的伙伴，再退化到任意未在阵容的伙伴
+      if (G.squad.length < want) {
+        const pickFrom = (filterFn) => game_config.heroes
+          .filter(h => h.key !== G.leader && h.usePet !== false && !G.squad.includes(h.key))
+          .filter(filterFn)
+          .map(h => h.key);
+        const pool = [...pickFrom(h => !!G.unlocked[h.key]), ...pickFrom(h => !G.unlocked[h.key])];
+        while (G.squad.length < want && pool.length) {
+          G.squad.push(pool.shift());
+        }
+      }
     }
 
     function renderStory() {
@@ -1066,6 +1133,14 @@
     }
 
     // ================= BOOT =================
+    // 视口留白(letterbox/pillarbox)背景：优先用 art_assets 里的 ancient_tomb_ui_background；
+    // 取不到时保留 CSS 中写死的回退图(或纯黑)。这样图库 URL 更新时也能自动跟随。
+    (function applyViewportBg() {
+      try {
+        const a = ART.byId && ART.byId.ancient_tomb_ui_background;
+        if (a && a.imageUrl) document.body.style.backgroundImage = `url('${a.imageUrl}')`;
+      } catch (e) {}
+    })();
     resize();
     show('home');
     // 加载宠物图库（用于主角/敌人形象 + 5系归类），加载完成后刷新当前界面
@@ -1772,6 +1847,7 @@
       flash: 0,                   // 全屏闪白(大招演出)
       slowmo: 0,                  // 子弹时间(大招瞬间)
       shield: 0,                  // 护盾值(护盾大招)
+      seenEnemies: {},            // 已出现过的怪物图鉴: element -> {element, spriteUrl, ti, name}
       lanes: [], laneTop: 78, laneBottom: 0,
       paused: false
     };
@@ -1811,12 +1887,17 @@
         combo: 0, comboTimer: 0, comboBest: 0, shake: 0, overdrive: 0, lifesteal: 0, zaps: [],
         energy: (game_config.ult && game_config.ult.startEnergy) || 30,
         energyMax: (game_config.ult && game_config.ult.energyMax) || 100,
-        ultsUsed: 0, summons: [], fields: [], flash: 0, slowmo: 0, shield: 0
+        ultsUsed: 0, summons: [], fields: [], flash: 0, slowmo: 0, shield: 0,
+        seenEnemies: {}
       });
       // build wave list (fallback to a single wave if config missing)
       B.waves = Array.isArray(lv.waves) && lv.waves.length ? lv.waves.slice() : [{ count: lv.target || 30 }];
       B.waveTarget = B.waves[0].count;
       B.totalTarget = B.waves.reduce((s, w) => s + (w.count || 0), 0);
+
+      // 关卡启动：按本关允许的出战角色数(含主角，未配置=5，上限5)自动 trim 或补齐阵容。
+      // (fitSquadToLevel/levelSquadCap 定义在 chunk 1，通过共享的 __GD(D) 访问)
+      D.fitSquadToLevel(D.levelSquadCap(lv));
 
       // ALWAYS start with ONLY the leader on the field.
       let leaderKey = G.leader;
@@ -1996,6 +2077,14 @@
         slowT: 0, stunT: 0, burnT: 0, burnDmg: 0, shockT: 0, frozenT: 0, vuln: 0, wob: Math.random() * Math.PI * 2,
         eliteElement: isElite ? element : null
       });
+      // 记入「已出现怪物图鉴」(按系别归类，记录首个出现的形象)
+      if (!B.seenEnemies[element] || (B.seenEnemies[element] && !B.seenEnemies[element].spriteUrl && petEntry)) {
+        B.seenEnemies[element] = {
+          element,
+          spriteUrl: petEntry ? petEntry.imageSheetUrl : (B.seenEnemies[element] ? B.seenEnemies[element].spriteUrl : ''),
+          ti, formRow: 0
+        };
+      }
     }
     function pickBossName() { const arr = game_config.bossNames || ['首领']; return arr[Math.floor(Math.random() * arr.length)]; }
 
@@ -2027,11 +2116,14 @@
             const total = aMass + bMass;
             const aShare = bMass / total, bShare = aMass / total;
             if (ox < oy) {
+              // 水平分离：左右推开，不影响前进
               const push = ox * (dx < 0 ? -1 : 1);
               a.x -= push * aShare; b.x += push * bShare;
             } else {
-              const push = oy * (dy < 0 ? -1 : 1);
-              a.y -= push * aShare; b.y += push * bShare;
+              // 垂直分离：只把「靠后(y 较小)」的那只往后顶，绝不把「靠前(y 较大)」的拉回去，
+              // 否则领先的怪(尤其 Boss)会被后面堆积的小怪不断顶停，导致到一定距离就不再前进。
+              const rear = a.y <= b.y ? a : b;     // 靠后(更小 y)
+              rear.y -= oy;                        // 仅后者后退
             }
             // 夹在屏幕内，且不要被推回出生线之上太多
             a.x = Math.max(Wnow * 0.06, Math.min(Wnow * 0.94, a.x));
@@ -2304,7 +2396,7 @@
       showDebutLine(unit, def);
     }
 
-    // 登场台词：在该角色头顶弹出一个小对话框，2.4s 后自动消失，不阻塞战斗
+    // 登场台词：在该角色头顶弹出一个对话框，4.2s 后自动消失，不阻塞战斗 (加宽，一行可容纳 ≥10 字)
     function showDebutLine(unit, def) {
       const banter = (game_config.story && game_config.story.banter) || {};
       const lines = Array.isArray(banter.debut) ? banter.debut : [];
@@ -2312,11 +2404,18 @@
       const txt = lines[Math.floor(Math.random() * lines.length)];
       const bub = el('div', 'debut-bubble');
       bub.innerHTML = `<div class="debut-name" style="color:${def.color || '#7a4a10'};">${def.name}</div>${txt}`;
-      // 头顶上方定位 (canvas 与 root 同坐标系)
+      // 头顶上方定位 (canvas 与 root 同坐标系)；水平夹限避免气泡超出屏幕两侧
       bub.style.left = (unit.x || D.W / 2) + 'px';
       bub.style.top = Math.max(70, (unit.y || B.laneBottom) - 96) + 'px';
       root.appendChild(bub);
-      setTimeout(() => { if (bub.parentNode) bub.parentNode.removeChild(bub); }, 2400);
+      // 气泡为 translateX(-50%) 居中，按实际宽度把 left 夹在 [half, W-half] 内，不超出画面
+      requestAnimationFrame(() => {
+        if (!bub.parentNode) return;
+        const half = bub.offsetWidth / 2 + 6;
+        const lx = Math.max(half, Math.min(D.W - half, unit.x || D.W / 2));
+        bub.style.left = lx + 'px';
+      });
+      setTimeout(() => { if (bub.parentNode) bub.parentNode.removeChild(bub); }, 4200);
     }
 
     function applyChoice(c) {
@@ -2396,8 +2495,59 @@
             </div>
           </div>`;
       }).join('');
-      wrap.innerHTML = `${banner}<div class="flex justify-center items-stretch w-full px-2">${cards}</div>`;
+      wrap.innerHTML = `${banner}<div class="flex justify-center items-stretch w-full px-2">${cards}</div>
+        <!-- 查看它们：展开已出现怪物图鉴 -->
+        <button id="bestiaryToggle" class="mt-4 text-[13px] font-bold text-amber-300 underline decoration-dotted underline-offset-4 active:scale-95 transition-transform"
+          style="text-shadow:0 1px 3px #000;">📖 查看它们 ▾</button>
+        <div id="bestiaryPanel" class="hidden w-full px-3 mt-2 max-h-[34%] overflow-y-auto scrollx"></div>`;
       root.appendChild(wrap); overlayEl = wrap;
+      // ---- 查看它们：内联展示已出现过的怪物 icon + 系别能力 ----
+      const bToggle = wrap.querySelector('#bestiaryToggle');
+      const bPanel = wrap.querySelector('#bestiaryPanel');
+      let bestiaryOpen = false;
+      function renderBestiary() {
+        const list = Object.values(B.seenEnemies || {});
+        if (!list.length) {
+          bPanel.innerHTML = `<div class="text-center text-[12px] text-stone-300 py-3" style="text-shadow:0 1px 2px #000;">尚未遭遇任何怪物</div>`;
+          return;
+        }
+        // 按系别克制环顺序排序，便于阅读
+        const order = ['fire','ice','thunder','dark','life','nature'];
+        list.sort((a,b)=> order.indexOf(a.element) - order.indexOf(b.element));
+        bPanel.innerHTML = list.map((m,i)=>{
+          const col = elColorOf(m.element);
+          return `<div class="flex items-center gap-3 rounded-lg px-3 py-2 mb-2" style="background:rgba(20,14,10,.82);border:1px solid ${col}66;">
+              <div class="relative flex-none rounded-full overflow-hidden" style="width:46px;height:46px;background:radial-gradient(circle at 40% 30%,${col}55,#120c08);border:2px solid ${col};">
+                <canvas class="bestiaryArt" data-sprite="${m.spriteUrl}" data-ti="${m.ti}" data-form="${m.formRow||0}" width="92" height="92" style="width:46px;height:46px;image-rendering:auto;"></canvas>
+                <div class="bestiaryFallback absolute inset-0 flex items-center justify-center text-2xl">${elEmojiOf(m.element)}</div>
+              </div>
+              <div class="flex-1 min-w-0">
+                <div class="flex items-center gap-1">
+                  <span class="text-base leading-none">${elEmojiOf(m.element)}</span>
+                  <span class="text-[13px] font-bold" style="color:${col};">${elNameOf(m.element)}系凶物</span>
+                </div>
+                <div class="text-[11px] text-stone-200 mt-[2px] leading-tight">${elAbilityText(m.element)}</div>
+              </div>
+            </div>`;
+        }).join('');
+        // 绘制怪物 sprite (失败则保留 emoji 占位)
+        bPanel.querySelectorAll('.bestiaryArt').forEach(cv => {
+          const url = cv.getAttribute('data-sprite');
+          const form = +cv.getAttribute('data-form') || 0;
+          const fb = cv.parentElement.querySelector('.bestiaryFallback');
+          if (!url) { cv.style.display = 'none'; return; }
+          const cc = cv.getContext('2d');
+          const draw = () => { cc.clearRect(0,0,cv.width,cv.height); return drawSheetCell(cc, url, form, 0, 4, 4, 84, 84); };
+          if (draw()) { if (fb) fb.style.display = 'none'; }
+          else { let n=0; const iv=setInterval(()=>{ if(draw()){ if(fb) fb.style.display='none'; clearInterval(iv);} else if(++n>20) clearInterval(iv); },120); }
+        });
+      }
+      bToggle.addEventListener('click', () => {
+        bestiaryOpen = !bestiaryOpen;
+        bPanel.classList.toggle('hidden', !bestiaryOpen);
+        bToggle.innerHTML = bestiaryOpen ? '📖 查看它们 ▴' : '📖 查看它们 ▾';
+        if (bestiaryOpen) renderBestiary();
+      });
       // draw character pet sprites (image占位) for character cards
       wrap.querySelectorAll('.cardArt').forEach(cv => {
         const url = cv.getAttribute('data-sprite');
@@ -2413,8 +2563,7 @@
     }
     function skillIcon(type) { return ({ explode: '💥', nail: '❄️', pierce: '🎯', rapid: '🔫', support: '💉', flame: '🔥', chain: '⚡', normal: '🔫' })[type] || '✨'; }
 
-    // ---- input: drag the *whole squad* horizontally; tap pause/speed ----
-    let dragging = false, dragBaseX = 0, squadAnchor = 0;
+    // ---- input: 角色只能点击(显示技能范围)，不可拖动；tap pause/speed/ult ----
     function clientXY(e) { const r = canvas.getBoundingClientRect(); return { x: (e.clientX - r.left) * (D.W / r.width), y: (e.clientY - r.top) * (D.H / r.height) }; }
     function hitHero(e) {
       const p = clientXY(e);
@@ -2427,21 +2576,13 @@
       if (hitPause(e)) { B.paused = true; renderPause(); return; }
       if (hitSpeed(e)) { B.speedMul = B.speedMul === 1 ? 1.5 : 1; return; }
       if (hitUlt(e)) { castUltimate(); return; }
-      // 点击下方角色：切换显示其攻击半径
+      // 角色禁止拖动：按住某角色才显示该角色的攻击半径；按空白处不显示。
       const hh = hitHero(e);
-      if (hh) { B.selectedHero = (B.selectedHero === hh) ? null : hh; }
-      dragging = true; dragBaseX = clientX(e); squadAnchor = B.heroes.reduce((s, h) => s + h.x, 0) / B.heroes.length;
+      B.selectedHero = hh || null;
     });
-    canvas.addEventListener('pointermove', e => {
-      if (!dragging || !B.running || B.paused) return;
-      const dx = clientX(e) - dragBaseX;
-      const W = D.W; const targetCenter = Math.max(W * 0.2, Math.min(W * 0.8, squadAnchor + dx));
-      const curCenter = B.heroes.reduce((s, h) => s + h.x, 0) / B.heroes.length;
-      const shift = targetCenter - curCenter;
-      B.heroes.forEach(h => h.x = Math.max(W * 0.06, Math.min(W * 0.94, h.x + shift)));
-    });
-    window.addEventListener('pointerup', () => dragging = false);
-    function clientX(e) { return e.clientX - canvas.getBoundingClientRect().left; }
+    // 抬起时隐藏技能范围 (无拖动)
+    window.addEventListener('pointerup', () => { B.selectedHero = null; });
+    window.addEventListener('pointercancel', () => { B.selectedHero = null; });
     function hitPause(e) { const r = canvas.getBoundingClientRect(); const x = e.clientX - r.left, y = e.clientY - r.top; return x > 6 && x < 70 && y > 6 && y < 40; }
     function hitSpeed(e) { const r = canvas.getBoundingClientRect(); const x = e.clientX - r.left, y = e.clientY - r.top; return x > D.W - 70 && x < D.W - 6 && y > 6 && y < 40; }
     // 大招按钮在右下角(圆形)
@@ -2794,6 +2935,19 @@
     }
     function elColorOf(elKey) { return (game_config.elements[elKey] && game_config.elements[elKey].color) || '#888'; }
     function elEmojiOf(elKey) { return (game_config.elements[elKey] && game_config.elements[elKey].emoji) || '✨'; }
+    function elNameOf(elKey) { return (game_config.elements[elKey] && game_config.elements[elKey].name) || elKey; }
+    // 系别能力说明：该系克制谁、被谁克制 (自然为平衡)
+    function elAbilityText(elKey) {
+      const els = game_config.elements;
+      const e = els[elKey]; if (!e) return '';
+      if (e.balanced) return '平衡之力 · 无克制无弱点';
+      const beats = e.beats;                                   // 该系克制的目标
+      const counteredBy = Object.keys(els).find(k => els[k].beats === elKey); // 克制该系的系别
+      const parts = [];
+      if (beats) parts.push(`克制 ${elEmojiOf(beats)}${elNameOf(beats)}`);
+      if (counteredBy) parts.push(`惧 ${elEmojiOf(counteredBy)}${elNameOf(counteredBy)}`);
+      return parts.join(' · ');
+    }
 
     function drawEnemy(e) {
       const cx = e.x + Math.sin(e.wob) * 3, cy = e.y;
@@ -2853,8 +3007,8 @@
       // 发技能起伏：bob∈[0,1] → 用 sin 做一次向上的弹跳位移
       const bobOff = h.bob > 0 ? -Math.sin(h.bob * Math.PI) * 7 : 0;
       const y = h.y + bobOff;
-      // 选中时绘制攻击半径圈 (画在最底层，半透明)
-      if (B.selectedHero === h) {
+      // 按下时绘制攻击半径圈 (画在最底层，半透明)；'ALL' = 显示全体
+      if (B.selectedHero === h || B.selectedHero === 'ALL') {
         const range = skillRange(h);
         ctx.save();
         ctx.fillStyle = elColorOf(h.element); ctx.globalAlpha = 0.10;
@@ -2885,9 +3039,25 @@
       if (h.muzzle) { ctx.fillStyle = 'rgba(255,200,80,.9)'; ctx.beginPath(); ctx.arc(x, y - 30, 5 + Math.random() * 3, 0, Math.PI * 2); ctx.fill(); }
       // elder 最终形态加金色光圈
       if (formRow >= 3) { ctx.strokeStyle = '#ffd24a'; ctx.globalAlpha = .6 + Math.sin(B.elapsed * 6) * .2; ctx.lineWidth = 2; ctx.beginPath(); ctx.arc(x, y - 6, 26, 0, Math.PI * 2); ctx.stroke(); ctx.globalAlpha = 1; }
-      // element badge + 形态 + name + lvl
+      // element badge
       ctx.font = '12px sans-serif'; ctx.textAlign = 'center'; ctx.textBaseline = 'alphabetic'; ctx.fillText(elEmojiOf(h.element), x + 16, y - 18);
-      ctx.font = 'bold 9px sans-serif'; ctx.fillStyle = '#fff'; ctx.fillText(h.def.name + ' ' + FORM_LABELS[formRow] + '·Lv.' + Math.floor(h.lvl), x, h.y + 24);
+      // 名字 + 等级徽章并排一行：名字居左、等级圆圈紧贴名字右侧，二者整体水平居中、互不重叠
+      const lvNum = Math.floor(h.lvl);
+      const nameY = h.y + 26, br = 7, gap = 4;
+      ctx.font = 'bold 9px sans-serif';
+      const nameW = ctx.measureText(h.def.name).width;
+      const totalW = nameW + gap + br * 2;   // 名字 + 间隙 + 圆圈直径
+      const startX = x - totalW / 2;          // 整体水平居中
+      // 名字 (左对齐，从 startX 开始)
+      ctx.textAlign = 'left'; ctx.textBaseline = 'alphabetic'; ctx.fillStyle = '#fff';
+      ctx.fillText(h.def.name, startX, nameY);
+      // 等级圆圈 (在名字右侧)
+      const bx = startX + nameW + gap + br, by = nameY - 3;
+      ctx.beginPath(); ctx.arc(bx, by, br, 0, Math.PI * 2);
+      ctx.fillStyle = '#1a1208'; ctx.fill();
+      ctx.lineWidth = 1.5; ctx.strokeStyle = '#ffd24a'; ctx.stroke();
+      ctx.fillStyle = '#ffe7a0'; ctx.font = 'bold 9px sans-serif'; ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+      ctx.fillText(String(lvNum), bx, by + 0.5);
       ctx.restore();
       // 技能 CD 读条：在角色脚下绘制一个小进度条 (满=即将发招)
       drawHeroCdBar(h);
