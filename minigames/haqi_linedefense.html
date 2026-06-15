@@ -487,6 +487,323 @@
 ];
   </script>
 
+  <!-- ============ chunk 0: Web Audio 音效 + 程序化 MIDI 风格背景音乐引擎 ============ -->
+  <!-- 完全自包含：用 Web Audio API 实时合成所有音效与盗墓主题的循环 BGM (无需任何音频文件)。
+       通过 window.__AUDIO 暴露给战斗/UI 逻辑调用；首次用户交互后自动解锁 AudioContext。 -->
+  <script>
+  (function () {
+    'use strict';
+
+    const SAVE_KEY = 'haqiLineDefenseAudioV1';
+    const AC = window.AudioContext || window.webkitAudioContext;
+
+    const A = {
+      ctx: null,
+      master: null,        // 总音量
+      sfxGain: null,       // 音效总线
+      musicGain: null,     // 音乐总线
+      muted: false,        // 静音(影响音效与音乐)
+      musicOn: true,       // 背景音乐开关
+      sfxVol: 0.7,
+      musicVol: 0.32,
+      ready: false,
+      music: { timer: null, step: 0, track: null, nextTime: 0, voices: [] }
+    };
+
+    // ---- persisted prefs ----
+    try {
+      const raw = localStorage.getItem(SAVE_KEY);
+      if (raw) { const d = JSON.parse(raw); if (d && typeof d === 'object') { if (typeof d.muted === 'boolean') A.muted = d.muted; if (typeof d.musicOn === 'boolean') A.musicOn = d.musicOn; } }
+    } catch (e) {}
+    function save() { try { localStorage.setItem(SAVE_KEY, JSON.stringify({ muted: A.muted, musicOn: A.musicOn })); } catch (e) {} }
+
+    function ensure() {
+      if (A.ready) return true;
+      if (!AC) return false;
+      try {
+        A.ctx = new AC();
+        A.master = A.ctx.createGain(); A.master.gain.value = A.muted ? 0 : 1; A.master.connect(A.ctx.destination);
+        A.sfxGain = A.ctx.createGain(); A.sfxGain.gain.value = A.sfxVol; A.sfxGain.connect(A.master);
+        A.musicGain = A.ctx.createGain(); A.musicGain.gain.value = A.musicVol; A.musicGain.connect(A.master);
+        A.ready = true;
+        return true;
+      } catch (e) { return false; }
+    }
+
+    function now() { return A.ctx ? A.ctx.currentTime : 0; }
+
+    // ---- low-level tone synth (一个带包络的振荡器音符) ----
+    function tone(opt) {
+      if (!ensure() || A.muted) return;
+      const o = opt || {};
+      const t0 = (o.t != null ? o.t : now()) + (o.delay || 0);
+      const type = o.type || 'sine';
+      const f0 = o.freq || 440;
+      const dur = o.dur != null ? o.dur : 0.18;
+      const peak = (o.gain != null ? o.gain : 0.5);
+      const dest = o.music ? A.musicGain : A.sfxGain;
+      const osc = A.ctx.createOscillator();
+      osc.type = type;
+      osc.frequency.setValueAtTime(f0, t0);
+      if (o.toFreq) osc.frequency.exponentialRampToValueAtTime(Math.max(1, o.toFreq), t0 + dur);
+      const g = A.ctx.createGain();
+      const atk = o.atk != null ? o.atk : 0.005;
+      g.gain.setValueAtTime(0.0001, t0);
+      g.gain.exponentialRampToValueAtTime(peak, t0 + atk);
+      g.gain.exponentialRampToValueAtTime(0.0001, t0 + dur);
+      let node = osc;
+      // optional lowpass for softer/punchier tones
+      if (o.filter) {
+        const lp = A.ctx.createBiquadFilter();
+        lp.type = o.filterType || 'lowpass';
+        lp.frequency.setValueAtTime(o.filter, t0);
+        if (o.filterTo) lp.frequency.exponentialRampToValueAtTime(Math.max(40, o.filterTo), t0 + dur);
+        osc.connect(lp); lp.connect(g);
+      } else {
+        osc.connect(g);
+      }
+      g.connect(dest);
+      osc.start(t0); osc.stop(t0 + dur + 0.02);
+    }
+
+    // ---- white-noise burst (爆炸/打击/沙沙声) ----
+    function noise(opt) {
+      if (!ensure() || A.muted) return;
+      const o = opt || {};
+      const t0 = (o.t != null ? o.t : now()) + (o.delay || 0);
+      const dur = o.dur != null ? o.dur : 0.2;
+      const peak = o.gain != null ? o.gain : 0.4;
+      const len = Math.max(1, Math.floor(A.ctx.sampleRate * dur));
+      const buf = A.ctx.createBuffer(1, len, A.ctx.sampleRate);
+      const data = buf.getChannelData(0);
+      for (let i = 0; i < len; i++) data[i] = (Math.random() * 2 - 1);
+      const src = A.ctx.createBufferSource(); src.buffer = buf;
+      const lp = A.ctx.createBiquadFilter();
+      lp.type = o.filterType || 'lowpass';
+      lp.frequency.setValueAtTime(o.filter || 1800, t0);
+      if (o.filterTo) lp.frequency.exponentialRampToValueAtTime(Math.max(60, o.filterTo), t0 + dur);
+      const g = A.ctx.createGain();
+      g.gain.setValueAtTime(peak, t0);
+      g.gain.exponentialRampToValueAtTime(0.0001, t0 + dur);
+      src.connect(lp); lp.connect(g); g.connect(A.sfxGain);
+      src.start(t0); src.stop(t0 + dur + 0.02);
+    }
+
+    // ===================== SFX 音效库 =====================
+    // 每个音效按盗墓塔防的手感设计；用节流避免高频刷子弹时音爆。
+    const throttleMap = {};
+    function throttled(key, ms) {
+      const t = performance.now();
+      if (throttleMap[key] && t - throttleMap[key] < ms) return false;
+      throttleMap[key] = t; return true;
+    }
+
+    const SFX = {
+      // UI 点击 / 切换
+      click() { tone({ type: 'square', freq: 520, toFreq: 700, dur: 0.06, gain: 0.18, filter: 1200 }); },
+      tab() { tone({ type: 'triangle', freq: 660, dur: 0.07, gain: 0.2 }); tone({ type: 'triangle', freq: 880, dur: 0.07, gain: 0.16, delay: 0.04 }); },
+      // 不同英雄技能开火 (按类型给不同音色，节流防刷)
+      shoot(type) {
+        if (!throttled('shoot', 45)) return;
+        switch (type) {
+          case 'pierce': tone({ type: 'sawtooth', freq: 900, toFreq: 1500, dur: 0.08, gain: 0.16, filter: 2600 }); break;
+          case 'explode': tone({ type: 'square', freq: 220, toFreq: 120, dur: 0.1, gain: 0.2, filter: 900 }); break;
+          case 'nail': tone({ type: 'triangle', freq: 1200, toFreq: 700, dur: 0.07, gain: 0.16 }); break;
+          case 'chain': tone({ type: 'sawtooth', freq: 1400, toFreq: 2200, dur: 0.06, gain: 0.14, filter: 3000 }); break;
+          case 'flame': noise({ filter: 1400, filterTo: 500, dur: 0.1, gain: 0.16 }); break;
+          case 'rapid': tone({ type: 'square', freq: 700, toFreq: 500, dur: 0.05, gain: 0.12 }); break;
+          default: tone({ type: 'square', freq: 760, toFreq: 560, dur: 0.06, gain: 0.14, filter: 1800 });
+        }
+      },
+      // 子弹命中
+      hit() { if (!throttled('hit', 40)) return; noise({ filter: 2400, filterTo: 800, dur: 0.05, gain: 0.12 }); },
+      // 暴击 (清脆高音)
+      crit() { if (!throttled('crit', 60)) return; tone({ type: 'triangle', freq: 1568, dur: 0.09, gain: 0.22 }); tone({ type: 'sine', freq: 2093, dur: 0.07, gain: 0.14, delay: 0.03 }); },
+      // 爆炸
+      explosion(big) {
+        noise({ filter: big ? 900 : 1400, filterTo: 80, dur: big ? 0.5 : 0.3, gain: big ? 0.5 : 0.34 });
+        tone({ type: 'sine', freq: big ? 90 : 140, toFreq: 40, dur: big ? 0.45 : 0.28, gain: big ? 0.45 : 0.3, filter: 600 });
+      },
+      // 敌人死亡 (短促闷响)
+      kill() { if (!throttled('kill', 35)) return; noise({ filter: 1100, filterTo: 200, dur: 0.12, gain: 0.18 }); tone({ type: 'square', freq: 180, toFreq: 80, dur: 0.1, gain: 0.14 }); },
+      // 精英死亡
+      eliteKill() { tone({ type: 'sawtooth', freq: 300, toFreq: 90, dur: 0.22, gain: 0.26, filter: 1200, filterTo: 200 }); noise({ filter: 1600, filterTo: 120, dur: 0.2, gain: 0.22 }); },
+      // Boss 死亡 (盛大)
+      bossKill() {
+        SFX.explosion(true);
+        [392, 523, 659, 784].forEach((f, i) => tone({ type: 'triangle', freq: f, dur: 0.28, gain: 0.26, delay: 0.1 + i * 0.09 }));
+      },
+      // 防线受击 (低沉警示)
+      hurt() { if (!throttled('hurt', 80)) return; tone({ type: 'sawtooth', freq: 160, toFreq: 70, dur: 0.22, gain: 0.3, filter: 700, filterTo: 200 }); noise({ filter: 600, filterTo: 100, dur: 0.15, gain: 0.18 }); },
+      // 升级/选卡弹出
+      levelup() { [523, 659, 784, 1047].forEach((f, i) => tone({ type: 'triangle', freq: f, dur: 0.16, gain: 0.24, delay: i * 0.07 })); },
+      // 选定技能卡
+      pickCard() { tone({ type: 'square', freq: 660, toFreq: 990, dur: 0.1, gain: 0.22 }); tone({ type: 'triangle', freq: 1320, dur: 0.12, gain: 0.16, delay: 0.06 }); },
+      // 新角色登场
+      debut() { [440, 554, 659, 880].forEach((f, i) => tone({ type: 'triangle', freq: f, dur: 0.14, gain: 0.2, delay: i * 0.06 })); },
+      // 进化
+      evolve() { tone({ type: 'sawtooth', freq: 300, toFreq: 1200, dur: 0.5, gain: 0.24, filter: 800, filterTo: 3000 }); [784, 988, 1319].forEach((f, i) => tone({ type: 'triangle', freq: f, dur: 0.2, gain: 0.18, delay: 0.2 + i * 0.08 })); },
+      // 大招就绪提示
+      ultReady() { tone({ type: 'triangle', freq: 880, dur: 0.12, gain: 0.26 }); tone({ type: 'triangle', freq: 1175, dur: 0.14, gain: 0.22, delay: 0.1 }); },
+      // 释放大招 (上扬充能 + 轰鸣)
+      ultCast() {
+        tone({ type: 'sawtooth', freq: 200, toFreq: 1400, dur: 0.45, gain: 0.3, filter: 600, filterTo: 4000 });
+        SFX.explosion(true);
+        [523, 659, 784, 1047, 1319].forEach((f, i) => tone({ type: 'triangle', freq: f, dur: 0.3, gain: 0.22, delay: 0.25 + i * 0.07 }));
+      },
+      // 大招能量不足
+      noEnergy() { tone({ type: 'square', freq: 240, toFreq: 180, dur: 0.12, gain: 0.16, filter: 700 }); },
+      // 连杀里程碑
+      combo(n) { const base = 523 + Math.min(8, Math.floor(n / 10)) * 80; [base, base * 1.26, base * 1.5].forEach((f, i) => tone({ type: 'triangle', freq: f, dur: 0.12, gain: 0.2, delay: i * 0.05 })); },
+      // 波次提示
+      wave(boss) { if (boss) { tone({ type: 'sawtooth', freq: 110, toFreq: 70, dur: 0.6, gain: 0.3, filter: 500 }); tone({ type: 'square', freq: 220, dur: 0.3, gain: 0.18, delay: 0.1 }); } else { tone({ type: 'triangle', freq: 392, dur: 0.18, gain: 0.2 }); tone({ type: 'triangle', freq: 587, dur: 0.18, gain: 0.16, delay: 0.12 }); } },
+      // 波次清空
+      waveClear() { [659, 784, 988].forEach((f, i) => tone({ type: 'triangle', freq: f, dur: 0.16, gain: 0.2, delay: i * 0.08 })); },
+      // 治疗/护盾
+      heal() { tone({ type: 'sine', freq: 660, toFreq: 990, dur: 0.3, gain: 0.2, filter: 2000 }); tone({ type: 'sine', freq: 880, dur: 0.25, gain: 0.14, delay: 0.1 }); },
+      // 召唤
+      summon() { tone({ type: 'sawtooth', freq: 150, toFreq: 500, dur: 0.3, gain: 0.22, filter: 900 }); tone({ type: 'triangle', freq: 660, dur: 0.18, gain: 0.16, delay: 0.18 }); },
+      // 解锁角色 / 购买
+      unlock() { [523, 698, 880, 1047].forEach((f, i) => tone({ type: 'triangle', freq: f, dur: 0.2, gain: 0.24, delay: i * 0.08 })); },
+      // 胜利结算
+      win() { [523, 659, 784, 1047, 1319, 1568].forEach((f, i) => tone({ type: 'triangle', freq: f, dur: 0.3, gain: 0.26, delay: i * 0.12 })); },
+      // 失败结算
+      lose() { [392, 330, 262, 196].forEach((f, i) => tone({ type: 'sawtooth', freq: f, dur: 0.4, gain: 0.26, delay: i * 0.16, filter: 1200, filterTo: 300 })); }
+    };
+
+    // ===================== 程序化 MIDI 风格 BGM =====================
+    // 用一个 16 分音符步进的序列器实时合成循环背景音乐。
+    // 每张曲子有：bass(低音)、arp(琶音/旋律)、pad(铺底)、drum(鼓点) 几个声部。
+    // 盗墓神秘氛围：偏小调 (Aeolian/Harmonic minor)，慢速 80~96 BPM。
+    const NOTE = { 'C': 261.63, 'C#': 277.18, 'D': 293.66, 'D#': 311.13, 'E': 329.63, 'F': 349.23, 'F#': 369.99, 'G': 392.00, 'G#': 415.30, 'A': 440.00, 'A#': 466.16, 'B': 493.88 };
+    function nf(name, oct) { return NOTE[name] * Math.pow(2, (oct || 4) - 4); }
+
+    // 主菜单/首页：A 小调神秘缓慢主题
+    const TRACKS = {
+      menu: {
+        bpm: 84,
+        // 每步一个琶音音符 (16 步循环)；'-' 为休止
+        arp: ['A4', '-', 'C5', 'E5', '-', 'C5', 'A4', '-', 'G4', '-', 'B4', 'D5', '-', 'B4', 'G4', '-'],
+        arpType: 'triangle',
+        bass: ['A2', '-', '-', '-', 'F2', '-', '-', '-', 'G2', '-', '-', '-', 'E2', '-', '-', '-'],
+        pad: ['A3', '-', '-', '-', 'F3', '-', '-', '-', 'G3', '-', '-', '-', 'E3', '-', '-', '-'],
+        drum: ['k', '-', '-', 'h', 's', '-', '-', 'h', 'k', '-', 'k', 'h', 's', '-', 'h', '-']
+      },
+      // 战斗：更紧凑、推进感强的小调
+      battle: {
+        bpm: 132,
+        arp: ['A4', 'E4', 'A4', 'C5', 'B4', 'E4', 'B4', 'D5', 'C5', 'G4', 'C5', 'E5', 'A4', 'E4', 'C5', 'A4'],
+        arpType: 'sawtooth',
+        bass: ['A2', 'A2', '-', 'A2', 'F2', 'F2', '-', 'F2', 'G2', 'G2', '-', 'G2', 'E2', 'E2', '-', 'E2'],
+        pad: ['A3', '-', '-', '-', 'F3', '-', '-', '-', 'G3', '-', '-', '-', 'C4', '-', '-', '-'],
+        drum: ['k', 'h', 's', 'h', 'k', 'h', 's', 'h', 'k', 'h', 's', 'h', 'k', 's', 's', 'h']
+      },
+      // Boss：阴森低沉 + 急促鼓
+      boss: {
+        bpm: 144,
+        arp: ['A4', '-', 'G#4', 'A4', 'C5', '-', 'B4', 'C5', 'E5', '-', 'D5', 'E5', 'A4', 'C5', 'E5', 'A5'],
+        arpType: 'square',
+        bass: ['A1', 'A2', 'A1', 'A2', 'A1', 'A2', 'A1', 'A2', 'F1', 'F2', 'F1', 'F2', 'E1', 'E2', 'E1', 'G2'],
+        pad: ['A3', '-', '-', '-', 'A3', '-', '-', '-', 'F3', '-', '-', '-', 'E3', '-', '-', '-'],
+        drum: ['k', 's', 'k', 's', 'k', 's', 'k', 's', 'k', 's', 'k', 's', 'k', 'k', 's', 's']
+      }
+    };
+
+    // 鼓声合成
+    function drumKick(t) { tone({ t, type: 'sine', freq: 150, toFreq: 45, dur: 0.18, gain: 0.5, music: true }); }
+    function drumSnare(t) { noise({ t, filter: 2600, filterTo: 800, dur: 0.12, gain: 0.22 }); tone({ t, type: 'triangle', freq: 220, dur: 0.08, gain: 0.12, music: true }); }
+    function drumHat(t) { noise({ t, filter: 8000, filterTo: 5000, dur: 0.04, gain: 0.08 }); }
+
+    function musicTone(name, oct, t, type, dur, gain, filter) {
+      if (name === '-' || !name) return;
+      // 支持 'A4' 这种写法
+      let nm = name, o = oct;
+      const m = /^([A-G]#?)(\d)$/.exec(name);
+      if (m) { nm = m[1]; o = +m[2]; }
+      tone({ t, type, freq: nf(nm, o), dur, gain, music: true, filter: filter || 0 });
+    }
+
+    function scheduleStep(track, step, t) {
+      const T = TRACKS[track]; if (!T) return;
+      const i = step % 16;
+      const stepDur = 60 / T.bpm / 4; // 16 分音符时长
+      // bass
+      musicTone(T.bass[i], null, t, 'sawtooth', stepDur * 1.6, 0.16, 600);
+      // arp/melody
+      musicTone(T.arp[i], null, t, T.arpType || 'triangle', stepDur * 1.1, 0.1);
+      // pad (每拍铺底，较弱长音)
+      if (i % 4 === 0) musicTone(T.pad[i], null, t, 'sine', stepDur * 4.2, 0.06, 1400);
+      // drums
+      const d = T.drum[i];
+      if (d === 'k') drumKick(t);
+      else if (d === 's') drumSnare(t);
+      else if (d === 'h') drumHat(t);
+    }
+
+    function stopMusic() {
+      if (A.music.timer) { clearInterval(A.music.timer); A.music.timer = null; }
+      A.music.track = null;
+    }
+
+    // 切换/播放 BGM 曲目
+    function playMusic(track) {
+      if (!ensure()) return;
+      if (!A.musicOn || A.muted) { stopMusic(); A.music.track = track; return; }
+      if (A.music.track === track && A.music.timer) return; // 已在播放
+      stopMusic();
+      A.music.track = track;
+      A.music.step = 0;
+      const T = TRACKS[track] || TRACKS.menu;
+      const stepDur = 60 / T.bpm / 4;
+      A.music.nextTime = now() + 0.1;
+      // 提前调度的 lookahead 序列器
+      A.music.timer = setInterval(() => {
+        if (!A.ctx) return;
+        const ahead = now() + 0.2;
+        while (A.music.nextTime < ahead) {
+          scheduleStep(A.music.track, A.music.step, A.music.nextTime);
+          A.music.step++;
+          A.music.nextTime += stepDur;
+        }
+      }, 50);
+    }
+
+    // ===================== 控制接口 =====================
+    function applyMute() {
+      if (A.master) A.master.gain.setTargetAtTime(A.muted ? 0 : 1, now(), 0.02);
+    }
+    function setMuted(v) {
+      A.muted = !!v; applyMute(); save();
+      if (A.muted) stopMusic();
+      else if (A.musicOn && A.music.track) playMusic(A.music.track);
+    }
+    function toggleMute() { setMuted(!A.muted); return A.muted; }
+    function setMusicOn(v) {
+      A.musicOn = !!v; save();
+      if (!A.musicOn) stopMusic();
+      else if (!A.muted && A.music.track) playMusic(A.music.track);
+    }
+
+    // 首次用户交互解锁 AudioContext (浏览器自动播放策略)
+    function unlock() {
+      if (ensure() && A.ctx.state === 'suspended') A.ctx.resume();
+      // 若菜单音乐曾被请求但因未解锁而未播放，这里补播
+      if (A.musicOn && !A.muted && A.music.track && !A.music.timer) playMusic(A.music.track);
+    }
+    ['pointerdown', 'touchstart', 'keydown'].forEach(ev => window.addEventListener(ev, unlock, { passive: true }));
+
+    // 暴露 API
+    window.__AUDIO = {
+      sfx: SFX,
+      playMusic, stopMusic,
+      toggleMute, setMuted, setMusicOn,
+      isMuted: () => A.muted,
+      isMusicOn: () => A.musicOn,
+      unlock
+    };
+  })();
+  </script>
+
   <!-- ============ Game script (chunk 1: core + screen router + home + story) ============ -->
   <script>
   (function () {
@@ -513,17 +830,34 @@
       barrierHp: 76,
       petCache: null,
       cleared: {},               // 已通关关卡 id 标记
-      hardMode: false            // 困难模式开关：敌人更强，首页显示警戒封条
+      hardMode: false,           // 困难模式开关：敌人更强，首页显示警戒封条
+
+      // ===== 装备 / 经济系统 (Equipment & Economy) =====
+      // inventory: 玩家拥有的所有装备实例 [{id, slot, baseId, rarity, level, ...}]
+      inventory: [],
+      // equipped: 每个英雄各槽位装备的实例 id  equipped[heroKey][slot] = itemId | null
+      equipped: {},
+      // materials: 强化/合成素材库存  {screw, gear, potion, crystal}
+      materials: { screw: 0, gear: 0, potion: 0, crystal: 0 },
+      // 每日奖励领取记录 (按 yyyy-mm-dd 标记)
+      dailyClaim: {},
+      // 自增装备实例 id
+      _itemSeq: 1,
+      // 统计：累计赚取金币 / 通关次数 (用于平衡与成就)
+      totalEarned: 0, totalRuns: 0
     };
 
     // ================= LOCALSTORAGE PERSISTENCE =================
-    const SAVE_KEY = 'haqiLineDefenseSaveV1';
+    const SAVE_KEY = 'haqiLineDefenseSaveV2';   // V2: 引入装备/经济系统
     function saveProgress() {
       try {
         const data = {
           gems: G.gems, coins: G.coins, lvlIndex: G.lvlIndex, playerLevel: G.playerLevel,
           unlocked: G.unlocked, heroLevel: G.heroLevel, leader: G.leader, squad: G.squad, cleared: G.cleared,
-          hardMode: G.hardMode
+          hardMode: G.hardMode,
+          // 装备/经济系统持久化
+          inventory: G.inventory, equipped: G.equipped, materials: G.materials,
+          dailyClaim: G.dailyClaim, _itemSeq: G._itemSeq, totalEarned: G.totalEarned, totalRuns: G.totalRuns
         };
         localStorage.setItem(SAVE_KEY, JSON.stringify(data));
       } catch (e) {}
@@ -544,6 +878,14 @@
         if (Array.isArray(d.squad)) G.squad = d.squad.filter(k => heroDefSafe(k));
         if (d.cleared) G.cleared = d.cleared;
         if (typeof d.hardMode === 'boolean') G.hardMode = d.hardMode;
+        // 装备/经济系统读档
+        if (Array.isArray(d.inventory)) G.inventory = d.inventory;
+        if (d.equipped && typeof d.equipped === 'object') G.equipped = d.equipped;
+        if (d.materials && typeof d.materials === 'object') Object.assign(G.materials, d.materials);
+        if (d.dailyClaim && typeof d.dailyClaim === 'object') G.dailyClaim = d.dailyClaim;
+        if (typeof d._itemSeq === 'number') G._itemSeq = d._itemSeq;
+        if (typeof d.totalEarned === 'number') G.totalEarned = d.totalEarned;
+        if (typeof d.totalRuns === 'number') G.totalRuns = d.totalRuns;
         if (!G.squad.length) G.squad = [G.leader];
       } catch (e) {}
     }
@@ -665,6 +1007,10 @@
     function heroDef(key) { return game_config.heroes.find(h => h.key === key); }
     function curLevel() { return game_config.levels[G.lvlIndex]; }
 
+    // ---- 音效引擎快捷方式 (chunk 0 提供)；空安全包装 ----
+    function sfx(name, ...args) { try { const a = window.__AUDIO; if (a && a.sfx && a.sfx[name]) a.sfx[name](...args); } catch (e) {} }
+    function bgm(track) { try { window.__AUDIO && window.__AUDIO.playMusic(track); } catch (e) {} }
+
     // ---- shared sprite-sheet cell drawer (4 cols x 4 rows: rows=stage, cols=anim) ----
     function getSheetImg(url) {
       if (!url) return null;
@@ -686,6 +1032,15 @@
       if (!sw || !sh) return false;
       targetCtx.drawImage(e.img, animCol * sw, stageRow * sh, sw, sh, x, y, w, h);
       return true;
+    }
+    // 判断某个精灵表是否「仍在加载中」(有 url、未出错、且尚未加载完成)。
+    // 用于战斗中：当宠物贴图还没加载完毕时，不要绘制占位 fallback，避免出现一闪而过的占位图后再切换为贴图的闪烁。
+    function sheetPending(url) {
+      if (!url) return false;            // 没有 url → 直接用 fallback (不属于"加载中")
+      const e = getSheetImg(url);
+      if (!e) return false;
+      if (e.error) return false;         // 加载失败 → 允许 fallback
+      return !e.loaded;                  // 有 url、未失败、未加载完 → 加载中
     }
 
     // ====== ART ASSETS (背景场景图) ======
@@ -766,7 +1121,7 @@
 
     // shared accessor used by other chunks
     window.__GD = { G, heroDef, curLevel, el, get W() { return W; }, get H() { return H; }, ctx, canvas, ui, root,
-      PET, drawSheetCell, getSheetImg, pickPetForElement, pickPetById, ELEMENT_KEYS, saveProgress, loadPetCatalog,
+      PET, drawSheetCell, getSheetImg, sheetPending, pickPetForElement, pickPetById, ELEMENT_KEYS, saveProgress, loadPetCatalog,
       petAvatarHTML, hydratePetCanvases, bgUrlForLevel, getBgImg, drawBgCover, ART,
       // squad helpers (defined later in this chunk) — exposed for chunk 3's startBattle
       ensureLeaderInSquad: (...a) => ensureLeaderInSquad(...a),
@@ -786,6 +1141,8 @@
       // clear any stray battle overlay (skill-select / pause / result) when changing screens
       if (window.__clearBattleOverlay) window.__clearBattleOverlay();
       if (screen !== 'battle' && window.__stopBattle) window.__stopBattle();
+      // 非战斗子界面统一播放菜单主题 BGM (battle 由战斗逻辑自行控制)
+      if (screen !== 'battle') bgm('menu');
       G.screen = screen;
       applyScreenVisibility();
       ui.innerHTML = '';
@@ -842,6 +1199,36 @@
       wrap.appendChild(top);
       hydratePetCanvases(top);
 
+      // 背景音乐开关：右上角资源条下方一个低调的次要图标 (🎵/🔇)，仅控制 BGM，不影响音效。
+      const soundCtl = el('div', 'absolute z-20 flex flex-col gap-2 items-center');
+      soundCtl.style.right = '12px';
+      soundCtl.style.top = '58px';
+      // 每日奖励是否有可领取项 (红点提示)
+      const dailyHot = window.__dailyHasClaimable ? window.__dailyHasClaimable() : false;
+      soundCtl.innerHTML = `
+        <button id="homeMusic" class="flex items-center justify-center w-8 h-8 rounded-full text-[16px] text-stone-300 active:scale-90 transition-transform"
+          style="background:rgba(0,0,0,.3);" title="背景音乐开关"></button>
+        <button id="homeDaily" class="relative flex items-center justify-center w-9 h-9 rounded-full text-[18px] active:scale-90 transition-transform"
+          style="background:linear-gradient(#ffb733,#e07b0a);box-shadow:0 2px 0 #7a2408;" title="每日奖励">📅
+          ${dailyHot ? '<span class="absolute -top-1 -right-1 w-3 h-3 rounded-full bg-red-500 border border-white"></span>' : ''}
+        </button>`;
+      wrap.appendChild(soundCtl);
+      const dailyBtn = soundCtl.querySelector('#homeDaily');
+      if (dailyBtn) dailyBtn.addEventListener('click', () => { sfx('click'); if (window.__renderDaily) window.__renderDaily(); });
+
+      (function initSoundBtn() {
+        const A = window.__AUDIO;
+        const musicBtn = soundCtl.querySelector('#homeMusic');
+        const syncMusic = () => {
+          if (!musicBtn) return;
+          const on = A && A.isMusicOn && A.isMusicOn();
+          musicBtn.textContent = on ? '🎵' : '🔇';
+          musicBtn.style.opacity = on ? '0.75' : '0.45';
+        };
+        syncMusic();
+        if (musicBtn) musicBtn.addEventListener('click', () => { if (A && A.setMusicOn && A.isMusicOn) A.setMusicOn(!A.isMusicOn()); syncMusic(); });
+      })();
+
       const head = el('div', 'relative z-10 text-center mt-2');
       const diffStyle = G.hardMode
         ? 'background:linear-gradient(#e0402a,#9a1a10);box-shadow:0 2px 0 #5c1008;'
@@ -878,7 +1265,7 @@
           </div>
         </button>
         <div class="flex items-center justify-between mt-2 px-1">
-          <div class="px-3 py-1 rounded-full bg-black/40 text-[11px] text-stone-200 border border-amber-900/40">� 探墓</div>
+          <div class="px-3 py-1 rounded-full bg-black/40 text-[11px] text-amber-200 font-bold border border-amber-900/40">⚡ 战力 ${window.__ECON ? window.__ECON.squadPower() : 0}</div>
           <div id="homeStageClear" class="px-3 py-1 rounded-full bg-black/40 text-[11px] text-stone-200 border border-amber-900/40">通关 ${lv.name.split('-')[0]} (1/1) 🏅200</div>
         </div>`;
       wrap.appendChild(startWrap);
@@ -932,13 +1319,15 @@
         G.hardMode = !G.hardMode;
         applyDifficultyVisual();
         flash(e.currentTarget);
+        sfx('tab');
         saveProgress();
       });
 
-      wrap.querySelector('#startBtn').addEventListener('click', () => show('battle'));
-      wrap.querySelector('#prevStage').addEventListener('click', () => { G.lvlIndex = (G.lvlIndex - 1 + game_config.levels.length) % game_config.levels.length; updateStageInfo(); });
-      wrap.querySelector('#nextStage').addEventListener('click', () => { G.lvlIndex = (G.lvlIndex + 1) % game_config.levels.length; updateStageInfo(); });
+      wrap.querySelector('#startBtn').addEventListener('click', () => { sfx('click'); show('battle'); });
+      wrap.querySelector('#prevStage').addEventListener('click', () => { sfx('click'); G.lvlIndex = (G.lvlIndex - 1 + game_config.levels.length) % game_config.levels.length; updateStageInfo(); });
+      wrap.querySelector('#nextStage').addEventListener('click', () => { sfx('click'); G.lvlIndex = (G.lvlIndex + 1) % game_config.levels.length; updateStageInfo(); });
       wrap.querySelectorAll('[data-nav]').forEach(b => b.addEventListener('click', () => {
+        sfx('click');
         const k = b.getAttribute('data-nav');
         if (k === 'battle') show('home');   // 战斗 = 返回战斗主页
         else if (k === 'roster') show('roster');
@@ -970,6 +1359,7 @@
         </button>`;
       }).join('');
       nav.querySelectorAll('[data-nav]').forEach(b => b.addEventListener('click', () => {
+        sfx('click');
         const k = b.getAttribute('data-nav');
         if (k === 'battle') show('home');   // 战斗 = 返回战斗主页
         else if (k === 'roster') show('roster');
@@ -1177,12 +1567,363 @@
   })();
   </script>
 
+  <!-- ============ chunk 1.5: EQUIPMENT & ECONOMY ENGINE (装备 & 经济系统) ============ -->
+  <!-- 自包含的装备/经济核心：装备定义、稀有度、词条、强化、合成、有效属性、战力、奖励掉落、每日奖励。
+       通过 window.__ECON 暴露给商店(chunk4)、背包(chunk4)、战斗(chunk3) 使用。
+       所有持久化字段挂在 chunk1 的 G 上 (G.inventory / G.equipped / G.materials / G.dailyClaim)。 -->
+  <script>
+  (function () {
+    'use strict';
+    const D = window.__GD;
+    const G = D.G, heroDef = D.heroDef, saveProgress = D.saveProgress;
+
+    // ---------- 数值常量 (集中管理，便于平衡调参) ----------
+    const ECON = {
+      // 6 个装备槽
+      slots: [
+        { k: 'helmet', t: '头盔', e: '🪖', mainStat: 'hp' },
+        { k: 'armor',  t: '护甲', e: '🦺', mainStat: 'hp' },
+        { k: 'legs',   t: '护腿', e: '👖', mainStat: 'phys' },
+        { k: 'boots',  t: '战靴', e: '🥾', mainStat: 'rate' },
+        { k: 'gloves', t: '手套', e: '🧤', mainStat: 'crit' },
+        { k: 'badge',  t: '徽章', e: '🎖️', mainStat: 'phys' }
+      ],
+      // 5 档稀有度：颜色 / 名称 / 词条数 / 属性倍率 / 强化上限
+      rarities: [
+        { r: 1, key: 'common',    name: '普通', color: '#9aa0a6', mul: 1.0,  affixes: 1, maxLvl: 5,  sellCoin: 60,   sellMatBonus: 0 },
+        { r: 2, key: 'fine',      name: '精良', color: '#3fce6a', mul: 1.35, affixes: 1, maxLvl: 8,  sellCoin: 140,  sellMatBonus: 1 },
+        { r: 3, key: 'rare',      name: '稀有', color: '#4aa3ff', mul: 1.8,  affixes: 2, maxLvl: 12, sellCoin: 320,  sellMatBonus: 2 },
+        { r: 4, key: 'epic',      name: '史诗', color: '#b06bff', mul: 2.45, affixes: 3, maxLvl: 16, sellCoin: 760,  sellMatBonus: 4 },
+        { r: 5, key: 'legendary', name: '传说', color: '#ffb733', mul: 3.4,  affixes: 4, maxLvl: 20, sellCoin: 1800, sellMatBonus: 8 }
+      ],
+      // 属性类型：键 -> 显示信息 (用于词条/主属性)
+      statInfo: {
+        phys: { t: '物理伤害', e: '⚔️', suffix: '%', base: 6 },
+        crit: { t: '暴击率',   e: '🎯', suffix: '%', base: 4 },
+        hp:   { t: '防线耐久', e: '🛡️', suffix: '',  base: 8 },
+        rate: { t: '射速',     e: '⚡', suffix: '%', base: 5 }
+      },
+      // 装备基础模板 (按槽位提供若干外观/名字)，rarity/level 实例化时决定
+      bases: {
+        helmet: [ { id: 'h_steel', name: '钢制头盔', e: '🪖' }, { id: 'h_bronze', name: '青铜面甲', e: '⛑️' }, { id: 'h_jade', name: '玉冠', e: '👑' } ],
+        armor:  [ { id: 'a_vest', name: '防弹背心', e: '🦺' }, { id: 'a_robe', name: '守陵法袍', e: '🥋' }, { id: 'a_scale', name: '龙鳞胸甲', e: '🐲' } ],
+        legs:   [ { id: 'l_guard', name: '护腿', e: '👖' }, { id: 'l_plate', name: '战术护胫', e: '🦿' } ],
+        boots:  [ { id: 'b_boot', name: '军用战靴', e: '🥾' }, { id: 'b_swift', name: '疾风踏靴', e: '👟' } ],
+        gloves: [ { id: 'g_glove', name: '战术手套', e: '🧤' }, { id: 'g_claw', name: '裂甲爪套', e: '🐾' } ],
+        badge:  [ { id: 'd_lucky', name: '幸运徽章', e: '🎖️' }, { id: 'd_hero', name: '英雄勋章', e: '🏅' }, { id: 'd_seal', name: '镇墓符印', e: '🧿' } ]
+      },
+      // 强化每级属性增幅 (相对该件白值的百分比)
+      enhancePerLevel: 0.12,
+      // 强化花费曲线: coins = base * (level+1)^1.35 * rarityMul ; 素材随等级递增
+      enhanceCoinBase: 80,
+      enhanceMatBase: 1,
+      // 合成: 3 件同稀有度 -> 1 件高一档 (随机槽)
+      fuseNeed: 3,
+      // 材料显示信息
+      mats: {
+        screw:   { t: '螺丝', e: '🔩' },
+        gear:    { t: '齿轮', e: '⚙️' },
+        potion:  { t: '强化液', e: '🧪' },
+        crystal: { t: '结晶', e: '💠' }
+      }
+    };
+
+    // 初始化某英雄的装备槽记录
+    function ensureEquipSlots(key) {
+      if (!G.equipped[key]) {
+        G.equipped[key] = { helmet: null, armor: null, legs: null, boots: null, gloves: null, badge: null };
+      }
+      return G.equipped[key];
+    }
+
+    // ---------- 装备实例生成 ----------
+    function rarityDef(r) { return ECON.rarities.find(x => x.r === r) || ECON.rarities[0]; }
+    function slotDef(slot) { return ECON.slots.find(s => s.k === slot); }
+
+    // 按 slot + rarity 生成一件随机装备实例。可指定 baseId / level。
+    function makeItem(slot, rarity, opt) {
+      opt = opt || {};
+      const sd = slotDef(slot); if (!sd) return null;
+      const rd = rarityDef(rarity);
+      const bases = ECON.bases[slot] || [{ id: slot, name: sd.t, e: sd.e }];
+      const base = opt.baseId ? (bases.find(b => b.id === opt.baseId) || bases[0]) : bases[Math.floor(Math.random() * bases.length)];
+      // 主属性 = 该槽位 mainStat，数值 = base * rarityMul (取整)
+      const mainKey = sd.mainStat;
+      const mainVal = Math.round(ECON.statInfo[mainKey].base * rd.mul);
+      // 副词条：按稀有度 affixes 数量随机抽取 (不与主属性重复，可重复种类则叠加)
+      const statKeys = Object.keys(ECON.statInfo);
+      const affixes = [];
+      const affixCount = Math.max(0, rd.affixes - 1); // 主属性占 1 条
+      for (let i = 0; i < affixCount; i++) {
+        const k = statKeys[Math.floor(Math.random() * statKeys.length)];
+        const v = Math.round(ECON.statInfo[k].base * rd.mul * (0.4 + Math.random() * 0.5));
+        affixes.push({ k, v: Math.max(1, v) });
+      }
+      return {
+        id: 'it' + (G._itemSeq++),
+        slot, baseId: base.id, name: base.name, emoji: base.e,
+        rarity, level: opt.level || 0,
+        main: { k: mainKey, v: mainVal },
+        affixes
+      };
+    }
+
+    // 把一件装备加入背包
+    function addItem(item) { if (item) { G.inventory.push(item); } return item; }
+
+    // 计算装备「当前等级下」的属性合计 (主+副，含强化加成) -> {phys,crit,hp,rate}
+    function itemStats(item) {
+      const out = { phys: 0, crit: 0, hp: 0, rate: 0 };
+      if (!item) return out;
+      const lvlMul = 1 + (item.level || 0) * ECON.enhancePerLevel;
+      if (item.main) out[item.main.k] += item.main.v * lvlMul;
+      (item.affixes || []).forEach(a => { out[a.k] += a.v * lvlMul; });
+      for (const k in out) out[k] = Math.round(out[k]);
+      return out;
+    }
+
+    // 单件装备战力评分 (用于排序/品质感)
+    function itemPower(item) {
+      const s = itemStats(item);
+      return Math.round(s.phys * 3 + s.crit * 4 + s.hp * 1.5 + s.rate * 3 + (item.rarity || 1) * 20);
+    }
+
+    // 查找实例
+    function findItem(itemId) { return G.inventory.find(i => i.id === itemId) || null; }
+
+    // ---------- 穿戴 / 卸下 ----------
+    function equip(heroKey, itemId) {
+      const item = findItem(itemId); if (!item) return false;
+      const slots = ensureEquipSlots(heroKey);
+      // 若该装备已被其它英雄穿戴，先卸下
+      for (const hk in G.equipped) {
+        for (const sk in G.equipped[hk]) {
+          if (G.equipped[hk][sk] === itemId) G.equipped[hk][sk] = null;
+        }
+      }
+      slots[item.slot] = itemId;
+      saveProgress();
+      return true;
+    }
+    function unequip(heroKey, slot) {
+      const slots = ensureEquipSlots(heroKey);
+      slots[slot] = null; saveProgress();
+    }
+    // 某装备当前被谁穿戴 (返回 heroKey 或 null)
+    function wearerOf(itemId) {
+      for (const hk in G.equipped) {
+        for (const sk in G.equipped[hk]) if (G.equipped[hk][sk] === itemId) return hk;
+      }
+      return null;
+    }
+
+    // ---------- 有效属性 (基础 + 装备) ----------
+    // 返回 {phys, crit, hpBonus, rateBonus} —— hpBonus 给防线上限，rateBonus 百分比加射速
+    function effectiveStats(heroKey) {
+      const def = heroDef(heroKey);
+      const lvl = (G.heroLevel[heroKey] || 1);
+      // 角色基础随技能等级成长 (与战斗内 makeHeroUnit 一致)
+      const base = {
+        phys: (def ? def.stats.phys : 0) + (lvl - 1) * 4,
+        crit: (def ? def.stats.crit : 0) + (lvl - 1) * 2,
+        hp: 0, rate: 0
+      };
+      const slots = ensureEquipSlots(heroKey);
+      for (const sk in slots) {
+        const it = findItem(slots[sk]);
+        if (!it) continue;
+        const s = itemStats(it);
+        base.phys += s.phys; base.crit += s.crit; base.hp += s.hp; base.rate += s.rate;
+      }
+      base.phys = Math.round(base.phys); base.crit = Math.round(base.crit);
+      base.hp = Math.round(base.hp); base.rate = Math.round(base.rate);
+      return base;
+    }
+
+    // 英雄综合战力 (含装备)
+    function heroPower(heroKey) {
+      const s = effectiveStats(heroKey);
+      const lvl = (G.heroLevel[heroKey] || 1);
+      return Math.round(s.phys * 12 + s.crit * 8 + s.hp * 4 + s.rate * 6 + lvl * 60);
+    }
+    // 出战阵容总战力 (主角 + 候补)
+    function squadPower() {
+      const keys = [G.leader, ...G.squad.filter(k => k !== G.leader)].filter((v, i, a) => a.indexOf(v) === i);
+      return keys.reduce((s, k) => s + (heroDef(k) ? heroPower(k) : 0), 0);
+    }
+
+    // ---------- 强化 ----------
+    function enhanceCost(item) {
+      const rd = rarityDef(item.rarity);
+      const lv = item.level || 0;
+      const coin = Math.round(ECON.enhanceCoinBase * Math.pow(lv + 1, 1.35) * (0.6 + rd.r * 0.35));
+      // 素材：低级用螺丝/齿轮，高级追加强化液/结晶
+      const need = { screw: 0, gear: 0, potion: 0, crystal: 0 };
+      need.screw = ECON.enhanceMatBase + Math.floor(lv / 2) + rd.r;
+      if (lv >= 4) need.gear = 1 + Math.floor((lv - 4) / 3);
+      if (lv >= 8) need.potion = 1 + Math.floor((lv - 8) / 4);
+      if (lv >= 14 && rd.r >= 4) need.crystal = 1 + Math.floor((lv - 14) / 5);
+      return { coin, mats: need };
+    }
+    function canEnhance(item) {
+      const rd = rarityDef(item.rarity);
+      if ((item.level || 0) >= rd.maxLvl) return { ok: false, reason: 'max' };
+      const c = enhanceCost(item);
+      if (G.coins < c.coin) return { ok: false, reason: 'coin', cost: c };
+      for (const m in c.mats) if ((G.materials[m] || 0) < c.mats[m]) return { ok: false, reason: 'mat', cost: c };
+      return { ok: true, cost: c };
+    }
+    function enhance(item) {
+      const chk = canEnhance(item);
+      if (!chk.ok) return chk;
+      G.coins -= chk.cost.coin;
+      for (const m in chk.cost.mats) G.materials[m] = (G.materials[m] || 0) - chk.cost.mats[m];
+      item.level = (item.level || 0) + 1;
+      saveProgress();
+      return { ok: true, level: item.level };
+    }
+
+    // ---------- 出售 / 合成 ----------
+    function sellItem(itemId) {
+      const it = findItem(itemId); if (!it) return false;
+      const w = wearerOf(itemId); if (w) unequip(w, it.slot);
+      const rd = rarityDef(it.rarity);
+      // 售价 = 基础 + 强化等级返还
+      const coin = Math.round(rd.sellCoin * (1 + (it.level || 0) * 0.15));
+      G.coins += coin;
+      // 高稀有返还少量素材
+      if (rd.sellMatBonus > 0) { G.materials.gear = (G.materials.gear || 0) + rd.sellMatBonus; }
+      G.inventory = G.inventory.filter(i => i.id !== itemId);
+      saveProgress();
+      return { coin, mat: rd.sellMatBonus };
+    }
+    // 合成：选 fuseNeed 件同稀有度 -> 1 件高一档
+    function fuse(itemIds) {
+      if (!Array.isArray(itemIds) || itemIds.length < ECON.fuseNeed) return { ok: false, reason: 'count' };
+      const items = itemIds.map(findItem).filter(Boolean);
+      if (items.length < ECON.fuseNeed) return { ok: false, reason: 'missing' };
+      const r = items[0].rarity;
+      if (!items.every(i => i.rarity === r)) return { ok: false, reason: 'rarity' };
+      if (r >= 5) return { ok: false, reason: 'max' };
+      // 消耗素材：合成需要齿轮
+      const matNeed = r;
+      if ((G.materials.gear || 0) < matNeed) return { ok: false, reason: 'mat', need: matNeed };
+      G.materials.gear -= matNeed;
+      // 卸下并移除被合成的装备
+      items.forEach(it => { const w = wearerOf(it.id); if (w) unequip(w, it.slot); });
+      G.inventory = G.inventory.filter(i => !itemIds.includes(i.id));
+      // 产出：随机槽、高一档
+      const slot = ECON.slots[Math.floor(Math.random() * ECON.slots.length)].k;
+      const out = makeItem(slot, r + 1, {});
+      addItem(out);
+      saveProgress();
+      return { ok: true, item: out };
+    }
+
+    // ---------- 掉落 (战斗奖励) ----------
+    // 根据关卡序号 stageIdx + 是否胜利 + 表现，生成本局奖励 {coins, gems, mats, items[]}
+    function rollBattleRewards(stageIdx, win, opt) {
+      opt = opt || {};
+      const score = opt.score || 0, comboBest = opt.comboBest || 0, kills = opt.kills || 0, hard = !!opt.hard;
+      const stageMul = 1 + stageIdx * 0.28;
+      const hardMul = hard ? 1.6 : 1;
+      // 金币：基础 + 分数 + 连杀，胜利额外加成
+      const baseCoin = (win ? 120 : 30) + Math.round(score / 4) + Math.round(comboBest * 2) + kills * 2;
+      const coins = Math.round(baseCoin * stageMul * hardMul);
+      // 材料掉落 (胜利更多)
+      const mats = { screw: 0, gear: 0, potion: 0, crystal: 0 };
+      const matRoll = (win ? 1 : 0.4) * (1 + stageIdx * 0.15) * hardMul;
+      mats.screw = Math.round((2 + Math.random() * 4) * matRoll);
+      if (Math.random() < 0.5 + stageIdx * 0.05) mats.gear = Math.round((1 + Math.random() * 2) * matRoll);
+      if (win && stageIdx >= 2 && Math.random() < 0.4) mats.potion = 1 + Math.floor(Math.random() * 2);
+      if (win && stageIdx >= 4 && Math.random() < 0.25) mats.crystal = 1;
+      // 钻石：首通多，复通少
+      let gems = 0;
+      if (win) { const firstClear = opt.firstClear; gems = firstClear ? (15 + stageIdx * 5) : 6; }
+      // 装备掉落：胜利必掉 1 件，按关卡决定稀有度权重；表现好(高连杀)有几率额外掉落
+      const items = [];
+      if (win) {
+        items.push(rollDropItem(stageIdx, hard));
+        if (comboBest >= 30 && Math.random() < 0.5) items.push(rollDropItem(stageIdx, hard));
+      } else if (Math.random() < 0.35) {
+        items.push(rollDropItem(stageIdx, hard));
+      }
+      return { coins, gems, mats, items: items.filter(Boolean) };
+    }
+    // 按关卡 + 困难度决定掉落装备稀有度，再随机槽位
+    function rollDropItem(stageIdx, hard) {
+      // 稀有度权重随关卡推进而上移
+      const t = Math.min(1, stageIdx / 7);
+      const w = [
+        Math.max(2, 50 - t * 45),                 // common
+        30 + t * 5,                                // fine
+        12 + t * 22,                               // rare
+        4 + t * 14,                                // epic
+        1 + t * 9 + (hard ? 4 : 0)                 // legendary
+      ];
+      const total = w.reduce((a, b) => a + b, 0);
+      let roll = Math.random() * total, rarity = 1;
+      for (let i = 0; i < w.length; i++) { roll -= w[i]; if (roll <= 0) { rarity = i + 1; break; } }
+      const slot = ECON.slots[Math.floor(Math.random() * ECON.slots.length)].k;
+      return makeItem(slot, rarity, {});
+    }
+
+    // ---------- 每日奖励 ----------
+    function todayKey() { const d = new Date(); return d.getFullYear() + '-' + (d.getMonth() + 1) + '-' + d.getDate(); }
+    function canClaimDaily(id) { const t = todayKey(); return !(G.dailyClaim[t] && G.dailyClaim[t][id]); }
+    function claimDaily(id, reward) {
+      const t = todayKey();
+      if (!G.dailyClaim[t]) G.dailyClaim[t] = {};
+      if (G.dailyClaim[t][id]) return false;
+      G.dailyClaim[t][id] = true;
+      // 应用奖励
+      if (reward.coins) G.coins += reward.coins;
+      if (reward.gems) G.gems += reward.gems;
+      if (reward.mats) for (const m in reward.mats) G.materials[m] = (G.materials[m] || 0) + reward.mats[m];
+      if (reward.item) addItem(reward.item);
+      saveProgress();
+      return true;
+    }
+
+    // ---------- 给新玩家发一套启动装备 (仅首次，背包为空时) ----------
+    function seedStarterGear() {
+      if (G.inventory && G.inventory.length) return;
+      // 给 2 件普通 + 1 件精良，并自动给主角穿上
+      const a = makeItem('helmet', 1, {});
+      const b = makeItem('armor', 1, {});
+      const c = makeItem('gloves', 2, {});
+      addItem(a); addItem(b); addItem(c);
+      const lk = G.leader || (heroDef && game_config.heroes[0].key);
+      if (lk) { ensureEquipSlots(lk); equip(lk, a.id); equip(lk, b.id); equip(lk, c.id); }
+      saveProgress();
+    }
+
+    // 暴露 API
+    window.__ECON = {
+      ECON, rarityDef, slotDef,
+      makeItem, addItem, findItem, itemStats, itemPower,
+      equip, unequip, wearerOf, ensureEquipSlots,
+      effectiveStats, heroPower, squadPower,
+      enhanceCost, canEnhance, enhance,
+      sellItem, fuse,
+      rollBattleRewards, rollDropItem,
+      todayKey, canClaimDaily, claimDaily,
+      seedStarterGear
+    };
+
+    // 启动：为新玩家播种初始装备
+    seedStarterGear();
+  })();
+  </script>
+
   <!-- ============ chunk 2: roster / partner screen (up to 5 heroes, skill upgrade) ============ -->
   <script>
   (function () {
     'use strict';
     const D = window.__GD;
     const G = D.G, heroDef = D.heroDef, el = D.el, ui = D.ui;
+    // 音效快捷方式 (chunk 0)
+    function sfx(name, ...args) { try { const a = window.__AUDIO; if (a && a.sfx && a.sfx[name]) a.sfx[name](...args); } catch (e) {} }
 
     // cost to upgrade a hero skill = level * 120 coins
     function upCost(lvl) { return lvl * 120; }
@@ -1301,9 +2042,9 @@
       if (navHost && window.__buildBottomNav) navHost.appendChild(window.__buildBottomNav('roster'));
 
       // 一次性事件绑定
-      wrap.querySelector('#closeRoster').addEventListener('click', () => window.__show('home'));
-      R.tabStyle.addEventListener('click', () => { if (tab !== 'style') { tab = 'style'; previewForm = null; refreshSelected(); } });
-      R.tabSkill.addEventListener('click', () => { if (tab !== 'skill') { tab = 'skill'; previewForm = null; refreshSelected(); } });
+      wrap.querySelector('#closeRoster').addEventListener('click', () => { sfx('click'); window.__show('home'); });
+      R.tabStyle.addEventListener('click', () => { if (tab !== 'style') { tab = 'style'; previewForm = null; sfx('tab'); refreshSelected(); } });
+      R.tabSkill.addEventListener('click', () => { if (tab !== 'skill') { tab = 'skill'; previewForm = null; sfx('tab'); refreshSelected(); } });
 
       // 两排卡片 + 局部内容
       renderDeployRows(R.deployRow, R.benchRow);
@@ -1319,8 +2060,13 @@
       const sk = h.skill;
       const curForm = heroFormRow(lvl);
       const showForm = (previewForm != null) ? previewForm : curForm;
-      const crit = h.stats.crit + (lvl - 1) * 2;
-      const phys = h.stats.phys + (lvl - 1) * 4;
+      // 有效属性：基础(随等级) + 装备加成 (来自 __ECON)，让伙伴页直观体现装备价值
+      const eff = (window.__ECON && window.__ECON.effectiveStats) ? window.__ECON.effectiveStats(selectedKey) : null;
+      const crit = eff ? eff.crit : (h.stats.crit + (lvl - 1) * 2);
+      const phys = eff ? eff.phys : (h.stats.phys + (lvl - 1) * 4);
+      const gearHp = eff ? eff.hp : 0;
+      const gearRate = eff ? eff.rate : 0;
+      const power = (window.__ECON && window.__ECON.heroPower) ? window.__ECON.heroPower(selectedKey) : 0;
 
       // 背景随选中角色配色
       R.wrap.style.background = `linear-gradient(160deg,${h.color}26,#120d0b 60%,#0a0706)`;
@@ -1329,10 +2075,13 @@
       R.name.textContent = h.name;
       R.title.textContent = h.title;
 
-      // 核心属性：放到宠物卡片左上角，每个一行
+      // 核心属性：放到宠物卡片左上角，每个一行 (含装备加成 + 战力)
       R.statBox.innerHTML = `
+        <div class="px-2 py-[1px] rounded bg-black/60 text-[10px] font-bold text-amber-300">⚡ 战力 ${power}</div>
+        <div class="px-2 py-[1px] rounded bg-black/60 text-[10px] font-bold text-amber-300">物伤 +${phys}%</div>
         <div class="px-2 py-[1px] rounded bg-black/60 text-[10px] font-bold text-amber-300">暴击 +${crit}%</div>
-        <div class="px-2 py-[1px] rounded bg-black/60 text-[10px] font-bold text-amber-300">物伤 +${phys}%</div>`;
+        ${gearHp ? `<div class="px-2 py-[1px] rounded bg-black/60 text-[10px] font-bold text-emerald-300">🛡️ +${gearHp}</div>` : ''}
+        ${gearRate ? `<div class="px-2 py-[1px] rounded bg-black/60 text-[10px] font-bold text-sky-300">⚡ 射速+${gearRate}%</div>` : ''}`;
 
       // 立绘底色 / 元素徽章 / 形态名 / 锁定灰度
       R.portraitBox.style.background = `radial-gradient(circle at 50% 38%,${h.color}55,${h.color}11)`;
@@ -1375,7 +2124,7 @@
       const h = heroDef(key);
       const cost = unlockCost(key);
       if (G.gems >= cost) {
-        G.gems -= cost; G.unlocked[key] = true; toast('已解锁 ' + h.name); D.saveProgress();
+        G.gems -= cost; G.unlocked[key] = true; sfx('unlock'); toast('已解锁 ' + h.name); D.saveProgress();
         renderDeployRows(R.deployRow, R.benchRow);  // 卡片锁状态变化，重建两排
         refreshSelected();
       } else toast('💎 不足，无法解锁 ' + h.name);
@@ -1719,6 +2468,7 @@
               onOk: () => {
                 if (G.coins >= cost) {
                   G.coins -= cost; G.heroLevel[selectedKey]++;
+                  sfx('levelup');
                   toast(h.name + ' 技能升至 Lv.' + G.heroLevel[selectedKey]);
                   D.saveProgress(); refreshSelected();
                 } else toast('🪙 不足');
@@ -1790,7 +2540,11 @@
     const D = window.__GD;
     const G = D.G, heroDef = D.heroDef, curLevel = D.curLevel, el = D.el;
     const canvas = D.canvas, ctx = D.ctx, ui = D.ui, root = D.root;
-    const PET = D.PET, drawSheetCell = D.drawSheetCell, pickPetForElement = D.pickPetForElement, ELEMENT_KEYS = D.ELEMENT_KEYS;
+    const PET = D.PET, drawSheetCell = D.drawSheetCell, sheetPending = D.sheetPending, pickPetForElement = D.pickPetForElement, ELEMENT_KEYS = D.ELEMENT_KEYS;
+    // 音效引擎快捷方式 (chunk 0 提供)；做空安全包装，缺失时静默。
+    const SFX = (window.__AUDIO && window.__AUDIO.sfx) || {};
+    function sfx(name, ...args) { try { if (SFX[name]) SFX[name](...args); } catch (e) {} }
+    function bgm(track) { try { window.__AUDIO && window.__AUDIO.playMusic(track); } catch (e) {} }
 
     // ---- 4-form evolution (form1/2/3/ultimate = sprite rows 0..3) ----
     const FORM_NAMES = ['baby', 'teen', 'adult', 'elder'];
@@ -1909,6 +2663,14 @@
       // randomly join the battle on level-ups via the 3-choose-1 card.
       B.reserve = [...new Set(G.squad.filter(k => k !== leaderKey && heroDef(k)))];
 
+      // ===== 装备「防线耐久」加成：把出战阵容(主角+候补)各自装备的 hp 词条汇总，提高防线上限。
+      // 主角全额计入，候补按 60% 计入(他们尚未登场)，鼓励为整队投资护甲类装备。
+      if (window.__ECON && window.__ECON.effectiveStats) {
+        let hpBonus = (window.__ECON.effectiveStats(leaderKey).hp) || 0;
+        B.reserve.forEach(k => { hpBonus += Math.round((window.__ECON.effectiveStats(k).hp || 0) * 0.6); });
+        if (hpBonus > 0) { B.baseHpMax += hpBonus; B.baseHp += hpBonus; }
+      }
+
       layoutLanes();
       lastTime = performance.now();
       try { window.parent.postMessage({ type: 'gameStarted' }, '*'); } catch (e) {}
@@ -1924,6 +2686,7 @@
       if (G.screen !== 'battle') return;   // 玩家可能已退出
       removeOverlay();
       B.paused = false;
+      bgm('battle');   // 进入战斗 → 切换战斗 BGM (Boss 波会自动切到 boss 曲)
       announceWave();
       lastTime = performance.now();
     }
@@ -2008,7 +2771,11 @@
 
     function makeHeroUnit(key) {
       const def = heroDef(key);
-      return { key, def, x: 0, y: 0, cd: 0, cdMax: def.skill.fireRate || 1000, bob: 0, baseCd: 0, lvl: G.heroLevel[key] || 1, color: def.color, element: def.element, spriteUrl: def.spriteUrl || '' };
+      // 有效属性 = 角色基础(随等级) + 装备加成 (来自 __ECON.effectiveStats)
+      const eff = (window.__ECON && window.__ECON.effectiveStats)
+        ? window.__ECON.effectiveStats(key)
+        : { phys: def.stats.phys, crit: def.stats.crit, hp: 0, rate: 0 };
+      return { key, def, x: 0, y: 0, cd: 0, cdMax: def.skill.fireRate || 1000, bob: 0, baseCd: 0, lvl: G.heroLevel[key] || 1, color: def.color, element: def.element, spriteUrl: def.spriteUrl || '', eff };
     }
 
     function announceWave() {
@@ -2022,6 +2789,9 @@
       else if (w.elite) label += ' · 精英出没';
       const col = isBoss ? '#ff4b3a' : (w.swarm ? '#ff8a3a' : (w.elite ? '#c98aff' : '#ffe7c2'));
       B.floaters.push({ x: D.W / 2, y: B.laneTop + 60, txt: label, life: 1.7, color: col, big: true });
+      sfx('wave', isBoss);
+      // Boss 波切换为阴森 Boss BGM，否则回到常规战斗曲
+      bgm(isBoss ? 'boss' : 'battle');
       if (isBoss) B.shake = Math.max(B.shake, 10);
     }
 
@@ -2181,7 +2951,8 @@
           continue;
         }
         h.cd -= dt;
-        const rate = sk.fireRate / (1 + (h.lvl - 1) * 0.12) * rateBuff();
+        const rateGear = 1 + ((h.eff ? h.eff.rate : 0) || 0) / 100;   // 装备射速加成(%)
+        const rate = sk.fireRate / (1 + (h.lvl - 1) * 0.12) / rateGear * rateBuff();
         h.cdMax = rate;
         if (h.cd <= 0 && B.enemies.length) {
           const tgt = nearestEnemyInRange(h.x, h.y, range);
@@ -2191,8 +2962,10 @@
     }
     function fire(h, tgt, buff) {
       const sk = h.def.skill;
-      const dmg = sk.dmg * (1 + (h.lvl - 1) * 0.25) * buff * (1 + h.def.stats.phys / 100);
+      const phys = (h.eff ? h.eff.phys : h.def.stats.phys) || 0;
+      const dmg = sk.dmg * (1 + (h.lvl - 1) * 0.25) * buff * (1 + phys / 100);
       h.muzzle = 0.08;
+      sfx('shoot', sk.type);
       const elColor = (game_config.elements[h.element] && game_config.elements[h.element].color) || h.color;
       // 多重射击：发射 multishot 发，带角度扩散
       const shots = sk.multishot || 1;
@@ -2205,7 +2978,7 @@
           x: h.x, y: h.y - 26, vx: Math.cos(ang) * sk.speed, vy: Math.sin(ang) * sk.speed,
           dmg, type: sk.type, radius: sk.radius || 0, pierce: sk.pierce || 0, slow: sk.slow || 0,
           burn: sk.burn || 0, burnDmg: sk.burnDmg || 0, chain: sk.chain || 0, shock: sk.shock || 0,
-          color: elColor, element: h.element, crit: h.def.stats.crit || 0,
+          color: elColor, element: h.element, crit: (h.eff ? h.eff.crit : h.def.stats.crit) || 0,
           r: (sk.type === 'explode' || sk.type === 'flame') ? 7 : (sk.type === 'nail' || sk.type === 'chain') ? 6 : 4,
           life: 2.5, hits: []
         });
@@ -2236,6 +3009,7 @@
       for (let i = 0; i < 8; i++) { const a = Math.random() * Math.PI * 2; B.particles.push({ x, y, vx: Math.cos(a) * 60, vy: Math.sin(a) * 60, life: .4, max: .4, color, r: 2 }); }
     }
     function explode(x, y, radius, dmg, color, slow, stun, element, crit) {
+      sfx('explosion', radius >= 60);
       for (const e of B.enemies) {
         if (e.dead) continue;
         if (Math.hypot(e.x - x, e.y - y) <= radius) { hurt(e, dmg, element, crit); if (slow) e.slowT = Math.max(e.slowT, 1.6); if (stun) e.stunT = Math.max(e.stunT, 1.0); }
@@ -2246,7 +3020,7 @@
       // element counter + crit roll
       const mul = elementMul(element, e.element);
       let isCrit = false;
-      if (crit && Math.random() * 100 < crit) { dmg *= 1.6; isCrit = true; }
+      if (crit && Math.random() * 100 < crit) { dmg *= 1.6; isCrit = true; sfx('crit'); }
       dmg *= mul;
       // 脆弱(冰封)：受到的伤害放大
       if (e.vuln && e.frozenT > 0) dmg *= e.vuln;
@@ -2277,7 +3051,7 @@
         const ld = leaderUnit();
         if (ld && ld.def && ld.def.ult) {
           B.floaters.push({ x: ultBtnGeo().cx, y: ultBtnGeo().cy - 50, txt: '大招就绪!', life: 1.4, big: true, color: '#ffd24a' });
-          B.shake = Math.max(B.shake, 4);
+          B.shake = Math.max(B.shake, 4); sfx('ultReady');
         }
       }
     }
@@ -2285,6 +3059,7 @@
     function killEnemy(e) {
       {
         e.dead = true; B.kills++;
+        sfx(e.isBoss ? 'bossKill' : (e.isElite ? 'eliteKill' : 'kill'));
         // ---- 连杀系统：在窗口内连续击杀累计 combo，提供分数与击杀奖励加成 ----
         B.combo++; B.comboTimer = 2.2; if (B.combo > B.comboBest) B.comboBest = B.combo;
         const comboMul = 1 + Math.min(2, B.combo * 0.04);  // 最高 +200% 分数
@@ -2301,7 +3076,7 @@
         // 连杀里程碑提示 + 过载触发
         if (B.combo === 10 || B.combo === 25 || B.combo === 50 || B.combo === 100) {
           B.floaters.push({ x: D.W / 2, y: B.laneTop + 110, txt: B.combo + ' 连杀!', life: 1.3, big: true, color: '#ffd24a' });
-          B.shake = Math.max(B.shake, 6);
+          B.shake = Math.max(B.shake, 6); sfx('combo', B.combo);
           if (B.combo >= 25) B.overdrive = Math.max(B.overdrive, 4);  // 25+连杀触发全队过载
         }
         // 击杀爆裂粒子
@@ -2332,6 +3107,7 @@
 
     function openSkillSelect() {
       B.paused = true;
+      sfx('levelup');
       // Build a 3-choose-1: each option is either RECRUIT (a candidate joins) or
       // BOOST (an already-deployed hero levels up). Recruits are weighted so new
       // members appear, but boosts keep showing once the squad is full.
@@ -2392,6 +3168,7 @@
       placeHeroes();
       // little flourish text
       B.floaters.push({ x: D.W / 2, y: B.laneBottom + 30, txt: def.name + ' 登场!', life: 1.1, color: def.color });
+      sfx('debut');
       // 首次登场说一句话 (头顶冒泡，不暂停游戏)
       showDebutLine(unit, def);
     }
@@ -2419,6 +3196,7 @@
     }
 
     function applyChoice(c) {
+      sfx('pickCard');
       if (c.kind === 'recruit') { deployReserve(c.key); }
       else if (c.kind === 'boost') {
         const before = heroFormRow(c.hero.lvl);
@@ -2426,15 +3204,17 @@
         const after = heroFormRow(c.hero.lvl);
         if (after > before) {  // 跨过形态阈值 → 进化特效
           const isFinal = after >= 3;
+          sfx('evolve');
           B.floaters.push({ x: c.hero.x, y: c.hero.y - 40, txt: c.hero.def.name + ' 进化为 ' + FORM_LABELS[after] + (isFinal ? '·最终形态!' : '态!'), life: 1.5, big: true, color: isFinal ? '#ffd24a' : '#7CFC00' });
           for (let i = 0; i < 24; i++) { const a = Math.random() * Math.PI * 2, sp = 60 + Math.random() * 160; B.particles.push({ x: c.hero.x, y: c.hero.y - 6, vx: Math.cos(a) * sp, vy: Math.sin(a) * sp, life: .7, max: .7, color: elColorOf(c.hero.element), r: 2 + Math.random() * 3 }); }
         }
       }
-      else if (c.kind === 'dmg') B.heroes.forEach(h => h.def.stats.phys += 18);
+      // 注意：临时增益只改 hero 单位的 eff 快照，绝不污染共享的 game_config.def.stats
+      else if (c.kind === 'dmg') B.heroes.forEach(h => { if (h.eff) h.eff.phys += 18; });
       else if (c.kind === 'rate') B.heroes.forEach(h => h.lvl += 0.6);
       else if (c.kind === 'heal') B.baseHp = Math.min(B.baseHpMax, B.baseHp + 30);
       else if (c.kind === 'maxhp') { B.baseHpMax += 25; B.baseHp = Math.min(B.baseHpMax, B.baseHp + 25); }
-      else if (c.kind === 'crit') B.heroes.forEach(h => h.def.stats.crit += 8);
+      else if (c.kind === 'crit') B.heroes.forEach(h => { if (h.eff) h.eff.crit += 8; });
       else if (c.kind === 'overdrive') B.overdrive = Math.max(B.overdrive, 5);
       else if (c.kind === 'element') game_config.elementBonus = (game_config.elementBonus || 1.75) + 0.25;
       else if (c.kind === 'lifesteal') B.lifesteal = (B.lifesteal || 0) + 1;
@@ -2572,6 +3352,8 @@
       return best;
     }
     canvas.addEventListener('pointerdown', e => {
+      // 背景音乐开关即使暂停也可点（不依赖 B.running/paused）
+      if (hitMusic(e)) { const A = window.__AUDIO; if (A && A.setMusicOn && A.isMusicOn) A.setMusicOn(!A.isMusicOn()); return; }
       if (!B.running || B.paused) return;
       if (hitPause(e)) { B.paused = true; renderPause(); return; }
       if (hitSpeed(e)) { B.speedMul = B.speedMul === 1 ? 1.5 : 1; return; }
@@ -2585,6 +3367,9 @@
     window.addEventListener('pointercancel', () => { B.selectedHero = null; });
     function hitPause(e) { const r = canvas.getBoundingClientRect(); const x = e.clientX - r.left, y = e.clientY - r.top; return x > 6 && x < 70 && y > 6 && y < 40; }
     function hitSpeed(e) { const r = canvas.getBoundingClientRect(); const x = e.clientX - r.left, y = e.clientY - r.top; return x > D.W - 70 && x < D.W - 6 && y > 6 && y < 40; }
+    // 背景音乐开关按钮几何 (右上角速度按钮下方；下移避开黄色经验条)
+    function musicBtnGeo() { return { cx: D.W - 35, cy: 80, r: 15 }; }
+    function hitMusic(e) { const r = canvas.getBoundingClientRect(); const g = musicBtnGeo(); const x = e.clientX - r.left, y = e.clientY - r.top; return Math.hypot(x - g.cx, y - g.cy) <= g.r + 6; }
     // 大招按钮在右下角(圆形)
     function ultBtnGeo() { return { cx: D.W - 52, cy: D.laneBottom + 56, r: 38 }; }
     function hitUlt(e) { const r = canvas.getBoundingClientRect(); const g = ultBtnGeo(); const x = e.clientX - r.left, y = e.clientY - r.top; return Math.hypot(x - g.cx, y - g.cy) <= g.r + 6; }
@@ -2600,25 +3385,26 @@
           <button id="resumeBtn" class="px-7 py-2 rounded-full font-bold text-white" style="background:linear-gradient(#ffb733,#e07b0a);box-shadow:0 3px 0 #7a2408;">继续战斗</button>
         </div>`;
       root.appendChild(wrap); overlayEl = wrap;
-      wrap.querySelector('#resumeBtn').addEventListener('click', () => { B.paused = false; removeOverlay(); lastTime = performance.now(); });
+      wrap.querySelector('#resumeBtn').addEventListener('click', () => { sfx('click'); B.paused = false; removeOverlay(); lastTime = performance.now(); });
       // 退出战斗 = 判定失败：结算为 DEFEAT 并展示结算界面
-      wrap.querySelector('#quitBtn').addEventListener('click', () => { removeOverlay(); B.paused = false; endBattle(false); });
+      wrap.querySelector('#quitBtn').addEventListener('click', () => { sfx('click'); removeOverlay(); B.paused = false; endBattle(false); });
     }
 
     // ================= ULTIMATE / 大招系统 =================
     function leaderUnit() { return B.heroes.find(h => h.key === G.leader) || B.heroes[0]; }
     function castUltimate() {
       if (!B.running || B.paused) return;
-      if (B.energy < B.energyMax) { B.floaters.push({ x: D.W / 2, y: B.laneBottom - 40, txt: '能量不足', life: .8, color: '#ffcf66' }); return; }
+      if (B.energy < B.energyMax) { B.floaters.push({ x: D.W / 2, y: B.laneBottom - 40, txt: '能量不足', life: .8, color: '#ffcf66' }); sfx('noEnergy'); return; }
       const ld = leaderUnit(); if (!ld) return;
       const ult = ld.def.ult;
-      if (!ult) { B.floaters.push({ x: D.W / 2, y: B.laneBottom - 40, txt: '该角色暂无大招', life: .9, color: '#ffcf66' }); return; }
+      if (!ult) { B.floaters.push({ x: D.W / 2, y: B.laneBottom - 40, txt: '该角色暂无大招', life: .9, color: '#ffcf66' }); sfx('noEnergy'); return; }
       B.energy = 0; B.ultsUsed++;
+      sfx('ultCast');
       // 通用大招演出：全屏闪白 + 震动 + 子弹时间 + 大字
       B.flash = 0.5; B.shake = Math.max(B.shake, 16); B.slowmo = 0.5;
       B.floaters.push({ x: D.W / 2, y: D.H * 0.4, txt: '★ ' + ult.name + ' ★', life: 1.6, big: true, color: ld.color });
       const allEnemies = () => B.enemies.filter(e => !e.dead);
-      const el = ld.element, crit = ld.def.stats.crit || 0, phys = 1 + (ld.def.stats.phys || 0) / 100;
+      const el = ld.element, crit = (ld.eff ? ld.eff.crit : ld.def.stats.crit) || 0, phys = 1 + ((ld.eff ? ld.eff.phys : ld.def.stats.phys) || 0) / 100;
       const D2 = v => v * phys * (1 + (ld.lvl - 1) * 0.12);  // 大招随领队等级成长
       switch (ult.type) {
         case 'meteor': { // 火雨：随机落点爆炸+点燃
@@ -2683,6 +3469,7 @@
         for (let p = 0; p < 12; p++) { const a = Math.random() * Math.PI * 2; B.particles.push({ x: ld.x + off, y: B.laneBottom + 20, vx: Math.cos(a) * 100, vy: Math.sin(a) * 100, life: .4, max: .4, color: ld.color, r: 2, grav: 0 }); }
       }
       B.floaters.push({ x: D.W / 2, y: B.laneBottom - 10, txt: '援军登场!', life: 1.1, color: ld.color });
+      sfx('summon');
     }
     function spawnTurret(ld, dur, forceEl) {
       const S = game_config.summon || {};
@@ -2783,6 +3570,7 @@
             B.waveResting = true;
             B.restTimer = c.restGap || 2400;
             B.floaters.push({ x: D.W / 2, y: B.laneTop + 90, txt: '波次清空，准备下一波!', life: 1.4, color: '#7CFC00' });
+            sfx('waveClear');
           }
         }
       }
@@ -2838,6 +3626,7 @@
           if (B.shield > 0) { const absorbed = Math.min(B.shield, dmg); B.shield -= absorbed; dmg -= absorbed; }
           B.baseHp -= dmg; e.dead = true;
           B.shake = Math.max(B.shake, e.isBoss ? 14 : 6);
+          sfx('hurt');
           B.floaters.push({ x: D.W / 2, y: B.laneBottom, txt: '-' + Math.round((e.isBoss ? 25 : (e.ti === 2 ? 12 : 6)) * (e.dmgMul || 1)), life: .7, color: '#ff4b3a', big: true });
         }
       }
@@ -2865,44 +3654,82 @@
     function endBattle(win) {
       if (!B.running) return;
       B.running = false;
-      // 奖励随关卡难度与连杀表现增长；首次通关额外给钻石
-      const stageMul = 1 + G.lvlIndex * 0.25;
-      const comboBonus = Math.round(B.comboBest * 1.5);
-      const earn = Math.round((B.score / 5 + (win ? 60 : 10) + comboBonus) * stageMul);
-      G.coins += earn; G.cash = (G.cash || 0) + B.cash;
-      // 钻石：首次通关给较多，重复通关给少量，确保经济不膨胀
-      let gemReward = 0;
-      if (win) { const firstClear = !(G.cleared && G.cleared[curLevel().id]); gemReward = firstClear ? (15 + G.lvlIndex * 5) : 8; }
-      G.gems += gemReward;
-      B._lastEarn = earn; B._lastGem = gemReward;
+      sfx(win ? 'win' : 'lose');
+      bgm('menu');   // 结算后回到菜单主题音乐
+      const firstClear = win && !(G.cleared && G.cleared[curLevel().id]);
+      // ===== 经济结算：交给 __ECON.rollBattleRewards 统一计算金币/钻石/材料/装备掉落 =====
+      let rw;
+      if (window.__ECON && window.__ECON.rollBattleRewards) {
+        rw = window.__ECON.rollBattleRewards(G.lvlIndex, win, {
+          score: B.score, comboBest: B.comboBest, kills: B.kills, hard: G.hardMode, firstClear
+        });
+      } else {
+        // 兜底（__ECON 未就绪）
+        const stageMul = 1 + G.lvlIndex * 0.25;
+        rw = { coins: Math.round((B.score / 5 + (win ? 60 : 10)) * stageMul), gems: win ? (firstClear ? 15 : 6) : 0, mats: {}, items: [] };
+      }
+      // 应用奖励
+      G.coins += rw.coins;
+      G.gems += rw.gems || 0;
+      G.cash = (G.cash || 0) + B.cash;
+      if (rw.mats) for (const m in rw.mats) { if (rw.mats[m]) G.materials[m] = (G.materials[m] || 0) + rw.mats[m]; }
+      (rw.items || []).forEach(it => { if (window.__ECON) window.__ECON.addItem(it); });
+      // 统计
+      G.totalEarned = (G.totalEarned || 0) + rw.coins;
+      G.totalRuns = (G.totalRuns || 0) + 1;
+      // 缓存到 B 供结算界面展示
+      B._reward = rw;
       if (win) G.cleared[curLevel().id] = true;
       if (window.__saveProgress) window.__saveProgress();  // persist progress to localStorage
-      renderResult(win, earn);
+      renderResult(win, rw);
       try { window.parent.postMessage({ type: 'gameFinished', data: { earnedPoints: B.score, kills: B.kills, level: curLevel().id, win } }, '*'); } catch (e) {}
     }
-    function renderResult(win, earn) {
+    function renderResult(win, rw) {
       removeOverlay();
       const lv = curLevel();
       const hasNext = win && G.lvlIndex < game_config.levels.length - 1;
-      const wrap = el('div', 'absolute inset-0 flex flex-col items-center justify-center z-30');
-      wrap.style.background = 'rgba(8,6,5,.82)';
+      const EC = window.__ECON;
+      rw = rw || { coins: 0, gems: 0, mats: {}, items: [] };
+      // 材料汇总文案
+      const matBits = [];
+      if (rw.mats) for (const m in rw.mats) { if (rw.mats[m] && EC) matBits.push(`${EC.ECON.mats[m].e}+${rw.mats[m]}`); }
+      // 掉落装备卡片
+      const itemCards = (rw.items || []).map(it => {
+        const rd = EC ? EC.rarityDef(it.rarity) : { color: '#9aa', name: '' };
+        const sd = EC ? EC.slotDef(it.slot) : { t: '' };
+        return `<div class="flex flex-col items-center rounded-lg px-2 py-2 mx-1" style="background:rgba(0,0,0,.5);border:2px solid ${rd.color};min-width:74px;">
+            <div class="text-3xl leading-none">${it.emoji}</div>
+            <div class="text-[10px] font-bold mt-1" style="color:${rd.color};">${rd.name}</div>
+            <div class="text-[9px] text-stone-300">${it.name}</div>
+          </div>`;
+      }).join('');
+      const wrap = el('div', 'absolute inset-0 flex flex-col items-center justify-center z-30 px-4 overflow-y-auto');
+      wrap.style.background = 'rgba(8,6,5,.86)';
       wrap.innerHTML = `
         <div class="text-4xl font-black mb-2" style="color:${win ? '#7CFC00' : '#ff4b3a'};text-shadow:0 2px 6px #000;">${win ? '盗墓成功' : '葬身墓中'}</div>
-        <div class="text-stone-300 mb-1">${lv.name}</div>
-        <div class="text-amber-300 text-lg font-bold">击杀 ${B.kills}</div>
-        <div class="text-amber-200 mb-1">分数 ${B.score} · 最高连杀 🔥${B.comboBest}</div>
-        <div class="text-yellow-300">🪙 +${earn}${B._lastGem ? ('　💎 +' + B._lastGem) : ''}</div>
-        <div class="mb-6"></div>
-        <div class="flex gap-3">
+        <div class="text-stone-300 mb-1">${lv.name}${win && rw.gems && rw.gems > 8 ? '　<span style="color:#ffd24a;">首通!</span>' : ''}</div>
+        <div class="text-amber-300 text-lg font-bold">击杀 ${B.kills} · 分数 ${B.score}</div>
+        <div class="text-amber-200 mb-3 text-[13px]">最高连杀 🔥${B.comboBest}</div>
+        <!-- 货币奖励行 -->
+        <div class="flex items-center justify-center gap-4 mb-3">
+          <div class="flex items-center gap-1 text-lg"><span>🪙</span><span class="text-yellow-300 font-black">+${rw.coins}</span></div>
+          ${rw.gems ? `<div class="flex items-center gap-1 text-lg"><span>💎</span><span class="text-sky-300 font-black">+${rw.gems}</span></div>` : ''}
+        </div>
+        ${matBits.length ? `<div class="text-[12px] text-stone-300 mb-2">素材掉落：${matBits.join('　')}</div>` : ''}
+        ${itemCards ? `<div class="text-[11px] text-amber-300 font-bold mb-1">⚔️ 装备掉落</div><div class="flex flex-wrap justify-center mb-3">${itemCards}</div>` : ''}
+        <div class="mb-4"></div>
+        <div class="flex gap-3 flex-wrap justify-center">
           ${hasNext ? `<button id="nextBtn" class="px-6 py-2 rounded-full font-bold text-white" style="background:linear-gradient(#36c45a,#1e8a3a);box-shadow:0 3px 0 #115221;">下一关</button>` : ''}
           <button id="retryBtn" class="px-6 py-2 rounded-full font-bold text-white" style="background:linear-gradient(#ff7a2a,#e0480f);box-shadow:0 3px 0 #7a2408;">重打</button>
-          <button id="homeBtn" class="px-6 py-2 rounded-full font-bold text-stone-200 bg-black/50 border border-stone-600">基地</button>
+          <button id="bagBtn" class="px-5 py-2 rounded-full font-bold text-stone-100" style="background:linear-gradient(#5a93d6,#2a6ab0);box-shadow:0 3px 0 #1a447a;">🎒 背包</button>
+          <button id="homeBtn" class="px-5 py-2 rounded-full font-bold text-stone-200 bg-black/50 border border-stone-600">基地</button>
         </div>`;
       root.appendChild(wrap); overlayEl = wrap;
       const nb = wrap.querySelector('#nextBtn');
-      if (nb) nb.addEventListener('click', () => { G.lvlIndex++; removeOverlay(); startBattle(); });
-      wrap.querySelector('#retryBtn').addEventListener('click', () => { removeOverlay(); startBattle(); });
-      wrap.querySelector('#homeBtn').addEventListener('click', () => { removeOverlay(); window.__show('home'); });
+      if (nb) nb.addEventListener('click', () => { sfx('click'); G.lvlIndex++; removeOverlay(); startBattle(); });
+      wrap.querySelector('#retryBtn').addEventListener('click', () => { sfx('click'); removeOverlay(); startBattle(); });
+      wrap.querySelector('#bagBtn').addEventListener('click', () => { sfx('click'); removeOverlay(); window.__show('bag'); });
+      wrap.querySelector('#homeBtn').addEventListener('click', () => { sfx('click'); removeOverlay(); window.__show('home'); });
     }
 
     // ---- render ----
@@ -2971,7 +3798,8 @@
       const formRow = e.formRow || 0;
       let drew = false;
       if (e.spriteUrl) drew = drawSheetCell(ctx, e.spriteUrl, formRow, 0, cx - size / 2, cy - size * 0.62, size, size);
-      if (!drew) {
+      // 贴图仍在加载中：跳过 fallback，本帧不画身体，避免占位图一闪而过造成闪烁。
+      if (!drew && !sheetPending(e.spriteUrl)) {
         // fallback drawn zombie
         ctx.save(); ctx.translate(cx, cy);
         ctx.fillStyle = e.slowT > 0 ? '#6f9bd6' : '#e8e6df'; ctx.fillRect(-w / 2, -h / 4, w, h * 0.55);
@@ -3030,7 +3858,8 @@
       const size = 52 * (1 + formRow * 0.08);
       let drew = false;
       if (h.spriteUrl) drew = drawSheetCell(ctx, h.spriteUrl, formRow, 1, x - size / 2, y - size * 0.66, size, size);
-      if (!drew) {
+      // 贴图仍在加载中：跳过占位圆，本帧不画身体，避免占位图一闪而过造成闪烁。
+      if (!drew && !sheetPending(h.spriteUrl)) {
         // 宠物图未就绪时的占位：角色配色圆形 (不再用 emoji)
         ctx.fillStyle = h.def.color || '#888'; ctx.beginPath(); ctx.arc(x, y - 10, size * 0.42, 0, Math.PI * 2); ctx.fill();
         ctx.fillStyle = 'rgba(255,255,255,.25)'; ctx.beginPath(); ctx.arc(x - size * 0.12, y - size * 0.22, size * 0.14, 0, Math.PI * 2); ctx.fill();
@@ -3097,7 +3926,8 @@
           // 民兵：用领队宠物缩略图，否则配色圆
           let drew = false;
           if (s.spriteUrl) drew = drawSheetCell(ctx, s.spriteUrl, 0, 1, s.x - 18, s.y - 30, 36, 36);
-          if (!drew) { ctx.fillStyle = s.color; ctx.beginPath(); ctx.arc(s.x, s.y - 8, 14, 0, Math.PI * 2); ctx.fill(); }
+          // 贴图仍在加载中：跳过配色圆占位，避免闪烁。
+          if (!drew && !sheetPending(s.spriteUrl)) { ctx.fillStyle = s.color; ctx.beginPath(); ctx.arc(s.x, s.y - 8, 14, 0, Math.PI * 2); ctx.fill(); }
           ctx.strokeStyle = s.color; ctx.lineWidth = 2; ctx.globalAlpha = fade * .6; ctx.beginPath(); ctx.arc(s.x, s.y - 8, 18, 0, Math.PI * 2); ctx.stroke();
         }
         ctx.restore();
@@ -3177,6 +4007,20 @@
       if (B.shield > 0) { const sp = Math.min(1, B.shield / B.baseHpMax); ctx.fillStyle = '#16e0c0'; roundRect(bx, by, bw * Math.min(1, pct + sp) , 4, 2); ctx.fill(); }
       ctx.fillStyle = '#fff'; ctx.font = 'bold 9px sans-serif'; ctx.textAlign = 'center'; ctx.fillText('防线耐久 ' + Math.ceil(B.baseHp) + (B.shield > 0 ? (' +🛡' + Math.ceil(B.shield)) : ''), W / 2, by + 7);
       drawUltButton();
+      drawSoundButtons();
+    }
+    // ---- 战斗内 背景音乐开关 (右上角速度按钮下方；图标不透明、底透明) ----
+    function drawSoundButtons() {
+      const A = window.__AUDIO;
+      const musicOn = A && A.isMusicOn && A.isMusicOn();
+      const g = musicBtnGeo();
+      ctx.save();
+      // 图标完全不透明，背景透明 (不画底圆)
+      ctx.globalAlpha = 1;
+      ctx.font = '18px sans-serif'; ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+      ctx.fillText(musicOn ? '🎵' : '🔇', g.cx, g.cy + 1);
+      ctx.restore();
+      ctx.textBaseline = 'alphabetic';
     }
     // ---- 大招按钮 + 能量环 (右下角) ----
     function drawUltButton() {
@@ -3260,6 +4104,8 @@
     const G = D.G, heroDef = D.heroDef, el = D.el, ui = D.ui;
     const buildBottomNav = window.__buildBottomNav, buildTopBar = window.__buildTopBar;
     const toast = window.__toast || function () {};
+    // 音效快捷方式 (chunk 0)
+    function sfx(name, ...args) { try { const a = window.__AUDIO; if (a && a.sfx && a.sfx[name]) a.sfx[name](...args); } catch (e) {} }
     const elColor = k => (game_config.elements[k] && game_config.elements[k].color) || '#888';
     const elName  = k => (game_config.elements[k] && game_config.elements[k].name)  || '?';
     const elEmoji = k => (game_config.elements[k] && game_config.elements[k].emoji) || '✨';
@@ -3278,46 +4124,51 @@
     }
 
     // ===================================================================
-    //  商店 SHOP
+    //  商店 SHOP  (真实经济：宝箱抽装备 / 素材兑换 / 角色解锁 / 钻石礼包)
     // ===================================================================
     const SHOP_TABS = [
-      { k: 'gem',   t: '钻石', e: '💎' },
-      { k: 'gear',  t: '装备', e: '🛡️' },
+      { k: 'chest', t: '宝箱', e: '🎁' },
+      { k: 'mat',   t: '素材', e: '🧪' },
       { k: 'hero',  t: '角色', e: '🧑‍🤝‍🧑' },
-      { k: 'daily', t: '每日', e: '📅' }
+      { k: 'gem',   t: '钻石', e: '💎' }
     ];
-    let shopTab = 'gem';
+    let shopTab = 'chest';
 
-    const SHOP_GOODS = {
-      gem: [
-        { id: 'g1', name: '一小袋钻石', emoji: '💎', amount: '×60',   price: '¥6',  tag: '' },
-        { id: 'g2', name: '一把钻石',   emoji: '💎', amount: '×300',  price: '¥30', tag: '热卖' },
-        { id: 'g3', name: '一堆钻石',   emoji: '💎', amount: '×680',  price: '¥68', tag: '超值' },
-        { id: 'g4', name: '一箱钻石',   emoji: '💎', amount: '×1280', price: '¥128', tag: '' },
-        { id: 'g5', name: '钻石宝库',   emoji: '💎', amount: '×3280', price: '¥328', tag: '尊享' },
-        { id: 'g6', name: '钻石神殿',   emoji: '💎', amount: '×6480', price: '¥648', tag: 'MAX' }
-      ],
-      gear: [
-        { id: 'e1', name: '钢制头盔', emoji: '🪖', amount: '+12 防御', price: '🪙 800',  tag: '' },
-        { id: 'e2', name: '防弹背心', emoji: '🦺', amount: '+20 生命', price: '🪙 1200', tag: '推荐' },
-        { id: 'e3', name: '战术手套', emoji: '🧤', amount: '+8 暴击',  price: '🪙 600',  tag: '' },
-        { id: 'e4', name: '军用战靴', emoji: '🥾', amount: '+10 移速', price: '🪙 700',  tag: '' },
-        { id: 'e5', name: '幸运徽章', emoji: '🎖️', amount: '+15 攻击', price: '💎 120',  tag: '稀有' },
-        { id: 'e6', name: '英雄勋章', emoji: '🏅', amount: '+30 全属', price: '💎 320',  tag: '史诗' }
-      ],
-      get hero() {
-        return game_config.heroes.filter(h => h.locked).map(h => ({
-          id: 'h_' + h.key, key: h.key, name: h.name, spriteUrl: h.spriteUrl, color: h.color,
-          amount: h.title, price: '💎 ' + (h.unlockCost || 200), tag: '角色', element: h.element
-        }));
-      },
-      daily: [
-        { id: 'd1', name: '每日金币', emoji: '🪙', amount: '×500',  price: '免费', tag: '可领' },
-        { id: 'd2', name: '每日钻石', emoji: '💎', amount: '×20',   price: '看广告', tag: '可领' },
-        { id: 'd3', name: '体力补给', emoji: '🎟️', amount: '×5',   price: '🪙 200', tag: '' },
-        { id: 'd4', name: '神秘礼盒', emoji: '🎁', amount: '随机奖励', price: '💎 50', tag: '限时' }
-      ]
-    };
+    // ---- 宝箱定义：花费货币开箱，按权重表掉落随机装备 (走 __ECON.rollDropItem 的稀有度逻辑) ----
+    // minRarity: 保底稀有度；stageBoost: 等效关卡偏移(越高出货越好)；count: 一次开几件
+    const CHESTS = [
+      { id: 'wood',  name: '木质宝箱', e: '📦', cur: 'coins', price: 800,  count: 1, minRarity: 1, stageBoost: 0, tag: '', desc: '随机 1 件装备' },
+      { id: 'iron',  name: '青铜宝箱', e: '🧰', cur: 'coins', price: 2400, count: 1, minRarity: 2, stageBoost: 2, tag: '推荐', desc: '保底精良起' },
+      { id: 'gold',  name: '鎏金宝箱', e: '🎁', cur: 'gems',  price: 60,   count: 1, minRarity: 3, stageBoost: 4, tag: '稀有', desc: '保底稀有起' },
+      { id: 'relic', name: '明器宝箱', e: '🏆', cur: 'gems',  price: 180,  count: 3, minRarity: 3, stageBoost: 6, tag: '超值', desc: '3 连抽 · 保底稀有起' },
+      { id: 'epicc', name: '史诗宝箱', e: '💎', cur: 'gems',  price: 320,  count: 1, minRarity: 4, stageBoost: 7, tag: '史诗', desc: '保底史诗起' }
+    ];
+
+    // ---- 素材兑换：用金币/钻石买强化素材 ----
+    const MAT_GOODS = [
+      { id: 'm_screw', mat: 'screw',  amount: 20, cur: 'coins', price: 400,  tag: '' },
+      { id: 'm_gear',  mat: 'gear',   amount: 10, cur: 'coins', price: 1200, tag: '' },
+      { id: 'm_pot',   mat: 'potion', amount: 5,  cur: 'coins', price: 2000, tag: '推荐' },
+      { id: 'm_pot2',  mat: 'potion', amount: 12, cur: 'gems',  price: 80,   tag: '超值' },
+      { id: 'm_cry',   mat: 'crystal',amount: 3,  cur: 'gems',  price: 120,  tag: '稀有' },
+      { id: 'm_cry2',  mat: 'crystal',amount: 8,  cur: 'gems',  price: 280,  tag: '史诗' }
+    ];
+
+    // ---- 钻石礼包 (内购演示) ----
+    const GEM_PACKS = [
+      { id: 'g1', name: '一小袋钻石', amount: 60,   price: '¥6',  tag: '' },
+      { id: 'g2', name: '一把钻石',   amount: 300,  price: '¥30', tag: '热卖' },
+      { id: 'g3', name: '一堆钻石',   amount: 680,  price: '¥68', tag: '超值' },
+      { id: 'g4', name: '一箱钻石',   amount: 1280, price: '¥128', tag: '' },
+      { id: 'g5', name: '钻石宝库',   amount: 3280, price: '¥328', tag: '尊享' },
+      { id: 'g6', name: '钻石神殿',   amount: 6480, price: '¥648', tag: 'MAX' }
+    ];
+
+    const curIcon = c => c === 'gems' ? '💎' : '🪙';
+    function spend(cur, amt) {
+      if (cur === 'gems') { if (G.gems < amt) return false; G.gems -= amt; return true; }
+      if (G.coins < amt) return false; G.coins -= amt; return true;
+    }
 
     function renderShop() {
       const body = scaffold('商店', 'shop');
@@ -3331,60 +4182,161 @@
         </button>`).join('');
       body.appendChild(tabs);
 
-      // featured banner
+      // 当前材料库存条 (在素材/宝箱页显示，方便决策)
+      if (shopTab === 'mat' || shopTab === 'chest') {
+        const EC = window.__ECON;
+        const inv = el('div', 'flex items-center justify-around bg-black/35 rounded-xl px-2 py-2 mb-2 mt-1 border border-amber-900/40');
+        inv.innerHTML = Object.keys(EC.ECON.mats).map(m => `<div class="flex items-center gap-1 text-[12px]"><span>${EC.ECON.mats[m].e}</span><span class="text-stone-200 font-bold">${G.materials[m] || 0}</span></div>`).join('');
+        body.appendChild(inv);
+      }
+
+      if (shopTab === 'chest') renderChestTab(body);
+      else if (shopTab === 'mat') renderMatTab(body);
+      else if (shopTab === 'hero') renderHeroTab(body);
+      else if (shopTab === 'gem') renderGemTab(body);
+
+      tabs.querySelectorAll('[data-stab]').forEach(b => b.addEventListener('click', () => { sfx('tab'); shopTab = b.getAttribute('data-stab'); renderShop(); }));
+    }
+
+    // ---- 宝箱页 ----
+    function renderChestTab(body) {
+      const EC = window.__ECON;
+      const grid = el('div', 'grid grid-cols-2 gap-2 pb-3');
+      grid.innerHTML = CHESTS.map(c => `
+        <div class="rounded-xl p-2 flex flex-col items-center text-center relative" style="background:linear-gradient(#2a1c14,#120d0b 75%);border:1px solid rgba(217,154,58,.3);">
+          ${c.tag ? `<div class="absolute top-1 left-1 px-2 py-[1px] rounded-full text-[9px] font-bold text-black bg-amber-400">${c.tag}</div>` : ''}
+          <div class="mt-2 mb-1 text-4xl">${c.e}</div>
+          <div class="text-[12px] font-bold text-amber-100">${c.name}</div>
+          <div class="text-[10px] text-stone-400 leading-tight min-h-[26px]">${c.desc}</div>
+          <button data-chest="${c.id}" class="mt-1 w-full py-[6px] rounded-lg text-[12px] font-black text-white" style="background:linear-gradient(#ffb733,#e07b0a);box-shadow:0 2px 0 #7a2408;">${curIcon(c.cur)} ${c.price}</button>
+        </div>`).join('');
+      body.appendChild(grid);
+      grid.querySelectorAll('[data-chest]').forEach(b => b.addEventListener('click', () => {
+        const c = CHESTS.find(x => x.id === b.getAttribute('data-chest')); if (!c) return;
+        if (!spend(c.cur, c.price)) { sfx('noEnergy'); toast(curIcon(c.cur) + ' 不足'); return; }
+        sfx('unlock');
+        const got = [];
+        for (let i = 0; i < c.count; i++) {
+          let it = EC.rollDropItem(G.lvlIndex + c.stageBoost, false);
+          // 应用宝箱保底稀有度
+          if (it.rarity < c.minRarity) it = EC.makeItem(it.slot, c.minRarity, {});
+          EC.addItem(it); got.push(it);
+        }
+        D.saveProgress();
+        showLootPopup(got);
+        renderShop();
+      }));
+    }
+
+    // ---- 素材页 ----
+    function renderMatTab(body) {
+      const EC = window.__ECON;
+      const grid = el('div', 'grid grid-cols-2 gap-2 pb-3');
+      grid.innerHTML = MAT_GOODS.map(g => {
+        const mi = EC.ECON.mats[g.mat];
+        return `<div class="rounded-xl p-2 flex flex-col items-center text-center relative" style="background:linear-gradient(#1f2a24,#120d0b 75%);border:1px solid rgba(255,255,255,.08);">
+          ${g.tag ? `<div class="absolute top-1 left-1 px-2 py-[1px] rounded-full text-[9px] font-bold text-black bg-amber-400">${g.tag}</div>` : ''}
+          <div class="mt-2 mb-1 text-4xl">${mi.e}</div>
+          <div class="text-[12px] font-bold text-amber-100">${mi.t} ×${g.amount}</div>
+          <button data-mat="${g.id}" class="mt-2 w-full py-[6px] rounded-lg text-[12px] font-black text-white" style="background:linear-gradient(#ffb733,#e07b0a);box-shadow:0 2px 0 #7a2408;">${curIcon(g.cur)} ${g.price}</button>
+        </div>`;
+      }).join('');
+      body.appendChild(grid);
+      grid.querySelectorAll('[data-mat]').forEach(b => b.addEventListener('click', () => {
+        const g = MAT_GOODS.find(x => x.id === b.getAttribute('data-mat')); if (!g) return;
+        if (!spend(g.cur, g.price)) { sfx('noEnergy'); toast(curIcon(g.cur) + ' 不足'); return; }
+        G.materials[g.mat] = (G.materials[g.mat] || 0) + g.amount;
+        sfx('unlock'); D.saveProgress();
+        toast(EC.ECON.mats[g.mat].e + ' +' + g.amount); renderShop();
+      }));
+    }
+
+    // ---- 角色页 (真实解锁) ----
+    function renderHeroTab(body) {
+      const locked = game_config.heroes.filter(h => h.locked);
+      const grid = el('div', 'grid grid-cols-2 gap-2 pb-3');
+      grid.innerHTML = locked.map(h => {
+        const owned = !!G.unlocked[h.key];
+        const cost = h.unlockCost || 200;
+        return `<div class="rounded-xl p-2 flex flex-col items-center text-center relative" style="background:linear-gradient(${h.color}26,#120d0b 70%);border:1px solid ${h.color}55;">
+          <div class="absolute top-1 left-1 px-2 py-[1px] rounded-full text-[9px] font-bold text-black" style="background:${elColor(h.element)};">${elName(h.element)}系</div>
+          <div class="mt-2 mb-1 flex items-center justify-center" style="height:52px;">${h.spriteUrl ? D.petAvatarHTML(h.spriteUrl, 52) : '🧑'}</div>
+          <div class="text-[12px] font-bold text-amber-100">${h.name}</div>
+          <div class="text-[10px] text-stone-300">${h.title}</div>
+          <button data-hero="${h.key}" class="mt-2 w-full py-[6px] rounded-lg text-[12px] font-black text-white"
+            style="background:${owned ? 'rgba(80,80,80,.6)' : 'linear-gradient(#ffb733,#e07b0a)'};box-shadow:${owned ? 'none' : '0 2px 0 #7a2408'};">${owned ? '已拥有' : '💎 ' + cost}</button>
+        </div>`;
+      }).join('');
+      body.appendChild(grid);
+      D.hydratePetCanvases(grid);
+      grid.querySelectorAll('[data-hero]').forEach(b => b.addEventListener('click', () => {
+        const key = b.getAttribute('data-hero'); const h = heroDef(key); if (!h) return;
+        const cost = h.unlockCost || 200;
+        if (G.unlocked[key]) { toast(h.name + ' 已拥有'); return; }
+        if (G.gems >= cost) { G.gems -= cost; G.unlocked[key] = true; sfx('unlock'); D.saveProgress(); toast('🎉 解锁 ' + h.name); renderShop(); }
+        else { sfx('noEnergy'); toast('💎 不足'); }
+      }));
+    }
+
+    // ---- 钻石礼包页 (内购演示) ----
+    function renderGemTab(body) {
       const banner = el('div', 'rounded-xl p-3 mb-3 mt-1 relative overflow-hidden');
       banner.style.background = 'linear-gradient(110deg,#7a1f15,#c0392b 60%,#e0a017)';
       banner.innerHTML = `
-        <div class="text-[10px] text-amber-100/80 font-bold">限时礼包 · 剩余 23:59:01</div>
+        <div class="text-[10px] text-amber-100/80 font-bold">限时礼包</div>
         <div class="text-lg font-black text-white mt-[2px]">摸金者首充礼包</div>
-        <div class="text-[11px] text-amber-100 mt-[2px]">💎×300 + 🪙×2000 + 随机角色碎片</div>
+        <div class="text-[11px] text-amber-100 mt-[2px]">💎×300 + 🪙×2000 + 鎏金宝箱×1</div>
         <button id="bannerBuy" class="mt-2 px-4 py-1 rounded-full text-sm font-black text-[#7a1f15] bg-amber-300">¥6 抢购</button>
         <div class="absolute -right-2 -bottom-3 text-[80px] opacity-30 select-none">🎁</div>`;
       body.appendChild(banner);
-
-      // goods grid
-      const goods = SHOP_GOODS[shopTab] || [];
       const grid = el('div', 'grid grid-cols-2 gap-2 pb-3');
-      grid.innerHTML = goods.map(g => `
-        <div class="rounded-xl p-2 flex flex-col items-center text-center relative"
-          style="background:linear-gradient(${(g.color||'#caa')}26,#120d0b 70%);border:1px solid rgba(255,255,255,.08);">
+      grid.innerHTML = GEM_PACKS.map(g => `
+        <div class="rounded-xl p-2 flex flex-col items-center text-center relative" style="background:linear-gradient(#1a2a3a,#120d0b 75%);border:1px solid rgba(91,147,214,.3);">
           ${g.tag ? `<div class="absolute top-1 left-1 px-2 py-[1px] rounded-full text-[9px] font-bold text-black bg-amber-400">${g.tag}</div>` : ''}
-          <div class="mt-2 mb-1 flex items-center justify-center" style="height:48px;">
-            ${g.spriteUrl ? D.petAvatarHTML(g.spriteUrl, 48) : `<div class="text-4xl">${g.emoji}</div>`}
-          </div>
+          <div class="mt-2 mb-1 text-4xl">💎</div>
           <div class="text-[12px] font-bold text-amber-100">${g.name}</div>
-          <div class="text-[11px] text-stone-300">${g.amount}</div>
-          <button data-buy="${g.id}" class="mt-2 w-full py-[6px] rounded-lg text-[12px] font-black text-white"
-            style="background:linear-gradient(#ffb733,#e07b0a);box-shadow:0 2px 0 #7a2408;">${g.price}</button>
+          <div class="text-[11px] text-sky-300 font-bold">×${g.amount}</div>
+          <button data-gem="${g.id}" class="mt-2 w-full py-[6px] rounded-lg text-[12px] font-black text-white" style="background:linear-gradient(#5a93d6,#2a6ab0);box-shadow:0 2px 0 #1a447a;">${g.price}</button>
         </div>`).join('');
       body.appendChild(grid);
-      D.hydratePetCanvases(grid);
-
-      tabs.querySelectorAll('[data-stab]').forEach(b => b.addEventListener('click', () => { shopTab = b.getAttribute('data-stab'); renderShop(); }));
-      banner.querySelector('#bannerBuy').addEventListener('click', () => toast('💖 充值入口为演示，暂未开放'));
-      grid.querySelectorAll('[data-buy]').forEach(b => b.addEventListener('click', () => {
-        const id = b.getAttribute('data-buy');
-        const g = goods.find(x => x.id === id);
-        if (!g) return;
-        // 角色购买走真实解锁逻辑
-        if (shopTab === 'hero' && g.key) {
-          const cost = heroDef(g.key)?.unlockCost || 200;
-          if (G.unlocked[g.key]) { toast(g.name + ' 已拥有'); return; }
-          if (G.gems >= cost) { G.gems -= cost; G.unlocked[g.key] = true; D.saveProgress(); toast('🎉 解锁 ' + g.name); renderShop(); }
-          else toast('💎 不足');
-          return;
-        }
-        if (shopTab === 'daily' && g.id === 'd1') { G.coins += 500; D.saveProgress(); toast('🪙 +500'); renderShop(); return; }
-        if (shopTab === 'daily' && g.id === 'd2') { G.gems += 20; D.saveProgress(); toast('💎 +20'); renderShop(); return; }
-        toast('（演示）已购买 ' + g.name);
-      }));
+      banner.querySelector('#bannerBuy').addEventListener('click', () => { sfx('click'); toast('💖 充值入口为演示，暂未开放'); });
+      grid.querySelectorAll('[data-gem]').forEach(b => b.addEventListener('click', () => { sfx('click'); toast('💖 充值入口为演示，暂未开放'); }));
     }
+
+    // ---- 开箱/获得装备的弹窗展示 ----
+    function showLootPopup(items) {
+      const EC = window.__ECON;
+      const prev = document.getElementById('__lootPopup'); if (prev) prev.remove();
+      const mask = el('div', 'fixed inset-0 z-[60] flex items-center justify-center'); mask.id = '__lootPopup';
+      mask.style.background = 'rgba(0,0,0,.7)';
+      const cards = items.map(it => {
+        const rd = EC.rarityDef(it.rarity), sd = EC.slotDef(it.slot), st = EC.itemStats(it);
+        const affixLines = [];
+        affixLines.push(`${EC.ECON.statInfo[it.main.k].e} ${EC.ECON.statInfo[it.main.k].t} +${st[it.main.k]}`);
+        return `<div class="flex flex-col items-center rounded-xl px-3 py-3 mx-1" style="background:rgba(0,0,0,.55);border:2px solid ${rd.color};min-width:96px;box-shadow:0 0 18px ${rd.color}66;">
+            <div class="text-5xl leading-none">${it.emoji}</div>
+            <div class="text-[12px] font-black mt-1" style="color:${rd.color};">${rd.name}</div>
+            <div class="text-[11px] text-stone-200">${it.name}</div>
+            <div class="text-[9px] text-stone-400">${sd.t}</div>
+            <div class="text-[10px] text-emerald-300 mt-1">${affixLines.join('')}</div>
+          </div>`;
+      }).join('');
+      mask.innerHTML = `<div class="rounded-2xl p-5 text-center" style="background:linear-gradient(160deg,#2a1c18,#171010);border:1px solid rgba(217,154,58,.5);box-shadow:0 10px 40px #000;">
+          <div class="text-xl font-black text-amber-200 mb-3">🎉 获得装备</div>
+          <div class="flex flex-wrap justify-center mb-4">${cards}</div>
+          <button id="lootOk" class="px-8 py-2 rounded-full font-bold text-white" style="background:linear-gradient(#ffb733,#e07b0a);box-shadow:0 3px 0 #7a2408;">收下</button>
+        </div>`;
+      D.root.appendChild(mask);
+      const close = () => mask.remove();
+      mask.addEventListener('click', e => { if (e.target === mask) close(); });
+      mask.querySelector('#lootOk').addEventListener('click', () => { sfx('pickCard'); close(); });
+    }
+    window.__showLootPopup = showLootPopup;
     window.__renderShop = renderShop;
 
     // ===================================================================
-    //  背包 BAG  (角色立绘 + 6 个装备槽 + 三类背包标签)
+    //  背包 BAG  (角色立绘 + 6 装备槽真实穿戴 + 装备库 + 强化/出售/合成 + 素材)
     // ===================================================================
-    // 6 装备槽 (对应参考图：头盔/护甲/护腿/战靴/手套/徽章)
     const EQUIP_SLOTS = [
       { k: 'helmet', t: '头盔', e: '🪖' },
       { k: 'armor',  t: '护甲', e: '🦺' },
@@ -3394,71 +4346,67 @@
       { k: 'badge',  t: '徽章', e: '🎖️' }
     ];
     const BAG_TABS = [
-      { k: 'gear', t: '装备背包', e: '🛡️' },
-      { k: 'badge', t: '徽章背包', e: '🎖️' },
-      { k: 'mat', t: '素材背包', e: '🧪' }
+      { k: 'gear', t: '装备', e: '🛡️' },
+      { k: 'fuse', t: '合成', e: '🔮' },
+      { k: 'mat',  t: '素材', e: '🧪' }
     ];
-    const BAG_ITEMS = {
-      gear: [
-        { e: '🪖', n: '钢盔', q: 2 }, { e: '🦺', n: '背心', q: 1 }, { e: '👖', n: '护腿', q: 3 },
-        { e: '🥾', n: '战靴', q: 1 }, { e: '🧤', n: '手套', q: 2 }, { e: '🛡️', n: '盾牌', q: 1 }
-      ],
-      badge: [
-        { e: '🎖️', n: '攻击徽章', q: 1 }, { e: '🏅', n: '防御徽章', q: 2 }, { e: '🥇', n: '暴击徽章', q: 1 },
-        { e: '🎗️', n: '幸运徽章', q: 4 }
-      ],
-      mat: [
-        { e: '🔩', n: '螺丝', q: 28 }, { e: '⚙️', n: '齿轮', q: 12 }, { e: '🧪', n: '强化液', q: 6 },
-        { e: '💠', n: '结晶', q: 3 }, { e: '🪵', n: '木料', q: 40 }, { e: '🧱', n: '铁块', q: 17 }
-      ]
-    };
     let bagTab = 'gear';
-    let bagHeroIdx = 0; // which owned hero to show
+    let bagHeroIdx = 0;        // 当前查看的已拥有英雄
+    let bagFilterSlot = 'all'; // 装备库筛选槽位
+    let fuseSel = [];          // 合成已选 itemId
 
     function ownedHeroes() { return game_config.heroes.filter(h => G.unlocked[h.key]); }
+    function EC() { return window.__ECON; }
 
     function renderBag() {
-      const body = scaffold('背包', 'bag');
+      const body = scaffold('背包 / 装备', 'bag');
       const owned = ownedHeroes();
       bagHeroIdx = Math.max(0, Math.min(bagHeroIdx, owned.length - 1));
       const h = owned[bagHeroIdx] || game_config.heroes[0];
+      EC().ensureEquipSlots(h.key);
+      const eff = EC().effectiveStats(h.key);
+      const power = EC().heroPower(h.key);
 
-      // 角色立绘 + 环绕 6 装备槽
+      // ===== 角色立绘 + 环绕 6 装备槽 =====
       const charBox = el('div', 'relative rounded-2xl my-2 overflow-hidden');
-      charBox.style.height = '300px';
+      charBox.style.height = '280px';
       charBox.style.background = `radial-gradient(circle at 50% 30%,${h.color}33,#120d0b 75%)`;
+      const slots = G.equipped[h.key];
       charBox.innerHTML = `
         <button id="bagPrev" class="absolute left-1 top-1/2 -translate-y-1/2 w-9 h-9 rounded-full bg-black/50 text-white text-lg z-20">‹</button>
         <button id="bagNext" class="absolute right-1 top-1/2 -translate-y-1/2 w-9 h-9 rounded-full bg-black/50 text-white text-lg z-20">›</button>
-        <!-- 立绘 (webp 宠物精灵占位) -->
         <div class="absolute inset-0 flex items-center justify-center">
           <canvas id="bagCanvas" width="200" height="200" style="image-rendering:auto;"></canvas>
           <div class="text-[12px] text-stone-300 absolute" id="bagEmoji">形象加载中…</div>
         </div>
-        <!-- 名字 + 元素 -->
         <div class="absolute top-2 left-2 z-10">
           <div class="text-lg font-black text-white" style="text-shadow:0 2px 4px #000;">${h.name}</div>
           <div class="text-[11px]" style="color:${elColor(h.element)};">${elEmoji(h.element)} ${elName(h.element)}系 · ${h.title}</div>
         </div>
-        <!-- 左侧 3 槽 -->
-        <div class="absolute left-2 top-1/2 -translate-y-1/2 flex flex-col gap-2 z-10">
-          ${EQUIP_SLOTS.slice(0,3).map(s => slotHtml(s)).join('')}
+        <div class="absolute top-2 right-2 z-10 text-right">
+          <div class="text-[10px] text-stone-300">战力</div>
+          <div class="text-lg font-black text-amber-300" style="text-shadow:0 1px 3px #000;">⚡${power}</div>
         </div>
-        <!-- 右侧 3 槽 -->
-        <div class="absolute right-2 top-1/2 -translate-y-1/2 flex flex-col gap-2 z-10">
-          ${EQUIP_SLOTS.slice(3).map(s => slotHtml(s)).join('')}
+        <div class="absolute left-2 top-1/2 -translate-y-1/2 flex flex-col gap-1 z-10">
+          ${EQUIP_SLOTS.slice(0,3).map(s => slotHtml(s, slots[s.k])).join('')}
+        </div>
+        <div class="absolute right-2 top-1/2 -translate-y-1/2 flex flex-col gap-1 z-10">
+          ${EQUIP_SLOTS.slice(3).map(s => slotHtml(s, slots[s.k])).join('')}
         </div>`;
       body.appendChild(charBox);
 
-      // 战力条
-      const power = el('div', 'flex items-center justify-between bg-black/40 rounded-xl px-3 py-2 mb-2 border border-amber-900/40');
-      const lvl = G.heroLevel[h.key] || 1;
-      power.innerHTML = `
-        <div class="text-[12px] text-stone-300">综合战力</div>
-        <div class="text-xl font-black text-amber-300">⚡ ${(h.stats.phys * 12 + h.stats.crit * 8 + lvl * 60)}</div>`;
-      body.appendChild(power);
+      // ===== 有效属性条 =====
+      const stat = el('div', 'grid grid-cols-4 gap-1 mb-2');
+      const si = EC().ECON.statInfo;
+      stat.innerHTML = [['phys', eff.phys], ['crit', eff.crit], ['hp', eff.hp], ['rate', eff.rate]].map(([k, v]) => `
+        <div class="rounded-lg py-1 text-center" style="background:rgba(0,0,0,.4);">
+          <div class="text-[14px]">${si[k].e}</div>
+          <div class="text-[9px] text-stone-400">${si[k].t}</div>
+          <div class="text-[12px] font-bold text-amber-200">${v}${si[k].suffix}</div>
+        </div>`).join('');
+      body.appendChild(stat);
 
-      // 三类背包标签
+      // ===== 三类标签 =====
       const tabs = el('div', 'flex gap-2 mb-2');
       tabs.innerHTML = BAG_TABS.map(t => `
         <button data-btab="${t.k}" class="flex-1 py-2 rounded-xl text-[12px] font-bold flex items-center justify-center gap-1"
@@ -3467,36 +4415,209 @@
         </button>`).join('');
       body.appendChild(tabs);
 
-      // 物品格子
-      const items = BAG_ITEMS[bagTab] || [];
-      const grid = el('div', 'grid grid-cols-4 gap-2 pb-3');
-      grid.innerHTML = items.map(it => `
-        <div class="aspect-square rounded-xl flex flex-col items-center justify-center relative"
-          style="background:linear-gradient(#2a221c,#171210);border:1px solid rgba(255,255,255,.08);">
-          <div class="text-3xl">${it.e}</div>
-          <div class="text-[9px] text-stone-300 mt-[1px]">${it.n}</div>
-          <div class="absolute bottom-[2px] right-[3px] text-[10px] font-bold text-amber-300">×${it.q}</div>
-        </div>`).join('')
-        // pad empty slots
-        + Array.from({ length: Math.max(0, 8 - items.length) }).map(() => `
-        <div class="aspect-square rounded-xl flex items-center justify-center" style="background:rgba(0,0,0,.3);border:1px dashed rgba(255,255,255,.08);"><span class="text-stone-600 text-lg">＋</span></div>`).join('');
-      body.appendChild(grid);
+      if (bagTab === 'gear') renderGearLib(body, h);
+      else if (bagTab === 'fuse') renderFuse(body);
+      else if (bagTab === 'mat') renderMatBag(body);
 
-      // draw portrait
       drawBagPortrait(h);
 
-      charBox.querySelector('#bagPrev').addEventListener('click', () => { bagHeroIdx = (bagHeroIdx - 1 + owned.length) % owned.length; renderBag(); });
-      charBox.querySelector('#bagNext').addEventListener('click', () => { bagHeroIdx = (bagHeroIdx + 1) % owned.length; renderBag(); });
-      charBox.querySelectorAll('[data-slot]').forEach(b => b.addEventListener('click', () => toast('装备槽：' + b.getAttribute('data-slotname') + '（演示）')));
-      tabs.querySelectorAll('[data-btab]').forEach(b => b.addEventListener('click', () => { bagTab = b.getAttribute('data-btab'); renderBag(); }));
+      charBox.querySelector('#bagPrev').addEventListener('click', () => { bagHeroIdx = (bagHeroIdx - 1 + owned.length) % owned.length; fuseSel = []; renderBag(); });
+      charBox.querySelector('#bagNext').addEventListener('click', () => { bagHeroIdx = (bagHeroIdx + 1) % owned.length; fuseSel = []; renderBag(); });
+      // 点击已装备槽 -> 卸下
+      charBox.querySelectorAll('[data-slot]').forEach(b => b.addEventListener('click', () => {
+        const slot = b.getAttribute('data-slot');
+        if (G.equipped[h.key][slot]) { EC().unequip(h.key, slot); sfx('click'); toast('已卸下 ' + EQUIP_SLOTS.find(s => s.k === slot).t); renderBag(); }
+        else { bagFilterSlot = slot; bagTab = 'gear'; renderBag(); }
+      }));
+      tabs.querySelectorAll('[data-btab]').forEach(b => b.addEventListener('click', () => { sfx('tab'); bagTab = b.getAttribute('data-btab'); renderBag(); }));
     }
 
-    function slotHtml(s) {
-      return `<button data-slot="${s.k}" data-slotname="${s.t}" class="w-12 h-12 rounded-xl flex flex-col items-center justify-center"
-        style="background:rgba(0,0,0,.5);border:2px solid rgba(217,154,58,.45);">
-        <div class="text-xl">${s.e}</div>
-        <div class="text-[7px] text-stone-300 -mt-[2px]">${s.t}</div>
+    // 装备槽 HTML：若已装备，显示该装备 emoji + 稀有度边框 + 强化等级
+    function slotHtml(s, itemId) {
+      const it = itemId ? EC().findItem(itemId) : null;
+      const rd = it ? EC().rarityDef(it.rarity) : null;
+      const border = rd ? rd.color : 'rgba(217,154,58,.45)';
+      return `<button data-slot="${s.k}" data-slotname="${s.t}" class="w-12 h-12 rounded-xl flex flex-col items-center justify-center relative"
+        style="background:rgba(0,0,0,.5);border:2px solid ${border};${rd ? 'box-shadow:0 0 8px ' + rd.color + '66;' : ''}">
+        <div class="text-xl">${it ? it.emoji : s.e}</div>
+        <div class="text-[7px] ${it ? 'text-amber-200' : 'text-stone-300'} -mt-[2px]">${it ? (it.level ? '+' + it.level : s.t) : s.t}</div>
+        ${it ? '' : `<div class="absolute -bottom-1 -right-1 text-[10px] text-emerald-400">＋</div>`}
       </button>`;
+    }
+
+    // ===== 装备库：列出可用装备，支持筛选、装备、查看详情(强化/出售) =====
+    function renderGearLib(body, h) {
+      // 槽位筛选条
+      const filterBar = el('div', 'flex gap-1 mb-2 overflow-x-auto scrollx');
+      const filters = [{ k: 'all', t: '全部', e: '🎒' }, ...EQUIP_SLOTS];
+      filterBar.innerHTML = filters.map(f => `
+        <button data-flt="${f.k}" class="shrink-0 px-3 py-1 rounded-full text-[11px] font-bold"
+          style="${f.k === bagFilterSlot ? 'background:#c0392b;color:#fff;' : 'background:rgba(0,0,0,.4);color:#cbb;'}">${f.e}${f.t}</button>`).join('');
+      body.appendChild(filterBar);
+      filterBar.querySelectorAll('[data-flt]').forEach(b => b.addEventListener('click', () => { sfx('click'); bagFilterSlot = b.getAttribute('data-flt'); renderBag(); }));
+
+      // 列表 (按战力降序)
+      let list = G.inventory.slice();
+      if (bagFilterSlot !== 'all') list = list.filter(i => i.slot === bagFilterSlot);
+      list.sort((a, b) => EC().itemPower(b) - EC().itemPower(a));
+
+      const grid = el('div', 'grid grid-cols-4 gap-2 pb-3');
+      if (!list.length) {
+        grid.className = 'pb-3';
+        grid.innerHTML = `<div class="text-center text-[12px] text-stone-400 py-6">暂无装备，去商店开宝箱或打关掉落</div>`;
+      } else {
+        grid.innerHTML = list.map(it => {
+          const rd = EC().rarityDef(it.rarity);
+          const wearer = EC().wearerOf(it.id);
+          const onThis = wearer === h.key;
+          return `<button data-item="${it.id}" class="aspect-square rounded-xl flex flex-col items-center justify-center relative"
+            style="background:linear-gradient(${rd.color}22,#171210);border:2px solid ${rd.color};">
+            <div class="text-2xl">${it.emoji}</div>
+            <div class="text-[8px] mt-[1px]" style="color:${rd.color};">${rd.name}</div>
+            ${it.level ? `<div class="absolute top-[2px] left-[3px] text-[9px] font-bold text-amber-300">+${it.level}</div>` : ''}
+            ${wearer ? `<div class="absolute bottom-[1px] right-[2px] text-[9px] ${onThis ? 'text-emerald-400' : 'text-sky-400'}">${onThis ? '✓' : '装'}</div>` : ''}
+          </button>`;
+        }).join('');
+      }
+      body.appendChild(grid);
+      grid.querySelectorAll('[data-item]').forEach(b => b.addEventListener('click', () => openItemDetail(b.getAttribute('data-item'), h)));
+    }
+
+    // ===== 装备详情弹窗：属性、装备/卸下、强化、出售 =====
+    function openItemDetail(itemId, h) {
+      const it = EC().findItem(itemId); if (!it) return;
+      const rd = EC().rarityDef(it.rarity), sd = EC().slotDef(it.slot), si = EC().ECON.statInfo;
+      const wearer = EC().wearerOf(it.id);
+      const onThis = wearer === h.key;
+      const st = EC().itemStats(it);
+      const lines = [];
+      lines.push(`<div class="flex justify-between text-[12px]"><span class="text-stone-300">${si[it.main.k].e} ${si[it.main.k].t}(主)</span><span class="text-emerald-300 font-bold">+${st[it.main.k]}${si[it.main.k].suffix}</span></div>`);
+      (it.affixes || []).forEach(a => {
+        // 副词条单独展示其(含强化)的数值
+        const v = Math.round(a.v * (1 + (it.level || 0) * EC().ECON.enhancePerLevel));
+        lines.push(`<div class="flex justify-between text-[12px]"><span class="text-stone-300">${si[a.k].e} ${si[a.k].t}</span><span class="text-amber-200 font-bold">+${v}${si[a.k].suffix}</span></div>`);
+      });
+      const chk = EC().canEnhance(it);
+      const cost = chk.cost || EC().enhanceCost(it);
+      const matStr = Object.keys(cost.mats).filter(m => cost.mats[m]).map(m => `${EC().ECON.mats[m].e}${cost.mats[m]}`).join(' ');
+      const atMax = (it.level || 0) >= rd.maxLvl;
+      const sellRd = EC().rarityDef(it.rarity);
+      const sellCoin = Math.round(sellRd.sellCoin * (1 + (it.level || 0) * 0.15));
+
+      const prev = document.getElementById('__itemDetail'); if (prev) prev.remove();
+      const mask = el('div', 'fixed inset-0 z-[60] flex items-center justify-center'); mask.id = '__itemDetail';
+      mask.style.background = 'rgba(0,0,0,.66)';
+      mask.innerHTML = `<div class="w-[84%] max-w-[330px] rounded-2xl p-4" style="background:linear-gradient(160deg,#2a1c18,#171010);border:2px solid ${rd.color};box-shadow:0 10px 40px #000;">
+          <div class="flex items-center gap-3 mb-3">
+            <div class="w-14 h-14 rounded-xl flex items-center justify-center text-3xl" style="background:radial-gradient(circle at 40% 30%,${rd.color}55,#0a0706);border:2px solid ${rd.color};">${it.emoji}</div>
+            <div>
+              <div class="font-black text-[15px]" style="color:${rd.color};">${it.name} ${it.level ? '<span class="text-amber-300">+' + it.level + '</span>' : ''}</div>
+              <div class="text-[11px] text-stone-300">${rd.name} · ${sd.t} · Lv.${it.level || 0}/${rd.maxLvl}</div>
+            </div>
+          </div>
+          <div class="bg-black/40 rounded-xl p-3 mb-3 flex flex-col gap-1">${lines.join('')}</div>
+          <div class="text-[10px] text-stone-400 mb-2">${atMax ? '已达强化上限' : ('强化花费：🪙' + cost.coin + (matStr ? '　' + matStr : ''))}</div>
+          <div class="grid grid-cols-2 gap-2 mb-2">
+            <button id="idEquip" class="py-2 rounded-xl font-bold text-white text-[13px]" style="background:${onThis ? 'rgba(80,80,80,.6)' : 'linear-gradient(#36c45a,#1e8a3a)'};box-shadow:${onThis ? 'none' : '0 2px 0 #115221'};">${onThis ? '卸下' : '装备'}</button>
+            <button id="idEnh" class="py-2 rounded-xl font-bold text-white text-[13px] ${atMax ? 'opacity-50' : ''}" style="background:linear-gradient(#ffb733,#e07b0a);box-shadow:0 2px 0 #7a2408;">${atMax ? '满级' : '强化 ▲'}</button>
+          </div>
+          <div class="flex gap-2">
+            <button id="idSell" class="flex-1 py-2 rounded-xl font-bold text-stone-200 text-[12px]" style="background:rgba(255,255,255,.1);">出售 🪙${sellCoin}</button>
+            <button id="idClose" class="flex-1 py-2 rounded-xl font-bold text-stone-200 text-[12px]" style="background:rgba(255,255,255,.1);">关闭</button>
+          </div>
+        </div>`;
+      D.root.appendChild(mask);
+      const close = () => mask.remove();
+      mask.addEventListener('click', e => { if (e.target === mask) close(); });
+      mask.querySelector('#idClose').addEventListener('click', () => { sfx('click'); close(); });
+      mask.querySelector('#idEquip').addEventListener('click', () => {
+        sfx('click');
+        if (onThis) EC().unequip(h.key, it.slot); else EC().equip(h.key, it.id);
+        close(); renderBag();
+      });
+      mask.querySelector('#idEnh').addEventListener('click', () => {
+        if (atMax) { toast('已达强化上限'); return; }
+        const r = EC().enhance(it);
+        if (r.ok) { sfx('levelup'); toast(it.name + ' 强化至 +' + r.level); close(); openItemDetail(itemId, h); renderBag(); }
+        else { sfx('noEnergy'); toast(r.reason === 'coin' ? '🪙 不足' : (r.reason === 'mat' ? '素材不足' : '无法强化')); }
+      });
+      mask.querySelector('#idSell').addEventListener('click', () => {
+        window.__confirmModal({ title: '出售装备', body: `出售 <b style="color:${rd.color};">${it.name}</b> 可得 🪙${sellCoin}${sellRd.sellMatBonus ? ('　⚙️+' + sellRd.sellMatBonus) : ''}`, okText: '出售', onOk: () => {
+          const r = EC().sellItem(it.id); if (r) { sfx('unlock'); toast('已出售 · 🪙+' + r.coin); } close(); renderBag();
+        }});
+      });
+    }
+
+    // ===== 合成：选 3 件同稀有度装备 -> 1 件高一档 =====
+    function renderFuse(body) {
+      const need = EC().ECON.fuseNeed;
+      // 说明 + 当前选择
+      const info = el('div', 'bg-black/40 rounded-xl p-3 mb-2 border border-purple-700/40');
+      const selItems = fuseSel.map(EC().findItem).filter(Boolean);
+      const sameR = selItems.length ? selItems[0].rarity : null;
+      const allSame = selItems.length === need && selItems.every(i => i.rarity === sameR);
+      const matNeed = sameR || 1;
+      info.innerHTML = `
+        <div class="text-[12px] font-bold text-purple-200 mb-1">🔮 装备合成</div>
+        <div class="text-[10px] text-stone-400 mb-2">选择 ${need} 件<b>相同稀有度</b>的装备，消耗 ⚙️×稀有度 合成 1 件<b>高一档</b>装备(随机槽位)。</div>
+        <div class="flex items-center justify-center gap-2 mb-2">
+          ${Array.from({ length: need }).map((_, i) => {
+            const it = selItems[i];
+            const rd = it ? EC().rarityDef(it.rarity) : null;
+            return `<div class="w-14 h-14 rounded-xl flex items-center justify-center text-2xl" style="background:rgba(0,0,0,.5);border:2px dashed ${rd ? rd.color : 'rgba(255,255,255,.2)'};">${it ? it.emoji : '?'}</div>`;
+          }).join('<span class="text-stone-500">+</span>')}
+          <span class="text-stone-400">→</span>
+          <div class="w-14 h-14 rounded-xl flex items-center justify-center text-2xl" style="background:rgba(176,107,255,.15);border:2px solid ${sameR && sameR < 5 ? EC().rarityDef(sameR + 1).color : 'rgba(255,255,255,.2)'};">🎁</div>
+        </div>
+        <button id="fuseGo" class="w-full py-2 rounded-xl font-bold text-white text-[13px] ${allSame ? '' : 'opacity-50'}" style="background:linear-gradient(#a05bff,#6b2fb0);box-shadow:0 2px 0 #3a1a6a;">合成 (⚙️${matNeed} · 拥有 ${G.materials.gear || 0})</button>`;
+      body.appendChild(info);
+      info.querySelector('#fuseGo').addEventListener('click', () => {
+        if (!allSame) { toast('需选择 ' + need + ' 件相同稀有度装备'); return; }
+        const r = EC().fuse(fuseSel.slice());
+        if (r.ok) { sfx('evolve'); fuseSel = []; window.__showLootPopup([r.item]); renderBag(); }
+        else { sfx('noEnergy'); toast(r.reason === 'mat' ? ('⚙️ 不足(需' + r.need + ')') : (r.reason === 'rarity' ? '稀有度需一致' : (r.reason === 'max' ? '传说已是最高档' : '无法合成'))); }
+      });
+
+      // 可选装备列表 (未被装备的优先，传说不可作为材料若已是最高... 这里允许选)
+      const list = G.inventory.slice().sort((a, b) => a.rarity - b.rarity || EC().itemPower(a) - EC().itemPower(b));
+      const grid = el('div', 'grid grid-cols-4 gap-2 pb-3');
+      grid.innerHTML = list.map(it => {
+        const rd = EC().rarityDef(it.rarity);
+        const sel = fuseSel.includes(it.id);
+        const wearer = EC().wearerOf(it.id);
+        return `<button data-fitem="${it.id}" class="aspect-square rounded-xl flex flex-col items-center justify-center relative"
+          style="background:linear-gradient(${rd.color}22,#171210);border:2px solid ${sel ? '#fff' : rd.color};${sel ? 'box-shadow:0 0 10px #fff;' : ''}">
+          <div class="text-2xl">${it.emoji}</div>
+          <div class="text-[8px]" style="color:${rd.color};">${rd.name}${it.level ? '+' + it.level : ''}</div>
+          ${sel ? '<div class="absolute top-[2px] right-[3px] text-[11px] text-white font-black">✓</div>' : ''}
+          ${wearer ? '<div class="absolute bottom-[1px] right-[2px] text-[9px] text-sky-400">装</div>' : ''}
+        </button>`;
+      }).join('');
+      body.appendChild(grid);
+      grid.querySelectorAll('[data-fitem]').forEach(b => b.addEventListener('click', () => {
+        const id = b.getAttribute('data-fitem');
+        if (fuseSel.includes(id)) fuseSel = fuseSel.filter(x => x !== id);
+        else { if (fuseSel.length >= need) { toast('最多选 ' + need + ' 件'); return; } fuseSel.push(id); }
+        sfx('click'); renderBag();
+      }));
+    }
+
+    // ===== 素材背包 =====
+    function renderMatBag(body) {
+      const mats = EC().ECON.mats;
+      const grid = el('div', 'grid grid-cols-2 gap-2 pb-3');
+      grid.innerHTML = Object.keys(mats).map(m => `
+        <div class="rounded-xl flex items-center gap-3 px-3 py-3" style="background:linear-gradient(#2a221c,#171210);border:1px solid rgba(255,255,255,.08);">
+          <div class="text-4xl">${mats[m].e}</div>
+          <div class="flex-1">
+            <div class="text-[13px] font-bold text-amber-100">${mats[m].t}</div>
+            <div class="text-[11px] text-stone-400">用于装备强化/合成</div>
+          </div>
+          <div class="text-xl font-black text-amber-300">×${G.materials[m] || 0}</div>
+        </div>`).join('');
+      body.appendChild(grid);
+      const tip = el('div', 'text-center text-[11px] text-stone-400 pb-4', '通关掉落或在商店「素材」页购买');
+      body.appendChild(tip);
     }
 
     function drawBagPortrait(h) {
@@ -3579,6 +4700,102 @@
     }
     window.__renderMap = renderMap;
 
+  })();
+  </script>
+
+  <!-- ============ chunk 5: 每日奖励 / 签到 (Daily Rewards & Sinks) ============ -->
+  <!-- 每日可领取一组免费奖励 (金币/材料/钻石/宝箱)，配合战斗产出与商店消耗形成完整经济循环。
+       通过 __ECON.canClaimDaily/claimDaily 落地，按本地日期去重。 -->
+  <script>
+  (function () {
+    'use strict';
+    const D = window.__GD;
+    const G = D.G;
+    const toast = window.__toast || function () {};
+    function sfx(name, ...args) { try { const a = window.__AUDIO; if (a && a.sfx && a.sfx[name]) a.sfx[name](...args); } catch (e) {} }
+    function EC() { return window.__ECON; }
+
+    // 每日奖励清单 (id 必须稳定，用于去重)。reward 描述领取后发放的内容。
+    function dailyList() {
+      const ec = EC();
+      return [
+        { id: 'd_coin', name: '每日金币', e: '🪙', desc: '🪙 ×600',  reward: { coins: 600 } },
+        { id: 'd_screw', name: '补给箱',  e: '🔩', desc: '🔩 ×15',    reward: { mats: { screw: 15 } } },
+        { id: 'd_gear',  name: '齿轮包',  e: '⚙️', desc: '⚙️ ×6',     reward: { mats: { gear: 6 } } },
+        { id: 'd_gem',   name: '每日钻石', e: '💎', desc: '💎 ×30',    reward: { gems: 30 } },
+        { id: 'd_chest', name: '免费宝箱', e: '🎁', desc: '随机装备×1', reward: { item: null }, isChest: true }
+      ];
+    }
+
+    // 是否有任意可领取项 (用于首页红点)
+    function dailyHasClaimable() {
+      const ec = EC(); if (!ec) return false;
+      return dailyList().some(d => ec.canClaimDaily(d.id));
+    }
+    window.__dailyHasClaimable = dailyHasClaimable;
+
+    function renderDaily() {
+      const ec = EC(); if (!ec) return;
+      const prev = document.getElementById('__dailyModal'); if (prev) prev.remove();
+      const mask = D.el('div', 'fixed inset-0 z-[60] flex items-center justify-center p-4'); mask.id = '__dailyModal';
+      mask.style.background = 'rgba(0,0,0,.7)';
+      const list = dailyList();
+      const cards = list.map(d => {
+        const claimable = ec.canClaimDaily(d.id);
+        return `<div class="flex items-center gap-3 rounded-xl px-3 py-2" style="background:rgba(0,0,0,.45);border:1px solid ${claimable ? 'rgba(255,183,51,.5)' : 'rgba(255,255,255,.08)'};">
+            <div class="text-3xl">${d.e}</div>
+            <div class="flex-1">
+              <div class="text-[13px] font-bold text-amber-100">${d.name}</div>
+              <div class="text-[11px] text-stone-300">${d.desc}</div>
+            </div>
+            <button data-daily="${d.id}" class="px-4 py-[6px] rounded-full text-[12px] font-bold text-white ${claimable ? '' : 'opacity-50'}"
+              style="background:${claimable ? 'linear-gradient(#36c45a,#1e8a3a)' : 'rgba(80,80,80,.6)'};${claimable ? 'box-shadow:0 2px 0 #115221;' : ''}">${claimable ? '领取' : '已领'}</button>
+          </div>`;
+      }).join('');
+      mask.innerHTML = `<div class="w-full max-w-[340px] rounded-2xl p-4" style="background:linear-gradient(160deg,#2a1c18,#171010);border:1px solid rgba(217,154,58,.5);box-shadow:0 10px 40px #000;">
+          <div class="flex items-center justify-between mb-3">
+            <div class="text-lg font-black text-amber-200">📅 每日奖励</div>
+            <button id="dailyClose" class="w-8 h-8 rounded-full bg-black/50 text-white">✕</button>
+          </div>
+          <div class="flex flex-col gap-2">${cards}</div>
+          ${dailyHasClaimable() ? `<button id="dailyAll" class="w-full mt-3 py-2 rounded-xl font-bold text-white text-[13px]" style="background:linear-gradient(#ffb733,#e07b0a);box-shadow:0 2px 0 #7a2408;">一键领取全部</button>` : ''}
+          <div class="text-[10px] text-stone-500 text-center mt-3">每日 0 点刷新 · 坚持登录领满全部奖励</div>
+        </div>`;
+      D.root.appendChild(mask);
+      const close = () => mask.remove();
+      mask.addEventListener('click', e => { if (e.target === mask) close(); });
+      mask.querySelector('#dailyClose').addEventListener('click', () => { sfx('click'); close(); });
+      const allBtn = mask.querySelector('#dailyAll');
+      if (allBtn) allBtn.addEventListener('click', () => {
+        const drops = [];
+        list.forEach(d => {
+          if (!ec.canClaimDaily(d.id)) return;
+          const reward = Object.assign({}, d.reward);
+          if (d.isChest) reward.item = ec.rollDropItem(G.lvlIndex + 1, false);
+          if (ec.claimDaily(d.id, reward) && reward.item) drops.push(reward.item);
+        });
+        sfx('unlock'); toast('已领取全部每日奖励');
+        if (drops.length && window.__showLootPopup) window.__showLootPopup(drops);
+        renderDaily();
+        if (window.__renderHome && G.screen === 'home') window.__renderHome();
+      });
+      mask.querySelectorAll('[data-daily]').forEach(b => b.addEventListener('click', () => {
+        const id = b.getAttribute('data-daily');
+        const d = list.find(x => x.id === id); if (!d) return;
+        if (!ec.canClaimDaily(id)) { toast('今日已领取'); return; }
+        // 宝箱类：实时生成一件随机装备作为奖励
+        const reward = Object.assign({}, d.reward);
+        if (d.isChest) reward.item = ec.rollDropItem(G.lvlIndex + 1, false);
+        if (ec.claimDaily(id, reward)) {
+          sfx('unlock');
+          if (reward.item) { if (window.__showLootPopup) window.__showLootPopup([reward.item]); else toast('获得装备'); }
+          else toast('领取成功 · ' + d.desc);
+          renderDaily();                       // 刷新弹窗状态
+          if (window.__renderHome && G.screen === 'home') window.__renderHome();  // 刷新红点/货币
+        }
+      }));
+    }
+    window.__renderDaily = renderDaily;
   })();
   </script>
 </body>
