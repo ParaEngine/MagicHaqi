@@ -819,7 +819,14 @@
       screen: 'home',            // home | roster | story | battle | result
       lvlIndex: 0,
       cash: 0, gems: 1200, coins: 2200,
-      playerLevel: 4,
+      // ===== 真实玩家进度 (Player progression) =====
+      playerLevel: 1,            // 真实玩家等级 (由 XP 升级)
+      playerXp: 0,               // 当前等级内累计经验
+      medals: 0,                 // 🏅 荣誉勋章 (首通/三星奖励)
+      // ===== 真实体力 (Stamina) =====
+      energy: 30,                // 当前体力
+      energyMax: 30,             // 体力上限 (随玩家等级提升)
+      energyTs: Date.now(),      // 上次体力结算时间戳 (用于按真实时间回复)
       profileName: '摸金校尉.5eeb02db',
       unlocked: _unlocked,       // 默认解锁 5 个，其余需付费解锁
       heroLevel: _heroLevel,
@@ -827,9 +834,11 @@
       leader: 'saya',
       // pool: up to 5 pre-selected candidates that may randomly join during the run
       squad: ['saya', 'takashi'],
-      barrierHp: 76,
+      barrierHp: 100,            // 长明灯油量(%)：上一局结束时的真实防线剩余 (满=100)
       petCache: null,
       cleared: {},               // 已通关关卡 id 标记
+      stars: {},                 // 每关真实星级评价 stars[levelId] = 0..3 (取历史最佳)
+      bestScore: {},             // 每关历史最高分 bestScore[levelId]
       hardMode: false,           // 困难模式开关：敌人更强，首页显示警戒封条
 
       // ===== 装备 / 经济系统 (Equipment & Economy) =====
@@ -848,13 +857,16 @@
     };
 
     // ================= LOCALSTORAGE PERSISTENCE =================
-    const SAVE_KEY = 'haqiLineDefenseSaveV2';   // V2: 引入装备/经济系统
+    const SAVE_KEY = 'haqiLineDefenseSaveV3';   // V3: 真实体力/玩家等级/星级/勋章系统
     function saveProgress() {
       try {
         const data = {
           gems: G.gems, coins: G.coins, lvlIndex: G.lvlIndex, playerLevel: G.playerLevel,
           unlocked: G.unlocked, heroLevel: G.heroLevel, leader: G.leader, squad: G.squad, cleared: G.cleared,
           hardMode: G.hardMode,
+          // 真实进度系统持久化
+          playerXp: G.playerXp, medals: G.medals, energy: G.energy, energyMax: G.energyMax, energyTs: G.energyTs,
+          barrierHp: G.barrierHp, stars: G.stars, bestScore: G.bestScore,
           // 装备/经济系统持久化
           inventory: G.inventory, equipped: G.equipped, materials: G.materials,
           dailyClaim: G.dailyClaim, _itemSeq: G._itemSeq, totalEarned: G.totalEarned, totalRuns: G.totalRuns
@@ -878,6 +890,15 @@
         if (Array.isArray(d.squad)) G.squad = d.squad.filter(k => heroDefSafe(k));
         if (d.cleared) G.cleared = d.cleared;
         if (typeof d.hardMode === 'boolean') G.hardMode = d.hardMode;
+        // 真实进度系统读档
+        if (typeof d.playerXp === 'number') G.playerXp = d.playerXp;
+        if (typeof d.medals === 'number') G.medals = d.medals;
+        if (typeof d.energy === 'number') G.energy = d.energy;
+        if (typeof d.energyMax === 'number') G.energyMax = d.energyMax;
+        if (typeof d.energyTs === 'number') G.energyTs = d.energyTs;
+        if (typeof d.barrierHp === 'number') G.barrierHp = d.barrierHp;
+        if (d.stars && typeof d.stars === 'object') G.stars = d.stars;
+        if (d.bestScore && typeof d.bestScore === 'object') G.bestScore = d.bestScore;
         // 装备/经济系统读档
         if (Array.isArray(d.inventory)) G.inventory = d.inventory;
         if (d.equipped && typeof d.equipped === 'object') G.equipped = d.equipped;
@@ -892,6 +913,100 @@
     function heroDefSafe(key) { return game_config.heroes.some(h => h.key === key); }
     window.__saveProgress = saveProgress;
     window.__G = G;
+
+    // ================= 真实进度引擎 (Progression: 体力 / 玩家等级 / 星级 / 勋章) =================
+    const PROG = {
+      energyRegenSec: 180,       // 每 180 秒(3 分钟)回复 1 点体力
+      energyPerLevel: 2,         // 玩家每升 1 级，体力上限 +2
+      maxPlayerLevel: 60
+    };
+    // 玩家升级所需经验曲线 (累积到下一级)
+    function playerXpNeed(level) { return Math.round(100 * Math.pow(level, 1.4)); }
+
+    // ---- 体力：按真实时间结算回复 ----
+    // 返回回复后的当前体力；不超过上限。energyTs 记录上次结算时间。
+    function refreshEnergy() {
+      const now = Date.now();
+      const elapsed = Math.max(0, (now - (G.energyTs || now)) / 1000);
+      if (G.energy < G.energyMax && elapsed >= PROG.energyRegenSec) {
+        const gain = Math.floor(elapsed / PROG.energyRegenSec);
+        G.energy = Math.min(G.energyMax, G.energy + gain);
+        // 把"用掉"的整段时间推进，保留余数继续累计
+        G.energyTs = now - Math.round((elapsed % PROG.energyRegenSec) * 1000);
+        if (G.energy >= G.energyMax) G.energyTs = now;   // 满了就归零计时
+      } else if (G.energy >= G.energyMax) {
+        G.energyTs = now;
+      }
+      return G.energy;
+    }
+    // 距离下一点体力回复的剩余秒数 (满时返回 0)
+    function energyNextInSec() {
+      if (G.energy >= G.energyMax) return 0;
+      const now = Date.now();
+      const elapsed = (now - (G.energyTs || now)) / 1000;
+      return Math.max(0, Math.ceil(PROG.energyRegenSec - (elapsed % PROG.energyRegenSec)));
+    }
+    function hasEnergy(cost) { refreshEnergy(); return G.energy >= cost; }
+    function spendEnergy(cost) {
+      refreshEnergy();
+      if (G.energy < cost) return false;
+      // 从满体力开始消耗时启动计时
+      if (G.energy >= G.energyMax) G.energyTs = Date.now();
+      G.energy -= cost;
+      saveProgress();
+      return true;
+    }
+    function addEnergy(v) { refreshEnergy(); G.energy = Math.min(G.energyMax, G.energy + v); saveProgress(); }
+
+    // ---- 玩家经验 / 升级 ----
+    // 返回 {leveled:bool, levels:n, rewards:{coins,gems,energyMax}}
+    function gainPlayerXp(amount) {
+      if (amount <= 0) return { leveled: false, levels: 0 };
+      G.playerXp += amount;
+      let leveled = 0, gainCoins = 0, gainGems = 0;
+      while (G.playerLevel < PROG.maxPlayerLevel && G.playerXp >= playerXpNeed(G.playerLevel)) {
+        G.playerXp -= playerXpNeed(G.playerLevel);
+        G.playerLevel++;
+        leveled++;
+        // 升级奖励：体力上限 +2 并回满；金币随等级；每 5 级给钻石
+        G.energyMax += PROG.energyPerLevel;
+        G.energy = G.energyMax;
+        gainCoins += 200 + G.playerLevel * 30;
+        if (G.playerLevel % 5 === 0) gainGems += 30;
+      }
+      if (leveled) { G.coins += gainCoins; G.gems += gainGems; }
+      saveProgress();
+      return { leveled: leveled > 0, levels: leveled, rewards: { coins: gainCoins, gems: gainGems, energyMax: leveled * PROG.energyPerLevel } };
+    }
+
+    // ---- 星级评价：根据胜负 + 防线剩余% 计算本局星数，取历史最佳 ----
+    function computeStars(win, barrierPct) {
+      if (!win) return 0;
+      if (barrierPct >= 80) return 3;
+      if (barrierPct >= 40) return 2;
+      return 1;
+    }
+    // 记录一局结果，返回 {newBest, stars, prevStars, firstClear}
+    function recordResult(levelId, win, score, barrierPct) {
+      const stars = computeStars(win, barrierPct);
+      const prevStars = G.stars[levelId] || 0;
+      const firstClear = win && !G.cleared[levelId];
+      if (win) G.cleared[levelId] = true;
+      if (stars > prevStars) G.stars[levelId] = stars;
+      if (!G.bestScore[levelId] || score > G.bestScore[levelId]) G.bestScore[levelId] = score;
+      return { stars, prevStars, bestStars: G.stars[levelId] || 0, firstClear, improved: stars > prevStars };
+    }
+    // 总星数 / 总关数 (进度展示)
+    function totalStars() { return Object.values(G.stars).reduce((a, b) => a + b, 0); }
+    function maxStars() { return game_config.levels.length * 3; }
+
+    // 暴露给其它 chunk
+    window.__PROG = {
+      PROG, playerXpNeed, refreshEnergy, energyNextInSec, hasEnergy, spendEnergy, addEnergy,
+      gainPlayerXp, computeStars, recordResult, totalStars, maxStars
+    };
+    // 启动时先结算一次体力回复
+    refreshEnergy();
 
     // ================= PET CATALOG + ELEMENT ART =================
     // 从 famous-pets 图库自动取宠物精灵，给主角和敌人当形象；按 elementalAttribute 归入 5 系。
@@ -1156,6 +1271,35 @@
     }
     window.__show = show;
 
+    // ================= 进入战斗前的真实校验 (关卡解锁 + 体力消耗) =================
+    // 关卡需逐关解锁：第 1 关恒解锁，其余需上一关已通关。
+    function isLevelUnlocked(idx) {
+      if (idx <= 0) return true;
+      const prev = game_config.levels[idx - 1];
+      return !!(prev && G.cleared[prev.id]);
+    }
+    // 尝试开战：校验解锁 + 体力，扣除体力后进入战斗。返回是否成功。
+    function tryStartBattle() {
+      const PR = window.__PROG;
+      const lv = curLevel();
+      if (!isLevelUnlocked(G.lvlIndex)) {
+        if (window.__toast) window.__toast('🔒 需先通关上一关');
+        sfx('noEnergy'); return false;
+      }
+      const cost = lv.cost || 5;
+      if (PR && PR.hasEnergy && !PR.hasEnergy(cost)) {
+        const sec = PR.energyNextInSec ? PR.energyNextInSec() : 0;
+        const mm = Math.floor(sec / 60), ss = sec % 60;
+        if (window.__toast) window.__toast('🎟️ 体力不足 (需' + cost + ')，' + (sec ? ('约 ' + mm + ':' + (ss < 10 ? '0' : '') + ss + ' 后回复') : '稍后再来'));
+        sfx('noEnergy'); return false;
+      }
+      if (PR && PR.spendEnergy) PR.spendEnergy(cost);
+      show('battle');
+      return true;
+    }
+    window.__tryStartBattle = tryStartBattle;
+    window.__isLevelUnlocked = isLevelUnlocked;
+
     // ================= HOME SCREEN =================
     function renderHome() {
       const lv = curLevel();
@@ -1182,6 +1326,10 @@
       wrap.appendChild(bgLayer);
 
       const leaderForAvatar = heroDef(G.leader) || {};
+      // 真实体力 (按时间结算) + 距下次回复秒数
+      const PR = window.__PROG;
+      if (PR && PR.refreshEnergy) PR.refreshEnergy();
+      const coinTxt = G.coins >= 10000 ? (G.coins / 1000).toFixed(1) + 'K' : String(G.coins);
       const top = el('div', 'relative z-10 flex items-center gap-2 px-3 pt-3');
       top.innerHTML = `
         <div class="relative flex items-center gap-2 bg-black/40 rounded-full pr-3 border border-amber-900/50">
@@ -1193,11 +1341,28 @@
           </div>
         </div>
         <div class="flex-1"></div>
-        <div class="flex items-center gap-1 bg-black/40 rounded-full px-2 py-1 text-[11px]"><span>🎟️</span><span class="text-stone-200 font-bold">56/30</span></div>
-        <div class="flex items-center gap-1 bg-black/40 rounded-full px-2 py-1 text-[11px]"><span>🪙</span><span class="text-amber-300 font-bold">${(G.coins/1000).toFixed(1)}K</span></div>
+        <div id="homeEnergy" class="flex items-center gap-1 bg-black/40 rounded-full px-2 py-1 text-[11px]"><span>🎟️</span><span class="text-stone-200 font-bold">${G.energy}/${G.energyMax}</span></div>
+        <div class="flex items-center gap-1 bg-black/40 rounded-full px-2 py-1 text-[11px]"><span>🏅</span><span class="text-amber-300 font-bold">${G.medals || 0}</span></div>
+        <div class="flex items-center gap-1 bg-black/40 rounded-full px-2 py-1 text-[11px]"><span>🪙</span><span class="text-amber-300 font-bold">${coinTxt}</span></div>
         <div class="flex items-center gap-1 bg-black/40 rounded-full px-2 py-1 text-[11px]"><span>💎</span><span class="text-sky-300 font-bold">${G.gems}</span></div>`;
       wrap.appendChild(top);
       hydratePetCanvases(top);
+
+      // 体力实时倒计时刷新 (每秒更新显示，回满后停止)
+      (function energyTicker() {
+        const span = top.querySelector('#homeEnergy span:last-child');
+        if (!span || !PR) return;
+        let iv = null;
+        const tick = () => {
+          if (G.screen !== 'home' || !document.body.contains(span)) { if (iv) clearInterval(iv); return; }
+          PR.refreshEnergy();
+          const sec = PR.energyNextInSec ? PR.energyNextInSec() : 0;
+          if (G.energy >= G.energyMax) span.textContent = G.energy + '/' + G.energyMax;
+          else { const mm = Math.floor(sec / 60), ss = sec % 60; span.textContent = G.energy + '/' + G.energyMax + ' (' + mm + ':' + (ss < 10 ? '0' : '') + ss + ')'; }
+        };
+        tick();
+        iv = setInterval(tick, 1000);
+      })();
 
       // 背景音乐开关：右上角资源条下方一个低调的次要图标 (🎵/🔇)，仅控制 BGM，不影响音效。
       const soundCtl = el('div', 'absolute z-20 flex flex-col gap-2 items-center');
@@ -1256,17 +1421,20 @@
         <button id="nextStage" class="absolute right-1 top-1/2 -translate-y-1/2 w-9 h-9 rounded-full bg-black/50 text-white text-lg">›</button>`;
       wrap.appendChild(stage);
 
+      const locked0 = !((window.__isLevelUnlocked) ? window.__isLevelUnlocked(G.lvlIndex) : true);
+      const stars0 = G.stars[lv.id] || 0;
+      const starStr0 = locked0 ? '🔒 未解锁' : (stars0 ? '⭐'.repeat(stars0) + '☆'.repeat(3 - stars0) : '☆☆☆ 未通关');
       const startWrap = el('div', 'relative z-10 px-6 mt-2');
       startWrap.innerHTML = `
-        <button id="startBtn" class="startbtn w-full rounded-2xl p-[3px]">
+        <button id="startBtn" class="startbtn w-full rounded-2xl p-[3px]" ${locked0 ? 'style="filter:grayscale(.7);opacity:.7;"' : ''}>
           <div class="startbtn-inner rounded-2xl py-3 text-center">
-            <div id="homeStageCost" class="text-[11px] text-white/90 font-bold">🌍 ${lv.cost}</div>
-            <div class="text-2xl font-black text-white tracking-widest" style="text-shadow:0 2px 3px #7a2408;">START</div>
+            <div id="homeStageCost" class="text-[11px] text-white/90 font-bold">🎟️ ${lv.cost}</div>
+            <div class="text-2xl font-black text-white tracking-widest" style="text-shadow:0 2px 3px #7a2408;">${locked0 ? '🔒 LOCKED' : 'START'}</div>
           </div>
         </button>
         <div class="flex items-center justify-between mt-2 px-1">
           <div class="px-3 py-1 rounded-full bg-black/40 text-[11px] text-amber-200 font-bold border border-amber-900/40">⚡ 战力 ${window.__ECON ? window.__ECON.squadPower() : 0}</div>
-          <div id="homeStageClear" class="px-3 py-1 rounded-full bg-black/40 text-[11px] text-stone-200 border border-amber-900/40">通关 ${lv.name.split('-')[0]} (1/1) 🏅200</div>
+          <div id="homeStageClear" class="px-3 py-1 rounded-full bg-black/40 text-[11px] text-amber-200 border border-amber-900/40">${starStr0}</div>
         </div>`;
       wrap.appendChild(startWrap);
 
@@ -1296,10 +1464,16 @@
         const costEl = wrap.querySelector('#homeStageCost');
         const clearEl = wrap.querySelector('#homeStageClear');
         const bgEl = wrap.querySelector('#homeStageBg');
+        const startBtnEl = wrap.querySelector('#startBtn');
+        const startTxtEl = startBtnEl ? startBtnEl.querySelector('.text-2xl') : null;
+        const locked = !((window.__isLevelUnlocked) ? window.__isLevelUnlocked(G.lvlIndex) : true);
+        const stars = G.stars[l.id] || 0;
         if (nameEl) nameEl.textContent = l.name;
         if (diffEl) diffEl.textContent = G.hardMode ? '☠️ (HARD)' : `🔄 (${l.diff})`;
-        if (costEl) costEl.textContent = `🌍 ${l.cost}`;
-        if (clearEl) clearEl.textContent = `通关 ${l.name.split('-')[0]} (1/1) 🏅200`;
+        if (costEl) costEl.textContent = `🎟️ ${l.cost}`;
+        if (clearEl) clearEl.textContent = locked ? '🔒 未解锁' : (stars ? '⭐'.repeat(stars) + '☆'.repeat(3 - stars) : '☆☆☆ 未通关');
+        if (startBtnEl) { startBtnEl.style.filter = locked ? 'grayscale(.7)' : ''; startBtnEl.style.opacity = locked ? '.7' : '1'; }
+        if (startTxtEl) startTxtEl.textContent = locked ? '🔒 LOCKED' : 'START';
         if (bgEl) { const u = bgUrlForLevel(l); if (u) { bgEl.src = u; bgEl.style.display = ''; } }
       }
 
@@ -1323,7 +1497,7 @@
         saveProgress();
       });
 
-      wrap.querySelector('#startBtn').addEventListener('click', () => { sfx('click'); show('battle'); });
+      wrap.querySelector('#startBtn').addEventListener('click', () => { sfx('click'); tryStartBattle(); });
       wrap.querySelector('#prevStage').addEventListener('click', () => { sfx('click'); G.lvlIndex = (G.lvlIndex - 1 + game_config.levels.length) % game_config.levels.length; updateStageInfo(); });
       wrap.querySelector('#nextStage').addEventListener('click', () => { sfx('click'); G.lvlIndex = (G.lvlIndex + 1) % game_config.levels.length; updateStageInfo(); });
       wrap.querySelectorAll('[data-nav]').forEach(b => b.addEventListener('click', () => {
@@ -1485,7 +1659,7 @@
       hydratePetCanvases(lb);
 
       renderPoolRow(wrap.querySelector('#poolRow'));
-      wrap.querySelector('#goBattle').addEventListener('click', () => show('battle'));
+      wrap.querySelector('#goBattle').addEventListener('click', () => tryStartBattle());
       wrap.querySelector('#editSquad').addEventListener('click', () => show('roster'));
       wrap.querySelector('#backHome').addEventListener('click', () => show('home'));
     }
@@ -3656,33 +3830,58 @@
       B.running = false;
       sfx(win ? 'win' : 'lose');
       bgm('menu');   // 结算后回到菜单主题音乐
-      const firstClear = win && !(G.cleared && G.cleared[curLevel().id]);
-      // ===== 经济结算：交给 __ECON.rollBattleRewards 统一计算金币/钻石/材料/装备掉落 =====
+      const lvId = curLevel().id;
+      const PR = window.__PROG;
+      const firstClear = win && !(G.cleared && G.cleared[lvId]);
+      // 真实防线剩余百分比 (长明灯油量)
+      const barrierPct = Math.max(0, Math.round((B.baseHp / B.baseHpMax) * 100));
+      G.barrierHp = win ? Math.max(barrierPct, 1) : 0;   // 失败=油尽
+
+      // ===== 星级 / 通关记录 (真实) =====
+      let res = { stars: win ? 1 : 0, prevStars: G.stars[lvId] || 0, bestStars: G.stars[lvId] || 0, firstClear, improved: false };
+      if (PR && PR.recordResult) res = PR.recordResult(lvId, win, B.score, barrierPct);
+
+      // ===== 经济结算：__ECON 统一计算金币/钻石/材料/装备掉落 =====
       let rw;
       if (window.__ECON && window.__ECON.rollBattleRewards) {
         rw = window.__ECON.rollBattleRewards(G.lvlIndex, win, {
           score: B.score, comboBest: B.comboBest, kills: B.kills, hard: G.hardMode, firstClear
         });
       } else {
-        // 兜底（__ECON 未就绪）
         const stageMul = 1 + G.lvlIndex * 0.25;
         rw = { coins: Math.round((B.score / 5 + (win ? 60 : 10)) * stageMul), gems: win ? (firstClear ? 15 : 6) : 0, mats: {}, items: [] };
       }
-      // 应用奖励
+      // 应用货币/材料/装备奖励
       G.coins += rw.coins;
       G.gems += rw.gems || 0;
       G.cash = (G.cash || 0) + B.cash;
       if (rw.mats) for (const m in rw.mats) { if (rw.mats[m]) G.materials[m] = (G.materials[m] || 0) + rw.mats[m]; }
       (rw.items || []).forEach(it => { if (window.__ECON) window.__ECON.addItem(it); });
+
+      // ===== 勋章 🏅：首通按星数发放；刷新星级(打出更高星)补发差额 =====
+      let medalGain = 0;
+      if (win) {
+        if (firstClear) medalGain = res.bestStars * 100 + 100;            // 首通基础 100 + 每星 100
+        else if (res.improved) medalGain = (res.bestStars - res.prevStars) * 60;  // 提升星级补发
+      }
+      if (medalGain > 0) G.medals = (G.medals || 0) + medalGain;
+      rw.medals = medalGain;
+      rw.stars = res.bestStars;
+      rw.firstClear = firstClear;
+
+      // ===== 玩家经验 / 升级 (真实) =====
+      const xpGain = Math.round(B.score / 3 + (win ? 40 : 8) + B.comboBest * 1.2 + (firstClear ? 60 : 0));
+      let lvUp = { leveled: false, levels: 0, rewards: {} };
+      if (PR && PR.gainPlayerXp) lvUp = PR.gainPlayerXp(xpGain);
+      rw.xp = xpGain; rw.levelUp = lvUp;
+
       // 统计
       G.totalEarned = (G.totalEarned || 0) + rw.coins;
       G.totalRuns = (G.totalRuns || 0) + 1;
-      // 缓存到 B 供结算界面展示
       B._reward = rw;
-      if (win) G.cleared[curLevel().id] = true;
-      if (window.__saveProgress) window.__saveProgress();  // persist progress to localStorage
+      if (window.__saveProgress) window.__saveProgress();
       renderResult(win, rw);
-      try { window.parent.postMessage({ type: 'gameFinished', data: { earnedPoints: B.score, kills: B.kills, level: curLevel().id, win } }, '*'); } catch (e) {}
+      try { window.parent.postMessage({ type: 'gameFinished', data: { earnedPoints: B.score, kills: B.kills, level: lvId, win, stars: res.bestStars } }, '*'); } catch (e) {}
     }
     function renderResult(win, rw) {
       removeOverlay();
@@ -3703,17 +3902,29 @@
             <div class="text-[9px] text-stone-300">${it.name}</div>
           </div>`;
       }).join('');
+      // 星级显示 (3 颗星，根据本局最佳点亮)
+      const starCount = rw.stars || 0;
+      const starRow = win ? `<div class="flex items-center justify-center gap-2 mb-2">
+          ${[0, 1, 2].map(i => `<span class="text-3xl" style="${i < starCount ? 'filter:drop-shadow(0 0 6px #ffd24a);' : 'opacity:.28;filter:grayscale(1);'}">⭐</span>`).join('')}
+        </div>` : '';
+      // 玩家升级横幅
+      const lvUp = rw.levelUp || {};
+      const lvUpBanner = (lvUp.leveled) ? `<div class="px-4 py-1 rounded-full mb-2 text-[12px] font-black text-black" style="background:linear-gradient(#ffe27a,#ffb733);">🎉 玩家升级! Lv.${G.playerLevel}　体力上限+${lvUp.rewards.energyMax}${lvUp.rewards.coins ? ' · 🪙+' + lvUp.rewards.coins : ''}${lvUp.rewards.gems ? ' · 💎+' + lvUp.rewards.gems : ''}</div>` : '';
       const wrap = el('div', 'absolute inset-0 flex flex-col items-center justify-center z-30 px-4 overflow-y-auto');
       wrap.style.background = 'rgba(8,6,5,.86)';
       wrap.innerHTML = `
-        <div class="text-4xl font-black mb-2" style="color:${win ? '#7CFC00' : '#ff4b3a'};text-shadow:0 2px 6px #000;">${win ? '盗墓成功' : '葬身墓中'}</div>
-        <div class="text-stone-300 mb-1">${lv.name}${win && rw.gems && rw.gems > 8 ? '　<span style="color:#ffd24a;">首通!</span>' : ''}</div>
+        <div class="text-4xl font-black mb-1" style="color:${win ? '#7CFC00' : '#ff4b3a'};text-shadow:0 2px 6px #000;">${win ? '盗墓成功' : '葬身墓中'}</div>
+        ${starRow}
+        <div class="text-stone-300 mb-1">${lv.name}${rw.firstClear ? '　<span style="color:#ffd24a;">首通!</span>' : ''}</div>
         <div class="text-amber-300 text-lg font-bold">击杀 ${B.kills} · 分数 ${B.score}</div>
-        <div class="text-amber-200 mb-3 text-[13px]">最高连杀 🔥${B.comboBest}</div>
-        <!-- 货币奖励行 -->
-        <div class="flex items-center justify-center gap-4 mb-3">
+        <div class="text-amber-200 mb-2 text-[13px]">最高连杀 🔥${B.comboBest} · 防线 ${G.barrierHp}%</div>
+        ${lvUpBanner}
+        <!-- 货币 / 经验 / 勋章奖励行 -->
+        <div class="flex items-center justify-center gap-3 mb-2 flex-wrap">
           <div class="flex items-center gap-1 text-lg"><span>🪙</span><span class="text-yellow-300 font-black">+${rw.coins}</span></div>
           ${rw.gems ? `<div class="flex items-center gap-1 text-lg"><span>💎</span><span class="text-sky-300 font-black">+${rw.gems}</span></div>` : ''}
+          ${rw.medals ? `<div class="flex items-center gap-1 text-lg"><span>🏅</span><span class="text-amber-300 font-black">+${rw.medals}</span></div>` : ''}
+          ${rw.xp ? `<div class="flex items-center gap-1 text-[13px]"><span>📊</span><span class="text-emerald-300 font-bold">EXP+${rw.xp}</span></div>` : ''}
         </div>
         ${matBits.length ? `<div class="text-[12px] text-stone-300 mb-2">素材掉落：${matBits.join('　')}</div>` : ''}
         ${itemCards ? `<div class="text-[11px] text-amber-300 font-bold mb-1">⚔️ 装备掉落</div><div class="flex flex-wrap justify-center mb-3">${itemCards}</div>` : ''}
@@ -3725,9 +3936,17 @@
           <button id="homeBtn" class="px-5 py-2 rounded-full font-bold text-stone-200 bg-black/50 border border-stone-600">基地</button>
         </div>`;
       root.appendChild(wrap); overlayEl = wrap;
+      // 下一关 / 重打都需消耗体力 (走统一校验)；体力不足则退回首页
+      const startWithEnergy = (advance) => {
+        if (advance) G.lvlIndex = Math.min(G.lvlIndex + 1, game_config.levels.length - 1);
+        removeOverlay();
+        if (window.__tryStartBattle) {
+          if (!window.__tryStartBattle()) window.__show('home');
+        } else { startBattle(); }
+      };
       const nb = wrap.querySelector('#nextBtn');
-      if (nb) nb.addEventListener('click', () => { sfx('click'); G.lvlIndex++; removeOverlay(); startBattle(); });
-      wrap.querySelector('#retryBtn').addEventListener('click', () => { sfx('click'); removeOverlay(); startBattle(); });
+      if (nb) nb.addEventListener('click', () => { sfx('click'); startWithEnergy(true); });
+      wrap.querySelector('#retryBtn').addEventListener('click', () => { sfx('click'); startWithEnergy(false); });
       wrap.querySelector('#bagBtn').addEventListener('click', () => { sfx('click'); removeOverlay(); window.__show('bag'); });
       wrap.querySelector('#homeBtn').addEventListener('click', () => { sfx('click'); removeOverlay(); window.__show('home'); });
     }
@@ -4129,10 +4348,20 @@
     const SHOP_TABS = [
       { k: 'chest', t: '宝箱', e: '🎁' },
       { k: 'mat',   t: '素材', e: '🧪' },
+      { k: 'honor', t: '荣誉', e: '🏅' },
       { k: 'hero',  t: '角色', e: '🧑‍🤝‍🧑' },
       { k: 'gem',   t: '钻石', e: '💎' }
     ];
     let shopTab = 'chest';
+
+    // ---- 荣誉(🏅 勋章)兑换：勋章是通关/三星专属硬通货，可兑换高价值物资 ----
+    const HONOR_GOODS = [
+      { id: 'hn_coin', kind: 'coins', amount: 3000, price: 200,  e: '🪙', name: '金币补给', desc: '🪙 ×3000' },
+      { id: 'hn_pot',  kind: 'mat', mat: 'potion', amount: 10, price: 300, e: '🧪', name: '强化液礼包', desc: '🧪 ×10' },
+      { id: 'hn_cry',  kind: 'mat', mat: 'crystal', amount: 6, price: 500, e: '💠', name: '结晶礼包', desc: '💠 ×6' },
+      { id: 'hn_chest', kind: 'chest', minRarity: 4, stageBoost: 8, price: 800, e: '🏆', name: '荣誉宝箱', desc: '保底史诗装备 ×1' },
+      { id: 'hn_gem',  kind: 'gems', amount: 100, price: 600, e: '💎', name: '钻石兑换', desc: '💎 ×100' }
+    ];
 
     // ---- 宝箱定义：花费货币开箱，按权重表掉落随机装备 (走 __ECON.rollDropItem 的稀有度逻辑) ----
     // minRarity: 保底稀有度；stageBoost: 等效关卡偏移(越高出货越好)；count: 一次开几件
@@ -4164,9 +4393,10 @@
       { id: 'g6', name: '钻石神殿',   amount: 6480, price: '¥648', tag: 'MAX' }
     ];
 
-    const curIcon = c => c === 'gems' ? '💎' : '🪙';
+    const curIcon = c => c === 'gems' ? '💎' : (c === 'medals' ? '🏅' : '🪙');
     function spend(cur, amt) {
       if (cur === 'gems') { if (G.gems < amt) return false; G.gems -= amt; return true; }
+      if (cur === 'medals') { if ((G.medals || 0) < amt) return false; G.medals -= amt; return true; }
       if (G.coins < amt) return false; G.coins -= amt; return true;
     }
 
@@ -4190,8 +4420,16 @@
         body.appendChild(inv);
       }
 
+      // 荣誉页顶部显示当前勋章数
+      if (shopTab === 'honor') {
+        const hb = el('div', 'flex items-center justify-center gap-2 bg-black/35 rounded-xl px-2 py-2 mb-2 mt-1 border border-amber-900/40');
+        hb.innerHTML = `<span class="text-[13px]">🏅</span><span class="text-amber-300 font-black text-[15px]">${G.medals || 0}</span><span class="text-[11px] text-stone-400">· 通关/三星获得</span>`;
+        body.appendChild(hb);
+      }
+
       if (shopTab === 'chest') renderChestTab(body);
       else if (shopTab === 'mat') renderMatTab(body);
+      else if (shopTab === 'honor') renderHonorTab(body);
       else if (shopTab === 'hero') renderHeroTab(body);
       else if (shopTab === 'gem') renderGemTab(body);
 
@@ -4213,18 +4451,26 @@
       body.appendChild(grid);
       grid.querySelectorAll('[data-chest]').forEach(b => b.addEventListener('click', () => {
         const c = CHESTS.find(x => x.id === b.getAttribute('data-chest')); if (!c) return;
-        if (!spend(c.cur, c.price)) { sfx('noEnergy'); toast(curIcon(c.cur) + ' 不足'); return; }
-        sfx('unlock');
-        const got = [];
-        for (let i = 0; i < c.count; i++) {
-          let it = EC.rollDropItem(G.lvlIndex + c.stageBoost, false);
-          // 应用宝箱保底稀有度
-          if (it.rarity < c.minRarity) it = EC.makeItem(it.slot, c.minRarity, {});
-          EC.addItem(it); got.push(it);
-        }
-        D.saveProgress();
-        showLootPopup(got);
-        renderShop();
+        sfx('click');
+        window.__confirmModal({
+          title: '购买确认',
+          body: `确认花费 <b class="text-amber-300">${curIcon(c.cur)}${c.price}</b> 开启<br><b>${c.e} ${c.name}</b>？<br><span class="text-[10px] text-stone-400">${c.desc}</span>`,
+          okText: '购买',
+          onOk: () => {
+            if (!spend(c.cur, c.price)) { sfx('noEnergy'); toast(curIcon(c.cur) + ' 不足'); return; }
+            sfx('unlock');
+            const got = [];
+            for (let i = 0; i < c.count; i++) {
+              let it = EC.rollDropItem(G.lvlIndex + c.stageBoost, false);
+              // 应用宝箱保底稀有度
+              if (it.rarity < c.minRarity) it = EC.makeItem(it.slot, c.minRarity, {});
+              EC.addItem(it); got.push(it);
+            }
+            D.saveProgress();
+            showLootPopup(got);
+            renderShop();
+          }
+        });
       }));
     }
 
@@ -4244,10 +4490,51 @@
       body.appendChild(grid);
       grid.querySelectorAll('[data-mat]').forEach(b => b.addEventListener('click', () => {
         const g = MAT_GOODS.find(x => x.id === b.getAttribute('data-mat')); if (!g) return;
-        if (!spend(g.cur, g.price)) { sfx('noEnergy'); toast(curIcon(g.cur) + ' 不足'); return; }
-        G.materials[g.mat] = (G.materials[g.mat] || 0) + g.amount;
-        sfx('unlock'); D.saveProgress();
-        toast(EC.ECON.mats[g.mat].e + ' +' + g.amount); renderShop();
+        const mi = EC.ECON.mats[g.mat];
+        sfx('click');
+        window.__confirmModal({
+          title: '购买确认',
+          body: `确认花费 <b class="text-amber-300">${curIcon(g.cur)}${g.price}</b> 购买<br><b>${mi.e} ${mi.t} ×${g.amount}</b>？`,
+          okText: '购买',
+          onOk: () => {
+            if (!spend(g.cur, g.price)) { sfx('noEnergy'); toast(curIcon(g.cur) + ' 不足'); return; }
+            G.materials[g.mat] = (G.materials[g.mat] || 0) + g.amount;
+            sfx('unlock'); D.saveProgress();
+            toast(mi.e + ' +' + g.amount); renderShop();
+          }
+        });
+      }));
+    }
+
+    // ---- 荣誉(🏅 勋章)兑换页 ----
+    function renderHonorTab(body) {
+      const EC = window.__ECON;
+      const grid = el('div', 'grid grid-cols-2 gap-2 pb-3');
+      grid.innerHTML = HONOR_GOODS.map(g => `
+        <div class="rounded-xl p-2 flex flex-col items-center text-center relative" style="background:linear-gradient(#2a2414,#120d0b 75%);border:1px solid rgba(217,154,58,.3);">
+          <div class="mt-2 mb-1 text-4xl">${g.e}</div>
+          <div class="text-[12px] font-bold text-amber-100">${g.name}</div>
+          <div class="text-[10px] text-stone-400 leading-tight min-h-[26px]">${g.desc}</div>
+          <button data-honor="${g.id}" class="mt-1 w-full py-[6px] rounded-lg text-[12px] font-black text-white" style="background:linear-gradient(#d6a017,#a8740a);box-shadow:0 2px 0 #6a4a08;">🏅 ${g.price}</button>
+        </div>`).join('');
+      body.appendChild(grid);
+      grid.querySelectorAll('[data-honor]').forEach(b => b.addEventListener('click', () => {
+        const g = HONOR_GOODS.find(x => x.id === b.getAttribute('data-honor')); if (!g) return;
+        sfx('click');
+        window.__confirmModal({
+          title: '兑换确认',
+          body: `确认花费 <b class="text-amber-300">🏅${g.price}</b> 兑换<br><b>${g.e} ${g.name}</b>？<br><span class="text-[10px] text-stone-400">${g.desc}</span>`,
+          okText: '兑换',
+          onOk: () => {
+            if (!spend('medals', g.price)) { sfx('noEnergy'); toast('🏅 勋章不足'); return; }
+            sfx('unlock');
+            if (g.kind === 'coins') { G.coins += g.amount; toast('🪙 +' + g.amount); }
+            else if (g.kind === 'gems') { G.gems += g.amount; toast('💎 +' + g.amount); }
+            else if (g.kind === 'mat') { G.materials[g.mat] = (G.materials[g.mat] || 0) + g.amount; toast(EC.ECON.mats[g.mat].e + ' +' + g.amount); }
+            else if (g.kind === 'chest') { let it = EC.rollDropItem(G.lvlIndex + g.stageBoost, false); if (it.rarity < g.minRarity) it = EC.makeItem(it.slot, g.minRarity, {}); EC.addItem(it); showLootPopup([it]); }
+            D.saveProgress(); renderShop();
+          }
+        });
       }));
     }
 
@@ -4273,8 +4560,16 @@
         const key = b.getAttribute('data-hero'); const h = heroDef(key); if (!h) return;
         const cost = h.unlockCost || 200;
         if (G.unlocked[key]) { toast(h.name + ' 已拥有'); return; }
-        if (G.gems >= cost) { G.gems -= cost; G.unlocked[key] = true; sfx('unlock'); D.saveProgress(); toast('🎉 解锁 ' + h.name); renderShop(); }
-        else { sfx('noEnergy'); toast('💎 不足'); }
+        sfx('click');
+        window.__confirmModal({
+          title: '解锁角色',
+          body: `确认花费 <b class="text-amber-300">💎${cost}</b> 解锁<br><b style="color:${elColor(h.element)};">${h.name}</b>（${h.title}）？`,
+          okText: '解锁',
+          onOk: () => {
+            if (G.gems >= cost) { G.gems -= cost; G.unlocked[key] = true; sfx('unlock'); D.saveProgress(); toast('🎉 解锁 ' + h.name); renderShop(); }
+            else { sfx('noEnergy'); toast('💎 不足'); }
+          }
+        });
       }));
     }
 
@@ -4286,7 +4581,7 @@
         <div class="text-[10px] text-amber-100/80 font-bold">限时礼包</div>
         <div class="text-lg font-black text-white mt-[2px]">摸金者首充礼包</div>
         <div class="text-[11px] text-amber-100 mt-[2px]">💎×300 + 🪙×2000 + 鎏金宝箱×1</div>
-        <button id="bannerBuy" class="mt-2 px-4 py-1 rounded-full text-sm font-black text-[#7a1f15] bg-amber-300">¥6 抢购</button>
+        <button id="bannerBuy" class="mt-2 px-4 py-1 rounded-full text-sm font-black ${G.firstChargeClaimed ? 'text-stone-300 bg-black/30' : 'text-[#7a1f15] bg-amber-300'}">${G.firstChargeClaimed ? '✓ 已领取' : '¥6 抢购'}</button>
         <div class="absolute -right-2 -bottom-3 text-[80px] opacity-30 select-none">🎁</div>`;
       body.appendChild(banner);
       const grid = el('div', 'grid grid-cols-2 gap-2 pb-3');
@@ -4299,8 +4594,46 @@
           <button data-gem="${g.id}" class="mt-2 w-full py-[6px] rounded-lg text-[12px] font-black text-white" style="background:linear-gradient(#5a93d6,#2a6ab0);box-shadow:0 2px 0 #1a447a;">${g.price}</button>
         </div>`).join('');
       body.appendChild(grid);
-      banner.querySelector('#bannerBuy').addEventListener('click', () => { sfx('click'); toast('💖 充值入口为演示，暂未开放'); });
-      grid.querySelectorAll('[data-gem]').forEach(b => b.addEventListener('click', () => { sfx('click'); toast('💖 充值入口为演示，暂未开放'); }));
+      // ---- 模拟充值：首充礼包 (一次性) ----
+      banner.querySelector('#bannerBuy').addEventListener('click', () => {
+        sfx('click');
+        if (G.firstChargeClaimed) { toast('💖 首充礼包已领取'); return; }
+        window.__confirmModal({
+          title: '模拟充值',
+          body: `确认支付 <b class="text-amber-300">¥6</b> 购买<br><b>摸金者首充礼包</b>？<br><span class="text-[11px] text-stone-400">💎×300 + 🪙×2000 + 🎁鎏金宝箱×1</span><br><span class="text-[10px] text-stone-500">(演示模式，确认即视为支付成功)</span>`,
+          okText: '确认支付',
+          onOk: () => {
+            const EC = window.__ECON;
+            G.gems += 300;
+            G.coins += 2000;
+            G.firstChargeClaimed = true;
+            // 鎏金宝箱：保底稀有起，立即开出 1 件
+            let it = EC.rollDropItem(G.lvlIndex + 4, false);
+            if (it.rarity < 3) it = EC.makeItem(it.slot, 3, {});
+            EC.addItem(it);
+            sfx('unlock'); D.saveProgress();
+            toast('🎉 支付成功 · 💎+300 🪙+2000');
+            showLootPopup([it]);
+            renderShop();
+          }
+        });
+      });
+      // ---- 模拟充值：钻石礼包 ----
+      grid.querySelectorAll('[data-gem]').forEach(b => b.addEventListener('click', () => {
+        sfx('click');
+        const g = GEM_PACKS.find(x => x.id === b.getAttribute('data-gem')); if (!g) return;
+        window.__confirmModal({
+          title: '模拟充值',
+          body: `确认支付 <b class="text-amber-300">${g.price}</b> 购买<br><b>${g.name}</b> (💎×${g.amount})？<br><span class="text-[10px] text-stone-500">(演示模式，确认即视为支付成功)</span>`,
+          okText: '确认支付',
+          onOk: () => {
+            G.gems += g.amount;
+            sfx('unlock'); D.saveProgress();
+            toast('🎉 支付成功 · 💎+' + g.amount);
+            renderShop();
+          }
+        });
+      }));
     }
 
     // ---- 开箱/获得装备的弹窗展示 ----
@@ -4373,8 +4706,8 @@
       charBox.style.background = `radial-gradient(circle at 50% 30%,${h.color}33,#120d0b 75%)`;
       const slots = G.equipped[h.key];
       charBox.innerHTML = `
-        <button id="bagPrev" class="absolute left-1 top-1/2 -translate-y-1/2 w-9 h-9 rounded-full bg-black/50 text-white text-lg z-20">‹</button>
-        <button id="bagNext" class="absolute right-1 top-1/2 -translate-y-1/2 w-9 h-9 rounded-full bg-black/50 text-white text-lg z-20">›</button>
+        <button id="bagPrev" class="absolute left-1 bottom-2 w-9 h-9 rounded-full bg-black/50 text-white text-lg z-20">‹</button>
+        <button id="bagNext" class="absolute right-1 bottom-2 w-9 h-9 rounded-full bg-black/50 text-white text-lg z-20">›</button>
         <div class="absolute inset-0 flex items-center justify-center">
           <canvas id="bagCanvas" width="200" height="200" style="image-rendering:auto;"></canvas>
           <div class="text-[12px] text-stone-300 absolute" id="bagEmoji">形象加载中…</div>
@@ -4385,62 +4718,109 @@
         </div>
         <div class="absolute top-2 right-2 z-10 text-right">
           <div class="text-[10px] text-stone-300">战力</div>
-          <div class="text-lg font-black text-amber-300" style="text-shadow:0 1px 3px #000;">⚡${power}</div>
+          <div id="bagPower" class="text-lg font-black text-amber-300" style="text-shadow:0 1px 3px #000;">⚡${power}</div>
         </div>
-        <div class="absolute left-2 top-1/2 -translate-y-1/2 flex flex-col gap-1 z-10">
+        <div id="bagSlotsL" class="absolute left-2 top-1/2 -translate-y-1/2 flex flex-col gap-1 z-10">
           ${EQUIP_SLOTS.slice(0,3).map(s => slotHtml(s, slots[s.k])).join('')}
         </div>
-        <div class="absolute right-2 top-1/2 -translate-y-1/2 flex flex-col gap-1 z-10">
+        <div id="bagSlotsR" class="absolute right-2 top-1/2 -translate-y-1/2 flex flex-col gap-1 z-10">
           ${EQUIP_SLOTS.slice(3).map(s => slotHtml(s, slots[s.k])).join('')}
         </div>`;
       body.appendChild(charBox);
 
       // ===== 有效属性条 =====
       const stat = el('div', 'grid grid-cols-4 gap-1 mb-2');
-      const si = EC().ECON.statInfo;
-      stat.innerHTML = [['phys', eff.phys], ['crit', eff.crit], ['hp', eff.hp], ['rate', eff.rate]].map(([k, v]) => `
-        <div class="rounded-lg py-1 text-center" style="background:rgba(0,0,0,.4);">
-          <div class="text-[14px]">${si[k].e}</div>
-          <div class="text-[9px] text-stone-400">${si[k].t}</div>
-          <div class="text-[12px] font-bold text-amber-200">${v}${si[k].suffix}</div>
-        </div>`).join('');
+      stat.id = 'bagStats';
+      stat.innerHTML = bagStatsHtml(eff);
       body.appendChild(stat);
 
-      // ===== 三类标签 =====
+      // ===== 标签 + 标签内容(可局部刷新，不触动立绘) =====
+      const lower = el('div');
+      lower.id = 'bagLower';
+      body.appendChild(lower);
+      fillBagLower(lower, h);
+
+      drawBagPortrait(h);
+
+      charBox.querySelector('#bagPrev').addEventListener('click', () => { bagHeroIdx = (bagHeroIdx - 1 + owned.length) % owned.length; fuseSel = []; renderBag(); });
+      charBox.querySelector('#bagNext').addEventListener('click', () => { bagHeroIdx = (bagHeroIdx + 1) % owned.length; fuseSel = []; renderBag(); });
+      bindSlotClicks(charBox, h);
+    }
+
+    // 填充「三类标签 + 当前标签内容」（供整页渲染与局部刷新复用）
+    function fillBagLower(lower, h) {
+      lower.innerHTML = '';
       const tabs = el('div', 'flex gap-2 mb-2');
       tabs.innerHTML = BAG_TABS.map(t => `
         <button data-btab="${t.k}" class="flex-1 py-2 rounded-xl text-[12px] font-bold flex items-center justify-center gap-1"
           style="${t.k === bagTab ? 'background:linear-gradient(#c0392b,#7a1f15);color:#fff;box-shadow:0 2px 0 #4a120c;' : 'background:rgba(0,0,0,.4);color:#cbb;'}">
           <span>${t.e}</span><span>${t.t}</span>
         </button>`).join('');
-      body.appendChild(tabs);
+      lower.appendChild(tabs);
 
-      if (bagTab === 'gear') renderGearLib(body, h);
-      else if (bagTab === 'fuse') renderFuse(body);
-      else if (bagTab === 'mat') renderMatBag(body);
+      if (bagTab === 'gear') renderGearLib(lower, h);
+      else if (bagTab === 'fuse') renderFuse(lower);
+      else if (bagTab === 'mat') renderMatBag(lower);
 
-      drawBagPortrait(h);
-
-      charBox.querySelector('#bagPrev').addEventListener('click', () => { bagHeroIdx = (bagHeroIdx - 1 + owned.length) % owned.length; fuseSel = []; renderBag(); });
-      charBox.querySelector('#bagNext').addEventListener('click', () => { bagHeroIdx = (bagHeroIdx + 1) % owned.length; fuseSel = []; renderBag(); });
-      // 点击已装备槽 -> 卸下
-      charBox.querySelectorAll('[data-slot]').forEach(b => b.addEventListener('click', () => {
-        const slot = b.getAttribute('data-slot');
-        if (G.equipped[h.key][slot]) { EC().unequip(h.key, slot); sfx('click'); toast('已卸下 ' + EQUIP_SLOTS.find(s => s.k === slot).t); renderBag(); }
-        else { bagFilterSlot = slot; bagTab = 'gear'; renderBag(); }
-      }));
-      tabs.querySelectorAll('[data-btab]').forEach(b => b.addEventListener('click', () => { sfx('tab'); bagTab = b.getAttribute('data-btab'); renderBag(); }));
+      tabs.querySelectorAll('[data-btab]').forEach(b => b.addEventListener('click', () => { sfx('tab'); bagTab = b.getAttribute('data-btab'); refreshBagLower(h); }));
     }
 
-    // 装备槽 HTML：若已装备，显示该装备 emoji + 稀有度边框 + 强化等级
+    // 局部刷新下半部分(标签+内容)，立绘/装备槽/属性条保持不动
+    function refreshBagLower(h) {
+      const lower = document.getElementById('bagLower');
+      if (lower) fillBagLower(lower, h);
+      else renderBag();
+    }
+
+    // 有效属性条 HTML（供整页渲染与局部刷新复用）
+    function bagStatsHtml(eff) {
+      const si = EC().ECON.statInfo;
+      return [['phys', eff.phys], ['crit', eff.crit], ['hp', eff.hp], ['rate', eff.rate]].map(([k, v]) => `
+        <div class="rounded-lg py-1 text-center" style="background:rgba(0,0,0,.4);">
+          <div class="text-[14px]">${si[k].e}</div>
+          <div class="text-[9px] text-stone-400">${si[k].t}</div>
+          <div class="text-[12px] font-bold text-amber-200">${v}${si[k].suffix}</div>
+        </div>`).join('');
+    }
+
+    // 绑定装备槽点击：点已装备槽->卸下；点空槽->切到装备库并按该槽筛选
+    function bindSlotClicks(container, h) {
+      container.querySelectorAll('[data-slot]').forEach(b => b.addEventListener('click', () => {
+        const slot = b.getAttribute('data-slot');
+        if (G.equipped[h.key][slot]) { EC().unequip(h.key, slot); sfx('click'); toast('已卸下 ' + EQUIP_SLOTS.find(s => s.k === slot).t); refreshBagEquip(h); }
+        else { bagFilterSlot = slot; bagTab = 'gear'; sfx('click'); refreshBagLower(h); }
+      }));
+    }
+
+    // 局部刷新：装备/卸下后只更新装备槽、战力、有效属性条 与 装备库列表，避免整页重渲染(立绘闪烁)
+    function refreshBagEquip(h) {
+      EC().ensureEquipSlots(h.key);
+      const slots = G.equipped[h.key];
+      const slotsL = document.getElementById('bagSlotsL');
+      const slotsR = document.getElementById('bagSlotsR');
+      const powerEl = document.getElementById('bagPower');
+      const statEl = document.getElementById('bagStats');
+      if (slotsL) { slotsL.innerHTML = EQUIP_SLOTS.slice(0, 3).map(s => slotHtml(s, slots[s.k])).join(''); }
+      if (slotsR) { slotsR.innerHTML = EQUIP_SLOTS.slice(3).map(s => slotHtml(s, slots[s.k])).join(''); }
+      if (slotsL || slotsR) {
+        const cb = (slotsL || slotsR).closest('.relative');
+        if (cb) bindSlotClicks(cb, h);
+      }
+      if (powerEl) powerEl.textContent = '⚡' + EC().heroPower(h.key);
+      if (statEl) statEl.innerHTML = bagStatsHtml(EC().effectiveStats(h.key));
+      // 装备库列表（仅在装备页时刷新标记✓/装）
+      if (bagTab === 'gear') refreshGearGrid(h);
+    }
+
+    // 装备槽 HTML：已装备显示该装备 emoji + 稀有度边框 + 强化等级；未装备显示空槽(灰色「空」占位)
     function slotHtml(s, itemId) {
       const it = itemId ? EC().findItem(itemId) : null;
       const rd = it ? EC().rarityDef(it.rarity) : null;
-      const border = rd ? rd.color : 'rgba(217,154,58,.45)';
+      const border = rd ? rd.color : 'rgba(255,255,255,.18)';
       return `<button data-slot="${s.k}" data-slotname="${s.t}" class="w-12 h-12 rounded-xl flex flex-col items-center justify-center relative"
         style="background:rgba(0,0,0,.5);border:2px solid ${border};${rd ? 'box-shadow:0 0 8px ' + rd.color + '66;' : ''}">
-        <div class="text-xl">${it ? it.emoji : s.e}</div>
-        <div class="text-[7px] ${it ? 'text-amber-200' : 'text-stone-300'} -mt-[2px]">${it ? (it.level ? '+' + it.level : s.t) : s.t}</div>
+        <div class="text-xl ${it ? '' : 'opacity-40 text-stone-500'}">${it ? it.emoji : '空'}</div>
+        <div class="text-[7px] ${it ? 'text-amber-200' : 'text-stone-500'} -mt-[2px]">${it ? (it.level ? '+' + it.level : s.t) : s.t}</div>
         ${it ? '' : `<div class="absolute -bottom-1 -right-1 text-[10px] text-emerald-400">＋</div>`}
       </button>`;
     }
@@ -4454,18 +4834,29 @@
         <button data-flt="${f.k}" class="shrink-0 px-3 py-1 rounded-full text-[11px] font-bold"
           style="${f.k === bagFilterSlot ? 'background:#c0392b;color:#fff;' : 'background:rgba(0,0,0,.4);color:#cbb;'}">${f.e}${f.t}</button>`).join('');
       body.appendChild(filterBar);
-      filterBar.querySelectorAll('[data-flt]').forEach(b => b.addEventListener('click', () => { sfx('click'); bagFilterSlot = b.getAttribute('data-flt'); renderBag(); }));
+      filterBar.querySelectorAll('[data-flt]').forEach(b => b.addEventListener('click', () => { sfx('click'); bagFilterSlot = b.getAttribute('data-flt'); refreshBagLower(h); }));
 
-      // 列表 (按战力降序)
-      let list = G.inventory.slice();
+      const grid = el('div', 'grid grid-cols-4 gap-2 pb-3');
+      grid.id = 'bagGearGrid';
+      body.appendChild(grid);
+      fillGearGrid(grid, h);
+    }
+
+    // 填充装备库网格内容并绑定点击（供整页渲染与局部刷新复用）
+    function fillGearGrid(grid, h) {
+      // 列表 (按战力降序)；隐藏已装备在「其它角色」身上的装备，只保留未装备的与当前角色已装备的
+      let list = G.inventory.slice().filter(i => {
+        const w = EC().wearerOf(i.id);
+        return !w || w === h.key;
+      });
       if (bagFilterSlot !== 'all') list = list.filter(i => i.slot === bagFilterSlot);
       list.sort((a, b) => EC().itemPower(b) - EC().itemPower(a));
 
-      const grid = el('div', 'grid grid-cols-4 gap-2 pb-3');
       if (!list.length) {
         grid.className = 'pb-3';
         grid.innerHTML = `<div class="text-center text-[12px] text-stone-400 py-6">暂无装备，去商店开宝箱或打关掉落</div>`;
       } else {
+        grid.className = 'grid grid-cols-4 gap-2 pb-3';
         grid.innerHTML = list.map(it => {
           const rd = EC().rarityDef(it.rarity);
           const wearer = EC().wearerOf(it.id);
@@ -4479,8 +4870,13 @@
           </button>`;
         }).join('');
       }
-      body.appendChild(grid);
       grid.querySelectorAll('[data-item]').forEach(b => b.addEventListener('click', () => openItemDetail(b.getAttribute('data-item'), h)));
+    }
+
+    // 局部刷新装备库网格（装备/卸下后更新 ✓/装 标记）
+    function refreshGearGrid(h) {
+      const grid = document.getElementById('bagGearGrid');
+      if (grid) fillGearGrid(grid, h);
     }
 
     // ===== 装备详情弹窗：属性、装备/卸下、强化、出售 =====
@@ -4533,17 +4929,17 @@
       mask.querySelector('#idEquip').addEventListener('click', () => {
         sfx('click');
         if (onThis) EC().unequip(h.key, it.slot); else EC().equip(h.key, it.id);
-        close(); renderBag();
+        close(); refreshBagEquip(h);
       });
       mask.querySelector('#idEnh').addEventListener('click', () => {
         if (atMax) { toast('已达强化上限'); return; }
         const r = EC().enhance(it);
-        if (r.ok) { sfx('levelup'); toast(it.name + ' 强化至 +' + r.level); close(); openItemDetail(itemId, h); renderBag(); }
+        if (r.ok) { sfx('levelup'); toast(it.name + ' 强化至 +' + r.level); close(); openItemDetail(itemId, h); refreshBagEquip(h); }
         else { sfx('noEnergy'); toast(r.reason === 'coin' ? '🪙 不足' : (r.reason === 'mat' ? '素材不足' : '无法强化')); }
       });
       mask.querySelector('#idSell').addEventListener('click', () => {
         window.__confirmModal({ title: '出售装备', body: `出售 <b style="color:${rd.color};">${it.name}</b> 可得 🪙${sellCoin}${sellRd.sellMatBonus ? ('　⚙️+' + sellRd.sellMatBonus) : ''}`, okText: '出售', onOk: () => {
-          const r = EC().sellItem(it.id); if (r) { sfx('unlock'); toast('已出售 · 🪙+' + r.coin); } close(); renderBag();
+          const r = EC().sellItem(it.id); if (r) { sfx('unlock'); toast('已出售 · 🪙+' + r.coin); } close(); refreshBagEquip(h);
         }});
       });
     }
@@ -4633,69 +5029,87 @@
     window.__renderBag = renderBag;
 
     // ===================================================================
-    //  地图 MAP  (古墓秘境/关卡节点)
+    //  地图 MAP  (真实关卡推进：每关一个节点，按通关进度逐关解锁)
     // ===================================================================
-    const MAP_NODES = [
-      { id: 1, name: '行脚商铺', e: '🏪', x: 18, y: 18, type: 'shop' },
-      { id: 2, name: '荒废校墓', e: '🪦', x: 62, y: 14, type: 'lvl', lvl: 0 },
-      { id: 3, name: '地下阴河', e: '🌊', x: 30, y: 42, type: 'lvl', lvl: 2 },
-      { id: 4, name: '休整营地', e: '🏕️', x: 74, y: 40, type: 'heal' },
-      { id: 5, name: '古墓主殿', e: '🏛️', x: 20, y: 66, type: 'lvl', lvl: 1 },
-      { id: 6, name: '雪山铜门', e: '🚪', x: 58, y: 64, type: 'boss' },
-      { id: 7, name: '矿井古墓', e: '⛏️', x: 40, y: 86, type: 'final' }
-    ];
+    // 关卡节点坐标 (蜿蜒墓道布局，按 game_config.levels 数量自动生成 zig-zag 路径)
+    function levelMapNodes() {
+      const n = game_config.levels.length;
+      return game_config.levels.map((lv, i) => {
+        // zig-zag：奇偶行左右交错，纵向均匀分布
+        const row = i;
+        const x = (i % 2 === 0) ? 28 : 72;
+        const y = 10 + (80 * row / Math.max(1, n - 1));
+        return { idx: i, lv, x, y };
+      });
+    }
 
     function renderMap() {
       const body = scaffold('地图 · 古墓秘境', 'map');
+      const PR = window.__PROG;
+      const nodes = levelMapNodes();
 
-      const board = el('div', 'relative rounded-2xl my-2 overflow-hidden');
-      board.style.height = 'calc(100% - 16px)';
+      // 顶部进度条：总星数 / 已通关
+      const totS = PR && PR.totalStars ? PR.totalStars() : 0;
+      const maxS = PR && PR.maxStars ? PR.maxStars() : game_config.levels.length * 3;
+      const clearedCnt = game_config.levels.filter(l => G.cleared[l.id]).length;
+      const prog = el('div', 'flex items-center justify-between bg-black/40 rounded-xl px-3 py-2 mb-2 mt-1 border border-amber-900/40');
+      prog.innerHTML = `
+        <div class="text-[12px] text-stone-200">通关 <b class="text-amber-300">${clearedCnt}/${game_config.levels.length}</b></div>
+        <div class="text-[12px] text-stone-200">⭐ <b class="text-amber-300">${totS}/${maxS}</b></div>
+        <button id="mapShop" class="px-3 py-1 rounded-full text-[11px] font-bold text-white" style="background:linear-gradient(#36c45a,#1e8a3a);">🏪 补给</button>`;
+      body.appendChild(prog);
+
+      const board = el('div', 'relative rounded-2xl my-1 overflow-hidden');
+      board.style.height = 'calc(100% - 56px)';
       board.style.minHeight = '440px';
       board.style.background = 'linear-gradient(180deg,#3a4a3a,#222018 70%,#15110d)';
-      // 盗墓主殿场景作为地图底图 (引用 art_assets)，叠暗角与纹理
       const mapBgUrl = (D.ART && D.ART.byId && D.ART.byId.ancient_tomb_hall && D.ART.byId.ancient_tomb_hall.imageUrl) || '';
       board.innerHTML = `
         ${mapBgUrl ? `<img src="${mapBgUrl}" alt="" class="absolute inset-0 w-full h-full object-cover opacity-45" onerror="this.style.display='none'">` : ''}
         <div class="absolute inset-0" style="background:linear-gradient(180deg,rgba(10,7,5,.35),rgba(10,7,5,.65));"></div>
         <div class="absolute inset-0 grain opacity-50"></div>`;
 
-      // connection lines (svg)
-      const svg = `
-        <svg class="absolute inset-0 w-full h-full" viewBox="0 0 100 100" preserveAspectRatio="none">
-          ${[[2,1],[1,5],[5,3],[3,6],[6,4],[3,7]].map(([a,b])=>{
-            const A = MAP_NODES.find(n=>n.id===a), Bn = MAP_NODES.find(n=>n.id===b);
-            return `<line x1="${A.x}" y1="${A.y}" x2="${Bn.x}" y2="${Bn.y}" stroke="rgba(217,154,58,.5)" stroke-width=".6" stroke-dasharray="2 1.5"/>`;
-          }).join('')}
-        </svg>`;
-      board.insertAdjacentHTML('beforeend', svg);
+      // 连接线：依次连接各关卡节点 (已通关段亮、未解锁段暗)
+      const lines = nodes.slice(0, -1).map((a, i) => {
+        const b = nodes[i + 1];
+        const seg = G.cleared[a.lv.id] ? 'rgba(255,210,74,.85)' : 'rgba(217,154,58,.35)';
+        return `<line x1="${a.x}" y1="${a.y}" x2="${b.x}" y2="${b.y}" stroke="${seg}" stroke-width=".7" stroke-dasharray="2 1.5"/>`;
+      }).join('');
+      board.insertAdjacentHTML('beforeend', `<svg class="absolute inset-0 w-full h-full" viewBox="0 0 100 100" preserveAspectRatio="none">${lines}</svg>`);
 
-      // nodes
-      MAP_NODES.forEach(n => {
-        const cleared = n.type === 'lvl' && G.cleared && G.cleared[(game_config.levels[n.lvl] || {}).id];
-        const node = el('button', 'absolute -translate-x-1/2 -translate-y-1/2 flex flex-col items-center');
-        node.style.left = n.x + '%';
-        node.style.top = n.y + '%';
-        node.setAttribute('data-node', n.id);
-        const ring = n.type === 'boss' ? '#e84393' : n.type === 'final' ? '#f1c40f' : n.type === 'shop' ? '#36c45a' : '#d99a3a';
-        node.innerHTML = `
-          <div class="w-14 h-14 rounded-2xl flex items-center justify-center text-3xl relative"
-               style="background:radial-gradient(circle at 40% 30%,#fff2,#0006);border:3px solid ${ring};box-shadow:0 0 14px ${ring}66;">
-            ${n.e}
-            ${cleared ? '<div class="absolute -top-1 -right-1 text-sm">✅</div>' : ''}
+      // 节点
+      nodes.forEach(node => {
+        const unlocked = window.__isLevelUnlocked ? window.__isLevelUnlocked(node.idx) : true;
+        const cleared = !!G.cleared[node.lv.id];
+        const stars = G.stars[node.lv.id] || 0;
+        const isCur = node.idx === G.lvlIndex;
+        const ring = !unlocked ? '#555' : (cleared ? '#36c45a' : (node.idx === game_config.levels.length - 1 ? '#f1c40f' : '#d99a3a'));
+        const btn = el('button', 'absolute -translate-x-1/2 -translate-y-1/2 flex flex-col items-center');
+        btn.style.left = node.x + '%'; btn.style.top = node.y + '%';
+        btn.setAttribute('data-mapidx', node.idx);
+        // 星星条
+        const starHtml = unlocked ? `<div class="flex gap-[1px] mt-[2px]">${[0,1,2].map(i=>`<span class="text-[8px]" style="${i<stars?'':'opacity:.3;'}">⭐</span>`).join('')}</div>` : '';
+        btn.innerHTML = `
+          <div class="w-14 h-14 rounded-2xl flex items-center justify-center text-2xl relative"
+               style="background:radial-gradient(circle at 40% 30%,#fff2,#0006);border:3px solid ${ring};box-shadow:0 0 14px ${ring}66;${isCur?'outline:2px solid #fff;outline-offset:2px;':''}${unlocked?'':'filter:grayscale(.8);'}">
+            ${unlocked ? node.lv.name.match(/[\u{1F300}-\u{1FAFF}]|🪦|🏛️|🌊|🚪|⛏️/u)?.[0] || ['🪦','🏛️','🌊','🏜️','🚪','🌴','🚢','⛏️'][node.idx % 8] : '🔒'}
+            <div class="absolute -bottom-2 left-1/2 -translate-x-1/2 px-[5px] py-[1px] rounded-full bg-black/80 text-[8px] font-bold text-amber-200 whitespace-nowrap">${node.idx + 1}</div>
           </div>
-          <div class="mt-1 px-2 py-[1px] rounded-full bg-black/70 text-[10px] text-amber-100 font-bold whitespace-nowrap">${n.name}</div>`;
-        board.appendChild(node);
+          <div class="mt-2 px-2 py-[1px] rounded-full bg-black/70 text-[9px] ${unlocked?'text-amber-100':'text-stone-500'} font-bold whitespace-nowrap">${node.lv.name.split('-')[1] || node.lv.name}</div>
+          ${starHtml}`;
+        board.appendChild(btn);
       });
       body.appendChild(board);
 
-      board.querySelectorAll('[data-node]').forEach(b => b.addEventListener('click', () => {
-        const n = MAP_NODES.find(x => x.id === +b.getAttribute('data-node'));
-        if (!n) return;
-        if (n.type === 'shop') { window.__show('shop'); return; }
-        if (n.type === 'heal') { toast('�️ 已休整，长明灯油量恢复'); return; }
-        if (n.type === 'lvl' && game_config.levels[n.lvl]) { G.lvlIndex = n.lvl; D.saveProgress(); window.__show('battle'); return; }
-        if (n.type === 'boss') { G.lvlIndex = Math.min(2, game_config.levels.length - 1); window.__show('battle'); return; }
-        if (n.type === 'final') { toast('⛏️ 墓主主墓 · 通关全部关卡后开放'); return; }
+      prog.querySelector('#mapShop').addEventListener('click', () => { sfx('click'); window.__show('shop'); });
+      board.querySelectorAll('[data-mapidx]').forEach(b => b.addEventListener('click', () => {
+        const idx = +b.getAttribute('data-mapidx');
+        const unlocked = window.__isLevelUnlocked ? window.__isLevelUnlocked(idx) : true;
+        if (!unlocked) { sfx('noEnergy'); toast('🔒 需先通关上一关'); return; }
+        sfx('click');
+        G.lvlIndex = idx; D.saveProgress();
+        // 回首页并选中该关 (玩家在首页确认体力后开战)
+        window.__show('home');
       }));
     }
     window.__renderMap = renderMap;
