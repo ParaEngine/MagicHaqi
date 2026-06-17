@@ -5,6 +5,12 @@ agents operate the **live website** via the KeepWork login REST, URL params, and
 in-page command interface (`window.MagicHaqiAgent` + `#mh-agent-cmd` / `#mh-agent-result`
 / `#mh-agent-state`).
 
+## openclaw/  (the runtime — install this first)
+The portable **"be OpenClaw" skill**: turns any host coding agent (Claude Code / Copilot /
+Codex / CodeBuddy) into an [OpenClaw](https://openclaw.ai)-like personal-assistant runtime
+(memory, skill loading, permission gating, autonomous loop) so the skills below have somewhere
+to run. Install: `node agents/openclaw/install.mjs all`. See [openclaw/](openclaw/README.md).
+
 ## pet-master/  (for ALL users)
 The OpenClaw skill installed on every user's computer. Lets a user's own agent act as a
 **co-parent**: adopt, care for, talk to, and share a MagicHaqi pet.
