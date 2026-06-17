@@ -73,9 +73,11 @@ Rules:
    <script src="https://cdn.keepwork.com/keepwork/cdn/tailwindcss@3.4.16.js"></script>
    ```
 2. **No custom CSS/font files** - Use only Tailwind utility classes and inline styles
-3. **Three.js** (when needed): Use CDN for 3D games like `guess_cubes.html`
+3. **Three.js** (when needed): Use CDN ES module for 3D games
    ```html
-   <script src="https://cdn.keepwork.com/npm/three%400.128.0/build/three.min.js"></script>
+   <script type="module">
+   import * as THREE from 'https://cdn.keepwork.com/npm/three@0.160.0/build/three.module.min.js';
+   </script>
    ```
 
 ### UI/UX Design Patterns

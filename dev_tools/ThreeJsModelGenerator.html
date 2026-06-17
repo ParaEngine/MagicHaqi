@@ -1,0 +1,909 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+	<meta charset="utf-8">
+	<meta name="viewport" content="width=device-width, initial-scale=1">
+	<title>Three.js Model Generator · 3D Vibe DevTools</title>
+	<script src="https://cdn.keepwork.com/keepwork/cdn/tailwindcss@3.4.16.js"></script>
+	<!-- Three.js is imported as an ES module inside ThreeJsModelGenerator.js — no global script needed. -->
+	<style type="text/tailwindcss">
+		@layer base {
+			:root { color-scheme: light; }
+			body { @apply m-0 min-h-screen bg-slate-100 text-slate-900 font-sans; }
+			button { @apply min-h-[34px] cursor-pointer rounded-md border border-slate-300 bg-white px-3 text-slate-900 transition hover:border-sky-300 hover:bg-slate-50 active:translate-y-px disabled:cursor-not-allowed disabled:opacity-50 disabled:active:translate-y-0; }
+			input, textarea, select { @apply w-full min-h-[34px] rounded-md border border-slate-300 bg-white px-2.5 py-1.5 text-slate-900 outline-none focus:border-sky-600 focus:ring-2 focus:ring-sky-600/15; }
+			textarea { @apply resize-y leading-normal; }
+			label { @apply flex flex-col gap-1.5 text-xs text-slate-500; }
+			h1, h2, h3 { @apply m-0 tracking-normal; }
+			h1 { @apply text-lg leading-tight font-semibold; }
+			h2 { @apply text-sm font-semibold; }
+			h3 { @apply text-xs font-normal text-slate-500; }
+		}
+		/* thin, subtle scrollbars across the whole tool (light theme) */
+		* { scrollbar-width: thin; scrollbar-color: rgba(100,116,139,.4) transparent; }
+		*::-webkit-scrollbar { width: 8px; height: 8px; }
+		*::-webkit-scrollbar-track { background: transparent; }
+		*::-webkit-scrollbar-thumb { background: rgba(100,116,139,.35); border-radius: 999px; border: 2px solid transparent; background-clip: padding-box; }
+		*::-webkit-scrollbar-thumb:hover { background: rgba(2,132,199,.55); background-clip: padding-box; }
+		*::-webkit-scrollbar-corner { background: transparent; }
+		@layer components {
+			.app { @apply grid min-h-screen grid-cols-1 gap-3 p-2 lg:h-screen lg:min-h-0 lg:grid-cols-[260px_minmax(300px,0.9fr)] lg:overflow-hidden lg:p-3 xl:grid-cols-[260px_300px_minmax(640px,1.6fr)]; }
+			/* collapsed: left account/project panel shrinks to a thin vertical rail */
+			.app.collapsed { @apply lg:grid-cols-[48px_minmax(300px,0.9fr)] xl:grid-cols-[48px_280px_minmax(680px,1.8fr)]; }
+			.app.collapsed .panel-full { @apply hidden; }
+			.app:not(.collapsed) .panel-rail { @apply hidden; }
+			/* thin rail shown when collapsed */
+			.panel-rail { @apply flex min-h-0 flex-col items-center gap-3 overflow-hidden rounded-lg border border-slate-300 bg-white py-3 shadow-lg shadow-slate-300/40; }
+			.panel-rail .rail-vtext { writing-mode: vertical-rl; @apply mt-1 text-xs font-semibold tracking-wide text-slate-500; }
+			/* vertical chips in the collapsed rail: current model + username */
+			.rail-chip { writing-mode: vertical-rl; @apply max-h-[180px] min-h-0 overflow-hidden text-ellipsis whitespace-nowrap rounded-md border px-1 py-2 text-[11px] font-semibold; }
+			.rail-chip-model { @apply border-sky-300 bg-sky-50 text-sky-700 hover:border-sky-500; }
+			.rail-chip-user { @apply border-emerald-300 bg-emerald-50 text-emerald-700 hover:border-emerald-500; }
+			.collapse-btn { @apply grid h-8 w-8 min-h-0 place-items-center rounded-md border border-slate-300 bg-white p-0 text-slate-500 hover:border-sky-400 hover:text-sky-600; }
+			.panel { @apply flex min-h-0 flex-col overflow-hidden rounded-lg border border-slate-300 bg-white shadow-lg shadow-slate-300/40; }
+			.panel-head { @apply flex min-h-14 items-center justify-between gap-2.5 border-b border-slate-300 px-3.5 py-3; }
+			.panel-body { @apply flex min-h-0 flex-1 flex-col gap-3 overflow-auto p-3; }
+			.section { @apply flex flex-col gap-2.5 rounded-lg border border-slate-300 bg-slate-50 p-3; }
+			.toolbar { @apply flex flex-wrap items-center gap-2; }
+			.toolbar button { @apply flex-none; }
+			.primary { @apply border-sky-600 bg-sky-600 text-white hover:border-sky-700 hover:bg-sky-700; }
+			.success { @apply border-emerald-600 bg-emerald-600 text-white hover:border-emerald-700 hover:bg-emerald-700; }
+			.danger { @apply border-red-200 bg-red-50 text-red-700 hover:border-red-300 hover:bg-red-100; }
+			.hint { @apply text-xs leading-normal text-slate-500; }
+			.pill { @apply inline-flex min-h-6 items-center whitespace-nowrap rounded-full border border-slate-300 bg-white px-2 text-xs text-slate-500; }
+			.status { @apply whitespace-pre-wrap rounded-md border border-sky-200 bg-sky-50 px-2.5 py-2 text-xs leading-normal text-sky-900; }
+			.status.ok { @apply border-emerald-200 bg-emerald-50 text-emerald-800; }
+			.status.error { @apply border-red-200 bg-red-50 text-red-800; }
+			.status-action { @apply min-h-0 border-0 bg-transparent p-0 font-bold underline underline-offset-2 hover:border-transparent hover:bg-transparent; }
+			.record-toolbar { @apply grid grid-cols-[minmax(0,1fr)_auto] gap-2 border-b border-slate-300 bg-slate-50 p-3; }
+			.record-list { @apply flex min-h-0 flex-1 flex-col gap-1.5 overflow-auto p-2; }
+			.record-item { @apply grid w-full grid-cols-[minmax(0,1fr)_auto] items-center gap-2.5 rounded-md border border-slate-300 bg-white p-2.5 text-left; }
+			.record-item.active { @apply border-sky-600 bg-sky-50 ring-2 ring-sky-600/15; }
+			.record-main { @apply block min-w-0 border-0 bg-transparent p-0 text-left hover:border-transparent hover:bg-transparent; }
+			.record-title { @apply block min-w-0 overflow-hidden text-ellipsis whitespace-nowrap text-[13px] font-bold; }
+			.record-meta { @apply block min-w-0 overflow-hidden text-ellipsis whitespace-nowrap text-[11px] text-slate-500; }
+			.record-actions { @apply flex flex-col gap-1.5; }
+			.record-actions button { @apply min-h-[28px] px-2 text-xs; }
+			.editor { @apply lg:col-span-2 xl:col-span-1; }
+
+			/* ---- live editor: 3-column code | 3D | params (mirrors the front-page live demo) ---- */
+			.live-grid { @apply grid min-h-0 flex-1 grid-cols-1 gap-3 lg:grid-cols-[minmax(0,1fr)_minmax(0,1fr)] xl:grid-cols-[minmax(0,1.05fr)_minmax(0,1.2fr)_minmax(280px,0.95fr)]; }
+			/* each column is its own scroll area so the three panes stay aligned and independent */
+			.live-col { @apply flex min-h-0 flex-col gap-2.5; }
+			/* on lg the params column drops below the 3D column (2-col grid); on xl it's the 3rd column */
+			.col-params { @apply lg:col-span-2 xl:col-span-1; }
+			.code-pane { @apply min-h-[300px] flex-1 overflow-auto rounded-lg border border-slate-800 bg-slate-950 font-mono text-xs leading-relaxed xl:min-h-0; }
+			.code-line { @apply grid grid-cols-[44px_1fr] items-start whitespace-pre transition; }
+			.code-line .ln { @apply select-none border-r border-slate-700/40 pr-3 text-right text-slate-600 opacity-60; }
+			.code-line .lc { @apply px-3 text-slate-200; }
+			.code-line.hl { @apply bg-sky-500/15; box-shadow: inset 3px 0 0 #38bdf8; }
+			.code-line.hl .ln { @apply text-sky-400 opacity-100; }
+			.tok-k { color: #c792ea; }
+			.tok-f { color: #82aaff; }
+			.tok-n { color: #f78c6c; }
+			.tok-s { color: #c3e88d; }
+			.tok-c { color: #546178; font-style: italic; }
+
+			/* fixed-height box so the WebGL canvas can never grow past it and overlap the params below.
+			   shrink-0 keeps the fixed height inside the flex-column section (otherwise it collapses). */
+			.view-wrap { @apply relative h-[360px] w-full shrink-0 overflow-hidden rounded-lg border border-slate-800; }
+			.view-canvas { @apply absolute inset-0 block h-full w-full cursor-crosshair; background: radial-gradient(circle at 50% 40%, #0e1530, #060914); }
+			.view-hud { @apply pointer-events-none absolute left-3 right-3 top-3 z-10 flex flex-wrap gap-2; }
+			.view-hud .hint-pill { @apply rounded-full border border-sky-400/40 bg-slate-950/60 px-3 py-1 text-[11px] text-sky-300 backdrop-blur; }
+
+			.params-head { @apply mb-2 flex flex-wrap items-center gap-2; }
+			.params-head .who { @apply text-xs text-slate-500; }
+			.params-head .who b { @apply text-slate-900; }
+			.params-head .who code { @apply text-amber-600; }
+			.params-actions { @apply ml-auto flex gap-2; }
+			/* params live in their own scrollable section so the 3D view stays put */
+			.params-section { @apply min-h-0 flex-1 overflow-hidden; }
+			.params-scroll { @apply min-h-0 flex-1 overflow-auto pr-1; }
+			/* 2 cols when params span full width (lg), single col in the narrow 3rd column (xl) */
+			.params-grid { @apply grid grid-cols-1 gap-x-4 gap-y-3 md:grid-cols-2 xl:grid-cols-1; }
+			.pp-row { @apply flex flex-col gap-1.5; }
+			.pp-row.rel { @apply -mx-2 rounded-md px-2 py-1.5; background: rgba(56,189,248,0.08); box-shadow: inset 2px 0 0 #38bdf8; }
+			.pp-row .pp-label { @apply flex items-baseline justify-between font-mono text-xs; }
+			.pp-row .pp-label .k { @apply text-sky-600; }
+			.pp-row .pp-label .v { @apply text-amber-600; }
+			.pp-row .pp-label .v.changed { @apply font-bold text-emerald-600; }
+			.pp-row .pp-meta { @apply font-mono text-[10.5px] text-slate-400; }
+			.pp-row .pp-meta b { @apply text-amber-600; }
+			.pp-row input[type=range] { @apply h-1.5 cursor-pointer appearance-none rounded-full p-0; background: linear-gradient(90deg, #38bdf8, #7b61ff); }
+			.pp-row input[type=range]::-webkit-slider-thumb { @apply h-4 w-4 cursor-pointer appearance-none rounded-full border-2 border-violet-500 bg-white; }
+			.pp-empty { @apply text-xs text-slate-400; }
+
+			.start-screen { @apply fixed inset-0 z-[1200] flex bg-slate-100 p-3; }
+			.start-window { @apply m-auto grid h-[min(760px,100%)] w-[min(980px,100%)] grid-cols-1 overflow-hidden rounded-2xl border border-slate-300 bg-white shadow-2xl shadow-slate-400/40 lg:grid-cols-[320px_minmax(0,1fr)]; }
+			.start-hero { @apply flex flex-col justify-between gap-6 bg-gradient-to-br from-sky-700 to-indigo-700 p-6 text-white; }
+			.start-body { @apply flex min-h-0 flex-col gap-3 overflow-hidden p-4; }
+			.project-file-list { @apply flex min-h-0 flex-1 flex-col gap-1.5 overflow-auto rounded-lg border border-slate-300 bg-slate-50 p-2; }
+			.project-file-item { @apply grid grid-cols-[minmax(0,1fr)_auto] items-center gap-2 rounded-md border border-slate-300 bg-white p-2.5 text-left hover:border-sky-500 hover:bg-sky-50; }
+			.project-file-item strong { @apply block min-w-0 overflow-hidden text-ellipsis whitespace-nowrap text-sm; }
+			.project-file-item span { @apply block min-w-0 overflow-hidden text-ellipsis whitespace-nowrap text-xs text-slate-500; }
+			.toggle-line { @apply flex-row items-center gap-2 text-slate-900; }
+			.toggle-line input { @apply h-4 min-h-0 w-4 accent-sky-600; }
+			.modal-overlay { @apply fixed inset-0 z-[1050] flex bg-slate-950/60 p-[18px]; }
+			.modal-window { @apply m-auto flex max-h-full w-[min(820px,100%)] flex-col overflow-hidden rounded-lg bg-white shadow-2xl; height: min(640px,100%); }
+			.modal-titlebar { @apply flex min-h-12 items-center justify-between gap-2.5 border-b border-slate-300 bg-slate-50 px-4 py-0 select-none; }
+			.modal-body { @apply min-h-0 flex-1 overflow-auto p-3; }
+			.export-out { @apply min-h-0 flex-1 overflow-auto whitespace-pre font-mono text-xs leading-normal; }
+		}
+		@media (max-width: 760px) {
+			.app { @apply min-h-screen; }
+			.modal-overlay { @apply p-0; }
+			.modal-window { @apply h-full w-full rounded-none; }
+		}
+	</style>
+</head>
+<body>
+	<!-- ============ START SCREEN: pick / create project ============ -->
+	<div id="startScreen" class="start-screen">
+		<div class="start-window" role="dialog" aria-modal="true" aria-label="Select Three.js Model Project">
+			<section class="start-hero">
+				<div class="flex flex-col gap-3">
+					<div class="inline-flex w-fit rounded-full bg-white/15 px-3 py-1 text-xs font-semibold ring-1 ring-white/20">Workspace: ThreeJsModels</div>
+					<div>
+						<h1 class="text-3xl font-black leading-tight">Three.js Model Generator</h1>
+						<p class="mt-3 text-sm leading-6 text-sky-50">点 3D 对象 → 定位代码 → 拖滑块改真实参数。零侵入精修 AI 生成的 Three.js 模型，管理 snippet 并按需导出干净源码。</p>
+					</div>
+				</div>
+				<div id="startSdkState" class="rounded-lg bg-white/10 p-3 text-xs leading-5 text-sky-50">Loading KeepworkSDK...</div>
+			</section>
+			<section class="start-body">
+				<div class="flex items-center justify-between gap-2">
+					<div>
+						<h2>Projects</h2>
+						<h3>Only filenames are listed at this stage.</h3>
+					</div>
+					<div class="toolbar"><button id="btnStartRefresh" type="button">Refresh</button><button id="btnStartClose" type="button">Close</button></div>
+				</div>
+				<div id="startProjectList" class="project-file-list"><div class="hint p-2.5">Loading project files...</div></div>
+				<div class="section">
+					<h2>Create new project</h2>
+					<label>File / Project ID <input id="startNewProjectId" placeholder="my_models"></label>
+					<label>Name <input id="startNewProjectName" placeholder="My 3D Models"></label>
+					<div class="toolbar justify-end"><button id="btnStartCreate" class="primary" type="button">Create Project</button></div>
+				</div>
+				<div id="startStatus" class="status">Preparing project list...</div>
+			</section>
+		</div>
+	</div>
+
+	<main id="app" class="app">
+		<!-- ============ LEFT: account + project meta (collapsible) ============ -->
+		<!-- thin rail shown when collapsed -->
+		<aside class="panel-rail panel-rail-el">
+			<button id="btnExpandLeft" class="collapse-btn" type="button" title="展开账户/项目面板" aria-label="Expand">»</button>
+			<span class="rail-vtext">3D Vibe DevTools</span>
+			<span id="sdkStateRail" class="pill" title="SDK 状态" style="writing-mode:vertical-rl">SDK</span>
+			<button id="railModel" class="rail-chip rail-chip-model" type="button" title="当前 Chat 模型（点击展开设置）">model</button>
+			<button id="railUser" class="rail-chip rail-chip-user" type="button" title="当前账户（点击展开）">未登录</button>
+		</aside>
+		<!-- full panel shown when expanded -->
+		<aside class="panel panel-full">
+			<div class="panel-head">
+				<h1>3D Vibe DevTools</h1>
+				<div class="flex items-center gap-2">
+					<span id="sdkState" class="pill">SDK loading</span>
+					<button id="btnCollapseLeft" class="collapse-btn" type="button" title="收起为侧边栏" aria-label="Collapse">«</button>
+				</div>
+			</div>
+			<div class="panel-body">
+				<section class="section">
+					<h2>Account & Workspace</h2>
+					<div id="loginState" class="status">正在加载 KeepworkSDK...</div>
+					<div class="toolbar">
+						<button id="btnLocalApi" type="button">本地 API Key</button>
+						<button id="btnRefreshProjects" type="button">刷新</button>
+					</div>
+					<div class="hint">PersonalPageStore workspace: <strong>ThreeJsModels</strong></div>
+				</section>
+
+				<section class="section">
+					<h2>Models (AI 生成/精修)</h2>
+					<label>Chat model <select id="chatModelSelect"><option value="">等待 SDK</option></select></label>
+					<div class="hint">选中代码块后可让 Chat 模型局部精修（只改相关行，省 token）。</div>
+				</section>
+
+				<section class="section">
+					<h2>Project</h2>
+					<label>Project name <input id="projectName" placeholder="My 3D Models"></label>
+					<label>Description <textarea id="projectDescription" rows="3"></textarea></label>
+					<div class="hint">Snippets 保存在 <strong>ThreeJsModels</strong> 工作区，可随项目一起导出。</div>
+				</section>
+			</div>
+		</aside>
+
+		<!-- ============ MIDDLE: snippet list ============ -->
+		<section class="panel records">
+			<div class="record-toolbar">
+				<input id="snippetSearch" class="col-span-2" placeholder="Search id / name / source">
+				<button id="btnAddSnippet" class="primary" type="button">Add</button>
+			</div>
+			<div id="snippetList" class="record-list"><div class="hint p-2.5">No snippets yet.</div></div>
+		</section>
+
+		<!-- ============ RIGHT: live editor ============ -->
+		<section class="panel editor">
+			<div class="panel-head">
+				<div class="min-w-0">
+					<h2 id="editorTitle">Three.js Snippet</h2>
+					<button id="currentFileLabel" class="hint min-h-0 max-w-full overflow-hidden text-ellipsis whitespace-nowrap border-0 bg-transparent p-0 text-left text-sky-700 underline underline-offset-2 hover:border-transparent hover:bg-transparent hover:text-sky-900 disabled:no-underline disabled:text-slate-400" type="button">No project file loaded.</button>
+				</div>
+				<div class="toolbar">
+					<button id="btnFileOpen" type="button">Open...</button>
+					<button id="btnFileNew" type="button">New</button>
+					<button id="btnFileSave" class="success" type="button">Save</button>
+					<button id="btnExport" class="primary" type="button">Export</button>
+				</div>
+			</div>
+			<div class="panel-body">
+				<div id="runStatus" class="status">准备就绪。新增 snippet 或从 Starter 载入示例，点 3D 部件即可定位代码并调参。</div>
+
+				<section class="section">
+					<div class="flex flex-wrap items-center gap-2">
+						<h2>Selected Snippet</h2>
+						<div class="toolbar ml-auto">
+							<button id="btnResetCam" type="button">复位视角</button>
+							<button id="btnEditSource" type="button">编辑源码</button>
+							<button id="btnAiRefine" type="button">AI 精修选中块</button>
+						</div>
+					</div>
+					<div class="row grid grid-cols-1 gap-2.5 md:grid-cols-2">
+						<label>ID <input id="snippetId" placeholder="my_model"></label>
+						<label>Name <input id="snippetName" placeholder="My model"></label>
+					</div>
+					<label>Filename (影响代码段定位) <input id="snippetFilename" placeholder="model.three.js"></label>
+				</section>
+
+				<!-- The whole code|3D|params UI is provided by the reusable widget in ThreeJsModelGenerator.js -->
+				<div id="devtoolsHost" class="min-h-0 flex-1"></div>
+			</div>
+		</section>
+	</main>
+
+	<script type="module">
+	// ============================================================
+	//  App logic — snippet management + live editor wiring.
+	//  Reuses the core engine from ./ThreeJsModelGenerator.js.
+	// ============================================================
+	import {
+		mountThreeModelDevtools,
+	} from './ThreeJsModelGenerator.js';
+
+	const WORKSPACE = 'ThreeJsModels';
+	const PROJECT_DIR = 'projects';
+	const INDEX_PATH = `${PROJECT_DIR}/_index.json`;
+	const STORAGE_KEY = 'ThreeJsModelGenerator.localDraft.v1';
+	const SETTINGS_KEY = 'ThreeJsModelGenerator.settings.v1';
+
+	const $ = (id) => document.getElementById(id);
+	const state = {
+		sdk: null, widget: null,
+		projects: [], project: null, selectedSnippetId: '',
+		lastProjectPath: '', appStarted: false, lastUsername: '',
+	};
+
+	/* ===== small utils ===== */
+	function nowIso() { return new Date().toISOString(); }
+	function setStatus(el, text, kind = '') {
+		if (!el) return;
+		el.textContent = text;
+		el.classList.toggle('ok', kind === 'ok');
+		el.classList.toggle('error', kind === 'error');
+	}
+	function setStartStatus(text, kind = '') { setStatus($('startStatus'), text, kind); }
+	function showStartScreen() { $('startScreen').classList.remove('hidden'); state.appStarted = false; }
+	function hideStartScreen() { $('startScreen').classList.add('hidden'); state.appStarted = true; }
+	/* collapse/expand the left account/project panel to a thin rail; reflow then resize the 3D canvas */
+	function setLeftCollapsed(collapsed) {
+		const app = $('app');
+		if (!app) return;
+		app.classList.toggle('collapsed', !!collapsed);
+		try { localStorage.setItem('ThreeJsModelGenerator.leftCollapsed', collapsed ? '1' : '0'); } catch (_) {}
+		// the 3D column width changes when the grid reflows → resize after layout settles
+		requestAnimationFrame(() => state.widget?.resize());
+	}
+	function isLeftCollapsed() { try { return localStorage.getItem('ThreeJsModelGenerator.leftCollapsed') === '1'; } catch (_) { return false; } }
+	/* keep the collapsed rail's vertical model + user chips in sync */
+	function updateRailInfo() {
+		const sdk = state.sdk || window.keepwork;
+		const model = $('chatModelSelect')?.value || state.project?.project?.models?.chat || '';
+		if ($('railModel')) {
+			$('railModel').textContent = model || '未选模型';
+			$('railModel').title = model ? `当前 Chat 模型：${model}（点击展开设置）` : '未选 Chat 模型（点击展开设置）';
+		}
+		const username = sdk?.user?.username || state.lastUsername || '';
+		if ($('railUser')) {
+			$('railUser').textContent = (sdk?.token && username) ? username : '未登录';
+			$('railUser').title = (sdk?.token && username) ? `已登录：${username}（点击展开）` : '未登录（点击展开登录）';
+		}
+	}
+	function escapeHtml(value) {
+		return String(value ?? '').replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
+	}
+	function safeId(value, fallback = 'project') {
+		return String(value || '').trim().toLowerCase().replace(/[^a-z0-9_-]+/g, '_').replace(/^_+|_+$/g, '').slice(0, 80) || fallback;
+	}
+	function clone(value) { return JSON.parse(JSON.stringify(value ?? null)); }
+	function fileNameFromPath(path = '') { return String(path || '').replace(/\\/g, '/').split('/').pop() || String(path || ''); }
+	function projectPath(id = state.project?.project?.id) { return `${PROJECT_DIR}/${safeId(id, 'three_models')}.json`; }
+
+	/* ===== project / snippet model ===== */
+	function defaultSnippetSource(id) {
+		return `// ${id || 'model'}.three.js — 新建 snippet（遵循约定即可被点选/调参）\n\n/* ===== PARAMS ===== */\nconst size = 1.5;   // 主体尺寸\nconst tall = 1.2;   // 高度\n\n// body 主体\nconst body = box(size, tall, size, mat(0x38bdf8, 0.5, 0.1));\nbody.position.y = tall / 2;\nscene.add(body);\n`;
+	}
+	function defaultProject() {
+		const id = safeId(`three_models_${new Date().toISOString().slice(0, 10)}`, 'three_models');
+		return {
+			schemaVersion: 1,
+			project: { id, name: 'My 3D Models', description: '', createdAt: nowIso(), updatedAt: nowIso(), models: { chat: '' } },
+			snippets: [],
+		};
+	}
+	function normalizeSnippet(snippet = {}, index = 0) {
+		const id = safeId(snippet.id || snippet.name || `model_${index + 1}`, `model_${index + 1}`);
+		return {
+			id,
+			name: String(snippet.name || snippet.title || id || `Model ${index + 1}`).trim(),
+			filename: String(snippet.filename || `${id}.three.js`).trim(),
+			source: String(snippet.source || snippet.code || defaultSnippetSource(id)),
+			tags: Array.isArray(snippet.tags) ? snippet.tags.map(String) : [],
+			updatedAt: snippet.updatedAt || nowIso(),
+		};
+	}
+	function normalizeProject(data = defaultProject()) {
+		const source = data && typeof data === 'object' ? data : defaultProject();
+		const project = { ...defaultProject().project, ...(source.project || {}) };
+		project.id = safeId(project.id || source.id, 'three_models');
+		project.name = String(project.name || project.id);
+		project.description = String(project.description || '');
+		project.models = project.models && typeof project.models === 'object' ? { chat: String(project.models.chat || '') } : { chat: '' };
+		project.updatedAt = nowIso();
+		const snippets = Array.isArray(source.snippets) ? source.snippets : [];
+		return { schemaVersion: Number(source.schemaVersion) || 1, project, snippets: snippets.map((s, i) => normalizeSnippet(s, i)) };
+	}
+
+	function getSelectedSnippet() {
+		return (state.project?.snippets || []).find(s => s.id === state.selectedSnippetId) || null;
+	}
+
+	/* ===== local draft + settings ===== */
+	function saveLocalDraft() {
+		try {
+			localStorage.setItem(STORAGE_KEY, JSON.stringify({ project: state.project, selectedSnippetId: state.selectedSnippetId, lastProjectPath: state.lastProjectPath || projectPath() }));
+		} catch (_) {}
+	}
+	function loadLocalDraft() {
+		try { return JSON.parse(localStorage.getItem(STORAGE_KEY) || '{}') || {}; }
+		catch (_) { return {}; }
+	}
+	function saveSettings() {
+		if (state.project?.project) {
+			state.project.project.models = { chat: $('chatModelSelect').value || '' };
+		}
+		try { localStorage.setItem(SETTINGS_KEY, JSON.stringify({ chatModel: $('chatModelSelect').value })); }
+		catch (_) {}
+	}
+	function loadSettings() {
+		try { return JSON.parse(localStorage.getItem(SETTINGS_KEY) || '{}') || {}; }
+		catch (_) { return {}; }
+	}
+
+	/* ===== render: snippet list ===== */
+	function renderSnippetList() {
+		const query = $('snippetSearch').value.trim().toLowerCase();
+		const snippets = (state.project?.snippets || [])
+			.filter(s => !query || [s.id, s.name, s.filename, s.source, ...(s.tags || [])].join(' ').toLowerCase().includes(query));
+		$('snippetList').innerHTML = snippets.length ? snippets.map(s => {
+			const active = s.id === state.selectedSnippetId ? ' active' : '';
+			const lineCount = String(s.source || '').split('\n').length;
+			return `<div class="record-item${active}">
+				<button class="record-main" type="button" data-open-snippet="${escapeHtml(s.id)}"><span class="record-title">${escapeHtml(s.name || s.id)}</span><span class="record-meta">${escapeHtml(s.id)} · ${escapeHtml(s.filename)} · ${lineCount} 行</span></button>
+				<div class="record-actions"><button type="button" data-copy-snippet="${escapeHtml(s.id)}">Copy</button><button type="button" class="danger" data-delete-snippet="${escapeHtml(s.id)}">Del</button></div>
+			</div>`;
+		}).join('') : '<div class="hint p-2.5">No matching snippets. Add one or load a Starter example.</div>';
+		$('snippetList').querySelectorAll('[data-open-snippet]').forEach(b => b.onclick = () => selectSnippet(b.dataset.openSnippet));
+		$('snippetList').querySelectorAll('[data-copy-snippet]').forEach(b => b.onclick = () => copySnippet(b.dataset.copySnippet));
+		$('snippetList').querySelectorAll('[data-delete-snippet]').forEach(b => b.onclick = () => deleteSnippet(b.dataset.deleteSnippet));
+	}
+
+	/* ===== editor lifecycle (delegated to the reusable widget) ===== */
+	function destroyEditor() {
+		try { state.widget?.destroy(); } catch (_) {}
+		state.widget = null;
+	}
+	async function mountEditor(snippet) {
+		destroyEditor();
+		if (!snippet) return;
+		try {
+			state.widget = await mountThreeModelDevtools($('devtoolsHost'), {
+				source: snippet.source,
+				filename: snippet.filename,
+				onSourceChange: (src) => {
+					// keep snippet source in sync after param edits / save
+					const s = getSelectedSnippet();
+					if (s) s.source = src;
+					saveLocalDraft();
+				},
+			});
+		} catch (e) {
+			setStatus($('runStatus'), `初始化 3D 编辑器失败：${e.message}`, 'error');
+		}
+	}
+
+	function applySnippetToEditorForm(snippet) {
+		$('snippetId').value = snippet?.id || '';
+		$('snippetName').value = snippet?.name || '';
+		$('snippetFilename').value = snippet?.filename || '';
+		$('editorTitle').textContent = snippet?.name || snippet?.id || 'Three.js Snippet';
+	}
+
+	/* ===== snippet operations ===== */
+	function selectSnippet(id) {
+		const snippet = (state.project?.snippets || []).find(s => s.id === id);
+		if (!snippet) return;
+		state.selectedSnippetId = snippet.id;
+		applySnippetToEditorForm(snippet);
+		mountEditor(snippet);
+		renderSnippetList();
+		saveLocalDraft();
+		setLeftCollapsed(true);   // auto-collapse the left panel when a snippet is selected → more room for code|3D|params
+		setStatus($('runStatus'), `已选择 snippet：${snippet.id}`, 'ok');
+	}
+	function addSnippet(seed = {}) {
+		const index = state.project.snippets.length;
+		const base = normalizeSnippet({
+			id: seed.id || `model_${index + 1}`,
+			name: seed.name || `Model ${index + 1}`,
+			filename: seed.filename,
+			source: seed.source,
+		}, index);
+		// ensure unique id
+		const existing = new Set(state.project.snippets.map(s => s.id));
+		let uid = base.id;
+		for (let n = 2; existing.has(uid); n++) uid = `${base.id}_${n}`;
+		base.id = uid;
+		if (!seed.filename) base.filename = `${uid}.three.js`;
+		state.project.snippets.push(base);
+		state.selectedSnippetId = base.id;
+		applySnippetToEditorForm(base);
+		mountEditor(base);
+		renderSnippetList();
+		saveLocalDraft();
+		setStatus($('runStatus'), `已新增 snippet：${base.id}`, 'ok');
+		return base;
+	}
+	function copySnippet(id) {
+		const s = (state.project?.snippets || []).find(x => x.id === id);
+		if (!s) return;
+		addSnippet({ id: `${s.id}_copy`, name: `${s.name} Copy`, source: s.source });
+	}
+	function deleteSnippet(id = state.selectedSnippetId) {
+		if (!id) return;
+		state.project.snippets = (state.project.snippets || []).filter(s => s.id !== id);
+		if (state.selectedSnippetId === id) {
+			state.selectedSnippetId = state.project.snippets[0]?.id || '';
+			const next = getSelectedSnippet();
+			if (next) { applySnippetToEditorForm(next); mountEditor(next); }
+			else { applySnippetToEditorForm(null); destroyEditor(); }
+		}
+		renderSnippetList();
+		saveLocalDraft();
+		setStatus($('runStatus'), `已删除 snippet：${id}`, 'ok');
+	}
+	function updateSnippetMetaFromForm() {
+		const s = getSelectedSnippet();
+		if (!s) return;
+		const newId = safeId($('snippetId').value, s.id);
+		s.name = $('snippetName').value.trim() || s.id;
+		s.filename = $('snippetFilename').value.trim() || `${newId}.three.js`;
+		if (newId !== s.id && !state.project.snippets.some(x => x.id === newId)) {
+			s.id = newId;
+			state.selectedSnippetId = newId;
+		}
+		s.updatedAt = nowIso();
+		$('editorTitle').textContent = s.name;
+		renderSnippetList();
+		saveLocalDraft();
+	}
+
+	/* ===== project IO via PersonalPageStore ===== */
+	function getWorkspaceStore() {
+		const sdk = state.sdk || window.keepwork;
+		if (!sdk?.personalPageStore) throw new Error('PersonalPageStore 不可用');
+		return typeof sdk.personalPageStore.withWorkspace === 'function' ? sdk.personalPageStore.withWorkspace(WORKSPACE) : sdk.personalPageStore;
+	}
+	async function readFile(path) {
+		const store = getWorkspaceStore();
+		try { return await store.readFile(path, 1, 10 * 1024 * 1024) || ''; }
+		catch (_) { return await store.readFile(path) || ''; }
+	}
+	async function writeFile(path, content) { await getWorkspaceStore().createFile(path, content == null ? '' : String(content)); }
+	async function readProjectIndex() {
+		try {
+			const parsed = JSON.parse(await readFile(INDEX_PATH) || '[]');
+			return Array.isArray(parsed) ? parsed : [];
+		} catch (_) { return []; }
+	}
+	async function writeProjectIndexEntry(project = state.project.project) {
+		const entry = { id: project.id, name: project.name, description: project.description, path: projectPath(project.id), updatedAt: nowIso() };
+		const list = await readProjectIndex();
+		const index = list.findIndex(item => item.id === entry.id);
+		if (index >= 0) list[index] = { ...list[index], ...entry };
+		else list.push(entry);
+		list.sort((a, b) => String(b.updatedAt || '').localeCompare(String(a.updatedAt || '')));
+		await writeFile(INDEX_PATH, JSON.stringify(list, null, 2));
+		return list;
+	}
+	function updateProjectFromForm() {
+		if (!state.project) state.project = defaultProject();
+		state.project.project.name = $('projectName').value.trim() || state.project.project.id;
+		state.project.project.description = $('projectDescription').value.trim();
+		state.project.project.models = { chat: $('chatModelSelect').value || state.project.project.models?.chat || '' };
+		state.project.project.updatedAt = nowIso();
+		updateCurrentFileLabel();
+	}
+	function updateCurrentFileLabel() {
+		const path = state.project?.project?.id ? projectPath(state.project.project.id) : '';
+		if ($('currentFileLabel')) {
+			$('currentFileLabel').textContent = path ? `${WORKSPACE}/${path}` : 'No project file loaded.';
+			$('currentFileLabel').disabled = !path;
+		}
+	}
+	function applyProjectToForm(projectData = state.project) {
+		state.project = normalizeProject(projectData || defaultProject());
+		$('projectName').value = state.project.project.name;
+		$('projectDescription').value = state.project.project.description;
+		$('editorTitle').textContent = state.project.project.name;
+		updateCurrentFileLabel();
+		renderSnippetList();
+		const fallback = state.project.snippets.find(s => s.id === state.selectedSnippetId) || state.project.snippets[0];
+		if (fallback) selectSnippet(fallback.id);
+		else { applySnippetToEditorForm(null); destroyEditor(); }
+		saveLocalDraft();
+	}
+	async function saveProject() {
+		updateSnippetMetaFromForm();
+		const data = normalizeProject(state.project);
+		state.project = data;
+		updateProjectFromForm();
+		const path = projectPath(data.project.id);
+		await writeFile(path, JSON.stringify(data, null, 2));
+		await writeProjectIndexEntry(data.project);
+		state.lastProjectPath = path;
+		await refreshProjects();
+		setStatus($('runStatus'), `已保存项目：${WORKSPACE}/${path}`, 'ok');
+		saveLocalDraft();
+	}
+	async function loadSelectedProject(pathOverride = '') {
+		const path = pathOverride || projectPath();
+		if (!path) return;
+		const text = await readFile(path);
+		if (!text) throw new Error(`Project file is empty or missing: ${path}`);
+		applyProjectToForm(JSON.parse(text));
+		state.lastProjectPath = path;
+		saveLocalDraft();
+		setStatus($('runStatus'), `已加载项目：${WORKSPACE}/${path}`, 'ok');
+	}
+	async function refreshProjects() {
+		if (!(state.sdk || window.keepwork)?.personalPageStore) return;
+		const list = await readProjectIndex();
+		state.projects = list;
+		renderStartProjectList(list);
+		setStartStatus(`Found ${list.length} project file(s).`, 'ok');
+	}
+	async function autoOpenLastProject() {
+		const draft = loadLocalDraft();
+		const path = draft.lastProjectPath || '';
+		if (!path) return false;
+		try {
+			setStartStatus(`Opening last project: ${fileNameFromPath(path)}...`, '');
+			await loadSelectedProject(path);
+			hideStartScreen();
+			return true;
+		} catch (error) {
+			setStartStatus(`Could not auto-open last project: ${error.message}`, 'error');
+			return false;
+		}
+	}
+	function renderStartProjectList(list = state.projects) {
+		const root = $('startProjectList');
+		if (!root) return;
+		root.innerHTML = list.length ? list.map(item => {
+			const path = item.path || projectPath(item.id);
+			return `<button type="button" class="project-file-item" data-start-open-path="${escapeHtml(path)}"><span><strong>${escapeHtml(fileNameFromPath(path))}</strong><span>${escapeHtml(path)}</span></span><span class="pill">Open</span></button>`;
+		}).join('') : '<div class="hint p-2.5">No saved project files yet. Create a new one below.</div>';
+		root.querySelectorAll('[data-start-open-path]').forEach(b => b.onclick = () => openProjectFromStart(b.dataset.startOpenPath));
+	}
+	async function openProjectFromStart(path) {
+		try {
+			setStartStatus(`Loading ${fileNameFromPath(path)}...`, '');
+			await loadSelectedProject(path);
+			hideStartScreen();
+		} catch (error) { setStartStatus(`Load failed: ${error.message}`, 'error'); }
+	}
+	function createProjectFromStart() {
+		const id = safeId($('startNewProjectId').value, 'three_models');
+		const project = defaultProject();
+		project.project.id = id;
+		project.project.name = $('startNewProjectName').value.trim() || id;
+		applyProjectToForm(project);
+		hideStartScreen();
+		setStatus($('runStatus'), `已创建新项目草稿：${project.project.id}。点击 Save 保存到 ${WORKSPACE}。`, 'ok');
+	}
+
+	/* ===== source edit dialog ===== */
+	function openSourceDialog() {
+		const s = getSelectedSnippet();
+		if (!s) { setStatus($('runStatus'), '请先选择一个 snippet。', 'error'); return; }
+		closeDialog('sourceOverlay');
+		const overlay = document.createElement('div');
+		overlay.className = 'modal-overlay';
+		overlay.id = 'sourceOverlay';
+		overlay.innerHTML = `<div class="modal-window" role="dialog" aria-modal="true" aria-label="Edit source">
+			<div class="modal-titlebar"><strong>编辑源码 · ${escapeHtml(s.filename)}</strong><button type="button" id="closeSource">Close</button></div>
+			<div class="modal-body flex flex-col gap-2">
+				<div class="hint">直接编辑 Three.js 源码。顶部 <code>const name = number; // 注释</code> 为可调参数，每组对象前用 <code>// label 说明</code> 注释分段。</div>
+				<textarea id="sourceText" class="export-out" spellcheck="false"></textarea>
+				<div class="toolbar justify-end"><button id="btnCancelSource" type="button">Cancel</button><button id="btnApplySource" class="primary" type="button">Apply & rebuild</button></div>
+			</div>
+		</div>`;
+		document.body.appendChild(overlay);
+		overlay.addEventListener('click', e => { if (e.target === overlay) closeDialog('sourceOverlay'); });
+		$('sourceText').value = state.widget ? state.widget.getCurrentSource() : s.source;
+		$('closeSource').onclick = $('btnCancelSource').onclick = () => closeDialog('sourceOverlay');
+		$('btnApplySource').onclick = () => {
+			const src = $('sourceText').value;
+			s.source = src;
+			s.updatedAt = nowIso();
+			if (state.widget) state.widget.setSource(src, { filename: s.filename });
+			else mountEditor(s);
+			renderSnippetList();
+			saveLocalDraft();
+			closeDialog('sourceOverlay');
+			setStatus($('runStatus'), `源码已应用：${s.id}`, 'ok');
+		};
+	}
+
+	/* ===== AI refine (local-context, token-saving) ===== */
+	async function aiRefineSelectedBlock() {
+		const sdk = state.sdk || window.keepwork;
+		const s = getSelectedSnippet();
+		if (!s) { setStatus($('runStatus'), '请先选择 snippet。', 'error'); return; }
+		if (!sdk?.aiChat?.chat && !sdk?.aiGenerators?.chat) { setStatus($('runStatus'), '当前 SDK 不支持 Chat 调用。', 'error'); return; }
+		const model = $('chatModelSelect').value.trim();
+		if (!model) { setStatus($('runStatus'), '请先配置 Chat 模型。', 'error'); return; }
+		const instruction = window.prompt('用一句话描述要如何精修（例：把球洞扩大 20%）：', '');
+		if (!instruction) return;
+		const prompt = [
+			'你是 Three.js 建模助手。下面是一段遵循约定的源码：顶部 PARAMS 为可调参数（const name = number; // 注释），每组对象前有 // label 注释分段。',
+			'请按用户要求精修，并返回完整、可直接运行的源码（仅返回代码，不要 markdown 围栏，不要解释）。保持 PARAMS + 注释分段约定。',
+			`用户要求：${instruction}`,
+			'当前源码：',
+			state.widget ? state.widget.getCurrentSource() : s.source,
+		].join('\n\n');
+		setStatus($('runStatus'), `AI 精修中…（model=${model}）`, '');
+		let streamed = '';
+		const onMessage = (full) => { streamed = String(full || streamed || ''); };
+		try {
+			const options = { model, stream: true, temperature: 0.4, messages: [{ role: 'user', content: prompt }], onMessage };
+			const result = sdk.aiGenerators?.chat ? await sdk.aiGenerators.chat(options) : await sdk.aiChat.chat(options);
+			const text = (typeof result === 'string' ? result : result?.result || result?.content || result?.choices?.[0]?.message?.content || streamed || '').trim();
+			const code = text.replace(/^```(?:js|javascript)?\s*/i, '').replace(/```\s*$/i, '').trim();
+			if (!code) throw new Error('AI 未返回有效源码');
+			s.source = code;
+			s.updatedAt = nowIso();
+			if (state.widget) state.widget.setSource(code, { filename: s.filename });
+			else mountEditor(s);
+			renderSnippetList();
+			saveLocalDraft();
+			setStatus($('runStatus'), `AI 精修完成：${s.id}`, 'ok');
+		} catch (e) { setStatus($('runStatus'), `AI 精修失败：${e.message}`, 'error'); }
+	}
+
+	/* ===== export ===== */
+	function buildExportText(filter) {
+		const project = normalizeProject(state.project);
+		if (filter === 'current') {
+			const s = state.widget ? { ...getSelectedSnippet(), source: state.widget.getCurrentSource() } : getSelectedSnippet();
+			return s ? String(s.source) : '';
+		}
+		if (filter === 'project') return JSON.stringify(project, null, 2);
+		// all snippets concatenated as standalone files
+		return project.snippets.map(s => `// ===== ${s.filename} (${s.name}) =====\n${s.source}`).join('\n\n');
+	}
+	function openExportDialog() {
+		closeDialog('exportOverlay');
+		const overlay = document.createElement('div');
+		overlay.className = 'modal-overlay';
+		overlay.id = 'exportOverlay';
+		let currentFilter = state.widget ? 'current' : 'all';
+		overlay.innerHTML = `<div class="modal-window" role="dialog" aria-modal="true" aria-label="Export">
+			<div class="modal-titlebar"><strong>Export</strong><button type="button" id="closeExport">Close</button></div>
+			<div class="modal-body flex flex-col gap-3">
+				<div class="toolbar" id="exportTabs">
+					<button type="button" data-export="current" class="primary">Current snippet (cleaned)</button>
+					<button type="button" data-export="all">All snippets</button>
+					<button type="button" data-export="project">Full project JSON</button>
+				</div>
+				<div class="hint">导出的源码是带最新参数值的纯净 Three.js（无调试色注入），可直接运行。</div>
+				<textarea id="exportText" class="export-out" spellcheck="false" readonly></textarea>
+				<div class="toolbar justify-end"><button id="btnExportCopy" type="button">Copy</button><button id="btnExportSave" class="primary" type="button">Save to file</button></div>
+			</div>
+		</div>`;
+		document.body.appendChild(overlay);
+		overlay.addEventListener('click', e => { if (e.target === overlay) closeDialog('exportOverlay'); });
+		$('closeExport').onclick = () => closeDialog('exportOverlay');
+		const refresh = () => {
+			overlay.querySelectorAll('[data-export]').forEach(b => b.classList.toggle('primary', b.dataset.export === currentFilter));
+			$('exportText').value = buildExportText(currentFilter);
+		};
+		overlay.querySelectorAll('[data-export]').forEach(b => b.onclick = () => { currentFilter = b.dataset.export; refresh(); });
+		$('btnExportCopy').onclick = async () => {
+			try { await navigator.clipboard.writeText($('exportText').value); setStatus($('runStatus'), `已复制导出内容（${currentFilter}）。`, 'ok'); }
+			catch (e) { setStatus($('runStatus'), `复制失败：${e.message}`, 'error'); }
+		};
+		$('btnExportSave').onclick = () => {
+			const isProject = currentFilter === 'project';
+			const ext = isProject ? 'json' : 'js';
+			const blob = new Blob([$('exportText').value], { type: isProject ? 'application/json;charset=utf-8' : 'text/javascript;charset=utf-8' });
+			const url = URL.createObjectURL(blob);
+			const a = document.createElement('a');
+			a.href = url;
+			const base = currentFilter === 'current' ? safeId(getSelectedSnippet()?.id || 'snippet') : safeId(state.project?.project?.id || 'three_models');
+			a.download = `${base}.${ext}`;
+			document.body.appendChild(a);
+			a.click();
+			a.remove();
+			setTimeout(() => URL.revokeObjectURL(url), 500);
+			setStatus($('runStatus'), `已下载导出（${currentFilter}）。`, 'ok');
+		};
+		refresh();
+	}
+	function closeDialog(id) { $(id)?.remove(); }
+
+	/* ===== SDK loading ===== */
+	function getSdkCandidates() {
+		const params = new URLSearchParams(window.location.search);
+		const explicitSdk = params.get('sdk');
+		const hostname = window.location.hostname;
+		const isLocalHost = !hostname || hostname === 'localhost' || hostname === '127.0.0.1' || hostname === '::1';
+		const local = ['http://127.0.0.1:5001/index.ts'];
+		const deployed = ['https://cdn.keepwork.com/sdk/keepworkSDK.iife.js', 'https://keepwork.com/public/resource/keepworkSDK.iife.js'];
+		return [explicitSdk, ...(isLocalHost || window.location.protocol === 'file:' ? local : []), ...deployed, ...(isLocalHost || window.location.protocol === 'file:' ? [] : local)].filter(Boolean);
+	}
+	function loadScript(src) {
+		return new Promise((resolve, reject) => {
+			const existing = [...document.scripts].find(s => s.src === src);
+			if (existing) { existing.addEventListener('load', resolve, { once: true }); existing.addEventListener('error', reject, { once: true }); return; }
+			const s = document.createElement('script');
+			s.src = src; s.onload = resolve; s.onerror = reject;
+			document.head.appendChild(s);
+		});
+	}
+	function importRuntimeModule(src) { return new Function('src', 'return import(src)')(src); }
+	async function loadSdk() {
+		let lastError = null;
+		for (const url of getSdkCandidates()) {
+			try {
+				if (/(^|\/)index\.(?:ts|mjs|js)(?:[?#].*)?$/.test(url)) await importRuntimeModule(url);
+				else await loadScript(url);
+				if (window.keepwork) {
+					state.sdk = window.keepwork;
+					$('sdkState').textContent = 'SDK ready';
+					await populateModelDropdowns();
+					await refreshLoginState();
+					await refreshProjects().catch(() => {});
+					await autoOpenLastProject();
+					if ($('startProjectList')?.textContent.includes('Loading project files')) renderStartProjectList(state.projects);
+					return;
+				}
+			} catch (error) { lastError = error; }
+		}
+		$('sdkState').textContent = 'SDK failed';
+		if ($('startSdkState')) $('startSdkState').textContent = `SDK failed: ${lastError?.message || lastError || 'unknown'}`;
+		renderStartProjectList([]);
+		setStartStatus('SDK failed. 仍可创建本地草稿，但保存需要 KeepworkSDK。', 'error');
+		setStatus($('loginState'), `KeepworkSDK 加载失败：${lastError?.message || lastError || 'unknown'}`, 'error');
+	}
+	async function refreshLoginState() {
+		const sdk = state.sdk || window.keepwork;
+		if (!sdk) return;
+		let username = sdk.user?.username || '';
+		if (sdk.token && !username) {
+			try {
+				const user = typeof sdk.getUserProfile === 'function' ? await sdk.getUserProfile() : await sdk.getCurrentUser?.();
+				username = user?.username || sdk.user?.username || '';
+			} catch (_) {}
+		}
+		const loginState = $('loginState');
+		loginState.classList.toggle('ok', !!sdk.token);
+		loginState.innerHTML = sdk.token
+			? `已登录：<button id="btnProfile" class="status-action" type="button">${escapeHtml(username || 'Keepwork 用户')}</button>`
+			: '<button id="btnProfile" class="status-action" type="button">未登录</button>。可点击登录，或使用 localAPI。';
+		if ($('startSdkState')) $('startSdkState').textContent = sdk.token ? `SDK ready. Logged in as ${username || 'Keepwork user'}.` : 'SDK ready. 可使用本地 API，或登录以同步项目。';
+		$('btnProfile').onclick = openLoginOrProfile;
+		state.lastUsername = username;
+		updateRailInfo();
+	}
+	async function openLoginOrProfile() {
+		const sdk = state.sdk || window.keepwork;
+		if (!sdk) return;
+		if (!sdk.token) {
+			if (sdk.loginWindow?.show) sdk.loginWindow.show({ onLogin: refreshLoginState });
+			else if (sdk.login) await sdk.login();
+			setTimeout(refreshLoginState, 600);
+			return;
+		}
+		if (typeof sdk.showProfileWindow === 'function') await sdk.showProfileWindow();
+		else if (sdk.profileWindow?.show) await sdk.profileWindow.show();
+		await refreshLoginState();
+	}
+	async function populateModelDropdowns() {
+		const sdk = state.sdk || window.keepwork;
+		if (!sdk?.localAPIKeySettings?.listModels) return;
+		await sdk.localAPIKeySettings.load?.();
+		const settings = loadSettings();
+		const remembered = state.project?.project?.models?.chat || settings.chatModel;
+		const select = $('chatModelSelect');
+		const models = sdk.localAPIKeySettings.listModels('Chat').filter(m => m.enabled !== false);
+		select.innerHTML = models.length ? models.map(m => {
+			const value = m.name || m.modelId || '';
+			const label = m.modelId && m.modelId !== value ? `${value} (${m.modelId})` : value;
+			return `<option value="${escapeHtml(value)}">${escapeHtml(label)}</option>`;
+		}).join('') : '<option value="">No Chat models</option>';
+		select.disabled = !models.length;
+		if (remembered && models.some(m => (m.name || m.modelId || '') === remembered)) select.value = remembered;
+		updateRailInfo();
+	}
+
+	/* ===== events ===== */
+	function wireEvents() {
+		$('btnCollapseLeft').onclick = () => setLeftCollapsed(true);
+		$('btnExpandLeft').onclick = () => setLeftCollapsed(false);
+		$('railModel').onclick = () => setLeftCollapsed(false);
+		$('railUser').onclick = () => setLeftCollapsed(false);
+		$('btnStartRefresh').onclick = () => refreshProjects().catch(e => setStartStatus(`Refresh failed: ${e.message}`, 'error'));
+		$('btnStartClose').onclick = () => { if (state.project) hideStartScreen(); else createProjectFromStart(); };
+		$('btnStartCreate').onclick = createProjectFromStart;
+		$('btnFileOpen').onclick = showStartScreen;
+		$('btnFileNew').onclick = showStartScreen;
+		$('btnFileSave').onclick = () => saveProject().catch(e => setStatus($('runStatus'), `保存失败：${e.message}`, 'error'));
+		$('currentFileLabel').onclick = () => { if (window.createWorkspaceViewer) try { window.createWorkspaceViewer({ sdk: state.sdk, workspace: WORKSPACE, file: projectPath() }); } catch (_) {} };
+		$('btnLocalApi').onclick = async () => {
+			const settings = (state.sdk || window.keepwork)?.localAPIKeySettings;
+			if (!settings?.show) return setStatus($('loginState'), '当前 SDK 不支持本地 API Key 设置。', 'error');
+			await settings.load?.();
+			settings.show({ title: '本地 API Key 设置', fullscreen: true, onSave: populateModelDropdowns });
+		};
+		$('btnRefreshProjects').onclick = () => refreshProjects().catch(e => setStatus($('runStatus'), `刷新失败：${e.message}`, 'error'));
+		$('btnExport').onclick = openExportDialog;
+		$('btnAddSnippet').onclick = () => addSnippet();
+		$('btnEditSource').onclick = openSourceDialog;
+		$('btnAiRefine').onclick = () => aiRefineSelectedBlock();
+		$('btnResetCam').onclick = () => state.widget?.editor?.resetCamera();
+		$('snippetSearch').addEventListener('input', renderSnippetList);
+		['snippetId', 'snippetName', 'snippetFilename'].forEach(id => $(id).addEventListener('input', updateSnippetMetaFromForm));
+		['projectName', 'projectDescription'].forEach(id => $(id).addEventListener('input', () => { updateProjectFromForm(); saveLocalDraft(); }));
+		$('chatModelSelect').addEventListener('change', () => { saveSettings(); updateRailInfo(); });
+		window.addEventListener('resize', () => state.widget?.resize());
+	}
+
+	/* ===== init ===== */
+	async function init() {
+		wireEvents();
+		const draft = loadLocalDraft();
+		state.lastProjectPath = draft.lastProjectPath || '';
+		if (draft.selectedSnippetId) state.selectedSnippetId = draft.selectedSnippetId;
+		$('app').classList.toggle('collapsed', isLeftCollapsed());   // restore last collapse state
+		// Three.js is imported by the widget module itself; nothing to load here.
+		applyProjectToForm(draft.project || defaultProject());
+		loadSdk();
+	}
+
+	init();
+	</script>
+</body>
+</html>
