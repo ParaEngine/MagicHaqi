@@ -51,6 +51,43 @@ export function disposeEncyclopedia() {
     quizState = null;
 }
 
+/** 自检：扫描已领养的 shenzhen_zoo 宠物，同步图鉴 adopted 状态 */
+async function syncAdoptedProgress(data, planetId) {
+    if (!data || planetId !== 'shenzhen_zoo') return;
+    const animals = Array.isArray(data.animals) ? data.animals : [];
+    if (!animals.length) return;
+    // 确保所有 petOrder 中的宠物数据已加载
+    const { loadPet } = await import('./storage.js');
+    for (const id of (state.petOrder || [])) {
+        if (!state.pets[id]) {
+            try { const pet = await loadPet(id); if (pet) state.pets[id] = pet; } catch (_) {}
+        }
+    }
+    const adoptedAnimalIds = new Set();
+    // 扫描所有宠物，找出已领养的动物园动物
+    for (const id of (state.petOrder || [])) {
+        const pet = state.pets[id];
+        if (pet && String(pet.adoptedFromZoo || '').trim() === 'shenzhen_zoo') {
+            const animalId = String(pet.adoptedFromAnimal || '').trim();
+            if (animalId) adoptedAnimalIds.add(animalId);
+        }
+    }
+    let changed = false;
+    for (const animal of animals) {
+        const shouldBeAdopted = adoptedAnimalIds.has(animal.id);
+        const prog = progressCache?.animals?.[animal.id];
+        const currentlyAdopted = !!(prog?.adopted);
+        if (shouldBeAdopted !== currentlyAdopted) {
+            progressCache = await saveEncyclopediaProgress(planetId, animal.id,
+                shouldBeAdopted ? { learned: true, adopted: true } : { learned: !!prog?.learned, adopted: false });
+            changed = true;
+        }
+    }
+    if (changed) {
+        progressCache = await loadEncyclopediaProgress(planetId);
+    }
+}
+
 /** 离开星球 / 切换星球时重置图鉴 UI 状态。 */
 export function resetEncyclopediaView() {
     currentAnimalId = null;
@@ -114,6 +151,16 @@ const ENC_STYLE = `
 .mh-enc-locked-tip { font-size:12.5px; color:var(--text-muted,#9ca3af); text-align:center; margin-top:8px; }
 .mh-enc-task { background:linear-gradient(135deg,#ecfeff,#cffafe); border-radius:14px; padding:10px 12px; font-size:13px; color:#155e75; line-height:1.55; display:flex; gap:8px; }
 .mh-enc-empty { text-align:center; padding:48px 20px; color:var(--text-muted,#9ca3af); font-size:14px; }
+.mh-enc-camera-float {
+    position:fixed; bottom:24px; right:16px; z-index:100;
+    width:52px; height:52px; border-radius:50%;
+    background:linear-gradient(135deg,#22c55e,#16a34a);
+    border:none; box-shadow:0 4px 16px rgba(22,163,74,.4);
+    font-size:26px; cursor:pointer;
+    display:flex; align-items:center; justify-content:center;
+    transition:transform .15s, box-shadow .15s;
+}
+.mh-enc-camera-float:active { transform:scale(.9); box-shadow:0 2px 8px rgba(22,163,74,.3); }
 </style>
 `;
 
@@ -127,6 +174,7 @@ export function renderEncyclopedia(panel, _data, callbacks = {}) {
             <span class="font-bold" style="color:var(--text-primary)">📖 ${escapeHtml(t('encTitle'))}</span>
             <button class="btn-icon" id="mhEncLang" title="${escapeHtml(t('encSwitchLang'))}" style="width:auto;min-width:36px;height:36px;font-size:13px;font-weight:800;padding:0 10px">${lang() === 'zh' ? 'EN' : '中'}</button>
         </div>
+        <button class="mh-enc-camera-float" id="mhEncCameraFloat" title="${escapeHtml(t('encCamera'))}">📸</button>
         <div class="mh-enc-wrap" id="mhEncBody"><div class="mh-enc-empty">${escapeHtml(t('loading'))}</div></div>
     `;
     $('mhEncBack').onclick = () => {
@@ -144,6 +192,10 @@ export function renderEncyclopedia(panel, _data, callbacks = {}) {
         contentLang = lang() === 'zh' ? 'en' : 'zh';
         renderEncyclopedia(panel, _data, callbacks);
     };
+    $('mhEncCameraFloat').onclick = (e) => {
+        e.stopPropagation();
+        showToast(t('encCameraComing'), 'info', 2000);
+    };
 
     if (!encUrl) {
         $('mhEncBody').innerHTML = `<div class="mh-enc-empty">${escapeHtml(t('encNotAvailable'))}</div>`;
@@ -155,8 +207,10 @@ export function renderEncyclopedia(panel, _data, callbacks = {}) {
     Promise.all([
         loadEncyclopediaData(encUrl),
         progressCache ? Promise.resolve(progressCache) : loadEncyclopediaProgress(planetId),
-    ]).then(([data, progress]) => {
+    ]).then(async ([data, progress]) => {
         progressCache = progress;
+        // 自检：根据实际已领养宠物同步图鉴进度
+        await syncAdoptedProgress(data, planetId);
         const body = $('mhEncBody');
         if (!body) return;
         if (!data || !Array.isArray(data.animals) || !data.animals.length) {
@@ -254,6 +308,7 @@ function renderDetail(body, data, animal, panel, _data, callbacks) {
                 <div class="mh-enc-toggles">
                     <button class="mh-enc-toggle ${ageLevel === 'kid' ? 'on' : ''}" data-age="kid">${escapeHtml(t('encAgeKid'))}</button>
                     <button class="mh-enc-toggle ${ageLevel === 'junior' ? 'on' : ''}" data-age="junior">${escapeHtml(t('encAgeJunior'))}</button>
+                    <button class="mh-enc-toggle ${ageLevel === 'advanced' ? 'on' : ''}" data-age="advanced">${escapeHtml(t('encAgeAdvanced'))}</button>
                 </div>
             </div>
         </div>

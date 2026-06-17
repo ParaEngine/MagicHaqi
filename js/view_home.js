@@ -526,7 +526,148 @@ export function renderHome(panel, { pet }, callbacks = {}) {
 
         <div id="mhDock" class="mh-dock" style="height:${MH_DOCK_HEIGHT}px">
             ${level.dockHtml(pet)}
-        </div>`;
+        </div>
+        ${String(state.settings?.starSettlement?.planetId || '').trim() === 'shenzhen_zoo' ? `
+        <button class="mh-zoo-encyclopedia-float" id="mhZooEncFloat" title="${escapeHtml(t('encTitle'))}">
+            <span class="mh-zoo-enc-icon">📖</span>
+            <span class="mh-zoo-enc-label">${escapeHtml(t('encTitle'))}</span>
+        </button>` : ''}
+        ${String(state.settings?.starSettlement?.planetId || '').trim() === 'shenzhen_zoo' ? `
+        <button class="mh-guide-avatar" id="mhGuideAvatar" title="${escapeHtml(t('guideChat'))}">
+            <span class="mh-guide-face">🐯</span>
+        </button>
+        <div class="mh-guide-bubble" id="mhGuideBubble"></div>
+        <div class="mh-guide-chat-overlay" id="mhGuideChatOverlay" style="display:none">
+            <div class="mh-guide-chat-header">
+                <span>🐯 ${escapeHtml(t('guideChat'))}</span>
+                <button class="mh-guide-chat-close" id="mhGuideChatClose">✕</button>
+            </div>
+            <div class="mh-guide-chat-body" id="mhGuideChatBody">
+                <div class="chat-bubble guide">${escapeHtml(t('guideWelcome'))}</div>
+            </div>
+            <div class="mh-guide-chat-input-row">
+                <input type="text" class="mh-guide-chat-input" id="mhGuideChatInput" placeholder="${escapeHtml(t('guidePlaceholder'))}">
+                <button class="mh-guide-chat-send" id="mhGuideChatSend">${escapeHtml(t('send'))}</button>
+            </div>
+        </div>` : ''}
+        ${(String(state.settings?.starSettlement?.planetId || '').trim() === 'default' || !state.settings?.starSettlement?.planetId) ? `
+        <button class="mh-zoo-enter-planet" id="mhZooEnterPlanet" title="${escapeHtml(t('zooEnterPlanet'))}">
+            <span class="mh-zoo-enter-icon">🐾</span>
+            <span class="mh-zoo-enter-label">${escapeHtml(t('zooEnterPlanet'))}</span>
+        </button>` : ''}
+        ${String(state.settings?.starSettlement?.planetId || '').trim() === 'shenzhen_zoo' ? `
+        <button class="mh-zoo-enter-planet" id="mhZooBackHome" title="${escapeHtml(t('zooBackHome'))}">
+            <span class="mh-zoo-enter-icon">🏠</span>
+            <span class="mh-zoo-enter-label">${escapeHtml(t('zooBackHome'))}</span>
+        </button>` : ''}
+        <style>
+        .mh-zoo-encyclopedia-float {
+            position:fixed; top:60px; left:10px; z-index:100;
+            display:flex; flex-direction:column; align-items:center; gap:2px;
+            background:rgba(255,255,255,.92); backdrop-filter:blur(8px);
+            border:2px solid #22c55e; border-radius:16px;
+            padding:8px 10px 6px; cursor:pointer;
+            box-shadow:0 2px 12px rgba(34,197,94,.25);
+            transition:transform .15s, box-shadow .15s;
+        }
+        .mh-zoo-encyclopedia-float:active { transform:scale(.92); }
+        .mh-zoo-enc-icon { font-size:26px; line-height:1; }
+        .mh-zoo-enc-label { font-size:10px; font-weight:800; color:#166534; }
+        .mh-guide-avatar {
+            position:fixed; bottom:140px; right:16px; z-index:100;
+            width:56px; height:56px; border-radius:50%;
+            background:linear-gradient(135deg,#fbbf24,#f59e0b);
+            border:3px solid #fff; box-shadow:0 4px 16px rgba(245,158,11,.4);
+            font-size:30px; cursor:pointer;
+            display:flex; align-items:center; justify-content:center;
+            animation:mh-guide-bounce 2s ease-in-out infinite;
+            transition:transform .15s;
+        }
+        .mh-guide-avatar:active { transform:scale(.85); }
+        @keyframes mh-guide-bounce {
+            0%,100% { transform:translateY(0); }
+            50% { transform:translateY(-6px); }
+        }
+        .mh-guide-bubble {
+            position:fixed; bottom:202px; right:12px; z-index:101;
+            max-width:200px; background:#fff; border-radius:14px;
+            padding:8px 12px; font-size:12px; color:#78350f;
+            box-shadow:0 2px 12px rgba(0,0,0,.12);
+            opacity:0; transform:translateY(8px);
+            transition:opacity .3s, transform .3s;
+            pointer-events:none;
+            white-space:pre-wrap; word-break:break-word;
+        }
+        .mh-guide-bubble::after {
+            content:''; position:absolute; bottom:-8px; right:20px;
+            width:0; height:0;
+            border-left:8px solid transparent;
+            border-right:8px solid transparent;
+            border-top:8px solid #fff;
+        }
+        .mh-guide-bubble.show { opacity:1; transform:translateY(0); }
+        .mh-guide-chat-overlay {
+            position:fixed; bottom:0; right:0; z-index:200;
+            width:320px; max-width:100vw; height:400px; max-height:60vh;
+            background:#fff; border-radius:16px 16px 0 0;
+            box-shadow:0 -4px 24px rgba(0,0,0,.15);
+            display:flex; flex-direction:column;
+            animation:mh-guide-slideup .25s ease-out;
+        }
+        @keyframes mh-guide-slideup {
+            from { transform:translateY(100%); }
+            to { transform:translateY(0); }
+        }
+        .mh-guide-chat-header {
+            display:flex; align-items:center; justify-content:space-between;
+            padding:12px 16px; background:linear-gradient(135deg,#fbbf24,#f59e0b);
+            border-radius:16px 16px 0 0; color:#78350f; font-weight:800; font-size:15px;
+        }
+        .mh-guide-chat-close {
+            background:none; border:none; font-size:20px; color:#78350f; cursor:pointer; line-height:1;
+        }
+        .mh-guide-chat-body {
+            flex:1; overflow-y:auto; padding:12px;
+            display:flex; flex-direction:column; gap:8px;
+        }
+        .mh-guide-chat-body .chat-bubble {
+            max-width:85%; padding:8px 12px; border-radius:12px; font-size:13px; line-height:1.5;
+        }
+        .mh-guide-chat-body .chat-bubble.user {
+            align-self:flex-end; background:#dcfce7; color:#166534;
+        }
+        .mh-guide-chat-body .chat-bubble.guide {
+            align-self:flex-start; background:#fef3c7; color:#78350f;
+        }
+        .mh-guide-chat-input-row {
+            display:flex; gap:6px; padding:8px 12px 12px; border-top:1px solid #fde68a;
+        }
+        .mh-guide-chat-input {
+            flex:1; border:1.5px solid #fde68a; border-radius:12px; padding:8px 12px;
+            font-size:13px; outline:none;
+        }
+        .mh-guide-chat-send {
+            background:#f59e0b; color:#fff; border:none; border-radius:12px;
+            padding:8px 16px; font-weight:700; cursor:pointer; font-size:13px;
+        }
+        .mh-zoo-enter-planet {
+            position:fixed; bottom:24px; right:16px; z-index:100;
+            display:flex; flex-direction:column; align-items:center; gap:2px;
+            background:rgba(255,255,255,.92); backdrop-filter:blur(8px);
+            border:2px solid #22c55e; border-radius:16px;
+            padding:10px 12px 8px; cursor:pointer;
+            box-shadow:0 2px 12px rgba(34,197,94,.25);
+            animation:mh-enter-pulse 2s ease-in-out infinite;
+            transition:transform .15s;
+        }
+        .mh-zoo-enter-planet:active { transform:scale(.92); }
+        @keyframes mh-enter-pulse {
+            0%,100% { box-shadow:0 2px 12px rgba(34,197,94,.25); }
+            50% { box-shadow:0 4px 20px rgba(34,197,94,.5); }
+        }
+        .mh-zoo-enter-icon { font-size:28px; line-height:1; }
+        .mh-zoo-enter-label { font-size:10px; font-weight:800; color:#166534; }
+        </style>`;
 
     if ($('mhMenuBtn')) {
         const menuButton = $('mhMenuBtn');
@@ -538,6 +679,163 @@ export function renderHome(panel, { pet }, callbacks = {}) {
             e.preventDefault();
             e.stopPropagation();
             openDevConsoleFromHome();
+        };
+    }
+    // 胖虎导游悬浮头像 + 气泡 + AI 对话
+    const guideAvatar = $('mhGuideAvatar');
+    if (guideAvatar) {
+        const guideBubble = $('mhGuideBubble');
+        const guideOverlay = $('mhGuideChatOverlay');
+        const guideClose = $('mhGuideChatClose');
+        const guideBody = $('mhGuideChatBody');
+        const guideInput = $('mhGuideChatInput');
+        const guideSend = $('mhGuideChatSend');
+
+        // 定时气泡消息
+        const guideMessages = [
+            t('guideBubble1'), t('guideBubble2'), t('guideBubble3'),
+            t('guideBubble4'), t('guideBubble5'),
+        ];
+        let guideBubbleTimer = null;
+        const showGuideBubble = () => {
+            if (!guideBubble) return;
+            const msg = guideMessages[Math.floor(Math.random() * guideMessages.length)];
+            guideBubble.textContent = msg;
+            guideBubble.classList.add('show');
+            clearTimeout(guideBubbleTimer);
+            guideBubbleTimer = setTimeout(() => guideBubble.classList.remove('show'), 5000);
+        };
+        showGuideBubble();
+        const bubbleInterval = setInterval(showGuideBubble, 20000);
+
+        // 点击头像打开对话
+        guideAvatar.onclick = () => {
+            if (guideOverlay) {
+                guideOverlay.style.display = 'flex';
+                clearTimeout(guideBubbleTimer);
+                if (guideBubble) guideBubble.classList.remove('show');
+            }
+        };
+
+        // 关闭对话
+        if (guideClose) guideClose.onclick = () => {
+            guideOverlay.style.display = 'none';
+            showGuideBubble();
+        };
+
+        // 发送消息
+        const sendGuideMessage = async () => {
+            if (!guideInput || !guideBody) return;
+            const text = guideInput.value.trim();
+            if (!text) return;
+            guideInput.value = '';
+            guideBody.innerHTML += `<div class="chat-bubble user">${text.replace(/</g,'&lt;')}</div>`;
+            guideBody.scrollTop = guideBody.scrollHeight;
+
+            // 加载提示
+            const loadingEl = document.createElement('div');
+            loadingEl.className = 'chat-bubble guide';
+            loadingEl.textContent = '...';
+            guideBody.appendChild(loadingEl);
+            guideBody.scrollTop = guideBody.scrollHeight;
+
+            try {
+                const { state } = await import('./state.js');
+                let reply = '';
+                if (state.sdk?.aiChat?.chat) {
+                    const r = await state.sdk.aiChat.chat({
+                        messages: [
+                            { role: 'system', content: t('guideSystemPrompt') },
+                            { role: 'user', content: text },
+                        ],
+                    });
+                    reply = (r?.text || r || '').toString().trim();
+                } else if (state.sdk?.aiGenerators?.chat) {
+                    const r = await state.sdk.aiGenerators.chat({
+                        messages: [
+                            { role: 'system', content: t('guideSystemPrompt') },
+                            { role: 'user', content: text },
+                        ],
+                    });
+                    reply = (r?.text || r?.choices?.[0]?.message?.content || '').toString().trim();
+                }
+                loadingEl.textContent = reply || t('guideNoReply');
+            } catch (e) {
+                loadingEl.textContent = t('guideError', { error: e?.message || '' });
+            }
+            guideBody.scrollTop = guideBody.scrollHeight;
+        };
+
+        if (guideSend) guideSend.onclick = sendGuideMessage;
+        if (guideInput) guideInput.onkeydown = (e) => {
+            if (e.key === 'Enter') sendGuideMessage();
+        };
+
+        // 清理定时器
+        const cleanupGuide = () => {
+            clearInterval(bubbleInterval);
+            clearTimeout(guideBubbleTimer);
+        };
+        // 在 dispose 时清理
+        panel.__mhGuideCleanup = cleanupGuide;
+    }
+    // 深圳动物园：左上角📖图鉴按钮
+    const zooEncFloat = $('mhZooEncFloat');
+    if (zooEncFloat) {
+        zooEncFloat.onclick = () => {
+            soundManager.playButtonClick();
+            callbacks.onNav?.('encyclopedia');
+        };
+    }
+    // 默认星球：左下角"进入深圳动物园"快捷按钮
+    const enterPlanetBtn = $('mhZooEnterPlanet');
+    if (enterPlanetBtn) {
+        enterPlanetBtn.onclick = async () => {
+            soundManager.playButtonClick();
+            const { state, notify, setView } = await import('./state.js');
+            const { loadPlanetIndex } = await import('./config.js');
+            const { saveUserProfileDebounced } = await import('./storage.js');
+            
+            state.settings = state.settings || {};
+            state.settings.starSettlement = {
+                source: 'official', planetId: 'shenzhen_zoo',
+                encyclopediaUrl: 'famous-planets/shenzhen_zoo_encyclopedia.json',
+            };
+            
+            try {
+                const index = await loadPlanetIndex();
+                const sz = (index?.planets || []).find(p => p.id === 'shenzhen_zoo');
+                if (sz) {
+                    const { applySettledOfficialPlanetFromProfile } = await import('./view_star_settlements.js');
+                    await applySettledOfficialPlanetFromProfile();
+                }
+            } catch (e) {
+                console.warn('切换深圳动物园失败', e);
+            }
+            await saveUserProfileDebounced();
+            setView('home');
+        };
+    }
+    // 深圳动物园：左下角"返回主星球"按钮
+    const backHomeBtn = $('mhZooBackHome');
+    if (backHomeBtn) {
+        backHomeBtn.onclick = async () => {
+            soundManager.playButtonClick();
+            const { state, setView } = await import('./state.js');
+            const { saveUserProfileDebounced } = await import('./storage.js');
+            // 清除动物园的地形场景，恢复默认
+            const { getTerrainFieldSlots } = await import('./view_terrain_fields.js');
+            state.settings = state.settings || {};
+            state.settings.starSettlement = { source: 'official', planetId: 'default' };
+            state.settings.terrainFields = { slots: [
+                { index: 1, typeId: 'sky', name: '天空' },
+                { index: 2, typeId: 'land', name: '陆地' },
+                { index: 3, typeId: 'water', name: '海洋' },
+            ] };
+            const { applySettledOfficialPlanetFromProfile } = await import('./view_star_settlements.js');
+            await applySettledOfficialPlanetFromProfile();
+            await saveUserProfileDebounced();
+            setView('home');
         };
     }
     bindHudTips(panel);

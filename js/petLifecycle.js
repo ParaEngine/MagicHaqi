@@ -318,7 +318,28 @@ export function hasRenderablePetTexture(pet) {
     return !!(pet?.imageSheetUrl || pet?.imageUrl);
 }
 
+// 深圳动物园：每只领养动物绑定到对应的园区场景
+// animalId（图鉴中的 id）→ 场景 slot 编号
+const ZOO_PET_FIELD_MAP = {
+    south_china_tiger: '2',  // 猛兽谷
+    giant_panda: '3',        // 熊猫竹林
+    red_panda: '6',          // 雨林溪谷
+    giraffe: '4',            // 长颈鹿草原
+    penguin: '5',            // 企鹅冰湾
+};
+
+function getZooPetFieldId(pet) {
+    if (!pet) return null;
+    const zooId = String(pet.adoptedFromZoo || '').trim();
+    const animalId = String(pet.adoptedFromAnimal || '').trim();
+    if (zooId !== 'shenzhen_zoo' || !animalId) return null;
+    return ZOO_PET_FIELD_MAP[animalId] || null;
+}
+
 export function canPetAppearInField(pet, fieldId = null) {
+    // 深圳动物园宠物：只在指定园区出现
+    const zooFieldId = getZooPetFieldId(pet);
+    if (zooFieldId) return !fieldId || fieldId === zooFieldId;
     if (useGeneratedLocation(pet)) {
         const home = getGeneratedPetLocation(pet);
         return home.kind === 'field' && (!fieldId || home.id === fieldId);
