@@ -17,7 +17,7 @@ import { displayPetName } from './dna.js';
 
 import { planetLevel, showPlanetResearchPanel } from './level_planet.js';
 import { showVisitReturnPrompt } from './view_spacetravel.js';
-import { fieldLevel }  from './level_field.js';
+import { fieldLevel, stopZooPetWalking }  from './level_field.js';
 import { petLevel, stopPetWalk } from './level_pet.js';
 import { cellLevel, stopCellGame } from './level_cell.js';
 import { playPetHappy } from './pet.js';
@@ -487,6 +487,7 @@ export function renderHome(panel, { pet }, callbacks = {}) {
     }
     rememberDockScrollPositions(panel);
     stopPetWalk();
+    stopZooPetWalking();
     stopCellGame();
 
     __lastPet = pet;
@@ -861,12 +862,24 @@ export function renderHome(panel, { pet }, callbacks = {}) {
     // 首次进入后预渲染相邻层
     invalidateLevelCache();
     schedulePreRenderAdjacent();
+    // 根据当前缩放级别更新动物园按钮可见性
+    updateZooButtonVisibility();
 }
 
 // 兼容旧 API
 export function stopHomeWalk() {
     stopPetWalk();
+    stopZooPetWalking();
     stopCellGame();
+}
+
+/** 根据当前缩放级别显示/隐藏动物园入口与返回按钮 */
+function updateZooButtonVisibility() {
+    const enterBtn = document.getElementById('mhZooEnterPlanet');
+    const backBtn = document.getElementById('mhZooBackHome');
+    const visible = state.zoomLevel === 0;
+    if (enterBtn) enterBtn.style.display = visible ? 'flex' : 'none';
+    if (backBtn) backBtn.style.display = visible ? 'flex' : 'none';
 }
 
 // =============================================================================
@@ -1897,6 +1910,7 @@ function runZoomTransition(from, to) {
         stage.className = `mh-stage zoom-${zd.id} ${state.isDecorMode && (to === 1 || to === 2) ? 'decor-mode' : ''} ${state.isFeedMode && to === 2 ? 'feed-mode' : ''}`;
         stage.style.touchAction = 'none';
         refreshZoomLevelBar(stage);
+        updateZooButtonVisibility();
 
         const ctx = makeCtx(pet, __lastCallbacks);
         syncBgMusicForLevel(newLevel);

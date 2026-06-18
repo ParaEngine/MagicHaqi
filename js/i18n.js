@@ -508,6 +508,14 @@ export const zhCN = {
     encAdoptedTip: '这只伙伴已经在你的星球上啦。', encAdoptSuccess: '{name} 已来到你的星球！',
     encAdoptFailed: '领养失败，请稍后再试。', encNoPetConfigured: '这只动物还没有配置可领养的伙伴。',
     encAlreadyOwned: '你已经拥有 {name} 啦，已为你切换过去。',
+    // 相机拍照识别
+    encCameraTitle: '📸 拍照识别动物', encCameraCapture: '拍照', encCameraUpload: '从相册选择', encCameraRetake: '重拍', encCameraUse: '使用照片', encCameraAnalyzing: '🔍 正在识别动物…', encCameraNoMatch: '没有识别到图鉴中的动物，试试拍得更清楚一些？', encCameraMatchFound: '识别到 {name}！正在打开图鉴…', encCameraPermission: '需要相机权限才能拍照识别哦～', encCameraNoCamera: '你的设备不支持拍照功能',
+    // 互动任务
+    encTaskTitle: '🎯 互动任务', encTaskPhotoAnimal: '📸 给动物拍张照', encTaskPhotoDone: '📸 已拍照 ✓', encTaskRecord: '🎤 录一段动物叫声', encTaskRecordDone: '🎤 已录音 ✓', encTaskRecordListening: '🔴 正在录音…点击停止', encTaskDraw: '✍️ 画出你看到的动物', encTaskDrawDone: '✍️ 已画完 ✓', encTaskNote: '📝 写一句观察笔记', encTaskNoteDone: '📝 已记录 ✓', encTaskNotePlaceholder: '写下你观察到的…', encTaskComplete: '任务完成！你认识 {name} 啦 🎉', encTaskIncomplete: '还有任务没完成哦，继续加油！',
+    // 录音
+    encRecordStart: '🎤 开始录音', encRecordStop: '⏹️ 停止录音', encRecordPlaying: '▶️ 播放录音', encRecordNoSupport: '你的设备不支持录音功能',
+    // 涂鸦
+    encDrawClear: '清空', encDrawDone: '画好了', encDrawHint: '用手指画出你看到的动物吧～',
     // 胖虎导游
     guideChat: '胖虎导游', guideWelcome: '嗨！我是胖虎🐯，有什么关于动物的问题都可以问我哦～',
     guidePlaceholder: '问问胖虎关于动物的事...', guideNoReply: '胖虎想了想，不知道该怎么回答呢～',
@@ -1765,6 +1773,10 @@ export const enUS = {
     encAdoptedTip: 'This buddy is already on your planet.', encAdoptSuccess: '{name} has arrived on your planet!',
     encAdoptFailed: 'Adoption failed, please try again later.', encNoPetConfigured: 'No adoptable buddy is configured for this animal yet.',
     encAlreadyOwned: 'You already have {name} — switched to it for you.',
+    encCameraTitle: '📸 Photo Identify', encCameraCapture: 'Take Photo', encCameraUpload: 'From Gallery', encCameraRetake: 'Retake', encCameraUse: 'Use Photo', encCameraAnalyzing: '🔍 Identifying animal…', encCameraNoMatch: 'No matching animal found. Try a clearer photo?', encCameraMatchFound: 'Found {name}! Opening encyclopedia…', encCameraPermission: 'Camera permission is needed for photo identification～', encCameraNoCamera: 'Your device does not support camera',
+    encTaskTitle: '🎯 Tasks', encTaskPhotoAnimal: '📸 Take a photo of the animal', encTaskPhotoDone: '📸 Photo taken ✓', encTaskRecord: '🎤 Record the animal sound', encTaskRecordDone: '🎤 Recorded ✓', encTaskRecordListening: '🔴 Recording… tap to stop', encTaskDraw: '✍️ Draw the animal', encTaskDrawDone: '✍️ Drawn ✓', encTaskNote: '📝 Write an observation note', encTaskNoteDone: '📝 Noted ✓', encTaskNotePlaceholder: 'Write your observation…', encTaskComplete: 'Tasks done! You now know {name} 🎉', encTaskIncomplete: 'Keep going — some tasks are not finished yet!',
+    encRecordStart: '🎤 Start Recording', encRecordStop: '⏹️ Stop Recording', encRecordPlaying: '▶️ Play Recording', encRecordNoSupport: 'Your device does not support audio recording',
+    encDrawClear: 'Clear', encDrawDone: 'Done', encDrawHint: 'Use your finger to draw the animal～',
     guideChat: 'Guide Tiger', guideWelcome: 'Hi! I\'m Guide Tiger 🐯, ask me anything about animals～',
     guidePlaceholder: 'Ask Guide Tiger about animals...', guideNoReply: 'Guide Tiger is thinking hard but doesn\'t know how to answer～',
     guideError: 'Guide Tiger got distracted: {error}',

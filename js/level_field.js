@@ -146,6 +146,80 @@ const ZOO_ANIMAL_FIELD_MAP = {
     penguin: '5',            // 企鹅冰湾
 };
 
+// ---------- 动物园宠物自主走动 ----------
+// 每只 zoo pet 在 field 上周期性走动到新的随机位置（限制在地图中部区域）
+const ZOO_WALK_INTERVAL_MS = 7000;          // 每次走动的间隔
+const ZOO_WALK_TRANSITION_MS = 5500;         // CSS transition 时长
+const ZOO_WALK_MID_X_MIN = 0.30;             // 中部区域 X 范围
+const ZOO_WALK_MID_X_MAX = 0.70;
+const ZOO_WALK_MID_Y_MIN = 0.54;             // 中部区域 Y 范围（偏下）
+const ZOO_WALK_MID_Y_MAX = 0.70;
+let zooWalkTimer = null;                     // setInterval id
+let zooWalkPetIds = [];                      // 当前正在走动的 zoo pet ids
+
+function stopZooPetWalking() {
+    if (zooWalkTimer) { clearInterval(zooWalkTimer); zooWalkTimer = null; }
+    // 清理 CSS class
+    zooWalkPetIds.forEach(id => {
+        const el = document.querySelector(`.field-pet[data-field-pet="${id}"]`);
+        if (el) {
+            el.classList.remove('field-pet-zoo-walking');
+            el.style.transition = '';
+            const wanderEl = el.querySelector('.field-pet-wander');
+            if (wanderEl) wanderEl.style.animation = '';
+        }
+    });
+    zooWalkPetIds = [];
+}
+
+export { stopZooPetWalking };
+
+function startZooPetWalking() {
+    stopZooPetWalking();
+    const planetId = String(state.settings?.starSettlement?.planetId || '').trim();
+    if (planetId !== 'shenzhen_zoo') return;
+    const fieldId = state.currentField;
+    // 找出当前场地上所有 zoo 宠物
+    const zooPets = (state.petOrder || []).filter(id => {
+        const pet = state.pets[id];
+        if (!pet) return false;
+        if (String(pet.adoptedFromZoo || '').trim() !== 'shenzhen_zoo') return false;
+        return canPetAppearInField(pet, fieldId);
+    });
+    zooWalkPetIds = zooPets;
+    if (!zooWalkPetIds.length) return;
+
+    // 为每个 zoo pet 的 DOM 元素设置 CSS transition，实现平滑走动
+    zooWalkPetIds.forEach(id => {
+        const el = document.querySelector(`.field-pet[data-field-pet="${id}"]`);
+        if (el) {
+            el.classList.add('field-pet-zoo-walking');
+            el.style.transition = `left ${ZOO_WALK_TRANSITION_MS}ms ease-in-out, top ${ZOO_WALK_TRANSITION_MS}ms ease-in-out`;
+            // 停止原有 CSS wander 动画，改由 JS 驱动位置
+            const wanderEl = el.querySelector('.field-pet-wander');
+            if (wanderEl) wanderEl.style.animation = 'none';
+        }
+    });
+
+    // 周期性更新位置
+    const tickWalk = () => {
+        zooWalkPetIds.forEach(id => {
+            const el = document.querySelector(`.field-pet[data-field-pet="${id}"]`);
+            if (!el) return;
+            const x = ZOO_WALK_MID_X_MIN + Math.random() * (ZOO_WALK_MID_X_MAX - ZOO_WALK_MID_X_MIN);
+            const y = ZOO_WALK_MID_Y_MIN + Math.random() * (ZOO_WALK_MID_Y_MAX - ZOO_WALK_MID_Y_MIN);
+            el.style.left = (x * 100).toFixed(2) + '%';
+            el.style.top = (y * 100).toFixed(2) + '%';
+            // z-index 随 y 深度变化
+            el.style.zIndex = String(16 + Math.round(y * 18));
+        });
+    };
+
+    // 首次立即走一步（分散初始位置）
+    tickWalk();
+    zooWalkTimer = setInterval(tickWalk, ZOO_WALK_INTERVAL_MS);
+}
+
 function autoSelectZooFieldPet(_fieldId) {
     // 深圳动物园：始终确保自己的宠物是当前宠物
     // 领养动物在自己的园区中自然出现（通过 canPetAppearInField 映射）
@@ -2472,6 +2546,12 @@ export const fieldLevel = {
                     ctx.onPetTouch?.(petEl, clickedPet);
                     playPetClickFeedback(petEl, clickedPet);
                 }
+                // 动物园领养宠物：点击选中，可放大进入互动界面
+                else if (clickedPet.adoptedFromZoo) {
+                    setCurrentPet(clickedPet.id);
+                    showToast(`已选中 ${displayPetName(clickedPet)}，放大即可互动～`, 'success', 2000);
+                    playPetClickFeedback(petEl, clickedPet);
+                }
                 else showFieldPetTalk(petEl, clickedPet);
             };
         });
@@ -2489,6 +2569,8 @@ export const fieldLevel = {
             scheduleCenterFieldPet(pet);
         }
         requestAnimationFrame(() => showCaretakerFieldNotice(pet));
+        // 深圳动物园：启动园区宠物自主走动
+        startZooPetWalking();
     },
 
     dockHtml(pet) {
