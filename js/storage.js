@@ -1661,8 +1661,8 @@ export async function saveEncyclopediaProgress(planetId = '', animalId = '', pat
     const progress = normalizeEncyclopediaProgress(data);
     const prev = progress.animals[id] || { learned: false, learnedAt: 0, adopted: false, adoptedAt: 0 };
     const next = { ...prev };
-    if (patch.learned && !prev.learned) { next.learned = true; next.learnedAt = Date.now(); }
-    if (patch.adopted && !prev.adopted) { next.adopted = true; next.adoptedAt = Date.now(); }
+    if ('learned' in patch) { next.learned = !!patch.learned; if (patch.learned) next.learnedAt = Date.now(); }
+    if ('adopted' in patch) { next.adopted = !!patch.adopted; if (patch.adopted) next.adoptedAt = Date.now(); }
     progress.animals[id] = next;
     await saveJSONNow(path, progress);
     return progress;

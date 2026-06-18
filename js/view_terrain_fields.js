@@ -115,6 +115,24 @@ export function getTerrainFieldSlots({ includeEmpty = false } = {}) {
     const rawSlots = Array.isArray(settings.slots) ? settings.slots : [];
     const hasSavedCollectedSlot = rawSlots.some(rawSlotHasCollectedType);
     const slots = TERRAIN_FIELD_SLOT_DEFS.map((def, index) => normalizedSlot(rawSlotForIndex(rawSlots, index), index, !hasSavedCollectedSlot && index === 0));
+    // 首次进入无任何保存数据时，自动初始化基础地形（陆地/水域/天空）
+    const populatedCount = slots.filter(s => s.typeId).length;
+    if (!hasSavedCollectedSlot && !rawSlots.length && populatedCount < baseTerrainTypes().length) {
+        const baseTypes = baseTerrainTypes();
+        TERRAIN_FIELD_SLOT_DEFS.forEach((def, index) => {
+            if (index < baseTypes.length) {
+                slots[index] = {
+                    ...slots[index],
+                    typeId: baseTypes[index].id,
+                    fieldId: baseTypes[index].id,
+                    name: baseTypes[index].name || def.label,
+                };
+            }
+        });
+        // 持久化初始槽位，避免下次进入又只剩一个
+        settings.slots = slots.map(s => ({ index: s.index, typeId: s.typeId, name: s.name }));
+        saveTerrainFieldsDebounced(settings);
+    }
     return includeEmpty ? slots : slots.filter(slot => slot.typeId);
 }
 

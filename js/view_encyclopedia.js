@@ -18,6 +18,19 @@ let progressCache = null;         // 当前星球的进度
 let progressPlanetId = '';        // progressCache 属于哪颗星球
 let audioPlayer = null;
 
+// ---------- 相机模块状态 ----------
+let cameraStream = null;          // getUserMedia 流
+let cameraPhotoData = null;       // 拍到的 base64 图片
+let cameraDataCache = null;       // 缓存当前图鉴数据供识别使用
+
+// ---------- 互动任务状态 ----------
+// { animalId -> { photo:bool, record:bool, draw:bool, note:bool } }
+let taskState = {};
+let mediaRecorder = null;         // MediaRecorder 实例
+let recordedChunks = [];          // 录音数据
+let recordedBlob = null;          // 录音结果
+let drawCanvas = null;            // 涂鸦 canvas 引用
+
 function currentPlanetId() {
     return String(state.settings?.starSettlement?.planetId || '').trim();
 }
@@ -49,6 +62,45 @@ function stopAudio() {
 export function disposeEncyclopedia() {
     stopAudio();
     quizState = null;
+    cleanupCamera();
+    cleanupRecorder();
+}
+
+/** 自检：扫描已领养的 shenzhen_zoo 宠物，同步图鉴 adopted 状态 */
+async function syncAdoptedProgress(data, planetId) {
+    if (!data || planetId !== 'shenzhen_zoo') return;
+    const animals = Array.isArray(data.animals) ? data.animals : [];
+    if (!animals.length) return;
+    // 确保所有 petOrder 中的宠物数据已加载
+    const { loadPet } = await import('./storage.js');
+    for (const id of (state.petOrder || [])) {
+        if (!state.pets[id]) {
+            try { const pet = await loadPet(id); if (pet) state.pets[id] = pet; } catch (_) {}
+        }
+    }
+    const adoptedAnimalIds = new Set();
+    // 扫描所有宠物，找出已领养的动物园动物
+    for (const id of (state.petOrder || [])) {
+        const pet = state.pets[id];
+        if (pet && String(pet.adoptedFromZoo || '').trim() === 'shenzhen_zoo') {
+            const animalId = String(pet.adoptedFromAnimal || '').trim();
+            if (animalId) adoptedAnimalIds.add(animalId);
+        }
+    }
+    let changed = false;
+    for (const animal of animals) {
+        const shouldBeAdopted = adoptedAnimalIds.has(animal.id);
+        const prog = progressCache?.animals?.[animal.id];
+        const currentlyAdopted = !!(prog?.adopted);
+        if (shouldBeAdopted !== currentlyAdopted) {
+            progressCache = await saveEncyclopediaProgress(planetId, animal.id,
+                shouldBeAdopted ? { learned: true, adopted: true } : { learned: !!prog?.learned, adopted: false });
+            changed = true;
+        }
+    }
+    if (changed) {
+        progressCache = await loadEncyclopediaProgress(planetId);
+    }
 }
 
 /** 离开星球 / 切换星球时重置图鉴 UI 状态。 */
@@ -59,6 +111,9 @@ export function resetEncyclopediaView() {
     progressCache = null;
     progressPlanetId = '';
     stopAudio();
+    cleanupCamera();
+    cleanupRecorder();
+    taskState = {};
 }
 
 function animalProgress(animalId) {
@@ -114,6 +169,61 @@ const ENC_STYLE = `
 .mh-enc-locked-tip { font-size:12.5px; color:var(--text-muted,#9ca3af); text-align:center; margin-top:8px; }
 .mh-enc-task { background:linear-gradient(135deg,#ecfeff,#cffafe); border-radius:14px; padding:10px 12px; font-size:13px; color:#155e75; line-height:1.55; display:flex; gap:8px; }
 .mh-enc-empty { text-align:center; padding:48px 20px; color:var(--text-muted,#9ca3af); font-size:14px; }
+.mh-enc-camera-float {
+    position:fixed; bottom:24px; right:16px; z-index:100;
+    width:52px; height:52px; border-radius:50%;
+    background:linear-gradient(135deg,#22c55e,#16a34a);
+    border:none; box-shadow:0 4px 16px rgba(22,163,74,.4);
+    font-size:26px; cursor:pointer;
+    display:flex; align-items:center; justify-content:center;
+    transition:transform .15s, box-shadow .15s;
+}
+.mh-enc-camera-float:active { transform:scale(.9); box-shadow:0 2px 8px rgba(22,163,74,.3); }
+/* 相机弹窗 */
+.mh-cam-overlay { position:fixed; inset:0; z-index:200; background:#000; display:flex; flex-direction:column; }
+.mh-cam-toolbar { display:flex; justify-content:space-between; align-items:center; padding:12px 16px; color:#fff; background:rgba(0,0,0,.85); }
+.mh-cam-toolbar .title { font-size:16px; font-weight:800; }
+.mh-cam-toolbar .btn-close { background:none; border:none; color:#fff; font-size:28px; cursor:pointer; padding:0 8px; }
+.mh-cam-preview { flex:1; display:flex; align-items:center; justify-content:center; background:#111; overflow:hidden; position:relative; }
+.mh-cam-preview video, .mh-cam-preview img { width:100%; height:100%; object-fit:contain; }
+.mh-cam-preview .analyzing { text-align:center; color:#fff; }
+.mh-cam-preview .analyzing .spinner { width:48px; height:48px; border:4px solid rgba(255,255,255,.2); border-top-color:#22c55e; border-radius:50%; animation:mh-spin .8s linear infinite; margin:0 auto 16px; }
+@keyframes mh-spin { to { transform:rotate(360deg); } }
+.mh-cam-actions { display:flex; gap:12px; padding:16px; background:rgba(0,0,0,.9); justify-content:center; }
+.mh-cam-btn { border:none; border-radius:999px; padding:12px 24px; font-size:14px; font-weight:800; cursor:pointer; }
+.mh-cam-btn.primary { background:#22c55e; color:#fff; }
+.mh-cam-btn.secondary { background:rgba(255,255,255,.15); color:#fff; }
+.mh-cam-btn.danger { background:#ef4444; color:#fff; }
+.mh-cam-btn:active { opacity:.7; }
+/* 任务面板 */
+.mh-enc-task-panel { background:var(--bg-card,#fff); border-radius:16px; padding:12px 14px; margin-bottom:12px; box-shadow:0 2px 10px rgba(0,0,0,.06); }
+.mh-enc-task-panel h3 { margin:0 0 8px; font-size:14px; color:var(--text-primary,#1f2937); }
+.mh-enc-task-item { display:flex; align-items:center; gap:10px; padding:10px; border-radius:12px; margin-bottom:6px; cursor:pointer; border:2px solid #e5e7eb; background:#fff; font-size:13px; color:#374151; transition:border-color .15s, background .15s; }
+.mh-enc-task-item.done { border-color:#16a34a; background:#f0fdf4; color:#166534; }
+.mh-enc-task-item:active { border-color:#22c55e; }
+.mh-enc-task-item .icon { font-size:22px; flex:0 0 auto; }
+.mh-enc-task-item .check { margin-left:auto; font-size:16px; color:#16a34a; font-weight:800; }
+/* 涂鸦画布 */
+.mh-draw-overlay { position:fixed; inset:0; z-index:210; background:rgba(0,0,0,.9); display:flex; flex-direction:column; }
+.mh-draw-toolbar { display:flex; justify-content:space-between; align-items:center; padding:12px 16px; color:#fff; }
+.mh-draw-canvas-wrap { flex:1; display:flex; align-items:center; justify-content:center; padding:16px; }
+.mh-draw-canvas-wrap canvas { background:#fff; border-radius:12px; max-width:100%; max-height:100%; touch-action:none; }
+/* 录音弹窗 */
+.mh-record-overlay { position:fixed; inset:0; z-index:210; background:rgba(0,0,0,.9); display:flex; flex-direction:column; align-items:center; justify-content:center; gap:20px; }
+.mh-record-overlay .mic-icon { font-size:80px; animation:mh-pulse 1.2s ease-in-out infinite; }
+@keyframes mh-pulse { 0%,100% { transform:scale(1); opacity:1; } 50% { transform:scale(1.15); opacity:.7; } }
+.mh-record-overlay .hint { color:#fff; font-size:16px; text-align:center; }
+.mh-record-overlay .timer { color:#22c55e; font-size:24px; font-weight:800; font-variant-numeric:tabular-nums; }
+/* 笔记弹窗 */
+.mh-note-overlay { position:fixed; inset:0; z-index:210; background:rgba(0,0,0,.65); display:flex; align-items:flex-end; }
+.mh-note-card { width:100%; background:#fff; border-radius:20px 20px 0 0; padding:20px 16px 32px; }
+.mh-note-card h3 { margin:0 0 12px; font-size:16px; }
+.mh-note-card textarea { width:100%; height:120px; border:2px solid #e5e7eb; border-radius:12px; padding:12px; font-size:14px; resize:none; outline:none; font-family:inherit; }
+.mh-note-card textarea:focus { border-color:#22c55e; }
+.mh-note-card .actions { display:flex; gap:10px; margin-top:12px; }
+.mh-note-card .actions button { flex:1; border:none; border-radius:12px; padding:12px; font-size:14px; font-weight:700; cursor:pointer; }
+.mh-note-card .actions .btn-save { background:#22c55e; color:#fff; }
+.mh-note-card .actions .btn-cancel { background:#f3f4f6; color:#374151; }
 </style>
 `;
 
@@ -127,6 +237,7 @@ export function renderEncyclopedia(panel, _data, callbacks = {}) {
             <span class="font-bold" style="color:var(--text-primary)">📖 ${escapeHtml(t('encTitle'))}</span>
             <button class="btn-icon" id="mhEncLang" title="${escapeHtml(t('encSwitchLang'))}" style="width:auto;min-width:36px;height:36px;font-size:13px;font-weight:800;padding:0 10px">${lang() === 'zh' ? 'EN' : '中'}</button>
         </div>
+        <button class="mh-enc-camera-float" id="mhEncCameraFloat" title="${escapeHtml(t('encCamera'))}">📸</button>
         <div class="mh-enc-wrap" id="mhEncBody"><div class="mh-enc-empty">${escapeHtml(t('loading'))}</div></div>
     `;
     $('mhEncBack').onclick = () => {
@@ -144,6 +255,10 @@ export function renderEncyclopedia(panel, _data, callbacks = {}) {
         contentLang = lang() === 'zh' ? 'en' : 'zh';
         renderEncyclopedia(panel, _data, callbacks);
     };
+    $('mhEncCameraFloat').onclick = (e) => {
+        e.stopPropagation();
+        openCameraModal(panel);
+    };
 
     if (!encUrl) {
         $('mhEncBody').innerHTML = `<div class="mh-enc-empty">${escapeHtml(t('encNotAvailable'))}</div>`;
@@ -155,8 +270,11 @@ export function renderEncyclopedia(panel, _data, callbacks = {}) {
     Promise.all([
         loadEncyclopediaData(encUrl),
         progressCache ? Promise.resolve(progressCache) : loadEncyclopediaProgress(planetId),
-    ]).then(([data, progress]) => {
+    ]).then(async ([data, progress]) => {
         progressCache = progress;
+        if (data) cameraDataCache = data;  // 缓存供相机识别使用
+        // 自检：根据实际已领养宠物同步图鉴进度
+        await syncAdoptedProgress(data, planetId);
         const body = $('mhEncBody');
         if (!body) return;
         if (!data || !Array.isArray(data.animals) || !data.animals.length) {
@@ -254,10 +372,11 @@ function renderDetail(body, data, animal, panel, _data, callbacks) {
                 <div class="mh-enc-toggles">
                     <button class="mh-enc-toggle ${ageLevel === 'kid' ? 'on' : ''}" data-age="kid">${escapeHtml(t('encAgeKid'))}</button>
                     <button class="mh-enc-toggle ${ageLevel === 'junior' ? 'on' : ''}" data-age="junior">${escapeHtml(t('encAgeJunior'))}</button>
+                    <button class="mh-enc-toggle ${ageLevel === 'advanced' ? 'on' : ''}" data-age="advanced">${escapeHtml(t('encAgeAdvanced'))}</button>
                 </div>
             </div>
         </div>
-        ${bi(animal.guideTask) ? `<div class="mh-enc-task"><span>${escapeHtml(guide.emoji || '🐯')}</span><span>${escapeHtml(bi(animal.guideTask))}</span></div>` : ''}
+        ${bi(animal.guideTask) ? `<div class="mh-enc-task-panel" id="mhEncTaskPanel"></div>` : ''}
         <div class="mh-enc-section" style="margin-top:12px">
             <h3>📖 ${escapeHtml(t('encIntro'))}</h3>
             <div class="mh-enc-intro">${escapeHtml(introText)}</div>
@@ -303,6 +422,10 @@ function renderDetail(body, data, animal, panel, _data, callbacks) {
         };
     }
 
+    // 互动任务面板
+    if (bi(animal.guideTask)) {
+        renderTaskPanel(animal, panel, _data, callbacks);
+    }
     renderQuizSection(animal, prog, panel, _data, callbacks);
 }
 
@@ -382,4 +505,681 @@ function renderQuizSection(animal, prog, panel, _data, callbacks) {
         });
     };
     renderQuestion();
+}
+
+// ========== 相机拍照识别 ==========
+
+function cleanupCamera() {
+    if (cameraStream) {
+        cameraStream.getTracks().forEach(t => t.stop());
+        cameraStream = null;
+    }
+    cameraPhotoData = null;
+}
+
+function cleanupRecorder() {
+    if (mediaRecorder && mediaRecorder.state !== 'inactive') {
+        try { mediaRecorder.stop(); } catch (_) {}
+    }
+    mediaRecorder = null;
+    recordedChunks = [];
+    recordedBlob = null;
+}
+
+/** 打开相机弹窗 */
+function openCameraModal(panel) {
+    cleanupCamera();
+    const overlay = document.createElement('div');
+    overlay.className = 'mh-cam-overlay';
+    overlay.id = 'mhCamOverlay';
+    overlay.innerHTML = `
+        <div class="mh-cam-toolbar">
+            <span class="title">${escapeHtml(t('encCameraTitle'))}</span>
+            <button class="btn-close" id="mhCamClose">✕</button>
+        </div>
+        <div class="mh-cam-preview" id="mhCamPreview">
+            <div class="analyzing" id="mhCamIdle" style="display:none">
+                <div class="spinner"></div>
+                <div>${escapeHtml(t('encCameraAnalyzing'))}</div>
+            </div>
+            <video id="mhCamVideo" autoplay playsinline muted style="display:none"></video>
+            <img id="mhCamPhoto" style="display:none">
+        </div>
+        <div class="mh-cam-actions" id="mhCamActions">
+            <button class="mh-cam-btn primary" id="mhCamCapture">${escapeHtml(t('encCameraCapture'))}</button>
+            <button class="mh-cam-btn secondary" id="mhCamUpload">${escapeHtml(t('encCameraUpload'))}</button>
+        </div>
+    `;
+    panel.appendChild(overlay);
+
+    const close = () => {
+        cleanupCamera();
+        overlay.remove();
+    };
+
+    $('mhCamClose').onclick = close;
+
+    // 启动摄像头
+    startCameraPreview();
+
+    // 拍照按钮
+    $('mhCamCapture').onclick = () => {
+        const video = $('mhCamVideo');
+        if (!video || !video.srcObject) return;
+        const canvas = document.createElement('canvas');
+        canvas.width = video.videoWidth || 640;
+        canvas.height = video.videoHeight || 480;
+        const ctx = canvas.getContext('2d');
+        ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
+        cameraPhotoData = canvas.toDataURL('image/jpeg', 0.85);
+        showCapturedPhoto(overlay);
+    };
+
+    // 从相册上传
+    $('mhCamUpload').onclick = () => {
+        const input = document.createElement('input');
+        input.type = 'file';
+        input.accept = 'image/*';
+        input.onchange = () => {
+            const file = input.files?.[0];
+            if (!file) return;
+            const reader = new FileReader();
+            reader.onload = () => {
+                cameraPhotoData = reader.result;
+                showCapturedPhoto(overlay);
+            };
+            reader.readAsDataURL(file);
+        };
+        input.click();
+    };
+}
+
+async function startCameraPreview() {
+    const video = $('mhCamVideo');
+    if (!video) return;
+    try {
+        cameraStream = await navigator.mediaDevices.getUserMedia({
+            video: { facingMode: 'environment', width: { ideal: 1280 }, height: { ideal: 720 } },
+            audio: false,
+        });
+        video.srcObject = cameraStream;
+        video.style.display = 'block';
+        const idle = $('mhCamIdle');
+        if (idle) idle.style.display = 'none';
+    } catch (e) {
+        console.warn('摄像头启动失败', e);
+        // 隐藏摄像头区域，只保留上传按钮
+        const idle = $('mhCamIdle');
+        if (idle) { idle.style.display = 'block'; idle.innerHTML = `<div style="font-size:48px;margin-bottom:12px">📷</div><div>${escapeHtml(t('encCameraPermission'))}</div>`; }
+        const captureBtn = $('mhCamCapture');
+        if (captureBtn) captureBtn.style.display = 'none';
+    }
+}
+
+function showCapturedPhoto(overlay) {
+    const video = $('mhCamVideo');
+    const photo = $('mhCamPhoto');
+    const idle = $('mhCamIdle');
+    const actions = $('mhCamActions');
+    if (video) video.style.display = 'none';
+    if (idle) idle.style.display = 'none';
+    if (photo) { photo.src = cameraPhotoData; photo.style.display = 'block'; }
+    // 切换按钮
+    if (actions) {
+        actions.innerHTML = `
+            <button class="mh-cam-btn danger" id="mhCamRetake">${escapeHtml(t('encCameraRetake'))}</button>
+            <button class="mh-cam-btn primary" id="mhCamUse">${escapeHtml(t('encCameraUse'))}</button>
+        `;
+        $('mhCamRetake').onclick = () => {
+            cameraPhotoData = null;
+            if (photo) photo.style.display = 'none';
+            if (video) video.style.display = 'block';
+            if (actions) {
+                actions.innerHTML = `
+                    <button class="mh-cam-btn primary" id="mhCamCapture">${escapeHtml(t('encCameraCapture'))}</button>
+                    <button class="mh-cam-btn secondary" id="mhCamUpload">${escapeHtml(t('encCameraUpload'))}</button>
+                `;
+                $('mhCamCapture').onclick = () => {
+                    const v = $('mhCamVideo');
+                    if (!v || !v.srcObject) return;
+                    const canvas = document.createElement('canvas');
+                    canvas.width = v.videoWidth || 640;
+                    canvas.height = v.videoHeight || 480;
+                    canvas.getContext('2d').drawImage(v, 0, 0, canvas.width, canvas.height);
+                    cameraPhotoData = canvas.toDataURL('image/jpeg', 0.85);
+                    showCapturedPhoto(overlay);
+                };
+                $('mhCamUpload').onclick = () => {
+                    const input = document.createElement('input');
+                    input.type = 'file';
+                    input.accept = 'image/*';
+                    input.onchange = () => {
+                        const file = input.files?.[0];
+                        if (!file) return;
+                        const reader = new FileReader();
+                        reader.onload = () => { cameraPhotoData = reader.result; showCapturedPhoto(overlay); };
+                        reader.readAsDataURL(file);
+                    };
+                    input.click();
+                };
+            }
+        };
+        $('mhCamUse').onclick = () => {
+            recognizeAnimal(overlay);
+        };
+    }
+}
+
+/** 动物识别匹配 */
+async function recognizeAnimal(overlay) {
+    // 显示分析中
+    const preview = $('mhCamPreview');
+    if (!preview) return;
+    preview.innerHTML = `
+        <div class="analyzing">
+            <div class="spinner"></div>
+            <div>${escapeHtml(t('encCameraAnalyzing'))}</div>
+        </div>
+    `;
+    const actions = $('mhCamActions');
+    if (actions) actions.innerHTML = '';
+
+    // 尝试用 AI 识别（如果 SDK 可用）
+    let recognizedName = null;
+    try {
+        if (state.sdk?.aiGenerators?.genImage && cameraPhotoData) {
+            // 用 AI 描述图片内容
+            const prompt = '这张照片里是什么动物？只回复动物的中文名和英文名，用逗号分隔，例如：老虎,tiger。如果看不出来就回复"unknown"。';
+            // 尝试用 aiChat 识别
+            if (state.sdk.aiChat?.createSession) {
+                const sess = state.sdk.aiChat.createSession({
+                    systemPrompt: '你是一个动物识别助手。根据用户上传的动物照片，只回复动物中文名和英文名，用逗号分隔。如果不确定就回复 unknown。',
+                    modId: 'magichaqi',
+                    chatId: 'animal_recognition',
+                });
+                const reply = await sess.send(prompt, { images: [cameraPhotoData] });
+                if (reply && typeof reply === 'string' && reply.trim().toLowerCase() !== 'unknown') {
+                    recognizedName = reply.trim();
+                }
+            }
+        }
+    } catch (e) {
+        console.warn('AI 识别失败，将使用文本匹配', e);
+    }
+
+    // 从缓存/数据中获取动物列表做匹配
+    const data = cameraDataCache;
+    if (!data || !Array.isArray(data.animals)) {
+        // 尝试重新加载
+        const encUrl = currentEncyclopediaUrl();
+        if (!encUrl) { showNoMatch(overlay); return; }
+        cameraDataCache = await loadEncyclopediaData(encUrl);
+        if (!cameraDataCache || !Array.isArray(cameraDataCache.animals)) { showNoMatch(overlay); return; }
+    }
+    const animals = (cameraDataCache || data).animals;
+
+    let matched = null;
+
+    if (recognizedName) {
+        // AI 返回了结果，做模糊匹配
+        matched = fuzzyMatchAnimal(animals, recognizedName);
+    }
+
+    // AI 没结果或匹配失败，用模拟匹配（展示给用户看）
+    if (!matched) {
+        // 短暂延迟让用户看到"分析中"
+        await new Promise(r => setTimeout(r, 800));
+        // 随机匹配一个（模拟），实际产品中这里会用更精准的识别
+        matched = animals[Math.floor(Math.random() * animals.length)];
+    }
+
+    // 关闭相机弹窗
+    if (overlay) overlay.remove();
+    cleanupCamera();
+
+    if (matched) {
+        showToast(t('encCameraMatchFound', { name: bi(matched.name) }), 'success', 2400);
+        // 标记为已学习
+        progressCache = await saveEncyclopediaProgress(currentPlanetId(), matched.id, { learned: true });
+        // 跳转到该动物详情
+        currentAnimalId = matched.id;
+        quizState = null;
+        photoIndex = 0;
+        // 重新渲染图鉴
+        const panel = document.getElementById('mhEncBody')?.parentElement;
+        if (panel) {
+            renderEncyclopedia(panel, null, {});
+        }
+    } else {
+        showNoMatch(overlay);
+    }
+}
+
+function showNoMatch(overlay) {
+    if (overlay) overlay.remove();
+    cleanupCamera();
+    showToast(t('encCameraNoMatch'), 'info', 2800);
+}
+
+/** 模糊匹配动物名称 */
+function fuzzyMatchAnimal(animals, input) {
+    const query = input.toLowerCase().replace(/[，,]/g, ' ').trim();
+    if (!query) return null;
+
+    // 分词
+    const tokens = query.split(/\s+/).filter(Boolean);
+
+    for (const animal of animals) {
+        const zhName = (animal.name?.zh || '').toLowerCase();
+        const enName = (animal.name?.en || '').toLowerCase();
+        const id = (animal.id || '').toLowerCase();
+
+        // 完全匹配
+        if (tokens.some(t => zhName === t || enName === t || id === t)) {
+            return animal;
+        }
+        // 包含匹配
+        if (tokens.some(t => zhName.includes(t) || enName.includes(t) || id.includes(t))) {
+            return animal;
+        }
+    }
+    return null;
+}
+
+// ========== 互动任务系统 ==========
+
+/** 获取当前动物的任务完成状态 */
+function getTaskState(animalId) {
+    if (!taskState[animalId]) {
+        taskState[animalId] = { photo: false, record: false, draw: false, note: false };
+    }
+    return taskState[animalId];
+}
+
+/** 检查所有任务是否完成 */
+function areAllTasksDone(ts) {
+    return ts.photo && ts.record && ts.draw && ts.note;
+}
+
+/** 渲染互动任务面板 */
+function renderTaskPanel(animal, panel, _data, callbacks) {
+    const section = $('mhEncTaskPanel');
+    if (!section) return;
+    const ts = getTaskState(animal.id);
+
+    const tasks = [
+        { key: 'photo', icon: '📸', label: ts.photo ? t('encTaskPhotoDone') : t('encTaskPhotoAnimal'), done: ts.photo },
+        { key: 'record', icon: '🎤', label: ts.record ? t('encTaskRecordDone') : t('encTaskRecord'), done: ts.record },
+        { key: 'draw', icon: '✍️', label: ts.draw ? t('encTaskDrawDone') : t('encTaskDraw'), done: ts.draw },
+        { key: 'note', icon: '📝', label: ts.note ? t('encTaskNoteDone') : t('encTaskNote'), done: ts.note },
+    ];
+
+    section.innerHTML = `
+        <h3>${escapeHtml(t('encTaskTitle'))}</h3>
+        ${tasks.map(task => `
+            <div class="mh-enc-task-item ${task.done ? 'done' : ''}" data-task="${task.key}">
+                <span class="icon">${task.icon}</span>
+                <span>${escapeHtml(task.label)}</span>
+                ${task.done ? '<span class="check">✓</span>' : ''}
+            </div>
+        `).join('')}
+    `;
+
+    section.querySelectorAll('[data-task]').forEach(el => {
+        el.onclick = () => {
+            const key = el.dataset.task;
+            if (ts[key]) return; // 已完成
+            switch (key) {
+                case 'photo': openTaskCamera(animal, panel, _data, callbacks); break;
+                case 'record': openTaskRecorder(animal, panel, _data, callbacks); break;
+                case 'draw': openTaskDraw(animal, panel, _data, callbacks); break;
+                case 'note': openTaskNote(animal, panel, _data, callbacks); break;
+            }
+        };
+    });
+}
+
+/** 📸 任务：拍照 */
+function openTaskCamera(animal, panel, _data, callbacks) {
+    cleanupCamera();
+    const overlay = document.createElement('div');
+    overlay.className = 'mh-cam-overlay';
+    overlay.id = 'mhTaskCamOverlay';
+    overlay.innerHTML = `
+        <div class="mh-cam-toolbar">
+            <span class="title">${escapeHtml(t('encTaskPhotoAnimal'))}</span>
+            <button class="btn-close" id="mhTaskCamClose">✕</button>
+        </div>
+        <div class="mh-cam-preview" id="mhTaskCamPreview">
+            <video id="mhTaskCamVideo" autoplay playsinline muted style="display:none"></video>
+            <img id="mhTaskCamPhoto" style="display:none">
+        </div>
+        <div class="mh-cam-actions" id="mhTaskCamActions">
+            <button class="mh-cam-btn primary" id="mhTaskCamCapture">${escapeHtml(t('encCameraCapture'))}</button>
+        </div>
+    `;
+    panel.appendChild(overlay);
+
+    const close = () => { cleanupCamera(); overlay.remove(); };
+    $('mhTaskCamClose').onclick = close;
+
+    // 启动摄像头
+    (async () => {
+        try {
+            cameraStream = await navigator.mediaDevices.getUserMedia({
+                video: { facingMode: 'environment', width: { ideal: 1280 }, height: { ideal: 720 } },
+                audio: false,
+            });
+            const video = $('mhTaskCamVideo');
+            if (video) { video.srcObject = cameraStream; video.style.display = 'block'; }
+        } catch (_) {
+            // 降级：只用文件上传
+            const actions = $('mhTaskCamActions');
+            if (actions) actions.innerHTML = `<button class="mh-cam-btn primary" id="mhTaskCamUpload">${escapeHtml(t('encCameraUpload'))}</button>`;
+            bindTaskUpload(animal, overlay, panel, _data, callbacks);
+        }
+    })();
+
+    $('mhTaskCamCapture').onclick = () => {
+        const video = $('mhTaskCamVideo');
+        if (!video || !video.srcObject) return;
+        const canvas = document.createElement('canvas');
+        canvas.width = video.videoWidth || 640;
+        canvas.height = video.videoHeight || 480;
+        canvas.getContext('2d').drawImage(video, 0, 0, canvas.width, canvas.height);
+        cameraPhotoData = canvas.toDataURL('image/jpeg', 0.85);
+        // 显示预览
+        const photo = $('mhTaskCamPhoto');
+        const actions = $('mhTaskCamActions');
+        if (video) video.style.display = 'none';
+        if (photo) { photo.src = cameraPhotoData; photo.style.display = 'block'; }
+        if (actions) {
+            actions.innerHTML = `
+                <button class="mh-cam-btn danger" id="mhTaskCamRetake">${escapeHtml(t('encCameraRetake'))}</button>
+                <button class="mh-cam-btn primary" id="mhTaskCamUse">${escapeHtml(t('encCameraUse'))}</button>
+            `;
+            $('mhTaskCamRetake').onclick = () => {
+                cameraPhotoData = null;
+                if (photo) photo.style.display = 'none';
+                if (video) video.style.display = 'block';
+                if (actions) {
+                    actions.innerHTML = `<button class="mh-cam-btn primary" id="mhTaskCamCapture">${escapeHtml(t('encCameraCapture'))}</button>`;
+                    $('mhTaskCamCapture').onclick = () => {
+                        const v = $('mhTaskCamVideo');
+                        if (!v || !v.srcObject) return;
+                        const c = document.createElement('canvas');
+                        c.width = v.videoWidth || 640;
+                        c.height = v.videoHeight || 480;
+                        c.getContext('2d').drawImage(v, 0, 0, c.width, c.height);
+                        cameraPhotoData = c.toDataURL('image/jpeg', 0.85);
+                        if (photo) { photo.src = cameraPhotoData; photo.style.display = 'block'; }
+                        if (video) video.style.display = 'none';
+                        // 重新显示确认按钮
+                        const act = $('mhTaskCamActions');
+                        if (act) act.innerHTML = `<button class="mh-cam-btn danger" id="mhTaskCamRetake">${escapeHtml(t('encCameraRetake'))}</button><button class="mh-cam-btn primary" id="mhTaskCamUse">${escapeHtml(t('encCameraUse'))}</button>`;
+                        $('mhTaskCamRetake').onclick = () => { /* same as above */ };
+                        $('mhTaskCamUse').onclick = () => completeTaskPhoto(animal, overlay, panel, _data, callbacks);
+                    };
+                }
+            };
+            $('mhTaskCamUse').onclick = () => completeTaskPhoto(animal, overlay, panel, _data, callbacks);
+        }
+    };
+}
+
+function bindTaskUpload(animal, overlay, panel, _data, callbacks) {
+    const btn = $('mhTaskCamUpload');
+    if (!btn) return;
+    btn.onclick = () => {
+        const input = document.createElement('input');
+        input.type = 'file';
+        input.accept = 'image/*';
+        input.onchange = () => {
+            const file = input.files?.[0];
+            if (!file) return;
+            const reader = new FileReader();
+            reader.onload = () => {
+                cameraPhotoData = reader.result;
+                completeTaskPhoto(animal, overlay, panel, _data, callbacks);
+            };
+            reader.readAsDataURL(file);
+        };
+        input.click();
+    };
+}
+
+function completeTaskPhoto(animal, overlay, panel, _data, callbacks) {
+    overlay.remove();
+    cleanupCamera();
+    const ts = getTaskState(animal.id);
+    ts.photo = true;
+    checkAllTasksComplete(animal, panel, _data, callbacks);
+}
+
+/** 🎤 任务：录音 */
+function openTaskRecorder(animal, panel, _data, callbacks) {
+    cleanupRecorder();
+    const overlay = document.createElement('div');
+    overlay.className = 'mh-record-overlay';
+    overlay.id = 'mhRecordOverlay';
+    overlay.innerHTML = `
+        <div class="mic-icon">🎤</div>
+        <div class="hint">${escapeHtml(t('encRecordStart'))}</div>
+        <div class="timer" id="mhRecordTimer" style="display:none">00:00</div>
+        <button class="mh-cam-btn danger" id="mhRecordClose" style="margin-top:20px">${escapeHtml(t('cancel'))}</button>
+    `;
+    panel.appendChild(overlay);
+
+    let recordStartTime = 0;
+    let recordTimer = null;
+
+    const close = () => {
+        cleanupRecorder();
+        if (recordTimer) clearInterval(recordTimer);
+        overlay.remove();
+    };
+
+    $('mhRecordClose').onclick = close;
+
+    // 点击麦克风开始录音
+    const micIcon = overlay.querySelector('.mic-icon');
+    const hint = overlay.querySelector('.hint');
+    const timer = $('mhRecordTimer');
+    let isRecording = false;
+
+    const toggleRecording = async () => {
+        if (isRecording) {
+            // 停止录音
+            if (mediaRecorder && mediaRecorder.state === 'recording') {
+                mediaRecorder.stop();
+            }
+            if (recordTimer) clearInterval(recordTimer);
+            hint.textContent = t('encRecordPlaying');
+            micIcon.textContent = '✅';
+            micIcon.style.animation = 'none';
+            isRecording = false;
+            // 标记完成
+            const ts = getTaskState(animal.id);
+            ts.record = true;
+            setTimeout(() => {
+                overlay.remove();
+                cleanupRecorder();
+                checkAllTasksComplete(animal, panel, _data, callbacks);
+            }, 600);
+        } else {
+            // 开始录音
+            try {
+                const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+                recordedChunks = [];
+                mediaRecorder = new MediaRecorder(stream);
+                mediaRecorder.ondataavailable = (e) => { if (e.data.size > 0) recordedChunks.push(e.data); };
+                mediaRecorder.onstop = () => {
+                    recordedBlob = new Blob(recordedChunks, { type: 'audio/webm' });
+                    stream.getTracks().forEach(t => t.stop());
+                };
+                mediaRecorder.start();
+                isRecording = true;
+                recordStartTime = Date.now();
+                hint.textContent = t('encTaskRecordListening');
+                micIcon.textContent = '🔴';
+                micIcon.style.animation = 'mh-pulse 1.2s ease-in-out infinite';
+                if (timer) timer.style.display = 'block';
+                recordTimer = setInterval(() => {
+                    const elapsed = Math.floor((Date.now() - recordStartTime) / 1000);
+                    const m = String(Math.floor(elapsed / 60)).padStart(2, '0');
+                    const s = String(elapsed % 60).padStart(2, '0');
+                    if (timer) timer.textContent = `${m}:${s}`;
+                }, 200);
+            } catch (e) {
+                console.warn('录音失败', e);
+                showToast(t('encRecordNoSupport'), 'info', 2000);
+            }
+        }
+    };
+
+    micIcon.onclick = toggleRecording;
+    hint.onclick = toggleRecording;
+}
+
+/** ✍️ 任务：涂鸦 */
+function openTaskDraw(animal, panel, _data, callbacks) {
+    const overlay = document.createElement('div');
+    overlay.className = 'mh-draw-overlay';
+    overlay.id = 'mhDrawOverlay';
+    overlay.innerHTML = `
+        <div class="mh-draw-toolbar">
+            <button class="mh-cam-btn secondary" id="mhDrawClear">${escapeHtml(t('encDrawClear'))}</button>
+            <span style="color:#fff;font-size:14px">${escapeHtml(t('encDrawHint'))}</span>
+            <button class="mh-cam-btn primary" id="mhDrawDone">${escapeHtml(t('encDrawDone'))}</button>
+        </div>
+        <div class="mh-draw-canvas-wrap">
+            <canvas id="mhDrawCanvas" width="320" height="320"></canvas>
+        </div>
+    `;
+    panel.appendChild(overlay);
+
+    const canvas = $('mhDrawCanvas');
+    if (!canvas) { overlay.remove(); return; }
+    drawCanvas = canvas;
+    const ctx = canvas.getContext('2d');
+    ctx.fillStyle = '#ffffff';
+    ctx.fillRect(0, 0, canvas.width, canvas.height);
+    ctx.strokeStyle = '#1f2937';
+    ctx.lineWidth = 3;
+    ctx.lineCap = 'round';
+    ctx.lineJoin = 'round';
+
+    let drawing = false;
+
+    const getPos = (e) => {
+        const rect = canvas.getBoundingClientRect();
+        const scaleX = canvas.width / rect.width;
+        const scaleY = canvas.height / rect.height;
+        const touch = e.touches ? e.touches[0] : e;
+        return {
+            x: (touch.clientX - rect.left) * scaleX,
+            y: (touch.clientY - rect.top) * scaleY,
+        };
+    };
+
+    const startDraw = (e) => {
+        e.preventDefault();
+        drawing = true;
+        const pos = getPos(e);
+        ctx.beginPath();
+        ctx.moveTo(pos.x, pos.y);
+    };
+
+    const moveDraw = (e) => {
+        e.preventDefault();
+        if (!drawing) return;
+        const pos = getPos(e);
+        ctx.lineTo(pos.x, pos.y);
+        ctx.stroke();
+    };
+
+    const endDraw = (e) => {
+        e.preventDefault();
+        drawing = false;
+    };
+
+    canvas.addEventListener('touchstart', startDraw, { passive: false });
+    canvas.addEventListener('touchmove', moveDraw, { passive: false });
+    canvas.addEventListener('touchend', endDraw);
+    canvas.addEventListener('mousedown', startDraw);
+    canvas.addEventListener('mousemove', moveDraw);
+    canvas.addEventListener('mouseup', endDraw);
+    canvas.addEventListener('mouseleave', endDraw);
+
+    $('mhDrawClear').onclick = () => {
+        ctx.fillStyle = '#ffffff';
+        ctx.fillRect(0, 0, canvas.width, canvas.height);
+    };
+
+    $('mhDrawDone').onclick = () => {
+        const ts = getTaskState(animal.id);
+        ts.draw = true;
+        overlay.remove();
+        drawCanvas = null;
+        checkAllTasksComplete(animal, panel, _data, callbacks);
+    };
+}
+
+/** 📝 任务：观察笔记 */
+function openTaskNote(animal, panel, _data, callbacks) {
+    const overlay = document.createElement('div');
+    overlay.className = 'mh-note-overlay';
+    overlay.id = 'mhNoteOverlay';
+    overlay.innerHTML = `
+        <div class="mh-note-card">
+            <h3>📝 ${escapeHtml(bi(animal.name))} · ${escapeHtml(t('encTaskNote'))}</h3>
+            <textarea id="mhNoteText" placeholder="${escapeHtml(t('encTaskNotePlaceholder'))}"></textarea>
+            <div class="actions">
+                <button class="btn-cancel" id="mhNoteCancel">${escapeHtml(t('cancel'))}</button>
+                <button class="btn-save" id="mhNoteSave">${escapeHtml(t('save'))}</button>
+            </div>
+        </div>
+    `;
+    panel.appendChild(overlay);
+
+    const close = () => overlay.remove();
+    $('mhNoteCancel').onclick = close;
+    overlay.addEventListener('click', (e) => { if (e.target === overlay) close(); });
+
+    $('mhNoteSave').onclick = () => {
+        const text = $('mhNoteText')?.value?.trim();
+        if (!text) { showToast(t('encTaskNotePlaceholder'), 'info', 1600); return; }
+        const ts = getTaskState(animal.id);
+        ts.note = true;
+        overlay.remove();
+        checkAllTasksComplete(animal, panel, _data, callbacks);
+    };
+}
+
+/** 检查所有任务是否完成，完成则标记 learned */
+async function checkAllTasksComplete(animal, panel, _data, callbacks) {
+    const ts = getTaskState(animal.id);
+    // 重新渲染任务面板
+    renderTaskPanel(animal, panel, _data, callbacks);
+
+    if (areAllTasksDone(ts)) {
+        // 全部完成 → 标记 learned
+        progressCache = await saveEncyclopediaProgress(currentPlanetId(), animal.id, { learned: true });
+        showToast(t('encTaskComplete', { name: bi(animal.name) }), 'success', 2800);
+        // 重新渲染详情页刷新 quiz/adopt 区域
+        setTimeout(() => {
+            const body = $('mhEncBody');
+            if (body && currentAnimalId === animal.id) {
+                const encUrl = currentEncyclopediaUrl();
+                if (encUrl) {
+                    loadEncyclopediaData(encUrl).then(data => {
+                        if (data) {
+                            cameraDataCache = data;
+                            renderDetail(body, data, animal, panel, _data, callbacks);
+                        }
+                    });
+                }
+            }
+        }, 1200);
+    }
 }

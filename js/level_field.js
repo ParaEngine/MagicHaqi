@@ -3,7 +3,7 @@
 import { $, $$, coinIconSvg, dockDisabledAttrs, escapeHtml, isDockButtonDisabled, renderVisualAsset, setDockButtonDisabled, showDockDisabledToast, showToast } from './utils.js';
 import { itemName, t, localizeFieldName } from './i18n.js';
 import { canPlaceItemInArea, CONFIG, DECO_VISUALS, findLargestHouseInLayout, getPlacedItemZOrder, getPlanetMiningCoins, getPlanetMiningConfig, getPlanetMiningVisualCoinCount, getShopItemById, isHouseItem, recordPlanetMiningFieldCollected, SHOP_ITEMS } from './config.js';
-import { getActivePlanetWeather, isVisitingMode, notify, state, setCurrentField } from './state.js';
+import { getActivePlanetWeather, isVisitingMode, notify, state, setCurrentField, setCurrentPet } from './state.js';
 import { getLayout, saveFieldScenesDebounced, savePetDebounced, saveUserProfileDebounced } from './storage.js';
 import { displayPetName } from './dna.js';
 import { buildEggSvg, getPet, getPetSpriteCell, getPetSleepActionState, isPetInteractionBlocked, petArtHtml, playEggWelcomeOnce, playPetClickFeedback, playPetHappy, randomPetTalk, SHEET_COLS, SHEET_ROWS, sleepingInteractionText } from './pet.js';
@@ -135,6 +135,103 @@ function availableFields() {
         const type = SHOP_FIELD_TYPES[slot.typeId] || CONFIG.fields.find(field => field.id === slot.typeId) || {};
         return { ...type, id: slot.id, typeId: slot.typeId, name: slot.name, positionLabel: slot.positionLabel };
     }) : CONFIG.fields;
+}
+
+// 深圳动物园：场景 → 动物映射（animalId → field slot）
+const ZOO_ANIMAL_FIELD_MAP = {
+    south_china_tiger: '2',  // 猛兽谷
+    giant_panda: '3',        // 熊猫竹林
+    red_panda: '6',          // 雨林溪谷
+    giraffe: '4',            // 长颈鹿草原
+    penguin: '5',            // 企鹅冰湾
+};
+
+// ---------- 动物园宠物自主走动 ----------
+// 每只 zoo pet 在 field 上周期性走动到新的随机位置（限制在地图中部区域）
+const ZOO_WALK_INTERVAL_MS = 7000;          // 每次走动的间隔
+const ZOO_WALK_TRANSITION_MS = 5500;         // CSS transition 时长
+const ZOO_WALK_MID_X_MIN = 0.30;             // 中部区域 X 范围
+const ZOO_WALK_MID_X_MAX = 0.70;
+const ZOO_WALK_MID_Y_MIN = 0.54;             // 中部区域 Y 范围（偏下）
+const ZOO_WALK_MID_Y_MAX = 0.70;
+let zooWalkTimer = null;                     // setInterval id
+let zooWalkPetIds = [];                      // 当前正在走动的 zoo pet ids
+
+function stopZooPetWalking() {
+    if (zooWalkTimer) { clearInterval(zooWalkTimer); zooWalkTimer = null; }
+    // 清理 CSS class
+    zooWalkPetIds.forEach(id => {
+        const el = document.querySelector(`.field-pet[data-field-pet="${id}"]`);
+        if (el) {
+            el.classList.remove('field-pet-zoo-walking');
+            el.style.transition = '';
+            const wanderEl = el.querySelector('.field-pet-wander');
+            if (wanderEl) wanderEl.style.animation = '';
+        }
+    });
+    zooWalkPetIds = [];
+}
+
+export { stopZooPetWalking };
+
+function startZooPetWalking() {
+    stopZooPetWalking();
+    const planetId = String(state.settings?.starSettlement?.planetId || '').trim();
+    if (planetId !== 'shenzhen_zoo') return;
+    const fieldId = state.currentField;
+    // 找出当前场地上所有 zoo 宠物
+    const zooPets = (state.petOrder || []).filter(id => {
+        const pet = state.pets[id];
+        if (!pet) return false;
+        if (String(pet.adoptedFromZoo || '').trim() !== 'shenzhen_zoo') return false;
+        return canPetAppearInField(pet, fieldId);
+    });
+    zooWalkPetIds = zooPets;
+    if (!zooWalkPetIds.length) return;
+
+    // 为每个 zoo pet 的 DOM 元素设置 CSS transition，实现平滑走动
+    zooWalkPetIds.forEach(id => {
+        const el = document.querySelector(`.field-pet[data-field-pet="${id}"]`);
+        if (el) {
+            el.classList.add('field-pet-zoo-walking');
+            el.style.transition = `left ${ZOO_WALK_TRANSITION_MS}ms ease-in-out, top ${ZOO_WALK_TRANSITION_MS}ms ease-in-out`;
+            // 停止原有 CSS wander 动画，改由 JS 驱动位置
+            const wanderEl = el.querySelector('.field-pet-wander');
+            if (wanderEl) wanderEl.style.animation = 'none';
+        }
+    });
+
+    // 周期性更新位置
+    const tickWalk = () => {
+        zooWalkPetIds.forEach(id => {
+            const el = document.querySelector(`.field-pet[data-field-pet="${id}"]`);
+            if (!el) return;
+            const x = ZOO_WALK_MID_X_MIN + Math.random() * (ZOO_WALK_MID_X_MAX - ZOO_WALK_MID_X_MIN);
+            const y = ZOO_WALK_MID_Y_MIN + Math.random() * (ZOO_WALK_MID_Y_MAX - ZOO_WALK_MID_Y_MIN);
+            el.style.left = (x * 100).toFixed(2) + '%';
+            el.style.top = (y * 100).toFixed(2) + '%';
+            // z-index 随 y 深度变化
+            el.style.zIndex = String(16 + Math.round(y * 18));
+        });
+    };
+
+    // 首次立即走一步（分散初始位置）
+    tickWalk();
+    zooWalkTimer = setInterval(tickWalk, ZOO_WALK_INTERVAL_MS);
+}
+
+function autoSelectZooFieldPet(_fieldId) {
+    // 深圳动物园：始终确保自己的宠物是当前宠物
+    // 领养动物在自己的园区中自然出现（通过 canPetAppearInField 映射）
+    const planetId = String(state.settings?.starSettlement?.planetId || '').trim();
+    if (planetId !== 'shenzhen_zoo') return;
+    const ownPetId = (state.petOrder || []).find(id => {
+        const p = state.pets[id];
+        return p && !p.adoptedFromZoo;
+    });
+    if (ownPetId && state.currentPetId !== ownPetId) {
+        setCurrentPet(ownPetId);
+    }
 }
 
 const SHOP_FIELD_TYPES = Object.fromEntries([
@@ -1106,6 +1203,8 @@ function renderFieldActionTray(pet) {
             ? t('cleanPoopTitle', { cost: CONFIG.poopMachineCostCoins })
             : t('cleanCoinsTitle'));
     const cleanDisabledReason = t('cleanDisabledReason');
+    // 深圳动物园星球：隐藏孵化仓和图鉴（图鉴改为悬浮按钮）
+    const isShenzhenZoo = String(state.settings?.starSettlement?.planetId || '').trim() === 'shenzhen_zoo';
     return `
         <div class="mh-dock-row mh-scroll-x dock-action-row">
             <button type="button" class="btn-secondary action-btn dock-icon-btn mh-decor-action mh-field-mode-toggle" id="mhFieldDecorBtn">
@@ -1120,7 +1219,7 @@ function renderFieldActionTray(pet) {
                 <span class="dock-icon">🎾</span>
                 <span class="dock-label">${escapeHtml(t('dockPlay'))}</span>
             </button>
-            ${String(state.settings?.starSettlement?.encyclopediaUrl || '').trim() ? `
+            ${!isShenzhenZoo && String(state.settings?.starSettlement?.encyclopediaUrl || '').trim() ? `
             <button type="button" class="btn-secondary action-btn dock-icon-btn mh-field-nav-action" data-field-nav="encyclopedia" title="${escapeHtml(t('encTitle'))}">
                 <span class="dock-icon">📖</span>
                 <span class="dock-label">${escapeHtml(t('dockEncyclopedia'))}</span>
@@ -1129,10 +1228,11 @@ function renderFieldActionTray(pet) {
                 <span class="dock-icon">${sleepAction.icon}</span>
                 <span class="dock-label">${escapeHtml(sleepAction.label)}</span>
             </button>
+            ${!isShenzhenZoo ? `
             <button type="button" class="btn-secondary action-btn dock-icon-btn mh-field-nav-action${hatchingDisabled ? ' is-sleep-disabled' : ''}" data-field-nav="hatching"${dockDisabledAttrs(hatchingDisabled, hatchingTitle)} title="${escapeHtml(hatchingTitle)}">
                 <span class="dock-icon">🥚</span>
                 <span class="dock-label">${escapeHtml(t('dockHatchPod'))}</span>
-            </button>
+            </button>` : ''}
         </div>
     `;
 }
@@ -1713,12 +1813,17 @@ function visitingFieldPetsHtml(currentPet, fieldId) {
 function getFieldPetIds(currentPet, fieldId) {
     return (state.petOrder || []).filter((id) => {
         if (!id) return false;
+        const pet = state.pets[id];
+        // 深圳动物园宠物：强制走 canPetAppearInField，不走随机生成逻辑
+        if (pet && String(pet.adoptedFromZoo || '').trim() === 'shenzhen_zoo') {
+            return canPetAppearInField(pet, fieldId);
+        }
         if (id === currentPet?.id) return canPetAppearInField(currentPet, fieldId);
         if (isNearActiveGeneratedPet(id)) {
-            const home = getGeneratedPetLocation(state.pets[id] || id);
+            const home = getGeneratedPetLocation(pet || id);
             return home.kind === 'field' && home.id === fieldId;
         }
-        return canPetAppearInField(state.pets[id] || id, fieldId);
+        return canPetAppearInField(pet || id, fieldId);
     });
 }
 
@@ -2441,6 +2546,12 @@ export const fieldLevel = {
                     ctx.onPetTouch?.(petEl, clickedPet);
                     playPetClickFeedback(petEl, clickedPet);
                 }
+                // 动物园领养宠物：点击选中，可放大进入互动界面
+                else if (clickedPet.adoptedFromZoo) {
+                    setCurrentPet(clickedPet.id);
+                    showToast(`已选中 ${displayPetName(clickedPet)}，放大即可互动～`, 'success', 2000);
+                    playPetClickFeedback(petEl, clickedPet);
+                }
                 else showFieldPetTalk(petEl, clickedPet);
             };
         });
@@ -2458,6 +2569,8 @@ export const fieldLevel = {
             scheduleCenterFieldPet(pet);
         }
         requestAnimationFrame(() => showCaretakerFieldNotice(pet));
+        // 深圳动物园：启动园区宠物自主走动
+        startZooPetWalking();
     },
 
     dockHtml(pet) {
@@ -2503,6 +2616,8 @@ export const fieldLevel = {
             event?.stopPropagation?.();
             dock.__mhFieldDockTabHandledAt = Date.now();
             setCurrentField(fieldBtn.dataset.field);
+            // 深圳动物园：切换场景时自动选中该园区的宠物
+            autoSelectZooFieldPet(fieldBtn.dataset.field);
             return true;
         };
 
