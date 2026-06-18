@@ -30,37 +30,112 @@ import * as THREE_DEFAULT from 'https://cdn.keepwork.com/npm/three@0.160.0/build
  *  Source parsing helpers (pure, no THREE needed)
  * ============================================================ */
 
-const PARAM_RE = /^const\s+([A-Za-z_$][\w$]*)\s*=\s*(-?\d+(?:\.\d+)?)\s*;(?:\s*\/\/\s*(.*))?$/;
-
-// 把源码顶部的 `const name = number; // comment` 解析为可调参数列表。
-export function parseParams(source) {
-	const lines = String(source || '').replace(/\n$/, '').split('\n');
-	const params = Object.create(null);
-	const order = [];
-	lines.forEach((ln, i) => {
-		const m = ln.match(PARAM_RE);
-		if (!m) return;
-		const name = m[1];
-		const num = parseFloat(m[2]);
-		const comment = (m[3] || '').trim();
-		params[name] = { name, line: i + 1, orig: num, value: num, saved: num, comment };
-		order.push(name);
-	});
-	return { params, order, lines };
-}
+// 顶格 `const name = <rhs>;  // 注释`。rhs 既可以是单个数字字面量（如 `1.5`），
+// 也可以是一个 material 调用（如 `mat(0x263fc8, 0.86, 0.01)`）。
+const PARAM_LINE_RE = /^const\s+([A-Za-z_$][\w$]*)\s*=\s*([^;]*?)\s*;(?:\s*\/\/\s*(.*))?$/;
+// 单一数字字面量（不含十六进制、不含科学计数）。
+const SINGLE_NUM_RE = /^-?\d+(?:\.\d+)?$/;
+// material 调用：mat( arg0 , arg1 , ... )。
+const MAT_CALL_RE = /^(mat)\s*\(\s*([^)]*?)\s*\)$/;
 
 function fmtNum(v) {
 	return Number.isInteger(v) ? String(v) : String(+v.toFixed(3));
 }
 
-// 用当前参数值重建源码字符串：仅替换 PARAM 行上的字面量，保留变量名 + 注释。
+// 16 进制颜色 → "#rrggbb"（给 <input type=color> 用）。
+function hexToCss(num) {
+	return '#' + (num >>> 0).toString(16).padStart(6, '0').slice(-6);
+}
+// "#rrggbb" / 数字 → 0xRRGGBB 字面量字符串。
+function cssToHexLiteral(css) {
+	const n = typeof css === 'number' ? css : parseInt(String(css).replace(/^#/, ''), 16);
+	return '0x' + ((n >>> 0) & 0xffffff).toString(16).padStart(6, '0');
+}
+
+// 把 material 调用的参数切成数组，并标注每个参数的类型：
+//   { kind:'color', hex, raw } | { kind:'num', value, raw } | { kind:'const', raw }
+// color：十六进制字面量 0x..（可用取色器编辑）。
+// num：十进制数字（rough / metal 等，可拖动）。
+// const：标识符 / 其它表达式（如 skinColor）→ 原样保留、不可编辑。
+function parseMatArgs(argStr) {
+	if (!argStr.trim()) return [];
+	return argStr.split(',').map((part) => {
+		const raw = part.trim();
+		if (/^0x[0-9a-fA-F]+$/.test(raw)) return { kind: 'color', hex: parseInt(raw, 16), raw };
+		if (SINGLE_NUM_RE.test(raw)) return { kind: 'num', value: parseFloat(raw), raw };
+		return { kind: 'const', raw };
+	});
+}
+
+// material 参数的位置标签（mat(color, rough, metal)）。
+const MAT_ARG_LABELS = ['color', 'rough', 'metal'];
+
+// 把源码顶部的 PARAMS 行解析为可调参数列表。
+// kind:'number'   → 经典单数字行，key = 变量名。
+// kind:'material' → 一个 mat(...) 调用作为「单个属性」，含一个取色器 + 若干数字子控件。
+export function parseParams(source) {
+	const lines = String(source || '').replace(/\n$/, '').split('\n');
+	const params = Object.create(null);
+	const order = [];
+	lines.forEach((ln, i) => {
+		const m = ln.match(PARAM_LINE_RE);
+		if (!m) return;
+		const varName = m[1];
+		const rhs = m[2];
+		const comment = (m[3] || '').trim();
+
+		// ① material 调用：作为单个属性。
+		const matM = rhs.match(MAT_CALL_RE);
+		if (matM) {
+			const args = parseMatArgs(matM[2]);
+			// 至少要有一个可编辑字段（颜色或数字）才值得作为参数。
+			const editable = args.some(a => a.kind === 'color' || a.kind === 'num');
+			if (!editable) return;
+			const fields = args.map((a, ai) => {
+				const label = MAT_ARG_LABELS[ai] || ('arg' + (ai + 1));
+				if (a.kind === 'color') return { kind: 'color', label, orig: a.hex, value: a.hex, saved: a.hex };
+				if (a.kind === 'num') return { kind: 'num', label, orig: a.value, value: a.value, saved: a.value };
+				return { kind: 'const', label, raw: a.raw };
+			});
+			params[varName] = { name: varName, varName, kind: 'material', line: i + 1, comment, fn: matM[1], fields };
+			order.push(varName);
+			return;
+		}
+
+		// ② 经典单数字行。
+		if (SINGLE_NUM_RE.test(rhs)) {
+			const num = parseFloat(rhs);
+			params[varName] = { name: varName, varName, kind: 'number', line: i + 1, comment, orig: num, value: num, saved: num };
+			order.push(varName);
+		}
+	});
+	return { params, order, lines };
+}
+
+// 用当前参数值重建源码字符串：只重写 PARAM 行的 rhs，保留变量名、注释、
+// material 里的常量 / 标识符参数（如 skinColor）原样不动。
 export function buildSource(lines, params, order) {
 	const out = lines.slice();
 	for (const name of order) {
 		const p = params[name];
+		if (!p) continue;
 		const ln = out[p.line - 1];
-		out[p.line - 1] = ln.replace(PARAM_RE, (full, nm, _num, cm) =>
-			'const ' + nm + ' = ' + fmtNum(p.value) + ';' + (cm !== undefined ? '  // ' + cm : ''));
+		const m = ln.match(PARAM_LINE_RE);
+		if (!m) continue;
+		const varName = m[1];
+		const cm = m[3];
+		let rhs;
+		if (p.kind === 'material') {
+			const argsTxt = p.fields.map((f) => {
+				if (f.kind === 'color') return cssToHexLiteral(f.value);
+				if (f.kind === 'num') return fmtNum(f.value);
+				return f.raw;
+			}).join(', ');
+			rhs = p.fn + '(' + argsTxt + ')';
+		} else {
+			rhs = fmtNum(p.value);
+		}
+		out[p.line - 1] = 'const ' + varName + ' = ' + rhs + ';' + (cm !== undefined ? '  // ' + cm : '');
 	}
 	return out.join('\n');
 }
@@ -230,9 +305,11 @@ export function createThreeModelEditor(config) {
 		camera.lookAt(cam.target);
 	}
 
-	// ---- lights ----
-	scene.add(new THREE.HemisphereLight(0xffffff, 0x53606e, 1.1));
-	scene.add(new THREE.AmbientLight(0xffffff, 0.35));
+	// ---- lights (kept as named refs so the lighting panel can tweak them live) ----
+	const hemi = new THREE.HemisphereLight(0xffffff, 0x53606e, 1.1);
+	scene.add(hemi);
+	const ambient = new THREE.AmbientLight(0xffffff, 0.35);
+	scene.add(ambient);
 	const key = new THREE.DirectionalLight(0xfff6df, 1.8);
 	key.position.set(-4.8, 9.5, 5.8);
 	key.castShadow = true;
@@ -248,6 +325,79 @@ export function createThreeModelEditor(config) {
 	const fill = new THREE.DirectionalLight(0xbfe0ff, 0.85);
 	fill.position.set(5.5, 6, -5);
 	scene.add(fill);
+
+	// Snapshot the original lighting so the panel's "reset" can restore defaults.
+	const LIGHT_DEFAULTS = {
+		exposure: renderer.toneMappingExposure,
+		hemi: { intensity: hemi.intensity },
+		ambient: { intensity: ambient.intensity },
+		key: { intensity: key.intensity, color: '#' + key.color.getHexString(), x: key.position.x, y: key.position.y, z: key.position.z },
+		fill: { intensity: fill.intensity, color: '#' + fill.color.getHexString() },
+	};
+	// Flat, panel-friendly view of every adjustable light parameter.
+	function getLights() {
+		return {
+			exposure: renderer.toneMappingExposure,
+			hemiIntensity: hemi.intensity,
+			ambientIntensity: ambient.intensity,
+			keyIntensity: key.intensity,
+			keyColor: '#' + key.color.getHexString(),
+			keyX: key.position.x, keyY: key.position.y, keyZ: key.position.z,
+			fillIntensity: fill.intensity,
+			fillColor: '#' + fill.color.getHexString(),
+		};
+	}
+
+	// ---- lighting persistence (localStorage, shared across snippets/sessions) ----
+	const LIGHT_STORAGE_KEY = 'ThreeJsModelGenerator.lighting.v1';
+	function saveLightsToStorage() {
+		try { localStorage.setItem(LIGHT_STORAGE_KEY, JSON.stringify(getLights())); } catch (_) {}
+	}
+	function applyLights(values) {
+		if (!values || typeof values !== 'object') return;
+		for (const name of Object.keys(values)) setLightRaw(name, values[name]);
+	}
+	function loadLightsFromStorage() {
+		try {
+			const raw = localStorage.getItem(LIGHT_STORAGE_KEY);
+			if (raw) applyLights(JSON.parse(raw));
+		} catch (_) {}
+	}
+
+	// setLightRaw applies a value without persisting (used during bulk load); setLight
+	// applies + persists (used by the panel's interactive controls).
+	function setLightRaw(name, value) {
+		switch (name) {
+			case 'exposure': renderer.toneMappingExposure = Number(value); break;
+			case 'hemiIntensity': hemi.intensity = Number(value); break;
+			case 'ambientIntensity': ambient.intensity = Number(value); break;
+			case 'keyIntensity': key.intensity = Number(value); break;
+			case 'keyColor': key.color.set(value); break;
+			case 'keyX': key.position.x = Number(value); break;
+			case 'keyY': key.position.y = Number(value); break;
+			case 'keyZ': key.position.z = Number(value); break;
+			case 'fillIntensity': fill.intensity = Number(value); break;
+			case 'fillColor': fill.color.set(value); break;
+		}
+	}
+	function setLight(name, value) {
+		setLightRaw(name, value);
+		saveLightsToStorage();
+	}
+	function resetLights() {
+		renderer.toneMappingExposure = LIGHT_DEFAULTS.exposure;
+		hemi.intensity = LIGHT_DEFAULTS.hemi.intensity;
+		ambient.intensity = LIGHT_DEFAULTS.ambient.intensity;
+		key.intensity = LIGHT_DEFAULTS.key.intensity;
+		key.color.set(LIGHT_DEFAULTS.key.color);
+		key.position.set(LIGHT_DEFAULTS.key.x, LIGHT_DEFAULTS.key.y, LIGHT_DEFAULTS.key.z);
+		fill.intensity = LIGHT_DEFAULTS.fill.intensity;
+		fill.color.set(LIGHT_DEFAULTS.fill.color);
+		try { localStorage.removeItem(LIGHT_STORAGE_KEY); } catch (_) {}
+	}
+
+	// Restore any previously-saved lighting now that all light refs + helpers exist.
+	loadLightsFromStorage();
 
 	// ground (not pickable)
 	const floor = new THREE.Mesh(
@@ -437,7 +587,9 @@ export function createThreeModelEditor(config) {
 		const set = new Set();
 		if (!text) return set;
 		for (const name of paramOrder) {
-			if (new RegExp('\\b' + name + '\\b').test(text)) set.add(name);
+			// multi-slot 参数的 key 形如 `varName·N`，要用底层变量名去匹配源码引用。
+			const varName = (params[name] && params[name].varName) || name;
+			if (new RegExp('\\b' + varName + '\\b').test(text)) set.add(name);
 		}
 		return set;
 	}
@@ -461,11 +613,26 @@ export function createThreeModelEditor(config) {
 		for (const m of idToMeta.values()) (map[m.label] || (map[m.label] = [])).push(sigOf(m));
 		return map;
 	}
+	// material 改的是外观（颜色 / 粗糙 / 金属），不改几何，因此 geometry 签名探测不到。
+	// 用「源码里有多少个对象段引用了该变量」来估算受影响对象数。
+	function countRefByVar(varName) {
+		const re = new RegExp('\\b' + varName + '\\b');
+		const labels = new Set();
+		for (const m of idToMeta.values()) {
+			const text = objectText(m);
+			if (text && re.test(text)) labels.add(m.label);
+		}
+		return labels.size;
+	}
 	function measureAffected() {
 		if (buildError) return;
 		const base = snapshotByLabel();
 		for (const name of paramOrder) {
 			const p = params[name];
+			if (p.kind === 'material') {
+				affected[name] = countRefByVar(p.varName);
+				continue;
+			}
 			const keep = p.value;
 			p.value = keep + Math.max(Math.abs(keep) * 0.25, 0.15);
 			rebuild();
@@ -530,6 +697,28 @@ export function createThreeModelEditor(config) {
 	const pointers = new Map();
 	let gesture = null, downPos = null, moved = false, autoRotate = true;
 
+	// Pan the orbit target along the camera's right/up axes (screen-space drag).
+	// dx/dy are pixel deltas; the world scale tracks distance so panning feels
+	// consistent at any zoom level.
+	const _right = new THREE.Vector3(), _up = new THREE.Vector3(), _fwd = new THREE.Vector3();
+	function panCamera(dx, dy) {
+		camera.getWorldDirection(_fwd);
+		_right.crossVectors(_fwd, camera.up).normalize();
+		_up.crossVectors(_right, _fwd).normalize();
+		const scale = cam.dist * 0.0016;     // px → world units, scaled by zoom
+		cam.target.addScaledVector(_right, -dx * scale);
+		cam.target.addScaledVector(_up, dy * scale);
+		updateCamera();
+	}
+	// A primary-button (left) drag with no modifier orbits; middle/right button,
+	// or left+Shift/Ctrl, pans. Touch: 1 finger orbits, 2 fingers pinch-zoom + pan.
+	function isPanButton(e) {
+		return e.button === 1 || e.button === 2 || e.shiftKey || e.ctrlKey || e.metaKey;
+	}
+	function midpoint(pts) {
+		return { x: (pts[0].x + pts[1].x) / 2, y: (pts[0].y + pts[1].y) / 2 };
+	}
+
 	function onDown(e) {
 		canvas.setPointerCapture?.(e.pointerId);
 		pointers.set(e.pointerId, { x: e.clientX, y: e.clientY });
@@ -537,10 +726,14 @@ export function createThreeModelEditor(config) {
 		if (pointers.size === 1) {
 			downPos = { x: e.clientX, y: e.clientY };
 			moved = false;
-			gesture = { type: 'rotate', x: e.clientX, y: e.clientY };
+			// mouse: middle/right button or modifier → pan; otherwise orbit (rotate).
+			const pan = e.pointerType === 'mouse' && isPanButton(e);
+			gesture = { type: pan ? 'pan' : 'rotate', x: e.clientX, y: e.clientY };
 		} else if (pointers.size === 2) {
 			const p = [...pointers.values()];
-			gesture = { type: 'pinch', dist: Math.hypot(p[0].x - p[1].x, p[0].y - p[1].y) };
+			const mid = midpoint(p);
+			// two fingers: simultaneous pinch-zoom + pan (track distance + midpoint).
+			gesture = { type: 'pinch', dist: Math.hypot(p[0].x - p[1].x, p[0].y - p[1].y), mx: mid.x, my: mid.y };
 		}
 		e.preventDefault();
 	}
@@ -555,13 +748,23 @@ export function createThreeModelEditor(config) {
 			gesture.x = e.clientX;
 			gesture.y = e.clientY;
 			updateCamera();
+		} else if (gesture?.type === 'pan' && pointers.size === 1) {
+			const dx = e.clientX - gesture.x, dy = e.clientY - gesture.y;
+			if (Math.hypot(dx, dy) > 3) moved = true;
+			panCamera(dx, dy);
+			gesture.x = e.clientX;
+			gesture.y = e.clientY;
 		} else if (gesture?.type === 'pinch' && pointers.size === 2) {
 			const p = [...pointers.values()];
 			const d = Math.hypot(p[0].x - p[1].x, p[0].y - p[1].y);
 			cam.dist = Math.min(DIST_MAX, Math.max(DIST_MIN, cam.dist * (gesture.dist / d)));
+			// two-finger drag of the midpoint also pans (RDP-style touch navigation).
+			const mid = midpoint(p);
+			panCamera(mid.x - gesture.mx, mid.y - gesture.my);
 			gesture.dist = d;
+			gesture.mx = mid.x;
+			gesture.my = mid.y;
 			moved = true;
-			updateCamera();
 		}
 		e.preventDefault();
 	}
@@ -586,6 +789,9 @@ export function createThreeModelEditor(config) {
 	canvas.addEventListener('pointerup', onUp);
 	canvas.addEventListener('pointercancel', onUp);
 	canvas.addEventListener('wheel', onWheel, { passive: false });
+	// suppress the browser context menu so right-button drag can pan the camera.
+	const onContextMenu = (e) => e.preventDefault();
+	canvas.addEventListener('contextmenu', onContextMenu);
 
 	function onResize() {
 		camera.aspect = canvas.clientWidth / vh();
@@ -631,21 +837,50 @@ export function createThreeModelEditor(config) {
 		getParams: () => paramOrder.map(name => ({ ...params[name], affected: affected[name] || 0 })),
 		getParamOrder: () => paramOrder.slice(),
 		setParam(name, value) {
-			if (!params[name]) return;
-			params[name].value = Number(value);
+			const p = params[name];
+			if (!p || p.kind === 'material') return;
+			p.value = Number(value);
+			rebuild();
+			highlightSelectedMesh();
+			if (onSourceChange) onSourceChange(currentSource());
+		},
+		// material：改某个字段（fieldIndex 对应 fields[]，color 传 0xRRGGBB 数字或 "#rrggbb"，num 传数字）。
+		setMaterialField(name, fieldIndex, value) {
+			const p = params[name];
+			if (!p || p.kind !== 'material') return;
+			const f = p.fields[fieldIndex];
+			if (!f) return;
+			if (f.kind === 'color') {
+				f.value = typeof value === 'number' ? value : parseInt(String(value).replace(/^#/, ''), 16);
+			} else if (f.kind === 'num') {
+				f.value = Number(value);
+			} else return;            // const 字段不可改
 			rebuild();
 			highlightSelectedMesh();
 			if (onSourceChange) onSourceChange(currentSource());
 		},
 		commitParams() {
-			for (const name of paramOrder) params[name].saved = params[name].value;
+			for (const name of paramOrder) {
+				const p = params[name];
+				if (p.kind === 'material') p.fields.forEach(f => { if ('value' in f) f.saved = f.value; });
+				else p.saved = p.value;
+			}
 			if (onSourceChange) onSourceChange(currentSource());
 		},
 		resetParams() {
 			let any = false;
 			for (const name of paramOrder) {
-				if (Math.abs(params[name].value - params[name].saved) > 1e-9) any = true;
-				params[name].value = params[name].saved;
+				const p = params[name];
+				if (p.kind === 'material') {
+					p.fields.forEach(f => {
+						if (!('value' in f)) return;
+						if (Math.abs(f.value - f.saved) > 1e-9) any = true;
+						f.value = f.saved;
+					});
+				} else {
+					if (Math.abs(p.value - p.saved) > 1e-9) any = true;
+					p.value = p.saved;
+				}
 			}
 			if (any) { rebuild(); highlightSelectedMesh(); }
 			if (onSourceChange) onSourceChange(currentSource());
@@ -674,6 +909,12 @@ export function createThreeModelEditor(config) {
 			autoRotate = true;
 			updateCamera();
 		},
+		panBy(dx, dy) { autoRotate = false; panCamera(dx, dy); },
+
+		// lighting
+		getLights,
+		setLight,
+		resetLights,
 
 		destroy() {
 			disposed = true;
@@ -684,6 +925,7 @@ export function createThreeModelEditor(config) {
 			canvas.removeEventListener('pointerup', onUp);
 			canvas.removeEventListener('pointercancel', onUp);
 			canvas.removeEventListener('wheel', onWheel);
+			canvas.removeEventListener('contextmenu', onContextMenu);
 			disposeGroup();
 			pickTarget.dispose();
 			renderer.dispose();
@@ -749,6 +991,7 @@ const WIDGET_CSS = `
 .tmd-bar .act{border:1px solid var(--panel-line);background:rgba(255,255,255,.04);color:var(--ink-soft);cursor:pointer;font-size:11px;padding:5px 11px;border-radius:8px;font-family:inherit;transition:all .18s;}
 .tmd-bar .act:hover{color:var(--ink);border-color:var(--cyan);}
 .tmd-bar .act.save{color:#04121a;font-weight:700;border:none;background:linear-gradient(120deg,var(--green),#2bb673);}
+.tmd-bar .act.active{color:var(--cyan);border-color:var(--cyan);background:rgba(45,226,230,.12);}
 .tmd-grid{display:grid;grid-template-columns:minmax(0,1.1fr) minmax(0,1.2fr) minmax(300px,.9fr);grid-auto-rows:minmax(0,1fr);flex:1 1 auto;min-height:0;}
 .tmd-code{border-right:1px solid var(--panel-line);background:#070b18;overflow:hidden;min-height:0;height:100%;position:relative;display:flex;flex-direction:column;}
 .tmd-code .tmd-cm-host{flex:1 1 auto;min-height:0;overflow:hidden;}
@@ -766,6 +1009,22 @@ const WIDGET_CSS = `
 .tmd-canvas{width:100%;flex:1;min-height:360px;display:block;cursor:crosshair;background:radial-gradient(circle at 50% 40%,#0e1530,#060914);}
 .tmd-hud{position:absolute;top:12px;left:12px;right:12px;display:flex;gap:8px;flex-wrap:wrap;pointer-events:none;}
 .tmd-hud .hint{font-size:11px;color:var(--cyan);background:rgba(6,9,20,.6);border:1px solid var(--panel-line);border-radius:999px;padding:4px 12px;backdrop-filter:blur(6px);}
+/* ---- lighting popover panel (top-right of the 3D view) ---- */
+.tmd-light-panel{position:absolute;top:48px;right:12px;width:248px;max-height:calc(100% - 60px);overflow-y:auto;z-index:5;padding:12px 14px;border:1px solid var(--panel-line);border-radius:12px;background:rgba(8,12,26,.92);backdrop-filter:blur(10px);box-shadow:0 20px 40px -18px rgba(0,0,0,.8);font-size:11.5px;color:var(--ink-soft);}
+.tmd-light-panel[hidden]{display:none;}
+.tmd-light-panel .lp-head{display:flex;align-items:center;justify-content:space-between;margin-bottom:10px;}
+.tmd-light-panel .lp-head b{color:var(--ink);font-size:12.5px;}
+.tmd-light-panel .lp-reset{border:1px solid var(--panel-line);background:rgba(255,255,255,.04);color:var(--ink-soft);cursor:pointer;font-size:10.5px;padding:3px 8px;border-radius:6px;font-family:inherit;}
+.tmd-light-panel .lp-reset:hover{color:var(--ink);border-color:var(--cyan);}
+.tmd-light-panel .lp-row{display:flex;flex-direction:column;gap:3px;margin-bottom:9px;}
+.tmd-light-panel .lp-row .lp-label{display:flex;justify-content:space-between;align-items:baseline;font-family:"JetBrains Mono",monospace;}
+.tmd-light-panel .lp-row .lp-label .lv{color:var(--amber);}
+.tmd-light-panel .lp-row.lp-color{flex-direction:row;align-items:center;justify-content:space-between;}
+.tmd-light-panel input[type=range]{-webkit-appearance:none;appearance:none;width:100%;height:5px;min-height:0;padding:0;margin:2px 0;border:none;border-radius:999px;background:linear-gradient(90deg,var(--cyan),var(--violet));outline:none;cursor:pointer;}
+.tmd-light-panel input[type=range]::-webkit-slider-thumb{-webkit-appearance:none;appearance:none;width:13px;height:13px;margin-top:-4px;border-radius:50%;background:#eaf0ff;border:2px solid var(--violet);cursor:pointer;}
+.tmd-light-panel input[type=range]::-moz-range-thumb{width:13px;height:13px;border-radius:50%;background:#eaf0ff;border:2px solid var(--violet);cursor:pointer;}
+.tmd-light-panel input[type=color]{width:34px;height:22px;min-height:0;padding:0;border:1px solid var(--panel-line);border-radius:5px;background:transparent;cursor:pointer;}
+.tmd-light-panel .lp-group{margin:10px 0 4px;font-size:10.5px;letter-spacing:.5px;text-transform:uppercase;color:var(--ink-dim);}
 .tmd-side{background:rgba(8,12,26,.45);display:flex;flex-direction:column;min-height:0;height:100%;overflow:hidden;}
 .tmd-foot{padding:12px 16px;font-size:12.5px;color:var(--ink-soft);min-height:64px;display:flex;flex-direction:column;gap:6px;justify-content:center;flex:0 0 auto;}
 .tmd-foot .row1{display:flex;align-items:center;gap:10px;flex-wrap:wrap;}
@@ -787,6 +1046,26 @@ const WIDGET_CSS = `
 .tmd-row .pp-label .v.changed{color:var(--green);font-weight:700;}
 .tmd-row.rel{padding:6px 8px;margin:-6px -8px;border-radius:8px;background:rgba(45,226,230,.06);box-shadow:inset 2px 0 0 var(--cyan);}
 .tmd-row .rel-dot{color:var(--cyan);font-size:9px;font-style:normal;}
+.tmd-row .arg-tag{margin-left:4px;padding:0 5px;border-radius:999px;background:rgba(139,92,246,.16);color:var(--violet);font-size:9.5px;font-style:normal;font-weight:600;vertical-align:middle;}
+/* material param: collapsible dropdown row */
+.tmd-mat .mat-dd{margin:0;}
+.tmd-mat summary{list-style:none;cursor:pointer;outline:none;}
+.tmd-mat summary::-webkit-details-marker{display:none;}
+.tmd-mat summary .pp-label{width:100%;min-width:0;}
+.tmd-mat .mat-sum{display:inline-flex;align-items:center;gap:7px;min-width:0;flex:0 1 auto;}
+.tmd-mat .mat-sum .v{white-space:nowrap;overflow:hidden;text-overflow:ellipsis;}
+.tmd-mat .mat-swatch{flex:none;width:14px;height:14px;border-radius:4px;border:1px solid rgba(255,255,255,.35);box-shadow:0 0 0 1px rgba(0,0,0,.25);}
+.tmd-mat .dd-caret{font-style:normal;color:var(--ink-dim);font-size:10px;transition:transform .15s;}
+.tmd-mat .mat-dd[open] .dd-caret{transform:rotate(180deg);}
+.tmd-mat .mat-fields{margin:8px 0 2px;padding:8px 10px;border-radius:8px;background:rgba(255,255,255,.04);display:flex;flex-direction:column;gap:9px;}
+.tmd-mat .mat-field{display:grid;grid-template-columns:54px 1fr auto;align-items:center;gap:8px;font-family:"JetBrains Mono",monospace;font-size:11px;}
+.tmd-mat .mat-fl{color:var(--cyan);}
+.tmd-mat .mat-fv{color:var(--amber);min-width:48px;text-align:right;}
+.tmd-mat .mat-field input[type=color]{width:100%;height:22px;min-height:0;padding:0;border:1px solid rgba(255,255,255,.18);border-radius:6px;background:none;cursor:pointer;}
+.tmd-mat .mat-field input[type=color]::-webkit-color-swatch-wrapper{padding:2px;}
+.tmd-mat .mat-field input[type=color]::-webkit-color-swatch{border:none;border-radius:4px;}
+.tmd-mat .mat-const .mat-fc{color:var(--ink-dim);text-align:right;font-style:italic;}
+.tmd-mat .mat-const{opacity:.75;}
 .tmd-row .pp-meta{font-family:"JetBrains Mono",monospace;font-size:10.5px;color:var(--ink-dim);}
 .tmd-row .pp-meta b{color:var(--amber);}
 /* Use !important + explicit resets so host base styles (e.g. Tailwind's global
@@ -950,6 +1229,7 @@ export async function mountThreeModelDevtools(container, opts = {}) {
 					<button data-tmd="modeNormal" class="active">正常渲染</button>
 					<button data-tmd="modePick">显示 color id</button>
 				</span>
+				<button class="act" data-tmd="lightBtn" title="调整灯光">💡 灯光</button>
 				${showToolbarActions ? '<button class="act" data-tmd="reset">↺ 重置</button><button class="act save" data-tmd="save">✓ 保存</button>' : ''}
 			</span>
 		</div>
@@ -962,7 +1242,8 @@ export async function mountThreeModelDevtools(container, opts = {}) {
 			</div>
 			<div class="tmd-view">
 				<canvas data-tmd="canvas" class="tmd-canvas"></canvas>
-				<div class="tmd-hud"><span class="hint">↳ 点击部件 → 定位代码 + 调参 · 拖动旋转 · 滚轮/双指缩放</span></div>
+				<div class="tmd-hud"><span class="hint">↳ 点击部件 → 定位代码 + 调参 · 拖动旋转 · 右键/中键或双指拖动平移 · 滚轮/双指缩放</span></div>
+				<div class="tmd-light-panel" data-tmd="lightPanel" hidden></div>
 			</div>
 			<div class="tmd-side">
 				<div class="tmd-foot" data-tmd="foot">
@@ -993,6 +1274,8 @@ export async function mountThreeModelDevtools(container, opts = {}) {
 	const btnUndo = q('undo');
 	const btnRedo = q('redo');
 	const editHint = q('edithint');
+	const btnLight = q('lightBtn');
+	const lightPanel = q('lightPanel');
 
 	let picked = null;
 
@@ -1125,29 +1408,116 @@ export async function mountThreeModelDevtools(container, opts = {}) {
 		} else {
 			who.innerHTML = '源码顶部的<b>真实参数</b>（PARAMS）—— 拖动滑块直接改写源码字面量并重跑。';
 		}
-		if (!params.length) { ppGrid.innerHTML = '<div class="tmd-empty">源码顶部没有可识别的 <code>const name = number;</code> 参数。</div>'; return; }
+		if (!params.length) { ppGrid.innerHTML = '<div class="tmd-empty">源码顶部没有可识别的 <code>const name = number;</code> 或 <code>const xxxMat = mat(0x.., …);</code> 参数。</div>'; return; }
+		const fmtN = (v) => Number.isInteger(+v) ? String(+v) : String(+(+v).toFixed(3));
+		const hex6 = (n) => '#' + ((n >>> 0) & 0xffffff).toString(16).padStart(6, '0');
+		// 摘要单行短标签：rough→r、metal→m，其它取首字母。
+		const shortLabel = (lab) => ({ rough: 'r', metal: 'm', color: 'c' }[lab] || String(lab || '').charAt(0) || '?');
 		const ordered = params.slice().sort((x, y) => (related.has(x.name) ? 0 : 1) - (related.has(y.name) ? 0 : 1));
 		ppGrid.innerHTML = ordered.map(p => {
+			const isRel = related.has(p.name);
+			const relDot = isRel ? ' <em class="rel-dot">●</em>' : '';
+			const meta = `L${p.line} · ${escapeHtml(p.comment || 'const ' + p.varName)} · 影响 <b>${p.affected || 0}</b> 个对象`;
+
+			// ---- material：单个属性，用下拉展开「取色器 + rough/metal 滑块」 ----
+			if (p.kind === 'material') {
+				const colorF = p.fields.find(f => f.kind === 'color');
+				const matChanged = p.fields.some(f => ('value' in f) && Math.abs(f.value - f.saved) > 1e-9);
+				const swatch = colorF ? hex6(colorF.value) : '#888888';
+				// 摘要：颜色块 + 各数字字段的当前值，单行短标签（r: / m:）。
+				const summaryNums = p.fields.filter(f => f.kind === 'num')
+					.map(f => `${escapeHtml(shortLabel(f.label))}:${fmtN(f.value)}`).join(' · ');
+				const fieldsHtml = p.fields.map((f, fi) => {
+					if (f.kind === 'color') {
+						return `<div class="mat-field" data-fi="${fi}" data-fk="color">
+							<span class="mat-fl">${escapeHtml(f.label)}</span>
+							<input type="color" value="${hex6(f.value)}">
+							<span class="mat-fv">${hex6(f.value)}</span>
+						</div>`;
+					}
+					if (f.kind === 'num') {
+						const span = Math.max(Math.abs(f.orig) * 1.2, 0.4);
+						const min = +(Math.max(0, f.orig - span)).toFixed(3), max = +(f.orig + span).toFixed(3);
+						const step = +(span / 120).toFixed(4) || 0.001;
+						return `<div class="mat-field" data-fi="${fi}" data-fk="num">
+							<span class="mat-fl">${escapeHtml(f.label)}</span>
+							<input type="range" min="${min}" max="${max}" step="${step}" value="${f.value}">
+							<span class="mat-fv">${fmtN(f.value)}</span>
+						</div>`;
+					}
+					// const：原样展示、不可改。
+					return `<div class="mat-field mat-const" data-fi="${fi}" data-fk="const">
+						<span class="mat-fl">${escapeHtml(f.label)}</span>
+						<span class="mat-fc">${escapeHtml(f.raw)}</span>
+					</div>`;
+				}).join('');
+				return `<div class="tmd-row${isRel ? ' rel' : ''} tmd-mat" data-name="${escapeHtml(p.name)}" data-kind="material">
+					<details class="mat-dd">
+						<summary>
+							<span class="pp-label"><span class="k">${escapeHtml(p.varName)} <em class="arg-tag">mat</em>${relDot}</span>
+							<span class="mat-sum"><span class="mat-swatch" style="background:${swatch}"></span><span class="v${matChanged ? ' changed' : ''}">${escapeHtml(summaryNums || 'material')}</span><em class="dd-caret">▾</em></span></span>
+						</summary>
+						<div class="mat-fields">${fieldsHtml}</div>
+					</details>
+					<div class="pp-meta">${meta}</div>
+				</div>`;
+			}
+
+			// ---- number：经典滑块 ----
 			const span = Math.max(Math.abs(p.orig) * 1.2, 0.4);
 			const min = +(p.orig - span).toFixed(3), max = +(p.orig + span).toFixed(3);
 			const step = +(span / 120).toFixed(4) || 0.001;
 			const changed = Math.abs(p.value - p.saved) > 1e-9;
-			const isRel = related.has(p.name);
-			const fmt = Number.isInteger(p.value) ? String(p.value) : String(+p.value.toFixed(3));
-			return `<div class="tmd-row${isRel ? ' rel' : ''}" data-name="${escapeHtml(p.name)}">
-				<div class="pp-label"><span class="k">${escapeHtml(p.name)}${isRel ? ' <em class="rel-dot">●</em>' : ''}</span><span class="v${changed ? ' changed' : ''}">${fmt}</span></div>
+			return `<div class="tmd-row${isRel ? ' rel' : ''}" data-name="${escapeHtml(p.name)}" data-kind="number">
+				<div class="pp-label"><span class="k">${escapeHtml(p.name)}${relDot}</span><span class="v${changed ? ' changed' : ''}">${fmtN(p.value)}</span></div>
 				<input type="range" min="${min}" max="${max}" step="${step}" value="${p.value}">
-				<div class="pp-meta">L${p.line} · ${escapeHtml(p.comment || 'const ' + p.name)} · 影响 <b>${p.affected || 0}</b> 个对象</div>
+				<div class="pp-meta">${meta}</div>
 			</div>`;
 		}).join('');
-		ppGrid.querySelectorAll('.tmd-row').forEach(row => {
+
+		// ---- wire up: number rows ----
+		ppGrid.querySelectorAll('.tmd-row[data-kind="number"]').forEach(row => {
 			const name = row.getAttribute('data-name');
-			const input = row.querySelector('input');
+			const input = row.querySelector('input[type=range]');
 			const vEl = row.querySelector('.v');
 			input.addEventListener('input', () => {
 				editor.setParam(name, parseFloat(input.value));
-				vEl.textContent = Number.isInteger(+input.value) ? input.value : String(+parseFloat(input.value).toFixed(3));
+				vEl.textContent = fmtN(input.value);
 				vEl.classList.add('changed');
+			});
+		});
+
+		// ---- wire up: material rows (dropdown with color + num fields) ----
+		ppGrid.querySelectorAll('.tmd-row[data-kind="material"]').forEach(row => {
+			const name = row.getAttribute('data-name');
+			const sumV = row.querySelector('.mat-sum .v');
+			const swatchEl = row.querySelector('.mat-swatch');
+			row.querySelectorAll('.mat-field').forEach(fEl => {
+				const fi = +fEl.getAttribute('data-fi');
+				const fk = fEl.getAttribute('data-fk');
+				const fvEl = fEl.querySelector('.mat-fv');
+				if (fk === 'color') {
+					const ci = fEl.querySelector('input[type=color]');
+					ci.addEventListener('input', () => {
+						editor.setMaterialField(name, fi, ci.value);
+						if (fvEl) fvEl.textContent = ci.value;
+						if (swatchEl) swatchEl.style.background = ci.value;
+						if (sumV) sumV.classList.add('changed');
+					});
+				} else if (fk === 'num') {
+					const ri = fEl.querySelector('input[type=range]');
+					ri.addEventListener('input', () => {
+						editor.setMaterialField(name, fi, parseFloat(ri.value));
+						if (fvEl) fvEl.textContent = fmtN(ri.value);
+						// 刷新摘要里的数字部分（单行短标签 r:/m:）。
+						const nums = [...row.querySelectorAll('.mat-field[data-fk=num]')].map(el => {
+							const lab = el.querySelector('.mat-fl').textContent;
+							const val = el.querySelector('.mat-fv').textContent;
+							return shortLabel(lab) + ':' + val;
+						}).join(' · ');
+						if (sumV) { sumV.textContent = nums; sumV.classList.add('changed'); }
+					});
+				}
 			});
 		});
 	}
@@ -1214,6 +1584,66 @@ export async function mountThreeModelDevtools(container, opts = {}) {
 	// ---- toolbar wiring ----
 	btnNormal.addEventListener('click', () => { editor.setShowPick(false); btnNormal.classList.add('active'); btnPick.classList.remove('active'); });
 	btnPick.addEventListener('click', () => { editor.setShowPick(true); btnPick.classList.add('active'); btnNormal.classList.remove('active'); });
+
+	// ---- lighting panel (intensity / color / key-light position sliders) ----
+	// Each control reads/writes through the editor's getLights()/setLight() API so
+	// changes apply live without rebuilding the model.
+	const LIGHT_CONTROLS = [
+		{ group: '全局' },
+		{ key: 'exposure', label: '曝光 Exposure', min: 0, max: 3, step: 0.01 },
+		{ key: 'hemiIntensity', label: '半球光 Hemisphere', min: 0, max: 3, step: 0.01 },
+		{ key: 'ambientIntensity', label: '环境光 Ambient', min: 0, max: 2, step: 0.01 },
+		{ group: '主光 Key' },
+		{ key: 'keyIntensity', label: '强度 Intensity', min: 0, max: 5, step: 0.01 },
+		{ key: 'keyColor', label: '颜色 Color', color: true },
+		{ key: 'keyX', label: '位置 X', min: -20, max: 20, step: 0.1 },
+		{ key: 'keyY', label: '位置 Y', min: 0, max: 25, step: 0.1 },
+		{ key: 'keyZ', label: '位置 Z', min: -20, max: 20, step: 0.1 },
+		{ group: '补光 Fill' },
+		{ key: 'fillIntensity', label: '强度 Intensity', min: 0, max: 5, step: 0.01 },
+		{ key: 'fillColor', label: '颜色 Color', color: true },
+	];
+	const fmtLight = (v) => Number.isInteger(v) ? String(v) : String(+(+v).toFixed(2));
+	function buildLightPanel() {
+		if (!lightPanel) return;
+		const L = editor.getLights();
+		const rows = LIGHT_CONTROLS.map(c => {
+			if (c.group) return `<div class="lp-group">${escapeHtml(c.group)}</div>`;
+			if (c.color) {
+				return `<div class="lp-row lp-color" data-key="${c.key}"><span>${escapeHtml(c.label)}</span><input type="color" value="${escapeHtml(L[c.key])}"></div>`;
+			}
+			return `<div class="lp-row" data-key="${c.key}">
+				<div class="lp-label"><span>${escapeHtml(c.label)}</span><span class="lv">${fmtLight(L[c.key])}</span></div>
+				<input type="range" min="${c.min}" max="${c.max}" step="${c.step}" value="${L[c.key]}">
+			</div>`;
+		}).join('');
+		lightPanel.innerHTML = `<div class="lp-head"><b>💡 灯光</b><button type="button" class="lp-reset" data-tmd="lightReset">↺ 默认</button></div>${rows}`;
+		lightPanel.querySelectorAll('.lp-row').forEach(row => {
+			const key = row.getAttribute('data-key');
+			const input = row.querySelector('input');
+			const lv = row.querySelector('.lv');
+			input.addEventListener('input', () => {
+				editor.setLight(key, input.value);
+				if (lv) lv.textContent = fmtLight(input.type === 'range' ? +input.value : input.value);
+			});
+		});
+		const reset = lightPanel.querySelector('[data-tmd="lightReset"]');
+		if (reset) reset.addEventListener('click', () => { editor.resetLights(); buildLightPanel(); });
+	}
+	function toggleLightPanel(show) {
+		if (!lightPanel) return;
+		const next = show === undefined ? lightPanel.hasAttribute('hidden') : show;
+		if (next) { buildLightPanel(); lightPanel.removeAttribute('hidden'); }
+		else lightPanel.setAttribute('hidden', '');
+		if (btnLight) btnLight.classList.toggle('active', next);
+	}
+	if (btnLight) btnLight.addEventListener('click', (e) => { e.stopPropagation(); toggleLightPanel(); });
+	// click outside the panel (and not on the toggle button) closes it.
+	root.addEventListener('click', (e) => {
+		if (!lightPanel || lightPanel.hasAttribute('hidden')) return;
+		if (lightPanel.contains(e.target) || btnLight?.contains(e.target)) return;
+		toggleLightPanel(false);
+	});
 
 	// undo / redo drive CodeMirror's built-in history; the change handler then
 	// reruns the model + refreshes button state.

@@ -57,8 +57,11 @@
 			.status-action { @apply min-h-0 border-0 bg-transparent p-0 font-bold underline underline-offset-2 hover:border-transparent hover:bg-transparent; }
 			.record-toolbar { @apply grid grid-cols-[minmax(0,1fr)_auto] gap-2 border-b border-slate-300 bg-slate-50 p-3; }
 			.record-list { @apply flex min-h-0 flex-1 flex-col gap-1.5 overflow-auto p-2; }
-			.record-item { @apply grid w-full grid-cols-[minmax(0,1fr)_auto] items-center gap-2.5 rounded-md border border-slate-300 bg-white p-2.5 text-left; }
+			.record-item { @apply grid w-full grid-cols-[18px_minmax(0,1fr)_auto] items-center gap-2.5 rounded-md border border-slate-300 bg-white p-2.5 text-left; }
 			.record-item.active { @apply border-sky-600 bg-sky-50 ring-2 ring-sky-600/15; }
+			.record-item.checked { @apply border-sky-400 bg-sky-50/70; }
+			.record-select { @apply grid place-items-center; }
+			.record-select input { @apply h-4 min-h-0 w-4 accent-sky-600; }
 			.record-main { @apply block min-w-0 border-0 bg-transparent p-0 text-left hover:border-transparent hover:bg-transparent; }
 			.record-title { @apply block min-w-0 overflow-hidden text-ellipsis whitespace-nowrap text-[13px] font-bold; }
 			.record-meta { @apply block min-w-0 overflow-hidden text-ellipsis whitespace-nowrap text-[11px] text-slate-500; }
@@ -128,6 +131,16 @@
 			.modal-titlebar { @apply flex min-h-12 items-center justify-between gap-2.5 border-b border-slate-300 bg-slate-50 px-4 py-0 select-none; }
 			.modal-body { @apply min-h-0 flex-1 overflow-auto p-3; }
 			.export-out { @apply min-h-0 flex-1 overflow-auto whitespace-pre font-mono text-xs leading-normal; }
+			.prompt-box { @apply min-h-[140px] text-xs; }
+			.row { @apply grid grid-cols-1 gap-2.5 md:grid-cols-2; }
+			.row-3 { @apply grid grid-cols-1 gap-2.5 md:grid-cols-3; }
+		}
+		/* On narrow / mobile screens (below the lg breakpoint) the single-column stacked layout
+		   makes the vertical "collapsed rail" pointless and awkward. Force the left column to render
+		   as a normal full (horizontal/stacked) panel and ignore the collapsed state entirely. */
+		@media (max-width: 1023px) {
+			.app.collapsed .panel-full { display: flex !important; }
+			.app .panel-rail { display: none !important; }
 		}
 		@media (max-width: 760px) {
 			.app { @apply min-h-screen; }
@@ -218,8 +231,11 @@
 		<!-- ============ MIDDLE: snippet list ============ -->
 		<section class="panel records">
 			<div class="record-toolbar">
-				<input id="snippetSearch" class="col-span-2" placeholder="Search id / name / source">
+				<input id="snippetSearch" placeholder="Search id / name / source">
 				<button id="btnAddSnippet" class="primary" type="button">Add</button>
+				<button id="btnDeleteSelected" class="danger col-span-2" type="button" disabled>Delete selected (0)</button>
+				<button id="btnBatchGenerate" class="col-span-2" type="button" disabled>Generate selected (0)</button>
+				<label class="toggle-line col-span-2"><input id="snippetSelectAll" type="checkbox"><span id="snippetSelectAllLabel">Select all visible</span></label>
 			</div>
 			<div id="snippetList" class="record-list"><div class="hint p-2.5">No snippets yet.</div></div>
 		</section>
@@ -244,17 +260,14 @@
 				<section class="section">
 					<div class="flex flex-wrap items-center gap-2">
 						<h2>Selected Snippet</h2>
-						<div class="toolbar ml-auto">
-							<button id="btnResetCam" type="button">复位视角</button>
-							<button id="btnEditSource" type="button">编辑源码</button>
-							<button id="btnAiRefine" type="button">AI 精修选中块</button>
-						</div>
+						<button id="btnRegenerate" class="primary ml-auto" type="button" title="用 Chat 模型按描述重新生成模型源码">↻ Regenerate</button>
 					</div>
-					<div class="row grid grid-cols-1 gap-2.5 md:grid-cols-2">
+					<div class="grid grid-cols-1 gap-2.5 md:grid-cols-2 xl:grid-cols-3">
 						<label>ID <input id="snippetId" placeholder="my_model"></label>
 						<label>Name <input id="snippetName" placeholder="My model"></label>
+						<label class="md:col-span-2 xl:col-span-1">Filename (影响代码段定位) <input id="snippetFilename" placeholder="model.three.js"></label>
 					</div>
-					<label>Filename (影响代码段定位) <input id="snippetFilename" placeholder="model.three.js"></label>
+					<label>Description (short, 用于导出 + Regenerate 提示词) <textarea id="snippetDescription" rows="2" placeholder="一句话描述这个 3D 模型的外形、组成与风格。"></textarea></label>
 				</section>
 
 				<!-- The whole code|3D|params UI is provided by the reusable widget in ThreeJsModelGenerator.js -->
@@ -274,6 +287,7 @@
 
 	const WORKSPACE = 'ThreeJsModels';
 	const PROJECT_DIR = 'projects';
+	const MODEL_DIR = 'models';   // per-snippet source files live here, parallel to projects/
 	const INDEX_PATH = `${PROJECT_DIR}/_index.json`;
 	const STORAGE_KEY = 'ThreeJsModelGenerator.localDraft.v1';
 	const SETTINGS_KEY = 'ThreeJsModelGenerator.settings.v1';
@@ -282,11 +296,27 @@
 	const state = {
 		sdk: null, widget: null,
 		projects: [], project: null, selectedSnippetId: '',
+		selectedSnippetIds: new Set(), batch: null,
 		lastProjectPath: '', appStarted: false, lastUsername: '',
+		workspaceViewer: null,
+		// Persistence dirty tracking (personal page store is only touched on Save, except first generation).
+		// projectMetaDirty: project metadata (name/desc/snippet list/filenames/tags…) changed since last persist.
+		// dirtySources: snippet ids whose source changed (and is not yet persisted) since last persist.
+		projectMetaDirty: false, dirtySources: new Set(),
 	};
+	/* Mark project metadata dirty → the projects/<id>.json file must be (re)written on next Save. */
+	function markProjectDirty() { state.projectMetaDirty = true; }
+	/* Mark a snippet's source dirty → its models/<file>.js.md must be (re)written on next Save. */
+	function markSourceDirty(id = state.selectedSnippetId) { if (id) state.dirtySources.add(id); }
 
 	/* ===== small utils ===== */
 	function nowIso() { return new Date().toISOString(); }
+	/* Compact local timestamp YYYYMMDDHHmmssSSS — used as a snippet's immutable creation stamp
+	   so per-snippet model filenames never collide across or within projects. */
+	function compactStamp(date = new Date()) {
+		const p = (n, w = 2) => String(n).padStart(w, '0');
+		return `${date.getFullYear()}${p(date.getMonth() + 1)}${p(date.getDate())}${p(date.getHours())}${p(date.getMinutes())}${p(date.getSeconds())}${p(date.getMilliseconds(), 3)}`;
+	}
 	function setStatus(el, text, kind = '') {
 		if (!el) return;
 		el.textContent = text;
@@ -329,6 +359,19 @@
 	function clone(value) { return JSON.parse(JSON.stringify(value ?? null)); }
 	function fileNameFromPath(path = '') { return String(path || '').replace(/\\/g, '/').split('/').pop() || String(path || ''); }
 	function projectPath(id = state.project?.project?.id) { return `${PROJECT_DIR}/${safeId(id, 'three_models')}.json`; }
+	/* Per-snippet source file path: models/<name>_<fileStamp>.<ext>.md, parallel to projects/<id>.json.
+	   The snippet.fileStamp (immutable creation timestamp) is injected before the file extension so
+	   filenames never collide across or within projects. Result e.g. models/chair_20260617143022123.three.js.md */
+	function modelPath(snippet = {}) {
+		const base = String(snippet.filename || `${safeId(snippet.id, 'model')}.three.js`).trim().replace(/\\/g, '/').split('/').pop();
+		const clean = (base.replace(/\.md$/i, '') || `${safeId(snippet.id, 'model')}.three.js`);
+		const stamp = String(snippet.fileStamp || '').trim();
+		if (!stamp) return `${MODEL_DIR}/${clean}.md`;   // defensive: no stamp → legacy plain name
+		// insert _<stamp> right before the first extension dot (or at the end if none)
+		const dot = clean.indexOf('.');
+		const named = dot > 0 ? `${clean.slice(0, dot)}_${stamp}${clean.slice(dot)}` : `${clean}_${stamp}`;
+		return `${MODEL_DIR}/${named}.md`;
+	}
 
 	/* ===== project / snippet model ===== */
 	function defaultSnippetSource(id) {
@@ -344,11 +387,38 @@
 	}
 	function normalizeSnippet(snippet = {}, index = 0) {
 		const id = safeId(snippet.id || snippet.name || `model_${index + 1}`, `model_${index + 1}`);
+		// Preserve an explicitly empty source (used by batch-add stubs awaiting AI generation);
+		// only fall back to the starter template when source is undefined/null AND there is no
+		// external sourcePath to lazily load from (new format stores source in models/<file>.js.md).
+		const rawSource = snippet.source ?? snippet.code;
+		const sourcePath = typeof snippet.sourcePath === 'string' ? snippet.sourcePath : '';
+		// fileStamp = immutable creation timestamp, the "secret static" marker of "this model has been
+		// generated/persisted before". It is ONLY assigned when a real source is first persisted
+		// (first generation auto-save, or first manual Save). Empty here ⇒ never generated yet.
+		// Legacy projects (where every snippet already carries a sourcePath + fileStamp) keep theirs.
+		const fileStamp = String(snippet.fileStamp || '').trim();
+		// Source hydration is now lazy: when a snippet has been persisted (sourcePath or fileStamp),
+		// we leave its in-memory source empty and load it on demand. Inline source (legacy / draft) is kept.
+		const persistedBefore = !!sourcePath || !!fileStamp;
+		// sourceLoaded (runtime-only): true when the in-memory source is authoritative. Honor an
+		// explicit incoming flag (preserved across re-normalize); otherwise a persisted snippet starts
+		// unloaded (lazy) and a brand-new/inline one starts loaded.
+		const sourceLoaded = typeof snippet.sourceLoaded === 'boolean'
+			? snippet.sourceLoaded
+			: (typeof rawSource === 'string' && !persistedBefore);
+		let source;
+		if (typeof rawSource === 'string') source = rawSource;
+		else if (persistedBefore) source = '';                  // lazy — hydrated from the model file on demand
+		else source = defaultSnippetSource(id);
 		return {
 			id,
 			name: String(snippet.name || snippet.title || id || `Model ${index + 1}`).trim(),
 			filename: String(snippet.filename || `${id}.three.js`).trim(),
-			source: String(snippet.source || snippet.code || defaultSnippetSource(id)),
+			fileStamp,
+			source,
+			sourcePath,
+			sourceLoaded,                                       // runtime-only: is in-memory source authoritative?
+			description: String(snippet.description || snippet.prompt || '').trim(),
 			tags: Array.isArray(snippet.tags) ? snippet.tags.map(String) : [],
 			updatedAt: snippet.updatedAt || nowIso(),
 		};
@@ -398,15 +468,81 @@
 			.filter(s => !query || [s.id, s.name, s.filename, s.source, ...(s.tags || [])].join(' ').toLowerCase().includes(query));
 		$('snippetList').innerHTML = snippets.length ? snippets.map(s => {
 			const active = s.id === state.selectedSnippetId ? ' active' : '';
-			const lineCount = String(s.source || '').split('\n').length;
-			return `<div class="record-item${active}">
-				<button class="record-main" type="button" data-open-snippet="${escapeHtml(s.id)}"><span class="record-title">${escapeHtml(s.name || s.id)}</span><span class="record-meta">${escapeHtml(s.id)} · ${escapeHtml(s.filename)} · ${lineCount} 行</span></button>
+			const checked = state.selectedSnippetIds.has(s.id);
+			// "Generated before" is determined by the createTime (fileStamp), independent of whether the
+			// source is lazy-loaded into memory yet. Loaded snippets also show their line count.
+			const generated = !!s.fileStamp;
+			const meta = s.sourceLoaded
+				? `${String(s.source || '').split('\n').length} 行${String(s.source || '').trim() ? '' : ' · (empty)'}`
+				: (generated ? '未加载（已生成）' : '(empty)');
+			return `<div class="record-item${active}${checked ? ' checked' : ''}">
+				<label class="record-select"><input type="checkbox" data-select-snippet="${escapeHtml(s.id)}" ${checked ? 'checked' : ''} aria-label="Select ${escapeHtml(s.name || s.id)}"></label>
+				<button class="record-main" type="button" data-open-snippet="${escapeHtml(s.id)}"><span class="record-title">${generated ? '' : '🆕 '}${escapeHtml(s.name || s.id)}</span><span class="record-meta">${escapeHtml(s.id)} · ${escapeHtml(s.filename)} · ${meta}</span></button>
 				<div class="record-actions"><button type="button" data-copy-snippet="${escapeHtml(s.id)}">Copy</button><button type="button" class="danger" data-delete-snippet="${escapeHtml(s.id)}">Del</button></div>
 			</div>`;
 		}).join('') : '<div class="hint p-2.5">No matching snippets. Add one or load a Starter example.</div>';
+		$('snippetList').querySelectorAll('[data-select-snippet]').forEach(input => input.onchange = () => {
+			if (input.checked) state.selectedSnippetIds.add(input.dataset.selectSnippet);
+			else state.selectedSnippetIds.delete(input.dataset.selectSnippet);
+			renderSnippetList();
+		});
 		$('snippetList').querySelectorAll('[data-open-snippet]').forEach(b => b.onclick = () => selectSnippet(b.dataset.openSnippet));
 		$('snippetList').querySelectorAll('[data-copy-snippet]').forEach(b => b.onclick = () => copySnippet(b.dataset.copySnippet));
 		$('snippetList').querySelectorAll('[data-delete-snippet]').forEach(b => b.onclick = () => deleteSnippet(b.dataset.deleteSnippet));
+		updateSelectionControls();
+	}
+
+	/* ===== batch selection controls ===== */
+	function getSelectedSnippets() {
+		const validIds = new Set((state.project?.snippets || []).map(s => s.id));
+		for (const id of [...state.selectedSnippetIds]) if (!validIds.has(id)) state.selectedSnippetIds.delete(id);
+		return (state.project?.snippets || []).filter(s => state.selectedSnippetIds.has(s.id));
+	}
+	function updateSelectionControls() {
+		const selectedCount = getSelectedSnippets().length;
+		const renderedIds = [...($('snippetList')?.querySelectorAll('[data-select-snippet]') || [])].map(i => i.dataset.selectSnippet).filter(Boolean);
+		const selectedRendered = renderedIds.filter(id => state.selectedSnippetIds.has(id)).length;
+		if ($('snippetSelectAll')) {
+			$('snippetSelectAll').disabled = !renderedIds.length;
+			$('snippetSelectAll').checked = !!renderedIds.length && selectedRendered === renderedIds.length;
+			$('snippetSelectAll').indeterminate = selectedRendered > 0 && selectedRendered < renderedIds.length;
+		}
+		if ($('snippetSelectAllLabel')) $('snippetSelectAllLabel').textContent = $('snippetSelectAll')?.checked ? 'Unselect all visible' : 'Select all visible';
+		if ($('btnDeleteSelected')) {
+			$('btnDeleteSelected').textContent = `Delete selected (${selectedCount})`;
+			$('btnDeleteSelected').disabled = selectedCount <= 0 || !!state.batch?.running;
+		}
+		if ($('btnBatchGenerate')) {
+			const batch = state.batch;
+			$('btnBatchGenerate').textContent = batch?.running
+				? `${batch.stopRequested ? 'Stopping' : 'Stop'} generate (${Math.min(batch.total, batch.done + 1)}/${batch.total})`
+				: `Generate selected (${selectedCount})`;
+			$('btnBatchGenerate').disabled = selectedCount <= 0 && !batch?.running;
+		}
+	}
+	function setVisibleSnippetSelection(checked) {
+		[...($('snippetList')?.querySelectorAll('[data-select-snippet]') || [])].forEach(input => {
+			if (checked) state.selectedSnippetIds.add(input.dataset.selectSnippet);
+			else state.selectedSnippetIds.delete(input.dataset.selectSnippet);
+		});
+		renderSnippetList();
+	}
+	function deleteSelectedSnippets() {
+		const selected = getSelectedSnippets();
+		if (!selected.length) return;
+		const ids = new Set(selected.map(s => s.id));
+		state.project.snippets = (state.project.snippets || []).filter(s => !ids.has(s.id));
+		ids.forEach(id => { state.selectedSnippetIds.delete(id); state.dirtySources.delete(id); });
+		markProjectDirty();   // snippet list changed → project file must be rewritten on Save
+		if (ids.has(state.selectedSnippetId)) {
+			state.selectedSnippetId = state.project.snippets[0]?.id || '';
+			const next = getSelectedSnippet();
+			if (next) { applySnippetToEditorForm(next); mountEditor(next); }
+			else { applySnippetToEditorForm(null); destroyEditor(); }
+		}
+		renderSnippetList();
+		saveLocalDraft();
+		setStatus($('runStatus'), `已删除 ${ids.size} 个选中 snippet。`, 'ok');
 	}
 
 	/* ===== editor lifecycle (delegated to the reusable widget) ===== */
@@ -418,13 +554,22 @@
 		destroyEditor();
 		if (!snippet) return;
 		try {
+			// Lazy-load the persisted source on demand (only when this snippet is actually opened).
+			await ensureSnippetSource(snippet);
+			// Empty stubs (from batch-add, awaiting AI source) get a placeholder so the 3D editor can mount;
+			// the placeholder is NOT written back to the snippet until edited/generated.
+			const sourceForEditor = String(snippet.source || '').trim() ? snippet.source : defaultSnippetSource(snippet.id);
 			state.widget = await mountThreeModelDevtools($('devtoolsHost'), {
-				source: snippet.source,
+				source: sourceForEditor,
 				filename: snippet.filename,
 				onSourceChange: (src) => {
 					// keep snippet source in sync after param edits / save
 					const s = getSelectedSnippet();
-					if (s) s.source = src;
+					if (s) {
+						if (s.sourceLoaded && src !== s.source) markSourceDirty(s.id);   // real edit → needs Save
+						s.source = src;
+						s.sourceLoaded = true;
+					}
 					saveLocalDraft();
 				},
 			});
@@ -437,6 +582,7 @@
 		$('snippetId').value = snippet?.id || '';
 		$('snippetName').value = snippet?.name || '';
 		$('snippetFilename').value = snippet?.filename || '';
+		$('snippetDescription').value = snippet?.description || '';
 		$('editorTitle').textContent = snippet?.name || snippet?.id || 'Three.js Snippet';
 	}
 
@@ -468,6 +614,8 @@
 		if (!seed.filename) base.filename = `${uid}.three.js`;
 		state.project.snippets.push(base);
 		state.selectedSnippetId = base.id;
+		markProjectDirty();                       // snippet list changed → project file must be rewritten
+		if (String(base.source || '').trim()) markSourceDirty(base.id);   // has real source → persist on Save
 		applySnippetToEditorForm(base);
 		mountEditor(base);
 		renderSnippetList();
@@ -475,14 +623,17 @@
 		setStatus($('runStatus'), `已新增 snippet：${base.id}`, 'ok');
 		return base;
 	}
-	function copySnippet(id) {
+	async function copySnippet(id) {
 		const s = (state.project?.snippets || []).find(x => x.id === id);
 		if (!s) return;
-		addSnippet({ id: `${s.id}_copy`, name: `${s.name} Copy`, source: s.source });
+		const source = await ensureSnippetSource(s);   // lazy-load before duplicating
+		addSnippet({ id: `${s.id}_copy`, name: `${s.name} Copy`, source });
 	}
 	function deleteSnippet(id = state.selectedSnippetId) {
 		if (!id) return;
 		state.project.snippets = (state.project.snippets || []).filter(s => s.id !== id);
+		state.dirtySources.delete(id);
+		markProjectDirty();                       // snippet list changed → project file must be rewritten
 		if (state.selectedSnippetId === id) {
 			state.selectedSnippetId = state.project.snippets[0]?.id || '';
 			const next = getSelectedSnippet();
@@ -497,8 +648,14 @@
 		const s = getSelectedSnippet();
 		if (!s) return;
 		const newId = safeId($('snippetId').value, s.id);
-		s.name = $('snippetName').value.trim() || s.id;
-		s.filename = $('snippetFilename').value.trim() || `${newId}.three.js`;
+		const newName = $('snippetName').value.trim() || s.id;
+		const newFilename = $('snippetFilename').value.trim() || `${newId}.three.js`;
+		const newDesc = $('snippetDescription').value.trim();
+		// Only mark the project dirty when metadata actually changed (so a no-op Save stays clean).
+		if (newName !== s.name || newFilename !== s.filename || newDesc !== s.description || (newId !== s.id && !state.project.snippets.some(x => x.id === newId))) markProjectDirty();
+		s.name = newName;
+		s.filename = newFilename;
+		s.description = newDesc;
 		if (newId !== s.id && !state.project.snippets.some(x => x.id === newId)) {
 			s.id = newId;
 			state.selectedSnippetId = newId;
@@ -539,10 +696,15 @@
 	}
 	function updateProjectFromForm() {
 		if (!state.project) state.project = defaultProject();
-		state.project.project.name = $('projectName').value.trim() || state.project.project.id;
-		state.project.project.description = $('projectDescription').value.trim();
-		state.project.project.models = { chat: $('chatModelSelect').value || state.project.project.models?.chat || '' };
-		state.project.project.updatedAt = nowIso();
+		const p = state.project.project;
+		const newName = $('projectName').value.trim() || p.id;
+		const newDesc = $('projectDescription').value.trim();
+		const newChat = $('chatModelSelect').value || p.models?.chat || '';
+		if (newName !== p.name || newDesc !== p.description || newChat !== (p.models?.chat || '')) markProjectDirty();
+		p.name = newName;
+		p.description = newDesc;
+		p.models = { chat: newChat };
+		p.updatedAt = nowIso();
 		updateCurrentFileLabel();
 	}
 	function updateCurrentFileLabel() {
@@ -564,17 +726,56 @@
 		else { applySnippetToEditorForm(null); destroyEditor(); }
 		saveLocalDraft();
 	}
+	/* Persist a single snippet's source to its models/<file>.js.md file and clear its dirty mark.
+	   Used by (a) first-generation auto-save and (b) the Save button for each changed source.
+	   On first persist it stamps the snippet with an immutable createTime (fileStamp) — the "secret
+	   static" marker that this model has been generated/persisted before. Sets sourcePath in-place. */
+	async function persistSnippetSource(snippet) {
+		if (!snippet.fileStamp) snippet.fileStamp = compactStamp();   // createTime, assigned once on first persist
+		const mPath = modelPath(snippet);
+		await writeFile(mPath, String(snippet.source ?? ''));
+		snippet.sourcePath = mPath;
+		snippet.sourceLoaded = true;
+		state.dirtySources.delete(snippet.id);
+		return mPath;
+	}
+	/* Write the projects/<id>.json file (sources stripped — they live in their own model files) plus
+	   the index entry. Clears the metadata-dirty flag. Reused by Save and by first-generation auto-save
+	   (so a freshly stamped createTime/sourcePath becomes discoverable on the next load). */
+	async function persistProjectFile() {
+		const path = projectPath(state.project.project.id);
+		const persisted = clone(state.project);
+		for (const snippet of persisted.snippets) { delete snippet.source; delete snippet.sourceLoaded; }
+		await writeFile(path, JSON.stringify(persisted, null, 2));
+		await writeProjectIndexEntry(state.project.project);
+		state.projectMetaDirty = false;
+		state.lastProjectPath = path;
+		return path;
+	}
 	async function saveProject() {
 		updateSnippetMetaFromForm();
 		const data = normalizeProject(state.project);
 		state.project = data;
 		updateProjectFromForm();
 		const path = projectPath(data.project.id);
-		await writeFile(path, JSON.stringify(data, null, 2));
-		await writeProjectIndexEntry(data.project);
+		const everSaved = state.lastProjectPath === path;   // project JSON already exists in the store
+		// 1) Write model files only for snippets whose in-memory source is loaded AND either changed
+		//    since last persist (dirty) or has a non-empty inline source not yet on disk (legacy/new).
+		//    Lazy-unloaded snippets are never rewritten — their model file stays untouched.
+		const sourceWrites = data.snippets.filter(s =>
+			s.sourceLoaded && (state.dirtySources.has(s.id) || (!s.sourcePath && String(s.source || '').trim()))
+		);
+		for (const snippet of sourceWrites) await persistSnippetSource(snippet);
+		// 2) Write the projects/<id>.json file ONLY when metadata changed or it has never been saved.
+		//    If only model source changed, the project file is left untouched (per requirement).
+		const writeProjectFile = state.projectMetaDirty || !everSaved;
+		if (writeProjectFile) await persistProjectFile();
 		state.lastProjectPath = path;
 		await refreshProjects();
-		setStatus($('runStatus'), `已保存项目：${WORKSPACE}/${path}`, 'ok');
+		const parts = [];
+		if (sourceWrites.length) parts.push(`${sourceWrites.length} 个源码 → ${MODEL_DIR}/`);
+		parts.push(writeProjectFile ? `项目文件已更新` : `项目文件无变化（仅源码改动）`);
+		setStatus($('runStatus'), `已保存：${WORKSPACE}/${path}（${parts.join('；')}）`, 'ok');
 		saveLocalDraft();
 	}
 	async function loadSelectedProject(pathOverride = '') {
@@ -582,10 +783,52 @@
 		if (!path) return;
 		const text = await readFile(path);
 		if (!text) throw new Error(`Project file is empty or missing: ${path}`);
-		applyProjectToForm(JSON.parse(text));
+		const raw = JSON.parse(text);
+		// Legacy project files stored each snippet's source inline. That stale `source` must be
+		// stripped out: detect it here so the next Save rewrites a cleaned project file (sources now
+		// live only in their own models/<file>.js.md files).
+		const hasInlineSource = Array.isArray(raw?.snippets) && raw.snippets.some(s => typeof (s?.source ?? s?.code) === 'string');
+		const data = normalizeProject(raw);
+		// NOTE: snippet sources are NOT eagerly loaded here — they are lazy-loaded on demand
+		// (see ensureSnippetSource) when a snippet is selected/mounted/exported/generated.
+		applyProjectToForm(data);
 		state.lastProjectPath = path;
+		// A freshly loaded project is fully in sync with the store → clear all dirty marks…
+		state.projectMetaDirty = false;
+		state.dirtySources.clear();
+		// …except: if the project file still carried inline source, mark it dirty so Save strips it.
+		if (hasInlineSource) state.projectMetaDirty = true;
+		const pending = autoSelectUngeneratedSnippets();   // pre-check models that were never generated
 		saveLocalDraft();
-		setStatus($('runStatus'), `已加载项目：${WORKSPACE}/${path}`, 'ok');
+		setStatus($('runStatus'), `已加载项目：${WORKSPACE}/${path}（${data.snippets.length} 个 snippet，${pending} 个未生成已勾选）`, 'ok');
+	}
+	/* Lazy-load a single snippet's source from its models/<file>.js.md file on demand.
+	   A snippet is considered "persisted" when it has a sourcePath (new format) or a fileStamp
+	   (createTime). Until loaded, its in-memory source stays empty; this hydrates it once. */
+	async function ensureSnippetSource(snippet) {
+		if (!snippet) return '';
+		if (snippet.sourceLoaded) return snippet.source || '';
+		const path = snippet.sourcePath || (snippet.fileStamp ? modelPath(snippet) : '');
+		if (!path) { snippet.sourceLoaded = true; return snippet.source || ''; }   // never persisted → nothing to load
+		try {
+			const text = await readFile(path);
+			if (typeof text === 'string' && text.length) snippet.source = text;
+			snippet.sourcePath = snippet.sourcePath || path;
+		} catch (_) { /* missing model file → keep empty stub */ }
+		snippet.sourceLoaded = true;
+		return snippet.source || '';
+	}
+	/* On startup, auto-check every snippet that has never been generated (no fileStamp/createTime),
+	   so the user can immediately batch-generate them. Returns the count selected. */
+	function autoSelectUngeneratedSnippets() {
+		const ungenerated = (state.project?.snippets || []).filter(s => !s.fileStamp);
+		state.selectedSnippetIds = new Set(ungenerated.map(s => s.id));
+		renderSnippetList();
+		return ungenerated.length;
+	}
+	/* Lazy-load every snippet's source (used before a full export, which needs all sources at once). */
+	async function ensureAllSnippetSources() {
+		await Promise.all((state.project?.snippets || []).map(s => ensureSnippetSource(s)));
 	}
 	async function refreshProjects() {
 		if (!(state.sdk || window.keepwork)?.personalPageStore) return;
@@ -634,6 +877,32 @@
 		setStatus($('runStatus'), `已创建新项目草稿：${project.project.id}。点击 Save 保存到 ${WORKSPACE}。`, 'ok');
 	}
 
+	/* ===== workspace viewer (browse the saved project file in PersonalPageStore) ===== */
+	function openWorkspaceViewer(file = projectPath()) {
+		if (typeof window.createWorkspaceViewer !== 'function') {
+			setStatus($('runStatus'), 'WorkspaceViewer 不可用：当前 SDK 未导出 createWorkspaceViewer。', 'error');
+			return;
+		}
+		closeWorkspaceViewer();
+		const targetFile = String(file || projectPath()).replace(/^\/+/, '');
+		const overlay = document.createElement('div');
+		overlay.className = 'modal-overlay';
+		overlay.id = 'workspaceOverlay';
+		overlay.innerHTML = `<div class="modal-window" role="dialog" aria-modal="true" aria-label="WorkspaceViewer" style="width:min(1180px,100%);height:min(780px,calc(100vh - 36px))">
+			<div class="modal-titlebar"><strong>WorkspaceViewer · ${WORKSPACE}/${escapeHtml(targetFile)}</strong><button type="button" id="closeWorkspaceViewer">关闭</button></div>
+			<div class="modal-body p-0" id="workspaceHost" style="padding:0"></div>
+		</div>`;
+		document.body.appendChild(overlay);
+		overlay.addEventListener('click', event => { if (event.target === overlay) closeWorkspaceViewer(); });
+		$('closeWorkspaceViewer').onclick = closeWorkspaceViewer;
+		state.workspaceViewer = window.createWorkspaceViewer({ container: $('workspaceHost'), sdk: state.sdk || window.keepwork, workspace: WORKSPACE, mountFolder: '', file: targetFile, compact: true, hideUserInfo: true });
+	}
+	function closeWorkspaceViewer() {
+		try { state.workspaceViewer?.destroy?.(); } catch (_) {}
+		state.workspaceViewer = null;
+		$('workspaceOverlay')?.remove();
+	}
+
 	/* ===== source edit dialog ===== */
 	function openSourceDialog() {
 		const s = getSelectedSnippet();
@@ -657,7 +926,9 @@
 		$('btnApplySource').onclick = () => {
 			const src = $('sourceText').value;
 			s.source = src;
+			s.sourceLoaded = true;
 			s.updatedAt = nowIso();
+			markSourceDirty(s.id);   // manual source edit → needs Save (no auto-save except first generation)
 			if (state.widget) state.widget.setSource(src, { filename: s.filename });
 			else mountEditor(s);
 			renderSnippetList();
@@ -694,7 +965,9 @@
 			const code = text.replace(/^```(?:js|javascript)?\s*/i, '').replace(/```\s*$/i, '').trim();
 			if (!code) throw new Error('AI 未返回有效源码');
 			s.source = code;
+			s.sourceLoaded = true;
 			s.updatedAt = nowIso();
+			markSourceDirty(s.id);   // AI refine edits source → needs Save
 			if (state.widget) state.widget.setSource(code, { filename: s.filename });
 			else mountEditor(s);
 			renderSnippetList();
@@ -703,32 +976,426 @@
 		} catch (e) { setStatus($('runStatus'), `AI 精修失败：${e.message}`, 'error'); }
 	}
 
+	/* ===== shared chat helper + AI source generation ===== */
+	function splitList(value) {
+		return String(value || '').split(/[\n,，、；;|]+/).map(item => item.trim()).filter(Boolean);
+	}
+	function extractAssistantText(result) {
+		if (typeof result === 'string') return result;
+		return result?.result || result?.content || result?.message?.content || result?.choices?.[0]?.message?.content || result?.data?.choices?.[0]?.message?.content || result?.text || '';
+	}
+	function extractJsonObject(text) {
+		const raw = String(text || '').trim();
+		if (!raw) throw new Error('LLM 返回空内容');
+		try { return JSON.parse(raw); } catch (_) {}
+		const fenced = raw.match(/```(?:json)?\s*([\s\S]*?)```/i);
+		if (fenced) return JSON.parse(fenced[1]);
+		const fa = raw.indexOf('[');
+		const la = raw.lastIndexOf(']');
+		if (fa >= 0 && la > fa) try { return JSON.parse(raw.slice(fa, la + 1)); } catch (_) {}
+		const fo = raw.indexOf('{');
+		const lo = raw.lastIndexOf('}');
+		if (fo >= 0 && lo > fo) return JSON.parse(raw.slice(fo, lo + 1));
+		throw new Error('LLM 响应不是有效 JSON');
+	}
+	function stripCodeFences(text) {
+		return String(text || '').replace(/^```(?:js|javascript)?\s*/i, '').replace(/```\s*$/i, '').trim();
+	}
+	async function callChatModel(prompt, { onMessage, onReasoning } = {}) {
+		const sdk = state.sdk || window.keepwork;
+		if (!sdk?.aiChat?.chat && !sdk?.aiGenerators?.chat) throw new Error('当前 SDK 不支持 Chat 模型调用');
+		const model = $('chatModelSelect').value.trim();
+		if (!model) throw new Error('请先配置 Chat 模型');
+		const options = { model, stream: true, temperature: 0.5, messages: [{ role: 'user', content: prompt }], onMessage, onReasoning };
+		return sdk.aiGenerators?.chat ? await sdk.aiGenerators.chat(options) : await sdk.aiChat.chat(options);
+	}
+	// The contract the generated Three.js source MUST follow (mirrors the widget's runtime sandbox:
+	// globals = THREE, IS_MOBILE, scene + the helper functions from createDefaultHelpers()).
+	// 这份 system prompt 与首页 Live Demo 的「零侵入 + PARAMS + 注释分段」约定保持一致。
+	const SOURCE_SPEC = [
+		'【产品背景】3D Vibe DevTools：你生成的 Three.js 源码会被工具零侵入 hook（自动给每个对象注入调试色并定位源码），用户可点击 3D 部件定位代码、拖动滑块实时改参数（“改一处、动多处”）。最终该源码会被导出为一个 `createModel(ctx)` 回调（ctx 提供下述全局 + 内置函数）。为了可点选/可调参，务必严格遵守下面的「代码约定」。',
+		'【运行环境】你的代码会在一个已注入以下全局变量/函数的沙箱里直接执行，无需 import、无需创建 Scene/Camera/Renderer/灯光：',
+		'- `scene`：THREE.Scene 实例。把每个网格用 `scene.add(mesh)` 加入即可（零侵入，工具会 hook scene.add 自动给对象注入调试色并定位源码）。',
+		'- `THREE`：完整的 three.js 命名空间（需要自定义几何体/Shape 时用 `new THREE.XxxGeometry(...)`、`new THREE.Shape()` 等）。',
+		'- `IS_MOBILE`：布尔值，移动端为 true，可据此降面数（可忽略）。',
+		'',
+		'【内置辅助函数】优先使用它们，少写样板代码：',
+		'- `mat(colorHex, roughness=0.7, metalness=0.05)` → MeshStandardMaterial，如 `mat(0x38bdf8, 0.5, 0.1)`。',
+		'- `box(w, h, d, material)` → 立方体 Mesh。',
+		'- `boxAt([w,h,d], [x,y,z], material)` → 立方体并直接定位。',
+		'- `cyl(radiusTop, radiusBottom, height, material, open=false)` → 圆柱/圆台。',
+		'- `cone(radius, height, material)` → 圆锥。',
+		'- `sphere(radius, material)` → 球体。',
+		'- `circle(radius, material)` → 圆面（常配 `mesh.rotation.x = -Math.PI/2` 平铺）。',
+		'- `torus(radius, tube, material)` → 圆环。',
+		'- `plane(w, h, material)` → 平面。',
+		'- `extrudeShape(shape, depth, material)` → 由 `THREE.Shape` 挤出（已自动 rotation.x = PI/2）。',
+		'- `hideFace(material, faceIndex)` → 返回一个材质数组，隐藏立方体某一面（faceIndex 0..5），用于拼接无缝木框等。',
+		'',
+		'【代码约定】（务必遵守，否则无法点选/调参）：',
+		'1. 顶部用 `/* ===== PARAMS ===== */` 起一段可调参数区，每个可调参数写成 `const name = number; // 中文注释`（纯数字字面量，滑块会改写它）。让多个对象引用同一个参数，实现「改一处、动多处」。此外 `const xxxMat = mat(0x.., 0.6, 0.05);` 这类 material 行会作为「单个材质属性」识别：面板里用一个下拉展开取色器（改颜色 0x..）+ rough/metal 滑块；若颜色写成标识符（如 skinColor）则原样保留、不可改。',
+		'2. 每组对象前用单行注释 `// label 说明` 分段（label 用英文小写单词），作为点选时的对象名。',
+		'3. 仅返回纯 JavaScript 源码：不要 markdown 围栏、不要 import、不要解释文字、不要包裹成函数。',
+		'4. 模型整体大致居中于原点，尺寸适中（约 1~3 单位），y 轴朝上。',
+		'',
+		'【示例（一个简单的小桌子，展示约定与辅助函数用法）】',
+		'```',
+		'// table.three.js',
+		'',
+		'/* ===== PARAMS ===== */',
+		'const topW   = 1.6;   // 桌面宽',
+		'const topD   = 1.0;   // 桌面深',
+		'const topH   = 0.12;  // 桌面厚',
+		'const legH   = 0.9;   // 桌腿高（四条腿统一）',
+		'const legR   = 0.06;  // 桌腿半径',
+		'const inset  = 0.12;  // 桌腿内缩',
+		'const woodMat = mat(0x9b6b3a, 0.6, 0.05);',
+		'',
+		'// top 桌面',
+		'const top = box(topW, topH, topD, woodMat);',
+		'top.position.y = legH + topH / 2;',
+		'scene.add(top);',
+		'',
+		'// leg 四条桌腿（引用同一组 PARAMS）',
+		'[[-1,-1],[1,-1],[-1,1],[1,1]].forEach(([sx, sz]) => {',
+		'  const leg = cyl(legR, legR, legH, woodMat);',
+		'  leg.position.set(sx * (topW/2 - inset), legH/2, sz * (topD/2 - inset));',
+		'  scene.add(leg);',
+		'});',
+		'```',
+	].join('\n');
+	// 复杂度选项 → 提示词文本（默认 '' = 不指定，不注入任何限制）。
+	const COMPLEXITY_OPTIONS = [
+		{ value: '', label: '不指定（默认）', prompt: '' },
+		{ value: 'simple', label: '简单（低面数、几个部件）', prompt: '【复杂度要求】保持简单：约 3~6 个部件/网格，几何体尽量用基础形状，低面数，只保留最能体现辨识度的主要特征。' },
+		{ value: 'medium', label: '中等（适量细节）', prompt: '【复杂度要求】中等复杂度：约 7~15 个部件/网格，在主体基础上补充适量细节与装饰，兼顾辨识度与性能。' },
+		{ value: 'complex', label: '复杂（丰富细节）', prompt: '【复杂度要求】高复杂度：16+ 个部件/网格，丰富的结构与装饰细节、多层次造型，在保证可运行的前提下尽量精致（移动端可参考 IS_MOBILE 适当降面）。' },
+	];
+	function buildSnippetPrompt(snippet, { complexity = '' } = {}) {
+		const desc = String(snippet?.description || snippet?.prompt || snippet?.name || snippet?.id || '').trim();
+		const complexityPrompt = (COMPLEXITY_OPTIONS.find(o => o.value === complexity) || {}).prompt || '';
+		return [
+			'你是资深 Three.js 建模助手。请根据下面的描述生成一段遵循约定、可直接在沙箱运行的 Three.js 建模源码。',
+			SOURCE_SPEC,
+			`【本次要生成的模型描述】\n${desc || '一个简单、有辨识度的 3D 物体'}`,
+			complexityPrompt,   // 空字符串会被下面的 filter(Boolean) 去掉
+			'现在只输出最终源码（纯 JS，无围栏、无解释）：',
+		].filter(Boolean).join('\n\n');
+	}
+	async function generateSourceForSnippet(snippet, { silent = false, promptOverride = '', onStream = null, deferProjectPersist = false } = {}) {
+		const s = (state.project.snippets || []).find(x => x.id === snippet.id) || snippet;
+		const prompt = promptOverride.trim() || buildSnippetPrompt(s);
+		let streamed = '';
+		let reasoned = '';
+		const onMessage = (full) => {
+			streamed = String(full || streamed || '');
+			onStream?.({ content: streamed, reasoning: reasoned });
+			setStatus($('runStatus'), `正在生成源码：${s.name || s.id}\n📝 ${streamed.slice(-300)}`.trimEnd(), '');
+		};
+		const onReasoning = (full) => {
+			reasoned = String(full || reasoned || '');
+			onStream?.({ content: streamed, reasoning: reasoned });
+		};
+		setStatus($('runStatus'), `正在生成源码：${s.name || s.id}`, '');
+		const result = await callChatModel(prompt, { onMessage, onReasoning });
+		const code = stripCodeFences(extractAssistantText(result) || streamed);
+		if (!code) throw new Error('生成内容不包含源码');
+		// "First generation" = the snippet has no createTime (fileStamp) yet → never generated before.
+		// Only the first generation auto-saves the model file (and stamps the createTime); later
+		// edits/regenerations just mark dirty and wait for the user to press Save.
+		const isFirstGeneration = !s.fileStamp;
+		s.source = code;
+		s.sourceLoaded = true;
+		s.updatedAt = nowIso();
+		if (s.id === state.selectedSnippetId && state.widget) state.widget.setSource(code, { filename: s.filename });
+		renderSnippetList();
+		saveLocalDraft();
+		if (isFirstGeneration) {
+			try {
+				await persistSnippetSource(s);    // auto-save the freshly generated model file (+ stamp createTime)
+				// Also persist the project file so the new createTime/sourcePath is discoverable on the
+				// next load (and the snippet stops being auto-selected as "not generated"). During a batch
+				// run this is deferred to a single write after the loop (see batchGenerateSelected).
+				if (!deferProjectPersist) await persistProjectFile();
+				else markProjectDirty();
+			} catch (e) {
+				markSourceDirty(s.id);            // store unavailable → fall back to manual Save
+				markProjectDirty();
+				if (!silent) setStatus($('runStatus'), `生成完成但自动保存失败（请手动 Save）：${e.message}`, 'error');
+			}
+		} else {
+			markSourceDirty(s.id);                // subsequent generation → needs manual Save (no auto-save)
+		}
+		if (!silent) setStatus($('runStatus'), `生成完成：${s.id}（${code.split('\n').length} 行）${isFirstGeneration ? ' · 已自动保存模型' : ' · 点 Save 保存改动'}`, 'ok');
+		return s;
+	}
+	// Regenerate opens a dialog showing the full (editable) prompt + a Generate button.
+	function regenerateSelectedSnippet() {
+		updateSnippetMetaFromForm();   // capture latest description/name before building the prompt
+		const s = getSelectedSnippet();
+		if (!s) { setStatus($('runStatus'), '请先选择一个 snippet。', 'error'); return; }
+		openRegeneratePromptDialog(s);
+	}
+	function openRegeneratePromptDialog(snippet) {
+		closeDialog('regenOverlay');
+		const overlay = document.createElement('div');
+		overlay.className = 'modal-overlay';
+		overlay.id = 'regenOverlay';
+		overlay.innerHTML = `<div class="modal-window" role="dialog" aria-modal="true" aria-label="Regenerate model">
+			<div class="modal-titlebar"><strong>重新生成模型 · ${escapeHtml(snippet.name || snippet.id)}</strong><button type="button" id="closeRegen">Close</button></div>
+			<div class="modal-body flex flex-col gap-3">
+				<div class="hint">下面是发送给 Chat 模型的完整提示词（含「3D Vibe DevTools 约定 + 内置函数 + 模型描述」），可直接编辑后生成。</div>
+				<label id="regenComplexityWrap">大约复杂度 <select id="regenComplexity">${COMPLEXITY_OPTIONS.map(o => `<option value="${escapeHtml(o.value)}">${escapeHtml(o.label)}</option>`).join('')}</select></label>
+				<textarea id="regenPrompt" class="export-out" spellcheck="false"></textarea>
+				<div id="regenStream" class="flex min-h-0 flex-1 flex-col gap-2" style="display:none">
+					<div id="regenReasoningWrap" class="flex min-h-0 flex-col gap-1" style="display:none">
+						<div class="hint flex items-center gap-1"><span>🧠 Reasoning</span></div>
+						<pre id="regenReasoning" class="export-out" style="max-height:160px;color:#64748b;background:#f8fafc"></pre>
+					</div>
+					<div class="flex min-h-0 flex-1 flex-col gap-1">
+						<div class="hint">📝 Output</div>
+						<pre id="regenOutput" class="export-out" style="min-height:120px"></pre>
+					</div>
+				</div>
+				<div id="regenStatus" class="status">编辑提示词（可选），点 Generate 开始生成。</div>
+				<div class="toolbar justify-end">
+					<button id="btnRegenReset" type="button">Reset prompt</button>
+					<button id="btnRegenCancel" type="button">Cancel</button>
+					<button id="btnRegenGenerate" class="primary" type="button">Generate</button>
+				</div>
+			</div>
+		</div>`;
+		document.body.appendChild(overlay);
+		overlay.addEventListener('click', e => { if (e.target === overlay) closeDialog('regenOverlay'); });
+		const rebuildPrompt = () => { $('regenPrompt').value = buildSnippetPrompt(snippet, { complexity: $('regenComplexity').value }); };
+		rebuildPrompt();
+		// 选复杂度时重建提示词（若用户已手动改过提示词，先确认再覆盖）
+		$('regenComplexity').onchange = () => {
+			const untouched = $('regenPrompt').value === buildSnippetPrompt(snippet, { complexity: '' })
+				|| COMPLEXITY_OPTIONS.some(o => $('regenPrompt').value === buildSnippetPrompt(snippet, { complexity: o.value }));
+			if (untouched || window.confirm('重建提示词将覆盖你对提示词的手动修改，继续？')) rebuildPrompt();
+		};
+		$('closeRegen').onclick = $('btnRegenCancel').onclick = () => closeDialog('regenOverlay');
+		$('btnRegenReset').onclick = () => { rebuildPrompt(); setStatus($('regenStatus'), '已重置为默认提示词。', 'ok'); };
+		// auto-scroll a <pre> to the bottom as new tokens stream in
+		const tail = (el) => { if (el) el.scrollTop = el.scrollHeight; };
+		const onStream = ({ content, reasoning }) => {
+			if (reasoning) {
+				$('regenReasoningWrap').style.display = '';
+				$('regenReasoning').textContent = reasoning;
+				tail($('regenReasoning'));
+			}
+			$('regenOutput').textContent = content || '（等待模型输出…）';
+			tail($('regenOutput'));
+		};
+		$('btnRegenGenerate').onclick = async () => {
+			const btn = $('btnRegenGenerate');
+			btn.disabled = true; btn.textContent = 'Generating...';
+			// switch from prompt-editing view to the live streaming view
+			$('regenPrompt').style.display = 'none';
+			$('regenComplexityWrap').style.display = 'none';
+			$('btnRegenReset').style.display = 'none';
+			$('regenStream').style.display = '';
+			$('regenOutput').textContent = '（等待模型输出…）';
+			setStatus($('regenStatus'), '正在生成…（流式输出，请稍候）', '');
+			try {
+				await generateSourceForSnippet(snippet, { promptOverride: $('regenPrompt').value, onStream });
+				closeDialog('regenOverlay');
+			} catch (e) {
+				setStatus($('regenStatus'), `生成失败：${e.message}`, 'error');
+				// restore the prompt-editing view so the user can retry
+				$('regenPrompt').style.display = '';
+				$('regenComplexityWrap').style.display = '';
+				$('btnRegenReset').style.display = '';
+				$('regenStream').style.display = 'none';
+				btn.disabled = false; btn.textContent = 'Generate';
+			}
+		};
+	}
+	async function batchGenerateSelected() {
+		if (state.batch?.running) {
+			state.batch.stopRequested = true;
+			updateSelectionControls();
+			setStatus($('runStatus'), '收到停止请求，当前 snippet 完成后停止。', '');
+			return;
+		}
+		const queue = getSelectedSnippets().map(s => clone(s));
+		if (!queue.length) return;
+		state.batch = { running: true, stopRequested: false, total: queue.length, done: 0 };
+		updateSelectionControls();
+		try {
+			for (const snippet of queue) {
+				if (state.batch.stopRequested) break;
+				setStatus($('runStatus'), `批量生成 ${state.batch.done + 1}/${queue.length}：${snippet.name || snippet.id}`, '');
+				// Defer the per-snippet project-file write → persist once after the loop.
+				await generateSourceForSnippet(snippet, { silent: true, deferProjectPersist: true });
+				state.selectedSnippetIds.delete(snippet.id);
+				state.batch.done += 1;
+				updateSelectionControls();
+			}
+			// One project-file write captures all freshly stamped createTimes from this batch.
+			if (state.projectMetaDirty) { try { await persistProjectFile(); } catch (_) {} }
+			saveLocalDraft();
+			setStatus($('runStatus'), state.batch.stopRequested ? `批量生成已停止：完成 ${state.batch.done}/${state.batch.total}` : `批量生成完成：${state.batch.done}/${state.batch.total}`, 'ok');
+		} finally {
+			state.batch = null;
+			renderSnippetList();
+			updateSelectionControls();
+		}
+	}
+
+	/* ===== batch add dialog ===== */
+	function buildBatchPlanPrompt() {
+		const count = Math.max(1, Math.min(50, Number($('batchCount')?.value) || 6));
+		const tags = splitList($('batchTags')?.value || '');
+		const example = JSON.stringify({ models: [{ id: 'snake_case_id', name: '简短名称', description: '一句话描述这个 3D 模型的外形、组成与风格。', tags: ['tag'] }] }, null, 2);
+		return [
+			'你是 3D 游戏美术。请规划一组 Three.js 模型，只写「描述」，不要写代码。返回严格 JSON（不要 markdown）。',
+			`规划恰好 ${count} 个模型。`,
+			'每个模型提供：id（snake_case）、name（简短）、description（一句话描述外形/组成/风格）、tags。',
+			'不要写任何代码，不要包含 source 字段——实际 Three.js 源码稍后按描述逐个生成。',
+			tags.length ? `每个模型都包含这些标签：${tags.join(', ')}。` : '为每个模型生成 1-2 个简洁标签。',
+			`返回结构：\n${example}`,
+			`用户需求：\n${$('batchRequest')?.value?.trim() || '生成一组实用的游戏 3D 模型。'}`,
+		].join('\n\n');
+	}
+	function openBatchAddDialog() {
+		if (!state.project) { setStatus($('runStatus'), '请先创建或打开一个项目。', 'error'); return; }
+		closeDialog('batchAddOverlay');
+		const overlay = document.createElement('div');
+		overlay.className = 'modal-overlay';
+		overlay.id = 'batchAddOverlay';
+		overlay.innerHTML = `<div class="modal-window" role="dialog" aria-modal="true" aria-label="Batch add models">
+			<div class="modal-titlebar"><strong>批量新增模型 snippet</strong><button type="button" id="closeBatchAdd">Close</button></div>
+			<div class="modal-body flex flex-col gap-3">
+				<div class="row"><label>数量<input id="batchCount" type="number" min="1" max="50" value="6"></label><label>标签<input id="batchTags" placeholder="low-poly, prop, fantasy"></label></div>
+				<label>需求描述<textarea id="batchRequest" class="prompt-box" spellcheck="false" placeholder="描述要创建的一组模型，例如：一套低多边形中世纪道具（木桶、宝箱、火把、路牌……）。"></textarea></label>
+				<label>发送给 Chat 模型的提示词（可编辑）<textarea id="batchPrompt" class="prompt-box" spellcheck="false"></textarea></label>
+				<div id="batchAddStatus" class="status">可直接「创建空白 snippet」，或让 Chat 模型先规划一组模型描述（id / name / description / tags）；实际源码稍后逐个生成。</div>
+				<pre id="batchAddPreview" class="export-out" style="min-height:120px">Waiting...</pre>
+				<div class="toolbar justify-end"><button id="btnCancelBatchAdd" type="button">Cancel</button><button id="btnPlanEmpty" type="button">创建空白 snippet</button><button id="btnPlanLlm" class="primary" type="button">生成描述</button></div>
+			</div>
+		</div>`;
+		document.body.appendChild(overlay);
+		overlay.addEventListener('click', e => { if (e.target === overlay) closeDialog('batchAddOverlay'); });
+		$('closeBatchAdd').onclick = $('btnCancelBatchAdd').onclick = () => closeDialog('batchAddOverlay');
+		const refresh = () => { $('batchPrompt').value = buildBatchPlanPrompt(); };
+		['batchCount', 'batchRequest', 'batchTags'].forEach(id => $(id).addEventListener('input', refresh));
+		$('btnPlanEmpty').onclick = () => runBatchAdd({ planOnly: true }).catch(e => setStatus($('batchAddStatus'), `失败：${e.message}`, 'error'));
+		$('btnPlanLlm').onclick = () => runBatchAdd({ planOnly: false }).catch(e => setStatus($('batchAddStatus'), `失败：${e.message}`, 'error'));
+		refresh();
+	}
+	async function runBatchAdd({ planOnly = false } = {}) {
+		const requiredTags = splitList($('batchTags')?.value || '');
+		let planned;
+		if (planOnly) {
+			const count = Math.max(1, Math.min(50, Number($('batchCount')?.value) || 6));
+			const baseReq = $('batchRequest')?.value?.trim() || '';
+			planned = Array.from({ length: count }, (_, i) => ({ id: `model_${i + 1}`, name: `Model ${i + 1}`, description: baseReq, tags: requiredTags, source: '' }));
+			$('batchAddPreview').textContent = '已创建空白 snippet（未调用 LLM）。勾选后点「Generate selected」生成源码。';
+		} else {
+			const prompt = $('batchPrompt').value.trim() || buildBatchPlanPrompt();
+			let streamed = '';
+			setStatus($('batchAddStatus'), '正在调用 Chat 模型…', '');
+			const result = await callChatModel(prompt, { onMessage: (full) => { streamed = String(full || streamed || ''); $('batchAddPreview').textContent = streamed.slice(-1200) || 'Waiting...'; } });
+			const payload = extractJsonObject(extractAssistantText(result) || streamed);
+			const list = Array.isArray(payload.models) ? payload.models : Array.isArray(payload.snippets) ? payload.snippets : Array.isArray(payload) ? payload : [];
+			if (!list.length) throw new Error('未返回任何模型描述');
+			// Descriptions only — ignore any source the model may have included; it's generated later per snippet.
+			planned = list.map(m => ({ id: m.id, name: m.name, description: m.description || m.prompt || '', tags: [...requiredTags, ...(Array.isArray(m.tags) ? m.tags : splitList(m.tags || ''))], source: '' }));
+		}
+		const existing = new Set((state.project.snippets || []).map(s => s.id));
+		const created = [];
+		planned.forEach((m, i) => {
+			const base = normalizeSnippet({ id: m.id || `model_${i + 1}`, name: m.name || `Model ${i + 1}`, source: m.source || '', tags: m.tags }, (state.project.snippets || []).length + i);
+			let uid = base.id;
+			for (let n = 2; existing.has(uid); n++) uid = `${base.id}_${n}`;
+			base.id = uid;
+			base.filename = `${uid}.three.js`;
+			base.description = String(m.description || '');     // keep description for later source generation
+			existing.add(uid);
+			state.project.snippets.push(base);
+			state.selectedSnippetIds.add(uid);
+			created.push(base);
+		});
+		state.selectedSnippetId = created[0]?.id || state.selectedSnippetId;
+		if (created.length) markProjectDirty();   // snippet list grew → project file must be rewritten on Save
+		renderSnippetList();
+		const sel = getSelectedSnippet();
+		if (sel) { applySnippetToEditorForm(sel); mountEditor(sel); }
+		saveLocalDraft();
+		if (!planOnly) $('batchAddPreview').textContent = JSON.stringify(created.map(s => ({ id: s.id, name: s.name, description: s.description, tags: s.tags })), null, 2);
+		setStatus($('batchAddStatus'), `已创建 ${created.length} 个 snippet（已自动勾选）。点「Generate selected」逐个生成源码。`, 'ok');
+		setStatus($('runStatus'), `批量新建完成：${created.length} 个 snippet。`, 'ok');
+	}
+
 	/* ===== export ===== */
+	// JS string literal of a value (used for the createModel block headers).
+	function jsString(value) { return JSON.stringify(String(value ?? '')); }
+	// Indent every line of a source block (so it nests cleanly inside the function body).
+	function indentBlock(text, pad = '        ') {
+		return String(text || '').replace(/\n$/, '').split('\n').map(ln => (ln ? pad + ln : ln)).join('\n');
+	}
+	// Wrap one snippet's Three.js source into a `createModel` callback. The source uses the
+	// globals `scene`, `THREE`, `IS_MOBILE` + the builtin helpers (mat/box/cyl/sphere/...),
+	// so we expose them as a single destructured context argument: createModel(ctx).
+	function buildCreateModelFn(source) {
+		const body = indentBlock(source);
+		return [
+			'function (ctx) {',
+			'        // ctx provides the runtime + builtin helpers (same contract as the generator sandbox).',
+			'        const { THREE, scene, IS_MOBILE = false,',
+			'            mat, box, boxAt, cyl, cone, sphere, circle, torus, plane, extrudeShape, hideFace } = ctx;',
+			body,
+			'        return scene;',
+			'      }',
+		].join('\n');
+	}
+	// Render one art_assets entry { id, createModel, description, type } for a snippet.
+	function buildArtAssetEntry(snippet, source) {
+		return [
+			'  {',
+			`    id: ${jsString(snippet.id)},`,
+			`    description: ${jsString(snippet.description || snippet.name || snippet.id)},`,
+			`    type: "threejs",`,
+			`    createModel: ${buildCreateModelFn(source)},`,
+			'  }',
+		].join('\n');
+	}
+	function buildArtAssetsArray(snippets) {
+		const entries = snippets.map(s => buildArtAssetEntry(s, s.source)).join(',\n');
+		return `art_assets = [\n${entries}\n];\n`;
+	}
 	function buildExportText(filter) {
 		const project = normalizeProject(state.project);
 		if (filter === 'current') {
-			const s = state.widget ? { ...getSelectedSnippet(), source: state.widget.getCurrentSource() } : getSelectedSnippet();
-			return s ? String(s.source) : '';
+			const sel = getSelectedSnippet();
+			if (!sel) return 'art_assets = [];\n';
+			const source = state.widget ? state.widget.getCurrentSource() : sel.source;
+			return buildArtAssetsArray([{ ...sel, source }]);
 		}
 		if (filter === 'project') return JSON.stringify(project, null, 2);
-		// all snippets concatenated as standalone files
-		return project.snippets.map(s => `// ===== ${s.filename} (${s.name}) =====\n${s.source}`).join('\n\n');
+		// all snippets as a single art_assets array (the createModel manifest)
+		const selId = state.selectedSnippetId;
+		const snippets = project.snippets.map(s =>
+			(state.widget && s.id === selId) ? { ...s, source: state.widget.getCurrentSource() } : s);
+		return buildArtAssetsArray(snippets);
 	}
 	function openExportDialog() {
 		closeDialog('exportOverlay');
 		const overlay = document.createElement('div');
 		overlay.className = 'modal-overlay';
 		overlay.id = 'exportOverlay';
-		let currentFilter = state.widget ? 'current' : 'all';
+		let currentFilter = 'all';
 		overlay.innerHTML = `<div class="modal-window" role="dialog" aria-modal="true" aria-label="Export">
 			<div class="modal-titlebar"><strong>Export</strong><button type="button" id="closeExport">Close</button></div>
 			<div class="modal-body flex flex-col gap-3">
 				<div class="toolbar" id="exportTabs">
-					<button type="button" data-export="current" class="primary">Current snippet (cleaned)</button>
-					<button type="button" data-export="all">All snippets</button>
+					<button type="button" data-export="all" class="primary">art_assets (all)</button>
+					<button type="button" data-export="current">art_assets (current)</button>
 					<button type="button" data-export="project">Full project JSON</button>
 				</div>
-				<div class="hint">导出的源码是带最新参数值的纯净 Three.js（无调试色注入），可直接运行。</div>
+				<div class="hint">导出为 <code>art_assets = [{ id, description, type:"threejs", createModel(ctx) }]</code> 格式。<code>createModel</code> 接收运行时上下文（THREE / scene / IS_MOBILE + mat/box/cyl/... 等内置函数），携带最新参数值、无调试色注入，可直接运行。</div>
 				<textarea id="exportText" class="export-out" spellcheck="false" readonly></textarea>
 				<div class="toolbar justify-end"><button id="btnExportCopy" type="button">Copy</button><button id="btnExportSave" class="primary" type="button">Save to file</button></div>
 			</div>
@@ -736,8 +1403,12 @@
 		document.body.appendChild(overlay);
 		overlay.addEventListener('click', e => { if (e.target === overlay) closeDialog('exportOverlay'); });
 		$('closeExport').onclick = () => closeDialog('exportOverlay');
-		const refresh = () => {
+		const refresh = async () => {
 			overlay.querySelectorAll('[data-export]').forEach(b => b.classList.toggle('primary', b.dataset.export === currentFilter));
+			$('exportText').value = 'Loading model sources…';
+			// 'all' / 'project' need every snippet's source → lazy-load them first.
+			if (currentFilter !== 'current') await ensureAllSnippetSources();
+			else await ensureSnippetSource(getSelectedSnippet());
 			$('exportText').value = buildExportText(currentFilter);
 		};
 		overlay.querySelectorAll('[data-export]').forEach(b => b.onclick = () => { currentFilter = b.dataset.export; refresh(); });
@@ -871,7 +1542,7 @@
 		$('btnFileOpen').onclick = showStartScreen;
 		$('btnFileNew').onclick = showStartScreen;
 		$('btnFileSave').onclick = () => saveProject().catch(e => setStatus($('runStatus'), `保存失败：${e.message}`, 'error'));
-		$('currentFileLabel').onclick = () => { if (window.createWorkspaceViewer) try { window.createWorkspaceViewer({ sdk: state.sdk, workspace: WORKSPACE, file: projectPath() }); } catch (_) {} };
+		$('currentFileLabel').onclick = () => openWorkspaceViewer(projectPath());
 		$('btnLocalApi').onclick = async () => {
 			const settings = (state.sdk || window.keepwork)?.localAPIKeySettings;
 			if (!settings?.show) return setStatus($('loginState'), '当前 SDK 不支持本地 API Key 设置。', 'error');
@@ -880,12 +1551,13 @@
 		};
 		$('btnRefreshProjects').onclick = () => refreshProjects().catch(e => setStatus($('runStatus'), `刷新失败：${e.message}`, 'error'));
 		$('btnExport').onclick = openExportDialog;
-		$('btnAddSnippet').onclick = () => addSnippet();
-		$('btnEditSource').onclick = openSourceDialog;
-		$('btnAiRefine').onclick = () => aiRefineSelectedBlock();
-		$('btnResetCam').onclick = () => state.widget?.editor?.resetCamera();
+		$('btnAddSnippet').onclick = openBatchAddDialog;
+		$('snippetSelectAll').addEventListener('change', () => setVisibleSnippetSelection($('snippetSelectAll').checked));
+		$('btnDeleteSelected').onclick = deleteSelectedSnippets;
+		$('btnBatchGenerate').onclick = () => batchGenerateSelected().catch(e => setStatus($('runStatus'), `批量生成失败：${e.message}`, 'error'));
 		$('snippetSearch').addEventListener('input', renderSnippetList);
-		['snippetId', 'snippetName', 'snippetFilename'].forEach(id => $(id).addEventListener('input', updateSnippetMetaFromForm));
+		['snippetId', 'snippetName', 'snippetFilename', 'snippetDescription'].forEach(id => $(id).addEventListener('input', updateSnippetMetaFromForm));
+		$('btnRegenerate').onclick = () => { try { regenerateSelectedSnippet(); } catch (e) { setStatus($('runStatus'), `重新生成失败：${e.message}`, 'error'); } };
 		['projectName', 'projectDescription'].forEach(id => $(id).addEventListener('input', () => { updateProjectFromForm(); saveLocalDraft(); }));
 		$('chatModelSelect').addEventListener('change', () => { saveSettings(); updateRailInfo(); });
 		window.addEventListener('resize', () => state.widget?.resize());
