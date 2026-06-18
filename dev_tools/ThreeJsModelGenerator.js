@@ -183,7 +183,7 @@ export function highlightLine(raw) {
 	if (h.includes('tok-c')) return h;
 	h = h.replace(/(&#39;[^&]*?&#39;|'[^']*'|`[^`]*`)/g, '<span class="tok-s">$1</span>');
 	h = h.replace(/\b(const|let|var|for|of|in|new|return|function|if|else|continue|break|while)\b/g, '<span class="tok-k">$1</span>');
-	h = h.replace(/\b(scene|add|box|boxAt|circle|cyl|sphere|cone|torus|plane|mat|extrudeShape|hideFace|forEach|map|push|set|absarc|moveTo|lineTo)\b/g, '<span class="tok-f">$1</span>');
+	h = h.replace(/\b(scene|add|box|boxAt|circle|cyl|sphere|cone|torus|plane|mat|quality|extrudeShape|hideFace|forEach|map|push|set|absarc|moveTo|lineTo)\b/g, '<span class="tok-f">$1</span>');
 	h = h.replace(/\b(0x[0-9a-fA-F]+|\d+\.?\d*)\b/g, '<span class="tok-n">$1</span>');
 	return h;
 }
@@ -195,6 +195,13 @@ export function highlightLine(raw) {
 
 export function createDefaultHelpers(THREE, opts = {}) {
 	const segHi = opts.lowPoly ? false : true;
+	// Global poly-quality multiplier. opts.quality may be a number or a getter (so the
+	// live editor can change it at runtime and have it picked up on the next rebuild).
+	// seg() scales a base segment count by the current quality and clamps to a sane floor
+	// so curved built-in shapes (sphere / cyl / cone / torus / circle / extrude) can be
+	// made cheaper — fewer segments ⇒ fewer triangles — without editing the model source.
+	const getQ = typeof opts.quality === 'function' ? opts.quality : () => (Number(opts.quality) || 1);
+	const seg = (base, min = 3) => Math.max(min, Math.round(base * getQ()));
 	const mat = (color, rough = 0.7, metal = 0.05) =>
 		new THREE.MeshStandardMaterial({ color, roughness: rough, metalness: metal });
 	const box = (w, h, d, m) => new THREE.Mesh(new THREE.BoxGeometry(w, h, d), m);
@@ -204,14 +211,14 @@ export function createDefaultHelpers(THREE, opts = {}) {
 		return b;
 	};
 	const cyl = (rt, rb, h, m, open = false) =>
-		new THREE.Mesh(new THREE.CylinderGeometry(rt, rb, h, segHi ? 40 : 18, 1, open), m);
-	const cone = (r, h, m) => new THREE.Mesh(new THREE.ConeGeometry(r, h, segHi ? 36 : 16), m);
-	const sphere = (r, m) => new THREE.Mesh(new THREE.SphereGeometry(r, segHi ? 28 : 16, segHi ? 20 : 12), m);
-	const circle = (r, m) => new THREE.Mesh(new THREE.CircleGeometry(r, segHi ? 56 : 24), m);
-	const torus = (r, tube, m) => new THREE.Mesh(new THREE.TorusGeometry(r, tube, 12, segHi ? 40 : 18), m);
+		new THREE.Mesh(new THREE.CylinderGeometry(rt, rb, h, seg(segHi ? 40 : 18), 1, open), m);
+	const cone = (r, h, m) => new THREE.Mesh(new THREE.ConeGeometry(r, h, seg(segHi ? 36 : 16)), m);
+	const sphere = (r, m) => new THREE.Mesh(new THREE.SphereGeometry(r, seg(segHi ? 28 : 16), seg(segHi ? 20 : 12, 2)), m);
+	const circle = (r, m) => new THREE.Mesh(new THREE.CircleGeometry(r, seg(segHi ? 56 : 24)), m);
+	const torus = (r, tube, m) => new THREE.Mesh(new THREE.TorusGeometry(r, tube, seg(12), seg(segHi ? 40 : 18)), m);
 	const plane = (w, h, m) => new THREE.Mesh(new THREE.PlaneGeometry(w, h), m);
 	const extrudeShape = (shape, depth, m) => {
-		const g = new THREE.ExtrudeGeometry(shape, { depth, bevelEnabled: false, curveSegments: segHi ? 30 : 14 });
+		const g = new THREE.ExtrudeGeometry(shape, { depth, bevelEnabled: false, curveSegments: seg(segHi ? 30 : 14) });
 		const mesh = new THREE.Mesh(g, m);
 		mesh.rotation.x = Math.PI / 2;
 		return mesh;
@@ -237,6 +244,8 @@ export function createThreeModelEditor(config) {
 		background = 0x223052,
 		onPick = null,            // (meta|null, { relatedParams }) => void
 		onSourceChange = null,    // (currentSource) => void
+		onStats = null,           // ({ triangles }) => void — fired after every (re)build
+		polyQuality: initialPolyQuality = 1,   // global segment-count multiplier for built-in curved shapes
 		onReady = null,
 	} = config;
 
@@ -265,8 +274,39 @@ export function createThreeModelEditor(config) {
 		return buildSource(lines, params, paramOrder);
 	}
 
+	// Persist the poly-quality into the source as a top-of-file `quality(<n>)` builtin call:
+	// update the existing line in place, or insert one just below the header comment. When inserting
+	// we shift PARAM/section line numbers in place (rather than re-parsing) so in-flight slider values
+	// and the changed/saved baselines are preserved.
+	const QUALITY_LINE_RE = /^\s*quality\s*\(/;
+	function writeQualityLine(q) {
+		const text = `quality(${fmtNum(q)});   // 精度（内置曲面分段倍率，越低面越少；随模型保存）`;
+		const idx = lines.findIndex(ln => QUALITY_LINE_RE.test(ln));
+		if (idx >= 0) { lines[idx] = text; return; }
+		const insertAt = (lines[0] && /^\s*\/\//.test(lines[0])) ? 1 : 0;   // keep below the `// file.three.js` header
+		lines.splice(insertAt, 0, text);
+		for (const name of paramOrder) { const p = params[name]; if (p && p.line >= insertAt + 1) p.line += 1; }
+		sectionRanges = buildSectionRanges(lines);
+	}
+
 	// ---- helpers passed to user source ----
-	const helpers = { ...createDefaultHelpers(THREE, { lowPoly }), ...helperOverrides };
+	// polyQuality scales the segment counts of built-in curved shapes at build time. The model
+	// source persists it per-model via a top-of-file `quality(<n>)` builtin call (see the `quality`
+	// helper below + setPolyQuality), so each rebuild reads the current value through this getter.
+	// Lowering it cuts triangle count for spheres / cylinders / cones / etc.
+	const clampQuality = (q) => Math.max(0.1, Math.min(4, Number(q) || 1));
+	// defaultQuality is what a model gets when its source has no `quality(...)` call. Each build
+	// resets to it so the source's call is authoritative (and quality never leaks between snippets).
+	const defaultQuality = clampQuality(initialPolyQuality);
+	let polyQuality = defaultQuality;
+	const helpers = {
+		...createDefaultHelpers(THREE, { lowPoly, quality: () => polyQuality }),
+		// builtin: quality(q) — set this model's poly-quality multiplier. Call it once near the top
+		// of the source (before any shape). The 精度 slider writes/updates this line so it is saved
+		// with the model. Returns the clamped value.
+		quality: (q) => { polyQuality = clampQuality(q); return polyQuality; },
+		...helperOverrides,
+	};
 
 	// ---- renderer / scene ----
 	const renderer = new THREE.WebGLRenderer({ canvas, antialias: true });
@@ -404,9 +444,15 @@ export function createThreeModelEditor(config) {
 		new THREE.PlaneGeometry(80, 60),
 		new THREE.MeshStandardMaterial({ color: 0x2b3550, roughness: 0.95 }));
 	floor.rotation.x = -Math.PI / 2;
-	floor.position.y = -1.6;
+	floor.position.y = 0;   // the ground plane (1 unit = 1 m). Models stand with base at y=0, so shadows land here.
 	floor.receiveShadow = true;
 	scene.add(floor);
+
+	// Measurement grid on the ground plane (1 unit = 1 meter). The cell size auto-switches between
+	// 1 m and 1 cm depending on the model's footprint, so the grid stays useful for both a building
+	// and a small prop. Rebuilt by updateGroundGrid() after each build (see runBuild).
+	let groundGrid = null;
+	let gridInfo = { unit: 'm', cell: 1, size: 0, divisions: 0 };
 
 	// ============================================================
 	//  Color-injection picking infrastructure
@@ -421,6 +467,74 @@ export function createThreeModelEditor(config) {
 	let nextId = 0;
 	const idToMeta = new Map();
 	const pickEntries = []; // { id, pickMat, exact }
+	// Green wireframe overlays for the currently selected shape (declared early because
+	// disposeGroup → clearHighlightOverlay can run during initial measureAffected()).
+	let highlightWires = [];
+
+	// ---- render options (wireframe / shadow / ground / grid) ----
+	// wireframe must be re-applied after every rebuild (materials are recreated); shadow/ground/grid
+	// are renderer/scene-level and persist across rebuilds.
+	const renderOpts = { wireframe: false, shadow: true, ground: true, grid: true };
+	function applyRenderOptions() {
+		group.traverse(o => {
+			if (!o.isMesh) return;
+			const mats = Array.isArray(o.material) ? o.material : [o.material];
+			for (const m of mats) if (m && 'wireframe' in m) m.wireframe = renderOpts.wireframe;
+		});
+	}
+	function setWireframe(on) { renderOpts.wireframe = !!on; applyRenderOptions(); }
+	function setShadow(on) {
+		renderOpts.shadow = !!on;
+		renderer.shadowMap.enabled = renderOpts.shadow;
+		key.castShadow = renderOpts.shadow;
+		// toggling shadowMap.enabled after materials have compiled requires a shader recompile
+		scene.traverse(o => {
+			if (!o.isMesh) return;
+			const mats = Array.isArray(o.material) ? o.material : [o.material];
+			for (const m of mats) if (m) m.needsUpdate = true;
+		});
+	}
+	function setGround(on) { renderOpts.ground = !!on; floor.visible = renderOpts.ground; }
+	function setGrid(on) { renderOpts.grid = !!on; if (groundGrid) groundGrid.visible = renderOpts.grid; }
+	function getRenderOptions() { return { ...renderOpts }; }
+	function getGridInfo() { return { ...gridInfo }; }
+
+	// Intrinsic (un-rotated) bounding box of the model. The group auto-rotates, so we momentarily
+	// neutralize its transform to measure the object's own size rather than its spinning AABB.
+	const _gridBox = new THREE.Box3(), _gridSize = new THREE.Vector3(), _gridCenter = new THREE.Vector3();
+	function modelBounds() {
+		if (!group.children.length) return null;
+		const rot = group.rotation.clone(), pos = group.position.clone();
+		group.rotation.set(0, 0, 0); group.position.set(0, 0, 0); group.updateMatrixWorld(true);
+		_gridBox.setFromObject(group);
+		group.rotation.copy(rot); group.position.copy(pos); group.updateMatrixWorld(true);
+		if (_gridBox.isEmpty()) return null;
+		_gridBox.getSize(_gridSize); _gridBox.getCenter(_gridCenter);
+		return { size: _gridSize.clone(), center: _gridCenter.clone(), minY: _gridBox.min.y };
+	}
+	// Rebuild the ground grid sized to the model. cell = 1 m normally, 1 cm for small (<0.5 m) props.
+	function updateGroundGrid() {
+		const b = modelBounds();
+		const footprint = b ? Math.max(b.size.x, b.size.z) : 1;
+		const useCm = footprint < 0.5;                 // sub-half-meter objects read better in cm
+		const cell = useCm ? 0.01 : 1;                 // world units per cell (1 unit = 1 meter)
+		let divisions = Math.round((footprint / cell) * 2) || 1;
+		divisions = Math.min(80, Math.max(8, divisions));   // keep line count sane while covering the model
+		const size = +(divisions * cell).toFixed(6);
+		if (!groundGrid || gridInfo.cell !== cell || gridInfo.divisions !== divisions) {
+			if (groundGrid) { scene.remove(groundGrid); groundGrid.geometry.dispose(); groundGrid.material.dispose(); }
+			// lighter than the floor (0x2b3550) so the lines read clearly against it
+			groundGrid = new THREE.GridHelper(size, divisions, 0x8fc4ff, 0x6a7da6);
+			groundGrid.material.transparent = true;
+			groundGrid.material.opacity = 0.7;
+			groundGrid.visible = renderOpts.grid;
+			scene.add(groundGrid);
+		}
+		// sit the grid on the y=0 ground (where the floor + model base are), centered on the footprint.
+		// a hair above 0 so the grid lines don't z-fight with the coplanar floor plane.
+		groundGrid.position.set(b ? b.center.x : 0, 0.002, b ? b.center.z : 0);
+		gridInfo = { unit: useCm ? 'cm' : 'm', cell, size, divisions };
+	}
 	const labelSeq = Object.create(null);
 
 	function idToColor(id) {
@@ -498,6 +612,7 @@ export function createThreeModelEditor(config) {
 	function runBuild() {
 		if (!buildFn) return;
 		stackOffset = null;
+		polyQuality = defaultQuality;   // source's `quality(...)` call (if any) overrides this during the run
 		for (const k in labelSeq) delete labelSeq[k];
 		const uninstall = installPickHook(group);
 		try {
@@ -507,9 +622,26 @@ export function createThreeModelEditor(config) {
 		} finally {
 			uninstall();
 		}
+		applyRenderOptions();   // re-apply wireframe to the freshly built materials
+		updateGroundGrid();     // resize the measurement grid (auto m / cm) to the new model
+		emitStats();
 	}
 
+	// ---- triangle count of the live model (the visible `group`, excluding ground/lights) ----
+	function countTriangles() {
+		let tris = 0;
+		group.traverse(o => {
+			if (!o.isMesh || !o.geometry) return;
+			const g = o.geometry;
+			if (g.index) tris += g.index.count / 3;
+			else if (g.attributes && g.attributes.position) tris += g.attributes.position.count / 3;
+		});
+		return Math.round(tris);
+	}
+	function emitStats() { if (onStats) { try { onStats({ triangles: countTriangles(), grid: getGridInfo() }); } catch (_) {} } }
+
 	function disposeGroup() {
+		clearHighlightOverlay();   // drop green wireframe overlays before tearing down their host meshes
 		while (group.children.length) {
 			const c = group.children.pop();
 			c.geometry && c.geometry.dispose();
@@ -651,14 +783,37 @@ export function createThreeModelEditor(config) {
 	measureAffected();
 
 	// ============================================================
-	//  Selection + highlight (emissive glow on selected meshes)
+	//  Selection + highlight (green wireframe overlay on the picked shape)
 	// ============================================================
 	let selectedLabel = null;
+	// We outline only the picked geometry — NOT the material — because a material
+	// (e.g. a shared mat(...)) can be reused by many meshes; tinting it would light up
+	// every shape that uses it. highlightWires is declared near the group state above.
+	function clearHighlightOverlay() {
+		for (const w of highlightWires) {
+			w.parent && w.parent.remove(w);
+			w.geometry && w.geometry.dispose();
+			w.material && w.material.dispose();
+		}
+		highlightWires = [];
+	}
 	function highlightSelectedMesh() {
-		for (const m of idToMeta.values()) m.mats.forEach(({ mat }) => mat.emissive && mat.emissive.setHex(0x000000));
+		clearHighlightOverlay();
 		if (!selectedLabel) return;
 		for (const m of idToMeta.values()) {
-			if (m.label === selectedLabel) m.mats.forEach(({ mat }) => mat.emissive && mat.emissive.setHex(0x123a55));
+			if (m.label !== selectedLabel) continue;
+			for (const mesh of (m.meshes || [])) {
+				if (!mesh.geometry) continue;
+				// Build the wireframe in the mesh's own geometry space and parent it to the
+				// mesh, so it inherits the exact position/rotation/scale and rotates with the group.
+				const wire = new THREE.LineSegments(
+					new THREE.WireframeGeometry(mesh.geometry),
+					new THREE.LineBasicMaterial({ color: 0x00ff00, transparent: true, depthTest: false })
+				);
+				wire.renderOrder = 999;   // draw on top so the outline is always visible
+				mesh.add(wire);
+				highlightWires.push(wire);
+			}
 		}
 	}
 	function metaByLabel(label) {
@@ -896,9 +1051,28 @@ export function createThreeModelEditor(config) {
 		getSelectedLabel: () => selectedLabel,
 		clearSelection() { selectMeta(null); },
 
+		// stats + poly quality
+		getTriangleCount: () => countTriangles(),
+		getPolyQuality: () => polyQuality,
+		setPolyQuality(v) {
+			const next = clampQuality(v);
+			polyQuality = next;
+			writeQualityLine(next);    // persist into the source's top-of-file `quality(<n>)` call
+			rebuild();                 // re-runs source → curved shapes pick up the new segment counts (emits stats)
+			highlightSelectedMesh();   // re-attach the green wireframe to the rebuilt mesh
+			if (onSourceChange) onSourceChange(currentSource());   // mirror the edited line into the code editor / snippet
+			return polyQuality;
+		},
+
 		// rendering modes
 		setShowPick(v) { showPick = !!v; },
 		isShowingPick: () => showPick,
+		getRenderOptions,
+		setWireframe,
+		setShadow,
+		setGround,
+		setGrid,
+		getGridInfo,
 		setAutoRotate(v) { autoRotate = !!v; },
 		resize: onResize,
 
@@ -927,6 +1101,7 @@ export function createThreeModelEditor(config) {
 			canvas.removeEventListener('wheel', onWheel);
 			canvas.removeEventListener('contextmenu', onContextMenu);
 			disposeGroup();
+			if (groundGrid) { scene.remove(groundGrid); groundGrid.geometry.dispose(); groundGrid.material.dispose(); groundGrid = null; }
 			pickTarget.dispose();
 			renderer.dispose();
 		},
@@ -961,11 +1136,13 @@ const WIDGET_CSS = `
      container's width, not the viewport (the widget can be embedded in a
      narrow column inside a wide page). */
   container-type:inline-size;container-name:tmd;
-  /* In the wide (3-column) layout give the widget a self-contained bounded height
-     (a share of the viewport) so the columns fill it and the params list scrolls
-     inside its own column instead of growing the whole widget. The stacked
-     container/media queries below reset this to height:auto so the page scrolls. */
-  font-family:"PingFang SC","Microsoft YaHei","Segoe UI",system-ui,sans-serif;color:var(--ink);height:82vh;max-height:680px;min-height:520px;display:flex;flex-direction:column;}
+  /* In the wide (3-column) layout the widget fills its host's bounded height so the
+     columns fill it and the params list scrolls inside its own column instead of
+     growing the whole widget. */
+  /* fill the host container (#devtoolsHost is a flex-1 panel child) instead of a
+     fixed viewport share, so the widget never leaves empty space below it. The
+     stacked container/media queries below reset this to height:auto so the page scrolls. */
+  font-family:"PingFang SC","Microsoft YaHei","Segoe UI",system-ui,sans-serif;color:var(--ink);height:100%;min-height:520px;display:flex;flex-direction:column;}
 .tmd-root *{box-sizing:border-box;}
 /* thin custom scrollbars (Firefox + WebKit) */
 .tmd-root,.tmd-root *{scrollbar-width:thin;scrollbar-color:rgba(123,150,255,.35) transparent;}
@@ -992,6 +1169,9 @@ const WIDGET_CSS = `
 .tmd-bar .act:hover{color:var(--ink);border-color:var(--cyan);}
 .tmd-bar .act.save{color:#04121a;font-weight:700;border:none;background:linear-gradient(120deg,var(--green),#2bb673);}
 .tmd-bar .act.active{color:var(--cyan);border-color:var(--cyan);background:rgba(45,226,230,.12);}
+.tmd-bar .act.chat{color:#04121a;font-weight:700;border:none;background:linear-gradient(120deg,var(--cyan),var(--violet));box-shadow:0 6px 16px -8px rgba(45,226,230,.8);}
+.tmd-bar .act.chat:hover{filter:brightness(1.08);color:#04121a;}
+.tmd-bar .act.chat:active{transform:scale(.97);}
 .tmd-grid{display:grid;grid-template-columns:minmax(0,1.1fr) minmax(0,1.2fr) minmax(300px,.9fr);grid-auto-rows:minmax(0,1fr);flex:1 1 auto;min-height:0;}
 .tmd-code{border-right:1px solid var(--panel-line);background:#070b18;overflow:hidden;min-height:0;height:100%;position:relative;display:flex;flex-direction:column;}
 .tmd-code .tmd-cm-host{flex:1 1 auto;min-height:0;overflow:hidden;}
@@ -1007,10 +1187,19 @@ const WIDGET_CSS = `
 .tmd-edit-hint.err{color:#ff6b6b;}
 .tmd-view{position:relative;display:flex;flex-direction:column;border-right:1px solid var(--panel-line);}
 .tmd-canvas{width:100%;flex:1;min-height:360px;display:block;cursor:crosshair;background:radial-gradient(circle at 50% 40%,#0e1530,#060914);}
-.tmd-hud{position:absolute;top:12px;left:12px;right:12px;display:flex;gap:8px;flex-wrap:wrap;pointer-events:none;}
+.tmd-hud{position:absolute;top:12px;left:12px;right:12px;display:flex;gap:8px;flex-wrap:wrap;align-items:center;pointer-events:none;}
 .tmd-hud .hint{font-size:11px;color:var(--cyan);background:rgba(6,9,20,.6);border:1px solid var(--panel-line);border-radius:999px;padding:4px 12px;backdrop-filter:blur(6px);}
+/* always-on triangle-count badge in the HUD (full controls live in the 显示 panel) */
+.tmd-hud .tmd-tris-badge{margin-left:auto;font-size:11px;font-weight:700;color:var(--amber);font-family:"JetBrains Mono",monospace;white-space:nowrap;background:rgba(6,9,20,.6);border:1px solid var(--panel-line);border-radius:999px;padding:4px 12px;backdrop-filter:blur(6px);cursor:pointer;pointer-events:auto;}
+.tmd-hud .tmd-tris-badge:hover{border-color:var(--amber);}
+/* render panel extras (reuses .tmd-light-panel chrome) */
+.tmd-light-panel .lp-head .lp-tris{color:var(--amber);font-size:11px;font-weight:700;font-family:"JetBrains Mono",monospace;}
+.tmd-light-panel .lp-hint{margin-top:3px;font-size:10px;line-height:1.4;color:var(--ink-dim);}
+.tmd-light-panel .lp-toggle{flex-direction:row;align-items:center;justify-content:space-between;gap:8px;margin-bottom:9px;cursor:pointer;color:var(--ink-soft);}
+.tmd-light-panel .lp-toggle:hover{color:var(--ink);}
+.tmd-light-panel .lp-toggle input[type=checkbox]{width:15px;height:15px;min-height:0;margin:0;padding:0;accent-color:var(--violet);cursor:pointer;}
 /* ---- lighting popover panel (top-right of the 3D view) ---- */
-.tmd-light-panel{position:absolute;top:48px;right:12px;width:248px;max-height:calc(100% - 60px);overflow-y:auto;z-index:5;padding:12px 14px;border:1px solid var(--panel-line);border-radius:12px;background:rgba(8,12,26,.92);backdrop-filter:blur(10px);box-shadow:0 20px 40px -18px rgba(0,0,0,.8);font-size:11.5px;color:var(--ink-soft);}
+.tmd-light-panel{position:absolute;top:48px;right:12px;width:248px;max-height:calc(100% - 60px);overflow-y:auto;z-index:5;padding:12px 14px;border:1px solid var(--panel-line);border-radius:12px;background:rgba(8,12,26,.42);backdrop-filter:blur(10px);box-shadow:0 20px 40px -18px rgba(0,0,0,.8);font-size:11.5px;color:var(--ink-soft);}
 .tmd-light-panel[hidden]{display:none;}
 .tmd-light-panel .lp-head{display:flex;align-items:center;justify-content:space-between;margin-bottom:10px;}
 .tmd-light-panel .lp-head b{color:var(--ink);font-size:12.5px;}
@@ -1202,6 +1391,8 @@ export async function mountThreeModelDevtools(container, opts = {}) {
 		showToolbarActions = true,    // 重置 / 保存 buttons in the title bar
 		onSourceChange = null,
 		onPick = null,
+		onChat = null,                // 提供时在 params 头部显示「💬 AI 改模型」按钮，点击调用此回调
+
 		lowPoly = false,
 		background = 0x223052,
 	} = opts;
@@ -1225,11 +1416,13 @@ export async function mountThreeModelDevtools(container, opts = {}) {
 			</span>
 			<span class="file" data-tmd="file">${escapeHtml(filename)}</span>
 			<span class="modepill">
+				${onChat ? '<button type="button" class="act chat" data-tmd="chatBtn" title="用 AI 对话修改这个模型的源码（keepwork 编辑工具）">💬 AI 改模型</button>' : ''}
 				<span class="sw">
 					<button data-tmd="modeNormal" class="active">正常渲染</button>
 					<button data-tmd="modePick">显示 color id</button>
 				</span>
 				<button class="act" data-tmd="lightBtn" title="调整灯光">💡 灯光</button>
+				<button class="act" data-tmd="renderBtn" title="显示与渲染选项（三角形 / 精度 / 线框 / 阴影 / 地面）">🔺 显示</button>
 				${showToolbarActions ? '<button class="act" data-tmd="reset">↺ 重置</button><button class="act save" data-tmd="save">✓ 保存</button>' : ''}
 			</span>
 		</div>
@@ -1242,8 +1435,12 @@ export async function mountThreeModelDevtools(container, opts = {}) {
 			</div>
 			<div class="tmd-view">
 				<canvas data-tmd="canvas" class="tmd-canvas"></canvas>
-				<div class="tmd-hud"><span class="hint">↳ 点击部件 → 定位代码 + 调参 · 拖动旋转 · 右键/中键或双指拖动平移 · 滚轮/双指缩放</span></div>
+				<div class="tmd-hud">
+					<span class="hint">↳ 点击部件 → 定位代码 + 调参 · 拖动旋转 · 右键/中键或双指拖动平移 · 滚轮/双指缩放</span>
+					<span class="tmd-tris-badge" data-tmd="trisBadge" title="当前模型的三角形总数（点击打开「显示」面板）">△ —</span>
+				</div>
 				<div class="tmd-light-panel" data-tmd="lightPanel" hidden></div>
+				<div class="tmd-light-panel" data-tmd="renderPanel" hidden></div>
 			</div>
 			<div class="tmd-side">
 				<div class="tmd-foot" data-tmd="foot">
@@ -1276,6 +1473,29 @@ export async function mountThreeModelDevtools(container, opts = {}) {
 	const editHint = q('edithint');
 	const btnLight = q('lightBtn');
 	const lightPanel = q('lightPanel');
+	const btnChat = q('chatBtn');
+	if (btnChat && onChat) btnChat.addEventListener('click', (e) => { e.stopPropagation(); onChat(); });
+	const trisBadge = q('trisBadge');
+	const btnRender = q('renderBtn');
+	const renderPanel = q('renderPanel');
+	// Latest triangle count, refreshed after every build via the editor's onStats. The HUD badge is
+	// always present; the render panel's readout (data-tmd="trisPanel") only exists while the panel is open.
+	let lastTris = 0;
+	let lastGrid = { unit: 'm', cell: 1 };
+	const fmtTris = (n) => '△ ' + Number(n || 0).toLocaleString('en-US') + ' tris';
+	// Human label for one grid cell's real size, e.g. "1 m" or "1 cm".
+	const fmtGrid = (g) => !g ? '1 m' : (g.unit === 'cm' ? `${+(+(g.cell || 0) * 100).toFixed(2)} cm` : `${+(+(g.cell || 1)).toFixed(2)} m`);
+	function setTris(n) {
+		lastTris = Number(n || 0);
+		if (trisBadge) trisBadge.textContent = fmtTris(lastTris);
+		const panelTris = renderPanel && renderPanel.querySelector('[data-tmd="trisPanel"]');
+		if (panelTris) panelTris.textContent = fmtTris(lastTris);
+	}
+	function setGridReadout(g) {
+		if (g) lastGrid = g;
+		const el = renderPanel && renderPanel.querySelector('[data-tmd="gridInfo"]');
+		if (el) el.textContent = fmtGrid(lastGrid);
+	}
 
 	let picked = null;
 
@@ -1543,6 +1763,7 @@ export async function mountThreeModelDevtools(container, opts = {}) {
 			setCodeValue(src);
 			if (onSourceChange) onSourceChange(src);
 		},
+		onStats: ({ triangles, grid }) => { setTris(triangles); setGridReadout(grid); },
 	});
 
 	const err = editor.getError();
@@ -1550,6 +1771,8 @@ export async function mountThreeModelDevtools(container, opts = {}) {
 		foot.innerHTML = `<div class="row1"><span class="pick" style="background:#ff5f57">error</span><span>建模脚本执行失败：${escapeHtml(err.message)}</span></div>`;
 	}
 	renderParams();
+
+	setTris(editor.getTriangleCount());   // seed the readout (the build during construction already counted)
 
 	// ---- mount the always-editable CodeMirror code panel ----
 	loadCodeMirror(doc, opts.codeMirrorCdn).then((CodeMirror) => {
@@ -1633,7 +1856,7 @@ export async function mountThreeModelDevtools(container, opts = {}) {
 	function toggleLightPanel(show) {
 		if (!lightPanel) return;
 		const next = show === undefined ? lightPanel.hasAttribute('hidden') : show;
-		if (next) { buildLightPanel(); lightPanel.removeAttribute('hidden'); }
+		if (next) { toggleRenderPanel(false); buildLightPanel(); lightPanel.removeAttribute('hidden'); }
 		else lightPanel.setAttribute('hidden', '');
 		if (btnLight) btnLight.classList.toggle('active', next);
 	}
@@ -1643,6 +1866,60 @@ export async function mountThreeModelDevtools(container, opts = {}) {
 		if (!lightPanel || lightPanel.hasAttribute('hidden')) return;
 		if (lightPanel.contains(e.target) || btnLight?.contains(e.target)) return;
 		toggleLightPanel(false);
+	});
+
+	// ---- render / display panel (triangle count · 精度 LOD · wireframe · shadow · ground) ----
+	function buildRenderPanel() {
+		if (!renderPanel) return;
+		const ro = editor.getRenderOptions();
+		const q2 = editor.getPolyQuality();
+		const toggle = (key, label, on, hint) =>
+			`<label class="lp-toggle" data-key="${key}" title="${escapeHtml(hint)}"><span>${escapeHtml(label)}</span><input type="checkbox" ${on ? 'checked' : ''}></label>`;
+		renderPanel.innerHTML = `
+			<div class="lp-head"><b>🔺 显示</b><span class="lp-tris" data-tmd="trisPanel">${fmtTris(lastTris)}</span></div>
+			<div class="lp-group">几何精度</div>
+			<div class="lp-row" data-tmd="lodRow">
+				<div class="lp-label"><span>精度 Quality</span><span class="lv" data-tmd="lodVal">${(+q2).toFixed(2)}×</span></div>
+				<input type="range" data-tmd="lod" min="0.2" max="1" step="0.05" value="${q2}">
+				<div class="lp-hint">缩放球 / 圆柱 / 圆锥 / 圆环等内置曲面形状的分段数。调低 → 三角形更少。</div>
+			</div>
+			<div class="lp-group">渲染</div>
+			${toggle('wireframe', '线框 Wireframe', ro.wireframe, '以线框显示模型（关闭则为着色实体）。')}
+			${toggle('shadow', '阴影 Shadow', ro.shadow, '开启主光投影 + 地面接收阴影。')}
+			${toggle('ground', '地面 Ground', ro.ground, '显示/隐藏地面平面（阴影承接面）。')}
+			${toggle('grid', '网格 Grid', ro.grid, '显示/隐藏地面测量网格（1 单位 = 1 米，按物体大小自动切换 米 / 厘米）。')}
+			<div class="lp-hint" style="margin-top:-4px;">每格 = <b style="color:var(--amber)" data-tmd="gridInfo">${escapeHtml(fmtGrid(lastGrid))}</b>（1 单位 = 1 米，随物体大小自动切换 米 / 厘米）</div>`;
+		const lod = renderPanel.querySelector('[data-tmd="lod"]');
+		const lodVal = renderPanel.querySelector('[data-tmd="lodVal"]');
+		if (lod) lod.addEventListener('input', () => {
+			if (lodVal) lodVal.textContent = parseFloat(lod.value).toFixed(2) + '×';
+			editor.setPolyQuality(parseFloat(lod.value));   // rebuilds + emits stats → tris readout refreshes
+		});
+		renderPanel.querySelectorAll('.lp-toggle').forEach(row => {
+			const key = row.getAttribute('data-key');
+			const input = row.querySelector('input[type=checkbox]');
+			input.addEventListener('change', () => {
+				if (key === 'wireframe') editor.setWireframe(input.checked);
+				else if (key === 'shadow') editor.setShadow(input.checked);
+				else if (key === 'ground') editor.setGround(input.checked);
+				else if (key === 'grid') editor.setGrid(input.checked);
+			});
+		});
+	}
+	function toggleRenderPanel(show) {
+		if (!renderPanel) return;
+		const next = show === undefined ? renderPanel.hasAttribute('hidden') : show;
+		if (next) { toggleLightPanel(false); buildRenderPanel(); renderPanel.removeAttribute('hidden'); }
+		else renderPanel.setAttribute('hidden', '');
+		if (btnRender) btnRender.classList.toggle('active', next);
+	}
+	if (btnRender) btnRender.addEventListener('click', (e) => { e.stopPropagation(); toggleRenderPanel(); });
+	// the tris badge is a shortcut into the same 显示 panel
+	if (trisBadge) trisBadge.addEventListener('click', (e) => { e.stopPropagation(); toggleRenderPanel(); });
+	root.addEventListener('click', (e) => {
+		if (!renderPanel || renderPanel.hasAttribute('hidden')) return;
+		if (renderPanel.contains(e.target) || btnRender?.contains(e.target) || trisBadge?.contains(e.target)) return;
+		toggleRenderPanel(false);
 	});
 
 	// undo / redo drive CodeMirror's built-in history; the change handler then
@@ -1665,6 +1942,20 @@ export async function mountThreeModelDevtools(container, opts = {}) {
 		root,
 		editor,
 		getCurrentSource: () => editor.getCurrentSource(),
+		// 当前在 3D 视图里选中的部件 → 它的源码块（标签 + 1-based 行号区间 + 代码文本）。
+		// 用于把「选中的部件 / 代码行」作为上下文附加到 AI 对话里（类比编辑器附加选区）。
+		// 没有选中部件时返回 null。
+		getSelection() {
+			if (!picked || !lastRange) return null;
+			const [a, b] = lastRange;
+			const srcLines = editor.getCurrentSource().split('\n');
+			return {
+				label: picked.displayLabel || '',
+				line: picked.line || a,
+				range: [a, b],
+				code: srcLines.slice(a - 1, b).join('\n'),
+			};
+		},
 		setSource(src, o = {}) {
 			picked = null;
 			clearTimeout(editTimer);
