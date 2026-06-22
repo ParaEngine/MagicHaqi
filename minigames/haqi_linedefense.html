@@ -1706,7 +1706,6 @@
       } catch (e) {}
     })();
     resize();
-    show('home');
     // 加载宠物图库（用于主角/敌人形象 + 5系归类），加载完成后刷新当前界面
     window.__onPetCatalogReady = () => {
       if (G.screen === 'battle') return;
@@ -1719,7 +1718,11 @@
       else if (G.screen === 'bag' && window.__renderBag) window.__renderBag();
       else if (G.screen === 'map' && window.__renderMap) window.__renderMap();
     };
-    loadPetCatalog();
+    // 首页同步渲染：首帧画出来的就是完整主页，杜绝“先显示背景/空屏、再弹出主页”的闪烁。
+    // 为保持 start 预算，renderHome 内部把非视觉关键的初始化(宠物头像 canvas 绘制、
+    // 体力每秒倒计时、音乐按钮状态)推迟到首帧绘制之后执行；异步宠物图库(网络)同样延后。
+    show('home');
+    requestAnimationFrame(() => loadPetCatalog());
     try { window.parent.postMessage({ type: 'gameLoaded' }, '*'); } catch (e) {}
 
     window.addEventListener('message', function (e) {

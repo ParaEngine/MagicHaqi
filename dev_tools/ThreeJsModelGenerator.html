@@ -2348,13 +2348,14 @@
 	}
 
 	/* ===== SDK loading ===== */
+	const SDK_CDN_URL = 'https://cdn.keepwork.com/sdk/keepworkSDK.iife.js?v=20260619a';
 	function getSdkCandidates() {
 		const params = new URLSearchParams(window.location.search);
 		const explicitSdk = params.get('sdk');
 		const hostname = window.location.hostname;
 		const isLocalHost = !hostname || hostname === 'localhost' || hostname === '127.0.0.1' || hostname === '::1';
 		const local = ['http://127.0.0.1:5001/index.ts'];
-		const deployed = ['https://cdn.keepwork.com/sdk/keepworkSDK.iife.js', 'https://keepwork.com/public/resource/keepworkSDK.iife.js'];
+		const deployed = [SDK_CDN_URL];
 		return [explicitSdk, ...(isLocalHost || window.location.protocol === 'file:' ? local : []), ...deployed, ...(isLocalHost || window.location.protocol === 'file:' ? [] : local)].filter(Boolean);
 	}
 	function loadScript(src) {

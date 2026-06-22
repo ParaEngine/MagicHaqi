@@ -11,9 +11,10 @@ import {
 } from './storage.js';
 import { applyDecay, applyStage, clampEnergyToMax, defaultPermanentTrauma, defaultStats, eggStats, getActiveSickness, getEffectiveSicknessSeverity, getSicknessDef, markPetCared, maybeRollDailySickness, tickOffline, startTickLoop, stopTickLoop, treatPetSicknessOneLevel } from './petTick.js';
 import { renderLogin } from './view_login.js';
-import { loadFamousPetsIndex, renderPetList } from './view_petList.js';
+// view_petList.js (~53KB) is lazy-loaded; see loadPetListView() below.
 import { renderHatch } from './view_hatch.js';
-import { renderHome, stopHomeWalk } from './view_home.js';
+// view_home.js (+ the 4 level modules ~600KB) is lazy-loaded so it stays out of
+// the startup module graph; see loadHomeView()/renderHomeRoute below.
 import { renderShop } from './view_shop.js';
 import { renderInventory } from './view_inventory.js';
 import { renderProfile } from './view_profile.js';
@@ -92,36 +93,49 @@ async function ensureKeepworkSDK() {
     }
 }
 
-try {
-    await ensureKeepworkSDK();
-} catch (err) {
-    console.error('SDK 加载失败', err);
-    document.getElementById('app').innerHTML = '<div style="padding:40px;text-align:center;color:#b91c1c">SDK 加载失败，请检查网络后刷新。</div>';
-    throw err;
-}
-
 const soundManager = SoundManager.getInstance();
 const APP_AUDIO_VOLUME = 2.5;
 const SLEEP_BLOCKED_ROUTES = new Set(['chat', 'minigames', 'hatching', 'hatch']);
 
-// ==== SDK 初始化 ====
-if (!window.KeepworkSDK) {
-    showToast('SDK 加载失败', 'error', 5000);
-    throw new Error('KeepworkSDK 未定义');
-}
-const sdk = window.keepwork || new window.KeepworkSDK({ timeout: 30000 });
-// 设置 maisi 项目 API Key
-if (sdk.setUserApiKey && window.KeepworkSDK?.API_KEYS?.maisi) {
-    sdk.setUserApiKey(window.KeepworkSDK.API_KEYS.maisi);
-}
-sdk.localAPIKeySettings?.load?.().catch(err => console.warn('Local API Key settings load failed:', err));
-sdk.audioEngine?.setVolume?.(APP_AUDIO_VOLUME);
-state.sdk = sdk;
-window.MH_state = state; // 给 view_petList 顶部金币使用
-window.sdk = sdk;
-
 // 主面板
 const app = document.getElementById('app');
+
+// 立即绘制启动闪屏：首屏渲染不再等待 SDK（CDN 往返 + ~600KB 解析）或网络数据，
+// 给用户一个即时可见的内容画面（FCP），SDK 在后台并行加载。
+function renderSplash() {
+    app.innerHTML =
+        '<div style="position:absolute;inset:0;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:18px;color:#0f2747">'
+        + '<div style="font-size:30px;font-weight:800;letter-spacing:1px">蛋蛋星球</div>'
+        + '<div style="width:34px;height:34px;border:4px solid rgba(14,116,144,.25);border-top-color:#0ea5e9;border-radius:50%;animation:spin .8s linear infinite"></div>'
+        + '</div>';
+}
+renderSplash();
+
+// ==== SDK 延迟初始化 ====
+// sdk 在 initSdk() 完成后才可用；所有使用方（路由 / bootstrap）都在其后执行。
+let sdk = null;
+let sdkReadyPromise = null;
+function initSdk() {
+    if (sdkReadyPromise) return sdkReadyPromise;
+    sdkReadyPromise = (async () => {
+        await ensureKeepworkSDK();
+        if (!window.KeepworkSDK) throw new Error('KeepworkSDK 未定义');
+        sdk = window.keepwork || new window.KeepworkSDK({ timeout: 30000 });
+        // 设置 maisi 项目 API Key
+        if (sdk.setUserApiKey && window.KeepworkSDK?.API_KEYS?.maisi) {
+            sdk.setUserApiKey(window.KeepworkSDK.API_KEYS.maisi);
+        }
+        sdk.localAPIKeySettings?.load?.().catch(err => console.warn('Local API Key settings load failed:', err));
+        sdk.audioEngine?.setVolume?.(APP_AUDIO_VOLUME);
+        state.sdk = sdk;
+        window.MH_state = state; // 给 view_petList 顶部金币使用
+        window.sdk = sdk;
+        return sdk;
+    })();
+    return sdkReadyPromise;
+}
+// 后台并行预热 SDK（不阻塞首屏）。
+initSdk().catch(() => {});
 
 const ITEM_BY_ID = new Proxy({}, { get: (_, id) => getShopItemById(id) });
 let planetPlaytimeTimer = null;
@@ -727,12 +741,28 @@ function renderSettingsRoute() {
         });
 }
 
+// view_petList.js（图鉴 / 宠物列表，~53KB）—— 懒加载，移出启动模块图。
+let petListViewModule = null;
+let petListViewPromise = null;
+function loadPetListView() {
+    if (!petListViewPromise) {
+        petListViewPromise = import('./view_petList.js').then((mod) => { petListViewModule = mod; return mod; });
+    }
+    return petListViewPromise;
+}
+async function loadFamousPetsIndex(...args) {
+    const mod = petListViewModule || await loadPetListView();
+    return mod.loadFamousPetsIndex(...args);
+}
+
 async function renderPetListRoute() {
     app.innerHTML = `<div class="topbar"><button class="btn-icon" id="mhPetListBack" style="width:36px;height:36px;font-size:18px">‹</button><span class="font-bold" style="color:var(--text-primary)">${escapeHtml(t('petList'))}</span><span style="width:36px;height:36px"></span></div><div style="padding:18px;color:var(--text-muted)">${escapeHtml(t('petListLoading'))}</div>`;
     const back = $('mhPetListBack');
     if (back) back.onclick = () => setView(state.currentPetId ? 'home' : 'petList');
     if (state.currentView !== 'petList') return;
-    renderPetList(app, { pets: (state.petOrder || []).map(id => state.pets[id] || { id, lazyPetRecord: true }) }, {
+    const mod = petListViewModule || await loadPetListView();
+    if (state.currentView !== 'petList') return;
+    mod.renderPetList(app, { pets: (state.petOrder || []).map(id => state.pets[id] || { id, lazyPetRecord: true }) }, {
         onSelect: handleSelectPet,
         onFind:   handleFindPet,
         onDelete: handleDeletePet,
@@ -747,18 +777,17 @@ async function renderPetListRoute() {
 }
 
 // ==== 路由 ====
-const routes = {
-    login:     () => renderLogin(app, null, { onLogin: handleLogin, onOffline: handleOfflineMode }),
-    petList:   renderPetListRoute,
-    hatch:     () => {
-        const pet = getCurrentPet();
-        if (pet && guardSleepingRoute(pet)) return;
-        renderHatch(app, hatchCtx, {
-            onCreated: () => { hatchCtx = {}; setView('home'); },
-            onCancel:  () => { hatchCtx = {}; setView('hatching'); },
-        });
-    },
-    home:      () => renderHome(app, { pet: getCurrentPet() }, {
+// 家园主舞台（含 4 个 level 模块，约 600KB）—— 懒加载，移出启动模块图。
+let homeViewModule = null;
+let homeViewPromise = null;
+function loadHomeView() {
+    if (!homeViewPromise) {
+        homeViewPromise = import('./view_home.js').then((mod) => { homeViewModule = mod; return mod; });
+    }
+    return homeViewPromise;
+}
+function homeCallbacks() {
+    return {
         onAction:     handleAction,
         onSwitchRoom: (id) => { state.currentRoom = id; const p = getCurrentPet(); if (p) p.activeRoom = id; savePetDebounced(p); render(); },
         onToggleDecor: handleToggleDecor,
@@ -770,7 +799,37 @@ const routes = {
         onFeedComplete: render,
         onNav:        handleNav,
         onTreatSickness: handleTreatSickness,
-    }),
+    };
+}
+function renderHomeRoute() {
+    if (homeViewModule) {
+        homeViewModule.renderHome(app, { pet: getCurrentPet() }, homeCallbacks());
+        return;
+    }
+    app.innerHTML = '<div style="padding:24px;color:var(--text-muted)">' + escapeHtml(t('loading')) + '</div>';
+    loadHomeView()
+        .then((mod) => {
+            if (state.currentView !== 'home') return;
+            mod.renderHome(app, { pet: getCurrentPet() }, homeCallbacks());
+        })
+        .catch((e) => {
+            console.error('加载家园失败', e);
+            app.innerHTML = '<div style="padding:24px;color:#b91c1c">' + escapeHtml(t('renderError', { error: (e?.message || e) })) + '</div>';
+        });
+}
+
+const routes = {
+    login:     () => renderLogin(app, null, { onLogin: handleLogin, onOffline: handleOfflineMode }),
+    petList:   renderPetListRoute,
+    hatch:     () => {
+        const pet = getCurrentPet();
+        if (pet && guardSleepingRoute(pet)) return;
+        renderHatch(app, hatchCtx, {
+            onCreated: () => { hatchCtx = {}; setView('home'); },
+            onCancel:  () => { hatchCtx = {}; setView('hatching'); },
+        });
+    },
+    home:      renderHomeRoute,
     shop:      () => renderShop(app, null, {
         onBack: () => {
             const preserveRoomMode = shopReturnPreserveRoomMode;
@@ -953,7 +1012,7 @@ function render() {
     const currentView = (sdk.token || state.offlineMode) ? state.currentView : 'login';
     if (state.currentView !== currentView) state.currentView = currentView;
     cleanupLeavingView(currentView);
-    stopHomeWalk();
+    homeViewModule?.stopHomeWalk?.();
     const fn = routes[currentView] || routes.login;
     try { fn(); } catch (e) { console.error('render 失败', e); app.innerHTML = '<div style="padding:30px;color:#b91c1c">' + escapeHtml(t('renderError', { error: (e?.message || e) })) + '</div>'; }
 }
@@ -1022,6 +1081,15 @@ async function enterForcedViewIfAny() {
 
 // ==== 启动流程 ====
 async function bootstrap() {
+    // 等待 SDK 就绪（已在模块加载时并行预热；首屏闪屏此刻已绘制）。
+    try {
+        await initSdk();
+    } catch (err) {
+        console.error('SDK 加载失败', err);
+        app.innerHTML = '<div style="padding:40px;text-align:center;color:#b91c1c">SDK 加载失败，请检查网络后刷新。</div>';
+        throw err;
+    }
+
     // URL token
     try {
         const url = new URL(window.location.href);
@@ -1043,6 +1111,9 @@ async function bootstrap() {
         setView('login');
         return;
     }
+
+    // 已登录：提前并行预载家园视图（与网络请求并发），落地 home 时即可直接渲染，避免闪屏。
+    loadHomeView();
 
     // 已登录：加载数据
     try {

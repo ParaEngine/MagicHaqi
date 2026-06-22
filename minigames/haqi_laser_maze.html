@@ -533,6 +533,15 @@
 		return { start, baby, path };
 	}
 
+	let boardReady = false;
+	function ensureBoard() {
+		if (boardReady) return;
+		boardReady = true;
+		generateLevel();
+		render();
+		requestPetImage();
+	}
+
 	function generateLevel() {
 		stopTimers();
 		const difficulty = DIFFICULTIES[state.difficulty];
@@ -1202,6 +1211,7 @@
 	}
 
 	function resetLevel() {
+		boardReady = true;
 		generateLevel();
 		render();
 		if (state.started) startTimers();
@@ -1300,6 +1310,7 @@
 	function bindEvents() {
 		els.help.addEventListener('click', () => { els.overlay.hidden = false; });
 		els.start.addEventListener('click', () => {
+			ensureBoard();
 			els.overlay.hidden = true;
 			startGame();
 			setStatus(t('statusStartPlay'));
@@ -1414,10 +1425,10 @@
 
 	initDifficulties();
 	bindEvents();
-	generateLevel();
-	render();
-	requestPetImage();
 	post('gameLoaded', { title: t('title') });
+	// Defer heavy board/level construction until after first paint so the
+	// rules overlay (the real initial screen) renders within the start budget.
+	requestAnimationFrame(() => requestAnimationFrame(ensureBoard));
 })();
 </script>
 

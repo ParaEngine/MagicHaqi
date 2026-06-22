@@ -1108,6 +1108,115 @@ export async function deletePetGame(pathOrName) {
     return true;
 }
 
+// ========== 伴学游戏（study-games/ 下以 HTML 文件存储） ==========
+// 与 pet-games 同构，但独立命名空间，供 dev_tools/AITestGenerator.html 使用，
+// 与「我创造的小游戏」列表互不混淆。复用上方的纯函数 helper（normalize / 文件名生成等）。
+const STUDY_GAME_DIR = 'study-games';
+const STUDY_GAME_INDEX = `${STUDY_GAME_DIR}/index.json`;
+const STUDENT_MEMORY_DIR = `${STUDY_GAME_DIR}/memory`;
+
+function studyGamePath(name) {
+    return `${STUDY_GAME_DIR}/${safePetGameBaseName(name)}.html`;
+}
+function studyGamePathFromMetaPath(path) {
+    const clean = String(path || '').trim().replace(/^\/+/, '');
+    return clean && /^study-games\/[^/]+\.html?$/i.test(clean) ? clean : '';
+}
+
+export async function loadStudyGameList() {
+    const list = await readJSON(STUDY_GAME_INDEX, []);
+    const byPath = new Map();
+    (Array.isArray(list) ? list : [])
+        .map(normalizePetGameRecord)
+        .filter(Boolean)
+        .forEach(record => {
+            if (!record?.path) return;
+            const prev = byPath.get(record.path);
+            byPath.set(record.path, !prev || (record.updatedAt || 0) >= (prev.updatedAt || 0) ? record : prev);
+        });
+    return [...byPath.values()].sort((a, b) => (b.updatedAt || 0) - (a.updatedAt || 0));
+}
+
+async function saveStudyGameList(list) {
+    const normalized = (Array.isArray(list) ? list : [])
+        .map(normalizePetGameRecord)
+        .filter(Boolean)
+        .slice(0, 300);
+    await writeJSON(STUDY_GAME_INDEX, normalized);
+    return normalized;
+}
+
+export async function loadStudyGameHtml(pathOrName) {
+    const raw = String(pathOrName || '').trim();
+    if (!raw) return '';
+    const path = (raw.includes('/') ? raw : studyGamePath(raw)).replace(/^\/+/, '');
+    return normalizePetGameHtml(await readFileSafe(path));
+}
+
+// 保存伴学游戏：html 必填，meta 可包含 { title, icon, desc, path }。首次保存使用系统生成文件名；再次保存沿用 path。
+export async function saveStudyGame(html, meta = {}) {
+    const existing = await loadStudyGameList();
+    const existingPath = studyGamePathFromMetaPath(meta.path);
+    const usedPaths = new Set(existing.map(item => item.path));
+    let path = existingPath;
+    while (!path) {
+        const candidate = studyGamePath(generatedPetGameBaseName());
+        if (!usedPaths.has(candidate)) path = candidate;
+    }
+    const baseName = path.split('/').pop().replace(/\.html?$/i, '');
+    await writeFileSafe(path, normalizePetGameHtml(html));
+    const record = normalizePetGameRecord({
+        path,
+        id: meta.id || baseName,
+        title: meta.title || petGameTitleFromPath(path),
+        icon: meta.icon || '📚',
+        desc: meta.desc || '',
+        updatedAt: Date.now(),
+    });
+    const nextIndex = [record, ...existing.filter(item => item.path !== path)];
+    await saveStudyGameList(nextIndex);
+    return { path, record, index: nextIndex };
+}
+
+export async function deleteStudyGame(pathOrName) {
+    const raw = String(pathOrName || '').trim();
+    if (!raw) return false;
+    const path = (raw.includes('/') ? raw : studyGamePath(raw)).replace(/^\/+/, '');
+    const existing = await loadStudyGameList();
+    await saveStudyGameList(existing.filter(item => item.path !== path));
+    await deleteFileSafe(path);
+    return true;
+}
+
+// ---------- 学生长期记忆（study-games/memory/<studentId>.md） ----------
+// 供数字人「记得」学生：掌握项、反复错点、偏好题型、历史会话摘要。
+// 沿用 pets/<id>.memory.md 的 8KB 头摘要轮转约定。
+function safeStudentId(id) {
+    return String(id || '').trim().replace(/[^a-zA-Z0-9_\-一-龥]/g, '_').slice(0, 64) || 'default';
+}
+function studentMemoryPath(studentId) {
+    return `${STUDENT_MEMORY_DIR}/${safeStudentId(studentId)}.md`;
+}
+
+export async function loadStudentMemory(studentId) {
+    return await readFileSafe(studentMemoryPath(studentId));
+}
+
+export async function appendStudentMemory(studentId, line) {
+    if (!line) return;
+    const id = safeStudentId(studentId);
+    const cur = await loadStudentMemory(id);
+    const stamp = new Date().toISOString().slice(0, 16).replace('T', ' ');
+    const newLine = `- [${stamp}] ${String(line).trim()}\n`;
+    let next = (cur || `# ${id} 的伴学记忆\n\n`) + newLine;
+    if (next.length > CONFIG.memoryMaxBytes) {
+        const head = next.slice(0, 200);
+        const tail = next.slice(-CONFIG.memoryMaxBytes + 300);
+        next = head + '\n\n... (旧记忆已归档) ...\n\n' + tail;
+    }
+    await writeFileSafe(studentMemoryPath(id), next);
+}
+
 // 读取别人 workspace 下分享的小游戏 HTML（用于分享链接 / 收藏的他人作品试玩）。
 function safeShareUsername(value) {
     return String(value || '').trim().replace(/[^a-zA-Z0-9_-]/g, '').slice(0, 64);

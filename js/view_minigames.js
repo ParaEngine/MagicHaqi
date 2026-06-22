@@ -1482,6 +1482,18 @@ export function renderMinigames(panel, { pet }, { onBack, onGameFinished, initia
             handleUserProfileUpdate(frame, msg);
             return;
         }
+        if (isUnlockRequest(msg)) {
+            handleUnlockRequest(frame, msg);
+            return;
+        }
+        if (msg.type === 'haqi_open_vip') {
+            handleOpenVipRequest(frame);
+            return;
+        }
+        if (msg.type === 'haqi_get_vip_status') {
+            postVipStatus(frame);
+            return;
+        }
         if (msg.type === 'gameLoaded') {
             setMinigameLoading(false);
             return;
@@ -1670,6 +1682,122 @@ function isUserProfileRequest(msg) {
 
 function isUserProfileUpdate(msg) {
     return MINIGAME_USER_PROFILE_UPDATES.has(String(msg?.type || ''));
+}
+
+function isUnlockRequest(msg) {
+    return String(msg?.type || '') === 'haqi_request_unlock';
+}
+
+// 处理小游戏的「解锁付费点」请求：转调 sdk.ads.requestUnlock（看广告解锁 / 会员免广告），
+// 把结果回执给 iframe（haqi_unlock_result）。老版 SDK 还没有 ads 模块时本地占位兜底，
+// 保证「看广告→解锁」整条流程在 SDK 上线前也能跑通。
+async function handleUnlockRequest(frame, msg) {
+    const sourceWindow = frame?.contentWindow;
+    if (!sourceWindow) return;
+    const requestId = msg.requestId || msg.id || null;
+    const scene = (msg.scene || msg.data?.scene || 'minigame').toString();
+    const title = (msg.title || msg.data?.title || '').toString();
+    // 立即 ack：告诉小游戏「宿主已接手」，让它取消独立兜底、安心等待最终结果
+    // （解锁可能涉及看广告/会员窗口，耗时较长）。
+    try { sourceWindow.postMessage({ type: 'haqi_unlock_ack', requestId }, '*'); } catch (_) {}
+    let res = { unlocked: false, via: 'cancel' };
+    try {
+        const ads = state.sdk?.ads;
+        if (ads && typeof ads.requestUnlock === 'function') {
+            res = await ads.requestUnlock({ scene, title });
+        } else {
+            res = await localUnlockFallback(title);
+        }
+    } catch (_) {
+        res = { unlocked: false, via: 'error' };
+    }
+    try {
+        sourceWindow.postMessage({ type: 'haqi_unlock_result', requestId, ok: true, ...res }, '*');
+    } catch (_) {}
+    // 若本次因会员而解锁，主动回传会员状态，使后续付费点直接跳过广告。
+    if (res && res.via === 'vip') { postVipStatus(frame, true); }
+}
+
+// 查询真实会员状态：优先 keepworkSDK 真实会员（含付费会员），无 SDK 时回退到应用内会员开关。
+async function isUserVipNow(forceRefresh = false) {
+    try {
+        if (state.sdk && typeof state.sdk.isUserVip === 'function') {
+            return !!(await state.sdk.isUserVip(forceRefresh ? { useCache: false } : {}));
+        }
+    } catch (_) {}
+    return !!state.isPaid;
+}
+
+// 把当前会员状态回传给小游戏 iframe（小游戏据此跳过广告）。
+async function postVipStatus(frame, isVipOverride) {
+    const sourceWindow = frame?.contentWindow;
+    if (!sourceWindow) return;
+    const isVip = typeof isVipOverride === 'boolean' ? isVipOverride : await isUserVipNow();
+    try { sourceWindow.postMessage({ type: 'haqi_vip_status', isVip }, '*'); } catch (_) {}
+}
+
+// 小游戏内点击「开通会员·永久免广告」：打开 keepwork 个人中心（含会员开通/激活与真实支付），
+// 关闭后重新核对真实会员状态，同步应用内会员开关并回传给小游戏。
+async function handleOpenVipRequest(frame) {
+    const sdk = state.sdk;
+    try {
+        if (sdk && typeof sdk.showProfileWindow === 'function') {
+            await sdk.showProfileWindow();
+        } else {
+            // 无 SDK（如本地预览）兜底：沿用应用内会员模拟开关。
+            state.isPaid = true;
+            try { saveUserProfileDebounced(); } catch (_) {}
+        }
+    } catch (_) {}
+    // 强制刷新核对真实会员状态（用户可能刚完成支付/激活）。
+    const isVip = await isUserVipNow(true);
+    if (isVip && !state.isPaid) { state.isPaid = true; try { saveUserProfileDebounced(); } catch (_) {} }
+    await postVipStatus(frame, isVip);
+    if (isVip) { try { showToast('会员已生效，免广告', 'success', 1600); } catch (_) {} }
+}
+
+// 解锁付费点的三选一弹层：看广告 / 开通会员（永久免广告）/ 取消。返回 'ad' | 'vip' | 'cancel'。
+function chooseUnlockAction(title) {
+    return new Promise((resolve) => {
+        const mask = document.createElement('div');
+        mask.className = 'modal-mask';
+        mask.innerHTML = `
+            <div class="modal-card text-center">
+                <div class="text-base font-bold mb-1" style="color:var(--text-primary)">${escapeHtml(title || '解锁此功能')}</div>
+                <div class="text-xs mb-3" style="color:var(--text-muted)">看一段广告即可解锁，或开通会员永久免广告</div>
+                <div class="flex flex-col gap-2 mt-3">
+                    <button class="btn-primary" data-act="ad">📺 看广告解锁</button>
+                    <button class="btn-secondary" data-act="vip" style="border-color:var(--accent);color:var(--accent)">👑 开通会员 · 永久免广告</button>
+                    <button class="btn-secondary" data-act="cancel">取消</button>
+                </div>
+            </div>`;
+        const done = (v) => { mask.remove(); resolve(v); };
+        mask.addEventListener('click', (e) => {
+            if (e.target === mask) return done('cancel');
+            const act = e.target.closest?.('[data-act]')?.dataset.act;
+            if (act) done(act);
+        });
+        document.body.appendChild(mask);
+    });
+}
+
+// 降级兜底：当前加载的 SDK 还没有 ads 模块时，用弹层提供「看广告解锁 / 开通会员 / 会员免广告」。
+async function localUnlockFallback(title) {
+    if (await isUserVipNow()) return { unlocked: true, via: 'vip' };
+    const choice = await chooseUnlockAction(title);
+    if (choice === 'ad') return { unlocked: true, via: 'ad' };
+    if (choice === 'vip') {
+        // 打开 keepwork 真实开通会员/支付流程，完成后核对会员状态。
+        const sdk = state.sdk;
+        try {
+            if (sdk && typeof sdk.showProfileWindow === 'function') await sdk.showProfileWindow();
+            else { state.isPaid = true; try { saveUserProfileDebounced(); } catch (_) {} }
+        } catch (_) {}
+        const isVip = await isUserVipNow(true);
+        if (isVip && !state.isPaid) { state.isPaid = true; try { saveUserProfileDebounced(); } catch (_) {} }
+        return isVip ? { unlocked: true, via: 'vip' } : { unlocked: false, via: 'cancel' };
+    }
+    return { unlocked: false, via: 'cancel' };
 }
 
 // 收集可暴露给小游戏的用户档案：星球名、昵称、用户名、性别、头像。

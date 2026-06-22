@@ -2,6 +2,8 @@ import crypto from 'node:crypto';
 import fs from 'node:fs';
 import path from 'node:path';
 import { defineConfig } from 'vite';
+import postcss from 'postcss';
+import tailwindcss from 'tailwindcss';
 
 const rootDir = import.meta.dirname;
 const sideBySideDirs = ['minigames', 'dev_tools', 'famous-pets', 'famous-planets', 'pet-story'];
@@ -255,6 +257,120 @@ function extractHtmlStylesToCss() {
 
 
 
+// The dev source (MagicHaqi.html, minigames/*, dev_tools/*) loads Tailwind from
+// the CDN as a runtime in-browser JIT compiler. That compiler parses the DOM and
+// generates CSS on every page load (~130-170ms of main-thread work) — fine for
+// authoring, far too slow for shipped pages. This plugin replaces that runtime
+// <script> in the *dist* copies with a tiny inline <style> containing only the
+// utility classes each file actually uses, compiled at build time. Source files
+// keep the CDN script, so the dev experience is unchanged.
+const TW_CDN_SRC = 'https://cdn.keepwork.com/keepwork/cdn/tailwindcss@3.4.16.js';
+function tailwindScriptRe() {
+    return new RegExp(
+        `<script[^>]*src=["']${TW_CDN_SRC.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}["'][^>]*></script>`,
+        'g',
+    );
+}
+
+// Conservative CSS minify: strip comments and newline-adjacent whitespace, drop
+// the semicolon before a closing brace. Tailwind's generated CSS never relies on
+// newlines inside declaration values, so this is safe and matches the CLI's
+// --minify output closely (~6.5KB per game vs the 407KB runtime compiler).
+function minifyCss(css) {
+    return css
+        .replace(/\/\*[\s\S]*?\*\//g, '')
+        .replace(/\s*\n\s*/g, '')
+        .replace(/;}/g, '}')
+        .trim();
+}
+
+const twCache = new Map(); // content fingerprint -> compiled css (cheap dedupe across identical files)
+async function compileTailwind(contentSources) {
+    const key = crypto.createHash('sha1').update(contentSources.join(' ')).digest('hex');
+    if (twCache.has(key)) return twCache.get(key);
+    const input = '@tailwind base;@tailwind components;@tailwind utilities;';
+    const result = await postcss([
+        tailwindcss({
+            content: contentSources.map((raw) => ({ raw, extension: 'html' })),
+            corePlugins: { preflight: true },
+        }),
+    ]).process(input, { from: undefined });
+    const css = minifyCss(result.css);
+    twCache.set(key, css);
+    return css;
+}
+
+function collectHtmlFiles(dir, out = []) {
+    if (!fs.existsSync(dir)) return out;
+    for (const entry of fs.readdirSync(dir, { withFileTypes: true })) {
+        const full = path.join(dir, entry.name);
+        if (entry.isDirectory()) collectHtmlFiles(full, out);
+        else if (entry.name.toLowerCase().endsWith('.html')) out.push(full);
+    }
+    return out;
+}
+
+function precompileTailwind() {
+    return {
+        name: 'precompile-tailwind',
+        async closeBundle() {
+            const distDir = path.join(rootDir, 'dist');
+            if (!fs.existsSync(distDir)) return;
+
+            // The main app's class usage lives in its bundled JS, not just the
+            // HTML, so scan the emitted assets/*.js for MagicHaqi.html.
+            const assetsDir = path.join(distDir, 'assets');
+            const bundledJs = fs.existsSync(assetsDir)
+                ? fs.readdirSync(assetsDir)
+                    .filter((f) => f.endsWith('.js'))
+                    .map((f) => fs.readFileSync(path.join(assetsDir, f), 'utf8'))
+                : [];
+
+            let processed = 0;
+            for (const fp of collectHtmlFiles(distDir)) {
+                const html = fs.readFileSync(fp, 'utf8');
+                if (!tailwindScriptRe().test(html)) continue;
+                const isMainApp = path.basename(fp) === 'MagicHaqi.html';
+                // Self-contained pages (minigames/dev_tools) have all their
+                // markup + scripts inline, so the HTML itself is the full
+                // content source; the main app also needs its bundled JS.
+                const sources = isMainApp ? [html, ...bundledJs] : [html];
+                const css = await compileTailwind(sources);
+
+                // Main app: it is Vite-bundled and already <link>s the bundled
+                // assets/*.css (extractHtmlStylesToCss). Append the precompiled
+                // Tailwind into that stylesheet and just drop the runtime <script>,
+                // rather than inlining a ~10KB <style> into every release HTML.
+                // (Self-contained minigames/dev_tools have no bundle, so they keep
+                // the inline <style> path below.)
+                if (isMainApp) {
+                    const bundledCss = fs.existsSync(assetsDir)
+                        ? fs.readdirSync(assetsDir).find((f) => f.endsWith('.css'))
+                        : null;
+                    if (bundledCss) {
+                        const cssPath = path.join(assetsDir, bundledCss);
+                        const existing = fs.readFileSync(cssPath, 'utf8');
+                        // Tailwind base/preflight first, so the app's hand-written
+                        // CSS keeps winning on equal specificity (matches the source
+                        // order where the Tailwind <script> preceded the app CSS).
+                        fs.writeFileSync(cssPath, `${css}\n${existing}`);
+                        fs.writeFileSync(fp, html.replace(tailwindScriptRe(), ''));
+                        processed++;
+                        continue;
+                    }
+                    // Fallback (no bundled css asset found): inline as before.
+                }
+
+                const styleBlock = `<style data-tw-precompiled>${css}</style>`;
+                fs.writeFileSync(fp, html.replace(tailwindScriptRe(), styleBlock));
+                processed++;
+            }
+            // eslint-disable-next-line no-console
+            console.log(`\n[precompile-tailwind] replaced runtime Tailwind compiler in ${processed} dist HTML file(s).`);
+        },
+    };
+}
+
 export default defineConfig({
     root: rootDir,
     base: './',
@@ -264,6 +380,7 @@ export default defineConfig({
         extractHtmlStylesToCss(),
         cleanStaleAssets(),
         copySideBySideDirs(),
+        precompileTailwind(), // must run last: needs the populated dist/ tree
     ],
     build: {
         outDir: 'dist',

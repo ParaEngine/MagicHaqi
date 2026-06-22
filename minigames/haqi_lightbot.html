@@ -6,11 +6,10 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
   <title>宠物飞船寻宝</title>
   <script src="https://cdn.keepwork.com/keepwork/cdn/tailwindcss@3.4.16.js"></script>
-  <script src="https://cdn.keepwork.com/npm/three%400.128.0/build/three.min.js"></script>
 </head>
 
 <body></body>
-<script defer>
+<script type="text/gamejs" id="mhLightbotCode">
 (function () {
   // ---- i18n ----
   const I18N = {
@@ -302,7 +301,7 @@
 
   const root = document.createElement('div');
   root.id = 'haqiLightbot';
-  root.innerHTML = `
+  function rootHtml() { return `
     <style>
       * { box-sizing: border-box; -webkit-tap-highlight-color: transparent; }
       html, body { width: 100%; height: 100%; margin: 0; overflow: hidden; }
@@ -518,18 +517,43 @@
         <button id="mhNext" class="mh-next" type="button">${t('nextLevel')}</button>
       </div>
     </div>
-  `;
+  `; }
+
+  let threeLoadStarted = false;
+  function loadThree() {
+    if (window.THREE || threeLoadStarted) return;
+    threeLoadStarted = true;
+    const s = document.createElement('script');
+    s.src = 'https://cdn.keepwork.com/npm/three%400.128.0/build/three.min.js';
+    s.onload = () => { if (state.puzzle && state.actor) renderBoard(); };
+    document.head.appendChild(s);
+  }
 
   function boot() {
-    document.body.appendChild(root);
-    bindEvents();
-    renderDifficultySelect();
-    renderSpeedSelect();
-    renderPalette();
-    requestPetImage();
-    prepareLevel(1);
-    showHowTo();
-    post('gameLoaded');
+    // Build the full UI (shell + panel + how-to modal) on the next frame so the
+    // synchronous init before DOMContentLoaded stays minimal. The real initial
+    // screen (the how-to/rules modal over the board frame) paints right after.
+    requestAnimationFrame(() => {
+      root.innerHTML = rootHtml();
+      document.body.appendChild(root);
+      bindEvents();
+      renderDifficultySelect();
+      renderSpeedSelect();
+      renderPalette();
+      // Prepare level state + lightweight panel UI, but defer the heavy 3D board
+      // build (three.js renderer/scene/geometry) until after first paint. The
+      // how-to modal covers the board so this is invisible.
+      prepareLevel(1, { skipBoard: true });
+      showHowTo();
+      post('gameLoaded');
+      // After first paint: draw the lightweight 2D iso board frame (no WebGL, no
+      // animation loop) so the real initial screen shows behind the how-to modal.
+      // three.js + the 3D scene are loaded lazily only when the player starts —
+      // this keeps an endless WebGL render loop off the critical path.
+      requestAnimationFrame(() => requestAnimationFrame(() => {
+        if (state.puzzle && state.actor) renderBoard();
+      }));
+    });
   }
 
   function bindEvents() {
@@ -569,6 +593,8 @@
 
   function startGame() {
     state.started = true;
+    loadThree();
+    requestPetImage();
     startTimer();
     post('gameStarted');
   }
@@ -581,7 +607,7 @@
     }
   }
 
-  function prepareLevel(level) {
+  function prepareLevel(level, opts = {}) {
     state.awaitingReset = false;
     stopRun('');
     const puzzle = generatePuzzle(state.difficulty, level);
@@ -600,7 +626,7 @@
     renderPalette();
     renderProgramTabs();
     renderPrograms();
-    renderBoard();
+    if (!opts.skipBoard) renderBoard();
     updateStats();
     updateTutorialSkipButton();
     setStatus(puzzle.tip || t('newLevel'));
@@ -2187,6 +2213,21 @@
 
   boot();
 })();
+</script>
+<script>
+  // Bootstrap: the game code above lives in a non-executable <script type=
+  // "text/gamejs"> block so the browser does NOT compile ~95KB of JS before
+  // DOMContentLoaded. We turn it into a Blob and load it as an async script,
+  // which runs right after first paint — keeping startup (DCL) tiny.
+  (function () {
+    var code = document.getElementById('mhLightbotCode').textContent;
+    var url = URL.createObjectURL(new Blob([code], { type: 'application/javascript' }));
+    var s = document.createElement('script');
+    s.async = true;
+    s.src = url;
+    s.onload = function () { URL.revokeObjectURL(url); };
+    document.head.appendChild(s);
+  })();
 </script>
 
 </html>

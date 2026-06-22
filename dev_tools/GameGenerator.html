@@ -145,7 +145,7 @@
     }
 
     // -------- KeepworkSDK 加载（本地源码优先，CDN 兜底） --------
-    const sdkCdnUrl = 'https://cdn.keepwork.com/sdk/keepworkSDK.iife.js?v=20260612a';
+    const SDK_CDN_URL = 'https://cdn.keepwork.com/sdk/keepworkSDK.iife.js?v=20260619a';
     const sdkLoadTimeoutMs = 8000;
 
     function withTimeout(promise, ms, label) {
@@ -178,7 +178,7 @@
       const isLocalHost = !host || host === 'localhost' || host === '127.0.0.1' || host === '::1';
       const isFile = window.location.protocol === 'file:';
       const localCandidates = ['http://127.0.0.1:5001/index.ts'];
-      const deployedCandidates = [sdkCdnUrl, 'https://keepwork.com/public/resource/keepworkSDK.iife.js'];
+      const deployedCandidates = [SDK_CDN_URL];
       return [
         explicitSdk,
         ...((isLocalHost || isFile) ? localCandidates : []),

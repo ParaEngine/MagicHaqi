@@ -2852,6 +2852,9 @@
 
   function draw() {
     const vw = window.innerWidth, vh = window.innerHeight;
+    // Before the world exists (intro overlay covering the canvas), draw only the
+    // sky/hill background so we never trigger world generation on the boot frame.
+    if (!state.generatedCols) { drawBackground(vw, vh); return; }
     ensureWorldGeneratedTo(Math.ceil((state.camera.x + vw) / TILE) + 3);
     drawBackground(vw, vh);
     drawTrees();
@@ -3062,9 +3065,18 @@
     if (msg.type === 'setGameConfig' && msg.data?.difficulty && DIFFICULTIES[msg.data.difficulty]) { state.difficulty = msg.data.difficulty; updateChoiceButtons(); updateHud(); }
   });
 
-  updateChoiceButtons(); resize(); generateWorld(); buildHearts(); updateHud(); draw(); requestPetImage();
+  // Critical path: only the intro overlay (which covers the canvas) needs to be
+  // ready for first paint. World generation (a ~240k-cell allocation + hundreds
+  // of columns), heart-building, the pet image request and the render loop are
+  // all deferred until after first paint. startGame()->resetGame() regenerates
+  // the world anyway, so nothing heavy here is needed before the user taps Start.
+  updateChoiceButtons();
   if (!state.loadedPosted) { state.loadedPosted = true; post('gameLoaded', { title: '宠物冒险' }); }
-  state.lastTime = performance.now(); state.rafId = requestAnimationFrame(loop);
+  requestAnimationFrame(() => requestAnimationFrame(() => {
+    resize(); buildHearts(); updateHud();
+    state.lastTime = performance.now(); state.rafId = requestAnimationFrame(loop);
+    setTimeout(requestPetImage, 0);
+  }));
 })();
 </script>
 

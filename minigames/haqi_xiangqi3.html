@@ -5,7 +5,6 @@
 <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
 <title>三国象棋 - 三人对弈</title>
 <script src="https://cdn.keepwork.com/keepwork/cdn/tailwindcss@3.4.16.js"></script>
-<script src="https://cdn.keepwork.com/npm/three%400.128.0/build/three.min.js"></script>
 <style>
   html, body { margin: 0; padding: 0; overflow: hidden; width: 100%; height: 100%; background: #1a1208; }
   #c3d { position: absolute; inset: 0; touch-action: none; }
@@ -22,26 +21,46 @@
 <div id="c3d"></div>
 
 <!-- HUD: turn indicator -->
-<div id="hud" class="absolute top-2 left-1/2 -translate-x-1/2 flex gap-3 items-center pointer-events-none z-10">
+<div id="hud" class="absolute top-2 left-1/2 -translate-x-1/2 flex flex-col gap-1 items-center pointer-events-none z-10">
   <div id="turnBadge" class="px-4 py-1.5 rounded-full text-white font-bold text-sm shadow-lg bg-red-700">红方回合</div>
+  <div id="aiInfo" class="text-[11px] font-bold text-amber-200/80 drop-shadow"></div>
 </div>
 
 <!-- 两只宠物对手头像：左上曹魏(蓝) / 右上东吴(绿) -->
 <div class="absolute top-2 left-2 z-10 flex flex-col items-center gap-0.5 pointer-events-none">
   <div id="petIconBlue" class="petIcon" style="border-color:#2471b5">🐱</div>
-  <div class="text-xs font-bold" style="color:#7db6e8">曹魏</div>
+  <div class="text-xs font-bold" style="color:#7db6e8">曹魏·凶猛</div>
 </div>
 <div class="absolute top-2 right-2 z-10 flex flex-col items-center gap-0.5 pointer-events-none">
   <div id="petIconGreen" class="petIcon" style="border-color:#1e8a4c">🐶</div>
-  <div class="text-xs font-bold" style="color:#7fd6a4">东吴</div>
+  <div class="text-xs font-bold" style="color:#7fd6a4">东吴·稳健</div>
 </div>
 
 <!-- Toast 提示 -->
 <div id="toast" class="hidden absolute top-14 left-1/2 -translate-x-1/2 px-5 py-2 rounded-xl text-white font-bold text-sm shadow-xl z-20 transition-opacity duration-700 pointer-events-none"></div>
 
+<!-- 三方战力 / 存活实况 + 形势条 -->
+<div id="strengthTray" class="hidden absolute bottom-14 left-1/2 -translate-x-1/2 z-10 flex flex-col items-center gap-1 pointer-events-none">
+  <div id="powerBar" class="w-44 h-2 rounded-full overflow-hidden flex shadow bg-black/30">
+    <div data-seat="0" class="h-full bg-red-500 transition-all duration-500" style="width:33.3%"></div>
+    <div data-seat="1" class="h-full bg-emerald-500 transition-all duration-500" style="width:33.3%"></div>
+    <div data-seat="2" class="h-full bg-sky-500 transition-all duration-500" style="width:33.3%"></div>
+  </div>
+  <div class="flex gap-2">
+    <div data-seat="0" class="strPill px-2.5 py-1 rounded-lg text-white text-xs font-bold shadow-lg bg-red-700/85">红</div>
+    <div data-seat="1" class="strPill px-2.5 py-1 rounded-lg text-white text-xs font-bold shadow-lg bg-emerald-700/85">绿</div>
+    <div data-seat="2" class="strPill px-2.5 py-1 rounded-lg text-white text-xs font-bold shadow-lg bg-sky-700/85">蓝</div>
+  </div>
+</div>
+
 <!-- 重新开始 -->
 <div id="restartBar" class="hidden absolute bottom-6 left-1/2 -translate-x-1/2 z-20">
   <button id="restartBtn" class="px-8 py-2.5 rounded-xl bg-amber-600 hover:bg-amber-500 text-white font-bold text-lg shadow-xl">再来一局</button>
+</div>
+
+<!-- 悔棋（每回合可悔1次，回退到你上一步之前） -->
+<div id="undoBar" class="hidden absolute bottom-6 left-3 z-20">
+  <button id="undoBtn" class="px-5 py-2.5 rounded-xl bg-slate-700/85 hover:bg-slate-600 text-white font-bold text-base shadow-xl disabled:opacity-40 disabled:cursor-not-allowed">📺 悔棋</button>
 </div>
 
 <!-- Rules modal -->
@@ -54,12 +73,13 @@
       <li>规则同中国象棋；<b>先吃掉某方主帅者，接管其全部剩余棋子！</b></li>
       <li>最后存活主帅的一方获胜。你执红，先行。</li>
     </ul>
-    <div class="flex items-center justify-center gap-2 mb-4">
-      <span class="text-sm font-bold">AI 难度：</span>
-      <div id="diffGroup" class="flex gap-1.5">
-        <button data-diff="easy" class="diffBtn px-4 py-1.5 rounded-lg text-sm font-bold border-2 border-amber-700 text-amber-800">简单</button>
-        <button data-diff="normal" class="diffBtn px-4 py-1.5 rounded-lg text-sm font-bold border-2 border-amber-700 bg-amber-700 text-white">普通</button>
-        <button data-diff="hard" class="diffBtn px-4 py-1.5 rounded-lg text-sm font-bold border-2 border-amber-700 text-amber-800">困难</button>
+    <div class="flex flex-col items-center gap-2 mb-4">
+      <span class="text-sm font-bold">AI 难度</span>
+      <div id="diffGroup" class="flex flex-wrap justify-center gap-1.5">
+        <button data-diff="easy" class="diffBtn px-3 py-1.5 rounded-lg text-sm font-bold border-2 border-amber-700 text-amber-800">简单</button>
+        <button data-diff="normal" class="diffBtn px-3 py-1.5 rounded-lg text-sm font-bold border-2 border-amber-700 bg-amber-700 text-white">普通</button>
+        <button data-diff="hard" class="diffBtn px-3 py-1.5 rounded-lg text-sm font-bold border-2 border-amber-700 text-amber-800">困难</button>
+        <button data-diff="master" class="diffBtn px-3 py-1.5 rounded-lg text-sm font-bold border-2 border-rose-700 text-rose-700">大师</button>
       </div>
     </div>
     <button id="startBtn" class="w-full py-2.5 rounded-xl bg-red-700 hover:bg-red-600 text-white font-bold text-lg">开始对弈</button>
@@ -79,6 +99,26 @@ art_assets = [];
 </script>
 
 <script>
+// 难度选择必须"即时可用"：主逻辑(#xqGameCode)是点「开始对弈」后才懒加载执行的，
+// 若把难度按钮事件留在主逻辑里，开局（未点开始前）就根本无法选难度。这里即时绑定，
+// 只改 game_config.difficulty + 高亮，游戏启动时读取该值即可。
+(function bindDifficultyEager() {
+  const btns = document.querySelectorAll('.diffBtn');
+  btns.forEach(btn => {
+    btn.addEventListener('click', () => {
+      game_config.difficulty = btn.dataset.diff;
+      btns.forEach(b => {
+        const on = b === btn;
+        b.classList.toggle('bg-amber-700', on);
+        b.classList.toggle('text-white', on);
+        b.classList.toggle('text-amber-800', !on);
+      });
+    });
+  });
+})();
+</script>
+
+<script type="text/gamejs" class="xqGameCode" id="xqGameCode0">
 // ============ 基础 3D 场景 ============
 const PLAYER_COLORS = [0xc0392b, 0x1e8a4c, 0x2471b5];
 const PLAYER_NAMES = ['红', '绿', '蓝'];
@@ -143,10 +183,15 @@ window.parent.postMessage({ type: 'gameLoaded' }, '*');
 document.getElementById('startBtn').addEventListener('click', () => {
   document.getElementById('rulesModal').classList.add('hidden');
   document.getElementById('helpBtn').classList.remove('hidden');
+  document.getElementById('undoBar').classList.remove('hidden');
+  document.getElementById('strengthTray').classList.remove('hidden');
   if (!gameStarted) {
     gameStarted = true;
     window.parent.postMessage({ type: 'gameStarted' }, '*');
   }
+  if (typeof updateUndoButton === 'function') updateUndoButton();
+  if (typeof updateStrengthTray === 'function') updateStrengthTray();
+  if (typeof updateCheckMarkers === 'function') updateCheckMarkers();
 });
 document.getElementById('helpBtn').addEventListener('click', () => {
   document.getElementById('rulesModal').classList.remove('hidden');
@@ -208,7 +253,7 @@ function mountPetIcon(elId, pet) {
 requestPetIcons();
 </script>
 
-<script>
+<script type="text/gamejs" class="xqGameCode" id="xqGameCode1">
 // ============ 棋盘拓扑 ============
 // 三个半盘（zone 0/1/2），每盘 5 行(r:0后排..4河岸) x 9 列(c:0..8)，绕中心 120° 旋转。
 // 中央三角形为河界；河岸点经"过河桥"与相邻两盘的河岸相连，c=4 经中心点 C 连通三方。
@@ -308,10 +353,9 @@ function crossZoneFor(p) {
 function continuationsOf(a, b) { return cont.get(a + '|' + b) || []; }
 
 buildTopology();
-console.log('topology nodes:', nodes.size);
 </script>
 
-<script>
+<script type="text/gamejs" class="xqGameCode" id="xqGameCode2">
 // ============ 棋盘渲染 ============
 const boardGroup = new THREE.Group();
 scene.add(boardGroup);
@@ -461,7 +505,7 @@ buildBoardMesh();
 buildBoardLines();
 </script>
 
-<script>
+<script type="text/gamejs" class="xqGameCode" id="xqGameCode3">
 // ============ 棋子数据与渲染 ============
 // type: K帅 A士 E相 H马 R车 C炮 P兵
 const PIECE_CHARS = {
@@ -583,7 +627,7 @@ initialSetup();
 renderAllPieces();
 </script>
 
-<script>
+<script type="text/gamejs" class="xqGameCode" id="xqGameCode4">
 // ============ 走法生成 ============
 // 直线行走（车/炮/兵/帅用）：沿 a->b 方向利用 cont 表延伸
 function* rayFrom(start, dir) {  // 产出依次的格子 key
@@ -680,7 +724,16 @@ function kingMoves(pc) {
   for (const d of orth.get(pc.nodeKey)) {
     if (inPalace(pc.home, d)) pushMove(pc, d, res);
   }
-  return res;
+  // 飞将（将帅对脸）：沿直线（同车的射线扫描）若第一个遇到的棋子是对方老将，可直接吃掉
+  for (const ray of allRays(pc.nodeKey)) {
+    for (const k of ray) {
+      const occ = pieceAt.get(k);
+      if (!occ) continue;                                          // 空格继续延伸
+      if (occ.owner !== pc.owner && occ.type === 'K') res.push(k); // 对脸：飞将吃帅
+      break;                                                       // 第一个棋子即挡路，停止该方向
+    }
+  }
+  return dedup(res);
 }
 
 function rookMoves(pc) {
@@ -715,6 +768,22 @@ function cannonMoves(pc) {
 }
 
 // 兵：未过河只能向前（r 增大方向）；过河后可走桥邻/横向/继续"前进"（任何远离本方后排方向）
+// 各方"到本方后排(r=0)的图上最短步数"（BFS over orth），用于过河兵的前进/横走/后退判定。
+// 比欧氏距离稳健：在三角形/邻盘的弯曲拓扑下，横走保持同距、前进增大、后退减小，不会误杀横向吃子。
+const homeDist = [null, null, null];
+(function buildHomeDist() {
+  for (let p = 0; p < 3; p++) {
+    const dist = new Map(), q = [];
+    for (let c = 0; c <= 8; c++) { const k = NK(p, 0, c); dist.set(k, 0); q.push(k); }
+    let qi = 0;
+    while (qi < q.length) {
+      const k = q[qi++], d = dist.get(k);
+      for (const nb of orth.get(k)) if (!dist.has(nb)) { dist.set(nb, d + 1); q.push(nb); }
+    }
+    homeDist[p] = dist;
+  }
+})();
+
 function pawnMoves(pc) {
   const res = [], n0 = nodes.get(pc.nodeKey);
   const crossed = crossedRiver(pc);
@@ -726,16 +795,16 @@ function pawnMoves(pc) {
                   (n0.r === 4 && n.p !== n0.p);
       if (fwd) pushMove(pc, d, res);
     } else {
-      // 过河后：不允许退回让自己更接近本方后排
+      // 过河后：可前进或横走，仅禁止"后退"（朝本方后排走近一步）
       if (!movesTowardHome(pc, n0, n)) pushMove(pc, d, res);
     }
   }
   return res;
 }
-// 判断 n0->n 是否朝向 pc.home 的后排（即"后退"）
+// 判断 n0->n 是否"后退"：到本方后排的图上距离严格变小才算后退；横走(同距)与前进(变大)均放行
 function movesTowardHome(pc, n0, n) {
-  const homeBack = nodeWorldPos(pc.home, 0, 4);
-  return n.pos.distanceTo(homeBack) < n0.pos.distanceTo(homeBack) - 0.01;
+  const D = homeDist[pc.home];
+  return D.get(n.key) < D.get(n0.key);
 }
 
 function pushMove(pc, dstKey, out) {
@@ -760,7 +829,7 @@ function legalMoves(pc) {
 }
 </script>
 
-<script>
+<script type="text/gamejs" class="xqGameCode" id="xqGameCode5">
 // ============ 交互与回合 ============
 let curPlayer = 0;                 // 0红 1绿 2蓝
 let alivePlayers = [true, true, true];
@@ -854,6 +923,8 @@ renderer.domElement.addEventListener('pointerdown', onTap);
 
 let animating = false;
 function doMove(pc, dstKey) {
+  // 人类落子前记录快照，供"悔棋"回退（每回合只保留最近一次）
+  if (isHuman(pc.owner)) captureUndoSnapshot();
   const fromPos = nodes.get(pc.nodeKey).pos.clone();
   const victim = pieceAt.get(dstKey);
   pieceAt.delete(pc.nodeKey);
@@ -866,6 +937,7 @@ function doMove(pc, dstKey) {
   let victimMesh = null;
   if (victim) { victimMesh = victim.mesh; victim.mesh = null; }
   animating = true;
+  updateUndoButton();
   animatePieceHop(pc, fromPos, n.pos, () => {
     animating = false;
     if (victim) {
@@ -875,6 +947,8 @@ function doMove(pc, dstKey) {
       capturePiece(victim, pc.owner);
     }
     applyPieceFacing();
+    updateStrengthTray();
+    updateCheckMarkers();
     if (!gameOver) nextTurn();
   });
 }
@@ -893,12 +967,199 @@ function updateTurnBadge() {
   badge.classList.remove(...colors);
   badge.classList.add(colors[curPlayer]);
   badge.textContent = PLAYER_NAMES[curPlayer] + '方回合' + (isHuman(curPlayer) ? '（你）' : '');
+  if (isHuman(curPlayer)) { const info = document.getElementById('aiInfo'); if (info) info.textContent = ''; }
+  updateUndoButton();
+}
+
+// ============ 悔棋（每回合可悔1次，回退到你上一步之前；含期间 AI 的应招）============
+let undoSnapshot = null;
+
+// 记录落子前的完整逻辑状态（位置/存活/归属/回合），供一键回退
+function captureUndoSnapshot() {
+  undoSnapshot = {
+    curPlayer,
+    alivePlayers: alivePlayers.slice(),
+    gameOver,
+    pieces: pieces.map(p => ({ id: p.id, owner: p.owner, nodeKey: p.nodeKey, alive: p.alive }))
+  };
+}
+
+let unlockInFlight = false;   // 正在请求解锁（看广告/会员），防连点
+function updateUndoButton() {
+  const btn = document.getElementById('undoBtn');
+  if (!btn) return;
+  btn.disabled = !(undoSnapshot && gameStarted && !gameOver && !animating && isHuman(curPlayer) && !unlockInFlight);
+}
+
+// 点击「悔棋」：先解锁（看广告 / 会员免），成功后再回退。悔棋一律需解锁，会员免广告。
+async function requestUndo() {
+  if (!undoSnapshot || animating || gameOver || !isHuman(curPlayer) || unlockInFlight) return;
+  unlockInFlight = true;
+  updateUndoButton();
+  try {
+    const ok = await requestUnlock('xiangqi_undo', '悔棋');
+    if (!ok) {
+      if (typeof toast === 'function') toast('需看完广告或开通会员才能悔棋', PLAYER_COLORS[0]);
+      return;
+    }
+    // 解锁过程可能耗时，回退前再次校验仍可悔（状态可能已变化）。
+    if (!undoSnapshot || animating || gameOver || !isHuman(curPlayer)) return;
+    applyUndo();
+  } finally {
+    unlockInFlight = false;
+    updateUndoButton();
+  }
+}
+
+// 通用「解锁付费点」：请求父窗口（MagicHaqi 宿主 → sdk.ads）。
+// 宿主会先回 haqi_unlock_ack 表示接手，随后回 haqi_unlock_result。
+// 独立打开（无父窗口）或宿主不支持（无 ack）时，本地占位广告兜底，保证可测。
+function requestUnlock(scene, title) {
+  return new Promise((resolve) => {
+    // 会员免广告：已开通会员则直接解锁，不再走广告/父窗口流程。
+    if (isHaqiVip()) { resolve(true); return; }
+    const requestId = 'unlock_' + Date.now() + '_' + Math.floor(Math.random() * 1e6);
+    let settled = false, acked = false;
+    const finish = (v) => {
+      if (settled) return;
+      settled = true;
+      window.removeEventListener('message', onMsg);
+      clearTimeout(ackTimer);
+      resolve(v);
+    };
+    const onMsg = (e) => {
+      const m = e.data || {};
+      if (m.requestId !== requestId) return;
+      if (m.type === 'haqi_unlock_ack') { acked = true; clearTimeout(ackTimer); }
+      else if (m.type === 'haqi_unlock_result') finish(!!m.unlocked);
+    };
+    window.addEventListener('message', onMsg);
+
+    const hasParent = window.parent && window.parent !== window;
+    if (hasParent) {
+      try { window.parent.postMessage({ type: 'haqi_request_unlock', requestId, scene, title }, '*'); } catch (_) {}
+    }
+    // 无父窗口 → 立即兜底；有父窗口但 ~900ms 内无 ack → 视为宿主不支持，本地兜底。
+    const ackTimer = setTimeout(() => {
+      if (settled || acked) return;
+      localPlaceholderAd(title).then(finish);
+    }, hasParent ? 900 : 0);
+  });
+}
+
+// ===== 会员（VIP）状态与开通 =====
+// 嵌入宿主（蛋蛋星球）时，会员状态来自 keepworkSDK 真实会员（由宿主回传）；
+// 独立打开（无宿主/无支付）时用本地占位标记模拟会员，仅便于测试。
+const HAS_HOST = !!(window.parent && window.parent !== window);
+let hostVipStatus = null;   // null=未知；true/false=宿主已告知
+let currentAdDone = null;   // 当前占位广告弹层的结算回调（开通会员成功后即时解锁）
+
+function isHaqiVip() {
+  if (hostVipStatus === true) return true;
+  if (!HAS_HOST) { try { return localStorage.getItem('haqi_local_vip') === '1'; } catch (_) { return false; } }
+  return false;
+}
+
+// 监听宿主回传的会员状态：开通成功后即时解锁正在展示的广告弹层。
+window.addEventListener('message', (e) => {
+  const m = (e && e.data) || {};
+  if (m.type === 'haqi_vip_status') {
+    hostVipStatus = !!m.isVip;
+    if (hostVipStatus && typeof currentAdDone === 'function') currentAdDone(true);
+  }
+});
+// 进入游戏即向宿主查询会员状态（会员可直接跳过广告）。
+if (HAS_HOST) { try { window.parent.postMessage({ type: 'haqi_get_vip_status' }, '*'); } catch (_) {} }
+
+// 点击「开通会员」：嵌入宿主→请宿主打开 keepwork 真实开通会员/支付流程（结果异步回传）；
+// 独立打开→无支付环境，写本地占位标记模拟会员。返回 true 表示可立即解锁。
+function openVip() {
+  if (HAS_HOST) {
+    try { window.parent.postMessage({ type: 'haqi_open_vip', scene: 'xiangqi_undo' }, '*'); } catch (_) {}
+    return false;
+  }
+  try { localStorage.setItem('haqi_local_vip', '1'); } catch (_) {}
+  return true;
+}
+
+// 游戏内占位激励广告（独立打开/宿主不支持时的兜底）：5 秒倒计时，看完→true。
+function localPlaceholderAd(title) {
+  return new Promise((resolve) => {
+    let remaining = 5, settled = false;
+    const done = (ok) => { if (settled) return; settled = true; currentAdDone = null; clearInterval(timer); ov.remove(); resolve(ok); };
+    const ov = document.createElement('div');
+    ov.style.cssText = 'position:fixed;inset:0;z-index:99999;display:flex;flex-direction:column;align-items:center;justify-content:center;background:rgba(8,12,20,.92);color:#fff;font:600 16px/1.5 system-ui,sans-serif;text-align:center;padding:24px';
+    const x = document.createElement('button');
+    x.textContent = '✕';
+    x.style.cssText = 'position:absolute;top:16px;right:18px;width:36px;height:36px;border-radius:50%;border:none;background:rgba(255,255,255,.18);color:#fff;font-size:18px;cursor:pointer';
+    x.onclick = () => done(false);
+    const body = document.createElement('div');
+    const btn = document.createElement('button');
+    btn.disabled = true;
+    btn.style.cssText = 'margin-top:18px;padding:10px 26px;border-radius:12px;border:none;background:#f59e0b;color:#fff;font-size:16px;font-weight:700;opacity:.5;cursor:not-allowed';
+    btn.onclick = () => { if (!btn.disabled) done(true); };
+    // 开通会员（永久免广告）：随时可点，点击即免本次及后续广告。
+    const vipBtn = document.createElement('button');
+    vipBtn.textContent = '👑 开通会员 · 永久免广告';
+    vipBtn.style.cssText = 'margin-top:12px;padding:9px 22px;border-radius:12px;border:1px solid rgba(255,215,80,.6);background:rgba(255,215,80,.14);color:#ffd750;font-size:14px;font-weight:700;cursor:pointer';
+    vipBtn.onclick = () => {
+      // 独立打开：本地模拟会员，立即解锁；嵌入宿主：打开真实开通流程，等待回传后解锁。
+      if (openVip()) { done(true); return; }
+      vipBtn.disabled = true;
+      vipBtn.style.cursor = 'progress';
+      vipBtn.textContent = '正在打开开通会员…';
+    };
+    const vipHint = document.createElement('div');
+    vipHint.textContent = '会员可跳过所有激励广告';
+    vipHint.style.cssText = 'opacity:.6;margin-top:8px;font-size:12px;font-weight:500';
+    const render = () => {
+      body.innerHTML = `<div style="font-size:54px">📺</div><div style="font-size:20px;font-weight:800;margin-top:8px">激励广告（占位）</div>`
+        + `<div style="opacity:.8;margin-top:6px">${remaining > 0 ? remaining + ' 秒后可领取（' + (title || '解锁') + '）' : '观看完成，点击领取'}</div>`;
+      btn.textContent = remaining > 0 ? '请稍候 (' + remaining + ')' : '领取并悔棋';
+      if (remaining <= 0) { btn.disabled = false; btn.style.opacity = '1'; btn.style.cursor = 'pointer'; }
+    };
+    ov.append(x, body, btn, vipBtn, vipHint);
+    document.body.appendChild(ov);
+    currentAdDone = done;   // 供宿主回传「会员已开通」时即时解锁
+    render();
+    const timer = setInterval(() => { remaining = Math.max(0, remaining - 1); render(); if (remaining === 0) clearInterval(timer); }, 1000);
+  });
+}
+
+// 执行回退（纯逻辑，不含付费门控）。
+function applyUndo() {
+  if (!undoSnapshot || animating || gameOver || !isHuman(curPlayer)) return;
+  const snap = undoSnapshot;
+  const byId = new Map(pieces.map(p => [p.id, p]));
+  for (const s of snap.pieces) {
+    const p = byId.get(s.id);
+    if (!p) continue;
+    p.owner = s.owner;
+    p.nodeKey = s.nodeKey;
+    p.alive = s.alive;
+  }
+  // 由存活棋子重建占位表
+  pieceAt.clear();
+  for (const p of pieces) if (p.alive) pieceAt.set(p.nodeKey, p);
+  curPlayer = snap.curPlayer;
+  alivePlayers = snap.alivePlayers.slice();
+  gameOver = snap.gameOver;
+  selected = null;
+  clearHints();
+  clearLastMoveMarkers();
+  renderAllPieces();
+  updateTurnBadge();
+  updateStrengthTray();
+  updateCheckMarkers();
+  undoSnapshot = null;          // 用过即清，确保每回合只可悔1次
+  updateUndoButton();
+  if (typeof playSound === 'function') playSound('select');
 }
 
 updateTurnBadge();
 </script>
 
-<script>
+<script type="text/gamejs" class="xqGameCode" id="xqGameCode6">
 // ============ 吃子 / 接管 / 胜负 ============
 function capturePiece(victim, byOwner) {
   victim.alive = false;
@@ -932,6 +1193,8 @@ function absorbPlayer(loser, winner) {
 function endGame(winner) {
   gameOver = true;
   clearHints(); selected = null;
+  clearCheckMarkers();
+  updateStrengthTray();
   const human = isHuman(winner);
   if (typeof playSound === 'function') playSound(human ? 'win' : 'lose');
   if (typeof spawnBurst === 'function') {
@@ -961,21 +1224,51 @@ function toast(text, colorHex, ms = 2600) {
 }
 </script>
 
-<script>
-// ============ AI（Paranoid 多层搜索 + alpha-beta 剪枝，参考 haqi_xiangqi.html）============
-// 三人棋适配：本方为 max 层，其余两方一律按 min 层处理（paranoid 假设：都针对我），
-// 配合吃子优先排序、分支截断与时间预算，深度可达 4 层仍保持流畅。
-const PIECE_VALUE = { K: 10000, R: 90, C: 50, H: 45, E: 22, A: 22, P: 12 };
+<script type="text/gamejs" class="xqGameCode" id="xqGameCode7">
+// ============ AI 引擎：迭代加深 + 静态搜索(Quiescence) + Paranoid alpha-beta ============
+// 三人棋适配：本方为 max 层，其余两方一律按 min 层处理（paranoid 假设：都针对我）。
+// 强度来源：① 迭代加深（逐层加深 + 主变例优先排序，时间用满即止）
+//          ② 静态搜索（只续吃子直到局面平静，消除"地平线效应"，看清子力交换）
+//          ③ 局面评估（子力 + 位置价值表 + 兵过河 + 主帅安全 + 三人制"压制领先者"）
+//          ④ 杀手着法/历史启发 排序，大幅提升 alpha-beta 剪枝效率
+const PIECE_VALUE = { K: 10000, R: 90, C: 50, H: 48, E: 22, A: 22, P: 12 };
 const WIN_SCORE = 60000;
 
-// depth = 总搜索层数（含 AI 自己这步）；limit = 每层候选走法上限（0 不限）；
-// deadline = 单次搜索时间预算(ms)，超时节点退化为静态评估，保证不卡死；
-// topK = 从前 K 个最优中随机挑选（制造低难度的"失误"）
+// depth = 迭代加深的最大层数（受 deadline 限制，未必跑满）；
+// limit = 内部节点每层候选走法上限（0 不限，配合排序近似"选择性延伸"）；
+// deadline = 单步思考时间预算(ms)，迭代加深用满即返回当前最优，永不卡死；
+// qdepth = 静态搜索最大续吃深度（0 = 关闭，制造低难度的战术盲点）；
+// topK = 从前 K 个最优中随机挑选（制造低难度的"失误"）；noise = 评分扰动幅度。
 const AI_DIFF = {
-  easy:   { depth: 1, limit: 0,  noise: 26, deadline: 200,  topK: 4 },
-  normal: { depth: 3, limit: 12, noise: 5,  deadline: 900,  topK: 1 },
-  hard:   { depth: 4, limit: 9,  noise: 0,  deadline: 1400, topK: 1 }
+  easy:   { depth: 1, limit: 0,  noise: 34, deadline: 300,  topK: 4, qdepth: 0  },
+  normal: { depth: 4, limit: 14, noise: 4,  deadline: 1000, topK: 1, qdepth: 4  },
+  hard:   { depth: 6, limit: 10, noise: 0,  deadline: 1700, topK: 1, qdepth: 6  },
+  master: { depth: 8, limit: 8,  noise: 0,  deadline: 2200, topK: 1, qdepth: 10 }
 };
+
+// 搜索期共享状态
+let killers = [];          // killers[ply] = [最近两个引发剪枝的安静着法 key]
+let history = {};          // "pcId_dst" -> 历史启发分（剪枝越深加分越多）
+let qDepthBudget = 6;      // 当前难度的静态搜索深度
+let aiLastDepth = 0;       // 上一步实际跑到的搜索层数（用于 HUD 展示）
+let lastScored = null;     // 上一完成层的根节点评分表（用于 topK/noise 选择）
+
+// AI 性格（按座位）：让两个电脑对手棋风迥异 —— atk 放大本方进攻/位置权重，def 放大本方主帅安全权重。
+// 红(0)均衡（通常是人类）；绿(1)东吴=稳健（重防守、慎进取）；蓝(2)曹魏=凶猛（重进攻、轻自保）。
+const AI_STYLE = [
+  { name: '均衡', atk: 1.0,  def: 1.0  },
+  { name: '稳健', atk: 0.85, def: 1.4  },
+  { name: '凶猛', atk: 1.35, def: 0.7  }
+];
+
+// 列中心度：第 4 列（中线）最高，越靠边越低 —— 大子居中威力更大
+const COL_CENTER = [0, 1, 2, 3, 4, 3, 2, 1, 0];
+
+function recordKiller(ply, id, dst) {
+  const key = id + '_' + dst;
+  const k = killers[ply] || (killers[ply] = []);
+  if (k[0] !== key) { k[1] = k[0]; k[0] = key; }
+}
 
 // 临时执行/撤销一步（仅数据层，不动渲染），返回 undo 闭包
 function simMove(pc, dst) {
@@ -993,6 +1286,27 @@ function simMove(pc, dst) {
   };
 }
 
+// 模拟"吃帅接管"：pc 吃掉 dst 处的敌帅，败方全部存活棋子倒戈归 pc.owner（含 alivePlayers 更新）。
+// 返回 undo 闭包。供搜索精确评估接管带来的巨大子力转移与三人制连锁。
+function simAbsorbMove(pc, dst) {
+  const fromKey = pc.nodeKey;
+  const victim = pieceAt.get(dst);
+  const loser = victim.owner, captor = pc.owner;
+  const flipped = [];
+  pieceAt.delete(fromKey);
+  victim.alive = false; pieceAt.delete(dst);
+  pieceAt.set(dst, pc); pc.nodeKey = dst;
+  for (const q of pieces) { if (q.alive && q.owner === loser) { q.owner = captor; flipped.push(q); } }
+  const wasAlive = alivePlayers[loser];
+  alivePlayers[loser] = false;
+  return () => {
+    alivePlayers[loser] = wasAlive;
+    for (const q of flipped) q.owner = loser;
+    pc.nodeKey = fromKey; pieceAt.delete(dst); pieceAt.set(fromKey, pc);
+    victim.alive = true; pieceAt.set(dst, victim);
+  };
+}
+
 // 节点是否被任一敌方攻击（提早退出，供评估函数使用）
 function isAttacked(nodeKey, defenderOwner) {
   for (const en of pieces) {
@@ -1002,33 +1316,70 @@ function isAttacked(nodeKey, defenderOwner) {
   return false;
 }
 
-// 静态评估（以 player 视角）：子力 + 兵过河 + 本方主帅安全
+// 位置价值表：依据棋子类型给出"站位好坏"加成（与归属方无关，纯几何）
+function pstBonus(pc) {
+  const n = nodes.get(pc.nodeKey);
+  if (!n) return 0;
+  const central = COL_CENTER[n.c];          // 0..4
+  switch (pc.type) {
+    case 'P': {                              // 兵：过河价值飙升，未过河鼓励向前并居中
+      const crossed = !inHomeHalf(pc, pc.nodeKey);
+      return crossed ? 20 + central * 1.6 : n.r * 2 + central * 0.5;
+    }
+    case 'R': return central * 2.0 + (n.r > 0 ? 2 : 0);   // 车：占中线、出原位
+    case 'H': return central * 2.4 + (n.r > 0 ? 2 : 0);   // 马：居中机动性最强
+    case 'C': return central * 1.4;                       // 炮：略偏好中线
+    case 'E': return inHomeHalf(pc, pc.nodeKey) ? 2 : -3; // 象：守家，不宜远离
+    case 'A': return 2;                                   // 士：守宫
+    case 'K': return inPalace(pc.home, pc.nodeKey) ? 0 : -6;
+  }
+  return 0;
+}
+
+// 静态评估（以 player 视角）：子力 + 位置价值×性格 + 主帅安全×性格 + 三人制压制领先者
 function evalFor(player) {
-  let score = 0;
-  let king = null;
+  const style = AI_STYLE[player] || AI_STYLE[0];
+  let score = 0, king = null;
+  const oppMat = [0, 0, 0];                  // 各对手的纯子力（用于"压制领先者"）
   for (const pc of pieces) {
     if (!pc.alive) continue;
-    const sign = pc.owner === player ? 1 : -1;
-    score += sign * PIECE_VALUE[pc.type];
-    if (pc.type === 'P' && !inHomeHalf(pc, pc.nodeKey)) score += sign * 8;
-    if (pc.type === 'K' && pc.owner === player) king = pc;
+    const pos = pstBonus(pc);
+    if (pc.owner === player) {
+      score += PIECE_VALUE[pc.type] + pos * style.atk;     // 进攻型更看重己方位置/前压
+      if (pc.type === 'K') king = pc;
+    } else {
+      score -= PIECE_VALUE[pc.type] + pos;
+      oppMat[pc.owner] += PIECE_VALUE[pc.type];
+    }
   }
   if (!king) return -WIN_SCORE;
-  if (isAttacked(king.nodeKey, player)) score -= 160;
+  if (isAttacked(king.nodeKey, player)) score -= 150 * style.def;   // 防守型更怕被将
+  // 三人博弈：额外压制实力最强的对手，避免某方做大后回头一统
+  score -= Math.max(oppMat[0], oppMat[1], oppMat[2]) * 0.12;
   return score;
 }
 
-// 走法生成 + 排序：吃子优先（按被吃子价值降序，利于剪枝），可按 limit 截断
-function orderedMovesOf(player, limit) {
+// 走法生成 + 排序：吃子(MVV-LVA) → 杀手着法 → 历史启发 → 其余，最大化剪枝效率，可按 limit 截断
+function orderedMovesOf(player, limit, ply) {
   const moves = [];
+  const kl = killers[ply];
   for (const pc of pieces) {
     if (!pc.alive || pc.owner !== player) continue;
     for (const dst of legalMoves(pc)) {
       const v = pieceAt.get(dst);
-      moves.push({ pc, dst, cap: v ? PIECE_VALUE[v.type] : 0 });
+      let s;
+      if (v) {
+        // MVV-LVA：优先"高价值受害者、低价值攻击者"
+        s = 100000 + PIECE_VALUE[v.type] * 10 - PIECE_VALUE[pc.type];
+      } else {
+        const key = pc.id + '_' + dst;
+        if (kl && (kl[0] === key || kl[1] === key)) s = 90000;   // 杀手着法
+        else s = history[key] || 0;                               // 历史启发
+      }
+      moves.push({ pc, dst, s });
     }
   }
-  moves.sort((a, b) => b.cap - a.cap);
+  moves.sort((a, b) => b.s - a.s);
   return limit > 0 && moves.length > limit ? moves.slice(0, limit) : moves;
 }
 
@@ -1038,13 +1389,56 @@ function nextAliveOf(p) {
   return q;
 }
 
-// Paranoid alpha-beta：turnPlayer === player 时取 max，否则取 min
 let aiDeadline = 0;
-function paranoid(player, turnPlayer, depth, alpha, beta, limit) {
-  if (depth <= 0 || performance.now() > aiDeadline) return evalFor(player);
-  const moves = orderedMovesOf(turnPlayer, limit);
+
+// 静态搜索：到达深度 0 后只继续"吃子"直到局面平静，消除地平线效应（看清交换结果）。
+// 同样按 paranoid 处理：turnPlayer === player 取 max，否则取 min；可随时 stand-pat。
+function quiesce(player, turnPlayer, alpha, beta, qdepth) {
+  if (performance.now() > aiDeadline) return evalFor(player);
+  const maximizing = turnPlayer === player;
+  let best = evalFor(player);                          // stand-pat：不强迫续吃
+  if (maximizing) { if (best >= beta) return best; if (best > alpha) alpha = best; }
+  else            { if (best <= alpha) return best; if (best < beta) beta = best; }
+  if (qdepth <= 0) return best;
+
+  const caps = [];
+  for (const pc of pieces) {
+    if (!pc.alive || pc.owner !== turnPlayer) continue;
+    for (const dst of legalMoves(pc)) {
+      const v = pieceAt.get(dst);
+      if (v) caps.push({ pc, dst, cv: PIECE_VALUE[v.type], vk: v.type === 'K', vo: v.owner });
+    }
+  }
+  caps.sort((a, b) => b.cv - a.cv);
+  for (const m of caps) {
+    let score;
+    if (m.vk) {
+      if (m.vo === player) score = -WIN_SCORE;       // 我方主帅被吃
+      else {                                         // 接管：模拟倒戈后评估
+        const u = simAbsorbMove(m.pc, m.dst);
+        score = alivePlayers.filter(Boolean).length <= 1
+          ? (maximizing ? WIN_SCORE : -WIN_SCORE) : evalFor(player);
+        u();
+      }
+    } else {
+      const u = simMove(m.pc, m.dst);
+      score = quiesce(player, nextAliveOf(turnPlayer), alpha, beta, qdepth - 1);
+      u();
+    }
+    if (maximizing) { if (score > best) best = score; if (best > alpha) alpha = best; }
+    else            { if (score < best) best = score; if (best < beta) beta = best; }
+    if (alpha >= beta) break;
+  }
+  return best;
+}
+
+// Paranoid alpha-beta：turnPlayer === player 时取 max，否则取 min；depth 0 进入静态搜索
+function paranoid(player, turnPlayer, depth, alpha, beta, limit, ply) {
+  if (performance.now() > aiDeadline) return evalFor(player);
+  if (depth <= 0) return quiesce(player, turnPlayer, alpha, beta, qDepthBudget);
+  const moves = orderedMovesOf(turnPlayer, limit, ply);
   if (!moves.length)   // 无子可动：跳过该方
-    return paranoid(player, nextAliveOf(turnPlayer), depth - 1, alpha, beta, limit);
+    return paranoid(player, nextAliveOf(turnPlayer), depth - 1, alpha, beta, limit, ply + 1);
   const maximizing = turnPlayer === player;
   let best = maximizing ? -Infinity : Infinity;
   for (const { pc, dst } of moves) {
@@ -1053,17 +1447,17 @@ function paranoid(player, turnPlayer, depth, alpha, beta, limit) {
     if (victim && victim.type === 'K') {
       if (victim.owner === player) {
         score = -(WIN_SCORE + depth * 100);          // 我方主帅被吃：致命
-      } else if (maximizing) {
-        score = WIN_SCORE + depth * 100;             // 吃掉敌帅并接管其棋子：必胜级
       } else {
-        // 敌方互吃主帅：对方阵营合并变强，近似为轻微不利，不再深搜
-        const undo = simMove(pc, dst);
-        score = evalFor(player) - 120;
+        // 接管：精确模拟全军倒戈。若就此只剩一方 → 终局；否则按接管后的子力局面评估。
+        const undo = simAbsorbMove(pc, dst);
+        score = alivePlayers.filter(Boolean).length <= 1
+          ? (maximizing ? WIN_SCORE + depth * 100 : -(WIN_SCORE + depth * 100))
+          : evalFor(player);
         undo();
       }
     } else {
       const undo = simMove(pc, dst);
-      score = paranoid(player, nextAliveOf(turnPlayer), depth - 1, alpha, beta, limit);
+      score = paranoid(player, nextAliveOf(turnPlayer), depth - 1, alpha, beta, limit, ply + 1);
       undo();
     }
     if (maximizing) {
@@ -1073,41 +1467,94 @@ function paranoid(player, turnPlayer, depth, alpha, beta, limit) {
       if (score < best) best = score;
       if (best < beta) beta = best;
     }
-    if (alpha >= beta) break;                        // 剪枝
+    if (alpha >= beta) {                              // 剪枝：记录安静着法为杀手/历史
+      if (!victim) { recordKiller(ply, pc.id, dst); history[pc.id + '_' + dst] = (history[pc.id + '_' + dst] || 0) + depth * depth; }
+      break;
+    }
   }
   return best;
 }
 
 // 最近走法记忆（防原地往返循环）
 const aiRecentMoves = [[], [], []];
+// 每方已走步数：用于开局多样化（前两步在近似等价着法中随机选，避免每局雷同）
+const aiMoveCount = [0, 0, 0];
 
 function aiPickMove(player) {
   const cfg = AI_DIFF[game_config.difficulty] || AI_DIFF.normal;
   aiDeadline = performance.now() + cfg.deadline;
-  const moves = orderedMovesOf(player, 0);
-  if (!moves.length) return null;
-  const recent = aiRecentMoves[player];
-  const scored = [];
-  let alphaRoot = -Infinity;
+  qDepthBudget = cfg.qdepth || 0;
+  killers = []; history = {}; lastScored = null; aiLastDepth = 0;
 
-  for (const { pc, dst } of moves) {
-    const victim = pieceAt.get(dst);
-    if (victim && victim.type === 'K') return { pc, dst };   // 必杀：直接吃帅接管
-
-    const undo = simMove(pc, dst);
-    let score = paranoid(player, nextAliveOf(player), cfg.depth - 1,
-                         cfg.topK > 1 ? -Infinity : alphaRoot, Infinity, cfg.limit);
-    undo();
-
-    if (recent.includes(pc.id + '>' + dst)) score -= 30;     // 重复走法惩罚
-    if (cfg.noise) score += Math.random() * cfg.noise;
-    scored.push({ pc, dst, score });
-    if (score > alphaRoot) alphaRoot = score;
+  const rootMoves = orderedMovesOf(player, 0, 0);
+  if (!rootMoves.length) return null;
+  // 终局杀：若吃帅后只剩本方一家，直接落子（一统天下）
+  for (const m of rootMoves) {
+    const v = pieceAt.get(m.dst);
+    if (v && v.type === 'K') {
+      const undo = simAbsorbMove(m.pc, m.dst);
+      const ends = alivePlayers.filter(Boolean).length <= 1;
+      undo();
+      if (ends) return { pc: m.pc, dst: m.dst };
+    }
   }
 
-  scored.sort((a, b) => b.score - a.score);
-  const k = Math.min(cfg.topK || 1, scored.length);
-  const pick = scored[k > 1 ? Math.floor(Math.random() * k) : 0];
+  const recent = aiRecentMoves[player];
+  let pvKey = null;
+
+  // 迭代加深：逐层加深，主变例(PV)优先排序；时间用满即停，返回最近完成层的结果
+  for (let d = 1; d <= cfg.depth; d++) {
+    if (pvKey) {  // 把上一层最优着法提到最前，显著提升剪枝
+      rootMoves.sort((a, b) =>
+        (((b.pc.id + '_' + b.dst) === pvKey) ? 1 : 0) - (((a.pc.id + '_' + a.dst) === pvKey) ? 1 : 0));
+    }
+    let alphaRoot = -Infinity, timedOut = false;
+    const scored = [];
+    for (const { pc, dst } of rootMoves) {
+      if (performance.now() > aiDeadline) { timedOut = true; break; }
+      const victim = pieceAt.get(dst);
+      let score;
+      if (victim && victim.type === 'K') {           // 吃帅接管：模拟倒戈后评估（终局则记为必胜）
+        const undo = simAbsorbMove(pc, dst);
+        score = alivePlayers.filter(Boolean).length <= 1 ? WIN_SCORE : evalFor(player);
+        undo();
+      } else {
+        const undo = simMove(pc, dst);
+        score = paranoid(player, nextAliveOf(player), d - 1,
+                         cfg.topK > 1 ? -Infinity : alphaRoot, Infinity, cfg.limit, 1);
+        undo();
+      }
+      if (recent.includes(pc.id + '>' + dst)) score -= 30;   // 防原地往返循环
+      scored.push({ pc, dst, score });
+      if (score > alphaRoot) alphaRoot = score;
+    }
+    // 仅采纳"完整跑完"的层；超时层结果可能不公允，丢弃但保留上一完整层
+    if (!timedOut && scored.length) {
+      scored.sort((a, b) => b.score - a.score);
+      lastScored = scored;
+      pvKey = scored[0].pc.id + '_' + scored[0].dst;
+      aiLastDepth = d;
+      if (Math.abs(scored[0].score) >= WIN_SCORE) break;     // 已找到杀棋，无需再深
+    }
+    if (timedOut) break;
+  }
+
+  let scored = lastScored || [{ pc: rootMoves[0].pc, dst: rootMoves[0].dst, score: 0 }];
+  if (cfg.noise) {                                           // 低难度：扰动后重新排序制造"失误"
+    scored = scored.map(s => ({ ...s, score: s.score + Math.random() * cfg.noise }))
+                   .sort((a, b) => b.score - a.score);
+  }
+
+  // 开局多样化：高难度(topK=1)前两步，在与最优近似等价(≤8分)的着法中随机选 —— 不削弱强度，但每局开局不同
+  let pick;
+  if ((cfg.topK || 1) === 1 && aiMoveCount[player] < 2 && scored.length > 1) {
+    const near = scored.filter(s => scored[0].score - s.score <= 8);
+    pick = near[Math.floor(Math.random() * near.length)];
+  } else {
+    const k = Math.min(cfg.topK || 1, scored.length);
+    pick = scored[k > 1 ? Math.floor(Math.random() * k) : 0];
+  }
+  aiMoveCount[player]++;
   recent.push(pick.pc.id + '>' + pick.dst);
   if (recent.length > 6) recent.shift();
   return { pc: pick.pc, dst: pick.dst };
@@ -1122,8 +1569,11 @@ function scheduleAI() {
   }, 300);
   setTimeout(() => {
     if (gameOver || isHuman(curPlayer)) { clearTimeout(thinkTimer); return; }
-    const mv = aiPickMove(curPlayer);
+    const aiSeat = curPlayer;
+    const mv = aiPickMove(aiSeat);
     clearTimeout(thinkTimer);
+    const info = document.getElementById('aiInfo');
+    if (info) info.textContent = `${PLAYER_NAMES[aiSeat]}方 AI · ${(AI_STYLE[aiSeat] || AI_STYLE[0]).name} · 算到 ${aiLastDepth} 层`;
     if (mv) {
       doMove(mv.pc, mv.dst);
     } else {
@@ -1133,7 +1583,7 @@ function scheduleAI() {
 }
 </script>
 
-<script>
+<script type="text/gamejs" class="xqGameCode" id="xqGameCode8">
 // ============ 相机环绕 & 重开 ============
 let camTheta = 0, camPhi = 1.25, camDist = 19;   // 默认近俯视
 let userZoomed = false;
@@ -1208,6 +1658,8 @@ function restartGame() {
   alivePlayers = [true, true, true];
   selected = null;
   animating = false;
+  undoSnapshot = null;
+  aiMoveCount.fill(0);
   if (typeof clearAllFX === 'function') clearAllFX();
   clearHints();
   document.getElementById('restartBar').classList.add('hidden');
@@ -1215,12 +1667,15 @@ function restartGame() {
   initialSetup();
   renderAllPieces();
   updateTurnBadge();
+  updateStrengthTray();
+  updateCheckMarkers();
   if (!isHuman(curPlayer)) scheduleAI();
 }
 document.getElementById('restartBtn').addEventListener('click', restartGame);
+document.getElementById('undoBtn').addEventListener('click', requestUndo);
 </script>
 
-<script>
+<script type="text/gamejs" class="xqGameCode" id="xqGameCode9">
 // ============ 动画 / 粒子特效 / 音效 ============
 const fxTweens = [];
 const fxParticles = [];
@@ -1266,6 +1721,12 @@ function updateFX(dt) {
   // 上一手标记脉冲
   for (const m of lastMoveMarkers) {
     m.material.opacity = 0.5 + Math.sin(fxTime * 4) * 0.22;
+  }
+  // 将军红环脉冲（更快更醒目）
+  for (const m of checkMarkers) {
+    m.material.opacity = 0.55 + Math.sin(fxTime * 9) * 0.35;
+    const s = 1 + Math.sin(fxTime * 9) * 0.12;
+    m.scale.set(s, s, s);
   }
 }
 
@@ -1338,6 +1799,63 @@ function clearAllFX() {
   for (const p of fxParticles) scene.remove(p.mesh);
   fxParticles.length = 0;
   clearLastMoveMarkers();
+  clearCheckMarkers();
+}
+
+// ---- 将军提示：被将的主帅脚下亮红环（脉冲），人类被将时弹警告+音效 ----
+let checkMarkers = [];
+function kingOf(player) {
+  for (const pc of pieces) if (pc.alive && pc.type === 'K' && pc.owner === player) return pc;
+  return null;
+}
+function clearCheckMarkers() {
+  for (const m of checkMarkers) scene.remove(m);
+  checkMarkers = [];
+}
+function updateCheckMarkers() {
+  clearCheckMarkers();
+  if (gameOver) return;
+  let humanInCheck = false;
+  const geo = new THREE.RingGeometry(0.34, 0.5, 28);
+  for (let p = 0; p < 3; p++) {
+    if (!alivePlayers[p]) continue;
+    const k = kingOf(p);
+    if (!k || !isAttacked(k.nodeKey, p)) continue;
+    const mat = new THREE.MeshBasicMaterial({ color: 0xff2222, transparent: true, opacity: 0.7, side: THREE.DoubleSide });
+    const ring = new THREE.Mesh(geo, mat);
+    ring.rotation.x = -Math.PI / 2;
+    const n = nodes.get(k.nodeKey);
+    ring.position.set(n.pos.x, 0.045, n.pos.z);
+    scene.add(ring);
+    checkMarkers.push(ring);
+    if (isHuman(p)) humanInCheck = true;
+  }
+  if (humanInCheck) {
+    toast('⚠️ 你被将军了！快保护主帅', PLAYER_COLORS[0], 1800);
+    playSound('check');
+  }
+}
+
+// ---- 三方战力实况：存活棋子数 + 王冠/骷髅 + 形势条（子力占比），谁在做大一目了然 ----
+function updateStrengthTray() {
+  const tray = document.getElementById('strengthTray');
+  if (!tray) return;
+  const cnt = [0, 0, 0], val = [0, 0, 0];
+  for (const pc of pieces) {
+    if (!pc.alive) continue;
+    cnt[pc.owner]++;
+    if (pc.type !== 'K') val[pc.owner] += PIECE_VALUE[pc.type];   // 去掉帅的天价，反映真实战力
+  }
+  tray.querySelectorAll('.strPill').forEach(el => {
+    const s = +el.dataset.seat;
+    el.textContent = PLAYER_NAMES[s] + (alivePlayers[s] ? ' 👑' : ' 💀') + cnt[s];
+    el.style.opacity = alivePlayers[s] ? '1' : '0.4';
+  });
+  const tot = (val[0] + val[1] + val[2]) || 1;
+  const bar = document.getElementById('powerBar');
+  if (bar) bar.querySelectorAll('[data-seat]').forEach(el => {
+    el.style.width = (val[+el.dataset.seat] / tot * 100) + '%';
+  });
 }
 
 // ---- WebAudio 合成音效（无需外部资源）----
@@ -1377,11 +1895,63 @@ function playSound(type) {
     case 'select':  tone(880, 0.06, 'triangle', 0.12); break;
     case 'move':    noiseBurst(0.07, 0.32, 900); tone(180, 0.08, 'sine', 0.22); break;
     case 'capture': noiseBurst(0.12, 0.4, 500); tone(110, 0.18, 'sine', 0.32); tone(70, 0.22, 'sine', 0.26, 0.03); break;
+    case 'check':   tone(740, 0.1, 'square', 0.18); tone(740, 0.1, 'square', 0.18, 0.13); break;
     case 'absorb':  [523, 659, 784, 1047].forEach((f, i) => tone(f, 0.18, 'triangle', 0.2, i * 0.09)); break;
     case 'win':     [523, 659, 784, 1047, 1319].forEach((f, i) => tone(f, 0.3, 'triangle', 0.22, i * 0.13)); break;
     case 'lose':    [392, 330, 262, 196].forEach((f, i) => tone(f, 0.28, 'sawtooth', 0.1, i * 0.14)); break;
   }
 }
+
+</script>
+<script>
+  // Bootstrap: the rules modal (static HTML) is the real initial screen and
+  // paints immediately. All game logic lives in a non-executable <script
+  // type="text/gamejs"> block so the browser does NOT compile it before
+  // DOMContentLoaded, and three.js is NOT a blocking head script. After first
+  // paint we lazy-load three.js, then run the game code (which builds the WebGL
+  // scene, board topology and pieces) — keeping startup (DCL) tiny.
+  (function () {
+    try { window.parent.postMessage({ type: 'gameLoaded' }, '*'); } catch (_) {}
+    var booted = false;
+    // Load each game block as its OWN classic script, in order. They must stay
+    // separate (not concatenated) because the original code relies on per-<script>
+    // top-level lexical isolation: a `typeof someLet` in an earlier block must see
+    // 'undefined' for a `let` declared in a later block, not throw a TDZ error.
+    function runGame(after) {
+      var blocks = Array.prototype.slice.call(document.querySelectorAll('script.xqGameCode'));
+      (function next(i) {
+        if (i >= blocks.length) { if (after) after(); return; }
+        var url = URL.createObjectURL(new Blob([blocks[i].textContent], { type: 'application/javascript' }));
+        var s = document.createElement('script');
+        s.src = url;
+        s.onload = function () { URL.revokeObjectURL(url); next(i + 1); };
+        s.onerror = function () { URL.revokeObjectURL(url); next(i + 1); };
+        document.head.appendChild(s);
+      })(0);
+    }
+    function boot(after) {
+      if (booted) { if (after) after(); return; }
+      booted = true;
+      if (window.THREE) { runGame(after); return; }
+      var t = document.createElement('script');
+      t.src = 'https://cdn.keepwork.com/npm/three%400.128.0/build/three.min.js';
+      t.onload = function () { runGame(after); };
+      document.head.appendChild(t);
+    }
+    // The Start button: build the 3D engine on demand, then replay the click so
+    // the game's own start handler (attached when the game code runs) fires.
+    var startBtn = document.getElementById('startBtn');
+    if (startBtn) startBtn.addEventListener('click', function () {
+      if (booted) return;            // game code now owns the button
+      pendingStart = true;
+      boot(function () { startBtn.click(); });
+    });
+    // If the parent drives the game (gameContinue) before any tap, boot too.
+    window.addEventListener('message', function (e) {
+      var msg = e.data || {};
+      if (!booted && (msg.type === 'gameContinue' || msg.type === 'setGameConfig')) boot();
+    });
+  })();
 </script>
 </body>
 </html>

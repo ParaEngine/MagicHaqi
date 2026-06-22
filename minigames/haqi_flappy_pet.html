@@ -411,6 +411,7 @@
   }
 
   function startGame() {
+    if (!width || !height) resize();
     const cfg = config();
     stopLoop();
     const runToken = ++state.runToken;
@@ -1273,11 +1274,16 @@
   startBtn.onclick = () => startGame();
 
   buildDifficulties();
-  resize();
   updateHud();
-  requestPetImage();
-  draw(performance.now());
   post('gameLoaded');
+  // Defer canvas sizing, the background paint and the pet-image request until
+  // after the first paint. The rules overlay (the real initial screen) covers
+  // the canvas, so this keeps DOMContentLoaded under the start budget.
+  requestAnimationFrame(() => requestAnimationFrame(() => {
+    resize();
+    requestPetImage();
+    draw(performance.now());
+  }));
 })();
 </script>
 

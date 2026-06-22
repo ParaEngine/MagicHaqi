@@ -257,6 +257,22 @@ function loadAgentsMd() {
     return agentsMdPromise;
 }
 
+// 伴学游戏（AITestGenerator / mode==='study'）专用的生成指南：把 haqi_science_quiz.html
+// 已验证的题型模板、揭晓卡、数字人语音陪学接线、长期记忆契约固化给 AI 复刻。
+const STUDY_AGENTS_MD_URL = new URL('minigames/STUDY_AGENTS.md', new URL('..', import.meta.url + '')).href;
+let studyAgentsMdPromise = null;
+let studyAgentsMdCache = '';
+
+function loadStudyAgentsMd() {
+    if (studyAgentsMdCache) return Promise.resolve(studyAgentsMdCache);
+    if (studyAgentsMdPromise) return studyAgentsMdPromise;
+    studyAgentsMdPromise = fetch(STUDY_AGENTS_MD_URL, { cache: 'no-store' })
+        .then((res) => (res.ok ? res.text() : ''))
+        .then((text) => { studyAgentsMdCache = text || ''; return studyAgentsMdCache; })
+        .catch(() => { studyAgentsMdPromise = null; return ''; });
+    return studyAgentsMdPromise;
+}
+
 // ---------- 中止 / 流式工具（与 view_story_maker 同款约定） ----------
 function createAbortError() {
     const error = new Error('AI_GENERATION_ABORTED');
@@ -642,14 +658,43 @@ const EMOJI_OPTIONS = [
 ];
 
 // game: 编辑已有游戏时传入 { record, html }；新建时为 null。
-export function renderGameMaker(panel, { game = null } = {}, { onBack, onSaved } = {}) {
+// mode: 'game'（默认，小游戏工坊）| 'study'（伴学游戏，AITestGenerator）。
+// materials: 伴学模式下注入的题库 + 题型（资料 OCR 抽取并确认后的结构化数据）。
+// memory: 伴学模式下注入的该生长期记忆摘要（薄弱点 / 偏好 / 历史），用于个性化。
+// storage: 可选持久化适配器 { save }；不传时回退默认 pet-games 的 savePetGame（game 模式行为不变）。
+export function renderGameMaker(panel, { game = null, mode = 'game', materials = null, memory = '', initialPrompt = '' } = {}, { onBack, onSaved, storage = null } = {}) {
     disposeGameMaker();
+
+    const studyMode = mode === 'study';
+    const autoPrompt = String(initialPrompt || '').trim();
+    const saveGame = (typeof storage?.save === 'function') ? storage.save : savePetGame;
+    const studyMaterials = materials || null;
+    const studyMemory = String(memory || '').trim();
+
+    // 伴学模式：把游戏工坊里游戏化的界面文案替换成"伴学/复习"风格（仅 study；game 模式仍走原 t）。
+    const STUDY_TEXT = {
+        mgGameNamePlaceholder: '给这个复习游戏起名',
+        mgGameChatPlaceholder: '想怎么改尽管说，例如：题目再简单点 / 多些鼓励的话 / 换个颜色',
+        mgGameWelcomeTitle: '把资料变成复习游戏',
+        mgGameInspireHint: '在下面告诉我想怎么改，或让我出主意',
+        mgGameInspireOr: '或者直接在下面告诉我',
+        mgGameEditWelcome: '这是你的复习游戏《{title}》，想改什么直接告诉我～',
+        mgDefaultName: '复习游戏',
+    };
+    const tt = (key, vars) => {
+        if (studyMode && STUDY_TEXT[key] != null) {
+            let s = STUDY_TEXT[key];
+            if (vars) for (const k of Object.keys(vars)) s = s.replace(new RegExp('\\{' + k + '\\}', 'g'), vars[k]);
+            return s;
+        }
+        return t(key, vars);
+    };
 
     const record = game?.record || null;
     const editing = !!record;
     let currentHtml = (game?.html != null && String(game.html).trim()) ? String(game.html) : '';
     let gameName = record?.title || '';
-    let gameIcon = record?.icon || '🎮';
+    let gameIcon = record?.icon || (studyMode ? '📚' : '🎮');
     const gameDesc = record?.desc || '';
     let savedPath = record?.path || '';
     let activePane = 'chat'; // 'chat' | 'preview'
@@ -767,6 +812,8 @@ export function renderGameMaker(panel, { game = null } = {}, { onBack, onSaved }
             .mh-gm-suggest { display:flex; align-items:center; gap:9px; width:100%; padding:11px 14px; border:1px solid rgba(148,163,184,.24); background:rgba(255,255,255,.05); border-radius:12px; color:#e2e8f0; font-size:14px; font-weight:700; cursor:pointer; text-align:left; transition:border-color .15s, background .15s; }
             .mh-gm-suggest:hover { border-color:#6366f1; background:rgba(99,102,241,.14); }
             .mh-gm-suggest:active { background:rgba(99,102,241,.22); }
+            .mh-gm-suggest-primary { border-color:#6366f1; background:rgba(99,102,241,.18); color:#fff; }
+            .mh-gm-suggest-primary:hover { border-color:#818cf8; background:rgba(99,102,241,.28); }
             .mh-gm-suggest-ico { font-size:18px; flex:0 0 auto; }
             .mh-gm-suggest-text { min-width:0; flex:1; }
             /* 「换一批」chip：弱化样式（虚线边框 + 居中），与普通建议气泡区分。 */
@@ -1000,7 +1047,7 @@ export function renderGameMaker(panel, { game = null } = {}, { onBack, onSaved }
             <div class="mh-gm-topbar">
                 <button type="button" class="mh-gm-iconbtn" id="mhGmBack" title="${escapeHtml(t('back'))}" aria-label="${escapeHtml(t('back'))}">‹</button>
                 <button type="button" class="mh-gm-iconbtn" id="mhGmIcon" title="${escapeHtml(t('mgGameIconLabel'))}" aria-label="${escapeHtml(t('mgGameIconLabel'))}">${escapeHtml(gameIcon)}</button>
-                <input class="mh-gm-name" id="mhGmName" type="text" maxlength="64" placeholder="${escapeHtml(t('mgGameNamePlaceholder'))}" value="${escapeHtml(gameName)}">
+                <input class="mh-gm-name" id="mhGmName" type="text" maxlength="64" placeholder="${escapeHtml(tt('mgGameNamePlaceholder'))}" value="${escapeHtml(gameName)}">
                 <button type="button" class="mh-gm-save" id="mhGmSave">${escapeHtml(t('mgGameSave'))}</button>
             </div>
             <div class="mh-gm-tabbar">
@@ -1032,7 +1079,7 @@ export function renderGameMaker(panel, { game = null } = {}, { onBack, onSaved }
                     <div class="mh-gm-input-area">
                         <div class="mh-gm-attach-preview" id="mhGmAttachPreview"></div>
                         <div class="mh-gm-input-box">
-                            <textarea class="mh-gm-textarea" id="mhGmInput" rows="2" placeholder="${escapeHtml(t('mgGameChatPlaceholder'))}"></textarea>
+                            <textarea class="mh-gm-textarea" id="mhGmInput" rows="2" placeholder="${escapeHtml(tt('mgGameChatPlaceholder'))}"></textarea>
                             <button type="button" class="mh-gm-attach-btn" id="mhGmAttach" title="添加图片" aria-label="添加图片">
                                 <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="3" width="18" height="18" rx="2" ry="2"/><circle cx="8.5" cy="8.5" r="1.5"/><polyline points="21 15 16 10 5 21"/></svg>
                             </button>
@@ -1102,7 +1149,21 @@ export function renderGameMaker(panel, { game = null } = {}, { onBack, onSaved }
         const value = String(finalText || '');
         if (value) segs.push({ type: 'text', text: value });
     }
-    
+
+    // 流式结束后，把已写入的最后一个文本段里 AI 附带的「快捷回复 json 块」剥掉，
+    // 只保留正文（json 已被解析成可点击 chip）。finalizeSegmentsText 在已有文本段时会早退，
+    // 所以这里直接改最后一段的内容。
+    function stripChipJsonFromSegments(aiMsg) {
+        if (!Array.isArray(aiMsg?.segments)) return;
+        for (let i = aiMsg.segments.length - 1; i >= 0; i--) {
+            const seg = aiMsg.segments[i];
+            if (seg?.type === 'text' && String(seg.text || '').trim()) {
+                seg.text = parseInspireReply(seg.text).intro;
+                break;
+            }
+        }
+    }
+
     // Hidden file input for image selection
     const fileInput = document.createElement('input');
     fileInput.type = 'file';
@@ -1525,7 +1586,7 @@ export function renderGameMaker(panel, { game = null } = {}, { onBack, onSaved }
         const hasGame = !!(currentHtml && currentHtml.trim());
         if (hasGame) {
             // 与初始加载一致：已有游戏时显示编辑欢迎语（游戏名为可点击链接）。
-            messages.push({ role: 'ai', text: t('mgGameEditWelcome', { title: gameName || t('mgDefaultName') }), editLink: true });
+            messages.push({ role: 'ai', text: tt('mgGameEditWelcome', { title: gameName || tt('mgDefaultName') }), editLink: true });
         }
         renderMessages();
         setPreview(currentHtml);
@@ -1569,10 +1630,10 @@ export function renderGameMaker(panel, { game = null } = {}, { onBack, onSaved }
             msgsEl.innerHTML = `
                 <div class="mh-gm-welcome">
                     <div class="mh-gm-welcome-star" aria-hidden="true">✨</div>
-                    <div class="mh-gm-welcome-title">${escapeHtml(t('mgGameWelcomeTitle'))}</div>
-                    <div class="mh-gm-welcome-sub">${escapeHtml(t('mgGameInspireHint'))}</div>
+                    <div class="mh-gm-welcome-title">${escapeHtml(tt('mgGameWelcomeTitle'))}</div>
+                    <div class="mh-gm-welcome-sub">${escapeHtml(tt('mgGameInspireHint'))}</div>
                     <button type="button" class="mh-gm-inspire" data-mh-gm-inspire="1">${escapeHtml(t('mgGameInspire'))}</button>
-                    <div class="mh-gm-welcome-or">${escapeHtml(t('mgGameInspireOr'))}</div>
+                    <div class="mh-gm-welcome-or">${escapeHtml(tt('mgGameInspireOr'))}</div>
                 </div>`;
             return;
         }
@@ -1648,6 +1709,12 @@ export function renderGameMaker(panel, { game = null } = {}, { onBack, onSaved }
                 const dots = showDots ? '<span class="mh-gm-dots" aria-label="…"><span></span><span></span><span></span></span>' : '';
                 // 基础 Markdown 渲染（带记忆化缓存）：行内代码/加粗/斜体、代码围栏、有/无序列表。
                 const inner = `${renderBasicMarkdownCached(value)}${dots}`;
+                // 首次创建「先讨论」轮（confirmStage）：方案/讨论正文完整展开，不限高、不显示折叠按钮。
+                if (m.confirmStage) {
+                    return `<div class="mh-gm-textseg is-expanded" data-mh-gm-textseg="${escapeHtml(segKey)}">
+                        <div class="mh-gm-textseg-body">${inner}</div>
+                    </div>`;
+                }
                 const expanded = expandedTextSegs.has(segKey);
                 const toggleTitle = escapeHtml(expanded ? t('mgGameTextCollapse') : t('mgGameTextExpand'));
                 return `<div class="mh-gm-textseg${expanded ? ' is-expanded' : ''}" data-mh-gm-textseg="${escapeHtml(segKey)}">
@@ -1697,16 +1764,21 @@ export function renderGameMaker(panel, { game = null } = {}, { onBack, onSaved }
             //   末尾「换一批」chip —— 让 AI 在同一步给出更多/不同的选项。
             if (m.role === 'ai' && Array.isArray(m.suggestions) && m.suggestions.length) {
                 const isDir = m.inspireStage === 'direction';
-                const label = isDir ? t('mgGameDirectionLabel') : t('mgGameSuggestionsLabel');
+                const isConfirm = !!m.confirmStage;
+                const label = isConfirm ? t('mgGameConfirmLabel') : (isDir ? t('mgGameDirectionLabel') : t('mgGameSuggestionsLabel'));
                 const moreLabel = isDir ? t('mgGameDirectionMore') : t('mgGameSuggestMore');
                 body += `<div class="mh-gm-suggest-label">${escapeHtml(label)}</div>`;
                 body += '<div class="mh-gm-suggest-list">';
                 body += m.suggestions.map((s, sIdx) => {
                     const ico = s?.icon ? `<span class="mh-gm-suggest-ico" aria-hidden="true">${escapeHtml(s.icon)}</span>` : '';
-                    return `<button type="button" class="mh-gm-suggest" data-mh-gm-suggest="${idx}" data-mh-gm-suggest-idx="${sIdx}">${ico}<span class="mh-gm-suggest-text">${escapeHtml(s?.text || '')}</span></button>`;
+                    // 确认阶段：首个 chip（确认开始）用主色突出。
+                    const primary = isConfirm && sIdx === 0 ? ' mh-gm-suggest-primary' : '';
+                    return `<button type="button" class="mh-gm-suggest${primary}" data-mh-gm-suggest="${idx}" data-mh-gm-suggest-idx="${sIdx}">${ico}<span class="mh-gm-suggest-text">${escapeHtml(s?.text || '')}</span></button>`;
                 }).join('');
-                // 「换一批」chip：弱化样式，区分于普通建议。
-                body += `<button type="button" class="mh-gm-suggest mh-gm-suggest-more" data-mh-gm-suggest-more="${idx}"><span class="mh-gm-suggest-text">${escapeHtml(moreLabel)}</span></button>`;
+                // 「换一批」chip 仅用于启发流；确认阶段不显示。
+                if (!isConfirm) {
+                    body += `<button type="button" class="mh-gm-suggest mh-gm-suggest-more" data-mh-gm-suggest-more="${idx}"><span class="mh-gm-suggest-text">${escapeHtml(moreLabel)}</span></button>`;
+                }
                 body += '</div>';
             }
 
@@ -2309,6 +2381,7 @@ export function renderGameMaker(panel, { game = null } = {}, { onBack, onSaved }
     async function generateGame(promptText, aiMsg, images = []) {
         const sdk = state.sdk || window.keepwork;
         const agentsMd = await loadAgentsMd();
+        const studyMd = studyMode ? await loadStudyAgentsMd() : '';
         const lang = getLang();
         const langLine = lang === 'en'
             ? 'The game UI text should match the user request language.'
@@ -2376,9 +2449,12 @@ export function renderGameMaker(panel, { game = null } = {}, { onBack, onSaved }
                 curSegText += delta;
             }
             ensureCurSeg();
-            flushCurSeg();
+            // 首次创建「先讨论」轮：AI 会在末尾追加 ```json 快捷回复块——流式期间先按三个反引号截断，
+            // 避免半截 json 在气泡里闪烁；收尾时再解析成可点击 chip。
+            const display = discussFirst ? curSegText.split('```')[0].trimEnd() : curSegText;
+            if (curSeg) curSeg.text = display;
             // text 对外只需最终全量，这里同步成「已定稿段 + 当前段」的拼接近似即可。
-            aiMsg.text = curSegText;
+            aiMsg.text = display;
             aiMsg.streaming = true;
             renderMessages();
         };
@@ -2414,9 +2490,17 @@ export function renderGameMaker(panel, { game = null } = {}, { onBack, onSaved }
         const model = selectedModel || undefined;
 
         // 首轮创建与后续编辑使用不同的开场用户消息。
-        const userPrompt = hasExistingHtml
-            ? `This is an EDIT session for an existing game. The current ${GAME_MAKER_FILE_PATH} content is shown at the end of the system prompt. Make incremental chunk edits with replace_string_in_file / multi_replace_string_in_file to satisfy this request, then briefly summarize the changes:\n\n${promptText}`
-            : `This is a FIRST-TIME CREATE session — ${GAME_MAKER_FILE_PATH} is essentially empty. Build a complete, self-contained HTML5 mini game in one create_file call (full HTML document), then briefly summarize. User request:\n\n${promptText}`;
+        // 首次创建（用户手动发起）：必须先与用户讨论需求，完全清楚并经用户确认后，才开始编码。
+        // 伴学 / 外部工具自动注入（studyMode 或 autoPrompt）已携带题库与设计意图，直接构建，不打扰用户。
+        const discussFirst = !hasExistingHtml && !studyMode && !autoPrompt;
+        let userPrompt;
+        if (hasExistingHtml) {
+            userPrompt = `This is an EDIT session for an existing game. The current ${GAME_MAKER_FILE_PATH} content is shown at the end of the system prompt. Make incremental chunk edits with replace_string_in_file / multi_replace_string_in_file to satisfy this request, then briefly summarize the changes:\n\n${promptText}`;
+        } else if (discussFirst) {
+            userPrompt = `This is a FIRST-TIME CREATE session — ${GAME_MAKER_FILE_PATH} is essentially empty.\n\nIMPORTANT — DISCUSS BEFORE YOU CODE:\n- Do NOT call any file tools (create_file / replace_string_in_file / etc.) and do NOT write any HTML until the design is fully clear AND the user has explicitly confirmed they are happy with the plan.\n- The conversation history (if any) is shown between the system prompt and this message; use it to judge how much is already settled.\n- If anything important is still unclear or unconfirmed — game type/genre, core gameplay loop and goal, controls, art/visual style, theme & characters, win/lose conditions, difficulty, scoring — ask the user concise, friendly clarifying questions (prefer a short numbered list, and offer a sensible default/example option for each so it is easy to answer). Ask only what you still need; do not re-ask what the history already answered.\n- When you believe you understand the whole game, restate a short design summary (one tight paragraph or a few bullets) and ask the user to confirm or adjust. Do NOT start building in the same turn you first present the summary — wait for their explicit go-ahead.\n- QUICK-REPLY CHIPS: Whenever you are still discussing (i.e. NOT building yet), END your reply with a \`\`\`json fenced array of 2-4 tappable quick replies the user can click instead of typing. Each item is { "icon": "<one emoji>", "text": "<short reply phrased in the user's first person>" }. Always include one clear "confirm & start building" chip (e.g. {"icon":"✅","text":"确认设计，开始制作游戏"}) plus 1-3 concrete refinement chips relevant to what you just asked (e.g. pick a theme, change difficulty, "我想再讨论 / 调整一下"). Put NOTHING after the json block.\n- ONLY after the user has clearly confirmed (e.g. they pick the confirm chip or say 确认/可以/开始做/looks good): build a complete, self-contained HTML5 mini game in one create_file call (full HTML document) per the agreed design, then briefly summarize what you built — and in that build turn do NOT output any json chip block.\n\nUse the same language as the user. User request:\n\n${promptText}`;
+        } else {
+            userPrompt = `This is a FIRST-TIME CREATE session — ${GAME_MAKER_FILE_PATH} is essentially empty. Build a complete, self-contained HTML5 mini game in one create_file call (full HTML document), then briefly summarize. User request:\n\n${promptText}`;
+        }
 
         // Build message content with images if present
         let userContent;
@@ -2574,7 +2658,19 @@ export function renderGameMaker(panel, { game = null } = {}, { onBack, onSaved }
         }
         const fileBlock = `current game file content:\ncopilot.read_file("${GAME_MAKER_FILE_PATH}", 1, 200):\n\`\`\`text\n${headContent && headContent.trim() ? headContent : ''}\n\`\`\``;
         const guideBlock = agentsMd ? `\n\n--- Platform game development guide (follow it) ---\n${agentsMd}` : '';
-        const systemPrompt = `${baseRules}${guideBlock}\n\n${fileBlock}`;
+        // 伴学模式：追加伴学游戏指南 + 注入题库与该生长期记忆，让 AI 把题目与个性化烤进生成的游戏。
+        const studyGuideBlock = (studyMode && studyMd)
+            ? `\n\n--- Study-companion game guide (this OVERRIDES generic rules; follow it closely) ---\n${studyMd}`
+            : '';
+        let studyDataBlock = '';
+        if (studyMode && studyMaterials) {
+            const matText = typeof studyMaterials === 'string' ? studyMaterials : JSON.stringify(studyMaterials, null, 2);
+            studyDataBlock += `\n\n--- Learning material (bake these EXACT items into the generated game's question bank) ---\n${matText}`;
+        }
+        if (studyMode && studyMemory) {
+            studyDataBlock += `\n\n--- Student long-term memory (personalize: focus weak points, keep an encouraging tone the buddy "remembers") ---\n${studyMemory}`;
+        }
+        const systemPrompt = `${baseRules}${guideBlock}${studyGuideBlock}${studyDataBlock}\n\n${fileBlock}`;
 
         // 所有文件工具只允许操作当前活动游戏文件（game.html），且不提供 list_dir。
         // 通过 session.sandbox.registerAPI 覆盖内置工具：强制 filePath，再委派给内置实现。
@@ -2647,7 +2743,13 @@ export function renderGameMaker(panel, { game = null } = {}, { onBack, onSaved }
             throw new Error(t('mgGameAiUnavailable'));
         }
         throwIfAborted(signal);
-        const toolHtml = await readWorkspaceHtml();
+        // seedFile 会在生成前往工作区写入占位 HTML，所以「先讨论」轮即便 AI 没写代码，
+        // readWorkspaceHtml 也会读回占位文档。仅当 AI 真的调用了写文件工具（create_file / replace_*）
+        // 才视为产出了游戏代码；否则返回空 html，让上层走「讨论 / chip」分支，不把占位当成成品保存。
+        const wroteFile = Array.isArray(aiMsg?.toolCalls) && aiMsg.toolCalls.some(
+            c => /create_file|replace_string_in_file|multi_replace_string_in_file/i.test(c?.name || '') && c?.status === 'done'
+        );
+        const toolHtml = wroteFile ? await readWorkspaceHtml() : '';
         return { text, reasoning: reasoningText, html: extractHtml(toolHtml) || toolHtml };
     }
 
@@ -2661,17 +2763,17 @@ export function renderGameMaker(panel, { game = null } = {}, { onBack, onSaved }
         }
         if (autoSaving) return null;
         autoSaving = true;
-        const name = (nameEl?.value || gameName || '').trim() || extractHtmlTitle(currentHtml) || t('mgDefaultName');
+        const name = (nameEl?.value || gameName || '').trim() || extractHtmlTitle(currentHtml) || tt('mgDefaultName');
         gameName = name;
         if (nameEl && !nameEl.value.trim()) nameEl.value = name;
         const saveBtn = $('mhGmSave');
         if (saveBtn && !silent) saveBtn.disabled = true;
         try {
-            const result = await savePetGame(currentHtml, {
+            const result = await saveGame(currentHtml, {
                 path: savedPath,
                 id: record?.id || undefined,
                 title: name,
-                icon: gameIcon || '🎮',
+                icon: gameIcon || (studyMode ? '📚' : '🎮'),
                 desc: gameDesc || '',
             });
             // 记住系统分配的路径，使后续生成与本地会话历史都关联到同一个游戏文件。
@@ -2712,14 +2814,28 @@ export function renderGameMaker(panel, { game = null } = {}, { onBack, onSaved }
         try {
             const result = await generateGame(text, aiMsg, imagesToSend);
             const reply = result.text;
-            const html = result.html || extractHtml(reply);
+            // 首次创建（用户手动发起）的「先讨论」模式。
+            const discussFirst = !htmlBefore.trim() && !studyMode && !autoPrompt;
+            // result.html 来自「AI 真的写了文件」；为空时再从回复正文兜底提取（无工具模型会把 HTML 写在正文里）。
+            // 但讨论轮的散文里可能出现 <canvas> 等标签，会被 extractHtml 误判为成品 —— 讨论模式下只接受「完整 HTML 文档」。
+            let html = result.html;
+            if (!html) {
+                html = discussFirst
+                    ? (/<!DOCTYPE|<html[\s>]/i.test(reply || '') ? extractHtml(reply) : '')
+                    : extractHtml(reply);
+            }
             aiMsg.pending = false;
             aiMsg.streaming = false;
             aiMsg.thinking = false;
             if (html) {
                 currentHtml = html;
-                aiMsg.text = reply?.trim() ? reply.trim() : t('mgGameAiDone');
+                // 首次创建确认后真正构建：万一 AI 仍在末尾附了 json chip 块，剥掉只留正文。
+                const builtIntro = discussFirst
+                    ? (parseInspireReply(reply || '').intro || reply || '')
+                    : (reply || '');
+                aiMsg.text = builtIntro.trim() ? builtIntro.trim() : t('mgGameAiDone');
                 finalizeSegmentsText(aiMsg, aiMsg.text);
+                if (discussFirst) stripChipJsonFromSegments(aiMsg);
                 setPreview(currentHtml);
                 if (!gameName.trim()) {
                     gameName = extractHtmlTitle(currentHtml);
@@ -2731,8 +2847,23 @@ export function renderGameMaker(panel, { game = null } = {}, { onBack, onSaved }
                 const saved = await persistGame({ silent: true });
                 if (saved) showToast(t('mgGameSaved'), 'success', 1200);
             } else {
-                aiMsg.text = reply?.trim() ? reply.trim() : t('mgGameAiNoHtml');
-                finalizeSegmentsText(aiMsg, aiMsg.text);
+                // 首次创建的「先讨论」轮：本轮没产出代码 → 解析 AI 末尾的 json 快捷回复，
+                // 渲染成「确认开始 / 再讨论一下」等可点击 chip；同时把 json 块从正文里剥掉。
+                if (discussFirst) {
+                    const { intro, suggestions } = parseInspireReply(reply || '');
+                    aiMsg.text = (intro || reply || '').trim() || t('mgGameAiNoHtml');
+                    finalizeSegmentsText(aiMsg, aiMsg.text);
+                    stripChipJsonFromSegments(aiMsg);
+                    // AI 没给 chip 时兜底一对：始终让用户可一键确认或继续讨论。
+                    aiMsg.suggestions = suggestions.length ? suggestions : [
+                        { icon: '✅', text: t('mgGameConfirmStartChip') },
+                        { icon: '💬', text: t('mgGameDiscussMoreChip') },
+                    ];
+                    aiMsg.confirmStage = true;
+                } else {
+                    aiMsg.text = reply?.trim() ? reply.trim() : t('mgGameAiNoHtml');
+                    finalizeSegmentsText(aiMsg, aiMsg.text);
+                }
             }
         } catch (e) {
             aiMsg.pending = false;
@@ -3337,17 +3468,24 @@ export function renderGameMaker(panel, { game = null } = {}, { onBack, onSaved }
     updateGenerationControls();
     setPreview(currentHtml);
     if (editing) {
-        messages.push({ role: 'ai', text: t('mgGameEditWelcome', { title: gameName || t('mgDefaultName') }), editLink: true });
+        messages.push({ role: 'ai', text: tt('mgGameEditWelcome', { title: gameName || tt('mgDefaultName') }), editLink: true });
         renderMessages();
     }
-    // 预热 AGENTS.md（不阻塞）。
+    // 预热 AGENTS.md（不阻塞）。伴学模式同时预热伴学指南。
     loadAgentsMd();
+    if (studyMode) loadStudyAgentsMd();
     // 加载本地模型列表后填充下拉。
     (async () => {
         const sdk = state.sdk || window.keepwork;
         try { await sdk?.localAPIKeySettings?.load?.(); } catch (_) {}
         populateModelSelect();
     })();
+
+    // 伴学/外部工具传入 initialPrompt 时：挂载后自动发起一轮生成（题库与记忆已注入系统提示），
+    // 这样用户无需自己再描述需求，省去"游戏工坊空白欢迎页"的困惑。仅在非编辑（新建/生成）时触发。
+    if (autoPrompt && !editing) {
+        setTimeout(() => { try { handleSend(autoPrompt); } catch (_) {} }, 0);
+    }
 
     activeGameMakerCleanup = () => {
         try { abortController?.abort(); } catch (_) {}

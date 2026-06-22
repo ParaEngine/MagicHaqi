@@ -2,7 +2,7 @@
 
 import { $, clamp, dockDisabledAttrs, escapeHtml, formatTime, isDockButtonDisabled, prompt, randId, showDockDisabledToast, showToast } from './utils.js';
 import { planetName, t } from './i18n.js';
-import { endVisitingMode, isVisitingMode, notify, startVisitingMode, state } from './state.js';
+import { addBiofuel, endVisitingMode, isVisitingMode, notify, startVisitingMode, state } from './state.js';
 import { addToInventory, loadRecentFriendPlanets, saveRecentFriendPlanetsDebounced, saveUserProfileDebounced, savePetDebounced } from './storage.js';
 import { defaultStats, clampEnergyToMax } from './petTick.js';
 import { computePlanetProgress } from './planetProgress.js';
@@ -852,10 +852,9 @@ async function launchFriendPlanetVisit(friend, pet, close) {
         showToast(t('stNeedFuelFriend', { fuel: fuelCost }), 'error', 2600);
         return false;
     }
-    state.biofuel = Math.max(0, (state.biofuel | 0) - fuelCost);
+    addBiofuel(-fuelCost); // 唯一经济入口；已含 notify()
     refreshTopbarResources();
     saveUserProfileDebounced();
-    notify();
     close?.();
     __remoteCargoActive = true;
     const crew = getVisitCrewPets(pet);
@@ -976,10 +975,9 @@ async function launchHaqiSocialVisit(pet, close) {
         showToast(`需要 ${fuelCost} ⛽ 生物燃料，去星球收集便便吧。`, 'error', 2600);
         return false;
     }
-    state.biofuel = Math.max(0, (state.biofuel | 0) - fuelCost);
+    addBiofuel(-fuelCost); // 唯一经济入口；已含 notify()
     refreshTopbarResources();
     saveUserProfileDebounced();
-    notify();
     close?.();
     __remoteCargoActive = true;
     showToast(t('stShipDepartHaqi'), 'info', 2600);
@@ -1163,10 +1161,9 @@ async function launchOfficialPlanetVisit(planet, pet, close) {
         showToast(t('stNeedFuelOfficial', { fuel: fuelCost, name: officialPlanetTitle(planet) }), 'error', 2600);
         return false;
     }
-    state.biofuel = Math.max(0, (state.biofuel | 0) - fuelCost);
+    addBiofuel(-fuelCost); // 唯一经济入口；已含 notify()
     refreshTopbarResources();
     saveUserProfileDebounced();
-    notify();
     close?.();
     __remoteCargoActive = true;
     const crew = getVisitCrewPets(pet);
@@ -1265,10 +1262,9 @@ async function visitRemotePlanet(remote, close) {
         showToast(t('stNeedFuelShip', { fuel: fuelCost }), 'error', 2600);
         return false;
     }
-    state.biofuel = Math.max(0, (state.biofuel | 0) - fuelCost);
+    addBiofuel(-fuelCost); // 唯一经济入口；已含 notify()
     refreshTopbarResources();
     saveUserProfileDebounced();
-    notify();
     close?.();
     __remoteCargoActive = true;
     showToast(t('stVoyageStart', { name: remotePlanetName(remote), attr: remote.elementalAttribute }), 'info', 2600);

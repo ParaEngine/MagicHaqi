@@ -534,6 +534,7 @@
   }
 
   function startGame(options = {}) {
+    if (!width) resize(); // canvas sizing was deferred; ensure it's done before generating
     const keepLevel = options.keepLevel === true;
     initSound();
     stopLoop();
@@ -2170,11 +2171,17 @@
   document.getElementById('mhStart').onclick = () => startGame();
 
   buildDifficulties();
-  resize();
-  generateLevel();
-  updateHud();
-  requestPetImage();
-  draw(performance.now());
+  // Defer canvas sizing, heavy initial level generation, first draw and the pet
+  // image request until after the overlay (real initial screen) paints. The
+  // overlay modal is already in the DOM and covers the board; startGame()
+  // regenerates the level anyway, so none of this is needed for the first frame.
+  requestAnimationFrame(() => requestAnimationFrame(() => {
+    resize();
+    generateLevel();
+    updateHud();
+    requestPetImage();
+    draw(performance.now());
+  }));
   post('gameLoaded');
 })();
 </script>

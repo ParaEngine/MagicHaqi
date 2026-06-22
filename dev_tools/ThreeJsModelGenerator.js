@@ -26,6 +26,34 @@
 // pass a THREE instance in.
 import * as THREE_DEFAULT from 'https://cdn.keepwork.com/npm/three@0.160.0/build/three.module.min.js';
 
+// Same-version build URL of THREE, reused to patch the example modules' bare `three`
+// specifier so they resolve to *our* instance (single THREE → instanceof stays valid).
+const THREE_MODULE_URL = 'https://cdn.keepwork.com/npm/three@0.160.0/build/three.module.min.js';
+const TRANSFORM_CONTROLS_URL = 'https://cdn.keepwork.com/npm/three@0.160.0/examples/jsm/controls/TransformControls.js';
+
+// Lazy, self-contained loader for the official TransformControls gizmo. The jsm module
+// imports from the bare specifier `'three'`, which won't resolve next to our full-URL
+// import. We fetch the source, rewrite the specifier to the full CDN URL, and import it
+// via a Blob URL — no host <script type="importmap"> needed, and it shares our THREE.
+let _tcLoading = null;
+function loadTransformControls(url = TRANSFORM_CONTROLS_URL) {
+	if (!_tcLoading) {
+		_tcLoading = (async () => {
+			const res = await fetch(url);
+			if (!res.ok) throw new Error('HTTP ' + res.status);
+			const code = (await res.text()).replace(/from\s*['"]three['"]/g, `from '${THREE_MODULE_URL}'`);
+			const blobUrl = URL.createObjectURL(new Blob([code], { type: 'text/javascript' }));
+			try {
+				const mod = await import(/* @vite-ignore */ blobUrl);
+				return mod.TransformControls;
+			} finally {
+				URL.revokeObjectURL(blobUrl);
+			}
+		})().catch((e) => { _tcLoading = null; throw e; });   // allow a later retry
+	}
+	return _tcLoading;
+}
+
 /* ============================================================
  *  Source parsing helpers (pure, no THREE needed)
  * ============================================================ */
@@ -247,6 +275,9 @@ export function createThreeModelEditor(config) {
 		onStats = null,           // ({ triangles }) => void — fired after every (re)build
 		polyQuality: initialPolyQuality = 1,   // global segment-count multiplier for built-in curved shapes
 		onReady = null,
+		transformControlsUrl = TRANSFORM_CONTROLS_URL,   // override the gizmo module URL (optional)
+		onNotice = null,          // (msg) => void — transient user-facing hints (e.g. non-writable part)
+		onGizmoReady = null,      // (ok:boolean) => void — fired once the transform gizmo loads (or fails)
 	} = config;
 
 	if (!THREE) throw new Error('createThreeModelEditor requires a THREE module');
@@ -452,6 +483,9 @@ export function createThreeModelEditor(config) {
 	// 1 m and 1 cm depending on the model's footprint, so the grid stays useful for both a building
 	// and a small prop. Rebuilt by updateGroundGrid() after each build (see runBuild).
 	let groundGrid = null;
+	// Two colored center lines overlaid on the grid so the X (red) and Z (blue) axes read at a glance.
+	let groundAxes = null;
+	const AXIS_X_COLOR = 0xff6b6b, AXIS_Z_COLOR = 0x4d9fff;
 	let gridInfo = { unit: 'm', cell: 1, size: 0, divisions: 0 };
 
 	// ============================================================
@@ -470,6 +504,22 @@ export function createThreeModelEditor(config) {
 	// Green wireframe overlays for the currently selected shape (declared early because
 	// disposeGroup → clearHighlightOverlay can run during initial measureAffected()).
 	let highlightWires = [];
+
+	// Transform-gizmo state. Declared here (not next to the gizmo functions further down)
+	// because measureAffected()/rebuild() run during construction and call refreshGizmoTarget(),
+	// which reads `gizmo` — a `let` further down would still be in its temporal dead zone.
+	let gizmo = null;             // THREE TransformControls (lazy-loaded)
+	let gizmoLoadStarted = false;
+	let transformMode = 'camera'; // 'camera' | 'translate' | 'scale' | 'rotate'
+	let draggingGizmo = false;
+	let pivot = null;             // temp parent for multi-select transforms
+	// Per-category snap increments (null = that category snaps freely / off).
+	//   snapTranslate: null | number (world units, 1 unit = 1 m). Default 0.1 = 10 cm.
+	//   snapRotateDeg: null | degrees
+	//   snapScaleStep: null | step
+	let snapTranslate = 0.1;
+	let snapRotateDeg = 15;
+	let snapScaleStep = 0.1;
 
 	// ---- render options (wireframe / shadow / ground / grid) ----
 	// wireframe must be re-applied after every rebuild (materials are recreated); shadow/ground/grid
@@ -495,7 +545,7 @@ export function createThreeModelEditor(config) {
 		});
 	}
 	function setGround(on) { renderOpts.ground = !!on; floor.visible = renderOpts.ground; }
-	function setGrid(on) { renderOpts.grid = !!on; if (groundGrid) groundGrid.visible = renderOpts.grid; }
+	function setGrid(on) { renderOpts.grid = !!on; if (groundGrid) groundGrid.visible = renderOpts.grid; if (groundAxes) groundAxes.visible = renderOpts.grid; }
 	function getRenderOptions() { return { ...renderOpts }; }
 	function getGridInfo() { return { ...gridInfo }; }
 
@@ -512,6 +562,19 @@ export function createThreeModelEditor(config) {
 		_gridBox.getSize(_gridSize); _gridBox.getCenter(_gridCenter);
 		return { size: _gridSize.clone(), center: _gridCenter.clone(), minY: _gridBox.min.y };
 	}
+	// Two center lines through the grid origin, colored per axis (X red, Z blue) so model orientation
+	// reads instantly. Local coords centered at 0 — positioned with the grid in updateGroundGrid().
+	function buildGroundAxes(size) {
+		const h = size / 2;
+		const positions = new Float32Array([-h, 0, 0, h, 0, 0, /* X */ 0, 0, -h, 0, 0, h /* Z */]);
+		const cx = new THREE.Color(AXIS_X_COLOR), cz = new THREE.Color(AXIS_Z_COLOR);
+		const colors = new Float32Array([cx.r, cx.g, cx.b, cx.r, cx.g, cx.b, cz.r, cz.g, cz.b, cz.r, cz.g, cz.b]);
+		const geo = new THREE.BufferGeometry();
+		geo.setAttribute('position', new THREE.BufferAttribute(positions, 3));
+		geo.setAttribute('color', new THREE.BufferAttribute(colors, 3));
+		const mat = new THREE.LineBasicMaterial({ vertexColors: true, transparent: true, opacity: 0.9 });
+		return new THREE.LineSegments(geo, mat);
+	}
 	// Rebuild the ground grid sized to the model. cell = 1 m normally, 1 cm for small (<0.5 m) props.
 	function updateGroundGrid() {
 		const b = modelBounds();
@@ -523,16 +586,24 @@ export function createThreeModelEditor(config) {
 		const size = +(divisions * cell).toFixed(6);
 		if (!groundGrid || gridInfo.cell !== cell || gridInfo.divisions !== divisions) {
 			if (groundGrid) { scene.remove(groundGrid); groundGrid.geometry.dispose(); groundGrid.material.dispose(); }
-			// lighter than the floor (0x2b3550) so the lines read clearly against it
-			groundGrid = new THREE.GridHelper(size, divisions, 0x8fc4ff, 0x6a7da6);
+			// uniform light lines (lighter than the floor 0x2b3550 so they read clearly); the X/Z center
+			// lines are drawn separately by groundAxes below in distinct colors.
+			groundGrid = new THREE.GridHelper(size, divisions, 0x6a7da6, 0x6a7da6);
 			groundGrid.material.transparent = true;
 			groundGrid.material.opacity = 0.7;
 			groundGrid.visible = renderOpts.grid;
 			scene.add(groundGrid);
+			// rebuild the colored axis overlay to match the new grid extent
+			if (groundAxes) { scene.remove(groundAxes); groundAxes.geometry.dispose(); groundAxes.material.dispose(); }
+			groundAxes = buildGroundAxes(size);
+			groundAxes.visible = renderOpts.grid;
+			scene.add(groundAxes);
 		}
 		// sit the grid on the y=0 ground (where the floor + model base are), centered on the footprint.
 		// a hair above 0 so the grid lines don't z-fight with the coplanar floor plane.
 		groundGrid.position.set(b ? b.center.x : 0, 0.002, b ? b.center.z : 0);
+		// axes sit a touch higher still so they draw cleanly over the grid lines they cross.
+		groundAxes.position.set(b ? b.center.x : 0, 0.003, b ? b.center.z : 0);
 		gridInfo = { unit: useCm ? 'cm' : 'm', cell, size, divisions };
 	}
 	const labelSeq = Object.create(null);
@@ -559,7 +630,9 @@ export function createThreeModelEditor(config) {
 		pm.quaternion.copy(mesh.quaternion);
 		pm.scale.copy(mesh.scale);
 		pickGroup.add(pm);
-		pickEntries.push({ id, pickMat, exact: idToColor(id) });
+		// keep `src` so syncPick() can re-copy the live transform every pick — the override
+		// footer (and any other post-add transform) moves the mesh *after* registration.
+		pickEntries.push({ id, pickMat, exact: idToColor(id), pm, src: mesh });
 		const mats = [];
 		const mm = Array.isArray(mesh.material) ? mesh.material[0] : mesh.material;
 		if (mm && mm.emissive) mats.push({ mat: mm });
@@ -612,6 +685,12 @@ export function createThreeModelEditor(config) {
 	function runBuild() {
 		if (!buildFn) return;
 		stackOffset = null;
+		// Reset the group transform so the source's own `scene.position/rotation/scale` calls
+		// (written back by the whole-model gizmo) are authoritative — otherwise a removed
+		// `// layout` block would leave a stale group transform from the previous run.
+		group.position.set(0, 0, 0);
+		group.rotation.set(0, 0, 0);
+		group.scale.set(1, 1, 1);
 		polyQuality = defaultQuality;   // source's `quality(...)` call (if any) overrides this during the run
 		for (const k in labelSeq) delete labelSeq[k];
 		const uninstall = installPickHook(group);
@@ -659,6 +738,7 @@ export function createThreeModelEditor(config) {
 		disposeGroup();
 		compile();
 		runBuild();
+		refreshGizmoTarget();   // re-anchor the gizmo to the freshly rebuilt meshes (no-op until loaded)
 	}
 
 	compile();
@@ -673,6 +753,15 @@ export function createThreeModelEditor(config) {
 	function syncPick() {
 		pickGroup.rotation.copy(group.rotation);
 		pickGroup.position.copy(group.position);
+		pickGroup.scale.copy(group.scale);
+		// mirror each part's live transform so the id buffer matches what's on screen even after
+		// the override footer / gizmo moved a mesh post-registration.
+		for (const e of pickEntries) {
+			if (!e.src) continue;
+			e.pm.position.copy(e.src.position);
+			e.pm.quaternion.copy(e.src.quaternion);
+			e.pm.scale.copy(e.src.scale);
+		}
 	}
 
 	function pickAt(clientX, clientY) {
@@ -785,7 +874,11 @@ export function createThreeModelEditor(config) {
 	// ============================================================
 	//  Selection + highlight (green wireframe overlay on the picked shape)
 	// ============================================================
-	let selectedLabel = null;
+	// Selection is a set of object labels (single-select replaces it; Shift-click toggles
+	// membership for multi-part transforms). firstSelected() keeps the legacy single-label
+	// behaviour for code-highlight / related-params lookups.
+	const selectedLabels = new Set();
+	const firstSelected = () => { for (const l of selectedLabels) return l; return null; };
 	// We outline only the picked geometry — NOT the material — because a material
 	// (e.g. a shared mat(...)) can be reused by many meshes; tinting it would light up
 	// every shape that uses it. highlightWires is declared near the group state above.
@@ -799,9 +892,9 @@ export function createThreeModelEditor(config) {
 	}
 	function highlightSelectedMesh() {
 		clearHighlightOverlay();
-		if (!selectedLabel) return;
+		if (!selectedLabels.size) return;
 		for (const m of idToMeta.values()) {
-			if (m.label !== selectedLabel) continue;
+			if (!selectedLabels.has(m.label)) continue;
 			for (const mesh of (m.meshes || [])) {
 				if (!mesh.geometry) continue;
 				// Build the wireframe in the mesh's own geometry space and parent it to the
@@ -834,23 +927,400 @@ export function createThreeModelEditor(config) {
 		return info.total > 1 ? info.base + ' #' + info.idx + '/' + info.total : info.base;
 	}
 
-	function selectMeta(meta) {
-		selectedLabel = meta ? meta.label : null;
+	function selectMeta(meta, opts = {}) {
+		const additive = !!opts.additive;
+		if (!meta) {
+			if (!additive) selectedLabels.clear();
+		} else if (additive) {
+			if (selectedLabels.has(meta.label)) selectedLabels.delete(meta.label);
+			else selectedLabels.add(meta.label);
+		} else {
+			selectedLabels.clear();
+			selectedLabels.add(meta.label);
+		}
 		highlightSelectedMesh();
+		refreshGizmoTarget();
 		if (onPick) {
-			onPick(meta, {
-				relatedParams: meta ? [...relatedParams(meta)] : [],
-				range: blockRange(meta),
-				displayLabel: meta ? displayLabel(meta) : '',
+			// Report the just-clicked object (or the surviving selection) so the host can
+			// localize code + grab related params. On a multi-select toggle that removed the
+			// clicked part, fall back to whatever remains selected.
+			const reportLabel = (meta && selectedLabels.has(meta.label)) ? meta.label : firstSelected();
+			const report = reportLabel ? metaByLabel(reportLabel) : null;
+			onPick(report, {
+				relatedParams: report ? [...relatedParams(report)] : [],
+				range: blockRange(report),
+				displayLabel: report ? displayLabel(report) : '',
 			});
 		}
 	}
 
 	// ============================================================
+	//  Transform gizmo (camera / move / scale / rotate)  — writes back into source
+	//  (state declared earlier, before measureAffected/rebuild can run)
+	// ============================================================
+	function metaByMesh(mesh) {
+		for (const m of idToMeta.values()) if ((m.meshes || []).includes(mesh)) return m;
+		return null;
+	}
+	function selectedMeshes() {
+		const out = [];
+		for (const m of idToMeta.values()) {
+			if (!selectedLabels.has(m.label)) continue;
+			for (const mesh of (m.meshes || [])) out.push(mesh);
+		}
+		return out;
+	}
+	// A mesh's transform expressed in the build group's local space, regardless of its current
+	// parent (it may be temporarily under the multi-select pivot). Used to measure the gizmo
+	// delta in the same space the source writes (group-local), so we can append an offset that
+	// preserves the original parametric `.set(...)` line instead of overwriting it.
+	const _glM = new THREE.Matrix4();
+	function groupLocalTransform(mesh) {
+		group.updateMatrixWorld(true);
+		mesh.updateMatrixWorld(true);
+		_glM.copy(group.matrixWorld).invert().multiply(mesh.matrixWorld);
+		const pos = new THREE.Vector3(), quat = new THREE.Quaternion(), scale = new THREE.Vector3();
+		_glM.decompose(pos, quat, scale);
+		return { pos, quat, scale };
+	}
+	const dragStarts = new Map();   // mesh → group-local transform snapshot at drag start
+	function captureDragStart() {
+		dragStarts.clear();
+		for (const mesh of selectedMeshes()) dragStarts.set(mesh, groupLocalTransform(mesh));
+	}
+	function applySnap() {
+		if (!gizmo) return;
+		gizmo.setTranslationSnap(snapTranslate == null ? null : snapTranslate);
+		gizmo.setRotationSnap(snapRotateDeg == null ? null : THREE.MathUtils.degToRad(snapRotateDeg));
+		gizmo.setScaleSnap(snapScaleStep == null ? null : snapScaleStep);
+	}
+	function dropPivot() {
+		if (!pivot) return;
+		for (const child of [...pivot.children]) group.attach(child);   // restore world transform into group space
+		group.remove(pivot);
+		pivot = null;
+	}
+	// Resolve what the gizmo should act on: nothing → whole model (group); one part → that
+	// mesh; many parts → a temp pivot at their centroid (so they move/scale/rotate together).
+	function refreshGizmoTarget() {
+		if (!gizmo) return;
+		dropPivot();
+		if (transformMode === 'camera') {
+			gizmo.detach();
+			gizmo.visible = false;
+			gizmo.enabled = false;
+			return;
+		}
+		gizmo.enabled = true;
+		gizmo.visible = true;
+		gizmo.setMode(transformMode);
+		applySnap();
+		autoRotate = false;
+		const meshes = selectedMeshes();
+		if (meshes.length === 0) {
+			gizmo.attach(group);                  // 什么都不选 → 调整所有模型
+		} else if (meshes.length === 1) {
+			gizmo.attach(meshes[0]);
+		} else {
+			group.updateMatrixWorld(true);
+			const box = new THREE.Box3();
+			for (const mesh of meshes) box.expandByObject(mesh);
+			const center = box.isEmpty() ? new THREE.Vector3() : box.getCenter(new THREE.Vector3());
+			pivot = new THREE.Group();
+			group.add(pivot);
+			group.updateMatrixWorld(true);
+			pivot.position.copy(group.worldToLocal(center.clone()));
+			group.updateMatrixWorld(true);
+			for (const mesh of meshes) pivot.attach(mesh);
+			gizmo.attach(pivot);
+		}
+	}
+
+	// ---- writeback helpers (edit the raw `lines[]`; buildSource preserves them verbatim) ----
+	const _wbEuler = new THREE.Euler();
+	function fmtVec3(v) { return `${fmtNum(v.x)}, ${fmtNum(v.y)}, ${fmtNum(v.z)}`; }
+	function isIdentity(obj) {
+		const p = obj.position, s = obj.scale;
+		_wbEuler.setFromQuaternion(obj.quaternion, 'XYZ');
+		return Math.abs(p.x) + Math.abs(p.y) + Math.abs(p.z) < 1e-6
+			&& Math.abs(_wbEuler.x) + Math.abs(_wbEuler.y) + Math.abs(_wbEuler.z) < 1e-6
+			&& Math.abs(s.x - 1) + Math.abs(s.y - 1) + Math.abs(s.z - 1) < 1e-6;
+	}
+	// Build `<prefix>.position/.rotation/.scale.set(...)` lines, omitting identity components.
+	function transformLines(obj, prefix, indent = '') {
+		const out = [];
+		const p = obj.position, s = obj.scale;
+		_wbEuler.setFromQuaternion(obj.quaternion, 'XYZ');
+		out.push(`${indent}${prefix}.position.set(${fmtVec3(p)});`);
+		if (Math.abs(_wbEuler.x) + Math.abs(_wbEuler.y) + Math.abs(_wbEuler.z) > 1e-6)
+			out.push(`${indent}${prefix}.rotation.set(${fmtNum(_wbEuler.x)}, ${fmtNum(_wbEuler.y)}, ${fmtNum(_wbEuler.z)});`);
+		if (Math.abs(s.x - 1) + Math.abs(s.y - 1) + Math.abs(s.z - 1) > 1e-6)
+			out.push(`${indent}${prefix}.scale.set(${fmtVec3(s)});`);
+		return out;
+	}
+	function notice(msg) { if (onNotice) { try { onNotice(msg); } catch (_) {} } }
+
+	// Remove the deprecated `// overrides` IIFE footer that earlier versions appended. We now
+	// always write transforms into the object's own code, so on the next gizmo edit we strip any
+	// leftover footer (otherwise it would keep re-applying a stale transform after the build).
+	function stripOverrideFooter() {
+		for (let i = lines.length - 1; i >= 0; i--) {
+			if (!/scene\.traverse\(\s*o\s*=>\s*o\.isMesh\s*&&\s*M\.push/.test(lines[i])) continue;
+			let start = i;
+			if (start > 0 && /^\/\/\s*overrides\b/.test(lines[start - 1])) start--;
+			if (start > 0 && lines[start - 1].trim() === '') start--;   // also drop a leading blank
+			lines.splice(start, i - start + 1);
+		}
+	}
+
+	// Whole-model transform → a `// layout` footer block that sets it on `scene` (=== group
+	// inside the source). Replaces an existing block; removed entirely when back at identity.
+	function writeGroupTransform(g) {
+		const ranges = buildSectionRanges(lines);
+		let found = null;
+		for (const [a, b] of ranges) if (/^\/\/\s*layout\b/.test(lines[a - 1])) { found = [a, b]; break; }
+		if (isIdentity(g)) {
+			if (found) lines.splice(found[0] - 1, found[1] - found[0] + 1);
+			return;
+		}
+		const block = ['// layout 整体布局（gizmo 编辑）', ...transformLines(g, 'scene')];
+		if (found) lines.splice(found[0] - 1, found[1] - found[0] + 1, ...block);
+		else {
+			if (lines.length && lines[lines.length - 1].trim() !== '') lines.push('');
+			lines.push(...block);
+		}
+	}
+
+	const NZ = 1e-5;
+	// Parse a `<var>.<kind>.<axis> <op>= n; …  // gizmo` offset line → { x, y, z } (missing axes
+	// default to identity: 0 for +=, 1 for *=), or null if the line isn't this var/kind/op.
+	function parseOffsetLine(line, varName, kind, op) {
+		const e = op === '*=' ? '\\*=' : '\\+=';
+		const v = varName.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+		if (!new RegExp(`(?:^|;|\\s)${v}\\.${kind}\\.[xyz]\\s*${e}`).test(line)) return null;
+		const ident = op === '*=' ? 1 : 0;
+		const out = { x: ident, y: ident, z: ident };
+		for (const ax of ['x', 'y', 'z']) {
+			const m = line.match(new RegExp(`${v}\\.${kind}\\.${ax}\\s*${e}\\s*(-?[0-9.]+)`));
+			if (m) out[ax] = parseFloat(m[1]);
+		}
+		return out;
+	}
+	// Build the `// gizmo` offset lines for the accumulated deltas — only the components that
+	// actually moved (identity axes are omitted, so no `+= 0` / `*= 1` noise).
+	function offsetLines(varName, dPos, dRot, fScale, indent) {
+		const out = [];
+		const emit = (kind, v, ident, op) => {
+			const parts = [];
+			for (const ax of ['x', 'y', 'z']) if (Math.abs(v[ax] - ident) > NZ) parts.push(`${varName}.${kind}.${ax} ${op} ${fmtNum(v[ax])};`);
+			if (parts.length) out.push(`${indent}${parts.join(' ')}   // gizmo`);
+		};
+		emit('position', dPos, 0, '+=');
+		emit('rotation', dRot, 0, '+=');
+		emit('scale', fScale, 1, '*=');
+		return out;
+	}
+	// Apply one mesh's drag delta to a section's line array (in place, returning the new array),
+	// PRESERVING the original parametric `.set(...)` line and only appending/updating this var's
+	// `// gizmo` offset line. `addRel` is the index of this mesh's `scene.add(<var>)` within `sec`.
+	// Operates on the passed array so several meshes in the same section can be folded one by one.
+	function offsetEditOnSection(sec, addRel, mesh, start, end) {
+		if (addRel < 0 || addRel >= sec.length) return null;
+		const m = sec[addRel].match(/scene\s*\.\s*add\s*\(\s*([A-Za-z_$][\w$]*)\s*\)/);
+		if (!m) return null;                          // inline add → no variable to offset
+		const varName = m[1];
+		const indent = (sec[addRel].match(/^\s*/) || [''])[0];
+
+		// this gesture's delta, group-local: position additive, rotation additive (euler), scale multiplicative
+		const dPos = { x: end.pos.x - start.pos.x, y: end.pos.y - start.pos.y, z: end.pos.z - start.pos.z };
+		const se = new THREE.Euler().setFromQuaternion(end.quat, 'XYZ');
+		const ss = new THREE.Euler().setFromQuaternion(start.quat, 'XYZ');
+		const dRot = { x: se.x - ss.x, y: se.y - ss.y, z: se.z - ss.z };
+		const fScale = {
+			x: start.scale.x ? end.scale.x / start.scale.x : 1,
+			y: start.scale.y ? end.scale.y / start.scale.y : 1,
+			z: start.scale.z ? end.scale.z / start.scale.z : 1,
+		};
+
+		// keep everything except THIS var's existing `// gizmo` offset lines, accumulating their
+		// values; reinsert the merged offset lines right before scene.add(var).
+		let pPos = { x: 0, y: 0, z: 0 }, pRot = { x: 0, y: 0, z: 0 }, pScale = { x: 1, y: 1, z: 1 };
+		const kept = [];
+		let addIdx = -1;
+		for (let i = 0; i < sec.length; i++) {
+			if (/\/\/\s*gizmo\s*$/.test(sec[i])) {
+				const pp = parseOffsetLine(sec[i], varName, 'position', '+=');
+				const pr = parseOffsetLine(sec[i], varName, 'rotation', '+=');
+				const psc = parseOffsetLine(sec[i], varName, 'scale', '*=');
+				if (pp) { pPos = pp; continue; }
+				if (pr) { pRot = pr; continue; }
+				if (psc) { pScale = psc; continue; }
+			}
+			if (i === addRel) addIdx = kept.length;
+			kept.push(sec[i]);
+		}
+		if (addIdx < 0) return null;
+		const nPos = { x: pPos.x + dPos.x, y: pPos.y + dPos.y, z: pPos.z + dPos.z };
+		const nRot = { x: pRot.x + dRot.x, y: pRot.y + dRot.y, z: pRot.z + dRot.z };
+		const nScale = { x: pScale.x * fScale.x, y: pScale.y * fScale.y, z: pScale.z * fScale.z };
+		kept.splice(addIdx, 0, ...offsetLines(varName, nPos, nRot, nScale, indent));
+		return kept;
+	}
+	function applyEdits(edits) {
+		// bottom-up so earlier splices don't shift later (start, removeCount) ranges
+		edits.sort((x, y) => y.start - x.start);
+		for (const e of edits) lines.splice(e.start - 1, e.removeCount, ...e.newSec);
+	}
+	function findBlockRange(re) {
+		const ranges = buildSectionRanges(lines);
+		for (const [a, b] of ranges) if (re.test(lines[a - 1])) return [a, b];
+		return null;
+	}
+	const rangeLines = ([a, b]) => { const out = []; for (let n = a; n <= b; n++) out.push(n); return out; };
+	// Char spans of the numeric literals we wrote on a changed line (the `// gizmo` offset line,
+	// or the whole-model `scene.position.set(...)`), so the host can paint just those green. Skips
+	// numbers glued to identifiers and anything inside the trailing line comment.
+	function numberSpans(text) {
+		const codeEnd = (() => { const c = text.indexOf('//'); return c === -1 ? text.length : c; })();
+		const spans = []; const re = /-?\d+(?:\.\d+)?/g; let m;
+		while ((m = re.exec(text))) {
+			if (m.index >= codeEnd) break;
+			const before = text[m.index - 1] || '', after = text[m.index + m[0].length] || '';
+			if (/[A-Za-z_$.]/.test(before) || /[A-Za-z_$]/.test(after)) continue;   // part of an identifier/member
+			spans.push([m.index, m.index + m[0].length]);
+		}
+		return spans;
+	}
+	// Build the highlight payload for a set of 1-based line numbers: each gets a green line
+	// background; clean .set() lines also get green spans on their numbers.
+	function changesForLines(lineNums) {
+		return lineNums.map((ln) => ({ line: ln, ranges: numberSpans(lines[ln - 1] || '') }));
+	}
+	function finalizeWriteback(changes) {
+		sectionRanges = buildSectionRanges(lines);
+		rebuild();
+		highlightSelectedMesh();
+		refreshGizmoTarget();
+		const list = changes && changes.length ? changes : null;
+		// A gizmo commit is a discrete edit → ask the host to record one undo entry (unlike
+		// slider drags, which pass no flag) and green-highlight + scroll to the value(s) we wrote.
+		if (onSourceChange) onSourceChange(currentSource(), { history: true, changes: list, scrollLine: list ? list[0].line : null });
+	}
+
+	// Fired when a gizmo drag ends → persist the result into the source.
+	function onGizmoCommit() {
+		if (!gizmo) return;
+		const target = gizmo.object;
+		if (!target) return;
+		try {
+			stripOverrideFooter();   // migrate away from any leftover deprecated footer
+			if (target === group) {
+				writeGroupTransform(group);
+				const r = findBlockRange(/^\/\/\s*layout\b/);
+				const lineNums = r ? rangeLines(r) : [];
+				finalizeWriteback(changesForLines(lineNums));
+				return;
+			}
+			// Collect the affected meshes (single mesh, or the pivot's children for multi-select).
+			const meshes = (target === pivot) ? [...pivot.children] : [target];
+			if (target === pivot) dropPivot();   // reparent into group → world transforms baked to local
+			// Group meshes by their source section so several parts in ONE section fold into a single
+			// edit (two edits with the same start would otherwise clobber each other).
+			const bySection = new Map();   // start → { range, items:[{mesh,start,end,addRel}] }
+			let unlocated = 0;
+			for (const mesh of meshes) {
+				const start = dragStarts.get(mesh);
+				const meta = metaByMesh(mesh);
+				if (!start || !meta || !meta.line) { unlocated++; continue; }
+				const range = blockRange(meta) || [meta.line, meta.line];
+				const g = bySection.get(range[0]) || { range, items: [] };
+				g.items.push({ mesh, start, end: groupLocalTransform(mesh), addRel: meta.line - range[0] });
+				bySection.set(range[0], g);
+			}
+			dragStarts.clear();
+			const edits = [];
+			for (const { range, items } of bySection.values()) {
+				const [a, b] = range;
+				let sec = lines.slice(a - 1, b);
+				// fold meshes bottom-up within the section so inserts don't shift earlier add lines
+				items.sort((x, y) => y.addRel - x.addRel);
+				let any = false;
+				for (const it of items) {
+					const next = offsetEditOnSection(sec, it.addRel, it.mesh, it.start, it.end);
+					if (next) { sec = next; any = true; } else unlocated++;
+				}
+				if (any) edits.push({ start: a, removeCount: b - a + 1, newSec: sec });
+			}
+			if (edits.length) {
+				applyEdits(edits);                        // bottom-up across sections (distinct starts)
+				// green-highlight every `// gizmo` line in the touched sections. Walk ascending and
+				// carry the running line shift so each section's final position accounts for the
+				// growth of the sections above it.
+				const changedLines = [];
+				let shift = 0;
+				for (const e of [...edits].sort((x, y) => x.start - y.start)) {
+					e.newSec.forEach((ln, k) => { if (/\/\/\s*gizmo\s*$/.test(ln)) changedLines.push(e.start + shift + k); });
+					shift += e.newSec.length - e.removeCount;
+				}
+				finalizeWriteback(changesForLines(changedLines));
+			} else {
+				refreshGizmoTarget();                     // nothing written → just re-anchor the gizmo
+			}
+			if (unlocated) notice(`有 ${unlocated} 个部件是内联生成（scene.add(box(...))），源码里没有可写入的变量，未写回`);
+		} catch (err) {
+			console.error('[ThreeModel] gizmo writeback failed:', err);
+			notice('写回失败：' + (err && err.message || err));
+		}
+	}
+
+	function ensureGizmo() {
+		if (gizmo || gizmoLoadStarted) return;
+		gizmoLoadStarted = true;
+		loadTransformControls(transformControlsUrl).then((TC) => {
+			if (disposed || !TC) return;
+			gizmo = new TC(camera, renderer.domElement);
+			gizmo.addEventListener('dragging-changed', (e) => {
+				draggingGizmo = e.value;
+				if (e.value) { autoRotate = false; captureDragStart(); return; }
+				// Defer the commit: writeback rebuilds (disposing the dragged mesh), so run it
+				// after TransformControls finishes its own pointer-up dispatch, not during it.
+				Promise.resolve().then(() => { if (!disposed) onGizmoCommit(); });
+			});
+			scene.add(gizmo);
+			gizmo.visible = false;
+			gizmo.enabled = false;
+			applySnap();
+			refreshGizmoTarget();
+			if (onGizmoReady) onGizmoReady(true);
+		}).catch((err) => {
+			gizmoLoadStarted = false;   // permit a retry on the next mode switch
+			console.warn('[ThreeModel] TransformControls 加载失败，已禁用变换模式：', err);
+			if (onGizmoReady) onGizmoReady(false);
+		});
+	}
+
+	function setTransformMode(mode) {
+		transformMode = (mode === 'translate' || mode === 'scale' || mode === 'rotate') ? mode : 'camera';
+		if (transformMode !== 'camera') { autoRotate = false; ensureGizmo(); }
+		refreshGizmoTarget();
+		return transformMode;
+	}
+	// Snap config: pass any subset of { translate, rotateDeg, scale }. Each value is the
+	// increment in world units / degrees, or null to turn that category off.
+	function setSnapConfig(cfg = {}) {
+		if ('translate' in cfg) snapTranslate = cfg.translate;
+		if ('rotateDeg' in cfg) snapRotateDeg = cfg.rotateDeg;
+		if ('scale' in cfg) snapScaleStep = cfg.scale;
+		applySnap();
+		return getSnapConfig();
+	}
+	function getSnapConfig() { return { translate: snapTranslate, rotateDeg: snapRotateDeg, scale: snapScaleStep }; }
+
+	// ============================================================
 	//  Pointer: orbit + pinch + click-pick
 	// ============================================================
 	const pointers = new Map();
-	let gesture = null, downPos = null, moved = false, autoRotate = true;
+	let gesture = null, downPos = null, downShift = false, moved = false, autoRotate = true;
 
 	// Pan the orbit target along the camera's right/up axes (screen-space drag).
 	// dx/dy are pixel deltas; the world scale tracks distance so panning feels
@@ -875,11 +1345,15 @@ export function createThreeModelEditor(config) {
 	}
 
 	function onDown(e) {
+		// In a transform mode, when the pointer is over a gizmo handle, let TransformControls
+		// own the gesture — don't start an orbit/pan or capture the pointer.
+		if (transformMode !== 'camera' && gizmo && gizmo.enabled && gizmo.axis) return;
 		canvas.setPointerCapture?.(e.pointerId);
 		pointers.set(e.pointerId, { x: e.clientX, y: e.clientY });
 		autoRotate = false;
 		if (pointers.size === 1) {
 			downPos = { x: e.clientX, y: e.clientY };
+			downShift = !!e.shiftKey;
 			moved = false;
 			// mouse: middle/right button or modifier → pan; otherwise orbit (rotate).
 			const pan = e.pointerType === 'mouse' && isPanButton(e);
@@ -893,6 +1367,7 @@ export function createThreeModelEditor(config) {
 		e.preventDefault();
 	}
 	function onMove(e) {
+		if (draggingGizmo) return;   // gizmo owns the drag → suppress orbit/pan
 		if (!pointers.has(e.pointerId)) return;
 		pointers.set(e.pointerId, { x: e.clientX, y: e.clientY });
 		if (gesture?.type === 'rotate' && pointers.size === 1) {
@@ -926,7 +1401,9 @@ export function createThreeModelEditor(config) {
 	function onUp(e) {
 		const wasSingle = pointers.size === 1;
 		pointers.delete(e.pointerId);
-		if (wasSingle && !moved && downPos) selectMeta(pickAt(downPos.x, downPos.y));
+		// A tap (no drag) picks. When the gizmo is mid-drag (it clears `draggingGizmo` in its
+		// own later-registered pointerup handler), skip picking. Shift toggles multi-select.
+		if (wasSingle && !moved && downPos && !draggingGizmo) selectMeta(pickAt(downPos.x, downPos.y), { additive: downShift });
 		gesture = pointers.size === 1
 			? { type: 'rotate', x: [...pointers.values()][0].x, y: [...pointers.values()][0].y }
 			: null;
@@ -965,7 +1442,7 @@ export function createThreeModelEditor(config) {
 	function animate() {
 		if (disposed) return;
 		rafId = requestAnimationFrame(animate);
-		if (autoRotate) { cam.yaw += 0.0025; updateCamera(); }
+		if (autoRotate && transformMode === 'camera') { cam.yaw += 0.0025; updateCamera(); }
 		if (showPick) { syncPick(); renderer.render(pickScene, camera); }
 		else renderer.render(scene, camera);
 	}
@@ -981,8 +1458,9 @@ export function createThreeModelEditor(config) {
 		getOriginalLines: () => lines.slice(),
 		setSource(src) {
 			loadSource(src);
-			selectedLabel = null;
+			selectedLabels.clear();
 			rebuild();
+			refreshGizmoTarget();
 			measureAffected();
 			if (onSourceChange) onSourceChange(currentSource());
 		},
@@ -1043,13 +1521,20 @@ export function createThreeModelEditor(config) {
 		},
 		affectedCount: (name) => affected[name] || 0,
 		relatedParamsForSelection() {
-			const meta = metaByLabel(selectedLabel);
+			const meta = metaByLabel(firstSelected());
 			return meta ? [...relatedParams(meta)] : [];
 		},
 
 		// selection
-		getSelectedLabel: () => selectedLabel,
+		getSelectedLabel: () => firstSelected(),
+		getSelectedLabels: () => [...selectedLabels],
 		clearSelection() { selectMeta(null); },
+
+		// transform gizmo (move / scale / rotate)
+		setTransformMode,
+		getTransformMode: () => transformMode,
+		setSnapConfig,
+		getSnapConfig,
 
 		// stats + poly quality
 		getTriangleCount: () => countTriangles(),
@@ -1093,6 +1578,8 @@ export function createThreeModelEditor(config) {
 		destroy() {
 			disposed = true;
 			cancelAnimationFrame(rafId);
+			dropPivot();
+			if (gizmo) { gizmo.detach(); scene.remove(gizmo); if (gizmo.dispose) gizmo.dispose(); gizmo = null; }
 			window.removeEventListener('resize', onResize);
 			canvas.removeEventListener('pointerdown', onDown);
 			canvas.removeEventListener('pointermove', onMove);
@@ -1102,6 +1589,7 @@ export function createThreeModelEditor(config) {
 			canvas.removeEventListener('contextmenu', onContextMenu);
 			disposeGroup();
 			if (groundGrid) { scene.remove(groundGrid); groundGrid.geometry.dispose(); groundGrid.material.dispose(); groundGrid = null; }
+			if (groundAxes) { scene.remove(groundAxes); groundAxes.geometry.dispose(); groundAxes.material.dispose(); groundAxes = null; }
 			pickTarget.dispose();
 			renderer.dispose();
 		},
@@ -1181,6 +1669,9 @@ const WIDGET_CSS = `
 .tmd-code .CodeMirror-linenumber{color:var(--ink-dim);opacity:.6;}
 /* highlighted source range for the picked object */
 .tmd-code .CodeMirror-line-hl{background:linear-gradient(90deg,rgba(45,226,230,.16),rgba(123,97,255,.10));box-shadow:inset 3px 0 0 var(--cyan);}
+/* green highlight of the value(s) a gizmo move just wrote back */
+.tmd-code .CodeMirror-line-changed{background:linear-gradient(90deg,rgba(61,220,132,.16),rgba(61,220,132,.04));box-shadow:inset 3px 0 0 var(--green);}
+.tmd-code .tmd-num-changed{background:rgba(61,220,132,.42);color:#eafff1!important;border-radius:3px;box-shadow:0 0 0 1px rgba(61,220,132,.6);}
 .tmd-code .CodeMirror-gutter-hl{color:var(--cyan)!important;opacity:1!important;}
 .tmd-edit-bar{flex:0 0 auto;display:flex;align-items:center;gap:10px;flex-wrap:wrap;padding:8px 12px;border-top:1px solid var(--panel-line);background:rgba(6,9,20,.6);}
 .tmd-edit-hint{font-size:11px;color:var(--ink-dim);flex:1 1 auto;min-width:120px;}
@@ -1192,6 +1683,13 @@ const WIDGET_CSS = `
 /* always-on triangle-count badge in the HUD (full controls live in the 显示 panel) */
 .tmd-hud .tmd-tris-badge{margin-left:auto;font-size:11px;font-weight:700;color:var(--amber);font-family:"JetBrains Mono",monospace;white-space:nowrap;background:rgba(6,9,20,.6);border:1px solid var(--panel-line);border-radius:999px;padding:4px 12px;backdrop-filter:blur(6px);cursor:pointer;pointer-events:auto;}
 .tmd-hud .tmd-tris-badge:hover{border-color:var(--amber);}
+.tmd-mode-bar{position:absolute;left:12px;bottom:12px;display:flex;gap:6px;flex-wrap:wrap;align-items:center;background:rgba(6,9,20,.62);border:1px solid var(--panel-line);border-radius:999px;padding:4px;backdrop-filter:blur(6px);z-index:3;}
+.tmd-mode-bar button{font-size:12px;line-height:1;color:var(--ink-soft);background:transparent;border:1px solid transparent;border-radius:999px;padding:6px 11px;cursor:pointer;white-space:nowrap;transition:background .12s,color .12s,border-color .12s;}
+.tmd-mode-bar button:hover{color:var(--ink);background:rgba(120,150,255,.12);}
+.tmd-mode-bar button.active{color:#06121a;background:var(--cyan);border-color:var(--cyan);font-weight:700;}
+.tmd-mode-bar button.snap{margin-left:4px;border-color:var(--panel-line);}
+.tmd-mode-bar button.snap.on{color:var(--amber);border-color:var(--amber);background:rgba(255,176,46,.12);}
+.tmd-mode-bar button:disabled{opacity:.4;cursor:not-allowed;}
 /* render panel extras (reuses .tmd-light-panel chrome) */
 .tmd-light-panel .lp-head .lp-tris{color:var(--amber);font-size:11px;font-weight:700;font-family:"JetBrains Mono",monospace;}
 .tmd-light-panel .lp-hint{margin-top:3px;font-size:10px;line-height:1.4;color:var(--ink-dim);}
@@ -1214,6 +1712,12 @@ const WIDGET_CSS = `
 .tmd-light-panel input[type=range]::-moz-range-thumb{width:13px;height:13px;border-radius:50%;background:#eaf0ff;border:2px solid var(--violet);cursor:pointer;}
 .tmd-light-panel input[type=color]{width:34px;height:22px;min-height:0;padding:0;border:1px solid var(--panel-line);border-radius:5px;background:transparent;cursor:pointer;}
 .tmd-light-panel .lp-group{margin:10px 0 4px;font-size:10.5px;letter-spacing:.5px;text-transform:uppercase;color:var(--ink-dim);}
+/* snap panel — anchored bottom-left near the mode bar instead of top-right */
+.tmd-light-panel.tmd-snap-panel{top:auto;bottom:56px;left:12px;right:auto;width:210px;}
+.tmd-snap-panel .snap-opts{display:flex;flex-wrap:wrap;gap:5px;margin-bottom:2px;}
+.tmd-snap-panel .snap-opts button{flex:0 0 auto;font-size:11px;line-height:1;color:var(--ink-soft);background:rgba(255,255,255,.04);border:1px solid var(--panel-line);border-radius:6px;padding:5px 9px;cursor:pointer;font-family:inherit;}
+.tmd-snap-panel .snap-opts button:hover{color:var(--ink);border-color:var(--cyan);}
+.tmd-snap-panel .snap-opts button.active{color:#06121a;background:var(--cyan);border-color:var(--cyan);font-weight:700;}
 .tmd-side{background:rgba(8,12,26,.45);display:flex;flex-direction:column;min-height:0;height:100%;overflow:hidden;}
 .tmd-foot{padding:12px 16px;font-size:12.5px;color:var(--ink-soft);min-height:64px;display:flex;flex-direction:column;gap:6px;justify-content:center;flex:0 0 auto;}
 .tmd-foot .row1{display:flex;align-items:center;gap:10px;flex-wrap:wrap;}
@@ -1436,10 +1940,18 @@ export async function mountThreeModelDevtools(container, opts = {}) {
 			<div class="tmd-view">
 				<canvas data-tmd="canvas" class="tmd-canvas"></canvas>
 				<div class="tmd-hud">
-					<span class="hint">↳ 点击部件 → 定位代码 + 调参 · 拖动旋转 · 右键/中键或双指拖动平移 · 滚轮/双指缩放</span>
+					<span class="hint">↳ 点击部件 → 定位代码 + 调参 · Shift 点击多选 · 拖动旋转 · 右键/中键或双指拖动平移 · 滚轮/双指缩放</span>
 					<span class="tmd-tris-badge" data-tmd="trisBadge" title="当前模型的三角形总数（点击打开「显示」面板）">△ —</span>
 				</div>
-				<div class="tmd-light-panel" data-tmd="lightPanel" hidden></div>
+				<div class="tmd-mode-bar" data-tmd="modebar" title="变换模式：相机浏览 / 移动 / 缩放 / 旋转（未选中部件时变换整个模型）">
+						<button type="button" data-tmd="mCam" class="active">🎥 相机</button>
+						<button type="button" data-tmd="mMove">✥ 移动</button>
+						<button type="button" data-tmd="mScale">⤢ 缩放</button>
+						<button type="button" data-tmd="mRot">⟳ 旋转</button>
+						<button type="button" data-tmd="snap" class="snap on" title="吸附设置（位置 / 角度 / 缩放）">🧲 吸附</button>
+					</div>
+					<div class="tmd-light-panel tmd-snap-panel" data-tmd="snapPanel" hidden></div>
+						<div class="tmd-light-panel" data-tmd="lightPanel" hidden></div>
 				<div class="tmd-light-panel" data-tmd="renderPanel" hidden></div>
 			</div>
 			<div class="tmd-side">
@@ -1478,6 +1990,10 @@ export async function mountThreeModelDevtools(container, opts = {}) {
 	const trisBadge = q('trisBadge');
 	const btnRender = q('renderBtn');
 	const renderPanel = q('renderPanel');
+	// transform mode bar (camera / move / scale / rotate + snap toggle)
+	const modeBtns = { camera: q('mCam'), translate: q('mMove'), scale: q('mScale'), rotate: q('mRot') };
+	const btnSnap = q('snap');
+	const snapPanel = q('snapPanel');
 	// Latest triangle count, refreshed after every build via the editor's onStats. The HUD badge is
 	// always present; the render panel's readout (data-tmd="trisPanel") only exists while the panel is open.
 	let lastTris = 0;
@@ -1593,12 +2109,42 @@ export async function mountThreeModelDevtools(container, opts = {}) {
 	// ---- highlight the source range of the picked object ----
 	function clearHighlight() {
 		lastRange = null;
+		clearChangeHighlight();   // a new pick/typed edit supersedes the last gizmo write
 		if (!cm) return;
 		hlMarks.forEach((ln) => {
 			cm.removeLineClass(ln, 'background', 'CodeMirror-line-hl');
 			cm.removeLineClass(ln, 'gutter', 'CodeMirror-gutter-hl');
 		});
 		hlMarks = [];
+	}
+
+	// ---- green highlight of the exact value(s) a gizmo commit just wrote ----
+	let changeTextMarks = [];   // CodeMirror TextMarker handles (number spans)
+	let changeLineNos = [];     // 0-based line numbers carrying the green line background
+	function clearChangeHighlight() {
+		if (!cm) { changeTextMarks = []; changeLineNos = []; return; }
+		changeTextMarks.forEach((mk) => { try { mk.clear(); } catch (_) {} });
+		changeLineNos.forEach((ln) => cm.removeLineClass(ln, 'background', 'CodeMirror-line-changed'));
+		changeTextMarks = [];
+		changeLineNos = [];
+	}
+	// changes: [{ line (1-based), ranges: [[ch0,ch1], …] }]; scrollLine 1-based.
+	function applyChangeHighlight(changes, scrollLine) {
+		if (!cm || !changes || !changes.length) return;
+		clearChangeHighlight();
+		clearHighlight();   // drop the cyan pick highlight so the green stands alone
+		const last = cm.lineCount();
+		for (const c of changes) {
+			const ln = c.line - 1;
+			if (ln < 0 || ln >= last) continue;
+			cm.addLineClass(ln, 'background', 'CodeMirror-line-changed');
+			changeLineNos.push(ln);
+			for (const [a, b] of (c.ranges || [])) {
+				changeTextMarks.push(cm.markText({ line: ln, ch: a }, { line: ln, ch: b }, { className: 'tmd-num-changed' }));
+			}
+		}
+		const s = (scrollLine || changes[0].line) - 1;
+		if (s >= 0 && s < last) cm.scrollIntoView({ line: s, ch: 0 }, 80);
 	}
 	function applyHighlight(range) {
 		if (!cm) { lastRange = range || null; return; } // buffer until CodeMirror mounts
@@ -1743,7 +2289,9 @@ export async function mountThreeModelDevtools(container, opts = {}) {
 	}
 
 	// ---- the engine ----
-	const editor = createThreeModelEditor({
+	let editor;
+	try {
+		editor = createThreeModelEditor({
 		THREE, canvas, source, lowPoly, background,
 		onPick: (meta, info) => {
 			picked = meta ? { displayLabel: info.displayLabel, line: meta.line } : null;
@@ -1757,14 +2305,36 @@ export async function mountThreeModelDevtools(container, opts = {}) {
 			}
 			if (onPick) onPick(meta, info);
 		},
-		onSourceChange: (src) => {
+		onSourceChange: (src, info) => {
 			// engine-driven source change (slider edits / setSource) → mirror into the
-			// editor without re-triggering the auto-rerun.
-			setCodeValue(src);
+			// editor without re-triggering the auto-rerun. A gizmo transform commit passes
+			// { history:true } → record one undoable entry so ↶ / Ctrl+Z reverts the move.
+			if (info && info.history) {
+				setCodeValue(src, false);                    // keep this edit in undo history
+				savedBaseline = editor.getCurrentSource();   // fold baseline forward (Save won't double-count)
+				updateHistoryButtons();
+				if (info.changes) applyChangeHighlight(info.changes, info.scrollLine);   // green-mark the written values
+			} else {
+				setCodeValue(src);
+			}
 			if (onSourceChange) onSourceChange(src);
 		},
 		onStats: ({ triangles, grid }) => { setTris(triangles); setGridReadout(grid); },
-	});
+		transformControlsUrl: opts.transformControlsUrl,
+		onNotice: (msg) => { setEditHint(msg, false); },
+		onGizmoReady: (ok) => {
+			if (ok) return;
+			// gizmo failed to load → keep camera mode only, disable the transform buttons.
+			[modeBtns.translate, modeBtns.scale, modeBtns.rotate, btnSnap].forEach(b => { if (b) b.disabled = true; });
+			setEditHint('变换 gizmo 加载失败，仅相机模式可用。', true);
+		},
+		});
+	} catch (e) {
+		// Construction failed → don't leave an orphan card in the DOM (the host may retry the
+		// mount, which would otherwise stack a second widget). Clean up and rethrow.
+		root.remove();
+		throw e;
+	}
 
 	const err = editor.getError();
 	if (err) {
@@ -1807,6 +2377,77 @@ export async function mountThreeModelDevtools(container, opts = {}) {
 	// ---- toolbar wiring ----
 	btnNormal.addEventListener('click', () => { editor.setShowPick(false); btnNormal.classList.add('active'); btnPick.classList.remove('active'); });
 	btnPick.addEventListener('click', () => { editor.setShowPick(true); btnPick.classList.add('active'); btnNormal.classList.remove('active'); });
+
+	// ---- transform mode bar (camera / move / scale / rotate + snap) ----
+	function selectModeButton(mode) {
+		for (const [k, b] of Object.entries(modeBtns)) if (b) b.classList.toggle('active', k === mode);
+		canvas.style.cursor = (mode === 'camera') ? 'crosshair' : 'move';
+	}
+	for (const [mode, btn] of Object.entries(modeBtns)) {
+		if (!btn) continue;
+		btn.addEventListener('click', () => { editor.setTransformMode(mode); selectModeButton(mode); });
+	}
+	// ---- snap panel (position / angle / scale increments) ----
+	const SNAP_OPTS = {
+		translate: { label: '位置 Position', key: 'translate', def: 0.1, opts: [
+			{ v: null, t: '关' }, { v: 1, t: '1 m' }, { v: 0.1, t: '10 cm' }, { v: 0.01, t: '1 cm' },
+		] },
+		rotate: { label: '角度 Angle', key: 'rotateDeg', def: 15, opts: [
+			{ v: null, t: '关' }, { v: 5, t: '5°' }, { v: 15, t: '15°' }, { v: 45, t: '45°' }, { v: 90, t: '90°' },
+		] },
+		scale: { label: '缩放 Scale', key: 'scale', def: 0.1, opts: [
+			{ v: null, t: '关' }, { v: 0.1, t: '0.1' }, { v: 0.25, t: '0.25' }, { v: 0.5, t: '0.5' },
+		] },
+	};
+	const snapValEq = (a, b) => (a == null && b == null) ? true : a === b;
+	function refreshSnapActive() {
+		if (!snapPanel) return;
+		const cfg = editor.getSnapConfig();
+		snapPanel.querySelectorAll('.snap-opts').forEach(grp => {
+			const meta = SNAP_OPTS[grp.dataset.cat];
+			const cur = cfg[meta.key];
+			grp.querySelectorAll('button').forEach(b => {
+				b.classList.toggle('active', snapValEq(JSON.parse(b.dataset.v), cur));
+			});
+		});
+		// the 🧲 button glows when at least one category is snapping
+		const anyOn = cfg.translate != null || cfg.rotateDeg != null || cfg.scale != null;
+		if (btnSnap) btnSnap.classList.toggle('on', anyOn);
+	}
+	function buildSnapPanel() {
+		if (!snapPanel) return;
+		const groups = Object.values(SNAP_OPTS).map(meta => {
+			const btns = meta.opts.map(o =>
+				`<button type="button" data-v='${JSON.stringify(o.v)}'>${escapeHtml(o.t)}</button>`).join('');
+			return `<div class="lp-group">${escapeHtml(meta.label)}</div><div class="snap-opts" data-cat="${meta.key === 'rotateDeg' ? 'rotate' : meta.key === 'translate' ? 'translate' : 'scale'}">${btns}</div>`;
+		}).join('');
+		snapPanel.innerHTML = `<div class="lp-head"><b>🧲 吸附</b><button type="button" class="lp-reset" data-tmd="snapReset">↺ 默认</button></div>${groups}`;
+		snapPanel.querySelectorAll('.snap-opts').forEach(grp => {
+			const meta = SNAP_OPTS[grp.dataset.cat];
+			grp.querySelectorAll('button').forEach(b => b.addEventListener('click', () => {
+				editor.setSnapConfig({ [meta.key]: JSON.parse(b.dataset.v) });
+				refreshSnapActive();
+			}));
+		});
+		const reset = snapPanel.querySelector('[data-tmd="snapReset"]');
+		if (reset) reset.addEventListener('click', () => {
+			editor.setSnapConfig({ translate: SNAP_OPTS.translate.def, rotateDeg: SNAP_OPTS.rotate.def, scale: SNAP_OPTS.scale.def });
+			refreshSnapActive();
+		});
+		refreshSnapActive();
+	}
+	function toggleSnapPanel(show) {
+		if (!snapPanel) return;
+		const next = show === undefined ? snapPanel.hasAttribute('hidden') : show;
+		if (next) { toggleLightPanel(false); toggleRenderPanel(false); buildSnapPanel(); snapPanel.removeAttribute('hidden'); }
+		else snapPanel.setAttribute('hidden', '');
+	}
+	if (btnSnap) btnSnap.addEventListener('click', (e) => { e.stopPropagation(); toggleSnapPanel(); });
+	root.addEventListener('click', (e) => {
+		if (!snapPanel || snapPanel.hasAttribute('hidden')) return;
+		if (snapPanel.contains(e.target) || btnSnap?.contains(e.target)) return;
+		toggleSnapPanel(false);
+	});
 
 	// ---- lighting panel (intensity / color / key-light position sliders) ----
 	// Each control reads/writes through the editor's getLights()/setLight() API so
@@ -1856,7 +2497,7 @@ export async function mountThreeModelDevtools(container, opts = {}) {
 	function toggleLightPanel(show) {
 		if (!lightPanel) return;
 		const next = show === undefined ? lightPanel.hasAttribute('hidden') : show;
-		if (next) { toggleRenderPanel(false); buildLightPanel(); lightPanel.removeAttribute('hidden'); }
+		if (next) { toggleRenderPanel(false); toggleSnapPanel(false); buildLightPanel(); lightPanel.removeAttribute('hidden'); }
 		else lightPanel.setAttribute('hidden', '');
 		if (btnLight) btnLight.classList.toggle('active', next);
 	}
@@ -1909,7 +2550,7 @@ export async function mountThreeModelDevtools(container, opts = {}) {
 	function toggleRenderPanel(show) {
 		if (!renderPanel) return;
 		const next = show === undefined ? renderPanel.hasAttribute('hidden') : show;
-		if (next) { toggleLightPanel(false); buildRenderPanel(); renderPanel.removeAttribute('hidden'); }
+		if (next) { toggleLightPanel(false); toggleSnapPanel(false); buildRenderPanel(); renderPanel.removeAttribute('hidden'); }
 		else renderPanel.setAttribute('hidden', '');
 		if (btnRender) btnRender.classList.toggle('active', next);
 	}

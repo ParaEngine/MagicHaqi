@@ -1419,13 +1419,13 @@
   function setScene(id, { silent = false } = {}) {
     if (!SCENE_DEFS[id] && !(IS_LIVE_PREVIEW && id === TEST_SCENE_ID)) return;
     state.sceneId = id;
-    applyResponsiveLayout(true);
+    if (!deferInitRender) applyResponsiveLayout(true); // heavy SVG static scene build; deferred during init
     markRenderDirty('spots', 'hero', 'hud');
     overlayTitleEl.textContent = `${t('title')} · ${currentScene().label}`;
     overlayTextEl.textContent = helpText();
     if (sceneSelectEl && SCENE_DEFS[id]) setCustomSelectValue(sceneSelectEl, id, { silent: true });
     refreshTestPanelVisibility();
-    layoutSvgStage();
+    if (!deferInitRender) layoutSvgStage();
     renderAll();
     if (!silent) showToast(t('sceneSwitched', { label: currentScene().label }));
   }
@@ -2754,6 +2754,12 @@
   }
 
   function startGame(options = {}) {
+    if (deferInitRender) { // user started before deferred init ran: do it now
+      deferInitRender = false;
+      layoutSvgStage();
+      applyResponsiveLayout(true);
+      layoutSvgStage();
+    }
     stopLoop();
     const conf = cfg();
     state.started = true;
@@ -4592,26 +4598,36 @@
   }
 
   function init() {
-    layoutSvgStage();
-    applyResponsiveLayout(true);
-    initCustomSelects();
+    // Lightweight setup needed for the real initial screen (the overlay modal):
+    // controls, difficulty buttons, scene state + overlay text. Heavy stage
+    // layout, SVG spot DOM, canvas world rendering and the pet-image request are
+    // deferred until after first paint so DOMContentLoaded stays under budget.
+    deferInitRender = true;
+    // Minimal synchronous work to make the overlay (real initial screen) correct
+    // and interactive: difficulty buttons, scene title/help text, Start binding.
     makeDifficultyButtons();
-    bindControls();
-    layoutSvgStage();
-    setScene(state.sceneId, { silent: true });
+    overlayTitleEl.textContent = `${t('title')} · ${currentScene().label}`;
     overlayTextEl.textContent = helpText();
-    renderAll();
-    requestPetImage();
-    updateHud();
-    requestAnimationFrame(() => {
-      layoutSvgStage();
-      markRenderDirty('spots', 'hero', 'hud');
-      renderAll();
-    });
+    startBtn.onclick = hideOverlay; // hideOverlay -> startGame(); startGame self-heals deferred layout
     if (!state.loadedPosted) {
       state.loadedPosted = true;
       postParent('gameLoaded');
     }
+    // Everything else (full control bindings, custom selects, stage layout, SVG
+    // spot DOM, canvas world render, pet image) runs after the first paint.
+    requestAnimationFrame(() => requestAnimationFrame(() => {
+      deferInitRender = false;
+      bindControls(); // re-binds startBtn (idempotent) + all other controls/listeners
+      initCustomSelects();
+      setScene(state.sceneId, { silent: true }); // applies custom-select value + layout
+      layoutSvgStage();
+      applyResponsiveLayout(true);
+      layoutSvgStage();
+      markRenderDirty('spots', 'hero', 'hud');
+      renderAll();
+      requestPetImage();
+      updateHud();
+    }));
   }
 
   init();

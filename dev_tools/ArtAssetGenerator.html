@@ -317,7 +317,7 @@
 		const WORKSPACE = 'ArtAssets';
 		const PROJECT_DIR = 'projects';
 		const INDEX_PATH = `${PROJECT_DIR}/_index.json`;
-		const SDK_CDN_URL = 'https://cdn.keepwork.com/sdk/keepworkSDK.iife.js?v=20260612a';
+		const SDK_CDN_URL = 'https://cdn.keepwork.com/sdk/keepworkSDK.iife.js?v=20260619a';
 		const STORAGE_KEY = 'ArtAssetGenerator.localDraft.v1';
 		const SETTINGS_KEY = 'ArtAssetGenerator.settings.v1';
 		const CDN_CONFIG_KEY = 'keepwork_upload_cdn_config';
@@ -2019,7 +2019,7 @@
 			const hostname = window.location.hostname;
 			const isLocalHost = !hostname || hostname === 'localhost' || hostname === '127.0.0.1' || hostname === '::1';
 			const localCandidates = ['http://127.0.0.1:5001/index.ts'];
-			const deployedCandidates = [SDK_CDN_URL, 'https://keepwork.com/public/resource/keepworkSDK.iife.js'];
+			const deployedCandidates = [SDK_CDN_URL];
 			return [explicitSdk, ...(isLocalHost || window.location.protocol === 'file:' ? localCandidates : []), ...deployedCandidates, ...(isLocalHost || window.location.protocol === 'file:' ? [] : localCandidates)].filter(Boolean);
 		}
 		function loadScript(src) {
