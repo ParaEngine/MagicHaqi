@@ -23,6 +23,7 @@ Page({
     const parts = []
     if (options && options.gameFrom) parts.push('gameFrom=' + encodeURIComponent(options.gameFrom))
     if (options && options.game) parts.push('game=' + encodeURIComponent(options.game))
+    if (options && options.msg) parts.push('msg=' + encodeURIComponent(options.msg))
     this._shareParams = parts.join('&')
     this._loadWebView()
   },
