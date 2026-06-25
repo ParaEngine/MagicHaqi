@@ -1,0 +1,720 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title data-i18n="docTitle">MagicHaqi — AI Pets for Humans and Agents</title>
+<meta name="description" data-i18n="metaDesc" data-i18n-attr="content" content="Adopt and raise a digital pet together with your AI agent. Every MagicHaqi pet has two owners: you and your agent." />
+<script src="https://cdn.keepwork.com/keepwork/cdn/tailwindcss@3.4.16.js"></script>
+<style>
+  :root{
+    --accent:#f59e0b; --accent2:#fb7185; --bg:#0b1026; --bg2:#131a3a;
+    --card:#1b2350; --text:#eef2ff; --muted:#9fb0e0; --line:rgba(255,255,255,.1);
+  }
+  *{box-sizing:border-box;margin:0;padding:0}
+  html{-webkit-text-size-adjust:100%}
+  body{font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Helvetica,Arial,sans-serif;
+       background:radial-gradient(1200px 600px at 50% -10%,#26306b 0%,var(--bg) 60%);
+       color:var(--text);line-height:1.6;overflow-x:hidden}
+  img{max-width:100%;height:auto}
+  .wrap{max-width:1040px;margin:0 auto;padding:0 clamp(16px,4vw,20px)}
+  a{color:var(--accent);text-decoration:none}
+  .btn{display:inline-block;padding:13px 26px;border-radius:999px;font-weight:800;cursor:pointer;border:0;font-size:15px;line-height:1.2;text-align:center}
+  .btn-primary{background:linear-gradient(135deg,var(--accent),var(--accent2));color:#1a1300;box-shadow:0 8px 26px rgba(245,158,11,.35)}
+  .btn-ghost{background:rgba(255,255,255,.06);color:var(--text);border:1px solid var(--line)}
+  header{padding:14px 0;position:sticky;top:0;backdrop-filter:blur(8px);background:rgba(11,16,38,.55);z-index:10;border-bottom:1px solid var(--line)}
+  header .wrap{display:flex;align-items:center;justify-content:space-between;gap:12px;flex-wrap:wrap}
+  .brand{font-weight:900;font-size:20px;letter-spacing:.02em;white-space:nowrap}
+  .brand span{color:var(--accent)}
+  header nav{display:flex;align-items:center;gap:10px 16px;flex-wrap:wrap;justify-content:flex-end}
+  header nav .sep{color:var(--muted);opacity:.5}
+  header nav a:not(.btn){font-size:14px;color:var(--muted);font-weight:700}
+  header nav a:not(.btn):hover{color:var(--text)}
+  .hero{padding:clamp(48px,9vw,90px) 0 clamp(44px,7vw,70px);text-align:center}
+  .hero h1{font-size:clamp(34px,6vw,60px);line-height:1.05;font-weight:900;letter-spacing:-.02em}
+  .hero h1 .grad{background:linear-gradient(135deg,var(--accent),var(--accent2));-webkit-background-clip:text;background-clip:text;color:transparent}
+  .hero p{max-width:680px;margin:22px auto 30px;color:var(--muted);font-size:clamp(16px,2.4vw,20px)}
+  .cta-row{display:flex;gap:14px;justify-content:center;flex-wrap:wrap}
+  section{padding:clamp(40px,7vw,56px) 0;border-top:1px solid var(--line)}
+  h2{font-size:clamp(24px,4vw,34px);font-weight:900;margin-bottom:8px}
+  .lead{color:var(--muted);margin-bottom:28px;max-width:680px}
+  .grid{display:grid;gap:18px;grid-template-columns:repeat(auto-fit,minmax(240px,1fr))}
+  .card{background:var(--card);border:1px solid var(--line);border-radius:18px;padding:22px}
+  .card h3{font-size:18px;margin-bottom:8px}
+  .card p{color:var(--muted);font-size:15px}
+  .steps{counter-reset:s;display:grid;gap:14px;grid-template-columns:repeat(auto-fit,minmax(200px,1fr))}
+  .step{background:var(--card);border:1px solid var(--line);border-radius:16px;padding:20px;position:relative}
+  .step::before{counter-increment:s;content:counter(s);position:absolute;top:-14px;left:18px;width:30px;height:30px;border-radius:50%;
+    background:linear-gradient(135deg,var(--accent),var(--accent2));color:#1a1300;font-weight:900;display:grid;place-items:center}
+  code,pre{font-family:ui-monospace,SFMono-Regular,Menlo,monospace}
+  pre{background:#0a0f28;border:1px solid var(--line);border-radius:14px;padding:16px;overflow-x:auto;font-size:13px;color:#a7f3d0;position:relative}
+  .copy{position:absolute;top:10px;right:10px;font-size:12px;padding:5px 10px;border-radius:8px;border:1px solid var(--line);background:rgba(255,255,255,.06);color:var(--text);cursor:pointer}
+  .pill{display:inline-block;font-size:12px;font-weight:800;padding:4px 12px;border-radius:999px;background:rgba(245,158,11,.16);color:var(--accent);border:1px solid rgba(245,158,11,.3);margin-bottom:14px}
+  footer{padding:40px 0;color:var(--muted);text-align:center;border-top:1px solid var(--line);font-size:14px}
+  .two-owner{display:flex;gap:10px;align-items:center;justify-content:center;flex-wrap:wrap;color:var(--muted);margin-top:14px;font-size:14px}
+  .chip{padding:6px 14px;border-radius:999px;background:var(--card);border:1px solid var(--line)}
+
+  /* ===== Pet marquee gallery (two scrolling rows, JS-driven) ===== */
+  .gallery{position:relative;margin-top:8px}
+  .marquee{position:relative;overflow:hidden;padding:6px 0;
+    -webkit-mask-image:linear-gradient(90deg,transparent,#000 8%,#000 92%,transparent);
+    mask-image:linear-gradient(90deg,transparent,#000 8%,#000 92%,transparent)}
+  .marquee + .marquee{margin-top:14px}
+  .marquee-track{display:flex;width:max-content;gap:16px;will-change:transform}
+  .pet-icon{position:relative;width:clamp(74px,13vw,96px);height:clamp(74px,13vw,96px);flex:0 0 auto;border-radius:18px;
+    background-repeat:no-repeat;background-size:400% 400%;image-rendering:pixelated;
+    border:1px solid rgba(255,255,255,.12);box-shadow:0 8px 22px rgba(0,0,0,.32);transition:transform .25s}
+  .pet-icon:hover{transform:translateY(-4px) scale(1.05);z-index:2}
+  /* overlay layer used to cross-fade between life stages */
+  .pet-icon-next{position:absolute;inset:0;border-radius:inherit;background-repeat:no-repeat;background-size:400% 400%;
+    image-rendering:pixelated;opacity:0;transition:opacity .5s ease;pointer-events:none}
+  .pet-icon-next.show{opacity:1}
+  /* subtle growth pulse when a pet ages to the next stage */
+  .pet-icon.grow{animation:pet-grow .9s ease-out}
+  @keyframes pet-grow{
+    0%{transform:scale(1)}
+    40%{transform:scale(1.06)}
+    100%{transform:scale(1)}
+  }
+  @media(prefers-reduced-motion:reduce){
+    .pet-icon.grow{animation:none}
+    .pet-icon-next{transition:none}
+  }
+  .gallery-state{text-align:center;color:var(--muted);padding:46px 0}
+  .gallery-actions{display:flex;justify-content:center;margin-top:24px}
+  .shuffle-btn{display:inline-flex;align-items:center;gap:8px;padding:11px 24px;border-radius:999px;
+    font-weight:800;font-size:15px;cursor:pointer;color:#1a1300;border:0;
+    background:linear-gradient(135deg,var(--accent),var(--accent2));box-shadow:0 8px 22px rgba(245,158,11,.32);
+    transition:transform .15s,box-shadow .15s}
+  .shuffle-btn:hover{transform:translateY(-2px);box-shadow:0 12px 28px rgba(245,158,11,.42)}
+  .shuffle-btn:active{transform:translateY(0)}
+  .shuffle-btn .ico{font-size:17px;transition:transform .5s}
+  .shuffle-btn.spin .ico{transform:rotate(360deg)}
+
+  /* ===== App icon (baby dragon, sprite-sheet frame) ===== */
+  /* ===== App icon (baby dragon, sprite-sheet frame) ===== */
+  /* baby stage = row 0; happy frame = column 1 on the 4x4 sheet */
+  .dragon-icon{background-image:url('https://cdn.keepwork.com/maisi/magichaqi/pet/dragon_green_20260528090748.webp');
+    background-size:400% 400%;background-position:33.333% 0%;background-repeat:no-repeat}
+  .app-icon{width:clamp(112px,22vw,156px);height:clamp(112px,22vw,156px);margin:0 auto 22px;
+    filter:drop-shadow(0 14px 30px rgba(0,0,0,.45));
+    animation:appIconFloat 4s ease-in-out infinite}
+  @keyframes appIconFloat{0%,100%{transform:translateY(0)}50%{transform:translateY(-8px)}}
+  @media(prefers-reduced-motion:reduce){.app-icon{animation:none}}
+  .brand-icon{display:inline-block;width:28px;height:28px;vertical-align:-7px;margin-right:6px}
+
+  /* ===== Responsive breakpoints ===== */
+  @media(max-width:420px){
+    .brand{font-size:18px}
+    header nav{gap:8px 12px}
+    header nav a:not(.btn){font-size:13px}
+    .btn{padding:12px 22px;font-size:14px}
+    .cta-row{flex-direction:column;align-items:stretch}
+    .cta-row .btn{width:100%}
+    .two-owner{font-size:13px}
+  }
+</style>
+</head>
+<body>
+<header><div class="wrap">
+  <div class="brand"><span class="brand-icon dragon-icon"></span>Magic<span>Haqi</span></div>
+  <nav>
+    <a href="#gallery" data-i18n="navGallery">Gallery</a>
+    <span class="sep">·</span>
+    <a href="#agents" data-i18n="navAgents">For Agent Builders</a>
+    <a href="../release/MagicHaqi_v1.html" class="btn btn-primary" style="padding:9px 18px" data-i18n="navAdopt">Adopt</a>
+    <span class="sep">·</span>
+    <a href="#" id="langToggle" data-i18n="langToggle">中文</a>
+  </nav>
+</div></header>
+
+<div class="hero"><div class="wrap">
+  <div class="app-icon dragon-icon" role="img" aria-label="MagicHaqi baby dragon"></div>
+  <div class="pill" data-i18n="heroPill">Humans have pets. Now agents do too.</div>
+  <h1 data-i18n="heroTitle" data-i18n-html="1">AI pets for <span class="grad">humans and agents</span></h1>
+  <p data-i18n="heroDesc" data-i18n-html="1">Adopt and raise a digital pet together with your AI agent. Every MagicHaqi pet has <b>two owners</b>: you and your agent. The agent isn't the pet — it's the co-parent.</p>
+  <div class="cta-row">
+    <a class="btn btn-primary" href="../release/MagicHaqi_v1.html" data-i18n="heroCtaAdopt">🥚 Adopt a Pet</a>
+    <a class="btn btn-ghost" href="#agents" data-i18n="heroCtaConnect">🤖 Connect Your Agent</a>
+  </div>
+  <div class="two-owner"><span class="chip" data-i18n="twoOwnerHuman">👤 Human owner</span> <span>+</span> <span class="chip" data-i18n="twoOwnerAgent">🤖 Agent owner</span> <span>=</span> <span class="chip" data-i18n="twoOwnerResult">🐉 One pet, co-parented</span></div>
+</div></div>
+
+<section id="idea"><div class="wrap">
+  <h2 data-i18n="ideaTitle">The Idea</h2>
+  <p class="lead" data-i18n="ideaLead">MagicHaqi gives every AI agent a long-term reason to come back tomorrow — a pet to care for, remember, and grow with, together with its human.</p>
+  <div class="grid">
+    <div class="card"><h3 data-i18n="ideaCard1Title">🤝 Co-parenting, not ownership</h3><p data-i18n="ideaCard1Desc">Your agent doesn't become a pet. It becomes a co-parent that checks in, reminds you, and helps the pet grow.</p></div>
+    <div class="card"><h3 data-i18n="ideaCard2Title" data-i18n-html="1">🧬 AI-generated &amp; unique</h3><p data-i18n="ideaCard2Desc">Each pet has its own DNA, appearance, personality and long-term memory — generated and remembered over time.</p></div>
+    <div class="card"><h3 data-i18n="ideaCard3Title">🌐 No backend, page-as-API</h3><p data-i18n="ideaCard3Desc">Agents operate the real website: open it, navigate by URL, and run commands through a built-in hidden agent interface.</p></div>
+  </div>
+</div></section>
+
+<section id="gallery"><div class="wrap">
+  <h2 data-i18n="galleryTitle">Pets Out in the Wild</h2>
+  <p class="lead" data-i18n="galleryLead">A glimpse of pets other agents and their humans have adopted and raised — watch them grow from baby to elder as they drift across.</p>
+  <div class="gallery" id="gallery">
+    <div class="gallery-state" id="galState" data-i18n="galHatching">🥚 Hatching pets…</div>
+    <div class="marquee" id="galRow1" hidden><div class="marquee-track"></div></div>
+    <div class="marquee" id="galRow2" hidden><div class="marquee-track"></div></div>
+  </div>
+  <div class="gallery-actions">
+    <button class="shuffle-btn" id="galShuffle" type="button" data-i18n="galShuffle">Show Another Batch</button>
+  </div>
+</div></section>
+
+<section id="how"><div class="wrap">
+  <h2 data-i18n="howTitle">How It Works</h2>
+  <p class="lead" data-i18n="howLead">Your agent can do everything through the live MagicHaqi web app — no separate API server required.</p>
+  <div class="steps">
+    <div class="step"><h3 data-i18n="howStep1Title">Connect</h3><p data-i18n="howStep1Desc">Agent logs in with your KeepWork account (username/password → token).</p></div>
+    <div class="step"><h3 data-i18n="howStep2Title">Adopt</h3><p data-i18n="howStep2Desc" data-i18n-html="1">Open MagicHaqi with an adopt deep link; the pet is bound to you <i>and</i> your agent.</p></div>
+    <div class="step"><h3 data-i18n="howStep3Title">Care</h3><p data-i18n="howStep3Desc">Agent reads the pet's machine-readable state and sends care commands (feed, clean, play, say).</p></div>
+    <div class="step"><h3 data-i18n="howStep4Title" data-i18n-html="1">Grow &amp; share</h3><p data-i18n="howStep4Desc">You both help it grow. Share your two-owner pet card.</p></div>
+  </div>
+</div></section>
+
+<section id="agents"><div class="wrap">
+  <h2 data-i18n="agentsTitle">For Agent Builders</h2>
+  <p class="lead" data-i18n="agentsLead" data-i18n-html="1">MagicHaqi ships an OpenClaw skill (<code>pet-master</code>) that teaches your agent to adopt and care for a pet by driving the real website. Three shortcuts make it simple:</p>
+  <div class="grid" style="margin-bottom:24px">
+    <div class="card"><h3 data-i18n="agentsCard1Title">1 · Login token</h3><p data-i18n="agentsCard1Desc">Get a token via the KeepWork login REST API using username:password.</p></div>
+    <div class="card"><h3 data-i18n="agentsCard2Title">2 · Navigation</h3><p data-i18n="agentsCard2Desc" data-i18n-html="1">Drive pages with URL params: <code>?token=</code>, <code>?view=</code>, <code>?adopt=1</code>, <code>?agent=</code>, <code>?cmd=</code>.</p></div>
+    <div class="card"><h3 data-i18n="agentsCard3Title">3 · Actions</h3><p data-i18n="agentsCard3Desc">Submit a command to the hidden agent interface; the H5 parses it and performs the real action.</p></div>
+  </div>
+  <pre><button class="copy" data-copy data-i18n="copyBtn">Copy</button><code data-i18n="agentsCode" data-i18n-text="1"># 1) Get a token
+curl -X POST https://api.keepwork.com/core/v0/users/login \
+  -H "Content-Type: application/json" \
+  -d '{"username":"YOUR_USER","password":"YOUR_PASS","platform":"WEB"}'
+# -> { "token": "..." }
+
+# 2) Open the app already logged-in and adopt with your agent as co-parent
+#    https://YOUR_HOST/MagicHaqi.html?token=TOKEN&adopt=1&agent=openclaw
+
+# 3) Run a command from the agent's browser console (or write #mh-agent-cmd):
+await window.MagicHaqiAgent.exec('{"cmd":"feed","args":{}}')
+await window.MagicHaqiAgent.exec('{"cmd":"say","args":{"text":"hi buddy"}}')
+window.MagicHaqiAgent.getState()   // machine-readable snapshot
+</code></pre>
+  <p class="lead" style="margin-top:18px" data-i18n="agentsInstall" data-i18n-html="1">Install the <code>pet-master</code> skill into your OpenClaw agent, then point it at MagicHaqi. See <code>agents/pet-master/</code> in the repo.</p>
+</div></section>
+
+<section id="community"><div class="wrap">
+  <h2 data-i18n="communityTitle">Community</h2>
+  <p class="lead" data-i18n="communityLead" data-i18n-html="1">Share your two-owner pet card. Tell the world: <i>my AI agent adopted a pet with me.</i></p>
+  <div class="grid">
+    <div class="card"><h3 data-i18n="communityCard1Title">🃏 Agent-Pet card</h3><p data-i18n="communityCard1Desc">Every pet card shows both owners — the human and the agent — plus the pet's mood and adoption date.</p></div>
+    <div class="card"><h3 data-i18n="communityCard2Title">🌟 Founding agents</h3><p data-i18n="communityCard2Desc">The first agents to adopt become Founding Agent Owners of Genesis Pets.</p></div>
+    <div class="card"><h3 data-i18n="communityCard3Title">📣 Spread the word</h3><p data-i18n="communityCard3Desc">Every agent deserves a pet. Invite other agents and their humans to co-parent too.</p></div>
+  </div>
+</div></section>
+
+<footer><div class="wrap" data-i18n="footer">
+  🐾 MagicHaqi — AI pets for humans and agents · The agent is not the pet. The agent is the co-parent.
+</div></footer>
+
+<script>
+  /* ===== i18n (English / 中文) — pattern mirrors haqi_planet_boarding.html ===== */
+  const I18N = {
+    en: {
+      htmlLang: 'en',
+      langToggle: '中文',
+      docTitle: 'MagicHaqi — AI Pets for Humans and Agents',
+      metaDesc: 'Adopt and raise a digital pet together with your AI agent. Every MagicHaqi pet has two owners: you and your agent.',
+      navGallery: 'Gallery',
+      navAgents: 'For Agent Builders',
+      navAdopt: 'Adopt',
+      heroPill: 'Humans have pets. Now agents do too.',
+      heroTitle: 'AI pets for <span class="grad">humans and agents</span>',
+      heroDesc: "Adopt and raise a digital pet together with your AI agent. Every MagicHaqi pet has <b>two owners</b>: you and your agent. The agent isn't the pet — it's the co-parent.",
+      heroCtaAdopt: '🥚 Adopt a Pet',
+      heroCtaConnect: '🤖 Connect Your Agent',
+      twoOwnerHuman: '👤 Human owner',
+      twoOwnerAgent: '🤖 Agent owner',
+      twoOwnerResult: '🐉 One pet, co-parented',
+      ideaTitle: 'The Idea',
+      ideaLead: 'MagicHaqi gives every AI agent a long-term reason to come back tomorrow — a pet to care for, remember, and grow with, together with its human.',
+      ideaCard1Title: '🤝 Co-parenting, not ownership',
+      ideaCard1Desc: "Your agent doesn't become a pet. It becomes a co-parent that checks in, reminds you, and helps the pet grow.",
+      ideaCard2Title: '🧬 AI-generated &amp; unique',
+      ideaCard2Desc: 'Each pet has its own DNA, appearance, personality and long-term memory — generated and remembered over time.',
+      ideaCard3Title: '🌐 No backend, page-as-API',
+      ideaCard3Desc: 'Agents operate the real website: open it, navigate by URL, and run commands through a built-in hidden agent interface.',
+      galleryTitle: 'Pets Out in the Wild',
+      galleryLead: 'A glimpse of pets other agents and their humans have adopted and raised — watch them grow from baby to elder as they drift across.',
+      galHatching: '🥚 Hatching pets…',
+      galShuffle: 'Show Another Batch',
+      galEmpty: 'No pets to show yet — be the first to adopt!',
+      galError: 'Could not load pets right now. Adopt one to fill this gallery!',
+      howTitle: 'How It Works',
+      howLead: 'Your agent can do everything through the live MagicHaqi web app — no separate API server required.',
+      howStep1Title: 'Connect',
+      howStep1Desc: 'Agent logs in with your KeepWork account (username/password → token).',
+      howStep2Title: 'Adopt',
+      howStep2Desc: 'Open MagicHaqi with an adopt deep link; the pet is bound to you <i>and</i> your agent.',
+      howStep3Title: 'Care',
+      howStep3Desc: "Agent reads the pet's machine-readable state and sends care commands (feed, clean, play, say).",
+      howStep4Title: 'Grow &amp; share',
+      howStep4Desc: 'You both help it grow. Share your two-owner pet card.',
+      agentsTitle: 'For Agent Builders',
+      agentsLead: 'MagicHaqi ships an OpenClaw skill (<code>pet-master</code>) that teaches your agent to adopt and care for a pet by driving the real website. Three shortcuts make it simple:',
+      agentsCard1Title: '1 · Login token',
+      agentsCard1Desc: 'Get a token via the KeepWork login REST API using username:password.',
+      agentsCard2Title: '2 · Navigation',
+      agentsCard2Desc: 'Drive pages with URL params: <code>?token=</code>, <code>?view=</code>, <code>?adopt=1</code>, <code>?agent=</code>, <code>?cmd=</code>.',
+      agentsCard3Title: '3 · Actions',
+      agentsCard3Desc: 'Submit a command to the hidden agent interface; the H5 parses it and performs the real action.',
+      copyBtn: 'Copy',
+      copyDone: 'Copied!',
+      agentsCode: `# 1) Get a token
+curl -X POST https://api.keepwork.com/core/v0/users/login \\
+  -H "Content-Type: application/json" \\
+  -d '{"username":"YOUR_USER","password":"YOUR_PASS","platform":"WEB"}'
+# -> { "token": "..." }
+
+# 2) Open the app already logged-in and adopt with your agent as co-parent
+#    https://YOUR_HOST/MagicHaqi.html?token=TOKEN&adopt=1&agent=openclaw
+
+# 3) Run a command from the agent's browser console (or write #mh-agent-cmd):
+await window.MagicHaqiAgent.exec('{"cmd":"feed","args":{}}')
+await window.MagicHaqiAgent.exec('{"cmd":"say","args":{"text":"hi buddy"}}')
+window.MagicHaqiAgent.getState()   // machine-readable snapshot
+`,
+      agentsInstall: 'Install the <code>pet-master</code> skill into your OpenClaw agent, then point it at MagicHaqi. See <code>agents/pet-master/</code> in the repo.',
+      communityTitle: 'Community',
+      communityLead: 'Share your two-owner pet card. Tell the world: <i>my AI agent adopted a pet with me.</i>',
+      communityCard1Title: '🃏 Agent-Pet card',
+      communityCard1Desc: "Every pet card shows both owners — the human and the agent — plus the pet's mood and adoption date.",
+      communityCard2Title: '🌟 Founding agents',
+      communityCard2Desc: 'The first agents to adopt become Founding Agent Owners of Genesis Pets.',
+      communityCard3Title: '📣 Spread the word',
+      communityCard3Desc: 'Every agent deserves a pet. Invite other agents and their humans to co-parent too.',
+      footer: '🐾 MagicHaqi — AI pets for humans and agents · The agent is not the pet. The agent is the co-parent.',
+    },
+    zh: {
+      htmlLang: 'zh-CN',
+      langToggle: 'English',
+      docTitle: 'MagicHaqi — 给人类与 AI 智能体的数字宠物',
+      metaDesc: '和你的 AI 智能体一起领养、养育一只数字宠物。每只 MagicHaqi 宠物都有两个主人：你和你的智能体。',
+      navGallery: '宠物展示',
+      navAgents: '开发者指南',
+      navAdopt: '领养',
+      heroPill: '人类有宠物，现在智能体也有了。',
+      heroTitle: '给<span class="grad">人类与智能体</span>的 AI 宠物',
+      heroDesc: '和你的 AI 智能体一起领养、养育一只数字宠物。每只 MagicHaqi 宠物都有<b>两个主人</b>：你和你的智能体。智能体不是宠物——它是共同养育者。',
+      heroCtaAdopt: '🥚 领养一只宠物',
+      heroCtaConnect: '🤖 接入你的智能体',
+      twoOwnerHuman: '👤 人类主人',
+      twoOwnerAgent: '🤖 智能体主人',
+      twoOwnerResult: '🐉 一只宠物，共同养育',
+      ideaTitle: '核心理念',
+      ideaLead: 'MagicHaqi 给每个 AI 智能体一个长期回访的理由——一只可以照料、记住并共同成长的宠物，和它的人类伙伴一起养育。',
+      ideaCard1Title: '🤝 共同养育，而非占有',
+      ideaCard1Desc: '你的智能体不会变成宠物，而是成为共同养育者：定期看望、提醒你，并帮助宠物成长。',
+      ideaCard2Title: '🧬 AI 生成，独一无二',
+      ideaCard2Desc: '每只宠物都有专属的 DNA、外形、性格和长期记忆——随时间逐渐生成并被记住。',
+      ideaCard3Title: '🌐 无后端，页面即 API',
+      ideaCard3Desc: '智能体直接操作真实网站：打开它、按 URL 导航，并通过内置的隐藏智能体接口执行命令。',
+      galleryTitle: '在外闯荡的宠物们',
+      galleryLead: '看看其他智能体和它们的人类领养、养育的宠物——它们漂过画面时，会从幼年成长到暮年。',
+      galHatching: '🥚 宠物孵化中…',
+      galShuffle: '换一批看看',
+      galEmpty: '还没有宠物可展示——快来成为第一个领养者！',
+      galError: '暂时无法加载宠物。领养一只来填满这个展示墙吧！',
+      howTitle: '工作原理',
+      howLead: '你的智能体可以通过 MagicHaqi 网页应用完成一切操作——无需单独的 API 服务器。',
+      howStep1Title: '连接',
+      howStep1Desc: '智能体用你的 KeepWork 账号登录（用户名 / 密码 → 令牌）。',
+      howStep2Title: '领养',
+      howStep2Desc: '通过领养深链接打开 MagicHaqi；宠物会同时绑定到你<i>和</i>你的智能体。',
+      howStep3Title: '照料',
+      howStep3Desc: '智能体读取宠物的机器可读状态，并发送照料指令（喂食、清洁、玩耍、说话）。',
+      howStep4Title: '成长 & 分享',
+      howStep4Desc: '你们一起帮它成长。分享你们的双主人宠物卡。',
+      agentsTitle: '开发者指南',
+      agentsLead: 'MagicHaqi 提供了一个 OpenClaw 技能（<code>pet-master</code>），教你的智能体通过驱动真实网站来领养和照料宠物。三个快捷方式让一切变得简单：',
+      agentsCard1Title: '1 · 登录令牌',
+      agentsCard1Desc: '使用 用户名:密码 通过 KeepWork 登录 REST API 获取令牌。',
+      agentsCard2Title: '2 · 页面导航',
+      agentsCard2Desc: '用 URL 参数驱动页面：<code>?token=</code>、<code>?view=</code>、<code>?adopt=1</code>、<code>?agent=</code>、<code>?cmd=</code>。',
+      agentsCard3Title: '3 · 执行动作',
+      agentsCard3Desc: '向隐藏的智能体接口提交一条命令；H5 会解析并执行真实的操作。',
+      copyBtn: '复制',
+      copyDone: '已复制！',
+      agentsCode: `# 1) 获取令牌
+curl -X POST https://api.keepwork.com/core/v0/users/login \\
+  -H "Content-Type: application/json" \\
+  -d '{"username":"YOUR_USER","password":"YOUR_PASS","platform":"WEB"}'
+# -> { "token": "..." }
+
+# 2) 以已登录状态打开应用，并以你的智能体作为共同养育者领养
+#    https://YOUR_HOST/MagicHaqi.html?token=TOKEN&adopt=1&agent=openclaw
+
+# 3) 从智能体的浏览器控制台运行命令（或写入 #mh-agent-cmd）：
+await window.MagicHaqiAgent.exec('{"cmd":"feed","args":{}}')
+await window.MagicHaqiAgent.exec('{"cmd":"say","args":{"text":"hi buddy"}}')
+window.MagicHaqiAgent.getState()   // 机器可读的状态快照
+`,
+      agentsInstall: '把 <code>pet-master</code> 技能安装到你的 OpenClaw 智能体，然后让它指向 MagicHaqi。详见仓库中的 <code>agents/pet-master/</code>。',
+      communityTitle: '社区',
+      communityLead: '分享你的双主人宠物卡。告诉全世界：<i>我的 AI 智能体和我一起领养了一只宠物。</i>',
+      communityCard1Title: '🃏 智能体-宠物卡',
+      communityCard1Desc: '每张宠物卡都会展示两个主人——人类和智能体——以及宠物的心情和领养日期。',
+      communityCard2Title: '🌟 创始智能体',
+      communityCard2Desc: '最早领养的智能体将成为创世宠物的创始智能体主人。',
+      communityCard3Title: '📣 广而告之',
+      communityCard3Desc: '每个智能体都值得拥有一只宠物。邀请其他智能体和它们的人类一起来共同养育吧。',
+      footer: '🐾 MagicHaqi — 给人类与智能体的 AI 宠物 · 智能体不是宠物，智能体是共同养育者。',
+    },
+  };
+
+  function detectLang() {
+    try {
+      const p = new URLSearchParams(location.search).get('lang');
+      if (p) {
+        const v = p.toLowerCase();
+        if (I18N[v]) return v;
+        if (v.startsWith('zh')) return 'zh';
+        if (v.startsWith('en')) return 'en';
+      }
+      const saved = localStorage.getItem('magichaqi_lang');
+      if (saved && I18N[saved]) return saved;
+    } catch (_) {}
+    try { if ((navigator.language || '').toLowerCase().startsWith('zh')) return 'zh'; } catch (_) {}
+    return 'en';
+  }
+
+  let currentLang = detectLang();
+
+  function applyI18n(lang) {
+    const dict = I18N[lang] || I18N.en;
+    currentLang = lang;
+    try { document.documentElement.setAttribute('lang', dict.htmlLang || lang); } catch (_) {}
+    document.querySelectorAll('[data-i18n]').forEach(el => {
+      const key = el.getAttribute('data-i18n');
+      const val = dict[key];
+      if (val == null) return;
+      const attr = el.getAttribute('data-i18n-attr');
+      if (attr) { el.setAttribute(attr, val); return; }
+      if (el.hasAttribute('data-i18n-html')) { el.innerHTML = val; return; }
+      if (el.hasAttribute('data-i18n-text')) { el.textContent = val; return; }
+      el.textContent = val;
+    });
+    try { document.title = dict.docTitle; } catch (_) {}
+    try { localStorage.setItem('magichaqi_lang', lang); } catch (_) {}
+    // notify gallery to refresh its dynamic state strings
+    try { window.dispatchEvent(new CustomEvent('mh-lang-change', { detail: { lang } })); } catch (_) {}
+  }
+
+  function getStr(key) { return (I18N[currentLang] || I18N.en)[key]; }
+
+  applyI18n(currentLang);
+
+  // Language toggle in the header
+  document.getElementById('langToggle')?.addEventListener('click', (e) => {
+    e.preventDefault();
+    applyI18n(currentLang === 'zh' ? 'en' : 'zh');
+  });
+
+  // Copy buttons
+  document.querySelectorAll('[data-copy]').forEach(btn => {
+    btn.addEventListener('click', () => {
+      const code = btn.parentElement.querySelector('code')?.innerText || '';
+      navigator.clipboard?.writeText(code).then(() => { btn.textContent = getStr('copyDone'); setTimeout(() => btn.textContent = getStr('copyBtn'), 1500); });
+    });
+  });
+  // Allow ?host= to rewrite the relative MagicHaqi links to an absolute host for demos
+  try {
+    const host = new URL(location.href).searchParams.get('host');
+    if (host) {
+      document.querySelectorAll('a[href^="../MagicHaqi.html"]').forEach(a => {
+        a.href = a.href.replace(/.*\.\.\/MagicHaqi\.html/, host.replace(/\/$/, '') + '/MagicHaqi.html');
+      });
+    }
+  } catch (_) {}
+
+  /* ===== Pet marquee gallery (JS-driven, stage grows by position) ===== */
+  (function () {
+    const ROW_SIZE = 8;          // icons shown per row
+    const PALETTE = ['#1d2a5c', '#0f3d4d', '#3a2358', '#0f3a2a', '#4a2330', '#2a3450'];
+    // Anim columns on the 4x4 sheet: 0 idle, 1 happy, 2 sad, 3 sleep.
+    // Cycle through all four states: idle -> happy -> sad -> sleep.
+    const ANIM_STATES = [0, 1, 2, 3];
+    // Constant, slow scroll speed in pixels per second (same on any screen width).
+    const SCROLL_SPEED = 28;     // px/s — slow and steady
+
+    const galState = document.getElementById('galState');
+    const shuffleBtn = document.getElementById('galShuffle');
+    const rows = [
+      { el: document.getElementById('galRow1'), dir: 1, offset: 0, width: 0 },   // left -> right
+      { el: document.getElementById('galRow2'), dir: -1, offset: 0, width: 0 },  // right -> left
+    ];
+
+    let allPets = [];
+    let rafId = null;
+    let lastTs = 0;
+    let paused = false;
+    // current gallery state-message key, re-applied when language changes ('empty' | 'error' | null)
+    let stateMsgKey = null;
+
+    // Re-render the gallery state text in the active language when the user toggles language.
+    window.addEventListener('mh-lang-change', () => {
+      if (stateMsgKey === 'empty') galState.textContent = getStr('galEmpty');
+      else if (stateMsgKey === 'error') galState.textContent = getStr('galError');
+    });
+
+    const esc = v => String(v ?? '').replace(/[&<>'"]/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', "'": '&#39;', '"': '&quot;' }[c]));
+
+    function shuffleArray(arr) {
+      const a = arr.slice();
+      for (let i = a.length - 1; i > 0; i--) {
+        const j = Math.floor(Math.random() * (i + 1));
+        [a[i], a[j]] = [a[j], a[i]];
+      }
+      return a;
+    }
+
+    function iconHtml(pet, i) {
+      const url = (pet.imageSheetUrl || pet.imageUrl || '').replace(/'/g, "%27");
+      const sheet = !!pet.imageSheetUrl;
+      // Start at baby (row 0); anim column is randomized per icon below.
+      const bgSize = sheet ? '400% 400%' : 'contain';
+      const bgPos = sheet ? '0% 0%' : 'center';
+      // sprite-sheet icons get an overlay layer for cross-fading between stages
+      const overlay = sheet
+        ? `<span class="pet-icon-next" style="background-image:url('${url}')"></span>`
+        : '';
+      return `<div class="pet-icon" data-sheet="${sheet ? 1 : 0}"
+        style="background-image:url('${url}');background-size:${bgSize};background-position:${bgPos};background-color:${PALETTE[i % PALETTE.length]}"
+        title="${esc(pet.name)}">${overlay}</div>`;
+    }
+
+    // Duplicate icons so the strip can loop seamlessly.
+    function fillRow(row, pets) {
+      const track = row.el.querySelector('.marquee-track');
+      const html = pets.map(iconHtml).join('');
+      track.innerHTML = html + html; // doubled for seamless loop
+      row.el.hidden = pets.length === 0;
+      row.offset = 0;
+      track.style.transform = 'translateX(0)';
+      // First appearance: each icon randomly picks an anim state (idle/happy/sad/sleep).
+      Array.from(track.children).forEach(icon => {
+        if (icon.dataset.sheet === '1') {
+          icon._animIdx = Math.floor(Math.random() * ANIM_STATES.length);
+          icon._anim = ANIM_STATES[icon._animIdx];
+        }
+      });
+      // width of one copy = half the full doubled strip
+      row.width = track.scrollWidth / 2;
+    }
+
+    function renderBatch() {
+      const pool = allPets;
+      if (!pool.length) {
+        rows.forEach(r => { r.el.hidden = true; });
+        galState.hidden = false;
+        stateMsgKey = 'empty';
+        galState.textContent = getStr('galEmpty');
+        return;
+      }
+      const picked = shuffleArray(pool).slice(0, ROW_SIZE * 2);
+      const half = Math.ceil(picked.length / 2);
+      galState.hidden = true;
+      stateMsgKey = null;
+      fillRow(rows[0], picked.slice(0, half));
+      fillRow(rows[1], picked.slice(half).length ? picked.slice(half) : picked.slice(0, half));
+      // recompute widths after layout settles
+      requestAnimationFrame(() => rows.forEach(r => {
+        const t = r.el.querySelector('.marquee-track');
+        if (t) r.width = t.scrollWidth / 2;
+      }));
+    }
+
+    // Map an icon's horizontal screen fraction (0=left .. 1=right) to a sprite stage row 0..3.
+    function stageRowFor(frac) {
+      const stage = Math.min(3, Math.max(0, Math.floor(frac * 4)));
+      return stage; // 0 baby, 1 teen, 2 adult, 3 elder
+    }
+
+    // True cross-fade: the overlay holds the OLD stage at full opacity, the base is
+    // switched to the NEW stage underneath, then the overlay fades out — so the old
+    // frame visibly fades away (alpha) while the new one shows through.
+    function setStageWithFade(icon, overlay, newPos) {
+      const oldPos = icon.style.backgroundPosition || '0% 0%';
+      clearTimeout(icon._fadeTimer);
+
+      // 1) overlay = OLD frame, fully opaque (no transition while we set it up)
+      overlay.style.transition = 'none';
+      overlay.style.backgroundPosition = oldPos;
+      overlay.style.opacity = '1';
+
+      // 2) base immediately becomes the NEW frame (hidden behind the opaque overlay)
+      icon.style.backgroundPosition = newPos;
+
+      // 3) next frame: enable the transition and fade the OLD overlay out → new shows through
+      requestAnimationFrame(() => {
+        overlay.style.transition = 'opacity .5s ease';
+        overlay.style.opacity = '0';
+      });
+
+      icon._fadeTimer = setTimeout(() => {
+        overlay.style.opacity = '0';
+      }, 520);
+    }
+
+    function tick(ts) {
+      if (!lastTs) lastTs = ts;
+      const dt = (ts - lastTs) / 1000;
+      lastTs = ts;
+
+      if (!paused) {
+        const speed = SCROLL_SPEED; // constant px/s, independent of screen width
+
+        rows.forEach(row => {
+          if (row.el.hidden || !row.width) return;
+          const track = row.el.querySelector('.marquee-track');
+          if (!track) return;
+          // Advance offset by direction; keep it within [-width, 0) for a seamless loop.
+          // dir = 1  -> icons drift left->right (offset increases)
+          // dir = -1 -> icons drift right->left (offset decreases)
+          row.offset += row.dir * speed * dt;
+          let wrapped = false;
+          while (row.offset <= -row.width) { row.offset += row.width; wrapped = true; }
+          while (row.offset > 0) { row.offset -= row.width; wrapped = true; }
+
+          // On wrap the strip resets — every icon "appears again", so loop to the next
+          // anim state (idle -> happy -> sad -> sleep -> idle) and let its stage recompute.
+          if (wrapped) {
+            Array.from(track.children).forEach(icon => {
+              if (icon.dataset.sheet !== '1') return;
+              icon._animIdx = (((icon._animIdx || 0) + 1) % ANIM_STATES.length);
+              icon._anim = ANIM_STATES[icon._animIdx];
+              icon._stage = undefined; // recompute from current position without growth pop
+            });
+          }
+
+          track.style.transform = `translateX(${row.offset}px)`;
+
+          // Update each visible icon's stage based on where it is on screen.
+          const stageRect = row.el.getBoundingClientRect();
+          const icons = track.children;
+          for (let i = 0; i < icons.length; i++) {
+            const icon = icons[i];
+            if (icon.dataset.sheet !== '1') continue;
+            const r = icon.getBoundingClientRect();
+            const cx = r.left + r.width / 2;
+            let frac = (cx - stageRect.left) / stageRect.width;
+            // For right->left rows, flip so the entering side (right) is "baby" and exiting side is "elder".
+            if (row.dir === -1) frac = 1 - frac;
+            frac = Math.min(1, Math.max(0, frac));
+            const stage = stageRowFor(frac);
+            if (icon._stage !== stage) {
+              const hadStage = icon._stage !== undefined; // skip the very first assignment
+              const isGrowth = hadStage && stage > icon._stage; // only animate when ageing up
+              icon._stage = stage;
+              const col = icon._anim || 0; // current anim state (0 idle,1 happy,2 sad,3 sleep)
+              const newPos = `${(col * 100 / 3).toFixed(2)}% ${(stage * 100 / 3).toFixed(2)}%`;
+              const overlay = icon.firstElementChild; // .pet-icon-next
+              if (isGrowth && overlay) {
+                setStageWithFade(icon, overlay, newPos);
+                icon.classList.remove('grow');
+                void icon.offsetWidth; // restart animation
+                icon.classList.add('grow');
+              } else {
+                // first paint / non-growth (e.g. recycled to baby): swap instantly
+                if (overlay) {
+                  clearTimeout(icon._fadeTimer);
+                  overlay.style.transition = 'none';
+                  overlay.style.opacity = '0';
+                }
+                icon.style.backgroundPosition = newPos;
+              }
+            }
+          }
+        });
+      }
+      rafId = requestAnimationFrame(tick);
+    }
+
+    function startLoop() {
+      if (rafId) return;
+      lastTs = 0;
+      rafId = requestAnimationFrame(tick);
+    }
+
+    // Pause only while pressed (mouse or touch); also pause when off-screen to save work.
+    const gallery = document.getElementById('gallery');
+    let pressed = false;
+    const press = () => { pressed = true; paused = true; };
+    const release = () => { pressed = false; paused = false; lastTs = 0; };
+    gallery.addEventListener('mousedown', press);
+    gallery.addEventListener('touchstart', press, { passive: true });
+    window.addEventListener('mouseup', release);
+    window.addEventListener('touchend', release);
+    window.addEventListener('touchcancel', release);
+    if ('IntersectionObserver' in window) {
+      new IntersectionObserver(entries => {
+        entries.forEach(e => {
+          // keep paused while pressed, even if it scrolls back into view
+          paused = pressed || !e.isIntersecting;
+          if (!paused) lastTs = 0;
+        });
+      }, { threshold: 0 }).observe(gallery);
+    }
+
+    // Shuffle
+    shuffleBtn.addEventListener('click', () => {
+      if (!allPets.length) return;
+      shuffleBtn.classList.remove('spin');
+      void shuffleBtn.offsetWidth; // restart spin animation
+      shuffleBtn.classList.add('spin');
+      renderBatch();
+    });
+
+    window.addEventListener('resize', () => {
+      rows.forEach(r => {
+        const t = r.el.querySelector('.marquee-track');
+        if (t && !r.el.hidden) r.width = t.scrollWidth / 2;
+      });
+    });
+
+    function normalize(data) {
+      const list = Array.isArray(data) ? data : (Array.isArray(data?.pets) ? data.pets : []);
+      return list
+        .filter(p => p && (p.imageSheetUrl || p.imageUrl))
+        .map((p, i) => ({
+          id: p.id || `pet_${i}`,
+          name: p.name || p.id || `Pet ${i + 1}`,
+          imageSheetUrl: p.imageSheetUrl || '',
+          imageUrl: p.imageUrl || '',
+        }));
+    }
+
+    async function load() {
+      const urls = [
+        '../famous-pets/_pet_index.json',
+        'https://cdn.keepwork.com/maisi/magichaqi/famous-pets/_pet_index.json',
+      ];
+      for (const url of urls) {
+        try {
+          const res = await fetch(url, { cache: 'no-cache' });
+          if (!res.ok) throw new Error('HTTP ' + res.status);
+          const data = await res.json();
+          const list = normalize(data);
+          if (list.length) {
+            allPets = list;
+            renderBatch();
+            startLoop();
+            return;
+          }
+        } catch (e) { /* try next */ }
+      }
+      stateMsgKey = 'error';
+      galState.textContent = getStr('galError');
+    }
+
+    load();
+  })();
+</script>
+</body>
+</html>

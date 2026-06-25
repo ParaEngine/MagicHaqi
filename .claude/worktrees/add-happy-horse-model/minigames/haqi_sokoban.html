@@ -1,0 +1,1016 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+  <title>宠物推箱子</title>
+  <script src="https://cdn.keepwork.com/keepwork/cdn/tailwindcss@3.4.16.js"></script>
+</head>
+
+<body></body>
+<script defer>
+(function () {
+  // ---- i18n ----
+  const I18N = {
+    zhCN: {
+      title: '宠物推箱子',
+      menuAria: '玩法',
+      gameStatusAria: '游戏状态',
+      difficultyLabel: '难度',
+      pushesLabel: '推动',
+      movesLabel: '步数',
+      boardAria: '宠物推箱子棋盘',
+      selectDiffAria: '选择难度',
+      helpBtn: '玩法',
+      restartBtn: '重开',
+      newLevelBtn: '新关卡',
+      dirControlAria: '方向控制',
+      dirUp: '上',
+      dirLeft: '左',
+      dirDown: '下',
+      dirRight: '右',
+      howToTitle: '宠物推箱子',
+      howToText: '用当前宠物推动木箱，把所有木箱推到绿色标记上。每个 AI 关卡都会先由求解器验证可解；选择难度后会自动记住，下次继续使用。',
+      startGame: '开始游戏',
+      winTitle: '完成！',
+      winTextDefault: '所有箱子都到位了。',
+      nextLevel: '下一关',
+      generating: 'AI 正在生成可解关卡...',
+      diffEasy: '轻松',
+      diffNormal: '标准',
+      diffHard: '困难',
+      diffExpert: '专家',
+      winText: 'Lv.{level} {label}完成，推动 {pushes} 次，AI最少 {solution} 次。',
+      toastWin: '通关!',
+      crateDone: '已到位木箱',
+      crate: '木箱',
+    },
+    enUS: {
+      title: 'Pet Sokoban',
+      menuAria: 'How to Play',
+      gameStatusAria: 'Game status',
+      difficultyLabel: 'Difficulty',
+      pushesLabel: 'Pushes',
+      movesLabel: 'Moves',
+      boardAria: 'Pet Sokoban board',
+      selectDiffAria: 'Select difficulty',
+      helpBtn: 'How to Play',
+      restartBtn: 'Restart',
+      newLevelBtn: 'New Level',
+      dirControlAria: 'Direction controls',
+      dirUp: 'Up',
+      dirLeft: 'Left',
+      dirDown: 'Down',
+      dirRight: 'Right',
+      howToTitle: 'Pet Sokoban',
+      howToText: 'Push crates with your pet to place every crate on a green marker. Each AI-generated level is verified solvable by a solver; your difficulty choice is saved and reused next time.',
+      startGame: 'Start Game',
+      winTitle: 'Complete!',
+      winTextDefault: 'All crates are in place.',
+      nextLevel: 'Next Level',
+      generating: 'AI is generating a solvable level...',
+      diffEasy: 'Easy',
+      diffNormal: 'Normal',
+      diffHard: 'Hard',
+      diffExpert: 'Expert',
+      winText: 'Lv.{level} {label} complete, {pushes} pushes, AI minimum {solution}.',
+      toastWin: 'Cleared!',
+      crateDone: 'Crate in place',
+      crate: 'Crate',
+    },
+  };
+  function detectLang() {
+    try {
+      const params = new URLSearchParams(window.location.search);
+      const lang = params.get('lang');
+      if (lang && I18N[lang]) return lang;
+    } catch (_) {}
+    return 'zhCN';
+  }
+  const LANG = detectLang();
+  const L = I18N[LANG];
+  function t(key, vars) {
+    let str = L[key] || I18N.zhCN[key] || key;
+    if (vars) str = str.replace(/\{(\w+)\}/g, (m, n) => vars[n] != null ? String(vars[n]) : m);
+    return str;
+  }
+  try { document.documentElement.setAttribute('lang', LANG === 'enUS' ? 'en' : 'zh-CN'); } catch (_) {}
+  try { document.title = t('title'); } catch (_) {}
+  const STORAGE_KEY_DIFFICULTY = 'haqiSokobanLastDifficulty';
+  const STORAGE_KEY_BEST = 'haqiSokobanBestLevel';
+  const FALLBACK_PET = '🐾';
+  const DIRS = [
+    { key: 'up', dr: -1, dc: 0, label: '↑' },
+    { key: 'right', dr: 0, dc: 1, label: '→' },
+    { key: 'down', dr: 1, dc: 0, label: '↓' },
+    { key: 'left', dr: 0, dc: -1, label: '←' },
+  ];
+  const DIFFICULTIES = {
+    easy: { id: 'easy', label: t('diffEasy'), size: 7, boxes: 2, walls: 5, minPushes: 4, attempts: 90, maxNodes: 6000, sliceNodes: 2200, timeBudget: 360, reward: 70 },
+    normal: { id: 'normal', label: t('diffNormal'), size: 8, boxes: 3, walls: 8, minPushes: 8, attempts: 120, maxNodes: 10000, sliceNodes: 2200, timeBudget: 560, reward: 95 },
+    hard: { id: 'hard', label: t('diffHard'), size: 8, boxes: 3, walls: 12, minPushes: 12, attempts: 150, maxNodes: 14000, sliceNodes: 2200, timeBudget: 800, reward: 125 },
+    expert: { id: 'expert', label: t('diffExpert'), size: 9, boxes: 4, walls: 14, minPushes: 16, attempts: 180, maxNodes: 18000, sliceNodes: 2200, timeBudget: 1100, reward: 160 },
+  };
+  const DIFFICULTY_ORDER = ['easy', 'normal', 'hard', 'expert'];
+
+  const state = {
+    difficulty: normalizeDifficulty(localStorage.getItem(STORAGE_KEY_DIFFICULTY)),
+    level: 1,
+    bestLevel: Number(localStorage.getItem(STORAGE_KEY_BEST) || 1),
+    started: false,
+    finished: false,
+    generating: false,
+    board: null,
+    walls: new Set(),
+    goals: new Set(),
+    boxes: [],
+    player: 0,
+    moves: 0,
+    pushes: 0,
+    seconds: 0,
+    timer: null,
+    solutionPushes: 0,
+    petAsset: null,
+    petRequestId: '',
+    objectUrls: [],
+    pointer: null,
+  };
+
+  const root = document.createElement('div');
+  root.id = 'haqiSokoban';
+  root.innerHTML = `
+    <style>
+      * { box-sizing: border-box; -webkit-tap-highlight-color: transparent; }
+      html, body { width: 100%; height: 100%; margin: 0; overflow: hidden; }
+      body {
+        font-family: -apple-system, BlinkMacSystemFont, 'PingFang SC', 'Microsoft YaHei', sans-serif;
+        color: #17314a;
+        background:
+          radial-gradient(circle at 18% 16%, rgba(255,255,255,.82) 0 7%, transparent 22%),
+          radial-gradient(circle at 76% 18%, rgba(125,211,252,.42) 0 9%, transparent 24%),
+          linear-gradient(180deg, #d8f5ff 0%, #fff1b8 48%, #baf2c4 100%);
+        touch-action: none;
+        user-select: none;
+      }
+      .mh-shell { position: relative; z-index: 1; height: 100vh; display: grid; grid-template-rows: auto minmax(0, 1fr) auto; gap: 9px; padding: 9px; overflow: hidden; }
+      .mh-bg { position: fixed; inset: 0; overflow: hidden; pointer-events: none; }
+      .mh-bg::before {
+        content: ''; position: absolute; inset: 0;
+        background:
+          radial-gradient(ellipse at 50% 102%, rgba(255,255,255,.7) 0 8%, transparent 27%),
+          radial-gradient(ellipse at 12% 94%, rgba(34,197,94,.2) 0 7%, transparent 22%),
+          linear-gradient(90deg, rgba(255,255,255,.22) 1px, transparent 1px),
+          linear-gradient(180deg, rgba(255,255,255,.16) 1px, transparent 1px);
+        background-size: auto, auto, 46px 46px, 46px 46px;
+        mask-image: linear-gradient(180deg, rgba(0,0,0,.58), rgba(0,0,0,.08));
+      }
+      .mh-bg::after {
+        content: ''; position: absolute; left: -8%; right: -8%; bottom: -9%; height: 28%;
+        background:
+          radial-gradient(ellipse at 19% 100%, rgba(22,163,74,.22) 0 22%, transparent 56%),
+          radial-gradient(ellipse at 69% 92%, rgba(14,116,144,.16) 0 18%, transparent 50%);
+      }
+      .mh-top {
+        min-height: 48px; display: grid; grid-template-columns: 40px minmax(0,1fr) auto; align-items: center; gap: 8px;
+        padding: 7px 9px; border-radius: 14px; background: linear-gradient(180deg, rgba(255,255,255,.94), rgba(240,253,250,.86)); border: 2px solid rgba(255,255,255,.95);
+        box-shadow: 0 5px 0 rgba(14,116,144,.14), 0 12px 24px rgba(15,23,42,.12), inset 0 1px 0 rgba(255,255,255,.96);
+      }
+      .mh-icon-btn, .mh-action, .mh-dir, .mh-start, .mh-next, .mh-difficulty {
+        border: 0; cursor: pointer; font-weight: 900; color: inherit;
+      }
+      .mh-icon-btn { width: 34px; height: 34px; border-radius: 999px; background: linear-gradient(180deg, #fb923c, #ea580c); color: white; box-shadow: 0 3px 0 #9a3412, 0 7px 14px rgba(154,52,18,.22); font-size: 18px; text-shadow: 0 1px 0 rgba(124,45,18,.38); }
+      .mh-title { min-width: 0; text-align: center; font-size: 17px; font-weight: 1000; color: #16324f; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+      .mh-stats { display: flex; align-items: center; justify-content: flex-end; gap: 5px; flex-wrap: wrap; }
+      .mh-pill { min-width: 46px; height: 28px; display: inline-flex; align-items: center; justify-content: center; gap: 3px; padding: 0 8px; border-radius: 999px; background: linear-gradient(180deg, #fff, #ecfeff); border: 1px solid rgba(14,116,144,.18); color: #0f766e; font-size: 12px; font-weight: 900; box-shadow: 0 2px 0 rgba(14,116,144,.12), inset 0 1px 0 rgba(255,255,255,.9); }
+      .mh-stage { min-height: 0; display: grid; place-items: center; overflow: hidden; padding: 2px 0; }
+      .mh-board-wrap {
+        position: relative; width: min(86vw, calc(100vh - 154px), 560px); max-width: calc(100vw - 18px); max-height: 100%; aspect-ratio: 1; padding: 10px; border-radius: 18px;
+        background: linear-gradient(145deg, #0f766e, #115e59 46%, #14532d); border: 3px solid rgba(255,255,255,.95);
+        box-shadow: 0 18px 34px rgba(15,23,42,.24), 0 0 0 6px rgba(255,255,255,.22), inset 0 2px 0 rgba(255,255,255,.32), inset 0 -7px 0 rgba(20,83,45,.32);
+      }
+      .mh-board-wrap::before {
+        content: ''; position: absolute; inset: 5px; border-radius: 14px; pointer-events: none;
+        background: linear-gradient(135deg, rgba(255,255,255,.2), transparent 34%, rgba(15,23,42,.16));
+        z-index: 2;
+      }
+      .mh-board { position: relative; width: 100%; height: 100%; display: grid; grid-template-columns: repeat(var(--size), 1fr); grid-template-rows: repeat(var(--size), 1fr); gap: 4px; padding: 2px; border-radius: 12px; background: rgba(12,66,50,.72); overflow: hidden; }
+      .mh-cell { position: relative; overflow: hidden; border-radius: 7px; background: #5f3718; box-shadow: inset 0 1px 0 rgba(255,255,255,.1), inset 0 -2px 0 rgba(28,16,8,.3); }
+      .mh-cell.floor {
+        background:
+            radial-gradient(circle at 26% 20%, rgba(255,255,255,.09) 0 10%, transparent 24%),
+            linear-gradient(135deg, rgba(255,255,255,.04) 0 12%, transparent 12% 100%),
+          linear-gradient(180deg, var(--tile-top), var(--tile-bottom));
+      }
+      .mh-cell.floor::before {
+        content: ''; position: absolute; inset: 0; pointer-events: none;
+        background:
+          linear-gradient(90deg, rgba(255,255,255,.05) 1px, transparent 1px),
+          linear-gradient(180deg, rgba(15,23,42,.2) 1px, transparent 1px);
+        background-size: 50% 50%; opacity: .65;
+      }
+      .mh-cell.tone-0 { --tile-top: #704116; --tile-bottom: #3f220d; }
+      .mh-cell.tone-1 { --tile-top: #633811; --tile-bottom: #351c0a; }
+      .mh-cell.tone-2 { --tile-top: #754a1c; --tile-bottom: #45270f; }
+      .mh-cell.tone-3 { --tile-top: #55300f; --tile-bottom: #2f1908; }
+      .mh-cell.floor.reachable::before {
+        background:
+          radial-gradient(circle at 50% 50%, rgba(45,212,191,.18), transparent 58%),
+          linear-gradient(90deg, rgba(255,255,255,.05) 1px, transparent 1px),
+          linear-gradient(180deg, rgba(15,23,42,.2) 1px, transparent 1px);
+        background-size: auto, 50% 50%, 50% 50%;
+      }
+      .mh-cell.wall {
+        background:
+          linear-gradient(135deg, rgba(255,255,255,.54) 0 14%, transparent 14% 100%),
+          linear-gradient(145deg, #ffb36b 0%, #ea7a32 47%, #b84d1e 100%);
+        box-shadow: inset 4px 4px 0 rgba(255,255,255,.42), inset -5px -6px 0 rgba(91,33,14,.24), 0 3px 0 rgba(91,33,14,.48), 0 6px 12px rgba(15,23,42,.24);
+      }
+      .mh-cell.wall::before {
+        content: ''; position: absolute; inset: 7%; border-radius: 5px; border: 2px solid rgba(255,237,213,.34); box-shadow: inset 0 -2px 0 rgba(91,33,14,.18), 0 1px 0 rgba(255,255,255,.16);
+      }
+      .mh-cell.goal { box-shadow: inset 0 1px 0 rgba(255,255,255,.16), inset 0 -2px 0 rgba(69,26,3,.18), 0 0 0 2px rgba(74,222,128,.22); }
+      .mh-cell.goal::before {
+        content: ''; position: absolute; left: 50%; top: 50%; width: 56%; height: 56%; border-radius: 9px;
+        background: radial-gradient(circle, rgba(220,252,231,.86), rgba(74,222,128,.36) 56%, rgba(74,222,128,0) 72%);
+        border: 2px solid rgba(187,247,208,.9); box-shadow: 0 0 13px rgba(74,222,128,.55), inset 0 0 0 2px rgba(22,101,52,.16);
+        transform: translate(-50%, -50%) rotate(45deg); z-index: 1;
+      }
+      .mh-cell.goal::after {
+        content: ''; position: absolute; left: 50%; top: 50%; width: 26%; height: 26%; border-radius: 999px;
+        background: #f0fdf4; box-shadow: 0 0 0 3px rgba(34,197,94,.42), 0 0 10px rgba(220,252,231,.9);
+        transform: translate(-50%, -50%); z-index: 2;
+      }
+      .mh-box, .mh-player { position: absolute; z-index: 3; transition: transform .16s ease, filter .16s ease; pointer-events: none; }
+      .mh-box {
+        inset: 5%; border-radius: 8px; filter: drop-shadow(0 6px 0 rgba(124,45,18,.82)) drop-shadow(0 10px 9px rgba(15,23,42,.25));
+      }
+      .mh-box svg { width: 100%; height: 100%; display: block; overflow: visible; }
+      .mh-box.done { filter: drop-shadow(0 5px 0 rgba(127,29,29,.86)) drop-shadow(0 0 12px rgba(74,222,128,.62)) drop-shadow(0 9px 11px rgba(15,23,42,.25)); }
+      .mh-player { left: 2%; top: -18%; width: 96%; height: 124%; z-index: 5; display: grid; place-items: center; filter: drop-shadow(0 7px 3px rgba(15,23,42,.3)); }
+      .mh-player::after { content: ''; position: absolute; left: 18%; right: 18%; bottom: 12%; height: 16%; border-radius: 999px; background: rgba(15,23,42,.2); filter: blur(1px); z-index: 0; }
+      .mh-player .sprite { position: relative; z-index: 1; width: 100%; height: 100%; background-repeat: no-repeat; background-position: center; }
+      .mh-player.fallback-player { left: 10%; top: 10%; width: 80%; height: 80%; filter: drop-shadow(0 4px 2px rgba(15,23,42,.28)); }
+      .mh-player.fallback-player::after { left: 17%; right: 17%; bottom: 0; height: 14%; }
+      .mh-player .fallback { position: relative; z-index: 1; width: 100%; height: 100%; display: grid; place-items: center; font-size: clamp(22px, 5.6vmin, 42px); line-height: 1; }
+      .mh-cell.reachable { outline: 2px solid rgba(125,211,252,.58); outline-offset: -5px; }
+      .mh-bottom { position: relative; z-index: 3; display: grid; grid-template-columns: minmax(0,1fr) auto; align-items: center; gap: 8px; min-height: 68px; }
+      .mh-controls { display: flex; align-items: center; gap: 7px; flex-wrap: wrap; min-width: 0; overflow: hidden; }
+      .mh-action { height: 34px; border-radius: 999px; padding: 0 12px; background: linear-gradient(180deg, #38bdf8, #0284c7); color: white; box-shadow: 0 4px 0 #075985, 0 8px 14px rgba(2,132,199,.22); text-shadow: 0 1px 0 rgba(12,74,110,.35); }
+      .mh-action.help { background: linear-gradient(180deg, #fb923c, #ea580c); box-shadow-color: #9a3412; }
+      .mh-difficulties { display: flex; align-items: center; gap: 4px; padding: 4px; border-radius: 999px; background: rgba(255,255,255,.78); border: 1px solid rgba(14,116,144,.16); overflow-x: auto; box-shadow: inset 0 1px 0 rgba(255,255,255,.86), 0 4px 12px rgba(15,23,42,.08); }
+      .mh-difficulty { flex: 0 0 auto; height: 28px; min-width: 44px; padding: 0 9px; border-radius: 999px; background: transparent; color: #0f766e; font-size: 12px; }
+      .mh-difficulty.active { background: linear-gradient(180deg, #34d399, #16a34a); color: white; box-shadow: 0 2px 0 #15803d, 0 5px 12px rgba(22,163,74,.24); }
+      .mh-dpad { width: 104px; height: 68px; display: grid; grid-template-columns: repeat(3, 32px); grid-template-rows: repeat(2, 32px); gap: 4px; justify-content: center; align-content: center; }
+      .mh-dir { width: 32px; height: 32px; border-radius: 999px; background: linear-gradient(180deg, #fff, #ecfeff); color: #0f766e; box-shadow: 0 3px 0 rgba(14,116,144,.22), 0 7px 13px rgba(15,23,42,.12), inset 0 1px 0 rgba(255,255,255,.95); font-size: 16px; }
+      .mh-dir.up { grid-column: 2; grid-row: 1; }
+      .mh-dir.left { grid-column: 1; grid-row: 2; }
+      .mh-dir.down { grid-column: 2; grid-row: 2; }
+      .mh-dir.right { grid-column: 3; grid-row: 2; }
+      .mh-overlay { position: fixed; inset: 0; z-index: 40; display: flex; align-items: center; justify-content: center; padding: 18px; background: rgba(15,39,71,.46); }
+      .mh-card { width: min(92vw, 420px); padding: 20px; border-radius: 18px; background: linear-gradient(180deg, #fff, #f0fdf4); border: 3px solid #86efac; box-shadow: 0 18px 44px rgba(15,23,42,.28), inset 0 1px 0 rgba(255,255,255,.95); text-align: center; }
+      .mh-card h1 { margin: 0 0 10px; color: #16324f; font-size: 25px; font-weight: 1000; }
+      .mh-card p { margin: 0 0 15px; color: #0f766e; font-size: 15px; font-weight: 800; line-height: 1.55; }
+      .mh-start, .mh-next { border-radius: 999px; padding: 10px 22px; background: linear-gradient(180deg, #34d399, #16a34a); color: white; box-shadow: 0 5px 0 #15803d, 0 10px 18px rgba(22,163,74,.24); }
+      .mh-generating { position: fixed; left: 50%; top: 50%; z-index: 35; transform: translate(-50%, -50%); padding: 13px 18px; border-radius: 16px; background: rgba(255,255,255,.96); border: 2px solid #86efac; color: #0f766e; font-weight: 1000; box-shadow: 0 12px 30px rgba(15,23,42,.2); }
+      .mh-toast { position: fixed; left: 50%; top: 50%; z-index: 45; transform: translate(-50%, -50%); padding: 17px 22px; border-radius: 18px; background: white; border: 3px solid #86efac; color: #15803d; font-size: 22px; font-weight: 1000; text-align: center; box-shadow: 0 18px 42px rgba(15,23,42,.24); animation: mhToast 1.3s ease-out forwards; pointer-events: none; }
+      .mh-confetti { position: fixed; top: -16px; z-index: 48; width: 9px; height: 15px; border-radius: 3px; background: var(--c); animation: mhConfetti var(--d) ease-in forwards; pointer-events: none; }
+      [hidden] { display: none !important; }
+      @keyframes mhToast { 0% { opacity: 0; transform: translate(-50%, -40%) scale(.82); } 18% { opacity: 1; transform: translate(-50%, -50%) scale(1); } 100% { opacity: 0; transform: translate(-50%, -78%) scale(.94); } }
+      @keyframes mhConfetti { 100% { opacity: 0; transform: translate3d(var(--x), 112vh, 0) rotate(680deg); } }
+      @media (max-width: 520px) {
+        .mh-shell { gap: 7px; padding: 7px; }
+        .mh-top { grid-template-columns: 36px 1fr; }
+        .mh-stats { grid-column: 1 / -1; justify-content: center; }
+        .mh-board-wrap { width: min(92vw, calc(100vh - 218px)); }
+        .mh-bottom { grid-template-columns: 1fr; justify-items: center; }
+        .mh-controls { justify-content: center; }
+      }
+      @media (max-height: 580px) {
+        .mh-shell { grid-template-rows: auto 1fr; }
+        .mh-bottom { position: absolute; left: 8px; right: 8px; bottom: 8px; min-height: 0; pointer-events: none; }
+        .mh-controls { display: none; }
+        .mh-dpad { margin-left: auto; pointer-events: auto; }
+        .mh-board-wrap { width: min(74vmin, 520px); }
+      }
+    </style>
+    <div class="mh-bg" aria-hidden="true"></div>
+    <div class="mh-shell">
+      <header class="mh-top">
+        <button id="mhMenu" class="mh-icon-btn" type="button" aria-label="${t('menuAria')}">?</button>
+        <div class="mh-title">${t('title')} Lv.<span id="mhLevel">1</span></div>
+        <div class="mh-stats" aria-label="${t('gameStatusAria')}">
+          <span class="mh-pill">${t('difficultyLabel')} <b id="mhDifficultyLabel">${t('diffNormal')}</b></span>
+          <span class="mh-pill">${t('pushesLabel')} <b id="mhPushes">0</b></span>
+          <span class="mh-pill">${t('movesLabel')} <b id="mhMoves">0</b></span>
+          <span class="mh-pill"><b id="mhTime">0</b>s</span>
+        </div>
+      </header>
+      <main class="mh-stage">
+        <div class="mh-board-wrap">
+          <div id="mhBoard" class="mh-board" aria-label="${t('boardAria')}"></div>
+        </div>
+      </main>
+      <footer class="mh-bottom">
+        <div class="mh-controls">
+          <div class="mh-difficulties" id="mhDifficulties" aria-label="${t('selectDiffAria')}"></div>
+          <button id="mhHelp" class="mh-action help" type="button">${t('helpBtn')}</button>
+          <button id="mhRestart" class="mh-action" type="button">${t('restartBtn')}</button>
+          <button id="mhNew" class="mh-action" type="button">${t('newLevelBtn')}</button>
+        </div>
+        <div class="mh-dpad" aria-label="${t('dirControlAria')}">
+          <button class="mh-dir up" type="button" data-dir="up" aria-label="${t('dirUp')}">↑</button>
+          <button class="mh-dir left" type="button" data-dir="left" aria-label="${t('dirLeft')}">←</button>
+          <button class="mh-dir down" type="button" data-dir="down" aria-label="${t('dirDown')}">↓</button>
+          <button class="mh-dir right" type="button" data-dir="right" aria-label="${t('dirRight')}">→</button>
+        </div>
+      </footer>
+    </div>
+    <div id="mhHowTo" class="mh-overlay" role="dialog" aria-modal="true" aria-labelledby="mhHowToTitle" hidden>
+      <div class="mh-card">
+        <h1 id="mhHowToTitle">${t('howToTitle')}</h1>
+        <p>${t('howToText')}</p>
+        <button id="mhStart" class="mh-start" type="button">${t('startGame')}</button>
+      </div>
+    </div>
+    <div id="mhWin" class="mh-overlay" role="dialog" aria-modal="true" aria-labelledby="mhWinTitle" hidden>
+      <div class="mh-card">
+        <h1 id="mhWinTitle">${t('winTitle')}</h1>
+        <p id="mhWinText">${t('winTextDefault')}</p>
+        <button id="mhNext" class="mh-next" type="button">${t('nextLevel')}</button>
+      </div>
+    </div>
+    <div id="mhGenerating" class="mh-generating" hidden>${t('generating')}</div>
+  `;
+
+  function boot() {
+    document.body.appendChild(root);
+    renderDifficultyButtons();
+    bindEvents();
+    showHowTo();
+    post('gameLoaded');
+    // Defer heavy work (pet image request + level generation/solving, which is a
+    // big synchronous task) until after the first paint so the rules modal shows
+    // instantly. The board isn't interactive until the user taps Start anyway.
+    requestAnimationFrame(() => requestAnimationFrame(() => {
+      requestPetImage();
+      if (!state.board && !state.generating) prepareLevel(1);
+    }));
+  }
+
+  function bindEvents() {
+    byId('mhMenu').onclick = showHowTo;
+    byId('mhHelp').onclick = showHowTo;
+    byId('mhStart').onclick = () => {
+      byId('mhHowTo').hidden = true;
+      if (!state.board && !state.generating) prepareLevel(1);
+      if (!state.started) startGame();
+    };
+    byId('mhRestart').onclick = () => {
+      if (state.generating || !state.board) return;
+      restoreSnapshot(state.board);
+      state.moves = 0;
+      state.pushes = 0;
+      state.finished = false;
+      startTimer();
+      updateStats();
+      renderBoard();
+      post('gameStarted');
+    };
+    byId('mhNew').onclick = () => prepareAndStart(state.level + 1);
+    byId('mhNext').onclick = () => {
+      byId('mhWin').hidden = true;
+      prepareAndStart(state.level + 1);
+    };
+    document.querySelectorAll('[data-dir]').forEach((btn) => {
+      btn.onclick = () => movePlayer(btn.dataset.dir);
+    });
+    window.addEventListener('keydown', onKeyDown);
+    byId('mhBoard').addEventListener('pointerdown', onPointerDown);
+    byId('mhBoard').addEventListener('pointerup', onPointerUp);
+    window.addEventListener('message', (event) => {
+      const msg = event.data || {};
+      if (msg.type === 'gameContinue' && !state.started) startGame();
+      if (msg.type === 'setGameConfig' && msg.data?.petId) requestPetImage(msg.data.petId);
+      if (msg.type === 'haqi_pet_image' && msg.ok && msg.data && (!state.petRequestId || !msg.requestId || msg.requestId === state.petRequestId || msg.requestId === 'active_pet_config')) setPetImage(msg.data);
+      if (msg.type === 'haqi_pet_images' && msg.ok) {
+        const firstPet = Array.isArray(msg.data?.pets) ? msg.data.pets[0] : null;
+        if (firstPet) setPetImage(firstPet);
+      }
+    });
+  }
+
+  function renderDifficultyButtons() {
+    const wrap = byId('mhDifficulties');
+    wrap.innerHTML = DIFFICULTY_ORDER.map((id) => {
+      const difficulty = DIFFICULTIES[id];
+      return `<button class="mh-difficulty${id === state.difficulty ? ' active' : ''}" type="button" data-difficulty="${id}">${difficulty.label}</button>`;
+    }).join('');
+    wrap.querySelectorAll('[data-difficulty]').forEach((btn) => {
+      btn.onclick = () => {
+        const next = normalizeDifficulty(btn.dataset.difficulty);
+        if (next === state.difficulty || state.generating) return;
+        state.difficulty = next;
+        localStorage.setItem(STORAGE_KEY_DIFFICULTY, next);
+        renderDifficultyButtons();
+        prepareAndStart(1);
+      };
+    });
+  }
+
+  function startGame() {
+    state.started = true;
+    state.finished = false;
+    state.moves = 0;
+    state.pushes = 0;
+    startTimer();
+    updateStats();
+    post('gameStarted');
+  }
+
+  function prepareAndStart(level) {
+    // Stop any running timer; the level-ready callback in prepareLevel restarts
+    // it (and posts gameStarted) once the (async) board is built.
+    clearInterval(state.timer);
+    state.timer = null;
+    prepareLevel(level);
+  }
+
+  function startTimer() {
+    clearInterval(state.timer);
+    state.seconds = 0;
+    state.timer = setInterval(() => {
+      if (state.finished || state.generating) return;
+      state.seconds += 1;
+      updateStats();
+    }, 1000);
+  }
+
+  function prepareLevel(level) {
+    state.generating = true;
+    byId('mhGenerating').hidden = false;
+    // Generate/solve the level in time-sliced chunks so no single main-thread
+    // task exceeds the budget (the solver BFS over many attempts is heavy).
+    generatePuzzle(state.difficulty, level, (puzzle) => {
+      state.level = level;
+      state.board = puzzle;
+      state.solutionPushes = puzzle.solutionPushes;
+      restoreSnapshot(puzzle);
+      state.moves = 0;
+      state.pushes = 0;
+      state.finished = false;
+      state.generating = false;
+      byId('mhGenerating').hidden = true;
+      updateStats();
+      renderBoard();
+      // If the user already tapped Start while we were generating, kick off the
+      // timer/gameStarted now that the board exists.
+      if (state.started && !state.timer) {
+        startTimer();
+        post('gameStarted');
+      }
+    });
+  }
+
+  // Async, chunked puzzle generation: runs a few solver attempts per slice and
+  // yields to the event loop between slices so each task stays well under 50ms.
+  function generatePuzzle(difficultyId, level, done) {
+    const difficulty = DIFFICULTIES[difficultyId] || DIFFICULTIES.normal;
+    let best = null;
+    let attempt = 0;
+    const startedAt = Date.now();
+    const target = difficulty.minPushes + Math.min(10, Math.floor(level * 1.15));
+    // Each solver call is capped to sliceNodes so a single solve task stays well
+    // under the 50ms budget regardless of puzzle hardness. We run a small handful
+    // of cheap candidate-generations + one capped solve per slice, then yield.
+    const sliceNodes = difficulty.sliceNodes || 2200;
+    const SLICE_MS = 14;
+
+    function finish(puzzle) {
+      // Hand off to its own task so the DOM grid build in renderBoard never
+      // shares a task with a solver slice.
+      setTimeout(() => done(puzzle), 0);
+    }
+
+    function slice() {
+      const sliceStart = Date.now();
+      while (attempt < difficulty.attempts) {
+        if (attempt > 8 && Date.now() - startedAt > difficulty.timeBudget) {
+          attempt = difficulty.attempts; // stop
+          break;
+        }
+        const candidate = randomPuzzleCandidate(difficulty, level, attempt);
+        attempt++;
+        const solution = solvePuzzle(candidate, sliceNodes);
+        if (solution.solved) {
+          candidate.solutionPushes = solution.pushes;
+          candidate.solutionMoves = solution.moves;
+          if (!best || candidate.solutionPushes > best.solutionPushes) best = candidate;
+          if (candidate.solutionPushes >= target) { finish(candidate); return; }
+        }
+        // Yield after a bounded slice of wall time so each task stays small.
+        if (Date.now() - sliceStart >= SLICE_MS) break;
+      }
+      if (attempt < difficulty.attempts) {
+        setTimeout(slice, 0);
+      } else {
+        finish(best || fallbackPuzzle(difficulty));
+      }
+    }
+
+    slice();
+  }
+
+  function randomPuzzleCandidate(difficulty, level, attempt) {
+    const size = difficulty.size;
+    const cells = innerCells(size);
+    const walls = new Set(borderWalls(size));
+    const wallBudget = difficulty.walls + Math.min(5, Math.floor(level / 3));
+    shuffle(cells);
+    for (const pos of cells) {
+      if (walls.size >= borderWalls(size).length + wallBudget) break;
+      const row = rowOf(pos, size);
+      const col = colOf(pos, size);
+      if ((row === 1 && col === 1) || (row === size - 2 && col === size - 2)) continue;
+      if (Math.random() < .68) walls.add(pos);
+    }
+
+    let open = cells.filter(pos => !walls.has(pos));
+    if (largestOpenArea(open, walls, size) < Math.max(18, difficulty.boxes * 7)) {
+      walls.clear();
+      borderWalls(size).forEach(pos => walls.add(pos));
+      open = cells.filter(pos => !walls.has(pos));
+    }
+    shuffle(open);
+
+    const goals = [];
+    const boxes = [];
+    for (const pos of open) {
+      if (goals.length >= difficulty.boxes) break;
+      if (nearBorder(pos, size) && Math.random() < .45) continue;
+      goals.push(pos);
+    }
+    const blocked = new Set([...goals]);
+    const boxPool = open.filter(pos => !blocked.has(pos) && !isSimpleCorner(pos, walls, size));
+    shuffle(boxPool);
+    for (const pos of boxPool) {
+      if (boxes.length >= difficulty.boxes) break;
+      if (boxes.some(box => manhattan(box, pos, size) < 2)) continue;
+      boxes.push(pos);
+    }
+    const occupied = new Set([...goals, ...boxes]);
+    const playerPool = open.filter(pos => !occupied.has(pos));
+    const player = playerPool[(attempt + level + Math.floor(Math.random() * playerPool.length)) % Math.max(1, playerPool.length)] || open[0];
+    return {
+      size,
+      walls,
+      goals: new Set(goals),
+      boxes: normalizeBoxes(boxes),
+      player,
+      difficultyId: difficulty.id,
+      seed: `${difficulty.id}-${level}-${Date.now().toString(36)}-${attempt}`,
+      solutionPushes: 0,
+      solutionMoves: 0,
+    };
+  }
+
+  function fallbackPuzzle(difficulty) {
+    const size = Math.max(7, difficulty.size);
+    const walls = new Set(borderWalls(size));
+    const layoutWalls = [idx(2, 2, size), idx(2, 5, size), idx(3, 5, size), idx(4, 2, size), idx(5, 4, size)];
+    layoutWalls.forEach(pos => { if (rowOf(pos, size) < size - 1 && colOf(pos, size) < size - 1) walls.add(pos); });
+    const goals = new Set([idx(1, size - 2, size), idx(3, size - 2, size), idx(size - 2, size - 3, size), idx(size - 3, 1, size)].slice(0, difficulty.boxes));
+    const boxes = normalizeBoxes([idx(1, 3, size), idx(3, 3, size), idx(size - 3, 3, size), idx(size - 2, 2, size)].slice(0, difficulty.boxes));
+    const puzzle = { size, walls, goals, boxes, player: idx(size - 2, 1, size), difficultyId: difficulty.id, seed: 'fallback', solutionPushes: 0, solutionMoves: 0 };
+    const solution = solvePuzzle(puzzle, difficulty.sliceNodes || 2200);
+    puzzle.solutionPushes = solution.solved ? solution.pushes : difficulty.minPushes;
+    puzzle.solutionMoves = solution.solved ? solution.moves : difficulty.minPushes * 2;
+    return puzzle;
+  }
+
+  function solvePuzzle(puzzle, maxNodes) {
+    const startBoxes = normalizeBoxes(puzzle.boxes);
+    const startKey = stateKey(puzzle.player, startBoxes);
+    const seen = new Set([startKey]);
+    const queue = [{ player: puzzle.player, boxes: startBoxes, pushes: 0, moves: 0 }];
+    let cursor = 0;
+    while (cursor < queue.length && seen.size < maxNodes) {
+      const node = queue[cursor++];
+      if (isSolvedBoxes(node.boxes, puzzle.goals)) return { solved: true, pushes: node.pushes, moves: node.moves };
+      const reachable = reachableCells(node.player, node.boxes, puzzle);
+      for (const box of node.boxes) {
+        for (const dir of DIRS) {
+          const pushFrom = box - dir.dr * puzzle.size - dir.dc;
+          const pushedTo = box + dir.dr * puzzle.size + dir.dc;
+          if (!reachable.has(pushFrom)) continue;
+          if (!isFree(pushedTo, node.boxes, puzzle)) continue;
+          const nextBoxes = normalizeBoxes(node.boxes.map(pos => pos === box ? pushedTo : pos));
+          if (hasDeadBox(nextBoxes, puzzle)) continue;
+          const key = stateKey(box, nextBoxes);
+          if (seen.has(key)) continue;
+          seen.add(key);
+          const walk = reachable.get(pushFrom) || 0;
+          queue.push({ player: box, boxes: nextBoxes, pushes: node.pushes + 1, moves: node.moves + walk + 1 });
+        }
+      }
+    }
+    return { solved: false, pushes: Infinity, moves: Infinity };
+  }
+
+  function reachableCells(player, boxes, puzzle) {
+    const boxSet = new Set(boxes);
+    const reached = new Map([[player, 0]]);
+    const queue = [player];
+    let cursor = 0;
+    while (cursor < queue.length) {
+      const pos = queue[cursor++];
+      const distance = reached.get(pos) || 0;
+      for (const dir of DIRS) {
+        const next = pos + dir.dr * puzzle.size + dir.dc;
+        if (reached.has(next) || puzzle.walls.has(next) || boxSet.has(next)) continue;
+        reached.set(next, distance + 1);
+        queue.push(next);
+      }
+    }
+    return reached;
+  }
+
+  function movePlayer(dirKey) {
+    if (state.finished || state.generating || !state.board) return;
+    const dir = DIRS.find(item => item.key === dirKey);
+    if (!dir) return;
+    const size = state.board.size;
+    const next = state.player + dir.dr * size + dir.dc;
+    if (state.walls.has(next)) return;
+    const boxIndex = state.boxes.indexOf(next);
+    if (boxIndex >= 0) {
+      const pushedTo = next + dir.dr * size + dir.dc;
+      if (state.walls.has(pushedTo) || state.boxes.includes(pushedTo)) return;
+      state.boxes[boxIndex] = pushedTo;
+      state.boxes = normalizeBoxes(state.boxes);
+      state.pushes += 1;
+    }
+    state.player = next;
+    state.moves += 1;
+    updateStats();
+    renderBoard();
+    if (isSolvedBoxes(state.boxes, state.goals)) winLevel();
+  }
+
+  function renderBoard() {
+    const board = byId('mhBoard');
+    if (!state.board) return;
+    const size = state.board.size;
+    board.style.setProperty('--size', size);
+    board.innerHTML = '';
+    const reachable = state.finished ? new Map() : reachableCells(state.player, state.boxes, state.board);
+    for (let pos = 0; pos < size * size; pos++) {
+      const cell = document.createElement('div');
+      const row = rowOf(pos, size);
+      const col = colOf(pos, size);
+      const tone = (row * 3 + col * 5 + size) % 4;
+      const isWall = state.walls.has(pos);
+      const isGoal = state.goals.has(pos);
+      cell.className = `mh-cell ${isWall ? 'wall' : `floor tone-${tone}`}${isGoal ? ' goal' : ''}${reachable.has(pos) && !isWall ? ' reachable' : ''}`;
+      cell.dataset.pos = String(pos);
+      const boxHere = state.boxes.includes(pos);
+      if (boxHere) cell.appendChild(createBoxElement(isGoal));
+      if (state.player === pos) cell.appendChild(createPlayerElement());
+      board.appendChild(cell);
+    }
+  }
+
+  function createBoxElement(done) {
+    const el = document.createElement('span');
+    el.className = `mh-box${done ? ' done' : ''}`;
+    el.innerHTML = createCrateSvg(done);
+    return el;
+  }
+
+  function createCrateSvg(done) {
+    const suffix = `crate_${Math.random().toString(36).slice(2)}`;
+    const palette = done
+      ? { top: '#f87171', mid: '#dc2626', low: '#991b1b', rail: '#fecaca', railShadow: '#7f1d1d', metal: '#fed7aa', shine: '#fee2e2' }
+      : { top: '#f7c88f', mid: '#d9863f', low: '#8f451d', rail: '#ffe0b0', railShadow: '#8a3f17', metal: '#d38a45', shine: '#fff1c7' };
+    const glow = done ? `<rect x="4" y="4" width="92" height="92" rx="10" fill="none" stroke="#86efac" stroke-width="5" opacity=".75"/>` : '';
+    return `
+      <svg viewBox="0 0 100 100" role="img" aria-label="${done ? t('crateDone') : t('crate')}" xmlns="http://www.w3.org/2000/svg">
+        <defs>
+          <linearGradient id="${suffix}_face" x1="0" y1="0" x2="1" y2="1">
+            <stop offset="0" stop-color="${palette.top}"/>
+            <stop offset=".48" stop-color="${palette.mid}"/>
+            <stop offset="1" stop-color="${palette.low}"/>
+          </linearGradient>
+          <linearGradient id="${suffix}_rail" x1="0" y1="0" x2="0" y2="1">
+            <stop offset="0" stop-color="${palette.shine}"/>
+            <stop offset=".54" stop-color="${palette.rail}"/>
+            <stop offset="1" stop-color="${palette.railShadow}"/>
+          </linearGradient>
+          <linearGradient id="${suffix}_edge" x1="0" y1="0" x2="1" y2="1">
+            <stop offset="0" stop-color="#fff7ed" stop-opacity=".85"/>
+            <stop offset="1" stop-color="#451a03" stop-opacity=".38"/>
+          </linearGradient>
+          <filter id="${suffix}_inner" x="-15%" y="-15%" width="130%" height="130%">
+            <feDropShadow dx="0" dy="2" stdDeviation="1.2" flood-color="#451a03" flood-opacity=".38"/>
+          </filter>
+        </defs>
+        ${glow}
+        <rect x="8" y="8" width="84" height="84" rx="7" fill="url(#${suffix}_face)" stroke="#5f2b13" stroke-width="4"/>
+        <path d="M13 20 H87 M13 50 H87 M13 80 H87" stroke="#6f3216" stroke-width="2.4" opacity=".34"/>
+        <path d="M20 14 V86 M50 14 V86 M80 14 V86" stroke="#fff7ed" stroke-width="1.7" opacity=".16"/>
+        <path d="M16 15 C30 19 43 13 58 18 C69 22 78 17 87 20" fill="none" stroke="#fff7ed" stroke-width="2" stroke-linecap="round" opacity=".28"/>
+        <path d="M14 34 C31 29 45 38 59 33 C72 29 82 34 88 31" fill="none" stroke="#6f3216" stroke-width="2" stroke-linecap="round" opacity=".28"/>
+        <path d="M14 69 C27 64 40 72 54 68 C68 63 78 69 88 64" fill="none" stroke="#fff7ed" stroke-width="1.7" stroke-linecap="round" opacity=".22"/>
+        <path d="M16 16 L84 84" stroke="#6b2f12" stroke-width="17" stroke-linecap="square" opacity=".5"/>
+        <path d="M84 16 L16 84" stroke="#6b2f12" stroke-width="17" stroke-linecap="square" opacity=".5"/>
+        <path d="M16 16 L84 84" stroke="url(#${suffix}_rail)" stroke-width="12" stroke-linecap="square" filter="url(#${suffix}_inner)"/>
+        <path d="M84 16 L16 84" stroke="url(#${suffix}_rail)" stroke-width="12" stroke-linecap="square" filter="url(#${suffix}_inner)"/>
+        <rect x="8" y="8" width="84" height="84" rx="7" fill="none" stroke="url(#${suffix}_edge)" stroke-width="5"/>
+        <rect x="14" y="14" width="72" height="72" rx="3" fill="none" stroke="#fff7ed" stroke-width="2" opacity=".34"/>
+        <path d="M11 11 H86" stroke="#fff7ed" stroke-width="4" stroke-linecap="round" opacity=".34"/>
+        <g fill="${palette.metal}" stroke="#5f2b13" stroke-width="1.8">
+          <circle cx="15" cy="15" r="4"/><circle cx="85" cy="15" r="4"/><circle cx="15" cy="85" r="4"/><circle cx="85" cy="85" r="4"/>
+          <circle cx="28" cy="50" r="3.3"/><circle cx="72" cy="50" r="3.3"/>
+        </g>
+        <g fill="#fff7ed" opacity=".55">
+          <circle cx="13.8" cy="13.5" r="1.2"/><circle cx="83.8" cy="13.5" r="1.2"/><circle cx="26.9" cy="48.6" r="1"/>
+        </g>
+      </svg>
+    `;
+  }
+
+  function createPlayerElement() {
+    const el = document.createElement('span');
+    el.className = 'mh-player';
+    if (state.petAsset?.url) {
+      const sprite = document.createElement('span');
+      sprite.className = 'sprite';
+      sprite.style.backgroundImage = `url("${state.petAsset.url}")`;
+      const uv = state.petAsset.uv;
+      sprite.style.backgroundSize = uv.cols > 1 || uv.rows > 1 ? `${uv.cols * 100}% ${uv.rows * 100}%` : 'contain';
+      sprite.style.backgroundPosition = uv.cols > 1 || uv.rows > 1 ? `${uv.col * 100 / Math.max(1, uv.cols - 1)}% ${uv.row * 100 / Math.max(1, uv.rows - 1)}%` : 'center';
+      el.appendChild(sprite);
+    } else {
+      el.classList.add('fallback-player');
+      const fallback = document.createElement('span');
+      fallback.className = 'fallback';
+      fallback.textContent = FALLBACK_PET;
+      el.appendChild(fallback);
+    }
+    return el;
+  }
+
+  function winLevel() {
+    state.finished = true;
+    clearInterval(state.timer);
+    state.bestLevel = Math.max(state.bestLevel, state.level + 1);
+    localStorage.setItem(STORAGE_KEY_BEST, String(state.bestLevel));
+    const difficulty = DIFFICULTIES[state.difficulty];
+    const efficiency = Math.max(0, state.solutionPushes ? state.solutionPushes - state.pushes : 0);
+    const earnedPoints = difficulty.reward + state.level * 8 + efficiency * 4;
+    byId('mhWinText').textContent = t('winText', { level: state.level, label: difficulty.label, pushes: state.pushes, solution: state.solutionPushes });
+    byId('mhWin').hidden = false;
+    showToast(t('toastWin'));
+    launchConfetti();
+    post('gameFinished', {
+      earnedPoints,
+      score: earnedPoints,
+      difficulty: state.difficulty,
+      difficultyLabel: difficulty.label,
+      level: state.level,
+      moves: state.moves,
+      pushes: state.pushes,
+      solutionPushes: state.solutionPushes,
+      seconds: state.seconds,
+      finishedAt: Date.now(),
+    });
+  }
+
+  function updateStats() {
+    const difficulty = DIFFICULTIES[state.difficulty] || DIFFICULTIES.normal;
+    byId('mhLevel').textContent = String(state.level);
+    byId('mhDifficultyLabel').textContent = difficulty.label;
+    byId('mhPushes').textContent = String(state.pushes);
+    byId('mhMoves').textContent = String(state.moves);
+    byId('mhTime').textContent = String(state.seconds);
+  }
+
+  function onKeyDown(event) {
+    if (byId('mhHowTo').hidden === false || byId('mhWin').hidden === false) return;
+    const keyMap = {
+      ArrowUp: 'up', w: 'up', W: 'up',
+      ArrowRight: 'right', d: 'right', D: 'right',
+      ArrowDown: 'down', s: 'down', S: 'down',
+      ArrowLeft: 'left', a: 'left', A: 'left',
+    };
+    const dir = keyMap[event.key];
+    if (!dir) return;
+    event.preventDefault();
+    movePlayer(dir);
+  }
+
+  function onPointerDown(event) {
+    state.pointer = { x: event.clientX, y: event.clientY };
+  }
+
+  function onPointerUp(event) {
+    if (!state.pointer) return;
+    const dx = event.clientX - state.pointer.x;
+    const dy = event.clientY - state.pointer.y;
+    state.pointer = null;
+    if (Math.max(Math.abs(dx), Math.abs(dy)) < 18) {
+      const cell = event.target.closest?.('.mh-cell');
+      if (cell?.dataset?.pos) moveToward(Number(cell.dataset.pos));
+      return;
+    }
+    if (Math.abs(dx) > Math.abs(dy)) movePlayer(dx > 0 ? 'right' : 'left');
+    else movePlayer(dy > 0 ? 'down' : 'up');
+  }
+
+  function moveToward(pos) {
+    if (!state.board) return;
+    const playerRow = rowOf(state.player, state.board.size);
+    const playerCol = colOf(state.player, state.board.size);
+    const targetRow = rowOf(pos, state.board.size);
+    const targetCol = colOf(pos, state.board.size);
+    const dr = targetRow - playerRow;
+    const dc = targetCol - playerCol;
+    if (Math.abs(dr) + Math.abs(dc) !== 1) return;
+    if (dr < 0) movePlayer('up');
+    else if (dr > 0) movePlayer('down');
+    else if (dc < 0) movePlayer('left');
+    else if (dc > 0) movePlayer('right');
+  }
+
+  function restoreSnapshot(puzzle) {
+    state.walls = new Set(puzzle.walls);
+    state.goals = new Set(puzzle.goals);
+    state.boxes = normalizeBoxes(puzzle.boxes);
+    state.player = puzzle.player;
+  }
+
+  function showHowTo() {
+    byId('mhHowTo').hidden = false;
+  }
+
+  function showToast(text) {
+    const toast = document.createElement('div');
+    toast.className = 'mh-toast';
+    toast.textContent = text;
+    document.body.appendChild(toast);
+    setTimeout(() => toast.remove(), 1300);
+  }
+
+  function launchConfetti() {
+    const colors = ['#f97316', '#facc15', '#22c55e', '#38bdf8', '#ec4899', '#8b5cf6'];
+    for (let i = 0; i < 44; i++) {
+      const piece = document.createElement('span');
+      piece.className = 'mh-confetti';
+      piece.style.left = `${Math.random() * 100}vw`;
+      piece.style.setProperty('--x', `${(Math.random() - .5) * 150}px`);
+      piece.style.setProperty('--c', colors[i % colors.length]);
+      piece.style.setProperty('--d', `${1.2 + Math.random() * .9}s`);
+      document.body.appendChild(piece);
+      setTimeout(() => piece.remove(), 2300);
+    }
+  }
+
+  function requestPetImage(petId = '') {
+    const requestId = `sokoban_pet_${Date.now()}_${Math.floor(Math.random() * 1000)}`;
+    state.petRequestId = requestId;
+    post('haqi_get_pet_image', { requestId, anim: 'idle', petId: petId || undefined }, { requestId, anim: 'idle', petId: petId || undefined });
+    setTimeout(() => {
+      if (state.petAsset?.url) return;
+      const fallbackId = `sokoban_pets_${Date.now()}_${Math.floor(Math.random() * 1000)}`;
+      post('haqi_get_pet_images', { requestId: fallbackId, anim: 'idle' }, { requestId: fallbackId, anim: 'idle' });
+    }, 900);
+  }
+
+  function setPetImage(pet) {
+    if (!pet?.imageBlob || !pet?.uv) return;
+    if (state.petAsset?.url) {
+      URL.revokeObjectURL(state.petAsset.url);
+      state.objectUrls = state.objectUrls.filter(url => url !== state.petAsset.url);
+    }
+    const url = URL.createObjectURL(pet.imageBlob);
+    state.objectUrls.push(url);
+    state.petAsset = { url, uv: pet.uv };
+    renderBoard();
+  }
+
+  function isFree(pos, boxes, puzzle) {
+    return pos >= 0 && pos < puzzle.size * puzzle.size && !puzzle.walls.has(pos) && !boxes.includes(pos);
+  }
+
+  function isSolvedBoxes(boxes, goals) {
+    return boxes.every(pos => goals.has(pos));
+  }
+
+  function hasDeadBox(boxes, puzzle) {
+    return boxes.some(pos => !puzzle.goals.has(pos) && isSimpleCorner(pos, puzzle.walls, puzzle.size));
+  }
+
+  function isSimpleCorner(pos, walls, size) {
+    const up = walls.has(pos - size);
+    const down = walls.has(pos + size);
+    const left = walls.has(pos - 1);
+    const right = walls.has(pos + 1);
+    return (up || down) && (left || right);
+  }
+
+  function largestOpenArea(open, walls, size) {
+    const openSet = new Set(open);
+    const seen = new Set();
+    let largest = 0;
+    for (const start of openSet) {
+      if (seen.has(start)) continue;
+      let count = 0;
+      const queue = [start];
+      seen.add(start);
+      for (let cursor = 0; cursor < queue.length; cursor++) {
+        const pos = queue[cursor];
+        count++;
+        for (const dir of DIRS) {
+          const next = pos + dir.dr * size + dir.dc;
+          if (seen.has(next) || walls.has(next) || !openSet.has(next)) continue;
+          seen.add(next);
+          queue.push(next);
+        }
+      }
+      largest = Math.max(largest, count);
+    }
+    return largest;
+  }
+
+  function innerCells(size) {
+    const cells = [];
+    for (let r = 1; r < size - 1; r++) {
+      for (let c = 1; c < size - 1; c++) cells.push(idx(r, c, size));
+    }
+    return cells;
+  }
+
+  function borderWalls(size) {
+    const cells = [];
+    for (let r = 0; r < size; r++) {
+      for (let c = 0; c < size; c++) {
+        if (r === 0 || c === 0 || r === size - 1 || c === size - 1) cells.push(idx(r, c, size));
+      }
+    }
+    return cells;
+  }
+
+  function normalizeBoxes(boxes) {
+    return [...boxes].sort((a, b) => a - b);
+  }
+
+  function stateKey(player, boxes) {
+    return `${player}|${boxes.join(',')}`;
+  }
+
+  function normalizeDifficulty(value) {
+    return DIFFICULTIES[value] ? value : 'normal';
+  }
+
+  function nearBorder(pos, size) {
+    const r = rowOf(pos, size);
+    const c = colOf(pos, size);
+    return r === 1 || c === 1 || r === size - 2 || c === size - 2;
+  }
+
+  function manhattan(a, b, size) {
+    return Math.abs(rowOf(a, size) - rowOf(b, size)) + Math.abs(colOf(a, size) - colOf(b, size));
+  }
+
+  function rowOf(pos, size) { return Math.floor(pos / size); }
+  function colOf(pos, size) { return pos % size; }
+  function idx(row, col, size) { return row * size + col; }
+
+  function shuffle(items) {
+    for (let i = items.length - 1; i > 0; i--) {
+      const j = Math.floor(Math.random() * (i + 1));
+      [items[i], items[j]] = [items[j], items[i]];
+    }
+    return items;
+  }
+
+  function post(type, data = {}, extra = {}) {
+    try {
+      window.parent.postMessage({ type, data, ...extra }, '*');
+    } catch (_) {}
+  }
+
+  function byId(id) {
+    return document.getElementById(id);
+  }
+
+  window.addEventListener('beforeunload', () => {
+    clearInterval(state.timer);
+    state.objectUrls.forEach(url => URL.revokeObjectURL(url));
+  });
+
+  boot();
+})();
+</script>
+
+</html>

@@ -1,0 +1,837 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+  <title>宠物五子棋</title>
+  <script src="https://cdn.keepwork.com/keepwork/cdn/tailwindcss@3.4.16.js"></script>
+  <style>
+    * { box-sizing: border-box; -webkit-tap-highlight-color: transparent; user-select: none; }
+    html, body { width: 100%; height: 100%; margin: 0; overflow: hidden; }
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, "PingFang SC", "Microsoft YaHei", sans-serif;
+      color: #263238;
+      background: linear-gradient(180deg, #dff7ff 0%, #fff7d6 52%, #dcfce7 100%);
+      touch-action: none;
+    }
+    .shell { height: 100vh; height: 100dvh; display: grid; grid-template-rows: auto minmax(0, 1fr) auto; gap: 10px; padding: 10px; }
+    .top {
+      min-height: 58px; display: flex; align-items: center; justify-content: space-between; gap: 10px;
+      padding: 9px 12px; border-radius: 14px; background: rgba(255,255,255,.88);
+      border: 2px solid rgba(255,255,255,.9); box-shadow: 0 5px 0 rgba(14,116,144,.14);
+    }
+    .title { font-size: 20px; font-weight: 1000; color: #075985; white-space: nowrap; }
+    .stats { display: flex; align-items: center; justify-content: flex-end; gap: 7px; flex-wrap: wrap; }
+    .pill, .selectWrap {
+      min-width: 66px; height: 32px; display: inline-flex; align-items: center; justify-content: center; gap: 4px;
+      padding: 0 10px; border-radius: 999px; background: #fff; border: 1px solid rgba(14,116,144,.2);
+      color: #0f766e; font-size: 13px; font-weight: 900; box-shadow: 0 2px 0 rgba(14,116,144,.12);
+    }
+    .turnBadge { color: #fff; background: #0ea5e9; border-color: rgba(14,165,233,.4); transition: background .18s ease, transform .18s ease; }
+    .turnBadge.thinking { background: #8b5cf6; }
+    .turnBadge.result { background: #f97316; }
+    .selectWrap { padding-right: 8px; }
+    .selectWrap select { border: 0; outline: 0; background: transparent; color: #0f766e; font: inherit; max-width: 70px; }
+    .main { min-height: 0; display: grid; grid-template-columns: minmax(0, 1fr) minmax(150px, 220px); gap: 10px; }
+    .boardPanel, .petPanel, .bottom {
+      border-radius: 16px; background: rgba(255,255,255,.74); border: 2px solid rgba(255,255,255,.9);
+      box-shadow: 0 10px 24px rgba(15,23,42,.15);
+    }
+    .boardPanel { min-height: 0; display: grid; place-items: center; padding: 8px; overflow: hidden; }
+    .board {
+      position: relative; width: min(100%, 620px, calc(100dvh - 150px)); aspect-ratio: 1 / 1;
+      border-radius: 12px; background: linear-gradient(135deg, #f5c978, #dda853);
+      border: 5px solid #9a6428; box-shadow: inset 0 0 0 3px rgba(255,255,255,.18), 0 10px 18px rgba(76,45,14,.24);
+      overflow: hidden; cursor: pointer;
+    }
+    .board.isThinking { cursor: wait; }
+    .board.isResult, .board.isIntro { cursor: default; }
+    .board.isThinking::after {
+      content: attr(data-thinking-text); position: absolute; left: 50%; top: 12px; z-index: 4; transform: translateX(-50%);
+      border-radius: 999px; background: rgba(139,92,246,.9); color: #fff; padding: 6px 12px; font-size: 13px; font-weight: 1000;
+      box-shadow: 0 5px 12px rgba(15,23,42,.2); pointer-events: none;
+    }
+    .board svg { position: absolute; inset: 0; width: 100%; height: 100%; pointer-events: none; }
+    .point {
+      position: absolute; width: 7.8%; aspect-ratio: 1; transform: translate(-50%, -50%);
+      border: 0; border-radius: 50%; background: transparent; padding: 0; pointer-events: none; z-index: 2;
+    }
+    .point.hint::after {
+      content: ""; position: absolute; left: 50%; top: 50%; width: 28%; height: 28%; transform: translate(-50%, -50%);
+      border-radius: 50%; background: rgba(34,197,94,.58); box-shadow: 0 0 8px rgba(34,197,94,.38);
+    }
+    .point.hint.defense::after { background: rgba(14,165,233,.65); box-shadow: 0 0 8px rgba(14,165,233,.4); }
+    .point.hint.win::after { width: 36%; height: 36%; background: rgba(250,204,21,.78); box-shadow: 0 0 12px rgba(250,204,21,.5); }
+    .point.last { background: rgba(14,165,233,.16); box-shadow: inset 0 0 0 2px rgba(14,165,233,.34); }
+    .point.lastWhite { background: rgba(139,92,246,.16); box-shadow: inset 0 0 0 2px rgba(139,92,246,.32); }
+    .stone {
+      position: absolute; inset: 8%; border-radius: 50%; box-shadow: inset 0 2px 5px rgba(255,255,255,.45), inset 0 -7px 10px rgba(15,23,42,.22), 0 3px 7px rgba(15,23,42,.33);
+    }
+    .stone.new { animation: stoneDrop .2s ease-out; }
+    .stone.black { background: radial-gradient(circle at 34% 28%, #64748b 0%, #1f2937 38%, #020617 100%); border: 2px solid #020617; }
+    .stone.white { background: radial-gradient(circle at 34% 28%, #fff 0%, #f8fafc 42%, #cbd5e1 100%); border: 2px solid #64748b; }
+    .point.win .stone { animation: winPulse .72s ease-in-out infinite; box-shadow: 0 0 0 5px rgba(250,204,21,.44), 0 6px 12px rgba(15,23,42,.28); }
+    .petPanel { min-width: 0; display: grid; grid-template-rows: auto minmax(0, 1fr) auto; gap: 9px; padding: 12px; text-align: center; }
+    .petTitle { font-size: 16px; font-weight: 1000; color: #075985; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+    .petAvatarWrap { min-height: 0; display: grid; place-items: center; }
+    .petAvatar {
+      width: min(150px, 30vmin); height: min(150px, 30vmin); border-radius: 20px;
+      background: linear-gradient(180deg, #e0f2fe, #fef3c7); border: 3px solid #7dd3fc;
+      box-shadow: 0 7px 0 rgba(14,116,144,.16); display: grid; place-items: center; overflow: hidden;
+    }
+    .petAvatar.thinking { animation: petThink .7s ease-in-out infinite alternate; }
+    .petAvatar.happy { animation: petHappy .45s ease-in-out 3; }
+    .petSprite { width: 100%; height: 100%; background-repeat: no-repeat; image-rendering: auto; }
+    .petFallback { font-size: 54px; font-weight: 1000; color: #0ea5e9; }
+    .petBubble {
+      font-size: 14px; line-height: 1.45; font-weight: 900; color: #164e63; background: #ecfeff;
+      border: 2px solid #a5f3fc; border-radius: 13px; padding: 9px;
+    }
+    .bottom { min-height: 58px; display: flex; align-items: center; justify-content: space-between; gap: 10px; padding: 9px 12px; }
+    .status { min-width: 0; font-size: 16px; line-height: 1.35; font-weight: 1000; color: #7c2d12; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+    .actions { display: flex; gap: 8px; flex-wrap: wrap; justify-content: flex-end; }
+    .btn {
+      border: 0; border-radius: 999px; padding: 10px 15px; font-family: inherit; font-weight: 1000;
+      background: #0ea5e9; color: #fff; cursor: pointer; box-shadow: 0 4px 0 rgba(15,23,42,.24);
+    }
+    .btn:active { transform: translateY(2px); box-shadow: 0 2px 0 rgba(15,23,42,.24); }
+    .btn:disabled { opacity: .48; cursor: not-allowed; transform: none; box-shadow: 0 2px 0 rgba(15,23,42,.12); }
+    .btn-orange { background: #f97316; }
+    .btn-soft { background: #fff7ed; color: #9a3412; border: 2px solid #fed7aa; }
+    .overlay { position: fixed; inset: 0; z-index: 20; display: flex; align-items: center; justify-content: center; padding: 16px; background: rgba(15,39,71,.46); }
+    .card { width: min(92vw, 420px); border-radius: 18px; background: #fff; border: 3px solid #fbbf24; padding: 22px; box-shadow: 0 18px 42px rgba(15,23,42,.28); }
+    .card h1 { margin: 0 0 10px; font-size: 28px; line-height: 1.1; font-weight: 1000; color: #b45309; }
+    .card p { margin: 0 0 16px; font-size: 15px; line-height: 1.7; font-weight: 850; color: #0f2747; }
+    .cardActions { display: flex; gap: 10px; flex-wrap: wrap; }
+    .resultStats { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 8px; margin: 14px 0 16px; }
+    .resultStat { border-radius: 12px; background: #ecfeff; border: 2px solid #a5f3fc; padding: 10px; color: #164e63; font-size: 14px; font-weight: 1000; }
+    .resultStat b { display: block; margin-top: 2px; color: #0f766e; font-size: 18px; }
+    .toast { position: fixed; left: 50%; top: 50%; z-index: 30; transform: translate(-50%, -50%); border-radius: 15px; background: #fff; border: 3px solid #7dd3fc; padding: 14px 18px; font-size: 18px; line-height: 1.45; font-weight: 1000; text-align: center; box-shadow: 0 15px 36px rgba(15,23,42,.28); }
+    [hidden] { display: none !important; }
+    @keyframes winPulse { 0%,100% { transform: scale(1); } 50% { transform: scale(1.12); } }
+    @keyframes stoneDrop { from { transform: scale(.55); opacity: .2; } to { transform: scale(1); opacity: 1; } }
+    @keyframes petThink { from { transform: translateY(0); } to { transform: translateY(-5px); } }
+    @keyframes petHappy { 0%,100% { transform: scale(1); } 50% { transform: scale(1.07) rotate(2deg); } }
+    @media (max-width: 720px) {
+      .shell { padding: 7px; gap: 7px; }
+      .main { grid-template-columns: 1fr; grid-template-rows: auto minmax(0, 1fr); }
+      .petPanel { order: -1; grid-template-columns: auto 1fr; grid-template-rows: auto auto; align-items: center; text-align: left; padding: 8px; }
+      .petAvatarWrap { grid-row: 1 / 3; }
+      .petAvatar { width: 76px; height: 76px; border-radius: 13px; }
+      .petTitle { grid-column: 2; }
+      .petBubble { font-size: 13px; padding: 7px; }
+      .board { width: min(100%, calc(100dvh - 230px)); }
+      .top { align-items: flex-start; }
+      .title { font-size: 18px; }
+      .pill { min-width: 58px; height: 29px; font-size: 12px; padding: 0 8px; }
+      .selectWrap { min-width: 84px; height: 29px; font-size: 12px; padding: 0 6px 0 8px; }
+      .bottom { align-items: stretch; flex-direction: column; }
+      .status { white-space: normal; }
+      .actions { width: 100%; justify-content: space-between; }
+      .btn { padding: 9px 13px; }
+    }
+  </style>
+</head>
+
+<body>
+  <div class="shell">
+    <div class="top">
+      <div class="title">宠物五子棋</div>
+      <div class="stats">
+        <span class="pill"><span id="stepsLabel">手数</span> <b id="steps">0</b></span>
+        <span class="pill"><span id="scoreLabel">得分</span> <b id="score">0</b></span>
+        <span class="pill turnBadge" id="turnBadge">准备</span>
+        <label class="selectWrap"><span id="diffLabel">难度</span>
+          <select id="difficulty" aria-label="难度">
+            <option value="easy">轻松</option>
+            <option value="normal" selected>普通</option>
+            <option value="hard">挑战</option>
+          </select>
+        </label>
+      </div>
+    </div>
+    <div class="main">
+      <div class="boardPanel"><div id="board" class="board" aria-label="五子棋棋盘"></div></div>
+      <aside class="petPanel">
+        <div class="petTitle" id="petName">宠物执白棋</div>
+        <div class="petAvatarWrap"><div id="petAvatar" class="petAvatar"><span class="petFallback">五</span></div></div>
+        <div class="petBubble" id="petTalk">你执黑棋先走，我们来连成五子吧。</div>
+      </aside>
+    </div>
+    <div class="bottom">
+      <div id="status" class="status">点击开始后，你先落黑棋</div>
+      <div class="actions">
+        <button id="help" class="btn btn-soft" type="button">玩法</button>
+        <button id="hint" class="btn btn-soft" type="button">提示</button>
+        <button id="undo" class="btn btn-soft" type="button">悔棋</button>
+        <button id="restart" class="btn btn-orange" type="button">重新开始</button>
+      </div>
+    </div>
+  </div>
+
+  <div id="intro" class="overlay" role="dialog" aria-modal="true" aria-labelledby="introTitle">
+    <div class="card">
+      <h1 id="introTitle">宠物五子棋</h1>
+      <p>你执黑棋先手，宠物执白棋。点击棋盘交叉点落子，横、竖或斜线任意方向先连成五子即可获胜。完成一局会提升亲密度。</p>
+      <button id="start" class="btn btn-orange" type="button">开始对弈</button>
+    </div>
+  </div>
+
+  <div id="result" class="overlay" role="dialog" aria-modal="true" aria-labelledby="resultTitle" hidden>
+    <div class="card">
+      <h1 id="resultTitle">本局结束</h1>
+      <p id="resultText">亲密度提升</p>
+      <div class="resultStats">
+        <div class="resultStat"><span id="rStepsLabel">手数</span><b id="resultSteps">0</b></div>
+        <div class="resultStat"><span id="rScoreLabel">得分</span><b id="resultScore">0</b></div>
+        <div class="resultStat"><span id="rDiffLabel">难度</span><b id="resultDifficulty">普通</b></div>
+        <div class="resultStat"><span id="rRewardLabel">奖励</span><b id="resultReward">0</b></div>
+      </div>
+      <div class="cardActions">
+        <button id="again" class="btn btn-orange" type="button">再来一局</button>
+        <button id="closeResult" class="btn btn-soft" type="button">查看棋盘</button>
+      </div>
+    </div>
+  </div>
+
+  <script>
+    // ---- i18n ----
+    const I18N = {
+      zhCN: {
+        title: '宠物五子棋',
+        stepsLabel: '手数',
+        scoreLabel: '得分',
+        ready: '准备',
+        difficultyLabel: '难度',
+        diffEasy: '轻松',
+        diffNormal: '普通',
+        diffHard: '挑战',
+        boardAria: '五子棋棋盘',
+        petPlaysWhite: '宠物执白棋',
+        petFallbackChar: '五',
+        introBubble: '你执黑棋先走，我们来连成五子吧。',
+        initialStatus: '点击开始后，你先落黑棋',
+        helpBtn: '玩法',
+        hintBtn: '提示',
+        undoBtn: '悔棋',
+        restartBtn: '重新开始',
+        introTitle: '宠物五子棋',
+        introText: '你执黑棋先手，宠物执白棋。点击棋盘交叉点落子，横、竖或斜线任意方向先连成五子即可获胜。完成一局会提升亲密度。',
+        startGame: '开始对弈',
+        continueGame: '继续对弈',
+        resultTitle: '本局结束',
+        resultDefault: '亲密度提升',
+        resultStepsLabel: '手数',
+        resultScoreLabel: '得分',
+        resultDiffLabel: '难度',
+        resultRewardLabel: '奖励',
+        playAgain: '再来一局',
+        viewBoard: '查看棋盘',
+        thinkingOverlay: '宠物思考中',
+        blackName: '黑棋',
+        whiteName: '白棋',
+        occupied: '这里已经有棋子了',
+        niceLineToast: '漂亮连线<br>+{gain} 分',
+        petThinking: '宠物正在思考...',
+        dangerousMove: '这一步很危险，我得认真挡住。',
+        letMeSee: '我看看哪里最关键。',
+        boardFull: '棋盘已满',
+        yourTurnBlack: '轮到你落黑棋',
+        petThinkingBadge: '宠物思考',
+        gameOverBadge: '本局结束',
+        yourTurnBadge: '你的回合',
+        hideHint: '收起提示',
+        fiveInRow: '{side}连成五子',
+        hintWin: '金色提示能直接连成五子。',
+        hintDefense: '蓝色提示适合防守我的连线。',
+        hintAttack: '绿色提示适合继续进攻。',
+        hintPenalty: '已显示提示，使用提示扣 3 分',
+        hintHidden: '提示收起来啦，试试自己的判断。',
+        petThreat: '我也连出威胁了，看看你能不能挡住。',
+        strongLine: '你已经有很强的连线了。',
+        yourTurn: '轮到你啦。',
+        youGoFirst: '你先走，我执白棋。',
+        undone: '已悔棋，轮到你落黑棋',
+        noWorries: '没关系，我们再想一次。',
+        youWin: '你赢啦！',
+        draw: '平局',
+        petWins: '宠物获胜',
+        bondIncreased: '亲密度提升',
+        greatLine: '好厉害！这条连线太漂亮了。',
+        fullBoardGreat: '下满一盘也很棒。',
+        iWon: '这局我赢啦，我们再来。',
+        gameComplete: '本局完成',
+        resultTextFmt: '{reason}，亲密度提升。',
+        petNameWhite: '{name}执白棋',
+        pet: '宠物',
+        diffSwitched: '难度切换为{name}。',
+      },
+      enUS: {
+        title: 'Pet Gomoku',
+        stepsLabel: 'Moves',
+        scoreLabel: 'Score',
+        ready: 'Ready',
+        difficultyLabel: 'Level',
+        diffEasy: 'Easy',
+        diffNormal: 'Normal',
+        diffHard: 'Hard',
+        boardAria: 'Gomoku board',
+        petPlaysWhite: 'Pet plays White',
+        petFallbackChar: 'G',
+        introBubble: 'You play Black first. Let\'s connect five in a row!',
+        initialStatus: 'After starting, you place Black first',
+        helpBtn: 'Help',
+        hintBtn: 'Hint',
+        undoBtn: 'Undo',
+        restartBtn: 'Restart',
+        introTitle: 'Pet Gomoku',
+        introText: 'You play Black first, Pet plays White. Tap an intersection to place a stone. Connect five in a row horizontally, vertically, or diagonally to win. Completing a game increases bond.',
+        startGame: 'Start Game',
+        continueGame: 'Continue Game',
+        resultTitle: 'Game Over',
+        resultDefault: 'Bond increased',
+        resultStepsLabel: 'Moves',
+        resultScoreLabel: 'Score',
+        resultDiffLabel: 'Level',
+        resultRewardLabel: 'Reward',
+        playAgain: 'Play Again',
+        viewBoard: 'View Board',
+        thinkingOverlay: 'Pet is thinking\u2026',
+        blackName: 'Black',
+        whiteName: 'White',
+        occupied: 'There is already a stone here',
+        niceLineToast: 'Nice line<br>+{gain} pts',
+        petThinking: 'Pet is thinking...',
+        dangerousMove: 'This move is dangerous. I need to block it carefully.',
+        letMeSee: 'Let me see where it matters most.',
+        boardFull: 'Board is full',
+        yourTurnBlack: 'Your turn to place Black',
+        petThinkingBadge: 'Pet thinking',
+        gameOverBadge: 'Game Over',
+        yourTurnBadge: 'Your Turn',
+        hideHint: 'Hide Hint',
+        fiveInRow: '{side} connected five',
+        hintWin: 'The gold hint connects five directly.',
+        hintDefense: 'The blue hint is good for defending my line.',
+        hintAttack: 'The green hint is good for continuing the attack.',
+        hintPenalty: 'Hints shown. -3 points for using hints',
+        hintHidden: 'Hints hidden. Try your own judgment.',
+        petThreat: 'I\'ve created a threat too. Let\'s see if you can block it.',
+        strongLine: 'You already have a strong line.',
+        yourTurn: 'Your turn.',
+        youGoFirst: 'You go first. I\'ll play White.',
+        undone: 'Undone. Your turn to place Black',
+        noWorries: 'No worries. Let\'s think again.',
+        youWin: 'You Win!',
+        draw: 'Draw',
+        petWins: 'Pet Wins',
+        bondIncreased: 'Bond increased',
+        greatLine: 'Amazing! That line is beautiful.',
+        fullBoardGreat: 'Filling the whole board is great too.',
+        iWon: 'I won this round. Let\'s play again.',
+        gameComplete: 'Game complete',
+        resultTextFmt: '{reason}. Bond increased.',
+        petNameWhite: '{name} plays White',
+        pet: 'Pet',
+        diffSwitched: 'Difficulty switched to {name}.',
+      },
+    };
+    function detectLang() {
+      try {
+        const params = new URLSearchParams(window.location.search);
+        const lang = params.get('lang');
+        if (lang && I18N[lang]) return lang;
+      } catch (_) {}
+      return 'zhCN';
+    }
+    const LANG = detectLang();
+    const L = I18N[LANG];
+    function t(key, vars) {
+      let str = L[key] || I18N.zhCN[key] || key;
+      if (vars) str = str.replace(/\{(\w+)\}/g, (m, n) => vars[n] != null ? String(vars[n]) : m);
+      return str;
+    }
+    try { document.documentElement.setAttribute('lang', LANG === 'enUS' ? 'en' : 'zh-CN'); } catch (_) {}
+    try { document.title = t('title'); } catch (_) {}
+
+    const SIZE = 15;
+    const EMPTY = '';
+    const BLACK = 'black';
+    const WHITE = 'white';
+    const DIRECTIONS = [[1, 0], [0, 1], [1, 1], [1, -1]];
+    const DIFFICULTIES = {
+      easy: { level: 0, name: t('diffEasy'), own: .82, block: .66, noise: 80, missBlock: .28, reward: 24 },
+      normal: { level: 1, name: t('diffNormal'), own: 1.12, block: 1.02, noise: 8, missBlock: 0, reward: 32 },
+      hard: { level: 2, name: t('diffHard'), own: 1.22, block: 1.18, noise: 2, missBlock: 0, reward: 46 },
+    };
+    const els = {
+      board: document.getElementById('board'),
+      status: document.getElementById('status'),
+      steps: document.getElementById('steps'),
+      score: document.getElementById('score'),
+      turnBadge: document.getElementById('turnBadge'),
+      difficulty: document.getElementById('difficulty'),
+      intro: document.getElementById('intro'),
+      result: document.getElementById('result'),
+      resultTitle: document.getElementById('resultTitle'),
+      resultText: document.getElementById('resultText'),
+      resultSteps: document.getElementById('resultSteps'),
+      resultScore: document.getElementById('resultScore'),
+      resultDifficulty: document.getElementById('resultDifficulty'),
+      resultReward: document.getElementById('resultReward'),
+      petAvatar: document.getElementById('petAvatar'),
+      petName: document.getElementById('petName'),
+      petTalk: document.getElementById('petTalk'),
+      start: document.getElementById('start'),
+      hint: document.getElementById('hint'),
+      undo: document.getElementById('undo'),
+      restart: document.getElementById('restart'),
+    };
+
+    // Apply i18n to static HTML
+    document.querySelector('.title').textContent = t('title');
+    document.getElementById('stepsLabel').textContent = t('stepsLabel');
+    document.getElementById('scoreLabel').textContent = t('scoreLabel');
+    document.getElementById('diffLabel').textContent = t('difficultyLabel');
+    document.getElementById('difficulty').setAttribute('aria-label', t('difficultyLabel'));
+    document.querySelector('#difficulty option[value="easy"]').textContent = t('diffEasy');
+    document.querySelector('#difficulty option[value="normal"]').textContent = t('diffNormal');
+    document.querySelector('#difficulty option[value="hard"]').textContent = t('diffHard');
+    document.getElementById('board').setAttribute('aria-label', t('boardAria'));
+    document.getElementById('board').dataset.thinkingText = t('thinkingOverlay');
+    document.getElementById('petName').textContent = t('petPlaysWhite');
+    document.querySelector('.petFallback').textContent = t('petFallbackChar');
+    document.getElementById('petTalk').textContent = t('introBubble');
+    document.getElementById('status').textContent = t('initialStatus');
+    document.getElementById('help').textContent = t('helpBtn');
+    document.getElementById('hint').textContent = t('hintBtn');
+    document.getElementById('undo').textContent = t('undoBtn');
+    document.getElementById('restart').textContent = t('restartBtn');
+    document.getElementById('introTitle').textContent = t('introTitle');
+    document.querySelector('#intro .card p').textContent = t('introText');
+    document.getElementById('start').textContent = t('startGame');
+    document.getElementById('resultTitle').textContent = t('resultTitle');
+    document.getElementById('resultText').textContent = t('resultDefault');
+    document.getElementById('rStepsLabel').textContent = t('resultStepsLabel');
+    document.getElementById('rScoreLabel').textContent = t('resultScoreLabel');
+    document.getElementById('rDiffLabel').textContent = t('resultDiffLabel');
+    document.getElementById('rRewardLabel').textContent = t('resultRewardLabel');
+    document.getElementById('again').textContent = t('playAgain');
+    document.getElementById('closeResult').textContent = t('viewBoard');
+
+    let board = createBoard();
+    let phase = 'intro';
+    let turn = BLACK;
+    let steps = 0;
+    let score = 0;
+    let history = [];
+    let lastMove = null;
+    let winLine = [];
+    let finished = false;
+    let difficulty = 'normal';
+    let hintVisible = false;
+    let resultTimer = 0;
+    let petObjectUrl = '';
+    let petRequestId = '';
+
+    function createBoard() { return Array.from({ length: SIZE }, () => Array(SIZE).fill(EMPTY)); }
+    function cloneBoard(source) { return source.map(row => row.slice()); }
+    function inside(x, y) { return x >= 0 && x < SIZE && y >= 0 && y < SIZE; }
+    function keyOf(x, y) { return `${x},${y}`; }
+    function sideName(side) { return side === BLACK ? t('blackName') : t('whiteName'); }
+    function post(type, data = {}, extra = {}) { try { window.parent.postMessage({ type, data, ...extra }, '*'); } catch (e) {} }
+    function setStatus(text) { els.status.textContent = text; updateControls(); }
+    function setPetTalk(text) { els.petTalk.textContent = text; }
+    function clamp(value, min, max) { return Math.max(min, Math.min(max, value)); }
+
+    function boardSvg() {
+      const ns = 'http://www.w3.org/2000/svg';
+      const svg = document.createElementNS(ns, 'svg');
+      svg.setAttribute('viewBox', '-0.6 -0.6 15.2 15.2');
+      for (let i = 0; i < SIZE; i++) {
+        svg.appendChild(line(ns, 0, i, SIZE - 1, i));
+        svg.appendChild(line(ns, i, 0, i, SIZE - 1));
+      }
+      [[3,3], [11,3], [7,7], [3,11], [11,11]].forEach(([x, y]) => {
+        const dot = document.createElementNS(ns, 'circle');
+        dot.setAttribute('cx', x); dot.setAttribute('cy', y); dot.setAttribute('r', '.13');
+        dot.setAttribute('fill', 'rgba(70,36,10,.72)');
+        svg.appendChild(dot);
+      });
+      return svg;
+    }
+    function line(ns, x1, y1, x2, y2) {
+      const el = document.createElementNS(ns, 'line');
+      el.setAttribute('x1', x1); el.setAttribute('y1', y1); el.setAttribute('x2', x2); el.setAttribute('y2', y2);
+      el.setAttribute('stroke', 'rgba(55,30,8,.62)'); el.setAttribute('stroke-width', '.045');
+      return el;
+    }
+    function render() {
+      els.board.innerHTML = '';
+      els.board.appendChild(boardSvg());
+      els.board.classList.toggle('isThinking', phase === 'thinking');
+      els.board.classList.toggle('isResult', phase === 'result');
+      els.board.classList.toggle('isIntro', phase === 'intro');
+      els.petAvatar.classList.toggle('thinking', phase === 'thinking');
+      const pad = 0.6, total = 15.2;
+      const winKeys = new Set(winLine.map(p => keyOf(p.x, p.y)));
+      const hints = phase === 'playing' && turn === BLACK && hintVisible ? getHintCells() : new Map();
+      for (let y = 0; y < SIZE; y++) for (let x = 0; x < SIZE; x++) {
+        const btn = document.createElement('button');
+        btn.type = 'button'; btn.className = 'point'; btn.dataset.x = x; btn.dataset.y = y;
+        btn.style.left = `${((x + pad) / total) * 100}%`;
+        btn.style.top = `${((y + pad) / total) * 100}%`;
+        if (lastMove?.x === x && lastMove?.y === y) btn.classList.add('last', lastMove.side === WHITE ? 'lastWhite' : 'lastBlack');
+        if (winKeys.has(keyOf(x, y))) btn.classList.add('win');
+        const hint = hints.get(keyOf(x, y));
+        if (!board[y][x] && hint) btn.classList.add('hint', hint.type);
+        if (board[y][x]) {
+          const stone = document.createElement('span');
+          stone.className = `stone ${board[y][x]}`;
+          if (lastMove?.x === x && lastMove?.y === y) stone.classList.add('new');
+          btn.appendChild(stone);
+        }
+        els.board.appendChild(btn);
+      }
+      els.steps.textContent = steps;
+      els.score.textContent = score;
+      updateControls();
+    }
+
+    function handleBoardClick(event) {
+      if (phase !== 'playing' || turn !== BLACK) return;
+      const rect = els.board.getBoundingClientRect();
+      const pad = 0.6, total = 15.2;
+      const x = clamp(Math.round(((event.clientX - rect.left) / rect.width) * total - pad), 0, SIZE - 1);
+      const y = clamp(Math.round(((event.clientY - rect.top) / rect.height) * total - pad), 0, SIZE - 1);
+      if (board[y][x]) { setStatus(t('occupied')); return; }
+      hintVisible = false;
+      commitMove(x, y, BLACK);
+    }
+    function commitMove(x, y, side) {
+      history.push({ board: cloneBoard(board), turn, steps, score, lastMove, winLine: winLine.slice(), finished, phase, hintVisible });
+      board[y][x] = side;
+      lastMove = { x, y, side };
+      if (side === BLACK) {
+        steps++;
+        const gain = scoreForMove(x, y, BLACK);
+        score += gain;
+        if (gain >= 40) toast(t('niceLineToast', { gain }));
+      }
+      render();
+      const result = checkResult(x, y, side);
+      if (result.ended) { finish(result.winner, result.reason, result.line); return; }
+      turn = side === BLACK ? WHITE : BLACK;
+      if (turn === WHITE) {
+        phase = 'thinking';
+        setStatus(t('petThinking'));
+        setPetTalk(nearThreat(BLACK) ? t('dangerousMove') : t('letMeSee'));
+        setTimeout(() => {
+          const move = chooseAIMove();
+          if (!move) finish('draw', t('boardFull'), []);
+          else {
+            hintVisible = false;
+            commitMove(move.x, move.y, WHITE);
+          }
+        }, 420);
+      } else {
+        phase = 'playing';
+        setStatus(t('yourTurnBlack'));
+        setPetTalk(reactionAfterPetMove());
+        render();
+      }
+    }
+
+    function updateControls() {
+      const isPlaying = phase === 'playing' && turn === BLACK;
+      els.turnBadge.textContent = phase === 'thinking' ? t('petThinkingBadge') : phase === 'result' ? t('gameOverBadge') : phase === 'playing' ? t('yourTurnBadge') : t('ready');
+      els.turnBadge.classList.toggle('thinking', phase === 'thinking');
+      els.turnBadge.classList.toggle('result', phase === 'result');
+      els.hint.disabled = !isPlaying || finished;
+      els.hint.textContent = hintVisible ? t('hideHint') : t('hintBtn');
+      els.undo.disabled = phase === 'thinking' || finished || history.length < 2;
+      els.difficulty.disabled = phase === 'thinking';
+      els.restart.textContent = phase === 'result' ? t('playAgain') : t('restartBtn');
+    }
+
+    function checkResult(x, y, side) {
+      const line = findFiveLine(x, y, side);
+      if (line.length >= 5) return { ended: true, winner: side, reason: t('fiveInRow', { side: sideName(side) }), line };
+      if (!emptyCells().length) return { ended: true, winner: 'draw', reason: t('boardFull'), line: [] };
+      return { ended: false };
+    }
+    function findFiveLine(x, y, side) {
+      for (const [dx, dy] of DIRECTIONS) {
+        const cells = [{ x, y }];
+        let nx = x + dx, ny = y + dy;
+        while (inside(nx, ny) && board[ny][nx] === side) { cells.push({ x: nx, y: ny }); nx += dx; ny += dy; }
+        nx = x - dx; ny = y - dy;
+        while (inside(nx, ny) && board[ny][nx] === side) { cells.unshift({ x: nx, y: ny }); nx -= dx; ny -= dy; }
+        if (cells.length >= 5) return cells;
+      }
+      return [];
+    }
+    function emptyCells() {
+      const cells = [];
+      for (let y = 0; y < SIZE; y++) for (let x = 0; x < SIZE; x++) if (!board[y][x]) cells.push({ x, y });
+      return cells;
+    }
+    function occupiedCells() {
+      const cells = [];
+      for (let y = 0; y < SIZE; y++) for (let x = 0; x < SIZE; x++) if (board[y][x]) cells.push({ x, y });
+      return cells;
+    }
+    function candidateCells() {
+      const occupied = occupiedCells();
+      if (!occupied.length) return [{ x: 7, y: 7 }];
+      const map = new Map();
+      occupied.forEach(({ x, y }) => {
+        for (let dy = -2; dy <= 2; dy++) for (let dx = -2; dx <= 2; dx++) {
+          const nx = x + dx, ny = y + dy;
+          if (inside(nx, ny) && !board[ny][nx]) map.set(keyOf(nx, ny), { x: nx, y: ny });
+        }
+      });
+      return Array.from(map.values());
+    }
+    function chooseAIMove() {
+      const candidates = candidateCells();
+      if (!candidates.length) return null;
+      const config = DIFFICULTIES[difficulty] || DIFFICULTIES.normal;
+      const winning = candidates.find(cell => scoreCell(cell.x, cell.y, WHITE) >= 1000000);
+      if (winning) return winning;
+      const mustBlock = candidates.find(cell => scoreCell(cell.x, cell.y, BLACK) >= 1000000);
+      if (mustBlock && Math.random() >= config.missBlock) return mustBlock;
+      if (difficulty === 'hard') {
+        const openFour = candidates.find(cell => scoreCell(cell.x, cell.y, BLACK) >= 120000);
+        if (openFour) return openFour;
+      }
+      let best = null;
+      for (const cell of candidates) {
+        const own = scoreCell(cell.x, cell.y, WHITE);
+        const block = scoreCell(cell.x, cell.y, BLACK);
+        const center = 16 - Math.abs(7 - cell.x) - Math.abs(7 - cell.y);
+        const score = own * config.own + block * config.block + center * 4 + Math.random() * config.noise;
+        if (!best || score > best.score) best = { ...cell, score };
+      }
+      return best;
+    }
+    function scoreCell(x, y, side) {
+      if (board[y][x]) return -Infinity;
+      board[y][x] = side;
+      let total = 0;
+      for (const [dx, dy] of DIRECTIONS) total += patternScore(x, y, side, dx, dy);
+      board[y][x] = EMPTY;
+      return total;
+    }
+    function patternScore(x, y, side, dx, dy) {
+      let count = 1, open = 0;
+      let nx = x + dx, ny = y + dy;
+      while (inside(nx, ny) && board[ny][nx] === side) { count++; nx += dx; ny += dy; }
+      if (inside(nx, ny) && !board[ny][nx]) open++;
+      nx = x - dx; ny = y - dy;
+      while (inside(nx, ny) && board[ny][nx] === side) { count++; nx -= dx; ny -= dy; }
+      if (inside(nx, ny) && !board[ny][nx]) open++;
+      if (count >= 5) return 1000000;
+      if (count === 4 && open === 2) return 120000;
+      if (count === 4 && open === 1) return 26000;
+      if (count === 3 && open === 2) return 9000;
+      if (count === 3 && open === 1) return 1400;
+      if (count === 2 && open === 2) return 600;
+      if (count === 2 && open === 1) return 90;
+      return open ? 18 : 2;
+    }
+    function scoreForMove(x, y, side) {
+      const value = scoreCellAfterPlaced(x, y, side);
+      if (value >= 1000000) return 120;
+      if (value >= 120000) return 40;
+      if (value >= 9000) return 24;
+      return 8;
+    }
+    function scoreCellAfterPlaced(x, y, side) {
+      let total = 0;
+      for (const [dx, dy] of DIRECTIONS) total += patternScore(x, y, side, dx, dy);
+      return total;
+    }
+    function nearThreat(side) {
+      return candidateCells().some(cell => scoreCell(cell.x, cell.y, side) >= 9000);
+    }
+    function getHintCells() {
+      const cells = candidateCells().map(cell => {
+        const attack = scoreCell(cell.x, cell.y, BLACK);
+        const defense = scoreCell(cell.x, cell.y, WHITE);
+        const score = attack + defense * .7;
+        const type = attack >= 1000000 ? 'win' : defense > attack ? 'defense' : 'attack';
+        return { ...cell, score, type, attack, defense };
+      });
+      cells.sort((a, b) => b.score - a.score);
+      return new Map(cells.slice(0, 3).map(cell => [keyOf(cell.x, cell.y), cell]));
+    }
+    function showHint() {
+      if (phase !== 'playing' || turn !== BLACK) return;
+      hintVisible = !hintVisible;
+      if (hintVisible) {
+        score = Math.max(0, score - 3);
+        const best = Array.from(getHintCells().values())[0];
+        if (best?.type === 'win') setPetTalk(t('hintWin'));
+        else if (best?.type === 'defense') setPetTalk(t('hintDefense'));
+        else setPetTalk(t('hintAttack'));
+        setStatus(t('hintPenalty'));
+      } else {
+        setStatus(t('yourTurnBlack'));
+        setPetTalk(t('hintHidden'));
+      }
+      render();
+    }
+    function openHelp() {
+      els.start.textContent = phase === 'intro' ? t('startGame') : t('continueGame');
+      els.intro.hidden = false;
+    }
+    function closeIntroOrStart() {
+      els.intro.hidden = true;
+      if (phase === 'intro') resetGame();
+    }
+    function reactionAfterPetMove() {
+      if (nearThreat(WHITE)) return t('petThreat');
+      if (nearThreat(BLACK)) return t('strongLine');
+      return t('yourTurn');
+    }
+
+    function resetGame() {
+      if (resultTimer) {
+        clearTimeout(resultTimer);
+        resultTimer = 0;
+      }
+      board = createBoard();
+      phase = 'playing';
+      turn = BLACK;
+      steps = 0;
+      score = 0;
+      history = [];
+      lastMove = null;
+      winLine = [];
+      finished = false;
+      hintVisible = false;
+      els.result.hidden = true;
+      setStatus(t('yourTurnBlack'));
+      setPetTalk(t('youGoFirst'));
+      render();
+      post('gameStarted');
+    }
+    function undo() {
+      if (phase === 'thinking' || finished || history.length < 2) return;
+      history.pop();
+      const previous = history.pop();
+      if (!previous) return;
+      board = previous.board;
+      turn = BLACK;
+      steps = previous.steps;
+      score = previous.score;
+      lastMove = previous.lastMove;
+      winLine = previous.winLine || [];
+      finished = previous.finished;
+      hintVisible = previous.hintVisible || false;
+      phase = 'playing';
+      setStatus(t('undone'));
+      setPetTalk(t('noWorries'));
+      render();
+    }
+    function finish(winner, reason, line) {
+      if (finished) return;
+      finished = true;
+      phase = 'result';
+      turn = 'none';
+      winLine = line || [];
+      render();
+      const won = winner === BLACK;
+      const draw = winner === 'draw';
+      const config = DIFFICULTIES[difficulty] || DIFFICULTIES.normal;
+      const earnedPoints = (won ? 106 : draw ? 82 : 64) + config.reward;
+      const title = won ? t('youWin') : draw ? t('draw') : t('petWins');
+      setStatus(`${title} ${reason || ''} ${t('bondIncreased')}`);
+      setPetTalk(won ? t('greatLine') : draw ? t('fullBoardGreat') : t('iWon'));
+      pulsePet();
+      toast(`${title}<br>${t('bondIncreased')}`);
+      resultTimer = setTimeout(() => {
+        resultTimer = 0;
+        if (finished && phase === 'result') showResult(title, reason, earnedPoints, config.name);
+      }, 2400);
+      post('gameFinished', { earnedPoints, score, steps, difficulty: config.level, difficultyName: config.name, winner, reason, bondBonus: config.reward, finishedAt: Date.now() });
+    }
+    function showResult(title, reason, earnedPoints, difficultyName) {
+      els.resultTitle.textContent = title;
+      els.resultText.textContent = t('resultTextFmt', { reason: reason || t('gameComplete') });
+      els.resultSteps.textContent = steps;
+      els.resultScore.textContent = score;
+      els.resultDifficulty.textContent = difficultyName;
+      els.resultReward.textContent = `+${earnedPoints}`;
+      els.result.hidden = false;
+    }
+    function pulsePet() {
+      els.petAvatar.classList.remove('happy');
+      void els.petAvatar.offsetWidth;
+      els.petAvatar.classList.add('happy');
+    }
+    function toast(html) {
+      const box = document.createElement('div');
+      box.className = 'toast';
+      box.innerHTML = html;
+      document.body.appendChild(box);
+      setTimeout(() => box.remove(), 1700);
+    }
+
+    function requestPetImage(petId = '') {
+      const requestId = `gomoku_pet_${Date.now()}`;
+      petRequestId = requestId;
+      post('haqi_get_pet_image', { requestId, anim: 'idle', petId: petId || undefined }, { requestId, anim: 'idle', petId: petId || undefined });
+      setTimeout(() => {
+        if (petObjectUrl) return;
+        const fallbackId = `gomoku_pets_${Date.now()}`;
+        post('haqi_get_pet_images', { requestId: fallbackId, anim: 'idle' }, { requestId: fallbackId, anim: 'idle' });
+      }, 900);
+    }
+    function mountPet(pet) {
+      if (!pet?.imageBlob || !pet?.uv) return;
+      if (petObjectUrl) URL.revokeObjectURL(petObjectUrl);
+      petObjectUrl = URL.createObjectURL(pet.imageBlob);
+      const uv = pet.uv;
+      const el = document.createElement('div');
+      el.className = 'petSprite';
+      el.style.backgroundImage = `url("${petObjectUrl}")`;
+      if (uv.cols > 1 || uv.rows > 1) {
+        el.style.backgroundSize = `${uv.cols * 100}% ${uv.rows * 100}%`;
+        el.style.backgroundPosition = `${uv.cols > 1 ? uv.col * 100 / (uv.cols - 1) : 50}% ${uv.rows > 1 ? uv.row * 100 / (uv.rows - 1) : 50}%`;
+      } else {
+        el.style.backgroundSize = 'contain'; el.style.backgroundPosition = 'center';
+      }
+      els.petAvatar.innerHTML = ''; els.petAvatar.appendChild(el);
+      els.petName.textContent = t('petNameWhite', { name: pet.name || t('pet') });
+    }
+
+    els.board.onclick = handleBoardClick;
+    els.start.onclick = closeIntroOrStart;
+    els.restart.onclick = resetGame;
+    els.undo.onclick = undo;
+    els.hint.onclick = showHint;
+    els.difficulty.onchange = () => { difficulty = els.difficulty.value; setPetTalk(t('diffSwitched', { name: DIFFICULTIES[difficulty].name })); updateControls(); };
+    document.getElementById('again').onclick = resetGame;
+    document.getElementById('closeResult').onclick = () => { els.result.hidden = true; };
+    document.getElementById('help').onclick = openHelp;
+    window.addEventListener('message', e => {
+      const msg = e.data || {};
+      if (msg.type === 'gameContinue') resetGame();
+      if (msg.type === 'setGameConfig' && msg.data?.petId) requestPetImage(msg.data.petId);
+      if (msg.type === 'haqi_pet_image' && msg.ok && msg.data && (!petRequestId || !msg.requestId || msg.requestId === petRequestId || msg.requestId === 'active_pet_config')) mountPet(msg.data);
+      if (msg.type === 'haqi_pet_images' && msg.ok) {
+        const firstPet = Array.isArray(msg.data?.pets) ? msg.data.pets[0] : null;
+        if (firstPet) mountPet(firstPet);
+      }
+    });
+    window.addEventListener('beforeunload', () => { if (petObjectUrl) URL.revokeObjectURL(petObjectUrl); });
+    // 棋盘 render() 在 intro 浮层背后，延后到首帧绘制之后执行(不可见，无闪烁)，缩短启动。
+    post('gameLoaded');
+    requestAnimationFrame(() => { render(); requestPetImage(); });
+  </script>
+</body>
+
+</html>

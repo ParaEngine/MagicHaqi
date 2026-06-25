@@ -1,0 +1,2233 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+  <title>宠物飞船寻宝</title>
+  <script src="https://cdn.keepwork.com/keepwork/cdn/tailwindcss@3.4.16.js"></script>
+</head>
+
+<body></body>
+<script type="text/gamejs" id="mhLightbotCode">
+(function () {
+  // ---- i18n ----
+  const I18N = {
+    zhCN: {
+      title: '宠物飞船寻宝',
+      menuAria: '玩法',
+      levelTitle: '宠物飞船寻宝 Lv.',
+      gameStatusAria: '游戏状态',
+      diffLabel: '难度',
+      diffSelectAria: '选择难度',
+      foodLabel: '食物',
+      stepLabel: '步',
+      dirNorth: '北', dirEast: '东', dirSouth: '南', dirWest: '西',
+      cmdForward: '前进', cmdForwardShort: '前',
+      cmdLeft: '左转', cmdLeftShort: '左',
+      cmdRight: '右转', cmdRightShort: '右',
+      cmdJump: '跳跃', cmdJumpShort: '跳',
+      cmdLight: '收集', cmdLightShort: '食',
+      cmdP1: '调用P1', cmdP2: '调用P2',
+      cmdRepeat2: '重复下一步2次', cmdRepeat3: '重复下一步3次',
+      diffEasy: '轻松', diffNormal: '标准', diffHard: '困难', diffExpert: '专家',
+      progMain: '主程序', progP1: 'P1函数', progP2: 'P2函数',
+      speedSlow: '慢速', speedNormal: '中速', speedFast: '快速',
+      tut1Title: '跳跃收集', tut1Tip: '食物悬在格子上方，第一关只要跳到食物所在格。',
+      tut2Title: '先走再跳', tut2Tip: '没有食物的平地用前进，最后一步用跳跃收集。',
+      tut3Title: '转向路线', tut3Tip: '飞船只会朝面向的方向移动，先转向再前进。',
+      tut4Title: '高低台阶', tut4Tip: '前方更高时必须跳跃，跳跃也能顺手收集食物。',
+      tut5Title: '重复节奏', tut5Tip: '这关可以直接完成，也可以试试用重复指令压缩程序。',
+      stageAria: '等距地图', runBtn: '运行', resetBtn: '重置',
+      panelAria: '编程面板', paletteAria: '指令库', programTabsAria: '选择程序',
+      defaultStatus: '把指令拖到程序槽里，然后点击运行。',
+      stepBtn: '单步', hintBtn: '提示', undoBtn: '撤销', clearBtn: '清空',
+      skipTutorialBtn: '跳过教程', speedAria: '运行速度',
+      howToTitle: '宠物飞船寻宝',
+      howToText: '把前进、转向和跳跃指令排进程序槽，让飞船跳起收集悬浮在方块上方的食物。食物用虚线连到所属格子中心，只有跳跃到食物所在格才算收集。',
+      startGame: '开始游戏', skipIntro: '跳过教程',
+      winTitle: '食物收集完成！', winDefaultText: '你完成了这一关。',
+      nextLevel: '下一关',
+      slotFull: '{name} 已经满了',
+      noUndo: '没有可撤销的操作',
+      clearConfirm: '再点一次清空当前程序',
+      needMainCmd: '先放入主程序指令',
+      petRunning: '宠物正在执行程序...',
+      stepDebug: '单步调试中：继续点击单步。',
+      paused: '已暂停，点击单步继续调试，或点重置回到起点。',
+      progEnd: '程序结束了，还有食物没有收集。',
+      executing: '{stack} 正在执行：{cmd}',
+      stepDone: '{stack} 已执行一步，继续点击单步。',
+      progLabel: '程序',
+      foodNeedJump: '食物悬在高处，需要用跳跃触碰。',
+      noFoodHere: '这里没有可收集的食物。',
+      noCmdInFn: '{name} 还没有指令。',
+      callTooDeep: '函数调用太深了。',
+      needActionAfterRepeat: '重复指令后面需要再放一个动作。',
+      noRoad: '前面没有路，程序停下来了。试试先左转或右转。',
+      needJump: '前面更高，需要使用跳跃。把这一步换成跳跃再试试。',
+      tooHigh: '太高了，跳不过去。找一条只升高一层的路线。',
+      flatJumpWaste: '平地也可以跳，但会浪费一步。',
+      jumpCollect: '跳跃收集到 {food}！',
+      resetToStart: '已重置到起点。',
+      newLevel: '新关卡已生成，跳起来收集悬浮食物吧。',
+      tutorialSkipped: '已跳过教程，之后会直接进入正式关卡。',
+      allCollected: '食物全部收集，通关成功。',
+      clickToDelete: '点击删除 {label}',
+      dragIn: '拖入指令',
+      slotsUnit: '{n} 槽',
+      hintObserve: '先观察飞船朝向，再决定转向、前进或跳跃。',
+      hintTryNext: '下一步可以试试：{cmd}。',
+      hintRefStart: '参考开头：{sample}{more}',
+      hintCompress: '完整路线不一定最短，试着把重复片段放进 P1 或用重复指令。',
+      hintRepeat: '发现重复片段：{seq}，可以试试重复指令或 P1。',
+      hintP1Overflow: '如果主程序放不下，把一小段常用动作放进 P1，再在主程序调用 P1。',
+      speechLeft: '左转', speechRight: '右转', speechJump: '跳跃',
+      winText: 'Lv.{level} {diff}完成，用了 {steps} 步，生成路线约 {solution} 步。',
+      toastCollect: '食物收集完成!',
+      facing: '面向{dir}',
+    },
+    enUS: {
+      title: 'Pet Spaceship Treasure Hunt',
+      menuAria: 'Help',
+      levelTitle: 'Pet Spaceship Treasure Hunt Lv.',
+      gameStatusAria: 'Game status',
+      diffLabel: 'Difficulty',
+      diffSelectAria: 'Select difficulty',
+      foodLabel: 'Food',
+      stepLabel: 'Steps',
+      dirNorth: 'N', dirEast: 'E', dirSouth: 'S', dirWest: 'W',
+      cmdForward: 'Forward', cmdForwardShort: 'Fwd',
+      cmdLeft: 'Turn Left', cmdLeftShort: 'Left',
+      cmdRight: 'Turn Right', cmdRightShort: 'Right',
+      cmdJump: 'Jump', cmdJumpShort: 'Jump',
+      cmdLight: 'Collect', cmdLightShort: 'Eat',
+      cmdP1: 'Call P1', cmdP2: 'Call P2',
+      cmdRepeat2: 'Repeat next step ×2', cmdRepeat3: 'Repeat next step ×3',
+      diffEasy: 'Easy', diffNormal: 'Normal', diffHard: 'Hard', diffExpert: 'Expert',
+      progMain: 'Main', progP1: 'P1 Function', progP2: 'P2 Function',
+      speedSlow: 'Slow', speedNormal: 'Medium', speedFast: 'Fast',
+      tut1Title: 'Jump & Collect', tut1Tip: 'Food floats above a tile — just jump onto it to collect.',
+      tut2Title: 'Walk then Jump', tut2Tip: 'Use Forward on flat ground, then Jump on the last step to collect.',
+      tut3Title: 'Turn & Go', tut3Tip: 'The ship only moves in the direction it faces — turn first, then move.',
+      tut4Title: 'Stairs', tut4Tip: 'Jump when the path goes up — jumping also collects food along the way.',
+      tut5Title: 'Repeat Rhythm', tut5Tip: 'You can finish this level directly, or try compressing with repeat commands.',
+      stageAria: 'Isometric map', runBtn: 'Run', resetBtn: 'Reset',
+      panelAria: 'Coding panel', paletteAria: 'Command library', programTabsAria: 'Select program',
+      defaultStatus: 'Drag commands into program slots, then press Run.',
+      stepBtn: 'Step', hintBtn: 'Hint', undoBtn: 'Undo', clearBtn: 'Clear',
+      skipTutorialBtn: 'Skip Tutorial', speedAria: 'Run speed',
+      howToTitle: 'Pet Spaceship Treasure Hunt',
+      howToText: 'Place forward, turn, and jump commands into program slots to make the ship jump and collect food floating above the blocks. Food is connected to its tile center with a dashed line — only jumping onto the food tile counts as collecting.',
+      startGame: 'Start Game', skipIntro: 'Skip Tutorial',
+      winTitle: 'All Food Collected!', winDefaultText: 'You completed this level.',
+      nextLevel: 'Next Level',
+      slotFull: '{name} is full',
+      noUndo: 'Nothing to undo',
+      clearConfirm: 'Tap again to clear current program',
+      needMainCmd: 'Add commands to the main program first',
+      petRunning: 'Pet is running the program...',
+      stepDebug: 'Step debugging: keep tapping Step to continue.',
+      paused: 'Paused — tap Step to continue debugging, or Reset to go back.',
+      progEnd: 'Program ended — some food is still uncollected.',
+      executing: '{stack} executing: {cmd}',
+      stepDone: '{stack} executed one step — keep tapping Step.',
+      progLabel: 'Program',
+      foodNeedJump: 'Food is up high — you need to jump to reach it.',
+      noFoodHere: 'There is no food to collect here.',
+      noCmdInFn: '{name} has no commands yet.',
+      callTooDeep: 'Function calls are too deep.',
+      needActionAfterRepeat: 'Place an action command after the repeat command.',
+      noRoad: 'No road ahead — the program stopped. Try turning left or right first.',
+      needJump: 'It\'s higher ahead — use Jump instead. Try replacing this step with Jump.',
+      tooHigh: 'Too high to jump over. Find a route that only goes up one level.',
+      flatJumpWaste: 'You can jump on flat ground, but it wastes a step.',
+      jumpCollect: 'Jumped and collected {food}!',
+      resetToStart: 'Reset to start.',
+      newLevel: 'New level generated — jump to collect the floating food!',
+      tutorialSkipped: 'Tutorial skipped — you\'ll go straight to the main levels.',
+      allCollected: 'All food collected — level clear!',
+      clickToDelete: 'Click to remove {label}',
+      dragIn: 'Drop command',
+      slotsUnit: '{n} slots',
+      hintObserve: 'Observe the ship\'s direction first, then decide to turn, move, or jump.',
+      hintTryNext: 'Try this next: {cmd}.',
+      hintRefStart: 'Reference start: {sample}{more}',
+      hintCompress: 'The shortest path may not fit — try putting repeated segments in P1 or using repeat commands.',
+      hintRepeat: 'Found a repeated segment: {seq} — try a repeat command or P1.',
+      hintP1Overflow: 'If the main program is too long, put common moves in P1 and call P1 from main.',
+      speechLeft: 'Turn left', speechRight: 'Turn right', speechJump: 'Jump',
+      winText: 'Lv.{level} {diff} complete in {steps} steps (solution ≈ {solution} steps).',
+      toastCollect: 'All food collected!',
+      facing: 'Facing {dir}',
+    },
+  };
+  function detectLang() {
+    try {
+      const params = new URLSearchParams(window.location.search);
+      const lang = params.get('lang');
+      if (lang && I18N[lang]) return lang;
+    } catch (_) {}
+    return 'zhCN';
+  }
+  const LANG = detectLang();
+  const L = I18N[LANG];
+  function t(key, vars) {
+    let str = L[key] || I18N.zhCN[key] || key;
+    if (vars) str = str.replace(/\{(\w+)\}/g, (m, n) => vars[n] != null ? String(vars[n]) : m);
+    return str;
+  }
+  try { document.documentElement.setAttribute('lang', LANG === 'enUS' ? 'en' : 'zh-CN'); } catch (_) {}
+  try { document.title = t('title'); } catch (_) {}
+
+  const STORAGE_DIFFICULTY = 'haqiLightbotDifficultyV1';
+  const STORAGE_BEST = 'haqiLightbotBestLevelV1';
+  const STORAGE_SPEED = 'haqiLightbotSpeedV1';
+  const STORAGE_SKIP_TUTORIAL = 'haqiLightbotSkipTutorialV1';
+  const FALLBACK_PET = '🐾';
+  const FOOD_ITEMS = ['🍎', '🍓', '🍇', '🍌', '🥕', '🍒', '🥝', '🍪'];
+  const DIRS = [
+    { id: 0, dr: -1, dc: 0, arrow: '↑', name: t('dirNorth') },
+    { id: 1, dr: 0, dc: 1, arrow: '→', name: t('dirEast') },
+    { id: 2, dr: 1, dc: 0, arrow: '↓', name: t('dirSouth') },
+    { id: 3, dr: 0, dc: -1, arrow: '←', name: t('dirWest') },
+  ];
+  const COMMANDS = {
+    forward: { id: 'forward', icon: '↥', label: t('cmdForward'), short: t('cmdForwardShort') },
+    left: { id: 'left', icon: '↺', label: t('cmdLeft'), short: t('cmdLeftShort') },
+    right: { id: 'right', icon: '↻', label: t('cmdRight'), short: t('cmdRightShort') },
+    jump: { id: 'jump', icon: '⤴', label: t('cmdJump'), short: t('cmdJumpShort') },
+    light: { id: 'light', icon: '🍎', label: t('cmdLight'), short: t('cmdLightShort') },
+    p1: { id: 'p1', icon: 'P1', label: t('cmdP1'), short: 'P1' },
+    p2: { id: 'p2', icon: 'P2', label: t('cmdP2'), short: 'P2' },
+    repeat2: { id: 'repeat2', icon: '×2', label: t('cmdRepeat2'), short: '×2' },
+    repeat3: { id: 'repeat3', icon: '×3', label: t('cmdRepeat3'), short: '×3' },
+  };
+  const DIFFICULTIES = {
+    easy: { id: 'easy', label: t('diffEasy'), size: 5, basePath: 5, pathGrow: .55, goals: 2, mainSlots: 14, p1Slots: 4, p2Slots: 0, reward: 70, heightChance: .14, turnBias: .28 },
+    normal: { id: 'normal', label: t('diffNormal'), size: 6, basePath: 8, pathGrow: .75, goals: 3, mainSlots: 12, p1Slots: 7, p2Slots: 0, reward: 95, heightChance: .28, turnBias: .4 },
+    hard: { id: 'hard', label: t('diffHard'), size: 7, basePath: 11, pathGrow: .95, goals: 4, mainSlots: 11, p1Slots: 8, p2Slots: 6, reward: 125, heightChance: .42, turnBias: .5 },
+    expert: { id: 'expert', label: t('diffExpert'), size: 8, basePath: 14, pathGrow: 1.08, goals: 5, mainSlots: 10, p1Slots: 8, p2Slots: 8, reward: 160, heightChance: .5, turnBias: .62 },
+  };
+  const DIFFICULTY_ORDER = ['easy', 'normal', 'hard', 'expert'];
+  const PROGRAMS = ['main', 'p1', 'p2'];
+  const PROGRAM_LABELS = { main: t('progMain'), p1: t('progP1'), p2: t('progP2') };
+  const RUN_SPEEDS = {
+    slow: { id: 'slow', label: t('speedSlow'), interval: 620 },
+    normal: { id: 'normal', label: t('speedNormal'), interval: 430 },
+    fast: { id: 'fast', label: t('speedFast'), interval: 230 },
+  };
+  const TUTORIAL_LEVELS = [
+    {
+      title: t('tut1Title'),
+      tip: t('tut1Tip'),
+      size: 5,
+      start: { row: 2, col: 1, dir: 1 },
+      path: [{ row: 2, col: 1, height: 0 }, { row: 2, col: 2, height: 0 }],
+      goals: [[2, 2]],
+    },
+    {
+      title: t('tut2Title'),
+      tip: t('tut2Tip'),
+      size: 5,
+      start: { row: 2, col: 1, dir: 1 },
+      path: [{ row: 2, col: 1, height: 0 }, { row: 2, col: 2, height: 0 }, { row: 2, col: 3, height: 0 }],
+      goals: [[2, 3]],
+    },
+    {
+      title: t('tut3Title'),
+      tip: t('tut3Tip'),
+      size: 5,
+      start: { row: 3, col: 1, dir: 1 },
+      path: [{ row: 3, col: 1, height: 0 }, { row: 3, col: 2, height: 0 }, { row: 2, col: 2, height: 0 }],
+      goals: [[2, 2]],
+    },
+    {
+      title: t('tut4Title'),
+      tip: t('tut4Tip'),
+      size: 5,
+      start: { row: 3, col: 1, dir: 1 },
+      path: [{ row: 3, col: 1, height: 0 }, { row: 3, col: 2, height: 1 }, { row: 2, col: 2, height: 1 }, { row: 2, col: 3, height: 0 }],
+      goals: [[3, 2], [2, 3]],
+    },
+    {
+      title: t('tut5Title'),
+      tip: t('tut5Tip'),
+      size: 5,
+      start: { row: 2, col: 0, dir: 1 },
+      path: [{ row: 2, col: 0, height: 0 }, { row: 2, col: 1, height: 0 }, { row: 2, col: 2, height: 0 }, { row: 2, col: 3, height: 0 }, { row: 2, col: 4, height: 0 }],
+      goals: [[2, 4]],
+    },
+  ];
+
+  const state = {
+    difficulty: normalizeDifficulty(localStorage.getItem(STORAGE_DIFFICULTY)),
+    level: 1,
+    bestLevel: Number(localStorage.getItem(STORAGE_BEST) || 1),
+    puzzle: null,
+    actor: null,
+    litGoals: new Set(),
+    programs: { main: [], p1: [], p2: [] },
+    selectedProgram: 'main',
+    running: false,
+    awaitingReset: false,
+    runMode: 'auto',
+    speed: normalizeSpeed(localStorage.getItem(STORAGE_SPEED)),
+    skipTutorial: localStorage.getItem(STORAGE_SKIP_TUTORIAL) === '1',
+    activeStep: null,
+    undoStack: [],
+    hintLevel: 0,
+    clearConfirmAt: 0,
+    started: false,
+    finished: false,
+    steps: 0,
+    seconds: 0,
+    timer: null,
+    runner: null,
+    stack: [],
+    trace: [],
+    petAsset: null,
+    petRequestId: '',
+    objectUrls: [],
+    three: null,
+    petTextureKey: '',
+    petTexture: null,
+    emojiTexture: null,
+    arrowTextures: {},
+    foodTextures: {},
+    flameTexture: null,
+    audioContext: null,
+  };
+
+  const root = document.createElement('div');
+  root.id = 'haqiLightbot';
+  function rootHtml() { return `
+    <style>
+      * { box-sizing: border-box; -webkit-tap-highlight-color: transparent; }
+      html, body { width: 100%; height: 100%; margin: 0; overflow: hidden; }
+      body {
+        font-family: -apple-system, BlinkMacSystemFont, 'PingFang SC', 'Microsoft YaHei', sans-serif;
+        color: #17314a;
+        background:
+          radial-gradient(circle at 16% 15%, rgba(255,255,255,.86) 0 7%, transparent 22%),
+          radial-gradient(circle at 82% 12%, rgba(125,211,252,.42) 0 8%, transparent 24%),
+          linear-gradient(180deg, #dff7ff 0%, #fef3c7 48%, #dcfce7 100%);
+        touch-action: none;
+        user-select: none;
+      }
+      .mh-shell { height: 100vh; height: 100dvh; display: grid; grid-template-rows: auto minmax(0, 1fr) auto; gap: 8px; padding: 8px; overflow: hidden; }
+      .mh-top {
+        min-height: 52px; display: grid; grid-template-columns: 38px minmax(0,1fr) auto; align-items: center; gap: 8px;
+        padding: 7px 9px; border-radius: 14px; background: rgba(255,255,255,.9); border: 2px solid rgba(255,255,255,.94);
+        box-shadow: 0 5px 0 rgba(14,116,144,.14), 0 12px 24px rgba(15,23,42,.1);
+      }
+      .mh-icon-btn, .mh-action, .mh-difficulty, .mh-command, .mh-slot, .mh-start, .mh-next, .mh-program-tab { border: 0; cursor: pointer; font-family: inherit; font-weight: 1000; color: inherit; }
+      .mh-icon-btn { width: 34px; height: 34px; border-radius: 999px; background: linear-gradient(180deg, #fb923c, #ea580c); color: #fff; box-shadow: 0 3px 0 #9a3412; font-size: 18px; }
+      .mh-title { min-width: 0; text-align: center; font-size: 18px; font-weight: 1000; color: #075985; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+      .mh-stats { display: flex; justify-content: flex-end; align-items: center; gap: 5px; flex-wrap: wrap; }
+      .mh-pill { min-width: 46px; height: 28px; display: inline-flex; align-items: center; justify-content: center; gap: 3px; padding: 0 8px; border-radius: 999px; background: #fff; border: 1px solid rgba(14,116,144,.18); color: #0f766e; font-size: 12px; font-weight: 900; box-shadow: 0 2px 0 rgba(14,116,144,.1); }
+      .mh-difficulty-select { height: 28px; min-width: 68px; border: 0; outline: 0; background: transparent; color: #0f766e; font: inherit; font-size: 12px; font-weight: 1000; cursor: pointer; }
+      .mh-main { min-height: 0; display: grid; grid-template-columns: minmax(0, 1fr) minmax(290px, 390px); gap: 9px; }
+      .mh-stage, .mh-panel { min-height: 0; border-radius: 16px; background: rgba(255,255,255,.72); border: 2px solid rgba(255,255,255,.9); box-shadow: 0 12px 28px rgba(15,23,42,.14); }
+      .mh-stage { position: relative; overflow: hidden; display: grid; place-items: center; }
+      .mh-stage::before { content: ''; position: absolute; inset: 0; background: linear-gradient(90deg, rgba(255,255,255,.18) 1px, transparent 1px), linear-gradient(180deg, rgba(255,255,255,.16) 1px, transparent 1px); background-size: 42px 42px; mask-image: linear-gradient(180deg, rgba(0,0,0,.65), rgba(0,0,0,.12)); pointer-events: none; }
+      .mh-run-float { position: absolute; right: 14px; top: 14px; z-index: 12; min-width: 84px; height: 48px; border-radius: 999px; font-family: inherit; font-size: 18px; font-weight: 1000; cursor: pointer; background: linear-gradient(180deg, #fb923c, #f97316); color: #fff; border: 3px solid rgba(255,255,255,.86); box-shadow: 0 6px 0 #9a3412, 0 12px 24px rgba(15,23,42,.18); }
+      .mh-run-float:not(.orange) { background: linear-gradient(180deg, #38bdf8, #0284c7); box-shadow: 0 6px 0 #075985, 0 12px 24px rgba(15,23,42,.18); }
+      .mh-board-wrap { position: relative; z-index: 1; width: min(100%, 780px); height: 100%; min-height: 310px; overflow: hidden; touch-action: none; }
+      .mh-board-wrap::after { content: ''; position: absolute; left: 13%; right: 13%; bottom: 8%; height: 18%; border-radius: 999px; background: radial-gradient(ellipse, rgba(15,23,42,.18), rgba(15,23,42,0) 68%); filter: blur(4px); pointer-events: none; }
+      .mh-iso-board { position: absolute; left: 50%; top: 50%; width: 100%; height: 100%; transform: translate(-50%, -48%); overflow: hidden; touch-action: none; }
+      .mh-three-canvas { position: absolute; inset: 0; z-index: 2; width: 100%; height: 100%; display: block; touch-action: none; cursor: grab; }
+      .mh-three-canvas:active { cursor: grabbing; }
+      .mh-tile { position: absolute; width: 84px; height: 112px; transform: translate(-50%, -72%); filter: drop-shadow(0 8px 6px rgba(15,23,42,.18)); }
+      .mh-cube { position: absolute; left: 0; bottom: var(--lift); width: 84px; height: 58px; }
+      .mh-cube-top,
+      .mh-cube-left,
+      .mh-cube-right { position: absolute; display: block; }
+      .mh-cube-top {
+        left: 0; top: 0; width: 84px; height: 48px;
+        clip-path: polygon(50% 0, 100% 50%, 50% 100%, 0 50%);
+        background:
+          radial-gradient(circle at 36% 26%, rgba(255,255,255,.52) 0 8%, transparent 25%),
+          linear-gradient(145deg, var(--tile-a), var(--tile-b));
+        border: 1px solid rgba(255,255,255,.62);
+        box-shadow: inset 0 2px 0 rgba(255,255,255,.3), inset -5px -5px 0 rgba(15,23,42,.08);
+        z-index: 3;
+      }
+      .mh-cube-left {
+        left: 0; top: 24px; width: 42px; height: 30px;
+        clip-path: polygon(0 0, 100% 100%, 100% 62%, 0 12%);
+        background: linear-gradient(180deg, var(--tile-left), #3f8ca4);
+        z-index: 2;
+      }
+      .mh-cube-right {
+        right: 0; top: 24px; width: 42px; height: 30px;
+        clip-path: polygon(0 100%, 100% 0, 100% 12%, 0 62%);
+        background: linear-gradient(180deg, var(--tile-right), #287188);
+        z-index: 2;
+      }
+      .mh-cube:not(.top-cube) .mh-cube-top { filter: brightness(.88) saturate(.9); }
+      .mh-tile.goal .top-cube .mh-cube-top { box-shadow: 0 0 18px rgba(56,189,248,.38), inset 0 2px 0 rgba(255,255,255,.48); }
+      .mh-food-icon { position: absolute; left: 50%; top: -42px; z-index: 8; transform: translate(-50%, -50%); font-size: 30px; filter: drop-shadow(0 10px 4px rgba(15,23,42,.26)); pointer-events: none; }
+      .mh-food-icon::before { content: ''; position: absolute; left: 50%; top: 96%; width: 0; height: 45px; border-left: 2px dashed rgba(255,255,255,.82); transform: translateX(-50%); }
+      .mh-food-icon::after { content: ''; position: absolute; left: 50%; top: 134%; width: 42px; height: 15px; border-radius: 999px; background: rgba(15,82,104,.24); transform: translateX(-50%); filter: blur(1px); }
+      .mh-tile.lit .mh-food-icon { opacity: .18; }
+      .mh-actor { position: absolute; width: 76px; height: 92px; transform: translate(-50%, -95%); z-index: 40; transition: left .22s ease, top .22s ease, filter .18s ease; display: grid; place-items: center; filter: drop-shadow(0 8px 4px rgba(15,23,42,.26)); }
+      .mh-actor.jump { filter: drop-shadow(0 16px 7px rgba(15,23,42,.2)); animation: mhActorJump .34s ease-out; }
+      .mh-actor.dash { animation: mhActorDash .28s ease-out; }
+      .mh-actor.turn-left { animation: mhActorTurnLeft .3s ease-out; }
+      .mh-actor.turn-right { animation: mhActorTurnRight .3s ease-out; }
+      .mh-actor::after { content: ''; position: absolute; left: 18%; right: 18%; bottom: 8%; height: 15%; border-radius: 999px; background: rgba(15,23,42,.22); filter: blur(1px); z-index: 0; }
+      .mh-actor.dash::before { content: ''; position: absolute; left: 50%; bottom: 16px; width: 34px; height: 18px; transform: translateX(-50%); border-radius: 999px; background: radial-gradient(circle, #fff7ad 0 18%, #fb923c 44%, rgba(249,115,22,0) 72%); filter: blur(.5px); z-index: 0; }
+      .mh-sprite { position: relative; z-index: 1; width: 100%; height: 100%; background-repeat: no-repeat; background-position: center; }
+      .mh-fallback { position: relative; z-index: 1; width: 58px; height: 58px; border-radius: 18px; display: grid; place-items: center; background: linear-gradient(180deg, #fff7ed, #f97316); color: #fff; border: 3px solid #fed7aa; font-size: 34px; text-shadow: 0 2px 0 rgba(124,45,18,.28); }
+      .mh-dir-badge { position: absolute; right: 6px; bottom: 15px; z-index: 3; min-width: 22px; height: 22px; display: grid; place-items: center; border-radius: 999px; background: #0ea5e9; color: white; font-size: 14px; font-weight: 1000; box-shadow: 0 2px 0 #075985; }
+      .mh-panel { display: grid; grid-template-rows: auto minmax(0,1fr); gap: 8px; padding: 10px; overflow: hidden; }
+      .mh-palette { display: grid; grid-template-columns: repeat(5, minmax(0,1fr)); gap: 6px; }
+      .mh-command { height: 44px; border-radius: 10px; color: #fff; background: linear-gradient(180deg, #38bdf8, #0284c7); box-shadow: 0 4px 0 #075985; font-size: 13px; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 1px; }
+      .mh-command strong { font-size: 16px; line-height: 1; }
+      .mh-command span { font-size: 10px; line-height: 1.05; }
+      .mh-command.fn { background: linear-gradient(180deg, #a78bfa, #7c3aed); box-shadow-color: #5b21b6; }
+      .mh-command.light { background: linear-gradient(180deg, #fbbf24, #f97316); box-shadow-color: #9a3412; }
+      .mh-command.loop { background: linear-gradient(180deg, #34d399, #059669); box-shadow-color: #047857; }
+      .mh-command:disabled { opacity: .42; filter: grayscale(.35); cursor: default; }
+      .mh-program-tabs { display: none; }
+      .mh-program-tab { flex: 1; min-width: 0; height: 30px; border-radius: 999px; background: #ecfeff; color: #0f766e; border: 1px solid rgba(14,116,144,.18); font-size: 12px; }
+      .mh-program-tab.active { background: #0ea5e9; color: #fff; box-shadow: 0 2px 0 #075985; }
+      .mh-programs { min-height: 0; overflow: auto; display: grid; grid-template-columns: repeat(auto-fit, minmax(112px, 1fr)); align-content: start; gap: 8px; padding-right: 2px; }
+      .mh-program { min-width: 0; cursor: pointer; border-radius: 12px; background: rgba(255,255,255,.82); border: 1px solid rgba(14,116,144,.16); padding: 8px; }
+      .mh-program.selected { background: rgba(236,254,255,.94); border: 2px solid #0ea5e9; box-shadow: inset 0 0 0 1px rgba(255,255,255,.72), 0 3px 0 rgba(7,89,133,.18); }
+      .mh-program-head { display: flex; align-items: center; justify-content: space-between; gap: 8px; margin-bottom: 6px; }
+      .mh-program-name { font-size: 13px; font-weight: 1000; color: #075985; }
+      .mh-program-tip { min-width: 0; font-size: 11px; font-weight: 800; color: #64748b; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+      .mh-slots { display: grid; grid-template-columns: repeat(2, minmax(0,1fr)); gap: 5px; }
+      .mh-slot { height: 34px; border-radius: 9px; background: #f8fafc; border: 2px dashed rgba(14,116,144,.24); color: #64748b; display: grid; place-items: center; font-size: 12px; }
+      .mh-slot.filled { border-style: solid; background: #fff7ed; color: #7c2d12; box-shadow: inset 0 -2px 0 rgba(251,146,60,.2); }
+      .mh-slot.active-step { outline: 3px solid #facc15; background: #fef3c7; }
+      .mh-slot.drop-target { outline: 3px solid rgba(14,165,233,.44); }
+      .mh-bottom { display: grid; grid-template-columns: minmax(0,1fr) auto; align-items: center; gap: 8px; min-height: 54px; }
+      .mh-status { min-width: 0; color: #7c2d12; font-size: 14px; line-height: 1.3; font-weight: 1000; overflow: hidden; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; }
+      .mh-actions { display: flex; align-items: center; justify-content: flex-end; gap: 6px; flex-wrap: wrap; }
+      .mh-action { height: 34px; border-radius: 999px; padding: 0 12px; background: #0ea5e9; color: #fff; box-shadow: 0 4px 0 #075985; }
+      .mh-action.orange { background: #f97316; box-shadow-color: #9a3412; }
+      .mh-action.soft { background: #fff7ed; color: #9a3412; border: 2px solid #fed7aa; box-shadow: 0 2px 0 rgba(154,52,18,.2); }
+      .mh-action:disabled { opacity: .5; cursor: default; }
+      .mh-speed-select { height: 34px; border: 0; border-radius: 999px; padding: 0 10px; background: #ecfeff; color: #0f766e; font: inherit; font-size: 12px; font-weight: 1000; box-shadow: 0 2px 0 rgba(7,89,133,.16); outline: 0; }
+      .mh-overlay { position: fixed; inset: 0; z-index: 70; display: flex; align-items: center; justify-content: center; padding: 16px; background: rgba(15,39,71,.46); }
+      .mh-card { width: min(92vw, 460px); padding: 21px; border-radius: 18px; background: linear-gradient(180deg, #fff, #f0fdf4); border: 3px solid #86efac; box-shadow: 0 18px 44px rgba(15,23,42,.28); text-align: center; }
+      .mh-card h1 { margin: 0 0 10px; color: #075985; font-size: 26px; line-height: 1.12; font-weight: 1000; }
+      .mh-card p { margin: 0 0 15px; color: #0f766e; font-size: 15px; font-weight: 800; line-height: 1.55; }
+      .mh-start, .mh-next { border-radius: 999px; padding: 10px 22px; background: linear-gradient(180deg, #34d399, #16a34a); color: #fff; box-shadow: 0 5px 0 #15803d; }
+      .mh-card-actions { display: flex; justify-content: center; gap: 9px; flex-wrap: wrap; }
+      .mh-toast { position: fixed; left: 50%; top: 50%; z-index: 90; transform: translate(-50%, -50%); padding: 15px 19px; border-radius: 16px; background: #fff; border: 3px solid #7dd3fc; color: #075985; font-size: 18px; line-height: 1.35; font-weight: 1000; text-align: center; box-shadow: 0 18px 42px rgba(15,23,42,.24); animation: mhToast 1.25s ease-out forwards; pointer-events: none; }
+      .mh-confetti { position: fixed; top: -16px; z-index: 88; width: 9px; height: 15px; border-radius: 3px; background: var(--c); animation: mhConfetti var(--d) ease-in forwards; pointer-events: none; }
+      [hidden] { display: none !important; }
+      @keyframes mhToast { 0% { opacity: 0; transform: translate(-50%, -40%) scale(.84); } 18% { opacity: 1; transform: translate(-50%, -50%) scale(1); } 100% { opacity: 0; transform: translate(-50%, -78%) scale(.94); } }
+      @keyframes mhConfetti { 100% { opacity: 0; transform: translate3d(var(--x), 112vh, 0) rotate(680deg); } }
+      @keyframes mhActorJump { 0% { transform: translate(-50%, -82%); } 50% { transform: translate(-50%, -108%); } 100% { transform: translate(-50%, -82%); } }
+      @keyframes mhActorDash { 0% { transform: translate(-50%, -95%) scale(.9); } 58% { transform: translate(-50%, -101%) scale(1.08); } 100% { transform: translate(-50%, -95%) scale(1); } }
+      @keyframes mhActorTurnLeft { 0% { transform: translate(-50%, -95%) rotate(0deg); } 48% { transform: translate(-50%, -95%) rotate(-18deg) scale(1.04); } 100% { transform: translate(-50%, -95%) rotate(0deg); } }
+      @keyframes mhActorTurnRight { 0% { transform: translate(-50%, -95%) rotate(0deg); } 48% { transform: translate(-50%, -95%) rotate(18deg) scale(1.04); } 100% { transform: translate(-50%, -95%) rotate(0deg); } }
+      @media (max-width: 860px) {
+        .mh-main { grid-template-columns: 1fr; grid-template-rows: minmax(260px, 1fr) minmax(270px, auto); }
+        .mh-board-wrap { min-height: 260px; }
+        .mh-programs { max-height: 240px; }
+      }
+      @media (max-width: 560px) {
+        .mh-shell { padding: 6px; gap: 6px; }
+        .mh-top { grid-template-columns: 34px 1fr; }
+        .mh-stats { grid-column: 1 / -1; justify-content: center; }
+        .mh-main { grid-template-rows: minmax(190px, .8fr) minmax(0, 1fr); }
+        .mh-panel { grid-template-rows: auto auto minmax(0,1fr); gap: 6px; padding: 8px; }
+        .mh-tile { width: 68px; height: 92px; }
+        .mh-cube { width: 68px; height: 48px; }
+        .mh-cube-top { width: 68px; height: 39px; }
+        .mh-cube-left, .mh-cube-right { top: 20px; width: 34px; height: 25px; }
+        .mh-actor { width: 62px; height: 76px; }
+        .mh-fallback { width: 48px; height: 48px; font-size: 29px; }
+        .mh-palette { grid-template-columns: repeat(5, minmax(0,1fr)); gap: 4px; }
+        .mh-command { height: 40px; border-radius: 9px; }
+        .mh-command span { display: none; }
+        .mh-programs { grid-template-columns: repeat(auto-fit, minmax(104px, 1fr)); gap: 6px; max-height: none; min-height: 0; padding: 0 2px 4px 0; }
+        .mh-program-tabs { display: flex; gap: 5px; }
+        .mh-programs.tabbed { grid-template-columns: 1fr; }
+        .mh-programs.tabbed .mh-program:not(.selected) { display: none; }
+        .mh-programs.tabbed .mh-program-head { display: none; }
+        .mh-program { padding: 6px; border-radius: 10px; }
+        .mh-program-head { gap: 4px; margin-bottom: 5px; }
+        .mh-program-name { font-size: 12px; }
+        .mh-program-tip { font-size: 10px; }
+        .mh-slots { grid-template-columns: repeat(2, minmax(0,1fr)); gap: 4px; }
+        .mh-slot { height: 40px; border-radius: 9px; }
+          .mh-run-float { right: 9px; top: 9px; min-width: 72px; height: 42px; font-size: 16px; }
+        .mh-bottom { position: relative; z-index: 8; grid-template-columns: 1fr; gap: 5px; min-height: 86px; padding: 6px 6px 7px; border-radius: 14px; background: rgba(240,253,244,.94); border: 2px solid rgba(255,255,255,.86); box-shadow: 0 -6px 18px rgba(15,23,42,.08); }
+        .mh-status { width: 100%; text-align: center; font-size: 13px; }
+        .mh-actions { justify-content: center; gap: 5px; }
+        .mh-action { height: 31px; padding: 0 9px; }
+        .mh-speed-select { height: 31px; padding: 0 8px; }
+      }
+    </style>
+    <div class="mh-shell">
+      <header class="mh-top">
+        <button id="mhMenu" class="mh-icon-btn" type="button" aria-label="${t('menuAria')}">?</button>
+        <div class="mh-title">${t('levelTitle')}<span id="mhLevel">1</span></div>
+        <div class="mh-stats" aria-label="${t('gameStatusAria')}">
+          <label class="mh-pill">${t('diffLabel')} <select id="mhDifficultySelect" class="mh-difficulty-select" aria-label="${t('diffSelectAria')}"></select></label>
+          <span class="mh-pill">${t('foodLabel')} <b id="mhGoalCount">0/0</b></span>
+          <span class="mh-pill">${t('stepLabel')} <b id="mhSteps">0</b></span>
+          <span class="mh-pill"><b id="mhTime">0</b>s</span>
+        </div>
+      </header>
+      <main class="mh-main">
+        <section class="mh-stage" aria-label="${t('stageAria')}">
+          <button id="mhRun" class="mh-run-float orange" type="button">${t('runBtn')}</button>
+          <div class="mh-board-wrap"><div id="mhBoard" class="mh-iso-board"></div></div>
+        </section>
+        <aside class="mh-panel" aria-label="${t('panelAria')}">
+          <div class="mh-palette" id="mhPalette" aria-label="${t('paletteAria')}"></div>
+          <div class="mh-program-tabs" id="mhProgramTabs" aria-label="${t('programTabsAria')}"></div>
+          <div class="mh-programs" id="mhPrograms"></div>
+        </aside>
+      </main>
+      <footer class="mh-bottom">
+        <div id="mhStatus" class="mh-status">${t('defaultStatus')}</div>
+        <div class="mh-actions">
+          <button id="mhStep" class="mh-action soft" type="button">${t('stepBtn')}</button>
+          <button id="mhHint" class="mh-action soft" type="button">${t('hintBtn')}</button>
+          <button id="mhUndo" class="mh-action soft" type="button">${t('undoBtn')}</button>
+          <button id="mhClear" class="mh-action soft" type="button">${t('clearBtn')}</button>
+          <button id="mhSkipTutorial" class="mh-action soft" type="button" hidden>${t('skipTutorialBtn')}</button>
+          <select id="mhSpeedSelect" class="mh-speed-select" aria-label="${t('speedAria')}"></select>
+        </div>
+      </footer>
+    </div>
+    <div id="mhHowTo" class="mh-overlay" role="dialog" aria-modal="true" aria-labelledby="mhHowToTitle" hidden>
+      <div class="mh-card">
+        <h1 id="mhHowToTitle">${t('howToTitle')}</h1>
+        <p>${t('howToText')}</p>
+        <div class="mh-card-actions">
+          <button id="mhStart" class="mh-start" type="button">${t('startGame')}</button>
+          <button id="mhSkipIntro" class="mh-action soft" type="button">${t('skipIntro')}</button>
+        </div>
+      </div>
+    </div>
+    <div id="mhWin" class="mh-overlay" role="dialog" aria-modal="true" aria-labelledby="mhWinTitle" hidden>
+      <div class="mh-card">
+        <h1 id="mhWinTitle">${t('winTitle')}</h1>
+        <p id="mhWinText">${t('winDefaultText')}</p>
+        <button id="mhNext" class="mh-next" type="button">${t('nextLevel')}</button>
+      </div>
+    </div>
+  `; }
+
+  let threeLoadStarted = false;
+  function loadThree() {
+    if (window.THREE || threeLoadStarted) return;
+    threeLoadStarted = true;
+    const s = document.createElement('script');
+    s.src = 'https://cdn.keepwork.com/npm/three%400.128.0/build/three.min.js';
+    s.onload = () => { if (state.puzzle && state.actor) renderBoard(); };
+    document.head.appendChild(s);
+  }
+
+  function boot() {
+    // Build the full UI (shell + panel + how-to modal) on the next frame so the
+    // synchronous init before DOMContentLoaded stays minimal. The real initial
+    // screen (the how-to/rules modal over the board frame) paints right after.
+    requestAnimationFrame(() => {
+      root.innerHTML = rootHtml();
+      document.body.appendChild(root);
+      bindEvents();
+      renderDifficultySelect();
+      renderSpeedSelect();
+      renderPalette();
+      // Prepare level state + lightweight panel UI, but defer the heavy 3D board
+      // build (three.js renderer/scene/geometry) until after first paint. The
+      // how-to modal covers the board so this is invisible.
+      prepareLevel(1, { skipBoard: true });
+      showHowTo();
+      post('gameLoaded');
+      // After first paint: draw the lightweight 2D iso board frame (no WebGL, no
+      // animation loop) so the real initial screen shows behind the how-to modal.
+      // three.js + the 3D scene are loaded lazily only when the player starts —
+      // this keeps an endless WebGL render loop off the critical path.
+      requestAnimationFrame(() => requestAnimationFrame(() => {
+        if (state.puzzle && state.actor) renderBoard();
+      }));
+    });
+  }
+
+  function bindEvents() {
+    byId('mhMenu').onclick = showHowTo;
+    byId('mhStart').onclick = () => {
+      byId('mhHowTo').hidden = true;
+      if (!state.started) startGame();
+    };
+    byId('mhSkipIntro').onclick = () => skipTutorial(true);
+    byId('mhSkipTutorial').onclick = () => skipTutorial(true);
+    byId('mhNext').onclick = () => {
+      byId('mhWin').hidden = true;
+      prepareAndStart(state.level + 1);
+    };
+    byId('mhRun').onclick = handleRunButton;
+    byId('mhStep').onclick = stepOnce;
+    byId('mhUndo').onclick = undoCommand;
+    byId('mhClear').onclick = clearSelectedProgram;
+    byId('mhHint').onclick = showHint;
+    window.addEventListener('keydown', onKeyDown);
+    window.addEventListener('resize', () => {
+      renderProgramTabs();
+      renderPrograms(state.activeStep);
+      if (state.puzzle && state.actor) renderBoard();
+    });
+    window.addEventListener('message', (event) => {
+      const msg = event.data || {};
+      if (msg.type === 'gameContinue' && !state.started) startGame();
+      if (msg.type === 'setGameConfig' && msg.data?.petId) requestPetImage(msg.data.petId);
+      if (msg.type === 'haqi_pet_image' && msg.ok && msg.data && (!state.petRequestId || !msg.requestId || msg.requestId === state.petRequestId || msg.requestId === 'active_pet_config')) setPetImage(msg.data);
+      if (msg.type === 'haqi_pet_images' && msg.ok) {
+        const firstPet = Array.isArray(msg.data?.pets) ? msg.data.pets[0] : null;
+        if (firstPet) setPetImage(firstPet);
+      }
+    });
+  }
+
+  function startGame() {
+    state.started = true;
+    loadThree();
+    requestPetImage();
+    startTimer();
+    post('gameStarted');
+  }
+
+  function prepareAndStart(level) {
+    prepareLevel(level);
+    if (state.started) {
+      startTimer();
+      post('gameStarted');
+    }
+  }
+
+  function prepareLevel(level, opts = {}) {
+    state.awaitingReset = false;
+    stopRun('');
+    const puzzle = generatePuzzle(state.difficulty, level);
+    state.level = level;
+    state.puzzle = puzzle;
+    state.programs = { main: [], p1: [], p2: [] };
+    state.selectedProgram = 'main';
+    state.finished = false;
+    state.steps = 0;
+    state.seconds = 0;
+    state.litGoals = new Set();
+    state.undoStack = [];
+    state.hintLevel = 0;
+    state.activeStep = null;
+    state.actor = { row: puzzle.start.row, col: puzzle.start.col, dir: puzzle.start.dir };
+    renderPalette();
+    renderProgramTabs();
+    renderPrograms();
+    if (!opts.skipBoard) renderBoard();
+    updateStats();
+    updateTutorialSkipButton();
+    setStatus(puzzle.tip || t('newLevel'));
+  }
+
+  function skipTutorial(startAfterSkip = false) {
+    state.skipTutorial = true;
+    localStorage.setItem(STORAGE_SKIP_TUTORIAL, '1');
+    byId('mhHowTo').hidden = true;
+    stopRun('');
+    prepareLevel(1);
+    updateTutorialSkipButton();
+    setStatus(t('tutorialSkipped'));
+    if (state.started) startTimer();
+    else if (startAfterSkip) startGame();
+  }
+
+  function updateTutorialSkipButton() {
+    const skip = byId('mhSkipTutorial');
+    if (skip) skip.hidden = state.skipTutorial || !state.puzzle?.tutorial;
+    const introSkip = byId('mhSkipIntro');
+    if (introSkip) introSkip.hidden = state.skipTutorial;
+  }
+
+  function startTimer() {
+    clearInterval(state.timer);
+    state.seconds = 0;
+    state.timer = setInterval(() => {
+      if (state.finished || state.running === false) {
+        state.seconds += state.finished ? 0 : 1;
+      } else {
+        state.seconds += 1;
+      }
+      updateStats();
+    }, 1000);
+  }
+
+  function generatePuzzle(difficultyId, level) {
+    const difficulty = DIFFICULTIES[difficultyId] || DIFFICULTIES.normal;
+    const tutorial = authoredTutorialPuzzle(level, difficulty);
+    if (tutorial) return tutorial;
+    let best = null;
+    for (let attempt = 0; attempt < 80; attempt++) {
+      const candidate = randomPuzzle(difficulty, level, attempt);
+      if (!fitsCommandBudget(candidate, difficulty)) continue;
+      if (!best || candidate.solution.length > best.solution.length) best = candidate;
+      if (candidate.solution.length >= Math.min(solutionBudget(difficulty), difficulty.basePath + level * difficulty.pathGrow)) return candidate;
+    }
+    return best || fallbackPuzzle(difficulty);
+  }
+
+  function authoredTutorialPuzzle(level, difficulty) {
+    if (state.skipTutorial) return null;
+    const template = TUTORIAL_LEVELS[level - 1];
+    if (!template) return null;
+    const path = template.path.map(cell => ({ ...cell }));
+    const goals = new Set(template.goals.map(([row, col]) => cellKey(row, col)));
+    return {
+      size: template.size,
+      start: { ...template.start },
+      path,
+      goals,
+      cells: buildAuthoredCells(template.size, path),
+      solution: buildSolution(path, template.start.dir, goals),
+      seed: `tutorial-${difficulty.id}-${level}`,
+      title: template.title,
+      tutorial: true,
+      tip: `${template.title}：${template.tip}`,
+    };
+  }
+
+  function buildAuthoredCells(size, path) {
+    const pathMap = new Map(path.map(cell => [cellKey(cell.row, cell.col), cell.height]));
+    const cells = [];
+    for (let row = 0; row < size; row++) {
+      for (let col = 0; col < size; col++) {
+        const key = cellKey(row, col);
+        const onPath = pathMap.has(key);
+        cells.push({ row, col, key, height: onPath ? pathMap.get(key) : 0, blocked: !onPath });
+      }
+    }
+    return cells;
+  }
+
+  function randomPuzzle(difficulty, level, attempt) {
+    const size = difficulty.size;
+    const maxMoves = Math.max(4, Math.min(size * size - 2, solutionBudget(difficulty)));
+    const length = Math.min(maxMoves, Math.round(difficulty.basePath + level * difficulty.pathGrow + Math.random() * 4));
+    const start = { row: Math.floor(size / 2), col: Math.floor(size / 2), dir: attempt % 4 };
+    const path = [{ row: start.row, col: start.col, height: 0 }];
+    const visited = new Set([cellKey(start.row, start.col)]);
+    let dir = start.dir;
+    let height = 0;
+    for (let step = 0; step < length; step++) {
+      const options = DIRS.map(item => ({ ...item, weight: item.id === dir ? 3 : (Math.random() < difficulty.turnBias ? 2 : 1) }))
+        .sort(() => Math.random() - .5);
+      let picked = null;
+      for (const option of options) {
+        const nr = path[path.length - 1].row + option.dr;
+        const nc = path[path.length - 1].col + option.dc;
+        if (nr < 0 || nc < 0 || nr >= size || nc >= size || visited.has(cellKey(nr, nc))) continue;
+        picked = option;
+        break;
+      }
+      if (!picked) break;
+      dir = picked.id;
+      const maxHeight = terrainMaxHeight(difficulty, level);
+      if (Math.random() < difficulty.heightChance) height = clamp(height + (Math.random() < .5 ? -1 : 1), 0, maxHeight);
+      const next = { row: path[path.length - 1].row + picked.dr, col: path[path.length - 1].col + picked.dc, height };
+      path.push(next);
+      visited.add(cellKey(next.row, next.col));
+    }
+    if (path.length < Math.max(5, difficulty.goals + 2)) return fallbackPuzzle(difficulty);
+    const maxGoals = Math.max(2, Math.floor(solutionBudget(difficulty) / 2));
+    const goals = pickGoals(path, Math.min(maxGoals, difficulty.goals + Math.min(2, Math.floor(level / 4))));
+    const solution = buildSolution(path, start.dir, goals);
+    const cells = buildCells(size, path, difficulty, level);
+    return { size, start, path, goals, cells, solution, seed: `${difficulty.id}-${level}-${Date.now().toString(36)}-${attempt}` };
+  }
+
+  function fallbackPuzzle(difficulty) {
+    const size = Math.max(5, difficulty.size);
+    const start = { row: Math.floor(size / 2), col: 1, dir: 1 };
+    const path = [
+      { row: start.row, col: 1, height: 0 },
+      { row: start.row, col: 2, height: 0 },
+      { row: start.row, col: 3, height: 1 },
+      { row: start.row - 1, col: 3, height: 1 },
+      { row: start.row - 2, col: 3, height: 0 },
+      { row: start.row - 2, col: 4, height: 0 },
+    ].filter(cell => cell.row >= 0 && cell.col >= 0 && cell.row < size && cell.col < size);
+    const goals = new Set([cellKey(path[2].row, path[2].col), cellKey(path[path.length - 1].row, path[path.length - 1].col)]);
+    return { size, start, path, goals, cells: buildCells(size, path, difficulty, 1), solution: buildSolution(path, start.dir, goals), seed: 'fallback' };
+  }
+
+  function solutionBudget(difficulty) {
+    return difficulty.mainSlots;
+  }
+
+  function fitsCommandBudget(puzzle, difficulty) {
+    return puzzle.solution.length <= solutionBudget(difficulty);
+  }
+
+  function pickGoals(path, count) {
+    const goals = new Set();
+    const candidates = path.slice(1).map((cell, index) => ({ cell, index: index + 1 }));
+    const spacing = Math.max(1, Math.floor(candidates.length / count));
+    for (let i = spacing - 1; i < candidates.length && goals.size < count; i += spacing) {
+      const cell = candidates[Math.min(candidates.length - 1, i)].cell;
+      goals.add(cellKey(cell.row, cell.col));
+    }
+    goals.add(cellKey(path[path.length - 1].row, path[path.length - 1].col));
+    return goals;
+  }
+
+  function buildCells(size, path, difficulty, level) {
+    const cells = [];
+    const pathMap = new Map(path.map(cell => [cellKey(cell.row, cell.col), cell.height]));
+    for (let row = 0; row < size; row++) {
+      for (let col = 0; col < size; col++) {
+        const key = cellKey(row, col);
+        const onPath = pathMap.has(key);
+        const nearPath = DIRS.some(dir => pathMap.has(cellKey(row + dir.dr, col + dir.dc)));
+        const showFiller = nearPath && Math.random() < Math.max(.18, .48 - level * .018);
+        const blocked = !onPath && !showFiller;
+        const height = onPath ? pathMap.get(key) : Math.floor(Math.random() * (terrainMaxHeight(difficulty, level) + 1));
+        cells.push({ row, col, key, height, blocked });
+      }
+    }
+    return cells;
+  }
+
+  function terrainMaxHeight(difficulty, level) {
+    const difficultyBonus = difficulty.heightChance > .45 ? 1 : 0;
+    return clamp(2 + difficultyBonus + Math.floor(level / 5), 2, 4);
+  }
+
+  function buildSolution(path, startDir, goals) {
+    const commands = [];
+    let dir = startDir;
+    for (let i = 1; i < path.length; i++) {
+      const prev = path[i - 1];
+      const next = path[i];
+      const targetDir = directionBetween(prev, next);
+      while (dir !== targetDir) {
+        const clockwise = (targetDir - dir + 4) % 4;
+        if (clockwise === 1 || clockwise === 2) { commands.push('right'); dir = (dir + 1) % 4; }
+        else { commands.push('left'); dir = (dir + 3) % 4; }
+      }
+      const nextHasFood = goals.has(cellKey(next.row, next.col));
+      commands.push(nextHasFood || next.height > prev.height ? 'jump' : 'forward');
+    }
+    return commands;
+  }
+
+  function renderDifficultySelect() {
+    const select = byId('mhDifficultySelect');
+    if (!select) return;
+    select.innerHTML = DIFFICULTY_ORDER.map((id) => {
+      const difficulty = DIFFICULTIES[id];
+      return `<option value="${id}">${difficulty.label}</option>`;
+    }).join('');
+    select.value = state.difficulty;
+    select.onchange = () => {
+      const next = normalizeDifficulty(select.value);
+      if (next === state.difficulty) return;
+      if (state.running) {
+        select.value = state.difficulty;
+        return;
+      }
+      state.difficulty = next;
+      localStorage.setItem(STORAGE_DIFFICULTY, next);
+      prepareAndStart(1);
+    };
+  }
+
+  function renderSpeedSelect() {
+    const select = byId('mhSpeedSelect');
+    if (!select) return;
+    select.innerHTML = Object.values(RUN_SPEEDS).map(speed => `<option value="${speed.id}">${speed.label}</option>`).join('');
+    select.value = state.speed;
+    select.onchange = () => {
+      state.speed = normalizeSpeed(select.value);
+      localStorage.setItem(STORAGE_SPEED, state.speed);
+      if (state.running && state.runMode === 'auto') restartRunner();
+    };
+  }
+
+  function availableCommands() {
+    const difficulty = DIFFICULTIES[state.difficulty] || DIFFICULTIES.normal;
+    const commands = ['forward', 'left', 'right', 'jump'];
+    if (difficulty.p1Slots > 0) commands.push('p1');
+    if (difficulty.p2Slots > 0) commands.push('p2');
+    if (state.difficulty !== 'easy' || state.level >= 3) commands.push('repeat2');
+    if (state.difficulty === 'hard' || state.difficulty === 'expert' || state.level >= 6) commands.push('repeat3');
+    return commands;
+  }
+
+  function renderPalette() {
+    const palette = byId('mhPalette');
+    const commands = availableCommands();
+    palette.innerHTML = commands.map((id) => {
+      const cmd = COMMANDS[id];
+      const tone = id === 'light' ? ' light' : id.startsWith('p') ? ' fn' : id.startsWith('repeat') ? ' loop' : '';
+      return `<button class="mh-command${tone}" type="button" data-command="${id}" draggable="true" title="${cmd.label}"><strong>${cmd.icon}</strong><span>${cmd.label}</span></button>`;
+    }).join('');
+    palette.querySelectorAll('[data-command]').forEach((btn) => {
+      btn.onclick = () => addCommand(btn.dataset.command);
+      btn.addEventListener('dragstart', (event) => {
+        event.dataTransfer.setData('text/plain', btn.dataset.command);
+        event.dataTransfer.effectAllowed = 'copy';
+      });
+    });
+  }
+
+  function renderProgramTabs() {
+    const tabs = byId('mhProgramTabs');
+    if (!tabs) return;
+    const slots = programSlots();
+    tabs.innerHTML = PROGRAMS.filter(id => slots[id] > 0).map(id => `<button class="mh-program-tab${state.selectedProgram === id ? ' active' : ''}" type="button" data-tab-program="${id}">${PROGRAM_LABELS[id]}</button>`).join('');
+    tabs.querySelectorAll('[data-tab-program]').forEach((tab) => {
+      tab.onclick = () => {
+        state.selectedProgram = tab.dataset.tabProgram;
+        renderProgramTabs();
+        renderPrograms(state.activeStep);
+      };
+    });
+  }
+
+  function renderPrograms(active = null) {
+    const wrap = byId('mhPrograms');
+    const slots = programSlots();
+    wrap.classList.toggle('tabbed', window.innerWidth <= 560);
+    wrap.innerHTML = PROGRAMS.filter(id => slots[id] > 0).map((id) => {
+      const commands = state.programs[id] || [];
+      return `
+        <section class="mh-program${state.selectedProgram === id ? ' selected' : ''}" data-program="${id}">
+          <div class="mh-program-head">
+            <span class="mh-program-name">${PROGRAM_LABELS[id]}</span>
+            <span class="mh-program-tip">${commands.length}/${t('slotsUnit', { n: slots[id] })}</span>
+          </div>
+          <div class="mh-slots">
+            ${Array.from({ length: slots[id] }, (_, index) => renderSlot(id, index, commands[index], active)).join('')}
+          </div>
+        </section>`;
+    }).join('');
+    wrap.querySelectorAll('[data-program]').forEach((el) => {
+      el.onclick = (event) => {
+        if (event.target.closest('.mh-slot')) return;
+        state.selectedProgram = el.dataset.program;
+        renderProgramTabs();
+        renderPrograms(active);
+      };
+    });
+    wrap.querySelectorAll('.mh-slot').forEach((slot) => {
+      slot.onclick = () => {
+        const program = slot.dataset.program;
+        const index = Number(slot.dataset.index);
+        state.selectedProgram = program;
+        if (slot.dataset.command) {
+          recordUndo();
+          state.programs[program].splice(index, 1);
+          state.hintLevel = 0;
+          renderProgramTabs();
+          renderPrograms();
+        } else {
+          renderProgramTabs();
+          renderPrograms();
+        }
+      };
+      slot.addEventListener('dragover', (event) => {
+        event.preventDefault();
+        slot.classList.add('drop-target');
+      });
+      slot.addEventListener('dragleave', () => slot.classList.remove('drop-target'));
+      slot.addEventListener('drop', (event) => {
+        event.preventDefault();
+        slot.classList.remove('drop-target');
+        const command = event.dataTransfer.getData('text/plain');
+        insertCommand(slot.dataset.program, Number(slot.dataset.index), command);
+      });
+    });
+  }
+
+  function renderSlot(program, index, command, active) {
+    const cmd = COMMANDS[command];
+    const isActive = active && active.program === program && active.index === index;
+    return `<button class="mh-slot${cmd ? ' filled' : ''}${isActive ? ' active-step' : ''}" type="button" data-program="${program}" data-index="${index}"${cmd ? ` data-command="${cmd.id}" title="${t('clickToDelete', { label: cmd.label })}"` : ` title="${t('dragIn')}"`}>${cmd ? cmd.short : index + 1}</button>`;
+  }
+
+  function addCommand(command) {
+    const slots = programSlots()[state.selectedProgram] || 0;
+    if (!slots || state.running) return;
+    if (state.programs[state.selectedProgram].length >= slots) {
+      showToast(t('slotFull', { name: PROGRAM_LABELS[state.selectedProgram] }));
+      return;
+    }
+    recordUndo();
+    state.programs[state.selectedProgram].push(command);
+    state.hintLevel = 0;
+    renderPrograms();
+  }
+
+  function insertCommand(program, index, command) {
+    if (!COMMANDS[command] || state.running) return;
+    const slots = programSlots()[program] || 0;
+    if (!slots) return;
+    state.selectedProgram = program;
+    const commands = state.programs[program];
+    recordUndo();
+    if (index < commands.length) commands[index] = command;
+    else if (commands.length < slots) commands.push(command);
+    else commands[slots - 1] = command;
+    state.hintLevel = 0;
+    renderProgramTabs();
+    renderPrograms();
+  }
+
+  function undoCommand() {
+    if (state.running) return;
+    const previous = state.undoStack.pop();
+    if (!previous) {
+      showToast(t('noUndo'));
+      return;
+    }
+    state.programs = clonePrograms(previous.programs);
+    state.selectedProgram = previous.selectedProgram;
+    state.hintLevel = 0;
+    renderProgramTabs();
+    renderPrograms();
+  }
+
+  function clearSelectedProgram() {
+    if (state.running) return;
+    const now = performance.now();
+    if (state.programs[state.selectedProgram].length && now - state.clearConfirmAt > 1600) {
+      state.clearConfirmAt = now;
+      showToast(t('clearConfirm'));
+      return;
+    }
+    recordUndo();
+    state.programs[state.selectedProgram] = [];
+    state.hintLevel = 0;
+    renderPrograms();
+  }
+
+  function recordUndo() {
+    state.undoStack.push({ programs: clonePrograms(state.programs), selectedProgram: state.selectedProgram });
+    if (state.undoStack.length > 40) state.undoStack.shift();
+  }
+
+  function clonePrograms(programs) {
+    return { main: [...(programs.main || [])], p1: [...(programs.p1 || [])], p2: [...(programs.p2 || [])] };
+  }
+
+  function runProgram() {
+    if (!state.puzzle || state.running) return;
+    if (!state.programs.main.length) {
+      showToast(t('needMainCmd'));
+      return;
+    }
+    ensureAudioContext();
+    resetActor('');
+    state.running = true;
+    state.awaitingReset = true;
+    state.runMode = 'auto';
+    updateRunButton();
+    state.stack = [{ program: 'main', commands: state.programs.main.slice(), index: 0, depth: 0 }];
+    setStatus(t('petRunning'));
+    restartRunner();
+  }
+
+  function startStepRun() {
+    if (!state.puzzle) return false;
+    if (!state.programs.main.length) {
+      showToast(t('needMainCmd'));
+      return false;
+    }
+    ensureAudioContext();
+    resetActor('');
+    state.running = true;
+    state.awaitingReset = true;
+    state.runMode = 'step';
+    state.stack = [{ program: 'main', commands: state.programs.main.slice(), index: 0, depth: 0 }];
+    updateRunButton();
+    setStatus(t('stepDebug'));
+    return true;
+  }
+
+  function stepOnce() {
+    if (state.finished) return;
+    if (state.running && state.runMode === 'auto') {
+      clearInterval(state.runner);
+      state.runner = null;
+      state.runMode = 'step';
+      state.awaitingReset = true;
+      updateRunButton();
+      setStatus(t('paused'));
+    }
+    if (!state.running && !startStepRun()) return;
+    stepProgram(true);
+  }
+
+  function restartRunner() {
+    clearInterval(state.runner);
+    state.runner = setInterval(() => stepProgram(false), RUN_SPEEDS[state.speed].interval);
+  }
+
+  function stepProgram(manual = false) {
+    if (!state.running) return;
+    const frame = state.stack[state.stack.length - 1];
+    if (!frame) {
+      stopRun(t('progEnd'));
+      return;
+    }
+    if (frame.index >= frame.commands.length) {
+      state.stack.pop();
+      return;
+    }
+    const index = frame.index;
+    const command = frame.commands[frame.index++];
+    state.activeStep = { program: frame.program, index };
+    renderPrograms(state.activeStep);
+    setStatus(t('executing', { stack: callStackLabel(), cmd: COMMANDS[command]?.label || command }));
+    executeCommand(command, frame.depth);
+    updateStats();
+    if (state.litGoals.size >= state.puzzle.goals.size) winLevel();
+    else if (manual && state.running) setStatus(t('stepDone', { stack: callStackLabel() }));
+  }
+
+  function callStackLabel() {
+    if (!state.stack.length) return t('progLabel');
+    return state.stack.map(frame => PROGRAM_LABELS[frame.program]).join(' > ');
+  }
+
+  function executeCommand(command, depth) {
+    if (command === 'left') {
+      const fromDir = state.actor.dir;
+      state.actor.dir = (state.actor.dir + 3) % 4;
+      state.steps++;
+      playCommandCue('left');
+      renderBoard({ turn: 'left', fromDir });
+      return;
+    }
+    if (command === 'right') {
+      const fromDir = state.actor.dir;
+      state.actor.dir = (state.actor.dir + 1) % 4;
+      state.steps++;
+      playCommandCue('right');
+      renderBoard({ turn: 'right', fromDir });
+      return;
+    }
+    if (command === 'forward' || command === 'jump') {
+      moveActor(command === 'jump');
+      return;
+    }
+    if (command === 'light') {
+      const key = cellKey(state.actor.row, state.actor.col);
+      if (state.puzzle.goals.has(key) && !state.litGoals.has(key)) {
+        setStatus(t('foodNeedJump'));
+      } else {
+        setStatus(t('noFoodHere'));
+      }
+      state.steps++;
+      renderBoard();
+      return;
+    }
+    if (command === 'p1' || command === 'p2') {
+      const commands = (state.programs[command] || []).filter(Boolean);
+      if (!commands.length) {
+        setStatus(t('noCmdInFn', { name: PROGRAM_LABELS[command] }));
+        return;
+      }
+      if (depth >= 5 || state.stack.length > 12) {
+        stopRun(t('callTooDeep'));
+        return;
+      }
+      state.stack.push({ program: command, commands: commands.slice(), index: 0, depth: depth + 1 });
+      state.steps++;
+      return;
+    }
+    if (command === 'repeat2' || command === 'repeat3') {
+      const count = command === 'repeat2' ? 2 : 3;
+      const next = state.stack[state.stack.length - 1]?.commands[state.stack[state.stack.length - 1].index];
+      if (!next) {
+        setStatus(t('needActionAfterRepeat'));
+        return;
+      }
+      state.stack[state.stack.length - 1].index++;
+      state.stack.push({ program: state.stack[state.stack.length - 1].program, commands: Array(count).fill(next), index: 0, depth: depth + 1 });
+      state.steps++;
+    }
+  }
+
+  function moveActor(isJump) {
+    const dir = DIRS[state.actor.dir];
+    const nr = state.actor.row + dir.dr;
+    const nc = state.actor.col + dir.dc;
+    const from = cellAt(state.actor.row, state.actor.col);
+    const to = cellAt(nr, nc);
+    if (!to || to.blocked) {
+      stopRun(t('noRoad'));
+      return;
+    }
+    const climb = (to.height || 0) - (from.height || 0);
+    if (!isJump && climb > 0) {
+      stopRun(t('needJump'));
+      return;
+    }
+    if (isJump && climb > 1) {
+      stopRun(t('tooHigh'));
+      return;
+    }
+    if (isJump && climb <= 0 && !state.puzzle.goals.has(cellKey(nr, nc))) {
+      setStatus(t('flatJumpWaste'));
+    }
+    state.actor.row = nr;
+    state.actor.col = nc;
+    state.steps++;
+    if (isJump) {
+      const collected = collectFoodAt(nr, nc);
+      playCommandCue('jump');
+      if (collected) setStatus(t('jumpCollect', { food: collected }));
+    }
+    renderBoard({ jump: isJump, dash: true });
+  }
+
+  function collectFoodAt(row, col) {
+    const key = cellKey(row, col);
+    if (!state.puzzle?.goals?.has(key) || state.litGoals.has(key)) return '';
+    const food = foodForKey(key);
+    state.litGoals.add(key);
+    return food;
+  }
+
+  function resetActor(message) {
+    if (!state.puzzle) return;
+    stopRun('');
+    state.awaitingReset = false;
+    state.actor = { row: state.puzzle.start.row, col: state.puzzle.start.col, dir: state.puzzle.start.dir };
+    state.litGoals = new Set();
+    state.finished = false;
+    state.steps = 0;
+    state.seconds = 0;
+    state.trace = [];
+    const win = byId('mhWin');
+    if (win) win.hidden = true;
+    renderBoard();
+    updateStats();
+    updateRunButton();
+    if (message) setStatus(message);
+  }
+
+  function stopRun(message) {
+    clearInterval(state.runner);
+    state.runner = null;
+    state.running = false;
+    state.stack = [];
+    state.activeStep = null;
+    updateRunButton();
+    renderProgramTabs();
+    renderPrograms();
+    if (message) setStatus(message);
+  }
+
+  function handleRunButton() {
+    if (state.running || state.awaitingReset) resetActor(t('resetToStart'));
+    else runProgram();
+  }
+
+  function updateRunButton() {
+    const run = byId('mhRun');
+    if (!run) return;
+    const shouldReset = state.running || state.awaitingReset;
+    run.textContent = shouldReset ? t('resetBtn') : t('runBtn');
+    run.classList.toggle('orange', !shouldReset);
+  }
+
+  function renderBoard(effect = {}) {
+    const board = byId('mhBoard');
+    if (!state.puzzle || !state.actor) return;
+    const moveEffect = typeof effect === 'boolean' ? { jump: effect } : effect;
+    if (window.THREE) {
+      renderThreeBoard(board, moveEffect);
+      return;
+    }
+    const size = state.puzzle.size;
+    const small = window.innerWidth <= 560;
+    const tileW = small ? 58 : 72;
+    const tileH = small ? 32 : 39;
+    const heightStep = small ? 13 : 16;
+    const centerX = board.clientWidth / 2 || 350;
+    const centerY = (board.clientHeight / 2 || 230) - size * 5;
+    const parts = [];
+    const sorted = state.puzzle.cells.filter(cell => !cell.blocked).sort((a, b) => (a.row + a.col) - (b.row + b.col) || a.height - b.height);
+    sorted.forEach((cell) => {
+      const point = isoPoint(cell.row, cell.col, 0, centerX, centerY, tileW, tileH, heightStep);
+      parts.push(createTileHtml(cell, point, heightStep));
+    });
+    const actorCell = cellAt(state.actor.row, state.actor.col);
+    const actorPoint = isoPoint(state.actor.row, state.actor.col, actorCell?.height || 0, centerX, centerY, tileW, tileH, heightStep);
+    parts.push(createActorHtml(actorPoint, moveEffect));
+    board.innerHTML = parts.join('');
+  }
+
+  function renderThreeBoard(board, effect = {}) {
+    const THREE = window.THREE;
+    const view = ensureThreeView(board);
+    resizeThreeView(board, view);
+    clearThreeGroup(view.world);
+
+    const blockHeight = .44;
+    const gap = 1.04;
+    const cells = state.puzzle.cells.filter(cell => !cell.blocked);
+    cells.forEach((cell) => {
+      const isGoal = state.puzzle.goals.has(cell.key);
+      const lit = state.litGoals.has(cell.key);
+      const mesh = createPlatformMesh(cell, isGoal, lit, blockHeight, THREE);
+      mesh.position.set(cellX(cell, gap), mesh.position.y, cellZ(cell, gap));
+      mesh.castShadow = true;
+      mesh.receiveShadow = true;
+      view.world.add(mesh);
+      if (isGoal) view.world.add(createFoodMarker(cell, lit, blockHeight, gap, THREE));
+    });
+
+    updateThreeSceneBounds(view, THREE);
+    const actor = createActor3D(blockHeight, gap, effect, THREE);
+    view.world.add(actor);
+    fitThreeCamera(view, state.puzzle.size, Boolean(effect?.turn || effect?.dash || effect?.jump));
+    view.renderer.render(view.scene, view.camera);
+    startShipIdle(view, actor, effect);
+    if (effect?.dash) animateActorDash(view, actor, effect);
+    if (effect?.turn) animateActorTurn(view, actor, effect);
+  }
+
+  function ensureThreeView(board) {
+    if (state.three?.renderer?.domElement?.isConnected) return state.three;
+    const THREE = window.THREE;
+    board.innerHTML = '';
+    const renderer = new THREE.WebGLRenderer({ antialias: true, alpha: true });
+    renderer.setPixelRatio(Math.min(2, window.devicePixelRatio || 1));
+    renderer.shadowMap.enabled = true;
+    renderer.shadowMap.type = THREE.PCFSoftShadowMap;
+    renderer.domElement.className = 'mh-three-canvas';
+    board.appendChild(renderer.domElement);
+
+    const scene = new THREE.Scene();
+    const camera = new THREE.PerspectiveCamera(36, 1, .1, 100);
+    camera.position.set(6.6, 7.4, 6.6);
+    camera.lookAt(0, 0, 0);
+
+    scene.add(new THREE.HemisphereLight(0xffffff, 0x4f6d83, .86));
+    const sun = new THREE.DirectionalLight(0xffffff, 1.05);
+    sun.position.set(4.6, 9, 3.4);
+    sun.castShadow = true;
+    sun.shadow.mapSize.set(1024, 1024);
+    sun.shadow.camera.near = .5;
+    sun.shadow.camera.far = 28;
+    sun.shadow.camera.left = -9;
+    sun.shadow.camera.right = 9;
+    sun.shadow.camera.top = 9;
+    sun.shadow.camera.bottom = -9;
+    scene.add(sun);
+
+    const ground = new THREE.Mesh(
+      new THREE.CircleGeometry(8.2, 64),
+      new THREE.MeshBasicMaterial({ color: 0x2f6f88, transparent: true, opacity: .08 })
+    );
+    ground.rotation.x = -Math.PI / 2;
+    ground.position.y = -.02;
+    scene.add(ground);
+
+    const world = new THREE.Group();
+    scene.add(world);
+    state.three = {
+      renderer,
+      scene,
+      camera,
+      world,
+      target: new THREE.Vector3(0, 0, 0),
+      width: 0,
+      height: 0,
+      controls: { azimuth: Math.PI / 4, elevation: .78, zoom: 1, dragging: false, lastX: 0, lastY: 0, pinchDistance: 0 },
+      pointers: new Map(),
+      cameraFrame: 0,
+      idleFrame: 0,
+      sceneBounds: null,
+      cameraSpan: 0,
+    };
+    attachThreeControls(state.three);
+    return state.three;
+  }
+
+  function attachThreeControls(view) {
+    const canvas = view.renderer.domElement;
+    const surface = canvas.parentElement || canvas;
+    canvas.style.touchAction = 'none';
+    surface.style.touchAction = 'none';
+    surface.addEventListener('pointerdown', (event) => {
+      if (event.pointerType === 'touch') event.preventDefault();
+      surface.setPointerCapture?.(event.pointerId);
+      view.pointers.set(event.pointerId, { x: event.clientX, y: event.clientY });
+      view.controls.dragging = view.pointers.size === 1;
+      view.controls.lastX = event.clientX;
+      view.controls.lastY = event.clientY;
+      if (view.pointers.size === 2) view.controls.pinchDistance = pointerDistance(view.pointers);
+    }, { passive: false });
+    surface.addEventListener('pointermove', (event) => {
+      if (!view.pointers.has(event.pointerId)) return;
+      if (event.pointerType === 'touch') event.preventDefault();
+      view.pointers.set(event.pointerId, { x: event.clientX, y: event.clientY });
+      if (view.pointers.size === 2) {
+        const distance = pointerDistance(view.pointers);
+        if (view.controls.pinchDistance) {
+          view.controls.zoom = clamp(view.controls.zoom * (distance / view.controls.pinchDistance), .68, 2.65);
+          renderThreeCameraOnly(view);
+        }
+        view.controls.pinchDistance = distance;
+        return;
+      }
+      if (!view.controls.dragging) return;
+      const dx = event.clientX - view.controls.lastX;
+      const dy = event.clientY - view.controls.lastY;
+      view.controls.lastX = event.clientX;
+      view.controls.lastY = event.clientY;
+      view.controls.azimuth -= dx * .008;
+      view.controls.elevation = clamp(view.controls.elevation + dy * .005, .48, 1.08);
+      renderThreeCameraOnly(view);
+    }, { passive: false });
+    ['pointerup', 'pointercancel', 'pointerleave'].forEach((type) => {
+      surface.addEventListener(type, (event) => {
+        view.pointers.delete(event.pointerId);
+        view.controls.dragging = false;
+        view.controls.pinchDistance = 0;
+      });
+    });
+    surface.addEventListener('wheel', (event) => {
+      event.preventDefault();
+      view.controls.zoom = clamp(view.controls.zoom * (event.deltaY > 0 ? .92 : 1.1), .68, 2.65);
+      renderThreeCameraOnly(view);
+    }, { passive: false });
+
+    if (!window.PointerEvent) {
+      surface.addEventListener('touchstart', (event) => handleThreeTouchStart(event, view), { passive: false });
+      surface.addEventListener('touchmove', (event) => handleThreeTouchMove(event, view), { passive: false });
+      surface.addEventListener('touchend', () => resetThreeTouch(view));
+      surface.addEventListener('touchcancel', () => resetThreeTouch(view));
+    }
+  }
+
+  function handleThreeTouchStart(event, view) {
+    event.preventDefault();
+    const touches = event.touches;
+    if (touches.length === 1) {
+      view.controls.dragging = true;
+      view.controls.lastX = touches[0].clientX;
+      view.controls.lastY = touches[0].clientY;
+      view.controls.pinchDistance = 0;
+    } else if (touches.length >= 2) {
+      view.controls.dragging = false;
+      view.controls.pinchDistance = touchDistance(touches);
+    }
+  }
+
+  function handleThreeTouchMove(event, view) {
+    event.preventDefault();
+    const touches = event.touches;
+    if (touches.length >= 2) {
+      const distance = touchDistance(touches);
+      if (view.controls.pinchDistance) {
+        view.controls.zoom = clamp(view.controls.zoom * (distance / view.controls.pinchDistance), .68, 2.65);
+        renderThreeCameraOnly(view);
+      }
+      view.controls.pinchDistance = distance;
+      return;
+    }
+    if (touches.length !== 1 || !view.controls.dragging) return;
+    const dx = touches[0].clientX - view.controls.lastX;
+    const dy = touches[0].clientY - view.controls.lastY;
+    view.controls.lastX = touches[0].clientX;
+    view.controls.lastY = touches[0].clientY;
+    view.controls.azimuth -= dx * .008;
+    view.controls.elevation = clamp(view.controls.elevation + dy * .005, .48, 1.08);
+    renderThreeCameraOnly(view);
+  }
+
+  function resetThreeTouch(view) {
+    view.controls.dragging = false;
+    view.controls.pinchDistance = 0;
+  }
+
+  function touchDistance(touches) {
+    if (touches.length < 2) return 0;
+    return Math.hypot(touches[0].clientX - touches[1].clientX, touches[0].clientY - touches[1].clientY);
+  }
+
+  function renderThreeCameraOnly(view) {
+    if (!state.puzzle || !view?.renderer) return;
+    if (view.cameraFrame) return;
+    view.cameraFrame = requestAnimationFrame(() => {
+      view.cameraFrame = 0;
+      fitThreeCamera(view, state.puzzle.size, true);
+      view.renderer.render(view.scene, view.camera);
+    });
+  }
+
+  function pointerDistance(pointers) {
+    const points = Array.from(pointers.values());
+    if (points.length < 2) return 0;
+    return Math.hypot(points[0].x - points[1].x, points[0].y - points[1].y);
+  }
+
+  function resizeThreeView(board, view) {
+    const width = Math.max(1, board.clientWidth || 640);
+    const height = Math.max(1, board.clientHeight || 420);
+    if (view.width === width && view.height === height) return;
+    view.width = width;
+    view.height = height;
+    view.renderer.setSize(width, height, false);
+  }
+
+  function updateThreeSceneBounds(view, THREE) {
+    const box = new THREE.Box3().setFromObject(view.world);
+    if (box.isEmpty()) return;
+    view.sceneBounds = box;
+    const center = box.getCenter(new THREE.Vector3());
+    view.target.copy(center);
+  }
+
+  function fitThreeCamera(view, size, preserveSpan = false) {
+    const aspect = Math.max(.6, view.width / Math.max(1, view.height));
+    const controls = view.controls || { azimuth: Math.PI / 4, elevation: .78, zoom: 1 };
+    const fallbackSpan = Math.max(5.6, size * 1.42);
+    if (!preserveSpan || !view.cameraSpan) view.cameraSpan = fittedCameraSpan(view, fallbackSpan);
+    const span = view.cameraSpan / controls.zoom;
+    const fov = (view.camera.fov || 36) * Math.PI / 180;
+    const radius = Math.max(5.2, span / (2 * Math.tan(fov / 2)));
+    const horizontal = Math.cos(controls.elevation) * radius;
+    const lookTarget = cameraLookTarget(view);
+    view.camera.position.set(
+      lookTarget.x + Math.sin(controls.azimuth) * horizontal,
+      lookTarget.y + Math.sin(controls.elevation) * radius,
+      lookTarget.z + Math.cos(controls.azimuth) * horizontal
+    );
+    view.camera.lookAt(lookTarget);
+    view.camera.aspect = aspect;
+    view.camera.updateProjectionMatrix();
+  }
+
+  function cameraLookTarget(view) {
+    const THREE = window.THREE;
+    const base = view.target || new THREE.Vector3(0, 0, 0);
+    if (!THREE) return base;
+    const span = view.cameraSpan || 5.6;
+    return new THREE.Vector3(base.x, base.y - span * .12, base.z);
+  }
+
+  function fittedCameraSpan(view, fallbackSpan) {
+    if (!view.sceneBounds) return fallbackSpan;
+    const THREE = window.THREE;
+    if (!THREE) return fallbackSpan;
+    view.camera.updateMatrixWorld(true);
+    const box = view.sceneBounds;
+    const corners = [
+      [box.min.x, box.min.y, box.min.z], [box.min.x, box.min.y, box.max.z],
+      [box.min.x, box.max.y, box.min.z], [box.min.x, box.max.y, box.max.z],
+      [box.max.x, box.min.y, box.min.z], [box.max.x, box.min.y, box.max.z],
+      [box.max.x, box.max.y, box.min.z], [box.max.x, box.max.y, box.max.z],
+    ];
+    let minX = Infinity, maxX = -Infinity, minY = Infinity, maxY = -Infinity;
+    for (const corner of corners) {
+      const point = view.camera.worldToLocal(new THREE.Vector3(corner[0], corner[1], corner[2]));
+      minX = Math.min(minX, point.x);
+      maxX = Math.max(maxX, point.x);
+      minY = Math.min(minY, point.y);
+      maxY = Math.max(maxY, point.y);
+    }
+    const aspect = Math.max(.6, view.width / Math.max(1, view.height));
+    const widthSpan = (maxX - minX) / aspect;
+    const heightSpan = maxY - minY;
+    return Math.max(3.2, widthSpan, heightSpan) * 1.14;
+  }
+
+  function clearThreeGroup(group) {
+    while (group.children.length) {
+      const child = group.children.pop();
+      child.traverse?.((node) => {
+        if (node.geometry) node.geometry.dispose?.();
+        if (node.material) {
+          const materials = Array.isArray(node.material) ? node.material : [node.material];
+          materials.forEach(material => material.dispose?.());
+        }
+      });
+    }
+  }
+
+  function createPlatformMesh(cell, isGoal, lit, blockHeight, THREE) {
+    const height = (cell.height + 1) * blockHeight;
+    const colors = tileColors((cell.row * 5 + cell.col * 3) % 4);
+    const topColor = lit ? 0xfacc15 : isGoal ? 0x55c7f0 : colors.top3d;
+    const materials = [
+      new THREE.MeshLambertMaterial({ color: colors.right3d }),
+      new THREE.MeshLambertMaterial({ color: colors.left3d }),
+      new THREE.MeshLambertMaterial({ color: topColor, emissive: lit ? 0x7c3b00 : isGoal ? 0x063647 : 0x000000, emissiveIntensity: lit ? .34 : isGoal ? .16 : 0 }),
+      new THREE.MeshLambertMaterial({ color: 0x1f6178 }),
+      new THREE.MeshLambertMaterial({ color: colors.left3d }),
+      new THREE.MeshLambertMaterial({ color: colors.right3d }),
+    ];
+    const mesh = new THREE.Mesh(new THREE.BoxGeometry(.94, height, .94), materials);
+    mesh.position.y = height / 2;
+
+    const edges = new THREE.LineSegments(
+      new THREE.EdgesGeometry(mesh.geometry),
+      new THREE.LineBasicMaterial({ color: 0x2b6f88, transparent: true, opacity: .42 })
+    );
+    mesh.add(edges);
+    return mesh;
+  }
+
+  function createFoodMarker(cell, lit, blockHeight, gap, THREE) {
+    const topY = (cell.height + 1) * blockHeight;
+    const foodY = topY + 1.28;
+    const group = new THREE.Group();
+    const x = cellX(cell, gap);
+    const z = cellZ(cell, gap);
+    group.position.set(x, 0, z);
+
+    const shadow = new THREE.Mesh(
+      new THREE.CircleGeometry(.28, 32),
+      new THREE.MeshBasicMaterial({ color: 0x0f5268, transparent: true, opacity: lit ? .1 : .26, depthWrite: false })
+    );
+    shadow.rotation.x = -Math.PI / 2;
+    shadow.position.y = topY + .0002;
+    group.add(shadow);
+
+    const lineGeometry = new THREE.BufferGeometry().setFromPoints([
+      new THREE.Vector3(0, topY + .04, 0),
+      new THREE.Vector3(0, foodY - .3, 0),
+    ]);
+    const line = new THREE.Line(
+      lineGeometry,
+      new THREE.LineDashedMaterial({ color: 0xffffff, dashSize: .12, gapSize: .08, transparent: true, opacity: lit ? .18 : .82 })
+    );
+    line.computeLineDistances();
+    group.add(line);
+
+    if (!lit) {
+      const food = new THREE.Sprite(new THREE.SpriteMaterial({ map: foodTexture(foodForKey(cell.key), THREE), transparent: true, depthWrite: false }));
+      food.position.y = foodY;
+      food.scale.set(.62, .62, 1);
+      group.add(food);
+
+      const glow = new THREE.Sprite(new THREE.SpriteMaterial({ map: radialGlowTexture(THREE), color: 0xffffff, transparent: true, opacity: .42, depthWrite: false, blending: THREE.AdditiveBlending }));
+      glow.position.y = foodY;
+      glow.scale.set(.9, .9, 1);
+      group.add(glow);
+    }
+    return group;
+  }
+
+  function createActor3D(blockHeight, gap, effect, THREE) {
+    const cell = cellAt(state.actor.row, state.actor.col) || { height: 0 };
+    const topY = (cell.height + 1) * blockHeight;
+    const group = new THREE.Group();
+    group.position.set(cellX(state.actor, gap), topY, cellZ(state.actor, gap));
+    group.userData.baseX = group.position.x;
+    group.userData.baseY = topY;
+    group.userData.baseZ = group.position.z;
+    group.userData.forwardX = DIRS[state.actor.dir].dc;
+    group.userData.forwardZ = DIRS[state.actor.dir].dr;
+
+    const shadow = new THREE.Mesh(
+      new THREE.CircleGeometry(.31, 28),
+      new THREE.MeshBasicMaterial({ color: 0x102a3a, transparent: true, opacity: .22 })
+    );
+    shadow.rotation.x = -Math.PI / 2;
+    shadow.position.y = .0002;
+    group.add(shadow);
+    group.userData.shadow = shadow;
+
+    const ship = new THREE.Group();
+    const targetYaw = directionYaw(state.actor.dir);
+    ship.rotation.y = effect?.turn ? directionYaw(effect.fromDir) : targetYaw;
+    ship.position.y = .42 + (effect?.jump ? .18 : 0);
+    ship.userData.baseY = ship.position.y;
+    group.add(ship);
+    group.userData.ship = ship;
+    group.userData.startYaw = ship.rotation.y;
+    group.userData.targetYaw = targetYaw;
+
+    const bodyMat = new THREE.MeshLambertMaterial({ color: 0x12b8d7, emissive: 0x063647, emissiveIntensity: .12 });
+    const noseMat = new THREE.MeshLambertMaterial({ color: 0xff8a18, emissive: 0x6b2100, emissiveIntensity: .16 });
+    const glassMat = new THREE.MeshLambertMaterial({ color: 0xcffafe, transparent: true, opacity: .72, emissive: 0x0e7490, emissiveIntensity: .18 });
+
+    const body = new THREE.Mesh(new THREE.CylinderGeometry(.2, .28, .72, 24), bodyMat);
+    body.rotation.x = Math.PI / 2;
+    ship.add(body);
+
+    const nose = new THREE.Mesh(new THREE.ConeGeometry(.23, .42, 24), noseMat);
+    nose.rotation.x = -Math.PI / 2;
+    nose.position.z = -.54;
+    ship.add(nose);
+
+    const cockpit = new THREE.Mesh(new THREE.SphereGeometry(.2, 18, 12), glassMat);
+    cockpit.scale.set(1.08, .62, .9);
+    cockpit.position.set(0, .18, -.1);
+    ship.add(cockpit);
+
+    const engine = new THREE.Mesh(
+      new THREE.TorusGeometry(.18, .035, 10, 24),
+      new THREE.MeshLambertMaterial({ color: 0xffe45c, emissive: 0x0ea5e9, emissiveIntensity: .16 })
+    );
+    engine.rotation.x = Math.PI / 2;
+    engine.position.z = .45;
+    ship.add(engine);
+    ship.userData.engine = engine;
+
+    const pet = new THREE.Sprite(new THREE.SpriteMaterial({ map: petTexture(THREE), transparent: true, depthWrite: false }));
+    pet.position.set(0, .48, -.06);
+    pet.scale.set(.46, .46, 1);
+    ship.add(pet);
+
+    const arrow = new THREE.Sprite(new THREE.SpriteMaterial({ map: arrowTexture(DIRS[state.actor.dir].arrow, THREE), transparent: true, depthWrite: false }));
+    arrow.position.set(0, .42, -.84);
+    arrow.scale.set(.28, .28, 1);
+    ship.add(arrow);
+
+    addFlameParticles(ship, THREE, effect?.dash ? 1.45 : 1);
+    return group;
+  }
+
+  function addFlameParticles(ship, THREE, intensity = 1) {
+    const texture = flameTexture(THREE);
+    const colors = [0x7dd3fc, 0x38bdf8, 0xfff08a, 0xfacc15];
+    const particles = [];
+    for (let i = 0; i < 18; i++) {
+      const material = new THREE.SpriteMaterial({
+        map: texture,
+        color: colors[i % colors.length],
+        transparent: true,
+        opacity: (.84 - i * .032) * intensity,
+        depthWrite: false,
+        blending: THREE.AdditiveBlending,
+      });
+      const flame = new THREE.Sprite(material);
+      const baseX = (Math.random() - .5) * .18;
+      const baseY = -.01 + Math.random() * .12;
+      const baseZ = .54 + i * .035 + Math.random() * .08;
+      flame.position.set(baseX, baseY, baseZ);
+      const scale = (.19 - i * .0045) * intensity;
+      flame.scale.set(scale, scale, 1);
+      flame.userData.baseX = baseX;
+      flame.userData.baseY = baseY;
+      flame.userData.baseZ = baseZ;
+      flame.userData.baseScale = scale;
+      flame.userData.phase = Math.random() * Math.PI * 2;
+      particles.push(flame);
+      ship.add(flame);
+    }
+    ship.userData.engineParticles = particles;
+  }
+
+  function startShipIdle(view, actor, effect = {}) {
+    if (view.idleFrame) cancelAnimationFrame(view.idleFrame);
+    const ship = actor?.userData?.ship;
+    if (!ship) return;
+    const startedAt = performance.now();
+    const activeEffect = Boolean(effect?.dash || effect?.turn || effect?.jump);
+    const baseShipY = ship.userData.baseY ?? ship.position.y;
+    function frame(now) {
+      if (state.three !== view || !actor.parent) return;
+      const t = (now - startedAt) / 1000;
+      animateShipEngine(ship, t, activeEffect ? 1.45 : 1);
+      if (!activeEffect) {
+        ship.position.y = baseShipY + Math.sin(t * 3.4) * .035 + Math.sin(t * 7.1) * .01;
+        ship.rotation.x = Math.sin(t * 9.2) * .018;
+        ship.rotation.z = Math.sin(t * 11.3 + .6) * .014;
+      }
+      const shadow = actor.userData.shadow;
+      if (shadow) {
+        const pulse = 1 + Math.sin(t * 3.4) * .045;
+        shadow.scale.set(pulse, pulse, 1);
+        shadow.material.opacity = activeEffect ? .18 : .2 + Math.sin(t * 5.2) * .035;
+      }
+      view.renderer.render(view.scene, view.camera);
+      view.idleFrame = requestAnimationFrame(frame);
+    }
+    view.idleFrame = requestAnimationFrame(frame);
+  }
+
+  function animateShipEngine(ship, t, intensity = 1) {
+    const engine = ship.userData.engine;
+    if (engine) {
+      const pulse = 1 + Math.sin(t * 24) * .12;
+      engine.scale.set(pulse, pulse, pulse);
+      if (engine.material) engine.material.emissiveIntensity = .18 + Math.sin(t * 18) * .08;
+    }
+    const particles = ship.userData.engineParticles || [];
+    particles.forEach((flame, index) => {
+      const phase = t * (9 + index * .17) + flame.userData.phase;
+      const flicker = .72 + Math.sin(phase) * .22 + Math.sin(phase * 2.3) * .08;
+      const trail = index / Math.max(1, particles.length - 1);
+      flame.position.x = flame.userData.baseX + Math.sin(phase * 1.7) * .035 * (1 + trail);
+      flame.position.y = flame.userData.baseY + Math.cos(phase * 1.3) * .025;
+      flame.position.z = flame.userData.baseZ + Math.sin(phase * .9) * .045 + trail * .08 * intensity;
+      const scale = flame.userData.baseScale * flicker * intensity;
+      flame.scale.set(scale * (1 + trail * .75), scale * (1 - trail * .18), 1);
+      flame.material.opacity = clamp((.9 - trail * .52) * flicker * intensity, .12, .95);
+    });
+  }
+
+  function animateActorDash(view, actor, effect) {
+    const startTime = performance.now();
+    const duration = 260;
+    const startX = actor.userData.baseX - actor.userData.forwardX * .44;
+    const startZ = actor.userData.baseZ - actor.userData.forwardZ * .44;
+    const baseY = actor.userData.baseY;
+    function frame(now) {
+      const t = clamp((now - startTime) / duration, 0, 1);
+      const eased = 1 - Math.pow(1 - t, 3);
+      actor.position.x = startX + (actor.userData.baseX - startX) * eased;
+      actor.position.z = startZ + (actor.userData.baseZ - startZ) * eased;
+      actor.position.y = baseY;
+      if (actor.userData.ship) actor.userData.ship.position.y = .42 + (effect?.jump ? Math.sin(t * Math.PI) * .34 : Math.sin(t * Math.PI) * .06);
+      view.renderer.render(view.scene, view.camera);
+      if (t < 1 && state.three === view) requestAnimationFrame(frame);
+    }
+    requestAnimationFrame(frame);
+  }
+
+  function animateActorTurn(view, actor, effect) {
+    const ship = actor.userData.ship;
+    if (!ship) return;
+    const startTime = performance.now();
+    const duration = 300;
+    const startYaw = actor.userData.startYaw;
+    const targetYaw = actor.userData.targetYaw;
+    const delta = shortestAngleDelta(startYaw, targetYaw);
+    function frame(now) {
+      const t = clamp((now - startTime) / duration, 0, 1);
+      const eased = 1 - Math.pow(1 - t, 3);
+      ship.rotation.y = startYaw + delta * eased;
+      ship.position.y = .42 + Math.sin(t * Math.PI) * .08;
+      view.renderer.render(view.scene, view.camera);
+      if (t < 1 && state.three === view) requestAnimationFrame(frame);
+    }
+    requestAnimationFrame(frame);
+  }
+
+  function directionYaw(dir) {
+    return [0, -Math.PI / 2, Math.PI, Math.PI / 2][dir] || 0;
+  }
+
+  function shortestAngleDelta(from, to) {
+    const fullTurn = Math.PI * 2;
+    return ((to - from + Math.PI) % fullTurn + fullTurn) % fullTurn - Math.PI;
+  }
+
+  function flameTexture(THREE) {
+    if (state.flameTexture) return state.flameTexture;
+    const canvas = document.createElement('canvas');
+    canvas.width = 64;
+    canvas.height = 64;
+    const ctx = canvas.getContext('2d');
+    const grad = ctx.createRadialGradient(32, 30, 2, 32, 32, 30);
+    grad.addColorStop(0, 'rgba(255,255,255,1)');
+    grad.addColorStop(.32, 'rgba(125,211,252,.92)');
+    grad.addColorStop(.62, 'rgba(250,204,21,.62)');
+    grad.addColorStop(1, 'rgba(56,189,248,0)');
+    ctx.fillStyle = grad;
+    ctx.fillRect(0, 0, 64, 64);
+    state.flameTexture = new THREE.CanvasTexture(canvas);
+    return state.flameTexture;
+  }
+
+  function petTexture(THREE) {
+    if (state.petAsset?.url) {
+      const key = `${state.petAsset.url}:${state.petAsset.uv?.row || 0}:${state.petAsset.uv?.col || 0}`;
+      if (state.petTextureKey !== key || !state.petTexture) {
+        state.petTextureKey = key;
+        state.petTexture = new THREE.TextureLoader().load(state.petAsset.url, () => renderBoard());
+        const uv = state.petAsset.uv || { cols: 1, rows: 1, col: 0, row: 0 };
+        state.petTexture.repeat.set(1 / Math.max(1, uv.cols), 1 / Math.max(1, uv.rows));
+        state.petTexture.offset.set((uv.col || 0) / Math.max(1, uv.cols), 1 - ((uv.row || 0) + 1) / Math.max(1, uv.rows));
+        state.petTexture.needsUpdate = true;
+      }
+      return state.petTexture;
+    }
+    if (!state.emojiTexture) state.emojiTexture = makeTextTexture(FALLBACK_PET, 112, THREE, { fontSize: 76, bg: true });
+    return state.emojiTexture;
+  }
+
+  function arrowTexture(text, THREE) {
+    if (!state.arrowTextures[text]) state.arrowTextures[text] = makeTextTexture(text, 96, THREE, { fontSize: 58, bg: false, fill: '#ffffff', shadow: '#075985' });
+    return state.arrowTextures[text];
+  }
+
+  function foodForKey(key) {
+    let hash = 0;
+    for (let i = 0; i < key.length; i++) hash = (hash * 31 + key.charCodeAt(i)) >>> 0;
+    return FOOD_ITEMS[hash % FOOD_ITEMS.length];
+  }
+
+  function foodTexture(food, THREE) {
+    if (!state.foodTextures[food]) state.foodTextures[food] = makeTextTexture(food, 128, THREE, { fontSize: 82, bg: false, shadow: 'rgba(15,23,42,.34)' });
+    return state.foodTextures[food];
+  }
+
+  function radialGlowTexture(THREE) {
+    if (state.foodTextures.__glow) return state.foodTextures.__glow;
+    const canvas = document.createElement('canvas');
+    canvas.width = 96;
+    canvas.height = 96;
+    const ctx = canvas.getContext('2d');
+    const grad = ctx.createRadialGradient(48, 48, 4, 48, 48, 44);
+    grad.addColorStop(0, 'rgba(255,255,255,.86)');
+    grad.addColorStop(.38, 'rgba(186,230,253,.42)');
+    grad.addColorStop(1, 'rgba(186,230,253,0)');
+    ctx.fillStyle = grad;
+    ctx.fillRect(0, 0, 96, 96);
+    state.foodTextures.__glow = new THREE.CanvasTexture(canvas);
+    return state.foodTextures.__glow;
+  }
+
+  function makeTextTexture(text, size, THREE, options = {}) {
+    const canvas = document.createElement('canvas');
+    canvas.width = size;
+    canvas.height = size;
+    const ctx = canvas.getContext('2d');
+    ctx.clearRect(0, 0, size, size);
+    if (options.bg) {
+      const grad = ctx.createLinearGradient(0, 0, 0, size);
+      grad.addColorStop(0, '#fff7ed');
+      grad.addColorStop(1, '#fb923c');
+      ctx.fillStyle = grad;
+      roundRect(ctx, 10, 10, size - 20, size - 20, 26);
+      ctx.fill();
+      ctx.lineWidth = 7;
+      ctx.strokeStyle = '#fed7aa';
+      ctx.stroke();
+    }
+    ctx.font = `900 ${options.fontSize || 66}px Apple Color Emoji, Segoe UI Emoji, sans-serif`;
+    ctx.textAlign = 'center';
+    ctx.textBaseline = 'middle';
+    ctx.shadowColor = options.shadow || 'rgba(15,23,42,.28)';
+    ctx.shadowBlur = options.bg ? 2 : 7;
+    ctx.shadowOffsetY = options.bg ? 3 : 1;
+    ctx.fillStyle = options.fill || '#ffffff';
+    ctx.fillText(text, size / 2, size / 2 + (options.bg ? 2 : 0));
+    const texture = new THREE.CanvasTexture(canvas);
+    texture.needsUpdate = true;
+    return texture;
+  }
+
+  function roundRect(ctx, x, y, w, h, r) {
+    ctx.beginPath();
+    ctx.moveTo(x + r, y);
+    ctx.arcTo(x + w, y, x + w, y + h, r);
+    ctx.arcTo(x + w, y + h, x, y + h, r);
+    ctx.arcTo(x, y + h, x, y, r);
+    ctx.arcTo(x, y, x + w, y, r);
+    ctx.closePath();
+  }
+
+  function cellX(cell, gap) { return (cell.col - (state.puzzle.size - 1) / 2) * gap; }
+  function cellZ(cell, gap) { return (cell.row - (state.puzzle.size - 1) / 2) * gap; }
+
+  function createTileHtml(cell, point, heightStep) {
+    const isGoal = state.puzzle.goals.has(cell.key);
+    const lit = state.litGoals.has(cell.key);
+    const tone = (cell.row * 5 + cell.col * 3) % 4;
+    const colors = tileColors(tone);
+    const cubes = [];
+    for (let level = 0; level <= cell.height; level++) {
+      cubes.push(`
+        <span class="mh-cube${level === cell.height ? ' top-cube' : ''}" style="--lift:${level * heightStep}px">
+          <span class="mh-cube-left"></span>
+          <span class="mh-cube-right"></span>
+          <span class="mh-cube-top"></span>
+        </span>`);
+    }
+    const icon = isGoal ? `<span class="mh-food-icon">${foodForKey(cell.key)}</span>` : '';
+    return `<div class="mh-tile${isGoal ? ' goal' : ''}${lit ? ' lit' : ''}" style="left:${point.x}px;top:${point.y}px;z-index:${point.z + cell.height};--tile-a:${colors.a};--tile-b:${colors.b};--tile-left:${colors.left};--tile-right:${colors.right}">${cubes.join('')}${icon}</div>`;
+  }
+
+  function createActorHtml(point, effect) {
+    const dir = DIRS[state.actor.dir];
+    const sprite = state.petAsset?.url
+      ? `<span class="mh-sprite" style="background-image:url('${state.petAsset.url}');background-size:${spriteBackgroundSize(state.petAsset.uv)};background-position:${spriteBackgroundPosition(state.petAsset.uv)}"></span>`
+      : `<span class="mh-fallback">${FALLBACK_PET}</span>`;
+    const turnClass = effect?.turn === 'left' ? ' turn-left' : effect?.turn === 'right' ? ' turn-right' : '';
+    return `<div class="mh-actor${effect?.jump ? ' jump' : ''}${effect?.dash ? ' dash' : ''}${turnClass}" style="left:${point.x}px;top:${point.y - 8}px;z-index:${point.z + 50}">${sprite}<span class="mh-dir-badge" title="${t('facing', { dir: dir.name })}">${dir.arrow}</span></div>`;
+  }
+
+  function winLevel() {
+    if (state.finished) return;
+    state.finished = true;
+    stopRun(t('allCollected'));
+    clearInterval(state.timer);
+    state.bestLevel = Math.max(state.bestLevel, state.level + 1);
+    localStorage.setItem(STORAGE_BEST, String(state.bestLevel));
+    const difficulty = DIFFICULTIES[state.difficulty] || DIFFICULTIES.normal;
+    const efficiency = Math.max(0, state.puzzle.solution.length - state.steps);
+    const earnedPoints = difficulty.reward + state.level * 9 + efficiency * 3;
+    byId('mhWinText').textContent = t('winText', { level: state.level, diff: difficulty.label, steps: state.steps, solution: state.puzzle.solution.length });
+    byId('mhWin').hidden = false;
+    showToast(t('toastCollect'));
+    launchConfetti();
+    post('gameFinished', {
+      earnedPoints,
+      score: earnedPoints,
+      difficulty: state.difficulty,
+      difficultyLabel: difficulty.label,
+      level: state.level,
+      steps: state.steps,
+      solutionSteps: state.puzzle.solution.length,
+      lights: state.litGoals.size,
+      seconds: state.seconds,
+      finishedAt: Date.now(),
+    });
+  }
+
+  function showHint() {
+    if (!state.puzzle) return;
+    state.hintLevel = Math.min(state.hintLevel + 1, 4);
+    const nextAction = nextHelpfulCommand();
+    if (state.hintLevel === 1) {
+      setStatus(state.puzzle.tip || t('hintObserve'));
+      return;
+    }
+    if (state.hintLevel === 2 && nextAction) {
+      setStatus(t('hintTryNext', { cmd: COMMANDS[nextAction]?.label || nextAction }));
+      return;
+    }
+    if (state.hintLevel === 3) {
+      const sample = state.puzzle.solution.slice(0, 4).map(id => COMMANDS[id]?.short || id).join(' ');
+      setStatus(t('hintRefStart', { sample, more: state.puzzle.solution.length > 4 ? ' ...' : '' }));
+      return;
+    }
+    setStatus(compressionHint() || t('hintCompress'));
+  }
+
+  function nextHelpfulCommand() {
+    const current = state.programs[state.selectedProgram] || [];
+    if (state.selectedProgram !== 'main' || current.length >= state.puzzle.solution.length) return state.puzzle.solution[0];
+    for (let i = 0; i < state.puzzle.solution.length; i++) {
+      if (current[i] !== state.puzzle.solution[i]) return state.puzzle.solution[i];
+    }
+    return state.puzzle.solution[current.length] || state.puzzle.solution[0];
+  }
+
+  function compressionHint() {
+    const solution = state.puzzle?.solution || [];
+    const slots = programSlots();
+    if (slots.p1 <= 0 && solution.length <= 4) return '';
+    for (let size = 2; size <= 4; size++) {
+      for (let start = 0; start + size * 2 <= solution.length; start++) {
+        const chunk = solution.slice(start, start + size).join(',');
+        const next = solution.slice(start + size, start + size * 2).join(',');
+        if (chunk === next) return t('hintRepeat', { seq: solution.slice(start, start + size).map(id => COMMANDS[id]?.short || id).join(' ') });
+      }
+    }
+    return slots.p1 > 0 ? t('hintP1Overflow') : '';
+  }
+
+  function ensureAudioContext() {
+    const AudioCtor = window.AudioContext || window.webkitAudioContext;
+    if (!AudioCtor) return null;
+    if (!state.audioContext) state.audioContext = new AudioCtor();
+    if (state.audioContext.state === 'suspended') state.audioContext.resume?.();
+    return state.audioContext;
+  }
+
+  function playCommandCue(command) {
+    const labels = { left: t('speechLeft'), right: t('speechRight'), jump: t('speechJump') };
+    speakCommand(labels[command]);
+    playCommandTone(command);
+  }
+
+  function speakCommand(text) {
+    if (!text || !window.speechSynthesis) return;
+    try {
+      window.speechSynthesis.cancel();
+      const utterance = new SpeechSynthesisUtterance(text);
+      utterance.lang = 'zh-CN';
+      utterance.rate = 1.18;
+      utterance.pitch = 1.22;
+      utterance.volume = .72;
+      window.speechSynthesis.speak(utterance);
+    } catch (_) {}
+  }
+
+  function playCommandTone(command) {
+    const audio = ensureAudioContext();
+    if (!audio) return;
+    const now = audio.currentTime;
+    const oscillator = audio.createOscillator();
+    const gain = audio.createGain();
+    const tones = { left: 360, right: 460, jump: 680 };
+    oscillator.type = command === 'jump' ? 'triangle' : 'sine';
+    oscillator.frequency.setValueAtTime(tones[command] || 420, now);
+    if (command === 'jump') oscillator.frequency.exponentialRampToValueAtTime(920, now + .16);
+    gain.gain.setValueAtTime(.0001, now);
+    gain.gain.exponentialRampToValueAtTime(.08, now + .018);
+    gain.gain.exponentialRampToValueAtTime(.0001, now + (command === 'jump' ? .24 : .14));
+    oscillator.connect(gain);
+    gain.connect(audio.destination);
+    oscillator.start(now);
+    oscillator.stop(now + (command === 'jump' ? .26 : .16));
+  }
+
+  function updateStats() {
+    const difficulty = DIFFICULTIES[state.difficulty] || DIFFICULTIES.normal;
+    byId('mhLevel').textContent = String(state.level);
+    const select = byId('mhDifficultySelect');
+    if (select && select.value !== state.difficulty) select.value = state.difficulty;
+    byId('mhGoalCount').textContent = `${state.litGoals.size}/${state.puzzle?.goals?.size || 0}`;
+    byId('mhSteps').textContent = String(state.steps);
+    byId('mhTime').textContent = String(state.seconds);
+  }
+
+  function onKeyDown(event) {
+    if (byId('mhHowTo').hidden === false || byId('mhWin').hidden === false) return;
+    const keyMap = { '1': 'forward', '2': 'left', '3': 'right', '4': 'jump', '5': 'repeat2', '6': 'repeat3', '7': 'p1', '8': 'p2' };
+    if (event.key === 'Enter') { event.preventDefault(); handleRunButton(); return; }
+    if (event.key === 'Backspace') { event.preventDefault(); undoCommand(); return; }
+    const command = keyMap[event.key];
+    if (command && availableCommands().includes(command)) {
+      event.preventDefault();
+      addCommand(command);
+    }
+  }
+
+  function requestPetImage(petId = '') {
+    const requestId = `lightbot_pet_${Date.now()}_${Math.floor(Math.random() * 1000)}`;
+    state.petRequestId = requestId;
+    post('haqi_get_pet_image', { requestId, anim: 'idle', petId: petId || undefined }, { requestId, anim: 'idle', petId: petId || undefined });
+    setTimeout(() => {
+      if (state.petAsset?.url) return;
+      const fallbackId = `lightbot_pets_${Date.now()}_${Math.floor(Math.random() * 1000)}`;
+      post('haqi_get_pet_images', { requestId: fallbackId, anim: 'idle' }, { requestId: fallbackId, anim: 'idle' });
+    }, 900);
+  }
+
+  function setPetImage(pet) {
+    if (!pet?.imageBlob || !pet?.uv) return;
+    if (state.petAsset?.url) {
+      URL.revokeObjectURL(state.petAsset.url);
+      state.objectUrls = state.objectUrls.filter(url => url !== state.petAsset.url);
+    }
+    const url = URL.createObjectURL(pet.imageBlob);
+    state.objectUrls.push(url);
+    state.petAsset = { url, uv: pet.uv };
+    state.petTextureKey = '';
+    state.petTexture = null;
+    renderBoard();
+  }
+
+  function programSlots() {
+    const difficulty = DIFFICULTIES[state.difficulty] || DIFFICULTIES.normal;
+    return { main: difficulty.mainSlots, p1: difficulty.p1Slots, p2: difficulty.p2Slots };
+  }
+
+  function cellAt(row, col) {
+    return state.puzzle?.cells.find(cell => cell.row === row && cell.col === col) || null;
+  }
+
+  function directionBetween(a, b) {
+    const dr = b.row - a.row;
+    const dc = b.col - a.col;
+    return DIRS.find(dir => dir.dr === dr && dir.dc === dc)?.id || 0;
+  }
+
+  function isoPoint(row, col, height, centerX, centerY, tileW, tileH, heightStep) {
+    return {
+      x: centerX + (col - row) * tileW / 2,
+      y: centerY + (col + row) * tileH / 2 - height * heightStep,
+      z: 10 + (row + col) * 4 + height,
+    };
+  }
+
+  function tileColors(tone) {
+    return [
+      { a: '#bdf4ff', b: '#4bb8df', left: '#6fc9e7', right: '#2d93bd', top3d: 0x9feaff, left3d: 0x58b8d8, right3d: 0x2c8db6 },
+      { a: '#d8fbff', b: '#5fc5e6', left: '#7ed3ed', right: '#3aa1c7', top3d: 0xc5f4ff, left3d: 0x66c5df, right3d: 0x3297be },
+      { a: '#c7f3ff', b: '#38bdf8', left: '#63c7ea', right: '#248cb5', top3d: 0xaeefff, left3d: 0x4db7df, right3d: 0x257fa9 },
+      { a: '#eefcff', b: '#75d4ed', left: '#8fdcf1', right: '#49aaca', top3d: 0xd9f9ff, left3d: 0x83d2e7, right3d: 0x3f9dbc },
+    ][tone % 4];
+  }
+
+  function spriteBackgroundSize(uv) {
+    return uv.cols > 1 || uv.rows > 1 ? `${uv.cols * 100}% ${uv.rows * 100}%` : 'contain';
+  }
+
+  function spriteBackgroundPosition(uv) {
+    return uv.cols > 1 || uv.rows > 1 ? `${uv.col * 100 / Math.max(1, uv.cols - 1)}% ${uv.row * 100 / Math.max(1, uv.rows - 1)}%` : 'center';
+  }
+
+  function cellKey(row, col) { return `${row},${col}`; }
+  function clamp(value, min, max) { return Math.max(min, Math.min(max, value)); }
+  function normalizeDifficulty(value) { return DIFFICULTIES[value] ? value : 'normal'; }
+  function normalizeSpeed(value) { return RUN_SPEEDS[value] ? value : 'normal'; }
+  function byId(id) { return document.getElementById(id); }
+  function setStatus(text) { byId('mhStatus').textContent = text; }
+
+  function showHowTo() {
+    updateTutorialSkipButton();
+    byId('mhHowTo').hidden = false;
+  }
+
+  function showToast(text) {
+    const toast = document.createElement('div');
+    toast.className = 'mh-toast';
+    toast.textContent = text;
+    document.body.appendChild(toast);
+    setTimeout(() => toast.remove(), 1250);
+  }
+
+  function launchConfetti() {
+    const colors = ['#f97316', '#facc15', '#22c55e', '#38bdf8', '#ec4899', '#8b5cf6'];
+    for (let i = 0; i < 46; i++) {
+      const piece = document.createElement('span');
+      piece.className = 'mh-confetti';
+      piece.style.left = `${Math.random() * 100}vw`;
+      piece.style.setProperty('--x', `${(Math.random() - .5) * 150}px`);
+      piece.style.setProperty('--c', colors[i % colors.length]);
+      piece.style.setProperty('--d', `${1.2 + Math.random() * .9}s`);
+      document.body.appendChild(piece);
+      setTimeout(() => piece.remove(), 2300);
+    }
+  }
+
+  function post(type, data = {}, extra = {}) {
+    try {
+      window.parent.postMessage({ type, data, ...extra }, '*');
+    } catch (_) {}
+  }
+
+  window.addEventListener('beforeunload', () => {
+    clearInterval(state.timer);
+    clearInterval(state.runner);
+    state.objectUrls.forEach(url => URL.revokeObjectURL(url));
+  });
+
+  boot();
+})();
+</script>
+<script>
+  // Bootstrap: the game code above lives in a non-executable <script type=
+  // "text/gamejs"> block so the browser does NOT compile ~95KB of JS before
+  // DOMContentLoaded. We turn it into a Blob and load it as an async script,
+  // which runs right after first paint — keeping startup (DCL) tiny.
+  (function () {
+    var code = document.getElementById('mhLightbotCode').textContent;
+    var url = URL.createObjectURL(new Blob([code], { type: 'application/javascript' }));
+    var s = document.createElement('script');
+    s.async = true;
+    s.src = url;
+    s.onload = function () { URL.revokeObjectURL(url); };
+    document.head.appendChild(s);
+  })();
+</script>
+
+</html>

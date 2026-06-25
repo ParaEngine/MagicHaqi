@@ -105,7 +105,7 @@ const app = document.getElementById('app');
 function renderSplash() {
     app.innerHTML =
         '<div style="position:absolute;inset:0;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:18px;color:#0f2747">'
-        + '<div style="font-size:30px;font-weight:800;letter-spacing:1px">蛋蛋星球</div>'
+        + '<div style="font-size:30px;font-weight:800;letter-spacing:1px">Loading...</div>'
         + '<div style="width:34px;height:34px;border:4px solid rgba(14,116,144,.25);border-top-color:#0ea5e9;border-radius:50%;animation:spin .8s linear infinite"></div>'
         + '</div>';
 }
@@ -147,6 +147,8 @@ let pendingMinigameLaunch = null;
 let pendingMinigameTab = null;
 // 分享链接进入的小游戏（?gameFrom=&game=），引导进入 minigames 视图并自动试玩。
 let pendingSharedGame = null;
+// 新用户通过分享小游戏链接进入：先直接试玩，退出（点返回）后才走命名 / 新手领养流程。
+let deferredNewUserSharedGame = false;
 let hatchingViewPromise = null;
 let hatchingViewModule = null;
 let settingsViewPromise = null;
@@ -179,21 +181,31 @@ let isBootstrapping = true;
 
 const NEW_USER_STORY_PARAM = 'new_user_story';
 
-// 分享小游戏链接：?gameFrom=<username>&game=<filename>
+// 分享小游戏链接：?gameFrom=<username>&game=<filename>[&msg=<自定义留言>]
+// msg 是分享者（或程序）附加的一句留言，会显示在分享落地登录页的单独一行。
 function parseSharedGameParams() {
     try {
         const url = new URL(window.location.href);
         const fromUsername = (url.searchParams.get('gameFrom') || '').trim();
         const game = (url.searchParams.get('game') || '').trim();
-        return { fromUsername, game };
+        const message = (url.searchParams.get('msg') || '').trim().slice(0, 200);
+        return { fromUsername, game, message };
     } catch (_) {
-        return { fromUsername: '', game: '' };
+        return { fromUsername: '', game: '', message: '' };
     }
 }
 
 function hasSharedGameParams() {
-    const { fromUsername, game } = parseSharedGameParams();
-    return !!(fromUsername && game);
+    // 用户作品分享带 gameFrom + game；官方游戏分享只带 game（按 id 打开），故只需 game 即视为分享进入。
+    const { game } = parseSharedGameParams();
+    return !!game;
+}
+
+// 分享小游戏进入登录页时，展示专属分享登录页：
+// 用户作品分享（带 gameFrom）→「XXX 分享了小游戏」；官方游戏分享（仅 game）→「有人给你分享了一个小游戏」。
+function sharedGameLoginContext() {
+    const params = parseSharedGameParams();
+    return params.game ? params : null;
 }
 
 // 启动落地视图：分享小游戏 > 明信片 > home。分享小游戏会记下待试玩参数。
@@ -208,7 +220,7 @@ function resolveLandingView() {
 function cleanupSharedGameUrl() {
     try {
         const url = new URL(window.location.href);
-        ['gameFrom', 'game'].forEach(key => url.searchParams.delete(key));
+        ['gameFrom', 'game', 'msg'].forEach(key => url.searchParams.delete(key));
         window.history.replaceState({}, '', url.toString());
     } catch (_) {}
 }
@@ -593,6 +605,8 @@ function renderMinigamesRoute() {
     if (!pet) return;
     if (guardSleepingRoute(pet)) return;
     const launch = pendingMinigameLaunch;
+    // 新用户分享小游戏落地：点"返回"退出小游戏时才补跑被推迟的命名 / 新手领养流程。
+    const deferredNewUser = deferredNewUserSharedGame;
     const returnToCellLevel = () => {
         state.lastHomeZoomLevel = 3;
         navigateToView('home');
@@ -600,6 +614,10 @@ function renderMinigamesRoute() {
     const renderOptions = {
         onBack: () => {
             pendingMinigameLaunch = null;
+            if (deferredNewUser) {
+                runDeferredNewUserFlow();
+                return;
+            }
             if (launch?.mode === 'story') {
                 handleStoryMinigameExit();
                 return;
@@ -637,10 +655,10 @@ function renderMinigamesRoute() {
         },
         initialGameId: launch?.gameId || null,
         initialGameParams: launch?.params || null,
-        allowPlayWhenLowEnergy: !!launch?.allowLowEnergy,
+        allowPlayWhenLowEnergy: !!launch?.allowLowEnergy || deferredNewUser,
         suppressRewards: !!launch?.suppressRewards,
         hideTopbarActions: launch?.mode === 'adopt' || launch?.mode === 'onboarding',
-        exitGameToBack: launch?.mode === 'sickness' || launch?.mode === 'story' || launch?.mode === 'adopt',
+        exitGameToBack: deferredNewUser || launch?.mode === 'sickness' || launch?.mode === 'story' || launch?.mode === 'adopt',
         deferGameFinishedUntilCompletionExit: launch?.mode === 'story',
         completionPrompt: launch?.mode === 'story' ? {
             title: '小游戏完成啦',
@@ -819,7 +837,7 @@ function renderHomeRoute() {
 }
 
 const routes = {
-    login:     () => renderLogin(app, null, { onLogin: handleLogin, onOffline: handleOfflineMode }),
+    login:     () => renderLogin(app, null, { onLogin: handleLogin, onOffline: handleOfflineMode, sharedGame: sharedGameLoginContext() }),
     petList:   renderPetListRoute,
     hatch:     () => {
         const pet = getCurrentPet();
@@ -1135,6 +1153,9 @@ async function bootstrap() {
     }
     startTickLoop();
 
+    // 新用户经别人分享的小游戏链接进入：先直接试玩，命名 / 领养推迟到退出小游戏时。
+    if (!hasSelectablePets() && await maybeEnterSharedGameForNewUser()) return;
+
     // 进入游戏前必须先给"星球"命名（每位用户只有一个星球）
     await ensurePlanetNamed();
 
@@ -1319,6 +1340,29 @@ async function prepareDefaultEggHome() {
 async function enterDefaultEggHome() {
     await prepareDefaultEggHome();
     setView(resolveLandingView());
+}
+
+// 新用户通过别人分享的小游戏链接（?gameFrom=&game=）登录后：直接进入分享的小游戏试玩，
+// 暂不触发星球命名 / 新手领养仪式。静默创建一颗默认蛋仅作为小游戏 iframe 的上下文，
+// 真正的命名 / 领养在玩家点"返回"退出小游戏时（runDeferredNewUserFlow）才发生。
+async function maybeEnterSharedGameForNewUser() {
+    const shared = parseSharedGameParams();
+    if (!shared.fromUsername || !shared.game) return false; // 仅用户作品分享走此流程
+    await prepareDefaultEggHome();
+    pendingSharedGame = shared;
+    deferredNewUserSharedGame = true;
+    finishBootstrap();
+    setView('minigames');
+    return true;
+}
+
+// 退出分享小游戏后，补跑被推迟的新用户流程（星球命名 → 新手故事 / 领养仪式 → 默认蛋家园）。
+async function runDeferredNewUserFlow() {
+    deferredNewUserSharedGame = false;
+    await ensurePlanetNamed();
+    if (await maybeStartNewUserStory()) return;
+    if (await maybeStartOnboarding()) return;
+    await enterDefaultEggHome();
 }
 
 /** 系统默认蛋：当玩家没有任何宠物时（首次进入 / 删光宠物后）静默创建。 */
@@ -1623,6 +1667,8 @@ async function handleLogin() {
             if (maybeRollDailySickness(pet)) savePetDebounced(pet);
         }
         startTickLoop();
+        // 新用户经别人分享的小游戏链接登录：先直接试玩，命名 / 领养推迟到退出小游戏时。
+        if (!hasSelectablePets() && await maybeEnterSharedGameForNewUser()) return;
         await ensurePlanetNamed();
         if (await enterForcedViewIfAny()) return;
         if (!hasSelectablePets()) {

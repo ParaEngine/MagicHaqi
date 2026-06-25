@@ -1,0 +1,936 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+  <title>哈奇策划模拟器</title>
+</head>
+<body style="margin:0;background:#1e1e1e;overflow:hidden;" class="select-none"></body>
+<script>
+// 关卡 / 难度可被宿主通过 postMessage('setGameConfig') 覆盖
+game_config = {
+  difficulty: "normal",
+  target: 800,          // 完成度达到该分数即「上线」
+  scoreBug: 30,         // 修复 Bug 得分
+  scorePRD: 40,         // PRD 归档得分
+  scoreFood: 12,        // 夜宵得分
+  foodHeal: 26,         // 夜宵恢复理智
+  bugClicks: 3          // 修复 Bug 需要的连击次数
+};
+</script>
+<script>art_assets = [];</script>
+<script defer>
+(function () {
+  'use strict';
+
+  /* ----------------------------- i18n ----------------------------- */
+  const I18N = {
+    zhCN: {
+      title: '哈奇策划模拟器',
+      tabMain: 'haqi_main.js',
+      tabBugs: 'bug_tracker.log',
+      run: '▶ 开始开发',
+      restart: '重新构建',
+      sanity: '理智值',
+      crash: '线上事故',
+      done: '归档 DONE',
+      ship: 'SHIP 进度',
+      day: 'DAY',
+      paused: '已暂停',
+      resume: '继续',
+      pause: '暂停',
+      diffIntern: '实习生',
+      diffNormal: '制作人',
+      diffVeteran: '主程',
+      diffLegend: '一人公司',
+      startHint: '// 修复 Bug · 归档 PRD · 靠夜宵续命',
+      winTitle: '🚀 哈奇上线了！',
+      loseSanity: '🫠 理智归零，你被需求同化了',
+      loseCrash: '💥 线上事故太多，服务器崩了',
+      finalScore: '完成度',
+      bug: 'BUG',
+      prd: 'PRD',
+      fixed: 'FIXED',
+      filed: 'FILED',
+      misclick: '别点！要拖！',
+      prdLost: 'PRD 漏处理了',
+      bugLost: 'Bug 上线了！',
+      yum: '续命 +',
+      combo: '连击',
+      popups: [
+        ['西峙的紧急对齐会议', '“就对齐五分钟，真的只要五分钟。”'],
+        ['施维的美术反馈', '“这个红色，能不能再哈奇一点？”'],
+        ['运营要加春节活动', '“下周一上线，今天提的需求。”'],
+        ['老板路过工位', '“这个按钮，再大亿点点。”'],
+        ['用户的五星好评', '“太好玩了！但是闪退了三次。”'],
+        ['法务的文案审查', '“‘最强’两个字必须删掉。”'],
+        ['产品的最后一处修改', '“这是第 47 次‘最后一处’。”']
+      ]
+    },
+    enUS: {
+      title: 'Haqi Planner Sim',
+      tabMain: 'haqi_main.js',
+      tabBugs: 'bug_tracker.log',
+      run: '▶ Start Dev',
+      restart: 'Rebuild',
+      sanity: 'SANITY',
+      crash: 'INCIDENTS',
+      done: 'DONE',
+      ship: 'SHIP',
+      day: 'DAY',
+      paused: 'Paused',
+      resume: 'Resume',
+      pause: 'Pause',
+      diffIntern: 'Intern',
+      diffNormal: 'Producer',
+      diffVeteran: 'Lead',
+      diffLegend: 'Solo Co.',
+      startHint: '// Squash bugs · File PRDs · Survive on snacks',
+      winTitle: '🚀 Haqi Shipped!',
+      loseSanity: '🫠 Sanity zero. Assimilated by the PM.',
+      loseCrash: '💥 Too many incidents. Server is down.',
+      finalScore: 'Progress',
+      bug: 'BUG',
+      prd: 'PRD',
+      fixed: 'FIXED',
+      filed: 'FILED',
+      misclick: "Drag it, don't tap!",
+      prdLost: 'PRD slipped away',
+      bugLost: 'Bug shipped to prod!',
+      yum: 'Sanity +',
+      combo: 'Combo',
+      popups: [
+        ['Urgent Sync Meeting', '"Just five minutes, really, five."'],
+        ['Art Feedback', '"Can this red be a bit more... Haqi?"'],
+        ['Spring Festival Event', '"Ship next Monday. Specced today."'],
+        ['The Boss Walks By', '"Make this button a tiny bit bigger."'],
+        ['A 5-Star Review', '"So fun! But it crashed thrice."'],
+        ['Legal Review', '"Remove the word \'best\'."'],
+        ["PM's Final Change", '"This is the 47th \'final\' change."']
+      ]
+    }
+  };
+  function detectLang() {
+    try {
+      const p = new URLSearchParams(location.search).get('lang');
+      if (p && I18N[p]) return p;
+    } catch (_) {}
+    return (navigator.language || '').startsWith('zh') ? 'zhCN' : 'enUS';
+  }
+  const LANG = detectLang();
+  const L = I18N[LANG];
+  const t = (k) => (L[k] != null ? L[k] : (I18N.zhCN[k] != null ? I18N.zhCN[k] : k));
+  try { document.documentElement.lang = LANG === 'enUS' ? 'en' : 'zh-CN'; document.title = t('title'); } catch (_) {}
+
+  /* --------------------------- difficulty -------------------------- */
+  const STORAGE_DIFF = 'haqiPlannerSimDiff2';
+  const STORAGE_BEST = 'haqiPlannerSimBest2';
+  const DIFF_ORDER = ['intern', 'normal', 'veteran', 'legend'];
+  // drain: 理智/秒  bugTtl: Bug 存活秒  hearts: 容错  *Every: 生成间隔ms  fall: PRD下落px/s
+  const DIFFS = {
+    intern:  { label: t('diffIntern'),  drain: 1.0, bugTtl: 6.0, hearts: 4, bugEvery: 2200, prdEvery: 3200, foodEvery: 7000,  popupEvery: 16000, fall: 42 },
+    normal:  { label: t('diffNormal'),  drain: 1.5, bugTtl: 5.0, hearts: 3, bugEvery: 1800, prdEvery: 2700, foodEvery: 8500,  popupEvery: 13000, fall: 54 },
+    veteran: { label: t('diffVeteran'), drain: 2.0, bugTtl: 4.0, hearts: 3, bugEvery: 1500, prdEvery: 2300, foodEvery: 10000, popupEvery: 11000, fall: 66 },
+    legend:  { label: t('diffLegend'),  drain: 2.6, bugTtl: 3.3, hearts: 2, bugEvery: 1250, prdEvery: 2000, foodEvery: 12000, popupEvery: 9000,  fall: 80 }
+  };
+  function normDiff(d) { return DIFF_ORDER.includes(d) ? d : (game_config.difficulty || 'normal'); }
+
+  const FOOD_ICONS = ['🍔', '🍗', '🍕', '🍟', '🌭', '🍜', '🥡'];
+
+  /* ----------------------------- state ----------------------------- */
+  const state = {
+    difficulty: normDiff(localStorage.getItem(STORAGE_DIFF)),
+    score: 0,
+    sanity: 100,
+    hearts: 3,
+    combo: 0,
+    maxCombo: 0,
+    day: 1,
+    clock: 0,            // 游戏内毫秒（暂停时不前进）
+    items: [],
+    nextId: 1,
+    running: false,
+    paused: false,
+    finished: false,
+    popupActive: false,
+    nextBug: 0, nextPrd: 0, nextFood: 0, nextPopup: 0,
+    loopId: 0,
+    sentStarted: false
+  };
+  function diff() { return DIFFS[state.difficulty]; }
+
+  /* ------------------------------ DOM ------------------------------ */
+  const root = document.createElement('div');
+  root.id = 'hps';
+  root.innerHTML = `
+    <style>
+      #hps, #hps * { box-sizing: border-box; }
+      #hps {
+        position: fixed; inset: 0;
+        font-family: "Cascadia Code", "Courier New", ui-monospace, monospace;
+        color: #d4d4d4; overflow: hidden;
+        background: #1e1e1e;
+        user-select: none; -webkit-user-select: none; touch-action: none;
+      }
+      /* ---- 编辑器背景（代码氛围）---- */
+      .hps-editor { position: absolute; inset: 0; overflow: hidden; }
+      .hps-code {
+        position: absolute; inset: 0; padding: 8px 0 0 4px;
+        font-size: 13px; line-height: 20px; color: #5a5a5a; opacity: .35;
+        white-space: pre; pointer-events: none; user-select: none;
+      }
+      .hps-gutter { display: inline-block; width: 34px; text-align: right; padding-right: 10px; color: #4a4a4a; }
+      .hps-kw { color: #4a6a8a; } .hps-st { color: #5a7a5a; } .hps-fn { color: #7a6a4a; }
+      .hps-vignette { position:absolute; inset:0; pointer-events:none;
+        background: radial-gradient(120% 90% at 50% 30%, transparent 55%, rgba(0,0,0,.45) 100%); }
+
+      /* ---- 顶部状态栏 ---- */
+      .hps-top { position: absolute; top: 0; left: 0; right: 0; z-index: 30;
+        background: #323233; border-bottom: 1px solid #1a1a1a;
+        display: flex; align-items: center; gap: 12px; padding: 6px 12px; }
+      .hps-traffic { display: flex; gap: 6px; }
+      .hps-traffic i { width: 12px; height: 12px; border-radius: 50%; display: block; }
+      .hps-traffic .r { background:#ff5f56; } .hps-traffic .y { background:#ffbd2e; } .hps-traffic .g { background:#27c93f; }
+      .hps-tabs { display: flex; gap: 1px; font-size: 12px; }
+      .hps-tab { padding: 4px 12px; background: #2d2d2d; color: #969696; border-top: 2px solid transparent; }
+      .hps-tab.active { background: #1e1e1e; color: #d4d4d4; border-top-color: #0a84ff; }
+      .hps-tab .dot { color:#e0a040; }
+      .hps-top-spacer { flex: 1; }
+
+      /* 理智条（左侧） */
+      .hps-sanity { display: flex; align-items: center; gap: 8px; min-width: 160px; }
+      .hps-sanity .lab { font-size: 10px; color: #9aa; letter-spacing: 1px; }
+      .hps-bar { position: relative; width: 150px; height: 14px; background: #111; border: 1px solid #000;
+        border-radius: 3px; overflow: hidden; box-shadow: inset 0 1px 2px rgba(0,0,0,.6); }
+      .hps-bar-fill { height: 100%; width: 100%;
+        background: linear-gradient(90deg, #2dd4bf, #38bdf8);
+        transition: width .2s linear, background .3s; }
+      .hps-bar-fill.mid { background: linear-gradient(90deg, #f59e0b, #f97316); }
+      .hps-bar-fill.low { background: linear-gradient(90deg, #ef4444, #dc2626); animation: hpsBlink .5s infinite; }
+      @keyframes hpsBlink { 50% { opacity: .45; } }
+      .hps-bar-txt { position:absolute; inset:0; display:flex; align-items:center; justify-content:center;
+        font-size:9px; color:#fff; text-shadow:0 1px 1px #000; }
+
+      /* 容错红心（右侧） */
+      .hps-hearts { display:flex; align-items:center; gap:8px; }
+      .hps-hearts .lab { font-size:10px; color:#f88; letter-spacing:1px; }
+      .hps-heart-row { display:flex; gap:3px; font-size:16px; }
+      .hps-heart { filter: drop-shadow(0 1px 1px #000); transition: transform .2s; }
+      .hps-heart.gone { filter: grayscale(1) brightness(.4); }
+      .hps-heart.pop { animation: hpsHeartPop .4s; }
+      @keyframes hpsHeartPop { 0%{transform:scale(1.6);} 100%{transform:scale(1);} }
+
+      /* 中间信息 */
+      .hps-mid { display:flex; align-items:center; gap:14px; font-size:11px; }
+      .hps-chip { background:#252526; border:1px solid #3a3a3a; border-radius:4px; padding:3px 9px; color:#ccc; }
+      .hps-chip b { color:#7dd3fc; }
+      .hps-ship { display:flex; align-items:center; gap:6px; }
+      .hps-ship-bar { width:90px; height:8px; background:#111; border-radius:4px; overflow:hidden; border:1px solid #000; }
+      .hps-ship-fill { height:100%; width:0%; background:linear-gradient(90deg,#34d399,#a3e635); transition:width .3s; }
+      .hps-pause { background:#3a3a3a; border:1px solid #555; color:#ddd; border-radius:4px;
+        padding:3px 10px; font-size:11px; cursor:pointer; font-family:inherit; }
+      .hps-pause:hover { background:#4a4a4a; }
+
+      /* ---- 玩法区 ---- */
+      .hps-play { position: absolute; left: 0; right: 0; bottom: 0; top: 44px; }
+
+      /* 体素方块基础 */
+      .vx { position:absolute; display:flex; align-items:center; justify-content:center;
+        border-radius:7px; will-change:transform;
+        box-shadow: inset 4px 4px 0 rgba(255,255,255,.28), inset -5px -5px 0 rgba(0,0,0,.32),
+                    0 5px 0 rgba(0,0,0,.45), 0 8px 14px rgba(0,0,0,.5);
+        image-rendering: pixelated; }
+
+      /* Bug */
+      .hps-bug { background:#7f1d1d; color:#fff; cursor:pointer;
+        animation: hpsShake .35s infinite; }
+      .hps-bug .emo { font-size:60%; filter: drop-shadow(0 1px 0 #000); pointer-events:none; }
+      .hps-bug .ttl { position:absolute; left:8%; right:8%; bottom:5px; height:4px; border-radius:2px;
+        background:#000; overflow:hidden; pointer-events:none; }
+      .hps-bug .ttl > i { display:block; height:100%; background:#fca5a5; width:100%; }
+      .hps-bug .pips { position:absolute; top:4px; left:0; right:0; display:flex; gap:3px;
+        justify-content:center; pointer-events:none; }
+      .hps-bug .pips > i { width:7px; height:7px; border-radius:50%; background:#000; opacity:.5; }
+      .hps-bug .pips > i.on { background:#fde047; opacity:1; box-shadow:0 0 4px #fde047; }
+      @keyframes hpsShake {
+        0%,100%{ transform: translate(var(--x),var(--y)) rotate(-3deg); }
+        50%{ transform: translate(calc(var(--x) + 2px),var(--y)) rotate(3deg); } }
+
+      /* PRD */
+      .hps-prd { background:#1e3a8a; color:#dbeafe; cursor:grab; flex-direction:column; gap:2px;
+        transform: translate(var(--x),var(--y)); }
+      .hps-prd.drag { cursor:grabbing; box-shadow: inset 4px 4px 0 rgba(255,255,255,.3),
+                    inset -5px -5px 0 rgba(0,0,0,.32), 0 14px 24px rgba(0,0,0,.6); z-index:25; }
+      .hps-prd .emo { font-size:46%; pointer-events:none; }
+      .hps-prd .tag { font-size:10px; font-weight:700; letter-spacing:1px; color:#93c5fd; pointer-events:none; }
+
+      /* Food */
+      .hps-food { background:#a16207; color:#fff; cursor:pointer; border-radius:50%;
+        transform: translate(var(--x),var(--y));
+        box-shadow: inset 4px 4px 0 rgba(255,255,255,.35), inset -5px -5px 0 rgba(0,0,0,.3),
+                    0 0 16px rgba(251,191,36,.55), 0 6px 12px rgba(0,0,0,.5);
+        animation: hpsBob 1.4s ease-in-out infinite; }
+      .hps-food .emo { font-size:62%; pointer-events:none; }
+      @keyframes hpsBob { 50%{ filter: brightness(1.25); } }
+
+      /* DONE 文件夹 */
+      .hps-done { position:absolute; right:18px; bottom:18px; width:118px; height:92px; z-index:20;
+        border:2px dashed #475569; border-radius:12px; background:rgba(30,41,59,.55);
+        display:flex; flex-direction:column; align-items:center; justify-content:center; gap:2px;
+        color:#94a3b8; transition: all .15s; }
+      .hps-done .ico { font-size:34px; line-height:1; }
+      .hps-done .lab { font-size:11px; letter-spacing:1px; }
+      .hps-done.hot { border-color:#34d399; background:rgba(16,185,129,.22); color:#a7f3d0;
+        transform:scale(1.06); box-shadow:0 0 24px rgba(52,211,153,.5); }
+
+      /* 飘字 / 爆点 */
+      .hps-pop { position:absolute; font-size:15px; font-weight:800; pointer-events:none; z-index:28;
+        text-shadow:0 2px 4px #000; animation: hpsPop .8s ease-out forwards; }
+      @keyframes hpsPop { 0%{transform:translate(-50%,0) scale(.6);opacity:0;}
+        20%{transform:translate(-50%,-12px) scale(1.2);opacity:1;}
+        100%{transform:translate(-50%,-54px) scale(1);opacity:0;} }
+      .hps-splat { position:absolute; pointer-events:none; z-index:26; font-size:30px;
+        animation: hpsSplat .5s ease-out forwards; }
+      @keyframes hpsSplat { 0%{transform:translate(-50%,-50%) scale(.4);opacity:1;}
+        100%{transform:translate(-50%,-50%) scale(1.8);opacity:0;} }
+      .hps-combo { position:absolute; top:54%; left:50%; transform:translate(-50%,-50%); z-index:27;
+        font-size:42px; font-weight:900; color:#fde047; text-shadow:0 0 20px rgba(253,224,71,.8);
+        pointer-events:none; animation: hpsCombo .7s ease-out forwards; }
+      @keyframes hpsCombo { 0%{transform:translate(-50%,-50%) scale(.5);opacity:0;}
+        30%{transform:translate(-50%,-50%) scale(1.3);opacity:1;}
+        100%{transform:translate(-50%,-50%) scale(1);opacity:0;} }
+
+      /* 受击全屏红闪 */
+      .hps-damage { position:absolute; inset:0; z-index:35; pointer-events:none; opacity:0;
+        box-shadow: inset 0 0 120px 30px rgba(220,38,38,.7); }
+      .hps-damage.flash { animation: hpsDmg .5s ease-out; }
+      @keyframes hpsDmg { 0%{opacity:1;} 100%{opacity:0;} }
+
+      /* ---- 突发弹窗 ---- */
+      .hps-popup-mask { position:absolute; inset:0; z-index:40;
+        background:rgba(0,0,0,.35); display:flex; align-items:center; justify-content:center;
+        animation: hpsFade .15s ease-out; }
+      @keyframes hpsFade { from{opacity:0;} to{opacity:1;} }
+      .hps-popup { position:relative; width:min(86%,380px);
+        background:linear-gradient(180deg,#3a3a3a,#2b2b2b);
+        border:1px solid #555; border-radius:8px; box-shadow:0 24px 60px rgba(0,0,0,.7);
+        animation: hpsDrop .25s cubic-bezier(.2,1.3,.4,1); }
+      @keyframes hpsDrop { from{transform:translateY(-30px) scale(.9);opacity:0;} to{transform:none;opacity:1;} }
+      .hps-popup-bar { display:flex; align-items:center; justify-content:space-between;
+        background:#252526; padding:8px 10px 8px 14px; border-radius:8px 8px 0 0; border-bottom:1px solid #1a1a1a; }
+      .hps-popup-bar .ti { font-size:12px; color:#cfcfcf; }
+      .hps-popup-x { width:24px; height:24px; border-radius:4px; border:1px solid #5a3030;
+        background:#7f1d1d; color:#fff; font-size:14px; line-height:1; cursor:pointer;
+        display:flex; align-items:center; justify-content:center; font-family:inherit;
+        animation: hpsXglow 1s infinite; }
+      .hps-popup-x:hover { background:#b91c1c; }
+      @keyframes hpsXglow { 50%{ box-shadow:0 0 10px rgba(248,113,113,.8); } }
+      .hps-popup-body { padding:22px 20px; text-align:center; }
+      .hps-popup-body .big { font-size:40px; margin-bottom:10px; }
+      .hps-popup-body .msg { font-size:14px; color:#e4e4e4; line-height:1.6; }
+      .hps-popup-body .sub { margin-top:10px; font-size:11px; color:#f59e0b; }
+
+      /* ---- 覆盖层（开始 / 结束）---- */
+      .hps-overlay { position:absolute; inset:0; z-index:60; display:flex; align-items:center;
+        justify-content:center; padding:20px; background:rgba(20,20,20,.78); backdrop-filter:blur(6px); }
+      .hps-card { width:min(92%,420px); background:#252526; border:1px solid #3a3a3a; border-radius:12px;
+        box-shadow:0 24px 60px rgba(0,0,0,.6); overflow:hidden; }
+      .hps-card-bar { background:#323233; padding:7px 12px; display:flex; align-items:center; gap:8px;
+        border-bottom:1px solid #1a1a1a; font-size:11px; color:#9aa; }
+      .hps-card-bar .dots { display:flex; gap:5px; }
+      .hps-card-bar .dots i { width:10px; height:10px; border-radius:50%; display:block; }
+      .hps-card-body { padding:22px; text-align:center; }
+      .hps-card-title { font-size:22px; font-weight:800; color:#7dd3fc; margin-bottom:6px; }
+      .hps-card-sub { font-size:12px; color:#7a8; margin-bottom:18px; }
+      .hps-diff { display:flex; gap:6px; justify-content:center; flex-wrap:wrap; margin-bottom:18px; }
+      .hps-diff button { background:transparent; border:1px solid #3a3a3a; color:#9aa; border-radius:6px;
+        padding:6px 12px; font-size:12px; cursor:pointer; font-family:inherit; transition:.15s; }
+      .hps-diff button.active { background:#0a84ff; border-color:#0a84ff; color:#fff; font-weight:700; }
+      .hps-run { background:linear-gradient(135deg,#0ea5e9,#6366f1); border:none; color:#fff;
+        font-weight:800; font-size:15px; padding:11px 28px; border-radius:8px; cursor:pointer;
+        font-family:inherit; box-shadow:0 6px 18px rgba(56,189,248,.35); transition:.15s; }
+      .hps-run:hover { filter:brightness(1.1); transform:translateY(-1px); }
+      .hps-run:active { transform:translateY(0) scale(.97); }
+      .hps-legend { display:flex; justify-content:center; gap:16px; margin:16px 0 4px; flex-wrap:wrap; }
+      .hps-legend div { display:flex; flex-direction:column; align-items:center; gap:3px; font-size:10px; color:#9aa; width:74px; }
+      .hps-legend .ic { font-size:24px; }
+      .hps-best { margin-top:14px; font-size:11px; color:#888; }
+
+      @media (max-width: 680px) {
+        .hps-mid { display:none; }
+        .hps-bar { width:96px; } .hps-sanity { min-width:auto; }
+        .hps-tabs { display:none; }
+      }
+      @media (max-width: 460px) {
+        .hps-sanity .lab, .hps-hearts .lab { display:none; }
+        .hps-done { width:92px; height:74px; } .hps-done .ico { font-size:26px; }
+      }
+    </style>
+
+    <div class="hps-editor">
+      <div class="hps-code" id="hpsCode"></div>
+      <div class="hps-vignette"></div>
+    </div>
+
+    <div class="hps-top">
+      <div class="hps-sanity">
+        <span class="lab">${t('sanity')}</span>
+        <div class="hps-bar"><div class="hps-bar-fill" id="hpsSan" style="width:100%"></div>
+          <div class="hps-bar-txt" id="hpsSanTxt">100</div></div>
+      </div>
+      <div class="hps-tabs">
+        <div class="hps-tab active">${t('tabMain')} <span class="dot">●</span></div>
+        <div class="hps-tab">${t('tabBugs')}</div>
+      </div>
+      <div class="hps-mid">
+        <div class="hps-chip">${t('day')} <b id="hpsDay">1</b></div>
+        <div class="hps-ship">
+          <span style="font-size:10px;color:#9aa;">${t('ship')}</span>
+          <div class="hps-ship-bar"><div class="hps-ship-fill" id="hpsShip"></div></div>
+          <b id="hpsScore" style="color:#a3e635;font-size:11px;">0</b>
+        </div>
+      </div>
+      <div class="hps-top-spacer"></div>
+      <button class="hps-pause" id="hpsPause" style="display:none;">${t('pause')}</button>
+      <div class="hps-hearts">
+        <span class="lab">${t('crash')}</span>
+        <div class="hps-heart-row" id="hpsHearts"></div>
+      </div>
+    </div>
+
+    <div class="hps-play" id="hpsPlay">
+      <div class="hps-done" id="hpsDone">
+        <span class="ico">📁</span><span class="lab">${t('done')}</span>
+      </div>
+      <div class="hps-damage" id="hpsDamage"></div>
+    </div>
+
+    <div class="hps-overlay" id="hpsStart">
+      <div class="hps-card">
+        <div class="hps-card-bar"><div class="dots"><i style="background:#ff5f56"></i><i style="background:#ffbd2e"></i><i style="background:#27c93f"></i></div>
+          <span>~/haqi — zsh</span></div>
+        <div class="hps-card-body">
+          <div class="hps-card-title">📓 ${t('title')}</div>
+          <div class="hps-card-sub">${t('startHint')}</div>
+          <div class="hps-legend">
+            <div><span class="ic">🐛</span><span>${LANG === 'enUS' ? 'Tap ×3 to squash' : '连点 3 次修复'}</span></div>
+            <div><span class="ic">📄</span><span>${LANG === 'enUS' ? 'Drag to DONE' : '拖进 DONE'}</span></div>
+            <div><span class="ic">🍔</span><span>${LANG === 'enUS' ? 'Tap to refuel' : '点击续命'}</span></div>
+          </div>
+          <div class="hps-diff" id="hpsDiff"></div>
+          <button class="hps-run" id="hpsRun">${t('run')}</button>
+          <div class="hps-best" id="hpsBest"></div>
+        </div>
+      </div>
+    </div>
+
+    <div class="hps-overlay" id="hpsEnd" style="display:none;">
+      <div class="hps-card">
+        <div class="hps-card-bar"><div class="dots"><i style="background:#ff5f56"></i><i style="background:#ffbd2e"></i><i style="background:#27c93f"></i></div>
+          <span>git log</span></div>
+        <div class="hps-card-body">
+          <div class="hps-card-title" id="hpsEndTitle"></div>
+          <div class="hps-card-sub" id="hpsEndSub"></div>
+          <div class="hps-chip" style="display:inline-block;margin-bottom:18px;">${t('finalScore')}: <b id="hpsEndScore">0</b></div>
+          <div><button class="hps-run" id="hpsRestart">${t('restart')}</button></div>
+          <div class="hps-best" id="hpsBest2"></div>
+        </div>
+      </div>
+    </div>
+  `;
+  document.body.appendChild(root);
+
+  const $ = (id) => document.getElementById(id);
+  const els = {
+    code: $('hpsCode'), san: $('hpsSan'), sanTxt: $('hpsSanTxt'), hearts: $('hpsHearts'),
+    day: $('hpsDay'), ship: $('hpsShip'), score: $('hpsScore'), pause: $('hpsPause'),
+    play: $('hpsPlay'), done: $('hpsDone'), damage: $('hpsDamage'),
+    start: $('hpsStart'), diff: $('hpsDiff'), run: $('hpsRun'), best: $('hpsBest'),
+    end: $('hpsEnd'), endTitle: $('hpsEndTitle'), endSub: $('hpsEndSub'),
+    endScore: $('hpsEndScore'), restart: $('hpsRestart'), best2: $('hpsBest2')
+  };
+
+  /* --------------------- 背景假代码 --------------------- */
+  (function fillCode() {
+    const lines = [
+      ['function', ' shipHaqi() {', 'kw'],
+      ['  while', ' (bugs.length) {', 'kw'],
+      ['    ', 'squash(bugs.pop());', 'fn'],
+      ['  }', '', 'kw'],
+      ['  const', ' prd = await review();', 'kw'],
+      ['  ', 'archive(prd); // 第 47 版', 'st'],
+      ['  if', ' (sanity <= 0) cry();', 'kw'],
+      ['  ', 'eat("夜宵"); // 续命', 'st'],
+      ['  return', ' "🚀 launch";', 'kw'],
+      ['}', '', 'kw'],
+      ['', '// TODO: 修不完的 bug', 'st'],
+      ['', '// FIXME: 改不完的需求', 'st']
+    ];
+    let html = '';
+    let n = 1;
+    for (let r = 0; r < 5; r++) {
+      for (const [a, b, cls] of lines) {
+        html += `<span class="hps-gutter">${n++}</span><span class="hps-${cls}">${a}</span>${b ? `<span>${b.replace(/</g, '&lt;')}</span>` : ''}\n`;
+      }
+    }
+    els.code.innerHTML = html;
+  })();
+
+  /* ----------------------------- utils ----------------------------- */
+  function post(type, data) { try { window.parent && window.parent.postMessage(data ? { type, data } : { type }, '*'); } catch (_) {} }
+  const clamp = (v, lo, hi) => Math.max(lo, Math.min(hi, v));
+  const rand = (lo, hi) => lo + Math.random() * (hi - lo);
+  const bestScore = () => parseInt(localStorage.getItem(STORAGE_BEST) || '0', 10) || 0;
+  function setBest(s) { if (s > bestScore()) localStorage.setItem(STORAGE_BEST, String(s)); }
+  function playRect() { return els.play.getBoundingClientRect(); }
+
+  /* ----------------------------- HUD ------------------------------- */
+  function renderHearts() {
+    let h = '';
+    const max = diff().hearts;
+    for (let i = 0; i < max; i++) h += `<span class="hps-heart${i < state.hearts ? '' : ' gone'}" data-i="${i}">❤️</span>`;
+    els.hearts.innerHTML = h;
+  }
+  function updateHUD() {
+    const s = clamp(state.sanity, 0, 100);
+    els.san.style.width = s + '%';
+    els.sanTxt.textContent = Math.round(s);
+    els.san.classList.toggle('mid', s <= 45 && s > 22);
+    els.san.classList.toggle('low', s <= 22);
+    els.score.textContent = state.score;
+    els.day.textContent = state.day;
+    els.ship.style.width = clamp(state.score / game_config.target * 100, 0, 100) + '%';
+  }
+
+  /* --------------------- 飘字 / 特效 --------------------- */
+  function pop(x, y, txt, color) {
+    const e = document.createElement('div'); e.className = 'hps-pop'; e.textContent = txt;
+    e.style.left = x + 'px'; e.style.top = y + 'px'; e.style.color = color || '#fff';
+    els.play.appendChild(e); setTimeout(() => e.remove(), 800);
+  }
+  function splat(x, y, emo) {
+    const e = document.createElement('div'); e.className = 'hps-splat'; e.textContent = emo;
+    e.style.left = x + 'px'; e.style.top = y + 'px';
+    els.play.appendChild(e); setTimeout(() => e.remove(), 500);
+  }
+  function comboFlash(txt) {
+    const e = document.createElement('div'); e.className = 'hps-combo'; e.textContent = txt;
+    els.play.appendChild(e); setTimeout(() => e.remove(), 700);
+  }
+  function damageFlash() {
+    els.damage.classList.remove('flash'); void els.damage.offsetWidth; els.damage.classList.add('flash');
+  }
+  function bumpCombo() {
+    state.combo++; state.maxCombo = Math.max(state.maxCombo, state.combo);
+    if (state.combo > 0 && state.combo % 5 === 0) comboFlash(state.combo + ' ' + t('combo') + '!');
+  }
+  function comboMult() { return 1 + Math.floor(state.combo / 5) * 0.25; }
+
+  /* ===================== 实体：BUG ===================== */
+  function spawnBug() {
+    const r = playRect();
+    const base = Math.round(rand(46, 56));
+    const x = rand(20, r.width - base - 140);   // 给 DONE 文件夹留空
+    const y = rand(20, r.height - base - 40);
+    const el = document.createElement('div');
+    el.className = 'vx hps-bug';
+    el.style.setProperty('--x', x + 'px');
+    el.style.setProperty('--y', y + 'px');
+    el.style.width = base + 'px'; el.style.height = base + 'px';
+    let pipsHtml = '';
+    for (let i = 0; i < game_config.bugClicks; i++) pipsHtml += '<i></i>';
+    el.innerHTML = `<div class="pips">${pipsHtml}</div><span class="emo">🐛</span><div class="ttl"><i></i></div>`;
+    const item = {
+      id: state.nextId++, kind: 'bug', el, x, y,
+      base, curSize: base, maxSize: base + 40, ttl: diff().bugTtl,
+      bornClock: state.clock, clicks: 0, lastClick: -9999, alive: true
+    };
+    el.addEventListener('pointerdown', (e) => {
+      e.stopPropagation(); e.preventDefault();
+      if (!playable() || !item.alive) return;
+      clickBug(item, e.clientX, e.clientY);
+    });
+    els.play.appendChild(el);
+    state.items.push(item);
+  }
+  function clickBug(b, cx, cy) {
+    // 连击必须够快，否则重置
+    if (state.clock - b.lastClick > 1100) b.clicks = 0;
+    b.lastClick = state.clock;
+    b.clicks++;
+    const pips = b.el.querySelectorAll('.pips > i');
+    for (let i = 0; i < pips.length; i++) pips[i].classList.toggle('on', i < b.clicks);
+    // 命中反馈：缩一下
+    b.el.style.transition = 'filter .1s';
+    b.el.style.filter = 'brightness(1.6)';
+    setTimeout(() => { if (b.el) b.el.style.filter = ''; }, 90);
+    if (b.clicks >= game_config.bugClicks) {
+      b.alive = false;
+      const px = b.x + b.curSize / 2, py = b.y + b.curSize / 2;
+      splat(px, py, '💥');
+      bumpCombo();
+      const gain = Math.round(game_config.scoreBug * comboMult());
+      state.score += gain;
+      state.sanity = clamp(state.sanity + 2, 0, 100);  // 修好 bug 小回血
+      pop(px, py, '+' + gain + ' ' + t('fixed'), '#86efac');
+      removeItem(b);
+      updateHUD(); checkWin();
+    }
+  }
+  function bugTimeout(b) {
+    b.alive = false;
+    const px = b.x + b.curSize / 2, py = b.y + b.curSize / 2;
+    splat(px, py, '🔥'); pop(px, py, t('bugLost'), '#fca5a5');
+    state.combo = 0;
+    loseHeart();
+    removeItem(b);
+  }
+  function updateBug(b, dt) {
+    const age = state.clock - b.bornClock;
+    const p = clamp(age / (b.ttl * 1000), 0, 1);
+    const size = b.base + (b.maxSize - b.base) * p;
+    b.curSize = size;
+    b.el.style.width = size + 'px'; b.el.style.height = size + 'px';
+    // 越接近超时越红、越大
+    const fill = b.el.querySelector('.ttl > i');
+    if (fill) fill.style.width = (1 - p) * 100 + '%';
+    if (p >= 1 && b.alive) bugTimeout(b);
+  }
+
+  /* ===================== 实体：PRD（拖拽）===================== */
+  function spawnPRD() {
+    const r = playRect();
+    const w = 78, h = 92;
+    const x = rand(10, r.width - w - 150);
+    const y = -h;
+    const el = document.createElement('div');
+    el.className = 'vx hps-prd';
+    el.style.width = w + 'px'; el.style.height = h + 'px';
+    el.style.setProperty('--x', x + 'px');
+    el.style.setProperty('--y', y + 'px');
+    el.innerHTML = `<span class="emo">📄</span><span class="tag">${t('prd')}</span>`;
+    const item = {
+      id: state.nextId++, kind: 'prd', el, x, y, w, h,
+      vy: diff().fall, alive: true, dragging: false,
+      grabX: 0, grabY: 0, downX: 0, downY: 0, moved: 0
+    };
+    el.addEventListener('pointerdown', (e) => onPrdDown(item, e));
+    el.addEventListener('pointermove', (e) => onPrdMove(item, e));
+    el.addEventListener('pointerup', (e) => onPrdUp(item, e));
+    el.addEventListener('pointercancel', (e) => onPrdUp(item, e));
+    els.play.appendChild(el);
+    state.items.push(item);
+  }
+  function onPrdDown(p, e) {
+    e.stopPropagation(); e.preventDefault();
+    if (!playable() || !p.alive) return;
+    p.dragging = true; p.moved = 0;
+    p.downX = e.clientX; p.downY = e.clientY;
+    const r = playRect();
+    p.grabX = (e.clientX - r.left) - p.x;
+    p.grabY = (e.clientY - r.top) - p.y;
+    p.el.classList.add('drag');
+    try { p.el.setPointerCapture(e.pointerId); } catch (_) {}
+  }
+  function onPrdMove(p, e) {
+    if (!p.dragging) return;
+    e.preventDefault();
+    const r = playRect();
+    p.x = clamp((e.clientX - r.left) - p.grabX, -10, r.width - p.w + 10);
+    p.y = clamp((e.clientY - r.top) - p.grabY, -10, r.height - p.h + 10);
+    p.el.style.setProperty('--x', p.x + 'px');
+    p.el.style.setProperty('--y', p.y + 'px');
+    p.moved = Math.hypot(e.clientX - p.downX, e.clientY - p.downY);
+    // DONE 高亮
+    els.done.classList.toggle('hot', overDone(e.clientX, e.clientY));
+  }
+  function onPrdUp(p, e) {
+    if (!p.dragging) return;
+    p.dragging = false; p.el.classList.remove('drag');
+    els.done.classList.remove('hot');
+    try { p.el.releasePointerCapture(e.pointerId); } catch (_) {}
+    if (!p.alive) return;
+    if (overDone(e.clientX, e.clientY)) {
+      filePRD(p);
+    } else if (p.moved < 8) {
+      // 误点：没拖动 → 扣理智
+      const px = p.x + p.w / 2, py = p.y + p.h / 2;
+      pop(px, py, t('misclick'), '#fca5a5');
+      state.combo = 0;
+      hurt(7);
+    }
+    // 否则：拖到一半松手 → 从当前位置继续下落（无惩罚）
+  }
+  function overDone(cx, cy) {
+    const d = els.done.getBoundingClientRect();
+    return cx >= d.left && cx <= d.right && cy >= d.top && cy <= d.bottom;
+  }
+  function filePRD(p) {
+    p.alive = false;
+    const d = els.done.getBoundingClientRect(), r = playRect();
+    // 飞入文件夹动画
+    p.el.style.transition = 'transform .25s ease, opacity .25s';
+    p.el.style.transform = `translate(${d.left - r.left + 30}px, ${d.top - r.top + 20}px) scale(.3)`;
+    p.el.style.opacity = '0';
+    setTimeout(() => removeItem(p), 250);
+    els.done.classList.add('hot'); setTimeout(() => els.done.classList.remove('hot'), 200);
+    bumpCombo();
+    const gain = Math.round(game_config.scorePRD * comboMult());
+    state.score += gain;
+    pop(d.left - r.left + 50, d.top - r.top, '+' + gain + ' ' + t('filed'), '#7dd3fc');
+    updateHUD(); checkWin();
+  }
+  function updatePRD(p, dt) {
+    if (p.dragging) return;
+    p.y += p.vy * dt;
+    p.el.style.setProperty('--y', p.y + 'px');
+    const r = playRect();
+    if (p.y > r.height + 4) {
+      p.alive = false;
+      pop(p.x + p.w / 2, r.height - 30, t('prdLost'), '#fbbf24');
+      state.combo = 0;
+      removeItem(p);
+      hurt(6);
+    }
+  }
+
+  /* ===================== 实体：夜宵 ===================== */
+  function spawnFood() {
+    const r = playRect();
+    const size = Math.round(rand(48, 56));
+    const fromLeft = Math.random() < 0.5;
+    const y = rand(60, r.height - size - 110);
+    const x = fromLeft ? -size : r.width + size;
+    const vx = (fromLeft ? 1 : -1) * rand(70, 110);
+    const el = document.createElement('div');
+    el.className = 'vx hps-food';
+    el.style.width = size + 'px'; el.style.height = size + 'px';
+    el.style.setProperty('--x', x + 'px'); el.style.setProperty('--y', y + 'px');
+    el.innerHTML = `<span class="emo">${FOOD_ICONS[(Math.floor(rand(0, FOOD_ICONS.length)))]}</span>`;
+    const item = { id: state.nextId++, kind: 'food', el, x, y, vx, size, alive: true };
+    el.addEventListener('pointerdown', (e) => {
+      e.stopPropagation(); e.preventDefault();
+      if (!playable() || !item.alive) return;
+      eatFood(item);
+    });
+    els.play.appendChild(el);
+    state.items.push(item);
+  }
+  function eatFood(f) {
+    f.alive = false;
+    const px = f.x + f.size / 2, py = f.y + f.size / 2;
+    splat(px, py, '✨');
+    const heal = game_config.foodHeal;
+    state.sanity = clamp(state.sanity + heal, 0, 100);
+    state.score += game_config.scoreFood;
+    pop(px, py, t('yum') + heal, '#fde047');
+    removeItem(f); updateHUD(); checkWin();
+  }
+  function updateFood(f, dt) {
+    f.x += f.vx * dt;
+    f.el.style.setProperty('--x', f.x + 'px');
+    const r = playRect();
+    if (f.x < -f.size - 20 || f.x > r.width + f.size + 20) { f.alive = false; removeItem(f); }
+  }
+
+  /* --------------------- 通用：移除 / 伤害 --------------------- */
+  function removeItem(it) { if (it.el && it.el.parentNode) it.el.remove(); }
+  function hurt(n) {
+    state.sanity = clamp(state.sanity - n, 0, 100);
+    damageFlash();
+    updateHUD();
+    if (state.sanity <= 0) endGame('sanity');
+  }
+  function loseHeart() {
+    if (state.hearts <= 0) return;
+    state.hearts--;
+    renderHearts();
+    const hs = els.hearts.querySelectorAll('.hps-heart');
+    const justLost = hs[state.hearts];
+    if (justLost) { justLost.classList.add('pop'); }
+    damageFlash();
+    updateHUD();
+    if (state.hearts <= 0) endGame('crash');
+  }
+
+  /* ===================== 突发弹窗 ===================== */
+  function triggerPopup() {
+    if (state.popupActive) return;
+    state.popupActive = true;
+    const list = t('popups');
+    const [title, msg] = list[Math.floor(rand(0, list.length))];
+    const mask = document.createElement('div');
+    mask.className = 'hps-popup-mask';
+    mask.innerHTML = `
+      <div class="hps-popup">
+        <div class="hps-popup-bar">
+          <span class="ti">⚠️ ${title}</span>
+          <button class="hps-popup-x" type="button">✕</button>
+        </div>
+        <div class="hps-popup-body">
+          <div class="big">📢</div>
+          <div class="msg">${msg}</div>
+          <div class="sub">${LANG === 'enUS' ? 'Bugs keep ticking behind this — close it!' : '背后的 Bug 还在倒计时——快关掉！'}</div>
+        </div>
+      </div>`;
+    // 点击遮罩本体不关闭，必须点 X
+    mask.addEventListener('pointerdown', (e) => { e.stopPropagation(); });
+    const xBtn = mask.querySelector('.hps-popup-x');
+    xBtn.addEventListener('pointerdown', (e) => {
+      e.stopPropagation(); e.preventDefault();
+      mask.remove();
+      state.popupActive = false;
+    });
+    els.play.appendChild(mask);
+    state._popupEl = mask;
+  }
+
+  /* ============================ 主循环 ============================ */
+  const LOOP_MS = 1000 / 60;
+  let lastReal = 0;
+  function playable() { return state.running && !state.paused && !state.finished; }
+
+  function tick() {
+    if (!state.running || state.finished) return;
+    const now = performance.now();
+    let dtReal = now - lastReal; lastReal = now;
+    if (state.paused) return;
+    const dt = Math.min(50, dtReal) / 1000;
+    state.clock += Math.min(50, dtReal);
+
+    // 难度随时间 / 分数缓升：day 推进
+    const newDay = 1 + Math.floor(state.score / 150);
+    if (newDay !== state.day) { state.day = newDay; }
+
+    // 理智随时间消耗（弹窗存续时更快）
+    let drain = diff().drain;
+    if (state.popupActive) drain *= 1.7;
+    state.sanity = clamp(state.sanity - drain * dt, 0, 100);
+
+    // 生成
+    if (state.clock >= state.nextBug)  { spawnBug();  state.nextBug  = state.clock + diff().bugEvery  * rand(0.7, 1.2); }
+    if (state.clock >= state.nextPrd)  { spawnPRD();  state.nextPrd  = state.clock + diff().prdEvery  * rand(0.75, 1.25); }
+    if (state.clock >= state.nextFood) { spawnFood(); state.nextFood = state.clock + diff().foodEvery * rand(0.8, 1.3); }
+    if (state.clock >= state.nextPopup && !state.popupActive) {
+      triggerPopup(); state.nextPopup = state.clock + diff().popupEvery * rand(0.85, 1.4);
+    }
+
+    // 更新实体
+    const survivors = [];
+    for (const it of state.items) {
+      if (!it.alive) continue;
+      if (it.kind === 'bug') updateBug(it, dt);
+      else if (it.kind === 'prd') updatePRD(it, dt);
+      else if (it.kind === 'food') updateFood(it, dt);
+      if (it.alive) survivors.push(it);
+    }
+    state.items = survivors;
+
+    updateHUD();
+    if (state.sanity <= 0 && !state.finished) endGame('sanity');
+  }
+
+  function startLoop() { stopLoop(); lastReal = performance.now(); state.loopId = setInterval(tick, LOOP_MS); }
+  function stopLoop() { if (state.loopId) { clearInterval(state.loopId); state.loopId = 0; } }
+
+  /* ============================ 流程 ============================ */
+  function clearItems() {
+    for (const it of state.items) removeItem(it);
+    state.items = [];
+    if (state._popupEl) { state._popupEl.remove(); state._popupEl = null; }
+    state.popupActive = false;
+  }
+
+  function startGame() {
+    clearItems();
+    state.score = 0; state.sanity = 100; state.combo = 0; state.maxCombo = 0;
+    state.day = 1; state.clock = 0; state.nextId = 1;
+    state.hearts = diff().hearts;
+    state.running = true; state.paused = false; state.finished = false;
+    const warm = 700;
+    state.nextBug = warm; state.nextPrd = warm + 400;
+    state.nextFood = diff().foodEvery * 0.6; state.nextPopup = diff().popupEvery;
+    els.start.style.display = 'none';
+    els.end.style.display = 'none';
+    els.pause.style.display = '';
+    els.pause.textContent = t('pause');
+    renderHearts(); updateHUD();
+    if (!state.sentStarted) { post('gameStarted'); state.sentStarted = true; }
+    startLoop();
+  }
+
+  function checkWin() {
+    if (state.finished) return;
+    if (state.score >= game_config.target) endGame('win');
+  }
+
+  function endGame(reason) {
+    if (state.finished) return;
+    state.finished = true; state.running = false;
+    stopLoop();
+    if (state._popupEl) { state._popupEl.remove(); state._popupEl = null; }
+    state.popupActive = false;
+    const won = reason === 'win';
+    setBest(state.score);
+    els.endTitle.textContent = won ? t('winTitle') : (reason === 'crash' ? t('loseCrash') : t('loseSanity'));
+    els.endSub.textContent = (LANG === 'enUS' ? 'Max combo ' : '最高连击 ') + state.maxCombo;
+    els.endScore.textContent = state.score;
+    els.best2.textContent = (LANG === 'enUS' ? 'Best: ' : '最佳：') + bestScore();
+    els.end.style.display = 'flex';
+    els.pause.style.display = 'none';
+    post('gameFinished', { earnedPoints: state.score, difficulty: diff().label, won });
+  }
+
+  function togglePause() {
+    if (!state.running || state.finished) return;
+    state.paused = !state.paused;
+    els.pause.textContent = state.paused ? t('resume') : t('pause');
+    if (!state.paused) lastReal = performance.now();
+  }
+
+  /* --------------------------- 难度按钮 --------------------------- */
+  function renderDiff() {
+    els.diff.innerHTML = '';
+    DIFF_ORDER.forEach((id) => {
+      const b = document.createElement('button');
+      b.type = 'button';
+      b.className = state.difficulty === id ? 'active' : '';
+      b.textContent = DIFFS[id].label;
+      b.addEventListener('click', () => {
+        state.difficulty = id;
+        localStorage.setItem(STORAGE_DIFF, id);
+        renderDiff();
+      });
+      els.diff.appendChild(b);
+    });
+  }
+
+  /* ----------------------------- 事件 ----------------------------- */
+  els.run.addEventListener('click', startGame);
+  els.restart.addEventListener('click', startGame);
+  els.pause.addEventListener('click', togglePause);
+  window.addEventListener('keydown', (e) => {
+    if (e.key === 'Escape' || e.key === ' ') { e.preventDefault(); togglePause(); }
+  });
+  window.addEventListener('message', (ev) => {
+    const m = ev.data || {};
+    if (m.type === 'setGameConfig') {
+      if (m.difficulty && DIFFS[m.difficulty]) {
+        state.difficulty = m.difficulty;
+        localStorage.setItem(STORAGE_DIFF, m.difficulty);
+        renderDiff();
+      }
+      if (m.data && typeof m.data === 'object') { try { Object.assign(game_config, m.data); } catch (_) {} }
+    } else if (m.type === 'pause') { if (!state.paused) togglePause(); }
+    else if (m.type === 'resume') { if (state.paused) togglePause(); }
+  });
+
+  /* ------------------------------ init ----------------------------- */
+  renderDiff();
+  renderHearts();
+  updateHUD();
+  els.best.textContent = (LANG === 'enUS' ? 'Best: ' : '最佳：') + bestScore();
+  post('gameLoaded');
+})();
+</script>
+</html>

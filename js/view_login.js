@@ -99,9 +99,18 @@ function ensureLoginSpinnerStyle() {
     document.head.appendChild(style);
 }
 
-export function renderLogin(panel, _data, { onLogin, onOffline, mode = 'login' } = {}) {
+export function renderLogin(panel, _data, { onLogin, onOffline, mode = 'login', sharedGame = null } = {}) {
     ensureLoginSpinnerStyle();
     const appTitle = String(state.settings?.starSettlement?.appTitle || '').trim() || t('appName');
+    // 分享小游戏落地的专属登录页：不展示品牌（蛋蛋星球），改为「XXX 给你分享了一个小游戏，登录即可一起玩」。
+    // 用户作品分享带 gameFrom（作者名）；官方游戏分享只带 game，无作者，用通用文案。
+    const shareOwner = String(sharedGame?.fromUsername || '').trim();
+    const isShare = !!(shareOwner || String(sharedGame?.game || '').trim());
+    const shareTitle = shareOwner
+        ? t('mgShareLoginTitle', { owner: shareOwner })
+        : t('mgShareLoginTitleAnon');
+    // 分享者（或程序）附加的一句自定义留言，单独一行展示在引导文案下方。
+    const shareMessage = String(sharedGame?.message || '').trim();
     // 复用 level_planet 的太空背景：.mh-stage.zoom-space + .space-bg + 闪烁星点
     const stars = Array.from({ length: 82 }).map((_, i) => {
         const x = (Math.random() * 100).toFixed(2);
@@ -124,14 +133,21 @@ export function renderLogin(panel, _data, { onLogin, onOffline, mode = 'login' }
                 ${planets}
             </div>
             <div class="absolute inset-0 flex flex-col items-center justify-center px-8 text-center" style="z-index:40">
+                ${isShare ? `
+                <div class="text-7xl floaty mb-4" style="filter:drop-shadow(0 0 18px rgba(125,225,255,0.55))">🎮</div>
+                <h1 class="text-2xl font-extrabold mb-3" style="color:#e8f7ff;text-shadow:0 0 18px rgba(84,226,255,0.55),0 2px 8px rgba(6,18,44,0.6);max-width:300px;line-height:1.32">${escapeHtml(shareTitle)}</h1>
+                ${shareMessage ? `<p class="text-sm mb-3 px-4 py-2" style="color:#fff;background:rgba(84,226,255,0.16);border:1px solid rgba(152,239,255,0.4);border-radius:14px;max-width:300px;line-height:1.4;text-shadow:0 1px 4px rgba(6,18,44,0.6);white-space:pre-wrap;word-break:break-word">${escapeHtml(shareMessage)}</p>` : ''}
+                <p class="text-sm mb-8" style="color:#bde6ff;text-shadow:0 0 10px rgba(84,226,255,0.35)">${escapeHtml(t('mgShareLoginDesc'))}</p>
+                ` : `
                 <div class="text-7xl floaty mb-4" style="filter:drop-shadow(0 0 18px rgba(125,225,255,0.55))">🐾</div>
                 <h1 class="text-3xl font-extrabold mb-2" style="color:#e8f7ff;text-shadow:0 0 18px rgba(84,226,255,0.55),0 2px 8px rgba(6,18,44,0.6)">${escapeHtml(appTitle)}</h1>
                 <p class="text-sm mb-8" style="color:#bde6ff;text-shadow:0 0 10px rgba(84,226,255,0.35)">${escapeHtml(t('tagline'))}</p>
                 <p class="text-xs mb-6" style="color:#9fd0eb;text-shadow:0 1px 4px rgba(6,18,44,0.6)">${escapeHtml(t('pleaseLogin'))}</p>
+                `}
                 <div id="mhLoginAction" class="flex items-center justify-center" style="min-height:64px">
                     ${actionAreaHtml(mode)}
                 </div>
-                ${mode === 'loggingIn' ? '' : offlineOptionHtml()}
+                ${(mode === 'loggingIn' || isShare) ? '' : offlineOptionHtml()}
                 ${languageSelectorHtml()}
             </div>
         </div>`;
@@ -145,7 +161,7 @@ export function renderLogin(panel, _data, { onLogin, onOffline, mode = 'login' }
         };
     }
     const switchLanguage = (lang) => {
-        if (setLang(lang)) renderLogin(panel, _data, { onLogin, onOffline, mode });
+        if (setLang(lang)) renderLogin(panel, _data, { onLogin, onOffline, mode, sharedGame });
     };
     const langZh = $('mhLoginLangZh');
     const langEn = $('mhLoginLangEn');

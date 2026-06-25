@@ -1,0 +1,219 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+  <title>舒尔特方格</title>
+  <script src="https://cdn.keepwork.com/keepwork/cdn/tailwindcss@3.4.16.js"></script>
+  <style>
+    * {
+      box-sizing: border-box
+    }
+
+    html,
+    body {
+      height: 100%;
+      margin: 0
+    }
+
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, 'PingFang SC', 'Microsoft YaHei', sans-serif;
+      background: linear-gradient(180deg, #fef08a, #38bdf8);
+      color: #0f2747;
+      overflow: hidden
+    }
+
+    .shell {
+      height: 100%;
+      display: grid;
+      grid-template-rows: auto 1fr auto;
+      gap: 10px;
+      padding: 12px
+    }
+
+    .top {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 10px;
+      background: rgba(255, 255, 255, .86);
+      border: 2px solid #e0f7ff;
+      border-radius: 14px;
+      padding: 10px 12px;
+      box-shadow: 0 5px 0 rgba(14, 116, 144, .18)
+    }
+
+    .title {
+      font-weight: 900;
+      font-size: 18px
+    }
+
+    .stats {
+      display: flex;
+      gap: 10px;
+      font-weight: 800;
+      color: #2563eb
+    }
+
+    .topActions {
+      display: flex;
+      align-items: center;
+      gap: 10px
+    }
+
+    .helpBtn {
+      border: 0;
+      border-radius: 999px;
+      padding: 8px 12px;
+      background: #f97316;
+      color: white;
+      font-weight: 900;
+      box-shadow: 0 4px 0 #9a3412
+    }
+
+    .grid {
+      align-self: center;
+      justify-self: center;
+      width: min(76vmin, 420px);
+      height: min(76vmin, 420px);
+      display: grid;
+      grid-template-columns: repeat(5, 1fr);
+      gap: 8px
+    }
+
+    .cell {
+      border: 0;
+      border-radius: 12px;
+      background: linear-gradient(180deg, #fff, #dff7ff);
+      box-shadow: 0 5px 0 #1d4ed8, 0 10px 18px rgba(15, 23, 42, .16);
+      font-size: clamp(18px, 5vmin, 34px);
+      font-weight: 900;
+      color: #164e7a
+    }
+
+    .cell.done {
+      background: #bbf7d0;
+      color: #047857;
+      box-shadow: 0 3px 0 #059669
+    }
+
+    .cell.next {
+      outline: 4px solid #f97316
+    }
+
+    .bottom {
+      display: flex;
+      justify-content: center;
+      gap: 10px
+    }
+
+    .btn {
+      border: 0;
+      border-radius: 999px;
+      padding: 10px 22px;
+      background: #0ea5e9;
+      color: white;
+      font-weight: 900;
+      box-shadow: 0 5px 0 #1e3a8a
+    }
+
+    .toast {
+      position: fixed;
+      left: 50%;
+      top: 50%;
+      transform: translate(-50%, -50%);
+      background: #fff;
+      border: 2px solid #7dd3fc;
+      border-radius: 16px;
+      padding: 18px 22px;
+      font-weight: 900;
+      box-shadow: 0 16px 40px rgba(15, 23, 42, .25)
+    }
+
+    .howToOverlay {
+      position: fixed;
+      inset: 0;
+      z-index: 20;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      padding: 18px;
+      background: rgba(15, 39, 71, .42)
+    }
+
+    .howToCard {
+      width: min(92vw, 360px);
+      background: #fff;
+      border: 3px solid #7dd3fc;
+      border-radius: 16px;
+      padding: 20px;
+      box-shadow: 0 18px 44px rgba(15, 23, 42, .28)
+    }
+
+    .howToTitle {
+      margin: 0 0 10px;
+      font-size: 22px;
+      font-weight: 900;
+      color: #0f2747
+    }
+
+    .howToText {
+      margin: 0 0 16px;
+      line-height: 1.55;
+      font-weight: 800;
+      color: #164e7a
+    }
+
+    [hidden] {
+      display: none !important
+    }
+
+    @media (max-width: 420px) {
+      .top {
+        align-items: flex-start;
+        flex-direction: column
+      }
+
+      .topActions {
+        width: 100%;
+        justify-content: space-between
+      }
+    }
+  </style>
+</head>
+
+<body>
+  <div class="shell">
+    <div class="top">
+      <div class="title">📊 舒尔特方格</div>
+      <div class="topActions">
+        <div class="stats"><span>下一个 <b id="nextNum">1</b></span><span>用时 <b id="time">0.0</b>s</span></div>
+        <button id="help" class="helpBtn" type="button">玩法</button>
+      </div>
+    </div>
+    <div id="grid" class="grid"></div>
+    <div class="bottom"><button id="restart" class="btn">重新开始</button></div>
+  </div>
+  <div id="howTo" class="howToOverlay" role="dialog" aria-modal="true" aria-labelledby="howToTitle" hidden>
+    <div class="howToCard">
+      <h1 id="howToTitle" class="howToTitle">怎么玩</h1>
+      <p class="howToText">从 1 开始，按顺序点击数字直到 25。越快完成，获得的心情奖励越高。</p>
+      <button id="startPlay" class="btn" type="button">开始玩</button>
+    </div>
+  </div>
+  <script>
+    const grid = document.getElementById('grid'); const nextNum = document.getElementById('nextNum'); const timeEl = document.getElementById('time'); let next = 1, start = 0, timer = 0;
+    const howTo = document.getElementById('howTo'); let hasStarted = false;
+    function shuffle(arr) { for (let i = arr.length - 1; i > 0; i--) { const j = Math.floor(Math.random() * (i + 1));[arr[i], arr[j]] = [arr[j], arr[i]] } return arr }
+    function post(type, data = {}) { try { window.parent.postMessage({ type, data }, '*') } catch (e) { } }
+    function startGame() { next = 1; start = performance.now(); clearInterval(timer); timer = setInterval(() => { timeEl.textContent = ((performance.now() - start) / 1000).toFixed(1) }, 100); nextNum.textContent = next; grid.innerHTML = ''; shuffle(Array.from({ length: 25 }, (_, i) => i + 1)).forEach(n => { const b = document.createElement('button'); b.className = 'cell' + (n === 1 ? ' next' : ''); b.textContent = n; b.onclick = () => hit(b, n); grid.appendChild(b) }); post('gameStarted') }
+    function hit(btn, n) { if (n !== next) return; btn.classList.add('done'); btn.classList.remove('next'); next++; nextNum.textContent = next > 25 ? '完成' : next; grid.querySelectorAll('.cell').forEach(el => el.classList.toggle('next', Number(el.textContent) === next)); if (next > 25) finish() }
+    function finish() { clearInterval(timer); const seconds = (performance.now() - start) / 1000; const score = Math.max(40, Math.round(120 - seconds * 2)); const box = document.createElement('div'); box.className = 'toast'; box.textContent = '完成！心情 +'; document.body.appendChild(box); post('gameFinished', { earnedPoints: score, seconds: Math.round(seconds * 10) / 10, finishedAt: Date.now() }); setTimeout(() => box.remove(), 1400) }
+    function showHowTo() { howTo.hidden = false }
+    function closeHowTo() { howTo.hidden = true; if (!hasStarted) { hasStarted = true; startGame() } }
+    document.getElementById('help').onclick = showHowTo; document.getElementById('startPlay').onclick = closeHowTo; document.getElementById('restart').onclick = () => { hasStarted = true; startGame() }; window.addEventListener('message', e => { if (e.data?.type === 'gameContinue') { hasStarted = true; startGame() } }); post('gameLoaded'); showHowTo();
+  </script>
+</body>
+
+</html>

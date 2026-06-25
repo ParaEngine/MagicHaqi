@@ -1,0 +1,1194 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+<title>拉霸肉鸽 · Slot Roguelike</title>
+<script src="https://cdn.keepwork.com/keepwork/cdn/tailwindcss@3.4.16.js"></script>
+<style>
+  :root{
+    --c-bg:#0b1020; --c-panel:#141a2e; --c-accent:#f59e0b;
+    --c-fire:#ef4444; --c-ice:#38bdf8; --c-thunder:#a855f7; --c-nature:#22c55e;
+  }
+  *{box-sizing:border-box;}
+  html,body{margin:0;height:100%;background:#070b16;color:#e5e7eb;font-family:"PingFang SC","Microsoft YaHei",system-ui,sans-serif;overflow:hidden;touch-action:manipulation;-webkit-tap-highlight-color:transparent;}
+  #app{position:relative;width:100vw;height:100vh;display:flex;flex-direction:column;}
+
+  /* ---------- HUD ---------- */
+  .hud{display:flex;align-items:center;justify-content:space-between;padding:7px 12px;background:linear-gradient(180deg,#10162c,#0a0f1f);border-bottom:2px solid #1e2540;flex-shrink:0;z-index:5;}
+  .hud b{font-variant-numeric:tabular-nums;}
+  .chip{display:inline-flex;align-items:center;gap:4px;font-size:12px;color:#94a3b8;}
+
+  /* ---------- main layout ---------- */
+  .main{flex:1;display:flex;min-height:0;}
+  .stage{flex:1;position:relative;min-width:0;background:#060912;}
+  #battleCanvas{display:block;width:100%;height:100%;}
+  .slotpanel{width:320px;flex-shrink:0;display:flex;flex-direction:column;align-items:center;justify-content:center;
+    background:linear-gradient(180deg,#141a2e,#0c1124);border-left:3px solid #1e2540;padding:12px;gap:10px;}
+
+  /* ---------- reels ---------- */
+  .reels{display:flex;gap:10px;perspective:600px;}
+  .reel{position:relative;width:82px;height:84px;overflow:hidden;border-radius:14px;cursor:pointer;
+    background:linear-gradient(180deg,#1e2540,#0d1226);border:3px solid #2a3358;
+    box-shadow:inset 0 0 18px rgba(0,0,0,.6);transition:border-color .15s,box-shadow .15s,transform .1s;}
+  .reel:active{transform:scale(.97);}
+  .reel.lockable:hover{border-color:#64748b;}
+  .reel.locked{border-color:var(--c-accent);box-shadow:0 0 16px rgba(245,158,11,.55),inset 0 0 14px rgba(245,158,11,.25);}
+  .reel.hint{animation:reelHint 1s infinite;}
+  @keyframes reelHint{0%,100%{box-shadow:0 0 0 0 rgba(245,158,11,.6),inset 0 0 14px rgba(245,158,11,.15);}50%{box-shadow:0 0 0 7px rgba(245,158,11,0),inset 0 0 14px rgba(245,158,11,.25);}}
+  .reel-strip{position:absolute;left:0;right:0;top:0;will-change:transform;}
+  .sym{height:84px;display:flex;align-items:center;justify-content:center;font-size:44px;line-height:1;filter:drop-shadow(0 2px 4px rgba(0,0,0,.55));}
+  .lock-badge{position:absolute;top:3px;right:4px;font-size:13px;opacity:0;transition:opacity .15s;z-index:3;text-shadow:0 1px 2px #000;}
+  .reel.locked .lock-badge{opacity:1;}
+  .reel-glare{position:absolute;inset:0;pointer-events:none;z-index:2;
+    background:linear-gradient(180deg,rgba(13,18,38,.85),transparent 26%,transparent 74%,rgba(13,18,38,.85));}
+
+  .combo-line{min-height:42px;text-align:center;}
+  .combo-badge{display:inline-block;background:rgba(245,158,11,.15);border:1px solid rgba(245,158,11,.45);color:#fbbf24;border-radius:9px;padding:4px 12px;font-size:13px;font-weight:800;}
+  .dmg-pre{font-size:12px;color:#cbd5e1;margin-top:3px;}
+
+  /* ---------- buttons ---------- */
+  .btnrow{display:flex;gap:8px;align-items:center;justify-content:center;flex-wrap:wrap;}
+  .btn{cursor:pointer;user-select:none;border:none;border-radius:13px;font-weight:800;transition:transform .08s,filter .15s,opacity .15s;}
+  .btn:active{transform:translateY(2px) scale(.98);}
+  .btn:disabled{opacity:.35;cursor:not-allowed;filter:grayscale(.4);}
+  .btn-spin{background:linear-gradient(180deg,#fbbf24,#d97706);color:#1a1206;padding:13px 30px;font-size:18px;box-shadow:0 4px 0 #92400e,0 7px 14px rgba(0,0,0,.4);}
+  .btn-attack{background:linear-gradient(180deg,#f87171,#dc2626);color:#fff;padding:13px 26px;font-size:17px;box-shadow:0 4px 0 #7f1d1d,0 7px 14px rgba(0,0,0,.4);}
+  .btn-reroll{background:linear-gradient(180deg,#60a5fa,#2563eb);color:#fff;padding:11px 18px;font-size:14px;box-shadow:0 4px 0 #1e3a8a;}
+  .btn.hint{animation:btnHint 1s infinite;}
+  @keyframes btnHint{0%,100%{box-shadow:0 0 0 0 rgba(255,255,255,.5),0 4px 0 rgba(0,0,0,.3);transform:translateY(0);}50%{box-shadow:0 0 0 9px rgba(255,255,255,0),0 4px 0 rgba(0,0,0,.3);transform:translateY(-2px);}}
+
+  /* ---------- coach bubble ---------- */
+  .coach{position:absolute;left:50%;transform:translateX(-50%);bottom:14px;max-width:88%;
+    background:linear-gradient(180deg,#1f2748,#141a30);border:2px solid var(--c-accent);
+    color:#fde68a;font-size:14px;font-weight:700;padding:10px 16px;border-radius:14px;
+    box-shadow:0 8px 24px rgba(0,0,0,.5);z-index:30;text-align:center;animation:coachPop .25s ease-out both;pointer-events:none;}
+  .coach::after{content:"";position:absolute;left:50%;bottom:-9px;transform:translateX(-50%);
+    border:8px solid transparent;border-top-color:var(--c-accent);}
+  @keyframes coachPop{0%{transform:translateX(-50%) scale(.7);opacity:0;}100%{transform:translateX(-50%) scale(1);opacity:1;}}
+  .coach .em{color:#fff;}
+
+  /* ---------- modals ---------- */
+  .modal-bg{position:fixed;inset:0;background:rgba(2,6,23,.82);backdrop-filter:blur(4px);z-index:50;display:flex;align-items:center;justify-content:center;padding:18px;animation:fadein .2s;}
+  @keyframes fadein{from{opacity:0;}to{opacity:1;}}
+  .modal{background:linear-gradient(180deg,#1b2240,#10162c);border:2px solid #2a3358;border-radius:20px;max-width:540px;width:100%;padding:24px;box-shadow:0 24px 64px rgba(0,0,0,.6);text-align:center;}
+  .skill-card{background:linear-gradient(180deg,#1e2748,#141a2e);border:2px solid #2a3358;border-radius:15px;padding:15px 8px;cursor:pointer;transition:transform .12s,border-color .15s,box-shadow .15s;}
+  .skill-card:hover{transform:translateY(-5px);border-color:var(--c-accent);box-shadow:0 10px 22px rgba(245,158,11,.28);}
+  @keyframes cardPop{0%{transform:scale(.6) rotate(-6deg);opacity:0;}60%{transform:scale(1.06) rotate(2deg);opacity:1;}100%{transform:scale(1) rotate(0);opacity:1;}}
+  .card-pop{animation:cardPop .35s ease-out both;}
+  .tip-pop{animation:cardPop .4s ease-out both;}
+
+  @media (max-width:760px){
+    .main{flex-direction:column;}
+    .stage{flex:1;min-height:0;}
+    .slotpanel{width:100%;flex-direction:row;flex-wrap:wrap;border-left:none;border-top:3px solid #1e2540;
+      padding:8px;gap:8px;justify-content:space-around;}
+    .reels{order:1;}
+    .combo-line{order:2;width:100%;min-height:30px;}
+    .btnrow{order:3;}
+    .reel{width:64px;height:66px;}
+    .sym{height:66px;font-size:34px;}
+    .btn-spin{padding:11px 22px;font-size:16px;}
+    .btn-attack{padding:11px 20px;font-size:15px;}
+  }
+</style>
+</head>
+<body>
+<div id="app"></div>
+
+<script>
+/* ===== game configuration ===== */
+game_config = {
+  difficulty: "normal",
+  maxFloor: 10,
+  startHp: 100,
+  baseDamage: 10,
+  spinDurationMs: 900,
+  rerollsPerTurn: 2,
+  elements: {
+    fire:    { name: "火", emoji: "🔥", color: "#ef4444" },
+    ice:     { name: "冰", emoji: "❄️", color: "#38bdf8" },
+    thunder: { name: "雷", emoji: "⚡", color: "#a855f7" },
+    nature:  { name: "自然", emoji: "🌿", color: "#22c55e" }
+  },
+  symbols: [
+    { id: "fire",    type: "element", emoji: "🔥", name: "火元素", weight: 17 },
+    { id: "ice",     type: "element", emoji: "❄️", name: "冰元素", weight: 17 },
+    { id: "thunder", type: "element", emoji: "⚡", name: "雷元素", weight: 17 },
+    { id: "nature",  type: "element", emoji: "🌿", name: "自然元素", weight: 17 },
+    { id: "combo",   type: "skill",   emoji: "💥", name: "连击", weight: 9 },
+    { id: "pierce",  type: "skill",   emoji: "🎯", name: "穿透", weight: 8 },
+    { id: "crit",    type: "skill",   emoji: "✨", name: "暴击", weight: 8 },
+    { id: "wild",    type: "modifier",emoji: "⭐", name: "万能", weight: 4 },
+    { id: "multi",   type: "modifier",emoji: "✖️", name: "倍率", weight: 3 }
+  ],
+  levels: [
+    { id: 1,  name: "第1层 · 哥布林斥候", enemyHp: 20,  count: 1, reward: 10, tutorial: 1 },
+    { id: 2,  name: "第2层 · 烈焰小鬼",   enemyHp: 30,  count: 1, reward: 14, tutorial: 2 },
+    { id: 3,  name: "第3层 · 草丛骚动",   enemyHp: 34,  count: 2, reward: 16 },
+    { id: 4,  name: "第4层 · 寒霜兽群",   enemyHp: 42,  count: 3, reward: 18 },
+    { id: 5,  name: "第5层 · 雷云密布",   enemyHp: 50,  count: 3, reward: 22 },
+    { id: 6,  name: "第6层 · 冰封巨像",   enemyHp: 150, count: 1, reward: 40, boss: true, weak: "thunder" },
+    { id: 7,  name: "第7层 · 暗影潜行",   enemyHp: 62,  count: 4, reward: 26 },
+    { id: 8,  name: "第8层 · 狂暴兽潮",   enemyHp: 78,  count: 4, reward: 30 },
+    { id: 9,  name: "第9层 · 终焉前奏",   enemyHp: 92,  count: 4, reward: 34 },
+    { id: 10, name: "第10层 · 炎魔领主", enemyHp: 280, count: 1, reward: 90, boss: true, weak: "ice" }
+  ],
+  upgradePool: [
+    { id: "dmg_up",     name: "锋锐",   desc: "全部伤害 +25%", icon: "⚔️", apply: s => { s.dmgMul *= 1.25; } },
+    { id: "crit_up",    name: "锐眼",   desc: "暴击率 +15%",   icon: "🎯", apply: s => { s.critRate += 0.15; } },
+    { id: "hp_up",      name: "坚韧",   desc: "最大生命 +30",  icon: "❤️", apply: s => { s.maxHp += 30; s.hp += 30; } },
+    { id: "lifesteal_up",name: "吸血",  desc: "吸血 +10%",     icon: "🩸", apply: s => { s.lifesteal += 0.10; } },
+    { id: "reroll_up",  name: "再转",   desc: "每回合重转 +1", icon: "🔄", apply: s => { s.rerollBonus += 1; } },
+    { id: "fire_up",    name: "炎之心", desc: "火元素 +40%",   icon: "🔥", apply: s => { s.elemMul.fire *= 1.4; } },
+    { id: "ice_up",     name: "冰之心", desc: "冰元素 +40%",   icon: "❄️", apply: s => { s.elemMul.ice *= 1.4; } },
+    { id: "thunder_up", name: "雷之心", desc: "雷元素 +40%",   icon: "⚡", apply: s => { s.elemMul.thunder *= 1.4; } },
+    { id: "nature_up",  name: "木之心", desc: "自然元素 +40%", icon: "🌿", apply: s => { s.elemMul.nature *= 1.4; } }
+  ],
+  difficulties: {
+    easy:   { label: "轻松", enemyHp: 0.8, enemyDmg: 0.8, scoreScale: 0.9 },
+    normal: { label: "普通", enemyHp: 1.0, enemyDmg: 1.0, scoreScale: 1.0 },
+    hard:   { label: "困难", enemyHp: 1.3, enemyDmg: 1.25, scoreScale: 1.3 }
+  }
+};
+</script>
+
+<script defer>
+(function () {
+  "use strict";
+
+  /* ---------- helpers ---------- */
+  const $  = (s, r = document) => r.querySelector(s);
+  const el = (tag, cls, html) => { const e = document.createElement(tag); if (cls) e.className = cls; if (html != null) e.innerHTML = html; return e; };
+  const clamp = (v, a, b) => Math.max(a, Math.min(b, v));
+  const rand  = (a, b) => a + Math.random() * (b - a);
+  const pick  = a => a[Math.floor(Math.random() * a.length)];
+  const lerp  = (a, b, t) => a + (b - a) * t;
+  const easeOut = t => 1 - Math.pow(1 - t, 3);
+  const postParent = (type, data) => { try { window.parent.postMessage({ type, data }, "*"); } catch (e) {} };
+
+  function shade(hex, amt) {
+    const n = parseInt(hex.slice(1), 16);
+    let r = (n >> 16) & 255, g = (n >> 8) & 255, b = n & 255;
+    r = clamp(r + amt, 0, 255); g = clamp(g + amt, 0, 255); b = clamp(b + amt, 0, 255);
+    return `rgb(${r|0},${g|0},${b|0})`;
+  }
+
+  const CFG  = game_config;
+  const ELEM = CFG.elements;
+  const SYM  = {}; CFG.symbols.forEach(s => SYM[s.id] = s);
+
+  /* ---------- state ---------- */
+  function newState() {
+    return {
+      difficulty: CFG.difficulty || "normal",
+      floor: 1,
+      hp: CFG.startHp, maxHp: CFG.startHp,
+      score: 0,
+      best: parseInt(localStorage.getItem("haqi_slot_best") || "0", 10),
+      dmgMul: 1, critRate: 0.1, critMul: 2, lifesteal: 0,
+      rerollBonus: 0,
+      elemMul: { fire: 1, ice: 1, thunder: 1, nature: 1 },
+      reels: ["thunder", "thunder", "thunder"],
+      locked: [false, false, false],
+      rerollLeft: CFG.rerollsPerTurn,
+      phase: "idle",          // idle | roll | decide | busy
+      roundId: "slot_" + Date.now(),
+      started: false, finished: false, loadedPosted: false,
+      tut: { on: true, step: "", allow: {}, forcedSpin: null, forcedReroll: null, hintReels: [], requireLocks: null }
+    };
+  }
+  let S = newState();
+
+  function diff()  { return CFG.difficulties[S.difficulty] || CFG.difficulties.normal; }
+  function level() { return CFG.levels[S.floor - 1]; }
+
+  /* ---------- messaging (difficulty only) ---------- */
+  window.addEventListener("message", (ev) => {
+    const m = ev.data || {};
+    if (m.type === "setGameConfig" && m.data && m.data.difficulty && CFG.difficulties[m.data.difficulty]) {
+      S.difficulty = m.data.difficulty;
+    }
+  });
+
+  /* ---------- weighted symbol ---------- */
+  function weightedSymbol() {
+    const total = CFG.symbols.reduce((s, x) => s + x.weight, 0);
+    let r = Math.random() * total;
+    for (const s of CFG.symbols) { r -= s.weight; if (r <= 0) return s.id; }
+    return CFG.symbols[0].id;
+  }
+  const symColor = id => (SYM[id].type === "element" ? ELEM[id].color : (SYM[id].type === "skill" ? "#fbbf24" : "#e879f9"));
+
+  /* ---------- combo resolution ---------- */
+  function resolveCombo(syms) {
+    // expand wild -> dominant element among the rest
+    const expanded = syms.map(id => {
+      if (id !== "wild") return SYM[id];
+      const counts = {};
+      syms.forEach(x => { if (SYM[x].type === "element") counts[x] = (counts[x] || 0) + 1; });
+      let best = null, bc = 0;
+      for (const k in counts) if (counts[k] > bc) { bc = counts[k]; best = k; }
+      return best ? { ...SYM[best], _wild: true } : SYM["thunder"];
+    });
+    const elems  = expanded.filter(s => s.type === "element");
+    const skills = expanded.filter(s => s.type === "skill");
+    const mods   = syms.map(id => SYM[id]).filter(s => s.id === "multi");
+
+    const counts = {}; elems.forEach(e => counts[e.id] = (counts[e.id] || 0) + 1);
+    const entries = Object.entries(counts).sort((a, b) => b[1] - a[1]);
+    const top = entries[0];
+    const base = CFG.baseDamage;
+
+    let r = { label: "普通攻击", element: null, effect: "slash", big: false,
+              damage: base, critForce: false, ignoreDef: false };
+
+    if (top && top[1] >= 3) {
+      const e = ELEM[top[0]];
+      r = { label: `三连${e.name} · 风暴`, element: top[0], effect: top[0], big: true, damage: base * 3 };
+    } else if (top && top[1] === 2) {
+      const e = ELEM[top[0]];
+      if (skills.length >= 1) {
+        const sk = skills[0];
+        r = { label: `${e.name} · ${sk.name}`, element: top[0], effect: top[0], big: false,
+              damage: base * (sk.id === "combo" ? 2.4 : 2.2),
+              critForce: sk.id === "crit", ignoreDef: sk.id === "pierce" };
+      } else {
+        r = { label: `双${e.name}连击`, element: top[0], effect: top[0], big: false, damage: base * 1.8 };
+      }
+    } else if (skills.length >= 3) {
+      const sk = skills[0];
+      r = { label: `${sk.name}爆发`, element: null, effect: "slash", big: true, damage: base * 2.5,
+            critForce: sk.id === "crit", ignoreDef: sk.id === "pierce" };
+    } else if (skills.length >= 1) {
+      const sk = skills[0];
+      r = { label: `${sk.name}`, element: null, effect: "slash", big: false, damage: base * 1.4,
+            critForce: sk.id === "crit", ignoreDef: sk.id === "pierce" };
+    } else if (elems.length >= 1) {
+      r = { label: `${ELEM[elems[0].id].name}打击`, element: elems[0].id, effect: elems[0].id, big: false, damage: base * 1.2 };
+    }
+
+    if (mods.length) { r.damage *= Math.pow(2, mods.length); r.label += " ×2"; }
+    return r;
+  }
+
+  /* preview damage (without crit randomness) */
+  function previewDamage(combo, enemy) {
+    let d = combo.damage * S.dmgMul;
+    if (combo.element) { d *= (S.elemMul[combo.element] || 1); if (enemy && enemy.weak === combo.element) d *= 2; }
+    return Math.round(d);
+  }
+
+  /* =====================================================================
+     DOM SHELL
+  ===================================================================== */
+  const app = $("#app");
+
+  function renderShell() {
+    app.innerHTML = `
+      <div class="hud">
+        <div style="display:flex;align-items:center;gap:7px;">
+          <span style="font-size:20px;">🎰</span>
+          <b style="color:#fbbf24;">拉霸肉鸽</b>
+        </div>
+        <div style="display:flex;gap:12px;">
+          <span class="chip">🗺️ <b id="hFloor" style="color:#fbbf24;">1</b>/${CFG.maxFloor}</span>
+          <span class="chip">❤️ <b id="hHp" style="color:#fca5a5;">100</b></span>
+          <span class="chip">⭐ <b id="hScore" style="color:#6ee7b7;">0</b></span>
+          <span class="chip">🏆 <b id="hBest" style="color:#cbd5e1;">0</b></span>
+        </div>
+      </div>
+      <div class="main">
+        <div class="stage" id="stage">
+          <canvas id="battleCanvas"></canvas>
+        </div>
+        <div class="slotpanel">
+          <div id="floorName" style="font-size:12px;color:#94a3b8;width:100%;text-align:center;"></div>
+          <div class="reels" id="reels"></div>
+          <div class="combo-line" id="comboLine"></div>
+          <div class="btnrow" id="btnrow">
+            <button class="btn btn-spin" id="spinBtn">转动</button>
+            <button class="btn btn-reroll" id="rerollBtn" style="display:none;">重转 <span id="rerollCount">2</span></button>
+            <button class="btn btn-attack" id="attackBtn" style="display:none;">出招 ⚔️</button>
+          </div>
+        </div>
+      </div>
+    `;
+    buildReels();
+    $("#spinBtn").onclick   = onSpin;
+    $("#rerollBtn").onclick = onReroll;
+    $("#attackBtn").onclick = onAttack;
+    updateHUD();
+  }
+
+  function buildReels() {
+    const wrap = $("#reels"); wrap.innerHTML = "";
+    for (let i = 0; i < 3; i++) {
+      const reel = el("div", "reel");
+      reel.dataset.i = i;
+      reel.innerHTML = `<div class="reel-strip" id="strip${i}"></div><div class="reel-glare"></div><div class="lock-badge">🔒</div>`;
+      reel.onclick = () => onReelTap(i);
+      wrap.appendChild(reel);
+      setReelStatic(i, S.reels[i]);
+    }
+  }
+  function setReelStatic(i, id) {
+    const strip = $("#strip" + i);
+    if (!strip) return;
+    strip.style.transition = "none";
+    strip.style.transform = "translateY(0)";
+    strip.innerHTML = `<div class="sym" style="color:${symColor(id)}">${SYM[id].emoji}</div>`;
+  }
+
+  function updateHUD() {
+    const set = (id, v) => { const e = $("#" + id); if (e) e.textContent = v; };
+    set("hFloor", S.floor); set("hHp", Math.max(0, Math.round(S.hp)));
+    set("hScore", S.score); set("hBest", S.best);
+    set("rerollCount", S.rerollLeft);
+    const fn = $("#floorName"); const lv = level();
+    if (fn) fn.textContent = lv ? lv.name : "";
+  }
+
+  /* button visibility per phase + tutorial gating */
+  function refreshButtons() {
+    const spin = $("#spinBtn"), rer = $("#rerollBtn"), atk = $("#attackBtn");
+    if (!spin) return;
+    const t = S.tut;
+    const allow = (k) => !t.on || t.allow[k];
+
+    [spin, rer, atk].forEach(b => b.classList.remove("hint"));
+    document.querySelectorAll(".reel").forEach(r => { r.classList.remove("hint"); r.classList.remove("lockable"); });
+
+    if (S.phase === "roll") {
+      spin.style.display = ""; rer.style.display = "none"; atk.style.display = "none";
+      spin.disabled = !allow("spin");
+      if (t.on && allow("spin")) spin.classList.add("hint");
+    } else if (S.phase === "decide") {
+      spin.style.display = "none"; rer.style.display = ""; atk.style.display = "";
+      rer.disabled = S.rerollLeft <= 0 || !allow("reroll");
+      atk.disabled = !allow("attack");
+      // locking
+      document.querySelectorAll(".reel").forEach(r => {
+        const i = +r.dataset.i;
+        const canLock = allow("lock") && (!t.on || !t.hintReels.length || t.hintReels.includes(i));
+        if (canLock) r.classList.add("lockable");
+      });
+      if (t.on) {
+        if (allow("reroll") && !t.requireLocks) rer.classList.add("hint");
+        if (allow("attack")) atk.classList.add("hint");
+        if (allow("lock") && t.hintReels.length) t.hintReels.forEach(i => {
+          const r = document.querySelector(`.reel[data-i="${i}"]`); if (r && !S.locked[i]) r.classList.add("hint");
+        });
+      }
+    } else {
+      spin.disabled = true; rer.disabled = true; atk.disabled = true;
+    }
+  }
+
+  /* =====================================================================
+     REEL SPIN ANIMATION
+  ===================================================================== */
+  function rowH() { return $(".reel") ? $(".reel").clientHeight : 84; }
+
+  function animateReels(targets) {
+    return new Promise(resolve => {
+      const h = rowH();
+      let done = 0, toAnimate = 0;
+      for (let i = 0; i < 3; i++) {
+        const strip = $("#strip" + i);
+        if (S.locked[i]) { setReelStatic(i, S.reels[i]); continue; } // keep locked
+        toAnimate++;
+        const N = 26;
+        let html = "";
+        for (let k = 0; k < N - 1; k++) { const id = weightedSymbol(); html += `<div class="sym" style="color:${symColor(id)}">${SYM[id].emoji}</div>`; }
+        const tid = targets[i];
+        html += `<div class="sym" style="color:${symColor(tid)}">${SYM[tid].emoji}</div>`;
+        strip.style.transition = "none";
+        strip.style.transform = "translateY(0)";
+        strip.innerHTML = html;
+        void strip.offsetHeight;
+        const finalY = -((N - 1) * h);
+        const delay = i * 130;
+        setTimeout(() => {
+          strip.style.transition = `transform ${CFG.spinDurationMs}ms cubic-bezier(.13,.85,.28,1)`;
+          strip.style.transform = `translateY(${finalY}px)`;
+          setTimeout(() => {
+            setReelStatic(i, tid); // collapse to single symbol, stable
+            done++;
+            if (done >= toAnimate) resolve();
+          }, CFG.spinDurationMs + 40);
+        }, delay);
+      }
+      if (toAnimate === 0) resolve();
+    });
+  }
+
+  /* =====================================================================
+     TURN FLOW
+  ===================================================================== */
+  function startTurn() {
+    if (S.finished) return;
+    S.phase = "roll";
+    S.rerollLeft = CFG.rerollsPerTurn + S.rerollBonus;
+    S.locked = [false, false, false];
+    document.querySelectorAll(".reel").forEach(r => r.classList.remove("locked"));
+    const cl = $("#comboLine"); if (cl) cl.innerHTML = "";
+    if (S.tut.on) tutorialOnTurn();
+    refreshButtons();
+    updateHUD();
+  }
+
+  async function onSpin() {
+    if (S.phase !== "roll" || (S.tut.on && !S.tut.allow.spin)) return;
+    if (!S.started) { S.started = true; postParent("gameStarted", { difficulty: S.difficulty, roundId: S.roundId }); }
+    S.phase = "busy"; refreshButtons();
+    clearCoach();
+
+    const targets = S.tut.on && S.tut.forcedSpin ? S.tut.forcedSpin.slice()
+                  : [weightedSymbol(), weightedSymbol(), weightedSymbol()];
+    S.reels = targets.slice();
+    await animateReels(targets);
+    S.phase = "decide";
+    showComboPreview();
+    if (S.tut.on) tutorialAfterSpin();
+    refreshButtons();
+  }
+
+  async function onReroll() {
+    if (S.phase !== "decide" || S.rerollLeft <= 0) return;
+    if (S.tut.on && !S.tut.allow.reroll) return;
+    if (S.tut.on && S.tut.requireLocks && !tutorialLocksSatisfied()) { flashCoach(); return; }
+    S.rerollLeft--;
+    S.phase = "busy"; refreshButtons(); clearCoach();
+
+    const targets = S.reels.slice();
+    for (let i = 0; i < 3; i++) {
+      if (S.locked[i]) continue;
+      if (S.tut.on && S.tut.forcedReroll && S.tut.forcedReroll[i] != null) targets[i] = S.tut.forcedReroll[i];
+      else targets[i] = weightedSymbol();
+    }
+    S.reels = targets.slice();
+    await animateReels(targets);
+    S.phase = "decide";
+    showComboPreview();
+    if (S.tut.on) tutorialAfterReroll();
+    updateHUD();
+    refreshButtons();
+  }
+
+  function onReelTap(i) {
+    if (S.phase !== "decide") return;
+    const t = S.tut;
+    if (t.on) {
+      if (!t.allow.lock) return;
+      if (t.hintReels.length && !t.hintReels.includes(i)) return;
+    }
+    S.locked[i] = !S.locked[i];
+    const r = document.querySelector(`.reel[data-i="${i}"]`);
+    if (r) r.classList.toggle("locked", S.locked[i]);
+    if (t.on) tutorialAfterLock();
+    refreshButtons();
+  }
+
+  function onAttack() {
+    if (S.phase !== "decide") return;
+    if (S.tut.on && !S.tut.allow.attack) return;
+    const combo = resolveCombo(S.reels);
+    S.phase = "busy"; refreshButtons(); clearCoach();
+    commitAttack(combo);
+  }
+
+  function showComboPreview() {
+    const combo = resolveCombo(S.reels);
+    const en = scene.enemy;
+    const dmg = previewDamage(combo, en);
+    const cl = $("#comboLine");
+    if (cl) cl.innerHTML = `<span class="combo-badge" style="border-color:${combo.element ? ELEM[combo.element].color : "#fbbf24"};color:${combo.element ? ELEM[combo.element].color : "#fbbf24"}">${combo.label}</span><div class="dmg-pre">预计伤害 <b style="color:#fff">${dmg}</b>${en && en.weak === combo.element ? ' · <span style="color:#fbbf24">命中弱点!</span>' : ''}</div>`;
+  }
+
+  /* =====================================================================
+     COACH (tutorial bubble)
+  ===================================================================== */
+  let coachEl = null;
+  function coach(html) {
+    clearCoach();
+    coachEl = el("div", "coach", html);
+    $("#stage").appendChild(coachEl);
+  }
+  function clearCoach() { if (coachEl) { coachEl.remove(); coachEl = null; } }
+  function flashCoach() { if (coachEl) { coachEl.style.animation = "none"; void coachEl.offsetHeight; coachEl.style.animation = "coachPop .25s ease-out both"; } }
+
+  /* =====================================================================
+     TUTORIAL  (3 manipulated rounds)
+  ===================================================================== */
+  function tutorialOnTurn() {
+    const t = S.tut;
+    if (S.floor === 1) {
+      t.step = "t1-spin";
+      t.allow = { spin: true };
+      t.forcedSpin = ["thunder", "thunder", "thunder"];
+      t.forcedReroll = null; t.hintReels = []; t.requireLocks = null;
+      coach('👆 点击 <span class="em">【转动】</span> 摇出你的第一击！');
+    } else if (S.floor === 2) {
+      t.step = "t2-spin";
+      t.allow = { spin: true };
+      t.forcedSpin = ["fire", "fire", "ice"];
+      t.forcedReroll = { 2: "fire" }; t.hintReels = []; t.requireLocks = null;
+      coach('👆 再点一次 <span class="em">【转动】</span>');
+    }
+  }
+
+  function tutorialAfterSpin() {
+    const t = S.tut;
+    if (t.step === "t1-spin") {
+      // forced thunder x3 -> lock everything, auto attack (hand-held)
+      t.allow = {}; refreshButtons();
+      coach('看好了 —— 三个 <span class="em">⚡</span> 连成一线！');
+      setTimeout(() => {
+        const combo = resolveCombo(S.reels);
+        S.phase = "busy"; refreshButtons(); clearCoach();
+        commitAttack(combo);
+      }, 1100);
+    } else if (t.step === "t2-spin") {
+      // fire,fire,ice -> ask to lock the two fire
+      t.step = "t2-lock";
+      t.allow = { lock: true };
+      t.hintReels = [0, 1];
+      t.requireLocks = [0, 1];
+      coach('两个 <span class="em">🔥</span> 很关键！点击它们 <span class="em">🔒锁定</span>');
+    }
+  }
+
+  function tutorialAfterLock() {
+    const t = S.tut;
+    if (t.step === "t2-lock" && tutorialLocksSatisfied()) {
+      t.step = "t2-reroll";
+      t.allow = { reroll: true };
+      t.hintReels = [];
+      t.requireLocks = null;
+      coach('完美！现在点 <span class="em">【重转】</span>，把 ❄ 换成 🔥');
+    }
+  }
+  function tutorialLocksSatisfied() {
+    return S.tut.requireLocks && S.tut.requireLocks.every(i => S.locked[i]);
+  }
+
+  function tutorialAfterReroll() {
+    const t = S.tut;
+    if (t.step === "t2-reroll") {
+      t.step = "t2-attack";
+      t.allow = { attack: true };
+      t.forcedReroll = null;
+      coach('三连 <span class="em">🔥</span> 凑齐！点击 <span class="em">【出招】</span> 终结它！');
+    }
+  }
+
+  function endTutorial() {
+    S.tut.on = false;
+    S.tut.allow = {}; S.tut.forcedSpin = null; S.tut.forcedReroll = null;
+    S.tut.hintReels = []; S.tut.requireLocks = null;
+  }
+
+  /* tutorial tooltip between floors */
+  function tutorialTip(icon, title, body, onClose) {
+    const bg = el("div", "modal-bg");
+    bg.innerHTML = `<div class="modal tip-pop">
+      <div style="font-size:46px;margin-bottom:6px;">${icon}</div>
+      <div style="font-size:18px;font-weight:800;color:#fbbf24;margin-bottom:8px;">${title}</div>
+      <div style="font-size:14px;color:#cbd5e1;margin-bottom:18px;line-height:1.5;">${body}</div>
+      <button class="btn btn-spin" id="tipNext">继续 ▶</button>
+    </div>`;
+    document.body.appendChild(bg);
+    $("#tipNext", bg).onclick = () => { bg.remove(); onClose && onClose(); };
+  }
+
+  /* =====================================================================
+     BATTLE SCENE  (voxel canvas)
+  ===================================================================== */
+  const scene = {
+    canvas: null, ctx: null, W: 0, H: 0,
+    hero: null, enemy: null,
+    effects: [], particles: [], floats: [],
+    shake: { mag: 0, until: 0 },
+    groundY: 0, heroX: 0, enemyX: 0,
+    last: 0, raf: 0, remaining: 0
+  };
+
+  function initScene() {
+    scene.canvas = $("#battleCanvas");
+    scene.ctx = scene.canvas.getContext("2d");
+    resizeScene();
+    scene.hero = { hp: S.hp, maxHp: S.maxHp, state: "idle", animT: 0, bob: 0 };
+    if (!scene.raf) { scene.last = performance.now(); scene.raf = requestAnimationFrame(tick); }
+    if (!scene._resizeBound) { scene._resizeBound = true; window.addEventListener("resize", resizeScene); }
+  }
+  function resizeScene() {
+    const c = scene.canvas; if (!c) return;
+    const r = c.getBoundingClientRect();
+    c.width  = Math.max(280, Math.floor(r.width));
+    c.height = Math.max(220, Math.floor(r.height));
+    scene.W = c.width; scene.H = c.height;
+    scene.groundY = Math.floor(scene.H * 0.74);
+    scene.heroX  = Math.floor(scene.W * 0.24);
+    scene.enemyX = Math.floor(scene.W * 0.74);
+  }
+
+  function spawnEnemy() {
+    const lv = level(), d = diff();
+    const hp = Math.round(lv.enemyHp * d.enemyHp);
+    const palette = ["#22c55e", "#16a34a", "#84cc16", "#0ea5e9", "#a855f7", "#f97316"];
+    scene.enemy = {
+      hp, maxHp: hp,
+      x: scene.W + 80, targetX: scene.enemyX, y: scene.groundY,
+      isBoss: !!lv.boss, weak: lv.weak || null,
+      color: lv.boss ? "#7c3aed" : pick(palette),
+      size: lv.boss ? 1.55 : (0.85 + Math.random() * 0.25),
+      state: "in", animT: 0, hitFlash: 0, bob: 0, dead: false, squash: 0
+    };
+  }
+
+  function commitAttack(combo) {
+    const en = scene.enemy;
+    if (!en || en.dead) { S.phase = "decide"; refreshButtons(); return; }
+    scene.hero.state = "attack"; scene.hero.animT = 0;
+
+    const impact = { thunder: 260, fire: 380, ice: 280, nature: 280, slash: 170 }[combo.effect] || 200;
+    setTimeout(() => spawnAttackEffect(combo, en), Math.max(0, impact - 140));
+    setTimeout(() => applyDamage(combo, en), impact);
+  }
+
+  function applyDamage(combo, en) {
+    if (!en || en.dead) return;
+    let dmg = combo.damage * S.dmgMul;
+    if (combo.element) { dmg *= (S.elemMul[combo.element] || 1); if (en.weak === combo.element) dmg *= 2; }
+    const crit = combo.critForce || Math.random() < S.critRate;
+    if (crit) dmg *= S.critMul;
+    dmg = Math.round(dmg);
+    const weakHit = en.weak === combo.element;
+
+    // tutorial guarantees the kill
+    if (S.tut.on) dmg = Math.max(dmg, en.hp);
+
+    en.hp -= dmg; en.hitFlash = 9; en.squash = 1;
+    addShake(combo.big ? 16 : 9, 320);
+    addFloat(en.x, en.y - en.size * 60, "-" + dmg + (crit ? "!" : ""), crit ? "#fbbf24" : "#fff", crit ? 22 : 18);
+    if (weakHit) addFloat(en.x, en.y - en.size * 60 - 24, "弱点!", "#f87171", 14);
+    burstParticles(en.x, en.y - en.size * 36, combo.element ? ELEM[combo.element].color : "#fbbf24", combo.big ? 18 : 11);
+
+    if (S.lifesteal > 0) {
+      const heal = Math.round(dmg * S.lifesteal);
+      if (heal > 0) { S.hp = Math.min(S.maxHp, S.hp + heal); addFloat(scene.heroX, scene.groundY - 70, "+" + heal, "#34d399", 14); updateHUD(); }
+    }
+
+    if (en.hp <= 0) {
+      en.hp = 0; en.dead = true; en.state = "die"; en.animT = 0;
+      burstParticles(en.x, en.y - en.size * 36, en.color, 22);
+      addShake(14, 360);
+      S.score += en.isBoss ? 60 : 12; updateHUD();
+      setTimeout(onEnemyDead, 700);
+    } else {
+      setTimeout(() => enemyTurn(en), 520);
+    }
+  }
+
+  function enemyTurn(en) {
+    if (!en || en.dead || S.finished) return;
+    en.state = "attack"; en.animT = 0;
+    const d = diff(), lv = level();
+    const edmg = Math.round((3 + S.floor * 1.1) * (en.isBoss ? 1.9 : 1) * d.enemyDmg);
+    setTimeout(() => {
+      S.hp -= edmg;
+      addShake(11, 300);
+      addFloat(scene.heroX, scene.groundY - 78, "-" + edmg, "#f87171", 16);
+      scene.hero.state = "hit"; scene.hero.animT = 0;
+      updateHUD();
+      if (S.hp <= 0) { S.hp = 0; updateHUD(); setTimeout(() => finishGame(false), 600); return; }
+      setTimeout(startTurn, 520);
+    }, 360);
+  }
+
+  function onEnemyDead() {
+    scene.remaining--;
+    if (S.finished) return;
+    if (scene.remaining > 0) {
+      spawnEnemy();
+      setTimeout(startTurn, 480);
+    } else {
+      floorCleared();
+    }
+  }
+
+  function floorCleared() {
+    const lv = level(), d = diff();
+    S.score += Math.round((lv.reward || 10) * d.scoreScale); updateHUD();
+
+    // tutorial tooltips
+    if (lv.tutorial === 1) {
+      tutorialTip("⚡", "同元素连线 = 强力攻击", "三个相同元素连成一线，就能召唤毁灭级的属性风暴。元素越统一，伤害越炸裂！", () => advanceFloor());
+      return;
+    }
+    if (lv.tutorial === 2) {
+      endTutorial();
+      tutorialTip("🔒", "锁定关键符号，重转逆天改命", "看中了好符号？先点它<b>锁定🔒</b>，再点<b>重转</b>，没锁的格子会重摇。像打德州一样凑出你想要的连线！", () => advanceFloor());
+      return;
+    }
+    // normal floor -> upgrade choice
+    if (S.floor >= CFG.maxFloor) { finishGame(true); return; }
+    showUpgradeChoice(() => advanceFloor());
+  }
+
+  function advanceFloor() {
+    if (S.floor >= CFG.maxFloor) { finishGame(true); return; }
+    S.floor++;
+    S.hp = Math.min(S.maxHp, S.hp + 14); // small heal
+    updateHUD();
+    scene.remaining = level().count;
+    spawnEnemy();
+    setTimeout(startTurn, 520);
+  }
+
+  /* ---------- effects ---------- */
+  function addShake(mag, dur) { scene.shake.mag = Math.max(scene.shake.mag, mag); scene.shake.until = performance.now() + dur; }
+  function addFloat(x, y, text, color, size) { scene.floats.push({ x, y, vy: -0.9, text, color, size: size || 16, life: 46, max: 46 }); }
+  function burstParticles(x, y, color, n) {
+    for (let i = 0; i < n; i++) scene.particles.push({ x, y, vx: rand(-3.4, 3.4), vy: rand(-5, 1), s: rand(3, 7), color, life: rand(22, 38) });
+  }
+  function spawnAttackEffect(combo, en) {
+    const tx = en.x, ty = en.y - en.size * 40;
+    const k = combo.effect;
+    if (k === "thunder") {
+      const segs = []; let yy = 0;
+      while (yy < 1) { yy += rand(0.07, 0.16); segs.push({ y: clamp(yy, 0, 1), dx: rand(-18, 18) }); }
+      scene.effects.push({ kind: "thunder", tx, ty, segs, life: 22, max: 22, big: combo.big });
+      addShake(combo.big ? 18 : 12, 360);
+    } else if (k === "fire") {
+      scene.effects.push({ kind: "fire", x: scene.heroX, y: scene.groundY - 60, tx, ty, t: 0, life: 26, max: 26, big: combo.big });
+    } else if (k === "ice") {
+      scene.effects.push({ kind: "ice", tx, ty, life: 24, max: 24, big: combo.big });
+    } else if (k === "nature") {
+      scene.effects.push({ kind: "nature", tx, ty, life: 26, max: 26, big: combo.big });
+    } else {
+      scene.effects.push({ kind: "slash", tx, ty, life: 16, max: 16, big: combo.big });
+    }
+  }
+
+  /* =====================================================================
+     RENDER LOOP
+  ===================================================================== */
+  function tick(now) {
+    const dt = Math.min(50, now - scene.last); scene.last = now;
+    scene.raf = requestAnimationFrame(tick);
+    const ctx = scene.ctx; if (!ctx) return;
+    const W = scene.W, H = scene.H;
+
+    // update entities
+    const t = now / 1000;
+    if (scene.hero) {
+      scene.hero.bob = Math.sin(t * 2.4) * 2;
+      if (scene.hero.state !== "idle") { scene.hero.animT += dt / 320; if (scene.hero.animT >= 1) scene.hero.state = "idle"; }
+    }
+    const en = scene.enemy;
+    if (en) {
+      if (en.state === "in") { en.x = lerp(en.x, en.targetX, 0.12); if (Math.abs(en.x - en.targetX) < 2) { en.x = en.targetX; en.state = "idle"; } }
+      en.bob = Math.sin(t * 3 + 1) * 2;
+      if (en.hitFlash > 0) en.hitFlash -= dt / 16;
+      if (en.squash > 0) en.squash = Math.max(0, en.squash - dt / 220);
+      if (en.state === "attack") { en.animT += dt / 300; if (en.animT >= 1) en.state = "idle"; }
+      if (en.state === "die") { en.animT += dt / 480; }
+    }
+    // effects life
+    scene.effects.forEach(e => { e.life -= dt / 16; if (e.kind === "fire") e.t = clamp(1 - e.life / e.max, 0, 1); });
+    scene.effects = scene.effects.filter(e => e.life > 0);
+    scene.particles.forEach(p => { p.x += p.vx; p.y += p.vy; p.vy += 0.28; p.life -= dt / 16; });
+    scene.particles = scene.particles.filter(p => p.life > 0);
+    scene.floats.forEach(f => { f.y += f.vy; f.vy *= 0.96; f.life -= dt / 16; });
+    scene.floats = scene.floats.filter(f => f.life > 0);
+
+    // shake offset
+    let sx = 0, sy = 0;
+    if (now < scene.shake.until) {
+      const m = scene.shake.mag * (scene.shake.until - now) / 360;
+      sx = rand(-m, m); sy = rand(-m, m);
+    } else scene.shake.mag = 0;
+
+    ctx.clearRect(0, 0, W, H);
+    ctx.save();
+    ctx.translate(sx, sy);
+    drawBackground(ctx, W, H);
+    drawGround(ctx, W, H);
+    // depth order
+    if (en && !(en.state === "die" && en.animT >= 1)) drawEnemy(ctx, en);
+    drawHero(ctx, scene.heroX, scene.groundY);
+    drawEffects(ctx);
+    drawParticles(ctx);
+    drawFloats(ctx);
+    ctx.restore();
+  }
+
+  function drawBackground(ctx, W, H) {
+    const lv = level() || {};
+    const g = ctx.createLinearGradient(0, 0, 0, H);
+    if (lv.boss) { g.addColorStop(0, "#2a1030"); g.addColorStop(1, "#0a0610"); }
+    else { g.addColorStop(0, "#16243f"); g.addColorStop(1, "#070b16"); }
+    ctx.fillStyle = g; ctx.fillRect(0, 0, W, H);
+    // distant voxel hills
+    ctx.fillStyle = "rgba(255,255,255,.04)";
+    const hy = scene.groundY - 46;
+    for (let x = -20; x < W + 40; x += 46) {
+      const hh = 30 + ((x * 7) % 40);
+      ctx.fillRect(x, hy - hh, 44, hh + 60);
+    }
+  }
+
+  /* isometric-ish blocky ground */
+  function drawGround(ctx, W, H) {
+    const gy = scene.groundY;
+    const lv = level() || {};
+    const grass = lv.boss ? "#5b21b6" : "#3f6212";
+    const grassTop = lv.boss ? "#7c3aed" : "#65a30d";
+    const dirt = "#3a2a1a";
+    // dirt fill
+    ctx.fillStyle = dirt; ctx.fillRect(0, gy, W, H - gy);
+    // blocky grass row
+    const s = 26, d = 9;
+    for (let x = -s; x < W + s; x += s) {
+      // front face
+      ctx.fillStyle = shade(grass, ((x / s) % 2 ? 4 : -4));
+      ctx.fillRect(x, gy, s, 16);
+      // top face
+      ctx.fillStyle = grassTop;
+      ctx.beginPath();
+      ctx.moveTo(x, gy); ctx.lineTo(x + d, gy - d); ctx.lineTo(x + s + d, gy - d); ctx.lineTo(x + s, gy);
+      ctx.closePath(); ctx.fill();
+      // outline
+      ctx.strokeStyle = "rgba(0,0,0,.18)"; ctx.lineWidth = 1; ctx.strokeRect(x, gy, s, 16);
+    }
+    // dirt speckle blocks
+    ctx.fillStyle = "rgba(0,0,0,.16)";
+    for (let x = 8; x < W; x += 38) for (let y = gy + 22; y < H; y += 22) ctx.fillRect(x + ((y / 22) % 2 ? 12 : 0), y, 8, 8);
+  }
+
+  /* generic voxel cube: front face at (x,y,w,h), 3D toward up-right by depth */
+  function cube(ctx, x, y, w, h, color, depth) {
+    depth = depth == null ? Math.max(3, Math.min(w, h) * 0.22) : depth;
+    // top
+    ctx.fillStyle = shade2(color, 34);
+    ctx.beginPath(); ctx.moveTo(x, y); ctx.lineTo(x + depth, y - depth); ctx.lineTo(x + w + depth, y - depth); ctx.lineTo(x + w, y); ctx.closePath(); ctx.fill();
+    // right
+    ctx.fillStyle = shade2(color, -42);
+    ctx.beginPath(); ctx.moveTo(x + w, y); ctx.lineTo(x + w + depth, y - depth); ctx.lineTo(x + w + depth, y - depth + h); ctx.lineTo(x + w, y + h); ctx.closePath(); ctx.fill();
+    // front
+    ctx.fillStyle = color; ctx.fillRect(x, y, w, h);
+    ctx.strokeStyle = "rgba(0,0,0,.28)"; ctx.lineWidth = 1; ctx.strokeRect(x + .5, y + .5, w - 1, h - 1);
+  }
+  function shade2(color, amt) {
+    if (color[0] === "#") return shade(color, amt);
+    // rgb(...) string
+    const m = color.match(/\d+/g); if (!m) return color;
+    let r = +m[0], g = +m[1], b = +m[2];
+    return `rgb(${clamp(r + amt,0,255)|0},${clamp(g + amt,0,255)|0},${clamp(b + amt,0,255)|0})`;
+  }
+
+  /* ---------- HERO: thunder voxel swordsman ---------- */
+  function drawHero(ctx, fx, fy) {
+    const h = scene.hero;
+    const a = h.state === "attack" ? easeOut(h.animT) : 0;
+    const hurt = h.state === "hit" ? (1 - h.animT) : 0;
+    const lunge = Math.sin(a * Math.PI) * 16;          // forward thrust
+    const bob = h.bob + hurt * 4;
+    const x = fx + lunge - hurt * 6;
+    const sc = 1;
+    const arm = "#0f766e", armor = "#0e7490", armorDk = "#155e75";
+    const skin = "#fcd9b6", helmet = "#1e293b";
+    const cyan = "#67e8f9";
+
+    // shadow
+    ctx.fillStyle = "rgba(0,0,0,.32)";
+    ctx.beginPath(); ctx.ellipse(fx + 6, fy + 4, 26, 7, 0, 0, Math.PI * 2); ctx.fill();
+
+    // legs
+    cube(ctx, x - 11, fy - 18, 9, 18, "#1e3a8a");
+    cube(ctx, x + 2,  fy - 18, 9, 18, "#1d4ed8");
+    // body (teal armor)
+    const by = fy - 18 - 22 + bob * 0.3;
+    cube(ctx, x - 12, by, 24, 22, armor);
+    cube(ctx, x - 12, by + 6, 24, 6, armorDk, 2); // belt
+    // chest spark emblem
+    ctx.fillStyle = cyan; ctx.globalAlpha = .9;
+    ctx.fillRect(x - 2, by + 5, 4, 4); ctx.globalAlpha = 1;
+    // head
+    const hy = by - 16 + bob * 0.2;
+    cube(ctx, x - 9, hy, 18, 16, skin);
+    // helmet
+    cube(ctx, x - 10, hy - 5, 20, 8, helmet);
+    ctx.fillStyle = cyan; ctx.fillRect(x - 1, hy - 5, 3, 9); // crest
+    // eyes (glowing)
+    ctx.fillStyle = cyan; ctx.shadowColor = cyan; ctx.shadowBlur = 8;
+    ctx.fillRect(x - 5, hy + 6, 3, 3); ctx.fillRect(x + 3, hy + 6, 3, 3);
+    ctx.shadowBlur = 0;
+
+    // front arm reaching right
+    const shy = by + 2;
+    const reach = 6 + lunge * 0.6;
+    cube(ctx, x + 8, shy, 8 + reach, 8, arm);
+
+    // SWORD — glowing thunder blade
+    const handX = x + 16 + reach, handY = shy + 4;
+    const swingUp = (1 - a) * 26;             // raised before strike, down on strike
+    ctx.save();
+    ctx.translate(handX, handY);
+    ctx.rotate((-0.9 + a * 1.5));              // swing arc
+    // hilt
+    cube(ctx, -3, -2, 6, 8, "#475569", 2);
+    // blade
+    const bladeLen = 34, bladeW = 7;
+    const grad = ctx.createLinearGradient(0, 0, 0, -bladeLen);
+    grad.addColorStop(0, "#e0f2fe"); grad.addColorStop(1, cyan);
+    ctx.shadowColor = cyan; ctx.shadowBlur = a > 0 ? 18 : 8;
+    ctx.fillStyle = grad;
+    ctx.beginPath();
+    ctx.moveTo(-bladeW/2, -6); ctx.lineTo(bladeW/2, -6);
+    ctx.lineTo(bladeW/2 - 1, -bladeLen + 6); ctx.lineTo(0, -bladeLen); ctx.lineTo(-bladeW/2 + 1, -bladeLen + 6);
+    ctx.closePath(); ctx.fill();
+    // electric flicker on blade when attacking
+    if (a > 0.05) {
+      ctx.strokeStyle = "#fff"; ctx.lineWidth = 1.4; ctx.globalAlpha = .8;
+      ctx.beginPath();
+      for (let i = 0; i <= bladeLen; i += 6) ctx.lineTo(rand(-3, 3), -i);
+      ctx.stroke(); ctx.globalAlpha = 1;
+    }
+    ctx.shadowBlur = 0;
+    ctx.restore();
+
+    // hero HP bar
+    drawBar(ctx, fx - 26, fy - 86, 52, S.hp / S.maxHp, "#22c55e");
+  }
+
+  /* ---------- ENEMY: voxel creature ---------- */
+  function drawEnemy(ctx, e) {
+    const sc = e.size;
+    const baseW = 38 * sc, baseH = 38 * sc;
+    const squash = e.squash > 0 ? Math.sin(e.squash * Math.PI) : 0;
+    const w = baseW * (1 + squash * 0.18), bh = baseH * (1 - squash * 0.16);
+    const a = e.state === "attack" ? easeOut(e.animT) : 0;
+    const die = e.state === "die" ? easeOut(Math.min(1, e.animT)) : 0;
+    const lunge = -Math.sin(a * Math.PI) * 20;  // toward hero (left)
+    const x = e.x + lunge;
+    const y = e.y - die * 12;
+    const bob = e.bob;
+
+    ctx.save();
+    ctx.globalAlpha = 1 - die;
+    // shadow
+    ctx.fillStyle = "rgba(0,0,0,.32)";
+    ctx.beginPath(); ctx.ellipse(e.x, e.y + 4, w * 0.55, 7, 0, 0, Math.PI * 2); ctx.fill();
+
+    const col = e.hitFlash > 0 ? "#ffffff" : e.color;
+    const fy = y - bh + bob * 0.4;
+    // body
+    cube(ctx, x - w/2, fy, w, bh, col);
+    // boss horns / crown
+    if (e.isBoss) {
+      cube(ctx, x - w/2 + 2, fy - 8, 7, 9, "#fbbf24");
+      cube(ctx, x + w/2 - 9, fy - 8, 7, 9, "#fbbf24");
+    } else {
+      // little legs
+      cube(ctx, x - w/2 + 3, e.y - 8, 7, 8, shade2(col, -30));
+      cube(ctx, x + w/2 - 10, e.y - 8, 7, 8, shade2(col, -30));
+    }
+    // eyes
+    ctx.fillStyle = "#fff";
+    const ew = w * 0.15, eyY = fy + bh * 0.32;
+    ctx.fillRect(x - w*0.22, eyY, ew, ew); ctx.fillRect(x + w*0.07, eyY, ew, ew);
+    ctx.fillStyle = e.hitFlash > 0 ? "#000" : "#7f1d1d";
+    ctx.fillRect(x - w*0.22 + ew*0.3, eyY + ew*0.3, ew*0.5, ew*0.5);
+    ctx.fillRect(x + w*0.07 + ew*0.3, eyY + ew*0.3, ew*0.5, ew*0.5);
+    // angry mouth
+    ctx.fillStyle = "#1f2937";
+    ctx.fillRect(x - w*0.16, fy + bh*0.62, w*0.32, 4);
+
+    ctx.restore();
+
+    // weak element tag (boss)
+    if (e.weak && !e.dead) {
+      ctx.font = "16px sans-serif"; ctx.textAlign = "center";
+      ctx.fillText(ELEM[e.weak].emoji, x + w/2 + 8, fy);
+      ctx.font = "9px sans-serif"; ctx.fillStyle = "#fca5a5";
+      ctx.fillText("弱点", x + w/2 + 8, fy + 12);
+    }
+    // enemy HP bar
+    if (!e.dead) drawBar(ctx, e.x - w/2, fy - 16, w, e.hp / e.maxHp, e.hp / e.maxHp > 0.4 ? "#22c55e" : "#ef4444");
+  }
+
+  function drawBar(ctx, x, y, w, ratio, color) {
+    ratio = clamp(ratio, 0, 1);
+    ctx.fillStyle = "rgba(0,0,0,.55)"; ctx.fillRect(x - 1, y - 1, w + 2, 7);
+    ctx.fillStyle = "rgba(255,255,255,.18)"; ctx.fillRect(x, y, w, 5);
+    ctx.fillStyle = color; ctx.fillRect(x, y, w * ratio, 5);
+  }
+
+  /* ---------- effects render ---------- */
+  function drawEffects(ctx) {
+    scene.effects.forEach(e => {
+      const a = clamp(e.life / e.max, 0, 1);
+      if (e.kind === "thunder") {
+        ctx.save();
+        ctx.globalAlpha = a;
+        ctx.strokeStyle = "#fff"; ctx.shadowColor = "#a855f7"; ctx.shadowBlur = 20;
+        ctx.lineWidth = e.big ? 6 : 4; ctx.lineJoin = "round";
+        ctx.beginPath();
+        let px = e.tx, py = 0;
+        ctx.moveTo(px, py);
+        e.segs.forEach(s => { px = e.tx + s.dx; py = s.y * e.ty; ctx.lineTo(px, py); });
+        ctx.lineTo(e.tx, e.ty);
+        ctx.stroke();
+        ctx.lineWidth = e.big ? 2.5 : 1.5; ctx.strokeStyle = "#e9d5ff"; ctx.stroke();
+        // bright flash disc
+        ctx.globalAlpha = a * 0.5; ctx.fillStyle = "#c4b5fd";
+        ctx.beginPath(); ctx.arc(e.tx, e.ty, (e.big ? 34 : 22) * (1 - a + .4), 0, Math.PI * 2); ctx.fill();
+        ctx.restore();
+      } else if (e.kind === "fire") {
+        const t = e.t;
+        const x = lerp(e.x, e.tx, easeOut(t)), y = lerp(e.y, e.ty, easeOut(t)) - Math.sin(t * Math.PI) * 26;
+        ctx.save();
+        ctx.shadowColor = "#f97316"; ctx.shadowBlur = 18;
+        for (let i = 0; i < 3; i++) {
+          ctx.globalAlpha = a * (1 - i * 0.25);
+          ctx.fillStyle = ["#fde047", "#f97316", "#ef4444"][i];
+          ctx.beginPath(); ctx.arc(x - i * 3, y, (e.big ? 14 : 10) - i * 2, 0, Math.PI * 2); ctx.fill();
+        }
+        ctx.restore();
+        if (t > 0.92) burstOnce(e, e.tx, e.ty, "#f97316", e.big ? 16 : 9);
+      } else if (e.kind === "ice") {
+        ctx.save(); ctx.globalAlpha = a;
+        ctx.strokeStyle = "#bae6fd"; ctx.shadowColor = "#38bdf8"; ctx.shadowBlur = 14; ctx.lineWidth = 3;
+        const n = e.big ? 8 : 6;
+        for (let i = 0; i < n; i++) {
+          const ang = (i / n) * Math.PI * 2;
+          const r1 = (1 - a) * 40, r2 = r1 + 14;
+          ctx.beginPath();
+          ctx.moveTo(e.tx + Math.cos(ang) * r1, e.ty + Math.sin(ang) * r1);
+          ctx.lineTo(e.tx + Math.cos(ang) * r2, e.ty + Math.sin(ang) * r2);
+          ctx.stroke();
+        }
+        ctx.restore();
+      } else if (e.kind === "nature") {
+        ctx.save(); ctx.globalAlpha = a;
+        for (let i = 0; i < (e.big ? 12 : 7); i++) {
+          const ang = i * 1.7 + (1 - a) * 4;
+          const r = (1 - a) * 46;
+          ctx.fillStyle = i % 2 ? "#22c55e" : "#84cc16";
+          ctx.fillRect(e.tx + Math.cos(ang) * r, e.ty + Math.sin(ang) * r, 6, 6);
+        }
+        ctx.restore();
+      } else { // slash
+        ctx.save(); ctx.globalAlpha = a;
+        ctx.strokeStyle = "#fef08a"; ctx.shadowColor = "#fbbf24"; ctx.shadowBlur = 14;
+        ctx.lineWidth = e.big ? 7 : 4; ctx.lineCap = "round";
+        const sweep = (1 - a) * 1.6;
+        ctx.beginPath();
+        ctx.arc(e.tx, e.ty, e.big ? 34 : 24, -0.6 + sweep, 1.4 + sweep);
+        ctx.stroke();
+        ctx.restore();
+      }
+    });
+  }
+  const _burstFlags = new WeakSet();
+  function burstOnce(e, x, y, color, n) { if (_burstFlags.has(e)) return; _burstFlags.add(e); burstParticles(x, y, color, n); }
+
+  function drawParticles(ctx) {
+    scene.particles.forEach(p => {
+      ctx.globalAlpha = clamp(p.life / 30, 0, 1);
+      cube(ctx, p.x, p.y, p.s, p.s, p.color, 2);
+    });
+    ctx.globalAlpha = 1;
+  }
+  function drawFloats(ctx) {
+    scene.floats.forEach(f => {
+      ctx.globalAlpha = clamp(f.life / f.max, 0, 1);
+      ctx.font = `800 ${f.size}px system-ui,sans-serif`; ctx.textAlign = "center";
+      ctx.lineWidth = 3; ctx.strokeStyle = "rgba(0,0,0,.7)"; ctx.strokeText(f.text, f.x, f.y);
+      ctx.fillStyle = f.color; ctx.fillText(f.text, f.x, f.y);
+    });
+    ctx.globalAlpha = 1;
+  }
+
+  /* =====================================================================
+     UPGRADES / FINISH
+  ===================================================================== */
+  function showUpgradeChoice(onDone) {
+    const pool = CFG.upgradePool.slice();
+    for (let i = pool.length - 1; i > 0; i--) { const j = Math.floor(Math.random() * (i + 1)); [pool[i], pool[j]] = [pool[j], pool[i]]; }
+    const choices = pool.slice(0, 3);
+    const bg = el("div", "modal-bg");
+    const m = el("div", "modal");
+    m.innerHTML = `<div style="font-size:18px;font-weight:800;color:#fbbf24;margin-bottom:4px;">🎁 选择强化</div>
+      <div style="font-size:12px;color:#94a3b8;margin-bottom:14px;">通关第 ${S.floor} 层！挑选一项永久增益</div>`;
+    const grid = el("div"); grid.style.cssText = "display:grid;grid-template-columns:repeat(3,1fr);gap:10px;";
+    choices.forEach((c, idx) => {
+      const card = el("div", "skill-card card-pop");
+      card.style.animationDelay = (idx * 0.06) + "s";
+      card.innerHTML = `<div style="font-size:30px;margin-bottom:6px;">${c.icon}</div>
+        <div style="font-weight:800;color:#fde68a;font-size:14px;">${c.name}</div>
+        <div style="font-size:11px;color:#cbd5e1;margin-top:3px;">${c.desc}</div>`;
+      card.onclick = () => { c.apply(S); bg.remove(); onDone(); };
+      grid.appendChild(card);
+    });
+    m.appendChild(grid);
+    bg.appendChild(m);
+    document.body.appendChild(bg);
+  }
+
+  function finishGame(won) {
+    if (S.finished) return;
+    S.finished = true; S.phase = "idle";
+    if (S.score > S.best) { S.best = S.score; localStorage.setItem("haqi_slot_best", String(S.best)); }
+    const earnedPoints = clamp(Math.round(S.score / 16) + (won ? 40 : 0), 12, 260);
+    postParent("gameFinished", { earnedPoints, score: S.score, level: S.floor, difficulty: S.difficulty, won, roundId: S.roundId, finishedAt: Date.now() });
+    setTimeout(() => showEndScreen(won), 400);
+  }
+
+  function showEndScreen(won) {
+    const bg = el("div", "modal-bg");
+    const m = el("div", "modal");
+    m.innerHTML = `
+      <div style="font-size:54px;margin-bottom:6px;">${won ? "🏆" : "💀"}</div>
+      <div style="font-size:22px;font-weight:800;color:${won ? "#fbbf24" : "#f87171"};margin-bottom:10px;">${won ? "通关胜利！" : "你失败了"}</div>
+      <div style="font-size:14px;color:#cbd5e1;margin-bottom:4px;">到达 <b style="color:#fbbf24;">第 ${S.floor} 层</b> / ${CFG.maxFloor}</div>
+      <div style="font-size:14px;color:#cbd5e1;margin-bottom:4px;">得分 <b style="color:#6ee7b7;">${S.score}</b></div>
+      <div style="font-size:12px;color:#94a3b8;margin-bottom:18px;">🏆 最佳 ${S.best}</div>
+      <button class="btn btn-spin" id="againBtn">再来一局 🔄</button>`;
+    bg.appendChild(m);
+    document.body.appendChild(bg);
+    $("#againBtn", m).onclick = () => { bg.remove(); restart(); };
+  }
+
+  /* =====================================================================
+     INIT / RESTART
+  ===================================================================== */
+  function startGame() {
+    renderShell();
+    initScene();
+    scene.enemy = null; scene.effects = []; scene.particles = []; scene.floats = [];
+    scene.remaining = level().count;
+    spawnEnemy();
+    startTurn();
+  }
+
+  function restart() {
+    const best = S.best;
+    if (scene.raf) { cancelAnimationFrame(scene.raf); scene.raf = 0; }
+    S = newState(); S.best = best;
+    scene.hero = null; scene.enemy = null; scene.effects = []; scene.particles = []; scene.floats = [];
+    startGame();
+  }
+
+  function init() {
+    startGame();
+    if (!S.loadedPosted) { S.loadedPosted = true; postParent("gameLoaded"); }
+  }
+  init();
+})();
+</script>
+</body>
+</html>

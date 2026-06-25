@@ -1197,7 +1197,12 @@
   function drawPet(x, y, w, h) {
     if (state.petBitmap && state.petMeta?.uv) {
       const uv = state.petMeta.uv;
-      ctx.drawImage(state.petBitmap, uv.x, uv.y, uv.width, uv.height, x, y, w, h);
+      try {
+        ctx.drawImage(state.petBitmap, uv.x, uv.y, uv.width, uv.height, x, y, w, h);
+      } catch (_) {
+        // Bitmap was detached (e.g. closed during teardown) — fall back to emoji.
+        ctx.font = `${Math.round(h * .75)}px serif`; ctx.textAlign = 'center'; ctx.textBaseline = 'middle'; ctx.fillText(FALLBACK_PET, x + w / 2, y + h / 2);
+      }
     } else {
       ctx.font = `${Math.round(h * .75)}px serif`; ctx.textAlign = 'center'; ctx.textBaseline = 'middle'; ctx.fillText(FALLBACK_PET, x + w / 2, y + h / 2);
     }
@@ -1361,11 +1366,17 @@
   async function setPetImage(pet) {
     if (!pet?.imageBlob) return;
     try {
-      if (state.petBitmap?.close) state.petBitmap.close();
-      if (state.petUrl) URL.revokeObjectURL(state.petUrl);
+      // Build the new bitmap first; only swap once it's ready so the render
+      // loop never sees a closed (detached) bitmap mid-await.
+      const nextUrl = URL.createObjectURL(pet.imageBlob);
+      const nextBitmap = await createImageBitmap(pet.imageBlob);
+      const oldBitmap = state.petBitmap;
+      const oldUrl = state.petUrl;
       state.petMeta = pet;
-      state.petUrl = URL.createObjectURL(pet.imageBlob);
-      state.petBitmap = await createImageBitmap(pet.imageBlob);
+      state.petUrl = nextUrl;
+      state.petBitmap = nextBitmap;
+      if (oldBitmap?.close) oldBitmap.close();
+      if (oldUrl) URL.revokeObjectURL(oldUrl);
     } catch (_) {}
   }
   async function handlePetImage(msg) {

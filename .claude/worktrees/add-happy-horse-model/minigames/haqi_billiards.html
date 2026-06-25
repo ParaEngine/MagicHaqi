@@ -1,0 +1,3451 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+  <title>宠物台球对战</title>
+  <script src="https://cdn.keepwork.com/keepwork/cdn/tailwindcss@3.4.16.js"></script>
+</head>
+
+<body></body>
+<!--
+  The full game (~148KB of JS: i18n, state, the rules/intro markup, physics, AI,
+  and all three.js scene/geometry/texture builders) lives in the NON-EXECUTING
+  <script type="text/plain"> block below so the browser does NOT parse/compile it
+  before DOMContentLoaded. A tiny synchronous bootstrap at the very end turns it
+  into a Blob URL and loads it as a classic script right after first paint; the
+  IIFE then builds the real initial screen (rules modal) and posts `gameLoaded`.
+  three.js itself is also lazy-loaded (only when the 3D scene is built).
+-->
+<script type="text/plain" id="mhBilliardsCode">
+(function () {
+  // ---- i18n ----
+  const I18N = {
+    zhCN: {
+      title: '宠物台球对战',
+      helpAria: '玩法',
+      modeAria: '模式',
+      diffAria: '难度',
+      modeEight: '花球',
+      modeSnooker: '斯诺克',
+      modeEightTitle: '花球对战',
+      modeSnookerTitle: '斯诺克练习赛',
+      diffEasy: '轻松',
+      diffNormal: '标准',
+      diffHard: '困难',
+      diffExpert: '专家',
+      playerYou: '你',
+      playerPotsAria: '你的进球记录',
+      petOpponent: '宠物对手',
+      petPotsAria: '宠物的进球记录',
+      readyBreak: '准备开球',
+      selectModeStart: '选择模式和难度，点击开始',
+      cancelSwing: '点击取消挥杆',
+      swingAria: '挥杆击球点',
+      rerack: '重摆',
+      start: '开始',
+      settingsAria: '设置',
+      rulesTitle: '宠物台球对战',
+      rulesP1: '和宠物轮流击球。轮到你时先拖动调整视角，然后拖动或点击下面白色球挥杆；再拖动蓄力，松手击球，球停稳后结算回合。',
+      rulesP2: '斯诺克开局可拖动白球摆位。难度会影响宠物瞄准精度和力度，双指可缩放和平移球台。',
+      eightMode: '花球模式',
+      snookerMode: '斯诺克模式',
+      startGame: '开始游戏',
+      settingsTitle: '设置',
+      qualityLabel: '画质',
+      qualityAuto: '自动',
+      qualityHigh: '高画质',
+      qualityLow: '低画质',
+      thinking: '思考中',
+      snookerPlaceCue: '斯诺克开局：拖动白球摆位',
+      dragAdjustAim: '拖动调整视角，然后拖动或点击下面白色球挥杆',
+      reracked: '已重摆，点击开始',
+      cuePottedPlace: '白球进袋：拖动白球摆位，然后点击下面白色球确认',
+      dragOrClickCue: '拖动调整视角，或点击白球/下面白色球挥杆',
+      petAiming: '宠物正在瞄准',
+      cuePottedOpponentScores: '白球进袋，对手得分',
+      foulEightOpponentScores: '误进黑八，对手得分',
+      pottedContinue: '进球，继续',
+      pottedSwitch: '进球后换人',
+      noPotSwitch: '没有进球，换人',
+      cuePottedOpponentPlus4: '白球进袋，对手加4分',
+      wrongTarget: '打错目标，对手得分',
+      redBall: '红球',
+      blackEight: '黑八',
+      pointsBall: '{points}分球',
+      numberBall: '{label}号球',
+      pottedBall: '进球',
+      youWin: '你赢啦',
+      petWins: '宠物赢了',
+      victory: '胜利！',
+      matchOver: '对局结束',
+      hitPointAdjusted: '击球点已调整，松手进入挥杆',
+      swingMode: '挥杆模式：拖动蓄力，松手击球',
+      swingCancelled: '已取消挥杆，可继续调整视角',
+      dragCueFreePlace: '拖动白球自由摆位，然后点击下面白色球确认',
+      dragCuePlace: '拖动白球摆位，然后点击下面白色球确认',
+      cuePlaced: '白球已摆好，点击下面白色球开始瞄准',
+      cueBlocked: '这个角度球杆被挡住了，换个方向试试',
+      powerTooLow: '力度太小，再拖远一点',
+      dragRotatePinch: '拖动旋转视角，双指缩放/平移',
+      dragAdjustPinch: '拖动调整视角，双指缩放/平移',
+      ballsMoving: '球在运动中',
+      clickStartAgain: '点击开始再来一局',
+      ready: '准备',
+      targetRed: '目标红球',
+      targetColor: '目标彩球',
+      targetSmall: '目标小号',
+      targetBig: '目标大号',
+      targetAny: '目标任意',
+      dragHereCancel: '拖到这里取消挥杆',
+      difficultyToast: '难度：{label}',
+      qualityToast: '画质：{label}',
+      pet: '宠物',
+      swingAriaDetail: '挥杆击球点，左右 {side}，上下 {vertical}',
+    },
+    enUS: {
+      title: 'Pet Billiards',
+      helpAria: 'Help',
+      modeAria: 'Mode',
+      diffAria: 'Difficulty',
+      modeEight: '8-Ball',
+      modeSnooker: 'Snooker',
+      modeEightTitle: '8-Ball Match',
+      modeSnookerTitle: 'Snooker Practice',
+      diffEasy: 'Easy',
+      diffNormal: 'Normal',
+      diffHard: 'Hard',
+      diffExpert: 'Expert',
+      playerYou: 'You',
+      playerPotsAria: 'Your potted balls',
+      petOpponent: 'Pet Opponent',
+      petPotsAria: "Pet's potted balls",
+      readyBreak: 'Ready to break',
+      selectModeStart: 'Select mode & difficulty, then start',
+      cancelSwing: 'Tap to cancel swing',
+      swingAria: 'Cue hit point',
+      rerack: 'Rerack',
+      start: 'Start',
+      settingsAria: 'Settings',
+      rulesTitle: 'Pet Billiards',
+      rulesP1: 'Take turns with your pet. When it\'s your turn, drag to adjust the camera, then drag or tap the white ball below to swing; drag again to charge power, release to shoot. The turn settles once all balls stop.',
+      rulesP2: 'In Snooker you can drag the cue ball to place it at the start. Difficulty affects the pet\'s aim accuracy and power. Pinch to zoom and pan the table.',
+      eightMode: '8-Ball Mode',
+      snookerMode: 'Snooker Mode',
+      startGame: 'Start Game',
+      settingsTitle: 'Settings',
+      qualityLabel: 'Graphics',
+      qualityAuto: 'Auto',
+      qualityHigh: 'High',
+      qualityLow: 'Low',
+      thinking: 'Thinking',
+      snookerPlaceCue: 'Snooker opening: drag the cue ball to place it',
+      dragAdjustAim: 'Drag to adjust camera, then drag or tap the white ball below to swing',
+      reracked: 'Reracked — tap Start',
+      cuePottedPlace: 'Cue ball potted: drag it to place, then tap the white ball below to confirm',
+      dragOrClickCue: 'Drag to adjust camera, or tap the cue ball / white ball below to swing',
+      petAiming: 'Pet is aiming',
+      cuePottedOpponentScores: 'Cue ball potted — opponent scores',
+      foulEightOpponentScores: '8-ball potted early — opponent scores',
+      pottedContinue: 'Potted — continue',
+      pottedSwitch: 'Potted — switch turns',
+      noPotSwitch: 'No pot — switch turns',
+      cuePottedOpponentPlus4: 'Cue ball potted — opponent +4',
+      wrongTarget: 'Wrong target — opponent scores',
+      redBall: 'Red',
+      blackEight: '8-Ball',
+      pointsBall: '{points}-pt ball',
+      numberBall: 'Ball {label}',
+      pottedBall: 'Potted',
+      youWin: 'You win!',
+      petWins: 'Pet wins',
+      victory: 'Victory!',
+      matchOver: 'Match Over',
+      hitPointAdjusted: 'Hit point adjusted — release to swing',
+      swingMode: 'Swing mode: drag to charge, release to shoot',
+      swingCancelled: 'Swing cancelled — adjust camera',
+      dragCueFreePlace: 'Drag the cue ball to place it, then tap the white ball below to confirm',
+      dragCuePlace: 'Drag the cue ball to place it, then tap the white ball below to confirm',
+      cuePlaced: 'Cue ball placed — tap the white ball below to aim',
+      cueBlocked: 'Cue stick is blocked at this angle — try another direction',
+      powerTooLow: 'Too little power — drag further',
+      dragRotatePinch: 'Drag to rotate, pinch to zoom/pan',
+      dragAdjustPinch: 'Drag to adjust camera, pinch to zoom/pan',
+      ballsMoving: 'Balls in motion',
+      clickStartAgain: 'Tap Start to play again',
+      ready: 'Ready',
+      targetRed: 'Target: Red',
+      targetColor: 'Target: Color',
+      targetSmall: 'Target: Solids',
+      targetBig: 'Target: Stripes',
+      targetAny: 'Target: Any',
+      dragHereCancel: 'Drag here to cancel swing',
+      difficultyToast: 'Difficulty: {label}',
+      qualityToast: 'Graphics: {label}',
+      pet: 'Pet',
+      swingAriaDetail: 'Hit point: horizontal {side}, vertical {vertical}',
+    },
+  };
+  function detectLang() {
+    try {
+      const params = new URLSearchParams(window.location.search);
+      const lang = params.get('lang');
+      if (lang && I18N[lang]) return lang;
+    } catch (_) {}
+    return 'zhCN';
+  }
+  const LANG = detectLang();
+  const L = I18N[LANG];
+  function t(key, vars) {
+    let str = L[key] || I18N.zhCN[key] || key;
+    if (vars) str = str.replace(/\{(\w+)\}/g, (m, n) => vars[n] != null ? String(vars[n]) : m);
+    return str;
+  }
+  try { document.documentElement.setAttribute('lang', LANG === 'enUS' ? 'en' : 'zh-CN'); } catch (_) {}
+  try { document.title = t('title'); } catch (_) {}
+
+  const STORAGE_KEY = 'haqiBilliardsSettingsV1';
+  const BEST_KEY = 'haqiBilliardsBestScoreV1';
+  const TABLE = { width: 10.4, height: 5.8, rail: .48, pocket: .36 };
+  const railHeight = .28;
+  const cushionHeight = .22;
+  const cushionDepth = .16;
+  const cushionBottomY = -.01;
+  const TABLE_PROFILES = {
+    eight: {
+      width: 10.4, height: 5.8, railWidth: .48, pocket: .36,
+      felt: 0x263fc8, feltDark: 0x192b91, cushion: 0x1c277f,
+      railColor: 0x7b3617, railDark: 0x3d1809, trim: 0xe8d7a6,
+      floor: 0x274f3f, wall: 0x744231, sky: 0x141b2c,
+    },
+    snooker: {
+      width: 12.4, height: 6.35, railWidth: .52, pocket: .34,
+      felt: 0x0b7f43, feltDark: 0x064d2a, cushion: 0x075e35,
+      railColor: 0x7a3514, railDark: 0x351506, trim: 0xf0dd9e,
+      floor: 0x244438, wall: 0x6f392f, sky: 0x14241b,
+    },
+  };
+  const BALL_RADIUS = .135;
+  const IS_MOBILE = /Mobi|Android|iPhone|iPad|iPod/i.test(navigator.userAgent) || navigator.maxTouchPoints > 1;
+  const FIXED_DT = IS_MOBILE ? 1 / 90 : 1 / 120;
+  const MAX_FRAME_DT = 1 / 24;
+  const MAX_PIXEL_RATIO = IS_MOBILE ? 1.8 : 2;
+  const BALL_WIDTH_SEGMENTS = IS_MOBILE ? 28 : 32;
+  const BALL_HEIGHT_SEGMENTS = IS_MOBILE ? 18 : 20;
+  const GRAPHICS_PRESETS = IS_MOBILE
+    ? [
+      { id: 'high', pixelRatio: 1.8, shadows: true, shadowMapSize: 1024 },
+      { id: 'balanced', pixelRatio: 1.45, shadows: true, shadowMapSize: 512 },
+      { id: 'low', pixelRatio: 1.05, shadows: false, shadowMapSize: 0 },
+    ]
+    : [
+      { id: 'high', pixelRatio: 2, shadows: true, shadowMapSize: 1024 },
+      { id: 'balanced', pixelRatio: 1.6, shadows: true, shadowMapSize: 1024 },
+      { id: 'low', pixelRatio: 1.25, shadows: false, shadowMapSize: 0 },
+    ];
+  const GRAPHICS_MODE_LABELS = { auto: t('qualityAuto'), high: t('qualityHigh'), low: t('qualityLow') };
+  const GRAPHICS_FPS_SAMPLE_MS = 3600;
+  const GRAPHICS_LOW_FPS = IS_MOBILE ? 42 : 48;
+  const GRAPHICS_DOWNGRADE_COOLDOWN_MS = 6500;
+  const AIM_INTENT_PIXEL_THRESHOLD = IS_MOBILE ? 22 : 12;
+  const AIM_FULL_POWER_PIXELS = IS_MOBILE ? 230 : 190;
+  const DEFAULT_CAMERA = { yaw: -Math.PI / 2, pitch: .58, distancePortrait: 11.7, distanceLandscape: 10, targetX: 0, targetY: 0 };
+  const CAMERA_DISTANCE_MIN = 6.2;
+  const CAMERA_DISTANCE_MAX = 16.5;
+  const CAMERA_PITCH_MIN = .22;
+  const CAMERA_PITCH_MAX = 1.48;
+  const CAMERA_ROTATE_VIEW_SLOW = Math.PI / 2400;
+  const CAMERA_ROTATE_VIEW_FAST = .0092;
+  const CAMERA_ROTATE_VIEW_ACCEL_START_PIXELS = 2;
+  const CAMERA_ROTATE_VIEW_ACCEL_PIXELS = 30;
+  const CAMERA_ROTATE_AIM_SLOW = Math.PI / 32000;
+  const CAMERA_ROTATE_AIM_FAST = .0058;
+  const CAMERA_ROTATE_AIM_ACCEL_START_PIXELS = 14;
+  const CAMERA_ROTATE_AIM_ACCEL_PIXELS = 70;
+  const AUTO_CAMERA_ORIGIN_LOOK_AHEAD = 1.45;
+  const AUTO_CAMERA_ORIGIN_EASE = .18;
+  const AUTO_CAMERA_ORIGIN_MOVING_EASE = .06;
+  const AUTO_CAMERA_ORIGIN_FAST_EASE = .024;
+  const AUTO_CAMERA_ORIGIN_FAST_SPEED = 11;
+  const AUTO_CAMERA_ORIGIN_ZOOM_IN_DISTANCE = CAMERA_DISTANCE_MIN;
+  const AUTO_CAMERA_ORIGIN_ZOOM_OUT_DISTANCE = CAMERA_DISTANCE_MAX;
+  const FRICTION = .74;
+  const CUSHION_RESTITUTION = .84;
+  const BALL_RESTITUTION = .96;
+  const STOP_SPEED = .045;
+  const CUE_SPIN_CURVE = .24;
+  const CUE_SPIN_DECAY = .18;
+  const CUE_SPIN_COLLISION = 2.35;
+  const CUE_SPIN_CUSHION = .2;
+  const POCKET_FALL_DURATION = 1;
+  const POCKET_FALL_DEPTH = .82;
+  const POCKET_EFFECT_DURATION = 1.05;
+  const HIT_POINT_DRAG_THRESHOLD = 4;
+  const CUE_STICK_LENGTH = 3.05;
+  const CUE_STICK_MESH_LENGTH = 3.2;
+  const CUE_STICK_MIN_VISIBLE = .46;
+  const CUE_STICK_PULLBACK = .82;
+  const CUE_STICK_EDGE_BLOCK_GAP = BALL_RADIUS * .95;
+  const MODES = {
+    eight: { id: 'eight', label: t('modeEight'), title: t('modeEightTitle'), target: 7 },
+    snooker: { id: 'snooker', label: t('modeSnooker'), title: t('modeSnookerTitle'), target: 32 },
+  };
+  const DIFFICULTIES = {
+    easy: { id: 'easy', label: t('diffEasy'), aiNoise: .22, aiPower: .82, aimHelp: .62, targetScore: 5, reward: 42 },
+    normal: { id: 'normal', label: t('diffNormal'), aiNoise: .11, aiPower: .94, aimHelp: .38, targetScore: 7, reward: 56 },
+    hard: { id: 'hard', label: t('diffHard'), aiNoise: .045, aiPower: 1.05, aimHelp: .2, targetScore: 9, reward: 72 },
+    expert: { id: 'expert', label: t('diffExpert'), aiNoise: .018, aiPower: 1.14, aimHelp: .08, targetScore: 11, reward: 88 },
+  };
+  const EIGHT_COLORS = ['#f8fafc', '#facc15', '#2563eb', '#dc2626', '#7c3aed', '#f97316', '#16a34a', '#7f1d1d', '#111827', '#facc15', '#2563eb', '#dc2626', '#7c3aed', '#f97316', '#16a34a', '#7f1d1d'];
+  const SNOOKER_COLORS = { cue: '#f8fafc', red: '#dc2626', yellow: '#facc15', green: '#16a34a', brown: '#92400e', blue: '#2563eb', pink: '#ec4899', black: '#111827' };
+  const SNOOKER_POINTS = { red: 1, yellow: 2, green: 3, brown: 4, blue: 5, pink: 6, black: 7 };
+
+  const saved = readSettings();
+  const state = {
+    mode: saved.mode || 'eight',
+    difficulty: saved.difficulty || 'normal',
+    started: false,
+    finished: false,
+    running: false,
+    currentPlayer: 0,
+    playerScore: 0,
+    petScore: 0,
+    turnPots: [],
+    message: t('dragAdjustAim'),
+    balls: [],
+    ballMeshes: new Map(),
+    pocketed: [[], []],
+    pocketEffects: [],
+    groupOwner: { solids: null, stripes: null },
+    snookerNext: 'red',
+    seconds: 0,
+    timer: null,
+    frame: null,
+    accumulator: 0,
+    lastTime: 0,
+    pointer: null,
+    inputMode: 'view',
+    cuePlacement: { active: false, pointer: null, afterScratch: false },
+    hitPoint: { x: 0, y: 0 },
+    hitControl: { active: false, pointer: null, moved: false, startX: 0, startY: 0 },
+    aim: { active: false, intentReady: false, startX: 0, startY: 0, screenStartX: 0, screenStartY: 0, x: 0, y: 0, power: 0, dir: { x: 1, y: 0 }, blocked: false },
+    cameraControl: {
+      yaw: DEFAULT_CAMERA.yaw,
+      pitch: DEFAULT_CAMERA.pitch,
+      distance: DEFAULT_CAMERA.distanceLandscape,
+      targetX: DEFAULT_CAMERA.targetX,
+      targetY: DEFAULT_CAMERA.targetY,
+      autoDistance: true,
+      pointers: new Map(),
+      gesture: null,
+    },
+    aiThinking: false,
+    turnSummary: '',
+    petAssets: [],
+    objectUrls: [],
+    best: Number(localStorage.getItem(BEST_KEY) || 0),
+    shotCount: 0,
+    audio: { ctx: null, master: null, lastCollisionAt: 0, enabled: false },
+    aiShotAnimation: { active: false, startedAt: 0, duration: 620, shot: null, fired: false },
+    graphics: { mode: normalizeGraphicsMode(saved.graphicsMode), level: graphicsLevelForMode(saved.graphicsMode), frames: 0, sampleStartedAt: 0, lastDowngradeAt: 0 },
+  };
+
+  const three = {
+    scene: null,
+    camera: null,
+    renderer: null,
+    tableGroup: null,
+    cue: null,
+    cueHitDot: null,
+    aimLine: null,
+    targetLine: null,
+    pocketLine: null,
+    ghostBall: null,
+    petActor: null,
+    petBillboard: null,
+    petBillboardTexture: null,
+    petStick: null,
+    petThought: null,
+    clock: null,
+    light: null,
+    reusable: null,
+  };
+
+  const root = document.createElement('div');
+  root.id = 'haqiBilliards';
+  root.innerHTML = `
+    <style>
+      #haqiBilliards { --mh-ui-scale: 1; }
+      * { box-sizing: border-box; -webkit-tap-highlight-color: transparent; }
+      html, body { width: 100%; height: 100%; margin: 0; overflow: hidden; }
+      body {
+        font-family: -apple-system, BlinkMacSystemFont, 'PingFang SC', 'Microsoft YaHei', sans-serif;
+        color: #10233f;
+        background: linear-gradient(180deg, #d8f6ff 0%, #e8fff1 58%, #fff7d7 100%);
+        touch-action: none;
+        user-select: none;
+      }
+      .mh-shell { width: 100vw; height: 100vh; height: 100dvh; display: grid; grid-template-rows: auto minmax(0,1fr) auto; gap: calc(7px * var(--mh-ui-scale)); padding: calc(7px * var(--mh-ui-scale)) calc(7px * var(--mh-ui-scale)) calc(12px * var(--mh-ui-scale)); overflow: hidden; }
+      .mh-top { min-height: calc(48px * var(--mh-ui-scale)); display: grid; grid-template-columns: calc(38px * var(--mh-ui-scale)) minmax(0,1fr) auto; align-items: center; gap: calc(7px * var(--mh-ui-scale)); padding: calc(7px * var(--mh-ui-scale)); border-radius: calc(14px * var(--mh-ui-scale)); background: rgba(255,255,255,.88); border: 2px solid rgba(255,255,255,.94); box-shadow: 0 calc(5px * var(--mh-ui-scale)) 0 rgba(15,118,110,.14), 0 calc(12px * var(--mh-ui-scale)) calc(24px * var(--mh-ui-scale)) rgba(15,23,42,.1); }
+      .mh-icon-btn, .mh-start, .mh-restart, .mh-swing, .mh-select, .mh-chip, .mh-mode, .mh-settings-btn, .mh-quality-btn { border: 0; cursor: pointer; font-family: inherit; font-weight: 1000; }
+      .mh-icon-btn { width: calc(34px * var(--mh-ui-scale)); height: calc(34px * var(--mh-ui-scale)); border-radius: 999px; color: #fff; background: linear-gradient(180deg,#fb923c,#ea580c); box-shadow: 0 calc(3px * var(--mh-ui-scale)) 0 #9a3412; font-size: calc(18px * var(--mh-ui-scale)); }
+      .mh-title { min-width: 0; text-align: center; font-size: calc(18px * var(--mh-ui-scale)); font-weight: 1000; color: #075985; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+      .mh-stats { display: flex; align-items: center; justify-content: flex-end; gap: 5px; flex-wrap: wrap; }
+      .mh-pill, .mh-select { min-width: calc(54px * var(--mh-ui-scale)); height: calc(29px * var(--mh-ui-scale)); display: inline-flex; align-items: center; justify-content: center; gap: calc(3px * var(--mh-ui-scale)); padding: 0 calc(8px * var(--mh-ui-scale)); border-radius: 999px; background: #fff; border: 1px solid rgba(14,116,144,.2); color: #0f766e; font-size: calc(12px * var(--mh-ui-scale)); font-weight: 900; box-shadow: 0 calc(2px * var(--mh-ui-scale)) 0 rgba(14,116,144,.12); }
+      .mh-select { outline: none; max-width: calc(92px * var(--mh-ui-scale)); }
+      .mh-stage { position: relative; min-height: 0; overflow: hidden; border-radius: calc(16px * var(--mh-ui-scale)); background: linear-gradient(180deg, rgba(255,255,255,.36), rgba(255,255,255,.16)); border: 2px solid rgba(255,255,255,.82); box-shadow: inset 0 1px 0 rgba(255,255,255,.5), 0 calc(14px * var(--mh-ui-scale)) calc(30px * var(--mh-ui-scale)) rgba(15,23,42,.14); }
+      .mh-stage canvas { position: absolute; inset: 0; width: 100%; height: 100%; display: block; }
+      .mh-stage::before { content: ''; position: absolute; inset: 0; pointer-events: none; background: radial-gradient(circle at 22% 18%, rgba(255,255,255,.45), transparent 24%), radial-gradient(circle at 78% 12%, rgba(125,211,252,.24), transparent 20%); z-index: 1; }
+      .mh-hud { position: absolute; left: calc(8px * var(--mh-ui-scale)); right: calc(8px * var(--mh-ui-scale)); top: calc(8px * var(--mh-ui-scale)); z-index: 5; display: grid; grid-template-columns: 1fr auto 1fr; align-items: start; gap: calc(6px * var(--mh-ui-scale)); pointer-events: none; }
+      .mh-player { min-width: 0; display: flex; align-items: center; gap: calc(7px * var(--mh-ui-scale)); padding: calc(6px * var(--mh-ui-scale)) calc(8px * var(--mh-ui-scale)); border-radius: calc(13px * var(--mh-ui-scale)); background: rgba(255,255,255,.86); border: 1px solid rgba(14,116,144,.18); box-shadow: 0 calc(4px * var(--mh-ui-scale)) calc(12px * var(--mh-ui-scale)) rgba(15,23,42,.12); pointer-events: auto; }
+      .mh-player.pet { justify-content: flex-end; }
+      .mh-player.active { outline: 3px solid rgba(249,115,22,.66); }
+      .mh-player-meta { min-width: 0; display: grid; gap: 1px; }
+      .mh-name { min-width: 0; font-size: calc(12px * var(--mh-ui-scale)); font-weight: 900; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; color: #075985; }
+      .mh-score { font-size: calc(20px * var(--mh-ui-scale)); line-height: 1; font-weight: 1000; color: #f97316; font-variant-numeric: tabular-nums; }
+      .mh-pot-strip { flex: 1 1 auto; min-width: 0; height: calc(38px * var(--mh-ui-scale)); display: flex; align-items: center; gap: calc(5px * var(--mh-ui-scale)); overflow-x: auto; overflow-y: hidden; overscroll-behavior-x: contain; -webkit-overflow-scrolling: touch; pointer-events: auto; touch-action: pan-x; scrollbar-width: none; padding: 0 calc(2px * var(--mh-ui-scale)); }
+      .mh-pot-strip::-webkit-scrollbar { display: none; }
+      .mh-pot-strip.pet { flex-direction: row-reverse; }
+      .mh-pot-ball { position: relative; flex: 0 0 auto; width: calc(27px * var(--mh-ui-scale)); height: calc(27px * var(--mh-ui-scale)); border-radius: 999px; display: grid; place-items: center; overflow: hidden; background: var(--ball-color, #f8fafc); border: 2px solid rgba(255,255,255,.92); box-shadow: inset calc(-5px * var(--mh-ui-scale)) calc(-6px * var(--mh-ui-scale)) calc(10px * var(--mh-ui-scale)) rgba(15,23,42,.2), inset calc(4px * var(--mh-ui-scale)) calc(4px * var(--mh-ui-scale)) calc(9px * var(--mh-ui-scale)) rgba(255,255,255,.6), 0 calc(2px * var(--mh-ui-scale)) calc(4px * var(--mh-ui-scale)) rgba(15,23,42,.2); color: #111827; font-size: calc(11px * var(--mh-ui-scale)); font-weight: 1000; line-height: 1; }
+      .mh-pot-ball::before { content: ''; position: absolute; left: 18%; top: 14%; width: 34%; height: 28%; border-radius: 999px; background: rgba(255,255,255,.58); pointer-events: none; }
+      .mh-pot-ball.stripe::after { content: ''; position: absolute; left: -12%; right: -12%; top: 34%; height: 32%; background: rgba(248,250,252,.96); pointer-events: none; }
+      .mh-pot-label { position: relative; z-index: 1; min-width: 52%; min-height: 52%; display: grid; place-items: center; border-radius: 999px; background: rgba(248,250,252,.9); }
+      .mh-pot-ball.red .mh-pot-label, .mh-pot-ball.cue .mh-pot-label { display: none; }
+      .mh-center-note { align-self: start; min-width: calc(118px * var(--mh-ui-scale)); max-width: 42vw; padding: calc(7px * var(--mh-ui-scale)) calc(10px * var(--mh-ui-scale)); border-radius: 999px; text-align: center; color: #0f766e; background: rgba(255,255,255,.88); border: 1px solid rgba(14,116,144,.18); font-size: calc(12px * var(--mh-ui-scale)); font-weight: 900; box-shadow: 0 calc(4px * var(--mh-ui-scale)) calc(12px * var(--mh-ui-scale)) rgba(15,23,42,.1); }
+      .mh-power-wrap { position: absolute; left: calc(10px * var(--mh-ui-scale)); top: calc(96px * var(--mh-ui-scale)); bottom: calc(92px * var(--mh-ui-scale)); z-index: 6; width: calc(18px * var(--mh-ui-scale)); border-radius: 999px; background: rgba(255,255,255,.56); border: 1px solid rgba(255,255,255,.82); overflow: hidden; pointer-events: none; box-shadow: inset 0 calc(2px * var(--mh-ui-scale)) calc(7px * var(--mh-ui-scale)) rgba(15,23,42,.12); }
+      .mh-power { position: absolute; left: 0; right: 0; bottom: 0; height: 0%; border-radius: inherit; background: linear-gradient(180deg,#ef4444,#f97316 42%,#facc15 72%,#22c55e); transition: height .08s linear; }
+      .mh-guide { position: absolute; left: 50%; bottom: calc(14px * var(--mh-ui-scale)); z-index: 7; transform: translateX(-50%); min-width: min(calc(310px * var(--mh-ui-scale)), calc(100vw - 28px)); padding: calc(8px * var(--mh-ui-scale)) calc(12px * var(--mh-ui-scale)); border-radius: 999px; text-align: center; color: #fff; background: rgba(15,39,71,.68); font-size: calc(13px * var(--mh-ui-scale)); font-weight: 900; pointer-events: none; opacity: .96; }
+      .mh-bottom { min-height: calc(76px * var(--mh-ui-scale)); display: grid; grid-template-columns: minmax(0,1fr) auto minmax(0,1fr); gap: calc(7px * var(--mh-ui-scale)); align-items: center; padding-bottom: calc(8px * var(--mh-ui-scale)); }
+      .mh-cancel-zone { grid-column: 1; justify-self: start; width: min(calc(190px * var(--mh-ui-scale)), 100%); min-height: calc(48px * var(--mh-ui-scale)); display: flex; align-items: center; justify-content: center; padding: calc(7px * var(--mh-ui-scale)) calc(10px * var(--mh-ui-scale)); border-radius: calc(14px * var(--mh-ui-scale)); border: 2px dashed rgba(225,29,72,.72); color: #be123c; background: rgba(255,255,255,.58); font-size: calc(13px * var(--mh-ui-scale)); font-weight: 1000; text-align: center; box-shadow: inset 0 1px calc(8px * var(--mh-ui-scale)) rgba(225,29,72,.1); cursor: pointer; touch-action: manipulation; }
+      .mh-actions { grid-column: 3; min-width: 0; display: flex; align-items: center; justify-content: flex-end; gap: calc(6px * var(--mh-ui-scale)); }
+      .mh-swing-zone { grid-column: 2; display: flex; align-items: center; justify-content: center; min-width: calc(118px * var(--mh-ui-scale)); }
+      .mh-mode, .mh-chip, .mh-start, .mh-restart, .mh-swing, .mh-settings-btn { flex: 0 0 auto; height: calc(38px * var(--mh-ui-scale)); min-width: calc(70px * var(--mh-ui-scale)); padding: 0 calc(12px * var(--mh-ui-scale)); border-radius: 999px; color: #0f766e; background: rgba(255,255,255,.88); border: 1px solid rgba(14,116,144,.2); box-shadow: 0 calc(3px * var(--mh-ui-scale)) 0 rgba(14,116,144,.14); font-size: calc(13px * var(--mh-ui-scale)); }
+      .mh-mode.active, .mh-chip.active { color: #fff; background: linear-gradient(180deg,#38bdf8,#0284c7); box-shadow: 0 calc(3px * var(--mh-ui-scale)) 0 #075985; }
+      .mh-start, .mh-restart { color: white; background: linear-gradient(180deg,#fb923c,#f97316); box-shadow: 0 calc(4px * var(--mh-ui-scale)) 0 #9a3412; min-width: calc(84px * var(--mh-ui-scale)); }
+      .mh-restart { height: calc(32px * var(--mh-ui-scale)); min-width: calc(58px * var(--mh-ui-scale)); padding: 0 calc(11px * var(--mh-ui-scale)); background: linear-gradient(180deg,#34d399,#059669); box-shadow: 0 calc(3px * var(--mh-ui-scale)) 0 #047857; font-size: calc(12px * var(--mh-ui-scale)); }
+      .mh-settings-btn { width: calc(38px * var(--mh-ui-scale)); min-width: calc(38px * var(--mh-ui-scale)); padding: 0; color: #fff; background: linear-gradient(180deg,#64748b,#334155); box-shadow: 0 calc(3px * var(--mh-ui-scale)) 0 #1e293b; font-size: calc(18px * var(--mh-ui-scale)); line-height: 1; }
+      .mh-swing { position: relative; width: calc(72px * var(--mh-ui-scale)); min-width: calc(72px * var(--mh-ui-scale)); height: calc(72px * var(--mh-ui-scale)); padding: 0; border-radius: 999px; overflow: hidden; color: transparent; background: radial-gradient(circle at 34% 28%, #fff 0 18%, #f8fafc 42%, #dbeafe 74%, #bfdbfe 100%); border: 3px solid rgba(255,255,255,.96); box-shadow: 0 calc(6px * var(--mh-ui-scale)) 0 #0284c7, 0 calc(11px * var(--mh-ui-scale)) calc(18px * var(--mh-ui-scale)) rgba(2,132,199,.26), inset calc(-8px * var(--mh-ui-scale)) calc(-9px * var(--mh-ui-scale)) calc(18px * var(--mh-ui-scale)) rgba(37,99,235,.16), inset calc(7px * var(--mh-ui-scale)) calc(7px * var(--mh-ui-scale)) calc(16px * var(--mh-ui-scale)) rgba(255,255,255,.96); touch-action: none; }
+      .mh-swing::before { content: ''; position: absolute; inset: calc(10px * var(--mh-ui-scale)); border-radius: inherit; border: 1px dashed rgba(14,116,144,.2); pointer-events: none; }
+      .mh-hit-dot { position: absolute; left: 50%; top: 50%; width: calc(13px * var(--mh-ui-scale)); height: calc(13px * var(--mh-ui-scale)); border-radius: 999px; transform: translate(-50%,-50%); background: radial-gradient(circle at 35% 30%, #fecaca 0 18%, #ef4444 48%, #991b1b 100%); border: 2px solid rgba(255,255,255,.96); box-shadow: 0 calc(2px * var(--mh-ui-scale)) calc(5px * var(--mh-ui-scale)) rgba(127,29,29,.28); pointer-events: none; }
+      .mh-overlay { position: fixed; inset: 0; z-index: 40; display: flex; align-items: center; justify-content: center; padding: 18px; background: rgba(15,39,71,.42); }
+      .mh-card { width: min(92vw, 420px); padding: 18px; border-radius: 18px; text-align: center; background: #fff; border: 3px solid #7dd3fc; box-shadow: 0 18px 44px rgba(15,23,42,.28); }
+      .mh-card h1 { margin: 0 0 10px; color: #075985; font-size: 25px; font-weight: 1000; }
+      .mh-card p { margin: 0 0 13px; color: #0f766e; font-size: 14px; line-height: 1.55; font-weight: 800; }
+      .mh-card-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; margin: 11px 0 14px; }
+      .mh-settings-card { width: min(92vw, 360px); padding: 18px; border-radius: 18px; text-align: left; background: #fff; border: 3px solid #bae6fd; box-shadow: 0 18px 44px rgba(15,23,42,.28); }
+      .mh-settings-card h2 { margin: 0 0 12px; color: #075985; font-size: 22px; font-weight: 1000; text-align: center; }
+      .mh-setting-label { margin: 0 0 8px; color: #0f766e; font-size: 13px; font-weight: 1000; }
+      .mh-quality-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 8px; }
+      .mh-quality-btn { min-height: 42px; border-radius: 999px; color: #0f766e; background: #ecfeff; border: 1px solid rgba(14,116,144,.2); box-shadow: 0 3px 0 rgba(14,116,144,.14); font-size: 13px; }
+      .mh-quality-btn.active { color: #fff; background: linear-gradient(180deg,#38bdf8,#0284c7); box-shadow: 0 3px 0 #075985; }
+      .mh-toast { position: fixed; left: 50%; top: 50%; z-index: 45; transform: translate(-50%,-50%); padding: 16px 20px; border-radius: 18px; background: white; border: 3px solid #86efac; color: #15803d; font-size: 21px; font-weight: 1000; text-align: center; box-shadow: 0 18px 42px rgba(15,23,42,.24); animation: mhToast 1.35s ease-out forwards; pointer-events: none; }
+      [hidden] { display: none !important; }
+      @keyframes mhToast { 0% { opacity: 0; transform: translate(-50%,-42%) scale(.82); } 18% { opacity: 1; transform: translate(-50%,-50%) scale(1); } 100% { opacity: 0; transform: translate(-50%,-76%) scale(.94); } }
+      @media (orientation: landscape) and (max-height: 520px) {
+        .mh-shell { grid-template-rows: 42px minmax(0,1fr) 60px; gap: 5px; padding: 5px 5px 10px; }
+        .mh-top { min-height: 42px; padding: 4px 7px; }
+        .mh-title { font-size: 16px; }
+        .mh-hud { top: 6px; }
+        .mh-pot-strip { height: 32px; }
+        .mh-pot-ball { width: 24px; height: 24px; font-size: 10px; }
+        .mh-guide { bottom: 8px; padding: 6px 10px; font-size: 12px; }
+        .mh-bottom { min-height: 60px; padding-bottom: 6px; }
+        .mh-cancel-zone { min-height: 42px; width: min(168px, 100%); padding: 6px 8px; font-size: 12px; }
+        .mh-mode, .mh-chip, .mh-start, .mh-restart { height: 34px; min-width: 62px; padding: 0 10px; }
+        .mh-restart { height: 30px; min-width: 54px; padding: 0 9px; font-size: 12px; }
+        .mh-settings-btn { width: 34px; min-width: 34px; height: 34px; padding: 0; }
+        .mh-swing { width: 62px; min-width: 62px; height: 62px; }
+      }
+      @media (max-width: 430px) {
+        .mh-shell { gap: 6px; padding: 6px 6px 12px; }
+        .mh-top { grid-template-columns: 34px minmax(0,1fr) auto; }
+        .mh-title { font-size: 16px; }
+        .mh-pill { min-width: 46px; padding: 0 6px; }
+        .mh-select { max-width: 76px; padding: 0 5px; }
+        .mh-hud { grid-template-columns: 1fr 102px 1fr; gap: 4px; }
+        .mh-player { padding: 5px; gap: 5px; }
+        .mh-pot-strip { height: 34px; gap: 4px; }
+        .mh-pot-ball { width: 24px; height: 24px; font-size: 10px; }
+        .mh-name { font-size: 11px; }
+        .mh-score { font-size: 18px; }
+        .mh-center-note { min-width: 92px; max-width: 32vw; padding: 6px 7px; font-size: 11px; }
+        .mh-guide { bottom: 12px; font-size: 12px; }
+        .mh-bottom { min-height: 76px; grid-template-columns: minmax(0,1fr) 92px minmax(0,1fr); gap: 5px; padding-bottom: 8px; }
+        .mh-cancel-zone { min-height: 44px; width: min(136px, 100%); padding: 6px; font-size: 11px; }
+        .mh-swing-zone { min-width: 0; }
+        .mh-swing { min-width: 68px; width: 68px; height: 68px; padding: 0; }
+        .mh-actions { width: 100%; gap: 4px; overflow: visible; }
+        .mh-start, .mh-restart { flex: 1 1 0; min-width: 0; height: 38px; padding: 0 5px; font-size: 12px; }
+        .mh-restart { flex: 0 0 auto; min-width: 56px; height: 32px; padding: 0 9px; }
+        .mh-settings-btn { flex: 0 0 auto; width: 38px; min-width: 38px; padding: 0; }
+        .mh-card-grid { grid-template-columns: 1fr; }
+      }
+    </style>
+    <div class="mh-shell">
+      <div class="mh-top">
+        <button class="mh-icon-btn" id="helpBtn" type="button" aria-label="${t('helpAria')}">?</button>
+        <div class="mh-title">${t('title')}</div>
+        <div class="mh-stats">
+          <span class="mh-pill">🏆 <b id="bestScore">0</b></span>
+          <select class="mh-select" id="modeSelect" aria-label="${t('modeAria')}">
+            <option value="eight">${t('modeEight')}</option>
+            <option value="snooker">${t('modeSnooker')}</option>
+          </select>
+          <select class="mh-select" id="difficultySelect" aria-label="${t('diffAria')}">
+            <option value="easy">${t('diffEasy')}</option>
+            <option value="normal">${t('diffNormal')}</option>
+            <option value="hard">${t('diffHard')}</option>
+            <option value="expert">${t('diffExpert')}</option>
+          </select>
+        </div>
+      </div>
+      <main class="mh-stage" id="stage">
+        <div class="mh-hud">
+          <div class="mh-player" id="playerHud">
+            <div class="mh-player-meta"><span class="mh-name">${t('playerYou')}</span><span class="mh-score" id="playerScore">0</span></div>
+            <div class="mh-pot-strip" id="playerPots" aria-label="${t('playerPotsAria')}"></div>
+          </div>
+          <div class="mh-center-note" id="centerNote">${t('readyBreak')}</div>
+          <div class="mh-player pet" id="petHud">
+            <div class="mh-pot-strip pet" id="petPots" aria-label="${t('petPotsAria')}"></div>
+            <div class="mh-player-meta" style="text-align:right"><span class="mh-name" id="petName">${t('petOpponent')}</span><span class="mh-score" id="petScore">0</span></div>
+          </div>
+        </div>
+        <div class="mh-power-wrap"><div class="mh-power" id="powerBar"></div></div>
+        <div class="mh-guide" id="guideText">${t('selectModeStart')}</div>
+      </main>
+      <div class="mh-bottom">
+        <div class="mh-cancel-zone" id="cancelZone" hidden>${t('cancelSwing')}</div>
+        <div class="mh-swing-zone">
+          <button class="mh-swing" id="swingBtn" type="button" aria-label="${t('swingAria')}" hidden><span class="mh-hit-dot" id="hitDot"></span></button>
+        </div>
+        <div class="mh-actions">
+          <button class="mh-restart" id="restartBtn" type="button">${t('rerack')}</button>
+          <button class="mh-start" id="startBtn" type="button">${t('start')}</button>
+          <button class="mh-settings-btn" id="settingsBtn" type="button" aria-label="${t('settingsAria')}">&#9881;</button>
+        </div>
+      </div>
+    </div>
+    <div class="mh-overlay" id="rulesOverlay">
+      <div class="mh-card">
+        <h1>${t('rulesTitle')}</h1>
+        <p>${t('rulesP1')}</p>
+        <p>${t('rulesP2')}</p>
+        <div class="mh-card-grid">
+          <button class="mh-mode" data-card-mode="eight" type="button">${t('eightMode')}</button>
+          <button class="mh-mode" data-card-mode="snooker" type="button">${t('snookerMode')}</button>
+        </div>
+        <button class="mh-start" id="rulesStartBtn" type="button">${t('startGame')}</button>
+      </div>
+    </div>
+    <div class="mh-overlay" id="settingsOverlay" hidden>
+      <div class="mh-settings-card">
+        <h2>${t('settingsTitle')}</h2>
+        <div class="mh-setting-label">${t('qualityLabel')}</div>
+        <div class="mh-quality-grid" id="qualityOptions">
+          <button class="mh-quality-btn" data-quality="auto" type="button">${t('qualityAuto')}</button>
+          <button class="mh-quality-btn" data-quality="high" type="button">${t('qualityHigh')}</button>
+          <button class="mh-quality-btn" data-quality="low" type="button">${t('qualityLow')}</button>
+        </div>
+      </div>
+    </div>`;
+  document.body.appendChild(root);
+
+  const els = {
+    stage: document.getElementById('stage'),
+    overlay: document.getElementById('rulesOverlay'),
+    help: document.getElementById('helpBtn'),
+    start: document.getElementById('startBtn'),
+    rulesStart: document.getElementById('rulesStartBtn'),
+    restart: document.getElementById('restartBtn'),
+    settings: document.getElementById('settingsBtn'),
+    settingsOverlay: document.getElementById('settingsOverlay'),
+    swing: document.getElementById('swingBtn'),
+    hitDot: document.getElementById('hitDot'),
+    cancelZone: document.getElementById('cancelZone'),
+    modeSelect: document.getElementById('modeSelect'),
+    difficultySelect: document.getElementById('difficultySelect'),
+    bestScore: document.getElementById('bestScore'),
+    playerScore: document.getElementById('playerScore'),
+    petScore: document.getElementById('petScore'),
+    playerPots: document.getElementById('playerPots'),
+    petPots: document.getElementById('petPots'),
+    centerNote: document.getElementById('centerNote'),
+    guideText: document.getElementById('guideText'),
+    powerBar: document.getElementById('powerBar'),
+    playerHud: document.getElementById('playerHud'),
+    petHud: document.getElementById('petHud'),
+    petName: document.getElementById('petName'),
+    qualityButtons: Array.from(document.querySelectorAll('[data-quality]')),
+  };
+
+  init();
+
+  // Heavy 3D init (renderer/scene/geometry/textures/balls) is deferred off the
+  // critical path so the rules/intro screen paints instantly. `sceneReady` flips
+  // true once the WebGL scene + balls exist.
+  let sceneReady = false;
+  let sceneInitStarted = false;
+
+  function init() {
+    els.modeSelect.value = normalizeMode(state.mode);
+    els.difficultySelect.value = normalizeDifficulty(state.difficulty);
+    state.mode = els.modeSelect.value;
+    state.difficulty = els.difficultySelect.value;
+    applyTableProfile();
+    updateUIScale();
+    updateQualityUI();
+    bindEvents();
+    updateUI();
+    // Show the real initial screen (rules/intro modal) immediately, then build
+    // the 3D scene after first paint, chunked so no single task exceeds 50ms.
+    window.parent.postMessage({ type: 'gameLoaded' }, '*');
+    requestAnimationFrame(() => requestAnimationFrame(() => { ensureScene(); }));
+  }
+
+  // Build the heavy 3D scene in chunks across animation frames. Safe to call
+  // multiple times; runs only once. If `onDone` is supplied it fires after the
+  // scene is fully ready (used when the player starts before deferral finishes).
+  function ensureScene(onDone) {
+    if (sceneReady) { if (onDone) onDone(); return; }
+    sceneInitQueue.push(onDone || null);
+    if (sceneInitStarted) return;
+    sceneInitStarted = true;
+    // three.js is no longer a blocking <script> in <head>, so it never delays
+    // DOMContentLoaded / first paint. Load it on demand, then build the scene.
+    loadThree(() => buildSceneSteps());
+  }
+
+  let threeLoading = null;
+  function loadThree(cb) {
+    if (window.THREE) { cb(); return; }
+    if (threeLoading) { threeLoading.push(cb); return; }
+    threeLoading = [cb];
+    const s = document.createElement('script');
+    s.src = 'https://cdn.keepwork.com/npm/three%400.128.0/build/three.min.js';
+    s.onload = () => { const cbs = threeLoading; threeLoading = []; cbs.forEach(fn => fn()); };
+    document.head.appendChild(s);
+  }
+
+  function buildSceneSteps() {
+    const steps = [
+      () => { setupThree(); },        // scene + renderer + lights (no geometry)
+      () => { createTable(); },        // table geometry + felt/carpet textures
+      () => { createCueMeshes(); },    // cue + aim/target/ghost helpers
+      () => { createPetActor(); },     // pet billboard/model
+      () => { applyGraphicsMode(); },
+      () => { rackBalls(); },          // ball state + meshes + ball textures
+      () => { resize(); requestPets(); },
+    ];
+    let i = 0;
+    const runNext = () => {
+      // Run exactly one step per frame so no single heavy builder shares a task
+      // with another — keeps the longest main-thread task well under 50ms.
+      if (i < steps.length) steps[i++]();
+      if (i < steps.length) {
+        requestAnimationFrame(runNext);
+      } else {
+        sceneReady = true;
+        const cbs = sceneInitQueue.slice();
+        sceneInitQueue.length = 0;
+        cbs.forEach(cb => { if (cb) cb(); });
+      }
+    };
+    requestAnimationFrame(runNext);
+  }
+  const sceneInitQueue = [];
+
+  function bindEvents() {
+    window.addEventListener('resize', resize);
+    window.addEventListener('message', handleMessage);
+    els.help.onclick = () => { els.overlay.hidden = false; };
+    els.start.onclick = () => startGame();
+    els.rulesStart.onclick = () => startGame();
+    els.restart.onclick = () => resetGame(true);
+    els.settings.onclick = () => { els.settingsOverlay.hidden = false; };
+    els.settingsOverlay.addEventListener('click', event => {
+      if (event.target === els.settingsOverlay) els.settingsOverlay.hidden = true;
+    });
+    els.qualityButtons.forEach(btn => btn.onclick = () => setGraphicsMode(btn.dataset.quality));
+    els.swing.addEventListener('pointerdown', onHitControlDown);
+    els.swing.addEventListener('pointermove', onHitControlMove);
+    els.swing.addEventListener('pointerup', onHitControlUp);
+    els.swing.addEventListener('pointercancel', onHitControlCancel);
+    els.swing.addEventListener('click', event => event.preventDefault());
+    els.cancelZone.addEventListener('pointerdown', cancelSwingFromZone);
+    els.cancelZone.addEventListener('click', cancelSwingFromZone);
+    els.modeSelect.onchange = () => setMode(els.modeSelect.value, true);
+    els.difficultySelect.onchange = () => setDifficulty(els.difficultySelect.value, true);
+    document.querySelectorAll('[data-card-mode]').forEach(btn => btn.onclick = () => setMode(btn.dataset.cardMode, false));
+    els.stage.addEventListener('pointerdown', onPointerDown);
+    els.stage.addEventListener('pointermove', onPointerMove);
+    els.stage.addEventListener('pointerup', onPointerUp);
+    els.stage.addEventListener('pointercancel', onPointerCancel);
+    els.stage.addEventListener('wheel', onWheel, { passive: false });
+    document.addEventListener('visibilitychange', () => {
+      if (document.hidden) cancelAnimationFrame(state.frame);
+      else startLoop();
+    });
+  }
+
+  function currentGraphicsPreset() {
+    return GRAPHICS_PRESETS[state.graphics.level] || GRAPHICS_PRESETS[0];
+  }
+
+  function setRendererPixelRatio() {
+    if (!three.renderer) return;
+    const preset = currentGraphicsPreset();
+    three.renderer.setPixelRatio(Math.min(MAX_PIXEL_RATIO, preset.pixelRatio, window.devicePixelRatio || 1));
+  }
+
+  function monitorGraphicsQuality(now) {
+    if (state.graphics.mode !== 'auto') return;
+    const graphics = state.graphics;
+    if (!graphics.sampleStartedAt) {
+      graphics.sampleStartedAt = now;
+      graphics.frames = 0;
+      return;
+    }
+    graphics.frames += 1;
+    const elapsed = now - graphics.sampleStartedAt;
+    if (elapsed < GRAPHICS_FPS_SAMPLE_MS) return;
+    const fps = graphics.frames * 1000 / elapsed;
+    const canDowngrade = graphics.level < GRAPHICS_PRESETS.length - 1 && now - graphics.lastDowngradeAt > GRAPHICS_DOWNGRADE_COOLDOWN_MS;
+    if (fps < GRAPHICS_LOW_FPS && canDowngrade) applyGraphicsQuality(graphics.level + 1, now);
+    graphics.sampleStartedAt = now;
+    graphics.frames = 0;
+  }
+
+  function applyGraphicsQuality(level, now = performance.now()) {
+    state.graphics.level = clamp(Math.round(level), 0, GRAPHICS_PRESETS.length - 1);
+    state.graphics.lastDowngradeAt = now;
+    const preset = currentGraphicsPreset();
+    setRendererPixelRatio();
+    if (three.renderer?.shadowMap) {
+      three.renderer.shadowMap.enabled = preset.shadows;
+      three.renderer.shadowMap.needsUpdate = true;
+    }
+    if (three.light) {
+      three.light.castShadow = preset.shadows;
+      if (preset.shadowMapSize) {
+        three.light.shadow.mapSize.width = preset.shadowMapSize;
+        three.light.shadow.mapSize.height = preset.shadowMapSize;
+      }
+      if (three.light.shadow.map) {
+        three.light.shadow.map.dispose();
+        three.light.shadow.map = null;
+      }
+    }
+    if (three.renderer && els.stage) resize();
+  }
+
+  function setGraphicsMode(mode) {
+    const nextMode = normalizeGraphicsMode(mode);
+    els.settingsOverlay.hidden = true;
+    if (state.graphics.mode === nextMode) return;
+    state.graphics.mode = nextMode;
+    saveSettings();
+    applyGraphicsMode();
+    updateQualityUI();
+    toast(t('qualityToast', { label: GRAPHICS_MODE_LABELS[nextMode] }));
+  }
+
+  function applyGraphicsMode() {
+    const targetLevel = graphicsLevelForMode(state.graphics.mode);
+    state.graphics.sampleStartedAt = 0;
+    state.graphics.frames = 0;
+    applyGraphicsQuality(targetLevel);
+  }
+
+  function setupThree() {
+    const THREE = window.THREE;
+    three.scene = new THREE.Scene();
+    const profile = tableProfile();
+    three.scene.background = new THREE.Color(profile.sky);
+    three.scene.fog = new THREE.Fog(profile.sky, 13, 32);
+    three.camera = new THREE.PerspectiveCamera(38, 1, .1, 100);
+    three.renderer = new THREE.WebGLRenderer({ antialias: true, alpha: false, powerPreference: 'high-performance' });
+    three.renderer.outputEncoding = THREE.sRGBEncoding;
+    three.renderer.toneMapping = THREE.ACESFilmicToneMapping;
+    three.renderer.toneMappingExposure = 1.04;
+    setRendererPixelRatio();
+    three.renderer.setClearColor(profile.sky, 1);
+    three.renderer.shadowMap.enabled = currentGraphicsPreset().shadows;
+    three.renderer.shadowMap.type = THREE.PCFSoftShadowMap;
+    els.stage.insertBefore(three.renderer.domElement, els.stage.firstChild);
+    three.reusable = {
+      rollAxis: new THREE.Vector3(),
+      rollStepQuat: new THREE.Quaternion(),
+      cueUp: new THREE.Vector3(0, 1, 0),
+      cueDir: new THREE.Vector3(),
+      cueHitSide: new THREE.Vector3(),
+      cueHitNormal: new THREE.Vector3(),
+      cameraTarget: new THREE.Vector3(),
+      raycaster: new THREE.Raycaster(),
+      pointerNdc: new THREE.Vector2(),
+      tablePlane: new THREE.Plane(new THREE.Vector3(0, 1, 0), 0),
+      tablePoint: new THREE.Vector3(),
+    };
+
+    const ambient = new THREE.HemisphereLight(0xfff7e6, 0x26372f, .62);
+    three.scene.add(ambient);
+    three.light = new THREE.DirectionalLight(0xfff6df, 1.12);
+    three.light.position.set(-4.8, 8.5, 5.8);
+    three.light.castShadow = currentGraphicsPreset().shadows;
+    three.light.shadow.mapSize.width = currentGraphicsPreset().shadowMapSize || 512;
+    three.light.shadow.mapSize.height = currentGraphicsPreset().shadowMapSize || 512;
+    three.light.shadow.camera.near = 1;
+    three.light.shadow.camera.far = 24;
+    three.light.shadow.camera.left = -9;
+    three.light.shadow.camera.right = 9;
+    three.light.shadow.camera.top = 7;
+    three.light.shadow.camera.bottom = -7;
+    three.scene.add(three.light);
+
+    const fill = new THREE.PointLight(0x82d7ff, .52, 20);
+    fill.position.set(4.5, 4.2, -4.8);
+    three.scene.add(fill);
+
+    const tableGlow = new THREE.RectAreaLight(0xffffff, IS_MOBILE ? 1.8 : 2.4, 5.5, 2.4);
+    tableGlow.position.set(0, 5.3, 0);
+    tableGlow.rotation.x = -Math.PI / 2;
+    three.scene.add(tableGlow);
+
+    three.tableGroup = new THREE.Group();
+    three.scene.add(three.tableGroup);
+  }
+
+  function createTable() {
+    const THREE = window.THREE;
+    three.tableGroup.clear();
+    const profile = tableProfile();
+    if (three.scene) {
+      three.scene.background = new THREE.Color(profile.sky);
+      three.scene.fog = new THREE.Fog(profile.sky, 13, 32);
+      three.renderer?.setClearColor(profile.sky, 1);
+    }
+
+    const feltTexture = makeFeltTexture(profile);
+    const feltMat = new THREE.MeshStandardMaterial({ map: feltTexture, color: 0xffffff, roughness: .86, metalness: .01 });
+    const railMat = new THREE.MeshStandardMaterial({ color: profile.railColor, roughness: .34, metalness: .08 });
+    const railDarkMat = new THREE.MeshStandardMaterial({ color: profile.railDark, roughness: .42, metalness: .04 });
+    const cushionMat = new THREE.MeshStandardMaterial({ color: profile.cushion, roughness: .76, metalness: .02 });
+    const trimMat = new THREE.MeshStandardMaterial({ color: profile.trim, roughness: .22, metalness: .42 });
+    const rubberMat = new THREE.MeshStandardMaterial({ color: 0x03040a, roughness: .72, metalness: .02 });
+
+    const felt = new THREE.Mesh(
+      new THREE.BoxGeometry(TABLE.width, .16, TABLE.height),
+      feltMat
+    );
+    felt.position.y = -.08;
+    felt.receiveShadow = true;
+    three.tableGroup.add(felt);
+
+    addContinuousApron(railDarkMat);
+    addFrameSegments(railMat, trimMat);
+    addPocketRailCaps(railMat, trimMat);
+
+    addCushionSegments(cushionMat);
+
+    addTableDiamondSites(trimMat);
+
+    addPocketCutouts(rubberMat);
+
+    const legMat = new THREE.MeshStandardMaterial({ color: profile.railDark, roughness: .38, metalness: .08 });
+    const footMat = new THREE.MeshStandardMaterial({ color: 0x160906, roughness: .58, metalness: .08 });
+    const legPositions = [
+      [-TABLE.width / 2 + .55, -TABLE.height / 2 + .5],
+      [TABLE.width / 2 - .55, -TABLE.height / 2 + .5],
+      [-TABLE.width / 2 + .55, TABLE.height / 2 - .5],
+      [TABLE.width / 2 - .55, TABLE.height / 2 - .5],
+    ];
+    legPositions.forEach(([x, z]) => {
+      const leg = new THREE.Mesh(new THREE.CylinderGeometry(.16, .22, 1.2, IS_MOBILE ? 12 : 18), legMat);
+      leg.position.set(x, -.78, z);
+      leg.castShadow = true;
+      leg.receiveShadow = true;
+      three.tableGroup.add(leg);
+      const foot = new THREE.Mesh(new THREE.CylinderGeometry(.28, .32, .12, IS_MOBILE ? 14 : 20), footMat);
+      foot.position.set(x, -1.42, z);
+      foot.castShadow = true;
+      foot.receiveShadow = true;
+      three.tableGroup.add(foot);
+    });
+
+    const floor = new THREE.Mesh(
+      new THREE.PlaneGeometry(32, 18),
+      new THREE.MeshStandardMaterial({ map: makeCarpetTexture(profile), color: 0xffffff, roughness: .9 })
+    );
+    floor.rotation.x = -Math.PI / 2;
+    floor.position.y = -1.5;
+    floor.receiveShadow = true;
+    three.tableGroup.add(floor);
+
+    const wall = new THREE.Mesh(
+      new THREE.PlaneGeometry(32, 12),
+      new THREE.MeshStandardMaterial({ color: profile.wall, roughness: .82 })
+    );
+    wall.position.set(0, 4.8, -8.6);
+    wall.receiveShadow = true;
+    three.tableGroup.add(wall);
+
+    const backBar = new THREE.Mesh(
+      new THREE.BoxGeometry(20, .72, .46),
+      new THREE.MeshStandardMaterial({ color: profile.railDark, roughness: .38, metalness: .04 })
+    );
+    backBar.position.set(0, 1.2, -7.95);
+    backBar.castShadow = true;
+    backBar.receiveShadow = true;
+    three.tableGroup.add(backBar);
+  }
+
+  function addTableBox(size, position, material) {
+    const THREE = window.THREE;
+    const mesh = new THREE.Mesh(new THREE.BoxGeometry(...size), material);
+    mesh.position.set(...position);
+    mesh.castShadow = true;
+    mesh.receiveShadow = true;
+    three.tableGroup.add(mesh);
+    return mesh;
+  }
+
+  function materialWithHiddenBoxFace(material, hiddenFaceIndex) {
+    const THREE = window.THREE;
+    const hiddenMat = new THREE.MeshBasicMaterial({ color: 0x000000, depthWrite: false });
+    hiddenMat.visible = false;
+    return [0, 1, 2, 3, 4, 5].map(index => index === hiddenFaceIndex ? hiddenMat : material);
+  }
+
+  function frameCutSegments() {
+    const cornerGap = TABLE.pocket * 1.38;
+    const middleGap = TABLE.pocket * 1.08;
+    return {
+      long: [
+        [-TABLE.width / 2 + cornerGap, -middleGap],
+        [middleGap, TABLE.width / 2 - cornerGap],
+      ],
+      short: [[-TABLE.height / 2 + cornerGap, TABLE.height / 2 - cornerGap]],
+    };
+  }
+
+  function addLongFramePieces(segments, z, y, depth, height, material, trimLength = 0) {
+    segments.forEach(([start, end]) => {
+      const length = Math.max(.05, end - start + trimLength);
+      addTableBox([length, height, depth], [(start + end) / 2, y, z], material);
+    });
+  }
+
+  function addShortFramePieces(segments, x, y, width, height, material, trimLength = 0) {
+    segments.forEach(([start, end]) => {
+      const length = Math.max(.05, end - start + trimLength);
+      addTableBox([width, height, length], [x, y, (start + end) / 2], material);
+    });
+  }
+
+  function addContinuousApron(railDarkMat) {
+    addTableBox([TABLE.width + TABLE.rail * 2.45, .72, TABLE.rail * .42], [0, -.28, TABLE.height / 2 + TABLE.rail * .9], railDarkMat);
+    addTableBox([TABLE.width + TABLE.rail * 2.45, .72, TABLE.rail * .42], [0, -.28, -TABLE.height / 2 - TABLE.rail * .9], railDarkMat);
+    addTableBox([TABLE.rail * .42, .72, TABLE.height + TABLE.rail * 1.45], [TABLE.width / 2 + TABLE.rail * .9, -.28, 0], railDarkMat);
+    addTableBox([TABLE.rail * .42, .72, TABLE.height + TABLE.rail * 1.45], [-TABLE.width / 2 - TABLE.rail * .9, -.28, 0], railDarkMat);
+  }
+
+  function addFrameSegments(railMat, trimMat) {
+    const segments = frameCutSegments();
+    const railCenterY = -.11 + railHeight / 2;
+    const railTopY = -.11 + railHeight;
+    [1, -1].forEach(sign => {
+      const railFaceMat = materialWithHiddenBoxFace(railMat, sign > 0 ? 5 : 4);
+      addLongFramePieces(segments.long, sign * (TABLE.height / 2 + TABLE.rail / 2), railCenterY, TABLE.rail, railHeight, railFaceMat, TABLE.rail * .1);
+      addLongFramePieces(segments.long, sign * (TABLE.height / 2 + TABLE.rail * .74), railTopY + .02, .035, .035, trimMat, 0);
+    });
+    [1, -1].forEach(sign => {
+      const railFaceMat = materialWithHiddenBoxFace(railMat, sign > 0 ? 1 : 0);
+      addShortFramePieces(segments.short, sign * (TABLE.width / 2 + TABLE.rail / 2), railCenterY, TABLE.rail, railHeight, railFaceMat, 0);
+      addShortFramePieces(segments.short, sign * (TABLE.width / 2 + TABLE.rail * .74), railTopY + .02, .035, .035, trimMat, -TABLE.rail * .14);
+    });
+  }
+
+  function addPocketRailCaps(railMat, trimMat) {
+    const THREE = window.THREE;
+    const surfaceMat = railMat.clone();
+    surfaceMat.side = THREE.DoubleSide;
+    const hiddenInnerSideMat = new THREE.MeshBasicMaterial({ visible: false, depthWrite: false });
+    const halfW = TABLE.width / 2;
+    const halfH = TABLE.height / 2;
+    const outer = TABLE.rail * 1.08;
+    const pocketRadius = TABLE.pocket * .92;
+    const surfaceY = -.11 + railHeight + .022;
+    const railDepth = .39;
+
+    function addRailSurface(shape, isInnerSideTriangle) {
+      const geometry = new THREE.ExtrudeGeometry(shape, {
+        depth: railDepth,
+        bevelEnabled: false,
+        curveSegments: IS_MOBILE ? 18 : 28,
+      }).toNonIndexed();
+      assignRailCapMaterials(geometry, isInnerSideTriangle);
+      const mesh = new THREE.Mesh(geometry, [surfaceMat, railMat, hiddenInnerSideMat]);
+      mesh.rotation.x = Math.PI / 2;
+      mesh.position.y = surfaceY;
+      mesh.castShadow = true;
+      mesh.receiveShadow = true;
+      three.tableGroup.add(mesh);
+    }
+
+    function assignRailCapMaterials(geometry, isInnerSideTriangle) {
+      const position = geometry.attributes.position;
+      const epsilon = .004;
+      geometry.clearGroups();
+      for (let vertex = 0; vertex < position.count; vertex += 3) {
+        const p0 = { x: position.getX(vertex), y: position.getY(vertex), z: position.getZ(vertex) };
+        const p1 = { x: position.getX(vertex + 1), y: position.getY(vertex + 1), z: position.getZ(vertex + 1) };
+        const p2 = { x: position.getX(vertex + 2), y: position.getY(vertex + 2), z: position.getZ(vertex + 2) };
+        const isCapSurface = Math.abs(p0.z - p1.z) < epsilon && Math.abs(p1.z - p2.z) < epsilon;
+        const materialIndex = isCapSurface ? 0 : isInnerSideTriangle(p0, p1, p2, epsilon) ? 2 : 1;
+        geometry.addGroup(vertex, 3, materialIndex);
+      }
+    }
+
+    function addLongRailSurface(sign) {
+      const innerZ = sign * halfH;
+      const outerZ = sign * (halfH + outer);
+      const clockwiseArc = sign < 0;
+      const shape = new THREE.Shape();
+      shape.moveTo(-halfW - outer, outerZ);
+      shape.lineTo(halfW + outer, outerZ);
+      shape.lineTo(halfW + outer, innerZ);
+      shape.lineTo(halfW + pocketRadius, innerZ);
+      shape.absarc(halfW, innerZ, pocketRadius, 0, Math.PI, clockwiseArc);
+      shape.lineTo(pocketRadius, innerZ);
+      shape.absarc(0, innerZ, pocketRadius, 0, Math.PI, clockwiseArc);
+      shape.lineTo(-halfW + pocketRadius, innerZ);
+      shape.absarc(-halfW, innerZ, pocketRadius, 0, Math.PI, clockwiseArc);
+      shape.lineTo(-halfW - outer, innerZ);
+      shape.lineTo(-halfW - outer, outerZ);
+      addRailSurface(shape, (p0, p1, p2, epsilon) => [p0, p1, p2].every(point => Math.abs(point.y - innerZ) < epsilon));
+    }
+
+    function addSideRailSurface(sign) {
+      const innerX = sign * halfW;
+      const outerX = sign * (halfW + outer);
+      const shape = new THREE.Shape();
+      if (sign < 0) {
+        shape.moveTo(outerX, -halfH - outer);
+        shape.lineTo(innerX, -halfH - outer);
+        shape.lineTo(innerX, -halfH - pocketRadius);
+        shape.absarc(innerX, -halfH, pocketRadius, -Math.PI / 2, Math.PI / 2, true);
+        shape.lineTo(innerX, halfH - pocketRadius);
+        shape.absarc(innerX, halfH, pocketRadius, -Math.PI / 2, Math.PI / 2, true);
+        shape.lineTo(innerX, halfH + outer);
+        shape.lineTo(outerX, halfH + outer);
+      } else {
+        shape.moveTo(outerX, -halfH - outer);
+        shape.lineTo(outerX, halfH + outer);
+        shape.lineTo(innerX, halfH + outer);
+        shape.lineTo(innerX, halfH + pocketRadius);
+        shape.absarc(innerX, halfH, pocketRadius, Math.PI / 2, -Math.PI / 2, true);
+        shape.lineTo(innerX, -halfH + pocketRadius);
+        shape.absarc(innerX, -halfH, pocketRadius, Math.PI / 2, -Math.PI / 2, true);
+        shape.lineTo(innerX, -halfH - outer);
+      }
+      shape.lineTo(outerX, -halfH - outer);
+      addRailSurface(shape, (p0, p1, p2, epsilon) => [p0, p1, p2].every(point => Math.abs(point.x - innerX) < epsilon));
+    }
+
+    addLongRailSurface(1);
+    addLongRailSurface(-1);
+    addSideRailSurface(-1);
+    addSideRailSurface(1);
+  }
+
+  function addCushionSegments(cushionMat) {
+    const segments = frameCutSegments();
+    const cushionCenterY = cushionBottomY + cushionHeight / 2;
+    [1, -1].forEach(sign => {
+      addLongFramePieces(segments.long, sign * (TABLE.height / 2 + cushionDepth / 2), cushionCenterY, cushionDepth, cushionHeight, cushionMat, -TABLE.rail * .42);
+      addShortFramePieces(segments.short, sign * (TABLE.width / 2 + cushionDepth / 2), cushionCenterY, cushionDepth, cushionHeight, cushionMat, -TABLE.rail * .42);
+    });
+  }
+
+  function addPocketCutouts(rubberMat) {
+    const THREE = window.THREE;
+    visualPocketCenters().forEach((p) => {
+      const pocket = new THREE.Mesh(
+        new THREE.CylinderGeometry(TABLE.pocket * .92, TABLE.pocket * 1.05, .15, IS_MOBILE ? 28 : 48),
+        rubberMat
+      );
+      pocket.position.set(p.x, .06, p.y);
+      pocket.receiveShadow = true;
+      three.tableGroup.add(pocket);
+    });
+  }
+
+  function visualPocketCenters() {
+    const inset = TABLE.pocket * .28;
+    return [
+      { x: -TABLE.width / 2 + inset, y: -TABLE.height / 2 + inset },
+      { x: 0, y: -TABLE.height / 2 + TABLE.pocket * .1 },
+      { x: TABLE.width / 2 - inset, y: -TABLE.height / 2 + inset },
+      { x: -TABLE.width / 2 + inset, y: TABLE.height / 2 - inset },
+      { x: 0, y: TABLE.height / 2 - TABLE.pocket * .1 },
+      { x: TABLE.width / 2 - inset, y: TABLE.height / 2 - inset },
+    ];
+  }
+
+  function tableProfile() {
+    return TABLE_PROFILES[state.mode] || TABLE_PROFILES.eight;
+  }
+
+  function applyTableProfile() {
+    const profile = tableProfile();
+    TABLE.width = profile.width;
+    TABLE.height = profile.height;
+    TABLE.rail = profile.railWidth;
+    TABLE.pocket = profile.pocket;
+  }
+
+  function refreshTableForMode() {
+    applyTableProfile();
+    if (three.tableGroup) createTable();
+    state.cameraControl.targetX = clamp(state.cameraControl.targetX, -TABLE.width * .32, TABLE.width * .32);
+    state.cameraControl.targetY = clamp(state.cameraControl.targetY, -TABLE.height * .32, TABLE.height * .32);
+    if (three.renderer) resize();
+  }
+
+  function makeFeltTexture(profile) {
+    const THREE = window.THREE;
+    const canvas = document.createElement('canvas');
+    canvas.width = 1024;
+    canvas.height = 512;
+    const ctx = canvas.getContext('2d');
+    const base = `#${profile.felt.toString(16).padStart(6, '0')}`;
+    const dark = `#${profile.feltDark.toString(16).padStart(6, '0')}`;
+    ctx.fillStyle = base;
+    ctx.fillRect(0, 0, canvas.width, canvas.height);
+    ctx.globalAlpha = .18;
+    for (let y = 0; y < canvas.height; y += 3) {
+      ctx.fillStyle = y % 12 === 0 ? dark : 'rgba(255,255,255,.22)';
+      ctx.fillRect(0, y, canvas.width, 1);
+    }
+    ctx.globalAlpha = .12;
+    for (let x = -canvas.height; x < canvas.width; x += 22) {
+      ctx.beginPath();
+      ctx.moveTo(x, 0);
+      ctx.lineTo(x + canvas.height, canvas.height);
+      ctx.strokeStyle = '#ffffff';
+      ctx.lineWidth = 1;
+      ctx.stroke();
+    }
+    ctx.globalAlpha = .18;
+    const vignette = ctx.createRadialGradient(canvas.width / 2, canvas.height / 2, 90, canvas.width / 2, canvas.height / 2, canvas.width * .62);
+    vignette.addColorStop(0, 'rgba(255,255,255,.42)');
+    vignette.addColorStop(1, 'rgba(0,0,0,.5)');
+    ctx.fillStyle = vignette;
+    ctx.fillRect(0, 0, canvas.width, canvas.height);
+    const texture = new THREE.CanvasTexture(canvas);
+    texture.wrapS = THREE.RepeatWrapping;
+    texture.wrapT = THREE.RepeatWrapping;
+    texture.repeat.set(TABLE.width / 4.8, TABLE.height / 3);
+    texture.anisotropy = 8;
+    texture.encoding = THREE.sRGBEncoding;
+    return texture;
+  }
+
+  function makeCarpetTexture(profile) {
+    const THREE = window.THREE;
+    const canvas = document.createElement('canvas');
+    canvas.width = 512;
+    canvas.height = 512;
+    const ctx = canvas.getContext('2d');
+    const base = `#${profile.floor.toString(16).padStart(6, '0')}`;
+    ctx.fillStyle = base;
+    ctx.fillRect(0, 0, canvas.width, canvas.height);
+    ctx.globalAlpha = .16;
+    for (let y = 0; y < canvas.height; y += 42) {
+      ctx.fillStyle = '#ffffff';
+      ctx.fillRect(0, y, canvas.width, 2);
+    }
+    for (let x = 0; x < canvas.width; x += 42) {
+      ctx.fillStyle = '#000000';
+      ctx.fillRect(x, 0, 2, canvas.height);
+    }
+    const texture = new THREE.CanvasTexture(canvas);
+    texture.wrapS = THREE.RepeatWrapping;
+    texture.wrapT = THREE.RepeatWrapping;
+    texture.repeat.set(6, 4);
+    texture.anisotropy = 4;
+    texture.encoding = THREE.sRGBEncoding;
+    return texture;
+  }
+
+  function addCushionSegments(material) {
+    const THREE = window.THREE;
+    const cornerGap = TABLE.pocket * .9;
+    const sideGap = TABLE.pocket * 1.54;
+    const longZ = TABLE.height / 2 + cushionDepth / 2;
+    const shortX = TABLE.width / 2 + cushionDepth / 2;
+
+    [-1, 1].forEach(sign => {
+      const leftStart = -TABLE.width / 2 + cornerGap;
+      const leftEnd = -sideGap / 2;
+      const rightStart = sideGap / 2;
+      const rightEnd = TABLE.width / 2 - cornerGap;
+      addCushionBox(leftStart, leftEnd, sign * longZ, true, material);
+      addCushionBox(rightStart, rightEnd, sign * longZ, true, material);
+
+      const bottomStart = -TABLE.height / 2 + cornerGap;
+      const topEnd = TABLE.height / 2 - cornerGap;
+      addCushionBox(bottomStart, topEnd, sign * shortX, false, material);
+    });
+  }
+
+  function addCushionBox(start, end, fixedPosition, horizontal, material) {
+    const THREE = window.THREE;
+    const length = Math.max(.2, end - start);
+    const cushionCenterY = cushionBottomY + cushionHeight / 2;
+    const geometry = horizontal ? new THREE.BoxGeometry(length, cushionHeight, cushionDepth) : new THREE.BoxGeometry(cushionDepth, cushionHeight, length);
+    const mesh = new THREE.Mesh(geometry, material);
+    if (horizontal) mesh.position.set((start + end) / 2, cushionCenterY, fixedPosition);
+    else mesh.position.set(fixedPosition, cushionCenterY, (start + end) / 2);
+    mesh.castShadow = true;
+    three.tableGroup.add(mesh);
+  }
+
+  function addPocketCutouts(material) {
+    const THREE = window.THREE;
+    const wellGeo = new THREE.CircleGeometry(TABLE.pocket * .86, IS_MOBILE ? 30 : 48);
+    const linerGeo = new THREE.CylinderGeometry(TABLE.pocket * .9, TABLE.pocket * .72, .18, IS_MOBILE ? 30 : 48, 1, true);
+    const linerMat = new THREE.MeshBasicMaterial({ color: 0x02030a, side: THREE.DoubleSide });
+
+    pocketCenters().forEach((p) => {
+      const well = new THREE.Mesh(wellGeo, material);
+      well.rotation.x = -Math.PI / 2;
+      well.position.set(p.x, .006, p.y);
+      three.tableGroup.add(well);
+
+      const liner = new THREE.Mesh(linerGeo, linerMat);
+      liner.position.set(p.x, -.075, p.y);
+      three.tableGroup.add(liner);
+    });
+  }
+
+  function addTableDiamondSites(material) {
+    const THREE = window.THREE;
+    const diamondGeo = new THREE.BoxGeometry(.08, .026, .08);
+    const longY = TABLE.height / 2 + TABLE.rail * .56;
+    for (let i = 1; i < 8; i++) {
+      if (i === 4) continue;
+      const x = -TABLE.width / 2 + TABLE.width * i / 8;
+      [-longY, longY].forEach(z => {
+        const diamond = new THREE.Mesh(diamondGeo, material);
+        diamond.position.set(x, .32, z);
+        diamond.rotation.y = Math.PI / 4;
+        three.tableGroup.add(diamond);
+      });
+    }
+  }
+
+  function createCueMeshes() {
+    const THREE = window.THREE;
+    const cueMat = new THREE.MeshStandardMaterial({ color: 0xd6a25a, roughness: .45 });
+    three.cue = new THREE.Mesh(new THREE.CylinderGeometry(.035, .06, 3.2, 16), cueMat);
+    three.cue.visible = false;
+    three.cue.castShadow = true;
+    three.scene.add(three.cue);
+
+    three.cueHitDot = new THREE.Mesh(
+      new THREE.SphereGeometry(BALL_RADIUS * .17, IS_MOBILE ? 10 : 14, IS_MOBILE ? 8 : 10),
+      new THREE.MeshBasicMaterial({ color: 0xef4444, depthTest: true })
+    );
+    three.cueHitDot.visible = false;
+    three.cueHitDot.renderOrder = 3;
+    three.scene.add(three.cueHitDot);
+
+    const aimMat = new THREE.LineBasicMaterial({ color: 0xffffff, transparent: true, opacity: .82 });
+    const targetMat = new THREE.LineBasicMaterial({ color: 0xfacc15, transparent: true, opacity: .58 });
+    const pocketMat = new THREE.LineBasicMaterial({ color: 0x22c55e, transparent: true, opacity: .52 });
+    three.aimLine = new THREE.Line(createLineGeometry(), aimMat);
+    three.targetLine = new THREE.Line(createLineGeometry(), targetMat);
+    three.pocketLine = new THREE.Line(createLineGeometry(), pocketMat);
+    three.aimLine.frustumCulled = false;
+    three.targetLine.frustumCulled = false;
+    three.pocketLine.frustumCulled = false;
+    three.aimLine.visible = false;
+    three.targetLine.visible = false;
+    three.pocketLine.visible = false;
+    three.scene.add(three.aimLine, three.targetLine, three.pocketLine);
+
+    three.ghostBall = new THREE.Mesh(
+      new THREE.SphereGeometry(BALL_RADIUS, IS_MOBILE ? 18 : 24, IS_MOBILE ? 12 : 16),
+      new THREE.MeshBasicMaterial({ color: 0xffffff, transparent: true, opacity: .36, depthWrite: false })
+    );
+    three.ghostBall.visible = false;
+    three.ghostBall.renderOrder = 12;
+    three.scene.add(three.ghostBall);
+  }
+
+  function createPetActor() {
+    const THREE = window.THREE;
+    const actor = new THREE.Group();
+    const bodyMat = new THREE.MeshStandardMaterial({ color: 0xf59e0b, roughness: .52, metalness: .02 });
+    const bellyMat = new THREE.MeshStandardMaterial({ color: 0xfff7ed, roughness: .58 });
+    const earMat = new THREE.MeshStandardMaterial({ color: 0xfb923c, roughness: .5 });
+    const body = new THREE.Mesh(new THREE.SphereGeometry(.34, IS_MOBILE ? 16 : 24, IS_MOBILE ? 12 : 18), bodyMat);
+    body.scale.set(.88, 1.08, .78);
+    body.position.y = .34;
+    body.castShadow = true;
+    actor.add(body);
+    const belly = new THREE.Mesh(new THREE.SphereGeometry(.2, IS_MOBILE ? 12 : 18, IS_MOBILE ? 8 : 12), bellyMat);
+    belly.scale.set(1, .75, .38);
+    belly.position.set(0, .25, .24);
+    actor.add(belly);
+    const head = new THREE.Mesh(new THREE.SphereGeometry(.25, IS_MOBILE ? 16 : 24, IS_MOBILE ? 10 : 16), bodyMat);
+    head.position.set(0, .73, .04);
+    head.castShadow = true;
+    actor.add(head);
+    [[-.16, .95, 0], [.16, .95, 0]].forEach(([x, y, z]) => {
+      const ear = new THREE.Mesh(new THREE.SphereGeometry(.105, IS_MOBILE ? 10 : 16, IS_MOBILE ? 8 : 10), earMat);
+      ear.scale.set(.7, 1.24, .7);
+      ear.position.set(x, y, z);
+      ear.castShadow = true;
+      actor.add(ear);
+    });
+    [[-.09, .77, .24], [.09, .77, .24]].forEach(([x, y, z]) => {
+      const eye = new THREE.Mesh(new THREE.SphereGeometry(.028, IS_MOBILE ? 8 : 10, IS_MOBILE ? 6 : 8), new THREE.MeshBasicMaterial({ color: 0x10233f }));
+      eye.position.set(x, y, z);
+      actor.add(eye);
+    });
+    actor.userData.modelParts = actor.children.slice();
+    const billboard = new THREE.Sprite(new THREE.SpriteMaterial({ transparent: true, depthWrite: false }));
+    billboard.scale.set(.86, .86, 1);
+    billboard.position.set(0, .66, .08);
+    billboard.visible = false;
+    billboard.renderOrder = 25;
+    actor.add(billboard);
+    const stick = new THREE.Mesh(new THREE.CylinderGeometry(.025, .04, 2.35, 12), new THREE.MeshStandardMaterial({ color: 0xd8a15a, roughness: .42 }));
+    stick.castShadow = true;
+    stick.visible = false;
+    const thought = new THREE.Sprite(new THREE.SpriteMaterial({ map: makeThoughtTexture(), transparent: true, depthTest: false }));
+    thought.scale.set(.72, .36, 1);
+    thought.position.set(0, 1.24, .04);
+    thought.renderOrder = 30;
+    actor.add(thought);
+    actor.visible = false;
+    three.petActor = actor;
+    three.petBillboard = billboard;
+    three.petStick = stick;
+    three.petThought = thought;
+    three.scene.add(actor);
+    three.scene.add(stick);
+  }
+
+  function rackBalls() {
+    clearBalls();
+    if (state.mode === 'snooker') rackSnooker();
+    else rackEightBall();
+    syncBallMeshes();
+    updateUI();
+  }
+
+  function clearBalls() {
+    if (three.scene) for (const mesh of state.ballMeshes.values()) three.scene.remove(mesh);
+    state.ballMeshes.clear();
+    clearPocketEffects();
+    state.balls = [];
+    state.pocketed = [[], []];
+    state.groupOwner = { solids: null, stripes: null };
+    state.snookerNext = 'red';
+    state.turnPots = [];
+  }
+
+  function rackEightBall() {
+    state.balls.push(makeBall('cue', 0, -TABLE.width * .28, 0, 'cue', EIGHT_COLORS[0], 0));
+    const startX = TABLE.width * .22;
+    const gap = BALL_RADIUS * 2.08;
+    const order = [1, 9, 2, 10, 8, 3, 11, 4, 12, 5, 13, 6, 14, 7, 15];
+    let index = 0;
+    for (let row = 0; row < 5; row++) {
+      for (let col = 0; col <= row; col++) {
+        const number = order[index++];
+        const x = startX + row * gap * .92;
+        const y = (col - row / 2) * gap;
+        state.balls.push(makeBall(`b${number}`, number, x, y, number === 8 ? 'eight' : number <= 7 ? 'solid' : 'stripe', EIGHT_COLORS[number], number));
+      }
+    }
+  }
+
+  function rackSnooker() {
+    state.balls.push(makeBall('cue', 0, -TABLE.width * .34, 0, 'cue', SNOOKER_COLORS.cue, 0));
+    const redStartX = TABLE.width * .18;
+    const gap = BALL_RADIUS * 2.05;
+    let id = 1;
+    for (let row = 0; row < 5; row++) {
+      for (let col = 0; col <= row; col++) {
+        const x = redStartX + row * gap * .9;
+        const y = (col - row / 2) * gap;
+        state.balls.push(makeBall(`r${id++}`, 1, x, y, 'red', SNOOKER_COLORS.red, 1));
+      }
+    }
+    [
+      ['yellow', -TABLE.width * .32, -TABLE.height * .22, 2],
+      ['green', -TABLE.width * .32, TABLE.height * .22, 3],
+      ['brown', -TABLE.width * .32, 0, 4],
+      ['blue', 0, 0, 5],
+      ['pink', TABLE.width * .09, 0, 6],
+      ['black', TABLE.width * .39, 0, 7],
+    ].forEach(([type, x, y, points]) => state.balls.push(makeBall(type, points, x, y, type, SNOOKER_COLORS[type], points)));
+  }
+
+  function makeBall(id, label, x, y, type, color, points) {
+    return { id, label, x, y, vx: 0, vy: 0, spinSide: 0, spinForward: 0, spinDirX: 0, spinDirY: 0, type, color, points, pocketed: false, pocketFall: null, respot: { x, y }, rollQuat: null };
+  }
+
+  function syncBallMeshes() {
+    if (!three.scene) return; // meshes are created when the deferred scene builds
+    state.balls.forEach(ball => {
+      if (state.ballMeshes.has(ball.id)) return;
+      const mesh = createBallMesh(ball);
+      state.ballMeshes.set(ball.id, mesh);
+      three.scene.add(mesh);
+    });
+    updateBallMeshes();
+  }
+
+  function createBallMesh(ball) {
+    const THREE = window.THREE;
+    const group = new THREE.Group();
+    ball.rollQuat = new THREE.Quaternion();
+    const material = new THREE.MeshStandardMaterial({ map: makeBallTexture(ball), roughness: .2, metalness: .02 });
+    const sphere = new THREE.Mesh(new THREE.SphereGeometry(BALL_RADIUS, BALL_WIDTH_SEGMENTS, BALL_HEIGHT_SEGMENTS), material);
+    sphere.castShadow = true;
+    sphere.receiveShadow = true;
+    group.userData.rollables = [sphere];
+    group.add(sphere);
+    const shine = new THREE.Mesh(
+      new THREE.SphereGeometry(BALL_RADIUS * .18, IS_MOBILE ? 8 : 10, IS_MOBILE ? 6 : 8),
+      new THREE.MeshBasicMaterial({ color: 0xffffff, transparent: true, opacity: .34, depthWrite: false })
+    );
+    shine.position.set(-BALL_RADIUS * .32, BALL_RADIUS * .36, BALL_RADIUS * .42);
+    group.add(shine);
+    return group;
+  }
+
+  function makeBallTexture(ball) {
+    const canvas = document.createElement('canvas');
+    canvas.width = 512;
+    canvas.height = 256;
+    const ctx = canvas.getContext('2d');
+    ctx.fillStyle = ball.color;
+    ctx.fillRect(0, 0, canvas.width, canvas.height);
+    if (ball.type === 'stripe') {
+      ctx.fillStyle = '#f8fafc';
+      ctx.fillRect(0, 88, canvas.width, 80);
+    }
+    ctx.fillStyle = 'rgba(255,255,255,.18)';
+    ctx.fillRect(0, 0, canvas.width, 26);
+    ctx.fillStyle = 'rgba(15,23,42,.12)';
+    ctx.fillRect(0, canvas.height - 34, canvas.width, 34);
+    const label = ballLabel(ball);
+    if (label) {
+      const centers = [[128, 128], [384, 128]];
+      centers.forEach(([x, y]) => drawTextureNumber(ctx, x, y, label, ball));
+    }
+    const texture = new THREE.CanvasTexture(canvas);
+    texture.anisotropy = 4;
+    texture.encoding = THREE.sRGBEncoding;
+    texture.needsUpdate = true;
+    return texture;
+  }
+
+  function ballLabel(ball) {
+    if (ball.type === 'cue') return '';
+    if (state.mode === 'eight') return String(ball.label || '');
+    if (ball.type === 'red') return '';
+    return String(ball.points || '');
+  }
+
+  function drawTextureNumber(ctx, x, y, label, ball) {
+    const radius = state.mode === 'eight' ? 50 : 42;
+    ctx.save();
+    ctx.translate(x, y);
+    ctx.fillStyle = state.mode === 'eight' ? '#f8fafc' : 'rgba(15,23,42,.52)';
+    ctx.beginPath();
+    ctx.arc(0, 0, radius, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.lineWidth = 5;
+    ctx.strokeStyle = 'rgba(15,23,42,.18)';
+    ctx.stroke();
+    ctx.fillStyle = '#111827';
+    if (state.mode !== 'eight') ctx.fillStyle = '#f8fafc';
+    ctx.font = `900 ${label.length > 1 ? 54 : 66}px Arial`;
+    ctx.textAlign = 'center';
+    ctx.textBaseline = 'middle';
+    ctx.fillText(label, 0, 2);
+    ctx.restore();
+  }
+
+  function makeThoughtTexture() {
+    const canvas = document.createElement('canvas');
+    canvas.width = 180;
+    canvas.height = 92;
+    const ctx = canvas.getContext('2d');
+    ctx.clearRect(0, 0, canvas.width, canvas.height);
+    ctx.fillStyle = 'rgba(255,255,255,.94)';
+    ctx.strokeStyle = 'rgba(14,116,144,.28)';
+    ctx.lineWidth = 5;
+    roundRect(ctx, 18, 10, 142, 52, 24);
+    ctx.fill();
+    ctx.stroke();
+    ctx.fillStyle = '#0f766e';
+    ctx.font = '900 24px Arial';
+    ctx.textAlign = 'center';
+    ctx.textBaseline = 'middle';
+    ctx.fillText(t('thinking'), 89, 36);
+    ctx.fillStyle = 'rgba(255,255,255,.94)';
+    [[52, 70, 10], [36, 82, 6]].forEach(([x, y, r]) => {
+      ctx.beginPath();
+      ctx.arc(x, y, r, 0, Math.PI * 2);
+      ctx.fill();
+    });
+    return new THREE.CanvasTexture(canvas);
+  }
+
+  function roundRect(ctx, x, y, w, h, r) {
+    ctx.beginPath();
+    ctx.moveTo(x + r, y);
+    ctx.lineTo(x + w - r, y);
+    ctx.quadraticCurveTo(x + w, y, x + w, y + r);
+    ctx.lineTo(x + w, y + h - r);
+    ctx.quadraticCurveTo(x + w, y + h, x + w - r, y + h);
+    ctx.lineTo(x + r, y + h);
+    ctx.quadraticCurveTo(x, y + h, x, y + h - r);
+    ctx.lineTo(x, y + r);
+    ctx.quadraticCurveTo(x, y, x + r, y);
+  }
+
+  function updateBallMeshes() {
+    state.balls.forEach(ball => {
+      const mesh = state.ballMeshes.get(ball.id);
+      if (!mesh) return;
+      const fall = ball.pocketFall;
+      const falling = isBallFalling(ball);
+      const fallT = fall ? clamp(fall.elapsed / fall.duration, 0, 1) : 0;
+      mesh.visible = !ball.pocketed || falling;
+      mesh.position.set(ball.x, BALL_RADIUS - POCKET_FALL_DEPTH * fallT * fallT, ball.y);
+      const highlighted = shouldHighlightLegalTarget(ball);
+      mesh.scale.setScalar(falling ? 1 - fallT * .34 : highlighted ? 1.08 : 1);
+      (mesh.userData.rollables || []).forEach((part) => {
+        if (ball.rollQuat) part.quaternion.copy(ball.rollQuat);
+        updateBallHighlight(part, highlighted);
+      });
+    });
+  }
+
+  function shouldHighlightLegalTarget(ball) {
+    if (!ball || ball.pocketed || ball.type === 'cue') return false;
+    return canHumanShoot() && state.inputMode !== 'swing' && legalTargetsFor(0).includes(ball);
+  }
+
+  function updateBallHighlight(part, highlighted) {
+    const mat = part?.material;
+    if (!mat || !mat.emissive) return;
+    mat.emissive.setHex(highlighted ? 0x164e2f : 0x000000);
+    mat.emissiveIntensity = highlighted ? .42 : 0;
+  }
+
+  function startGame() {
+    // The player may tap Start before the deferred 3D scene finishes building.
+    // Hide the intro now for instant feedback, then start once the scene exists.
+    els.overlay.hidden = true;
+    if (!sceneReady) { ensureScene(() => startGame()); return; }
+    if (!state.started || state.finished) {
+      state.started = true;
+      state.finished = false;
+      state.running = false;
+      state.currentPlayer = 0;
+      state.playerScore = 0;
+      state.petScore = 0;
+      state.seconds = 0;
+      state.shotCount = 0;
+      state.turnSummary = '';
+      resetHitPoint();
+      rackBalls();
+      state.inputMode = 'view';
+      state.cuePlacement.active = state.mode === 'snooker';
+      state.cuePlacement.afterScratch = false;
+      startTimer();
+      window.parent.postMessage({ type: 'gameStarted' }, '*');
+    }
+    els.overlay.hidden = true;
+    state.message = state.cuePlacement.active ? t('snookerPlaceCue') : t('dragAdjustAim');
+    updateUI();
+    startLoop();
+  }
+
+  function resetGame(fromButton) {
+    state.started = false;
+    state.finished = false;
+    state.running = false;
+    state.aiThinking = false;
+    state.currentPlayer = 0;
+    state.playerScore = 0;
+    state.petScore = 0;
+    state.seconds = 0;
+    state.shotCount = 0;
+    state.turnSummary = '';
+    state.inputMode = 'view';
+    resetHitPoint();
+    state.cuePlacement.active = false;
+    state.cuePlacement.pointer = null;
+    state.cuePlacement.afterScratch = false;
+    cancelAim();
+    hidePetActor(true);
+    stopTimer();
+    rackBalls();
+    state.message = fromButton ? t('reracked') : t('readyBreak');
+    updateUI();
+  }
+
+  function startTimer() {
+    stopTimer();
+    state.timer = setInterval(() => {
+      if (state.started && !state.finished) {
+        state.seconds += 1;
+        updateUI();
+      }
+    }, 1000);
+  }
+
+  function stopTimer() {
+    if (state.timer) clearInterval(state.timer);
+    state.timer = null;
+  }
+
+  function startLoop() {
+    cancelAnimationFrame(state.frame);
+    state.lastTime = performance.now();
+    state.frame = requestAnimationFrame(loop);
+  }
+
+  function loop(now) {
+    const dt = Math.min(MAX_FRAME_DT, Math.max(0, (now - state.lastTime) / 1000));
+    state.lastTime = now;
+    state.accumulator += dt;
+    let stepped = false;
+    while (state.accumulator >= FIXED_DT) {
+      stepPhysics(FIXED_DT);
+      state.accumulator -= FIXED_DT;
+      stepped = true;
+    }
+    updateBallMeshes();
+    if (state.running) {
+      applyAutoCameraOriginShift();
+      updateCamera();
+    }
+    updateAimVisuals();
+    updatePetActor(now);
+    updatePocketEffects(dt);
+    three.renderer.render(three.scene, three.camera);
+    monitorGraphicsQuality(now);
+    if (stepped) afterPhysicsCheck();
+    state.frame = requestAnimationFrame(loop);
+  }
+
+  function stepPhysics(dt) {
+    if (!state.running) return;
+    updatePocketFalls(dt);
+    state.balls.forEach(ball => {
+      if (ball.pocketed) return;
+      const dx = ball.vx * dt;
+      const dy = ball.vy * dt;
+      ball.x += ball.vx * dt;
+      ball.y += ball.vy * dt;
+      applyBallRoll(ball, dx, dy);
+      const decay = Math.pow(FRICTION, dt);
+      ball.vx *= decay;
+      ball.vy *= decay;
+      if (Math.hypot(ball.vx, ball.vy) < STOP_SPEED) {
+        ball.vx = 0;
+        ball.vy = 0;
+        resetBallSpin(ball);
+      }
+      applyCueSpin(ball, dt);
+      handleCushion(ball);
+    });
+
+    for (let i = 0; i < state.balls.length; i++) {
+      const first = state.balls[i];
+      if (first.pocketed) continue;
+      for (let j = i + 1; j < state.balls.length; j++) {
+        const second = state.balls[j];
+        if (!second.pocketed) resolveBallCollision(first, second);
+      }
+    }
+    checkPockets();
+  }
+
+  function handleCushion(ball) {
+    const minX = -TABLE.width / 2 + BALL_RADIUS;
+    const maxX = TABLE.width / 2 - BALL_RADIUS;
+    const minY = -TABLE.height / 2 + BALL_RADIUS;
+    const maxY = TABLE.height / 2 - BALL_RADIUS;
+    let hitX = false;
+    let hitY = false;
+    if (ball.x < minX) { playRailSound(Math.abs(ball.vx)); ball.x = minX; ball.vx = Math.abs(ball.vx) * CUSHION_RESTITUTION; hitX = true; }
+    if (ball.x > maxX) { playRailSound(Math.abs(ball.vx)); ball.x = maxX; ball.vx = -Math.abs(ball.vx) * CUSHION_RESTITUTION; hitX = true; }
+    if (ball.y < minY) { playRailSound(Math.abs(ball.vy)); ball.y = minY; ball.vy = Math.abs(ball.vy) * CUSHION_RESTITUTION; hitY = true; }
+    if (ball.y > maxY) { playRailSound(Math.abs(ball.vy)); ball.y = maxY; ball.vy = -Math.abs(ball.vy) * CUSHION_RESTITUTION; hitY = true; }
+    applyCueSpinCushion(ball, hitX, hitY);
+  }
+
+  function resolveBallCollision(a, b) {
+    const dx = b.x - a.x;
+    const dy = b.y - a.y;
+    const dist = Math.hypot(dx, dy);
+    const minDist = BALL_RADIUS * 2;
+    if (!dist || dist >= minDist) return;
+    const nx = dx / dist;
+    const ny = dy / dist;
+    const overlap = minDist - dist;
+    a.x -= nx * overlap * .5;
+    a.y -= ny * overlap * .5;
+    b.x += nx * overlap * .5;
+    b.y += ny * overlap * .5;
+
+    const rvx = b.vx - a.vx;
+    const rvy = b.vy - a.vy;
+    const velAlongNormal = rvx * nx + rvy * ny;
+    if (velAlongNormal > 0) return;
+    const impulse = -(1 + BALL_RESTITUTION) * velAlongNormal / 2;
+    playCollisionSound(Math.abs(impulse));
+    const ix = impulse * nx;
+    const iy = impulse * ny;
+    a.vx -= ix;
+    a.vy -= iy;
+    b.vx += ix;
+    b.vy += iy;
+    applyCueSpinCollision(a);
+    applyCueSpinCollision(b);
+  }
+
+  function applyCueSpin(ball, dt) {
+    if (ball.type !== 'cue') return;
+    const speed = Math.hypot(ball.vx, ball.vy);
+    if (!speed) return;
+    const side = ball.spinSide || 0;
+    if (Math.abs(side) > .001) {
+      const ux = ball.vx / speed;
+      const uy = ball.vy / speed;
+      const curve = side * speed * CUE_SPIN_CURVE * dt;
+      ball.vx += -uy * curve;
+      ball.vy += ux * curve;
+    }
+    const decay = Math.pow(CUE_SPIN_DECAY, dt);
+    ball.spinSide *= decay;
+    ball.spinForward *= decay;
+  }
+
+  function applyCueSpinCollision(ball) {
+    if (ball.type !== 'cue') return;
+    const forward = ball.spinForward || 0;
+    const side = ball.spinSide || 0;
+    if (Math.abs(forward) < .02 && Math.abs(side) < .02) return;
+    const dirX = ball.spinDirX || 0;
+    const dirY = ball.spinDirY || 0;
+    if (!dirX && !dirY) return;
+    ball.vx += dirX * forward * CUE_SPIN_COLLISION;
+    ball.vy += dirY * forward * CUE_SPIN_COLLISION;
+    ball.vx += -dirY * side * CUE_SPIN_COLLISION * .42;
+    ball.vy += dirX * side * CUE_SPIN_COLLISION * .42;
+    ball.spinForward *= .34;
+    ball.spinSide *= .62;
+  }
+
+  function applyCueSpinCushion(ball, hitX, hitY) {
+    if (ball.type !== 'cue' || (!hitX && !hitY)) return;
+    const side = ball.spinSide || 0;
+    if (Math.abs(side) < .02) return;
+    if (hitX) ball.vy += side * Math.abs(ball.vx) * CUE_SPIN_CUSHION;
+    if (hitY) ball.vx -= side * Math.abs(ball.vy) * CUE_SPIN_CUSHION;
+    ball.spinSide *= .72;
+  }
+
+  function resetBallSpin(ball) {
+    if (!ball) return;
+    ball.spinSide = 0;
+    ball.spinForward = 0;
+    ball.spinDirX = 0;
+    ball.spinDirY = 0;
+  }
+
+  function applyBallRoll(ball, dx, dy) {
+    const distance = Math.hypot(dx, dy);
+    if (!distance || ball.pocketed) return;
+    const THREE = window.THREE;
+    if (!ball.rollQuat) ball.rollQuat = new THREE.Quaternion();
+    const reusable = three.reusable;
+    reusable.rollAxis.set(dy, 0, -dx).normalize();
+    reusable.rollStepQuat.setFromAxisAngle(reusable.rollAxis, distance / BALL_RADIUS);
+    ball.rollQuat.premultiply(reusable.rollStepQuat).normalize();
+  }
+
+  function checkPockets() {
+    const pockets = pocketCenters();
+    state.balls.forEach(ball => {
+      if (ball.pocketed) return;
+      const hit = pockets.find(p => Math.hypot(ball.x - p.x, ball.y - p.y) < TABLE.pocket);
+      if (!hit) return;
+      startPocketFall(ball, hit);
+      ball.vx = 0;
+      ball.vy = 0;
+      resetBallSpin(ball);
+      state.turnPots.push(ball);
+      playPocketSound();
+    });
+  }
+
+  function startPocketFall(ball, pocket) {
+    ball.pocketed = true;
+    createPocketEffect(ball, pocket);
+    ball.pocketFall = {
+      elapsed: 0,
+      duration: POCKET_FALL_DURATION,
+      startX: ball.x,
+      startY: ball.y,
+      targetX: pocket.x,
+      targetY: pocket.y,
+      done: false,
+    };
+  }
+
+  function updatePocketFalls(dt) {
+    state.balls.forEach(ball => {
+      const fall = ball.pocketFall;
+      if (!fall || fall.done) return;
+      fall.elapsed = Math.min(fall.duration, fall.elapsed + dt);
+      const t = clamp(fall.elapsed / fall.duration, 0, 1);
+      const ease = 1 - Math.pow(1 - t, 3);
+      ball.x = fall.startX + (fall.targetX - fall.startX) * ease;
+      ball.y = fall.startY + (fall.targetY - fall.startY) * ease;
+      if (t >= 1) fall.done = true;
+    });
+  }
+
+  function isBallFalling(ball) {
+    return !!ball.pocketFall && !ball.pocketFall.done;
+  }
+
+  function createPocketEffect(ball, pocket) {
+    const THREE = window.THREE;
+    if (!three.scene) return;
+    const result = pocketResultFor(ball);
+    const group = new THREE.Group();
+    group.position.set(pocket.x, BALL_RADIUS * 1.45, pocket.y);
+    const emoji = new THREE.Sprite(new THREE.SpriteMaterial({ map: makeEmojiTexture(result.emoji), transparent: true, depthWrite: false }));
+    emoji.scale.set(.46, .46, 1);
+    emoji.position.y = .12;
+    emoji.renderOrder = 35;
+    group.add(emoji);
+    const particles = [];
+    const count = IS_MOBILE ? 10 : 16;
+    for (let index = 0; index < count; index++) {
+      const angle = Math.PI * 2 * index / count + Math.random() * .32;
+      const speed = result.good ? .5 + Math.random() * .38 : .34 + Math.random() * .28;
+      const particle = new THREE.Mesh(
+        new THREE.SphereGeometry(result.good ? .026 : .022, IS_MOBILE ? 8 : 10, IS_MOBILE ? 6 : 8),
+        new THREE.MeshBasicMaterial({ color: index % 2 ? result.color : result.accent, transparent: true, opacity: .92, depthWrite: false })
+      );
+      particle.position.set(0, 0, 0);
+      particle.userData.velocity = {
+        x: Math.cos(angle) * speed,
+        y: result.good ? .48 + Math.random() * .46 : .22 + Math.random() * .25,
+        z: Math.sin(angle) * speed,
+      };
+      group.add(particle);
+      particles.push(particle);
+    }
+    three.scene.add(group);
+    state.pocketEffects.push({ age: 0, duration: POCKET_EFFECT_DURATION, group, emoji, particles, good: result.good });
+  }
+
+  function updatePocketEffects(dt) {
+    for (let index = state.pocketEffects.length - 1; index >= 0; index--) {
+      const effect = state.pocketEffects[index];
+      effect.age += dt;
+      const t = clamp(effect.age / effect.duration, 0, 1);
+      const opacity = Math.max(0, 1 - t);
+      effect.emoji.position.y = .12 + t * .62;
+      effect.emoji.scale.setScalar(.46 + Math.sin(Math.min(1, t * 2.8) * Math.PI) * .16);
+      effect.emoji.material.opacity = opacity;
+      effect.particles.forEach(particle => {
+        const velocity = particle.userData.velocity;
+        particle.position.x += velocity.x * dt;
+        particle.position.y += velocity.y * dt;
+        particle.position.z += velocity.z * dt;
+        velocity.y -= (effect.good ? .56 : .9) * dt;
+        particle.material.opacity = opacity * .9;
+        particle.scale.setScalar(1 + t * (effect.good ? 1.2 : .45));
+      });
+      if (t >= 1) {
+        disposePocketEffect(effect);
+        state.pocketEffects.splice(index, 1);
+      }
+    }
+  }
+
+  function clearPocketEffects() {
+    state.pocketEffects.forEach(disposePocketEffect);
+    state.pocketEffects = [];
+  }
+
+  function disposePocketEffect(effect) {
+    if (!effect?.group) return;
+    effect.group.traverse(object => {
+      object.geometry?.dispose?.();
+      if (object.material) {
+        object.material.map?.dispose?.();
+        object.material.dispose?.();
+      }
+    });
+    three.scene?.remove(effect.group);
+  }
+
+  function makeEmojiTexture(emoji) {
+    const canvas = document.createElement('canvas');
+    canvas.width = 128;
+    canvas.height = 128;
+    const ctx = canvas.getContext('2d');
+    ctx.clearRect(0, 0, canvas.width, canvas.height);
+    ctx.fillStyle = 'rgba(255,255,255,.9)';
+    ctx.beginPath();
+    ctx.arc(64, 64, 48, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.font = '76px Apple Color Emoji, Segoe UI Emoji, Noto Color Emoji, sans-serif';
+    ctx.textAlign = 'center';
+    ctx.textBaseline = 'middle';
+    ctx.fillText(emoji, 64, 68);
+    const texture = new THREE.CanvasTexture(canvas);
+    texture.needsUpdate = true;
+    return texture;
+  }
+
+  function pocketResultFor(ball) {
+    if (ball.type === 'cue') return { good: false, emoji: '😵', color: 0xef4444, accent: 0xf97316 };
+    if (state.mode === 'snooker') {
+      const expectedRed = state.snookerNext === 'red';
+      const legal = expectedRed ? ball.type === 'red' : ball.type !== 'red';
+      return legal
+        ? { good: true, emoji: '😄', color: 0x22c55e, accent: 0xfacc15 }
+        : { good: false, emoji: '😵', color: 0xef4444, accent: 0x60a5fa };
+    }
+    const ownGroup = playerGroup(state.currentPlayer);
+    if (ball.type === 'eight') {
+      const remainingOwn = ownGroup ? state.balls.some(other => other.type === ownGroup && !other.pocketed) : true;
+      return remainingOwn
+        ? { good: false, emoji: '😵', color: 0xef4444, accent: 0xf97316 }
+        : { good: true, emoji: '😄', color: 0x22c55e, accent: 0xfacc15 };
+    }
+    const opponentGroup = ownGroup === 'solid' ? 'stripe' : ownGroup === 'stripe' ? 'solid' : null;
+      if (opponentGroup && ball.type === opponentGroup) return { good: false, emoji: '😬', color: 0x60a5fa, accent: 0xef4444 };
+      return { good: true, emoji: '😄', color: 0x22c55e, accent: 0xfacc15 };
+  }
+
+  function afterPhysicsCheck() {
+    if (!state.running || ballsMoving()) return;
+    state.running = false;
+    settleTurn();
+  }
+
+  function ballsMoving() {
+    return state.balls.some(ball => isBallFalling(ball) || (!ball.pocketed && Math.hypot(ball.vx, ball.vy) > STOP_SPEED));
+  }
+
+  function settleTurn() {
+    hidePetActor(true);
+    const cue = cueBall();
+    const cuePotted = state.turnPots.some(b => b.type === 'cue');
+    if (cuePotted) respotCue();
+    const scoringPots = state.turnPots.filter(b => b.type !== 'cue');
+    state.turnSummary = '';
+    let keepTurn = scoringPots.length > 0 && !cuePotted;
+    if (state.mode === 'eight') keepTurn = settleEight(scoringPots, cuePotted);
+    else keepTurn = settleSnooker(scoringPots, cuePotted);
+    state.turnPots = [];
+    if (isGameOver()) return finishGame();
+    if (!keepTurn) state.currentPlayer = state.currentPlayer ? 0 : 1;
+    state.inputMode = 'view';
+    state.cuePlacement.active = false;
+    state.cuePlacement.afterScratch = false;
+    if (cuePotted && state.currentPlayer === 0) {
+      state.cuePlacement.active = true;
+      state.cuePlacement.afterScratch = true;
+    }
+    if (state.currentPlayer === 0) resetHitPoint();
+    const nextAction = state.cuePlacement.active
+      ? t('cuePottedPlace')
+      : state.currentPlayer === 0
+        ? t('dragOrClickCue')
+        : t('petAiming');
+    state.message = state.turnSummary ? `${state.turnSummary} · ${nextAction}` : nextAction;
+    updateUI();
+    if (state.currentPlayer === 1) scheduleAIShot();
+    if (cue) {
+      cue.pocketed = false;
+      cue.pocketFall = null;
+    }
+  }
+
+  function settleEight(scoringPots, cuePotted) {
+    let keepTurn = scoringPots.length > 0 && !cuePotted;
+    let foulEight = false;
+    scoringPots.forEach(ball => {
+      if (ball.type === 'eight') {
+        const ownGroup = playerGroup(state.currentPlayer);
+        const remainingOwn = ownGroup ? state.balls.some(b => b.type === ownGroup && !b.pocketed) : true;
+        if (remainingOwn) {
+          foulEight = true;
+          recordPottedBall(state.currentPlayer ? 0 : 1, ball);
+        } else {
+          addScore(state.currentPlayer, 3);
+          recordPottedBall(state.currentPlayer, ball);
+        }
+        return;
+      }
+      if (!playerGroup(0) && !playerGroup(1) && (ball.type === 'solid' || ball.type === 'stripe')) {
+        state.groupOwner[ball.type === 'solid' ? 'solids' : 'stripes'] = state.currentPlayer;
+        state.groupOwner[ball.type === 'solid' ? 'stripes' : 'solids'] = state.currentPlayer ? 0 : 1;
+      }
+      const ownGroup = playerGroup(state.currentPlayer);
+      if (!ownGroup || ball.type === ownGroup) {
+        addScore(state.currentPlayer, 1);
+        recordPottedBall(state.currentPlayer, ball);
+      } else {
+        const opponent = state.currentPlayer ? 0 : 1;
+        addScore(opponent, 1);
+        recordPottedBall(opponent, ball);
+      }
+    });
+    if (cuePotted) {
+      keepTurn = false;
+      addScore(state.currentPlayer ? 0 : 1, 1);
+      state.turnSummary = t('cuePottedOpponentScores');
+    }
+    if (foulEight) {
+      addScore(state.currentPlayer ? 0 : 1, 4);
+      state.turnSummary = t('foulEightOpponentScores');
+    }
+    if (!state.turnSummary) {
+      if (scoringPots.length) state.turnSummary = keepTurn ? t('pottedContinue') : t('pottedSwitch');
+      else state.turnSummary = t('noPotSwitch');
+    }
+    return keepTurn && !foulEight;
+  }
+
+  function settleSnooker(scoringPots, cuePotted) {
+    let keepTurn = scoringPots.length > 0 && !cuePotted;
+    let illegalPot = false;
+    if (cuePotted) {
+      addScore(state.currentPlayer ? 0 : 1, 4);
+      state.turnSummary = t('cuePottedOpponentPlus4');
+    }
+    scoringPots.forEach(ball => {
+      const expectedRed = state.snookerNext === 'red';
+      const legal = expectedRed ? ball.type === 'red' : ball.type !== 'red';
+      if (legal) {
+        addScore(state.currentPlayer, ball.points);
+        recordPottedBall(state.currentPlayer, ball);
+        state.snookerNext = expectedRed ? 'color' : 'red';
+      } else {
+        const opponent = state.currentPlayer ? 0 : 1;
+        addScore(opponent, Math.max(4, ball.points || 4));
+        recordPottedBall(opponent, ball);
+        keepTurn = false;
+        illegalPot = true;
+      }
+      if (ball.type !== 'red' && redsRemaining()) respotColored(ball);
+    });
+    if (!redsRemaining()) state.snookerNext = 'color';
+    if (!state.turnSummary) {
+      if (illegalPot) state.turnSummary = t('wrongTarget');
+      else if (scoringPots.length) state.turnSummary = keepTurn ? t('pottedContinue') : t('pottedSwitch');
+      else state.turnSummary = t('noPotSwitch');
+    }
+    return keepTurn;
+  }
+
+  function addScore(player, points) {
+    if (player === 0) state.playerScore += points;
+    else state.petScore += points;
+  }
+
+  function recordPottedBall(player, ball) {
+    if (!ball || ball.type === 'cue') return;
+    const list = state.pocketed[player] || (state.pocketed[player] = []);
+    list.unshift({ id: ball.id, type: ball.type, color: ball.color, label: ballLabel(ball), points: ball.points });
+    if (list.length > 36) list.length = 36;
+  }
+
+  function renderPottedBalls() {
+    renderPottedBallStrip(els.playerPots, state.pocketed[0] || []);
+    renderPottedBallStrip(els.petPots, state.pocketed[1] || []);
+  }
+
+  function renderPottedBallStrip(container, balls) {
+    if (!container) return;
+    const key = balls.map(ball => `${ball.id}:${ball.type}:${ball.label}`).join('|');
+    if (container.dataset.potsKey === key) return;
+    container.replaceChildren(...balls.map(makePottedBallElement));
+    container.dataset.potsKey = key;
+    if (container.classList.contains('pet')) container.scrollLeft = container.scrollWidth;
+    else container.scrollLeft = 0;
+  }
+
+  function makePottedBallElement(ball) {
+    const el = document.createElement('span');
+    el.className = `mh-pot-ball ${ball.type || ''}`;
+    el.style.setProperty('--ball-color', ball.color || '#f8fafc');
+    el.title = potBallTitle(ball);
+    const label = document.createElement('span');
+    label.className = 'mh-pot-label';
+    label.textContent = ball.label || '';
+    el.appendChild(label);
+    return el;
+  }
+
+  function potBallTitle(ball) {
+    if (ball.type === 'red') return t('redBall');
+    if (ball.type === 'eight') return t('blackEight');
+    if (state.mode === 'snooker' && ball.points) return t('pointsBall', { points: ball.points });
+    return ball.label ? t('numberBall', { label: ball.label }) : t('pottedBall');
+  }
+
+  function playerGroup(player) {
+    if (state.groupOwner.solids === player) return 'solid';
+    if (state.groupOwner.stripes === player) return 'stripe';
+    return null;
+  }
+
+  function redsRemaining() {
+    return state.balls.some(b => b.type === 'red' && !b.pocketed);
+  }
+
+  function isGameOver() {
+    if (state.mode === 'eight') {
+      const eight = state.balls.find(b => b.type === 'eight');
+      return eight?.pocketed || !state.balls.some(b => b.type !== 'cue' && b.type !== 'eight' && !b.pocketed);
+    }
+    return !state.balls.some(b => b.type !== 'cue' && !b.pocketed) || Math.max(state.playerScore, state.petScore) >= DIFFICULTIES[state.difficulty].targetScore + 6;
+  }
+
+  function finishGame() {
+    state.finished = true;
+    state.started = false;
+    state.running = false;
+    state.inputMode = 'view';
+    state.cuePlacement.active = false;
+    cancelAim();
+    stopTimer();
+    const won = state.playerScore >= state.petScore;
+    const earnedPoints = Math.max(1, state.playerScore * 10 + (won ? 30 : 8) - Math.floor(state.seconds / 9));
+    state.best = Math.max(state.best, earnedPoints);
+    localStorage.setItem(BEST_KEY, String(state.best));
+    state.message = won ? t('youWin') : t('petWins');
+    updateUI();
+    toast(won ? t('victory') : t('matchOver'));
+    playFinishSound(won);
+    window.parent.postMessage({
+      type: 'gameFinished',
+      data: {
+        earnedPoints,
+        score: state.playerScore,
+        petScore: state.petScore,
+        mode: state.mode,
+        difficulty: state.difficulty,
+        seconds: state.seconds,
+        passed: won,
+        rewardCoins: Math.max(10, Math.min(DIFFICULTIES[state.difficulty].reward, Math.round(earnedPoints / 8))),
+        roundId: `billiards_${Date.now()}`,
+      }
+    }, '*');
+  }
+
+  function respotCue() {
+    const cue = cueBall();
+    if (!cue) return;
+    cue.pocketed = false;
+    cue.pocketFall = null;
+    cue.x = -TABLE.width * .34;
+    cue.y = 0;
+    cue.vx = 0;
+    cue.vy = 0;
+    resetBallSpin(cue);
+    cue.rollQuat?.identity?.();
+    nudgeIfOverlapping(cue);
+  }
+
+  function respotColored(ball) {
+    ball.pocketed = false;
+    ball.pocketFall = null;
+    ball.x = ball.respot.x;
+    ball.y = ball.respot.y;
+    ball.vx = 0;
+    ball.vy = 0;
+    resetBallSpin(ball);
+    ball.rollQuat?.identity?.();
+    nudgeIfOverlapping(ball);
+  }
+
+  function nudgeIfOverlapping(ball) {
+    for (let tries = 0; tries < 18; tries++) {
+      const overlap = state.balls.some(other => other !== ball && !other.pocketed && Math.hypot(other.x - ball.x, other.y - ball.y) < BALL_RADIUS * 2.2);
+      if (!overlap) return;
+      ball.y += (tries % 2 ? -1 : 1) * BALL_RADIUS * .9;
+      if (Math.abs(ball.y) > TABLE.height / 2 - BALL_RADIUS) ball.y = 0;
+    }
+  }
+
+  function cueBall() {
+    return state.balls.find(b => b.type === 'cue');
+  }
+
+  function toggleSwingMode() {
+    if (state.inputMode !== 'swing') enterSwingMode();
+  }
+
+  function onHitControlDown(event) {
+    if (!canHumanShoot()) return;
+    ensureAudio();
+    state.hitControl = { active: true, pointer: event.pointerId, moved: false, startX: event.clientX, startY: event.clientY };
+    els.swing.setPointerCapture?.(event.pointerId);
+    event.preventDefault();
+  }
+
+  function onHitControlMove(event) {
+    const control = state.hitControl;
+    if (!control.active || control.pointer !== event.pointerId) return;
+    const moved = Math.hypot(event.clientX - control.startX, event.clientY - control.startY) >= HIT_POINT_DRAG_THRESHOLD;
+    if (moved) {
+      control.moved = true;
+      state.hitPoint = hitPointFromEvent(event);
+      updateHitPointUI();
+      state.message = t('hitPointAdjusted');
+      updateUI();
+    }
+    event.preventDefault();
+  }
+
+  function onHitControlUp(event) {
+    const control = state.hitControl;
+    if (!control.active || control.pointer !== event.pointerId) return;
+    if (control.moved) state.hitPoint = hitPointFromEvent(event);
+    state.hitControl = { active: false, pointer: null, moved: false, startX: 0, startY: 0 };
+    updateHitPointUI();
+    enterSwingMode();
+    event.preventDefault();
+  }
+
+  function onHitControlCancel(event) {
+    if (state.hitControl.pointer !== event.pointerId) return;
+    state.hitControl = { active: false, pointer: null, moved: false, startX: 0, startY: 0 };
+  }
+
+  function hitPointFromEvent(event) {
+    const rect = els.swing.getBoundingClientRect();
+    const radius = Math.min(rect.width, rect.height) * .38;
+    const centerX = rect.left + rect.width / 2;
+    const centerY = rect.top + rect.height / 2;
+    let x = (event.clientX - centerX) / radius;
+    let y = (event.clientY - centerY) / radius;
+    const length = Math.hypot(x, y);
+    if (length > 1) {
+      x /= length;
+      y /= length;
+    }
+    return { x: clamp(x, -1, 1), y: clamp(y, -1, 1) };
+  }
+
+  function updateHitPointUI() {
+    if (!els.hitDot) return;
+    els.hitDot.style.left = `${50 + state.hitPoint.x * 32}%`;
+    els.hitDot.style.top = `${50 + state.hitPoint.y * 32}%`;
+    const side = Math.round(state.hitPoint.x * 100);
+    const vertical = Math.round(-state.hitPoint.y * 100);
+    els.swing.setAttribute('aria-label', t('swingAriaDetail', { side, vertical }));
+  }
+
+  function resetHitPoint() {
+    state.hitPoint = { x: 0, y: 0 };
+    updateHitPointUI();
+  }
+
+  function enterSwingMode() {
+    if (!canHumanShoot()) return;
+    state.cuePlacement.active = false;
+    state.cuePlacement.pointer = null;
+    state.inputMode = 'swing';
+    state.aim.dir = cameraShotDirection();
+    state.aim.power = 0;
+    state.message = t('swingMode');
+    updateUI();
+  }
+
+  function exitSwingMode(message = t('dragAdjustAim')) {
+    cancelAim();
+    state.inputMode = 'view';
+    state.message = message;
+    updateUI();
+  }
+
+  function cancelSwingFromZone(event) {
+    if (event) {
+      event.preventDefault();
+      event.stopPropagation();
+    }
+    if (state.inputMode !== 'swing') return;
+    exitSwingMode(t('swingCancelled'));
+  }
+
+  function canPlaceCue() {
+    return canHumanShoot() && state.cuePlacement.active && state.inputMode === 'view';
+  }
+
+  function pointerNearCue(point, cue) {
+    return point && cue && Math.hypot(point.x - cue.x, point.y - cue.y) < BALL_RADIUS * 4.2;
+  }
+
+  function placeCueBall(point) {
+    const cue = cueBall();
+    if (!cue || !point) return;
+    const fullTable = state.cuePlacement.afterScratch;
+    cue.x = fullTable
+      ? clamp(point.x, -TABLE.width / 2 + BALL_RADIUS * 2.2, TABLE.width / 2 - BALL_RADIUS * 2.2)
+      : clamp(point.x, -TABLE.width / 2 + BALL_RADIUS * 2.2, -TABLE.width * .24);
+    cue.y = fullTable
+      ? clamp(point.y, -TABLE.height / 2 + BALL_RADIUS * 2.2, TABLE.height / 2 - BALL_RADIUS * 2.2)
+      : clamp(point.y, -TABLE.height * .3, TABLE.height * .3);
+    cue.vx = 0;
+    cue.vy = 0;
+    resetBallSpin(cue);
+    cue.rollQuat?.identity?.();
+    nudgeIfOverlapping(cue);
+    updateBallMeshes();
+  }
+
+  function onPointerDown(event) {
+    ensureAudio();
+    const point = screenToTable(event.clientX, event.clientY);
+    const cue = cueBall();
+    if (canPlaceCue() && pointerNearCue(point, cue)) {
+      els.stage.setPointerCapture?.(event.pointerId);
+      state.cuePlacement.pointer = event.pointerId;
+      placeCueBall(point);
+      state.message = state.cuePlacement.afterScratch ? t('dragCueFreePlace') : t('dragCuePlace');
+      updateUI();
+      event.preventDefault();
+      return;
+    }
+    if (canHumanShoot() && state.inputMode === 'view' && pointerNearCue(point, cue)) {
+      enterSwingMode();
+      event.preventDefault();
+      return;
+    }
+    if (state.aim.active) return;
+    const shouldAim = canHumanShoot() && state.inputMode === 'swing' && point && cue && !cue.pocketed;
+    if (!shouldAim) {
+      startCameraPointer(event);
+      return;
+    }
+    els.stage.setPointerCapture?.(event.pointerId);
+    state.pointer = event.pointerId;
+    state.aim.active = true;
+    state.aim.intentReady = false;
+    state.aim.blocked = false;
+    state.aim.startX = point.x;
+    state.aim.startY = point.y;
+    state.aim.screenStartX = event.clientX;
+    state.aim.screenStartY = event.clientY;
+    state.aim.x = point.x;
+    state.aim.y = point.y;
+    state.aim.power = 0;
+    updateCancelZoneText();
+    three.cue.visible = false;
+    three.aimLine.visible = false;
+    three.targetLine.visible = false;
+    event.preventDefault();
+  }
+
+  function onPointerMove(event) {
+    if (state.cuePlacement.pointer === event.pointerId) {
+      const point = screenToTable(event.clientX, event.clientY);
+      placeCueBall(point);
+      event.preventDefault();
+      return;
+    }
+    if (!state.aim.active || state.pointer !== event.pointerId) {
+      updateCameraPointer(event);
+      return;
+    }
+    const dragPixels = Math.hypot(event.clientX - state.aim.screenStartX, event.clientY - state.aim.screenStartY);
+    if (dragPixels < AIM_INTENT_PIXEL_THRESHOLD) {
+      state.aim.intentReady = false;
+      state.aim.power = 0;
+      els.powerBar.style.height = '0%';
+      updateCancelZoneText();
+      three.cue.visible = false;
+      three.aimLine.visible = false;
+      three.targetLine.visible = false;
+      event.preventDefault();
+      return;
+    }
+    const point = screenToTable(event.clientX, event.clientY);
+    if (!point) return;
+    state.aim.intentReady = true;
+    updateCancelZoneText();
+    const dx = state.aim.startX - point.x;
+    const dy = state.aim.startY - point.y;
+    const length = Math.hypot(dx, dy);
+    if (length > .001) {
+      state.aim.dir = { x: dx / length, y: dy / length };
+      state.aim.power = Math.min(1, dragPixels / AIM_FULL_POWER_PIXELS);
+    }
+    state.aim.x = point.x;
+    state.aim.y = point.y;
+    els.powerBar.style.height = `${Math.round(state.aim.power * 100)}%`;
+    event.preventDefault();
+  }
+
+  function onPointerUp(event) {
+    if (state.cuePlacement.pointer === event.pointerId) {
+      state.cuePlacement.pointer = null;
+      state.message = t('cuePlaced');
+      updateUI();
+      event.preventDefault();
+      return;
+    }
+    if (!state.aim.active || state.pointer !== event.pointerId) {
+      endCameraPointer(event.pointerId);
+      return;
+    }
+    if (isPointOverElement(event, els.cancelZone)) {
+      exitSwingMode(t('swingCancelled'));
+      event.preventDefault();
+      return;
+    }
+    const power = state.aim.power;
+    const dir = { ...state.aim.dir };
+    const blocked = state.aim.blocked;
+    cancelAim();
+    if (blocked) {
+      state.message = t('cueBlocked');
+      state.inputMode = 'swing';
+      updateUI();
+      return;
+    }
+    if (power < .055) {
+      state.message = t('powerTooLow');
+      updateUI();
+      return;
+    }
+    state.inputMode = 'view';
+    shoot(dir, power, 0, { ...state.hitPoint });
+    event.preventDefault();
+  }
+
+  function onPointerCancel(event) {
+    if (state.cuePlacement.pointer === event.pointerId) state.cuePlacement.pointer = null;
+    if (state.aim.active && state.pointer === event.pointerId) cancelAim();
+    endCameraPointer(event.pointerId);
+  }
+
+  function cancelAim() {
+    state.aim.active = false;
+    state.aim.intentReady = false;
+    state.aim.blocked = false;
+    state.pointer = null;
+    els.powerBar.style.height = '0%';
+    updateCancelZoneText();
+    three.cue.visible = false;
+    if (three.cueHitDot) three.cueHitDot.visible = false;
+    three.aimLine.visible = false;
+    three.targetLine.visible = false;
+    if (three.pocketLine) three.pocketLine.visible = false;
+    if (three.ghostBall) three.ghostBall.visible = false;
+  }
+
+  function startCameraPointer(event) {
+    els.stage.setPointerCapture?.(event.pointerId);
+    state.cameraControl.pointers.set(event.pointerId, { x: event.clientX, y: event.clientY });
+    resetCameraGesture();
+    if (!state.running && !state.aiThinking) {
+      state.message = state.started ? t('dragRotatePinch') : t('dragAdjustPinch');
+      updateUI();
+    }
+    event.preventDefault();
+  }
+
+  function updateCameraPointer(event) {
+    const control = state.cameraControl;
+    if (!control.pointers.has(event.pointerId)) return;
+    control.pointers.set(event.pointerId, { x: event.clientX, y: event.clientY });
+    applyCameraGesture();
+    event.preventDefault();
+  }
+
+  function endCameraPointer(pointerId) {
+    const control = state.cameraControl;
+    if (!control.pointers.has(pointerId)) return;
+    control.pointers.delete(pointerId);
+    resetCameraGesture();
+    if (!control.pointers.size && state.started && !state.running && !state.aiThinking) {
+      state.message = state.currentPlayer === 0 ? (state.cuePlacement.active ? t('dragCuePlace') : t('dragAdjustAim')) : t('petAiming');
+      updateUI();
+    }
+  }
+
+  function resetCameraGesture() {
+    const metrics = cameraPointerMetrics();
+    state.cameraControl.gesture = metrics ? { ...metrics } : null;
+  }
+
+  function cameraPointerMetrics() {
+    const points = [...state.cameraControl.pointers.values()];
+    if (!points.length) return null;
+    if (points.length === 1) return { count: 1, x: points[0].x, y: points[0].y, distance: 0 };
+    const a = points[0];
+    const b = points[1];
+    return {
+      count: points.length,
+      x: (a.x + b.x) / 2,
+      y: (a.y + b.y) / 2,
+      distance: Math.max(1, Math.hypot(a.x - b.x, a.y - b.y)),
+    };
+  }
+
+  function applyCameraGesture() {
+    const control = state.cameraControl;
+    const prev = control.gesture;
+    const next = cameraPointerMetrics();
+    if (!prev || !next || prev.count !== next.count) {
+      resetCameraGesture();
+      return;
+    }
+    control.autoDistance = false;
+    if (next.count === 1) {
+      const dx = next.x - prev.x;
+      const dy = next.y - prev.y;
+      const rotateSpeed = cameraRotateSpeed(Math.hypot(dx, dy));
+      control.yaw -= dx * rotateSpeed;
+      control.pitch = clamp(control.pitch + dy * rotateSpeed * .78, CAMERA_PITCH_MIN, CAMERA_PITCH_MAX);
+      applyAutoCameraOriginShift();
+    } else {
+      const zoomRatio = prev.distance / next.distance;
+      control.distance = clamp(control.distance * zoomRatio, CAMERA_DISTANCE_MIN, CAMERA_DISTANCE_MAX);
+      applyAutoCameraOriginShift();
+      panCameraTarget(next.x - prev.x, next.y - prev.y);
+    }
+    control.gesture = { ...next };
+    updateCamera();
+  }
+
+  function cameraRotateSpeed(deltaPixels) {
+    const aiming = state.inputMode === 'swing';
+    const slow = aiming ? CAMERA_ROTATE_AIM_SLOW : CAMERA_ROTATE_VIEW_SLOW;
+    const fast = aiming ? CAMERA_ROTATE_AIM_FAST : CAMERA_ROTATE_VIEW_FAST;
+    const startPixels = aiming ? CAMERA_ROTATE_AIM_ACCEL_START_PIXELS : CAMERA_ROTATE_VIEW_ACCEL_START_PIXELS;
+    const accelPixels = aiming ? CAMERA_ROTATE_AIM_ACCEL_PIXELS : CAMERA_ROTATE_VIEW_ACCEL_PIXELS;
+    const t = clamp((deltaPixels - startPixels) / accelPixels, 0, 1);
+    const smooth = t * t * (3 - 2 * t);
+    return slow + (fast - slow) * smooth;
+  }
+
+  function applyAutoCameraOriginShift() {
+    if (state.inputMode !== 'view') return;
+    const cue = cueBall();
+    if (!cue || cue.pocketed) return;
+    const control = state.cameraControl;
+    const zoomOutT = clamp((control.distance - AUTO_CAMERA_ORIGIN_ZOOM_IN_DISTANCE) / (AUTO_CAMERA_ORIGIN_ZOOM_OUT_DISTANCE - AUTO_CAMERA_ORIGIN_ZOOM_IN_DISTANCE), 0, 1);
+    const cueWeight = 1 - zoomOutT;
+    const forwardX = -Math.sin(control.yaw);
+    const cueAnchorX = clamp(cue.x + forwardX * AUTO_CAMERA_ORIGIN_LOOK_AHEAD, -TABLE.width * .32, TABLE.width * .32);
+    const cueAnchorY = clamp(cue.y, -TABLE.height * .32, TABLE.height * .32);
+    const targetX = cueAnchorX * cueWeight;
+    const targetY = cueAnchorY * cueWeight;
+    const cueSpeed = Math.hypot(cue.vx || 0, cue.vy || 0);
+    const fastT = clamp(cueSpeed / AUTO_CAMERA_ORIGIN_FAST_SPEED, 0, 1);
+    const movingEase = AUTO_CAMERA_ORIGIN_MOVING_EASE + (AUTO_CAMERA_ORIGIN_FAST_EASE - AUTO_CAMERA_ORIGIN_MOVING_EASE) * fastT;
+    const ease = state.running ? movingEase : AUTO_CAMERA_ORIGIN_EASE;
+    control.targetX += (targetX - control.targetX) * ease;
+    control.targetY += (targetY - control.targetY) * ease;
+  }
+
+  function panCameraTarget(dx, dy) {
+    const control = state.cameraControl;
+    const scale = control.distance * .00155;
+    const right = { x: Math.cos(control.yaw), y: -Math.sin(control.yaw) };
+    const forward = { x: Math.sin(control.yaw), y: Math.cos(control.yaw) };
+    control.targetX = clamp(control.targetX - right.x * dx * scale + forward.x * dy * scale, -TABLE.width * .32, TABLE.width * .32);
+    control.targetY = clamp(control.targetY - right.y * dx * scale + forward.y * dy * scale, -TABLE.height * .32, TABLE.height * .32);
+  }
+
+  function onWheel(event) {
+    state.cameraControl.autoDistance = false;
+    state.cameraControl.distance = clamp(state.cameraControl.distance * (1 + Math.sign(event.deltaY) * .09), CAMERA_DISTANCE_MIN, CAMERA_DISTANCE_MAX);
+    applyAutoCameraOriginShift();
+    updateCamera();
+    event.preventDefault();
+  }
+
+  function canHumanShoot() {
+    return state.started && !state.finished && !state.running && state.currentPlayer === 0 && !state.aiThinking;
+  }
+
+  function shoot(dir, power, player, hitPoint = { x: 0, y: 0 }) {
+    const cue = cueBall();
+    if (!cue || cue.pocketed || state.running) return;
+    state.inputMode = 'view';
+    state.cuePlacement.active = false;
+    state.turnPots = [];
+    state.currentPlayer = player;
+    const speed = 6.2 + power * 8.8;
+    ensureAudio();
+    playShootSound(power);
+    if (player === 1) {
+      state.aiThinking = false;
+    }
+    cue.vx = dir.x * speed;
+    cue.vy = dir.y * speed;
+    const contact = normalizeHitPoint(hitPoint);
+    cue.spinSide = contact.x * power;
+    cue.spinForward = -contact.y * power;
+    cue.spinDirX = dir.x;
+    cue.spinDirY = dir.y;
+    state.running = true;
+    state.shotCount += 1;
+    state.message = t('ballsMoving');
+    updateUI();
+  }
+
+  function scheduleAIShot() {
+    if (state.aiThinking || state.finished) return;
+    state.inputMode = 'view';
+    state.cuePlacement.active = false;
+    state.aiThinking = true;
+    showThinkingPetActor();
+    updateUI();
+    setTimeout(() => {
+      if (state.currentPlayer !== 1 || state.running || state.finished) return;
+      const shot = chooseAIShot();
+      startPetHitAnimation(shot);
+    }, 460 + Math.random() * 360);
+  }
+
+  function showThinkingPetActor() {
+    const cue = cueBall();
+    if (!cue || !three.petActor) return;
+    positionPetActor({ dir: { x: 1, y: 0 }, power: .35 });
+    three.petActor.visible = true;
+    if (three.petStick) three.petStick.visible = true;
+    if (three.petThought) three.petThought.visible = true;
+    state.aiShotAnimation.active = false;
+  }
+
+  function startPetHitAnimation(shot) {
+    if (!three.petActor) {
+      state.aiThinking = false;
+      shoot(shot.dir, shot.power, 1);
+      return;
+    }
+    positionPetActor(shot);
+    three.petActor.visible = true;
+    if (three.petStick) three.petStick.visible = true;
+    if (three.petThought) three.petThought.visible = false;
+    state.aiShotAnimation = { active: true, startedAt: performance.now(), duration: 680, shot, fired: false };
+  }
+
+  function hidePetActor(force = false) {
+    if (!force && state.currentPlayer === 1 && state.running) return;
+    if (three.petActor) three.petActor.visible = false;
+    if (three.petStick) three.petStick.visible = false;
+    state.aiShotAnimation.active = false;
+  }
+
+  function positionPetActor(shot) {
+    const cue = cueBall();
+    if (!cue || !three.petActor || !shot?.dir) return;
+    const dir = normalize(shot.dir);
+    const side = { x: -dir.y, y: dir.x };
+    const bodyDistance = .92;
+    const sideOffset = .36;
+    const x = cue.x - dir.x * bodyDistance + side.x * sideOffset;
+    const z = cue.y - dir.y * bodyDistance + side.y * sideOffset;
+    three.petActor.position.set(x, BALL_RADIUS, z);
+    three.petActor.rotation.y = Math.atan2(dir.x, dir.y);
+    updatePetStickPose(dir, shot.power || .55, 0);
+  }
+
+  function movePetAsideAfterStroke(shot) {
+    const cue = cueBall();
+    if (!cue || !three.petActor || !shot?.dir) return;
+    const dir = normalize(shot.dir);
+    const side = { x: dir.y, y: -dir.x };
+    let x;
+    let z;
+    if (Math.abs(side.x) > Math.abs(side.y)) {
+      x = side.x > 0 ? TABLE.width / 2 + .78 : -TABLE.width / 2 - .78;
+      z = clamp(cue.y + side.y * 1.2, -TABLE.height / 2 + .62, TABLE.height / 2 - .62);
+    } else {
+      x = clamp(cue.x + side.x * 1.2, -TABLE.width / 2 + .72, TABLE.width / 2 - .72);
+      z = side.y > 0 ? TABLE.height / 2 + .78 : -TABLE.height / 2 - .78;
+    }
+    three.petActor.position.set(x, BALL_RADIUS, z);
+    const face = normalize({ x: -x, y: -z });
+    three.petActor.rotation.y = Math.atan2(face.x, face.y);
+    three.petActor.scale.setScalar(.94);
+    if (three.petStick) {
+      three.petStick.visible = true;
+      three.petStick.position.set(x + face.x * .28, BALL_RADIUS * 3.2, z + face.y * .28);
+      three.petStick.quaternion.setFromUnitVectors(three.reusable.cueUp, three.reusable.cueDir.set(face.x * .22, .96, face.y * .22).normalize());
+    }
+  }
+
+  function updatePetStickPose(dir, power, phase) {
+    const cue = cueBall();
+    if (!cue || !three.petStick) return;
+    const pull = .18 + power * .5;
+    const strikeOffset = phase < .45 ? phase / .45 * pull : (1 - (phase - .45) / .55) * pull * .38;
+    const tipGap = BALL_RADIUS + .08 + pull - strikeOffset;
+    const tip = { x: cue.x - dir.x * tipGap, y: cue.y - dir.y * tipGap };
+    const back = { x: tip.x - dir.x * 2.25, y: tip.y - dir.y * 2.25 };
+    three.petStick.position.set((tip.x + back.x) / 2, BALL_RADIUS * 1.45, (tip.y + back.y) / 2);
+    three.petStick.quaternion.setFromUnitVectors(three.reusable.cueUp, three.reusable.cueDir.set(dir.x, 0, dir.y).normalize());
+  }
+
+  function updatePetActor(now) {
+    if (!three.petActor || !three.petActor.visible) return;
+    const actor = three.petActor;
+    actor.position.y = BALL_RADIUS + Math.sin(now * .004) * .025;
+    if (three.petThought?.visible) three.petThought.position.y = 1.24 + Math.sin(now * .006) * .04;
+    const anim = state.aiShotAnimation;
+    if (!anim.active || !anim.shot) return;
+    const phase = clamp((now - anim.startedAt) / anim.duration, 0, 1);
+    const dir = normalize(anim.shot.dir);
+    updatePetStickPose(dir, anim.shot.power, phase);
+    actor.scale.setScalar(1 + Math.sin(phase * Math.PI) * .06);
+    if (!anim.fired && phase >= .56) {
+      anim.fired = true;
+      shoot(anim.shot.dir, anim.shot.power, 1);
+      movePetAsideAfterStroke(anim.shot);
+      anim.active = false;
+      actor.scale.setScalar(.94);
+      return;
+    }
+    if (phase >= 1) {
+      anim.active = false;
+      actor.scale.setScalar(1);
+    }
+  }
+
+  function chooseAIShot() {
+    const cue = cueBall();
+    const targets = legalTargetsFor(1);
+    let bestShot = null;
+    let bestScore = -Infinity;
+    const pockets = pocketCenters();
+    targets.forEach(ball => {
+      pockets.forEach(pocket => {
+        const candidate = pocketShotFor(cue, ball, pocket);
+        if (!candidate) return;
+        const cueToGhost = distance(cue, candidate.ghost);
+        const ballToPocket = distance(ball, pocket);
+        const anglePenalty = Math.abs(candidate.cutAngle) * 1.35;
+        const score = -cueToGhost - ballToPocket * .74 - anglePenalty + Math.random() * .28;
+        if (score > bestScore) { bestScore = score; bestShot = candidate; }
+      });
+    });
+    const best = bestShot?.ball || targets[0] || state.balls.find(b => b.type !== 'cue' && !b.pocketed);
+    if (!best) return { dir: { x: 1, y: 0 }, power: .48 };
+    const aim = bestShot ? bestShot.dir : ghostAim(cue, best);
+    const diff = DIFFICULTIES[state.difficulty];
+    const angle = Math.atan2(aim.y, aim.x) + (Math.random() - .5) * diff.aiNoise;
+    const dist = bestShot ? distance(cue, bestShot.ghost) + distance(best, bestShot.pocket) * .34 : Math.hypot(best.x - cue.x, best.y - cue.y);
+    const power = Math.max(.32, Math.min(.96, (.34 + dist / 7.5) * diff.aiPower));
+    return { dir: { x: Math.cos(angle), y: Math.sin(angle) }, power };
+  }
+
+  function pocketShotFor(cue, ball, pocket) {
+    if (!cue || !ball || !pocket) return null;
+    const targetToPocket = normalize({ x: pocket.x - ball.x, y: pocket.y - ball.y });
+    const ghost = { x: ball.x - targetToPocket.x * BALL_RADIUS * 2, y: ball.y - targetToPocket.y * BALL_RADIUS * 2 };
+    const cueToGhost = normalize({ x: ghost.x - cue.x, y: ghost.y - cue.y });
+    const cutAngle = Math.acos(clamp(cueToGhost.x * targetToPocket.x + cueToGhost.y * targetToPocket.y, -1, 1));
+    if (cutAngle > Math.PI * .54) return null;
+    if (!isPathClear(cue, ghost, cue, ball, BALL_RADIUS * 2.16)) return null;
+    if (!isPathClear(ball, pocket, ball, null, BALL_RADIUS * 1.72)) return null;
+    return { ball, pocket, ghost, dir: cueToGhost, cutAngle };
+  }
+
+  function isPathClear(from, to, ignoreA, ignoreB, clearance) {
+    const dx = to.x - from.x;
+    const dy = to.y - from.y;
+    const lengthSq = dx * dx + dy * dy;
+    if (lengthSq <= .0001) return false;
+    return !state.balls.some(ball => {
+      if (ball.pocketed || ball === ignoreA || ball === ignoreB || ball.type === 'cue') return false;
+      const t = clamp(((ball.x - from.x) * dx + (ball.y - from.y) * dy) / lengthSq, 0, 1);
+      const closestX = from.x + dx * t;
+      const closestY = from.y + dy * t;
+      return Math.hypot(ball.x - closestX, ball.y - closestY) < clearance;
+    });
+  }
+
+  function legalTargetsFor(player) {
+    if (state.mode === 'eight') {
+      const group = playerGroup(player);
+      if (group) {
+        const groupBalls = state.balls.filter(b => b.type === group && !b.pocketed);
+        if (groupBalls.length) return groupBalls;
+        return state.balls.filter(b => b.type === 'eight' && !b.pocketed);
+      }
+      return state.balls.filter(b => (b.type === 'solid' || b.type === 'stripe') && !b.pocketed);
+    }
+    if (state.snookerNext === 'red' && redsRemaining()) return state.balls.filter(b => b.type === 'red' && !b.pocketed);
+    return state.balls.filter(b => !['cue', 'red'].includes(b.type) && !b.pocketed);
+  }
+
+  function ghostAim(cue, target) {
+    const pockets = pocketCenters();
+    const pocket = pockets.reduce((a, p) => distance(target, p) < distance(target, a) ? p : a, pockets[0]);
+    const tx = pocket.x - target.x;
+    const ty = pocket.y - target.y;
+    const td = Math.hypot(tx, ty) || 1;
+    const ghostX = target.x - tx / td * BALL_RADIUS * 2;
+    const ghostY = target.y - ty / td * BALL_RADIUS * 2;
+    const dx = ghostX - cue.x;
+    const dy = ghostY - cue.y;
+    const d = Math.hypot(dx, dy) || 1;
+    return { x: dx / d, y: dy / d };
+  }
+
+  function updateAimVisuals() {
+    const cue = cueBall();
+    if (!cue) {
+      if (three.cueHitDot) three.cueHitDot.visible = false;
+      return;
+    }
+    const dir = state.aim.dir;
+    const power = state.aim.power;
+    if (!state.aim.active) {
+      const showSwingPreview = state.inputMode === 'swing' && canHumanShoot() && !cue.pocketed;
+      const showHitControlPreview = state.hitControl.active && canHumanShoot() && !cue.pocketed;
+      if (showSwingPreview || showHitControlPreview) {
+        state.aim.dir = cameraShotDirection();
+        if (showSwingPreview) setCueStickPose(cue, state.aim.dir, 0);
+        else three.cue.visible = false;
+      } else {
+        three.cue.visible = false;
+      }
+      updateCueHitDot(cue, state.aim.dir);
+      three.aimLine.visible = false;
+      three.targetLine.visible = false;
+      if (three.pocketLine) three.pocketLine.visible = false;
+      if (three.ghostBall) three.ghostBall.visible = false;
+      return;
+    }
+    if (!state.aim.intentReady) {
+      setCueStickPose(cue, state.aim.dir, 0);
+      updateCueHitDot(cue, state.aim.dir);
+      three.aimLine.visible = false;
+      three.targetLine.visible = false;
+      if (three.pocketLine) three.pocketLine.visible = false;
+      if (three.ghostBall) three.ghostBall.visible = false;
+      return;
+    }
+    updateCueHitDot(cue, dir);
+    state.aim.blocked = !setCueStickPose(cue, dir, power);
+    if (state.aim.blocked) {
+      three.aimLine.visible = false;
+      three.targetLine.visible = false;
+      if (three.pocketLine) three.pocketLine.visible = false;
+      if (three.ghostBall) three.ghostBall.visible = false;
+      els.guideText.textContent = t('cueBlocked');
+      return;
+    }
+    els.guideText.textContent = state.message;
+    const prediction = predictCueHit(cue, dir);
+    const aimEnd = prediction ? prediction.contact : extendToTableEdge(cue, dir, 5.4);
+    setLine(three.aimLine, cue.x, cue.y, aimEnd.x, aimEnd.y);
+    three.aimLine.visible = true;
+
+    if (prediction) {
+      const out = prediction.targetDir;
+      const targetEnd = extendToTableEdge(prediction.ball, out, 2.8);
+      setLine(three.targetLine, prediction.ball.x, prediction.ball.y, targetEnd.x, targetEnd.y);
+      three.targetLine.visible = true;
+      if (three.pocketLine) three.pocketLine.visible = false;
+      if (three.ghostBall) {
+        three.ghostBall.position.set(prediction.contact.x, BALL_RADIUS * 1.04, prediction.contact.y);
+        three.ghostBall.visible = true;
+      }
+    } else {
+      three.targetLine.visible = false;
+      if (three.pocketLine) three.pocketLine.visible = false;
+      if (three.ghostBall) three.ghostBall.visible = false;
+    }
+  }
+
+  function updateCueHitDot(cue, dir) {
+    if (!three.cueHitDot) return;
+    const show = (state.inputMode === 'swing' || state.hitControl.active) && canHumanShoot() && cue && !cue.pocketed;
+    if (!show) {
+      three.cueHitDot.visible = false;
+      return;
+    }
+    const shotDir = normalize(dir || state.aim.dir || { x: 1, y: 0 });
+    const point = normalizeHitPoint(state.hitPoint);
+    const maxOffset = .68;
+    const offsetX = point.x * maxOffset;
+    const offsetY = -point.y * maxOffset;
+    const faceDepth = Math.sqrt(Math.max(.18, 1 - offsetX * offsetX - offsetY * offsetY));
+    const side = three.reusable.cueHitSide.set(-shotDir.y, 0, shotDir.x).normalize();
+    const normal = three.reusable.cueHitNormal
+      .set(-shotDir.x * faceDepth, offsetY, -shotDir.y * faceDepth)
+      .addScaledVector(side, offsetX)
+      .normalize();
+    three.cueHitDot.position.set(
+      cue.x + normal.x * (BALL_RADIUS + .012),
+      BALL_RADIUS + normal.y * (BALL_RADIUS + .012),
+      cue.y + normal.z * (BALL_RADIUS + .012)
+    );
+    three.cueHitDot.visible = true;
+  }
+
+  function cameraShotDirection() {
+    const yaw = state.cameraControl?.yaw || DEFAULT_CAMERA.yaw;
+    return normalize({ x: -Math.sin(yaw), y: -Math.cos(yaw) });
+  }
+
+  function setCueStickPose(cue, dir, power) {
+    const pullBack = power * CUE_STICK_PULLBACK;
+    const cueTip = { x: cue.x - dir.x * (BALL_RADIUS + .1 + pullBack), y: cue.y - dir.y * (BALL_RADIUS + .1 + pullBack) };
+    const stickSpace = cueStickSpace(cue, dir, cueTip);
+    const visibleLength = stickSpace.length;
+    if (visibleLength < CUE_STICK_MIN_VISIBLE) {
+      three.cue.visible = false;
+      return false;
+    }
+    const cueBack = { x: cueTip.x - dir.x * visibleLength, y: cueTip.y - dir.y * visibleLength };
+    const elevationT = stickSpace.elevated ? clamp((CUE_STICK_LENGTH - stickSpace.railLength) / CUE_STICK_LENGTH, 0, 1) : 0;
+    const lift = stickSpace.elevated ? .18 + elevationT * .58 + power * .22 : 0;
+    three.cue.visible = true;
+    three.cue.scale.set(1, visibleLength / CUE_STICK_MESH_LENGTH, 1);
+    three.cue.position.set((cueTip.x + cueBack.x) / 2, BALL_RADIUS * 1.08 + lift * .5, (cueTip.y + cueBack.y) / 2);
+    three.cue.quaternion.setFromUnitVectors(three.reusable.cueUp, three.reusable.cueDir.set(dir.x, -lift / Math.max(visibleLength, .001), dir.y).normalize());
+    return true;
+  }
+
+  function cueStickSpace(cue, dir, cueTip) {
+    const back = { x: -dir.x, y: -dir.y };
+    const railLength = cueStickRailLength(cueTip, back);
+    const cueEdgeGap = cueStickRailLength(cue, back);
+    let ballLength = CUE_STICK_LENGTH;
+
+    state.balls.forEach(ball => {
+      if (ball === cue || ball.pocketed) return;
+      const ox = ball.x - cueTip.x;
+      const oy = ball.y - cueTip.y;
+      const projection = ox * back.x + oy * back.y;
+      if (projection <= 0 || projection >= ballLength) return;
+      const perp = Math.abs(ox * back.y - oy * back.x);
+      if (perp < BALL_RADIUS * 1.18) ballLength = Math.min(ballLength, projection - BALL_RADIUS * 1.32);
+    });
+    const elevated = railLength < ballLength && cueEdgeGap > CUE_STICK_EDGE_BLOCK_GAP;
+    const length = elevated ? ballLength : Math.min(ballLength, railLength);
+    return { length: Math.max(0, length), railLength, elevated };
+  }
+
+  function cueStickRailLength(point, back) {
+    const minX = -TABLE.width / 2 + BALL_RADIUS * .55;
+    const maxX = TABLE.width / 2 - BALL_RADIUS * .55;
+    const minY = -TABLE.height / 2 + BALL_RADIUS * .55;
+    const maxY = TABLE.height / 2 - BALL_RADIUS * .55;
+    let length = CUE_STICK_LENGTH;
+    if (back.x > .001) length = Math.min(length, (maxX - point.x) / back.x - .05);
+    if (back.x < -.001) length = Math.min(length, (minX - point.x) / back.x - .05);
+    if (back.y > .001) length = Math.min(length, (maxY - point.y) / back.y - .05);
+    if (back.y < -.001) length = Math.min(length, (minY - point.y) / back.y - .05);
+    return Math.max(0, length);
+  }
+
+  function predictCueHit(cue, dir) {
+    const maxDistance = 7.5;
+    let best = null;
+    legalTargetsFor(0).forEach(ball => {
+      if (ball.pocketed) return;
+      const ox = ball.x - cue.x;
+      const oy = ball.y - cue.y;
+      const projection = ox * dir.x + oy * dir.y;
+      if (projection <= BALL_RADIUS * 2 || projection > maxDistance) return;
+      const closestSq = ox * ox + oy * oy - projection * projection;
+      const assist = DIFFICULTIES[state.difficulty]?.aimHelp || 0;
+      const hitRadius = BALL_RADIUS * (2.08 + assist * .55);
+      if (closestSq > hitRadius * hitRadius) return;
+      const offset = Math.sqrt(Math.max(0, hitRadius * hitRadius - closestSq));
+      const t = projection - offset;
+      if (t <= 0 || (best && t >= best.t)) return;
+      const contact = { x: cue.x + dir.x * t, y: cue.y + dir.y * t };
+      const targetDir = normalize({ x: ball.x - contact.x, y: ball.y - contact.y });
+      best = { ball, t, contact, targetDir };
+    });
+    return best;
+  }
+
+  function extendToTableEdge(origin, dir, fallbackLength) {
+    const minX = -TABLE.width / 2 + BALL_RADIUS;
+    const maxX = TABLE.width / 2 - BALL_RADIUS;
+    const minY = -TABLE.height / 2 + BALL_RADIUS;
+    const maxY = TABLE.height / 2 - BALL_RADIUS;
+    const distances = [];
+    if (dir.x > .001) distances.push((maxX - origin.x) / dir.x);
+    if (dir.x < -.001) distances.push((minX - origin.x) / dir.x);
+    if (dir.y > .001) distances.push((maxY - origin.y) / dir.y);
+    if (dir.y < -.001) distances.push((minY - origin.y) / dir.y);
+    const distance = Math.min(fallbackLength, ...distances.filter(v => v > 0));
+    return { x: origin.x + dir.x * distance, y: origin.y + dir.y * distance };
+  }
+
+  function bestPocketForBall(ball) {
+    const pockets = pocketCenters();
+    if (!ball || !pockets.length) return null;
+    return pockets.reduce((best, pocket) => distance(ball, pocket) < distance(ball, best) ? pocket : best, pockets[0]);
+  }
+
+  function setLine(line, x1, y1, x2, y2) {
+    const position = line.geometry.attributes.position;
+    position.setXYZ(0, x1, BALL_RADIUS * 1.25, y1);
+    position.setXYZ(1, x2, BALL_RADIUS * 1.25, y2);
+    position.needsUpdate = true;
+  }
+
+  function createLineGeometry() {
+    const THREE = window.THREE;
+    const geometry = new THREE.BufferGeometry();
+    geometry.setAttribute('position', new THREE.Float32BufferAttribute([0, 0, 0, 0, 0, 0], 3));
+    return geometry;
+  }
+
+  function screenToTable(clientX, clientY) {
+    const rect = three.renderer.domElement.getBoundingClientRect();
+    const x = ((clientX - rect.left) / rect.width) * 2 - 1;
+    const y = -(((clientY - rect.top) / rect.height) * 2 - 1);
+    const reusable = three.reusable;
+    reusable.pointerNdc.set(x, y);
+    reusable.raycaster.setFromCamera(reusable.pointerNdc, three.camera);
+    const point = reusable.tablePoint;
+    if (!reusable.raycaster.ray.intersectPlane(reusable.tablePlane, point)) return null;
+    return { x: point.x, y: point.z };
+  }
+
+  function resize() {
+    updateUIScale();
+    if (!three.renderer) return;
+    const rect = els.stage.getBoundingClientRect();
+    const width = Math.max(1, rect.width);
+    const height = Math.max(1, rect.height);
+    setRendererPixelRatio();
+    three.renderer.setSize(width, height, false);
+    three.camera.aspect = width / height;
+    const portrait = height > width;
+    if (state.cameraControl.autoDistance) state.cameraControl.distance = portrait ? DEFAULT_CAMERA.distancePortrait : DEFAULT_CAMERA.distanceLandscape;
+    three.camera.fov = portrait ? 48 : 40;
+    updateCamera();
+    three.renderer.render(three.scene, three.camera);
+  }
+
+  function updateUIScale() {
+    const width = window.innerWidth || document.documentElement.clientWidth || 0;
+    const height = window.innerHeight || document.documentElement.clientHeight || 0;
+    const shortSide = Math.min(width, height);
+    const longSide = Math.max(width, height);
+    const landscapeReference = Math.min(shortSide / 720, longSide / 1280);
+    const portraitReference = Math.min(shortSide / 390, longSide / 844);
+    const reference = height > width ? portraitReference : landscapeReference;
+    const scale = clamp(reference, 1, IS_MOBILE ? 1.12 : 1.34);
+    root.style.setProperty('--mh-ui-scale', scale.toFixed(3));
+  }
+
+  function currentGraphicsPreset() {
+    return GRAPHICS_PRESETS[state.graphics.level] || GRAPHICS_PRESETS[0];
+  }
+
+  function setRendererPixelRatio() {
+    if (!three.renderer) return;
+    const preset = currentGraphicsPreset();
+    three.renderer.setPixelRatio(Math.min(MAX_PIXEL_RATIO, preset.pixelRatio, window.devicePixelRatio || 1));
+  }
+
+  function monitorGraphicsQuality(now) {
+    if (state.graphics.mode !== 'auto') return;
+    const graphics = state.graphics;
+    if (!graphics.sampleStartedAt) {
+      graphics.sampleStartedAt = now;
+      graphics.frames = 0;
+      return;
+    }
+    graphics.frames += 1;
+    const elapsed = now - graphics.sampleStartedAt;
+    if (elapsed < GRAPHICS_FPS_SAMPLE_MS) return;
+    const fps = graphics.frames * 1000 / elapsed;
+    const canDowngrade = graphics.level < GRAPHICS_PRESETS.length - 1 && now - graphics.lastDowngradeAt > GRAPHICS_DOWNGRADE_COOLDOWN_MS;
+    if (fps < GRAPHICS_LOW_FPS && canDowngrade) applyGraphicsQuality(graphics.level + 1, now);
+    graphics.sampleStartedAt = now;
+    graphics.frames = 0;
+  }
+
+  function applyGraphicsQuality(level, now = performance.now()) {
+    state.graphics.level = clamp(Math.round(level), 0, GRAPHICS_PRESETS.length - 1);
+    state.graphics.lastDowngradeAt = now;
+    const preset = currentGraphicsPreset();
+    setRendererPixelRatio();
+    if (three.renderer?.shadowMap) {
+      three.renderer.shadowMap.enabled = preset.shadows;
+      three.renderer.shadowMap.needsUpdate = true;
+    }
+    if (three.light) {
+      three.light.castShadow = preset.shadows;
+      if (preset.shadowMapSize) {
+        three.light.shadow.mapSize.width = preset.shadowMapSize;
+        three.light.shadow.mapSize.height = preset.shadowMapSize;
+      }
+      if (three.light.shadow.map) {
+        three.light.shadow.map.dispose();
+        three.light.shadow.map = null;
+      }
+    }
+    if (three.renderer && els.stage) resize();
+  }
+
+  function updateCamera() {
+    const control = state.cameraControl;
+    const horizontal = Math.cos(control.pitch) * control.distance;
+    const target = three.reusable.cameraTarget.set(control.targetX, 0, control.targetY);
+    three.camera.position.set(
+      target.x + Math.sin(control.yaw) * horizontal,
+      Math.sin(control.pitch) * control.distance,
+      target.z + Math.cos(control.yaw) * horizontal
+    );
+    three.camera.lookAt(target);
+    three.camera.updateProjectionMatrix();
+  }
+
+  function pocketCenters() {
+    return [
+      { x: -TABLE.width / 2, y: -TABLE.height / 2 },
+      { x: 0, y: -TABLE.height / 2 - .02 },
+      { x: TABLE.width / 2, y: -TABLE.height / 2 },
+      { x: -TABLE.width / 2, y: TABLE.height / 2 },
+      { x: 0, y: TABLE.height / 2 + .02 },
+      { x: TABLE.width / 2, y: TABLE.height / 2 },
+    ];
+  }
+
+  function updateUI() {
+    els.bestScore.textContent = String(state.best);
+    els.playerScore.textContent = String(state.playerScore);
+    els.petScore.textContent = String(state.petScore);
+    renderPottedBalls();
+    const targetHint = currentTargetHint();
+    els.centerNote.textContent = `${MODES[state.mode].label} · ${targetHint} · ${formatTime(state.seconds)}`;
+    els.guideText.textContent = state.finished ? t('clickStartAgain') : state.started ? state.message : t('selectModeStart');
+    els.playerHud.classList.toggle('active', state.currentPlayer === 0 && state.started && !state.running);
+    els.petHud.classList.toggle('active', state.currentPlayer === 1 && state.started && !state.running);
+    const swingAvailable = canHumanShoot();
+    els.swing.hidden = !swingAvailable || state.inputMode === 'swing';
+    els.cancelZone.hidden = !(swingAvailable && state.inputMode === 'swing');
+    updateCancelZoneText();
+    els.swing.disabled = !swingAvailable;
+    updateHitPointUI();
+    els.start.hidden = state.started && !state.finished;
+    els.start.textContent = t('start');
+    document.querySelectorAll('[data-card-mode]').forEach(btn => btn.classList.toggle('active', btn.dataset.cardMode === state.mode));
+    updateQualityUI();
+    els.modeSelect.value = state.mode;
+    els.difficultySelect.value = state.difficulty;
+  }
+
+  function updateQualityUI() {
+    els.qualityButtons.forEach(btn => btn.classList.toggle('active', btn.dataset.quality === state.graphics.mode));
+  }
+
+  function currentTargetHint() {
+    if (!state.started || state.finished) return t('ready');
+    if (state.mode === 'snooker') return state.snookerNext === 'red' && redsRemaining() ? t('targetRed') : t('targetColor');
+    const group = playerGroup(state.currentPlayer);
+    if (group === 'solid') return t('targetSmall');
+    if (group === 'stripe') return t('targetBig');
+    return t('targetAny');
+  }
+
+  function isPointOverElement(event, element) {
+    if (!element || element.hidden) return false;
+    const rect = element.getBoundingClientRect();
+    return event.clientX >= rect.left && event.clientX <= rect.right && event.clientY >= rect.top && event.clientY <= rect.bottom;
+  }
+
+  function updateCancelZoneText() {
+    els.cancelZone.textContent = state.aim.active && state.aim.intentReady ? t('dragHereCancel') : t('cancelSwing');
+  }
+
+  function normalizeHitPoint(point) {
+    if (!point) return { x: 0, y: 0 };
+    let x = Number(point.x) || 0;
+    let y = Number(point.y) || 0;
+    const length = Math.hypot(x, y);
+    if (length > 1) {
+      x /= length;
+      y /= length;
+    }
+    return { x: clamp(x, -1, 1), y: clamp(y, -1, 1) };
+  }
+
+  function setMode(mode, rerack) {
+    const previousMode = state.mode;
+    state.mode = normalizeMode(mode);
+    refreshTableForMode();
+    saveSettings();
+    if (rerack || !state.started || previousMode !== state.mode) resetGame(false);
+    updateUI();
+  }
+
+  function setDifficulty(difficulty, silent) {
+    state.difficulty = normalizeDifficulty(difficulty);
+    saveSettings();
+    if (!silent) toast(t('difficultyToast', { label: DIFFICULTIES[state.difficulty].label }));
+    updateUI();
+  }
+
+  function handleMessage(event) {
+    const msg = event.data || {};
+    if (msg.type === 'setGameConfig') applyGameConfig(msg.data || msg.config || {});
+    if (msg.type === 'haqi_pet_image' && msg.ok) applyPetImages([msg.data]);
+    if (msg.type === 'haqi_pet_images' && msg.ok) applyPetImages(msg.data?.pets || []);
+  }
+
+  function applyGameConfig(config) {
+    if (config.mode) state.mode = normalizeMode(config.mode);
+    if (config.difficulty) state.difficulty = normalizeDifficulty(config.difficulty);
+    refreshTableForMode();
+    saveSettings();
+    resetGame(false);
+  }
+
+  function requestPets() {
+    const requestId = `billiards_pets_${Date.now()}`;
+    window.parent.postMessage({ type: 'haqi_get_pet_images', requestId, anim: 'idle' }, '*');
+    setTimeout(() => {
+      if (!state.petAssets.length) applyFallbackPets();
+    }, 1200);
+  }
+
+  function applyPetImages(pets) {
+    if (!Array.isArray(pets) || !pets.length) return;
+    cleanupObjectUrls();
+    state.petAssets = pets.slice(0, 2).map((pet, index) => ({ pet, index }));
+    const currentPet = state.petAssets[0]?.pet;
+    if (currentPet) {
+      setPetBillboard(currentPet);
+      els.petName.textContent = currentPet.name || t('pet');
+    }
+  }
+
+  function applyFallbackPets() {
+    els.petName.textContent = t('pet');
+  }
+
+  function setPetBillboard(pet) {
+    if (!three.petBillboard) return;
+    if (!pet?.imageBlob) {
+      three.petBillboard.visible = false;
+      three.petActor?.userData?.modelParts?.forEach(part => { part.visible = true; });
+      return;
+    }
+    const url = URL.createObjectURL(pet.imageBlob);
+    state.objectUrls.push(url);
+    const THREE = window.THREE;
+    const texture = new THREE.TextureLoader().load(url, () => {
+      const aspect = texture.image?.width && texture.image?.height ? texture.image.width / texture.image.height : 1;
+      three.petBillboard.scale.set(.86 * Math.max(.7, Math.min(1.4, aspect)), .86, 1);
+      texture.needsUpdate = true;
+    });
+    const uv = pet.uv || { cols: 1, rows: 1, col: 0, row: 0 };
+    if (uv.cols > 1 || uv.rows > 1) {
+      texture.repeat.set(1 / uv.cols, 1 / uv.rows);
+      texture.offset.set((uv.col || 0) / uv.cols, 1 - ((uv.row || 0) + 1) / uv.rows);
+    }
+    if (three.petBillboardTexture) three.petBillboardTexture.dispose?.();
+    three.petBillboardTexture = texture;
+    three.petBillboard.material.map = texture;
+    three.petBillboard.material.needsUpdate = true;
+    three.petBillboard.visible = true;
+    three.petActor?.userData?.modelParts?.forEach(part => { part.visible = false; });
+  }
+
+  function cleanupObjectUrls() {
+    if (three.petBillboardTexture) {
+      three.petBillboardTexture.dispose?.();
+      three.petBillboardTexture = null;
+    }
+    if (three.petBillboard) {
+      three.petBillboard.material.map = null;
+      three.petBillboard.material.needsUpdate = true;
+      three.petBillboard.visible = false;
+      three.petActor?.userData?.modelParts?.forEach(part => { part.visible = true; });
+    }
+    state.objectUrls.forEach(url => URL.revokeObjectURL(url));
+    state.objectUrls = [];
+  }
+
+  function ensureAudio() {
+    if (state.audio.ctx) {
+      if (state.audio.ctx.state === 'suspended') state.audio.ctx.resume?.();
+      state.audio.enabled = true;
+      return state.audio.ctx;
+    }
+    const AudioContext = window.AudioContext || window.webkitAudioContext;
+    if (!AudioContext) return null;
+    const ctx = new AudioContext();
+    const master = ctx.createGain();
+    master.gain.value = .18;
+    master.connect(ctx.destination);
+    state.audio.ctx = ctx;
+    state.audio.master = master;
+    state.audio.enabled = true;
+    return ctx;
+  }
+
+  function playTone({ frequency = 440, duration = .08, type = 'sine', gain = .12, slideTo = null }) {
+    const ctx = ensureAudio();
+    if (!ctx || !state.audio.master || !state.audio.enabled) return;
+    const start = ctx.currentTime;
+    const osc = ctx.createOscillator();
+    const amp = ctx.createGain();
+    osc.type = type;
+    osc.frequency.setValueAtTime(frequency, start);
+    if (slideTo) osc.frequency.exponentialRampToValueAtTime(Math.max(20, slideTo), start + duration);
+    amp.gain.setValueAtTime(0, start);
+    amp.gain.linearRampToValueAtTime(gain, start + .008);
+    amp.gain.exponentialRampToValueAtTime(.0001, start + duration);
+    osc.connect(amp);
+    amp.connect(state.audio.master);
+    osc.start(start);
+    osc.stop(start + duration + .02);
+  }
+
+  function playShootSound(power) {
+    playTone({ frequency: 150 + power * 120, slideTo: 72, duration: .13, type: 'triangle', gain: .16 + power * .08 });
+  }
+
+  function playRailSound(speed) {
+    if (speed < .45) return;
+    playTone({ frequency: 180 + Math.min(320, speed * 36), duration: .045, type: 'square', gain: Math.min(.08, speed * .012) });
+  }
+
+  function playCollisionSound(strength) {
+    const now = performance.now();
+    if (strength < .18 || now - state.audio.lastCollisionAt < 28) return;
+    state.audio.lastCollisionAt = now;
+    playTone({ frequency: 360 + Math.min(420, strength * 48), slideTo: 210, duration: .055, type: 'triangle', gain: Math.min(.13, .04 + strength * .008) });
+  }
+
+  function playPocketSound() {
+    playTone({ frequency: 210, slideTo: 72, duration: .18, type: 'sine', gain: .12 });
+    setTimeout(() => playTone({ frequency: 96, slideTo: 56, duration: .16, type: 'triangle', gain: .08 }), 70);
+  }
+
+  function playFinishSound(won) {
+    if (won) {
+      [330, 440, 660].forEach((frequency, index) => setTimeout(() => playTone({ frequency, duration: .12, type: 'sine', gain: .11 }), index * 90));
+    } else {
+      playTone({ frequency: 220, slideTo: 130, duration: .22, type: 'triangle', gain: .11 });
+    }
+  }
+
+  function toast(text) {
+    const el = document.createElement('div');
+    el.className = 'mh-toast';
+    el.textContent = text;
+    document.body.appendChild(el);
+    setTimeout(() => el.remove(), 1400);
+  }
+
+  function distance(a, b) {
+    return Math.hypot(a.x - b.x, a.y - b.y);
+  }
+
+  function normalize(v) {
+    const d = Math.hypot(v.x, v.y) || 1;
+    return { x: v.x / d, y: v.y / d };
+  }
+
+  function clamp(value, min, max) {
+    return Math.max(min, Math.min(max, value));
+  }
+
+  function formatTime(seconds) {
+    const m = Math.floor(seconds / 60);
+    const s = seconds % 60;
+    return `${m}:${String(s).padStart(2, '0')}`;
+  }
+
+  function readSettings() {
+    try { return JSON.parse(localStorage.getItem(STORAGE_KEY) || '{}') || {}; } catch (_) { return {}; }
+  }
+
+  function saveSettings() {
+    localStorage.setItem(STORAGE_KEY, JSON.stringify({ mode: state.mode, difficulty: state.difficulty, graphicsMode: state.graphics.mode }));
+  }
+
+  function normalizeMode(mode) {
+    return MODES[mode] ? mode : 'eight';
+  }
+
+  function normalizeDifficulty(difficulty) {
+    return DIFFICULTIES[difficulty] ? difficulty : 'normal';
+  }
+
+  function normalizeGraphicsMode(mode) {
+    return GRAPHICS_MODE_LABELS[mode] ? mode : 'auto';
+  }
+
+  function graphicsLevelForMode(mode) {
+    const normalized = normalizeGraphicsMode(mode);
+    if (normalized === 'low') return GRAPHICS_PRESETS.length - 1;
+    return 0;
+  }
+})();
+</script>
+<script>
+  // Bootstrap: the game code above lives in a non-executable
+  // <script type="text/plain" id="mhBilliardsCode"> block so the browser does NOT
+  // compile ~148KB of JS before DOMContentLoaded. We turn it into a Blob and load
+  // it as a classic script that runs right after first paint; the IIFE then builds
+  // the rules/intro screen and posts `gameLoaded` — keeping startup (DCL) tiny.
+  (function () {
+    var run = function () {
+      var code = document.getElementById('mhBilliardsCode').textContent;
+      var url = URL.createObjectURL(new Blob([code], { type: 'application/javascript' }));
+      var s = document.createElement('script');
+      s.src = url;
+      s.onload = function () { URL.revokeObjectURL(url); };
+      document.head.appendChild(s);
+    };
+    // Defer the Blob script's parse+execute until after the first paint so DCL and
+    // the initial frame are not blocked by the ~148KB engine.
+    if (document.readyState === 'loading') {
+      document.addEventListener('DOMContentLoaded', function () { requestAnimationFrame(run); });
+    } else {
+      requestAnimationFrame(run);
+    }
+  })();
+</script>
+</html>

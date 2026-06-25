@@ -7,6 +7,7 @@ import { state } from './state.js';
 import { savePetGame } from './storage.js';
 import { handleMinigamePetMessage, pushActivePetConfigToFrame } from './view_minigames.js';
 import { openGameMakerSettings, closeGameMakerSettings } from './view_game_maker_settings.js';
+import { handleGameHostMessage, loadGameHtmlIntoFrame } from './gameHostFrame.js';
 
 // 游戏创作工坊的 AI 会话共用同一个 modId，chatId 区分不同会话，便于列出历史。
 const GAME_MAKER_MOD_ID = 'magichaqi-game-maker';
@@ -2171,10 +2172,13 @@ export function renderGameMaker(panel, { game = null, mode = 'game', materials =
         // 每次重新加载预览都清空旧的运行时错误。
         clearRuntimeErrors();
         if (hasContent) {
-            previewFrame.srcdoc = injectErrorCapture(html);
+            // 注入预览 HTML：现代内核走 srcdoc；微信等不支持 srcdoc 的内核走通用宿主页（见 gameHostFrame.js）。
+            // 宿主页路径下，宠物配置改由 mhGameRendered 握手回调推送（onPreviewLoad）。
+            loadGameHtmlIntoFrame(previewFrame, injectErrorCapture(html), { onRendered: () => onPreviewLoad() });
             if (previewEmpty) previewEmpty.style.display = 'none';
         } else {
             previewFrame.removeAttribute('srcdoc');
+            previewFrame.removeAttribute('src');
             if (previewEmpty) previewEmpty.style.display = 'flex';
         }
         // 仅在有内容时允许显示刷新按钮（具体显隐由 CSS 结合当前激活面板决定）。
@@ -2194,10 +2198,12 @@ export function renderGameMaker(panel, { game = null, mode = 'game', materials =
         // 重新加载时清空旧错误，重新收集。
         clearRuntimeErrors();
         if (currentHtml && currentHtml.trim()) {
-            // 清空再重设 srcdoc 才能在内容相同时强制 iframe 重新渲染。
+            // 先清空，下一帧再注入：内容相同也能强制 iframe 重新渲染（srcdoc 与宿主页两条路径都适用）。
             previewFrame.removeAttribute('srcdoc');
-            // 下一帧重新赋值，确保浏览器识别为变化。
-            requestAnimationFrame(() => { previewFrame.srcdoc = injectErrorCapture(currentHtml); });
+            previewFrame.removeAttribute('src');
+            requestAnimationFrame(() => {
+                loadGameHtmlIntoFrame(previewFrame, injectErrorCapture(currentHtml), { onRendered: () => onPreviewLoad() });
+            });
             if (previewEmpty) previewEmpty.style.display = 'none';
         } else {
             setPreview('');
@@ -2258,6 +2264,8 @@ export function renderGameMaker(panel, { game = null, mode = 'game', materials =
     const onPreviewError = (e) => {
         // 仅响应本预览 iframe 发来的消息，避免跨窗口误处理。
         if (previewFrame && e?.source === previewFrame.contentWindow) {
+            // 通用宿主页握手（就绪→下发 HTML；渲染完成→推送宠物配置）。
+            if (handleGameHostMessage(previewFrame, e.data || {})) return;
             // 宠物形象请求：交由共享处理器回复 haqi_pet_image(s)。
             if (handleMinigamePetMessage(previewFrame, e.data || {})) return;
         }

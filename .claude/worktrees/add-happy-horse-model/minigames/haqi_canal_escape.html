@@ -1,0 +1,1101 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+  <title>宠物运河营救</title>
+  <script src="https://cdn.keepwork.com/keepwork/cdn/tailwindcss@3.4.16.js"></script>
+</head>
+
+<body></body>
+<script defer>
+(function () {
+  // ---- i18n ----
+  const I18N = {
+    zhCN: {
+      title: '宠物运河营救',
+      diffEasy: '简单',
+      diffEasyDesc: '少量船块 · 轻松上手',
+      diffNormal: '中等',
+      diffNormalDesc: '需要一些规划',
+      diffHard: '困难',
+      diffHardDesc: '船块密集 · 烧脑挑战',
+      menu: '菜单',
+      titleLevel: '宠物运河营救 Lv.{level}',
+      levelProgress: '关卡进度',
+      boardAria: '宠物运河营救棋盘',
+      moves: '步数',
+      shortest: '最短',
+      undo: '撤销',
+      hint: '提示',
+      help: '玩法',
+      restart: '重开',
+      howToTitle: '宠物运河营救',
+      howToText: '宠物坐在小船上。滑动横向或纵向船块，给小船让出上方水道。卡住时可以撤销或使用提示，通关后难度继续上升。',
+      chooseDiff: '选择难度',
+      diffTitle: '选择难度',
+      diffText: '选择关卡难度，越难船块越多、解法越长。',
+      winTitle: '通过！',
+      winDefault: '小船成功离开运河。',
+      nextLevel: '下一关',
+      generating: 'AI 正在生成新水道...',
+      noUndo: '还没有可撤销的步数',
+      nearExit: '小船快到出口了',
+      hintAuto: '提示帮你走一步',
+      hintGlow: '先移动发光的船块',
+      hintDir: '沿黄色方向移动',
+      winText: 'Lv.{level} 完成，{starsOn}{starsOff} 用了 {moves} 步，最短 {best} 步。',
+      toastWin: '通关!',
+    },
+    enUS: {
+      title: 'Canal Escape',
+      diffEasy: 'Easy',
+      diffEasyDesc: 'Few blocks · Beginner friendly',
+      diffNormal: 'Normal',
+      diffNormalDesc: 'Needs some planning',
+      diffHard: 'Hard',
+      diffHardDesc: 'Dense blocks · Brain burner',
+      menu: 'Menu',
+      titleLevel: 'Canal Escape Lv.{level}',
+      levelProgress: 'Level progress',
+      boardAria: 'Canal Escape board',
+      moves: 'Moves',
+      shortest: 'Best',
+      undo: 'Undo',
+      hint: 'Hint',
+      help: 'Help',
+      restart: 'Restart',
+      howToTitle: 'Canal Escape',
+      howToText: 'Your pet sits on the boat. Slide horizontal or vertical blocks to clear a path upward. Use undo or hints when stuck — difficulty keeps rising after each level.',
+      chooseDiff: 'Choose Difficulty',
+      diffTitle: 'Choose Difficulty',
+      diffText: 'Pick a difficulty — harder levels have more blocks and longer solutions.',
+      winTitle: 'Cleared!',
+      winDefault: 'The boat escaped the canal!',
+      nextLevel: 'Next Level',
+      generating: 'AI is generating a new canal...',
+      noUndo: 'Nothing to undo',
+      nearExit: 'The boat is almost at the exit',
+      hintAuto: 'Hint moves one step for you',
+      hintGlow: 'Move the glowing block first',
+      hintDir: 'Move in the yellow direction',
+      winText: 'Lv.{level} cleared! {starsOn}{starsOff} Used {moves} moves, best {best}.',
+      toastWin: 'Cleared!',
+    },
+  };
+  function detectLang() {
+    try {
+      const params = new URLSearchParams(window.location.search);
+      const lang = params.get('lang');
+      if (lang && I18N[lang]) return lang;
+    } catch (_) {}
+    return 'zhCN';
+  }
+  const LANG = detectLang();
+  const L = I18N[LANG];
+  function t(key, vars) {
+    let str = L[key] || I18N.zhCN[key] || key;
+    if (vars) str = str.replace(/\{(\w+)\}/g, (m, n) => vars[n] != null ? String(vars[n]) : m);
+    return str;
+  }
+  try { document.documentElement.setAttribute('lang', LANG === 'enUS' ? 'en' : 'zh-CN'); } catch (_) {}
+  try { document.title = t('title'); } catch (_) {}
+
+  const GRID = 5;
+  const TARGET_ID = 'haqiBoat';
+  const STORAGE_KEY = 'haqiCanalEscapeBestLevel';
+  const GAP_PX = 5;
+  const MAX_SOLVER_NODES = 22000;
+  const COLORS = [
+    ['#ffffff', '#eef8ff', '#c2d3e3'],
+    ['#ffffff', '#f5fbf6', '#b8d7c9'],
+    ['#ffffff', '#fffbea', '#d8ceb3'],
+    ['#ffffff', '#fff4fa', '#e2bfd4'],
+    ['#ffffff', '#f8f5ff', '#cfc3e8'],
+    ['#ffffff', '#f1fdff', '#b6d8e0'],
+  ];
+  const DIFFICULTIES = [
+    { key: 'easy', name: t('diffEasy'), desc: t('diffEasyDesc'), startLevel: 1, emoji: '🐣', color: '#22c55e', shadow: '#15803d' },
+    { key: 'normal', name: t('diffNormal'), desc: t('diffNormalDesc'), startLevel: 5, emoji: '🐢', color: '#0ea5e9', shadow: '#0369a1' },
+    { key: 'hard', name: t('diffHard'), desc: t('diffHardDesc'), startLevel: 10, emoji: '🐉', color: '#f97316', shadow: '#9a3412' },
+  ];
+  const DIFFICULTY_STORAGE_KEY = 'haqiCanalEscapeDifficulty';
+
+  const state = {
+    level: 1,
+    difficultyKey: localStorage.getItem(DIFFICULTY_STORAGE_KEY) || 'easy',
+    bestLevel: Number(localStorage.getItem(STORAGE_KEY) || 1),
+    pieces: [],
+    solutionMoves: 0,
+    selectedId: TARGET_ID,
+    started: false,
+    finished: false,
+    generating: false,
+    moves: 0,
+    seconds: 0,
+    timer: null,
+    history: [],
+    hintsUsed: 0,
+    hint: null,
+    petAsset: null,
+    objectUrls: [],
+    pointer: null,
+    hasPostedFinish: false,
+    petRequestId: '',
+  };
+
+  const root = document.createElement('div');
+  root.id = 'haqiCanalEscape';
+  root.innerHTML = `
+    <style>
+      * { box-sizing: border-box; -webkit-tap-highlight-color: transparent; }
+      html, body { width: 100%; height: 100%; margin: 0; overflow: hidden; }
+      body {
+        font-family: -apple-system, BlinkMacSystemFont, 'PingFang SC', 'Microsoft YaHei', sans-serif;
+        color: #0f2747;
+        background: #72cbed;
+        touch-action: none;
+        user-select: none;
+      }
+      .mh-bg { position: fixed; inset: 0; overflow: hidden; pointer-events: none; }
+      .mh-bg::before {
+        content: ''; position: absolute; inset: 0;
+        background:
+          radial-gradient(ellipse at 70% 96%, rgba(255,255,255,.52) 0 9%, transparent 23%),
+          radial-gradient(ellipse at 8% 93%, rgba(255,255,255,.32) 0 8%, transparent 20%),
+          linear-gradient(180deg, #8edfff 0%, #54c5ea 58%, #71d5e5 100%);
+      }
+      .mh-fish { position: absolute; width: 54px; height: 16px; opacity: .12; transform: scale(var(--s,1)); }
+      .mh-fish::before { content: ''; position: absolute; left: 0; top: 3px; width: 38px; height: 10px; border-radius: 50%; background: #0e7490; }
+      .mh-fish::after { content: ''; position: absolute; right: 0; top: 1px; border-left: 14px solid #0e7490; border-top: 7px solid transparent; border-bottom: 7px solid transparent; }
+      .mh-sea-art { position: absolute; inset: 0; width: 100%; height: 100%; opacity: .18; }
+      .mh-shell { position: relative; z-index: 1; width: 100vw; height: 100vh; margin: 0 auto; display: grid; grid-template-rows: 39px 42px 1fr 42px; gap: 5px; padding: 4px 8px 9px; }
+      .mh-top {
+        width: min(100%, 320px); justify-self: center;
+        height: 35px; display: grid; grid-template-columns: 34px 1fr 48px; align-items: center; gap: 6px;
+        padding: 4px 7px 4px 4px; border-radius: 999px; background: rgba(36,78,104,.62); color: white;
+        box-shadow: inset 0 1px 0 rgba(255,255,255,.22), 0 5px 14px rgba(15,23,42,.12);
+      }
+      .mh-menu, .mh-help, .mh-start, .mh-next, .mh-restart, .mh-undo, .mh-hint {
+        border: 0; cursor: pointer; font-weight: 900;
+      }
+      .mh-menu { width: 29px; height: 29px; border-radius: 50%; background: rgba(255,255,255,.9); color: #2f7583; font-size: 18px; line-height: 29px; }
+      .mh-title { text-align: center; font-size: 14px; font-weight: 900; min-width: 0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+      .mh-time { min-width: 46px; text-align: center; font-size: 13px; font-weight: 900; border-left: 1px solid rgba(255,255,255,.25); padding-left: 9px; }
+      .mh-stats { display: grid; place-items: center; align-content: center; gap: 3px; }
+      .mh-energy { height: 22px; min-width: 96px; display: flex; align-items: center; justify-content: center; gap: 5px; border-radius: 999px; color: #fff; background: rgba(39,89,112,.48); font-size: 12px; font-weight: 900; }
+      .mh-play { width: 17px; height: 17px; display: grid; place-items: center; border-radius: 50%; background: #ecfdf5; color: #10b981; font-size: 10px; }
+      .mh-progress { width: 214px; height: 14px; padding: 2px; border-radius: 999px; background: rgba(50,95,116,.38); display: flex; align-items: center; gap: 5px; }
+      .mh-star { width: 18px; height: 18px; display: grid; place-items: center; border-radius: 50%; background: #fff; color: #f59e0b; font-size: 13px; flex: 0 0 auto; }
+      .mh-bar { height: 8px; flex: 1; border-radius: 999px; overflow: hidden; background: rgba(15,39,71,.22); }
+      .mh-bar span { display: block; width: 0%; height: 100%; border-radius: inherit; background: linear-gradient(90deg, #fde047, #f59e0b); transition: width .25s ease; }
+      .mh-stage { min-height: 0; display: grid; place-items: center; padding: 38px 0 18px; }
+      .mh-board-wrap {
+        --board-pad: 10px;
+        --grid-cell: calc((100% - 40px) / 5);
+        --exit-left: calc(var(--board-pad) + var(--grid-cell) + 5px + var(--grid-cell) + 5px);
+        position: relative; width: min(calc(100vw - 56px), calc(100vh - 198px), 560px); aspect-ratio: 1;
+      }
+      .mh-exit {
+        position: absolute; left: var(--exit-left); top: -30px;
+        width: var(--grid-cell); height: 34px; border-radius: 17px 17px 0 0;
+        background: linear-gradient(180deg, rgba(154,224,248,.35), rgba(255,255,255,.08));
+        border-left: 4px solid rgba(255,255,255,.95); border-right: 4px solid rgba(255,255,255,.95);
+        display: grid; place-items: center; color: #e8fbff; font-size: 0; font-weight: 900;
+      }
+      .mh-exit::before, .mh-exit::after {
+        content: ''; position: absolute; left: 50%; transform: translateX(-50%);
+        width: 0; height: 0; border-left: 8px solid transparent; border-right: 8px solid transparent;
+        border-bottom: 9px solid rgba(255,255,255,.82); filter: drop-shadow(0 1px 0 rgba(14,116,144,.16));
+      }
+      .mh-exit::before { top: 8px; opacity: .95; }
+      .mh-exit::after { top: 20px; opacity: .56; }
+      .mh-board {
+        position: absolute; inset: 0; border: 4px solid rgba(255,255,255,.98); border-radius: 13px; padding: 10px;
+        background:
+          radial-gradient(circle at 78% 18%, rgba(255,255,255,.18) 0 5%, transparent 15%),
+          radial-gradient(circle at 20% 86%, rgba(255,255,255,.14) 0 6%, transparent 17%),
+          rgba(70, 178, 217, .56);
+        box-shadow: inset 0 0 0 2px rgba(14,116,144,.1), inset 0 16px 28px rgba(255,255,255,.1), 0 16px 28px rgba(15,82,113,.14);
+      }
+      .mh-board::before {
+        content: ''; position: absolute; left: var(--exit-left); top: -4px;
+        width: var(--grid-cell); height: 10px; background: #6bcced; z-index: 1;
+      }
+      .mh-cell-grid { position: absolute; inset: 10px; display: grid; grid-template-columns: repeat(5, 1fr); gap: 5px; }
+      .mh-cell { border: 2px dotted rgba(255,255,255,.78); border-radius: 7px; background: rgba(255,255,255,.08); box-shadow: inset 0 1px 5px rgba(255,255,255,.08); }
+      .mh-cell.path { background: rgba(254,240,138,.34); border-color: rgba(250,204,21,.98); box-shadow: inset 0 0 0 2px rgba(255,255,255,.34), 0 0 10px rgba(250,204,21,.24); }
+      .mh-piece-layer { position: absolute; inset: 10px; }
+      .mh-piece {
+        position: absolute; border: 2px solid rgba(255,255,255,.98); border-radius: 7px; overflow: hidden;
+        background:
+          linear-gradient(180deg, rgba(255,255,255,.72), rgba(255,255,255,.12) 48%, rgba(255,255,255,.34)),
+          linear-gradient(180deg, var(--from), var(--to));
+        box-shadow: inset 0 1px 0 rgba(255,255,255,.9), 0 2px 0 var(--shadow), 0 6px 12px rgba(15,82,113,.12);
+        transition: transform .16s ease, filter .16s ease, left .18s ease, top .18s ease;
+      }
+      .mh-piece.selected { outline: 3px solid rgba(255,255,255,.98); z-index: 8; filter: brightness(1.04); }
+      .mh-piece.hinted { outline: 4px solid #fde047; box-shadow: inset 0 1px 0 rgba(255,255,255,.9), 0 2px 0 var(--shadow), 0 0 0 7px rgba(250,204,21,.28), 0 8px 18px rgba(15,82,113,.2); }
+      .mh-piece.dragging { z-index: 10; filter: brightness(1.13) saturate(1.08); transition: none; cursor: grabbing; }
+      .mh-piece.blocked { animation: mhBlocked .26s ease-in-out; }
+      .mh-piece::before, .mh-piece::after { content: ''; position: absolute; pointer-events: none; }
+      .mh-piece::before { inset: 8px; border-radius: 6px; border: 2px solid rgba(255,255,255,.42); }
+      .mh-piece.horizontal::after { left: 14px; right: 14px; top: 50%; height: 7px; margin-top: -3.5px; border-radius: 999px; background: linear-gradient(90deg, rgba(133,151,171,.22), rgba(103,120,139,.28)); }
+      .mh-piece.vertical::after { top: 14px; bottom: 14px; left: 50%; width: 7px; margin-left: -3.5px; border-radius: 999px; background: linear-gradient(180deg, rgba(133,151,171,.22), rgba(103,120,139,.28)); }
+      .mh-boat {
+        border-color: rgba(99,213,241,.96); border-radius: 999px 999px 10px 10px;
+        background: radial-gradient(ellipse at 50% 10%, rgba(255,255,255,.48) 0 35%, transparent 36%), linear-gradient(180deg, #1184a5 0 17%, #6ee7fb 17% 31%, #d97706 31% 72%, #6ee7fb 72% 86%, #1184a5 86% 100%);
+        box-shadow: 0 3px 0 #0e7490, 0 0 0 6px rgba(56,189,248,.33), 0 8px 15px rgba(15,82,113,.18);
+      }
+      .mh-boat::before { display: none; }
+      .mh-boat-art { position: absolute; inset: 4px; z-index: 1; pointer-events: none; filter: drop-shadow(0 2px 1px rgba(15,82,113,.18)); }
+      .mh-boat-art svg { width: 100%; height: 100%; display: block; }
+      .mh-boat .mh-pet { position: absolute; left: 50%; top: 54%; width: 92%; aspect-ratio: 1; height: auto; transform: translate(-50%, -50%); z-index: 2; filter: drop-shadow(0 4px 2px rgba(15,23,42,.2)); background-repeat: no-repeat; }
+      .mh-boat .mh-pet-fallback { display: grid; place-items: center; font-size: clamp(30px, 10vw, 48px); line-height: 1; }
+      .mh-arrows { position: absolute; inset: 0; pointer-events: none; z-index: 11; }
+      .mh-arrow { position: absolute; width: clamp(32px, 7.5vw, 42px); height: clamp(32px, 7.5vw, 42px); transform: translate(-50%, -50%); border-radius: 50%; border: 0; background: rgba(255,255,255,.96); color: #38bdf8; font-size: clamp(15px, 3.8vw, 22px); font-weight: 1000; box-shadow: 0 5px 12px rgba(15,82,113,.22), inset 0 1px 0 rgba(255,255,255,.95); pointer-events: auto; }
+      .mh-arrow.hint { background: #fef08a; color: #b45309; animation: mhHintPulse .75s ease-in-out infinite alternate; }
+      .mh-bottom { display: flex; align-items: center; justify-content: center; gap: 7px; min-height: 38px; padding-bottom: 2px; }
+      .mh-pill { min-width: 66px; height: 32px; display: inline-flex; align-items: center; justify-content: center; gap: 4px; padding: 0 10px; border-radius: 999px; background: rgba(255,255,255,.9); color: #0f766e; font-size: 12px; font-weight: 900; box-shadow: 0 3px 0 rgba(14,116,144,.2); }
+      .mh-help, .mh-restart, .mh-undo, .mh-hint { height: 32px; border-radius: 999px; padding: 0 12px; background: #0ea5e9; color: white; box-shadow: 0 4px 0 #1e3a8a; }
+      .mh-help { background: #f97316; box-shadow: 0 4px 0 #9a3412; }
+      .mh-hint { background: #eab308; box-shadow: 0 4px 0 #a16207; }
+      .mh-undo { background: #14b8a6; box-shadow: 0 4px 0 #0f766e; }
+      .mh-undo:disabled { opacity: .45; cursor: default; transform: translateY(2px); box-shadow: 0 2px 0 #0f766e; }
+      .mh-overlay { position: fixed; inset: 0; z-index: 40; display: flex; align-items: center; justify-content: center; padding: 18px; background: rgba(15,39,71,.42); }
+      .mh-card { width: min(92vw, 390px); padding: 19px; border-radius: 16px; background: #fff; border: 3px solid #7dd3fc; box-shadow: 0 18px 44px rgba(15,23,42,.28); text-align: center; }
+      .mh-card h1 { margin: 0 0 10px; color: #0f2747; font-size: 24px; font-weight: 1000; }
+      .mh-card p { margin: 0 0 15px; color: #0f766e; font-size: 15px; font-weight: 800; line-height: 1.55; }
+      .mh-start, .mh-next { border-radius: 999px; padding: 10px 22px; background: #22c55e; color: white; box-shadow: 0 5px 0 #15803d; }
+      .mh-diff-list { display: flex; flex-direction: column; gap: 10px; margin: 4px 0 6px; }
+      .mh-diff-btn {
+        display: flex; align-items: center; gap: 12px; width: 100%; padding: 11px 14px; border: 0; border-radius: 14px;
+        color: #fff; text-align: left; cursor: pointer; box-shadow: 0 5px 0 var(--ds, #15803d); transition: transform .12s ease, filter .12s ease;
+        background: var(--dc, #22c55e);
+      }
+      .mh-diff-btn:active { transform: translateY(3px); box-shadow: 0 2px 0 var(--ds, #15803d); }
+      .mh-diff-btn.current { outline: 3px solid #fde047; outline-offset: 2px; }
+      .mh-diff-emoji { font-size: 28px; line-height: 1; flex: none; }
+      .mh-diff-meta { display: flex; flex-direction: column; gap: 2px; min-width: 0; }
+      .mh-diff-name { font-size: 17px; font-weight: 1000; }
+      .mh-diff-desc { font-size: 12px; font-weight: 800; opacity: .92; }
+      .mh-diff-lv { margin-left: auto; flex: none; font-size: 12px; font-weight: 900; background: rgba(255,255,255,.28); padding: 3px 9px; border-radius: 999px; }
+      .mh-generating { position: fixed; left: 50%; top: 50%; z-index: 35; transform: translate(-50%, -50%); padding: 14px 18px; border-radius: 16px; background: rgba(255,255,255,.95); color: #0f766e; font-weight: 1000; border: 2px solid #7dd3fc; box-shadow: 0 12px 30px rgba(15,23,42,.22); }
+      .mh-toast { position: fixed; left: 50%; top: 50%; z-index: 45; transform: translate(-50%, -50%); padding: 18px 22px; border-radius: 18px; background: white; border: 3px solid #86efac; color: #15803d; font-size: 22px; font-weight: 1000; text-align: center; box-shadow: 0 18px 42px rgba(15,23,42,.24); animation: mhToast 1.3s ease-out forwards; pointer-events: none; }
+      .mh-confetti { position: fixed; top: -16px; z-index: 48; width: 9px; height: 15px; border-radius: 3px; background: var(--c); animation: mhConfetti var(--d) ease-in forwards; pointer-events: none; }
+      [hidden] { display: none !important; }
+      @keyframes mhToast { 0% { opacity: 0; transform: translate(-50%, -40%) scale(.82); } 18% { opacity: 1; transform: translate(-50%, -50%) scale(1); } 100% { opacity: 0; transform: translate(-50%, -78%) scale(.94); } }
+      @keyframes mhConfetti { 100% { opacity: 0; transform: translate3d(var(--x), 112vh, 0) rotate(680deg); } }
+      @keyframes mhHintPulse { from { transform: translate(-50%, -50%) scale(1); } to { transform: translate(-50%, -50%) scale(1.08); } }
+      @keyframes mhBlocked { 0%, 100% { transform: translateX(0); } 25% { transform: translateX(-5px); } 75% { transform: translateX(5px); } }
+      @media (max-width: 430px) {
+        .mh-shell { gap: 5px; padding: 4px 7px 8px; }
+        .mh-board-wrap { width: min(calc(100vw - 22px), calc(100vh - 198px), 330px); }
+        .mh-bottom { gap: 5px; }
+        .mh-pill { min-width: 62px; padding: 0 7px; }
+        .mh-help, .mh-restart { padding: 0 9px; }
+      }
+      @media (max-height: 560px) {
+        .mh-shell { grid-template-rows: auto 1fr auto; }
+        .mh-stats { display: none; }
+        .mh-stage { padding: 30px 0 12px; }
+        .mh-board-wrap { width: min(calc(100vw - 52px), calc(100vh - 122px), 500px); }
+      }
+    </style>
+    <div class="mh-bg" aria-hidden="true">
+      <svg class="mh-sea-art" viewBox="0 0 320 640" preserveAspectRatio="none" aria-hidden="true">
+        <path d="M266 70c-14 34-7 70 19 107" fill="none" stroke="#0e7490" stroke-width="6" stroke-linecap="round" opacity=".32"/>
+        <path d="M270 95c22-9 35-7 47 4M274 128c21-13 36-14 50-4M284 165c18-9 29-8 39 1" fill="none" stroke="#0e7490" stroke-width="5" stroke-linecap="round" opacity=".28"/>
+        <path d="M48 575c20-25 23-49 9-72" fill="none" stroke="#ffffff" stroke-width="5" opacity=".28"/>
+        <path d="M35 540l35-21 26 33-36 24z" fill="none" stroke="#ffffff" stroke-width="4" opacity=".22"/>
+        <path d="M0 595c34-13 66-13 96 0s64 13 102 0 78-13 122 1v44H0z" fill="#ffffff" opacity=".22"/>
+      </svg>
+      <i class="mh-fish" style="left:12%;top:7%;--s:.8"></i>
+      <i class="mh-fish" style="left:64%;top:14%;--s:1.1"></i>
+      <i class="mh-fish" style="left:28%;top:84%;--s:.7"></i>
+      <i class="mh-fish" style="left:76%;top:66%;--s:.9"></i>
+    </div>
+    <div class="mh-shell">
+      <header class="mh-top">
+        <button id="mhMenu" class="mh-menu" type="button" aria-label="${t('menu')}">☰</button>
+        <div class="mh-title">${t('title')} Lv.<span id="mhLevel">1</span></div>
+        <div class="mh-time"><span id="mhTime">0</span>s</div>
+      </header>
+      <section class="mh-stats" aria-label="${t('levelProgress')}">
+        <div class="mh-energy"><span class="mh-play">▶</span><span id="mhEnergy">600</span></div>
+        <div class="mh-progress"><span class="mh-star">★</span><div class="mh-bar"><span id="mhProgress"></span></div></div>
+      </section>
+      <main class="mh-stage">
+        <div class="mh-board-wrap">
+          <div class="mh-exit" aria-hidden="true"></div>
+          <div class="mh-board" id="mhBoard" aria-label="${t('boardAria')}">
+            <div class="mh-cell-grid" id="mhCells"></div>
+            <div class="mh-piece-layer" id="mhPieces"></div>
+            <div class="mh-arrows" id="mhArrows"></div>
+          </div>
+        </div>
+      </main>
+      <footer class="mh-bottom">
+        <span class="mh-pill">${t('moves')} <b id="mhMoves">0</b></span>
+        <span class="mh-pill">${t('shortest')} <b id="mhDifficulty">1</b></span>
+        <button id="mhUndo" class="mh-undo" type="button">${t('undo')}</button>
+        <button id="mhHint" class="mh-hint" type="button">${t('hint')}</button>
+        <button id="mhHelp" class="mh-help" type="button">${t('help')}</button>
+        <button id="mhRestart" class="mh-restart" type="button">${t('restart')}</button>
+      </footer>
+    </div>
+    <div id="mhHowTo" class="mh-overlay" role="dialog" aria-modal="true" aria-labelledby="mhHowToTitle" hidden>
+      <div class="mh-card">
+        <h1 id="mhHowToTitle">${t('howToTitle')}</h1>
+        <p>${t('howToText')}</p>
+        <button id="mhStart" class="mh-start" type="button">${t('chooseDiff')}</button>
+      </div>
+    </div>
+    <div id="mhDiff" class="mh-overlay" role="dialog" aria-modal="true" aria-labelledby="mhDiffTitle" hidden>
+      <div class="mh-card">
+        <h1 id="mhDiffTitle">${t('diffTitle')}</h1>
+        <p>${t('diffText')}</p>
+        <div class="mh-diff-list" id="mhDiffList"></div>
+      </div>
+    </div>
+    <div id="mhWin" class="mh-overlay" role="dialog" aria-modal="true" aria-labelledby="mhWinTitle" hidden>
+      <div class="mh-card">
+        <h1 id="mhWinTitle">${t('winTitle')}</h1>
+        <p id="mhWinText">${t('winDefault')}</p>
+        <button id="mhNext" class="mh-next" type="button">${t('nextLevel')}</button>
+      </div>
+    </div>
+    <div id="mhGenerating" class="mh-generating" hidden>${t('generating')}</div>
+  `;
+
+  function boot() {
+    document.body.appendChild(root);
+    createCells();
+    bindEvents();
+    showDifficulty();
+    post('gameLoaded');
+    // Defer heavy puzzle generation (BFS solver) off the critical path: the
+    // difficulty modal is the real initial screen and covers the board, so the
+    // pre-generated level-1 board only needs to exist after first paint.
+    requestAnimationFrame(() => requestAnimationFrame(() => {
+      requestPetImage();
+      if (!state.started) prepareLevel(1);
+    }));
+  }
+
+  function createCells() {
+    const cells = byId('mhCells');
+    cells.innerHTML = '';
+    for (let i = 0; i < GRID * GRID; i++) {
+      const cell = document.createElement('button');
+      cell.type = 'button';
+      cell.className = 'mh-cell';
+      cell.dataset.index = String(i);
+      cell.onclick = () => moveSelectedToward(Math.floor(i / GRID), i % GRID);
+      cells.appendChild(cell);
+    }
+  }
+
+  function bindEvents() {
+    byId('mhHelp').onclick = showHowTo;
+    byId('mhMenu').onclick = showHowTo;
+    byId('mhUndo').onclick = undoMove;
+    byId('mhHint').onclick = useHint;
+    byId('mhStart').onclick = () => {
+      byId('mhHowTo').hidden = true;
+      showDifficulty();
+    };
+    byId('mhRestart').onclick = () => {
+      if (state.generating) return;
+      showDifficulty();
+    };
+    byId('mhNext').onclick = () => {
+      byId('mhWin').hidden = true;
+      prepareLevel(state.level + 1);
+      startTimer();
+      post('gameStarted');
+    };
+    window.addEventListener('keydown', onKeyDown);
+    window.addEventListener('message', (event) => {
+      const msg = event.data || {};
+      if (msg.type === 'gameContinue' && !state.started) startGame();
+      if (msg.type === 'setGameConfig' && msg.data?.petId) requestPetImage(msg.data.petId);
+      if (msg.type === 'haqi_pet_image' && msg.ok && msg.data && (!state.petRequestId || !msg.requestId || msg.requestId === state.petRequestId || msg.requestId === 'active_pet_config')) setPetImage(msg.data);
+      if (msg.type === 'haqi_pet_images' && msg.ok) {
+        const firstPet = Array.isArray(msg.data?.pets) ? msg.data.pets[0] : null;
+        if (firstPet) setPetImage(firstPet);
+      }
+    });
+  }
+
+  function startGame(startLevel) {
+    state.started = true;
+    state.finished = false;
+    state.moves = 0;
+    state.seconds = 0;
+    state.selectedId = TARGET_ID;
+    state.history = [];
+    state.hintsUsed = 0;
+    state.hint = null;
+    prepareLevel(Math.max(1, Math.round(startLevel || state.level)));
+    startTimer();
+    post('gameStarted');
+    updateStats();
+  }
+
+  function startTimer() {
+    clearInterval(state.timer);
+    state.seconds = 0;
+    state.timer = setInterval(() => {
+      if (state.finished || state.generating || byId('mhHowTo').hidden === false || byId('mhWin').hidden === false) return;
+      state.seconds += 1;
+      updateStats();
+    }, 1000);
+  }
+
+  function prepareLevel(level) {
+    state.generating = true;
+    byId('mhGenerating').hidden = false;
+    // Generate the puzzle in time-sliced chunks so no single main-thread task
+    // exceeds ~50ms (the BFS solver across ~80+ attempts is the heavy work).
+    state.prepareToken = (state.prepareToken || 0) + 1;
+    const token = state.prepareToken;
+    generatePuzzleSliced(level, token, puzzle => {
+      if (token !== state.prepareToken) return; // superseded by a newer request
+      state.level = level;
+      state.pieces = puzzle.pieces;
+      state.solutionMoves = puzzle.solutionMoves;
+      state.selectedId = TARGET_ID;
+      state.moves = 0;
+      state.history = [];
+      state.hintsUsed = 0;
+      state.hint = null;
+      state.finished = false;
+      state.generating = false;
+      byId('mhGenerating').hidden = true;
+      updateStats();
+      renderBoard();
+    });
+  }
+
+  function defaultPuzzle() {
+    return {
+      pieces: [
+        boatPiece(3, 2),
+        piece('h0', 1, 1, 2, 1, 'h', 0),
+        piece('v1', 0, 0, 1, 2, 'v', 1),
+        piece('h2', 2, 3, 2, 1, 'h', 2),
+        piece('v3', 3, 4, 1, 2, 'v', 3),
+      ],
+      solutionMoves: 5,
+    };
+  }
+
+  function generatePuzzleSliced(level, token, done) {
+    const minimumMoves = Math.min(5 + Math.floor(level * 1.35), 24);
+    const maximumMoves = Math.min(minimumMoves + 8, 30);
+    const targetMoves = Math.min(minimumMoves + 3, maximumMoves);
+    const pieceCount = Math.min(6 + Math.floor(level / 2), 11);
+    const attempts = Math.min(80 + level * 8, 220);
+    let best = null;
+    let attempt = 0;
+    const SLICE_BUDGET_MS = 12;
+
+    function runSlice() {
+      if (token !== state.prepareToken) return; // cancelled
+      const sliceStart = (typeof performance !== 'undefined' ? performance.now() : Date.now());
+      while (attempt < attempts) {
+        const pieces = scrambleSolvedBoard(pieceCount, 34 + level * 7 + attempt);
+        const solutionMoves = solveMinimumMoves(pieces);
+        attempt++;
+        if (Number.isFinite(solutionMoves)) {
+          const distance = Math.abs(solutionMoves - targetMoves) + (solutionMoves < minimumMoves ? 6 : 0) + (solutionMoves > maximumMoves ? 8 : 0);
+          if (!best || distance < best.distance || (distance === best.distance && solutionMoves > best.solutionMoves)) best = { pieces, solutionMoves, distance };
+          if (solutionMoves >= minimumMoves && solutionMoves <= maximumMoves && pieces.find(p => p.id === TARGET_ID).r >= 2) {
+            done({ pieces, solutionMoves });
+            return;
+          }
+        }
+        const now = (typeof performance !== 'undefined' ? performance.now() : Date.now());
+        if (now - sliceStart >= SLICE_BUDGET_MS) {
+          setTimeout(runSlice, 0); // yield to keep each task under budget
+          return;
+        }
+      }
+      done(best || defaultPuzzle());
+    }
+
+    runSlice();
+  }
+
+  function scrambleSolvedBoard(pieceCount, steps) {
+    let pieces = createSolvedPieces(pieceCount);
+    let previous = '';
+    for (let i = 0; i < steps; i++) {
+      const moves = legalOneStepMoves(pieces).filter(move => `${move.id}:${-move.dr}:${-move.dc}` !== previous);
+      if (!moves.length) break;
+      const weighted = moves.flatMap(move => move.id === TARGET_ID && move.dr > 0 ? [move, move, move] : [move]);
+      const move = weighted[Math.floor(Math.random() * weighted.length)];
+      pieces = applyMove(pieces, move.id, move.dr, move.dc);
+      previous = `${move.id}:${move.dr}:${move.dc}`;
+    }
+    return normalizePieces(pieces);
+  }
+
+  function createSolvedPieces(pieceCount) {
+    const pieces = [boatPiece(0, 2)];
+    let guard = 0;
+    while (pieces.length < pieceCount && guard < 500) {
+      guard++;
+      const axis = Math.random() < .52 ? 'v' : 'h';
+      const length = Math.random() < .82 ? 2 : 3;
+      const w = axis === 'h' ? length : 1;
+      const h = axis === 'v' ? length : 1;
+      const r = Math.floor(Math.random() * (GRID - h + 1));
+      const c = Math.floor(Math.random() * (GRID - w + 1));
+      if (c === 2 && r < 2) continue;
+      const next = piece(`p${pieces.length}`, r, c, w, h, axis, pieces.length - 1);
+      if (fits(next, pieces)) pieces.push(next);
+    }
+    return pieces;
+  }
+
+  function boatPiece(r, c) {
+    return { id: TARGET_ID, r, c, w: 1, h: 2, axis: 'v', colorIndex: -1 };
+  }
+
+  function piece(id, r, c, w, h, axis, colorIndex) {
+    return { id, r, c, w, h, axis, colorIndex };
+  }
+
+  function fits(candidate, pieces) {
+    if (candidate.r < 0 || candidate.c < 0 || candidate.r + candidate.h > GRID || candidate.c + candidate.w > GRID) return false;
+    return !pieces.some(other => overlaps(candidate, other));
+  }
+
+  function overlaps(a, b) {
+    return a.c < b.c + b.w && a.c + a.w > b.c && a.r < b.r + b.h && a.r + a.h > b.r;
+  }
+
+  function solveMinimumMoves(startPieces) {
+    const start = normalizePieces(startPieces);
+    const startKey = keyOf(start);
+    const seen = new Set([startKey]);
+    const queue = [{ pieces: start, depth: 0 }];
+    let cursor = 0;
+    while (cursor < queue.length && seen.size < MAX_SOLVER_NODES) {
+      const node = queue[cursor++];
+      if (isSolved(node.pieces)) return node.depth;
+      for (const move of legalOneStepMoves(node.pieces)) {
+        const next = applyMove(node.pieces, move.id, move.dr, move.dc);
+        const key = keyOf(next);
+        if (seen.has(key)) continue;
+        seen.add(key);
+        queue.push({ pieces: next, depth: node.depth + 1 });
+      }
+    }
+    return Infinity;
+  }
+
+  function findBestNextMove(startPieces) {
+    const start = normalizePieces(startPieces);
+    const startKey = keyOf(start);
+    const seen = new Set([startKey]);
+    const queue = [{ pieces: start, firstMove: null }];
+    let cursor = 0;
+    while (cursor < queue.length && seen.size < MAX_SOLVER_NODES) {
+      const node = queue[cursor++];
+      for (const move of legalOneStepMoves(node.pieces)) {
+        const next = applyMove(node.pieces, move.id, move.dr, move.dc);
+        const key = keyOf(next);
+        if (seen.has(key)) continue;
+        const firstMove = node.firstMove || move;
+        if (isSolved(next)) return firstMove;
+        seen.add(key);
+        queue.push({ pieces: next, firstMove });
+      }
+    }
+    return null;
+  }
+
+  function legalOneStepMoves(pieces) {
+    const moves = [];
+    for (const pieceItem of pieces) {
+      if (pieceItem.axis === 'h') {
+        if (canMove(pieces, pieceItem.id, 0, -1)) moves.push({ id: pieceItem.id, dr: 0, dc: -1 });
+        if (canMove(pieces, pieceItem.id, 0, 1)) moves.push({ id: pieceItem.id, dr: 0, dc: 1 });
+      } else {
+        if (canMove(pieces, pieceItem.id, -1, 0)) moves.push({ id: pieceItem.id, dr: -1, dc: 0 });
+        if (canMove(pieces, pieceItem.id, 1, 0)) moves.push({ id: pieceItem.id, dr: 1, dc: 0 });
+      }
+    }
+    return moves;
+  }
+
+  function canMove(pieces, id, dr, dc) {
+    const item = pieces.find(p => p.id === id);
+    if (!item) return false;
+    if (item.axis === 'h' && dr !== 0) return false;
+    if (item.axis === 'v' && dc !== 0) return false;
+    const moved = { ...item, r: item.r + dr, c: item.c + dc };
+    if (moved.r < 0 || moved.c < 0 || moved.r + moved.h > GRID || moved.c + moved.w > GRID) return false;
+    return !pieces.some(other => other.id !== id && overlaps(moved, other));
+  }
+
+  function applyMove(pieces, id, dr, dc) {
+    return normalizePieces(pieces.map(item => item.id === id ? { ...item, r: item.r + dr, c: item.c + dc } : { ...item }));
+  }
+
+  function normalizePieces(pieces) {
+    return pieces.map(item => ({ ...item })).sort((a, b) => a.id === TARGET_ID ? -1 : b.id === TARGET_ID ? 1 : a.id.localeCompare(b.id));
+  }
+
+  function keyOf(pieces) {
+    return pieces.map(item => `${item.r},${item.c}`).join('|');
+  }
+
+  function isSolved(pieces) {
+    const boat = pieces.find(p => p.id === TARGET_ID);
+    return boat && boat.r <= 0;
+  }
+
+  function renderBoard() {
+    const layer = byId('mhPieces');
+    const arrows = byId('mhArrows');
+    layer.innerHTML = '';
+    arrows.innerHTML = '';
+    for (const pieceItem of state.pieces) {
+      const el = document.createElement('button');
+      el.type = 'button';
+      el.className = `mh-piece ${pieceItem.axis === 'h' ? 'horizontal' : 'vertical'}${pieceItem.id === TARGET_ID ? ' mh-boat' : ''}${state.selectedId === pieceItem.id ? ' selected' : ''}${state.hint?.id === pieceItem.id ? ' hinted' : ''}`;
+      el.dataset.id = pieceItem.id;
+      const [from, to, shadow] = pieceItem.id === TARGET_ID ? ['#f59e0b', '#b45309', '#0e7490'] : COLORS[Math.max(0, pieceItem.colorIndex) % COLORS.length];
+      el.style.setProperty('--from', from);
+      el.style.setProperty('--to', to);
+      el.style.setProperty('--shadow', shadow);
+      placeElement(el, pieceItem);
+      if (pieceItem.id === TARGET_ID) {
+        el.appendChild(createBoatArtElement());
+        el.appendChild(createPetElement());
+      }
+      el.onclick = (event) => {
+        event.stopPropagation();
+        selectPiece(pieceItem.id);
+      };
+      el.onpointerdown = (event) => beginDrag(event, pieceItem.id, el);
+      layer.appendChild(el);
+    }
+    renderArrows();
+    renderHintPath();
+  }
+
+  function placeElement(el, item) {
+    const track = `((100% - ${(GRID - 1) * GAP_PX}px) / ${GRID})`;
+    el.style.left = `calc(${item.c} * (${track} + ${GAP_PX}px))`;
+    el.style.top = `calc(${item.r} * (${track} + ${GAP_PX}px))`;
+    el.style.width = `calc(${item.w} * ${track} + ${(item.w - 1) * GAP_PX}px)`;
+    el.style.height = `calc(${item.h} * ${track} + ${(item.h - 1) * GAP_PX}px)`;
+  }
+
+  function createPetElement() {
+    const el = document.createElement('span');
+    if (state.petAsset?.url) {
+      el.className = 'mh-pet';
+      el.style.backgroundImage = `url("${state.petAsset.url}")`;
+      const uv = state.petAsset.uv;
+      el.style.backgroundSize = uv.cols > 1 || uv.rows > 1 ? `${uv.cols * 100}% ${uv.rows * 100}%` : 'contain';
+      el.style.backgroundPosition = uv.cols > 1 || uv.rows > 1 ? `${uv.col * 100 / Math.max(1, uv.cols - 1)}% ${uv.row * 100 / Math.max(1, uv.rows - 1)}%` : 'center';
+    } else {
+      el.className = 'mh-pet mh-pet-fallback';
+      el.textContent = '🐾';
+    }
+    return el;
+  }
+
+  function createBoatArtElement() {
+    const wrap = document.createElement('span');
+    wrap.className = 'mh-boat-art';
+    wrap.innerHTML = `
+      <svg viewBox="0 0 72 128" preserveAspectRatio="none" aria-hidden="true">
+        <path d="M13 9C22 2 50 2 59 9c7 20 8 84 0 110-10 8-36 8-46 0C5 93 6 29 13 9z" fill="#0e8fb2"/>
+        <path d="M20 13c7-5 25-5 32 0 5 18 5 75 0 98-7 6-25 6-32 0-5-23-5-80 0-98z" fill="#7dd3fc" opacity=".82"/>
+        <path d="M24 32h24c4 0 7 3 7 7v51c0 4-3 7-7 7H24c-4 0-7-3-7-7V39c0-4 3-7 7-7z" fill="#b45309"/>
+        <path d="M23 42h26M23 58h26M23 74h26M23 90h26" stroke="#f59e0b" stroke-width="4" stroke-linecap="round" opacity=".82"/>
+        <path d="M19 17c8-5 26-5 34 0" fill="none" stroke="#e0faff" stroke-width="5" stroke-linecap="round" opacity=".75"/>
+      </svg>`;
+    return wrap;
+  }
+
+  function renderArrows() {
+    const selected = getSelectedPiece();
+    if (!selected) return;
+    const directions = selected.axis === 'h'
+      ? [{ label: '◀', dr: 0, dc: -1 }, { label: '▶', dr: 0, dc: 1 }]
+      : [{ label: '▲', dr: -1, dc: 0 }, { label: '▼', dr: 1, dc: 0 }];
+    directions.forEach(direction => {
+      if (!canMove(state.pieces, selected.id, direction.dr, direction.dc)) return;
+      const btn = document.createElement('button');
+      btn.type = 'button';
+      btn.className = `mh-arrow${state.hint?.id === selected.id && state.hint.dr === direction.dr && state.hint.dc === direction.dc ? ' hint' : ''}`;
+      btn.textContent = direction.label;
+      btn.onclick = (event) => {
+        event.stopPropagation();
+        movePiece(selected.id, direction.dr, direction.dc, 1);
+      };
+      const centerR = selected.r + selected.h / 2;
+      const centerC = selected.c + selected.w / 2;
+      const top = direction.dr < 0 ? selected.r : direction.dr > 0 ? selected.r + selected.h : centerR;
+      const left = direction.dc < 0 ? selected.c : direction.dc > 0 ? selected.c + selected.w : centerC;
+      btn.style.left = `${left / GRID * 100}%`;
+      btn.style.top = `${top / GRID * 100}%`;
+      byId('mhArrows').appendChild(btn);
+    });
+  }
+
+  function renderHintPath() {
+    document.querySelectorAll('.mh-cell.path').forEach(cell => cell.classList.remove('path'));
+    if (!state.hint || state.hint.level < 2) return;
+    const item = state.pieces.find(p => p.id === state.hint.id);
+    if (!item) return;
+    const steps = countMovableSteps(state.pieces, item.id, state.hint.dr, state.hint.dc);
+    for (let step = 1; step <= steps; step++) {
+      const row = state.hint.dr < 0 ? item.r - step : state.hint.dr > 0 ? item.r + item.h - 1 + step : item.r;
+      const col = state.hint.dc < 0 ? item.c - step : state.hint.dc > 0 ? item.c + item.w - 1 + step : item.c;
+      const cell = document.querySelector(`.mh-cell[data-index="${row * GRID + col}"]`);
+      cell?.classList.add('path');
+    }
+  }
+
+  function beginDrag(event, id, el) {
+    if (state.finished || state.generating) return;
+    state.selectedId = id;
+    document.querySelectorAll('.mh-piece').forEach(pieceEl => pieceEl.classList.toggle('selected', pieceEl.dataset.id === id));
+    byId('mhArrows').innerHTML = '';
+    renderArrows();
+    el.setPointerCapture?.(event.pointerId);
+    el.classList.add('dragging');
+    state.pointer = { id, x: event.clientX, y: event.clientY, el, previewSteps: 0 };
+    event.preventDefault();
+  }
+
+  window.addEventListener('pointermove', (event) => {
+    if (!state.pointer) return;
+    const pointer = state.pointer;
+    const item = state.pieces.find(p => p.id === pointer.id);
+    if (!item) return;
+    const dx = event.clientX - pointer.x;
+    const dy = event.clientY - pointer.y;
+    const cellSize = boardCellSize();
+    const rawSteps = item.axis === 'h' ? Math.round(dx / cellSize) : Math.round(dy / cellSize);
+    const clampedSteps = clampDragSteps(pointer.id, item.axis === 'h' ? 0 : rawSteps, item.axis === 'h' ? rawSteps : 0);
+    pointer.previewSteps = clampedSteps;
+    const offset = clampedSteps * cellSize;
+    pointer.el.style.transform = item.axis === 'h' ? `translateX(${offset}px)` : `translateY(${offset}px)`;
+  });
+
+  window.addEventListener('pointerup', (event) => {
+    if (!state.pointer) return;
+    const pointer = state.pointer;
+    state.pointer = null;
+    pointer.el.classList.remove('dragging');
+    pointer.el.style.transform = '';
+    const item = state.pieces.find(p => p.id === pointer.id);
+    if (!item) return;
+    const steps = pointer.previewSteps || 0;
+    if (steps !== 0) {
+      movePiece(item.id, item.axis === 'v' ? Math.sign(steps) : 0, item.axis === 'h' ? Math.sign(steps) : 0, Math.abs(steps));
+    } else {
+      renderBoard();
+    }
+  });
+
+  function boardCellSize() {
+    const boardSize = byId('mhBoard').getBoundingClientRect().width - 20;
+    return Math.max(1, boardSize / GRID);
+  }
+
+  function clampDragSteps(id, drSteps, dcSteps) {
+    const steps = drSteps || dcSteps;
+    if (!steps) return 0;
+    const dr = drSteps ? Math.sign(drSteps) : 0;
+    const dc = dcSteps ? Math.sign(dcSteps) : 0;
+    const limit = countMovableSteps(state.pieces, id, dr, dc);
+    return Math.sign(steps) * Math.min(Math.abs(steps), limit);
+  }
+
+  function countMovableSteps(pieces, id, dr, dc) {
+    let count = 0;
+    let next = pieces;
+    while (canMove(next, id, dr, dc)) {
+      next = applyMove(next, id, dr, dc);
+      count++;
+      if (count >= GRID) break;
+    }
+    return count;
+  }
+
+  function selectPiece(id) {
+    state.selectedId = id;
+    renderBoard();
+  }
+
+  function getSelectedPiece() {
+    return state.pieces.find(p => p.id === state.selectedId);
+  }
+
+  function saveHistory() {
+    state.history.push({
+      pieces: normalizePieces(state.pieces),
+      moves: state.moves,
+      selectedId: state.selectedId,
+    });
+    if (state.history.length > 40) state.history.shift();
+  }
+
+  function undoMove() {
+    if (state.finished || state.generating) return;
+    const snapshot = state.history.pop();
+    if (!snapshot) {
+      showToast(t('noUndo'));
+      return;
+    }
+    state.pieces = normalizePieces(snapshot.pieces);
+    state.moves = snapshot.moves;
+    state.selectedId = snapshot.selectedId;
+    state.hint = null;
+    updateStats();
+    renderBoard();
+  }
+
+  function useHint() {
+    if (state.finished || state.generating) return;
+    const move = findBestNextMove(state.pieces);
+    if (!move) {
+      showToast(t('nearExit'));
+      return;
+    }
+    state.hintsUsed += 1;
+    state.selectedId = move.id;
+    state.hint = { ...move, level: Math.min(3, state.hintsUsed) };
+    if (state.hint.level >= 3) {
+      showToast(t('hintAuto'));
+      movePiece(move.id, move.dr, move.dc, 1);
+      return;
+    }
+    showToast(state.hint.level === 1 ? t('hintGlow') : t('hintDir'));
+    updateStats();
+    renderBoard();
+  }
+
+  function moveSelectedToward(row, col) {
+    const item = getSelectedPiece();
+    if (!item || state.finished || state.generating) return;
+    if (item.axis === 'h' && row === item.r) {
+      const dir = col < item.c ? -1 : col >= item.c + item.w ? 1 : 0;
+      if (dir) movePiece(item.id, 0, dir, Math.abs(dir < 0 ? item.c - col : col - item.c - item.w + 1));
+    }
+    if (item.axis === 'v' && col === item.c) {
+      const dir = row < item.r ? -1 : row >= item.r + item.h ? 1 : 0;
+      if (dir) movePiece(item.id, dir, 0, Math.abs(dir < 0 ? item.r - row : row - item.r - item.h + 1));
+    }
+  }
+
+  function movePiece(id, dr, dc, requestedSteps) {
+    if (state.finished || state.generating) return;
+    if (!canMove(state.pieces, id, dr, dc)) {
+      pulseBlocked(id);
+      return;
+    }
+    saveHistory();
+    state.hint = null;
+    let moved = 0;
+    for (let i = 0; i < requestedSteps; i++) {
+      if (!canMove(state.pieces, id, dr, dc)) break;
+      state.pieces = applyMove(state.pieces, id, dr, dc);
+      moved++;
+    }
+    if (!moved) return;
+    state.moves += moved;
+    state.selectedId = id;
+    updateStats();
+    renderBoard();
+    if (isSolved(state.pieces)) winLevel();
+  }
+
+  function pulseBlocked(id) {
+    const el = document.querySelector(`.mh-piece[data-id="${id}"]`);
+    if (!el) return;
+    el.classList.remove('blocked');
+    void el.offsetWidth;
+    el.classList.add('blocked');
+  }
+
+  function winLevel() {
+    state.finished = true;
+    clearInterval(state.timer);
+    state.bestLevel = Math.max(state.bestLevel, state.level + 1);
+    localStorage.setItem(STORAGE_KEY, String(state.bestLevel));
+    const stars = calculateStars();
+    const earnedPoints = calculateScore(stars);
+    byId('mhWinText').textContent = t('winText', { level: state.level, starsOn: '★'.repeat(stars), starsOff: '☆'.repeat(3 - stars), moves: state.moves, best: state.solutionMoves });
+    byId('mhWin').hidden = false;
+    launchConfetti();
+    showToast(t('toastWin'));
+    post('gameFinished', {
+      earnedPoints,
+      score: earnedPoints,
+      moves: state.moves,
+      seconds: state.seconds,
+      difficulty: state.level,
+      solutionMoves: state.solutionMoves,
+      hintsUsed: state.hintsUsed,
+      stars,
+      finishedAt: Date.now(),
+    });
+  }
+
+  function calculateStars() {
+    const extraMoves = Math.max(0, state.moves - state.solutionMoves) + state.hintsUsed * 2;
+    if (extraMoves <= 2) return 3;
+    if (extraMoves <= 6) return 2;
+    return 1;
+  }
+
+  function calculateScore(stars) {
+    const starScore = stars === 3 ? 100 : stars === 2 ? 82 : 64;
+    const timePenalty = Math.min(18, Math.floor(state.seconds / 18));
+    return Math.max(50, starScore - state.hintsUsed * 5 - timePenalty);
+  }
+
+  function updateStats() {
+    byId('mhLevel').textContent = String(state.level);
+    byId('mhTime').textContent = String(state.seconds);
+    byId('mhMoves').textContent = String(state.moves);
+    byId('mhDifficulty').textContent = String(Math.max(1, Math.round(state.solutionMoves || state.level)));
+    byId('mhEnergy').textContent = String(560 + state.level * 40);
+    byId('mhUndo').disabled = state.history.length === 0;
+    const progress = Math.min(100, Math.round((state.level / Math.max(state.bestLevel, state.level + 2)) * 100));
+    byId('mhProgress').style.width = `${progress}%`;
+  }
+
+  function onKeyDown(event) {
+    if (byId('mhHowTo').hidden === false || byId('mhWin').hidden === false) return;
+    const item = getSelectedPiece();
+    if (!item) return;
+    const keyMap = {
+      ArrowLeft: [0, -1], ArrowRight: [0, 1], ArrowUp: [-1, 0], ArrowDown: [1, 0],
+      a: [0, -1], d: [0, 1], w: [-1, 0], s: [1, 0],
+    };
+    const pair = keyMap[event.key];
+    if (!pair) return;
+    event.preventDefault();
+    movePiece(item.id, pair[0], pair[1], 1);
+  }
+
+  function showHowTo() {
+    byId('mhHowTo').hidden = false;
+  }
+
+  function renderDifficulties() {
+    const list = byId('mhDiffList');
+    list.innerHTML = '';
+    DIFFICULTIES.forEach(diff => {
+      const btn = document.createElement('button');
+      btn.type = 'button';
+      btn.className = `mh-diff-btn${diff.key === state.difficultyKey ? ' current' : ''}`;
+      btn.style.setProperty('--dc', diff.color);
+      btn.style.setProperty('--ds', diff.shadow);
+      btn.innerHTML = `
+        <span class="mh-diff-emoji">${diff.emoji}</span>
+        <span class="mh-diff-meta">
+          <span class="mh-diff-name">${diff.name}</span>
+          <span class="mh-diff-desc">${diff.desc}</span>
+        </span>
+        <span class="mh-diff-lv">Lv.${diff.startLevel}+</span>`;
+      btn.onclick = () => chooseDifficulty(diff.key);
+      list.appendChild(btn);
+    });
+  }
+
+  function showDifficulty() {
+    if (state.generating) return;
+    renderDifficulties();
+    byId('mhWin').hidden = true;
+    byId('mhHowTo').hidden = true;
+    byId('mhDiff').hidden = false;
+  }
+
+  function chooseDifficulty(key) {
+    const diff = DIFFICULTIES.find(d => d.key === key) || DIFFICULTIES[0];
+    state.difficultyKey = diff.key;
+    try { localStorage.setItem(DIFFICULTY_STORAGE_KEY, diff.key); } catch (_) {}
+    byId('mhDiff').hidden = true;
+    startGame(diff.startLevel);
+  }
+
+  function showToast(text) {
+    const toast = document.createElement('div');
+    toast.className = 'mh-toast';
+    toast.textContent = text;
+    document.body.appendChild(toast);
+    setTimeout(() => toast.remove(), 1300);
+  }
+
+  function launchConfetti() {
+    const colors = ['#f97316', '#facc15', '#22c55e', '#38bdf8', '#ec4899', '#8b5cf6'];
+    for (let i = 0; i < 44; i++) {
+      const piece = document.createElement('span');
+      piece.className = 'mh-confetti';
+      piece.style.left = `${Math.random() * 100}vw`;
+      piece.style.setProperty('--x', `${(Math.random() - .5) * 150}px`);
+      piece.style.setProperty('--c', colors[i % colors.length]);
+      piece.style.setProperty('--d', `${1.2 + Math.random() * .9}s`);
+      document.body.appendChild(piece);
+      setTimeout(() => piece.remove(), 2300);
+    }
+  }
+
+  function requestPetImage(petId = '') {
+    const requestId = `canal_pet_${Date.now()}_${Math.floor(Math.random() * 1000)}`;
+    state.petRequestId = requestId;
+    post('haqi_get_pet_image', { requestId, anim: 'happy', petId: petId || undefined }, { requestId, anim: 'happy', petId: petId || undefined });
+    setTimeout(() => {
+      if (state.petAsset?.url) return;
+      const fallbackId = `canal_pets_${Date.now()}_${Math.floor(Math.random() * 1000)}`;
+      post('haqi_get_pet_images', { requestId: fallbackId, anim: 'happy' }, { requestId: fallbackId, anim: 'happy' });
+    }, 900);
+  }
+
+  function setPetImage(pet) {
+    if (!pet?.imageBlob || !pet?.uv) return;
+    if (state.petAsset?.url) {
+      URL.revokeObjectURL(state.petAsset.url);
+      state.objectUrls = state.objectUrls.filter(url => url !== state.petAsset.url);
+    }
+    const url = URL.createObjectURL(pet.imageBlob);
+    state.objectUrls.push(url);
+    state.petAsset = { url, uv: pet.uv };
+    renderBoard();
+  }
+
+  function post(type, data = {}, extra = {}) {
+    try {
+      window.parent.postMessage({ type, data, ...extra }, '*');
+    } catch (_) {}
+  }
+
+  function byId(id) {
+    return document.getElementById(id);
+  }
+
+  window.addEventListener('beforeunload', () => {
+    clearInterval(state.timer);
+    state.objectUrls.forEach(url => URL.revokeObjectURL(url));
+  });
+
+  boot();
+})();
+</script>
+
+</html>

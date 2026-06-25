@@ -1,0 +1,65 @@
+<!DOCTYPE html>
+<html lang="zh">
+<head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no">
+    <title>Haqi Game Host</title>
+    <style>html,body{margin:0;padding:0;width:100%;height:100%;background:#0f2747;overflow:hidden}</style>
+</head>
+<body>
+<!--
+  通用小游戏宿主页（real URL，非 srcdoc）。
+
+  背景：自创 / 分享小游戏原本用 iframe.srcdoc 注入 HTML，但微信 PC 版内置浏览器（老内核）
+  不渲染 srcdoc，父页面跨帧 document.write 子文档同样失败。唯一在所有内核都可靠的方式是：
+  父页面把 iframe.src 指向一个真实 URL（官方游戏走 src 已验证在微信 PC 可用），由该页面
+  通过 postMessage 收到游戏 HTML 后「自我重写」（同源自身 document.write，最基础、各内核通用）。
+
+  握手协议（与 js/view_minigames.js 对应）：
+    宿主就绪  → 父：postMessage({ type:'mhGameHostReady' })
+    父发游戏  → 宿主：postMessage({ type:'mhRenderGame', html })
+    宿主渲完  → 父：postMessage({ type:'mhGameRendered' })   // 父据此推送宠物配置
+  之后宿主文档已被游戏 HTML 取代，游戏自身的脚本接管与父页面的 postMessage 通信。
+-->
+<script>
+(function () {
+    'use strict';
+    var rendered = false;
+
+    function notifyParent(payload) {
+        try { if (window.parent && window.parent !== window) window.parent.postMessage(payload, '*'); } catch (_) {}
+    }
+
+    function renderGame(html) {
+        if (rendered) return;
+        rendered = true;
+        window.removeEventListener('message', onMessage);
+        try {
+            // 自我重写：替换本页文档为游戏 HTML。document.write 在所有内核（含微信 PC 老内核）
+            // 都支持，且内联脚本会同步执行；游戏的 message 监听器随之注册。
+            document.open();
+            document.write(String(html));
+            document.close();
+        } catch (err) {
+            try { document.body.innerHTML = '<div style="color:#fff;font-family:sans-serif;padding:16px">load failed</div>'; } catch (_) {}
+            notifyParent({ type: 'mhGameRenderFailed', error: String(err && err.message || err) });
+            return;
+        }
+        // 文档已替换，但 window 仍是同一个；通知父页面游戏已就绪，可推送配置。
+        notifyParent({ type: 'mhGameRendered' });
+    }
+
+    function onMessage(e) {
+        var data = (e && e.data) || {};
+        if (data.type === 'mhRenderGame' && typeof data.html === 'string') {
+            renderGame(data.html);
+        }
+    }
+
+    window.addEventListener('message', onMessage);
+    // 告知父页面：宿主已加载、监听器就绪，可以发送游戏 HTML。
+    notifyParent({ type: 'mhGameHostReady' });
+})();
+</script>
+</body>
+</html>

@@ -1,0 +1,1910 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+  <title>落在麦思星球上的抱抱龙蛋</title>
+  <script src="https://cdn.keepwork.com/keepwork/cdn/tailwindcss@3.4.16.js"></script>
+  <style>
+    * { margin: 0; padding: 0; box-sizing: border-box; }
+    html, body {
+      width: 100%; height: 100%; overflow: hidden;
+      font-family: 'PingFang SC', 'Hiragino Sans GB', 'Microsoft YaHei', sans-serif;
+      background:
+        radial-gradient(ellipse at 77% 62%, rgba(40, 190, 255, 0.18) 0%, transparent 34%),
+        radial-gradient(ellipse at 24% 18%, rgba(179, 92, 255, 0.24) 0%, transparent 30%),
+        radial-gradient(ellipse at 42% 78%, rgba(255, 184, 91, 0.10) 0%, transparent 28%),
+        radial-gradient(ellipse at 50% 40%, #1a1e63 0%, #0a1137 48%, #020617 100%);
+      background-attachment: fixed;
+      color: #fff;
+    }
+    button { -webkit-tap-highlight-color: transparent; }
+
+    #nebula {
+      position: fixed; inset: -18%; z-index: 0; pointer-events: none;
+      background:
+        radial-gradient(ellipse at 22% 38%, rgba(77, 221, 255, 0.20), transparent 32%),
+        radial-gradient(ellipse at 62% 18%, rgba(255, 222, 138, 0.14), transparent 26%),
+        radial-gradient(ellipse at 78% 74%, rgba(168, 112, 255, 0.22), transparent 34%),
+        radial-gradient(ellipse at 42% 58%, rgba(35, 252, 184, 0.08), transparent 30%);
+      filter: blur(14px);
+      animation: nebulaDrift 24s ease-in-out infinite alternate;
+    }
+    @keyframes nebulaDrift { 0% { transform: translate(0, 0) scale(1); } 100% { transform: translate(2%, -2%) scale(1.05); } }
+    #starfield { position: fixed; inset: 0; z-index: 1; }
+    .star { position: absolute; border-radius: 50%; mix-blend-mode: lighter; animation: starIn .6s ease-out both, twinkle var(--dur) ease-in-out var(--delay) infinite alternate; }
+    @keyframes starIn { from { opacity: 0; transform: scale(0.3); } to { opacity: var(--o1); transform: scale(1); } }
+    @keyframes twinkle { 0% { opacity: var(--o1); transform: scale(1); } 100% { opacity: var(--o2); transform: scale(1.35); } }
+
+    #sceneContainer { position: fixed; inset: 0; z-index: 10; display: flex; align-items: center; justify-content: center; }
+    .scene { width: 100%; height: 100%; display: flex; flex-direction: column; align-items: center; justify-content: center; padding: 76px 22px 28px; position: relative; }
+    .scene-enter { animation: sceneIn .65s ease-out forwards; }
+    .scene-exit { animation: sceneOut .38s ease-in forwards; }
+    @keyframes sceneIn { from { opacity: 0; transform: translateY(24px); } to { opacity: 1; transform: translateY(0); } }
+    @keyframes sceneOut { from { opacity: 1; transform: translateY(0); } to { opacity: 0; transform: translateY(-18px); } }
+
+    .push-layer {
+      position: absolute; inset: 0; z-index: 20;
+      display: flex; align-items: center; justify-content: center;
+      overflow: hidden; pointer-events: none;
+    }
+    .push-ui-panel {
+      position: absolute;
+      left: 0; right: 0; bottom: 0;
+      z-index: 5;
+      display: flex; flex-direction: column; align-items: center;
+      padding: 0 24px 7%;
+      gap: 10px;
+      opacity: 0;
+      transform: translateY(120%);
+      transition: opacity .45s ease, transform .55s cubic-bezier(.22,1,.36,1);
+    }
+    .push-ui-panel.is-in { opacity: 1; transform: translateY(0); }
+
+    .hud {
+      position: fixed; left: 50%; top: 16px; transform: translateX(-50%); z-index: 50;
+      min-width: min(88vw, 340px); padding: 10px 16px; text-align: center;
+      border: 1px solid rgba(255, 220, 150, .22); border-radius: 18px;
+      background: rgba(4, 12, 38, .46); backdrop-filter: blur(10px);
+      box-shadow: 0 10px 30px rgba(0,0,0,.18);
+    }
+    .hud-title { color: rgba(255, 232, 181, .95); font-weight: 700; font-size: 15px; letter-spacing: .04em; }
+    .hud-sub { color: rgba(255,255,255,.58); font-size: 12px; margin-top: 2px; }
+    .music-toggle {
+      position: fixed; right: 14px; top: 14px; z-index: 60; width: 38px; height: 38px;
+      border-radius: 999px; display: grid; place-items: center; color: #ffdc96;
+      border: 1px solid rgba(255,220,150,.24); background: rgba(255,255,255,.06); backdrop-filter: blur(8px);
+    }
+
+    .stage {
+      width: min(94vw, 460px); min-height: min(78vh, 650px); display: flex; flex-direction: column;
+      align-items: center; justify-content: center; gap: 18px; text-align: center;
+    }
+    .landing-stage {
+      justify-content: flex-start;
+      padding-top: 6px;
+    }
+    .landing-text-slot {
+      min-height: 86px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+    }
+    .landing-bubble-slot {
+      min-height: 66px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+    }
+    .landing-button-slot {
+      min-height: 56px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+    }
+    .story-text {
+      color: rgba(255,255,255,.80); font-size: clamp(18px, 4.8vw, 25px); line-height: 1.62;
+      text-shadow: 0 2px 14px rgba(0,0,0,.22); white-space: pre-line;
+    }
+    .small-text { color: rgba(255,255,255,.62); font-size: clamp(13px, 3.4vw, 16px); line-height: 1.55; white-space: pre-line; }
+    .egg-bubble {
+      max-width: min(86vw, 360px); padding: 13px 18px; border-radius: 22px 22px 22px 7px;
+      color: rgba(255, 238, 201, .96); background: rgba(255, 255, 255, .09);
+      border: 1px solid rgba(255, 220, 150, .24); backdrop-filter: blur(10px);
+      box-shadow: 0 8px 30px rgba(0,0,0,.14); font-size: clamp(15px, 3.8vw, 18px); line-height: 1.58; white-space: pre-line;
+    }
+    .confirm-btn {
+      min-width: 168px; border-radius: 18px; padding: 13px 28px; font-weight: 700;
+      color: #ffe7ad; border: 1.5px solid rgba(255,220,150,.50);
+      background: linear-gradient(135deg, rgba(255,220,150,.24), rgba(255, 172, 90, .20));
+      box-shadow: 0 12px 28px rgba(255,170,80,.10); transition: transform .22s ease, box-shadow .22s ease, background .22s ease;
+    }
+    .confirm-btn:hover, .confirm-btn:active { transform: scale(1.035); background: linear-gradient(135deg, rgba(255,220,150,.38), rgba(255, 172, 90, .31)); box-shadow: 0 0 26px rgba(255,220,150,.22); }
+    .ghost-btn { min-width: 150px; border-radius: 16px; padding: 11px 22px; color: rgba(255,255,255,.75); border: 1px solid rgba(255,255,255,.14); background: rgba(255,255,255,.06); }
+
+    .planet-wrap { position: relative; width: min(75vw, 270px); height: min(75vw, 270px); filter: drop-shadow(0 0 28px rgba(92,236,228,.45)); }
+    .planet-spin { animation: planetSpin 58s linear infinite; transform-origin: 100px 100px; }
+    @keyframes planetSpin { to { transform: rotate(360deg); } }
+    .nest {
+      position: absolute; left: 50%; top: 25%; width: 112px; height: 46px; transform: translate(-50%, -50%) rotate(-4deg);
+      border-radius: 50%; background: radial-gradient(ellipse at center, rgba(255,236,176,.38), rgba(97,214,196,.22) 56%, transparent 72%);
+      box-shadow: 0 0 20px rgba(255,220,150,.18); opacity: 0; transition: opacity .45s, box-shadow .45s;
+    }
+    .nest.visible { opacity: 1; }
+    .nest.awake { box-shadow: 0 0 34px rgba(255,220,150,.50), inset 0 0 18px rgba(255,255,255,.16); }
+    .planet-egg { position: absolute; left: 50%; top: 14%; transform: translate(-50%, -50%) scale(.44); transform-origin: center; z-index: 4; opacity: 0; transition: opacity .45s, transform .45s; }
+    .planet-egg.visible { opacity: 1; transform: translate(-50%, -50%) scale(.50); }
+
+    .egg-holder {
+      width: 142px; height: 142px; position: relative;
+      background-image: var(--egg-sprite, url('https://cdn.keepwork.com/maisi/magichaqi/pet/dragon_green_20260528090748.webp'));
+      background-size: 400% 400%;
+      background-position: 0% 0%;
+      background-repeat: no-repeat;
+      filter: drop-shadow(0 9px 18px rgba(255,200,100,.26));
+    }
+    .egg-holder.egg-normal { background-position: 0% 0%; }
+    .egg-holder.egg-happy { background-position: 33.333% 0%; }
+    .egg-holder.pattern-careful::before,
+    .egg-holder.pattern-brave::before,
+    .egg-holder.pattern-wise::before {
+      content: '';
+      position: absolute;
+      inset: 9% 13% 13%;
+      border-radius: 999px;
+      pointer-events: none;
+      mix-blend-mode: screen;
+    }
+    .egg-holder.pattern-careful::before { box-shadow: inset 0 -10px 20px rgba(145,244,168,.55), 0 0 18px rgba(145,244,168,.45); }
+    .egg-holder.pattern-brave::before { box-shadow: inset 0 -10px 20px rgba(255,177,94,.55), 0 0 18px rgba(255,177,94,.45); }
+    .egg-holder.pattern-wise::before { box-shadow: inset 0 -10px 20px rgba(201,167,255,.55), 0 0 18px rgba(201,167,255,.45); }
+    .egg-holder.awakened::after {
+      content: '✦';
+      position: absolute;
+      right: 15%; top: 10%;
+      color: #fff4a8;
+      font-size: 22px;
+      text-shadow: 0 0 8px rgba(255,220,104,.9);
+      transform: rotate(12deg);
+    }
+    .egg-float { animation: eggFloat 3.2s ease-in-out infinite; }
+    .egg-breathe { animation: eggBreathe 2.6s ease-in-out infinite; }
+    .egg-wobble { animation: eggWobble .62s ease-in-out; }
+    .egg-glow { filter: drop-shadow(0 0 26px rgba(255,220,150,.65)); }
+    @keyframes eggFloat { 0%,100% { transform: translateY(0) rotate(-2deg); } 50% { transform: translateY(-14px) rotate(2deg); } }
+    @keyframes eggBreathe { 0%,100% { transform: scale(1); filter: drop-shadow(0 6px 16px rgba(255,200,100,.28)); } 50% { transform: scale(1.025); filter: drop-shadow(0 0 28px rgba(255,220,150,.45)); } }
+    @keyframes eggWobble { 0% { transform: rotate(0); } 18% { transform: rotate(-10deg); } 40% { transform: rotate(8deg); } 62% { transform: rotate(-5deg); } 82% { transform: rotate(3deg); } 100% { transform: rotate(0); } }
+    .egg-holder svg { width: 100%; height: 100%; display: block; overflow: visible; }
+    .pattern-layer { opacity: 0; transition: opacity .45s; }
+    .egg-holder.pattern-careful .pattern-careful, .egg-holder.pattern-brave .pattern-brave, .egg-holder.pattern-wise .pattern-wise { opacity: 1; }
+    .egg-holder.awakened .star-mark { opacity: 1; transform: scale(1); }
+    .star-mark { opacity: 0; transform: scale(.4); transform-origin: 86px 39px; transition: opacity .55s, transform .55s; }
+    .pattern-careful { stroke: #91f4a8; fill: rgba(145,244,168,.16); filter: drop-shadow(0 0 5px rgba(145,244,168,.85)); }
+    .pattern-brave { stroke: #ffb15e; fill: rgba(255,177,94,.14); filter: drop-shadow(0 0 5px rgba(255,177,94,.85)); animation: sparkPulse 1.3s ease-in-out infinite alternate; }
+    .pattern-wise { stroke: #c9a7ff; fill: rgba(201,167,255,.15); filter: drop-shadow(0 0 5px rgba(201,167,255,.85)); }
+    @keyframes sparkPulse { from { opacity: .72; } to { opacity: 1; } }
+
+    .meteor { position: absolute; left: -80px; top: 12%; width: 18px; height: 18px; border-radius: 999px; background: #ffe6a8; box-shadow: 0 0 18px #ffe6a8, -38px -16px 20px rgba(255,220,150,.28); opacity: 0; }
+    .meteor.fly { animation: meteorFly 1.8s cubic-bezier(.25,.75,.35,1) forwards; }
+    @keyframes meteorFly { 0% { opacity: 0; transform: translate(0, 0) scale(.5); } 12% { opacity: 1; } 100% { opacity: 0; transform: translate(calc(50vw + 15px), 35vh) scale(.85); } }
+
+    .wish-grid { display: grid; gap: 13px; width: min(92vw, 430px); }
+    .wish-card {
+      text-align: left; padding: 15px 16px; border-radius: 20px; border: 1.5px solid rgba(255,255,255,.15);
+      background: rgba(255,255,255,.065); backdrop-filter: blur(10px); transition: transform .2s, border-color .2s, box-shadow .2s, background .2s;
+    }
+    .wish-card:hover, .wish-card:active { transform: translateY(-2px) scale(1.012); border-color: rgba(255,220,150,.55); background: rgba(255,220,150,.10); }
+    .wish-card.selected { border-color: rgba(255,220,150,.75); background: rgba(255,220,150,.14); box-shadow: 0 0 22px rgba(255,220,150,.22); }
+    .wish-title { color: rgba(255,238,201,.96); font-size: 16px; font-weight: 800; margin-bottom: 5px; }
+    .wish-desc { color: rgba(255,255,255,.60); font-size: 13px; line-height: 1.45; }
+    .wish-chip { width: 34px; height: 34px; display: inline-grid; place-items: center; border-radius: 999px; margin-right: 8px; }
+    .chip-careful { background: rgba(145,244,168,.15); color: #a8ffb8; }
+    .chip-brave { background: rgba(255,177,94,.16); color: #ffc071; }
+    .chip-wise { background: rgba(201,167,255,.16); color: #d6bdff; }
+
+    .opt-row { display: flex; flex-wrap: wrap; justify-content: center; gap: 12px; max-width: min(92vw, 430px); }
+    .opt-btn {
+      min-width: 92px; padding: 12px 16px; border-radius: 18px;
+      color: rgba(255,255,255,.82); border: 1.5px solid rgba(255,255,255,.15);
+      background: rgba(255,255,255,.065); backdrop-filter: blur(9px);
+      transition: transform .22s ease, border-color .22s ease, background .22s ease, box-shadow .22s ease;
+    }
+    .opt-btn:hover, .opt-btn:active, .opt-btn.selected {
+      transform: scale(1.035); border-color: rgba(255,220,150,.58);
+      background: rgba(255,220,150,.12); box-shadow: 0 0 20px rgba(255,220,150,.16);
+    }
+    .food-btn { min-width: 96px; display: flex; flex-direction: column; align-items: center; gap: 5px; }
+    .food-emoji { font-size: 32px; }
+    .food-desc { color: rgba(255,255,255,.48); font-size: 12px; }
+    .food-fly {
+      position: fixed;
+      z-index: 85;
+      pointer-events: none;
+      font-size: 34px;
+      transform-origin: center center;
+      animation: foodFlyToEgg .82s cubic-bezier(.24,.72,.22,1) forwards;
+    }
+    @keyframes foodFlyToEgg {
+      0% { transform: translate(0, 0) scale(1); opacity: 1; }
+      58% { transform: translate(calc(var(--tx) * .72), calc(var(--ty) * .72 - 24px)) scale(.9); opacity: .92; }
+      100% { transform: translate(var(--tx), var(--ty)) scale(.12); opacity: 0; }
+    }
+    .energy-fly {
+      position: fixed;
+      z-index: 85;
+      pointer-events: none;
+      width: 10px;
+      height: 10px;
+      border-radius: 999px;
+      background: radial-gradient(circle, #fff7ad 0%, #ffd66b 45%, rgba(255,214,107,0) 72%);
+      box-shadow: 0 0 14px rgba(255,220,120,.86);
+      animation: energyFlyToEgg var(--edur, 1s) cubic-bezier(.2,.72,.22,1) forwards;
+    }
+    @keyframes energyFlyToEgg {
+      0% { transform: translate(0, 0) scale(.45); opacity: 0; }
+      14% { opacity: 1; }
+      72% { transform: translate(calc(var(--tx) * .75), calc(var(--ty) * .75 + var(--arc))) scale(1); opacity: .95; }
+      100% { transform: translate(var(--tx), var(--ty)) scale(.12); opacity: 0; }
+    }
+    .touch-ripple {
+      position: absolute;
+      border-radius: 50%;
+      border: 2px solid rgba(255,220,150,.62);
+      animation: rippleOut 1s ease-out forwards;
+      pointer-events: none;
+    }
+    @keyframes rippleOut {
+      0% { width: 0; height: 0; opacity: 1; }
+      100% { width: 190px; height: 190px; opacity: 0; margin-left: -95px; margin-top: -95px; }
+    }
+
+    .mini-game-card {
+      width: min(94vw, 470px); height: min(82vh, 525px); padding: 20px 18px; border-radius: 28px;
+      position: relative;
+      background: linear-gradient(180deg, rgba(255,255,255,.10), rgba(255,255,255,.055));
+      border: 1px solid rgba(255,220,150,.22); backdrop-filter: blur(12px);
+      box-shadow: 0 18px 60px rgba(0,0,0,.18);
+    }
+    .palace-title { position: absolute; left: 20px; top: 24px; margin: 0; text-align: left; }
+    .palace-prompt {
+      position: absolute;
+      left: 20px;
+      right: 20px;
+      top: 74px;
+      min-height: 48px;
+      display: flex;
+      align-items: flex-start;
+      justify-content: flex-start;
+      text-align: left;
+      white-space: pre-line;
+    }
+    .palace-board {
+      display: grid;
+      gap: 7px;
+      width: min(76vw, 330px);
+      height: min(76vw, 330px);
+      position: absolute;
+      left: 50%;
+      top: 132px;
+      transform: translateX(-50%);
+      padding: 7px;
+      border-radius: 22px;
+      background: rgba(255,255,255,.90);
+      box-shadow: 0 14px 38px rgba(0,0,0,.18), inset 0 0 0 1px rgba(255,255,255,.45);
+      transition: transform var(--rotate-duration, 1.2s) linear;
+      transform-origin: center center;
+    }
+    .palace-feedback { position: absolute; left: 20px; right: 20px; bottom: 20px; min-height: 44px; text-align: center; }
+    .palace-cell {
+      border: none;
+      border-radius: 14px;
+      background: #8a83ff;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      position: relative;
+      overflow: visible;
+      cursor: pointer;
+      transition: background .2s ease, transform .18s ease, box-shadow .18s ease;
+    }
+    .palace-cell.has-dragon { z-index: 5; }
+    .palace-cell:hover, .palace-cell:active { transform: scale(1.035); box-shadow: 0 0 0 4px rgba(255,220,150,.18); }
+    .palace-cell.correct { background: #22c55e; }
+    .palace-cell.incorrect { background: #fb7185; }
+    .palace-dragon {
+      width: 72%;
+      height: 72%;
+      background-image: var(--egg-sprite, url('https://cdn.keepwork.com/maisi/magichaqi/pet/dragon_green_20260528090748.webp'));
+      background-size: 400% 400%;
+      background-position: 0% 0%;
+      background-repeat: no-repeat;
+      filter: drop-shadow(0 4px 8px rgba(0,0,0,.16));
+      pointer-events: none;
+    }
+    .palace-dragon.happy { background-position: 33.333% 0%; }
+    .palace-result-wrap {
+      position: absolute;
+      inset: 0;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      pointer-events: none;
+      z-index: 3;
+      transform: rotate(var(--counter-rotation, 0deg));
+    }
+    .palace-result-wrap .palace-memory-bubble { bottom: 78%; }
+    .palace-memory-bubble {
+      position: absolute;
+      left: 50%;
+      bottom: 82%;
+      transform: translateX(-50%);
+      z-index: 4;
+      white-space: nowrap;
+      padding: 5px 9px;
+      border-radius: 999px;
+      color: #5b3a12;
+      background: rgba(255,238,201,.96);
+      border: 1px solid rgba(255,220,150,.78);
+      box-shadow: 0 5px 14px rgba(0,0,0,.14);
+      font-size: clamp(10px, 2.2vw, 13px);
+      font-weight: 700;
+      pointer-events: none;
+      animation: memoryBubbleFloat 1.4s ease-in-out infinite;
+    }
+    .palace-memory-bubble::after {
+      content: '';
+      position: absolute;
+      left: 50%;
+      top: 100%;
+      transform: translateX(-50%);
+      border-width: 6px 5px 0 5px;
+      border-style: solid;
+      border-color: rgba(255,238,201,.96) transparent transparent transparent;
+    }
+    @keyframes memoryBubbleFloat {
+      0%, 100% { transform: translate(-50%, 0); }
+      50% { transform: translate(-50%, -4px); }
+    }
+    .palace-click-cue {
+      position: absolute;
+      left: 50%;
+      top: 50%;
+      width: 72%;
+      height: 72%;
+      border: 3px solid rgba(255,220,150,.92);
+      border-radius: 999px;
+      transform: translate(-50%, -50%) scale(.88);
+      pointer-events: none;
+      animation: palaceClickCue 1.05s ease-out infinite;
+      box-shadow: 0 0 18px rgba(255,220,150,.42);
+    }
+    @keyframes palaceClickCue {
+      0% { opacity: .95; transform: translate(-50%, -50%) scale(.76); }
+      70% { opacity: .18; transform: translate(-50%, -50%) scale(1.16); }
+      100% { opacity: 0; transform: translate(-50%, -50%) scale(1.24); }
+    }
+    .game-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 14px; margin: 20px auto 16px; width: min(88vw, 330px); }
+    .star-btn {
+      aspect-ratio: 1; border-radius: 24px; border: 1px solid rgba(255,255,255,.12); background: rgba(255,255,255,.07);
+      font-size: 42px; display: grid; place-items: center; transition: transform .18s, background .18s, box-shadow .18s;
+    }
+    .star-btn:hover, .star-btn:active { transform: scale(1.05); background: rgba(255,255,255,.12); }
+    .star-btn.hint { box-shadow: 0 0 24px rgba(102,210,255,.58), inset 0 0 18px rgba(102,210,255,.16); animation: hintPulse .8s ease-in-out infinite alternate; }
+    .star-btn.correct { animation: correctJump .7s ease-out forwards; }
+    @keyframes hintPulse { from { transform: scale(1); } to { transform: scale(1.06); } }
+    @keyframes correctJump { 0% { transform: translateY(0) scale(1); } 40% { transform: translateY(-18px) scale(1.16); } 100% { transform: translateY(0) scale(1.05); } }
+    .thinking-star { font-size: 44px; filter: drop-shadow(0 0 18px rgba(255,230,140,.65)); animation: starFloat 2.4s ease-in-out infinite; }
+    @keyframes starFloat { 0%,100% { transform: translateY(0) rotate(-4deg); } 50% { transform: translateY(-10px) rotate(4deg); } }
+    .star-fly { position: fixed; z-index: 80; pointer-events: none; font-size: 42px; animation: starFly 1.05s cubic-bezier(.22,.8,.28,1) forwards; }
+    @keyframes starFly { to { transform: translate(var(--tx), var(--ty)) scale(.35) rotate(80deg); opacity: .15; } }
+
+    .particle { position: fixed; border-radius: 50%; pointer-events: none; z-index: 70; animation: particleFly var(--pdur) ease-out forwards; }
+    @keyframes particleFly { 0% { opacity: 1; transform: translate(0,0) scale(1); } 100% { opacity: 0; transform: translate(var(--px), var(--py)) scale(0); } }
+    .typewriter-cursor::after { content: '▍'; animation: blink .8s step-end infinite; color: rgba(255,220,150,.85); }
+    @keyframes blink { 0%,100% { opacity: 1; } 50% { opacity: 0; } }
+  </style>
+</head>
+
+<body>
+  <div id="nebula"></div>
+  <div id="starfield"></div>
+  <button id="musicToggle" class="music-toggle" title="音乐开关" aria-label="music toggle">🔊</button>
+  <div id="sceneContainer"></div>
+</body>
+
+<script>
+game_config = {
+  difficulty: "easy",
+  planetName: "麦思星球",
+  // 性格与原 planet boarding 完全一致；性格决定一种元素属性（对应 dna.js ELEMENTAL_ATTRIBUTES）。
+  personalities: ["温柔", "元气", "傲娇", "佛系", "好奇", "神秘"],
+  // 性格 → 元素属性映射（自然 / 火 / 冰 / 生命 / 暗 / 雷）。
+  personalityToAttribute: {
+    "温柔": "生命",
+    "元气": "雷",
+    "傲娇": "火",
+    "佛系": "冰",
+    "好奇": "自然",
+    "神秘": "暗"
+  },
+  // 食物与原 planet boarding 完全一致：决定宠物食性（杂食 / 肉食 / 素食）。
+  foods: [
+    { id: "omnivore", diet: "omnivore", name: "杂食", desc: "什么都吃", emoji: "🍪" },
+    { id: "carnivore", diet: "carnivore", name: "肉食", desc: "爱吃肉", emoji: "🍖" },
+    { id: "herbivore", diet: "herbivore", name: "素食", desc: "只吃菜", emoji: "🥬" }
+  ],
+  // 抱抱龙蛋颜色 → 实际孵化的 petId（对应 famous-pets / planet_pets 里的 dragon_*）。
+  // 用户选择的颜色决定最终孵化哪只抱抱龙，孵化时以 petId 为准。
+  dragonColorToPetId: {
+    green: "dragon_green",
+    orange: "dragon_orange",
+    purple: "dragon_purple"
+  },
+  scenes: [
+    { id: 1, name: "小蛋落下", type: "story" },
+    { id: 2, name: "靠近抱抱龙蛋", type: "story" },
+    { id: 3, name: "送出愿望", type: "choice" },
+    { id: 4, name: "需要思维小星星", type: "story" },
+    { id: 5, name: "找找亮晶晶", type: "minigame" },
+    { id: 6, name: "小星星回家", type: "story" },
+    { id: 7, name: "唤醒抱抱龙蛋", type: "story" },
+    { id: 8, name: "进入主逻辑", type: "complete" }
+  ],
+  wishes: [
+    {
+      id: "careful",
+      wish_type: "careful",
+      dragon_color: "green",
+      egg_pattern: "leaf",
+      title: "嫩绿色叶芽纹理",
+      desc: "像小小的嫩芽，\n在蛋壳上慢慢亮起来。",
+      label: "嫩绿色的光",
+      icon: "🌱"
+    },
+    {
+      id: "brave",
+      wish_type: "brave",
+      dragon_color: "orange",
+      egg_pattern: "spark",
+      title: "暖橙色火花纹理",
+      desc: "像小火花一样，\n在蛋壳上轻轻跳动。",
+      label: "暖橙色的光",
+      icon: "🔥"
+    },
+    {
+      id: "wise",
+      wish_type: "wise",
+      dragon_color: "purple",
+      egg_pattern: "moon_star",
+      title: "淡紫色星月纹理",
+      desc: "像夜空里的星星和月牙，\n一点点亮起来。",
+      label: "淡紫色的光",
+      icon: "🌙"
+    }
+  ],
+  tutorialEvents: [
+    "tutorial_start", "egg_landed", "egg_approach_click", "egg_accept_click", "wish_start_click",
+    "wish_selected", "first_game_start", "first_game_success", "thinking_star_get", "thinking_star_give",
+    "egg_awakened", "tutorial_complete", "daily_training_start_click"
+  ]
+};
+</script>
+
+<script>
+art_assets = [
+  {
+    id: "dragon_egg_green",
+    imageUrl: "https://cdn.keepwork.com/maisi/magichaqi/pet/dragon_green_20260528090748.webp",
+    rows: 4,
+    columns: 4,
+    isTransparent: true,
+    description: "绿色抱抱龙蛋 4x4 sprite sheet，第 1 行第 1/2 帧用于默认/开心",
+    imageWidth: 704,
+    imageHeight: 704
+  },
+  {
+    id: "dragon_egg_orange",
+    imageUrl: "https://cdn.keepwork.com/maisi/magichaqi/pet/dragon_orange_20260528090846.webp",
+    rows: 4,
+    columns: 4,
+    isTransparent: true,
+    description: "橙色抱抱龙蛋 4x4 sprite sheet，第 1 行第 1/2 帧用于默认/开心",
+    imageWidth: 704,
+    imageHeight: 704
+  },
+  {
+    id: "dragon_egg_purple",
+    imageUrl: "https://cdn.keepwork.com/maisi/magichaqi/pet/dragon_purple_20260528090706.webp",
+    rows: 4,
+    columns: 4,
+    isTransparent: true,
+    description: "紫色抱抱龙蛋 4x4 sprite sheet，第 1 行第 1/2 帧用于默认/开心",
+    imageWidth: 704,
+    imageHeight: 704
+  }
+];
+</script>
+
+<script defer>
+(function () {
+  // ---- i18n ----
+  const I18N = {
+    zhCN: {
+      title: '落在麦思星球上的抱抱龙蛋',
+      // status (top HUD)
+      statusLv1: 'Lv.1 刚刚醒来',
+      statusAwake: 'Lv.1 抱抱龙蛋已醒来',
+      // scene 1
+      scene1Narration: '今天，宇宙没有发生什么大事。\n只是有一颗抱抱龙的蛋，\n偏偏降落到了你这里。',
+      scene1Hint: '点击漂浮的蛋',
+      // scene 2 (name planet)
+      scene2Prompt: '给这个星球起个名字吧',
+      scene2DefaultName: '麦思星球',
+      scene2Confirm: '点亮星球',
+      // scene 3 (feeding)
+      scene3Narration: '第一口食物，\n会被抱抱龙悄悄记住。',
+      scene3Prompt: '你想先喂它尝尝什么？',
+      // scene 4 (personality)
+      scene4PetSays: '在我醒来之前……\n你觉得我会是什么样的呢？',
+      scene4Prompt: '它看起来像是什么样的性格？',
+      // scene 5 (color wish)
+      scene5Title: '你希望蛋壳上，\n亮起哪一种长大的光？',
+      scene5Confirm: '确认这个颜色',
+      // scene 6 (touch egg)
+      scene6PetSays: '你可以碰碰我吗？\n我想确认，这不是梦。',
+      scene6Hint: '轻轻点击蛋壳',
+      scene6Touch1: '蛋壳变暖了 ……',
+      scene6Touch2: '蛋壳上的光，\n好像变得不一样了。',
+      scene6Touch3: '它记住了你的颜色。',
+      // scene 6 need star
+      scene6NeedStar: '能和我玩个小游戏吗？',
+      scene6NeedStarHint: '（玩思维训练小游戏，可以让抱抱龙获得成长能量）',
+      scene6StartGame: '开始小游戏',
+      // mini game (rotating palace)
+      palaceTitle: '旋转宫殿',
+      palacePrompt: '第 {cur}/4 次 · {size}×{size}\n先找到抱抱龙。',
+      palaceMemoryHint: '记住我的位置',
+      palaceRotating: '宫殿开始旋转……',
+      palaceAnswerPrompt: '现在，点出抱抱龙原来所在的位置。',
+      palaceFoundGrow: '找到了，宫殿变大一点！',
+      palaceFound: '找到了！',
+      palaceTryAgain: '再试一次。',
+      palaceCorrectSay: '太棒了。',
+      palaceWrongSay: '我在这里呢。',
+      palaceGotEnergy: '获得了一些能量',
+      // scene 8 energy finish
+      scene8EnergyText1: '获得了一些能量。',
+      scene8EnergyText2: '快来星球找我吧！',
+      scene8Ok: '好的',
+      // legacy / unused scenes (kept localized for consistency)
+      scene5FbBubble1: '我听见啦。\n我会带着{label}，\n一点点长大。',
+      scene5FbText: '抱抱龙蛋记住了你的愿望。',
+      scene5FbBubble2: '蛋壳上的光，\n好像变得不一样了。\n等我长大一点，\n你就会看到啦。',
+      scene5FbContinue: '继续看看',
+      legacyStarReturn: '思维小星星，\n回到了麦思星球。',
+      legacyStarForMe: '是给我的吗？',
+      legacyGiveIt: '送给它',
+      legacyEggWarm: '暖暖的……',
+      legacyEggWake: '我醒来啦。',
+      legacyEggThanks: '谢谢你，\n我会在这里慢慢长大。',
+      legacyEggMovedIn: '抱抱龙蛋，\n已经住进了麦思星球。',
+      legacyEnterPlanet: '进入麦思星球',
+      legacyDailyBubble: '每天完成小游戏，\n抱抱龙蛋会一点点长大。',
+      legacyWaitingTraining: '麦思星球，\n正在等你开始今天的训练。',
+      legacyStartTraining: '开始今日训练',
+    },
+    enUS: {
+      title: 'A Hug Dragon Egg Landed on Mase Planet',
+      statusLv1: 'Lv.1 Just Woke Up',
+      statusAwake: 'Lv.1 Hug Dragon Egg Awakened',
+      scene1Narration: "Today, nothing big happened in the universe.\nJust a hug dragon's egg,\nthat happened to land right here with you.",
+      scene1Hint: 'Tap the floating egg',
+      scene2Prompt: 'Give this planet a name',
+      scene2DefaultName: 'Mase Planet',
+      scene2Confirm: 'Light Up Planet',
+      scene3Narration: 'The first bite of food\nwill be quietly remembered by the hug dragon.',
+      scene3Prompt: 'What would you like to feed it first?',
+      scene4PetSays: 'Before I wake up...\nwhat do you think I\'ll be like?',
+      scene4Prompt: 'What kind of personality does it seem to have?',
+      scene5Title: 'Which growing light\nwould you like to glow on the shell?',
+      scene5Confirm: 'Confirm This Color',
+      scene6PetSays: 'Can you touch me?\nI want to make sure this isn\'t a dream.',
+      scene6Hint: 'Gently tap the eggshell',
+      scene6Touch1: 'The eggshell grew warm ...',
+      scene6Touch2: 'The light on the shell\nseems to have changed.',
+      scene6Touch3: 'It remembered your color.',
+      scene6NeedStar: 'Will you play a little game with me?',
+      scene6NeedStarHint: '(Playing thinking-training games gives the hug dragon growth energy)',
+      scene6StartGame: 'Start the Game',
+      palaceTitle: 'Rotating Palace',
+      palacePrompt: 'Round {cur}/4 · {size}×{size}\nFirst, find the hug dragon.',
+      palaceMemoryHint: 'Remember my spot',
+      palaceRotating: 'The palace starts to rotate...',
+      palaceAnswerPrompt: 'Now, tap where the hug dragon used to be.',
+      palaceFoundGrow: 'Found it! The palace grows a bit!',
+      palaceFound: 'Found it!',
+      palaceTryAgain: 'Try again.',
+      palaceCorrectSay: 'Awesome.',
+      palaceWrongSay: "I'm right here.",
+      palaceGotEnergy: 'Got some energy',
+      scene8EnergyText1: 'Got some energy.',
+      scene8EnergyText2: 'Come find me on the planet!',
+      scene8Ok: 'Okay',
+      scene5FbBubble1: 'I heard you.\nI\'ll carry {label}\nas I slowly grow.',
+      scene5FbText: 'The hug dragon egg remembered your wish.',
+      scene5FbBubble2: 'The light on the shell\nseems to have changed.\nWhen I grow a little,\nyou\'ll see it.',
+      scene5FbContinue: 'Keep watching',
+      legacyStarReturn: 'The thinking star\nreturned to Mase Planet.',
+      legacyStarForMe: 'Is it for me?',
+      legacyGiveIt: 'Give It',
+      legacyEggWarm: 'So warm...',
+      legacyEggWake: "I'm awake.",
+      legacyEggThanks: 'Thank you,\nI\'ll grow up slowly here.',
+      legacyEggMovedIn: 'The hug dragon egg\nhas moved into Mase Planet.',
+      legacyEnterPlanet: 'Enter Mase Planet',
+      legacyDailyBubble: 'Finish a little game each day,\nand the hug dragon egg grows bit by bit.',
+      legacyWaitingTraining: 'Mase Planet\nis waiting for you to start today\'s training.',
+      legacyStartTraining: 'Start Today\'s Training',
+    }
+  };
+
+  function detectLang() {
+    try {
+      const params = new URLSearchParams(window.location.search);
+      const lang = params.get('lang');
+      if (lang && I18N[lang]) return lang;
+    } catch (_) {}
+    return 'zhCN';
+  }
+  const LANG = detectLang();
+  const L = I18N[LANG];
+  function t(key, vars) {
+    let str = L[key] != null ? L[key] : (I18N.zhCN[key] != null ? I18N.zhCN[key] : key);
+    if (vars) str = str.replace(/\{(\w+)\}/g, (m, n) => vars[n] != null ? String(vars[n]) : m);
+    return str;
+  }
+  try { document.documentElement.setAttribute('lang', LANG === 'enUS' ? 'en' : 'zh-CN'); } catch (_) {}
+  try { document.title = t('title'); } catch (_) {}
+
+  // ---- localized game_config text (foods / wishes / personalities) ----
+  const CONFIG_I18N = {
+    zhCN: {
+      personalities: ['温柔', '元气', '傲娇', '佛系', '好奇', '神秘'],
+      foods: {
+        omnivore: { name: '杂食', desc: '什么都吃' },
+        carnivore: { name: '肉食', desc: '爱吃肉' },
+        herbivore: { name: '素食', desc: '只吃菜' }
+      },
+      wishes: {
+        careful: { title: '嫩绿色叶芽纹理', desc: '像小小的嫩芽，\n在蛋壳上慢慢亮起来。', label: '嫩绿色的光' },
+        brave: { title: '暖橙色火花纹理', desc: '像小火花一样，\n在蛋壳上轻轻跳动。', label: '暖橙色的光' },
+        wise: { title: '淡紫色星月纹理', desc: '像夜空里的星星和月牙，\n一点点亮起来。', label: '淡紫色的光' }
+      }
+    },
+    enUS: {
+      personalities: ['Gentle', 'Bubbly', 'Tsundere', 'Easygoing', 'Curious', 'Mysterious'],
+      foods: {
+        omnivore: { name: 'Omnivore', desc: 'Eats anything' },
+        carnivore: { name: 'Carnivore', desc: 'Loves meat' },
+        herbivore: { name: 'Herbivore', desc: 'Greens only' }
+      },
+      wishes: {
+        careful: { title: 'Tender Green Leaf Pattern', desc: 'Like a tiny sprout,\nslowly glowing on the shell.', label: 'Tender green light' },
+        brave: { title: 'Warm Orange Spark Pattern', desc: 'Like little sparks,\ngently dancing on the shell.', label: 'Warm orange light' },
+        wise: { title: 'Soft Purple Star-Moon Pattern', desc: 'Like stars and a crescent in the night sky,\nlighting up bit by bit.', label: 'Soft purple light' }
+      }
+    }
+  };
+
+  // Localize game_config in place so the rest of the code can read localized text.
+  (function localizeConfig() {
+    const c = CONFIG_I18N[LANG] || CONFIG_I18N.zhCN;
+    try {
+      game_config.planetName = t('scene2DefaultName');
+      game_config.personalities = c.personalities.slice();
+      (game_config.foods || []).forEach(f => {
+        const loc = c.foods[f.id];
+        if (loc) { f.name = loc.name; f.desc = loc.desc; }
+      });
+      (game_config.wishes || []).forEach(w => {
+        const loc = c.wishes[w.id];
+        if (loc) { w.title = loc.title; w.desc = loc.desc; w.label = loc.label; }
+      });
+    } catch (_) {}
+  })();
+
+  const DRAGON_EGG_SPRITES = {
+    green: 'https://cdn.keepwork.com/maisi/magichaqi/pet/dragon_green_20260528090748.webp',
+    orange: 'https://cdn.keepwork.com/maisi/magichaqi/pet/dragon_orange_20260528090846.webp',
+    purple: 'https://cdn.keepwork.com/maisi/magichaqi/pet/dragon_purple_20260528090706.webp'
+  };
+
+  const state = {
+    currentScene: 0,
+    wish: null,
+    previewWish: null,
+    dragonColor: 'green',
+    planetName: t('scene2DefaultName'),
+    personality: '',
+    elementalAttribute: '',   // 性格决定的元素属性（自然 / 火 / 冰 / 生命 / 暗 / 雷）
+    firstFood: null,
+    first_game_completed: false,
+    thinking_star_count: 0,
+    egg_awakened: false,
+    tutorial_completed: false,
+    wrongClicks: 0,
+    palaceAttempts: 0,
+    palaceLevelIndex: 0,
+    gameStarted: false,
+    finished: false
+  };
+
+  const sceneContainer = document.getElementById('sceneContainer');
+  const statusText = document.getElementById('statusText');
+
+  function post(type, data = {}) {
+    try { window.parent.postMessage({ type, data }, '*'); } catch (_) {}
+  }
+
+  function track(eventName, data = {}) {
+    post('gameEvent', { eventName, ...data, step_index: state.currentScene });
+  }
+
+  const Music = (function () {
+    let ctx = null, master = null, echoSend = null, started = false, muted = false, timer = null;
+    function midiToFreq(m) { return 440 * Math.pow(2, (m - 69) / 12); }
+    function ensureCtx() {
+      if (!ctx) {
+        const AC = window.AudioContext || window.webkitAudioContext;
+        if (!AC) return null;
+        ctx = new AC();
+        master = ctx.createGain();
+        master.gain.value = muted ? 0 : 0.0001;
+        master.connect(ctx.destination);
+        master.gain.linearRampToValueAtTime(muted ? 0 : 0.26, ctx.currentTime + 1.8);
+        echoSend = ctx.createGain();
+        const delay = ctx.createDelay(2.0);
+        const fb = ctx.createGain();
+        const lp = ctx.createBiquadFilter();
+        delay.delayTime.value = .45; fb.gain.value = .52; lp.type = 'lowpass'; lp.frequency.value = 1800;
+        echoSend.connect(delay); delay.connect(lp); lp.connect(fb); fb.connect(delay); lp.connect(master);
+      }
+      if (ctx.state === 'suspended') ctx.resume().catch(() => {});
+      return ctx;
+    }
+    function tone(midi, vel, dur) {
+      if (!ctx) return;
+      const now = ctx.currentTime + .01;
+      const osc = ctx.createOscillator();
+      const gain = ctx.createGain();
+      osc.type = 'sine'; osc.frequency.value = midiToFreq(midi);
+      gain.gain.setValueAtTime(.0001, now);
+      gain.gain.linearRampToValueAtTime(vel || .05, now + .04);
+      gain.gain.exponentialRampToValueAtTime(.0001, now + (dur || 2.8));
+      osc.connect(gain); gain.connect(master); if (echoSend) gain.connect(echoSend);
+      osc.start(now); osc.stop(now + (dur || 2.9));
+    }
+    function start() {
+      if (started) { ensureCtx(); return; }
+      if (!ensureCtx()) return;
+      started = true;
+      function loop() {
+        if (!muted) tone([72, 76, 79, 84, 88][Math.floor(Math.random() * 5)], .026 + Math.random() * .025, 3.2);
+        timer = setTimeout(loop, 4200 + Math.random() * 5200);
+      }
+      timer = setTimeout(loop, 1600);
+    }
+    function click() { if (!ensureCtx() || muted) return; tone(76 + Math.floor(Math.random() * 5), .06, 1.0); }
+    function egg() { if (!ensureCtx() || muted) return; tone(67, .08, 1.2); }
+    function success() { if (!ensureCtx() || muted) return; [76, 81, 88].forEach((m, i) => setTimeout(() => tone(m, .06 - i * .006, 1.25), i * 90)); }
+    function error() { if (!ensureCtx() || muted) return; [67, 63].forEach((m, i) => setTimeout(() => tone(m, .055, 1.05), i * 110)); }
+    function rotate() { if (!ensureCtx() || muted) return; [72, 76, 79, 76].forEach((m, i) => setTimeout(() => tone(m, .035, 1.1), i * 150)); }
+    function sparkle() { if (!ensureCtx() || muted) return; [76, 81, 84, 88].forEach((m, i) => setTimeout(() => tone(m, .052 - i * .006, 2.2), i * 100)); }
+    function setMuted(v) {
+      muted = !!v;
+      if (master && ctx) {
+        const now = ctx.currentTime;
+        master.gain.cancelScheduledValues(now);
+        master.gain.setValueAtTime(master.gain.value, now);
+        master.gain.linearRampToValueAtTime(muted ? 0 : .26, now + .45);
+      }
+    }
+    function isMuted() { return muted; }
+    return { start, click, egg, success, error, rotate, sparkle, setMuted, isMuted };
+  })();
+
+  function preloadEggSprite() {
+    Object.values(DRAGON_EGG_SPRITES).forEach(src => {
+      const img = new Image();
+      img.src = src;
+    });
+  }
+
+  function flashEggHappy(egg, duration = 900) {
+    setEggMood(egg, 'happy');
+    setTimeout(() => setEggMood(egg, 'normal'), duration);
+  }
+
+  function createPalaceDragon(message, mood = 'happy', counterRotation = 0) {
+    const wrap = document.createElement('div');
+    wrap.className = 'palace-result-wrap';
+    wrap.style.setProperty('--counter-rotation', `${counterRotation}deg`);
+    const bubble = document.createElement('div');
+    bubble.className = 'palace-memory-bubble';
+    bubble.textContent = message;
+    const dragon = document.createElement('div');
+    dragon.className = `palace-dragon ${mood === 'happy' ? 'happy' : ''}`;
+    dragon.style.setProperty('--egg-sprite', `url('${DRAGON_EGG_SPRITES[state.dragonColor] || DRAGON_EGG_SPRITES.green}')`);
+    wrap.appendChild(bubble);
+    wrap.appendChild(dragon);
+    return wrap;
+  }
+
+  function animateFoodToEgg(sourceEl, egg, emoji) {
+    return new Promise(resolve => {
+      if (!sourceEl || !egg) { resolve(); return; }
+      const from = sourceEl.getBoundingClientRect();
+      const to = egg.getBoundingClientRect();
+      const fly = document.createElement('div');
+      fly.className = 'food-fly';
+      fly.textContent = emoji || '🍪';
+      fly.style.left = (from.left + from.width / 2 - 17) + 'px';
+      fly.style.top = (from.top + from.height / 2 - 17) + 'px';
+      fly.style.setProperty('--tx', (to.left + to.width / 2 - from.left - from.width / 2) + 'px');
+      fly.style.setProperty('--ty', (to.top + to.height / 2 - from.top - from.height / 2) + 'px');
+      document.body.appendChild(fly);
+      fly.addEventListener('animationend', () => {
+        fly.remove();
+        resolve();
+      }, { once: true });
+      setTimeout(() => {
+        if (fly.parentNode) {
+          fly.remove();
+          resolve();
+        }
+      }, 1000);
+    });
+  }
+
+  function animateEnergyToEgg(egg, count = 18) {
+    return new Promise(resolve => {
+      if (!egg) { resolve(); return; }
+      const rect = egg.getBoundingClientRect();
+      const targetX = rect.left + rect.width / 2;
+      const targetY = rect.top + rect.height / 2;
+      let finished = 0;
+      for (let i = 0; i < count; i++) {
+        const p = document.createElement('div');
+        p.className = 'energy-fly';
+        const startX = window.innerWidth * (0.18 + Math.random() * 0.64);
+        const startY = window.innerHeight * (0.68 + Math.random() * 0.20);
+        p.style.left = startX + 'px';
+        p.style.top = startY + 'px';
+        p.style.setProperty('--tx', (targetX - startX) + 'px');
+        p.style.setProperty('--ty', (targetY - startY) + 'px');
+        p.style.setProperty('--arc', (-30 - Math.random() * 80) + 'px');
+        p.style.setProperty('--edur', (0.85 + Math.random() * 0.45) + 's');
+        p.style.animationDelay = (i * 38) + 'ms';
+        document.body.appendChild(p);
+        p.addEventListener('animationend', () => {
+          p.remove();
+          finished++;
+          if (finished >= count) resolve();
+        }, { once: true });
+      }
+      setTimeout(resolve, 1600);
+    });
+  }
+
+  function createStarfield() {
+    const container = document.getElementById('starfield');
+    container.innerHTML = '';
+    const count = Math.min(120, Math.floor(window.innerWidth * window.innerHeight / 6000));
+    // 保留原有的发光/闪烁星点视觉(box-shadow + mix-blend-mode + twinkle)，但不再一次性
+    // 插入上百个星点(那会造成约 120-230ms 的同步样式/绘制长任务)。改为每帧只生成一小批，
+    // 配合 .star 的 starIn 淡入动画，让星星“逐帧浮现”，既不卡顿也不突兀。
+    const PER_FRAME = 6;
+    let i = 0;
+    function makeStar(idx) {
+      const star = document.createElement('div');
+      star.className = 'star';
+      const size = Math.random() * 2.5 + 0.5;
+      const color = idx % 5 === 0 ? 'hsl(44 100% 82%)' : idx % 3 === 0 ? 'hsl(190 100% 82%)' : '#fff';
+      star.style.cssText =
+        `width:${size}px;height:${size}px;` +
+        `left:${(Math.random() * 100).toFixed(2)}%;top:${(Math.random() * 100).toFixed(2)}%;` +
+        `background:${color};box-shadow:0 0 ${(2 + size * 1.5).toFixed(1)}px ${color};` +
+        `--dur:${(2 + Math.random() * 4).toFixed(2)}s;` +
+        `--o1:${(0.2 + Math.random() * 0.3).toFixed(2)};--o2:${(0.58 + Math.random() * 0.4).toFixed(2)};` +
+        // twinkle 在 starIn(0.6s)淡入之后再开始，并加少量随机错相，避免整片同步闪烁
+        `--delay:${(0.6 + Math.random() * 1.4).toFixed(2)}s`;
+      container.appendChild(star);
+    }
+    function batch() {
+      const end = Math.min(i + PER_FRAME, count);
+      for (; i < end; i++) makeStar(i);
+      if (i < count) requestAnimationFrame(batch);
+    }
+    batch();
+  }
+
+  function clearScene() {
+    return new Promise(resolve => {
+      const children = Array.from(sceneContainer.children);
+      if (!children.length) { resolve(); return; }
+      children.forEach(child => child.classList.add('scene-exit'));
+      setTimeout(() => { sceneContainer.innerHTML = ''; resolve(); }, 380);
+    });
+  }
+
+  function clearSceneInstant() {
+    sceneContainer.innerHTML = '';
+  }
+
+  function addScene() {
+    const div = document.createElement('div');
+    div.className = 'scene scene-enter';
+    sceneContainer.appendChild(div);
+    return div;
+  }
+
+  function typewrite(element, text, speed = 36) {
+    return new Promise(resolve => {
+      element.textContent = '';
+      element.classList.add('typewriter-cursor');
+      const lines = String(text || '').split('\n');
+      let lineIdx = 0, charIdx = 0;
+      function render() {
+        let html = '';
+        for (let l = 0; l <= lineIdx && l < lines.length; l++) {
+          const line = l < lineIdx ? lines[l] : lines[l].substring(0, charIdx);
+          html += (l > 0 ? '<br>' : '') + line;
+        }
+        element.innerHTML = html;
+      }
+      function tick() {
+        if (lineIdx >= lines.length) {
+          element.classList.remove('typewriter-cursor');
+          resolve();
+          return;
+        }
+        if (charIdx <= lines[lineIdx].length) {
+          render();
+          if (charIdx < lines[lineIdx].length) {
+            charIdx++;
+            setTimeout(tick, speed);
+          } else {
+            lineIdx++; charIdx = 0;
+            setTimeout(tick, speed * 2.4);
+          }
+        }
+      }
+      tick();
+    });
+  }
+
+  function spawnParticles(x, y, count, color) {
+    for (let i = 0; i < count; i++) {
+      const p = document.createElement('div');
+      p.className = 'particle';
+      const size = 3 + Math.random() * 6;
+      p.style.width = size + 'px'; p.style.height = size + 'px';
+      p.style.left = x + 'px'; p.style.top = y + 'px';
+      p.style.background = color || 'rgba(255,220,150,.8)';
+      const angle = Math.random() * Math.PI * 2;
+      const dist = 38 + Math.random() * 88;
+      p.style.setProperty('--px', Math.cos(angle) * dist + 'px');
+      p.style.setProperty('--py', Math.sin(angle) * dist + 'px');
+      p.style.setProperty('--pdur', (.6 + Math.random() * .8) + 's');
+      document.body.appendChild(p);
+      setTimeout(() => p.remove(), 1500);
+    }
+  }
+
+  function planetSVG() {
+    return `
+<svg viewBox="0 0 200 200" xmlns="http://www.w3.org/2000/svg" style="width:100%;height:100%;display:block;overflow:visible">
+  <defs>
+    <radialGradient id="maisiPlanet" cx="50%" cy="42%" r="62%">
+      <stop offset="0%" stop-color="#9df7df"/><stop offset="48%" stop-color="#44d8cc"/><stop offset="100%" stop-color="#1687ad"/>
+    </radialGradient>
+    <radialGradient id="maisiHi" cx="34%" cy="24%" r="42%">
+      <stop offset="0%" stop-color="rgba(255,255,255,.76)"/><stop offset="65%" stop-color="rgba(255,255,255,.10)"/><stop offset="100%" stop-color="rgba(255,255,255,0)"/>
+    </radialGradient>
+    <radialGradient id="maisiShade" cx="70%" cy="76%" r="44%">
+      <stop offset="0%" stop-color="rgba(10,70,108,.42)"/><stop offset="100%" stop-color="rgba(10,70,108,0)"/>
+    </radialGradient>
+    <clipPath id="maisiClip"><circle cx="100" cy="100" r="78"/></clipPath>
+  </defs>
+  <circle cx="100" cy="100" r="78" fill="url(#maisiPlanet)"/>
+  <g clip-path="url(#maisiClip)"><g class="planet-spin">
+    <ellipse cx="72" cy="84" rx="23" ry="13" fill="rgba(255,255,255,.16)" transform="rotate(-12 72 84)"/>
+    <ellipse cx="130" cy="119" rx="18" ry="10" fill="rgba(8,70,90,.22)" transform="rotate(8 130 119)"/>
+    <ellipse cx="110" cy="69" rx="10" ry="6" fill="rgba(255,255,255,.12)"/>
+    <ellipse cx="59" cy="133" rx="16" ry="9" fill="rgba(255,255,255,.10)" transform="rotate(160 59 133)"/>
+    <ellipse cx="142" cy="75" rx="12" ry="8" fill="rgba(8,70,90,.18)" transform="rotate(200 142 75)"/>
+  </g></g>
+  <circle cx="100" cy="100" r="78" fill="url(#maisiShade)"/>
+  <circle cx="100" cy="100" r="78" fill="url(#maisiHi)"/>
+</svg>`;
+  }
+
+  function eggSVG() {
+    return `
+<svg viewBox="0 0 120 140" xmlns="http://www.w3.org/2000/svg" aria-label="抱抱龙蛋">
+  <defs>
+    <radialGradient id="eggBody" cx="40%" cy="35%" r="75%">
+      <stop offset="0%" stop-color="#fff7d6"/><stop offset="55%" stop-color="#ffd86b"/><stop offset="100%" stop-color="#e8a93a"/>
+    </radialGradient>
+    <radialGradient id="eggShine" cx="50%" cy="50%" r="50%">
+      <stop offset="0%" stop-color="#fff" stop-opacity=".9"/><stop offset="100%" stop-color="#fff" stop-opacity="0"/>
+    </radialGradient>
+    <linearGradient id="eggGloss" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0%" stop-color="#fff" stop-opacity=".55"/><stop offset="100%" stop-color="#fff" stop-opacity="0"/>
+    </linearGradient>
+    <clipPath id="eggClip"><path d="M60 14 C90 14 108 40 108 73 C108 106 89 126 60 126 C31 126 12 106 12 73 C12 40 30 14 60 14 Z"/></clipPath>
+  </defs>
+  <ellipse cx="60" cy="121" rx="42" ry="6.5" fill="#000" opacity=".12"/>
+  <path d="M60 14 C90 14 108 40 108 73 C108 106 89 126 60 126 C31 126 12 106 12 73 C12 40 30 14 60 14 Z" fill="url(#eggBody)" stroke="#caa23a" stroke-width="2"/>
+  <g clip-path="url(#eggClip)">
+    <g class="pattern-layer pattern-careful">
+      <path d="M34 102 C42 82 50 74 62 63" fill="none" stroke-width="3" stroke-linecap="round"/>
+      <path d="M46 84 C38 82 34 75 35 68 C44 70 50 75 50 83 Z"/>
+      <path d="M62 63 C72 58 80 48 84 38" fill="none" stroke-width="2.6" stroke-linecap="round"/>
+      <path d="M72 54 C65 50 63 44 65 38 C73 41 77 46 76 53 Z"/>
+    </g>
+    <g class="pattern-layer pattern-brave">
+      <path d="M38 94 L44 80 L50 94 L44 101 Z" stroke-width="2"/>
+      <path d="M70 54 L77 36 L84 55 L77 64 Z" stroke-width="2"/>
+      <circle cx="84" cy="91" r="5" stroke-width="2"/>
+      <path d="M28 62 Q40 55 50 64" fill="none" stroke-width="3" stroke-linecap="round"/>
+    </g>
+    <g class="pattern-layer pattern-wise">
+      <path d="M33 88 Q58 70 88 85" fill="none" stroke-width="2.6" stroke-linecap="round"/>
+      <path d="M77 42 A12 12 0 1 0 92 56 A9 9 0 1 1 77 42" stroke-width="1.8"/>
+      <path d="M42 56 L45 63 L52 64 L47 69 L48 76 L42 72 L36 76 L37 69 L32 64 L39 63 Z" stroke-width="1.5"/>
+      <circle cx="65" cy="96" r="3.5" stroke-width="1.6"/>
+    </g>
+  </g>
+  <path d="M30 36 C42 24 78 24 90 36 C80 46 40 46 30 36 Z" fill="url(#eggGloss)"/>
+  <ellipse cx="27" cy="86" rx="8" ry="4.4" fill="#fb7185" opacity=".55"/>
+  <ellipse cx="93" cy="86" rx="8" ry="4.4" fill="#fb7185" opacity=".55"/>
+  <ellipse cx="44" cy="74" rx="9" ry="11" fill="#fff"/>
+  <ellipse cx="76" cy="74" rx="9" ry="11" fill="#fff"/>
+  <circle cx="45.5" cy="76" r="5.4" fill="#3a2a1a"/><circle cx="77.5" cy="76" r="5.4" fill="#3a2a1a"/>
+  <circle cx="43.5" cy="73.5" r="1.8" fill="#fff"/><circle cx="75.5" cy="73.5" r="1.8" fill="#fff"/>
+  <path d="M54 92 Q60 98 66 92" fill="none" stroke="#caa23a" stroke-width="2.2" stroke-linecap="round"/>
+  <ellipse cx="40" cy="44" rx="14" ry="17" fill="url(#eggShine)"/>
+  <path class="star-mark" d="M86 28 L89 36 L98 36 L91 41 L94 50 L86 45 L78 50 L81 41 L74 36 L83 36 Z" fill="#fff4a8" stroke="#ffdc68" stroke-width="1.6"/>
+</svg>`;
+  }
+
+  function createEgg(size = 142, classes = '') {
+    const egg = document.createElement('div');
+    egg.className = `egg-holder egg-normal ${classes}`.trim();
+    egg.style.width = size + 'px';
+    egg.style.height = size + 'px';
+    applyEggSprite(egg, state.dragonColor || 'green');
+    applyEggState(egg);
+    return egg;
+  }
+
+  function applyEggSprite(egg, color) {
+    if (!egg) return;
+    const src = DRAGON_EGG_SPRITES[color] || DRAGON_EGG_SPRITES.green;
+    egg.style.setProperty('--egg-sprite', `url('${src}')`);
+    egg.dataset.dragonColor = color || 'green';
+  }
+
+  function setEggMood(egg, mood) {
+    if (!egg) return;
+    egg.classList.toggle('egg-happy', mood === 'happy');
+    egg.classList.toggle('egg-normal', mood !== 'happy');
+  }
+
+  function patternClass() {
+    if (!state.wish) return '';
+    if (state.wish.id === 'careful') return 'pattern-careful';
+    if (state.wish.id === 'brave') return 'pattern-brave';
+    if (state.wish.id === 'wise') return 'pattern-wise';
+    return '';
+  }
+
+  function applyEggState(egg) {
+    egg.classList.remove('pattern-careful', 'pattern-brave', 'pattern-wise', 'awakened');
+    const cls = patternClass();
+    if (cls) egg.classList.add(cls);
+    if (state.egg_awakened) egg.classList.add('awakened');
+  }
+
+  function createPlanet(showEgg = false, awake = false) {
+    const wrap = document.createElement('div');
+    wrap.className = 'planet-wrap';
+    wrap.innerHTML = planetSVG();
+    const nest = document.createElement('div');
+    nest.className = `nest ${showEgg ? 'visible' : ''} ${awake ? 'awake' : ''}`;
+    const eggWrap = document.createElement('div');
+    eggWrap.className = `planet-egg ${showEgg ? 'visible' : ''}`;
+    const egg = createEgg(108, awake ? 'egg-breathe' : 'egg-float');
+    eggWrap.appendChild(egg);
+    wrap.appendChild(nest);
+    wrap.appendChild(eggWrap);
+    return wrap;
+  }
+
+  function pushEggToPlanet(eggNode, eggStartRect, opts = {}) {
+    return new Promise(resolve => {
+      const dur = opts.duration || 2000;
+      const planetSize = opts.planetSize || 220;
+      const eggEndScale = opts.eggEndScale != null ? opts.eggEndScale : 0.34;
+      const vw = window.innerWidth;
+      const vh = window.innerHeight;
+
+      const layer = document.createElement('div');
+      layer.className = 'push-layer';
+
+      const planetEl = document.createElement('div');
+      planetEl.style.position = 'absolute';
+      planetEl.style.left = '50%';
+      planetEl.style.top = '50%';
+      planetEl.style.width = planetSize + 'px';
+      planetEl.style.height = planetSize + 'px';
+      planetEl.style.zIndex = '1';
+      planetEl.style.filter = 'drop-shadow(0 0 28px rgba(92,236,228,.48))';
+      planetEl.style.transformOrigin = 'center center';
+      planetEl.style.transform = 'translate(-50%, -50%) scale(.08)';
+      planetEl.style.opacity = '0';
+      planetEl.style.transition = `transform ${dur}ms cubic-bezier(.22,.6,.25,1), opacity ${dur * .3}ms ease`;
+      planetEl.innerHTML = planetSVG();
+
+      const startCX = eggStartRect.left + eggStartRect.width / 2;
+      const startCY = eggStartRect.top + eggStartRect.height / 2;
+      const startW = eggStartRect.width;
+      const startH = eggStartRect.height;
+      const radius = planetSize / 2;
+      const angle = -Math.PI / 2;
+      const endCX = vw / 2 + Math.cos(angle) * radius * .88;
+      const endCY = vh / 2 + Math.sin(angle) * radius * .88;
+
+      const eggHolder = document.createElement('div');
+      eggHolder.style.position = 'fixed';
+      eggHolder.style.left = '0';
+      eggHolder.style.top = '0';
+      eggHolder.style.zIndex = '3';
+      eggHolder.style.width = startW + 'px';
+      eggHolder.style.height = startH + 'px';
+      eggHolder.style.transformOrigin = 'center center';
+      eggHolder.style.willChange = 'transform';
+      eggHolder.style.transform = `translate(${startCX - startW / 2}px, ${startCY - startH / 2}px) scale(1)`;
+      eggHolder.style.transition = `transform ${dur}ms cubic-bezier(.4,0,.25,1)`;
+
+      eggNode.classList.remove('egg-float', 'egg-glow', 'egg-wobble');
+      eggNode.style.width = startW + 'px';
+      eggNode.style.height = startH + 'px';
+      eggHolder.appendChild(eggNode);
+
+      layer.appendChild(planetEl);
+      layer.appendChild(eggHolder);
+      sceneContainer.appendChild(layer);
+
+      requestAnimationFrame(() => {
+        planetEl.style.opacity = '1';
+        planetEl.style.transform = 'translate(-50%, -50%) scale(1)';
+        const tx = endCX - startW / 2;
+        const ty = endCY - startH / 2;
+        eggHolder.style.transform = `translate(${tx}px, ${ty}px) scale(${eggEndScale})`;
+      });
+
+      const dust = setInterval(() => {
+        spawnParticles(
+          vw * (.3 + Math.random() * .4),
+          vh * (.3 + Math.random() * .4),
+          3,
+          'rgba(255,255,255,.5)'
+        );
+      }, 200);
+
+      setTimeout(() => {
+        clearInterval(dust);
+        eggNode.classList.add('egg-float');
+        layer.style.pointerEvents = 'auto';
+        resolve({ layer, planetEl, eggEl: eggHolder, eggNode, planetSize });
+      }, dur);
+    });
+  }
+
+  function settlePlanetUI(settled) {
+    const panel = document.createElement('div');
+    panel.className = 'push-ui-panel';
+    settled.layer.appendChild(panel);
+    settled.layer.style.pointerEvents = 'auto';
+    requestAnimationFrame(() => panel.classList.add('is-in'));
+    return panel;
+  }
+
+  function updateStatus(text) {
+    if (statusText) statusText.textContent = text;
+  }
+
+  function button(label, onClick, className = 'confirm-btn') {
+    const btn = document.createElement('button');
+    btn.className = className;
+    btn.textContent = label;
+    btn.addEventListener('click', () => { Music.start(); Music.click(); onClick && onClick(); });
+    return btn;
+  }
+
+  async function scene1() {
+    state.currentScene = 1;
+    updateStatus(t('statusLv1'));
+    track('tutorial_start');
+    await clearScene();
+    const scene = addScene();
+    const stage = document.createElement('div');
+    stage.className = 'stage';
+    const text = document.createElement('div');
+    text.className = 'story-text';
+    text.style.fontSize = 'clamp(15px, 3.5vw, 20px)';
+    text.style.marginBottom = '34px';
+    const eggWrap = createEgg(130, 'egg-float egg-glow');
+    eggWrap.style.cursor = 'pointer';
+    const hint = document.createElement('div');
+    hint.className = 'small-text';
+    hint.textContent = t('scene1Hint');
+    hint.style.marginTop = '10px';
+    stage.appendChild(text);
+    stage.appendChild(eggWrap);
+    stage.appendChild(hint);
+    scene.appendChild(stage);
+    await typewrite(text, t('scene1Narration'), 48);
+
+    let clicked = false;
+    eggWrap.addEventListener('click', function onEggClick(e) {
+      if (clicked) return;
+      clicked = true;
+      Music.start(); Music.egg();
+      eggWrap.classList.remove('egg-float');
+      eggWrap.classList.add('egg-wobble');
+      spawnParticles(e.clientX, e.clientY, 12, 'rgba(255,220,150,.7)');
+      hint.style.opacity = '0';
+      text.style.transition = 'opacity .4s';
+      text.style.opacity = '0';
+      setTimeout(async () => {
+        const eggRect = eggWrap.getBoundingClientRect();
+        eggWrap.classList.remove('egg-wobble');
+        if (eggWrap.parentNode) eggWrap.parentNode.removeChild(eggWrap);
+        clearSceneInstant();
+        const settled = await pushEggToPlanet(eggWrap, eggRect, {
+          planetSize: 220,
+          eggEndScale: .36,
+          duration: 2000,
+        });
+        track('egg_landed');
+        scene2(settled);
+      }, 700);
+    }, { once: false });
+  }
+
+  async function scene2(settled) {
+    state.currentScene = 2;
+    const panel = settlePlanetUI(settled);
+    const prompt = document.createElement('div');
+    prompt.className = 'small-text';
+    prompt.textContent = t('scene2Prompt');
+    const input = document.createElement('input');
+    input.type = 'text';
+    input.value = state.planetName || t('scene2DefaultName');
+    input.maxLength = 12;
+    input.className = 'px-4 py-3 rounded-xl text-center text-lg';
+    input.style.cssText = 'width:min(68vw,240px);background:rgba(255,255,255,.06);border:1.5px solid rgba(255,220,150,.32);color:#ffdc96;outline:none;';
+    const nameBtn = button(t('scene2Confirm'), () => {
+      const name = input.value.trim() || t('scene2DefaultName');
+      state.planetName = name;
+      const eggNode = settled.eggNode;
+      eggNode.classList.remove('egg-float');
+      eggNode.classList.add('egg-wobble');
+      flashEggHappy(eggNode, 900);
+      const pr = settled.planetEl.getBoundingClientRect();
+      spawnParticles(pr.left + pr.width / 2, pr.top + pr.height / 2, 22, 'rgba(92,236,228,.62)');
+      panel.classList.remove('is-in');
+      setTimeout(() => {
+        eggNode.classList.remove('egg-wobble');
+        eggNode.classList.add('egg-float');
+        if (panel.parentNode) panel.parentNode.removeChild(panel);
+        scene3Feeding();
+      }, 620);
+    });
+    input.addEventListener('keydown', (e) => { if (e.key === 'Enter') nameBtn.click(); });
+    panel.appendChild(prompt);
+    panel.appendChild(input);
+    panel.appendChild(nameBtn);
+  }
+
+  async function scene4Personality() {
+    state.currentScene = 4;
+    await clearScene();
+    const scene = addScene();
+    const stage = document.createElement('div');
+    stage.className = 'stage';
+    const egg = createEgg(112, 'egg-float egg-glow');
+    const bubble = document.createElement('div');
+    bubble.className = 'egg-bubble';
+    const prompt = document.createElement('div');
+    prompt.className = 'small-text';
+    prompt.textContent = t('scene4Prompt');
+    const row = document.createElement('div');
+    row.className = 'opt-row';
+    game_config.personalities.forEach(p => {
+      const btn = document.createElement('button');
+      btn.className = 'opt-btn';
+      btn.textContent = p;
+      btn.addEventListener('click', () => {
+        Music.start(); Music.click();
+        state.personality = p;
+        // 性格决定元素属性（自然 / 火 / 冰 / 生命 / 暗 / 雷）。
+        state.elementalAttribute = (game_config.personalityToAttribute || {})[p] || '自然';
+        btn.classList.add('selected');
+        const r = btn.getBoundingClientRect();
+        spawnParticles(r.left + r.width / 2, r.top, 12, 'rgba(255,220,150,.6)');
+        setTimeout(() => scene5ColorWish(), 620);
+      });
+      row.appendChild(btn);
+    });
+    stage.appendChild(bubble);
+    stage.appendChild(egg);
+    stage.appendChild(prompt);
+    stage.appendChild(row);
+    scene.appendChild(stage);
+    await typewrite(bubble, t('scene4PetSays'), 42);
+  }
+
+  async function scene3Feeding() {
+    state.currentScene = 3;
+    await clearScene();
+    const scene = addScene();
+    const stage = document.createElement('div');
+    stage.className = 'stage';
+    const text = document.createElement('div');
+    text.className = 'story-text';
+    text.style.fontSize = 'clamp(15px, 3.5vw, 19px)';
+    const egg = createEgg(116, 'egg-float egg-glow');
+    const prompt = document.createElement('div');
+    prompt.className = 'small-text';
+    prompt.textContent = t('scene3Prompt');
+    const row = document.createElement('div');
+    row.className = 'opt-row';
+    game_config.foods.forEach(food => {
+      const btn = document.createElement('button');
+      btn.className = 'opt-btn food-btn';
+      btn.innerHTML = `<span class="food-emoji">${food.emoji}</span><span>${food.name}</span><span class="food-desc">${food.desc}</span>`;
+      btn.addEventListener('click', async () => {
+        Music.start(); Music.click();
+        state.firstFood = food;
+        btn.classList.add('selected');
+        row.querySelectorAll('button').forEach(b => { if (b !== btn) b.disabled = true; });
+        const emojiEl = btn.querySelector('.food-emoji');
+        if (emojiEl) emojiEl.style.opacity = '0';
+        await animateFoodToEgg(btn, egg, food.emoji);
+        flashEggHappy(egg, 900);
+        egg.classList.remove('egg-float');
+        egg.classList.add('egg-wobble');
+        const r = egg.getBoundingClientRect();
+        spawnParticles(r.left + r.width / 2, r.top + r.height / 2, 14, 'rgba(255,180,100,.65)');
+        setTimeout(() => scene4Personality(), 760);
+      });
+      row.appendChild(btn);
+    });
+    stage.appendChild(text);
+    stage.appendChild(egg);
+    stage.appendChild(prompt);
+    stage.appendChild(row);
+    scene.appendChild(stage);
+    await typewrite(text, t('scene3Narration'), 44);
+  }
+
+  async function scene5ColorWish() {
+    state.currentScene = 5;
+    track('wish_start_click');
+    state.previewWish = state.wish || game_config.wishes[0];
+    state.dragonColor = state.previewWish?.dragon_color || 'green';
+    await clearScene();
+    const scene = addScene();
+    const stage = document.createElement('div');
+    stage.className = 'stage';
+    stage.style.justifyContent = 'flex-start';
+    const egg = createEgg(116, 'egg-float egg-glow');
+    const title = document.createElement('div');
+    title.className = 'story-text';
+    title.style.fontSize = 'clamp(17px, 4.3vw, 22px)';
+    title.textContent = t('scene5Title');
+    const grid = document.createElement('div');
+    grid.className = 'wish-grid';
+    const confirmBtn = button(t('scene5Confirm'), async () => {
+      const w = state.previewWish || game_config.wishes[0];
+      state.wish = w;
+      state.dragonColor = w.dragon_color || 'green';
+      applyEggSprite(egg, state.dragonColor);
+      applyEggState(egg);
+      flashEggHappy(egg, 900);
+      const r = egg.getBoundingClientRect();
+      spawnParticles(r.left + r.width / 2, r.top + r.height / 2, 22, w.id === 'careful' ? 'rgba(145,244,168,.75)' : w.id === 'brave' ? 'rgba(255,177,94,.75)' : 'rgba(201,167,255,.75)');
+      track('wish_selected', { wish_type: w.wish_type, dragon_color: w.dragon_color, egg_pattern: w.egg_pattern });
+      await new Promise(resolve => setTimeout(resolve, 560));
+      scene6TouchEgg();
+    });
+    game_config.wishes.forEach(w => {
+      const card = document.createElement('button');
+      card.className = 'wish-card';
+      const chipClass = w.id === 'careful' ? 'chip-careful' : w.id === 'brave' ? 'chip-brave' : 'chip-wise';
+      card.innerHTML = `<div class="wish-title"><span class="wish-chip ${chipClass}">${w.icon}</span>${w.title}</div>`;
+      if (state.previewWish && state.previewWish.id === w.id) card.classList.add('selected');
+      card.addEventListener('click', () => {
+        Music.start(); Music.click();
+        state.previewWish = w;
+        state.dragonColor = w.dragon_color || 'green';
+        grid.querySelectorAll('.wish-card').forEach(el => el.classList.remove('selected'));
+        card.classList.add('selected');
+        applyEggSprite(egg, state.dragonColor);
+        applyEggState(egg);
+        flashEggHappy(egg, 900);
+        const r = egg.getBoundingClientRect();
+        spawnParticles(r.left + r.width / 2, r.top + r.height / 2, 12, w.id === 'careful' ? 'rgba(145,244,168,.65)' : w.id === 'brave' ? 'rgba(255,177,94,.65)' : 'rgba(201,167,255,.65)');
+      });
+      grid.appendChild(card);
+    });
+    stage.appendChild(egg);
+    stage.appendChild(title);
+    stage.appendChild(grid);
+    stage.appendChild(confirmBtn);
+    scene.appendChild(stage);
+  }
+
+  async function scene6TouchEgg() {
+    state.currentScene = 6;
+    await clearScene();
+    const scene = addScene();
+    const stage = document.createElement('div');
+    stage.className = 'stage';
+
+    const bubble = document.createElement('div');
+    bubble.className = 'egg-bubble';
+
+    const egg = createEgg(150, 'egg-float egg-glow');
+    egg.style.cursor = 'pointer';
+
+    const touchLine = document.createElement('div');
+    touchLine.className = 'story-text';
+    touchLine.style.fontSize = 'clamp(16px, 4vw, 22px)';
+    touchLine.style.minHeight = '35px';
+
+    const hint = document.createElement('div');
+    hint.className = 'small-text';
+    hint.textContent = t('scene6Hint');
+
+    const dots = document.createElement('div');
+    dots.className = 'flex gap-3';
+    for (let i = 0; i < 3; i++) {
+      const dot = document.createElement('div');
+      dot.className = 'w-3 h-3 rounded-full bg-white/20 transition-all duration-500';
+      dots.appendChild(dot);
+    }
+
+    stage.appendChild(bubble);
+    stage.appendChild(egg);
+    stage.appendChild(touchLine);
+    stage.appendChild(hint);
+    stage.appendChild(dots);
+    scene.appendChild(stage);
+
+    await typewrite(bubble, t('scene6PetSays'), 42);
+
+    let touches = 0;
+    const lines = [t('scene6Touch1'), t('scene6Touch2'), t('scene6Touch3')];
+    egg.addEventListener('click', function onTouch(e) {
+      if (touches >= 3) return;
+      touches++;
+      Music.start(); Music.egg();
+
+      const rect = egg.getBoundingClientRect();
+      const ripple = document.createElement('div');
+      ripple.className = 'touch-ripple';
+      ripple.style.left = (e.clientX - rect.left) + 'px';
+      ripple.style.top = (e.clientY - rect.top) + 'px';
+      egg.appendChild(ripple);
+      setTimeout(() => ripple.remove(), 1000);
+
+      egg.classList.remove('egg-float');
+      egg.classList.add('egg-wobble');
+      flashEggHappy(egg, 700);
+      setTimeout(() => {
+        egg.classList.remove('egg-wobble');
+        if (touches < 3) egg.classList.add('egg-float');
+      }, 520);
+
+      const dot = dots.children[touches - 1];
+      if (dot) {
+        dot.style.background = 'rgba(255,220,150,.86)';
+        dot.style.boxShadow = '0 0 10px rgba(255,220,150,.55)';
+      }
+      spawnParticles(e.clientX, e.clientY, 8, 'rgba(255,220,150,.62)');
+      touchLine.textContent = lines[touches - 1] || '';
+
+      if (touches >= 3) {
+        egg.removeEventListener('click', onTouch);
+        hint.style.opacity = '0';
+        setTimeout(() => scene6NeedStar(), 850);
+      }
+    });
+  }
+
+  async function scene5ColorFeedback() {
+    await clearScene();
+    const scene = addScene();
+    const stage = document.createElement('div');
+    stage.className = 'stage';
+    const egg = createEgg(142, 'egg-float egg-glow');
+    const text = document.createElement('div');
+    text.className = 'story-text';
+    const bubble = document.createElement('div');
+    bubble.className = 'egg-bubble';
+    stage.appendChild(egg);
+    stage.appendChild(text);
+    stage.appendChild(bubble);
+    scene.appendChild(stage);
+    await typewrite(bubble, t('scene5FbBubble1', { label: state.wish.label }), 40);
+    await typewrite(text, t('scene5FbText'), 42);
+    await typewrite(bubble, t('scene5FbBubble2'), 38);
+    stage.appendChild(button(t('scene5FbContinue'), () => scene6NeedStar()));
+  }
+
+  async function scene6NeedStar() {
+    state.currentScene = 6;
+    await clearScene();
+    const scene = addScene();
+    const stage = document.createElement('div');
+    stage.className = 'stage';
+    const egg = createEgg(126, 'egg-float egg-glow');
+    const text = document.createElement('div');
+    text.className = 'story-text';
+    text.style.fontSize = 'clamp(16px, 4.2vw, 22px)';
+    const hint = document.createElement('div');
+    hint.className = 'small-text';
+    hint.textContent = t('scene6NeedStarHint');
+    stage.appendChild(egg);
+    stage.appendChild(text);
+    stage.appendChild(hint);
+    scene.appendChild(stage);
+    await typewrite(text, t('scene6NeedStar'), 44);
+    stage.appendChild(button(t('scene6StartGame'), () => { track('first_game_start'); scene7Game(); }));
+  }
+
+  async function scene8EnergyFinish() {
+    state.currentScene = 8;
+    state.first_game_completed = true;
+    state.thinking_star_count = 1;
+    await clearScene();
+    const scene = addScene();
+    const stage = document.createElement('div');
+    stage.className = 'stage';
+    const egg = createEgg(146, 'egg-glow');
+    setEggMood(egg, 'happy');
+    const text = document.createElement('div');
+    text.className = 'story-text';
+    text.style.fontSize = 'clamp(18px, 4.8vw, 25px)';
+    stage.appendChild(egg);
+    stage.appendChild(text);
+    scene.appendChild(stage);
+    Music.sparkle();
+    const r = egg.getBoundingClientRect();
+    spawnParticles(r.left + r.width / 2, r.top + r.height / 2, 28, 'rgba(255,220,150,.72)');
+    await typewrite(text, t('scene8EnergyText1'), 46);
+    await animateEnergyToEgg(egg, 20);
+    flashEggHappy(egg, 1000);
+    await new Promise(resolve => setTimeout(resolve, 700));
+    await typewrite(text, t('scene8EnergyText2'), 52);
+    track('tutorial_complete');
+    stage.appendChild(button(t('scene8Ok'), () => finishGame()));
+  }
+
+  async function scene7Game() {
+    state.currentScene = 7;
+    state.palaceAttempts = 0;
+    state.palaceLevelIndex = 0;
+    track('first_game_start');
+    await runPalaceRound();
+  }
+
+  async function runPalaceRound() {
+    await clearScene();
+    const scene = addScene();
+    const card = document.createElement('div');
+    card.className = 'mini-game-card scene-enter';
+    const size = [2, 3, 4][state.palaceLevelIndex] || 4;
+    const title = document.createElement('div');
+    title.className = 'story-text';
+    title.style.fontSize = 'clamp(22px, 5.5vw, 30px)';
+    title.textContent = t('palaceTitle');
+    const prompt = document.createElement('div');
+    prompt.className = 'small-text';
+    prompt.textContent = t('palacePrompt', { cur: state.palaceAttempts + 1, size });
+    const board = document.createElement('div');
+    board.className = 'palace-board';
+    board.style.gridTemplateColumns = `repeat(${size}, 1fr)`;
+    board.style.gridTemplateRows = `repeat(${size}, 1fr)`;
+    const feedback = document.createElement('div');
+    feedback.className = 'small-text palace-feedback';
+
+    const outer = [];
+    for (let i = 0; i < size * size; i++) {
+      const row = Math.floor(i / size);
+      const col = i % size;
+      if (row === 0 || row === size - 1 || col === 0 || col === size - 1) outer.push(i);
+    }
+    const targetIndex = outer[Math.floor(Math.random() * outer.length)];
+    const rotations = size >= 3 ? [-270, -90, 90, 180, 270] : [-90, 90, 180];
+    const rotation = rotations[Math.floor(Math.random() * rotations.length)];
+    const rotateDuration = Math.abs(rotation) * 13;
+    let phase = 'find';
+
+    function rotatedIndex(index, deg) {
+      let row = Math.floor(index / size);
+      let col = index % size;
+      let turns = ((deg / 90) % 4 + 4) % 4;
+      for (let t = 0; t < turns; t++) {
+        const nextRow = col;
+        const nextCol = size - 1 - row;
+        row = nextRow;
+        col = nextCol;
+      }
+      return row * size + col;
+    }
+    const answerIndex = targetIndex;
+
+    function finishRound(success) {
+      state.palaceAttempts++;
+      if (success) {
+        state.palaceLevelIndex = Math.min(2, state.palaceLevelIndex + 1);
+      }
+      if (state.palaceAttempts >= 4) {
+        state.first_game_completed = true;
+        state.thinking_star_count = 1;
+        feedback.innerHTML = t('palaceGotEnergy');
+        track('first_game_success', { palaceAttempts: state.palaceAttempts, palaceLevel: size });
+        track('thinking_star_get', { thinking_star_count: 1 });
+        setTimeout(() => scene8EnergyFinish(), 720);
+      } else {
+        setTimeout(() => runPalaceRound(), 820);
+      }
+    }
+
+    for (let i = 0; i < size * size; i++) {
+      const cell = document.createElement('button');
+      cell.className = 'palace-cell';
+      if (i === targetIndex) {
+        cell.classList.add('has-dragon');
+        const dragon = document.createElement('div');
+        dragon.className = 'palace-dragon';
+        dragon.style.setProperty('--egg-sprite', `url('${DRAGON_EGG_SPRITES[state.dragonColor] || DRAGON_EGG_SPRITES.green}')`);
+        const memoryBubble = document.createElement('div');
+        memoryBubble.className = 'palace-memory-bubble';
+        memoryBubble.textContent = t('palaceMemoryHint');
+        const cue = document.createElement('div');
+        cue.className = 'palace-click-cue';
+        cell.appendChild(memoryBubble);
+        cell.appendChild(dragon);
+        cell.appendChild(cue);
+      }
+      cell.addEventListener('click', () => {
+        Music.start(); Music.click();
+        if (phase === 'find') {
+          if (i !== targetIndex) return;
+          phase = 'rotate';
+          cell.innerHTML = '';
+          feedback.textContent = t('palaceRotating');
+          Music.rotate();
+          board.style.setProperty('--rotate-duration', `${rotateDuration}ms`);
+          board.style.transform = `translateX(-50%) rotate(${rotation}deg)`;
+          setTimeout(() => {
+            phase = 'answer';
+            prompt.textContent = t('palaceAnswerPrompt');
+            feedback.textContent = '';
+          }, rotateDuration + 120);
+          return;
+        }
+        if (phase !== 'answer') return;
+        phase = 'done';
+        if (i === answerIndex) {
+          cell.classList.add('correct');
+          cell.classList.add('has-dragon');
+          cell.appendChild(createPalaceDragon(t('palaceCorrectSay'), 'happy', -rotation));
+          Music.success();
+          const r = cell.getBoundingClientRect();
+          spawnParticles(r.left + r.width / 2, r.top + r.height / 2, 18, 'rgba(34,197,94,.7)');
+          feedback.textContent = size < 4 ? t('palaceFoundGrow') : t('palaceFound');
+          finishRound(true);
+        } else {
+          cell.classList.add('incorrect');
+          const correctCell = board.children[answerIndex];
+          if (correctCell) {
+            correctCell.classList.add('correct');
+            correctCell.classList.add('has-dragon');
+            correctCell.appendChild(createPalaceDragon(t('palaceWrongSay'), 'normal', -rotation));
+          }
+          Music.error();
+          feedback.textContent = t('palaceTryAgain');
+          finishRound(false);
+        }
+      });
+      board.appendChild(cell);
+    }
+
+    card.appendChild(title);
+    card.appendChild(prompt);
+    card.appendChild(board);
+    card.appendChild(feedback);
+    scene.appendChild(card);
+  }
+
+  async function scene6() {
+    state.currentScene = 6;
+    await clearScene();
+    const scene = addScene();
+    const stage = document.createElement('div');
+    stage.className = 'stage';
+    const planet = createPlanet(true, false);
+    const star = document.createElement('div');
+    star.className = 'thinking-star';
+    star.textContent = '⭐';
+    const text = document.createElement('div');
+    text.className = 'story-text';
+    const bubble = document.createElement('div');
+    bubble.className = 'egg-bubble';
+    stage.appendChild(planet); stage.appendChild(star); stage.appendChild(text); stage.appendChild(bubble);
+    scene.appendChild(stage);
+    await typewrite(text, t('legacyStarReturn'), 44);
+    await typewrite(bubble, t('legacyStarForMe'), 42);
+    stage.appendChild(button(t('legacyGiveIt'), () => { track('thinking_star_give'); scene7(); }));
+  }
+
+  async function scene7() {
+    state.currentScene = 7;
+    await clearScene();
+    const scene = addScene();
+    const stage = document.createElement('div');
+    stage.className = 'stage';
+    const egg = createEgg(154, 'egg-glow');
+    const star = document.createElement('div');
+    star.className = 'thinking-star';
+    star.textContent = '⭐';
+    const bubble = document.createElement('div');
+    bubble.className = 'egg-bubble';
+    const text = document.createElement('div');
+    text.className = 'story-text';
+    stage.appendChild(star); stage.appendChild(egg); stage.appendChild(bubble); stage.appendChild(text);
+    scene.appendChild(stage);
+    await new Promise(r => setTimeout(r, 350));
+    const sr = star.getBoundingClientRect();
+    const er = egg.getBoundingClientRect();
+    const flying = document.createElement('div');
+    flying.className = 'star-fly';
+    flying.textContent = '⭐';
+    flying.style.left = sr.left + 'px'; flying.style.top = sr.top + 'px';
+    flying.style.setProperty('--tx', (er.left + er.width / 2 - sr.left - 18) + 'px');
+    flying.style.setProperty('--ty', (er.top + er.height / 2 - sr.top - 18) + 'px');
+    document.body.appendChild(flying);
+    star.style.opacity = '0';
+    await new Promise(r => setTimeout(r, 980));
+    flying.remove();
+    state.egg_awakened = true;
+    applyEggState(egg);
+    setEggMood(egg, 'happy');
+    egg.classList.add('egg-wobble', 'awakened');
+    updateStatus(t('statusAwake'));
+    Music.sparkle();
+    const r = egg.getBoundingClientRect();
+    spawnParticles(r.left + r.width / 2, r.top + r.height / 2, 34, 'rgba(255,235,150,.76)');
+    track('egg_awakened', { wish_type: state.wish?.wish_type, dragon_color: state.wish?.dragon_color, egg_pattern: state.wish?.egg_pattern });
+    await typewrite(bubble, t('legacyEggWarm'), 46);
+    await new Promise(resolve => setTimeout(resolve, 360));
+    await typewrite(bubble, t('legacyEggWake'), 46);
+    await new Promise(resolve => setTimeout(resolve, 360));
+    await typewrite(bubble, t('legacyEggThanks'), 42);
+    await typewrite(text, t('legacyEggMovedIn'), 44);
+    stage.appendChild(button(t('legacyEnterPlanet'), () => scene8()));
+  }
+
+  async function scene8() {
+    state.currentScene = 8;
+    state.tutorial_completed = true;
+    await clearScene();
+    const scene = addScene();
+    const stage = document.createElement('div');
+    stage.className = 'stage';
+    const planet = createPlanet(true, true);
+    const tip = document.createElement('div');
+    tip.className = 'story-text';
+    tip.style.fontSize = 'clamp(17px, 4.2vw, 23px)';
+    const bubble = document.createElement('div');
+    bubble.className = 'egg-bubble';
+    bubble.textContent = t('legacyDailyBubble');
+    stage.appendChild(planet); stage.appendChild(bubble); stage.appendChild(tip);
+    scene.appendChild(stage);
+    await typewrite(tip, t('legacyWaitingTraining'), 42);
+    stage.appendChild(button(t('legacyStartTraining'), () => finishGame()));
+    track('tutorial_complete');
+  }
+
+  function finishGame() {
+    if (state.finished) return;
+    state.finished = true;
+    track('daily_training_start_click');
+    // 抱抱龙颜色 → petId：孵化时以 petId 为准，覆盖其他选择（食性 / 元素属性等）。
+    const dragonColor = state.wish?.dragon_color || state.dragonColor || 'green';
+    const petId = (game_config.dragonColorToPetId || {})[dragonColor] || '';
+    post('gameFinished', {
+      earnedPoints: 10,
+      planetName: state.planetName || t('scene2DefaultName'),
+      personality: state.personality || '',
+      // ---- 孵化目标：明确指定 petId，孵化时优先使用它并覆盖其他属性 ----
+      petId, // 由抱抱龙颜色决定：dragon_green / dragon_orange / dragon_purple
+      // ---- DNA 相关：与 planet boarding 一致，游戏收到后据此生成 / 偏置宠物 DNA ----
+      elementalAttribute: state.elementalAttribute || '', // 元素属性（自然 / 火 / 冰 / 生命 / 暗 / 雷），由性格决定
+      diet: state.firstFood?.diet || state.firstFood?.id || '', // 食性：omnivore / carnivore / herbivore
+      firstFood: state.firstFood?.id || '',
+      wish_type: state.wish?.wish_type || '',
+      dragon_color: dragonColor,
+      egg_pattern: state.wish?.egg_pattern || '',
+      first_game_completed: state.first_game_completed,
+      thinking_star_count: state.thinking_star_count,
+      egg_awakened: state.egg_awakened,
+      tutorial_completed: true,
+      pet_stage: 'egg',
+      status: t('statusAwake')
+    });
+  }
+
+  window.addEventListener('message', event => {
+    const msg = event.data || {};
+    if (msg.type === 'setGameConfig' && msg.data && typeof msg.data === 'object') {
+      Object.assign(game_config, msg.data);
+    }
+    if (msg.type === 'gameContinue') {
+      // no-op for onboarding story
+    }
+  });
+
+  document.addEventListener('click', (e) => {
+    const btn = e.target.closest && e.target.closest('button');
+    if (!btn || btn.id === 'musicToggle') return;
+    Music.start();
+  }, true);
+
+  (function initMusicToggle() {
+    const btn = document.getElementById('musicToggle');
+    btn.addEventListener('click', () => {
+      Music.start();
+      const next = !Music.isMuted();
+      Music.setMuted(next);
+      btn.textContent = next ? '🔇' : '🔊';
+      btn.style.color = next ? 'rgba(255,255,255,.42)' : '#ffdc96';
+    });
+  })();
+
+  function bootMusic() { try { Music.start(); } catch (_) {} }
+  bootMusic();
+  ['pointerdown', 'keydown', 'touchstart'].forEach(type => window.addEventListener(type, bootMusic, { once: true, capture: true }));
+
+  post('gameLoaded');
+  scene1();
+  if (!state.gameStarted) {
+    state.gameStarted = true;
+    post('gameStarted');
+  }
+  // 星空(约120个带阴影的星点，绘制开销大)与龙蛋贴图预载均为装饰/预热，
+  // 位于场景内容背后，推迟到首帧绘制之后执行，不阻塞启动且无可见闪烁。
+  requestAnimationFrame(() => { createStarfield(); preloadEggSprite(); });
+})();
+</script>
+
+</html>

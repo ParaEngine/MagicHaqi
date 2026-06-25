@@ -1,0 +1,601 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+  <title>宠物象棋</title>
+  <script src="https://cdn.keepwork.com/keepwork/cdn/tailwindcss@3.4.16.js"></script>
+  <style>
+    * { box-sizing: border-box; -webkit-tap-highlight-color: transparent; user-select: none; }
+    html, body { width: 100%; height: 100%; margin: 0; overflow: hidden; }
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, "PingFang SC", "Microsoft YaHei", sans-serif;
+      color: #2f2417;
+      background: linear-gradient(180deg, #fef3c7 0%, #bae6fd 54%, #bbf7d0 100%);
+    }
+    .shell { height: 100%; display: grid; grid-template-rows: auto 1fr auto; gap: .8rem; padding: .9rem; }
+    .top {
+      display: flex; align-items: center; justify-content: space-between; gap: .8rem;
+      padding: .8rem 1rem; border-radius: 1.4rem; background: rgba(255,255,255,.86);
+      border: .2rem solid rgba(251,191,36,.65); box-shadow: 0 .45rem 0 rgba(180,83,9,.22);
+    }
+    .title { font-size: 1.8rem; font-weight: 900; white-space: nowrap; }
+    .stats { display: flex; align-items: center; gap: .8rem; flex-wrap: wrap; justify-content: flex-end; font-size: 1.3rem; font-weight: 900; color: #92400e; }
+    .select, .btn {
+      border: 0; border-radius: 999px; font-family: inherit; font-weight: 900;
+      box-shadow: 0 .35rem 0 rgba(15,23,42,.24);
+    }
+    .select { padding: .55rem .8rem; color: #7c2d12; background: #fffbeb; border: .15rem solid #fbbf24; }
+    .btn { padding: .8rem 1.35rem; background: #0ea5e9; color: #fff; cursor: pointer; }
+    .btn:active { transform: translateY(.18rem); box-shadow: 0 .17rem 0 rgba(15,23,42,.24); }
+    .btn-orange { background: #f97316; }
+    .btn-soft { background: #fff7ed; color: #9a3412; border: .15rem solid #fed7aa; }
+    .main { min-height: 0; display: grid; grid-template-columns: minmax(0, 1fr) minmax(12rem, 18rem); gap: .9rem; }
+    .boardPanel, .petPanel, .bottom {
+      border-radius: 1.6rem; background: rgba(255,255,255,.74); border: .2rem solid rgba(255,255,255,.86);
+      box-shadow: 0 .8rem 1.8rem rgba(15,23,42,.14);
+    }
+    .boardPanel { min-height: 0; display: flex; align-items: center; justify-content: center; padding: .7rem; overflow: hidden; }
+    .board {
+      position: relative; width: min(100%, 62rem, calc((100vh - 15rem) * 0.901)); aspect-ratio: 9.1 / 10.1;
+      background: #d8a958; border: .35rem solid #9a6a2c; border-radius: .6rem;
+      box-shadow: inset 0 0 0 .25rem rgba(255,255,255,.16), 0 .7rem 1.2rem rgba(76,45,14,.22);
+    }
+    .board svg { position: absolute; inset: 0; width: 100%; height: 100%; pointer-events: none; }
+    .river { font-family: "KaiTi", "STKaiti", serif; font-size: .74px; font-weight: 900; fill: rgba(70,36,10,.42); letter-spacing: .16px; }
+    .point {
+      position: absolute; width: 10%; aspect-ratio: 1; transform: translate(-50%, -50%);
+      border: 0; border-radius: 50%; background: transparent; padding: 0; cursor: pointer; z-index: 2;
+    }
+    .point.selected { background: rgba(250,204,21,.42); }
+    .point.last { background: rgba(14,165,233,.18); }
+    .point.legal::after {
+      content: ""; position: absolute; left: 50%; top: 50%; width: 28%; height: 28%; transform: translate(-50%, -50%);
+      border-radius: 50%; background: rgba(22,163,74,.56); box-shadow: 0 0 .45rem rgba(22,163,74,.4);
+    }
+    .point.check { background: rgba(239,68,68,.28); animation: pulse .55s ease-in-out 4; }
+    .piece {
+      position: absolute; inset: 4%; display: grid; place-items: center; border-radius: 50%; line-height: 1;
+      font-family: "KaiTi", "STKaiti", "FangSong", serif; font-size: clamp(1.6rem, 4.4vmin, 3.3rem); font-weight: 900;
+      background: radial-gradient(circle at 35% 30%, #fff7df 0%, #f0dfb8 36%, #c99e58 100%);
+      border: .28rem solid #573b22; box-shadow: inset 0 .16rem .24rem rgba(255,255,255,.55), 0 .18rem .38rem rgba(0,0,0,.28);
+    }
+    .red { color: #991b1b; border-color: #991b1b; }
+    .black { color: #172554; border-color: #172554; }
+    .petPanel { min-width: 0; display: grid; grid-template-rows: auto 1fr auto; gap: .8rem; padding: 1rem; text-align: center; }
+    .petTitle { font-size: 1.35rem; font-weight: 900; color: #075985; }
+    .petAvatarWrap { display: grid; place-items: center; min-height: 0; }
+    .petAvatar {
+      width: min(13rem, 30vmin); height: min(13rem, 30vmin); border-radius: 2rem;
+      background: linear-gradient(180deg, #e0f2fe, #fef3c7); border: .22rem solid #7dd3fc;
+      box-shadow: 0 .5rem 0 rgba(14,116,144,.18); display: grid; place-items: center; overflow: hidden;
+    }
+    .petSprite { width: 100%; height: 100%; background-repeat: no-repeat; image-rendering: auto; }
+    .petFallback { font-size: 5rem; font-weight: 900; color: #0ea5e9; }
+    .petBubble { font-size: 1.25rem; line-height: 1.45; font-weight: 800; color: #164e63; background: #ecfeff; border: .15rem solid #a5f3fc; border-radius: 1.1rem; padding: .8rem; }
+    .bottom { display: flex; align-items: center; justify-content: space-between; gap: .8rem; padding: .75rem 1rem; }
+    .status { min-width: 0; font-size: 1.45rem; font-weight: 900; color: #7c2d12; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+    .actions { display: flex; gap: .7rem; flex-wrap: wrap; justify-content: flex-end; }
+    .overlay { position: fixed; inset: 0; z-index: 20; display: flex; align-items: center; justify-content: center; padding: 1.6rem; background: rgba(15,39,71,.46); }
+    .card { width: min(92vw, 42rem); border-radius: 1.8rem; background: #fff; border: .25rem solid #fbbf24; padding: 2rem; box-shadow: 0 1.6rem 4rem rgba(15,23,42,.28); }
+    .card h1 { margin: 0 0 1rem; font-size: 2.6rem; font-weight: 900; color: #b45309; }
+    .card p { margin: 0 0 1.4rem; font-size: 1.45rem; line-height: 1.6; font-weight: 800; color: #0f2747; }
+    .diffGrid { display: grid; grid-template-columns: repeat(3, 1fr); gap: .7rem; margin: 1rem 0 1.4rem; }
+    .diffBtn { border: .18rem solid #bae6fd; border-radius: 1.2rem; background: #f0f9ff; padding: .8rem .5rem; font-weight: 900; color: #075985; cursor: pointer; }
+    .diffBtn.active { background: #f97316; border-color: #fb923c; color: #fff; }
+    .toast { position: fixed; left: 50%; top: 50%; z-index: 30; transform: translate(-50%, -50%); border-radius: 1.5rem; background: #fff; border: .2rem solid #7dd3fc; padding: 1.4rem 1.8rem; font-size: 1.7rem; font-weight: 900; box-shadow: 0 1rem 3rem rgba(15,23,42,.28); }
+    [hidden] { display: none !important; }
+    @keyframes pulse { 0%,100% { box-shadow: 0 0 0 0 rgba(239,68,68,.55); } 50% { box-shadow: 0 0 0 .65rem rgba(239,68,68,.22); } }
+    @media (max-width: 720px) {
+      .shell { padding: .7rem; gap: .65rem; }
+      .main { grid-template-columns: 1fr; grid-template-rows: auto minmax(0, 1fr); }
+      .petPanel { order: -1; }
+      .board { width: min(100%, calc((100vh - 26rem) * 0.901)); }
+      .petPanel { grid-template-columns: auto 1fr; grid-template-rows: auto auto; align-items: center; text-align: left; padding: .7rem; }
+      .petTitle { grid-column: 2; }
+      .petAvatarWrap { grid-row: 1 / 3; }
+      .petAvatar { width: 7.8rem; height: 7.8rem; border-radius: 1.3rem; }
+      .petBubble { font-size: 1.15rem; padding: .6rem; }
+      .top { align-items: flex-start; }
+      .stats { font-size: 1.15rem; }
+      .bottom { align-items: stretch; flex-direction: column; }
+      .status { width: 100%; white-space: normal; }
+      .actions { width: 100%; justify-content: space-between; }
+    }
+  </style>
+</head>
+
+<body>
+  <div class="shell">
+    <div class="top">
+      <div class="title" data-i18n="title">宠物象棋</div>
+      <div class="stats">
+        <span><span data-i18n="steps">步数</span> <b id="steps">0</b></span>
+        <span><span data-i18n="score">得分</span> <b id="score">0</b></span>
+        <label><span data-i18n="difficulty">难度</span> <select id="difficulty" class="select"></select></label>
+      </div>
+    </div>
+    <div class="main">
+      <div class="boardPanel"><div id="board" class="board" data-i18n-aria="boardAria" aria-label="象棋棋盘"></div></div>
+      <aside class="petPanel">
+        <div class="petTitle" id="petName" data-i18n="petOpponent">宠物对手</div>
+        <div class="petAvatarWrap"><div id="petAvatar" class="petAvatar"><span class="petFallback" data-i18n="petFallback">棋</span></div></div>
+        <div class="petBubble" id="petTalk" data-i18n="petDefaultTalk">我执黑棋。选好难度，我们来下一局吧。</div>
+      </aside>
+    </div>
+    <div class="bottom">
+      <div id="status" class="status" data-i18n="statusDefault">请选择难度开始对弈</div>
+      <div class="actions">
+        <button id="help" class="btn btn-soft" type="button" data-i18n="helpBtn">玩法</button>
+        <button id="undo" class="btn btn-soft" type="button" data-i18n="undoBtn">悔棋</button>
+        <button id="restart" class="btn btn-orange" type="button" data-i18n="restartBtn">重新开始</button>
+      </div>
+    </div>
+  </div>
+
+  <div id="intro" class="overlay" role="dialog" aria-modal="true" aria-labelledby="introTitle">
+    <div class="card">
+      <h1 id="introTitle" data-i18n="introTitle">宠物象棋</h1>
+      <p data-i18n="introText">你执红棋先手，当前宠物执黑棋。点击红方棋子，再点击绿色提示点落子。完成一局后会获得较多亲密度奖励。</p>
+      <div id="introDiff" class="diffGrid"></div>
+      <button id="start" class="btn btn-orange" type="button" data-i18n="startBtn">开始对弈</button>
+    </div>
+  </div>
+
+  <script>
+    // ---- i18n ----
+    const I18N = {
+      zhCN: {
+        title: '宠物象棋',
+        boardAria: '象棋棋盘',
+        steps: '步数',
+        score: '得分',
+        difficulty: '难度',
+        petOpponent: '宠物对手',
+        petFallback: '棋',
+        petDefaultTalk: '我执黑棋。选好难度，我们来下一局吧。',
+        statusDefault: '请选择难度开始对弈',
+        helpBtn: '玩法',
+        undoBtn: '悔棋',
+        restartBtn: '重新开始',
+        introTitle: '宠物象棋',
+        introText: '你执红棋先手，当前宠物执黑棋。点击红方棋子，再点击绿色提示点落子。完成一局后会获得较多亲密度奖励。',
+        startBtn: '开始对弈',
+        diff1: '入门',
+        diff2: '新手',
+        diff3: '普通',
+        diff4: '挑战',
+        diff5: '高手',
+        diff6: '大师',
+        selectRedPiece: '请选择红方棋子',
+        cannotMoveThere: '这个位置不能走',
+        selected: '已选中 {name}',
+        cannotMove: '{name} 暂时不能移动',
+        yourTurn: '轮到你走棋',
+        captured: '吃掉',
+        movedTo: '走到',
+        petThinking: '宠物正在思考...',
+        petDefend: '你将军了，我要认真防守。',
+        petPondering: '我看看下一步怎么走。',
+        noMovesLeft: '无棋可走',
+        youAreChecked: '你被将军了！',
+        check: '将军！想想怎么化解吧。',
+        yourTurnShort: '轮到你啦。',
+        petUsesDiff: '我用{name}难度陪你下。',
+        undone: '已悔棋，轮到你走棋',
+        petUndone: '没关系，我们再想一次。',
+        youWin: '你赢啦！',
+        petWins: '宠物获胜',
+        draw: '和棋',
+        bondUp: '亲密度大幅提升',
+        petWinTalk: '好厉害！这局我学到了很多。',
+        petLoseTalk: '下完一整局真开心，亲密度提升啦。',
+        diffChanged: '难度调整为{name}。',
+        petPlaysBlack: '{name}执黑棋',
+        petDefaultName: '宠物',
+        red: '红',
+        black: '黑',
+        reasonCapture: '吃将',
+        reasonCheckmate: '将杀',
+        reasonStalemate: '困毙',
+        chuHe: '楚 河',
+        hanJie: '汉 界',
+      },
+      enUS: {
+        title: 'Pet Xiangqi',
+        boardAria: 'Xiangqi board',
+        steps: 'Moves',
+        score: 'Score',
+        difficulty: 'Difficulty',
+        petOpponent: 'Pet Opponent',
+        petFallback: '♟',
+        petDefaultTalk: 'I play Black. Pick a difficulty and let\'s start!',
+        statusDefault: 'Pick a difficulty to begin',
+        helpBtn: 'Help',
+        undoBtn: 'Undo',
+        restartBtn: 'Restart',
+        introTitle: 'Pet Xiangqi',
+        introText: 'You play Red (first move). Your pet plays Black. Tap a Red piece, then tap a green dot to move. Completing a game earns a big bond bonus.',
+        startBtn: 'Start Game',
+        diff1: 'Beginner',
+        diff2: 'Novice',
+        diff3: 'Normal',
+        diff4: 'Challenge',
+        diff5: 'Expert',
+        diff6: 'Master',
+        selectRedPiece: 'Please select a Red piece',
+        cannotMoveThere: 'Can\'t move there',
+        selected: 'Selected {name}',
+        cannotMove: '{name} has no moves right now',
+        yourTurn: 'Your turn',
+        captured: 'captured',
+        movedTo: 'moved to',
+        petThinking: 'Pet is thinking...',
+        petDefend: 'You put me in check — I\'ll defend carefully.',
+        petPondering: 'Let me think about my next move.',
+        noMovesLeft: 'No moves left',
+        youAreChecked: 'You\'re in check!',
+        check: 'Check! Think how to get out.',
+        yourTurnShort: 'Your turn.',
+        petUsesDiff: 'I\'ll play at {name} difficulty.',
+        undone: 'Move undone — your turn',
+        petUndone: 'No worries, let\'s try again.',
+        youWin: 'You Win!',
+        petWins: 'Pet Wins',
+        draw: 'Draw',
+        bondUp: 'Bond greatly increased',
+        petWinTalk: 'Great game! I learned a lot.',
+        petLoseTalk: 'What a fun game — bond level up!',
+        diffChanged: 'Difficulty set to {name}.',
+        petPlaysBlack: '{name} plays Black',
+        petDefaultName: 'Pet',
+        red: 'Red',
+        black: 'Black',
+        reasonCapture: 'King captured',
+        reasonCheckmate: 'Checkmate',
+        reasonStalemate: 'Stalemate',
+        chuHe: 'RIVER',
+        hanJie: 'BORDER',
+      },
+    };
+    function detectLang() {
+      try {
+        const params = new URLSearchParams(window.location.search);
+        const lang = params.get('lang');
+        if (lang && I18N[lang]) return lang;
+      } catch (_) {}
+      return 'zhCN';
+    }
+    const LANG = detectLang();
+    const L = I18N[LANG];
+    function t(key, vars) {
+      let str = L[key] || I18N.zhCN[key] || key;
+      if (vars) str = str.replace(/\{(\w+)\}/g, (m, n) => vars[n] != null ? String(vars[n]) : m);
+      return str;
+    }
+    try { document.documentElement.setAttribute('lang', LANG === 'enUS' ? 'en' : 'zh-CN'); } catch (_) {}
+    try { document.title = t('title'); } catch (_) {}
+
+    // Apply i18n to static HTML elements
+    document.querySelectorAll('[data-i18n]').forEach(el => {
+      const key = el.getAttribute('data-i18n');
+      el.textContent = t(key);
+    });
+    document.querySelectorAll('[data-i18n-aria]').forEach(el => {
+      const key = el.getAttribute('data-i18n-aria');
+      el.setAttribute('aria-label', t(key));
+    });
+
+    const W = 9, H = 10;
+    const ORDER = ['r','n','b','a','k','a','b','n','r'];
+    const LABELS = {
+      red: { k: '帥', a: '仕', b: '相', n: '馬', r: '車', c: '炮', p: '兵' },
+      black: { k: '將', a: '士', b: '象', n: '馬', r: '車', c: '砲', p: '卒' }
+    };
+    const NAMES = { k: '将', a: '士', b: '象', n: '马', r: '车', c: '炮', p: '卒' };
+    const VALUE = { p: 100, a: 160, b: 170, n: 320, c: 360, r: 540, k: 10000 };
+    const DIFFICULTIES = [
+      { id: 1, name: t('diff1'), depth: 1, think: 300, noise: 180 },
+      { id: 2, name: t('diff2'), depth: 1, think: 360, noise: 80 },
+      { id: 3, name: t('diff3'), depth: 2, think: 430, noise: 24 },
+      { id: 4, name: t('diff4'), depth: 2, think: 520, noise: 0 },
+      { id: 5, name: t('diff5'), depth: 3, think: 620, noise: 0, limit: 28 },
+      { id: 6, name: t('diff6'), depth: 3, think: 760, noise: 0, limit: 38 }
+    ];
+    const els = {
+      board: document.getElementById('board'), status: document.getElementById('status'), steps: document.getElementById('steps'), score: document.getElementById('score'),
+      difficulty: document.getElementById('difficulty'), intro: document.getElementById('intro'), introDiff: document.getElementById('introDiff'), petAvatar: document.getElementById('petAvatar'),
+      petName: document.getElementById('petName'), petTalk: document.getElementById('petTalk')
+    };
+    let board = createInitialBoard(), turn = 'red', selected = null, legalMap = new Map(), phase = 'intro', steps = 0, score = 0, history = [], lastMove = null, difficulty = 3, finished = false;
+    let petObjectUrl = '';
+    let petRequestId = '';
+
+    function piece(side, type) { return { side, type }; }
+    function clone(b) { return b.map(row => row.map(p => p ? { ...p } : null)); }
+    function inside(x, y) { return x >= 0 && x < W && y >= 0 && y < H; }
+    function opp(side) { return side === 'red' ? 'black' : 'red'; }
+    function forward(side) { return side === 'red' ? -1 : 1; }
+    function palace(side, x, y) { return x >= 3 && x <= 5 && (side === 'red' ? y >= 7 && y <= 9 : y >= 0 && y <= 2); }
+    function crossed(side, y) { return side === 'red' ? y <= 4 : y >= 5; }
+    function label(p) { return p ? LABELS[p.side][p.type] : ''; }
+    function nameOf(p) { return p ? (p.side === 'red' ? t('red') : t('black')) + (NAMES[p.type] || '') : ''; }
+    function difficultyConfig() { return DIFFICULTIES.find(d => d.id === Number(difficulty)) || DIFFICULTIES[1]; }
+
+    function createInitialBoard() {
+      const b = Array.from({ length: H }, () => Array(W).fill(null));
+      ORDER.forEach((t, x) => { b[0][x] = piece('black', t); b[9][x] = piece('red', t); });
+      b[2][1] = piece('black', 'c'); b[2][7] = piece('black', 'c');
+      b[7][1] = piece('red', 'c'); b[7][7] = piece('red', 'c');
+      [0,2,4,6,8].forEach(x => { b[3][x] = piece('black', 'p'); b[6][x] = piece('red', 'p'); });
+      return b;
+    }
+
+    function findKing(b, side) {
+      for (let y = 0; y < H; y++) for (let x = 0; x < W; x++) if (b[y][x]?.side === side && b[y][x].type === 'k') return { x, y };
+      return null;
+    }
+    function facingKings(b) {
+      const red = findKing(b, 'red'), black = findKing(b, 'black');
+      if (!red || !black || red.x !== black.x) return false;
+      for (let y = Math.min(red.y, black.y) + 1; y < Math.max(red.y, black.y); y++) if (b[y][red.x]) return false;
+      return true;
+    }
+    function pushMove(b, moves, side, fx, fy, tx, ty) {
+      if (!inside(tx, ty)) return;
+      const target = b[ty][tx];
+      if (target?.side === side) return;
+      moves.push({ from: { x: fx, y: fy }, to: { x: tx, y: ty }, piece: b[fy][fx], capture: target });
+    }
+    function pseudoMoves(b, x, y) {
+      const p = b[y]?.[x]; if (!p) return [];
+      const moves = [], side = p.side, type = p.type;
+      if (type === 'r' || type === 'c') {
+        for (const [dx, dy] of [[1,0],[-1,0],[0,1],[0,-1]]) {
+          let nx = x + dx, ny = y + dy, jumped = false;
+          while (inside(nx, ny)) {
+            const target = b[ny][nx];
+            if (type === 'r') {
+              if (!target) moves.push({ from: { x, y }, to: { x: nx, y: ny }, piece: p, capture: null });
+              else { if (target.side !== side) moves.push({ from: { x, y }, to: { x: nx, y: ny }, piece: p, capture: target }); break; }
+            } else if (!jumped) {
+              if (!target) moves.push({ from: { x, y }, to: { x: nx, y: ny }, piece: p, capture: null }); else jumped = true;
+            } else if (target) { if (target.side !== side) moves.push({ from: { x, y }, to: { x: nx, y: ny }, piece: p, capture: target }); break; }
+            nx += dx; ny += dy;
+          }
+        }
+      }
+      if (type === 'n') for (const [lx,ly,dx,dy] of [[0,-1,1,-2],[0,-1,-1,-2],[0,1,1,2],[0,1,-1,2],[1,0,2,1],[1,0,2,-1],[-1,0,-2,1],[-1,0,-2,-1]]) if (inside(x+lx,y+ly) && !b[y+ly][x+lx]) pushMove(b, moves, side, x, y, x+dx, y+dy);
+      if (type === 'b') for (const [dx,dy] of [[2,2],[2,-2],[-2,2],[-2,-2]]) { const ex = x + dx / 2, ey = y + dy / 2, nx = x + dx, ny = y + dy; if (inside(nx, ny) && !b[ey][ex] && !(side === 'red' && ny < 5) && !(side === 'black' && ny > 4)) pushMove(b, moves, side, x, y, nx, ny); }
+      if (type === 'a') for (const [dx,dy] of [[1,1],[1,-1],[-1,1],[-1,-1]]) if (palace(side, x+dx, y+dy)) pushMove(b, moves, side, x, y, x+dx, y+dy);
+      if (type === 'k') {
+        for (const [dx,dy] of [[1,0],[-1,0],[0,1],[0,-1]]) if (palace(side, x+dx, y+dy)) pushMove(b, moves, side, x, y, x+dx, y+dy);
+        let ny = y + forward(side);
+        while (inside(x, ny)) { const target = b[ny][x]; if (!target) { ny += forward(side); continue; } if (target.side !== side && target.type === 'k') pushMove(b, moves, side, x, y, x, ny); break; }
+      }
+      if (type === 'p') { pushMove(b, moves, side, x, y, x, y + forward(side)); if (crossed(side, y)) { pushMove(b, moves, side, x, y, x - 1, y); pushMove(b, moves, side, x, y, x + 1, y); } }
+      return moves;
+    }
+    function apply(b, move) { const nb = clone(b); nb[move.to.y][move.to.x] = nb[move.from.y][move.from.x]; nb[move.from.y][move.from.x] = null; return nb; }
+    function inCheck(b, side) {
+      const king = findKing(b, side); if (!king) return true;
+      for (let y = 0; y < H; y++) for (let x = 0; x < W; x++) if (b[y][x]?.side === opp(side) && pseudoMoves(b, x, y).some(m => m.to.x === king.x && m.to.y === king.y)) return true;
+      return false;
+    }
+    function legalMovesFor(b, from) {
+      const p = b[from.y]?.[from.x]; if (!p) return [];
+      return pseudoMoves(b, from.x, from.y).filter(move => { const nb = apply(b, move); return !facingKings(nb) && !inCheck(nb, p.side); });
+    }
+    function allLegalMoves(b, side) {
+      const moves = [];
+      for (let y = 0; y < H; y++) for (let x = 0; x < W; x++) if (b[y][x]?.side === side) moves.push(...legalMovesFor(b, { x, y }));
+      return moves;
+    }
+    function winnerState(b, sideToMove) {
+      if (!findKing(b, 'red')) return { ended: true, winner: 'black', reason: t('reasonCapture') };
+      if (!findKing(b, 'black')) return { ended: true, winner: 'red', reason: t('reasonCapture') };
+      if (!allLegalMoves(b, sideToMove).length) return { ended: true, winner: opp(sideToMove), reason: inCheck(b, sideToMove) ? t('reasonCheckmate') : t('reasonStalemate') };
+      return { ended: false };
+    }
+
+    function evaluate(b) {
+      let total = 0;
+      for (let y = 0; y < H; y++) for (let x = 0; x < W; x++) {
+        const p = b[y][x]; if (!p) continue;
+        const advance = p.type === 'p' ? (p.side === 'black' ? y : 9 - y) * 8 : 0;
+        total += ((VALUE[p.type] || 0) + advance) * (p.side === 'black' ? 1 : -1);
+      }
+      if (inCheck(b, 'red')) total += 70;
+      if (inCheck(b, 'black')) total -= 90;
+      return total;
+    }
+    function orderedMoves(b, side, limit) {
+      const moves = allLegalMoves(b, side).sort((a, c) => (VALUE[c.capture?.type] || 0) - (VALUE[a.capture?.type] || 0));
+      return limit ? moves.slice(0, limit) : moves;
+    }
+    function minimax(b, side, depth, alpha, beta, limit) {
+      const end = winnerState(b, side);
+      if (end.ended) return end.winner === 'black' ? 99999 + depth : end.winner === 'red' ? -99999 - depth : 0;
+      if (depth <= 0) return evaluate(b);
+      const moves = orderedMoves(b, side, limit);
+      if (side === 'black') {
+        let best = -Infinity;
+        for (const move of moves) { best = Math.max(best, minimax(apply(b, move), 'red', depth - 1, alpha, beta, limit)); alpha = Math.max(alpha, best); if (alpha >= beta) break; }
+        return best;
+      }
+      let best = Infinity;
+      for (const move of moves) { best = Math.min(best, minimax(apply(b, move), 'black', depth - 1, alpha, beta, limit)); beta = Math.min(beta, best); if (alpha >= beta) break; }
+      return best;
+    }
+    function chooseAIMove() {
+      const cfg = difficultyConfig();
+      const moves = orderedMoves(board, 'black', cfg.limit || 0);
+      if (!moves.length) return null;
+      const scored = moves.map(move => ({ move, score: minimax(apply(board, move), 'red', cfg.depth - 1, -Infinity, Infinity, cfg.limit || 0) + (cfg.noise ? Math.random() * cfg.noise : 0) }));
+      scored.sort((a, b) => b.score - a.score);
+      if (cfg.id === 1) return scored.slice(0, Math.min(4, scored.length))[Math.floor(Math.random() * Math.min(4, scored.length))].move;
+      return scored[0].move;
+    }
+
+    function boardSvg() {
+      const ns = 'http://www.w3.org/2000/svg', svg = document.createElementNS(ns, 'svg');
+      svg.setAttribute('viewBox', '-.55 -.55 9.1 10.1');
+      const line = (x1,y1,x2,y2) => { const el = document.createElementNS(ns, 'line'); el.setAttribute('x1', x1); el.setAttribute('y1', y1); el.setAttribute('x2', x2); el.setAttribute('y2', y2); el.setAttribute('stroke', 'rgba(55,30,8,.64)'); el.setAttribute('stroke-width', '.045'); return el; };
+      for (let r = 0; r <= 4; r++) svg.appendChild(line(0, r, 8, r));
+      for (let r = 5; r <= 9; r++) svg.appendChild(line(0, r, 8, r));
+      for (let c = 0; c <= 8; c++) { if (c === 0 || c === 8) svg.appendChild(line(c, 0, c, 9)); else { svg.appendChild(line(c, 0, c, 4)); svg.appendChild(line(c, 5, c, 9)); } }
+      svg.appendChild(line(3,0,5,2)); svg.appendChild(line(5,0,3,2)); svg.appendChild(line(3,7,5,9)); svg.appendChild(line(5,7,3,9));
+      [[t('chuHe'),2], [t('hanJie'),6]].forEach(([text, x]) => { const el = document.createElementNS(ns, 'text'); el.setAttribute('x', x); el.setAttribute('y', 4.5); el.setAttribute('text-anchor', 'middle'); el.setAttribute('dominant-baseline', 'central'); el.setAttribute('class', 'river'); el.textContent = text; svg.appendChild(el); });
+      return svg;
+    }
+    function render() {
+      els.board.innerHTML = '';
+      els.board.appendChild(boardSvg());
+      const pad = .55, totalW = 9.1, totalH = 10.1;
+      const checkedKing = phase !== 'intro' ? (inCheck(board, 'red') ? findKing(board, 'red') : inCheck(board, 'black') ? findKing(board, 'black') : null) : null;
+      for (let y = 0; y < H; y++) for (let x = 0; x < W; x++) {
+        const btn = document.createElement('button');
+        btn.type = 'button'; btn.className = 'point'; btn.dataset.x = x; btn.dataset.y = y;
+        btn.style.left = `${((x + pad) / totalW) * 100}%`; btn.style.top = `${((y + pad) / totalH) * 100}%`;
+        if (selected?.x === x && selected?.y === y) btn.classList.add('selected');
+        if (legalMap.has(`${x},${y}`)) btn.classList.add('legal');
+        if (lastMove && ((lastMove.from.x === x && lastMove.from.y === y) || (lastMove.to.x === x && lastMove.to.y === y))) btn.classList.add('last');
+        if (checkedKing?.x === x && checkedKing?.y === y) btn.classList.add('check');
+        const p = board[y][x];
+        if (p) { const s = document.createElement('span'); s.className = `piece ${p.side}`; s.textContent = label(p); btn.appendChild(s); }
+        btn.onclick = handlePointClick;
+        els.board.appendChild(btn);
+      }
+      els.steps.textContent = steps;
+      els.score.textContent = score;
+    }
+    function setStatus(text) { els.status.textContent = text; }
+    function setPetTalk(text) { els.petTalk.textContent = text; }
+    function handlePointClick(event) {
+      if (phase !== 'playing' || turn !== 'red') return;
+      const x = Number(event.currentTarget.dataset.x), y = Number(event.currentTarget.dataset.y), p = board[y][x];
+      if (!selected) { if (p?.side !== 'red') { setStatus(t('selectRedPiece')); return; } select({ x, y }); return; }
+      if (selected.x === x && selected.y === y) { clearSelection(); return; }
+      if (p?.side === 'red') { select({ x, y }); return; }
+      const move = legalMap.get(`${x},${y}`);
+      if (!move) { setStatus(t('cannotMoveThere')); return; }
+      commit(move, 'red');
+    }
+    function select(pos) {
+      selected = pos;
+      legalMap = new Map(legalMovesFor(board, pos).map(m => [`${m.to.x},${m.to.y}`, m]));
+      const p = board[pos.y][pos.x];
+      setStatus(legalMap.size ? t('selected', { name: label(p) }) : t('cannotMove', { name: label(p) }));
+      render();
+    }
+    function clearSelection() { selected = null; legalMap.clear(); setStatus(t('yourTurn')); render(); }
+    function moveText(move) { return `${nameOf(move.piece)}${move.capture ? t('captured') + nameOf(move.capture) : t('movedTo')}（${move.to.x + 1},${10 - move.to.y}）`; }
+    function commit(move, side) {
+      const before = { board: clone(board), turn, steps, score, lastMove };
+      board = apply(board, move); lastMove = { from: move.from, to: move.to }; selected = null; legalMap.clear();
+      if (side === 'red') { steps++; if (move.capture) score += Math.round((VALUE[move.capture.type] || 0) / 10); }
+      history.push(before);
+      render();
+      const next = opp(side);
+      const state = winnerState(board, next);
+      if (state.ended) { finish(state.winner, state.reason); return; }
+      turn = next;
+      if (turn === 'black') {
+        phase = 'thinking'; setStatus(t('petThinking')); setPetTalk(inCheck(board, 'black') ? t('petDefend') : t('petPondering'));
+        const cfg = difficultyConfig();
+        setTimeout(() => { const aiMove = chooseAIMove(); if (!aiMove) finish('red', t('noMovesLeft')); else commit(aiMove, 'black'); }, cfg.think);
+      } else {
+        phase = 'playing';
+        setStatus((inCheck(board, 'red') ? t('youAreChecked') : t('yourTurn')) + ` ${moveText(move)}`);
+        setPetTalk(inCheck(board, 'red') ? t('check') : t('yourTurnShort'));
+      }
+    }
+    function resetGame() {
+      board = createInitialBoard(); turn = 'red'; selected = null; legalMap.clear(); phase = 'playing'; steps = 0; score = 0; history = []; lastMove = null; finished = false;
+      setStatus(t('yourTurn')); setPetTalk(t('petUsesDiff', { name: difficultyConfig().name })); render();
+      post('gameStarted');
+    }
+    function undo() {
+      if (phase === 'thinking' || finished || history.length < 2) return;
+      history.pop();
+      const previous = history.pop();
+      if (!previous) return;
+      board = previous.board; turn = 'red'; steps = previous.steps; score = previous.score; lastMove = previous.lastMove; phase = 'playing'; selected = null; legalMap.clear();
+      setStatus(t('undone')); setPetTalk(t('petUndone')); render();
+    }
+    function finish(winner, reason) {
+      if (finished) return;
+      finished = true; phase = 'result'; turn = 'none'; render();
+      const won = winner === 'red', draw = !winner || winner === 'draw';
+      const diff = difficultyConfig();
+      const earnedPoints = won ? 130 + diff.id * 18 : draw ? 110 + diff.id * 12 : 85 + diff.id * 10;
+      const title = won ? t('youWin') : winner === 'black' ? t('petWins') : t('draw');
+      setStatus(`${title} ${reason || ''} ${t('bondUp')}`);
+      setPetTalk(won ? t('petWinTalk') : t('petLoseTalk'));
+      toast(`${title}<br>${t('bondUp')}`);
+      post('gameFinished', { earnedPoints, score, steps, difficulty: diff.id, difficultyName: diff.name, winner, reason, bondBonus: 32, finishedAt: Date.now() });
+    }
+    function toast(html) { const box = document.createElement('div'); box.className = 'toast'; box.innerHTML = html; document.body.appendChild(box); setTimeout(() => box.remove(), 1700); }
+    function post(type, data = {}, extra = {}) { try { window.parent.postMessage({ type, data, ...extra }, '*'); } catch (e) {} }
+
+    function setupDifficulty() {
+      DIFFICULTIES.forEach(d => { const opt = document.createElement('option'); opt.value = d.id; opt.textContent = d.name; els.difficulty.appendChild(opt); });
+      els.difficulty.value = difficulty;
+      els.difficulty.onchange = () => { difficulty = Number(els.difficulty.value) || 2; setPetTalk(t('diffChanged', { name: difficultyConfig().name })); syncIntroDifficulty(); };
+      DIFFICULTIES.forEach(d => { const btn = document.createElement('button'); btn.type = 'button'; btn.className = 'diffBtn'; btn.dataset.diff = d.id; btn.textContent = d.name; btn.onclick = () => { difficulty = d.id; els.difficulty.value = d.id; syncIntroDifficulty(); }; els.introDiff.appendChild(btn); });
+      syncIntroDifficulty();
+    }
+    function syncIntroDifficulty() { Array.from(els.introDiff.children).forEach(btn => btn.classList.toggle('active', Number(btn.dataset.diff) === Number(difficulty))); }
+
+    function requestPetImage(petId = '') {
+      const requestId = `xiangqi_pet_${Date.now()}`;
+      petRequestId = requestId;
+      post('haqi_get_pet_image', { requestId, anim: 'idle', petId: petId || undefined }, { requestId, anim: 'idle', petId: petId || undefined });
+      setTimeout(() => {
+        if (petObjectUrl) return;
+        const fallbackId = `xiangqi_pets_${Date.now()}`;
+        post('haqi_get_pet_images', { requestId: fallbackId, anim: 'idle' }, { requestId: fallbackId, anim: 'idle' });
+      }, 900);
+    }
+    function mountPet(pet) {
+      if (!pet?.imageBlob || !pet?.uv) return;
+      if (petObjectUrl) URL.revokeObjectURL(petObjectUrl);
+      petObjectUrl = URL.createObjectURL(pet.imageBlob);
+      const uv = pet.uv;
+      const el = document.createElement('div');
+      el.className = 'petSprite';
+      el.style.backgroundImage = `url("${petObjectUrl}")`;
+      if (uv.cols > 1 || uv.rows > 1) {
+        el.style.backgroundSize = `${uv.cols * 100}% ${uv.rows * 100}%`;
+        el.style.backgroundPosition = `${uv.cols > 1 ? uv.col * 100 / (uv.cols - 1) : 50}% ${uv.rows > 1 ? uv.row * 100 / (uv.rows - 1) : 50}%`;
+      } else {
+        el.style.backgroundSize = 'contain'; el.style.backgroundPosition = 'center';
+      }
+      els.petAvatar.innerHTML = ''; els.petAvatar.appendChild(el);
+      els.petName.textContent = t('petPlaysBlack', { name: pet.name || t('petDefaultName') });
+    }
+
+    document.getElementById('start').onclick = () => { els.intro.hidden = true; resetGame(); };
+    document.getElementById('restart').onclick = resetGame;
+    document.getElementById('undo').onclick = undo;
+    document.getElementById('help').onclick = () => { els.intro.hidden = false; };
+    window.addEventListener('message', e => {
+      const msg = e.data || {};
+      if (msg.type === 'gameContinue') resetGame();
+      if (msg.type === 'setGameConfig' && msg.data?.petId) requestPetImage(msg.data.petId);
+      if (msg.type === 'haqi_pet_image' && msg.ok && msg.data && (!petRequestId || !msg.requestId || msg.requestId === petRequestId || msg.requestId === 'active_pet_config')) mountPet(msg.data);
+      if (msg.type === 'haqi_pet_images' && msg.ok) {
+        const firstPet = Array.isArray(msg.data?.pets) ? msg.data.pets[0] : null;
+        if (firstPet) mountPet(firstPet);
+      }
+    });
+    window.addEventListener('beforeunload', () => { if (petObjectUrl) URL.revokeObjectURL(petObjectUrl); });
+    document.documentElement.style.fontSize = '10px';
+    // 棋盘 render() 在 intro 浮层背后，延后到首帧绘制之后执行(不可见，无闪烁)，缩短启动。
+    setupDifficulty(); post('gameLoaded');
+    requestAnimationFrame(() => { render(); requestPetImage(); });
+  </script>
+</body>
+
+</html>

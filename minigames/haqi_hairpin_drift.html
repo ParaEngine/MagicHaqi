@@ -1,0 +1,1145 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover">
+<title>秋名山发卡弯漂移</title>
+<script src="https://cdn.keepwork.com/keepwork/cdn/tailwindcss@3.4.16.js"></script>
+<style>
+  html,body{height:100%;margin:0;overscroll-behavior:none;}
+  #app{height:100dvh;}
+  .mh-confetti{position:fixed;top:-12px;width:10px;height:14px;border-radius:2px;pointer-events:none;z-index:30;
+    animation:mhConfetti var(--d,1200ms) ease-out forwards;}
+  @keyframes mhConfetti{
+    0%{transform:translate(0,0) rotate(0);opacity:1;}
+    100%{transform:translate(var(--x,0),110vh) rotate(720deg);opacity:0;}
+  }
+  #nitroWrap{transition:opacity .2s;}
+  #nitroFill{transition:width .08s linear;}
+  @media (max-width:560px){
+    #hud{padding:6px 8px;}
+    .mh-stat{font-size:12px;}
+    .mh-btn{padding:6px 10px;font-size:12px;}
+  }
+  @media (max-height:520px){
+    #hud{padding:4px 8px;}
+    .mh-optional{display:none;}
+  }
+</style>
+</head>
+<body class="bg-slate-950 overflow-hidden select-none" style="touch-action:none;">
+
+<script>
+game_config = {
+  difficulty: "normal",
+  levels: [
+    { id: 1, name: "无尽漂移", target: 0, time: 0 }
+  ],
+  // 伪3D漂移赛车参数（OutRun 风格分段赛道）
+  difficulties: {
+    easy: {
+      label: "easy",
+      baseSpeed: 4200, maxSpeed: 8000, accel: 2300, nitroBoost: 1000, maxNitroTier: 5,
+      curve: 1.1,            // 基础弯道曲率单位（越大弯越急）
+      centrifugal: 0.26,     // 离心外推强度
+      drift: 3.1,            // 漂移转向速率（需 > 离心力才能守住弯心）
+      grazeInner: 0.84       // 进入“极限擦边”判定的内侧阈值
+    },
+    normal: {
+      label: "normal",
+      baseSpeed: 4800, maxSpeed: 9200, accel: 2600, nitroBoost: 1150, maxNitroTier: 6,
+      curve: 1.35, centrifugal: 0.30, drift: 2.8, grazeInner: 0.86
+    },
+    hard: {
+      label: "hard",
+      baseSpeed: 5400, maxSpeed: 10800, accel: 2900, nitroBoost: 1300, maxNitroTier: 7,
+      curve: 1.7, centrifugal: 0.34, drift: 2.55, grazeInner: 0.88
+    }
+  },
+  distanceScoreRate: 0.012,   // 每世界单位距离基础分
+  grazeMultiplier: 10,        // 擦边积分倍率
+  comboTick: 0.16,            // 擦边每多少秒累加一次 combo
+  nitroFillRate: 0.6,         // 擦边时氮气槽填充速率（/秒）
+  speedUpEvery: 30,           // 每存活 N 秒提升基础速度
+  speedUpRate: 0.10           // 每次提升比例（+10%）
+};
+</script>
+
+<script>
+art_assets = [];
+</script>
+
+<script defer>
+(function () {
+  'use strict';
+
+  // ============ i18n ============
+  const I18N = {
+    zhCN: {
+      title: '秋名山发卡弯漂移',
+      score: '得分', best: '最佳', combo: '连击', distance: '距离', nitro: '氮气',
+      overlayTitle: '秋名山发卡弯漂移',
+      overlayText: '墩弟骑着哈奇坐骑冲下红叶盘山公路！赛车自动加速，弯道会把你甩向悬崖——长按屏幕漂移守住弯心。贴着红白减速带极限擦边收集时光碎片，10 倍连击暴分。每存活 30 秒全局提速 10%，越来越刺激！',
+      startBtn: '开始漂移',
+      continueBtn: '继续',
+      restartBtn: '再来一局',
+      easy: '轻松', normal: '经典', hard: '困难',
+      gameOver: '坠崖！',
+      gameOverText: '你冲出了盘山公路。本局得分 {score}，距离 {distance}m，最高连击 {combo}。',
+      newBest: '新纪录！',
+      helpTitle: '操作说明',
+      helpText: '· 赛车自动向前加速行驶\n· 弯道处离心力会把你甩向外侧悬崖\n· 长按屏幕（或空格/↓）漂移，车头甩尾守住弯心\n· 松开结束漂移、回正方向\n· 贴着红白减速带「极限擦边」积分 10 倍暴涨\n· 高价值时光碎片就放在弯道边缘——为高分冒险擦边\n· 连续擦边蓄满氮气提速；每 30 秒全局再提速 10%\n· 冲出红白减速带边界即坠崖结束',
+      perfect: 'PERFECT DRIFT!',
+      speedup: 'SPEED +10%!'
+    },
+    enUS: {
+      title: 'Akina Hairpin Drift',
+      score: 'Score', best: 'Best', combo: 'Combo', distance: 'Dist', nitro: 'Nitro',
+      overlayTitle: 'Akina Hairpin Drift',
+      overlayText: 'Totoro rides a Haqi mount down the autumn maple pass! The kart auto-accelerates and corners fling you toward the cliff — hold to drift and hold the apex. Graze the red-white rumble to grab time shards for a 10x combo. Every 30s the whole world speeds up 10%!',
+      startBtn: 'Start Drift',
+      continueBtn: 'Resume',
+      restartBtn: 'Race Again',
+      easy: 'Easy', normal: 'Normal', hard: 'Hard',
+      gameOver: 'Off the cliff!',
+      gameOverText: 'You flew off the mountain pass. Score {score}, distance {distance}m, best combo {combo}.',
+      newBest: 'New Best!',
+      helpTitle: 'How to Play',
+      helpText: '· The kart auto-accelerates forward\n· Corners fling you outward toward the cliff\n· Hold the screen (or Space/Down) to drift toward the apex\n· Release to end the drift and straighten\n· Graze the red-white rumble for 10x score\n· High-value shards sit on the corner edges — risk a graze\n· Chain grazes to fill nitro; every 30s the world speeds up 10%\n· Fly past the red-white rumble edge and you fall',
+      perfect: 'PERFECT DRIFT!',
+      speedup: 'SPEED +10%!'
+    }
+  };
+  const lang = (navigator.language || 'zh-CN').toLowerCase().startsWith('zh') ? 'zhCN' : 'enUS';
+  const t = (key, vars) => {
+    let s = I18N[lang][key] || key;
+    if (vars) for (const k of Object.keys(vars)) s = s.replaceAll(`{${k}}`, vars[k]);
+    return s;
+  };
+
+  // ============ DOM ============
+  document.body.innerHTML = `
+    <div id="app" class="fixed inset-0 flex flex-col items-stretch" style="background:linear-gradient(180deg,#3a2d4d 0%,#7a4a52 45%,#c97a3a 100%);">
+      <div id="hud" class="w-full flex items-center justify-between px-3 pt-2 gap-2" style="z-index:10;">
+        <div class="flex items-center gap-2">
+          <div id="petBox" class="w-11 h-11 rounded-full bg-white/10 shadow overflow-hidden hidden flex items-center justify-center"></div>
+          <button id="helpBtn" class="mh-btn rounded-xl px-3 py-2 bg-white/10 text-white text-sm font-bold active:scale-95">❓</button>
+          <button id="restartBtn" class="mh-btn rounded-xl px-3 py-2 bg-white/10 text-white text-sm font-bold active:scale-95">🔄</button>
+        </div>
+        <div class="flex items-center gap-3 text-white">
+          <div class="text-center">
+            <div class="text-[10px] uppercase opacity-70 mh-stat">${t('score')}</div>
+            <div id="scoreEl" class="text-lg font-black leading-none">0</div>
+          </div>
+          <div class="text-center mh-optional">
+            <div class="text-[10px] uppercase opacity-70 mh-stat">${t('distance')}</div>
+            <div id="distEl" class="text-lg font-black leading-none">0m</div>
+          </div>
+          <div class="text-center">
+            <div class="text-[10px] uppercase opacity-70 mh-stat">${t('best')}</div>
+            <div id="bestEl" class="text-lg font-black leading-none text-amber-300">0</div>
+          </div>
+          <div id="comboBadge" class="text-center hidden">
+            <div class="text-[10px] uppercase opacity-70 mh-stat">${t('combo')}</div>
+            <div id="comboEl" class="text-lg font-black leading-none text-yellow-300">x1</div>
+          </div>
+        </div>
+      </div>
+      <div id="nitroWrap" class="w-full px-3 pt-1 opacity-0" style="z-index:10;">
+        <div class="flex items-center gap-2">
+          <span class="text-[10px] font-black text-cyan-200 tracking-widest">${t('nitro')}</span>
+          <div class="flex-1 h-2.5 rounded-full overflow-hidden bg-black/40 ring-1 ring-white/10">
+            <div id="nitroFill" class="h-full w-0 rounded-full" style="background:linear-gradient(90deg,#22d3ee,#a3e635,#fde047);"></div>
+          </div>
+          <span id="nitroTierEl" class="text-[10px] font-black text-cyan-200">LV0</span>
+        </div>
+      </div>
+      <canvas id="game" class="flex-1 w-full" style="touch-action:none;min-height:0;flex:1 1 auto;"></canvas>
+      <div id="overlay" class="fixed inset-0 flex items-center justify-center p-4" style="background:rgba(20,8,12,.8);backdrop-filter:blur(6px);z-index:20;">
+        <div class="w-full max-w-sm rounded-3xl p-6 text-center shadow-2xl" style="background:linear-gradient(165deg,#b45309,#7c2d12);">
+          <div class="text-5xl mb-2">🍁</div>
+          <h1 id="ovTitle" class="text-2xl font-black text-white mb-2"></h1>
+          <p id="ovText" class="text-sm text-amber-50/90 leading-relaxed mb-4 whitespace-pre-line"></p>
+          <div id="diffRow" class="flex justify-center gap-2 mb-4">
+            <button data-diff="easy" class="diffBtn px-3 py-2 rounded-xl text-sm font-bold bg-white/10 text-white">${t('easy')}</button>
+            <button data-diff="normal" class="diffBtn px-3 py-2 rounded-xl text-sm font-bold bg-white/10 text-white">${t('normal')}</button>
+            <button data-diff="hard" class="diffBtn px-3 py-2 rounded-xl text-sm font-bold bg-white/10 text-white">${t('hard')}</button>
+          </div>
+          <button id="ovBtn" class="w-full rounded-2xl py-3 text-lg font-black text-white shadow-lg active:scale-95" style="background:linear-gradient(135deg,#f97316,#dc2626);"></button>
+        </div>
+      </div>
+    </div>`;
+
+  const canvas = document.getElementById('game');
+  const ctx = canvas.getContext('2d');
+  const overlayEl = document.getElementById('overlay');
+  const ovTitle = document.getElementById('ovTitle');
+  const ovText = document.getElementById('ovText');
+  const ovBtn = document.getElementById('ovBtn');
+  const scoreEl = document.getElementById('scoreEl');
+  const distEl = document.getElementById('distEl');
+  const bestEl = document.getElementById('bestEl');
+  const comboBadge = document.getElementById('comboBadge');
+  const comboEl = document.getElementById('comboEl');
+  const petBox = document.getElementById('petBox');
+  const nitroWrap = document.getElementById('nitroWrap');
+  const nitroFill = document.getElementById('nitroFill');
+  const nitroTierEl = document.getElementById('nitroTierEl');
+
+  // ============ Storage ============
+  const STORAGE_KEY_BESTS = 'haqi_hairpin_drift_bests';
+  const STORAGE_KEY_DIFF = 'haqi_hairpin_drift_diff';
+  function loadBests() {
+    try { return JSON.parse(localStorage.getItem(STORAGE_KEY_BESTS)) || { easy: 0, normal: 0, hard: 0 }; }
+    catch (e) { return { easy: 0, normal: 0, hard: 0 }; }
+  }
+  function saveBests(b) { try { localStorage.setItem(STORAGE_KEY_BESTS, JSON.stringify(b)); } catch (e) {} }
+  function loadDiff() {
+    const d = localStorage.getItem(STORAGE_KEY_DIFF);
+    return (d && game_config.difficulties[d]) ? d : (game_config.difficulties[game_config.difficulty] ? game_config.difficulty : 'normal');
+  }
+  function saveDiff(d) { try { localStorage.setItem(STORAGE_KEY_DIFF, d); } catch (e) {} }
+
+  // ============ Pseudo-3D road constants ============
+  const ROAD = { SEG: 200, RUMBLE: 4, DRAW: 220, WIDTH: 2200 };
+  const FOV = 105;
+  const EDGE = 1.16;               // 红白减速带外缘（超出即坠崖）
+  const MAX_TAIL = 0.42;           // 最大甩尾角(rad)
+  const lerp = (a, b, p) => a + (b - a) * p;
+  const clamp = (v, a, b) => v < a ? a : v > b ? b : v;
+  const easeIn = (a, b, p) => a + (b - a) * p * p;
+  const easeInOut = (a, b, p) => a + (b - a) * ((-Math.cos(p * Math.PI) / 2) + 0.5);
+
+  // ============ Track engine (segment based, OutRun style) ============
+  const track = { segs: new Map(), built: -1, lastY: 0 };
+  function getSeg(i) { return track.segs.get(i); }
+  function segCurve(i) { const s = track.segs.get(i); return s ? s.curve : 0; }
+  function segY(i) { const s = track.segs.get(i); return s ? s.y : track.lastY; }
+
+  function addSeg(curve, y, coin) {
+    track.built++;
+    track.segs.set(track.built, { i: track.built, curve, y, coin: coin || null });
+    track.lastY = y;
+  }
+
+  // 添加一段道路：进入缓动 enter + 保持 hold + 退出缓动 leave
+  function addRoad(enter, hold, leave, curve, hillDelta, coinPlan) {
+    const startY = track.lastY;
+    const endY = startY + (hillDelta || 0);
+    const total = (enter + hold + leave) || 1;
+    let n = 0;
+    const place = (k) => (coinPlan ? coinPlan(k, total) : null);
+    for (let i = 0; i < enter; i++) { addSeg(easeIn(0, curve, i / enter), easeInOut(startY, endY, n / total), place(n)); n++; }
+    for (let i = 0; i < hold; i++)  { addSeg(curve,                       easeInOut(startY, endY, n / total), place(n)); n++; }
+    for (let i = 0; i < leave; i++) { addSeg(easeInOut(curve, 0, i / leave), easeInOut(startY, endY, n / total), place(n)); n++; }
+  }
+
+  function randHill() { return (Math.random() - 0.5) * 2400 * Math.random(); }
+
+  // 弯道边缘高价值碎片：逼迫玩家去极限擦边
+  function coinPlanCurve(curve, hairpin) {
+    return (k, total) => {
+      if (k < total * 0.22 || k > total * 0.8) return null;
+      if (k % 3 !== 0) return null;
+      // 60% 放外侧悬崖一侧（离心被甩去的方向），40% 放弯心
+      const outer = -Math.sign(curve || 1);
+      const side = (Math.random() < 0.6) ? outer : -outer;
+      const x = side * (0.82 + Math.random() * (EDGE - 0.84)); // 贴近红白减速带
+      return { x, value: hairpin ? 80 : 45, edge: true, taken: false };
+    };
+  }
+  function coinPlanStraight() {
+    return (k) => (k % 7 === 0 && Math.random() < 0.5)
+      ? { x: (Math.random() - 0.5) * 0.5, value: 10, edge: false, taken: false } : null;
+  }
+
+  // 程序化拼接道路：随距离递增曲率、减少直道
+  function addPiece() {
+    const dist = track.built * ROAD.SEG;
+    const diff = clamp(dist / 55000, 0, 1);          // 0→1 随距离加难
+    const base = diffCfg().curve;
+    const straightChance = Math.max(0.05, 0.32 - diff * 0.28);
+    if (Math.random() < straightChance) {
+      const len = Math.max(10, (16 + Math.random() * 28 * (1 - diff * 0.7)) | 0);
+      addRoad((len * 0.3) | 0, len, (len * 0.3) | 0, 0, randHill(), coinPlanStraight());
+    } else {
+      const dir = Math.random() < 0.5 ? -1 : 1;
+      const hairpin = Math.random() < (0.18 + diff * 0.55);
+      let mag = base * (hairpin ? (2.4 + diff * 2.2) : (1.2 + diff * 1.4)) * (0.8 + Math.random() * 0.5);
+      mag = Math.min(mag, 9.5);
+      const curve = dir * mag;
+      const hold = ((hairpin ? (16 + Math.random() * 16) : (26 + Math.random() * 26))) | 0;
+      addRoad(10, hold, 10, curve, randHill(), coinPlanCurve(curve, hairpin));
+    }
+  }
+
+  function initTrack() {
+    track.segs.clear(); track.built = -1; track.lastY = 0;
+    addRoad(0, 90, 0, 0, 0);           // 安全起跑直道（开局不会立刻坠崖）
+    addRoad(20, 30, 20, diffCfg().curve * 1.6, 0); // 先来一个温和的弯热身
+  }
+  function buildAhead(toIndex) { while (track.built < toIndex) addPiece(); }
+  function pruneBehind(fromIndex) {
+    for (const k of track.segs.keys()) { if (k < fromIndex) track.segs.delete(k); else break; }
+  }
+
+  // ============ State ============
+  const bests = loadBests();
+  const state = {
+    difficulty: loadDiff(),
+    started: false,
+    over: false,
+    roundId: 0,
+    score: 0,
+    distance: 0,
+    position: 0,
+    speed: 0,
+    elapsed: 0,
+    speedTier: 0,        // 存活提速档
+    playerX: 0,          // -1..±EDGE normalized lateral
+    lastPlayerSeg: 0,
+    holding: false,
+    driftActive: false,
+    driftDir: 0,
+    tail: 0,
+    targetTail: 0,
+    combo: 0,
+    maxCombo: 0,
+    comboTimer: 0,
+    grazeTick: 0,
+    grazing: false,
+    grazeFlash: 0,
+    nitro: 0,
+    nitroTier: 0,
+    coinsGot: 0,
+    particles: [],
+    skids: [],
+    floatTexts: [],
+    shakeUntil: 0,
+    fallAnim: null,
+    bob: 0,
+    petBitmap: null,
+    petMeta: null,
+    petUrl: ''
+  };
+
+  let geom = null;
+  function computeGeom() {
+    const dpr = Math.min(window.devicePixelRatio || 1, 2);
+    const rect = canvas.getBoundingClientRect();
+    canvas.width = Math.round(rect.width * dpr);
+    canvas.height = Math.round(rect.height * dpr);
+    ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+    const W = rect.width, H = rect.height;
+    const cameraDepth = 1 / Math.tan((FOV / 2) * Math.PI / 180);
+    const cameraHeight = 820;     // 压低镜头 → 强透视
+    const playerZ = cameraHeight * cameraDepth;
+    const playerScreenY = H * 0.84;
+    const horizonY = H * 0.46;
+    geom = { W, H, cameraDepth, cameraHeight, playerZ, playerScreenY, horizonY };
+  }
+
+  // ============ Audio ============
+  let audioCtx = null;
+  function ac() {
+    if (!audioCtx) try { audioCtx = new (window.AudioContext || window.webkitAudioContext)(); } catch (e) {}
+    if (audioCtx && audioCtx.state === 'suspended') audioCtx.resume().catch(() => {});
+    return audioCtx;
+  }
+  function tone(freq, dur, type, gainVal, when) {
+    const c = ac(); if (!c) return;
+    const o = c.createOscillator(), g = c.createGain();
+    o.type = type || 'sine'; o.frequency.value = freq;
+    const t0 = c.currentTime + (when || 0);
+    g.gain.setValueAtTime(0.0001, t0);
+    g.gain.exponentialRampToValueAtTime(gainVal || 0.1, t0 + 0.012);
+    g.gain.exponentialRampToValueAtTime(0.0001, t0 + dur);
+    o.connect(g); g.connect(c.destination);
+    o.start(t0); o.stop(t0 + dur + 0.02);
+  }
+  const sounds = {
+    drift: () => { tone(120 + Math.random() * 40, 0.07, 'sawtooth', 0.035); },
+    graze: (combo) => { tone(620 + Math.min(combo, 12) * 45, 0.09, 'triangle', 0.08); tone(940 + Math.min(combo, 12) * 50, 0.07, 'sine', 0.05, 0.02); },
+    coin: (v) => { tone(660 + (v > 50 ? 220 : 0), 0.1, 'triangle', 0.08); tone(990, 0.08, 'sine', 0.05, 0.03); },
+    nitro: () => { for (let i = 0; i < 5; i++) tone(300 + i * 160, 0.12, 'sawtooth', 0.07, i * 0.05); },
+    speedup: () => { for (let i = 0; i < 3; i++) tone(500 + i * 200, 0.12, 'square', 0.06, i * 0.06); },
+    fall: () => { tone(330, 0.2, 'sine', 0.12); tone(247, 0.25, 'sine', 0.12, 0.15); tone(110, 0.6, 'sawtooth', 0.1, 0.32); },
+    best: () => { for (let i = 0; i < 4; i++) tone(523 + i * 130, 0.18, 'triangle', 0.1, i * 0.08); }
+  };
+
+  // ============ Difficulty ============
+  function diffCfg() { return game_config.difficulties[state.difficulty] || game_config.difficulties.normal; }
+  function refreshDiffButtons() {
+    document.querySelectorAll('.diffBtn').forEach(b => {
+      b.style.background = (b.dataset.diff === state.difficulty) ? 'linear-gradient(135deg,#f97316,#dc2626)' : 'rgba(255,255,255,0.1)';
+      b.style.color = '#fff';
+    });
+  }
+  document.querySelectorAll('.diffBtn').forEach(b => {
+    b.addEventListener('click', () => {
+      state.difficulty = b.dataset.diff;
+      saveDiff(state.difficulty);
+      refreshDiffButtons();
+      updateBestDisplay();
+    });
+  });
+  function updateBestDisplay() { bestEl.textContent = Math.floor(bests[state.difficulty] || 0); }
+
+  // ============ Overlay ============
+  function showOverlay(opts) {
+    ovTitle.textContent = opts.title;
+    ovText.textContent = opts.text;
+    ovBtn.textContent = opts.button;
+    overlayEl.style.display = 'flex';
+  }
+  function hideOverlay() { overlayEl.style.display = 'none'; }
+  document.getElementById('helpBtn').addEventListener('click', () => {
+    showOverlay({ title: t('helpTitle'), text: t('helpText'), button: state.over ? t('restartBtn') : (state.started ? t('continueBtn') : t('startBtn')) });
+  });
+  document.getElementById('restartBtn').addEventListener('click', () => { startGame(); });
+  ovBtn.addEventListener('click', () => {
+    if (state.over || !state.started) startGame();
+    else hideOverlay();
+  });
+
+  // ============ Game flow ============
+  function resetGame() {
+    state.started = false;
+    state.over = false;
+    state.roundId++;
+    state.score = 0;
+    state.distance = 0;
+    state.position = 0;
+    state.speed = diffCfg().baseSpeed;
+    state.elapsed = 0;
+    state.speedTier = 0;
+    state.playerX = 0;
+    state.holding = false;
+    state.driftActive = false;
+    state.driftDir = 0;
+    state.tail = 0;
+    state.targetTail = 0;
+    state.combo = 0;
+    state.maxCombo = 0;
+    state.comboTimer = 0;
+    state.grazeTick = 0;
+    state.grazing = false;
+    state.grazeFlash = 0;
+    state.nitro = 0;
+    state.nitroTier = 0;
+    state.coinsGot = 0;
+    state.particles = [];
+    state.skids = [];
+    state.floatTexts = [];
+    state.shakeUntil = 0;
+    state.fallAnim = null;
+    state.bob = 0;
+    initTrack();
+    buildAhead(ROAD.DRAW + 10);
+    state.lastPlayerSeg = Math.floor(geom.playerZ / ROAD.SEG);
+    updateHUD();
+  }
+
+  function startGame() {
+    if (!geom) computeGeom();
+    resetGame();
+    state.started = true;
+    hideOverlay();
+    if (!gameStartedSent) { post('gameStarted'); gameStartedSent = true; }
+    ac();
+  }
+
+  let gameStartedSent = false;
+  let gameLoadedSent = false;
+
+  function gameOver() {
+    if (state.over) return;
+    state.over = true;
+    state.holding = false;
+    state.fallAnim = { t0: performance.now(), duration: 1100, dir: Math.sign(state.playerX) || 1 };
+    state.shakeUntil = performance.now() + 520;
+    sounds.fall();
+    const px = geom.W / 2 + state.playerX * geom.W * 0.18, py = geom.playerScreenY;
+    for (let i = 0; i < 22; i++) {
+      state.particles.push({
+        kind: 'debris', x: px, y: py,
+        vx: (Math.random() - 0.5) * 340, vy: (Math.random() - 0.9) * 360,
+        r: 3 + Math.random() * 4, color: ['#dc2626', '#ea580c', '#f59e0b', '#fbbf24'][i % 4],
+        t0: performance.now(), life: 800 + Math.random() * 500, grav: 620
+      });
+    }
+    const finalScore = Math.floor(state.score);
+    const isBest = finalScore > (bests[state.difficulty] || 0);
+    if (isBest) { bests[state.difficulty] = finalScore; saveBests(bests); sounds.best(); burstConfetti(); }
+    setTimeout(() => {
+      showOverlay({
+        title: isBest ? t('newBest') : t('gameOver'),
+        text: t('gameOverText', { score: finalScore, distance: Math.floor(state.distance / 200), combo: state.maxCombo }),
+        button: t('restartBtn')
+      });
+      updateBestDisplay();
+      post('gameFinished', {
+        completed: false, passed: false,
+        earnedPoints: Math.max(5, Math.round(finalScore / 4)),
+        score: finalScore,
+        distance: Math.floor(state.distance / 200),
+        maxCombo: state.maxCombo,
+        nitroTier: state.nitroTier,
+        coins: state.coinsGot,
+        difficulty: state.difficulty === 'easy' ? 1 : state.difficulty === 'hard' ? 3 : 2,
+        difficultyId: state.difficulty,
+        roundId: state.roundId,
+        finishedAt: Date.now()
+      });
+    }, 1150);
+  }
+
+  function burstConfetti() {
+    const colors = ['#dc2626', '#ea580c', '#f59e0b', '#fbbf24', '#facc15'];
+    for (let i = 0; i < 38; i++) {
+      const piece = document.createElement('i');
+      piece.className = 'mh-confetti';
+      piece.style.left = `${5 + Math.random() * 90}vw`;
+      piece.style.setProperty('--x', `${Math.round((Math.random() - 0.5) * 140)}px`);
+      piece.style.setProperty('--d', `${900 + Math.random() * 600}ms`);
+      piece.style.background = colors[Math.floor(Math.random() * colors.length)];
+      document.body.appendChild(piece);
+      setTimeout(() => piece.remove(), 1600);
+    }
+  }
+
+  // ============ Input: hold to drift ============
+  function pressDown(e) {
+    if (!state.started || state.over) return;
+    state.holding = true;
+    if (e && e.pointerId != null) { try { canvas.setPointerCapture(e.pointerId); } catch (err) {} }
+  }
+  function pressUp() { state.holding = false; }
+  canvas.addEventListener('pointerdown', pressDown);
+  canvas.addEventListener('pointerup', pressUp);
+  canvas.addEventListener('pointercancel', pressUp);
+  canvas.addEventListener('pointerleave', pressUp);
+  window.addEventListener('keydown', e => {
+    if (e.code === 'Space' || e.key === 'ArrowDown' || e.key === 'Shift') { if (state.started && !state.over) state.holding = true; e.preventDefault(); }
+  });
+  window.addEventListener('keyup', e => {
+    if (e.code === 'Space' || e.key === 'ArrowDown' || e.key === 'Shift') state.holding = false;
+  });
+
+  // ============ FX spawners ============
+  function emitSmoke(side) {
+    const px = geom.W / 2 + state.playerX * geom.W * 0.18 + side * 16;
+    state.particles.push({
+      kind: 'smoke', x: px, y: geom.playerScreenY + 6,
+      vx: (Math.random() - 0.5) * 40 - state.tail * 60, vy: 30 + Math.random() * 60,
+      r: 6 + Math.random() * 6, color: '255,255,255',
+      t0: performance.now(), life: 520 + Math.random() * 260, grav: 0, grow: 26
+    });
+  }
+  function emitSpark(gold) {
+    const px = geom.W / 2 + state.playerX * geom.W * 0.18;
+    const sideSign = state.playerX >= 0 ? 1 : -1;
+    state.particles.push({
+      kind: 'spark', x: px + sideSign * (18 + Math.random() * 8), y: geom.playerScreenY - 2 + (Math.random() - 0.5) * 18,
+      vx: sideSign * (120 + Math.random() * 180), vy: (Math.random() - 0.8) * 200,
+      r: 1.6 + Math.random() * 2.2, color: gold ? ['#fde047', '#facc15', '#fff7cc', '#f59e0b'][Math.floor(Math.random() * 4)] : '#fbbf24',
+      t0: performance.now(), life: 360 + Math.random() * 280, grav: 360
+    });
+  }
+
+  function collectCoin(coin) {
+    state.coinsGot++;
+    const mult = 1 + state.combo * 0.05 + (state.grazing ? (game_config.grazeMultiplier - 1) : 0);
+    const gain = Math.round(coin.value * mult);
+    state.score += gain;
+    sounds.coin(coin.value);
+    state.floatTexts.push({
+      text: `+${gain}`, x: geom.W / 2 + coin.x * geom.W * 0.18, y: geom.playerScreenY - 24,
+      color: coin.edge ? '#fde047' : '#7dd3fc', size: coin.edge ? 20 : 15, t0: performance.now(), life: 800
+    });
+    for (let i = 0; i < (coin.edge ? 8 : 4); i++) emitSpark(coin.edge);
+  }
+
+  // ============ Update ============
+  function update(dt) {
+    if (!state.started || state.over) return;
+    const rect = canvas.getBoundingClientRect();
+    if (!geom || Math.abs(rect.width - geom.W) > 1 || Math.abs(rect.height - geom.H) > 1) computeGeom();
+    const cfg = diffCfg();
+
+    // 存活提速：每 N 秒全局基础速度 +10%
+    state.elapsed += dt;
+    const tier = Math.floor(state.elapsed / game_config.speedUpEvery);
+    if (tier > state.speedTier) {
+      state.speedTier = tier;
+      sounds.speedup();
+      state.floatTexts.push({ text: t('speedup'), x: geom.W / 2, y: geom.H * 0.34, color: '#fca5a5', size: 24, t0: performance.now(), life: 1000 });
+    }
+    const speedMul = Math.pow(1 + game_config.speedUpRate, state.speedTier);
+
+    // 自动加速到当前速度上限（存活提速 + 氮气提升）
+    const maxNow = cfg.maxSpeed * speedMul + state.nitroTier * cfg.nitroBoost;
+    state.speed = Math.min(maxNow, state.speed + cfg.accel * speedMul * dt);
+    state.position += state.speed * dt;
+    state.distance += state.speed * dt;
+    const sp = state.speed / cfg.maxSpeed;
+
+    // 维护赛道段
+    const baseIndex = Math.floor(state.position / ROAD.SEG);
+    buildAhead(baseIndex + ROAD.DRAW + 6);
+    if (baseIndex > 4) pruneBehind(baseIndex - 3);
+
+    // 玩家所在路段的弯度
+    const playerSeg = Math.floor((state.position + geom.playerZ) / ROAD.SEG);
+    const curve = segCurve(playerSeg);
+
+    // 离心力：弯道把车甩向外侧（不操作必坠崖）
+    state.playerX -= dt * sp * curve * cfg.centrifugal;
+
+    // 长按漂移：朝弯心滑动，对抗离心力
+    if (state.holding) {
+      state.driftActive = true;
+      const dir = curve > 0.12 ? 1 : curve < -0.12 ? -1 : state.driftDir;
+      state.driftDir = dir;
+      state.playerX += dir * cfg.drift * sp * dt;
+      state.targetTail = dir * MAX_TAIL;
+      const pp = ((state.position + geom.playerZ) % ROAD.SEG) / ROAD.SEG;
+      state.skids.push({ idx: playerSeg, percent: pp, x: state.playerX - 0.04, a: 1 });
+      state.skids.push({ idx: playerSeg, percent: pp, x: state.playerX + 0.04, a: 1 });
+      if (Math.random() < 0.6) emitSmoke(-1);
+      if (Math.random() < 0.6) emitSmoke(1);
+      if (Math.random() < 0.25) sounds.drift();
+    } else {
+      state.driftActive = false;
+      state.targetTail = 0;
+    }
+    state.tail += (state.targetTail - state.tail) * Math.min(1, dt * 9);
+    state.bob += dt * (6 + sp * 6);
+
+    // 基础距离分
+    state.score += game_config.distanceScoreRate * state.speed * dt;
+
+    // 极限擦边判定（贴红白减速带）
+    const ax = Math.abs(state.playerX);
+    const grazing = state.driftActive && ax >= cfg.grazeInner && ax <= EDGE;
+    state.grazing = grazing;
+    if (grazing) {
+      state.grazeFlash = 1;
+      state.score += game_config.distanceScoreRate * state.speed * dt * (game_config.grazeMultiplier - 1) * (1 + state.combo * 0.05);
+      state.nitro += game_config.nitroFillRate * dt;
+      state.grazeTick += dt;
+      if (state.grazeTick >= game_config.comboTick) {
+        state.grazeTick -= game_config.comboTick;
+        state.combo++;
+        state.maxCombo = Math.max(state.maxCombo, state.combo);
+        state.comboTimer = 0.7;
+        state.score += Math.round((10 + state.combo) * (1 + state.combo * 0.05));
+        sounds.graze(state.combo);
+        for (let i = 0; i < 3; i++) emitSpark(true);
+        if (state.combo % 5 === 0) state.floatTexts.push({ text: `COMBO x${state.combo}`, x: geom.W / 2, y: geom.playerScreenY - 70, color: '#fde047', size: 22, t0: performance.now(), life: 700 });
+      }
+      if (state.nitro >= 1 && state.nitroTier < cfg.maxNitroTier) {
+        state.nitro = 0; state.nitroTier++;
+        state.shakeUntil = performance.now() + 260; sounds.nitro();
+        state.floatTexts.push({ text: `NITRO LV${state.nitroTier}!`, x: geom.W / 2, y: geom.playerScreenY - 100, color: '#22d3ee', size: 26, t0: performance.now(), life: 900 });
+      } else if (state.nitro > 1) state.nitro = 1;
+    } else {
+      state.grazeTick = 0;
+    }
+
+    if (state.comboTimer > 0) { state.comboTimer -= dt; if (state.comboTimer <= 0) state.combo = 0; }
+    state.grazeFlash = Math.max(0, state.grazeFlash - dt * 4);
+
+    // 碎片收集（车驶过的所有路段）
+    for (let i = state.lastPlayerSeg + 1; i <= playerSeg; i++) {
+      const s = getSeg(i);
+      if (s && s.coin && !s.coin.taken && Math.abs(state.playerX - s.coin.x) < 0.2) {
+        s.coin.taken = true; collectCoin(s.coin);
+      }
+    }
+    state.lastPlayerSeg = playerSeg;
+
+    // 冲出红白减速带边界 → 坠崖
+    if (ax > EDGE) { gameOver(); return; }
+
+    // FX 更新
+    const now = performance.now();
+    state.particles = state.particles.filter(p => now - p.t0 < p.life);
+    state.floatTexts = state.floatTexts.filter(f => now - f.t0 < f.life);
+    state.skids = state.skids.filter(s => s.idx >= baseIndex - 1 && s.idx < baseIndex + ROAD.DRAW);
+    if (state.skids.length > 900) state.skids.splice(0, state.skids.length - 900);
+
+    updateHUD();
+  }
+
+  function updateHUD() {
+    scoreEl.textContent = Math.floor(state.score);
+    distEl.textContent = Math.floor(state.distance / 200) + 'm';
+    if (state.combo >= 1) { comboBadge.classList.remove('hidden'); comboEl.textContent = 'x' + state.combo; }
+    else comboBadge.classList.add('hidden');
+    nitroWrap.style.opacity = state.started && !state.over ? '1' : '0';
+    nitroFill.style.width = Math.round(state.nitro * 100) + '%';
+    nitroTierEl.textContent = 'LV' + state.nitroTier;
+  }
+
+  // ============ Projection ============
+  function projectSeg(idx, xOffset, camX, camY, camZ) {
+    const wz = idx * ROAD.SEG;
+    const cx = xOffset - camX;
+    const cy = segY(idx) - camY;
+    const cz = wz - camZ;
+    const scale = geom.cameraDepth / cz;
+    return {
+      camZ: cz, scale,
+      sx: geom.W / 2 + scale * cx * geom.W / 2,
+      sy: geom.H / 2 - scale * cy * geom.H / 2,
+      sw: scale * ROAD.WIDTH * geom.W / 2
+    };
+  }
+
+  // ============ Render ============
+  let lastFrame = 0;
+  function render(now) {
+    const rect = canvas.getBoundingClientRect();
+    if (!geom || Math.abs(rect.width - geom.W) > 1 || Math.abs(rect.height - geom.H) > 1) computeGeom();
+    if (!geom) { requestAnimationFrame(render); return; }
+    const dt = lastFrame ? Math.min(0.05, (now - lastFrame) / 1000) : 0;
+    lastFrame = now;
+    update(dt);
+    const { W, H } = geom;
+
+    ctx.save();
+    if (now < state.shakeUntil) {
+      const m = (state.shakeUntil - now) / 520 * 9;
+      ctx.translate((Math.random() - 0.5) * m, (Math.random() - 0.5) * m);
+    }
+
+    drawSky(now);
+    drawMountains();
+    drawRoad(now);
+    drawPlayer(now);
+    drawParticles(now);
+    drawSpeedFx(now);
+    drawFloatTexts(now);
+    drawGrazeBanner(now);
+
+    ctx.restore();
+    requestAnimationFrame(render);
+  }
+
+  function drawSky(now) {
+    const { W, H, horizonY } = geom;
+    const g = ctx.createLinearGradient(0, 0, 0, horizonY + 40);
+    g.addColorStop(0, '#3a2d4d'); g.addColorStop(0.4, '#6d4159');
+    g.addColorStop(0.75, '#b5623f'); g.addColorStop(1, '#e8965a');
+    ctx.fillStyle = g; ctx.fillRect(0, 0, W, horizonY + 40);
+    const cx = W * 0.62, cy = horizonY - 6, r = Math.min(W, H) * 0.085;
+    const glow = ctx.createRadialGradient(cx, cy, r * 0.4, cx, cy, r * 3.2);
+    glow.addColorStop(0, 'rgba(255,210,140,0.55)'); glow.addColorStop(1, 'rgba(255,170,90,0)');
+    ctx.fillStyle = glow; ctx.beginPath(); ctx.arc(cx, cy, r * 3.2, 0, Math.PI * 2); ctx.fill();
+    const sun = ctx.createRadialGradient(cx - r * 0.2, cy - r * 0.2, r * 0.1, cx, cy, r);
+    sun.addColorStop(0, '#fff3d6'); sun.addColorStop(0.6, '#fcd34d'); sun.addColorStop(1, '#f97316');
+    ctx.fillStyle = sun; ctx.beginPath(); ctx.arc(cx, cy, r, 0, Math.PI * 2); ctx.fill();
+  }
+
+  function drawMountains() {
+    const { W, horizonY } = geom;
+    const layers = [
+      { col: 'rgba(91,46,68,0.6)', amp: 46, base: horizonY - 6, off: state.position * 0.00005, step: 0.010 },
+      { col: 'rgba(124,45,18,0.7)', amp: 36, base: horizonY + 6, off: state.position * 0.00009, step: 0.016 },
+      { col: 'rgba(154,52,18,0.82)', amp: 26, base: horizonY + 18, off: state.position * 0.00014, step: 0.024 }
+    ];
+    for (const L of layers) {
+      ctx.fillStyle = L.col;
+      ctx.beginPath(); ctx.moveTo(0, L.base + 60);
+      for (let x = 0; x <= W; x += 14) {
+        const yy = L.base - (Math.sin(x * L.step + L.off * 1000) * L.amp + Math.sin(x * L.step * 2.7 + 1.5) * L.amp * 0.4);
+        ctx.lineTo(x, yy);
+      }
+      ctx.lineTo(W, L.base + 60); ctx.closePath(); ctx.fill();
+    }
+  }
+
+  function drawRoad(now) {
+    const { W, H } = geom;
+    const baseIndex = Math.floor(state.position / ROAD.SEG);
+    const basePercent = (state.position % ROAD.SEG) / ROAD.SEG;
+    const playerSeg = Math.floor((state.position + geom.playerZ) / ROAD.SEG);
+    const playerPercent = ((state.position + geom.playerZ) % ROAD.SEG) / ROAD.SEG;
+    const playerWorldY = lerp(segY(playerSeg), segY(playerSeg + 1), playerPercent);
+
+    const camX = state.playerX * ROAD.WIDTH;
+    const camY = playerWorldY + geom.cameraHeight;
+    const camZ = state.position;
+
+    let x = 0;
+    let dx = -(segCurve(baseIndex) * basePercent);
+    let maxy = H;
+
+    const visible = [];
+    const segMap = Object.create(null);
+
+    for (let n = 0; n < ROAD.DRAW; n++) {
+      const idx = baseIndex + n;
+      const curve = segCurve(idx);
+      const p1 = projectSeg(idx, x, camX, camY, camZ);
+      const p2 = projectSeg(idx + 1, x + dx, camX, camY, camZ);
+      x += dx; dx += curve;
+
+      if (p1.camZ <= geom.cameraDepth) continue;
+      if (p2.sy >= p1.sy) continue;
+      if (p2.sy >= maxy) continue;
+
+      drawSegment(idx, n, p1, p2);
+      visible.push({ idx, p1, p2 });
+      segMap[idx] = { p1, p2 };
+      maxy = p2.sy;
+    }
+
+    // 胎痕（贴地）
+    for (const s of state.skids) {
+      const m = segMap[s.idx]; if (!m) continue;
+      const sx = lerp(m.p1.sx, m.p2.sx, s.percent);
+      const sy = lerp(m.p1.sy, m.p2.sy, s.percent);
+      const sw = lerp(m.p1.sw, m.p2.sw, s.percent);
+      const rad = Math.max(1, sw * 0.05);
+      ctx.fillStyle = `rgba(28,22,20,${0.45 * s.a})`;
+      ctx.beginPath(); ctx.ellipse(sx + s.x * sw, sy, rad, rad * 0.6, 0, 0, Math.PI * 2); ctx.fill();
+    }
+
+    // 远→近：路边红枫 + 碎片（正确遮挡）
+    for (let i = visible.length - 1; i >= 0; i--) {
+      const v = visible[i];
+      drawRoadsideTrees(v.idx, v.p1);
+      const s = getSeg(v.idx);
+      if (s && s.coin && !s.coin.taken) drawCoin(v.p1, s.coin, now);
+    }
+  }
+
+  function drawSegment(idx, n, p1, p2) {
+    const { W } = geom;
+    const alt = (Math.floor(idx / ROAD.RUMBLE) % 2) === 0;
+    ctx.fillStyle = alt ? '#8a5a2b' : '#7a4d22';
+    ctx.fillRect(0, p2.sy, W, p1.sy - p2.sy + 1);
+    polyTrap(alt ? '#dc2626' : '#f1f5f9', p1.sx, p1.sy, p1.sw * EDGE, p2.sx, p2.sy, p2.sw * EDGE);
+    polyTrap(alt ? '#3b3b44' : '#34343c', p1.sx, p1.sy, p1.sw, p2.sx, p2.sy, p2.sw);
+    if (alt) polyTrap('#e8e2cf', p1.sx, p1.sy, p1.sw * 0.035, p2.sx, p2.sy, p2.sw * 0.035);
+    const fog = Math.min(1, Math.pow(n / ROAD.DRAW, 2.2) * 1.3) * 0.85;
+    if (fog > 0.02) { ctx.fillStyle = `rgba(214,140,86,${fog})`; ctx.fillRect(0, p2.sy, W, p1.sy - p2.sy + 1); }
+  }
+
+  function polyTrap(color, x1, y1, w1, x2, y2, w2) {
+    ctx.fillStyle = color;
+    ctx.beginPath();
+    ctx.moveTo(x1 - w1, y1); ctx.lineTo(x1 + w1, y1);
+    ctx.lineTo(x2 + w2, y2); ctx.lineTo(x2 - w2, y2);
+    ctx.closePath(); ctx.fill();
+  }
+
+  function drawCoin(p1, coin, now) {
+    const sw = p1.sw; if (sw < 2) return;
+    const x = p1.sx + coin.x * sw;
+    const size = clamp(sw * 0.16, 3, 26);
+    const y = p1.sy - size * 1.2;
+    const pulse = 0.75 + 0.25 * Math.sin(now * 0.006 + coin.x * 7);
+    ctx.save();
+    ctx.translate(x, y);
+    const halo = ctx.createRadialGradient(0, 0, size * 0.2, 0, 0, size * 2);
+    halo.addColorStop(0, coin.edge ? `rgba(253,224,71,${0.5 * pulse})` : `rgba(125,211,252,${0.45 * pulse})`);
+    halo.addColorStop(1, 'rgba(0,0,0,0)');
+    ctx.fillStyle = halo; ctx.beginPath(); ctx.arc(0, 0, size * 2, 0, Math.PI * 2); ctx.fill();
+    ctx.rotate(now * 0.003 + coin.x);
+    ctx.globalAlpha = pulse;
+    const grad = ctx.createLinearGradient(0, -size, 0, size);
+    if (coin.edge) { grad.addColorStop(0, '#fff7cc'); grad.addColorStop(0.5, '#fde047'); grad.addColorStop(1, '#f59e0b'); }
+    else { grad.addColorStop(0, '#bae6fd'); grad.addColorStop(0.5, '#38bdf8'); grad.addColorStop(1, '#0284c7'); }
+    ctx.fillStyle = grad;
+    ctx.beginPath(); ctx.moveTo(0, -size); ctx.lineTo(size * 0.72, 0); ctx.lineTo(0, size); ctx.lineTo(-size * 0.72, 0); ctx.closePath(); ctx.fill();
+    ctx.fillStyle = 'rgba(255,255,255,0.55)';
+    ctx.beginPath(); ctx.moveTo(0, -size); ctx.lineTo(size * 0.3, -size * 0.3); ctx.lineTo(0, 0); ctx.lineTo(-size * 0.3, -size * 0.3); ctx.closePath(); ctx.fill();
+    ctx.restore();
+    ctx.globalAlpha = 1;
+  }
+
+  function drawRoadsideTrees(idx, p1) {
+    if (idx % 5 !== 0) return;
+    const sw = p1.sw; if (sw < 2) return;
+    const sides = (idx % 10 === 0) ? [-1, 1] : [(Math.floor(idx / 5) % 2 === 0) ? -1 : 1];
+    for (const side of sides) {
+      const tx = p1.sx + side * 1.5 * sw;
+      const h = sw * 1.7; if (h < 4) continue;
+      drawVoxelMaple(tx, p1.sy, sw * 0.62, h, (idx * 73) % 5);
+    }
+  }
+
+  function drawVoxelMaple(cx, baseY, w, h, variant) {
+    const trunkW = Math.max(2, w * 0.28);
+    ctx.fillStyle = '#5a3318'; ctx.fillRect(cx - trunkW / 2, baseY - h * 0.34, trunkW, h * 0.34);
+    ctx.fillStyle = 'rgba(0,0,0,0.25)'; ctx.fillRect(cx - trunkW / 2, baseY - h * 0.34, trunkW * 0.4, h * 0.34);
+    const reds = ['#dc2626', '#ea580c', '#f59e0b', '#b91c1c', '#f97316'];
+    const block = Math.max(2, w * 0.34);
+    const top = baseY - h;
+    const rows = [[0], [-1, 0, 1], [-1.5, -0.5, 0.5, 1.5], [-1, 0, 1], [0]];
+    for (let r = 0; r < rows.length; r++) {
+      for (const c of rows[r]) {
+        const col = reds[(r + Math.round(c) + variant + 5) % reds.length];
+        const bx = cx + c * block - block / 2, by = top + r * block;
+        ctx.fillStyle = col; ctx.fillRect(bx, by, block + 0.5, block + 0.5);
+        ctx.fillStyle = 'rgba(255,255,255,0.18)'; ctx.fillRect(bx, by, block + 0.5, block * 0.3);
+        ctx.fillStyle = 'rgba(0,0,0,0.18)'; ctx.fillRect(bx, by + block * 0.7, block + 0.5, block * 0.3);
+      }
+    }
+  }
+
+  // ============ Player: voxel Totoro on a Haqi mount ============
+  function drawPlayer(now) {
+    const { W } = geom;
+    let px = W / 2 + state.playerX * W * 0.18;
+    let py = geom.playerScreenY;
+    let rot = state.tail;
+    let alpha = 1, sc = 1;
+
+    if (state.fallAnim) {
+      const age = (now - state.fallAnim.t0) / state.fallAnim.duration;
+      py += age * age * 380;
+      px += state.fallAnim.dir * age * 140;
+      rot += age * 7 * state.fallAnim.dir;
+      sc = Math.max(0.05, 1 - age * 0.85);  // 变小掉落
+      alpha = Math.max(0, 1 - age * 0.9);
+    }
+
+    const bob = state.started && !state.fallAnim ? Math.sin(state.bob) * 1.6 : 0;
+    const S = Math.max(34, Math.min(64, geom.H * 0.085));
+
+    ctx.save();
+    ctx.globalAlpha = alpha;
+    ctx.translate(px, py + bob);
+    ctx.scale(sc, sc);
+
+    ctx.fillStyle = 'rgba(0,0,0,0.32)';
+    ctx.beginPath(); ctx.ellipse(0, S * 0.5, S * 0.7, S * 0.2, 0, 0, Math.PI * 2); ctx.fill();
+
+    ctx.rotate(rot * 0.5);
+    drawMount(S, now);
+    ctx.translate(0, -S * 0.62);
+    drawVoxelTotoro(S * 0.92, state.tail);
+
+    ctx.restore();
+    ctx.globalAlpha = 1;
+  }
+
+  function drawMount(S, now) {
+    const w = S * 1.15, h = S * 0.34;
+    if (state.petBitmap && state.petMeta && state.petMeta.uv) {
+      const uv = state.petMeta.uv, ps = S * 1.1;
+      ctx.drawImage(state.petBitmap, uv.x, uv.y, uv.width, uv.height, -ps / 2, -ps * 0.05, ps, ps * 0.8);
+    } else {
+      ctx.fillStyle = '#f59e0b'; roundRect(-w / 2, -h * 0.2, w, h, 6); ctx.fill();
+      ctx.fillStyle = '#b45309'; ctx.fillRect(-w / 2, -h * 0.2 + h * 0.6, w, h * 0.4);
+      ctx.fillStyle = '#fde68a'; ctx.fillRect(-w / 2 + 4, -h * 0.2 + 2, w - 8, 3);
+    }
+    const wheelR = S * 0.2;
+    for (const wx of [-w * 0.34, w * 0.34]) {
+      ctx.save(); ctx.translate(wx, S * 0.32);
+      ctx.fillStyle = '#1f2937'; ctx.beginPath(); ctx.arc(0, 0, wheelR, 0, Math.PI * 2); ctx.fill();
+      ctx.strokeStyle = 'rgba(255,255,255,0.5)'; ctx.lineWidth = 2;
+      const spin = (now * 0.03) % (Math.PI * 2);
+      for (let i = 0; i < 4; i++) { const a = spin + i * Math.PI / 2; ctx.beginPath(); ctx.moveTo(0, 0); ctx.lineTo(Math.cos(a) * wheelR * 0.7, Math.sin(a) * wheelR * 0.7); ctx.stroke(); }
+      ctx.restore();
+    }
+  }
+
+  function drawVoxelTotoro(s, tail) {
+    const bodyW = s * 0.92, bodyH = s * 1.02;
+    ctx.fillStyle = '#3f4b57'; roundRect(-bodyW / 2 - 2, -bodyH + 2, bodyW + 4, bodyH + 2, s * 0.28); ctx.fill();
+    ctx.fillStyle = '#8d99a8'; roundRect(-bodyW / 2, -bodyH, bodyW, bodyH, s * 0.28); ctx.fill();
+    ctx.fillStyle = 'rgba(255,255,255,0.18)'; roundRect(-bodyW / 2, -bodyH, bodyW, bodyH * 0.34, s * 0.28); ctx.fill();
+    ctx.fillStyle = 'rgba(0,0,0,0.16)'; roundRect(-bodyW / 2, -bodyH * 0.32, bodyW, bodyH * 0.32, s * 0.2); ctx.fill();
+    ctx.fillStyle = '#7a8696';
+    for (const ex of [-bodyW * 0.26, bodyW * 0.26]) {
+      ctx.beginPath(); ctx.moveTo(ex - s * 0.1, -bodyH + s * 0.04); ctx.lineTo(ex, -bodyH - s * 0.26); ctx.lineTo(ex + s * 0.1, -bodyH + s * 0.04); ctx.closePath(); ctx.fill();
+    }
+    ctx.fillStyle = '#f4efe3'; roundRect(-bodyW * 0.32, -bodyH * 0.62, bodyW * 0.64, bodyH * 0.56, s * 0.18); ctx.fill();
+    ctx.fillStyle = '#9aa6b2';
+    for (let i = 0; i < 3; i++) {
+      const yy = -bodyH * 0.5 + i * s * 0.14;
+      ctx.beginPath(); ctx.moveTo(-bodyW * 0.14, yy); ctx.lineTo(0, yy + s * 0.07); ctx.lineTo(bodyW * 0.14, yy);
+      ctx.lineTo(bodyW * 0.14, yy + s * 0.05); ctx.lineTo(0, yy + s * 0.12); ctx.lineTo(-bodyW * 0.14, yy + s * 0.05); ctx.closePath(); ctx.fill();
+    }
+    const eyeY = -bodyH * 0.74;
+    for (const ex of [-bodyW * 0.2, bodyW * 0.2]) {
+      ctx.fillStyle = '#fff'; ctx.beginPath(); ctx.arc(ex, eyeY, s * 0.12, 0, Math.PI * 2); ctx.fill();
+      ctx.fillStyle = '#1f2430'; ctx.beginPath(); ctx.arc(ex - tail * s * 0.18, eyeY, s * 0.06, 0, Math.PI * 2); ctx.fill();
+      ctx.fillStyle = '#fff'; ctx.beginPath(); ctx.arc(ex - tail * s * 0.18 - s * 0.02, eyeY - s * 0.02, s * 0.02, 0, Math.PI * 2); ctx.fill();
+    }
+    ctx.fillStyle = '#2b313c'; ctx.beginPath(); ctx.arc(0, eyeY + s * 0.16, s * 0.05, 0, Math.PI * 2); ctx.fill();
+    ctx.strokeStyle = 'rgba(40,46,58,0.7)'; ctx.lineWidth = 1.4;
+    for (const dir of [-1, 1]) for (let i = -1; i <= 1; i++) {
+      ctx.beginPath(); ctx.moveTo(dir * bodyW * 0.16, eyeY + s * 0.16 + i * s * 0.04); ctx.lineTo(dir * bodyW * 0.5, eyeY + s * 0.16 + i * s * 0.1); ctx.stroke();
+    }
+  }
+
+  function roundRect(x, y, w, h, r) {
+    r = Math.min(r, w / 2, h / 2);
+    ctx.beginPath();
+    ctx.moveTo(x + r, y);
+    ctx.arcTo(x + w, y, x + w, y + h, r);
+    ctx.arcTo(x + w, y + h, x, y + h, r);
+    ctx.arcTo(x, y + h, x, y, r);
+    ctx.arcTo(x, y, x + w, y, r);
+    ctx.closePath();
+  }
+
+  // ============ Particles & FX ============
+  function drawParticles(now) {
+    for (const p of state.particles) {
+      const age = (now - p.t0) / p.life; if (age >= 1) continue;
+      const tt = (now - p.t0) / 1000;
+      const px = p.x + p.vx * tt;
+      const py = p.y + p.vy * tt + 0.5 * (p.grav || 0) * tt * tt;
+      if (p.kind === 'smoke') {
+        const r = p.r + (p.grow || 0) * age;
+        ctx.globalAlpha = (1 - age) * 0.5; ctx.fillStyle = `rgba(${p.color},1)`;
+        ctx.beginPath(); ctx.arc(px, py, r, 0, Math.PI * 2); ctx.fill();
+      } else if (p.kind === 'debris') {
+        ctx.globalAlpha = 1 - age; ctx.fillStyle = p.color;
+        ctx.save(); ctx.translate(px, py); ctx.rotate(tt * 6); ctx.fillRect(-p.r / 2, -p.r / 2, p.r, p.r); ctx.restore();
+      } else {
+        ctx.globalAlpha = 1 - age; ctx.fillStyle = p.color;
+        ctx.beginPath(); ctx.arc(px, py, p.r, 0, Math.PI * 2); ctx.fill();
+      }
+    }
+    ctx.globalAlpha = 1;
+  }
+
+  function drawSpeedFx(now) {
+    const { W, H } = geom;
+    if (!state.started || state.over) return;
+    const cfg = diffCfg();
+    const sp = state.speed / cfg.maxSpeed;
+    const intensity = clamp((sp - 0.7) / 0.3, 0, 1) * 0.5 + state.nitroTier * 0.05 + state.speedTier * 0.04;
+    if (intensity <= 0.02) return;
+    const vig = ctx.createRadialGradient(W / 2, H * 0.62, H * 0.2, W / 2, H * 0.62, H * 0.8);
+    vig.addColorStop(0, 'rgba(0,0,0,0)'); vig.addColorStop(1, `rgba(255,160,60,${Math.min(0.42, intensity)})`);
+    ctx.fillStyle = vig; ctx.fillRect(0, 0, W, H);
+    ctx.strokeStyle = `rgba(255,255,255,${Math.min(0.4, intensity)})`; ctx.lineWidth = 2;
+    for (let i = 0; i < 6; i++) {
+      const side = i % 2 === 0 ? -1 : 1;
+      const yy = H * 0.5 + ((now * 0.6 + i * 120) % (H * 0.5));
+      const xx = W / 2 + side * (W * 0.3 + (yy - H * 0.5));
+      ctx.globalAlpha = (1 - (yy - H * 0.5) / (H * 0.5)) * Math.min(0.5, intensity);
+      ctx.beginPath(); ctx.moveTo(xx, yy); ctx.lineTo(xx + side * 30, yy + 18); ctx.stroke();
+    }
+    ctx.globalAlpha = 1;
+  }
+
+  function drawFloatTexts(now) {
+    for (const f of state.floatTexts) {
+      const age = (now - f.t0) / f.life; if (age >= 1) continue;
+      ctx.globalAlpha = 1 - age; ctx.fillStyle = f.color;
+      ctx.font = `900 ${f.size}px sans-serif`; ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+      ctx.lineWidth = 3; ctx.strokeStyle = 'rgba(0,0,0,0.5)';
+      ctx.strokeText(f.text, f.x, f.y - age * 46); ctx.fillText(f.text, f.x, f.y - age * 46);
+    }
+    ctx.globalAlpha = 1;
+  }
+
+  function drawGrazeBanner(now) {
+    if (state.grazeFlash <= 0.05) return;
+    const { W } = geom;
+    const pulse = 0.85 + 0.15 * Math.sin(now * 0.02);
+    ctx.save();
+    ctx.globalAlpha = Math.min(1, state.grazeFlash) * 0.95;
+    ctx.translate(W / 2, geom.H * 0.3); ctx.scale(pulse, pulse);
+    ctx.font = '900 30px sans-serif'; ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+    ctx.lineWidth = 5; ctx.strokeStyle = 'rgba(120,50,0,0.7)'; ctx.strokeText(t('perfect'), 0, 0);
+    const grad = ctx.createLinearGradient(0, -18, 0, 18);
+    grad.addColorStop(0, '#fff7cc'); grad.addColorStop(0.5, '#fde047'); grad.addColorStop(1, '#f59e0b');
+    ctx.fillStyle = grad; ctx.fillText(t('perfect'), 0, 0);
+    if (state.combo >= 2) { ctx.font = '900 20px sans-serif'; ctx.fillStyle = '#fff'; ctx.strokeText('x' + state.combo, 0, 30); ctx.fillText('x' + state.combo, 0, 30); }
+    ctx.restore();
+    ctx.globalAlpha = 1;
+  }
+
+  // ============ Pet integration ============
+  let petRequestId = '';
+  function requestPetImage(petId) {
+    const requestId = `pet_${Date.now()}`;
+    petRequestId = requestId;
+    window.parent.postMessage({ type: 'haqi_get_pet_image', requestId, anim: 'happy', petId: petId || undefined }, '*');
+    setTimeout(() => {
+      if (state.petBitmap) return;
+      window.parent.postMessage({ type: 'haqi_get_pet_images', requestId: `pets_${Date.now()}`, anim: 'happy' }, '*');
+    }, 900);
+  }
+
+  async function setPetImage(payload) {
+    cleanupPetImage();
+    if (!payload || !payload.imageBlob || !payload.uv) return;
+    try {
+      state.petUrl = URL.createObjectURL(payload.imageBlob);
+      state.petBitmap = await createImageBitmap(payload.imageBlob);
+      state.petMeta = payload;
+      petBox.style.backgroundImage = `url("${state.petUrl}")`;
+      petBox.style.backgroundRepeat = 'no-repeat';
+      const uv = payload.uv;
+      if (uv.cols > 1 || uv.rows > 1) {
+        petBox.style.backgroundSize = `${uv.cols * 100}% ${uv.rows * 100}%`;
+        petBox.style.backgroundPosition = `${uv.col * 100 / Math.max(1, uv.cols - 1)}% ${uv.row * 100 / Math.max(1, uv.rows - 1)}%`;
+      } else {
+        petBox.style.backgroundSize = 'contain';
+        petBox.style.backgroundPosition = 'center';
+      }
+      petBox.classList.remove('hidden');
+    } catch (e) { cleanupPetImage(); }
+  }
+
+  function cleanupPetImage() {
+    if (state.petBitmap && state.petBitmap.close) state.petBitmap.close();
+    state.petBitmap = null; state.petMeta = null;
+    if (state.petUrl) URL.revokeObjectURL(state.petUrl);
+    state.petUrl = '';
+  }
+
+  // ============ postMessage ============
+  function post(type, data) {
+    try { window.parent.postMessage(data ? { type, data } : { type }, '*'); } catch (e) {}
+  }
+
+  window.addEventListener('message', (event) => {
+    const msg = event.data || {};
+    if (msg.type === 'setGameConfig' && msg.data) {
+      if (msg.data.difficulty && game_config.difficulties[msg.data.difficulty]) {
+        state.difficulty = msg.data.difficulty;
+        saveDiff(state.difficulty);
+        refreshDiffButtons();
+        updateBestDisplay();
+      }
+      if (msg.data.petId) requestPetImage(msg.data.petId);
+    }
+    if (msg.type === 'haqi_pet_image' && msg.ok && msg.data &&
+        (!petRequestId || !msg.requestId || msg.requestId === petRequestId || msg.requestId === 'active_pet_config')) {
+      setPetImage(msg.data);
+    }
+    if (msg.type === 'haqi_pet_images' && msg.ok) {
+      const firstPet = Array.isArray(msg.data && msg.data.pets) ? msg.data.pets[0] : null;
+      if (firstPet) setPetImage(firstPet);
+    }
+    if (msg.type === 'gameContinue') { startGame(); }
+  });
+
+  // ============ Init ============
+  computeGeom();
+  window.addEventListener('resize', () => { computeGeom(); });
+  document.addEventListener('visibilitychange', () => { lastFrame = 0; });
+  refreshDiffButtons();
+  updateBestDisplay();
+  showOverlay({ title: t('overlayTitle'), text: t('overlayText'), button: t('startBtn') });
+  requestPetImage('');
+  requestAnimationFrame(render);
+  if (!gameLoadedSent) { post('gameLoaded'); gameLoadedSent = true; }
+
+})();
+</script>
+</body>
+</html>

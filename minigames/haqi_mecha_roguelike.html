@@ -1,0 +1,1290 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+<title>墩弟机甲 · 肉鸽闯关 (原型 P1)</title>
+<style>
+  :root{
+    --c-bg:#070b16; --c-thunder:#facc15; --c-neon:#22d3ee;
+  }
+  *{box-sizing:border-box;}
+  html,body{margin:0;height:100%;background:#04060d;color:#e5e7eb;
+    font-family:"PingFang SC","Microsoft YaHei",system-ui,monospace;overflow:hidden;
+    touch-action:none;-webkit-tap-highlight-color:transparent;user-select:none;}
+  #wrap{position:relative;width:100vw;height:100vh;}
+  canvas{display:block;width:100%;height:100%;image-rendering:pixelated;background:#04060d;}
+  /* 操作说明 */
+  #help{position:absolute;left:12px;bottom:12px;font-size:12px;line-height:1.7;
+    color:#7c8db5;background:rgba(8,12,24,.55);border:1px solid #1e2540;border-radius:10px;
+    padding:8px 12px;pointer-events:none;backdrop-filter:blur(3px);}
+  #help b{color:#bcd1ff;font-weight:700;}
+  #help .k{display:inline-block;min-width:20px;text-align:center;padding:1px 6px;margin:0 1px;
+    background:#161d33;border:1px solid #2a3358;border-radius:5px;color:#e5e7eb;font-weight:700;}
+  #title{position:absolute;left:14px;top:12px;font-size:13px;color:#f1f5ff;letter-spacing:.5px;pointer-events:none;text-shadow:0 1px 3px rgba(0,0,0,.8);}
+  #title b{color:#fff200;}
+</style>
+</head>
+<body>
+<div id="wrap">
+  <canvas id="game"></canvas>
+  <div id="title"><b>墩弟机甲</b> · Roguelike 横版动作射击 — 阶段一原型：物理引擎 + 主角状态机</div>
+  <div id="help">
+    <b>移动</b> <span class="k">A</span><span class="k">D</span> / <span class="k">←</span><span class="k">→</span> &nbsp;
+    <b>跳跃</b> <span class="k">空格</span>/<span class="k">K</span>（蹬墙跳：贴墙时跳）<br>
+    <b>冲刺</b> <span class="k">Shift</span>/<span class="k">L</span>（0.2s 无敌帧，空中可冲一次）&nbsp;
+    <b>射击</b> <span class="k">J</span>（轻按平A · 长按蓄力放穿透炮）<br>
+    <span style="color:#475569">调试</span> <span class="k">P</span> 显示碰撞盒/状态 &nbsp; <span class="k">R</span> 复位
+  </div>
+</div>
+<script>
+"use strict";
+/* =========================================================================
+   墩弟机甲 · 横版动作射击 Roguelike —— 阶段一：底层物理 + 主角状态机
+   纯 Canvas / Vanilla JS，无外部依赖。世界单位 = 像素。
+   ========================================================================= */
+
+//==========================================================================
+// 0. 调参区（所有手感数值集中在此，方便调试）
+//==========================================================================
+const TILE = 40;                 // 瓦片边长(px)
+const CFG = {
+  // —— 重力与下落 ——
+  gravity:        2050,          // px/s^2  ↓降重力，手感更轻盈
+  maxFall:        1060,          // 最大下落速度
+  // —— 水平移动 ——
+  moveSpeed:      370,
+  groundAccel:    3800,
+  airAccel:       2600,          // ↑空中控制更跟手(利于蹬墙跳走位)
+  groundFriction: 4200,
+  airDrag:        600,
+  // —— 跳跃 ——
+  jumpVel:        -880,          // 起跳初速度  ↑跳得更高更轻
+  jumpCutMul:     0.42,          // 提前松开跳跃键，上升速度衰减系数（可变跳跃高度）
+  coyoteTime:     0.11,          // 土狼时间：离开地面后仍可起跳的窗口
+  jumpBuffer:     0.12,          // 跳跃缓冲：落地前预输入的有效窗口
+  // —— 滑墙 / 蹬墙跳 ——
+  wallSlideMax:   125,           // 贴墙下滑最大速度 ↓大幅削减→"缓慢滑墙"，留足反应时间
+  wallJumpVelX:   380,           // 蹬墙跳水平推力（烟囱内不必飞太远，更易回贴对面墙）
+  wallJumpVelY:   -845,          // 蹬墙跳竖直推力（确保每次蹬墙净增高度）
+  wallJumpLock:   0.11,          // 蹬墙跳后锁定水平输入的时间 ↓更短→更快夺回控制回贴
+  wallStickTime:  0.14,          // 离墙后仍判定"贴墙"的宽限（手感更黏更宽容）
+  // —— 冲刺 Dash ——
+  dashSpeed:      760,
+  dashTime:       0.16,          // 冲刺持续
+  dashIFrame:     0.20,          // 无敌帧时长
+  dashCooldown:   0.42,          // 冷却
+  // —— 射击 ——
+  fireInterval:   0.13,          // 平A 射速
+  bulletSpeed:    820,
+  chargeFull:     0.62,          // 蓄力到满所需时间
+  chargeMinHold:  0.16,          // 超过此时长松手才算"蓄力炮"，否则当平A
+};
+
+//==========================================================================
+// 1. 画布与缩放
+//==========================================================================
+const canvas = document.getElementById('game');
+const ctx = canvas.getContext('2d');
+let DPR = Math.min(window.devicePixelRatio || 1, 2);
+let VIEW_W = 0, VIEW_H = 0;      // 逻辑视口尺寸(px)
+const RENDER_SCALE = 1;          // 1 = 不做像素降采样；可调大获得更"体素"的颗粒感
+
+function resize(){
+  DPR = Math.min(window.devicePixelRatio || 1, 2);
+  VIEW_W = Math.floor(window.innerWidth);
+  VIEW_H = Math.floor(window.innerHeight);
+  canvas.width  = Math.floor(VIEW_W * DPR);
+  canvas.height = Math.floor(VIEW_H * DPR);
+  ctx.setTransform(DPR, 0, 0, DPR, 0, 0);
+  ctx.imageSmoothingEnabled = false;
+}
+window.addEventListener('resize', resize);
+resize();
+
+//==========================================================================
+// 2. 输入：键盘
+//==========================================================================
+const Input = {
+  down:   new Set(),     // 当前按住
+  pressed:new Set(),     // 本帧刚按下（边沿）
+  released:new Set(),    // 本帧刚松开（边沿）
+  _next:  { pressed:new Set(), released:new Set() },
+  has(code){ return this.down.has(code); },
+  justPressed(code){ return this.pressed.has(code); },
+  justReleased(code){ return this.released.has(code); },
+  // 语义按键映射（允许多键绑定）
+  axisX(){
+    let x = 0;
+    if (this.has('KeyA') || this.has('ArrowLeft'))  x -= 1;
+    if (this.has('KeyD') || this.has('ArrowRight')) x += 1;
+    return x;
+  },
+  jumpDown(){ return this.has('Space') || this.has('KeyK'); },
+  jumpPressed(){ return this.justPressed('Space') || this.justPressed('KeyK'); },
+  jumpReleased(){ return this.justReleased('Space') || this.justReleased('KeyK'); },
+  dashPressed(){ return this.justPressed('ShiftLeft') || this.justPressed('ShiftRight') || this.justPressed('KeyL'); },
+  fireDown(){ return this.has('KeyJ'); },
+  firePressed(){ return this.justPressed('KeyJ'); },
+  fireReleased(){ return this.justReleased('KeyJ'); },
+  // 每帧收尾：把累积的边沿事件搬进来
+  flush(){
+    this.pressed = this._next.pressed; this._next.pressed = new Set();
+    this.released = this._next.released; this._next.released = new Set();
+  }
+};
+window.addEventListener('keydown', e=>{
+  initAudio();   // 浏览器要求用户手势后才能播放音频
+  if (['Space','ArrowLeft','ArrowRight','ArrowUp','ArrowDown'].includes(e.code)) e.preventDefault();
+  if (!Input.down.has(e.code)) Input._next.pressed.add(e.code); // 忽略系统重复触发
+  Input.down.add(e.code);
+  if (e.code === 'KeyR') resetGame();
+  if (e.code === 'KeyP') DEBUG = !DEBUG;
+});
+window.addEventListener('keyup', e=>{
+  Input.down.delete(e.code);
+  Input._next.released.add(e.code);
+});
+window.addEventListener('blur', ()=> Input.down.clear());
+
+let DEBUG = false;
+
+//==========================================================================
+// 3. 测试房间（瓦片地图）  '#'=实心  ' '=空气  'S'=出生点
+//    这是一个用来验证物理的盒子房间：地面、平台、台阶、墙壁、天花板。
+//==========================================================================
+// 程序化生成，避免手数空格出错。渐进引导：平地 → 矮阶梯 → 高墙
+const MAP_W = 76, MAP_H = 18;
+const SPAWN_C = 3, SPAWN_R = 15;
+function buildLevel(){
+  const rows = [];
+  for (let r = 0; r < MAP_H; r++){
+    let line = '';
+    for (let c = 0; c < MAP_W; c++){
+      let solid = false;
+      if (r === 0 || r === MAP_H-1)            solid = true;   // 上/下边界
+      else if (c === 0 || c === MAP_W-1)       solid = true;   // 左/右边界
+      // 地面(rows16-17)，但 cols33-37 挖空成"弹簧垫陷阱坑"
+      else if (r >= MAP_H-2)                   solid = !(c >= 33 && c <= 37);
+      // —— 左侧矮阶梯：每级抬高 1 格 ——
+      else if (c >= 15 && c <= 17 && r >= 14)  solid = true;   // 第1阶(顶row14)
+      else if (c >= 18 && c <= 20 && r >= 13)  solid = true;   // 第2阶(顶row13)
+      else if (c >= 21 && c <= 23 && r >= 12)  solid = true;   // 第3阶(顶row12)
+      else if (c >= 24 && c <= 26 && r >= 11)  solid = true;   // 第4阶(顶row11)
+      // —— 上层巡逻平台两端的落脚台(row11，已右移) ——
+      else if (r === 11 && c >= 44 && c <= 47) solid = true;   // 左台
+      else if (r === 11 && c >= 56 && c <= 59) solid = true;   // 右台
+      // —— 右侧可攀爬高墙：右壁笔直冲天(无顶部凸出)，左壁矮桩，落脚台在更低的row6 ——
+      else if (c === 69 && r >= 2)             solid = true;   // 右壁笔直冲天(主攀爬墙)
+      else if (c === 66 && r >= 9 && r <= 14)  solid = true;   // 左壁矮桩(底部row15入口+Z字蹬墙)
+      else if (r === 6 && c >= 59 && c <= 66)  solid = true;   // 顶部落脚平台(在通道左侧;通道col67,68上方全程净空)
+      line += solid ? '#' : (r === SPAWN_R && c === SPAWN_C ? 'S' : ' ');
+    }
+    rows.push(line);
+  }
+  return rows;
+}
+const LEVEL = buildLevel();
+
+class TileMap {
+  constructor(rows){
+    this.rows = rows;
+    this.h = rows.length;
+    this.w = rows[0].length;
+    this.pxW = this.w * TILE;
+    this.pxH = this.h * TILE;
+    this.spawn = { x: TILE*2, y: TILE*2 };
+    for (let r=0; r<this.h; r++)
+      for (let c=0; c<this.w; c++)
+        if (rows[r][c] === 'S') this.spawn = { x: c*TILE, y: r*TILE };
+  }
+  // 某瓦片坐标是否实心（越界视为实心，防止漏出地图）
+  solidAt(col, row){
+    if (col < 0 || col >= this.w || row < 0 || row >= this.h) return true;
+    return this.rows[row][col] === '#';
+  }
+  // 世界坐标点是否落在实心瓦片
+  solidAtPx(x, y){
+    return this.solidAt(Math.floor(x / TILE), Math.floor(y / TILE));
+  }
+}
+const map = new TileMap(LEVEL);
+
+//==========================================================================
+// 4. 物理：AABB vs 瓦片地图，逐轴解算（先 X 后 Y，避免卡角）
+//    返回本次移动后的接触信息（用于状态机判断地面/墙壁/天花板）。
+//==========================================================================
+function aabb(a, b){
+  return a.x < b.x + b.w && a.x + a.w > b.x && a.y < b.y + b.h && a.y + a.h > b.y;
+}
+// box 逐轴移动，先与瓦片解算，再与动态实心体(SOLIDS:移动平台/砖块)解算。
+// contact 额外带 topSolid/bottomSolid，便于上层判断"顶撞砖块"与"站在电梯上"。
+function moveAndCollide(box, dx, dy){
+  const contact = { left:false, right:false, top:false, bottom:false, topSolid:null, bottomSolid:null };
+
+  // —— X 轴 ——
+  box.x += dx;
+  if (dx !== 0){
+    const dir = dx > 0 ? 1 : -1;
+    const probeX = dir > 0 ? box.x + box.w : box.x;
+    const col = Math.floor(probeX / TILE);
+    const rowTop = Math.floor(box.y / TILE);
+    const rowBot = Math.floor((box.y + box.h - 0.001) / TILE);
+    for (let r = rowTop; r <= rowBot; r++){
+      if (map.solidAt(col, r)){
+        if (dir > 0){ box.x = col * TILE - box.w; contact.right = true; }
+        else        { box.x = (col + 1) * TILE;   contact.left  = true; }
+        break;
+      }
+    }
+    // 动态实心体(X)
+    for (const s of SOLIDS){
+      if (s === box) continue;
+      if (aabb(box, s)){
+        if (dir > 0){ box.x = s.x - box.w; contact.right = true; }
+        else        { box.x = s.x + s.w;   contact.left  = true; }
+      }
+    }
+  }
+
+  // —— Y 轴 ——
+  box.y += dy;
+  if (dy !== 0){
+    const dir = dy > 0 ? 1 : -1;
+    const probeY = dir > 0 ? box.y + box.h : box.y;
+    const row = Math.floor(probeY / TILE);
+    const colL = Math.floor(box.x / TILE);
+    const colR = Math.floor((box.x + box.w - 0.001) / TILE);
+    for (let c = colL; c <= colR; c++){
+      if (map.solidAt(c, row)){
+        if (dir > 0){ box.y = row * TILE - box.h; contact.bottom = true; }
+        else        { box.y = (row + 1) * TILE;   contact.top    = true; }
+        break;
+      }
+    }
+    // 动态实心体(Y)
+    for (const s of SOLIDS){
+      if (s === box) continue;
+      if (aabb(box, s)){
+        if (dir > 0){ box.y = s.y - box.h; contact.bottom = true; contact.bottomSolid = s; }
+        else        { box.y = s.y + s.h;   contact.top    = true; contact.topSolid    = s; }
+      }
+    }
+  }
+  return contact;
+}
+
+//==========================================================================
+// 5. 子弹
+//==========================================================================
+const bullets = [];
+class Bullet {
+  constructor(x, y, dir, charged){
+    this.x = x; this.y = y;
+    this.dir = dir;
+    this.charged = charged;
+    this.speed = charged ? CFG.bulletSpeed * 0.9 : CFG.bulletSpeed;
+    this.w = charged ? 26 : 14;
+    this.h = charged ? 14 : 6;
+    this.pierce = charged;        // 蓄力炮穿透
+    this.life = 1.4;
+    this.dead = false;
+    this.hitSet = charged ? new Set() : null;  // 穿透弹防止对同一目标重复结算
+    this.trail = [];              // 拖尾历史位置
+  }
+  update(dt){
+    this.trail.push({ x:this.x, y:this.y });
+    if (this.trail.length > 7) this.trail.shift();
+    this.x += this.dir * this.speed * dt;
+    this.life -= dt;
+    if (this.life <= 0) this.dead = true;
+    // 撞墙：非穿透即销毁；穿透弹也被实心墙挡住
+    if (map.solidAtPx(this.x + (this.dir>0?this.w:0), this.y)){
+      this.dead = true;
+    }
+  }
+  draw(g, cam){
+    g.save();
+    // —— 蓝黄相间的发光拖尾 ——
+    for (let i=0; i<this.trail.length; i++){
+      const t = this.trail[i];
+      const a = (i+1) / this.trail.length;
+      const col = (i % 2 === 0) ? '#22d3ee' : '#facc15';   // 蓝、黄交替
+      g.globalAlpha = a * 0.65;
+      g.shadowBlur = 10; g.shadowColor = col; g.fillStyle = col;
+      const s = this.h * (0.5 + a*0.8);
+      g.fillRect(t.x - cam.x - s/2, t.y - cam.y - s/2, s, s);
+    }
+    g.globalAlpha = 1;
+    // —— 弹体 ——
+    const sx = this.x - cam.x, sy = this.y - cam.y - this.h/2;
+    g.shadowBlur = this.charged ? 22 : 14;
+    g.shadowColor = this.charged ? '#facc15' : '#22d3ee';
+    g.fillStyle  = this.charged ? '#fff7cc' : '#d6fbff';
+    g.fillRect(sx, sy, this.w, this.h);
+    g.fillStyle  = this.charged ? '#facc15' : '#22d3ee';   // 弹头亮芯
+    g.fillRect(sx + (this.dir>0?this.w-4:0), sy-1, 4, this.h+2);
+    g.restore();
+  }
+}
+
+//==========================================================================
+// 6. 粒子（冲刺残影 / 枪口火花 / 落地烟尘），纯表现层
+//==========================================================================
+const particles = [];
+function spawnParticle(x, y, vx, vy, life, color, size){
+  particles.push({ x, y, vx, vy, life, max:life, color, size });
+}
+function updateParticles(dt){
+  for (let i=particles.length-1; i>=0; i--){
+    const p = particles[i];
+    p.x += p.vx*dt; p.y += p.vy*dt; p.vy += 400*dt; p.life -= dt;
+    if (p.life <= 0) particles.splice(i,1);
+  }
+}
+
+//==========================================================================
+// 6.5 交互实体 + 音效 + 计分
+//==========================================================================
+
+// —— 极简 WebAudio 合成音效（无需素材；首个按键解锁 AudioContext）——
+let AC = null;
+function initAudio(){ if (AC) return; try{ AC = new (window.AudioContext||window.webkitAudioContext)(); }catch(e){} }
+function blip(freq, dur, type, vol, slideTo){
+  if (!AC) return;
+  const t = AC.currentTime;
+  const o = AC.createOscillator(), g = AC.createGain();
+  o.type = type || 'square';
+  o.frequency.setValueAtTime(freq, t);
+  if (slideTo) o.frequency.exponentialRampToValueAtTime(Math.max(1, slideTo), t + dur);
+  g.gain.setValueAtTime(vol || 0.18, t);
+  g.gain.exponentialRampToValueAtTime(0.0008, t + dur);
+  o.connect(g); g.connect(AC.destination); o.start(t); o.stop(t + dur + 0.02);
+}
+const SFX = {
+  boing(){ blip(260, 0.20, 'sine', 0.32, 920); },                  // 弹簧垫"Boing"
+  coin(){ blip(940, 0.05, 'square', 0.22); blip(1500, 0.10, 'square', 0.18); }, // 吃金币
+  hit(){ blip(200, 0.07, 'square', 0.18, 90); },                  // 子弹命中
+  stomp(){ blip(150, 0.10, 'square', 0.22, 420); },               // 踩怪
+  bump(){ blip(180, 0.06, 'square', 0.15, 120); },                // 顶砖
+  brk(){ blip(240, 0.14, 'sawtooth', 0.2, 70); blip(520, 0.08, 'square', 0.14); }, // 破箱
+};
+
+// 实体集合 + 当前帧动态实心体 + 分数
+const dummies = [], boxes = [], coins = [], pads = [], movers = [];
+const dmgNums = [];
+let SOLIDS = [];                 // moveAndCollide 使用：移动平台 + 未破坏砖块
+let score = 0;
+let shake = 0;                   // 屏幕震动强度(像素)，逐帧衰减
+function addShake(m){ shake = Math.max(shake, m); }
+function rebuildSolids(){
+  SOLIDS.length = 0;
+  for (const m of movers) SOLIDS.push(m);
+  for (const b of boxes) if (!b.broken) SOLIDS.push(b);
+}
+
+// —— 伤害跳字：白色数字，初速向上 + 抛物线下坠 + 渐隐 ——
+function spawnDamage(x, y, val, crit){
+  dmgNums.push({ x, y, vx:(Math.random()-0.5)*60, vy:-175, life:0.8, max:0.8, val, crit });
+}
+function updateDamage(dt){
+  for (let i=dmgNums.length-1; i>=0; i--){
+    const d = dmgNums[i];
+    d.x += d.vx*dt; d.y += d.vy*dt; d.vy += 520*dt; d.life -= dt;
+    if (d.life <= 0) dmgNums.splice(i,1);
+  }
+}
+function drawDamage(g){
+  g.textAlign = 'center';
+  for (const d of dmgNums){
+    g.globalAlpha = Math.min(1, d.life/d.max*1.5);
+    g.font = `bold ${d.crit?20:15}px monospace`;
+    g.lineWidth = 3; g.strokeStyle = 'rgba(0,0,0,.6)';
+    g.strokeText(d.val, d.x-cam.x, d.y-cam.y);
+    g.fillStyle = d.crit ? '#fde047' : '#ffffff';
+    g.fillText(d.val, d.x-cam.x, d.y-cam.y);
+  }
+  g.globalAlpha = 1; g.textAlign = 'left';
+}
+
+// —— 收集物：金光闪闪，抛物线落地，靠近自动磁吸吸取 ——
+class Coin {
+  constructor(x, y, vx, vy){ this.x=x; this.y=y; this.w=14; this.h=14;
+    this.vx=vx||0; this.vy=vy||0; this.collected=false; this.rest=false; this.t=Math.random()*6.28; }
+  update(dt, player){
+    this.t += dt*8;
+    if (!this.rest){
+      this.vy += 2100*dt; this.vx *= Math.pow(0.1, dt);
+      const nx = this.x + this.vx*dt, ny = this.y + this.vy*dt;
+      if (this.vy>0 && map.solidAtPx(nx+this.w/2, ny+this.h)){   // 落地停住
+        this.y = Math.floor((ny+this.h)/TILE)*TILE - this.h; this.vy=0; this.vx=0; this.rest=true;
+      } else { this.x = nx; this.y = ny; }
+    }
+    // 磁吸
+    const dx = (player.x+player.w/2) - (this.x+this.w/2);
+    const dy = (player.y+player.h/2) - (this.y+this.h/2);
+    const dist = Math.hypot(dx, dy);
+    if (dist < 75){ this.x += dx*0.18; this.y += dy*0.18; }
+    if (dist < 16 || aabb(this, player)) this.collect();
+  }
+  collect(){
+    if (this.collected) return; this.collected = true;
+    score += 10; SFX.coin();
+    for (let i=0;i<6;i++) spawnParticle(this.x+this.w/2, this.y+this.h/2,
+      (Math.random()-0.5)*220, (Math.random()-0.5)*220, 0.3, '#fde047', 3);
+  }
+  draw(g){
+    const sx = this.x-cam.x+this.w/2, sy = this.y-cam.y+this.h/2;
+    const sw = Math.abs(Math.cos(this.t))*this.w*0.5 + 2;   // 旋转闪烁
+    g.save(); g.shadowBlur = 12; g.shadowColor = '#fde047';
+    g.fillStyle = '#fde047'; g.beginPath(); g.ellipse(sx, sy, sw, this.h*0.5, 0, 0, 6.28); g.fill();
+    g.fillStyle = '#fffbe6'; g.beginPath(); g.ellipse(sx-sw*0.2, sy-this.h*0.15, sw*0.4, this.h*0.22, 0, 0, 6.28); g.fill();
+    g.restore();
+  }
+}
+function spawnCoinBurst(x, y, n){
+  for (let i=0;i<n;i++){
+    const a = -Math.PI/2 + (Math.random()-0.5)*1.7;
+    const sp = 190 + Math.random()*160;
+    coins.push(new Coin(x-7, y-7, Math.cos(a)*sp, Math.sin(a)*sp));
+  }
+}
+
+// —— 全息补给箱(问号砖块)：顶撞或射击破坏，爆出 3-5 金币 ——
+class Box {
+  constructor(x, y){ this.x=x; this.y=y; this.w=36; this.h=36; this.broken=false; this.t=Math.random()*6.28; this.shake=0; }
+  break(){
+    if (this.broken) return; this.broken = true; SFX.brk();
+    spawnCoinBurst(this.x+this.w/2, this.y+this.h/2, 3 + (Math.random()*3|0)); // 3~5
+    for (let i=0;i<14;i++) spawnParticle(this.x+this.w/2, this.y+this.h/2,
+      (Math.random()-0.5)*300, (Math.random()-0.5)*300, 0.4, Math.random()<0.5?'#22d3ee':'#a5f3fc', 4);
+  }
+  update(dt){ this.t += dt*3; this.shake = Math.max(0, this.shake - dt*5); }
+  draw(g){
+    if (this.broken) return;
+    const jit = this.shake>0 ? (Math.random()-0.5)*4 : 0;
+    const x = this.x-cam.x+jit, y = this.y-cam.y;
+    const pulse = 0.5 + 0.5*Math.sin(this.t*1.6);     // 呼吸灯
+    g.save();
+    g.shadowBlur = 12 + pulse*16; g.shadowColor = '#facc15';   // 呼吸发光
+    // 经典明黄箱体 + 立体浮雕
+    g.fillStyle = '#facc15'; g.fillRect(x, y, this.w, this.h);
+    g.fillStyle = '#fef08a'; g.fillRect(x, y, this.w, 7);                 // 顶部亮
+    g.fillStyle = '#a16207'; g.fillRect(x+this.w-6, y, 6, this.h);        // 右侧暗
+    g.fillStyle = 'rgba(255,255,255,' + (0.35+pulse*0.5) + ')'; g.fillRect(x+2, y+2, this.w-4, 3); // 呼吸高光带
+    g.strokeStyle = '#fffbeb'; g.lineWidth = 2; g.strokeRect(x+1, y+1, this.w-2, this.h-2);
+    // 问号
+    g.shadowBlur = 4; g.fillStyle = '#7c2d12'; g.font = 'bold 24px monospace'; g.textAlign = 'center';
+    g.fillText('?', x+this.w/2, y+this.h/2+8); g.textAlign = 'left';
+    g.restore();
+  }
+}
+
+// —— 巡逻移动平台(电梯)：左右往返，玩家站上随之吸附 ——
+class Mover {
+  constructor(x, y, w, h, x0, x1, speed){ this.x=x; this.y=y; this.w=w; this.h=h;
+    this.x0=x0; this.x1=x1; this.dir=1; this.speed=speed; this.dx=0; }
+  step(dt){
+    const px = this.x; this.x += this.dir*this.speed*dt;
+    if (this.x <= this.x0){ this.x = this.x0; this.dir = 1; }
+    else if (this.x >= this.x1){ this.x = this.x1; this.dir = -1; }
+    this.dx = this.x - px; return this.dx;
+  }
+  carries(p){ const feet = p.y+p.h; return feet>=this.y-4 && feet<=this.y+6 && p.x+p.w>this.x+2 && p.x<this.x+this.w-2; }
+  draw(g){
+    const x = this.x-cam.x, y = this.y-cam.y;
+    g.save(); g.shadowBlur = 10; g.shadowColor = '#a855f7';
+    g.fillStyle = '#3b2d63'; g.fillRect(x, y, this.w, this.h);
+    g.fillStyle = '#a855f7'; g.fillRect(x, y, this.w, 3);
+    g.fillStyle = 'rgba(0,0,0,.3)'; g.fillRect(x, y+this.h-3, this.w, 3);
+    g.fillStyle = '#d8b4fe'; g.font = '10px monospace'; g.textAlign = 'center';
+    g.fillText(this.dir>0?'▶ ▶':'◀ ◀', x+this.w/2, y+this.h-5); g.textAlign = 'left';
+    g.restore();
+  }
+}
+
+// —— 霓虹弹簧垫：踩上瞬间高速弹射 ——
+class Pad {
+  constructor(x, y, w, h, power){ this.x=x; this.y=y; this.w=w; this.h=h; this.power=power; this.anim=0; this.flash=0; }
+  trigger(p){
+    p.vy = -this.power; p.airDashUsed = false; p.canCut = false; p.grounded = false;
+    this.flash = 0.25; SFX.boing();
+    for (let i=0;i<12;i++) spawnParticle(this.x+this.w/2, this.y,
+      (Math.random()-0.5)*160, -120-Math.random()*260, 0.4, '#34d399', 4);
+  }
+  update(dt, p){
+    this.anim += dt; this.flash = Math.max(0, this.flash - dt);
+    const feet = p.y+p.h;
+    if (p.vy>=0 && feet>=this.y-6 && feet<=this.y+this.h && p.x+p.w>this.x+2 && p.x<this.x+this.w-2)
+      this.trigger(p);
+  }
+  draw(g){
+    const x = this.x-cam.x, y = this.y-cam.y;
+    const sq = this.flash>0 ? 1.4 : 1;
+    g.save(); g.shadowBlur = 14 + (this.flash>0?16:0); g.shadowColor = '#34d399';
+    g.fillStyle = '#065f46'; g.fillRect(x, y, this.w, this.h);
+    g.fillStyle = '#10b981'; g.fillRect(x, y, this.w, 4);
+    const ay = y - 2 - (Math.sin(this.anim*6)+1)*3*sq;          // 动态向上箭头
+    g.fillStyle = '#6ee7b7'; g.beginPath();
+    g.moveTo(x+this.w/2, ay-10*sq); g.lineTo(x+this.w/2-10, ay); g.lineTo(x+this.w/2+10, ay); g.closePath(); g.fill();
+    g.restore();
+  }
+}
+
+// —— 木桩怪(测试沙袋)：受击闪白/后仰/抖动 + 伤害跳字；血量归零 → 标记 dead，
+//    由主循环 splice 彻底移除(不再诈尸复活)，移除瞬间爆红黄碎片 + 屏幕震动 ——
+class Dummy {
+  constructor(x, y){ this.x=x; this.y=y; this.w=30; this.h=38; this.maxHp=100; this.hp=100;
+    this.flash=0; this.knock=0; this.shake=0; this.dead=false; }
+  hit(dmg, dir, crit){
+    if (this.dead) return;
+    this.hp -= dmg; this.flash = 0.1; this.knock = dir*9; this.shake = 0.18;
+    spawnDamage(this.x+this.w/2, this.y-6, Math.round(dmg), crit);
+    SFX[crit ? 'stomp' : 'hit']();
+    for (let i=0;i<8;i++) spawnParticle(this.x+this.w/2, this.y+this.h/2,
+      (Math.random()-0.5)*240, (Math.random()-0.5)*200 - (crit?0:60), 0.3, crit?'#fde68a':'#fca5a5', 3);
+    if (this.hp <= 0) this.die();
+  }
+  die(){
+    this.dead = true; score += 50; addShake(11);          // 屏幕震动
+    // 红黄相间体素碎片向四周炸开
+    for (let i=0;i<24;i++){
+      const a = Math.random()*6.28, sp = 130 + Math.random()*360;
+      spawnParticle(this.x+this.w/2, this.y+this.h/2, Math.cos(a)*sp, Math.sin(a)*sp - 90,
+        0.5 + Math.random()*0.35, Math.random()<0.5 ? '#ef4444' : '#fde047', 3 + Math.random()*4);
+    }
+  }
+  update(dt){
+    this.flash = Math.max(0, this.flash - dt); this.shake = Math.max(0, this.shake - dt);
+    this.knock *= Math.pow(0.02, dt);
+  }
+  draw(g){
+    if (this.dead) return;
+    const jit = this.shake>0 ? (Math.random()-0.5)*5 : 0;
+    const x = this.x-cam.x+this.knock+jit, y = this.y-cam.y + (this.shake>0?(Math.random()-0.5)*3:0);
+    const white = this.flash > 0;
+    g.save(); g.shadowBlur = white?16:8; g.shadowColor = white?'#fff':'#ef4444';
+    g.fillStyle = white?'#ffffff':'#ef4444'; g.fillRect(x, y, this.w, this.h);    // 底色调亮
+    g.fillStyle = white?'#ffffff':'#fca5a5'; g.fillRect(x, y, this.w, 6);          // 顶部反光白边
+    g.fillStyle = white?'#ffffff':'#ffffff'; g.globalAlpha=0.5; g.fillRect(x, y, this.w, 2); g.globalAlpha=1;
+    g.fillStyle = white?'#e5e7eb':'#991b1b'; g.fillRect(x+this.w-6, y, 6, this.h); // 右侧暗
+    g.restore();
+    if (!white){
+      // 黑色像素眼 + 愤怒怒眉 + 张口
+      g.fillStyle = '#000';
+      g.fillRect(x+7, y+15, 5, 6); g.fillRect(x+this.w-12, y+15, 5, 6);
+      g.lineWidth = 2.5; g.strokeStyle = '#000'; g.beginPath();
+      g.moveTo(x+5, y+10); g.lineTo(x+13, y+14);                       // 左怒眉
+      g.moveTo(x+this.w-5, y+10); g.lineTo(x+this.w-13, y+14);         // 右怒眉
+      g.stroke();
+      g.fillRect(x+10, y+27, this.w-20, 4);                            // 抿嘴/张口
+    }
+    const bw = this.w+4, bx = x-2, by = y-9;
+    g.fillStyle = 'rgba(0,0,0,.5)'; g.fillRect(bx, by, bw, 4);
+    g.fillStyle = this.hp/this.maxHp>0.3?'#22c55e':'#f59e0b'; g.fillRect(bx, by, bw*Math.max(0,this.hp/this.maxHp), 4);
+  }
+}
+
+// —— 关卡实体布置（init 与 resetGame 共用）——
+function setupEntities(){
+  dummies.length=0; boxes.length=0; pads.length=0; movers.length=0; coins.length=0; dmgNums.length=0;
+  score = 0; shake = 0;
+  // 木桩：左阶梯 ×2 + 右落脚台 ×1(供踩怪)
+  dummies.push(new Dummy(19*TILE, 13*TILE-38));
+  dummies.push(new Dummy(25*TILE, 11*TILE-38));
+  dummies.push(new Dummy(57*TILE, 11*TILE-38));   // 右落脚台(c56-59)
+  // 全息补给箱：悬空 row8(缺口上方)
+  boxes.push(new Box(50*TILE+2, 8*TILE));
+  boxes.push(new Box(52*TILE+2, 8*TILE));
+  boxes.push(new Box(54*TILE+2, 8*TILE));
+  // 巡逻移动平台：row11 跨越两落脚台(c44-47 与 c56-59)之间的缺口
+  movers.push(new Mover(48*TILE, 11*TILE, 120, 18, 48*TILE, 56*TILE-120, 80));
+  // 弹簧垫(弹力较上版 +30%)：A=陷阱坑底(cols33-37)，B=开阔地蹦床(一飞冲天)
+  pads.push(new Pad(33*TILE+12, 18*TILE-16, 5*TILE-24, 16, 1560));
+  pads.push(new Pad(40*TILE, 16*TILE-16, 2*TILE, 16, 2015));
+  // 静态收集物：缺口上方一道弧线诱导探索
+  for (const c of [49,51,53,55]){ const cn = new Coin(c*TILE+13, 9*TILE+13); cn.rest = true; coins.push(cn); }
+}
+
+//==========================================================================
+// 7. 主角状态机 —— 墩弟机甲
+//    State: idle | run | jump | fall | wallSlide | dash
+//    物理与状态机解耦：物理始终积分，状态机负责手感门控与表现。
+//==========================================================================
+const PlayerState = { IDLE:'idle', RUN:'run', JUMP:'jump', FALL:'fall', WALLSLIDE:'wallSlide', DASH:'dash' };
+
+class Player {
+  constructor(x, y){
+    this.w = 28; this.h = 38;
+    this.spawnX = x; this.spawnY = y;
+    this.reset();
+  }
+  reset(){
+    this.x = this.spawnX; this.y = this.spawnY;
+    this.vx = 0; this.vy = 0;
+    this.facing = 1;             // 朝向 1=右 -1=左
+    this.state = PlayerState.FALL;
+    this.grounded = false;
+    this.onWall = 0;            // -1 左墙, 1 右墙, 0 无
+    // 计时器
+    this.coyote = 0;            // 离地剩余土狼时间
+    this.jumpBuffer = 0;        // 跳跃预输入剩余时间
+    this.wallStick = 0;         // 离墙宽限
+    this.wallJumpLock = 0;      // 蹬墙跳后水平输入锁定
+    this.canCut = false;        // 当前这次跳跃是否允许"松键截断"(仅普通跳允许)
+    // 冲刺
+    this.dashTimer = 0;         // >0 表示正在冲刺
+    this.dashCooldown = 0;
+    this.iframe = 0;            // 无敌帧剩余
+    this.airDashUsed = false;   // 空中冲刺是否已用
+    // 射击
+    this.fireCooldown = 0;
+    this.charge = 0;            // 蓄力时间
+    this.charging = false;
+    // 表现
+    this.squash = 1;           // 落地/起跳挤压
+    this.animT = 0;
+    this.muzzleFlash = 0;      // 枪口亮光剩余时长
+    this.muzzleCharged = false;
+  }
+  get cx(){ return this.x + this.w/2; }
+  get cy(){ return this.y + this.h/2; }
+
+  update(dt){
+    const wasGrounded = this.grounded;
+
+    // ---- 计时器衰减 ----
+    this.coyote        = Math.max(0, this.coyote - dt);
+    this.jumpBuffer    = Math.max(0, this.jumpBuffer - dt);
+    this.wallStick     = Math.max(0, this.wallStick - dt);
+    this.wallJumpLock  = Math.max(0, this.wallJumpLock - dt);
+    this.dashCooldown  = Math.max(0, this.dashCooldown - dt);
+    this.iframe        = Math.max(0, this.iframe - dt);
+    this.fireCooldown  = Math.max(0, this.fireCooldown - dt);
+    this.muzzleFlash   = Math.max(0, this.muzzleFlash - dt);
+    this.animT += dt;
+
+    // ---- 输入边沿登记 ----
+    if (Input.jumpPressed()) this.jumpBuffer = CFG.jumpBuffer;
+
+    //==================================================================
+    // A) 冲刺状态：独占控制，期间忽略常规水平/重力
+    //==================================================================
+    if (this.dashTimer > 0){
+      this.dashTimer -= dt;
+      this.vy = 0;                       // 冲刺水平笔直
+      const c = moveAndCollide(this, this.vx*dt, 0);
+      this._postContact(c);
+      // 残影
+      spawnParticle(this.cx, this.cy, -this.vx*0.12, (Math.random()-0.5)*40, 0.18,
+        this.thunderMode? '#facc15':'#22d3ee', 6);
+      // 撞墙提前结束
+      if ((this.vx>0 && c.right) || (this.vx<0 && c.left)) this.dashTimer = 0;
+      // 冲刺允许在途中起跳取消（更灵活）
+      if (this.jumpBuffer > 0 && (this.coyote>0 || this.onWall || this.grounded)){
+        this.dashTimer = 0;
+      } else {
+        this.state = PlayerState.DASH;
+        return;
+      }
+    }
+
+    //==================================================================
+    // B) 水平移动（含蹬墙跳后的输入锁定）
+    //==================================================================
+    let ax = Input.axisX();
+    if (this.wallJumpLock > 0) ax = 0;       // 锁定期内不响应玩家方向，避免立刻回贴墙
+    if (ax !== 0) this.facing = ax;
+
+    const accel = this.grounded ? CFG.groundAccel : CFG.airAccel;
+    if (ax !== 0){
+      this.vx += ax * accel * dt;
+      this.vx = clamp(this.vx, -CFG.moveSpeed, CFG.moveSpeed);
+    } else {
+      // 摩擦/空气阻力
+      const drag = (this.grounded ? CFG.groundFriction : CFG.airDrag) * dt;
+      if (Math.abs(this.vx) <= drag) this.vx = 0;
+      else this.vx -= Math.sign(this.vx) * drag;
+    }
+
+    //==================================================================
+    // C) 重力 + 滑墙
+    //==================================================================
+    const pushingWall = (this.onWall === 1 && ax > 0) || (this.onWall === -1 && ax < 0)
+                        || (this.wallStick > 0 && this.onWall !== 0);
+    const wallSliding = !this.grounded && this.vy > 0 && this.onWall !== 0 && pushingWall;
+
+    this.vy += CFG.gravity * dt;
+    if (wallSliding){
+      this.vy = Math.min(this.vy, CFG.wallSlideMax);   // 缓慢滑墙
+      // 机甲摩擦墙壁 → 火花
+      if (Math.random() < 0.55){
+        const wx = this.onWall > 0 ? this.x + this.w : this.x;
+        spawnWallSpark(wx, this.cy, this.h, this.onWall);
+      }
+    }
+    this.vy = Math.min(this.vy, CFG.maxFall);
+
+    //==================================================================
+    // D) 跳跃：地面/土狼跳 与 蹬墙跳
+    //==================================================================
+    if (this.jumpBuffer > 0){
+      if (this.grounded || this.coyote > 0){
+        // 普通跳
+        this.vy = CFG.jumpVel;
+        this.grounded = false;
+        this.coyote = 0;
+        this.jumpBuffer = 0;
+        this.canCut = true;              // 普通跳：允许可变跳跃高度
+        this.squash = 0.7;
+        spawnDust(this.cx, this.y + this.h);
+      } else if (this.onWall !== 0 || this.wallStick > 0){
+        // 蹬墙跳：朝离墙方向弹出
+        const wallDir = this.onWall !== 0 ? this.onWall : -this.facing;
+        this.vx = -wallDir * CFG.wallJumpVelX;
+        this.vy = CFG.wallJumpVelY;
+        this.facing = -wallDir;
+        this.wallJumpLock = CFG.wallJumpLock;
+        this.jumpBuffer = 0;
+        this.wallStick = 0;
+        this.canCut = false;             // 蹬墙跳：固定高度，不被松键截断(否则点按就升不上去)
+        this.airDashUsed = false;        // 蹬墙跳刷新空中冲刺
+        this.squash = 0.7;
+        for (let i=0;i<6;i++)
+          spawnParticle(this.x + (wallDir>0?0:this.w), this.cy,
+            wallDir*120*Math.random(), (Math.random()-0.5)*120, 0.3, '#93c5fd', 4);
+      }
+    }
+    // 可变跳跃高度：上升中松开跳跃键 → 截断上升速度（仅普通跳，蹬墙跳不截断）
+    if (Input.jumpReleased() && this.vy < 0 && this.canCut){
+      this.vy *= CFG.jumpCutMul;
+      this.canCut = false;
+    }
+
+    //==================================================================
+    // E) 冲刺触发
+    //==================================================================
+    if (Input.dashPressed() && this.dashCooldown <= 0 && !(!this.grounded && this.airDashUsed)){
+      this.dashTimer = CFG.dashTime;
+      this.dashCooldown = CFG.dashCooldown;
+      this.iframe = CFG.dashIFrame;
+      this.vx = this.facing * CFG.dashSpeed;
+      this.vy = 0;
+      if (!this.grounded) this.airDashUsed = true;
+      spawnDust(this.cx, this.y + this.h);   // 冲刺起步灰尘
+      this.state = PlayerState.DASH;
+      return; // 下一帧进入冲刺分支
+    }
+
+    //==================================================================
+    // F) 射击（平A / 蓄力炮）
+    //==================================================================
+    this._handleShooting(dt);
+
+    //==================================================================
+    // G) 积分 + 碰撞
+    //==================================================================
+    const c = moveAndCollide(this, this.vx*dt, this.vy*dt);
+    this._postContact(c);
+
+    // 从下方顶撞全息箱 → 破坏
+    if (c.topSolid instanceof Box){ c.topSolid.shake = 0.2; c.topSolid.break(); SFX.bump(); }
+
+    // 落地事件
+    if (this.grounded && !wasGrounded){
+      this.squash = 1.35;
+      this.airDashUsed = false;
+      spawnDust(this.cx, this.y + this.h);
+    }
+
+    //==================================================================
+    // H) 状态机：决定 state（用于动画/上色/逻辑）
+    //==================================================================
+    this._resolveState(ax, wallSliding);
+
+    // 挤压回弹
+    this.squash += (1 - this.squash) * Math.min(1, dt*14);
+  }
+
+  // 碰撞后更新接触标志 + 土狼/贴墙宽限
+  _postContact(c){
+    // 地面
+    if (c.bottom){ this.grounded = true; this.vy = 0; this.coyote = CFG.coyoteTime; }
+    else { if (this.grounded) this.coyote = CFG.coyoteTime; this.grounded = false; }
+    if (c.top) this.vy = 0;
+
+    // 墙壁判定
+    this.onWall = 0;
+    if (c.left)  { this.onWall = -1; this.vx = 0; }
+    if (c.right) { this.onWall =  1; this.vx = 0; }
+    if (this.onWall !== 0 && !this.grounded) this.wallStick = CFG.wallStickTime;
+  }
+
+  _resolveState(ax, wallSliding){
+    if (this.dashTimer > 0){ this.state = PlayerState.DASH; return; }
+    if (wallSliding){ this.state = PlayerState.WALLSLIDE; return; }
+    if (!this.grounded){
+      this.state = this.vy < 0 ? PlayerState.JUMP : PlayerState.FALL;
+      return;
+    }
+    this.state = Math.abs(this.vx) > 18 ? PlayerState.RUN : PlayerState.IDLE;
+  }
+
+  _handleShooting(dt){
+    if (Input.firePressed()){ this.charging = true; this.charge = 0; }
+    if (this.charging && Input.fireDown()) this.charge += dt;
+
+    // 长按蓄满或一直按住时的平A连发（轻按）：这里用"松开"决定单发/蓄力
+    if (Input.fireReleased() && this.charging){
+      const charged = this.charge >= CFG.chargeFull;
+      const validCharge = this.charge >= CFG.chargeMinHold && charged;
+      this._fire(validCharge);
+      this.charging = false;
+      this.charge = 0;
+    }
+    // 押住未松开但已可连发平A（让平A手感是"可边跑边打"的连射）
+    if (Input.fireDown() && this.charge < CFG.chargeMinHold && this.fireCooldown <= 0){
+      this._fire(false);
+    }
+  }
+
+  _fire(charged){
+    if (!charged && this.fireCooldown > 0) return;
+    this.fireCooldown = CFG.fireInterval;
+    const muzzleX = this.facing > 0 ? this.x + this.w : this.x;
+    const muzzleY = this.cy - 2;
+    bullets.push(new Bullet(muzzleX, muzzleY, this.facing, charged));
+    this.muzzleFlash = 0.06;            // 开火瞬间枪口亮光
+    this.muzzleCharged = charged;
+    // 枪口火花 + 后坐
+    for (let i=0;i<(charged?10:4);i++)
+      spawnParticle(muzzleX, muzzleY, this.facing*(80+Math.random()*160),
+        (Math.random()-0.5)*120, 0.18, charged?'#fde68a':'#a5f3fc', charged?5:3);
+    this.vx -= this.facing * (charged ? 120 : 24);   // 蓄力炮明显后坐
+  }
+
+  // 踩怪反弹(Pogo)：被向上弹起 + 重置空中冲刺次数
+  pogo(){
+    this.vy = -560; this.airDashUsed = false; this.canCut = false; this.grounded = false;
+    this.squash = 0.7;
+    for (let i=0;i<8;i++) spawnParticle(this.cx, this.y + this.h,
+      (Math.random()-0.5)*220, -Math.random()*120, 0.3, '#fde68a', 3);
+  }
+
+  // —— 渲染：胖龙猫墩弟 + 灰色体素机甲（核心脉冲发光）——
+  draw(g, cam){
+    const sx = this.x - cam.x, sy = this.y - cam.y;
+    const cxm = sx + this.w/2;
+    // 挤压形变
+    const sw = this.w / this.squash;
+    const sh = this.h * this.squash;
+    const ox = cxm - sw/2;
+    const oy = sy + (this.h - sh);
+    const f  = this.facing;
+
+    const isThunder = false;                       // 阶段二：雷电觉醒预留
+    const core = isThunder ? '#facc15' : '#22d3ee';
+
+    g.save();
+    // 无敌帧闪烁
+    if (this.iframe > 0 && Math.floor(this.animT*30)%2===0) g.globalAlpha = 0.4;
+
+    // —— 冲刺霓虹拖影（不镜像，纯色块）——
+    if (this.dashTimer > 0){
+      g.save();
+      g.globalAlpha *= 0.32;
+      g.shadowBlur = 22; g.shadowColor = core; g.fillStyle = core;
+      roundRect(g, ox - f*12, oy, sw, sh, 8); g.fill();
+      g.restore();
+    }
+
+    // 统一按"朝右"绘制，再用镜像处理朝向
+    g.translate(cxm, 0); g.scale(f, 1); g.translate(-cxm, 0);
+
+    const bx = ox, by = oy, bw = sw, bh = sh;
+
+    // —— 机甲双腿 ——
+    g.fillStyle = '#3a4156'; g.fillRect(bx+bw*0.16, by+bh*0.74, bw*0.26, bh*0.26);
+    g.fillStyle = '#2a3043'; g.fillRect(bx+bw*0.58, by+bh*0.74, bw*0.26, bh*0.26);
+
+    // —— 机甲躯干（灰色金属，纵向渐变 + 圆角）——
+    const metal = g.createLinearGradient(bx, by, bx, by+bh);
+    metal.addColorStop(0,   '#cdd2de');
+    metal.addColorStop(0.5, '#9aa1b3');
+    metal.addColorStop(1,   '#666c82');
+    g.fillStyle = metal;
+    roundRect(g, bx, by+bh*0.18, bw, bh*0.60, 8); g.fill();
+    g.strokeStyle = '#454b5e'; g.lineWidth = 1.5; g.stroke();
+
+    // 肩甲（左亮右暗，强化立体）
+    g.fillStyle = '#b4bacb'; roundRect(g, bx-2, by+bh*0.20, bw*0.30, bh*0.22, 5); g.fill();
+    g.fillStyle = '#868ca0'; roundRect(g, bx+bw*0.72, by+bh*0.20, bw*0.30, bh*0.22, 5); g.fill();
+    // 头顶座舱罩
+    g.fillStyle = '#7c8398'; roundRect(g, bx+bw*0.28, by, bw*0.44, bh*0.24, 6); g.fill();
+
+    // —— 胸腔驾驶舱（深色玻璃罩，青色描边）——
+    const ccX=bx+bw*0.22, ccY=by+bh*0.28, ccW=bw*0.56, ccH=bh*0.40;
+    g.fillStyle = '#0b1326'; roundRect(g, ccX, ccY, ccW, ccH, 6); g.fill();
+    g.save(); g.globalAlpha *= 0.7; g.strokeStyle = core; g.lineWidth = 1; g.stroke(); g.restore();
+
+    // —— 墩弟：胖龙猫 ——
+    const mx=ccX+ccW*0.5, my=ccY+ccH*0.56;
+    g.fillStyle = '#c3c9d4';                                  // 灰团子身体
+    g.beginPath(); g.ellipse(mx, my, ccW*0.34, ccH*0.40, 0, 0, Math.PI*2); g.fill();
+    g.fillStyle = '#e8ebf1';                                  // 浅色肚皮
+    g.beginPath(); g.ellipse(mx, my+ccH*0.06, ccW*0.2, ccH*0.26, 0, 0, Math.PI*2); g.fill();
+    g.fillStyle = '#aab0bd';                                  // 双耳
+    g.beginPath(); g.ellipse(mx-ccW*0.2, my-ccH*0.36, ccW*0.09, ccH*0.16, -0.3,0,Math.PI*2); g.fill();
+    g.beginPath(); g.ellipse(mx+ccW*0.2, my-ccH*0.36, ccW*0.09, ccH*0.16,  0.3,0,Math.PI*2); g.fill();
+    g.fillStyle = '#10151f';                                  // 眼睛(朝右)
+    g.beginPath(); g.arc(mx+ccW*0.05, my-ccH*0.04, 1.8, 0, Math.PI*2); g.fill();
+    g.beginPath(); g.arc(mx+ccW*0.22, my-ccH*0.04, 1.8, 0, Math.PI*2); g.fill();
+    g.fillStyle = '#f9a8d4';                                  // 粉鼻子
+    g.beginPath(); g.arc(mx+ccW*0.13, my+ccH*0.05, 1.3, 0, Math.PI*2); g.fill();
+
+    // —— 发光核心（胸口，脉冲呼吸）——
+    const pulse = 0.6 + 0.4*Math.sin(this.animT*8);
+    g.save();
+    g.shadowBlur = 14*pulse + 6; g.shadowColor = core;
+    g.fillStyle = core; g.globalAlpha = 0.5 + 0.5*pulse;
+    g.beginPath(); g.arc(bx+bw*0.5, by+bh*0.74, 3.2+pulse*1.8, 0, Math.PI*2); g.fill();
+    g.restore();
+
+    // —— 炮口（朝右，发光）——
+    g.save();
+    g.shadowBlur = 8; g.shadowColor = core; g.fillStyle = core;
+    g.fillRect(bx+bw, by+bh*0.5, 7, 5);
+    g.restore();
+
+    g.restore(); // 取消镜像 + 恢复 iframe 透明度
+
+    // —— 蓄力光环（屏幕空间，居中，不镜像）——
+    if (this.charging && this.charge > CFG.chargeMinHold){
+      const t = Math.min(1, this.charge / CFG.chargeFull);
+      g.save();
+      g.globalAlpha = 0.4 + 0.4*Math.sin(this.animT*20);
+      g.strokeStyle = t>=1 ? '#facc15' : core;
+      g.lineWidth = 2 + t*2;
+      g.shadowBlur = 12; g.shadowColor = g.strokeStyle;
+      g.beginPath(); g.arc(sx+this.w/2, sy+this.h/2, 20 + t*12, 0, Math.PI*2); g.stroke();
+      g.restore();
+    }
+
+    // —— 枪口亮光(开火瞬间) ——
+    if (this.muzzleFlash > 0){
+      const mx = (this.facing>0 ? this.x+this.w : this.x) - cam.x;
+      const my = this.cy - cam.y - 2;
+      const r = (this.muzzleCharged ? 17 : 11) * (this.muzzleFlash / 0.06);
+      g.save();
+      g.globalCompositeOperation = 'lighter';
+      g.shadowBlur = 18; g.shadowColor = this.muzzleCharged ? '#facc15' : '#22d3ee';
+      g.fillStyle = this.muzzleCharged ? '#fdf0b5' : '#bdfaff';
+      g.beginPath(); g.arc(mx, my, r, 0, 6.28); g.fill();
+      g.restore();
+    }
+
+    // 调试碰撞盒
+    if (DEBUG){
+      g.strokeStyle = this.iframe>0 ? '#f472b6' : '#34d399';
+      g.lineWidth = 1;
+      g.strokeRect(sx+0.5, sy+0.5, this.w-1, this.h-1);
+    }
+  }
+}
+
+//==========================================================================
+// 8. 渲染辅助
+//==========================================================================
+function clamp(v, a, b){ return v < a ? a : v > b ? b : v; }
+
+function roundRect(g, x, y, w, h, r){
+  r = Math.min(r, w/2, h/2);
+  g.beginPath();
+  g.moveTo(x+r, y);
+  g.arcTo(x+w, y,   x+w, y+h, r);
+  g.arcTo(x+w, y+h, x,   y+h, r);
+  g.arcTo(x,   y+h, x,   y,   r);
+  g.arcTo(x,   y,   x+w, y,   r);
+  g.closePath();
+}
+
+function drawVoxelBox(g, x, y, w, h, edge){
+  g.fillRect(x, y, w, h);
+  // 高光顶面 + 暗侧面，营造体素立体感
+  g.fillStyle = 'rgba(255,255,255,.18)';
+  g.fillRect(x, y, w, Math.max(3,h*0.16));
+  g.fillStyle = 'rgba(0,0,0,.28)';
+  g.fillRect(x, y+h-Math.max(3,h*0.16), w, Math.max(3,h*0.16));
+  // 霓虹描边
+  g.strokeStyle = edge; g.lineWidth = 1.5;
+  g.strokeRect(x+0.75, y+0.75, w-1.5, h-1.5);
+}
+
+const DUST_COLS = ['#6b7280','#94a3b8','#9ca3af','#7c8597','#57606f'];
+function dustCol(){ return DUST_COLS[(Math.random()*DUST_COLS.length)|0]; }
+// 脚下灰尘：向左右两边对称散开的灰色体素
+function spawnDust(x, y){
+  for (let i=0;i<5;i++){
+    const sp = 60 + Math.random()*150;
+    spawnParticle(x, y, -sp, -20-Math.random()*70, 0.34, dustCol(), 4+Math.random()*2);
+    spawnParticle(x, y,  sp, -20-Math.random()*70, 0.34, dustCol(), 4+Math.random()*2);
+  }
+}
+// 滑墙摩擦火花：贴墙侧迸出橙黄色火星
+function spawnWallSpark(x, cy, h, wallDir){
+  spawnParticle(x, cy + (Math.random()-0.5)*h*0.7,
+    -wallDir*(30+Math.random()*70), -30-Math.random()*130,
+    0.3, Math.random()<0.5 ? '#fbbf24' : '#fde68a', 3);
+}
+
+//==========================================================================
+// 9. 摄像机（平滑跟随 + 边界夹紧）
+//==========================================================================
+const cam = {
+  x:0, y:0,
+  follow(target, dt){
+    const tx = target.cx - VIEW_W/2;
+    const ty = target.cy - VIEW_H*0.55;
+    this.x += (tx - this.x) * Math.min(1, dt*8);
+    this.y += (ty - this.y) * Math.min(1, dt*8);
+    this.x = clamp(this.x, 0, Math.max(0, map.pxW - VIEW_W));
+    this.y = clamp(this.y, 0, Math.max(0, map.pxH - VIEW_H));
+  }
+};
+
+//==========================================================================
+// 10. 渲染世界
+//==========================================================================
+function drawBackground(g){
+  // —— 明亮赛博乐园天幕：亮青 → 品红 → 橙 → 明黄(高饱和) ——
+  const grad = g.createLinearGradient(0,0,0,VIEW_H);
+  grad.addColorStop(0,    '#22d3ee');   // 顶部亮青
+  grad.addColorStop(0.42, '#f472b6');   // 亮粉
+  grad.addColorStop(0.74, '#fb923c');   // 橙
+  grad.addColorStop(1,    '#fde047');   // 底部明黄
+  g.fillStyle = grad; g.fillRect(-20,-20,VIEW_W+40,VIEW_H+40);
+
+  // —— 明亮太阳光晕 ——
+  const sunX = VIEW_W*0.5 - cam.x*0.04, sunY = VIEW_H*0.40;
+  const sun = g.createRadialGradient(sunX,sunY,0, sunX,sunY, VIEW_H*0.5);
+  sun.addColorStop(0,   'rgba(255,255,255,.9)');
+  sun.addColorStop(0.45,'rgba(253,224,71,.5)');
+  sun.addColorStop(1,   'rgba(253,224,71,0)');
+  g.fillStyle = sun; g.fillRect(-20,-20,VIEW_W+40,VIEW_H+40);
+
+  // —— 远景天际线(视差0.15，亮紫剪影，白色霓虹顶) ——
+  drawSkyline(g, 0.15, VIEW_H*0.82, 100, 'rgba(167,139,250,.55)', 'rgba(255,255,255,.7)', 7);
+  // —— 中景天际线(视差0.42，青色剪影，明黄霓虹窗) ——
+  drawSkyline(g, 0.42, VIEW_H*0.99, 185, 'rgba(13,148,136,.7)',   'rgba(253,224,71,.85)', 11);
+}
+
+// 视差城市剪影：par=视差系数, baseY=地基线, maxH=最高楼, seed=造型种子步进
+function drawSkyline(g, par, baseY, maxH, body, win, seed){
+  const span = 150, off = cam.x * par;
+  const start = Math.floor(off/span) - 1;
+  const end = start + Math.ceil(VIEW_W/span) + 3;
+  for (let i = start; i < end; i++){
+    const h = maxH*0.42 + ((i*seed*37) % Math.floor(maxH*0.6));
+    const w = 64 + ((i*53) % 70);
+    const x = i*span - off, y = baseY - h;
+    g.fillStyle = body; g.fillRect(x, y, w, h);
+    g.save(); g.shadowBlur = 6; g.shadowColor = win;
+    g.fillStyle = win;  g.fillRect(x, y, w, 3);             // 顶部霓虹边(发光)
+    for (let wy = y+10; wy < baseY-6; wy += 14)             // 窗户灯
+      for (let wx = x+6; wx < x+w-6; wx += 12)
+        if (((wx + wy*3 + i*7) | 0) % 5 < 2) g.fillRect(wx, wy, 4, 6);
+    g.restore();
+  }
+}
+
+function drawTiles(g){
+  const c0 = Math.max(0, Math.floor(cam.x / TILE));
+  const c1 = Math.min(map.w-1, Math.floor((cam.x + VIEW_W) / TILE));
+  const r0 = Math.max(0, Math.floor(cam.y / TILE));
+  const r1 = Math.min(map.h-1, Math.floor((cam.y + VIEW_H) / TILE));
+  const D = 7; // 体素立体厚度
+  for (let r=r0; r<=r1; r++){
+    for (let c=c0; c<=c1; c++){
+      if (!map.solidAt(c,r)) continue;
+      const x = Math.round(c*TILE - cam.x), y = Math.round(r*TILE - cam.y);
+      const topOpen = !map.solidAt(c, r-1);   // 顶面暴露在空气 → 视为"地面/平台"
+      // 明亮调色：地面=亮青绿，墙体=亮紫，底色都调亮
+      const pal = topOpen
+        ? { face:'#2dd4bf', top:'#5eead4', side:'#0f9488', edge:'#ffffff' }
+        : { face:'#a78bfa', top:'#c4b5fd', side:'#7c3aed', edge:'#f5d0fe' };
+      // 正面(亮主色)
+      g.fillStyle = pal.face; g.fillRect(x, y, TILE, TILE);
+      // 顶面(更亮)
+      g.fillStyle = pal.top;  g.fillRect(x, y, TILE, D);
+      // 右侧面(稍暗) —— 伪3D浮雕
+      g.fillStyle = pal.side; g.fillRect(x+TILE-D, y, D, TILE);
+      // 底部柔和阴影
+      g.fillStyle = 'rgba(0,0,0,.20)'; g.fillRect(x, y+TILE-3, TILE, 3);
+      // —— 顶部边缘高亮反光白边(浮雕感) ——
+      if (topOpen){
+        g.save();
+        g.shadowBlur = 8; g.shadowColor = '#ffffff';
+        g.fillStyle = '#ffffff'; g.fillRect(x, y, TILE, 3);            // 反光白边
+        g.restore();
+        g.fillStyle = 'rgba(255,255,255,.45)'; g.fillRect(x, y+3, TILE, 2);
+      }
+      // 左缘高光
+      g.fillStyle = 'rgba(255,255,255,.22)'; g.fillRect(x, y, 2, TILE);
+      g.strokeStyle = 'rgba(255,255,255,.18)'; g.lineWidth = 1;
+      g.strokeRect(x+0.5, y+0.5, TILE-1, TILE-1);
+    }
+  }
+}
+
+function drawParticles(g){
+  for (const p of particles){
+    g.globalAlpha = Math.max(0, p.life / p.max);
+    g.fillStyle = p.color;
+    g.fillRect(p.x - cam.x - p.size/2, p.y - cam.y - p.size/2, p.size, p.size);
+  }
+  g.globalAlpha = 1;
+}
+
+function drawHUD(g, player){
+  // 冲刺冷却条
+  const bw = 120, bx = 14, by = 44;
+  g.fillStyle = 'rgba(8,12,24,.6)'; g.fillRect(bx, by, bw, 8);
+  const dashPct = 1 - player.dashCooldown / CFG.dashCooldown;
+  g.fillStyle = dashPct>=1 ? '#22d3ee' : '#64748b';
+  g.fillRect(bx, by, bw*clamp(dashPct,0,1), 8);
+  g.fillStyle = '#7c8db5'; g.font = '11px monospace';
+  g.fillText('DASH', bx+bw+8, by+8);
+
+  // 蓄力条
+  const cy = by+14;
+  g.fillStyle = 'rgba(8,12,24,.6)'; g.fillRect(bx, cy, bw, 8);
+  const cPct = clamp(player.charge / CFG.chargeFull, 0, 1);
+  g.fillStyle = cPct>=1 ? '#facc15' : '#22d3ee';
+  g.fillRect(bx, cy, bw*cPct, 8);
+  g.fillStyle = '#7c8db5'; g.fillText('CHARGE', bx+bw+8, cy+8);
+
+  // 分数
+  g.save();
+  g.font = 'bold 18px monospace'; g.textAlign = 'right';
+  g.shadowBlur = 8; g.shadowColor = '#facc15';
+  g.fillStyle = '#fde047'; g.fillText('★ ' + score, VIEW_W - 16, 30);
+  g.restore(); g.textAlign = 'left';
+
+  if (DEBUG){
+    g.fillStyle = '#a5f3fc'; g.font = '12px monospace';
+    const lines = [
+      `state : ${player.state}`,
+      `vx,vy : ${player.vx.toFixed(0)}, ${player.vy.toFixed(0)}`,
+      `ground: ${player.grounded}  wall:${player.onWall}`,
+      `coyote: ${player.coyote.toFixed(2)}  buf:${player.jumpBuffer.toFixed(2)}`,
+      `iframe: ${player.iframe.toFixed(2)}  airDash:${player.airDashUsed}`,
+      `bullets:${bullets.length}  parts:${particles.length}`,
+    ];
+    lines.forEach((s,i)=> g.fillText(s, VIEW_W-230, 70+i*16));
+  }
+}
+
+//==========================================================================
+// 11. 游戏循环（固定步长积分，保证物理稳定）
+//==========================================================================
+let player = new Player(map.spawn.x + (TILE-28)/2, map.spawn.y);
+setupEntities();
+
+function resetGame(){
+  player.reset();
+  bullets.length = 0;
+  particles.length = 0;
+  setupEntities();               // 重建木桩/砖块/平台/弹簧垫/金币 + 清零分数
+  cam.x = cam.y = 0;
+}
+
+const FIXED = 1/120;             // 物理步长
+let acc = 0, last = performance.now();
+
+function frame(now){
+  let dt = (now - last) / 1000;
+  last = now;
+  if (dt > 0.1) dt = 0.1;        // 防止切后台后大跳
+
+  // —— 固定步长更新 ——
+  acc += dt;
+  let steps = 0;
+  while (acc >= FIXED && steps < 8){
+    // 移动平台先动，并吸附站在其上的玩家(X 跟随)
+    for (const m of movers){ const d = m.step(FIXED); if (m.carries(player)) player.x += d; }
+    rebuildSolids();             // 刷新动态实心体供玩家碰撞
+    player.update(FIXED);
+    for (const b of bullets) b.update(FIXED);
+    for (const pd of pads) pd.update(FIXED, player);   // 弹簧垫
+    // 踩怪(Pogo)：下落中踩到木桩头顶
+    if (player.vy > 0){
+      const feet = player.y + player.h;
+      for (const d of dummies){
+        if (d.dead) continue;
+        if (player.x+player.w > d.x+4 && player.x < d.x+d.w-4 && feet > d.y && feet < d.y + d.h*0.6){
+          d.hit(34, 0, true); player.pogo();
+        }
+      }
+    }
+    acc -= FIXED; steps++;
+    Input.flush();
+  }
+
+  // 子弹 vs 木桩 / 全息箱
+  for (const b of bullets){
+    if (b.dead) continue;
+    const bb = { x:b.x, y:b.y - b.h/2, w:b.w, h:b.h };
+    for (const d of dummies){
+      if (d.dead) continue;
+      if (aabb(bb, d)){
+        if (b.hitSet){ if (b.hitSet.has(d)) continue; b.hitSet.add(d); }
+        d.hit(b.charged ? 40 : 13, b.dir, false);
+        if (!b.charged){ b.dead = true; break; }
+      }
+    }
+    if (b.dead) continue;
+    for (const bx of boxes){
+      if (bx.broken) continue;
+      if (aabb(bb, bx)){ bx.break(); if (!b.charged){ b.dead = true; break; } }
+    }
+  }
+
+  // 实体 + 粒子更新；死亡/破坏/拾取者立刻从数组 splice 移除（杜绝诈尸）
+  for (let i=dummies.length-1; i>=0; i--){ dummies[i].update(dt); if (dummies[i].dead) dummies.splice(i,1); }
+  for (let i=boxes.length-1;   i>=0; i--){ boxes[i].update(dt);   if (boxes[i].broken) boxes.splice(i,1); }
+  for (let i=coins.length-1;   i>=0; i--){ coins[i].update(dt, player); if (coins[i].collected) coins.splice(i,1); }
+  updateDamage(dt);
+  for (let i=bullets.length-1; i>=0; i--) if (bullets[i].dead) bullets.splice(i,1);
+  updateParticles(dt);
+  cam.follow(player, dt);
+  shake = Math.max(0, shake - dt*55);     // 屏幕震动衰减
+
+  // 掉出地图保护
+  if (player.y > map.pxH + 200) resetGame();
+
+  // —— 渲染（远→近）；屏幕震动只抖世界，不抖 HUD ——
+  const sm = shake > 0.4 ? shake : 0;
+  const shx = sm ? (Math.random()-0.5)*sm : 0;
+  const shy = sm ? (Math.random()-0.5)*sm : 0;
+  ctx.save();
+  ctx.translate(shx, shy);
+  drawBackground(ctx);
+  drawTiles(ctx);
+  for (const pd of pads) pd.draw(ctx);
+  for (const m of movers) m.draw(ctx);
+  for (const bx of boxes) bx.draw(ctx);
+  for (const d of dummies) d.draw(ctx);
+  for (const c of coins) c.draw(ctx);
+  drawParticles(ctx);
+  for (const b of bullets) b.draw(ctx, cam);
+  player.draw(ctx, cam);
+  drawDamage(ctx);
+  ctx.restore();
+  drawHUD(ctx, player);
+
+  requestAnimationFrame(frame);
+}
+requestAnimationFrame(frame);
+</script>
+</body>
+</html>

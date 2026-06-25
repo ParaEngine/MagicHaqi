@@ -1,0 +1,254 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Zoo Encyclopedia Maker</title>
+  <script src="https://cdn.keepwork.com/keepwork/cdn/tailwindcss@3.4.16.js"></script>
+  <style type="text/tailwindcss">
+    @layer base {
+      :root { color-scheme: light; }
+      body { @apply m-0 min-h-screen bg-slate-100 text-slate-900 font-sans; }
+      button { @apply min-h-[34px] cursor-pointer rounded-md border border-slate-300 bg-white px-3 text-slate-900 transition hover:border-sky-300 hover:bg-slate-50 active:translate-y-px disabled:cursor-not-allowed disabled:opacity-50 disabled:active:translate-y-0; }
+      input, textarea, select { @apply w-full min-h-[34px] rounded-md border border-slate-300 bg-white px-2.5 py-1.5 text-slate-900 outline-none focus:border-sky-600 focus:ring-2 focus:ring-sky-600/15; }
+      textarea { @apply resize-y leading-normal; }
+      label { @apply flex flex-col gap-1.5 text-xs text-slate-500; }
+      h1, h2, h3 { @apply m-0 tracking-normal; }
+      h1 { @apply text-lg leading-tight font-semibold; }
+      h2 { @apply text-sm font-semibold; }
+      h3 { @apply text-xs font-normal text-slate-500; }
+    }
+    @layer components {
+      .app { @apply grid min-h-screen grid-cols-1 gap-3 p-2 lg:h-screen lg:min-h-0 lg:grid-cols-[280px_minmax(360px,1fr)] lg:overflow-hidden lg:p-3 xl:grid-cols-[280px_340px_minmax(560px,1fr)]; }
+      .panel { @apply flex min-h-0 flex-col overflow-hidden rounded-lg border border-slate-300 bg-white shadow-lg shadow-slate-300/40; }
+      .panel-head { @apply flex min-h-14 items-center justify-between gap-2.5 border-b border-slate-300 px-3.5 py-3; }
+      .panel-body { @apply flex min-h-0 flex-1 flex-col gap-3 overflow-auto p-3; }
+      .section { @apply flex flex-col gap-2.5 rounded-lg border border-slate-300 bg-slate-50 p-3; }
+      .toolbar { @apply flex flex-wrap items-center gap-2; }
+      .toolbar button { @apply flex-none; }
+      .primary { @apply border-sky-600 bg-sky-600 text-white hover:border-sky-700 hover:bg-sky-700; }
+      .success { @apply border-emerald-600 bg-emerald-600 text-white hover:border-emerald-700 hover:bg-emerald-700; }
+      .danger { @apply border-red-200 bg-red-50 text-red-700; }
+      .pill { @apply inline-flex min-h-6 items-center whitespace-nowrap rounded-full border border-slate-300 bg-white px-2 text-xs text-slate-500; }
+      .hint { @apply text-xs leading-normal text-slate-500; }
+      .status { @apply whitespace-pre-wrap rounded-md border border-sky-200 bg-sky-50 px-2.5 py-2 text-xs leading-normal text-sky-900; }
+      .status.ok { @apply border-emerald-200 bg-emerald-50 text-emerald-800; }
+      .status.error { @apply border-red-200 bg-red-50 text-red-800; }
+      .status-action { @apply min-h-0 border-0 bg-transparent p-0 font-bold underline underline-offset-2 hover:border-transparent hover:bg-transparent; }
+      .row { @apply grid grid-cols-1 gap-2.5 md:grid-cols-2; }
+      .record-list { @apply flex min-h-0 flex-1 flex-col gap-1.5 overflow-auto p-2; }
+      .record-item { @apply grid w-full grid-cols-[46px_minmax(0,1fr)_auto] items-center gap-2.5 rounded-md border border-slate-300 bg-white p-2.5 text-left; }
+      .record-item.active { @apply border-sky-600 bg-sky-50 ring-2 ring-sky-600/15; }
+      .record-main { @apply block min-w-0 border-0 bg-transparent p-0 text-left hover:border-transparent hover:bg-transparent; }
+      .record-actions { @apply flex items-center gap-1; }
+      .record-actions button { @apply min-h-[30px] px-2 text-xs; }
+      .record-title { @apply block min-w-0 overflow-hidden text-ellipsis whitespace-nowrap text-[13px] font-bold; }
+      .record-meta { @apply block min-w-0 overflow-hidden text-ellipsis whitespace-nowrap text-[11px] text-slate-500; }
+      .record-visual { @apply grid h-[46px] w-[46px] place-items-center overflow-hidden rounded-md bg-emerald-50 text-2xl; }
+      .record-visual img { @apply h-full w-full object-cover; }
+      .photo-grid { @apply grid grid-cols-3 gap-2; }
+      .photo-cell { @apply relative aspect-[4/3] overflow-hidden rounded-md border border-slate-300 bg-slate-50; }
+      .photo-cell img { @apply h-full w-full object-cover; }
+      .photo-cell button { @apply absolute right-1 top-1 min-h-0 rounded bg-red-600/90 px-1.5 py-0.5 text-[11px] text-white border-0; }
+      .json-output { @apply min-h-[200px] overflow-auto whitespace-pre font-mono text-xs leading-normal; }
+      .prompt-box { @apply min-h-[120px] text-xs; }
+      .stream-preview { @apply min-h-[100px] max-h-[200px] overflow-auto whitespace-pre-wrap font-mono text-xs; }
+      .modal-overlay { @apply fixed inset-0 z-[1000] flex bg-slate-950/60 p-[18px]; }
+      .modal-window { @apply m-auto flex max-h-[calc(100vh-36px)] w-[min(720px,100%)] flex-col overflow-hidden rounded-lg bg-white shadow-2xl; }
+      .modal-titlebar { @apply flex min-h-12 items-center justify-between gap-2.5 border-b border-slate-300 bg-slate-50 px-4; }
+      .modal-body { @apply min-h-0 flex-1 overflow-auto p-3 flex flex-col gap-3; }
+    }
+    @media (max-width: 760px) {
+      .modal-overlay { @apply p-0; }
+      .modal-window { @apply h-full max-h-none w-full rounded-none; }
+    }
+  </style>
+</head>
+<body>
+  <main class="app">
+    <!-- ===== 左栏：账号 / 动物园 / 模型 / CDN ===== -->
+    <aside class="panel">
+      <div class="panel-head">
+        <div>
+          <h1>Zoo Encyclopedia Maker</h1>
+          <h3>动物园图鉴制作端</h3>
+        </div>
+        <span id="sdkState" class="pill">SDK loading</span>
+      </div>
+      <div class="panel-body">
+        <section class="section">
+          <h2>账号与 Workspace</h2>
+          <div id="loginState" class="status">正在加载 KeepworkSDK...</div>
+          <div class="toolbar">
+            <button id="btnLocalApi" type="button">本地 API Key</button>
+            <button id="btnWorkspace" type="button">打开 Workspace</button>
+          </div>
+        </section>
+        <section class="section">
+          <h2>动物园图鉴文件</h2>
+          <label>动物园 ID（zooId）
+            <input id="zooFileId" placeholder="shenzhen_zoo" value="shenzhen_zoo">
+          </label>
+          <div class="hint">数据文件：famous-planets/&lt;zooId&gt;_encyclopedia.json。优先读 workspace，回退本地 JSON。</div>
+          <div class="toolbar">
+            <button id="btnReload" class="primary" type="button">加载</button>
+            <button id="btnNewZoo" type="button">新建图鉴</button>
+          </div>
+        </section>
+        <section class="section">
+          <h2>AI 模型</h2>
+          <label>Chat 模型（适龄化双语改写）
+            <select id="chatModel"><option value="">等待 SDK 加载...</option></select>
+          </label>
+          <div class="hint">推荐 GPT5.5。在本地 API Key 设置中配置。</div>
+        </section>
+        <section class="section">
+          <h2>CDN 上传</h2>
+          <div id="cdnStatus" class="hint">CDN folder: maisi/magichaqi/zoo</div>
+          <div class="toolbar">
+            <button id="btnCdnConfig" type="button">CDN 设置</button>
+          </div>
+          <div class="hint">未加载 qiniu.yaml 时使用 Keepwork 临时 CDN（180 天）。照片会压缩为 WebP 后上传。</div>
+        </section>
+        <section class="section">
+          <h2>动物园信息</h2>
+          <div class="row">
+            <label>中文名<input id="zooNameZh" placeholder="深圳动物园"></label>
+            <label>英文名<input id="zooNameEn" placeholder="Shenzhen Zoo"></label>
+          </div>
+          <label>导游 Emoji<input id="guideEmoji" placeholder="🐯"></label>
+          <label>导游欢迎词（中文）<textarea id="guideWelcomeZh" rows="2"></textarea></label>
+          <label>导游欢迎词（英文）<textarea id="guideWelcomeEn" rows="2"></textarea></label>
+        </section>
+        <div id="runStatus" class="status">就绪。</div>
+      </div>
+    </aside>
+
+    <!-- ===== 中栏：动物列表 ===== -->
+    <section class="panel">
+      <div class="panel-head">
+        <div>
+          <h2>动物列表</h2>
+          <h3 id="recordCount">0 只动物</h3>
+        </div>
+        <button id="btnNewAnimal" class="primary" type="button">新建动物</button>
+      </div>
+      <div class="px-3 pt-2">
+        <input id="recordSearch" placeholder="搜索 id / 名称">
+      </div>
+      <div id="recordList" class="record-list"></div>
+    </section>
+
+    <!-- ===== 右栏：动物编辑器 ===== -->
+    <section class="panel">
+      <div class="panel-head">
+        <div>
+          <h2 id="editorTitle">动物编辑器</h2>
+          <h3>真实资料 + AI 适龄化双语改写 + 卡通宠物 prompt</h3>
+        </div>
+        <div class="toolbar">
+          <button id="btnSaveTop" class="success" type="button">保存到 Workspace</button>
+        </div>
+      </div>
+      <div class="panel-body">
+        <section class="section">
+          <h2>基础信息</h2>
+          <div class="row">
+            <label>动物 ID<input id="animalId" placeholder="south_china_tiger"></label>
+            <label>Emoji<input id="animalEmoji" placeholder="🐯"></label>
+          </div>
+          <div class="row">
+            <label>中文名<input id="animalNameZh" placeholder="华南虎"></label>
+            <label>英文名<input id="animalNameEn" placeholder="South China Tiger"></label>
+          </div>
+          <div class="row">
+            <label>领养宠物 ID（famous-pets）<input id="animalFamousPetId" placeholder="zodiac_tiger_tangtang"></label>
+            <label>胖虎引导任务（中文）<input id="animalGuideTaskZh" placeholder="去看看真正的老虎..."></label>
+          </div>
+          <label>胖虎引导任务（英文）<input id="animalGuideTaskEn" placeholder="Go watch the real tiger..."></label>
+        </section>
+        <section class="section">
+          <h2>照片 / 媒体</h2>
+          <div id="photoGrid" class="photo-grid"></div>
+          <div class="toolbar">
+            <button id="btnAddPhoto" type="button">上传照片</button>
+            <button id="btnAddPhotoUrl" type="button">添加照片 URL</button>
+            <input id="photoFileInput" type="file" accept="image/*" multiple class="hidden" style="display:none">
+          </div>
+          <div class="row">
+            <label>叫声 URL（mp3）<input id="animalSoundUrl" placeholder="https://cdn.keepwork.com/..."></label>
+            <label>视频 URL（mp4）<input id="animalVideoUrl" placeholder="https://cdn.keepwork.com/..."></label>
+          </div>
+          <div class="toolbar">
+            <button id="btnUploadSound" type="button">上传叫声文件</button>
+            <button id="btnUploadVideo" type="button">上传视频文件</button>
+            <input id="mediaFileInput" type="file" class="hidden" style="display:none">
+          </div>
+        </section>
+        <section class="section">
+          <h2>AI 适龄化双语改写</h2>
+          <label>原始资料（动物园提供的科普文字，粘贴在这里）
+            <textarea id="rawMaterial" class="prompt-box" placeholder="把动物园提供的介绍、习性、保护信息等原始资料粘贴在这里，AI 会生成图鉴档案、分龄介绍、趣味知识和 3 道答题。"></textarea>
+          </label>
+          <div class="toolbar">
+            <button id="btnAiRewrite" class="primary" type="button">AI 生成图鉴内容</button>
+            <button id="btnAiPetPrompt" type="button">生成卡通宠物 Prompt</button>
+          </div>
+          <div id="aiStream" class="status stream-preview" style="display:none"></div>
+        </section>
+        <section class="section">
+          <h2>图鉴档案（facts）</h2>
+          <div class="row">
+            <label>栖息地（中）<input id="factHabitatZh"></label>
+            <label>栖息地（英）<input id="factHabitatEn"></label>
+            <label>食物（中）<input id="factDietZh"></label>
+            <label>食物（英）<input id="factDietEn"></label>
+            <label>寿命（中）<input id="factLifespanZh"></label>
+            <label>寿命（英）<input id="factLifespanEn"></label>
+            <label>体型（中）<input id="factSizeZh"></label>
+            <label>体型（英）<input id="factSizeEn"></label>
+            <label>保护等级（中）<input id="factProtectionZh"></label>
+            <label>保护等级（英）<input id="factProtectionEn"></label>
+          </div>
+        </section>
+        <section class="section">
+          <h2>分龄介绍</h2>
+          <label>幼儿版（中文）<textarea id="introKidZh" rows="2"></textarea></label>
+          <label>幼儿版（英文）<textarea id="introKidEn" rows="2"></textarea></label>
+          <label>小学版（中文）<textarea id="introJuniorZh" rows="3"></textarea></label>
+          <label>小学版（英文）<textarea id="introJuniorEn" rows="3"></textarea></label>
+        </section>
+        <section class="section">
+          <h2>趣味知识（每行一条，格式：中文 | English）</h2>
+          <textarea id="funFactsText" rows="4" placeholder="每只老虎的条纹都不一样 | Every tiger's stripes are unique"></textarea>
+        </section>
+        <section class="section">
+          <h2>知识挑战（quiz JSON 数组）</h2>
+          <textarea id="quizJson" class="prompt-box" spellcheck="false" placeholder='[{"q":{"zh":"...","en":"..."},"options":[{"zh":"A","en":"A"}],"answer":0}]'></textarea>
+        </section>
+        <section class="section">
+          <h2>卡通宠物 Prompt（复制到 FamousPetGenerator 使用）</h2>
+          <textarea id="petPromptOut" class="prompt-box" spellcheck="false" placeholder="点击上方「生成卡通宠物 Prompt」，结果可直接复制到 FamousPetGenerator 的 wishPrompt。"></textarea>
+          <div class="toolbar">
+            <button id="btnCopyPetPrompt" type="button">复制 Prompt</button>
+            <a class="pill" href="./FamousPetGenerator.html" target="_blank">打开 FamousPetGenerator ↗</a>
+          </div>
+        </section>
+        <section class="section">
+          <h2>JSON</h2>
+          <div class="toolbar">
+            <button id="btnApplyAnimal" class="primary" type="button">应用表单到列表</button>
+            <button id="btnDeleteAnimal" class="danger" type="button">删除此动物</button>
+            <button id="btnCopyJson" type="button">复制整份 JSON</button>
+            <button id="btnDownloadJson" type="button">下载 JSON</button>
+            <button id="btnSave" class="success" type="button">保存到 Workspace</button>
+          </div>
+          <textarea id="zooJson" class="json-output" spellcheck="false"></textarea>
+        </section>
+      </div>
+    </section>
+  </main>
+  <input id="cdnConfigInput" type="file" accept=".yaml,.yml,.txt" style="display:none">
+  <script type="module" src="./zooEncyclopediaMaker.js"></script>
+</body>
+</html>

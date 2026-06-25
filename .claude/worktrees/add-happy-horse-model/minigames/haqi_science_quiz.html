@@ -1,0 +1,1281 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+  <title>科学期末闯关</title>
+  <script src="https://cdn.keepwork.com/keepwork/cdn/tailwindcss@3.4.16.js"></script>
+  <style>
+    * { box-sizing: border-box; -webkit-tap-highlight-color: transparent; user-select: none; }
+    html, body { width: 100%; height: 100%; margin: 0; overflow: hidden; }
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, "PingFang SC", "Microsoft YaHei", sans-serif;
+      color: #263238;
+      background: linear-gradient(180deg, #dff7ff 0%, #fff7d6 52%, #dcfce7 100%);
+      touch-action: manipulation;
+    }
+    .shell { height: 100vh; height: 100dvh; display: grid; grid-template-rows: auto auto minmax(0, 1fr) auto; gap: 10px; padding: 10px; }
+    .top {
+      min-height: 58px; display: flex; align-items: center; justify-content: space-between; gap: 10px;
+      padding: 9px 12px; border-radius: 14px; background: rgba(255,255,255,.88);
+      border: 2px solid rgba(255,255,255,.9); box-shadow: 0 5px 0 rgba(14,116,144,.14);
+    }
+    .title { font-size: 20px; font-weight: 1000; color: #075985; white-space: nowrap; }
+    .stats { display: flex; align-items: center; justify-content: flex-end; gap: 7px; flex-wrap: wrap; }
+    .pill {
+      min-width: 60px; height: 32px; display: inline-flex; align-items: center; justify-content: center; gap: 4px;
+      padding: 0 10px; border-radius: 999px; background: #fff; border: 1px solid rgba(14,116,144,.2);
+      color: #0f766e; font-size: 13px; font-weight: 900; box-shadow: 0 2px 0 rgba(14,116,144,.12);
+    }
+    .pill.combo { color: #c2410c; border-color: rgba(249,115,22,.3); }
+    .pill.combo.hot { background: #fff7ed; }
+    .hearts { font-size: 16px; letter-spacing: 1px; }
+    /* progress track */
+    .trackWrap {
+      display: flex; align-items: center; gap: 8px; padding: 8px 12px; border-radius: 14px;
+      background: rgba(255,255,255,.78); border: 2px solid rgba(255,255,255,.9); box-shadow: 0 4px 0 rgba(14,116,144,.12);
+    }
+    .track {
+      position: relative; flex: 1; min-width: 0; height: 18px; border-radius: 999px;
+      background: linear-gradient(90deg, #bbf7d0, #fde68a, #bae6fd); border: 2px solid rgba(255,255,255,.9);
+      box-shadow: inset 0 2px 4px rgba(15,23,42,.12);
+    }
+    .trackToken {
+      position: absolute; top: 50%; left: 0; transform: translate(-50%, -50%); font-size: 22px;
+      transition: left .45s cubic-bezier(.34,1.56,.64,1); filter: drop-shadow(0 2px 2px rgba(0,0,0,.25));
+    }
+    .trackFlag { font-size: 20px; }
+    .trackLabel { font-size: 13px; font-weight: 1000; color: #0f766e; white-space: nowrap; }
+    .main { min-height: 0; display: grid; grid-template-columns: 1fr; gap: 10px; }
+    .petHidden { display: none; }
+    .quizPanel, .petPanel {
+      border-radius: 16px; background: rgba(255,255,255,.82); border: 2px solid rgba(255,255,255,.9);
+      box-shadow: 0 10px 24px rgba(15,23,42,.15);
+    }
+    .quizPanel { min-height: 0; display: grid; grid-template-rows: auto minmax(0, 1fr); gap: 10px; padding: 14px; overflow: hidden; }
+    .qHead { display: flex; align-items: center; gap: 8px; }
+    .qUnit { font-size: 12px; font-weight: 1000; color: #fff; background: #0ea5e9; border-radius: 999px; padding: 3px 10px; white-space: nowrap; }
+    .qIndex { font-size: 12px; font-weight: 900; color: #64748b; }
+    .qBody { min-height: 0; display: grid; grid-template-rows: auto minmax(0, 1fr); gap: 12px; }
+    .qText { font-size: clamp(17px, 2.6vh, 22px); line-height: 1.5; font-weight: 1000; color: #0f2747; }
+    .options { display: grid; grid-template-columns: 1fr; gap: 10px; align-content: start; overflow: auto; }
+    .opt {
+      display: flex; align-items: center; gap: 10px; width: 100%; text-align: left;
+      border: 2px solid #bae6fd; border-radius: 14px; background: #f0f9ff; color: #0f2747;
+      padding: 12px 14px; font-family: inherit; font-size: clamp(15px, 2.3vh, 18px); font-weight: 900;
+      cursor: pointer; box-shadow: 0 3px 0 rgba(14,116,144,.14); transition: transform .1s ease;
+    }
+    .opt:active { transform: translateY(2px); }
+    .opt .tag {
+      flex: none; width: 28px; height: 28px; border-radius: 50%; display: grid; place-items: center;
+      background: #0ea5e9; color: #fff; font-weight: 1000; font-size: 15px;
+    }
+    .opt.correct { border-color: #22c55e; background: #dcfce7; }
+    .opt.correct .tag { background: #16a34a; }
+    .opt.wrong { border-color: #f87171; background: #fee2e2; }
+    .opt.wrong .tag { background: #dc2626; }
+    .opt.dim { opacity: .5; }
+    .opt:disabled { cursor: default; }
+    .explain {
+      margin-top: 4px; border-radius: 12px; background: #fffbeb; border: 2px solid #fde68a;
+      padding: 10px 12px; font-size: 14px; line-height: 1.55; font-weight: 850; color: #7c2d12;
+    }
+    .explain b { color: #b45309; }
+    .explain.ok { background: #ecfdf5; border-color: #a7f3d0; color: #065f46; }
+    .explain.ok b { color: #047857; }
+    /* ---- 知道更多 reveal card (the content centerpiece) ---- */
+    .reveal { margin-top: 4px; border-radius: 14px; border: 2px solid #fcd9a8; background: #fffaf0; padding: 12px 13px; display: grid; gap: 9px; animation: revealIn .3s ease; }
+    .reveal.ok { border-color: #a7f3d0; background: #f3fdf6; }
+    .reveal-head { font-size: 16px; font-weight: 1000; color: #b45309; }
+    .reveal.ok .reveal-head { color: #047857; }
+    .reveal-vis { font-size: 15px; line-height: 1.75; font-weight: 800; text-align: center; color: #475569; background: rgba(255,255,255,.72); border: 1px dashed #d6b36b; border-radius: 11px; padding: 9px 8px; }
+    .reveal.ok .reveal-vis { border-color: #86e0b8; }
+    .reveal-sec { font-size: 14px; line-height: 1.6; font-weight: 800; color: #334155; }
+    .reveal-tag { font-weight: 1000; margin-right: 5px; white-space: nowrap; }
+    .reveal-sec.why .reveal-tag { color: #0369a1; }
+    .reveal-sec.wow { background: linear-gradient(180deg, #fffbe6, #fff1c2); border: 2px solid #fcd34d; border-radius: 12px; padding: 10px 12px; color: #7c2d12; box-shadow: 0 2px 0 rgba(202,138,4,.18); }
+    .reveal-sec.wow .reveal-tag { color: #d97706; }
+    @keyframes revealIn { from { opacity: 0; transform: translateY(6px); } to { opacity: 1; transform: none; } }
+    @media (prefers-reduced-motion: reduce) { .reveal { animation: none; } }
+    /* pet panel */
+    .petPanel { min-width: 0; display: grid; grid-template-rows: auto minmax(0, 1fr) auto; gap: 9px; padding: 12px; text-align: center; }
+    .petTitle { font-size: 15px; font-weight: 1000; color: #075985; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+    .petAvatarWrap { min-height: 0; display: grid; place-items: center; }
+    .petAvatar {
+      width: min(140px, 28vmin); height: min(140px, 28vmin); border-radius: 20px;
+      background: linear-gradient(180deg, #e0f2fe, #fef3c7); border: 3px solid #7dd3fc;
+      box-shadow: 0 7px 0 rgba(14,116,144,.16); display: grid; place-items: center; overflow: hidden;
+    }
+    .petAvatar.happy { animation: petHappy .45s ease-in-out 2; }
+    .petAvatar.sad { animation: petSad .5s ease-in-out 1; }
+    .petSprite { width: 100%; height: 100%; background-repeat: no-repeat; image-rendering: auto; }
+    .petFallback { font-size: 52px; font-weight: 1000; }
+    /* 语音字幕：屏幕下方居中的轻量浮层（无内容时隐藏） */
+    .petBubble {
+      position: fixed; left: 50%; bottom: 74px; transform: translateX(-50%); z-index: 16;
+      max-width: min(92vw, 460px); font-size: 14px; line-height: 1.45; font-weight: 900; color: #164e63;
+      background: rgba(236,254,255,.97); border: 2px solid #a5f3fc; border-radius: 13px; padding: 9px 13px;
+      box-shadow: 0 8px 22px rgba(15,23,42,.2); text-align: center;
+    }
+    .petBubble:empty { display: none; }
+    /* 语音陪学按钮：移到顶栏，做成与 pill 同高的紧凑胶囊 */
+    .voiceBtn {
+      height: 32px; padding: 0 12px; border: 2px solid #fbcfe8; border-radius: 999px;
+      background: linear-gradient(180deg, #fff, #fdf2f8); color: #be185d; font-family: inherit;
+      font-weight: 1000; font-size: 13px; cursor: pointer; box-shadow: 0 2px 0 rgba(190,24,93,.16);
+      transition: transform .1s ease; display: inline-flex; align-items: center; justify-content: center; gap: 5px; white-space: nowrap;
+    }
+    .voiceBtn:active { transform: translateY(2px); }
+    .voiceBtn.on { background: linear-gradient(180deg, #fdf2f8, #fbcfe8); border-color: #f472b6; animation: voicePulse 1.5s ease-in-out infinite; }
+    .voiceBtn.busy { opacity: .7; cursor: default; }
+    @keyframes voicePulse { 0%,100% { box-shadow: 0 3px 0 rgba(190,24,93,.16); } 50% { box-shadow: 0 3px 0 rgba(190,24,93,.16), 0 0 0 6px rgba(244,114,182,.18); } }
+    .bottom { min-height: 54px; display: flex; align-items: center; justify-content: flex-end; gap: 10px; padding: 9px 12px;
+      border-radius: 16px; background: rgba(255,255,255,.74); border: 2px solid rgba(255,255,255,.9); box-shadow: 0 8px 20px rgba(15,23,42,.12); }
+    .actions { display: flex; gap: 8px; flex-wrap: wrap; justify-content: flex-end; }
+    .btn {
+      border: 0; border-radius: 999px; padding: 11px 16px; font-family: inherit; font-weight: 1000;
+      background: #0ea5e9; color: #fff; cursor: pointer; box-shadow: 0 4px 0 rgba(15,23,42,.24); font-size: 15px;
+    }
+    .btn:active { transform: translateY(2px); box-shadow: 0 2px 0 rgba(15,23,42,.24); }
+    .btn:disabled { opacity: .48; cursor: not-allowed; transform: none; box-shadow: 0 2px 0 rgba(15,23,42,.12); }
+    .btn-orange { background: #f97316; }
+    .btn-soft { background: #fff7ed; color: #9a3412; border: 2px solid #fed7aa; box-shadow: 0 3px 0 rgba(154,52,18,.18); }
+    .overlay { position: fixed; inset: 0; z-index: 20; display: flex; align-items: center; justify-content: center; padding: 16px; background: rgba(15,39,71,.46); }
+    .card { width: min(94vw, 460px); max-height: 92dvh; overflow: auto; border-radius: 18px; background: #fff; border: 3px solid #fbbf24; padding: 22px; box-shadow: 0 18px 42px rgba(15,23,42,.28); }
+    .card h1 { margin: 0 0 8px; font-size: 26px; line-height: 1.15; font-weight: 1000; color: #b45309; }
+    .card p { margin: 0 0 14px; font-size: 15px; line-height: 1.65; font-weight: 850; color: #0f2747; }
+    .unitGrid { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; margin: 8px 0 16px; }
+    .unitBtn {
+      display: flex; flex-direction: column; align-items: center; gap: 4px; border: 2px solid #bae6fd; border-radius: 14px;
+      background: #f0f9ff; color: #0f2747; padding: 14px 8px; font-family: inherit; font-weight: 1000; font-size: 15px; cursor: pointer;
+      box-shadow: 0 3px 0 rgba(14,116,144,.14);
+    }
+    .unitBtn:active { transform: translateY(2px); }
+    .unitBtn .emoji { font-size: 28px; }
+    .unitBtn .cnt { font-size: 12px; font-weight: 800; color: #64748b; }
+    .cardActions { display: flex; gap: 10px; flex-wrap: wrap; }
+    .resultStats { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 8px; margin: 14px 0 16px; }
+    .resultStat { border-radius: 12px; background: #ecfeff; border: 2px solid #a5f3fc; padding: 10px 6px; color: #164e63; font-size: 13px; font-weight: 1000; text-align: center; }
+    .resultStat b { display: block; margin-top: 2px; color: #0f766e; font-size: 20px; }
+    .grade { font-size: 18px; font-weight: 1000; color: #b45309; margin: 0 0 6px; text-align: center; }
+    .batchInfo { display: inline-block; margin-top: 6px; font-size: 13px; font-weight: 900; color: #0f766e; }
+    .toast { position: fixed; left: 50%; top: 30%; z-index: 30; transform: translate(-50%, -50%); border-radius: 15px; background: #fff; border: 3px solid #7dd3fc; padding: 12px 18px; font-size: 18px; line-height: 1.4; font-weight: 1000; text-align: center; box-shadow: 0 15px 36px rgba(15,23,42,.28); }
+    /* ---- fun FX ---- */
+    .shell { position: relative; z-index: 1; }
+    .fxLayer { position: fixed; inset: 0; z-index: 50; pointer-events: none; overflow: hidden; }
+    .confetti { position: absolute; width: 9px; height: 14px; border-radius: 2px; will-change: transform, opacity; }
+    @keyframes confettiFall { 0% { transform: translate(0,0) rotate(0); opacity: 1; } 100% { transform: translate(var(--dx), var(--dy)) rotate(var(--rot)); opacity: 0; } }
+    .scorePop { position: fixed; z-index: 55; font-size: 22px; font-weight: 1000; color: #16a34a; pointer-events: none; text-shadow: 0 2px 4px rgba(0,0,0,.18); animation: scorePop .9s ease-out forwards; }
+    @keyframes scorePop { 0% { transform: translate(-50%, 0) scale(.6); opacity: 0; } 25% { transform: translate(-50%, -10px) scale(1.15); opacity: 1; } 100% { transform: translate(-50%, -56px) scale(1); opacity: 0; } }
+    .pill.combo.bump { animation: comboBump .35s ease; }
+    @keyframes comboBump { 0%,100% { transform: scale(1); } 40% { transform: scale(1.24); } }
+    .opt.correct { animation: optPop .4s ease; }
+    .opt.wrong { animation: optShake .42s ease; }
+    @keyframes optPop { 0%,100% { transform: scale(1); } 40% { transform: scale(1.04); } }
+    @keyframes optShake { 0%,100% { transform: translateX(0); } 20% { transform: translateX(-6px); } 40% { transform: translateX(6px); } 60% { transform: translateX(-4px); } 80% { transform: translateX(4px); } }
+    .stars { text-align: center; margin: 2px 0 10px; letter-spacing: 5px; }
+    .star { font-size: 32px; display: inline-block; animation: starPop .5s ease backwards; }
+    .star.off { filter: grayscale(1); opacity: .32; }
+    @keyframes starPop { 0% { transform: scale(0) rotate(-30deg); opacity: 0; } 70% { transform: scale(1.3); } 100% { transform: scale(1); opacity: 1; } }
+    .petAvatar.celebrate { animation: petCelebrate .6s ease; }
+    @keyframes petCelebrate { 0%,100% { transform: scale(1) rotate(0); } 25% { transform: scale(1.13) rotate(-8deg); } 50% { transform: scale(1.16) rotate(8deg); } 75% { transform: scale(1.12) rotate(-5deg); } }
+    @media (prefers-reduced-motion: reduce) { .opt.correct, .opt.wrong, .pill.combo.bump, .petAvatar.celebrate { animation: none; } }
+    [hidden] { display: none !important; }
+    @keyframes petHappy { 0%,100% { transform: scale(1); } 50% { transform: scale(1.08) rotate(3deg); } }
+    @keyframes petSad { 0%,100% { transform: translateX(0); } 25% { transform: translateX(-5px); } 75% { transform: translateX(5px); } }
+    @media (max-width: 720px) {
+      .shell { padding: 7px; gap: 7px; }
+      .main { grid-template-columns: 1fr; grid-template-rows: minmax(0, 1fr) auto; }
+      .petPanel { order: 2; grid-template-columns: auto 1fr; grid-template-rows: auto auto; align-items: center; text-align: left; padding: 8px; gap: 8px; }
+      .petAvatarWrap { grid-row: 1 / 3; }
+      .petAvatar { width: 64px; height: 64px; border-radius: 13px; }
+      .petFallback { font-size: 34px; }
+      .petTitle { grid-column: 2; }
+      .petBubble { font-size: 12px; padding: 7px 11px; min-height: 0; bottom: 104px; }
+      .title { font-size: 17px; }
+      .pill { min-width: 52px; height: 29px; font-size: 12px; padding: 0 8px; }
+      .quizPanel { padding: 11px; }
+      .bottom { align-items: stretch; flex-direction: column; }
+      .actions { width: 100%; justify-content: space-between; }
+      .trackLabel { display: none; }
+    }
+  </style>
+</head>
+
+<body>
+  <div class="shell">
+    <div class="top">
+      <div class="title" id="gameTitle">科学期末闯关</div>
+      <div class="stats">
+        <span class="pill"><span id="scoreLabel">得分</span> <b id="score">0</b></span>
+        <span class="pill combo" id="comboPill"><span id="comboLabel">连对</span> <b id="combo">0</b></span>
+        <span class="pill hearts" id="hearts">❤❤❤</span>
+        <button class="voiceBtn" id="voiceBtn" type="button" aria-label="语音陪学">🎙 <span id="voiceBtnLabel">语音陪学</span></button>
+      </div>
+    </div>
+
+    <div class="trackWrap">
+      <span class="trackLabel" id="trackLabel">闯关进度</span>
+      <div class="track"><span class="trackToken" id="trackToken">🥚</span></div>
+      <span class="trackFlag">🏁</span>
+    </div>
+
+    <div class="main">
+      <section class="quizPanel">
+        <div class="qHead">
+          <span class="qUnit" id="qUnit">第一单元</span>
+          <span class="qIndex" id="qIndex">第 1 / 10 题</span>
+        </div>
+        <div class="qBody">
+          <div class="qText" id="qText">准备开始……</div>
+          <div class="options" id="options"></div>
+        </div>
+      </section>
+    </div>
+    <!-- 数字人精简：语音「语音陪学」按钮已移到顶栏；这里只保留隐藏元素供脚本/精灵动画引用。 -->
+    <div class="petHidden" aria-hidden="true">
+      <span id="petName"></span>
+      <div id="petAvatar" class="petAvatar"><span class="petFallback">🧪</span></div>
+    </div>
+    <!-- 语音字幕：屏幕下方轻量浮层，无内容时自动隐藏。 -->
+    <div class="petBubble" id="petTalk"></div>
+
+    <div class="bottom">
+      <div class="actions">
+        <button class="btn btn-soft" id="prev" hidden>上一题</button>
+        <button class="btn btn-soft" id="changeUnit" hidden>换单元</button>
+        <button class="btn btn-orange" id="start">开始闯关</button>
+        <button class="btn btn-orange" id="next" hidden>下一题</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- intro / unit picker -->
+  <div class="overlay" id="intro">
+    <div class="card">
+      <h1 id="introTitle">🧪 蛋蛋星球·科学期末闯关</h1>
+      <p id="introText">选择一个复习单元，答对题目就能帮 Haqi 前进闯关！连续答对有连对奖励，答错会掉一颗❤并讲解知识点。三颗❤用完或答完全部题目就结束。</p>
+      <div class="unitGrid" id="unitGrid"></div>
+    </div>
+  </div>
+
+  <!-- result -->
+  <div class="overlay" id="result" hidden>
+    <div class="card">
+      <h1 id="resultTitle">闯关完成！</h1>
+      <div class="stars" id="resultStars"></div>
+      <p class="grade" id="resultGrade"></p>
+      <p id="resultText"></p>
+      <div class="resultStats">
+        <div class="resultStat"><span id="rsCorrectLabel">答对</span><b id="rsCorrect">0/0</b></div>
+        <div class="resultStat"><span id="rsComboLabel">最高连对</span><b id="rsCombo">0</b></div>
+        <div class="resultStat"><span id="rsScoreLabel">得分</span><b id="rsScore">0</b></div>
+      </div>
+      <div class="cardActions">
+        <button class="btn btn-orange" id="again">再来一局</button>
+        <button class="btn btn-soft" id="changeUnit2">换单元</button>
+      </div>
+    </div>
+  </div>
+
+  <div class="fxLayer" id="fxLayer" aria-hidden="true"></div>
+
+  <script>
+    'use strict';
+
+    /* ---------------- i18n ---------------- */
+    const I18N = {
+      zhCN: {
+        gameTitle: '科学期末闯关', scoreLabel: '得分', comboLabel: '连对', petDefault: '我的闯关伙伴',
+        petNameFmt: '伙伴：{name}', pet: 'Haqi',
+        introTitle: '🧪 蛋蛋星球·科学期末闯关',
+        introText: '选择一个复习单元，答对题目就能帮 Haqi 前进闯关！连续答对有连对奖励，答错会掉一颗❤并讲解知识点。三颗❤用完或答完全部题目就结束。',
+        startBtn: '开始闯关', changeUnit: '换单元', again: '再来一局',
+        prevBtn: '上一题', nextBtn: '下一题', finishBtn: '查看结果',
+        nextBatchBtn: '下一批', newPassBtn: '再来一遍',
+        reviewedFmt: '已复习 {done}/{all}',
+        remainText: '本单元还剩 {n} 题没复习，点「下一批」继续，不会重复哦！',
+        passDoneText: '🎉 本单元题目全部复习完啦！再来一遍会换个新顺序。',
+        trackLabel: '闯关进度', qUnitFmt: '{u}', qIndexFmt: '第 {i} / {n} 题',
+        revealRight: '✅ 回答正确', revealWrongFmt: '❌ 正确答案：{ans}',
+        whyLabel: '为什么', wowLabel: '你知道吗',
+        resultTitle: '闯关完成！', resultTitleFail: '继续加油！',
+        rsCorrect: '答对', rsCombo: '最高连对', rsScore: '得分',
+        resultTextWin: '你帮 Haqi 顺利闯关，复习得很扎实！',
+        resultTextOk: '不错的成绩，再复习一遍就更牢固啦！',
+        resultTextFail: '❤用完了，别灰心，知识点都讲过了，再来一次一定行！',
+        gradeS: '🏆 满分学霸！', gradeA: '🌟 优秀！', gradeB: '👍 良好', gradeC: '💪 继续努力',
+        units: { u1: '第一单元·植物生长', u2: '第二单元·电路', u3: '第三单元·岩石与土壤', all: '全部混合' },
+        unitShort: { u1: '植物生长', u2: '电路', u3: '岩石与土壤', all: '全部混合' },
+        unitEmoji: { u1: '🌱', u2: '🔌', u3: '🪨', all: '🌈' },
+        cntFmt: '{n} 题', comboToastFmt: '连对 ×{n}！', heartGainToast: '❤ 回血 +1！太棒啦！',
+        voiceStart: '语音陪学', voiceStop: '结束语音', voiceConnecting: '连接中…',
+        voiceWelcome: '嗨！我是你的科学小伙伴，有不懂的随时问我～',
+        voiceReady: '我在听啦，对着麦克风说话吧～', voiceYouFmt: '你：{text}',
+        voiceNeedLogin: '请先登录蛋蛋星球再用语音哦～', voiceError: '语音连接失败，待会再试试～',
+        voiceTapHint: '点一下屏幕就能听到我说话啦～'
+      },
+      enUS: {
+        gameTitle: 'Science Quiz Quest', scoreLabel: 'Score', comboLabel: 'Combo', petDefault: 'My quiz buddy',
+        petNameFmt: 'Buddy: {name}', pet: 'Haqi',
+        introTitle: '🧪 Haqi Planet · Science Final Quiz',
+        introText: 'Pick a review unit. Each correct answer moves Haqi forward! Streaks earn bonus points; a wrong answer costs one ❤ and shows the key point. The run ends when ❤ run out or all questions are done.',
+        startBtn: 'Start', changeUnit: 'Change unit', again: 'Play again',
+        prevBtn: 'Previous', nextBtn: 'Next', finishBtn: 'See result',
+        nextBatchBtn: 'Next batch', newPassBtn: 'New round',
+        reviewedFmt: 'Reviewed {done}/{all}',
+        remainText: '{n} question(s) left in this unit — tap "Next batch" to continue, no repeats!',
+        passDoneText: '🎉 You\'ve reviewed every question in this unit! A new round reshuffles them.',
+        trackLabel: 'Progress', qUnitFmt: '{u}', qIndexFmt: 'Q {i} / {n}',
+        revealRight: '✅ Correct!', revealWrongFmt: '❌ Answer: {ans}',
+        whyLabel: 'Why', wowLabel: 'Did you know',
+        resultTitle: 'Quest complete!', resultTitleFail: 'Keep going!',
+        rsCorrect: 'Correct', rsCombo: 'Best combo', rsScore: 'Score',
+        resultTextWin: 'You guided Haqi to the finish — solid review!',
+        resultTextOk: 'Nice score — one more round makes it stick!',
+        resultTextFail: 'Out of ❤. Don\'t give up — you saw every key point, try again!',
+        gradeS: '🏆 Perfect!', gradeA: '🌟 Excellent!', gradeB: '👍 Good', gradeC: '💪 Keep trying',
+        units: { u1: 'Unit 1 · Plant Growth', u2: 'Unit 2 · Circuits', u3: 'Unit 3 · Rocks & Soil', all: 'All mixed' },
+        unitShort: { u1: 'Plants', u2: 'Circuits', u3: 'Rocks & Soil', all: 'All mixed' },
+        unitEmoji: { u1: '🌱', u2: '🔌', u3: '🪨', all: '🌈' },
+        cntFmt: '{n} Qs', comboToastFmt: 'Combo ×{n}!', heartGainToast: '❤ +1 life! Awesome!',
+        voiceStart: 'Talk to buddy', voiceStop: 'Stop voice', voiceConnecting: 'Connecting…',
+        voiceWelcome: 'Hi! I\'m your science buddy — ask me anything!',
+        voiceReady: 'I\'m listening — talk into the mic~', voiceYouFmt: 'You: {text}',
+        voiceNeedLogin: 'Please log in to Haqi Planet to use voice~', voiceError: 'Voice failed, try again later~',
+        voiceTapHint: 'Tap the screen to hear me~'
+      }
+    };
+    function detectLang() {
+      try {
+        const params = new URLSearchParams(window.location.search);
+        const q = params.get('lang');
+        if (q && I18N[q]) return q;
+        if (q === 'en' || q === 'en-US') return 'enUS';
+        if (q === 'zh' || q === 'zh-CN') return 'zhCN';
+        const stored = localStorage.getItem('haqi_lang');
+        if (stored && I18N[stored]) return stored;
+      } catch (_) {}
+      return 'zhCN';
+    }
+    let LANG = detectLang();
+    function L() { return I18N[LANG]; }
+    function t(key, vars) {
+      let s = L()[key];
+      if (s == null) s = I18N.zhCN[key];
+      if (typeof s === 'string' && vars) for (const k in vars) s = s.replace(new RegExp('\\{' + k + '\\}', 'g'), vars[k]);
+      return s;
+    }
+    function pick(arr) { return arr[Math.floor(Math.random() * arr.length)]; }
+
+    /* ---------------- question bank (authored from 四下科学期末复习资料) ---------------- */
+    // unit: u1 植物 / u2 电路 / u3 岩石与土壤. answer = index into options.
+    // Each item: q 题目, o 选项, a 正确答案下标; why 为什么(讲机制), wow 你知道吗(超出课本的趣闻), vis 小图示.
+    const QUESTIONS = [
+      // ===== 第一单元 植物的生长变化 =====
+      { u: 'u1', q: '种子是由哪两部分构成的？', o: ['种皮和胚', '果皮和种子', '花萼和花瓣', '柱头和子房'], a: 0,
+        why: '种子由种皮和胚两部分构成。种皮负责保护，胚里有胚根、胚芽和子叶，是“活”的部分，将来长成一整株植物。',
+        wow: '有的莲花种子能在泥里沉睡上千年，被挖出来还能发芽开花，被叫做“千年古莲”。',
+        vis: '🌰 种子 = 种皮🛡️ + 胚<br>胚 → 胚根·胚芽·子叶' },
+      { u: 'u1', q: '种子萌发时，胚的哪一部分发育成植物的根？', o: ['胚芽', '胚根', '子叶', '种皮'], a: 1,
+        why: '胚根向下长成根，胚芽向上长成茎和叶，子叶像“饭盒”，提供发芽时要用的养分。',
+        wow: '不管你怎么摆放种子，根总朝下、芽总朝上长——植物能“感觉”到地心引力的方向。',
+        vis: '胚根⬇️→根 · 胚芽⬆️→茎叶 · 子叶🍱→养分' },
+      { u: 'u1', q: '种子萌发需要的三个基本条件是？', o: ['阳光、土壤、肥料', '适宜的温度、适量的水分、充足的空气', '高温、大量水、强光', '黑暗、干燥、低温'], a: 1,
+        why: '适宜的温度、适量的水分和充足的空气，三者缺一不可；阳光和土壤反而不是发芽的必需条件。',
+        wow: '把绿豆放在湿纸巾上，没有泥土也照样发芽——这就是“无土发芽”。',
+        vis: '🌡️适温 + 💧适水 + 💨空气 → 🌱发芽' },
+      { u: 'u1', q: '种子萌发时，通常哪一部分先突破种皮？', o: ['胚芽先向上', '胚根先向下', '子叶先张开', '叶子先长出'], a: 1,
+        why: '发芽时胚根先钻出种皮向下扎，先“喝水”站稳，然后胚芽才向上顶出地面。',
+        wow: '豆芽菜那根白白的、最长的部分，其实就是先长出来的胚根和胚轴。',
+        vis: '🌰 → 胚根⬇️(先) → 胚芽⬆️(后)' },
+      { u: 'u1', q: '植物的根有什么作用？', o: ['进行光合作用', '吸收水分和矿物质并固定植物', '制造养分', '传播种子'], a: 1,
+        why: '根像吸管又像锚：一边吸收土里的水分和矿物质，一边把植物牢牢固定住。',
+        wow: '一棵大树地下的根加起来可能比地上还长，有的能往下扎十几米去找水。',
+        vis: '🌱 根：💧吸水+矿物质 · ⚓固定植物' },
+      { u: 'u1', q: '凤仙花的根属于哪种根系？', o: ['须根系', '直根系', '变态根', '气生根'], a: 1,
+        why: '凤仙花有一条粗主根和许多侧根，是直根系；葱、韭菜没有明显主根，是须根系。',
+        wow: '胡萝卜、红薯我们吃的部分，其实是膨大的根，是植物把养分藏起来的“地下仓库”。',
+        vis: '直根系🥕(主根+侧根) ┃ 须根系🧅(一把胡须)' },
+      { u: 'u1', q: '茎的主要作用是？', o: ['吸收水分', '支撑植物、运输水分和养料', '进行呼吸', '繁殖后代'], a: 1,
+        why: '茎支撑植物，还像“双向高速路”：把根吸的水往上运，把叶造的养分往下运。',
+        wow: '把白花插进有色素的水里，几小时后花瓣就被染色——因为茎一直在往上运水。',
+        vis: '根💧→(水↑) 茎🌿 (养分↓)←叶🍃' },
+      { u: 'u1', q: '叶进行光合作用主要是为了？', o: ['吸收水分', '制造养分（有机物）', '散发水分', '固定植物'], a: 1,
+        why: '叶子用阳光、水和二氧化碳制造养分（有机物），这是植物自带的“厨房”。',
+        wow: '我们呼吸的氧气，绝大部分来自植物的光合作用——树和海里的藻类是地球的“氧气工厂”。',
+        vis: '☀️+💧+CO₂ →🍃光合→ 养分 + O₂' },
+      { u: 'u1', q: '叶的蒸腾作用是指？', o: ['吸收二氧化碳', '把体内的水分蒸发出去', '吸收阳光', '制造氧气'], a: 1,
+        why: '蒸腾把叶里的水变成水汽散出去，会“拉”着根不停吸水，还能给植物降温。',
+        wow: '一棵大树一天能蒸腾出几百升水，森林上空的云和雨，部分就是树“呼”出来的。',
+        vis: '🍃蒸腾💨→水汽出 · 帮根吸水💧 · 降温❄️' },
+      { u: 'u1', q: '仙人掌身上的刺其实是它的什么？', o: ['茎', '根', '叶子', '花'], a: 2,
+        why: '仙人掌的叶退化成刺，能大大减少蒸腾、把水牢牢存住，适应干旱炎热的沙漠。',
+        wow: '仙人掌的刺还能在清晨凝结小水珠，沙漠里有些动物就靠舔刺上的露水解渴。',
+        vis: '🌵 叶→刺（少蒸腾·存水💧）适应沙漠☀️' },
+      { u: 'u1', q: '大多数植物的花由哪四部分组成？', o: ['花萼、花瓣、雄蕊、雌蕊', '花药、花丝、柱头、子房', '根、茎、叶、花', '种皮、胚根、胚芽、子叶'], a: 0,
+        why: '完全花有花萼、花瓣、雄蕊、雌蕊四部分；缺其中一部分的叫不完全花。',
+        wow: '我们爱吃的西兰花，其实是还没开放的一大簇花苞——吃的是“花”！',
+        vis: '🌸完全花 = 花萼 + 花瓣 + 雄蕊♂ + 雌蕊♀' },
+      { u: 'u1', q: '雄蕊的花药里藏着许多什么？', o: ['花粉', '黏液', '胚珠', '种子'], a: 0,
+        why: '雄蕊由花药和花丝组成，花药里装满花粉；雌蕊柱头有黏液，能黏住花粉。',
+        wow: '蜜蜂腿上会沾满花粉，边采蜜边帮花“送粉”，一只蜜蜂一天能拜访上千朵花。',
+        vis: '雄蕊♂ = 花药(藏花粉🟡) + 花丝' },
+      { u: 'u1', q: '苍耳、鬼针草的种子主要靠什么方式传播？', o: ['风力传播', '水力传播', '动物传播', '弹力传播'], a: 2,
+        why: '苍耳有钩刺，能钩住动物皮毛“搭便车”到远方，属于动物传播。',
+        wow: '人们正是受苍耳钩刺的启发，发明了能反复粘的“魔术贴”（尼龙搭扣）。',
+        vis: '🦔 苍耳带钩刺 → 钩住皮毛 → 搭便车' },
+      { u: 'u1', q: '蒲公英的种子主要靠什么传播？', o: ['动物传播', '风力传播', '水力传播', '弹力传播'], a: 1,
+        why: '蒲公英种子又轻又带绒毛，像小降落伞，能随风飘很远，属于风力传播。',
+        wow: '蒲公英的“小伞”顶着一团特殊的空气小涡旋飞行，能飘出好几公里远。',
+        vis: '🪂 蒲公英带绒毛 → 随风飞🍃' },
+      { u: 'u1', q: '凤仙花成熟时果实突然爆裂把种子弹出，这属于？', o: ['风力传播', '水力传播', '弹力传播', '动物传播'], a: 2,
+        why: '凤仙花、油菜、绿豆的果实成熟时会突然爆裂，把种子弹射出去，属于弹力传播。',
+        wow: '碰一下成熟的凤仙花果荚，它会“啪”地卷起来弹出种子，所以它还有个名字叫“急性子”。',
+        vis: '💥 果实成熟爆裂 → 弹出种子' },
+      { u: 'u1', q: '果实由哪两部分构成？', o: ['果皮和种子', '种皮和胚', '花瓣和花萼', '柱头和子房'], a: 0,
+        why: '果实由果皮和种子构成：果皮负责保护和传播，种子负责繁殖后代。',
+        wow: '我们以为是蔬菜的西红柿、黄瓜、辣椒，按科学定义其实都是“果实”，因为里面有种子。',
+        vis: '🍎果实 = 果皮(保护/传播) + 种子(繁殖)' },
+      { u: 'u1', q: '凤仙花一生大致经历的顺序是？', o: ['开花→种子→幼苗→成株', '种子→发芽→幼苗→成株→开花→结果', '幼苗→种子→开花→发芽', '结果→开花→幼苗→种子'], a: 1,
+        why: '顺序是种子→发芽→幼苗→成株→开花→结果→种子成熟，一圈走完又能重新开始。',
+        wow: '植物长高是“先快后慢”的，一旦开始开花，个子基本不再长了——能量都拿去开花结果。',
+        vis: '🌰→🌱→🌿→🌸→🍑→🌰（先快后慢）' },
+      { u: 'u1', q: '成熟的凤仙花植株由几部分组成？', o: ['根、茎、叶、花、果实、种子', '只有根、茎、叶', '花和果实', '种子和叶'], a: 0,
+        why: '成熟植株由根、茎、叶、花、果实、种子六部分组成，各有各的任务。',
+        wow: '一株凤仙花能结出几百粒种子，第二年就可能长出一小片凤仙花。',
+        vis: '🌱 根·茎·叶·花·果实·种子（6部分）' },
+
+      // ===== 第二单元 电路 =====
+      { u: 'u2', q: '人体的安全电压是多少？', o: ['不高于36V', '220V', '1.5V', '110V'], a: 0,
+        why: '人体安全电压不高于36V；家里插座是220V交流电，足以致命，绝不能直接碰。',
+        wow: '电鳗能放出600多伏的电，一击就电晕水里的猎物——它是自带“高压电源”的鱼。',
+        vis: '⚠️ 安全≤36V · 干电池1.5V🔋 · 家用220V🏠(危险)' },
+      { u: 'u2', q: '一节新干电池的电压大约是多少？', o: ['36V', '220V', '1.5V', '12V'], a: 2,
+        why: '一节新干电池约1.5V；做电学实验只能用安全的干电池，不能用插座里的电。',
+        wow: '把几节电池首尾排起来电压会相加，遥控器里两节就是1.5+1.5=3V。',
+        vis: '🔋 一节干电池 ≈ 1.5V' },
+      { u: 'u2', q: '发电厂通过导线送到各家各户的电是？', o: ['1.5V直流电', '36V交流电', '220V交流电', '110V直流电'], a: 2,
+        why: '发电厂发的电经过电网送到各家各户，是220V交流电，能致人触电死亡。',
+        wow: '电从发电厂到你家可能跑了几百公里；为了少损耗，路上会先升到几十万伏，再降回220V。',
+        vis: '🏭发电厂 → 电网 → 🏠220V 交流电' },
+      { u: 'u2', q: '小灯泡的灯丝起什么作用？', o: ['发光', '保护和散光', '支撑', '导电'], a: 0,
+        why: '灯丝通电发光；玻璃泡保护灯丝并散光，金属架支撑并导电，连接点也导电。',
+        wow: '灯丝通电时能烧到2000多度，比铁水还烫；玻璃泡里抽掉了氧气，灯丝才不会烧断。',
+        vis: '💡 玻璃泡🛡️ · 灯丝🔥发光 · 金属架/连接点⚡导电' },
+      { u: 'u2', q: '把电池两端用导线直接连接起来会发生什么？', o: ['灯泡更亮', '短路', '形成回路', '什么都不会'], a: 1,
+        why: '电池两端被导线直接连上就是短路，电流猛增，电池迅速耗电、发烫甚至爆炸。',
+        wow: '手机和充电宝里都有保护电路，一旦短路会立刻切断电流，防止过热起火。',
+        vis: '🔋 ➖直接连➕ = 短路🔥（发烫·危险）' },
+      { u: 'u2', q: '电流要让小灯泡发光，必须形成一个完整的？', o: ['短路', '回路', '断路', '开关'], a: 1,
+        why: '电流从正极流出，经过灯丝再回到负极，形成完整回路，灯泡才会亮。',
+        wow: '哪怕电路只断开一丁点缝隙，电流就过不去、灯就灭了——这正是开关的工作原理。',
+        vis: '🔋→🔌导线→💡灯泡→🔘开关→回到🔋（闭合回路）' },
+      { u: 'u2', q: '一个完整的简易电路由哪四部分组成？', o: ['电源、导线、用电器、开关', '电池、灯泡、水、土壤', '导线、纸、塑料、铜', '正极、负极、玻璃、灯丝'], a: 0,
+        why: '电源、导线、用电器、开关四样齐全，才组成一个完整的简易电路。',
+        wow: '你身边的手电筒就是一个最小电路：电池(电源)+灯泡(用电器)+开关+金属片(导线)。',
+        vis: '电源🔋 + 导线🔌 + 用电器💡 + 开关🔘' },
+      { u: 'u2', q: '下列哪一组都是导体？', o: ['橡胶、玻璃、陶瓷', '金属、人体、铅笔芯（石墨）', '干木头、塑料、纸', '陶瓷、橡胶、头发'], a: 1,
+        why: '金属、人体、大地、潮湿物体、石墨等容易让电流通过，是导体。',
+        wow: '铅笔芯是石墨，能导电——用粗铅笔在纸上涂一条很黑的线，竟也能让微弱电流通过。',
+        vis: '导体⚡通：金属·人体·水·石墨✏️' },
+      { u: 'u2', q: '下列哪一组都是绝缘体？', o: ['铜、铁、铝', '橡胶、玻璃、干木头', '人体、大地、石墨', '银、金、潮湿的物体'], a: 1,
+        why: '橡胶、玻璃、陶瓷、干木头、纸等不容易让电流通过，是绝缘体。',
+        wow: '电线外面那层塑料就是绝缘体，把电“关”在铜丝里，我们才能安全地拿着电线。',
+        vis: '绝缘体🚫：橡胶·玻璃·陶瓷·干木头·塑料' },
+      { u: 'u2', q: '为什么不能用湿手或湿抹布触摸电器和开关？', o: ['会弄脏电器', '人体、大地和不纯净的水都是导体，容易触电', '会让电器生锈', '没有影响'], a: 1,
+        why: '人体、大地和不纯净的水都是导体，潮湿时更容易导电，所以湿手不能碰电器开关。',
+        wow: '纯净水其实几乎不导电，真正导电的是水里溶的盐和杂质——而自来水、汗水里都有不少。',
+        vis: '💧湿手=导体 → 碰电器⚡ 危险!' },
+      { u: 'u2', q: '路灯天亮自动熄灭，用的是哪种开关？', o: ['声控开关', '光控开关', '温控开关', '定时开关'], a: 1,
+        why: '路灯天亮自动灭，用的是光控开关；它能“看”光线强弱来通断电路。',
+        wow: '路灯顶上常有个小光敏元件，天黑电阻变大就开灯、天亮就关灯，全程没人管。',
+        vis: '☀️天亮 → 💡灭：光控开关(路灯)' },
+      { u: 'u2', q: '楼道灯晚上有声音就自动亮，用的是哪种开关？', o: ['光控开关', '声控开关', '红外遥控开关', '温控开关'], a: 1,
+        why: '楼道灯一有声音就亮，用的是声控开关，过一会儿自动灭，省电又方便。',
+        wow: '声控灯“听到”的其实是声音的振动；你拍手、跺脚产生的振动让它接通了电路。',
+        vis: '👏有声 → 💡亮：声控开关(楼道灯)' },
+      { u: 'u2', q: '一个开关控制两个或更多用电器、首尾相连的电路叫？', o: ['并联电路', '串联电路', '短路', '断路'], a: 1,
+        why: '用电器首尾相连、由一个开关控制的是串联电路；各有各开关的是并联电路。',
+        wow: '老式小彩灯是串联的——只要其中一个灯坏了，整串就全灭，找起来特别头疼。',
+        vis: '串联：🔋-💡-💡 首尾相连，一个开关全控' },
+      { u: 'u2', q: '用电路检测器检测前必须先做什么？', o: ['把电池卸下来，并让两个检测头互相接触试灯', '直接去测家用电器', '把灯泡拆掉', '把导线剪断'], a: 0,
+        why: '检测前要卸下被测电路的电池，并先让两个检测头互碰试灯，确认检测器本身没坏。',
+        wow: '维修工查线路也是这样：先在已知好的地方测一下仪器准不准，再去找毛病。',
+        vis: '检测器：先两头互碰试灯✅ · 卸下电池🔋' },
+      { u: 'u2', q: '电路检测器不能用来检测什么？', o: ['简易电路', '接线盒', '家用电器电路', '小灯泡'], a: 2,
+        why: '电路检测器只能测干电池的低压电路，绝不能去测220V的家用电器电路。',
+        wow: '专业电工测家用电路会用万用表，并先断电、戴绝缘手套——220V可不是闹着玩的。',
+        vis: '🚫 检测器不能测家用220V电路' },
+
+      // ===== 第三单元 岩石与土壤 =====
+      { u: 'u3', q: '古代动植物的遗体或痕迹被称为？', o: ['矿物', '化石', '土壤', '标本'], a: 1,
+        why: '化石是古代动植物的遗体或痕迹。喜马拉雅山上发现菊石化石，说明那里几亿年前是海洋。',
+        wow: '科学家靠化石和岩石里的元素“数年轮”，算出地球大约有46亿岁了。',
+        vis: '🦕→🪨 化石=古生物痕迹（菊石🐚→曾是海🌊）' },
+      { u: 'u3', q: '土壤剖面从上到下一般由哪几层组成？', o: ['表层土、下层土、基岩碎屑、基岩', '沙、水、空气、石头', '黏土、沙、腐殖质、水', '岩石、矿物、化石、土壤'], a: 0,
+        why: '从上到下是表层土、下层土、基岩碎屑、基岩；土壤的形成过程极其漫长。',
+        wow: '形成约1厘米厚的土壤可能要几百年；我们脚下的土，比爷爷的爷爷还要老得多。',
+        vis: '表层土🌱 / 下层土 / 基岩碎屑 / 基岩🪨' },
+      { u: 'u3', q: '研究岩石硬度时，能用指甲刻出痕迹说明岩石？', o: ['很硬', '软', '较硬', '是金属'], a: 1,
+        why: '能用指甲刻出痕的是软；指甲刻不动但铜钥匙能刻的是较软；都刻不动的是硬。',
+        wow: '世界上最硬的天然矿物是金刚石（钻石），硬到只能用钻石去切钻石。',
+        vis: '能刻动=更软：指甲💅 ＜ 铜钥匙🔑 ＜ 小刀🔪' },
+      { u: 'u3', q: '花岗岩主要由哪三种矿物组成？', o: ['石英、长石、云母', '盐、石膏、石墨', '金、银、铜', '沙、黏土、腐殖质'], a: 0,
+        why: '花岗岩由无色透明的石英、肉红色的长石和黑色的云母组成，所以看上去“花花”的。',
+        wow: '很多城市的台阶和纪念碑都用花岗岩，又硬又耐磨，能立上千年不坏。',
+        vis: '花岗岩 = 石英💎(无色) + 长石(肉红) + 云母⚫(黑)' },
+      { u: 'u3', q: '石英、长石、云母从硬到软的正确排序是？', o: ['云母、长石、石英', '长石、石英、云母', '石英、长石、云母', '云母、石英、长石'], a: 2,
+        why: '这三种矿物从硬到软是：石英、长石、云母。',
+        wow: '云母能一层层撕成很薄的透明片，古时候没有玻璃，人们曾用云母片当窗户。',
+        vis: '硬 → 软：石英💎 ＞ 长石 ＞ 云母⚫' },
+      { u: 'u3', q: '判断矿物时，为什么条痕颜色比外表颜色更可靠？', o: ['条痕更鲜艳', '外表颜色易受环境影响变化，条痕颜色固定单一', '条痕颜色会发光', '外表颜色看不见'], a: 1,
+        why: '矿物外表颜色会被环境影响而变化，而条痕（在白瓷板上划的痕迹）颜色固定、单一，更可靠。',
+        wow: '黄铁矿金灿灿的，常被当成黄金，号称“愚人金”；但它的条痕是黑绿色，一划就露馅。',
+        vis: '条痕：白瓷板上划🔲 → 颜色固定，比外表可靠' },
+      { u: 'u3', q: '由于水、大气、气温或动植物的作用使岩石破碎的现象叫？', o: ['风化', '化石', '沉积', '熔化'], a: 0,
+        why: '岩石在水、大气、气温或动植物作用下慢慢破碎，这叫风化，过程非常缓慢。',
+        wow: '反复的冷热和结冰能把大石头“撑”裂——水钻进缝里结冰会变大，像一把无形的楔子。',
+        vis: '🌊💨🌡️🌱 长年累月 → 岩石破碎 = 风化(很慢)' },
+      { u: 'u3', q: '岩石、沙和黏土相比，能团成小球且很久才平摊的是？', o: ['岩石', '沙', '黏土', '都可以'], a: 2,
+        why: '黏土颗粒最小，能团成球且很久才平摊；沙能团但很快摊开；岩石根本团不成。',
+        wow: '正因为黏土能塑形又能烧硬，人类几千年前就用它做出了陶罐、瓷碗和砖头。',
+        vis: '团一团：黏土🟤成球(久) ＞ 沙(快摊) ＞ 岩石(不能)' },
+      { u: 'u3', q: '土壤是哪些物质的混合物？', o: ['只有沙和水', '沙砾、沙、黏土、腐殖质、水和空气', '只有黏土和腐殖质', '岩石和矿物'], a: 1,
+        why: '土壤是沙砾、沙、黏土、腐殖质、水和空气混合而成的。',
+        wow: '腐殖质是落叶和小动物残体腐烂变成的；蚯蚓边吃边松土，是了不起的“土壤工程师”。',
+        vis: '土壤 = 沙砾 + 沙 + 黏土 + 腐殖质 + 💧 + 💨' },
+      { u: 'u3', q: '把水倒进装土壤的杯子搅拌，看到冒气泡说明土壤里有？', o: ['水分', '空气', '腐殖质', '黏土'], a: 1,
+        why: '往土壤里倒水搅拌冒气泡，说明土里有空气；静置后重的先沉，说明沙比黏土重。',
+        wow: '土里的空气是根和蚯蚓“呼吸”用的；土被踩得太实没了空气，植物反而长不好。',
+        vis: '搅拌土壤水 → 冒气泡💨 = 土里有空气' },
+      { u: 'u3', q: '保水性、保肥性、渗水性和透气性都比较好的理想土壤是？', o: ['沙质土', '黏质土', '壤土', '基岩'], a: 2,
+        why: '壤土保水、保肥、渗水、透气都不错，是最理想的土壤，适合种各种作物。',
+        wow: '农民常往地里加腐熟的落叶和粪肥，就是为了把普通土慢慢“养”成松软肥沃的壤土。',
+        vis: '壤土🌾：保水·保肥·透气都好 → 最理想' },
+      { u: 'u3', q: '渗水快、透气好但保水保肥性差的是哪种土壤？', o: ['沙质土', '黏质土', '壤土', '腐殖土'], a: 0,
+        why: '沙质土沙粒多，渗水最快、透气好，但存不住水和肥，适合花生、大豆、果树等。',
+        wow: '沙漠里的仙人掌和西瓜都爱沙质土——水一浇就渗下去，根才不会因积水烂掉。',
+        vis: '沙质土：渗水快💧透气好，但存不住水肥' },
+      { u: 'u3', q: '关于矿产资源，下列说法正确的是？', o: ['可以随便开采', '属于国家，任何组织和个人不得私自开采', '是可再生资源', '没有用处'], a: 1,
+        why: '矿产资源属于国家，任何人不得私自开采；岩石矿物不可再生，要保护、合理利用。',
+        wow: '一部手机里藏着几十种矿物元素：金、银、锂、稀土……所以回收旧手机也是在“挖矿”。',
+        vis: '⛏️ 矿产属于国家 · 不可再生 → 要保护' },
+      { u: 'u3', q: '做铅笔芯用的、硬度很小的矿物是？', o: ['金刚石', '石墨', '石膏', '石英'], a: 1,
+        why: '石墨硬度最小，用来做铅笔芯；金刚石硬度最大，用来做钻石；石膏能点豆腐。',
+        wow: '石墨和钻石都是纯碳，只是碳原子排列方式不同——一个最软、一个最硬，差别巨大！',
+        vis: '✏️石墨(最软)→铅笔芯 ┃ 💎金刚石(最硬)→钻石' }
+    ];
+
+    const UNIT_KEYS = ['u1', 'u2', 'u3', 'all'];
+    const RUN_LEN = 10; // 每批题数；一个单元按批次全部复习完（不重复）后再换新顺序
+
+    /* ---------------- state ---------------- */
+    const els = {
+      gameTitle: document.getElementById('gameTitle'), score: document.getElementById('score'),
+      scoreLabel: document.getElementById('scoreLabel'), combo: document.getElementById('combo'),
+      comboLabel: document.getElementById('comboLabel'), comboPill: document.getElementById('comboPill'),
+      hearts: document.getElementById('hearts'), trackToken: document.getElementById('trackToken'),
+      trackLabel: document.getElementById('trackLabel'),
+      qUnit: document.getElementById('qUnit'), qIndex: document.getElementById('qIndex'),
+      qText: document.getElementById('qText'), options: document.getElementById('options'),
+      petName: document.getElementById('petName'), petAvatar: document.getElementById('petAvatar'),
+      petTalk: document.getElementById('petTalk'),
+      voiceBtn: document.getElementById('voiceBtn'), voiceBtnLabel: document.getElementById('voiceBtnLabel'),
+      start: document.getElementById('start'), changeUnit: document.getElementById('changeUnit'),
+      prev: document.getElementById('prev'), next: document.getElementById('next'),
+      fxLayer: document.getElementById('fxLayer'),
+      resultStars: document.getElementById('resultStars'),
+      intro: document.getElementById('intro'), introTitle: document.getElementById('introTitle'),
+      introText: document.getElementById('introText'), unitGrid: document.getElementById('unitGrid'),
+      result: document.getElementById('result'), resultTitle: document.getElementById('resultTitle'),
+      resultGrade: document.getElementById('resultGrade'), resultText: document.getElementById('resultText'),
+      rsCorrect: document.getElementById('rsCorrect'), rsCombo: document.getElementById('rsCombo'),
+      rsScore: document.getElementById('rsScore'),
+      rsCorrectLabel: document.getElementById('rsCorrectLabel'), rsComboLabel: document.getElementById('rsComboLabel'),
+      rsScoreLabel: document.getElementById('rsScoreLabel'),
+      again: document.getElementById('again'), changeUnit2: document.getElementById('changeUnit2')
+    };
+
+    let queue = [];        // current run's questions
+    let qi = 0;            // index within queue
+    let score = 0;
+    let combo = 0;
+    let maxCombo = 0;
+    let hearts = 3;
+    let correctCount = 0;
+    let answers = [];      // answers[i] = { chosen, correct } once question i is answered
+    let orders = [];       // orders[i] = stable option display order for question i
+    let progress = {};     // per-unit { seq:[shuffled questions], cursor:int } for no-repeat batches
+    let currentUnit = 'all';
+    let running = false;
+    let petObjectUrl = null;
+    let petRequestId = null;
+
+    /* ---------------- helpers ---------------- */
+    function shuffle(arr) {
+      const a = arr.slice();
+      for (let i = a.length - 1; i > 0; i--) {
+        const j = Math.floor(Math.random() * (i + 1));
+        [a[i], a[j]] = [a[j], a[i]];
+      }
+      return a;
+    }
+    function unitLabel(u) { return L().units[u]; }
+    function questionsFor(u) { return u === 'all' ? QUESTIONS.slice() : QUESTIONS.filter(q => q.u === u); }
+    // Per-unit batch progress: a single shuffled pass through the unit served in
+    // chunks of RUN_LEN, with `cursor` counting questions already reviewed. When a
+    // pass is finished we reshuffle for a fresh, differently-ordered pass.
+    function getProgress(unit) {
+      let p = progress[unit];
+      if (!p || p.cursor >= p.seq.length) { p = { seq: shuffle(questionsFor(unit)), cursor: 0 }; progress[unit] = p; }
+      return p;
+    }
+    function post(type, data = {}, extra = {}) { try { window.parent.postMessage({ type, data, ...extra }, '*'); } catch (e) {} }
+    function setBubble(text) { els.petTalk.textContent = text; }
+    function pulsePet(cls) {
+      els.petAvatar.classList.remove('happy', 'sad');
+      void els.petAvatar.offsetWidth;
+      els.petAvatar.classList.add(cls);
+    }
+    function toast(html) {
+      const box = document.createElement('div');
+      box.className = 'toast';
+      box.innerHTML = html;
+      document.body.appendChild(box);
+      setTimeout(() => box.remove(), 1300);
+    }
+    function renderHearts() {
+      els.hearts.textContent = '❤'.repeat(hearts) + '🖤'.repeat(Math.max(0, 3 - hearts));
+    }
+    function updateTrack() {
+      const total = queue.length || 1;
+      const frac = Math.min(1, correctCount / total);
+      els.trackToken.style.left = (frac * 100) + '%';
+      els.trackToken.textContent = frac >= 1 ? '🐥' : (frac >= 0.5 ? '🐣' : '🥚'); // egg hatches as you advance
+    }
+
+    /* ---------------- fun FX: sound + confetti + popups ---------------- */
+    const soundOn = true;
+    let actx = null;
+    function audioCtx() {
+      try {
+        if (!actx) actx = new (window.AudioContext || window.webkitAudioContext)();
+        if (actx.state === 'suspended') actx.resume();
+      } catch (_) { actx = null; }
+      return actx;
+    }
+    function tone(freq, start, dur, type, vol) {
+      const ac = audioCtx(); if (!ac) return;
+      const t0 = ac.currentTime + start;
+      const osc = ac.createOscillator(), g = ac.createGain();
+      osc.type = type || 'sine'; osc.frequency.setValueAtTime(freq, t0);
+      g.gain.setValueAtTime(0.0001, t0);
+      g.gain.linearRampToValueAtTime(vol || 0.16, t0 + 0.02);
+      g.gain.exponentialRampToValueAtTime(0.0001, t0 + dur);
+      osc.connect(g); g.connect(ac.destination);
+      osc.start(t0); osc.stop(t0 + dur + 0.03);
+    }
+    function sfx(name, n) {
+      if (!soundOn) return;
+      if (name === 'tap') tone(440, 0, 0.07, 'triangle', 0.10);
+      else if (name === 'correct') {
+        const lift = Math.min(5, (n || 1) - 1);               // pitch climbs with the streak
+        [0, 4, 7, 12].forEach((s, i) => tone(523.25 * Math.pow(2, (s + lift) / 12), i * 0.07, 0.18, 'triangle', 0.16));
+      } else if (name === 'wrong') { tone(300, 0, 0.16, 'sawtooth', 0.12); tone(196, 0.12, 0.24, 'sawtooth', 0.12); }
+      else if (name === 'heart') { [784, 988, 1319].forEach((f, i) => tone(f, i * 0.08, 0.22, 'sine', 0.18)); }
+      else if (name === 'wow') { tone(1175, 0, 0.14, 'sine', 0.11); tone(1568, 0.09, 0.2, 'sine', 0.11); } // soft "discovery" sparkle when the 知道更多 card appears
+      else if (name === 'win') { [523, 659, 784, 1047, 1319].forEach((f, i) => tone(f, i * 0.11, 0.32, 'triangle', 0.18)); }
+      else if (name === 'lose') { [392, 330, 262].forEach((f, i) => tone(f, i * 0.16, 0.3, 'sine', 0.15)); }
+    }
+    const CONFETTI_COLORS = ['#f59e0b', '#22c55e', '#0ea5e9', '#ef4444', '#a855f7', '#ec4899', '#facc15'];
+    function confettiBurst(x, y, count, spread) {
+      const layer = els.fxLayer; if (!layer) return;
+      for (let i = 0; i < count; i++) {
+        const s = document.createElement('span');
+        s.className = 'confetti';
+        s.style.left = x + 'px'; s.style.top = y + 'px';
+        s.style.background = CONFETTI_COLORS[i % CONFETTI_COLORS.length];
+        const ang = Math.random() * Math.PI * 2;
+        const dist = spread * (0.4 + Math.random() * 0.8);
+        const dx = Math.cos(ang) * dist;
+        const dy = Math.sin(ang) * dist + 130 + Math.random() * 140; // gravity
+        s.style.setProperty('--dx', dx.toFixed(0) + 'px');
+        s.style.setProperty('--dy', dy.toFixed(0) + 'px');
+        s.style.setProperty('--rot', (Math.random() * 720 - 360).toFixed(0) + 'deg');
+        const dur = 0.9 + Math.random() * 0.7;
+        s.style.animation = `confettiFall ${dur}s ease-out forwards`;
+        layer.appendChild(s);
+        setTimeout(() => s.remove(), dur * 1000 + 80);
+      }
+    }
+    function confettiAtEl(el, count, spread) {
+      if (!el) return;
+      const r = el.getBoundingClientRect();
+      confettiBurst(r.left + r.width / 2, r.top + r.height / 2, count, spread);
+    }
+    function bigConfetti() {
+      const w = window.innerWidth, h = window.innerHeight;
+      for (let k = 0; k < 4; k++) setTimeout(() => confettiBurst(w * (0.2 + 0.2 * k), h * 0.28, 24, 220), k * 170);
+    }
+    function floatScore(text) {
+      const r = els.score.getBoundingClientRect();
+      const el = document.createElement('div');
+      el.className = 'scorePop';
+      el.textContent = text;
+      el.style.left = (r.left + r.width / 2) + 'px';
+      el.style.top = (r.top - 6) + 'px';
+      document.body.appendChild(el);
+      setTimeout(() => el.remove(), 950);
+    }
+    let scoreAnim = null;
+    function setScore(target) {
+      const start = Number(els.score.textContent) || 0;
+      if (scoreAnim) cancelAnimationFrame(scoreAnim);
+      let t0 = null;
+      function step(now) {
+        if (t0 === null) t0 = now;
+        const k = Math.min(1, (now - t0) / 450);
+        els.score.textContent = String(Math.round(start + (target - start) * k));
+        if (k < 1) scoreAnim = requestAnimationFrame(step);
+      }
+      scoreAnim = requestAnimationFrame(step);
+    }
+    function celebratePet() {
+      els.petAvatar.classList.remove('happy', 'sad', 'celebrate');
+      void els.petAvatar.offsetWidth;
+      els.petAvatar.classList.add('celebrate');
+    }
+    function bumpCombo() {
+      els.comboPill.classList.remove('bump');
+      void els.comboPill.offsetWidth;
+      els.comboPill.classList.add('bump');
+    }
+    function renderStars(n) {
+      els.resultStars.innerHTML = '';
+      for (let i = 0; i < 3; i++) {
+        const s = document.createElement('span');
+        s.className = 'star' + (i < n ? '' : ' off');
+        s.style.animationDelay = (i * 0.12) + 's';
+        s.textContent = '⭐';
+        els.resultStars.appendChild(s);
+      }
+    }
+
+    /* ---------------- static text ---------------- */
+    function applyStaticText() {
+      document.documentElement.setAttribute('lang', LANG === 'enUS' ? 'en' : 'zh-CN');
+      els.gameTitle.textContent = t('gameTitle');
+      els.scoreLabel.textContent = t('scoreLabel');
+      els.comboLabel.textContent = t('comboLabel');
+      els.trackLabel.textContent = t('trackLabel');
+      els.introTitle.textContent = t('introTitle');
+      els.introText.textContent = t('introText');
+      els.start.textContent = t('startBtn');
+      els.prev.textContent = t('prevBtn');
+      els.next.textContent = t('nextBtn');
+      els.changeUnit.textContent = t('changeUnit');
+      els.changeUnit2.textContent = t('changeUnit');
+      els.again.textContent = t('again');
+      els.rsCorrectLabel.textContent = t('rsCorrect');
+      els.rsComboLabel.textContent = t('rsCombo');
+      els.rsScoreLabel.textContent = t('rsScore');
+      if (els.voiceBtnLabel) els.voiceBtnLabel.textContent = voiceOn ? t('voiceStop') : (voiceBusy ? t('voiceConnecting') : t('voiceStart'));
+      if (!running) {
+        els.petName.textContent = t('petDefault');
+      }
+      buildUnitGrid();
+    }
+    function buildUnitGrid() {
+      els.unitGrid.innerHTML = '';
+      UNIT_KEYS.forEach(u => {
+        const btn = document.createElement('button');
+        btn.className = 'unitBtn';
+        btn.type = 'button';
+        const n = questionsFor(u).length;
+        const p = progress[u];
+        const done = p ? Math.min(p.cursor, n) : 0;
+        const cnt = (done > 0 && done < n) ? t('reviewedFmt', { done, all: n }) : t('cntFmt', { n });
+        btn.innerHTML = `<span class="emoji">${L().unitEmoji[u]}</span>` +
+          `<span>${L().unitShort[u]}</span>` +
+          `<span class="cnt">${cnt}</span>`;
+        btn.onclick = () => { sfx('tap'); startRun(u); };
+        els.unitGrid.appendChild(btn);
+      });
+    }
+
+    /* ---------------- flow ---------------- */
+    function openIntro() {
+      running = false;
+      els.result.hidden = true;
+      els.intro.hidden = false;
+      els.changeUnit.hidden = true;
+      els.start.hidden = false;
+      els.prev.hidden = true;
+      els.next.hidden = true;
+      els.petName.textContent = t('petDefault');
+      buildUnitGrid();
+    }
+
+    function startRun(unit) {
+      currentUnit = unit;
+      const p = getProgress(unit);
+      queue = p.seq.slice(p.cursor, p.cursor + RUN_LEN); // next unseen batch (cursor advances at endRun)
+      qi = 0; score = 0; combo = 0; maxCombo = 0; hearts = 3; correctCount = 0; running = true;
+      answers = []; orders = [];
+      els.intro.hidden = true;
+      els.result.hidden = true;
+      els.start.hidden = true;
+      els.changeUnit.hidden = false;
+      els.score.textContent = '0';
+      els.combo.textContent = '0';
+      els.comboPill.classList.remove('hot');
+      renderHearts();
+      els.trackToken.textContent = '🥚';
+      post('gameStarted');
+      showQuestion();
+    }
+
+    // Render the current question. If it has already been answered, show it read-only
+    // with the correct answer + explanation (review mode); otherwise show it live.
+    function showQuestion() {
+      const item = queue[qi];
+      const ans = answers[qi];
+      els.qUnit.textContent = unitLabel(item.u);
+      els.qIndex.textContent = t('qIndexFmt', { i: qi + 1, n: queue.length });
+      els.qText.textContent = item.q;
+      updateTrack();
+      els.options.innerHTML = '';
+
+      let order = orders[qi];
+      if (!order) { order = shuffle(item.o.map((_, idx) => idx)); orders[qi] = order; }
+      const letters = ['A', 'B', 'C', 'D', 'E', 'F'];
+      order.forEach((origIdx, pos) => {
+        const btn = document.createElement('button');
+        btn.className = 'opt';
+        btn.type = 'button';
+        btn.innerHTML = `<span class="tag">${letters[pos]}</span><span class="txt">${item.o[origIdx]}</span>`;
+        btn.dataset.idx = String(origIdx);
+        if (ans) {
+          btn.disabled = true;
+          if (origIdx === item.a) btn.classList.add('correct');
+          else if (origIdx === ans.chosen) btn.classList.add('wrong');
+          else btn.classList.add('dim');
+        } else {
+          btn.onclick = () => answer(origIdx, item);
+        }
+        els.options.appendChild(btn);
+      });
+
+      if (ans) {
+        // The "知道更多" reveal — the centerpiece. Shown for BOTH correct and wrong:
+        // correct answer + 为什么(机制) + 你知道吗(超出课本的趣闻) + 小图示.
+        const card = document.createElement('div');
+        card.className = 'reveal' + (ans.correct ? ' ok' : '');
+        let html = `<div class="reveal-head">${ans.correct ? t('revealRight') : t('revealWrongFmt', { ans: item.o[item.a] })}</div>`;
+        if (item.vis) html += `<div class="reveal-vis">${item.vis}</div>`;
+        if (item.why) html += `<div class="reveal-sec why"><span class="reveal-tag">🤔 ${t('whyLabel')}</span>${item.why}</div>`;
+        if (item.wow) html += `<div class="reveal-sec wow"><span class="reveal-tag">💡 ${t('wowLabel')}</span>${item.wow}</div>`;
+        card.innerHTML = html;
+        els.options.appendChild(card);
+      } else {
+        voiceOnQuestionShown(); // 语音模式：让伙伴读这道未作答的题目（不剧透答案）
+      }
+      updateNav();
+    }
+
+    // Show 上一题 whenever we're past the first question; show 下一题 / 查看结果 only
+    // once the current question has been answered (forces a confirm before moving on).
+    function updateNav() {
+      els.prev.hidden = false;
+      els.prev.disabled = qi === 0;
+      const ans = answers[qi];
+      if (!ans) { els.next.hidden = true; return; }
+      els.next.hidden = false;
+      const lastAnswered = answers.length - 1;
+      const canAnswerMore = hearts > 0 && lastAnswered < queue.length - 1;
+      const isFrontier = qi >= lastAnswered;
+      els.next.textContent = (isFrontier && !canAnswerMore) ? t('finishBtn') : t('nextBtn');
+    }
+
+    function goPrev() {
+      if (qi > 0) { qi--; showQuestion(); }
+    }
+    function goNext() {
+      if (!answers[qi]) return;
+      const lastAnswered = answers.length - 1;
+      if (qi < lastAnswered) { qi++; showQuestion(); return; } // forward through reviewed questions
+      // at the frontier: continue to the next live question, or end the run
+      const canAnswerMore = hearts > 0 && lastAnswered < queue.length - 1;
+      if (canAnswerMore) { qi++; showQuestion(); }
+      else endRun();
+    }
+
+    function answer(chosenIdx, item) {
+      if (answers[qi]) return; // already answered — review mode
+      const correct = chosenIdx === item.a;
+      answers[qi] = { chosen: chosenIdx, correct };
+
+      if (correct) {
+        correctCount++;
+        combo++;
+        maxCombo = Math.max(maxCombo, combo);
+        const gain = 20 + Math.min(30, (combo - 1) * 5); // base + 连对奖励
+        score += gain;
+        setScore(score);
+        floatScore('+' + gain);
+        els.combo.textContent = String(combo);
+        els.comboPill.classList.toggle('hot', combo >= 2);
+        bumpCombo();
+        sfx('correct', combo);
+        pulsePet('happy');
+        // every 5th in a streak earns a heart back (if not full) — big reward moment
+        if (combo % 5 === 0 && hearts < 3) {
+          hearts++; renderHearts(); sfx('heart'); celebratePet();
+          toast(t('heartGainToast'));
+        } else if (combo >= 3) {
+          celebratePet();
+          toast(t('comboToastFmt', { n: combo }) + ' 🔥');
+        }
+      } else {
+        combo = 0;
+        els.combo.textContent = '0';
+        els.comboPill.classList.remove('hot');
+        hearts = Math.max(0, hearts - 1);
+        renderHearts();
+        sfx('wrong');
+        pulsePet('sad');
+      }
+      showQuestion(); // re-render this question in answered state (reveal card + 下一题)
+      els.options.scrollTop = els.options.scrollHeight; // keep the 知道更多 card in view
+      // keep confetti small so it never covers the reveal card (content is the star)
+      if (correct) confettiAtEl(els.options.querySelector('.opt.correct'), combo >= 3 ? 16 : 10, combo >= 3 ? 150 : 110);
+      setTimeout(() => sfx('wow'), 300); // gentle chime as the 知道更多 card appears
+      voiceOnAnswered(item, answers[qi]); // 语音模式：让伙伴点评结果并讲解知识点
+    }
+
+    function gradeKey() {
+      const total = queue.length || 1;
+      const r = correctCount / total;
+      if (correctCount === total) return 'gradeS';
+      if (r >= 0.8) return 'gradeA';
+      if (r >= 0.6) return 'gradeB';
+      return 'gradeC';
+    }
+
+    function endRun() {
+      running = false;
+      const total = queue.length;
+      const passed = hearts > 0 && correctCount >= Math.ceil(total * 0.6);
+      const win = hearts > 0;
+      // advance the unit's batch cursor by the questions actually answered, so a run
+      // cut short by losing hearts leaves its unseen questions for the next batch.
+      const p = progress[currentUnit];
+      if (p) p.cursor = Math.min(p.seq.length, p.cursor + answers.length);
+      const poolSize = p ? p.seq.length : total;
+      const reviewed = p ? p.cursor : correctCount;
+      const remaining = p ? Math.max(0, p.seq.length - p.cursor) : 0;
+      const passComplete = remaining === 0;
+
+      const gk = gradeKey();
+      const stars = !win ? 0 : (gk === 'gradeS' || gk === 'gradeA') ? 3 : (gk === 'gradeB' ? 2 : 1);
+      renderStars(stars);
+      els.resultTitle.textContent = win ? t('resultTitle') : t('resultTitleFail');
+      els.resultGrade.textContent = t(gk);
+      const baseText = !win ? t('resultTextFail') : (correctCount === total ? t('resultTextWin') : (passed ? t('resultTextWin') : t('resultTextOk')));
+      const batchInfo = passComplete ? t('passDoneText') : t('remainText', { n: remaining });
+      els.resultText.innerHTML = baseText + '<br><span class="batchInfo">' + batchInfo + '</span>';
+      els.again.textContent = passComplete ? t('newPassBtn') : t('nextBatchBtn');
+      els.rsCorrect.textContent = `${correctCount}/${total}`;
+      els.rsCombo.textContent = String(maxCombo);
+      els.rsScore.textContent = String(score);
+      els.changeUnit.hidden = true;
+      els.start.hidden = true;
+      els.prev.hidden = true;
+      els.next.hidden = true;
+      els.result.hidden = false;
+      if (win) { sfx('win'); bigConfetti(); } else { sfx('lose'); }
+      // reward: keep earnedPoints aligned with score so parent levelReward works
+      const earnedPoints = score;
+      post('gameFinished', {
+        earnedPoints, score, correct: correctCount, total,
+        unit: currentUnit, streakMax: maxCombo, passed,
+        reviewed, poolSize, passComplete, finishedAt: Date.now()
+      });
+    }
+
+    /* ---------------- pet sprite (optional, from parent) ---------------- */
+    function requestPetImage(petId = '') {
+      const requestId = `sciquiz_pet_${Date.now()}`;
+      petRequestId = requestId;
+      post('haqi_get_pet_image', { requestId, anim: 'idle', petId: petId || undefined }, { requestId, anim: 'idle', petId: petId || undefined });
+      setTimeout(() => {
+        if (petObjectUrl) return;
+        const fallbackId = `sciquiz_pets_${Date.now()}`;
+        post('haqi_get_pet_images', { requestId: fallbackId, anim: 'idle' }, { requestId: fallbackId, anim: 'idle' });
+      }, 900);
+    }
+    function mountPet(pet) {
+      if (!pet?.imageBlob || !pet?.uv) return;
+      if (petObjectUrl) URL.revokeObjectURL(petObjectUrl);
+      petObjectUrl = URL.createObjectURL(pet.imageBlob);
+      const uv = pet.uv;
+      const el = document.createElement('div');
+      el.className = 'petSprite';
+      el.style.backgroundImage = `url("${petObjectUrl}")`;
+      if (uv.cols > 1 || uv.rows > 1) {
+        el.style.backgroundSize = `${uv.cols * 100}% ${uv.rows * 100}%`;
+        el.style.backgroundPosition = `${uv.cols > 1 ? uv.col * 100 / (uv.cols - 1) : 50}% ${uv.rows > 1 ? uv.row * 100 / (uv.rows - 1) : 50}%`;
+      } else {
+        el.style.backgroundSize = 'contain'; el.style.backgroundPosition = 'center';
+      }
+      els.petAvatar.innerHTML = ''; els.petAvatar.appendChild(el);
+      if (pet.name) els.petName.textContent = t('petNameFmt', { name: pet.name });
+    }
+
+    /* ---------------- 语音陪学（KeepworkSDK AIChatRTC 实时语音）---------------- */
+    // 标准 minigame 为独立 HTML，按需懒加载 SDK，仅在点击语音时付出加载成本。
+    const SDK_URL = 'https://cdn.keepwork.com/sdk/keepworkSDK.iife.js?v=20260612a';
+    let rtcSdkPromise = null;
+    function ensureSDK() {
+      if (window.AIChatRTC) return Promise.resolve();
+      if (rtcSdkPromise) return rtcSdkPromise;
+      rtcSdkPromise = new Promise((resolve, reject) => {
+        const s = document.createElement('script');
+        s.src = SDK_URL; s.async = true;
+        s.onload = () => (window.AIChatRTC ? resolve() : reject(new Error('AIChatRTC missing')));
+        s.onerror = () => { rtcSdkPromise = null; reject(new Error('SDK load failed')); };
+        document.head.appendChild(s);
+      });
+      return rtcSdkPromise;
+    }
+
+    const VOICE_LETTERS = ['A', 'B', 'C', 'D', 'E', 'F'];
+
+    // 与单元绑定的角色 + 行为规则系统提示（与具体题目无关；每题的事实通过 [题目]/[已作答] 消息注入）。
+    function voiceSystemPrompt() {
+      const petName = (els.petName.textContent || '').replace(/^[^:：]*[:：]\s*/, '').trim() || L().pet;
+      const unit = unitLabel(currentUnit);
+      if (LANG === 'enUS') {
+        return [
+          `You are ${petName}, a warm voice study-buddy in Haqi Planet's "Science Final Quiz", helping a primary-school kid review "${unit}".`,
+          'Rules:',
+          '0. Always focus ONLY on the question currently on the child\'s screen — that is the most recent "[Question]" or "[Answered]" message you received. Never talk about other questions or make one up.',
+          '1. The app sends you "[Question]" messages with the current question, options and correct answer. Read the question and each option aloud in a friendly way and guide the child to think — but NEVER say or hint at the correct answer.',
+          '2. The child talks to you by voice. If the child clearly names an option or asks you to pick, call the choose_answer tool (letter = the option letter). If the question is already answered and the child wants to continue, call the next_question tool.',
+          '3. The app sends "[Answered]" messages with the result and the key point. Then briefly tell the child whether they were right, what the correct answer is, and explain why with an everyday example; you may add one fun fact.',
+          '4. Always be warm, encouraging and conversational, suitable for a child. At most 3 short sentences per turn.',
+        ].join('\n');
+      }
+      return [
+        `你是"蛋蛋星球·科学期末闯关"里的语音陪学伙伴${petName}，正在陪一位小学生复习《${unit}》。`,
+        '请遵守以下规则：',
+        '0. 你始终只围绕小朋友屏幕上"当前显示的那一道题"交流，也就是你最近收到的「[题目]」或「[已作答]」消息；不要谈论别的题目，也不要自己编题。',
+        '1. 程序会用「[题目]」开头的消息告诉你当前题目、选项和正确答案。收到后用亲切的口语把题目和每个选项读给小朋友听，引导他思考，但绝对不要说出或暗示正确答案。',
+        '2. 小朋友会用语音和你交流。如果他清楚地说出某个选项、或请你帮他选，就调用 choose_answer 工具（letter 为选项字母）替他作答；如果题目已作答、他想继续，就调用 next_question 工具进入下一题。',
+        '3. 程序会用「[已作答]」开头的消息告诉你作答结果和知识点。收到后简短告诉他答对还是答错、正确答案是什么，并用生活中的例子讲清楚为什么，可以再补充一个有趣的小知识。',
+        '4. 始终热情、鼓励、口语化，适合小学生，每次最多3句话，不要一次读太多。',
+      ].join('\n');
+    }
+
+    // 自定义工具定义（OpenAI 格式）：合并进 LLMConfig.Tools，执行时由 sandbox.registerAPI 注册的本地函数处理。
+    const VOICE_TOOLS = [
+      { type: 'function', function: {
+        name: 'choose_answer',
+        description: 'Select an option for the current quiz question on the child\'s behalf. Call when the child clearly states an option or asks you to pick one.',
+        parameters: { type: 'object', properties: { letter: { type: 'string', description: 'Option letter shown on screen, e.g. A, B, C or D' } }, required: ['letter'] },
+      } },
+      { type: 'function', function: {
+        name: 'next_question',
+        description: 'Advance to the next question. Only call after the current question is already answered and the child wants to continue.',
+        parameters: { type: 'object', properties: {} },
+      } },
+    ];
+
+    // 完整 RTC 会话配置（默认 appId + Keepwork 代理的 VolcEngine ASR/LLM/TTS，凭证由服务端下发，无需密钥）。
+    function rtcConfig(systemPrompt) {
+      return {
+        appId: '69883f4ae00f9e017600b901',
+        agentUserId: 'ChatBot01',
+        agentConfig: { UserId: 'ChatBot01', WelcomeMessage: t('voiceWelcome'), EnableConversationStateCallback: true },
+        tools: VOICE_TOOLS,
+        config: {
+          ASRConfig: { Provider: 'volcano', ProviderParams: { Mode: 'bigmodel', AppId: '3065448513', ApiResourceId: 'volc.bigasr.sauc.duration' } },
+          TTSConfig: {
+            Provider: 'volcano_bidirection',
+            ProviderParams: { app: { appid: '3065448513' }, audio: { voice_type: 'zh_female_tianmeiyueyue_moon_bigtts', speech_rate: 0 }, ResourceId: 'volc.service_type.10029' },
+            IgnoreBracketText: [1, 2],
+          },
+          LLMConfig: { Mode: 'ArkV3', EndPointId: 'ep-20260315160200-s6fg7', VisionConfig: { Enable: false }, ThinkingType: 'disabled', Tools: [], SystemMessages: [systemPrompt] },
+          SubtitleConfig: { SubtitleMode: 1 },
+          InterruptMode: 0,
+        },
+        enabledToolCategories: [],
+        workspace: 'haqi_science_quiz',
+      };
+    }
+
+    let voiceRtc = null, voiceSession = null, voiceOn = false, voiceBusy = false;
+    let voiceToolAnswering = false, voiceToolAdvancing = false;
+
+    function setVoiceUI(s) {
+      const btn = els.voiceBtn; if (!btn) return;
+      btn.classList.toggle('on', s === 'on');
+      btn.classList.toggle('busy', s === 'connecting');
+      const labels = { off: t('voiceStart'), connecting: t('voiceConnecting'), on: t('voiceStop') };
+      if (els.voiceBtnLabel) els.voiceBtnLabel.textContent = labels[s] || labels.off;
+    }
+
+    function voiceSend(text) {
+      if (voiceOn && voiceSession && text) { try { voiceSession.send(text); } catch (_) {} }
+    }
+
+    // 当前题目按"屏幕显示顺序"列出选项，并给出正确答案对应的显示字母。
+    function voiceOptionView() {
+      const item = queue[qi];
+      if (!item) return null;
+      const order = orders[qi] || item.o.map((_, i) => i);
+      const lines = order.map((origIdx, pos) => `${VOICE_LETTERS[pos]}. ${item.o[origIdx]}`);
+      return { item, order, lines, correctLetter: VOICE_LETTERS[order.indexOf(item.a)] || '?' };
+    }
+
+    function questionContextText(v) {
+      const idx = `${qi + 1}/${queue.length}`;
+      if (LANG === 'enUS') {
+        return `[Question] Q${idx}: ${v.item.q}\nOptions:\n${v.lines.join('\n')}\nCorrect answer (KEEP SECRET — do not say or hint it): ${v.correctLetter}\nNow read the question and options aloud and guide the child to think.`;
+      }
+      return `[题目] 第${idx}题：${v.item.q}\n选项：\n${v.lines.join('\n')}\n正确答案（请保密，绝对不要读出来或暗示）：${v.correctLetter}\n现在请把题目和选项读给小朋友听，引导他思考。`;
+    }
+
+    function answeredContextText(item, ans) {
+      const order = orders[qi] || item.o.map((_, i) => i);
+      const chosenLetter = VOICE_LETTERS[order.indexOf(ans.chosen)] || '?';
+      const correctLetter = VOICE_LETTERS[order.indexOf(item.a)] || '?';
+      if (LANG === 'enUS') {
+        return `[Answered] The child chose ${chosenLetter}. ${item.o[ans.chosen]} — ${ans.correct ? 'correct' : 'wrong'}. Correct answer: ${correctLetter}. ${item.o[item.a]}.`
+          + (item.why ? ` Why: ${item.why}` : '') + (item.wow ? ` Fun fact: ${item.wow}` : '')
+          + ' Briefly tell the child if they were right, the correct answer, and explain why with an everyday example.';
+      }
+      return `[已作答] 小朋友选了 ${chosenLetter}. ${item.o[ans.chosen]}，${ans.correct ? '答对了' : '答错了'}。正确答案：${correctLetter}. ${item.o[item.a]}。`
+        + (item.why ? `为什么：${item.why}` : '') + (item.wow ? ` 小知识：${item.wow}` : '')
+        + ' 请简短地告诉小朋友答对还是答错、正确答案，并用生活例子讲清楚为什么。';
+    }
+
+    // 渲染了一道未作答的题目时调用：让语音伙伴读题（工具驱动的"下一题"除外，避免和工具返回值重复）。
+    function voiceOnQuestionShown() {
+      if (!voiceOn || voiceToolAdvancing) return;
+      const v = voiceOptionView();
+      if (v) voiceSend(questionContextText(v));
+    }
+    // 作答后调用：让语音伙伴讲解（工具驱动的作答除外，那种情况由工具返回值携带讲解上下文）。
+    function voiceOnAnswered(item, ans) {
+      if (!voiceOn || voiceToolAnswering || !item || !ans) return;
+      voiceSend(answeredContextText(item, ans));
+    }
+    // 对齐到"屏幕上当前显示的那道题"：未作答→读题，已作答→讲解。供启用语音 / 切题时调用。
+    function voiceSyncCurrent() {
+      if (!voiceOn || !running) return;
+      const item = queue[qi];
+      if (!item) return;
+      const ans = answers[qi];
+      if (ans) voiceSend(answeredContextText(item, ans));
+      else { const v = voiceOptionView(); if (v) voiceSend(questionContextText(v)); }
+    }
+
+    // start() 创建 sandbox 后注册本地工具：让语音伙伴能替小朋友点选答案 / 进入下一题。
+    function registerVoiceTools(session) {
+      const sb = session && session.sandbox;
+      if (!sb || typeof sb.registerAPI !== 'function') return;
+      sb.registerAPI('choose_answer', async (args) => {
+        const letter = String((args && args.letter) || '').trim().toUpperCase().charAt(0);
+        const pos = VOICE_LETTERS.indexOf(letter);
+        if (!running || !queue[qi]) return LANG === 'enUS' ? 'No active question right now.' : '现在没有正在作答的题目。';
+        if (answers[qi]) return LANG === 'enUS' ? 'This question is already answered.' : '这道题已经回答过啦。';
+        const btn = els.options.children[pos];
+        if (pos < 0 || !btn) return LANG === 'enUS' ? `There is no option "${letter}".` : `没有"${letter}"这个选项哦。`;
+        voiceToolAnswering = true;
+        try { btn.click(); } finally { voiceToolAnswering = false; }
+        const ans = answers[qi];
+        return ans ? answeredContextText(queue[qi], ans) : (LANG === 'enUS' ? 'OK.' : '好的。');
+      });
+      sb.registerAPI('next_question', async () => {
+        if (!running || !answers[qi]) return LANG === 'enUS' ? 'Please answer the current question first.' : '请先回答当前这道题哦。';
+        voiceToolAdvancing = true;
+        try { goNext(); } finally { voiceToolAdvancing = false; }
+        if (!running) return LANG === 'enUS' ? 'The quest is complete — well done!' : '闯关结束啦，太棒了！';
+        const v = voiceOptionView();
+        return v ? questionContextText(v) : (LANG === 'enUS' ? 'Moved on.' : '继续。');
+      });
+    }
+
+    async function startVoice() {
+      if (voiceBusy || voiceOn) return;
+      voiceBusy = true; setVoiceUI('connecting'); setBubble(t('voiceConnecting'));
+      try {
+        await ensureSDK();
+        const sdk = window.keepwork || (window.KeepworkSDK ? new window.KeepworkSDK({ timeout: 30000 }) : null);
+        if (!sdk) throw new Error(t('voiceError'));
+        if (!sdk.token) {
+          try { await sdk.loginWindow?.open?.(); } catch (_) {}
+          if (!sdk.token) throw new Error(t('voiceNeedLogin'));
+        }
+        voiceRtc = new window.AIChatRTC(sdk);
+        voiceSession = voiceRtc.createSession(rtcConfig(voiceSystemPrompt()));
+        voiceSession.on('subtitle', ({ text, isUser }) => {
+          if (!text) return;
+          setBubble(isUser ? t('voiceYouFmt', { text }) : text);
+        });
+        voiceSession.on('welcome', ({ message }) => { if (message) setBubble(message); });
+        voiceSession.on('state', ({ code }) => { els.petAvatar.classList.toggle('happy', code === 3); });
+        voiceSession.on('autoplayFailed', () => setBubble(t('voiceTapHint')));
+        voiceSession.on('error', () => setBubble(t('voiceError')));
+        await voiceSession.start();
+        registerVoiceTools(voiceSession);
+        voiceOn = true; setVoiceUI('on'); setBubble(t('voiceReady'));
+        // 启用后立即对齐屏幕上"当前显示的题目"并开口读题（稍候让欢迎语先起头）。
+        setTimeout(voiceSyncCurrent, 600);
+      } catch (e) {
+        setBubble((e && e.message) || t('voiceError'));
+        await stopVoice();
+      } finally {
+        voiceBusy = false;
+      }
+    }
+
+    async function stopVoice() {
+      voiceOn = false; setVoiceUI('off');
+      const s = voiceSession; voiceSession = null; voiceRtc = null;
+      els.petAvatar.classList.remove('happy');
+      try { await s?.stop?.(); } catch (_) {}
+    }
+
+    /* ---------------- events ---------------- */
+    els.voiceBtn.onclick = () => { sfx('tap'); voiceOn ? stopVoice() : startVoice(); };
+    els.start.onclick = () => { sfx('tap'); openIntro(); };
+    els.prev.onclick = () => { sfx('tap'); goPrev(); };
+    els.next.onclick = () => { sfx('tap'); goNext(); };
+    els.changeUnit.onclick = () => { sfx('tap'); openIntro(); };
+    els.changeUnit2.onclick = () => { sfx('tap'); openIntro(); };
+    els.again.onclick = () => { sfx('tap'); startRun(currentUnit); };
+    window.addEventListener('message', e => {
+      const msg = e.data || {};
+      if (msg.type === 'gameContinue') openIntro();
+      if (msg.type === 'setGameConfig' && msg.data?.petId) requestPetImage(msg.data.petId);
+      if (msg.type === 'haqi_pet_image' && msg.ok && msg.data && (!petRequestId || !msg.requestId || msg.requestId === petRequestId || msg.requestId === 'active_pet_config')) mountPet(msg.data);
+      if (msg.type === 'haqi_pet_images' && msg.ok) {
+        const firstPet = Array.isArray(msg.data?.pets) ? msg.data.pets[0] : null;
+        if (firstPet) mountPet(firstPet);
+      }
+    });
+    window.addEventListener('beforeunload', () => { if (petObjectUrl) URL.revokeObjectURL(petObjectUrl); stopVoice(); });
+
+    /* ---------------- init ---------------- */
+    applyStaticText();
+    openIntro();
+    requestPetImage();
+    post('gameLoaded');
+  </script>
+</body>
+
+</html>

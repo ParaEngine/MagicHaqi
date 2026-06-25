@@ -1,0 +1,668 @@
+.dock-icon-btn.is-sleep-disabled,
+.dock-icon-btn[aria-disabled="true"],
+.dock-icon-btn:disabled {
+    opacity: 0.52;
+    filter: grayscale(0.24);
+    cursor: not-allowed;
+}
+.mh-feed-action.is-urgent:not(:disabled) {
+    border-color: #fbbf24;
+    color: #7c2d12;
+    background:
+        linear-gradient(180deg, rgba(255,255,255,0.72), rgba(255,255,255,0.08)),
+        linear-gradient(135deg, #fef3c7, #86efac 56%, #67e8f9);
+    box-shadow: 0 4px 0 rgba(146,64,14,0.24), 0 0 16px rgba(251,191,36,0.62), inset 0 1px 0 rgba(255,255,255,0.92);
+}
+
+/* ==========================================================================
+ * MagicHaqi · 宠物互动样式
+ * 包含宠物精灵基础样式、idle / walk / flip 动画，以及点击宠物时的
+ * "开心史莱姆"动画与粒子（爱心 / 气泡 / 星星）特效。
+ * 触发：level_pet.js 中的 playPetHappy()。
+ * ========================================================================== */
+
+/* ---------- 0. 宠物精灵基础 ---------- */
+.pet-sprite {
+    position: absolute;
+    transition: left 4s ease-in-out, top 4s ease-in-out, transform 0.2s;
+    pointer-events: auto;
+    cursor: pointer;
+    z-index: 10;
+    text-align: center;
+}
+.mh-pet-art {
+    position: relative;
+}
+.mh-pet-art-sprite {
+    contain: layout paint;
+    backface-visibility: hidden;
+    overflow: hidden;
+}
+.pet-sprite img {
+    width: 96px; height: 96px;
+    object-fit: contain;
+    display: block;
+    filter: drop-shadow(0 4px 8px rgba(0, 0, 0, 0.2));
+}
+.pet-sprite .pet-name {
+    font-size: 11px; font-weight: 700; color: #fff;
+    background: rgba(0, 0, 0, 0.55);
+    padding: 2px 8px; border-radius: 999px;
+    margin: 2px auto 0; display: inline-block;
+}
+@media (max-width: 380px) {
+    .pet-sprite img { width: 80px; height: 80px; }
+}
+
+/* ---------- 1. 宠物精灵动画：idle = 长循环混合呼吸 + 偶尔史莱姆抖动；walk = 真实跳跃 ---------- */
+/* idle: 纯呼吸动画——只做轻微缩放，不上下移动。12s 长循环里安排几次呼吸 +
+   不等长的安静停顿，避免节奏过于重复。 */
+@keyframes mhPetIdle {
+    0%   { transform: scale(1, 1); }            /* 呼气 */
+    7%   { transform: scale(1.03, 0.97); }       /* 第一次吸气 */
+    14%  { transform: scale(1, 1); }            /* 呼气 */
+    /* 安静停顿 */
+    30%  { transform: scale(1, 1); }
+    37%  { transform: scale(1.03, 0.97); }       /* 第二次吸气 */
+    44%  { transform: scale(1, 1); }
+    /* 较长安静停顿 */
+    66%  { transform: scale(1, 1); }
+    73%  { transform: scale(1.025, 0.975); }     /* 第三次较轻吸气 */
+    80%  { transform: scale(1, 1); }
+    /* 收尾停顿 */
+    100% { transform: scale(1, 1); }
+}
+/* walk: 原地史莱姆 squash & stretch，轻微起伏，不再像跳跃那样大幅上下移动 */
+@keyframes mhPetWalk {
+    0%, 100% { transform: translateY(0) scale(1, 1); }
+    50%      { transform: translateY(-4%) scale(0.97, 1.03); }
+}
+@keyframes mhPetFlip {
+    0%, 48%   { transform: scaleX(1); }
+    50%, 98%  { transform: scaleX(-1); }
+    100%      { transform: scaleX(1); }
+}
+.mh-pet-flip {
+    width: 100%; height: 100%;
+    transform-origin: 50% 50%;
+    animation: mhPetFlip 22s ease-in-out infinite;
+    will-change: transform;
+}
+.mh-pet-idle,
+.mh-pet-art-egg {
+    transform-origin: 50% 100%;
+    animation: mhPetIdle 12s ease-in-out infinite;
+    will-change: transform;
+}
+.mh-pet-walk {
+    transform-origin: 50% 100%; /* 落地瞬间以脚底为支点压扁 */
+    animation: mhPetWalk 1.3s ease-in-out infinite;
+    will-change: transform;
+}
+/* 当宿主同时挂了 idle 和 walk 时，walk 优先 */
+.mh-pet-art-egg.mh-pet-walk { animation: mhPetWalk 1.3s ease-in-out infinite; }
+
+@keyframes mhEggHatchPendingTint {
+    0%   { filter: hue-rotate(0deg) saturate(1.08) brightness(1); }
+    18%  { filter: hue-rotate(55deg) saturate(1.28) brightness(1.08) drop-shadow(0 0 8px rgba(251,191,36,0.35)); }
+    38%  { filter: hue-rotate(130deg) saturate(1.35) brightness(1.03) drop-shadow(0 0 10px rgba(34,211,238,0.35)); }
+    62%  { filter: hue-rotate(215deg) saturate(1.3) brightness(1.1) drop-shadow(0 0 12px rgba(168,85,247,0.35)); }
+    82%  { filter: hue-rotate(300deg) saturate(1.22) brightness(1.06) drop-shadow(0 0 10px rgba(244,114,182,0.35)); }
+    100% { filter: hue-rotate(360deg) saturate(1.08) brightness(1); }
+}
+.mh-pet-art-egg.mh-egg-hatch-pending,
+.mh-egg-hatch-pending .mh-pet-art-egg,
+.mh-egg-hatch-pending > div {
+    animation: mhPetIdle 1.8s ease-in-out infinite, mhEggHatchPendingTint 4.8s linear infinite;
+}
+
+/* sleeping: 切到 sleep sprite cell 后，再叠加柔和呼吸和 Zzz 头顶提示 */
+@keyframes mhPetSleepBreath {
+    0%, 100% { transform: scale(1, 1) translateY(0); filter: saturate(0.92) brightness(0.96); }
+    50%      { transform: scale(1.025, 0.975) translateY(1.5%); filter: saturate(0.88) brightness(0.94); }
+}
+@keyframes mhPetSleepZ {
+    0%   { opacity: 0; transform: translate(0, 8px) scale(0.72) rotate(-8deg); }
+    25%  { opacity: 1; }
+    100% { opacity: 0; transform: translate(18px, -34px) scale(1.16) rotate(6deg); }
+}
+.mh-pet-sleeping .mh-pet-art-sprite,
+.mh-pet-art-egg.mh-pet-sleeping {
+    animation: mhPetSleepBreath 2.4s ease-in-out infinite !important;
+    transform-origin: 50% 100%;
+}
+
+@keyframes mhPetGreenSmokeRise {
+    0%, 8% {
+        opacity: 0;
+        transform: translate3d(-50%, 10px, 0) scale(0.78) rotate(-2deg);
+    }
+    34% { opacity: 0.58; }
+    72% { opacity: 0.34; }
+    100% {
+        opacity: 0;
+        transform: translate3d(calc(-50% + var(--mh-smoke-drift, 0px)), calc(-1 * var(--mh-smoke-rise, 60px)), 0) scale(1.02) rotate(3deg);
+    }
+}
+.mh-pet-dirty .mh-pet-flip,
+.mh-pet-dirty.mh-pet-art-egg > div {
+    position: relative;
+    z-index: 2;
+}
+.mh-pet-smoke-emitter {
+    display: none;
+}
+.mh-stage.zoom-field .mh-pet-dirty > .mh-pet-smoke-emitter,
+.mh-stage.zoom-pet .mh-pet-dirty > .mh-pet-smoke-emitter {
+    display: block;
+    position: absolute;
+    left: 4%;
+    right: 4%;
+    bottom: 44%;
+    height: 82%;
+    pointer-events: none;
+    z-index: 1;
+    overflow: visible;
+}
+.mh-pet-smoke-line {
+    position: absolute;
+    left: var(--mh-smoke-left, 50%);
+    bottom: 0;
+    width: var(--mh-smoke-w, 18%);
+    height: var(--mh-smoke-h, 58%);
+    color: var(--mh-smoke-color, #84cc16);
+    opacity: 0;
+    filter: drop-shadow(0 1px 1px rgba(20, 83, 45, 0.18));
+    transform-origin: 50% 100%;
+    animation: mhPetGreenSmokeRise var(--mh-smoke-dur, 1.8s) ease-out var(--mh-smoke-delay, 0s) infinite;
+    will-change: transform, opacity;
+}
+.mh-pet-smoke-line svg {
+    display: block;
+    width: 100%;
+    height: 100%;
+    overflow: visible;
+}
+.pet-sprite.mh-pet-sleeping::after,
+.mh-pet-art.mh-pet-sleeping::after {
+    content: 'Zzz';
+    position: absolute;
+    left: 64%;
+    top: -10px;
+    z-index: 13;
+    color: #4f46e5;
+    font-size: 15px;
+    font-weight: 800;
+    line-height: 1;
+    letter-spacing: 0;
+    text-shadow: 0 1px 0 rgba(255,255,255,0.9), 0 2px 8px rgba(79,70,229,0.22);
+    pointer-events: none;
+    animation: mhPetSleepZ 1.9s ease-out infinite;
+}
+
+/* ---------- 1b. 宠物说话气泡 ---------- */
+@keyframes mhPetTalkPop {
+    0%   { opacity: 0; transform: translate(-50%, 8px) scaleX(var(--mh-talk-flip, 1)) scale(0.86); }
+    70%  { opacity: 1; transform: translate(-50%, -2px) scaleX(var(--mh-talk-flip, 1)) scale(1.04); }
+    100% { opacity: 1; transform: translate(-50%, 0) scaleX(var(--mh-talk-flip, 1)) scale(1); }
+}
+@keyframes mhPetTalkHide {
+    from { opacity: 1; transform: translate(-50%, 0) scaleX(var(--mh-talk-flip, 1)) scale(1); }
+    to   { opacity: 0; transform: translate(-50%, -8px) scaleX(var(--mh-talk-flip, 1)) scale(0.96); }
+}
+.mh-pet-talk-bubble {
+    position: absolute;
+    left: 50%;
+    top: -42px;
+    width: max-content;
+    max-width: min(220px, calc(100vw - 32px));
+    min-width: 36px;
+    padding: 7px 10px;
+    border-radius: 14px;
+    background: rgba(255, 255, 255, 0.96);
+    border: 1.5px solid rgba(251, 191, 36, 0.95);
+    color: #422006;
+    font-size: 12px;
+    font-weight: 700;
+    line-height: 1.3;
+    white-space: normal;
+    word-break: keep-all;
+    overflow-wrap: break-word;
+    transform: translateX(-50%) scaleX(var(--mh-talk-flip, 1));
+    box-shadow: 0 6px 18px rgba(146, 64, 14, 0.16);
+    pointer-events: none;
+    z-index: 20;
+}
+.mh-pet-talk-bubble::after {
+    content: '';
+    position: absolute;
+    left: 50%;
+    bottom: -6px;
+    width: 10px;
+    height: 10px;
+    background: rgba(255, 255, 255, 0.96);
+    border-right: 1.5px solid rgba(251, 191, 36, 0.95);
+    border-bottom: 1.5px solid rgba(251, 191, 36, 0.95);
+    transform: translateX(-50%) rotate(45deg);
+}
+.mh-pet-talk-bubble-pop { animation: mhPetTalkPop 0.22s ease-out both; }
+.mh-pet-talk-bubble-hide { animation: mhPetTalkHide 0.18s ease-in forwards; }
+
+/* ---------- 2. 开心弹跳：点击时短暂覆盖 idle/walk ---------- */
+/* 连续跳两下，只用垂直关键帧（地面 / 最高点），靠缓动平滑过渡，避免卡顿。 */
+@keyframes mhPetHappy {
+    0%   { transform: translateY(0);    }   /* 地面 */
+    25%  { transform: translateY(-28%); }   /* 第一跳最高点 */
+    50%  { transform: translateY(0);    }   /* 落回地面 */
+    75%  { transform: translateY(-28%); }   /* 第二跳最高点 */
+    100% { transform: translateY(0);    }   /* 落回地面 */
+}
+.pet-sprite.mh-happy .mh-pet-art-sprite {
+    transform-origin: 50% 100%; /* 以脚底为支点，跳跃更自然 */
+    will-change: transform;
+    animation: mhPetHappy 0.9s ease-in-out 1 !important;
+}
+
+@keyframes mhPetEatingQuick {
+    0%, 100% { transform: translateY(0) scale(1, 1); }
+    35%      { transform: translateY(-7%) scale(1.02, 0.98); }
+    70%      { transform: translateY(4%) scale(0.98, 1.02); }
+}
+.pet-sprite.mh-pet-eating .mh-pet-art-sprite {
+    animation: mhPetEatingQuick 0.18s ease-in-out infinite !important;
+    transform-origin: 50% 100%;
+}
+.pet-sprite.mh-pet-eating .mh-pet-art-egg {
+    animation: mhPetEatingQuick 0.18s ease-in-out infinite !important;
+    transform-origin: 50% 100%;
+}
+.pet-sprite.mh-pet-eating .mh-pet-art-egg > div {
+    animation: none !important;
+}
+
+@keyframes mhPetBathWiggle {
+    0%, 100% { transform: translateY(0) scale(1, 1) rotate(0deg); filter: saturate(1.08) brightness(1.04); }
+    22%      { transform: translateY(-2%) scale(1.025, 0.985) rotate(-2deg); filter: saturate(1.16) brightness(1.08); }
+    48%      { transform: translateY(1%) scale(0.985, 1.018) rotate(2deg); filter: saturate(1.12) brightness(1.06); }
+    72%      { transform: translateY(-1%) scale(1.012, 0.995) rotate(-1deg); filter: saturate(1.16) brightness(1.08); }
+}
+.pet-sprite.mh-pet-bathing .mh-pet-art-sprite {
+    animation: mhPetBathWiggle 0.68s ease-in-out infinite !important;
+    transform-origin: 50% 100%;
+}
+
+@keyframes mhBathSequenceFade {
+    0%, 88% { opacity: 1; }
+    100% { opacity: 0; }
+}
+@keyframes mhBathTutFlight {
+    0%   { opacity: 1; transform: translate(-132px, -68px) scale(0.48) rotate(-14deg); }
+    10%  { opacity: 1; transform: translate(-82px, -34px) scale(0.64) rotate(-8deg); }
+    24%  { opacity: 1; transform: translate(-8px, 14px) scale(0.9) rotate(1deg); }
+    42%  { opacity: 1; transform: translate(0, 17px) scale(0.94) rotate(-2deg); }
+    64%  { opacity: 1; transform: translate(4px, 12px) scale(0.92) rotate(2deg); }
+    76%  { opacity: 1; transform: translate(-2px, 16px) scale(0.9) rotate(-1deg); }
+    90%  { opacity: 0.9; transform: translate(116px, -68px) scale(0.54) rotate(16deg); }
+    100% { opacity: 0; transform: translate(216px, -132px) scale(0.24) rotate(28deg); }
+}
+@keyframes mhBathShowerPulse {
+    0%, 18% { opacity: 0; stroke-dashoffset: 0; }
+    28%, 75% { opacity: 0.82; }
+    100% { opacity: 0; stroke-dashoffset: -96; }
+}
+@keyframes mhBathBubbleFloat {
+    0% { opacity: 0; transform: translate(0, 0) scale(0.45); }
+    15% { opacity: 0.96; }
+    82% { opacity: 0.82; }
+    100% { opacity: 0; transform: translate(var(--mh-bath-drift, 0px), calc(-1 * var(--mh-bath-rise, 120px))) scale(1.22); }
+}
+@keyframes mhBathSparklePop {
+    0%, 58% { opacity: 0; transform: scale(0.25) rotate(0deg); }
+    68% { opacity: 1; transform: scale(1.12) rotate(16deg); }
+    100% { opacity: 0; transform: scale(0.35) rotate(58deg); }
+}
+.mh-bath-sequence {
+    position: absolute;
+    z-index: 132;
+    pointer-events: none;
+    transform: translate(-50%, -86%);
+    animation: mhBathSequenceFade 10s linear forwards;
+    filter: drop-shadow(0 12px 18px rgba(7, 89, 133, 0.24));
+}
+.mh-bath-svg {
+    width: 100%;
+    height: 100%;
+    overflow: visible;
+    display: block;
+}
+.mh-bath-tut-tool {
+    transform-box: fill-box;
+    transform-origin: 50% 56%;
+    animation: mhBathTutFlight 10s cubic-bezier(0.18, 0.86, 0.22, 1) forwards;
+}
+.mh-bath-shower-stream {
+    opacity: 0;
+    animation: mhBathShowerPulse 7.8s linear 1.2s forwards;
+}
+.mh-bath-bubble {
+    fill: url(#mhBathBubble);
+    stroke: rgba(255,255,255,0.86);
+    stroke-width: 2;
+    transform-box: fill-box;
+    transform-origin: center;
+    animation: mhBathBubbleFloat var(--mh-bath-dur, 3s) ease-out var(--mh-bath-delay, 0s) forwards;
+    opacity: 0;
+}
+.mh-bath-sparkle {
+    fill: #fef08a;
+    stroke: #ffffff;
+    stroke-width: 1.6;
+    transform-box: fill-box;
+    transform-origin: center;
+    animation: mhBathSparklePop 1.5s ease-out var(--mh-bath-sparkle-delay, 7.2s) forwards;
+    opacity: 0;
+}
+
+/* ---------- 2. 粒子层：覆盖在宠物上方，禁止指针拦截 ---------- */
+.mh-pet-fx {
+    position: absolute;
+    left: 0; right: 0; top: 0; bottom: 0;
+    pointer-events: none;
+    overflow: visible;
+    z-index: 11;
+}
+
+/* ---------- 3. 主气泡 / 爱心粒子：从底部冒起，飘升 + 轻微左右摇 ---------- */
+@keyframes mhPetParticleFloat {
+    0% {
+        opacity: 0;
+        transform: translate(calc(-50% + var(--mh-x, 0px)), 10px) scale(0.4) rotate(0deg);
+    }
+    20% {
+        opacity: 1;
+        transform: translate(calc(-50% + var(--mh-x, 0px)), -10px) scale(1) rotate(var(--mh-r, 8deg));
+    }
+    100% {
+        opacity: 0;
+        transform: translate(calc(-50% + var(--mh-x, 0px) + var(--mh-drift, 12px)),
+                             calc(-1 * var(--mh-rise, 90px)))
+                   scale(var(--mh-end-scale, 1.25))
+                   rotate(calc(var(--mh-r, 8deg) * -1));
+    }
+}
+.mh-pet-particle {
+    position: absolute;
+    left: 50%;
+    bottom: 30%;
+    font-size: var(--mh-size, 20px);
+    line-height: 1;
+    text-shadow: 0 1px 2px rgba(0, 0, 0, 0.18);
+    will-change: transform, opacity;
+    animation: mhPetParticleFloat var(--mh-dur, 1.1s) ease-out forwards;
+    animation-delay: var(--mh-delay, 0s);
+    pointer-events: none;
+}
+
+@keyframes mhFoodShardFall {
+    0% {
+        opacity: 0;
+        transform: translate(calc(-50% + var(--mh-food-start-x, 0px)), var(--mh-food-start-y, 0px)) scale(0.72) rotate(0deg);
+    }
+    16% {
+        opacity: 1;
+        transform: translate(calc(-50% + var(--mh-food-burst-x, 0px)), var(--mh-food-burst-y, -34px)) scale(0.92) rotate(calc(var(--mh-food-rot, 90deg) * 0.42));
+    }
+    100% {
+        opacity: 0;
+        transform: translate(calc(-50% + var(--mh-food-burst-x, 0px)), var(--mh-food-fall-y, 70px)) scale(0.22) rotate(var(--mh-food-rot, 90deg));
+    }
+}
+.mh-food-shard {
+    position: absolute;
+    left: 50%;
+    top: 30%;
+    font-size: var(--mh-food-size, 14px);
+    line-height: 1;
+    pointer-events: none;
+    will-change: transform, opacity;
+    filter: drop-shadow(0 2px 2px rgba(0,0,0,0.18));
+    animation: mhFoodShardFall 0.78s cubic-bezier(0.18, 0.78, 0.32, 1) forwards;
+    animation-delay: var(--mh-food-delay, 0s);
+}
+
+@keyframes mhFoodLoveBurst {
+    0%   { opacity: 0; transform: translate(-50%, 8px) scale(0.5) rotate(-10deg); }
+    35%  { opacity: 1; transform: translate(-50%, -14px) scale(1.18) rotate(6deg); }
+    100% { opacity: 0; transform: translate(-50%, -58px) scale(1.42) rotate(0deg); }
+}
+.mh-food-love-burst {
+    position: absolute;
+    left: 50%;
+    top: 4%;
+    font-size: 28px;
+    line-height: 1;
+    pointer-events: none;
+    animation: mhFoodLoveBurst 0.95s ease-out forwards;
+    filter: drop-shadow(0 3px 4px rgba(0,0,0,0.2));
+    z-index: 13;
+}
+
+@keyframes mhStoryFeedEmoji {
+    0%   { opacity: 0; transform: translate(-50%, -2px) scale(0.68) rotate(-8deg); }
+    15%  { opacity: 1; transform: translate(-50%, -24px) scale(1.12) rotate(4deg); }
+    78%  { opacity: 1; transform: translate(-50%, -30px) scale(1) rotate(-2deg); }
+    100% { opacity: 0; transform: translate(-50%, -36px) scale(0.72) rotate(8deg); }
+}
+.mh-story-feed-emoji {
+    position: absolute;
+    left: 50%;
+    top: 18%;
+    z-index: 13;
+    font-size: 32px;
+    line-height: 1;
+    pointer-events: none;
+    filter: drop-shadow(0 4px 6px rgba(120, 53, 15, 0.24));
+    animation: mhStoryFeedEmoji var(--mh-story-feed-duration, 3.2s) ease-in-out forwards;
+}
+
+@keyframes mhFoodStatFloat {
+    0%   { opacity: 0; transform: translate(calc(-50% + var(--mh-stat-x, 0px)), 4px) scale(0.72); }
+    16%  { opacity: 1; transform: translate(calc(-50% + var(--mh-stat-x, 0px)), -18px) scale(1.06); }
+    72%  { opacity: 1; transform: translate(calc(-50% + var(--mh-stat-x, 0px)), -44px) scale(1); }
+    100% { opacity: 0; transform: translate(calc(-50% + var(--mh-stat-x, 0px)), -72px) scale(0.96); }
+}
+.mh-food-stat-floater {
+    position: absolute;
+    left: 50%;
+    top: 8%;
+    padding: 3px 7px;
+    border-radius: 999px;
+    font-size: 14px;
+    line-height: 1.15;
+    font-weight: 800;
+    white-space: nowrap;
+    pointer-events: none;
+    z-index: 14;
+    color: #166534;
+    background: rgba(240, 253, 244, 0.94);
+    border: 1px solid rgba(34, 197, 94, 0.28);
+    box-shadow: 0 6px 14px rgba(22, 101, 52, 0.18);
+    animation: mhFoodStatFloat 3s ease-out forwards;
+    animation-delay: var(--mh-stat-delay, 0s);
+}
+.mh-food-stat-floater.is-negative {
+    color: #be123c;
+    background: rgba(255, 241, 242, 0.94);
+    border-color: rgba(244, 63, 94, 0.32);
+    box-shadow: 0 6px 14px rgba(190, 18, 60, 0.18);
+}
+
+@keyframes mhServingFoodIdle {
+    0%, 100% { transform: translate(-50%, -50%) scale(1) rotate(-1deg); }
+    50%      { transform: translate(-50%, -54%) scale(1.04) rotate(1deg); }
+}
+.mh-room-furniture.mh-serving-food {
+    pointer-events: none;
+    animation: mhServingFoodIdle 1.25s ease-in-out infinite;
+    filter: drop-shadow(0 10px 14px rgba(120, 53, 15, 0.26));
+}
+.mh-story-serving-food.mh-room-furniture.mh-serving-food {
+    position: absolute;
+    left: 50%;
+    top: 24%;
+    width: 62px;
+    height: 62px;
+    z-index: 14;
+    display: block;
+    font-size: 0;
+}
+.mh-story-serving-food .mh-food-svg {
+    width: 78%;
+    height: 78%;
+    margin: auto;
+}
+@keyframes mhServingFoodSliceEat {
+    0% {
+        opacity: 1;
+        transform: translate3d(0, 0, 0) rotate(0deg) scale(1);
+        filter: none;
+    }
+    38% {
+        opacity: 1;
+        transform: translate3d(var(--mh-slice-mid-x, 0px), var(--mh-slice-mid-y, 0px), 0) rotate(var(--mh-slice-mid-rot, 0deg)) scale(1.015);
+        filter: none;
+    }
+    100% {
+        opacity: 0;
+        transform: translate3d(var(--mh-slice-x, 0px), var(--mh-slice-y, 0px), 0) rotate(var(--mh-slice-rot, 0deg)) scale(0.72);
+        filter: drop-shadow(0 2px 2px rgba(120, 53, 15, 0.12));
+    }
+}
+.mh-serving-food-cut-stack {
+    position: absolute;
+    inset: 0;
+    display: block;
+    overflow: visible;
+}
+.mh-serving-food-slice {
+    position: absolute;
+    inset: 0;
+    display: block;
+    clip-path: var(--mh-slice-clip);
+    overflow: hidden;
+    transform-origin: 50% 52%;
+    will-change: transform, opacity;
+}
+.mh-serving-food-slice-art {
+    position: absolute;
+    inset: 0;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+}
+.mh-serving-food-slice-art .mh-furniture-svg,
+.mh-serving-food-slice-art .mh-furniture-svg svg,
+.mh-serving-food-slice-art .mh-furniture-svg img {
+    display: block;
+    width: 100%;
+    height: 100%;
+    object-fit: contain;
+}
+.mh-room-furniture.mh-serving-food.mh-serving-food-consuming {
+    animation: none;
+    transform: translate(-50%, -50%);
+}
+.mh-room-furniture.mh-serving-food.mh-serving-food-consuming .mh-serving-food-slice {
+    animation: mhServingFoodSliceEat var(--mh-slice-dur, 360ms) cubic-bezier(0.16, 0.78, 0.28, 1) var(--mh-slice-delay, 0ms) forwards;
+}
+.mh-room-furniture.mh-serving-food.mh-serving-food-dissolve {
+    animation: none;
+    transform: translate(-50%, -50%);
+}
+@keyframes mhServedFoodPieceGravity {
+    0% {
+        opacity: 0;
+        transform: translate(-50%, -50%) scale(0.8) rotate(0deg);
+    }
+    14% {
+        opacity: 1;
+        transform: translate(calc(-50% + var(--mh-piece-hop-x, 0px)), calc(-50% - var(--mh-piece-hop, 42px))) scale(1) rotate(32deg);
+    }
+    100% {
+        opacity: 0;
+        transform: translate(calc(-50% + var(--mh-piece-x, 0px)), calc(-50% + var(--mh-piece-fall, 140px))) scale(0.28) rotate(var(--mh-piece-rot, 90deg));
+    }
+}
+.mh-served-food-piece {
+    position: absolute;
+    z-index: 120;
+    font-size: var(--mh-piece-size, 14px);
+    line-height: 1;
+    pointer-events: none;
+    will-change: transform, opacity;
+    filter: drop-shadow(0 2px 3px rgba(0,0,0,0.22));
+    animation: mhServedFoodPieceGravity var(--mh-piece-dur, 1.1s) cubic-bezier(0.18, 0.72, 0.32, 1) forwards;
+}
+
+/* ---------- 4. 顶部主表情爆发（更大的那一颗） ---------- */
+@keyframes mhPetHappyGlow {
+    0%   { opacity: 0; transform: translate(-50%, 0) scale(0.6); }
+    40%  { opacity: 1; }
+    100% { opacity: 0; transform: translate(-50%, -60px) scale(1.4); }
+}
+.mh-happy-burst {
+    position: absolute;
+    left: 50%; top: -8px;
+    transform: translate(-50%, 0);
+    font-size: 24px;
+    pointer-events: none;
+    animation: mhPetHappyGlow 0.9s ease-out forwards;
+    z-index: 12;
+}
+
+/* ---------- 5. 可访问性：尊重用户减少动画偏好 ---------- */
+@media (prefers-reduced-motion: reduce) {
+    /* 仍保留极轻的 idle 呼吸（scale 1.012，对前庭友好），
+       仅关掉幅度较大的 flip / walk / happy / 粒子动画。 */
+    .mh-pet-flip, .mh-pet-walk { animation: none; }
+    .mh-pet-sleeping .mh-pet-art-sprite,
+    .mh-pet-art-egg.mh-pet-sleeping,
+    .mh-pet-art-egg.mh-egg-hatch-pending,
+    .mh-egg-hatch-pending .mh-pet-art-egg,
+    .mh-egg-hatch-pending > div,
+    .pet-sprite.mh-pet-sleeping::after,
+    .mh-pet-art.mh-pet-sleeping::after,
+    .mh-pet-smoke-line { animation: none !important; }
+    .mh-pet-talk-bubble-pop,
+    .mh-pet-talk-bubble-hide { animation: none; }
+    .pet-sprite.mh-happy .mh-pet-art-sprite,
+    .pet-sprite.mh-pet-eating .mh-pet-art-sprite,
+    .pet-sprite.mh-pet-bathing .mh-pet-art-sprite { animation: none !important; }
+    .mh-happy-burst,
+    .mh-pet-particle,
+    .mh-food-shard,
+    .mh-food-love-burst,
+    .mh-food-stat-floater,
+    .mh-pet-smoke-line,
+    .mh-room-furniture.mh-serving-food,
+    .mh-served-food-piece,
+    .mh-bath-sequence { animation: none; opacity: 0; }
+}
+
+/* 蛋孵化时的爆发动画：宿主缩放 + 光晕 */
+@keyframes mhPetHatchBurst {
+    0%   { transform: scale(1); filter: brightness(1); }
+    18%  { transform: scale(1.25); filter: brightness(1.55) drop-shadow(0 0 18px #fde68a); }
+    52%  { transform: scale(0.9); filter: brightness(1.2) drop-shadow(0 0 24px #fbbf24); }
+    100% { transform: scale(1); filter: brightness(1); }
+}
+.mh-pet-hatch-burst {
+    animation: mhPetHatchBurst 1.2s ease-out both;
+}
+
+/* 蛋欢迎烟花粒子（复用 mh-pet-particle 的动画，仅追加发光效果） */
+.mh-firework-shard {
+    filter: drop-shadow(0 0 6px rgba(253, 224, 71, 0.85))
+            drop-shadow(0 0 12px rgba(251, 191, 36, 0.45));
+}
+
