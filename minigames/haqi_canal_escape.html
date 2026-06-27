@@ -373,10 +373,15 @@
     document.body.appendChild(root);
     createCells();
     bindEvents();
-    requestPetImage();
-    prepareLevel(1);
     showDifficulty();
     post('gameLoaded');
+    // Defer heavy puzzle generation (BFS solver) off the critical path: the
+    // difficulty modal is the real initial screen and covers the board, so the
+    // pre-generated level-1 board only needs to exist after first paint.
+    requestAnimationFrame(() => requestAnimationFrame(() => {
+      requestPetImage();
+      if (!state.started) prepareLevel(1);
+    }));
   }
 
   function createCells() {
@@ -452,42 +457,30 @@
   function prepareLevel(level) {
     state.generating = true;
     byId('mhGenerating').hidden = false;
-    const puzzle = generatePuzzle(level);
-    state.level = level;
-    state.pieces = puzzle.pieces;
-    state.solutionMoves = puzzle.solutionMoves;
-    state.selectedId = TARGET_ID;
-    state.moves = 0;
-    state.history = [];
-    state.hintsUsed = 0;
-    state.hint = null;
-    state.finished = false;
-    state.generating = false;
-    byId('mhGenerating').hidden = true;
-    updateStats();
-    renderBoard();
+    // Generate the puzzle in time-sliced chunks so no single main-thread task
+    // exceeds ~50ms (the BFS solver across ~80+ attempts is the heavy work).
+    state.prepareToken = (state.prepareToken || 0) + 1;
+    const token = state.prepareToken;
+    generatePuzzleSliced(level, token, puzzle => {
+      if (token !== state.prepareToken) return; // superseded by a newer request
+      state.level = level;
+      state.pieces = puzzle.pieces;
+      state.solutionMoves = puzzle.solutionMoves;
+      state.selectedId = TARGET_ID;
+      state.moves = 0;
+      state.history = [];
+      state.hintsUsed = 0;
+      state.hint = null;
+      state.finished = false;
+      state.generating = false;
+      byId('mhGenerating').hidden = true;
+      updateStats();
+      renderBoard();
+    });
   }
 
-  function generatePuzzle(level) {
-    const minimumMoves = Math.min(5 + Math.floor(level * 1.35), 24);
-    const maximumMoves = Math.min(minimumMoves + 8, 30);
-    const targetMoves = Math.min(minimumMoves + 3, maximumMoves);
-    const pieceCount = Math.min(6 + Math.floor(level / 2), 11);
-    let best = null;
-    const attempts = Math.min(80 + level * 8, 220);
-
-    for (let attempt = 0; attempt < attempts; attempt++) {
-      const pieces = scrambleSolvedBoard(pieceCount, 34 + level * 7 + attempt);
-      const solutionMoves = solveMinimumMoves(pieces);
-      if (!Number.isFinite(solutionMoves)) continue;
-      const distance = Math.abs(solutionMoves - targetMoves) + (solutionMoves < minimumMoves ? 6 : 0) + (solutionMoves > maximumMoves ? 8 : 0);
-      if (!best || distance < best.distance || (distance === best.distance && solutionMoves > best.solutionMoves)) best = { pieces, solutionMoves, distance };
-      if (solutionMoves >= minimumMoves && solutionMoves <= maximumMoves && pieces.find(p => p.id === TARGET_ID).r >= 2) {
-        return { pieces, solutionMoves };
-      }
-    }
-
-    return best || {
+  function defaultPuzzle() {
+    return {
       pieces: [
         boatPiece(3, 2),
         piece('h0', 1, 1, 2, 1, 'h', 0),
@@ -497,6 +490,43 @@
       ],
       solutionMoves: 5,
     };
+  }
+
+  function generatePuzzleSliced(level, token, done) {
+    const minimumMoves = Math.min(5 + Math.floor(level * 1.35), 24);
+    const maximumMoves = Math.min(minimumMoves + 8, 30);
+    const targetMoves = Math.min(minimumMoves + 3, maximumMoves);
+    const pieceCount = Math.min(6 + Math.floor(level / 2), 11);
+    const attempts = Math.min(80 + level * 8, 220);
+    let best = null;
+    let attempt = 0;
+    const SLICE_BUDGET_MS = 12;
+
+    function runSlice() {
+      if (token !== state.prepareToken) return; // cancelled
+      const sliceStart = (typeof performance !== 'undefined' ? performance.now() : Date.now());
+      while (attempt < attempts) {
+        const pieces = scrambleSolvedBoard(pieceCount, 34 + level * 7 + attempt);
+        const solutionMoves = solveMinimumMoves(pieces);
+        attempt++;
+        if (Number.isFinite(solutionMoves)) {
+          const distance = Math.abs(solutionMoves - targetMoves) + (solutionMoves < minimumMoves ? 6 : 0) + (solutionMoves > maximumMoves ? 8 : 0);
+          if (!best || distance < best.distance || (distance === best.distance && solutionMoves > best.solutionMoves)) best = { pieces, solutionMoves, distance };
+          if (solutionMoves >= minimumMoves && solutionMoves <= maximumMoves && pieces.find(p => p.id === TARGET_ID).r >= 2) {
+            done({ pieces, solutionMoves });
+            return;
+          }
+        }
+        const now = (typeof performance !== 'undefined' ? performance.now() : Date.now());
+        if (now - sliceStart >= SLICE_BUDGET_MS) {
+          setTimeout(runSlice, 0); // yield to keep each task under budget
+          return;
+        }
+      }
+      done(best || defaultPuzzle());
+    }
+
+    runSlice();
   }
 
   function scrambleSolvedBoard(pieceCount, steps) {

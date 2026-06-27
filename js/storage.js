@@ -1021,6 +1021,8 @@ function normalizePetGameRecord(record) {
         icon: String(record.icon || '🎮').slice(0, 8),
         desc: String(record.desc || '').slice(0, 200),
         updatedAt: Number.isFinite(record.updatedAt) ? record.updatedAt : 0,
+        // 是否已发布到 Keepwork 作品广场（userWorks）。发布成功后置 true 并持久化。
+        isPublished: !!record.isPublished,
     };
 }
 
@@ -1085,6 +1087,7 @@ export async function savePetGame(html, meta = {}) {
     }
     const baseName = path.split('/').pop().replace(/\.html?$/i, '');
     await writeFileSafe(path, normalizePetGameHtml(html));
+    const prev = existing.find(item => item.path === path);
     const record = normalizePetGameRecord({
         path,
         id: meta.id || baseName,
@@ -1092,20 +1095,285 @@ export async function savePetGame(html, meta = {}) {
         icon: meta.icon || '🎮',
         desc: meta.desc || '',
         updatedAt: Date.now(),
+        // 重新保存 / 编辑同一个游戏时保留已发布标记（meta 不携带该字段）。
+        isPublished: meta.isPublished != null ? meta.isPublished : prev?.isPublished,
     });
     const nextIndex = [record, ...existing.filter(item => item.path !== path)];
     await savePetGameList(nextIndex);
     return { path, record, index: nextIndex };
 }
 
-export async function deletePetGame(pathOrName) {
+// 更新单个游戏的发布状态（发布到 Keepwork 作品广场成功后调用），并持久化到索引。
+export async function setPetGamePublished(pathOrName, isPublished = true) {
+    const raw = String(pathOrName || '').trim();
+    if (!raw) return null;
+    const path = (raw.includes('/') ? raw : petGamePath(raw)).replace(/^\/+/, '');
+    const existing = await loadPetGameList();
+    let updatedRecord = null;
+    const nextIndex = existing.map(item => {
+        if (item.path !== path) return item;
+        updatedRecord = { ...item, isPublished: !!isPublished };
+        return updatedRecord;
+    });
+    if (!updatedRecord) return null;
+    await savePetGameList(nextIndex);
+    return updatedRecord;
+}
+
+// 删除我的小游戏。默认连同 HTML 文件一并删除；keepFile=true 时只从索引（pet-games/index.json）
+// 移除，保留 HTML 文件——用于已发布到作品广场的游戏，删除「我的」列表条目但不破坏线上作品链接。
+export async function deletePetGame(pathOrName, { keepFile = false } = {}) {
     const raw = String(pathOrName || '').trim();
     if (!raw) return false;
     const path = (raw.includes('/') ? raw : petGamePath(raw)).replace(/^\/+/, '');
     const existing = await loadPetGameList();
     await savePetGameList(existing.filter(item => item.path !== path));
+    if (!keepFile) await deleteFileSafe(path);
+    return true;
+}
+
+// ========== 探索「已看过」记录（7 天内不再重复推送同一个作品） ==========
+// 双层存储：完整历史放本地 IndexedDB（容量大、不限条数）；个人主页存储只同步最近
+// EXPLORE_SEEN_STORE_MAX 条（体积可控、可跨设备）。读取时合并两者，写入时两边都更新。
+const EXPLORE_SEEN_FILE = 'user/explore_seen.json';
+const EXPLORE_SEEN_TTL_MS = 7 * 24 * 60 * 60 * 1000;
+const EXPLORE_SEEN_STORE_MAX = 300;     // 同步到个人主页存储的上限
+const EXPLORE_SEEN_DB_MAX = 2000;       // 本地 IndexedDB 完整历史的上限（超出按最旧裁剪）
+
+const EXPLORE_SEEN_DB = 'MagicHaqiExploreSeen';
+const EXPLORE_SEEN_STORE = 'seen';
+let _exploreSeenDbPromise = null;
+
+function openExploreSeenDb() {
+    if (_exploreSeenDbPromise) return _exploreSeenDbPromise;
+    _exploreSeenDbPromise = new Promise((resolve, reject) => {
+        if (typeof indexedDB === 'undefined') { reject(new Error('IndexedDB 不可用')); return; }
+        const req = indexedDB.open(EXPLORE_SEEN_DB, 1);
+        req.onupgradeneeded = () => {
+            const db = req.result;
+            if (!db.objectStoreNames.contains(EXPLORE_SEEN_STORE)) {
+                db.createObjectStore(EXPLORE_SEEN_STORE, { keyPath: 'key' });
+            }
+        };
+        req.onsuccess = () => resolve(req.result);
+        req.onerror = () => reject(req.error || new Error('打开 IndexedDB 失败'));
+    }).catch((e) => { _exploreSeenDbPromise = null; throw e; });
+    return _exploreSeenDbPromise;
+}
+
+// 只保留 7 天内的记录，返回 { key: seenAt } 映射。
+function pruneExploreSeen(raw) {
+    const now = Date.now();
+    const out = {};
+    if (raw && typeof raw === 'object') {
+        Object.keys(raw).forEach(key => {
+            const ts = Number(raw[key]) || 0;
+            if (ts && now - ts < EXPLORE_SEEN_TTL_MS) out[String(key).slice(0, 200)] = ts;
+        });
+    }
+    return out;
+}
+
+// 读取 IndexedDB 里的完整已看过历史（剔除 7 天前的，并异步清理过期行）。
+async function loadExploreSeenFromDb() {
+    try {
+        const db = await openExploreSeenDb();
+        const rows = await new Promise((resolve, reject) => {
+            const tx = db.transaction(EXPLORE_SEEN_STORE, 'readonly');
+            const req = tx.objectStore(EXPLORE_SEEN_STORE).getAll();
+            req.onsuccess = () => resolve(Array.isArray(req.result) ? req.result : []);
+            req.onerror = () => reject(req.error);
+        });
+        const now = Date.now();
+        const map = {};
+        const expired = [];
+        const valid = [];
+        rows.forEach(r => {
+            const key = r?.key;
+            const ts = Number(r?.seenAt) || 0;
+            if (!key || !ts) return;
+            if (now - ts < EXPLORE_SEEN_TTL_MS) { map[key] = ts; valid.push({ key, seenAt: ts }); }
+            else expired.push(key);
+        });
+        // 超出条数上限时，连同过期行一起把最旧的裁掉（map 也同步去掉，避免返回被删的 key）。
+        let toDelete = expired;
+        if (valid.length > EXPLORE_SEEN_DB_MAX) {
+            valid.sort((a, b) => a.seenAt - b.seenAt);
+            const overflow = valid.slice(0, valid.length - EXPLORE_SEEN_DB_MAX);
+            overflow.forEach(({ key }) => { delete map[key]; });
+            toDelete = expired.concat(overflow.map(({ key }) => key));
+        }
+        if (toDelete.length) pruneExploreSeenDb(db, toDelete).catch(() => {});
+        return map;
+    } catch (_) { return {}; }
+}
+
+async function pruneExploreSeenDb(db, keys) {
+    await new Promise((resolve) => {
+        const tx = db.transaction(EXPLORE_SEEN_STORE, 'readwrite');
+        const store = tx.objectStore(EXPLORE_SEEN_STORE);
+        keys.forEach(k => { if (k) store.delete(k); });
+        tx.oncomplete = resolve;
+        tx.onerror = resolve;
+    });
+}
+
+// 往 IndexedDB 写若干条已看过记录（完整历史，无 300 上限）。
+async function putExploreSeenToDb(entries) {
+    if (!entries.length) return;
+    try {
+        const db = await openExploreSeenDb();
+        await new Promise((resolve, reject) => {
+            const tx = db.transaction(EXPLORE_SEEN_STORE, 'readwrite');
+            const store = tx.objectStore(EXPLORE_SEEN_STORE);
+            entries.forEach(({ key, seenAt }) => { if (key) store.put({ key, seenAt: Number(seenAt) || Date.now() }); });
+            tx.oncomplete = resolve;
+            tx.onerror = () => reject(tx.error);
+        });
+    } catch (_) { /* IndexedDB 不可用时仅靠个人主页存储 */ }
+}
+
+// 读取探索已看过记录：合并 IndexedDB 完整历史 + 个人主页存储（最近 300，可跨设备），均剔除 7 天前的。
+// 同时把「文件里有、但本地 IndexedDB 没有」的记录回填到 IndexedDB（吸收其它设备同步过来的记录）。
+export async function loadExploreSeen() {
+    const fromFile = pruneExploreSeen(await readJSON(EXPLORE_SEEN_FILE, {}));
+    const fromDb = await loadExploreSeenFromDb();
+    const merged = { ...fromDb };
+    const backfill = [];
+    Object.keys(fromFile).forEach(key => {
+        const ts = fromFile[key];
+        if (!merged[key] || ts > merged[key]) merged[key] = ts;
+        if (!fromDb[key]) backfill.push({ key, seenAt: ts });
+    });
+    if (backfill.length) putExploreSeenToDb(backfill);
+    return merged;
+}
+
+// 记录单个作品为已看过：写入 IndexedDB 完整历史（不限条数）。
+export function recordExploreSeen(key, seenAt = Date.now()) {
+    const k = String(key || '').trim();
+    if (!k) return;
+    putExploreSeenToDb([{ key: k.slice(0, 200), seenAt }]);
+}
+
+// 同步「已看过」到个人主页存储：剔除过期 + 只保留最近 EXPLORE_SEEN_STORE_MAX 条（防抖写盘）。
+export function saveExploreSeen(map) {
+    const pruned = pruneExploreSeen(map);
+    const capped = Object.keys(pruned)
+        .sort((a, b) => pruned[b] - pruned[a])
+        .slice(0, EXPLORE_SEEN_STORE_MAX)
+        .reduce((acc, key) => { acc[key] = pruned[key]; return acc; }, {});
+    saveJSONDebounced(EXPLORE_SEEN_FILE, capped);
+    return capped;
+}
+
+// ========== 伴学游戏（study-games/ 下以 HTML 文件存储） ==========
+// 与 pet-games 同构，但独立命名空间，供 dev_tools/AITestGenerator.html 使用，
+// 与「我创造的小游戏」列表互不混淆。复用上方的纯函数 helper（normalize / 文件名生成等）。
+const STUDY_GAME_DIR = 'study-games';
+const STUDY_GAME_INDEX = `${STUDY_GAME_DIR}/index.json`;
+const STUDENT_MEMORY_DIR = `${STUDY_GAME_DIR}/memory`;
+
+function studyGamePath(name) {
+    return `${STUDY_GAME_DIR}/${safePetGameBaseName(name)}.html`;
+}
+function studyGamePathFromMetaPath(path) {
+    const clean = String(path || '').trim().replace(/^\/+/, '');
+    return clean && /^study-games\/[^/]+\.html?$/i.test(clean) ? clean : '';
+}
+
+export async function loadStudyGameList() {
+    const list = await readJSON(STUDY_GAME_INDEX, []);
+    const byPath = new Map();
+    (Array.isArray(list) ? list : [])
+        .map(normalizePetGameRecord)
+        .filter(Boolean)
+        .forEach(record => {
+            if (!record?.path) return;
+            const prev = byPath.get(record.path);
+            byPath.set(record.path, !prev || (record.updatedAt || 0) >= (prev.updatedAt || 0) ? record : prev);
+        });
+    return [...byPath.values()].sort((a, b) => (b.updatedAt || 0) - (a.updatedAt || 0));
+}
+
+async function saveStudyGameList(list) {
+    const normalized = (Array.isArray(list) ? list : [])
+        .map(normalizePetGameRecord)
+        .filter(Boolean)
+        .slice(0, 300);
+    await writeJSON(STUDY_GAME_INDEX, normalized);
+    return normalized;
+}
+
+export async function loadStudyGameHtml(pathOrName) {
+    const raw = String(pathOrName || '').trim();
+    if (!raw) return '';
+    const path = (raw.includes('/') ? raw : studyGamePath(raw)).replace(/^\/+/, '');
+    return normalizePetGameHtml(await readFileSafe(path));
+}
+
+// 保存伴学游戏：html 必填，meta 可包含 { title, icon, desc, path }。首次保存使用系统生成文件名；再次保存沿用 path。
+export async function saveStudyGame(html, meta = {}) {
+    const existing = await loadStudyGameList();
+    const existingPath = studyGamePathFromMetaPath(meta.path);
+    const usedPaths = new Set(existing.map(item => item.path));
+    let path = existingPath;
+    while (!path) {
+        const candidate = studyGamePath(generatedPetGameBaseName());
+        if (!usedPaths.has(candidate)) path = candidate;
+    }
+    const baseName = path.split('/').pop().replace(/\.html?$/i, '');
+    await writeFileSafe(path, normalizePetGameHtml(html));
+    const record = normalizePetGameRecord({
+        path,
+        id: meta.id || baseName,
+        title: meta.title || petGameTitleFromPath(path),
+        icon: meta.icon || '📚',
+        desc: meta.desc || '',
+        updatedAt: Date.now(),
+    });
+    const nextIndex = [record, ...existing.filter(item => item.path !== path)];
+    await saveStudyGameList(nextIndex);
+    return { path, record, index: nextIndex };
+}
+
+export async function deleteStudyGame(pathOrName) {
+    const raw = String(pathOrName || '').trim();
+    if (!raw) return false;
+    const path = (raw.includes('/') ? raw : studyGamePath(raw)).replace(/^\/+/, '');
+    const existing = await loadStudyGameList();
+    await saveStudyGameList(existing.filter(item => item.path !== path));
     await deleteFileSafe(path);
     return true;
+}
+
+// ---------- 学生长期记忆（study-games/memory/<studentId>.md） ----------
+// 供数字人「记得」学生：掌握项、反复错点、偏好题型、历史会话摘要。
+// 沿用 pets/<id>.memory.md 的 8KB 头摘要轮转约定。
+function safeStudentId(id) {
+    return String(id || '').trim().replace(/[^a-zA-Z0-9_\-一-龥]/g, '_').slice(0, 64) || 'default';
+}
+function studentMemoryPath(studentId) {
+    return `${STUDENT_MEMORY_DIR}/${safeStudentId(studentId)}.md`;
+}
+
+export async function loadStudentMemory(studentId) {
+    return await readFileSafe(studentMemoryPath(studentId));
+}
+
+export async function appendStudentMemory(studentId, line) {
+    if (!line) return;
+    const id = safeStudentId(studentId);
+    const cur = await loadStudentMemory(id);
+    const stamp = new Date().toISOString().slice(0, 16).replace('T', ' ');
+    const newLine = `- [${stamp}] ${String(line).trim()}\n`;
+    let next = (cur || `# ${id} 的伴学记忆\n\n`) + newLine;
+    if (next.length > CONFIG.memoryMaxBytes) {
+        const head = next.slice(0, 200);
+        const tail = next.slice(-CONFIG.memoryMaxBytes + 300);
+        next = head + '\n\n... (旧记忆已归档) ...\n\n' + tail;
+    }
+    await writeFileSafe(studentMemoryPath(id), next);
 }
 
 // 读取别人 workspace 下分享的小游戏 HTML（用于分享链接 / 收藏的他人作品试玩）。

@@ -1,0 +1,804 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+<title>哈奇炼金炉：大瓜突变 · Alchemy Furnace</title>
+<script src="https://cdn.keepwork.com/keepwork/cdn/tailwindcss@3.4.16.js"></script>
+<style>
+  :root{ --c-bg:#0a0712; --c-panel:#1a1530; --c-accent:#f5a524; --c-accent2:#c084fc;
+    --c-good:#34d399; --c-bad:#f87171; --c-coin:#fbbf24; --line:#2e2350; }
+  *{box-sizing:border-box;}
+  html,body{margin:0;height:100%;color:#ece7f5;background:#070510;
+    font-family:"PingFang SC","Microsoft YaHei",system-ui,sans-serif;overflow:hidden;
+    touch-action:none;-webkit-tap-highlight-color:transparent;user-select:none;}
+  #app{position:relative;width:100vw;height:100vh;display:flex;flex-direction:column;
+    background:
+      radial-gradient(120% 55% at 50% -8%, rgba(168,85,247,.20), transparent 60%),
+      radial-gradient(130% 50% at 50% 110%, rgba(245,124,40,.24), transparent 62%),
+      linear-gradient(180deg,#0d0819,#0a0712 58%,#100a1c);}
+
+  /* ---------- HUD (glass) ---------- */
+  .hud{display:flex;align-items:center;justify-content:space-between;gap:10px;
+    padding:8px 14px;border-bottom:1px solid rgba(192,132,252,.25);flex-shrink:0;z-index:5;
+    background:linear-gradient(180deg,rgba(30,22,52,.92),rgba(16,11,30,.88));
+    box-shadow:0 4px 20px rgba(0,0,0,.45);backdrop-filter:blur(8px);}
+  .stat{display:flex;flex-direction:column;align-items:center;line-height:1.12;min-width:50px;}
+  .stat .k{font-size:10px;color:#9d92bd;letter-spacing:1px;}
+  .stat .v{font-size:17px;font-weight:800;font-variant-numeric:tabular-nums;
+    background:linear-gradient(180deg,#fff,#cdbff0);-webkit-background-clip:text;background-clip:text;color:transparent;}
+  .prog{flex:1;height:18px;margin:0 6px;border-radius:10px;position:relative;overflow:hidden;
+    background:rgba(8,5,18,.85);border:1px solid var(--line);box-shadow:inset 0 2px 6px rgba(0,0,0,.55);}
+  .prog > i{display:block;height:100%;width:0%;border-radius:10px;transition:width .3s ease;
+    background:linear-gradient(90deg,#d97706,#f59e0b,#fbbf24,#fde68a);box-shadow:0 0 14px rgba(245,158,11,.7);}
+  .prog.near > i{animation:progPulse 1s infinite;}
+  @keyframes progPulse{0%,100%{filter:brightness(1);}50%{filter:brightness(1.45);}}
+  .prog > span{position:absolute;inset:0;display:flex;align-items:center;justify-content:center;
+    font-size:11px;font-weight:800;color:#fff;text-shadow:0 1px 3px rgba(0,0,0,.85);}
+
+  /* ---------- main ---------- */
+  .main{flex:1;display:flex;min-height:0;position:relative;}
+  .stage{flex:1;position:relative;min-width:0;display:flex;align-items:center;justify-content:center;padding:10px;}
+  #board{display:block;border-radius:22px;touch-action:none;
+    box-shadow:0 0 0 2px rgba(192,132,252,.32),0 0 46px rgba(168,85,247,.22),0 26px 64px rgba(0,0,0,.6);}
+
+  .sidebar{width:128px;flex-shrink:0;display:flex;flex-direction:column;gap:9px;padding:12px 9px;
+    background:linear-gradient(180deg,rgba(26,21,48,.92),rgba(12,9,24,.92));
+    border-left:1px solid rgba(192,132,252,.2);}
+  .relic{display:flex;align-items:center;gap:7px;border-radius:12px;padding:8px;font-size:11px;color:#d9d2ec;
+    background:linear-gradient(180deg,rgba(46,35,80,.85),rgba(26,21,48,.85));
+    border:1px solid rgba(192,132,252,.22);box-shadow:0 2px 8px rgba(0,0,0,.3);transition:.2s;}
+  .relic .ri{font-size:20px;filter:drop-shadow(0 1px 2px rgba(0,0,0,.5));}
+  .relic.off{opacity:.34;filter:grayscale(.6);}
+  .relic:not(.off):not(#nextBox){border-color:rgba(245,165,36,.6);box-shadow:0 0 14px rgba(245,165,36,.28);}
+  .skillbtn{margin-top:auto;}
+
+  .btn{cursor:pointer;border:none;border-radius:13px;font-weight:800;letter-spacing:.5px;
+    transition:transform .08s,filter .15s,opacity .15s;}
+  .btn:active{transform:translateY(2px) scale(.98);}
+  .btn:disabled{opacity:.35;cursor:not-allowed;filter:grayscale(.4);}
+  .btn-amber{background:linear-gradient(180deg,#fcd34d,#d97706);color:#2a1604;box-shadow:0 4px 0 #92400e,0 6px 16px rgba(217,119,6,.4);}
+  .btn-blue{background:linear-gradient(180deg,#c084fc,#7c3aed);color:#fff;box-shadow:0 4px 0 #5b21b6,0 6px 16px rgba(124,58,237,.4);}
+  .btn-red{background:linear-gradient(180deg,#fb7185,#dc2626);color:#fff;box-shadow:0 4px 0 #7f1d1d;}
+  .btn-ghost{background:rgba(46,35,80,.75);color:#d9d2ec;border:1px solid rgba(192,132,252,.3);}
+  .btn-blue.ring{outline:3px solid rgba(192,132,252,.6);outline-offset:2px;}
+
+  /* ---------- modal ---------- */
+  .modal-bg{position:fixed;inset:0;background:rgba(2,6,23,.82);backdrop-filter:blur(4px);z-index:50;
+    display:none;align-items:center;justify-content:center;padding:18px;animation:fadein .2s;}
+  .modal-bg.show{display:flex;}
+  @keyframes fadein{from{opacity:0;}to{opacity:1;}}
+  .modal{background:linear-gradient(180deg,#241a44,#140d28);border:1px solid rgba(192,132,252,.4);border-radius:22px;
+    max-width:480px;width:100%;padding:24px;text-align:center;
+    box-shadow:0 24px 70px rgba(0,0,0,.65),0 0 60px rgba(168,85,247,.18);}
+  .modal h2{margin:0 0 6px;font-size:23px;font-weight:900;}
+  .modal p{margin:0 0 16px;font-size:14px;color:#bdb2d8;line-height:1.6;}
+  .choices{display:grid;grid-template-columns:1fr 1fr;gap:12px;}
+  .choice{background:linear-gradient(180deg,#2c2150,#1a1334);border:1px solid rgba(192,132,252,.28);border-radius:16px;
+    padding:15px 10px;cursor:pointer;transition:transform .12s,border-color .15s,box-shadow .15s;}
+  .choice:hover{transform:translateY(-4px);border-color:var(--c-accent);box-shadow:0 12px 26px rgba(245,165,36,.3);}
+  .choice .ce{font-size:36px;filter:drop-shadow(0 2px 4px rgba(0,0,0,.5));}
+  .choice .ct{font-size:14px;font-weight:800;margin-top:5px;}
+  .choice .cd{font-size:11px;color:#a99fc6;margin-top:5px;line-height:1.45;}
+
+  .coach{position:absolute;left:50%;top:12px;transform:translateX(-50%);max-width:90%;
+    background:rgba(15,22,44,.92);border:1px solid var(--c-accent);color:#fde68a;
+    font-size:12px;font-weight:700;padding:6px 14px;border-radius:12px;z-index:30;
+    text-align:center;pointer-events:none;opacity:0;transition:opacity .25s;white-space:nowrap;}
+  .coach.show{opacity:1;}
+
+  .combo-banner{position:absolute;left:50%;top:36%;transform:translate(-50%,-50%) scale(.5);
+    font-size:40px;font-weight:900;color:#fbbf24;pointer-events:none;z-index:25;opacity:0;
+    text-shadow:0 2px 10px rgba(0,0,0,.6),0 0 22px rgba(245,158,11,.65);}
+  .combo-banner.pop{animation:comboPop .75s ease-out;}
+  @keyframes comboPop{0%{opacity:0;transform:translate(-50%,-50%) scale(.4) rotate(-8deg);}
+    28%{opacity:1;transform:translate(-50%,-50%) scale(1.18) rotate(4deg);}
+    100%{opacity:0;transform:translate(-50%,-50%) scale(1) rotate(0);}}
+
+  @media (max-width:760px){
+    .main{flex-direction:column;}
+    .sidebar{width:100%;flex-direction:row;flex-wrap:wrap;border-left:none;border-top:2px solid #1e2540;
+      padding:8px;justify-content:center;align-items:center;}
+    .relic{flex:1 1 30%;min-width:96px;}
+    .skillbtn{margin:0;flex:1 1 100%;}
+    .choices{grid-template-columns:1fr;}
+  }
+</style>
+</head>
+<body>
+<div id="app">
+  <div class="hud">
+    <div class="stat"><span class="k">天数</span><span class="v" id="hudDay">1/30</span></div>
+    <div class="stat"><span class="k">掉落</span><span class="v" id="hudDrops">18</span></div>
+    <div class="prog"><i id="progFill"></i><span id="progTxt">0 / 300</span></div>
+    <div class="stat"><span class="k">💰金币</span><span class="v" id="hudCoins" style="color:var(--c-coin)">0</span></div>
+    <div class="stat"><span class="k">分数</span><span class="v" id="hudScore">0</span></div>
+  </div>
+
+  <div class="main">
+    <div class="stage">
+      <canvas id="board"></canvas>
+      <div class="coach" id="coach"></div>
+      <div class="combo-banner" id="comboBanner"></div>
+    </div>
+    <div class="sidebar">
+      <div class="relic" id="nextBox" style="justify-content:space-between;"><span>下一颗</span><span class="ri" id="nextEmoji">🍒</span></div>
+      <div class="relic off" id="relicGravity"><span class="ri">🪨</span><span>重力铅块</span></div>
+      <div class="relic off" id="relicSpike"><span class="ri">🔱</span><span>尖刺墙壁</span></div>
+      <div class="relic off" id="relicFusion"><span class="ri">⚗️</span><span>万能融合剂</span></div>
+      <button class="btn btn-blue skillbtn" id="btnFusion" style="padding:10px;font-size:13px;display:none;">⚗️ 融合剂 ×1</button>
+    </div>
+  </div>
+</div>
+
+<!-- ============ 1. game_config (pure data) ============ -->
+<script>
+game_config = {
+  difficulty: "normal",
+  totalDays: 30,                 // 30 天配额制
+  field: { w: 440, h: 680, wall: 14, deathLine: 112 },
+  // 物理法则参数 —— 遗物通过修改这些字段改变物理（见 PHYS / applyRelic）
+  physics: {
+    gravityY: 1.05,              // 世界重力
+    restitution: 0.12,           // 弹性（调低，更好控制）
+    friction: 0.05,
+    frictionAir: 0.004,
+    density: 0.0014,             // 基础密度
+    massMul: 1,                  // 重力铅块 → 2
+    spikeWalls: false            // 尖刺墙壁 → true（樱桃撞墙爆体）
+  },
+  drop: { startLevels: [0,0,1,1,2,2], cooldownMs: 300, previewLevel: 0 },
+  carryTop: 3,                   // 过关保留前 3 大的球
+  combo: { windowMs: 1700, maxMult: 8 },   // 连击：窗口内连锁合并叠加倍率
+  // 11 级体素球：樱桃 → 大西瓜
+  balls: [
+    { lv:0,  name:"樱桃",   r:15, score:2,   emoji:"🍒", color:"#e23b53" },
+    { lv:1,  name:"草莓",   r:20, score:5,   emoji:"🍓", color:"#f0506b" },
+    { lv:2,  name:"葡萄",   r:26, score:10,  emoji:"🍇", color:"#9b59d0" },
+    { lv:3,  name:"橘子",   r:32, score:18,  emoji:"🍊", color:"#ff9f1c" },
+    { lv:4,  name:"柠檬",   r:39, score:30,  emoji:"🍋", color:"#f6d743" },
+    { lv:5,  name:"猕猴桃", r:47, score:50,  emoji:"🥝", color:"#86b94b" },
+    { lv:6,  name:"苹果",   r:55, score:80,  emoji:"🍎", color:"#e8413a" },
+    { lv:7,  name:"水蜜桃", r:64, score:130, emoji:"🍑", color:"#ff8fa3" },
+    { lv:8,  name:"菠萝",   r:74, score:210, emoji:"🍍", color:"#f4c430" },
+    { lv:9,  name:"哈密瓜", r:86, score:340, emoji:"🍈", color:"#9acd32" },
+    { lv:10, name:"大西瓜", r:100,score:550, emoji:"🍉", color:"#2fae5a" }
+  ],
+  reward: { scoreDivisor: 12, passBonus: 20, min: 12, max: 300 }
+};
+</script>
+
+<!-- ============ 2. art_assets (none — drawn on canvas) ============ -->
+<script>
+art_assets = [];
+</script>
+
+<!-- ============ 3. game logic ============ -->
+<script>
+"use strict";
+const CFG   = game_config;
+const BALLS = CFG.balls;
+const MAXLV = BALLS.length - 1;
+const FW = CFG.field.w, FH = CFG.field.h, WALL = CFG.field.wall, DEATH_Y = CFG.field.deathLine;
+
+/* ---- live physics-law parameters (relics mutate this object) ---- */
+const PHYS = Object.assign({}, CFG.physics);
+
+/* ---- tiny helpers ---- */
+const $ = s => document.querySelector(s);
+const clamp = (v,a,b)=>Math.max(a,Math.min(b,v));
+const rand  = (a,b)=>a+Math.random()*(b-a);
+const pick  = a=>a[Math.floor(Math.random()*a.length)];
+const postParent = (type,data)=>{ try{ window.parent.postMessage({type,data},"*"); }catch(e){} };
+
+/* ============================================================
+ *  ENGINE BOOTSTRAP — Matter.js via resilient multi-CDN loader.
+ *  (Single PHYS object drives every physics law so relics are
+ *   just field flips — see applyRelic.)
+ * ============================================================ */
+function loadMatter(cb){
+  if(window.Matter) return cb();
+  const urls = [
+    "https://cdn.keepwork.com/npm/matter-js@0.19.0/build/matter.min.js",
+    "https://cdn.jsdelivr.net/npm/matter-js@0.19.0/build/matter.min.js",
+    "https://unpkg.com/matter-js@0.19.0/build/matter.min.js"
+  ];
+  (function next(i){
+    if(i>=urls.length){ document.getElementById("coach").textContent="物理引擎加载失败，请检查网络"; document.getElementById("coach").classList.add("show"); return; }
+    const s=document.createElement("script");
+    s.src=urls[i]; s.onload=()=>cb(); s.onerror=()=>next(i+1);
+    document.head.appendChild(s);
+  })(0);
+}
+
+let M, engine, world, runner;
+let walls = [], spikeSensors = [];
+
+function buildContainer(){
+  M = window.Matter;
+  engine = M.Engine.create();
+  world  = engine.world;
+  engine.gravity.y = PHYS.gravityY;
+  engine.gravity.scale = 0.0014;
+
+  const t = WALL;
+  const opt = { isStatic:true, restitution:0.05, friction:0.2, render:{visible:false} };
+  // floor + two side walls (inner faces at WALL .. FW-WALL)
+  walls = [
+    M.Bodies.rectangle(FW/2, FH+t/2, FW+t*2, t, opt),            // floor
+    M.Bodies.rectangle(t/2,  FH/2,   t,      FH*2, opt),         // left
+    M.Bodies.rectangle(FW-t/2, FH/2, t,      FH*2, opt)          // right
+  ];
+  M.Composite.add(world, walls);
+
+  // spike sensors (inactive until 尖刺墙壁 relic) — thin sensors hugging both inner walls
+  const sopt = { isStatic:true, isSensor:true, label:"spike", render:{visible:false} };
+  spikeSensors = [
+    M.Bodies.rectangle(t+3, FH/2, 6, FH, sopt),
+    M.Bodies.rectangle(FW-t-3, FH/2, 6, FH, sopt)
+  ];
+  M.Composite.add(world, spikeSensors);
+
+  M.Events.on(engine, "collisionStart", onCollision);
+
+  runner = M.Runner.create();
+  M.Runner.run(runner, engine);
+}
+
+/* ---- create a fruit body of a given level at (x,y) ---- */
+function makeBall(level, x, y){
+  const b = BALLS[level];
+  const body = M.Bodies.circle(x, y, b.r, {
+    restitution: PHYS.restitution,
+    friction:    PHYS.friction,
+    frictionAir: PHYS.frictionAir,
+    density:     PHYS.density * PHYS.massMul,
+    label: "ball"
+  });
+  body.plugin = { level, merging:false, born: performance.now() };
+  M.Composite.add(world, body);
+  return body;
+}
+
+function ballBodies(){ return M.Composite.allBodies(world).filter(b=>b.label==="ball"); }
+
+/* ---- merge logic: equal levels touch → next level ---- */
+function onCollision(ev){
+  for(const p of ev.pairs){
+    const a=p.bodyA, b=p.bodyB;
+    // spike wall: cherry (lv0) touching an armed spike sensor → pop
+    if(PHYS.spikeWalls){
+      const ball = a.label==="ball"?a : (b.label==="ball"?b:null);
+      const spk  = a.label==="spike"?a : (b.label==="spike"?b:null);
+      if(ball && spk && ball.plugin.level===0 && !ball.plugin.merging){
+        ball.plugin.merging=true;
+        popBall(ball, true);
+        continue;
+      }
+    }
+    if(a.label!=="ball" || b.label!=="ball") continue;
+    if(a.plugin.merging || b.plugin.merging) continue;
+    if(a.plugin.level !== b.plugin.level) continue;
+    const lv = a.plugin.level;
+    if(lv >= MAXLV){ // two watermelons → big payoff, both pop
+      a.plugin.merging=b.plugin.merging=true;
+      const wx=(a.position.x+b.position.x)/2, wy=(a.position.y+b.position.y)/2;
+      popBall(a); popBall(b);
+      mergeScore(BALLS[MAXLV].score*2, wx, wy, MAXLV);
+      spawnPuff(wx,wy,BALLS[MAXLV].color,30);
+      continue;
+    }
+    a.plugin.merging=b.plugin.merging=true;
+    const mx=(a.position.x+b.position.x)/2, my=(a.position.y+b.position.y)/2;
+    popBall(a); popBall(b);
+    const nb = makeBall(lv+1, mx, my);
+    M.Body.setVelocity(nb, {x:0, y:-1.2});
+    nb.plugin.born = performance.now()+120;   // brief merge grace
+    mergeScore(BALLS[lv+1].score, mx, my, lv+1);
+    spawnPuff(mx,my,BALLS[lv+1].color,16);
+  }
+}
+function popBall(b){ try{ M.Composite.remove(world,b); }catch(e){} }
+
+/* combo-aware scoring: chained merges within combo.windowMs stack a multiplier */
+function mergeScore(base, x, y, lv){
+  const now = performance.now();
+  SM.combo = now < SM.comboUntil ? SM.combo + 1 : 1;
+  SM.comboUntil = now + CFG.combo.windowMs;
+  const mult = Math.min(SM.combo, CFG.combo.maxMult);
+  const gain = base * mult;
+  SM.score += gain;
+  spawnPopup(x, y - (BALLS[lv]?BALLS[lv].r:10) - 4, "+" + gain + (mult>1 ? "  ×"+mult : ""), mult>=3 ? "#fbbf24" : "#ffffff");
+  if(mult >= 2) showCombo(mult);
+  refreshHud();
+}
+
+/* ============================================================
+ *  RELIC INTERFACE — every relic is just a PHYS mutation.
+ * ============================================================ */
+const RELICS = {
+  gravity_lead: { id:"gravity_lead", name:"重力铅块", node:"#relicGravity",
+    apply(){ PHYS.massMul = 2; ballBodies().forEach(b=>M.Body.setDensity(b, PHYS.density*PHYS.massMul)); } },
+  spike_walls:  { id:"spike_walls", name:"尖刺墙壁", node:"#relicSpike",
+    apply(){ PHYS.spikeWalls = true; } },
+  fusion_agent: { id:"fusion_agent", name:"万能融合剂", node:"#relicFusion",
+    apply(){ SM.hasFusion = true; $("#btnFusion").style.display="block"; } }
+};
+function applyRelic(id){
+  const r = RELICS[id]; if(!r || SM.relics.has(id)) return;
+  SM.relics.add(id); r.apply();
+  const n = document.querySelector(r.node); if(n) n.classList.remove("off");
+  toast(`获得遗物：${r.name}`);
+}
+
+/* ============================================================
+ *  STATE MACHINE — 30-day quota loop
+ *  BOOT → DAY_START → PLAYING → SETTLE → EVENT → (DAY_START | WIN)
+ *                                  └→ FAIL (drops out / overflow)
+ * ============================================================ */
+function dayConfig(day){
+  // tuned middle ground: fewer drops force efficiency; targets need ~2 mid fruits + combo play.
+  // day1 ≈ 150 / 21 drops · day10 ≈ 1010 / 25 · day30 ≈ 4480 / 36
+  const target = Math.round(150 + (day-1)*64 + Math.pow(day-1, 1.78) * 7);
+  const drops  = 21 + Math.floor((day-1) * 0.5);
+  return { day, target, drops };
+}
+
+const SM = {
+  state:"BOOT", day:1, score:0, coins:0,
+  target:0, dropsLeft:0, dropsEmptyAt:0,
+  cursorX:FW/2, queue:[],
+  canDrop:false, lastDrop:0,
+  combo:0, comboUntil:0,
+  relics:new Set(), hasFusion:false, fusionArmed:false, fusionPick:null,
+  started:false, loaded:false, overflowSince:0
+};
+function fillQueue(){ while(SM.queue.length < 3) SM.queue.push(pick(CFG.drop.startLevels)); }
+
+function setState(s){ SM.state=s; }
+
+function startDay(day){
+  const dc = dayConfig(day);
+  SM.day=day; SM.target=dc.target; SM.dropsLeft=dc.drops;
+  SM.canDrop=true; SM.overflowSince=0; SM.dropsEmptyAt=0;
+  SM.combo=0; SM.comboUntil=0;
+  SM.queue=[]; fillQueue();
+  // refresh per-day active skill charge if relic owned
+  if(SM.relics.has("fusion_agent")){ SM.hasFusion=true; $("#btnFusion").style.display="block"; $("#btnFusion").disabled=false; $("#btnFusion").textContent="⚗️ 融合剂 ×1"; }
+  setState("PLAYING");
+  refreshHud();
+  toast(`第 ${day} 天 — 目标 ${dc.target} 分 · ${dc.drops} 次掉落`);
+}
+
+/* ---- player drops the current ball ---- */
+function doDrop(){
+  if(SM.state!=="PLAYING" || !SM.canDrop || SM.dropsLeft<=0) return;
+  const now=performance.now();
+  if(now - SM.lastDrop < CFG.drop.cooldownMs) return;
+  SM.lastDrop=now;
+  const lv=SM.queue.shift(); fillQueue();
+  const r=BALLS[lv].r;
+  const x=clamp(SM.cursorX, WALL+r+1, FW-WALL-r-1);
+  const body=makeBall(lv, x, DEATH_Y - r - 6);
+  M.Body.setVelocity(body,{x:0,y:0});
+  SM.dropsLeft--;
+  refreshHud();
+}
+
+/* ---- after each settle tick: target reached? overflow? drops out? ---- */
+function checkProgress(){
+  if(SM.state!=="PLAYING") return;
+  // win condition: reach target score
+  if(SM.score >= SM.target){ enterSettle(); return; }
+  // overflow: a *resting* ball pokes above the death line for > 1.4s
+  const over = ballBodies().some(b=>{
+    const r=BALLS[b.plugin.level].r;
+    const slow=Math.abs(b.velocity.y)<0.6 && Math.abs(b.velocity.x)<0.6;
+    return slow && (b.position.y - r) < DEATH_Y && (performance.now()-b.plugin.born)>500;
+  });
+  if(over){
+    if(!SM.overflowSince) SM.overflowSince=performance.now();
+    else if(performance.now()-SM.overflowSince>1400){ failDay("溢出！容器爆满"); }
+  } else SM.overflowSince=0;
+  // out of drops without hitting target — wait for the field to settle, with a 3.5s safety grace
+  if(SM.dropsLeft<=0){
+    if(!SM.dropsEmptyAt) SM.dropsEmptyAt=performance.now();
+    const waited = performance.now()-SM.dropsEmptyAt > 3500;
+    if((settledEnough()||waited) && SM.score < SM.target) failDay("掉落次数用尽，未达目标");
+  }
+}
+function settledEnough(){
+  return ballBodies().every(b=>Math.abs(b.velocity.y)<0.8 && Math.abs(b.velocity.x)<0.8);
+}
+
+/* ---- SETTLE: keep top-3 balls, rest → coins, clear field ---- */
+function enterSettle(){
+  setState("SETTLE"); SM.canDrop=false;
+  const sorted = ballBodies().slice().sort((a,b)=>b.plugin.level-a.plugin.level);
+  const keep = sorted.slice(0, CFG.carryTop);
+  const drop = sorted.slice(CFG.carryTop);
+  const carry = keep.map(b=>b.plugin.level);
+  let coinGain = 0;
+  drop.forEach(b=> coinGain += Math.max(1, Math.floor(BALLS[b.plugin.level].score/8)) );
+  coinGain += CFG.reward.passBonus;
+  SM.coins += coinGain;
+  // wipe the field
+  ballBodies().forEach(popBall);
+  refreshHud();
+  showClearModal(carry, coinGain);
+}
+
+/* re-seed carried balls into the next day's container */
+function seedCarry(carry){
+  carry.forEach((lv,i)=>{
+    const r=BALLS[lv].r;
+    const x=clamp(FW*(0.3+0.2*i), WALL+r+2, FW-WALL-r-2);
+    const body=makeBall(lv, x, FH-80-r);
+    body.plugin.born = performance.now()-2000;
+  });
+}
+
+function failDay(reason){
+  if(SM.state==="FAIL"||SM.state==="WIN") return;
+  setState("FAIL"); SM.canDrop=false;
+  finishRun(false, reason);
+}
+
+function winRun(){
+  setState("WIN"); SM.canDrop=false;
+  finishRun(true, "通关 30 天！");
+}
+
+function finishRun(won, reason){
+  const earned = clamp(Math.round(SM.score/CFG.reward.scoreDivisor) + (won?80:0),
+                       CFG.reward.min, CFG.reward.max);
+  postParent("gameFinished", { earnedPoints:earned, score:SM.score, coins:SM.coins,
+    level:SM.day, won, reason, finishedAt:Date.now() });
+  showEndModal(won, reason, earned);
+}
+
+/* ============================================================
+ *  ROGUELIKE EVENT — between days. Goblin + relic offers.
+ * ============================================================ */
+function enterEvent(carry){
+  setState("EVENT");
+  // alternate: relic offer on odd days, goblin on even — simple phase-1 rotation
+  if(SM.day % 2 === 1 && SM.day < CFG.totalDays){
+    showRelicOffer(carry);
+  } else {
+    showGoblin(carry);
+  }
+}
+
+function showGoblin(carry){
+  const biggest = carry.length ? BALLS[Math.max(...carry)].name : "（无）";
+  openModal(`
+    <h2>👺 贪婪的地精</h2>
+    <p>地精盯上了你保留的最大的球（${biggest}）。</p>
+    <div class="choices">
+      <div class="choice" data-act="A">
+        <div class="ce">💰</div><div class="ct">交出最大球</div>
+        <div class="cd">换取 <b style="color:var(--c-coin)">500 金币</b>，腾出空间</div>
+      </div>
+      <div class="choice" data-act="B">
+        <div class="ce">🎲</div><div class="ct">付 100 金币</div>
+        <div class="cd">他扔来一颗随机高级球（有溢出风险）</div>
+      </div>
+    </div>`,
+    node=>{
+      node.querySelectorAll(".choice").forEach(c=>c.onclick=()=>{
+        const act=c.dataset.act;
+        if(act==="A" && carry.length){
+          const idx=carry.indexOf(Math.max(...carry));
+          carry.splice(idx,1);
+          SM.coins+=500; toast("地精拿走了最大球，+500 金币");
+        } else if(act==="B"){
+          if(SM.coins>=100){ SM.coins-=100; carry.push(clamp(3+Math.floor(rand(0,5)),0,8)); toast("地精扔来一颗高级球！"); }
+          else toast("金币不足，地精嫌弃地走了");
+        }
+        closeModal(); proceedToNextDay(carry);
+      });
+    });
+}
+
+function showRelicOffer(carry){
+  const owned = SM.relics;
+  const pool = Object.values(RELICS).filter(r=>!owned.has(r.id));
+  if(!pool.length){ proceedToNextDay(carry); return; }
+  const offer = pool.sort(()=>Math.random()-0.5).slice(0,Math.min(2,pool.length));
+  const cards = offer.map(r=>`
+      <div class="choice" data-relic="${r.id}">
+        <div class="ce">${({gravity_lead:"🪨",spike_walls:"🔱",fusion_agent:"⚗️"})[r.id]}</div>
+        <div class="ct">${r.name}</div>
+        <div class="cd">${relicDesc(r.id)}</div>
+      </div>`).join("");
+  openModal(`<h2>⚗️ 突变抉择</h2><p>选择一件改变物理法则的遗物：</p><div class="choices">${cards}</div>`,
+    node=>{
+      node.querySelectorAll(".choice").forEach(c=>c.onclick=()=>{
+        applyRelic(c.dataset.relic); closeModal(); proceedToNextDay(carry);
+      });
+    });
+}
+function relicDesc(id){
+  return ({
+    gravity_lead:"所有球重量翻倍，减少乱弹，更易压实底部",
+    spike_walls:"左右墙变尖刺，樱桃撞墙直接爆体（清垃圾神器）",
+    fusion_agent:"每天 1 次：强行融合任意两颗球（取最高级）"
+  })[id]||"";
+}
+
+function proceedToNextDay(carry){
+  if(SM.day >= CFG.totalDays){ winRun(); return; }
+  startDay(SM.day+1);
+  seedCarry(carry);
+}
+
+/* ============================================================
+ *  ACTIVE SKILL — 万能融合剂 (tap two balls → fuse to highest)
+ * ============================================================ */
+$("#btnFusion").onclick = ()=>{
+  if(!SM.hasFusion || SM.state!=="PLAYING") return;
+  SM.fusionArmed=!SM.fusionArmed; SM.fusionPick=null;
+  $("#btnFusion").classList.toggle("ring", SM.fusionArmed);
+  toast(SM.fusionArmed?"融合剂已激活：点选两颗球":"已取消融合剂");
+};
+function tryFusionPick(x,y){
+  const hit = ballBodies().find(b=>{
+    const r=BALLS[b.plugin.level].r;
+    return (x-b.position.x)**2+(y-b.position.y)**2 <= r*r;
+  });
+  if(!hit) return;
+  if(!SM.fusionPick){ SM.fusionPick=hit; toast("已选第一颗，再点一颗"); return; }
+  if(hit===SM.fusionPick) return;
+  const lv=Math.max(SM.fusionPick.plugin.level, hit.plugin.level);
+  const mx=(hit.position.x+SM.fusionPick.position.x)/2, my=(hit.position.y+SM.fusionPick.position.y)/2;
+  popBall(hit); popBall(SM.fusionPick);
+  const nb=makeBall(Math.min(lv+1,MAXLV), mx, my);
+  spawnPuff(mx,my,BALLS[nb.plugin.level].color,18);
+  mergeScore(BALLS[nb.plugin.level].score, mx, my, nb.plugin.level);
+  SM.hasFusion=false; SM.fusionArmed=false; SM.fusionPick=null;
+  $("#btnFusion").disabled=true; $("#btnFusion").textContent="⚗️ 已用完";
+}
+
+/* ============================================================
+ *  RENDER + INPUT
+ * ============================================================ */
+const cv=$("#board"), ctx=cv.getContext("2d");
+let dpr=Math.min(2, window.devicePixelRatio||1), scale=1, ox=0, oy=0;
+
+function fitCanvas(){
+  const stage=$(".stage").getBoundingClientRect();
+  const pad=14;
+  scale=Math.min((stage.width-pad)/FW, (stage.height-pad)/FH);
+  cv.style.width=(FW*scale)+"px"; cv.style.height=(FH*scale)+"px";
+  cv.width=FW*scale*dpr; cv.height=FH*scale*dpr;
+  ctx.setTransform(scale*dpr,0,0,scale*dpr,0,0);
+}
+window.addEventListener("resize", fitCanvas);
+
+function ptToField(e){
+  const r=cv.getBoundingClientRect();
+  const cx=(e.touches?e.touches[0].clientX:e.clientX)-r.left;
+  const cy=(e.touches?e.touches[0].clientY:e.clientY)-r.top;
+  return { x:cx/scale, y:cy/scale };
+}
+cv.addEventListener("pointermove", e=>{ const p=ptToField(e); SM.cursorX=p.x; });
+cv.addEventListener("pointerdown", e=>{
+  const p=ptToField(e); SM.cursorX=p.x;
+  if(SM.fusionArmed){ tryFusionPick(p.x,p.y); return; }
+  doDrop();
+});
+
+let tNow=0;
+function draw(){
+  if(!window.Matter){ return; }
+  tNow += 0.016;
+  ctx.clearRect(0,0,FW,FH);
+
+  // ---- molten "alchemy" liquid background ----
+  const bg=ctx.createLinearGradient(0,0,0,FH);
+  bg.addColorStop(0,"#170f2b"); bg.addColorStop(.55,"#1d1336"); bg.addColorStop(1,"#2c1740");
+  ctx.fillStyle=bg; ctx.fillRect(0,0,FW,FH);
+  // ember glow rising from the bottom of the furnace
+  const eg=ctx.createRadialGradient(FW/2,FH+30,30,FW/2,FH+30,FH*0.85);
+  eg.addColorStop(0,"rgba(245,124,40,.32)"); eg.addColorStop(.6,"rgba(245,124,40,.08)"); eg.addColorStop(1,"rgba(245,124,40,0)");
+  ctx.fillStyle=eg; ctx.fillRect(0,0,FW,FH);
+  // mutation haze at the top
+  const tg=ctx.createRadialGradient(FW/2,-10,8,FW/2,-10,FH*0.5);
+  tg.addColorStop(0,"rgba(168,85,247,.22)"); tg.addColorStop(1,"rgba(168,85,247,0)");
+  ctx.fillStyle=tg; ctx.fillRect(0,0,FW,FH);
+  // drifting bubbles for liquid feel
+  ctx.fillStyle="rgba(255,255,255,.04)";
+  for(let i=0;i<7;i++){ const bx=(i*73+ (tNow*9*(1+i*0.1)))%FW; const by=FH-((tNow*16*(0.6+i*0.12))% (FH+40)); const br=3+(i%3)*2;
+    ctx.beginPath(); ctx.arc(bx,by,br,0,7); ctx.fill(); }
+
+  // ---- side walls ----
+  drawWall(0); drawWall(FW-WALL);
+  if(PHYS.spikeWalls){
+    ctx.fillStyle="#fda4af";
+    for(let y=10;y<FH;y+=26){
+      ctx.beginPath(); ctx.moveTo(WALL,y); ctx.lineTo(WALL+10,y+6); ctx.lineTo(WALL,y+12); ctx.fill();
+      ctx.beginPath(); ctx.moveTo(FW-WALL,y); ctx.lineTo(FW-WALL-10,y+6); ctx.lineTo(FW-WALL,y+12); ctx.fill();
+    }
+  }
+  // inner edge highlights
+  ctx.fillStyle="rgba(255,255,255,.07)"; ctx.fillRect(WALL,0,1.5,FH); ctx.fillRect(FW-WALL-1.5,0,1.5,FH);
+
+  // ---- death line (glowing) ----
+  ctx.save();
+  const pulse=0.4+0.18*Math.sin(tNow*3);
+  ctx.strokeStyle=`rgba(251,113,133,${pulse+0.25})`; ctx.setLineDash([9,7]); ctx.lineWidth=2;
+  ctx.shadowColor="rgba(251,113,133,.7)"; ctx.shadowBlur=9;
+  ctx.beginPath(); ctx.moveTo(WALL+2,DEATH_Y); ctx.lineTo(FW-WALL-2,DEATH_Y); ctx.stroke();
+  ctx.restore(); ctx.setLineDash([]);
+
+  // ---- balls ----
+  for(const b of ballBodies()) drawBall(b);
+
+  // ---- drop cursor + preview ghost ----
+  if(SM.state==="PLAYING" && SM.canDrop){
+    const lv=SM.queue[0], r=BALLS[lv].r;
+    const x=clamp(SM.cursorX, WALL+r+1, FW-WALL-r-1);
+    ctx.strokeStyle="rgba(245,165,36,.35)"; ctx.setLineDash([4,7]); ctx.lineWidth=1.5;
+    ctx.beginPath(); ctx.moveTo(x,DEATH_Y); ctx.lineTo(x,FH); ctx.stroke(); ctx.setLineDash([]);
+    drawFruit(x, DEATH_Y-r-6, lv, .82);
+  }
+  // ---- fusion pick highlight ----
+  if(SM.fusionPick){
+    const r=BALLS[SM.fusionPick.plugin.level].r;
+    ctx.save(); ctx.strokeStyle="#c084fc"; ctx.lineWidth=3; ctx.shadowColor="#c084fc"; ctx.shadowBlur=12;
+    ctx.beginPath(); ctx.arc(SM.fusionPick.position.x,SM.fusionPick.position.y,r+4,0,7); ctx.stroke(); ctx.restore();
+  }
+  drawPuffs();
+  drawPopups();
+  requestAnimationFrame(draw);
+}
+function drawWall(x){
+  const g=ctx.createLinearGradient(x,0,x+WALL,0);
+  if(PHYS.spikeWalls){ g.addColorStop(0,"#7f1d1d"); g.addColorStop(.5,"#c0303a"); g.addColorStop(1,"#7f1d1d"); }
+  else { g.addColorStop(0,"#2e2350"); g.addColorStop(.5,"#5e4c95"); g.addColorStop(1,"#2e2350"); }
+  ctx.fillStyle=g; ctx.fillRect(x,0,WALL,FH);
+}
+function drawBall(b){ drawFruit(b.position.x, b.position.y, b.plugin.level, 1, b.angle); }
+function drawFruit(x,y,lv,alpha,angle){
+  const f=BALLS[lv], r=f.r;
+  ctx.save(); ctx.globalAlpha=alpha; ctx.translate(x,y);
+  // soft contact shadow (world-aligned, before rotation)
+  ctx.save(); ctx.globalAlpha=alpha*0.26; ctx.fillStyle="#000";
+  ctx.beginPath(); ctx.ellipse(0,r*0.84,r*0.8,r*0.28,0,0,7); ctx.fill(); ctx.restore();
+  if(angle) ctx.rotate(angle);
+  // body — 3-stop gradient for volume
+  const g=ctx.createRadialGradient(-r*0.34,-r*0.4,r*0.12,0,0,r*1.06);
+  g.addColorStop(0,lighten(f.color,60)); g.addColorStop(.58,f.color); g.addColorStop(1,darken(f.color,42));
+  ctx.fillStyle=g; ctx.beginPath(); ctx.arc(0,0,r,0,7); ctx.fill();
+  // darker rim
+  ctx.lineWidth=Math.max(1,r*0.045); ctx.strokeStyle=darken(f.color,58); ctx.globalAlpha=alpha*0.55;
+  ctx.beginPath(); ctx.arc(0,0,r-ctx.lineWidth/2,0,7); ctx.stroke(); ctx.globalAlpha=alpha;
+  // glossy highlight
+  const hl=ctx.createRadialGradient(-r*0.3,-r*0.34,1,-r*0.3,-r*0.34,r*0.72);
+  hl.addColorStop(0,"rgba(255,255,255,.6)"); hl.addColorStop(1,"rgba(255,255,255,0)");
+  ctx.fillStyle=hl; ctx.beginPath(); ctx.arc(-r*0.26,-r*0.3,r*0.55,0,7); ctx.fill();
+  // emoji face
+  ctx.font=`${Math.round(r*1.0)}px serif`; ctx.textAlign="center"; ctx.textBaseline="middle";
+  ctx.globalAlpha=alpha*0.96; ctx.fillText(f.emoji,0,r*0.05);
+  ctx.restore();
+}
+function lighten(hex,amt){ const n=parseInt(hex.slice(1),16); let r=(n>>16&255)+amt,g=(n>>8&255)+amt,bl=(n&255)+amt;
+  return `rgb(${clamp(r,0,255)},${clamp(g,0,255)},${clamp(bl,0,255)})`; }
+function darken(hex,amt){ return lighten(hex,-amt); }
+
+/* merge puff particles */
+const puffs=[];
+function spawnPuff(x,y,color,n){ for(let i=0;i<n;i++){const a=rand(0,7),s=rand(1,4);puffs.push({x,y,vx:Math.cos(a)*s,vy:Math.sin(a)*s,life:1,color});} }
+function drawPuffs(){
+  for(let i=puffs.length-1;i>=0;i--){const p=puffs[i];p.x+=p.vx;p.y+=p.vy;p.vy+=0.15;p.life-=0.04;
+    if(p.life<=0){puffs.splice(i,1);continue;}
+    ctx.globalAlpha=p.life;ctx.fillStyle=p.color;ctx.beginPath();ctx.arc(p.x,p.y,3*p.life+1,0,7);ctx.fill();ctx.globalAlpha=1;}
+}
+
+/* floating score popups */
+const popups=[];
+function spawnPopup(x,y,text,color){ popups.push({x,y,text,color,life:1}); }
+function drawPopups(){
+  ctx.textAlign="center"; ctx.textBaseline="middle"; ctx.font="bold 19px system-ui,sans-serif"; ctx.lineWidth=3;
+  for(let i=popups.length-1;i>=0;i--){const p=popups[i];p.y-=0.7;p.life-=0.016;
+    if(p.life<=0){popups.splice(i,1);continue;}
+    ctx.globalAlpha=Math.min(1,p.life*1.6);
+    ctx.strokeStyle="rgba(0,0,0,.65)"; ctx.strokeText(p.text,p.x,p.y);
+    ctx.fillStyle=p.color; ctx.fillText(p.text,p.x,p.y);
+  }
+  ctx.globalAlpha=1;
+}
+
+/* center combo banner (DOM, animated) */
+function showCombo(mult){
+  const b=$("#comboBanner"); if(!b) return;
+  b.textContent="连击 ×"+mult+"!";
+  b.classList.remove("pop"); void b.offsetWidth; b.classList.add("pop");
+}
+
+/* ---- HUD ---- */
+function refreshHud(){
+  $("#hudDay").textContent=`${SM.day}/${CFG.totalDays}`;
+  $("#hudDrops").textContent=SM.dropsLeft;
+  $("#hudCoins").textContent=SM.coins;
+  $("#hudScore").textContent=SM.score;
+  const pct=clamp(SM.score/Math.max(1,SM.target)*100,0,100);
+  $("#progFill").style.width=pct+"%";
+  $("#progTxt").textContent=`${SM.score} / ${SM.target}`;
+  $(".prog").classList.toggle("near", pct>=80 && pct<100);
+  const ne=$("#nextEmoji"); if(ne && SM.queue.length>1) ne.textContent=BALLS[SM.queue[1]].emoji;
+}
+let toastT;
+function toast(msg){ const c=$("#coach"); c.textContent=msg; c.classList.add("show");
+  clearTimeout(toastT); toastT=setTimeout(()=>c.classList.remove("show"),1900); }
+
+/* ---- modal plumbing ---- */
+function ensureModalRoot(){
+  let m=$("#modalRoot");
+  if(!m){ m=document.createElement("div"); m.id="modalRoot"; m.className="modal-bg";
+    m.innerHTML=`<div class="modal" id="modalBox"></div>`; document.body.appendChild(m); }
+  return m;
+}
+function openModal(html, bind){ const m=ensureModalRoot(); $("#modalBox").innerHTML=html; m.classList.add("show"); if(bind) bind($("#modalBox")); }
+function closeModal(){ const m=$("#modalRoot"); if(m) m.classList.remove("show"); }
+
+function showClearModal(carry, coins){
+  const names=carry.map(lv=>BALLS[lv].emoji+BALLS[lv].name).join(" · ")||"（无）";
+  openModal(`
+    <h2>✅ 第 ${SM.day} 天达标！</h2>
+    <p>保留前 ${CFG.carryTop} 大：<br><b style="color:#fde68a">${names}</b><br>
+       其余转化为 <b style="color:var(--c-coin)">+${coins} 金币</b></p>
+    <button class="btn btn-amber" id="toEvent" style="padding:12px 28px;font-size:16px;">继续 ▶</button>`,
+    node=>{ node.querySelector("#toEvent").onclick=()=>{ closeModal(); enterEvent(carry); }; });
+}
+function showEndModal(won, reason, earned){
+  openModal(`
+    <h2>${won?"🏆 通关！":"💥 挑战结束"}</h2>
+    <p>${reason}<br>抵达第 <b>${SM.day}</b> 天 · 总分 <b>${SM.score}</b><br>
+       获得奖励 <b style="color:var(--c-coin)">${earned} 分</b></p>
+    <button class="btn btn-amber" id="again" style="padding:12px 28px;font-size:16px;">再来一局 ↺</button>`,
+    node=>{ node.querySelector("#again").onclick=()=>{ closeModal(); resetRun(); }; });
+}
+
+/* ---- progress watchdog (runs on Matter afterUpdate) ---- */
+function attachWatchdog(){
+  M.Events.on(engine,"afterUpdate",()=>{ if(SM.state==="PLAYING") checkProgress(); });
+}
+
+/* ============================================================
+ *  RUN LIFECYCLE
+ * ============================================================ */
+function resetRun(){
+  // clear field
+  if(world) ballBodies().forEach(popBall);
+  Object.assign(PHYS, CFG.physics);
+  engine.gravity.y=PHYS.gravityY;
+  SM.score=0; SM.coins=0; SM.relics.clear(); SM.hasFusion=false; SM.fusionArmed=false; SM.fusionPick=null;
+  Object.values(RELICS).forEach(r=>{ const n=document.querySelector(r.node); if(n)n.classList.add("off"); });
+  $("#btnFusion").style.display="none";
+  if(!SM.started){ SM.started=true; postParent("gameStarted",{difficulty:CFG.difficulty}); }
+  startDay(1);
+}
+
+function boot(){
+  loadMatter(()=>{
+    buildContainer();
+    attachWatchdog();
+    fitCanvas();
+    requestAnimationFrame(draw);
+    if(!SM.loaded){ SM.loaded=true; postParent("gameLoaded"); }
+    resetRun();
+  });
+}
+
+/* parent → child config override */
+window.addEventListener("message", e=>{
+  const d=e.data||{};
+  if(d.type==="setGameConfig" && d.data){ /* phase-2: merge overrides into game_config */ }
+});
+
+boot();
+</script>
+</body>
+</html>

@@ -533,6 +533,15 @@
 		return { start, baby, path };
 	}
 
+	let boardReady = false;
+	function ensureBoard() {
+		if (boardReady) return;
+		boardReady = true;
+		generateLevel();
+		render();
+		requestPetImage();
+	}
+
 	function generateLevel() {
 		stopTimers();
 		const difficulty = DIFFICULTIES[state.difficulty];
@@ -615,7 +624,12 @@
 
 	function createLasers(difficulty) {
 		const lasers = [];
-		const rows = shuffle([...Array(state.size - 2)].map((_, i) => i + 1));
+		// 排除出生点与餐盘所在行：激光水平发射，若落在这两行会直接扫过出生点/终点，导致开局秒输或无法过关。
+		const startRow = state.start ? state.start.r : -1;
+		const babyRow = state.baby ? state.baby.r : -1;
+		const rows = shuffle(
+			[...Array(state.size - 2)].map((_, i) => i + 1).filter(r => r !== startRow && r !== babyRow)
+		);
 		for (let i = 0; i < difficulty.lasers && i < rows.length; i++) {
 			const r = rows[i];
 			const fromLeft = i % 2 === 0;
@@ -1202,6 +1216,7 @@
 	}
 
 	function resetLevel() {
+		boardReady = true;
 		generateLevel();
 		render();
 		if (state.started) startTimers();
@@ -1300,6 +1315,7 @@
 	function bindEvents() {
 		els.help.addEventListener('click', () => { els.overlay.hidden = false; });
 		els.start.addEventListener('click', () => {
+			ensureBoard();
 			els.overlay.hidden = true;
 			startGame();
 			setStatus(t('statusStartPlay'));
@@ -1414,10 +1430,10 @@
 
 	initDifficulties();
 	bindEvents();
-	generateLevel();
-	render();
-	requestPetImage();
 	post('gameLoaded', { title: t('title') });
+	// Defer heavy board/level construction until after first paint so the
+	// rules overlay (the real initial screen) renders within the start budget.
+	requestAnimationFrame(() => requestAnimationFrame(ensureBoard));
 })();
 </script>
 

@@ -6,11 +6,19 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
   <title>宠物台球对战</title>
   <script src="https://cdn.keepwork.com/keepwork/cdn/tailwindcss@3.4.16.js"></script>
-  <script src="https://cdn.keepwork.com/npm/three%400.128.0/build/three.min.js"></script>
 </head>
 
 <body></body>
-<script defer>
+<!--
+  The full game (~148KB of JS: i18n, state, the rules/intro markup, physics, AI,
+  and all three.js scene/geometry/texture builders) lives in the NON-EXECUTING
+  <script type="text/plain"> block below so the browser does NOT parse/compile it
+  before DOMContentLoaded. A tiny synchronous bootstrap at the very end turns it
+  into a Blob URL and loads it as a classic script right after first paint; the
+  IIFE then builds the real initial screen (rules modal) and posts `gameLoaded`.
+  three.js itself is also lazy-loaded (only when the 3D scene is built).
+-->
+<script type="text/plain" id="mhBilliardsCode">
 (function () {
   // ---- i18n ----
   const I18N = {
@@ -574,6 +582,12 @@
 
   init();
 
+  // Heavy 3D init (renderer/scene/geometry/textures/balls) is deferred off the
+  // critical path so the rules/intro screen paints instantly. `sceneReady` flips
+  // true once the WebGL scene + balls exist.
+  let sceneReady = false;
+  let sceneInitStarted = false;
+
   function init() {
     els.modeSelect.value = normalizeMode(state.mode);
     els.difficultySelect.value = normalizeDifficulty(state.difficulty);
@@ -581,15 +595,66 @@
     state.difficulty = els.difficultySelect.value;
     applyTableProfile();
     updateUIScale();
-    setupThree();
-    applyGraphicsMode();
+    updateQualityUI();
     bindEvents();
-    requestPets();
-    rackBalls();
     updateUI();
-    resize();
+    // Show the real initial screen (rules/intro modal) immediately, then build
+    // the 3D scene after first paint, chunked so no single task exceeds 50ms.
     window.parent.postMessage({ type: 'gameLoaded' }, '*');
+    requestAnimationFrame(() => requestAnimationFrame(() => { ensureScene(); }));
   }
+
+  // Build the heavy 3D scene in chunks across animation frames. Safe to call
+  // multiple times; runs only once. If `onDone` is supplied it fires after the
+  // scene is fully ready (used when the player starts before deferral finishes).
+  function ensureScene(onDone) {
+    if (sceneReady) { if (onDone) onDone(); return; }
+    sceneInitQueue.push(onDone || null);
+    if (sceneInitStarted) return;
+    sceneInitStarted = true;
+    // three.js is no longer a blocking <script> in <head>, so it never delays
+    // DOMContentLoaded / first paint. Load it on demand, then build the scene.
+    loadThree(() => buildSceneSteps());
+  }
+
+  let threeLoading = null;
+  function loadThree(cb) {
+    if (window.THREE) { cb(); return; }
+    if (threeLoading) { threeLoading.push(cb); return; }
+    threeLoading = [cb];
+    const s = document.createElement('script');
+    s.src = 'https://cdn.keepwork.com/npm/three%400.128.0/build/three.min.js';
+    s.onload = () => { const cbs = threeLoading; threeLoading = []; cbs.forEach(fn => fn()); };
+    document.head.appendChild(s);
+  }
+
+  function buildSceneSteps() {
+    const steps = [
+      () => { setupThree(); },        // scene + renderer + lights (no geometry)
+      () => { createTable(); },        // table geometry + felt/carpet textures
+      () => { createCueMeshes(); },    // cue + aim/target/ghost helpers
+      () => { createPetActor(); },     // pet billboard/model
+      () => { applyGraphicsMode(); },
+      () => { rackBalls(); },          // ball state + meshes + ball textures
+      () => { resize(); requestPets(); },
+    ];
+    let i = 0;
+    const runNext = () => {
+      // Run exactly one step per frame so no single heavy builder shares a task
+      // with another — keeps the longest main-thread task well under 50ms.
+      if (i < steps.length) steps[i++]();
+      if (i < steps.length) {
+        requestAnimationFrame(runNext);
+      } else {
+        sceneReady = true;
+        const cbs = sceneInitQueue.slice();
+        sceneInitQueue.length = 0;
+        cbs.forEach(cb => { if (cb) cb(); });
+      }
+    };
+    requestAnimationFrame(runNext);
+  }
+  const sceneInitQueue = [];
 
   function bindEvents() {
     window.addEventListener('resize', resize);
@@ -749,9 +814,6 @@
 
     three.tableGroup = new THREE.Group();
     three.scene.add(three.tableGroup);
-    createTable();
-    createCueMeshes();
-    createPetActor();
   }
 
   function createTable() {
@@ -1287,7 +1349,7 @@
   }
 
   function clearBalls() {
-    for (const mesh of state.ballMeshes.values()) three.scene.remove(mesh);
+    if (three.scene) for (const mesh of state.ballMeshes.values()) three.scene.remove(mesh);
     state.ballMeshes.clear();
     clearPocketEffects();
     state.balls = [];
@@ -1340,6 +1402,7 @@
   }
 
   function syncBallMeshes() {
+    if (!three.scene) return; // meshes are created when the deferred scene builds
     state.balls.forEach(ball => {
       if (state.ballMeshes.has(ball.id)) return;
       const mesh = createBallMesh(ball);
@@ -1492,6 +1555,10 @@
   }
 
   function startGame() {
+    // The player may tap Start before the deferred 3D scene finishes building.
+    // Hide the intro now for instant feedback, then start once the scene exists.
+    els.overlay.hidden = true;
+    if (!sceneReady) { ensureScene(() => startGame()); return; }
     if (!state.started || state.finished) {
       state.started = true;
       state.finished = false;
@@ -2981,6 +3048,7 @@
 
   function resize() {
     updateUIScale();
+    if (!three.renderer) return;
     const rect = els.stage.getBoundingClientRect();
     const width = Math.max(1, rect.width);
     const height = Math.max(1, rect.height);
@@ -3355,5 +3423,29 @@
     return 0;
   }
 })();
+</script>
+<script>
+  // Bootstrap: the game code above lives in a non-executable
+  // <script type="text/plain" id="mhBilliardsCode"> block so the browser does NOT
+  // compile ~148KB of JS before DOMContentLoaded. We turn it into a Blob and load
+  // it as a classic script that runs right after first paint; the IIFE then builds
+  // the rules/intro screen and posts `gameLoaded` — keeping startup (DCL) tiny.
+  (function () {
+    var run = function () {
+      var code = document.getElementById('mhBilliardsCode').textContent;
+      var url = URL.createObjectURL(new Blob([code], { type: 'application/javascript' }));
+      var s = document.createElement('script');
+      s.src = url;
+      s.onload = function () { URL.revokeObjectURL(url); };
+      document.head.appendChild(s);
+    };
+    // Defer the Blob script's parse+execute until after the first paint so DCL and
+    // the initial frame are not blocked by the ~148KB engine.
+    if (document.readyState === 'loading') {
+      document.addEventListener('DOMContentLoaded', function () { requestAnimationFrame(run); });
+    } else {
+      requestAnimationFrame(run);
+    }
+  })();
 </script>
 </html>

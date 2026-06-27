@@ -910,13 +910,13 @@
     return !state.tiles.some(other => !other.removed && other.layer > tile.layer && overlaps(tile, other));
   }
 
-  function setupLevel(index = state.levelIndex) {
+  function setupLevel(index = state.levelIndex, defer = false) {
     clearInterval(state.timer);
     state.levelIndex = Math.max(0, Math.min(LEVELS.length - 1, index));
     saveDifficultyIndex(state.levelIndex);
     const base = LEVELS[state.levelIndex];
     state.level = buildLevel(base, state.clears[base.id] || 0);
-    state.tiles = generateFairTiles(state.level);
+    state.tiles = [];
     state.tray = [];
     state.started = false;
     state.finished = false;
@@ -929,12 +929,30 @@
     state.maxTrayTypes = 0;
     state.roundId = `${state.level.id}_${Date.now()}`;
     renderLevels();
-    renderAll();
+    // Show the real initial screen (start overlay + level picker) immediately.
     showOverlay(state.level.title, state.level.note, t('startChallenge'));
+    state.setupToken = (state.setupToken || 0) + 1;
+    const token = state.setupToken;
+    const buildTiles = () => {
+      if (token !== state.setupToken) return; // superseded by a newer setup
+      state.tiles = generateFairTiles(state.level);
+      renderAll();
+    };
+    if (defer) {
+      // Defer heavy fair-tile generation off the critical path (after first paint).
+      requestAnimationFrame(() => requestAnimationFrame(buildTiles));
+    } else {
+      buildTiles();
+    }
   }
 
   function startGame() {
     if (state.started) return;
+    // If the player taps Start before the deferred tile build ran, build now.
+    if (!state.tiles.length) {
+      state.tiles = generateFairTiles(state.level);
+      renderAll();
+    }
     state.started = true;
     state.finished = false;
     overlayEl.hidden = true;
@@ -1335,7 +1353,7 @@
   document.getElementById('mhHint').onclick = showHint;
   startBtn.onclick = handleOverlayAction;
 
-  setupLevel(state.levelIndex);
+  setupLevel(state.levelIndex, true);
   post('gameLoaded', { title: t('gameLoadedTitle') });
 })();
 </script>

@@ -95,6 +95,10 @@ export function mutatePet(id, fn) {
 
 export function addCoins(n) { state.coins = Math.max(0, state.coins + n); notify(); }
 
+// 生物燃料（poop 回收，用于星际旅行）唯一的增减入口，统一钳制到 >= 0。
+// 与 addCoins 对称；level_*.js / view_*.js 不应再直接写 state.biofuel。
+export function addBiofuel(n) { state.biofuel = Math.max(0, (state.biofuel | 0) + n); notify(); }
+
 export function setZoomLevel(level) {
     const lv = Math.max(0, Math.min(3, level | 0));
     if (state.zoomLevel === lv) return;

@@ -1,0 +1,1167 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+<title>哈奇深渊 · 机甲矿工</title>
+<style>
+  *{box-sizing:border-box;-webkit-tap-highlight-color:transparent;}
+  html,body{margin:0;height:100%;background:#05070f;overflow:hidden;
+    font-family:"PingFang SC","Microsoft YaHei",system-ui,sans-serif;
+    color:#e8edff;touch-action:none;user-select:none;-webkit-user-select:none;}
+  #wrap{position:fixed;inset:0;display:flex;align-items:center;justify-content:center;
+    background:radial-gradient(120% 80% at 50% 0%,#16203c 0%,#080b18 55%,#04060d 100%);}
+  canvas{display:block;image-rendering:auto;box-shadow:0 0 60px rgba(0,0,0,.6);
+    border-radius:14px;background:#0a0f1f;touch-action:none;}
+
+  /* ---- DOM 覆盖层（菜单/商店/结算）---- */
+  .overlay{position:absolute;inset:0;display:none;align-items:center;justify-content:center;
+    z-index:20;backdrop-filter:blur(4px);background:rgba(4,6,13,.72);}
+  .overlay.show{display:flex;}
+  .panel{width:min(86vw,440px);max-height:88vh;overflow:auto;background:linear-gradient(180deg,#121a32,#0c1124);
+    border:1px solid #2a3a66;border-radius:18px;padding:22px 20px;box-shadow:0 20px 60px rgba(0,0,0,.6);}
+  .panel h1{margin:0 0 4px;font-size:26px;letter-spacing:1px;color:#fff;text-align:center;}
+  .panel h1 b{color:#ffcf33;}
+  .panel .sub{text-align:center;color:#8aa0d6;font-size:13px;margin-bottom:16px;line-height:1.6;}
+  .btn{display:block;width:100%;padding:13px;margin-top:10px;border:none;border-radius:12px;cursor:pointer;
+    font-size:16px;font-weight:700;color:#1a1206;background:linear-gradient(180deg,#ffd95e,#f4a623);
+    box-shadow:0 4px 0 #b9760f;transition:transform .05s;}
+  .btn:active{transform:translateY(2px);box-shadow:0 2px 0 #b9760f;}
+  .btn.ghost{background:#1c2747;color:#cdd9ff;box-shadow:0 4px 0 #0f1733;}
+  .shop-grid{display:flex;flex-direction:column;gap:12px;margin:8px 0 4px;}
+  .item{display:flex;gap:12px;align-items:center;padding:12px;border-radius:14px;
+    background:#161f3a;border:1px solid #283659;cursor:pointer;transition:.12s;}
+  .item:active{transform:scale(.98);}
+  .item.bought{opacity:.45;pointer-events:none;}
+  .item.poor{opacity:.6;}
+  .item .ico{font-size:34px;width:50px;text-align:center;flex:0 0 auto;}
+  .item .info{flex:1;min-width:0;}
+  .item .info .nm{font-weight:800;font-size:15px;color:#fff;}
+  .item .info .ds{font-size:12px;color:#90a3d0;line-height:1.45;margin-top:3px;}
+  .item .price{font-weight:800;color:#ffcf33;font-size:15px;white-space:nowrap;}
+  .merchants{display:flex;justify-content:space-around;margin:6px 0 14px;}
+  .merchant{text-align:center;font-size:12px;color:#a9bdf0;}
+  .merchant .face{font-size:40px;}
+  .wallet{text-align:center;font-size:15px;margin:10px 0;color:#ffcf33;font-weight:700;}
+  .card-reveal{display:flex;flex-wrap:wrap;gap:10px;justify-content:center;margin:14px 0;}
+  .bcard{width:64px;height:90px;border-radius:10px;background:#0e1428;border:1px solid #34406b;
+    display:flex;align-items:center;justify-content:center;font-size:30px;position:relative;
+    animation:flip .5s ease;}
+  .bcard.good{border-color:#ffd23f;box-shadow:0 0 18px rgba(255,210,63,.5);}
+  .bcard.bad{border-color:#ff5d6c;box-shadow:0 0 18px rgba(255,93,108,.4);}
+  .bcard .amt{position:absolute;bottom:6px;width:100%;text-align:center;font-size:12px;font-weight:800;}
+  @keyframes flip{from{transform:rotateY(90deg);opacity:0;}to{transform:rotateY(0);opacity:1;}}
+  /* 底部主动道具按钮（游戏内） */
+  #hudBtns{position:absolute;left:0;right:0;bottom:14px;display:none;justify-content:center;gap:14px;z-index:15;}
+  #hudBtns.show{display:flex;}
+  .actbtn{min-width:96px;padding:11px 14px;border-radius:14px;border:1px solid #3a4a78;
+    background:rgba(20,28,52,.85);color:#dbe6ff;font-weight:800;font-size:14px;cursor:pointer;
+    display:flex;align-items:center;gap:7px;box-shadow:0 3px 0 rgba(0,0,0,.4);}
+  .actbtn:active{transform:translateY(2px);}
+  .actbtn .cnt{background:#ffcf33;color:#1a1206;border-radius:8px;padding:0 7px;font-size:13px;}
+  .actbtn:disabled{opacity:.35;}
+</style>
+</head>
+<body>
+<div id="wrap"><canvas id="cv"></canvas></div>
+
+<!-- 主动道具按钮 -->
+<div id="hudBtns">
+  <button class="actbtn" id="btnDart">🍣 切绳 <span class="cnt" id="dartCnt">就绪</span></button>
+  <button class="actbtn" id="btnBomb">💣 震爆 <span class="cnt" id="bombCnt">就绪</span></button>
+</div>
+
+<!-- 开始菜单 -->
+<div class="overlay show" id="ovMenu">
+  <div class="panel">
+    <h1>哈奇深渊 · <b>机甲矿工</b></h1>
+    <div class="sub">胖龙猫「墩弟」驾驶赛博机甲，深入哈奇深渊抓取金矿钻石。<br>
+      连击越高拉得越快、得分越多 —— 但小心废石、雷怪和盲盒黑卡！</div>
+    <button class="btn" id="btnStart">⛏️ 开始下潜</button>
+    <button class="btn ghost" id="btnHow">📖 怎么玩</button>
+  </div>
+</div>
+
+<!-- 玩法说明 -->
+<div class="overlay" id="ovHow">
+  <div class="panel">
+    <h1>怎么玩</h1>
+    <div class="sub" style="text-align:left;line-height:1.9;">
+      • <b>点击屏幕 / 空格</b>：能量爪在 160° 钟摆，发射抓取<br>
+      • <b>重量手感</b>：废石又重又慢，钻石轻快回拉<br>
+      • <b>连击 Combo</b>：连续抓中金矿/钻石 → 拉速↑、得分倍率↑；抓到废石或抓空 → 清零<br>
+      • <b>⚡ 雷怪 / 🦇 蝙蝠</b>：雷怪麻痹 2 秒，蝙蝠撞飞钩爪扣时间，看准空隙<br>
+      • <b>🐹 钻地鼹鼠</b>：携金块快速横移的高分目标，考验预判<br>
+      • <b>场上拾取</b>：⚡极速 ✨双倍 ⏳加时 🔥狂热(好) · 🌫️迷雾 🪨超载 ⛓️冻结(坏，别夹)<br>
+      • <b>🎴 遗物</b>：过关进「西咪拍卖行」鉴定成交，可能天价也可能倒贴<br>
+      • <b>🍣 切绳(F)</b>/<b>💣 震爆(G)</b>：主动道具，拉拽中弃废石 / 清雷怪<br>
+      • <b>🔥 满连击</b>触发「深渊狂热」：全场加速、得分 ×2<br>
+      • <b>🗿 黄金墩弟雕像</b>：稀有大目标，价值连城别错过<br>
+      • 每关<b>限时</b>内达<b>目标分</b>即可下潜；西咪的补给站有 10 款道具可升级
+    </div>
+    <button class="btn" id="btnHowBack">明白了</button>
+  </div>
+</div>
+
+<!-- 关卡结算 + 黑卡鉴定 -->
+<div class="overlay" id="ovResult">
+  <div class="panel">
+    <h1 id="resTitle">第 1 层 · 通过！</h1>
+    <div class="sub" id="resSub"></div>
+    <div class="card-reveal" id="cardReveal"></div>
+    <div class="wallet" id="resWallet">💰 0</div>
+    <button class="btn" id="btnNext">前往补给站 →</button>
+  </div>
+</div>
+
+<!-- 失败 -->
+<div class="overlay" id="ovOver">
+  <div class="panel">
+    <h1>下潜终止</h1>
+    <div class="sub" id="overSub"></div>
+    <button class="btn" id="btnRetry">♻️ 再来一次</button>
+  </div>
+</div>
+
+<!-- 肉鸽商店 -->
+<div class="overlay" id="ovShop">
+  <div class="panel">
+    <h1>西咪的<b>补给站</b></h1>
+    <div class="merchants">
+      <div class="merchant"><div class="face">😼</div>神秘商人 · 西咪</div>
+    </div>
+    <div class="sub" style="margin:2px 0 8px;">每次进站随机上架 4 件 · 可升级 · 可重摇</div>
+    <div class="wallet" id="shopWallet">💰 0</div>
+    <div class="shop-grid" id="shopGrid"></div>
+    <button class="btn ghost" id="btnReroll" style="margin-top:12px;">🎲 重摇货架（💰80）</button>
+    <button class="btn" id="btnShopGo" style="margin-top:10px;">⛏️ 继续下潜 →</button>
+  </div>
+</div>
+
+<script>
+"use strict";
+/* =========================================================================
+   《哈奇深渊 · 机甲矿工》—— 自包含原型（物理 + 渲染 + Juice + 肉鸽商店）
+   纯 Canvas / Vanilla JS。虚拟分辨率 720×1280，等比缩放铺满。
+   ========================================================================= */
+
+//==========================================================================
+// 调参区
+//==========================================================================
+const VW = 720, VH = 1280;
+const PIVOT = { x: VW/2, y: 196 };          // 爪子悬挂支点
+const DIRT_TOP = 372;                         // 泥土区顶部
+const DIRT_BOT = 1232;                        // 泥土区底部
+
+const CFG = {
+  swingArcDeg: 160, swingPeriod: 2.35, ropeMinLen: 40,
+  shootSpeed: 1260, basePullSpeed: 560,
+  pullMassRef: 1.7, minPullSpeed: 78,
+  comboMax: 15, comboPullPer: 0.06,
+  comboGoodTypes: ["gold_small","gold_big","diamond","statue","mole"],
+  friedChickenMul: 2.0, stunTime: 2.0, clawTipRadius: 15, ropeSag: 0.16,
+};
+const ORE_TYPES = {
+  gold_small:{weight:0.9,value:120,radius:19},
+  gold_big:  {weight:3.6,value:420,radius:36,heavy:true},
+  diamond:   {weight:0.55,value:680,radius:18},
+  rock:      {weight:4.4,value:14,radius:31},
+  blackcard: {weight:0.6,value:0,radius:22,mystery:true},
+  thunder:   {weight:0,value:0,radius:23,hazard:true},
+  statue:    {weight:5.2,value:1500,radius:40,heavy:true}, // 稀有大目标·黄金墩弟雕像
+  // —— 动态干扰生物 ——
+  mole:      {weight:1.0,value:300,radius:22,mole:true},          // 钻地鼹鼠：快速横移的奖励目标
+  bat:       {weight:0,value:0,radius:20,hazard:true,bat:true},   // 蝙蝠：飞行骚扰，撞到被弹飞
+  // —— 场景 buff / debuff 拾取物 ——
+  b_haste:   {weight:0.5,value:0,radius:18,pickup:'haste'},
+  b_double:  {weight:0.5,value:0,radius:18,pickup:'double'},
+  b_time:    {weight:0.5,value:0,radius:18,pickup:'time'},
+  b_frenzy:  {weight:0.5,value:0,radius:18,pickup:'frenzy'},
+  d_fog:     {weight:2.6,value:0,radius:20,pickup:'fog',bad:true},
+  d_heavy:   {weight:2.6,value:0,radius:20,pickup:'heavy',bad:true},
+  d_chain:   {weight:2.6,value:0,radius:20,pickup:'chain',bad:true},
+};
+// 关底拍卖行遗物
+const RELICS=[
+  {good:true, name:'黄金龙猫像',   ico:'🗿', min:600, max:1500},
+  {good:true, name:'上古能量核心', ico:'🔋', min:500, max:1200},
+  {good:true, name:'西咪私藏茶具', ico:'🍵', min:400, max:900},
+  {good:true, name:'星际钻石原石', ico:'💎', min:800, max:1800},
+  {good:true, name:'会下金蛋的怀表',ico:'⏱️', min:300, max:1100},
+  {good:false,name:'诅咒赝品',     ico:'💀', min:-700,max:-200},
+  {good:false,name:'漏气的盲盒',   ico:'🎈', min:-500,max:-100},
+  {good:false,name:'西咪的账单(误)',ico:'🧾', min:-600,max:-150},
+];
+const PICKUP_ICON={haste:'⚡',double:'✨',time:'⏳',frenzy:'🔥',fog:'🌫️',heavy:'🪨',chain:'⛓️'};
+const DEG = Math.PI/180;
+const clamp=(v,a,b)=>v<a?a:v>b?b:v;
+const lerp=(a,b,t)=>a+(b-a)*t;
+const rand=(a,b)=>a+Math.random()*(b-a);
+const randi=(a,b)=>Math.floor(rand(a,b+1));
+
+//==========================================================================
+// 音效（WebAudio，纯合成，无外部资源）
+//==========================================================================
+const SFX = (()=>{
+  let ac=null;
+  const ensure=()=>{ if(!ac){ try{ac=new (window.AudioContext||window.webkitAudioContext)();}catch(e){} } if(ac&&ac.state==="suspended")ac.resume(); return ac; };
+  function tone(freq,dur,type="square",vol=.18,slideTo=null){
+    const c=ensure(); if(!c)return;
+    const o=c.createOscillator(),g=c.createGain();
+    o.type=type; o.frequency.setValueAtTime(freq,c.currentTime);
+    if(slideTo)o.frequency.exponentialRampToValueAtTime(slideTo,c.currentTime+dur);
+    g.gain.setValueAtTime(vol,c.currentTime);
+    g.gain.exponentialRampToValueAtTime(0.0008,c.currentTime+dur);
+    o.connect(g).connect(c.destination); o.start(); o.stop(c.currentTime+dur);
+  }
+  return {
+    ensure,
+    fire:()=>tone(660,.12,"square",.12,180),
+    catch:()=>tone(520,.1,"triangle",.16,880),
+    heavy:()=>{tone(160,.22,"sawtooth",.2,70);},
+    diamond:()=>{tone(880,.09,"triangle",.18,1320);setTimeout(()=>tone(1320,.12,"triangle",.16,1760),70);},
+    miss:()=>tone(200,.16,"sine",.12,90),
+    rock:()=>tone(120,.18,"sawtooth",.16,80),
+    combo:(n)=>tone(440+n*40,.09,"square",.14,660+n*40),
+    zap:()=>{for(let i=0;i<3;i++)setTimeout(()=>tone(rand(800,1600),.05,"square",.16),i*40);},
+    coin:()=>{tone(988,.07,"square",.14);setTimeout(()=>tone(1319,.1,"square",.13),60);},
+    bad:()=>tone(180,.3,"sawtooth",.18,70),
+    buy:()=>{tone(660,.08,"square",.14);setTimeout(()=>tone(990,.1,"square",.13),70);},
+  };
+})();
+
+//==========================================================================
+// Ore —— 矿物碰撞体
+//==========================================================================
+class Ore{
+  constructor(type,x,y,opts={}){
+    const b=ORE_TYPES[type]||ORE_TYPES.gold_small;
+    Object.assign(this,{type,x,y},b,opts);
+    this.heavy=!!(b.heavy||opts.heavy); this.mystery=!!b.mystery; this.hazard=!!b.hazard;
+    this.hidden=!!opts.hidden;                 // 深埋钻石：需透视目镜
+    const dir=Math.random()<.5?-1:1;
+    this.vx=opts.vx ?? (this.bat?rand(130,185)*dir : this.mole?rand(95,150)*dir : this.hazard?rand(45,90)*dir : 0);
+    this.baseY=y; this.amp=this.bat?rand(12,26):0; // 蝙蝠上下飞
+    this.rangeMinX=opts.rangeMinX??null; this.rangeMaxX=opts.rangeMaxX??null;
+    this.alive=true; this.captured=false; this.spin=rand(0,Math.PI*2); this.bob=rand(0,6.28);
+  }
+  update(dt){
+    if(this.captured||!this.alive)return;
+    this.bob+=dt*2;
+    if(this.vx){
+      this.x+=this.vx*dt;
+      if(this.rangeMinX!=null&&this.x<this.rangeMinX){this.x=this.rangeMinX;this.vx*=-1;}
+      if(this.rangeMaxX!=null&&this.x>this.rangeMaxX){this.x=this.rangeMaxX;this.vx*=-1;}
+    }
+    if(this.amp)this.y=this.baseY+Math.sin(this.bob*1.6)*this.amp;
+  }
+  hitTest(px,py,r=0){const dx=px-this.x,dy=py-this.y,rr=this.radius+r;return dx*dx+dy*dy<=rr*rr;}
+  isComboGood(){return CFG.comboGoodTypes.includes(this.type);}
+}
+
+//==========================================================================
+// Claw —— 能量爪（钟摆/发射/抓取/按重量回拉/麻痹）
+//==========================================================================
+const CLAW={SWING:"swing",SHOOT:"shoot",PULL:"pull",STUN:"stun"};
+class Claw{
+  constructor(px,py){
+    this.pivot={x:px,y:py}; this.state=CLAW.SWING;
+    this.angle=0; this.length=CFG.ropeMinLen; this.swingT=0;
+    this.payload=null; this.pullSpeed=CFG.basePullSpeed; this.stunTimer=0;
+    this.openAmt=1; this.maxLen=DIRT_BOT-py; this.aimAngle=null; // 鼠标瞄准角(null=无输入,做钟摆待机)
+  }
+  get tip(){const a=this.angle;return{x:this.pivot.x+Math.sin(a)*this.length,y:this.pivot.y+Math.cos(a)*this.length};}
+  fire(){
+    if(this.state!==CLAW.SWING)return false;
+    const half=(CFG.swingArcDeg*0.5)*DEG;
+    if(this.aimAngle!=null)this.angle=clamp(this.aimAngle,-half,half); // 朝鼠标方向发射
+    this.state=CLAW.SHOOT; return true;
+  }
+  cutRope(){
+    if(this.state===CLAW.PULL&&this.payload){
+      this.payload.captured=false; this.payload.alive=false; this.payload=null;
+      this.pullSpeed=CFG.basePullSpeed; return true;
+    } return false;
+  }
+  electrocute(){
+    if(this.payload){this.payload.captured=false;this.payload.alive=true;this.payload=null;}
+    this.state=CLAW.STUN; this.stunTimer=CFG.stunTime;
+  }
+  _grab(ore,ctx){
+    this.payload=ore; ore.captured=true; this.state=CLAW.PULL;
+    const base=ctx.pullBase||CFG.basePullSpeed;
+    if(ctx.fried){ this.pullSpeed=base*(ctx.friedMul||CFG.friedChickenMul); }
+    else{
+      const mf=CFG.pullMassRef/(CFG.pullMassRef+ore.weight);
+      this.pullSpeed=Math.max(CFG.minPullSpeed,base*mf*(ctx.comboMul||1));
+    }
+  }
+  update(dt,ctx){
+    const H=ctx.hooks;
+    // 爪子张合动画
+    const wantOpen=(this.state===CLAW.SWING||this.state===CLAW.SHOOT||this.state===CLAW.STUN);
+    this.openAmt=lerp(this.openAmt,wantOpen?1:0,Math.min(1,dt*18));
+
+    if(this.state===CLAW.SWING){
+      const half=(CFG.swingArcDeg*0.5)*DEG;
+      let target;
+      if(this.aimAngle!=null){ target=clamp(this.aimAngle,-half,half); }   // 跟随鼠标
+      else { this.swingT+=dt; target=half*Math.sin((this.swingT/CFG.swingPeriod)*Math.PI*2); } // 无输入时钟摆待机
+      this.angle=lerp(this.angle,target,Math.min(1,dt*16));
+      this.length=CFG.ropeMinLen; return null;
+    }
+    if(this.state===CLAW.SHOOT){
+      // 子步进推进，避免高速穿模
+      const gr=ctx.grabRadius||CFG.clawTipRadius;
+      const pb=ctx.pullBase||CFG.basePullSpeed;
+      let remain=CFG.shootSpeed*dt;
+      while(remain>0){
+        const step=Math.min(remain,10); this.length+=step; remain-=step;
+        const tip=this.tip;
+        for(const ore of ctx.ores){
+          if(!ore.alive||ore.captured)continue;
+          if(!ore.hitTest(tip.x,tip.y,gr))continue;
+          if(ore.hazard){
+            if(ctx.shield){ H.onShieldBlock?.(ore,tip); this.pullSpeed=pb; this.state=CLAW.PULL; return {ore:null,empty:true,blocked:true}; }
+            if(ore.bat){ H.onBatHit?.(ore,tip); this.pullSpeed=pb; this.state=CLAW.PULL; return {ore:null,empty:true,knocked:true}; }
+            H.onElectrocute?.(ore,tip); this.electrocute(); return {ore:null,empty:true,electrocuted:true};
+          }
+          H.onGrab?.(ore,tip); if(ore.heavy)H.onHeavyGrab?.(ore,tip);
+          this._grab(ore,ctx); return null;
+        }
+        if(this.length>=this.maxLen){ this.pullSpeed=pb; this.state=CLAW.PULL; H.onMiss?.(this.tip); break; }
+      }
+      return null;
+    }
+    if(this.state===CLAW.PULL){
+      this.length-=this.pullSpeed*dt;
+      if(this.payload){const t=this.tip;this.payload.x=t.x;this.payload.y=t.y;}
+      if(this.length<=CFG.ropeMinLen){
+        this.length=CFG.ropeMinLen;
+        const ore=this.payload;
+        if(ore){ore.captured=false;ore.alive=false;}
+        this.payload=null; this.state=CLAW.SWING;
+        return {ore,empty:!ore};
+      }
+      return null;
+    }
+    if(this.state===CLAW.STUN){
+      this.stunTimer-=dt; this.length=CFG.ropeMinLen;
+      if(this.stunTimer<=0){this.state=CLAW.SWING;this.swingT=0;}
+      return null;
+    }
+    return null;
+  }
+  ropePoints(seg=8){
+    const tip=this.tip;
+    const taut=(this.state===CLAW.PULL||this.state===CLAW.SHOOT)?1:0;
+    const sag=CFG.ropeSag*this.length*(1-taut);
+    const pts=[];
+    for(let i=0;i<=seg;i++){const t=i/seg;
+      pts.push({x:this.pivot.x+(tip.x-this.pivot.x)*t,
+                y:this.pivot.y+(tip.y-this.pivot.y)*t+Math.sin(t*Math.PI)*sag});}
+    return pts;
+  }
+}
+
+//==========================================================================
+// 游戏主体
+//==========================================================================
+const cv=document.getElementById("cv"), g=cv.getContext("2d");
+const G={
+  state:"menu",            // menu | playing | result | shop | over
+  claw:null, ores:[], particles:[], floats:[],
+  level:1, score:0, goal:0, time:0, money:0, combo:0,
+  blackcards:0, // 本关收集的黑卡数
+  shake:0, shakeMag:0, flash:0, recoil:0, slowmo:0, frenzy:0,
+  up:{},                       // 道具等级表 id->level（fried 的 level 即库存）
+  cd:{dart:0,bomb:0,shield:0}, // 主动道具冷却 / 护盾充能
+  fx:{haste:0,double:0,fog:0,heavy:0,chain:0}, // 局内临时 buff/debuff 计时
+  shopOffers:null,             // 本次商店随机货架
+};
+
+function lv(id){ return G.up[id]||0; }
+// 连击核心：拉速加成更高、分数倍率门槛更低
+function comboMul(){ return 1+clamp(G.combo,0,CFG.comboMax)*CFG.comboPullPer*(1+0.25*lv('core')); }
+function scoreMul(){ const step=lv('core')>0?2:3; return 1+Math.floor(clamp(G.combo,0,CFG.comboMax)/step)*0.5; }
+
+// 环境浮尘（贯穿全程的氛围粒子）
+G.dust=[]; G.bgGems=[];
+for(let i=0;i<48;i++)G.dust.push({x:rand(0,VW),y:rand(0,VH),vy:-rand(8,26),size:rand(1,2.6),alpha:rand(.05,.2),ph:rand(0,6.28)});
+
+//---------------------------------------------------------------- 关卡生成
+function startLevel(n){
+  G.level=n; G.score=0; G.blackcards=0; G.combo=0; G.frenzy=0;
+  G.cd={dart:0,bomb:0,shield:0};
+  G.fx={haste:0,double:0,fog:0,heavy:0,chain:0};
+  G.goal=900+(n-1)*1000;
+  G.time=Math.max(46,76-n*4)+6*lv('clock'); // ⏱️ 时停怀表
+  G.ores=[]; G.particles=[]; G.floats=[];
+  G.claw=new Claw(PIVOT.x,PIVOT.y);
+  // 岩壁里嵌的发光晶体（装饰，按关卡随机）
+  G.bgGems=[];
+  const gemCols=["#3aa0ff","#a36bff","#39e6cf","#ff6bd0","#ffd23f"];
+  for(let i=0;i<11;i++)G.bgGems.push({x:rand(28,VW-28),y:rand(DIRT_TOP+50,DIRT_BOT-40),
+    r:rand(7,16),col:gemCols[randi(0,gemCols.length-1)],ph:rand(0,6.28)});
+  const place=(type,opts)=>{
+    // 在泥土区找一个不太重叠的位置
+    for(let tries=0;tries<40;tries++){
+      const r=(ORE_TYPES[type].radius)||20;
+      const x=rand(70+r,VW-70-r), y=rand(DIRT_TOP+60,DIRT_BOT-50);
+      let ok=true;
+      for(const o of G.ores){const dx=o.x-x,dy=o.y-y;if(dx*dx+dy*dy<(o.radius+r+14)**2){ok=false;break;}}
+      if(ok||tries===39){G.ores.push(new Ore(type,x,y,opts||{}));return;}
+    }
+  };
+  for(let i=0;i<5+n;i++)place("gold_small");
+  for(let i=0;i<1+Math.floor(n/2);i++)place("gold_big");
+  const diaN=2+Math.floor(n/3);
+  for(let i=0;i<diaN;i++) place("diamond",{hidden: i<Math.ceil(diaN/2)? Math.random()<.6:false});
+  for(let i=0;i<4+n;i++)place("rock");
+  for(let i=0;i<1+Math.floor(n/2);i++)place("blackcard"); // 拍卖遗物
+  const thN=Math.min(4,Math.floor(n/2));
+  for(let i=0;i<thN;i++){
+    const r=ORE_TYPES.thunder.radius, minX=70+r, maxX=VW-70-r;
+    place("thunder",{rangeMinX:minX,rangeMaxX:maxX});
+  }
+  if(Math.random()<Math.min(.55,.10+n*0.06))place("statue"); // 🗿 稀有黄金墩弟雕像
+  // —— 动态干扰：钻地鼹鼠(奖励·移动) / 蝙蝠(骚扰·飞行) ——
+  const fmin=70, fmax=VW-70;
+  for(let i=0;i<1+Math.floor((n-1)/2);i++) place("mole",{rangeMinX:fmin,rangeMaxX:fmax});
+  for(let i=0;i<Math.min(3,n-1);i++)       place("bat", {rangeMinX:fmin,rangeMaxX:fmax});
+  // —— 场上 buff / debuff 拾取物（可夹）——
+  const goodB=["b_haste","b_double","b_time","b_frenzy"], badB=["d_fog","d_heavy","d_chain"];
+  for(let i=0;i<1+Math.floor(n/4);i++) place(goodB[randi(0,goodB.length-1)]);
+  for(let i=0;i<1+Math.floor(n/3);i++) place(badB[randi(0,badB.length-1)]);
+  // 🍗 高热量炸鸡桶：本局消耗一份库存
+  G.fried=false;
+  if((G.up.fried||0)>0){ G.fried=true; G.up.fried--; }
+  G.state="playing";
+  refreshHudBtns();
+  closeAllOverlays();
+}
+
+//---------------------------------------------------------------- 抓取结算 hooks
+const HOOKS={
+  onGrab:(ore,tip)=>{ if(ore.type==="diamond")SFX.diamond(); else SFX.catch();
+    for(let i=0;i<8;i++)spark(tip.x,tip.y,ore.type==="diamond"?"#6ff":"#ffd84a"); },
+  onHeavyGrab:(ore,tip)=>{ SFX.heavy(); G.shake=.45;G.shakeMag=16;G.recoil=1;G.flash=.25;
+    for(let i=0;i<16;i++)dirtChunk(tip.x,tip.y); },
+  onMiss:(tip)=>{ SFX.miss(); },
+  onElectrocute:(ore,tip)=>{ SFX.zap(); G.shake=.5;G.shakeMag=20;G.flash=.4;
+    for(let i=0;i<14;i++)spark(tip.x,tip.y,"#9bd6ff"); },
+  onShieldBlock:(ore,tip)=>{ SFX.combo(6); G.shake=.25;G.shakeMag=10;G.flash=.2;
+    for(let i=0;i<10;i++)spark(tip.x,tip.y,"#7af6ff");
+    floatText(tip.x,PIVOT.y+50,"🛡️ 抵挡!","#7af6ff",22); },
+  onBatHit:(ore,tip)=>{ SFX.zap(); G.shake=.3;G.shakeMag=12;
+    for(let i=0;i<8;i++)spark(tip.x,tip.y,"#c9a6ff"); },
+};
+
+//---------------------------------------------------------------- 一次抓取入账
+function resolveCatch(res){
+  const {ore,empty,electrocuted,blocked,knocked}=res;
+  if(blocked){ G.cd.shield=Math.max(2,15-3*lv('shield')); return; } // 🛡️ 抵挡电击：充能、不清连击
+  if(knocked){ G.combo=0; G.time=Math.max(0,G.time-1.5); SFX.zap();
+    floatText(VW/2,PIVOT.y+60,"🦇 撞飞！ -1.5s","#c9a6ff",22); return; }
+  if(ore&&ore.pickup){ applyPickup(ore); return; } // buff/debuff 拾取，单独结算
+  // Combo 更新
+  if(electrocuted||empty||(ore&&!ore.isComboGood())){
+    if(G.combo>0&&!electrocuted){ if(ore&&!ore.isComboGood())SFX.rock(); }
+    G.combo=0;
+  }else if(ore&&ore.isComboGood()){
+    if(G.fx.chain<=0)G.combo=clamp(G.combo+1,0,CFG.comboMax); // ⛓️ 冻结时连击不增长
+    if(G.combo>=2){SFX.combo(G.combo);
+      floatText(VW-90,150,"COMBO x"+G.combo,"#ff7ad9",22);}
+    if(G.combo>=CFG.comboMax){ if(G.frenzy<=0.1)triggerFrenzy(); else G.frenzy=Math.max(G.frenzy,4); }
+  }
+  if(!ore)return;
+  if(ore.mystery){ G.blackcards++; SFX.coin();
+    floatText(ore.x,PIVOT.y+30,"🎴 遗物!","#c9a6ff",22); return; }
+  if(ore.hazard)return;
+  // 价值：💰点金符 + 🥽目镜隐藏钻加成 + 连击倍率 + 🔥狂热 + ✨双倍
+  let v=ore.value*(1+0.15*lv('fortune'));
+  if(ore.hidden&&lv('goggles')>=3)v*=1.5;
+  const mul=scoreMul()*(G.frenzy>0?2:1)*(G.fx.double>0?2:1);
+  const gain=Math.round(v*mul);
+  G.score+=gain; G.money+=gain;
+  SFX.coin(); if(ore.type==="statue"||ore.type==="mole")SFX.diamond();
+  floatText(ore.x,PIVOT.y+30, "+"+gain+(mul>1?(" ×"+mul):""),
+    ore.type==="diamond"?"#7af":(ore.type==="statue"?"#ffe27a":(ore.type==="mole"?"#ffd0a0":"#ffd84a")), ore.heavy?26:20);
+  if(ore.type==="diamond"||ore.heavy)G.flash=Math.max(G.flash,.18);
+}
+function applyPickup(ore){
+  const p=ore.pickup;
+  if(ore.bad){ G.combo=0; SFX.bad(); G.shake=.4; G.shakeMag=14; G.flash=.3; }
+  else { SFX.diamond(); G.flash=.25; }
+  const F=(t,c)=>floatText(ore.x,PIVOT.y+44,t,c,24);
+  if(p==='haste'){ G.fx.haste=8; F('⚡ 极速 8s','#7af6ff'); }
+  else if(p==='double'){ G.fx.double=8; F('✨ 双倍分 8s','#ffe27a'); }
+  else if(p==='time'){ G.time+=8; F('⏳ +8 秒','#9be88a'); }
+  else if(p==='frenzy'){ triggerFrenzy(); }
+  else if(p==='fog'){ G.fx.fog=8; F('🌫️ 迷雾 8s','#9fb0c8'); }
+  else if(p==='heavy'){ G.fx.heavy=8; F('🪨 超载 8s','#c8b0a0'); }
+  else if(p==='chain'){ G.fx.chain=7; F('⛓️ 连击冻结 7s','#c8b0a0'); }
+}
+function triggerFrenzy(){ G.frenzy=4.5; SFX.diamond(); G.flash=.5; G.shake=.4; G.shakeMag=14;
+  floatText(VW/2,262,"🔥 深渊狂热！","#ff8a3d",30); }
+
+//---------------------------------------------------------------- 粒子/飘字
+function spark(x,y,color){G.particles.push({x,y,vx:rand(-140,140),vy:rand(-180,40),life:rand(.3,.6),max:.6,color,size:rand(2,4),grav:300,kind:"spark"});}
+function dirtChunk(x,y){G.particles.push({x,y,vx:rand(-180,180),vy:rand(-260,-60),life:rand(.5,.9),max:.9,color:["#7a5230","#8a6038","#5e3f24"][randi(0,2)],size:rand(5,9),grav:760,kind:"chunk"});}
+function floatText(x,y,text,color,size){G.floats.push({x,y,text,color,size:size||20,life:1,vy:-46});}
+
+//==========================================================================
+// 输入
+//==========================================================================
+function fire(){
+  if(G.state!=="playing")return;
+  SFX.ensure();
+  if(G.claw.fire())SFX.fire();
+}
+function tryDart(){
+  if(G.state!=="playing"||lv('dart')<1||G.cd.dart>0)return;
+  if(G.claw.cutRope()){
+    G.cd.dart=Math.max(2,6-2*lv('dart')); SFX.miss(); G.combo=0;
+    if(lv('dart')>=3)G.time+=2; // Lv3 返还时间
+    floatText(VW/2,PIVOT.y+60,"🍣 切绳！","#9be",20);
+  }
+}
+function useBomb(){
+  if(G.state!=="playing"||lv('bomb')<1||G.cd.bomb>0)return;
+  const radius=120+30*lv('bomb'), tip=G.claw?G.claw.tip:{x:VW/2,y:DIRT_TOP};
+  for(const o of G.ores){
+    if(o.hazard){ o.alive=false; for(let i=0;i<10;i++)spark(o.x,o.y,"#9bd6ff"); }
+    else if(o.type==="rock"){
+      const dx=o.x-tip.x,dy=o.y-tip.y;
+      if(dx*dx+dy*dy<radius*radius){ // 废石 → 碎金
+        o.type="gold_small"; o.weight=ORE_TYPES.gold_small.weight; o.value=ORE_TYPES.gold_small.value;
+        o.radius=ORE_TYPES.gold_small.radius; o.heavy=false;
+        for(let i=0;i<6;i++)spark(o.x,o.y,"#ffd84a");
+      }
+    }
+  }
+  G.ores=G.ores.filter(o=>o.alive);
+  G.cd.bomb=Math.max(6,14-2*lv('bomb')); SFX.heavy(); G.shake=.5; G.shakeMag=18; G.flash=.4;
+  floatText(VW/2,PIVOT.y+60,"💥 震爆！","#ffb347",24);
+}
+addEventListener("keydown",e=>{
+  if(e.code==="Space"){e.preventDefault();fire();}
+  if(e.code==="KeyF"){e.preventDefault();tryDart();}
+  if(e.code==="KeyG"){e.preventDefault();useBomb();}
+});
+// —— 鼠标瞄准：点哪个方向就往哪抓 ——
+function toVirtual(e){
+  const r=cv.getBoundingClientRect();
+  return { x:(e.clientX-r.left)/r.width*VW, y:(e.clientY-r.top)/r.height*VH };
+}
+function aimToward(p){
+  if(!G.claw)return;
+  const half=CFG.swingArcDeg*0.5*DEG;
+  const dx=p.x-PIVOT.x, dy=Math.max(p.y-PIVOT.y,1); // 强制向下半区，避免朝天发射
+  G.claw.aimAngle=clamp(Math.atan2(dx,dy),-half,half);
+}
+cv.addEventListener("pointermove",e=>{ if(G.state==="playing")aimToward(toVirtual(e)); });
+cv.addEventListener("pointerdown",e=>{ e.preventDefault(); if(G.state==="playing")aimToward(toVirtual(e)); fire(); });
+cv.addEventListener("pointerleave",()=>{ if(G.claw)G.claw.aimAngle=null; }); // 移出→恢复待机钟摆
+
+const hudBtns=document.getElementById("hudBtns");
+document.getElementById("btnDart").addEventListener("click",tryDart);
+document.getElementById("btnBomb").addEventListener("click",useBomb);
+// 进局时按拥有情况显隐主动道具按钮
+function refreshHudBtns(){
+  document.getElementById("btnDart").style.display=lv('dart')>0?"flex":"none";
+  document.getElementById("btnBomb").style.display=lv('bomb')>0?"flex":"none";
+  hudBtns.classList.toggle("show", G.state==="playing"&&(lv('dart')>0||lv('bomb')>0));
+}
+// 每帧刷新冷却文字 / 禁用态
+function updateHudBtns(){
+  if(lv('dart')>0){ const c=G.cd.dart; document.getElementById("btnDart").disabled=c>0;
+    document.getElementById("dartCnt").textContent=c>0?Math.ceil(c)+"s":"就绪"; }
+  if(lv('bomb')>0){ const c=G.cd.bomb; document.getElementById("btnBomb").disabled=c>0;
+    document.getElementById("bombCnt").textContent=c>0?Math.ceil(c)+"s":"就绪"; }
+}
+
+//==========================================================================
+// 画面缩放
+//==========================================================================
+function resize(){
+  const ww=innerWidth, wh=innerHeight, ar=VW/VH;
+  let w=ww,h=ww/ar; if(h>wh){h=wh;w=wh*ar;}
+  const dpr=Math.min(devicePixelRatio||1,2);
+  cv.width=VW*dpr; cv.height=VH*dpr;
+  cv.style.width=w+"px"; cv.style.height=h+"px";
+  g.setTransform(dpr,0,0,dpr,0,0);
+}
+addEventListener("resize",resize); resize();
+
+//==========================================================================
+// 主循环
+//==========================================================================
+let last=performance.now();
+function loop(now){
+  let dt=(now-last)/1000; last=now; dt=Math.min(dt,1/30);
+  if(G.slowmo>0){ G.slowmo-=dt; dt*=0.35; }
+  update(dt); render();
+  requestAnimationFrame(loop);
+}
+requestAnimationFrame(loop);
+
+function update(dt){
+  // 衰减
+  G.shake=Math.max(0,G.shake-dt); G.flash=Math.max(0,G.flash-dt*2.4);
+  G.recoil=Math.max(0,G.recoil-dt*2.2);
+  // 粒子
+  for(const p of G.particles){p.life-=dt;p.vy+=p.grav*dt;p.x+=p.vx*dt;p.y+=p.vy*dt;}
+  G.particles=G.particles.filter(p=>p.life>0&&p.y<VH+40);
+  for(const f of G.floats){f.life-=dt*1.1;f.y+=f.vy*dt;}
+  G.floats=G.floats.filter(f=>f.life>0);
+  // 浮尘（任何状态都飘，保持画面有生气）
+  for(const d of G.dust){d.y+=d.vy*dt;if(d.y<-12){d.y=VH+12;d.x=rand(0,VW);}}
+
+  if(G.state!=="playing")return;
+
+  G.time-=dt;
+  G.frenzy=Math.max(0,G.frenzy-dt);
+  for(const k in G.fx)G.fx[k]=Math.max(0,G.fx[k]-dt);
+  G.cd.dart=Math.max(0,G.cd.dart-dt);
+  G.cd.bomb=Math.max(0,G.cd.bomb-dt);
+  G.cd.shield=Math.max(0,G.cd.shield-dt);
+  updateHudBtns();
+  for(const o of G.ores)o.update(dt);
+  const fr=G.frenzy>0, haste=G.fx.haste>0, heavy=G.fx.heavy>0;
+  const res=G.claw.update(dt,{
+    ores:G.ores,
+    comboMul:comboMul()*(fr?1.5:1)*(haste?1.3:1),
+    fried:G.fried, friedMul:CFG.friedChickenMul,
+    pullBase:CFG.basePullSpeed*(1+0.12*lv('reel'))*(fr?1.25:1)*(haste?1.4:1)*(heavy?0.6:1), // ⚙️绞盘 + 🔥狂热 + ⚡极速 / 🪨超载
+    grabRadius:CFG.clawTipRadius*(1+0.22*lv('magnet')),         // 🧲磁力线圈
+    shield: lv('shield')>0 && G.cd.shield<=0,                   // 🛡️护盾就绪
+    hooks:HOOKS });
+  if(res){ resolveCatch(res);
+    if(res.electrocuted){G.slowmo=0.25;}
+    if(G.ores.some(o=>!o.alive))G.ores=G.ores.filter(o=>o.alive);
+  }
+  // 结束条件：时间到 / 有价值矿物清空
+  const valuableLeft=G.ores.some(o=>o.alive&&!o.hazard&&(o.value>0||o.mystery));
+  if(G.time<=0||(!valuableLeft && G.claw.state===CLAW.SWING)){
+    endLevel();
+  }
+}
+
+//---------------------------------------------------------------- 关卡结束
+function endLevel(){
+  if(G.time<0)G.time=0;
+  G.state="result";
+  hudBtns.classList.remove("show");
+  const passed=G.score>=G.goal;
+  // 黑卡鉴定
+  const reveal=document.getElementById("cardReveal");
+  reveal.innerHTML="";
+  let bonus=0; const lines=[];
+  for(let i=0;i<G.blackcards;i++){
+    const good=Math.random()<0.58;
+    const pool=RELICS.filter(r=>r.good===good);
+    const rel=pool[randi(0,pool.length-1)];
+    let amt=randi(rel.min,rel.max), hot=false;
+    if(good&&Math.random()<0.18){ amt=Math.round(amt*2); hot=true; } // 🔥 拍卖热战翻倍
+    bonus+=amt;
+    const el=document.createElement("div");
+    el.className="bcard "+(good?"good":"bad");
+    el.innerHTML=(hot?'🔥':rel.ico)+'<span class="amt" style="color:'+(good?"#ffd23f":"#ff6b78")+'">'+(amt>0?"+":"")+amt+'</span>';
+    el.title=rel.name; el.style.animationDelay=(i*0.12)+"s";
+    reveal.appendChild(el);
+    lines.push(rel.ico+(hot?'🔥':'')+rel.name+' '+(amt>0?'+':'')+amt);
+  }
+  G.money+=bonus;
+  if(G.blackcards>0)setTimeout(()=>{ bonus>=0?SFX.coin():SFX.bad(); },300);
+
+  const ov=document.getElementById("ovResult");
+  document.getElementById("resTitle").textContent=
+    passed?("第 "+G.level+" 层 · 通过！"):("第 "+G.level+" 层 · 未达标");
+  document.getElementById("resTitle").style.color=passed?"#fff":"#ff7a7a";
+  document.getElementById("resSub").innerHTML=
+    "本层得分 <b style='color:#ffcf33'>"+G.score+"</b> / 目标 "+G.goal+
+    (G.blackcards>0?("<br>🔨 <b>西咪拍卖行</b> 成交 <b style='color:"+(bonus>=0?"#ffd23f":"#ff6b78")+"'>"+(bonus>=0?"+":"")+bonus+
+      "</b> 💰<br><span style='font-size:12px;color:#90a3d0'>"+lines.join(' · ')+"</span>"):"");
+  document.getElementById("resWallet").textContent="💰 "+G.money;
+  const nextBtn=document.getElementById("btnNext");
+  if(passed){ nextBtn.textContent="前往补给站 →"; nextBtn.onclick=()=>openShop(true); }
+  else{ nextBtn.textContent="结束本次下潜"; nextBtn.onclick=gameOver; }
+  show(ov);
+}
+
+function gameOver(){
+  G.state="over";
+  document.getElementById("overSub").innerHTML=
+    "你下潜到了 <b style='color:#ffcf33'>第 "+G.level+" 层</b>，累计财富 <b style='color:#ffcf33'>"+G.money+"</b> 💰";
+  closeAllOverlays(); show(document.getElementById("ovOver"));
+}
+
+//==========================================================================
+// 商店
+//==========================================================================
+// 10 款道具：type=consume(囤货) / active(等级·冷却) / passive(等级·永久)
+const ITEMS={
+  fried:  {ico:'🍗',name:'高热量炸鸡桶',type:'consume',max:5, price:l=>240+l*60,
+    eff:n=>'下一局机甲马力全开：无视重量、拉速 +100%（可囤货连续多局）'},
+  dart:   {ico:'🍣',name:'寿司飞镖',type:'active',max:3, price:l=>180+l*150,
+    eff:n=>'抓取中按 F/🍣 切绳弃废石；冷却 '+Math.max(2,6-2*n)+'s'+(n>=3?'，并返还 2s 时间':'')},
+  bomb:   {ico:'💣',name:'深渊震爆弹',type:'active',max:3, price:l=>280+l*160,
+    eff:n=>'按 G/💣 引爆：清全场⚡雷怪，半径'+(120+30*n)+'内废石→碎金；冷却 '+Math.max(6,14-2*n)+'s'},
+  shield: {ico:'🛡️',name:'绝缘护盾',type:'active',max:3, price:l=>220+l*140,
+    eff:n=>'自动抵挡电击麻痹，充能 '+Math.max(2,15-3*n)+'s/次'},
+  goggles:{ico:'🥽',name:'透视目镜',type:'passive',max:3, price:l=>320+l*240,
+    eff:n=>['','看穿隐藏钻石','隐藏钻石描边高亮','隐藏钻石额外 +50% 价值'][n]||'已满级'},
+  magnet: {ico:'🧲',name:'磁力线圈',type:'passive',max:4, price:l=>240+l*180,
+    eff:n=>'能量爪抓取判定半径 +'+(22*n)+'%'},
+  reel:   {ico:'⚙️',name:'强力绞盘',type:'passive',max:4, price:l=>260+l*190,
+    eff:n=>'基础回拉速度 +'+(12*n)+'%'},
+  fortune:{ico:'💰',name:'点金符',type:'passive',max:4, price:l=>300+l*220,
+    eff:n=>'所有矿物价值 +'+(15*n)+'%'},
+  clock:  {ico:'⏱️',name:'时停怀表',type:'passive',max:3, price:l=>280+l*170,
+    eff:n=>'每关时间 +'+(6*n)+'s'},
+  core:   {ico:'🔥',name:'连击核心',type:'passive',max:3, price:l=>320+l*230,
+    eff:n=>'连击拉速加成强化，更易触发分数倍率（Lv'+n+'）'},
+};
+const ITEM_ORDER=['fried','dart','bomb','shield','goggles','magnet','reel','fortune','clock','core'];
+
+function rollShop(){
+  const pool=ITEM_ORDER.filter(id=>(G.up[id]||0)<ITEMS[id].max);
+  for(let i=pool.length-1;i>0;i--){const j=randi(0,i);[pool[i],pool[j]]=[pool[j],pool[i]];}
+  G.shopOffers=pool.slice(0,4);
+  if(G.shopOffers.length===0)G.shopOffers=ITEM_ORDER.slice(0,4); // 全满级兜底
+}
+function openShop(fresh){
+  G.state="shop"; closeAllOverlays();
+  if(fresh||!G.shopOffers)rollShop();
+  document.getElementById("shopWallet").textContent="💰 "+G.money;
+  const grid=document.getElementById("shopGrid"); grid.innerHTML="";
+  for(const id of G.shopOffers){
+    const it=ITEMS[id], cur=G.up[id]||0, maxed=cur>=it.max, price=it.price(cur), poor=G.money<price;
+    const tag=it.type==='consume'?('库存 '+cur)
+            :it.type==='passive'?('Lv '+cur+'/'+it.max)
+            :(cur>0?('Lv '+cur+'/'+it.max):'未拥有');
+    const el=document.createElement("div");
+    el.className="item"+(maxed?" bought":(poor?" poor":""));
+    el.innerHTML='<div class="ico">'+it.ico+'</div><div class="info"><div class="nm">'+it.name+
+      ' <span style="color:#7fa0e0;font-size:12px">'+tag+'</span></div><div class="ds">'+
+      it.eff(maxed?cur:cur+1)+'</div></div><div class="price">'+(maxed?"已满级":("💰"+price))+'</div>';
+    if(!maxed)el.onclick=()=>buy(id,el);
+    grid.appendChild(el);
+  }
+  show(document.getElementById("ovShop"));
+}
+function buy(id,el){
+  const it=ITEMS[id], cur=G.up[id]||0; if(cur>=it.max)return;
+  const price=it.price(cur);
+  if(G.money<price){ SFX.bad(); el.classList.add("poor"); return; }
+  G.money-=price; SFX.buy(); G.up[id]=cur+1;
+  openShop(false); // 货架不变，仅刷新状态
+}
+function rerollShop(){
+  if(G.money<80){ SFX.bad(); return; }
+  G.money-=80; SFX.buy(); rollShop(); openShop(false);
+}
+
+//==========================================================================
+// 渲染
+//==========================================================================
+function render(){
+  g.clearRect(0,0,VW,VH);
+  g.save();
+  // 震屏
+  if(G.shake>0){const m=G.shakeMag*(G.shake);g.translate(rand(-m,m),rand(-m,m));}
+
+  drawBackground();
+  drawDirt();
+  drawAimGuide();
+  drawOres();
+  drawRopeAndClaw();
+  drawMech();
+  drawParticles();
+  drawDust();
+  drawFloats();
+  if(G.state==="playing"||G.state==="result")drawHUD();
+
+  g.restore();
+  // 暗角
+  const vg=g.createRadialGradient(VW/2,VH*0.5,VH*0.32,VW/2,VH*0.5,VH*0.74);
+  vg.addColorStop(0,"rgba(0,0,0,0)"); vg.addColorStop(1,"rgba(0,0,0,.5)");
+  g.fillStyle=vg; g.fillRect(0,0,VW,VH);
+  // 🌫️ 迷雾 debuff：遮蔽矿区视野
+  if(G.fx.fog>0){ const a=0.34*Math.min(1,G.fx.fog/8); g.fillStyle="rgba(150,168,196,"+a+")"; g.fillRect(0,DIRT_TOP,VW,VH-DIRT_TOP); }
+  // 狂热暖色脉冲
+  if(G.frenzy>0){ g.fillStyle="rgba(255,120,40,"+(0.10+0.05*Math.sin(performance.now()/60))+")"; g.fillRect(0,0,VW,VH); }
+  // 闪光
+  if(G.flash>0){g.fillStyle="rgba(255,255,255,"+(G.flash*0.6)+")";g.fillRect(0,0,VW,VH);}
+}
+
+function drawBackground(){
+  const t=performance.now()/1000;
+  // 夜空渐变
+  const sky=g.createLinearGradient(0,0,0,DIRT_TOP);
+  sky.addColorStop(0,"#1a2a52"); sky.addColorStop(.55,"#0f1a34"); sky.addColorStop(1,"#0a1228");
+  g.fillStyle=sky; g.fillRect(0,0,VW,DIRT_TOP);
+  // 闪烁星点
+  for(let i=0;i<24;i++){const sx=(i*97)%VW, sy=(i*53)%(DIRT_TOP-50)+8;
+    g.globalAlpha=(0.35+0.5*Math.abs(Math.sin(t*1.6+i)))*0.7;
+    g.fillStyle="#bcd6ff"; g.fillRect(sx,sy,2,2);}
+  g.globalAlpha=1;
+  // 远景霓虹城市剪影
+  for(let i=0;i<9;i++){const bw=34+(i%3)*20, bx=(i*84)%VW, bh=28+(i*37%56);
+    g.fillStyle=i%2?"#16284d":"#241a47"; g.fillRect(bx,DIRT_TOP-bh-26,bw,bh);
+    g.fillStyle="rgba(110,210,255,.3)"; g.fillRect(bx+6,DIRT_TOP-bh-18,4,5);
+    g.fillStyle="rgba(255,180,90,.25)"; g.fillRect(bx+bw-12,DIRT_TOP-bh-6,4,5);}
+  // 洞口冷光晕
+  const glow=g.createRadialGradient(VW/2,DIRT_TOP,20,VW/2,DIRT_TOP,300);
+  glow.addColorStop(0,"rgba(80,170,255,.20)"); glow.addColorStop(1,"rgba(80,170,255,0)");
+  g.fillStyle=glow; g.fillRect(0,DIRT_TOP-240,VW,300);
+}
+
+function drawDirt(){
+  // 体素分层泥土
+  const layerH=86, shades=["#6b4a2a","#5d3f24","#7a5733","#523620","#664526"];
+  let li=0;
+  for(let y=DIRT_TOP;y<DIRT_BOT;y+=layerH){
+    g.fillStyle=shades[li%shades.length];
+    g.fillRect(0,y,VW,Math.min(layerH,DIRT_BOT-y));
+    g.fillStyle="rgba(0,0,0,.10)";
+    for(let x=(li%2)*30;x<VW;x+=60)g.fillRect(x,y+10,26,26);
+    g.fillStyle="rgba(255,255,255,.04)";
+    for(let x=(li%2)*30+30;x<VW;x+=60)g.fillRect(x,y+44,22,22);
+    li++;
+  }
+  // 岩壁里嵌的发光晶体（装饰）
+  const t=performance.now()/600;
+  for(const gm of G.bgGems){
+    const pulse=0.5+0.5*Math.sin(t+gm.ph);
+    g.save(); g.translate(gm.x,gm.y); g.rotate(gm.ph);
+    g.globalAlpha=0.09+0.13*pulse; g.fillStyle=gm.col;   // 调暗：纯背景装饰，避免误以为可抓
+    g.beginPath();
+    for(let k=0;k<8;k++){const a=k/8*6.28;const rr=gm.r*(k%2?0.42:1);
+      const px=Math.cos(a)*rr,py=Math.sin(a)*rr; k?g.lineTo(px,py):g.moveTo(px,py);}
+    g.closePath(); g.fill();
+    g.globalAlpha=0.18+0.18*pulse; g.fillStyle="rgba(255,255,255,.5)";
+    g.beginPath();g.arc(-gm.r*0.2,-gm.r*0.2,gm.r*0.14,0,7);g.fill();
+    g.restore(); g.globalAlpha=1;
+  }
+  // 深度变暗（越深越黑，强化“深渊”）
+  const dg=g.createLinearGradient(0,DIRT_TOP,0,DIRT_BOT);
+  dg.addColorStop(0,"rgba(0,0,0,0)"); dg.addColorStop(1,"rgba(0,0,0,.58)");
+  g.fillStyle=dg; g.fillRect(0,DIRT_TOP,VW,DIRT_BOT-DIRT_TOP);
+  // 洞口边缘 + 钟乳石
+  g.fillStyle="#3a2715"; g.fillRect(0,DIRT_TOP-8,VW,10);
+  g.fillStyle="#2c1f12";
+  for(let i=0;i<8;i++){const sx=i*VW/8+VW/16;
+    g.beginPath();g.moveTo(sx-11,DIRT_TOP);g.lineTo(sx+11,DIRT_TOP);
+    g.lineTo(sx,DIRT_TOP+22+(i*7%18));g.closePath();g.fill();}
+}
+
+function drawAimGuide(){
+  if(!G.claw||G.claw.state!==CLAW.SWING)return;
+  // 用与爪尖完全相同的 sin/cos 公式，保证「瞄准线方向 == 实际抓取方向」
+  const a=G.claw.angle, len=Math.min(DIRT_BOT-PIVOT.y,540);
+  const dx=Math.sin(a), dy=Math.cos(a);
+  const x0=PIVOT.x+dx*44,  y0=PIVOT.y+dy*44;
+  const x1=PIVOT.x+dx*len, y1=PIVOT.y+dy*len;
+  g.strokeStyle="rgba(80,224,255,.30)"; g.lineWidth=2; g.setLineDash([7,11]);
+  g.beginPath(); g.moveTo(x0,y0); g.lineTo(x1,y1); g.stroke();
+  g.setLineDash([]);
+  g.strokeStyle="rgba(80,224,255,.55)"; g.lineWidth=2;
+  g.beginPath(); g.arc(x1,y1,11,0,7); g.stroke();
+  g.beginPath(); g.moveTo(x1-16,y1);g.lineTo(x1+16,y1);g.moveTo(x1,y1-16);g.lineTo(x1,y1+16); g.stroke();
+}
+
+function drawDust(){
+  for(const d of G.dust){
+    g.globalAlpha=d.alpha; g.fillStyle="#cfe0ff";
+    g.beginPath(); g.arc(d.x,d.y,d.size,0,7); g.fill();
+  }
+  g.globalAlpha=1;
+}
+
+function drawOres(){
+  for(const o of G.ores){
+    if(!o.alive)continue;
+    const bob=o.captured?0:Math.sin(o.bob)*2;
+    const x=o.x,y=o.y+bob;
+    const hiddenUnseen = o.hidden && lv('goggles')<1 && !o.captured;
+    g.save(); g.translate(x,y);
+    if(o.type==="rock"){
+      voxelBlock(0,0,o.radius,"#8a8f99","#5a606b","#aab0bb");
+    }else if(o.type==="gold_small"){
+      voxelBlock(0,0,o.radius,"#ffcf33","#c98f12","#fff0a0");
+    }else if(o.type==="gold_big"){
+      voxelBlock(0,0,o.radius,"#ffc21f","#b87808","#fff2b0");
+      g.fillStyle="#fff7cf";g.font="bold 14px system-ui";g.textAlign="center";g.fillText("★",0,5);
+    }else if(o.type==="diamond"){
+      if(hiddenUnseen){ // 深埋：只露一点土包
+        g.fillStyle="rgba(40,28,16,.55)"; g.beginPath();g.arc(0,0,o.radius*0.7,0,7);g.fill();
+      }else{
+        if(o.hidden&&lv('goggles')>=2){ g.strokeStyle="rgba(120,255,220,.85)"; g.lineWidth=2;
+          g.beginPath();g.arc(0,0,o.radius+6,0,7);g.stroke(); }
+        gem(o.radius, o.hidden?0.9:1);
+      }
+    }else if(o.type==="statue"){
+      drawStatue(o.radius);
+    }else if(o.type==="blackcard"){
+      g.rotate(Math.sin(o.bob*0.6)*0.12);
+      g.fillStyle="#1a1330";g.strokeStyle="#a070ff";g.lineWidth=3;
+      roundRect(-o.radius*0.8,-o.radius,o.radius*1.6,o.radius*2,6);g.fill();g.stroke();
+      g.fillStyle="#c9a6ff";g.font="bold 22px system-ui";g.textAlign="center";g.fillText("?",0,8);
+    }else if(o.type==="thunder"){
+      drawThunder(o);
+    }else if(o.type==="mole"){
+      drawMole(o);
+    }else if(o.type==="bat"){
+      drawBat(o);
+    }else if(o.pickup){
+      drawPickup(o);
+    }
+    g.restore();
+  }
+}
+function drawMole(o){const r=o.radius;
+  // 身体
+  g.fillStyle="#7a5536";g.beginPath();g.ellipse(0,0,r*0.95,r*0.82,0,0,7);g.fill();
+  g.fillStyle="#5e4026";g.beginPath();g.ellipse(0,r*0.22,r*0.62,r*0.5,0,0,7);g.fill();
+  // 爪子
+  g.fillStyle="#d8cdbd";g.fillRect(-r*0.78,-r*0.05,r*0.28,r*0.3);g.fillRect(r*0.5,-r*0.05,r*0.28,r*0.3);
+  // 粉鼻 + 眼
+  g.fillStyle="#ff9bb0";g.beginPath();g.arc(0,-r*0.08,r*0.17,0,7);g.fill();
+  g.fillStyle="#15110c";g.fillRect(-r*0.32,-r*0.34,3,3);g.fillRect(r*0.22,-r*0.34,3,3);
+  // 携带金块
+  g.fillStyle="#ffd24a";g.fillRect(-7,r*0.46,14,10);
+  g.fillStyle="#fff3b0";g.fillRect(-7,r*0.46,14,3);
+}
+function drawBat(o){const r=o.radius,t=performance.now()/120,flap=Math.sin(t*4)*r*0.32;
+  g.fillStyle="#3a2b55";
+  g.beginPath();g.moveTo(0,0);g.lineTo(-r,-flap-r*0.2);g.lineTo(-r*0.5,r*0.22);g.closePath();g.fill();
+  g.beginPath();g.moveTo(0,0);g.lineTo(r,-flap-r*0.2);g.lineTo(r*0.5,r*0.22);g.closePath();g.fill();
+  g.fillStyle="#4a3768";g.beginPath();g.arc(0,0,r*0.46,0,7);g.fill();
+  g.fillStyle="#3a2b55";
+  g.beginPath();g.moveTo(-r*0.3,-r*0.35);g.lineTo(-r*0.16,-r*0.72);g.lineTo(0,-r*0.35);g.fill();
+  g.beginPath();g.moveTo(r*0.3,-r*0.35);g.lineTo(r*0.16,-r*0.72);g.lineTo(0,-r*0.35);g.fill();
+  g.fillStyle="#ff5d6c";g.fillRect(-r*0.22,-r*0.08,3,3);g.fillRect(r*0.12,-r*0.08,3,3);
+}
+function drawPickup(o){const r=o.radius,t=performance.now()/500;
+  const col=o.bad?"#ff6bb0":"#46c8ff";
+  g.shadowColor=col;g.shadowBlur=12+4*Math.sin(t*3);
+  g.fillStyle=o.bad?"rgba(120,30,70,.5)":"rgba(30,90,140,.5)";
+  g.beginPath();g.arc(0,0,r,0,7);g.fill();
+  g.strokeStyle=col;g.lineWidth=2;g.beginPath();g.arc(0,0,r,0,7);g.stroke();
+  g.shadowBlur=0;
+  g.fillStyle="#fff";
+  g.font="bold "+Math.round(r*1.1)+"px system-ui";g.textAlign="center";g.textBaseline="middle";
+  g.fillText(PICKUP_ICON[o.pickup]||'?',0,1);g.textBaseline="alphabetic";
+}
+function voxelBlock(x,y,r,face,dark,light){
+  const s=r*1.5;
+  g.fillStyle=dark; g.fillRect(x-s/2+3,y-s/2+3,s,s);      // 阴影面
+  g.fillStyle=face; g.fillRect(x-s/2,y-s/2,s,s);          // 正面
+  g.fillStyle=light; g.fillRect(x-s/2,y-s/2,s,s*0.32);    // 高光顶
+  g.fillStyle="rgba(0,0,0,.12)"; g.fillRect(x-s/2,y+s*0.18,s,s*0.32);
+}
+function gem(r,a){
+  g.globalAlpha=a;
+  g.fillStyle="#39e6ff";
+  g.beginPath();g.moveTo(0,-r);g.lineTo(r*0.8,-r*0.2);g.lineTo(0,r);g.lineTo(-r*0.8,-r*0.2);g.closePath();g.fill();
+  g.fillStyle="#bff7ff";g.beginPath();g.moveTo(0,-r);g.lineTo(r*0.35,-r*0.2);g.lineTo(0,r*0.1);g.lineTo(-r*0.35,-r*0.2);g.closePath();g.fill();
+  g.strokeStyle="rgba(255,255,255,.7)";g.lineWidth=1.5;g.stroke();
+  g.globalAlpha=1;
+}
+function drawStatue(r){
+  const t=performance.now()/400;
+  g.shadowColor="#ffd24a"; g.shadowBlur=12+4*Math.sin(t);
+  voxelBlock(0,4,r,"#ffd24a","#b8860b","#fff3b0");
+  g.shadowBlur=0;
+  // 黄金龙猫剪影
+  g.fillStyle="#9a6b08";
+  g.beginPath();g.ellipse(0,-2,r*0.42,r*0.5,0,0,7);g.fill();
+  g.beginPath();g.ellipse(-r*0.34,-r*0.42,r*0.16,r*0.24,-.3,0,7);g.fill();
+  g.beginPath();g.ellipse(r*0.34,-r*0.42,r*0.16,r*0.24,.3,0,7);g.fill();
+  g.fillStyle="#fff3b0"; g.font="bold 11px system-ui"; g.textAlign="center"; g.fillText("墩",0,r*0.72);
+}
+function drawThunder(o){
+  const t=performance.now()/1000;
+  // 电光环
+  g.strokeStyle="rgba(120,200,255,"+(0.5+0.3*Math.sin(t*20))+")";g.lineWidth=2;
+  g.beginPath();
+  for(let i=0;i<8;i++){const a=i/8*6.28+t*3;const rr=o.radius+4+Math.sin(t*30+i)*4;
+    const px=Math.cos(a)*rr,py=Math.sin(a)*rr; i?g.lineTo(px,py):g.moveTo(px,py);}
+  g.closePath();g.stroke();
+  // 身体
+  g.fillStyle="#4a2d8f"; g.beginPath();g.arc(0,0,o.radius*0.8,0,7);g.fill();
+  g.fillStyle="#facc15"; g.font="bold 20px system-ui";g.textAlign="center";g.fillText("⚡",0,7);
+  // 眼睛
+  g.fillStyle="#fff";g.fillRect(-7,-4,4,4);g.fillRect(3,-4,4,4);
+}
+
+function drawRopeAndClaw(){
+  if(!G.claw)return;
+  const pts=G.claw.ropePoints(10), tip=G.claw.tip;
+  // 绳索
+  g.strokeStyle="#9fb3d8";g.lineWidth=4;g.beginPath();
+  pts.forEach((p,i)=>i?g.lineTo(p.x,p.y):g.moveTo(p.x,p.y));g.stroke();
+  g.strokeStyle="rgba(120,220,255,.5)";g.lineWidth=1.5;g.stroke();
+  // 发射/回拉时，沿绳索流动的能量脉冲
+  if(G.claw.state===CLAW.SHOOT||G.claw.state===CLAW.PULL){
+    const flow=(performance.now()/1000*(G.claw.state===CLAW.PULL?-2.2:2.2))%1;
+    const k=(flow+1)%1, idx=k*(pts.length-1), i0=Math.floor(idx), p0=pts[i0], p1=pts[Math.min(i0+1,pts.length-1)];
+    const ex=lerp(p0.x,p1.x,idx-i0), ey=lerp(p0.y,p1.y,idx-i0);
+    g.fillStyle="#7af6ff"; g.shadowColor="#46e0ff"; g.shadowBlur=12;
+    g.beginPath(); g.arc(ex,ey,4,0,7); g.fill(); g.shadowBlur=0;
+  }
+  // 能量爪
+  g.save();g.translate(tip.x,tip.y);
+  // Canvas 旋转方向与 sin/cos 公式镜像相反，故取 -angle 让爪头沿绳索朝向一致
+  const ang=G.claw.angle; g.rotate(-ang);
+  const stun=G.claw.state===CLAW.STUN;
+  const glow=stun?"#ff5d6c":"#46e0ff";
+  g.shadowColor=glow;g.shadowBlur=14;
+  // 爪基座
+  g.fillStyle="#2b3a5e";g.fillRect(-10,-14,20,16);
+  // 两个张合爪指
+  const open=G.claw.openAmt, spread=lerp(6,20,open);
+  g.strokeStyle=glow;g.lineWidth=5;g.lineCap="round";
+  g.beginPath();g.moveTo(-6,0);g.lineTo(-spread,18);g.stroke();
+  g.beginPath();g.moveTo(6,0);g.lineTo(spread,18);g.stroke();
+  g.fillStyle=glow;g.beginPath();g.arc(0,-4,5,0,7);g.fill();
+  g.restore();g.shadowBlur=0;
+}
+
+function drawMech(){
+  const rec=G.recoil; // 后仰量
+  g.save();
+  g.translate(PIVOT.x, 150 + rec*8);
+  g.rotate(-rec*0.08);
+  // 机甲底座
+  g.fillStyle="#243152";roundRect(-120,-30,240,90,16);g.fill();
+  g.fillStyle="#2f4474";roundRect(-120,-30,240,30,16);g.fill();
+  // 霓虹条
+  g.fillStyle="#46e0ff";g.fillRect(-110,2,220,5);
+  // 驾驶舱
+  g.fillStyle="#101830";roundRect(-58,-86,116,70,14);g.fill();
+  g.fillStyle="rgba(80,200,255,.18)";roundRect(-50,-78,100,54,10);g.fill();
+  g.strokeStyle="#3d5e94";g.lineWidth=2;roundRect(-58,-86,116,70,14);g.stroke();
+  // —— 墩弟（胖龙猫）——
+  g.save();g.translate(rec*6,-50+rec*4);
+  // 耳朵
+  g.fillStyle="#9aa4b8";g.beginPath();g.ellipse(-22,-22,11,16,-.3,0,7);g.fill();
+  g.beginPath();g.ellipse(22,-22,11,16,.3,0,7);g.fill();
+  g.fillStyle="#c7cedd";g.beginPath();g.ellipse(-22,-20,5,9,-.3,0,7);g.fill();
+  g.beginPath();g.ellipse(22,-20,5,9,.3,0,7);g.fill();
+  // 身体/脸
+  g.fillStyle="#aeb7c9";g.beginPath();g.ellipse(0,2,30,28,0,0,7);g.fill();
+  g.fillStyle="#dfe5ef";g.beginPath();g.ellipse(0,8,20,18,0,0,7);g.fill();
+  // 眼睛
+  g.fillStyle="#1a2030";g.beginPath();g.arc(-10,-2,4.5,0,7);g.fill();g.beginPath();g.arc(10,-2,4.5,0,7);g.fill();
+  g.fillStyle="#fff";g.beginPath();g.arc(-8.5,-3.5,1.6,0,7);g.fill();g.beginPath();g.arc(11.5,-3.5,1.6,0,7);g.fill();
+  // 腮红 + 鼻
+  g.fillStyle="rgba(255,140,160,.55)";g.beginPath();g.arc(-16,6,4,0,7);g.fill();g.beginPath();g.arc(16,6,4,0,7);g.fill();
+  g.fillStyle="#ff9bb0";g.beginPath();g.arc(0,4,2.4,0,7);g.fill();
+  // 用力时的表情符
+  if(rec>0.3){g.fillStyle="#ffd23f";g.font="bold 16px system-ui";g.textAlign="center";g.fillText("💪",40,-10);}
+  g.restore();
+  // 摇杆
+  g.strokeStyle="#5a6b8f";g.lineWidth=6;g.beginPath();g.moveTo(48,10);g.lineTo(54+rec*4,-16);g.stroke();
+  g.fillStyle="#ff5d6c";g.beginPath();g.arc(54+rec*4,-18,7,0,7);g.fill();
+  g.restore();
+}
+
+function drawParticles(){
+  for(const p of G.particles){
+    g.globalAlpha=clamp(p.life/p.max,0,1);
+    g.fillStyle=p.color;
+    if(p.kind==="chunk")g.fillRect(p.x-p.size/2,p.y-p.size/2,p.size,p.size);
+    else{g.beginPath();g.arc(p.x,p.y,p.size,0,7);g.fill();}
+  }
+  g.globalAlpha=1;
+}
+function drawFloats(){
+  for(const f of G.floats){
+    g.globalAlpha=clamp(f.life,0,1);
+    g.fillStyle=f.color;g.font="bold "+f.size+"px system-ui";g.textAlign="center";
+    g.lineWidth=4;g.strokeStyle="rgba(0,0,0,.55)";
+    g.strokeText(f.text,f.x,f.y);g.fillText(f.text,f.x,f.y);
+  }
+  g.globalAlpha=1;
+}
+
+function drawHUD(){
+  g.textAlign="left";
+  // 顶部信息条
+  g.fillStyle="rgba(8,12,24,.55)";roundRect(12,12,VW-24,56,12);g.fill();
+  g.fillStyle="#fff";g.font="bold 22px system-ui";
+  g.fillText("第 "+G.level+" 层",26,48);
+  // 分数/目标
+  g.font="bold 18px system-ui";g.fillStyle="#ffcf33";
+  g.fillText("⛏ "+G.score+" / "+G.goal,150,46);
+  // 钱
+  g.fillStyle="#9be88a";g.fillText("💰 "+G.money,360,46);
+  // 时间
+  const tcol=G.time<10?"#ff6b78":"#9bd6ff";
+  g.fillStyle=tcol;g.textAlign="right";g.fillText("⏱ "+Math.ceil(G.time)+"s",VW-26,46);
+  g.textAlign="left";
+  // 进度条
+  const pw=VW-48, prog=clamp(G.score/G.goal,0,1);
+  g.fillStyle="#1c2747";roundRect(24,74,pw,8,4);g.fill();
+  g.fillStyle=prog>=1?"#7ef08a":"#ffcf33";roundRect(24,74,pw*prog,8,4);g.fill();
+
+  // Combo 槽（右上）
+  if(G.combo>0){
+    const cx=VW-150,cy=98,cw=130;
+    g.fillStyle="rgba(8,12,24,.5)";roundRect(cx,cy,cw,30,8);g.fill();
+    g.fillStyle="#ff7ad9";g.font="bold 16px system-ui";
+    g.fillText("🔥 COMBO "+G.combo,cx+10,cy+21);
+    // 倍率提示
+    const sm=scoreMul();
+    if(sm>1){g.fillStyle="#ffd23f";g.font="bold 14px system-ui";g.textAlign="right";
+      g.fillText("分数 ×"+sm,cx+cw-8,cy+50);g.textAlign="left";}
+    // 拉速条
+    g.fillStyle="#2a1840";roundRect(cx,cy+34,cw,6,3);g.fill();
+    g.fillStyle="#ff7ad9";roundRect(cx,cy+34,cw*(G.combo/CFG.comboMax),6,3);g.fill();
+  }
+  // 麻痹提示
+  if(G.claw&&G.claw.state===CLAW.STUN){
+    g.fillStyle="#ff5d6c";g.font="bold 28px system-ui";g.textAlign="center";
+    g.fillText("⚡ 麻痹！",VW/2,250);g.textAlign="left";
+  }
+  // 狂热提示
+  if(G.frenzy>0){
+    g.textAlign="center"; g.globalAlpha=0.7+0.3*Math.sin(performance.now()/80);
+    g.fillStyle="#ff8a3d"; g.font="bold 26px system-ui";
+    g.fillText("🔥 深渊狂热 ×2",VW/2,205); g.globalAlpha=1; g.textAlign="left";
+  }
+  // 状态行：炸鸡 / 护盾
+  let sy=108;
+  if(G.fried){g.fillStyle="#ffb347";g.font="bold 15px system-ui";g.fillText("🍗 马力全开",26,sy);sy+=20;}
+  if(lv('shield')>0){ const rdy=G.cd.shield<=0;
+    g.fillStyle=rdy?"#7af6ff":"#5a6b8f"; g.font="bold 15px system-ui";
+    g.fillText(rdy?"🛡️ 护盾就绪":("🛡️ 充能 "+Math.ceil(G.cd.shield)+"s"),26,sy); sy+=20; }
+  // 局内 buff/debuff 计时
+  g.font="bold 15px system-ui"; g.textAlign="left";
+  const fxRow=[['haste','⚡','#7af6ff'],['double','✨','#ffe27a'],['fog','🌫️','#9fb0c8'],['heavy','🪨','#c8b0a0'],['chain','⛓️','#c8b0a0']];
+  let fx0=26; for(const [k,ic,c] of fxRow){ if(G.fx[k]>0){ g.fillStyle=c; g.fillText(ic+Math.ceil(G.fx[k])+"s",fx0,sy); fx0+=64; } }
+}
+
+// 圆角矩形辅助
+function roundRect(x,y,w,h,r){g.beginPath();g.moveTo(x+r,y);g.arcTo(x+w,y,x+w,y+h,r);g.arcTo(x+w,y+h,x,y+h,r);g.arcTo(x,y+h,x,y,r);g.arcTo(x,y,x+w,y,r);g.closePath();}
+
+//==========================================================================
+// 覆盖层控制
+//==========================================================================
+function show(el){el.classList.add("show");}
+function hide(el){el.classList.remove("show");}
+function closeAllOverlays(){document.querySelectorAll(".overlay").forEach(o=>o.classList.remove("show"));}
+
+document.getElementById("btnStart").onclick=()=>{ SFX.ensure(); G.money=0; G.up={}; G.shopOffers=null; G.cd={dart:0,bomb:0,shield:0}; startLevel(1); };
+document.getElementById("btnHow").onclick=()=>{hide(document.getElementById("ovMenu"));show(document.getElementById("ovHow"));};
+document.getElementById("btnHowBack").onclick=()=>{hide(document.getElementById("ovHow"));show(document.getElementById("ovMenu"));};
+document.getElementById("btnShopGo").onclick=()=>{ startLevel(G.level+1); };
+document.getElementById("btnReroll").onclick=rerollShop;
+document.getElementById("btnRetry").onclick=()=>{ closeAllOverlays(); show(document.getElementById("ovMenu")); G.state="menu"; };
+
+</script>
+</body>
+</html>

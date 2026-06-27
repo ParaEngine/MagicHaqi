@@ -1,0 +1,1088 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+<title>哈奇幻境 · 像素侦探</title>
+<script src="https://cdn.keepwork.com/keepwork/cdn/tailwindcss@3.4.16.js"></script>
+<style>
+  :root{
+    --c-bg:#0b1020; --c-panel:#141a2e; --c-accent:#f59e0b; --c-accent2:#38bdf8;
+    --c-good:#22c55e; --c-bad:#ef4444; --c-ink:#e5e7eb; --c-dim:#94a3b8;
+  }
+  *{box-sizing:border-box;}
+  html,body{margin:0;height:100%;background:#070b16;color:var(--c-ink);
+    font-family:"PingFang SC","Microsoft YaHei",system-ui,sans-serif;overflow:hidden;
+    touch-action:manipulation;-webkit-tap-highlight-color:transparent;user-select:none;}
+  #app{position:relative;width:100vw;height:100vh;display:flex;flex-direction:column;}
+
+  /* ---------- HUD ---------- */
+  .hud{display:flex;align-items:center;gap:10px;padding:6px 12px;flex-wrap:wrap;
+    background:linear-gradient(180deg,#10162c,#0a0f1f);border-bottom:2px solid #1e2540;flex-shrink:0;z-index:5;}
+  .hud .grp{display:flex;align-items:center;gap:6px;font-size:12px;color:var(--c-dim);}
+  .hud b{font-variant-numeric:tabular-nums;color:#fff;font-size:14px;}
+  .sanwrap{flex:1;min-width:120px;height:14px;border-radius:8px;background:#0a0f1f;
+    border:1px solid #2a3358;overflow:hidden;position:relative;}
+  .sanbar{height:100%;width:100%;background:linear-gradient(90deg,#ef4444,#f59e0b,#22c55e);
+    transition:width .25s ease;}
+  .sancap{position:absolute;top:0;bottom:0;width:2px;background:#000a;}
+  .timepill{font-size:13px;font-weight:800;padding:2px 10px;border-radius:9px;
+    background:rgba(56,189,248,.14);border:1px solid rgba(56,189,248,.4);color:#7dd3fc;}
+  .timepill.warn{background:rgba(239,68,68,.16);border-color:rgba(239,68,68,.5);color:#fca5a5;
+    animation:pulse .7s infinite;}
+  @keyframes pulse{50%{opacity:.55;}}
+  @keyframes shake{0%,100%{transform:translate(0,0);}20%{transform:translate(-6px,2px);}40%{transform:translate(6px,-2px);}60%{transform:translate(-4px,1px);}80%{transform:translate(4px,-1px);}}
+  #app.shake{animation:shake .26s ease;}
+  .relicrow{display:flex;gap:4px;}
+  .relicchip{width:24px;height:24px;border-radius:7px;display:flex;align-items:center;justify-content:center;
+    font-size:14px;background:#1e2540;border:1px solid #2a3358;cursor:help;}
+
+  /* ---------- stage ---------- */
+  .stage{flex:1;display:flex;gap:8px;padding:8px;min-height:0;}
+  .panel{flex:1;position:relative;min-width:0;border-radius:14px;overflow:hidden;
+    border:3px solid #1e2540;background:#0a0f1f;box-shadow:inset 0 0 30px #0008;}
+  .panel canvas{display:block;width:100%;height:100%;}
+  .panel .tag{position:absolute;top:6px;left:8px;font-size:11px;color:#0009;font-weight:800;
+    background:#ffffffcc;padding:1px 8px;border-radius:7px;z-index:2;pointer-events:none;}
+  .divider{width:2px;align-self:stretch;background:linear-gradient(180deg,transparent,#2a3358,transparent);}
+  @media (max-width:560px){ .stage{flex-direction:column;} }
+
+  .foundcount{position:absolute;bottom:8px;left:50%;transform:translateX(-50%);
+    font-size:12px;color:#fff;background:#000a;padding:3px 12px;border-radius:10px;z-index:3;pointer-events:none;}
+
+  /* ---------- overlays ---------- */
+  .ov{position:absolute;inset:0;z-index:40;display:flex;align-items:center;justify-content:center;
+    background:#060912e8;backdrop-filter:blur(3px);padding:18px;}
+  .ov.hidden{display:none;}
+  .card{width:100%;max-width:520px;max-height:90%;overflow:auto;background:linear-gradient(180deg,#141a2e,#0c1124);
+    border:2px solid #2a3358;border-radius:18px;padding:20px;box-shadow:0 18px 60px #000a;}
+  .card h2{margin:0 0 8px;font-size:20px;color:#fff;}
+  .card p{margin:6px 0;font-size:13px;color:#cbd5e1;line-height:1.6;}
+  .doors{display:flex;gap:12px;margin-top:14px;}
+  .door{flex:1;cursor:pointer;border-radius:14px;padding:16px 12px;text-align:center;
+    border:2px solid #2a3358;background:#11182e;transition:transform .1s,border-color .15s,box-shadow .15s;}
+  .door:hover{transform:translateY(-3px);border-color:var(--c-accent);box-shadow:0 8px 22px #0007;}
+  .door .ico{font-size:38px;}
+  .door .t{font-weight:800;color:#fff;margin-top:6px;}
+  .door .d{font-size:11px;color:var(--c-dim);margin-top:4px;line-height:1.4;}
+  .choices{display:flex;flex-direction:column;gap:10px;margin-top:14px;}
+  .choice{cursor:pointer;border-radius:12px;padding:12px 14px;border:2px solid #2a3358;background:#11182e;
+    transition:transform .08s,border-color .15s;}
+  .choice:hover{transform:translateY(-2px);border-color:var(--c-accent2);}
+  .choice .ct{font-weight:800;color:#fff;font-size:14px;}
+  .choice .cd{font-size:12px;color:var(--c-dim);margin-top:3px;}
+  .shopgrid{display:flex;flex-direction:column;gap:10px;margin-top:12px;}
+  .shopitem{display:flex;align-items:center;gap:12px;border-radius:12px;padding:10px 12px;
+    border:2px solid #2a3358;background:#11182e;}
+  .shopitem .si-ico{font-size:30px;}
+  .shopitem .si-body{flex:1;}
+  .shopitem .si-name{font-weight:800;color:#fff;font-size:14px;}
+  .shopitem .si-desc{font-size:11px;color:var(--c-dim);margin-top:2px;line-height:1.4;}
+  .btn{cursor:pointer;border:none;border-radius:11px;font-weight:800;transition:transform .08s,opacity .15s,filter .15s;}
+  .btn:active{transform:translateY(2px);}
+  .btn:disabled{opacity:.4;cursor:not-allowed;filter:grayscale(.5);}
+  .btn-buy{background:linear-gradient(180deg,#fbbf24,#d97706);color:#1a1206;padding:8px 14px;font-size:13px;white-space:nowrap;}
+  .btn-go{background:linear-gradient(180deg,#fbbf24,#d97706);color:#1a1206;padding:12px 28px;font-size:16px;margin-top:16px;width:100%;}
+  .btn-skip{background:#1e2540;color:#cbd5e1;padding:8px 18px;font-size:13px;margin-top:10px;width:100%;}
+  .resline{font-size:13px;color:#a7f3d0;margin-top:12px;text-align:center;min-height:18px;line-height:1.5;}
+
+  .help{position:absolute;top:10px;right:10px;z-index:30;width:32px;height:32px;border-radius:50%;
+    background:#1e2540cc;border:1px solid #2a3358;color:#fff;font-size:16px;cursor:pointer;display:none;
+    align-items:center;justify-content:center;}
+  .toast{position:absolute;top:54px;left:50%;transform:translateX(-50%);z-index:35;
+    background:#000c;color:#fff;font-size:13px;font-weight:700;padding:7px 16px;border-radius:11px;
+    opacity:0;transition:opacity .2s,transform .2s;pointer-events:none;white-space:nowrap;}
+  .toast.show{opacity:1;transform:translateX(-50%) translateY(0);}
+  .toast.bad{color:#fca5a5;} .toast.good{color:#86efac;}
+  .coins{color:#fbbf24;}
+</style>
+</head>
+<body>
+<div id="app">
+  <div class="hud" id="hud">
+    <div class="grp">🗼 <b id="hFloor">1/30</b></div>
+    <div class="grp">🧠 <span class="sanwrap"><span class="sanbar" id="hSanBar"></span><span class="sancap" id="hSanCap"></span></span> <b id="hSan">100</b></div>
+    <div class="grp coins">🪙 <b id="hCoins" class="coins">0</b></div>
+    <div class="timepill" id="hTime">⏱ 45s</div>
+    <div class="relicrow" id="hRelics"></div>
+  </div>
+
+  <div class="stage">
+    <div class="panel" id="panelL"><span class="tag">原图</span><canvas id="cvL"></canvas>
+      <div class="foundcount" id="fcL">已找出 0 / 0</div></div>
+    <div class="panel" id="panelR"><span class="tag">复制品</span><canvas id="cvR"></canvas></div>
+  </div>
+
+  <button class="help" id="helpBtn">❓</button>
+  <div class="toast" id="toast"></div>
+
+  <!-- 通用模态遮罩 -->
+  <div class="ov" id="overlay"><div class="card" id="ovCard"></div></div>
+</div>
+
+<!-- ============================================================= -->
+<!-- 1) game_config —— 可调玩法参数（纯数据）                         -->
+<!-- ============================================================= -->
+<script>
+game_config = {
+  difficulty: "normal",
+  totalFloors: 30,          // 共 30 层
+  baseSanity: 100,          // 初始/上限 理智值 (HP)
+  wrongPenalty: 15,         // 找错一次扣 15
+  timeoutPenalty: 30,       // 倒计时结束未找全扣 30
+  eventEvery: 3,            // 每 3 层触发一次 Roguelike 抉择
+  // 每层基础差异数量：随楼层递增
+  diffBase: 3,
+  diffPerBand: 1,           // 每 6 层 +1
+  diffBandSize: 6,
+  diffMax: 8,
+  // 每层基础时间（秒），随层数递减，下限 24s
+  timeTop: 50,
+  timeFloorDrop: 1,
+  timeMin: 24,
+  freezeMs: 5000,           // 时间沙漏冻结时长
+  // 金币奖励
+  coinClearBase: 8,
+  coinTimeBonusPer: 1,      // 每剩 1s + ?
+  coinFlawless: 6
+};
+</script>
+
+<!-- ============================================================= -->
+<!-- 2) art_assets —— 资源清单（本作纯 Canvas/Emoji 绘制，留空占位）   -->
+<!-- ============================================================= -->
+<script>
+art_assets = [];
+</script>
+
+<!-- ============================================================= -->
+<!-- 3) 主游戏脚本                                                   -->
+<!-- ============================================================= -->
+<script>
+(function(){
+"use strict";
+const CFG = game_config;
+const clamp = (v,a,b)=>Math.max(a,Math.min(b,v));
+const rand  = (a,b)=>a+Math.random()*(b-a);
+const randi = (a,b)=>Math.floor(rand(a,b+1));
+const pick  = arr=>arr[randi(0,arr.length-1)];
+const postParent = (type,data)=>{ try{ window.parent.postMessage({type,data},"*"); }catch(e){} };
+
+/* 逻辑场景坐标系（两个画板共用，绘制时等比缩放到各自像素尺寸） */
+const SCENE_W = 480, SCENE_H = 600;
+
+/* =========================================================================
+ *  A. 场景主题与程序化生成
+ *     —— 找茬内容不靠美术资源，而是“一组带属性的对象”，因此可无限生成。
+ * ========================================================================= */
+const THEMES = [
+  { name:"哈奇的房间", bg:["#fde68a","#fca5a5"], ground:"#b45309",
+    pool:["🛏️","🪑","🧸","📺","🪴","🕰️","🖼️","📚","🎈","🧦","🪀","🛋️","💡","🐱","🪟","🎒"] },
+  { name:"星球公园",   bg:["#bbf7d0","#86efac"], ground:"#15803d",
+    pool:["🌳","🌷","🦋","🍄","⛲","🪨","🐦","🌻","🐝","🌲","🪵","🦆","🚲","🛝","🌼","🐞"] },
+  { name:"甜品工坊",   bg:["#fbcfe8","#f9a8d4"], ground:"#9d174d",
+    pool:["🍰","🧁","🍩","🍭","🍬","🍪","🥧","🍦","🫖","🍫","🥐","🍓","🧋","🎂","🍮","🍯"] },
+  { name:"深海秘境",   bg:["#a5f3fc","#38bdf8"], ground:"#0e7490",
+    pool:["🐠","🐡","🦀","🐙","🐚","🌊","🪸","⭐","🦈","🐬","🫧","🦞","🐢","🦑","🪼","🐳"] },
+  { name:"赛博机房",   bg:["#c4b5fd","#818cf8"], ground:"#3730a3",
+    pool:["💻","🖥️","⌨️","🖱️","💾","📡","🔌","🔋","🛰️","🤖","🧠","💡","📟","🪫","🕹️","📀"] },
+  { name:"太空舱",     bg:["#cbd5e1","#94a3b8"], ground:"#1e293b",
+    pool:["🚀","🛸","🪐","⭐","☄️","🌙","👨‍🚀","🛰️","🌍","✨","🔭","🌠","🛎️","📦","🧯","🔦"] }
+];
+
+/* 颜色工具：把 16 进制颜色按比例混向白(t>0)/黑 */
+function hexToRgb(h){ h=h.replace("#",""); return [parseInt(h.slice(0,2),16),parseInt(h.slice(2,4),16),parseInt(h.slice(4,6),16)]; }
+function lighten(hex,t){ const c=hexToRgb(hex); const f=v=>Math.round(v+(255-v)*t);
+  return `rgb(${f(c[0])},${f(c[1])},${f(c[2])})`; }
+function darken(hex,t){ const c=hexToRgb(hex); const f=v=>Math.round(v*(1-t));
+  return `rgb(${f(c[0])},${f(c[1])},${f(c[2])})`; }
+
+/* 生成与场景配套的“装饰背景”（两侧画板共用，不参与找茬）
+   —— 角落光晕 + 主题漂浮物 + 双层丘陵 + 闪烁微光，让画面有层次。*/
+function makeDecor(theme){
+  const glow = { x:rand(50,SCENE_W-50), y:rand(36,110), r:rand(130,190) };
+  const kindMap = { "深海秘境":"bubble", "赛博机房":"node", "太空舱":"star" };
+  const kind = kindMap[theme.name] || "cloud";
+  const props=[]; const n = kind==="star"?26 : kind==="node"?12 : 5;
+  for(let i=0;i<n;i++){
+    props.push({ kind,
+      x:rand(16,SCENE_W-16), y:rand(28,SCENE_H-150),
+      r: kind==="star"?rand(1.4,3.4): kind==="node"?rand(10,22): rand(18,34),
+      tw:rand(0,6.28), spd:rand(0.5,1.5) });
+  }
+  const hills=[
+    { base:SCENE_H-56, amp:rand(14,22), color:lighten(theme.ground,0.40), k:rand(1.1,1.7), ph:rand(0,6) },
+    { base:SCENE_H-26, amp:rand(10,18), color:theme.ground,                k:rand(1.6,2.4), ph:rand(0,6) }
+  ];
+  const sparks=[]; for(let i=0;i<16;i++) sparks.push({ x:rand(0,SCENE_W), y:rand(36,SCENE_H-120), r:rand(0.9,2.3), tw:rand(0,6.28) });
+  return { glow, props, hills, sparks, kind };
+}
+
+/* 生成一帧“原图”场景：装饰背景 + 一批散布的对象 */
+function makeScene(floor){
+  const theme = THEMES[(floor-1) % THEMES.length];
+  const items = [];
+  // 抖动网格布点，铺满可视区，底部交给丘陵
+  const cols = 4, rows = 5;
+  const topM = 56, botM = 96;
+  const areaH = SCENE_H - topM - botM;
+  const cellW = SCENE_W/cols, cellH = areaH/rows;
+  let id = 0;
+  for(let r=0;r<rows;r++){
+    for(let c=0;c<cols;c++){
+      if(Math.random()<0.10) continue;               // 偶尔留空，布局更自然
+      const size = rand(36,54);
+      items.push({
+        id:id++, type:"emoji",
+        glyph: pick(theme.pool),
+        x: c*cellW + cellW/2 + rand(-cellW*0.20,cellW*0.20),
+        y: topM + r*cellH + cellH/2 + rand(-cellH*0.18,cellH*0.18),
+        size,
+        rot: 0,
+        hue: 0,                  // 色相偏移（找茬“变色”用）
+        alpha: 1,
+        hidden: false,
+        anim: null               // 动态属性：呼吸/闪烁
+      });
+    }
+  }
+  return { theme, items, decor: makeDecor(theme) };
+}
+
+/* =========================================================================
+ *  B. 差异注入器
+ *     深拷贝原图 → 在右图(复制品)上挑 N 个对象做突变，记录可点击热区。
+ *     突变类型涵盖：变色 / 换物 / 消失 / 位移 / 旋转 / 缩放(静态)
+ *                  / 呼吸(动态缩放) / 闪烁(不同频率)
+ * ========================================================================= */
+const DIFF_TYPES = [
+  "hue","swap","gone","move","rotate","scale","breathe","blinkfreq"
+];
+
+function deepItems(items){ return items.map(it=>({...it, anim: it.anim?{...it.anim}:null})); }
+
+function injectDiffs(scene, count){
+  const leftItems  = deepItems(scene.items);
+  const rightItems = deepItems(scene.items);
+  const theme = scene.theme;
+
+  // 候选：可见对象的下标，随机挑 count 个不重复
+  const idxs = leftItems.map((_,i)=>i);
+  for(let i=idxs.length-1;i>0;i--){ const j=randi(0,i); [idxs[i],idxs[j]]=[idxs[j],idxs[i]]; }
+  const chosen = idxs.slice(0, Math.min(count, idxs.length));
+
+  const diffs = [];
+  for(const idx of chosen){
+    const L = leftItems[idx], R = rightItems[idx];
+    const type = pick(DIFF_TYPES);
+    const hot = [];                        // 可点击热区（场景坐标）
+    const baseR = ()=>Math.max(30, L.size*0.75);
+
+    switch(type){
+      case "hue":      // 复制品变色
+        R.hue = pick([60,120,180,210,300, -60, -120]);
+        hot.push({x:L.x,y:L.y,r:baseR()});
+        break;
+      case "swap":     // 复制品换成另一种物件
+        { let g; do{ g = pick(theme.pool); }while(g===L.glyph); R.glyph = g; }
+        hot.push({x:L.x,y:L.y,r:baseR()});
+        break;
+      case "gone":     // 复制品缺失该物件
+        R.hidden = true;
+        hot.push({x:L.x,y:L.y,r:baseR()});
+        break;
+      case "move":     // 复制品位置偏移（两侧都可点）
+        { const dx=rand(28,52)*(Math.random()<.5?-1:1), dy=rand(20,40)*(Math.random()<.5?-1:1);
+          R.x = clamp(R.x+dx, 30, SCENE_W-30); R.y = clamp(R.y+dy, 50, SCENE_H-40);
+          hot.push({x:L.x,y:L.y,r:baseR()}); hot.push({x:R.x,y:R.y,r:baseR()}); }
+        break;
+      case "rotate":   // 复制品旋转
+        R.rot = pick([Math.PI*0.5, Math.PI, Math.PI*1.5, Math.PI*0.25, -Math.PI*0.25]);
+        hot.push({x:L.x,y:L.y,r:baseR()});
+        break;
+      case "scale":    // 复制品静态尺寸不同
+        R.size = L.size * pick([0.6,0.65,1.4,1.5]);
+        hot.push({x:L.x,y:L.y,r:Math.max(L.size,R.size)*0.75});
+        break;
+      case "breathe":  // 复制品在缓慢呼吸（动态缩放）
+        R.anim = { kind:"breathe", amp:rand(0.18,0.30), spd:rand(1.6,2.6) };
+        hot.push({x:L.x,y:L.y,r:baseR()*1.3});
+        break;
+      case "blinkfreq":// 两侧都闪烁，但频率不同
+        L.anim = { kind:"blink", spd:rand(1.5,2.2) };
+        R.anim = { kind:"blink", spd:rand(4.5,6.5) };
+        hot.push({x:L.x,y:L.y,r:baseR()});
+        break;
+    }
+    diffs.push({ idx, type, found:false, hot });
+  }
+  return { leftItems, rightItems, diffs };
+}
+
+/* =========================================================================
+ *  C. 渲染
+ * ========================================================================= */
+const cvL = document.getElementById("cvL"), ctxL = cvL.getContext("2d");
+const cvR = document.getElementById("cvR"), ctxR = cvR.getContext("2d");
+
+function fitCanvas(cv,ctx){
+  const dpr = Math.min(window.devicePixelRatio||1, 2);
+  const w = cv.clientWidth, h = cv.clientHeight;
+  cv.width = Math.round(w*dpr); cv.height = Math.round(h*dpr);
+  ctx.setTransform(dpr,0,0,dpr,0,0);
+  return {w,h};
+}
+// 场景→画板的等比映射参数
+function mapping(cv){
+  const w = cv.clientWidth, h = cv.clientHeight;
+  const s = Math.min(w/SCENE_W, h/SCENE_H);
+  return { s, ox:(w-SCENE_W*s)/2, oy:(h-SCENE_H*s)/2 };
+}
+// 画板像素坐标 → 场景坐标
+function panelToScene(cv, px, py){
+  const m = mapping(cv);
+  return { x:(px-m.ox)/m.s, y:(py-m.oy)/m.s };
+}
+
+function drawItem(ctx, it, t){
+  if(it.hidden) return;
+  let scale = 1, alpha = it.alpha;
+  if(it.anim){
+    if(it.anim.kind==="breathe") scale = 1 + it.anim.amp*Math.sin(t*it.anim.spd);
+    if(it.anim.kind==="blink")   alpha = 0.18 + 0.82*(0.5+0.5*Math.sin(t*it.anim.spd));
+  }
+  alpha = clamp(alpha,0,1);
+  ctx.save();
+  ctx.translate(it.x, it.y);
+  // 落地软阴影（增加立体感）
+  ctx.save();
+  ctx.globalAlpha = alpha*0.16;
+  ctx.fillStyle = "#0a160a";
+  ctx.beginPath();
+  ctx.ellipse(0, it.size*0.46*scale, it.size*0.36*scale, it.size*0.12*scale, 0, 0, 7);
+  ctx.fill();
+  ctx.restore();
+  // 物件本体
+  ctx.save();
+  if(it.rot) ctx.rotate(it.rot);
+  ctx.scale(scale,scale);
+  ctx.globalAlpha = alpha;
+  if(it.hue){ ctx.filter = `hue-rotate(${it.hue}deg) saturate(1.4)`; }
+  ctx.font = `${it.size}px serif`;
+  ctx.textAlign="center"; ctx.textBaseline="middle";
+  ctx.fillText(it.glyph, 0, 0);
+  ctx.restore();
+  ctx.restore();
+}
+
+function drawCloud(ctx,x,y,r){
+  ctx.beginPath();
+  ctx.arc(x,y,r,0,7); ctx.arc(x+r*0.9,y+5,r*0.72,0,7);
+  ctx.arc(x-r*0.9,y+5,r*0.66,0,7); ctx.arc(x,y+r*0.42,r*0.85,0,7);
+  ctx.fill();
+}
+
+/* 绘制装饰背景（光晕 / 漂浮物 / 丘陵 / 微光），两侧一致，不算差异 */
+function drawDecor(ctx, decor, theme, t){
+  // 角落光晕
+  const gl = decor.glow;
+  const rg = ctx.createRadialGradient(gl.x,gl.y,0,gl.x,gl.y,gl.r);
+  rg.addColorStop(0,"rgba(255,255,255,.45)"); rg.addColorStop(1,"rgba(255,255,255,0)");
+  ctx.fillStyle=rg; ctx.beginPath(); ctx.arc(gl.x,gl.y,gl.r,0,7); ctx.fill();
+  // 主题漂浮物
+  for(const p of decor.props){
+    if(p.kind==="cloud"){ ctx.fillStyle="rgba(255,255,255,.55)"; drawCloud(ctx,p.x,p.y+Math.sin(t*0.4+p.tw)*4,p.r); }
+    else if(p.kind==="bubble"){ ctx.strokeStyle="rgba(255,255,255,.5)"; ctx.lineWidth=2;
+      ctx.beginPath(); ctx.arc(p.x,p.y+Math.sin(t*p.spd+p.tw)*7,p.r,0,7); ctx.stroke(); }
+    else if(p.kind==="node"){ ctx.fillStyle="rgba(165,180,252,.22)"; ctx.beginPath(); ctx.arc(p.x,p.y,p.r,0,7); ctx.fill();
+      ctx.strokeStyle="rgba(199,210,254,.30)"; ctx.lineWidth=1; ctx.stroke(); }
+    else if(p.kind==="star"){ const a=0.35+0.6*(0.5+0.5*Math.sin(t*2+p.tw));
+      ctx.fillStyle=`rgba(255,255,255,${a})`; ctx.beginPath(); ctx.arc(p.x,p.y,p.r,0,7); ctx.fill(); }
+  }
+  // 双层丘陵
+  for(const h of decor.hills){
+    ctx.fillStyle=h.color; ctx.beginPath(); ctx.moveTo(0,SCENE_H);
+    for(let x=0;x<=SCENE_W;x+=14){ const y=h.base+Math.sin((x/SCENE_W)*Math.PI*h.k+h.ph)*h.amp; ctx.lineTo(x,y); }
+    ctx.lineTo(SCENE_W,SCENE_H); ctx.closePath(); ctx.fill();
+  }
+  // 漂浮微光
+  for(const s of decor.sparks){ const a=0.25+0.5*(0.5+0.5*Math.sin(t*3+s.tw));
+    ctx.fillStyle=`rgba(255,255,255,${a})`; ctx.beginPath(); ctx.arc(s.x,s.y,s.r,0,7); ctx.fill(); }
+}
+
+/* 点击反馈特效（绿圈=找对，红叉=找错），按画板过滤 */
+function drawEffects(ctx, cv, t){
+  for(const e of G.effects){
+    if(e.cv!==cv) continue;
+    const age = t - e.born; if(age<0 || age>0.6) continue;
+    const k = age/0.6;
+    if(e.kind==="correct"){
+      ctx.strokeStyle=`rgba(34,197,94,${1-k})`; ctx.lineWidth=4;
+      ctx.beginPath(); ctx.arc(e.x,e.y,14+k*30,0,7); ctx.stroke();
+    } else {
+      const s=14; ctx.strokeStyle=`rgba(239,68,68,${1-k})`; ctx.lineWidth=4;
+      ctx.beginPath(); ctx.moveTo(e.x-s,e.y-s); ctx.lineTo(e.x+s,e.y+s);
+      ctx.moveTo(e.x+s,e.y-s); ctx.lineTo(e.x-s,e.y+s); ctx.stroke();
+      ctx.beginPath(); ctx.arc(e.x,e.y,s+6+k*12,0,7); ctx.stroke();
+    }
+  }
+}
+
+function drawPanel(cv, ctx, items, t, opts){
+  const {w,h} = fitCanvas(cv,ctx);
+  const m = mapping(cv);
+  const theme = G.theme;
+  // 天空渐变背景
+  const g = ctx.createLinearGradient(0,0,0,h);
+  g.addColorStop(0, theme.bg[0]); g.addColorStop(1, theme.bg[1]);
+  ctx.fillStyle=g; ctx.fillRect(0,0,w,h);
+  // 进入场景坐标系，并裁剪到场景矩形（避免溢出到黑边）
+  ctx.save();
+  ctx.translate(m.ox,m.oy); ctx.scale(m.s,m.s);
+  ctx.beginPath(); ctx.rect(0,0,SCENE_W,SCENE_H); ctx.clip();
+  // 装饰背景
+  if(G.decor) drawDecor(ctx, G.decor, theme, t);
+  // 对象
+  for(const it of items) drawItem(ctx, it, t);
+  // 已找出标记 / 闪烁提示
+  if(opts.markDiffs){
+    for(const d of G.diffs){
+      const showFound = d.found;
+      const showFlash = opts.flashAll && !d.found && opts.flashAll>0;
+      if(!showFound && !showFlash) continue;
+      const hr = d.hot[0];
+      const pulse = showFound ? 0 : Math.sin(t*6)*3;
+      ctx.beginPath(); ctx.arc(hr.x,hr.y,hr.r+pulse,0,7);
+      ctx.lineWidth = 4; ctx.strokeStyle = showFound? "#22c55e" : `rgba(245,158,11,${opts.flashAll||1})`;
+      ctx.stroke();
+    }
+  }
+  // 点击反馈
+  drawEffects(ctx, cv, t);
+  ctx.restore();
+
+  // 暗角，聚焦视线
+  const vg = ctx.createRadialGradient(w/2,h/2,Math.min(w,h)*0.34,w/2,h/2,Math.max(w,h)*0.72);
+  vg.addColorStop(0,"rgba(0,0,0,0)"); vg.addColorStop(1,"rgba(0,0,0,0.22)");
+  ctx.fillStyle=vg; ctx.fillRect(0,0,w,h);
+
+  // 放大镜遗物：在悬停画板上叠加“放大+提对比度”的放大镜
+  if(opts.loupe){
+    drawLoupe(cv, ctx, items, theme, t, m, opts.loupe);
+  }
+}
+
+function drawLoupe(cv, ctx, items, theme, t, m, lp){
+  const R = 70, zoom = 1.9;                 // 放大镜半径/倍率
+  const sx = (lp.x - m.ox)/m.s, sy = (lp.y - m.oy)/m.s;  // 镜心对应的场景坐标
+  ctx.save();
+  ctx.beginPath(); ctx.arc(lp.x,lp.y,R,0,7); ctx.clip();
+  // 镜内背景
+  ctx.fillStyle = theme.bg[0]; ctx.fillRect(lp.x-R,lp.y-R,R*2,R*2);
+  // 镜内：以镜心为中心放大重绘，并极度拉高对比/饱和
+  ctx.translate(lp.x,lp.y); ctx.scale(zoom*m.s, zoom*m.s); ctx.translate(-sx,-sy);
+  ctx.filter = "contrast(1.8) saturate(2)";
+  for(const it of items) drawItem(ctx, it, t);
+  ctx.restore();
+  // 镜框
+  ctx.save();
+  ctx.beginPath(); ctx.arc(lp.x,lp.y,R,0,7);
+  ctx.lineWidth=4; ctx.strokeStyle="#f59e0b"; ctx.stroke();
+  ctx.lineWidth=2; ctx.strokeStyle="#fff8"; ctx.stroke();
+  ctx.restore();
+}
+
+/* =========================================================================
+ *  D. 遗物（Buff）系统 —— 预留统一接口，引擎在关键节点回调各遗物 hooks
+ *     hooks 可实现：
+ *       onPickup(G)           获得时一次性效果
+ *       onFloorStart(G)       每层开局
+ *       modifyTime(sec,G)     修改本层时间
+ *       modifyDiffCount(n,G)  修改本层差异数量
+ *       onWrong(G)  -> true   处理一次找错；返回 true 表示“已消解”(不扣血)
+ *       onCorrect(G,diff)     找对一个差异后
+ *     另有渲染期 flag：magnifier（放大镜）
+ * ========================================================================= */
+const RELICS = [
+  { id:"magnifier", icon:"🔍", name:"放大镜", price:55,
+    desc:"鼠标/手指悬停处弹出放大镜，自动极度拉高对比度与饱和度。",
+    flags:{ magnifier:true }, hooks:{} },
+
+  { id:"hourglass", icon:"⏳", name:"时间沙漏", price:60,
+    desc:"每层开局前 5 秒时间冻结，从容观察。",
+    hooks:{ onFloorStart:(G)=>{ G.freeze = CFG.freezeMs; } } },
+
+  { id:"luckycat", icon:"🐱", name:"瞎猫碰死耗子", price:65,
+    desc:"每层 1 次：点错不扣理智，反而自动帮你标记一个正确差异点。",
+    hooks:{
+      onFloorStart:(G)=>{ G.luckyCharge = 1; },
+      onWrong:(G)=>{
+        if(G.luckyCharge>0){ G.luckyCharge--; G.revealRandom("瞎猫碰上死耗子！"); return true; }
+        return false;
+      }
+    } },
+
+  { id:"eagleeye", icon:"🦅", name:"鹰眼", price:70,
+    desc:"每层开局，所有差异点闪现高亮约 0.8 秒。",
+    hooks:{ onFloorStart:(G)=>{ G.flash = 0.8; } } },
+
+  { id:"coffee", icon:"☕", name:"静心咖啡", price:45,
+    desc:"每层倒计时 +8 秒，永久生效。",
+    hooks:{ modifyTime:(sec)=> sec+8 } },
+
+  { id:"sanitycore", icon:"💠", name:"理智核心", price:75,
+    desc:"理智值上限 +25，并立即回复 25 点。",
+    hooks:{ onPickup:(G)=>{ G.maxSan += 25; G.heal(25,"理智核心嵌入"); } } },
+
+  { id:"doublemind", icon:"👁️", name:"双生直觉", price:80,
+    desc:"每找对一个差异，有 25% 概率自动揭示另一个。",
+    hooks:{ onCorrect:(G)=>{ if(Math.random()<0.25) G.revealRandom("双生直觉触发！"); } } },
+
+  { id:"talisman", icon:"🛡️", name:"容错护符", price:50,
+    desc:"找错的理智惩罚从 15 降到 8。",
+    hooks:{ /* 在结算找错时读取 hasRelic('talisman') */ } }
+];
+const relicById = id => RELICS.find(r=>r.id===id);
+
+/* =========================================================================
+ *  E. Roguelike 事件池（每 3 层触发，二选一）
+ *     —— 围绕“黑客西峙”做文章，>=10 个事件。
+ *     每个 choice.apply(G) 执行效果并返回结果文案。
+ *     临时修正用 G.addModifier({floors,diffDelta,timeDelta,label})。
+ * ========================================================================= */
+const EVENTS = [
+  { title:"黑客西峙 · 帮你写外挂", icon:"💻",
+    text:"西峙推了推眼镜：“这破游戏的判定我闭着眼都能逆向。要不要我给你挂个脚本？不过……机器算力得借你的脑子跑。”",
+    choices:[
+      { ct:"A · 让他写外挂", cd:"接下来 3 层每层差异 -1，但理智上限 -20",
+        apply:(G)=>{ G.addModifier({floors:3,diffDelta:-1,label:"西峙外挂"}); G.maxSan-=20; G.san=Math.min(G.san,G.maxSan); return "脚本注入成功，但你感觉脑子被占用了一部分。上限 -20。"; } },
+      { ct:"B · 请他喝咖啡", cd:"恢复 30 点理智",
+        apply:(G)=>{ G.heal(30); return "西峙满意地喝着手冲，顺手帮你揉了揉太阳穴。理智 +30。"; } }
+    ] },
+
+  { title:"西峙的午夜代码", icon:"🌙",
+    text:"凌晨三点，西峙的屏幕还亮着：“陪我把这个 bug 修完，天亮请你吃豆浆油条。”",
+    choices:[
+      { ct:"A · 陪他通宵 debug", cd:"+35 金币，但理智上限 -10",
+        apply:(G)=>{ G.coins+=35; G.maxSan-=10; G.san=Math.min(G.san,G.maxSan); return "天亮了，bug 修好了，工钱到手。上限 -10，金币 +35。"; } },
+      { ct:"B · 劝他早点睡", cd:"恢复 20 点理智",
+        apply:(G)=>{ G.heal(20); return "你把他从键盘前拽走，两人都睡了个好觉。理智 +20。"; } }
+    ] },
+
+  { title:"西峙的开源项目", icon:"⭐",
+    text:"“我开源了一个找茬算法库，”西峙说，“给我点个 Star 呗，我把 VIP 折扣码塞给你。”",
+    choices:[
+      { ct:"A · Star 并贡献代码", cd:"下一家遗物商店全部半价",
+        apply:(G)=>{ G.shopDiscount=0.5; return "西峙偷偷把折扣码塞给你：下次遗物商店半价！"; } },
+      { ct:"B · Fork 完跑路", cd:"+20 金币，但西峙不爽（下一层差异 +1）",
+        apply:(G)=>{ G.coins+=20; G.addModifier({floors:1,diffDelta:1,label:"西峙不爽"}); return "白嫖虽香，但西峙黑了你一下，下层更难了。金币 +20。"; } }
+    ] },
+
+  { title:"西峙的内测邀请", icon:"🎮",
+    text:"“新游戏内测，帮我抓抓 bug。认真测的话我送你测试福利。”",
+    choices:[
+      { ct:"A · 认真找 bug", cd:"接下来 3 层每层 +10 秒，但本层差异 +1",
+        apply:(G)=>{ G.addModifier({floors:3,timeDelta:10,label:"测试经验"}); G.addModifier({floors:1,diffDelta:1,label:"内测版混乱"}); return "测得越细，眼力越好：3 层 +10 秒。但当前关卡有点乱，差异 +1。"; } },
+      { ct:"B · 随便玩玩", cd:"恢复 15 点理智，+10 金币",
+        apply:(G)=>{ G.heal(15); G.coins+=10; return "你摸鱼式体验了一把，身心愉悦。理智 +15，金币 +10。"; } }
+    ] },
+
+  { title:"西峙的能量饮料", icon:"🥤",
+    text:"西峙甩给你一罐不知名的紫色饮料：“自己调的，喝了手不抖眼不花，副作用嘛……一点点。”",
+    choices:[
+      { ct:"A · 一口干了", cd:"接下来 2 层每层 +6 秒，理智上限 -5",
+        apply:(G)=>{ G.addModifier({floors:2,timeDelta:6,label:"能量饮料"}); G.maxSan-=5; G.san=Math.min(G.san,G.maxSan); return "心跳加速，时间仿佛变慢了。2 层 +6 秒，上限 -5。"; } },
+      { ct:"B · 委婉拒绝", cd:"恢复 10 点理智",
+        apply:(G)=>{ G.heal(10); return "你礼貌地倒掉了它，松了口气。理智 +10。"; } }
+    ] },
+
+  { title:"西峙黑进了系统", icon:"🕶️",
+    text:"“我能直接改你的理智数值，”西峙坏笑，“当然，也能帮你举报这个 bug 拿赏金，看你怎么选。”",
+    choices:[
+      { ct:"A · 让他改高数值", cd:"理智上限 +15，但 -20 金币（封口费）",
+        apply:(G)=>{ G.maxSan+=15; G.heal(15); G.coins=Math.max(0,G.coins-20); return "数据被悄悄改高。上限 +15，但封口费 -20 金币。"; } },
+      { ct:"B · 举报漏洞拿赏", cd:"+35 金币，但他报复你（下一层差异 +1）",
+        apply:(G)=>{ G.coins+=35; G.addModifier({floors:1,diffDelta:1,label:"西峙报复"}); return "赏金到手，但西峙记仇了，下层更难。金币 +35。"; } }
+    ] },
+
+  { title:"西峙的 AI 助手", icon:"🤖",
+    text:"“我训了个识图 AI，”西峙说，“借你用一次，不过它会偷偷吃掉你一点脑容量当训练数据。”",
+    choices:[
+      { ct:"A · 借 AI 识图", cd:"本层自动标记 1 个差异，理智上限 -8",
+        apply:(G)=>{ G.maxSan-=8; G.san=Math.min(G.san,G.maxSan); G.revealRandom("AI 已锁定一处差异"); return "AI 帮你点亮了一处。上限 -8。"; } },
+      { ct:"B · 婉拒", cd:"恢复 12 点理智",
+        apply:(G)=>{ G.heal(12); return "你信不过这玩意儿，靠自己更踏实。理智 +12。"; } }
+    ] },
+
+  { title:"西峙摆烂了", icon:"😮‍💨",
+    text:"西峙瘫在椅子上：“不想干了，这项目毁灭吧。”——他正等着你的反应。",
+    choices:[
+      { ct:"A · 给他打打气", cd:"恢复 25 点理智（共情回血）",
+        apply:(G)=>{ G.heal(25); return "你陪他吐槽了半小时，两人都通透了。理智 +25。"; } },
+      { ct:"B · 接手他的活", cd:"+45 金币，但理智上限 -15",
+        apply:(G)=>{ G.coins+=45; G.maxSan-=15; G.san=Math.min(G.san,G.maxSan); return "你扛下了所有，钱包鼓了，人也累了。金币 +45，上限 -15。"; } }
+    ] },
+
+  { title:"西峙的遗物收藏", icon:"🎁",
+    text:"“仓库里堆了些没用的小玩意儿，”西峙踢了踢箱子，“50 金币随便挑一个，不挑拉倒。”",
+    choices:[
+      { ct:"A · 花 50 金币淘一件", cd:"随机获得 1 件未拥有遗物（金币不足则免费送）",
+        apply:(G)=>{ const got=G.grantRandomRelic(); if(!got) return "箱子空了，西峙尴尬地笑了笑。"; if(G.coins>=50){G.coins-=50; return `淘到了【${got.name}】！金币 -50。`;} return `金币不够，西峙大方地白送你【${got.name}】。`; } },
+      { ct:"B · 不淘了", cd:"什么都不发生",
+        apply:(G)=>{ return "你摆摆手走开了。"; } }
+    ] },
+
+  { title:"西峙的赌局", icon:"🎲",
+    text:"“来赌一把代码命运，”西峙掏出一枚硬币，“赢了我给你赏金，输了……你懂的。”",
+    choices:[
+      { ct:"A · 赌一把", cd:"50% 概率 +55 金币，否则 -25 理智",
+        apply:(G)=>{ if(Math.random()<0.5){ G.coins+=55; return "硬币正面！赏金到手，金币 +55。"; } G.damage(25,"赌输了"); return "硬币反面……你被嘲讽了一番。理智 -25。"; } },
+      { ct:"B · 不赌", cd:"恢复 10 点理智",
+        apply:(G)=>{ G.heal(10); return "君子不立危墙之下。理智 +10。"; } }
+    ] },
+
+  { title:"西峙重构搞崩了", icon:"💥",
+    text:"“我把找茬引擎重构了一半……然后它炸了。”西峙一脸生无可恋，“帮我回滚还是一起跑路？”",
+    choices:[
+      { ct:"A · 帮他回滚代码", cd:"接下来 3 层每层差异 -1（系统更稳定）",
+        apply:(G)=>{ G.addModifier({floors:3,diffDelta:-1,label:"稳定回滚"}); return "git reset --hard，世界清净了。3 层差异 -1。"; } },
+      { ct:"B · 一起摸鱼跑路", cd:"恢复 20 点理智，+15 金币",
+        apply:(G)=>{ G.heal(20); G.coins+=15; return "逃避虽可耻但有用，你俩去吃了顿火锅。理智 +20，金币 +15。"; } }
+    ] },
+
+  { title:"西峙的咖啡因危机", icon:"😵",
+    text:"西峙咖啡喝太多手开始抖：“帮我去买杯燕麦拿铁压一压，路费我出。”",
+    choices:[
+      { ct:"A · 帮他跑腿", cd:"+25 金币，并恢复 10 理智（散个步）",
+        apply:(G)=>{ G.coins+=25; G.heal(10); return "一来一回，钱也赚了，脑子也清醒了。金币 +25，理智 +10。"; } },
+      { ct:"B · 让他自己冷静", cd:"理智上限 +10（你守住了边界）",
+        apply:(G)=>{ G.maxSan+=10; G.heal(10); return "学会拒绝也是一种成长。上限 +10。"; } }
+    ] }
+];
+
+/* =========================================================================
+ *  F. 游戏状态机
+ * ========================================================================= */
+const G = {
+  phase:"menu",            // menu | playing | door | event | shop | over | win
+  floor:1,
+  san:CFG.baseSanity, maxSan:CFG.baseSanity,
+  coins:0,
+  diffs:[], leftItems:[], rightItems:[], theme:THEMES[0], decor:null,
+  effects:[], clock:0,
+  timeLeft:0, timeTotal:0,
+  freeze:0,                // 剩余冻结毫秒
+  flash:0,                 // 鹰眼/AI 闪现剩余秒
+  luckyCharge:0,
+  relics:[],               // 已拥有遗物 id
+  modifiers:[],            // 临时修正 {floors,diffDelta,timeDelta,label}
+  shopDiscount:1,          // 下一家商店折扣
+  combo:0,
+  loaded:false, started:false,
+  hover:null,              // {cv,x,y} 用于放大镜
+
+  addEffect(cv,x,y,kind){ this.effects.push({cv,x,y,kind,born:this.clock}); },
+  hasRelic(id){ return this.relics.includes(id); },
+  relicHook(name, ...args){ // 遍历所有遗物，调用某个 hook
+    let r;
+    for(const id of this.relics){ const def=relicById(id); const fn=def&&def.hooks&&def.hooks[name];
+      if(fn){ const ret=fn(this,...args); if(ret) r=ret; } }
+    return r;
+  },
+  heal(n,why){ this.san=clamp(this.san+n,0,this.maxSan); if(why) toast("good","💚 "+why); refreshHUD(); },
+  damage(n,why){ this.san=clamp(this.san-n,0,this.maxSan); toast("bad","💢 "+(why||"")+" -"+n); refreshHUD();
+    if(this.san<=0) gameOver(); },
+  addModifier(m){ this.modifiers.push({...m, floors:m.floors||1, diffDelta:m.diffDelta||0, timeDelta:m.timeDelta||0}); },
+  // 计算本层差异数量（基础 + 遗物 + 临时修正）
+  diffCountFor(floor){
+    let n = CFG.diffBase + Math.floor((floor-1)/CFG.diffBandSize)*CFG.diffPerBand;
+    n = this.relicHookNum("modifyDiffCount", n);
+    for(const m of this.modifiers) n += m.diffDelta;
+    return clamp(Math.round(n),1,CFG.diffMax);
+  },
+  timeFor(floor){
+    let s = Math.max(CFG.timeMin, CFG.timeTop - floor*CFG.timeFloorDrop);
+    s = this.relicHookNum("modifyTime", s);
+    for(const m of this.modifiers) s += m.timeDelta;
+    return Math.max(8, Math.round(s));
+  },
+  relicHookNum(name, val){ // 数值型 hook：依次叠加
+    for(const id of this.relics){ const def=relicById(id); const fn=def&&def.hooks&&def.hooks[name];
+      if(fn) val = fn(val, this); }
+    return val;
+  },
+  // 自动揭示一个尚未找到的差异
+  revealRandom(why){
+    const rest = this.diffs.filter(d=>!d.found);
+    if(!rest.length) return;
+    const d = pick(rest); d.found=true;
+    if(why) toast("good","✨ "+why);
+    refreshFound();
+    if(this.diffs.every(x=>x.found)) floorCleared();
+  },
+  grantRandomRelic(){
+    const avail = RELICS.filter(r=>!this.hasRelic(r.id));
+    if(!avail.length) return null;
+    const r = pick(avail); this.addRelic(r.id); return r;
+  },
+  addRelic(id){
+    if(this.hasRelic(id)) return;
+    this.relics.push(id);
+    const def=relicById(id);
+    if(def.hooks.onPickup) def.hooks.onPickup(this);
+    refreshHUD();
+  }
+};
+
+/* ---- HUD ---- */
+const el = id=>document.getElementById(id);
+function refreshHUD(){
+  el("hFloor").textContent = `${G.floor}/${CFG.totalFloors}`;
+  el("hSan").textContent = Math.round(G.san);
+  const pct = G.maxSan>0 ? clamp(G.san/G.maxSan,0,1)*100 : 0;
+  el("hSanBar").style.width = pct+"%";
+  // 上限刻度（相对默认 baseSanity 的位置，若上限<基础则提示缩水）
+  const capPct = clamp(G.maxSan/Math.max(CFG.baseSanity,G.maxSan),0,1)*100;
+  el("hSanCap").style.left = capPct+"%";
+  el("hCoins").textContent = G.coins;
+  // 遗物图标
+  el("hRelics").innerHTML = G.relics.map(id=>{ const r=relicById(id);
+    return `<div class="relicchip" title="${r.name}：${r.desc}">${r.icon}</div>`; }).join("");
+}
+function refreshFound(){
+  const got = G.diffs.filter(d=>d.found).length;
+  el("fcL").textContent = `已找出 ${got} / ${G.diffs.length}`;
+}
+function refreshTime(){
+  const s = Math.ceil(G.timeLeft/1000);
+  const pill = el("hTime");
+  pill.textContent = (G.freeze>0? "❄ ":"⏱ ") + s + "s";
+  pill.classList.toggle("warn", G.freeze<=0 && s<=8);
+}
+
+/* ---- 屏幕抖动 ---- */
+let shakeTimer=null;
+function shakeStage(){
+  const app=el("app"); app.classList.remove("shake");
+  void app.offsetWidth;          // 重排以重启动画
+  app.classList.add("shake");
+  clearTimeout(shakeTimer); shakeTimer=setTimeout(()=>app.classList.remove("shake"),280);
+}
+
+/* ---- toast ---- */
+let toastTimer=null;
+function toast(kind,msg){
+  const t=el("toast"); t.className="toast "+(kind||""); t.textContent=msg;
+  requestAnimationFrame(()=>t.classList.add("show"));
+  clearTimeout(toastTimer); toastTimer=setTimeout(()=>t.classList.remove("show"),1400);
+}
+
+/* =========================================================================
+ *  G. 关卡流程
+ * ========================================================================= */
+function startGame(){
+  G.phase="playing"; G.floor=1; G.coins=0; G.relics=[]; G.modifiers=[];
+  G.maxSan=CFG.baseSanity; G.san=CFG.baseSanity; G.shopDiscount=1;
+  if(!G.started){ G.started=true; postParent("gameStarted",{difficulty:CFG.difficulty}); }
+  hideOverlay();
+  loadFloor();
+}
+
+function loadFloor(){
+  G.phase="playing";
+  // 推进临时修正的剩余层数（在“开始一层”时结算上一层的消耗）
+  const scene = makeScene(G.floor);
+  G.theme = scene.theme;
+  const count = G.diffCountFor(G.floor);
+  const inj = injectDiffs(scene, count);
+  G.leftItems=inj.leftItems; G.rightItems=inj.rightItems; G.diffs=inj.diffs;
+  G.decor=scene.decor; G.effects=[];
+  G.combo=0; G.freeze=0; G.flash=0; G.luckyCharge=0;
+  // 遗物：每层开局 hook
+  for(const id of G.relics){ const def=relicById(id); if(def.hooks.onFloorStart) def.hooks.onFloorStart(G); }
+  G.timeTotal = G.timeFor(G.floor)*1000;
+  G.timeLeft = G.timeTotal;
+  refreshHUD(); refreshFound(); refreshTime();
+}
+
+function onCorrect(diff){
+  diff.found=true; G.combo++;
+  toast("good","✅ 找到一处！");
+  // 双侧绿圈反馈
+  const li=G.leftItems[diff.idx], ri=G.rightItems[diff.idx];
+  if(li) G.addEffect(cvL, li.x, li.y, "correct");
+  if(ri) G.addEffect(cvR, ri.hidden? li.x:ri.x, ri.hidden? li.y:ri.y, "correct");
+  refreshFound();
+  // 遗物 onCorrect
+  for(const id of G.relics){ const def=relicById(id); if(def.hooks.onCorrect) def.hooks.onCorrect(G,diff); }
+  if(G.diffs.every(d=>d.found)) floorCleared();
+}
+
+function onWrong(cv,p){
+  G.combo=0;
+  if(cv&&p) G.addEffect(cv, p.x, p.y, "wrong");
+  shakeStage();
+  // 遗物可消解一次找错（瞎猫碰死耗子）
+  const consumed = G.relicHook("onWrong");
+  if(consumed) return;
+  let pen = CFG.wrongPenalty;
+  if(G.hasRelic("talisman")) pen = 8;   // 容错护符
+  G.damage(pen,"找错了");
+}
+
+function floorCleared(){
+  if(G.phase!=="playing") return;
+  G.phase="cleared";
+  // 结算金币：基础 + 剩余时间 + 零失误奖励
+  const timeBonus = Math.round(G.timeLeft/1000)*CFG.coinTimeBonusPer;
+  let gain = CFG.coinClearBase + timeBonus;
+  G.coins += gain;
+  toast("good",`🎉 第 ${G.floor} 层通过！🪙+${gain}`);
+  refreshHUD();
+  // 消耗临时修正的层数
+  tickModifiers();
+  setTimeout(advance, 900);
+}
+
+function timeout(){
+  if(G.phase!=="playing") return;
+  G.phase="cleared";
+  toast("bad","⌛ 时间到！未找全，理智 -"+CFG.timeoutPenalty);
+  // 揭示剩余
+  G.diffs.forEach(d=>d.found=true); refreshFound();
+  G.damage(CFG.timeoutPenalty,"超时");
+  if(G.san<=0) return; // gameOver 已触发
+  tickModifiers();
+  setTimeout(advance, 900);
+}
+
+function tickModifiers(){
+  G.modifiers = G.modifiers.map(m=>({...m, floors:m.floors-1})).filter(m=>m.floors>0);
+}
+
+function advance(){
+  if(G.floor>=CFG.totalFloors){ winGame(); return; }
+  // 每 eventEvery 层触发 Roguelike 抉择门
+  const reachedGate = (G.floor % CFG.eventEvery)===0;
+  G.floor++;
+  refreshHUD();
+  if(reachedGate){ showDoors(); }
+  else { loadFloor(); }
+}
+
+/* =========================================================================
+ *  H. Roguelike 抉择界面（门 / 事件房 / 遗物商店）
+ * ========================================================================= */
+const overlay=el("overlay"), ovCard=el("ovCard");
+function showOverlay(html){ ovCard.innerHTML=html; overlay.classList.remove("hidden"); }
+function hideOverlay(){ overlay.classList.add("hidden"); }
+
+function showDoors(){
+  G.phase="door";
+  showOverlay(`
+    <h2>🚪 命运之门</h2>
+    <p>越往上理智越脆弱。选择一扇门继续前行：</p>
+    <div class="doors">
+      <div class="door" id="doorEvent">
+        <div class="ico">👤</div><div class="t">事件房间</div>
+        <div class="d">遭遇神秘人物，做出抉择，可能因祸得福。</div>
+      </div>
+      <div class="door" id="doorShop">
+        <div class="ico">🛒</div><div class="t">遗物商店</div>
+        <div class="d">消耗金币购买全局 Buff 遗物（当前 🪙${G.coins}）。</div>
+      </div>
+    </div>`);
+  el("doorEvent").onclick=showEvent;
+  el("doorShop").onclick=showShop;
+}
+
+function showEvent(){
+  G.phase="event";
+  const ev = pick(EVENTS);
+  showOverlay(`
+    <h2>${ev.icon} ${ev.title}</h2>
+    <p>${ev.text}</p>
+    <div class="choices" id="evChoices"></div>
+    <div class="resline" id="evRes"></div>
+    <button class="btn btn-go hidden" id="evNext">继续爬塔 ▶</button>`);
+  const box=el("evChoices");
+  ev.choices.forEach((c)=>{
+    const d=document.createElement("div"); d.className="choice";
+    d.innerHTML=`<div class="ct">${c.ct}</div><div class="cd">${c.cd}</div>`;
+    d.onclick=()=>{
+      const res=c.apply(G);
+      box.querySelectorAll(".choice").forEach(x=>x.style.pointerEvents="none");
+      el("evRes").textContent="➜ "+res;
+      el("evNext").classList.remove("hidden");
+      refreshHUD();
+    };
+    box.appendChild(d);
+  });
+  el("evNext").onclick=()=>{ hideOverlay(); if(G.san>0){ loadFloor(); } };
+}
+
+function showShop(){
+  G.phase="shop";
+  // 随机挑选最多 3 件“尚未拥有”的遗物
+  const avail = RELICS.filter(r=>!G.hasRelic(r.id));
+  for(let i=avail.length-1;i>0;i--){ const j=randi(0,i); [avail[i],avail[j]]=[avail[j],avail[i]]; }
+  const stock = avail.slice(0,3);
+  const disc = G.shopDiscount;
+  const priceOf = r=>Math.round(r.price*disc);
+
+  let rows = stock.map(r=>`
+    <div class="shopitem" data-id="${r.id}">
+      <div class="si-ico">${r.icon}</div>
+      <div class="si-body"><div class="si-name">${r.name} ${disc<1?'<span style="color:#f87171">半价!</span>':''}</div>
+        <div class="si-desc">${r.desc}</div></div>
+      <button class="btn btn-buy" data-buy="${r.id}">🪙 ${priceOf(r)}</button>
+    </div>`).join("");
+  if(!stock.length) rows = `<p>遗物已全部收齐，店主向你致敬。</p>`;
+
+  showOverlay(`
+    <h2>🛒 遗物商店</h2>
+    <p>当前金币 🪙<b id="shopCoins">${G.coins}</b>${disc<1?'（西峙折扣码生效，全场半价）':''}</p>
+    <div class="shopgrid">${rows}</div>
+    <div class="resline" id="shopRes"></div>
+    <button class="btn btn-skip" id="shopLeave">离开商店，继续爬塔 ▶</button>`);
+
+  ovCard.querySelectorAll("[data-buy]").forEach(btn=>{
+    btn.onclick=()=>{
+      const id=btn.getAttribute("data-buy"); const r=relicById(id); const price=priceOf(r);
+      if(G.coins<price){ el("shopRes").textContent="金币不足！"; return; }
+      G.coins-=price; G.addRelic(id);
+      el("shopCoins").textContent=G.coins;
+      el("shopRes").textContent=`已装备【${r.name}】！`;
+      btn.disabled=true; btn.textContent="已购买";
+      refreshHUD();
+    };
+  });
+  el("shopLeave").onclick=()=>{ G.shopDiscount=1; hideOverlay(); loadFloor(); };
+}
+
+/* =========================================================================
+ *  I. 结束界面
+ * ========================================================================= */
+function reportFinish(won){
+  // 上报父窗口用于经济结算
+  const earnedPoints = clamp(Math.round(G.floor*6 + G.coins*0.4 + (won?60:0)), 10, 300);
+  postParent("gameFinished",{ earnedPoints, floor:G.floor, coins:G.coins, won, difficulty:CFG.difficulty, finishedAt:Date.now() });
+}
+function gameOver(){
+  if(G.phase==="over"||G.phase==="win") return;
+  G.phase="over";
+  reportFinish(false);
+  showOverlay(`
+    <h2>🧠💔 理智崩溃</h2>
+    <p>你在第 <b>${G.floor}</b> 层耗尽了理智值。像素世界的真相暂时与你无缘。</p>
+    <p>累计金币 🪙${G.coins} · 装备遗物 ${G.relics.length} 件</p>
+    <button class="btn btn-go" id="overAgain">🔄 再战一次</button>`);
+  el("overAgain").onclick=startGame;
+}
+function winGame(){
+  G.phase="win";
+  reportFinish(true);
+  showOverlay(`
+    <h2>🏆 通关！像素侦探</h2>
+    <p>你穿越了全部 <b>30</b> 层幻境，识破了所有伪装。西峙服气地给你递上一杯咖啡。</p>
+    <p>剩余理智 🧠${Math.round(G.san)}/${G.maxSan} · 金币 🪙${G.coins} · 遗物 ${G.relics.length} 件</p>
+    <button class="btn btn-go" id="winAgain">🔄 再来一局</button>`);
+  el("winAgain").onclick=startGame;
+}
+
+function showMenu(){
+  G.phase="menu";
+  showOverlay(`
+    <h2>🔍 哈奇幻境 · 像素侦探</h2>
+    <p><b>玩法：</b>左右两幅画看似相同，找出所有不同点。差异不只是颜色——有的物件会<b>缓慢呼吸（缩放）</b>、有的会<b>以不同频率闪烁</b>、还会换物 / 移位 / 旋转 / 消失。</p>
+    <p><b>生存爬塔（30 层）：</b>理智值 ${CFG.baseSanity} 点。找错一次 -${CFG.wrongPenalty}；倒计时结束未找全 -${CFG.timeoutPenalty}。理智归零即失败，活过 30 层通关。</p>
+    <p><b>Roguelike 抉择：</b>每 ${CFG.eventEvery} 层出现命运之门，二选一进入「事件房间」（遇见黑客西峙等）或「遗物商店」（金币购买全局 Buff）。</p>
+    <p><b>遗物：</b>放大镜🔍 / 时间沙漏⏳ / 瞎猫碰死耗子🐱 等 8 件，提供不同的全局加成。</p>
+    <button class="btn btn-go" id="menuStart">▶ 开始探案</button>`);
+  el("menuStart").onclick=startGame;
+}
+
+/* =========================================================================
+ *  J. 输入：点击判定
+ * ========================================================================= */
+function handleClick(cv, ev){
+  if(G.phase!=="playing") return;
+  const rect=cv.getBoundingClientRect();
+  const px=(ev.touches? ev.changedTouches[0].clientX:ev.clientX)-rect.left;
+  const py=(ev.touches? ev.changedTouches[0].clientY:ev.clientY)-rect.top;
+  const p=panelToScene(cv,px,py);
+  // 命中任一未找到差异的热区？
+  for(const d of G.diffs){
+    if(d.found) continue;
+    for(const hr of d.hot){
+      const dx=p.x-hr.x, dy=p.y-hr.y;
+      if(dx*dx+dy*dy <= hr.r*hr.r){ onCorrect(d); return; }
+    }
+  }
+  onWrong(cv,p);
+}
+[cvL,cvR].forEach(cv=>{
+  cv.addEventListener("click", e=>handleClick(cv,e));
+  cv.addEventListener("mousemove", e=>{
+    const rect=cv.getBoundingClientRect();
+    G.hover={ cv, x:e.clientX-rect.left, y:e.clientY-rect.top };
+  });
+  cv.addEventListener("mouseleave", ()=>{ if(G.hover&&G.hover.cv===cv) G.hover=null; });
+});
+
+/* =========================================================================
+ *  K. 主循环（动画 + 倒计时状态机）
+ * ========================================================================= */
+let lastTs=0;
+function loop(ts){
+  const dt = lastTs? ts-lastTs : 0; lastTs=ts;
+  const t = ts/1000; G.clock = t;
+  // 清理过期特效
+  if(G.effects.length) G.effects = G.effects.filter(e=> t-e.born < 0.65);
+
+  if(G.phase==="playing"){
+    // 倒计时状态机：冻结优先，否则正常流逝
+    if(G.freeze>0){ G.freeze-=dt; if(G.freeze<0)G.freeze=0; }
+    else {
+      G.timeLeft-=dt;
+      if(G.timeLeft<=0){ G.timeLeft=0; refreshTime(); timeout(); }
+    }
+    if(G.flash>0){ G.flash-=dt/1000; if(G.flash<0)G.flash=0; }
+    refreshTime();
+  }
+
+  // 渲染两个画板（即使在抉择界面也保持背景动画）
+  if(G.leftItems.length){
+    const loupeL = (G.hasRelic("magnifier") && G.hover && G.hover.cv===cvL && G.phase==="playing") ? G.hover : null;
+    const loupeR = (G.hasRelic("magnifier") && G.hover && G.hover.cv===cvR && G.phase==="playing") ? G.hover : null;
+    const flashA = G.flash>0 ? clamp(G.flash/0.8,0,1) : 0;
+    drawPanel(cvL,ctxL,G.leftItems,t,{markDiffs:true,flashAll:flashA,loupe:loupeL});
+    drawPanel(cvR,ctxR,G.rightItems,t,{markDiffs:true,flashAll:flashA,loupe:loupeR});
+  }
+  requestAnimationFrame(loop);
+}
+
+/* =========================================================================
+ *  L. 父窗口消息 & 启动
+ * ========================================================================= */
+window.addEventListener("message",(ev)=>{
+  const m=ev.data||{};
+  if(m.type==="setGameConfig" && m.data){
+    if(m.data.difficulty) CFG.difficulty=m.data.difficulty;
+  }
+});
+window.addEventListener("resize",()=>{ fitCanvas(cvL,ctxL); fitCanvas(cvR,ctxR); });
+
+el("helpBtn").style.display="flex";
+el("helpBtn").onclick=()=>{ if(G.phase==="playing"){ /* 暂不打断对局 */ } showMenu(); };
+
+// 启动（不使用 DOMContentLoaded —— 脚本位于文档末尾）
+fitCanvas(cvL,ctxL); fitCanvas(cvR,ctxR);
+if(!G.loaded){ G.loaded=true; postParent("gameLoaded"); }
+showMenu();
+requestAnimationFrame(loop);
+
+})();
+</script>
+</body>
+</html>

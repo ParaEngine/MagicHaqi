@@ -752,18 +752,48 @@
     return ((n ^ (n >>> 13)) >>> 0) / 4294967296;
   }
 
-  function createTerrainAtlas() {
-    if (terrainAtlas) return terrainAtlas;
+  // The terrain atlas is a 70-tile (7 textures × 10 variants) pixel-art canvas
+  // whose per-pixel generation is the game's single heaviest task (~110ms). We
+  // build it lazily AND incrementally (a few rows at a time) so it never blocks
+  // the main thread for more than a few ms at once. drawTerrain() falls back to a
+  // flat color until the atlas finishes.
+  let atlasBuildRow = 0; // next texture-row to generate; >= length means done
+  let atlasReady = false;
+  function ensureAtlasCanvas() {
+    if (terrainAtlas) return;
     terrainAtlas = document.createElement('canvas');
     terrainAtlas.width = TERRAIN_TEXTURE_TILE * TERRAIN_VARIANTS;
     terrainAtlas.height = TERRAIN_TEXTURE_TILE * TERRAIN_TEXTURES.length;
     const tctx = terrainAtlas.getContext('2d');
     tctx.imageSmoothingEnabled = false;
-    TERRAIN_TEXTURES.forEach((type, row) => {
+  }
+  // Build up to `maxRows` texture rows; returns true when the atlas is complete.
+  function buildAtlasChunk(maxRows = 2) {
+    ensureAtlasCanvas();
+    const tctx = terrainAtlas.getContext('2d');
+    let built = 0;
+    while (atlasBuildRow < TERRAIN_TEXTURES.length && built < maxRows) {
+      const row = atlasBuildRow;
+      const type = TERRAIN_TEXTURES[row];
       for (let variant = 0; variant < TERRAIN_VARIANTS; variant++) {
         drawTerrainTextureTile(tctx, variant * TERRAIN_TEXTURE_TILE, row * TERRAIN_TEXTURE_TILE, type, 9100 + row * 311 + variant * 97);
       }
-    });
+      atlasBuildRow++;
+      built++;
+    }
+    if (atlasBuildRow >= TERRAIN_TEXTURES.length) atlasReady = true;
+    return atlasReady;
+  }
+  // Drive the incremental build across animation frames.
+  function buildAtlasProgressively() {
+    if (atlasReady) return;
+    buildAtlasChunk(1);
+    if (!atlasReady) requestAnimationFrame(buildAtlasProgressively);
+  }
+  function createTerrainAtlas() {
+    // Synchronous completion fallback (e.g. if something needs it immediately).
+    if (atlasReady) return terrainAtlas;
+    buildAtlasChunk(TERRAIN_TEXTURES.length);
     return terrainAtlas;
   }
 
@@ -2112,8 +2142,13 @@
     for (let x = fox; x < vw; x += fine) for (let y = foy; y < vh; y += fine) if (((Math.floor((x + state.camera.x) / fine) + Math.floor((y + state.camera.y) / fine)) & 3) === 0) ctx.fillRect(Math.round(x), Math.round(y), 1, 1);
   }
 
+  let chunkBuildBudget = 0; // max new terrain chunk canvases to rasterize per frame
   function drawTerrain() {
-    createTerrainAtlas();
+    // Keep building the atlas in small chunks across frames; until it's ready,
+    // skip atlas-based terrain (drawBackground already painted a base color) so
+    // we never trigger a synchronous full-atlas build on the main thread.
+    if (!atlasReady) { buildAtlasChunk(2); return; }
+    chunkBuildBudget = 2; // build at most 2 fresh chunks this frame
     const visibleStartCx = Math.floor(state.camera.x / CHUNK_SIZE);
     const visibleStartCy = Math.floor(state.camera.y / CHUNK_SIZE);
     const visibleEndCx = Math.floor((state.camera.x + window.innerWidth) / CHUNK_SIZE);
@@ -2146,6 +2181,13 @@
     const key = `${state.terrainSeed}:${cx},${cy}`;
     const cached = terrainChunkCache.get(key);
     if (cached) return cached;
+    // Each terrain chunk canvas is expensive to rasterize (24x24 tiles with
+    // interior variation + transitions). Building all visible chunks in one
+    // frame is a >50ms task, so cap how many we build per draw(); uncached
+    // chunks are skipped this frame (the flat background shows through) and
+    // filled in over the next few frames.
+    if (chunkBuildBudget <= 0) return null;
+    chunkBuildBudget--;
     const canvasEl = document.createElement('canvas');
     canvasEl.width = CHUNK_SIZE;
     canvasEl.height = CHUNK_SIZE;
@@ -2932,9 +2974,23 @@
     if (msg.type === 'setGameConfig' && msg.data?.masterStyle) { state.masterStyle = msg.data.masterStyle === 'girl' ? 'girl' : 'boy'; localStorage.setItem(STORAGE_MASTER, state.masterStyle); updateMasterButtons(); }
   });
 
-  updateMasterButtons(); resize(); generateWorld(); updateHud(); draw(); loadPetCatalog();
+  // Critical path: only what the intro overlay needs (cheap). The intro card
+  // covers the canvas, so world generation, terrain-atlas building and the first
+  // draw can happen after first paint — and startGame()/resetGame() regenerates
+  // the world anyway, so nothing here is needed before the user taps Start.
+  updateMasterButtons();
   if (!state.loadedPosted) { state.loadedPosted = true; post('gameLoaded', { title: t('title') }); }
-  state.lastTime = performance.now(); state.rafId = requestAnimationFrame(loop);
+  requestAnimationFrame(() => requestAnimationFrame(() => {
+    resize(); updateHud();
+    // The intro overlay covers the canvas and startGame()->resetGame()
+    // regenerates the world, so we don't need to build the world at boot.
+    // Kick off the incremental terrain-atlas build and the render loop (which
+    // only draws the background until Start), then load the pet catalog in a
+    // separate task so no single deferred step exceeds the budget.
+    buildAtlasProgressively();
+    state.lastTime = performance.now(); state.rafId = requestAnimationFrame(loop);
+    setTimeout(loadPetCatalog, 0);
+  }));
 })();
 </script>
 

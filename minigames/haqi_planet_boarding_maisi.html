@@ -33,7 +33,8 @@
     }
     @keyframes nebulaDrift { 0% { transform: translate(0, 0) scale(1); } 100% { transform: translate(2%, -2%) scale(1.05); } }
     #starfield { position: fixed; inset: 0; z-index: 1; }
-    .star { position: absolute; border-radius: 50%; mix-blend-mode: lighter; animation: twinkle var(--dur) ease-in-out infinite alternate; }
+    .star { position: absolute; border-radius: 50%; mix-blend-mode: lighter; animation: starIn .6s ease-out both, twinkle var(--dur) ease-in-out var(--delay) infinite alternate; }
+    @keyframes starIn { from { opacity: 0; transform: scale(0.3); } to { opacity: var(--o1); transform: scale(1); } }
     @keyframes twinkle { 0% { opacity: var(--o1); transform: scale(1); } 100% { opacity: var(--o2); transform: scale(1.35); } }
 
     #sceneContainer { position: fixed; inset: 0; z-index: 10; display: flex; align-items: center; justify-content: center; }
@@ -898,24 +899,34 @@ art_assets = [
 
   function createStarfield() {
     const container = document.getElementById('starfield');
+    container.innerHTML = '';
     const count = Math.min(120, Math.floor(window.innerWidth * window.innerHeight / 6000));
-    for (let i = 0; i < count; i++) {
+    // 保留原有的发光/闪烁星点视觉(box-shadow + mix-blend-mode + twinkle)，但不再一次性
+    // 插入上百个星点(那会造成约 120-230ms 的同步样式/绘制长任务)。改为每帧只生成一小批，
+    // 配合 .star 的 starIn 淡入动画，让星星“逐帧浮现”，既不卡顿也不突兀。
+    const PER_FRAME = 6;
+    let i = 0;
+    function makeStar(idx) {
       const star = document.createElement('div');
       star.className = 'star';
       const size = Math.random() * 2.5 + 0.5;
-      star.style.width = size + 'px'; star.style.height = size + 'px';
-      star.style.left = Math.random() * 100 + '%'; star.style.top = Math.random() * 100 + '%';
-      let color = '#fff';
-      if (i % 5 === 0) color = 'hsl(44 100% 82%)';
-      else if (i % 3 === 0) color = 'hsl(190 100% 82%)';
-      star.style.background = color;
-      star.style.boxShadow = `0 0 ${(2 + size * 1.5).toFixed(1)}px ${color}`;
-      star.style.setProperty('--dur', (2 + Math.random() * 4) + 's');
-      star.style.setProperty('--o1', (0.2 + Math.random() * 0.3).toFixed(2));
-      star.style.setProperty('--o2', (0.58 + Math.random() * 0.4).toFixed(2));
-      star.style.animationDelay = (Math.random() * 4) + 's';
+      const color = idx % 5 === 0 ? 'hsl(44 100% 82%)' : idx % 3 === 0 ? 'hsl(190 100% 82%)' : '#fff';
+      star.style.cssText =
+        `width:${size}px;height:${size}px;` +
+        `left:${(Math.random() * 100).toFixed(2)}%;top:${(Math.random() * 100).toFixed(2)}%;` +
+        `background:${color};box-shadow:0 0 ${(2 + size * 1.5).toFixed(1)}px ${color};` +
+        `--dur:${(2 + Math.random() * 4).toFixed(2)}s;` +
+        `--o1:${(0.2 + Math.random() * 0.3).toFixed(2)};--o2:${(0.58 + Math.random() * 0.4).toFixed(2)};` +
+        // twinkle 在 starIn(0.6s)淡入之后再开始，并加少量随机错相，避免整片同步闪烁
+        `--delay:${(0.6 + Math.random() * 1.4).toFixed(2)}s`;
       container.appendChild(star);
     }
+    function batch() {
+      const end = Math.min(i + PER_FRAME, count);
+      for (; i < end; i++) makeStar(i);
+      if (i < count) requestAnimationFrame(batch);
+    }
+    batch();
   }
 
   function clearScene() {
@@ -1884,14 +1895,15 @@ art_assets = [
   bootMusic();
   ['pointerdown', 'keydown', 'touchstart'].forEach(type => window.addEventListener(type, bootMusic, { once: true, capture: true }));
 
-  createStarfield();
-  preloadEggSprite();
   post('gameLoaded');
   scene1();
   if (!state.gameStarted) {
     state.gameStarted = true;
     post('gameStarted');
   }
+  // 星空(约120个带阴影的星点，绘制开销大)与龙蛋贴图预载均为装饰/预热，
+  // 位于场景内容背后，推迟到首帧绘制之后执行，不阻塞启动且无可见闪烁。
+  requestAnimationFrame(() => { createStarfield(); preloadEggSprite(); });
 })();
 </script>
 

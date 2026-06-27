@@ -107,10 +107,10 @@
     { key: 'left', dr: 0, dc: -1, label: '←' },
   ];
   const DIFFICULTIES = {
-    easy: { id: 'easy', label: t('diffEasy'), size: 7, boxes: 2, walls: 5, minPushes: 4, attempts: 60, maxNodes: 6000, timeBudget: 260, reward: 70 },
-    normal: { id: 'normal', label: t('diffNormal'), size: 8, boxes: 3, walls: 8, minPushes: 8, attempts: 80, maxNodes: 10000, timeBudget: 420, reward: 95 },
-    hard: { id: 'hard', label: t('diffHard'), size: 8, boxes: 3, walls: 12, minPushes: 12, attempts: 105, maxNodes: 14000, timeBudget: 620, reward: 125 },
-    expert: { id: 'expert', label: t('diffExpert'), size: 9, boxes: 4, walls: 14, minPushes: 16, attempts: 130, maxNodes: 18000, timeBudget: 850, reward: 160 },
+    easy: { id: 'easy', label: t('diffEasy'), size: 7, boxes: 2, walls: 5, minPushes: 4, attempts: 90, maxNodes: 6000, sliceNodes: 2200, timeBudget: 360, reward: 70 },
+    normal: { id: 'normal', label: t('diffNormal'), size: 8, boxes: 3, walls: 8, minPushes: 8, attempts: 120, maxNodes: 10000, sliceNodes: 2200, timeBudget: 560, reward: 95 },
+    hard: { id: 'hard', label: t('diffHard'), size: 8, boxes: 3, walls: 12, minPushes: 12, attempts: 150, maxNodes: 14000, sliceNodes: 2200, timeBudget: 800, reward: 125 },
+    expert: { id: 'expert', label: t('diffExpert'), size: 9, boxes: 4, walls: 14, minPushes: 16, attempts: 180, maxNodes: 18000, sliceNodes: 2200, timeBudget: 1100, reward: 160 },
   };
   const DIFFICULTY_ORDER = ['easy', 'normal', 'hard', 'expert'];
 
@@ -347,10 +347,15 @@
     document.body.appendChild(root);
     renderDifficultyButtons();
     bindEvents();
-    requestPetImage();
-    prepareLevel(1);
     showHowTo();
     post('gameLoaded');
+    // Defer heavy work (pet image request + level generation/solving, which is a
+    // big synchronous task) until after the first paint so the rules modal shows
+    // instantly. The board isn't interactive until the user taps Start anyway.
+    requestAnimationFrame(() => requestAnimationFrame(() => {
+      requestPetImage();
+      if (!state.board && !state.generating) prepareLevel(1);
+    }));
   }
 
   function bindEvents() {
@@ -358,6 +363,7 @@
     byId('mhHelp').onclick = showHowTo;
     byId('mhStart').onclick = () => {
       byId('mhHowTo').hidden = true;
+      if (!state.board && !state.generating) prepareLevel(1);
       if (!state.started) startGame();
     };
     byId('mhRestart').onclick = () => {
@@ -423,11 +429,11 @@
   }
 
   function prepareAndStart(level) {
+    // Stop any running timer; the level-ready callback in prepareLevel restarts
+    // it (and posts gameStarted) once the (async) board is built.
+    clearInterval(state.timer);
+    state.timer = null;
     prepareLevel(level);
-    if (state.started) {
-      startTimer();
-      post('gameStarted');
-    }
   }
 
   function startTimer() {
@@ -443,36 +449,76 @@
   function prepareLevel(level) {
     state.generating = true;
     byId('mhGenerating').hidden = false;
-    const puzzle = generatePuzzle(state.difficulty, level);
-    state.level = level;
-    state.board = puzzle;
-    state.solutionPushes = puzzle.solutionPushes;
-    restoreSnapshot(puzzle);
-    state.moves = 0;
-    state.pushes = 0;
-    state.finished = false;
-    state.generating = false;
-    byId('mhGenerating').hidden = true;
-    updateStats();
-    renderBoard();
+    // Generate/solve the level in time-sliced chunks so no single main-thread
+    // task exceeds the budget (the solver BFS over many attempts is heavy).
+    generatePuzzle(state.difficulty, level, (puzzle) => {
+      state.level = level;
+      state.board = puzzle;
+      state.solutionPushes = puzzle.solutionPushes;
+      restoreSnapshot(puzzle);
+      state.moves = 0;
+      state.pushes = 0;
+      state.finished = false;
+      state.generating = false;
+      byId('mhGenerating').hidden = true;
+      updateStats();
+      renderBoard();
+      // If the user already tapped Start while we were generating, kick off the
+      // timer/gameStarted now that the board exists.
+      if (state.started && !state.timer) {
+        startTimer();
+        post('gameStarted');
+      }
+    });
   }
 
-  function generatePuzzle(difficultyId, level) {
+  // Async, chunked puzzle generation: runs a few solver attempts per slice and
+  // yields to the event loop between slices so each task stays well under 50ms.
+  function generatePuzzle(difficultyId, level, done) {
     const difficulty = DIFFICULTIES[difficultyId] || DIFFICULTIES.normal;
     let best = null;
+    let attempt = 0;
     const startedAt = Date.now();
-    for (let attempt = 0; attempt < difficulty.attempts; attempt++) {
-      if (attempt > 8 && Date.now() - startedAt > difficulty.timeBudget) break;
-      const candidate = randomPuzzleCandidate(difficulty, level, attempt);
-      const solution = solvePuzzle(candidate, difficulty.maxNodes);
-      if (!solution.solved) continue;
-      candidate.solutionPushes = solution.pushes;
-      candidate.solutionMoves = solution.moves;
-      if (!best || candidate.solutionPushes > best.solutionPushes) best = candidate;
-      const target = difficulty.minPushes + Math.min(10, Math.floor(level * 1.15));
-      if (candidate.solutionPushes >= target) return candidate;
+    const target = difficulty.minPushes + Math.min(10, Math.floor(level * 1.15));
+    // Each solver call is capped to sliceNodes so a single solve task stays well
+    // under the 50ms budget regardless of puzzle hardness. We run a small handful
+    // of cheap candidate-generations + one capped solve per slice, then yield.
+    const sliceNodes = difficulty.sliceNodes || 2200;
+    const SLICE_MS = 14;
+
+    function finish(puzzle) {
+      // Hand off to its own task so the DOM grid build in renderBoard never
+      // shares a task with a solver slice.
+      setTimeout(() => done(puzzle), 0);
     }
-    return best || fallbackPuzzle(difficulty);
+
+    function slice() {
+      const sliceStart = Date.now();
+      while (attempt < difficulty.attempts) {
+        if (attempt > 8 && Date.now() - startedAt > difficulty.timeBudget) {
+          attempt = difficulty.attempts; // stop
+          break;
+        }
+        const candidate = randomPuzzleCandidate(difficulty, level, attempt);
+        attempt++;
+        const solution = solvePuzzle(candidate, sliceNodes);
+        if (solution.solved) {
+          candidate.solutionPushes = solution.pushes;
+          candidate.solutionMoves = solution.moves;
+          if (!best || candidate.solutionPushes > best.solutionPushes) best = candidate;
+          if (candidate.solutionPushes >= target) { finish(candidate); return; }
+        }
+        // Yield after a bounded slice of wall time so each task stays small.
+        if (Date.now() - sliceStart >= SLICE_MS) break;
+      }
+      if (attempt < difficulty.attempts) {
+        setTimeout(slice, 0);
+      } else {
+        finish(best || fallbackPuzzle(difficulty));
+      }
+    }
+
+    slice();
   }
 
   function randomPuzzleCandidate(difficulty, level, attempt) {
@@ -536,7 +582,7 @@
     const goals = new Set([idx(1, size - 2, size), idx(3, size - 2, size), idx(size - 2, size - 3, size), idx(size - 3, 1, size)].slice(0, difficulty.boxes));
     const boxes = normalizeBoxes([idx(1, 3, size), idx(3, 3, size), idx(size - 3, 3, size), idx(size - 2, 2, size)].slice(0, difficulty.boxes));
     const puzzle = { size, walls, goals, boxes, player: idx(size - 2, 1, size), difficultyId: difficulty.id, seed: 'fallback', solutionPushes: 0, solutionMoves: 0 };
-    const solution = solvePuzzle(puzzle, difficulty.maxNodes * 2);
+    const solution = solvePuzzle(puzzle, difficulty.sliceNodes || 2200);
     puzzle.solutionPushes = solution.solved ? solution.pushes : difficulty.minPushes;
     puzzle.solutionMoves = solution.solved ? solution.moves : difficulty.minPushes * 2;
     return puzzle;

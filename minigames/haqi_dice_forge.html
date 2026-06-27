@@ -1,0 +1,718 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover">
+  <title>哈奇方块骰：命运锻造</title>
+  <script src="https://cdn.keepwork.com/keepwork/cdn/tailwindcss@3.4.16.js"></script>
+  <style>
+    :root { --app-h: 100vh; }
+    html, body { margin: 0; height: 100%; -webkit-tap-highlight-color: transparent; overflow:hidden; overscroll-behavior:none;
+      background: linear-gradient(170deg, #fff6e9 0%, #ffe8d4 50%, #ffe0ef 100%); }
+    * { box-sizing: border-box; }
+    /* 微信/移动端 100vh 不可靠（含/不含地址栏抖动），用 JS 写入真实视口高度 */
+    .screen { height: var(--app-h, 100vh); padding-top: env(safe-area-inset-top); padding-bottom: env(safe-area-inset-bottom); }
+    .nofont { font-family: "PingFang SC", "Microsoft YaHei", -apple-system, system-ui, sans-serif; font-weight: 800; }
+    .ultra { font-weight: 900; }
+    body { color: #4a3b53; }
+    .ink   { color:#4a3b53; }
+    .muted { color:#9a7f74; }
+    .title { color:#f0790f; text-shadow:0 2px 0 rgba(255,255,255,.7); }
+
+    /* ---- 体素实体骰子 ---- */
+    .die {
+      border: 3px solid #f0dcbf; border-radius: 16px; background: #ffffff;
+      box-shadow: 0 7px 0 #eccfa3, 0 9px 0 #e3bd86;
+      transition: transform .09s ease, box-shadow .09s ease, border-color .12s ease, filter .12s;
+      transform: translateY(0); cursor: pointer; will-change: transform;
+    }
+    .die:hover:not(.sealed) { border-color: #ffcf80; }
+    .die.locked { transform: translateY(7px); box-shadow: 0 0 0 #eccfa3; border-color: #f59e0b; background: linear-gradient(#fff7e2,#ffedc8); }
+    .die.locked .lock-mark { opacity: .85; }
+    .die.sealed { filter: grayscale(.7) brightness(.97); opacity:.5; cursor: not-allowed; border-color:#e7d8c2; box-shadow:0 4px 0 #ddc8aa; }
+    .lock-mark { position:absolute; inset:0; display:flex; align-items:center; justify-content:center; font-size:52px; opacity:0; pointer-events:none; transition:opacity .12s ease; }
+    .seal-mark { position:absolute; inset:0; display:flex; align-items:center; justify-content:center; font-size:38px; }
+    .el-badge { position:absolute; top:3px; right:5px; font-size:14px; filter:drop-shadow(0 1px 1px rgba(0,0,0,.25)); }
+
+    @keyframes dice-toss {
+      0%{transform:translateY(0) scale(1) rotate(0)} 25%{transform:translateY(-18px) scale(1.14) rotate(-8deg)}
+      55%{transform:translateY(2px) scale(.93) rotate(6deg)} 78%{transform:translateY(-4px) scale(1.03) rotate(-2deg)} 100%{transform:translateY(0) scale(1) rotate(0)}
+    }
+    .die.rolling { animation: dice-toss .5s cubic-bezier(.3,1.25,.5,1); }
+
+    .face-icon { font-size: 38px; line-height: 1; }
+    .face-num  { font-size: 30px; line-height: 1; font-weight: 900; }
+    .face-atk{color:#f97316} .face-def{color:#2563eb} .face-heal{color:#16a34a} .face-empty{color:#b6a892}
+
+    .tray { background:#fffaf1; border:2px solid #f3e1c6; border-radius:18px; box-shadow: inset 0 3px 9px rgba(190,150,100,.18), 0 4px 0 rgba(190,150,100,.14); }
+    .panel-soft { background:#fffaf1; border:2px solid #f3e1c6; border-radius:16px; box-shadow:0 4px 0 rgba(190,150,100,.14); }
+
+    /* ---- 街机按钮 ---- */
+    .arcade { border:none; border-radius:16px; font-weight:900; letter-spacing:1px; color:#5a3a06; box-shadow:0 6px 0 var(--btn-deep), 0 7px 0 rgba(150,100,40,.25); transition: transform .07s ease, box-shadow .07s ease, filter .1s; transform: translateY(0); }
+    .arcade:hover:not(:disabled){ filter:brightness(1.05) }
+    .arcade:active:not(:disabled){ transform:translateY(6px); box-shadow:0 0 0 var(--btn-deep) }
+    .arcade-primary{ background:linear-gradient(#ffd34d,#ff9d24); --btn-deep:#d97706 }
+    .arcade-steel{ background:linear-gradient(#cfe0f5,#9bb6da); --btn-deep:#6f8bb5; color:#1e3a5f }
+    .arcade-go{ background:linear-gradient(#86efac,#22c55e); --btn-deep:#15a34a; color:#0d3d1f }
+    .arcade:disabled{ background:repeating-linear-gradient(45deg,#e8ddca,#e8ddca 8px,#ded2bb 8px,#ded2bb 16px); color:#b3a690; box-shadow:0 4px 0 #ccbfa6; transform:translateY(3px); cursor:not-allowed; }
+    @keyframes spotPulse { 0%,100%{box-shadow:0 6px 0 var(--btn-deep,#d97706), 0 0 0 rgba(249,115,22,.5)} 50%{box-shadow:0 6px 0 var(--btn-deep,#d97706), 0 0 16px 4px rgba(249,115,22,.85)} }
+    .spot { animation: spotPulse 1s infinite; }
+
+    /* ---- 血条 / 意图 ---- */
+    .bar { background:#f0e3cf; border:2px solid #e6d2b3; border-radius:999px; overflow:hidden; position:relative; }
+    .bar-fill { height:100%; border-radius:999px; transition: width .3s cubic-bezier(.4,0,.2,1); }
+    .hp-enemy { background:linear-gradient(#ff8a8a,#ef4444); } .hp-hero{ background:linear-gradient(#7ee29a,#22c55e); } .hp-low{ background:linear-gradient(#ffc764,#f97316); }
+    .intent { display:inline-flex; align-items:center; gap:3px; padding:1px 8px; border-radius:999px; font-weight:900; border:2px solid; font-size:12px; background:#fff; white-space:nowrap; }
+    .intent-atk{ color:#f97316; border-color:#fbbf77 } .intent-def{ color:#2563eb; border-color:#93b4f5 }
+    .enemy-focus { transform:scale(1.08); filter:drop-shadow(0 0 9px rgba(249,115,22,.75)) drop-shadow(0 5px 0 rgba(150,100,60,.25)) !important; }
+
+    @keyframes shake { 0%,100%{transform:translateX(0)} 20%{transform:translateX(-7px)} 60%{transform:translateX(6px)} }
+    .shake { animation: shake .3s; }
+    @keyframes flash { 0%{filter:brightness(1.6) saturate(1.4)} 100%{filter:brightness(1)} }
+    .flash { animation: flash .35s; }
+
+    /* ---- 光球 ---- */
+    #fxlayer { position:fixed; inset:0; pointer-events:none; z-index:60; }
+    @keyframes fly-atk { 0%{transform:translate(-50%,0) scale(.4);opacity:0} 18%{opacity:1} 100%{transform:translate(-50%,-55vh) scale(1.25);opacity:0} }
+    @keyframes fly-heal { 0%{transform:translate(-50%,0) scale(.4);opacity:0} 18%{opacity:1} 100%{transform:translate(-50%,-40vh) scale(1.2);opacity:0} }
+    .orb { position:absolute; left:50%; bottom:34%; transform:translate(-50%,0); font-size:34px; font-weight:900; display:flex; align-items:center; gap:2px; text-shadow:0 2px 5px rgba(0,0,0,.35); white-space:nowrap; }
+    .orb-atk { animation: fly-atk .55s ease-in forwards; } .orb-heal,.orb-def { animation: fly-heal .55s ease-out forwards; }
+
+    @keyframes pop { 0%{transform:scale(.7);opacity:0} 100%{transform:scale(1);opacity:1} }
+    .pop { animation: pop .22s ease-out both; }
+    @keyframes goldFloat { 0%{transform:translate(-50%,0);opacity:1} 100%{transform:translate(-50%,-40px);opacity:0} }
+    .goldfloat { position:fixed; left:50%; top:16%; font-weight:900; color:#f0790f; font-size:22px; z-index:61; pointer-events:none; animation:goldFloat 1s ease-out forwards; text-shadow:0 2px 3px rgba(255,255,255,.6); }
+
+    /* ---- 锻造工坊 ---- */
+    .sticker { border:2px solid var(--rc); border-radius:12px; background:#fffdf8; padding:8px 4px; text-align:center; cursor:pointer; transition:.12s; box-shadow:0 4px 0 rgba(190,150,100,.18); }
+    .sticker:hover { transform:translateY(-3px) }
+    .sticker-sel { box-shadow:0 0 0 3px var(--rc), 0 0 16px var(--rc); transform:translateY(-3px) }
+    .die-mini { border:2px solid #f0dcbf; border-radius:10px; background:#ffffff; box-shadow:0 3px 0 #eccfa3; display:flex; flex-direction:column; align-items:center; justify-content:center; position:relative; transition:.12s; }
+    .die-mini.can-apply { cursor:pointer } .die-mini.can-apply:hover { border-color:#f59e0b; transform:translateY(-2px) }
+    .die-mini.weak { border-style:dashed; border-color:#f59e0b; animation:weakPulse 1s infinite }
+    @keyframes weakPulse { 0%,100%{box-shadow:0 3px 0 #eccfa3, 0 0 0 rgba(245,158,11,.3)} 50%{box-shadow:0 3px 0 #eccfa3, 0 0 12px rgba(245,158,11,.7)} }
+    .die-mini.just-applied { border-color:#22c55e; box-shadow:0 3px 0 #eccfa3, 0 0 14px rgba(34,197,94,.7) }
+
+    .coach { background:linear-gradient(#fff6db,#ffeec0); border:2px solid #f59e0b; border-radius:14px; padding:9px 12px; color:#7a5316; box-shadow:0 4px 0 #ecc061; }
+  </style>
+</head>
+
+<body class="nofont select-none" style="touch-action:manipulation;"></body>
+
+<!-- ========================================================================
+  game_config — 纯数据。
+   · 三人小队，每人独立 HP + 一颗六面骰（各含 1 空白弱面，留给贴纸覆盖）。
+   · run.stages：每关一组敌人(可多个)，各有独立 HP + 意图序列。
+   · 玩家点敌人切换集火目标(🎯)，攻击对集火目标结算、溢出连斩下一个。
+   · 数值经脚本模拟校准；交互全 tap，适配微信小程序 web-view。
+========================================================================= -->
+<script>
+game_config = {
+  rules: { rerollsPerTurn: 2 },
+
+  faceTypes: {
+    atk:  { label:"攻击", cls:"face-atk"   },
+    def:  { label:"护盾", cls:"face-def"   },
+    heal: { label:"治疗", cls:"face-heal"  },
+    empty:{ label:"空白", cls:"face-empty" },
+  },
+  elements: {
+    wind:    { label:"风", icon:"🌪️", color:"#0d9488" },
+    thunder: { label:"雷", icon:"⚡",  color:"#9333ea" },
+  },
+
+  characters: [
+    { id:"xiaofei", name:"小肥", emoji:"🐷", accent:"#f97316", maxHp:18, faces:[
+      {type:"atk",value:3,icon:"⚔️"},{type:"atk",value:2,icon:"⚔️"},{type:"def",value:2,icon:"🛡️"},
+      {type:"heal",value:2,icon:"💚"},{type:"empty",value:0,icon:"·"},{type:"atk",value:4,icon:"⚡",el:"thunder"} ] },
+    { id:"shuba", name:"薯霸", emoji:"🥔", accent:"#2563eb", maxHp:22, faces:[
+      {type:"def",value:4,icon:"🛡️"},{type:"def",value:3,icon:"🛡️"},{type:"atk",value:2,icon:"⚔️"},
+      {type:"def",value:2,icon:"🛡️"},{type:"empty",value:0,icon:"·"},{type:"heal",value:2,icon:"💚"} ] },
+    { id:"dundi", name:"墩弟", emoji:"🐧", accent:"#16a34a", maxHp:14, faces:[
+      {type:"heal",value:3,icon:"💚"},{type:"heal",value:2,icon:"💚"},{type:"atk",value:3,icon:"🌪️",el:"wind"},
+      {type:"empty",value:0,icon:"·"},{type:"def",value:2,icon:"🛡️"},{type:"heal",value:4,icon:"💚"} ] },
+  ],
+
+  // 每关一组敌人。多敌人 → 集火/优先级博弈。
+  run: {
+    stages: [
+      [ { id:"sw1", name:"扫地兽", emoji:"🦾", maxHp:15, intents:[{type:"atk",value:4},{type:"def",value:2},{type:"atk",value:5}] },
+        { id:"sw2", name:"扫地兽", emoji:"🧹", maxHp:15, intents:[{type:"atk",value:3},{type:"atk",value:5},{type:"def",value:2}] } ],
+      [ { id:"dg1", name:"机犬", emoji:"🤖", maxHp:13, intents:[{type:"atk",value:4},{type:"def",value:3},{type:"atk",value:3}] },
+        { id:"dg2", name:"机犬", emoji:"🦿", maxHp:13, intents:[{type:"atk",value:3},{type:"atk",value:4},{type:"def",value:3}] },
+        { id:"dg3", name:"机犬", emoji:"🐕", maxHp:13, intents:[{type:"def",value:3},{type:"atk",value:4},{type:"atk",value:3}] } ],
+      [ { id:"core", name:"失控核心·BOSS", emoji:"👹", maxHp:46, intents:[{type:"atk",value:7},{type:"def",value:6},{type:"atk",value:9},{type:"atk",value:5}] },
+        { id:"add",  name:"护卫电犬", emoji:"⚡", maxHp:16, intents:[{type:"atk",value:4},{type:"atk",value:5},{type:"def",value:3}] } ],
+    ],
+  },
+
+  tutorial: {
+    dummy: { id:"dummy", name:"训练木桩", emoji:"🪵", maxHp:5,  intents:[{type:"def",value:0}] },
+    wolf:  { id:"wolf",  name:"野狼",     emoji:"🐺", maxHp:12, intents:[{type:"atk",value:5,fixedTarget:1}] },
+  },
+
+  rarityWeight: { common:6, rare:3, wonder:1 },
+
+  stickers: [
+    { id:"sword3",  name:"精钢剑击", icon:"⚔️", rarity:"common", desc:"攻击 +3",                 face:{type:"atk",value:3,icon:"⚔️"} },
+    { id:"sword4",  name:"裂石巨剑", icon:"🗡️", rarity:"rare",   desc:"攻击 +4",                 face:{type:"atk",value:4,icon:"🗡️"} },
+    { id:"shield3", name:"坚壁重盾", icon:"🛡️", rarity:"common", desc:"护盾 +3",                 face:{type:"def",value:3,icon:"🛡️"} },
+    { id:"shield4", name:"龟甲壁垒", icon:"🐢", rarity:"rare",   desc:"护盾 +4",                 face:{type:"def",value:4,icon:"🛡️"} },
+    { id:"heal3",   name:"治愈之心", icon:"💚", rarity:"common", desc:"治疗 +3",                 face:{type:"heal",value:3,icon:"💚"} },
+    { id:"vamp",    name:"吸血獠牙", icon:"🦷", rarity:"rare",   desc:"攻击2 · 命中回全队1血",   face:{type:"atk",value:2,icon:"🦷",lifesteal:1} },
+    { id:"poison",  name:"淬毒匕首", icon:"🐍", rarity:"rare",   desc:"攻击1 · 给敌人叠2层毒",   face:{type:"atk",value:1,icon:"🐍",poison:2} },
+    { id:"gale",    name:"疾风刃",   icon:"🌪️", rarity:"rare",   desc:"攻击2 · 风（锁≥2风→追击）", face:{type:"atk",value:2,icon:"🌪️",el:"wind"} },
+    { id:"bolt",    name:"落雷击",   icon:"⚡", rarity:"rare",   desc:"攻击3 · 雷（传导+1真伤）",  face:{type:"atk",value:3,icon:"⚡",el:"thunder"} },
+    { id:"palette", name:"施维的调色盘", icon:"🎨", rarity:"wonder", desc:"投出时复制相邻队友的骰面效果",   face:{type:"atk",value:0,icon:"🎨",copyAdj:true} },
+    { id:"budget",  name:"西峙的预算表", icon:"📊", rarity:"wonder", desc:"+10金币，但本回合全队护盾归零", face:{type:"def",value:0,icon:"📊",gold:10,defZero:true} },
+  ],
+};
+</script>
+
+<!-- ========================================================================
+  内核 —— 单一状态源 + render-on-mutate。
+========================================================================= -->
+<script>
+const CFG = game_config;
+const rand6 = () => Math.floor(Math.random() * 6);
+const charOf = id => CFG.characters.find(c => c.id === id);
+
+/* ---------------- 宿主消息协议 ---------------- */
+let _loaded=false, _started=false, _finished=false;
+function postParent(type, data){ try{ window.parent.postMessage(Object.assign({type}, data?{data}:{}), '*'); }catch(e){} }
+function sendLoaded(){ if(!_loaded){ _loaded=true; postParent('gameLoaded'); } }
+function sendStarted(){ if(!_started){ _started=true; postParent('gameStarted'); } }
+function sendFinished(){
+  if(_finished) return; _finished=true;
+  const win = state.phase === "runwin";
+  postParent('gameFinished', { earnedPoints: state.score + state.gold + (win ? 30 : 0), win, gold: state.gold });
+}
+window.addEventListener('message', () => {});
+
+/* ---------------- 状态 ---------------- */
+let state;
+function newGame() {
+  _finished = false;
+  state = {
+    mode: "tutorial", phase: "title", turn: 0,
+    rerollsLeft: CFG.rules.rerollsPerTurn,
+    run: { stage: 0 },
+    enemies: [], focus: 0,
+    heroes: CFG.characters.map(c => ({ charId:c.id, hp:c.maxHp, hit:false, faces: JSON.parse(JSON.stringify(c.faces)) })),
+    teamBlock: 0,
+    dice: CFG.characters.map(c => ({ charId:c.id, faceIndex:null, locked:false })),
+    reward: null, gold: 0, score: 0,
+    tut: { step: "t1_roll" },
+  };
+  render();
+}
+
+const heroOf   = i => state.heroes[i];
+const isAlive  = h => h.hp > 0;
+const aliveIdx = () => state.heroes.map((h,i)=>i).filter(i => isAlive(heroOf(i)));
+const faceData = (heroIdx, faceIdx) => faceIdx === null ? null : state.heroes[heroIdx].faces[faceIdx];
+const enemiesAlive = () => state.enemies.filter(e => e.hp > 0);
+const allEnemiesDead = () => state.enemies.every(e => e.hp <= 0);
+function focusEnemy() { const e = state.enemies[state.focus]; if (e && e.hp > 0) return e; return state.enemies.find(x => x.hp > 0) || null; }
+
+function loadEnemies(defs) { state.enemies = defs.map(d => ({ def:d, hp:d.maxHp, armor:0, poison:0, intent:null, hit:false })); state.focus = 0; }
+function resetBattleBoard() {
+  state.turn = 0; state.teamBlock = 0; state.rerollsLeft = CFG.rules.rerollsPerTurn;
+  state.dice.forEach(d => { d.faceIndex = null; d.locked = false; });
+  state.heroes.forEach(h => h.hit = false);
+  state.phase = "idle";
+}
+
+/* ---------------- 敌方意图 ---------------- */
+function declareIntents() {
+  state.enemies.forEach((e, ei) => {
+    if (e.hp <= 0) { e.intent = null; e.hit = false; return; }
+    const pat = e.def.intents[state.turn % e.def.intents.length];
+    const it = { ...pat };
+    if (it.type === "atk") {
+      const alive = aliveIdx();
+      if (it.fixedTarget != null && isAlive(heroOf(it.fixedTarget))) it.targetIdx = it.fixedTarget;
+      else it.targetIdx = alive[(state.turn + ei) % alive.length];
+    }
+    e.intent = it;
+  });
+  setDefaultFocus();
+}
+function setDefaultFocus() {
+  let best = -1, bi = -1;
+  state.enemies.forEach((e, i) => { if (e.hp <= 0) return; const d = e.intent && e.intent.type === "atk" ? e.intent.value : 0; if (d > best) { best = d; bi = i; } });
+  if (bi < 0) bi = state.enemies.findIndex(e => e.hp > 0);
+  state.focus = bi < 0 ? 0 : bi;
+}
+function setFocus(i) {
+  if (state.phase !== "idle" && state.phase !== "rolled") return;
+  if (state.enemies[i] && state.enemies[i].hp > 0) { state.focus = i; render(); }
+}
+
+/* ---------------- 新手引导 ---------------- */
+const TUT_ATK = { t1_roll:{0:5,1:2,2:2}, t2_roll:{0:1,1:2,2:2}, t2_finish:{0:5,1:2,2:2} };
+const TUT_DEF = { 0:2, 1:0, 2:4 };
+function tutStepNo() { const s = state.tut ? state.tut.step : ""; return s.startsWith("t1") ? 1 : s === "t_forge" ? 3 : 2; }
+function tutGate() {
+  const st = state.tut ? state.tut.step : null;
+  return {
+    canRoll:    state.phase==="idle"   && (st==="t1_roll"||st==="t2_roll"||st==="t2_finish"),
+    canReroll:  state.phase==="rolled" && st==="t2_lock",
+    canResolve: state.phase==="rolled" && (st==="t1_settle"||st==="t2_settle"||st==="t2_finish"),
+    canLock:    state.phase==="rolled" && st==="t2_lock",
+  };
+}
+function startTutorial() { state.mode = "tutorial"; state.tut = { step:"t1_roll" }; loadEnemies([CFG.tutorial.dummy]); resetBattleBoard(); declareIntents(); render(); }
+function startRun() {
+  state.mode = "run"; state.tut = null; state.run.stage = 0;
+  loadEnemies(CFG.run.stages[0]);
+  state.heroes.forEach(h => { h.hp = charOf(h.charId).maxHp; });
+  resetBattleBoard(); state.reward = null; declareIntents(); render();
+}
+
+/* ---------------- 玩家行为 ---------------- */
+function roll() {
+  if (state.phase !== "idle") return;
+  if (state.mode === "tutorial" && !tutGate().canRoll) return;
+  sendStarted();
+  const rig = state.mode === "tutorial" ? TUT_ATK[state.tut.step] : null;
+  state.dice.forEach((d, i) => { if (!isAlive(heroOf(i))) return; d.faceIndex = rig ? rig[i] : rand6(); d.locked = false; });
+  state.rerollsLeft = CFG.rules.rerollsPerTurn;
+  state.phase = "rolled";
+  if (state.mode === "tutorial") {
+    if (state.tut.step === "t1_roll") state.tut.step = "t1_settle";
+    else if (state.tut.step === "t2_roll") state.tut.step = "t2_lock";
+  }
+  render({ animateAll: true });
+}
+function reroll() {
+  if (state.phase !== "rolled" || state.rerollsLeft <= 0) return;
+  if (state.mode === "tutorial" && !tutGate().canReroll) return;
+  state.dice.forEach((d, i) => { if (!isAlive(heroOf(i)) || d.locked) return; d.faceIndex = state.mode === "tutorial" ? TUT_DEF[i] : rand6(); });
+  state.rerollsLeft -= 1;
+  if (state.mode === "tutorial" && state.tut.step === "t2_lock") state.tut.step = "t2_settle";
+  render({ animateUnlocked: true });
+}
+function toggleLock(idx) {
+  if (state.phase !== "rolled" || !isAlive(heroOf(idx))) return;
+  if (state.mode === "tutorial" && !tutGate().canLock) return;
+  state.dice[idx].locked = !state.dice[idx].locked;
+  render();
+}
+
+/* ---------------- 结算数学 ---------------- */
+function pickAdjacentFace(i) {
+  const cands = [];
+  [i-1, i+1].forEach(j => {
+    if (j < 0 || j >= state.dice.length || !isAlive(heroOf(j))) return;
+    const f = faceData(j, state.dice[j].faceIndex);
+    if (!f || f.type === "empty" || f.copyAdj) return;
+    cands.push(f);
+  });
+  if (!cands.length) return null;
+  cands.sort((a,b) => (b.value||0) - (a.value||0));
+  return cands[0];
+}
+function accFace(s, f) {
+  if (f.type && f.type !== "empty") s[f.type] += f.value;
+  if (f.lifesteal) s.lifesteal += f.lifesteal;
+  if (f.poison)    s.poison    += f.poison;
+  if (f.el === "wind")    { s.windCount++; s.windVal += f.value; }
+  if (f.el === "thunder") { s.thunCount++; s.thunVal += f.value; }
+}
+function sumDice() {
+  const s = { atk:0, def:0, heal:0, lifesteal:0, poison:0, gold:0, defZero:false, windCount:0, windVal:0, thunCount:0, thunVal:0 };
+  state.dice.forEach((d, i) => {
+    if (!isAlive(heroOf(i))) return;
+    const f = faceData(i, d.faceIndex);
+    if (!f || f.type === "empty") return;
+    if (f.gold) s.gold += f.gold;
+    if (f.defZero) s.defZero = true;
+    if (f.copyAdj) { const nb = pickAdjacentFace(i); if (nb) accFace(s, nb); return; }
+    accFace(s, f);
+  });
+  if (s.defZero) s.def = 0;
+  return s;
+}
+// 攻击链：先打集火目标，溢出连斩下一个存活敌人
+function applyDamageChain(amount, ignoreArmor) {
+  let dmg = amount; if (dmg <= 0) return;
+  const order = [];
+  if (state.enemies[state.focus] && state.enemies[state.focus].hp > 0) order.push(state.focus);
+  state.enemies.forEach((e, i) => { if (i !== state.focus && e.hp > 0) order.push(i); });
+  for (const i of order) {
+    if (dmg <= 0) break;
+    const e = state.enemies[i];
+    if (!ignoreArmor) { const ab = Math.min(e.armor, dmg); e.armor -= ab; dmg -= ab; }
+    if (dmg <= 0) break;
+    const hd = Math.min(e.hp, dmg); e.hp -= hd; dmg -= hd; e.hit = true;
+  }
+}
+
+function resolve() {
+  if (state.phase !== "rolled") return;
+  if (state.mode === "tutorial" && !tutGate().canResolve) return;
+  state.phase = "resolving";
+  const s = sumDice();
+  render();
+
+  let trueDmg = 0;
+  if (s.windCount >= 2) trueDmg += s.windVal;
+  if (s.thunCount > 0)  trueDmg += s.thunCount;
+
+  if (s.atk)    spawnOrb("orb-atk",  "⚔️", s.atk,  "#f97316");
+  if (trueDmg)  spawnOrb("orb-atk",  "✦",  trueDmg,"#9333ea");
+  if (s.poison) spawnOrb("orb-atk",  "🐍", s.poison,"#65a30d");
+  if (s.def)    spawnOrb("orb-def",  "🛡️", s.def,  "#2563eb");
+  if (s.heal || s.lifesteal) spawnOrb("orb-heal","💚", s.heal + s.lifesteal, "#16a34a");
+
+  setTimeout(() => {
+    applyDamageChain(s.atk, false);
+    if (trueDmg) applyDamageChain(trueDmg, true);
+    const fe = focusEnemy();
+    if (fe && s.poison) fe.poison += s.poison;
+    state.teamBlock += s.def;
+    if (s.heal)      healLowest(s.heal);
+    if (s.lifesteal) healLowest(s.lifesteal);
+    if (s.gold)      { state.gold += s.gold; floatGold(s.gold); }
+    render();
+
+    if (allEnemiesDead()) { setTimeout(onAllDead, 420); return; }
+    setTimeout(enemyAct, 480);
+  }, 420);
+}
+
+function healLowest(amount) {
+  const alive = aliveIdx(); if (!alive.length) return;
+  let t = alive[0];
+  alive.forEach(i => { if (heroOf(i).hp < heroOf(t).hp) t = i; });
+  heroOf(t).hp = Math.min(charOf(heroOf(t).charId).maxHp, heroOf(t).hp + amount);
+}
+
+/* ---------------- 敌方回合 ---------------- */
+function enemyAct() {
+  state.enemies.forEach(e => { if (e.hp > 0 && e.poison > 0) { e.hp = Math.max(0, e.hp - e.poison); e.poison = Math.max(0, e.poison - 1); e.hit = true; } });
+  render();
+  if (allEnemiesDead()) { setTimeout(onAllDead, 420); return; }
+
+  state.enemies.forEach(e => {
+    if (e.hp <= 0 || !e.intent) return;
+    const it = e.intent;
+    if (it.type === "def") { e.armor += it.value; return; }
+    let dmg = it.value;
+    const blocked = Math.min(state.teamBlock, dmg);
+    state.teamBlock -= blocked; dmg -= blocked;
+    let ti = it.targetIdx;
+    if (!isAlive(heroOf(ti))) { const a = aliveIdx(); if (a.length) ti = a[0]; }
+    if (dmg > 0 && isAlive(heroOf(ti))) { heroOf(ti).hp = Math.max(0, heroOf(ti).hp - dmg); heroOf(ti).hit = true; }
+  });
+  render();
+
+  if (aliveIdx().length === 0) { state.phase = "lose"; setTimeout(render, 380); return; }
+  setTimeout(startTurn, 480);
+}
+
+function startTurn() {
+  state.turn += 1;
+  state.teamBlock = 0;
+  state.enemies.forEach(e => e.hit = false);
+  state.heroes.forEach(h => h.hit = false);
+  state.dice.forEach(d => { d.faceIndex = null; d.locked = false; });
+  state.rerollsLeft = CFG.rules.rerollsPerTurn;
+  state.phase = "idle";
+  if (state.mode === "tutorial" && state.tut.step === "t2_settle") state.tut.step = "t2_finish";
+  declareIntents();
+  render();
+}
+
+/* ---------------- 胜利路由 ---------------- */
+function onAllDead() {
+  if (state.mode === "tutorial") return tutOnEnemyDead();
+  state.score += state.enemies.reduce((a, e) => a + e.def.maxHp, 0);
+  if (state.run.stage >= CFG.run.stages.length - 1) { state.phase = "runwin"; render(); return; }
+  enterForge();
+}
+function tutOnEnemyDead() {
+  if (state.enemies[0].def.id === "dummy") {
+    loadEnemies([CFG.tutorial.wolf]); resetBattleBoard();
+    state.tut.step = "t2_roll"; declareIntents(); render();
+  } else { enterTutorialForge(); }
+}
+
+/* ---------------- 锻造工坊 ---------------- */
+function weightedPick3() {
+  const pool = CFG.stickers.map(s => ({ s, w: CFG.rarityWeight[s.rarity] || 1 }));
+  const out = [];
+  for (let k = 0; k < 3 && pool.length; k++) {
+    const tot = pool.reduce((a,b) => a + b.w, 0);
+    let r = Math.random() * tot, idx = 0;
+    for (let i = 0; i < pool.length; i++) { r -= pool[i].w; if (r <= 0) { idx = i; break; } }
+    out.push(pool[idx].s); pool.splice(idx, 1);
+  }
+  return out;
+}
+function enterForge() { state.reward = { options: weightedPick3(), picked:null, applied:false, activeHero:0, appliedAt:null, tut:false }; state.phase = "forge"; render(); }
+function enterTutorialForge() {
+  const shield = { id:"ironwall", name:"铁皮护盾", icon:"🛡️", rarity:"common", desc:"护盾 +3", face:{type:"def",value:3,icon:"🛡️"} };
+  const others = CFG.stickers.filter(s => s.rarity !== "wonder").slice(0, 2);
+  state.reward = { options:[shield, others[0], others[1]], picked:shield, applied:false, activeHero:2, appliedAt:null, tut:true };
+  state.tut.step = "t_forge"; state.phase = "forge"; render();
+}
+function pickSticker(i) { if (!state.reward || state.reward.applied || state.reward.tut) return; state.reward.picked = state.reward.options[i]; render(); }
+function applyFace(hi, fi) {
+  const r = state.reward;
+  if (!r || !r.picked || r.applied) return;
+  if (r.tut && !(hi === 2 && fi === 3)) return;
+  state.heroes[hi].faces[fi] = JSON.parse(JSON.stringify(r.picked.face));
+  r.applied = true; r.appliedAt = { hi, fi }; render();
+}
+function depart() {
+  if (!state.reward || !state.reward.applied) return;
+  if (state.mode === "tutorial") return startRun();
+  nextBattle();
+}
+function nextBattle() {
+  state.run.stage += 1;
+  loadEnemies(CFG.run.stages[state.run.stage]);
+  state.heroes.forEach(h => { h.hp = charOf(h.charId).maxHp; });
+  resetBattleBoard(); state.reward = null; declareIntents(); render();
+}
+
+/* ========================================================================
+   视图层
+======================================================================== */
+document.body.innerHTML = '<div id="root"></div><div id="fxlayer"></div>';
+const root = document.getElementById("root");
+const fxLayer = document.getElementById("fxlayer");
+
+function spawnOrb(cls, emoji, val, color) {
+  const o = document.createElement("div");
+  o.className = `orb ${cls}`; o.style.color = color;
+  o.innerHTML = `${emoji}<span>${val}</span>`;
+  fxLayer.appendChild(o); setTimeout(() => o.remove(), 620);
+}
+function floatGold(n) { const o = document.createElement("div"); o.className = "goldfloat"; o.textContent = `💰 +${n}`; fxLayer.appendChild(o); setTimeout(() => o.remove(), 1000); }
+
+function render(opts = {}) {
+  if (state.phase === "title") { root.innerHTML = titleScreen(); bind(); return; }
+  if (state.phase === "forge") { root.innerHTML = forgeScreen(); bind(); return; }
+  if (state.phase === "lose" || state.phase === "runwin") { sendFinished(); root.innerHTML = endScreen(); bind(); return; }
+
+  const tutorial = state.mode === "tutorial";
+  const canReroll = state.phase === "rolled" && state.rerollsLeft > 0;
+  root.innerHTML = `
+    <div class="screen w-full flex flex-col max-w-md mx-auto px-4 py-3">
+      <div class="flex-1 flex flex-col items-center justify-start pt-1 min-h-0">
+        <div class="text-[11px] muted tracking-[0.2em] ultra mb-2">
+          ${tutorial ? `🎓 新手教学 ${tutStepNo()}/3` : `关卡 ${state.run.stage + 1}/${CFG.run.stages.length}`} · 第 ${state.turn + 1} 回合${state.gold>0?` · 💰${state.gold}`:""}
+        </div>
+        ${enemyView()}
+        <div class="flex-1"></div>
+        ${partyView()}
+      </div>
+      <div class="shrink-0">
+        ${tutorial ? `<div class="coach text-[13px] ultra mb-2 flex items-start gap-2"><span class="text-base">👉</span><span>${coachMsg()}</span></div>` : ""}
+        <div class="text-center text-[12px] ink mb-2 h-5">${tutorial ? "" : hint(canReroll)}</div>
+        <div class="tray w-full p-3 mb-3">
+          <div class="grid grid-cols-3 gap-3">${state.dice.map((d,i)=>dieCard(d,i,opts)).join("")}</div>
+        </div>
+        <div class="w-full flex gap-3">${buttons(canReroll)}</div>
+        ${tutorial ? `<div class="text-center mt-2"><button data-act="skip" class="text-[11px] muted underline">跳过教学，直接冒险 →</button></div>` : ""}
+      </div>
+    </div>`;
+  bind();
+}
+
+function titleScreen() {
+  return `
+    <div class="screen flex flex-col items-center justify-center max-w-md mx-auto px-8 text-center">
+      <div class="text-7xl mb-3 pop">🎲</div>
+      <div class="text-4xl ultra title mb-1">哈奇方块骰</div>
+      <div class="text-sm muted tracking-[0.35em] ultra mb-7">命 运 锻 造</div>
+      <div class="panel-soft text-[13px] ink leading-relaxed px-5 py-4 mb-8 text-left">
+        🐷🥔🐧 三人小队，每人一颗六面骰<br>
+        🎯 看清各敌人<b class="title">意图</b>，点敌人选<b class="title">集火目标</b><br>
+        🔒 <b class="title">锁定</b>好骰、<b class="title">重投</b>烂骰，把伤害分配到威胁上<br>
+        ⚒️ 打赢捡<b class="title">贴纸</b>，亲手把弱面捏成神器
+      </div>
+      <button data-act="start" class="arcade arcade-primary w-full py-4 text-lg mb-3 spot">▶ 开始游戏（含新手教学）</button>
+      <button data-act="adventure" class="text-[12px] muted underline">老手？跳过教学，直接冒险 →</button>
+    </div>`;
+}
+
+function coachMsg() {
+  return ({
+    t1_roll:   "欢迎来到命运锻造！点亮的【投掷】键——摇出你的三颗命运骰！",
+    t1_settle: "把数值砸向木桩！点【结算】，一击带走它 💥",
+    t2_roll:   "野狼盯上了薯霸，下回合要打 5 点！先【投掷】看看手气 🐺",
+    t2_lock:   "全是攻击、没有护盾！先点一颗攻击骰锁住 🔒，再点【重投】另外两颗去找盾",
+    t2_settle: "摇到护盾了！点【结算】，稳稳挡下野狼这一爪 🛡️",
+    t2_finish: "补刀！再投一波，结束这只野狼 ⚔️",
+  })[state.tut.step] || "";
+}
+
+function hint(canReroll) {
+  const multi = state.enemies.length > 1 ? ` · <span class="title">点敌人换🎯</span>` : "";
+  if (state.phase === "resolving") return "结算中…";
+  if (state.phase === "idle")      return "按下「投掷」开始本回合" + multi;
+  if (canReroll)                   return `点骰子<b class="title">锁定</b> · 重投 <b class="ultra title">${state.rerollsLeft}</b> 次` + multi;
+  return "重投用尽 —— 点「结算」打出这一手";
+}
+
+function enemyView() {
+  const list = state.enemies, n = list.length;
+  const emojiSize = n >= 3 ? "text-4xl" : n === 2 ? "text-5xl" : "text-6xl";
+  const barW = n >= 3 ? "w-16" : n === 2 ? "w-24" : "w-56";
+  return `<div class="flex items-end justify-center gap-3 w-full">` + list.map((e, i) => {
+    const def = e.def, alive = e.hp > 0, pct = Math.max(0, e.hp / def.maxHp * 100), focused = state.focus === i && alive;
+    const it = e.intent;
+    const badge = (alive && it)
+      ? (it.type === "atk"
+          ? `<span class="intent intent-atk">⚔️${it.value}→${charOf(heroOf(it.targetIdx).charId).name}</span>`
+          : (it.value > 0 ? `<span class="intent intent-def">🛡️+${it.value}</span>` : `<span class="intent intent-def">💤</span>`))
+      : "";
+    return `<div data-enemy="${i}" class="flex flex-col items-center ${alive?"cursor-pointer":"opacity-40"} ${e.hit?"shake":""}" style="max-width:33%">
+      <div class="mb-1 h-5 flex items-end">${badge}</div>
+      <div class="${emojiSize} ${e.hit?"flash":""} ${focused?"enemy-focus":""}" style="filter:drop-shadow(0 5px 0 rgba(150,100,60,.25))">${alive?def.emoji:"💥"}</div>
+      <div class="text-[11px] ultra ink mt-0.5 text-center leading-tight">${def.name}${e.armor>0?` <span style="color:#2563eb">🛡️${e.armor}</span>`:""}${e.poison>0?` <span style="color:#65a30d">🐍${e.poison}</span>`:""}</div>
+      <div class="bar ${barW} h-3 mt-0.5"><div class="bar-fill hp-enemy" style="width:${pct}%"></div><div class="absolute inset-0 flex items-center justify-center text-[9px] ultra text-white" style="text-shadow:0 1px 1px rgba(0,0,0,.35)">${e.hp}/${def.maxHp}</div></div>
+      <div class="h-4 text-[12px]">${focused?"🎯":""}</div>
+    </div>`;
+  }).join("") + `</div>`;
+}
+
+function partyView() {
+  return `
+    <div class="grid grid-cols-3 gap-2 w-full mb-1">
+      ${state.heroes.map((h,i)=>{
+        const c = charOf(h.charId), alive = isAlive(h), pct = Math.max(0, h.hp / c.maxHp * 100), low = pct <= 35;
+        return `<div class="flex flex-col items-center ${alive?"":"opacity-50"} ${h.hit?"shake":""}">
+          <div class="text-3xl ${alive?"":"grayscale"}">${alive?c.emoji:"💀"}</div>
+          <div class="text-[10px] ultra mt-0.5" style="color:${c.accent}">${c.name}</div>
+          <div class="bar w-full h-3 mt-0.5"><div class="bar-fill ${low?"hp-low":"hp-hero"}" style="width:${pct}%"></div>
+            <div class="absolute inset-0 flex items-center justify-center text-[9px] ultra text-white" style="text-shadow:0 1px 1px rgba(0,0,0,.35)">${alive?h.hp:0}</div></div>
+        </div>`;
+      }).join("")}
+    </div>
+    ${state.teamBlock>0?`<div class="text-[12px] ultra" style="color:#2563eb">🛡️ 全队护盾 ${state.teamBlock}</div>`:`<div class="h-4"></div>`}`;
+}
+
+function elBadge(f) { if (!f || !f.el) return ""; const e = CFG.elements[f.el]; return `<div class="el-badge" style="color:${e.color}">${e.icon}</div>`; }
+
+function dieCard(d, i, opts) {
+  const c = charOf(d.charId), alive = isAlive(heroOf(i));
+  if (!alive) return `<div class="die sealed relative flex items-center justify-center" style="aspect-ratio:1/1.02"><div class="seal-mark">🔒</div></div>`;
+  const f = faceData(i, d.faceIndex), rolled = f !== null;
+  const anim = (opts.animateAll || (opts.animateUnlocked && !d.locked)) && rolled ? "rolling" : "";
+  const ft = rolled ? CFG.faceTypes[f.type] : null;
+  const inner = rolled
+    ? `<div class="face-icon ${ft.cls}">${f.icon}</div><div class="face-num mt-0.5 ${ft.cls}">${f.type==="empty"?"–":f.value}</div><div class="text-[10px] mt-0.5 ${ft.cls} opacity-80 ultra">${ft.label}</div>${elBadge(f)}`
+    : `<div class="face-icon" style="color:#d8c4a6">?</div>`;
+  return `
+    <div data-die="${i}" class="die ${d.locked?"locked":""} ${anim} relative flex flex-col items-center justify-center" style="aspect-ratio:1/1.02">
+      <div class="absolute -top-2.5 left-1/2 -translate-x-1/2 text-[10px] ultra px-2 py-0.5 rounded-full bg-white border border-[#f0dcbf] whitespace-nowrap" style="color:${c.accent}">${c.emoji} ${c.name}</div>
+      ${inner}<div class="lock-mark">🔒</div>
+    </div>`;
+}
+
+function buttons(canReroll) {
+  if (state.phase === "resolving") return `<button disabled class="arcade arcade-primary flex-1 py-4 text-lg">结算中…</button>`;
+  if (state.mode === "tutorial") {
+    const g = tutGate();
+    if (state.phase === "idle")
+      return `<button data-act="roll" class="arcade arcade-primary flex-1 py-4 text-lg ${g.canRoll?"spot":""}" ${g.canRoll?"":"disabled"}>🎲 投 掷</button>`;
+    return `<button data-act="reroll" class="arcade arcade-steel px-5 py-4 text-base ${g.canReroll?"spot":""}" ${g.canReroll?"":"disabled"}>🔁 重投</button>
+            <button data-act="resolve" class="arcade arcade-go flex-1 py-4 text-lg ${g.canResolve?"spot":""}" ${g.canResolve?"":"disabled"}>⚔️ 结算</button>`;
+  }
+  if (state.phase === "idle")  return `<button data-act="roll" class="arcade arcade-primary flex-1 py-4 text-lg">🎲 投 掷</button>`;
+  if (canReroll) return `<button data-act="reroll" class="arcade arcade-primary flex-1 py-4 text-lg">🔁 重投(${state.rerollsLeft})</button>
+            <button data-act="resolve" class="arcade arcade-steel px-6 py-4 text-base">结算</button>`;
+  return `<button data-act="resolve" class="arcade arcade-go flex-1 py-4 text-lg">⚔️ 结 算</button>`;
+}
+
+/* ---- 锻造工坊 ---- */
+function forgeScreen() {
+  const r = state.reward, tut = r.tut;
+  const coach = tut
+    ? (r.applied ? "🎉 漂亮！这就是『命运锻造』——亲手把弱面捏成强面。出发，真正的冒险开始 →"
+                 : "🎁 战利品掉落！把【铁皮护盾】贴到墩弟<b>闪烁的空白面</b>上，补强它！")
+    : (r.applied ? "已贴上！点「出发」迎战下一关"
+                 : (r.picked ? "点骰子的某一面，把它覆盖掉" : "战利品三选一 · 先挑一张贴纸"));
+  const tabs = tut ? "" : `<div class="flex gap-2 justify-center mb-3">${state.heroes.map((h,i)=>heroTab(i)).join("")}</div>`;
+  return `
+    <div class="screen flex flex-col max-w-md mx-auto px-4 py-3">
+      <div class="text-center mb-2">
+        <div class="text-2xl ultra title">⚒️ 命运锻造</div>
+        ${tut ? `<div class="coach text-[12px] ultra mt-2 text-left">${coach}</div>` : `<div class="text-[12px] muted mt-1">${coach}</div>`}
+      </div>
+      <div class="grid grid-cols-3 gap-2 mb-3">${r.options.map((s,i)=>stickerCard(s,i)).join("")}</div>
+      <div class="tray flex-1 p-3 min-h-0 flex flex-col">
+        ${tabs}
+        <div class="flex-1 flex items-center justify-center">${crossNet(r.activeHero)}</div>
+        <div class="text-center text-[11px] muted mt-1">虚线闪烁 = 建议覆盖的弱面</div>
+      </div>
+      <button data-act="depart" class="arcade ${r.applied?"arcade-go spot":""} mt-3 py-4 text-lg" ${r.applied?"":"disabled"}>${r.applied?(tut?"⚔️ 出发冒险 →":"⚔️ 出 发 →"):"先贴一张贴纸"}</button>
+    </div>`;
+}
+function stickerCard(s, i) {
+  const r = state.reward, sel = r.picked && r.picked.id === s.id;
+  const rc = { common:"#b08a55", rare:"#9333ea", wonder:"#f0790f" }[s.rarity] || "#b08a55";
+  const dim = (r.applied || r.tut) && !sel;
+  return `<div data-pick="${i}" class="sticker ${sel?"sticker-sel":""}" style="--rc:${rc};${dim?"opacity:.4":""}">
+    <div class="text-3xl">${s.icon}</div><div class="text-[11px] ultra mt-1" style="color:${rc}">${s.name}</div><div class="text-[9px] muted mt-0.5 leading-tight">${s.desc}</div>
+  </div>`;
+}
+function heroTab(i) {
+  const c = charOf(state.heroes[i].charId), act = state.reward.activeHero === i;
+  return `<button data-hero="${i}" class="px-3 py-1 rounded-full text-[12px] ultra border-2 ${act?"":"opacity-50"}" style="border-color:${c.accent};color:${c.accent};background:${act?"rgba(0,0,0,.04)":"transparent"}">${c.emoji} ${c.name}</button>`;
+}
+function crossNet(hi) {
+  const faces = state.heroes[hi].faces, r = state.reward, pos = ["2/1","1/2","2/2","3/2","2/3","2/4"];
+  return `<div class="grid gap-1.5" style="grid-template-columns:repeat(3,54px);grid-template-rows:repeat(4,54px)">
+    ${faces.map((f,fi)=>{
+      const [col,row] = pos[fi].split("/"), ft = CFG.faceTypes[f.type], isEmpty = f.type === "empty";
+      const canApply = r.picked && !r.applied && (!r.tut || (hi === 2 && fi === 3));
+      const applied = r.appliedAt && r.appliedAt.hi === hi && r.appliedAt.fi === fi;
+      return `<div data-face="${fi}" class="die-mini ${canApply?"can-apply":""} ${isEmpty&&canApply?"weak":""} ${applied?"pop just-applied":""}" style="grid-column:${col};grid-row:${row}">
+        <div class="text-2xl ${ft.cls}">${f.icon}</div><div class="text-sm ultra ${ft.cls}">${isEmpty?"–":f.value}</div>${elBadge(f)}
+      </div>`;
+    }).join("")}
+  </div>`;
+}
+
+function endScreen() {
+  const win = state.phase === "runwin", earned = state.score + state.gold + (win ? 30 : 0);
+  return `
+    <div class="screen w-full flex flex-col items-center justify-center max-w-md mx-auto px-6 text-center">
+      <div class="text-7xl mb-4 pop">${win?"🏆":"💪"}</div>
+      <div class="text-3xl ultra mb-2" style="color:${win?"#f0790f":"#ef4444"};text-shadow:0 2px 0 rgba(255,255,255,.6)">${win?"通 关 胜 利":"全 队 阵 亡"}</div>
+      <div class="text-sm muted mb-2">${win?"你把破骰子捏成了神器，击穿了 BOSS！":"再来一局，换条锻造路线试试"}</div>
+      <div class="text-[13px] ultra title mb-8">本局积分 ${earned}${state.gold>0?` · 💰${state.gold}`:""}</div>
+      <button data-act="restart" class="arcade ${win?"arcade-go":"arcade-primary"} px-10 py-4 text-lg">🔄 再来一局</button>
+    </div>`;
+}
+
+/* ---- 事件绑定 ---- */
+function bind() {
+  root.querySelectorAll("[data-die]").forEach(el => el.addEventListener("click", () => toggleLock(+el.dataset.die)));
+  root.querySelectorAll("[data-enemy]").forEach(el => el.addEventListener("click", () => setFocus(+el.dataset.enemy)));
+  root.querySelectorAll("[data-pick]").forEach(el => el.addEventListener("click", () => pickSticker(+el.dataset.pick)));
+  root.querySelectorAll("[data-hero]").forEach(el => el.addEventListener("click", () => { state.reward.activeHero = +el.dataset.hero; render(); }));
+  root.querySelectorAll("[data-face]").forEach(el => el.addEventListener("click", () => applyFace(state.reward.activeHero, +el.dataset.face)));
+  const acts = { start: startTutorial, adventure: startRun, roll, reroll, resolve, depart, skip: startRun, restart: newGame };
+  root.querySelectorAll("[data-act]").forEach(el => el.addEventListener("click", () => acts[el.dataset.act]?.()));
+}
+
+/* ---- 微信/移动端真实视口高度 ---- */
+function setAppH() { try { document.documentElement.style.setProperty("--app-h", window.innerHeight + "px"); } catch (e) {} }
+setAppH();
+window.addEventListener("resize", setAppH);
+window.addEventListener("orientationchange", setAppH);
+
+/* ---- 启动 ---- */
+newGame();
+sendLoaded();
+</script>
+
+</html>

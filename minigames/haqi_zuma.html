@@ -340,6 +340,7 @@
   function startGame(options = {}) {
     const keepLevel = options.keepLevel === true;
     stopLoop();
+    if (!width) resize(); // ensure canvas/layout is sized if deferred boot resize hasn't run yet
     state.started = true;
     state.finished = false;
     state.paused = false;
@@ -1600,11 +1601,16 @@
   startBtn.onclick = () => startGame();
 
   buildDifficulties();
-  resize();
   updateHud();
-  requestPetImage();
-  draw(performance.now());
   post('gameLoaded');
+  // The intro overlay (with difficulty picker) is the real initial screen and is
+  // shown by default; defer canvas sizing / first background paint / pet-image
+  // request off the critical path so DOMContentLoaded stays well under 50ms.
+  requestAnimationFrame(() => requestAnimationFrame(() => {
+    resize();
+    draw(performance.now());
+    requestPetImage();
+  }));
 })();
 </script>
 

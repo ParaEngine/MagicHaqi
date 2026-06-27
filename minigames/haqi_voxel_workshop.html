@@ -1,0 +1,1621 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+  <title>体素微雕工坊</title>
+  <script src="https://cdn.keepwork.com/keepwork/cdn/tailwindcss@3.4.16.js"></script>
+</head>
+
+<body class="bg-slate-950 overflow-hidden select-none" style="touch-action:none;"></body>
+
+<script>
+// ---- game_config: pure data, no functions / DOM ----
+// palette: paracraft-style block colors. index 0 = empty.
+// Each color: { base, light, dark } -> right face / top face / left face shading.
+game_config = {
+  difficulty: "normal",          // "easy" | "normal" | "hard"
+  palette: [
+    { id: "empty",  base: "transparent", light: "transparent", dark: "transparent" },
+    { id: "grass",  base: "#4ade80", light: "#86efac", dark: "#16a34a" },   // 1 green
+    { id: "stone",  base: "#94a3b8", light: "#cbd5e1", dark: "#475569" },   // 2 gray
+    { id: "wood",   base: "#d97706", light: "#fbbf24", dark: "#92400e" },   // 3 brown
+    { id: "water",  base: "#38bdf8", light: "#7dd3fc", dark: "#0284c7" },   // 4 blue
+    { id: "roof",   base: "#ef4444", light: "#fca5a5", dark: "#b91c1c" },   // 5 red
+    { id: "sand",   base: "#fde047", light: "#fef08a", dark: "#ca8a04" },   // 6 yellow
+    { id: "leaf",   base: "#22c55e", light: "#4ade80", dark: "#15803d" },   // 7 leaf-green
+    { id: "magic",  base: "#a855f7", light: "#d8b4fe", dark: "#7e22ce" },   // 8 purple
+    { id: "snow",   base: "#f1f5f9", light: "#ffffff", dark: "#cbd5e1" },   // 9 white
+    { id: "night",  base: "#1e293b", light: "#475569", dark: "#0f172a" },   // 10 dark
+    { id: "pink",   base: "#ec4899", light: "#f9a8d4", dark: "#be185d" }    // 11 pink
+  ],
+  // Each level: 2D color-index matrix (0 = empty). Used as the build floor-plan / blueprint.
+  levels: [
+    {
+      id: 1, name: "小镇广场", theme: "广场旗帜与喷泉", hint: "中央立一面小旗，下方是喷泉的水池。",
+      time: 180,
+      grid: [
+        [0,0,0,0,0,5,5,5,0,0,0,0],
+        [0,0,0,0,0,5,9,5,0,0,0,0],
+        [0,0,0,0,0,5,5,5,0,0,0,0],
+        [0,0,0,0,3,3,3,3,3,0,0,0],
+        [0,0,0,0,0,3,3,3,0,0,0,0],
+        [0,0,0,0,0,3,3,3,0,0,0,0],
+        [0,0,0,4,4,4,4,4,4,0,0,0],
+        [0,0,0,4,9,9,9,9,9,4,0,0],
+        [0,0,0,4,9,4,4,4,9,4,0,0],
+        [0,0,0,4,4,4,4,4,4,4,0,0],
+        [0,0,0,0,2,2,2,2,2,0,0,0],
+        [0,0,0,0,2,2,2,2,2,0,0,0]
+      ]
+    },
+    {
+      id: 2, name: "魔法学院", theme: "尖顶魔法塔楼", hint: "紫色尖顶下是石砌的塔身。",
+      time: 200,
+      grid: [
+        [0,0,0,0,0,8,0,0,0,0,0,0],
+        [0,0,0,0,0,8,8,0,0,0,0,0],
+        [0,0,0,0,8,8,8,8,0,0,0,0],
+        [0,0,0,0,0,8,8,0,0,0,0,0],
+        [0,0,0,0,2,2,2,2,2,0,0,0],
+        [0,0,0,0,2,9,9,9,2,0,0,0],
+        [0,0,0,0,2,9,8,9,2,0,0,0],
+        [0,0,0,0,2,9,9,9,2,0,0,0],
+        [0,0,0,0,2,2,2,2,2,0,0,0],
+        [0,0,0,2,2,2,2,2,2,2,0,0],
+        [0,0,0,2,3,3,3,3,3,2,0,0],
+        [0,0,0,2,2,2,2,2,2,2,0,0]
+      ]
+    },
+    {
+      id: 3, name: "彩虹滑梯", theme: "游乐场彩虹滑梯", hint: "一道彩虹斜着滑下草地。",
+      time: 200,
+      grid: [
+        [0,0,0,0,0,0,0,0,0,0,0,0],
+        [5,5,5,5,5,5,5,5,5,5,5,5],
+        [0,6,6,6,6,6,6,6,6,6,6,0],
+        [0,0,4,4,4,4,4,4,4,4,4,0],
+        [0,0,0,1,1,1,1,1,1,1,1,0],
+        [0,0,0,0,7,7,7,7,7,7,7,0],
+        [0,0,0,0,0,8,8,8,8,8,8,0],
+        [0,0,0,0,0,0,11,11,11,11,11,0],
+        [0,0,0,0,0,0,0,2,2,2,2,0],
+        [0,0,0,0,0,0,0,0,2,2,2,0],
+        [0,0,0,0,0,0,0,0,0,2,2,0],
+        [0,0,0,0,0,0,0,0,0,0,2,0]
+      ]
+    },
+    {
+      id: 4, name: "阳光海滩", theme: "棕榈树与太阳", hint: "右上角是太阳，左下是一棵棕榈树。",
+      time: 220,
+      grid: [
+        [0,0,0,0,0,0,0,0,0,6,6,0],
+        [0,0,0,0,0,0,0,0,6,6,6,6],
+        [0,0,0,0,0,0,0,0,0,6,6,0],
+        [0,0,0,0,0,0,0,0,0,0,0,0],
+        [0,0,0,0,0,0,0,0,0,0,0,0],
+        [0,0,0,0,0,0,0,0,0,0,0,0],
+        [0,0,0,3,0,0,0,0,0,0,0,0],
+        [0,0,3,0,0,0,0,0,0,0,0,0],
+        [0,3,0,0,0,7,7,7,7,7,0,0],
+        [3,0,0,0,7,7,7,7,7,7,7,0],
+        [0,0,0,0,0,0,0,0,0,0,0,0],
+        [0,0,0,0,0,0,0,0,0,0,0,0]
+      ]
+    },
+    {
+      id: 5, name: "抱抱龙", theme: "哈奇小镇的抱抱龙", hint: "一只绿色小龙的正面像。",
+      time: 240,
+      grid: [
+        [0,0,0,0,0,0,0,0,0,0,0,0],
+        [0,0,1,1,0,0,0,0,1,1,0,0],
+        [0,0,1,9,1,0,0,1,9,1,0,0],
+        [0,0,1,1,1,1,1,1,1,1,0,0],
+        [0,0,0,1,1,8,8,1,1,0,0,0],
+        [0,0,0,1,1,1,1,1,1,0,0,0],
+        [0,0,0,1,1,1,1,1,1,0,0,0],
+        [0,0,0,1,0,1,1,0,1,0,0,0],
+        [0,0,0,1,0,1,1,0,1,0,0,0],
+        [0,0,0,0,0,1,1,0,0,0,0,0],
+        [0,0,0,0,0,3,3,0,0,0,0,0],
+        [0,0,0,0,3,3,3,3,0,0,0,0]
+      ]
+    },
+    {
+      id: 6, name: "魔法密林", theme: "大树与蘑菇房", hint: "一棵大树旁立着红顶蘑菇房。",
+      time: 260,
+      grid: [
+        [0,0,0,7,7,7,0,0,0,0,0,0],
+        [0,0,7,7,7,7,7,0,0,5,5,5],
+        [0,7,7,7,7,7,7,7,0,5,9,5],
+        [0,0,7,7,7,7,7,0,0,5,5,5],
+        [0,0,0,3,3,3,0,0,0,9,9,9],
+        [0,0,0,3,3,3,0,0,0,9,3,9],
+        [0,0,0,3,3,3,0,0,0,9,9,9],
+        [0,0,0,3,3,3,0,0,0,3,3,3],
+        [0,0,2,2,2,2,2,0,2,2,2,2],
+        [0,2,2,2,2,2,2,2,2,2,2,2],
+        [0,2,1,1,2,2,2,1,1,2,2,2],
+        [0,0,1,1,0,0,0,1,1,0,0,0]
+      ]
+    }
+  ],
+  difficulties: {
+    easy:   { gridSize: 12, holoOpacity: 1.0,  hintReveals: 5, timeBonus: true,  label: "easy" },
+    normal: { gridSize: 12, holoOpacity: 0.7,  hintReveals: 3, timeBonus: true,  label: "normal" },
+    hard:   { gridSize: 12, holoOpacity: 0.45, hintReveals: 1, timeBonus: false, label: "hard" }
+  },
+  scoring: {
+    baseReward: 30,
+    accuracyWeight: 100,
+    completionWeight: 60,
+    timeBonus: 40,
+    levelBonus: 8,
+    comboWeight: 4
+  },
+  // ---- "Creative repair" tuning ----
+  winThreshold: 80,   // fuzzy completion %: once overlap correctness >= this, Auto-Magic kicks in.
+  // life effect interface: maps a palette index -> a living particle emitter spawned from each
+  // surface (top-exposed) cell of that color once the model is repaired. Easy to extend per color.
+  lifeRules: {
+    "4":  { kind: "water",   rate: 0.020 },   // water -> fountain spray
+    "8":  { kind: "sparkle", rate: 0.012 },   // magic -> purple sparkles
+    "6":  { kind: "glow",    rate: 0.007 },   // sand/yellow -> warm lamp glow
+    "7":  { kind: "leaf",    rate: 0.009 },   // leaf -> drifting leaves
+    "11": { kind: "heart",   rate: 0.009 },   // pink -> floating hearts
+    "9":  { kind: "sparkle", rate: 0.005 }    // snow/white -> faint twinkle
+  },
+  // DIY blind-box decoration pieces handed out after the model comes alive.
+  decorPool: [
+    { id: "flower",   emoji: "🌷", base: "#22c55e" },
+    { id: "mushroom", emoji: "🍄", base: "#ef4444" },
+    { id: "dragon",   emoji: "🐲", base: "#4ade80" },
+    { id: "cone",     emoji: "🚧", base: "#f59e0b" },
+    { id: "star",     emoji: "⭐", base: "#fde047" },
+    { id: "heart",    emoji: "💗", base: "#ec4899" },
+    { id: "lantern",  emoji: "🏮", base: "#dc2626" }
+  ]
+};
+</script>
+
+<script>
+// ---- art_assets: empty (game uses only internal data), but section must exist ----
+art_assets = [];
+</script>
+
+<script defer>
+(function () {
+  'use strict';
+
+  // ---- i18n ----
+  const I18N = {
+    zhCN: {
+      title: '体素微雕工坊',
+      level: '关卡', best: '最佳', accuracy: '准确率', completion: '完成度', combo: '连击',
+      overlayTitle: '体素微雕工坊',
+      overlayText: '悬浮底座上漂着一张半透明的全息蓝图——哈奇小镇的地标。看清它的结构，用左下角清单里有限的方块，把实体一块块砸落拼搭出来。100% 还原后即可拍照分享！',
+      startBtn: '开始搭建', continueBtn: '继续搭建',
+      diffEasy: '轻松', diffNormal: '经典', diffHard: '困难',
+      levelSelectTitle: '选择关卡',
+      winTitle: '微雕完成！',
+      winText: 'Lv.{level} {name}：准确率 {accuracy}%，最高连击 ×{combo}，用时 {seconds}s。',
+      newBestText: '🎉 刷新了最佳纪录！',
+      nextLevel: '下一关', replay: '重玩本关', backToMenu: '回主菜单',
+      noHintLeft: '提示次数已用完', hintRevealed: '已为你砸下一块 ✨',
+      ghostHidden: '蓝图已隐藏', ghostShown: '蓝图已显示',
+      cleared: '已拆除全部方块', noMaterial: '这种方块用完啦',
+      cannotUndo: '没有可撤销的操作', cannotRedo: '没有可重做的操作',
+      levelLocked: '请先完成前一关',
+      materialsLabel: '建材清单',
+      shareBtn: '拍照分享', rotateBtn: '转视角', ghostBtn: '蓝图', hintBtn: '提示',
+      undoBtn: '撤销', redoBtn: '重做', clearBtn: '拆除',
+      allLevelsDone: '🎉 全部关卡完成！你是真正的微雕大师！',
+      photoSaved: '已生成 拍立得 分享图 📸',
+      luckSign: '大吉大利', petCheer: '墩弟为你喝彩！',
+      autoFixToast: '✨ 自动抛光！帮你补全了剩下的部分',
+      modelAlive: '模型活过来啦！',
+      decorTitle: '🎁 彩蛋点缀',
+      decorHint: '把彩蛋方块摆到底盘空地上，做出独一无二的作品吧！',
+      finishBtn: '完成结算',
+      winTextRepair: 'Lv.{level} {name}：你亲手还原了 {accuracy}%，最高连击 ×{combo}，剩下的由魔法自动抛光完成 ✨',
+      seconds: '秒'
+    },
+    enUS: {
+      title: 'Voxel Workshop',
+      level: 'Level', best: 'Best', accuracy: 'Accuracy', completion: 'Done', combo: 'Combo',
+      overlayTitle: 'Voxel Workshop',
+      overlayText: 'A glowing holographic blueprint of a Haqi-Town landmark floats over the platform. Read its shape, then drop blocks from your limited materials list to rebuild it solid. Reach 100% to snap a square photo!',
+      startBtn: 'Start Building', continueBtn: 'Continue',
+      diffEasy: 'Easy', diffNormal: 'Classic', diffHard: 'Hard',
+      levelSelectTitle: 'Select Level',
+      winTitle: 'Sculpture Complete!',
+      winText: 'Lv.{level} {name}: accuracy {accuracy}%, best combo x{combo}, time {seconds}s.',
+      newBestText: '🎉 New best score!',
+      nextLevel: 'Next', replay: 'Replay', backToMenu: 'Menu',
+      noHintLeft: 'No hints left', hintRevealed: 'A block dropped for you ✨',
+      ghostHidden: 'Blueprint hidden', ghostShown: 'Blueprint shown',
+      cleared: 'All blocks removed', noMaterial: 'Out of this block',
+      cannotUndo: 'Nothing to undo', cannotRedo: 'Nothing to redo',
+      levelLocked: 'Complete the previous level first',
+      materialsLabel: 'Materials',
+      shareBtn: 'Photo', rotateBtn: 'Rotate', ghostBtn: 'Blueprint', hintBtn: 'Hint',
+      undoBtn: 'Undo', redoBtn: 'Redo', clearBtn: 'Clear',
+      allLevelsDone: '🎉 All levels complete! You are a true voxel master!',
+      photoSaved: 'Polaroid share image ready 📸',
+      luckSign: 'Good Luck!', petCheer: 'Dundi cheers for you!',
+      autoFixToast: '✨ Auto-polish! We finished the rest for you',
+      modelAlive: 'The model came alive!',
+      decorTitle: '🎁 Decorate',
+      decorHint: 'Place your surprise blocks on the empty platform to make it uniquely yours!',
+      finishBtn: 'Finish',
+      winTextRepair: 'Lv.{level} {name}: you rebuilt {accuracy}% by hand, best combo x{combo}; magic auto-polished the rest ✨',
+      seconds: 's'
+    }
+  };
+  const lang = (navigator.language || 'zh-CN').toLowerCase().startsWith('zh') ? 'zhCN' : 'enUS';
+  const t = (key, vars) => {
+    let s = I18N[lang][key] || I18N.zhCN[key] || key;
+    if (vars) for (const k of Object.keys(vars)) s = s.replaceAll(`{${k}}`, vars[k]);
+    return s;
+  };
+
+  // ---- state ----
+  const PALETTE = game_config.palette;
+  const LEVELS = game_config.levels;
+  const BEST_KEY = 'haqi_voxel_workshop_best';
+  const PROGRESS_KEY = 'haqi_voxel_workshop_progress';
+  const DIFF_KEY = 'haqi_voxel_workshop_difficulty';
+  const COMBO_WINDOW = 1600;
+
+  const state = {
+    difficulty: (game_config.difficulty in game_config.difficulties) ? game_config.difficulty : 'normal',
+    levelIdx: 0,
+    maxUnlocked: Number(localStorage.getItem(PROGRESS_KEY) || 0),
+    best: Number(localStorage.getItem(BEST_KEY) || 0),
+    board: [],              // placed blocks (color index, 0 = empty)
+    target: [],             // blueprint
+    resTotal: {},           // color -> total available this level
+    resLeft: {},            // color -> remaining
+    selectedColor: 1,
+    ghostVisible: true,
+    hintsLeft: 0,
+    isoDir: 0,              // 0..3 isometric rotation
+    undoStack: [],
+    redoStack: [],
+    started: false,
+    finished: false,
+    startTime: 0,
+    elapsed: 0,
+    score: 0,
+    roundId: 0,
+    combo: 0,
+    comboBest: 0,
+    lastPlaceTime: 0,
+    // input
+    painting: false,
+    paintMode: 'place',
+    lastCell: -1,
+    // fx
+    falling: [],            // {i,j,color,t0,dur,quick,correct,auto}
+    pending: new Set(),     // i*n+j cells currently animating in
+    particles: [],
+    comboTexts: [],
+    shakeMag: 0,
+    winFlash: null,         // {t0,dur}
+    lastNow: 0,
+    // ---- creative-repair state machine ----
+    phase: 'build',         // 'build' | 'autofill' | 'alive' | 'decorate' | 'done'
+    autoRemaining: 0,       // auto-magic blocks still raining in
+    manualAccuracy: 0,      // accuracy the player achieved by hand (captured at 80%)
+    manualCompletion: 0,
+    emitters: [],           // living particle emitters {i,j,color,kind,rate,acc}
+    decor: {},              // key (i*n+j) -> { id, emoji, base }  player-placed surprise blocks
+    eggs: {},               // decor id -> remaining count in the DIY tray
+    selectedEgg: null,
+    // ---- camera ----
+    camZoom: 1,
+    camZoomTarget: 1,
+  };
+
+  function diffCfg() { return game_config.difficulties[state.difficulty] || game_config.difficulties.normal; }
+  function gridSize() { return diffCfg().gridSize; }
+  function currentLevel() { return LEVELS[state.levelIdx]; }
+  function holoOpacity() { return diffCfg().holoOpacity; }
+
+  function cloneGrid(g) { return g.map(r => r.slice()); }
+  function emptyGrid(n) { return Array.from({ length: n }, () => new Array(n).fill(0)); }
+
+  // Pad a level grid to gridSize x gridSize (centered).
+  function prepareTarget(rawGrid) {
+    const n = gridSize();
+    const h = rawGrid.length, w = rawGrid[0].length;
+    const out = emptyGrid(n);
+    const oy = Math.floor((n - h) / 2), ox = Math.floor((n - w) / 2);
+    for (let r = 0; r < h; r++)
+      for (let c = 0; c < w; c++)
+        if (oy + r >= 0 && oy + r < n && ox + c >= 0 && ox + c < n)
+          out[oy + r][ox + c] = rawGrid[r][c];
+    return out;
+  }
+  function computeResources(target) {
+    const counts = {};
+    for (const row of target) for (const v of row) if (v > 0) counts[v] = (counts[v] || 0) + 1;
+    return counts;
+  }
+
+  // ---- audio (WebAudio beeps) ----
+  let audioCtx = null;
+  function ac() {
+    if (!audioCtx) { try { audioCtx = new (window.AudioContext || window.webkitAudioContext)(); } catch (e) {} }
+    if (audioCtx && audioCtx.state === 'suspended') audioCtx.resume().catch(() => {});
+    return audioCtx;
+  }
+  function tone(freq, dur, type, gainVal, when) {
+    const ctx2 = ac(); if (!ctx2) return;
+    const o = ctx2.createOscillator(), g = ctx2.createGain();
+    o.type = type || 'sine'; o.frequency.value = freq;
+    const t0 = ctx2.currentTime + (when || 0);
+    g.gain.setValueAtTime(0.0001, t0);
+    g.gain.exponentialRampToValueAtTime(gainVal || 0.1, t0 + 0.012);
+    g.gain.exponentialRampToValueAtTime(0.0001, t0 + dur);
+    o.connect(g); g.connect(ctx2.destination);
+    o.start(t0); o.stop(t0 + dur + 0.02);
+  }
+  const sounds = {
+    pick:  () => tone(520, 0.06, 'triangle', 0.06),
+    drop:  () => tone(300, 0.04, 'square', 0.03),
+    land:  () => { tone(150, 0.09, 'sine', 0.09); tone(80, 0.12, 'sine', 0.06, 0.01); },
+    landQ: () => tone(220, 0.05, 'sine', 0.05),
+    erase: () => tone(200, 0.06, 'sine', 0.04),
+    combo: (n) => tone(420 + Math.min(n, 12) * 45, 0.08, 'triangle', 0.07),
+    hint:  () => { tone(660, 0.1, 'triangle', 0.08); tone(880, 0.1, 'triangle', 0.08, 0.08); },
+    win:   () => { for (let i = 0; i < 5; i++) tone(523 + i * 130, 0.18, 'triangle', 0.1, i * 0.09); },
+    bad:   () => tone(150, 0.12, 'sawtooth', 0.05),
+    magic: () => { [988, 1319, 1568, 2093].forEach((f, i) => tone(f, 0.22, 'sine', 0.07, i * 0.06)); },
+    chime: () => { tone(1568, 0.12, 'triangle', 0.06); tone(2093, 0.16, 'sine', 0.05, 0.06); },
+    pop:   () => tone(660, 0.05, 'triangle', 0.05),
+  };
+
+  // ---- core logic ----
+  function loadLevel(idx) {
+    state.levelIdx = idx;
+    state.target = prepareTarget(currentLevel().grid);
+    state.board = emptyGrid(gridSize());
+    state.resTotal = computeResources(state.target);
+    state.resLeft = Object.assign({}, state.resTotal);
+    state.undoStack = []; state.redoStack = [];
+    state.hintsLeft = diffCfg().hintReveals;
+    state.isoDir = 0;
+    state.finished = false;
+    state.startTime = performance.now();
+    state.elapsed = 0;
+    state.roundId += 1;
+    state.combo = 0; state.comboBest = 0; state.lastPlaceTime = 0;
+    state.ghostVisible = true;
+    state.falling = []; state.pending.clear();
+    state.particles = []; state.comboTexts = []; state.shakeMag = 0; state.winFlash = null;
+    // creative-repair reset
+    state.phase = 'build';
+    state.autoRemaining = 0;
+    state.manualAccuracy = 0; state.manualCompletion = 0;
+    state.emitters = [];
+    state.decor = {}; state.eggs = {}; state.selectedEgg = null;
+    state.camZoom = 1; state.camZoomTarget = 1;
+    showBuildBar();
+    // select first color present in blueprint
+    const cols = Object.keys(state.resTotal).map(Number).sort((a, b) => a - b);
+    state.selectedColor = cols[0] || 1;
+    setupCanvas();
+    renderMaterials();
+    updateHud();
+    hidePetCheer();
+  }
+
+  function startGame() {
+    loadLevel(state.levelIdx);
+    if (!state.started) { state.started = true; post('gameStarted'); }
+  }
+
+  function pushUndo() {
+    state.undoStack.push({ board: cloneGrid(state.board), res: Object.assign({}, state.resLeft) });
+    if (state.undoStack.length > 80) state.undoStack.shift();
+    state.redoStack = [];
+  }
+  function restoreSnap(snap) {
+    state.board = cloneGrid(snap.board);
+    state.resLeft = Object.assign({}, snap.res);
+    state.falling = []; state.pending.clear();
+    autoSelect();
+    renderMaterials(); updateHud();
+  }
+  function undo() {
+    if (state.phase !== 'build') return;
+    if (!state.undoStack.length) { toast(t('cannotUndo')); return; }
+    state.redoStack.push({ board: cloneGrid(state.board), res: Object.assign({}, state.resLeft) });
+    restoreSnap(state.undoStack.pop());
+  }
+  function redo() {
+    if (state.phase !== 'build') return;
+    if (!state.redoStack.length) { toast(t('cannotRedo')); return; }
+    state.undoStack.push({ board: cloneGrid(state.board), res: Object.assign({}, state.resLeft) });
+    restoreSnap(state.redoStack.pop());
+  }
+  function clearBoard() {
+    if (state.phase !== 'build') return;
+    pushUndo();
+    state.board = emptyGrid(gridSize());
+    state.resLeft = Object.assign({}, state.resTotal);
+    state.falling = []; state.pending.clear();
+    state.combo = 0;
+    autoSelect();
+    toast(t('cleared'));
+    renderMaterials(); updateHud();
+  }
+
+  function autoSelect() {
+    if ((state.resLeft[state.selectedColor] || 0) > 0) return;
+    const cols = Object.keys(state.resTotal).map(Number).sort((a, b) => a - b);
+    for (const c of cols) if ((state.resLeft[c] || 0) > 0) { state.selectedColor = c; return; }
+  }
+
+  function stats() {
+    const n = gridSize();
+    let targetCells = 0, correct = 0, filled = 0;
+    for (let r = 0; r < n; r++)
+      for (let c = 0; c < n; c++) {
+        const tgt = state.target[r][c], cur = state.board[r][c];
+        if (tgt > 0) targetCells++;
+        if (cur > 0) { filled++; if (cur === tgt) correct++; }
+      }
+    return {
+      targetCells, correct, filled,
+      completion: targetCells ? Math.round(correct / targetCells * 100) : 0,
+      accuracy: filled ? Math.round(correct / filled * 100) : 0
+    };
+  }
+  function isComplete() {
+    const n = gridSize();
+    for (let r = 0; r < n; r++)
+      for (let c = 0; c < n; c++)
+        if (state.target[r][c] !== state.board[r][c]) return false;
+    return true;
+  }
+
+  // ---- placement / removal ----
+  function occupied(i, j) { return state.board[i][j] > 0 || state.pending.has(i * gridSize() + j); }
+
+  function beginPlace(i, j, quick) {
+    if (state.phase !== 'build' || occupied(i, j)) return false;
+    const color = state.selectedColor;
+    if (!color || (state.resLeft[color] || 0) <= 0) { toast(t('noMaterial')); sounds.bad(); return false; }
+    state.resLeft[color]--;
+    state.pending.add(i * gridSize() + j);
+    const now = performance.now();
+    state.falling.push({ i, j, color, t0: now, dur: quick ? 170 : 380, quick, correct: state.target[i][j] === color });
+    sounds.drop();
+    renderMaterials();
+    return true;
+  }
+  function landBlock(f) {
+    state.board[f.i][f.j] = f.color;
+    state.pending.delete(f.i * gridSize() + f.j);
+    // Auto-Magic block: official bail-out, no combo / no resource cost
+    if (f.auto) {
+      spawnDust(f.i, f.j, PALETTE[f.color], 8);
+      state.shakeMag = Math.max(state.shakeMag, 3);
+      sounds.chime();
+      state.autoRemaining--;
+      updateHud();
+      if (state.autoRemaining <= 0) finalizeAutoComplete();
+      return;
+    }
+    spawnDust(f.i, f.j, PALETTE[f.color], f.quick ? 6 : 12);
+    state.shakeMag = Math.max(state.shakeMag, f.quick ? 3 : 7);
+    const now = performance.now();
+    if (f.correct) {
+      if (now - state.lastPlaceTime < COMBO_WINDOW) state.combo++; else state.combo = 1;
+      state.comboBest = Math.max(state.comboBest, state.combo);
+      if (state.combo >= 2) spawnComboText(f.i, f.j, state.combo);
+      sounds[f.quick ? 'landQ' : 'land']();
+      if (state.combo >= 2) sounds.combo(state.combo);
+    } else {
+      state.combo = 0;
+      sounds.bad();
+    }
+    state.lastPlaceTime = now;
+    autoSelect();
+    renderMaterials(); updateHud();
+    // Fuzzy 80% completion -> trigger creative-repair auto-fill (no more 100% grind).
+    if (state.phase === 'build' && stats().completion >= game_config.winThreshold) triggerAutoComplete();
+  }
+  function removeAt(i, j) {
+    if (state.phase !== 'build') return false;
+    const color = state.board[i][j];
+    if (color <= 0) return false;
+    state.board[i][j] = 0;
+    state.resLeft[color] = Math.min((state.resLeft[color] || 0) + 1, state.resTotal[color] || 0);
+    state.combo = 0;
+    spawnDust(i, j, PALETTE[color], 5);
+    sounds.erase();
+    renderMaterials(); updateHud();
+    return true;
+  }
+
+  function useHint() {
+    if (state.phase !== 'build') return;
+    if (state.hintsLeft <= 0) { toast(t('noHintLeft')); sounds.bad(); return; }
+    const n = gridSize(), candidates = [];
+    for (let i = 0; i < n; i++)
+      for (let j = 0; j < n; j++) {
+        const need = state.target[i][j];
+        if (need > 0 && !occupied(i, j) && (state.resLeft[need] || 0) > 0) candidates.push([i, j, need]);
+      }
+    if (!candidates.length) return;
+    const [i, j, need] = candidates[Math.floor(Math.random() * candidates.length)];
+    pushUndo();
+    state.selectedColor = need;
+    state.resLeft[need]--;
+    state.pending.add(i * n + j);
+    state.falling.push({ i, j, color: need, t0: performance.now(), dur: 420, quick: false, correct: true });
+    state.hintsLeft--;
+    sounds.hint();
+    toast(t('hintRevealed'));
+    renderMaterials();
+  }
+
+  // ===== Creative-repair state machine =====
+  // build --(>=80% correct)--> autofill (Auto-Magic rain) --> alive (model lives)
+  //       --> decorate (DIY blind-box) --(finish btn)--> done (results)
+
+  function triggerAutoComplete() {
+    if (state.phase !== 'build') return;
+    state.phase = 'autofill';
+    state.painting = false;
+    hoverCell = null;
+    const s = stats();
+    state.manualAccuracy = s.accuracy;
+    state.manualCompletion = s.completion;
+    state.camZoomTarget = 1.12;            // camera eases in
+    sounds.magic();
+    toast(t('autoFixToast'));
+    const n = gridSize();
+    const corrections = [];
+    for (let i = 0; i < n; i++) for (let j = 0; j < n; j++) {
+      const tg = state.target[i][j], cur = state.board[i][j];
+      if (cur === tg) continue;
+      if (cur > 0) { state.board[i][j] = 0; spawnDust(i, j, PALETTE[cur], 5); }  // poof wrong/extra
+      if (tg > 0) corrections.push([i, j, tg]);
+    }
+    // shuffle so blocks rain down in a scattered, organic order
+    for (let k = corrections.length - 1; k > 0; k--) {
+      const m = Math.floor(Math.random() * (k + 1));
+      const tmp = corrections[k]; corrections[k] = corrections[m]; corrections[m] = tmp;
+    }
+    state.autoRemaining = corrections.length;
+    renderMaterials(); updateHud();
+    if (!corrections.length) { finalizeAutoComplete(); return; }
+    const now = performance.now();
+    corrections.forEach((cell, idx) => {
+      state.pending.add(cell[0] * n + cell[1]);
+      state.falling.push({ i: cell[0], j: cell[1], color: cell[2], t0: now + idx * 55, dur: 300, quick: true, correct: true, auto: true });
+    });
+  }
+
+  function finalizeAutoComplete() {
+    state.phase = 'alive';
+    state.winFlash = { t0: performance.now(), dur: 1100 };  // perfect-polish white flash
+    sounds.win();
+    launchConfetti();
+    startLifeEffects();
+    toast(t('modelAlive'));
+    setTimeout(enterDecorate, 950);
+  }
+
+  // Spawn living particle emitters from the repaired model based on lifeRules (color -> effect).
+  function startLifeEffects() {
+    state.emitters = [];
+    const n = gridSize();
+    const rules = game_config.lifeRules || {};
+    const eligible = [];
+    for (let i = 0; i < n; i++) for (let j = 0; j < n; j++) {
+      const col = state.target[i][j];
+      if (col <= 0) continue;
+      const rule = rules[String(col)];
+      if (!rule) continue;
+      eligible.push({ i, j, color: col, kind: rule.kind, rate: rule.rate, acc: 0 });
+    }
+    // cap to keep particle load sane: keep an evenly-spaced subset
+    const CAP = 6;
+    if (eligible.length <= CAP) { state.emitters = eligible; return; }
+    const step = eligible.length / CAP;
+    for (let k = 0; k < CAP; k++) state.emitters.push(eligible[Math.floor(k * step)]);
+  }
+
+  function enterDecorate() {
+    state.phase = 'decorate';
+    // hand out 2-3 random surprise (blind-box) blocks
+    const pool = game_config.decorPool;
+    const count = 2 + Math.floor(Math.random() * 2);
+    state.eggs = {};
+    for (let k = 0; k < count; k++) {
+      const d = pool[Math.floor(Math.random() * pool.length)];
+      state.eggs[d.id] = (state.eggs[d.id] || 0) + 1;
+    }
+    state.selectedEgg = Object.keys(state.eggs)[0] || null;
+    showDecorBar();
+    renderDecorTray();
+    toast(t('decorHint'));
+  }
+
+  function decorDef(id) { return game_config.decorPool.find(d => d.id === id); }
+
+  function placeDecor(i, j) {
+    if (state.phase !== 'decorate') return;
+    const key = i * gridSize() + j;
+    // tap an existing decor -> pick it back up
+    if (state.decor[key]) {
+      const d = state.decor[key];
+      state.eggs[d.id] = (state.eggs[d.id] || 0) + 1;
+      delete state.decor[key];
+      sounds.pop();
+      renderDecorTray();
+      return;
+    }
+    if (state.board[i][j] > 0) return;                 // only empty platform cells
+    const id = state.selectedEgg;
+    if (!id || (state.eggs[id] || 0) <= 0) { sounds.bad(); return; }
+    state.eggs[id]--;
+    state.decor[key] = decorDef(id);
+    spawnDust(i, j, { light: state.decor[key].base }, 6);
+    state.shakeMag = Math.max(state.shakeMag, 3);
+    sounds.pop();
+    if ((state.eggs[id] || 0) <= 0) {
+      const next = Object.keys(state.eggs).find(k => state.eggs[k] > 0);
+      state.selectedEgg = next || null;
+    }
+    renderDecorTray();
+  }
+
+  function finalizeRun() {
+    if (state.finished) return;
+    state.finished = true;
+    state.phase = 'done';
+    state.elapsed = Math.round((performance.now() - state.startTime) / 1000);
+    const sc = game_config.scoring, lvl = currentLevel();
+    const acc = state.manualAccuracy;
+    let earned = sc.baseReward + acc * sc.accuracyWeight + 100 * sc.completionWeight
+      + state.levelIdx * sc.levelBonus + state.comboBest * sc.comboWeight;
+    if (diffCfg().timeBonus && state.elapsed < lvl.time) earned += sc.timeBonus;
+    state.score = earned;
+    if (earned > state.best) { state.best = earned; localStorage.setItem(BEST_KEY, String(state.best)); }
+    if (state.levelIdx + 1 > state.maxUnlocked) {
+      state.maxUnlocked = state.levelIdx + 1;
+      localStorage.setItem(PROGRESS_KEY, String(state.maxUnlocked));
+    }
+    showPetCheer();
+    showWinOverlay();
+    post('gameFinished', {
+      completed: true, passed: true, earnedPoints: earned, score: earned,
+      accuracy: acc, completion: 100, comboBest: state.comboBest,
+      difficulty: state.difficulty === 'easy' ? 1 : state.difficulty === 'hard' ? 3 : 2,
+      difficultyId: state.difficulty, level: state.levelIdx + 1, seconds: state.elapsed,
+      finishedAt: Date.now(), roundId: state.roundId
+    });
+  }
+
+  // ---- DOM ----
+  document.body.innerHTML = `
+    <div id="app" class="fixed inset-0 flex flex-col" style="background:radial-gradient(120% 100% at 50% 0%,#243b6b 0%,#131c39 48%,#05080f 100%);">
+      <!-- HUD -->
+      <div id="hud" class="w-full flex items-center justify-between px-3 pt-2 gap-2" style="z-index:5;">
+        <div class="flex items-center gap-2">
+          <div class="rounded-xl px-3 py-1.5 bg-white/10 backdrop-blur text-white text-center shadow">
+            <div class="text-[10px] uppercase tracking-wide opacity-70">${t('level')}</div>
+            <div id="levelVal" class="text-base font-black leading-none">1</div>
+          </div>
+          <div class="rounded-xl px-3 py-1.5 bg-white/10 backdrop-blur text-white text-center shadow">
+            <div class="text-[10px] uppercase tracking-wide opacity-70">${t('completion')}</div>
+            <div id="compVal" class="text-base font-black leading-none">0%</div>
+          </div>
+          <div id="comboBox" class="rounded-xl px-3 py-1.5 bg-white/10 backdrop-blur text-fuchsia-300 text-center shadow transition-transform">
+            <div class="text-[10px] uppercase tracking-wide opacity-70">🔥 ${t('combo')}</div>
+            <div id="comboVal" class="text-base font-black leading-none">×0</div>
+          </div>
+          <div class="rounded-xl px-3 py-1.5 bg-white/10 backdrop-blur text-amber-300 text-center shadow">
+            <div class="text-[10px] uppercase tracking-wide opacity-70">👑 ${t('best')}</div>
+            <div id="bestVal" class="text-base font-black leading-none">0</div>
+          </div>
+        </div>
+        <div class="flex items-center gap-2">
+          <button id="shareBtn" class="rounded-xl px-3 py-2 bg-emerald-500/70 text-white text-sm font-bold shadow active:scale-95 transition">📸</button>
+          <button id="levelsBtn" class="rounded-xl px-3 py-2 bg-white/10 text-white text-sm font-bold shadow active:scale-95 transition">📋</button>
+          <button id="helpBtn" class="rounded-xl px-3 py-2 bg-white/10 text-white text-sm font-bold shadow active:scale-95 transition">❓</button>
+          <button id="restartBtn" class="rounded-xl px-3 py-2 bg-white/10 text-white text-sm font-bold shadow active:scale-95 transition">🔄</button>
+        </div>
+      </div>
+
+      <div id="hintBar" class="w-full text-center text-xs text-slate-300/80 px-4 py-1 truncate" style="z-index:4;"></div>
+
+      <!-- Scene -->
+      <div id="stage" class="flex-1 relative overflow-hidden" style="z-index:2;">
+        <canvas id="scene" class="absolute inset-0 w-full h-full" style="touch-action:none;"></canvas>
+      </div>
+
+      <!-- Materials + tools (build phase) -->
+      <div id="buildBar" class="w-full px-3 pb-2 flex flex-col gap-1.5" style="z-index:5;">
+        <div class="flex items-end gap-2">
+          <div class="text-[10px] uppercase tracking-wide text-slate-300/70 font-bold pb-1 shrink-0">🧱 ${t('materialsLabel')}</div>
+          <div id="materials" class="flex items-center gap-2 overflow-x-auto flex-1 pb-1" style="scrollbar-width:none;"></div>
+        </div>
+        <div class="flex items-center justify-center gap-1.5 flex-wrap">
+          <button id="rotateBtn" class="toolBtn rounded-lg px-2.5 py-2 bg-white/10 text-white text-sm font-bold shadow active:scale-95 transition">🔄${t('rotateBtn')}</button>
+          <button id="ghostBtn" class="toolBtn rounded-lg px-2.5 py-2 bg-white/10 text-white text-sm font-bold shadow active:scale-95 transition">👁️${t('ghostBtn')}</button>
+          <button id="hintBtn" class="toolBtn rounded-lg px-2.5 py-2 bg-white/10 text-white text-sm font-bold shadow active:scale-95 transition">💡<span id="hintCount" class="text-xs"></span></button>
+          <button id="undoBtn" class="toolBtn rounded-lg px-2.5 py-2 bg-white/10 text-white text-sm font-bold shadow active:scale-95 transition">↩️</button>
+          <button id="redoBtn" class="toolBtn rounded-lg px-2.5 py-2 bg-white/10 text-white text-sm font-bold shadow active:scale-95 transition">↪️</button>
+          <button id="clearBtn" class="toolBtn rounded-lg px-2.5 py-2 bg-white/10 text-white text-sm font-bold shadow active:scale-95 transition">🗑️</button>
+        </div>
+      </div>
+
+      <!-- DIY blind-box decoration (decorate phase) -->
+      <div id="decorBar" class="w-full px-3 pb-2 hidden flex-col gap-1.5" style="z-index:5;">
+        <div class="flex items-end gap-2">
+          <div class="text-[10px] uppercase tracking-wide text-fuchsia-200/80 font-bold pb-1 shrink-0">${t('decorTitle')}</div>
+          <div id="decorTray" class="flex items-center gap-2 overflow-x-auto flex-1 pb-1" style="scrollbar-width:none;"></div>
+        </div>
+        <div class="flex items-center justify-center gap-2">
+          <button id="decorRotateBtn" class="toolBtn rounded-lg px-2.5 py-2 bg-white/10 text-white text-sm font-bold shadow active:scale-95 transition">🔄${t('rotateBtn')}</button>
+          <button id="decorShareBtn" class="rounded-lg px-3 py-2 bg-white/10 text-white text-sm font-bold shadow active:scale-95 transition">📸 ${t('shareBtn')}</button>
+          <button id="finishBtn" class="rounded-xl px-5 py-2 text-slate-900 text-sm font-black shadow active:scale-95 transition" style="background:linear-gradient(180deg,#fde047,#f59e0b);">✅ ${t('finishBtn')}</button>
+        </div>
+      </div>
+
+      <!-- Toast -->
+      <div id="toast" class="fixed left-1/2 bottom-28 -translate-x-1/2 px-4 py-2 rounded-xl bg-slate-900/90 text-white text-sm font-bold shadow-lg opacity-0 transition-opacity duration-200 pointer-events-none" style="z-index:30;"></div>
+
+      <!-- Confetti -->
+      <div id="confetti" class="fixed inset-0 pointer-events-none" style="z-index:25;"></div>
+
+      <!-- Pet cheer popup -->
+      <div id="petCheer" class="fixed right-3 bottom-32 hidden flex-col items-center" style="z-index:28;">
+        <div class="px-4 py-1.5 mb-1 rounded-xl text-red-700 font-black text-lg shadow-lg" style="background:linear-gradient(180deg,#fde047,#f59e0b);border:2px solid #b45309;transform:rotate(-4deg);">${t('luckSign')}</div>
+        <div id="petCheerImg" class="text-6xl drop-shadow-lg" style="filter:drop-shadow(0 6px 10px rgba(0,0,0,.5));">🐲</div>
+        <div class="text-[11px] text-amber-200 font-bold mt-0.5">${t('petCheer')}</div>
+      </div>
+
+      <!-- Overlay -->
+      <div id="overlay" class="fixed inset-0 flex items-center justify-center p-4" style="background:rgba(2,6,23,.78);backdrop-filter:blur(6px);z-index:20;">
+        <div class="w-full max-w-md rounded-3xl p-6 text-center shadow-2xl" style="background:linear-gradient(165deg,#1d4ed8,#0f172a);border:1px solid rgba(255,255,255,.14);">
+          <div id="ovIcon" class="text-5xl mb-2">🧱</div>
+          <h1 id="ovTitle" class="text-2xl font-black text-white mb-2">${t('overlayTitle')}</h1>
+          <p id="ovText" class="text-sm text-blue-100/90 leading-relaxed mb-4">${t('overlayText')}</p>
+          <div id="ovExtra" class="text-amber-300 font-bold text-sm mb-3 hidden"></div>
+          <div id="diffRow" class="flex justify-center gap-2 mb-4">
+            <button data-diff="easy" class="diffBtn rounded-xl px-3 py-1.5 text-sm font-bold text-white bg-white/10">${t('diffEasy')}</button>
+            <button data-diff="normal" class="diffBtn rounded-xl px-3 py-1.5 text-sm font-bold text-white bg-white/10">${t('diffNormal')}</button>
+            <button data-diff="hard" class="diffBtn rounded-xl px-3 py-1.5 text-sm font-bold text-white bg-white/10">${t('diffHard')}</button>
+          </div>
+          <div id="levelGrid" class="hidden grid grid-cols-3 gap-2 mb-4"></div>
+          <button id="ovBtn" class="w-full rounded-2xl py-3 text-lg font-black text-slate-900 shadow-lg active:scale-95 transition" style="background:linear-gradient(180deg,#fde047,#f59e0b);">${t('startBtn')}</button>
+          <button id="ovBtn2" class="hidden w-full rounded-2xl py-2.5 mt-2 text-base font-bold text-white shadow active:scale-95 transition bg-white/10"></button>
+        </div>
+      </div>
+    </div>`;
+
+  // ---- refs ----
+  const stage = document.getElementById('stage');
+  const canvas = document.getElementById('scene');
+  const ctx = canvas.getContext('2d');
+  const overlayEl = document.getElementById('overlay');
+  const ovIcon = document.getElementById('ovIcon');
+  const ovTitle = document.getElementById('ovTitle');
+  const ovText = document.getElementById('ovText');
+  const ovExtra = document.getElementById('ovExtra');
+  const ovBtn = document.getElementById('ovBtn');
+  const ovBtn2 = document.getElementById('ovBtn2');
+  const levelGrid = document.getElementById('levelGrid');
+  const hintBar = document.getElementById('hintBar');
+  const comboBox = document.getElementById('comboBox');
+  const petCheer = document.getElementById('petCheer');
+  const petCheerImg = document.getElementById('petCheerImg');
+  const buildBar = document.getElementById('buildBar');
+  const decorBar = document.getElementById('decorBar');
+
+  // ---- canvas geometry ----
+  let dpr = 1, W = 0, H = 0;
+  const geom = { originX: 0, originY: 0, tileW: 40, tileH: 20, cubeH: 22, slabH: 20 };
+
+  function computeGeom(w, h) {
+    const n = gridSize();
+    const maxByW = (w * 0.94) / n;
+    const maxByH = (h * 0.86) / (n * 0.5 + 1.05);
+    let tileW = Math.max(16, Math.min(maxByW, maxByH)) * state.camZoom;   // camera zoom baked in
+    geom.tileW = tileW;
+    geom.tileH = tileW * 0.5;
+    geom.cubeH = tileW * 0.55;
+    geom.slabH = tileW * 0.5;
+    geom.originX = w / 2;
+    geom.originY = h / 2 - (n * geom.tileH + geom.slabH - geom.cubeH) / 2;
+  }
+  function updateGeom() { computeGeom(W, H); }
+  function setupCanvas() {
+    const rect = stage.getBoundingClientRect();
+    dpr = Math.min(window.devicePixelRatio || 1, 2.5);
+    W = rect.width; H = rect.height;
+    canvas.width = Math.round(W * dpr);
+    canvas.height = Math.round(H * dpr);
+    ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+    computeGeom(W, H);
+  }
+
+  // rotation helpers
+  function rot(i, j, dir, n) {
+    const m = n - 1;
+    switch (dir % 4) {
+      case 1: return [j, m - i];
+      case 2: return [m - i, m - j];
+      case 3: return [m - j, i];
+      default: return [i, j];
+    }
+  }
+  function invRot(ri, rj, dir, n) { return rot(ri, rj, (4 - (dir % 4)) % 4, n); }
+
+  // projection (rotated grid space -> screen), with a given geom
+  function projP(g, rr, cc, yoff) {
+    return [g.originX + (cc - rr) * g.tileW / 2, g.originY + (cc + rr) * g.tileH / 2 + (yoff || 0)];
+  }
+
+  // ---- low-level drawing ----
+  function fillPoly(c, pts, color) {
+    c.beginPath(); c.moveTo(pts[0][0], pts[0][1]);
+    for (let i = 1; i < pts.length; i++) c.lineTo(pts[i][0], pts[i][1]);
+    c.closePath(); c.fillStyle = color; c.fill();
+  }
+  function strokePoly(c, pts, color, lw) {
+    c.beginPath(); c.moveTo(pts[0][0], pts[0][1]);
+    for (let i = 1; i < pts.length; i++) c.lineTo(pts[i][0], pts[i][1]);
+    c.closePath(); c.strokeStyle = color; c.lineWidth = lw || 1; c.stroke();
+  }
+  function lineSeg(c, a, b, color, lw) {
+    c.beginPath(); c.moveTo(a[0], a[1]); c.lineTo(b[0], b[1]);
+    c.strokeStyle = color; c.lineWidth = lw || 1; c.stroke();
+  }
+
+  // draw a solid cube at rotated cell (ri,rj)
+  function drawCube(c, g, ri, rj, col, opt) {
+    opt = opt || {};
+    const h = opt.h != null ? opt.h : g.cubeH;
+    const yoff = opt.yoff || 0;
+    const A = projP(g, ri, rj, yoff), B = projP(g, ri, rj + 1, yoff),
+          C = projP(g, ri + 1, rj + 1, yoff), D = projP(g, ri + 1, rj, yoff);
+    const up = p => [p[0], p[1] - h];
+    if (opt.alpha != null) c.globalAlpha = opt.alpha;
+    // left face (D-C), darkest
+    fillPoly(c, [up(D), up(C), C, D], col.dark);
+    // right face (B-C), mid
+    fillPoly(c, [up(B), up(C), C, B], col.base);
+    // top face, lightest
+    fillPoly(c, [up(A), up(B), up(C), up(D)], col.light);
+    // crisp seams
+    c.lineJoin = 'round';
+    strokePoly(c, [up(A), up(B), up(C), up(D)], 'rgba(0,0,0,.16)', 1);
+    lineSeg(c, up(C), C, 'rgba(0,0,0,.18)', 1);
+    // top edge highlight
+    lineSeg(c, up(A), up(B), 'rgba(255,255,255,.4)', 1);
+    lineSeg(c, up(A), up(D), 'rgba(255,255,255,.4)', 1);
+    if (opt.alpha != null) c.globalAlpha = 1;
+  }
+
+  // lighten (amt>0) / darken (amt<0) a #rrggbb hex toward white/black
+  function shadeHex(hex, amt) {
+    const m = hex.replace('#', '');
+    let r = parseInt(m.substr(0, 2), 16), g = parseInt(m.substr(2, 2), 16), b = parseInt(m.substr(4, 2), 16);
+    const f = amt < 0 ? 0 : 255, t = Math.abs(amt);
+    r = Math.round(r + (f - r) * t); g = Math.round(g + (f - g) * t); b = Math.round(b + (f - b) * t);
+    return `rgb(${r},${g},${b})`;
+  }
+  // decoration cube: shaded cube + an emoji glyph on the top face
+  function drawDecorCube(c, g, ri, rj, d) {
+    const col = { light: shadeHex(d.base, 0.35), base: d.base, dark: shadeHex(d.base, -0.4) };
+    drawCube(c, g, ri, rj, col);
+    const center = projP(g, ri + 0.5, rj + 0.5, -g.cubeH);
+    c.save();
+    c.font = Math.round(g.tileW * 0.55) + 'px "Segoe UI Emoji","Apple Color Emoji",system-ui,sans-serif';
+    c.fillStyle = '#1f2937';
+    c.textAlign = 'center'; c.textBaseline = 'middle';
+    c.fillText(d.emoji, center[0], center[1]);
+    c.restore();
+  }
+
+  // draw holographic target cube
+  function drawHologram(c, g, ri, rj, col, now) {
+    const sh = 0.55 + 0.45 * Math.sin(now / 360 + (ri + rj) * 0.6);
+    const baseA = holoOpacity();
+    const A = projP(g, ri, rj), B = projP(g, ri, rj + 1),
+          C = projP(g, ri + 1, rj + 1), D = projP(g, ri + 1, rj);
+    const h = g.cubeH;
+    const up = p => [p[0], p[1] - h];
+    c.globalAlpha = (0.1 + 0.08 * sh) * baseA;
+    fillPoly(c, [up(D), up(C), C, D], col.dark);
+    fillPoly(c, [up(B), up(C), C, B], col.base);
+    fillPoly(c, [up(A), up(B), up(C), up(D)], col.light);
+    // glowing wireframe
+    c.globalAlpha = (0.45 + 0.4 * sh) * baseA;
+    c.save();
+    c.shadowColor = col.light; c.shadowBlur = 6;
+    strokePoly(c, [up(A), up(B), up(C), up(D)], col.light, 1.4);
+    lineSeg(c, up(B), B, col.light, 1.2);
+    lineSeg(c, up(C), C, col.light, 1.2);
+    lineSeg(c, up(D), D, col.light, 1.2);
+    c.restore();
+    c.globalAlpha = 1;
+  }
+
+  // ---- platform ----
+  function drawPlatform(c, g, now, exporting) {
+    const n = gridSize();
+    const P = (rr, cc, yoff) => projP(g, rr, cc, yoff);
+    // floating shadow
+    if (!exporting) {
+      const cen = P(n / 2, n / 2, g.slabH + g.tileH * 0.6);
+      c.save();
+      c.globalAlpha = 0.35;
+      c.fillStyle = 'rgba(0,0,0,1)';
+      c.beginPath();
+      c.ellipse(cen[0], cen[1], n * g.tileW * 0.42, n * g.tileH * 0.42, 0, 0, Math.PI * 2);
+      c.filter = 'blur(8px)';
+      c.fill();
+      c.filter = 'none';
+      c.restore();
+    }
+    const A = P(0, 0), Bc = P(0, n), Cc = P(n, n), Dc = P(n, 0);
+    const down = (p, dy) => [p[0], p[1] + dy];
+    // front-right side
+    fillPoly(c, [Bc, Cc, down(Cc, g.slabH), down(Bc, g.slabH)], '#1b2540');
+    // front-left side
+    fillPoly(c, [Dc, Cc, down(Cc, g.slabH), down(Dc, g.slabH)], '#141d33');
+    // edge glow line at top of sides
+    lineSeg(c, Bc, Cc, 'rgba(96,165,250,.35)', 1.5);
+    lineSeg(c, Dc, Cc, 'rgba(96,165,250,.25)', 1.5);
+    // top surface
+    const grad = c.createLinearGradient(A[0], A[1], Cc[0], Cc[1]);
+    grad.addColorStop(0, '#27345c');
+    grad.addColorStop(1, '#17213a');
+    fillPoly(c, [A, Bc, Cc, Dc], grad);
+    // grid lines
+    c.globalAlpha = 0.9;
+    for (let k = 0; k <= n; k++) {
+      lineSeg(c, P(k, 0), P(k, n), 'rgba(120,160,230,.10)', 1);
+      lineSeg(c, P(0, k), P(n, k), 'rgba(120,160,230,.10)', 1);
+    }
+    c.globalAlpha = 1;
+    // outer rim
+    strokePoly(c, [A, Bc, Cc, Dc], 'rgba(125,211,252,.45)', 1.5);
+  }
+
+  // ---- hover highlight ----
+  let hoverCell = null;   // [i,j]
+  function drawHover(c, g) {
+    if (!hoverCell) return;
+    const n = gridSize();
+    const [ri, rj] = rot(hoverCell[0], hoverCell[1], state.isoDir, n);
+    const A = projP(g, ri, rj), B = projP(g, ri, rj + 1),
+          C = projP(g, ri + 1, rj + 1), D = projP(g, ri + 1, rj);
+    c.save();
+    c.globalAlpha = 0.5;
+    fillPoly(c, [A, B, C, D], 'rgba(253,224,71,.25)');
+    strokePoly(c, [A, B, C, D], 'rgba(253,224,71,.9)', 1.6);
+    c.restore();
+  }
+
+  // ---- particles / dust ----
+  function cellFloorScreen(i, j) {
+    const n = gridSize();
+    const [ri, rj] = rot(i, j, state.isoDir, n);
+    return projP(geom, ri + 0.5, rj + 0.5);
+  }
+  function spawnDust(i, j, col, count) {
+    const [x, y] = cellFloorScreen(i, j);
+    for (let k = 0; k < count; k++) {
+      const ang = Math.random() * Math.PI * 2;
+      const sp = 0.5 + Math.random() * 1.8;
+      state.particles.push({
+        x, y: y - geom.cubeH * 0.2,
+        vx: Math.cos(ang) * sp, vy: -Math.random() * 1.6 - 0.2,
+        life: 0, max: 360 + Math.random() * 260,
+        size: 2 + Math.random() * 3, color: (col && col.light) || '#ffffff', grav: 0.06
+      });
+    }
+  }
+
+  // Living model effect: spawn one particle from an emitter (color-driven behaviour).
+  function spawnLifeParticle(em) {
+    const [x, y] = cellFloorScreen(em.i, em.j);
+    const top = y - geom.cubeH;
+    const P = state.particles;
+    switch (em.kind) {
+      case 'water': {
+        const ang = -Math.PI / 2 + (Math.random() - 0.5) * 1.1;
+        const sp = 1.5 + Math.random() * 1.7;
+        P.push({ x, y: top, vx: Math.cos(ang) * sp, vy: Math.sin(ang) * sp, life: 0, max: 720 + Math.random() * 320, size: 2 + Math.random() * 2, color: '#7dd3fc', grav: 0.12 });
+        break;
+      }
+      case 'sparkle':
+        P.push({ x: x + (Math.random() - 0.5) * geom.tileW * 0.4, y: top, vx: (Math.random() - 0.5) * 0.4, vy: -0.4 - Math.random() * 0.5, life: 0, max: 700 + Math.random() * 400, size: 1.5 + Math.random() * 2, color: '#e9d5ff', grav: -0.01, glow: true });
+        break;
+      case 'glow':
+        P.push({ x, y: top, vx: 0, vy: -0.05, life: 0, max: 1000, size: geom.tileW * 0.75, color: '#fde68a', grav: 0, glow: true });
+        break;
+      case 'leaf':
+        P.push({ x, y: top, vx: (Math.random() - 0.5) * 0.9, vy: 0.25 + Math.random() * 0.4, life: 0, max: 1400, size: 2 + Math.random() * 2, color: '#86efac', grav: 0.004 });
+        break;
+      case 'heart':
+        P.push({ x: x + (Math.random() - 0.5) * geom.tileW * 0.3, y: top, vx: (Math.random() - 0.5) * 0.3, vy: -0.5 - Math.random() * 0.4, life: 0, max: 1100, size: 3 + Math.random() * 2, color: '#f9a8d4', grav: -0.005, glow: true });
+        break;
+    }
+  }
+  function updateEmitters(dt) {
+    if (!state.emitters.length) return;
+    if (state.phase !== 'alive' && state.phase !== 'decorate' && state.phase !== 'done') return;
+    for (const em of state.emitters) {
+      em.acc += dt * em.rate;
+      let guard = 0;
+      while (em.acc >= 1 && guard < 3) { em.acc -= 1; spawnLifeParticle(em); guard++; }
+      if (em.acc > 3) em.acc = 0;   // drop backlog after a stall
+    }
+  }
+
+  function updateParticles(dt) {
+    const ps = state.particles;
+    for (let k = ps.length - 1; k >= 0; k--) {
+      const p = ps[k];
+      p.life += dt;
+      if (p.life >= p.max) { ps.splice(k, 1); continue; }
+      p.x += p.vx * dt / 16;
+      p.y += p.vy * dt / 16;
+      p.vy += (p.grav || 0) * dt / 16;
+    }
+  }
+  function drawParticles(c) {
+    for (const p of state.particles) {
+      const a = Math.max(0, 1 - p.life / p.max);
+      if (p.glow) {
+        c.globalAlpha = a * 0.55;
+        const g = c.createRadialGradient(p.x, p.y, 0, p.x, p.y, p.size);
+        g.addColorStop(0, p.color);
+        g.addColorStop(1, 'rgba(255,255,255,0)');
+        c.fillStyle = g;
+        c.beginPath(); c.arc(p.x, p.y, p.size, 0, Math.PI * 2); c.fill();
+      } else {
+        c.globalAlpha = a * 0.9;
+        c.fillStyle = p.color;
+        c.fillRect(p.x - p.size / 2, p.y - p.size / 2, p.size, p.size);
+      }
+    }
+    c.globalAlpha = 1;
+  }
+
+  // ---- combo floating text ----
+  function spawnComboText(i, j, n) {
+    const [x, y] = cellFloorScreen(i, j);
+    state.comboTexts.push({ x, y: y - geom.cubeH, t0: performance.now(), dur: 850, n });
+    comboBox.style.transform = 'scale(1.18)';
+    setTimeout(() => { comboBox.style.transform = 'scale(1)'; }, 130);
+  }
+  function drawComboTexts(c, now) {
+    const ct = state.comboTexts;
+    for (let k = ct.length - 1; k >= 0; k--) {
+      const e = ct[k];
+      const p = (now - e.t0) / e.dur;
+      if (p >= 1) { ct.splice(k, 1); continue; }
+      const scale = 1 + Math.min(e.n, 12) * 0.06 + (1 - p) * 0.3;
+      c.save();
+      c.globalAlpha = p < 0.2 ? p / 0.2 : 1 - (p - 0.2) / 0.8;
+      c.translate(e.x, e.y - p * 42);
+      c.scale(scale, scale);
+      c.font = '900 18px system-ui, sans-serif';
+      c.textAlign = 'center'; c.textBaseline = 'middle';
+      c.lineWidth = 4; c.strokeStyle = 'rgba(0,0,0,.55)';
+      const txt = 'COMBO ×' + e.n;
+      c.strokeText(txt, 0, 0);
+      c.fillStyle = e.n >= 6 ? '#fde047' : '#f9a8d4';
+      c.fillText(txt, 0, 0);
+      c.restore();
+    }
+  }
+
+  // ---- win flash ----
+  function drawWinFlash(c, now) {
+    if (!state.winFlash) return;
+    const p = (now - state.winFlash.t0) / state.winFlash.dur;
+    if (p >= 1) { state.winFlash = null; return; }
+    // radial bloom
+    const cx = W / 2, cy = H * 0.45;
+    const r = (0.2 + p) * Math.max(W, H);
+    const g = c.createRadialGradient(cx, cy, 0, cx, cy, r);
+    const a = (1 - p) * 0.55;
+    g.addColorStop(0, `rgba(255,255,255,${a})`);
+    g.addColorStop(0.5, `rgba(253,224,71,${a * 0.5})`);
+    g.addColorStop(1, 'rgba(255,255,255,0)');
+    c.fillStyle = g; c.fillRect(0, 0, W, H);
+    // diagonal sweep
+    const sweepX = -W * 0.5 + p * W * 1.8;
+    const sg = c.createLinearGradient(sweepX, 0, sweepX + W * 0.4, H);
+    sg.addColorStop(0, 'rgba(255,255,255,0)');
+    sg.addColorStop(0.5, `rgba(255,255,255,${(1 - p) * 0.4})`);
+    sg.addColorStop(1, 'rgba(255,255,255,0)');
+    c.fillStyle = sg; c.fillRect(0, 0, W, H);
+  }
+
+  // ---- scene paint (platform + blocks/hologram) — shared by live + export ----
+  function paintScene(c, g, now, exporting) {
+    const n = gridSize();
+    drawPlatform(c, g, now, exporting);
+    if (!exporting) drawHover(c, g);
+
+    // build & sort draw list by rotated depth
+    const entries = [];
+    for (let i = 0; i < n; i++) {
+      for (let j = 0; j < n; j++) {
+        const [ri, rj] = rot(i, j, state.isoDir, n);
+        const depth = ri + rj;
+        const key = i * n + j;
+        if (state.board[i][j] > 0) {
+          entries.push({ ri, rj, depth, kind: 'solid', color: state.board[i][j] });
+        } else if (state.decor[key]) {
+          entries.push({ ri, rj, depth, kind: 'decor', decor: state.decor[key] });
+        } else if (!exporting && state.ghostVisible && state.target[i][j] > 0 && !state.pending.has(key)) {
+          entries.push({ ri, rj, depth, kind: 'holo', color: state.target[i][j] });
+        }
+      }
+    }
+    entries.sort((a, b) => a.depth - b.depth || a.ri - b.ri);
+    for (const e of entries) {
+      if (e.kind === 'solid') drawCube(c, g, e.ri, e.rj, PALETTE[e.color]);
+      else if (e.kind === 'decor') drawDecorCube(c, g, e.ri, e.rj, e.decor);
+      else drawHologram(c, g, e.ri, e.rj, PALETTE[e.color], now);
+    }
+  }
+
+  // ---- live render loop ----
+  function drawFalling(c, g, now) {
+    const n = gridSize();
+    const fallDist = H * 0.7;
+    for (let k = state.falling.length - 1; k >= 0; k--) {
+      const f = state.falling[k];
+      let p = (now - f.t0) / f.dur;
+      if (p < 0) continue;   // staggered auto-fill block hasn't started its drop yet
+      if (p >= 1) { landBlock(f); state.falling.splice(k, 1); continue; }
+      const eased = 1 - Math.pow(1 - p, 3);   // easeOutCubic
+      const yoff = -(1 - eased) * fallDist;
+      const [ri, rj] = rot(f.i, f.j, state.isoDir, n);
+      const col = PALETTE[f.color];
+      // motion trail
+      for (let tIdx = 3; tIdx >= 1; tIdx--) {
+        const ty = yoff - tIdx * (g.cubeH * 0.9) * (1 - eased);
+        drawCube(c, g, ri, rj, col, { yoff: ty, alpha: 0.12 * tIdx });
+      }
+      drawCube(c, g, ri, rj, col, { yoff });
+    }
+  }
+
+  function frame(now) {
+    const dt = Math.min(50, now - (state.lastNow || now));
+    state.lastNow = now;
+    // camera ease toward target zoom (Auto-Magic pulls the view in)
+    if (Math.abs(state.camZoom - state.camZoomTarget) > 0.002) {
+      state.camZoom += (state.camZoomTarget - state.camZoom) * Math.min(1, dt / 140);
+      updateGeom();
+    }
+    updateEmitters(dt);
+    updateParticles(dt);
+    if (state.shakeMag > 0.2) state.shakeMag *= Math.pow(0.86, dt / 16); else state.shakeMag = 0;
+
+    ctx.clearRect(0, 0, W, H);
+    ctx.save();
+    if (state.shakeMag > 0.2) {
+      ctx.translate((Math.random() - 0.5) * state.shakeMag, (Math.random() - 0.5) * state.shakeMag);
+    }
+    paintScene(ctx, geom, now, false);
+    drawFalling(ctx, geom, now);
+    drawParticles(ctx);
+    drawComboTexts(ctx, now);
+    ctx.restore();
+    drawWinFlash(ctx, now);
+
+    requestAnimationFrame(frame);
+  }
+
+  // ---- input / picking ----
+  function pickCell(clientX, clientY) {
+    const rect = canvas.getBoundingClientRect();
+    const sx = clientX - rect.left;
+    const sy = clientY - rect.top + geom.cubeH * 0.5;   // bias toward raised cube center
+    const n = gridSize();
+    const A2 = 2 * (sx - geom.originX) / geom.tileW;     // cc - rr
+    const B2 = 2 * (sy - geom.originY) / geom.tileH;     // cc + rr
+    const cf = (A2 + B2) / 2, rf = (B2 - A2) / 2;
+    const ri = Math.floor(rf), rj = Math.floor(cf);
+    if (ri < 0 || rj < 0 || ri >= n || rj >= n) return null;
+    return invRot(ri, rj, state.isoDir, n);
+  }
+
+  canvas.addEventListener('pointermove', e => {
+    if (state.phase !== 'build' && state.phase !== 'decorate') { hoverCell = null; return; }
+    const cell = pickCell(e.clientX, e.clientY);
+    hoverCell = cell;
+    if (state.phase !== 'build' || !state.painting || !cell) return;
+    const key = cell[0] * gridSize() + cell[1];
+    if (key === state.lastCell) return;
+    state.lastCell = key;
+    if (state.paintMode === 'place') beginPlace(cell[0], cell[1], true);
+    else removeAt(cell[0], cell[1]);
+    e.preventDefault();
+  });
+  canvas.addEventListener('pointerdown', e => {
+    if (state.phase !== 'build' && state.phase !== 'decorate') return;
+    ac();
+    const cell = pickCell(e.clientX, e.clientY);
+    if (!cell) return;
+    const [i, j] = cell;
+    if (state.phase === 'decorate') { placeDecor(i, j); e.preventDefault(); return; }
+    pushUndo();
+    state.painting = true;
+    state.lastCell = i * gridSize() + j;
+    if (state.board[i][j] > 0) { state.paintMode = 'remove'; removeAt(i, j); }
+    else { state.paintMode = 'place'; beginPlace(i, j, false); }
+    try { canvas.setPointerCapture(e.pointerId); } catch (err) {}
+    e.preventDefault();
+  });
+  function endPaint(e) {
+    if (!state.painting) return;
+    state.painting = false;
+    state.lastCell = -1;
+    try { canvas.releasePointerCapture(e.pointerId); } catch (err) {}
+  }
+  canvas.addEventListener('pointerup', endPaint);
+  canvas.addEventListener('pointercancel', endPaint);
+  canvas.addEventListener('pointerleave', () => { hoverCell = null; });
+
+  // ---- materials UI ----
+  function renderMaterials() {
+    const el = document.getElementById('materials');
+    const cols = Object.keys(state.resTotal).map(Number).sort((a, b) => a - b);
+    const parts = [];
+    for (const ci of cols) {
+      const col = PALETTE[ci];
+      const left = state.resLeft[ci] || 0;
+      const active = state.selectedColor === ci;
+      const dim = left <= 0 ? 'opacity-40' : '';
+      parts.push(`<button data-color="${ci}" class="matBtn shrink-0 flex items-center gap-1.5 rounded-xl pl-1.5 pr-2.5 py-1 ${dim} ${active ? 'ring-2 ring-white bg-white/20' : 'bg-white/8'}" style="background:${active ? 'rgba(255,255,255,.18)' : 'rgba(255,255,255,.06)'};">
+        <span style="display:inline-block;width:22px;height:22px;border-radius:6px;background:linear-gradient(135deg,${col.light},${col.base} 55%,${col.dark});box-shadow:inset 0 1px 0 rgba(255,255,255,.4),0 1px 2px rgba(0,0,0,.4);border:1px solid rgba(255,255,255,.2);"></span>
+        <span class="text-white text-sm font-black leading-none">×${left}</span>
+      </button>`);
+    }
+    el.innerHTML = parts.join('');
+    el.querySelectorAll('.matBtn').forEach(btn => {
+      btn.onclick = () => {
+        const ci = Number(btn.dataset.color);
+        if ((state.resLeft[ci] || 0) <= 0) { sounds.bad(); return; }
+        state.selectedColor = ci; sounds.pick(); renderMaterials();
+      };
+    });
+    document.getElementById('hintCount').textContent = state.hintsLeft > 0 ? `(${state.hintsLeft})` : '';
+  }
+
+  // ---- DIY decoration UI ----
+  function showBuildBar() { buildBar.classList.remove('hidden'); buildBar.classList.add('flex'); decorBar.classList.add('hidden'); decorBar.classList.remove('flex'); }
+  function showDecorBar() { decorBar.classList.remove('hidden'); decorBar.classList.add('flex'); buildBar.classList.add('hidden'); buildBar.classList.remove('flex'); }
+
+  function renderDecorTray() {
+    const el = document.getElementById('decorTray');
+    const ids = Object.keys(state.eggs);
+    const parts = [];
+    for (const id of ids) {
+      const d = decorDef(id), left = state.eggs[id] || 0;
+      const active = state.selectedEgg === id;
+      const dim = left <= 0 ? 'opacity-40' : '';
+      parts.push(`<button data-egg="${id}" class="eggBtn shrink-0 flex items-center gap-1.5 rounded-xl pl-1.5 pr-2.5 py-1 ${dim}" style="background:${active ? 'rgba(255,255,255,.2)' : 'rgba(255,255,255,.06)'};${active ? 'box-shadow:0 0 0 2px #fff inset;' : ''}">
+        <span style="display:inline-block;width:24px;height:24px;border-radius:6px;display:flex;align-items:center;justify-content:center;font-size:16px;background:linear-gradient(135deg,${d.base},rgba(0,0,0,.15));box-shadow:inset 0 1px 0 rgba(255,255,255,.4),0 1px 2px rgba(0,0,0,.4);">${d.emoji}</span>
+        <span class="text-white text-sm font-black leading-none">×${left}</span>
+      </button>`);
+    }
+    el.innerHTML = parts.join('');
+    el.querySelectorAll('.eggBtn').forEach(btn => {
+      btn.onclick = () => {
+        const id = btn.dataset.egg;
+        if ((state.eggs[id] || 0) <= 0) { sounds.bad(); return; }
+        state.selectedEgg = id; sounds.pick(); renderDecorTray();
+      };
+    });
+  }
+
+  // ---- HUD ----
+  function updateHud() {
+    const s = stats();
+    document.getElementById('levelVal').textContent = String(state.levelIdx + 1);
+    document.getElementById('compVal').textContent = s.completion + '%';
+    document.getElementById('comboVal').textContent = '×' + state.combo;
+    document.getElementById('bestVal').textContent = String(state.best);
+    const lvl = currentLevel();
+    hintBar.textContent = `Lv.${lvl.id} ${lvl.name} — ${lvl.hint}`;
+  }
+
+  // ---- toolbar ----
+  document.getElementById('rotateBtn').onclick = () => { state.isoDir = (state.isoDir + 1) % 4; sounds.pick(); };
+  document.getElementById('ghostBtn').onclick = () => {
+    state.ghostVisible = !state.ghostVisible;
+    toast(state.ghostVisible ? t('ghostShown') : t('ghostHidden'));
+  };
+  document.getElementById('hintBtn').onclick = useHint;
+  document.getElementById('undoBtn').onclick = undo;
+  document.getElementById('redoBtn').onclick = redo;
+  document.getElementById('clearBtn').onclick = clearBoard;
+  document.getElementById('shareBtn').onclick = exportPhoto;
+  document.getElementById('decorRotateBtn').onclick = () => { state.isoDir = (state.isoDir + 1) % 4; sounds.pick(); };
+  document.getElementById('decorShareBtn').onclick = exportPhoto;
+  document.getElementById('finishBtn').onclick = () => { sounds.pick(); finalizeRun(); };
+
+  // ---- toast ----
+  let toastTimer = null;
+  function toast(msg) {
+    const el = document.getElementById('toast');
+    el.textContent = msg;
+    el.classList.remove('opacity-0'); el.classList.add('opacity-100');
+    clearTimeout(toastTimer);
+    toastTimer = setTimeout(() => { el.classList.remove('opacity-100'); el.classList.add('opacity-0'); }, 1400);
+  }
+
+  // ---- confetti ----
+  function launchConfetti() {
+    const layer = document.getElementById('confetti');
+    layer.innerHTML = '';
+    const colors = ['#f87171', '#fbbf24', '#34d399', '#60a5fa', '#a78bfa', '#f472b6'];
+    for (let i = 0; i < 70; i++) {
+      const p = document.createElement('div');
+      p.style.cssText = `position:absolute;left:${Math.random() * 100}%;top:-12px;width:8px;height:13px;background:${colors[i % colors.length]};opacity:.92;border-radius:2px;transform:rotate(${Math.random() * 360}deg);`;
+      p.animate([
+        { transform: `translateY(0) rotate(0deg)`, opacity: 1 },
+        { transform: `translateY(${window.innerHeight + 50}px) rotate(${720 + Math.random() * 360}deg)`, opacity: 0 }
+      ], { duration: 1700 + Math.random() * 900, easing: 'cubic-bezier(.2,.6,.4,1)' });
+      layer.appendChild(p);
+      setTimeout(() => p.remove(), 2800);
+    }
+  }
+
+  // ---- pet cheer ----
+  function showPetCheer() {
+    petCheer.classList.remove('hidden');
+    petCheer.classList.add('flex');
+    petCheer.animate([
+      { transform: 'translateX(120%) scale(.6)', opacity: 0 },
+      { transform: 'translateX(0) scale(1)', opacity: 1 }
+    ], { duration: 520, easing: 'cubic-bezier(.2,1.4,.4,1)' });
+    petCheerImg.animate([
+      { transform: 'rotate(-6deg) translateY(0)' },
+      { transform: 'rotate(6deg) translateY(-8px)' },
+      { transform: 'rotate(-6deg) translateY(0)' }
+    ], { duration: 700, iterations: 3 });
+  }
+  function hidePetCheer() { petCheer.classList.add('hidden'); petCheer.classList.remove('flex'); }
+
+  // ---- 1:1 Polaroid photo export (locked square, includes player's decor) ----
+  function exportPhoto() {
+    sounds.chime();
+    const SQ = 1080;                 // hard-locked 1:1 square
+    const off = document.createElement('canvas');
+    off.width = SQ; off.height = SQ;
+    const c = off.getContext('2d');
+    // polaroid paper
+    c.fillStyle = '#fdfdf8'; c.fillRect(0, 0, SQ, SQ);
+    // soft paper edge shadow
+    c.strokeStyle = 'rgba(0,0,0,.06)'; c.lineWidth = 2; c.strokeRect(8, 8, SQ - 16, SQ - 16);
+    // photo window: even side/top borders, thicker bottom strip (classic polaroid)
+    const bd = 60, bottom = 200;
+    const px = bd, py = bd, pw = SQ - bd * 2, ph = SQ - bd - bottom;
+    c.save();
+    c.beginPath(); c.rect(px, py, pw, ph); c.clip();
+    const bg = c.createLinearGradient(px, py, px, py + ph);
+    bg.addColorStop(0, '#243b6b'); bg.addColorStop(0.55, '#131c39'); bg.addColorStop(1, '#05080f');
+    c.fillStyle = bg; c.fillRect(px, py, pw, ph);
+    const gl = c.createRadialGradient(px + pw / 2, py + ph * 0.4, 0, px + pw / 2, py + ph * 0.4, pw * 0.7);
+    gl.addColorStop(0, 'rgba(125,211,252,.18)'); gl.addColorStop(1, 'rgba(0,0,0,0)');
+    c.fillStyle = gl; c.fillRect(px, py, pw, ph);
+    // scene fit inside the photo window (renders board + player's decor)
+    const n = gridSize();
+    const eg = { originX: px + pw / 2, originY: 0, tileW: 0, tileH: 0, cubeH: 0, slabH: 0 };
+    eg.tileW = (pw * 0.80) / n;
+    eg.tileH = eg.tileW * 0.5; eg.cubeH = eg.tileW * 0.55; eg.slabH = eg.tileW * 0.5;
+    eg.originY = py + ph / 2 + 30 - (n * eg.tileH + eg.slabH - eg.cubeH) / 2;
+    paintScene(c, eg, 0, true);
+    c.restore();
+    // photo inner frame
+    c.strokeStyle = 'rgba(0,0,0,.12)'; c.lineWidth = 2; c.strokeRect(px, py, pw, ph);
+    // handwritten-style caption on the bottom strip
+    const lvl = currentLevel();
+    c.textAlign = 'center';
+    c.fillStyle = '#1f2937';
+    c.font = '900 46px "Segoe Script","Comic Sans MS",system-ui,sans-serif';
+    c.fillText(`哈奇小镇 · ${lvl.name}`, SQ / 2, py + ph + 84);
+    c.fillStyle = '#9ca3af';
+    c.font = '600 28px system-ui,sans-serif';
+    c.fillText('体素微雕工坊  ·  Voxel Workshop', SQ / 2, py + ph + 134);
+
+    let dataUrl = '';
+    try { dataUrl = off.toDataURL('image/png'); } catch (err) { toast('export failed'); return; }
+    try {
+      const a = document.createElement('a');
+      a.href = dataUrl;
+      a.download = `haqi_voxel_lv${lvl.id}.png`;
+      document.body.appendChild(a); a.click(); a.remove();
+    } catch (err) {}
+    post('haqi_share_image', { dataUrl, level: lvl.id, name: lvl.name, ratio: '1:1' });
+    toast(t('photoSaved'));
+  }
+
+  // ---- overlay / level select ----
+  function showOverlay(opts) {
+    ovIcon.textContent = opts.icon || '🧱';
+    ovTitle.textContent = opts.title;
+    ovText.textContent = opts.text;
+    if (opts.extra) { ovExtra.textContent = opts.extra; ovExtra.classList.remove('hidden'); }
+    else ovExtra.classList.add('hidden');
+    ovBtn.textContent = opts.button;
+    if (opts.button2) { ovBtn2.textContent = opts.button2; ovBtn2.classList.remove('hidden'); }
+    else ovBtn2.classList.add('hidden');
+    if (opts.showLevels) { renderLevelGrid(); levelGrid.classList.remove('hidden'); }
+    else levelGrid.classList.add('hidden');
+    refreshDiffButtons();
+    overlayEl.classList.remove('hidden');
+  }
+  function hideOverlay() { overlayEl.classList.add('hidden'); }
+
+  function refreshDiffButtons() {
+    document.querySelectorAll('.diffBtn').forEach(btn => {
+      const active = btn.dataset.diff === state.difficulty;
+      btn.style.background = active ? 'linear-gradient(180deg,#60a5fa,#2563eb)' : 'rgba(255,255,255,.1)';
+      btn.style.boxShadow = active ? '0 4px 14px rgba(37,99,235,.5)' : 'none';
+    });
+  }
+  function renderLevelGrid() {
+    const parts = [];
+    LEVELS.forEach((lvl, i) => {
+      const locked = i > state.maxUnlocked;
+      const done = i < state.maxUnlocked;
+      const badge = done ? '✅' : locked ? '🔒' : '';
+      parts.push(`<button data-lvl="${i}" class="lvlBtn rounded-xl py-2 px-1 text-white text-sm font-bold bg-white/10 ${locked ? 'opacity-40' : ''}">${badge} Lv.${lvl.id}<div class="text-[10px] font-normal opacity-80">${lvl.name}</div></button>`);
+    });
+    levelGrid.innerHTML = parts.join('');
+    levelGrid.querySelectorAll('.lvlBtn').forEach(btn => {
+      btn.onclick = () => {
+        const i = Number(btn.dataset.lvl);
+        if (i > state.maxUnlocked) { toast(t('levelLocked')); sounds.bad(); return; }
+        state.levelIdx = i; hideOverlay(); startGame();
+      };
+    });
+  }
+  function showWinOverlay() {
+    const lvl = currentLevel();
+    const isLast = state.levelIdx + 1 >= LEVELS.length;
+    showOverlay({
+      icon: '🏆', title: t('winTitle'),
+      text: t('winTextRepair', { level: lvl.id, name: lvl.name, accuracy: state.manualAccuracy, combo: state.comboBest, seconds: state.elapsed }),
+      extra: state.score >= state.best ? t('newBestText') : '',
+      button: isLast ? t('backToMenu') : t('nextLevel'),
+      button2: t('shareBtn'),
+      showLevels: true
+    });
+    ovBtn2.textContent = '📸 ' + t('shareBtn');
+    ovBtn2.onclick = exportPhoto;
+  }
+
+  ovBtn.addEventListener('click', () => {
+    ac();
+    if (state.finished) {
+      if (state.levelIdx + 1 < LEVELS.length) { state.levelIdx++; }
+      else { showOverlay({ icon: '🎉', title: t('title'), text: t('allLevelsDone'), button: t('backToMenu'), showLevels: true }); ovBtn.onclick = () => hideOverlay(); return; }
+    }
+    hideOverlay(); startGame();
+  });
+  document.querySelectorAll('.diffBtn').forEach(btn => {
+    btn.addEventListener('click', () => {
+      state.difficulty = btn.dataset.diff;
+      localStorage.setItem(DIFF_KEY, state.difficulty);
+      refreshDiffButtons();
+      if (state.started) loadLevel(state.levelIdx);
+    });
+  });
+  document.getElementById('helpBtn').addEventListener('click', () => {
+    showOverlay({ icon: '🧱', title: t('overlayTitle'), text: t('overlayText'), button: state.started ? t('continueBtn') : t('startBtn') });
+  });
+  document.getElementById('restartBtn').addEventListener('click', () => { ac(); startGame(); });
+  document.getElementById('levelsBtn').addEventListener('click', () => {
+    showOverlay({ icon: '📋', title: t('levelSelectTitle'), text: '', button: t('continueBtn'), showLevels: true });
+  });
+  overlayEl.addEventListener('click', e => {
+    if (e.target === overlayEl && state.started && !state.finished) hideOverlay();
+  });
+
+  // ---- pet integration ----
+  let petRequestId = '', petObjectUrl = '';
+  function requestPetImage(petId) {
+    const requestId = `pet_${Date.now()}`;
+    petRequestId = requestId;
+    window.parent.postMessage({ type: 'haqi_get_pet_image', requestId, anim: 'happy', petId: petId || undefined }, '*');
+    setTimeout(() => {
+      if (petObjectUrl) return;
+      window.parent.postMessage({ type: 'haqi_get_pet_images', requestId: `pets_${Date.now()}`, anim: 'happy' }, '*');
+    }, 900);
+  }
+  function setPetImage(pet) {
+    if (!pet || !pet.imageBlob) return;
+    const url = URL.createObjectURL(pet.imageBlob);
+    if (petObjectUrl) URL.revokeObjectURL(petObjectUrl);
+    petObjectUrl = url;
+    const uv = pet.uv || { cols: 1, rows: 1, col: 0, row: 0 };
+    petCheerImg.textContent = '';
+    petCheerImg.style.width = '92px';
+    petCheerImg.style.height = '92px';
+    petCheerImg.style.backgroundImage = `url("${url}")`;
+    petCheerImg.style.backgroundRepeat = 'no-repeat';
+    if (uv.cols > 1 || uv.rows > 1) {
+      petCheerImg.style.backgroundSize = `${uv.cols * 100}% ${uv.rows * 100}%`;
+      petCheerImg.style.backgroundPosition = `${uv.col * 100 / Math.max(1, uv.cols - 1)}% ${uv.row * 100 / Math.max(1, uv.rows - 1)}%`;
+    } else {
+      petCheerImg.style.backgroundSize = 'contain';
+      petCheerImg.style.backgroundPosition = 'center';
+    }
+  }
+
+  // ---- parent messaging ----
+  function post(type, data) {
+    try { window.parent.postMessage(data ? { type, data } : { type }, '*'); } catch (e) {}
+  }
+  window.addEventListener('message', event => {
+    const msg = event.data || {};
+    if (msg.type === 'setGameConfig' && msg.data) {
+      if (msg.data.difficulty && game_config.difficulties[msg.data.difficulty]) {
+        state.difficulty = msg.data.difficulty;
+        localStorage.setItem(DIFF_KEY, state.difficulty);
+        refreshDiffButtons();
+        if (state.started) loadLevel(state.levelIdx);
+      }
+      if (msg.data.petId) requestPetImage(msg.data.petId);
+    }
+    if (msg.type === 'haqi_pet_image' && msg.ok && msg.data &&
+        (!petRequestId || !msg.requestId || msg.requestId === petRequestId || msg.requestId === 'active_pet_config')) {
+      setPetImage(msg.data);
+    }
+    if (msg.type === 'haqi_pet_images' && msg.ok) {
+      const firstPet = Array.isArray(msg.data && msg.data.pets) ? msg.data.pets[0] : null;
+      if (firstPet) setPetImage(firstPet);
+    }
+  });
+
+  // ---- init ----
+  const savedDiff = localStorage.getItem(DIFF_KEY);
+  if (savedDiff && game_config.difficulties[savedDiff]) state.difficulty = savedDiff;
+  state.target = prepareTarget(currentLevel().grid);
+  state.board = emptyGrid(gridSize());
+  state.resTotal = computeResources(state.target);
+  state.resLeft = Object.assign({}, state.resTotal);
+  state.hintsLeft = diffCfg().hintReveals;
+  const cols0 = Object.keys(state.resTotal).map(Number).sort((a, b) => a - b);
+  state.selectedColor = cols0[0] || 1;
+  setupCanvas();
+  renderMaterials();
+  updateHud();
+  refreshDiffButtons();
+  window.addEventListener('resize', setupCanvas);
+  showOverlay({ icon: '🧱', title: t('overlayTitle'), text: t('overlayText'), button: t('startBtn') });
+  requestPetImage('');
+  post('gameLoaded');
+  requestAnimationFrame(frame);
+
+  // debug hook
+  window.__voxelWorkshopDebug = { state, stats, isComplete, loadLevel, exportPhoto };
+})();
+</script>
+
+</html>

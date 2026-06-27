@@ -6,9 +6,10 @@ import { state, setPlanetName } from './state.js';
 import { displayPetName } from './dna.js';
 import { getPet, getPetAsync, getPetImagePayload } from './pet.js';
 import { isPetOnCurrentPlanet } from './petLifecycle.js';
-import { addLikedGame, deletePetGame, loadLikedGames, loadPetGameHtml, loadPetGameList, loadRecentGames, loadRemotePetGameHtml, loadRemotePetGameList, recordRecentGame, removeLikedGame, saveUserProfileDebounced } from './storage.js';
+import { addLikedGame, deletePetGame, loadExploreSeen, loadLikedGames, loadPetGameHtml, loadPetGameList, loadRecentGames, loadRemotePetGameHtml, loadRemotePetGameList, recordExploreSeen, recordRecentGame, removeLikedGame, saveExploreSeen, saveUserProfileDebounced, setPetGamePublished } from './storage.js';
 import SoundManager from './soundManager.js';
 import { isMiniProgramWebView, isWechatBrowser, navigateToSharePage, postShareToMiniProgram, setWxShareData } from './wxShare.js';
+import { handleGameHostMessage, loadGameHtmlIntoFrame } from './gameHostFrame.js';
 
 const soundManager = SoundManager.getInstance();
 const STAT_REWARD_ANIMATION_MS = 1600;
@@ -285,6 +286,26 @@ function currentUsername() {
     return String(state.user?.username || state.sdk?.user?.username || '').trim();
 }
 
+// 解析分享小游戏的真实名称：优先取作者小游戏清单（index.json）里的标题，
+// 其次解析 HTML <title>，最后回退到文件名美化，避免显示通用的"分享的小游戏"。
+async function resolveSharedGameTitle(username, sharedPath, baseName, html) {
+    try {
+        const isMe = username === currentUsername();
+        const list = isMe ? await loadPetGameList() : await loadRemotePetGameList(username);
+        const match = (Array.isArray(list) ? list : []).find(item => {
+            const itemBase = String(item.path || '').split('/').pop().replace(/\.html?$/i, '');
+            return item.path === sharedPath || itemBase === baseName;
+        });
+        const fromIndex = String(match?.title || '').trim();
+        if (fromIndex) return fromIndex;
+    } catch (_) { /* 清单不可用时走下面的回退 */ }
+    const titleTag = String(html || '').match(/<title[^>]*>([\s\S]*?)<\/title>/i);
+    const fromHtml = titleTag ? titleTag[1].replace(/\s+/g, ' ').trim() : '';
+    if (fromHtml) return fromHtml;
+    const pretty = String(baseName || '').replace(/[_-]+/g, ' ').trim();
+    return pretty || t('mgSharedGameTitle');
+}
+
 // 作者标签文案：自己的游戏显示 [我]/[me]，否则取用户名前几位字母。
 function ownerTagLabel(owner) {
     const name = String(owner || '').trim();
@@ -352,11 +373,21 @@ function getMinigameShareUsername() {
     return state.sdk?.getUsername?.().catch?.(() => '') || Promise.resolve('');
 }
 
-function buildMinigameShareUrl(record, username) {
+function buildMinigameShareUrl(record, username, message = '') {
     const url = new URL('MagicHaqi.html', window.location.href);
-    url.searchParams.set('gameFrom', username || '');
-    const filename = String(record?.path || '').trim().replace(/^\/+/, '').split('/').pop() || '';
-    url.searchParams.set('game', filename);
+    const path = String(record?.path || '').trim();
+    if (path) {
+        // 用户作品：?gameFrom=<作者用户名>&game=<文件名>
+        url.searchParams.set('gameFrom', username || '');
+        const filename = path.replace(/^\/+/, '').split('/').pop() || '';
+        url.searchParams.set('game', filename);
+    } else {
+        // 官方内置游戏：无 path，按官方游戏 id 分享（?game=<officialId>，无 gameFrom）。
+        url.searchParams.set('game', String(record?.id || '').trim());
+    }
+    // 可选自定义留言（分享落地登录页单独一行展示）。
+    const msg = String(message || '').trim().slice(0, 200);
+    if (msg) url.searchParams.set('msg', msg);
     return url.href;
 }
 
@@ -408,13 +439,23 @@ function showWxShareGuide() {
 
 // 分享弹窗（参照 view_story_list 的故事分享样式）。
 async function openMinigameSharePanel(record) {
-    if (!record?.path) return;
-    const username = await getMinigameShareUsername();
-    if (!username) { showToast(t('mgShareLoginFirst'), 'error', 2200); return; }
+    if (!record) return;
+    // 官方内置游戏无 path（按 id 分享，无需登录）；用户作品有 path（需要作者用户名）。
+    const isOfficial = !String(record.path || '').trim();
+    let username = '';
+    if (!isOfficial) {
+        // 别人的作品用其 owner，自己的作品用当前登录名。
+        username = String(record.owner || '').trim() || await getMinigameShareUsername();
+        if (!username) { showToast(t('mgShareLoginFirst'), 'error', 2200); return; }
+    }
     document.querySelector('.mh-minigame-share-mask')?.remove();
     const safeTitle = record.title || t('mgDefaultName');
-    const url = buildMinigameShareUrl(record, username);
-    const gameFilename = String(record?.path || '').trim().replace(/^\/+/, '').split('/').pop() || '';
+    // 自定义留言（可由分享者输入），写进链接的 msg 参数，并在分享落地登录页单独一行展示。
+    let shareMessage = '';
+    let url = buildMinigameShareUrl(record, username, shareMessage);
+    const gameFilename = isOfficial
+        ? String(record.id || '').trim()
+        : (String(record.path || '').trim().replace(/^\/+/, '').split('/').pop() || '');
     const text = t('mgShareText', { title: safeTitle });
     const isWxBrowser = isWechatBrowser();
     const isMP = isMiniProgramWebView();
@@ -430,6 +471,7 @@ async function openMinigameSharePanel(record) {
                 <button type="button" class="mh-story-share-close" data-mg-share-close aria-label="${escapeHtml(t('mgShareClose'))}">×</button>
             </div>
             <div class="mh-story-share-preview">${escapeHtml(text)}</div>
+            <textarea class="modal-input mh-minigame-share-msg" data-mg-share-msg rows="2" maxlength="200" placeholder="${escapeHtml(t('mgShareMsgPlaceholder'))}" aria-label="${escapeHtml(t('mgShareMsgLabel'))}" style="resize:none;line-height:1.4"></textarea>
             <input class="modal-input mh-story-share-link" readonly value="${escapeHtml(url)}" aria-label="${escapeHtml(t('mgShareLink'))}">
             <div class="mh-story-share-actions">
                 <button type="button" class="btn-secondary" data-mg-share-method="copy">${escapeHtml(t('mgShareCopyLink'))}</button>
@@ -438,6 +480,15 @@ async function openMinigameSharePanel(record) {
             </div>
         </div>`;
     const close = () => mask.remove();
+    // 自定义留言输入：实时重算分享链接（msg 参数）并刷新只读链接框。
+    mask.addEventListener('input', (e) => {
+        const ta = e.target.closest?.('[data-mg-share-msg]');
+        if (!ta) return;
+        shareMessage = String(ta.value || '').trim().slice(0, 200);
+        url = buildMinigameShareUrl(record, username, shareMessage);
+        const linkInput = mask.querySelector('.mh-story-share-link');
+        if (linkInput) linkInput.value = url;
+    });
     mask.addEventListener('click', async (e) => {
         if (e.target === mask || e.target.closest?.('[data-mg-share-close]')) { close(); return; }
         const methodBtn = e.target.closest?.('[data-mg-share-method]');
@@ -448,7 +499,7 @@ async function openMinigameSharePanel(record) {
         } else if (method === 'wechat') {
             if (isMP) {
                 // 小程序 web-view：navigateTo 实时跳转到宿主原生分享页，由用户点原生按钮拉起转发
-                const ok = await navigateToSharePage({ title: safeTitle, desc: text, gameFrom: username, game: gameFilename, icon: record.icon });
+                const ok = await navigateToSharePage({ title: safeTitle, desc: text, gameFrom: username, game: gameFilename, icon: record.icon, msg: shareMessage });
                 if (ok) { showToast(t('mgShareNavOpening'), 'info', 1200); close(); } else {
                     await copyMinigameText(`${text}\n${url}`, t('mgShareWechatCopied'));
                 }
@@ -463,7 +514,7 @@ async function openMinigameSharePanel(record) {
         } else if (method === 'system') {
             if (isMP) {
                 // 小程序里没有系统分享，同样跳转到宿主原生分享页
-                const ok = await navigateToSharePage({ title: safeTitle, desc: text, gameFrom: username, game: gameFilename, icon: record.icon });
+                const ok = await navigateToSharePage({ title: safeTitle, desc: text, gameFrom: username, game: gameFilename, icon: record.icon, msg: shareMessage });
                 if (ok) { showToast(t('mgShareNavOpening'), 'info', 1200); close(); return; }
             }
             if (isWxBrowser) {
@@ -533,8 +584,10 @@ function cleanupSharedGameUrl() {
 
 // 单色 SVG 图标（fill/stroke 用 currentColor，跟随标签文字颜色：未选灰、选中蓝）。
 const MINIGAME_TAB_ICONS = {
-    // 推荐：五角星轮廓
-    recommend: '<svg viewBox="0 0 24 24" aria-hidden="true" focusable="false"><path d="M12 3.5l2.6 5.27 5.82.85-4.21 4.1.99 5.8L12 16.9l-5.2 2.62.99-5.8-4.21-4.1 5.82-.85z" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linejoin="round"/></svg>',
+    // 首页：房子轮廓
+    recommend: '<svg viewBox="0 0 24 24" aria-hidden="true" focusable="false"><path d="M4 11.5 12 5l8 6.5" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/><path d="M6 10.5V19h12v-8.5" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linejoin="round"/><path d="M10 19v-4.5h4V19" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linejoin="round"/></svg>',
+    // 探索：指南针
+    explore: '<svg viewBox="0 0 24 24" aria-hidden="true" focusable="false"><circle cx="12" cy="12" r="8.5" fill="none" stroke="currentColor" stroke-width="1.8"/><path d="M15.4 8.6 13 13l-4.4 2.4L11 11z" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linejoin="round"/></svg>',
     // 创造：加号
     create: '<svg viewBox="0 0 24 24" aria-hidden="true" focusable="false"><path d="M12 5v14M5 12h14" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"/></svg>',
     // 我的：方框（盒子轮廓）
@@ -543,6 +596,7 @@ const MINIGAME_TAB_ICONS = {
 
 const MINIGAME_TABS = [
     { id: 'recommend', labelKey: 'mgTabRecommend' },
+    { id: 'explore', labelKey: 'mgTabExplore' },
     { id: 'create', labelKey: 'mgTabCreate' },
     { id: 'mine', labelKey: 'mgTabMine' },
 ];
@@ -631,6 +685,18 @@ export function renderMinigames(panel, { pet }, { onBack, onGameFinished, initia
     if (reentrantSameGame) {
         const liveFrame = $('mhMinigameFrame');
         if (liveFrame?.isConnected && panel?.contains?.(liveFrame)) {
+            if (pet) currentPet = pet;
+            try { refreshPetStats(); } catch (_) {}
+            try { refreshCoins(); } catch (_) {}
+            return;
+        }
+    }
+    // 同理保护"探索"标签：抖音式信息流里有正在试玩的 iframe，全量重建会销毁它
+    // （触发同上：游戏请求宠物图 → 后台加载完成 notify() → 本路由重渲染）。
+    // 探索流仅由用户点标签进入（无路由参数），重入时只刷新动态数据、保住信息流。
+    if (!sharedGame && !initialGameId && activeMinigameTab === 'explore') {
+        const explorePane = $('mhMinigameExplore');
+        if (explorePane?.isConnected && panel?.contains?.(explorePane)) {
             if (pet) currentPet = pet;
             try { refreshPetStats(); } catch (_) {}
             try { refreshCoins(); } catch (_) {}
@@ -726,6 +792,108 @@ export function renderMinigames(panel, { pet }, { onBack, onGameFinished, initia
             .mh-minigame-tab-btn .mh-minigame-tab-ico svg { width: 22px; height: 22px; display: block; }
             .mh-minigame-tab-btn.active { color: #0ea5e9; }
             .mh-minigame-tab-btn.active .mh-minigame-tab-ico { transform: translateY(-1px); }
+            /* 探索：抖音式上下滑动逐个试玩 */
+            .mh-explore-pager {
+                overflow-y: auto;
+                scroll-snap-type: y mandatory;
+                -webkit-overflow-scrolling: touch;
+                background: #06172d;
+                padding: 0 !important;
+                /* 禁用原生触摸滚动：翻页一律走限速后的 exploreGo（程序化 scrollIntoView 不受 touch-action 影响），
+                   避免在加载封面上直接滑动绕过"最快 3 秒一个 / 未加载完不许翻页"的限制。 */
+                touch-action: none;
+            }
+            .mh-explore-pager::-webkit-scrollbar { display: none; }
+            .mh-explore-slide {
+                position: relative;
+                width: 100%;
+                height: 100%;
+                scroll-snap-align: start;
+                scroll-snap-stop: always;
+                overflow: hidden;
+                background: #06172d;
+            }
+            .mh-explore-frame-host { position: absolute; inset: 0; }
+            .mh-explore-frame-host iframe { width: 100%; height: 100%; border: 0; display: block; background: #fff; }
+            .mh-explore-poster {
+                position: absolute;
+                inset: 0;
+                z-index: 2;
+                display: flex;
+                flex-direction: column;
+                align-items: center;
+                justify-content: center;
+                gap: 14px;
+                padding: 24px;
+                text-align: center;
+                color: #fff;
+                background: radial-gradient(circle at 50% 38%, rgba(56,189,248,.34), rgba(6,23,45,.92) 72%);
+                transition: opacity .3s ease;
+            }
+            .mh-explore-slide.playing .mh-explore-poster { opacity: 0; pointer-events: none; }
+            .mh-explore-poster .mh-minigame-icon { width: 92px; height: 92px; font-size: 76px; }
+            .mh-explore-poster .mh-minigame-icon svg { width: 92px; height: 92px; }
+            .mh-explore-poster-title { font-size: 22px; font-weight: 1000; line-height: 1.2; text-shadow: 0 2px 8px rgba(0,0,0,.4); }
+            .mh-explore-poster-desc { font-size: 14px; font-weight: 700; line-height: 1.4; max-width: 16em; opacity: .9; }
+            .mh-explore-poster-spinner {
+                width: 40px;
+                height: 40px;
+                border-radius: 50%;
+                background: conic-gradient(from 0deg, #67e8f9, #0ea5e9, #8b5cf6, #67e8f9);
+                animation: mhMinigameLoadingSpin 1.05s linear infinite;
+                opacity: 0;
+            }
+            .mh-explore-slide.loading .mh-explore-poster-spinner { opacity: 1; }
+            .mh-explore-empty {
+                height: 100%;
+                display: flex;
+                align-items: center;
+                justify-content: center;
+                padding: 24px;
+                color: rgba(255,255,255,.82);
+                font-size: 14px;
+                font-weight: 800;
+                text-align: center;
+            }
+            /* 探索底部栏翻页按钮（像顶栏一样的底栏，左右两侧各一个） */
+            .mh-explore-nav-btn {
+                display: inline-flex;
+                align-items: center;
+                gap: 5px;
+                height: 40px;
+                padding: 0 18px;
+                border: 0;
+                border-radius: 999px;
+                background: rgba(14,165,233,.12);
+                color: #0369a1;
+                font-size: 14px;
+                font-weight: 900;
+                line-height: 1;
+                cursor: pointer;
+            }
+            .mh-explore-nav-btn svg { width: 20px; height: 20px; display: block; }
+            .mh-explore-nav-btn:disabled { opacity: .38; cursor: default; }
+            /* 探索底栏中间提示：上滑翻页，交互后淡出 */
+            .mh-explore-bar-hint {
+                flex: 1;
+                min-width: 0;
+                display: inline-flex;
+                align-items: center;
+                justify-content: center;
+                gap: 5px;
+                color: #64748b;
+                font-size: 13px;
+                font-weight: 900;
+                white-space: nowrap;
+                transition: opacity .3s ease;
+            }
+            .mh-explore-bar-hint .mh-explore-hint-arrow {
+                font-size: 17px;
+                line-height: 1;
+                color: #0ea5e9;
+                animation: mhMinigameLoadingFloat 1.4s ease-in-out infinite;
+            }
+            .mh-explore-bar-hint.dismissed { opacity: 0; }
             .mh-minigame-mine-grid {
                 padding: 14px;
                 display: grid;
@@ -781,7 +949,15 @@ export function renderMinigames(panel, { pet }, { onBack, onGameFinished, initia
             .mh-minigame-mine-title { font-weight: 800; color: var(--text-primary); font-size: 16px; line-height: 1.2; text-align: center; width: 100%; min-height: 2.4em; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; word-break: break-word; }
             .mh-minigame-mine-desc { color: var(--text-muted); font-size: 12px; line-height: 1.35; text-align: center; max-width: 12em; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; }
             .mh-minigame-mine-time { color: var(--text-muted); font-size: 11px; font-weight: 800; line-height: 1.2; opacity: .82; }
-            .mh-minigame-mine-actions { display: flex; gap: 6px; width: 100%; margin-top: auto; flex: 0 0 auto; }
+            .mh-minigame-mine-stats { position: absolute; top: 6px; left: 8px; z-index: 1; display: flex; gap: 8px; align-items: center; color: #0369a1; font-size: 11px; font-weight: 900; line-height: 1; }
+            .mh-minigame-mine-stats span { display: inline-flex; align-items: center; gap: 3px; }
+            /* 已发布作品：用青绿色描边 + 浅色底，与未发布卡片区分。 */
+            .mh-minigame-mine-card.is-published {
+                border: 1.5px solid rgba(16,185,129,.55);
+                background: linear-gradient(180deg, rgba(236,253,245,.96), rgba(209,250,229,.78));
+                box-shadow: 0 2px 10px rgba(16,185,129,.16);
+            }
+            .mh-minigame-mine-actions { display: flex; gap: 6px; align-items: center; width: 100%; margin-top: auto; flex: 0 0 auto; }
             .mh-minigame-mine-actions button { flex: 1; min-width: 0; padding: 7px 6px; font-size: 12px; min-height: 32px; }
             .mh-minigame-icon {
                 width: 58px;
@@ -1008,16 +1184,6 @@ export function renderMinigames(panel, { pet }, { onBack, onGameFinished, initia
             /* emoji 爱心：未收藏灰色（grayscale）；已收藏红色原色 */
             .mh-minigame-heart-emoji { font-size: 16px; line-height: 1; display: inline-block; filter: grayscale(1) opacity(.6); }
             .mh-minigame-heart-emoji.liked { filter: none; }
-            /* 分享按钮（我的卡片操作区，emoji 图标） */
-            .mh-minigame-mine-actions .mh-minigame-share-btn {
-                flex: 0 0 38px;
-                display: inline-flex;
-                align-items: center;
-                justify-content: center;
-                color: var(--text-secondary);
-                font-size: 16px;
-                line-height: 1;
-            }
             /* 分享弹窗（复用故事分享样式，本视图未注入 view_story_list 的 style，需自带） */
             .mh-minigame-share-mask { zoom:1 !important; align-items:flex-end; padding:14px 12px max(14px,env(safe-area-inset-bottom)); }
             .mh-minigame-share-mask .mh-story-share-card { width:min(420px, calc(100vw - 24px)); display:flex; flex-direction:column; gap:12px; border-radius:20px 20px 16px 16px; }
@@ -1091,17 +1257,22 @@ export function renderMinigames(panel, { pet }, { onBack, onGameFinished, initia
                 .mh-minigame-completion-card,
                 .mh-minigame-loading-card,
                 .mh-minigame-loading-spinner,
-                .mh-minigame-loading-dots span { animation: none; }
+                .mh-minigame-loading-dots span,
+                .mh-explore-poster-spinner,
+                .mh-explore-hint-arrow { animation: none; }
             }
         </style>
-        <div class="topbar">
+        <div class="topbar" id="mhMinigameTopbar" style="touch-action:none">
             <button class="btn-icon" id="mhBack" style="width:36px;height:36px;font-size:18px">‹</button>
             <span id="mhMinigameTitle" class="font-bold" style="color:var(--text-primary);flex:1;min-width:0;text-align:left;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${escapeHtml(t('mgPlay'))}</span>
             <div id="mhMinigameTopActions" style="display:${hideInitialTopbarActions ? 'none' : 'flex'};align-items:center;justify-content:flex-end;gap:5px;max-width:min(64vw,440px);overflow:visible">
-                ${renderCoinPill('mhMinigameCoins', 'mh-minigame-coin-pill')}
                 <button type="button" id="mhMinigameLikeBtn" class="mh-minigame-topbar-like" style="display:none" aria-pressed="false">
                     <span class="mh-minigame-topbar-like-ico" aria-hidden="true">${minigameHeartIcon(false)}</span>
                     <span class="mh-minigame-topbar-like-txt">${escapeHtml(t('mgLike'))}</span>
+                </button>
+                <button type="button" id="mhMinigameShareBtn" class="mh-minigame-topbar-like" style="display:none" aria-label="${escapeHtml(t('mgShare'))}" title="${escapeHtml(t('mgShare'))}">
+                    <span class="mh-minigame-topbar-like-ico" aria-hidden="true">${MINIGAME_SHARE_ICON}</span>
+                    <span class="mh-minigame-topbar-like-txt">${escapeHtml(t('mgShare'))}</span>
                 </button>
             </div>
         </div>
@@ -1111,9 +1282,24 @@ export function renderMinigames(panel, { pet }, { onBack, onGameFinished, initia
                     ${renderGameCards(getRecommendItems())}
                 </div>
                 <div id="mhMinigameMine" class="mh-minigame-tab-pane" data-mh-tab-pane="mine" style="height:100%;overflow:auto;padding:14px;display:${activeMinigameTab === 'mine' ? 'grid' : 'none'};grid-template-columns:repeat(auto-fill,minmax(140px,1fr));gap:12px;align-content:start"></div>
+                <div id="mhMinigameExplore" class="mh-minigame-tab-pane mh-explore-pager" data-mh-tab-pane="explore" style="height:100%;display:${activeMinigameTab === 'explore' ? 'block' : 'none'}"></div>
             </div>
             <div id="mhMinigameTabs" style="position:absolute;left:0;right:0;bottom:0;height:58px;display:${initialGameId ? 'none' : 'flex'};align-items:stretch;background:rgba(255,255,255,.92);border-top:1px solid rgba(14,116,144,.18);box-shadow:0 -2px 10px rgba(15,39,71,.08);z-index:5">
                 ${renderMinigameTabButtons()}
+            </div>
+            <div id="mhExploreBottomBar" style="display:none;position:absolute;left:0;right:0;bottom:0;height:58px;align-items:center;justify-content:space-between;gap:8px;padding:0 12px;background:rgba(255,255,255,.92);border-top:1px solid rgba(14,116,144,.18);box-shadow:0 -2px 10px rgba(15,39,71,.08);z-index:5;touch-action:none">
+                <button type="button" id="mhExplorePrev" class="mh-explore-nav-btn prev" aria-label="${escapeHtml(t('mgExplorePrev'))}" title="${escapeHtml(t('mgExplorePrev'))}">
+                    <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M7 14l5-5 5 5" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"/></svg>
+                    <span>${escapeHtml(t('mgExplorePrev'))}</span>
+                </button>
+                <div id="mhExploreHint" class="mh-explore-bar-hint" aria-hidden="true">
+                    <span class="mh-explore-hint-arrow">↑</span>
+                    <span>${escapeHtml(t('mgExploreHint'))}</span>
+                </div>
+                <button type="button" id="mhExploreNext" class="mh-explore-nav-btn next" aria-label="${escapeHtml(t('mgExploreNext'))}" title="${escapeHtml(t('mgExploreNext'))}">
+                    <span>${escapeHtml(t('mgExploreNext'))}</span>
+                    <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M7 10l5 5 5-5" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"/></svg>
+                </button>
             </div>
             <div id="mhMinigameFrameWrap" class="${initialGameId ? 'mh-minigame-is-loading' : ''}" style="display:${initialGameId ? 'block' : 'none'};position:absolute;inset:0;background:#0f2747;z-index:6">
                 <iframe id="mhMinigameFrame" title="${escapeHtml(t('mgFrameTitle'))}" style="width:100%;height:100%;border:0;background:#fff" allow="autoplay; fullscreen"></iframe>
@@ -1142,6 +1328,11 @@ export function renderMinigames(panel, { pet }, { onBack, onGameFinished, initia
         </div>`;
 
     $('mhBack').onclick = () => {
+        // 探索全屏模式：返回回到小游戏首页（推荐标签），而非退出小游戏视图。
+        if (activeMinigameTab === 'explore') {
+            switchTab('recommend');
+            return;
+        }
         if (currentGame) {
             if (exitGameToBack) {
                 completeDeferredGame();
@@ -1159,6 +1350,8 @@ export function renderMinigames(panel, { pet }, { onBack, onGameFinished, initia
     // 顶栏收藏按钮（仅游玩中显示）：切换当前游戏收藏状态。
     const likeBtnEl = $('mhMinigameLikeBtn');
     if (likeBtnEl) likeBtnEl.onclick = () => handlePlayLikeToggle();
+    const shareBtnEl = $('mhMinigameShareBtn');
+    if (shareBtnEl) shareBtnEl.onclick = () => { if (currentGameLikeMeta) openMinigameSharePanel(currentGameLikeMeta); };
 
     // 推荐标签当前条目（官方 + 收藏）按 id 索引，供点击时取回 like-meta 与作品来源。
     let recommendItemsById = new Map();
@@ -1325,13 +1518,21 @@ export function renderMinigames(panel, { pet }, { onBack, onGameFinished, initia
             onCreateGame?.();
             return;
         }
+        // 离开"探索"：卸载正在试玩的信息流 iframe，退出全屏模式（恢复 tabs 栏 / 顶栏标题）。
+        if (activeMinigameTab === 'explore' && tabId !== 'explore') {
+            unmountExploreFrame();
+            setExploreMode(false);
+        }
         activeMinigameTab = tabId;
         setTabButtonsActive();
         const list = $('mhMinigameList');
         const mine = $('mhMinigameMine');
+        const explore = $('mhMinigameExplore');
         if (list) list.style.display = tabId === 'recommend' ? 'grid' : 'none';
         if (mine) mine.style.display = tabId === 'mine' ? 'grid' : 'none';
+        if (explore) explore.style.display = tabId === 'explore' ? 'block' : 'none';
         if (tabId === 'mine') renderMineList();
+        if (tabId === 'explore') renderExplorePane();
     }
 
     function bindTabButtons() {
@@ -1340,6 +1541,13 @@ export function renderMinigames(panel, { pet }, { onBack, onGameFinished, initia
         });
     }
     bindTabButtons();
+    bindExploreBarGestures();
+
+    // 已发布作品的访问/点赞数据缓存（按游戏 path），切回「我的」标签时先用缓存即时渲染，再后台刷新。
+    let mineWorkStatsCache = {};
+    // userWorks.my 的原始作品列表缓存：整个会话只请求一次，发布新作品后置空以触发下次重新拉取。
+    let mineWorksRaw = null;
+    let mineWorksPromise = null;
 
     async function renderMineList() {
         const mine = $('mhMinigameMine');
@@ -1355,8 +1563,60 @@ export function renderMinigames(panel, { pet }, { onBack, onGameFinished, initia
             return;
         }
         if (cleanupMessageListener !== token || !$('mhMinigameMine') || activeMinigameTab !== 'mine') return;
-        mine.innerHTML = renderMineCards(records);
+        mine.innerHTML = renderMineCards(records, mineWorkStatsCache);
         bindMineCards(records);
+        // 至少有一个已发布作品时，拉取 MagicHaqi 名下的作品访问/点赞数据并回填到卡片。
+        if (records.some(r => r.isPublished)) {
+            const statsByPath = await loadMineWorkStats(records);
+            if (statsByPath && cleanupMessageListener === token && $('mhMinigameMine') && activeMinigameTab === 'mine') {
+                mineWorkStatsCache = statsByPath;
+                mine.innerHTML = renderMineCards(records, statsByPath);
+                bindMineCards(records);
+            }
+        }
+    }
+
+    // 从作品 url 中解析对应的本地游戏文件名（?game=<文件名>），用于把作品的访问/点赞数据对回「我的」列表。
+    function gameFilenameFromWorkUrl(url) {
+        try {
+            return (new URL(String(url || ''), window.location.href).searchParams.get('game') || '').trim();
+        } catch (_) { return ''; }
+    }
+
+    // 拉取当前用户在 MagicHaqi 名下的全部作品，整个会话只真正请求一次（结果缓存到 mineWorksRaw）。
+    // 并发调用复用同一个 in-flight promise；发布新作品后由 publishMineGame 置空缓存触发重拉。
+    function fetchMineWorks() {
+        const userWorks = state.sdk?.userWorks;
+        if (!userWorks?.my) return Promise.resolve(null);
+        if (mineWorksRaw) return Promise.resolve(mineWorksRaw);
+        if (mineWorksPromise) return mineWorksPromise;
+        mineWorksPromise = userWorks.my({ app: CONFIG.userWorksApp, page: 1, pageSize: 100 })
+            .then(result => {
+                const list = Array.isArray(result?.list) ? result.list : (Array.isArray(result) ? result : []);
+                mineWorksRaw = list;
+                return list;
+            })
+            .catch(() => null)
+            .finally(() => { mineWorksPromise = null; });
+        return mineWorksPromise;
+    }
+
+    // 把缓存的作品列表按 path 归并成 { visit, star } 映射（失败返回 null）。
+    async function loadMineWorkStats(records) {
+        const list = await fetchMineWorks();
+        if (!list) return null;
+        const byFilename = new Map();
+        list.forEach(work => {
+            const filename = gameFilenameFromWorkUrl(work?.url);
+            if (filename && !byFilename.has(filename)) byFilename.set(filename, work);
+        });
+        const statsByPath = {};
+        records.forEach(record => {
+            const filename = String(record.path || '').split('/').pop();
+            const work = byFilename.get(filename);
+            if (work) statsByPath[record.path] = { visit: Number(work.visit) || 0, star: Number(work.star) || 0 };
+        });
+        return statsByPath;
     }
 
     // 我的作品收藏记录：owner = 当前用户名，path = 文件路径。
@@ -1373,22 +1633,33 @@ export function renderMinigames(panel, { pet }, { onBack, onGameFinished, initia
         };
     }
 
-    function renderMineCards(records) {
+    function renderMineCards(records, statsByPath = {}) {
         if (!records.length) {
             return `<div class="mh-minigame-mine-empty">${escapeHtml(t('mgMineEmpty'))}</div>`;
         }
         return records.map(record => {
             const updatedLabel = formatRelativeTime(record.updatedAt);
+            const stats = record.isPublished ? statsByPath[record.path] : null;
+            // 访问量 / 获赞数：作为左上角小角标显示（不占卡片正文高度）。
+            const statsBadge = stats
+                ? `<span class="mh-minigame-mine-stats">
+                        <span title="${escapeHtml(t('mgMineVisits'))}">👁 ${stats.visit}</span>
+                        <span title="${escapeHtml(t('mgMineStars'))}">⭐ ${stats.star}</span>
+                   </span>`
+                : '';
             return `
-            <div class="card-flat mh-minigame-mine-card" data-mh-mine-path="${escapeHtml(record.path)}">
+            <div class="card-flat mh-minigame-mine-card${record.isPublished ? ' is-published' : ''}" data-mh-mine-path="${escapeHtml(record.path)}">
                 <button type="button" class="mh-minigame-mine-del" data-mh-mine-delete="${escapeHtml(record.path)}" aria-label="${escapeHtml(t('mgMineDelete'))}" title="${escapeHtml(t('mgMineDelete'))}">×</button>
+                ${statsBadge}
                 <span class="mh-minigame-mine-ico" aria-hidden="true">${escapeHtml(record.icon || '🎮')}</span>
                 <span class="mh-minigame-mine-title">${escapeHtml(record.title || t('mgDefaultName'))}</span>
                 ${record.desc ? `<span class="mh-minigame-mine-desc">${escapeHtml(record.desc)}</span>` : ''}
                 ${updatedLabel ? `<span class="mh-minigame-mine-time">${escapeHtml(updatedLabel)}</span>` : ''}
                 <div class="mh-minigame-mine-actions">
-                    <button type="button" class="btn-secondary mh-minigame-share-btn" data-mh-mine-share="${escapeHtml(record.path)}" aria-label="${escapeHtml(t('mgShare'))}" title="${escapeHtml(t('mgShare'))}"><span aria-hidden="true">🔗</span></button>
                     <button type="button" class="btn-primary" data-mh-mine-edit="${escapeHtml(record.path)}">${escapeHtml(t('slEdit'))}</button>
+                    ${record.isPublished
+                        ? ''
+                        : `<button type="button" class="btn-secondary" data-mh-mine-publish="${escapeHtml(record.path)}">${escapeHtml(t('mgMinePublish'))}</button>`}
                 </div>
             </div>
         `;
@@ -1404,11 +1675,14 @@ export function renderMinigames(panel, { pet }, { onBack, onGameFinished, initia
                 const path = delBtn.dataset.mhMineDelete;
                 const record = records.find(r => r.path === path);
                 const title = record?.title || t('mgDefaultName');
-                const ok = await confirm(t('mgMineDeleteConfirm', { title }), { okText: t('delete'), cancelText: t('cancel') });
+                const published = !!record?.isPublished;
+                // 已发布的作品：删除只从「我的」列表移除，保留 HTML 文件，作品广场上的链接仍可访问。
+                const confirmKey = published ? 'mgMineDeletePublishedConfirm' : 'mgMineDeleteConfirm';
+                const ok = await confirm(t(confirmKey, { title }), { okText: t('delete'), cancelText: t('cancel') });
                 if (!ok) return;
                 delBtn.disabled = true;
                 try {
-                    await deletePetGame(path);
+                    await deletePetGame(path, { keepFile: published });
                     showToast(t('mgMineDeleted'), 'success', 1400);
                     renderMineList();
                 } catch (err) {
@@ -1422,10 +1696,9 @@ export function renderMinigames(panel, { pet }, { onBack, onGameFinished, initia
                 openMineGameMaker(editBtn.dataset.mhMineEdit, records);
                 return;
             }
-            const shareBtn = e.target.closest?.('[data-mh-mine-share]');
-            if (shareBtn) {
-                const record = records.find(r => r.path === shareBtn.dataset.mhMineShare);
-                if (record) openMinigameSharePanel(record);
+            const publishBtn = e.target.closest?.('[data-mh-mine-publish]');
+            if (publishBtn) {
+                publishMineGame(publishBtn.dataset.mhMinePublish, records, publishBtn);
                 return;
             }
             // 点击卡片任意非按钮区域即试玩。
@@ -1466,10 +1739,548 @@ export function renderMinigames(panel, { pet }, { onBack, onGameFinished, initia
         });
     }
 
+    // 发布到 Keepwork 作品广场（userWorks）：app 固定为 MagicHaqi，url 为该游戏的分享链接，
+    // 发布成功后在 pet-games/index.json 该记录上标记 isPublished，并刷新「我的」列表。
+    async function publishMineGame(path, records, btn) {
+        const record = records.find(r => r.path === path);
+        if (!record) { showToast(t('mgMineMissing'), 'error'); return; }
+        const userWorks = state.sdk?.userWorks;
+        if (!userWorks?.upload) { showToast(t('mgMinePublishUnavailable'), 'error', 2400); return; }
+        const username = await getMinigameShareUsername();
+        if (!username) { showToast(t('mgMinePublishLoginFirst'), 'error', 2200); return; }
+        const title = record.title || t('mgDefaultName');
+        const ok = await confirm(t('mgMinePublishConfirm', { title }), { okText: t('mgMinePublish'), cancelText: t('cancel') });
+        if (!ok) return;
+        // 分享链接与「分享」用的完全一致（gameFrom=作者&game=文件名）。
+        const url = buildMinigameShareUrl(record, username);
+        const original = btn ? btn.textContent : '';
+        if (btn) { btn.disabled = true; btn.textContent = t('mgMinePublishing'); }
+        try {
+            await userWorks.upload({
+                app: CONFIG.userWorksApp,
+                title,
+                url,
+                category: 'minigame',
+                grade: 'all',
+                description: record.desc || title,
+            });
+            await setPetGamePublished(record.path, true);
+            // 新发布了作品，作废作品列表缓存，让接下来的 renderMineList 重新拉取一次 userWorks.my。
+            mineWorksRaw = null;
+            showToast(t('mgMinePublishSuccess'), 'success', 1800);
+            renderMineList();
+        } catch (err) {
+            if (btn) { btn.disabled = false; btn.textContent = original; }
+            showToast(t('mgMinePublishFailed', { error: (err?.message || err) }), 'error', 2800);
+        }
+    }
+
+    // ---------- 探索：抖音式上下滑动逐个试玩 ----------
+    // 候选池 = userWorks.listAll（app=MagicHaqi 的全部公开作品）；分页拉取、优先未看过、7 天去重。
+    // 数据源与补充逻辑见下方「探索数据源」一节（refillExploreItems / growExploreBuffer）。
+    let exploreItems = [];
+    let exploreActiveIndex = -1;
+    let exploreActiveGame = null;
+    let exploreGameStartedAt = 0;
+    let exploreRewardedRounds = new Set();
+    let exploreObserver = null;
+    let exploreLoadingTimer = null;
+    let exploreHintDismissed = false;
+    let exploreWheelCooldown = 0;
+    // 翻页闸门："没加载完不许翻到下一个"。游戏加载完成（gameLoaded）即可立即翻页（哪怕只用了 1 秒）；
+    // 3 秒是加载超时上限——超过 3 秒仍未加载完也放行，避免卡死。过早翻页给一次 toast 提示（节流）。
+    const EXPLORE_LOAD_TIMEOUT_MS = 3000;
+    let exploreSlideActivatedAt = 0;
+    let exploreActiveLoaded = false;
+    let exploreFlipCooldownTimer = null;
+    let exploreTooFastToastAt = 0;
+
+    // ---------- 探索数据源：纯 userWorks.listAll（不混入本地官方 / 我的作品）----------
+    // 客户端版的极简「抖音」：分页拉取 app=MagicHaqi 的作品，优先推送 7 天内没看过的；
+    // 单次补充最多翻 EXPLORE_MAX_PAGES_PER_REFILL 页（控制请求次数），实在没有新的就回退已看过的。
+    const EXPLORE_PAGE_SIZE = 20;
+    const EXPLORE_MAX_PAGES_PER_REFILL = 3;   // 一次补充最多翻几页（避免请求过多）
+    const EXPLORE_REFILL_TARGET = 6;          // 每次补充期望取到多少个
+    const EXPLORE_PREFETCH_AHEAD = 2;         // 距离信息流末尾还剩几个就提前补充
+    let exploreSeenMap = null;                // { key: seenAt } 7 天内已看过（内存缓存）
+    let explorePage = 0;                      // listAll 已翻到的页码
+    let exploreNoMore = false;                // listAll 已翻到底
+    let exploreFetchedItems = [];             // 本会话拉取到的全部候选（去重）
+    let exploreFetchedKeys = new Set();
+    let exploreShownKeys = new Set();          // 已放进信息流的 key（防止本会话重复）
+    let exploreRefillPromise = null;
+    let exploreAppending = false;
+
+    async function ensureExploreSeen() {
+        if (exploreSeenMap) return exploreSeenMap;
+        try { exploreSeenMap = await loadExploreSeen(); }
+        catch (_) { exploreSeenMap = {}; }
+        return exploreSeenMap;
+    }
+
+    // 标记某个探索作品为「已看过」（用户滑到并开始试玩时调用），7 天内不再重复推送。
+    function markExploreSeen(game) {
+        const key = game?.id;
+        if (!key) return;
+        if (!exploreSeenMap) exploreSeenMap = {};
+        const now = Date.now();
+        exploreSeenMap[key] = now;
+        recordExploreSeen(key, now);      // IndexedDB 完整历史（不限条数）
+        saveExploreSeen(exploreSeenMap);  // 个人主页存储（最近 300，防抖）
+    }
+
+    // 把一条 userWorks 作品转成探索条目：从其分享链接解析作者(gameFrom)与文件名(game)，
+    // 挂载时按 owner + path 远程取 HTML（见 mountExploreGame 的 'remote' 分支）。
+    function exploreItemFromWork(work) {
+        let owner = '', filename = '';
+        try {
+            const u = new URL(String(work?.url || ''), window.location.href);
+            owner = (u.searchParams.get('gameFrom') || '').trim();
+            filename = (u.searchParams.get('game') || '').trim();
+        } catch (_) { /* 非本游戏的作品链接，跳过 */ }
+        if (!owner || !filename) return null;
+        const baseName = filename.replace(/\.html?$/i, '').split('/').pop();
+        const path = filename.includes('/') ? filename : `pet-games/${filename}`;
+        const title = work.title || t('mgDefaultName');
+        return {
+            id: `remote:${owner}:${baseName}`,
+            title,
+            icon: '🎮',
+            desc: work.description || '',
+            allow: 'autoplay; fullscreen',
+            __exploreKind: 'remote',
+            __remoteOwner: owner,
+            __remotePath: path,
+            __likeMeta: { id: baseName, path, owner, title, icon: '🎮' },
+        };
+    }
+
+    // 翻页拉取更多候选到 exploreFetchedItems（去重）。单次最多翻 EXPLORE_MAX_PAGES_PER_REFILL 页，
+    // 本页已带来足够「未看过」时提前停（节省请求）。返回本次新增的候选数。
+    async function growExploreBuffer() {
+        const userWorks = state.sdk?.userWorks;
+        if (!userWorks?.listAll || exploreNoMore) return 0;
+        let added = 0;
+        for (let pages = 0; pages < EXPLORE_MAX_PAGES_PER_REFILL && !exploreNoMore; pages++) {
+            const page = explorePage + 1;
+            let works = [];
+            try {
+                const result = await userWorks.listAll({ app: CONFIG.userWorksApp, page, pageSize: EXPLORE_PAGE_SIZE, sortBy: 'hot' });
+                works = Array.isArray(result?.list) ? result.list : (Array.isArray(result) ? result : []);
+            } catch (_) { works = []; }
+            explorePage = page;
+            if (!works.length) { exploreNoMore = true; break; }
+            let newUnseen = 0;
+            works.forEach(work => {
+                const item = exploreItemFromWork(work);
+                if (!item || exploreFetchedKeys.has(item.id)) return;
+                exploreFetchedKeys.add(item.id);
+                exploreFetchedItems.push(item);
+                added++;
+                if (!exploreSeenMap?.[item.id]) newUnseen++;
+            });
+            if (newUnseen >= EXPLORE_REFILL_TARGET) break;
+        }
+        return added;
+    }
+
+    // 从已拉取的候选里取最多 n 个还没放进信息流的条目：优先「未看过」，不够再用「已看过」兜底。
+    function takeExploreItems(n) {
+        const unseen = [];
+        const seen = [];
+        exploreFetchedItems.forEach(item => {
+            if (exploreShownKeys.has(item.id)) return;
+            if (exploreSeenMap?.[item.id]) seen.push(item); else unseen.push(item);
+        });
+        const picked = [];
+        for (const item of [...unseen, ...seen]) {
+            if (picked.length >= n) break;
+            exploreShownKeys.add(item.id);
+            picked.push(item);
+        }
+        return picked;
+    }
+
+    // 补充一批探索条目：先用缓冲里现成的，不够且还没翻到底就翻页再取。多处并发调用复用同一个 promise。
+    function refillExploreItems(want = EXPLORE_REFILL_TARGET) {
+        if (exploreRefillPromise) return exploreRefillPromise;
+        exploreRefillPromise = (async () => {
+            await ensureExploreSeen();
+            let picked = takeExploreItems(want);
+            if (picked.length < want && !exploreNoMore) {
+                await growExploreBuffer();
+                picked = picked.concat(takeExploreItems(want - picked.length));
+            }
+            return picked;
+        })().finally(() => { exploreRefillPromise = null; });
+        return exploreRefillPromise;
+    }
+
+    function exploreSlideHtml(game, index) {
+        const title = escapeHtml(getMinigameTitle(game));
+        const desc = game.desc ? escapeHtml(game.desc) : '';
+        return `
+            <section class="mh-explore-slide" data-explore-index="${index}" data-game-id="${escapeHtml(game.id)}">
+                <div class="mh-explore-frame-host"></div>
+                <div class="mh-explore-poster">
+                    ${renderMinigameIcon(game)}
+                    <div class="mh-explore-poster-title">${title}</div>
+                    ${desc ? `<div class="mh-explore-poster-desc">${desc}</div>` : ''}
+                    <div class="mh-explore-poster-spinner" aria-hidden="true"></div>
+                </div>
+            </section>`;
+    }
+
+    async function renderExplorePane() {
+        const pane = $('mhMinigameExplore');
+        if (!pane) return;
+        setExploreMode(true);
+        // 已构建过则保留滚动位置（含上次的随机顺序）；观察器会在面板重新可见时挂载居中的那一个游戏。
+        if (pane.dataset.built === '1') { setupExploreObserver(); return; }
+        const token = cleanupMessageListener;
+        const items = await refillExploreItems(EXPLORE_REFILL_TARGET);
+        // 异步取作品清单期间视图可能已切换 / 销毁，丢弃过期结果。
+        if (cleanupMessageListener !== token || !$('mhMinigameExplore') || activeMinigameTab !== 'explore') return;
+        exploreItems = items;
+        if (!items.length) {
+            pane.innerHTML = `<div class="mh-explore-empty">${escapeHtml(t('mgExploreEmpty'))}</div>`;
+            return;
+        }
+        pane.innerHTML = items.map((game, i) => exploreSlideHtml(game, i)).join('');
+        pane.dataset.built = '1';
+        // 首次滑动（scroll）即视为交互，淡出"上滑翻页"提示。
+        pane.addEventListener('scroll', dismissExploreHint, { once: true, passive: true });
+        bindExploreControls();
+        setupExploreObserver();
+    }
+
+    // 快滑到信息流末尾前提前补充新作品并追加 slide（抖音式无限流，但仍受「不重复 / 控制请求数」约束）。
+    function maybePrefetchExplore() {
+        if (exploreActiveIndex >= exploreItems.length - EXPLORE_PREFETCH_AHEAD) appendMoreExploreSlides();
+    }
+
+    async function appendMoreExploreSlides() {
+        if (exploreAppending) return;
+        exploreAppending = true;
+        const token = cleanupMessageListener;
+        try {
+            const more = await refillExploreItems(EXPLORE_REFILL_TARGET);
+            if (cleanupMessageListener !== token || activeMinigameTab !== 'explore') return;
+            const pane = $('mhMinigameExplore');
+            if (!pane || !more.length) return;
+            const startIndex = exploreItems.length;
+            exploreItems = exploreItems.concat(more);
+            pane.insertAdjacentHTML('beforeend', more.map((game, i) => exploreSlideHtml(game, startIndex + i)).join(''));
+            pane.querySelectorAll('.mh-explore-slide').forEach(slide => {
+                if (Number(slide.dataset.exploreIndex) >= startIndex) exploreObserver?.observe(slide);
+            });
+            updateExploreNavState();
+        } finally {
+            exploreAppending = false;
+        }
+    }
+
+    // 进入 / 退出探索模式：底部把 tabs 栏换成"上一个 / 下一个"底栏（不遮挡游戏区），并切换顶栏收藏/分享。
+    function setExploreMode(on) {
+        const tabs = $('mhMinigameTabs');
+        const bottomBar = $('mhExploreBottomBar');
+        const hint = $('mhExploreHint');
+        if (tabs) tabs.style.display = on ? 'none' : 'flex';
+        if (bottomBar) bottomBar.style.display = on ? 'flex' : 'none';
+        if (hint) hint.classList.toggle('dismissed', exploreHintDismissed);
+        if (!on) {
+            // 退出探索：还原顶栏标题、隐藏收藏/分享（信息流 iframe 由调用方卸载）。
+            const titleEl = $('mhMinigameTitle');
+            if (titleEl) { titleEl.textContent = t('mgPlay'); titleEl.removeAttribute('title'); }
+            hidePlayLikeButton();
+        }
+    }
+
+    function bindExploreControls() {
+        const prev = $('mhExplorePrev');
+        const next = $('mhExploreNext');
+        if (prev) prev.onclick = () => exploreGo(-1);
+        if (next) next.onclick = () => exploreGo(1);
+        updateExploreNavState();
+    }
+
+    // 是否允许翻页：游戏已加载完成即可翻；否则等到 3 秒加载超时再放行。
+    function canExploreFlip() {
+        if (exploreActiveIndex < 0) return true;
+        if (exploreActiveLoaded) return true;
+        return (Date.now() - exploreSlideActivatedAt) >= EXPLORE_LOAD_TIMEOUT_MS;
+    }
+
+    // 距离"超时放行"还差多少毫秒（仅用于到点自动恢复按钮可点）。
+    function exploreFlipTimeoutRemainingMs() {
+        if (!exploreSlideActivatedAt) return 0;
+        return Math.max(0, EXPLORE_LOAD_TIMEOUT_MS - (Date.now() - exploreSlideActivatedAt));
+    }
+
+    // 过早翻页提示（节流，避免连续快滑刷屏）。
+    function showExploreTooFastToast() {
+        const now = Date.now();
+        if (now - exploreTooFastToastAt < 1500) return;
+        exploreTooFastToastAt = now;
+        showToast(t('mgExploreTooFast'), 'info', 1400);
+    }
+
+    // 翻页：delta=+1 下一个，-1 上一个。
+    // 没加载完就翻页 → 忽略并提示"滑太快啦"（除非已超过 3 秒加载超时）。
+    function exploreGo(delta) {
+        if (!canExploreFlip()) { showExploreTooFastToast(); scheduleExploreNavRefresh(); return; }
+        dismissExploreHint();
+        scrollExploreToIndex(exploreActiveIndex + delta);
+    }
+
+    // 加载超时到点后自动恢复"上一个/下一个"按钮可点（加载完成时则由 markExploreLoaded 立即恢复）。
+    function scheduleExploreNavRefresh() {
+        if (exploreFlipCooldownTimer) { clearTimeout(exploreFlipCooldownTimer); exploreFlipCooldownTimer = null; }
+        const remain = exploreFlipTimeoutRemainingMs();
+        if (remain <= 0 || exploreActiveLoaded) { updateExploreNavState(); return; }
+        exploreFlipCooldownTimer = setTimeout(() => {
+            exploreFlipCooldownTimer = null;
+            updateExploreNavState();
+        }, remain + 20);
+    }
+
+    // 当前格加载完成：立即放行翻页并恢复按钮可点。
+    function markExploreLoaded() {
+        exploreActiveLoaded = true;
+        if (exploreFlipCooldownTimer) { clearTimeout(exploreFlipCooldownTimer); exploreFlipCooldownTimer = null; }
+        updateExploreNavState();
+    }
+
+    // 在顶栏 / 底栏 / 信息流上识别滑动手势翻页（PC 鼠标拖拽 + 移动端触摸 + 滚轮），
+    // 但保留点击：只有移动超过阈值才翻页并吞掉随后的 click。运行中的游戏 iframe 会吞掉触摸事件，
+    // 故信息流上的手势只在加载封面阶段触发，且统一经限速后的 exploreGo，不影响游戏内交互。
+    // swipeDir: 'up' 上滑→下一个（底栏）；'down' 下滑→上一个（顶栏）；'both' 双向（信息流）。
+    function attachBarGestures(el, swipeDir) {
+        if (!el) return;
+        let suppressNextClick = false;
+        el.addEventListener('wheel', (e) => {
+            if (activeMinigameTab !== 'explore') return;
+            if (Math.abs(e.deltaY) < 4) return;
+            e.preventDefault();
+            const now = Date.now();
+            if (now < exploreWheelCooldown) return;
+            exploreWheelCooldown = now + 380;
+            exploreGo(e.deltaY > 0 ? 1 : -1);
+        }, { passive: false });
+        el.addEventListener('pointerdown', (e) => {
+            if (activeMinigameTab !== 'explore') return;
+            if (e.pointerType === 'mouse' && e.button !== 0) return;
+            suppressNextClick = false;
+            const startY = e.clientY;
+            let moved = false;
+            const move = (ev) => { if (Math.abs(ev.clientY - startY) > 8) moved = true; };
+            const up = (ev) => {
+                window.removeEventListener('pointermove', move);
+                window.removeEventListener('pointerup', up);
+                const dy = ev.clientY - startY;
+                if (Math.abs(dy) < 28) return;
+                if ((swipeDir === 'up' || swipeDir === 'both') && dy < 0) { exploreGo(1); suppressNextClick = moved; }
+                else if ((swipeDir === 'down' || swipeDir === 'both') && dy > 0) { exploreGo(-1); suppressNextClick = moved; }
+            };
+            window.addEventListener('pointermove', move);
+            window.addEventListener('pointerup', up);
+        });
+        // 捕获阶段吞掉滑动后误触发的 click（点击操作不受影响：未滑动时 suppressNextClick 为 false）。
+        el.addEventListener('click', (e) => {
+            if (suppressNextClick) { e.preventDefault(); e.stopPropagation(); suppressNextClick = false; }
+        }, true);
+    }
+
+    function bindExploreBarGestures() {
+        attachBarGestures($('mhExploreBottomBar'), 'up');   // 底栏：上滑 → 下一个
+        attachBarGestures($('mhMinigameTopbar'), 'down');   // 顶栏：下滑 → 上一个
+        attachBarGestures($('mhMinigameExplore'), 'both');  // 信息流：上滑下一个 / 下滑上一个（原生滚动已禁用，统一走限速翻页）
+    }
+
+    function scrollExploreToIndex(index) {
+        const pane = $('mhMinigameExplore');
+        if (!pane) return;
+        const target = clamp(index, 0, exploreItems.length - 1);
+        const slide = pane.querySelector(`[data-explore-index="${target}"]`);
+        slide?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+    }
+
+    function updateExploreNavState() {
+        const prev = $('mhExplorePrev');
+        const next = $('mhExploreNext');
+        // 当前游戏未加载完（且未到 3 秒超时）时翻页按钮置灰，给出"还不能翻页"的可视反馈。
+        const blocked = !canExploreFlip();
+        if (prev) prev.disabled = blocked || exploreActiveIndex <= 0;
+        if (next) next.disabled = blocked || exploreActiveIndex < 0 || exploreActiveIndex >= exploreItems.length - 1;
+    }
+
+    function dismissExploreHint() {
+        if (exploreHintDismissed) return;
+        exploreHintDismissed = true;
+        $('mhExploreHint')?.classList.add('dismissed');
+    }
+
+    function setupExploreObserver() {
+        const pane = $('mhMinigameExplore');
+        if (!pane || !exploreItems.length) return;
+        exploreObserver?.disconnect();
+        exploreObserver = new IntersectionObserver((entries) => {
+            let best = null;
+            entries.forEach((entry) => {
+                if (entry.isIntersecting && entry.intersectionRatio >= 0.6) {
+                    if (!best || entry.intersectionRatio > best.intersectionRatio) best = entry;
+                }
+            });
+            if (!best) return;
+            const index = Number(best.target.dataset.exploreIndex);
+            setExploreActive(index);
+        }, { root: pane, threshold: [0.6] });
+        pane.querySelectorAll('.mh-explore-slide').forEach(slide => exploreObserver.observe(slide));
+    }
+
+    function setExploreActive(index) {
+        if (index === exploreActiveIndex) return;
+        // 切换到另一格视为交互，淡出提示。
+        if (exploreActiveIndex >= 0) dismissExploreHint();
+        unmountExploreFrame();
+        exploreActiveIndex = index;
+        // 记录本格激活时刻 + 复位"已加载"标记：翻页闸门（未加载完不许翻、3 秒超时放行）都以此为基准。
+        exploreSlideActivatedAt = Date.now();
+        exploreActiveLoaded = false;
+        updateExploreNavState();
+        scheduleExploreNavRefresh();
+        const pane = $('mhMinigameExplore');
+        const slide = pane?.querySelector(`[data-explore-index="${index}"]`);
+        const game = exploreItems[index];
+        if (!slide || !game) return;
+        // 顶栏：展示当前游戏名 + 收藏 / 分享（与正常游戏 UI 一致）。
+        const titleEl = $('mhMinigameTitle');
+        const gameTitle = getMinigameTitle(game);
+        if (titleEl) { titleEl.textContent = gameTitle; titleEl.title = gameTitle; }
+        setTopbarActionsVisible(true);
+        const likeMeta = game.__likeMeta || likeMetaForGame(game, { official: true });
+        showPlayLikeButton(likeMeta);
+        // 滑到并开始试玩即记为「已看过」（7 天内不再重复推送）。
+        markExploreSeen(game);
+        // 临近末尾就提前补充更多作品。
+        maybePrefetchExplore();
+        // 滑到哪一格就立即加载试玩（海报仅作加载封面，加载完成淡出）。
+        mountExploreGame(slide, game);
+    }
+
+    function mountExploreGame(slide, game) {
+        const host = slide.querySelector('.mh-explore-frame-host');
+        if (!host) return;
+        exploreActiveGame = game;
+        exploreGameStartedAt = Date.now();
+        exploreRewardedRounds = new Set();
+        slide.classList.add('loading');
+        slide.classList.remove('playing');
+        const frame = document.createElement('iframe');
+        frame.id = 'mhExploreFrame';
+        frame.title = t('mgFrameTitle');
+        frame.setAttribute('allow', game.allow || 'autoplay; fullscreen');
+        frame.style.cssText = 'width:100%;height:100%;border:0;background:#fff;display:block';
+        frame.onload = () => postGameConfig(frame);
+        host.appendChild(frame);
+        if (game.__exploreKind === 'mine' && game.__minePath) {
+            // 我的作品：按 path 异步取 HTML 注入通用宿主页（与 openMineGame 同路径）。
+            const token = cleanupMessageListener;
+            loadPetGameHtml(game.__minePath).then((html) => {
+                if (cleanupMessageListener !== token || !frame.isConnected) return;
+                if (!html || !html.trim()) { hideExplorePoster(frame); return; }
+                loadGameHtmlIntoFrame(frame, html, { onRendered: () => postGameConfig(frame) });
+            }).catch(() => { /* 加载失败：交给下方兜底超时淡出海报 */ });
+        } else if (game.__exploreKind === 'remote' && game.__remotePath) {
+            // 公开作品：按作者 + path 远程取 HTML 注入通用宿主页。
+            const token = cleanupMessageListener;
+            loadRemotePetGameHtml(game.__remoteOwner, game.__remotePath).then((html) => {
+                if (cleanupMessageListener !== token || !frame.isConnected) return;
+                if (!html || !html.trim()) { hideExplorePoster(frame); return; }
+                loadGameHtmlIntoFrame(frame, html, { onRendered: () => postGameConfig(frame) });
+            }).catch(() => { /* 加载失败：交给下方兜底超时淡出海报 */ });
+        } else {
+            frame.src = minigameUrl(game.src);
+        }
+        // 兜底：部分小游戏不发送 gameLoaded，到点后也淡出加载海报。
+        if (exploreLoadingTimer) clearTimeout(exploreLoadingTimer);
+        exploreLoadingTimer = setTimeout(() => {
+            exploreLoadingTimer = null;
+            slide.classList.remove('loading');
+            slide.classList.add('playing');
+        }, MINIGAME_LOADING_MAX_MS);
+    }
+
+    function hideExplorePoster(frame) {
+        if (exploreLoadingTimer) { clearTimeout(exploreLoadingTimer); exploreLoadingTimer = null; }
+        // 加载完成（gameLoaded / 兜底超时 / HTML 注入失败）即放行翻页。
+        markExploreLoaded();
+        const slide = frame?.closest?.('.mh-explore-slide');
+        if (!slide) return;
+        slide.classList.remove('loading');
+        slide.classList.add('playing');
+    }
+
+    function unmountExploreFrame() {
+        if (exploreLoadingTimer) { clearTimeout(exploreLoadingTimer); exploreLoadingTimer = null; }
+        const frame = $('mhExploreFrame');
+        if (frame) {
+            try { frame.removeAttribute('srcdoc'); frame.src = 'about:blank'; frame.removeAttribute('src'); } catch (_) {}
+            const host = frame.parentElement;
+            frame.remove();
+            const slide = host?.closest?.('.mh-explore-slide');
+            slide?.classList.remove('loading', 'playing');
+        }
+        exploreActiveGame = null;
+        exploreActiveIndex = -1;
+        exploreSlideActivatedAt = 0;
+        exploreActiveLoaded = false;
+        if (exploreFlipCooldownTimer) { clearTimeout(exploreFlipCooldownTimer); exploreFlipCooldownTimer = null; }
+    }
+
+    // 探索流里的小游戏完成：发奖励（金币/属性走 onGameFinished 回调）并提示，逻辑与 finishCurrentGame 对齐。
+    function finishExploreGame(frame, data = {}) {
+        const game = exploreActiveGame;
+        if (!game) return;
+        const finishedAt = data?.finishedAt || Date.now();
+        const roundKey = minigameRoundKey(game, data, finishedAt);
+        if (exploreRewardedRounds.has(roundKey)) return;
+        exploreRewardedRounds.add(roundKey);
+        const beforeStats = capturePetStatValues(currentPet);
+        const beforeCoins = coinValue();
+        const durationSeconds = activityDurationSeconds(data, exploreGameStartedAt, finishedAt);
+        const rewardData = suppressCurrentRewards ? { levelReward: null, rewardCoins: null } : miniGameLevelReward(game, data, durationSeconds);
+        const result = {
+            ...data,
+            completed: data?.completed ?? data?.passed ?? true,
+            startedAt: exploreGameStartedAt || undefined,
+            finishedAt,
+            durationSeconds,
+            statBonus: suppressCurrentRewards ? {} : miniGameStatBonus(game),
+            ...(rewardData.levelReward ? rewardData : {}),
+        };
+        recordRecentPlay(game, game.__likeMeta || likeMetaForGame(game, { official: true }));
+        onGameFinished?.(game, result);
+        if (!suppressCurrentRewards && Number(data?.earnedPoints) > 0) soundManager.playPointReward();
+        if (rewardData.rewardCoins) {
+            const label = getMinigameRewardLabel(game, rewardData.levelReward);
+            showToast(`${label} ${t('mgRewardCoins', { coins: rewardData.rewardCoins })}`, 'success', 1800);
+        }
+        refreshCoins({ previous: beforeCoins });
+        refreshPetStats({ previous: beforeStats });
+    }
+
     const onMessage = (event) => {
-        const frame = $('mhMinigameFrame');
-        if (!frame || event.source !== frame.contentWindow) return;
+        const mainFrame = $('mhMinigameFrame');
+        const exploreFrame = $('mhExploreFrame');
+        let frame = null;
+        if (mainFrame && event.source === mainFrame.contentWindow) frame = mainFrame;
+        else if (exploreFrame && event.source === exploreFrame.contentWindow) frame = exploreFrame;
+        if (!frame) return;
+        const isExplore = frame === exploreFrame;
         const msg = event.data || {};
+        // 通用宿主页握手：宿主就绪 → 下发游戏 HTML；宿主渲染完成 → 推送宠物配置（onRendered）。
+        if (handleGameHostMessage(frame, msg)) return;
         if (isPetImageRequest(msg)) {
             handlePetImageRequest(frame, msg);
             return;
@@ -1482,11 +2293,28 @@ export function renderMinigames(panel, { pet }, { onBack, onGameFinished, initia
             handleUserProfileUpdate(frame, msg);
             return;
         }
+        if (isUnlockRequest(msg)) {
+            handleUnlockRequest(frame, msg);
+            return;
+        }
+        if (msg.type === 'haqi_open_vip') {
+            handleOpenVipRequest(frame);
+            return;
+        }
+        if (msg.type === 'haqi_get_vip_status') {
+            postVipStatus(frame);
+            return;
+        }
         if (msg.type === 'gameLoaded') {
-            setMinigameLoading(false);
+            if (isExplore) hideExplorePoster(frame);
+            else setMinigameLoading(false);
             return;
         }
         if (msg.type === 'gameFinished' || msg.type === 'learningFinished') {
+            if (isExplore) {
+                finishExploreGame(frame, msg.data || {});
+                return;
+            }
             if (deferGameFinishedUntilCompletionExit && completionPrompt) {
                 const result = finishCurrentGame(null, msg.data || {}, showCompletionAfterFinish, { forcePrompt: true });
                 if (result) deferredCompletion = { game: currentGame, data: result };
@@ -1501,6 +2329,9 @@ export function renderMinigames(panel, { pet }, { onBack, onGameFinished, initia
         window.removeEventListener('message', onMessage);
         window.removeEventListener('mh:tick', refreshPetStats);
         destroyMinigameIframe();
+        exploreObserver?.disconnect();
+        exploreObserver = null;
+        unmountExploreFrame();
         currentGame = null;
         currentGameLikeMeta = null;
         currentRenderGameList = null;
@@ -1516,6 +2347,8 @@ export function renderMinigames(panel, { pet }, { onBack, onGameFinished, initia
     // 若初始标签为"我的"（从创作工坊返回），加载列表。
     // 必须在 cleanupMessageListener 赋值之后调用，否则 renderMineList 捕获的 token 过期会丢弃结果。
     if (activeMinigameTab === 'mine') renderMineList();
+    // 初始即落在"探索"标签时构建抖音式信息流。
+    if (activeMinigameTab === 'explore') renderExplorePane();
     // 按需加载小游戏清单（只 fetch 一次并缓存），加载完成后渲染列表 / 启动初始游戏。
     const renderToken = cleanupMessageListener;
     if (MINIGAMES.length) {
@@ -1526,6 +2359,8 @@ export function renderMinigames(panel, { pet }, { onBack, onGameFinished, initia
             // 视图在加载期间被销毁/重渲染时丢弃过期回调。
             if (cleanupMessageListener !== renderToken || !$('mhMinigameList')) return;
             renderGameList();
+            // 清单异步加载完成后，若当前停留在"探索"标签则构建信息流。
+            if (activeMinigameTab === 'explore') renderExplorePane();
             if (initialGameId && !currentGame) openGame(initialGameId, initialGameParams, { allowLowEnergy: allowPlayWhenLowEnergy });
         });
     }
@@ -1542,7 +2377,16 @@ export function renderMinigames(panel, { pet }, { onBack, onGameFinished, initia
     async function openSharedGame({ fromUsername, game } = {}) {
         const username = String(fromUsername || '').trim();
         const filename = String(game || '').trim();
-        if (!username || !filename) return;
+        if (!filename) return;
+        // 无 gameFrom → 官方内置游戏分享链接（?game=<officialId>），按 id 打开内置游戏。
+        if (!username) {
+            await loadMinigameIndex();
+            if (cleanupMessageListener !== renderToken || !$('mhMinigameFrameWrap')) return;
+            const builtin = getPlayItems().find(item => item.src && item.id === filename && !item.hidden);
+            if (builtin) openGame(filename, null, { allowLowEnergy: true });
+            else showToast(t('mgSharedGameMissing'), 'error', 2400);
+            return;
+        }
         let html = '';
         try {
             const myUsername = state.user?.username || state.sdk?.user?.username;
@@ -1555,16 +2399,18 @@ export function renderMinigames(panel, { pet }, { onBack, onGameFinished, initia
         const baseName = filename.replace(/\.html?$/i, '').split('/').pop();
         const sharedId = `shared:${username}:${baseName}`;
         const sharedPath = String(filename).replace(/^\/+/, '').includes('/') ? filename : `pet-games/${filename}`;
+        // 真实游戏名：取作者小游戏清单里的标题，避免显示通用的"分享的小游戏"（尤其加入收藏后）。
+        const title = await resolveSharedGameTitle(username, sharedPath, baseName, html);
         openGame(sharedId, null, {
             allowLowEnergy: true,
             html,
-            game: { id: sharedId, title: t('mgSharedGameTitle'), icon: '🎮' },
+            game: { id: sharedId, title, icon: '🎮' },
             // 收藏键以 owner + 基础名（baseName）为准。
             likeMeta: {
                 id: baseName,
                 path: sharedPath,
                 owner: username,
-                title: t('mgSharedGameTitle'),
+                title,
                 icon: '🎮',
             },
         });
@@ -1670,6 +2516,122 @@ function isUserProfileRequest(msg) {
 
 function isUserProfileUpdate(msg) {
     return MINIGAME_USER_PROFILE_UPDATES.has(String(msg?.type || ''));
+}
+
+function isUnlockRequest(msg) {
+    return String(msg?.type || '') === 'haqi_request_unlock';
+}
+
+// 处理小游戏的「解锁付费点」请求：转调 sdk.ads.requestUnlock（看广告解锁 / 会员免广告），
+// 把结果回执给 iframe（haqi_unlock_result）。老版 SDK 还没有 ads 模块时本地占位兜底，
+// 保证「看广告→解锁」整条流程在 SDK 上线前也能跑通。
+async function handleUnlockRequest(frame, msg) {
+    const sourceWindow = frame?.contentWindow;
+    if (!sourceWindow) return;
+    const requestId = msg.requestId || msg.id || null;
+    const scene = (msg.scene || msg.data?.scene || 'minigame').toString();
+    const title = (msg.title || msg.data?.title || '').toString();
+    // 立即 ack：告诉小游戏「宿主已接手」，让它取消独立兜底、安心等待最终结果
+    // （解锁可能涉及看广告/会员窗口，耗时较长）。
+    try { sourceWindow.postMessage({ type: 'haqi_unlock_ack', requestId }, '*'); } catch (_) {}
+    let res = { unlocked: false, via: 'cancel' };
+    try {
+        const ads = state.sdk?.ads;
+        if (ads && typeof ads.requestUnlock === 'function') {
+            res = await ads.requestUnlock({ scene, title });
+        } else {
+            res = await localUnlockFallback(title);
+        }
+    } catch (_) {
+        res = { unlocked: false, via: 'error' };
+    }
+    try {
+        sourceWindow.postMessage({ type: 'haqi_unlock_result', requestId, ok: true, ...res }, '*');
+    } catch (_) {}
+    // 若本次因会员而解锁，主动回传会员状态，使后续付费点直接跳过广告。
+    if (res && res.via === 'vip') { postVipStatus(frame, true); }
+}
+
+// 查询真实会员状态：优先 keepworkSDK 真实会员（含付费会员），无 SDK 时回退到应用内会员开关。
+async function isUserVipNow(forceRefresh = false) {
+    try {
+        if (state.sdk && typeof state.sdk.isUserVip === 'function') {
+            return !!(await state.sdk.isUserVip(forceRefresh ? { useCache: false } : {}));
+        }
+    } catch (_) {}
+    return !!state.isPaid;
+}
+
+// 把当前会员状态回传给小游戏 iframe（小游戏据此跳过广告）。
+async function postVipStatus(frame, isVipOverride) {
+    const sourceWindow = frame?.contentWindow;
+    if (!sourceWindow) return;
+    const isVip = typeof isVipOverride === 'boolean' ? isVipOverride : await isUserVipNow();
+    try { sourceWindow.postMessage({ type: 'haqi_vip_status', isVip }, '*'); } catch (_) {}
+}
+
+// 小游戏内点击「开通会员·永久免广告」：打开 keepwork 个人中心（含会员开通/激活与真实支付），
+// 关闭后重新核对真实会员状态，同步应用内会员开关并回传给小游戏。
+async function handleOpenVipRequest(frame) {
+    const sdk = state.sdk;
+    try {
+        if (sdk && typeof sdk.showProfileWindow === 'function') {
+            await sdk.showProfileWindow();
+        } else {
+            // 无 SDK（如本地预览）兜底：沿用应用内会员模拟开关。
+            state.isPaid = true;
+            try { saveUserProfileDebounced(); } catch (_) {}
+        }
+    } catch (_) {}
+    // 强制刷新核对真实会员状态（用户可能刚完成支付/激活）。
+    const isVip = await isUserVipNow(true);
+    if (isVip && !state.isPaid) { state.isPaid = true; try { saveUserProfileDebounced(); } catch (_) {} }
+    await postVipStatus(frame, isVip);
+    if (isVip) { try { showToast('会员已生效，免广告', 'success', 1600); } catch (_) {} }
+}
+
+// 解锁付费点的三选一弹层：看广告 / 开通会员（永久免广告）/ 取消。返回 'ad' | 'vip' | 'cancel'。
+function chooseUnlockAction(title) {
+    return new Promise((resolve) => {
+        const mask = document.createElement('div');
+        mask.className = 'modal-mask';
+        mask.innerHTML = `
+            <div class="modal-card text-center">
+                <div class="text-base font-bold mb-1" style="color:var(--text-primary)">${escapeHtml(title || '解锁此功能')}</div>
+                <div class="text-xs mb-3" style="color:var(--text-muted)">看一段广告即可解锁，或开通会员永久免广告</div>
+                <div class="flex flex-col gap-2 mt-3">
+                    <button class="btn-primary" data-act="ad">📺 看广告解锁</button>
+                    <button class="btn-secondary" data-act="vip" style="border-color:var(--accent);color:var(--accent)">👑 开通会员 · 永久免广告</button>
+                    <button class="btn-secondary" data-act="cancel">取消</button>
+                </div>
+            </div>`;
+        const done = (v) => { mask.remove(); resolve(v); };
+        mask.addEventListener('click', (e) => {
+            if (e.target === mask) return done('cancel');
+            const act = e.target.closest?.('[data-act]')?.dataset.act;
+            if (act) done(act);
+        });
+        document.body.appendChild(mask);
+    });
+}
+
+// 降级兜底：当前加载的 SDK 还没有 ads 模块时，用弹层提供「看广告解锁 / 开通会员 / 会员免广告」。
+async function localUnlockFallback(title) {
+    if (await isUserVipNow()) return { unlocked: true, via: 'vip' };
+    const choice = await chooseUnlockAction(title);
+    if (choice === 'ad') return { unlocked: true, via: 'ad' };
+    if (choice === 'vip') {
+        // 打开 keepwork 真实开通会员/支付流程，完成后核对会员状态。
+        const sdk = state.sdk;
+        try {
+            if (sdk && typeof sdk.showProfileWindow === 'function') await sdk.showProfileWindow();
+            else { state.isPaid = true; try { saveUserProfileDebounced(); } catch (_) {} }
+        } catch (_) {}
+        const isVip = await isUserVipNow(true);
+        if (isVip && !state.isPaid) { state.isPaid = true; try { saveUserProfileDebounced(); } catch (_) {} }
+        return isVip ? { unlocked: true, via: 'vip' } : { unlocked: false, via: 'cancel' };
+    }
+    return { unlocked: false, via: 'cancel' };
 }
 
 // 收集可暴露给小游戏的用户档案：星球名、昵称、用户名、性别、头像。
@@ -1919,16 +2881,6 @@ function coinValue() {
     return Math.max(0, Math.round(Number(state.coins) || 0));
 }
 
-function renderCoinPill(id, className) {
-    return `
-        <span class="${className} mh-coin-amount" id="${id}" title="${escapeHtml(t('mgCoinTip'))}" aria-label="${escapeHtml(t('coins'))} ${coinValue()}"
-            style="position:relative;height:30px;min-width:46px;padding:0 7px;border-radius:999px;background:rgba(255,255,255,.86);border:1px solid rgba(217,119,6,.24);display:inline-flex;align-items:center;justify-content:center;gap:3px;font-weight:900;font-size:12px;color:var(--accent-dark);box-shadow:0 2px 0 rgba(217,119,6,.12)">
-            ${coinIconSvg()}
-            <span data-mh-minigame-coins>${coinValue()}</span>
-        </span>
-    `;
-}
-
 function refreshCoins({ previous = null, animate = false } = {}) {
     const value = coinValue();
     document.querySelectorAll('[data-mh-minigame-coins]').forEach((el) => {
@@ -2138,18 +3090,17 @@ function openGame(gameId, params = null, { allowLowEnergy = false, html = null, 
     if (titleEl) { titleEl.textContent = gameTitle; titleEl.title = gameTitle; }
     if (done) done.style.display = game.manualComplete ? 'block' : 'none';
     frame.setAttribute('allow', game.allow || 'autoplay; fullscreen');
+    // srcdoc 路径：load 事件推送配置；宿主页兜底路径：mhGameRendered 握手推送配置（见 gameHostFrame.js）。
     frame.onload = () => postGameConfig();
     if (html != null) {
-        frame.removeAttribute('src');
-        frame.srcdoc = String(html);
+        loadGameHtmlIntoFrame(frame, html, { onRendered: () => postGameConfig() });
     } else {
         frame.removeAttribute('srcdoc');
         frame.src = minigameUrl(game.src, params);
     }
 }
 
-async function postGameConfig() {
-    const frame = $('mhMinigameFrame');
+async function postGameConfig(frame = $('mhMinigameFrame')) {
     if (!frame?.contentWindow) return;
     const pet = await requestedPetForMinigame({});
     if (!frame?.contentWindow || !pet) return;
@@ -2344,13 +3295,17 @@ function setTopbarActionsVisible(visible) {
     if (actions) actions.style.display = visible ? 'flex' : 'none';
 }
 
-// 顶栏收藏按钮：仅游玩中显示，已收藏时按钮高亮并显示"已收藏"。
+// 顶栏收藏 / 分享按钮：仅游玩中显示，已收藏时收藏按钮高亮并显示"已收藏"。
 function hidePlayLikeButton() {
     const btn = $('mhMinigameLikeBtn');
     if (btn) btn.style.display = 'none';
+    const shareBtn = $('mhMinigameShareBtn');
+    if (shareBtn) shareBtn.style.display = 'none';
 }
 
 function renderPlayLikeButton() {
+    const shareBtn = $('mhMinigameShareBtn');
+    if (shareBtn) shareBtn.style.display = currentGameLikeMeta ? 'inline-flex' : 'none';
     const btn = $('mhMinigameLikeBtn');
     if (!btn) return;
     if (!currentGameLikeMeta) { btn.style.display = 'none'; return; }

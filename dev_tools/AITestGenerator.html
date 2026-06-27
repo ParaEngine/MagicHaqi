@@ -1,0 +1,676 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>AI Test Generator · 伴学游戏工坊</title>
+  <script src="https://cdn.keepwork.com/keepwork/cdn/tailwindcss@3.4.16.js"></script>
+  <style type="text/tailwindcss">
+    @layer base {
+      :root { color-scheme: light; }
+      button { @apply min-h-[34px] cursor-pointer rounded-md border border-slate-300 bg-white px-3 text-slate-900 transition hover:border-sky-300 hover:bg-slate-50 active:translate-y-px disabled:cursor-not-allowed disabled:opacity-50 disabled:active:translate-y-0; }
+      input, textarea, select { @apply w-full min-h-[34px] rounded-md border border-slate-300 bg-white px-2.5 py-1.5 text-slate-900 outline-none focus:border-sky-600 focus:ring-2 focus:ring-sky-600/15; }
+      label { @apply flex flex-col gap-1.5 text-xs text-slate-500; }
+      h1, h2, h3 { @apply m-0 tracking-normal; }
+      h1 { @apply text-lg leading-tight font-semibold; }
+      h2 { @apply text-sm font-semibold; }
+      h3 { @apply text-xs font-normal text-slate-500; }
+    }
+    @layer components {
+      .toolbar { @apply flex flex-wrap items-center gap-2; }
+      .toolbar button { @apply flex-none; }
+      .primary { @apply border-sky-600 bg-sky-600 text-white hover:border-sky-700 hover:bg-sky-700; }
+      .success { @apply border-emerald-600 bg-emerald-600 text-white hover:border-emerald-700 hover:bg-emerald-700; }
+      .danger { @apply border-red-200 bg-red-50 text-red-700; }
+      .hint { @apply text-xs leading-normal text-slate-500; }
+      .status { @apply whitespace-pre-wrap rounded-md border border-sky-200 bg-sky-50 px-2.5 py-2 text-xs leading-normal text-sky-900; }
+      .status.ok { @apply border-emerald-200 bg-emerald-50 text-emerald-800; }
+      .status.error { @apply border-red-200 bg-red-50 text-red-800; }
+      .status-action { @apply min-h-0 border-0 bg-transparent p-0 font-bold underline underline-offset-2 hover:border-transparent hover:bg-transparent; }
+      .pill { @apply inline-flex min-h-6 items-center whitespace-nowrap rounded-full border border-slate-300 bg-white px-2 text-xs text-slate-500; }
+      .record-list { @apply flex min-h-0 flex-1 flex-col gap-1.5 overflow-auto p-2; }
+      .record-item { @apply grid w-full min-w-0 flex-none grid-cols-[40px_minmax(0,1fr)_auto] items-center gap-2.5 overflow-hidden rounded-md border border-slate-300 bg-white p-2.5 text-left transition; }
+      .record-item.active { @apply border-sky-600 bg-sky-50 ring-2 ring-sky-600/15; }
+      .record-icon { @apply grid h-10 w-10 place-items-center rounded-md border border-slate-200 bg-slate-50 text-2xl; }
+      .record-main { @apply block min-w-0 border-0 bg-transparent p-0 text-left hover:border-transparent hover:bg-transparent; }
+      .record-title { @apply block min-w-0 overflow-hidden text-ellipsis whitespace-nowrap text-[13px] font-bold; }
+      .record-meta { @apply block min-w-0 overflow-hidden text-ellipsis whitespace-nowrap text-[11px] text-slate-500; }
+      .record-actions { @apply flex gap-1.5; }
+      .record-actions button { @apply min-h-[30px] min-w-[34px] px-2 text-xs; }
+      .empty-list { @apply rounded-md border border-dashed border-slate-300 bg-slate-50 p-4 text-center text-xs text-slate-500; }
+      .type-card { @apply flex cursor-pointer flex-col gap-0.5 rounded-md border border-slate-300 bg-white px-3 py-2 text-left transition hover:border-sky-300; }
+      .type-card.sel { @apply border-sky-600 bg-sky-50 ring-2 ring-sky-600/15; }
+      .type-card b { @apply text-[13px] font-bold text-slate-900; }
+      .type-card span { @apply text-[11px] text-slate-500; }
+      .thumb { @apply h-16 w-16 flex-none rounded-md border border-slate-300 object-cover; }
+      /* 编辑器宿主：view_game_maker.js 用 position:absolute; inset:0 填满此容器 */
+      .maker-host { @apply relative min-h-0 flex-1 overflow-hidden rounded-lg border border-slate-300 bg-slate-900; }
+      .maker-empty { @apply absolute inset-0 grid place-items-center p-6 text-center text-sm text-slate-400; }
+    }
+  </style>
+  <style>
+    @keyframes ggSpin { to { transform: rotate(360deg); } }
+    .gg-spinner { width: 34px; height: 34px; border: 3px solid rgba(148,163,184,.35); border-top-color: #0ea5e9; border-radius: 50%; animation: ggSpin .9s linear infinite; }
+  </style>
+</head>
+<body class="m-0 h-screen overflow-hidden bg-slate-100 text-slate-900 font-sans">
+  <main class="grid h-screen grid-cols-1 gap-3 p-3 lg:grid-cols-[280px_minmax(520px,1fr)] lg:overflow-hidden">
+    <!-- 侧栏：账号 + 伴学游戏列表 -->
+    <aside class="sidebar flex min-h-0 flex-col overflow-hidden rounded-lg border border-slate-300 bg-white shadow-lg shadow-slate-300/40">
+      <div class="flex min-h-14 items-center justify-between gap-2.5 border-b border-slate-300 px-3.5 py-3">
+        <div>
+          <h1>AI Test Generator</h1>
+          <h3>资料 → 伴学游戏</h3>
+        </div>
+        <span id="sdkState" class="pill">SDK loading</span>
+      </div>
+
+      <div class="flex flex-col gap-2.5 border-b border-slate-300 bg-slate-50 p-3">
+        <h2>账号与工具</h2>
+        <div id="loginState" class="status">正在加载 KeepworkSDK...</div>
+        <div class="toolbar">
+          <button id="btnLocalApi" type="button">本地 API Key</button>
+        </div>
+      </div>
+
+      <div class="flex items-center justify-between gap-2 border-b border-slate-300 bg-white px-3 py-2.5">
+        <div>
+          <h2>我的伴学游戏</h2>
+          <h3>Workspace: MagicHaqi/study-games</h3>
+        </div>
+        <span id="recordCount" class="pill">0</span>
+      </div>
+      <div class="grid grid-cols-2 gap-2 border-b border-slate-300 bg-slate-50 p-3">
+        <button id="btnNew" class="primary col-span-2" type="button">＋ 上传资料·新建</button>
+        <button id="btnRefresh" type="button">刷新列表</button>
+        <button id="btnReloadSelected" type="button">重新打开</button>
+      </div>
+      <div id="recordList" class="record-list">
+        <div class="hint p-2.5">加载 SDK 并登录后，会列出你创造的伴学游戏。</div>
+      </div>
+    </aside>
+
+    <!-- 主区：资料中台 + 伴学游戏制作工坊 -->
+    <section class="editor flex min-h-0 flex-col overflow-hidden rounded-lg border border-slate-300 bg-white shadow-lg shadow-slate-300/40">
+      <div class="flex min-h-14 items-center justify-between gap-2.5 border-b border-slate-300 px-3.5 py-3">
+        <div>
+          <h2 id="editorTitle">伴学游戏制作工坊</h2>
+          <h3 id="editorSubtitle">上传资料 → AI 抽题 → 生成有声有图的伴学游戏。</h3>
+        </div>
+        <div class="toolbar">
+          <button id="btnCloseMaker" type="button" class="hidden">关闭工坊</button>
+        </div>
+      </div>
+
+      <div class="flex min-h-0 flex-1 flex-col gap-3 p-3">
+        <!-- 资料中台（未打开工坊时显示） -->
+        <div id="intakePanel" class="flex min-h-0 flex-1 flex-col gap-3 overflow-auto">
+          <div class="grid gap-3 lg:grid-cols-2">
+            <label>学生（关联长期记忆）
+              <input id="studentId" type="text" placeholder="例如：小明 / xiaoming" value="同学">
+            </label>
+            <label>学科 / 主题
+              <input id="subjectTitle" type="text" placeholder="例如：四年级语文 · 古诗背诵">
+            </label>
+          </div>
+
+          <div>
+            <h3 class="mb-1.5">玩学题型</h3>
+            <div id="typeCards" class="grid grid-cols-2 gap-2 lg:grid-cols-4">
+              <button type="button" class="type-card sel" data-type="mcq"><b>选择题闯关</b><span>科学闯关同款 · 三层揭晓卡</span></button>
+              <button type="button" class="type-card" data-type="dictation"><b>听写 / 默写</b><span>语音读题 → 作答 → 校对</span></button>
+              <button type="button" class="type-card" data-type="cloze"><b>背诵填空</b><span>挖空填空 · 课文古诗</span></button>
+              <button type="button" class="type-card" data-type="review"><b>错题 / 卷子复习</b><span>针对薄弱点闯关</span></button>
+            </div>
+          </div>
+
+          <div class="grid gap-3 lg:grid-cols-2">
+            <div class="flex flex-col gap-2">
+              <h3>① 拍照 / 上传资料</h3>
+              <input id="fileInput" type="file" accept="image/*" capture="environment" multiple>
+              <div id="thumbs" class="flex flex-wrap gap-2"></div>
+              <label>或直接粘贴文字资料
+                <textarea id="pasteText" rows="4" placeholder="把听写词表 / 复习题 / 课文粘贴到这里…"></textarea>
+              </label>
+              <button id="btnExtract" class="primary" type="button">② AI 抽题</button>
+            </div>
+            <div class="flex min-h-0 flex-col gap-2">
+              <div class="flex items-center justify-between">
+                <h3>③ 题库（可编辑 JSON）</h3>
+                <span id="itemCount" class="pill">0 题</span>
+              </div>
+              <textarea id="itemsJson" rows="10" class="flex-1 font-mono text-[12px]" placeholder='AI 抽题后这里会出现结构化题库，可手动增删改…'></textarea>
+              <div id="itemsPreview" class="hint"></div>
+            </div>
+          </div>
+
+          <div id="intakeStatus" class="status hidden"></div>
+
+          <div class="flex flex-wrap items-center gap-3">
+            <span class="hint">题目只用上面的题库，单一主题、移动优先。</span>
+            <button id="btnGenerate" class="success" type="button" style="margin-left:auto">④ 生成伴学游戏 →</button>
+          </div>
+        </div>
+
+        <!-- 制作工坊宿主（生成 / 编辑时填充） -->
+        <div id="makerHost" class="maker-host hidden">
+          <div class="maker-empty" id="makerEmpty">
+            <div class="flex flex-col items-center gap-3">
+              <div class="gg-spinner"></div>
+              <div>正在加载制作工坊…</div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </section>
+  </main>
+
+  <script type="module">
+    // ============================================================
+    // AITestGenerator 独立工具：
+    //   - 壳参考 dev_tools/GameGenerator.html（账号 + 列表 + makerHost）
+    //   - 新增「资料中台」：拍照/上传 → 视觉 OCR 抽题 → 可编辑题库 → 生成
+    //   - 编辑器复用 view_game_maker.js（renderGameMaker，mode:'study'）
+    //   - 存储走 study-games 命名空间；长期记忆走 study-games/memory/<studentId>.md
+    // ============================================================
+    const $ = (id) => document.getElementById(id);
+
+    const state = {
+      sdk: null,
+      records: [],
+      activePath: '',
+      makerOpen: false,
+      type: 'mcq',
+      images: [],     // { id, name, dataUrl }
+      items: [],      // 抽取/编辑后的题库
+    };
+
+    function escapeHtml(value) {
+      const div = document.createElement('div');
+      div.textContent = value == null ? '' : String(value);
+      return div.innerHTML;
+    }
+    function formatTime(ts) {
+      const value = Number(ts);
+      if (!Number.isFinite(value) || value <= 0) return '';
+      try { return new Date(value).toLocaleString(); } catch (_) { return ''; }
+    }
+    function setIntakeStatus(text, kind = '') {
+      const el = $('intakeStatus');
+      el.textContent = text || '';
+      el.classList.toggle('hidden', !text);
+      el.classList.toggle('error', kind === 'error');
+      el.classList.toggle('ok', kind === 'ok');
+    }
+
+    // -------- KeepworkSDK 加载（本地源码优先，CDN 兜底） --------
+    const SDK_CDN_URL = 'https://cdn.keepwork.com/sdk/keepworkSDK.iife.js?v=20260619a';
+    const sdkLoadTimeoutMs = 8000;
+    function withTimeout(promise, ms, label) {
+      let timer = null;
+      const timeout = new Promise((_, reject) => { timer = setTimeout(() => reject(new Error(`${label} timed out`)), ms); });
+      return Promise.race([promise, timeout]).finally(() => clearTimeout(timer));
+    }
+    function loadScript(src) {
+      return new Promise((resolve, reject) => {
+        const existing = [...document.scripts].find(s => s.src === src);
+        if (existing) {
+          existing.addEventListener('load', () => resolve(), { once: true });
+          existing.addEventListener('error', () => reject(new Error(`SDK script failed: ${src}`)), { once: true });
+          if (window.keepwork || window.KeepworkSDK) resolve();
+          return;
+        }
+        const script = document.createElement('script');
+        script.src = src;
+        script.onload = () => resolve();
+        script.onerror = () => reject(new Error(`SDK script failed: ${src}`));
+        document.head.appendChild(script);
+      });
+    }
+    function importRuntimeModule(src) { return new Function('src', 'return import(src)')(src); }
+    function shouldLoadSdkAsModule(src) { return /(^|\/)index\.(?:ts|mjs|js)(?:[?#].*)?$/.test(src); }
+    function getSdkCandidates() {
+      const params = new URLSearchParams(window.location.search);
+      const explicitSdk = params.get('sdk');
+      const host = window.location.hostname;
+      const isLocalHost = !host || host === 'localhost' || host === '127.0.0.1' || host === '::1';
+      const isFile = window.location.protocol === 'file:';
+      const localCandidates = ['http://127.0.0.1:5001/index.ts'];
+      const deployedCandidates = [SDK_CDN_URL];
+      return [
+        explicitSdk,
+        ...((isLocalHost || isFile) ? localCandidates : []),
+        ...deployedCandidates,
+        ...((isLocalHost || isFile) ? [] : localCandidates),
+      ].filter(Boolean);
+    }
+
+    let stateMod, storageMod, gameMakerMod, i18nMod, configMod;
+
+    async function ensureKeepworkSDK() {
+      if (window.keepwork || window.KeepworkSDK) return;
+      let lastError = null;
+      for (const url of getSdkCandidates()) {
+        try {
+          if (shouldLoadSdkAsModule(url)) await withTimeout(importRuntimeModule(url), sdkLoadTimeoutMs, `SDK module ${url}`);
+          else await loadScript(url);
+          if (window.keepwork || window.KeepworkSDK) return;
+        } catch (e) { lastError = e; }
+      }
+      throw lastError || new Error('无法加载 KeepworkSDK');
+    }
+
+    async function loadSdk() {
+      try {
+        await ensureKeepworkSDK();
+      } catch (err) {
+        $('sdkState').textContent = 'SDK failed';
+        $('loginState').textContent = `KeepworkSDK 加载失败：${err?.message || err}`;
+        $('loginState').classList.add('error');
+        throw err;
+      }
+      const sdk = window.keepwork || new window.KeepworkSDK({ timeout: 30000 });
+      window.keepwork = sdk;
+      window.sdk = sdk;
+      state.sdk = sdk;
+      if (sdk.setUserApiKey && window.KeepworkSDK?.API_KEYS?.maisi) sdk.setUserApiKey(window.KeepworkSDK.API_KEYS.maisi);
+      try { await sdk.localAPIKeySettings?.load?.(); } catch (e) { console.warn('Local API Key settings load failed:', e); }
+
+      // 加载 MagicHaqi 运行时模块（共享 state 让 storage / game_maker 正常工作）。
+      [stateMod, storageMod, gameMakerMod, i18nMod, configMod] = await Promise.all([
+        import('../js/state.js'),
+        import('../js/storage.js'),
+        import('../js/view_game_maker.js'),
+        import('../js/i18n.js'),
+        import('../js/config.js'),
+      ]);
+      stateMod.state.sdk = sdk;
+      window.MH_state = stateMod.state;
+
+      $('sdkState').textContent = 'SDK ready';
+      await refreshLoginState();
+      await loadRecords();
+    }
+
+    // -------- 登录状态 --------
+    async function refreshLoginState() {
+      const sdk = state.sdk || window.keepwork;
+      if (!sdk) return;
+      let username = sdk.user?.username || '';
+      if (sdk.token && !username) {
+        try {
+          const user = typeof sdk.getUserProfile === 'function' ? await sdk.getUserProfile() : await sdk.getCurrentUser?.();
+          username = user?.username || sdk.user?.username || '';
+        } catch (_) {}
+      }
+      const loginState = $('loginState');
+      loginState.classList.toggle('ok', !!sdk.token);
+      loginState.classList.remove('error');
+      loginState.innerHTML = sdk.token
+        ? `已登录：<button id="btnProfile" class="status-action" type="button">${escapeHtml(username || 'Keepwork 用户')}</button>`
+        : '<button id="btnProfile" class="status-action" type="button">未登录</button>。点击登录后即可生成 / 保存伴学游戏。';
+      const btn = $('btnProfile');
+      if (btn) btn.onclick = openLoginOrProfile;
+    }
+    async function openLoginOrProfile() {
+      const sdk = state.sdk || window.keepwork;
+      if (!sdk) return;
+      if (!sdk.token) {
+        if (sdk.loginWindow?.show) sdk.loginWindow.show({ onLogin: async () => { await refreshLoginState(); await loadRecords(); } });
+        else if (sdk.login) await sdk.login();
+        setTimeout(async () => { await refreshLoginState(); await loadRecords(); }, 800);
+        return;
+      }
+      if (typeof sdk.showProfileWindow === 'function') {
+        const result = await sdk.showProfileWindow();
+        if (result?.action === 'logout') { await refreshLoginState(); await loadRecords(); return; }
+      } else if (sdk.profileWindow?.show) {
+        await sdk.profileWindow.show();
+      }
+      await refreshLoginState();
+    }
+
+    // -------- 列表（study-games/index.json） --------
+    async function loadRecords() {
+      const sdk = state.sdk || window.keepwork;
+      if (!sdk?.token) {
+        state.records = [];
+        $('recordCount').textContent = '0';
+        $('recordList').innerHTML = '<div class="empty-list">登录后查看你创造的伴学游戏。</div>';
+        return;
+      }
+      try {
+        state.records = await storageMod.loadStudyGameList();
+      } catch (e) {
+        console.error('加载伴学游戏列表失败', e);
+        state.records = [];
+        $('recordList').innerHTML = `<div class="empty-list">加载失败：${escapeHtml(e?.message || e)}</div>`;
+        $('recordCount').textContent = '0';
+        return;
+      }
+      renderRecords();
+    }
+    function renderRecords() {
+      const list = $('recordList');
+      $('recordCount').textContent = String(state.records.length);
+      if (!state.records.length) {
+        list.innerHTML = '<div class="empty-list">还没有伴学游戏。点「上传资料·新建」开始。</div>';
+        return;
+      }
+      list.innerHTML = state.records.map(rec => {
+        const active = rec.path === state.activePath;
+        return `
+          <div class="record-item${active ? ' active' : ''}" data-path="${escapeHtml(rec.path)}">
+            <div class="record-icon">${escapeHtml(rec.icon || '📚')}</div>
+            <button class="record-main" type="button" data-act="open" data-path="${escapeHtml(rec.path)}">
+              <span class="record-title">${escapeHtml(rec.title || rec.id || '未命名伴学游戏')}</span>
+              <span class="record-meta">${escapeHtml(formatTime(rec.updatedAt) || rec.path)}</span>
+            </button>
+            <div class="record-actions">
+              <button type="button" data-act="open" data-path="${escapeHtml(rec.path)}" title="编辑">✏️</button>
+              <button type="button" class="danger" data-act="delete" data-path="${escapeHtml(rec.path)}" title="删除">🗑</button>
+            </div>
+          </div>`;
+      }).join('');
+    }
+    $('recordList').addEventListener('click', async (e) => {
+      const btn = e.target.closest('button[data-act]');
+      if (!btn) return;
+      const path = btn.getAttribute('data-path');
+      const act = btn.getAttribute('data-act');
+      const rec = state.records.find(r => r.path === path);
+      if (!rec) return;
+      if (act === 'open') {
+        await openMaker(rec);
+      } else if (act === 'delete') {
+        if (!confirm(`删除伴学游戏「${rec.title || rec.id || path}」？此操作不可撤销。`)) return;
+        try {
+          await storageMod.deleteStudyGame(path);
+          if (state.activePath === path) { state.activePath = ''; closeMaker(); }
+          await loadRecords();
+        } catch (err) { alert('删除失败：' + (err?.message || err)); }
+      }
+    });
+
+    // -------- 资料中台：题型选择 --------
+    $('typeCards').addEventListener('click', (e) => {
+      const card = e.target.closest('.type-card');
+      if (!card) return;
+      state.type = card.dataset.type;
+      [...$('typeCards').children].forEach(c => c.classList.toggle('sel', c === card));
+    });
+
+    // -------- 资料中台：图片上传 --------
+    function fileToDataUrl(file) {
+      return new Promise((resolve, reject) => {
+        const fr = new FileReader();
+        fr.onload = () => resolve(fr.result);
+        fr.onerror = () => reject(new Error('读取文件失败'));
+        fr.readAsDataURL(file);
+      });
+    }
+    $('fileInput').addEventListener('change', async (e) => {
+      const files = [...(e.target.files || [])];
+      for (const file of files) {
+        if (!file.type.startsWith('image/')) continue;
+        try {
+          const dataUrl = await fileToDataUrl(file);
+          state.images.push({ id: `img_${Date.now()}_${Math.random().toString(36).slice(2, 6)}`, name: file.name, dataUrl });
+        } catch (_) {}
+      }
+      e.target.value = '';
+      renderThumbs();
+    });
+    function renderThumbs() {
+      $('thumbs').innerHTML = state.images.map(img =>
+        `<div class="relative"><img class="thumb" src="${img.dataUrl}" alt="${escapeHtml(img.name)}">
+         <button type="button" class="danger absolute -right-1 -top-1 min-h-0 rounded-full px-1.5 py-0 text-[11px]" data-rm="${img.id}">×</button></div>`
+      ).join('');
+    }
+    $('thumbs').addEventListener('click', (e) => {
+      const btn = e.target.closest('button[data-rm]');
+      if (!btn) return;
+      state.images = state.images.filter(i => i.id !== btn.dataset.rm);
+      renderThumbs();
+    });
+
+    // -------- 资料中台：题库 JSON 编辑 / 预览 --------
+    function setItems(items) {
+      state.items = Array.isArray(items) ? items : [];
+      $('itemsJson').value = JSON.stringify(state.items, null, 2);
+      renderItemsPreview();
+    }
+    function syncItemsFromTextarea() {
+      try {
+        const parsed = JSON.parse($('itemsJson').value || '[]');
+        state.items = Array.isArray(parsed) ? parsed : (Array.isArray(parsed?.items) ? parsed.items : []);
+        renderItemsPreview();
+        return true;
+      } catch (e) {
+        renderItemsPreview(`JSON 格式有误：${e.message}`);
+        return false;
+      }
+    }
+    function renderItemsPreview(err) {
+      $('itemCount').textContent = `${state.items.length} 题`;
+      if (err) { $('itemsPreview').innerHTML = `<span class="text-red-600">${escapeHtml(err)}</span>`; return; }
+      const sample = state.items.slice(0, 3).map((it, i) => {
+        const q = it.q || it.prompt || it.text || JSON.stringify(it);
+        return `${i + 1}. ${escapeHtml(String(q).slice(0, 60))}`;
+      }).join('<br>');
+      $('itemsPreview').innerHTML = sample || '（暂无题目）';
+    }
+    $('itemsJson').addEventListener('input', () => syncItemsFromTextarea());
+
+    // -------- AI 抽题（视觉 OCR → 结构化题库） --------
+    function extractAssistantText(result) {
+      if (typeof result === 'string') return result;
+      return result?.result || result?.choices?.[0]?.message?.content
+        || result?.data?.choices?.[0]?.message?.content || result?.text || '';
+    }
+    function extractJsonArray(text) {
+      const value = String(text || '').trim();
+      if (!value) throw new Error('AI 未返回内容');
+      // json_object 模式会把数组包进对象，键名不固定：兜底取第一个数组值。
+      const pickArray = (p) => {
+        if (Array.isArray(p)) return p;
+        if (p && typeof p === 'object') {
+          for (const k of ['items', 'questions', 'data', 'list', '题目']) if (Array.isArray(p[k])) return p[k];
+          for (const k of Object.keys(p)) if (Array.isArray(p[k])) return p[k];
+        }
+        return null;
+      };
+      const tryParse = (s) => { try { return pickArray(JSON.parse(s)); } catch (_) { return null; } };
+      let r = tryParse(value); if (r) return r;
+      const fenced = value.match(/```(?:json)?\s*([\s\S]*?)```/i);
+      if (fenced) { r = tryParse(fenced[1]); if (r) return r; }
+      const start = value.indexOf('['); const end = value.lastIndexOf(']');
+      if (start >= 0 && end > start) { r = tryParse(value.slice(start, end + 1)); if (r) return r; }
+      const os = value.indexOf('{'); const oe = value.lastIndexOf('}');
+      if (os >= 0 && oe > os) { r = tryParse(value.slice(os, oe + 1)); if (r) return r; }
+      throw new Error('AI 返回不是题库 JSON');
+    }
+    const TYPE_SCHEMA = {
+      mcq: '每题 {"q":"题面","o":["选项A","选项B","选项C","选项D"],"a":正确选项下标(0起),"why":"为什么(讲机制)","wow":"知道吗(课本外趣闻)","vis":"🌰 直观小图示(emoji/简短HTML)"}',
+      dictation: '每题 {"prompt":"要读出来让学生听写的词/句","answer":"正确答案","hint":"可选提示"}',
+      cloze: '每题 {"text":"完整句子/段落","blanks":[{"pos":挖空在第几个词或用 ___ 标记,"answer":"答案","hint":"可选提示"}]}',
+      review: '每题 {"q":"题面","o":["..."],"a":下标,"why":"...","wow":"...","vis":"...","weak":true/false(是否易错点)}',
+    };
+    async function extractItems() {
+      const sdk = state.sdk || window.keepwork;
+      if (!sdk?.token) { if (!confirm('AI 抽题需要先登录，现在登录吗？')) return; await openLoginOrProfile(); if (!sdk?.token) return; }
+      const paste = $('pasteText').value.trim();
+      if (!state.images.length && !paste) { setIntakeStatus('请先拍照/上传资料，或粘贴文字。', 'error'); return; }
+      $('btnExtract').disabled = true;
+      setIntakeStatus('AI 正在识别资料并抽题…');
+      const sys = `你是一个伴学题库抽取助手。从用户提供的资料（图片或文字）中提取题目，只输出 JSON 对象 {"items":[ ... ]}（不要 markdown、不要解释）。`
+        + `\n题型为「${state.type}」，items 里每个元素结构：${TYPE_SCHEMA[state.type]}。`
+        + `\n资料里若没有现成题目（例如只是一段课文/单词表），请据此自行出题；背诵填空(cloze)要把关键词挖空。`
+        + `\n忠实还原资料里的题目与答案；选择题/复习题若没给 why/wow/vis，请你补全（贴合学科、适龄、准确、简短）。`;
+      const userContent = [{ type: 'text', text: paste ? `文字资料：\n${paste}` : '请从下列图片中提取题目。' }];
+      for (const img of state.images) userContent.push({ type: 'image_url', image_url: { url: img.dataUrl } });
+      const messages = [{ role: 'system', content: sys }, { role: 'user', content: userContent }];
+      // 与 view_game_maker.js 共用同一模型键（用户在工坊里选的模型）。
+      let model; try { model = localStorage.getItem('mh_game_maker_model') || undefined; } catch (_) { model = undefined; }
+      // 流式：把模型的思考 / 出题进度实时显示在状态栏，避免长时间无反馈。
+      let reason = '', content = '';
+      const payloadText = (value, payload) => {
+        if (typeof value === 'string' && value) return value;
+        const p = payload != null ? payload : value;
+        if (typeof p === 'string') return p;
+        if (p && typeof p === 'object') return p.result || p.text || p.content || p.choices?.[0]?.message?.content || p.choices?.[0]?.delta?.content || '';
+        return '';
+      };
+      const onReasoning = (full, delta) => { reason = (typeof full === 'string' && full) ? full : (reason + (delta || '')); progress(); };
+      const onMessage = (value, payload) => { const t = payloadText(value, payload); if (!t) return; content = t.startsWith(content) ? t : (content + t); progress(); };
+      const progress = () => { const s = (reason || content || '').trim(); setIntakeStatus('AI 正在识别资料并出题…' + (s ? ('\n' + (s.length > 300 ? '…' + s.slice(-300) : s)) : '')); };
+      try {
+        let raw = '';
+        if (sdk?.aiGenerators?.chat) {
+          let r; const base = { messages, model, stream: true, temperature: 0.4, onMessage, onReasoning };
+          try { r = await sdk.aiGenerators.chat({ ...base, responseFormat: 'json_object' }); }
+          catch (err) { if (!/response.?format|json_object/i.test(err?.message || String(err))) throw err; r = await sdk.aiGenerators.chat(base); }
+          raw = extractAssistantText(r) || content;
+        } else if (sdk?.aiChat?.chat) {
+          raw = extractAssistantText(await sdk.aiChat.chat({ messages, model, stream: true, temperature: 0.4, onMessage, onReasoning })) || content;
+        } else {
+          throw new Error('当前 SDK 不支持 AI 抽题');
+        }
+        const items = extractJsonArray(raw);
+        setItems(items);
+        setIntakeStatus(`已抽取 ${items.length} 题，可在右侧 JSON 里增删改后再生成。`, 'ok');
+      } catch (e) {
+        console.error('抽题失败', e);
+        setIntakeStatus(`抽题失败：${e?.message || e}`, 'error');
+      } finally {
+        $('btnExtract').disabled = false;
+      }
+    }
+    $('btnExtract').onclick = extractItems;
+
+    // -------- 生成：把题库 + 记忆喂给 renderGameMaker（study 模式） --------
+    async function generate() {
+      const sdk = state.sdk || window.keepwork;
+      if (!sdk?.token) { if (!confirm('生成伴学游戏需要先登录，现在登录吗？')) return; await openLoginOrProfile(); if (!sdk?.token) return; }
+      if (!syncItemsFromTextarea()) { setIntakeStatus('题库 JSON 解析失败，请修正后再生成。', 'error'); return; }
+      if (!state.items.length) { setIntakeStatus('题库为空：先 AI 抽题或手动粘贴题目。', 'error'); return; }
+      const studentId = ($('studentId').value || '同学').trim();
+      const subject = ($('subjectTitle').value || '伴学复习').trim();
+      const materials = { type: state.type, subject, title: subject, studentId, items: state.items };
+      let memory = '';
+      try { memory = await storageMod.loadStudentMemory(studentId); } catch (_) {}
+
+      const typeLabel = ({ mcq: '选择题闯关', dictation: '听写默写', cloze: '背诵填空', review: '错题复习' })[state.type] || '伴学';
+      const initialPrompt = `请用我提供的学习资料做一个「${typeLabel}」伴学游戏：题库就用资料里的这 ${state.items.length} 道题`
+        + `（不要保留任何模板里的旧题，也不要自己另编题），单一主题不分单元、进入即开始答题；`
+        + `保留三层揭晓卡（图示/为什么/知道吗）、爱心连击与数字人语音陪学；`
+        + `移动优先、精简，「语音陪学」按钮放最上面的顶栏，手机上不要底部的宠物伙伴面板。`;
+
+      await openMaker(null, { mode: 'study', materials, memory, title: subject, initialPrompt });
+    }
+    $('btnGenerate').onclick = generate;
+
+    // -------- 制作工坊（view_game_maker.js, study 模式） --------
+    function showIntake() {
+      $('intakePanel').classList.remove('hidden');
+      $('makerHost').classList.add('hidden');
+      $('btnCloseMaker').classList.add('hidden');
+    }
+    function showMaker() {
+      $('intakePanel').classList.add('hidden');
+      $('makerHost').classList.remove('hidden');
+      $('btnCloseMaker').classList.remove('hidden');
+    }
+    function closeMaker() {
+      try { gameMakerMod?.disposeGameMaker?.(); } catch (_) {}
+      state.makerOpen = false;
+      state.activePath = '';
+      renderRecords();
+      $('editorTitle').textContent = '伴学游戏制作工坊';
+      $('editorSubtitle').textContent = '上传资料 → AI 抽题 → 生成有声有图的伴学游戏。';
+      showIntake();
+    }
+
+    // rec：编辑已有伴学游戏；opts：新建/生成时的 study 参数。
+    async function openMaker(rec, opts = {}) {
+      const sdk = state.sdk || window.keepwork;
+      if (!sdk?.token) { if (!confirm('管理 / 保存伴学游戏需要先登录，现在登录吗？')) return; await openLoginOrProfile(); if (!sdk?.token) return; }
+
+      let game = opts.game || null;
+      if (rec) {
+        let html = '';
+        try { html = await storageMod.loadStudyGameHtml(rec.path); } catch (e) { console.warn('读取伴学游戏 HTML 失败', e); }
+        game = { record: rec, html };
+        state.activePath = rec.path;
+        $('editorTitle').textContent = rec.title || rec.id || '编辑伴学游戏';
+        $('editorSubtitle').textContent = `编辑中 · ${rec.path}`;
+      } else {
+        state.activePath = '';
+        $('editorTitle').textContent = opts.title || '新建伴学游戏';
+        $('editorSubtitle').textContent = '与 AI 对话，把资料做成有声有图的伴学游戏。';
+      }
+      renderRecords();
+
+      const host = $('makerHost');
+      host.innerHTML = '';
+      state.makerOpen = true;
+      showMaker();
+      gameMakerMod.renderGameMaker(host, {
+        game,
+        mode: 'study',
+        materials: opts.materials || null,
+        memory: opts.memory || '',
+        initialPrompt: opts.initialPrompt || '',
+      }, {
+        onBack: () => { closeMaker(); },
+        onSaved: async (result) => {
+          if (result?.path) {
+            state.activePath = result.path;
+            const r = result.record;
+            if (r) { $('editorTitle').textContent = r.title || r.id || '编辑伴学游戏'; $('editorSubtitle').textContent = `已保存 · ${result.path}`; }
+          }
+          await loadRecords();
+        },
+        // study 模式：用 study-games 命名空间持久化，与「我的小游戏」互不混淆。
+        storage: { save: (html, meta) => storageMod.saveStudyGame(html, meta) },
+      });
+    }
+
+    // -------- 运行时记忆回写：监听生成的游戏 gameFinished 回传 --------
+    window.addEventListener('message', async (e) => {
+      const data = e?.data;
+      if (!data || data.type !== 'gameFinished' || !data.data) return;
+      const d = data.data;
+      const studentId = (d.studentId || $('studentId').value || '同学').trim();
+      if (!storageMod?.appendStudentMemory) return;
+      try {
+        const wrong = Array.isArray(d.wrong) && d.wrong.length ? `；易错：${d.wrong.slice(0, 8).join('、')}` : '';
+        await storageMod.appendStudentMemory(studentId,
+          `复习《${d.title || d.subject || '伴学'}》：${d.correct ?? '?'}/${d.total ?? '?'} 对，得分 ${d.score ?? '?'}${wrong}`);
+      } catch (err) { console.warn('记忆回写失败', err); }
+    });
+
+    // -------- 顶部 / 侧栏按钮 --------
+    $('btnNew').onclick = () => { closeMaker(); };
+    $('btnRefresh').onclick = () => loadRecords();
+    $('btnReloadSelected').onclick = () => {
+      const rec = state.records.find(r => r.path === state.activePath);
+      if (rec) openMaker(rec);
+      else alert('请先在列表中打开一个伴学游戏。');
+    };
+    $('btnCloseMaker').onclick = () => closeMaker();
+    $('btnLocalApi').onclick = async () => {
+      const sdk = state.sdk || window.keepwork;
+      const settings = sdk?.localAPIKeySettings;
+      if (!settings?.show) { setIntakeStatus('当前 SDK 不支持本地 API Key 设置。', 'error'); return; }
+      settings.show({ title: '本地 API Key 设置', fullscreen: true, onSave: async () => { await refreshLoginState(); } });
+    };
+
+    window.MH_AITestGenerator = { state, loadRecords, openMaker, closeMaker, extractItems, generate };
+
+    // 启动
+    renderItemsPreview();
+    loadSdk().catch(err => console.error('AITestGenerator 启动失败', err));
+  </script>
+</body>
+</html>

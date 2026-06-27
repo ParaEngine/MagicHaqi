@@ -264,10 +264,11 @@ export function postShareToMiniProgram({ title, desc, url, imageUrl }) {
  * @param {string} [data.game]     - 被分享游戏文件名
  * @param {string} [data.icon]     - 游戏图标（emoji）
  * @param {string} [data.imageUrl] - 分享图片
+ * @param {string} [data.msg]      - 分享者自定义留言（拼进落地登录页的 msg 参数）
  * @param {string} [data.page]     - 宿主小程序原生分享页路径
  * @returns {Promise<boolean>} 是否已发起跳转
  */
-export async function navigateToSharePage({ title, desc, gameFrom, game, icon, imageUrl, page = '/pages/share/share' }) {
+export async function navigateToSharePage({ title, desc, gameFrom, game, icon, imageUrl, msg, page = '/pages/share/share' }) {
     if (!isMiniProgramWebView()) return false;
     try {
         // wx.miniProgram.* 需要先加载微信 JS-SDK，否则 wx 不存在
@@ -283,6 +284,7 @@ export async function navigateToSharePage({ title, desc, gameFrom, game, icon, i
             add('game', game);
             add('icon', icon);
             add('imageUrl', imageUrl);
+            add('msg', msg);
             wxSdk.miniProgram.navigateTo({ url: `${page}?${pairs.join('&')}` });
             return true;
         }

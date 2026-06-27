@@ -1,0 +1,1498 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+  <title>哈奇快送：背包大乱斗</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Fredoka:wght@500;600;700&family=ZCOOL+KuaiLe&display=swap" rel="stylesheet">
+  <script src="https://cdn.keepwork.com/keepwork/cdn/tailwindcss@3.4.16.js"></script>
+  <style>
+    *{ box-sizing:border-box; }
+    :root{
+      --bg:#070d1c; --panel:#0e1a33; --panel2:#13213f; --line:#1d2b4d;   /* 统一午夜蓝 */
+      --hi:#ffe24d; --hi2:#ffb800;                                       /* 唯一霓虹黄高亮 */
+      --txt:#eaf1ff; --sub:#8597b8;
+    }
+    body{
+      margin:0; min-height:100%;
+      background: radial-gradient(circle at 50% -8%, #16224a 0%, #0a1224 48%, #050912 100%);
+      display:flex; align-items:center; justify-content:center; overflow:hidden;
+      font-family:'Fredoka','ZCOOL KuaiLe','PingFang SC','Microsoft YaHei',system-ui,sans-serif;
+      color:var(--txt); text-shadow:0 1px 1px rgba(0,0,0,.45);
+      -webkit-tap-highlight-color:transparent;
+    }
+    b,strong{ font-weight:700; }
+    /* ===== 强制 9:16 手机机身 ===== */
+    .phone{
+      position:relative; overflow:hidden;
+      width:min(100vw, calc(100dvh * 9 / 16));
+      height:min(100dvh, calc(100vw * 16 / 9));
+      background:linear-gradient(#0e1a33,#091224);
+      border:3px solid #1d2b4d; border-radius:26px;
+      box-shadow:0 0 0 2px #000, 0 30px 80px rgba(0,0,0,.75);
+    }
+    @media (max-width:520px){ .phone{ border-radius:0; border-left:none; border-right:none; } }
+    /* ===== 三段式骨架 ===== */
+    .screen{ display:flex; flex-direction:column; height:100%; }
+    .mid{ flex:1 1 auto; overflow-y:auto; overflow-x:hidden; padding:10px 12px 8px; display:flex; flex-direction:column; }
+    .bottom{ flex:0 0 auto; padding:10px 12px calc(12px + env(safe-area-inset-bottom)); background:linear-gradient(#0c1730,#08101f); border-top:2px solid var(--line); box-shadow:0 -10px 22px rgba(0,0,0,.5); }
+    .scroll::-webkit-scrollbar,.mid::-webkit-scrollbar{ width:5px } .scroll::-webkit-scrollbar-thumb,.mid::-webkit-scrollbar-thumb{ background:#26375e;border-radius:3px }
+    /* ===== 顶部状态栏（吸顶，只留 金币/血量/订单 + 帮助圆圈） ===== */
+    .hud{ display:flex; align-items:center; justify-content:space-between; padding:9px 12px; background:linear-gradient(#101c38,#0b1428); border-bottom:2px solid var(--line); box-shadow:0 4px 12px rgba(0,0,0,.4); flex:0 0 auto; z-index:5; }
+    .hud-pills{ display:flex; gap:7px; }
+    .pill{ display:inline-flex; align-items:center; gap:4px; padding:5px 11px; border-radius:11px; background:#091123; border:1.5px solid var(--line); box-shadow:inset 0 3px 6px rgba(0,0,0,.55); font-weight:700; font-size:.92rem; }
+    .pill.gold{ color:var(--hi); border-color:#5a4a12; }
+    .pill b{ font-family:'Fredoka',sans-serif; font-size:1.02rem; }
+    .help{ width:32px;height:32px;border-radius:50%;background:#1a2747;font-size:1rem;border:1.5px solid var(--line);color:#fff; box-shadow:0 3px 0 #060c1a; }
+    /* ===== 订单横幅（明确目标 + 难度，霓虹黄重心） ===== */
+    .order{ display:flex; align-items:center; gap:10px; margin-bottom:8px; padding:9px 12px; border-radius:14px;
+      background:linear-gradient(90deg, rgba(255,226,77,.12), rgba(255,226,77,.02)); border:1.5px solid var(--line); border-left:4px solid var(--hi); }
+    .order .o-emoji{ font-size:2rem; filter:drop-shadow(0 2px 2px #0009); }
+    .diff{ font-weight:700; padding:2px 8px; border-radius:8px; font-size:.7rem; }
+    /* ===== 背包：单层凹槽底板（去掉套娃边框） ===== */
+    .bag-board{ width:max-content; max-width:100%; margin:0 auto; padding:9px; border-radius:18px; background:#0a142b; border:1.5px solid var(--line); box-shadow: inset 0 5px 16px rgba(0,0,0,.6); }
+    .cell{ border-radius:9px; transition: box-shadow .14s, transform .1s; }
+    .slot{ background:#0c1832; box-shadow: inset 0 3px 6px rgba(0,0,0,.55); }
+    .locked{ background:repeating-linear-gradient(45deg,#091020,#091020 6px,#0d1730 6px,#0d1730 12px); opacity:.85; }
+    /* 落格预览 + 黄金羁绊格（统一霓虹黄引导色） */
+    .cell-ok{ box-shadow: inset 0 0 0 3px var(--hi), 0 0 14px rgba(255,226,77,.7) !important; background:rgba(255,226,77,.12) !important; }
+    .cell-bad{ box-shadow: inset 0 0 0 3px #ef4444, 0 0 14px rgba(239,68,68,.55) !important; }
+    @keyframes goldpulse{ 0%,100%{ box-shadow: inset 0 0 0 2px rgba(255,226,77,.5), 0 0 8px rgba(255,226,77,.35);} 50%{ box-shadow: inset 0 0 0 2px var(--hi), 0 0 16px rgba(255,226,77,.7);} }
+    .cell-gold{ animation: goldpulse 1.1s ease-in-out infinite; }
+    /* ===== 道具方块：统一描边 + 凸起厚度 + 拖拽悬浮 + 落格吸附 ===== */
+    .tile{ border:2px solid rgba(0,0,0,.45); border-radius:11px; cursor:grab; transition: transform .2s cubic-bezier(.18,1.4,.4,1), box-shadow .15s; }
+    .tile:hover{ transform:scale(1.05); z-index:6; }
+    .tile:active{ transform:scale(1.1); z-index:7; }
+    .tile-emoji{ font-size:2.2rem; line-height:1; pointer-events:none; filter: drop-shadow(0 2px 2px rgba(0,0,0,.5)); }
+    @keyframes snapin{ 0%{ transform:scale(1.35); } 55%{ transform:scale(.9); } 100%{ transform:scale(1); } }
+    .tile.snap{ animation: snapin .3s cubic-bezier(.2,1.3,.4,1); }
+    /* ===== 手持托盘 + 拿起抬升 ===== */
+    .tray{ background:#0a142b; border:1.5px dashed #2a3a60; border-radius:14px; box-shadow:inset 0 3px 8px rgba(0,0,0,.5); min-height:58px; }
+    @keyframes lift{ from{ transform:scale(.85) rotate(0) } to{ transform:scale(1.12) rotate(-7deg) } }
+    .held-emoji{ font-size:2.8rem; line-height:1; animation:lift .18s ease-out forwards; filter: drop-shadow(0 9px 7px rgba(0,0,0,.55)); }
+    /* ===== 厚实按钮 ===== */
+    .gbtn{ border:none; border-radius:13px; font-weight:700; color:#fff; text-shadow:0 2px 0 rgba(0,0,0,.28); box-shadow:0 4px 0 rgba(0,0,0,.42); transition: transform .06s, box-shadow .06s, filter .1s; cursor:pointer; }
+    .gbtn:hover{ filter:brightness(1.08); }
+    .gbtn:active{ transform:translateY(4px); box-shadow:0 0 0 rgba(0,0,0,.42); }
+    .gbtn:disabled{ filter:grayscale(.5) brightness(.7); box-shadow:0 2px 0 rgba(0,0,0,.42); }
+    .gbtn.hi{ background:linear-gradient(#ffe24d,#ffb800); color:#3a2a05; text-shadow:none; box-shadow:0 4px 0 #8a6200; }
+    .btn{ font-weight:700; box-shadow:0 4px 0 rgba(0,0,0,.4); transition:transform .06s, box-shadow .06s, filter .1s; cursor:pointer; }
+    .btn:hover{ filter:brightness(1.1); } .btn:active{ transform:translateY(3px); box-shadow:0 1px 0 rgba(0,0,0,.4); }
+    .gcard{ background:linear-gradient(#13213f,#0c1730); border:2px solid var(--line); border-radius:20px; box-shadow:0 10px 0 #060c1a, 0 22px 44px rgba(0,0,0,.65); }
+    /* ===== 抽屉式商业街 ===== */
+    .drawer-backdrop{ position:absolute; inset:0; z-index:40; background:rgba(0,0,0,0); transition:background .3s; }
+    .drawer-backdrop.open{ background:rgba(0,0,0,.55); }
+    .drawer{ position:absolute; left:0; right:0; bottom:0; max-height:74%; display:flex; flex-direction:column;
+      background:linear-gradient(#13213f,#0b1428); border-top:3px solid var(--hi); border-radius:22px 22px 0 0;
+      box-shadow:0 -18px 40px rgba(0,0,0,.6); transform:translateY(100%); transition:transform .34s cubic-bezier(.16,1,.3,1); }
+    .drawer-backdrop.open .drawer{ transform:translateY(0); }
+    .drawer-grip{ width:42px; height:5px; border-radius:3px; background:#2a3a60; margin:9px auto 4px; }
+    .drawer-body{ overflow-y:auto; padding:6px 12px 12px; display:grid; grid-template-columns:1fr 1fr; gap:10px; }
+    .shop-card{ background:#0f1c3a; border:1.5px solid var(--line); border-radius:14px; padding:8px; box-shadow:0 4px 0 #060c1a; display:flex; flex-direction:column; gap:5px; }
+    .shop-card.sold{ opacity:.4; }
+    .shop-card.merchant{ border-color:var(--hi2); box-shadow:0 4px 0 #060c1a, 0 0 14px rgba(255,184,0,.4); }
+    .card-ico{ height:62px; border:2px solid; border-radius:10px; display:grid; place-items:center; font-size:2.3rem; box-shadow:inset 0 3px 0 rgba(255,255,255,.4); position:relative; }
+    .card-name{ font-weight:700; font-size:.82rem; line-height:1.05; }
+    .card-desc{ font-size:.64rem; color:var(--sub); line-height:1.2; height:3.6em; overflow:hidden; text-shadow:none; }
+    .card-buy{ margin-top:1px; padding:7px; font-size:.85rem; }
+    /* ===== 巨型呼吸 CTA ===== */
+    @keyframes breathe{ 0%,100%{ transform:scale(1); box-shadow:0 7px 0 #7a1410, 0 10px 18px rgba(239,68,68,.4);} 50%{ transform:scale(1.03); box-shadow:0 9px 0 #7a1410, 0 16px 28px rgba(239,68,68,.6);} }
+    .cta{ border:none; border-radius:17px; padding:15px; font-size:1.4rem; font-weight:700; color:#fff; letter-spacing:1px; text-shadow:0 2px 0 rgba(0,0,0,.32); background:linear-gradient(#ff7a5c,#ef4444); box-shadow:0 7px 0 #7a1410; animation: breathe 1.9s ease-in-out infinite; cursor:pointer; }
+    .cta:active{ transform:translateY(6px) scale(1); box-shadow:0 1px 0 #7a1410; animation:none; }
+    .shopbtn{ border:none; border-radius:17px; padding:15px 14px; font-size:1.05rem; font-weight:700; color:#08101f; background:linear-gradient(#ffe24d,#ffb800); box-shadow:0 7px 0 #8a6200; cursor:pointer; transition:transform .06s, box-shadow .06s; }
+    .shopbtn:active{ transform:translateY(5px); box-shadow:0 2px 0 #8a6200; }
+    /* ===== 战斗血条 ===== */
+    .hpbar{ position:relative; height:20px; border-radius:11px; background:#070e1e; border:2px solid #070e1e; box-shadow:inset 0 3px 6px rgba(0,0,0,.6); overflow:hidden; }
+    .hpfill { transition: width .25s ease; }
+    .cdfill { transition: width .06s linear; }
+    /* ===== 羁绊反馈：闪电链 + 粒子 + 金色飘字 ===== */
+    @keyframes chainflash{ 0%{ opacity:0; transform:scaleX(.2);} 25%{ opacity:1;} 100%{ opacity:0; transform:scaleX(1);} }
+    .chain{ position:absolute; height:5px; border-radius:3px; transform-origin:left center; pointer-events:none; z-index:30; animation: chainflash .5s ease-out forwards; }
+    @keyframes sparkfly{ 0%{ opacity:1; transform:translate(-50%,-50%) scale(1);} 100%{ opacity:0; transform:translate(calc(-50% + var(--dx)), calc(-50% + var(--dy))) scale(.2);} }
+    .spark{ position:absolute; width:8px; height:8px; border-radius:50%; pointer-events:none; z-index:31; animation: sparkfly .55s ease-out forwards; }
+    /* ===== 触发 / 飘字 / 抖动 ===== */
+    @keyframes fire { 0%{transform:scale(1)} 35%{transform:scale(1.28)} 100%{transform:scale(1)} }
+    .fire-anim { animation: fire .32s ease-out; }
+    @keyframes floatUp { 0%{transform:translate(-50%,0);opacity:1} 100%{transform:translate(-50%,-46px);opacity:0} }
+    .dmg { position:absolute; left:50%; font-weight:700; font-family:'Fredoka',sans-serif; pointer-events:none; animation: floatUp .8s ease-out forwards; text-shadow:0 2px 3px #000; z-index:40; white-space:nowrap; }
+    @keyframes pop { 0%{transform:scale(.6);opacity:0} 100%{transform:scale(1);opacity:1} }
+    .pop { animation: pop .22s ease-out both; }
+    @keyframes shake { 0%,100%{transform:translateX(0)} 20%{transform:translateX(-6px)} 60%{transform:translateX(5px)} }
+    .shake { animation: shake .3s; }
+    @keyframes bolt { 0%{opacity:0} 30%{opacity:1} 100%{opacity:0} }
+    .bolt { position:absolute; pointer-events:none; z-index:35; animation: bolt .4s ease-out forwards; }
+    .glow-gold { text-shadow: 0 0 10px rgba(255,226,77,.7); }
+    /* ===== 实时战力面板（填满中部 + 给玩家即时反馈） ===== */
+    .statpanel{ display:grid; grid-template-columns:repeat(4,1fr); gap:6px; }
+    .stat{ display:flex; align-items:center; gap:6px; padding:7px 4px; border-radius:12px; background:#0c1832; border:1.5px solid var(--line); box-shadow:inset 0 2px 5px rgba(0,0,0,.45); justify-content:center; }
+    .stat span{ font-size:1.15rem; filter:drop-shadow(0 1px 1px #0008); }
+    .s-v{ font-family:'Fredoka',sans-serif; font-weight:700; font-size:1rem; line-height:1; }
+    .s-l{ font-size:.58rem; color:var(--sub); text-shadow:none; }
+    .stat.syn-on{ border-color:var(--hi); box-shadow:0 0 10px rgba(255,226,77,.4); }
+    .stat.syn-on .s-v{ color:var(--hi); }
+    /* ===== 引导动画（替代大段文字说明） ===== */
+    .ob-stage{ height:172px; border-radius:16px; background:#0a142b; border:1.5px solid var(--line); box-shadow:inset 0 4px 14px rgba(0,0,0,.55); position:relative; overflow:hidden; display:grid; place-items:center; }
+    .ob-cap{ font-size:.95rem; font-weight:700; margin-top:12px; min-height:2.6em; }
+    .ob-dots{ display:flex; gap:6px; justify-content:center; margin-top:10px; }
+    .ob-dot{ width:8px; height:8px; border-radius:50%; background:#33425f; transition:all .2s; }
+    .ob-dot.on{ background:var(--hi); width:22px; border-radius:4px; }
+    .ob-tile{ width:50px; height:50px; border-radius:11px; display:grid; place-items:center; font-size:1.9rem; border:2px solid rgba(0,0,0,.4); box-shadow:0 4px 0 rgba(0,0,0,.4), inset 0 2px 0 rgba(255,255,255,.4); }
+    .ob-slot{ width:50px; height:50px; border-radius:10px; background:#0c1832; box-shadow:inset 0 3px 6px rgba(0,0,0,.55); }
+    @keyframes obdrop{ 0%{ transform:translateY(-70px) rotate(-90deg); opacity:0 } 50%{ opacity:1 } 70%{ transform:translateY(6px) rotate(0) } 100%{ transform:translateY(0) rotate(0) } }
+    .ob-drop{ animation: obdrop 1.6s ease-in-out infinite; }
+    @keyframes obwind{ 0%,100%{ transform:scale(1); filter:drop-shadow(0 0 0 #2dd4bf) } 50%{ transform:scale(1.12); filter:drop-shadow(0 0 12px #2dd4bf) } }
+    .ob-wind{ animation: obwind 1s ease-in-out infinite; }
+    @keyframes obfast{ 0%,100%{ transform:translateX(0) } 50%{ transform:translateX(5px) } }
+    .ob-fast{ animation: obfast .28s linear infinite; }
+    @keyframes obzap{ 0%,100%{ opacity:.2; transform:scale(.8) } 50%{ opacity:1; transform:scale(1.15) } }
+    .ob-zap{ animation: obzap .7s ease-in-out infinite; }
+    @keyframes obbob{ 0%,100%{ transform:translateY(0) } 50%{ transform:translateY(-7px) } }
+    .ob-bob{ animation: obbob 1s ease-in-out infinite; }
+    @keyframes obcoin{ 0%{ transform:translateY(10px) scale(.5); opacity:0 } 40%{ opacity:1 } 100%{ transform:translateY(-26px) scale(1.1); opacity:0 } }
+    .ob-coin{ animation: obcoin 1.3s ease-out infinite; }
+    /* ===== 真·手指拖拽 ===== */
+    .tile, .held-emoji{ touch-action:none; }
+    .drag-ghost{ position:absolute; z-index:55; pointer-events:none; border:2px solid; border-radius:12px; display:grid; place-items:center;
+      transform:translate(-50%,-72%) scale(1.12) rotate(-5deg); box-shadow:0 14px 20px rgba(0,0,0,.55), inset 0 3px 0 rgba(255,255,255,.45); opacity:.97; }
+    /* ===== 打击感：受击闪红 / 屏震 / 暴击 ===== */
+    @keyframes hitflash{ 0%{ box-shadow: inset 0 0 0 999px rgba(239,68,68,0) } 28%{ box-shadow: inset 0 0 0 999px rgba(239,68,68,.42) } 100%{ box-shadow: inset 0 0 0 999px rgba(239,68,68,0) } }
+    .hitflash{ animation: hitflash .26s ease-out; }
+    @keyframes scrshake{ 0%,100%{ transform:translate(0,0) } 20%{ transform:translate(-4px,2px) } 40%{ transform:translate(4px,-2px) } 60%{ transform:translate(-3px,-1px) } 80%{ transform:translate(3px,2px) } }
+    .scrshake{ animation: scrshake .3s ease-in-out; }
+    .dmg.crit{ font-size:26px !important; color:#fde047; text-shadow:0 0 9px #f59e0b, 0 2px 3px #000; }
+    /* ===== 套餐羁绊徽标 ===== */
+    .setrow{ display:flex; gap:6px; flex-wrap:wrap; justify-content:center; margin-top:6px; }
+    .setchip{ font-size:.66rem; font-weight:700; padding:3px 9px; border-radius:9px; background:linear-gradient(#ffe24d,#ffb800); color:#3a2a05; box-shadow:0 2px 0 #8a6200; text-shadow:none; }
+  </style>
+</head>
+
+<body class="select-none" style="touch-action:manipulation;"></body>
+
+<!-- ========================================================================
+  game_config — 纯数据（无函数 / 无 DOM）。
+  《哈奇快送：背包大乱斗》网格背包收纳 + 自动回合制肉鸽。
+  设计要点：
+   · 风(wind 青绿) = 加速/连击：给相邻武器加攻速（被动光环）。
+   · 雷(lightning 亮紫) = 传导/爆发：触发时向周围 8 格道具传导，附加真实伤害。
+   · B 端联动神器(merchant) 单列于 merchantItems，读 JSON 即可上新；通关弹实体兑换券。
+   · 道具形状用相对坐标 cells 描述，可旋转。内核读配置即玩，便于 AI 量产。
+========================================================================= -->
+<script>
+game_config = {
+  grid: { cols: 6, rows: 5, cell: 50, gap: 5 },
+  start: { gold: 10, hearts: 3, playerHp: 42 },
+  economy: { rerollCost: 1, sellRatio: 0.6, interestPer: 10, interestMax: 5, winGoldBase: 4, winGoldPerRound: 2, shopSize: 4, slotBuyCost: 4 },
+  // 解锁区起始为居中 3 行 × 4 列（保证一条 1×4 长棍能放下）；扩容按离中心距离揭开。
+  ad: { slotsPerAd: 2 },
+
+  elementColors: {
+    none:   { fill:"#cbd5e1", txt:"#0f172a", glow:"#64748b" },
+    wind:   { fill:"#5eead4", txt:"#063b35", glow:"#2dd4bf" },
+    light:  { fill:"#d8b4fe", txt:"#3b0764", glow:"#a855f7" },
+    fire:   { fill:"#fdba74", txt:"#7c2d12", glow:"#fb923c" },
+    heal:   { fill:"#86efac", txt:"#14532d", glow:"#22c55e" },
+    shield: { fill:"#93c5fd", txt:"#1e3a8a", glow:"#3b82f6" }
+  },
+
+  shapes: {
+    s1:   [[0,0]],
+    h2:   [[0,0],[0,1]],
+    v2:   [[0,0],[1,0]],
+    h3:   [[0,0],[0,1],[0,2]],
+    v3:   [[0,0],[1,0],[2,0]],
+    h4:   [[0,0],[0,1],[0,2],[0,3]],
+    sq:   [[0,0],[0,1],[1,0],[1,1]],
+    L:    [[0,0],[1,0],[1,1]],
+    T:    [[0,0],[0,1],[0,2],[1,1]]
+  },
+
+  // ===== 普通道具池（商店随机刷新）。kind: weapon/heal/shield/aura =====
+  // el 决定元素与配色；aura 为相邻光环；conduct 为雷电传导真实伤害基数。
+  items: [
+    // —— 物理武器 ——
+    { id:"knife",   name:"外卖飞刀", emoji:"🔪", rar:"common", cost:3, shape:"s1", el:"none", kind:"weapon", dmg:6,  cd:1.0, desc:"最朴素的快递员防身刀，出手很快。" },
+    { id:"fork",    name:"钢叉",     emoji:"🍴", rar:"common", cost:3, shape:"v2", el:"none", kind:"weapon", dmg:12, cd:1.6, desc:"两格长叉，稳定的中坚输出。" },
+    { id:"boom",    name:"回旋镖",   emoji:"🪃", rar:"rare",   cost:5, shape:"L",  el:"none", kind:"weapon", dmg:16, cd:1.9, desc:"L 形回旋镖，去程回程都砸人。" },
+    { id:"hammer",  name:"大铁锤",   emoji:"🔨", rar:"epic",   cost:8, shape:"sq", el:"none", kind:"weapon", dmg:30, cd:3.0, desc:"沉重的 2×2 重锤，一锤定音。" },
+    { id:"glove",   name:"弹簧拳",   emoji:"🥊", rar:"common", cost:3, shape:"h2", el:"none", kind:"weapon", dmg:9,  cd:1.2, desc:"弹簧拳套，连续出击。" },
+    // —— 风 wind：加速/连击 ——
+    { id:"shuriken",name:"疾风手里剑", emoji:"🌀", rar:"rare", cost:5, shape:"s1", el:"wind", kind:"weapon", dmg:5, cd:0.8, aura:{target:"weapon", haste:0.30}, desc:"自身快速出手；让【相邻武器】攻速 +30%。" },
+    { id:"bell",    name:"清风铃",   emoji:"🎐", rar:"rare",   cost:5, shape:"s1", el:"wind", kind:"aura",   aura:{target:"weapon", haste:0.20}, desc:"纯辅助：让相邻所有武器攻速 +20%。" },
+    { id:"skate",   name:"风火滑板", emoji:"🛹", rar:"common", cost:4, shape:"h2", el:"wind", kind:"weapon", dmg:5, cd:0.6, combo:0.35, desc:"低冷却连击；有 35% 几率追加一击。" },
+    { id:"plane",   name:"纸飞机群", emoji:"✈️", rar:"epic",  cost:8, shape:"h3", el:"wind", kind:"weapon", dmg:7, cd:0.7, aura:{target:"weapon", haste:0.15}, desc:"三连击；相邻武器攻速 +15%。" },
+    // —— 雷 lightning：传导/爆发 ——
+    { id:"amulet",  name:"雷霆护身符", emoji:"⚡", rar:"rare", cost:5, shape:"s1", el:"light", kind:"weapon", dmg:8, cd:1.3, conduct:5, desc:"触发时向周围 8 格每件道具传导 +5 真实伤害。" },
+    { id:"forkbolt",name:"闪电叉",   emoji:"🔱", rar:"rare",   cost:6, shape:"v2", el:"light", kind:"weapon", dmg:14, cd:1.5, conduct:4, desc:"带电长叉，每个相邻道具追加 +4 真实伤害。" },
+    { id:"coil",    name:"特斯拉线圈", emoji:"🌩️", rar:"epic", cost:9, shape:"sq", el:"light", kind:"weapon", dmg:18, cd:2.0, conduct:7, desc:"2×2 线圈，把整片背包变成放电网。" },
+    { id:"battery", name:"暴走电池", emoji:"🔋", rar:"rare",   cost:5, shape:"s1", el:"light", kind:"aura", aura:{target:"light", conductAdd:4}, desc:"辅助：相邻【雷】道具的传导伤害 +4。" },
+    // —— 治疗 ——
+    { id:"bandaid", name:"创可贴",   emoji:"🩹", rar:"common", cost:3, shape:"s1", el:"heal", kind:"heal", heal:5, cd:2.4, desc:"定期回血 5 点。" },
+    { id:"energy",  name:"能量饮料", emoji:"🥤", rar:"rare",   cost:5, shape:"v2", el:"heal", kind:"heal", heal:9, cd:2.8, aura:{target:"weapon", haste:0.10}, desc:"回血并让相邻武器攻速 +10%。" },
+    { id:"firstaid",name:"急救箱",   emoji:"⛑️", rar:"epic",  cost:8, shape:"sq", el:"heal", kind:"heal", heal:16, cd:3.6, desc:"大额回血 16 点。" },
+    // —— 护盾 ——
+    { id:"helmet",  name:"安全头盔", emoji:"🪖", rar:"common", cost:3, shape:"s1", el:"shield", kind:"shield", shield:7, cd:3.0, desc:"定期获得 7 点护盾，抵挡伤害。" },
+    { id:"plate",   name:"钢板",     emoji:"🛡️", rar:"rare",  cost:5, shape:"h2", el:"shield", kind:"shield", shield:12, cd:3.2, desc:"较大护盾，扛住对手爆发。" },
+    { id:"vest",    name:"防弹背心", emoji:"🦺", rar:"epic",   cost:8, shape:"sq", el:"shield", kind:"shield", shield:22, cd:4.2, desc:"厚重护盾，硬抗 Boss。" }
+  ],
+
+  // ===== B 端联动神器（O2O 招租位）。写 JSON 即可上新一件“限定神器”。=====
+  // brand/coupon 用于通关后弹出实体兑换券，存入微信卡包形成 O2O 闭环。
+  merchantItems: [
+    { id:"baguette", name:"麦香晨光法棍", emoji:"🥖", rar:"merchant", cost:0, shape:"h4", el:"fire", kind:"weapon",
+      dmg:12, cd:1.6, onhitMaxHp:2, brand:"麦香晨光烘焙", coupon:"麦香晨光 8 折实体兑换券",
+      desc:"占 1×4 长条武器。每次攻击 +2 最大生命，越打越肉。通关赠实体 8 折券。" },
+    { id:"xizhi_coffee", name:"西峙特调", emoji:"☕", rar:"merchant", cost:0, shape:"v2", el:"wind", kind:"weapon",
+      dmg:9, cd:1.0, aura:{target:"weapon", haste:0.25}, brand:"西峙咖啡馆", coupon:"西峙咖啡 第二杯半价券",
+      desc:"提神快送！自身高攻速，相邻武器攻速 +25%。通关赠第二杯半价券。" },
+    { id:"sz_chicken", name:"深圳炸鸡桶", emoji:"🍗", rar:"merchant", cost:0, shape:"sq", el:"fire", kind:"weapon",
+      dmg:26, cd:2.4, conduct:0, brand:"鹏城脆皮炸鸡", coupon:"脆皮炸鸡 买一送一券",
+      desc:"2×2 神级重击，香酥爆伤。通关赠买一送一券。" },
+    { id:"haqi_milktea", name:"哈奇奶茶", emoji:"🧋", rar:"merchant", cost:0, shape:"v2", el:"heal", kind:"heal",
+      heal:11, cd:2.6, shield:4, brand:"哈奇茶饮", coupon:"哈奇奶茶 免费续杯券",
+      desc:"回血同时附赠护盾。通关赠免费续杯券。" }
+  ],
+
+  // ===== 顾客（敌人）。模块为简化数值块，按回合缩放。每 5 关刷 Boss；非 Boss 的整 3 关刷精英(带词缀)。=====
+  enemies: [
+    { name:"赶时间的上班族", emoji:"💼", hp:36, mods:[ {emoji:"📱",dmg:7,cd:1.2,el:"none"}, {emoji:"☕",dmg:5,cd:1.0,el:"wind"} ] },
+    { name:"砍价老阿姨",     emoji:"👵", hp:50, mods:[ {emoji:"👛",dmg:6,cd:0.9,el:"none"}, {emoji:"🛒",dmg:11,cd:1.8,el:"none"}, {emoji:"🩹",heal:5,cd:2.6,el:"heal"} ] },
+    { name:"差评外卖师",     emoji:"😡", hp:58, mods:[ {emoji:"⭐",dmg:9,cd:1.1,el:"none"}, {emoji:"💢",dmg:13,cd:1.7,el:"light",conduct:3}, {emoji:"🛡️",shield:8,cd:3.2,el:"shield"} ] },
+    { name:"健身房肌肉哥",   emoji:"💪", hp:74, mods:[ {emoji:"🏋️",dmg:18,cd:2.0,el:"none"}, {emoji:"🥤",heal:7,cd:2.4,el:"heal"}, {emoji:"🌀",dmg:5,cd:0.7,el:"wind"} ] },
+    { name:"奶茶续命大学生", emoji:"🧋", hp:66, mods:[ {emoji:"🧋",heal:9,cd:2.2,el:"heal"}, {emoji:"📚",dmg:10,cd:1.3,el:"none"}, {emoji:"⚡",dmg:9,cd:1.5,el:"light",conduct:4} ] },
+    { name:"暴雨送餐骑手",   emoji:"🌧️", hp:82, mods:[ {emoji:"🛵",dmg:12,cd:0.9,el:"wind"}, {emoji:"☔",shield:10,cd:2.8,el:"shield"}, {emoji:"💧",dmg:8,cd:1.2,el:"none"} ] },
+    { name:"网红探店博主",   emoji:"🤳", hp:90, mods:[ {emoji:"📸",dmg:11,cd:0.8,el:"wind"}, {emoji:"🔥",dmg:16,cd:1.6,el:"fire"}, {emoji:"💄",heal:8,cd:2.5,el:"heal"} ] },
+    { name:"广场舞领队",     emoji:"💃", hp:104, mods:[ {emoji:"📻",dmg:10,cd:0.7,el:"wind"}, {emoji:"🪭",dmg:14,cd:1.4,el:"none"}, {emoji:"🌀",dmg:7,cd:0.9,el:"wind"}, {emoji:"🛡️",shield:12,cd:3.0,el:"shield"} ] },
+    { name:"暴躁的西峙老板", emoji:"🧑‍💼", boss:true, hp:128, mods:[ {emoji:"📊",dmg:14,cd:1.2,el:"none"}, {emoji:"⚡",dmg:12,cd:1.4,el:"light",conduct:6}, {emoji:"☕",dmg:7,cd:0.8,el:"wind"}, {emoji:"⛑️",heal:12,cd:3.0,el:"heal"}, {emoji:"🛡️",shield:16,cd:3.4,el:"shield"} ] },
+    { name:"米其林评审团",   emoji:"🎩", boss:true, hp:160, mods:[ {emoji:"🍷",dmg:18,cd:1.3,el:"none"}, {emoji:"⭐",dmg:13,cd:0.9,el:"fire"}, {emoji:"🔱",dmg:15,cd:1.6,el:"light",conduct:7}, {emoji:"🧂",dmg:9,cd:0.7,el:"wind"}, {emoji:"🍽️",shield:20,cd:3.2,el:"shield"} ] }
+  ],
+
+  // 精英词缀（非 Boss 的整 3 关附加），增加难度与可玩性
+  affixes: [
+    { id:"berserk",  name:"狂暴",  emoji:"🔥", desc:"出手更快(冷却 -18%)" },
+    { id:"armored",  name:"铁壳",  emoji:"🐢", desc:"开局自带高额护盾" },
+    { id:"vampiric", name:"吸血",  emoji:"🧛", desc:"造成伤害的 35% 回血" },
+    { id:"regen",    name:"再生",  emoji:"🌿", desc:"每 2 秒回复生命" }
+  ],
+
+  // 套餐羁绊：把指定商家神器「拼在一起」（相邻连通）即激活，叠加全局加成；通关送套餐券。
+  sets: [
+    { id:"breakfast", name:"早餐套餐", emoji:"🥐", items:["baguette","xizhi_coffee"],
+      bonus:{ damage:0.5 }, desc:"法棍+西峙特调相邻：全武器伤害 +50%", coupon:"早餐套餐 买一送一券" },
+    { id:"latenight", name:"宵夜套餐", emoji:"🍗", items:["sz_chicken","haqi_milktea"],
+      bonus:{ haste:0.22, maxHp:25 }, desc:"炸鸡+奶茶相邻：攻速 +22%、生命 +25", coupon:"宵夜套餐 第二份半价券" }
+  ]
+};
+</script>
+
+<script>
+/* 本游戏全部使用 emoji 矢量图形，无外部位图。 */
+art_assets = [];
+</script>
+
+<script>
+'use strict';
+// ============================================================================
+//  《哈奇快送：背包大乱斗》主逻辑
+// ============================================================================
+const CFG = game_config;
+const SHAPES = CFG.shapes;
+const EC = CFG.elementColors;
+
+// ---------- 与宿主(父页面)的消息协议 ----------
+let loadedSent = false, startedSent = false;
+function postParent(type, data){ try{ window.parent.postMessage(Object.assign({type}, data?{data}:{}), '*'); }catch(e){} }
+function sendLoaded(){ if(!loadedSent){ loadedSent=true; postParent('gameLoaded'); } }
+function sendStarted(){ if(!startedSent){ startedSent=true; postParent('gameStarted'); } }
+window.addEventListener('message', (e)=>{
+  const m = e.data||{};
+  if(m.type==='setGameConfig' && m.data){ try{ Object.assign(CFG, m.data); }catch(_){} }
+});
+
+// ---------- 形状/旋转工具 ----------
+function normalize(cells){
+  let mr=Infinity, mc=Infinity;
+  for(const [r,c] of cells){ if(r<mr)mr=r; if(c<mc)mc=c; }
+  return cells.map(([r,c])=>[r-mr, c-mc]);
+}
+function rotateCW(cells){ return normalize(cells.map(([r,c])=>[c, -r])); }
+function rotateN(baseCells, times){ let c = baseCells.map(x=>x.slice()); for(let i=0;i<(times&3);i++) c=rotateCW(c); return normalize(c); }
+function shapeBounds(cells){ let R=0,C=0; for(const [r,c] of cells){ R=Math.max(R,r); C=Math.max(C,c); } return {h:R+1, w:C+1}; }
+
+// ---------- 道具定义查找 ----------
+function defById(id){ return CFG.items.find(i=>i.id===id) || CFG.merchantItems.find(i=>i.id===id); }
+
+// ---------- 全局状态 ----------
+const S = {
+  phase: 'menu',                 // menu | shop | battle | result | over
+  round: 1,
+  gold: CFG.start.gold,
+  hearts: CFG.start.hearts,
+  maxHp: CFG.start.playerHp,
+  placed: [],                    // {uid, id, rot, anchor:[r,c], cells:[[r,c]..]}
+  held: null,                    // {id, rot, fromUid|null}
+  shop: [],                      // [{id, sold:bool}]
+  unlocked: new Set(),           // "r,c"
+  rerollCost: CFG.economy.rerollCost,
+  best: Number(localStorage.getItem('haqi_bp_best')||0),
+  speed: 1,
+  battle: null,
+  uidSeq: 1,
+  earnedCoupons: []
+};
+
+function key(r,c){ return r+','+c; }
+function initUnlocked(){
+  S.unlocked.clear();
+  // 居中 4 行 × 4 列（rows 1..4, cols 1..4）——开局更宽裕、视觉更饱满
+  for(let r=1;r<=4;r++) for(let c=1;c<=4;c++) S.unlocked.add(key(r,c));
+}
+function centerDist(r,c){ const cr=(CFG.grid.rows-1)/2, cc=(CFG.grid.cols-1)/2; return Math.hypot(r-cr, c-cc); }
+function nextLockedCells(n){
+  const out=[];
+  for(let r=0;r<CFG.grid.rows;r++) for(let c=0;c<CFG.grid.cols;c++){ if(!S.unlocked.has(key(r,c))) out.push([r,c]); }
+  out.sort((a,b)=> centerDist(a[0],a[1])-centerDist(b[0],b[1]) || a[0]-b[0] || a[1]-b[1]);
+  return out.slice(0,n);
+}
+
+// ---------- 放置合法性 ----------
+function cellsFor(id, rot, anchor){
+  const def = defById(id);
+  const base = rotateN(SHAPES[def.shape], rot);
+  return base.map(([r,c])=>[anchor[0]+r, anchor[1]+c]);
+}
+function canPlace(id, rot, anchor, ignoreUid){
+  const cells = cellsFor(id, rot, anchor);
+  const occ = occupancyMap(ignoreUid);
+  for(const [r,c] of cells){
+    if(r<0||c<0||r>=CFG.grid.rows||c>=CFG.grid.cols) return false;
+    if(!S.unlocked.has(key(r,c))) return false;
+    if(occ.has(key(r,c))) return false;
+  }
+  return true;
+}
+function occupancyMap(ignoreUid){
+  const m = new Map();
+  for(const p of S.placed){ if(p.uid===ignoreUid) continue; for(const [r,c] of p.cells) m.set(key(r,c), p.uid); }
+  return m;
+}
+
+// ============================================================================
+//  渲染
+// ============================================================================
+function el(tag, cls, html){ const e=document.createElement(tag); if(cls)e.className=cls; if(html!=null)e.innerHTML=html; return e; }
+// 手机机身：所有界面 / 弹窗 / 提示都渲染进这个居中容器，营造手机屏幕的“饱满游戏感”
+const PHONE = el('div','phone'); document.body.appendChild(PHONE);
+const app = PHONE;                 // 渲染根 = 机身
+function overlayHost(){ return PHONE; }
+
+function render(){
+  if(S.phase==='menu') return renderMenu();
+  if(S.phase==='shop') return renderShop();
+  if(S.phase==='battle') return renderBattle();
+}
+
+// ---------- 顶部 HUD ----------
+function hud(){
+  const wrap = el('div','hud');
+  wrap.innerHTML = `
+    <div class="hud-pills">
+      <span class="pill">📦<b>${S.round}</b></span>
+      <span class="pill gold">🪙<b>${S.gold}</b></span>
+      <span class="pill">${'❤️'.repeat(S.hearts)}${'🖤'.repeat(Math.max(0,CFG.start.hearts-S.hearts))}</span>
+    </div>
+    <div class="flex items-center gap-2">
+      <span class="text-[11px]" style="color:#8294b3">最高 ${S.best}</span>
+      <button id="helpBtn" class="help gbtn">❓</button>
+    </div>`;
+  wrap.querySelector('#helpBtn').onclick = showRules;
+  return wrap;
+}
+
+// ---------- 网格渲染（商店里可交互，战斗里只读） ----------
+function buildGrid(opts){
+  const { cols, rows, cell, gap } = CFG.grid;
+  const interactive = opts.interactive;
+  const placed = opts.placed;
+  const board = el('div','bag-board');           // 深凹槽底板
+  const g = el('div','relative');
+  if(interactive) g.id='bagGrid';                // 拖拽落点检测用
+  g.style.width = (cols*cell + (cols-1)*gap)+'px';
+  g.style.height = (rows*cell + (rows-1)*gap)+'px';
+  board.appendChild(g);
+
+  // 底层单元（凹陷卡槽）
+  for(let r=0;r<rows;r++) for(let c=0;c<cols;c++){
+    const unlocked = S.unlocked.has(key(r,c));
+    const d = el('div', 'cell absolute '+(unlocked?'slot':'locked'));
+    d.style.cssText += `width:${cell}px;height:${cell}px;left:${c*(cell+gap)}px;top:${r*(cell+gap)}px;`;
+    d.dataset.r=r; d.dataset.c=c;
+    if(!unlocked) d.innerHTML = `<div class="w-full h-full grid place-items-center text-slate-600 text-lg">🔒</div>`;
+    if(interactive){
+      d.addEventListener('pointerenter', ()=>{ if(S.held) previewAt(g, r, c); });
+      d.addEventListener('pointerdown', (ev)=>{ ev.preventDefault(); onCellTap(r,c); });
+    }
+    g.appendChild(d);
+  }
+  // 已放置道具
+  for(const p of placed){ g.appendChild(itemTile(p, opts)); }
+  // 隐形新手引导：手持道具时，高亮能触发羁绊的「黄金格位」
+  if(interactive && S.held){
+    const zone = goldenZone(defById(S.held.id), S.held.fromUid);
+    zone.forEach(k=>{ const [r,c]=k.split(',').map(Number); const d=g.querySelector(`.cell[data-r="${r}"][data-c="${c}"]`); if(d) d.classList.add('cell-gold'); });
+  }
+  opts._gridEl = g;
+  return board;
+}
+
+function itemTile(p, opts){
+  const def = defById(p.id);
+  const { cell, gap } = CFG.grid;
+  // 用「相对形状」算尺寸：p.cells 是绝对坐标，直接喂 shapeBounds 会让尺寸随位置变大（道具越往右下越巨大）。
+  const b = shapeBounds(rotateN(SHAPES[def.shape], p.rot));
+  const anchor = p.anchor;
+  const t = el('div','tile absolute grid place-items-center');
+  const ec = EC[def.el]||EC.none;
+  // 凸起厚度：底部硬投影 + 顶部高光 + 元素色描边/外发光
+  let shadow = `0 4px 0 rgba(0,0,0,.45), inset 0 3px 0 rgba(255,255,255,.45), 0 0 11px ${ec.glow}66`;
+  if(def.rar==='merchant') shadow = `0 4px 0 rgba(0,0,0,.45), inset 0 3px 0 rgba(255,255,255,.5), 0 0 14px #f59e0baa, 0 0 0 2px #f59e0b`;
+  t.style.cssText += `left:${anchor[1]*(cell+gap)}px;top:${anchor[0]*(cell+gap)}px;width:${b.w*cell+(b.w-1)*gap}px;height:${b.h*cell+(b.h-1)*gap}px;background:${ec.fill};color:${ec.txt};border-color:${ec.glow};box-shadow:${shadow};`;
+  t.innerHTML = `<div class="tile-emoji">${def.emoji}</div>`;
+  t.dataset.uid = p.uid;
+  if(pendingFX && pendingFX.uid===p.uid) t.classList.add('snap');   // 落格吸附动画
+  // 冷却条（战斗中）
+  if(opts.battle){
+    const m = opts.battle.modulesByUid[p.uid];
+    if(m){
+      const bar = el('div','absolute left-1 right-1 bottom-1 h-1.5 rounded bg-black/40 overflow-hidden');
+      const fill = el('div','h-full cdfill rounded');
+      fill.style.background = barColor(def);
+      bar.appendChild(fill); t.appendChild(bar);
+      m._fillEl = fill; m._tileEl = t;
+    }
+  }
+  if(opts.interactive){
+    t.addEventListener('pointerdown',(ev)=>{ ev.preventDefault(); ev.stopPropagation(); dragFromPlaced(p.uid, ev); });
+  }
+  return t;
+}
+function elClass(el){ return el==='wind'?'el-wind':el==='light'?'el-light':el==='fire'?'el-fire':el==='heal'?'el-heal':el==='shield'?'el-shield':'el-none'; }
+function rarClass(r){ return 'rar-'+(r||'common'); }
+function barColor(def){ return (EC[def.el]||EC.none).glow; }
+
+function previewAt(g, r, c){
+  g.querySelectorAll('.cell').forEach(d=>{ d.classList.remove('cell-ok','cell-bad'); });
+  if(!S.held) return;
+  const ok = canPlace(S.held.id, S.held.rot, [r,c], S.held.fromUid);
+  // 把锚点对到指针所在格的形状左上：直接以该格为 anchor
+  const cells = cellsFor(S.held.id, S.held.rot, [r,c]);
+  for(const [rr,cc] of cells){
+    const d = g.querySelector(`.cell[data-r="${rr}"][data-c="${cc}"]`);
+    if(d) d.classList.add(ok?'cell-ok':'cell-bad');
+  }
+}
+
+// ============================================================================
+//  主菜单
+// ============================================================================
+function renderMenu(){
+  app.innerHTML='';
+  const wrap = el('div','w-full h-full flex flex-col items-center justify-center gap-5 px-7 text-center');
+  wrap.innerHTML = `
+    <div class="text-7xl pop" style="filter:drop-shadow(0 8px 10px rgba(0,0,0,.5))">🛵📦</div>
+    <h1 class="text-4xl leading-tight" style="color:#ffd56b;text-shadow:0 3px 0 #7a4a00,0 5px 8px rgba(0,0,0,.5)">哈奇快送</h1>
+    <div class="text-xl -mt-3" style="color:#7dd3fc;text-shadow:0 2px 0 #0c4a6e">· 背包大乱斗 ·</div>
+    <p class="text-sm leading-relaxed" style="color:#9fb0cc;max-width:18rem">拼手速不如拼收纳！把整条商业街塞进你的四次元背包，靠羁绊一键碾压奇葩顾客。</p>
+    <div class="flex flex-col gap-3 w-64 mt-1">
+      <button id="play" class="cta w-full">🛵 开始送单！</button>
+      <button id="how" class="gbtn py-3 text-base" style="background:#33425f">📖 玩法说明</button>
+    </div>
+    <p class="text-xs mt-2" style="color:#6b7a96">最高纪录：第 <b style="color:#ffd56b">${S.best}</b> 单</p>`;
+  wrap.querySelector('#play').onclick = ()=>{
+    if(!localStorage.getItem('haqi_bp_seen')){ localStorage.setItem('haqi_bp_seen','1'); showOnboarding(0); }  // 首次进入：先看引导动画
+    else { sendStarted(); startRun(); }
+  };
+  wrap.querySelector('#how').onclick = showRules;
+  app.appendChild(wrap);
+  sendLoaded();
+}
+
+// ============================================================================
+//  开局 / 进入商店
+// ============================================================================
+function startRun(){
+  S.phase='shop'; S.round=1; S.gold=CFG.start.gold; S.hearts=CFG.start.hearts;
+  S.maxHp=CFG.start.playerHp; S.placed=[]; S.held=null; S.earnedCoupons=[];
+  S.rerollCost=CFG.economy.rerollCost; S.uidSeq=1; S.curEnemy=null; S.curEnemyRound=0;
+  initUnlocked();
+  rollShop(true);
+  // 送一把起手武器
+  giveStarter();
+  render();
+}
+function giveStarter(){
+  const knife = defById('knife');
+  tryAutoPlace('knife',0); tryAutoPlace('bandaid',0);
+}
+function tryAutoPlace(id, rot){
+  for(let r=0;r<CFG.grid.rows;r++) for(let c=0;c<CFG.grid.cols;c++){
+    if(canPlace(id, rot, [r,c])){
+      S.placed.push({uid:S.uidSeq++, id, rot, anchor:[r,c], cells:cellsFor(id,rot,[r,c])});
+      return true;
+    }
+  }
+  return false;
+}
+
+function rollShop(includeMerchantChance){
+  const pool = CFG.items.slice();
+  const out=[];
+  const n = CFG.economy.shopSize;
+  // 加权：common 多、epic 少
+  const weight = it => it.rar==='common'?5: it.rar==='rare'?3: it.rar==='epic'?1.4: 1;
+  for(let i=0;i<n;i++){
+    let total=0; for(const it of pool) total+=weight(it);
+    let x=seededRand()*total, pick=pool[0];
+    for(const it of pool){ x-=weight(it); if(x<=0){ pick=it; break; } }
+    out.push({id:pick.id, sold:false});
+  }
+  S.shop = out;
+}
+// 简单可用的伪随机（无 Date.now 依赖图省事，仍用 Math.random 即可）
+function seededRand(){ return Math.random(); }
+
+// ============================================================================
+//  商店阶段渲染
+// ============================================================================
+// ---------- 羁绊判定 / 黄金格 / 粒子反馈 ----------
+let drawerEl = null;
+let pendingFX = null;
+let spacePromptShown = false;
+function pairSynergy(a, b){
+  const auraHits = (src,dst)=> src.aura && (src.aura.target==='all'
+    || (src.aura.target==='weapon' && dst.kind==='weapon')
+    || (src.aura.target==='light'  && dst.el==='light'));
+  if(auraHits(a,b) || auraHits(b,a)) return true;
+  if((a.el==='light' && (a.conduct||0)>0) || (b.el==='light' && (b.conduct||0)>0)) return true;
+  return false;
+}
+function cellsTouch(cellsA, cellsB){
+  const setB = new Set(cellsB.map(([r,c])=>key(r,c)));
+  for(const [r,c] of cellsA) for(let dr=-1;dr<=1;dr++) for(let dc=-1;dc<=1;dc++){
+    if(dr===0&&dc===0) continue; if(setB.has(key(r+dr,c+dc))) return true;
+  }
+  return false;
+}
+function synergyPartners(heldDef, placedCells, ignoreUid){
+  const out=[];
+  for(const p of S.placed){ if(p.uid===ignoreUid) continue;
+    if(cellsTouch(placedCells, p.cells) && pairSynergy(heldDef, defById(p.id))) out.push(p);
+  }
+  return out;
+}
+function goldenZone(heldDef, ignoreUid){
+  const zone=new Set(); const occ=occupancyMap(ignoreUid);
+  for(const p of S.placed){ if(p.uid===ignoreUid) continue;
+    if(!pairSynergy(heldDef, defById(p.id))) continue;
+    for(const [r,c] of p.cells) for(let dr=-1;dr<=1;dr++) for(let dc=-1;dc<=1;dc++){
+      const rr=r+dr, cc=c+dc;
+      if(rr<0||cc<0||rr>=CFG.grid.rows||cc>=CFG.grid.cols) continue;
+      if(!S.unlocked.has(key(rr,cc)) || occ.has(key(rr,cc))) continue;
+      zone.add(key(rr,cc));
+    }
+  }
+  return zone;
+}
+function hasAnyPlacement(id, rot, ignoreUid){
+  for(let r=0;r<CFG.grid.rows;r++) for(let c=0;c<CFG.grid.cols;c++){ if(canPlace(id,rot,[r,c],ignoreUid)) return true; }
+  return false;
+}
+function cellCenter(r,c){ const {cell,gap}=CFG.grid; return { x:c*(cell+gap)+cell/2, y:r*(cell+gap)+cell/2 }; }
+function tileCenter(uid){ const p=S.placed.find(x=>x.uid===uid); if(!p) return null;
+  let sx=0,sy=0; for(const [r,c] of p.cells){ const k=cellCenter(r,c); sx+=k.x; sy+=k.y; }
+  return { x:sx/p.cells.length, y:sy/p.cells.length };
+}
+function drawChain(g, a, b, color){
+  const dx=b.x-a.x, dy=b.y-a.y, len=Math.hypot(dx,dy), ang=Math.atan2(dy,dx)*180/Math.PI;
+  const c=el('div','chain');
+  c.style.cssText=`left:${a.x}px;top:${a.y-2}px;width:${len}px;transform:rotate(${ang}deg);background:linear-gradient(90deg,${color},#fff);box-shadow:0 0 10px ${color}`;
+  g.appendChild(c); setTimeout(()=>c.remove(),520);
+}
+function spawnSparks(g, p, color){
+  for(let i=0;i<6;i++){ const s=el('div','spark'); const ang=Math.random()*6.283, d=14+Math.random()*18;
+    s.style.cssText=`left:${p.x}px;top:${p.y}px;background:${color};box-shadow:0 0 6px ${color}`;
+    s.style.setProperty('--dx',(Math.cos(ang)*d)+'px'); s.style.setProperty('--dy',(Math.sin(ang)*d)+'px');
+    g.appendChild(s); setTimeout(()=>s.remove(),560);
+  }
+}
+function runSynergyFX(g, uid, partnerUids){
+  const a=tileCenter(uid); if(!a) return;
+  const self=S.placed.find(x=>x.uid===uid); const selfLight=self && defById(self.id).el==='light';
+  partnerUids.forEach(pu=>{
+    const b=tileCenter(pu); if(!b) return;
+    const part=S.placed.find(x=>x.uid===pu); const pdef=part&&defById(part.id);
+    const color=(selfLight || (pdef&&pdef.el==='light')) ? '#c084fc' : '#ffe24d';
+    drawChain(g,a,b,color); spawnSparks(g,b,color);
+  });
+  spawnSparks(g,a,'#ffe24d');
+  const lbl=el('div','dmg','⚡羁绊!'); lbl.style.cssText=`color:#ffe24d;left:${a.x}px;top:${a.y-18}px;font-size:15px`;
+  g.appendChild(lbl); setTimeout(()=>lbl.remove(),800);
+}
+function refreshHud(){ const g=overlayHost().querySelector('.pill.gold b'); if(g) g.textContent=S.gold; }
+
+// ---------- 套餐羁绊（商家神器组合） ----------
+function placedById(id){ return S.placed.filter(p=>p.id===id); }
+function setConnected(members){
+  if(members.length<=1) return true;
+  const seen=new Set([0]); const stack=[0];
+  while(stack.length){ const i=stack.pop();
+    for(let j=0;j<members.length;j++){ if(seen.has(j)) continue;
+      if(cellsTouch(members[i].cells, members[j].cells)){ seen.add(j); stack.push(j); }
+    }
+  }
+  return seen.size===members.length;
+}
+function activeSets(){
+  const out=[];
+  for(const set of (CFG.sets||[])){
+    const groups = set.items.map(id=>placedById(id));
+    if(groups.some(g=>g.length===0)) continue;
+    const members = set.items.map(id=>placedById(id)[0]);
+    if(setConnected(members)) out.push(set);
+  }
+  return out;
+}
+
+// ---------- 真·手指拖拽 ----------
+let drag = null;
+function makeGhost(id, rot){
+  removeGhost();
+  const def=defById(id); const ec=EC[def.el]||EC.none;
+  const {cell,gap}=CFG.grid; const b=shapeBounds(rotateN(SHAPES[def.shape],rot));
+  const g=el('div','drag-ghost');
+  g.style.width=(b.w*cell+(b.w-1)*gap)+'px'; g.style.height=(b.h*cell+(b.h-1)*gap)+'px';
+  g.style.background=ec.fill; g.style.color=ec.txt; g.style.borderColor=ec.glow;
+  g.innerHTML=`<div class="tile-emoji">${def.emoji}</div>`;
+  PHONE.appendChild(g); if(drag) drag.ghostEl=g;
+}
+function removeGhost(){ const old=PHONE.querySelector('.drag-ghost'); if(old) old.remove(); }
+function moveGhost(x,y){ if(!drag||!drag.ghostEl) return; const r=PHONE.getBoundingClientRect(); drag.ghostEl.style.left=(x-r.left)+'px'; drag.ghostEl.style.top=(y-r.top)+'px'; }
+function bagGridEl(){ return document.getElementById('bagGrid'); }
+function clearDragPreview(){ const g=bagGridEl(); if(g) g.querySelectorAll('.cell').forEach(d=>d.classList.remove('cell-ok','cell-bad')); }
+function beginDragSession(ev){
+  if(!S.held) return;
+  drag = { pid: ev.pointerId };
+  makeGhost(S.held.id, S.held.rot);
+  moveGhost(ev.clientX, ev.clientY);
+  try{ PHONE.setPointerCapture(ev.pointerId); }catch(_){}
+  PHONE.addEventListener('pointermove', onDragMove);
+  PHONE.addEventListener('pointerup', onDragEnd);
+  PHONE.addEventListener('pointercancel', onDragEnd);
+}
+function cellUnder(x,y){
+  const elu=document.elementFromPoint(x,y);
+  const cell=elu && elu.closest && elu.closest('.cell');
+  const g=bagGridEl();
+  if(cell && cell.dataset && cell.dataset.r!=null && g && g.contains(cell)) return cell;
+  return null;
+}
+function onDragMove(ev){
+  if(!drag) return;
+  moveGhost(ev.clientX, ev.clientY);
+  clearDragPreview();
+  const cell=cellUnder(ev.clientX, ev.clientY);
+  if(cell){ previewAt(bagGridEl(), +cell.dataset.r, +cell.dataset.c); }
+}
+function endDragCleanup(ev){
+  removeGhost();
+  try{ PHONE.releasePointerCapture(ev.pointerId); }catch(_){}
+  PHONE.removeEventListener('pointermove', onDragMove);
+  PHONE.removeEventListener('pointerup', onDragEnd);
+  PHONE.removeEventListener('pointercancel', onDragEnd);
+  drag=null;
+}
+function onDragEnd(ev){
+  const cell=cellUnder(ev.clientX, ev.clientY);
+  endDragCleanup(ev);
+  if(cell && S.held){ onCellTap(+cell.dataset.r, +cell.dataset.c); }
+  if(S.held) render();   // 落空：清掉预览高亮、保留手持（仍可点格放下）
+}
+// 从已放置的道具发起拖拽（先拾起再跟手）
+function dragFromPlaced(uid, ev){
+  if(S.held || drag) return;
+  const i=S.placed.findIndex(p=>p.uid===uid); if(i<0) return;
+  const p=S.placed[i]; S.placed.splice(i,1);
+  S.held={ id:p.id, rot:p.rot, fromUid:uid };
+  render();
+  beginDragSession(ev);
+}
+// 从手持托盘发起拖拽
+function dragFromHand(ev){ if(!S.held || drag) return; beginDragSession(ev); }
+function difficultyTag(round, boss){
+  if(boss) return { t:'👑 BOSS', c:'#7c3aed' };
+  if(round<3) return { t:'普通', c:'#16a34a' };
+  if(round<6) return { t:'困难', c:'#d97706' };
+  return { t:'地狱', c:'#dc2626' };
+}
+function computeStats(){
+  const pb = buildPlayerModules();
+  let dps=0, hps=0, sps=0;
+  for(const m of pb.modules){
+    if(m.kind==='weapon'){ dps += (m.dmg + m.conduct*m.neighborCount) / m.cd; }
+    else if(m.kind==='heal'){ hps += m.heal/m.cd; if(m.shield) sps += m.shield/m.cd; }
+    else if(m.kind==='shield'){ sps += m.shield/m.cd; }
+  }
+  let syn=0;
+  for(const p of S.placed){ const d=defById(p.id);
+    if(S.placed.some(q=> q.uid!==p.uid && cellsTouch(p.cells,q.cells) && pairSynergy(d, defById(q.id)))) syn++;
+  }
+  const r1=x=>Math.round(x*10)/10;
+  return { dps:r1(dps), hps:r1(hps), sps:r1(sps), syn };
+}
+function buildStatPanel(){
+  const s=computeStats();
+  const wrap=el('div','');
+  const p=el('div','statpanel');
+  p.innerHTML = `
+    <div class="stat"><span>⚔️</span><div><div class="s-v">${s.dps}</div><div class="s-l">攻击/秒</div></div></div>
+    <div class="stat"><span>💚</span><div><div class="s-v">${s.hps}</div><div class="s-l">回血/秒</div></div></div>
+    <div class="stat"><span>🛡️</span><div><div class="s-v">${s.sps}</div><div class="s-l">护盾/秒</div></div></div>
+    <div class="stat ${s.syn?'syn-on':''}"><span>⚡</span><div><div class="s-v">${s.syn}</div><div class="s-l">羁绊</div></div></div>`;
+  wrap.appendChild(p);
+  const sets=activeSets();
+  if(sets.length){
+    const row=el('div','setrow');
+    row.innerHTML = sets.map(s=>`<span class="setchip">${s.emoji} ${s.name} ✓ ${s.desc.split('：')[1]||''}</span>`).join('');
+    wrap.appendChild(row);
+  }
+  return wrap;
+}
+
+function renderShop(){
+  app.innerHTML='';
+  if(!S.held) spacePromptShown=false;
+  const root = el('div','screen');
+  root.appendChild(hud());
+  const enemy = makeEnemy(S.round);
+  const dt = difficultyTag(S.round, enemy.boss);
+
+  // ===== 中部核心区 =====
+  const mid = el('div','mid');
+  // 订单横幅：明确“下一步目标” + 难度 + 精英词缀
+  const order = el('div','order');
+  order.innerHTML = `<div class="o-emoji">${enemy.emoji}</div>
+    <div class="flex-1 leading-tight"><div class="text-[11px]" style="color:var(--sub)">📋 第 ${S.round} 单 · 目标</div>
+      <div class="text-sm font-bold">击败「${enemy.boss?'👑 ':''}${enemy.name}」</div>
+      ${enemy.affix?`<div class="text-[10px] mt-0.5" style="color:#c4b5fd">${enemy.affix.emoji} 精英·${enemy.affix.name}：${enemy.affix.desc}</div>`:''}</div>
+    <div class="text-right"><span class="diff" style="background:${dt.c}">${dt.t}</span>
+      <div class="text-[11px] mt-1" style="color:#f2a3a3">❤️${enemy.hp} · ${enemy.mods.length}件</div></div>`;
+  mid.appendChild(order);
+
+  // 居中收纳区（背包 + 实时战力面板 + 托盘）：flex-1 居中，消除大片空白
+  const group = el('div','flex-1 flex flex-col justify-center gap-3 py-2');
+  const gridOpts = { interactive:true, placed:S.placed, battle:null };
+  group.appendChild(buildGrid(gridOpts));
+  group.appendChild(buildStatPanel());
+
+  // 手持道具托盘（拿起时道具物理抬升）
+  const tray = el('div','tray flex items-center gap-3 px-3 py-2');
+  if(S.held){
+    const def = defById(S.held.id);
+    tray.innerHTML = `<div class="held-emoji">${def.emoji}</div>
+      <div class="text-left flex-1"><div class="font-bold text-base">${def.name} ${elBadge(def.el)}</div><div class="text-xs" style="color:var(--hi)">拖到金色格放下，或点格子放下 ✨</div></div>`;
+    const he = tray.querySelector('.held-emoji');
+    if(he) he.addEventListener('pointerdown', (ev)=>{ ev.preventDefault(); ev.stopPropagation(); dragFromHand(ev); });
+    const rot = el('button','gbtn px-4 py-2','🔄'); rot.style.background='#0d9488';
+    rot.onclick = ()=>{ S.held.rot=(S.held.rot+1)&3; render(); };
+    tray.appendChild(rot);
+    if(S.held.fromUid){
+      const sell = el('button','gbtn px-4 py-2','💰'); sell.style.background='#e11d48';
+      sell.onclick = ()=> sellHeld(); tray.appendChild(sell);
+    } else {
+      const cancel = el('button','gbtn px-4 py-2','✖'); cancel.style.background='#475569';
+      cancel.onclick = ()=>{ refundHeldToShop(); }; tray.appendChild(cancel);
+    }
+  } else {
+    tray.innerHTML = `<div style="color:var(--sub)" class="text-sm text-center w-full">🪧 点「商业街」进货，或点背包道具来挪动它</div>`;
+  }
+  group.appendChild(tray);
+  mid.appendChild(group);
+  root.appendChild(mid);
+
+  // ===== 底部操作区：抽屉入口 + 巨型 CTA（商店收进抽屉，不再常占屏幕） =====
+  const bottom = el('div','bottom flex gap-3');
+  const shopN = S.shop.filter(s=>!s.sold).length;
+  const shopBtn = el('button','shopbtn', `🛒 商业街${shopN?` · ${shopN}`:''}`);
+  shopBtn.onclick = ()=> openShopDrawer();
+  const cta = el('button','cta flex-1', '🛵 开始送单！');
+  cta.onclick = ()=> startBattle();
+  bottom.appendChild(shopBtn); bottom.appendChild(cta);
+  root.appendChild(bottom);
+
+  app.appendChild(root);
+
+  // 羁绊粒子反馈（落格后播放）
+  if(pendingFX){ const fx=pendingFX; pendingFX=null;
+    if(fx.partnerUids.length) requestAnimationFrame(()=>{ if(gridOpts._gridEl) runSynergyFX(gridOpts._gridEl, fx.uid, fx.partnerUids); });
+  }
+  // 仓库满了 → 小精灵提示（广告即仓库）
+  if(S.held && !hasAnyPlacement(S.held.id, S.held.rot, S.held.fromUid)) maybeSpacePrompt();
+}
+
+// ---------- 抽屉式商业街 ----------
+function openShopDrawer(){
+  if(drawerEl) return;
+  if(S.held){ toast('先放下手上的道具'); return; }
+  const ov = el('div','drawer-backdrop'); const panel = el('div','drawer');
+  ov.appendChild(panel); drawerEl = ov; overlayHost().appendChild(ov);
+  fillDrawer(panel);
+  requestAnimationFrame(()=> ov.classList.add('open'));
+  ov.addEventListener('pointerdown', (e)=>{ if(e.target===ov) closeShopDrawer(); });
+}
+function closeShopDrawer(){
+  if(!drawerEl) return; const ov=drawerEl; drawerEl=null;
+  ov.classList.remove('open'); setTimeout(()=>ov.remove(), 340);
+}
+function closeDrawerNow(){ if(drawerEl){ drawerEl.remove(); drawerEl=null; } }
+function fillDrawer(panel){
+  panel.innerHTML='';
+  panel.appendChild(el('div','drawer-grip'));
+  const head = el('div','flex items-center justify-between px-3 pb-2');
+  head.innerHTML = `<div class="font-bold">🛒 哈奇商业街 <span class="text-xs" style="color:var(--sub)">· 第 ${S.round} 单上新</span></div>`;
+  const rr = el('div','flex gap-2');
+  const reroll = el('button','gbtn px-3 py-1.5 text-xs', `🔄 ${S.rerollCost}🪙`); reroll.style.background='#33425f';
+  reroll.onclick = ()=>{ if(S.gold<S.rerollCost){ toast('金币不够刷新'); return; } S.gold-=S.rerollCost; rollShop(); refreshHud(); fillDrawer(panel); };
+  const sponsor = el('button','gbtn px-3 py-1.5 text-xs', '📺 赞助'); sponsor.style.background='#c026d3';
+  sponsor.onclick = ()=> playRewardedAd('金主赞助刷新', ()=>{ sponsoredReroll(); if(drawerEl) fillDrawer(panel); });
+  rr.appendChild(reroll); rr.appendChild(sponsor); head.appendChild(rr); panel.appendChild(head);
+
+  const body = el('div','drawer-body');
+  S.shop.forEach((slot, idx)=>{
+    const def = defById(slot.id); const ec = EC[def.el]||EC.none;
+    const card = el('div','shop-card'+(def.rar==='merchant'?' merchant':'')+(slot.sold?' sold':''));
+    card.innerHTML = `
+      <div class="card-ico" style="background:${ec.fill};color:${ec.txt};border-color:${ec.glow}">${def.emoji}<span style="position:absolute;top:2px;right:3px">${elBadge(def.el)}</span></div>
+      <div class="card-name">${def.name} ${def.rar==='merchant'?'<span style="color:var(--hi2)">★</span>':''}</div>
+      <div class="card-desc">${def.desc}</div>`;
+    const buy = el('button','gbtn hi card-buy', slot.sold?'已购':`${def.cost}🪙`);
+    buy.disabled = slot.sold; buy.onclick = ()=> buyFromShop(idx);
+    card.appendChild(buy); body.appendChild(card);
+  });
+  panel.appendChild(body);
+
+  const foot = el('div','flex gap-2 px-3 py-2');
+  const buySlot = el('button','gbtn flex-1 py-2 text-xs', `🔓 ${CFG.economy.slotBuyCost}🪙 解锁1格`); buySlot.style.background='#4f46e5';
+  buySlot.onclick = ()=>{ closeDrawerNow(); buySlotWithGold(); };
+  const adSlot = el('button','gbtn flex-1 py-2 text-xs', `📺 +${CFG.ad.slotsPerAd}格`); adSlot.style.background='#c026d3';
+  adSlot.onclick = ()=> playRewardedAd('扩容背包', ()=>{ closeDrawerNow(); unlockCells(CFG.ad.slotsPerAd); toast(`背包 +${CFG.ad.slotsPerAd} 格！`); render(); });
+  foot.appendChild(buySlot); foot.appendChild(adSlot); panel.appendChild(foot);
+}
+
+function maybeSpacePrompt(){
+  if(spacePromptShown) return; spacePromptShown=true;
+  const def = defById(S.held.id);
+  const m = modal(`<div class="text-5xl mb-2">🧚</div>
+    <h2 class="text-lg font-black mb-1">背包塞满啦！</h2>
+    <p class="text-sm mb-3" style="color:var(--sub)">小精灵：帮墩弟清理一下，腾出空间放「${def.name}」吧～</p>
+    <button id="ad" class="gbtn w-full py-3 mb-2" style="background:linear-gradient(#34d399,#059669)">📺 帮墩弟清理 +${CFG.ad.slotsPerAd}格</button>
+    <button id="sell" class="gbtn w-full py-2" style="background:#475569">💰 卖掉它换金币</button>`);
+  m.ov.classList.add('modal-ov');
+  m.box.querySelector('#ad').onclick = ()=>{ closeAll(); playRewardedAd('清理仓库', ()=>{ unlockCells(CFG.ad.slotsPerAd); toast(`+${CFG.ad.slotsPerAd}格！`); spacePromptShown=false; render(); }); };
+  m.box.querySelector('#sell').onclick = ()=>{ closeAll(); spacePromptShown=false; sellHeld(); };
+}
+function elBadge(e){
+  const map={wind:['风','#0d9488'],light:['雷','#7c3aed'],fire:['火','#ea580c'],heal:['疗','#16a34a'],shield:['盾','#2563eb'],none:['',''] };
+  const m=map[e]; if(!m||!m[0]) return '';
+  return `<span class="text-[10px] px-1 rounded" style="background:${m[1]}">${m[0]}</span>`;
+}
+
+// ---------- 商店交互 ----------
+function buyFromShop(idx){
+  const slot = S.shop[idx]; if(!slot||slot.sold) return;
+  const def = defById(slot.id);
+  if(S.held){ toast('先把手上的道具放下'); return; }
+  if(S.gold < def.cost){ toast('金币不够~'); return; }
+  S.gold -= def.cost; slot.sold=true;
+  S.held = { id:slot.id, rot:0, fromUid:null };
+  closeDrawerNow();   // 选完商品抽屉自动收回，把屏幕还给收纳
+  render();
+}
+function pickUpPlaced(uid){
+  if(S.held){ toast('先放下当前道具'); return; }
+  const i = S.placed.findIndex(p=>p.uid===uid); if(i<0) return;
+  const p = S.placed[i];
+  S.placed.splice(i,1);
+  S.held = { id:p.id, rot:p.rot, fromUid:uid };
+  render();
+}
+function onCellTap(r,c){
+  if(!S.held) return;
+  if(canPlace(S.held.id, S.held.rot, [r,c], S.held.fromUid)){
+    const heldDef = defById(S.held.id);
+    const placedCells = cellsFor(S.held.id, S.held.rot, [r,c]);
+    const uid = S.held.fromUid || S.uidSeq++;
+    const partners = synergyPartners(heldDef, placedCells, S.held.fromUid);
+    S.placed.push({ uid, id:S.held.id, rot:S.held.rot, anchor:[r,c], cells:placedCells });
+    pendingFX = { uid, partnerUids: partners.map(p=>p.uid) };   // 落格吸附 + 羁绊粒子
+    S.held=null; render();
+  } else { toast('这里放不下'); }
+}
+function sellHeld(){
+  const def = defById(S.held.id);
+  const refund = Math.max(1, Math.round((def.cost||3)*CFG.economy.sellRatio));
+  S.gold += refund; S.held=null; toast(`卖出 +${refund}🪙`); render();
+}
+function refundHeldToShop(){
+  // 取消刚买的：退还金币并标记商店该格可再买
+  const def = defById(S.held.id);
+  if(S.held.fromUid==null){
+    const slot = S.shop.find(s=>s.id===S.held.id && s.sold);
+    if(slot){ slot.sold=false; S.gold += def.cost; }
+  }
+  S.held=null; render();
+}
+function doReroll(){
+  if(S.held){ toast('先放下道具'); return; }
+  if(S.gold < S.rerollCost){ toast('金币不够刷新'); return; }
+  S.gold -= S.rerollCost; rollShop(); render();
+}
+function sponsoredReroll(){
+  rollShop();
+  // 必定塞入一件 B 端联动神器；若玩家已拿到某套餐的一半，优先补齐另一半（看广告凑套餐）
+  let pick = null;
+  for(const set of (CFG.sets||[])){
+    const owned = set.items.filter(id=>S.placed.some(p=>p.id===id));
+    const missing = set.items.filter(id=>!S.placed.some(p=>p.id===id));
+    if(owned.length>0 && missing.length>0){ pick = missing[0]; break; }
+  }
+  if(!pick){ pick = CFG.merchantItems[Math.floor(seededRand()*CFG.merchantItems.length)].id; }
+  S.shop[0] = { id:pick, sold:false };
+  toast('金主赞助到货：限定神器免费拿！');
+  render();
+}
+function buySlotWithGold(){
+  if(S.gold < CFG.economy.slotBuyCost){ toast('金币不够解锁'); return; }
+  if(nextLockedCells(1).length===0){ toast('背包已全部解锁'); return; }
+  S.gold -= CFG.economy.slotBuyCost; unlockCells(1); render();
+}
+function unlockCells(n){ for(const [r,c] of nextLockedCells(n)) S.unlocked.add(key(r,c)); }
+
+// ============================================================================
+//  敌人生成（按回合缩放）
+// ============================================================================
+function makeEnemy(round){
+  // 同一回合缓存，保证商店预览与实战是同一个敌人（含同一词缀）
+  if(S.curEnemy && S.curEnemyRound===round) return S.curEnemy;
+  const isBoss = round%5===0;
+  let tpl;
+  if(isBoss){ const bosses = CFG.enemies.filter(e=>e.boss); tpl = bosses[(Math.floor(round/5)-1)%bosses.length]; }
+  else { const normals = CFG.enemies.filter(e=>!e.boss); tpl = normals[(round-1)%normals.length]; }
+  const hpScale = 1 + 0.32*(round-1);
+  const dmgScale = 1 + 0.17*(round-1);
+  const hp = Math.round(tpl.hp * hpScale);
+  const mods = tpl.mods.map(m=>({
+    emoji:m.emoji, el:m.el||'none', cd:m.cd,
+    dmg: m.dmg?Math.round(m.dmg*dmgScale):0,
+    heal: m.heal?Math.round(m.heal*dmgScale):0,
+    shield: m.shield?Math.round(m.shield*dmgScale):0,
+    conduct: m.conduct||0
+  }));
+  // 精英词缀：非 Boss 的整 3 关附加
+  let affix = null;
+  if(!isBoss && round>=3 && round%3===0){ const a=CFG.affixes; affix = a[Math.floor(Math.random()*a.length)]; }
+  const e = { name:tpl.name, emoji:tpl.emoji, boss:!!tpl.boss, hp, maxHp:hp, mods, affix };
+  S.curEnemy = e; S.curEnemyRound = round;
+  return e;
+}
+
+// ============================================================================
+//  战斗：构建模块 + 计算羁绊 + 自动对战
+// ============================================================================
+function buildPlayerModules(){
+  // 计算每件道具的相邻关系
+  const list = S.placed.map(p=>({ p, def:defById(p.id), cellset:new Set(p.cells.map(([r,c])=>key(r,c))) }));
+  function adjacent(a,b){
+    for(const [r,c] of a.p.cells){
+      for(let dr=-1;dr<=1;dr++) for(let dc=-1;dc<=1;dc++){
+        if(dr===0&&dc===0) continue;
+        if(b.cellset.has(key(r+dr,c+dc))) return true;
+      }
+    }
+    return false;
+  }
+  // 邻接表
+  list.forEach(a=>{ a.neighbors = list.filter(b=>b!==a && adjacent(a,b)); });
+
+  const modules = [];
+  const modulesByUid = {};
+  for(const a of list){
+    const def = a.def;
+    let cd = def.cd||0;
+    let conductBonus = 0;
+    // 接收相邻光环
+    let hasteSum = 0;
+    for(const nb of a.neighbors){
+      const au = nb.def.aura; if(!au) continue;
+      const matches = au.target==='all' || (au.target==='weapon' && def.kind==='weapon') || (au.target==='light' && def.el==='light');
+      if(!matches) continue;
+      if(au.haste) hasteSum += au.haste;
+      if(au.conductAdd) conductBonus += au.conductAdd;
+    }
+    if(hasteSum>0 && cd>0) cd = Math.max(0.22, cd*(1-Math.min(0.7,hasteSum)));
+    if(def.kind==='aura' && def.dmg==null && !def.heal && !def.shield) continue; // 纯光环不参战触发
+    const m = {
+      uid:a.p.uid, kind:def.kind, el:def.el, def,
+      dmg:def.dmg||0, heal:def.heal||0, shield:def.shield||0,
+      cd, t:0, conduct:(def.conduct||0)+conductBonus,
+      combo:def.combo||0, onhitMaxHp:def.onhitMaxHp||0,
+      neighborCount:a.neighbors.length,
+      side:'player'
+    };
+    if(m.cd<=0) continue;
+    modules.push(m); modulesByUid[a.p.uid]=m;
+  }
+  // 套餐羁绊：相邻拼成套餐 → 全局加成
+  const sets = activeSets();
+  let sb = { damage:0, haste:0, crit:0 };
+  for(const s of sets){ const b=s.bonus||{}; sb.damage+=b.damage||0; sb.haste+=b.haste||0; sb.crit+=b.crit||0; }
+  if(sets.length){
+    for(const m of modules){ if(m.kind!=='weapon') continue;
+      if(sb.damage) m.dmg = Math.round(m.dmg*(1+sb.damage));
+      if(sb.haste)  m.cd  = Math.max(0.2, m.cd*(1-sb.haste));
+      if(sb.crit)   m.crit = 0.12 + sb.crit;
+    }
+  }
+  return { modules, modulesByUid, hasModules: modules.length>0, sets };
+}
+
+function buildEnemyModules(enemy){
+  const berserk = enemy.affix && enemy.affix.id==='berserk';
+  const modules = enemy.mods.map((m,i)=>({
+    uid:'e'+i, kind: m.dmg?'weapon':(m.heal?'heal':'shield'), el:m.el,
+    dmg:m.dmg, heal:m.heal, shield:m.shield, cd: berserk? m.cd*0.82 : m.cd, t:0,
+    conduct:m.conduct||0, combo:0, onhitMaxHp:0, neighborCount:enemy.mods.length-1, side:'enemy',
+    def:{ emoji:m.emoji, el:m.el, rar:'common' }
+  })).filter(m=>m.cd>0);
+  // 再生词缀：注入一个周期回血模块
+  if(enemy.affix && enemy.affix.id==='regen'){
+    modules.push({ uid:'eRegen', kind:'heal', el:'heal', dmg:0, heal:Math.max(3,Math.round(enemy.maxHp*0.045)), shield:0,
+      cd:2.0, t:0, conduct:0, combo:0, onhitMaxHp:0, neighborCount:0, side:'enemy', def:{ emoji:'🌿', el:'heal', rar:'common' } });
+  }
+  return modules;
+}
+
+function startBattle(){
+  if(S.held){ toast('先把手上的道具放下'); return; }
+  const pb = buildPlayerModules();
+  if(!pb.hasModules){ toast('背包里至少放一件会出手的道具！'); return; }
+  const enemy = makeEnemy(S.round);
+  const enemyShield = (enemy.affix && enemy.affix.id==='armored') ? Math.round(enemy.maxHp*0.3) : 0;
+  let bonusHp=0; for(const s of (pb.sets||[])) bonusHp += (s.bonus&&s.bonus.maxHp)||0;
+  const pMax = S.maxHp + bonusHp;
+  S.battle = {
+    player: { hp:pMax, maxHp:pMax, shield:0, name:'墩弟', emoji:'🛵' },
+    enemy: { hp:enemy.hp, maxHp:enemy.maxHp, shield:enemyShield, name:enemy.name, emoji:enemy.emoji, boss:enemy.boss, affix:enemy.affix },
+    playerMods: pb.modules, modulesByUid: pb.modulesByUid,
+    enemyMods: buildEnemyModules(enemy),
+    enemyDef: enemy,
+    over:false, result:null, time:0, last:null, raf:null
+  };
+  S.phase='battle';
+  renderBattle();
+  loopBattle(performance.now());
+}
+
+function renderBattle(){
+  app.innerHTML='';
+  const root = el('div','screen');
+  root.appendChild(hud());
+  const B = S.battle;
+
+  const arena = el('div','mid flex flex-col items-center gap-2');
+
+  // 玩家侧（上）
+  arena.appendChild(combatantBar('player'));
+  const pGridOpts = { interactive:false, placed:S.placed, battle:B };
+  B._pGridOpts = pGridOpts;
+  arena.appendChild(buildGrid(pGridOpts));
+
+  // VS 分隔
+  const vs = el('div','flex items-center justify-center gap-3 my-1');
+  vs.innerHTML = `<span style="height:3px;width:48px;background:#33425f;border-radius:3px"></span>
+    <span class="text-2xl font-bold" style="color:#fb7185;text-shadow:0 2px 0 #7a1410">⚔️ VS</span>
+    <span style="height:3px;width:48px;background:#33425f;border-radius:3px"></span>`;
+  arena.appendChild(vs);
+
+  // 敌人侧（下）
+  arena.appendChild(combatantBar('enemy'));
+  arena.appendChild(buildEnemyGrid(B));
+  root.appendChild(arena);
+
+  // 底部：战速控制
+  const bottom = el('div','bottom flex items-center justify-between');
+  bottom.innerHTML = `<div class="text-sm" style="color:#9fb0cc">⚙️ 自动结算中…</div>`;
+  const sp = el('button','gbtn px-5 py-2.5', `⏩ 战速 x${S.speed}`); sp.style.background='#2563eb';
+  sp.onclick = ()=>{ S.speed = S.speed>=3?1:S.speed*2; sp.textContent='⏩ 战速 x'+S.speed; };
+  bottom.appendChild(sp);
+  root.appendChild(bottom);
+
+  app.appendChild(root);
+}
+
+function combatantBar(side){
+  const B=S.battle; const c = B[side];
+  const wrap = el('div','w-full');
+  wrap.innerHTML = `
+    <div class="flex items-center gap-2 mb-1">
+      <span class="text-3xl" style="filter:drop-shadow(0 2px 2px #0008)">${c.emoji}</span>
+      <span class="font-bold text-base flex-1">${c.boss?'👑 ':''}${c.name}${c.affix?` <span class="text-[10px] px-1.5 py-0.5 rounded" style="background:#4b2e83;color:#e9d5ff">${c.affix.emoji}${c.affix.name}</span>`:''}</span>
+      <span class="text-xs" style="color:#cbd5e1;font-family:Fredoka,sans-serif" id="hpTxt_${side}">${Math.ceil(c.hp)}/${c.maxHp}</span>
+    </div>
+    <div class="hpbar">
+      <div id="hp_${side}" class="hpfill h-full" style="width:${100*c.hp/c.maxHp}%;background:linear-gradient(${side==='player'?'#34d399,#059669':'#fb7185,#e11d48'})"></div>
+      <div id="sh_${side}" class="absolute top-0 left-0 h-full" style="width:0%;background:rgba(96,165,250,.7)"></div>
+    </div>`;
+  return wrap;
+}
+function buildEnemyGrid(B){
+  // 敌人简化网格：每个模块占 1 格，按 4 列排布；同样做成凹槽底板 + 凸起方块
+  const cols=4, cell=CFG.grid.cell, gap=CFG.grid.gap;
+  const mods=B.enemyMods;
+  const rows=Math.max(1,Math.ceil(mods.length/cols));
+  const board=el('div','bag-board');
+  const g=el('div','relative');
+  g.style.width=(cols*cell+(cols-1)*gap)+'px';
+  g.style.height=(rows*cell+(rows-1)*gap)+'px';
+  board.appendChild(g);
+  mods.forEach((m,i)=>{
+    const r=Math.floor(i/cols), c=i%cols;
+    const ec=EC[m.el]||EC.none;
+    const t=el('div','tile absolute grid place-items-center');
+    t.style.cssText+=`left:${c*(cell+gap)}px;top:${r*(cell+gap)}px;width:${cell}px;height:${cell}px;background:${ec.fill};color:${ec.txt};border-color:${ec.glow};box-shadow:0 4px 0 rgba(0,0,0,.45), inset 0 3px 0 rgba(255,255,255,.45), 0 0 11px ${ec.glow}66`;
+    t.innerHTML=`<div class="tile-emoji">${m.def.emoji}</div>`;
+    const bar=el('div','absolute left-1 right-1 bottom-1 h-1.5 rounded bg-black/40 overflow-hidden');
+    const fill=el('div','h-full cdfill rounded'); fill.style.background=ec.glow;
+    bar.appendChild(fill); t.appendChild(bar);
+    m._fillEl=fill; m._tileEl=t;
+  });
+  B._eGridEl=g;
+  return board;
+}
+
+// ---------- 战斗主循环 ----------
+function loopBattle(now){
+  const B=S.battle; if(!B||B.over) return;
+  if(B.last==null) B.last=now;
+  let dt=(now-B.last)/1000; B.last=now;
+  dt=Math.min(dt,0.05)*S.speed;
+  B.time+=dt;
+
+  stepSide(B.playerMods, B.player, B.enemy, dt, 'player');
+  stepSide(B.enemyMods, B.enemy, B.player, dt, 'enemy');
+  updateBars();
+
+  if(B.enemy.hp<=0 && !B.over){ B.over=true; B.result='win'; return endBattle(); }
+  if(B.player.hp<=0 && !B.over){ B.over=true; B.result='lose'; return endBattle(); }
+
+  B.raf=requestAnimationFrame(loopBattle);
+}
+function stepSide(mods, self, foe, dt, side){
+  for(const m of mods){
+    if(m.cd<=0) continue;
+    m.t += dt;
+    while(m.t >= m.cd){
+      m.t -= m.cd;
+      triggerModule(m, self, foe, side);
+    }
+    if(m._fillEl) m._fillEl.style.width = Math.min(100, 100*m.t/m.cd)+'%';
+  }
+}
+function triggerModule(m, self, foe, side){
+  flashTile(m);
+  if(m.kind==='weapon'){
+    let dmg = m.dmg;
+    // 暴击：概率打出金色重击
+    const crit = Math.random() < (m.crit!=null?m.crit:0.12);
+    if(crit) dmg = Math.round(dmg*1.8);
+    // 风：连击概率追加一击
+    let hits = 1;
+    if(m.combo && Math.random()<m.combo) hits=2;
+    const tgrid = side==='player'?'enemy':'player';
+    for(let h=0;h<hits;h++){
+      dealDamage(foe, dmg, crit?'#fde047':(m.el==='light'?'#c084fc':null), tgrid, crit);
+    }
+    if(crit) screenShake();
+    // 吸血词缀（仅敌人）：造成伤害的一部分回血
+    if(side==='enemy' && S.battle.enemyDef.affix && S.battle.enemyDef.affix.id==='vampiric'){
+      self.hp = Math.min(self.maxHp, self.hp + Math.round(dmg*hits*0.35));
+    }
+    // 雷：传导真实伤害（无视护盾）
+    if(m.conduct>0 && m.neighborCount>0){
+      const tdmg = m.conduct * m.neighborCount;
+      dealTrue(foe, tdmg, side==='player'?'enemy':'player');
+      lightningFx(m);
+    }
+    // 法棍：每次攻击 +最大生命
+    if(m.onhitMaxHp>0 && side==='player'){
+      S.maxHp += m.onhitMaxHp; self.maxHp += m.onhitMaxHp; self.hp += m.onhitMaxHp;
+      floatText(side==='player'?'player':'enemy', `+${m.onhitMaxHp}❤`, '#fca5a5', true);
+    }
+    if(m.shield>0){ self.shield += m.shield; }
+  } else if(m.kind==='heal'){
+    self.hp = Math.min(self.maxHp, self.hp + m.heal);
+    floatText(side, `+${m.heal}`, '#86efac', side==='player');
+    if(m.shield>0){ self.shield += m.shield; }
+  } else if(m.kind==='shield'){
+    self.shield += m.shield;
+    floatText(side, `🛡+${m.shield}`, '#93c5fd', side==='player');
+  }
+}
+function dealDamage(target, dmg, color, whichGrid, crit){
+  let d = dmg;
+  if(target.shield>0){
+    const absorbed = Math.min(target.shield, d);
+    target.shield -= absorbed; d -= absorbed;
+  }
+  if(d>0) target.hp -= d;
+  floatText(whichGrid, `${crit?'💥':''}-${Math.round(dmg)}${crit?'!':''}`, color||'#fde68a', false, crit);
+  flashHit(whichGrid);
+}
+function dealTrue(target, dmg, whichGrid){
+  target.hp -= dmg;
+  floatText(whichGrid, `⚡${Math.round(dmg)}`, '#d8b4fe', false);
+  flashHit(whichGrid);
+}
+
+// ---------- 战斗视觉 ----------
+function flashTile(m){ if(m._tileEl){ m._tileEl.classList.remove('fire-anim'); void m._tileEl.offsetWidth; m._tileEl.classList.add('fire-anim'); } }
+function updateBars(){
+  const B=S.battle;
+  for(const side of ['player','enemy']){
+    const c=B[side];
+    const hp=document.getElementById('hp_'+side);
+    const sh=document.getElementById('sh_'+side);
+    const txt=document.getElementById('hpTxt_'+side);
+    if(hp) hp.style.width = Math.max(0,100*c.hp/c.maxHp)+'%';
+    if(sh) sh.style.width = Math.max(0,Math.min(100,100*c.shield/c.maxHp))+'%';
+    if(txt) txt.textContent = Math.max(0,Math.ceil(c.hp))+'/'+c.maxHp+(c.shield>0?(' 🛡'+Math.ceil(c.shield)):'');
+  }
+}
+function floatText(whichGrid, text, color, onPlayer, crit){
+  // 在对应网格上方飘字
+  const B=S.battle;
+  const ref = whichGrid==='player' ? B._pGridOpts?._gridEl : B._eGridEl;
+  if(!ref) return;
+  const d=el('div','dmg'+(crit?' crit':''), text);
+  d.style.color=color;
+  d.style.top = (10+Math.random()*30)+'px';
+  d.style.left = (28+Math.random()*60)+'%';
+  if(!crit) d.style.fontSize = '18px';
+  ref.appendChild(d);
+  setTimeout(()=>d.remove(), 820);
+}
+function boardOf(whichGrid){ const B=S.battle; const g = whichGrid==='player' ? B._pGridOpts?._gridEl : B._eGridEl; return g && g.parentElement; }
+function flashHit(whichGrid){
+  const b=boardOf(whichGrid); if(!b) return;
+  b.classList.remove('hitflash'); void b.offsetWidth; b.classList.add('hitflash');
+}
+let shakeT=null;
+function screenShake(){
+  PHONE.classList.remove('scrshake'); void PHONE.offsetWidth; PHONE.classList.add('scrshake');
+  clearTimeout(shakeT); shakeT=setTimeout(()=>PHONE.classList.remove('scrshake'), 320);
+}
+function lightningFx(m){
+  if(!m._tileEl) return;
+  const b=el('div','bolt','⚡');
+  b.style.left='50%'; b.style.top='-6px'; b.style.transform='translateX(-50%)'; b.style.fontSize='22px';
+  m._tileEl.appendChild(b); setTimeout(()=>b.remove(),420);
+}
+
+// ---------- 战斗结束 ----------
+function endBattle(){
+  const B=S.battle; if(B.raf) cancelAnimationFrame(B.raf);
+  if(B.result==='win') onWin(); else onLose();
+}
+function onWin(){
+  const eco=CFG.economy;
+  const reward = eco.winGoldBase + eco.winGoldPerRound*S.round;
+  const interest = Math.min(eco.interestMax, Math.floor(S.gold/eco.interestPer));
+  S.gold += reward + interest;
+  // 检查 B 端联动券：单品神器券 + 套餐羁绊券（双倍福利）
+  const usedMerchant = S.placed.map(p=>defById(p.id)).filter(d=>d.rar==='merchant' && d.coupon);
+  const setCoupons = activeSets().filter(s=>s.coupon).map(s=>({ id:'set_'+s.id, brand:s.name, coupon:s.coupon, emoji:s.emoji, isSet:true }));
+  const all = usedMerchant.concat(setCoupons);
+  const newCoupons = all.filter(d=>!S.earnedCoupons.find(c=>c.id===d.id));
+  showWinModal(reward, interest, newCoupons);
+}
+function onLose(){
+  showLoseModal();
+}
+
+// ============================================================================
+//  结算弹窗
+// ============================================================================
+function modal(innerHtml){
+  const ov=el('div','absolute inset-0 z-50 grid place-items-center bg-black/70 p-4');
+  const box=el('div','pop gcard p-5 w-full text-center', innerHtml);
+  box.style.maxWidth='340px';
+  ov.appendChild(box); overlayHost().appendChild(ov);
+  return { ov, box };
+}
+function closeModals(){ document.querySelectorAll('.modal-ov').forEach(x=>x.remove()); }
+
+function showWinModal(reward, interest, coupons){
+  const B=S.battle;
+  const m=modal(`
+    <div class="text-5xl mb-2">🎉</div>
+    <h2 class="text-xl font-black mb-1">送单成功！</h2>
+    <p class="text-slate-400 text-sm mb-3">击败了 ${B.enemy.name}</p>
+    <div class="bg-slate-800 rounded-xl p-3 text-sm mb-3 space-y-1">
+      <div class="flex justify-between"><span>本单报酬</span><b class="text-amber-300">+${reward}🪙</b></div>
+      <div class="flex justify-between"><span>金币利息</span><b class="text-amber-300">+${interest}🪙</b></div>
+    </div>
+    <div id="couponWrap"></div>
+    <button id="next" class="btn w-full py-3 rounded-xl bg-amber-500 text-slate-900 font-black mt-1">继续送下一单 ▶</button>`);
+  m.ov.classList.add('modal-ov');
+  if(coupons.length){
+    const cw=m.box.querySelector('#couponWrap');
+    coupons.forEach(def=>{
+      const c=el('div','mb-2 p-3 rounded-xl border-2 border-amber-500 bg-amber-500/10 text-left');
+      c.innerHTML=`<div class="text-xs text-amber-300 font-bold mb-1">🎟️ 商家联动福利 · ${def.brand}</div>
+        <div class="text-sm font-bold mb-2">${def.emoji} ${def.coupon}</div>`;
+      const btn=el('button','btn w-full py-2 rounded-lg bg-emerald-600 font-bold text-sm','📲 存入微信卡包');
+      btn.onclick=()=>{ S.earnedCoupons.push({id:def.id, coupon:def.coupon, brand:def.brand});
+        postParent('haqi_coupon', {brand:def.brand, coupon:def.coupon, item:def.id});
+        btn.textContent='✅ 已存入卡包'; btn.disabled=true; };
+      c.appendChild(btn); cw.appendChild(c);
+    });
+  }
+  m.box.querySelector('#next').onclick=()=>{
+    closeAll();
+    S.round++;
+    S.phase='shop';
+    S.rerollCost=CFG.economy.rerollCost;
+    rollShop(); render();
+  };
+}
+function showLoseModal(){
+  const B=S.battle;
+  const m=modal(`
+    <div class="text-5xl mb-2">😵</div>
+    <h2 class="text-xl font-black mb-1">送单失败…</h2>
+    <p class="text-slate-400 text-sm mb-3">${B.enemy.name} 给了你一个差评</p>
+    <button id="ad" class="btn w-full py-3 rounded-xl bg-fuchsia-600 font-black mb-2">📺 看广告让顾客「消消气」(免罚)</button>
+    <button id="take" class="btn w-full py-2 rounded-xl bg-slate-700 font-bold text-sm">扣 1 颗心 · 重整背包再战</button>`);
+  m.ov.classList.add('modal-ov');
+  m.box.querySelector('#ad').onclick=()=>{
+    closeAll();
+    playRewardedAd('消消气免罚', ()=>{ S.phase='shop'; render(); toast('顾客气消了，免去处罚！'); });
+  };
+  m.box.querySelector('#take').onclick=()=>{
+    closeAll();
+    S.hearts--;
+    if(S.hearts<=0){ gameOver(); }
+    else { S.phase='shop'; render(); toast(`剩余 ${S.hearts} 颗心`); }
+  };
+}
+function closeAll(){ document.querySelectorAll('.modal-ov').forEach(x=>x.remove()); }
+
+function gameOver(){
+  const reached=S.round;
+  if(reached>S.best){ S.best=reached; localStorage.setItem('haqi_bp_best', String(reached)); }
+  postParent('gameFinished', { earnedPoints: reached*10, round: reached, coupons: S.earnedCoupons.length, difficulty:'normal' });
+  const m=modal(`
+    <div class="text-5xl mb-2">🛵💨</div>
+    <h2 class="text-xl font-black mb-1">今日打烊</h2>
+    <p class="text-slate-300 text-sm mb-3">你坚持到了 <b class="text-amber-300">第 ${reached} 单</b><br>历史最佳：第 ${S.best} 单 · 领取兑换券 ${S.earnedCoupons.length} 张</p>
+    <button id="again" class="btn w-full py-3 rounded-xl bg-amber-500 text-slate-900 font-black">再开一天 🔄</button>`);
+  m.ov.classList.add('modal-ov');
+  m.box.querySelector('#again').onclick=()=>{ closeAll(); startRun(); };
+}
+
+// ============================================================================
+//  激励视频（占位：模拟成功回调，可由宿主接入真实广告）
+// ============================================================================
+function playRewardedAd(label, onReward){
+  postParent('haqi_rewarded_ad', { label });
+  const ov=el('div','absolute inset-0 z-[60] grid place-items-center bg-black/90 modal-ov');
+  ov.innerHTML=`
+    <div class="text-center px-6">
+      <div class="text-sm mb-2" style="color:#9fb0cc">激励视频（模拟）· ${label}</div>
+      <div class="text-7xl mb-4 pop">📺</div>
+      <div class="w-56 h-3 mx-auto rounded-full overflow-hidden" style="background:#0a1120;box-shadow:inset 0 2px 4px rgba(0,0,0,.6)"><div id="adp" class="h-full" style="width:0%;background:linear-gradient(#e879f9,#c026d3)"></div></div>
+      <div id="adstate" class="text-xs mt-3" style="color:#7c8aa3">广告加载中…</div>
+      <button id="adclaim" class="gbtn mt-4 px-6 py-3 hidden" style="background:linear-gradient(#34d399,#059669)">🎁 领取奖励</button>
+    </div>`;
+  overlayHost().appendChild(ov);
+  const bar=ov.querySelector('#adp'); const st=ov.querySelector('#adstate'); const claim=ov.querySelector('#adclaim');
+  let p=0; const iv=setInterval(()=>{
+    p+=4; bar.style.width=Math.min(100,p)+'%';
+    if(p>=100){ clearInterval(iv); st.textContent='观看完成！'; claim.classList.remove('hidden'); }
+  }, 80);
+  claim.onclick=()=>{ ov.remove(); onReward&&onReward(); };
+}
+
+// ============================================================================
+//  说明 & 提示
+// ============================================================================
+// ---------- 引导动画（替代大段文字说明） ----------
+const OB_STEPS = [
+  { title:'收纳即战力', cap:'把道具塞进背包格子，可<b style="color:var(--hi)">旋转</b>拼形状',
+    stage:`<div class="flex items-center gap-3">
+      <div class="ob-tile ob-drop" style="background:#cbd5e1;color:#0f172a">🔪</div>
+      <div class="ob-slot"></div><div class="ob-slot"></div>
+      <div class="ob-tile" style="background:#86efac;color:#14532d">🩹</div></div>` },
+  { title:'风 · 加速连击', cap:'<b style="color:#5eead4">风(青绿)</b> 让<b>相邻武器</b>攻速飙升',
+    stage:`<div class="flex items-center gap-3">
+      <div class="ob-tile ob-wind" style="background:#5eead4;color:#063b35">🌀</div>
+      <div class="text-2xl ob-fast">💨</div>
+      <div class="ob-tile ob-fast" style="background:#cbd5e1;color:#0f172a">🔪</div></div>` },
+  { title:'雷 · 传导爆发', cap:'<b style="color:#d8b4fe">雷(亮紫)</b> 向<b>周围 8 格</b>传导真实伤害，围得越密越猛',
+    stage:`<div style="position:relative;width:170px;height:120px">
+      ${[[35,10],[85,8],[6,45],[120,42],[35,82],[88,84],[8,12],[120,86]].map((p,i)=>`<div class="ob-tile ob-zap" style="position:absolute;left:${p[0]}px;top:${p[1]}px;width:34px;height:34px;font-size:1rem;background:#1f2b48;animation-delay:${i*0.08}s">⚡</div>`).join('')}
+      <div class="ob-tile" style="position:absolute;left:62px;top:42px;background:#d8b4fe;color:#3b0764">🌩️</div></div>` },
+  { title:'送单 & 商家神器', cap:'点<b style="color:#fb7185">开始送单</b>自动对战赢金币；带<b style="color:var(--hi)">商家神器🥖</b>通关送实体券',
+    stage:`<div class="flex items-center gap-4 relative">
+      <div class="text-4xl ob-bob">🛵</div><div class="text-xl font-bold" style="color:#fb7185">VS</div>
+      <div class="text-4xl ob-bob" style="animation-delay:.3s">😡</div>
+      <div class="ob-coin" style="position:absolute;left:50%;top:0;font-size:1.6rem">🪙</div></div>` }
+];
+function showRules(){ showOnboarding(0); }
+function showOnboarding(idx){
+  closeAll();
+  const last = idx>=OB_STEPS.length-1;
+  const st = OB_STEPS[idx];
+  const m = modal(`
+    <div class="flex items-center justify-center gap-2 mb-3"><span class="text-2xl">🎒</span><h2 class="text-lg font-black">${st.title}</h2></div>
+    <div class="ob-stage">${st.stage}</div>
+    <div class="ob-cap">${st.cap}</div>
+    <div class="ob-dots">${OB_STEPS.map((_,i)=>`<span class="ob-dot ${i===idx?'on':''}"></span>`).join('')}</div>
+    <div class="flex gap-2 mt-4">
+      ${idx>0?`<button id="prev" class="gbtn flex-1 py-3" style="background:#33425f">上一步</button>`:`<button id="skip" class="gbtn flex-1 py-3" style="background:#33425f">跳过</button>`}
+      <button id="next" class="gbtn flex-1 py-3 ${last?'':'hi'}" ${last?'style="background:linear-gradient(#ff7a5c,#ef4444)"':''}>${last?'🛵 开始送单!':'下一步 ▶'}</button>
+    </div>`);
+  m.ov.classList.add('modal-ov');
+  const nextBtn = m.box.querySelector('#next');
+  nextBtn.onclick = ()=>{ if(last){ m.ov.remove(); if(S.phase==='menu'){ sendStarted(); startRun(); } } else showOnboarding(idx+1); };
+  const prev = m.box.querySelector('#prev'); if(prev) prev.onclick = ()=> showOnboarding(idx-1);
+  const skip = m.box.querySelector('#skip'); if(skip) skip.onclick = ()=>{ m.ov.remove(); };
+}
+let toastT=null;
+function toast(msg){
+  let t=document.getElementById('toast');
+  if(!t){ t=el('div','absolute left-1/2 -translate-x-1/2 z-[70] px-4 py-2 rounded-xl text-sm font-bold'); t.id='toast';
+    t.style.cssText+='bottom:90px;background:linear-gradient(#1a2742,#121c32);border:2px solid #34466b;box-shadow:0 6px 0 #0a1120,0 10px 20px rgba(0,0,0,.5)';
+    overlayHost().appendChild(t); }
+  t.textContent=msg; t.style.opacity='1';
+  clearTimeout(toastT); toastT=setTimeout(()=>{ t.style.opacity='0'; }, 1400);
+  t.style.transition='opacity .3s';
+}
+
+// ============================================================================
+//  启动
+// ============================================================================
+renderMenu();
+</script>
+</html>

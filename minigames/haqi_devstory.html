@@ -1,0 +1,1994 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+  <title>魔法哈奇 · 开发者故事</title>
+  <script src="https://cdn.keepwork.com/keepwork/cdn/tailwindcss@3.4.16.js"></script>
+</head>
+
+<body></body>
+
+<!-- ============================================================= -->
+<!-- 1) game_config — declarative gameplay config (data only).      -->
+<!--    The whole level is BUILT FROM `storyMarkdown`.              -->
+<!--    Markdown rules (edit freely):                               -->
+<!--      #  章节横幅（显示在屏幕顶部）                              -->
+<!--      -  普通条目 → 容易触碰的「问号」，触碰即解锁这句剧情      -->
+<!--      ## 子标题，其下的 - 条目较难 → 放在需要跳跃的高台上       -->
+<!--      以表情符号开头的条目 → 怪物/首领，踩头击败后才显示后面的话 -->
+<!--      +  收集物命令，格式：+ <表情> <名称> x <数量>             -->
+<!--         例如：+ 👨‍💻 员工 x 10 / + 💍 妻子 x 1 / + 💰 融资 x 500 -->
+<!--         它们沿路漂浮，走过自动收集进顶部背包，往回走会放回场景。-->
+<!--         数量可为负数（如 x -60）：表示该物品从背包流回场景（反向）。 -->
+<!--         背包按「名称」聚合（忽略表情）：同名不同表情会替换图标，      -->
+<!--         如 👶 女儿 → 👧 女儿；将来表情位还可写图片 ![](图片URL) 女儿。 -->
+<!--  itemMarkdown — 物品名称 → 介绍（支持基础 markdown：图片/加粗/链接/列表）。-->
+<!--      用 `# 名称` 分段，点击背包里的物品会弹出可滚动的介绍弹窗。       -->
+<!--      /  气氛命令（slash command）：单独成行，用于烘托背景气氛。   -->
+<!--         在剧本中插入一行，从该位置开始生效，直到遇到下一个同类命令。-->
+<!--         可写在任意位置（也可写成「- /night」）；一行可写多个，     -->
+<!--         如「/night rain wind」。支持中英文：                       -->
+<!--         · 昼夜：/dawn 黎明 /day 白天 /dusk 黄昏 /night 夜晚         -->
+<!--         · 云量：/clear 晴 /cloudy 多云 /overcast 阴               -->
+<!--         · 降水：/rain 下雨 /snow 下雪 /storm 暴风雨               -->
+<!--         · 风：  /wind 刮风 /calm 无风                             -->
+<!--         · 背景：/city 高楼大厦 /nature 自然乡村                   -->
+<!--         命令之间互相叠加（只改自己那一项）：先 /night 再 /rain     -->
+<!--         即「雨夜」。/clear 会把云/雨/风重置为晴朗。               -->
+<!-- ============================================================= -->
+<script>
+game_config = {
+  difficulty: "story",      // relaxed, no death
+  chapterSpacing: 6,        // tiles between items inside a chapter
+  chapterMargin: 5,         // lead-in tiles at a chapter start
+  pointsPerFragment: 20,    // earnedPoints awarded per unlocked narrative
+  // The default 20-year story of MagicHaqi (ParaEngine → Paracraft → KeepWork → 魔法哈奇).
+  // 这是默认占位文本，可由 lixizhi 自由编辑修正（日期/事件均为示意）。
+  storyMarkdown: `
+本故事为默认文本，可自由编辑。规则见文件顶部注释。
+
+# 2004–2009：游戏引擎的诞生
+/day
+/clear
+- 2004年，lixizhi还在浙大读书，他一个人从零开始写一个分布式 3D 游戏引擎ParaEngine
+- 他创造了 NPL（神经元并行语言），并它驱动整个3D引擎
+- NPL 最初是为了写一个基于「相似原理」的人脑仿真程序
+- 同一年写完 700 页的《ParaEngine Reference Book》，并发表了 8 篇国际论文
++ 📑 论文 x 8
+## 那些深夜的细节
+/night
+/wind
+- 第一次让一个方块在屏幕上转起来的那个凌晨，世界第一次因他的代码而动
+- 让「每个文件都是一个神经元」：数据像神经信号一样单向流动，没有回调与锁
+- 一根线程，模拟上万条虚拟并行的「神经」，他想让代码长得像大脑
+- 👾 兼容性怪兽：在各种显卡驱动里反复崩溃的渲染管线，是他最早也最难缠的对手
+## 把引擎变成公司
+/day
+/city
+- 2005 年从浙大毕业，转身在深圳成立 ParaEngine 工作室：做一个能商用的国产 3D 引擎
++ 👥 队友 x 10
+- 2006 年做出 KidsMovieCreator，让 7–12 岁孩子也能上手创作，拿它去敲 IDG VC的门
+- 2007 年拿到 IDG 投资，成立ParaEngine公司，他成了 CEO，并做出3D UGC 社区ParaWorld
++ 👥 队友 x 20
+- 🐲 金融海啸：2008 年金融危机砸下，ParaWorld 在 Alpha 阶段被迫叫停，第一个梦碎在上线前夜
+# 2009–2012：哈奇小镇上线，魔法哈奇诞生
+/day
+/clear
+/city
+- 2009 年 11 月 20 日，《哈奇小镇》正式上线，公司第一款商业产品，用 NPL 一行行写出
+- 国内首个 3D 儿童网上乐园：每个孩子有自己的形象、自己的一块地
+- 孩子们骑着抱抱龙，在奇幻世界里收集魔法卡牌、对抗暗黑势力
+- 2010–2011 年更名为《魔法哈奇》，由上海淘米网络独家授权代理运营
+- 巅峰时 500 万注册用户、数千万营收：中国人自己写的引擎，能养活自己
++ 🐲 抱抱龙 x 1
++ 🃏 魔法卡牌 x 12
+## 上线那一夜
+/night
+- 第一批小创作者涌进服务器，做出让大人惊讶的作品，他们不是玩家，是创造者
+- 把单机逻辑改成「上万人同时在线而不崩溃」，每次扩容都是一次心跳过速
+- 抱抱龙这只小龙，从此刻进公司的基因，十六年后它还会回来
+- 👹 并发首领：第一次大规模用户涌入的那个夜晚，是上线之战里最硬的一仗
+## 看不见的代价
+/dusk
+- 这是「授权运营」而非「联合开发」，引擎和核心 IP 始终留在他自己手里
+- 把命脉交给别人运营，意味着看着自己的孩子长大，却不能完全替它做主
+
+# 2012–2015：Paracraft 与创造的乐园
+/day
+/clear
+/nature
+- 2012 年 1 月他结婚了，从此深夜写代码的人，身后多了一盏一直为他亮着的灯
+- 2012 年 Paracraft（帕拉卡）诞生，最初就发布在《魔法哈奇》的 3D 社区里
+- 让孩子用一个个方块搭出 3D 世界、动画和电影，「电影方块」是它的灵魂
+- 图形积木和文本代码一键互换，低地板、高天花板：7 岁能上手，长大能写百万行代码
++ 💍 婚戒 x 1
++ 🧱 电影方块 x 20
+## 坚持的理由
+/overcast
+- 没人看好「孩子也能做 3D 电影」时，他仍每天写下一行代码
+- 把教育和创造写进引擎底层，不是做一个游戏，而是做一支「会思考的笔」
+- 他始终坚持不去申请游戏版号，甘愿留在教育这条更窄、更长的路上
+- 🐉 资金巨龙：一次次在「公司还能撑多久」的清晨醒来，是从未真正离开的那条龙
++ 👥 队友 x -20
+# 2015–2019：大富网络、KeepWork 与平台之路
+/day
+/cloudy
+/city
+- 2015 年 ParaEngine 并入上市公司体系，更名大富网络，并开源了 200 万行 NPL 代码
+- KeepWork 平台长出来：从一个引擎，长成一个社区，老师和学生在同一个世界相遇
+- 学生每件作品都用 Git 云端版本管理，一个孩子的成长第一次被代码完整记录
+- 2016 年 8 月女儿出生，为千万孩子建世界的人，终于有了想用尽全力为她造世界的孩子
++ 👶 女儿 x 1
++ 🌐 开源·万行 x 200
+## 看不见的工程
+/overcast
+- 把单机的世界搬上云端，让作品「在任何一台电脑上登录都还在」
++ 👥 队友 x 30
+- 2018 年在深圳文博会，把 Paracraft 讲给非洲 10 国的教育代表听
+- 2019 年用它做的《汉字故事》动画在 16 省 IPTV 播出，播放量过千万
+- 👹 流量首领：把一个单机引擎，扛成一个要面对真实世界的在线平台
+
+# 2019–2022：进入校园、疫情与双减寒冬
+/overcast
+/snow
+/dusk
+- 2019 年底刚把 Paracraft 推进河南淅川 50 多所学校，就一头撞上了疫情
+- 2020 年浙大藕舫基金 500 万天使轮，把 Paracraft 拆出来独立成军
++ 👥 队友 x 30
+- 同年 C 端《玩学世界》上线三个月做到 60 万月活，一次平均玩 45 分钟
+- 2021 年做出 AI 双师平台和 L1–L7 课程，和浙大、北理工对齐国家课标
++ 📚 课时 x 96
++ 📉 月活·万 x 60
+## 寒冬里的人
+/snow
+/wind
+- 把课程送进招不到信息课老师的地方，让 AI 老师在客户端里一步步演示
+- 2021 年 7 月「双减」落地，整个教培行业入冬，60 万月活的《玩学世界》被迫停运
+- 他早就预判到政策风险，可预判到风暴，不等于淋不到雨
+- ⚔️ 寒冬之王：政策、疫情、资本退潮三股寒流同时压下，靠的是不肯熄火的那口气
+
+# 2022–2025：进入人工智能时代
+/day
+/clear
+/city
+- 当大语言模型的浪潮拍下，二十年的老引擎遇见了新魔法
+- 2023 年和金山 WPS 一起做「可计算文档」国家标准，做下一代数字教材的底座
+- 提出「世界模型 + 大语言模型」：Paracraft 模拟自然世界，LLM 处理非自然世界
+- 2024 年进驻上万所学校，沉淀 300 万件可溯源的学生作品
+- 2024年获得深圳市教育成果奖一等奖
++ 🏆 一等奖 x 1
+
+# 2025–2026：转型AI研究院
+/dusk
+- 投资方遇到资金问题，他带领团队转型AI研究院
++ 👥 队友 x -60
++ 🤖 AI 模型 x 6
+- 他从 CEO 退到 CTO和工作室，继续写代码，继续做研究
+
+## 那只小龙回来了
+/day
+- 2025 年麦思星球上线，把养成、创造与 AI 装进一颗小星球
+- 麦思星球的 AI 伙伴叫抱抱龙，正是 2009 年孩子们骑的那只小龙，十六年后会说话了
+- 一句话、一张照片，就能生成一个 3D 世界、一个场景、一群角色（AI 氛围编程）
+- 2025 年 7 月 12 日那场直播百万人观看，麦思登上抖音教育培训类当天第一
+- 🤖 算法之灵：让 AI 听懂孩子天马行空的奇思妙想
+
+## 哈奇的回归
+- 收到来自哈奇老用户的来信，希望能重启魔法哈奇。
+- 那个 2016 年出生的小女孩，如今刚好长到能骑上抱抱龙的年纪
+- 当年授权出去的「哈奇」，也以 H5 新版 MagicHaqi 的身份，被AI复活
+
+# 2026–未来：二十年，仍是少年
+/dawn
+/clear
+/nature
+- 一个不到7人的公司，也能照顾好一颗星球
+- 工具会变，引擎会换代，但「团结全世界的资源和力量，共同创造属于每个人的3D世界」二十年从未改变
+- 谢谢每一个走到这里的你，故事，还在继续
++ 🌟 心愿 x 3
++ 🚀 新星球 x 3
+## 写给下一个十年
+- 把舞台留给更年轻的创作者，让他们也有一个凌晨，看着自己写的方块第一次转起来
+- 让更多孩子创造属于自己的世界
+- 二十年前那句话依然作数：教育，就是让人保持一直有事可做（keep work）
+- 🏆 2026年6月发布了哈奇微信小程序，并在taptap发布了手机重制版。
+`,
+  // itemMarkdown — 收集物的介绍。每个 `# 名称` 一段，名称需与剧本里 + 命令的物品名一致。
+  // 点击顶部背包里的物品会弹出可滚动的介绍弹窗，正文支持基础 markdown（图片/加粗/链接/列表）。
+  itemMarkdown: `
+# 论文
+2004–2009 年，从浙大读书到独自写引擎的日子里写下的研究论文与技术笔记。
+**「让每个文件都是一个神经元」**——一根线程模拟上万条虚拟并行的神经，是 ParaEngine 最初的理论底稿。
+
+# 队友
+和你一起创造 3D 世界的伙伴。从深圳的 ParaEngine 工作室，到不到 7 人的 AI 研究院，人数起起落落，但**「团结全世界的资源和力量，共同创造属于每个人的 3D 世界」**始终没变。
+
+# 抱抱龙
+2009 年《哈奇小镇》里孩子们骑的那只小龙，从此刻进公司的基因。
+十六年后它会说话了——成为麦思星球的 AI 伙伴。
+
+# 魔法卡牌
+《魔法哈奇》里孩子们在奇幻世界中收集的魔法卡牌，骑着抱抱龙一起对抗暗黑势力。
+巅峰时 **500 万注册用户**，这是中国人自己写的引擎养活自己的证明。
+
+# 婚戒
+2012 年 1 月，他结婚了。
+从此深夜写代码的人，身后多了一盏**一直为他亮着的灯**。
+
+# 电影方块
+Paracraft（帕拉卡）的灵魂：用一个个方块搭出 3D 世界、动画和电影。
+图形积木和文本代码一键互换——**低地板、高天花板**，7 岁能上手，长大能写百万行代码。
+
+# 女儿
+2016 年 8 月出生的小女孩。
+**为千万孩子建世界的人**，终于有了一个想用尽全力为她造世界的孩子。那个 2016 年出生的女孩，如今刚好长到能骑上抱抱龙的年纪。
+
+# 开源·万行
+2015 年 ParaEngine 并入大富网络，开源了 **200 万行 NPL 代码**：从一个引擎，长成一个社区，老师和学生在同一个世界相遇。
+- https://github.com/LiXizhi/NPLRuntime
+
+# 课时
+2021 年做出的 AI 双师平台与 **L1–L7 课程**，和浙大、北理工对齐国家课标。
+把课程送进招不到信息课老师的地方，让 AI 老师在客户端里一步步演示。
+
+# 月活·万
+C 端《玩学世界》上线三个月做到 **60 万月活**，一次平均玩 45 分钟。
+却在 2021 年 7 月「双减」落地后被迫停运——预判到风暴，不等于淋不到雨。
+
+# 一等奖
+2024 年荣获**深圳市教育成果奖一等奖** 🏆。
+二十年坚持不申请游戏版号，甘愿留在教育这条更窄、更长的路上，终于被看见。
+
+# AI 模型
+2025 年带领团队转型 AI 研究院后训练的模型。
+提出**「世界模型 + 大语言模型」**：Paracraft 模拟自然世界，LLM 处理非自然世界，让 AI 听懂孩子天马行空的奇思妙想。
+
+# 心愿
+写给下一个十年的心愿：
+- 把舞台留给更年轻的创作者，让他们也有一个凌晨，看着自己写的方块第一次转起来
+- 让更多孩子创造属于自己的世界
+
+# 新星球
+2025 年麦思星球上线，把养成、创造与 AI 装进一颗小星球。
+一句话、一张照片，就能生成一个 3D 世界、一个场景、一群角色——**AI 氛围编程**。这样的小星球，未来还会有更多。
+`
+};
+</script>
+
+<!-- 2) art_assets — the world is canvas-drawn; the only external sprite is the pet (fetched live). -->
+<script>
+art_assets = [];
+</script>
+
+<!-- 3) main game script -->
+<script>
+(function () {
+  'use strict';
+
+  // ---------- i18n (UI chrome only; story stays Chinese) ----------
+  const I18N = {
+    zhCN: {
+      title: '魔法哈奇 · 开发者故事',
+      startTitle: '魔法哈奇 · 开发者故事',
+      intro1: '陪开发者 lixizhi 走过魔法哈奇的二十年。',
+      intro2: '触碰 ❓ 解锁一段回忆；踩怪物的头，击败它，露出它背后的故事。',
+      intro3: '高台上的回忆需要跳一下才能够到。慢慢走，慢慢读。',
+      start: '开始旅程',
+      hint: '方向键 / 拖动移动 · 空格 / 上滑跳跃 · 踩怪物头解锁回忆',
+      jump: '跳跃',
+      journal: '回忆录',
+      progress: '已解锁',
+      chapterDefault: '魔法哈奇 · 开发者故事',
+      monsterHint: '踩它的头！',
+      journalEmpty: '还没有解锁任何回忆，去触碰路上的 ❓ 吧。',
+      replay: '↪ 回到这里',
+      done: '旅程完成',
+      doneDesc: '你解锁了 {n}/{t} 段回忆。谢谢你陪我走完这二十年。',
+      doneEarly: '已解锁全部回忆！',
+      finish: '完成',
+      close: '关闭',
+      noItemDoc: '还没有这件物品的介绍。',
+      restart: '重新开始',
+      restartConfirm: '确定要重新开始吗？已解锁的回忆与收集都会清空。',
+    },
+    enUS: {
+      title: 'Developer Story',
+      startTitle: 'MagicHaqi · Developer Story',
+      intro1: "Walk through 20 years of MagicHaqi with its developer, lixizhi.",
+      intro2: 'Touch ❓ to unlock a memory; stomp a monster to reveal the story behind it.',
+      intro3: 'Memories on high platforms need a jump. Take your time, and read.',
+      start: 'Begin',
+      hint: 'Arrows / drag to move · Space / swipe up to jump · Stomp monsters to unlock',
+      jump: 'Jump',
+      journal: 'Journal',
+      progress: 'Unlocked',
+      chapterDefault: 'MagicHaqi · Developer Story',
+      monsterHint: 'Stomp it!',
+      journalEmpty: 'No memories yet — go touch the ❓ along the way.',
+      replay: '↪ Go here',
+      done: 'Journey Complete',
+      doneDesc: 'You unlocked {n}/{t} memories. Thank you for walking these 20 years with me.',
+      doneEarly: 'All memories unlocked!',
+      finish: 'Finish',
+      close: 'Close',
+      noItemDoc: 'No description for this item yet.',
+      restart: 'Restart',
+      restartConfirm: 'Restart from the beginning? Unlocked memories and collectables will be cleared.',
+    },
+  };
+  function detectLang() {
+    try {
+      const p = new URLSearchParams(location.search).get('lang');
+      if (p && I18N[p]) return p;
+    } catch (_) {}
+    return 'zhCN';
+  }
+  const LANG = detectLang();
+  const L = I18N[LANG];
+  function t(k, vars) {
+    let s = L[k] || I18N.zhCN[k] || k;
+    if (vars) s = s.replace(/\{(\w+)\}/g, (m, n) => vars[n] != null ? String(vars[n]) : m);
+    return s;
+  }
+  try { document.documentElement.lang = LANG === 'enUS' ? 'en' : 'zh-CN'; document.title = t('title'); } catch (_) {}
+
+  // ---------- constants ----------
+  const TILE = 32;
+  const WORLD_ROWS = 18;
+  const GROUND_ROW = 12;          // top solid row of the ground
+  const PLAT_RISE = 3;            // platforms sit this many tiles above the ground
+  const GRAVITY = 2000;
+  const JUMP_SPEED = 720;
+  const MOVE_SPEED = 240;
+  const MAX_FALL = 940;
+  const WORLD_H = WORLD_ROWS * TILE;
+  const PX_PER_COL = 3.6;   // timeline ruler scale (fixed; the ruler scrolls instead of compressing)
+
+  const CFG = (typeof game_config === 'object' && game_config) ? game_config : {};
+  const SPACING = Math.max(4, CFG.chapterSpacing || 6);
+  const MARGIN = Math.max(3, CFG.chapterMargin || 5);
+  const END_MARGIN = MARGIN + 1;
+  const POINTS_PER = CFG.pointsPerFragment || 20;
+
+  // ---------- helpers ----------
+  const clamp = (v, a, b) => Math.max(a, Math.min(b, v));
+  const lerp = (a, b, k) => a + (b - a) * k;
+  const intersects = (a, b) => a.x < b.x + b.w && a.x + a.w > b.x && a.y < b.y + b.h && a.y + a.h > b.y;
+  const nowMs = () => performance.now();
+  // Leading-emoji detector: grabs a full emoji cluster + optional trailing ":："/space.
+  const EMOJI_RE = /^(\p{Extended_Pictographic}(?:️|‍\p{Extended_Pictographic}|[\u{1F3FB}-\u{1F3FF}])*)\s*[:：]?\s*/u;
+  // A collectable icon may be a plain emoji or a leading markdown image ![alt](url) (future image icons).
+  const IMG_LEAD = /^!\[[^\]]*\]\((https?:\/\/[^\s)]+)\)\s*[:：]?\s*/;
+  const isImgIcon = s => typeof s === 'string' && s.charAt(0) === '!';
+  const imgUrlOf = s => { const m = String(s).match(/\((https?:\/\/[^\s)]+)\)/); return m ? m[1] : ''; };
+
+  // ---------- markdown (item descriptions + image icons) ----------
+  function escHtml(s) { return String(s).replace(/[&<>"]/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c])); }
+  function mdInline(s) {
+    s = escHtml(s);
+    s = s.replace(/!\[([^\]]*)\]\((https?:\/\/[^\s)]+)\)/g, (m, alt, url) => '<img src="' + url + '" alt="' + alt + '" loading="lazy">');
+    s = s.replace(/\[([^\]]+)\]\((https?:\/\/[^\s)]+)\)/g, (m, txt, url) => '<a href="' + url + '" target="_blank" rel="noopener">' + txt + '</a>');
+    // bare URL → link
+    s = s.replace(/(^|[\s(])(https?:\/\/[^\s<]+)/g, (m, pre, url) => pre + '<a href="' + url + '" target="_blank" rel="noopener">' + url + '</a>');
+    s = s.replace(/\*\*([^*]+)\*\*/g, '<strong>$1</strong>');
+    s = s.replace(/`([^`]+)`/g, '<code>$1</code>');
+    return s;
+  }
+  function mdToHtml(md) {
+    const out = []; let inList = false, para = [];
+    const flushPara = () => { if (para.length) { out.push('<p>' + para.join('<br>') + '</p>'); para = []; } };
+    const closeList = () => { if (inList) { out.push('</ul>'); inList = false; } };
+    for (const raw of String(md || '').split(/\r?\n/)) {
+      const line = raw.replace(/\s+$/, '');
+      if (!line.trim()) { flushPara(); closeList(); continue; }
+      let m;
+      if ((m = line.match(/^(#{1,4})\s+(.*)$/))) { flushPara(); closeList(); const n = Math.min(5, m[1].length + 1); out.push('<h' + n + '>' + mdInline(m[2]) + '</h' + n + '>'); continue; }
+      if ((m = line.match(/^[-*]\s+(.*)$/))) { flushPara(); if (!inList) { out.push('<ul>'); inList = true; } out.push('<li>' + mdInline(m[1]) + '</li>'); continue; }
+      para.push(mdInline(line.trim()));
+    }
+    flushPara(); closeList();
+    return out.join('');
+  }
+  // item name → description markdown, parsed from `# 名称` sections
+  function parseItemDocs(md) {
+    const map = {};
+    let cur = null, buf = [];
+    const flush = () => { if (cur != null) map[cur] = buf.join('\n').trim(); };
+    for (const raw of String(md || '').split(/\r?\n/)) {
+      const m = raw.match(/^#\s+(.*)$/);
+      if (m) { flush(); cur = m[1].trim(); buf = []; }
+      else if (cur != null) buf.push(raw);
+    }
+    flush();
+    return map;
+  }
+  let itemDocs = parseItemDocs(CFG.itemMarkdown || '');
+  // lazily-loaded <img> cache for image icons drawn on the canvas
+  const _iconImgs = {};
+  function iconImg(url) { let im = _iconImgs[url]; if (!im) { im = new Image(); im.decoding = 'async'; im.src = url; _iconImgs[url] = im; } return im; }
+
+  function post(type, data = {}) {
+    try { window.parent && window.parent.postMessage({ type, data }, '*'); } catch (_) {}
+  }
+
+  // ---------- audio (tiny WebAudio) ----------
+  const audio = {
+    ctx: null, master: null, on: true,
+    init() {
+      if (this.ctx || !this.on) return;
+      try {
+        const AC = window.AudioContext || window.webkitAudioContext;
+        if (!AC) { this.on = false; return; }
+        this.ctx = new AC();
+        this.master = this.ctx.createGain();
+        this.master.gain.value = 0.14;
+        this.master.connect(this.ctx.destination);
+      } catch (_) { this.on = false; }
+    },
+    resume() { this.init(); this.ctx && this.ctx.resume && this.ctx.resume(); },
+    note(f, dur = 0.12, type = 'square', g = 0.12, when = 0) {
+      if (!this.on) return; this.init(); if (!this.ctx) return;
+      const tt = this.ctx.currentTime + when;
+      const o = this.ctx.createOscillator(), gg = this.ctx.createGain();
+      o.type = type; o.frequency.setValueAtTime(f, tt);
+      gg.gain.setValueAtTime(0.0001, tt);
+      gg.gain.exponentialRampToValueAtTime(g, tt + 0.012);
+      gg.gain.exponentialRampToValueAtTime(0.0001, tt + dur);
+      o.connect(gg); gg.connect(this.master); o.start(tt); o.stop(tt + dur + 0.03);
+    },
+    sfx(name) {
+      this.resume();
+      if (name === 'unlock') [523.25, 659.25, 880].forEach((f, i) => this.note(f, 0.14, 'triangle', 0.1, i * 0.06));
+      else if (name === 'jump') this.note(659.25, 0.1, 'square', 0.09);
+      else if (name === 'defeat') [392, 523.25, 784].forEach((f, i) => this.note(f, 0.12, 'square', 0.09, i * 0.05));
+      else if (name === 'bump') this.note(130, 0.08, 'sawtooth', 0.07);
+      else if (name === 'finish') [523.25, 659.25, 784, 1046.5].forEach((f, i) => this.note(f, 0.18, 'triangle', 0.1, i * 0.09));
+      else if (name === 'start') [523.25, 659.25, 783.99].forEach((f, i) => this.note(f, 0.16, 'triangle', 0.08, i * 0.05));
+    }
+  };
+
+  // ---------- background music (tiny MIDI-style sequencer over WebAudio) ----------
+  // A gentle looping I–vi–IV–V arpeggio (C–Am–F–G) for nostalgic atmosphere. Reuses audio.ctx,
+  // starts on the first user gesture (the Start button), pauses when the tab is hidden, and is
+  // toggled by the 🎵 button in the top bar. Lookahead-scheduled so timing stays steady.
+  const music = {
+    on: true, playing: false, timer: null, step: 0, nextTime: 0, gain: null, bpm: 96,
+    prog: [[60, 64, 67], [57, 60, 64], [53, 57, 60], [55, 59, 62]], // C  Am  F  G (one bar each)
+    arp: [0, 1, 2, 1, 0, 2, 1, 2],
+    ensureGain() {
+      if (this.gain || !audio.ctx) return;
+      const g = audio.ctx.createGain(); g.gain.value = 0.4; g.connect(audio.ctx.destination);
+      this.gain = g;
+    },
+    tone(midi, t, dur, type, vol) {
+      const ctx = audio.ctx; if (!ctx || !this.gain) return;
+      const f = 440 * Math.pow(2, (midi - 69) / 12);
+      const o = ctx.createOscillator(), g = ctx.createGain();
+      o.type = type; o.frequency.setValueAtTime(f, t);
+      g.gain.setValueAtTime(0.0001, t);
+      g.gain.exponentialRampToValueAtTime(vol, t + 0.02);
+      g.gain.exponentialRampToValueAtTime(0.0001, t + Math.max(0.06, dur * 0.9));
+      o.connect(g); g.connect(this.gain); o.start(t); o.stop(t + dur + 0.05);
+    },
+    scheduleStep(step, t) {
+      const beat = 60 / this.bpm, eighth = beat / 2;
+      const bar = Math.floor(step / 8) % 4, pos = step % 8;
+      const ch = this.prog[bar];
+      this.tone(ch[this.arp[pos]] + 12, t, eighth * 0.9, 'triangle', 0.06);          // arpeggio
+      if (pos === 0 || pos === 4) this.tone(ch[0] - 12, t, beat * 0.95, 'sine', 0.11); // bass
+      if (pos === 0) this.tone(ch[2] + 12, t, beat * 1.1, 'sine', 0.05);              // melody accent
+    },
+    scheduler() {
+      const ctx = audio.ctx; if (!ctx || !this.playing) return;
+      const eighth = (60 / this.bpm) / 2;
+      while (this.nextTime < ctx.currentTime + 0.25) {
+        this.scheduleStep(this.step, this.nextTime);
+        this.step = (this.step + 1) % 32;
+        this.nextTime += eighth;
+      }
+    },
+    start() {
+      if (!this.on || this.playing) return;
+      audio.resume(); if (!audio.ctx) return;
+      this.ensureGain();
+      this.playing = true; this.step = 0; this.nextTime = audio.ctx.currentTime + 0.12;
+      this.timer = setInterval(() => this.scheduler(), 50);
+    },
+    stop() { this.playing = false; if (this.timer) { clearInterval(this.timer); this.timer = null; } },
+    toggle() { this.on = !this.on; if (this.on) this.start(); else this.stop(); return this.on; },
+  };
+
+  // ---------- markdown → chapters ----------
+  function parseStory(md) {
+    const lines = String(md || '').split(/\r?\n/);
+    const chapters = [];
+    let cur = null, group = 'major';
+    const preCmds = [];
+    // record an atmosphere slash-command at the current position (chapter + item index)
+    function addCmd(text) {
+      const toks = String(text || '').trim().split(/\s+/).filter(Boolean);
+      if (!toks.length) return;
+      if (cur) (cur._cmds || (cur._cmds = [])).push({ at: cur.items.length, toks });
+      else preCmds.push({ toks });
+    }
+    for (const raw of lines) {
+      const line = raw.trim();
+      if (!line) continue;
+      if (line.startsWith('## ')) { group = 'minor'; continue; }
+      if (line.startsWith('# ')) { cur = { title: line.slice(2).trim(), items: [], collectables: [] }; chapters.push(cur); group = 'major'; continue; }
+      // atmosphere slash-command on its own line:  /night   /rain wind   /city ...
+      if (line.startsWith('/')) { addCmd(line.slice(1)); continue; }
+      // collectable command:  + <emoji> <label> x <count>
+      const cm = line.match(/^\+\s+(.*)$/);
+      if (cm && cur) {
+        let rest = cm[1].trim();
+        let emoji = '⭐';
+        const im = rest.match(IMG_LEAD);
+        if (im) { emoji = im[0].replace(/\s*[:：]?\s*$/, '').trim(); rest = rest.slice(im[0].length).trim(); }
+        else { const em = rest.match(EMOJI_RE); if (em) { emoji = em[1]; rest = rest.slice(em[0].length).trim(); } }
+        // count may be negative: a negative item flows from the inventory back into the scene
+        const xm = rest.match(/^(.*?)\s*[×xX]\s*(-?\d+)\s*$/);
+        const label = xm ? xm[1].trim() : rest;
+        const count = xm ? (parseInt(xm[2], 10) || 1) : 1;
+        cur.collectables.push({ emoji, label, count });
+        continue;
+      }
+      const m = line.match(/^[-*]\s+(.*)$/);
+      if (m && cur) {
+        let text = m[1].trim();
+        // a list item may also carry a slash-command, e.g. "- /night"
+        if (text.startsWith('/')) { addCmd(text.slice(1)); continue; }
+        const em = text.match(EMOJI_RE);
+        if (em) {
+          chapters[chapters.length - 1].items.push({ kind: 'monster', emoji: em[1], text: text.slice(em[0].length).trim() });
+        } else {
+          cur.items.push({ kind: group, text });
+        }
+      }
+      // any other line (notes, plain text) is ignored
+    }
+    const out = chapters.filter(c => c.items.length);
+    out._preCmds = preCmds;
+    return out;
+  }
+
+  // ---------- world ----------
+  const world = { cols: 0, tiles: null, chapters: [], items: [], goalX: 0, total: 0 };
+
+  function tileAt(c, r) {
+    if (c < 0 || c >= world.cols) return 1;   // side walls keep the player in
+    if (r < 0) return 0;                       // open sky
+    if (r >= WORLD_ROWS) return 0;             // below world → air (fall → respawn)
+    return world.tiles[r * world.cols + c] || 0;
+  }
+  const isSolid = v => v === 1 || v === 2;
+
+  // atmosphere slash-commands → channel changes. A command only changes the channels it names,
+  // so commands stack (e.g. /night then /rain => a rainy night) and each persists until the next
+  // command on the same channel. Channels: sky / clouds / precip / wind / scene.
+  const CMD_MAP = {
+    // 昼夜 time of day
+    dawn:['sky','dawn'], morning:['sky','dawn'], 黎明:['sky','dawn'], 清晨:['sky','dawn'], 早晨:['sky','dawn'],
+    day:['sky','day'], daytime:['sky','day'], noon:['sky','day'], 白天:['sky','day'], 白昼:['sky','day'], 中午:['sky','day'], 正午:['sky','day'],
+    dusk:['sky','dusk'], sunset:['sky','dusk'], evening:['sky','dusk'], 黄昏:['sky','dusk'], 傍晚:['sky','dusk'], 日落:['sky','dusk'],
+    night:['sky','night'], midnight:['sky','night'], 夜晚:['sky','night'], 夜:['sky','night'], 深夜:['sky','night'], 黑夜:['sky','night'],
+    // 云量 cloud cover
+    clear:[['clouds','clear'],['precip','none'],['wind','off']], sunny:[['clouds','clear'],['precip','none']], 晴:[['clouds','clear'],['precip','none'],['wind','off']], 晴天:[['clouds','clear'],['precip','none'],['wind','off']],
+    cloud:['clouds','cloudy'], cloudy:['clouds','cloudy'], 多云:['clouds','cloudy'],
+    overcast:['clouds','overcast'], 阴:['clouds','overcast'], 阴天:['clouds','overcast'],
+    // 降水 precipitation
+    rain:[['precip','rain'],['clouds','overcast']], rainy:[['precip','rain'],['clouds','overcast']], 下雨:[['precip','rain'],['clouds','overcast']], 雨:[['precip','rain'],['clouds','overcast']], 雨天:[['precip','rain'],['clouds','overcast']],
+    storm:[['precip','rain'],['clouds','overcast'],['wind','on'],['sky','dusk']], 暴风雨:[['precip','rain'],['clouds','overcast'],['wind','on'],['sky','dusk']], 暴雨:[['precip','rain'],['clouds','overcast'],['wind','on']],
+    snow:[['precip','snow'],['clouds','overcast']], snowy:[['precip','snow'],['clouds','overcast']], 下雪:[['precip','snow'],['clouds','overcast']], 雪:[['precip','snow'],['clouds','overcast']],
+    // 风 wind
+    wind:['wind','on'], windy:['wind','on'], gale:['wind','on'], 刮风:['wind','on'], 风:['wind','on'], 大风:['wind','on'],
+    calm:['wind','off'], 无风:['wind','off'],
+    // 背景 scenery
+    city:['scene','city'], buildings:['scene','city'], skyline:['scene','city'], urban:['scene','city'], 高楼:['scene','city'], 高楼大厦:['scene','city'], 城市:['scene','city'], 都市:['scene','city'],
+    nature:['scene','nature'], country:['scene','nature'], countryside:['scene','nature'], rural:['scene','nature'], 自然:['scene','nature'], 乡村:['scene','nature'], 田园:['scene','nature'],
+  };
+
+  function buildWorld(chapters) {
+    const items = [];
+    const events = [];
+    // resolve a command's tokens into atmosphere events anchored at world-x
+    const emitEvents = (toks, x) => {
+      for (const tk of toks) {
+        let maps = CMD_MAP[tk] || CMD_MAP[String(tk).toLowerCase()];
+        if (!maps) continue;
+        if (typeof maps[0] === 'string') maps = [maps];
+        for (const mp of maps) events.push({ x, channel: mp[0], value: mp[1] });
+      }
+    };
+    (chapters._preCmds || []).forEach(cm => emitEvents(cm.toks, 0));
+    let col = 0;
+    chapters.forEach((ch, ci) => {
+      ch.startCol = col;
+      let c = col + MARGIN;
+      ch.items.forEach((it, ii) => {
+        const _cmds = ch._cmds || [];
+        for (const cm of _cmds) if (cm.at === ii) emitEvents(cm.toks, c * TILE);
+        const entry = { kind: it.kind, text: it.text, emoji: it.emoji || '', chapter: ci, unlocked: false };
+        if (it.kind === 'minor') {
+          const prow = GROUND_ROW - PLAT_RISE;
+          entry.platform = { c0: c - 1, row: prow, w: 3 };
+          const px = c * TILE + TILE / 2;
+          entry.w = 30; entry.h = 30;
+          entry.x = px - entry.w / 2;
+          entry.y = prow * TILE - entry.h - 4;
+          entry.icon = '💡';
+        } else if (it.kind === 'monster') {
+          entry.w = 34; entry.h = 34;
+          entry.x = c * TILE + (TILE - entry.w) / 2;
+          entry.y = GROUND_ROW * TILE - entry.h;
+          entry.homeX = entry.x; entry.vx = (ci % 2 ? -1 : 1) * 34; entry.defeated = false;
+        } else { // major
+          entry.w = 30; entry.h = 30;
+          entry.x = c * TILE + (TILE - entry.w) / 2;
+          entry.y = GROUND_ROW * TILE - 42;
+          entry.icon = '❓';
+        }
+        items.push(entry);
+        c += SPACING;
+      });
+      { const _cmds = ch._cmds || []; for (const cm of _cmds) if (cm.at >= ch.items.length) emitEvents(cm.toks, c * TILE); }
+      const span = MARGIN + ch.items.length * SPACING + END_MARGIN;
+      ch.endCol = col + span;
+      col = ch.endCol;
+    });
+
+    const cols = col + 6;
+    const tiles = new Uint8Array(cols * WORLD_ROWS);
+    for (let cc = 0; cc < cols; cc++) {
+      for (let r = GROUND_ROW; r < WORLD_ROWS; r++) tiles[r * cols + cc] = 1;
+    }
+    // platforms for minor items
+    items.forEach(it => {
+      if (it.platform) {
+        for (let dc = 0; dc < it.platform.w; dc++) {
+          const cc = it.platform.c0 + dc;
+          if (cc >= 0 && cc < cols) tiles[it.platform.row * cols + cc] = 2;
+        }
+      }
+    });
+
+    world.cols = cols;
+    world.tiles = tiles;
+    world.chapters = chapters;
+    world.items = items;
+    world.goalX = (cols - 4) * TILE;
+    world.total = items.length;
+    world.events = events.sort((a, b) => a.x - b.x);
+
+    // Era start years parsed from each chapter title (first 4-digit number); used by the timeline.
+    world.years = chapters.map((ch, i) => {
+      const m = (ch.title || '').match(/\d{4}/);
+      return m ? parseInt(m[0], 10) : 2004 + i * 4;
+    });
+
+    // Columns occupied by gameplay objects, so scenery (trees/flowers) keeps clear of them.
+    world.occupied = new Set();
+    const mark = c => { world.occupied.add(c - 1); world.occupied.add(c); world.occupied.add(c + 1); };
+    items.forEach(it => {
+      mark(Math.round((it.x + it.w / 2) / TILE));
+      if (it.platform) for (let dc = -1; dc <= it.platform.w; dc++) world.occupied.add(it.platform.c0 + dc);
+    });
+    mark(cols - 4);
+
+    // Collectables: floating trails of tokens. Collection is purely a function of the hero's
+    // horizontal position (token to the left of him = collected), so it reverses when walking back.
+    // Tokens of the same emoji+label share one inventory "bucket" chip, so later lines (positive or
+    // negative) add to / subtract from the same running total. A negative line spills its tokens
+    // out of the inventory back into the scene as the hero walks past them.
+    world.collectables = [];
+    world.buckets = new Map();
+    // Buckets are keyed by NAME only, so the same item under a different icon (e.g. 👶 女儿 → 👧 女儿,
+    // or an emoji → image) shares one chip; the icon just gets replaced as later tokens are collected.
+    const bucketFor = (emoji, label) => {
+      const key = label || '';
+      let b = world.buckets.get(key);
+      if (!b) { b = { key, emoji, label, collected: 0, emojiShown: null, chipEl: null, chipNum: null, chipEm: null, chipShown: -1 }; world.buckets.set(key, b); }
+      return b;
+    };
+    chapters.forEach((ch, ci) => {
+      const defs = ch.collectables || [];
+      if (!defs.length) return;
+      const all = [];
+      defs.forEach((def, di) => {
+        const sign = def.count < 0 ? -1 : 1, mag = Math.abs(def.count);
+        const n = clamp(mag, 1, 12);
+        const base = Math.floor(mag / n), rem = mag - base * n;
+        const bucket = bucketFor(def.emoji, def.label);
+        const entry = { id: ci + ':' + di, emoji: def.emoji, label: def.label, total: def.count, bucket, tokens: [] };
+        for (let k = 0; k < n; k++) entry.tokens.push({ value: sign * (base + (k < rem ? 1 : 0)), x: 0, yBase: 0, collected: false });
+        world.collectables.push(entry);
+        for (const tk of entry.tokens) all.push(tk);
+      });
+      const x0 = (ch.startCol + MARGIN) * TILE, x1 = (ch.endCol - END_MARGIN) * TILE;
+      const span = Math.max(TILE, x1 - x0);
+      all.forEach((tk, idx) => {
+        tk.x = x0 + ((idx + 1) / (all.length + 1)) * span;
+        tk.yBase = GROUND_ROW * TILE - 74 - Math.sin(idx * 0.7) * 18;
+      });
+    });
+  }
+
+  // ---------- entities ----------
+  const player = { x: 3 * TILE, y: (GROUND_ROW - 3) * TILE, w: 22, h: 44, vx: 0, vy: 0, dir: 1, grounded: false, anim: 0, lastSafe: { x: 3 * TILE, y: (GROUND_ROW - 3) * TILE } };
+  const pet = { x: player.x - 44, y: player.y, w: 36, h: 36, vx: 0, vy: 0, grounded: false, bob: 0 };
+
+  const camera = { x: 0, y: 0 };
+  const state = {
+    started: false, finished: false, loadedPosted: false,
+    unlocked: 0, activeChapter: -1, roundId: 'devstory_' + Date.now(),
+    cardItem: null, cardDismissed: null,
+    atmosSnap: true,
+    petBitmap: null, petUv: null, petUrl: '', petReqId: '', petId: '',
+  };
+
+  // ---------- input ----------
+  const input = { left: false, right: false, jumpHeld: false, jumpQueued: false, axis: 0, joyActive: false, joyId: null, joyStartX: 0, joyStartY: 0, joyDX: 0, joyDY: 0, jumpAnchorY: 0 };
+  function getAxis() {
+    let a = 0;
+    if (input.left) a -= 1;
+    if (input.right) a += 1;
+    if (Math.abs(input.joyDX) > 8) a = clamp(input.joyDX / 46, -1, 1);
+    return clamp(a, -1, 1);
+  }
+
+  // ---------- DOM ----------
+  const root = document.createElement('div');
+  root.innerHTML = `
+    <style>
+      * { box-sizing: border-box; -webkit-tap-highlight-color: transparent; }
+      html, body { width:100%; height:100%; margin:0; overflow:hidden; }
+      body { font-family:-apple-system,BlinkMacSystemFont,'PingFang SC','Microsoft YaHei',sans-serif; color:#1f2937; background:#bde0fe; user-select:none; touch-action:none; }
+      .ds-shell { position:relative; width:100vw; height:100vh; height:100dvh; overflow:hidden; image-rendering:pixelated; }
+      .ds-canvas { position:absolute; inset:0; width:100%; height:100%; display:block; image-rendering:pixelated; }
+      .ds-top { position:absolute; top:max(8px,env(safe-area-inset-top)); left:8px; right:8px; z-index:5; display:flex; gap:8px; align-items:center; pointer-events:none; }
+      .ds-banner { flex:1; min-width:0; display:flex; align-items:center; justify-content:center; height:38px; padding:0 6px; overflow:visible; }
+      .ds-banner-txt { display:inline-flex; align-items:center; max-width:100%; padding:5px 12px; border-radius:10px; background:rgba(255,255,255,.42); color:#1e3a5f; font-size:15px; font-weight:1000; white-space:nowrap; text-shadow:0 1px 1px rgba(255,255,255,.7); }
+      .ds-pill { height:38px; display:inline-flex; align-items:center; gap:4px; padding:0 10px; border-radius:10px; background:rgba(255,255,255,.86); border:3px solid rgba(30,58,95,.85); font-size:13px; font-weight:1000; box-shadow:0 4px 0 rgba(30,58,95,.16); color:#1e3a5f; pointer-events:auto; cursor:pointer; }
+      .ds-card { position:absolute; left:50%; bottom:max(74px,calc(env(safe-area-inset-bottom) + 70px)); transform:translateX(-50%) translateY(10px); z-index:7; width:min(88vw,560px); padding:12px 40px 12px 18px; border-radius:16px; background:linear-gradient(180deg,#fffdf5,#fef3c7); border:3px solid #b45309; box-shadow:0 12px 30px rgba(120,53,15,.28); opacity:0; transition:opacity .2s ease, transform .2s ease; pointer-events:none; }
+      .ds-card.show { opacity:1; transform:translateX(-50%) translateY(0); }
+      .ds-card .ds-era { font-size:11px; font-weight:1000; color:#b45309; letter-spacing:.5px; margin-bottom:5px; }
+      .ds-card .ds-text { font-size:16px; font-weight:850; line-height:1.5; color:#7c2d12; }
+      .ds-card-x { position:absolute; top:7px; right:8px; width:27px; height:27px; border:0; border-radius:50%; background:rgba(180,83,9,.16); color:#b45309; font-size:19px; font-weight:1000; line-height:1; cursor:pointer; pointer-events:auto; display:flex; align-items:center; justify-content:center; }
+      .ds-card-x:active { transform:scale(.9); }
+      .ds-bottom { position:absolute; left:10px; right:10px; bottom:max(10px,env(safe-area-inset-bottom)); z-index:6; display:flex; align-items:flex-end; pointer-events:none; }
+      .ds-hint { position:absolute; left:50%; top:50%; transform:translate(-50%,-50%); z-index:6; pointer-events:none; padding:9px 14px; border-radius:999px; background:rgba(255,255,255,.9); border:2px solid rgba(30,58,95,.6); color:#1e3a5f; font-size:13px; font-weight:900; box-shadow:0 4px 0 rgba(30,58,95,.14); transition:opacity .6s ease; max-width:90vw; text-align:center; }
+      .ds-hint.fade { opacity:0; }
+      .ds-joy { position:fixed; z-index:8; left:var(--x); top:var(--y); width:120px; height:120px; margin:-60px 0 0 -60px; border-radius:50%; background:rgba(30,58,95,.22); border:4px solid rgba(255,255,255,.75); display:none; pointer-events:none; }
+      .ds-joy.show { display:block; }
+      .ds-joy .ds-up { position:absolute; left:50%; top:8px; transform:translateX(-50%); font-size:16px; font-weight:1000; color:rgba(255,255,255,.5); transition:color .1s, opacity .1s; }
+      .ds-joy.up .ds-up { color:#fff; }
+      .ds-knob { position:absolute; left:50%; top:50%; width:48px; height:48px; margin:-24px 0 0 -24px; border-radius:50%; background:rgba(255,255,255,.78); border:3px solid rgba(30,58,95,.6); transform:translate(var(--kx,0px),var(--ky,0px)); }
+      .ds-overlay { position:fixed; inset:0; z-index:40; display:flex; align-items:center; justify-content:center; padding:14px; background:rgba(15,33,61,.55); overflow:auto; }
+      .ds-overlay[hidden] { display:none; }
+      .ds-modal { width:min(92vw,460px); max-height:calc(100dvh - 28px); overflow-y:auto; -webkit-overflow-scrolling:touch; padding:22px; border-radius:18px; background:linear-gradient(180deg,#ffffff,#e0f2fe 70%,#dcfce7); border:4px solid #1e3a5f; box-shadow:0 18px 44px rgba(15,23,42,.3); text-align:center; }
+      .ds-modal h1 { margin:0 0 10px; font-size:26px; line-height:1.15; font-weight:1000; color:#1e3a5f; }
+      .ds-modal p { margin:0 0 10px; color:#0f766e; font-size:14px; font-weight:800; line-height:1.55; }
+      .ds-btn { border:0; cursor:pointer; border-radius:999px; padding:12px 28px; color:#fff; font-weight:1000; font-size:16px; background:linear-gradient(180deg,#34d399,#16a34a); box-shadow:0 5px 0 #15803d; margin-top:8px; }
+      .ds-btn:active { transform:translateY(2px); filter:brightness(.95); }
+      .ds-btn.secondary { background:linear-gradient(180deg,#94a3b8,#475569); box-shadow:0 5px 0 #334155; }
+      .ds-btn.danger { background:linear-gradient(180deg,#fb7185,#e11d48); box-shadow:0 5px 0 #9f1239; }
+      .ds-btn-row { display:flex; gap:10px; justify-content:center; flex-wrap:wrap; margin-top:8px; }
+      .ds-btn-row .ds-btn { margin-top:0; }
+      .ds-journal { text-align:left; }
+      .ds-journal h2 { margin:14px 0 6px; font-size:15px; font-weight:1000; color:#b45309; }
+      .ds-journal .frag { font-size:13px; font-weight:700; line-height:1.5; color:#374151; padding:4px 0 4px 16px; position:relative; }
+      .ds-journal .frag::before { content:'•'; position:absolute; left:2px; color:#16a34a; }
+      .ds-journal .frag.mon::before { content:'⚔'; }
+      .ds-journal .frag.click { cursor:pointer; border-radius:8px; transition:background .12s; }
+      .ds-journal .frag.click:hover { background:rgba(37,99,235,.1); }
+      .ds-jumphint { float:right; margin-left:8px; font-size:11px; font-weight:900; color:#2563eb; opacity:0; transition:opacity .12s; }
+      .ds-journal .frag.click:hover .ds-jumphint { opacity:1; }
+      /* journal: pinned title + pinned buttons, only the middle list scrolls */
+      .ds-modal-journal { display:flex; flex-direction:column; overflow:hidden; }
+      .ds-modal-journal > h1, .ds-modal-journal > .ds-btn-row { flex:0 0 auto; }
+      .ds-modal-journal .ds-journal { flex:1 1 auto; min-height:0; overflow-y:auto; padding-right:4px; }
+      /* themed scrollbar for the journal / modals */
+      .ds-modal, .ds-journal { scrollbar-width:thin; scrollbar-color:#7f9bb8 transparent; }
+      .ds-modal::-webkit-scrollbar, .ds-journal::-webkit-scrollbar { width:10px; }
+      .ds-modal::-webkit-scrollbar-track, .ds-journal::-webkit-scrollbar-track { background:transparent; margin:6px 0; }
+      .ds-modal::-webkit-scrollbar-thumb, .ds-journal::-webkit-scrollbar-thumb { background:linear-gradient(180deg,#9db8d2,#6f8db0); border-radius:999px; border:2px solid rgba(255,255,255,.65); background-clip:padding-box; }
+      .ds-modal::-webkit-scrollbar-thumb:hover, .ds-journal::-webkit-scrollbar-thumb:hover { background:#5f7ea3; background-clip:padding-box; border:2px solid rgba(255,255,255,.65); }
+      /* timeline / time scrubber — fixed-scale ruler that scrolls (no compression on mobile) */
+      .ds-timeline { pointer-events:auto; flex:1; min-width:0; position:relative; height:58px; overflow:hidden; cursor:ew-resize; -webkit-mask-image:linear-gradient(90deg,transparent,#000 12px,#000 calc(100% - 12px),transparent); mask-image:linear-gradient(90deg,transparent,#000 12px,#000 calc(100% - 12px),transparent); }
+      .ds-tl-ruler { position:absolute; left:0; bottom:0; height:58px; will-change:transform; }
+      .ds-tl-line { position:absolute; left:0; right:0; top:26px; height:9px; border-radius:999px; background:rgba(255,255,255,.72); border:2px solid rgba(30,58,95,.55); }
+      .ds-tl-fill { position:absolute; left:0; top:26px; height:9px; width:0; border-radius:999px; background:linear-gradient(90deg,#fbbf24,#f97316); }
+      .ds-tl-thumb { position:absolute; top:30px; left:0; width:18px; height:18px; margin:-9px 0 0 -9px; border-radius:50%; background:#fff; border:3px solid #1e3a5f; box-shadow:0 2px 5px rgba(0,0,0,.3); z-index:3; }
+      .ds-tl-readout { position:absolute; top:0; left:0; transform:translateX(-50%); white-space:nowrap; padding:2px 9px; border-radius:8px; background:#1e3a5f; color:#fff; font-size:12px; font-weight:1000; box-shadow:0 3px 0 rgba(0,0,0,.18); z-index:4; }
+      .ds-tl-readout::after { content:''; position:absolute; left:50%; bottom:-5px; transform:translateX(-50%); border:5px solid transparent; border-bottom:0; border-top-color:#1e3a5f; }
+      .ds-tl-tick { position:absolute; top:26px; width:2px; height:9px; margin-left:-1px; background:rgba(30,58,95,.4); }
+      .ds-tl-tick.major { top:24px; height:14px; width:3px; margin-left:-1.5px; background:#1e3a5f; }
+      .ds-tl-lab { position:absolute; top:42px; transform:translateX(-50%); font-size:10px; font-weight:1000; color:#1e3a5f; background:rgba(255,255,255,.78); padding:0 4px; border-radius:4px; white-space:nowrap; pointer-events:none; }
+      /* inventory of collectables, below the title banner */
+      .ds-inv { position:absolute; top:max(54px,calc(env(safe-area-inset-top) + 50px)); left:8px; right:8px; z-index:5; display:flex; flex-wrap:wrap; gap:6px; overflow:visible; padding:4px 4px 6px; pointer-events:none; scrollbar-width:none; }
+      .ds-inv::-webkit-scrollbar { display:none; }
+      /* each collectable is a square slot: count badge top-right, label along the bottom, big emoji centered */
+      .ds-chip { position:relative; flex:0 0 auto; width:56px; height:56px; border-radius:12px; background:rgba(255,255,255,.92); border:2px solid rgba(30,58,95,.7); color:#1e3a5f; box-shadow:0 3px 0 rgba(30,58,95,.16); pointer-events:auto; cursor:pointer; transition:transform .1s; }
+      .ds-chip:active { transform:translateY(1px) scale(.96); }
+      .ds-chip .em { position:absolute; left:0; right:0; top:0; bottom:14px; display:flex; align-items:center; justify-content:center; font-size:24px; line-height:1; }
+      .ds-chip .em img { width:30px; height:30px; object-fit:contain; border-radius:6px; }
+      .ds-chip .lab { position:absolute; left:2px; right:2px; bottom:3px; text-align:center; font-size:9px; font-weight:800; line-height:1; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
+      .ds-chip .num { position:absolute; top:2px; right:2px; min-width:16px; height:16px; padding:0 3px; border-radius:999px; background:#f59e0b; color:#fff; font-size:10px; font-weight:1000; line-height:16px; text-align:center; box-shadow:0 1px 0 rgba(30,58,95,.25); }
+      .ds-chip.bump { animation:dsChipBump .32s ease; }
+      @keyframes dsChipBump { 0%{transform:scale(1);} 40%{transform:scale(1.24);} 100%{transform:scale(1);} }
+      .ds-fly { position:fixed; left:0; top:0; z-index:30; font-size:22px; line-height:1; pointer-events:none; transition:transform .5s cubic-bezier(.35,.1,.2,1), opacity .5s ease; will-change:transform,opacity; }
+      .ds-fly img { width:24px; height:24px; object-fit:contain; vertical-align:top; }
+      /* item description dialog */
+      .ds-modal-item { position:relative; text-align:left; display:flex; flex-direction:column; overflow:hidden; padding-top:16px; }
+      .ds-item-title { display:flex; align-items:center; gap:10px; margin:0 30px 12px 0; font-size:21px; flex:0 0 auto; }
+      .ds-item-em { font-size:30px; line-height:1; flex:0 0 auto; }
+      .ds-item-em img { width:34px; height:34px; object-fit:contain; border-radius:7px; vertical-align:middle; }
+      .ds-itemdoc { flex:1 1 auto; min-height:0; overflow-y:auto; padding-right:4px; color:#374151; font-size:14px; font-weight:600; line-height:1.6; }
+      .ds-itemdoc h2, .ds-itemdoc h3, .ds-itemdoc h4, .ds-itemdoc h5 { margin:14px 0 6px; color:#b45309; font-weight:1000; line-height:1.25; }
+      .ds-itemdoc h2 { font-size:17px; } .ds-itemdoc h3 { font-size:15px; } .ds-itemdoc h4, .ds-itemdoc h5 { font-size:14px; }
+      .ds-itemdoc p { margin:0 0 10px; }
+      .ds-itemdoc ul { margin:0 0 10px; padding-left:20px; } .ds-itemdoc li { margin:3px 0; }
+      .ds-itemdoc strong { color:#1e3a5f; font-weight:1000; }
+      .ds-itemdoc code { background:rgba(30,58,95,.1); padding:1px 5px; border-radius:5px; font-size:.92em; }
+      .ds-itemdoc a { color:#2563eb; word-break:break-all; }
+      .ds-itemdoc img { max-width:100%; height:auto; border-radius:10px; display:block; margin:8px 0; }
+      .ds-itemdoc-empty { color:#94a3b8; font-style:italic; }
+      [hidden] { display:none !important; }
+      @media (max-width:640px){ .ds-banner-txt{font-size:13px;} .ds-card .ds-text{font-size:15px;} }
+    </style>
+    <div class="ds-shell" id="dsShell">
+      <canvas id="dsCanvas" class="ds-canvas"></canvas>
+      <div class="ds-top">
+        <div class="ds-banner"><span class="ds-banner-txt" id="dsBanner">${t('chapterDefault')}</span></div>
+        <div class="ds-pill" id="dsMusicBtn" title="音乐">🎵</div>
+        <div class="ds-pill" id="dsJournalBtn">📖 <b id="dsProg">0</b>/<b id="dsTotal">0</b></div>
+      </div>
+      <div class="ds-inv" id="dsInv"></div>
+      <div class="ds-card" id="dsCard"><button class="ds-card-x" id="dsCardClose" type="button" aria-label="${t('close')}">×</button><div class="ds-era" id="dsCardEra"></div><div class="ds-text" id="dsCardText"></div></div>
+      <div class="ds-hint" id="dsHint">${t('hint')}</div>
+      <div class="ds-bottom">
+        <div class="ds-timeline" id="dsTimeline">
+          <div class="ds-tl-ruler" id="dsTlRuler">
+            <div class="ds-tl-line"></div>
+            <div class="ds-tl-fill" id="dsTlFill"></div>
+            <div class="ds-tl-thumb" id="dsTlThumb"></div>
+            <div class="ds-tl-readout" id="dsTlReadout">2004年 1月</div>
+          </div>
+        </div>
+      </div>
+      <div class="ds-joy" id="dsJoy"><div class="ds-up">↑</div><div class="ds-knob" id="dsKnob"></div></div>
+      <div class="ds-overlay" id="dsStart">
+        <div class="ds-modal">
+          <h1>${t('startTitle')}</h1>
+          <p>${t('intro1')}</p>
+          <p>${t('intro2')}</p>
+          <p>${t('intro3')}</p>
+          <button class="ds-btn" id="dsStartBtn" type="button">${t('start')}</button>
+        </div>
+      </div>
+      <div class="ds-overlay" id="dsJournalOverlay" hidden>
+        <div class="ds-modal ds-modal-journal">
+          <h1>${t('journal')}</h1>
+          <div class="ds-journal" id="dsJournalBody"></div>
+          <div class="ds-btn-row">
+            <button class="ds-btn danger" id="dsJournalRestart" type="button">${t('restart')}</button>
+            <button class="ds-btn secondary" id="dsJournalClose" type="button">${t('close')}</button>
+          </div>
+        </div>
+      </div>
+      <div class="ds-overlay" id="dsItemOverlay" hidden>
+        <div class="ds-modal ds-modal-item">
+          <button class="ds-card-x" id="dsItemClose" type="button" aria-label="${t('close')}">×</button>
+          <h1 class="ds-item-title"><span class="ds-item-em" id="dsItemEm"></span><span id="dsItemTitle"></span></h1>
+          <div class="ds-itemdoc" id="dsItemBody"></div>
+        </div>
+      </div>
+      <div class="ds-overlay" id="dsDone" hidden>
+        <div class="ds-modal">
+          <h1>${t('done')}</h1>
+          <p id="dsDoneDesc"></p>
+          <button class="ds-btn" id="dsFinishBtn" type="button">${t('finish')}</button>
+        </div>
+      </div>
+    </div>
+  `;
+  document.body.appendChild(root);
+
+  const canvas = root.querySelector('#dsCanvas');
+  const ctx = canvas.getContext('2d');
+  const shell = root.querySelector('#dsShell');
+  const els = {
+    banner: root.querySelector('#dsBanner'), prog: root.querySelector('#dsProg'), total: root.querySelector('#dsTotal'), inv: root.querySelector('#dsInv'), musicBtn: root.querySelector('#dsMusicBtn'),
+    card: root.querySelector('#dsCard'), cardEra: root.querySelector('#dsCardEra'), cardText: root.querySelector('#dsCardText'),
+    hint: root.querySelector('#dsHint'), joy: root.querySelector('#dsJoy'), knob: root.querySelector('#dsKnob'),
+    start: root.querySelector('#dsStart'), journalOverlay: root.querySelector('#dsJournalOverlay'), journalBody: root.querySelector('#dsJournalBody'),
+    done: root.querySelector('#dsDone'), doneDesc: root.querySelector('#dsDoneDesc'),
+    itemOverlay: root.querySelector('#dsItemOverlay'), itemEm: root.querySelector('#dsItemEm'), itemTitle: root.querySelector('#dsItemTitle'), itemBody: root.querySelector('#dsItemBody'),
+    timeline: root.querySelector('#dsTimeline'), tlRuler: root.querySelector('#dsTlRuler'), tlReadout: root.querySelector('#dsTlReadout'),
+    tlFill: root.querySelector('#dsTlFill'), tlThumb: root.querySelector('#dsTlThumb'),
+  };
+
+  let viewW = 0, viewH = 0, dpr = 1;
+  function resize() {
+    dpr = Math.max(1, Math.min(2, window.devicePixelRatio || 1));
+    viewW = Math.max(320, Math.floor(window.innerWidth));
+    viewH = Math.max(240, Math.floor(window.innerHeight));
+    canvas.width = Math.floor(viewW * dpr);
+    canvas.height = Math.floor(viewH * dpr);
+    canvas.style.width = viewW + 'px';
+    canvas.style.height = viewH + 'px';
+    ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+    ctx.imageSmoothingEnabled = false;
+    camera.y = WORLD_H - viewH;
+  }
+  window.addEventListener('resize', resize);
+  resize();
+
+  // ---------- pet sprite request ----------
+  function requestPetImage(petId) {
+    const reqId = 'pet_' + Date.now();
+    state.petReqId = reqId;
+    try {
+      window.parent.postMessage({ type: 'haqi_get_pet_image', requestId: reqId, anim: 'happy', petId: petId || undefined }, '*');
+    } catch (_) {}
+    setTimeout(() => {
+      if (state.petBitmap) return;
+      try { window.parent.postMessage({ type: 'haqi_get_pet_images', requestId: 'pets_' + Date.now(), anim: 'happy' }, '*'); } catch (_) {}
+    }, 900);
+  }
+  async function setPetImage(data) {
+    if (!data || !data.imageBlob) return;
+    try {
+      const bmp = await createImageBitmap(data.imageBlob);
+      if (state.petBitmap && state.petBitmap.close) state.petBitmap.close();
+      state.petBitmap = bmp;
+      state.petUv = data.uv || null;
+    } catch (_) {}
+  }
+
+  window.addEventListener('message', (e) => {
+    const msg = e.data || {};
+    if (msg.type === 'setGameConfig' && msg.data) {
+      if (msg.data.petId) state.petId = msg.data.petId; // no companion pet in this game (protagonist only)
+      if (typeof msg.data.itemMarkdown === 'string') {
+        game_config.itemMarkdown = msg.data.itemMarkdown;
+        itemDocs = parseItemDocs(msg.data.itemMarkdown);
+      }
+      if (typeof msg.data.storyMarkdown === 'string' && !state.started) {
+        game_config.storyMarkdown = msg.data.storyMarkdown;
+        initWorld();
+      }
+    }
+    if (msg.type === 'haqi_pet_image' && msg.ok && msg.data &&
+        (!state.petReqId || !msg.requestId || msg.requestId === state.petReqId || msg.requestId === 'active_pet_config')) {
+      setPetImage(msg.data);
+    }
+    if (msg.type === 'haqi_pet_images' && msg.ok && msg.data) {
+      const first = Array.isArray(msg.data.pets) ? msg.data.pets[0] : null;
+      if (first) setPetImage(first);
+    }
+  });
+
+  // ---------- progress persistence (localStorage) ----------
+  const SAVE_KEY = 'haqiDevStoryV1';
+  let lastSave = 0;
+  function loadProgress() { try { const r = localStorage.getItem(SAVE_KEY); return r ? JSON.parse(r) : null; } catch (_) { return null; } }
+  function saveProgress() {
+    try {
+      const unlocked = world.items.filter(it => it.unlocked).map(it => it.chapter + '|' + it.text);
+      localStorage.setItem(SAVE_KEY, JSON.stringify({ unlocked, x: Math.round(player.x), ts: Date.now() }));
+    } catch (_) {}
+  }
+
+  // ---------- timeline (current in-game date + scrub-to-jump) ----------
+  function dateAt(x) {
+    if (!world.chapters.length) return { year: 2004, month: 1 };
+    const col = x / TILE;
+    const i = chapterIndexAtCol(col);
+    const ch = world.chapters[i];
+    const span = (ch.endCol - ch.startCol) || 1;
+    const f = clamp((col - ch.startCol) / span, 0, 1);
+    const y0 = world.years[i];
+    const y1 = (i < world.chapters.length - 1) ? world.years[i + 1] : (y0 + 2);
+    const yf = y0 + f * (y1 - y0);
+    const year = Math.floor(yf);
+    return { year, month: clamp(Math.floor((yf - year) * 12) + 1, 1, 12) };
+  }
+  // Ticks/labels live on a fixed-scale ruler (PX_PER_COL px per world column). On a narrow
+  // screen the ruler is wider than the viewport, so it scrolls instead of compressing; year
+  // labels sit below the ticks.
+  function rulerWidth() { return world.cols * PX_PER_COL; }
+  function buildTimeline() {
+    const ruler = els.tlRuler;
+    ruler.querySelectorAll('.ds-tl-tick, .ds-tl-lab').forEach(n => n.remove());
+    ruler.style.width = rulerWidth() + 'px';
+    const frag = document.createDocumentFragment();
+    world.chapters.forEach((ch, i) => {
+      const major = document.createElement('div'); major.className = 'ds-tl-tick major'; major.style.left = (ch.startCol * PX_PER_COL) + 'px'; frag.appendChild(major);
+      const lab = document.createElement('div'); lab.className = 'ds-tl-lab'; lab.style.left = (ch.startCol * PX_PER_COL) + 'px'; lab.textContent = world.years[i]; frag.appendChild(lab);
+      const y0 = world.years[i], y1 = (i < world.chapters.length - 1) ? world.years[i + 1] : (y0 + 2);
+      const span = (ch.endCol - ch.startCol) || 1;
+      for (let yy = y0 + 1; yy < y1; yy++) {
+        const col = ch.startCol + ((yy - y0) / (y1 - y0)) * span;
+        const mt = document.createElement('div'); mt.className = 'ds-tl-tick'; mt.style.left = (col * PX_PER_COL) + 'px'; frag.appendChild(mt);
+      }
+    });
+    ruler.appendChild(frag);
+  }
+  function updateTimeline() {
+    const rw = rulerWidth();
+    const vw = els.timeline.clientWidth || 1;
+    const thumbX = clamp((player.x + player.w / 2) / TILE / world.cols, 0, 1) * rw;
+    els.tlThumb.style.left = thumbX + 'px';
+    els.tlFill.style.width = thumbX + 'px';
+    els.tlReadout.style.left = thumbX + 'px';
+    const d = dateAt(player.x + player.w / 2);
+    els.tlReadout.textContent = d.year + '年 ' + d.month + '月';
+    // scroll the ruler to keep the playhead centered, but keep it PAD px from both ends so the
+    // date readout (e.g. "2004年 5月") is never clipped at the start/finish of the timeline.
+    const PAD = 58;
+    const offset = clamp(vw / 2 - thumbX, Math.min(PAD, vw - PAD - rw), PAD);
+    els.tlRuler.style.transform = 'translateX(' + offset + 'px)';
+  }
+  // Move the protagonist to a world x (timeline scrub or journal replay). No death; lands on ground.
+  function jumpTo(x) {
+    player.x = clamp(x, TILE, world.goalX - 3 * TILE);
+    player.y = (GROUND_ROW - 3) * TILE; player.vx = 0; player.vy = 0;
+    player.lastSafe = { x: player.x, y: player.y };
+    camera.x = clamp(player.x + player.w / 2 - viewW * 0.42, 0, Math.max(0, world.cols * TILE - viewW));
+    state.atmosSnap = true;
+    state.activeChapter = -1;
+    updateTimeline();
+  }
+  function jumpToItem(it) {
+    els.journalOverlay.hidden = true;
+    jumpTo(it.x + it.w / 2 - player.w / 2);
+    showCard(it);
+  }
+
+  // ---------- world init ----------
+  function initWorld() {
+    const chapters = parseStory(game_config.storyMarkdown);
+    buildWorld(chapters.length ? chapters : [{ title: t('chapterDefault'), items: [{ kind: 'major', text: '...' }] }]);
+    els.total.textContent = world.total;
+    player.x = 3 * TILE; player.y = (GROUND_ROW - 3) * TILE; player.vx = 0; player.vy = 0; player.dir = 1;
+    state.unlocked = 0;
+
+    // restore saved progress (unlocked fragments + last position)
+    const saved = loadProgress();
+    if (saved && Array.isArray(saved.unlocked)) {
+      const set = new Set(saved.unlocked);
+      for (const it of world.items) {
+        if (set.has(it.chapter + '|' + it.text)) { it.unlocked = true; if (it.kind === 'monster') it.defeated = true; state.unlocked++; }
+      }
+      if (typeof saved.x === 'number') player.x = clamp(saved.x, TILE, world.goalX - 4 * TILE);
+    }
+    els.prog.textContent = state.unlocked;
+    player.lastSafe = { x: player.x, y: player.y };
+    camera.x = clamp(player.x + player.w / 2 - viewW * 0.42, 0, Math.max(0, world.cols * TILE - viewW));
+    buildTimeline();
+    updateTimeline();
+    els.inv.innerHTML = '';
+    state.atmosSnap = true;
+    computeInventory();
+    renderInventory();
+  }
+  initWorld();
+
+  // Banner shows just the era name — strip a leading "YYYY-YYYY：" date prefix so the title stays
+  // short and never clips. The full title (with year) is kept in the data for the timeline & card.
+  function chapterTitle(ch) {
+    if (!ch) return t('chapterDefault');
+    const s = (ch.title || '').trim();
+    const m = s.match(/^[^：:]*\d[^：:]*[：:]\s*(.+)$/);
+    return m ? m[1].trim() : (s || t('chapterDefault'));
+  }
+
+  // ---------- narrative card ----------
+  // The card stays visible while the protagonist is near the memory. It hides only when he
+  // walks far enough away, or the player taps the close button; walking back near re-shows it.
+  const CARD_RANGE = TILE * 2.2;
+  function renderCard(it) {
+    const ch = world.chapters[it.chapter];
+    els.cardEra.textContent = ch ? ch.title : '';
+    els.cardText.textContent = (it.kind === 'monster' && it.emoji ? it.emoji + ' ' : '') + (it.text || '');
+  }
+  function showCard(it) { state.cardItem = it; state.cardDismissed = null; renderCard(it); els.card.classList.add('show'); }
+  function hideCard() { els.card.classList.remove('show'); state.cardItem = null; }
+  function updateCard() {
+    const pcx = player.x + player.w / 2;
+    let near = null, best = 1e9;
+    for (const it of world.items) {
+      const got = it.kind === 'monster' ? it.defeated : it.unlocked;
+      if (!got) continue;
+      const d = Math.abs(pcx - (it.x + it.w / 2));
+      if (d < CARD_RANGE && d < best) { best = d; near = it; }
+    }
+    if (!near) { state.cardDismissed = null; if (state.cardItem) hideCard(); return; }
+    if (near === state.cardDismissed) { if (state.cardItem) hideCard(); return; } // user closed this one, still nearby
+    state.cardDismissed = null;
+    if (state.cardItem !== near) showCard(near);
+  }
+
+  // ---------- inventory (position-based collectables) ----------
+  // A token's value is added to its bucket while it sits behind the hero (collected). Positive
+  // tokens raise the bucket total, negative tokens lower it — same rule, opposite sign.
+  function sumBuckets() {
+    for (const b of world.buckets.values()) { b.collected = 0; b._iconX = -Infinity; }
+    for (const def of world.collectables || []) {
+      for (const tk of def.tokens) {
+        if (!tk.collected) continue;
+        def.bucket.collected += tk.value;
+        // the rightmost (latest) collected token wins the icon, so 👶→👧 swaps as the story advances
+        if (tk.x > def.bucket._iconX) { def.bucket._iconX = tk.x; def.bucket.emoji = def.emoji; }
+      }
+    }
+  }
+  function computeInventory() {
+    const pcx = player.x + player.w / 2;
+    for (const def of world.collectables || []) {
+      for (const tk of def.tokens) tk.collected = pcx >= tk.x;
+    }
+    sumBuckets();
+  }
+  // Each frame: collected = tokens behind the hero. Detect crossings to animate + refresh chips.
+  function updateInventory() {
+    const pcx = player.x + player.w / 2;
+    let changed = false;
+    for (const def of world.collectables || []) {
+      for (const tk of def.tokens) {
+        const c = pcx >= tk.x;
+        if (c !== tk.collected) {
+          tk.collected = c; changed = true;
+          const sx = tk.x - camera.x;
+          // positive: crossing right flies into the inventory; negative is reversed — crossing right
+          // flies out of the inventory back into the scene.
+          if (sx > -40 && sx < viewW + 40) spawnFly(def, tk, c === (tk.value >= 0));
+        }
+      }
+    }
+    if (changed) { sumBuckets(); renderInventory(); }
+  }
+  // Render an icon (emoji glyph or markdown image) into an element. Reused by chips and the fly sprite.
+  function setIcon(el, icon) {
+    const v = icon || '⭐';
+    if (isImgIcon(v)) { el.innerHTML = ''; const img = document.createElement('img'); img.src = imgUrlOf(v); img.alt = ''; el.appendChild(img); }
+    else { el.textContent = v; }
+  }
+  function renderInventory() {
+    for (const b of world.buckets.values()) {
+      if (b.collected > 0) {
+        if (!b.chipEl) {
+          const c = document.createElement('div'); c.className = 'ds-chip'; c.title = b.label || ''; c.setAttribute('role', 'button'); c.tabIndex = 0;
+          const num = document.createElement('b'); num.className = 'num';
+          const em = document.createElement('span'); em.className = 'em';
+          const lab = document.createElement('span'); lab.className = 'lab'; lab.textContent = b.label || '';
+          c.appendChild(num); c.appendChild(em); c.appendChild(lab);
+          c.addEventListener('click', () => openItemDoc(b));
+          c.addEventListener('keydown', e => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); openItemDoc(b); } });
+          b.chipEl = c; b.chipNum = num; b.chipEm = em; els.inv.appendChild(c);
+        }
+        if (b.emojiShown !== b.emoji) { setIcon(b.chipEm, b.emoji); b.emojiShown = b.emoji; }
+        if (b.chipShown !== b.collected) {
+          b.chipNum.textContent = b.collected;
+          if (b.collected > (b.chipShown < 0 ? 0 : b.chipShown)) { b.chipEl.classList.remove('bump'); void b.chipEl.offsetWidth; b.chipEl.classList.add('bump'); }
+          b.chipShown = b.collected;
+        }
+        b.chipEl.style.display = '';
+      } else if (b.chipEl) {
+        b.chipEl.style.display = 'none';
+        b.chipShown = 0;
+      }
+    }
+  }
+  // Popup the item's description (basic markdown) in a scrollable dialog with a close button.
+  function openItemDoc(b) {
+    if (!b) return;
+    setIcon(els.itemEm, b.emoji);
+    els.itemTitle.textContent = b.label || '';
+    const doc = itemDocs[b.label];
+    els.itemBody.innerHTML = doc ? mdToHtml(doc) : '<p class="ds-itemdoc-empty">' + escHtml(t('noItemDoc')) + '</p>';
+    els.itemBody.scrollTop = 0;
+    els.itemOverlay.hidden = false;
+  }
+  function spawnFly(def, tk, toInv) {
+    const sx = tk.x - camera.x, sy = tk.yBase - camera.y;
+    const ref = def.bucket.chipEl || els.inv;
+    const r = ref.getBoundingClientRect();
+    const ix = r.left + Math.min(r.width / 2, 40), iy = r.top + r.height / 2;
+    const from = toInv ? { x: sx, y: sy } : { x: ix, y: iy };
+    const to = toInv ? { x: ix, y: iy } : { x: sx, y: sy };
+    const el = document.createElement('div'); el.className = 'ds-fly'; setIcon(el, def.emoji);
+    el.style.transform = 'translate(' + from.x + 'px,' + from.y + 'px)';
+    el.style.opacity = '1';
+    root.appendChild(el);
+    requestAnimationFrame(() => requestAnimationFrame(() => {
+      el.style.transform = 'translate(' + to.x + 'px,' + to.y + 'px) scale(' + (toInv ? 0.6 : 1.15) + ')';
+      el.style.opacity = '0.15';
+    }));
+    setTimeout(() => el.remove(), 560);
+  }
+
+  function unlock(item) {
+    if (item.unlocked) return;
+    item.unlocked = true;
+    state.unlocked++;
+    els.prog.textContent = state.unlocked;
+    showCard(item);
+    audio.sfx(item.kind === 'monster' ? 'defeat' : 'unlock');
+    post('gameProgress', { unlocked: state.unlocked, total: world.total });
+    spawnPop(item.x + item.w / 2, item.y + item.h / 2);
+    saveProgress();
+  }
+
+  // ---------- particles ----------
+  const particles = [];
+  function spawnPop(x, y) {
+    for (let i = 0; i < 12; i++) {
+      const a = Math.random() * Math.PI * 2, sp = 60 + Math.random() * 120;
+      particles.push({ x, y, vx: Math.cos(a) * sp, vy: Math.sin(a) * sp - 60, life: 0.6 + Math.random() * 0.3, c: ['#fbbf24', '#34d399', '#60a5fa', '#f472b6'][i % 4] });
+    }
+  }
+
+  // ---------- physics ----------
+  // True if any tile in row `row` is solid across the actor's horizontal span.
+  function rowSolid(x, w, row) {
+    const c0 = Math.floor(x / TILE), c1 = Math.floor((x + w - 1) / TILE);
+    for (let c = c0; c <= c1; c++) if (isSolid(tileAt(c, row))) return true;
+    return false;
+  }
+  // Axis-separated movement that SNAPS to exact tile boundaries (no integer step-back loop, so a
+  // resting actor lands on the same pixel every frame — fixes the 1px standing jitter).
+  function moveActor(a, dt) {
+    // horizontal
+    if (a.vx) {
+      const nx = a.x + a.vx * dt;
+      const r0 = Math.floor(a.y / TILE), r1 = Math.floor((a.y + a.h - 1) / TILE);
+      if (a.vx > 0) {
+        const col = Math.floor((nx + a.w - 1) / TILE);
+        let hit = false; for (let r = r0; r <= r1; r++) if (isSolid(tileAt(col, r))) { hit = true; break; }
+        if (hit) { a.x = col * TILE - a.w; a.vx = 0; } else a.x = nx;
+      } else {
+        const col = Math.floor(nx / TILE);
+        let hit = false; for (let r = r0; r <= r1; r++) if (isSolid(tileAt(col, r))) { hit = true; break; }
+        if (hit) { a.x = (col + 1) * TILE; a.vx = 0; } else a.x = nx;
+      }
+    }
+    // vertical (gravity)
+    a.vy = clamp(a.vy + GRAVITY * dt, -2000, MAX_FALL);
+    const ny = a.y + a.vy * dt;
+    a.grounded = false;
+    a.headBumpRow = -1;
+    if (a.vy >= 0) {
+      const row = Math.floor((ny + a.h) / TILE);
+      if (rowSolid(a.x, a.w, row)) { a.y = row * TILE - a.h; a.vy = 0; a.grounded = true; }
+      else a.y = ny;
+    } else {
+      const row = Math.floor(ny / TILE);
+      if (rowSolid(a.x, a.w, row)) { a.y = (row + 1) * TILE; a.vy = 0; a.headBumpRow = row; }
+      else a.y = ny;
+    }
+  }
+
+  function jump() {
+    if (player.grounded) { player.vy = -JUMP_SPEED; player.grounded = false; audio.sfx('jump'); }
+  }
+
+  // ---------- update ----------
+  function update(dt) {
+    const axis = getAxis();
+    player.vx = axis * MOVE_SPEED;
+    if (axis < -0.05) player.dir = -1; else if (axis > 0.05) player.dir = 1;
+    if (input.jumpQueued) { input.jumpQueued = false; jump(); }
+    moveActor(player, dt);
+    if (Math.abs(player.vx) > 4 && player.grounded) player.anim += dt * 10;
+
+    // remember a safe spot while standing on solid ground
+    if (player.grounded && player.y + player.h <= (GROUND_ROW + 0.5) * TILE + 2) {
+      player.lastSafe.x = player.x; player.lastSafe.y = player.y;
+    }
+    // fell out of the world → gently respawn (no death)
+    if (player.y > WORLD_H + 80) {
+      player.x = player.lastSafe.x; player.y = player.lastSafe.y - 8; player.vx = 0; player.vy = 0;
+      audio.sfx('bump');
+    }
+
+    // Super-Mario style: bumping a platform from below collects the memory resting on it.
+    if (player.headBumpRow >= 0) {
+      const pc0 = Math.floor(player.x / TILE), pc1 = Math.floor((player.x + player.w - 1) / TILE);
+      for (const it of world.items) {
+        if (it.kind === 'minor' && !it.unlocked && it.platform && it.platform.row === player.headBumpRow &&
+            pc1 >= it.platform.c0 && pc0 <= it.platform.c0 + it.platform.w - 1) {
+          it.bumpT = nowMs();
+          unlock(it);
+        }
+      }
+    }
+
+    // items
+    for (const it of world.items) {
+      if (it.kind === 'monster') {
+        if (it.defeated) continue;
+        // patrol
+        it.x += it.vx * dt;
+        if (it.x < it.homeX - TILE * 1.4) { it.x = it.homeX - TILE * 1.4; it.vx *= -1; }
+        if (it.x > it.homeX + TILE * 1.4) { it.x = it.homeX + TILE * 1.4; it.vx *= -1; }
+        if (intersects(player, it)) {
+          // Reliable stomp: coming down onto the top of the monster.
+          const fromAbove = player.vy > 40 && (player.y + player.h) < it.y + it.h * 0.8;
+          if (fromAbove) {
+            it.defeated = true;
+            player.vy = -JUMP_SPEED * 0.6;
+            unlock(it);
+          } else if (!it.unlocked) {
+            // Gentle resistance so the monster feels like a guard, but never a hard
+            // wall: moveActor already advanced the player this frame, so a small
+            // push-back keeps net motion forward (no soft-lock). Jump to stomp it.
+            player.x -= player.dir * 2;
+          }
+        }
+      } else {
+        if (it.unlocked) continue;
+        if (intersects(player, it)) unlock(it);
+      }
+    }
+
+    // particles
+    for (let i = particles.length - 1; i >= 0; i--) {
+      const p = particles[i];
+      p.life -= dt; if (p.life <= 0) { particles.splice(i, 1); continue; }
+      p.vy += 320 * dt; p.x += p.vx * dt; p.y += p.vy * dt;
+    }
+
+    // active chapter banner
+    const px = player.x + player.w / 2;
+    let ci = 0;
+    for (let i = 0; i < world.chapters.length; i++) {
+      if (px >= world.chapters[i].startCol * TILE) ci = i; else break;
+    }
+    if (ci !== state.activeChapter) {
+      state.activeChapter = ci;
+      els.banner.textContent = chapterTitle(world.chapters[ci]);
+    }
+
+    // memory card follows proximity to unlocked memories
+    updateCard();
+    // collectables collected/returned purely by horizontal position
+    updateInventory();
+
+    // reach goal → finish
+    if (!state.finished && player.x + player.w >= world.goalX) finish();
+
+    // camera
+    const targetX = clamp(player.x + player.w / 2 - viewW * 0.42, 0, Math.max(0, world.cols * TILE - viewW));
+    camera.x = lerp(camera.x, targetX, 1 - Math.pow(0.0001, dt));
+    camera.y = WORLD_H - viewH; // align world bottom to screen bottom (calm, no vertical scroll)
+
+    updateTimeline();
+    // throttled autosave of progress + position
+    if (nowMs() - lastSave > 1500) { lastSave = nowMs(); saveProgress(); }
+  }
+
+  // ---------- atmosphere: day/night + weather + skyline (driven by slash-commands) ----------
+  // `atmos` is the live, smoothly-lerped scene state; each frame we read the target from
+  // world.events at the hero's position and ease toward it (instant when state.atmosSnap is set,
+  // e.g. on load / timeline scrub). Colours are RGB arrays so they can be interpolated.
+  const SKY = {
+    day:   { top: [124, 199, 255], mid: [189, 224, 254], bot: [230, 245, 239], dark: 0.0,  star: 0 },
+    dawn:  { top: [255, 154, 120], mid: [255, 214, 165], bot: [253, 233, 210], dark: 0.16, star: 0.15 },
+    dusk:  { top: [59, 58, 107],   mid: [201, 111, 134], bot: [246, 199, 155], dark: 0.42, star: 0.4 },
+    night: { top: [10, 18, 52],    mid: [26, 40, 92],    bot: [44, 56, 110],   dark: 0.82, star: 1 },
+  };
+  const atmos = {
+    dark: 0, star: 0, cloud: 0.25, rain: 0, snow: 0, wind: 0, city: 0,
+    top: SKY.day.top.slice(), mid: SKY.day.mid.slice(), bot: SKY.day.bot.slice(),
+  };
+  function lerpArr(a, b, k) { return [lerp(a[0], b[0], k), lerp(a[1], b[1], k), lerp(a[2], b[2], k)]; }
+  function rgb(a) { return 'rgb(' + (a[0] | 0) + ',' + (a[1] | 0) + ',' + (a[2] | 0) + ')'; }
+  function resolveAtmos(st) {
+    const s = SKY[st.sky] || SKY.day;
+    let cloud = st.clouds === 'overcast' ? 1 : st.clouds === 'cloudy' ? 0.6 : 0.25;
+    const rain = st.precip === 'rain' ? 1 : 0;
+    const snow = st.precip === 'snow' ? 1 : 0;
+    if (rain) cloud = Math.max(cloud, 0.95);
+    if (snow) cloud = Math.max(cloud, 0.7);
+    const wind = st.wind === 'on' ? 1 : 0;
+    const city = st.scene === 'city' ? 1 : 0;
+    const dark = Math.min(0.9, s.dark + (st.clouds === 'overcast' ? 0.12 : 0) + (rain ? 0.1 : 0));
+    return { top: s.top, mid: s.mid, bot: s.bot, dark, star: s.star, cloud, rain, snow, wind, city };
+  }
+  function updateAtmos() {
+    const px = player.x + player.w / 2;
+    const st = { sky: 'day', clouds: 'clear', precip: 'none', wind: 'off', scene: 'nature' };
+    const evs = world.events || [];
+    for (const ev of evs) { if (ev.x <= px) st[ev.channel] = ev.value; else break; }
+    const tg = resolveAtmos(st);
+    const k = state.atmosSnap ? 1 : 0.06;
+    state.atmosSnap = false;
+    atmos.dark = lerp(atmos.dark, tg.dark, k);
+    atmos.star = lerp(atmos.star, tg.star, k);
+    atmos.cloud = lerp(atmos.cloud, tg.cloud, k);
+    atmos.rain = lerp(atmos.rain, tg.rain, k);
+    atmos.snow = lerp(atmos.snow, tg.snow, k);
+    atmos.wind = lerp(atmos.wind, tg.wind, k);
+    atmos.city = lerp(atmos.city, tg.city, k);
+    atmos.top = lerpArr(atmos.top, tg.top, k);
+    atmos.mid = lerpArr(atmos.mid, tg.mid, k);
+    atmos.bot = lerpArr(atmos.bot, tg.bot, k);
+  }
+
+  // starfield (screen-space, faint parallax) — fades in as the sky darkens
+  const stars = [];
+  function ensureStars() { if (stars.length) return; for (let i = 0; i < 90; i++) stars.push({ x: hash(i * 1.3), y: hash(i * 2.7) * 0.5, r: 0.6 + hash(i * 3.1) * 1.5, tw: hash(i * 4.9) * 6.28 }); }
+  function drawStars() {
+    const a = clamp((atmos.dark - 0.28) / 0.6, 0, 1); if (a <= 0.01) return;
+    ctx.fillStyle = '#fdfdff';
+    const period = viewW;
+    for (const s of stars) {
+      const tw = 0.55 + 0.45 * Math.sin(nowMs() * 0.002 + s.tw * 7);
+      ctx.globalAlpha = a * tw;
+      let X = (s.x * viewW - camera.x * 0.04) % period; if (X < 0) X += period;
+      ctx.beginPath(); ctx.arc(X, s.y * viewH, s.r, 0, 6.3); ctx.fill();
+    }
+    ctx.globalAlpha = 1;
+  }
+  // sun by day, moon by night — fixed high on screen, behind the skyline/clouds
+  function drawCelestial() {
+    const cx = viewW * 0.8, cy = viewH * 0.18;
+    const sunA = clamp(1 - atmos.dark * 1.7, 0, 1);
+    if (sunA > 0.01) {
+      ctx.globalAlpha = sunA * 0.28; ctx.fillStyle = '#fff3b0'; ctx.beginPath(); ctx.arc(cx, cy, 46, 0, 6.3); ctx.fill();
+      ctx.globalAlpha = sunA; ctx.fillStyle = '#ffe680'; ctx.beginPath(); ctx.arc(cx, cy, 26, 0, 6.3); ctx.fill();
+    }
+    const moonA = clamp((atmos.dark - 0.34) / 0.5, 0, 1);
+    if (moonA > 0.01) {
+      ctx.globalAlpha = moonA * 0.3; ctx.fillStyle = '#dfe8ff'; ctx.beginPath(); ctx.arc(cx, cy, 38, 0, 6.3); ctx.fill();
+      ctx.globalAlpha = moonA; ctx.fillStyle = '#eef3ff'; ctx.beginPath(); ctx.arc(cx, cy, 21, 0, 6.3); ctx.fill();
+      ctx.fillStyle = rgb(atmos.top); ctx.beginPath(); ctx.arc(cx + 9, cy - 5, 19, 0, 6.3); ctx.fill();
+    }
+    ctx.globalAlpha = 1;
+  }
+  // parallax skyscraper skyline (far band, behind the hills) — windows light up at night
+  function drawSkyline() {
+    const amt = atmos.city; if (amt < 0.02) return;
+    const base = GROUND_ROW * TILE - camera.y + 10;
+    const p = 0.22, spacing = 58;
+    const startIdx = Math.floor((camera.x * p) / spacing) - 1;
+    const endIdx = startIdx + Math.ceil(viewW / spacing) + 3;
+    const lit = clamp((atmos.dark - 0.2) / 0.5, 0, 1);
+    for (let idx = startIdx; idx <= endIdx; idx++) {
+      const x = idx * spacing - camera.x * p;
+      const s1 = hash(idx * 2.17), s2 = hash(idx * 5.31);
+      const bw = 30 + Math.floor(s1 * 24);
+      const bh = 64 + Math.floor(s2 * 150);
+      const bx = x + (spacing - bw) / 2, by = base - bh;
+      const body = lerpArr([150, 165, 188], [38, 46, 74], clamp(atmos.dark, 0, 1));
+      ctx.globalAlpha = amt;
+      ctx.fillStyle = rgb(body); ctx.fillRect(bx, by, bw, bh);
+      ctx.fillStyle = rgb(lerpArr(body, [255, 255, 255], 0.12)); ctx.fillRect(bx, by, bw, 4);
+      const cols = Math.max(2, Math.floor(bw / 9)), rows = Math.floor(bh / 12);
+      for (let wr = 0; wr < rows; wr++) {
+        for (let wc = 0; wc < cols; wc++) {
+          const wx = bx + 4 + wc * 9, wy = by + 8 + wr * 12;
+          if (wx + 5 > bx + bw - 2) continue;
+          const on = hash(idx * 13.1 + wr * 3.7 + wc * 1.9) > 0.45;
+          if (lit > 0.05 && on) { ctx.globalAlpha = amt * (0.5 + 0.5 * lit); ctx.fillStyle = '#ffe9a8'; }
+          else { ctx.globalAlpha = amt * 0.5; ctx.fillStyle = lit > 0.5 ? '#2a3350' : '#cfe0f2'; }
+          ctx.fillRect(wx, wy, 5, 6);
+        }
+      }
+    }
+    ctx.globalAlpha = 1;
+  }
+  // rain / snow particle pools (screen-space; slanted/drifted by wind)
+  const rainDrops = [], snowFlakes = [];
+  function newDrop() { return { x: Math.random() * (viewW + 140) - 70, y: Math.random() * viewH, len: 11 + Math.random() * 11, sp: 11 + Math.random() * 8 }; }
+  function newFlake() { return { x: Math.random() * (viewW + 80) - 40, y: Math.random() * viewH, r: 1.5 + Math.random() * 2.5, sp: 1.1 + Math.random() * 1.6, dr: Math.random() * 6.28 }; }
+  function drawPrecip() {
+    const rt = Math.floor(atmos.rain * atmos.rain * 320);
+    while (rainDrops.length < rt) rainDrops.push(newDrop());
+    if (rainDrops.length) {
+      const slant = 0.28 + atmos.wind * 1.2;
+      ctx.strokeStyle = 'rgba(200,218,240,' + (0.3 + 0.45 * atmos.rain) + ')';
+      ctx.lineWidth = 1.4; ctx.beginPath();
+      for (let i = rainDrops.length - 1; i >= 0; i--) {
+        const d = rainDrops[i]; d.y += d.sp; d.x += d.sp * slant;
+        if (d.y > viewH + 12) {
+          if (rainDrops.length > rt) { rainDrops.splice(i, 1); continue; }
+          d.y = -14 - Math.random() * 40; d.x = Math.random() * (viewW + 140) - 70;
+        }
+        ctx.moveTo(d.x, d.y); ctx.lineTo(d.x - slant * d.len, d.y - d.len);
+      }
+      ctx.stroke();
+    }
+    const stk = Math.floor(atmos.snow * 200);
+    while (snowFlakes.length < stk) snowFlakes.push(newFlake());
+    if (snowFlakes.length) {
+      ctx.fillStyle = 'rgba(255,255,255,' + (0.55 + 0.35 * atmos.snow) + ')';
+      const drift = 0.6 + atmos.wind * 2.2;
+      for (let i = snowFlakes.length - 1; i >= 0; i--) {
+        const f = snowFlakes[i]; f.y += f.sp; f.dr += 0.03; f.x += Math.sin(f.dr) * drift;
+        if (f.y > viewH + 8) {
+          if (snowFlakes.length > stk) { snowFlakes.splice(i, 1); continue; }
+          f.y = -10 - Math.random() * 30; f.x = Math.random() * (viewW + 80) - 40;
+        }
+        ctx.beginPath(); ctx.arc(f.x, f.y, f.r, 0, 6.3); ctx.fill();
+      }
+    }
+  }
+  // faint wind streaks across the screen when it is windy but not raining
+  function drawWind() {
+    if (atmos.wind < 0.25 || atmos.rain > 0.3) return;
+    const n = Math.round(atmos.wind * 5);
+    ctx.strokeStyle = 'rgba(255,255,255,' + (0.1 * atmos.wind) + ')'; ctx.lineWidth = 2;
+    for (let i = 0; i < n; i++) {
+      const yy = (i * 71 % Math.max(1, viewH - 40)) + 20;
+      const phase = (nowMs() * 0.0007 + i * 0.37) % 1;
+      const xx = phase * (viewW + 220) - 110;
+      ctx.beginPath(); ctx.moveTo(xx, yy); ctx.quadraticCurveTo(xx + 46, yy - 7, xx + 92, yy); ctx.stroke();
+    }
+  }
+
+  // ---------- draw ----------
+  function draw() {
+    ensureClouds(); ensureStars();
+    updateAtmos();
+    // sky (day/night palette, smoothly lerped)
+    const g = ctx.createLinearGradient(0, 0, 0, viewH);
+    g.addColorStop(0, rgb(atmos.top)); g.addColorStop(0.55, rgb(atmos.mid)); g.addColorStop(1, rgb(atmos.bot));
+    ctx.fillStyle = g; ctx.fillRect(0, 0, viewW, viewH);
+
+    drawStars();
+    drawCelestial();
+    drawSkyline();
+    drawClouds();
+    drawHills();
+
+    const ox = -camera.x, oy = -camera.y;
+    const c0 = Math.max(0, Math.floor(camera.x / TILE) - 1);
+    const c1 = Math.min(world.cols - 1, Math.floor((camera.x + viewW) / TILE) + 1);
+
+    drawTrees(ox, oy, c0, c1);
+
+    // ground tiles (biome-tinted) — surface row gets a grass cap, fill rows are dirt
+    for (let c = c0; c <= c1; c++) {
+      const b = biomeAtCol(c);
+      for (let r = GROUND_ROW; r < WORLD_ROWS; r++) {
+        const v = world.tiles[r * world.cols + c];
+        if (!v) continue;
+        const x = c * TILE + ox, y = r * TILE + oy;
+        if (r === GROUND_ROW) {
+          ctx.fillStyle = b.dirt1; ctx.fillRect(x, y, TILE, TILE);
+          ctx.fillStyle = b.grassTop; ctx.fillRect(x, y, TILE, 9);
+          ctx.fillStyle = b.grassEdge; ctx.fillRect(x, y + 7, TILE, 3);
+        } else {
+          ctx.fillStyle = (r + c) % 2 ? b.dirt1 : b.dirt2; ctx.fillRect(x, y, TILE, TILE);
+          if (hash(r * 31 + c) > 0.84) { ctx.fillStyle = b.dirt2; ctx.fillRect(x + 6, y + 8, 5, 5); }
+        }
+      }
+    }
+    drawGroundDetail(ox, oy, c0, c1);
+    // platforms (value 2 may be above ground row)
+    for (let c = c0; c <= c1; c++) {
+      for (let r = 0; r < GROUND_ROW; r++) {
+        if (world.tiles[r * world.cols + c] === 2) {
+          const x = c * TILE + ox, y = r * TILE + oy;
+          ctx.fillStyle = '#caa472'; ctx.fillRect(x, y, TILE, TILE);
+          ctx.fillStyle = '#8c6239'; ctx.fillRect(x, y + TILE - 6, TILE, 6);
+          ctx.fillStyle = '#9bd96b'; ctx.fillRect(x, y, TILE, 5);
+        }
+      }
+    }
+
+    // goal flag
+    const gx = world.goalX + ox, gy = GROUND_ROW * TILE + oy;
+    if (gx > -60 && gx < viewW + 60) {
+      ctx.fillStyle = '#475569'; ctx.fillRect(gx, gy - TILE * 4, 5, TILE * 4);
+      ctx.fillStyle = '#ef4444'; ctx.beginPath(); ctx.moveTo(gx + 5, gy - TILE * 4); ctx.lineTo(gx + 5 + 34, gy - TILE * 4 + 12); ctx.lineTo(gx + 5, gy - TILE * 4 + 24); ctx.closePath(); ctx.fill();
+      ctx.font = '20px serif'; ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+      ctx.fillText('🏁', gx + 22, gy - 16);
+    }
+
+    // items
+    ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+    for (const it of world.items) {
+      const x = it.x + ox, y = it.y + oy;
+      if (x < -60 || x > viewW + 60) continue;
+      if (it.kind === 'monster') {
+        if (it.defeated) {
+          ctx.globalAlpha = 0.32; ctx.font = '26px serif'; ctx.fillText('💨', x + it.w / 2, y + it.h / 2); ctx.globalAlpha = 1;
+        } else {
+          // shadow + emoji body
+          ctx.fillStyle = 'rgba(0,0,0,.16)'; ctx.beginPath(); ctx.ellipse(x + it.w / 2, y + it.h - 2, it.w * 0.5, 5, 0, 0, 6.3); ctx.fill();
+          ctx.font = '30px serif'; ctx.fillText(it.emoji || '👾', x + it.w / 2, y + it.h / 2);
+          // hint arrow for un-unlocked monsters near the player
+          if (Math.abs((it.x) - player.x) < TILE * 4) { ctx.font = '14px serif'; ctx.fillText('▼', x + it.w / 2, y - 12); }
+        }
+      } else {
+        const bob = Math.sin(nowMs() / 400 + it.x) * 3;
+        if (it.unlocked) {
+          // collected memory → a soft glowing star (bumps up briefly when head-bumped)
+          const pop = it.bumpT ? Math.max(0, 1 - (nowMs() - it.bumpT) / 260) * -9 : 0;
+          const cx = x + it.w / 2, cy = y + it.h / 2 + bob + pop;
+          ctx.fillStyle = 'rgba(255,255,255,.45)'; ctx.beginPath(); ctx.arc(cx, cy, it.w * 0.5, 0, 6.3); ctx.fill();
+          drawStar(cx, cy, it.w * 0.44, '#fde047', '#ca8a04');
+        } else {
+          // golden block
+          ctx.fillStyle = it.kind === 'minor' ? '#a78bfa' : '#fbbf24';
+          roundRect(x, y + bob, it.w, it.h, 7); ctx.fill();
+          ctx.fillStyle = 'rgba(255,255,255,.5)'; roundRect(x + 3, y + 3 + bob, it.w - 6, 7, 4); ctx.fill();
+          ctx.font = '18px serif'; ctx.fillStyle = '#7c2d12';
+          ctx.fillText(it.kind === 'minor' ? '?' : '?', x + it.w / 2, y + it.h / 2 + bob + 1);
+        }
+      }
+    }
+
+    // collectable tokens floating in the scene (only those not yet collected)
+    ctx.textAlign = 'center'; ctx.textBaseline = 'middle'; ctx.font = '22px serif';
+    for (const def of world.collectables || []) {
+      for (const tk of def.tokens) {
+        // positive tokens wait in the scene until collected; negative tokens are the reverse —
+        // they appear in the scene only after the hero passes (returned from the inventory).
+        if (tk.value < 0 ? !tk.collected : tk.collected) continue;
+        const x = tk.x - camera.x;
+        if (x < -30 || x > viewW + 30) continue;
+        const y = tk.yBase - camera.y + Math.sin(nowMs() / 500 + tk.x) * 3;
+        ctx.fillStyle = 'rgba(255,255,255,.5)'; ctx.beginPath(); ctx.arc(x, y, 14, 0, 6.3); ctx.fill();
+        const icon = def.emoji || '⭐';
+        if (isImgIcon(icon)) { const im = iconImg(imgUrlOf(icon)); if (im.complete && im.naturalWidth) ctx.drawImage(im, x - 13, y - 13, 26, 26); else ctx.fillText('⭐', x, y); }
+        else ctx.fillText(icon, x, y);
+      }
+    }
+
+    drawPlayer(ox, oy);
+
+    // night darkening over the whole world (the sky already carries its own palette)
+    if (atmos.dark > 0.01) { ctx.fillStyle = 'rgba(10,16,40,' + (atmos.dark * 0.4) + ')'; ctx.fillRect(0, 0, viewW, viewH); }
+    // weather, drawn on top so it reads against the dimmed scene
+    drawPrecip();
+    drawWind();
+
+    // particles
+    for (const p of particles) {
+      ctx.globalAlpha = clamp(p.life * 2, 0, 1);
+      ctx.fillStyle = p.c; ctx.fillRect(p.x + ox - 3, p.y + oy - 3, 6, 6);
+    }
+    ctx.globalAlpha = 1;
+  }
+
+  function roundRect(x, y, w, h, r) {
+    ctx.beginPath();
+    ctx.moveTo(x + r, y); ctx.arcTo(x + w, y, x + w, y + h, r); ctx.arcTo(x + w, y + h, x, y + h, r);
+    ctx.arcTo(x, y + h, x, y, r); ctx.arcTo(x, y, x + w, y, r); ctx.closePath();
+  }
+  // five-point star used to mark a collected memory (replaces the plain ✅)
+  function drawStar(cx, cy, R, fill, stroke) {
+    const spikes = 5, inner = R * 0.45;
+    ctx.beginPath();
+    for (let i = 0; i < spikes * 2; i++) {
+      const ang = -Math.PI / 2 + i * Math.PI / spikes;
+      const rad = i % 2 === 0 ? R : inner;
+      const px = cx + Math.cos(ang) * rad, py = cy + Math.sin(ang) * rad;
+      if (i === 0) ctx.moveTo(px, py); else ctx.lineTo(px, py);
+    }
+    ctx.closePath();
+    ctx.fillStyle = fill; ctx.fill();
+    if (stroke) { ctx.lineWidth = 2; ctx.strokeStyle = stroke; ctx.stroke(); }
+    ctx.fillStyle = 'rgba(255,255,255,.7)'; ctx.beginPath(); ctx.arc(cx - R * 0.22, cy - R * 0.22, R * 0.16, 0, 6.3); ctx.fill();
+  }
+
+  // ---------- scenery: per-era biomes, parallax hills, clouds, trees ----------
+  // Each chapter (era) gets a distinct palette so the 20 years read as different places,
+  // in the spirit of haqi_adventure's biome variety.
+  const BIOMES = [
+    { grassTop: '#7ec850', grassEdge: '#5aa838', dirt1: '#a6743f', dirt2: '#8f6336', hillFar: '#a7dba8', hillNear: '#83c489', tree: '#4caf50', treeDark: '#2e7d32', flower: '#ff6b9d' },
+    { grassTop: '#67bf46', grassEdge: '#469a2f', dirt1: '#8a5a36', dirt2: '#754c30', hillFar: '#8fd0a0', hillNear: '#67b87f', tree: '#3a9d3a', treeDark: '#246b24', flower: '#ffd166' },
+    { grassTop: '#cba23c', grassEdge: '#a9862f', dirt1: '#9c6b3f', dirt2: '#855a34', hillFar: '#ddc079', hillNear: '#c6a455', tree: '#d4792b', treeDark: '#a85a1e', flower: '#ff8c42' },
+    { grassTop: '#3fc39a', grassEdge: '#2a9b78', dirt1: '#5d6b78', dirt2: '#4b5965', hillFar: '#9bd6cf', hillNear: '#71b9b2', tree: '#2bb0a6', treeDark: '#1e857d', flower: '#7df9ff' },
+    { grassTop: '#8b7ad6', grassEdge: '#6b5cc0', dirt1: '#6a5a7a', dirt2: '#574a68', hillFar: '#c3b5ec', hillNear: '#a08fdb', tree: '#9a7fd0', treeDark: '#6f57b0', flower: '#ffd1f0' },
+  ];
+  function chapterIndexAtCol(col) {
+    let idx = 0;
+    for (let i = 0; i < world.chapters.length; i++) { if (col >= world.chapters[i].startCol) idx = i; else break; }
+    return idx;
+  }
+  function biomeAtCol(c) { return BIOMES[chapterIndexAtCol(c) % BIOMES.length]; }
+  // cheap deterministic pseudo-random for decoration placement
+  function hash(n) { const s = Math.sin(n * 127.1) * 43758.5453; return s - Math.floor(s); }
+
+  const clouds = [];
+  // Clouds are spaced at a FIXED screen pixel gap (CLOUD_GAP), so their density is the same on any
+  // screen width — narrow phones no longer cram them together.
+  const CLOUD_GAP = 150;
+  function ensureClouds() { if (clouds.length) return; for (let i = 0; i < 120; i++) clouds.push({ x: i * CLOUD_GAP + (i * 71 % 70), y: 16 + (i * 57 % 160), s: 0.7 + (i * 29 % 60) / 100, vis: hash(i * 1.7) }); }
+  function drawClouds() {
+    const cover = atmos.cloud;
+    const show = clamp(0.22 + cover * 0.9, 0.2, 1);          // fraction of the cloud set drawn
+    const heavy = clamp((cover - 0.4) / 0.6, 0, 1);          // 0 = wispy, 1 = solid overcast
+    const period = clouds.length * CLOUD_GAP;
+    const speed = 0.004 * (1 + atmos.wind * 3);              // clouds rush when it is windy
+    const off = ((camera.x * 0.18 + nowMs() * speed) % period + period) % period;
+    let col = lerpArr([255, 255, 255], [150, 156, 170], heavy);
+    col = [col[0] * (1 - atmos.dark * 0.5), col[1] * (1 - atmos.dark * 0.5), col[2] * (1 - atmos.dark * 0.45)];
+    ctx.fillStyle = 'rgba(' + (col[0] | 0) + ',' + (col[1] | 0) + ',' + (col[2] | 0) + ',' + (0.7 + 0.22 * heavy) + ')';
+    for (const cl of clouds) {
+      if (cl.vis > show) continue;
+      let sx = (cl.x - off) % period; if (sx < 0) sx += period;
+      if (sx < -120 || sx > viewW + 120) continue;
+      const r = 14 * cl.s, y = cl.y;
+      ctx.beginPath();
+      ctx.arc(sx, y, r, 0, 6.3); ctx.arc(sx + r, y + 3, r * 0.8, 0, 6.3);
+      ctx.arc(sx - r, y + 4, r * 0.7, 0, 6.3); ctx.arc(sx + r * 0.3, y - r * 0.5, r * 0.7, 0, 6.3);
+      ctx.fill();
+    }
+  }
+  // Two parallax hill bands; each hill tinted by the biome under it.
+  function drawHills() {
+    const base = GROUND_ROW * TILE - camera.y;
+    const bands = [{ p: 0.35, dy: 8, rb: 70, ra: 60, alpha: 0.9 }, { p: 0.55, dy: 26, rb: 50, ra: 44, alpha: 1 }];
+    for (const band of bands) {
+      ctx.globalAlpha = band.alpha;
+      for (let i = -1; i < 60; i++) {
+        const wx = i * 230 + (i * 53 % 70);
+        const x = wx - camera.x * band.p;
+        if (x < -200 || x > viewW + 200) continue;
+        const worldCol = (camera.x * band.p + x) / TILE;
+        const b = biomeAtCol(clamp(Math.round(worldCol), 0, world.cols - 1));
+        ctx.fillStyle = band.p < 0.45 ? b.hillFar : b.hillNear;
+        const r = band.rb + (i * 37 % band.ra);
+        ctx.beginPath(); ctx.arc(x, base + band.dy, r, Math.PI, 0); ctx.fill();
+      }
+    }
+    ctx.globalAlpha = 1;
+  }
+  function drawTrees(ox, oy, c0, c1) {
+    const groundY = GROUND_ROW * TILE + oy;
+    for (let c = c0; c <= c1; c++) {
+      if (world.occupied && world.occupied.has(c)) continue;
+      if (hash(c * 1.37) <= 0.9) continue;
+      const seed = hash(c * 3.1);
+      const cx = c * TILE + ox + TILE / 2;
+      const b = biomeAtCol(c);
+      const hgt = 40 + Math.floor(seed * 30);
+      const fy = groundY - hgt, fr = 18 + seed * 10;
+      const sway = Math.sin(nowMs() * 0.0015 + c * 0.7) * atmos.wind * 5;   // crowns lean in the wind
+      // trunk runs up INTO the foliage (drawn next, covering the overlap) so there is no gap/crack
+      const trunkTop = fy + fr * 0.5;
+      ctx.fillStyle = '#6b4423'; ctx.fillRect(cx - 4, trunkTop, 8, groundY - trunkTop);
+      const fcx = cx + sway;
+      ctx.fillStyle = b.treeDark; ctx.beginPath(); ctx.arc(fcx, fy + 6, fr, 0, 6.3); ctx.fill();
+      ctx.fillStyle = b.tree;
+      ctx.beginPath();
+      ctx.arc(fcx - fr * 0.45, fy + 2, fr * 0.66, 0, 6.3);
+      ctx.arc(fcx + fr * 0.5, fy, fr * 0.66, 0, 6.3);
+      ctx.arc(fcx, fy - fr * 0.45, fr * 0.66, 0, 6.3);
+      ctx.fill();
+    }
+  }
+  // little grass blades + occasional flower along the surface row
+  function drawGroundDetail(ox, oy, c0, c1) {
+    const gy = GROUND_ROW * TILE + oy;
+    for (let c = c0; c <= c1; c++) {
+      const b = biomeAtCol(c), gx = c * TILE + ox;
+      ctx.strokeStyle = b.grassEdge; ctx.lineWidth = 2;
+      for (let k = 0; k < 3; k++) {
+        const hx = gx + 6 + k * 9 + hash(c * 9 + k) * 4;
+        const bh = 4 + hash(c * 5 + k) * 4;
+        ctx.beginPath(); ctx.moveTo(hx, gy); ctx.lineTo(hx + (hash(c + k) - 0.5) * 4, gy - bh); ctx.stroke();
+      }
+      if (hash(c * 7.7) > 0.82 && !(world.occupied && world.occupied.has(c))) {
+        const fx = gx + 10 + hash(c * 2.3) * 12;
+        ctx.fillStyle = b.flower; ctx.beginPath(); ctx.arc(fx, gy - 7, 3, 0, 6.3); ctx.fill();
+        ctx.fillStyle = '#fff'; ctx.fillRect(fx - 1, gy - 8, 2, 2);
+      }
+    }
+    ctx.lineWidth = 1;
+  }
+
+  // The protagonist: a pixel boy with glasses (lixizhi, the developer).
+  function drawPlayer(ox, oy) {
+    const x = player.x + ox, y = player.y + oy, w = player.w, h = player.h, dir = player.dir;
+    const walk = player.grounded && Math.abs(player.vx) > 4 ? Math.sin(player.anim) : 0;
+    // shadow
+    ctx.fillStyle = 'rgba(0,0,0,.14)';
+    ctx.beginPath(); ctx.ellipse(x + w / 2, y + h - 1, w * 0.55, 4, 0, 0, 6.3); ctx.fill();
+    // legs
+    ctx.fillStyle = '#374151';
+    ctx.fillRect(x + 3, y + h - 13 + walk * 2, 7, 13);
+    ctx.fillRect(x + w - 10, y + h - 13 - walk * 2, 7, 13);
+    // shoes
+    ctx.fillStyle = '#1f2937';
+    ctx.fillRect(x + 2, y + h - 3 + walk * 2, 9, 3);
+    ctx.fillRect(x + w - 11, y + h - 3 - walk * 2, 9, 3);
+    // body shirt + collar
+    ctx.fillStyle = '#2563eb'; ctx.fillRect(x + 1, y + 18, w - 2, h - 30);
+    ctx.fillStyle = '#1d4ed8'; ctx.fillRect(x + 1, y + 18, w - 2, 4);
+    // arms + hands
+    ctx.fillStyle = '#1e40af';
+    ctx.fillRect(x - 2, y + 20, 4, 13); ctx.fillRect(x + w - 2, y + 20, 4, 13);
+    ctx.fillStyle = '#f1c39b'; ctx.fillRect(x - 2, y + 32, 4, 4); ctx.fillRect(x + w - 2, y + 32, 4, 4);
+    // head
+    ctx.fillStyle = '#f4c8a0'; ctx.fillRect(x + 3, y + 2, w - 6, 17);
+    ctx.fillStyle = '#e9b48a'; ctx.fillRect(x + 2, y + 9, 2, 4); ctx.fillRect(x + w - 4, y + 9, 2, 4); // ears
+    // short boy hair with a side part
+    ctx.fillStyle = '#2b1d16';
+    ctx.fillRect(x + 2, y, w - 4, 7);
+    ctx.fillRect(x + 2, y, 4, 12);
+    ctx.fillRect(x + w - 6, y, 4, 10);
+    ctx.fillRect(x + 3, y + 6, w - 6, 2);
+    // glasses: two lenses + bridge
+    const ly = y + 10;
+    ctx.fillStyle = '#0f172a';
+    ctx.fillRect(x + 4, ly, 6, 6);
+    ctx.fillRect(x + 12, ly, 6, 6);
+    ctx.fillRect(x + 10, ly + 2, 2, 2);
+    ctx.fillStyle = '#d4ecff';
+    ctx.fillRect(x + 5, ly + 1, 4, 4);
+    ctx.fillRect(x + 13, ly + 1, 4, 4);
+    // pupils glance toward facing direction
+    ctx.fillStyle = '#0f172a';
+    const pdx = dir > 0 ? 2 : 0;
+    ctx.fillRect(x + 6 + pdx, ly + 2, 2, 2);
+    ctx.fillRect(x + 14 + pdx, ly + 2, 2, 2);
+  }
+
+  // ---------- loop ----------
+  let lastT = 0, raf = 0;
+  function loop(ts) {
+    raf = requestAnimationFrame(loop);
+    if (!lastT) lastT = ts;
+    let dt = (ts - lastT) / 1000; lastT = ts;
+    dt = Math.min(dt, 0.033);
+    // Keep updating after the goal too, so the hero can stroll back and forth and re-read the story.
+    // finish() only fires once (it's guarded), so reaching the end again won't replay the celebration.
+    if (state.started) update(dt);
+    draw();
+  }
+  requestAnimationFrame(loop);
+
+  // ---------- finish ----------
+  function finish() {
+    if (state.finished) return;
+    state.finished = true;
+    audio.sfx('finish');
+    const earned = state.unlocked * POINTS_PER + (state.unlocked >= world.total ? 50 : 0);
+    els.doneDesc.textContent = t('doneDesc', { n: state.unlocked, t: world.total });
+    els.done.hidden = false;
+    post('gameFinished', {
+      completed: true, earnedPoints: earned, unlocked: state.unlocked, total: world.total,
+      roundId: state.roundId, finishedAt: Date.now(),
+    });
+  }
+
+  // ---------- journal ----------
+  function openJournal() {
+    const body = els.journalBody;
+    body.innerHTML = '';
+    let any = false;
+    world.chapters.forEach((ch, ci) => {
+      const frags = world.items.filter(it => it.chapter === ci && it.unlocked);
+      if (!frags.length) return;
+      any = true;
+      const h = document.createElement('h2'); h.textContent = ch.title; body.appendChild(h);
+      frags.forEach(it => {
+        const d = document.createElement('div');
+        d.className = 'frag click' + (it.kind === 'monster' ? ' mon' : '');
+        d.textContent = (it.kind === 'monster' && it.emoji ? it.emoji + ' ' : '') + it.text;
+        const hint = document.createElement('span'); hint.className = 'ds-jumphint'; hint.textContent = t('replay');
+        d.appendChild(hint);
+        d.addEventListener('click', () => jumpToItem(it));
+        body.appendChild(d);
+      });
+    });
+    if (!any) { const d = document.createElement('div'); d.className = 'frag'; d.textContent = t('journalEmpty'); body.appendChild(d); }
+    els.journalOverlay.hidden = false;
+  }
+
+  // ---------- input wiring ----------
+  function onKey(e, down) {
+    const k = e.key;
+    if (k === 'ArrowLeft' || k === 'a' || k === 'A') { input.left = down; }
+    else if (k === 'ArrowRight' || k === 'd' || k === 'D') { input.right = down; }
+    else if (k === ' ' || k === 'ArrowUp' || k === 'w' || k === 'W') { if (down && !input.jumpHeld) input.jumpQueued = true; input.jumpHeld = down; e.preventDefault(); }
+  }
+  window.addEventListener('keydown', e => onKey(e, true));
+  window.addEventListener('keyup', e => onKey(e, false));
+
+  // joystick (drag anywhere on the shell that isn't UI): horizontal = move; each upward movement = a jump
+  const JOY_JUMP = 34; // px of upward movement that triggers one jump
+  function updateJoy(clientX, clientY) {
+    input.joyDX = clamp(clientX - input.joyStartX, -46, 46);
+    input.joyDY = clamp(clientY - input.joyStartY, -46, 46);
+    els.knob.style.setProperty('--kx', input.joyDX + 'px');
+    els.knob.style.setProperty('--ky', input.joyDY + 'px');
+    // Relative up-flick detection: every JOY_JUMP px of *upward* movement queues a jump and resets the
+    // anchor, so dragging up again (without releasing) jumps again. Moving down lowers the anchor.
+    if (clientY < input.jumpAnchorY - JOY_JUMP) {
+      input.jumpAnchorY = clientY;
+      input.jumpQueued = true;
+      els.joy.classList.add('up');
+    } else if (clientY > input.jumpAnchorY) {
+      input.jumpAnchorY = clientY;
+      els.joy.classList.remove('up');
+    }
+  }
+  shell.addEventListener('pointerdown', (e) => {
+    if (e.target.closest('button, .ds-pill, .ds-top, .ds-inv, .ds-chip, .ds-overlay, .ds-bottom')) return;
+    if (!state.started) return;
+    input.joyActive = true; input.joyId = e.pointerId;
+    input.joyStartX = e.clientX; input.joyStartY = e.clientY; input.joyDX = 0; input.joyDY = 0; input.jumpAnchorY = e.clientY;
+    els.joy.style.setProperty('--x', e.clientX + 'px');
+    els.joy.style.setProperty('--y', e.clientY + 'px');
+    els.joy.classList.add('show'); els.joy.classList.remove('up');
+    els.knob.style.setProperty('--kx', '0px'); els.knob.style.setProperty('--ky', '0px');
+    try { shell.setPointerCapture(e.pointerId); } catch (_) {}
+  });
+  shell.addEventListener('pointermove', (e) => { if (input.joyActive && e.pointerId === input.joyId) updateJoy(e.clientX, e.clientY); });
+  function endJoy(e) {
+    if (e.pointerId !== input.joyId) return;
+    input.joyActive = false; input.joyId = null; input.joyDX = 0; input.joyDY = 0;
+    els.joy.classList.remove('show', 'up');
+  }
+  shell.addEventListener('pointerup', endJoy);
+  shell.addEventListener('pointercancel', endJoy);
+
+  // timeline: drag the ruler left/right to scrub through time (and jump the protagonist there)
+  let tlDrag = false, tlStartX = 0, tlStartCol = 0;
+  els.timeline.addEventListener('pointerdown', (e) => {
+    if (!state.started) return;
+    tlDrag = true; tlStartX = e.clientX; tlStartCol = (player.x + player.w / 2) / TILE;
+    try { els.timeline.setPointerCapture(e.pointerId); } catch (_) {}
+    e.stopPropagation();
+  });
+  els.timeline.addEventListener('pointermove', (e) => {
+    if (!tlDrag) return;
+    const dCol = (tlStartX - e.clientX) / PX_PER_COL;   // drag left → move forward in time
+    jumpTo((tlStartCol + dCol) * TILE - player.w / 2);
+  });
+  els.timeline.addEventListener('pointerup', () => { if (tlDrag) { tlDrag = false; saveProgress(); } });
+  els.timeline.addEventListener('pointercancel', () => { tlDrag = false; });
+
+  // persist progress when the page is hidden / closed
+  window.addEventListener('pagehide', saveProgress);
+  window.addEventListener('visibilitychange', () => { if (document.hidden) { saveProgress(); music.stop(); } else if (state.started) music.start(); });
+
+  // journal + start + finish + close
+  root.querySelector('#dsCardClose').addEventListener('click', (e) => { e.stopPropagation(); if (state.cardItem) state.cardDismissed = state.cardItem; hideCard(); });
+  root.querySelector('#dsMusicBtn').addEventListener('click', () => { const on = music.toggle(); els.musicBtn.textContent = on ? '🎵' : '🔇'; });
+  root.querySelector('#dsJournalBtn').addEventListener('click', openJournal);
+  root.querySelector('#dsJournalClose').addEventListener('click', () => { els.journalOverlay.hidden = true; });
+  root.querySelector('#dsJournalRestart').addEventListener('click', () => {
+    if (!window.confirm(t('restartConfirm'))) return;
+    try { localStorage.removeItem(SAVE_KEY); } catch (_) {}
+    state.finished = false; state.activeChapter = -1; state.cardItem = null; state.cardDismissed = null;
+    hideCard();
+    els.done.hidden = true;
+    els.journalOverlay.hidden = true;
+    initWorld();   // no save → fresh start: memories relocked, inventory cleared, hero back at the beginning
+    els.banner.textContent = chapterTitle(world.chapters[0]);
+    audio.sfx('start');
+  });
+  root.querySelector('#dsFinishBtn').addEventListener('click', () => { els.done.hidden = true; });
+  // item description dialog: close via × or tapping the backdrop
+  root.querySelector('#dsItemClose').addEventListener('click', () => { els.itemOverlay.hidden = true; });
+  els.itemOverlay.addEventListener('click', (e) => { if (e.target === els.itemOverlay) els.itemOverlay.hidden = true; });
+  root.querySelector('#dsStartBtn').addEventListener('click', startGame);
+
+  function startGame() {
+    audio.sfx('start');
+    music.start();
+    els.start.hidden = true;
+    state.started = true;
+    post('gameStarted', { roundId: state.roundId });
+    setTimeout(() => els.hint.classList.add('fade'), 6000);
+  }
+
+  // ---------- ready ----------
+  function postLoaded() { if (!state.loadedPosted) { state.loadedPosted = true; post('gameLoaded', {}); } }
+  postLoaded();
+})();
+</script>
+
+</html>

@@ -525,6 +525,7 @@
 
   function startGame() {
     unlockAudio();
+    if (!state.player) resetRound(false); // world build was deferred; ensure it's ready
     if (!state.started) {
       state.started = true;
       window.parent.postMessage({ type: 'gameStarted' }, '*');
@@ -1528,9 +1529,15 @@
 
   makeButtons();
   resize();
-  resetRound(false);
-  requestPetImages();
-  draw(performance.now());
+  // Defer heavy world build (AI snakes, foods) + first canvas draw + pet image
+  // request until after the overlay (real initial screen) has painted. The
+  // overlay modal is already in the DOM and covers the canvas, so none of this
+  // is needed for the first frame.
+  requestAnimationFrame(() => requestAnimationFrame(() => {
+    resetRound(false);
+    requestPetImages();
+    draw(performance.now());
+  }));
   window.parent.postMessage({ type: 'gameLoaded' }, '*');
   state.loadedPosted = true;
 })();

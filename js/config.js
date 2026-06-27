@@ -107,6 +107,8 @@ export function resolveZoomLevelIndex(target, raw = {}, from = null) {
 
 export const CONFIG = {
     workspace: 'MagicHaqi',
+    // 发布小游戏到 Keepwork 作品广场（userWorks）时使用的 app 标识。
+    userWorksApp: 'MagicHaqi',
     assets: {
         cdnRoot: CDN_ROOT,
         bgSounds: {},

@@ -828,7 +828,9 @@
       }
     });
     window.addEventListener('beforeunload', () => { if (petObjectUrl) URL.revokeObjectURL(petObjectUrl); });
-    render(); requestPetImage(); post('gameLoaded');
+    // 棋盘 render() 在 intro 浮层背后，延后到首帧绘制之后执行(不可见，无闪烁)，缩短启动。
+    post('gameLoaded');
+    requestAnimationFrame(() => { render(); requestPetImage(); });
   </script>
 </body>
 
