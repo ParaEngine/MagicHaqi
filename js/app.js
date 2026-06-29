@@ -74,6 +74,10 @@ function importRuntimeModule(src) {
 
 async function ensureKeepworkSDK() {
     if (window.KeepworkSDK) return;
+    // 在 SDK 入口执行前预设默认实例参数：index.ts 会用它构造 window.keepwork，
+    // 使「自动创建的默认实例」也带 autoReloadAfterRedirectLogin:false，
+    // 避免微信回跳后被迫整页刷新（登录页闪现 → 刷新 → 登录后页面的双跳）。
+    window.KEEPWORK_DEFAULT_OPTIONS = { timeout: 30000, autoReloadAfterRedirectLogin: false };
     const host = window.location.hostname;
     const isLocalHost = host === '127.0.0.1' || host === 'localhost';
     const useLocalIndex = isLocalHost && !window.location.pathname.includes('/dist/');
@@ -123,6 +127,10 @@ function initSdk() {
         // autoReloadAfterRedirectLogin:false —— 微信整页授权回跳后不让 SDK 自动整页刷新，
         // 改由 bootstrap() await whenRedirectLoginSettled() 协调登录态并就地路由，避免双跳。
         sdk = window.keepwork || new window.KeepworkSDK({ timeout: 30000, autoReloadAfterRedirectLogin: false });
+        // 兜底：若 window.keepwork 由旧版 SDK（不认 KEEPWORK_DEFAULT_OPTIONS，如过期 CDN 包）
+        // 用默认参数预创建，其 autoReloadAfterRedirectLogin 仍为 true。这里强制关掉——
+        // codeToProbe 是网络请求，本行同步代码必在其 resolve 前执行，能赶在 reload 判断前生效。
+        if (sdk) sdk._autoReloadAfterRedirectLogin = false;
         // 设置 maisi 项目 API Key
         if (sdk.setUserApiKey && window.KeepworkSDK?.API_KEYS?.maisi) {
             sdk.setUserApiKey(window.KeepworkSDK.API_KEYS.maisi);
@@ -1758,6 +1766,19 @@ function handleLogout() {
     sdk.token = null;
     state.user = null;
     state.offlineMode = false;
+    // 清掉地址栏可能残留的第三方登录回跳参数（微信 / Google 的一次性 code 等）。
+    // 否则重新登录时，SDK 会把这个已失效的 code 再次拿去探测，被后端拒绝后
+    // 误报「微信未绑定账号，请先完成注册」。退出不刷新页面，故只需就地清掉 URL。
+    try {
+        const url = new URL(window.location.href);
+        let changed = false;
+        ['code', 'state', 'wxauth', 'googleauth', 'scope', 'authuser', 'prompt', 'error'].forEach((k) => {
+            if (url.searchParams.has(k)) { url.searchParams.delete(k); changed = true; }
+        });
+        if (changed && window.history?.replaceState) {
+            window.history.replaceState({}, '', `${url.pathname}${url.search}${url.hash}`);
+        }
+    } catch (_) {}
     persistPlanetPlaytimeNow();
     stopTickLoop();
     stopPlanetPlaytimePersistence();
