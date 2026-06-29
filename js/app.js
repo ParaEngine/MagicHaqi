@@ -120,7 +120,9 @@ function initSdk() {
     sdkReadyPromise = (async () => {
         await ensureKeepworkSDK();
         if (!window.KeepworkSDK) throw new Error('KeepworkSDK 未定义');
-        sdk = window.keepwork || new window.KeepworkSDK({ timeout: 30000 });
+        // autoReloadAfterRedirectLogin:false —— 微信整页授权回跳后不让 SDK 自动整页刷新，
+        // 改由 bootstrap() await whenRedirectLoginSettled() 协调登录态并就地路由，避免双跳。
+        sdk = window.keepwork || new window.KeepworkSDK({ timeout: 30000, autoReloadAfterRedirectLogin: false });
         // 设置 maisi 项目 API Key
         if (sdk.setUserApiKey && window.KeepworkSDK?.API_KEYS?.maisi) {
             sdk.setUserApiKey(window.KeepworkSDK.API_KEYS.maisi);
@@ -1128,6 +1130,11 @@ async function bootstrap() {
         const tok = url.searchParams.get('token');
         if (tok) sdk.token = tok;
     } catch (_) {}
+
+    // 微信内置浏览器整页授权回跳（?code=...&wxauth=1）：先等 SDK 兜底登录结算，
+    // 再决定首屏视图。期间维持 Loading 闪屏，避免「登录页闪现 → 整页刷新 → 登录后页面」
+    // 的双跳。无回跳时立即 resolve(false)，正常启动无额外开销。
+    try { await sdk.whenRedirectLoginSettled?.(); } catch (_) {}
 
     // 已有 token 则尝试拉取用户。若 token 失效或取不到用户，仍视为未登录。
     if (sdk.token) {
