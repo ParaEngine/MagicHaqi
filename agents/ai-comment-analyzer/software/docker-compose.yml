@@ -1,0 +1,18 @@
+services:
+  socialecho-lite:
+    build: .
+    container_name: socialecho-lite
+    ports:
+      - "8501:8501"
+    environment:
+      - TWITTER_BEARER_TOKEN=${TWITTER_BEARER_TOKEN}
+      - POST_ID=${POST_ID}
+      - OPENAI_API_KEY=${OPENAI_API_KEY}
+      - OPENAI_BASE_URL=${OPENAI_BASE_URL:-https://api.openai.com/v1}
+      - OPENAI_MODEL=${OPENAI_MODEL:-gpt-3.5-turbo}
+      - DB_PATH=/app/data/socialecho.db
+      - REPORT_DIR=/app/reports
+    volumes:
+      - ./data:/app/data
+      - ./reports:/app/reports
+    restart: unless-stopped
