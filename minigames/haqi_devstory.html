@@ -11,32 +11,11 @@
 <body></body>
 
 <!-- ============================================================= -->
-<!-- 1) game_config — declarative gameplay config (data only).      -->
-<!--    The whole level is BUILT FROM `storyMarkdown`.              -->
-<!--    Markdown rules (edit freely):                               -->
-<!--      #  章节横幅（显示在屏幕顶部）                              -->
-<!--      -  普通条目 → 容易触碰的「问号」，触碰即解锁这句剧情      -->
-<!--      ## 子标题，其下的 - 条目较难 → 放在需要跳跃的高台上       -->
-<!--      以表情符号开头的条目 → 怪物/首领，踩头击败后才显示后面的话 -->
-<!--      +  收集物命令，格式：+ <表情> <名称> x <数量>             -->
-<!--         例如：+ 👨‍💻 员工 x 10 / + 💍 妻子 x 1 / + 💰 融资 x 500 -->
-<!--         它们沿路漂浮，走过自动收集进顶部背包，往回走会放回场景。-->
-<!--         数量可为负数（如 x -60）：表示该物品从背包流回场景（反向）。 -->
-<!--         背包按「名称」聚合（忽略表情）：同名不同表情会替换图标，      -->
-<!--         如 👶 女儿 → 👧 女儿；将来表情位还可写图片 ![](图片URL) 女儿。 -->
-<!--  itemMarkdown — 物品名称 → 介绍（支持基础 markdown：图片/加粗/链接/列表）。-->
-<!--      用 `# 名称` 分段，点击背包里的物品会弹出可滚动的介绍弹窗。       -->
-<!--      /  气氛命令（slash command）：单独成行，用于烘托背景气氛。   -->
-<!--         在剧本中插入一行，从该位置开始生效，直到遇到下一个同类命令。-->
-<!--         可写在任意位置（也可写成「- /night」）；一行可写多个，     -->
-<!--         如「/night rain wind」。支持中英文：                       -->
-<!--         · 昼夜：/dawn 黎明 /day 白天 /dusk 黄昏 /night 夜晚         -->
-<!--         · 云量：/clear 晴 /cloudy 多云 /overcast 阴               -->
-<!--         · 降水：/rain 下雨 /snow 下雪 /storm 暴风雨               -->
-<!--         · 风：  /wind 刮风 /calm 无风                             -->
-<!--         · 背景：/city 高楼大厦 /nature 自然乡村                   -->
-<!--         命令之间互相叠加（只改自己那一项）：先 /night 再 /rain     -->
-<!--         即「雨夜」。/clear 会把云/雨/风重置为晴朗。               -->
+<!-- 1) game_config — declarative gameplay config (data only).       -->
+<!--    The whole level is BUILT FROM `storyMarkdown` (+ `itemMarkdown`).-->
+<!--    ⚠ 格式规则只有一个事实来源：脚本里的 `STORY_RULES` 常量。       -->
+<!--      它同时用于：① 喂给 AI 生成故事；② 创作窗口「查看规则」按钮展示。 -->
+<!--      不要在此重复格式说明，改规则请改 STORY_RULES（搜索该词）。      -->
 <!-- ============================================================= -->
 <script>
 game_config = {
@@ -47,210 +26,224 @@ game_config = {
   // The default 20-year story of MagicHaqi (ParaEngine → Paracraft → KeepWork → 魔法哈奇).
   // 这是默认占位文本，可由 lixizhi 自由编辑修正（日期/事件均为示意）。
   storyMarkdown: `
-本故事为默认文本，可自由编辑。规则见文件顶部注释。
+本故事为默认文本，可自由编辑。格式规则见创作窗口「查看规则」（即脚本中的 STORY_RULES）。
 
 # 2004–2009：游戏引擎的诞生
-/day
-/clear
+- /day
+- /clear
 - 2004年，lixizhi还在浙大读书，他一个人从零开始写一个分布式 3D 游戏引擎ParaEngine
-- 他创造了 NPL（神经元并行语言），并它驱动整个3D引擎
+- 他创造了 NPL（神经元并行计算机语言），并用它驱动整个3D引擎
+- + 📑 论文 x 8
 - NPL 最初是为了写一个基于「相似原理」的人脑仿真程序
+  - /night
+  - /wind
+  - 第一次让一个方块在屏幕上转起来的那个凌晨，世界第一次因他的代码而动
+  - 让「每个文件都是一个神经元」：数据像神经信号一样单向流动，没有回调与锁
+  - 一根线程，模拟上万条虚拟并行的「神经」，他想让代码长得像大脑
+  - 👾 兼容性怪兽：在各种显卡驱动里反复崩溃的渲染管线，是他最早也最难缠的对手
 - 同一年写完 700 页的《ParaEngine Reference Book》，并发表了 8 篇国际论文
-+ 📑 论文 x 8
-## 那些深夜的细节
-/night
-/wind
-- 第一次让一个方块在屏幕上转起来的那个凌晨，世界第一次因他的代码而动
-- 让「每个文件都是一个神经元」：数据像神经信号一样单向流动，没有回调与锁
-- 一根线程，模拟上万条虚拟并行的「神经」，他想让代码长得像大脑
-- 👾 兼容性怪兽：在各种显卡驱动里反复崩溃的渲染管线，是他最早也最难缠的对手
-## 把引擎变成公司
-/day
-/city
+- /day
+- /city
 - 2005 年从浙大毕业，转身在深圳成立 ParaEngine 工作室：做一个能商用的国产 3D 引擎
-+ 👥 队友 x 10
+- + 👥 队友 x 10
 - 2006 年做出 KidsMovieCreator，让 7–12 岁孩子也能上手创作，拿它去敲 IDG VC的门
 - 2007 年拿到 IDG 投资，成立ParaEngine公司，他成了 CEO，并做出3D UGC 社区ParaWorld
-+ 👥 队友 x 20
+- + 👥 队友 x 20
+- /night
+- /storm
 - 🐲 金融海啸：2008 年金融危机砸下，ParaWorld 在 Alpha 阶段被迫叫停，第一个梦碎在上线前夜
-# 2009–2012：哈奇小镇上线，魔法哈奇诞生
-/day
-/clear
-/city
-- 2009 年 11 月 20 日，《哈奇小镇》正式上线，公司第一款商业产品，用 NPL 一行行写出
-- 国内首个 3D 儿童网上乐园：每个孩子有自己的形象、自己的一块地
-- 孩子们骑着抱抱龙，在奇幻世界里收集魔法卡牌、对抗暗黑势力
-- 2010–2011 年更名为《魔法哈奇》，由上海淘米网络独家授权代理运营
-- 巅峰时 500 万注册用户、数千万营收：中国人自己写的引擎，能养活自己
-+ 🐲 抱抱龙 x 1
-+ 🃏 魔法卡牌 x 12
-## 上线那一夜
-/night
-- 第一批小创作者涌进服务器，做出让大人惊讶的作品，他们不是玩家，是创造者
-- 把单机逻辑改成「上万人同时在线而不崩溃」，每次扩容都是一次心跳过速
-- 抱抱龙这只小龙，从此刻进公司的基因，十六年后它还会回来
-- 👹 并发首领：第一次大规模用户涌入的那个夜晚，是上线之战里最硬的一仗
-## 看不见的代价
-/dusk
-- 这是「授权运营」而非「联合开发」，引擎和核心 IP 始终留在他自己手里
-- 把命脉交给别人运营，意味着看着自己的孩子长大，却不能完全替它做主
+- + 👥 队友 x -10
+- 公司转型和上海淘米公司合作开发一款儿童 3D 社区
 
-# 2012–2015：Paracraft 与创造的乐园
-/day
-/clear
-/nature
+# 2009–2012：哈奇小镇上线，魔法哈奇诞生
+- /day
+- /clear
+- /city
+- 2009 年 11 月 20 日，《哈奇小镇》正式上线，公司第一款商业产品，用 NPL 一行行写出
+- /night
+  - 第一批小创作者涌进服务器，做出让大人惊讶的作品，他们不是玩家，是创造者
+  - 把单机逻辑改成「上万人同时在线而不崩溃」，每次扩容都是一次心跳过速
+  - 👹 并发首领：第一次大规模用户涌入的那个夜晚，是上线之战里最硬的一仗
+- /day
+- /clear
+- 孩子们骑着抱抱龙，在小镇中自由玩耍，创造属于自己的3D家园。
+- + 🐲 抱抱龙 x 1
+  - 抱抱龙这只小龙，从此刻进公司的基因，十六年后它还会回来
+- 2010–2011 年更名为《魔法哈奇》，孩子们用魔法卡牌、对抗暗黑势力
+- + 🃏 魔法卡牌 x 12
+- 巅峰时 500 万注册用户、数千万营收：中国人自己写的引擎，能养活自己
+  - /dusk
+  - 2011 年 iPhone 发布，移动互联网时代来临，孩子们的世界从电脑搬到手机
+     - 他升级了3D引擎， 让魔法哈奇也能在网页和手机上运行，但是他没有发布手机产品
+     - 因为他坚持让孩子们使用PC作为主要创造工具
+  
+# 2012–2015：Paracraft与创造的乐园
+- /day
+- /clear
+- /nature
 - 2012 年 1 月他结婚了，从此深夜写代码的人，身后多了一盏一直为他亮着的灯
+- + 💍 婚戒 x 1
 - 2012 年 Paracraft（帕拉卡）诞生，最初就发布在《魔法哈奇》的 3D 社区里
 - 让孩子用一个个方块搭出 3D 世界、动画和电影，「电影方块」是它的灵魂
-- 图形积木和文本代码一键互换，低地板、高天花板：7 岁能上手，长大能写百万行代码
-+ 💍 婚戒 x 1
-+ 🧱 电影方块 x 20
-## 坚持的理由
-/overcast
-- 没人看好「孩子也能做 3D 电影」时，他仍每天写下一行代码
-- 把教育和创造写进引擎底层，不是做一个游戏，而是做一支「会思考的笔」
-- 他始终坚持不去申请游戏版号，甘愿留在教育这条更窄、更长的路上
-- 🐉 资金巨龙：一次次在「公司还能撑多久」的清晨醒来，是从未真正离开的那条龙
-+ 👥 队友 x -20
+  - 图形积木和文本代码一键互换，低地板、高天花板：7 岁能上手，长大能写百万行代码
+- + 🧱 电影方块 x 20
+  - /overcast
+  - 把教育和创造写进引擎底层，不是做一个游戏，而是做一支「会思考的笔」
+    - 用户在视频网站上发布了数十万个属于自己的视频作品
+    - 上百万的孩子创造了属于自己的3D世界
+    - 魔法哈奇百度贴吧超过200万发帖
+- /storm    
+- 手游逐渐崛起，PC 端的《魔法哈奇》用户流失严重
+  - + 👥 队友 x -20
+  - 但他始终坚持不做手游，甘愿留在教育这条更窄、更长的路上
+  - 🐉 资金巨龙：一次次在「公司还能撑多久」的清晨醒来，是从未真正离开的那条龙
+
 # 2015–2019：大富网络、KeepWork 与平台之路
-/day
-/cloudy
-/city
+- /day
+- /clear
+- /cloudy
+- /city
 - 2015 年 ParaEngine 并入上市公司体系，更名大富网络，并开源了 200 万行 NPL 代码
+- + 🌐 开源·万行 x 200
 - KeepWork 平台长出来：从一个引擎，长成一个社区，老师和学生在同一个世界相遇
 - 学生每件作品都用 Git 云端版本管理，一个孩子的成长第一次被代码完整记录
 - 2016 年 8 月女儿出生，为千万孩子建世界的人，终于有了想用尽全力为她造世界的孩子
-+ 👶 女儿 x 1
-+ 🌐 开源·万行 x 200
-## 看不见的工程
-/overcast
-- 把单机的世界搬上云端，让作品「在任何一台电脑上登录都还在」
-+ 👥 队友 x 30
-- 2018 年在深圳文博会，把 Paracraft 讲给非洲 10 国的教育代表听
-- 2019 年用它做的《汉字故事》动画在 16 省 IPTV 播出，播放量过千万
-- 👹 流量首领：把一个单机引擎，扛成一个要面对真实世界的在线平台
+- + 👶 女儿 x 1
+  - /overcast
+  - 把单机的世界搬上云端，让作品「在任何一台电脑上登录都还在」
+  - + 👥 队友 x 30
+  - 2018 年在深圳文博会，把 Paracraft 讲给非洲 10 国的教育代表听
+  - 2019 年用它做的《汉字故事》动画在 16 省 IPTV 播出，播放量过千万
+  - 👹 流量首领：把一个单机引擎，扛成一个要面对真实世界的在线平台
 
 # 2019–2022：进入校园、疫情与双减寒冬
-/overcast
-/snow
-/dusk
+- /overcast
+- /snow
+- /dusk
 - 2019 年底刚把 Paracraft 推进河南淅川 50 多所学校，就一头撞上了疫情
 - 2020 年浙大藕舫基金 500 万天使轮，把 Paracraft 拆出来独立成军
-+ 👥 队友 x 30
+- + 👥 队友 x 30
 - 同年 C 端《玩学世界》上线三个月做到 60 万月活，一次平均玩 45 分钟
-- 2021 年做出 AI 双师平台和 L1–L7 课程，和浙大、北理工对齐国家课标
-+ 📚 课时 x 96
-+ 📉 月活·万 x 60
-## 寒冬里的人
-/snow
-/wind
-- 把课程送进招不到信息课老师的地方，让 AI 老师在客户端里一步步演示
-- 2021 年 7 月「双减」落地，整个教培行业入冬，60 万月活的《玩学世界》被迫停运
-- 他早就预判到政策风险，可预判到风暴，不等于淋不到雨
-- ⚔️ 寒冬之王：政策、疫情、资本退潮三股寒流同时压下，靠的是不肯熄火的那口气
+- 2021 年做出 AI 双师平台和 L1–L7 课程，Paracraft写入《教育部国家信息科技新课标》指南。
+- + 📚 课时 x 96
+- + 📉 月活·万 x 60
+  - /snow
+  - /wind
+  - 把课程送进招不到信息课老师的地方，让 AI 老师在客户端里一步步演示
+  - 2021 年 7 月「双减」落地，整个教培行业入冬，60 万月活的《玩学世界》被迫停运
+  - ⚔️ 寒冬之王：政策、疫情、资本退潮三股寒流同时压下，靠的是不肯熄火的那口气
 
 # 2022–2025：进入人工智能时代
-/day
-/clear
-/city
+- /day
+- /clear
+- /city
 - 当大语言模型的浪潮拍下，二十年的老引擎遇见了新魔法
 - 2023 年和金山 WPS 一起做「可计算文档」国家标准，做下一代数字教材的底座
 - 提出「世界模型 + 大语言模型」：Paracraft 模拟自然世界，LLM 处理非自然世界
 - 2024 年进驻上万所学校，沉淀 300 万件可溯源的学生作品
 - 2024年获得深圳市教育成果奖一等奖
-+ 🏆 一等奖 x 1
+- + 🏆 一等奖 x 1
 
 # 2025–2026：转型AI研究院
-/dusk
+- /dusk
 - 投资方遇到资金问题，他带领团队转型AI研究院
-+ 👥 队友 x -60
-+ 🤖 AI 模型 x 6
+- + 👥 队友 x -60
+- + 🤖 AI 模型 x 6
 - 他从 CEO 退到 CTO和工作室，继续写代码，继续做研究
-
-## 那只小龙回来了
-/day
-- 2025 年麦思星球上线，把养成、创造与 AI 装进一颗小星球
-- 麦思星球的 AI 伙伴叫抱抱龙，正是 2009 年孩子们骑的那只小龙，十六年后会说话了
-- 一句话、一张照片，就能生成一个 3D 世界、一个场景、一群角色（AI 氛围编程）
-- 2025 年 7 月 12 日那场直播百万人观看，麦思登上抖音教育培训类当天第一
-- 🤖 算法之灵：让 AI 听懂孩子天马行空的奇思妙想
-
-## 哈奇的回归
-- 收到来自哈奇老用户的来信，希望能重启魔法哈奇。
+- /day
+- 2025 年《麦思星球》上线，把养成、创造与 AI 装进一颗小星球
+- 麦思星球的AI伙伴叫抱抱龙，正是 2009 年孩子们骑的那只小龙，十六年后会说话了
+  - 一句话、一张照片，就能生成一个 3D 世界、一个场景、一群角色（AI 氛围编程）
+  - 2025 年 7 月 12 日那场直播百万人观看，麦思登上抖音教育培训类当天第一
+  - 🤖 算法之灵：让 AI 听懂孩子天马行空的奇思妙想
+- 有一天，他收到来自哈奇老用户的来信，希望能重启魔法哈奇。
 - 那个 2016 年出生的小女孩，如今刚好长到能骑上抱抱龙的年纪
-- 当年授权出去的「哈奇」，也以 H5 新版 MagicHaqi 的身份，被AI复活
+- + 👧 女儿 x 0
+- 当年的「哈奇小镇」，也以 H5 新版 的身份，被AI复活
 
 # 2026–未来：二十年，仍是少年
-/dawn
-/clear
-/nature
+- /dawn
+- /clear
+- /nature
 - 一个不到7人的公司，也能照顾好一颗星球
 - 工具会变，引擎会换代，但「团结全世界的资源和力量，共同创造属于每个人的3D世界」二十年从未改变
 - 谢谢每一个走到这里的你，故事，还在继续
-+ 🌟 心愿 x 3
-+ 🚀 新星球 x 3
-## 写给下一个十年
+- + 🌟 心愿 x 3
+- + 🚀 新星球 x 3
 - 把舞台留给更年轻的创作者，让他们也有一个凌晨，看着自己写的方块第一次转起来
 - 让更多孩子创造属于自己的世界
 - 二十年前那句话依然作数：教育，就是让人保持一直有事可做（keep work）
-- 🏆 2026年6月发布了哈奇微信小程序，并在taptap发布了手机重制版。
+- 🏆 2026年6月发布了哈奇微信小程序，并在taptap发布了《魔法哈奇》手机怀旧版(免费)
 `,
-  // itemMarkdown — 收集物的介绍。每个 `# 名称` 一段，名称需与剧本里 + 命令的物品名一致。
-  // 点击顶部背包里的物品会弹出可滚动的介绍弹窗，正文支持基础 markdown（图片/加粗/链接/列表）。
+  // itemMarkdown — 收集物的介绍（格式规则见脚本中的 STORY_RULES 常量 / 创作窗口「查看规则」）。
   itemMarkdown: `
 # 论文
+![](https://cdn.keepwork.com/artassets/my_project/memory_atlas_4x4_20260627033535.webp#0_0_256_256)
 2004–2009 年，从浙大读书到独自写引擎的日子里写下的研究论文与技术笔记。
 **「让每个文件都是一个神经元」**——一根线程模拟上万条虚拟并行的神经，是 ParaEngine 最初的理论底稿。
 
 # 队友
+![](https://cdn.keepwork.com/artassets/my_project/memory_atlas_4x4_20260627033535.webp#256_0_256_256)
 和你一起创造 3D 世界的伙伴。从深圳的 ParaEngine 工作室，到不到 7 人的 AI 研究院，人数起起落落，但**「团结全世界的资源和力量，共同创造属于每个人的 3D 世界」**始终没变。
 
 # 抱抱龙
+![](https://cdn.keepwork.com/artassets/my_project/memory_atlas_4x4_20260627033535.webp#512_0_256_256)
 2009 年《哈奇小镇》里孩子们骑的那只小龙，从此刻进公司的基因。
 十六年后它会说话了——成为麦思星球的 AI 伙伴。
 
 # 魔法卡牌
+![](https://cdn.keepwork.com/artassets/my_project/memory_atlas_4x4_20260627033535.webp#768_0_256_256)
 《魔法哈奇》里孩子们在奇幻世界中收集的魔法卡牌，骑着抱抱龙一起对抗暗黑势力。
 巅峰时 **500 万注册用户**，这是中国人自己写的引擎养活自己的证明。
 
 # 婚戒
+![](https://cdn.keepwork.com/artassets/my_project/memory_atlas_4x4_20260627033535.webp#0_256_256_256)
 2012 年 1 月，他结婚了。
 从此深夜写代码的人，身后多了一盏**一直为他亮着的灯**。
 
 # 电影方块
+![](https://cdn.keepwork.com/artassets/my_project/memory_atlas_4x4_20260627033535.webp#512_768_256_256)
 Paracraft（帕拉卡）的灵魂：用一个个方块搭出 3D 世界、动画和电影。
 图形积木和文本代码一键互换——**低地板、高天花板**，7 岁能上手，长大能写百万行代码。
 
 # 女儿
+![](https://cdn.keepwork.com/artassets/my_project/memory_atlas_4x4_20260627033535.webp#512_256_256_256)
 2016 年 8 月出生的小女孩。
 **为千万孩子建世界的人**，终于有了一个想用尽全力为她造世界的孩子。那个 2016 年出生的女孩，如今刚好长到能骑上抱抱龙的年纪。
 
 # 开源·万行
+![](https://cdn.keepwork.com/artassets/my_project/memory_atlas_4x4_20260627033535.webp#768_256_256_256)
 2015 年 ParaEngine 并入大富网络，开源了 **200 万行 NPL 代码**：从一个引擎，长成一个社区，老师和学生在同一个世界相遇。
 - https://github.com/LiXizhi/NPLRuntime
 
 # 课时
+![](https://cdn.keepwork.com/artassets/my_project/memory_atlas_4x4_20260627033535.webp#0_512_256_256)
 2021 年做出的 AI 双师平台与 **L1–L7 课程**，和浙大、北理工对齐国家课标。
 把课程送进招不到信息课老师的地方，让 AI 老师在客户端里一步步演示。
 
 # 月活·万
+![](https://cdn.keepwork.com/artassets/my_project/memory_atlas_4x4_20260627033535.webp#256_256_256_256)
 C 端《玩学世界》上线三个月做到 **60 万月活**，一次平均玩 45 分钟。
 却在 2021 年 7 月「双减」落地后被迫停运——预判到风暴，不等于淋不到雨。
 
 # 一等奖
+![](https://cdn.keepwork.com/artassets/my_project/memory_atlas_4x4_20260627033535.webp#512_512_256_256)
 2024 年荣获**深圳市教育成果奖一等奖** 🏆。
 二十年坚持不申请游戏版号，甘愿留在教育这条更窄、更长的路上，终于被看见。
 
 # AI 模型
+![](https://cdn.keepwork.com/artassets/my_project/memory_atlas_4x4_20260627033535.webp#768_512_256_256)
 2025 年带领团队转型 AI 研究院后训练的模型。
 提出**「世界模型 + 大语言模型」**：Paracraft 模拟自然世界，LLM 处理非自然世界，让 AI 听懂孩子天马行空的奇思妙想。
 
 # 心愿
+![](https://cdn.keepwork.com/artassets/my_project/memory_atlas_4x4_20260627033535.webp#0_768_256_256)
 写给下一个十年的心愿：
 - 把舞台留给更年轻的创作者，让他们也有一个凌晨，看着自己写的方块第一次转起来
 - 让更多孩子创造属于自己的世界
 
 # 新星球
+![](https://cdn.keepwork.com/artassets/my_project/memory_atlas_4x4_20260627033535.webp#256_768_256_256)
 2025 年麦思星球上线，把养成、创造与 AI 装进一颗小星球。
 一句话、一张照片，就能生成一个 3D 世界、一个场景、一群角色——**AI 氛围编程**。这样的小星球，未来还会有更多。
 `
@@ -276,7 +269,7 @@ art_assets = [];
       intro2: '触碰 ❓ 解锁一段回忆；踩怪物的头，击败它，露出它背后的故事。',
       intro3: '高台上的回忆需要跳一下才能够到。慢慢走，慢慢读。',
       start: '开始旅程',
-      hint: '方向键 / 拖动移动 · 空格 / 上滑跳跃 · 踩怪物头解锁回忆',
+      hint: '拖动/方向键移动或跳跃，踩怪物头解锁回忆',
       jump: '跳跃',
       journal: '回忆录',
       progress: '已解锁',
@@ -292,6 +285,30 @@ art_assets = [];
       noItemDoc: '还没有这件物品的介绍。',
       restart: '重新开始',
       restartConfirm: '确定要重新开始吗？已解锁的回忆与收集都会清空。',
+      makeYours: '✏️ 创造你的故事',
+      makerTitle: '创造你的故事',
+      makerIntro: '把你自己的人生写成一个可以奔跑解锁的小游戏，分享给任何人（用链接即可游玩）。',
+      makerNameLabel: '故事标题',
+      makerNamePlaceholder: '例如：我的二十年',
+      makerStoryLabel: '故事剧本（Markdown）',
+      makerItemLabel: '收集物介绍（Markdown，可留空）',
+      makerPreview: '▶ 预览试玩',
+      makerRules: '📜 查看规则',
+      rulesTitle: '格式规则',
+      makerEmpty: '请先写一点故事剧本。',
+      makerAiLabel: '让 AI 帮你写（描述你的人生或经历，越具体越好）',
+      makerAiPlaceholder: '例如：我是一名小学老师，2008 年参加工作，2015 年结婚，2019 年生了女儿，2022 年评上特级教师……',
+      makerAiBtn: '✨ 用 AI 生成故事',
+      makerGenerating: 'AI 正在创作你的故事…',
+      makerGenFail: 'AI 生成失败，请稍后重试。',
+      makerGenEmpty: '请先描述一下你的人生或经历。',
+      makerSaveShare: '🔗 保存并复制分享链接',
+      makerSaving: '正在保存到你的主页…',
+      makerSaved: '已保存到你的主页，分享链接已复制，发给任何人都能游玩！',
+      makerSaveFail: '保存失败，请确认已登录后重试。',
+      makerLoginNeeded: '需要登录后才能保存并分享你的故事。',
+      makerLoadFail: '加载分享的故事失败，请检查链接或稍后重试。',
+      makerCopyFail: '复制失败，请手动选择链接复制。',
     },
     enUS: {
       title: 'Developer Story',
@@ -316,6 +333,30 @@ art_assets = [];
       noItemDoc: 'No description for this item yet.',
       restart: 'Restart',
       restartConfirm: 'Restart from the beginning? Unlocked memories and collectables will be cleared.',
+      makeYours: '✏️ Make your own',
+      makerTitle: 'Create your story',
+      makerIntro: 'Turn your own life into a little run-and-unlock game and share it with anyone — playable from just a link.',
+      makerNameLabel: 'Story title',
+      makerNamePlaceholder: 'e.g. My Twenty Years',
+      makerStoryLabel: 'Story script (Markdown)',
+      makerItemLabel: 'Collectable notes (Markdown, optional)',
+      makerPreview: '▶ Preview',
+      makerRules: '📜 View rules',
+      rulesTitle: 'Format rules',
+      makerEmpty: 'Write a little story script first.',
+      makerAiLabel: 'Let AI write it (describe your life or journey, the more specific the better)',
+      makerAiPlaceholder: 'e.g. I am a primary-school teacher, started work in 2008, married in 2015, had a daughter in 2019…',
+      makerAiBtn: '✨ Generate with AI',
+      makerGenerating: 'AI is writing your story…',
+      makerGenFail: 'AI generation failed, please try again.',
+      makerGenEmpty: 'Describe your life or journey first.',
+      makerSaveShare: '🔗 Save & copy share link',
+      makerSaving: 'Saving to your page…',
+      makerSaved: 'Saved to your page — share link copied; anyone can play it!',
+      makerSaveFail: 'Save failed — make sure you are logged in and try again.',
+      makerLoginNeeded: 'Please log in to save and share your story.',
+      makerLoadFail: 'Failed to load the shared story; check the link or try again.',
+      makerCopyFail: 'Copy failed — please select the link and copy manually.',
     },
   };
   function detectLang() {
@@ -343,6 +384,8 @@ art_assets = [];
   const JUMP_SPEED = 720;
   const MOVE_SPEED = 240;
   const MAX_FALL = 940;
+  const BATTLE_SECS = 5;          // seconds of body-contact to wear a monster down (jump = instant)
+  const STROKE_MS = 260;          // cadence of the hero's punches during an auto-battle
   const WORLD_H = WORLD_ROWS * TILE;
   const PX_PER_COL = 3.6;   // timeline ruler scale (fixed; the ruler scrolls instead of compressing)
 
@@ -363,6 +406,12 @@ art_assets = [];
   const IMG_LEAD = /^!\[[^\]]*\]\((https?:\/\/[^\s)]+)\)\s*[:：]?\s*/;
   const isImgIcon = s => typeof s === 'string' && s.charAt(0) === '!';
   const imgUrlOf = s => { const m = String(s).match(/\((https?:\/\/[^\s)]+)\)/); return m ? m[1] : ''; };
+  // An item DESCRIPTION (in itemMarkdown) may BEGIN with a sprite directive:  ![](url#x_y_w_h)
+  // It pins a sub-region (x,y,width,height in source pixels) of the image to be drawn on top of
+  // that collectable's floating emoji token in the scene. The directive is metadata, so it is
+  // stripped from the description shown in the popup. Separators may be `_` (or `,`).
+  const SPRITE_RE = /^\s*!\[[^\]]*\]\((https?:\/\/[^\s)#]+)#(\d+)[_,](\d+)[_,](\d+)[_,](\d+)\)\s*/;
+  const parseSprite = md => { const m = String(md || '').match(SPRITE_RE); return m ? { url: m[1], sx: +m[2], sy: +m[3], sw: +m[4], sh: +m[5] } : null; };
 
   // ---------- markdown (item descriptions + image icons) ----------
   function escHtml(s) { return String(s).replace(/[&<>"]/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c])); }
@@ -405,9 +454,60 @@ art_assets = [];
     return map;
   }
   let itemDocs = parseItemDocs(CFG.itemMarkdown || '');
+  // label → sprite sub-region, harvested from each description's leading ![](url#x_y_w_h) directive.
+  let itemSprites = {};
+  function rebuildSprites() { itemSprites = {}; for (const k in itemDocs) { const sp = parseSprite(itemDocs[k]); if (sp) itemSprites[k] = sp; } }
+  rebuildSprites();
   // lazily-loaded <img> cache for image icons drawn on the canvas
   const _iconImgs = {};
   function iconImg(url) { let im = _iconImgs[url]; if (!im) { im = new Image(); im.decoding = 'async'; im.src = url; _iconImgs[url] = im; } return im; }
+  // Draw a sprite sub-region centered at (cx,cy), scaled to fit a box px square (aspect preserved).
+  // Returns false (so the caller can fall back to the emoji) while the image is still loading.
+  function drawSpriteIcon(ctx2, sp, cx, cy, box) {
+    const im = iconImg(sp.url);
+    if (!(im.complete && im.naturalWidth)) return false;
+    const scale = box / Math.max(sp.sw, sp.sh), dw = sp.sw * scale, dh = sp.sh * scale;
+    const prev = ctx2.imageSmoothingEnabled; ctx2.imageSmoothingEnabled = true;   // photos, not pixel art
+    ctx2.drawImage(im, sp.sx, sp.sy, sp.sw, sp.sh, cx - dw / 2, cy - dh / 2, dw, dh);
+    ctx2.imageSmoothingEnabled = prev;
+    return true;
+  }
+  // Draw the sprite region clipped into a glowing, white-rimmed CIRCLE of radius r at (cx,cy) — the
+  // "lit" look for a unique collectable the hero has walked up to. Returns false while still loading.
+  function drawSpriteCircle(ctx2, sp, cx, cy, r) {
+    const im = iconImg(sp.url);
+    if (!(im.complete && im.naturalWidth)) return false;
+    ctx2.save();   // warm glow halo so it pops against any background
+    ctx2.shadowColor = 'rgba(255,233,150,.95)'; ctx2.shadowBlur = 16;
+    ctx2.fillStyle = '#fff'; ctx2.beginPath(); ctx2.arc(cx, cy, r, 0, 6.3); ctx2.fill();
+    ctx2.restore();
+    ctx2.save();   // clip to the circle, then cover it with the largest centred square of the region
+    ctx2.beginPath(); ctx2.arc(cx, cy, r, 0, 6.3); ctx2.clip();
+    const prev = ctx2.imageSmoothingEnabled; ctx2.imageSmoothingEnabled = true;
+    const side = Math.min(sp.sw, sp.sh), sxo = sp.sx + (sp.sw - side) / 2, syo = sp.sy + (sp.sh - side) / 2;
+    ctx2.drawImage(im, sxo, syo, side, side, cx - r, cy - r, r * 2, r * 2);
+    ctx2.imageSmoothingEnabled = prev;
+    ctx2.restore();
+    ctx2.lineWidth = 3; ctx2.strokeStyle = '#fff'; ctx2.beginPath(); ctx2.arc(cx, cy, r, 0, 6.3); ctx2.stroke();
+    ctx2.lineWidth = 1.5; ctx2.strokeStyle = 'rgba(30,58,95,.55)'; ctx2.beginPath(); ctx2.arc(cx, cy, r + 1.5, 0, 6.3); ctx2.stroke();
+    return true;
+  }
+  // A <canvas> showing ONLY the sprite sub-region (not the whole sheet), scaled to the popup width.
+  // Used by the item-detail dialog so a sheet-backed item reveals just its own cell.
+  function makeSpriteCanvas(sp, cls) {
+    const cv = document.createElement('canvas');
+    cv.className = cls || 'ds-itemimg'; cv.width = sp.sw; cv.height = sp.sh;
+    const render = () => {
+      const im = iconImg(sp.url);
+      if (!(im.complete && im.naturalWidth)) return false;
+      const c = cv.getContext('2d'); c.imageSmoothingEnabled = true;
+      c.clearRect(0, 0, sp.sw, sp.sh);
+      c.drawImage(im, sp.sx, sp.sy, sp.sw, sp.sh, 0, 0, sp.sw, sp.sh);
+      return true;
+    };
+    if (!render()) iconImg(sp.url).addEventListener('load', render, { once: true });
+    return cv;
+  }
 
   function post(type, data = {}) {
     try { window.parent && window.parent.postMessage({ type, data }, '*'); } catch (_) {}
@@ -444,6 +544,7 @@ art_assets = [];
       else if (name === 'jump') this.note(659.25, 0.1, 'square', 0.09);
       else if (name === 'defeat') [392, 523.25, 784].forEach((f, i) => this.note(f, 0.12, 'square', 0.09, i * 0.05));
       else if (name === 'bump') this.note(130, 0.08, 'sawtooth', 0.07);
+      else if (name === 'hit') { this.note(180, 0.07, 'square', 0.09); this.note(90, 0.1, 'sawtooth', 0.08, 0.01); } // punchy thwack per stroke
       else if (name === 'finish') [523.25, 659.25, 784, 1046.5].forEach((f, i) => this.note(f, 0.18, 'triangle', 0.1, i * 0.09));
       else if (name === 'start') [523.25, 659.25, 783.99].forEach((f, i) => this.note(f, 0.16, 'triangle', 0.08, i * 0.05));
     }
@@ -506,45 +607,71 @@ art_assets = [];
     const chapters = [];
     let cur = null, group = 'major';
     const preCmds = [];
+    // Indentation → nesting depth. A stack of leading-whitespace widths treats 2-space and
+    // 4-space indents consistently: an indent deeper than the current top pushes a level, a
+    // shallower one pops back. Depth 0 = a top-level memory (a ground ❓); depth ≥ 1 = a nested,
+    // "precious" memory (an elevated 💡 you must jump for). This REPLACES the old sticky `## 小节`
+    // mechanism: because depth is read per-line from the indent, after an indented (二级/三级) block
+    // you can return to the line start and keep adding top-level memories within the same chapter.
+    const indents = [];
+    const depthOf = (ws) => {
+      const w = ws.replace(/\t/g, '  ').length;
+      while (indents.length && w < indents[indents.length - 1]) indents.pop();
+      if (!indents.length || w > indents[indents.length - 1]) indents.push(w);
+      return indents.length - 1;
+    };
     // record an atmosphere slash-command at the current position (chapter + item index)
     function addCmd(text) {
-      const toks = String(text || '').trim().split(/\s+/).filter(Boolean);
+      // each token may carry its own leading slash (e.g. "/day /city") — strip per-token so every
+      // word still resolves to a command, not just the first one after the line's leading slash.
+      const toks = String(text || '').trim().split(/\s+/).map(s => s.replace(/^\/+/, '')).filter(Boolean);
       if (!toks.length) return;
       if (cur) (cur._cmds || (cur._cmds = [])).push({ at: cur.items.length, toks });
       else preCmds.push({ toks });
     }
+    // record a collectable:  + <emoji> <label> x <count>  (the `+` may be wrapped in a `-` bullet).
+    // Remember which story line it follows (number of items so far) so a unique item can be anchored
+    // right next to that line in the scene instead of floating off in the distance.
+    function addCollectable(rest) {
+      if (!cur) return;
+      rest = String(rest || '').trim();
+      let emoji = '⭐';
+      const im = rest.match(IMG_LEAD);
+      if (im) { emoji = im[0].replace(/\s*[:：]?\s*$/, '').trim(); rest = rest.slice(im[0].length).trim(); }
+      else { const em = rest.match(EMOJI_RE); if (em) { emoji = em[1]; rest = rest.slice(em[0].length).trim(); } }
+      // count may be negative: a negative item flows from the inventory back into the scene.
+      // count may be exactly 0: a "cameo" — the item appears again in the scene but adds nothing
+      // to its inventory total (and does not break its uniqueness; see labelTokenCount below).
+      const xm = rest.match(/^(.*?)\s*[×xX]\s*(-?\d+)\s*$/);
+      const label = xm ? xm[1].trim() : rest;
+      const parsed = xm ? parseInt(xm[2], 10) : NaN;
+      const count = Number.isFinite(parsed) ? parsed : 1;
+      cur.collectables.push({ emoji, label, count, at: cur.items.length });
+    }
     for (const raw of lines) {
+      if (!raw.trim()) continue;
+      const ws = (raw.match(/^[ \t]*/) || [''])[0];
       const line = raw.trim();
-      if (!line) continue;
-      if (line.startsWith('## ')) { group = 'minor'; continue; }
-      if (line.startsWith('# ')) { cur = { title: line.slice(2).trim(), items: [], collectables: [] }; chapters.push(cur); group = 'major'; continue; }
-      // atmosphere slash-command on its own line:  /night   /rain wind   /city ...
+      // legacy subsection headings (## / ###) — still accepted as a "minor" hint for old stories.
+      if (/^#{2,}\s/.test(line)) { group = 'minor'; continue; }
+      if (line.startsWith('# ')) { cur = { title: line.slice(2).trim(), items: [], collectables: [] }; chapters.push(cur); group = 'major'; indents.length = 0; continue; }
+      // bare (un-dashed) command / collectable lines — legacy form, always treated as top level.
       if (line.startsWith('/')) { addCmd(line.slice(1)); continue; }
-      // collectable command:  + <emoji> <label> x <count>
-      const cm = line.match(/^\+\s+(.*)$/);
-      if (cm && cur) {
-        let rest = cm[1].trim();
-        let emoji = '⭐';
-        const im = rest.match(IMG_LEAD);
-        if (im) { emoji = im[0].replace(/\s*[:：]?\s*$/, '').trim(); rest = rest.slice(im[0].length).trim(); }
-        else { const em = rest.match(EMOJI_RE); if (em) { emoji = em[1]; rest = rest.slice(em[0].length).trim(); } }
-        // count may be negative: a negative item flows from the inventory back into the scene
-        const xm = rest.match(/^(.*?)\s*[×xX]\s*(-?\d+)\s*$/);
-        const label = xm ? xm[1].trim() : rest;
-        const count = xm ? (parseInt(xm[2], 10) || 1) : 1;
-        cur.collectables.push({ emoji, label, count });
-        continue;
-      }
+      const bareC = line.match(/^\+\s+(.*)$/);
+      if (bareC && cur) { addCollectable(bareC[1]); continue; }
+      // list item: nesting depth comes from its indentation.
       const m = line.match(/^[-*]\s+(.*)$/);
       if (m && cur) {
-        let text = m[1].trim();
-        // a list item may also carry a slash-command, e.g. "- /night"
-        if (text.startsWith('/')) { addCmd(text.slice(1)); continue; }
+        const depth = depthOf(ws);
+        const text = m[1].trim();
+        if (text.startsWith('/')) { addCmd(text.slice(1)); continue; }     // - /night
+        const cm = text.match(/^\+\s+(.*)$/);
+        if (cm) { addCollectable(cm[1]); continue; }                       // - + 👶 女儿 x 1
         const em = text.match(EMOJI_RE);
-        if (em) {
-          chapters[chapters.length - 1].items.push({ kind: 'monster', emoji: em[1], text: text.slice(em[0].length).trim() });
-        } else {
-          cur.items.push({ kind: group, text });
+        if (em) {                                                          // - 😈 怪物：…（怪物永远在地面）
+          cur.items.push({ kind: 'monster', emoji: em[1], text: text.slice(em[0].length).trim() });
+        } else {                                                           // - 回忆（缩进 → 需要跳的高台）
+          cur.items.push({ kind: (depth > 0 || group === 'minor') ? 'minor' : 'major', text });
         }
       }
       // any other line (notes, plain text) is ignored
@@ -607,7 +734,9 @@ art_assets = [];
     chapters.forEach((ch, ci) => {
       ch.startCol = col;
       let c = col + MARGIN;
+      ch._itemCols = [];
       ch.items.forEach((it, ii) => {
+        ch._itemCols[ii] = c;   // record each story line's column, to anchor unique collectables
         const _cmds = ch._cmds || [];
         for (const cm of _cmds) if (cm.at === ii) emitEvents(cm.toks, c * TILE);
         const entry = { kind: it.kind, text: it.text, emoji: it.emoji || '', chapter: ci, unlocked: false };
@@ -624,6 +753,7 @@ art_assets = [];
           entry.x = c * TILE + (TILE - entry.w) / 2;
           entry.y = GROUND_ROW * TILE - entry.h;
           entry.homeX = entry.x; entry.vx = (ci % 2 ? -1 : 1) * 34; entry.defeated = false;
+          entry.hp = 1; // 1 → 0, drains over BATTLE_SECS of contact (jump-stomp kills instantly)
         } else { // major
           entry.w = 30; entry.h = 30;
           entry.x = c * TILE + (TILE - entry.w) / 2;
@@ -695,8 +825,16 @@ art_assets = [];
     chapters.forEach((ch, ci) => {
       const defs = ch.collectables || [];
       if (!defs.length) return;
-      const all = [];
-      defs.forEach((def, di) => {
+      const x0 = (ch.startCol + MARGIN) * TILE, x1 = (ch.endCol - END_MARGIN) * TILE;
+      const cols = ch._itemCols || [];
+      // x just to the right of the story line a `+` follows (def.at = number of items before it)
+      const anchorX = def => {
+        const k = (def.at || 0) - 1;
+        return (k >= 0 && cols[k] != null) ? cols[k] * TILE + TILE / 2 + TILE * 1.6 : x0 + TILE;
+      };
+      // Build every entry first, recording the anchor (just right of the story line its `+` follows)
+      // so a trail can begin at the exact moment it appears — never before its place on the timeline.
+      const built = defs.map((def, di) => {
         const sign = def.count < 0 ? -1 : 1, mag = Math.abs(def.count);
         const n = clamp(mag, 1, 12);
         const base = Math.floor(mag / n), rem = mag - base * n;
@@ -704,15 +842,34 @@ art_assets = [];
         const entry = { id: ci + ':' + di, emoji: def.emoji, label: def.label, total: def.count, bucket, tokens: [] };
         for (let k = 0; k < n; k++) entry.tokens.push({ value: sign * (base + (k < rem ? 1 : 0)), x: 0, yBase: 0, collected: false });
         world.collectables.push(entry);
-        for (const tk of entry.tokens) all.push(tk);
+        return { entry, ax: clamp(anchorX(def), x0, x1) };
       });
-      const x0 = (ch.startCol + MARGIN) * TILE, x1 = (ch.endCol - END_MARGIN) * TILE;
-      const span = Math.max(TILE, x1 - x0);
-      all.forEach((tk, idx) => {
-        tk.x = x0 + ((idx + 1) / (all.length + 1)) * span;
-        tk.yBase = GROUND_ROW * TILE - 74 - Math.sin(idx * 0.7) * 18;
+      built.forEach((b, bi) => {
+        const tokens = b.entry.tokens;
+        if (tokens.length === 1) {
+          // a single (unique) item sits right beside its story line, not spread across the chapter
+          tokens[0].x = b.ax;
+          tokens[0].yBase = GROUND_ROW * TILE - 74;
+          return;
+        }
+        // a bulk trail begins AT this line's anchor and flows rightward, stopping before the next
+        // collectable's anchor (or the chapter end), so it never spills back over earlier moments.
+        const lo = b.ax;
+        let end = x1;
+        for (let j = bi + 1; j < built.length; j++) { if (built[j].ax > lo) { end = built[j].ax; break; } }
+        const width = Math.min(Math.max(TILE * 2, end - lo), tokens.length * TILE * 1.8);
+        tokens.forEach((tk, idx) => {
+          tk.x = lo + ((idx + 1) / (tokens.length + 1)) * width;
+          tk.yBase = GROUND_ROW * TILE - 74 - Math.sin(idx * 0.7) * 18;
+        });
       });
     });
+    // tokens per label → a label is "unique" (one of a kind) when it has exactly one *counting*
+    // token in the whole world. Only unique items float their custom picture in the scene; bulk
+    // items stay emoji. Cameo tokens (value 0, from an "x 0" line) are re-displays that don't add
+    // to the total, so they don't count toward uniqueness — a unique item stays unique on re-appearance.
+    world.labelTokenCount = {};
+    for (const def of world.collectables) for (const tk of def.tokens) if (tk.value !== 0) world.labelTokenCount[def.label] = (world.labelTokenCount[def.label] || 0) + 1;
   }
 
   // ---------- entities ----------
@@ -753,13 +910,15 @@ art_assets = [];
       .ds-pill { height:38px; display:inline-flex; align-items:center; gap:4px; padding:0 10px; border-radius:10px; background:rgba(255,255,255,.86); border:3px solid rgba(30,58,95,.85); font-size:13px; font-weight:1000; box-shadow:0 4px 0 rgba(30,58,95,.16); color:#1e3a5f; pointer-events:auto; cursor:pointer; }
       .ds-card { position:absolute; left:50%; bottom:max(74px,calc(env(safe-area-inset-bottom) + 70px)); transform:translateX(-50%) translateY(10px); z-index:7; width:min(88vw,560px); padding:12px 40px 12px 18px; border-radius:16px; background:linear-gradient(180deg,#fffdf5,#fef3c7); border:3px solid #b45309; box-shadow:0 12px 30px rgba(120,53,15,.28); opacity:0; transition:opacity .2s ease, transform .2s ease; pointer-events:none; }
       .ds-card.show { opacity:1; transform:translateX(-50%) translateY(0); }
-      .ds-card .ds-era { font-size:11px; font-weight:1000; color:#b45309; letter-spacing:.5px; margin-bottom:5px; }
       .ds-card .ds-text { font-size:16px; font-weight:850; line-height:1.5; color:#7c2d12; }
       .ds-card-x { position:absolute; top:7px; right:8px; width:27px; height:27px; border:0; border-radius:50%; background:rgba(180,83,9,.16); color:#b45309; font-size:19px; font-weight:1000; line-height:1; cursor:pointer; pointer-events:auto; display:flex; align-items:center; justify-content:center; }
       .ds-card-x:active { transform:scale(.9); }
       .ds-bottom { position:absolute; left:10px; right:10px; bottom:max(10px,env(safe-area-inset-bottom)); z-index:6; display:flex; align-items:flex-end; pointer-events:none; }
       .ds-hint { position:absolute; left:50%; top:50%; transform:translate(-50%,-50%); z-index:6; pointer-events:none; padding:9px 14px; border-radius:999px; background:rgba(255,255,255,.9); border:2px solid rgba(30,58,95,.6); color:#1e3a5f; font-size:13px; font-weight:900; box-shadow:0 4px 0 rgba(30,58,95,.14); transition:opacity .6s ease; max-width:90vw; text-align:center; }
       .ds-hint.fade { opacity:0; }
+      .ds-chapter-title { position:absolute; left:50%; top:34%; transform:translate(-50%,-50%); z-index:7; pointer-events:none; text-align:center; width:100%; padding:0; color:#fff; font-size:44px; line-height:1.18; font-weight:1000; letter-spacing:1px; text-shadow:0 3px 0 rgba(30,58,95,.45), 0 0 26px rgba(120,170,230,.5); opacity:0; transition:opacity 1.1s ease; }
+      .ds-chapter-title.show { opacity:1; }
+      .ds-ct-line { display:block; white-space:nowrap; }
       .ds-joy { position:fixed; z-index:8; left:var(--x); top:var(--y); width:120px; height:120px; margin:-60px 0 0 -60px; border-radius:50%; background:rgba(30,58,95,.22); border:4px solid rgba(255,255,255,.75); display:none; pointer-events:none; }
       .ds-joy.show { display:block; }
       .ds-joy .ds-up { position:absolute; left:50%; top:8px; transform:translateX(-50%); font-size:16px; font-weight:1000; color:rgba(255,255,255,.5); transition:color .1s, opacity .1s; }
@@ -816,6 +975,15 @@ art_assets = [];
       .ds-chip .em img { width:30px; height:30px; object-fit:contain; border-radius:6px; }
       .ds-chip .lab { position:absolute; left:2px; right:2px; bottom:3px; text-align:center; font-size:9px; font-weight:800; line-height:1; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
       .ds-chip .num { position:absolute; top:2px; right:2px; min-width:16px; height:16px; padding:0 3px; border-radius:999px; background:#f59e0b; color:#fff; font-size:10px; font-weight:1000; line-height:16px; text-align:center; box-shadow:0 1px 0 rgba(30,58,95,.25); }
+      /* when an item has a sprite directive, its cropped picture fills the slot as the background */
+      .ds-chip .em { z-index:1; } .ds-chip .lab { z-index:2; } .ds-chip .num { z-index:3; }
+      .ds-chip.has-img { overflow:hidden; }
+      .ds-chip.has-img .em { top:0; bottom:0; }
+      .ds-chip.has-img .em canvas.ds-chipimg { width:100%; height:100%; object-fit:cover; display:block; }
+      .ds-chip.has-img .lab { color:#fff; padding:2px 2px 3px; background:linear-gradient(180deg,rgba(0,0,0,0),rgba(0,0,0,.55)); border-radius:0 0 10px 10px;
+        -webkit-text-stroke:.7px #000; paint-order:stroke fill;   /* crisp outline where supported */
+        text-shadow:-1px -1px 0 #000,1px -1px 0 #000,-1px 1px 0 #000,1px 1px 0 #000,0 0 3px rgba(0,0,0,.95); } /* universal outline fallback */
+      .ds-fly canvas.ds-flyimg { width:24px; height:24px; object-fit:cover; border-radius:5px; display:block; }
       .ds-chip.bump { animation:dsChipBump .32s ease; }
       @keyframes dsChipBump { 0%{transform:scale(1);} 40%{transform:scale(1.24);} 100%{transform:scale(1);} }
       .ds-fly { position:fixed; left:0; top:0; z-index:30; font-size:22px; line-height:1; pointer-events:none; transition:transform .5s cubic-bezier(.35,.1,.2,1), opacity .5s ease; will-change:transform,opacity; }
@@ -834,8 +1002,29 @@ art_assets = [];
       .ds-itemdoc code { background:rgba(30,58,95,.1); padding:1px 5px; border-radius:5px; font-size:.92em; }
       .ds-itemdoc a { color:#2563eb; word-break:break-all; }
       .ds-itemdoc img { max-width:100%; height:auto; border-radius:10px; display:block; margin:8px 0; }
+      .ds-itemdoc canvas.ds-itemimg { display:block; width:auto; max-width:100%; max-height:220px; height:auto; border-radius:12px; margin:0 auto 12px; box-shadow:0 4px 14px rgba(15,23,42,.18); }
       .ds-itemdoc-empty { color:#94a3b8; font-style:italic; }
       [hidden] { display:none !important; }
+      /* story maker (创造你的故事) */
+      .ds-modal-maker { position:relative; text-align:left; width:min(94vw,640px); display:flex; flex-direction:column; }
+      .ds-modal-maker h1 { font-size:22px; margin:0 30px 6px 0; }
+      .ds-maker-intro { margin:0 0 10px; color:#0f766e; font-size:13px; font-weight:800; line-height:1.5; }
+      .ds-maker-lab { display:block; margin:8px 0 4px; font-size:12px; font-weight:1000; color:#1e3a5f; }
+      .ds-maker-name { width:100%; padding:9px 12px; border-radius:10px; border:2px solid rgba(30,58,95,.45); background:#fff; font-size:14px; font-weight:700; color:#1f2937; }
+      .ds-maker-ta { width:100%; height:34vh; min-height:140px; resize:vertical; padding:10px 12px; border-radius:10px; border:2px solid rgba(30,58,95,.45); background:#fff; color:#1f2937; font-family:ui-monospace,Menlo,Consolas,monospace; font-size:12.5px; line-height:1.55; white-space:pre; overflow:auto; -webkit-overflow-scrolling:touch; }
+      .ds-maker-ta-sm { height:18vh; min-height:90px; }
+      .ds-maker-ai-row { display:flex; gap:8px; align-items:stretch; }
+      .ds-maker-ta-ai { flex:1; height:auto; min-height:60px; max-height:120px; font-family:inherit; font-size:13px; white-space:pre-wrap; }
+      .ds-maker-ai-row .ds-btn { flex:0 0 auto; align-self:stretch; white-space:nowrap; font-size:13px; padding:0 14px; }
+      .ds-maker-status { margin:8px 0 0; padding:8px 12px; border-radius:10px; background:rgba(14,165,233,.12); color:#0369a1; font-size:12.5px; font-weight:800; line-height:1.4; }
+      .ds-maker-status.err { background:rgba(239,68,68,.12); color:#b91c1c; }
+      .ds-maker-status.ok { background:rgba(16,185,129,.14); color:#047857; }
+      /* 查看规则: full STORY_RULES shown in its own popup (same text fed to the AI) */
+      .ds-modal-rules { position:relative; text-align:left; width:min(94vw,640px); max-height:calc(100dvh - 28px); display:flex; flex-direction:column; }
+      .ds-modal-rules h1 { font-size:20px; margin:0 30px 8px 0; flex:0 0 auto; }
+      .ds-rules-pre { flex:1 1 auto; min-height:0; overflow:auto; -webkit-overflow-scrolling:touch; margin:0; padding:12px 14px; border-radius:12px; background:#0f2747; color:#e2eafc; font-family:ui-monospace,Menlo,Consolas,monospace; font-size:12.5px; line-height:1.6; white-space:pre-wrap; word-break:break-word; }
+      .ds-modal-maker .ds-btn-row { position:sticky; bottom:0; background:linear-gradient(180deg,rgba(255,255,255,0),#dcfce7 40%); padding-top:8px; margin-top:6px; }
+      .ds-modal-maker .ds-btn { font-size:14px; padding:10px 16px; }
       @media (max-width:640px){ .ds-banner-txt{font-size:13px;} .ds-card .ds-text{font-size:15px;} }
     </style>
     <div class="ds-shell" id="dsShell">
@@ -846,8 +1035,9 @@ art_assets = [];
         <div class="ds-pill" id="dsJournalBtn">📖 <b id="dsProg">0</b>/<b id="dsTotal">0</b></div>
       </div>
       <div class="ds-inv" id="dsInv"></div>
-      <div class="ds-card" id="dsCard"><button class="ds-card-x" id="dsCardClose" type="button" aria-label="${t('close')}">×</button><div class="ds-era" id="dsCardEra"></div><div class="ds-text" id="dsCardText"></div></div>
+      <div class="ds-card" id="dsCard"><button class="ds-card-x" id="dsCardClose" type="button" aria-label="${t('close')}">×</button><div class="ds-text" id="dsCardText"></div></div>
       <div class="ds-hint" id="dsHint">${t('hint')}</div>
+      <div class="ds-chapter-title" id="dsChapterTitle"></div>
       <div class="ds-bottom">
         <div class="ds-timeline" id="dsTimeline">
           <div class="ds-tl-ruler" id="dsTlRuler">
@@ -873,6 +1063,7 @@ art_assets = [];
           <h1>${t('journal')}</h1>
           <div class="ds-journal" id="dsJournalBody"></div>
           <div class="ds-btn-row">
+            <button class="ds-btn" id="dsJournalMake" type="button">${t('makeYours')}</button>
             <button class="ds-btn danger" id="dsJournalRestart" type="button">${t('restart')}</button>
             <button class="ds-btn secondary" id="dsJournalClose" type="button">${t('close')}</button>
           </div>
@@ -889,7 +1080,41 @@ art_assets = [];
         <div class="ds-modal">
           <h1>${t('done')}</h1>
           <p id="dsDoneDesc"></p>
-          <button class="ds-btn" id="dsFinishBtn" type="button">${t('finish')}</button>
+          <div class="ds-btn-row">
+            <button class="ds-btn" id="dsDoneMake" type="button">${t('makeYours')}</button>
+            <button class="ds-btn secondary" id="dsFinishBtn" type="button">${t('finish')}</button>
+          </div>
+        </div>
+      </div>
+      <div class="ds-overlay" id="dsMakerOverlay" hidden>
+        <div class="ds-modal ds-modal-maker">
+          <button class="ds-card-x" id="dsMakerClose" type="button" aria-label="${t('close')}">×</button>
+          <h1>${t('makerTitle')}</h1>
+          <p class="ds-maker-intro">${t('makerIntro')}</p>
+          <label class="ds-maker-lab">${t('makerNameLabel')}</label>
+          <input class="ds-maker-name" id="dsMakerName" type="text" maxlength="40" placeholder="${t('makerNamePlaceholder')}">
+          <label class="ds-maker-lab">${t('makerAiLabel')}</label>
+          <div class="ds-maker-ai-row">
+            <textarea class="ds-maker-ta ds-maker-ta-ai" id="dsMakerAi" spellcheck="false" placeholder="${t('makerAiPlaceholder')}"></textarea>
+            <button class="ds-btn" id="dsMakerAiBtn" type="button">${t('makerAiBtn')}</button>
+          </div>
+          <label class="ds-maker-lab">${t('makerStoryLabel')}</label>
+          <textarea class="ds-maker-ta" id="dsMakerStory" spellcheck="false"></textarea>
+          <label class="ds-maker-lab">${t('makerItemLabel')}</label>
+          <textarea class="ds-maker-ta ds-maker-ta-sm" id="dsMakerItem" spellcheck="false"></textarea>
+          <div class="ds-maker-status" id="dsMakerStatus" hidden></div>
+          <div class="ds-btn-row">
+            <button class="ds-btn secondary" id="dsMakerRules" type="button">${t('makerRules')}</button>
+            <button class="ds-btn secondary" id="dsMakerPreview" type="button">${t('makerPreview')}</button>
+            <button class="ds-btn" id="dsMakerShare" type="button">${t('makerSaveShare')}</button>
+          </div>
+        </div>
+      </div>
+      <div class="ds-overlay" id="dsRulesOverlay" hidden>
+        <div class="ds-modal ds-modal-rules">
+          <button class="ds-card-x" id="dsRulesClose" type="button" aria-label="${t('close')}">×</button>
+          <h1>${t('rulesTitle')}</h1>
+          <pre class="ds-rules-pre" id="dsRulesPre"></pre>
         </div>
       </div>
     </div>
@@ -901,8 +1126,8 @@ art_assets = [];
   const shell = root.querySelector('#dsShell');
   const els = {
     banner: root.querySelector('#dsBanner'), prog: root.querySelector('#dsProg'), total: root.querySelector('#dsTotal'), inv: root.querySelector('#dsInv'), musicBtn: root.querySelector('#dsMusicBtn'),
-    card: root.querySelector('#dsCard'), cardEra: root.querySelector('#dsCardEra'), cardText: root.querySelector('#dsCardText'),
-    hint: root.querySelector('#dsHint'), joy: root.querySelector('#dsJoy'), knob: root.querySelector('#dsKnob'),
+    card: root.querySelector('#dsCard'), cardText: root.querySelector('#dsCardText'),
+    hint: root.querySelector('#dsHint'), bigTitle: root.querySelector('#dsChapterTitle'), joy: root.querySelector('#dsJoy'), knob: root.querySelector('#dsKnob'),
     start: root.querySelector('#dsStart'), journalOverlay: root.querySelector('#dsJournalOverlay'), journalBody: root.querySelector('#dsJournalBody'),
     done: root.querySelector('#dsDone'), doneDesc: root.querySelector('#dsDoneDesc'),
     itemOverlay: root.querySelector('#dsItemOverlay'), itemEm: root.querySelector('#dsItemEm'), itemTitle: root.querySelector('#dsItemTitle'), itemBody: root.querySelector('#dsItemBody'),
@@ -922,6 +1147,7 @@ art_assets = [];
     ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
     ctx.imageSmoothingEnabled = false;
     camera.y = WORLD_H - viewH;
+    if (els.bigTitle && els.bigTitle.classList.contains('show')) fitChapterTitle();
   }
   window.addEventListener('resize', resize);
   resize();
@@ -955,6 +1181,7 @@ art_assets = [];
       if (typeof msg.data.itemMarkdown === 'string') {
         game_config.itemMarkdown = msg.data.itemMarkdown;
         itemDocs = parseItemDocs(msg.data.itemMarkdown);
+        rebuildSprites();
       }
       if (typeof msg.data.storyMarkdown === 'string' && !state.started) {
         game_config.storyMarkdown = msg.data.storyMarkdown;
@@ -1075,7 +1302,247 @@ art_assets = [];
     computeInventory();
     renderInventory();
   }
-  initWorld();
+
+  // ===================== shared stories + story maker (创造你的故事) =====================
+  // The engine is reusable: a "story" is just Markdown. Anyone can write their own life as a story,
+  // save it to their own KeepWork personal page store, and share it by URL — the SAME html file
+  // loads any of them, so one engine powers everyone's stories.
+  //   share link:  haqi_devstory.html?from=<author>&story=<relPath>   (or ?storyUrl=<absoluteUrl>)
+  // One markdown file holds the story, then (optionally) the item docs after an @@ITEMS@@ line.
+  const STORY_DIR = 'stories';
+  const ITEMS_DELIM = '@@ITEMS@@';
+
+  // KeepworkSDK is loaded from CDN ON DEMAND — only when the maker or a shared link needs it.
+  let _sdkPromise = null;
+  function ensureSdk() {
+    if (window.__haqiDevstorySdk) return Promise.resolve(window.__haqiDevstorySdk);
+    if (_sdkPromise) return _sdkPromise;
+    _sdkPromise = new Promise((resolve, reject) => {
+      if (window.KeepworkSDK) return resolve();
+      const s = document.createElement('script');
+      s.src = 'https://cdn.keepwork.com/sdk/keepworkSDK.iife.js?v=20260627a';
+      s.async = true; s.onload = () => resolve(); s.onerror = () => reject(new Error('SDK load failed'));
+      document.head.appendChild(s);
+    }).then(() => {
+      if (!window.KeepworkSDK) throw new Error('KeepworkSDK undefined');
+      const sdk = window.keepwork || new window.KeepworkSDK({ timeout: 30000 });
+      try { if (sdk.setUserApiKey && window.KeepworkSDK.API_KEYS && window.KeepworkSDK.API_KEYS.maisi) sdk.setUserApiKey(window.KeepworkSDK.API_KEYS.maisi); } catch (_) {}
+      window.__haqiDevstorySdk = sdk;
+      return sdk;
+    }).catch((e) => { _sdkPromise = null; throw e; });
+    return _sdkPromise;
+  }
+
+  // one combined markdown file  <->  { story, items }
+  function splitStoryMarkdown(md) {
+    const text = String(md || '');
+    const m = text.match(new RegExp('^\\s*' + ITEMS_DELIM + '\\s*$', 'm'));
+    if (!m) return { story: text, items: '' };
+    return { story: text.slice(0, m.index).replace(/\s+$/, ''), items: text.slice(m.index + m[0].length).replace(/^\s+/, '') };
+  }
+  function joinStoryMarkdown(story, items) {
+    const s = String(story || '').replace(/\s+$/, '');
+    const i = String(items || '').trim();
+    return i ? (s + '\n\n' + ITEMS_DELIM + '\n' + i + '\n') : (s + '\n');
+  }
+
+  // apply a story to the running game and rebuild the world
+  function applyStory(story, items, title) {
+    if (typeof story === 'string' && story.trim()) game_config.storyMarkdown = story;
+    if (typeof items === 'string') { game_config.itemMarkdown = items; itemDocs = parseItemDocs(items); rebuildSprites(); }
+    if (title) { try { document.title = title; } catch (_) {} }
+    initWorld();
+  }
+
+  // fetch a shared story (from a personal page store, or a plain URL) and run it
+  async function loadSharedStory(opts) {
+    const from = opts.from, story = opts.story, storyUrl = opts.storyUrl;
+    let text = '';
+    if (storyUrl) {
+      const res = await fetch(storyUrl, { cache: 'no-store' });
+      text = res.ok ? await res.text() : '';
+    } else if (from && story) {
+      const sdk = await ensureSdk();
+      const clean = String(story).replace(/^\/+/, '').replace(/\\/g, '/');
+      if (clean.includes('..') || !/^[\w./-]+$/.test(clean)) throw new Error('bad story path');
+      const abs = '//' + String(from).replace(/[^\w-]/g, '') + '/edunotes/store/' + 'MagicHaqi' + '/' + clean;
+      text = (await sdk.personalPageStore.readFile(abs, 1, 99999)) || '';
+    }
+    if (!String(text).trim()) throw new Error('empty story');
+    const parts = splitStoryMarkdown(text);
+    applyStory(parts.story, parts.items, '');
+  }
+
+  // ---------- story maker UI ----------
+  const maker = {
+    overlay: root.querySelector('#dsMakerOverlay'),
+    name: root.querySelector('#dsMakerName'),
+    ai: root.querySelector('#dsMakerAi'),
+    story: root.querySelector('#dsMakerStory'),
+    item: root.querySelector('#dsMakerItem'),
+    status: root.querySelector('#dsMakerStatus'),
+  };
+  let makerStatusTimer = null;
+  function showMakerStatus(msg, kind) {
+    if (!maker.status) return;
+    if (makerStatusTimer) { clearTimeout(makerStatusTimer); makerStatusTimer = null; }
+    maker.status.textContent = msg;
+    maker.status.className = 'ds-maker-status' + (kind ? ' ' + kind : '');
+    maker.status.hidden = false;
+    if (kind === 'ok' || kind === 'err') makerStatusTimer = setTimeout(() => { if (maker.status) maker.status.hidden = true; }, 7000);
+  }
+  function openMaker() {
+    els.journalOverlay.hidden = true;
+    els.done.hidden = true;
+    maker.story.value = game_config.storyMarkdown || '';
+    maker.item.value = game_config.itemMarkdown || '';
+    if (!maker.name.value) maker.name.value = (document.title || '').trim();
+    maker.status.hidden = true;
+    maker.overlay.hidden = false;
+  }
+  function closeMaker() { maker.overlay.hidden = true; }
+  // 查看规则: show the single-source STORY_RULES text verbatim in its own popup.
+  function openRules() { const pre = root.querySelector('#dsRulesPre'); if (pre) { pre.textContent = STORY_RULES; pre.scrollTop = 0; } root.querySelector('#dsRulesOverlay').hidden = false; }
+  function closeRules() { root.querySelector('#dsRulesOverlay').hidden = true; }
+
+  // strip ``` fences the LLM may wrap around its markdown output
+  function stripFence(s) {
+    return String(s || '').trim().replace(/^```[a-zA-Z]*\s*\n?/, '').replace(/\n?```\s*$/, '');
+  }
+
+  // ===== STORY_RULES — the SINGLE SOURCE OF TRUTH for the markdown format. =====
+  // Reused verbatim in three places: (1) fed to the AI generator, (2) shown by the creator's
+  // 「查看规则」 button, (3) referenced by the file's top comment. Edit the format ONLY here.
+  const STORY_RULES = [
+    '【人生故事 · 格式规则】一个故事就是一段 Markdown，整个关卡都由它生成。',
+    '',
+    '一、故事剧本（storyMarkdown）',
+    '· # 标题 —— 一个人生阶段（章节），建议含年份，如「# 2008–2012：初入职场」；按时间先后排列。',
+    '· 章节里的每一行都写成 - 列表项：回忆、命令、收集物、怪物都以 - 开头。',
+    '· - 一句话 —— 一段普通回忆；在场景里是一个 ❓，走过触碰即解锁。',
+    '· 缩进的 - 一句话（比上一行多缩进 2 个空格）—— 更深一层的「珍贵回忆」，会放到需要跳一下才能够到的高台上；',
+    '  可继续嵌套二级、三级…，缩进越深层级越深。缩进结束、回到行首后又是普通回忆——所以同一章里能「进二/三级讲几句，再回主线继续讲」（取代了旧的 ## 小节写法）。',
+    '· 以表情开头的 - ，如「- 😈 拖延怪：…」 —— 是怪物（人生的困难/挑战），踩它的头击败后才解锁这句话。',
+    '· - + 表情 名称 x 数量 —— 收集物，如「- + 👶 女儿 x 1」「- + 👥 同事 x 20」。沿路漂浮，走过收进顶部背包，往回走会放回场景；',
+    '  数量可为负（如 x -20）表示从背包流回场景；背包按「名称」聚合（忽略表情），同名换表情会替换图标（如 👶→👧）。',
+    '· - /命令 —— 设置天气与昼夜，从该行起生效、可叠加（只改它对应的那一项）。建议每行写一个。',
+    '  昼夜：/dawn /day /dusk /night　云量：/clear /cloudy /overcast　降水：/rain /snow /storm　风：/wind /calm　背景：/city /nature',
+    '',
+    '二、收集物介绍（itemMarkdown，可选）',
+    '· 用 # 名称 分段（名称需与 + 命令里的名称一致）；正文支持基础 markdown（**加粗**、链接、列表、图片）。点击背包物品会弹出介绍。',
+    '· 介绍可以 ![](图片URL#x_y_宽_高) 开头：取该图片的子区域（像素，可当作图集 atlas 的一格）作图标——弹窗只显示这一格；',
+    '  唯一收集物（x1）走近时会在场景里亮出这格圆形大图，批量物则在背包格 / 弹窗里显示。',
+    '',
+    '三、单文件分享：故事写在前面；若要写物品介绍，另起一行写 ' + ITEMS_DELIM + ' ，其后再用 # 名称 分段。',
+    '',
+    '示例：',
+    '# 2008–2012：初入职场',
+    '- /day',
+    '- /city',
+    '- 2008 年第一次走进公司，紧张又兴奋',
+    '- + 👔 工牌 x 1',
+    '  - 第一次通宵赶项目，看着天亮（缩进 → 二级珍贵回忆，在高台上）',
+    '  - 😣 拖延怪：一次次想放弃的念头，被自己一点点打败',
+    '- 第二天，带着熬出来的成果，继续走主线（回到行首 → 又是普通回忆）',
+    ITEMS_DELIM,
+    '# 工牌',
+    '入职第一天发的工牌，**职业生涯的起点**。',
+  ].join('\n');
+
+  // AI generator system prompt = a thin instruction wrapper around the SAME STORY_RULES text.
+  const AI_SYSTEM_PROMPT = [
+    '你是"人生故事"小游戏的剧本作者。把用户描述的人生/经历改写成一段温暖、按时间顺序推进的剧本。',
+    '只输出 Markdown 正文本身，不要任何解释、不要代码块围栏。语言与用户描述一致（默认中文）。',
+    '按人生阶段分 4~7 个章节，每章 3~6 条回忆，可点缀 0~1 个怪物与若干收集物。',
+    '不要使用 ![](...) 图片指令（除非用户明确提供了图集图片地址）。',
+    '严格遵守下面的格式规则：',
+    '',
+    STORY_RULES,
+  ].join('\n');
+
+  async function makerAiGenerate() {
+    const desc = (maker.ai.value || '').trim();
+    if (!desc) { showMakerStatus(t('makerGenEmpty'), 'err'); return; }
+    showMakerStatus(t('makerGenerating'));
+    try {
+      const sdk = await ensureSdk();
+      if (!sdk.aiChat || !sdk.aiChat.createSession) throw new Error('aiChat unavailable');
+      const sess = sdk.aiChat.createSession({ systemPrompt: AI_SYSTEM_PROMPT, modId: 'magichaqi', chatId: 'devstory_maker' });
+      const userMsg = (maker.name.value ? ('标题：' + maker.name.value + '\n') : '') + desc;
+      let full = '';
+      if (typeof sess.send === 'function') {
+        const r = await sess.send(userMsg, { onChunk: (d) => { if (typeof d === 'string') { full += d; maker.story.value = stripFence(full); } } });
+        if (!full && typeof r === 'string') full = r;
+        if (!full && r && r.text) full = r.text;
+      } else if (sdk.aiChat.chat) {
+        const r = await sdk.aiChat.chat({ messages: [{ role: 'system', content: AI_SYSTEM_PROMPT }, { role: 'user', content: userMsg }] });
+        full = (r && r.text) || r || '';
+      }
+      full = stripFence(full);
+      if (!full.trim()) throw new Error('empty');
+      const parts = splitStoryMarkdown(full);
+      maker.story.value = parts.story;
+      if (parts.items) maker.item.value = parts.items;
+      if (maker.status) maker.status.hidden = true;
+    } catch (e) {
+      console.warn('ai generate failed', e);
+      showMakerStatus(t('makerGenFail'), 'err');
+    }
+  }
+
+  async function copyText(text) {
+    try { if (navigator.clipboard && navigator.clipboard.writeText) { await navigator.clipboard.writeText(text); return true; } } catch (_) {}
+    try {
+      const ta = document.createElement('textarea'); ta.value = text; ta.style.position = 'fixed'; ta.style.opacity = '0';
+      document.body.appendChild(ta); ta.select(); document.execCommand('copy'); ta.remove(); return true;
+    } catch (_) { return false; }
+  }
+
+  async function makerSaveShare() {
+    const story = (maker.story.value || '').trim();
+    if (!story) { showMakerStatus(t('makerEmpty'), 'err'); return; }
+    showMakerStatus(t('makerSaving'));
+    try {
+      const sdk = await ensureSdk();
+      let user = null;
+      try { user = sdk.getCurrentUser && await sdk.getCurrentUser(); } catch (_) {}
+      if ((!user || !user.username) && sdk.loginWindow && sdk.loginWindow.open) {
+        try { await sdk.loginWindow.open(); } catch (_) {}
+        try { user = sdk.getCurrentUser && await sdk.getCurrentUser(); } catch (_) {}
+      }
+      const username = user && user.username;
+      if (!username) { showMakerStatus(t('makerLoginNeeded'), 'err'); return; }
+      const store = (sdk.personalPageStore.withWorkspace) ? sdk.personalPageStore.withWorkspace('MagicHaqi') : sdk.personalPageStore;
+      const relPath = STORY_DIR + '/story_' + Date.now().toString(36) + '.md';
+      await store.createFile(relPath, joinStoryMarkdown(story, maker.item.value || ''));
+      const url = new URL(location.href);
+      ['storyUrl', 'cmd', 'adopt', 'agent', 'token'].forEach((k) => url.searchParams.delete(k));
+      url.searchParams.set('from', username);
+      url.searchParams.set('story', relPath);
+      const link = url.href;
+      const ok = await copyText(link);
+      showMakerStatus(ok ? t('makerSaved') : (t('makerCopyFail') + '\n' + link), 'ok');
+    } catch (e) {
+      console.warn('save story failed', e);
+      showMakerStatus(t('makerSaveFail'), 'err');
+    }
+  }
+
+  // boot: a shared link loads that story; otherwise the built-in developer story.
+  (function bootStory() {
+    let from = '', story = '', storyUrl = '';
+    try {
+      const q = new URLSearchParams(location.search);
+      from = (q.get('from') || '').trim(); story = (q.get('story') || '').trim(); storyUrl = (q.get('storyUrl') || '').trim();
+    } catch (_) {}
+    initWorld();   // show something immediately
+    if (storyUrl || (from && story)) {
+      loadSharedStory({ from: from, story: story, storyUrl: storyUrl }).catch((e) => {
+        console.warn('shared story load failed', e);
+        try { showMakerStatus(t('makerLoadFail'), 'err'); } catch (_) {}
+      });
+    }
+  })();
 
   // Banner shows just the era name — strip a leading "YYYY-YYYY：" date prefix so the title stays
   // short and never clips. The full title (with year) is kept in the data for the timeline & card.
@@ -1085,14 +1552,49 @@ art_assets = [];
     const m = s.match(/^[^：:]*\d[^：:]*[：:]\s*(.+)$/);
     return m ? m[1].trim() : (s || t('chapterDefault'));
   }
+  // big centered title shown at the start of each chapter (full title incl. the year range,
+  // e.g. "2004–2009：游戏引擎的诞生"). Rendered on one line, or split into two at the colon
+  // ("2004–2009：" / "游戏引擎的诞生"); neither line wraps — the font auto-scales to fit width.
+  function chapterTitleLines(ch) {
+    const s = (ch && (ch.title || '').trim()) || chapterTitle(ch);
+    const i = s.search(/[：:]/);
+    if (i >= 0 && i < s.length - 1) return [s.slice(0, i + 1).trim(), s.slice(i + 1).trim()];
+    return [s];
+  }
+  function fitChapterTitle() {
+    const el = els.bigTitle;
+    if (!el || !el.firstChild) return;
+    const MAX = 48, MIN = 14;
+    el.style.fontSize = MAX + 'px';
+    const avail = (shell ? shell.clientWidth : viewW) * 0.9;
+    let w = 0;
+    el.querySelectorAll('.ds-ct-line').forEach(ln => { w = Math.max(w, ln.scrollWidth); });
+    if (w > avail) el.style.fontSize = Math.max(MIN, Math.floor(MAX * avail / w)) + 'px';
+  }
+  function showChapterTitle(ci) {
+    const ch = world.chapters[ci];
+    if (!ch || !els.bigTitle) return;
+    // don't flash the title when resuming a save deep inside a chapter: only show it if the
+    // hero is still near this chapter's start (i.e. it would not already have faded out).
+    if (player.x - ch.startCol * TILE > TILE * 7) return;
+    const lines = chapterTitleLines(ch);
+    els.bigTitle.innerHTML = lines.map(() => '<span class="ds-ct-line"></span>').join('');
+    lines.forEach((line, k) => {
+      const span = els.bigTitle.children[k]; if (span) span.textContent = line;
+    });
+    fitChapterTitle();
+    state.bigTitleX = player.x;
+    // re-trigger the CSS fade even if it was already showing for a previous chapter
+    els.bigTitle.classList.remove('show');
+    void els.bigTitle.offsetWidth;
+    els.bigTitle.classList.add('show');
+  }
 
   // ---------- narrative card ----------
   // The card stays visible while the protagonist is near the memory. It hides only when he
   // walks far enough away, or the player taps the close button; walking back near re-shows it.
   const CARD_RANGE = TILE * 2.2;
   function renderCard(it) {
-    const ch = world.chapters[it.chapter];
-    els.cardEra.textContent = ch ? ch.title : '';
     els.cardText.textContent = (it.kind === 'monster' && it.emoji ? it.emoji + ' ' : '') + (it.text || '');
   }
   function showCard(it) { state.cardItem = it; state.cardDismissed = null; renderCard(it); els.card.classList.add('show'); }
@@ -1170,7 +1672,11 @@ art_assets = [];
           c.addEventListener('keydown', e => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); openItemDoc(b); } });
           b.chipEl = c; b.chipNum = num; b.chipEm = em; els.inv.appendChild(c);
         }
-        if (b.emojiShown !== b.emoji) { setIcon(b.chipEm, b.emoji); b.emojiShown = b.emoji; }
+        // a sprite directive (if any) fills the slot as its background; otherwise show the emoji
+        const sp = itemSprites[b.label];
+        if (sp) {
+          if (b.spriteShown !== sp) { b.chipEm.innerHTML = ''; b.chipEm.appendChild(makeSpriteCanvas(sp, 'ds-chipimg')); b.chipEl.classList.add('has-img'); b.spriteShown = sp; b.emojiShown = null; }
+        } else if (b.emojiShown !== b.emoji) { setIcon(b.chipEm, b.emoji); b.emojiShown = b.emoji; }
         if (b.chipShown !== b.collected) {
           b.chipNum.textContent = b.collected;
           if (b.collected > (b.chipShown < 0 ? 0 : b.chipShown)) { b.chipEl.classList.remove('bump'); void b.chipEl.offsetWidth; b.chipEl.classList.add('bump'); }
@@ -1188,8 +1694,12 @@ art_assets = [];
     if (!b) return;
     setIcon(els.itemEm, b.emoji);
     els.itemTitle.textContent = b.label || '';
-    const doc = itemDocs[b.label];
-    els.itemBody.innerHTML = doc ? mdToHtml(doc) : '<p class="ds-itemdoc-empty">' + escHtml(t('noItemDoc')) + '</p>';
+    // a leading sprite directive (![](url#x_y_w_h)) renders as its CROPPED sub-region at the top of
+    // the popup (never the whole sheet); the rest of the description follows as markdown.
+    const sp = itemSprites[b.label];
+    const doc = (itemDocs[b.label] || '').replace(SPRITE_RE, '').trim();
+    els.itemBody.innerHTML = doc ? mdToHtml(doc) : (sp ? '' : '<p class="ds-itemdoc-empty">' + escHtml(t('noItemDoc')) + '</p>');
+    if (sp) els.itemBody.insertBefore(makeSpriteCanvas(sp), els.itemBody.firstChild);
     els.itemBody.scrollTop = 0;
     els.itemOverlay.hidden = false;
   }
@@ -1200,7 +1710,10 @@ art_assets = [];
     const ix = r.left + Math.min(r.width / 2, 40), iy = r.top + r.height / 2;
     const from = toInv ? { x: sx, y: sy } : { x: ix, y: iy };
     const to = toInv ? { x: ix, y: iy } : { x: sx, y: sy };
-    const el = document.createElement('div'); el.className = 'ds-fly'; setIcon(el, def.emoji);
+    const el = document.createElement('div'); el.className = 'ds-fly';
+    // match the scene token: only UNIQUE items fly their picture; bulk items fly the emoji
+    const fsp = world.labelTokenCount[def.label] === 1 ? itemSprites[def.label] : null;
+    if (fsp) el.appendChild(makeSpriteCanvas(fsp, 'ds-flyimg')); else setIcon(el, def.emoji);
     el.style.transform = 'translate(' + from.x + 'px,' + from.y + 'px)';
     el.style.opacity = '1';
     root.appendChild(el);
@@ -1229,6 +1742,13 @@ art_assets = [];
     for (let i = 0; i < 12; i++) {
       const a = Math.random() * Math.PI * 2, sp = 60 + Math.random() * 120;
       particles.push({ x, y, vx: Math.cos(a) * sp, vy: Math.sin(a) * sp - 60, life: 0.6 + Math.random() * 0.3, c: ['#fbbf24', '#34d399', '#60a5fa', '#f472b6'][i % 4] });
+    }
+  }
+  // small impact burst at the fist on each battle stroke
+  function spawnHit(x, y) {
+    for (let i = 0; i < 5; i++) {
+      const a = Math.random() * Math.PI * 2, sp = 70 + Math.random() * 90;
+      particles.push({ x, y, vx: Math.cos(a) * sp, vy: Math.sin(a) * sp - 30, life: 0.18 + Math.random() * 0.14, c: ['#fff7cc', '#ffd54a', '#ff8a3d'][i % 3] });
     }
   }
 
@@ -1319,14 +1839,34 @@ art_assets = [];
           // Reliable stomp: coming down onto the top of the monster.
           const fromAbove = player.vy > 40 && (player.y + player.h) < it.y + it.h * 0.8;
           if (fromAbove) {
+            // Jumping on its head is the quick kill — defeat it instantly.
+            it.hp = 0;
             it.defeated = true;
             player.vy = -JUMP_SPEED * 0.6;
             unlock(it);
           } else if (!it.unlocked) {
-            // Gentle resistance so the monster feels like a guard, but never a hard
-            // wall: moveActor already advanced the player this frame, so a small
-            // push-back keeps net motion forward (no soft-lock). Jump to stomp it.
-            player.x -= player.dir * 2;
+            // Walking into it triggers an auto-battle: its health drains over
+            // BATTLE_SECS of contact, then it's defeated. Stepping away leaves the
+            // health where it is, so you can walk past without fully killing it.
+            it.hp = Math.max(0, it.hp - dt / BATTLE_SECS);
+            it.battleT = nowMs();
+            player.battleT = nowMs();
+            player.dir = (it.x + it.w / 2) >= (player.x + player.w / 2) ? 1 : -1; // face the monster
+            // discrete strokes: each lands a punch — sound + impact spark + arm thrust
+            if (nowMs() - (player.strokeT || 0) > STROKE_MS) {
+              player.strokeT = nowMs();
+              audio.sfx('hit');
+              spawnHit(player.x + player.w / 2 + player.dir * (player.w / 2 + 10), player.y + 24);
+            }
+            if (it.hp <= 0) {
+              it.defeated = true;
+              unlock(it);
+            } else {
+              // Gentle resistance so the monster feels like a guard, but never a hard
+              // wall: moveActor already advanced the player this frame, so a small
+              // push-back keeps net motion forward (no soft-lock). Jump to stomp it.
+              player.x -= player.dir * 2;
+            }
           }
         }
       } else {
@@ -1351,6 +1891,12 @@ art_assets = [];
     if (ci !== state.activeChapter) {
       state.activeChapter = ci;
       els.banner.textContent = chapterTitle(world.chapters[ci]);
+      showChapterTitle(ci);
+    }
+    // big centered chapter title fades out once the hero has walked some distance in
+    if (els.bigTitle && els.bigTitle.classList.contains('show') &&
+        Math.abs(player.x - state.bigTitleX) > TILE * 7) {
+      els.bigTitle.classList.remove('show');
     }
 
     // memory card follows proximity to unlocked memories
@@ -1498,6 +2044,10 @@ art_assets = [];
         if (d.y > viewH + 12) {
           if (rainDrops.length > rt) { rainDrops.splice(i, 1); continue; }
           d.y = -14 - Math.random() * 40; d.x = Math.random() * (viewW + 140) - 70;
+        } else if (d.x > viewW + 70) {
+          // strong wind slant pushes drops off the right edge faster than they fall;
+          // wrap them back to the left so the storm keeps covering the full screen
+          d.x -= viewW + 140;
         }
         ctx.moveTo(d.x, d.y); ctx.lineTo(d.x - slant * d.len, d.y - d.len);
       }
@@ -1598,11 +2148,28 @@ art_assets = [];
       if (x < -60 || x > viewW + 60) continue;
       if (it.kind === 'monster') {
         if (it.defeated) {
-          ctx.globalAlpha = 0.32; ctx.font = '26px serif'; ctx.fillText('💨', x + it.w / 2, y + it.h / 2); ctx.globalAlpha = 1;
+          // beaten → the same glowing memory star as collected memories (clearly visible, opaque),
+          // instead of a faint translucent puff that looked like a rendering bug.
+          const bob = Math.sin(nowMs() / 400 + it.x) * 3;
+          const cx = x + it.w / 2, cy = y + it.h / 2 + bob;
+          ctx.fillStyle = 'rgba(255,255,255,.45)'; ctx.beginPath(); ctx.arc(cx, cy, it.w * 0.5, 0, 6.3); ctx.fill();
+          drawStar(cx, cy, it.w * 0.44, '#fde047', '#ca8a04');
         } else {
           // shadow + emoji body
           ctx.fillStyle = 'rgba(0,0,0,.16)'; ctx.beginPath(); ctx.ellipse(x + it.w / 2, y + it.h - 2, it.w * 0.5, 5, 0, 0, 6.3); ctx.fill();
-          ctx.font = '30px serif'; ctx.fillText(it.emoji || '👾', x + it.w / 2, y + it.h / 2);
+          // restore an opaque fill before the emoji — on platforms that render emoji as
+          // monochrome glyphs they inherit the shadow's translucent fill and look see-through
+          ctx.fillStyle = '#1f2937'; ctx.font = '30px serif'; ctx.fillText(it.emoji || '👾', x + it.w / 2, y + it.h / 2);
+          // health bar — shown once the monster has taken any damage from an auto-battle
+          if (it.hp != null && it.hp < 1) {
+            const bw = it.w + 6, bh = 5, bx = x + it.w / 2 - bw / 2, by = y - 10;
+            ctx.fillStyle = 'rgba(0,0,0,.45)'; roundRect(bx - 1, by - 1, bw + 2, bh + 2, 3); ctx.fill();
+            ctx.fillStyle = '#4b5563'; roundRect(bx, by, bw, bh, 2.5); ctx.fill();
+            const hp = Math.max(0, it.hp);
+            ctx.fillStyle = hp > 0.5 ? '#22c55e' : hp > 0.25 ? '#f59e0b' : '#ef4444';
+            roundRect(bx, by, bw * hp, bh, 2.5); ctx.fill();
+            ctx.fillStyle = '#1f2937';
+          }
           // hint arrow for un-unlocked monsters near the player
           if (Math.abs((it.x) - player.x) < TILE * 4) { ctx.font = '14px serif'; ctx.fillText('▼', x + it.w / 2, y - 12); }
         }
@@ -1625,22 +2192,31 @@ art_assets = [];
       }
     }
 
-    // collectable tokens floating in the scene (only those not yet collected)
+    // collectable tokens floating in the scene (only those not yet collected). Drawn in TWO passes
+    // so a UNIQUE collectable (its lit portrait) always sits ABOVE neighbouring bulk emoji tokens,
+    // never half-hidden behind one that happens to come later in the list.
     ctx.textAlign = 'center'; ctx.textBaseline = 'middle'; ctx.font = '22px serif';
-    for (const def of world.collectables || []) {
-      for (const tk of def.tokens) {
-        // positive tokens wait in the scene until collected; negative tokens are the reverse —
-        // they appear in the scene only after the hero passes (returned from the inventory).
-        if (tk.value < 0 ? !tk.collected : tk.collected) continue;
-        const x = tk.x - camera.x;
-        if (x < -30 || x > viewW + 30) continue;
-        const y = tk.yBase - camera.y + Math.sin(nowMs() / 500 + tk.x) * 3;
-        ctx.fillStyle = 'rgba(255,255,255,.5)'; ctx.beginPath(); ctx.arc(x, y, 14, 0, 6.3); ctx.fill();
-        const icon = def.emoji || '⭐';
-        if (isImgIcon(icon)) { const im = iconImg(imgUrlOf(icon)); if (im.complete && im.naturalWidth) ctx.drawImage(im, x - 13, y - 13, 26, 26); else ctx.fillText('⭐', x, y); }
-        else ctx.fillText(icon, x, y);
-      }
-    }
+    const drawToken = (def, tk, unique) => {
+      // positive tokens wait in the scene until collected; negative tokens are the reverse —
+      // they appear in the scene only after the hero passes (returned from the inventory).
+      if (tk.value < 0 ? !tk.collected : tk.collected) return;
+      const x = tk.x - camera.x;
+      if (x < -30 || x > viewW + 30) return;
+      const y = tk.yBase - camera.y + Math.sin(nowMs() / 500 + tk.x) * 3;
+      const icon = def.emoji || '⭐';
+      // Only UNIQUE collectables (one token) carry a custom picture in the scene; bulk items stay
+      // emoji here and reveal their picture only in the inventory slot/popup. The picture stays
+      // hidden (shown as the emoji) until the hero walks up close, then it "lights up": a bigger,
+      // round-bordered, glowing portrait. Falls back to the emoji while the image still loads.
+      const usp = unique ? itemSprites[def.label] : null;
+      const lit = usp && Math.abs((player.x + player.w / 2) - tk.x) < TILE * 3;
+      if (lit && drawSpriteCircle(ctx, usp, x, y, 24)) return;
+      ctx.fillStyle = 'rgba(255,255,255,.5)'; ctx.beginPath(); ctx.arc(x, y, 14, 0, 6.3); ctx.fill();
+      if (isImgIcon(icon)) { const im = iconImg(imgUrlOf(icon)); if (im.complete && im.naturalWidth) ctx.drawImage(im, x - 13, y - 13, 26, 26); else ctx.fillText('⭐', x, y); }
+      else ctx.fillText(icon, x, y);
+    };
+    for (const def of world.collectables || []) { if (world.labelTokenCount[def.label] === 1) continue; for (const tk of def.tokens) drawToken(def, tk, false); }
+    for (const def of world.collectables || []) { if (world.labelTokenCount[def.label] !== 1) continue; for (const tk of def.tokens) drawToken(def, tk, true); }
 
     drawPlayer(ox, oy);
 
@@ -1806,9 +2382,24 @@ art_assets = [];
     ctx.fillStyle = '#2563eb'; ctx.fillRect(x + 1, y + 18, w - 2, h - 30);
     ctx.fillStyle = '#1d4ed8'; ctx.fillRect(x + 1, y + 18, w - 2, 4);
     // arms + hands
-    ctx.fillStyle = '#1e40af';
-    ctx.fillRect(x - 2, y + 20, 4, 13); ctx.fillRect(x + w - 2, y + 20, 4, 13);
-    ctx.fillStyle = '#f1c39b'; ctx.fillRect(x - 2, y + 32, 4, 4); ctx.fillRect(x + w - 2, y + 32, 4, 4);
+    // during an auto-battle the front arm jabs forward; `punch` is 1 right after a
+    // stroke and eases back to 0 before the next one (STROKE_MS cadence)
+    const sinceStroke = player.battleT && (nowMs() - player.battleT < 200) ? nowMs() - (player.strokeT || 0) : 1e9;
+    const punch = sinceStroke < 160 ? Math.max(0, 1 - sinceStroke / 160) : 0;
+    const backX = dir > 0 ? x - 2 : x + w - 2;     // arm away from facing dir — plain sleeve
+    ctx.fillStyle = '#1e40af'; ctx.fillRect(backX, y + 20, 4, 13);
+    ctx.fillStyle = '#f1c39b'; ctx.fillRect(backX, y + 32, 4, 4);
+    if (punch > 0.02) {
+      // front arm thrust out horizontally toward the monster, fist at the end
+      const reach = 5 + punch * 11, ay = y + 23;
+      const sx = dir > 0 ? x + w - 2 : x + 2 - reach;
+      ctx.fillStyle = '#1e40af'; ctx.fillRect(sx, ay, reach, 4);
+      ctx.fillStyle = '#f1c39b'; ctx.fillRect(dir > 0 ? sx + reach - 1 : sx - 4, ay - 1, 5, 5);
+    } else {
+      const frontX = dir > 0 ? x + w - 2 : x - 2;  // resting vertical sleeve
+      ctx.fillStyle = '#1e40af'; ctx.fillRect(frontX, y + 20, 4, 13);
+      ctx.fillStyle = '#f1c39b'; ctx.fillRect(frontX, y + 32, 4, 4);
+    }
     // head
     ctx.fillStyle = '#f4c8a0'; ctx.fillRect(x + 3, y + 2, w - 6, 17);
     ctx.fillStyle = '#e9b48a'; ctx.fillRect(x + 2, y + 9, 2, 4); ctx.fillRect(x + w - 4, y + 9, 2, 4); // ears
@@ -1971,6 +2562,21 @@ art_assets = [];
     audio.sfx('start');
   });
   root.querySelector('#dsFinishBtn').addEventListener('click', () => { els.done.hidden = true; });
+  // story maker (创造你的故事): open from the journal or the finish screen
+  root.querySelector('#dsJournalMake').addEventListener('click', openMaker);
+  root.querySelector('#dsDoneMake').addEventListener('click', openMaker);
+  root.querySelector('#dsMakerClose').addEventListener('click', closeMaker);
+  maker.overlay.addEventListener('click', (e) => { if (e.target === maker.overlay) closeMaker(); });
+  root.querySelector('#dsMakerAiBtn').addEventListener('click', makerAiGenerate);
+  root.querySelector('#dsMakerPreview').addEventListener('click', () => {
+    if (!(maker.story.value || '').trim()) { showMakerStatus(t('makerEmpty'), 'err'); return; }
+    applyStory(maker.story.value, maker.item.value, maker.name.value);
+    closeMaker();
+  });
+  root.querySelector('#dsMakerShare').addEventListener('click', makerSaveShare);
+  root.querySelector('#dsMakerRules').addEventListener('click', openRules);
+  root.querySelector('#dsRulesClose').addEventListener('click', closeRules);
+  root.querySelector('#dsRulesOverlay').addEventListener('click', (e) => { if (e.target.id === 'dsRulesOverlay') closeRules(); });
   // item description dialog: close via × or tapping the backdrop
   root.querySelector('#dsItemClose').addEventListener('click', () => { els.itemOverlay.hidden = true; });
   els.itemOverlay.addEventListener('click', (e) => { if (e.target === els.itemOverlay) els.itemOverlay.hidden = true; });

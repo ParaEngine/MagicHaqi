@@ -374,7 +374,11 @@ function getMinigameShareUsername() {
 }
 
 function buildMinigameShareUrl(record, username, message = '') {
-    const url = new URL('MagicHaqi.html', window.location.href);
+    // 基于当前页面实际地址生成分享链接（文件名可能是 MagicHaqi_v1.html 等版本化名称，
+    // 不能写死成 MagicHaqi.html），仅重置查询参数 / 锚点后再附加分享参数。
+    const url = new URL(window.location.href);
+    url.search = '';
+    url.hash = '';
     const path = String(record?.path || '').trim();
     if (path) {
         // 用户作品：?gameFrom=<作者用户名>&game=<文件名>

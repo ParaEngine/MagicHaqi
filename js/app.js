@@ -50,7 +50,7 @@ import { initAgentBridge } from './agentBridge.js';
 // Side-effect import: 订阅 state 并接管所有 [data-mh-pet] 占位符的渲染 + 动画
 import { canWakePet, daySleepRejectText, eatFood, hatchPetFromBoarding, isPetInteractionBlocked, isPetSleeping, petArtHtml, preloadPetAssets, say, scanAndMount, setAnim, shouldRejectDaySleep, sleepingInteractionText, startPetSleep, wakePet, wakePetForPlay } from './pet.js';
 
-const sdkCdnUrl = 'https://cdn.keepwork.com/sdk/keepworkSDK.iife.js?v=20260612a';
+const sdkCdnUrl = 'https://cdn.keepwork.com/sdk/keepworkSDK.iife.js?v=0889f6509544';
 
 function loadScript(src) {
     return new Promise((resolve, reject) => {
@@ -176,6 +176,9 @@ let pendingStoryReturnToList = false;
 let storyMakerOrigin = null;
 let shopReturnPreserveRoomMode = false;
 let pendingOnboardingProgress = null;
+// 当前星球的新手指引是否为"领养仪式"型（boarding 小游戏）。登录时预计算，供 home 视图在
+// 「星球→星球表面」缩放过渡前同步查询（onPlanetToFieldOnboarding），决定是否先弹领养小游戏。
+let boardingOnboardingPlanet = false;
 let lastRenderedView = null;
 let isBootstrapping = true;
 
@@ -197,7 +200,39 @@ function decodeSharedParam(value) {
 
 // 分享小游戏链接：?gameFrom=<username>&game=<filename>[&msg=<自定义留言>]
 // msg 是分享者（或程序）附加的一句留言，会显示在分享落地登录页的单独一行。
-function parseSharedGameParams() {
+// 分享小游戏意图持久化：登录 / 注册可能触发整页跳转（KeepWork OAuth 回跳），URL 上的
+// ?game= / ?gameFrom= / ?msg= 会在回跳后丢失，导致"新用户经分享链接登录后"误走新手领养
+// 仪式而非分享的小游戏。故在检测到分享参数时存入 sessionStorage（同标签页跨跳转保留），
+// URL 不再携带参数时回退读取；真正消费小游戏（cleanupSharedGameUrl）时一并清除。
+const SHARED_GAME_STORAGE_KEY = 'mh_pending_shared_game';
+
+function persistSharedGameParams(params) {
+    try {
+        if (params && params.game) {
+            sessionStorage.setItem(SHARED_GAME_STORAGE_KEY, JSON.stringify(params));
+        }
+    } catch (_) {}
+}
+
+function loadPersistedSharedGameParams() {
+    try {
+        const data = JSON.parse(sessionStorage.getItem(SHARED_GAME_STORAGE_KEY) || 'null');
+        const game = String(data?.game || '').trim();
+        if (!game) return null;
+        return {
+            fromUsername: String(data?.fromUsername || '').trim(),
+            game,
+            message: String(data?.message || '').trim().slice(0, 200),
+        };
+    } catch (_) { return null; }
+}
+
+function clearPersistedSharedGameParams() {
+    try { sessionStorage.removeItem(SHARED_GAME_STORAGE_KEY); } catch (_) {}
+}
+
+// 仅从当前 URL 解析分享参数（不含 sessionStorage 回退）。
+function parseSharedGameParamsFromUrl() {
     try {
         const url = new URL(window.location.href);
         const fromUsername = decodeSharedParam(url.searchParams.get('gameFrom') || '').trim();
@@ -207,6 +242,14 @@ function parseSharedGameParams() {
     } catch (_) {
         return { fromUsername: '', game: '', message: '' };
     }
+}
+
+function parseSharedGameParams() {
+    const fromUrl = parseSharedGameParamsFromUrl();
+    // URL 仍带分享参数：以 URL 为准，并刷新持久化的意图（防登录跳转丢失）。
+    if (fromUrl.game) { persistSharedGameParams(fromUrl); return fromUrl; }
+    // URL 不含分享参数（登录回跳后常见）：回退到跳转前持久化的意图。
+    return loadPersistedSharedGameParams() || fromUrl;
 }
 
 function hasSharedGameParams() {
@@ -232,6 +275,8 @@ function resolveLandingView() {
 }
 
 function cleanupSharedGameUrl() {
+    // 小游戏已被消费：清掉 URL 参数与登录跳转前持久化的意图，避免下次启动重复进入。
+    clearPersistedSharedGameParams();
     try {
         const url = new URL(window.location.href);
         ['gameFrom', 'game', 'msg'].forEach(key => url.searchParams.delete(key));
@@ -625,6 +670,16 @@ function renderMinigamesRoute() {
         state.lastHomeZoomLevel = 3;
         navigateToView('home');
     };
+    // 领养新手指引退出后落到「星球表面(field)」，让玩家停在自己的星球上（而非宇宙总览）。
+    const returnToFieldLevel = () => {
+        state.lastHomeZoomLevel = zoomLevelIdToIndex('field');
+        navigateToView('home');
+    };
+    // 退出到「星球」(space) 宇宙总览。
+    const returnToPlanetLevel = () => {
+        state.lastHomeZoomLevel = zoomLevelIdToIndex('space');
+        navigateToView('home');
+    };
     const renderOptions = {
         onBack: () => {
             pendingMinigameLaunch = null;
@@ -638,6 +693,13 @@ function renderMinigamesRoute() {
             }
             if (launch?.mode === 'sickness') {
                 returnToCellLevel();
+                return;
+            }
+            if (launch?.mode === 'onboarding') {
+                // 从领养新手指引点返回：永远回到「星球」总览（而非 field / 小游戏列表 / 我的）；
+                // 仅当玩家已拥有真实(非蛋)宠物时才落到星球表面 field。
+                if (hasAdoptedRealPet()) returnToFieldLevel();
+                else returnToPlanetLevel();
                 return;
             }
             if (launch?.mode === 'adopt') {
@@ -672,7 +734,9 @@ function renderMinigamesRoute() {
         allowPlayWhenLowEnergy: !!launch?.allowLowEnergy || deferredNewUser,
         suppressRewards: !!launch?.suppressRewards,
         hideTopbarActions: launch?.mode === 'adopt' || launch?.mode === 'onboarding',
-        exitGameToBack: deferredNewUser || launch?.mode === 'sickness' || launch?.mode === 'story' || launch?.mode === 'adopt',
+        // 分享小游戏(deferredNewUser)退出时返回小游戏列表(view_minigames)，再从列表返回才回到星球总览；
+        // 故这里不让分享小游戏直接 exit-to-back。其余仪式型(onboarding/adopt/...)仍直接退出。
+        exitGameToBack: launch?.mode === 'sickness' || launch?.mode === 'story' || launch?.mode === 'adopt' || launch?.mode === 'onboarding',
         deferGameFinishedUntilCompletionExit: launch?.mode === 'story',
         completionPrompt: launch?.mode === 'story' ? {
             title: '小游戏完成啦',
@@ -831,6 +895,15 @@ function homeCallbacks() {
         onFeedComplete: render,
         onNav:        handleNav,
         onTreatSickness: handleTreatSickness,
+        // 「星球→星球表面(field)」缩放过渡前的同步拦截：领养仪式型星球且玩家尚无真实宠物时，
+        // 直接弹出领养小游戏并返回 true，view_home 据此取消本次缩放（不进入 field）。
+        onPlanetToFieldOnboarding: () => {
+            if (!boardingOnboardingPlanet) return false;
+            if (onboardingDisabledByUrl()) return false;
+            if (hasAdoptedRealPet()) return false;
+            maybeStartOnboarding();
+            return true;
+        },
     };
 }
 function renderHomeRoute() {
@@ -1122,6 +1195,10 @@ async function bootstrap() {
         throw err;
     }
 
+    // 尽早持久化分享小游戏意图：登录 / 注册可能整页跳转（KeepWork OAuth 回跳）并丢失 URL 参数，
+    // 先存入 sessionStorage，回跳后即便 URL 已无参数也能恢复并优先进入分享的小游戏。
+    persistSharedGameParams(parseSharedGameParamsFromUrl());
+
     // URL token
     try {
         const url = new URL(window.location.href);
@@ -1168,10 +1245,14 @@ async function bootstrap() {
     startTickLoop();
 
     // 新用户经别人分享的小游戏链接进入：先直接试玩，命名 / 领养推迟到退出小游戏时。
-    if (!hasSelectablePets() && await maybeEnterSharedGameForNewUser()) return;
+    // 以"尚无真实(非蛋)宠物"为准：即便存在历史残留的默认蛋，也应优先展示分享的小游戏，而非领养新手指引。
+    if (!hasAdoptedRealPet() && await maybeEnterSharedGameForNewUser()) return;
 
     // 进入游戏前必须先给"星球"命名（每位用户只有一个星球）
     await ensurePlanetNamed();
+
+    // 预计算本星球新手指引是否为领养仪式型（供 planet→field 缩放过渡同步拦截）。
+    boardingOnboardingPlanet = await isBoardingOnboardingPlanet();
 
     // 强制进入指定视图（?view= 参数 / window.__view 全局变量）。优先级高于
     // 新手故事、URL story 路径与默认蛋流程，但仍保证存在可用宠物作为上下文。
@@ -1283,6 +1364,24 @@ function resolveOnboardingMinigameId(minigame) {
 // 进入星球时按其 onboarding 配置触发新手指引；已完成则跳过。
 // 返回 true 表示已接管视图（调用方应直接 return）。
 // 注意：URL 参数 new_user_story 优先级更高，由 maybeStartNewUserStory 单独处理。
+// 是否已拥有"真实宠物"（孵化过、非蛋阶段）。领养仪式（boarding 新手指引）以此为准，
+// 而不是 onboarding "completed" 标记 —— 保证新用户（只有系统默认蛋 / 无宠物）总能看到领养小游戏，
+// 不会因历史残留的 completed 标记而被跳过。
+function hasAdoptedRealPet() {
+    return Object.values(state.pets || {}).some(p => p && p.stage && p.stage !== 'egg');
+}
+
+// 当前星球的新手指引是否为"领养仪式"型（minigames 模式且为 boarding 小游戏）。
+async function isBoardingOnboardingPlanet() {
+    try {
+        if (onboardingDisabledByUrl()) return false;
+        const config = await getPlanetOnboardingConfig(getActivePlanetId());
+        if (!config || config.mode !== 'minigames') return false;
+        const gameId = resolveOnboardingMinigameId(config.minigame);
+        return !!gameId && isBoardingGame({ id: gameId });
+    } catch (_) { return false; }
+}
+
 async function maybeStartOnboarding() {
     if (onboardingDisabledByUrl()) return false;
     const planetId = getActivePlanetId();
@@ -1292,11 +1391,11 @@ async function maybeStartOnboarding() {
     } catch (_) { return false; }
     if (!config || config.mode === 'none') return false;
     const progressKey = config.progressKey || planetId;
-    let completed = false;
-    try { completed = await isOnboardingCompleted(progressKey); } catch (_) { completed = false; }
-    if (completed) return false;
 
     if (config.mode === 'pet-story') {
+        let completed = false;
+        try { completed = await isOnboardingCompleted(progressKey); } catch (_) { completed = false; }
+        if (completed) return false;
         if (!config.storyPath) return false;
         let storyPath = config.storyPath;
         try {
@@ -1316,14 +1415,18 @@ async function maybeStartOnboarding() {
     if (config.mode === 'minigames') {
         const gameId = resolveOnboardingMinigameId(config.minigame);
         if (!gameId) return false;
-        if (!getCurrentPet()) {
-            // boarding 类小游戏本身会完成领养/孵化；没有当前宠物时先创建一颗默认蛋作为 iframe 上下文。
-            if (isBoardingGame({ id: gameId })) {
-                await prepareDefaultEggHome();
-            } else {
-                // 其它 minigame 需要已有宠物才能玩，交回默认流程。
-                return false;
-            }
+        const boarding = isBoardingGame({ id: gameId });
+        if (boarding) {
+            // 领养仪式：只要还没有真实宠物就触发（不看 completed 标记）。
+            if (hasAdoptedRealPet()) return false;
+            // 没有当前宠物时先创建一颗默认蛋作为 iframe 上下文。
+            if (!getCurrentPet()) await prepareDefaultEggHome();
+        } else {
+            // 其它 minigame 型新手指引：仍以 completed 标记为准，且需要已有宠物。
+            let completed = false;
+            try { completed = await isOnboardingCompleted(progressKey); } catch (_) { completed = false; }
+            if (completed) return false;
+            if (!getCurrentPet()) return false;
         }
         pendingMinigameLaunch = {
             mode: 'onboarding',
@@ -1361,7 +1464,9 @@ async function enterDefaultEggHome() {
 // 真正的命名 / 领养在玩家点"返回"退出小游戏时（runDeferredNewUserFlow）才发生。
 async function maybeEnterSharedGameForNewUser() {
     const shared = parseSharedGameParams();
-    if (!shared.fromUsername || !shared.game) return false; // 仅用户作品分享走此流程
+    // 用户作品分享带 gameFrom+game；官方游戏分享只带 game（按 id 打开）。两者都视为分享进入，
+    // 都应优先于领养新手指引展示分享的小游戏，故这里只需 game 即可。
+    if (!shared.game) return false;
     await prepareDefaultEggHome();
     pendingSharedGame = shared;
     deferredNewUserSharedGame = true;
@@ -1374,7 +1479,17 @@ async function maybeEnterSharedGameForNewUser() {
 async function runDeferredNewUserFlow() {
     deferredNewUserSharedGame = false;
     await ensurePlanetNamed();
+    boardingOnboardingPlanet = await isBoardingOnboardingPlanet();
     if (await maybeStartNewUserStory()) return;
+    // 分享小游戏退出后：领养仪式型星球先回到「星球」(space) 总览，等玩家进入星球表面(field)时再弹
+    // 领养小游戏（见 onPlanetToFieldOnboarding）；非领养型保持原有"立即新手指引 / 默认蛋"流程。
+    if (boardingOnboardingPlanet && !hasAdoptedRealPet()) {
+        await prepareDefaultEggHome();
+        state.lastHomeZoomLevel = zoomLevelIdToIndex('space');
+        finishBootstrap();
+        setView('home');
+        return;
+    }
     if (await maybeStartOnboarding()) return;
     await enterDefaultEggHome();
 }
@@ -1682,11 +1797,16 @@ async function handleLogin() {
         }
         startTickLoop();
         // 新用户经别人分享的小游戏链接登录：先直接试玩，命名 / 领养推迟到退出小游戏时。
-        if (!hasSelectablePets() && await maybeEnterSharedGameForNewUser()) return;
+        // 以"尚无真实(非蛋)宠物"为准，避免历史残留默认蛋导致优先弹领养新手指引而非分享小游戏。
+        if (!hasAdoptedRealPet() && await maybeEnterSharedGameForNewUser()) return;
         await ensurePlanetNamed();
+        // 预计算本星球新手指引是否为领养仪式型（供 planet→field 缩放过渡同步拦截）。
+        boardingOnboardingPlanet = await isBoardingOnboardingPlanet();
         if (await enterForcedViewIfAny()) return;
         if (!hasSelectablePets()) {
             if (await maybeStartNewUserStory()) return;
+            // 新登录无宠物：与刷新(bootstrap)路径一致，触发领养新手指引。
+            if (await maybeStartOnboarding()) return;
             await enterDefaultEggHome();
             return;
         } else if (state.currentPetId && !isPetSelectable(state.pets[state.currentPetId])) {
@@ -1706,6 +1826,8 @@ async function handleLogin() {
             try { await ensurePetData(state.currentPetId); } catch (_) {}
         }
         preloadLoadedPetAssets();
+        // 已有宠物（含仅默认蛋）：与刷新路径一致，按需触发领养新手指引（无真实宠物时）。
+        if (await maybeStartOnboarding()) return;
         setView(resolveLandingView());
     }
 }
@@ -1771,7 +1893,9 @@ async function handleClearData() {
         state.isFeedMode = false;
         showToast('已清除', 'success');
         await ensurePlanetNamed();
+        boardingOnboardingPlanet = await isBoardingOnboardingPlanet();
         if (await maybeStartNewUserStory()) return;
+        if (await maybeStartOnboarding()) return;
         await enterDefaultEggHome();
     } catch (e) {
         showToast('清除失败：' + (e?.message || e), 'error');
@@ -1939,6 +2063,8 @@ async function handleAdoptMinigameResult(_game, data = {}) {
 
 async function handleBoardingOnboardingResult(_game, data = {}) {
     pendingMinigameLaunch = null;
+    // 领养仪式完成：新宠物孵化在自己的星球表面，落到 field 视图查看新伙伴。
+    state.lastHomeZoomLevel = zoomLevelIdToIndex('field');
     await finishBoardingHatch(data || {}, { stage: 'baby' });
     if (pendingOnboardingProgress) {
         try { await markOnboardingCompleted(pendingOnboardingProgress.progressKey, pendingOnboardingProgress.mode || 'minigames'); } catch (_) {}

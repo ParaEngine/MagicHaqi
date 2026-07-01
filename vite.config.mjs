@@ -9,6 +9,51 @@ const rootDir = import.meta.dirname;
 const sideBySideDirs = ['minigames', 'dev_tools', 'famous-pets', 'famous-planets', 'pet-story'];
 const sideBySideFiles = ['docs/userguide.html', 'docs/pet_wiki.html'];
 const sdkCdnPattern = /https:\/\/cdn\.keepwork\.com\/sdk\/keepworkSDK\.iife\.js(?:\?v=[^'"\s<)]*)?/g;
+const sdkCdnBase = 'https://cdn.keepwork.com/sdk/keepworkSDK.iife.js';
+
+// Download the live keepworkSDK bundle and return a short content hash. A random
+// query param busts the CDN edge cache so we always hash the freshest bytes; the
+// `?v=` we then ship is the hash of the *contents*, not that throwaway buster.
+async function fetchSdkContentHash() {
+    const cacheBuster = `${Date.now()}-${Math.random().toString(36).slice(2)}`;
+    const res = await fetch(`${sdkCdnBase}?v=${cacheBuster}`, { cache: 'no-store' });
+    if (!res.ok) throw new Error(`download failed (${res.status} ${res.statusText})`);
+    const buf = Buffer.from(await res.arrayBuffer());
+    return crypto.createHash('sha256').update(buf).digest('hex').slice(0, 12);
+}
+
+// Rewrite `const sdkCdnUrl = '…keepworkSDK.iife.js?v=<hash>'` in js/app.js so the
+// shipped version param matches the live SDK's content hash. Runs first in
+// buildStart (before the entry is read), so the bundled app.js and every HTML
+// file synced by copySideBySideDirs()/extractHtmlStylesToCss() get the new hash.
+function syncAppSdkCdnVersion() {
+    return {
+        name: 'sync-app-sdk-cdn-version',
+        apply: 'build',
+        async buildStart() {
+            let hash;
+            try {
+                hash = await fetchSdkContentHash();
+            } catch (err) {
+                this.warn(`[sync-app-sdk-cdn-version] keeping existing sdkCdnUrl ?v= — ${err.message}`);
+                return;
+            }
+            const appJsPath = path.join(rootDir, 'js', 'app.js');
+            const appJs = fs.readFileSync(appJsPath, 'utf8');
+            const nextAppJs = appJs.replace(
+                /(const\s+sdkCdnUrl\s*=\s*['"]https:\/\/cdn\.keepwork\.com\/sdk\/keepworkSDK\.iife\.js)(?:\?v=[^'"]*)?(['"])/,
+                `$1?v=${hash}$2`,
+            );
+            if (nextAppJs === appJs) {
+                this.warn('[sync-app-sdk-cdn-version] sdkCdnUrl not found / already current in js/app.js');
+                return;
+            }
+            fs.writeFileSync(appJsPath, nextAppJs);
+            // eslint-disable-next-line no-console
+            console.log(`[sync-app-sdk-cdn-version] sdkCdnUrl ?v=${hash}`);
+        },
+    };
+}
 
 function appSdkCdnUrl() {
     const appJs = fs.readFileSync(path.join(rootDir, 'js', 'app.js'), 'utf8');
@@ -376,6 +421,7 @@ export default defineConfig({
     base: './',
     publicDir: false,
     plugins: [
+        syncAppSdkCdnVersion(), // must run first: rewrites js/app.js ?v= before the entry is read
         inlinePetSheetWorker(),
         extractHtmlStylesToCss(),
         cleanStaleAssets(),

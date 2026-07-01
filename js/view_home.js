@@ -1530,6 +1530,12 @@ function getWipeFocusCenter(levelIndex) {
 }
 
 function runZoomTransition(from, to) {
+    // 跳转前拦截：从「星球」(space) 进入「星球表面」(field) 之前，先询问 app 是否需要先弹领养新手指引。
+    // 若需要，直接进入领养小游戏而不缩放进入 field（避免“先进 field 再弹小游戏”的闪烁）。
+    if (CONFIG.zoomLevels[from]?.id === 'space' && CONFIG.zoomLevels[to]?.id === 'field'
+        && !isVisitingMode() && __lastCallbacks?.onPlanetToFieldOnboarding?.()) {
+        return;
+    }
     const direction = to > from ? 'in' : 'out';
     const stage = document.getElementById('mhStage');
     const dock  = document.getElementById('mhDock');
