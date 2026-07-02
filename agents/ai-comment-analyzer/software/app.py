@@ -1130,6 +1130,141 @@ def page_one_click():
             st.write(f"{info['icon']} {info['display_name']}")
 
 
+def page_topic_search():
+    """主题搜索分析页面：按关键词搜索相关帖子并生成汇总分析报告"""
+    st.title("🔍 主题搜索分析")
+    st.markdown("输入一个关键词/主题，自动搜索相关帖子并抓取评论，生成汇总分析报告")
+    st.markdown("---")
+
+    platform = st.session_state.selected_platform
+    platform_info = PLATFORM_CONFIG[platform]
+
+    st.info(f"当前平台: {platform_info['icon']} {platform_info['display_name']}（可在侧边栏切换平台）")
+
+    if platform in ("douyin", "xiaohongshu"):
+        st.caption("⚠️ 该平台搜索接口需要签名验证，属于实验性功能，可能因反爸升级而失败")
+    elif platform == "weibo":
+        st.caption("⚠️ 微博搜索接口对未登录访问限制较严，建议在侧边栏配置登录 Cookie 以提高成功率")
+    elif platform == "twitter":
+        st.caption("💡 需要 Twitter API v2 权限，只能搜索最近 7 天内的推文")
+
+    keyword = st.text_input("🔎 搜索关键词/主题", placeholder="例如: python教程")
+
+    col1, col2, col3 = st.columns(3)
+    with col1:
+        max_posts = st.slider("最多抓取帖子数", min_value=1, max_value=30, value=10, step=1)
+    with col2:
+        max_comments_per_post = st.slider("每个帖子最多评论数", min_value=10, max_value=300, value=50, step=10)
+    with col3:
+        st.write("")
+        analyze_immediately = st.checkbox("自动 AI 分析", value=True)
+
+    if st.button("🚀 开始搜索并分析", type="primary", use_container_width=True):
+        if not keyword:
+            st.error("请输入搜索关键词")
+            return
+
+        collector = get_collector(platform)
+        if not collector:
+            st.error(f"无法初始化 {platform_info['display_name']} 收集器")
+            return
+
+        progress_bar = st.progress(0)
+        status_text = st.empty()
+
+        status_text.text(f"🔍 正在搜索「{keyword}」相关帖子...")
+        with st.spinner("搜索中..."):
+            posts = collector.search_posts(keyword, max_posts=max_posts)
+
+        if not posts:
+            st.warning("⚠️ 未找到相关帖子，请更换关键词，或检查平台配置/登录 Cookie 是否正确")
+            return
+
+        st.success(f"✅ 找到 {len(posts)} 个相关帖子")
+        progress_bar.progress(0.15)
+
+        db = get_db()
+        for p in posts:
+            db.insert_post(p)
+
+        ai = None
+        if analyze_immediately:
+            api_key = st.session_state.get("openai_api_key", "")
+            if not api_key:
+                st.warning("⚠️ 未配置 AI API Key，跳过 AI 分析步骤")
+            else:
+                ai = get_ai_analyzer()
+
+        total_comments_fetched = 0
+        for i, post in enumerate(posts):
+            pid = post.get("id", "")
+            post_label = (post.get("title") or post.get("content", "") or pid)[:30]
+
+            status_text.text(f"📥 ({i + 1}/{len(posts)}) 拉取帖子评论: {post_label}")
+            progress_bar.progress(0.15 + 0.55 * (i / len(posts)))
+
+            with st.spinner(f"拉取第 {i + 1}/{len(posts)} 个帖子的评论..."):
+                comments = collector.fetch_comments(pid, max_comments=max_comments_per_post)
+
+            if comments:
+                for c in comments:
+                    c["post_id"] = pid
+                    c["platform"] = platform
+                total_comments_fetched += db.insert_comments_batch(comments)
+
+            if ai:
+                status_text.text(f"🤖 ({i + 1}/{len(posts)}) AI 分析中: {post_label}")
+                unanalyzed = db.get_unanalyzed_comments(pid, platform)
+                analyses = []
+                for c in unanalyzed:
+                    result = ai.analyze_comment(c.get("text", ""))
+                    if result:
+                        analyses.append({
+                            "comment_id": c["id"],
+                            "platform": platform,
+                            "sentiment": result["sentiment"],
+                            "intent": result["intent"],
+                            "summary": result["summary"],
+                            "model": st.session_state.get("openai_model", "gpt-3.5-turbo")
+                        })
+                if analyses:
+                    db.insert_analyses_batch(analyses)
+
+        progress_bar.progress(0.8)
+        st.success(f"📥 共拉取 {total_comments_fetched} 条评论（涉及 {len(posts)} 个帖子）")
+
+        status_text.text("📄 正在生成主题汇总报告...")
+        report_gen = get_report_gen()
+        report_path = report_gen.generate_topic_report(
+            db=db,
+            keyword=keyword,
+            platform=platform,
+            posts_info=posts,
+            ai_analyzer=ai,
+        )
+
+        progress_bar.progress(1.0)
+        status_text.text("🎉 全部完成！")
+
+        st.success(f"✅ 报告已生成: `{os.path.basename(report_path)}`")
+
+        with open(report_path, 'r', encoding='utf-8') as f:
+            report_content = f.read()
+
+        st.markdown("---")
+        st.subheader("📄 主题汇总报告")
+        with st.container(height=400):
+            st.markdown(report_content)
+
+        st.download_button(
+            label="⬇️ 下载报告",
+            data=report_content,
+            file_name=os.path.basename(report_path),
+            mime="text/markdown",
+            use_container_width=True
+        )
+
+
 def page_reports():
     """历史报告页面"""
     st.title("📁 历史报告")
@@ -1184,6 +1319,7 @@ def main():
     # 导航
     page = st.navigation([
         st.Page(page_one_click, title="🚀 一键分析", icon="🚀"),
+        st.Page(page_topic_search, title="🔍 主题搜索分析", icon="🔍"),
         st.Page(page_home, title="📊 总览", icon="📊"),
         st.Page(page_fetch, title="🐦 拉取评论", icon="📥"),
         st.Page(page_analyze, title="🤖 AI 分析", icon="🤖"),

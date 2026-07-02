@@ -43,6 +43,57 @@ class TwitterCollector(BaseCollector):
             return url_or_id
         return url_or_id
 
+    def search_posts(self, keyword: str, max_posts: int = 10) -> List[Dict]:
+        """按关键词搜索最近的推文（需要 API v2 权限，最多可搜索最近 7 天内容）"""
+        posts = []
+        try:
+            response = self.client.search_recent_tweets(
+                query=keyword,
+                max_results=max(10, min(max_posts, 100)),
+                tweet_fields=[
+                    "id", "text", "created_at", "author_id",
+                    "public_metrics", "lang"
+                ],
+                expansions=["author_id"],
+                user_fields=["username", "name", "profile_image_url"]
+            )
+
+            if response.data is None:
+                print(f"[Twitter] 搜索「{keyword}」未找到结果")
+                return posts
+
+            users = {}
+            if response.includes and response.includes.get("users"):
+                for user in response.includes["users"]:
+                    users[user.id] = user
+
+            for tweet in response.data[:max_posts]:
+                author = users.get(tweet.author_id)
+                public_metrics = getattr(tweet, "public_metrics", {}) or {}
+
+                posts.append({
+                    "id": str(tweet.id),
+                    "title": "",
+                    "content": tweet.text,
+                    "author_id": str(tweet.author_id) if tweet.author_id else None,
+                    "author_name": author.name if author else None,
+                    "author_username": author.username if author else None,
+                    "author_avatar": author.profile_image_url if author else None,
+                    "created_at": tweet.created_at.isoformat() if tweet.created_at else None,
+                    "like_count": public_metrics.get("like_count", 0),
+                    "comment_count": public_metrics.get("reply_count", 0),
+                    "share_count": public_metrics.get("retweet_count", 0),
+                    "view_count": public_metrics.get("impression_count", 0),
+                    "platform": self.platform_name,
+                    "url": f"https://twitter.com/i/web/status/{tweet.id}",
+                })
+
+        except tweepy.TweepyException as e:
+            print(f"[Twitter] 搜索「{keyword}」异常: {e}")
+
+        print(f"[Twitter] 搜索「{keyword}」，找到 {len(posts)} 条推文")
+        return posts
+
     def get_post_info(self, post_id: str) -> Optional[Dict]:
         """获取推文信息"""
         tweet_id = self.extract_post_id(post_id)

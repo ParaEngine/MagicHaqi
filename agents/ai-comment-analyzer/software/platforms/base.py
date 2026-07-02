@@ -87,6 +87,22 @@ class BaseCollector(ABC):
         """
         return True
 
+    def search_posts(self, keyword: str, max_posts: int = 10) -> List[Dict]:
+        """
+        按关键词/主题搜索相关帖子（子类可选实现）
+
+        Args:
+            keyword: 搜索关键词或主题
+            max_posts: 最多返回的帖子数量
+
+        Returns:
+            帖子信息字典列表，每项字段与 get_post_info 返回值保持一致
+            （至少包含 id / title / url / author_name / comment_count / platform）
+            若平台不支持搜索，返回空列表
+        """
+        print(f"[{self.platform_display_name}] 该平台暂不支持关键词搜索")
+        return []
+
     @staticmethod
     def extract_post_id(url_or_id: str) -> str:
         """
