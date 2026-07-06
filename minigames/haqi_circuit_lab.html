@@ -1,0 +1,236 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+
+<head>
+	<meta charset="UTF-8">
+	<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+	<title>哈奇电路实验室</title>
+	<script src="https://cdn.keepwork.com/keepwork/cdn/tailwindcss@3.4.16.js"></script>
+</head>
+
+<body></body>
+<script>
+game_config = {
+	difficulty: "normal",
+	levels: [
+		{
+			id: 1,
+			name: "第一关：点亮第一盏灯",
+			gridCols: 5,
+			gridRows: 4,
+			fixed: [
+				{ type: "battery", row: 1, col: 0, orientation: "h" },
+				{ type: "bulb", row: 1, col: 3, orientation: "h" }
+			],
+			wireBudget: null
+		}
+	]
+};
+</script>
+<script>
+art_assets = [];
+</script>
+<script defer>
+(function () {
+	const I18N = {
+		zhCN: {
+			title: '哈奇电路实验室',
+			helpLabel: '玩法',
+			overlayTitle: '哈奇电路实验室',
+			overlayP1: '拖拽导线把电池和所有灯泡连成通路。灯泡全部点亮且没有短路即可过关。',
+			overlayP2: '开关默认断开，先点击合上；短路会立刻失败并重置本关新放置的导线。',
+			btnStart: '开始搭建',
+			toolWire: '导线',
+			toolSwitch: '开关',
+			toolRotate: '旋转',
+			toolEraser: '橡皮擦',
+			statLevel: '关卡',
+			statMoves: '步数',
+			statStatus: '状态',
+			statBest: '最高',
+			btnRestart: '重开',
+			statusOpen: '断路，请继续搭建',
+			statusShort: '短路！已重置新放置的元件',
+			statusLit: '已点亮 {lit}/{total}',
+			statusWin: '过关！',
+			toastWin: '通关 +{points}',
+			levelPrefix: '哈奇电路实验室 Lv.'
+		},
+		enUS: {
+			title: 'Haqi Circuit Lab',
+			helpLabel: 'Help',
+			overlayTitle: 'Haqi Circuit Lab',
+			overlayP1: 'Drag wires to connect the battery to every bulb. Light all bulbs with no short circuit to clear the level.',
+			overlayP2: 'Switches start open — tap to close them. A short circuit fails instantly and resets wires/switches you placed this level.',
+			btnStart: 'Start Building',
+			toolWire: 'Wire',
+			toolSwitch: 'Switch',
+			toolRotate: 'Rotate',
+			toolEraser: 'Eraser',
+			statLevel: 'Level',
+			statMoves: 'Moves',
+			statStatus: 'Status',
+			statBest: 'Best',
+			btnRestart: 'Restart',
+			statusOpen: 'Open circuit — keep building',
+			statusShort: 'Short circuit! New parts were reset',
+			statusLit: '{lit}/{total} lit',
+			statusWin: 'Level clear!',
+			toastWin: 'Cleared +{points}',
+			levelPrefix: 'Haqi Circuit Lab Lv.'
+		}
+	};
+
+	const state = {
+		lang: (navigator.language || 'zh-CN').toLowerCase().startsWith('zh') ? 'zhCN' : 'enUS',
+		levelIndex: 0,
+		grid: [],
+		gridCols: 0,
+		gridRows: 0,
+		tool: 'wire',
+		moves: 0,
+		gameStarted: false,
+		best: Number(localStorage.getItem('circuitLab.bestScore') || 0)
+	};
+
+	function t(key, vars) {
+		const str = (I18N[state.lang] && I18N[state.lang][key]) || I18N.zhCN[key] || key;
+		if (!vars) return str;
+		return str.replace(/\{(\w+)\}/g, (_, k) => (vars[k] !== undefined ? vars[k] : `{${k}}`));
+	}
+
+	function emptyGrid(rows, cols) {
+		const grid = [];
+		for (let r = 0; r < rows; r++) {
+			grid.push(new Array(cols).fill(null));
+		}
+		return grid;
+	}
+
+	function buildLevel(levelIndex) {
+		const level = game_config.levels[levelIndex];
+		state.levelIndex = levelIndex;
+		state.gridCols = level.gridCols;
+		state.gridRows = level.gridRows;
+		state.grid = emptyGrid(level.gridRows, level.gridCols);
+		state.moves = 0;
+		level.fixed.forEach(item => {
+			state.grid[item.row][item.col] = {
+				type: item.type,
+				orientation: item.orientation,
+				closed: item.type === 'switch' ? true : undefined,
+				fixed: true
+			};
+		});
+		return level;
+	}
+
+	function findBatteryCell() {
+		for (let r = 0; r < state.gridRows; r++) {
+			for (let c = 0; c < state.gridCols; c++) {
+				const cell = state.grid[r][c];
+				if (cell && cell.type === 'battery') return { row: r, col: c, cell };
+			}
+		}
+		return null;
+	}
+
+	function buildDom() {
+		document.body.innerHTML = `
+			<div class="w-full h-screen bg-slate-900 text-white flex flex-col items-center justify-between overflow-hidden select-none">
+				<div class="w-full flex items-center justify-between px-3 py-2 text-sm bg-slate-800">
+					<span id="statLevel"></span>
+					<span id="statMoves"></span>
+					<span id="statStatus" class="font-bold"></span>
+					<span id="statBest"></span>
+					<button id="btnHelp" class="text-xl">❓</button>
+				</div>
+				<div id="board" class="grid gap-1 p-2" role="grid" aria-label="circuit board"></div>
+				<div class="w-full flex items-center justify-center gap-2 px-3 py-2 bg-slate-800">
+					<button data-tool="wire" class="tool-btn px-3 py-2 rounded bg-slate-700"></button>
+					<button data-tool="switch" class="tool-btn px-3 py-2 rounded bg-slate-700"></button>
+					<button data-tool="rotate" class="tool-btn px-3 py-2 rounded bg-slate-700"></button>
+					<button data-tool="eraser" class="tool-btn px-3 py-2 rounded bg-slate-700"></button>
+					<button id="btnRestart" class="px-3 py-2 rounded bg-red-700"></button>
+				</div>
+				<div id="rulesOverlay" class="fixed inset-0 bg-black/80 flex items-center justify-center z-50">
+					<div class="bg-slate-800 rounded-lg p-6 max-w-md text-center space-y-3">
+						<h2 id="overlayTitle" class="text-xl font-bold"></h2>
+						<p id="overlayP1" class="text-sm text-slate-300"></p>
+						<p id="overlayP2" class="text-sm text-slate-300"></p>
+						<button id="btnStart" class="px-4 py-2 rounded bg-emerald-600 font-bold"></button>
+					</div>
+				</div>
+			</div>
+		`;
+	}
+
+	const CELL_GLYPH = {
+		battery: '🔋',
+		bulb_on: '💡',
+		bulb_off: '🔅',
+		switch_closed: '🔘',
+		switch_open: '⭕'
+	};
+
+	function renderGrid() {
+		const board = document.getElementById('board');
+		board.style.gridTemplateColumns = `repeat(${state.gridCols}, minmax(36px, 56px))`;
+		board.innerHTML = '';
+		for (let r = 0; r < state.gridRows; r++) {
+			for (let c = 0; c < state.gridCols; c++) {
+				const cell = state.grid[r][c];
+				const div = document.createElement('div');
+				div.className = 'aspect-square flex items-center justify-center rounded bg-slate-700 text-2xl cursor-pointer';
+				div.dataset.row = r;
+				div.dataset.col = c;
+				if (cell) {
+					div.textContent = cell.type === 'wire' ? '➖'
+						: cell.type === 'battery' ? CELL_GLYPH.battery
+						: cell.type === 'bulb' ? CELL_GLYPH.bulb_off
+						: cell.closed ? CELL_GLYPH.switch_closed : CELL_GLYPH.switch_open;
+					if ((cell.type === 'wire' && false) || cell.orientation === 'v') {
+						div.style.transform = 'rotate(90deg)';
+					}
+				}
+				board.appendChild(div);
+			}
+		}
+	}
+
+	function applyI18nText() {
+		document.getElementById('overlayTitle').textContent = t('overlayTitle');
+		document.getElementById('overlayP1').textContent = t('overlayP1');
+		document.getElementById('overlayP2').textContent = t('overlayP2');
+		document.getElementById('btnStart').textContent = t('btnStart');
+		document.getElementById('btnHelp').title = t('helpLabel');
+		document.getElementById('btnRestart').textContent = t('btnRestart');
+		document.querySelector('[data-tool="wire"]').textContent = t('toolWire');
+		document.querySelector('[data-tool="switch"]').textContent = t('toolSwitch');
+		document.querySelector('[data-tool="rotate"]').textContent = t('toolRotate');
+		document.querySelector('[data-tool="eraser"]').textContent = t('toolEraser');
+	}
+
+	buildDom();
+	document.title = t('title');
+	applyI18nText();
+	buildLevel(0);
+	renderGrid();
+
+	document.getElementById('btnStart').addEventListener('click', () => {
+		document.getElementById('rulesOverlay').remove();
+		if (!state.gameStarted) {
+			state.gameStarted = true;
+			window.parent.postMessage({ type: 'gameStarted' }, '*');
+		}
+	});
+	document.getElementById('btnHelp').addEventListener('click', () => {
+		location.reload();
+	});
+
+	window.parent.postMessage({ type: 'gameLoaded' }, '*');
+
+	window.__circuitDebug = { state, buildLevel, renderGrid, findBatteryCell };
+})();
+</script>
+</html>
