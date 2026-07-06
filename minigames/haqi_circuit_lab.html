@@ -135,6 +135,75 @@ art_assets = [];
 		return null;
 	}
 
+	function placeCell(row, col, cellData) {
+		const existing = state.grid[row][col];
+		if (existing && existing.fixed) return false;
+		state.grid[row][col] = cellData;
+		state.moves++;
+		return true;
+	}
+
+	function eraseCell(row, col) {
+		const existing = state.grid[row][col];
+		if (!existing || existing.fixed) return false;
+		state.grid[row][col] = null;
+		state.moves++;
+		return true;
+	}
+
+	let isPointerDown = false;
+
+	function handleCellAction(row, col) {
+		const existing = state.grid[row][col];
+		if (state.tool === 'eraser') {
+			eraseCell(row, col);
+		} else if (state.tool === 'wire') {
+			if (!existing) placeCell(row, col, { type: 'wire', orientation: 'h', fixed: false });
+		} else if (state.tool === 'switch') {
+			if (!existing) placeCell(row, col, { type: 'switch', orientation: 'h', closed: false, fixed: false });
+		}
+		renderGrid();
+		updateStatusBar();
+	}
+
+	function attachBoardEvents() {
+		const board = document.getElementById('board');
+		board.addEventListener('pointerdown', (e) => {
+			const target = e.target.closest('[data-row]');
+			if (!target) return;
+			isPointerDown = true;
+			handleCellAction(Number(target.dataset.row), Number(target.dataset.col));
+		});
+		board.addEventListener('pointerover', (e) => {
+			if (!isPointerDown) return;
+			const target = e.target.closest('[data-row]');
+			if (!target) return;
+			handleCellAction(Number(target.dataset.row), Number(target.dataset.col));
+		});
+		window.addEventListener('pointerup', () => { isPointerDown = false; });
+	}
+
+	function attachToolbarEvents() {
+		document.querySelectorAll('.tool-btn').forEach(btn => {
+			btn.addEventListener('click', () => {
+				state.tool = btn.dataset.tool;
+				document.querySelectorAll('.tool-btn').forEach(b => b.classList.remove('bg-emerald-600'));
+				btn.classList.add('bg-emerald-600');
+			});
+		});
+		document.getElementById('btnRestart').addEventListener('click', () => {
+			buildLevel(state.levelIndex);
+			renderGrid();
+			updateStatusBar();
+		});
+	}
+
+	function updateStatusBar() {
+		document.getElementById('statLevel').textContent = `${t('statLevel')}: ${state.levelIndex + 1}`;
+		document.getElementById('statMoves').textContent = `${t('statMoves')}: ${state.moves}`;
+		document.getElementById('statBest').textContent = `${t('statBest')}: ${state.best}`;
+	}
+
 	function buildDom() {
 		document.body.innerHTML = `
 			<div class="w-full h-screen bg-slate-900 text-white flex flex-col items-center justify-between overflow-hidden select-none">
@@ -216,6 +285,10 @@ art_assets = [];
 	applyI18nText();
 	buildLevel(0);
 	renderGrid();
+	attachBoardEvents();
+	attachToolbarEvents();
+	document.querySelector('[data-tool="wire"]').classList.add('bg-emerald-600');
+	updateStatusBar();
 
 	document.getElementById('btnStart').addEventListener('click', () => {
 		document.getElementById('rulesOverlay').remove();
@@ -230,7 +303,7 @@ art_assets = [];
 
 	window.parent.postMessage({ type: 'gameLoaded' }, '*');
 
-	window.__circuitDebug = { state, buildLevel, renderGrid, findBatteryCell };
+	window.__circuitDebug = { state, buildLevel, renderGrid, findBatteryCell, placeCell, eraseCell, handleCellAction };
 })();
 </script>
 </html>
