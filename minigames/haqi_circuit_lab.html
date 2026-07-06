@@ -135,6 +135,114 @@ art_assets = [];
 		return null;
 	}
 
+	const DIRS = [
+		{ name: 'up', dr: -1, dc: 0, opposite: 'down' },
+		{ name: 'down', dr: 1, dc: 0, opposite: 'up' },
+		{ name: 'left', dr: 0, dc: -1, opposite: 'right' },
+		{ name: 'right', dr: 0, dc: 1, opposite: 'left' }
+	];
+
+	function cellAllowsDirection(cell, dirName) {
+		if (!cell) return false;
+		if (cell.type === 'wire') return true;
+		if (cell.type === 'switch' && !cell.closed) return false;
+		const axis = cell.orientation === 'h' ? ['left', 'right'] : ['up', 'down'];
+		return axis.includes(dirName);
+	}
+
+	function cellKey(r, c) { return `${r},${c}`; }
+
+	// Builds an undirected adjacency list over all occupied, non-battery cells.
+	function buildGraph(excludeCell) {
+		const graph = new Map();
+		for (let r = 0; r < state.gridRows; r++) {
+			for (let c = 0; c < state.gridCols; c++) {
+				const cell = state.grid[r][c];
+				if (!cell) continue;
+				if (excludeCell && r === excludeCell.row && c === excludeCell.col) continue;
+				const key = cellKey(r, c);
+				if (!graph.has(key)) graph.set(key, []);
+			}
+		}
+		for (let r = 0; r < state.gridRows; r++) {
+			for (let c = 0; c < state.gridCols; c++) {
+				const cell = state.grid[r][c];
+				if (!cell) continue;
+				if (excludeCell && r === excludeCell.row && c === excludeCell.col) continue;
+				DIRS.forEach(dir => {
+					const nr = r + dir.dr, nc = c + dir.dc;
+					if (nr < 0 || nc < 0 || nr >= state.gridRows || nc >= state.gridCols) return;
+					const neighbor = state.grid[nr][nc];
+					if (!neighbor) return;
+					if (excludeCell && nr === excludeCell.row && nc === excludeCell.col) return;
+					if (!cellAllowsDirection(cell, dir.name)) return;
+					if (!cellAllowsDirection(neighbor, dir.opposite)) return;
+					graph.get(cellKey(r, c)).push({ key: cellKey(nr, nc), isBulb: neighbor.type === 'bulb' });
+				});
+			}
+		}
+		return graph;
+	}
+
+	// BFS from `startKey`. If `skipBulbs` is true, traversal will not pass through bulb cells
+	// (used to detect a pure wire/switch shortcut = short circuit).
+	function bfsReachable(graph, startKey, skipBulbs) {
+		const visited = new Set([startKey]);
+		const queue = [startKey];
+		while (queue.length) {
+			const current = queue.shift();
+			const neighbors = graph.get(current) || [];
+			neighbors.forEach(edge => {
+				if (visited.has(edge.key)) return;
+				if (skipBulbs && edge.isBulb) return;
+				visited.add(edge.key);
+				queue.push(edge.key);
+			});
+		}
+		return visited;
+	}
+
+	function analyzeCircuit() {
+		const battery = findBatteryCell();
+		if (!battery) return { circuitClosed: false, shortCircuit: false, litCells: new Set() };
+
+		const axis = battery.cell.orientation === 'h' ? [{ dr: 0, dc: -1 }, { dr: 0, dc: 1 }] : [{ dr: -1, dc: 0 }, { dr: 1, dc: 0 }];
+		const terminals = axis
+			.map(d => ({ row: battery.row + d.dr, col: battery.col + d.dc }))
+			.filter(p => p.row >= 0 && p.col >= 0 && p.row < state.gridRows && p.col < state.gridCols && state.grid[p.row][p.col]);
+
+		if (terminals.length < 2) {
+			return { circuitClosed: false, shortCircuit: false, litCells: new Set() };
+		}
+
+		const [termA, termB] = terminals;
+		const graph = buildGraph(battery);
+		const keyA = cellKey(termA.row, termA.col);
+		const keyB = cellKey(termB.row, termB.col);
+
+		const reachableFromA = bfsReachable(graph, keyA, false);
+		const circuitClosed = reachableFromA.has(keyB);
+
+		const reachableFromA_noBulb = bfsReachable(graph, keyA, true);
+		const shortCircuit = reachableFromA_noBulb.has(keyB);
+
+		const litCells = new Set();
+		if (circuitClosed && !shortCircuit) {
+			const reachableFromB = bfsReachable(graph, keyB, false);
+			for (let r = 0; r < state.gridRows; r++) {
+				for (let c = 0; c < state.gridCols; c++) {
+					const cell = state.grid[r][c];
+					if (cell && cell.type === 'bulb') {
+						const key = cellKey(r, c);
+						if (reachableFromA.has(key) && reachableFromB.has(key)) litCells.add(key);
+					}
+				}
+			}
+		}
+
+		return { circuitClosed, shortCircuit, litCells };
+	}
+
 	function placeCell(row, col, cellData) {
 		const existing = state.grid[row][col];
 		if (existing && existing.fixed) return false;
@@ -316,7 +424,7 @@ art_assets = [];
 
 	window.parent.postMessage({ type: 'gameLoaded' }, '*');
 
-	window.__circuitDebug = { state, buildLevel, renderGrid, findBatteryCell, placeCell, eraseCell, handleCellAction };
+	window.__circuitDebug = { state, buildLevel, renderGrid, findBatteryCell, analyzeCircuit, placeCell, eraseCell, handleCellAction };
 })();
 </script>
 </html>
