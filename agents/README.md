@@ -20,6 +20,22 @@ and analytics autonomously. Not distributed to end users.
 - `schedule.md` — 24/7 cadence.
 - `tasks/` — per-lane prompts (care / content / marketing / analytics).
 
+## promo-campaign-maker/  (for DEVELOPERS / marketing)
+Browser-driven promotional content pack generator. Opens a real product URL, navigates
+through important screens, captures screenshots, matches each screenshot to the supplied
+software/business/design plan, and drafts platform-specific posting copy for Douyin,
+Xiaohongshu, Bilibili, WeChat, Weibo, communities, and B2B/IP outreach. It produces a
+human-reviewable markdown posting pack only — it never publishes automatically.
+
+## ai-comment-analyzer/  (for DEVELOPERS / marketing)
+Multi-platform social media comment analysis and reply assistant. Aggregates comments from
+Twitter/X, Bilibili, Xiaohongshu, Weibo, and Douyin; analyzes sentiment, intent, quality,
+pain points, suggestions, and product feedback with AI; generates structured insight
+reports; and can draft or batch-manage platform-specific replies with rate-limit guardrails.
+It includes a Streamlit web UI, FastAPI agent API, WebSocket stream, and MCP endpoint for
+agent integration. Publishing replies should stay human-approved unless an explicit safe
+auto mode is configured.
+
 ## In-app fallback
 `MagicHaqi.html?view=ops` opens the **Ops Console** — a human dashboard showing agent
 state, care to-dos, the audit log, and a manual command runner.
