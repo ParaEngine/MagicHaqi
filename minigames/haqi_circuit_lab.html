@@ -155,12 +155,25 @@ art_assets = [];
 
 	function handleCellAction(row, col) {
 		const existing = state.grid[row][col];
+
+		// Tapping an existing switch always toggles open/closed, regardless of tool.
+		if (existing && existing.type === 'switch' && state.tool !== 'eraser') {
+			existing.closed = !existing.closed;
+			renderGrid();
+			updateStatusBar();
+			return;
+		}
+
 		if (state.tool === 'eraser') {
 			eraseCell(row, col);
 		} else if (state.tool === 'wire') {
 			if (!existing) placeCell(row, col, { type: 'wire', orientation: 'h', fixed: false });
 		} else if (state.tool === 'switch') {
 			if (!existing) placeCell(row, col, { type: 'switch', orientation: 'h', closed: false, fixed: false });
+		} else if (state.tool === 'rotate') {
+			if (existing && (existing.type === 'battery' || existing.type === 'bulb' || existing.type === 'switch')) {
+				existing.orientation = existing.orientation === 'h' ? 'v' : 'h';
+			}
 		}
 		renderGrid();
 		updateStatusBar();
