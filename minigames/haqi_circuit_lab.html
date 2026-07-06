@@ -157,7 +157,7 @@ art_assets = [];
 		const existing = state.grid[row][col];
 
 		// Tapping an existing switch always toggles open/closed, regardless of tool.
-		if (existing && existing.type === 'switch' && state.tool !== 'eraser') {
+		if (existing && existing.type === 'switch' && state.tool !== 'eraser' && state.tool !== 'rotate') {
 			existing.closed = !existing.closed;
 			renderGrid();
 			updateStatusBar();
