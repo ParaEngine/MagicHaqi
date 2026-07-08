@@ -280,18 +280,14 @@ class TapTapCollector(BaseCollector):
 
     def reply_comment(self, comment_id: str, reply_text: str, post_id: str = "") -> Dict:
         """
-        回复评价（需要登录 Cookie，且端点需验证）
+        回复评价（需要登录 Cookie）
 
-        注意：TapTap 评论 POST 端点无法从未登录状态确定。
-        如果你已配置有效 Cookie，可以：
-        1. 打开浏览器 F12 → Network
-        2. 在 TapTap 上实际回复一条评价
-        3. 找到 POST 请求的完整 URL，更新此方法中的 endpoints 列表
+        使用 TapTap 的 review-comment API。
 
         Args:
-            comment_id: 评价 ID
+            comment_id: 评价 ID（review_id）
             reply_text: 回复内容
-            post_id: 游戏 app_id（可选）
+            post_id: 游戏的 app_id（可选）
 
         Returns:
             {"success": bool, "message": str}
@@ -303,51 +299,38 @@ class TapTapCollector(BaseCollector):
                 "message": "请在侧边栏配置 TapTap Cookie（从浏览器登录后获取）"
             }
 
-        # 尝试已知的端点模式（均需登录后才能确认正确端点）
-        # 如果你知道正确的端点，请替换此列表
-        endpoints = [
-            f"{self.API_BASE}/review/v2/comment",
-            f"{self.API_BASE}/moment/v1/comment",
-            f"{self.API_BASE}/comment/v1/add",
-        ]
+        try:
+            # TapTap 使用 form-encoded 而非 JSON
+            resp = self.session.post(
+                f"{self.API_BASE}/review-comment/v1/create",
+                data={
+                    "review_id": comment_id,
+                    "content": reply_text,
+                },
+                timeout=15,
+            )
 
-        last_error = ""
+            ct = resp.headers.get("Content-Type", "")
+            if "json" not in ct:
+                # 可能返回空或 HTML
+                print(f"[TapTap] review-comment/create → {resp.status_code} {ct}")
+                if resp.status_code == 200:
+                    return {"success": True, "message": "回复成功"}
+                return {
+                    "success": False,
+                    "error": f"服务器返回 {ct}",
+                    "message": "Cookie 可能无效或过期",
+                }
 
-        for url in endpoints:
-            try:
-                resp = self.session.post(
-                    url,
-                    json={
-                        "review_id": int(comment_id) if comment_id.isdigit() else comment_id,
-                        "content": reply_text,
-                    },
-                    timeout=15,
-                )
+            result = resp.json()
+            if result.get("success") or result.get("data"):
+                print(f"[TapTap] 回复成功: review_id={comment_id}")
+                return {"success": True, "message": "回复成功", "data": result.get("data", {})}
 
-                ct = resp.headers.get("Content-Type", "")
-                if "json" not in ct:
-                    print(f"[TapTap] {url} → 非 JSON: {ct}")
-                    last_error = f"端点 {url} 返回 {ct} 而非 JSON — 可能需要不同的 API 路径"
-                    continue
+            err = result.get("msg", result.get("message", "未知错误"))
+            print(f"[TapTap] 回复失败: {err}")
+            return {"success": False, "error": err}
 
-                result = resp.json()
-                if result.get("success") or result.get("data"):
-                    print(f"[TapTap] 回复成功: {url}")
-                    return {"success": True, "message": "回复成功", "data": result.get("data", {})}
-
-                err = result.get("msg", result.get("message", "未知错误"))
-                print(f"[TapTap] {url} → {err}")
-                last_error = err
-
-            except Exception as e:
-                print(f"[TapTap] {url} 异常: {e}")
-                last_error = str(e)
-
-        return {
-            "success": False,
-            "error": last_error or "所有端点均失败",
-            "message": (
-                "无法确定 TapTap 的正确评论端点。请用浏览器登录 TapTap，"
-                "F12 → Network 标签，手动回复一条评价，找到 POST 请求的 URL 后告诉我。"
-            ),
-        }
+        except Exception as e:
+            print(f"[TapTap] 回复异常: {e}")
+            return {"success": False, "error": str(e)}
