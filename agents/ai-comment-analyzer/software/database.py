@@ -85,6 +85,7 @@ class Database:
             self._add_column_if_not_exists("comments", "author_avatar", "TEXT")
             self._add_column_if_not_exists("comments", "share_count", "INTEGER DEFAULT 0")
             self._add_column_if_not_exists("comments", "ip_location", "TEXT")
+            self._add_column_if_not_exists("comments", "rating", "REAL DEFAULT 0")
 
             # 创建帖子信息表
             cursor.execute("""
@@ -327,8 +328,8 @@ class Database:
                 INSERT OR REPLACE INTO comments 
                 (id, post_id, platform, author_id, author_username, author_name,
                  author_avatar, text, created_at, like_count, reply_count,
-                 share_count, ip_location, source, fetched_at)
-                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                 share_count, ip_location, source, rating, fetched_at)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
             """, (
                 comment.get("id"),
                 comment.get("post_id"),
@@ -344,6 +345,7 @@ class Database:
                 comment.get("share_count", 0),
                 comment.get("ip_location"),
                 comment.get("source"),
+                comment.get("rating", 0),
                 datetime.utcnow().isoformat() + "Z"
             ))
             conn.commit()

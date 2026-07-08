@@ -72,6 +72,16 @@ PLATFORM_CONFIG = {
         "post_label": "视频链接或 ID",
         "post_placeholder": "例如: https://www.douyin.com/video/7123456789",
     },
+    "taptap": {
+        "display_name": "TapTap (游戏社区)",
+        "icon": "🎮",
+        "color": "#15B5DD",
+        "config_fields": [
+            {"key": "cookie", "label": "登录 Cookie (可选)", "type": "text", "env": "TAPTAP_COOKIE"},
+        ],
+        "post_label": "游戏链接或 App ID",
+        "post_placeholder": "例如: https://www.taptap.cn/app/123456 或直接输入 App ID",
+    },
 }
 
 
@@ -935,6 +945,8 @@ def auto_detect_platform(url: str) -> str:
         return "weibo"
     elif "douyin.com" in url_lower:
         return "douyin"
+    elif "taptap" in url_lower:
+        return "taptap"
     return "bilibili"  # 默认
 
 
@@ -947,7 +959,7 @@ def page_one_click():
     # URL 输入
     url_input = st.text_input(
         "🔗 粘贴帖子/视频链接",
-        placeholder="支持: Twitter、B站、小红书、微博、抖音链接",
+        placeholder="支持: Twitter、B站、小红书、微博、抖音、TapTap链接",
         help="粘贴任意平台的帖子/视频链接，系统会自动识别平台并分析"
     )
 
@@ -1008,7 +1020,12 @@ def page_one_click():
         with st.expander("📺 帖子详情", expanded=True):
             col1, col2 = st.columns([3, 1])
             with col1:
-                st.write(f"**{post_info.get('title', post_info.get('content', '')[:50])}**")
+                content = post_info.get('content', '')
+                if isinstance(content, str):
+                    content = content[:50]
+                else:
+                    content = str(content)[:50]
+                st.write(f"**{post_info.get('title', content)}**")
             with col2:
                 st.metric("💬 评论数", f"{post_info.get('comment_count', 0):,}")
 
@@ -1123,10 +1140,10 @@ def page_one_click():
 
     st.markdown("---")
     st.subheader("📋 支持的平台")
-    col1, col2, col3, col4, col5 = st.columns(5)
+    cols = st.columns(3)
     platforms_list = list(PLATFORM_CONFIG.items())
     for i, (key, info) in enumerate(platforms_list):
-        with [col1, col2, col3, col4, col5][i]:
+        with cols[i % 3]:
             st.write(f"{info['icon']} {info['display_name']}")
 
 

@@ -81,6 +81,7 @@ class ReportGenerator:
             "xiaohongshu": "小红书",
             "weibo": "微博",
             "douyin": "抖音",
+            "taptap": "TapTap (游戏社区)",
         }
         platform_display = platform_names.get(platform, platform)
 
@@ -114,7 +115,7 @@ class ReportGenerator:
 
         # 帖子信息
         if post_info:
-            item_label = "帖子" if platform in ["weibo", "xiaohongshu"] else ("视频" if platform in ["bilibili", "douyin"] else "推文")
+            item_label = "游戏" if platform == "taptap" else ("帖子" if platform in ["weibo", "xiaohongshu"] else ("视频" if platform in ["bilibili", "douyin"] else "推文"))
             report_lines.append(f"## 📌 {item_label}信息")
             report_lines.append("")
             report_lines.append(f"- **ID**: {post_info.get('id', 'N/A')}")
@@ -127,6 +128,8 @@ class ReportGenerator:
                 report_lines.append(f"- **发布时间**: {post_info.get('created_at', 'N/A')}")
             if post_info.get('view_count'):
                 report_lines.append(f"- **浏览数**: {post_info.get('view_count', 0):,}")
+            if post_info.get('rating'):
+                report_lines.append(f"- **评分**: {post_info.get('rating', 'N/A')} / 10")
             report_lines.append(f"- **点赞数**: {post_info.get('like_count', 0):,}")
             report_lines.append(f"- **评论数**: {post_info.get('comment_count', 0):,}")
             report_lines.append(f"- **分享数**: {post_info.get('share_count', 0):,}")
@@ -390,6 +393,9 @@ class ReportGenerator:
                     author = f"{comment['author_name']} ({author})"
                 report_lines.append(f"- **作者**: {author}")
                 report_lines.append(f"- **发布时间**: {comment.get('created_at', 'N/A')}")
+                if comment.get('rating'):
+                    r = int(comment['rating'])
+                    report_lines.append(f"- **评分**: {'⭐' * r} ({r}/5)")
                 report_lines.append(f"- **点赞数**: {comment.get('like_count', 0):,}")
                 report_lines.append(f"- **情感**: {comment.get('sentiment', 'N/A')}")
                 report_lines.append(f"- **意图**: {comment.get('intent', 'N/A')}")
@@ -401,6 +407,7 @@ class ReportGenerator:
                 report_lines.append("")
         else:
             report_lines.append("暂无负面评论或投诉 🎉")
+            report_lines.append("")
             report_lines.append("")
 
         # 页脚
@@ -456,6 +463,7 @@ class ReportGenerator:
             "xiaohongshu": "小红书",
             "weibo": "微博",
             "douyin": "抖音",
+            "taptap": "TapTap (游戏社区)",
         }
         platform_display = platform_names.get(platform, platform)
         post_ids = [p.get("id", "") for p in posts_info if p.get("id")]
