@@ -244,6 +244,7 @@ class TapTapCollector(BaseCollector):
                         "ip_location": moment.get("device", ""),
                         "platform_data": {
                             "review_id": review.get("id"),
+                            "moment_id": moment.get("id_str", ""),
                             "rating": review.get("score", 0),
                             "stage": review.get("stage_label", ""),
                             "ratings": review.get("ratings", []),
@@ -281,12 +282,12 @@ class TapTapCollector(BaseCollector):
         """
         回复评价（需要登录 Cookie）
 
-        对 TapTap 上的某条评价进行回复。
+        TapTap 的评价基于 moment 系统，回复即对 moment 添加评论。
 
         Args:
-            comment_id: 评价 ID（即 review_id）
+            comment_id: 评价/评论 ID
             reply_text: 回复内容
-            post_id: 游戏的 app_id（可选）
+            post_id: 游戏的 app_id（可选，用于获取 moment_id）
 
         Returns:
             {"success": bool, "message": str}
@@ -298,36 +299,69 @@ class TapTapCollector(BaseCollector):
                 "message": "请在侧边栏配置 TapTap Cookie（从浏览器登录后获取）"
             }
 
-        # TapTap 回复评论的 API
-        # 注意：此端点基于 TapTap Web 端行为推断，需要实际登录验证
-        try:
-            resp = self.session.post(
-                f"{self.API_BASE}/review/v1/add-comment",
-                json={
+        # TapTap 评论 API：尝试多个已知的端点模式
+        endpoints = [
+            # 最常见：对 moment 添加评论
+            {
+                "url": f"{self.API_BASE}/moment/v1/comment",
+                "body": {
+                    "moment_id": comment_id,
+                    "content": reply_text,
+                },
+            },
+            # 备选：review v2 评论
+            {
+                "url": f"{self.API_BASE}/review/v2/comment",
+                "body": {
                     "review_id": int(comment_id) if comment_id.isdigit() else comment_id,
                     "content": reply_text,
-                    "type": "text",
                 },
-                timeout=15,
-            )
-            result = resp.json()
+            },
+        ]
 
-            if result.get("success") or result.get("data"):
-                print(f"[TapTap] 回复成功: review_id={comment_id}")
-                return {
-                    "success": True,
-                    "message": "回复成功",
-                    "data": result.get("data", {}),
-                }
-            else:
+        last_error = "所有端点均失败"
+
+        for ep in endpoints:
+            try:
+                resp = self.session.post(
+                    ep["url"],
+                    json=ep["body"],
+                    timeout=15,
+                )
+
+                # TapTap 可能返回空响应或 HTML，先检查 Content-Type
+                ct = resp.headers.get("Content-Type", "")
+                if "json" not in ct:
+                    print(f"[TapTap] 端点 {ep['url']} 返回非 JSON: {ct[:50]}")
+                    last_error = f"端点返回非 JSON ({ct[:30]})"
+                    continue
+
+                result = resp.json()
+
+                if result.get("success") or result.get("data"):
+                    print(f"[TapTap] 回复成功 via {ep['url']}")
+                    return {
+                        "success": True,
+                        "message": "回复成功",
+                        "data": result.get("data", {}),
+                    }
+
                 error_msg = result.get("msg", result.get("message", "未知错误"))
-                print(f"[TapTap] 回复失败: {error_msg}")
-                return {
-                    "success": False,
-                    "error": error_msg,
-                    "raw": result,
-                }
+                code = result.get("code", "")
+                print(f"[TapTap] {ep['url']} 返回: code={code} msg={error_msg}")
 
-        except Exception as e:
-            print(f"[TapTap] 回复异常: {e}")
-            return {"success": False, "error": str(e)}
+                # 如果是认证错误（未登录），直接返回
+                if "登录" in error_msg or "auth" in error_msg.lower() or code == -1:
+                    return {
+                        "success": False,
+                        "error": f"需要登录: {error_msg}",
+                        "message": "Cookie 无效或已过期，请重新获取"
+                    }
+
+                last_error = error_msg
+
+            except Exception as e:
+                print(f"[TapTap] 端点 {ep['url']} 异常: {e}")
+                last_error = str(e)
+
+        return {"success": False, "error": last_error}
