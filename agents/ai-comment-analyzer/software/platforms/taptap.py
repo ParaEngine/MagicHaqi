@@ -311,25 +311,29 @@ class TapTapCollector(BaseCollector):
             )
 
             ct = resp.headers.get("Content-Type", "")
-            if "json" not in ct:
-                # 可能返回空或 HTML
-                print(f"[TapTap] review-comment/create → {resp.status_code} {ct}")
-                if resp.status_code == 200:
-                    return {"success": True, "message": "回复成功"}
-                return {
-                    "success": False,
-                    "error": f"服务器返回 {ct}",
-                    "message": "Cookie 可能无效或过期",
-                }
+            body = resp.text.strip()
 
-            result = resp.json()
-            if result.get("success") or result.get("data"):
-                print(f"[TapTap] 回复成功: review_id={comment_id}")
-                return {"success": True, "message": "回复成功", "data": result.get("data", {})}
+            if "json" in ct:
+                result = resp.json()
+                if result.get("success") or result.get("data"):
+                    print(f"[TapTap] 回复成功: review_id={comment_id}")
+                    return {"success": True, "message": "回复成功", "data": result.get("data", {})}
+                err = result.get("msg", result.get("message", "未知错误"))
+                print(f"[TapTap] 回复失败: {err}")
+                return {"success": False, "error": err}
 
-            err = result.get("msg", result.get("message", "未知错误"))
-            print(f"[TapTap] 回复失败: {err}")
-            return {"success": False, "error": err}
+            # 非 JSON 响应 — 检查是否是错误
+            print(f"[TapTap] review-comment/create → {resp.status_code} {ct[:50]}")
+            print(f"[TapTap] 响应体: {body[:300]}")
+
+            if resp.status_code == 200 and not body:
+                return {"success": True, "message": "回复成功"}
+
+            # 200 但有文本内容 — 可能是错误页面
+            if "error" in body.lower() or "失败" in body or "登录" in body:
+                return {"success": False, "error": body[:200], "message": "Cookie 可能无效或已过期"}
+
+            return {"success": False, "error": f"未预期的响应: {body[:100]}"}
 
         except Exception as e:
             print(f"[TapTap] 回复异常: {e}")
