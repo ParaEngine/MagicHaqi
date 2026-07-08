@@ -1722,8 +1722,6 @@ def page_auto_reply():
     else:
         st.info("暂无回复记录")
 
-    page.run()
-
 
 if __name__ == "__main__":
     main()

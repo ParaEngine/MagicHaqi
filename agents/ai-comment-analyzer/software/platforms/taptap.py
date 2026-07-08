@@ -276,3 +276,58 @@ class TapTapCollector(BaseCollector):
 
         print(f"[TapTap] 共获取 {len(all_comments)} 条评价")
         return all_comments
+
+    def reply_comment(self, comment_id: str, reply_text: str, post_id: str = "") -> Dict:
+        """
+        回复评价（需要登录 Cookie）
+
+        对 TapTap 上的某条评价进行回复。
+
+        Args:
+            comment_id: 评价 ID（即 review_id）
+            reply_text: 回复内容
+            post_id: 游戏的 app_id（可选）
+
+        Returns:
+            {"success": bool, "message": str}
+        """
+        if not self.cookie:
+            return {
+                "success": False,
+                "error": "TapTap 回复需要登录 Cookie",
+                "message": "请在侧边栏配置 TapTap Cookie（从浏览器登录后获取）"
+            }
+
+        # TapTap 回复评论的 API
+        # 注意：此端点基于 TapTap Web 端行为推断，需要实际登录验证
+        try:
+            resp = self.session.post(
+                f"{self.API_BASE}/review/v1/add-comment",
+                json={
+                    "review_id": int(comment_id) if comment_id.isdigit() else comment_id,
+                    "content": reply_text,
+                    "type": "text",
+                },
+                timeout=15,
+            )
+            result = resp.json()
+
+            if result.get("success") or result.get("data"):
+                print(f"[TapTap] 回复成功: review_id={comment_id}")
+                return {
+                    "success": True,
+                    "message": "回复成功",
+                    "data": result.get("data", {}),
+                }
+            else:
+                error_msg = result.get("msg", result.get("message", "未知错误"))
+                print(f"[TapTap] 回复失败: {error_msg}")
+                return {
+                    "success": False,
+                    "error": error_msg,
+                    "raw": result,
+                }
+
+        except Exception as e:
+            print(f"[TapTap] 回复异常: {e}")
+            return {"success": False, "error": str(e)}
