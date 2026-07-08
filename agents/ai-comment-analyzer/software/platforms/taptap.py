@@ -38,7 +38,12 @@ class TapTapCollector(BaseCollector):
         self.session.headers.update(self.HEADERS)
         self.session.headers["X-UA"] = self.XUA
         if cookie:
-            self.session.headers["Cookie"] = cookie
+            # 将 Cookie 字符串解析并设置到 .taptap.cn 域名
+            for item in cookie.split(";"):
+                item = item.strip()
+                if "=" in item:
+                    key, val = item.split("=", 1)
+                    self.session.cookies.set(key.strip(), val.strip(), domain=".taptap.cn")
 
     def validate_config(self) -> bool:
         return True  # 无需登录即可获取评论
@@ -300,13 +305,19 @@ class TapTapCollector(BaseCollector):
             }
 
         try:
-            # TapTap 使用 form-encoded 而非 JSON
+            # TapTap POST 需要的额外请求头
+            headers = {
+                "X-Requested-With": "XMLHttpRequest",
+                "Referer": f"{self.BASE_URL}/app/{post_id}/review" if post_id else self.BASE_URL,
+            }
+
             resp = self.session.post(
                 f"{self.API_BASE}/review-comment/v1/create",
                 data={
                     "review_id": comment_id,
                     "contents": reply_text,
                 },
+                headers=headers,
                 timeout=15,
             )
 
