@@ -305,7 +305,7 @@ class TapTapCollector(BaseCollector):
                 f"{self.API_BASE}/review-comment/v1/create",
                 data={
                     "review_id": comment_id,
-                    "content": reply_text,
+                    "contents": reply_text,
                 },
                 timeout=15,
             )
@@ -315,10 +315,12 @@ class TapTapCollector(BaseCollector):
 
             if "json" in ct:
                 result = resp.json()
-                if result.get("success") or result.get("data"):
+                # TapTap API 成功时 data 是真正的数据对象，失败时 data 里有 code/error
+                data = result.get("data") or {}
+                if result.get("success") and not data.get("error"):
                     print(f"[TapTap] 回复成功: review_id={comment_id}")
-                    return {"success": True, "message": "回复成功", "data": result.get("data", {})}
-                err = result.get("msg", result.get("message", "未知错误"))
+                    return {"success": True, "message": "回复成功", "data": data}
+                err = data.get("msg", result.get("msg", result.get("message", "未知错误")))
                 print(f"[TapTap] 回复失败: {err}")
                 return {"success": False, "error": err}
 
