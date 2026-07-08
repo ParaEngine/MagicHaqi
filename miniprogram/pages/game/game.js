@@ -2,6 +2,61 @@ const app = getApp()
 
 // web-view 加载超时时间（毫秒）
 const WEB_VIEW_TIMEOUT = 15000
+const WORKBUDDY_APP_ID = 'wx907c65e5e107ddcf'
+
+function getReferrerExtraData() {
+  try {
+    return wx.getEnterOptionsSync?.()?.referrerInfo?.extraData
+      || wx.getLaunchOptionsSync?.()?.referrerInfo?.extraData
+      || {}
+  } catch (e) {
+    return {}
+  }
+}
+
+function getImportGameDraft(options = {}) {
+  const extra = getReferrerExtraData()
+  return options.importGameDraft
+    || options.workBuddyDraft
+    || options.wbDraft
+    || options.draftId
+    || extra.importGameDraft
+    || extra.workBuddyDraft
+    || extra.wbDraft
+    || extra.draftId
+    || ''
+}
+
+function openWorkBuddy(promptText) {
+  wx.setClipboardData({
+    data: String(promptText || ''),
+    success() {
+      wx.navigateToMiniProgram({
+        appId: WORKBUDDY_APP_ID,
+        path: '',
+        envVersion: 'release',
+        extraData: {
+          from: 'MagicHaqi',
+          action: 'pastePrompt'
+        },
+        fail(err) {
+          console.error('打开 WorkBuddy 失败', err)
+          wx.showToast({
+            title: '已复制提示词，请手动打开 WorkBuddy',
+            icon: 'none'
+          })
+        }
+      })
+    },
+    fail(err) {
+      console.error('复制 WorkBuddy 提示词失败', err)
+      wx.showToast({
+        title: '复制提示词失败',
+        icon: 'none'
+      })
+    }
+  })
+}
 
 Page({
   data: {
@@ -18,12 +73,29 @@ Page({
   _timeoutTimer: null,
   // 从分享路径带过来的游戏标识（gameFrom/game），拼进 web-view url 让接收方直达该游戏
   _shareParams: '',
+  _lastImportGameDraft: '',
 
   onLoad(options) {
     const parts = []
     if (options && options.gameFrom) parts.push('gameFrom=' + encodeURIComponent(options.gameFrom))
     if (options && options.game) parts.push('game=' + encodeURIComponent(options.game))
+    const importGameDraft = getImportGameDraft(options || {})
+    if (importGameDraft) {
+      this._lastImportGameDraft = importGameDraft
+      parts.push('importGameDraft=' + encodeURIComponent(importGameDraft))
+    }
     this._shareParams = parts.join('&')
+    this._loadWebView()
+  },
+
+  onShow() {
+    const importGameDraft = getImportGameDraft()
+    if (!importGameDraft) return
+    if (this._lastImportGameDraft === importGameDraft) return
+    this._lastImportGameDraft = importGameDraft
+    const nextParams = 'importGameDraft=' + encodeURIComponent(importGameDraft)
+    if (this._shareParams === nextParams) return
+    this._shareParams = nextParams
     this._loadWebView()
   },
 
@@ -91,6 +163,10 @@ Page({
     const msg = e?.detail?.data
     if (!Array.isArray(msg) || !msg.length) return
     const latest = msg[msg.length - 1]
+    if (latest?.type === 'openWorkBuddy') {
+      openWorkBuddy(latest.prompt || '')
+      return
+    }
     if (latest?.type === 'share') {
       this.setData({
         shareTitle: latest.title || this.data.shareTitle,

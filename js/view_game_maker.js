@@ -1,4 +1,4 @@
-// 小游戏创造视图（全屏）：AI vibe-coding 工坊。
+﻿// 小游戏创造视图（全屏）：AI vibe-coding 工坊。
 // 玩家用自然语言描述想要的游戏，AI 基于 minigames/AGENTS.md 生成完整 HTML5 单页游戏，
 // 支持实时预览与多轮迭代，保存到 PersonalPageStore 的 pet-games/ 目录。
 import { $, escapeHtml, showToast, confirm as gameConfirm } from './utils.js';
@@ -14,6 +14,7 @@ const GAME_MAKER_MOD_ID = 'magichaqi-game-maker';
 const GAME_MAKER_MODEL_KEY = 'mh_game_maker_model';
 const GAME_MAKER_WORKSPACE_PREFIX = 'magichaqi-game-maker';
 const GAME_MAKER_FILE_PATH = 'game.html';
+const WORKBUDDY_APP_URL = 'workbuddy://chat';
 
 // ---------- 本地 IndexedDB 会话历史 ----------
 // 设计：每条记录是一次完整的「对话会话」，含全部对话气泡 + 会话结束时的完整游戏代码。
@@ -261,6 +262,7 @@ function loadAgentsMd() {
 // 伴学游戏（AITestGenerator / mode==='study'）专用的生成指南：把 haqi_science_quiz.html
 // 已验证的题型模板、揭晓卡、数字人语音陪学接线、长期记忆契约固化给 AI 复刻。
 const STUDY_AGENTS_MD_URL = new URL('minigames/STUDY_AGENTS.md', new URL('..', import.meta.url + '')).href;
+const GAME_MAKER_LOGIC_URL = new URL('js/view_game_maker.js', new URL('..', import.meta.url + '')).href;
 let studyAgentsMdPromise = null;
 let studyAgentsMdCache = '';
 
@@ -696,7 +698,7 @@ export function renderGameMaker(panel, { game = null, mode = 'game', materials =
     let currentHtml = (game?.html != null && String(game.html).trim()) ? String(game.html) : '';
     let gameName = record?.title || '';
     let gameIcon = record?.icon || (studyMode ? '📚' : '🎮');
-    const gameDesc = record?.desc || '';
+    let gameDesc = record?.desc || '';
     let savedPath = record?.path || '';
     let activePane = 'chat'; // 'chat' | 'preview'
     let generating = false;
@@ -964,6 +966,19 @@ export function renderGameMaker(panel, { game = null, mode = 'game', materials =
             .mh-gm-file-link:hover { color:#c7d2fe; }
 
             .mh-gm-input-area { padding:10px 12px calc(10px + env(safe-area-inset-bottom,0px)); border-top:1px solid rgba(148,163,184,.16); flex-shrink:0; }
+            .mh-gm-workbuddy-strip { display:flex; gap:8px; margin:0 0 8px; }
+            .mh-gm-workbuddy-action { min-height:44px; border:0; border-radius:12px; cursor:pointer; font-size:14px; font-weight:900; display:flex; align-items:center; justify-content:center; gap:8px; padding:0 14px; box-shadow:0 10px 24px rgba(22,163,74,.18); }
+            .mh-gm-workbuddy-action.primary { flex:1 1 auto; background:linear-gradient(135deg,#22c55e,#16a34a); color:#ecfdf5; }
+            .mh-gm-workbuddy-action.primary:hover { filter:brightness(1.06); }
+            .mh-gm-workbuddy-action.secondary { flex:0 0 auto; min-width:108px; background:rgba(34,197,94,.13); color:#bbf7d0; border:1px solid rgba(34,197,94,.32); box-shadow:none; }
+            .mh-gm-workbuddy-action.secondary:hover { border-color:#22c55e; color:#dcfce7; background:rgba(34,197,94,.2); }
+            .mh-gm-workbuddy-action svg { width:18px; height:18px; flex:0 0 auto; }
+            .mh-gm-draft-textarea { width:100%; min-height:210px; resize:vertical; border-radius:12px; border:1px solid rgba(148,163,184,.28); background:rgba(15,39,71,.92); color:#e2e8f0; font-size:13px; line-height:1.5; padding:10px 12px; outline:none; font-family:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace; }
+            .mh-gm-draft-textarea::placeholder { color:#64748b; }
+            @media (max-width: 420px) {
+                .mh-gm-workbuddy-strip { flex-direction:column; }
+                .mh-gm-workbuddy-action.secondary { width:100%; min-width:0; }
+            }
             .mh-gm-input-box { display:flex; align-items:flex-end; gap:8px; background:rgba(255,255,255,.06); border:1px solid rgba(148,163,184,.24); border-radius:14px; padding:8px 10px 8px 14px; }
             .mh-gm-textarea { flex:1; background:none; border:0; color:#e2e8f0; font-size:16px; resize:none; outline:none; line-height:1.5; min-height:48px; max-height:200px; font-family:inherit; }
             .mh-gm-textarea::placeholder { color:#64748b; }
@@ -1078,6 +1093,15 @@ export function renderGameMaker(panel, { game = null, mode = 'game', materials =
                         <div class="mh-gm-history-pop" id="mhGmHistoryPop"></div>
                     </div>
                     <div class="mh-gm-input-area">
+                        <div class="mh-gm-workbuddy-strip">
+                            <button type="button" class="mh-gm-workbuddy-action primary" id="mhGmWorkBuddy" title="${escapeHtml(t('mgGameWorkBuddyLabel'))}" aria-label="${escapeHtml(t('mgGameWorkBuddyLabel'))}">
+                                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 2l3 6 6 .9-4.5 4.4 1.1 6.2L12 16.6 6.4 19.5l1.1-6.2L3 8.9 9 8l3-6z"/><path d="M8 22h8"/><path d="M12 16v6"/></svg>
+                                <span>用 WorkBuddy 帮我做游戏</span>
+                            </button>
+                            <button type="button" class="mh-gm-workbuddy-action secondary" id="mhGmPasteWorkBuddy" title="从剪贴板粘贴 WorkBuddy 草稿 JSON" aria-label="从剪贴板粘贴 WorkBuddy 草稿 JSON">
+                                <span>粘贴草稿</span>
+                            </button>
+                        </div>
                         <div class="mh-gm-attach-preview" id="mhGmAttachPreview"></div>
                         <div class="mh-gm-input-box">
                             <textarea class="mh-gm-textarea" id="mhGmInput" rows="2" placeholder="${escapeHtml(tt('mgGameChatPlaceholder'))}"></textarea>
@@ -1125,6 +1149,8 @@ export function renderGameMaker(panel, { game = null, mode = 'game', materials =
     const historyPop = $('mhGmHistoryPop');
     const newBtn = $('mhGmNew');
     const configBtn = $('mhGmConfig');
+    const workBuddyBtn = $('mhGmWorkBuddy');
+    const pasteWorkBuddyBtn = $('mhGmPasteWorkBuddy');
     const modelBtn = $('mhGmModelBtn');
     const modelList = $('mhGmModelList');
     let modelOpen = false;
@@ -2351,6 +2377,443 @@ export function renderGameMaker(panel, { game = null, mode = 'game', materials =
         inputEl.style.height = Math.min(200, Math.max(48, inputEl.scrollHeight)) + 'px';
     }
 
+    function fallbackCopyText(text) {
+        try {
+            const ta = document.createElement('textarea');
+            ta.value = text;
+            ta.setAttribute('readonly', '');
+            ta.style.cssText = 'position:fixed;left:-9999px;top:-9999px;opacity:0;';
+            document.body.appendChild(ta);
+            ta.select();
+            const ok = document.execCommand('copy');
+            ta.remove();
+            return ok;
+        } catch (_) { return false; }
+    }
+
+    async function copyText(text) {
+        try {
+            if (navigator.clipboard?.writeText) {
+                await navigator.clipboard.writeText(text);
+                return true;
+            }
+        } catch (_) {}
+        return fallbackCopyText(text);
+    }
+
+    function buildWorkBuddyPrompt() {
+        const idea = String(inputEl?.value || gameName || '').trim();
+        const ideaLine = idea || '用户还没有说具体想法，请先用下面的短开场白询问。';
+        return `# 角色卡：蛋蛋星球 MagicHaqi 小小游戏设计师
+
+你现在不是普通助手。你是“蛋蛋星球 MagicHaqi”的专属小游戏设计师，名字叫“小星星游戏设计师”。
+
+你的服务对象主要是小学生和初中生。你的任务不是先讲技术，也不是一上来写代码，而是像一个会陪孩子一起做游戏的创意伙伴，先听懂孩子想玩什么，再帮孩子把想法变成一个清楚、简单、好玩、能在蛋蛋星球里运行的小游戏。
+
+## 你的角色目标
+
+1. 先询问孩子想做什么类型的小游戏。
+2. 把孩子模糊的想法整理成清楚的玩法方案。
+3. 用孩子能理解的话确认方案，不要让孩子被技术细节吓到。
+4. 方案确认后，再生成完整单文件 HTML 小游戏。
+5. 自己验证游戏能打开、能玩、能结算。
+6. 把完整草稿 JSON 输出给用户，让用户复制后回到本页面点击"粘贴草稿"导入。
+
+## 你的语气
+
+- 温柔、清楚、有耐心。
+- 用小学生和初中生能懂的话。
+- 多给选择，少问开放到不知道怎么答的问题。
+- 每次最多问 2 到 3 个问题。
+- 不要一次性列很多复杂要求给孩子。
+- 不要在开头使用 HTML、JSON、CloudStudio、CORS、savePetGame、workspace 等技术词。
+- 不要替孩子做所有决定，要让孩子觉得“这是我自己做出来的游戏”。
+
+## 给孩子看的短开场白
+
+如果用户还没有明确游戏想法，请先只说这段，不要写代码，不要讲技术：
+
+你好呀！我来帮你做小游戏。
+
+你想做哪一种？
+
+1. 跳一跳
+2. 躲一躲
+3. 收集东西
+4. 养小宠物
+5. 翻牌找朋友
+6. 换衣服 / 装扮
+7. 自己想一个
+
+你选数字就可以啦。
+
+## 和孩子沟通的流程
+
+第一步：让孩子选择方向。
+- 如果孩子只回复数字，就根据数字继续问。
+- 如果孩子直接说想法，就顺着他的想法继续问。
+- 如果孩子说“不知道”，就给 2 到 3 个最容易玩的建议。
+
+第二步：追问关键玩法。
+每次最多问 2 到 3 个问题，例如：
+1. 主角是谁？比如小猫、小龙、机器人、哈奇宠物。
+2. 要收集什么？比如星星、糖果、宝石、宠物蛋。
+3. 要躲开什么？比如怪物、乌云、刺球、黑洞。
+4. 怎么操作？比如点击、拖动、左右移动、跳跃。
+5. 你想要什么画面？比如太空、森林、海底、糖果屋、宠物房间。
+
+第三步：把孩子的回答整理成方案。
+在写代码前，先用这种格式确认：
+
+我听懂啦！我们要做的游戏是：
+
+游戏名字：...
+主角：...
+玩法：...
+目标：...
+要躲开的东西：...
+奖励：...
+操作方式：...
+画面感觉：...
+
+你看看这样对不对？如果想改，我可以马上改。
+
+第四步：等孩子确认。
+- 如果孩子说“可以”“开始做”“就这样”，再进入开发。
+- 如果孩子想改，就继续帮他改方案。
+- 不要在孩子确认前开始写代码。
+
+## 开发前必须阅读的资料
+
+1. 先打开「创造小游戏模块逻辑」链接，了解 MagicHaqi 游戏工坊现有的创建流程、预览、保存和导入方式。
+2. 方案确认后，再打开「平台开发指南」链接，阅读 MagicHaqi 小游戏平台的代码规范。
+3. 如果两个文档与本提示词有冲突，以平台开发指南和创造小游戏模块逻辑为准。
+
+## 游戏制作要求
+
+请严格按照平台开发指南制作游戏：
+
+- 必须是完整单文件 HTML5 游戏。
+- 必须包含 <!DOCTYPE html>。
+- CSS 写在同一个 HTML 文件的 <style> 里。
+- JavaScript 写在同一个 HTML 文件的 <script> 里。
+- 必须包含 game_config = {...} 数据段。
+- 必须包含 art_assets = [...] 数据段。
+- 移动端优先，适合手机竖屏。
+- 能在普通浏览器、iframe、微信 web-view 中运行。
+- 不需要 npm。
+- 不需要构建。
+- 不依赖后端接口。
+- 不读取 token、cookie、用户隐私。
+- 不依赖本地文件路径。
+- 可以使用稳定 CDN 资源。
+- 操作用大按钮或大触摸区域，适合手指点。
+- 文字不能太小，按钮不能太挤。
+- 游戏规则要简单，孩子看一眼就知道怎么玩。
+- 每局最好 30 秒到 90 秒。
+- 要有开始、游玩、结算、再玩一次。
+- 要有得分、胜利或完成反馈。
+- 画面要明亮、可爱、友好，适合小朋友。
+
+## 自测要求
+
+生成后你可以把 HTML 保存成 .html 文件，并在浏览器里自己试玩验证。
+
+请至少检查：
+
+1. 页面能打开，不是空白页。
+2. 游戏能开始。
+3. 核心操作能响应。
+4. 能得分或完成目标。
+5. 能进入结算或胜利/失败状态。
+6. 能重新开始。
+7. 手机尺寸下按钮和文字不重叠。
+8. 控制方式清楚。
+9. 控制台没有明显运行时报错。
+
+如果发现问题，请先修好再交付。
+
+## 交付方式：直接输出完整草稿 JSON
+
+完成游戏后，不要直接写 Keepwork workspace，不要修改 pet-games/index.json，不要请求用户提供 token 或密码。
+
+请按下面方式交付：
+
+1. 生成草稿 JSON，格式必须是：
+{
+    "title": "小游戏标题",
+    "icon": "🎮",
+    "desc": "一句话玩法描述",
+    "html": "<!DOCTYPE html><html>...</html>"
+}
+
+字段要求：
+- title：80 字以内。
+- icon：一个 emoji。
+- desc：200 字以内。
+- html：完整 HTML 字符串，不要 markdown 代码块。
+- JSON 文件本身必须合法。
+- 不包含 token、cookie、用户 ID 或其它敏感信息。
+
+2. 把完整草稿 JSON 原样输出给用户，不要省略，不要截断。
+
+3. 告诉用户：复制上面的完整草稿 JSON，回到蛋蛋星球创造小游戏页面，点击"粘贴草稿"，粘贴后点导入即可。
+
+蛋蛋星球收到粘贴的草稿 JSON 后会自动：
+- 解析 title / icon / desc / html。
+- 调用 savePetGame(html, { title, icon, desc })。
+- 保存到 MagicHaqi workspace。
+- 写入 pet-games/<系统生成文件名>.html。
+- 更新 pet-games/index.json。
+- 显示在“我的小游戏”列表。
+
+## 失败兜底
+
+交付时只需要把下面信息清楚输出给用户，不要自动打开浏览器：
+
+1. 游戏标题
+2. 完整草稿 JSON
+3. 使用方法：复制完整草稿 JSON，回到创造小游戏页面，点击"粘贴草稿"，粘贴后导入。
+
+## 失败兜底
+
+如果草稿生成遇到问题，请不要假装成功。
+
+请告诉用户：
+
+小游戏已经做好啦，但是生成草稿的时候遇到一点问题。我先把能用的信息给你。
+
+然后输出：
+1. 游戏标题
+2. 完整草稿 JSON（如果有的话）
+3. 失败原因
+4. 下一步怎么做
+
+## 重要行为规则
+
+- 一开始不要写代码。
+- 一开始不要讲技术。
+- 一开始必须先问孩子想做什么游戏。
+- 给孩子看的开场白要短，用上面的短开场白。
+- 其它内部说明和交付流程要严格遵守，不要省略。
+- 每次最多问 2 到 3 个问题。
+- 如果孩子回答很短，要给选项帮助他继续想。
+- 确认游戏方案后再生成代码。
+- 生成后必须输出完整草稿 JSON，让用户复制后用“粘贴草稿”导入。
+- 不要直接修改 pet-games/index.json。
+- 不要直接写 Keepwork workspace。
+- 不要请求用户提供 token、密码、cookie 或其它敏感信息。
+
+创造小游戏模块逻辑：
+${GAME_MAKER_LOGIC_URL}
+
+平台开发指南：
+${AGENTS_MD_URL}
+
+用户当前输入的初始想法是：
+${ideaLine}`;
+    }
+
+    function postWorkBuddyToMiniProgram(promptText) {
+        try {
+            if (typeof wx !== 'undefined' && wx?.miniProgram?.postMessage) {
+                wx.miniProgram.postMessage({ data: { type: 'openWorkBuddy', prompt: promptText } });
+                return true;
+            }
+        } catch (_) {}
+        return false;
+    }
+
+    async function openWorkBuddy() {
+        const promptText = buildWorkBuddyPrompt();
+        await copyText(promptText);
+        if (postWorkBuddyToMiniProgram(promptText)) {
+            showToast(t('mgGameWorkBuddyMiniProgram'), 'success', 2200);
+            return;
+        }
+        try { window.location.href = WORKBUDDY_APP_URL; } catch (_) {}
+        showWorkBuddyCopiedDialog();
+    }
+
+    function showWorkBuddyCopiedDialog() {
+        const mask = document.createElement('div');
+        mask.className = 'modal-mask';
+        mask.innerHTML = `
+            <div class="modal-card text-center">
+                <div style="font-size:34px;line-height:1;margin-bottom:10px">✅</div>
+                <div class="text-base font-bold mb-2" style="color:var(--text-primary)">指令已经复制到剪贴板啦！</div>
+                <div class="text-sm" style="color:var(--text-muted);line-height:1.6">打开 WorkBuddy 的对话框，直接粘贴发送就可以开始做小游戏。</div>
+                <div class="flex gap-2 justify-center mt-4">
+                    <button class="btn-primary" data-act="ok">知道了</button>
+                </div>
+            </div>`;
+        const close = () => mask.remove();
+        mask.addEventListener('click', (e) => {
+            if (e.target === mask || e.target.closest?.('[data-act="ok"]')) close();
+        });
+        document.body.appendChild(mask);
+    }
+
+    function normalizePastedWorkBuddyGameDraft(data, source = 'clipboard') {
+        if (!data || typeof data !== 'object') return null;
+        const html = String(data?.html || data?.code || data?.content || '').trim();
+        if (!html) return null;
+        return {
+            path: source,
+            title: String(data?.title || data?.name || 'WorkBuddy 小游戏').slice(0, 80),
+            icon: String(data?.icon || '🎮').slice(0, 8),
+            desc: String(data?.desc || data?.description || '').slice(0, 200),
+            html,
+        };
+    }
+
+    function decodeLooseJsonString(text) {
+        return String(text || '')
+            .replace(/\\u([0-9a-fA-F]{4})/g, (_, hex) => String.fromCharCode(parseInt(hex, 16)))
+            .replace(/\\r/g, '\r')
+            .replace(/\\n/g, '\n')
+            .replace(/\\t/g, '\t')
+            .replace(/\\\//g, '/')
+            .replace(/\\"/g, '"')
+            .replace(/\\\\/g, '\\');
+    }
+
+    function extractLooseJsonField(raw, key) {
+        const pattern = new RegExp(`"${key}"\\s*:\\s*"((?:\\\\.|[^"\\\\])*)"`);
+        const match = String(raw || '').match(pattern);
+        return match ? decodeLooseJsonString(match[1]) : '';
+    }
+
+    function parseLooseWorkBuddyGameDraft(raw) {
+        const marker = raw.match(/"html"\s*:\s*"/);
+        if (!marker) return null;
+        const start = marker.index + marker[0].length;
+        const end = raw.lastIndexOf('"');
+        if (end <= start) return null;
+        const html = decodeLooseJsonString(raw.slice(start, end)).trim();
+        if (!html) return null;
+        return normalizePastedWorkBuddyGameDraft({
+            title: extractLooseJsonField(raw, 'title'),
+            icon: extractLooseJsonField(raw, 'icon'),
+            desc: extractLooseJsonField(raw, 'desc'),
+            html,
+        }, 'clipboard-loose');
+    }
+
+    function parsePastedWorkBuddyGameDraft(text) {
+        const raw = String(text || '').trim();
+        if (!raw) throw new Error('请先粘贴 WorkBuddy 给你的完整草稿 JSON');
+        const fence = raw.match(/```(?:json)?\s*([\s\S]*?)```/i);
+        let jsonText = fence ? fence[1].trim() : raw;
+        if (!jsonText.startsWith('{')) {
+            const start = jsonText.indexOf('{');
+            const end = jsonText.lastIndexOf('}');
+            if (start >= 0 && end > start) jsonText = jsonText.slice(start, end + 1);
+        }
+        let data = null;
+        try {
+            data = JSON.parse(jsonText);
+        } catch (_) {
+            const looseDraft = parseLooseWorkBuddyGameDraft(jsonText);
+            if (looseDraft) return looseDraft;
+            throw new Error('草稿不是有效 JSON，请粘贴 WorkBuddy 给出的完整草稿数据');
+        }
+        const draft = normalizePastedWorkBuddyGameDraft(data);
+        if (!draft?.html) throw new Error('草稿里没有 html 字段，不能导入为小游戏');
+        return draft;
+    }
+
+    function setWorkBuddyImportBusy(isBusy) {
+        if (pasteWorkBuddyBtn) pasteWorkBuddyBtn.disabled = isBusy;
+    }
+
+    async function applyWorkBuddyGameDraft(gameDraft) {
+        if (!gameDraft?.html) throw new Error('没有读取到 html 字段');
+        currentHtml = gameDraft.html;
+        gameName = gameDraft.title || gameName || 'WorkBuddy 小游戏';
+        gameIcon = gameDraft.icon || gameIcon || '🎮';
+        gameDesc = gameDraft.desc || '';
+        savedPath = '';
+        if (nameEl) nameEl.value = gameName;
+        if (iconBtn) iconBtn.textContent = gameIcon;
+        setPreview(currentHtml);
+        const saved = await persistGame({ silent: true });
+        if (!saved) throw new Error('保存失败');
+        showToast(`已导入 ${saved.record?.title || gameName}`, 'success', 2400);
+        switchPane('preview');
+    }
+
+    function promptWorkBuddyDraftJson(defaultValue = '') {
+        return new Promise((resolve) => {
+            const mask = document.createElement('div');
+            mask.className = 'modal-mask';
+            mask.innerHTML = `
+                <div class="modal-card" style="width:min(640px,calc(100vw - 28px))">
+                    <div class="text-base font-bold mb-2" style="color:var(--text-primary)">从剪贴板导入小游戏</div>
+                    <div class="text-xs mb-3" style="color:var(--text-muted);line-height:1.6">粘贴 WorkBuddy 给你的完整草稿 JSON。这个方式不需要读取 CloudStudio 网址，所以不会被 CORS 拦住。</div>
+                    <textarea class="mh-gm-draft-textarea" data-draft placeholder='{"title":"太空小猫跳一跳","html":"<!DOCTYPE html>..."}'></textarea>
+                    <div class="text-xs mt-2" data-err style="color:#fca5a5;min-height:18px"></div>
+                    <div class="flex gap-2 justify-end mt-3">
+                        <button class="btn-secondary" data-act="cancel">取消</button>
+                        <button class="btn-primary" data-act="ok">导入</button>
+                    </div>
+                </div>`;
+            const textarea = mask.querySelector('[data-draft]');
+            const errBox = mask.querySelector('[data-err]');
+            textarea.value = String(defaultValue || '');
+            const done = (value) => { mask.remove(); resolve(value); };
+            const tryOk = () => {
+                const value = textarea.value.trim();
+                try {
+                    parsePastedWorkBuddyGameDraft(value);
+                } catch (error) {
+                    errBox.textContent = error?.message || String(error);
+                    return;
+                }
+                done(value);
+            };
+            mask.addEventListener('click', (e) => {
+                if (e.target === mask) { done(null); return; }
+                const act = e.target.closest?.('[data-act]')?.dataset.act;
+                if (act === 'cancel') done(null);
+                if (act === 'ok') tryOk();
+            });
+            textarea.addEventListener('keydown', (e) => {
+                if ((e.ctrlKey || e.metaKey) && e.key === 'Enter') { e.preventDefault(); tryOk(); }
+                if (e.key === 'Escape') { e.preventDefault(); done(null); }
+            });
+            document.body.appendChild(mask);
+            setTimeout(() => textarea.focus(), 30);
+        });
+    }
+
+    async function importWorkBuddyGameFromClipboard() {
+        setWorkBuddyImportBusy(true);
+        try {
+            let text = '';
+            try {
+                if (navigator.clipboard?.readText) text = await navigator.clipboard.readText();
+            } catch (_) {}
+            let raw = text;
+            try {
+                if (raw.trim()) {
+                    const draft = parsePastedWorkBuddyGameDraft(raw);
+                    await applyWorkBuddyGameDraft(draft);
+                    return;
+                }
+            } catch (_) {}
+            raw = await promptWorkBuddyDraftJson(raw);
+            if (raw == null) return;
+            const draft = parsePastedWorkBuddyGameDraft(raw);
+            await applyWorkBuddyGameDraft(draft);
+        } catch (e) {
+            console.warn('从剪贴板导入 WorkBuddy 游戏失败', e);
+            showToast('导入失败：' + (e?.message || e), 'error', 3200);
+        } finally {
+            setWorkBuddyImportBusy(false);
+        }
+    }
+
     // 把内存里的对话气泡（messages[]）转换成模型可用的历史消息，供「续写/恢复历史后继续对话」携带上下文。
     // 关键：每次发送都新建一个临时 ChatSession（只含 system + 当前这条用户消息），
     // 模型本身并不记得之前的对话；因此这里把「本轮之前的已完成对话」整理为 user/assistant 历史一并发送，
@@ -2779,7 +3242,7 @@ export function renderGameMaker(panel, { game = null, mode = 'game', materials =
         try {
             const result = await saveGame(currentHtml, {
                 path: savedPath,
-                id: record?.id || undefined,
+                id: savedPath ? (record?.id || undefined) : undefined,
                 title: name,
                 icon: gameIcon || (studyMode ? '📚' : '🎮'),
                 desc: gameDesc || '',
@@ -3397,6 +3860,10 @@ export function renderGameMaker(panel, { game = null, mode = 'game', materials =
 
     // 新建会话。
     newBtn.onclick = startNewSession;
+
+    // 外部 AI 协作：复制完整提示词，并唤起 WorkBuddy。
+    workBuddyBtn.onclick = openWorkBuddy;
+    pasteWorkBuddyBtn.onclick = importWorkBuddyGameFromClipboard;
 
     // 设置弹窗（全局 / 游戏配置 / 美术资源三个标签页）。
     // 通过 ctx 把工坊的状态读写、模型列表、emoji 选择器、本地 API 设置、持久化逻辑桥接给设置模块。

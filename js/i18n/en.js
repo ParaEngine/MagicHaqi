@@ -1171,6 +1171,9 @@ export const enUS = {
     mgGameNewSessionDone: 'Started a new session',
     mgGameConfigLabel: 'Settings',
     mgGameConfigTitle: 'Local API Key settings',
+    mgGameWorkBuddyLabel: 'Continue in WorkBuddy',
+    mgGameWorkBuddyCopied: 'Prompt copied, opening WorkBuddy',
+    mgGameWorkBuddyMiniProgram: 'Prompt copied, opening WorkBuddy mini program',
     // Game maker settings popup
     mgGameSettingsTitle: 'Game settings',
     mgGameSettingsTabGlobal: 'Global',

@@ -1026,6 +1026,9 @@ export const zhCN = {
     mgGameNewSessionDone: '已开始新会话',
     mgGameConfigLabel: '设置',
     mgGameConfigTitle: '本地 API Key 设置',
+    mgGameWorkBuddyLabel: '用 WorkBuddy 继续开发',
+    mgGameWorkBuddyCopied: '已复制提示词，正在打开 WorkBuddy',
+    mgGameWorkBuddyMiniProgram: '已复制提示词，正在打开 WorkBuddy 小程序',
     // 游戏创造工坊「设置」弹窗
     mgGameSettingsTitle: '游戏设置',
     mgGameSettingsTabGlobal: '全局',
