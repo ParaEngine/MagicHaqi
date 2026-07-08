@@ -336,6 +336,7 @@ def sidebar():
                 "xiaohongshu": "XHS_COOKIE",
                 "weibo": "WEIBO_COOKIE",
                 "douyin": "DOUYIN_COOKIE",
+                "taptap": "TAPTAP_COOKIE",
             }
 
             updates = {}
@@ -352,6 +353,8 @@ def sidebar():
 
             if save_config(updates):
                 st.success("✅ 平台配置已保存到本地 .env 文件！")
+                # 清除缓存的收集器，下次会使用新 Cookie 重新创建
+                st.session_state.pop(f"collector_{platform}", None)
             else:
                 st.error("❌ 保存失败，请检查权限")
 
