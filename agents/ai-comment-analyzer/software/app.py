@@ -329,6 +329,16 @@ def sidebar():
                 "找到 `TAPTAP_SESSION` 和 `XSRF-TOKEN`，双击 Value 复制。"
                 "注意：`TAPTAP_SESSION` 是 HttpOnly 的，`document.cookie` 拿不到！"
             )
+        elif platform == "xiaohongshu":
+            st.caption(
+                "💡 获取方法：登录 xiaohongshu.com → F12 → Network → 刷新页面 → "
+                "点任意 `edith.xiaohongshu.com` 请求 → Request Headers → 复制 `Cookie:` 后面的全部内容，粘贴到上方输入框。"
+            )
+        elif platform == "tieba":
+            st.caption(
+                "💡 获取方法：登录 tieba.baidu.com → F12 → Network → 点任意请求 → "
+                "Request Headers → 复制 `Cookie:` 整行。关键字段：`BDUSS`（登录令牌）。"
+            )
 
         # 保存并测试平台配置按钮
         col1, col2 = st.columns(2)
