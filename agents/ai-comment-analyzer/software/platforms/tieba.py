@@ -96,10 +96,28 @@ class TiebaCollector(BaseCollector):
                     print("[贴吧] 等待内容超时，继续...")
                 time.sleep(2)
 
-                # 滚动触发懒加载
-                for _ in range(5):
+                # 滚动到底部触发懒加载，等评论数不再增长
+                for scroll_i in range(15):
                     page.evaluate("window.scrollTo(0, document.body.scrollHeight)")
-                    time.sleep(1.5)
+                    time.sleep(2)
+                    # 检查是否有新的评论加载
+                    try:
+                        load_more = page.locator("text=加载更多, .load-more, [class*='load_more']").first
+                        if load_more.is_visible(timeout=1000):
+                            load_more.click()
+                            time.sleep(2)
+                    except Exception:
+                        pass
+                    # 也尝试滚动评论区
+                    try:
+                        reply_list = page.locator(".pc-pb-reply-list, .pb-comment-list, [class*='reply-list']").first
+                        if reply_list.count() > 0:
+                            reply_list.evaluate("el => el.scrollTop = el.scrollHeight")
+                            time.sleep(1.5)
+                    except Exception:
+                        pass
+                    current = len(page.locator(".pb-comment-item, .thread-container, .virtual-list-item").all())
+                    print(f"[贴吧] 滚动 {scroll_i+1}: 当前 {current} 条评论")
 
                 # JS 提取 + 智能 fallback
                 posts_data, debug_info = page.evaluate("""
@@ -126,26 +144,16 @@ class TiebaCollector(BaseCollector):
                         const result = [];
                         const seenContents = new Set();  // 去重
 
-                        // 策略1: 新版选择器
+                        // 策略1: 新版选择器（内容哈希去重）
                         document.querySelectorAll(
                             '.pb-comment-item, .thread-container, .virtual-list-item'
                         ).forEach(el => {
-                            // 跳过嵌套的子项: 如果祖先已经是 comment-item，跳过
-                            let p = el.parentElement;
-                            let nested = false;
-                            while (p && p !== document.body) {
-                                if (p.matches && p.matches('.pb-comment-item,.thread-container,.virtual-list-item')) {
-                                    nested = true; break;
-                                }
-                                p = p.parentElement;
-                            }
-                            if (nested) return;
-
                             const ue = el.querySelector('.name-info a, .name-info-link, .head-line, [class*="name-info"] a, [class*="user-info"]');
                             const ce = el.querySelector('.comment-content, .pb-rich-text, .richtext-item, [class*="pb-content"]');
                             const te = el.querySelector('.comment-desc-left, [class*="desc-left"], [class*="tail-info"]');
                             const c = ce ? ce.textContent.trim() : '';
-                            const key = c.substring(0, 80);
+                            // 用前 120 字符做去重 key（比 80 更精确）
+                            const key = c.substring(0, 120);
                             if (c.length >= 2 && !seenContents.has(key)) {
                                 seenContents.add(key);
                                 result.push({userName: ue?ue.textContent.trim():'匿名', content:c, time:te?te.textContent.trim():''});
