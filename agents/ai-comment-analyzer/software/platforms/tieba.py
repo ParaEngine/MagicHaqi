@@ -143,31 +143,29 @@ class TiebaCollector(BaseCollector):
                         const result = [];
                         const seenContents = new Set();  // 去重
 
-                        // 策略1: 新版选择器
+                        // 策略1: 新版选择器（精确元素）
                         document.querySelectorAll(
                             '.pb-comment-item, .virtual-list-item'
                         ).forEach(el => {
-                            const ue = el.querySelector('.name-info a, .name-info-link, [class*="name-info"] a');
-                            // 精确取评论正文，避免取到按钮/时间/位置
-                            const ce = el.querySelector('.comment-content, .pb-rich-text, .richtext-item');
-                            const te = el.querySelector('.comment-desc-left, [class*="desc-left"]');
-                            // 确保 ce 不是整个卡片
-                            const c = ce ? ce.textContent.trim() : '';
-                            // 如果 ce 文本太长（>500字符），可能是取了整个卡片，尝试更精确的选择
-                            let content = c;
-                            if (c.length > 500) {
-                                const inner = ce.querySelector('[class*="content"]:not([class*="comment"])')
-                                    || ce.querySelector('.pb-content-item');
-                                if (inner) content = inner.textContent.trim();
+                            // 用户名: 只取 name-info-link （A标签），避免取到徽章
+                            const nameLink = el.querySelector('.name-info-link');
+                            const userName = nameLink ? nameLink.textContent.trim() : '匿名';
+                            // 内容: 只取 comment-content
+                            const contentEl = el.querySelector('.comment-content');
+                            let content = contentEl ? contentEl.textContent.trim() : '';
+                            // 如果 comment-content 没找到，尝试 pb-rich-text
+                            if (!content) {
+                                const rich = el.querySelector('.pb-rich-text');
+                                content = rich ? rich.textContent.trim() : '';
                             }
-                            const key = content.substring(0, 120);
+                            // 时间/楼层: 取左侧描述区域
+                            const descEl = el.querySelector('.comment-desc-left');
+                            const time = descEl ? descEl.textContent.trim() : '';
+
+                            const key = content.substring(0, 100);
                             if (content.length >= 1 && !seenContents.has(key)) {
                                 seenContents.add(key);
-                                result.push({
-                                    userName: ue ? ue.textContent.trim() : '匿名',
-                                    content: content,
-                                    time: te ? te.textContent.trim() : ''
-                                });
+                                result.push({userName, content, time});
                             }
                         });
                         // 策略1b: 旧版选择器（带去重）
