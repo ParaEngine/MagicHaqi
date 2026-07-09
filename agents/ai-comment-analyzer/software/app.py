@@ -77,7 +77,8 @@ PLATFORM_CONFIG = {
         "icon": "🎮",
         "color": "#15B5DD",
         "config_fields": [
-            {"key": "cookie", "label": "登录 Cookie (可选)", "type": "text", "env": "TAPTAP_COOKIE"},
+            {"key": "session", "label": "TAPTAP_SESSION（登录令牌）", "type": "text", "env": "TAPTAP_SESSION"},
+            {"key": "xsrf", "label": "XSRF-TOKEN（CSRF 令牌）", "type": "text", "env": "TAPTAP_XSRF_TOKEN"},
         ],
         "post_label": "游戏链接或 App ID",
         "post_placeholder": "例如: https://www.taptap.cn/app/123456 或直接输入 App ID",
@@ -336,12 +337,17 @@ def sidebar():
                 "xiaohongshu": "XHS_COOKIE",
                 "weibo": "WEIBO_COOKIE",
                 "douyin": "DOUYIN_COOKIE",
-                "taptap": "TAPTAP_COOKIE",
+                "taptap": "TAPTAP",
             }
 
             updates = {}
             for key, value in platform_config.items():
-                if key == "bearer_token":
+                if platform == "taptap":
+                    if key == "session":
+                        updates["TAPTAP_SESSION"] = value
+                    elif key == "xsrf":
+                        updates["TAPTAP_XSRF_TOKEN"] = value
+                elif key == "bearer_token":
                     updates["TWITTER_BEARER_TOKEN"] = value
                 elif key == "sessdata":
                     updates["BILIBILI_SESSDATA"] = value

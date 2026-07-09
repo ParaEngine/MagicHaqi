@@ -31,9 +31,9 @@ class TapTapCollector(BaseCollector):
     # TapTap 要求的 X-UA 头（Web 端标识，缺失会返回 404）
     XUA = "V=1&PN=WebApp&LANG=zh_CN&VN_CODE=102&LOC=CN&PLT=PC&DS=Android&OS=Windows&OSV=10&DT=PC"
 
-    def __init__(self, cookie: str = "", **kwargs):
+    def __init__(self, cookie: str = "", session: str = "", xsrf: str = "", **kwargs):
         super().__init__(**kwargs)
-        self.cookie = cookie
+        self.cookie = cookie or session  # 兼容旧参数
         self.session = requests.Session()
         self.session.headers.update(self.HEADERS)
         self.session.headers["X-UA"] = self.XUA
@@ -44,8 +44,14 @@ class TapTapCollector(BaseCollector):
         except Exception:
             pass
 
-        if cookie:
-            # 只保留 TapTap 相关的 Cookie 名
+        # 设置核心认证 Cookie
+        if session:
+            self.session.cookies.set("TAPTAP_SESSION", session, domain=".taptap.cn")
+        if xsrf:
+            self.session.cookies.set("XSRF-TOKEN", xsrf, domain=".taptap.cn")
+
+        # 兼容旧的全量 Cookie 字符串模式
+        if cookie and not session:
             TAPTAP_COOKIE_KEYS = {
                 "TAPTAP_SESSION", "XSRF-TOKEN", "user_id", "acw_tc",
                 "web_app_uuid", "web_app_next_redesign_gray_feature",
@@ -57,7 +63,6 @@ class TapTapCollector(BaseCollector):
                 if "=" in item:
                     key, val = item.split("=", 1)
                     key = key.strip()
-                    # 自动跳过百度/头条/微软等第三方 Cookie
                     if key in TAPTAP_COOKIE_KEYS or key.startswith("_ga"):
                         self.session.cookies.set(key, val.strip(), domain=".taptap.cn")
 
@@ -313,11 +318,16 @@ class TapTapCollector(BaseCollector):
         Returns:
             {"success": bool, "message": str}
         """
-        if not self.cookie:
+        # 检查是否配置了认证信息
+        has_session = any(
+            c.name == "TAPTAP_SESSION" and c.value
+            for c in self.session.cookies
+        )
+        if not has_session and not self.cookie:
             return {
                 "success": False,
-                "error": "未配置 Cookie",
-                "message": "请先在侧边栏「🎮 TapTap 配置」中填入登录 Cookie，然后点击「💾 保存到本地」"
+                "error": "未配置登录凭证",
+                "message": "请在侧边栏填入 TAPTAP_SESSION 和 XSRF-TOKEN\n获取方法：F12 → Application → Cookies → www.taptap.cn → 找到对应值"
             }
 
         # TapTap 常见错误码 → 用户友好提示
