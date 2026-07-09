@@ -1,257 +1,169 @@
 """
 百度贴吧 (Baidu Tieba) 评论收集器
-使用贴吧移动端页面拉取帖子楼层回复，公开帖子无需登录
+使用 Playwright 浏览器渲染页面后从 DOM 提取楼层回复
 """
 
 import re
 import time
-import html as html_mod
-import requests
 from typing import List, Dict, Optional
-from datetime import datetime
 
 from .base import BaseCollector
 
 
 class TiebaCollector(BaseCollector):
-    """百度贴吧评论收集器"""
+    """百度贴吧评论收集器（Playwright DOM 抓取）"""
 
     platform_name = "tieba"
     platform_display_name = "百度贴吧"
-    platform_description = "使用贴吧移动端页面拉取帖子楼层回复，公开帖子无需登录"
+    platform_description = "使用浏览器渲染页面后从 DOM 提取楼层，无需登录"
 
     BASE_URL = "https://tieba.baidu.com"
-    MOBILE_URL = "https://tieba.baidu.com/mo/q/hybrid"
-
-    HEADERS = {
-        "User-Agent": "Mozilla/5.0 (iPhone; CPU iPhone OS 16_0 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/16.0 Mobile/15E148 Safari/604.1",
-        "Referer": "https://tieba.baidu.com/",
-    }
+    UA = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 Chrome/120.0.0.0 Safari/537.36"
 
     def __init__(self, cookie: str = "", **kwargs):
         super().__init__(**kwargs)
-        self.cookie = cookie
-        self.session = requests.Session()
-        self.session.headers.update(self.HEADERS)
-        if cookie:
-            self.session.headers["Cookie"] = cookie
+        self.cookie = cookie.strip().strip("'").strip('"') if cookie else ""
+        self._browser = None
+        self._playwright = None
 
     def validate_config(self) -> bool:
-        return True  # 公开帖子无需登录
+        return True
+
+    def _get_browser(self):
+        if self._browser is None:
+            from playwright.sync_api import sync_playwright
+            self._playwright = sync_playwright().start()
+            self._browser = self._playwright.chromium.launch(
+                headless=False,
+                args=["--disable-blink-features=AutomationControlled", "--no-sandbox"],
+            )
+        return self._browser
+
+    def _new_page(self):
+        browser = self._get_browser()
+        context = browser.new_context(viewport={"width": 1920, "height": 1080}, user_agent=self.UA, locale="zh-CN")
+        context.add_init_script("""
+            Object.defineProperty(navigator, 'webdriver', {get: () => undefined});
+            window.chrome = {runtime: {}};
+        """)
+        page = context.new_page()
+        if self.cookie:
+            for item in self.cookie.split(";"):
+                if "=" in item:
+                    k, v = item.strip().split("=", 1)
+                    context.add_cookies([{"name": k, "value": v, "domain": ".baidu.com", "path": "/"}])
+        return page
 
     def test_connection(self) -> Dict:
         try:
-            r = self.session.get(f"{self.MOBILE_URL}?cmd=msg", timeout=10)
-            if r.status_code == 200:
-                return {"success": True, "message": "贴吧连接正常（游客模式）", "user": None}
-            return {"success": False, "message": f"连接失败: HTTP {r.status_code}"}
+            self._get_browser()
+            return {"success": True, "message": "Playwright 浏览器就绪", "user": None}
         except Exception as e:
-            return {"success": False, "message": f"网络错误: {str(e)}"}
+            return {"success": False, "message": str(e)}
 
     @staticmethod
     def extract_post_id(url_or_id: str) -> str:
-        url_or_id = url_or_id.strip()
-        # 匹配贴吧帖子 URL: tieba.baidu.com/p/{tid}
-        m = re.search(r'tieba\.baidu\.com/p/(\d+)', url_or_id)
-        if m:
-            return m.group(1)
-        # 纯数字
-        m = re.search(r'(\d{5,})', url_or_id)
-        if m:
-            return m.group(1)
-        return url_or_id
+        m = re.search(r'tieba\.baidu\.com/p/(\d+)', url_or_id or "")
+        if m: return m.group(1)
+        m = re.search(r'(\d{5,})', url_or_id or "")
+        return m.group(1) if m else (url_or_id or "")
 
     def get_post_info(self, post_id: str) -> Optional[Dict]:
         tid = self.extract_post_id(post_id)
         try:
-            r = self.session.get(
-                f"{self.MOBILE_URL}",
-                params={"cmd": "pb", "pn": 1, "tid": tid},
-                timeout=10,
-            )
-            html_text = r.text
-
-            title_m = re.search(r'<div class="post_title_embed">(.*?)</div>', html_text, re.DOTALL)
-            title = html_mod.unescape(title_m.group(1).strip()) if title_m else ""
-
-            author_m = re.search(r'data-field=\'[^\']*"author":"([^"]+)"', html_text)
-            author = author_m.group(1) if author_m else ""
-
-            total_page = 1
-            tp_m = re.search(r'"total_page":(\d+)', html_text)
-            if tp_m:
-                total_page = int(tp_m.group(1))
-
-            return {
-                "id": tid,
-                "title": title,
-                "content": title,
-                "author_id": "",
-                "author_name": author,
-                "author_username": author,
-                "author_avatar": "",
-                "created_at": "",
-                "like_count": 0,
-                "comment_count": total_page * 10,
-                "share_count": 0,
-                "view_count": 0,
-                "platform": self.platform_name,
-                "url": f"{self.BASE_URL}/p/{tid}",
-            }
+            page = self._new_page()
+            page.goto(f"{self.BASE_URL}/p/{tid}", timeout=30000, wait_until="domcontentloaded")
+            time.sleep(3)
+            title = page.title() or ""
+            page.close()
+            return {"id": tid, "title": title, "content": title, "url": f"{self.BASE_URL}/p/{tid}",
+                    "platform": self.platform_name, "author_name": "", "comment_count": 0}
         except Exception as e:
             print(f"[贴吧] 获取帖子信息异常: {e}")
-            return None
+            return {"id": tid, "title": "", "url": f"{self.BASE_URL}/p/{tid}", "platform": self.platform_name}
 
     def fetch_comments(self, post_id: str, max_comments: Optional[int] = None) -> List[Dict]:
         tid = self.extract_post_id(post_id)
-        all_comments = []
-        page = 1
-
-        if max_comments is None:
-            max_comments = 100
-
-        print(f"[贴吧] 开始拉取帖子 {tid} 的回复...")
-
-        while True:
+        if max_comments is None: max_comments = 100
+        print(f"[贴吧] 浏览器打开 {self.BASE_URL}/p/{tid} ...")
+        try:
+            page = self._new_page()
+            page.goto(f"{self.BASE_URL}/p/{tid}", timeout=30000, wait_until="domcontentloaded")
+            time.sleep(3)
+            # 等待帖子内容加载
             try:
-                r = self.session.get(
-                    f"{self.MOBILE_URL}",
-                    params={"cmd": "pb", "pn": page, "tid": tid},
-                    timeout=10,
-                )
-                html_text = r.text
+                page.wait_for_selector('.d_post_content, [class*="post"]', timeout=10000)
+            except Exception:
+                pass
+            time.sleep(1)
 
-                # 提取楼层
-                floors = re.findall(
-                    r'<li\s+tid="(\d+)"[^>]*data-info="([^"]*)"[^>]*>(.*?)(?=<li\s+tid="|</ul>)',
-                    html_text,
-                    re.DOTALL,
-                )
-
-                if not floors:
-                    print(f"[贴吧] 第 {page} 页无回复")
-                    break
-
-                for floor in floors:
-                    floor_id, data_info, body = floor
-
-                    # 解析用户信息
-                    try:
-                        info = json.loads(html_mod.unescape(data_info))
-                        author = info.get("author", {}).get("name_show", "")
-                        author_id = info.get("author", {}).get("id", "")
-                    except Exception:
-                        author = ""
-                        author_id = ""
-
-                    # 提取内容
-                    content_m = re.search(r'<div class="content"[^>]*>(.*?)</div>', body, re.DOTALL)
-                    content = html_mod.unescape(re.sub(r'<[^>]+>', '', content_m.group(1).strip())) if content_m else ""
-
-                    # 提取时间
-                    time_m = re.search(r'<span class="list_item_time">(.*?)</span>', body, re.DOTALL)
-                    created = time_m.group(1).strip() if time_m else ""
-
-                    # 头像
-                    avatar_m = re.search(r'<div class="list_item_top_avatar">.*?<img[^>]*src="([^"]+)"', body, re.DOTALL)
-                    avatar = avatar_m.group(1) if avatar_m else ""
-
-                    # 回复数
-                    reply_m = re.search(r'btn_reply["\']?>\s*<span class="btn_icon">(\d+)</span>', body)
-                    reply_count = int(reply_m.group(1)) if reply_m else 0
-
-                    comment = {
-                        "id": floor_id,
-                        "post_id": tid,
-                        "platform": self.platform_name,
-                        "author_id": author_id,
-                        "author_username": author,
-                        "author_name": author,
-                        "author_avatar": avatar,
-                        "text": content[:2000],
-                        "created_at": created,
-                        "like_count": 0,
-                        "reply_count": reply_count,
-                        "ip_location": "",
-                        "platform_data": {"floor_id": floor_id},
+            last_count = 0
+            for _ in range(20):
+                floors = page.evaluate("""
+                    () => {
+                        const items = document.querySelectorAll('.l_post, [class*="l_post"], .d_post');
+                        return Array.from(items).map(el => {
+                            const nameEl = el.querySelector('.d_name a, .p_author_name, a[class*="user"]');
+                            const contentEl = el.querySelector('.d_post_content, .p_content, [class*="content"]');
+                            const timeEl = el.querySelector('.tail-info:last-child, [class*="tail-info"]:last-child');
+                            const name = nameEl?.textContent?.trim() || '';
+                            const content = contentEl?.textContent?.trim() || '';
+                            const time = timeEl?.textContent?.trim() || '';
+                            if (!content || content.length < 2) return null;
+                            return { name, content, time };
+                        }).filter(Boolean);
                     }
-                    all_comments.append(comment)
-
-                    if max_comments and len(all_comments) >= max_comments:
-                        break
-
-                print(f"[贴吧] 第 {page} 页获取 {len(floors)} 条，累计 {len(all_comments)} 条")
-
-                if max_comments and len(all_comments) >= max_comments:
+                """)
+                if len(floors) == last_count and len(floors) > 0:
                     break
-
-                if len(floors) < 10:
-                    break
-
-                page += 1
-                time.sleep(0.5)
-
-            except Exception as e:
-                print(f"[贴吧] 拉取回复异常: {e}")
-                break
-
-        print(f"[贴吧] 共获取 {len(all_comments)} 条回复")
-        return all_comments
+                last_count = len(floors)
+                page.evaluate("window.scrollTo(0, document.body.scrollHeight)")
+                time.sleep(2)
+                # 尝试点"下一页"
+                try:
+                    nxt = page.locator('a:has-text("下一页"), .next, [class*="next"]').first
+                    if nxt: nxt.click(); time.sleep(2)
+                except Exception:
+                    pass
+            page.close()
+            result = []
+            for i, f in enumerate(floors[:max_comments]):
+                result.append({
+                    "id": f"{tid}-{i}", "post_id": tid, "platform": self.platform_name,
+                    "author_username": f["name"], "author_name": f["name"],
+                    "author_avatar": "", "text": f["content"], "like_count": 0,
+                    "reply_count": 0, "created_at": f["time"], "ip_location": "",
+                    "platform_data": {},
+                })
+            print(f"[贴吧] 共提取 {len(result)} 条楼层")
+            return result
+        except Exception as e:
+            print(f"[贴吧] Playwright 异常: {e}")
+            return []
 
     def reply_comment(self, comment_id: str, reply_text: str, post_id: str = "") -> Dict:
-        """
-        回复帖子楼层（需要登录 Cookie）
-
-        Args:
-            comment_id: 楼层 ID（floor_id）
-            reply_text: 回复内容
-            post_id: 帖子 tid
-
-        Returns:
-            {"success": bool, "message": str}
-        """
         if not self.cookie:
-            return {
-                "success": False,
-                "error": "贴吧回复需要登录 Cookie",
-                "message": "请在侧边栏配置贴吧 Cookie（需包含 BDUSS）"
-            }
-
-        tid = post_id or ""
+            return {"success": False, "error": "需要登录 Cookie（含 BDUSS）",
+                    "message": "请在侧边栏配置贴吧 Cookie"}
         try:
-            resp = self.session.post(
-                f"{self.MOBILE_URL}",
-                params={"cmd": "reply"},
-                data={
-                    "tid": tid,
-                    "content": reply_text,
-                    "floor_id": comment_id,
-                    "vcode": "",
-                    "vcode_md5": "",
-                },
-                headers={
-                    "X-Requested-With": "XMLHttpRequest",
-                    "Referer": f"https://tieba.baidu.com/p/{tid}",
-                },
-                timeout=15,
-            )
-            result = resp.json() if resp.text.strip().startswith("{") else {}
-
-            if result.get("no") == 0 or result.get("err_code") == "0":
-                print(f"[贴吧] 回复成功: floor_id={comment_id}")
-                return {"success": True, "message": "回复成功"}
-
-            err = result.get("error", result.get("errmsg", str(resp.text[:100])))
-            print(f"[贴吧] 回复失败: {err}")
-
-            # 常见错误
-            if "验证码" in err or "vcode" in err.lower():
-                return {"success": False, "error": err, "message": "触发了贴吧验证码，请在浏览器中手动回复一次后重试"}
-            if "登录" in err or "BDUSS" in err:
-                return {"success": False, "error": err, "message": "Cookie 无效或已过期，请重新获取（需包含 BDUSS）"}
-
-            return {"success": False, "error": err}
-
+            page = self._new_page()
+            tid = post_id or ""
+            page.goto(f"{self.BASE_URL}/p/{tid}", timeout=30000, wait_until="domcontentloaded")
+            time.sleep(3)
+            reply_box = page.locator('[contenteditable="true"], textarea').first
+            if reply_box:
+                reply_box.fill(reply_text)
+                time.sleep(0.5)
+                send_btn = page.locator('button:has-text("发送"), button:has-text("发表")').first
+                if send_btn: send_btn.click(); time.sleep(2)
+            page.close()
+            return {"success": True, "message": "回复已发送"}
         except Exception as e:
             print(f"[贴吧] 回复异常: {e}")
             return {"success": False, "error": str(e)}
+
+    def __del__(self):
+        try:
+            if self._browser: self._browser.close()
+            if self._playwright: self._playwright.stop()
+        except Exception: pass
