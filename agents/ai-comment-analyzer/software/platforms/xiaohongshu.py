@@ -190,21 +190,19 @@ class XiaohongshuCollector(BaseCollector):
                     timeout=10
                 )
 
-            # 检查响应是否是 JSON
-            ct = resp.headers.get("Content-Type", "")
-            if "json" not in ct:
-                print(f"[小红书] 非 JSON 响应: {ct}, 状态码: {resp.status_code}")
-                print(f"[小红书] 响应体[:200]: {resp.text[:200]}")
-                print("[小红书] Cookie 可能无效，请确认已登录并复制完整 Cookie")
-                break
-
+                # 检查响应是否是 JSON
+                ct = resp.headers.get("Content-Type", "")
+                if "json" not in ct:
+                    print(f"[小红书] 非 JSON 响应: {ct}, 状态码: {resp.status_code}")
+                    print(f"[小红书] 响应体[:200]: {resp.text[:200]}")
+                    print("[小红书] Cookie 可能无效，请确认已登录并复制完整 Cookie")
                     break
 
-                comments_data = data.get("data", {})
-                comments_list = comments_data.get("comments", [])
+                data = resp.json()
 
-                if not comments_list:
-                    print("[小红书] 无更多评论")
+                if not data.get("success"):
+                    msg = data.get("msg", "未知错误")
+                    print(f"[小红书] 拉取评论失败: {msg}")
                     break
 
                 for comment in comments_list:
