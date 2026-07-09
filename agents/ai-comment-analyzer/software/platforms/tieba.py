@@ -85,33 +85,23 @@ class TiebaCollector(BaseCollector):
             page = context.new_page()
             try:
                 print(f"[贴吧] 浏览器打开 {self.BASE_URL}/p/{tid} ...")
-                page.goto(f"{self.BASE_URL}/p/{tid}", timeout=30000, wait_until="domcontentloaded")
+                # networkidle 等 JS 完全渲染帖子
+                page.goto(f"{self.BASE_URL}/p/{tid}", timeout=60000, wait_until="networkidle")
                 time.sleep(3)
 
+                # 等待内容区域
                 try:
-                    page.wait_for_selector(".l_post, .d_post_content, [class*='post_content']", timeout=15000)
+                    page.wait_for_selector("[class*='thread'], [class*='post'], [class*='content']", timeout=20000)
                 except Exception:
-                    print("[贴吧] 等待楼层超时，尝试继续...")
+                    print("[贴吧] 等待内容超时，继续...")
                 time.sleep(2)
 
-                # 滚动加载更多
-                last_count = 0
-                for _ in range(10):
+                # 滚动触发懒加载
+                for _ in range(5):
                     page.evaluate("window.scrollTo(0, document.body.scrollHeight)")
                     time.sleep(1.5)
-                    try:
-                        load_more = page.locator("text=加载更多, .load-more, [class*='load_more']").first
-                        if load_more.is_visible():
-                            load_more.click()
-                            time.sleep(2)
-                    except Exception:
-                        pass
-                    current = len(page.locator(".l_post, [class*='l_post']").all())
-                    if current == last_count and current > 0:
-                        break
-                    last_count = current
 
-                # JS 提取 + 诊断（含 class dump + 内容定位）
+                # JS 提取 + 智能 fallback
                 posts_data, debug_info = page.evaluate("""
                     () => {
                         const debug = {
@@ -119,60 +109,73 @@ class TiebaCollector(BaseCollector):
                             bodyLen: document.body ? document.body.innerText.length : 0,
                             bodySample: document.body ? document.body.innerText.substring(0, 500) : '',
                             totalDivs: document.querySelectorAll('div').length,
-                            allClasses: [],
-                            selectors: {},
-                            contentTraces: []  // 追踪包含帖子内容文本的元素路径
+                            allClasses: [], selectors: {}, contentTraces: [], textBlockCounts: {}
                         };
-                        // 统计各选择器命中数
-                        ['l_post', 'j_l_post', 'd_post_content', 'post_content',
-                         'd_name', 'p_author_name', 'tail-info',
-                         '[class*="l_post"]', '[class*="post_content"]', '[class*="d_post"]',
-                         '[class*="content"]', '[class*="floor"]', '[class*="reply"]'].forEach(sel => {
-                            try { debug.selectors[sel] = document.querySelectorAll(sel).length; }
-                            catch(e) { debug.selectors[sel] = 'ERR'; }
+                        const knownSels = ['l_post','j_l_post','d_post_content','post_content','d_name','p_author_name',
+                            'tail-info','card','thread','post','feed','[class*="l_post"]','[class*="post_content"]',
+                            '[class*="d_post"]','[class*="content"]','[class*="floor"]','[class*="reply"]',
+                            '[class*="card"]','[class*="thread"]'];
+                        knownSels.forEach(s => {
+                            try { debug.selectors[s] = document.querySelectorAll(s).length; }
+                            catch(e) { debug.selectors[s] = 'ERR'; }
                         });
-                        // 收集页面上所有 div 的 class
                         const classSet = new Set();
-                        document.querySelectorAll('div[class], li[class], section[class]').forEach(el => {
-                            el.classList.forEach(c => classSet.add(c));
-                        });
+                        document.querySelectorAll('[class]').forEach(el => el.classList.forEach(c => classSet.add(c)));
                         debug.allClasses = Array.from(classSet).slice(0, 200);
 
                         const result = [];
-                        const floors = document.querySelectorAll('.l_post, .j_l_post, [class*="l_post"]');
-                        floors.forEach(el => {
-                            const userNameEl = el.querySelector('.d_name a, .p_author_name, a[class*="user"]');
-                            const contentEl = el.querySelector('.d_post_content, [class*="post_content"], .j_d_post_content');
-                            const timeEl = el.querySelector('.tail-info, [class*="tail_info"]');
-                            const userName = userNameEl ? userNameEl.textContent.trim() : '匿名';
-                            const content = contentEl ? contentEl.textContent.trim() : '';
-                            const time = timeEl ? timeEl.textContent.trim() : '';
-                            if (!content || content.length < 2) return;
-                            result.push({userName, content, time});
+                        // 策略1: 旧版选择器
+                        document.querySelectorAll('.l_post,.j_l_post,[class*="l_post"]').forEach(el => {
+                            const ue = el.querySelector('.d_name a,.p_author_name,a[class*="user"]');
+                            const ce = el.querySelector('.d_post_content,[class*="post_content"],.j_d_post_content');
+                            const te = el.querySelector('.tail-info,[class*="tail_info"]');
+                            const c = ce ? ce.textContent.trim() : '';
+                            if (c.length >= 2) result.push({userName: ue?ue.textContent.trim():'匿名', content:c, time:te?te.textContent.trim():''});
                         });
-                        // fallback
                         if (result.length === 0) {
-                            document.querySelectorAll('.d_post_content, [class*="post_content"]').forEach(el => {
+                            document.querySelectorAll('.d_post_content,[class*="post_content"]').forEach(el => {
                                 const c = el.textContent.trim();
-                                if (c && c.length > 2) result.push({userName:'贴吧用户', content:c, time:''});
+                                if (c.length > 2) result.push({userName:'贴吧用户', content:c, time:''});
                             });
                         }
-                        // 反推：找到包含特定文本的元素，输出其 class 路径
+                        // 策略2: 智能 fallback — 找文字密集的叶子元素
                         if (result.length === 0) {
-                            const keywords = ['贴吧用户', '关注', '发贴', '楼主'];
-                            keywords.forEach(kw => {
+                            const textBlocks = [];
+                            document.querySelectorAll('*').forEach(el => {
+                                if (el.children.length === 0 && el.textContent.trim().length >= 20) {
+                                    const cls = el.className ? el.className.replace(/\\s+/g,'.') : '(no-class)';
+                                    const tag = el.tagName.toLowerCase();
+                                    const pcls = el.parentElement && el.parentElement.className
+                                        ? el.parentElement.className.replace(/\\s+/g,'.') : '';
+                                    const key = tag + '.' + cls + ' <- ' + (pcls||'(no-class)');
+                                    textBlocks.push({key, text: el.textContent.trim().substring(0,200)});
+                                }
+                            });
+                            const groups = {};
+                            textBlocks.forEach(b => { groups[b.key] = (groups[b.key]||0)+1; });
+                            debug.textBlockCounts = groups;
+                            const sorted = Object.entries(groups).sort((a,b) => b[1]-a[1]);
+                            sorted.slice(0, 10).forEach(([k,c]) => debug.contentTraces.push({keyword: c+'x', path: k}));
+                            // 取出现最多的路径
+                            if (sorted.length>0 && sorted[0][1]>=3) {
+                                const bestKey = sorted[0][0];
+                                textBlocks.forEach(b => {
+                                    if (b.key === bestKey) result.push({userName:'贴吧用户', content:b.text, time:''});
+                                });
+                            }
+                        }
+                        // 策略3: 关键词追踪
+                        if (result.length === 0) {
+                            ['贴吧用户','关注','楼主'].forEach(kw => {
                                 const all = document.querySelectorAll('*');
-                                for (let i = 0; i < all.length; i++) {
-                                    const el = all[i];
-                                    if (el.children.length === 0 && el.textContent.trim() === kw) {
-                                        // 向上找最近的带 class 的祖先
-                                        let path = [];
-                                        let cur = el;
-                                        for (let d = 0; d < 6 && cur && cur !== document.body; d++) {
-                                            path.push(cur.tagName + (cur.className ? '.' + cur.className.replace(/\\s+/g, '.') : '') + (cur.id ? '#' + cur.id : ''));
-                                            cur = cur.parentElement;
+                                for (let i=0; i<all.length; i++) {
+                                    if (all[i].children.length===0 && all[i].textContent.trim()===kw) {
+                                        let path=[], cur=all[i];
+                                        for(let d=0; d<5 && cur && cur!==document.body; d++) {
+                                            path.push(cur.tagName+(cur.className?'.'+cur.className.replace(/\\s+/g,'.'):'')+(cur.id?'#'+cur.id:''));
+                                            cur=cur.parentElement;
                                         }
-                                        debug.contentTraces.push({keyword: kw, path: path.join(' > ')});
+                                        debug.contentTraces.push({keyword:kw, path:path.join(' > ')});
                                         break;
                                     }
                                 }
@@ -182,33 +185,24 @@ class TiebaCollector(BaseCollector):
                     }
                 """)
 
-                # 打印诊断
-                print(f"[贴吧] 页面标题: {debug_info.get('title', 'N/A')}")
-                print(f"[贴吧] body 文本长度: {debug_info.get('bodyLen', 0)} 字符，总 div: {debug_info.get('totalDivs', 0)}")
-                sel = debug_info.get('selectors', {})
-                print(f"[贴吧] 选择器: l_post={sel.get('l_post',0)} j_l_post={sel.get('j_l_post',0)} "
-                      f"d_post_content={sel.get('d_post_content',0)} post_content={sel.get('post_content',0)} "
-                      f"d_name={sel.get('d_name',0)} tail-info={sel.get('tail-info',0)}")
-                classes = debug_info.get('allClasses', [])
-                if classes:
-                    print(f"[贴吧] 页面class列表 (共{len(classes)}个): {', '.join(classes)}")
-                traces = debug_info.get('contentTraces', [])
-                if traces:
-                    for t in traces:
-                        print(f"[贴吧] 内容追踪 '{t['keyword']}': {t['path']}")
-                print(f"[贴吧] body 样本: {debug_info.get('bodySample', '')[:300]}")
-                print(f"[贴吧] 提取到 {len(posts_data)} 条帖子")
+                # 诊断输出
+                print(f"[贴吧] 标题: {debug_info.get('title','?')}, body: {debug_info.get('bodyLen',0)}字符, div: {debug_info.get('totalDivs',0)}")
+                sel = debug_info.get('selectors',{})
+                print(f"[贴吧] 选择器命中: {', '.join(f'{k}={v}' for k,v in sel.items() if v and v!=0)}")
+                classes = debug_info.get('allClasses',[])
+                if classes: print(f"[贴吧] class({len(classes)}): {', '.join(classes[:30])}")
+                traces = debug_info.get('contentTraces',[])
+                for t in traces: print(f"[贴吧] 追踪 {t['keyword']}: {t['path'][:200]}")
+                print(f"[贴吧] body样本: {debug_info.get('bodySample','')[:200]}")
+                print(f"[贴吧] 提取 {len(posts_data)} 条")
 
                 self.last_error = ""
                 if len(posts_data) == 0:
-                    trace_str = "; ".join([f"'{t['keyword']}'->{t['path']}" for t in traces]) if traces else "无追踪"
+                    trace_str = "; ".join([f"{t['keyword']}:{t['path'][:120]}" for t in traces[:5]]) or "无"
                     self.last_error = (
-                        f"页面可访问但未匹配到楼层。"
-                        f"标题={debug_info.get('title','?')}, "
-                        f"body={debug_info.get('bodyLen',0)}字符, "
-                        f"div={debug_info.get('totalDivs',0)}个。"
-                        f"内容追踪: {trace_str}。"
-                        f"CSS类: {', '.join(classes[:25])}..."
+                        f"页面可访问但未匹配到楼层。标题={debug_info.get('title','?')}, "
+                        f"body={debug_info.get('bodyLen',0)}字符, div={debug_info.get('totalDivs',0)}个。"
+                        f"文本块分布: {trace_str}"
                     )
                 return posts_data
             finally:
