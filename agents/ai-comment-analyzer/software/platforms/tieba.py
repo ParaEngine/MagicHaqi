@@ -124,18 +124,24 @@ class TiebaCollector(BaseCollector):
                         debug.allClasses = Array.from(classSet).slice(0, 200);
 
                         const result = [];
-                        // 策略1: 旧版选择器
-                        document.querySelectorAll('.l_post,.j_l_post,[class*="l_post"]').forEach(el => {
-                            const ue = el.querySelector('.d_name a,.p_author_name,a[class*="user"]');
-                            const ce = el.querySelector('.d_post_content,[class*="post_content"],.j_d_post_content');
-                            const te = el.querySelector('.tail-info,[class*="tail_info"]');
+                        // 策略1: 新版选择器（从实际页面 class dump 中提取）
+                        document.querySelectorAll(
+                            '.pb-comment-item, .thread-container, .virtual-list-item, [class*="comment-item"]'
+                        ).forEach(el => {
+                            const ue = el.querySelector('.name-info a, .name-info-link, .head-line, [class*="name-info"] a, [class*="user-info"]');
+                            const ce = el.querySelector('.comment-content, .pb-rich-text, .richtext-item, [class*="pb-content"], [class*="content-item"]');
+                            const te = el.querySelector('.comment-desc-left, [class*="desc-left"], [class*="tail-info"]');
                             const c = ce ? ce.textContent.trim() : '';
                             if (c.length >= 2) result.push({userName: ue?ue.textContent.trim():'匿名', content:c, time:te?te.textContent.trim():''});
                         });
+                        // 策略1b: 旧版选择器
                         if (result.length === 0) {
-                            document.querySelectorAll('.d_post_content,[class*="post_content"]').forEach(el => {
-                                const c = el.textContent.trim();
-                                if (c.length > 2) result.push({userName:'贴吧用户', content:c, time:''});
+                            document.querySelectorAll('.l_post,.j_l_post,[class*="l_post"]').forEach(el => {
+                                const ue = el.querySelector('.d_name a,.p_author_name,a[class*="user"]');
+                                const ce = el.querySelector('.d_post_content,[class*="post_content"],.j_d_post_content');
+                                const te = el.querySelector('.tail-info,[class*="tail_info"]');
+                                const c = ce ? ce.textContent.trim() : '';
+                                if (c.length >= 2) result.push({userName: ue?ue.textContent.trim():'匿名', content:c, time:te?te.textContent.trim():''});
                             });
                         }
                         // 策略2: 智能 fallback — 找文字密集的叶子元素
@@ -225,7 +231,7 @@ class TiebaCollector(BaseCollector):
             )
             page = context.new_page()
             try:
-                page.goto(f"{self.BASE_URL}/p/{tid}", timeout=30000, wait_until="domcontentloaded")
+                page.goto(f"{self.BASE_URL}/p/{tid}", timeout=60000, wait_until="networkidle")
                 time.sleep(3)
                 title = page.title() or ""
                 author = ""
