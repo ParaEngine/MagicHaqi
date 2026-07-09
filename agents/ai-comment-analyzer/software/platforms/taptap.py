@@ -37,13 +37,29 @@ class TapTapCollector(BaseCollector):
         self.session = requests.Session()
         self.session.headers.update(self.HEADERS)
         self.session.headers["X-UA"] = self.XUA
+
+        # 先访问一次 TapTap，自动获取反爬虫 Cookie（acw_tc 等）
+        try:
+            self.session.get(f"{self.BASE_URL}/", timeout=5)
+        except Exception:
+            pass
+
         if cookie:
-            # 将 Cookie 字符串解析并设置到 .taptap.cn 域名
+            # 只保留 TapTap 相关的 Cookie 名
+            TAPTAP_COOKIE_KEYS = {
+                "TAPTAP_SESSION", "XSRF-TOKEN", "user_id", "acw_tc",
+                "web_app_uuid", "web_app_next_redesign_gray_feature",
+                "currentDataSource", "ACCOUNTS_USER_ID", "gid",
+                "acw_sc_v2", "_ga", "_ga_",
+            }
             for item in cookie.split(";"):
                 item = item.strip()
                 if "=" in item:
                     key, val = item.split("=", 1)
-                    self.session.cookies.set(key.strip(), val.strip(), domain=".taptap.cn")
+                    key = key.strip()
+                    # 自动跳过百度/头条/微软等第三方 Cookie
+                    if key in TAPTAP_COOKIE_KEYS or key.startswith("_ga"):
+                        self.session.cookies.set(key, val.strip(), domain=".taptap.cn")
 
     def validate_config(self) -> bool:
         return True  # 无需登录即可获取评论
