@@ -19,7 +19,7 @@ class XiaohongshuCollector(BaseCollector):
     platform_display_name = "小红书"
     platform_description = "使用小红书 API 拉取笔记评论，需要登录 Cookie"
 
-    BASE_URL = "https://edith.xiaohongshu.com/api/sns/web/v1"
+    BASE_URL = "https://www.xiaohongshu.com/api/sns/web/v1"
     HEADERS = {
         "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
         "Referer": "https://www.xiaohongshu.com/",
