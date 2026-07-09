@@ -27,17 +27,36 @@ class XiaohongshuCollector(BaseCollector):
         return True  # 公开笔记无需登录
 
     def _get_browser(self):
-        """延迟加载 Playwright 浏览器"""
+        """延迟加载 Playwright 浏览器（反检测模式）"""
         if self._browser is None:
             from playwright.sync_api import sync_playwright
             self._playwright = sync_playwright().start()
-            self._browser = self._playwright.chromium.launch(headless=True)
+            self._browser = self._playwright.chromium.launch(
+                headless=True,
+                args=[
+                    "--disable-blink-features=AutomationControlled",
+                    "--no-sandbox",
+                    "--disable-gpu",
+                ]
+            )
         return self._browser
 
     def _new_page(self):
-        """创建带 Cookie 的新页面"""
+        """创建带反检测和 Cookie 的新页面"""
         browser = self._get_browser()
-        page = browser.new_page()
+        context = browser.new_context(
+            viewport={"width": 1920, "height": 1080},
+            user_agent="Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
+            locale="zh-CN",
+        )
+        # 隐藏 webdriver 标志
+        context.add_init_script("""
+            Object.defineProperty(navigator, 'webdriver', {get: () => undefined});
+            Object.defineProperty(navigator, 'plugins', {get: () => [1, 2, 3, 4, 5]});
+            Object.defineProperty(navigator, 'languages', {get: () => ['zh-CN', 'zh']});
+            window.chrome = {runtime: {}};
+        """)
+        page = context.new_page()
         if self.cookie:
             cookies = []
             for item in self.cookie.split(";"):
@@ -47,7 +66,7 @@ class XiaohongshuCollector(BaseCollector):
                     cookies.append({"name": k.strip(), "value": v.strip(),
                                    "domain": ".xiaohongshu.com", "path": "/"})
             if cookies:
-                page.context.add_cookies(cookies)
+                context.add_cookies(cookies)
         return page
 
     def test_connection(self) -> Dict:
