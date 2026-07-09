@@ -228,6 +228,9 @@ class TiebaCollector(BaseCollector):
                 for t in traces: print(f"[贴吧] 追踪 {t['keyword']}: {t['path'][:200]}")
                 print(f"[贴吧] body样本: {debug_info.get('bodySample','')[:200]}")
                 print(f"[贴吧] 提取 {len(posts_data)} 条")
+                # 打印前 3 条内容样本
+                for i, p in enumerate(posts_data[:3]):
+                    print(f"[贴吧]   [{i}] user={p.get('userName','?')} content={p.get('content','')[:100]}")
 
                 self.last_error = ""
                 if len(posts_data) == 0:
