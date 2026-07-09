@@ -315,12 +315,20 @@ def sidebar():
                 st.text_area(
                     field["label"],
                     value=st.session_state.get(session_key, ""),
-                    height=200,
+                    height=80,
                     key=session_key,
                     label_visibility="visible"
                 )
 
             platform_config[key] = st.session_state.get(session_key, "")
+
+        # TapTap 帮助提示
+        if platform == "taptap":
+            st.caption(
+                "💡 获取方法：F12 → Application → Cookies → www.taptap.cn → "
+                "找到 `TAPTAP_SESSION` 和 `XSRF-TOKEN`，双击 Value 复制。"
+                "注意：`TAPTAP_SESSION` 是 HttpOnly 的，`document.cookie` 拿不到！"
+            )
 
         # 保存并测试平台配置按钮
         col1, col2 = st.columns(2)
