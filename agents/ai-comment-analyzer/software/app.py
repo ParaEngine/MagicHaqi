@@ -21,16 +21,6 @@ from reply_manager import ReplyManager, BILIBILI_REPLY_INTERVAL
 
 # 平台配置映射
 PLATFORM_CONFIG = {
-    "twitter": {
-        "display_name": "Twitter / X",
-        "icon": "🐦",
-        "color": "#1DA1F2",
-        "config_fields": [
-            {"key": "bearer_token", "label": "Bearer Token", "type": "password", "env": "TWITTER_BEARER_TOKEN"},
-        ],
-        "post_label": "推文 ID 或链接",
-        "post_placeholder": "例如: https://twitter.com/user/status/123456789",
-    },
     "bilibili": {
         "display_name": "哔哩哔哩 (B站)",
         "icon": "📺",
@@ -82,6 +72,16 @@ PLATFORM_CONFIG = {
         ],
         "post_label": "游戏链接或 App ID",
         "post_placeholder": "例如: https://www.taptap.cn/app/123456 或直接输入 App ID",
+    },
+    "tieba": {
+        "display_name": "百度贴吧",
+        "icon": "📋",
+        "color": "#3385FF",
+        "config_fields": [
+            {"key": "cookie", "label": "登录 Cookie (可选)", "type": "text", "env": "TIEBA_COOKIE"},
+        ],
+        "post_label": "帖子链接或帖子 ID",
+        "post_placeholder": "例如: https://tieba.baidu.com/p/123456789 或直接输入帖子 ID",
     },
 }
 
@@ -340,12 +340,12 @@ def sidebar():
         if save_platform:
             # 保存平台配置到 .env 文件
             env_prefix = {
-                "twitter": "TWITTER_BEARER_TOKEN",
                 "bilibili": "BILIBILI",
                 "xiaohongshu": "XHS_COOKIE",
                 "weibo": "WEIBO_COOKIE",
                 "douyin": "DOUYIN_COOKIE",
                 "taptap": "TAPTAP",
+                "tieba": "TIEBA_COOKIE",
             }
 
             updates = {}
@@ -952,9 +952,7 @@ def page_report():
 def auto_detect_platform(url: str) -> str:
     """自动检测 URL 所属平台"""
     url_lower = url.lower()
-    if "twitter.com" in url_lower or "x.com" in url_lower:
-        return "twitter"
-    elif "bilibili.com" in url_lower or "bv" in url_lower.lower():
+    if "bilibili.com" in url_lower or "bv" in url_lower.lower():
         return "bilibili"
     elif "xiaohongshu.com" in url_lower or "xhs" in url_lower:
         return "xiaohongshu"
@@ -964,6 +962,8 @@ def auto_detect_platform(url: str) -> str:
         return "douyin"
     elif "taptap" in url_lower:
         return "taptap"
+    elif "tieba.baidu.com" in url_lower:
+        return "tieba"
     return "bilibili"  # 默认
 
 
@@ -976,7 +976,7 @@ def page_one_click():
     # URL 输入
     url_input = st.text_input(
         "🔗 粘贴帖子/视频链接",
-        placeholder="支持: Twitter、B站、小红书、微博、抖音、TapTap链接",
+        placeholder="支持: B站、小红书、微博、抖音、TapTap、贴吧链接",
         help="粘贴任意平台的帖子/视频链接，系统会自动识别平台并分析"
     )
 

@@ -76,12 +76,12 @@ class ReportGenerator:
 
         # 平台显示名称
         platform_names = {
-            "twitter": "Twitter / X",
             "bilibili": "哔哩哔哩 (B站)",
             "xiaohongshu": "小红书",
             "weibo": "微博",
             "douyin": "抖音",
             "taptap": "TapTap (游戏社区)",
+            "tieba": "百度贴吧",
         }
         platform_display = platform_names.get(platform, platform)
 
@@ -458,12 +458,12 @@ class ReportGenerator:
         print(f"[报告生成] 开始生成主题「{keyword}」的汇总分析报告...")
 
         platform_names = {
-            "twitter": "Twitter / X",
             "bilibili": "哔哩哔哩 (B站)",
             "xiaohongshu": "小红书",
             "weibo": "微博",
             "douyin": "抖音",
             "taptap": "TapTap (游戏社区)",
+            "tieba": "百度贴吧",
         }
         platform_display = platform_names.get(platform, platform)
         post_ids = [p.get("id", "") for p in posts_info if p.get("id")]
