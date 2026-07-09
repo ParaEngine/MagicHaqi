@@ -55,15 +55,39 @@
       .field-title { @apply min-w-0 overflow-hidden text-ellipsis whitespace-nowrap text-[13px] font-bold; }
       .field-grid { @apply grid grid-cols-1 gap-2 md:grid-cols-2; }
       .field-grid .wide { @apply md:col-span-2; }
-      .preview-planet { @apply relative mx-auto grid h-44 w-44 place-items-center overflow-hidden rounded-full text-3xl font-black text-white shadow-xl; text-shadow: 0 1px 8px rgb(15 23 42 / .5); }
+      .preview-planet { @apply relative mx-auto grid h-44 w-44 place-items-center overflow-hidden rounded-full text-3xl font-black text-white shadow-xl; text-shadow: 0 1px 8px rgb(15 23 42 / .5); cursor: pointer; outline: 3px solid transparent; outline-offset: 4px; transition: outline-color .15s ease; }
+      .preview-planet.active { outline-color: #0ea5e9; }
       .preview-planet:after { content:''; @apply absolute inset-0 rounded-full; background: radial-gradient(circle at 24% 20%, rgb(255 255 255 / .26), transparent 28%), radial-gradient(circle at 74% 76%, rgb(0 0 0 / .22), transparent 42%); mix-blend-mode: soft-light; }
       .field-preview-grid { @apply grid grid-cols-1 gap-2 sm:grid-cols-2; }
-      .field-preview { @apply overflow-hidden rounded-lg border border-slate-300 bg-white text-left transition hover:border-sky-500 hover:bg-sky-50 focus:border-sky-600 focus:outline-none focus:ring-2 focus:ring-sky-600/20; }
+      .field-preview { @apply cursor-pointer overflow-hidden rounded-lg border border-slate-300 bg-white text-left transition hover:border-sky-500 hover:bg-sky-50 focus:border-sky-600 focus:outline-none focus:ring-2 focus:ring-sky-600/20; }
+      .field-preview.active { @apply border-sky-600 bg-sky-50 ring-2 ring-sky-600/15; }
       .field-preview-art { @apply relative block aspect-video overflow-hidden; }
       .field-preview-body { @apply flex flex-col gap-1 p-2; }
       .field-preview-title { @apply overflow-hidden text-ellipsis whitespace-nowrap text-xs font-bold; }
       .field-preview-meta { @apply overflow-hidden text-ellipsis whitespace-nowrap text-[11px] text-slate-500; }
-      .field-preview-action { @apply text-[11px] font-bold text-sky-700; }
+      .field-preview-action { @apply min-h-0 w-auto border-0 bg-transparent p-0 text-[11px] font-bold text-sky-700 hover:border-transparent hover:bg-transparent hover:underline; }
+      .npc-marker { position: absolute; transform: translate(-50%, -50%); width: 22px; height: 22px; display: grid; place-items: center; font-size: 15px; line-height: 1; filter: drop-shadow(0 1px 3px rgb(15 23 42 / .5)); background-size: contain; background-repeat: no-repeat; background-position: center; pointer-events: none; }
+      .npc-marker-active { outline: 3px solid #10b981; box-shadow: 0 2px 10px rgb(16 185 129 / .5); z-index: 2; }
+      .modal-window.npc-placer-window { width: min(1300px, 96vw); max-height: 96vh; height: min(92vh, 880px); }
+      .npc-placer-body { display: flex; flex-direction: column; gap: 8px; min-height: 0; }
+      .npc-placer-art { position: relative; flex: 1; min-height: 0; border-radius: 10px; overflow: hidden; background-size: cover; background-position: center; cursor: crosshair; }
+      .npc-placer-toolbar { @apply flex flex-wrap items-center gap-1.5; }
+      .npc-placer-scale-label { @apply w-12 text-center text-[12px] font-bold; }
+      .npc-section { @apply mt-2 border-t border-slate-200 pt-2; }
+      .npc-list { @apply flex flex-col gap-1.5; }
+      .npc-item { @apply flex items-center gap-2 rounded-md border border-slate-200 bg-slate-50 p-1.5; }
+      .npc-icon { @apply grid h-8 w-8 shrink-0 place-items-center bg-white text-base; }
+      .npc-info { @apply flex min-w-0 flex-1 flex-col; }
+      .npc-info strong { @apply overflow-hidden text-ellipsis whitespace-nowrap text-[12px]; }
+      .npc-actions { @apply flex shrink-0 flex-wrap gap-1; }
+      .npc-actions button { @apply text-[11px]; }
+      .npc-icon-row { @apply flex items-center gap-1.5; }
+      .npc-icon-row input { @apply flex-1; }
+      /* 对话行删除按钮：在 .row（grid-cols-2）里默认会被拉伸铺满整格，这里改回按内容宽度、靠左对齐。 */
+      .npc-dialog-remove { @apply w-auto justify-self-start px-4; }
+      .icon-region-stage { position: relative; max-width: 100%; max-height: 60vh; overflow: auto; border-radius: 8px; background: #0f172a; touch-action: none; }
+      .icon-region-stage img { display: block; max-width: 100%; height: auto; user-select: none; pointer-events: none; }
+      .icon-region-box { position: absolute; border: 2px solid #10b981; background: rgba(16,185,129,.18); pointer-events: none; }
       .scene-grid { @apply grid grid-cols-2 gap-2 md:grid-cols-3; }
       .scene-card { @apply overflow-hidden rounded-lg border border-slate-300 bg-white p-1.5 text-left hover:border-sky-500; }
       .scene-card.active { @apply border-sky-600 bg-sky-50 ring-2 ring-sky-600/15; }
@@ -161,6 +185,7 @@
         <div id="runStatus" class="status">准备就绪。</div>
         <div class="grid grid-cols-1 gap-3 xl:grid-cols-[minmax(360px,1fr)_minmax(360px,1fr)]">
           <div class="flex min-w-0 flex-col gap-3">
+          <div id="planetGeneralSections" class="flex min-w-0 flex-col gap-3">
             <section class="section">
               <h2>星球信息</h2>
               <div class="row">
@@ -231,9 +256,10 @@
               <label>小游戏 minigame（minigames 模式）<input id="onboardingMinigame" maxlength="96" placeholder="adventure 或 haqi_adventure.html"></label>
               <div class="hint">首次进入该星球时触发；完成进度写在 user/&lt;planetId&gt;.layouts.json 的 onboarding 字段。mode=none 时导出 JSON 会省略 onboarding。</div>
             </section>
+          </div>
 
-            <section class="section">
-              <h2>7 个 Fields</h2>
+            <section class="section" id="fieldEditorSection" style="display:none">
+              <h2 id="fieldEditorTitle">场景信息</h2>
               <div id="fieldList" class="field-list"></div>
             </section>
           </div>
@@ -271,6 +297,7 @@
       renderSceneParticles,
       setupLazySceneBackgrounds,
     } from '../js/view_story_scene_maker.js';
+    import { fitIconCropAspectRatio, iconBackgroundStyleAttr, isImageIconValue, parseIconSource } from '../js/utils.js';
 
     const WORKSPACE = 'MagicHaqi';
     const PLANET_DIR = 'famous-planets';
@@ -324,7 +351,7 @@
     };
 
     const $ = (id) => document.getElementById(id);
-    const state = { sdk: null, records: [], indexMeta: { version: 1, planets: [] }, selectedId: '', scenes: [], activeFieldIndex: 0, lastChatModel: '', newPlanetPromptDirty: false, workspaceViewer: null };
+    const state = { sdk: null, records: [], indexMeta: { version: 1, planets: [] }, selectedId: '', scenes: [], activeFieldIndex: 0, previewMode: 'planet', fields: FIELD_SLOTS.map(() => ({})), lastChatModel: '', newPlanetPromptDirty: false, workspaceViewer: null, fieldNpcs: FIELD_SLOTS.map(() => []) };
 
     function escapeHtml(value) {
       const div = document.createElement('div');
@@ -710,6 +737,7 @@
           typeId: ['life', 'water', 'sky', 'land', 'land', 'land', 'sky'][index] || 'land',
           background: { type: 'color', color: ['#bbf7d0', '#bae6fd', '#dbeafe', '#fde68a', '#bbf7d0', '#fef3c7', '#cffafe'][index] || '#bae6fd', title: slot.label },
           particles: index % 2 === 0 ? ['sparkle'] : [],
+          npcs: [],
         })),
       };
     }
@@ -717,6 +745,67 @@
     function normalizeParticles(value) {
       const raw = Array.isArray(value) ? value : String(value || '').split(/[，,、\s]+/);
       return [...new Set(raw.map(item => String(item || '').trim()).filter(Boolean))];
+    }
+
+    function clampPercent(value, fallback = 50) {
+      const num = Number(value);
+      if (!Number.isFinite(num)) return fallback;
+      return Math.max(0, Math.min(100, num));
+    }
+
+    function clampNpcScale(value, fallback = 1) {
+      const num = Number(value);
+      if (!Number.isFinite(num) || num <= 0) return fallback;
+      return Math.max(0.4, Math.min(3, num));
+    }
+
+    function normalizeNpcDialog(value) {
+      const raw = Array.isArray(value) ? value : [];
+      return raw
+        .map(line => ({
+          speaker: String(line?.speaker || '').trim().slice(0, 24),
+          text: String(line?.text || '').trim().slice(0, 200),
+        }))
+        .filter(line => line.text);
+    }
+
+    function normalizeNpc(raw = {}, index = 0) {
+      return {
+        id: safeId(raw.id, `npc_${index + 1}`),
+        name: String(raw.name || '').trim().slice(0, 24) || `NPC${index + 1}`,
+        icon: String(raw.icon || raw.emoji || raw.imageUrl || '🧑').trim().slice(0, 300),
+        x: clampPercent(raw.x, 50),
+        y: clampPercent(raw.y, 50),
+        scale: clampNpcScale(raw.scale),
+        flip: !!raw.flip,
+        dropShadow: !!raw.dropShadow,
+        dialog: normalizeNpcDialog(raw.dialog),
+        // minigame 可填 gameId / html 文件名（本地清单），也可填完整 http(s) 远程小游戏地址。
+        minigame: String(raw.minigame || raw.game || '').trim().slice(0, 300),
+        // 显式覆盖是否强制横屏：未勾选(false)时沿用该游戏自身默认配置；勾选(true)时强制横屏。
+        minigameLandscape: !!raw.minigameLandscape,
+      };
+    }
+
+    function normalizeFieldNpcs(value) {
+      const raw = Array.isArray(value) ? value : [];
+      return raw.map((npc, index) => normalizeNpc(npc, index));
+    }
+
+    // 导出时：npc 必须至少有 dialog 或 minigame 之一，否则点击后没有任何反应，直接丢弃。
+    function compactFieldNpcs(value) {
+      return normalizeFieldNpcs(value)
+        .filter(npc => npc.dialog.length > 0 || npc.minigame)
+        .map(npc => {
+          const compact = { id: npc.id, name: npc.name, icon: npc.icon, x: npc.x, y: npc.y };
+          if (npc.scale !== 1) compact.scale = npc.scale;
+          if (npc.flip) compact.flip = true;
+          if (npc.dropShadow) compact.dropShadow = true;
+          if (npc.dialog.length) compact.dialog = npc.dialog;
+          if (npc.minigame) compact.minigame = npc.minigame;
+          if (npc.minigame && npc.minigameLandscape) compact.minigameLandscape = true;
+          return compact;
+        });
     }
 
     function normalizePlanetPets(value) {
@@ -831,6 +920,7 @@
             },
             particles: normalizeParticles(field.particles),
             bgMusic: String(field.bgMusic || ''),
+            npcs: normalizeFieldNpcs(field.npcs),
           };
         }),
       };
@@ -865,6 +955,8 @@
           if (field.background?.imageUrl) result.background.imageUrl = field.background.imageUrl;
           if (field.background?.presetId) result.background.presetId = field.background.presetId;
           if (field.bgMusic) result.bgMusic = field.bgMusic;
+          const npcs = compactFieldNpcs(field.npcs);
+          if (npcs.length) result.npcs = npcs;
           return result;
         }),
       };
@@ -925,7 +1017,37 @@ ${currentIndent}}`;
       return stringifyIndexJson(buildIndexObject());
     }
 
+    function readFieldFormValues() {
+      return {
+        name: $('fieldName').value.trim(),
+        typeId: $('fieldType').value || 'land',
+        background: {
+          color: $('fieldColor').value.trim() || '#bae6fd',
+          imageUrl: $('fieldImageUrl').value.trim(),
+          presetId: $('fieldPresetId').value.trim(),
+          title: $('fieldSceneTitle').value.trim(),
+        },
+        particles: normalizeParticles($('fieldParticles').value),
+        bgMusic: $('fieldMusic').value.trim(),
+      };
+    }
+
+    // 只有当前选中的 field 才会渲染进 DOM；切换选中项/构建配置前先把 DOM 里的编辑内容同步回 state.fields。
+    function syncActiveFieldFromDom() {
+      if (state.previewMode !== 'field' || typeof state.activeFieldIndex !== 'number') return;
+      if (!$('fieldName')) return;
+      const slot = FIELD_SLOTS[state.activeFieldIndex] || { label: `Field ${state.activeFieldIndex + 1}` };
+      const values = readFieldFormValues();
+      state.fields[state.activeFieldIndex] = {
+        ...state.fields[state.activeFieldIndex],
+        ...values,
+        name: values.name || slot.label,
+        background: { ...values.background, title: values.background.title || values.name || slot.label },
+      };
+    }
+
     function buildPlanetConfig() {
+      syncActiveFieldFromDom();
       return compactPlanet({
         id: safeId($('planetId').value, 'new_planet'),
         title: $('planetTitle').value.trim() || $('planetName').value.trim() || '新官方星球',
@@ -951,19 +1073,23 @@ ${currentIndent}}`;
           minigame: $('onboardingMinigame').value.trim(),
           progressKey: $('onboardingProgressKey').value.trim(),
         },
-        fields: FIELD_SLOTS.map((slot, index) => ({
-          name: $(`fieldName${index}`).value.trim() || slot.label,
-          typeId: $(`fieldType${index}`).value || 'land',
-          background: {
-            type: $(`fieldImageUrl${index}`).value.trim() ? 'image' : 'color',
-            color: $(`fieldColor${index}`).value.trim() || '#bae6fd',
-            imageUrl: $(`fieldImageUrl${index}`).value.trim(),
-            presetId: $(`fieldPresetId${index}`).value.trim(),
-            title: $(`fieldSceneTitle${index}`).value.trim() || $(`fieldName${index}`).value.trim() || slot.label,
-          },
-          particles: normalizeParticles($(`fieldParticles${index}`).value),
-          bgMusic: $(`fieldMusic${index}`).value.trim(),
-        })),
+        fields: FIELD_SLOTS.map((slot, index) => {
+          const field = state.fields[index] || {};
+          return {
+            name: field.name || slot.label,
+            typeId: field.typeId || 'land',
+            background: {
+              type: field.background?.imageUrl ? 'image' : 'color',
+              color: field.background?.color || '#bae6fd',
+              imageUrl: field.background?.imageUrl || '',
+              presetId: field.background?.presetId || '',
+              title: field.background?.title || field.name || slot.label,
+            },
+            particles: normalizeParticles(field.particles),
+            bgMusic: field.bgMusic || '',
+            npcs: state.fieldNpcs[index] || [],
+          };
+        }),
       });
     }
 
@@ -992,7 +1118,15 @@ ${currentIndent}}`;
       $('onboardingStoryPath').value = onboarding.storyPath;
       $('onboardingMinigame').value = onboarding.minigame;
       $('onboardingProgressKey').value = onboarding.progressKey === safePlanet.id ? '' : onboarding.progressKey;
-      renderFieldEditors(safePlanet.fields);
+      state.fieldNpcs = safePlanet.fields.map(field => normalizeFieldNpcs(field.npcs));
+      state.fields = safePlanet.fields.map(field => ({
+        name: field.name,
+        typeId: field.typeId,
+        background: { ...field.background },
+        particles: normalizeParticles(field.particles),
+        bgMusic: field.bgMusic || '',
+      }));
+      renderLeftPanel();
       updateOutput();
     }
 
@@ -1009,32 +1143,446 @@ ${currentIndent}}`;
       return `<option value="">无音乐</option>${keys.map(key => `<option value="${escapeHtml(key)}" ${key === selected ? 'selected' : ''}>${escapeHtml(BG_MUSIC_LABELS[key] || key)}</option>`).join('')}`;
     }
 
-    function renderFieldEditors(fields = []) {
-      $('fieldList').innerHTML = FIELD_SLOTS.map((slot, index) => {
-        const field = fields[index] || defaultPlanet().fields[index];
-        return `
-          <article class="field-card" data-field-editor="${index}">
+    // 预览面板支持一个"当前选中"状态：选中星球 → 左侧展示星球通用信息；选中某个场景 → 左侧只展示该场景的信息。
+    function renderLeftPanel() {
+      const isField = state.previewMode === 'field' && typeof state.activeFieldIndex === 'number';
+      $('planetGeneralSections').style.display = isField ? 'none' : '';
+      $('fieldEditorSection').style.display = isField ? '' : 'none';
+      if (isField) renderFieldEditor(state.activeFieldIndex);
+    }
+
+    function selectPreviewPlanet() {
+      syncActiveFieldFromDom();
+      state.previewMode = 'planet';
+      renderLeftPanel();
+      renderPreview(buildPlanetConfig());
+    }
+
+    function selectPreviewField(index) {
+      syncActiveFieldFromDom();
+      state.activeFieldIndex = index;
+      state.previewMode = 'field';
+      renderLeftPanel();
+      renderPreview(buildPlanetConfig());
+    }
+
+    function renderFieldEditor(index) {
+      const slot = FIELD_SLOTS[index] || { slotId: `field_${index + 1}`, label: `Field ${index + 1}` };
+      const field = state.fields[index] || defaultPlanet().fields[index];
+      $('fieldEditorTitle').textContent = `场景信息 · ${index + 1}. ${slot.label} · ${slot.slotId}`;
+      $('fieldList').innerHTML = `
+        <article class="field-card" data-field-editor="${index}">
+          <div class="field-head">
+            <strong class="field-title">${index + 1}. ${escapeHtml(slot.label)} · ${escapeHtml(slot.slotId)}</strong>
+            <button type="button" id="btnPickScene">选择场景</button>
+          </div>
+          <div class="field-grid">
+            <label>Field 名称 <input id="fieldName" value="${escapeHtml(field.name || slot.label)}" maxlength="24"></label>
+            <label>地貌类型 <select id="fieldType">${fieldTypeOptions(field.typeId || 'land')}</select></label>
+            <label>背景标题 <input id="fieldSceneTitle" value="${escapeHtml(field.background?.title || field.name || slot.label)}"></label>
+            <label>Preset ID <input id="fieldPresetId" value="${escapeHtml(field.background?.presetId || '')}"></label>
+            <label class="wide">背景色/CSS <input id="fieldColor" value="${escapeHtml(field.background?.color || '#bae6fd')}"></label>
+            <label class="wide">背景图 URL（也可用「框选区域」截取图片局部作为背景）
+              <span class="npc-icon-row">
+                <input id="fieldImageUrl" value="${escapeHtml(field.background?.imageUrl || '')}">
+                <button type="button" id="btnFieldBgRegion">框选区域</button>
+              </span>
+            </label>
+            <label>粒子 <input id="fieldParticles" value="${escapeHtml(normalizeParticles(field.particles).join(', '))}" placeholder="sparkle, mist"></label>
+            <label>音乐 <select id="fieldMusic">${musicOptions(field.bgMusic || '')}</select></label>
+            <div class="wide hint">可用粒子：${escapeHtml(particleOptionsText())}</div>
+          </div>
+          <div class="npc-section">
             <div class="field-head">
-              <strong class="field-title">${index + 1}. ${escapeHtml(slot.label)} · ${escapeHtml(slot.slotId)}</strong>
-              <button type="button" data-pick-scene="${index}">选择场景</button>
+              <strong class="field-title">NPC</strong>
+              <button type="button" data-add-npc="${index}">+ 新增 NPC</button>
             </div>
-            <div class="field-grid">
-              <label>Field 名称 <input id="fieldName${index}" value="${escapeHtml(field.name || slot.label)}" maxlength="24"></label>
-              <label>地貌类型 <select id="fieldType${index}">${fieldTypeOptions(field.typeId || 'land')}</select></label>
-              <label>背景标题 <input id="fieldSceneTitle${index}" value="${escapeHtml(field.background?.title || field.name || slot.label)}"></label>
-              <label>Preset ID <input id="fieldPresetId${index}" value="${escapeHtml(field.background?.presetId || '')}"></label>
-              <label class="wide">背景色/CSS <input id="fieldColor${index}" value="${escapeHtml(field.background?.color || '#bae6fd')}"></label>
-              <label class="wide">背景图 URL <input id="fieldImageUrl${index}" value="${escapeHtml(field.background?.imageUrl || '')}"></label>
-              <label>粒子 <input id="fieldParticles${index}" value="${escapeHtml(normalizeParticles(field.particles).join(', '))}" placeholder="sparkle, mist"></label>
-              <label>音乐 <select id="fieldMusic${index}">${musicOptions(field.bgMusic || '')}</select></label>
-              <div class="wide hint">可用粒子：${escapeHtml(particleOptionsText())}</div>
+            <div class="npc-list" data-npc-list="${index}">${renderNpcListItems(index)}</div>
+          </div>
+        </article>`;
+      $('fieldList').querySelectorAll('input, textarea, select').forEach(input => input.addEventListener('input', () => { syncActiveFieldFromDom(); updateOutput(); }));
+      $('btnPickScene').onclick = () => openScenePicker(index);
+      $('btnFieldBgRegion').onclick = async () => {
+        const urlInput = $('fieldImageUrl');
+        const picked = await openIconRegionPicker(urlInput.value.trim());
+        if (picked != null) { urlInput.value = picked; syncActiveFieldFromDom(); updateOutput(); }
+      };
+      fixNpcIconAspects($('fieldList'));
+      setupNpcListDelegation();
+    }
+
+    function npcListKey(fieldIndex, npcIndex) {
+      return `${fieldIndex}:${npcIndex}`;
+    }
+
+    function parseNpcKey(key) {
+      const [fieldIndex, npcIndex] = String(key || '').split(':').map(Number);
+      return { fieldIndex, npcIndex };
+    }
+
+    function npcSummaryTags(npc) {
+      const tags = [];
+      if (npc.dialog.length) tags.push('💬 对话');
+      if (npc.minigame) tags.push(`🎮 ${npc.minigame}${npc.minigameLandscape ? ' 📱↔️横屏' : ''}`);
+      return tags.join(' + ') || '未配置对话/小游戏（不会生效）';
+    }
+
+    function renderNpcListItems(fieldIndex) {
+      const list = state.fieldNpcs[fieldIndex] || [];
+      if (!list.length) return '<div class="hint">暂无 NPC。</div>';
+      return list.map((npc, npcIndex) => {
+        const key = npcListKey(fieldIndex, npcIndex);
+        const icon = isImageIconValue(npc.icon)
+          ? `<span data-npc-icon="${escapeHtml(npc.icon)}" style="display:block;width:100%;height:100%;${escapeHtml(iconBackgroundStyleAttr(npc.icon))}"></span>`
+          : escapeHtml(npc.icon || '🧑');
+        return `
+          <div class="npc-item">
+            <span class="npc-icon">${icon}</span>
+            <div class="npc-info">
+              <strong>${escapeHtml(npc.name)}</strong>
+              <span class="hint">(${npc.x.toFixed(0)}%, ${npc.y.toFixed(0)}%) · ${Math.round(clampNpcScale(npc.scale) * 100)}%${npc.flip ? ' · 镜像' : ''} · ${escapeHtml(npcSummaryTags(npc))}</span>
             </div>
-          </article>`;
+            <div class="npc-actions">
+              <button type="button" data-place-npc="${key}">摆放</button>
+              <button type="button" data-edit-npc="${key}">编辑</button>
+              <button type="button" data-copy-npc="${key}">复制→</button>
+              <button type="button" class="danger" data-delete-npc="${key}">删</button>
+            </div>
+          </div>`;
       }).join('');
-      $('fieldList').querySelectorAll('input, textarea, select').forEach(input => input.addEventListener('input', updateOutput));
-      $('fieldList').querySelectorAll('[data-pick-scene]').forEach(btn => {
-        btn.onclick = () => openScenePicker(Number(btn.dataset.pickScene) || 0);
+    }
+
+    // 裁剪局部区域的 NPC 图标：把每个 data-npc-icon 元素的宽高改成裁剪区域的真实宽高比，避免拉伸变形。
+    function fixNpcIconAspects(root) {
+      (root || document).querySelectorAll('[data-npc-icon]').forEach(el => {
+        fitIconCropAspectRatio(el, el.dataset.npcIcon, el.parentElement?.clientWidth || 32);
       });
+    }
+
+    function refreshNpcList(fieldIndex) {
+      const el = $('fieldList').querySelector(`[data-npc-list="${fieldIndex}"]`);
+      if (el) { el.innerHTML = renderNpcListItems(fieldIndex); fixNpcIconAspects(el); }
+    }
+
+    function addNpc(fieldIndex) {
+      const list = state.fieldNpcs[fieldIndex] || (state.fieldNpcs[fieldIndex] = []);
+      list.push(normalizeNpc({ name: `NPC${list.length + 1}` }, list.length));
+      refreshNpcList(fieldIndex);
+      updateOutput();
+      openNpcEditor(npcListKey(fieldIndex, list.length - 1));
+    }
+
+    function deleteNpc(key) {
+      const { fieldIndex, npcIndex } = parseNpcKey(key);
+      const list = state.fieldNpcs[fieldIndex] || [];
+      list.splice(npcIndex, 1);
+      refreshNpcList(fieldIndex);
+      updateOutput();
+    }
+
+    // 全屏摆放弹窗：背景图放大展示，点击场景内任意位置即摆放该 NPC，可反复点击调整。
+    function openNpcPlacer(key) {
+      const { fieldIndex, npcIndex } = parseNpcKey(key);
+      const npc = (state.fieldNpcs[fieldIndex] || [])[npcIndex];
+      if (!npc) return;
+      const slot = FIELD_SLOTS[fieldIndex] || { label: `Field ${fieldIndex + 1}` };
+      const scene = sceneFromField(fieldIndex);
+      const overlay = document.createElement('div');
+      overlay.className = 'modal-overlay';
+      overlay.innerHTML = `
+        <div class="modal-window npc-placer-window" role="dialog" aria-modal="true" aria-label="摆放 NPC">
+          <div class="modal-titlebar">
+            <strong>摆放「${escapeHtml(npc.name)}」· ${escapeHtml(slot.label)}</strong>
+            <div class="modal-titlebar-actions npc-placer-toolbar">
+              <button type="button" id="npcPlacerShrink" title="缩小">缩小 −</button>
+              <span id="npcPlacerScaleLabel" class="hint npc-placer-scale-label"></span>
+              <button type="button" id="npcPlacerGrow" title="放大">放大 ＋</button>
+              <button type="button" id="npcPlacerFlip" title="左右镜像">左右镜像</button>
+              <button type="button" id="closeNpcPlacer" class="success">完成</button>
+            </div>
+          </div>
+          <div class="modal-body npc-placer-body">
+            <div class="hint">点击场景中的任意位置来摆放 NPC；可反复点击调整位置，用上方按钮缩放/镜像，完成后点右上角"完成"。</div>
+            <div class="npc-placer-art" id="npcPlacerArt" ${fieldPreviewBackgroundAttrs(scene)}>${renderSceneParticles(scene, { density: 'field' })}</div>
+          </div>
+        </div>`;
+      document.body.appendChild(overlay);
+      setupLazySceneBackgrounds(overlay);
+      const finishPlacing = () => {
+        overlay.remove();
+        refreshNpcList(fieldIndex);
+        updateOutput();
+      };
+      overlay.addEventListener('click', (e) => { if (e.target === overlay) finishPlacing(); });
+      overlay.querySelector('#closeNpcPlacer').onclick = finishPlacing;
+
+      const art = overlay.querySelector('#npcPlacerArt');
+      const scaleLabel = overlay.querySelector('#npcPlacerScaleLabel');
+      const updateScaleLabel = () => { scaleLabel.textContent = `${Math.round(clampNpcScale(npc.scale) * 100)}%`; };
+      const renderMarkers = () => {
+        art.querySelectorAll('.npc-marker').forEach(el => el.remove());
+        (state.fieldNpcs[fieldIndex] || []).forEach((n, idx) => {
+          const isActive = idx === npcIndex;
+          const marker = document.createElement('span');
+          marker.className = 'npc-marker' + (isActive ? ' npc-marker-active' : '');
+          const size = Math.round((isActive ? 38 : 22) * clampNpcScale(n.scale));
+          marker.style.left = `${clampPercent(n.x)}%`;
+          marker.style.top = `${clampPercent(n.y)}%`;
+          marker.style.width = `${size}px`;
+          marker.style.height = `${size}px`;
+          marker.style.fontSize = `${Math.round(size * 0.6)}px`;
+          marker.style.transform = `translate(-50%, -50%) scale(${n.flip ? -1 : 1}, 1)`;
+          marker.title = n.name;
+          if (isImageIconValue(n.icon)) {
+            marker.style.cssText += iconBackgroundStyleAttr(n.icon);
+            fitIconCropAspectRatio(marker, n.icon, size);
+          } else marker.textContent = n.icon || '🧑';
+          art.appendChild(marker);
+        });
+      };
+      renderMarkers();
+      updateScaleLabel();
+      art.addEventListener('click', (e) => {
+        const rect = art.getBoundingClientRect();
+        npc.x = clampPercent(((e.clientX - rect.left) / rect.width) * 100);
+        npc.y = clampPercent(((e.clientY - rect.top) / rect.height) * 100);
+        renderMarkers();
+      });
+      overlay.querySelector('#npcPlacerShrink').onclick = () => {
+        npc.scale = clampNpcScale(clampNpcScale(npc.scale) - 0.1);
+        updateScaleLabel();
+        renderMarkers();
+      };
+      overlay.querySelector('#npcPlacerGrow').onclick = () => {
+        npc.scale = clampNpcScale(clampNpcScale(npc.scale) + 0.1);
+        updateScaleLabel();
+        renderMarkers();
+      };
+      overlay.querySelector('#npcPlacerFlip').onclick = () => {
+        npc.flip = !npc.flip;
+        renderMarkers();
+      };
+    }
+
+    function setupNpcListDelegation() {
+      if (state.npcDelegationBound) return;
+      state.npcDelegationBound = true;
+      $('fieldList').addEventListener('click', (e) => {
+        const addBtn = e.target.closest('[data-add-npc]');
+        if (addBtn) { addNpc(Number(addBtn.dataset.addNpc) || 0); return; }
+        const placeBtn = e.target.closest('[data-place-npc]');
+        if (placeBtn) { openNpcPlacer(placeBtn.dataset.placeNpc); return; }
+        const editBtn = e.target.closest('[data-edit-npc]');
+        if (editBtn) { openNpcEditor(editBtn.dataset.editNpc); return; }
+        const copyBtn = e.target.closest('[data-copy-npc]');
+        if (copyBtn) { openCopyNpcPicker(copyBtn.dataset.copyNpc); return; }
+        const delBtn = e.target.closest('[data-delete-npc]');
+        if (delBtn) { deleteNpc(delBtn.dataset.deleteNpc); return; }
+      });
+    }
+
+    function openNpcEditor(key) {
+      const { fieldIndex, npcIndex } = parseNpcKey(key);
+      const npc = (state.fieldNpcs[fieldIndex] || [])[npcIndex];
+      if (!npc) return;
+      const overlay = document.createElement('div');
+      overlay.className = 'modal-overlay';
+      overlay.innerHTML = `
+        <div class="modal-window" role="dialog" aria-modal="true" aria-label="NPC 编辑">
+          <div class="modal-titlebar">
+            <strong>编辑 NPC · ${escapeHtml(FIELD_SLOTS[fieldIndex]?.label || '')}</strong>
+            <button type="button" id="closeNpcEditor">关闭</button>
+          </div>
+          <div class="modal-body modal-stack">
+            <div class="row">
+              <label>名字 <input id="npcEditName" maxlength="24" value="${escapeHtml(npc.name)}"></label>
+              <label class="wide">Icon（emoji 或图片 URL；也可用「框选区域」截取图片局部作为图标）
+                <span class="npc-icon-row">
+                  <input id="npcEditIcon" maxlength="300" value="${escapeHtml(npc.icon)}">
+                  <button type="button" id="npcIconRegionBtn">框选区域</button>
+                </span>
+              </label>
+            </div>
+            <div class="hint">位置 (${npc.x.toFixed(0)}%, ${npc.y.toFixed(0)}%)，缩放 ${Math.round(clampNpcScale(npc.scale) * 100)}%${npc.flip ? '，已左右镜像' : ''}；关闭本窗口后点列表里的"摆放"按钮，可在放大的场景弹窗中点击设置位置、缩放和镜像。</div>
+            <label class="toggle-line"><input type="checkbox" id="npcEditDropShadow" ${npc.dropShadow ? 'checked' : ''}> 投影（脚下叠加一个静态柔和阴影，纯 CSS 渐变、不逐帧重绘，性能开销极低）</label>
+            <section class="section">
+              <h2>对话（可留空；留空则点击直接开小游戏）</h2>
+              <div id="npcDialogLines"></div>
+              <div class="toolbar"><button type="button" id="npcAddDialogLine">+ 新增对话行</button></div>
+            </section>
+            <label>小游戏 minigame（可留空；留空则仅对话） <input id="npcEditMinigame" maxlength="300" value="${escapeHtml(npc.minigame)}" placeholder="adventure / haqi_adventure.html / https://完整地址"></label>
+            <label class="toggle-line"><input type="checkbox" id="npcEditMinigameLandscape" ${npc.minigameLandscape ? 'checked' : ''}> 强制横屏（Force landscape，竖屏设备自动旋转 90 度）</label>
+            <div class="toolbar">
+              <button type="button" id="btnSaveNpc" class="success">保存</button>
+            </div>
+          </div>
+        </div>`;
+      document.body.appendChild(overlay);
+      overlay.addEventListener('click', (e) => { if (e.target === overlay) overlay.remove(); });
+      overlay.querySelector('#closeNpcEditor').onclick = () => overlay.remove();
+
+      let dialogDraft = npc.dialog.map(line => ({ ...line }));
+      const renderDialogLines = () => {
+        overlay.querySelector('#npcDialogLines').innerHTML = dialogDraft.map((line, lineIndex) => `
+          <div class="row" data-dialog-line="${lineIndex}">
+            <label>说话人 <input class="npc-dialog-speaker" maxlength="24" value="${escapeHtml(line.speaker)}"></label>
+            <label class="wide">台词 <input class="npc-dialog-text" maxlength="200" value="${escapeHtml(line.text)}"></label>
+            <button type="button" class="danger npc-dialog-remove w-auto justify-self-start">删</button>
+          </div>`).join('') || '<div class="hint">暂无对话行。</div>';
+        overlay.querySelectorAll('[data-dialog-line]').forEach(row => {
+          const lineIndex = Number(row.dataset.dialogLine);
+          row.querySelector('.npc-dialog-speaker').addEventListener('input', (e) => { dialogDraft[lineIndex].speaker = e.target.value; });
+          row.querySelector('.npc-dialog-text').addEventListener('input', (e) => { dialogDraft[lineIndex].text = e.target.value; });
+          row.querySelector('.npc-dialog-remove').onclick = () => { dialogDraft.splice(lineIndex, 1); renderDialogLines(); };
+        });
+      };
+      renderDialogLines();
+      overlay.querySelector('#npcAddDialogLine').onclick = () => {
+        dialogDraft.push({ speaker: npc.name, text: '' });
+        renderDialogLines();
+      };
+      overlay.querySelector('#npcIconRegionBtn').onclick = async () => {
+        const iconInput = overlay.querySelector('#npcEditIcon');
+        const picked = await openIconRegionPicker(iconInput.value.trim());
+        if (picked != null) iconInput.value = picked.slice(0, 300);
+      };
+      overlay.querySelector('#btnSaveNpc').onclick = () => {
+        npc.name = overlay.querySelector('#npcEditName').value.trim().slice(0, 24) || npc.name;
+        npc.icon = overlay.querySelector('#npcEditIcon').value.trim().slice(0, 300) || npc.icon;
+        npc.minigame = overlay.querySelector('#npcEditMinigame').value.trim().slice(0, 300);
+        npc.minigameLandscape = overlay.querySelector('#npcEditMinigameLandscape').checked;
+        npc.dropShadow = overlay.querySelector('#npcEditDropShadow').checked;
+        npc.dialog = normalizeNpcDialog(dialogDraft);
+        overlay.remove();
+        refreshNpcList(fieldIndex);
+        updateOutput();
+      };
+    }
+
+    // 框选区域弹窗：在图片上拖拽绘制矩形，返回 `src#x_y_w_h`（百分比裁剪区域）；取消返回 null。
+    function openIconRegionPicker(currentIcon) {
+      const { src, rect } = parseIconSource(currentIcon);
+      if (!src) {
+        setStatus($('runStatus'), '请先在 Icon 输入框填写图片 URL，再框选区域。', 'error');
+        return Promise.resolve(null);
+      }
+      return new Promise((resolve) => {
+        const overlay = document.createElement('div');
+        overlay.className = 'modal-overlay';
+        overlay.innerHTML = `
+          <div class="modal-window" style="width:min(760px, 94vw)" role="dialog" aria-modal="true" aria-label="框选图标区域">
+            <div class="modal-titlebar">
+              <strong>框选图标区域</strong>
+              <button type="button" id="closeIconRegionPicker">取消</button>
+            </div>
+            <div class="modal-body modal-stack">
+              <div class="hint">在图片上拖拽绘制矩形选区，作为该 NPC 图标使用的局部区域。</div>
+              <div id="iconRegionStage" class="icon-region-stage">
+                <img id="iconRegionImg" src="${escapeHtml(src)}" alt="" draggable="false">
+                <div id="iconRegionBox" class="icon-region-box" style="display:none"></div>
+              </div>
+              <div class="toolbar">
+                <span id="iconRegionInfo" class="hint"></span>
+                <button type="button" id="iconRegionUseFull">使用整张图片</button>
+                <button type="button" id="iconRegionConfirm" class="success">确定</button>
+              </div>
+            </div>
+          </div>`;
+        document.body.appendChild(overlay);
+        const done = (value) => { overlay.remove(); resolve(value); };
+        overlay.addEventListener('click', (e) => { if (e.target === overlay) done(null); });
+        overlay.querySelector('#closeIconRegionPicker').onclick = () => done(null);
+
+        const stage = overlay.querySelector('#iconRegionStage');
+        const img = overlay.querySelector('#iconRegionImg');
+        const box = overlay.querySelector('#iconRegionBox');
+        const info = overlay.querySelector('#iconRegionInfo');
+        let selected = rect ? { ...rect } : null;
+
+        const paintBox = () => {
+          if (!selected) { box.style.display = 'none'; info.textContent = '未选择区域（将使用整张图片）'; return; }
+          box.style.display = 'block';
+          box.style.left = `${selected.x}%`;
+          box.style.top = `${selected.y}%`;
+          box.style.width = `${selected.w}%`;
+          box.style.height = `${selected.h}%`;
+          info.textContent = `区域：x=${selected.x.toFixed(1)}% y=${selected.y.toFixed(1)}% w=${selected.w.toFixed(1)}% h=${selected.h.toFixed(1)}%`;
+        };
+        paintBox();
+
+        let dragStart = null;
+        const pctFromEvent = (e) => {
+          const r = img.getBoundingClientRect();
+          const x = clampPercent(((e.clientX - r.left) / r.width) * 100, 0);
+          const y = clampPercent(((e.clientY - r.top) / r.height) * 100, 0);
+          return { x, y };
+        };
+        stage.addEventListener('pointerdown', (e) => {
+          if (e.button !== undefined && e.button !== 0) return;
+          dragStart = pctFromEvent(e);
+          stage.setPointerCapture?.(e.pointerId);
+        });
+        stage.addEventListener('pointermove', (e) => {
+          if (!dragStart) return;
+          const cur = pctFromEvent(e);
+          const x = Math.min(dragStart.x, cur.x);
+          const y = Math.min(dragStart.y, cur.y);
+          const w = Math.abs(cur.x - dragStart.x);
+          const h = Math.abs(cur.y - dragStart.y);
+          selected = { x, y, w, h };
+          paintBox();
+        });
+        const endDrag = () => {
+          if (!dragStart) return;
+          dragStart = null;
+          if (selected && (selected.w < 1 || selected.h < 1)) selected = null;
+          paintBox();
+        };
+        stage.addEventListener('pointerup', endDrag);
+        stage.addEventListener('pointercancel', endDrag);
+
+        overlay.querySelector('#iconRegionUseFull').onclick = () => { selected = null; paintBox(); };
+        overlay.querySelector('#iconRegionConfirm').onclick = () => {
+          if (!selected) { done(src); return; }
+          const clampedW = Math.min(selected.w, 100 - selected.x);
+          const clampedH = Math.min(selected.h, 100 - selected.y);
+          done(`${src}#${selected.x.toFixed(2)}_${selected.y.toFixed(2)}_${clampedW.toFixed(2)}_${clampedH.toFixed(2)}`);
+        };
+      });
+    }
+
+    function openCopyNpcPicker(key) {
+      const { fieldIndex, npcIndex } = parseNpcKey(key);
+      const npc = (state.fieldNpcs[fieldIndex] || [])[npcIndex];
+      if (!npc) return;
+      const overlay = document.createElement('div');
+      overlay.className = 'modal-overlay';
+      overlay.innerHTML = `
+        <div class="modal-window" role="dialog" aria-modal="true" aria-label="复制 NPC">
+          <div class="modal-titlebar">
+            <strong>复制「${escapeHtml(npc.name)}」到其他场景</strong>
+            <button type="button" id="closeCopyNpc">关闭</button>
+          </div>
+          <div class="modal-body modal-stack">
+            ${FIELD_SLOTS.map((slot, idx) => idx === fieldIndex ? '' : `
+              <label class="toggle-line"><input type="checkbox" class="copy-npc-target" value="${idx}"> ${idx + 1}. ${escapeHtml(slot.label)}</label>`).join('')}
+            <div class="toolbar"><button type="button" id="btnCopyNpcConfirm" class="success">复制</button></div>
+          </div>
+        </div>`;
+      document.body.appendChild(overlay);
+      overlay.addEventListener('click', (e) => { if (e.target === overlay) overlay.remove(); });
+      overlay.querySelector('#closeCopyNpc').onclick = () => overlay.remove();
+      overlay.querySelector('#btnCopyNpcConfirm').onclick = () => {
+        const targets = Array.from(overlay.querySelectorAll('.copy-npc-target:checked')).map(el => Number(el.value));
+        targets.forEach(targetIndex => {
+          const list = state.fieldNpcs[targetIndex] || (state.fieldNpcs[targetIndex] = []);
+          list.push(normalizeNpc({ ...npc, id: `${npc.id}_copy${list.length + 1}` }, list.length));
+          refreshNpcList(targetIndex);
+        });
+        updateOutput();
+        overlay.remove();
+        setStatus($('runStatus'), `已复制「${npc.name}」到 ${targets.length} 个场景。`, 'ok');
+      };
     }
 
     function renderRecords() {
@@ -1133,6 +1681,9 @@ ${currentIndent}}`;
       $('planetPreview').textContent = initial;
       $('planetPreview').style.background = planet.planet?.bodyBackground || PLANET_PRESETS.maisi.bodyBackground;
       $('planetPreview').style.boxShadow = `inset -14px -24px 44px rgba(10,70,108,.42), 0 0 30px ${planet.planet?.glowColor || 'rgba(92,236,228,.58)'}`;
+      const isFieldSelected = index => state.previewMode === 'field' && state.activeFieldIndex === index;
+      $('planetPreview').classList.toggle('active', state.previewMode !== 'field');
+      $('planetPreview').setAttribute('title', '点击查看星球通用信息');
       $('fieldPreviewGrid').innerHTML = planet.fields.map((field, index) => {
         const slot = FIELD_SLOTS[index] || { slotId: `field_${index + 1}`, label: `Field ${index + 1}` };
         const scene = {
@@ -1144,18 +1695,58 @@ ${currentIndent}}`;
           particles: normalizeParticles(field.particles),
         };
         return `
-          <button type="button" class="field-preview" data-preview-field="${index}" aria-label="为 ${escapeHtml(field.name)} 选择背景">
+          <div class="field-preview ${isFieldSelected(index) ? 'active' : ''}" data-select-field="${index}" role="button" tabindex="0" aria-label="查看 ${escapeHtml(field.name)} 场景信息">
             <span class="field-preview-art" ${fieldPreviewBackgroundAttrs(scene)}>${renderSceneParticles(scene, { density: 'thumbnail' })}</span>
             <div class="field-preview-body">
               <strong class="field-preview-title">${index + 1}. ${escapeHtml(field.name)}</strong>
               <span class="field-preview-meta">${escapeHtml(slot.label)} · ${escapeHtml(field.typeId)} · ${escapeHtml(field.background?.title || '')}</span>
-              <span class="field-preview-action">选择背景</span>
+              <button type="button" class="field-preview-action" data-pick-scene-preview="${index}">选择背景</button>
             </div>
-          </button>`;
+          </div>`;
       }).join('');
       setupLazySceneBackgrounds($('fieldPreviewGrid'));
-      $('fieldPreviewGrid').querySelectorAll('[data-preview-field]').forEach(btn => {
-        btn.onclick = () => openScenePicker(Number(btn.dataset.previewField) || 0);
+      $('fieldPreviewGrid').querySelectorAll('[data-select-field]').forEach(el => {
+        const index = Number(el.dataset.selectField) || 0;
+        el.addEventListener('click', (e) => {
+          if (e.target.closest('[data-pick-scene-preview]')) return;
+          selectPreviewField(index);
+        });
+        el.addEventListener('keydown', (e) => {
+          if (e.key !== 'Enter' && e.key !== ' ') return;
+          e.preventDefault();
+          selectPreviewField(index);
+        });
+      });
+      $('fieldPreviewGrid').querySelectorAll('[data-pick-scene-preview]').forEach(btn => {
+        btn.onclick = (e) => { e.stopPropagation(); openScenePicker(Number(btn.dataset.pickScenePreview) || 0); };
+      });
+      renderNpcMarkers();
+    }
+
+    // 小预览图上仅作为静态参考标记，实际摆放通过 openNpcPlacer 的全屏弹窗完成。
+    function renderNpcMarkers() {
+      $('fieldPreviewGrid').querySelectorAll('[data-select-field]').forEach(btn => {
+        const index = Number(btn.dataset.selectField) || 0;
+        const art = btn.querySelector('.field-preview-art');
+        if (!art) return;
+        art.querySelectorAll('.npc-marker').forEach(el => el.remove());
+        (state.fieldNpcs[index] || []).forEach(npc => {
+          const marker = document.createElement('span');
+          marker.className = 'npc-marker';
+          const size = Math.round(22 * clampNpcScale(npc.scale));
+          marker.style.left = `${clampPercent(npc.x)}%`;
+          marker.style.top = `${clampPercent(npc.y)}%`;
+          marker.style.width = `${size}px`;
+          marker.style.height = `${size}px`;
+          marker.style.fontSize = `${Math.round(size * 0.68)}px`;
+          marker.style.transform = `translate(-50%, -50%) scale(${npc.flip ? -1 : 1}, 1)`;
+          marker.title = npc.name;
+          if (isImageIconValue(npc.icon)) {
+            marker.style.cssText += iconBackgroundStyleAttr(npc.icon);
+            fitIconCropAspectRatio(marker, npc.icon, size);
+          } else marker.textContent = npc.icon || '🧑';
+          art.appendChild(marker);
+        });
       });
     }
 
@@ -1214,33 +1805,44 @@ ${currentIndent}}`;
 
     function applySceneToField(fieldIndex, scene) {
       if (!scene) return;
+      syncActiveFieldFromDom();
       const background = scene.background || {};
-      $(`fieldSceneTitle${fieldIndex}`).value = background.title || scene.title || '';
-      $(`fieldPresetId${fieldIndex}`).value = background.presetId || scene.id || '';
-      $(`fieldColor${fieldIndex}`).value = background.color || scene.color || '#bae6fd';
-      $(`fieldImageUrl${fieldIndex}`).value = background.imageUrl || scene.imageUrl || '';
+      const current = state.fields[fieldIndex] || {};
       const particles = normalizeParticles(scene.particles || scene.effects);
-      if (particles.length) $(`fieldParticles${fieldIndex}`).value = particles.join(', ');
       const bgMusic = scene.bgMusic || background.bgMusic || '';
-      if (bgMusic) $(`fieldMusic${fieldIndex}`).value = bgMusic;
+      state.fields[fieldIndex] = {
+        ...current,
+        background: {
+          ...current.background,
+          title: background.title || scene.title || current.background?.title || '',
+          presetId: background.presetId || scene.id || current.background?.presetId || '',
+          color: background.color || scene.color || current.background?.color || '#bae6fd',
+          imageUrl: background.imageUrl || scene.imageUrl || current.background?.imageUrl || '',
+        },
+        particles: particles.length ? particles : (current.particles || []),
+        bgMusic: bgMusic || current.bgMusic || '',
+      };
+      if (state.previewMode === 'field' && state.activeFieldIndex === fieldIndex) renderFieldEditor(fieldIndex);
       updateOutput();
     }
 
     function sceneFromField(fieldIndex) {
+      syncActiveFieldFromDom();
       const slot = FIELD_SLOTS[fieldIndex] || { label: `Field ${fieldIndex + 1}` };
-      const title = $(`fieldSceneTitle${fieldIndex}`)?.value.trim() || $(`fieldName${fieldIndex}`)?.value.trim() || slot.label;
-      const color = $(`fieldColor${fieldIndex}`)?.value.trim() || '#bae6fd';
-      const imageUrl = $(`fieldImageUrl${fieldIndex}`)?.value.trim() || '';
-      const presetId = $(`fieldPresetId${fieldIndex}`)?.value.trim() || '';
-      const tags = normalizeScenePreset({ tags: [$(`fieldType${fieldIndex}`)?.value || 'land'] }).tags;
+      const field = state.fields[fieldIndex] || {};
+      const title = field.background?.title || field.name || slot.label;
+      const color = field.background?.color || '#bae6fd';
+      const imageUrl = field.background?.imageUrl || '';
+      const presetId = field.background?.presetId || '';
+      const tags = normalizeScenePreset({ tags: [field.typeId || 'land'] }).tags;
       return {
         id: presetId || `planet_field_${fieldIndex + 1}`,
         title,
         imageUrl,
         color,
         tags,
-        particles: normalizeParticles($(`fieldParticles${fieldIndex}`)?.value || ''),
-        bgMusic: $(`fieldMusic${fieldIndex}`)?.value.trim() || '',
+        particles: normalizeParticles(field.particles),
+        bgMusic: field.bgMusic || '',
         background: {
           type: imageUrl ? 'image' : 'color',
           color,
@@ -1253,7 +1855,6 @@ ${currentIndent}}`;
     }
 
     async function openScenePicker(fieldIndex = state.activeFieldIndex) {
-      state.activeFieldIndex = fieldIndex;
       const overlay = document.createElement('div');
       overlay.className = 'modal-overlay';
       overlay.innerHTML = `
@@ -1487,9 +2088,12 @@ ${currentIndent}}`;
       const sdk = state.sdk || window.keepwork;
       if (!sdk) return;
       if (!sdk.token) {
-        if (sdk.loginWindow?.show) sdk.loginWindow.show({ onLogin: refreshLoginState });
-        else if (sdk.login) await sdk.login();
-        setTimeout(refreshLoginState, 600);
+        try {
+          if (typeof sdk.showLoginWindow === 'function') await sdk.showLoginWindow({ title: 'Famous Planet Generator 登录' });
+          else if (sdk.loginWindow?.show) await new Promise(resolve => sdk.loginWindow.show({ onLogin: resolve, onClose: resolve }));
+          else if (sdk.login) await sdk.login();
+        } catch (_) {}
+        await refreshLoginState();
         return;
       }
       if (typeof sdk.showProfileWindow === 'function') {
@@ -1542,12 +2146,19 @@ ${currentIndent}}`;
         };
       });
       $('planetId').addEventListener('change', () => { $('planetId').value = safeId($('planetId').value, 'new_planet'); updateOutput(); });
+      $('planetPreview').onclick = selectPreviewPlanet;
+      $('planetPreview').setAttribute('tabindex', '0');
+      $('planetPreview').setAttribute('role', 'button');
+      $('planetPreview').addEventListener('keydown', (e) => {
+        if (e.key !== 'Enter' && e.key !== ' ') return;
+        e.preventDefault();
+        selectPreviewPlanet();
+      });
     }
 
     async function startFamousPlanetGenerator() {
       state.lastChatModel = String(readLocalGenerationSettings().lastChatModel || '').trim();
       bindEvents();
-      renderFieldEditors(defaultPlanet().fields);
       fillPlanetForm(defaultPlanet());
       await Promise.allSettled([initSdk(), loadScenes()]);
       await loadRecords();

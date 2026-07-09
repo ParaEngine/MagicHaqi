@@ -1,5 +1,5 @@
 // 主程序：SDK 启动 + 路由 + 全局事件
-import { $, showToast, confirm, clamp, prompt, escapeHtml } from './utils.js';
+import { $, showToast, confirm, clamp, prompt, escapeHtml, isImageIconValue } from './utils.js';
 import { canPlaceItemInArea, CONFIG, getItemZOrder, getShopItemById, findLargestHouseAcrossLayouts, getStageName, getForcedView, getAgentParams, zoomLevelIdToIndex, DEFAULT_PLANET_ID, getPlanetOnboardingConfig } from './config.js';
 import { state, notify, subscribe, setView, setCurrentPet, getCurrentPet } from './state.js';
 import {
@@ -50,7 +50,7 @@ import { initAgentBridge } from './agentBridge.js';
 // Side-effect import: 订阅 state 并接管所有 [data-mh-pet] 占位符的渲染 + 动画
 import { canWakePet, daySleepRejectText, eatFood, hatchPetFromBoarding, isPetInteractionBlocked, isPetSleeping, petArtHtml, preloadPetAssets, say, scanAndMount, setAnim, shouldRejectDaySleep, sleepingInteractionText, startPetSleep, wakePet, wakePetForPlay } from './pet.js';
 
-const sdkCdnUrl = 'https://cdn.keepwork.com/sdk/keepworkSDK.iife.js?v=0889f6509544';
+const sdkCdnUrl = 'https://cdn.keepwork.com/sdk/keepworkSDK.iife.js?v=d18326673e76';
 
 function loadScript(src) {
     return new Promise((resolve, reject) => {
@@ -157,6 +157,8 @@ let pendingMinigameLaunch = null;
 let pendingMinigameTab = null;
 // 分享链接进入的小游戏（?gameFrom=&game=），引导进入 minigames 视图并自动试玩。
 let pendingSharedGame = null;
+// 外部小游戏深链进入（?remoteGame=<url>），引导进入 minigames 视图并直接打开该远程 URL。
+let pendingRemoteGame = null;
 // 新用户通过分享小游戏链接进入：先直接试玩，退出（点返回）后才走命名 / 新手领养流程。
 let deferredNewUserSharedGame = false;
 let hatchingViewPromise = null;
@@ -281,7 +283,42 @@ function resolveLandingView() {
         pendingSharedGame = parseSharedGameParams();
         return 'minigames';
     }
+    if (hasRemoteGameParams()) {
+        pendingRemoteGame = parseRemoteGameParamsFromUrl();
+        return 'minigames';
+    }
     return hasPostcardParams() ? 'postcard' : 'home';
+}
+
+// 外部小游戏深链：?remoteGame=<完整 url>[&remoteGameTitle=&remoteGameIcon=&remoteGameLandscape=0]
+// 用于直接把任意远程 H5 小游戏地址嵌入玩耍视图试玩，不需要出现在 _minigame_index.json 清单里。
+// remoteGameLandscape 默认开启强制横屏（传 0 关闭）。
+function parseRemoteGameParamsFromUrl() {
+    try {
+        const url = new URL(window.location.href);
+        const remoteUrl = decodeSharedParam(url.searchParams.get('remoteGame') || '').trim();
+        if (!remoteUrl) return null;
+        return {
+            url: remoteUrl,
+            title: decodeSharedParam(url.searchParams.get('remoteGameTitle') || '').trim(),
+            icon: decodeSharedParam(url.searchParams.get('remoteGameIcon') || '').trim(),
+            landscape: url.searchParams.get('remoteGameLandscape') !== '0',
+        };
+    } catch (_) {
+        return null;
+    }
+}
+
+function hasRemoteGameParams() {
+    return !!parseRemoteGameParamsFromUrl();
+}
+
+function cleanupRemoteGameUrl() {
+    try {
+        const url = new URL(window.location.href);
+        ['remoteGame', 'remoteGameTitle', 'remoteGameIcon', 'remoteGameLandscape'].forEach(key => url.searchParams.delete(key));
+        window.history.replaceState({}, '', url.toString());
+    } catch (_) {}
 }
 
 function cleanupSharedGameUrl() {
@@ -718,6 +755,10 @@ function renderMinigamesRoute() {
                 navigateToView('home');
                 return;
             }
+            if (launch?.mode === 'npc') {
+                returnToFieldLevel();
+                return;
+            }
             navigateToView('home');
         },
         onGameFinished: (game, data) => {
@@ -741,12 +782,14 @@ function renderMinigamesRoute() {
         },
         initialGameId: launch?.gameId || null,
         initialGameParams: launch?.params || null,
+        // NPC 小游戏可显式覆盖强制横屏（true/false）；未设置时 null，沿用该游戏自身清单配置。
+        initialGameLandscape: launch?.mode === 'npc' ? (launch.landscapeOverride ?? null) : null,
         allowPlayWhenLowEnergy: !!launch?.allowLowEnergy || deferredNewUser,
         suppressRewards: !!launch?.suppressRewards,
         hideTopbarActions: launch?.mode === 'adopt' || launch?.mode === 'onboarding',
         // 分享小游戏(deferredNewUser)退出时返回小游戏列表(view_minigames)，再从列表返回才回到星球总览；
         // 故这里不让分享小游戏直接 exit-to-back。其余仪式型(onboarding/adopt/...)仍直接退出。
-        exitGameToBack: launch?.mode === 'sickness' || launch?.mode === 'story' || launch?.mode === 'adopt' || launch?.mode === 'onboarding',
+        exitGameToBack: launch?.mode === 'sickness' || launch?.mode === 'story' || launch?.mode === 'adopt' || launch?.mode === 'onboarding' || launch?.mode === 'npc',
         deferGameFinishedUntilCompletionExit: launch?.mode === 'story',
         completionPrompt: launch?.mode === 'story' ? {
             title: '小游戏完成啦',
@@ -770,6 +813,17 @@ function renderMinigamesRoute() {
             pendingSharedGame = null;
             if (shared) cleanupSharedGameUrl();
             return shared;
+        })(),
+        // 外部小游戏深链：?remoteGame=<url> 进入，自动打开该远程地址；
+        // NPC 的 minigame 字段若填的是完整 http(s) 地址，同样走这条路径打开。
+        remoteGame: (() => {
+            if (launch?.mode === 'npc' && launch.remoteUrl) {
+                return { url: launch.remoteUrl, title: launch.remoteTitle, icon: launch.remoteIcon, landscape: launch.landscape };
+            }
+            const remote = pendingRemoteGame;
+            pendingRemoteGame = null;
+            if (remote) cleanupRemoteGameUrl();
+            return remote;
         })(),
     };
     if (minigamesViewModule) {
@@ -905,6 +959,7 @@ function homeCallbacks() {
         onFeedComplete: render,
         onNav:        handleNav,
         onTreatSickness: handleTreatSickness,
+        onLaunchNpcMinigame: handleNpcMinigameLaunch,
         // 「星球→星球表面(field)」缩放过渡前的同步拦截：领养仪式型星球且玩家尚无真实宠物时，
         // 直接弹出领养小游戏并返回 true，view_home 据此取消本次缩放（不进入 field）。
         onPlanetToFieldOnboarding: () => {
@@ -2754,6 +2809,41 @@ function handleStoryMinigameLaunch(activity = {}) {
         mode: 'story',
         gameId,
         params: activity.params || null,
+        allowLowEnergy: true,
+        suppressRewards: true,
+    };
+    navigateToView('minigames', { preserveMinigameLaunch: true });
+}
+
+// 星球编辑器摆放的 NPC 对话结束后打开小游戏；minigame 字段可填 gameId / html 文件名（本地清单）
+// 或完整 http(s) 远程地址（不需要出现在 _minigame_index.json 里）。minigameLandscape 显式覆盖
+// 是否强制横屏（未设置时：远程地址默认强制横屏，本地 gameId 沿用其自身清单配置）。
+function handleNpcMinigameLaunch(npc) {
+    const raw = String(npc?.minigame || '').trim();
+    if (!raw || !getCurrentPet()) return;
+    const landscapeOverride = (npc?.minigameLandscape === true || npc?.minigameLandscape === false)
+        ? npc.minigameLandscape
+        : null;
+    if (/^https?:\/\//i.test(raw)) {
+        pendingMinigameLaunch = {
+            mode: 'npc',
+            remoteUrl: raw,
+            remoteTitle: String(npc?.name || '').trim(),
+            remoteIcon: isImageIconValue(npc?.icon) ? '' : String(npc?.icon || '').trim(),
+            // 与本地 gameId NPC 小游戏一致：默认不强制横屏，仅当 minigameLandscape 显式勾选时才开启。
+            landscape: !!landscapeOverride,
+            allowLowEnergy: true,
+            suppressRewards: true,
+        };
+        navigateToView('minigames', { preserveMinigameLaunch: true });
+        return;
+    }
+    const gameId = resolveOnboardingMinigameId(raw);
+    if (!gameId) return;
+    pendingMinigameLaunch = {
+        mode: 'npc',
+        gameId,
+        landscapeOverride,
         allowLowEnergy: true,
         suppressRewards: true,
     };

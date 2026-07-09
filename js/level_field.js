@@ -1,6 +1,6 @@
 // Level 1 — Field：星球表面（陆 / 水 / 空 三大生态）
 
-import { $, $$, coinIconSvg, dockDisabledAttrs, escapeHtml, isDockButtonDisabled, renderVisualAsset, setDockButtonDisabled, showDockDisabledToast, showToast } from './utils.js';
+import { $, $$, coinIconSvg, dockDisabledAttrs, escapeHtml, fitIconCropAspectRatio, iconBackgroundStyleAttr, isDockButtonDisabled, isImageIconValue, parseIconSource, renderVisualAsset, setDockButtonDisabled, showDockDisabledToast, showToast } from './utils.js';
 import { itemName, t, localizeFieldName } from './i18n.js';
 import { canPlaceItemInArea, CONFIG, DECO_VISUALS, findLargestHouseInLayout, getPlacedItemZOrder, getPlanetMiningCoins, getPlanetMiningConfig, getPlanetMiningVisualCoinCount, getShopItemById, isHouseItem, recordPlanetMiningFieldCollected, SHOP_ITEMS } from './config.js';
 import { getActivePlanetWeather, isVisitingMode, notify, state, setCurrentField } from './state.js';
@@ -16,6 +16,7 @@ import { setShopFilter, suppressShopInitialClick } from './view_shop.js';
 import { getTerrainFieldSlots, normalizeTerrainFieldSlotId, resolveTerrainFieldTypeId, terrainFieldTabIconHtml } from './view_terrain_fields.js';
 import { playFieldGreeting, playPhotoShutter } from './visit_animations.js';
 import { showTakePhotoWindow } from './view_takephoto.js';
+import { openNpcDialog } from './npc_dialog.js';
 
 const soundManager = SoundManager.getInstance();
 
@@ -42,12 +43,34 @@ const FIELD_EFFECT_MAX_SCALE = 1.7;
 const FIELD_WIDTH_METERS = 10;
 const FIELD_HEIGHT_METERS = 3;
 const FIELD_PET_BASE_SIZE_PX = 96;
+const FIELD_PET_DRAG_EDGE_ZONE_PX = 64;
+const FIELD_PET_DRAG_SCROLL_MIN_SPEED = 2;
+const FIELD_PET_DRAG_SCROLL_MAX_SPEED = 16;
+const FIELD_PET_DRAG_SCROLL_RAMP_MS = 900;
 const FIELD_PET_REPEL_MIN_X = 0.058;
 const FIELD_PET_REPEL_MIN_Y = 0.155;
 const FIELD_PET_REPEL_MIN_GAP = 0.018;
+// 有对话/小游戏的 NPC 是场景里固定不动的"静态物体"：宠物走位和便便掉落点都要绕开它，
+// 半径只需盖住 NPC 自身可点击的图标范围（避免挡住点击），不做大范围"个人空间"排斥；
+// 按 NPC 缩放比例开根号微调，避免大缩放 NPC 把宠物推得太远。
+const FIELD_NPC_AVOID_X = 0.02;
+const FIELD_NPC_AVOID_Y = 0.035;
 // 宠物在地表层的纵向落点上限（归一化 0=顶 1=底）。
 // 底部预留空间，避免与底部的等级条 UI（level bar）重叠。
 const FIELD_PET_MAX_Y = 0.82;
+// 层级优先级：主宠物 > NPC（.field-npcs 固定 z-index 29，见 field.css） > 其它宠物。
+// .field-pets 容器本身不再建立独立层叠上下文（field.css 已去掉其 z-index），
+// 这样每只宠物的行内 z-index 才能直接和 .field-npcs 比较，而不是整层被 NPC 一并盖住或盖住 NPC。
+const FIELD_OTHER_PET_Z_BASE = 10;
+const FIELD_OTHER_PET_Z_RANGE = 10;
+const FIELD_CURRENT_PET_Z_BASE = 32;
+const FIELD_CURRENT_PET_Z_RANGE = 10;
+
+function fieldPetZIndex(y, isCurrent) {
+    const base = isCurrent ? FIELD_CURRENT_PET_Z_BASE : FIELD_OTHER_PET_Z_BASE;
+    const range = isCurrent ? FIELD_CURRENT_PET_Z_RANGE : FIELD_OTHER_PET_Z_RANGE;
+    return base + Math.round(clamp01(y) * range);
+}
 const VISIT_FIELD_MAX_PLANET_GUEST_PETS = 3;
 const NEAR_ACTIVE_PET_MIN_RADIUS = 0.055;
 const NEAR_ACTIVE_PET_RANDOM_RADIUS = 0.065;
@@ -647,6 +670,42 @@ function metersToFieldPx(value) {
     return Math.max(1, Math.round((Number(value) || 0) * fieldPxPerMeter));
 }
 
+// 背景图支持 `src#x_y_w_h` 局部区域裁剪（与 NPC 图标同一约定，见 utils.js parseIconSource）。
+// 裁剪时仍使用原图 <img>（保留 naturalWidth/complete/load 事件供平移与找宠逻辑复用），
+// 只是用 transform 把裁剪区域缩放平移到刚好铺满容器，容器宽度也按裁剪区域的真实像素宽高比计算，避免拉伸变形。
+function fieldImageCropRect(img) {
+    const x = Number(img.dataset.cropX);
+    const y = Number(img.dataset.cropY);
+    const w = Number(img.dataset.cropW);
+    const h = Number(img.dataset.cropH);
+    if (![x, y, w, h].every(Number.isFinite) || w <= 0 || h <= 0) return null;
+    return { x, y, w, h };
+}
+
+function applyFieldCropImageLayout(img, rect, naturalWidth, naturalHeight, stageHeight) {
+    if (!rect || !(naturalWidth > 0) || !(naturalHeight > 0) || !(stageHeight > 0)) {
+        if (img.__mhFieldCropApplied) {
+            img.style.position = '';
+            img.style.top = '';
+            img.style.left = '';
+            img.style.width = '';
+            img.style.height = '';
+            img.style.transform = '';
+            img.__mhFieldCropApplied = false;
+        }
+        return;
+    }
+    const displayHeight = stageHeight * 100 / rect.h;
+    const displayWidth = displayHeight * naturalWidth / naturalHeight;
+    img.style.position = 'absolute';
+    img.style.top = '0';
+    img.style.left = '0';
+    img.style.height = `${displayHeight.toFixed(1)}px`;
+    img.style.width = `${displayWidth.toFixed(1)}px`;
+    img.style.transform = `translate(${(-(rect.x / 100) * displayWidth).toFixed(1)}px, ${(-(rect.y / 100) * displayHeight).toFixed(1)}px)`;
+    img.__mhFieldCropApplied = true;
+}
+
 function fieldImageBackgroundWidthPx(scene, stageWidth, stageHeight) {
     const img = scene?.querySelector?.('.field-custom-background-image');
     if (!img) return null;
@@ -658,7 +717,11 @@ function fieldImageBackgroundWidthPx(scene, stageWidth, stageHeight) {
     const width = img.naturalWidth || 0;
     const height = img.naturalHeight || 0;
     if (width <= 0 || height <= 0 || stageHeight <= 0) return Math.max(1, stageWidth || 1);
-    return Math.max(1, stageWidth || 1, Math.round(stageHeight * width / height));
+    const rect = fieldImageCropRect(img);
+    applyFieldCropImageLayout(img, rect, width, height, stageHeight);
+    const effWidth = rect ? width * rect.w / 100 : width;
+    const effHeight = rect ? height * rect.h / 100 : height;
+    return Math.max(1, stageWidth || 1, Math.round(stageHeight * effWidth / effHeight));
 }
 
 function recomputeFieldMetrics() {
@@ -834,18 +897,20 @@ function getPoopPetAvoidanceZones(pet, fieldId) {
     if (!pet || isVisitingMode()) return [];
     const ids = getFieldPetIds(pet, fieldId).filter(id => state.pets[id]);
     const activeFieldPosition = pet?.id ? petFieldPosition(pet, fieldId, 0) : null;
-    return ids.map((id, index) => {
+    const petZones = ids.map((id, index) => {
         const pos = id === pet?.id
             ? activeFieldPosition
             : petFieldPosition(state.pets[id], fieldId, index, activeFieldPosition);
         return pos ? { x: clamp01(pos.x), y: clamp01(pos.y) } : null;
     }).filter(Boolean);
+    // 便便也不能掉在有对话/小游戏的静态 NPC 身上。
+    return [...petZones, ...fieldNpcAvoidancePoints(fieldId)];
 }
 
 function isPoopOnPet(pos, zones) {
     return zones.some(zone => {
-        const dx = (pos.x - zone.x) / POOP_PET_AVOID_X;
-        const dy = (pos.y - zone.y) / POOP_PET_AVOID_Y;
+        const dx = (pos.x - zone.x) / (zone.radiusX || POOP_PET_AVOID_X);
+        const dy = (pos.y - zone.y) / (zone.radiusY || POOP_PET_AVOID_Y);
         return dx * dx + dy * dy < 1;
     });
 }
@@ -867,8 +932,10 @@ function makeRuntimePoopLocation(rng, zones) {
         const dx = fallback.x - zone.x;
         const dy = fallback.y - zone.y;
         const angle = Math.atan2(dy || 0.01, dx || 0.01);
-        fallback.x = clampRange(zone.x + Math.cos(angle) * POOP_PET_AVOID_X * 1.18, 0.06, 0.94);
-        fallback.y = clampRange(zone.y + Math.sin(angle) * POOP_PET_AVOID_Y * 1.18, 0.56, 0.92);
+        const rx = (zone.radiusX || POOP_PET_AVOID_X) * 1.18;
+        const ry = (zone.radiusY || POOP_PET_AVOID_Y) * 1.18;
+        fallback.x = clampRange(zone.x + Math.cos(angle) * rx, 0.06, 0.94);
+        fallback.y = clampRange(zone.y + Math.sin(angle) * ry, 0.56, 0.92);
     }
     return fallback;
 }
@@ -1375,6 +1442,50 @@ function getCurrentFieldBackground(fieldId = state.currentField) {
     return { imageUrl: '', gradient: customBg?.color || theme.sky };
 }
 
+// 星球编辑器摆放的静态 NPC：位置固定，不参与玩家的家具布局存档。
+function currentFieldNpcs(fieldId = state.currentField) {
+    const custom = isVisitingMode() ? visitingFieldSceneConfig(fieldId) : currentFieldSceneConfig(fieldId);
+    return Array.isArray(custom.npcs) ? custom.npcs : [];
+}
+
+// 有对话/小游戏的"非摆设" NPC 视为静态障碍点，供宠物走位 / 便便掉落点绕开（哑巴 NPC 已在存档时被过滤掉，见 config.js normalizeFieldNpcs）。
+function fieldNpcAvoidancePoints(fieldId = state.currentField) {
+    return currentFieldNpcs(fieldId)
+        .filter(npc => (npc?.dialog?.length > 0) || npc?.minigame)
+        .map(npc => {
+            const scale = Number(npc?.scale) > 0 ? Number(npc.scale) : 1;
+            const scaleFactor = Math.sqrt(scale);
+            return {
+                x: clamp01((Number(npc?.x) || 0) / 100),
+                y: clamp01((Number(npc?.y) || 0) / 100),
+                radiusX: FIELD_NPC_AVOID_X * scaleFactor,
+                radiusY: FIELD_NPC_AVOID_Y * scaleFactor,
+            };
+        });
+}
+
+// 裁剪局部区域的 NPC 图标：把 .field-npc-img 的宽高改成裁剪区域的真实宽高比，避免拉伸变形。
+function fixFieldNpcIconAspects(scene) {
+    scene?.querySelectorAll?.('.field-npc-img[data-npc-icon]').forEach(el => {
+        fitIconCropAspectRatio(el, el.dataset.npcIcon, el.parentElement?.clientWidth || 36);
+    });
+}
+
+function fieldNpcHtml(npc) {
+    const isImg = isImageIconValue(npc?.icon);
+    const inner = isImg
+        ? `<span class="field-npc-img" data-npc-icon="${escapeHtml(npc.icon)}" style="${escapeHtml(iconBackgroundStyleAttr(npc.icon))}"></span>`
+        : escapeHtml(npc?.icon || '🧑');
+    const scale = Number(npc?.scale) > 0 ? Number(npc.scale) : 1;
+    const flipX = npc?.flip ? -1 : 1;
+    // 图标用 transform:scale 放大不影响布局尺寸，放大倍数越大越容易和上方名字重叠；
+    // 按放大出的半高补一段 gap，让名字始终留在图标视觉边界之外。
+    const gapPx = Math.round(2 + Math.max(0, scale - 1) * 18);
+    // 静态阴影：纯 CSS 径向渐变，随图标一起被 .field-npc-icon 的 transform:scale 缩放，不逐帧重绘，开销可忽略。
+    const shadowHtml = npc?.dropShadow ? '<span class="field-npc-shadow"></span>' : '';
+    return `<button type="button" class="field-npc" data-npc-id="${escapeHtml(npc?.id || '')}" style="left:${Number(npc?.x) || 0}%;top:${Number(npc?.y) || 0}%;gap:${gapPx}px" aria-label="${escapeHtml(npc?.name || '')}"><span class="field-npc-icon" style="transform:scale(${(scale * flipX).toFixed(3)}, ${scale.toFixed(3)})">${shadowHtml}${inner}</span><span class="field-npc-name">${escapeHtml(npc?.name || '')}</span></button>`;
+}
+
 function fieldMapHtml(fieldId) {
     const typeId = resolveTerrainFieldTypeId(fieldId);
     const theme = FIELD_THEMES[typeId] || FIELD_THEMES.land;
@@ -1392,8 +1503,12 @@ function fieldMapHtml(fieldId) {
             ? custom.particles
             : (customBg.imageUrl || customBg.color ? [] : fieldParticleEffects(typeId)),
     };
-    const imageHtml = customBg.imageUrl
-        ? `<img class="field-custom-background-image" src="${escapeHtml(customBg.imageUrl)}" alt="" draggable="false">`
+    const bgIcon = customBg.imageUrl ? parseIconSource(customBg.imageUrl) : null;
+    const cropAttrs = bgIcon?.rect
+        ? ` data-crop-x="${bgIcon.rect.x}" data-crop-y="${bgIcon.rect.y}" data-crop-w="${bgIcon.rect.w}" data-crop-h="${bgIcon.rect.h}"`
+        : '';
+    const imageHtml = bgIcon?.src
+        ? `<img class="field-custom-background-image" src="${escapeHtml(bgIcon.src)}" alt="" draggable="false"${cropAttrs}>`
         : '';
     return `
         <div class="field-bg ${theme.className} field-bg-custom${weatherClass}" style="background:${escapeHtml(customBg.color || theme.sky)}">
@@ -1529,7 +1644,9 @@ function anchorNearActiveGeneratedPet(home, petId, fieldId, activeFieldPosition)
 }
 
 function fieldPetsRepelledPositions(entries) {
-    const placed = [];
+    const fieldId = entries[0]?.fieldId;
+    // NPC 是固定障碍点：预先放进 placed，宠物会被推开，但 NPC 自己永远不会被推动。
+    const placed = fieldId ? fieldNpcAvoidancePoints(fieldId) : [];
     return entries.map((entry, index) => repelFieldPetPosition(entry, placed, index));
 }
 
@@ -1539,17 +1656,19 @@ function repelFieldPetPosition(entry, placed, index = 0) {
     for (let step = 0; step < 10; step++) {
         let moved = false;
         for (const other of placed) {
+            const minX = other.radiusX || FIELD_PET_REPEL_MIN_X;
+            const minY = other.radiusY || FIELD_PET_REPEL_MIN_Y;
             const dx = pos.x - other.x;
             const dy = pos.y - other.y;
-            const nx = dx / FIELD_PET_REPEL_MIN_X;
-            const ny = dy / FIELD_PET_REPEL_MIN_Y;
+            const nx = dx / minX;
+            const ny = dy / minY;
             const distSq = nx * nx + ny * ny;
             if (distSq >= 1) continue;
             const dist = Math.sqrt(distSq) || 0.001;
             const angle = Math.atan2(dy || (rng() - 0.5), dx || (rng() - 0.5));
             const strength = (1 - dist) * 0.55 + FIELD_PET_REPEL_MIN_GAP;
-            pos.x = clampRange(pos.x + Math.cos(angle) * FIELD_PET_REPEL_MIN_X * strength, 0.08, 0.92);
-            pos.y = clampRange(pos.y + Math.sin(angle) * FIELD_PET_REPEL_MIN_Y * strength, 0.36, FIELD_PET_MAX_Y);
+            pos.x = clampRange(pos.x + Math.cos(angle) * minX * strength, 0.08, 0.92);
+            pos.y = clampRange(pos.y + Math.sin(angle) * minY * strength, 0.36, FIELD_PET_MAX_Y);
             moved = true;
         }
         if (!moved) break;
@@ -1559,10 +1678,11 @@ function repelFieldPetPosition(entry, placed, index = 0) {
 }
 
 function fieldPetsFindRepelledPositions(entries, currentPetId) {
+    const fieldId = entries[0]?.fieldId;
     const fixedEntries = entries.filter(entry => entry.id !== currentPetId);
     const fixedPositions = fieldPetsRepelledPositions(fixedEntries);
     const fixedById = new Map(fixedEntries.map((entry, index) => [entry.id, fixedPositions[index]]));
-    const occupied = fixedPositions.map(pos => ({ x: pos.x, y: pos.y }));
+    const occupied = [...(fieldId ? fieldNpcAvoidancePoints(fieldId) : []), ...fixedPositions.map(pos => ({ x: pos.x, y: pos.y }))];
     const activeIndex = entries.findIndex(entry => entry.id === currentPetId);
     const activePos = activeIndex >= 0
         ? repelFieldPetPosition(entries[activeIndex], occupied, activeIndex)
@@ -1631,7 +1751,7 @@ function fieldPetsHtml(currentPet, fieldId) {
         const pos = { ...entries[index].pos, ...repelledPositions[index] };
         const isCurrent = id === currentPet?.id;
         const size = isCurrent ? 96 : 78;
-        const zIndex = 16 + Math.round(pos.y * 18) + (isCurrent ? 5 : 0);
+        const zIndex = fieldPetZIndex(pos.y, isCurrent);
         return `
             <div class="pet-sprite field-pet ${isCurrent ? 'field-pet-current' : 'field-pet-friend'}" data-field-pet="${escapeHtml(id)}"
                 style="left:${pct(pos.x)};top:${pct(pos.y)};z-index:${zIndex};--field-wander-delay:${pos.delay}s;--field-wander-dur:${pos.dur}s;--field-wander-x:${pos.dx}px;--field-wander-y:${pos.dy}px">
@@ -1700,7 +1820,7 @@ function visitingFieldPetsHtml(currentPet, fieldId) {
     return entries.map((entry, index) => {
         const pos = { ...positions[index], ...repelledPositions[index] };
         const size = entry.current ? 96 : 82;
-        const zIndex = 16 + Math.round(pos.y * 18) + (entry.current ? 5 : 0);
+        const zIndex = fieldPetZIndex(pos.y, entry.current);
         return `
             <div class="pet-sprite field-pet ${entry.current ? 'field-pet-current' : `field-pet-friend ${entry.host ? 'field-pet-visit-host' : entry.planetGuest ? 'field-pet-visit-planet' : 'field-pet-visit-crew'}`}" data-field-pet="${escapeHtml(entry.id)}" ${entry.host ? 'data-visit-host-pet="1"' : ''}
                 style="left:${pct(pos.x)};top:${pct(pos.y)};z-index:${zIndex};--field-wander-delay:${pos.delay}s;--field-wander-dur:${pos.dur}s;--field-wander-x:${pos.dx}px;--field-wander-y:${pos.dy}px">
@@ -1728,7 +1848,7 @@ function invitedFieldPetHtml(fieldId, index = 0) {
     if (!pet || state.isDecorMode) return '';
     const pos = petFieldPosition({ ...pet, id: record.id || pet.id }, fieldId, index + 7);
     const size = 78;
-    const zIndex = 16 + Math.round(pos.y * 18);
+    const zIndex = fieldPetZIndex(pos.y, false);
     return `
         <div class="pet-sprite field-pet field-pet-friend field-pet-invite" data-field-pet="${escapeHtml(pet.id || '')}" data-invited-field-pet="1"
             style="left:${pct(pos.x)};top:${pct(pos.y)};z-index:${zIndex};--field-wander-delay:${pos.delay}s;--field-wander-dur:${pos.dur}s;--field-wander-x:${pos.dx}px;--field-wander-y:${pos.dy}px">
@@ -2316,6 +2436,10 @@ export const fieldLevel = {
             </div>
 
 
+            <div class="field-npcs">
+                ${currentFieldNpcs(fld.id).map(fieldNpcHtml).join('')}
+            </div>
+
             <div class="field-poops">
                 ${poops.map(p => `<button class="poop-btn" data-poop="${escapeHtml(p.id)}" style="left:${(p.x * 100).toFixed(2)}%;top:${(p.y * 100).toFixed(2)}%" title="收集 → ⛽">💩</button>`).join('')}
                 ${fieldCoins.map(fieldMiningCoinHtml).join('')}
@@ -2338,6 +2462,7 @@ export const fieldLevel = {
         lastBoundFieldPanKey = panKey;
         setFieldEffectScale();
         applyFieldPan();
+        fixFieldNpcIconAspects($('mhFieldScene'));
         ParticleEffects.getInstance().mountAll($('mhFieldScene'));
         const fieldMusic = selectedFieldMusic(fld.id);
         if (isVisitingMode() || !fieldMusic) {
@@ -2394,12 +2519,25 @@ export const fieldLevel = {
             };
         });
 
+        $$('.field-npc').forEach(el => {
+            el.onclick = (e) => {
+                e.stopPropagation();
+                const npc = currentFieldNpcs(fld.id).find(item => item.id === el.dataset.npcId);
+                if (!npc) return;
+                openNpcDialog(npc, {
+                    onFinished: () => {
+                        if (npc.minigame) ctx.callbacks.onLaunchNpcMinigame?.(npc);
+                    },
+                });
+            };
+        });
+
         // 点击空地放置已选中的家具
         const stage = $('mhStage');
         if (stage) {
             stage.addEventListener('click', (e) => {
                 if (Date.now() - (stage.__mhFieldPannedAt || 0) < 260) return;
-                if (e.target.closest('.poop-btn, .pet-sprite, [data-tray-item], .mh-field-scale-controls, [data-field-music-toggle]')) return;
+                if (e.target.closest('.poop-btn, .pet-sprite, .field-npc, [data-tray-item], .mh-field-scale-controls, [data-field-music-toggle]')) return;
                 if (e.target.closest('.field-item') && getClosestDraggableFieldItem(e.clientX, e.clientY)) return;
                 clearFieldItemSelection(ctx);
                 if (!isFieldDecorMode() || !ctx.selectedTrayItem) return;
@@ -2794,7 +2932,8 @@ function bindFieldPan(ctx) {
         if (e.button != null && e.button !== 0) return;
         const startsOnPoop = !!e.target.closest?.('.poop-btn');
         const startsOnFieldPet = !!e.target.closest?.('.field-pet');
-        if (!startsOnPoop && !startsOnFieldPet && e.target.closest?.('button, a, input, textarea, select, [contenteditable="true"], [data-tray-item], .pet-sprite')) return;
+        const startsOnFieldNpc = !!e.target.closest?.('.field-npc');
+        if (!startsOnPoop && !startsOnFieldPet && !startsOnFieldNpc && e.target.closest?.('button, a, input, textarea, select, [contenteditable="true"], [data-tray-item], .pet-sprite')) return;
         if (isFieldDecorMode() && e.target.closest?.('.field-item') && getClosestDraggableFieldItem(e.clientX, e.clientY)) return;
         drag = { id: e.pointerId, x: e.clientX, y: e.clientY, pan: fieldPan, active: false };
     });
@@ -3045,10 +3184,70 @@ function fieldDragDeltaToCoords(drag, clientX, clientY) {
         if (!rect || rect.width <= 0 || rect.height <= 0) return null;
         drag.sceneRect = rect;
     }
+    // 拖拽过程中若触发了边缘自动滚动，场景会发生位移；用累计的 pan 偏移量
+    // 修正像素差值，使宠物贴着指针位置，而不是随场景滚动"打滑"。
+    const panDelta = drag.panDelta || 0;
     return {
-        x: clamp01(drag.startX + (clientX - drag.x) / rect.width),
+        x: clamp01(drag.startX + (clientX - drag.x - panDelta) / rect.width),
         y: clamp01(drag.startY + (clientY - drag.y) / rect.height),
     };
+}
+
+// 拖拽宠物时若指针靠近场景左右边缘，自动带动背景滚动：
+// 停留时间越久速度越快，直到达到最大速度；离开边缘区域立即停止。
+function stopFieldPetDragEdgeScroll(drag) {
+    if (drag?.edgeScrollRaf) {
+        cancelAnimationFrame(drag.edgeScrollRaf);
+        drag.edgeScrollRaf = 0;
+    }
+    if (drag) {
+        drag.edgeDir = 0;
+        drag.edgeSince = 0;
+    }
+}
+
+function updateFieldPetDragEdgeScroll(el, drag, clientX) {
+    if (!drag.bounds) return;
+    const stageRect = drag.stageRect || (drag.stageRect = drag.bounds.stage.getBoundingClientRect());
+    let dir = 0;
+    let depth = 0;
+    if (clientX <= stageRect.left + FIELD_PET_DRAG_EDGE_ZONE_PX) {
+        dir = -1;
+        depth = clamp01((stageRect.left + FIELD_PET_DRAG_EDGE_ZONE_PX - clientX) / FIELD_PET_DRAG_EDGE_ZONE_PX);
+    } else if (clientX >= stageRect.right - FIELD_PET_DRAG_EDGE_ZONE_PX) {
+        dir = 1;
+        depth = clamp01((clientX - (stageRect.right - FIELD_PET_DRAG_EDGE_ZONE_PX)) / FIELD_PET_DRAG_EDGE_ZONE_PX);
+    }
+    drag.edgeDepth = depth;
+    if (dir === 0) {
+        stopFieldPetDragEdgeScroll(drag);
+        return;
+    }
+    if (drag.edgeDir !== dir) {
+        drag.edgeDir = dir;
+        drag.edgeSince = performance.now();
+    }
+    if (drag.edgeScrollRaf) return;
+    const step = () => {
+        drag.edgeScrollRaf = 0;
+        if (!drag.edgeDir) return;
+        const elapsed = performance.now() - drag.edgeSince;
+        const ramp = clamp01(elapsed / FIELD_PET_DRAG_SCROLL_RAMP_MS);
+        const speed = FIELD_PET_DRAG_SCROLL_MIN_SPEED + (FIELD_PET_DRAG_SCROLL_MAX_SPEED - FIELD_PET_DRAG_SCROLL_MIN_SPEED) * ramp * Math.max(0.35, drag.edgeDepth);
+        // edgeDir === -1（贴左边缘）：向右平移场景内容，即增大 fieldPan（趋向 0）。
+        // edgeDir === 1（贴右边缘）：向左平移场景内容，即减小 fieldPan（趋向 -maxPan）。
+        const nextPan = fieldPan + (drag.edgeDir === -1 ? speed : -speed);
+        const before = fieldPan;
+        applyFieldPanFast(drag.bounds, nextPan);
+        drag.panDelta = (drag.panDelta || 0) + (fieldPan - before);
+        const pos = fieldDragDeltaToCoords(drag, drag.lastClientX, drag.lastClientY);
+        if (pos) {
+            el.style.left = pct(pos.x);
+            el.style.top = pct(pos.y);
+        }
+        if (drag.edgeDir) drag.edgeScrollRaf = requestAnimationFrame(step);
+    };
+    drag.edgeScrollRaf = requestAnimationFrame(step);
 }
 
 // 装扮模式下让当前宠物可以像房间内家具一样被拖动到任意位置（仅本地姿态，不持久化）。
@@ -3059,6 +3258,11 @@ function bindFieldPetDrag(el, pet, ctx) {
     // 仅当前宠物可拖动；好友/受邀/拜访宠物不可拖动。
     if (!el.classList.contains('field-pet-current')) return;
     if (el.dataset.invitedFieldPet === '1' || el.dataset.visitHostPet === '1') return;
+    const wanderEl = el.querySelector(':scope > .field-pet-wander');
+    // 拖动期间暂停（而不是取消）晃动动画：pause/play 会保留动画当前的 transform 取值，
+    // 不会像 animation:none 那样瞬间把 transform 重置为 0，从而消除按下/松开时的左右跳动。
+    const pauseWander = () => { try { wanderEl?.getAnimations?.().forEach(a => a.pause()); } catch (_) { } };
+    const resumeWander = () => { try { wanderEl?.getAnimations?.().forEach(a => a.play()); } catch (_) { } };
     let drag = null;
     const cleanup = () => {
         window.removeEventListener('pointermove', onMove, true);
@@ -3067,23 +3271,35 @@ function bindFieldPetDrag(el, pet, ctx) {
     };
     const onMove = (e) => {
         if (!drag || drag.id !== e.pointerId) return;
-        const dist = Math.hypot(e.clientX - drag.x, e.clientY - drag.y);
-        if (dist < DRAG_PLACE_THRESHOLD && !drag.moved) return;
+        if (!drag.moved) {
+            const dist = Math.hypot(e.clientX - drag.x, e.clientY - drag.y);
+            if (dist < DRAG_PLACE_THRESHOLD) return;
+            // 越过阈值才算拖动：把拖动原点重置到当前指针，避免宠物一开始瞬跳阈值距离。
+            drag.x = e.clientX;
+            drag.y = e.clientY;
+        }
         e.preventDefault();
         e.stopPropagation();
         drag.moved = true;
+        drag.lastClientX = e.clientX;
+        drag.lastClientY = e.clientY;
         const pos = fieldDragDeltaToCoords(drag, e.clientX, e.clientY);
-        if (!pos) return;
-        el.style.left = pct(pos.x);
-        el.style.top = pct(pos.y);
+        if (pos) {
+            el.style.left = pct(pos.x);
+            el.style.top = pct(pos.y);
+        }
+        updateFieldPetDragEdgeScroll(el, drag, e.clientX);
     };
     const onEnd = (e) => {
         if (!drag || drag.id !== e.pointerId) return;
         e.preventDefault();
         e.stopPropagation();
+        stopFieldPetDragEdgeScroll(drag);
         cleanup();
         try { el.releasePointerCapture?.(e.pointerId); } catch {}
         el.classList.remove('is-dragging');
+        resumeWander();
+        if (drag.panDelta) applyFieldPan();
         if (drag.moved) {
             el.__mhFieldPetDraggedAt = Date.now();
             const pos = fieldDragDeltaToCoords(drag, e.clientX, e.clientY);
@@ -3103,20 +3319,30 @@ function bindFieldPetDrag(el, pet, ctx) {
         drag = null;
     };
     el.addEventListener('pointerdown', (e) => {
-        if (!isFieldDecorMode() || isVisitingMode()) return;
+        if (isVisitingMode()) return;
         if (e.button != null && e.button !== 0) return;
         e.preventDefault();
         e.stopPropagation();
         const startPos = pointToFieldCoords(e.clientX, e.clientY) || { x: 0.5, y: 0.6 };
+        const rawBounds = getFieldPanBounds();
+        const bounds = rawBounds ? { ...rawBounds, panKey: currentFieldPanKey() } : null;
         drag = {
             id: e.pointerId,
             x: e.clientX,
             y: e.clientY,
+            lastClientX: e.clientX,
+            lastClientY: e.clientY,
+            // 保留最初抓取点与宠物锚点之间的相对偏差（自然拖拽手感），
+            // 而不是让宠物瞬间贴合到指针下方——那样在指针未落在宠物中心时会产生跳动。
             startX: Number.isFinite(parseFloat(el.style.left)) ? parseFloat(el.style.left) / 100 : startPos.x,
             startY: Number.isFinite(parseFloat(el.style.top)) ? parseFloat(el.style.top) / 100 : startPos.y,
             moved: false,
+            bounds,
+            panDelta: 0,
+            edgeDir: 0,
         };
         el.classList.add('is-dragging');
+        pauseWander();
         try { el.setPointerCapture?.(e.pointerId); } catch {}
         cleanup();
         window.addEventListener('pointermove', onMove, true);

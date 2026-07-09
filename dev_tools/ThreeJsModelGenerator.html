@@ -1086,6 +1086,12 @@
 	   对当前 snippet 源码做增量修改，完成后读回并应用到 3D 编辑器。
 	   SDK 不支持 copilotTools 时回退到「整段重写」模式。 */
 	const CHAT_MOD_ID = 'threejs-model-chat';
+	// 单一复用的临时工作区：copilotTools 需要一个 workspace 作为源码文件的落地目录，该目录会持久化到
+	// 个人主页存储（edunotes/store/<workspace>/）。以前按 chatId 生成唯一 workspace
+	// （threejs-model-chat-<chatId>），导致每个 snippet / 每次对话都在个人主页存储里留下一个无用的
+	// 临时工作区。改用固定名称后全局至多一个：它只是每轮由当前源码重新 seed、读回后即删的草稿区
+	// （真正的源码存活在编辑器 / snippet 里），复用完全安全。每轮结束后顺手删掉草稿文件。
+	const CHAT_WORKSPACE = 'threejs-model-chat';
 	// detachedKey：用户用 ✕ 显式移除的那个选区的 key；当前选区 key 与之相同则视为「已分离」（不附加）。
 	// 选中别的部件后 key 变化 → 自动重新附加。
 	const chatState = { messages: [], generating: false, abort: null, chatId: '', snippetId: '', detachedKey: '' };
@@ -1594,7 +1600,9 @@
 
 		const curSource = state.widget ? state.widget.getCurrentSource() : (s.source || '');
 		const filePath = s.filename || `${s.id}.three.js`;
-		const workspace = `threejs-model-chat-${chatState.chatId}`;
+		// 固定复用同一个临时工作区（见 CHAT_WORKSPACE 说明），不再按 chatId 生成新目录，
+		// 避免每个 snippet / 每次对话都在个人主页存储里堆积一个无用的临时工作区。
+		const workspace = CHAT_WORKSPACE;
 		const hasTools = !!sdk?.copilotTools?.execute;
 
 		// 流式文本累积。
@@ -1688,6 +1696,11 @@
 			chatState.abort = null;
 			updateChatSendBtn();
 			renderChatMessages();
+			// 源码已在上面读回并应用到编辑器；删掉临时工作区里的草稿文件，避免在个人主页存储里留下无用文件。
+			try {
+				const ws = sdk?.personalPageStore?.withWorkspace?.(CHAT_WORKSPACE);
+				if (ws && typeof ws.deleteFile === 'function') await ws.deleteFile(filePath);
+			} catch (_) {}
 		}
 	}
 

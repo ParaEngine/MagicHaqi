@@ -1,5 +1,5 @@
 // 故事场景创作视图：为 story maker 选择预设背景、粒子效果，或由 VIP 生成背景图。
-import { escapeHtml, showToast } from './utils.js';
+import { escapeHtml, parseIconSource, showToast } from './utils.js';
 import { t } from './i18n.js';
 import { state } from './state.js';
 import { CONFIG, getDefaultSceneImageSize, getSceneImageSizes } from './config.js';
@@ -256,11 +256,24 @@ export async function assignPresetScenesToStory(story, { force = false } = {}) {
     return story;
 }
 
+// imageUrl 支持 `src#x_y_w_h` 局部区域裁剪（与 NPC 图标同一约定，见 utils.js parseIconSource）。
 export function sceneBackgroundStyle(scene = {}, fallbackColor = '#bae6fd') {
     const bg = scene.background || scene;
     const color = bg.color || scene.color || fallbackColor;
     const imageUrl = bg.imageUrl || scene.imageUrl || '';
-    if (imageUrl) return `linear-gradient(rgba(255,255,255,.1),rgba(255,255,255,.1)), url("${String(imageUrl).replace(/"/g, '%22')}") center/cover no-repeat`;
+    if (imageUrl) {
+        const { src, rect } = parseIconSource(imageUrl);
+        const safeSrc = String(src).replace(/"/g, '%22');
+        let position = 'center';
+        let size = 'cover';
+        if (rect) {
+            const posX = (100 - rect.w) > 0.001 ? (100 * rect.x / (100 - rect.w)) : 0;
+            const posY = (100 - rect.h) > 0.001 ? (100 * rect.y / (100 - rect.h)) : 0;
+            position = `${posX.toFixed(3)}% ${posY.toFixed(3)}%`;
+            size = `${(10000 / rect.w).toFixed(3)}% ${(10000 / rect.h).toFixed(3)}%`;
+        }
+        return `linear-gradient(rgba(255,255,255,.1),rgba(255,255,255,.1)), url("${safeSrc}") ${position} / ${size} no-repeat`;
+    }
     const base = /gradient\s*\(/i.test(color) ? color : `linear-gradient(180deg, ${color}, #ffffff)`;
     return `radial-gradient(circle at 50% 14%,rgba(255,255,255,.82),transparent 34%), ${base}`;
 }

@@ -543,13 +543,13 @@
       const sdk = state.sdk || window.keepwork;
       if (!sdk) return;
       if (!sdk.token) {
-        const refreshAfterLogin = async () => {
-          await refreshLoginState();
-          await loadAllData();
-        };
-        if (sdk.loginWindow?.show) sdk.loginWindow.show({ onLogin: refreshAfterLogin }).then?.(refreshAfterLogin).catch?.(() => {});
-        else if (sdk.login) await sdk.login();
-        setTimeout(refreshAfterLogin, 600);
+        try {
+          if (typeof sdk.showLoginWindow === 'function') await sdk.showLoginWindow({ title: 'Pet Story Generator 登录' });
+          else if (sdk.loginWindow?.show) await new Promise(resolve => sdk.loginWindow.show({ onLogin: resolve, onClose: resolve }));
+          else if (sdk.login) await sdk.login();
+        } catch (_) {}
+        await refreshLoginState();
+        await loadAllData();
         return;
       }
       if (typeof sdk.showProfileWindow === 'function') await sdk.showProfileWindow();

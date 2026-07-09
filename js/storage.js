@@ -1034,7 +1034,10 @@ function petGameTitleFromPath(path) {
 function normalizePetGameHtml(content) {
     const raw = String(content == null ? '' : content).trim();
     if (!raw) return '';
-    const fence = raw.match(/```(?:html)?\s*([\s\S]*?)```/i);
+    // 围栏边界要求 ``` 独占一行（真正的 Markdown 代码块写法），避免游戏自身源码里
+    // 内联出现的字面 ```（例如某些小游戏的 stripFence 正则里紧挨着的两个 ```）被
+    // 误判成围栏起止，导致保存/读取时把整份代码从中间截断成一小段乱码。
+    const fence = raw.match(/^[ \t]*```[a-zA-Z]*[ \t]*\r?\n([\s\S]*?)^[ \t]*```[ \t]*$/m);
     const candidate = (fence ? fence[1] : raw).trim();
     const docMatch = candidate.match(/<!DOCTYPE[\s\S]*<\/html>/i) || candidate.match(/<html[\s\S]*<\/html>/i);
     if (docMatch) return docMatch[0].trim();

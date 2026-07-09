@@ -1,0 +1,3616 @@
+<!DOCTYPE html>
+<!--
+  岁月留声 · 我的回忆录 (haqi_lifestory.html)  — 书本版 UI (v2)
+  SilverMind 银龄回忆录：整个界面就是书桌上一本摊开的宣纸线装书。
+  - 丝带书签 = 章节导航；平板横屏双页、手机竖屏单页；CSS 3D 翻页。
+  - 魔法笔：AI 提问以墨字逐字写出；长者口述先落成淡墨草稿，随后泛金光
+    「晕开」成更优美的文字 + emoji（点击可看原话）。
+  - 草稿本：砚台话筒(语音) / 键盘 / 毛笔手指画画 / 老照片(胶带贴上)。
+  - 聊天/成文: sdk.aiChat (modId magichaqi)   插画: sdk.aiGenerators.genImage
+  - 语音输入: sdk.speech.speechToText          朗读: sdk.speech.playKeepworkAudio
+  - 原声气泡: 加号菜单可录一段声音(MediaRecorder, opus/aac ≤200KB)，微信语音样式
+    插进书页，可拖动；文件传 sdk.cloudDrive.uploadUserCDNFile (永久用户 CDN)；
+    CDN 失败时单文件存 personalPageStore lifestory/recordings|photos/，未登录暂存本机待补传
+  - 老照片同样走 CDN 独立文件（音频/照片永不内联进 entries JSON，避免撑大 git 存储；
+    旧内联照片在登录加载后由 flushPendingMedia 自动迁移上 CDN）
+  - 对着照片聊: 贴完照片 AI 看图主动提问（askAboutPhoto，多模态 image_url 走章节会话，
+    失败退化为通用照片问题），问题便签插在照片正下方
+  - 未寄出的信: 隐藏第八章（✉️ 书签，不进目录），写给未来的信（文字+原声），
+    选日子或"亲手交给TA"后封存；分享视图到日期才能拆开（约定式，不加密）；letters.json
+  - 存档: personalPageStore workspace MagicHaqi, 目录 lifestory/
+    (profile.json / meta.json / entries_<ch>.json；自动迁移 v1 chat_<ch>.json+book.json)
+  - 分享: haqi_lifestory.html?from=<username>&book=1  (只读翻书)
+  - 互动人生: 生成 devstory 剧本 -> haqi_devstory.html?from=..&story=..
+-->
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+<title>岁月留声 · 我的回忆录</title>
+<script src="https://cdn.keepwork.com/keepwork/cdn/tailwindcss@3.4.16.js"></script>
+</head>
+<body>
+<script>
+game_config = {
+    storageDir: 'lifestory',
+    pointsPerAnswer: 15,
+    pointsPerChapterWritten: 40,
+    maxPhotosPerChapter: 4,
+    photoMaxSize: 640,
+    magicMaxLen: 90,
+    illustrationStyle: '中国水墨画风格插图，宣纸底色，淡彩晕染，温暖怀旧，构图简洁留白，画面中不出现任何文字',
+    chapters: [
+        { id: 'childhood', icon: '🏞️', title: '童年时光', short: '童年', hint: '老家的样子、父母长辈、儿时的玩伴与趣事',
+          ribbon: '#a2543c',
+          starter: '咱们先聊聊您的童年吧。您小时候生活在什么地方？那是个什么样的地方呢？' },
+        { id: 'school', icon: '📚', title: '求学岁月', short: '求学', hint: '上学的经历、难忘的老师和同学',
+          ribbon: '#3c5a78',
+          starter: '聊聊您上学那会儿的事吧。您还记得第一天上学时的情景吗？' },
+        { id: 'work', icon: '🛠️', title: '工作奋斗', short: '工作', hint: '第一份工作、奋斗的岁月、同事与成就',
+          ribbon: '#6b6b3a',
+          starter: '您的第一份工作是做什么的呀？当时是怎么开始的？' },
+        { id: 'love', icon: '💞', title: '成家立业', short: '成家', hint: '与老伴相识相守的故事',
+          ribbon: '#96434f',
+          starter: '能讲讲您和老伴当年是怎么认识的吗？' },
+        { id: 'family', icon: '👨‍👩‍👧', title: '儿女家庭', short: '儿女', hint: '孩子出生、成长中的点点滴滴',
+          ribbon: '#4f7a5a',
+          starter: '说说您的孩子吧，他们小时候是什么样的？' },
+        { id: 'moments', icon: '✨', title: '难忘时刻', short: '难忘', hint: '人生中的大事、转折与骄傲的瞬间',
+          ribbon: '#8a6a2f',
+          starter: '在您的人生里，有没有一件事让您至今想起来都特别难忘？' },
+        { id: 'retire', icon: '🍵', title: '如今生活', short: '如今', hint: '退休后的生活、爱好与心愿',
+          ribbon: '#5d5a75',
+          starter: '现在的日子过得怎么样？平时都喜欢做点什么？' }
+    ]
+};
+</script>
+<script>
+art_assets = [];
+</script>
+<script>
+(function () {
+    'use strict';
+    const CFG = (typeof game_config === 'object' && game_config) ? game_config : { chapters: [] };
+    const DIR = CFG.storageDir || 'lifestory';
+    const QS = new URLSearchParams(location.search);
+
+    function post(type, data) {
+        try { window.parent && window.parent !== window && window.parent.postMessage({ type, data: data || {} }, '*'); } catch (_) {}
+    }
+
+    // ===================== 数据模型 =====================
+    // 每章 entries: { t, ... }
+    //   t:'q'     AI 的话（墨字）            { text }
+    //   t:'a'     长者的话                    { text(润色后), raw(原话), fine(bool) }
+    //   t:'quote' 章首金句                    { text }
+    //   t:'narr'  成文段落                    { text }
+    //   t:'photo' 老照片                      { url(CDN), w, h, scale?, br? }（旧数据 c:[chunks]，登录后自动迁移；兜底同 voice: ref/pend）
+    //   t:'voice' 原声录音                    { url(CDN), mime, dur(秒), size, txt?(字幕) }
+    //             CDN 失败时: ref='recordings/xxx.json'(个人存储单文件) 或 pend=<id>(未登录，暂存本机等补传)
+    //   t:'draw'  手指画                      { strokes:[[x,y,x,y,...]] 归一化 0..1 }
+    //   t:'illu'  AI 插画                     { url }
+    const DEFAULT_PROFILE = { name: '', birthYear: '', voiceOn: true,
+        textStyle: 'plain', chatTone: 'junior', theme: 'classic', fontSize: 'm' };
+    // 回忆录文字风格（用于魔法润色与整理成文）
+    const TEXT_STYLES = {
+        plain: '质朴平实，像写给家人的亲笔家书，不堆辞藻',
+        concise: '简洁明快，多用短句，干净利落',
+        emotional: '深情细腻，注重情感与心境的描写',
+        literary: '文雅书卷气，可少量引用诗句或成语，但不晦涩',
+    };
+    // 陪聊口吻（用于对话追问）
+    const CHAT_TONES = {
+        junior: '一位亲切、耐心的晚辈倾听者，像孙辈陪长辈喝茶聊天',
+        friend: '一位相识多年的老朋友，轻松地闲话家常，偶尔打趣',
+        interview: '一位温和的口述历史采访者，问题更有条理、按时间线索展开',
+    };
+    const state = {
+        sdk: null, user: null,
+        readonly: false, sharedFrom: '',
+        profile: Object.assign({}, DEFAULT_PROFILE),
+        facts: [],             // 长者档案：跨章节记住的事实（人名/地名/年代…）
+        letters: [],           // 未寄出的信 [{id,to,openHint,openAt,body,voice?,createdAt}]
+        chapters: {},          // chId -> { entries: [] }
+        meta: { title: '', info: {}, updatedAt: 0 },  // info[chId] = {written, imagePrompt}
+        sessions: {},
+        pages: [],             // 全书页列表 [{kind:'cover'|'toc'|'body', ch, items:[entryIdx], first}]
+        pageIdx: 0,            // 当前（左）页
+        spread: false,         // 双页模式
+        flipping: false,
+        writing: false, writeQueue: [],
+        drawTarget: null,      // 正在画画的 entry
+        recording: null, recordingOn: false,
+        speaking: null,
+        sessionPoints: 0, sessionAnswers: 0,
+        roundId: 'lifestory_' + Date.now(),
+        started: false, loadedPosted: false,
+        saveTimers: {}, busyDepth: 0,
+        activeCh: null,        // 当前聊天章节
+    };
+
+    function chapterById(id) { return CFG.chapters.find((c) => c.id === id); }
+    function chEntries(chId) {
+        if (!state.chapters[chId]) state.chapters[chId] = { entries: [] };
+        return state.chapters[chId].entries;
+    }
+    function chInfo(chId) {
+        if (!state.meta.info) state.meta.info = {};
+        if (!state.meta.info[chId]) state.meta.info[chId] = {};
+        return state.meta.info[chId];
+    }
+    function answerCount(chId) { return chEntries(chId).filter((e) => e.t === 'a').length; }
+    // 一条提问算「已回答」：它后面出现过长者的回答（任意 a 条目）
+    function qAnswered(chId, idx) {
+        const entries = chEntries(chId);
+        for (let i = idx + 1; i < entries.length; i++) if (entries[i].t === 'a') return true;
+        return false;
+    }
+    function displayName() { return state.profile.name || (state.user && (state.user.nickname || state.user.username)) || ''; }
+
+    // ===================== SDK / 登录 / 存储 =====================
+    let _sdkPromise = null;
+    function ensureSdk() {
+        if (state.sdk) return Promise.resolve(state.sdk);
+        if (_sdkPromise) return _sdkPromise;
+        _sdkPromise = new Promise((resolve, reject) => {
+            if (window.KeepworkSDK) return resolve();
+            const s = document.createElement('script');
+            s.src = 'https://cdn.keepwork.com/sdk/keepworkSDK.iife.js?v=20260627a';
+            s.async = true; s.onload = () => resolve(); s.onerror = () => reject(new Error('SDK load failed'));
+            document.head.appendChild(s);
+        }).then(() => {
+            if (!window.KeepworkSDK) throw new Error('KeepworkSDK undefined');
+            const sdk = window.keepwork || new window.KeepworkSDK({ timeout: 45000 });
+            try {
+                if (sdk.setUserApiKey && window.KeepworkSDK.API_KEYS && window.KeepworkSDK.API_KEYS.maisi) {
+                    sdk.setUserApiKey(window.KeepworkSDK.API_KEYS.maisi);
+                }
+            } catch (_) {}
+            state.sdk = sdk;
+            return sdk;
+        }).catch((e) => { _sdkPromise = null; throw e; });
+        return _sdkPromise;
+    }
+    async function ensureLogin(silent) {
+        const sdk = await ensureSdk();
+        if (state.user && state.user.username) return state.user;
+        let user = null;
+        try { user = sdk.getCurrentUser && await sdk.getCurrentUser(); } catch (_) {}
+        if ((!user || !user.username) && !silent && sdk.loginWindow && sdk.loginWindow.open) {
+            try { await sdk.loginWindow.open(); } catch (_) {}
+            try { user = sdk.getCurrentUser && await sdk.getCurrentUser(); } catch (_) {}
+        }
+        if (!user || !user.username) throw new Error('login required');
+        state.user = user;
+        return user;
+    }
+    function getStore() {
+        const sdk = state.sdk;
+        if (!sdk || !sdk.personalPageStore) return null;
+        return sdk.personalPageStore.withWorkspace ? sdk.personalPageStore.withWorkspace('MagicHaqi') : sdk.personalPageStore;
+    }
+
+    const LS_KEY = 'haqiLifeStoryV2';
+    function lsLoad() { try { const r = localStorage.getItem(LS_KEY); return r ? JSON.parse(r) : null; } catch (_) { return null; } }
+    function lsSave() {
+        try {
+            localStorage.setItem(LS_KEY, JSON.stringify({ profile: state.profile, chapters: state.chapters, meta: state.meta, facts: state.facts, letters: state.letters, ts: Date.now() }));
+        } catch (_) {}
+    }
+    async function storeWrite(rel, obj) {
+        try {
+            await ensureLogin(true);  // 后台保存不弹登录窗，未登录时仅存本地
+            const store = getStore();
+            if (!store) return false;
+            await store.createFile(DIR + '/' + rel, JSON.stringify(obj, null, 1));
+            return true;
+        } catch (e) { console.warn('storeWrite 失败', rel, e); return false; }
+    }
+    async function storeReadJson(rel) {
+        try {
+            const store = getStore();
+            if (!store) return null;
+            const text = await store.readFile(DIR + '/' + rel, 1, 999999);
+            if (!text || !String(text).trim()) return null;
+            return JSON.parse(text);
+        } catch (_) { return null; }
+    }
+    async function storeReadShared(username, rel) {
+        const sdk = await ensureSdk();
+        const clean = String(rel).replace(/^\/+/, '').replace(/\\/g, '/');
+        if (clean.includes('..') || !/^[\w./-]+$/.test(clean)) throw new Error('bad path');
+        const abs = '//' + String(username).replace(/[^\w-]/g, '') + '/edunotes/store/MagicHaqi/' + clean;
+        const text = await sdk.personalPageStore.readFile(abs, 1, 999999);
+        if (!text || !String(text).trim()) return null;
+        return JSON.parse(text);
+    }
+    function scheduleSave(kind, chId) {
+        lsSave();
+        if (state.readonly) return;
+        const key = kind + ':' + (chId || '');
+        if (state.saveTimers[key]) clearTimeout(state.saveTimers[key]);
+        state.saveTimers[key] = setTimeout(() => {
+            delete state.saveTimers[key];
+            if (kind === 'profile') storeWrite('profile.json', state.profile);
+            else if (kind === 'entries') storeWrite('entries_' + chId + '.json', state.chapters[chId] || { entries: [] });
+            else if (kind === 'meta') { state.meta.updatedAt = Date.now(); storeWrite('meta.json', state.meta); }
+            else if (kind === 'facts') storeWrite('facts.json', { facts: state.facts });
+            else if (kind === 'letters') storeWrite('letters.json', { letters: state.letters });
+        }, 1200);
+    }
+
+    // v1 迁移：chat_<ch>.json + book.json -> entries
+    function migrateV1(chats, book) {
+        for (const ch of CFG.chapters) {
+            if ((state.chapters[ch.id] || { entries: [] }).entries.length) continue;
+            const entries = [];
+            const bc = (book && book.chapters && book.chapters[ch.id]) || {};
+            if (bc.quote) entries.push({ t: 'quote', text: bc.quote, ts: bc.updatedAt || 0 });
+            if (bc.imageUrl) entries.push({ t: 'illu', url: bc.imageUrl, ts: bc.updatedAt || 0 });
+            if (bc.narrative) for (const p of String(bc.narrative).split(/\n+/).filter((s) => s.trim())) {
+                entries.push({ t: 'narr', text: p.trim(), ts: bc.updatedAt || 0 });
+            }
+            for (const p of (bc.photos || [])) {
+                const c = Array.isArray(p && p.c) ? p.c : (typeof p === 'string' ? [p] : null);
+                if (c) entries.push({ t: 'photo', c, ts: 0 });
+            }
+            const msgs = (chats && chats[ch.id]) || [];
+            for (const m of msgs) {
+                if (!m || !m.text) continue;
+                if (m.role === 'user') entries.push({ t: 'a', text: m.text, raw: m.text, fine: false, ts: m.ts || 0 });
+                else entries.push({ t: 'q', text: m.text, ts: m.ts || 0 });
+            }
+            if (entries.length) {
+                state.chapters[ch.id] = { entries };
+                if (bc.narrative) chInfo(ch.id).written = true;
+            }
+        }
+        if (book && book.title) state.meta.title = book.title;
+    }
+
+    async function loadAllFromStore() {
+        try { await ensureLogin(true); } catch (_) { return; }
+        const profile = await storeReadJson('profile.json');
+        if (profile && typeof profile === 'object') state.profile = Object.assign({}, DEFAULT_PROFILE, state.profile, profile);
+        const facts = await storeReadJson('facts.json');
+        if (facts && Array.isArray(facts.facts)) state.facts = facts.facts;
+        const letters = await storeReadJson('letters.json');
+        if (letters && Array.isArray(letters.letters) && letters.letters.length >= state.letters.length) state.letters = letters.letters;
+        const meta = await storeReadJson('meta.json');
+        let hasV2 = false;
+        if (meta && typeof meta === 'object') { state.meta = Object.assign(state.meta, meta); hasV2 = true; }
+        for (const ch of CFG.chapters) {
+            const data = await storeReadJson('entries_' + ch.id + '.json');
+            if (data && Array.isArray(data.entries) && data.entries.length >= chEntries(ch.id).length) {
+                state.chapters[ch.id] = data;
+                hasV2 = true;
+            }
+        }
+        if (!hasV2) {
+            // 尝试 v1 数据
+            const book = await storeReadJson('book.json');
+            const chats = {};
+            for (const ch of CFG.chapters) {
+                const d = await storeReadJson('chat_' + ch.id + '.json');
+                if (d && Array.isArray(d.messages)) chats[ch.id] = d.messages;
+            }
+            migrateV1(chats, book);
+        }
+        lsSave();
+        if (typeof applyTheme === 'function') applyTheme();
+        rebuildBook({ keepPage: true });
+        flushPendingMedia();   // 已登录：把上次没传成的原声静默补传 CDN
+    }
+
+    // ===================== 工具 =====================
+    function esc(s) { return String(s == null ? '' : s).replace(/[&<>"]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c])); }
+    function stripFence(s) { return String(s || '').trim().replace(/^```[a-zA-Z]*\s*\n?/, '').replace(/\n?```\s*$/, ''); }
+    // 把 AI 回复末尾的「话头：词A｜词B」拆出来，正文与话头分开用
+    function splitHints(text) {
+        let hints = [];
+        const t = String(text || '').replace(/\n?\s*话头[:：]\s*(.+)\s*$/m, (m, g) => {
+            hints = g.split(/[|｜、，,/]/).map((s) => s.trim().replace(/^「|」$/g, '')).filter((s) => s && s.length <= 6).slice(0, 3);
+            return '';
+        }).trim();
+        return { text: t, hints };
+    }
+    function parseAiJson(s) {
+        const t = stripFence(s);
+        const m = t.match(/\{[\s\S]*\}/);
+        if (!m) return null;
+        try { return JSON.parse(m[0]); } catch (_) {}
+        try { return JSON.parse(m[0].replace(/,\s*([}\]])/g, '$1')); } catch (_) {}
+        return null;
+    }
+    // e.c 内联分块是老数据格式（mediaSrc 读取兼容，flushPendingMedia 会迁到 CDN），新照片/语音一律独立文件
+    // 照片宽度（占页面 %）：由 e.scale 决定，钳在 [30, 92]——最小三张一行，最大近整行
+    function photoWidth(e) { return Math.min(92, Math.max(30, Math.round(46 * (e.scale || 1)))); }
+    // 实际显示宽度：在 photoWidth 基础上按宽高比限高——保证照片完整放进一页、绝不裁切拉伸
+    function photoDisplayWidth(e) {
+        let w = photoWidth(e);
+        if (e.w && e.h && pageDims.h > 60) {
+            const maxImgH = pageDims.h * 0.82 - 44;              // 相框边框和胶带留量
+            const maxEntryPx = maxImgH * (e.w / e.h) / 0.94;     // img 占条目 94% 宽
+            const cap = Math.floor(maxEntryPx / pageDims.w * 100);
+            w = Math.max(20, Math.min(w, cap));
+        }
+        return w;
+    }
+    function splitParagraphs(text, maxLen) {
+        const out = [];
+        for (const para of String(text).split(/\n+/)) {
+            const p = para.trim();
+            if (!p) continue;
+            if (p.length <= maxLen) { out.push(p); continue; }
+            let cur = '';
+            for (const seg of p.split(/(?<=[。！？；.!?])/)) {
+                if (cur && (cur + seg).length > maxLen) { out.push(cur); cur = seg; } else cur += seg;
+            }
+            if (cur) out.push(cur);
+        }
+        return out;
+    }
+    function toast(msg, ms) {
+        const el = $('#lsToast');
+        el.textContent = msg; el.hidden = false;
+        clearTimeout(toast._t); toast._t = setTimeout(() => { el.hidden = true; }, ms || 2600);
+    }
+    function busy(msg) {
+        state.busyDepth++;
+        $('#lsBusyText').textContent = msg || '请稍候…';
+        $('#lsBusy').hidden = false;
+    }
+    function unbusy() {
+        state.busyDepth = Math.max(0, state.busyDepth - 1);
+        if (!state.busyDepth) $('#lsBusy').hidden = true;
+    }
+    async function copyText(text) {
+        try {
+            if (navigator.clipboard && navigator.clipboard.writeText) {
+                // 页面未聚焦时 writeText 可能一直挂起：超时就走降级方案
+                const ok = await Promise.race([
+                    navigator.clipboard.writeText(text).then(() => true, () => false),
+                    new Promise((res) => setTimeout(() => res(false), 1200)),
+                ]);
+                if (ok) return true;
+            }
+        } catch (_) {}
+        try {
+            const ta = document.createElement('textarea'); ta.value = text; ta.style.position = 'fixed'; ta.style.opacity = '0';
+            document.body.appendChild(ta); ta.select(); document.execCommand('copy'); ta.remove(); return true;
+        } catch (_) { return false; }
+    }
+
+    // ===================== 语音 =====================
+    function stopSpeak() {
+        const h = state.speaking;
+        state.speaking = null;
+        try { if (h && typeof h.pause === 'function') h.pause(); } catch (_) {}
+    }
+    async function speak(text) {
+        if (!state.profile.voiceOn) return;
+        const t = String(text || '').replace(/[*#>`\[\]]/g, '').trim();
+        if (!t) return;
+        try {
+            const sdk = await ensureSdk();
+            if (!sdk.speech || !sdk.speech.playKeepworkAudio) return;
+            stopSpeak();
+            const h = await sdk.speech.playKeepworkAudio(t.slice(0, 500), {
+                spd: 3, gender: 'female', age: 28, useCache: true, fallbackMode: 'silent',
+            });
+            state.speaking = h;
+        } catch (e) { console.warn('朗读失败', e); }
+    }
+    function extractSttText(r) {
+        if (!r) return '';
+        if (typeof r === 'string') return r;
+        if (typeof r.text === 'string') return r.text;
+        if (Array.isArray(r.result)) return r.result.join('');
+        if (r.data) {
+            if (typeof r.data === 'string') return r.data;
+            if (typeof r.data.text === 'string') return r.data.text;
+            if (Array.isArray(r.data.result)) return r.data.result.join('');
+        }
+        return '';
+    }
+    async function toggleRecord() {
+        const btn = $('#lsMicBtn');
+        if (state.recordingOn) {
+            try { state.recording && state.recording.stop(); } catch (_) {}
+            return;
+        }
+        if (!state.activeCh) { toast('先点一个丝带书签，翻到想聊的篇章'); return; }
+        try {
+            const sdk = await ensureSdk();
+            if (!sdk.speech || !sdk.speech.speechToText) { toast('这台设备暂不支持语音，请点键盘打字'); return; }
+            const recorder = await sdk.speech.speechToText({
+                maxDuration: 60,
+                onStart: () => { state.recordingOn = true; btn.classList.add('on'); $('#lsMicHint').hidden = false; },
+                onStop: () => {
+                    state.recordingOn = false; btn.classList.remove('on'); $('#lsMicHint').hidden = true;
+                    toast('墨已研好，正在听写…');
+                },
+                onResult: (r) => {
+                    const t = extractSttText(r).trim();
+                    if (t) submitAnswer(t, { voice: true });
+                    else toast('没有听清，请再说一次');
+                },
+                onError: (e) => {
+                    state.recordingOn = false; btn.classList.remove('on'); $('#lsMicHint').hidden = true;
+                    console.warn('录音失败', e);
+                    toast('录音没有成功，请检查麦克风权限');
+                },
+            });
+            state.recording = recorder;
+            recorder.start();
+        } catch (e) {
+            console.warn('语音输入不可用', e);
+            toast('语音输入暂时不可用，请点键盘打字');
+        }
+    }
+
+    // ===================== 原声录音（书页上的语音气泡） =====================
+    // CDN 单文件上限 200KB（SDK 强制），24kbps opus 一分钟约 180KB；
+    // 录制时实时累计字节，逼近上限就自动收尾，保证怎么录都传得上去。
+    const VOICE_MAX_SEC = CFG.voiceMaxSec || 60;
+    const VOICE_MAX_BYTES = 190 * 1024;
+    let vrec = null;   // { rec, stream, chunks, bytes, t0, timer, mime, blob, dur, prevUrl }
+
+    // 音频永远不内联进 entries JSON（那份要进 git）。播放来源优先级：
+    // CDN url > 未登录暂存(本机 localStorage) > 个人存储 recordings/ 单文件（异步取，进缓存）
+    const mediaRefCache = new Map();   // ref -> dataURL
+    function mediaSrc(e) { return e.url || pendGet(e.pend) || mediaRefCache.get(e.ref) || (Array.isArray(e.c) ? e.c.join('') : ''); }
+    async function loadMediaRef(e) {
+        if (!e.ref || mediaRefCache.has(e.ref)) return mediaRefCache.get(e.ref) || '';
+        let obj = null;
+        try {
+            obj = state.readonly && state.sharedFrom
+                ? await storeReadShared(state.sharedFrom, DIR + '/' + e.ref)
+                : await storeReadJson(e.ref);
+        } catch (err) { console.warn('取原声文件失败', e.ref, err); }
+        const src = obj && typeof obj.b64 === 'string' ? obj.b64 : '';
+        if (src) mediaRefCache.set(e.ref, src);
+        return src;
+    }
+    // 未登录时的本机暂存（localStorage，独立 key，不进云端/git），登录后 flushPendingMedia 补传 CDN
+    const VOICE_PEND_KEY = 'haqiLifeStoryVoicePend';
+    function pendLoad() { try { return JSON.parse(localStorage.getItem(VOICE_PEND_KEY)) || {}; } catch (_) { return {}; } }
+    function pendSave(m) { try { localStorage.setItem(VOICE_PEND_KEY, JSON.stringify(m)); return true; } catch (_) { return false; } }
+    function pendGet(id) { return id ? (pendLoad()[id] || '') : ''; }
+    function pendStash(dataUrl) {
+        const m = pendLoad();
+        const id = 'p' + Date.now().toString(36) + Math.random().toString(36).slice(2, 6);
+        m[id] = dataUrl;
+        return pendSave(m) ? id : null;   // 存储配额满时返回 null
+    }
+    function pendDrop(id) { const m = pendLoad(); if (id in m) { delete m[id]; pendSave(m); } }
+    function dataUrlToBlob(u) {
+        const i = u.indexOf(',');
+        const mime = (u.slice(5, i).split(';')[0]) || 'audio/webm';
+        const bin = atob(u.slice(i + 1));
+        const a = new Uint8Array(bin.length);
+        for (let j = 0; j < bin.length; j++) a[j] = bin.charCodeAt(j);
+        return new Blob([a], { type: mime });
+    }
+    let _mediaFlushing = false;
+    // 后台静默补传：①未登录时暂存本机的语音/照片 ②老数据里内联 base64 的照片（迁成 CDN 独立文件）
+    async function flushPendingMedia() {
+        if (_mediaFlushing || state.readonly) return;
+        _mediaFlushing = true;
+        try {
+            for (const ch of CFG.chapters) {
+                for (const e of chEntries(ch.id)) {
+                    if ((e.t !== 'voice' && e.t !== 'photo') || e.url) continue;
+                    try {
+                        if (e.pend) {
+                            const dataUrl = pendGet(e.pend);
+                            if (!dataUrl) continue;
+                            e.url = e.t === 'voice'
+                                ? await uploadVoiceBlob(dataUrlToBlob(dataUrl), e.mime, true)
+                                : await uploadMediaBlob((await photoBlobUnderLimit(dataUrl)).blob, 'photo', 'jpg', true);
+                            pendDrop(e.pend); delete e.pend;
+                        } else if (e.t === 'photo' && Array.isArray(e.c) && e.c.length) {
+                            const shrunk = await photoBlobUnderLimit(e.c.join(''));
+                            e.url = await uploadMediaBlob(shrunk.blob, 'photo', 'jpg', true);
+                            delete e.c;
+                        } else continue;
+                    } catch (_) { return; }   // 没登录/没网，下次再试
+                    scheduleSave('entries', ch.id);
+                }
+            }
+            // 未寄出的信里的原声同样补传
+            for (const L of (state.letters || [])) {
+                const v = L.voice;
+                if (!v || v.url || !v.pend) continue;
+                const dataUrl = pendGet(v.pend);
+                if (!dataUrl) continue;
+                try { v.url = await uploadVoiceBlob(dataUrlToBlob(dataUrl), v.mime, true); }
+                catch (_) { return; }
+                pendDrop(v.pend); delete v.pend;
+                scheduleSave('letters');
+            }
+        } finally { _mediaFlushing = false; }
+    }
+    function fmtDur(s) { s = Math.max(1, Math.round(s || 1)); return s < 60 ? s + '″' : Math.floor(s / 60) + '′' + (s % 60 ? (s % 60) + '″' : ''); }
+    function pickVoiceMime() {
+        const M = window.MediaRecorder;
+        if (!M || !M.isTypeSupported) return '';
+        for (const m of ['audio/webm;codecs=opus', 'audio/mp4', 'audio/webm', 'audio/ogg;codecs=opus'])
+            if (M.isTypeSupported(m)) return m;
+        return '';
+    }
+    function blobToDataUrl(blob) {
+        return new Promise((resolve, reject) => {
+            const fr = new FileReader();
+            fr.onload = () => resolve(fr.result);
+            fr.onerror = reject;
+            fr.readAsDataURL(blob);
+        });
+    }
+    // 录音浮层是可复用的：书页原声、未寄出的信里都用它。
+    // recordVoiceFlow() 返回 Promise，「确认」时给出 {blob, dur, mime}，取消/失败给 null。
+    function recordVoiceFlow(acceptLabel) {
+        return new Promise((resolve) => {
+            $('#lsVoiceUse').textContent = acceptLabel || '✔ 放进书里';
+            startVoiceCapture(resolve);
+        });
+    }
+    async function startVoiceCapture(resolve) {
+        if (state.recordingOn) { toast('正在听您说话呢，先说完这一句'); resolve(null); return; }
+        if (!(navigator.mediaDevices && navigator.mediaDevices.getUserMedia) || !window.MediaRecorder) {
+            toast('这台设备不支持录音'); resolve(null); return;
+        }
+        let stream;
+        try {
+            stream = await navigator.mediaDevices.getUserMedia({
+                audio: { channelCount: 1, echoCancellation: true, noiseSuppression: true },
+            });
+        } catch (e) { console.warn('麦克风不可用', e); toast('用不了麦克风，请检查录音权限'); resolve(null); return; }
+        stopSpeak(); stopVoicePlay();
+        const mime = pickVoiceMime();
+        let rec;
+        try {
+            rec = new MediaRecorder(stream, mime ? { mimeType: mime, audioBitsPerSecond: 24000 } : { audioBitsPerSecond: 24000 });
+        } catch (e) {
+            try { stream.getTracks().forEach((t) => t.stop()); } catch (_) {}
+            console.warn('MediaRecorder 创建失败', e); toast('这台设备不支持录音'); resolve(null); return;
+        }
+        vrec = { rec, stream, chunks: [], bytes: 0, t0: Date.now(), timer: 0, mime: rec.mimeType || mime || 'audio/webm', blob: null, dur: 0, prevUrl: '', resolve };
+        rec.ondataavailable = (ev) => {
+            if (!vrec || !ev.data || !ev.data.size) return;
+            vrec.chunks.push(ev.data); vrec.bytes += ev.data.size;
+            // iOS 的 AAC 不一定听 24kbps 的话，按实际字节数兜底自动收尾
+            if (vrec.bytes >= VOICE_MAX_BYTES && rec.state === 'recording') { toast('录满啦，这段就到这里'); rec.stop(); }
+        };
+        rec.onerror = (ev) => {
+            console.warn('录音出错', ev);
+            closeVoiceOverlay();
+            toast('录音没有成功，请再试一次');
+        };
+        rec.onstop = () => {
+            if (!vrec) return;
+            try { vrec.stream.getTracks().forEach((t) => t.stop()); } catch (_) {}
+            clearInterval(vrec.timer);
+            vrec.dur = Math.min(VOICE_MAX_SEC, Math.max(1, Math.round((Date.now() - vrec.t0) / 1000)));
+            vrec.blob = new Blob(vrec.chunks, { type: vrec.mime });
+            if (!vrec.blob.size) { closeVoiceOverlay(); toast('没录到声音，再试一次'); return; }
+            showVoicePreview();
+        };
+        // 打开录音浮层
+        $('#lsVoicePrev').hidden = true;
+        $('#lsVoiceRecing').hidden = false;
+        $('#lsVoiceTime').textContent = '0:00';
+        $('#lsVoiceOverlay').hidden = false;
+        rec.start(500);
+        vrec.timer = setInterval(() => {
+            if (!vrec) return;
+            const s = Math.round((Date.now() - vrec.t0) / 1000);
+            $('#lsVoiceTime').textContent = Math.floor(s / 60) + ':' + String(s % 60).padStart(2, '0');
+            if (s >= VOICE_MAX_SEC && vrec.rec.state === 'recording') { toast('录满一分钟啦'); vrec.rec.stop(); }
+        }, 250);
+    }
+    function showVoicePreview() {
+        if (!vrec || !vrec.blob) return;
+        try { if (vrec.prevUrl) URL.revokeObjectURL(vrec.prevUrl); } catch (_) {}
+        vrec.prevUrl = URL.createObjectURL(vrec.blob);
+        $('#lsVoiceRecing').hidden = true;
+        $('#lsVoicePrevDur').textContent = fmtDur(vrec.dur);
+        $('#lsVoicePrev').hidden = false;
+    }
+    function closeVoiceOverlay(keepPromise) {
+        $('#lsVoiceOverlay').hidden = true;
+        const v = vrec; vrec = null;
+        if (!v) return;
+        clearInterval(v.timer);
+        try { if (v.rec && v.rec.state === 'recording') v.rec.onstop = null, v.rec.stop(); } catch (_) {}
+        try { v.stream.getTracks().forEach((t) => t.stop()); } catch (_) {}
+        try { if (v.prevUrl) URL.revokeObjectURL(v.prevUrl); } catch (_) {}
+        stopVoicePlay();
+        if (!keepPromise && v.resolve) v.resolve(null);
+    }
+    // 存一段音频：CDN 独立文件 > 个人存储单文件(ref) > 本机暂存(pend)。返回可并入 entry/letter 的字段。
+    async function storeVoicePayload(blob, mime, dur) {
+        try {
+            return { url: await uploadVoiceBlob(blob, mime) };
+        } catch (e1) {
+            console.warn('原声传 CDN 失败，改走兜底', e1);
+            const dataUrl = await blobToDataUrl(blob).catch(() => '');
+            if (!dataUrl) return null;
+            const name = 'recordings/voice_' + Date.now() + '_' + Math.random().toString(36).slice(2, 7) + '.json';
+            if (await storeWrite(name, { mime, dur, b64: dataUrl })) {
+                mediaRefCache.set(name, dataUrl);
+                return { ref: name };
+            }
+            const pid = pendStash(dataUrl);   // 未登录：暂存本机，登录后自动补传
+            return pid ? { pend: pid } : null;
+        }
+    }
+    async function uploadMediaBlob(blob, prefix, ext, silent) {
+        await ensureLogin(!!silent);   // 传永久 CDN 需要登录：未登录会弹登录窗（后台补传时静默）
+        const sdk = state.sdk;
+        if (!sdk || !sdk.cloudDrive || !sdk.cloudDrive.uploadUserCDNFile) throw new Error('cloudDrive unavailable');
+        const name = prefix + '_' + Date.now() + '_' + Math.random().toString(36).slice(2, 7) + '.' + ext;
+        const res = await sdk.cloudDrive.uploadUserCDNFile(blob, { key: DIR + '/' + name, filename: name });
+        if (!res || !res.url) throw new Error('upload returned no url');
+        return res.url;
+    }
+    function uploadVoiceBlob(blob, mime, silent) {
+        const ext = /mp4/.test(mime) ? 'm4a' : (/ogg/.test(mime) ? 'ogg' : 'webm');
+        return uploadMediaBlob(blob, 'voice', ext, silent);
+    }
+    function imgFromSrc(src) {
+        return new Promise((resolve, reject) => {
+            const im = new Image();
+            im.onload = () => resolve(im); im.onerror = reject; im.src = src;
+        });
+    }
+    // 照片压到 CDN 200KB 限制以内（640px q0.62 基本都在 80KB 内，这里只是极端情况的保险）
+    async function photoBlobUnderLimit(dataUrl) {
+        let out = dataUrl, blob = dataUrlToBlob(dataUrl);
+        for (const q of [0.5, 0.38, 0.28]) {
+            if (blob.size <= 195 * 1024) break;
+            const im = await imgFromSrc(dataUrl);
+            const cv = document.createElement('canvas');
+            cv.width = im.naturalWidth; cv.height = im.naturalHeight;
+            cv.getContext('2d').drawImage(im, 0, 0);
+            out = cv.toDataURL('image/jpeg', q);
+            blob = dataUrlToBlob(out);
+        }
+        return { blob, dataUrl: out };
+    }
+    // 加号菜单入口：录一段原声插进书页
+    async function recordVoiceIntoBook() {
+        if (state.readonly) return;
+        const startPos = currentInsertPos() || (state.activeCh ? { ch: state.activeCh, idx: chEntries(state.activeCh).length } : null);
+        if (!startPos) { toast('先点一个丝带书签，翻到想放声音的篇章'); return; }
+        const v = await recordVoiceFlow('✔ 放进书里');
+        if (!v) return;
+        // 录音期间可能翻过页：优先插到现在看着的这一页
+        const pos = currentInsertPos() || startPos;
+        busy('正在把这段原声放进书里…');
+        const entry = { t: 'voice', mime: v.mime, dur: v.dur, size: v.blob.size, ts: Date.now() };
+        const stored = await storeVoicePayload(v.blob, v.mime, v.dur);
+        if (!stored) { unbusy(); toast('这段原声没有存下来，请先登录再录'); return; }
+        Object.assign(entry, stored);
+        chEntries(pos.ch).splice(Math.min(pos.idx, chEntries(pos.ch).length), 0, entry);
+        scheduleSave('entries', pos.ch);
+        rebuildBook({ keepPage: true });
+        const pi = state.pages.findIndex((pg) => pg.kind === PAGE_KINDS.BODY && pg.ch === pos.ch && pg.items.includes(pos.idx));
+        if (pi >= 0 && !visiblePages().includes(pi)) flipTo(pi);
+        unbusy();
+        toast(entry.pend ? '原声先存在这台设备上了 🎙️ 登录后会自动传好' : '原声放进书里了 🎙️ 按住气泡可以拖动');
+        sttCaption(v.blob, entry, pos.ch);   // 背景里配一行小字幕，不挡操作
+        if (entry.url) flushPendingMedia(); // 这次登录成功了：顺手补传以前欠着的
+    }
+    // 给原声气泡配一行文字小字幕（尽力而为，失败就不显示）
+    async function sttCaption(blob, entry, chId) {
+        try {
+            const sdk = await ensureSdk();
+            if (!sdk.speech || !sdk.speech.convertToWavBase64 || !sdk.speech.callSpeechToTextAPI) return;
+            const b64 = await sdk.speech.convertToWavBase64(blob, 16000);
+            const r = await sdk.speech.callSpeechToTextAPI(b64);
+            const t = extractSttText(r).trim();
+            if (!t) return;
+            entry.txt = t.slice(0, 120);
+            scheduleSave('entries', chId);
+            rebuildBook({ keepPage: true });
+        } catch (e) { console.warn('原声字幕失败', e); }
+    }
+    // ---------- 原声播放：全书共用一个 <audio>，微信语音式点了就放 ----------
+    let voiceAudio = null, voicePlayingEl = null;
+    function stopVoicePlay() {
+        try { if (voiceAudio) voiceAudio.pause(); } catch (_) {}
+        if (voicePlayingEl) voicePlayingEl.classList.remove('playing');
+        voicePlayingEl = null;
+    }
+    function toggleVoicePlay(e, div) {
+        if (voicePlayingEl === div) { stopVoicePlay(); return; }
+        stopSpeak(); stopVoicePlay();
+        let src = mediaSrc(e);
+        if (!src && e.ref) {
+            // 存在个人存储里的原声：先取回来再放
+            div.classList.add('loading');
+            loadMediaRef(e).then((s) => {
+                div.classList.remove('loading');
+                if (s) toggleVoicePlay(e, div);
+                else toast('这段原声没有取到，过会儿再试');
+            });
+            return;
+        }
+        if (!src) { toast('这段原声还没有传好'); return; }
+        if (!voiceAudio) {
+            voiceAudio = new Audio();
+            voiceAudio.addEventListener('ended', stopVoicePlay);
+            voiceAudio.addEventListener('error', () => { if (voicePlayingEl) toast('这段原声播放不了'); stopVoicePlay(); });
+        }
+        voiceAudio.src = src;
+        voicePlayingEl = div;
+        div.classList.add('playing');
+        voiceAudio.play().catch((err) => { console.warn('原声播放失败', err); toast('这段原声播放不了'); stopVoicePlay(); });
+    }
+
+    // ===================== AI =====================
+    function buildChatSystemPrompt(ch) {
+        const name = displayName();
+        const talk = chEntries(ch.id).filter((e) => e.t === 'q' || e.t === 'a');
+        const tail = talk.slice(-14).map((e) => (e.t === 'a' ? '长者' : (e.from ? '家人' + e.from : '你')) + '：' + (e.raw || e.text)).join('\n');
+        const tone = CHAT_TONES[state.profile.chatTone] || CHAT_TONES.junior;
+        return [
+            '你是「岁月留声」回忆录的陪伴者，' + tone + '，正在帮长者' + (name ? '（' + name + '）' : '') + '记录人生回忆。',
+            '当前聊的章节是【' + ch.title + '】，话题范围：' + ch.hint + '。',
+            (state.profile.birthYear ? '长者大约出生于 ' + state.profile.birthYear + ' 年，可以据此推算年代背景。' : ''),
+            (state.facts.length ? '你已经了解的长者情况（追问时可自然引用其中的细节，让长者感到被记住；一次只引用一处，不要罗列）：\n' +
+                state.facts.slice(-40).map((f) => '· ' + f).join('\n') : ''),
+            '对话规则：',
+            '1. 每次回复先用一两句真诚地回应长者刚说的内容，再自然地追问一个新问题。',
+            '2. 一次只问一个问题，问题要具体（当时的人、地点、声音、气味、心情），不要连着问好几个。',
+            '3. 用尊称「您」，句子简短口语化，像陪长辈喝茶聊天，不要书面腔，不要列条目。',
+            '4. 长者说到别的话题就顺着聊；长者情绪低落时先安慰。',
+            '5. 每条回复不超过 70 个字，最多用 1 个表情符号。',
+            '6. 回复的最后另起一行输出「话头：词A｜词B」——给长者两个和问题相关、具体的回忆切入词（每个 2~4 字，如：粉笔灰｜老槐树）。',
+            '7. 长者聊到亲人离世、疾病、饥荒等沉重回忆时，这一轮只回应与安慰、不提新问题、不输出话头，最多轻轻问一句「还想再说说这段吗，还是咱们聊点别的？」。',
+            tail ? '此前你们已聊过的内容摘录（不要重复提问）：\n' + tail : '这是本章的第一次对话。',
+        ].filter(Boolean).join('\n');
+    }
+    async function ensureSession(ch) {
+        if (state.sessions[ch.id]) return state.sessions[ch.id];
+        const sdk = await ensureSdk();
+        if (!sdk.aiChat || !sdk.aiChat.createSession) throw new Error('aiChat unavailable');
+        const sess = sdk.aiChat.createSession({
+            systemPrompt: buildChatSystemPrompt(ch),
+            modId: 'magichaqi',
+            chatId: 'lifestory_' + ch.id,
+        });
+        state.sessions[ch.id] = sess;
+        return sess;
+    }
+    async function aiOneShot(systemPrompt, userMsg, chatId) {
+        const sdk = await ensureSdk();
+        if (!sdk.aiChat) throw new Error('aiChat unavailable');
+        let full = '';
+        if (sdk.aiChat.createSession) {
+            const sess = sdk.aiChat.createSession({ systemPrompt, modId: 'magichaqi', chatId: chatId || 'lifestory_writer' });
+            if (typeof sess.send === 'function') {
+                const r = await sess.send(userMsg, { onChunk: (d) => { if (typeof d === 'string') full += d; } });
+                if (!full && typeof r === 'string') full = r;
+                if (!full && r && r.text) full = r.text;
+                return full;
+            }
+        }
+        if (sdk.aiChat.chat) {
+            const r = await sdk.aiChat.chat({ messages: [{ role: 'system', content: systemPrompt }, { role: 'user', content: userMsg }] });
+            full = (r && r.text) || r || '';
+        }
+        return full;
+    }
+    // 魔法润色：口述原话 -> 优美的一小段
+    async function beautify(ch, raw) {
+        const sys = [
+            '把长者口述的一段原话，润色成回忆录里一小段优美、温暖的第一人称文字。',
+            '文字风格：' + (TEXT_STYLES[state.profile.textStyle] || TEXT_STYLES.plain) + '。',
+            '完全保留原意与事实，绝不添加长者没说过的事；保留人名地名年代等细节。',
+            '长度不超过 ' + (CFG.magicMaxLen || 90) + ' 字；可自然点缀最多 2 个贴切的 emoji。',
+            '只输出润色后的文字本身，不要引号、不要解释。',
+        ].join('\n');
+        const userMsg = '章节：' + ch.title + '\n' + (displayName() ? '长者称呼：' + displayName() + '\n' : '') + '原话：' + raw;
+        const out = stripFence(await aiOneShot(sys, userMsg, 'lifestory_magic')).trim();
+        if (!out || out.length > (CFG.magicMaxLen || 90) * 2) throw new Error('bad beautify');
+        return out;
+    }
+
+    // 长者档案：从回答中沉淀事实，让所有章节的追问都能「记得」
+    async function extractFacts(ch, raw) {
+        try {
+            const known = state.facts.slice(-40).join('\n');
+            const sys = [
+                '你在为一位长者的回忆录维护一份「人物档案」。',
+                '从长者刚说的一段话中提取值得长期记住的新事实：人名、地名、年代、职业、重要物件、重要事件。',
+                '每条事实一句话、不超过 20 字，第三人称省略主语（例：18 岁在南京读书）。',
+                '只输出 JSON：{"facts":["…"]}；没有值得记的新事实就输出 {"facts":[]}。',
+                '已记住的事实（不要重复输出相同或相近的）：\n' + (known || '（还没有）'),
+            ].join('\n');
+            const out = await aiOneShot(sys, '章节【' + ch.title + '】长者说：' + raw, 'lifestory_facts');
+            const j = parseAiJson(out);
+            if (!j || !Array.isArray(j.facts)) return;
+            let added = false;
+            for (const f of j.facts) {
+                const s = String(f || '').trim().slice(0, 40);
+                if (s && !state.facts.includes(s)) { state.facts.push(s); added = true; }
+            }
+            if (added) {
+                if (state.facts.length > 80) state.facts = state.facts.slice(-80);
+                scheduleSave('facts');
+            }
+        } catch (e) { console.warn('档案提取失败', e); }
+    }
+
+    // ===================== 对着照片聊：照片是最好的记忆钩子 =====================
+    // 长者贴完照片，AI 主动看图提问；聊出来的故事自然排在照片旁边。
+    const PHOTO_Q_POOL = [
+        '这张照片是什么时候照的呀？里面都有谁？',
+        '这张照片背后有什么故事吗？您还记得那天的情形吗？',
+        '看到这张照片，您最先想起来的是什么？',
+    ];
+    function insertEntryAfter(chId, afterIdx, entry) {
+        const entries = chEntries(chId);
+        const at = Math.max(0, Math.min(afterIdx + 1, entries.length));
+        entries.splice(at, 0, entry);
+        scheduleSave('entries', chId);
+        rebuildBook({ keepPage: true });
+        const pi = state.pages.findIndex((pg) => pg.kind === PAGE_KINDS.BODY && pg.ch === chId && pg.items.includes(at));
+        if (pi >= 0 && !visiblePages().includes(pi)) flipTo(pi);
+        return at;
+    }
+    async function askAboutPhoto(chId, photoEntry) {
+        if (state.readonly || state.sending) return;
+        const ch = chapterById(chId);
+        if (!ch) return;
+        state.activeCh = chId;
+        state.sending = true;
+        try {
+            let qText = '', hints = [];
+            try {
+                const src = photoEntry.url || mediaSrc(photoEntry);   // CDN 地址优先；兜底 dataURL（SDK 会自动转临时 CDN）
+                if (!src) throw new Error('no photo src');
+                const sess = await ensureSession(ch);
+                const prompt = '（系统提示，长者看不到这句话：长者刚往回忆录书页上贴了一张老照片，就是本条消息附带的图片。请：' +
+                    '1. 用一两句话说出你从照片里看到的具体内容，像晚辈惊喜地凑过来看照片那样；' +
+                    '2. 围绕照片问一个具体的问题，比如什么时候照的、里面都有谁、当天的故事；' +
+                    '3. 最后另起一行输出「话头：词A｜词B」。' +
+                    '如果图片看不清或无法识别，就不要描述内容，直接亲切地问这张照片是什么时候照的、里面都有谁。）';
+                let full = '';
+                const r = await sess.send([
+                    { type: 'text', text: prompt },
+                    { type: 'image_url', image_url: { url: src } },
+                ], { onChunk: (d) => { if (typeof d === 'string') full += d; } });
+                if (!full && typeof r === 'string') full = r;
+                if (!full && r && r.text) full = r.text;
+                full = stripFence(full).trim();
+                if (!full) throw new Error('empty reply');
+                const parsed = splitHints(full);
+                qText = parsed.text; hints = parsed.hints;
+            } catch (e) {
+                console.warn('照片看图追问失败，用通用问题', e);
+                qText = PHOTO_Q_POOL[Math.floor(Math.random() * PHOTO_Q_POOL.length)];
+            }
+            const pIdx = chEntries(chId).indexOf(photoEntry);
+            const entry = { t: 'q', text: qText, hints, photo: true, ts: Date.now() };
+            const qIdx = pIdx >= 0 ? insertEntryAfter(chId, pIdx, entry) : appendEntry(chId, entry);
+            speak(qText);
+            await typewrite(chId, qIdx);
+        } finally {
+            state.sending = false;
+            updateTray();
+        }
+    }
+
+    // ===================== 未寄出的信（隐藏的第八章 / 时间胶囊） =====================
+    // 写给未来的悄悄话：封存后到了日子家人才能拆开。文案只讲喜事和成长节点，
+    // 绝不出现任何催促身后事的暗示。封存是约定式的（客户端控制），不做加密。
+    const LETTERS_KEY = '__letters';
+    function todayStr() {
+        const d = new Date();
+        return d.getFullYear() + '-' + String(d.getMonth() + 1).padStart(2, '0') + '-' + String(d.getDate()).padStart(2, '0');
+    }
+    function letterCanOpen(L) { return !state.readonly || !!(L.openAt && todayStr() >= L.openAt); }
+    function letterWhenText(L) {
+        if (!L.openAt) return '🤲 由我亲手交给 TA';
+        return '📅 ' + L.openAt.replace(/-/g, ' 年 ').replace(/ 年 (\d+)$/, ' 月 $1 日') + ' 拆开' + (L.openHint ? '（' + L.openHint + '）' : '');
+    }
+    function paginateLetters() {
+        const per = 4;
+        const pages = [];
+        for (let i = 0; i < state.letters.length; i += per) {
+            pages.push({ kind: 'letters', items: state.letters.slice(i, i + per).map((_, k) => i + k), first: i === 0 });
+        }
+        if (!pages.length) pages.push({ kind: 'letters', items: [], first: true });
+        return pages;
+    }
+    function lettersFirstPage() { return state.pages.findIndex((p) => p.kind === 'letters'); }
+    function lettersPageEl(p, body) {
+        if (p.first) {
+            const head = document.createElement('div');
+            head.className = 'ls-chhead';
+            head.innerHTML = '<span class="ls-chtitle"></span><span class="ls-seal">信</span>';
+            head.querySelector('.ls-chtitle').textContent = '✉️ 未寄出的信';
+            body.appendChild(head);
+            const sub = document.createElement('div');
+            sub.className = 'ls-ltsub';
+            sub.textContent = state.readonly
+                ? '这里封着写给未来的悄悄话，到了信封上的日子才能拆开。'
+                : '有些话，现在说太早，不说又怕忘。写下来封好，到了日子，它会替您说。';
+            body.appendChild(sub);
+        }
+        for (const i of p.items) {
+            const L = state.letters[i];
+            if (!L) continue;
+            const env = document.createElement('button');
+            env.type = 'button';
+            env.className = 'ls-envelope' + (state.readonly && !letterCanOpen(L) ? ' locked' : '');
+            env.innerHTML = '<span class="ls-env-wax">封</span><div class="ls-env-to"></div><div class="ls-env-when"></div>';
+            env.querySelector('.ls-env-to').textContent = '给 ' + (L.to || '家人') + ' 的信' + (L.voice ? ' 🎙️' : '');
+            env.querySelector('.ls-env-when').textContent = letterWhenText(L);
+            env.addEventListener('click', (ev) => {
+                ev.stopPropagation();
+                if (state.readonly && !letterCanOpen(L)) {
+                    toast(L.openAt ? '这封信要到 ' + L.openAt.replace(/-/g, '.') + ' 才能拆开 ✉️' : '这封信，要等长辈亲手交给你 ✉️', 3600);
+                    return;
+                }
+                openLetterView(i);
+            });
+            body.appendChild(env);
+        }
+        if (!state.readonly) {
+            const isLastLettersPage = !state.pages.some((pg, i) => pg.kind === 'letters' && i > state.pages.indexOf(p));
+            if (isLastLettersPage || p.items.length === 0) {
+                const btn = document.createElement('button');
+                btn.type = 'button';
+                btn.className = 'ls-pbtn primary ls-ltnew';
+                btn.textContent = '✉️ 写一封新的信';
+                btn.addEventListener('click', (ev) => { ev.stopPropagation(); openLetterEdit(null); });
+                body.appendChild(btn);
+            }
+        } else if (p.first && !state.letters.length) {
+            const hint = document.createElement('div');
+            hint.className = 'ls-pagehint';
+            hint.textContent = '这里还没有封存的信。';
+            body.appendChild(hint);
+        }
+    }
+    // ---------- 看一封信 ----------
+    function openLetterView(i) {
+        const L = state.letters[i];
+        if (!L) return;
+        const body = $('#lsLetterViewBody');
+        let html = '<h2>✉️ 给 ' + esc(L.to || '家人') + ' 的信</h2>' +
+            '<div class="ls-ltsub">' + esc(letterWhenText(L)) + '</div>' +
+            '<div class="ls-ltbodyview"></div>';
+        if (L.voice) {
+            html += '<div class="ls-e-voice ls-ltvoice"><button class="ls-vbubble" type="button">' +
+                '<span class="ls-vplay">▶</span><span class="ls-vwave"><i></i><i></i><i></i><i></i><i></i></span>' +
+                '<span class="ls-vdur">' + esc(fmtDur(L.voice.dur)) + '</span></button></div>';
+        }
+        html += '<div class="ls-pbtnrow">';
+        if (!state.readonly) html += '<button class="ls-pbtn" data-act="edit">✏️ 拆开改一改</button><button class="ls-pbtn" data-act="del">🗑️ 不留了</button>';
+        html += '</div><button class="ls-pbtn primary" data-act="close">合上信</button>';
+        body.innerHTML = html;
+        body.querySelector('.ls-ltbodyview').textContent = L.body || '';
+        const vb = body.querySelector('.ls-ltvoice');
+        if (vb) vb.querySelector('.ls-vbubble').addEventListener('click', () => toggleVoicePlay(L.voice, vb));
+        body.querySelectorAll('button[data-act]').forEach((b) => {
+            b.addEventListener('click', () => {
+                const act = b.dataset.act;
+                if (act === 'close') { stopVoicePlay(); $('#lsLetterViewOverlay').hidden = true; return; }
+                if (act === 'edit') { stopVoicePlay(); $('#lsLetterViewOverlay').hidden = true; openLetterEdit(i); return; }
+                if (act === 'del') {
+                    if (!b.dataset.sure) { b.dataset.sure = '1'; b.textContent = '🗑️ 再按一下，真的不留了'; return; }
+                    stopVoicePlay();
+                    $('#lsLetterViewOverlay').hidden = true;
+                    const gone = state.letters.splice(i, 1)[0];
+                    if (gone && gone.voice && gone.voice.pend) pendDrop(gone.voice.pend);
+                    scheduleSave('letters');
+                    rebuildBook({ keepPage: true });
+                    toast('这封信收回了');
+                }
+            });
+        });
+        $('#lsLetterViewOverlay').hidden = false;
+    }
+    // ---------- 写/改一封信 ----------
+    const letterDraft = { editing: -1, voice: null, openMode: 'hand' };
+    function openLetterEdit(i) {
+        const L = i != null && i >= 0 ? state.letters[i] : null;
+        letterDraft.editing = L ? i : -1;
+        letterDraft.voice = L ? (L.voice || null) : null;
+        letterDraft.openMode = L && L.openAt ? 'date' : 'hand';
+        $('#lsLtTo').value = L ? (L.to || '') : '';
+        $('#lsLtBody').value = L ? (L.body || '') : '';
+        $('#lsLtDate').value = L ? (L.openAt || '') : '';
+        $('#lsLtHint').value = L ? (L.openHint || '') : '';
+        renderLetterEditState();
+        $('#lsLetterEditOverlay').hidden = false;
+        try { $('#lsLtTo').focus(); } catch (_) {}
+    }
+    function renderLetterEditState() {
+        $('#lsLtWhenHand').classList.toggle('on', letterDraft.openMode === 'hand');
+        $('#lsLtWhenDate').classList.toggle('on', letterDraft.openMode === 'date');
+        $('#lsLtDateRow').hidden = letterDraft.openMode !== 'date';
+        const chip = $('#lsLtVoiceChip');
+        chip.hidden = !letterDraft.voice;
+        if (letterDraft.voice) $('#lsLtVoiceDur').textContent = '🎙️ 已录 ' + fmtDur(letterDraft.voice.dur);
+        $('#lsLtRecBtn').textContent = letterDraft.voice ? '🎙️ 重录一段' : '🎙️ 录一段悄悄话';
+    }
+    async function recordLetterVoice() {
+        const v = await recordVoiceFlow('✔ 就用这段');
+        $('#lsLetterEditOverlay').hidden = false;   // 录音浮层盖住过编辑框，回来
+        if (!v) return;
+        busy('正在收好这段悄悄话…');
+        const stored = await storeVoicePayload(v.blob, v.mime, v.dur);
+        unbusy();
+        if (!stored) { toast('这段没有存下来，请再录一次'); return; }
+        letterDraft.voice = Object.assign({ mime: v.mime, dur: v.dur }, stored);
+        renderLetterEditState();
+    }
+    function sealLetter() {
+        const to = ($('#lsLtTo').value || '').trim().slice(0, 20);
+        const bodyText = ($('#lsLtBody').value || '').trim().slice(0, 2000);
+        if (!to) { toast('先写上这封信给谁'); return; }
+        if (!bodyText && !letterDraft.voice) { toast('写几句话，或者录一段悄悄话'); return; }
+        let openAt = '', openHint = '';
+        if (letterDraft.openMode === 'date') {
+            openAt = $('#lsLtDate').value || '';
+            if (!openAt) { toast('选一个拆开的日子'); return; }
+            openHint = ($('#lsLtHint').value || '').trim().slice(0, 30);
+        }
+        const L = {
+            id: letterDraft.editing >= 0 && state.letters[letterDraft.editing] ? state.letters[letterDraft.editing].id : 'L' + Date.now().toString(36),
+            to, body: bodyText, openAt, openHint,
+            voice: letterDraft.voice || undefined,
+            createdAt: letterDraft.editing >= 0 && state.letters[letterDraft.editing] ? state.letters[letterDraft.editing].createdAt : Date.now(),
+        };
+        if (letterDraft.editing >= 0 && state.letters[letterDraft.editing]) state.letters[letterDraft.editing] = L;
+        else state.letters.push(L);
+        $('#lsLetterEditOverlay').hidden = true;
+        scheduleSave('letters');
+        rebuildBook({ keepPage: true });
+        // 封缄仪式：信封合上，火漆落印
+        const fx = $('#lsSealFx');
+        fx.hidden = false;
+        clearTimeout(sealLetter._t);
+        sealLetter._t = setTimeout(() => { fx.hidden = true; }, 1700);
+        toast('信封好了 ✉️ 到了日子，TA 才能拆开', 4000);
+    }
+
+    // ===================== 书页排版 =====================
+    const PAGE_KINDS = { COVER: 'cover', TOC: 'toc', BODY: 'body' };
+
+    function renderEntryEl(chId, idx, e) {
+        const div = document.createElement('div');
+        div.className = 'ls-entry ls-e-' + e.t;
+        div.dataset.ch = chId; div.dataset.idx = idx;
+        if (e.t === 'q') {
+            const fam = !!e.from;  // 家人留的问题
+            if (fam) div.classList.add('family');
+            if (qAnswered(chId, idx)) {
+                // 已回答的问题收起成一行小字，点一下可展开
+                div.classList.add('answered');
+                div.innerHTML = '<span class="ls-qmark">' + (fam ? '💌' : '问') + '</span><span class="ls-etext"></span>';
+            } else if (fam) {
+                // 家人的问题原样保留，不给换问题/话头
+                div.innerHTML = '<div class="ls-qfrom">💌 ' + esc(e.from) + ' 想问您</div><span class="ls-etext"></span>';
+            } else {
+                // 待回答的问题：贴在纸上的便签，附可点的话头
+                let acts = '';
+                if (!state.readonly) {
+                    // 不是提问（如安慰、建议休息的话）就不放「想不起来了」
+                    const isAsking = /[？?]/.test(e.text || '');
+                    const hints = (Array.isArray(e.hints) ? e.hints : []).concat(isAsking ? ['想不起来了'] : []);
+                    acts = '<div class="ls-qacts">' +
+                        hints.map((h) => '<button class="ls-qhint">' + esc(h) + '</button>').join('') +
+                        '<button class="ls-qswap">🔄 换个问题</button></div>';
+                }
+                div.innerHTML = '<span class="ls-qmark">问</span><span class="ls-etext"></span>' + acts;
+            }
+            div.querySelector('.ls-etext').textContent = e.text || '';
+        } else if (e.t === 'a') {
+            div.innerHTML = '<span class="ls-etext"></span>' +
+                (e.fine && e.raw && e.raw !== e.text ? '<span class="ls-rawline" hidden></span>' : '');
+            div.querySelector('.ls-etext').textContent = e.text || '';
+            if (!e.fine) div.classList.add('draft');
+            const rawEl = div.querySelector('.ls-rawline');
+            if (rawEl) rawEl.textContent = '原话：' + e.raw;
+        } else if (e.t === 'quote') {
+            div.innerHTML = '<span class="ls-etext"></span>';
+            div.querySelector('.ls-etext').textContent = '「' + (e.text || '') + '」';
+        } else if (e.t === 'narr') {
+            div.innerHTML = '<span class="ls-etext"></span>';
+            div.querySelector('.ls-etext').textContent = e.text || '';
+        } else if (e.t === 'photo') {
+            div.innerHTML = '<img alt="老照片">';
+            const img = div.querySelector('img');
+            const psrc = mediaSrc(e);
+            img.src = psrc;
+            if (!psrc && e.ref) loadMediaRef(e).then((s) => { if (s) img.src = s; });   // 个人存储兜底的照片：取回再显示
+            img.draggable = false;  // 禁掉浏览器原生的「拖拽图片」，否则 PC 上鼠标拖不动
+            // 关键：解码前就告诉布局图片的宽高比，分页测量才能拿到真实高度（否则会挤在一页被切掉）
+            if (e.w && e.h) img.style.aspectRatio = e.w + ' / ' + e.h;
+            div.style.width = photoDisplayWidth(e) + '%';  // 行内块：默认两张一行，宽高比锁定
+            if (e.br) div.classList.add('brk');            // 「另起一行」的照片
+            if (!e.w || !e.h) {
+                // 老数据没存尺寸：加载后补量一次并重排
+                img.addEventListener('load', () => {
+                    if (e.w || !img.naturalWidth) return;
+                    e.w = img.naturalWidth; e.h = img.naturalHeight;
+                    scheduleSave('entries', chId);
+                    clearTimeout(window.__lsPhotoReflow);
+                    window.__lsPhotoReflow = setTimeout(() => rebuildBook({ keepPage: true }), 80);
+                }, { once: true });
+            }
+        } else if (e.t === 'voice') {
+            // 微信语音式的原声气泡：▶ + 声波 + 时长，下面可选一行小字幕
+            div.innerHTML = '<button class="ls-vbubble" type="button" title="点一下听原声">' +
+                '<span class="ls-vplay">▶</span>' +
+                '<span class="ls-vwave"><i></i><i></i><i></i><i></i><i></i></span>' +
+                '<span class="ls-vdur"></span></button>' +
+                (e.txt ? '<span class="ls-vtxt"></span>' : '');
+            div.querySelector('.ls-vdur').textContent = fmtDur(e.dur);
+            const vt = div.querySelector('.ls-vtxt');
+            if (vt) vt.textContent = e.txt;
+            if (e.br) div.classList.add('brk');
+        } else if (e.t === 'illu') {
+            div.innerHTML = '<img alt="插画">';
+            div.querySelector('img').src = e.url || '';
+        } else if (e.t === 'draw') {
+            div.appendChild(drawSvg(e));
+        }
+        return div;
+    }
+    function drawSvg(e) {
+        const svg = document.createElementNS('http://www.w3.org/2000/svg', 'svg');
+        svg.setAttribute('viewBox', '0 0 100 62');
+        svg.setAttribute('preserveAspectRatio', 'none');
+        svg.classList.add('ls-drawsvg');
+        for (const s of (e.strokes || [])) {
+            if (!s || s.length < 4) continue;
+            let d = 'M' + (s[0] * 100).toFixed(1) + ' ' + (s[1] * 62).toFixed(1);
+            for (let i = 2; i < s.length; i += 2) d += ' L' + (s[i] * 100).toFixed(1) + ' ' + (s[i + 1] * 62).toFixed(1);
+            const p = document.createElementNS('http://www.w3.org/2000/svg', 'path');
+            p.setAttribute('d', d);
+            svg.appendChild(p);
+        }
+        return svg;
+    }
+
+    let measurer = null;
+    const pageDims = { w: 520, h: 700 };  // 页面内容区尺寸缓存（照片按高度限宽用）
+    function getMeasurer() {
+        if (!measurer) {
+            measurer = document.createElement('div');
+            measurer.className = 'ls-pagebody ls-measure';
+            $('#lsBook').appendChild(measurer);
+        }
+        const ref = $('.ls-page .ls-pagebody');
+        if (ref) {
+            const r = ref.getBoundingClientRect();
+            measurer.style.width = r.width + 'px';
+            measurer.style.height = r.height + 'px';
+            pageDims.w = r.width; pageDims.h = r.height;
+        } else {
+            // 首帧还没有渲染出书页时的近似回退（减去 pagebody 的内边距）
+            const pr = $('#lsPageR').getBoundingClientRect();
+            measurer.style.width = Math.max(100, pr.width - 68) + 'px';
+            measurer.style.height = Math.max(100, pr.height - 74) + 'px';
+            pageDims.w = Math.max(100, pr.width - 68); pageDims.h = Math.max(100, pr.height - 74);
+        }
+        return measurer;
+    }
+    function paginateChapter(ch) {
+        const entries = chEntries(ch.id);
+        const m = getMeasurer();
+        m.innerHTML = '';
+        const head = document.createElement('div');
+        head.className = 'ls-chhead';
+        head.innerHTML = '<span class="ls-chtitle"></span><span class="ls-seal">' + esc(ch.short) + '</span>';
+        head.querySelector('.ls-chtitle').textContent = ch.icon + ' ' + ch.title;
+        m.appendChild(head);
+        const pages = [];
+        let cur = [];
+        let firstPage = true;
+        for (let i = 0; i < entries.length; i++) {
+            const el = renderEntryEl(ch.id, i, entries[i]);
+            m.appendChild(el);
+            if (m.scrollHeight > m.clientHeight + 2 && cur.length > 0) {
+                pages.push({ kind: PAGE_KINDS.BODY, ch: ch.id, items: cur, first: firstPage });
+                firstPage = false;
+                cur = [];
+                m.innerHTML = '';
+                m.appendChild(renderEntryEl(ch.id, i, entries[i]));
+            }
+            cur.push(i);
+        }
+        pages.push({ kind: PAGE_KINDS.BODY, ch: ch.id, items: cur, first: firstPage });
+        m.innerHTML = '';
+        return pages;
+    }
+    function rebuildBook(opts) {
+        detectSpread();
+        const keep = opts && opts.keepPage ? currentLocator() : null;
+        const pages = [{ kind: PAGE_KINDS.COVER }];
+        // 双页模式：目录和每一章都从左页开始，末尾不足补空白页——一个对开面永远只属于一个章节
+        const tocPages = paginateToc();
+        pages.push(...tocPages);
+        if (state.spread && tocPages.length % 2 === 1) pages.push({ kind: 'blank' });
+        for (const ch of CFG.chapters) {
+            if (state.readonly && !chEntries(ch.id).length) continue;
+            const chPages = paginateChapter(ch);
+            pages.push(...chPages);
+            if (state.spread && chPages.length % 2 === 1) pages.push({ kind: 'blank' });
+        }
+        // 隐藏的第八章：未寄出的信（分享视图里没有信就整章不出现）
+        if (!state.readonly || state.letters.length) {
+            const lPages = paginateLetters();
+            pages.push(...lPages);
+            if (state.spread && lPages.length % 2 === 1) pages.push({ kind: 'blank' });
+        }
+        state.pages = pages;
+        if (keep) restoreLocator(keep);
+        clampPage();
+        renderSpread();
+        renderBookmarks();
+    }
+    function currentLocator() {
+        const p = state.pages[state.pageIdx];
+        if (!p) return null;
+        if (p.kind !== PAGE_KINDS.BODY) return { kind: p.kind };
+        return { kind: p.kind, ch: p.ch, entry: p.items.length ? p.items[0] : 0 };
+    }
+    function restoreLocator(loc) {
+        if (!loc) return;
+        if (loc.kind !== PAGE_KINDS.BODY) {
+            state.pageIdx = Math.max(0, state.pages.findIndex((p) => p.kind === loc.kind));
+            return;
+        }
+        let best = -1;
+        state.pages.forEach((p, i) => {
+            if (p.kind === PAGE_KINDS.BODY && p.ch === loc.ch && p.items[0] <= loc.entry) best = i;
+        });
+        if (best >= 0) state.pageIdx = best;
+    }
+    function chapterFirstPage(chId) {
+        return state.pages.findIndex((p) => p.kind === PAGE_KINDS.BODY && p.ch === chId);
+    }
+    function chapterLastPage(chId) {
+        let last = -1;
+        state.pages.forEach((p, i) => { if (p.kind === PAGE_KINDS.BODY && p.ch === chId) last = i; });
+        return last;
+    }
+    function clampPage() {
+        state.pageIdx = Math.max(0, Math.min(state.pageIdx, state.pages.length - 1));
+        if (state.spread && state.pageIdx > 0 && state.pageIdx % 2 === 0) state.pageIdx--;
+        // 双页模式：封面单独占右页（pageIdx 0）；正文从奇数页开始成对
+    }
+
+    // ===================== 页面渲染 =====================
+    function pageHtml(p) {
+        if (p && p.kind === PAGE_KINDS.COVER) return coverHtml();
+        return '';
+    }
+    function coverHtml() {
+        const title = state.meta.title || ((state.readonly ? (state.meta.authorName || state.sharedFrom) : displayName() || '我') + '的回忆录');
+        const sub = state.profile.birthYear ? esc(state.profile.birthYear) + ' 年起' : '一生的故事';
+        return '<div class="ls-cover"><div class="ls-cover-frame">' +
+            '<div class="ls-cover-title">' + esc(title).split('').join('<br>') + '</div>' +
+            '<div class="ls-cover-seal">岁月<br>留声</div>' +
+            '<div class="ls-cover-sub">' + sub.split('').join('<br>') + '</div>' +
+            '</div></div>';
+    }
+    function tocRowEl(ch) {
+        const n = answerCount(ch.id);
+        const st = chInfo(ch.id).written ? '已成文' : (n > 0 ? '已记 ' + n + ' 句' : '待开启');
+        const b = document.createElement('button');
+        b.className = 'ls-tocrow';
+        b.dataset.ch = ch.id;
+        b.innerHTML = '<span class="ls-tocicon">' + ch.icon + '</span>' +
+            '<span class="ls-toctitle">' + esc(ch.title) + '</span>' +
+            '<span class="ls-tocdots"></span>' +
+            '<span class="ls-tocst">' + st + '</span>';
+        return b;
+    }
+    function tocHeadEl() {
+        const d = document.createElement('div');
+        d.className = 'ls-tochead';
+        d.textContent = '目 录';
+        return d;
+    }
+    function tocHintEl() {
+        const d = document.createElement('div');
+        d.className = 'ls-tochint';
+        d.textContent = '点章节名，或点上方书签，翻到那一章';
+        return d;
+    }
+    // 目录也按页高分页，放不下的章节行流到下一页
+    function paginateToc() {
+        const list = CFG.chapters.filter((ch) => !(state.readonly && !chEntries(ch.id).length));
+        const m = getMeasurer();
+        m.innerHTML = '';
+        m.appendChild(tocHeadEl());
+        const pages = [];
+        let cur = [];
+        let first = true;
+        for (const ch of list) {
+            m.appendChild(tocRowEl(ch));
+            if (m.scrollHeight > m.clientHeight + 2 && cur.length > 0) {
+                pages.push({ kind: PAGE_KINDS.TOC, items: cur, first });
+                first = false;
+                cur = [];
+                m.innerHTML = '';
+                m.appendChild(tocRowEl(ch));
+            }
+            cur.push(ch.id);
+        }
+        // 提示行：能放下才放在最后一页
+        m.appendChild(tocHintEl());
+        const hintFits = m.scrollHeight <= m.clientHeight + 2;
+        pages.push({ kind: PAGE_KINDS.TOC, items: cur, first, hint: hintFits });
+        m.innerHTML = '';
+        return pages;
+    }
+    // ---------- 扉页（封面翻开后的左页）：题词 + 今日话头 ----------
+    function defaultDedication() {
+        const name = state.readonly ? (state.meta.authorName || '') : displayName();
+        return '谨以此书，\n献给我爱的家人。' + (name ? '\n—— ' + name : '');
+    }
+    function todayHintData() {
+        if (state.readonly) return null;
+        const fresh = CFG.chapters.find((c) => !chEntries(c.id).length);
+        if (fresh) return { ch: fresh.id, text: '今天想讲讲「' + fresh.title + '」的事吗？点这里开始' };
+        let best = null, bt = -1;
+        for (const c of CFG.chapters) for (const e of chEntries(c.id)) if ((e.ts || 0) > bt) { bt = e.ts || 0; best = c; }
+        return best ? { ch: best.id, text: '上次讲到「' + best.title + '」，今天接着聊聊？' } : null;
+    }
+    function flyleafHtml() {
+        const total = CFG.chapters.reduce((n, c) => n + chEntries(c.id).length, 0);
+        if (!total && !state.readonly) {
+            return '<div class="ls-dedic ls-guide">这本书还空着呢。<br>点右上角的丝带书签选一个篇章，<br>按下面的 🎙️ 说上一句，<br>您的回忆录就开始了。</div>';
+        }
+        const text = state.meta.dedication || defaultDedication();
+        let html = '<div class="ls-dedic">' + esc(text).replace(/\n/g, '<br>') + '</div>';
+        if (!state.readonly) html += '<div class="ls-dedic-edit">✏️ 点题词，可以改成您想说的话</div>';
+        const hint = todayHintData();
+        if (hint) html += '<button class="ls-todayhint" data-ch="' + esc(hint.ch) + '">🖋️ ' + esc(hint.text) + '</button>';
+        return html;
+    }
+    function openDedicationEdit() {
+        state.editTarget = { dedication: true };
+        $('#lsEditInput').value = state.meta.dedication || defaultDedication();
+        $('#lsEditRaw').hidden = true;
+        $('#lsEditOverlay').hidden = false;
+        try { $('#lsEditInput').focus(); } catch (_) {}
+    }
+
+    function fillBodyPage(el, p) {
+        el.innerHTML = '';
+        const body = document.createElement('div');
+        body.className = 'ls-pagebody';
+        if (p && p.kind === PAGE_KINDS.BODY) {
+            const ch = chapterById(p.ch);
+            body.dataset.pageIdx = String(state.pages.indexOf(p));  // 照片拖拽落点用
+            body.dataset.ch = p.ch;
+            if (p.first) {
+                const head = document.createElement('div');
+                head.className = 'ls-chhead';
+                head.innerHTML = '<span class="ls-chtitle"></span><span class="ls-seal">' + esc(ch.short) + '</span>';
+                head.querySelector('.ls-chtitle').textContent = ch.icon + ' ' + ch.title;
+                body.appendChild(head);
+            }
+            const entries = chEntries(p.ch);
+            for (const i of p.items) {
+                if (entries[i]) body.appendChild(renderEntryEl(p.ch, i, entries[i]));
+            }
+            if (p.first && !p.items.length && !state.readonly) {
+                const hint = document.createElement('div');
+                hint.className = 'ls-pagehint';
+                hint.textContent = '这一页还空着。按下面的砚台 🎙️ 说说「' + ch.title + '」，魔法笔就开始写啦。';
+                body.appendChild(hint);
+            }
+        } else if (p && p.kind === PAGE_KINDS.TOC) {
+            if (p.first) body.appendChild(tocHeadEl());
+            for (const id of (p.items || [])) {
+                const ch = chapterById(id);
+                if (ch) body.appendChild(tocRowEl(ch));
+            }
+            if (p.hint) body.appendChild(tocHintEl());
+        } else if (p && p.kind === PAGE_KINDS.COVER) {
+            body.classList.add('ls-special');
+            body.innerHTML = pageHtml(p);
+        } else if (p && p.kind === 'flyleaf') {
+            body.classList.add('ls-flyleaf');
+            body.innerHTML = flyleafHtml();
+        } else if (p && p.kind === 'letters') {
+            body.classList.add('ls-letterspage');
+            lettersPageEl(p, body);
+        } else {
+            body.classList.add('ls-blank');
+        }
+        el.appendChild(body);
+        const no = state.pages.indexOf(p);
+        if (p && p.kind === PAGE_KINDS.BODY && no > 0) {
+            const num = document.createElement('div');
+            num.className = 'ls-pageno';
+            num.textContent = String(no - 1);
+            el.appendChild(num);
+        }
+        bindPageEvents(el);
+    }
+    function bindPageEvents(el) {
+        el.querySelectorAll('.ls-tocrow').forEach((b) => {
+            b.addEventListener('click', (ev) => { ev.stopPropagation(); gotoChapter(b.dataset.ch, true); });
+        });
+        el.querySelectorAll('.ls-entry').forEach((d) => {
+            if (d.__lsBound) return; d.__lsBound = true;
+            d.addEventListener('click', (ev) => {
+                if (state.writing || state.drawTarget) return;
+                if (state.photoDragging || Date.now() - (state.photoDropped || 0) < 350) return;  // 刚拖完不当点击
+                const chId = d.dataset.ch, idx = +d.dataset.idx;
+                const e = chEntries(chId)[idx];
+                if (!e) return;
+                ev.stopPropagation();
+                if (e.t === 'q' && d.classList.contains('answered')) {
+                    // 收起的旧问题：点一下展开/收起
+                    d.classList.toggle('open');
+                    return;
+                }
+                if (e.t === 'voice' && ev.target.closest('.ls-vbubble')) {
+                    // 点气泡 = 播放/暂停原声（分享阅读也能听）
+                    toggleVoicePlay(e, d);
+                    return;
+                }
+                if (state.readonly) {
+                    // 只读分享：点长者的话可看原话
+                    const raw = d.querySelector('.ls-rawline');
+                    if (raw) raw.hidden = !raw.hidden;
+                    return;
+                }
+                if (e.t === 'draw') { resumeDrawing(chId, idx); return; }
+                if (e.t === 'q') {
+                    // 点问题便签 = 准备回答：高亮、再读一遍、提示按麦克风
+                    state.activeCh = chId;
+                    focusQuestion(d, e);
+                    return;
+                }
+                openEntryMenu(chId, idx);
+            });
+            const swap = d.querySelector('.ls-qswap');
+            if (swap) swap.addEventListener('click', (ev) => {
+                ev.stopPropagation();
+                if (state.writing || state.sending) return;
+                changeQuestion(d.dataset.ch, +d.dataset.idx);
+            });
+            d.querySelectorAll('.ls-qhint').forEach((hb) => {
+                hb.addEventListener('click', (ev) => {
+                    ev.stopPropagation();
+                    if (state.writing || state.sending) return;
+                    changeQuestion(d.dataset.ch, +d.dataset.idx, hb.textContent);
+                });
+            });
+            if ((d.classList.contains('ls-e-photo') || d.classList.contains('ls-e-voice')) && !state.readonly) bindPhotoDrag(d);
+        });
+        el.querySelectorAll('.ls-cover').forEach((c) => {
+            c.addEventListener('click', (ev) => { ev.stopPropagation(); flipTo(1); });
+        });
+        const ded = el.querySelector('.ls-dedic:not(.ls-guide)');
+        if (ded && !state.readonly) ded.addEventListener('click', (ev) => { ev.stopPropagation(); openDedicationEdit(); });
+        const th = el.querySelector('.ls-todayhint');
+        if (th) th.addEventListener('click', (ev) => { ev.stopPropagation(); gotoChapter(th.dataset.ch); });
+    }
+    // ---------- 照片/原声拖拽：拖起来，松手放到书页上的新位置 ----------
+    function bindPhotoDrag(ph) {
+        ph.addEventListener('pointerdown', (ev) => {
+            if (state.writing || state.drawTarget || state.sending) return;
+            const chId = ph.dataset.ch, idx = +ph.dataset.idx;
+            const startX = ev.clientX, startY = ev.clientY;
+            let ghost = null;
+            const onMove = (mv) => {
+                if (!ghost) {
+                    if (Math.hypot(mv.clientX - startX, mv.clientY - startY) < 12) return;
+                    state.photoDragging = true;
+                    ph.classList.add('dragging');
+                    const img = ph.querySelector('img');
+                    if (img) {
+                        ghost = document.createElement('img');
+                        ghost.src = img.src;
+                        ghost.className = 'ls-dragghost';
+                    } else {
+                        ghost = document.createElement('div');
+                        ghost.className = 'ls-dragghost ls-dragghost-voice';
+                        ghost.textContent = '🎙️';
+                    }
+                    document.body.appendChild(ghost);
+                }
+                ghost.style.left = mv.clientX + 'px';
+                ghost.style.top = mv.clientY + 'px';
+            };
+            const onUp = (uv) => {
+                window.removeEventListener('pointermove', onMove);
+                window.removeEventListener('pointerup', onUp);
+                window.removeEventListener('pointercancel', onUp);
+                if (!ghost) return;  // 没拖起来，当普通点击处理
+                ghost.remove();
+                ph.classList.remove('dragging');
+                state.photoDropped = Date.now();
+                setTimeout(() => { state.photoDragging = false; }, 0);
+                const drop = resolvePhotoDrop(uv.clientX, uv.clientY, chId, idx);
+                if (drop) { movePhotoEntry(chId, idx, drop); toast(ph.classList.contains('ls-e-voice') ? '挪好了 🎙️' : '挪好了 📷'); }
+            };
+            window.addEventListener('pointermove', onMove);
+            window.addEventListener('pointerup', onUp);
+            window.addEventListener('pointercancel', onUp);
+        });
+    }
+    // 松手位置 -> 应插入到哪一章的第几条
+    function resolvePhotoDrop(x, y, srcCh, srcIdx) {
+        const t = document.elementFromPoint(x, y);
+        if (!t) return null;
+        const entryEl = t.closest && t.closest('.ls-entry');
+        if (entryEl) {
+            if (entryEl.dataset.ch === srcCh && +entryEl.dataset.idx === srcIdx) return null;  // 放回了原处
+            const r = entryEl.getBoundingClientRect();
+            const ch = entryEl.dataset.ch, idx = +entryEl.dataset.idx;
+            if (entryEl.classList.contains('ls-e-photo')) {
+                // 落在照片下沿 -> 另起一行；落在照片左/右半 -> 尽量同一行
+                if (y > r.top + r.height * 0.68) return { ch, idx: idx + 1, newline: true };
+                return { ch, idx: idx + (x < r.left + r.width / 2 ? 0 : 1), sameRow: true };
+            }
+            // 落在文字上按上下分：放到这段文字的前面或后面
+            return { ch, idx: idx + (y < r.top + r.height / 2 ? 0 : 1) };
+        }
+        const bodyEl = t.closest && t.closest('.ls-pagebody');
+        if (bodyEl && bodyEl.dataset.ch) {
+            const pg = state.pages[+bodyEl.dataset.pageIdx];
+            if (pg && pg.kind === PAGE_KINDS.BODY) {
+                return { ch: pg.ch, idx: pg.items.length ? pg.items[pg.items.length - 1] + 1 : chEntries(pg.ch).length };
+            }
+        }
+        return null;
+    }
+    function movePhotoEntry(srcCh, srcIdx, drop) {
+        const src = chEntries(srcCh);
+        const entry = src[srcIdx];
+        if (!entry) return;
+        let dstIdx = drop.idx;
+        src.splice(srcIdx, 1);
+        if (drop.ch === srcCh && dstIdx > srcIdx) dstIdx--;
+        const dst = chEntries(drop.ch);
+        dstIdx = Math.max(0, Math.min(dstIdx, dst.length));
+        dst.splice(dstIdx, 0, entry);
+        if (drop.newline) {
+            entry.br = true;  // 放到图片下方：另起一行
+        } else if (drop.sameRow) {
+            entry.br = false;  // 放到图片旁边：尽量同一行
+            const prev = dst[dstIdx - 1], next = dst[dstIdx + 1];
+            const partner = (prev && prev.t === 'photo') ? prev : ((next && next.t === 'photo') ? next : null);
+            if (partner) {
+                if (partner === next && next.br) { entry.br = true; next.br = false; }  // 插到行首，接过换行标记
+                if (photoWidth(entry) + photoWidth(partner) > 94) { entry.scale = 1; partner.scale = 1; }  // 挤不下就一起缩成两张一行
+            }
+        }
+        scheduleSave('entries', srcCh);
+        if (drop.ch !== srcCh) scheduleSave('entries', drop.ch);
+        rebuildBook({ keepPage: true });
+    }
+
+    function renderSpread() {
+        detectSpread();
+        const leftEl = $('#lsPageL'), rightEl = $('#lsPageR');
+        if (state.spread) {
+            $('#lsBook').classList.remove('single');
+            const li = state.pageIdx % 2 === 1 ? state.pageIdx : state.pageIdx - 1;
+            // 封面（idx0）单独显示在右侧，左侧是扉页（题词页）
+            if (state.pageIdx === 0) {
+                fillBodyPage(leftEl, { kind: 'flyleaf' });
+                fillBodyPage(rightEl, state.pages[0]);
+            } else {
+                fillBodyPage(leftEl, state.pages[li] || null);
+                fillBodyPage(rightEl, state.pages[li + 1] || null);
+            }
+        } else {
+            $('#lsBook').classList.add('single');
+            fillBodyPage(rightEl, state.pages[state.pageIdx] || null);
+            fillBodyPage(leftEl, null);
+        }
+        renderBookmarks();
+        updateTray();
+    }
+    function detectSpread() {
+        const w = innerWidth, h = innerHeight;
+        state.spread = w > h * 1.12 && w > 760;
+    }
+
+    // ===================== 翻页 =====================
+    function visiblePages() {
+        if (!state.spread) return [state.pageIdx];
+        if (state.pageIdx === 0) return [0];
+        const li = state.pageIdx % 2 === 1 ? state.pageIdx : state.pageIdx - 1;
+        return [li, li + 1];
+    }
+    function flipTo(target, instant) {
+        target = Math.max(0, Math.min(target, state.pages.length - 1));
+        if (state.spread && target > 0 && target % 2 === 0) target--;
+        if (target === state.pageIdx || state.flipping) { if (target === state.pageIdx) renderSpread(); return; }
+        const forward = target > state.pageIdx;
+        if (instant) { state.pageIdx = target; renderSpread(); return; }
+        // 3D 翻页：一张活页绕书脊翻转。
+        // 关键点：底下的书页会立刻换成目标页，所以要在“活页落下才盖住”的那一侧
+        // 垫一层旧页内容（underlay），动画结束一起移除，避免文字瞬跳。
+        state.flipping = true;
+        const book = $('#lsBook');
+        const oldIdx = state.pageIdx;
+        const oldLi = oldIdx % 2 === 1 ? oldIdx : oldIdx - 1; // 双页模式下旧的左页下标
+        const sheet = document.createElement('div');
+        sheet.className = 'ls-sheet' + (forward ? '' : ' back');
+        const front = document.createElement('div'); front.className = 'ls-sheetface front';
+        const backf = document.createElement('div'); backf.className = 'ls-sheetface backf';
+        sheet.appendChild(front); sheet.appendChild(backf);
+        const underlay = document.createElement('div');
+        underlay.className = 'ls-underlay ' + (forward ? 'fw' : 'bk');
+        const reveal = document.createElement('div');
+        reveal.className = 'ls-revealshade ' + (forward ? 'fw' : 'bk');
+        if (state.spread) {
+            if (forward) {
+                // 活页正面 = 旧右页，背面 = 新左页；左边垫旧左页
+                fillBodyPage(front, oldIdx === 0 ? state.pages[0] : (state.pages[oldLi + 1] || null));
+                fillBodyPage(backf, state.pages[target] || null);
+                fillBodyPage(underlay, oldIdx === 0 ? null : (state.pages[oldLi] || null));
+            } else {
+                // 活页正面 = 新右页，背面 = 旧左页；右边垫旧右页
+                fillBodyPage(front, target === 0 ? state.pages[0] : (state.pages[target + 1] || state.pages[target] || null));
+                fillBodyPage(backf, state.pages[oldLi] || null);
+                fillBodyPage(underlay, state.pages[oldLi + 1] || null);
+            }
+        } else if (forward) {
+            fillBodyPage(front, state.pages[oldIdx]);
+            fillBodyPage(backf, state.pages[target]);
+        } else {
+            // 向后翻：活页从左边翻回来，落下的正面 = 目标页，抬起时可见的背面 = 当前页
+            fillBodyPage(front, state.pages[target]);
+            fillBodyPage(backf, state.pages[oldIdx]);
+            fillBodyPage(underlay, state.pages[oldIdx]);
+        }
+        // 单页模式向前翻时活页从第 0 帧就盖满整本书，不需要垫层；
+        // 单页模式向后翻时没有被掀开的一侧，不需要散去的阴影
+        book.appendChild(sheet);
+        if (state.spread || !forward) book.appendChild(underlay);
+        if (state.spread || forward) book.appendChild(reveal);
+        // 底下先换好目标页
+        state.pageIdx = target;
+        renderSpread();
+        requestAnimationFrame(() => sheet.classList.add('go'));
+        // 清理不放在 rAF 里：后台标签页 rAF 不执行，会让 flipping 永远卡住
+        setTimeout(() => { sheet.remove(); underlay.remove(); reveal.remove(); state.flipping = false; }, 620);
+        try { flipSound(); } catch (_) {}
+    }
+    function flipDelta(dir) {
+        const step = state.spread ? 2 : 1;
+        let t = state.pageIdx + dir * step;
+        if (state.pageIdx === 0 && dir > 0) t = 1;
+        flipTo(t);
+    }
+    // 书签 = 接着聊（翻到最后一页的待答便签）；目录 = 从头看（fromStart）
+    function gotoChapter(chId, fromStart) {
+        const first = chapterFirstPage(chId);
+        state.activeCh = chId;
+        if (first < 0) startChapter(chId);
+        else flipTo(fromStart ? first : chapterLastPage(chId));
+        renderBookmarks();
+        updateTray();
+    }
+    // 轻微的翻纸声
+    let audioCtx = null;
+    function flipSound() {
+        if (!audioCtx) audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+        const ctx = audioCtx, t = ctx.currentTime;
+        const buf = ctx.createBuffer(1, ctx.sampleRate * 0.18, ctx.sampleRate);
+        const d = buf.getChannelData(0);
+        for (let i = 0; i < d.length; i++) d[i] = (Math.random() * 2 - 1) * Math.pow(1 - i / d.length, 2.2) * 0.5;
+        const src = ctx.createBufferSource(); src.buffer = buf;
+        const f = ctx.createBiquadFilter(); f.type = 'bandpass'; f.frequency.value = 2600; f.Q.value = 0.7;
+        const g = ctx.createGain(); g.gain.setValueAtTime(0.25, t);
+        src.connect(f); f.connect(g); g.connect(ctx.destination);
+        src.start(t);
+    }
+
+    // ===================== 书签 =====================
+    function renderBookmarks() {
+        const wrap = $('#lsMarks');
+        const vis = visiblePages();
+        const li = vis[0], ri = vis[vis.length - 1];
+        // 每个书签：整章都在当前页之前 -> 左侧；整章都在之后 -> 右侧；正翻开着 -> 大旗标
+        const tabs = [];
+        let tocFirst = -1, tocLast = -1;
+        state.pages.forEach((p, i) => {
+            if (p.kind === PAGE_KINDS.TOC) { if (tocFirst < 0) tocFirst = i; tocLast = i; }
+        });
+        const tocTab = { key: 'toc', icon: '📑', short: '目录', ribbon: '#7a6a4f', first: tocFirst, last: tocLast };
+        for (const ch of CFG.chapters) {
+            if (state.readonly && !chEntries(ch.id).length) continue;
+            tabs.push({ key: ch.id, icon: ch.icon, short: ch.short, ribbon: ch.ribbon,
+                first: chapterFirstPage(ch.id), last: chapterLastPage(ch.id) });
+        }
+        const lFirst = lettersFirstPage();
+        if (lFirst >= 0) {
+            let lLast = -1;
+            state.pages.forEach((p, i) => { if (p.kind === 'letters') lLast = i; });
+            tabs.push({ key: LETTERS_KEY, icon: '✉️', short: '信', ribbon: '#5d556e', first: lFirst, last: lLast });
+        }
+        function tabHtml(t, cur) {
+            const label = esc(t.short).split('').join('<br>');
+            return '<button class="ls-mark' + (cur ? ' cur' : '') + '" data-key="' + t.key + '" ' +
+                'style="--ribbon:' + t.ribbon + '"><i>' + label + '</i></button>';
+        }
+        let left = '', right = '';
+        const all = [tocTab].concat(tabs);
+        for (const t of all) {
+            if (t.first < 0) continue;
+            if (t.last < li) left += tabHtml(t, false);
+            else if (t.first > ri) right += tabHtml(t, false);
+            else {
+                // 正翻开着的章节：加大的真书签，三角尖插进纸面，留在它所属的一侧
+                if (state.spread && t.first > li) right += tabHtml(t, true);
+                else left += tabHtml(t, true);
+            }
+        }
+        wrap.innerHTML = '<div class="ls-mgroup">' + left + '</div><div class="ls-mgroup">' + right + '</div>';
+        wrap.querySelectorAll('.ls-mark').forEach((b) => {
+            b.addEventListener('click', () => {
+                const key = b.dataset.key;
+                if (key === 'toc') { flipTo(1); return; }
+                if (key === LETTERS_KEY) { flipTo(lettersFirstPage()); return; }
+                gotoChapter(key);
+            });
+        });
+    }
+
+    // ===================== 魔法笔书写 =====================
+    const pen = { el: null };
+    function penEl() { if (!pen.el) pen.el = $('#lsPen'); return pen.el; }
+    function movePenTo(rect) {
+        const p = penEl();
+        const host = $('#lsStage').getBoundingClientRect();
+        p.style.opacity = '1';
+        p.style.transform = 'translate(' + (rect.right - host.left - 4) + 'px,' + (rect.top - host.top - 34) + 'px) rotate(-38deg)';
+    }
+    function hidePen() { const p = penEl(); p.style.opacity = '0'; }
+
+    function findEntryEl(chId, idx) {
+        return $('#lsBook').querySelector('.ls-entry[data-ch="' + chId + '"][data-idx="' + idx + '"]');
+    }
+    // 逐字书写 entry 的文字（须已在可见页上）
+    function typewrite(chId, idx, opts) {
+        return new Promise((resolve) => {
+            const el = findEntryEl(chId, idx);
+            const e = chEntries(chId)[idx];
+            if (!el || !e) return resolve();
+            const textEl = el.querySelector('.ls-etext');
+            if (!textEl) return resolve();
+            const full = e.text || '';
+            const speed = (opts && opts.speed) || 70;
+            textEl.innerHTML = '<span class="ls-done"></span><span class="ls-caret"></span>';
+            const doneEl = textEl.querySelector('.ls-done');
+            const caret = textEl.querySelector('.ls-caret');
+            let i = 0;
+            state.writing = true;
+            const timer = setInterval(() => {
+                i++;
+                doneEl.textContent = full.slice(0, i);
+                try { movePenTo(caret.getBoundingClientRect()); } catch (_) {}
+                if (i >= full.length) {
+                    clearInterval(timer);
+                    textEl.textContent = full;
+                    state.writing = false;
+                    hidePen();
+                    resolve();
+                }
+            }, Math.max(24, speed - Math.floor(full.length / 3)));
+        });
+    }
+    // 草稿 -> 魔法落定
+    function magicSettle(chId, idx) {
+        const el = findEntryEl(chId, idx);
+        const e = chEntries(chId)[idx];
+        if (!el || !e) return;
+        el.classList.add('magic');
+        for (let i = 0; i < 5; i++) {
+            const sp = document.createElement('span');
+            sp.className = 'ls-spark';
+            sp.textContent = '✨';
+            sp.style.left = (10 + Math.random() * 80) + '%';
+            sp.style.top = (Math.random() * 70) + '%';
+            sp.style.animationDelay = (Math.random() * 0.5) + 's';
+            el.appendChild(sp);
+        }
+        setTimeout(() => {
+            const fresh = renderEntryEl(chId, idx, e);
+            fresh.classList.add('settle');
+            el.replaceWith(fresh);
+            bindPageEvents(fresh.parentElement || $('#lsBook'));
+            // 内容变短/变长后可能溢出 -> 重排
+            setTimeout(() => { rebuildBook({ keepPage: true }); }, 900);
+        }, 1100);
+    }
+
+    // 追加 entry 并翻到它所在的页
+    function appendEntry(chId, entry) {
+        const entries = chEntries(chId);
+        entries.push(entry);
+        scheduleSave('entries', chId);
+        rebuildBook({ keepPage: true });
+        const last = chapterLastPage(chId);
+        if (!visiblePages().includes(last)) flipTo(last);
+        return entries.length - 1;
+    }
+
+    // ===================== 对话流程 =====================
+    async function startChapter(chId) {
+        const ch = chapterById(chId);
+        if (!ch) return;
+        state.activeCh = chId;
+        if (!chEntries(chId).length) {
+            const name = displayName();
+            const hello = (name ? name + '，您好呀！' : '您好呀！') + '我是您的回忆录小助手。' + ch.starter;
+            const idx = appendEntry(chId, { t: 'q', text: hello, ts: Date.now() });
+            setTimeout(() => { typewrite(chId, idx); speak(hello); }, 650);
+        } else {
+            flipTo(chapterLastPage(chId));
+        }
+        renderBookmarks();
+        updateTray();
+        try { await ensureLogin(); } catch (_) { toast('登录后才能保存您的回忆，请先登录'); }
+    }
+
+    // 语音听写后的「重说」窗口：草稿上纸时出现，写完后再留几秒
+    const redoBar = { st: null };
+    function openRedoBar() {
+        const st = { clicked: false, resolve: null };
+        redoBar.st = st;
+        $('#lsRedoBar').hidden = false;
+        return st;
+    }
+    function waitRedo(st, ms) {
+        return new Promise((res) => {
+            if (st.clicked) return res(true);
+            let done = false;
+            st.resolve = () => { if (!done) { done = true; res(true); } };
+            setTimeout(() => {
+                if (done || st.clicked) return;
+                done = true;
+                if (redoBar.st === st) { redoBar.st = null; $('#lsRedoBar').hidden = true; }
+                res(false);
+            }, ms);
+        });
+    }
+
+    async function submitAnswer(text, opts) {
+        const chId = state.activeCh;
+        const ch = chapterById(chId);
+        if (!ch || !text || state.sending) return;
+        if (!state.started) { state.started = true; post('gameStarted', { roundId: state.roundId }); }
+        state.sending = true;
+        // 1) 草稿写上纸
+        const entry = { t: 'a', text, raw: text, fine: false, ts: Date.now() };
+        const redoSt = (opts && opts.voice) ? openRedoBar() : null;
+        const idx = appendEntry(chId, entry);
+        await typewrite(chId, idx, { speed: 46 });
+        // 听写可能有误：写完再留几秒「重说」的机会，期间不惊动 AI
+        if (redoSt && await waitRedo(redoSt, 4000)) {
+            const i = chEntries(chId).indexOf(entry);
+            if (i >= 0) { chEntries(chId).splice(i, 1); scheduleSave('entries', chId); rebuildBook({ keepPage: true }); }
+            state.sending = false;
+            toggleRecord();  // 直接又开始听
+            return;
+        }
+        state.sessionAnswers++;
+        state.sessionPoints += (CFG.pointsPerAnswer || 15);
+        post('gameProgress', { answers: state.sessionAnswers, points: state.sessionPoints });
+        if (text.length >= 6) extractFacts(ch, text);  // 后台沉淀档案，不阻塞对话
+        // 2) 魔法润色（失败则保留原话）
+        beautify(ch, text).then((fine) => {
+            const i = chEntries(chId).indexOf(entry);
+            if (i < 0) return;  // 已被「重说」撤掉或删除
+            entry.text = fine; entry.fine = true; scheduleSave('entries', chId); magicSettle(chId, i);
+        }).catch((err) => {
+            console.warn('魔法润色失败', err);
+            const i = chEntries(chId).indexOf(entry);
+            if (i < 0) return;
+            entry.fine = true; scheduleSave('entries', chId); magicSettle(chId, i);
+        });
+        // 3) AI 追问（聊得久了就温柔收势，提醒长者歇歇）
+        try {
+            const sess = await ensureSession(ch);
+            let sendText = text;
+            if (state.sessionAnswers % (CFG.restEvery || 8) === 0) {
+                sendText += '\n\n（系统提示，长者看不到这句话：长者已经连着聊了很久。这次请先真诚回应上面的内容，' +
+                    '然后温柔地提议今天先歇一歇，说一句下次想听什么，不要再提问，也不要输出话头。）';
+            }
+            let full = '';
+            const r = await sess.send(sendText, { onChunk: (d) => { if (typeof d === 'string') full += d; } });
+            if (!full && typeof r === 'string') full = r;
+            if (!full && r && r.text) full = r.text;
+            full = stripFence(full).trim();
+            if (!full) throw new Error('empty reply');
+            const parsed = splitHints(full);
+            const qIdx = appendEntry(chId, { t: 'q', text: parsed.text, hints: parsed.hints, ts: Date.now() });
+            speak(parsed.text);  // 边写边读，不让长者干等笔写完
+            await typewrite(chId, qIdx);
+        } catch (e) {
+            console.warn('AI 回复失败', e);
+            const fbText = '嗯嗯，这段我先记下来了。您歇口气，再多给我讲讲当时的情形？';
+            const qIdx = appendEntry(chId, { t: 'q', text: fbText, ts: Date.now() });
+            speak(fbText);
+            await typewrite(chId, qIdx);
+        }
+        state.sending = false;
+        updateTray();
+    }
+
+    // 点问题便签：高亮它、读一遍、让麦克风跳一跳提示「按这里回答」
+    function focusQuestion(el, e) {
+        el.classList.remove('focus');
+        void el.offsetWidth;  // 重新触发动画
+        el.classList.add('focus');
+        const keep = state.profile.voiceOn;
+        state.profile.voiceOn = true; speak(e.text); state.profile.voiceOn = keep;
+        const mic = $('#lsMicBtn');
+        mic.classList.remove('pulse');
+        void mic.offsetWidth;
+        mic.classList.add('pulse');
+        clearTimeout(focusQuestion._t);
+        focusQuestion._t = setTimeout(() => mic.classList.remove('pulse'), 2600);
+    }
+    // 改写当前问题：steer 为空 = 换个问题；'想不起来了' = 换记忆钩子；其他 = 顺着话头问
+    async function changeQuestion(chId, idx, steer) {
+        const ch = chapterById(chId);
+        const e = chEntries(chId)[idx];
+        if (!ch || !e || e.t !== 'q' || state.sending) return;
+        state.sending = true;
+        stopSpeak();
+        toast(steer && steer !== '想不起来了' ? '好嘞，那咱就说说「' + steer + '」…' : '好嘞，我想想换个什么问题…');
+        try {
+            const tail = '如果合适，最后另起一行输出「话头：词A｜词B」。';
+            let sys = buildChatSystemPrompt(ch);
+            let userMsg;
+            if (steer === '想不起来了') {
+                userMsg = '长者说这个问题想不起来了：「' + (e.text || '') + '」。请先安慰一句（想不起来很正常，不着急这类），' +
+                    '再借那个年代常见的生活细节（老物件、吃食、声音、集市、广播…）换一个更容易唤起回忆的小问题。只输出这一两句话。' + tail;
+            } else if (steer) {
+                userMsg = '长者对「' + steer + '」有话想说。请顺着这个话头，问一个具体的小问题（当时的人、地点、声音、气味、心情）。只输出这一两句话。' + tail;
+            } else {
+                sys += '\n补充：长者不太想回答你刚提的问题，请换一个角度完全不同的新问题。';
+                userMsg = '刚才的问题是：「' + (e.text || '') + '」。请先用半句话轻松接住（比如「没关系，咱聊点别的」），' +
+                    '再问一个角度完全不同的新问题。只输出这一两句话本身。' + tail;
+            }
+            const out = stripFence(await aiOneShot(sys, userMsg, 'lifestory_swapq')).trim();
+            if (!out) throw new Error('empty swap');
+            const parsed = splitHints(out);
+            e.text = parsed.text; e.hints = parsed.hints; e.ts = Date.now();
+            delete state.sessions[chId];  // 下一轮对话按换过的问题重新续上
+            scheduleSave('entries', chId);
+            rebuildBook({ keepPage: true });
+            const last = chapterLastPage(chId);
+            if (!visiblePages().includes(last)) flipTo(last);
+            speak(parsed.text);
+            await typewrite(chId, idx);
+        } catch (err) {
+            console.warn('换问题失败', err);
+            toast('换问题没成功，请再试一次');
+        }
+        state.sending = false;
+    }
+
+    // ===================== 画画（神笔） =====================
+    function startDrawing() {
+        if (!state.activeCh) { toast('先点一个丝带书签，翻到想画的篇章'); return; }
+        const chId = state.activeCh;
+        const idx = appendEntry(chId, { t: 'draw', strokes: [], ts: Date.now() });
+        state.drawTarget = { ch: chId, idx, isNew: true };
+        setTimeout(() => enterDrawMode(), 350);
+    }
+    // 点书页上已画好的画 -> 接着画
+    function resumeDrawing(chId, idx) {
+        state.activeCh = chId;
+        state.drawTarget = { ch: chId, idx, isNew: false };
+        enterDrawMode();
+    }
+    function enterDrawMode() {
+        const t = state.drawTarget;
+        if (!t) return;
+        const el = findEntryEl(t.ch, t.idx);
+        if (!el) { state.drawTarget = null; return; }
+        const entry0 = chEntries(t.ch)[t.idx];
+        if (!Array.isArray(entry0.strokes)) entry0.strokes = [];
+        t.orig = JSON.parse(JSON.stringify(entry0.strokes));  // 「不画了」时恢复原样
+        el.classList.add('drawing');
+        const pad = document.createElement('div');
+        pad.className = 'ls-drawpad';
+        el.appendChild(pad);
+        $('#lsDrawBar').hidden = false;
+        $('#lsTray').hidden = true;
+        let cur = null;
+        const entry = chEntries(t.ch)[t.idx];
+        function pt(ev) {
+            const r = el.getBoundingClientRect();
+            const x = Math.min(1, Math.max(0, (ev.clientX - r.left) / r.width));
+            const y = Math.min(1, Math.max(0, (ev.clientY - r.top) / r.height));
+            return [x, y];
+        }
+        function redraw() {
+            const old = el.querySelector('svg');
+            const svg = drawSvg(entry);
+            if (old) old.replaceWith(svg); else el.insertBefore(svg, pad);
+        }
+        pad.addEventListener('pointerdown', (ev) => {
+            ev.preventDefault();
+            pad.setPointerCapture(ev.pointerId);
+            const [x, y] = pt(ev);
+            cur = [x, y];
+            entry.strokes.push(cur);
+        });
+        pad.addEventListener('pointermove', (ev) => {
+            if (!cur) return;
+            const [x, y] = pt(ev);
+            cur.push(x, y);
+            redraw();
+        });
+        const up = () => { cur = null; scheduleSave('entries', t.ch); };
+        pad.addEventListener('pointerup', up);
+        pad.addEventListener('pointercancel', up);
+        state.drawCtx = { el, pad, entry, redraw };
+    }
+    function endDrawMode(cancel) {
+        const t = state.drawTarget, c = state.drawCtx;
+        $('#lsDrawBar').hidden = true;
+        $('#lsTray').hidden = state.readonly;
+        state.drawTarget = null; state.drawCtx = null;
+        if (!t) return;
+        if (cancel) {
+            if (t.isNew) chEntries(t.ch).splice(t.idx, 1);
+            else chEntries(t.ch)[t.idx].strokes = t.orig || [];
+        } else if (!(chEntries(t.ch)[t.idx].strokes || []).length) {
+            chEntries(t.ch).splice(t.idx, 1);
+        }
+        scheduleSave('entries', t.ch);
+        rebuildBook({ keepPage: true });
+    }
+    function undoStroke() {
+        const c = state.drawCtx;
+        if (!c || !c.entry.strokes.length) return;
+        c.entry.strokes.pop();
+        c.redraw();
+    }
+    // 简笔画 -> 白底黑线的图片（作为 genImage 的参考图）
+    function strokesToDataUrl(entry) {
+        const W = 1000, H = 620;
+        const cv = document.createElement('canvas');
+        cv.width = W; cv.height = H;
+        const ctx = cv.getContext('2d');
+        ctx.fillStyle = '#ffffff'; ctx.fillRect(0, 0, W, H);
+        ctx.strokeStyle = '#222222'; ctx.lineWidth = 14; ctx.lineCap = 'round'; ctx.lineJoin = 'round';
+        for (const s of (entry.strokes || [])) {
+            if (!s || s.length < 4) continue;
+            ctx.beginPath();
+            ctx.moveTo(s[0] * W, s[1] * H);
+            for (let i = 2; i < s.length; i += 2) ctx.lineTo(s[i] * W, s[i + 1] * H);
+            ctx.stroke();
+        }
+        return cv.toDataURL('image/png');
+    }
+    // ✨ 把手绘的简笔画根据本章回忆变成一幅真正的 2D 插画（保留 strokes 可改回手绘）
+    async function sketchToImage() {
+        const t = state.drawTarget;
+        if (!t) return;
+        const entry = chEntries(t.ch)[t.idx];
+        if (!entry || !(entry.strokes || []).length) { toast('先画上几笔，我才好帮您变呀 🖌️'); return; }
+        const ch = chapterById(t.ch);
+        busy('魔法笔正在把您的画变成图片（约半分钟）…');
+        try {
+            const sdk = await ensureSdk();
+            if (!sdk.aiGenerators || !sdk.aiGenerators.genImage) throw new Error('genImage unavailable');
+            const sketch = strokesToDataUrl(entry);
+            const ctxTexts = chEntries(t.ch).filter((e) => e.t === 'a' || e.t === 'narr')
+                .slice(-4).map((e) => e.raw || e.text).join('；').slice(0, 220);
+            const prompt = '参考图是一位长者亲手画的黑白简笔画。请完全保留这幅简笔画的构图、物体和内容，' +
+                '把它画成一幅干净、温暖的2D彩色插画：简洁的手绘水彩风，怀旧温馨，画面中不出现任何文字。' +
+                (ch ? '主题与「' + ch.title + '」的回忆有关。' : '') +
+                (ctxTexts ? '这幅画讲的是：' + ctxTexts : '');
+            const url = await sdk.aiGenerators.genImage(prompt, {
+                width: 2560, height: 1600,  // Seedream 要求 ≥368 万像素
+                images: [{ url: sketch, role: 'reference' }],
+            });
+            if (!url) throw new Error('empty url');
+            entry.t = 'illu'; entry.url = url;
+            state.drawTarget = null; state.drawCtx = null;
+            $('#lsDrawBar').hidden = true;
+            $('#lsTray').hidden = state.readonly;
+            scheduleSave('entries', t.ch);
+            rebuildBook({ keepPage: true });
+            toast('画变成图片啦 🎨 点它还能挪动或改回手绘', 4000);
+        } catch (e) {
+            console.warn('简笔画变图片失败', e);
+            toast('这次没有变成，过一会儿再试试');
+        }
+        unbusy();
+    }
+
+    // ===================== 条目编辑（点书页上的内容） =====================
+    function entryBrief(e) {
+        if (e.t === 'photo') return '这张老照片';
+        if (e.t === 'illu') return '这幅插画';
+        if (e.t === 'voice') return '这段原声（' + fmtDur(e.dur) + '）';
+        const cs = Array.from(String(e.text || ''));  // 按字符截断，避免拆开 emoji
+        return '「' + (cs.length > 24 ? cs.slice(0, 24).join('') + '…' : cs.join('')) + '」';
+    }
+    function openEntryMenu(chId, idx) {
+        const e = chEntries(chId)[idx];
+        if (!e) return;
+        state.activeCh = chId;
+        const isImg = e.t === 'photo' || e.t === 'illu';
+        const isText = e.t === 'a' || e.t === 'narr' || e.t === 'quote';  // 提问不走编辑菜单
+        const isVoice = e.t === 'voice';
+        if (!isImg && !isText && !isVoice) return;
+        const body = $('#lsEntryMenu');
+        let html = '<div class="ls-embrief">' + esc(entryBrief(e)) + '</div>';
+        if (isImg) {
+            html += '<img class="ls-emimg" src="' + esc(e.t === 'photo' ? mediaSrc(e) : (e.url || '')) + '" alt="">';
+            if (e.t === 'photo') {
+                html += '<div class="ls-pbtnrow">' +
+                    '<button class="ls-pbtn" data-act="bigger">🔍 大一点</button>' +
+                    '<button class="ls-pbtn" data-act="smaller">🔎 小一点</button></div>';
+            }
+            html += '<div class="ls-pbtnrow">' +
+                '<button class="ls-pbtn" data-act="up">⬆️ 往上挪</button>' +
+                '<button class="ls-pbtn" data-act="down">⬇️ 往下挪</button></div>';
+            if (e.t === 'illu' && Array.isArray(e.strokes) && e.strokes.length) {
+                html += '<button class="ls-pbtn" data-act="sketch">🖌️ 改回我的手绘</button>';
+            }
+        }
+        if (isVoice) {
+            html += '<div class="ls-pbtnrow">' +
+                '<button class="ls-pbtn" data-act="up">⬆️ 往上挪</button>' +
+                '<button class="ls-pbtn" data-act="down">⬇️ 往下挪</button></div>';
+        }
+        if (isText) html += '<button class="ls-pbtn" data-act="edit">✏️ 改一改这段话</button>';
+        html += '<button class="ls-pbtn" data-act="del">🗑️ 删掉</button>';
+        html += '<button class="ls-pbtn primary" data-act="close">先不动，关闭</button>';
+        body.innerHTML = html;
+        $('#lsEntryOverlay').hidden = false;
+        body.querySelectorAll('button').forEach((b) => {
+            b.addEventListener('click', () => {
+                const act = b.dataset.act;
+                if (act === 'close') { $('#lsEntryOverlay').hidden = true; return; }
+                if (act === 'edit') { $('#lsEntryOverlay').hidden = true; openEditDialog(chId, idx); return; }
+                if (act === 'del') {
+                    // 防误触：要按两下才真的删除
+                    if (!b.dataset.sure) { b.dataset.sure = '1'; b.textContent = '🗑️ 再按一下，真的删掉'; return; }
+                    $('#lsEntryOverlay').hidden = true;
+                    if (e.t === 'voice') stopVoicePlay();
+                    if (e.pend) pendDrop(e.pend);
+                    chEntries(chId).splice(idx, 1);
+                    scheduleSave('entries', chId);
+                    rebuildBook({ keepPage: true });
+                    toast('删掉了');
+                    return;
+                }
+                if (act === 'bigger' || act === 'smaller') {
+                    const cur = e.scale || 1;
+                    const next = Math.round((cur + (act === 'bigger' ? 0.25 : -0.25)) * 100) / 100;
+                    const oldW = photoDisplayWidth(e);
+                    e.scale = next;
+                    const newW = photoDisplayWidth(e);
+                    if (newW === oldW) {
+                        e.scale = cur;
+                        toast(act === 'bigger' ? (photoWidth(e) < 92 ? '再大这一页就放不下啦' : '已经最大啦') : '已经最小啦');
+                        return;
+                    }
+                    $('#lsEntryOverlay').hidden = true;
+                    scheduleSave('entries', chId);
+                    rebuildBook({ keepPage: true });
+                    toast(act === 'bigger' ? '放大了一点 🔍' : '缩小了一点 🔎');
+                    return;
+                }
+                if (act === 'up' || act === 'down') {
+                    const entries = chEntries(chId);
+                    const j = idx + (act === 'up' ? -1 : 1);
+                    if (j < 0 || j >= entries.length) { toast(act === 'up' ? '已经在最前面啦' : '已经在最后面啦'); return; }
+                    const tmp = entries[idx]; entries[idx] = entries[j]; entries[j] = tmp;
+                    $('#lsEntryOverlay').hidden = true;
+                    scheduleSave('entries', chId);
+                    rebuildBook({ keepPage: true });
+                    toast(act === 'up' ? '往上挪好了 ⬆️' : '往下挪好了 ⬇️');
+                    return;
+                }
+                if (act === 'sketch') {
+                    $('#lsEntryOverlay').hidden = true;
+                    e.t = 'draw'; delete e.url;
+                    scheduleSave('entries', chId);
+                    rebuildBook({ keepPage: true });
+                    toast('改回手绘啦，点它可以接着画 🖌️');
+                }
+            });
+        });
+    }
+    function openEditDialog(chId, idx) {
+        const e = chEntries(chId)[idx];
+        if (!e) return;
+        state.editTarget = { ch: chId, idx };
+        $('#lsEditInput').value = e.text || '';
+        const rawEl = $('#lsEditRaw');
+        if (e.t === 'a' && e.raw && e.raw !== e.text) { rawEl.textContent = '您当时的原话：' + e.raw; rawEl.hidden = false; }
+        else rawEl.hidden = true;
+        $('#lsEditOverlay').hidden = false;
+        try { $('#lsEditInput').focus(); } catch (_) {}
+    }
+
+    // ===================== 照片 =====================
+    function readPhotoFile(file) {
+        return new Promise((resolve, reject) => {
+            const fr = new FileReader();
+            fr.onload = () => {
+                const img = new Image();
+                img.onload = () => {
+                    const max = CFG.photoMaxSize || 640;
+                    const scale = Math.min(1, max / Math.max(img.width, img.height));
+                    const w = Math.max(1, Math.round(img.width * scale));
+                    const h = Math.max(1, Math.round(img.height * scale));
+                    const cv = document.createElement('canvas');
+                    cv.width = w; cv.height = h;
+                    cv.getContext('2d').drawImage(img, 0, 0, w, h);
+                    resolve({ dataUrl: cv.toDataURL('image/jpeg', 0.62), w, h });
+                };
+                img.onerror = reject;
+                img.src = fr.result;
+            };
+            fr.onerror = reject;
+            fr.readAsDataURL(file);
+        });
+    }
+    // 照片插到「现在看着的这一页」末尾，而不是章节最后
+    function currentInsertPos() {
+        const vis = visiblePages().map((i) => state.pages[i]).filter((p) => p && p.kind === PAGE_KINDS.BODY);
+        if (!vis.length) return null;
+        const pg = vis.find((p) => p.ch === state.activeCh) || vis[vis.length - 1];
+        return { ch: pg.ch, idx: pg.items.length ? pg.items[pg.items.length - 1] + 1 : chEntries(pg.ch).length };
+    }
+    async function onPhotoPicked(file) {
+        if (!file) return;
+        const pos = currentInsertPos() || (state.activeCh ? { ch: state.activeCh, idx: chEntries(state.activeCh).length } : null);
+        if (!pos) return;
+        const chId = pos.ch;
+        const photoN = chEntries(chId).filter((e) => e.t === 'photo').length;
+        const maxN = CFG.maxPhotosPerChapter || 4;
+        if (photoN >= maxN) { toast('这一章最多贴 ' + maxN + ' 张照片啦'); return; }
+        busy('正在把照片贴到书页上…');
+        try {
+            const p = await readPhotoFile(file);
+            // 和原声同一套存法：CDN 独立文件 > 个人存储单文件 > 本机暂存等补传，绝不内联进 entries JSON
+            const shrunk = await photoBlobUnderLimit(p.dataUrl);
+            const entry = { t: 'photo', w: p.w, h: p.h, ts: Date.now() };
+            try {
+                entry.url = await uploadMediaBlob(shrunk.blob, 'photo', 'jpg', false);
+            } catch (e1) {
+                console.warn('照片传 CDN 失败，改走兜底', e1);
+                const name = 'photos/photo_' + Date.now() + '_' + Math.random().toString(36).slice(2, 7) + '.json';
+                if (await storeWrite(name, { b64: shrunk.dataUrl })) {
+                    entry.ref = name; mediaRefCache.set(name, shrunk.dataUrl);
+                } else {
+                    const pid = pendStash(shrunk.dataUrl);
+                    if (!pid) { unbusy(); toast('照片没有贴上，请先登录再试'); return; }
+                    entry.pend = pid;
+                }
+            }
+            chEntries(chId).splice(pos.idx, 0, entry);
+            scheduleSave('entries', chId);
+            if (entry.url) flushPendingMedia();   // 这次登录成功了：顺手补传以前欠着的
+            rebuildBook({ keepPage: true });
+            const pi = state.pages.findIndex((pg) => pg.kind === PAGE_KINDS.BODY && pg.ch === chId && pg.items.includes(pos.idx));
+            if (pi >= 0 && !visiblePages().includes(pi)) flipTo(pi);
+            toast('照片贴好了 📷 按住可以拖到想放的位置');
+            setTimeout(() => askAboutPhoto(chId, entry), 900);   // 让 AI 凑过来看看这张照片
+        } catch (e) {
+            console.warn('照片处理失败', e);
+            toast('照片没有贴上，换一张试试');
+        }
+        unbusy();
+    }
+
+    // ===================== 整理成文 / 插画 =====================
+    async function writeChapter(chId) {
+        const ch = chapterById(chId);
+        if (!ch) return;
+        if (answerCount(chId) < 2) { toast('先和我多聊几句「' + ch.title + '」，我才好为您动笔呀'); return; }
+        busy('正在为您撰写「' + ch.title + '」…');
+        try {
+            const talk = chEntries(chId).filter((e) => e.t === 'q' || e.t === 'a')
+                .map((e) => (e.t === 'a' ? '长者' : '倾听者') + '：' + (e.raw || e.text)).join('\n');
+            const sys = [
+                '你是一位温柔、文笔细腻的传记作家，为长者撰写回忆录章节。',
+                '根据对话记录，用第一人称（长者的口吻）写一段 300~450 字的回忆录正文：',
+                '只写长者真实讲过的内容，可以润色语言但绝不虚构事实；保留具体的人名、地名、年代与细节；分 2~3 个自然段。',
+                '文字风格：' + (TEXT_STYLES[state.profile.textStyle] || TEXT_STYLES.plain) + '。',
+                '另外提炼一句最打动人的话作为「金句」（20 字以内，可从原话中提取），',
+                '并为本章写一个适合配图的中文画面描述 imagePrompt（40 字以内，描述一个具体场景，不出现人名）。',
+                '严格只输出 JSON，格式：{"narrative":"…","quote":"…","imagePrompt":"…"}',
+            ].join('\n');
+            const userMsg = '章节：' + ch.title + '（' + ch.hint + '）\n' +
+                (displayName() ? '长者称呼：' + displayName() + '\n' : '') +
+                (state.profile.birthYear ? '出生年份：约' + state.profile.birthYear + '\n' : '') +
+                '对话记录：\n' + talk;
+            const out = await aiOneShot(sys, userMsg);
+            const data = parseAiJson(out);
+            if (!data || !data.narrative) throw new Error('bad json');
+            // 移除旧成文，插到章首
+            const entries = chEntries(chId).filter((e) => e.t !== 'narr' && e.t !== 'quote');
+            const head = [];
+            if (data.quote) head.push({ t: 'quote', text: String(data.quote).trim(), ts: Date.now() });
+            for (const p of splitParagraphs(String(data.narrative), 160)) head.push({ t: 'narr', text: p, ts: Date.now() });
+            state.chapters[chId].entries = head.concat(entries);
+            chInfo(chId).written = true;
+            chInfo(chId).imagePrompt = String(data.imagePrompt || '').trim();
+            state.meta.title = state.meta.title || ((displayName() || '我') + '的回忆录');
+            scheduleSave('entries', chId);
+            scheduleSave('meta');
+            state.sessionPoints += (CFG.pointsPerChapterWritten || 40);
+            post('gameProgress', { answers: state.sessionAnswers, points: state.sessionPoints });
+            rebuildBook({ keepPage: false });
+            flipTo(chapterFirstPage(chId));
+            toast('「' + ch.title + '」写好了 ✍️');
+        } catch (e) {
+            console.warn('整理成文失败', e);
+            toast('这次没有写成，请稍后再试一次');
+        }
+        unbusy();
+    }
+    async function genIllustration(chId) {
+        const ch = chapterById(chId);
+        const info = chInfo(chId);
+        if (!info.written) { toast('先点「整理成文」，我才知道画什么呀'); return; }
+        busy('正在为「' + ch.title + '」画插画（约半分钟）…');
+        try {
+            const sdk = await ensureSdk();
+            if (!sdk.aiGenerators || !sdk.aiGenerators.genImage) throw new Error('genImage unavailable');
+            const prompt = (info.imagePrompt || (ch.title + '的温馨回忆场景')) + '，' + (CFG.illustrationStyle || '水墨插画');
+            const url = await sdk.aiGenerators.genImage(prompt, { width: 1024, height: 768 });
+            if (!url) throw new Error('empty url');
+            const entries = chEntries(chId).filter((e) => e.t !== 'illu');
+            const qi = entries.findIndex((e) => e.t === 'narr');
+            entries.splice(qi >= 0 ? qi : 0, 0, { t: 'illu', url, ts: Date.now() });
+            state.chapters[chId].entries = entries;
+            scheduleSave('entries', chId);
+            rebuildBook({ keepPage: false });
+            flipTo(chapterFirstPage(chId));
+            toast('插画画好了 🎨');
+        } catch (e) {
+            console.warn('插画生成失败', e);
+            toast('插画没有画成，请稍后再试');
+        }
+        unbusy();
+    }
+
+    // ===================== 分享 =====================
+    async function shareBook() {
+        const done = CFG.chapters.filter((c) => chEntries(c.id).length);
+        if (!done.length) { toast('这本书还是空的，先聊几句再分享吧'); return; }
+        busy('正在保存并生成分享链接…');
+        try {
+            const user = await ensureLogin();
+            state.meta.author = user.username;
+            state.meta.authorName = displayName();
+            state.meta.updatedAt = Date.now();
+            await storeWrite('meta.json', state.meta);
+            await storeWrite('profile.json', state.profile);
+            for (const c of done) await storeWrite('entries_' + c.id + '.json', state.chapters[c.id]);
+            const url = new URL(location.href);
+            ['token', 'cmd', 'adopt', 'agent', 'story', 'storyUrl'].forEach((k) => url.searchParams.delete(k));
+            url.searchParams.set('from', user.username);
+            url.searchParams.set('book', '1');
+            const link = url.href;
+            const ok = await copyText(link);
+            $('#lsShareLink').textContent = link;
+            $('#lsShareOpen').dataset.href = link;
+            $('#lsShareOverlay').hidden = false;
+            if (ok) toast('链接已复制，去微信粘贴发给家人吧 💌', 4000);
+        } catch (e) {
+            console.warn('分享失败', e);
+            toast('分享没有成功，请确认已登录后再试');
+        }
+        unbusy();
+    }
+    async function makeInteractiveStory() {
+        const done = CFG.chapters.filter((c) => chInfo(c.id).written);
+        if (done.length < 2) { toast('先整理出两章以上回忆录，才够做成互动小游戏'); return; }
+        busy('正在把您的人生做成互动小游戏…');
+        try {
+            const user = await ensureLogin();
+            const source = done.map((c) => '【' + c.title + '】\n' +
+                chEntries(c.id).filter((e) => e.t === 'narr').map((e) => e.text).join('\n')).join('\n\n');
+            const sys = [
+                '你是"人生故事"横版小游戏的剧本作者。把下面的回忆录改写成游戏剧本 Markdown，只输出 Markdown 正文，不要解释、不要代码块围栏。',
+                '格式规则：',
+                '· # 标题 —— 一个人生阶段（章节），建议含年份，按时间先后排列；共 ' + Math.min(done.length, 7) + ' 章。',
+                '· 章节里每行都是 - 开头的列表项：一句话回忆（每章 3~5 条，从回忆录中提取，保留真实细节）。',
+                '· 缩进两个空格的 - 表示更珍贵的回忆（每章最多 1 条）。',
+                '· 可在章首用 - /day /night /rain /city /nature 等命令设置场景氛围（每章 1~2 个）。',
+                '· 不要使用图片、怪物或收集物指令。',
+            ].join('\n');
+            const md = stripFence(await aiOneShot(sys, source)).trim();
+            if (!md || !/^#\s/m.test(md)) throw new Error('bad story md');
+            const store = getStore();
+            const relPath = 'stories/lifestory_' + Date.now().toString(36) + '.md';
+            await store.createFile(relPath, md + '\n');
+            const url = new URL('haqi_devstory.html', location.href);
+            url.searchParams.set('from', user.username);
+            url.searchParams.set('story', relPath);
+            const link = url.href;
+            await copyText(link);
+            $('#lsShareLink').textContent = link;
+            $('#lsShareOpen').dataset.href = link;
+            $('#lsShareOverlay').hidden = false;
+            toast('互动人生做好了！链接已复制 🎮', 4500);
+        } catch (e) {
+            console.warn('互动人生生成失败', e);
+            toast('这次没有做成，请稍后再试');
+        }
+        unbusy();
+    }
+
+    // ===================== 奖励 =====================
+    function claimReward() {
+        if (state.sessionPoints <= 0) return;
+        post('gameFinished', {
+            completed: true,
+            earnedPoints: state.sessionPoints,
+            answers: state.sessionAnswers,
+            roundId: state.roundId,
+            finishedAt: Date.now(),
+        });
+        toast('今天聊得真好，奖励已经发啦 🎁', 3200);
+        state.sessionPoints = 0; state.sessionAnswers = 0;
+        state.roundId = 'lifestory_' + Date.now();
+        state.started = false;
+        updateTray();
+    }
+
+    // ===================== DOM =====================
+    const root = document.createElement('div');
+    root.id = 'lsRoot';
+    root.innerHTML = `
+<style>
+  #lsRoot { position: fixed; inset: 0; overflow: hidden; -webkit-tap-highlight-color: transparent;
+            font-family: "Kaiti SC","STKaiti","KaiTi","楷体","FZKaiTi","AR PL UKai CN",serif;
+            color: #33291c; font-size: 21px;
+            background:
+              radial-gradient(1200px 500px at 50% -10%, #6b4a33, transparent 70%),
+              linear-gradient(165deg, #4c3423, #3a2818 55%, #2e1f12);
+            display: flex; flex-direction: column; align-items: center; }
+  #lsRoot * { box-sizing: border-box; }
+  #lsRoot [hidden] { display: none !important; }
+  #lsRoot button { font-family: inherit; }
+
+  /* ---------- 书与舞台 ---------- */
+  #lsStage { position: relative; flex: 1; width: 100%; display: flex; align-items: flex-end;
+             justify-content: center; perspective: 2200px; min-height: 0; padding: 64px 16px 8px; }
+  #lsBook { position: relative; width: min(1400px, 100%); height: 100%; max-height: 900px;
+            display: flex; transform-style: preserve-3d; }
+  #lsBook.single { width: min(560px, 100%); }
+  .ls-page { position: relative; flex: 1; min-width: 0; overflow: hidden;
+             background:
+               radial-gradient(ellipse 120% 90% at 50% 40%, #faf4e4, #f2e8d0 78%, #e8dabb);
+             box-shadow: 0 12px 40px #0007; }
+  /* 宣纸纹理 */
+  .ls-page::before { content: ''; position: absolute; inset: 0; pointer-events: none; opacity: .5;
+             background-image:
+               repeating-linear-gradient(2deg, transparent 0 5px, #d8c9a422 5px 6px),
+               repeating-linear-gradient(92deg, transparent 0 7px, #cbbb9418 7px 8px);
+  }
+  #lsPageL { border-radius: 10px 2px 2px 10px;
+             box-shadow: inset -28px 0 34px -26px #7a633d88, 0 12px 40px #0007; }
+  #lsPageR { border-radius: 2px 10px 10px 2px;
+             box-shadow: inset 28px 0 34px -26px #7a633d88, 0 12px 40px #0007; }
+  #lsBook.single #lsPageL { display: none; }
+  #lsBook.single #lsPageR { border-radius: 8px; box-shadow: inset 14px 0 26px -22px #7a633d66, 0 12px 40px #0007; }
+  /* 书脊 */
+  #lsSpine { position: absolute; left: 50%; top: 0; bottom: 0; width: 26px; transform: translateX(-50%);
+             background: linear-gradient(90deg, transparent, #3a2a1477 30%, #241708aa 50%, #3a2a1477 70%, transparent);
+             pointer-events: none; z-index: 3; }
+  #lsBook.single #lsSpine { display: none; }
+  /* 书页下面的厚度 */
+  .ls-page::after { content: ''; position: absolute; left: 4px; right: 4px; bottom: -7px; height: 7px;
+             background: repeating-linear-gradient(90deg, #efe6cf 0 3px, #cdbd9b 3px 4px);
+             border-radius: 0 0 6px 6px; }
+
+  .ls-pagebody { position: absolute; inset: 0; padding: 30px 34px 44px; overflow: hidden;
+                 line-height: 1.85; font-size: 21.5px; }
+  .ls-pagebody.ls-blank { background: none; }
+  /* 章末补白页：一枚淡淡的印章水印，表示有意留白 */
+  .ls-pagebody.ls-blank::after { content: '岁月留声'; position: absolute; right: 14%; bottom: 10%;
+             font-size: 19px; letter-spacing: 5px; color: #b03a2a;
+             opacity: .13; border: 2px solid #b03a2a; border-radius: 8px; padding: 8px 8px 8px 13px;
+             transform: rotate(-8deg); }
+  /* ---------- 扉页：题词 + 今日话头 ---------- */
+  .ls-flyleaf { display: flex; flex-direction: column; align-items: center; justify-content: center;
+             text-align: center; }
+  .ls-dedic { font-size: 30px; line-height: 2.1; letter-spacing: 5px; color: #4a3416; font-weight: 600;
+             cursor: pointer; padding: 10px 6px; }
+  .ls-dedic.ls-guide { font-size: 23px; font-weight: 400; color: #8a7452; letter-spacing: 2px; cursor: default; }
+  .ls-dedic-edit { margin-top: 16px; font-size: 15px; color: #b3a075; }
+  .ls-todayhint { position: absolute; bottom: 44px; left: 50%; transform: translateX(-50%) rotate(-.6deg);
+             background: #fdf6df; border: 1.5px dashed #c9a052; border-radius: 10px; padding: 12px 20px;
+             font-size: 18px; color: #6b5327; box-shadow: 1px 2px 6px #0002; max-width: 86%; white-space: normal;
+             line-height: 1.5; }
+  .ls-todayhint:active { background: #f3e6c8; }
+  .ls-pagehint { margin-top: 26%; text-align: center; color: #a5946d; font-size: 19px; line-height: 1.8; padding: 0 8%; }
+  .ls-pageno { position: absolute; bottom: 12px; width: 100%; text-align: center; font-size: 15px; color: #a08d66; }
+  .ls-measure { visibility: hidden; pointer-events: none; z-index: -10; left: 0; top: 0; position: absolute; }
+
+  /* ---------- 章节头 / 印章 ---------- */
+  .ls-chhead { display: flex; align-items: center; justify-content: space-between; margin-bottom: 14px;
+               border-bottom: 1.5px solid #c9b68b; padding-bottom: 10px; }
+  .ls-chtitle { font-size: 27px; font-weight: 700; letter-spacing: 3px; color: #4a3416; }
+  .ls-seal { width: 46px; height: 46px; border-radius: 8px; background: #b03a2a; color: #fdf3e0;
+             display: flex; align-items: center; justify-content: center; font-size: 19px; font-weight: 700;
+             box-shadow: inset 0 0 6px #7c241833; transform: rotate(4deg); flex: none;
+             font-family: inherit; letter-spacing: 1px; }
+
+  /* ---------- 条目 ---------- */
+  .ls-entry { position: relative; margin: 10px 0; word-break: break-word; }
+  /* 小助手的提问：贴在纸上的便签，不是回忆录正文 */
+  .ls-e-q { background: linear-gradient(175deg, #fdf4cf, #f7eab2); border: 1.5px dashed #c9a052;
+             border-radius: 4px 14px 6px 12px; padding: 12px 14px; margin: 16px 2px 14px;
+             box-shadow: 0 3px 9px #00000022; transform: rotate(-.5deg); color: #5a4a22; }
+  .ls-e-q::before { content: ''; position: absolute; left: 50%; top: -8px; width: 58px; height: 16px;
+             transform: translateX(-50%) rotate(-2deg); background: #e8dcb8cc; box-shadow: 0 1px 3px #0002; }
+  .ls-e-q .ls-qmark { display: inline-flex; width: 30px; height: 30px; background: #b03a2a;
+             border-radius: 50%; align-items: center; justify-content: center; font-size: 16px;
+             color: #fdf3e0; margin-right: 10px; vertical-align: -6px; }
+  .ls-e-q .ls-etext { color: #5a4a22; }
+  .ls-qacts { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 10px; align-items: center; }
+  .ls-qhint { height: 40px; padding: 0 16px; border-radius: 999px; border: 1.5px solid #c9a052;
+             background: #fffcf0; color: #6b5327; font-size: 17px; }
+  .ls-qhint:active { background: #f3e6c8; }
+  .ls-qswap { margin-left: auto; height: 40px; padding: 0 14px; border-radius: 999px;
+             border: 1.5px solid #c9a052; background: #fffcf0; color: #8a6a2a; font-size: 16px; }
+  .ls-qswap:active { background: #f3e6c8; }
+  /* 已回答过的问题：收起成一行小字，点一下可展开 */
+  .ls-e-q.answered { background: none; border: none; box-shadow: none; transform: none;
+             padding: 0; margin: 6px 0; opacity: .5; font-size: .75em; }
+  .ls-e-q.answered::before { display: none; }
+  .ls-e-q.answered .ls-qmark { width: 20px; height: 20px; font-size: 12px; background: none;
+             border: 1.2px solid #8d7442; color: #8d7442; margin-right: 6px; vertical-align: -4px; }
+  .ls-e-q.answered .ls-etext { display: inline-block; max-width: calc(100% - 34px); white-space: nowrap;
+             overflow: hidden; text-overflow: ellipsis; vertical-align: bottom; color: #6d5c38; }
+  .ls-e-q.answered.open { opacity: .75; }
+  .ls-e-q.answered.open .ls-etext { display: inline; white-space: normal; max-width: none; }
+  /* 家人留下的问题：粉色便签 */
+  .ls-e-q.family { background: linear-gradient(175deg, #fdeae4, #f9dcd2); border-color: #d99a82; }
+  .ls-e-q.family .ls-qfrom { font-weight: 700; color: #a04a30; margin-bottom: 6px; font-size: 18px; }
+  .ls-e-q.family.answered { background: none; }
+  /* 点问题便签 = 准备回答：便签亮一下 */
+  .ls-e-q.focus { animation: lsQFocus 1.6s ease; }
+  @keyframes lsQFocus {
+    0%, 100% { box-shadow: 0 3px 9px #00000022; }
+    30% { box-shadow: 0 0 0 4px #d9a44166, 0 0 26px #d9a441aa; }
+  }
+  #lsMicBtn.pulse { animation: lsMicNudge .8s ease 3; border-color: #e2a94b; }
+  @keyframes lsMicNudge { 50% { transform: scale(1.12);
+             box-shadow: inset 0 4px 12px #000a, 0 0 26px #e2a94b99; } }
+  .ls-e-a { padding-left: 14px; border-left: 3px solid #c9b68b; }
+  .ls-e-a .ls-etext { color: #1f1a10; }
+  .ls-e-a.draft .ls-etext { color: #8b8271; font-style: italic; }
+  .ls-rawline { display: block; font-size: 16px; color: #a08d66; margin-top: 4px; }
+  .ls-e-quote { text-align: center; font-size: 24px; color: #7a4a1e; margin: 16px 0; letter-spacing: 2px; }
+  .ls-e-narr .ls-etext { text-indent: 2em; display: block; color: #26200f; }
+  .ls-e-photo { text-align: center; display: inline-block; vertical-align: top; margin: 10px 1%;
+             touch-action: none; cursor: grab; user-select: none; -webkit-user-select: none; }
+  .ls-e-photo img { -webkit-user-drag: none; }
+  .ls-e-photo img { width: 94%; height: auto; border: 8px solid #fffef8; border-bottom-width: 26px;
+             box-shadow: 0 4px 14px #0004; transform: rotate(-1.6deg); }
+  .ls-e-photo.brk { display: block; margin-left: auto; margin-right: auto; }
+  .ls-e-photo.dragging { opacity: .35; }
+  .ls-dragghost { position: fixed; z-index: 90; width: 130px; transform: translate(-50%, -55%) rotate(-3deg);
+             border: 6px solid #fffef8; border-bottom-width: 18px; box-shadow: 0 10px 26px #0007;
+             pointer-events: none; opacity: .92; }
+  .ls-e-photo::before, .ls-e-photo::after { content: ''; position: absolute; width: 66px; height: 20px;
+             background: #e8dcb899; top: -4px; box-shadow: 0 1px 3px #0002; }
+  .ls-e-photo::before { left: 14%; transform: rotate(-32deg); }
+  .ls-e-photo::after { right: 14%; transform: rotate(28deg); }
+  /* ---------- 原声气泡（微信语音样式） ---------- */
+  .ls-e-voice { display: block; margin: 12px 0; touch-action: none; cursor: grab;
+             user-select: none; -webkit-user-select: none; }
+  .ls-e-voice.dragging { opacity: .35; }
+  .ls-e-voice.loading .ls-vbubble { opacity: .55; }
+  .ls-vbubble { display: inline-flex; align-items: center; gap: 10px; min-width: 130px; max-width: 82%;
+             padding: 10px 18px; border: 1.5px solid #c9b68b; border-radius: 4px 18px 18px 18px;
+             background: linear-gradient(175deg, #f7eeda, #efe2c2); box-shadow: 0 3px 9px #00000022;
+             font: inherit; cursor: pointer; color: #5a4a26; }
+  .ls-vbubble:active { background: #ecdcb6; }
+  .ls-vplay { font-size: 18px; color: #7a5a22; }
+  .ls-e-voice.playing .ls-vplay { color: #b03a2a; }
+  .ls-vwave { display: inline-flex; gap: 3px; align-items: center; height: 22px; }
+  .ls-vwave i { width: 3px; background: #a08d5e; border-radius: 2px; height: 8px; }
+  .ls-vwave i:nth-child(2) { height: 15px; }
+  .ls-vwave i:nth-child(3) { height: 20px; }
+  .ls-vwave i:nth-child(4) { height: 13px; }
+  .ls-vwave i:nth-child(5) { height: 9px; }
+  .ls-e-voice.playing .ls-vwave i { animation: lsVWave .9s ease-in-out infinite; transform-origin: center; }
+  .ls-e-voice.playing .ls-vwave i:nth-child(2) { animation-delay: .12s; }
+  .ls-e-voice.playing .ls-vwave i:nth-child(3) { animation-delay: .24s; }
+  .ls-e-voice.playing .ls-vwave i:nth-child(4) { animation-delay: .36s; }
+  .ls-e-voice.playing .ls-vwave i:nth-child(5) { animation-delay: .48s; }
+  @keyframes lsVWave { 0%, 100% { transform: scaleY(.55); } 50% { transform: scaleY(1.45); } }
+  .ls-vdur { font-size: 17px; color: #7a6a42; }
+  .ls-vtxt { display: block; font-size: 15px; color: #a08d66; margin: 5px 4px 0; }
+  .ls-dragghost-voice { width: auto; padding: 10px 20px; background: #f7eeda;
+             border: 1.5px solid #c9b68b; border-radius: 4px 18px 18px 18px; font-size: 24px; }
+
+  /* ---------- 未寄出的信 ---------- */
+  .ls-ltsub { font-size: 15px; color: #8d7442; margin: 2px 0 12px; }
+  .ls-envelope { display: block; width: 100%; text-align: left; margin: 10px 0; padding: 13px 52px 11px 52px;
+             position: relative; background: linear-gradient(175deg, #f6efdd, #efe6cc);
+             border: 1.5px solid #c9b68b; border-radius: 8px; box-shadow: 0 3px 9px #00000022;
+             font: inherit; cursor: pointer; }
+  .ls-envelope:active { background: #ece0c4; }
+  .ls-envelope::before { content: '✉️'; position: absolute; left: 14px; top: 15px; font-size: 24px; }
+  .ls-envelope .ls-env-to { font-size: 19px; font-weight: 700; color: #4a3a18; }
+  .ls-envelope .ls-env-when { font-size: 14px; color: #8d7442; margin-top: 3px; }
+  .ls-envelope.locked { opacity: .82; }
+  .ls-env-wax { position: absolute; right: 13px; top: 13px; width: 32px; height: 32px; border-radius: 50%;
+             background: radial-gradient(circle at 35% 35%, #c0524a, #8e2f28); color: #f6e7d0;
+             font-size: 14px; display: flex; align-items: center; justify-content: center;
+             box-shadow: 0 2px 5px #0004; transform: rotate(-8deg); }
+  .ls-ltnew { display: block; margin: 16px auto 0; }
+  .ls-ltdialog { text-align: left; max-height: 88vh; overflow-y: auto; }
+  .ls-ltlabel { display: block; font-size: 15px; color: #7a6234; margin: 13px 0 6px; font-weight: 700; }
+  .ls-ltchips { display: flex; flex-wrap: wrap; gap: 8px; }
+  .ls-ltchip { font: inherit; font-size: 15px; padding: 7px 13px; border: 1.5px solid #c9b68b;
+             border-radius: 16px; background: #faf3e0; cursor: pointer; color: #5a4a26; }
+  .ls-ltchip.on { background: #8e2f28; color: #fff; border-color: #8e2f28; }
+  #lsLtTo, #lsLtBody, #lsLtDate, #lsLtHint { width: 100%; font: inherit; font-size: 17px; padding: 9px 10px;
+             border: 1.5px solid #c9b68b; border-radius: 8px; background: #fffdf6; margin-top: 6px; box-sizing: border-box; }
+  #lsLtBody { resize: vertical; }
+  #lsLtVoiceRow { margin-top: 10px; display: flex; align-items: center; gap: 10px; }
+  #lsLtVoiceChip { font-size: 15px; color: #5a4a26; background: #f1e7cd; border: 1.5px solid #c9b68b;
+             border-radius: 14px; padding: 5px 10px; }
+  #lsLtVoiceDel { font: inherit; border: none; background: none; cursor: pointer; color: #8e2f28; }
+  #lsLtDateRow { display: flex; gap: 8px; margin-top: 4px; }
+  #lsLtDateRow input { flex: 1; min-width: 0; }
+  .ls-ltbodyview { font-size: 18px; color: #26200f; white-space: pre-wrap; margin: 8px 0;
+             padding: 12px; background: #fbf5e4; border-radius: 8px; min-height: 60px; }
+  .ls-ltvoice { margin: 8px 0; }
+  #lsSealFx { position: fixed; inset: 0; z-index: 130; display: flex; align-items: center; justify-content: center;
+             background: #000000aa; }
+  #lsSealFx[hidden] { display: none; }
+  .ls-sealfx-env { font-size: 96px; animation: lsEnvIn .7s ease; }
+  .ls-sealfx-wax { position: absolute; width: 58px; height: 58px; border-radius: 50%;
+             background: radial-gradient(circle at 35% 35%, #c0524a, #7e2620); color: #f6e7d0; font-size: 25px;
+             display: flex; align-items: center; justify-content: center; transform: translate(30px, 24px) rotate(-8deg);
+             box-shadow: 0 4px 10px #0007; animation: lsWaxStamp .8s ease .5s backwards; }
+  @keyframes lsEnvIn { from { transform: scale(.4) rotate(-8deg); opacity: 0; } }
+  @keyframes lsWaxStamp { 0% { transform: translate(30px, 24px) scale(2.4) rotate(-8deg); opacity: 0; }
+             60% { transform: translate(30px, 24px) scale(.92) rotate(-8deg); opacity: 1; } }
+
+  /* ---------- 录音浮层 ---------- */
+  .ls-vdialog { text-align: center; }
+  #lsVoiceDot { width: 26px; height: 26px; border-radius: 50%; background: #b03a2a;
+             margin: 14px auto 8px; animation: lsVDot 1.1s ease-in-out infinite; }
+  @keyframes lsVDot { 0%, 100% { transform: scale(1); box-shadow: 0 0 0 0 #b03a2a55; }
+             50% { transform: scale(1.18); box-shadow: 0 0 0 12px #b03a2a00; } }
+  #lsVoiceTime { font-size: 34px; font-weight: 700; color: #4a3a18; letter-spacing: 2px; }
+  .ls-vhint { font-size: 16px; color: #8d7442; margin: 8px 0 12px; }
+  #lsVoicePrev .ls-pbtnrow { margin-top: 10px; }
+
+  .ls-e-illu { text-align: center; }
+  .ls-e-illu img { max-width: 96%; max-height: 280px; border-radius: 6px; border: 1.5px solid #c9b68b;
+             box-shadow: 0 4px 14px #0003; }
+  .ls-e-draw { height: 200px; border: 1.5px dashed #c9b68b66; border-radius: 8px; }
+  .ls-e-draw.drawing { border-color: #b03a2a; }
+  .ls-drawsvg { position: absolute; inset: 0; width: 100%; height: 100%; }
+  .ls-drawsvg path { fill: none; stroke: #2c2417; stroke-width: 1.6; stroke-linecap: round;
+             stroke-linejoin: round; opacity: .9; }
+  .ls-drawpad { position: absolute; inset: 0; touch-action: none; cursor: crosshair; }
+
+  /* ---------- 魔法 ---------- */
+  .ls-caret { display: inline-block; width: 2px; }
+  .ls-entry.magic .ls-etext { animation: lsMagicBlur 1.1s ease forwards; }
+  @keyframes lsMagicBlur {
+    0% { filter: blur(0); opacity: 1; }
+    45% { filter: blur(3px); opacity: .25; text-shadow: 0 0 18px #d9a441; }
+    100% { filter: blur(4px); opacity: 0; }
+  }
+  .ls-entry.settle .ls-etext { animation: lsSettle 1s ease; }
+  @keyframes lsSettle {
+    0% { filter: blur(4px); opacity: 0; text-shadow: 0 0 22px #d9a441; }
+    60% { filter: blur(0.5px); opacity: 1; text-shadow: 0 0 10px #d9a44188; }
+    100% { filter: blur(0); text-shadow: none; }
+  }
+  .ls-spark { position: absolute; font-size: 15px; animation: lsSpark 1.4s ease forwards; pointer-events: none; }
+  @keyframes lsSpark {
+    0% { opacity: 0; transform: translateY(6px) scale(.6); }
+    35% { opacity: 1; }
+    100% { opacity: 0; transform: translateY(-22px) scale(1.15); }
+  }
+  #lsPen { position: absolute; left: 0; top: 0; z-index: 30; font-size: 34px; opacity: 0;
+           transition: transform .06s linear, opacity .3s; pointer-events: none;
+           text-shadow: 0 3px 5px #0005; }
+
+  /* ---------- 封面 / 目录 ---------- */
+  .ls-special { padding: 0 !important; }
+  .ls-cover { position: absolute; inset: 0; cursor: pointer;
+              background:
+                radial-gradient(ellipse at 30% 20%, #9c2f2f22, transparent 60%),
+                linear-gradient(160deg, #7e3030, #5e1f1f 60%, #4d1717);
+              display: flex; align-items: center; justify-content: center; }
+  .ls-cover-frame { position: relative; width: 74%; height: 84%; border: 2px solid #d9b06a88;
+              outline: 10px solid transparent; border-radius: 4px;
+              display: flex; align-items: center; justify-content: center; }
+  .ls-cover-title { font-size: clamp(26px, 4.4vh, 42px); text-align: center;
+              color: #f3e2be; font-weight: 700; line-height: 1.5; max-height: 90%; overflow: hidden;
+              background: linear-gradient(#00000012, #00000012) padding-box;
+              padding: 20px 16px; border: 1.5px solid #d9b06a55; }
+  .ls-cover-seal { position: absolute; right: 8%; bottom: 8%; width: 62px; height: 62px; border-radius: 8px;
+              background: #b03a2a; color: #fdf3e0; font-size: 20px; font-weight: 700; line-height: 1.2;
+              display: flex; align-items: center; justify-content: center; text-align: center;
+              transform: rotate(6deg); box-shadow: inset 0 0 8px #7c241855; }
+  .ls-cover-sub { position: absolute; left: 8%; top: 8%; color: #d9b06a; font-size: 16px;
+              line-height: 1.6; text-align: center; }
+  .ls-tochead { text-align: center; font-size: 30px; letter-spacing: 16px; color: #4a3416; margin: 6px 0 18px; }
+  .ls-tocrow { display: flex; align-items: baseline; gap: 10px; width: 100%; background: none; border: none;
+              padding: 10px 2px; font-size: 22px; cursor: pointer; text-align: left; }
+  .ls-tocrow:active { background: #0000000d; }
+  .ls-tocicon { flex: none; }
+  .ls-toctitle { flex: none; letter-spacing: 2px; }
+  .ls-tocdots { flex: 1; border-bottom: 2px dotted #b7a173; margin: 0 4px; }
+  .ls-tocst { flex: none; font-size: 16px; color: #8d7442; }
+  .ls-tochint { margin-top: 18px; text-align: center; font-size: 16px; color: #a08d66; }
+
+  /* ---------- 翻页活页 ---------- */
+  .ls-sheet { position: absolute; top: 0; bottom: 0; right: 0; width: 50%; z-index: 20;
+              pointer-events: none; transform-style: preserve-3d; transform-origin: left center;
+              transform: translateZ(2px);
+              transition: transform .6s cubic-bezier(.45, .05, .35, 1); }
+  #lsBook.single .ls-sheet { width: 100%; transform-origin: left center; }
+  .ls-sheet.go { transform: translateZ(2px) rotateY(-180deg); }
+  .ls-sheet.back { transform: translateZ(2px) rotateY(-180deg); transition: none; }
+  .ls-sheet.back.go { transform: translateZ(2px) rotateY(0deg); transition: transform .6s cubic-bezier(.45, .05, .35, 1); }
+  .ls-sheetface { position: absolute; inset: 0; backface-visibility: hidden; overflow: hidden;
+              background: radial-gradient(ellipse 120% 90% at 50% 40%, #faf4e4, #f2e8d0 78%, #e8dabb); }
+  .ls-sheetface.front { box-shadow: inset 28px 0 34px -26px #7a633d88; }
+  .ls-sheetface.backf { transform: rotateY(180deg); box-shadow: inset -28px 0 34px -26px #7a633d88; }
+  /* 垫在活页落点下方的旧页内容：动画期间保持旧文字，结束时随活页一起移除 */
+  .ls-underlay { position: absolute; top: 0; bottom: 0; z-index: 10; pointer-events: none; overflow: hidden;
+              background: radial-gradient(ellipse 120% 90% at 50% 40%, #faf4e4, #f2e8d0 78%, #e8dabb); }
+  .ls-underlay.fw { left: 0; width: 50%; }
+  .ls-underlay.bk { right: 0; width: 50%; }
+  #lsBook.single .ls-underlay { left: 0; right: 0; width: auto; }
+  /* 活页临近落下时，垫层靠书脊一侧渐渐被投影盖住 */
+  .ls-underlay::after { content: ''; position: absolute; inset: 0; pointer-events: none;
+              animation: lsCoverShade .6s ease-in forwards; }
+  .ls-underlay.fw::after { background: linear-gradient(to left, #3a2c1455, transparent 55%); }
+  .ls-underlay.bk::after { background: linear-gradient(to right, #3a2c1455, transparent 55%); }
+  /* 活页掀开一侧：书脊附近的阴影随翻页逐渐散去 */
+  .ls-revealshade { position: absolute; top: 0; bottom: 0; z-index: 12; pointer-events: none;
+              animation: lsRevealShade .6s ease-out forwards; }
+  .ls-revealshade.fw { right: 0; width: 50%; background: linear-gradient(to right, #3a2c1440, transparent 55%); }
+  .ls-revealshade.bk { left: 0; width: 50%; background: linear-gradient(to left, #3a2c1440, transparent 55%); }
+  #lsBook.single .ls-revealshade { left: 0; right: 0; width: auto; }
+  @keyframes lsCoverShade { from { opacity: 0; } to { opacity: 1; } }
+  @keyframes lsRevealShade { from { opacity: 1; } to { opacity: 0; } }
+
+  /* ---------- 顶部书签（左边章节在左、右边章节在右、当前章折进页里） ---------- */
+  #lsMarks { position: absolute; left: 0; right: 0; top: -60px; height: 60px; z-index: 25;
+             display: flex; justify-content: space-between; pointer-events: none; }
+  .ls-mgroup { display: flex; gap: 7px; align-items: flex-end; padding: 0 10px; }
+  .ls-mark { pointer-events: auto; display: flex; align-items: center; justify-content: center;
+             width: 46px; height: 60px; padding: 4px 0 6px;
+             border: none; cursor: pointer; color: #fffaf0;
+             background: var(--ribbon, #a2543c);
+             background: linear-gradient(var(--ribbon, #a2543c), color-mix(in srgb, var(--ribbon, #a2543c) 78%, #000));
+             border-radius: 8px 8px 0 0; box-shadow: 0 -2px 6px #0004, inset 0 -4px 6px -4px #0007; }
+  .ls-mark i { font-style: normal; font-size: 19px; font-weight: 700; line-height: 1.25;
+             text-align: center; text-shadow: 0 1px 3px #000a; }
+  .ls-mark:active { filter: brightness(1.25); }
+  /* 当前打开的章节：真书签样式——大部分在书外，下端三角尖插进纸面，带亮边 */
+  .ls-mark.cur { align-self: flex-start; position: relative; width: 58px; height: 98px;
+             padding: 0; border-radius: 0; box-shadow: none;
+             background: #ffe9b8;   /* 亮边（外圈） */
+             clip-path: polygon(0 0, 100% 0, 100% calc(100% - 22px), 50% 100%, 0 calc(100% - 22px));
+             filter: drop-shadow(0 3px 6px #0007); }
+  .ls-mark.cur::before { content: ''; position: absolute; left: 2.5px; right: 2.5px; top: 2.5px; bottom: 3px;
+             background: var(--ribbon, #a2543c);
+             background: linear-gradient(var(--ribbon, #a2543c), color-mix(in srgb, var(--ribbon, #a2543c) 72%, #000));
+             clip-path: polygon(0 0, 100% 0, 100% calc(100% - 21px), 50% 100%, 0 calc(100% - 21px)); }
+  .ls-mark.cur i { position: relative; z-index: 1; font-size: 22px; padding-bottom: 22px; }
+
+  /* ---------- 底部文房四宝托盘 ---------- */
+  #lsTray { flex: none; width: 100%; display: flex; align-items: center; justify-content: center; gap: 14px;
+            padding: 8px 12px calc(8px + env(safe-area-inset-bottom)); z-index: 26; }
+  .ls-tool { width: 62px; height: 62px; border-radius: 50%; border: 2px solid #d9b06a55; font-size: 27px;
+             background: linear-gradient(160deg, #5a4028, #443019); box-shadow: 0 4px 10px #0006;
+             color: #f3e2be; display: flex; align-items: center; justify-content: center; }
+  .ls-tool:active { transform: scale(.94); }
+  .ls-tool { position: relative; }
+  .ls-flipbtn { width: 50px; height: 50px; font-size: 20px; opacity: .75; }
+  #lsMicBtn { width: 96px; height: 96px; font-size: 36px; border-width: 3px; flex-direction: column; gap: 0;
+             background: radial-gradient(circle at 35% 30%, #4c3826, #241708 75%);
+             box-shadow: inset 0 4px 12px #000a, 0 5px 14px #0007; }
+  .ls-miccap { font-size: 13px; color: #e8d1a0; letter-spacing: 1px; line-height: 1.2; }
+  #lsMoreSheet { position: fixed; left: 50%; transform: translateX(-50%); bottom: calc(112px + env(safe-area-inset-bottom));
+             display: flex; flex-direction: column; gap: 10px; z-index: 45; }
+  .ls-mbtn2 { height: 60px; padding: 0 30px; border-radius: 18px; border: 2px solid #d9b06a88;
+             background: #443019; color: #f3e2be; font-size: 22px; letter-spacing: 2px;
+             box-shadow: 0 4px 12px #0006; white-space: nowrap; }
+  .ls-mbtn2:active { transform: scale(.96); }
+  #lsMicBtn.on { animation: lsInk 1.2s infinite; border-color: #e2694b; }
+  @keyframes lsInk { 50% { box-shadow: inset 0 4px 12px #000a, 0 0 26px #e2694b88; } }
+  #lsMicHint { position: fixed; left: 50%; transform: translateX(-50%); bottom: 118px; background: #b03a2a;
+             color: #fdf3e0; padding: 14px 30px; border-radius: 22px; font-size: 20px; z-index: 60;
+             box-shadow: 0 4px 16px #0006; border: none; display: flex; flex-direction: column;
+             align-items: center; gap: 6px; animation: lsListen 1.6s ease infinite; cursor: pointer; }
+  #lsMicHint b { font-size: 26px; letter-spacing: 1px; }
+  #lsMicHint:active { transform: translateX(-50%) scale(.96); }
+  @keyframes lsListen { 50% { box-shadow: 0 4px 16px #0006, 0 0 30px #e2694b99; } }
+  #lsRedoBar { position: fixed; left: 50%; transform: translateX(-50%); bottom: 118px; z-index: 60; }
+  #lsRedoBtn { background: #5a4028; color: #ffe9b8; border: 2px solid #d9b06a; border-radius: 999px;
+             padding: 12px 26px; font-size: 22px; box-shadow: 0 4px 16px #0006; }
+  #lsRedoBtn:active { transform: scale(.96); }
+  #lsDrawBar { position: fixed; left: 50%; transform: translateX(-50%); bottom: 16px; display: flex; gap: 10px; z-index: 60; }
+  .ls-dbtn { height: 56px; padding: 0 22px; border-radius: 14px; border: 2px solid #d9b06a88; font-size: 20px;
+             background: #443019; color: #f3e2be; white-space: nowrap; flex: none; }
+  .ls-dbtn.primary { background: #b03a2a; border-color: #b03a2a; }
+
+  /* ---------- 页面菜单（成文/插画等） ---------- */
+  #lsChapterMenu { position: absolute; left: 50%; transform: translateX(-50%); bottom: 14px; display: flex;
+             gap: 8px; z-index: 24; flex-wrap: wrap; justify-content: center; }
+  .ls-chmbtn { height: 44px; padding: 0 14px; border-radius: 999px; border: 1.5px solid #c9b68b;
+             background: #fdf6e5ee; font-size: 17px; color: #6b5327; box-shadow: 0 2px 8px #0003; }
+  .ls-chmbtn:active { background: #f3e6c8; }
+  .ls-chmbtn.ls-back { background: #b03a2a; border-color: #b03a2a; color: #fdf3e0; font-weight: 700; }
+  .ls-chmbtn.ls-back:active { background: #973021; }
+
+  /* ---------- 顶栏 ---------- */
+  #lsTop { flex: none; width: 100%; display: flex; align-items: center; justify-content: space-between;
+           padding: 10px 14px 2px; z-index: 26; }
+  #lsTop .ls-title { color: #d9b06a; font-size: 20px; letter-spacing: 6px; text-shadow: 0 2px 4px #0008; }
+  #lsRoot .ls-topbtn { height: 46px; padding: 0 16px; border-radius: 12px; border: 1.5px solid #e3bc76;
+           background: #00000066; color: #ffe9b8; font-size: 18px; font-weight: 700;
+           text-shadow: 0 1px 2px #000; }
+  #lsRoot .ls-topbtn:active { background: #00000088; }
+  #lsTopRight { display: flex; gap: 8px; }
+
+  /* ---------- 弹窗 ---------- */
+  .ls-overlay { position: fixed; inset: 0; background: #000a; display: flex; align-items: center;
+                justify-content: center; padding: 20px; z-index: 70; }
+  .ls-dialog { background: #f7efdc; border-radius: 18px; padding: 24px 20px 0; width: min(480px, 100%);
+               max-height: 86vh; overflow-y: auto; border: 1px solid #d9b06a66;
+               scrollbar-width: thin; scrollbar-color: #c9b68b transparent; }
+  .ls-dialog::-webkit-scrollbar { width: 8px; }
+  .ls-dialog::-webkit-scrollbar-track { background: transparent; }
+  .ls-dialog::-webkit-scrollbar-thumb { background: #c9b68b; border-radius: 8px; border: 2px solid #f7efdc; }
+  .ls-dialog::-webkit-scrollbar-thumb:active { background: #b09a6a; }
+  /* 弹窗底部按钮吸底：内容从按钮条下滑过 */
+  .ls-dialog > .ls-pbtns { position: sticky; bottom: 0; background: #f7efdc; margin: 12px -4px 0;
+               padding: 12px 4px 20px; box-shadow: 0 -10px 12px -10px #0004; }
+  .ls-dialog h2 { font-size: 24px; font-weight: 800; margin: 0 0 14px; text-align: center; color: #6b4423; }
+  .ls-field { margin-bottom: 14px; }
+  .ls-field label { display: block; font-size: 19px; color: #8a7a5c; margin-bottom: 6px; }
+  .ls-field input, .ls-field textarea { width: 100%; border-radius: 12px; border: 1.5px solid #c9b68b;
+              padding: 12px 14px; font-size: 21px; background: #fffdf4; color: inherit; font-family: inherit; }
+  .ls-field input { height: 56px; }
+  .ls-switch { display: flex; align-items: center; justify-content: space-between; font-size: 21px; padding: 8px 2px; }
+  .ls-swbtn { width: 92px; height: 48px; border-radius: 999px; border: 2px solid #c9b68b; font-size: 19px; background: #efe5cc; }
+  .ls-swbtn.on { background: #5c7a3f; color: #fff; border-color: #5c7a3f; }
+  .ls-pbtns { display: flex; gap: 8px; flex-wrap: wrap; margin-top: 16px; }
+  .ls-pbtn { height: 54px; padding: 0 16px; border-radius: 14px; border: 1.5px solid #c9b68b; background: #fffdf4;
+             font-size: 19px; color: #6b5327; }
+  .ls-pbtn.primary { background: #b03a2a; color: #fdf3e0; border-color: #b03a2a; font-weight: 700; }
+  .ls-opts { display: flex; flex-wrap: wrap; gap: 8px; }
+  .ls-opts button { height: 50px; padding: 0 16px; border-radius: 999px; border: 1.5px solid #c9b68b;
+             background: #fffdf4; font-size: 18px; color: #6b5327; }
+  .ls-opts button.sel { background: #b03a2a; color: #fdf3e0; border-color: #b03a2a; font-weight: 700; }
+  /* 条目编辑菜单：竖排大按钮，适合手指点 */
+  #lsEntryMenu { display: flex; flex-direction: column; gap: 10px; padding-bottom: 20px; }
+  #lsEntryMenu .ls-pbtn { width: 100%; }
+  /* 成对的操作并排放，省一半高度 */
+  .ls-pbtnrow { display: flex; gap: 10px; }
+  #lsEntryMenu .ls-pbtnrow .ls-pbtn { width: auto; flex: 1; }
+  .ls-embrief { font-size: 20px; color: #5a4c33; text-align: center; margin-bottom: 6px; word-break: break-all; }
+  .ls-emimg { max-width: 70%; max-height: 160px; margin: 0 auto 8px; display: block;
+              border-radius: 8px; border: 1.5px solid #c9b68b; }
+  #lsEditRaw { font-size: 16px; color: #a08d66; margin: -6px 0 8px; line-height: 1.6; }
+  #lsToast { position: fixed; top: 16px; left: 50%; transform: translateX(-50%); background: #2c2214ee;
+             color: #f3e2be; padding: 12px 24px; border-radius: 999px; font-size: 20px; z-index: 99;
+             max-width: 90vw; text-align: center; box-shadow: 0 6px 18px #0007; border: 1px solid #d9b06a44; }
+  #lsBusy { z-index: 80; }
+  .ls-spin { width: 54px; height: 54px; border-radius: 50%; border: 6px solid #e0d0aa; border-top-color: #b03a2a;
+             animation: lsSpin .9s linear infinite; margin: 0 auto 16px; }
+  @keyframes lsSpin { to { transform: rotate(360deg); } }
+  #lsAskBtn { position: fixed; left: 50%; transform: translateX(-50%); bottom: calc(14px + env(safe-area-inset-bottom));
+             z-index: 40; height: 58px; padding: 0 30px; border-radius: 999px; border: 2px solid #e3bc76;
+             background: #b03a2a; color: #fdf3e0; font-size: 21px; font-weight: 700; box-shadow: 0 5px 16px #0007; }
+  #lsAskBtn:active { transform: translateX(-50%) scale(.96); }
+  #lsAskLink, #lsShareLink { font-size: 15px; word-break: break-all; background: #efe5cc; border-radius: 12px; padding: 12px;
+                 margin: 10px 0 4px; color: #6b5327; }
+
+  /* 手机竖屏微调 */
+  @media (max-width: 760px) {
+    #lsStage { padding: 54px 8px 4px; }
+    #lsTop { padding: 8px 8px 0; }
+    #lsTop .ls-title { font-size: 15px; letter-spacing: 3px; white-space: nowrap; }
+    .ls-topbtn { height: 40px; padding: 0 10px; font-size: 15px; white-space: nowrap; }
+    .ls-tool { width: 52px; height: 52px; font-size: 22px; }
+    #lsMicBtn { width: 72px; height: 72px; font-size: 32px; }
+    .ls-cover-title { font-size: clamp(22px, 3.6vh, 34px); }
+    .ls-pagebody { padding: 22px 20px 40px; font-size: 20px; }
+    .ls-chtitle { font-size: 23px; }
+    #lsMarks { top: -50px; height: 50px; }
+    .ls-mgroup { gap: 4px; padding: 0 4px; }
+    .ls-mark { width: 38px; height: 50px; }
+    .ls-mark i { font-size: 15px; }
+    .ls-mark.cur { width: 48px; height: 80px; }
+    .ls-mark.cur i { font-size: 17px; padding-bottom: 18px; }
+    #lsDrawBar { flex-wrap: wrap; justify-content: center; width: calc(100% - 12px); gap: 8px; }
+    .ls-dbtn { height: 50px; padding: 0 13px; font-size: 18px; }
+  }
+
+  /* ---------- 主题配色（书桌 + 纸色） ---------- */
+  #lsRoot[data-theme="bamboo"] {
+    background: radial-gradient(1200px 500px at 50% -10%, #4e6647, transparent 70%),
+                linear-gradient(165deg, #3b4f36, #2c3d28 55%, #20301d); }
+  #lsRoot[data-theme="bamboo"] .ls-page, #lsRoot[data-theme="bamboo"] .ls-sheetface {
+    background: radial-gradient(ellipse 120% 90% at 50% 40%, #f3f7e8, #e9efd6 78%, #dce4c0); }
+  #lsRoot[data-theme="lotus"] {
+    background: radial-gradient(1200px 500px at 50% -10%, #6d4a5a, transparent 70%),
+                linear-gradient(165deg, #573844, #462c37 55%, #37212b); }
+  #lsRoot[data-theme="lotus"] .ls-page, #lsRoot[data-theme="lotus"] .ls-sheetface {
+    background: radial-gradient(ellipse 120% 90% at 50% 40%, #faf1ef, #f3e4e0 78%, #e9d3cd); }
+  #lsRoot[data-theme="night"] {
+    background: radial-gradient(1200px 500px at 50% -10%, #2e3138, transparent 70%),
+                linear-gradient(165deg, #23252b, #1a1c21 55%, #131418); }
+  #lsRoot[data-theme="night"] .ls-page, #lsRoot[data-theme="night"] .ls-sheetface {
+    background: radial-gradient(ellipse 120% 90% at 50% 40%, #e6ddc6, #dcd2b6 78%, #ccc0a0); }
+
+  /* ---------- 字体大小（放在最后以覆盖媒体查询） ---------- */
+  #lsRoot.fs-l .ls-pagebody { font-size: 24px; line-height: 1.9; }
+  #lsRoot.fs-l .ls-chtitle { font-size: 29px; }
+  #lsRoot.fs-xl .ls-pagebody { font-size: 28px; line-height: 1.95; }
+  #lsRoot.fs-xl .ls-chtitle { font-size: 32px; }
+  #lsRoot.fs-xl .ls-pagehint, #lsRoot.fs-l .ls-pagehint { font-size: inherit; }
+</style>
+
+<div id="lsTop">
+  <button class="ls-topbtn" id="lsSettingsBtn">⚙ 设置</button>
+  <div class="ls-title">岁 月 留 声</div>
+  <div id="lsTopRight">
+    <button class="ls-topbtn" id="lsRewardBtn" hidden>🎁 领奖励</button>
+    <button class="ls-topbtn" id="lsVoiceToggle">🔊</button>
+    <button class="ls-topbtn" id="lsShareBtn">💌 分享</button>
+  </div>
+</div>
+
+<div id="lsStage">
+  <div id="lsBook">
+    <div class="ls-page" id="lsPageL"></div>
+    <div class="ls-page" id="lsPageR"></div>
+    <div id="lsSpine"></div>
+    <div id="lsMarks"></div>
+  </div>
+  <div id="lsPen">🖋️</div>
+  <div id="lsChapterMenu" hidden></div>
+</div>
+
+<div id="lsTray">
+  <button class="ls-tool ls-flipbtn" id="lsPrevBtn" title="往前翻">◀</button>
+  <button class="ls-tool" id="lsMicBtn" title="按一下，讲话">🎙️<span class="ls-miccap">按这儿说话</span></button>
+  <button class="ls-tool" id="lsMoreBtn" title="添点别的">➕</button>
+  <button class="ls-tool ls-flipbtn" id="lsNextBtn" title="往后翻">▶</button>
+</div>
+<div id="lsMoreSheet" hidden>
+  <button class="ls-mbtn2" id="lsKbBtn">⌨️ 打字写</button>
+  <button class="ls-mbtn2" id="lsBrushBtn">🖌️ 画一画</button>
+  <button class="ls-mbtn2" id="lsPhotoBtn">📷 贴照片</button>
+  <button class="ls-mbtn2" id="lsVoiceBtn">🎙️ 录一段声音</button>
+</div>
+<input type="file" id="lsPhotoInput" accept="image/*" hidden>
+<button id="lsMicHint" hidden><span class="ls-michint-ing">🎙️ 我听着呢，您慢慢说…</span><b>✔ 说完了，按这里</b></button>
+<div id="lsRedoBar" hidden><button id="lsRedoBtn">👂 没听对？按这里重说一遍</button></div>
+<div id="lsDrawBar" hidden>
+  <button class="ls-dbtn" id="lsUndoBtn">↩ 撤销一笔</button>
+  <button class="ls-dbtn" id="lsDrawCancel">✖ 不画了</button>
+  <button class="ls-dbtn" id="lsSketchGen">✨ 变成图片</button>
+  <button class="ls-dbtn primary" id="lsDrawDone">✔ 画好了</button>
+</div>
+
+<div class="ls-overlay" id="lsEntryOverlay" hidden>
+  <div class="ls-dialog">
+    <h2>📖 这一处怎么办？</h2>
+    <div id="lsEntryMenu"></div>
+  </div>
+</div>
+
+<div class="ls-overlay" id="lsLetterEditOverlay" hidden>
+  <div class="ls-dialog ls-ltdialog">
+    <h2>✉️ 写一封未寄出的信</h2>
+    <label class="ls-ltlabel">这封信写给谁？</label>
+    <div class="ls-ltchips" id="lsLtToChips">
+      <button type="button" class="ls-ltchip">孙子</button>
+      <button type="button" class="ls-ltchip">孙女</button>
+      <button type="button" class="ls-ltchip">儿子</button>
+      <button type="button" class="ls-ltchip">女儿</button>
+      <button type="button" class="ls-ltchip">老伴</button>
+    </div>
+    <input id="lsLtTo" maxlength="20" placeholder="TA 的称呼或名字">
+    <label class="ls-ltlabel">想说的话</label>
+    <textarea id="lsLtBody" rows="5" placeholder="有些话，现在说太早，不说又怕忘。写在这儿，封好。"></textarea>
+    <div id="lsLtVoiceRow">
+      <button type="button" class="ls-pbtn" id="lsLtRecBtn">🎙️ 录一段悄悄话</button>
+      <span id="lsLtVoiceChip" hidden><span id="lsLtVoiceDur"></span> <button type="button" id="lsLtVoiceDel" title="删掉这段">✖</button></span>
+    </div>
+    <label class="ls-ltlabel">什么时候拆开？</label>
+    <div class="ls-ltchips">
+      <button type="button" class="ls-ltchip" id="lsLtWhenHand">🤲 由我亲手交给 TA</button>
+      <button type="button" class="ls-ltchip" id="lsLtWhenDate">📅 选个日子</button>
+    </div>
+    <div id="lsLtDateRow" hidden>
+      <input type="date" id="lsLtDate">
+      <input id="lsLtHint" maxlength="30" placeholder="这是什么日子？（如：小宝 18 岁生日）">
+    </div>
+    <div class="ls-pbtnrow">
+      <button type="button" class="ls-pbtn" id="lsLtCancel">✖ 先不写了</button>
+      <button type="button" class="ls-pbtn primary" id="lsLtSeal">🔏 封存这封信</button>
+    </div>
+  </div>
+</div>
+
+<div class="ls-overlay" id="lsLetterViewOverlay" hidden>
+  <div class="ls-dialog ls-ltdialog" id="lsLetterViewBody"></div>
+</div>
+
+<div id="lsSealFx" hidden><div class="ls-sealfx-env">✉️</div><div class="ls-sealfx-wax">封</div></div>
+
+<div class="ls-overlay" id="lsVoiceOverlay" hidden>
+  <div class="ls-dialog ls-vdialog">
+    <h2>🎙️ 录一段原声</h2>
+    <div id="lsVoiceRecing">
+      <div id="lsVoiceDot"></div>
+      <div id="lsVoiceTime">0:00</div>
+      <div class="ls-vhint">对着手机慢慢说，最长一分钟</div>
+      <div class="ls-pbtnrow">
+        <button class="ls-pbtn" id="lsVoiceCancel">✖ 不录了</button>
+        <button class="ls-pbtn primary" id="lsVoiceStop">✔ 说完了</button>
+      </div>
+    </div>
+    <div id="lsVoicePrev" hidden>
+      <button class="ls-pbtn" id="lsVoicePrevPlay">▶ 听一听（<span id="lsVoicePrevDur"></span>）</button>
+      <div class="ls-vhint">满意就放进书里，不满意可以重录</div>
+      <div class="ls-pbtnrow">
+        <button class="ls-pbtn" id="lsVoiceDiscard">✖ 不要了</button>
+        <button class="ls-pbtn" id="lsVoiceRetry">🔁 重录</button>
+      </div>
+      <button class="ls-pbtn primary" id="lsVoiceUse">✔ 放进书里</button>
+    </div>
+  </div>
+</div>
+
+<div class="ls-overlay" id="lsEditOverlay" hidden>
+  <div class="ls-dialog">
+    <h2>✏️ 改一改</h2>
+    <div class="ls-field"><textarea id="lsEditInput" rows="5"></textarea></div>
+    <div id="lsEditRaw" hidden></div>
+    <div class="ls-pbtns">
+      <button class="ls-pbtn primary" id="lsEditSave" style="flex:1">就这样改</button>
+      <button class="ls-pbtn" id="lsEditCancel" style="flex:1">不改了</button>
+    </div>
+  </div>
+</div>
+
+<div class="ls-overlay" id="lsKbOverlay" hidden>
+  <div class="ls-dialog">
+    <h2>⌨️ 打字说一说</h2>
+    <div class="ls-field"><textarea id="lsKbInput" rows="4" placeholder="把想说的写在这里…"></textarea></div>
+    <div class="ls-pbtns">
+      <button class="ls-pbtn primary" id="lsKbSend" style="flex:1">写到书上</button>
+      <button class="ls-pbtn" id="lsKbClose" style="flex:1">关闭</button>
+    </div>
+  </div>
+</div>
+
+<div class="ls-overlay" id="lsSettingsOverlay" hidden>
+  <div class="ls-dialog">
+    <h2>⚙ 设置</h2>
+    <div class="ls-field"><label>怎么称呼您？（如：王奶奶、老李）</label><input id="lsNameInput" maxlength="12"></div>
+    <div class="ls-field"><label>出生年份（帮我了解年代，可不填）</label><input id="lsYearInput" inputmode="numeric" maxlength="4" placeholder="如 1950"></div>
+    <div class="ls-field"><label>✍️ 回忆录的文字风格</label>
+      <div class="ls-opts" data-set="textStyle">
+        <button data-v="plain">质朴家书</button><button data-v="concise">简洁明快</button>
+        <button data-v="emotional">深情细腻</button><button data-v="literary">文雅书卷</button>
+      </div>
+    </div>
+    <div class="ls-field"><label>💬 陪聊的口吻</label>
+      <div class="ls-opts" data-set="chatTone">
+        <button data-v="junior">亲切晚辈</button><button data-v="friend">老友闲谈</button>
+        <button data-v="interview">口述历史采访</button>
+      </div>
+    </div>
+    <div class="ls-field"><label>🎨 书的配色</label>
+      <div class="ls-opts" data-set="theme">
+        <button data-v="classic">宣纸古典</button><button data-v="bamboo">竹青素雅</button>
+        <button data-v="lotus">藕荷温润</button><button data-v="night">夜读护眼</button>
+      </div>
+    </div>
+    <div class="ls-field"><label>🔠 字体大小</label>
+      <div class="ls-opts" data-set="fontSize">
+        <button data-v="m">标准</button><button data-v="l">大字</button><button data-v="xl">特大</button>
+      </div>
+    </div>
+    <div class="ls-switch"><span>🔊 自动朗读对方的话</span><button class="ls-swbtn" id="lsVoiceSwitch">开</button></div>
+    <div class="ls-pbtns">
+      <button class="ls-pbtn primary" id="lsSettingsSave" style="flex:1">保存</button>
+      <button class="ls-pbtn" id="lsSettingsClose" style="flex:1">关闭</button>
+    </div>
+  </div>
+</div>
+
+<div class="ls-overlay" id="lsHelpOverlay" hidden>
+  <div class="ls-dialog">
+    <h2>📜 这本书怎么用？</h2>
+    <div style="font-size:20px;line-height:1.75;color:#5a4c33">
+      这是一本<b>会自己写字的回忆录</b>。<br><br>
+      1️⃣ 点右侧的<b>丝带书签</b>，翻到想聊的人生篇章。<br><br>
+      2️⃣ 按一下下面的<b>砚台话筒 🎙️</b>，像聊家常一样说话——魔法笔会把您的话写到纸上，再化成优美的文字。<br><br>
+      3️⃣ 点 <b>➕</b> 还能 ⌨️ 打字、🖌️ 在纸上画画、📷 贴老照片；画完点「✨ 变成图片」，简笔画就变成真的画啦。<br><br>
+      4️⃣ 书上写好的字、贴好的照片，<b>点一下</b>就能修改、挪动或删掉；画点一下能接着画。<br><br>
+      5️⃣ 聊过几次后点「整理成文」，就是漂亮的一章；点「💌 分享」发给儿女和老朋友。
+    </div>
+    <div class="ls-pbtns">
+      <button class="ls-pbtn primary" id="lsHelpClose" style="flex:1">好的，翻开这本书</button>
+    </div>
+  </div>
+</div>
+
+<div class="ls-overlay" id="lsShareOverlay" hidden>
+  <div class="ls-dialog">
+    <h2>💌 分享给家人</h2>
+    <div style="font-size:19px;color:#5a4c33;line-height:1.6">链接已复制。打开微信，粘贴发给家人，他们点开就能翻这本书：</div>
+    <div id="lsShareLink"></div>
+    <div class="ls-pbtns">
+      <button class="ls-pbtn primary" id="lsShareCopy" style="flex:1">再复制一次</button>
+      <button class="ls-pbtn" id="lsShareOpen" style="flex:1">打开看看</button>
+      <button class="ls-pbtn" id="lsShareGame" style="flex:1">🎮 互动人生</button>
+      <button class="ls-pbtn" id="lsShareClose" style="flex:1">关闭</button>
+    </div>
+  </div>
+</div>
+
+<button id="lsAskBtn" hidden>💌 我想问 TA</button>
+<div class="ls-overlay" id="lsAskOverlay" hidden>
+  <div class="ls-dialog">
+    <h2>💌 给 TA 留一个问题</h2>
+    <div style="font-size:18px;color:#5a4c33;line-height:1.6">写下您想问的事，生成链接发给 TA。TA 翻开书就会看到您的问题，讲的回忆也会写进书里。</div>
+    <div class="ls-field"><label>您的称呼（如：孙女小雨）</label><input id="lsAskName" maxlength="12" placeholder="孙女小雨"></div>
+    <div class="ls-field"><label>想问的问题</label><textarea id="lsAskText" rows="3" maxlength="120" placeholder="奶奶，您和爷爷当年是怎么认识的呀？"></textarea></div>
+    <div class="ls-field"><label>放进哪一章</label>
+      <div class="ls-opts" data-set="askCh" id="lsAskChs"></div>
+    </div>
+    <div id="lsAskLink" hidden></div>
+    <div class="ls-pbtns">
+      <button class="ls-pbtn primary" id="lsAskMake" style="flex:1">生成链接，发给 TA</button>
+      <button class="ls-pbtn" id="lsAskClose" style="flex:1">关闭</button>
+    </div>
+  </div>
+</div>
+
+<div class="ls-overlay" id="lsBusy" hidden>
+  <div class="ls-dialog" style="text-align:center">
+    <div class="ls-spin"></div>
+    <div id="lsBusyText" style="font-size:21px;color:#5a4c33">请稍候…</div>
+  </div>
+</div>
+
+<div id="lsToast" hidden></div>
+`;
+    document.body.appendChild(root);
+    function $(sel) { return root.querySelector(sel); }
+
+    // ---------- 章节菜单（当前章的操作） ----------
+    function updateTray() {
+        const rb = $('#lsRewardBtn');
+        rb.hidden = state.sessionPoints <= 0;
+        if (!rb.hidden) rb.textContent = '🎁 领奖励 ' + state.sessionPoints;
+        $('#lsTray').hidden = state.readonly || !!state.drawTarget;
+        const menu = $('#lsChapterMenu');
+        const p = state.pages[state.pageIdx];
+        const visible = visiblePages().map((i) => state.pages[i]).filter(Boolean);
+        const bodyPage = visible.find((x) => x && x.kind === PAGE_KINDS.BODY);
+        if (!bodyPage) { menu.hidden = true; return; }
+        const chId = bodyPage.ch;
+        const ch = chapterById(chId);
+        const info = chInfo(chId);
+        let html = '';
+        // 翻远了就给一根「书签绳」：一键回到正在聊的那页
+        const talkPage = state.activeCh ? chapterLastPage(state.activeCh) : -1;
+        if (!state.readonly && talkPage >= 0 && !visiblePages().includes(talkPage)) {
+            html += '<button class="ls-chmbtn ls-back" data-act="back">🖋️ 回到正在聊的地方</button>';
+        }
+        if (!state.readonly) {
+            if (answerCount(chId) >= 2) html += '<button class="ls-chmbtn" data-act="write">✍️ ' + (info.written ? '重新整理成文' : '整理成文') + '</button>';
+            if (info.written) html += '<button class="ls-chmbtn" data-act="illu">🎨 生成插画</button>';
+        }
+        html += '<button class="ls-chmbtn" data-act="read">🔊 朗读本页</button>';
+        menu.innerHTML = html;
+        menu.hidden = !html;
+        menu.querySelectorAll('.ls-chmbtn').forEach((b) => {
+            b.addEventListener('click', () => {
+                const act = b.dataset.act;
+                if (act === 'back') { const p = chapterLastPage(state.activeCh); if (p >= 0) flipTo(p); return; }
+                if (act === 'write') writeChapter(chId);
+                else if (act === 'illu') genIllustration(chId);
+                else if (act === 'read') {
+                    const texts = visiblePages().map((i) => state.pages[i]).filter((x) => x && x.kind === PAGE_KINDS.BODY)
+                        .flatMap((pg) => pg.items.map((i) => { const e = chEntries(pg.ch)[i]; return e && e.t !== 'q' && e.text; }))
+                        .filter(Boolean).join('。');
+                    if (texts) { const keep = state.profile.voiceOn; state.profile.voiceOn = true; speak(texts); state.profile.voiceOn = keep; }
+                }
+            });
+        });
+    }
+
+    // ---------- 主题 / 字号应用 ----------
+    function applyTheme() {
+        if (state.profile.theme && state.profile.theme !== 'classic') root.dataset.theme = state.profile.theme;
+        else delete root.dataset.theme;
+        root.classList.toggle('fs-l', state.profile.fontSize === 'l');
+        root.classList.toggle('fs-xl', state.profile.fontSize === 'xl');
+    }
+
+    // ===================== 事件 =====================
+    function markSelected(setName, value) {
+        const grp = $('.ls-opts[data-set="' + setName + '"]');
+        if (!grp) return;
+        grp.querySelectorAll('button').forEach((b) => b.classList.toggle('sel', b.dataset.v === value));
+    }
+    function selectedValue(setName, fallback) {
+        const b = $('.ls-opts[data-set="' + setName + '"] button.sel');
+        return (b && b.dataset.v) || fallback;
+    }
+    root.querySelectorAll('.ls-opts').forEach((grp) => {
+        grp.addEventListener('click', (e) => {
+            const b = e.target.closest('button');
+            if (!b) return;
+            grp.querySelectorAll('button').forEach((x) => x.classList.toggle('sel', x === b));
+        });
+    });
+    $('#lsSettingsBtn').addEventListener('click', () => {
+        $('#lsNameInput').value = state.profile.name || '';
+        $('#lsYearInput').value = state.profile.birthYear || '';
+        markSelected('textStyle', state.profile.textStyle || 'plain');
+        markSelected('chatTone', state.profile.chatTone || 'junior');
+        markSelected('theme', state.profile.theme || 'classic');
+        markSelected('fontSize', state.profile.fontSize || 'm');
+        const sw = $('#lsVoiceSwitch');
+        sw.textContent = state.profile.voiceOn ? '开' : '关';
+        sw.classList.toggle('on', !!state.profile.voiceOn);
+        $('#lsSettingsOverlay').hidden = false;
+    });
+    $('#lsSettingsClose').addEventListener('click', () => { $('#lsSettingsOverlay').hidden = true; });
+    $('#lsVoiceSwitch').addEventListener('click', () => {
+        const sw = $('#lsVoiceSwitch');
+        const on = !sw.classList.contains('on');
+        sw.classList.toggle('on', on);
+        sw.textContent = on ? '开' : '关';
+    });
+    $('#lsSettingsSave').addEventListener('click', () => {
+        state.profile.name = ($('#lsNameInput').value || '').trim();
+        state.profile.birthYear = ($('#lsYearInput').value || '').trim().replace(/\D/g, '').slice(0, 4);
+        state.profile.voiceOn = $('#lsVoiceSwitch').classList.contains('on');
+        state.profile.textStyle = selectedValue('textStyle', 'plain');
+        state.profile.chatTone = selectedValue('chatTone', 'junior');
+        state.profile.theme = selectedValue('theme', 'classic');
+        state.profile.fontSize = selectedValue('fontSize', 'm');
+        state.sessions = {};  // 称呼/口吻变了，重建会话
+        scheduleSave('profile');
+        $('#lsSettingsOverlay').hidden = true;
+        applyTheme();
+        rebuildBook({ keepPage: true });  // 字号变化需要重新分页
+        toast('已保存 ✅');
+    });
+    $('#lsHelpClose').addEventListener('click', () => {
+        $('#lsHelpOverlay').hidden = true;
+        if (state.pageIdx === 0) flipTo(1);
+    });
+    $('#lsVoiceToggle').addEventListener('click', () => {
+        state.profile.voiceOn = !state.profile.voiceOn;
+        if (!state.profile.voiceOn) stopSpeak();
+        $('#lsVoiceToggle').textContent = state.profile.voiceOn ? '🔊' : '🔇';
+        scheduleSave('profile');
+        toast(state.profile.voiceOn ? '已打开自动朗读 🔊' : '已关闭自动朗读 🔇');
+    });
+    $('#lsRewardBtn').addEventListener('click', claimReward);
+    $('#lsShareBtn').addEventListener('click', shareBook);
+    $('#lsShareClose').addEventListener('click', () => { $('#lsShareOverlay').hidden = true; });
+    $('#lsShareCopy').addEventListener('click', async () => {
+        const ok = await copyText($('#lsShareLink').textContent);
+        toast(ok ? '已复制 ✅' : '复制失败，请长按链接手动复制');
+    });
+    $('#lsShareOpen').addEventListener('click', (e) => {
+        const href = e.currentTarget.dataset.href || $('#lsShareLink').textContent;
+        if (href) { try { window.open(href, '_blank'); } catch (_) { location.href = href; } }
+    });
+    $('#lsShareGame').addEventListener('click', () => { $('#lsShareOverlay').hidden = true; makeInteractiveStory(); });
+    // 只读分享页：家人给长者留问题
+    $('#lsAskBtn').addEventListener('click', () => {
+        const grp = $('#lsAskChs');
+        if (!grp.children.length) {
+            grp.innerHTML = CFG.chapters.map((c, i) =>
+                '<button data-v="' + esc(c.id) + '"' + (i === 0 ? ' class="sel"' : '') + '>' + esc(c.title) + '</button>').join('');
+        }
+        $('#lsAskLink').hidden = true;
+        $('#lsAskOverlay').hidden = false;
+    });
+    $('#lsAskClose').addEventListener('click', () => { $('#lsAskOverlay').hidden = true; });
+    $('#lsAskMake').addEventListener('click', async () => {
+        const q = ($('#lsAskText').value || '').trim();
+        if (!q) { toast('先写下想问的问题呀'); return; }
+        const name = ($('#lsAskName').value || '').trim();
+        const chId = selectedValue('askCh', (CFG.chapters[0] || {}).id);
+        const url = new URL(location.href);
+        for (const k of [...url.searchParams.keys()]) url.searchParams.delete(k);
+        url.searchParams.set('ask', q.slice(0, 120));
+        if (name) url.searchParams.set('asker', name.slice(0, 12));
+        if (chId) url.searchParams.set('askch', chId);
+        url.searchParams.set('askid', Date.now().toString(36) + Math.random().toString(36).slice(2, 6));
+        const link = url.href;
+        const box = $('#lsAskLink');
+        box.textContent = link;
+        box.hidden = false;
+        const ok = await copyText(link);
+        toast(ok ? '链接已复制，微信发给 TA，TA 打开就能看到您的问题 💌' : '请长按下面的链接手动复制', 4500);
+    });
+    $('#lsPrevBtn').addEventListener('click', () => flipDelta(-1));
+    $('#lsNextBtn').addEventListener('click', () => flipDelta(1));
+    $('#lsMicBtn').addEventListener('click', toggleRecord);
+    $('#lsMicHint').addEventListener('click', toggleRecord);  // 录音中：大按钮「说完了」
+    $('#lsMoreBtn').addEventListener('click', (e) => {
+        e.stopPropagation();
+        const sh = $('#lsMoreSheet');
+        sh.hidden = !sh.hidden;
+    });
+    $('#lsMoreSheet').addEventListener('click', () => { $('#lsMoreSheet').hidden = true; });
+    document.addEventListener('click', (e) => {
+        const sh = $('#lsMoreSheet');
+        if (!sh.hidden && !e.target.closest('#lsMoreSheet, #lsMoreBtn')) sh.hidden = true;
+    });
+    $('#lsRedoBtn').addEventListener('click', () => {
+        const st = redoBar.st;
+        if (!st) return;
+        st.clicked = true;
+        redoBar.st = null;
+        $('#lsRedoBar').hidden = true;
+        if (st.resolve) st.resolve();
+    });
+    $('#lsBrushBtn').addEventListener('click', startDrawing);
+    $('#lsUndoBtn').addEventListener('click', undoStroke);
+    $('#lsDrawCancel').addEventListener('click', () => endDrawMode(true));
+    $('#lsDrawDone').addEventListener('click', () => endDrawMode(false));
+    $('#lsSketchGen').addEventListener('click', sketchToImage);
+    $('#lsEditCancel').addEventListener('click', () => { $('#lsEditOverlay').hidden = true; state.editTarget = null; });
+    $('#lsEditSave').addEventListener('click', () => {
+        const t = state.editTarget;
+        const v = ($('#lsEditInput').value || '').trim();
+        $('#lsEditOverlay').hidden = true;
+        state.editTarget = null;
+        if (!t) return;
+        if (t.dedication) {
+            if (v && v !== state.meta.dedication) {
+                state.meta.dedication = v.slice(0, 120);
+                scheduleSave('meta');
+                toast('题词写好了 ✅');
+            }
+            renderSpread();
+            return;
+        }
+        const e = chEntries(t.ch)[t.idx];
+        if (!e) return;
+        if (!v) { toast('改成空白就等于删掉，请用「删掉」按钮'); return; }
+        if (v === e.text) return;
+        e.text = v;
+        if (e.t === 'a') e.fine = true;
+        scheduleSave('entries', t.ch);
+        rebuildBook({ keepPage: true });
+        toast('改好了 ✅');
+    });
+    $('#lsKbBtn').addEventListener('click', () => {
+        if (!state.activeCh) { toast('先点一个丝带书签，翻到想聊的篇章'); return; }
+        $('#lsKbInput').value = '';
+        $('#lsKbOverlay').hidden = false;
+        try { $('#lsKbInput').focus(); } catch (_) {}
+    });
+    $('#lsKbClose').addEventListener('click', () => { $('#lsKbOverlay').hidden = true; });
+    $('#lsKbSend').addEventListener('click', () => {
+        const t = ($('#lsKbInput').value || '').trim();
+        $('#lsKbOverlay').hidden = true;
+        if (t) submitAnswer(t);
+    });
+    $('#lsPhotoBtn').addEventListener('click', () => {
+        if (!state.activeCh && !currentInsertPos()) { toast('先点一个丝带书签，翻到想贴照片的篇章'); return; }
+        $('#lsPhotoInput').click();
+    });
+    $('#lsPhotoInput').addEventListener('change', (e) => {
+        const f = e.target.files && e.target.files[0];
+        e.target.value = '';
+        if (f) onPhotoPicked(f);
+    });
+    $('#lsVoiceBtn').addEventListener('click', recordVoiceIntoBook);
+    // 未寄出的信
+    $('#lsLtToChips').addEventListener('click', (e) => {
+        const b = e.target.closest('.ls-ltchip');
+        if (b) { $('#lsLtTo').value = b.textContent; }
+    });
+    $('#lsLtWhenHand').addEventListener('click', () => { letterDraft.openMode = 'hand'; renderLetterEditState(); });
+    $('#lsLtWhenDate').addEventListener('click', () => { letterDraft.openMode = 'date'; renderLetterEditState(); });
+    $('#lsLtRecBtn').addEventListener('click', recordLetterVoice);
+    $('#lsLtVoiceDel').addEventListener('click', () => {
+        if (letterDraft.voice && letterDraft.voice.pend) pendDrop(letterDraft.voice.pend);
+        letterDraft.voice = null;
+        renderLetterEditState();
+    });
+    $('#lsLtCancel').addEventListener('click', () => { $('#lsLetterEditOverlay').hidden = true; });
+    $('#lsLtSeal').addEventListener('click', sealLetter);
+    $('#lsVoiceStop').addEventListener('click', () => { try { vrec && vrec.rec.state === 'recording' && vrec.rec.stop(); } catch (_) {} });
+    $('#lsVoiceCancel').addEventListener('click', () => closeVoiceOverlay());
+    $('#lsVoiceDiscard').addEventListener('click', () => closeVoiceOverlay());
+    $('#lsVoiceRetry').addEventListener('click', () => {
+        if (!vrec) return;
+        const res = vrec.resolve;
+        closeVoiceOverlay(true);       // 保住 promise，重新开录
+        startVoiceCapture(res);
+    });
+    $('#lsVoiceUse').addEventListener('click', () => {
+        const v = vrec;
+        if (!v || !v.blob) return;
+        if (v.blob.size > 200 * 1024) { toast('这段太长了存不下，请重录短一点'); return; }
+        const payload = { blob: v.blob, dur: v.dur, mime: v.mime };
+        const res = v.resolve;
+        closeVoiceOverlay(true);
+        if (res) res(payload);
+    });
+    $('#lsVoicePrevPlay').addEventListener('click', function () {
+        if (!vrec || !vrec.prevUrl) return;
+        // 试听：直接借用全局播放器
+        if (voiceAudio && !voiceAudio.paused && voiceAudio.src === vrec.prevUrl) { stopVoicePlay(); return; }
+        toggleVoicePlay({ url: vrec.prevUrl }, this.parentElement);
+    });
+    // 点页面左右边缘翻页 + 滑动翻页
+    (function bindFlipGestures() {
+        const stage = $('#lsStage');
+        let sx = 0, sy = 0, moved = false;
+        stage.addEventListener('pointerdown', (e) => { sx = e.clientX; sy = e.clientY; moved = false; });
+        stage.addEventListener('pointermove', (e) => { if (Math.abs(e.clientX - sx) > 12) moved = true; });
+        stage.addEventListener('pointerup', (e) => {
+            if (state.drawTarget || state.writing) return;
+            if (state.photoDragging || Date.now() - (state.photoDropped || 0) < 350) return;  // 拖照片不算翻页手势
+            const dx = e.clientX - sx;
+            if (moved && Math.abs(dx) > 46 && Math.abs(dx) > Math.abs(e.clientY - sy)) {
+                flipDelta(dx < 0 ? 1 : -1);
+                return;
+            }
+            if (moved) return;
+            // 点边缘翻页（避开按钮/条目）
+            if (e.target.closest('button, .ls-entry, .ls-cover, .ls-drawpad')) return;
+            const r = $('#lsBook').getBoundingClientRect();
+            const x = (e.clientX - r.left) / r.width;
+            if (x > 0.86) flipDelta(1);
+            else if (x < 0.14) flipDelta(-1);
+        });
+    })();
+    window.addEventListener('resize', () => {
+        clearTimeout(window.__lsResizeT);
+        window.__lsResizeT = setTimeout(() => rebuildBook({ keepPage: true }), 220);
+    });
+    window.addEventListener('message', (event) => {
+        const msg = event.data || {};
+        if (msg.type === 'setGameConfig' && msg.data) {
+            try {
+                if (typeof msg.data.elderName === 'string' && !state.profile.name) state.profile.name = msg.data.elderName;
+            } catch (_) {}
+            rebuildBook({ keepPage: true });
+        }
+    });
+
+    // ===================== 启动 =====================
+    // 家人通过链接留下的问题（?ask=…），翻开书时贴成粉色便签并读出来
+    function handleFamilyAsk() {
+        if (state.readonly) return;
+        const q = (QS.get('ask') || '').trim();
+        if (!q) return;
+        const askId = QS.get('askid') || ('ask_' + q.slice(0, 20));
+        let seen = [];
+        try { seen = JSON.parse(localStorage.getItem('haqiLifeStoryAsks') || '[]'); } catch (_) {}
+        if (seen.includes(askId)) return;  // 同一个链接只贴一次
+        seen.push(askId);
+        try { localStorage.setItem('haqiLifeStoryAsks', JSON.stringify(seen.slice(-50))); } catch (_) {}
+        const asker = (QS.get('asker') || '家里人').slice(0, 12);
+        const ch = chapterById(QS.get('askch')) || CFG.chapters[0];
+        if (!ch) return;
+        state.activeCh = ch.id;
+        const idx = appendEntry(ch.id, { t: 'q', text: q.slice(0, 200), from: asker, ts: Date.now() });
+        toast('💌 ' + asker + '给您留了一个问题', 4500);
+        setTimeout(() => {
+            const keep = state.profile.voiceOn;
+            state.profile.voiceOn = true; speak(asker + '想问您：' + q); state.profile.voiceOn = keep;
+            typewrite(ch.id, idx);
+        }, 800);
+    }
+    async function bootShared(from) {
+        state.readonly = true;
+        state.sharedFrom = from;
+        $('#lsTray').hidden = true;
+        $('#lsShareBtn').hidden = true;
+        $('#lsSettingsBtn').hidden = true;
+        busy('正在翻开这本回忆录…');
+        try {
+            const meta = await storeReadShared(from, DIR + '/meta.json');
+            if (meta) state.meta = meta;
+            let any = false;
+            for (const ch of CFG.chapters) {
+                try {
+                    const d = await storeReadShared(from, DIR + '/entries_' + ch.id + '.json');
+                    if (d && Array.isArray(d.entries) && d.entries.length) { state.chapters[ch.id] = d; any = true; }
+                } catch (_) {}
+            }
+            try {
+                const L = await storeReadShared(from, DIR + '/letters.json');
+                if (L && Array.isArray(L.letters)) state.letters = L.letters;
+            } catch (_) {}
+            if (!any) throw new Error('empty book');
+            rebuildBook({});
+            state.pageIdx = 0;
+            renderSpread();
+            $('#lsAskBtn').hidden = false;
+        } catch (e) {
+            console.warn('分享回忆录加载失败', e);
+            toast('这本回忆录还没准备好，请让家人重新分享一次', 5000);
+        }
+        unbusy();
+    }
+    function boot() {
+        const cached = lsLoad();
+        if (cached) {
+            if (cached.profile) state.profile = Object.assign({}, DEFAULT_PROFILE, cached.profile);
+            if (cached.chapters) state.chapters = cached.chapters;
+            if (cached.meta) state.meta = Object.assign(state.meta, cached.meta);
+            if (Array.isArray(cached.facts)) state.facts = cached.facts;
+            if (Array.isArray(cached.letters)) state.letters = cached.letters;
+        } else {
+            const v1 = (function () { try { const r = localStorage.getItem('haqiLifeStoryV1'); return r ? JSON.parse(r) : null; } catch (_) { return null; } })();
+            if (v1) {
+                if (v1.profile) state.profile = Object.assign({}, DEFAULT_PROFILE, v1.profile);
+                migrateV1(v1.chats, v1.book);
+                lsSave();
+            }
+        }
+        applyTheme();
+        const from = QS.get('from');
+        if (from && QS.get('book')) {
+            bootShared(from);
+        } else {
+            rebuildBook({});
+            state.pageIdx = 0;
+            renderSpread();
+            if (!cached) $('#lsHelpOverlay').hidden = false;
+            loadAllFromStore().then(handleFamilyAsk).catch(handleFamilyAsk);
+        }
+        $('#lsVoiceToggle').textContent = state.profile.voiceOn ? '🔊' : '🔇';
+        if (!state.loadedPosted) { state.loadedPosted = true; post('gameLoaded', {}); }
+    }
+    boot();
+})();
+</script>
+</body>
+</html>
