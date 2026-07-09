@@ -342,10 +342,20 @@ class TapTapCollector(BaseCollector):
         }
 
         try:
+            # 从 Cookie 中提取 XSRF-TOKEN，作为请求头发送（TapTap CSRF 校验要求）
+            xsrf_token = ""
+            for c in self.session.cookies:
+                if c.name == "XSRF-TOKEN":
+                    xsrf_token = c.value
+                    break
+
             headers = {
                 "X-Requested-With": "XMLHttpRequest",
                 "Referer": f"{self.BASE_URL}/app/{post_id}/review" if post_id else self.BASE_URL,
             }
+            if xsrf_token:
+                headers["X-XSRF-TOKEN"] = xsrf_token
+                headers["X-CSRF-TOKEN"] = xsrf_token
 
             resp = self.session.post(
                 f"{self.API_BASE}/review-comment/v1/create",
