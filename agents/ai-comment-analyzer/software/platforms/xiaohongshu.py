@@ -251,3 +251,51 @@ class XiaohongshuCollector(BaseCollector):
 
         print(f"[小红书] 共获取 {len(all_comments)} 条评论")
         return all_comments
+
+    def reply_comment(self, comment_id: str, reply_text: str, post_id: str = "") -> Dict:
+        """
+        回复评论（需要登录 Cookie）
+
+        Args:
+            comment_id: 被回复的评论 ID
+            reply_text: 回复内容
+            post_id: 笔记 ID（可选，用于关联）
+
+        Returns:
+            {"success": bool, "message": str}
+        """
+        if not self.cookie:
+            return {
+                "success": False,
+                "error": "小红书回复需要登录 Cookie",
+                "message": "请在侧边栏配置小红书 Cookie"
+            }
+
+        try:
+            body = {
+                "note_id": post_id or "",
+                "content": reply_text,
+                "target_comment_id": comment_id,
+            }
+            resp = self.session.post(
+                f"{self.BASE_URL}/comment/post",
+                json=body,
+                headers={
+                    "X-Requested-With": "XMLHttpRequest",
+                    "Referer": f"https://www.xiaohongshu.com/explore/{post_id}" if post_id else "https://www.xiaohongshu.com/",
+                },
+                timeout=15,
+            )
+            result = resp.json()
+
+            if result.get("success"):
+                print(f"[小红书] 回复成功: comment_id={comment_id}")
+                return {"success": True, "message": "回复成功"}
+
+            err = result.get("msg", "未知错误")
+            print(f"[小红书] 回复失败: {err}")
+            return {"success": False, "error": err}
+
+        except Exception as e:
+            print(f"[小红书] 回复异常: {e}")
+            return {"success": False, "error": str(e)}

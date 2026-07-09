@@ -197,3 +197,61 @@ class TiebaCollector(BaseCollector):
 
         print(f"[贴吧] 共获取 {len(all_comments)} 条回复")
         return all_comments
+
+    def reply_comment(self, comment_id: str, reply_text: str, post_id: str = "") -> Dict:
+        """
+        回复帖子楼层（需要登录 Cookie）
+
+        Args:
+            comment_id: 楼层 ID（floor_id）
+            reply_text: 回复内容
+            post_id: 帖子 tid
+
+        Returns:
+            {"success": bool, "message": str}
+        """
+        if not self.cookie:
+            return {
+                "success": False,
+                "error": "贴吧回复需要登录 Cookie",
+                "message": "请在侧边栏配置贴吧 Cookie（需包含 BDUSS）"
+            }
+
+        tid = post_id or ""
+        try:
+            resp = self.session.post(
+                f"{self.MOBILE_URL}",
+                params={"cmd": "reply"},
+                data={
+                    "tid": tid,
+                    "content": reply_text,
+                    "floor_id": comment_id,
+                    "vcode": "",
+                    "vcode_md5": "",
+                },
+                headers={
+                    "X-Requested-With": "XMLHttpRequest",
+                    "Referer": f"https://tieba.baidu.com/p/{tid}",
+                },
+                timeout=15,
+            )
+            result = resp.json() if resp.text.strip().startswith("{") else {}
+
+            if result.get("no") == 0 or result.get("err_code") == "0":
+                print(f"[贴吧] 回复成功: floor_id={comment_id}")
+                return {"success": True, "message": "回复成功"}
+
+            err = result.get("error", result.get("errmsg", str(resp.text[:100])))
+            print(f"[贴吧] 回复失败: {err}")
+
+            # 常见错误
+            if "验证码" in err or "vcode" in err.lower():
+                return {"success": False, "error": err, "message": "触发了贴吧验证码，请在浏览器中手动回复一次后重试"}
+            if "登录" in err or "BDUSS" in err:
+                return {"success": False, "error": err, "message": "Cookie 无效或已过期，请重新获取（需包含 BDUSS）"}
+
+            return {"success": False, "error": err}
+
+        except Exception as e:
+            print(f"[贴吧] 回复异常: {e}")
+            return {"success": False, "error": str(e)}
