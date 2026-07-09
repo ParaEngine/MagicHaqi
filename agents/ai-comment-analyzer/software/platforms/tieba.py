@@ -1,11 +1,13 @@
 """
 百度贴吧 (Baidu Tieba) 评论收集器
-使用 Playwright 异步 API + asyncio.run() 隔离线程，持久化浏览器 profile 绕过验证码。
+使用 Playwright 同步 API 在独立线程中运行，避免 Streamlit asyncio 冲突。
+持久化浏览器 profile 绕过验证码。
 """
 
 import re
-import asyncio
+import time
 import os
+import threading
 from typing import List, Dict, Optional
 
 from .base import BaseCollector
@@ -23,7 +25,7 @@ INIT_SCRIPT = """
 
 
 class TiebaCollector(BaseCollector):
-    """百度贴吧评论收集器（Playwright 异步 + 持久化 profile）"""
+    """百度贴吧评论收集器（独立线程 Playwright）"""
 
     platform_name = "tieba"
     platform_display_name = "百度贴吧"
@@ -38,97 +40,186 @@ class TiebaCollector(BaseCollector):
     def validate_config(self) -> bool:
         return True
 
-    # ---------- async core ----------
+    # ---------- Playwright ops (runs in dedicated thread) ----------
 
-    async def _async_new_context(self, playwright):
-        """创建持久化 context，复用 profile 中的登录态"""
-        os.makedirs(PROFILE_DIR, exist_ok=True)
-        context = await playwright.chromium.launch_persistent_context(
-            user_data_dir=PROFILE_DIR,
-            headless=False,
-            viewport={"width": 1280, "height": 800},
-            user_agent=UA,
-            locale="zh-CN",
-            args=["--disable-blink-features=AutomationControlled", "--no-sandbox"],
-        )
-        await context.add_init_script(INIT_SCRIPT)
-        if self.cookie:
-            cookies_to_add = []
-            for item in self.cookie.split(";"):
-                item = item.strip()
-                if "=" in item:
-                    k, v = item.split("=", 1)
-                    cookies_to_add.append({"name": k, "value": v, "domain": ".baidu.com", "path": "/"})
-            if cookies_to_add:
-                await context.add_cookies(cookies_to_add)
-        return context
+    def _run_in_thread(self, func, *args):
+        """在独立线程中运行 Playwright 同步操作，避免 asyncio 冲突"""
+        result = []
+        error = []
 
-    async def _async_extract_page(self, page):
-        """从页面 DOM 提取楼层"""
-        try:
-            await page.wait_for_selector(".l_post, .d_post_content, [class*='post_content']", timeout=15000)
-        except Exception:
-            pass
-        await asyncio.sleep(2)
-
-        # 滚动加载更多
-        last_count = 0
-        for _ in range(10):
-            await page.evaluate("window.scrollTo(0, document.body.scrollHeight)")
-            await asyncio.sleep(1.5)
+        def wrapper():
             try:
-                load_more = page.locator("text=加载更多, .load-more, [class*='load_more']").first
-                if await load_more.is_visible():
-                    await load_more.click()
-                    await asyncio.sleep(2)
-            except Exception:
-                pass
-            locs = page.locator(".l_post, [class*='l_post']")
-            current = await locs.count()
-            if current == last_count and current > 0:
-                break
-            last_count = current
+                result.append(func(*args))
+            except Exception as e:
+                error.append(e)
 
-        # JS 提取楼层
-        posts_data = await page.evaluate("""
-            () => {
-                const result = [];
-                const floors = document.querySelectorAll('.l_post, .j_l_post, [class*="l_post"]');
-                floors.forEach(el => {
-                    const userNameEl = el.querySelector('.d_name a, .p_author_name, a[class*="user"]');
-                    const contentEl = el.querySelector('.d_post_content, [class*="post_content"], .j_d_post_content');
-                    const timeEl = el.querySelector('.tail-info, [class*="tail_info"]');
-                    const userName = userNameEl ? userNameEl.textContent.trim() : '匿名';
-                    const content = contentEl ? contentEl.textContent.trim() : '';
-                    const time = timeEl ? timeEl.textContent.trim() : '';
-                    if (!content || content.length < 2) return;
-                    result.push({userName, content, time});
-                });
-                if (result.length === 0) {
-                    document.querySelectorAll('.d_post_content, [class*="post_content"]').forEach(el => {
-                        const c = el.textContent.trim();
-                        if (c && c.length > 2) result.push({userName:'贴吧用户', content:c, time:''});
-                    });
-                }
-                return result;
-            }
-        """)
-        return posts_data
+        t = threading.Thread(target=wrapper, daemon=True)
+        t.start()
+        t.join(timeout=120)  # 最多等 2 分钟
+        if error:
+            raise error[0]
+        return result[0] if result else None
 
-    # ---------- public API (wrapped in asyncio.run) ----------
+    def _pw_fetch_comments(self, tid: str, max_comments: int) -> List[Dict]:
+        """在独立线程中执行 Playwright 抓取"""
+        from playwright.sync_api import sync_playwright
+
+        with sync_playwright() as pw:
+            os.makedirs(PROFILE_DIR, exist_ok=True)
+            context = pw.chromium.launch_persistent_context(
+                user_data_dir=PROFILE_DIR,
+                headless=False,
+                viewport={"width": 1280, "height": 800},
+                user_agent=UA,
+                locale="zh-CN",
+                args=["--disable-blink-features=AutomationControlled", "--no-sandbox"],
+            )
+            context.add_init_script(INIT_SCRIPT)
+            if self.cookie:
+                for item in self.cookie.split(";"):
+                    if "=" in item:
+                        k, v = item.strip().split("=", 1)
+                        context.add_cookies([{"name": k, "value": v, "domain": ".baidu.com", "path": "/"}])
+
+            page = context.new_page()
+            try:
+                print(f"[贴吧] 浏览器打开 {self.BASE_URL}/p/{tid} ...")
+                page.goto(f"{self.BASE_URL}/p/{tid}", timeout=30000, wait_until="domcontentloaded")
+                time.sleep(3)
+
+                try:
+                    page.wait_for_selector(".l_post, .d_post_content, [class*='post_content']", timeout=15000)
+                except Exception:
+                    print("[贴吧] 等待楼层超时，尝试继续...")
+                time.sleep(2)
+
+                # 滚动加载更多
+                last_count = 0
+                for _ in range(10):
+                    page.evaluate("window.scrollTo(0, document.body.scrollHeight)")
+                    time.sleep(1.5)
+                    try:
+                        load_more = page.locator("text=加载更多, .load-more, [class*='load_more']").first
+                        if load_more.is_visible():
+                            load_more.click()
+                            time.sleep(2)
+                    except Exception:
+                        pass
+                    current = len(page.locator(".l_post, [class*='l_post']").all())
+                    if current == last_count and current > 0:
+                        break
+                    last_count = current
+
+                # JS 提取
+                posts_data = page.evaluate("""
+                    () => {
+                        const result = [];
+                        const floors = document.querySelectorAll('.l_post, .j_l_post, [class*="l_post"]');
+                        floors.forEach(el => {
+                            const userNameEl = el.querySelector('.d_name a, .p_author_name, a[class*="user"]');
+                            const contentEl = el.querySelector('.d_post_content, [class*="post_content"], .j_d_post_content');
+                            const timeEl = el.querySelector('.tail-info, [class*="tail_info"]');
+                            const userName = userNameEl ? userNameEl.textContent.trim() : '匿名';
+                            const content = contentEl ? contentEl.textContent.trim() : '';
+                            const time = timeEl ? timeEl.textContent.trim() : '';
+                            if (!content || content.length < 2) return;
+                            result.push({userName, content, time});
+                        });
+                        if (result.length === 0) {
+                            document.querySelectorAll('.d_post_content, [class*="post_content"]').forEach(el => {
+                                const c = el.textContent.trim();
+                                if (c && c.length > 2) result.push({userName:'贴吧用户', content:c, time:''});
+                            });
+                        }
+                        return result;
+                    }
+                """)
+                return posts_data
+            finally:
+                page.close()
+                context.close()
+
+    def _pw_get_post_info(self, tid: str) -> Dict:
+        """获取帖子基本信息"""
+        from playwright.sync_api import sync_playwright
+
+        with sync_playwright() as pw:
+            os.makedirs(PROFILE_DIR, exist_ok=True)
+            context = pw.chromium.launch_persistent_context(
+                user_data_dir=PROFILE_DIR,
+                headless=False,
+                viewport={"width": 1280, "height": 800},
+                user_agent=UA,
+                locale="zh-CN",
+                args=["--disable-blink-features=AutomationControlled", "--no-sandbox"],
+            )
+            page = context.new_page()
+            try:
+                page.goto(f"{self.BASE_URL}/p/{tid}", timeout=30000, wait_until="domcontentloaded")
+                time.sleep(3)
+                title = page.title() or ""
+                author = ""
+                try:
+                    author = page.locator(".d_name a, .p_author_name").first.inner_text()
+                except Exception:
+                    pass
+                return {"id": tid, "title": title, "content": title,
+                        "url": f"{self.BASE_URL}/p/{tid}",
+                        "platform": self.platform_name, "author_name": author, "comment_count": 0}
+            finally:
+                page.close()
+                context.close()
+
+    def _pw_reply(self, tid: str, reply_text: str) -> Dict:
+        """回复帖子"""
+        from playwright.sync_api import sync_playwright
+
+        with sync_playwright() as pw:
+            os.makedirs(PROFILE_DIR, exist_ok=True)
+            context = pw.chromium.launch_persistent_context(
+                user_data_dir=PROFILE_DIR,
+                headless=False,
+                viewport={"width": 1280, "height": 800},
+                user_agent=UA,
+                locale="zh-CN",
+                args=["--disable-blink-features=AutomationControlled", "--no-sandbox"],
+            )
+            page = context.new_page()
+            try:
+                page.goto(f"{self.BASE_URL}/p/{tid}", timeout=30000, wait_until="domcontentloaded")
+                time.sleep(3)
+                reply_box = page.locator(
+                    '[contenteditable="true"], #tb_rich_poster_text, textarea.editor'
+                ).first
+                if reply_box.count() > 0:
+                    reply_box.click()
+                    time.sleep(0.5)
+                    reply_box.fill(reply_text)
+                    time.sleep(0.5)
+                    send_btn = page.locator(
+                        'a:has-text("发表"), button:has-text("发表"), [class*="submit"]'
+                    ).first
+                    if send_btn.count() > 0:
+                        send_btn.click()
+                        time.sleep(2)
+                return {"success": True, "message": "回复已发送"}
+            finally:
+                page.close()
+                context.close()
+
+    # ---------- public API ----------
 
     def test_connection(self) -> Dict:
-        async def _test():
-            from playwright.async_api import async_playwright
-            pw = await async_playwright().start()
-            try:
-                ctx = await self._async_new_context(pw)
-                await ctx.close()
-            finally:
-                await pw.stop()
-            return {"success": True, "message": "浏览器就绪 — 首次使用请在弹出的浏览器中完成验证码", "user": None}
         try:
-            return asyncio.run(_test())
+            from playwright.sync_api import sync_playwright
+            with sync_playwright() as pw:
+                os.makedirs(PROFILE_DIR, exist_ok=True)
+                ctx = pw.chromium.launch_persistent_context(
+                    user_data_dir=PROFILE_DIR, headless=False,
+                    viewport={"width": 1280, "height": 800},
+                )
+                ctx.close()
+            return {"success": True, "message": "浏览器就绪 — 首次使用请在弹出的浏览器中完成验证码", "user": None}
         except Exception as e:
             return {"success": False, "message": str(e)}
 
@@ -142,30 +233,8 @@ class TiebaCollector(BaseCollector):
 
     def get_post_info(self, post_id: str) -> Optional[Dict]:
         tid = self.extract_post_id(post_id)
-        async def _get():
-            from playwright.async_api import async_playwright
-            pw = await async_playwright().start()
-            try:
-                ctx = await self._async_new_context(pw)
-                page = await ctx.new_page()
-                await page.goto(f"{self.BASE_URL}/p/{tid}", timeout=30000, wait_until="domcontentloaded")
-                await asyncio.sleep(3)
-                title = await page.title() or ""
-                author = ""
-                try:
-                    el = page.locator(".d_name a, .p_author_name").first
-                    author = await el.inner_text()
-                except Exception:
-                    pass
-                await page.close()
-                await ctx.close()
-                return {"id": tid, "title": title, "content": title,
-                        "url": f"{self.BASE_URL}/p/{tid}",
-                        "platform": self.platform_name, "author_name": author, "comment_count": 0}
-            finally:
-                await pw.stop()
         try:
-            return asyncio.run(_get())
+            return self._run_in_thread(self._pw_get_post_info, tid)
         except Exception as e:
             print(f"[贴吧] get_post_info 异常: {e}")
             return {"id": tid, "title": "", "url": f"{self.BASE_URL}/p/{tid}", "platform": self.platform_name}
@@ -174,27 +243,9 @@ class TiebaCollector(BaseCollector):
         tid = self.extract_post_id(post_id)
         if max_comments is None:
             max_comments = 100
-        print(f"[贴吧] 浏览器打开 {self.BASE_URL}/p/{tid} ...")
-
-        async def _fetch():
-            from playwright.async_api import async_playwright
-            pw = await async_playwright().start()
-            try:
-                ctx = await self._async_new_context(pw)
-                page = await ctx.new_page()
-                try:
-                    await page.goto(f"{self.BASE_URL}/p/{tid}", timeout=30000, wait_until="domcontentloaded")
-                    await asyncio.sleep(3)
-                    posts_data = await self._async_extract_page(page)
-                finally:
-                    await page.close()
-                    await ctx.close()
-                return posts_data
-            finally:
-                await pw.stop()
 
         try:
-            posts_data = asyncio.run(_fetch())
+            posts_data = self._run_in_thread(self._pw_fetch_comments, tid, max_comments)
         except Exception as e:
             print(f"[贴吧] 抓取异常: {e}")
             return []
@@ -220,35 +271,8 @@ class TiebaCollector(BaseCollector):
 
     def reply_comment(self, comment_id: str, reply_text: str, post_id: str = "") -> Dict:
         tid = self.extract_post_id(post_id) if post_id else ""
-
-        async def _reply():
-            from playwright.async_api import async_playwright
-            pw = await async_playwright().start()
-            try:
-                ctx = await self._async_new_context(pw)
-                page = await ctx.new_page()
-                try:
-                    await page.goto(f"{self.BASE_URL}/p/{tid}", timeout=30000, wait_until="domcontentloaded")
-                    await asyncio.sleep(3)
-                    reply_box = page.locator('[contenteditable="true"], #tb_rich_poster_text, textarea.editor').first
-                    if await reply_box.count() > 0:
-                        await reply_box.click()
-                        await asyncio.sleep(0.5)
-                        await reply_box.fill(reply_text)
-                        await asyncio.sleep(0.5)
-                        send_btn = page.locator('a:has-text("发表"), button:has-text("发表"), [class*="submit"]').first
-                        if await send_btn.count() > 0:
-                            await send_btn.click()
-                            await asyncio.sleep(2)
-                finally:
-                    await page.close()
-                    await ctx.close()
-                return {"success": True, "message": "回复已发送"}
-            finally:
-                await pw.stop()
-
         try:
-            return asyncio.run(_reply())
+            return self._run_in_thread(self._pw_reply, tid, reply_text)
         except Exception as e:
             print(f"[贴吧] 回复异常: {e}")
             return {"success": False, "error": str(e)}
