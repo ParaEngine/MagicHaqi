@@ -300,12 +300,32 @@ class TapTapCollector(BaseCollector):
         if not self.cookie:
             return {
                 "success": False,
-                "error": "TapTap 回复需要登录 Cookie",
-                "message": "请在侧边栏配置 TapTap Cookie（从浏览器登录后获取）"
+                "error": "未配置 Cookie",
+                "message": "请先在侧边栏「🎮 TapTap 配置」中填入登录 Cookie，然后点击「💾 保存到本地」"
             }
 
+        # TapTap 常见错误码 → 用户友好提示
+        ERROR_TIPS = {
+            "网页已过期": (
+                "Cookie 会话已过期。请重新登录 taptap.cn，"
+                "获取新的 Cookie 后再试。\n"
+                "操作：浏览器打开 taptap.cn → 登录 → F12 → Application → Cookies → 全选复制"
+            ),
+            "请先登录": (
+                "Cookie 无效或未登录。请确认复制的是登录后的完整 Cookie 字符串。"
+            ),
+            "验证": (
+                "触发了 TapTap 验证码。请在浏览器中手动完成验证后，重新获取 Cookie。"
+            ),
+            "频繁": (
+                "操作太频繁，请等待 1-2 分钟后再试。"
+            ),
+            "csrf": (
+                "CSRF 校验失败。Cookie 中可能缺少 csrfToken 字段，请重新获取完整 Cookie。"
+            ),
+        }
+
         try:
-            # TapTap POST 需要的额外请求头
             headers = {
                 "X-Requested-With": "XMLHttpRequest",
                 "Referer": f"{self.BASE_URL}/app/{post_id}/review" if post_id else self.BASE_URL,
@@ -326,28 +346,34 @@ class TapTapCollector(BaseCollector):
 
             if "json" in ct:
                 result = resp.json()
-                # TapTap API 成功时 data 是真正的数据对象，失败时 data 里有 code/error
                 data = result.get("data") or {}
+
                 if result.get("success") and not data.get("error"):
                     print(f"[TapTap] 回复成功: review_id={comment_id}")
-                    return {"success": True, "message": "回复成功", "data": data}
-                err = data.get("msg", result.get("msg", result.get("message", "未知错误")))
-                print(f"[TapTap] 回复失败: {err}")
-                return {"success": False, "error": err}
+                    return {"success": True, "message": "回复成功"}
 
-            # 非 JSON 响应 — 检查是否是错误
+                raw_err = data.get("msg", result.get("msg", ""))
+                print(f"[TapTap] 回复失败: {raw_err}")
+
+                # 匹配已知错误，给出友好提示
+                for keyword, tip in ERROR_TIPS.items():
+                    if keyword in raw_err:
+                        return {"success": False, "error": raw_err, "message": tip}
+
+                return {"success": False, "error": raw_err, "message": f"TapTap 返回: {raw_err}"}
+
+            # 非 JSON 响应
             print(f"[TapTap] review-comment/create → {resp.status_code} {ct[:50]}")
-            print(f"[TapTap] 响应体: {body[:300]}")
-
-            if resp.status_code == 200 and not body:
-                return {"success": True, "message": "回复成功"}
-
-            # 200 但有文本内容 — 可能是错误页面
-            if "error" in body.lower() or "失败" in body or "登录" in body:
-                return {"success": False, "error": body[:200], "message": "Cookie 可能无效或已过期"}
-
-            return {"success": False, "error": f"未预期的响应: {body[:100]}"}
+            return {
+                "success": False,
+                "error": f"服务器返回 {resp.status_code} ({ct[:30]})",
+                "message": "Cookie 可能无效。请重新登录 taptap.cn 获取新的 Cookie。"
+            }
 
         except Exception as e:
             print(f"[TapTap] 回复异常: {e}")
-            return {"success": False, "error": str(e)}
+            return {
+                "success": False,
+                "error": str(e),
+                "message": "网络请求失败，请检查网络后重试"
+            }
