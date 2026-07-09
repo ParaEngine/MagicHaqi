@@ -96,11 +96,18 @@ class TiebaCollector(BaseCollector):
                     print("[贴吧] 等待内容超时，继续...")
                 time.sleep(2)
 
-                # 滚动到底部触发懒加载，等评论数不再增长
+                # 滚动评论列表容器加载更多（虚拟列表）
                 for scroll_i in range(15):
-                    page.evaluate("window.scrollTo(0, document.body.scrollHeight)")
-                    time.sleep(2)
-                    # 检查是否有新的评论加载
+                    # 优先滚动评论区容器
+                    try:
+                        reply_list = page.locator(".pc-pb-reply-list, .pb-comment-list, [class*='reply-list']").first
+                        if reply_list.count() > 0:
+                            reply_list.evaluate("el => { el.scrollTop = el.scrollHeight; }")
+                            time.sleep(2)
+                    except Exception:
+                        page.evaluate("window.scrollTo(0, document.body.scrollHeight)")
+                        time.sleep(2)
+                    # 点击加载更多
                     try:
                         load_more = page.locator("text=加载更多, .load-more, [class*='load_more']").first
                         if load_more.is_visible(timeout=1000):
@@ -108,16 +115,8 @@ class TiebaCollector(BaseCollector):
                             time.sleep(2)
                     except Exception:
                         pass
-                    # 也尝试滚动评论区
-                    try:
-                        reply_list = page.locator(".pc-pb-reply-list, .pb-comment-list, [class*='reply-list']").first
-                        if reply_list.count() > 0:
-                            reply_list.evaluate("el => el.scrollTop = el.scrollHeight")
-                            time.sleep(1.5)
-                    except Exception:
-                        pass
-                    current = len(page.locator(".pb-comment-item, .thread-container, .virtual-list-item").all())
-                    print(f"[贴吧] 滚动 {scroll_i+1}: 当前 {current} 条评论")
+                    count = len(page.locator(".pb-comment-item, .virtual-list-item").all())
+                    print(f"[贴吧] 滚动 {scroll_i+1}: {count} 条可见")
 
                 # JS 提取 + 智能 fallback
                 posts_data, debug_info = page.evaluate("""
@@ -144,19 +143,31 @@ class TiebaCollector(BaseCollector):
                         const result = [];
                         const seenContents = new Set();  // 去重
 
-                        // 策略1: 新版选择器（内容哈希去重）
+                        // 策略1: 新版选择器
                         document.querySelectorAll(
-                            '.pb-comment-item, .thread-container, .virtual-list-item'
+                            '.pb-comment-item, .virtual-list-item'
                         ).forEach(el => {
-                            const ue = el.querySelector('.name-info a, .name-info-link, .head-line, [class*="name-info"] a, [class*="user-info"]');
-                            const ce = el.querySelector('.comment-content, .pb-rich-text, .richtext-item, [class*="pb-content"]');
-                            const te = el.querySelector('.comment-desc-left, [class*="desc-left"], [class*="tail-info"]');
+                            const ue = el.querySelector('.name-info a, .name-info-link, [class*="name-info"] a');
+                            // 精确取评论正文，避免取到按钮/时间/位置
+                            const ce = el.querySelector('.comment-content, .pb-rich-text, .richtext-item');
+                            const te = el.querySelector('.comment-desc-left, [class*="desc-left"]');
+                            // 确保 ce 不是整个卡片
                             const c = ce ? ce.textContent.trim() : '';
-                            // 用前 120 字符做去重 key（比 80 更精确）
-                            const key = c.substring(0, 120);
-                            if (c.length >= 2 && !seenContents.has(key)) {
+                            // 如果 ce 文本太长（>500字符），可能是取了整个卡片，尝试更精确的选择
+                            let content = c;
+                            if (c.length > 500) {
+                                const inner = ce.querySelector('[class*="content"]:not([class*="comment"])')
+                                    || ce.querySelector('.pb-content-item');
+                                if (inner) content = inner.textContent.trim();
+                            }
+                            const key = content.substring(0, 120);
+                            if (content.length >= 1 && !seenContents.has(key)) {
                                 seenContents.add(key);
-                                result.push({userName: ue?ue.textContent.trim():'匿名', content:c, time:te?te.textContent.trim():''});
+                                result.push({
+                                    userName: ue ? ue.textContent.trim() : '匿名',
+                                    content: content,
+                                    time: te ? te.textContent.trim() : ''
+                                });
                             }
                         });
                         // 策略1b: 旧版选择器（带去重）
