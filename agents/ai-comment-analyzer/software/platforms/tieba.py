@@ -111,7 +111,7 @@ class TiebaCollector(BaseCollector):
                         break
                     last_count = current
 
-                # JS 提取 + 诊断（含 class dump）
+                # JS 提取 + 诊断（含 class dump + 内容定位）
                 posts_data, debug_info = page.evaluate("""
                     () => {
                         const debug = {
@@ -120,7 +120,8 @@ class TiebaCollector(BaseCollector):
                             bodySample: document.body ? document.body.innerText.substring(0, 500) : '',
                             totalDivs: document.querySelectorAll('div').length,
                             allClasses: [],
-                            selectors: {}
+                            selectors: {},
+                            contentTraces: []  // 追踪包含帖子内容文本的元素路径
                         };
                         // 统计各选择器命中数
                         ['l_post', 'j_l_post', 'd_post_content', 'post_content',
@@ -130,9 +131,9 @@ class TiebaCollector(BaseCollector):
                             try { debug.selectors[sel] = document.querySelectorAll(sel).length; }
                             catch(e) { debug.selectors[sel] = 'ERR'; }
                         });
-                        // 收集页面上所有 div 的 class（去重，最多 200 个）
+                        // 收集页面上所有 div 的 class
                         const classSet = new Set();
-                        document.querySelectorAll('div[class]').forEach(el => {
+                        document.querySelectorAll('div[class], li[class], section[class]').forEach(el => {
                             el.classList.forEach(c => classSet.add(c));
                         });
                         debug.allClasses = Array.from(classSet).slice(0, 200);
@@ -149,10 +150,32 @@ class TiebaCollector(BaseCollector):
                             if (!content || content.length < 2) return;
                             result.push({userName, content, time});
                         });
+                        // fallback
                         if (result.length === 0) {
                             document.querySelectorAll('.d_post_content, [class*="post_content"]').forEach(el => {
                                 const c = el.textContent.trim();
                                 if (c && c.length > 2) result.push({userName:'贴吧用户', content:c, time:''});
+                            });
+                        }
+                        // 反推：找到包含特定文本的元素，输出其 class 路径
+                        if (result.length === 0) {
+                            const keywords = ['贴吧用户', '关注', '发贴', '楼主'];
+                            keywords.forEach(kw => {
+                                const all = document.querySelectorAll('*');
+                                for (let i = 0; i < all.length; i++) {
+                                    const el = all[i];
+                                    if (el.children.length === 0 && el.textContent.trim() === kw) {
+                                        // 向上找最近的带 class 的祖先
+                                        let path = [];
+                                        let cur = el;
+                                        for (let d = 0; d < 6 && cur && cur !== document.body; d++) {
+                                            path.push(cur.tagName + (cur.className ? '.' + cur.className.replace(/\\s+/g, '.') : '') + (cur.id ? '#' + cur.id : ''));
+                                            cur = cur.parentElement;
+                                        }
+                                        debug.contentTraces.push({keyword: kw, path: path.join(' > ')});
+                                        break;
+                                    }
+                                }
                             });
                         }
                         return [result, debug];
@@ -169,18 +192,23 @@ class TiebaCollector(BaseCollector):
                 classes = debug_info.get('allClasses', [])
                 if classes:
                     print(f"[贴吧] 页面class列表 (共{len(classes)}个): {', '.join(classes)}")
+                traces = debug_info.get('contentTraces', [])
+                if traces:
+                    for t in traces:
+                        print(f"[贴吧] 内容追踪 '{t['keyword']}': {t['path']}")
                 print(f"[贴吧] body 样本: {debug_info.get('bodySample', '')[:300]}")
                 print(f"[贴吧] 提取到 {len(posts_data)} 条帖子")
 
                 self.last_error = ""
                 if len(posts_data) == 0:
+                    trace_str = "; ".join([f"'{t['keyword']}'->{t['path']}" for t in traces]) if traces else "无追踪"
                     self.last_error = (
                         f"页面可访问但未匹配到楼层。"
                         f"标题={debug_info.get('title','?')}, "
                         f"body={debug_info.get('bodyLen',0)}字符, "
                         f"div={debug_info.get('totalDivs',0)}个。"
-                        f"l_post=0, d_post_content=0。"
-                        f"页面CSS类: {', '.join(classes[:30])}..."
+                        f"内容追踪: {trace_str}。"
+                        f"CSS类: {', '.join(classes[:25])}..."
                     )
                 return posts_data
             finally:
