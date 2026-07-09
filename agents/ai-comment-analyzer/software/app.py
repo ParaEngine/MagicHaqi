@@ -652,7 +652,13 @@ def page_fetch():
                             if comment.get('ip_location'):
                                 st.caption(f"📍 {comment['ip_location']}")
             else:
-                st.warning("⚠️ 未获取到任何评论，请检查链接或 Cookie 是否正确")
+                err_msg = "⚠️ 未获取到任何评论"
+                # 显示平台诊断信息
+                if hasattr(collector, 'last_error') and collector.last_error:
+                    err_msg += f"\n\n**诊断信息**: {collector.last_error}"
+                else:
+                    err_msg += "，请检查链接或 Cookie 是否正确"
+                st.warning(err_msg)
 
 
 def page_analyze():

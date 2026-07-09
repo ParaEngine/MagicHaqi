@@ -36,6 +36,7 @@ class TiebaCollector(BaseCollector):
     def __init__(self, cookie: str = "", **kwargs):
         super().__init__(**kwargs)
         self.cookie = cookie.strip().strip("'").strip('"') if cookie else ""
+        self.last_error = ""  # 供 UI 展示的诊断信息
 
     def validate_config(self) -> bool:
         return True
@@ -110,9 +111,25 @@ class TiebaCollector(BaseCollector):
                         break
                     last_count = current
 
-                # JS 提取
-                posts_data = page.evaluate("""
+                # JS 提取 + 诊断
+                posts_data, debug_info = page.evaluate("""
                     () => {
+                        const debug = {
+                            title: document.title,
+                            bodyLen: document.body ? document.body.innerText.length : 0,
+                            bodySample: document.body ? document.body.innerText.substring(0, 500) : '',
+                            totalDivs: document.querySelectorAll('div').length,
+                            selectors: {}
+                        };
+                        // 统计各选择器命中数
+                        ['l_post', 'j_l_post', 'd_post_content', 'post_content',
+                         'd_name', 'p_author_name', 'tail-info',
+                         '[class*="l_post"]', '[class*="post_content"]', '[class*="d_post"]',
+                         '[class*="content"]', '[class*="floor"]', '[class*="reply"]'].forEach(sel => {
+                            try { debug.selectors[sel] = document.querySelectorAll(sel).length; }
+                            catch(e) { debug.selectors[sel] = 'ERR'; }
+                        });
+
                         const result = [];
                         const floors = document.querySelectorAll('.l_post, .j_l_post, [class*="l_post"]');
                         floors.forEach(el => {
@@ -131,9 +148,31 @@ class TiebaCollector(BaseCollector):
                                 if (c && c.length > 2) result.push({userName:'贴吧用户', content:c, time:''});
                             });
                         }
-                        return result;
+                        return [result, debug];
                     }
                 """)
+
+                # 打印诊断
+                print(f"[贴吧] 页面标题: {debug_info.get('title', 'N/A')}")
+                print(f"[贴吧] body 文本长度: {debug_info.get('bodyLen', 0)} 字符")
+                print(f"[贴吧] 总 div 数: {debug_info.get('totalDivs', 0)}")
+                print(f"[贴吧] body 样本: {debug_info.get('bodySample', '')[:300]}")
+                sel = debug_info.get('selectors', {})
+                print(f"[贴吧] 选择器命中: l_post={sel.get('l_post',0)}, j_l_post={sel.get('j_l_post',0)}, "
+                      f"d_post_content={sel.get('d_post_content',0)}, post_content={sel.get('post_content',0)}, "
+                      f"d_name={sel.get('d_name',0)}, tail-info={sel.get('tail-info',0)}")
+                print(f"[贴吧] 提取到 {len(posts_data)} 条帖子")
+                self.last_error = ""
+                if len(posts_data) == 0:
+                    self.last_error = (
+                        f"页面可访问但未匹配到楼层。诊断: "
+                        f"标题={debug_info.get('title','?')}, "
+                        f"body文本={debug_info.get('bodyLen',0)}字符, "
+                        f"关键选择器命中: l_post={sel.get('l_post',0)}, "
+                        f"d_post_content={sel.get('d_post_content',0)}, "
+                        f"post_content={sel.get('post_content',0)}。"
+                        f"body样本: {debug_info.get('bodySample','')[:200]}"
+                    )
                 return posts_data
             finally:
                 page.close()
@@ -243,10 +282,12 @@ class TiebaCollector(BaseCollector):
         tid = self.extract_post_id(post_id)
         if max_comments is None:
             max_comments = 100
+        self.last_error = ""
 
         try:
             posts_data = self._run_in_thread(self._pw_fetch_comments, tid, max_comments)
         except Exception as e:
+            self.last_error = f"抓取异常: {e}"
             print(f"[贴吧] 抓取异常: {e}")
             return []
 
