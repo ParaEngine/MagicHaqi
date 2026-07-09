@@ -3,8 +3,6 @@ import { $, escapeHtml, showToast } from './utils.js';
 import { getLang, setLang, t } from './i18n.js';
 import { state } from './state.js';
 
-// 装饰用的小星球（复用 planet.css 中的 .space-planet / .planet-body / .planet-ring 等样式）
-// 通过 --planet-hue 调色，通过 left/top + transform scale 控制位置与大小，避免重复 CSS。
 const DECOR_PLANETS = [
     { left: '14%', top: '22%', scale: 0.42, hue: 200, ring: true },
     { left: '82%', top: '30%', scale: 0.30, hue: 28,  ring: false },
@@ -28,7 +26,6 @@ function decorPlanetHtml(p) {
         </div>`;
 }
 
-// 渲染中央动作区域：登录按钮 或 "登录中..." 提示
 function actionAreaHtml(mode) {
     if (mode === 'loggingIn') {
         return `
@@ -39,10 +36,45 @@ function actionAreaHtml(mode) {
                 </div>
             </div>`;
     }
+    if (mode === 'landing') {
+        return `
+            <div id="mhLoginLanding" class="flex flex-col items-center" style="width:100%;max-width:420px">
+                ${landingContentHtml()}
+            </div>`;
+    }
     return `
         <button id="mhLoginBtn" class="btn-primary text-base" style="padding:12px 36px">
             🔑 ${escapeHtml(t('login'))}
         </button>`;
+}
+
+function landingContentHtml() {
+    const features = [
+        { emoji: '🐱', title: t('loginFeature1Title'), desc: t('loginFeature1Desc') },
+        { emoji: '🎨', title: t('loginFeature2Title'), desc: t('loginFeature2Desc') },
+        { emoji: '🌍', title: t('loginFeature3Title'), desc: t('loginFeature3Desc') },
+        { emoji: '💬', title: t('loginFeature4Title'), desc: t('loginFeature4Desc') },
+    ];
+    const cards = features.map(f => `
+        <div class="mh-login-feature-card">
+            <div class="text-4xl mb-2">${escapeHtml(f.emoji)}</div>
+            <div class="text-sm font-bold" style="color:#dae8ff;margin-bottom:4px">${escapeHtml(f.title)}</div>
+            <div class="text-xs" style="color:#8899c0">${escapeHtml(f.desc)}</div>
+        </div>`).join('');
+
+    return `
+        <div class="mh-login-feature-grid">${cards}</div>
+        <div id="mhLoginPrivacy" class="mh-login-privacy">
+            <div id="mhLoginPrivacyCheck" class="mh-login-checkbox"></div>
+            <span style="color:#8ca0c4;font-size:13px">${escapeHtml(t('loginPrivacyPrefix'))}</span>
+            <span id="mhLoginPrivacyLink1" class="mh-login-privacy-link">${escapeHtml(t('loginPrivacyLink1'))}</span>
+            <span style="color:#8ca0c4;font-size:13px">${escapeHtml(t('loginPrivacyAnd'))}</span>
+            <span id="mhLoginPrivacyLink2" class="mh-login-privacy-link">${escapeHtml(t('loginPrivacyLink2'))}</span>
+        </div>
+        <button id="mhLoginAgreeBtn" class="mh-login-agree-btn disabled" disabled>
+            ${escapeHtml(t('loginAgreeBtn'))}
+        </button>
+        <div style="font-size:12px;color:#5b6d90;margin-top:12px">${escapeHtml(t('loginFooterTip'))}</div>`;
 }
 
 function languageSelectorHtml() {
@@ -81,50 +113,191 @@ function offlineOptionHtml() {
         </div>`;
 }
 
-// 一次性注入 spinner 样式
-function ensureLoginSpinnerStyle() {
-    if (document.getElementById('mhLoginSpinnerStyle')) return;
+function ensureLoginStyle() {
+    if (document.getElementById('mhLoginStyle')) return;
     const style = document.createElement('style');
-    style.id = 'mhLoginSpinnerStyle';
+    style.id = 'mhLoginStyle';
     style.textContent = `
-        .mh-login-spinner{
-            width:42px;height:42px;border-radius:50%;
-            border:3px solid rgba(152,239,255,0.25);
-            border-top-color:#7de1ff;
-            box-shadow:0 0 18px rgba(125,225,255,0.45);
-            animation:mhLoginSpin 0.9s linear infinite;
-        }
+        .mh-login-spinner{width:42px;height:42px;border-radius:50%;border:3px solid rgba(152,239,255,0.25);border-top-color:#7de1ff;box-shadow:0 0 18px rgba(125,225,255,0.45);animation:mhLoginSpin 0.9s linear infinite}
         @keyframes mhLoginSpin{to{transform:rotate(360deg)}}
+        .mh-login-feature-grid{display:grid;grid-template-columns:1fr 1fr;gap:12px;margin-bottom:24px;width:100%}
+        .mh-login-feature-card{background:rgba(20,30,60,0.58);border:1px solid rgba(152,239,255,0.12);border-radius:16px;padding:16px 10px 14px;display:flex;flex-direction:column;align-items:center;backdrop-filter:blur(6px);text-align:center;cursor:default;transition:border-color .25s}
+        .mh-login-feature-card:hover{border-color:rgba(152,239,255,0.28)}
+        .mh-login-privacy{display:flex;align-items:center;flex-wrap:wrap;justify-content:center;gap:3px;margin-bottom:20px;cursor:pointer}
+        .mh-login-checkbox{width:20px;height:20px;border:2px solid rgba(152,239,255,0.45);border-radius:5px;margin-right:6px;flex-shrink:0;transition:all .2s;display:flex;align-items:center;justify-content:center}
+        .mh-login-checkbox.checked{background:linear-gradient(135deg,#2acfff,#1f60ff);border-color:transparent}
+        .mh-login-checkbox.checked::after{content:'\\2713';font-size:14px;color:#fff;font-weight:700;line-height:1}
+        .mh-login-privacy-link{color:#5ecfff;font-size:13px;text-decoration:underline;cursor:pointer}
+        .mh-login-privacy-link:hover{color:#7de1ff}
+        .mh-login-agree-btn{width:100%;max-width:360px;padding:14px 0;border-radius:48px;border:none;background:linear-gradient(135deg,#2acfff,#4f6fff,#a34fff);color:#fff;font-size:17px;font-weight:700;box-shadow:0 10px 30px rgba(42,207,255,0.3);cursor:pointer;touch-action:manipulation;transition:all .25s}
+        .mh-login-agree-btn.disabled{background:rgba(60,80,130,0.45);box-shadow:none;color:#6b80a8;cursor:not-allowed}
+        .mh-login-agree-btn:not(.disabled):hover{opacity:0.9;transform:translateY(-1px);box-shadow:0 14px 36px rgba(42,207,255,0.4)}
+        .mh-modal-overlay{position:fixed;inset:0;z-index:9999;display:flex;align-items:center;justify-content:center;background:rgba(0,0,0,0.6);backdrop-filter:blur(4px);padding:24px}
+        .mh-modal-card{width:100%;max-width:480px;max-height:70vh;background:linear-gradient(160deg,#0f1a3a,#16213e,#1a2468);border:1px solid rgba(152,239,255,0.2);border-radius:20px;display:flex;flex-direction:column;overflow:hidden;box-shadow:0 20px 60px rgba(0,0,0,0.5)}
+        .mh-modal-header{display:flex;align-items:center;justify-content:space-between;padding:16px 20px;border-bottom:1px solid rgba(152,239,255,0.12);flex-shrink:0}
+        .mh-modal-title{font-size:16px;font-weight:700;color:#e8f7ff}
+        .mh-modal-close{background:none;border:none;color:#8ca0c4;font-size:28px;cursor:pointer;padding:0 4px;line-height:1}
+        .mh-modal-body{flex:1;overflow-y:auto;padding:16px 20px 20px;line-height:1.7}
+        .mh-modal-scroll{color:#9fd0eb;font-size:13px}
+        .mh-modal-scroll a{color:#5ecfff}
+        .mh-modal-scroll b{color:#e8f7ff}
     `;
     document.head.appendChild(style);
 }
 
-export function renderLogin(panel, _data, { onLogin, onOffline, mode = 'login', sharedGame = null } = {}) {
-    ensureLoginSpinnerStyle();
+function isMiniProgram() {
+    if (typeof window !== 'undefined' && window.__wxjs_environment === 'miniprogram') return true;
+    if (typeof navigator !== 'undefined' && /miniProgram/i.test(navigator.userAgent)) return true;
+    return false;
+}
+
+// ─── 从 docs/ 目录加载 Markdown 文档（带缓存） ───
+const _mdCache = {};
+async function loadMarkdown(filename) {
+    if (_mdCache[filename]) return _mdCache[filename];
+    const base = (() => {
+        try { return new URL('.', import.meta.url).href; }
+        catch (_) { return './'; }
+    })();
+    const url = base + '../../docs/' + filename;
+    const res = await fetch(url);
+    if (!res.ok) throw new Error(`加载文档失败: ${filename}`);
+    const text = await res.text();
+    _mdCache[filename] = text;
+    return text;
+}
+
+// ─── 轻量 Markdown → HTML 渲染器 ───
+function markdownToHtml(md) {
+    // Escape HTML first
+    let html = md
+        .replace(/&/g, '&amp;')
+        .replace(/</g, '&lt;')
+        .replace(/>/g, '&gt;');
+
+    // Inline: **bold**
+    html = html.replace(/\*\*(.+?)\*\*/g, '<b>$1</b>');
+
+    // Inline: [text](url)
+    html = html.replace(/\[(.+?)\]\((.+?)\)/g, '<a href="$2" target="_blank">$1</a>');
+
+    // Split into lines
+    const lines = html.split('\n');
+    const result = [];
+    let inList = false;
+
+    for (let i = 0; i < lines.length; i++) {
+        const raw = lines[i];
+        const line = raw.trim();
+
+        // Empty line: close list if open, push paragraph break
+        if (!line) {
+            if (inList) { result.push('</ul>'); inList = false; }
+            result.push('');
+            continue;
+        }
+
+        // H2: ## heading
+        if (line.startsWith('## ')) {
+            if (inList) { result.push('</ul>'); inList = false; }
+            result.push(`<p style="color:#fff;font-weight:600;margin-bottom:4px">${line.slice(3)}</p>`);
+            continue;
+        }
+
+        // H1: # heading
+        if (line.startsWith('# ')) {
+            if (inList) { result.push('</ul>'); inList = false; }
+            result.push(`<p style="color:#e8f7ff;font-weight:700;margin-bottom:12px;font-size:15px">${line.slice(2)}</p>`);
+            continue;
+        }
+
+        // List item: - text or * text
+        if (/^[\-\*] /.test(line)) {
+            const item = line.replace(/^[\-\*]\s+/, '');
+            if (!inList) { result.push('<ul style="color:#9fd0eb;font-size:12px;line-height:1.8;margin-bottom:12px;padding-left:16px;list-style:disc">'); inList = true; }
+            result.push(`<li>${item}</li>`);
+            continue;
+        }
+
+        // Close list if we were in one and hit a normal line
+        if (inList) { result.push('</ul>'); inList = false; }
+
+        // Regular paragraph
+        result.push(`<p style="color:#9fd0eb;font-size:12px;line-height:1.7;margin-bottom:12px">${line}</p>`);
+    }
+
+    if (inList) result.push('</ul>');
+
+    return '<div class="mh-modal-scroll">' + result.join('\n') + '</div>';
+}
+
+// ===== 弹窗（从 docs/ 目录实时加载 Markdown） =====
+async function showLoginPrivacyModal() {
+    try {
+        const md = await loadMarkdown('privacy.md');
+        showModal('隐私政策', markdownToHtml(md));
+    } catch (e) {
+        console.warn('加载隐私政策失败', e);
+        showModal('隐私政策', '<div class="mh-modal-scroll"><p style="color:#9fd0eb">文档加载失败，请稍后重试</p></div>');
+    }
+}
+
+async function showLoginLicenseModal() {
+    try {
+        const md = await loadMarkdown('license.md');
+        showModal('用户协议', markdownToHtml(md));
+    } catch (e) {
+        console.warn('加载用户协议失败', e);
+        showModal('用户协议', '<div class="mh-modal-scroll"><p style="color:#9fd0eb">文档加载失败，请稍后重试</p></div>');
+    }
+}
+
+function showModal(title, bodyHtml) {
+    const existing = document.getElementById('mhLoginPolicyModal');
+    if (existing) existing.remove();
+
+    const overlay = document.createElement('div');
+    overlay.id = 'mhLoginPolicyModal';
+    overlay.className = 'mh-modal-overlay';
+    overlay.innerHTML = `
+        <div class="mh-modal-card">
+            <div class="mh-modal-header">
+                <span class="mh-modal-title">${escapeHtml(title)}</span>
+                <button id="mhModalClose" class="mh-modal-close">&times;</button>
+            </div>
+            <div class="mh-modal-body">${bodyHtml}</div>
+        </div>`;
+    document.body.appendChild(overlay);
+
+    const close = () => overlay.remove();
+    overlay.addEventListener('click', (e) => { if (e.target === overlay) close(); });
+    const closeBtn = overlay.querySelector('#mhModalClose');
+    if (closeBtn) closeBtn.onclick = close;
+}
+
+// ===== 主入口 =====
+export function renderLogin(panel, _data, { onLogin, onOffline, mode, sharedGame = null } = {}) {
+    if (mode == null) mode = isMiniProgram() ? 'landing' : 'login';
+    ensureLoginStyle();
     const appTitle = String(state.settings?.starSettlement?.appTitle || '').trim() || t('appName');
-    // 分享小游戏落地的专属登录页：不展示品牌（蛋蛋星球），改为「XXX 给你分享了一个小游戏，登录即可一起玩」。
-    // 用户作品分享带 gameFrom（作者名）；官方游戏分享只带 game，无作者，用通用文案。
     const shareOwner = String(sharedGame?.fromUsername || '').trim();
     const isShare = !!(shareOwner || String(sharedGame?.game || '').trim());
     const shareTitle = shareOwner
         ? t('mgShareLoginTitle', { owner: shareOwner })
         : t('mgShareLoginTitleAnon');
-    // 分享者（或程序）附加的一句自定义留言，单独一行展示在引导文案下方。
     const shareMessage = String(sharedGame?.message || '').trim();
-    // 复用 level_planet 的太空背景：.mh-stage.zoom-space + .space-bg + 闪烁星点
     const stars = Array.from({ length: 82 }).map((_, i) => {
         const x = (Math.random() * 100).toFixed(2);
         const y = (Math.random() * 100).toFixed(2);
         const s = (Math.random() * 2.1 + 0.8).toFixed(2);
         const d = (Math.random() * 4 + 2).toFixed(2);
         const delay = (-(Math.random() * 4)).toFixed(2);
-        const glow = i % 5 === 0
-            ? 'rgba(255, 231, 161, 0.95)'
-            : i % 3 === 0 ? 'rgba(152, 239, 255, 0.95)' : '#fff';
+        const glow = i % 5 === 0 ? 'rgba(255, 231, 161, 0.95)' : i % 3 === 0 ? 'rgba(152, 239, 255, 0.95)' : '#fff';
         return `<i class="star" style="left:${x}%;top:${y}%;width:${s}px;height:${s}px;--star-glow:${glow};animation-duration:${d}s;animation-delay:${delay}s"></i>`;
     }).join('');
 
     const planets = DECOR_PLANETS.map(decorPlanetHtml).join('');
+    const isLanding = mode === 'landing';
 
     panel.innerHTML = `
         <div class="mh-stage zoom-space absolute inset-0 overflow-hidden fade-in" style="border-radius:inherit">
@@ -141,25 +314,17 @@ export function renderLogin(panel, _data, { onLogin, onOffline, mode = 'login', 
                 ` : `
                 <div class="text-7xl floaty mb-4" style="filter:drop-shadow(0 0 18px rgba(125,225,255,0.55))">🐾</div>
                 <h1 class="text-3xl font-extrabold mb-2" style="color:#e8f7ff;text-shadow:0 0 18px rgba(84,226,255,0.55),0 2px 8px rgba(6,18,44,0.6)">${escapeHtml(appTitle)}</h1>
-                <p class="text-sm mb-8" style="color:#bde6ff;text-shadow:0 0 10px rgba(84,226,255,0.35)">${escapeHtml(t('tagline'))}</p>
-                <p class="text-xs mb-6" style="color:#9fd0eb;text-shadow:0 1px 4px rgba(6,18,44,0.6)">${escapeHtml(t('pleaseLogin'))}</p>
+                <p class="text-sm" style="color:#bde6ff;text-shadow:0 0 10px rgba(84,226,255,0.35);margin-bottom:${isLanding ? '6px' : '32px'}">${escapeHtml(t('tagline'))}</p>
+                ${isLanding ? '' : `<p class="text-xs mb-6" style="color:#9fd0eb;text-shadow:0 1px 4px rgba(6,18,44,0.6)">${escapeHtml(t('pleaseLogin'))}</p>`}
                 `}
                 <div id="mhLoginAction" class="flex items-center justify-center" style="min-height:64px">
                     ${actionAreaHtml(mode)}
                 </div>
-                ${(mode === 'loggingIn' || isShare) ? '' : offlineOptionHtml()}
+                ${(mode === 'login' && !isShare) ? offlineOptionHtml() : ''}
                 ${languageSelectorHtml()}
             </div>
         </div>`;
-    const btn = $('mhLoginBtn');
-    if (btn) {
-        btn.onclick = () => {
-            // 立即切换到 "登录中..." 模式，避免短暂闪烁登录按钮
-            const action = $('mhLoginAction');
-            if (action) action.innerHTML = actionAreaHtml('loggingIn');
-            onLogin?.();
-        };
-    }
+
     const switchLanguage = (lang) => {
         if (setLang(lang)) renderLogin(panel, _data, { onLogin, onOffline, mode, sharedGame });
     };
@@ -167,9 +332,57 @@ export function renderLogin(panel, _data, { onLogin, onOffline, mode = 'login', 
     const langEn = $('mhLoginLangEn');
     if (langZh) langZh.onclick = () => switchLanguage('zh');
     if (langEn) langEn.onclick = () => switchLanguage('en');
-    const offlineBtn = $('mhOfflineBtn');
-    if (offlineBtn) offlineBtn.onclick = () => {
-        showToast(t('offlineHint'), 'info', 2800);
-        onOffline?.();
-    };
+
+    if (mode === 'login' && !isShare) {
+        const offlineBtn = $('mhOfflineBtn');
+        if (offlineBtn) offlineBtn.onclick = () => {
+            showToast(t('offlineHint'), 'info', 2800);
+            onOffline?.();
+        };
+    }
+
+    if (mode === 'login') {
+        const btn = $('mhLoginBtn');
+        if (btn) {
+            btn.onclick = () => {
+                const action = $('mhLoginAction');
+                if (action) action.innerHTML = actionAreaHtml('loggingIn');
+                onLogin?.();
+            };
+        }
+    }
+
+    if (mode === 'landing') {
+        let agreed = false;
+        const toggleAgreed = (val) => {
+            agreed = Boolean(val);
+            const check = $('mhLoginPrivacyCheck');
+            if (check) check.classList.toggle('checked', agreed);
+            const agreeBtn = $('mhLoginAgreeBtn');
+            if (agreeBtn) {
+                agreeBtn.classList.toggle('disabled', !agreed);
+                agreeBtn.disabled = !agreed;
+            }
+        };
+
+        const privacyRow = $('mhLoginPrivacy');
+        if (privacyRow) privacyRow.onclick = (e) => {
+            if (e.target.id === 'mhLoginPrivacyLink1' || e.target.id === 'mhLoginPrivacyLink2') return;
+            toggleAgreed(!agreed);
+        };
+
+        const link1 = $('mhLoginPrivacyLink1');
+        if (link1) link1.onclick = (e) => { e.stopPropagation(); showLoginPrivacyModal(); };
+        const link2 = $('mhLoginPrivacyLink2');
+        if (link2) link2.onclick = (e) => { e.stopPropagation(); showLoginLicenseModal(); };
+
+        const agreeBtn = $('mhLoginAgreeBtn');
+        if (agreeBtn) agreeBtn.onclick = () => {
+            if (!agreed) {
+                showToast(t('loginAgreeNotice'), 'none', 2000);
+                return;
+            }
+            renderLogin(panel, _data, { onLogin, onOffline, mode: 'login', sharedGame });
+        };
+    }
 }
