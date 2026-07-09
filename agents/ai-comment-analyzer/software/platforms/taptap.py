@@ -339,6 +339,15 @@ class TapTapCollector(BaseCollector):
             "csrf": (
                 "CSRF 校验失败。Cookie 中可能缺少 csrfToken 字段，请重新获取完整 Cookie。"
             ),
+            "未认证": (
+                "登录凭证无效或已过期。请：\n"
+                "1. 确认 TapTap 页面上显示已登录（有头像）\n"
+                "2. 在已登录的页面 F12 → Console 输入 document.cookie 重新获取\n"
+                "3. 如果还不行，请退出登录再重新登录"
+            ),
+            "未登录": (
+                "Cookie 中缺少登录凭证。请在 taptap.cn 登录后再获取 Cookie。"
+            ),
         }
 
         try:
