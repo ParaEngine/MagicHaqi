@@ -1,233 +1,196 @@
 """
 小红书 (Xiaohongshu) 评论收集器
-使用 Playwright 浏览器渲染页面后从 DOM 提取评论，绕过 API x-s/x-t 签名限制
+使用小红书 API 拉取笔记评论，需要 Cookie
 """
 
 import re
 import time
+import requests
 from typing import List, Dict, Optional
+from datetime import datetime
 
 from .base import BaseCollector
 
 
 class XiaohongshuCollector(BaseCollector):
-    """小红书评论收集器（Playwright DOM 抓取）"""
+    """小红书评论收集器"""
 
     platform_name = "xiaohongshu"
     platform_display_name = "小红书"
-    platform_description = "使用浏览器渲染页面后从 DOM 提取评论，无需 API 签名"
+    platform_description = "使用小红书 API 拉取笔记评论，需要登录 Cookie"
+
+    BASE_URL = "https://edith.xiaohongshu.com/api/sns/web/v1"
+    HEADERS = {
+        "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
+        "Referer": "https://www.xiaohongshu.com/",
+        "Origin": "https://www.xiaohongshu.com",
+    }
 
     def __init__(self, cookie: str = "", **kwargs):
         super().__init__(**kwargs)
-        self.cookie = cookie.strip().strip("'").strip('"') if cookie else ""
-        self._browser = None
-        self._playwright = None
+        self.cookie = cookie
+        self.session = requests.Session()
+        self.session.headers.update(self.HEADERS)
+        if cookie:
+            self.session.headers["Cookie"] = cookie
 
     def validate_config(self) -> bool:
-        return True  # 公开笔记无需登录
-
-    def _get_browser(self):
-        """延迟加载 Playwright 浏览器（反检测模式）"""
-        if self._browser is None:
-            from playwright.sync_api import sync_playwright
-            self._playwright = sync_playwright().start()
-            self._browser = self._playwright.chromium.launch(
-                headless=True,
-                args=[
-                    "--disable-blink-features=AutomationControlled",
-                    "--no-sandbox",
-                    "--disable-gpu",
-                ]
-            )
-        return self._browser
-
-    def _new_page(self):
-        """创建带反检测和 Cookie 的新页面"""
-        browser = self._get_browser()
-        context = browser.new_context(
-            viewport={"width": 1920, "height": 1080},
-            user_agent="Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
-            locale="zh-CN",
-        )
-        # 隐藏 webdriver 标志
-        context.add_init_script("""
-            Object.defineProperty(navigator, 'webdriver', {get: () => undefined});
-            Object.defineProperty(navigator, 'plugins', {get: () => [1, 2, 3, 4, 5]});
-            Object.defineProperty(navigator, 'languages', {get: () => ['zh-CN', 'zh']});
-            window.chrome = {runtime: {}};
-        """)
-        page = context.new_page()
-        if self.cookie:
-            cookies = []
-            for item in self.cookie.split(";"):
-                item = item.strip()
-                if "=" in item:
-                    k, v = item.split("=", 1)
-                    cookies.append({"name": k.strip(), "value": v.strip(),
-                                   "domain": ".xiaohongshu.com", "path": "/"})
-            if cookies:
-                context.add_cookies(cookies)
-        return page
-
-    def test_connection(self) -> Dict:
-        try:
-            self._get_browser()
-            return {"success": True, "message": "Playwright 浏览器就绪", "user": None}
-        except ImportError:
-            return {"success": False, "message": "请安装: pip install playwright && playwright install chromium"}
-        except Exception as e:
-            return {"success": False, "message": str(e)}
+        return bool(self.cookie)
 
     @staticmethod
     def extract_post_id(url_or_id: str) -> str:
+        """从 URL 或 ID 中提取笔记 ID"""
         url_or_id = url_or_id.strip()
-        m = re.search(r'/explore/([a-zA-Z0-9]+)', url_or_id)
-        if m:
-            return m.group(1)
-        m = re.search(r'/discovery/item/([a-zA-Z0-9]+)', url_or_id)
-        if m:
-            return m.group(1)
+        # 匹配 explore/ 后的 ID
+        match = re.search(r'/explore/([a-zA-Z0-9]+)', url_or_id)
+        if match:
+            return match.group(1)
+        # 匹配 discovery/item/ 后的 ID
+        match = re.search(r'/discovery/item/([a-zA-Z0-9]+)', url_or_id)
+        if match:
+            return match.group(1)
         return url_or_id
 
     def get_post_info(self, post_id: str) -> Optional[Dict]:
+        """获取笔记信息"""
         note_id = self.extract_post_id(post_id)
-        url = f"https://www.xiaohongshu.com/explore/{note_id}"
+
         try:
-            page = self._new_page()
-            page.goto(url, timeout=30000, wait_until="domcontentloaded")
-            time.sleep(3)
-            title = page.title() or ""
-            desc = author = ""
-            likes = comments_count = 0
-            try:
-                title = page.locator('[class*="title"]').first.inner_text() or title
-            except Exception:
-                pass
-            try:
-                desc = page.locator('[class*="desc"]').first.inner_text()
-            except Exception:
-                pass
-            try:
-                author = page.locator('[class*="username"], [class*="nickname"]').first.inner_text()
-            except Exception:
-                pass
-            try:
-                t = page.locator('[class*="like"] span').first.inner_text()
-                likes = int(re.sub(r'[^0-9]', '', t)) if t else 0
-            except Exception:
-                pass
-            try:
-                t = page.locator('[class*="comment"] span').first.inner_text()
-                comments_count = int(re.sub(r'[^0-9]', '', t)) if t else 0
-            except Exception:
-                pass
-            page.close()
-            return {
-                "id": note_id, "title": title, "content": desc,
-                "author_name": author, "author_username": author,
-                "like_count": likes, "comment_count": comments_count,
-                "share_count": 0, "url": url, "platform": self.platform_name,
-            }
+            resp = self.session.get(
+                f"{self.BASE_URL}/feed/detail",
+                params={"note_id": note_id, "xsec_source": "pc_search"},
+                timeout=10
+            )
+            data = resp.json()
+
+            if data.get("success") and data.get("data"):
+                note = data["data"]["items"][0] if data["data"].get("items") else {}
+                note_data = note.get("note_card", {})
+                user_info = note_data.get("user", {})
+                interact_info = note_data.get("interact_info", {})
+
+                return {
+                    "id": note_data.get("note_id", note_id),
+                    "title": note_data.get("title", ""),
+                    "content": note_data.get("desc", ""),
+                    "author_id": user_info.get("user_id", ""),
+                    "author_name": user_info.get("nickname", ""),
+                    "author_username": user_info.get("nickname", ""),
+                    "author_avatar": user_info.get("avatar", ""),
+                    "created_at": "",
+                    "like_count": interact_info.get("liked_count", 0),
+                    "comment_count": interact_info.get("comment_count", 0),
+                    "share_count": interact_info.get("share_count", 0),
+                    "view_count": 0,
+                    "platform": self.platform_name,
+                    "url": f"https://www.xiaohongshu.com/explore/{note_data.get('note_id', note_id)}",
+                }
+
         except Exception as e:
             print(f"[小红书] 获取笔记信息异常: {e}")
-            return {"id": note_id, "title": "", "content": "", "url": url, "platform": self.platform_name}
+
+        # 返回基本信息
+        return {
+            "id": note_id,
+            "title": "",
+            "content": "",
+            "author_id": "",
+            "author_name": "",
+            "author_username": "",
+            "author_avatar": "",
+            "created_at": "",
+            "like_count": 0,
+            "comment_count": 0,
+            "share_count": 0,
+            "view_count": 0,
+            "platform": self.platform_name,
+            "url": f"https://www.xiaohongshu.com/explore/{note_id}",
+        }
 
     def fetch_comments(self, post_id: str, max_comments: Optional[int] = None) -> List[Dict]:
+        """拉取笔记评论"""
         note_id = self.extract_post_id(post_id)
-        url = f"https://www.xiaohongshu.com/explore/{note_id}"
-        if max_comments is None:
-            max_comments = 100
-        print(f"[小红书] 浏览器打开 {url} ...")
-        try:
-            page = self._new_page()
-            page.goto(url, timeout=30000, wait_until="domcontentloaded")
-            time.sleep(3)
-            last_count = 0
-            for _ in range(20):
-                comments = page.evaluate("""
-                    () => {
-                        const items = document.querySelectorAll(
-                            '.comment-item, .parent-comment, [class*="comment-item"], [class*="CommentItem"]'
-                        );
-                        return Array.from(items).map(el => {
-                            const userName = el.querySelector(
-                                '.user-name, .nickname, .username, [class*="nickname"], a[href*="/user/"]'
-                            )?.textContent?.trim() || '小红书用户';
-                            const avatar = el.querySelector('img[class*="avatar"], img')?.src || '';
-                            let content = el.querySelector(
-                                '.content, .comment-content, .note-text, [class*="content"] span'
-                            )?.textContent?.trim() || '';
-                            if (!content) {
-                                const spans = el.querySelectorAll('span');
-                                content = Array.from(spans).map(s => s.textContent.trim()).join(' ').substring(0, 300);
-                            }
-                            const likeText = el.querySelector('[class*="like"] span, [class*="count"]')?.textContent || '0';
-                            const likeCount = parseInt(likeText.replace(/[^0-9]/g, '')) || 0;
-                            const id = el.getAttribute('data-comment-id') || el.id || '';
-                            if (!content || content.length < 2) return null;
-                            return { id, userName, avatar, content, likeCount };
-                        }).filter(Boolean);
-                    }
-                """)
-                if len(comments) == last_count and len(comments) > 0:
+        all_comments = []
+        cursor = ""
+
+        print(f"[小红书] 开始拉取笔记 {note_id} 的评论...")
+
+        while True:
+            try:
+                payload = {
+                    "note_id": note_id,
+                    "cursor": cursor,
+                    "top_comment_id": "",
+                    "image_formats": ["jpg", "webp", "avif"],
+                }
+
+                resp = self.session.post(
+                    f"{self.BASE_URL}/comment/page",
+                    json=payload,
+                    timeout=10
+                )
+                data = resp.json()
+
+                if not data.get("success"):
+                    msg = data.get("msg", "未知错误")
+                    print(f"[小红书] 拉取评论失败: {msg}")
                     break
-                last_count = len(comments)
-                page.evaluate("window.scrollTo(0, document.body.scrollHeight)")
-                time.sleep(2)
-                try:
-                    page.locator('text=加载更多').first.click(timeout=2000)
-                    time.sleep(2)
-                except Exception:
-                    pass
-            page.close()
-            result = []
-            for i, c in enumerate(comments[:max_comments]):
-                result.append({
-                    "id": c["id"] or f"xhs-{note_id}-{i}",
-                    "post_id": note_id, "platform": self.platform_name,
-                    "author_username": c["userName"], "author_name": c["userName"],
-                    "author_avatar": c["avatar"], "text": c["content"],
-                    "like_count": c["likeCount"], "reply_count": 0,
-                    "created_at": "", "ip_location": "", "platform_data": {},
-                })
-            print(f"[小红书] 共提取 {len(result)} 条评论")
-            return result
-        except Exception as e:
-            print(f"[小红书] Playwright 抓取异常: {e}")
-            return []
 
-    def reply_comment(self, comment_id: str, reply_text: str, post_id: str = "") -> Dict:
-        """回复评论（Playwright，需 Cookie）"""
-        if not self.cookie:
-            return {"success": False, "error": "需要登录 Cookie",
-                    "message": "请在侧边栏配置小红书 Cookie（从 Network 复制完整 Cookie 字符串）"}
-        note_id = self.extract_post_id(post_id) if post_id else ""
-        try:
-            page = self._new_page()
-            page.goto(f"https://www.xiaohongshu.com/explore/{note_id}",
-                      timeout=30000, wait_until="domcontentloaded")
-            time.sleep(3)
-            reply_box = page.locator('[contenteditable="true"], textarea, input[type="text"]').first
-            if not reply_box:
-                page.close()
-                return {"success": False, "error": "未找到回复输入框"}
-            reply_box.fill(reply_text)
-            time.sleep(0.5)
-            send_btn = page.locator('button:has-text("发送"), button:has-text("发布"), [class*="send"], [class*="submit"]').first
-            if send_btn:
-                send_btn.click()
-                time.sleep(2)
-            page.close()
-            return {"success": True, "message": "回复已发送（浏览器模拟）"}
-        except Exception as e:
-            print(f"[小红书] 回复异常: {e}")
-            return {"success": False, "error": str(e)}
+                comments_data = data.get("data", {})
+                comments_list = comments_data.get("comments", [])
 
-    def __del__(self):
-        try:
-            if self._browser:
-                self._browser.close()
-            if self._playwright:
-                self._playwright.stop()
-        except Exception:
-            pass
+                if not comments_list:
+                    print("[小红书] 无更多评论")
+                    break
+
+                for comment in comments_list:
+                    user_info = comment.get("user_info", {})
+                    like_info = comment.get("like_info", {})
+
+                    comment_data = {
+                        "id": comment.get("id", ""),
+                        "post_id": note_id,
+                        "platform": self.platform_name,
+                        "author_id": user_info.get("user_id", ""),
+                        "author_username": user_info.get("nickname", ""),
+                        "author_name": user_info.get("nickname", ""),
+                        "author_avatar": user_info.get("image", ""),
+                        "text": comment.get("content", ""),
+                        "created_at": datetime.fromtimestamp(comment.get("create_time", 0) / 1000).isoformat() if comment.get("create_time") else None,
+                        "like_count": like_info.get("like_count", 0),
+                        "reply_count": comment.get("sub_comment_count", 0),
+                        "ip_location": comment.get("ip_location", ""),
+                        "platform_data": {
+                            "status": comment.get("status"),
+                            "note_id": note_id,
+                        }
+                    }
+                    all_comments.append(comment_data)
+
+                    if max_comments and len(all_comments) >= max_comments:
+                        break
+
+                print(f"[小红书] 获取 {len(comments_list)} 条，累计 {len(all_comments)} 条")
+
+                if max_comments and len(all_comments) >= max_comments:
+                    print(f"[小红书] 已达到最大数量限制 {max_comments}")
+                    break
+
+                # 检查是否有下一页
+                has_more = comments_data.get("has_more", False)
+                if not has_more:
+                    print("[小红书] 已拉取全部评论")
+                    break
+
+                cursor = comments_data.get("cursor", "")
+                if not cursor:
+                    break
+
+                time.sleep(1)  # 请求间隔
+
+            except Exception as e:
+                print(f"[小红书] 拉取评论异常: {e}")
+                break
+
+        print(f"[小红书] 共获取 {len(all_comments)} 条评论")
+        return all_comments
