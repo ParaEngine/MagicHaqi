@@ -28,11 +28,14 @@ class XiaohongshuCollector(BaseCollector):
 
     def __init__(self, cookie: str = "", **kwargs):
         super().__init__(**kwargs)
-        self.cookie = cookie
+        # 去掉不小心复制进来的引号
+        self.cookie = cookie.strip().strip("'").strip('"')
         self.session = requests.Session()
         self.session.headers.update(self.HEADERS)
-        if cookie:
-            self.session.headers["Cookie"] = cookie
+        if self.cookie:
+            self.session.headers["Cookie"] = self.cookie
+            # 小红书需要 x-s 和 x-t 签名（由前端 JS 生成），未登录或无签名时部分接口可能不可用
+            # 公开笔记的评论拉取通常不需要 x-s，但需要 Cookie 中的 a1 和 webId
 
     def validate_config(self) -> bool:
         return bool(self.cookie)
@@ -186,11 +189,15 @@ class XiaohongshuCollector(BaseCollector):
                     json=payload,
                     timeout=10
                 )
-                data = resp.json()
 
-                if not data.get("success"):
-                    msg = data.get("msg", "未知错误")
-                    print(f"[小红书] 拉取评论失败: {msg}")
+            # 检查响应是否是 JSON
+            ct = resp.headers.get("Content-Type", "")
+            if "json" not in ct:
+                print(f"[小红书] 非 JSON 响应: {ct}, 状态码: {resp.status_code}")
+                print(f"[小红书] 响应体[:200]: {resp.text[:200]}")
+                print("[小红书] Cookie 可能无效，请确认已登录并复制完整 Cookie")
+                break
+
                     break
 
                 comments_data = data.get("data", {})
