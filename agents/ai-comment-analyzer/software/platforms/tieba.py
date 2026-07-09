@@ -124,27 +124,48 @@ class TiebaCollector(BaseCollector):
                         debug.allClasses = Array.from(classSet).slice(0, 200);
 
                         const result = [];
-                        // 策略1: 新版选择器（从实际页面 class dump 中提取）
+                        const seenContents = new Set();  // 去重
+
+                        // 策略1: 新版选择器
                         document.querySelectorAll(
-                            '.pb-comment-item, .thread-container, .virtual-list-item, [class*="comment-item"]'
+                            '.pb-comment-item, .thread-container, .virtual-list-item'
                         ).forEach(el => {
+                            // 跳过嵌套的子项: 如果祖先已经是 comment-item，跳过
+                            let p = el.parentElement;
+                            let nested = false;
+                            while (p && p !== document.body) {
+                                if (p.matches && p.matches('.pb-comment-item,.thread-container,.virtual-list-item')) {
+                                    nested = true; break;
+                                }
+                                p = p.parentElement;
+                            }
+                            if (nested) return;
+
                             const ue = el.querySelector('.name-info a, .name-info-link, .head-line, [class*="name-info"] a, [class*="user-info"]');
-                            const ce = el.querySelector('.comment-content, .pb-rich-text, .richtext-item, [class*="pb-content"], [class*="content-item"]');
+                            const ce = el.querySelector('.comment-content, .pb-rich-text, .richtext-item, [class*="pb-content"]');
                             const te = el.querySelector('.comment-desc-left, [class*="desc-left"], [class*="tail-info"]');
                             const c = ce ? ce.textContent.trim() : '';
-                            if (c.length >= 2) result.push({userName: ue?ue.textContent.trim():'匿名', content:c, time:te?te.textContent.trim():''});
+                            const key = c.substring(0, 80);
+                            if (c.length >= 2 && !seenContents.has(key)) {
+                                seenContents.add(key);
+                                result.push({userName: ue?ue.textContent.trim():'匿名', content:c, time:te?te.textContent.trim():''});
+                            }
                         });
-                        // 策略1b: 旧版选择器
+                        // 策略1b: 旧版选择器（带去重）
                         if (result.length === 0) {
                             document.querySelectorAll('.l_post,.j_l_post,[class*="l_post"]').forEach(el => {
                                 const ue = el.querySelector('.d_name a,.p_author_name,a[class*="user"]');
                                 const ce = el.querySelector('.d_post_content,[class*="post_content"],.j_d_post_content');
                                 const te = el.querySelector('.tail-info,[class*="tail_info"]');
                                 const c = ce ? ce.textContent.trim() : '';
-                                if (c.length >= 2) result.push({userName: ue?ue.textContent.trim():'匿名', content:c, time:te?te.textContent.trim():''});
+                                const key = c.substring(0, 80);
+                                if (c.length >= 2 && !seenContents.has(key)) {
+                                    seenContents.add(key);
+                                    result.push({userName: ue?ue.textContent.trim():'匿名', content:c, time:te?te.textContent.trim():''});
+                                }
                             });
                         }
-                        // 策略2: 智能 fallback — 找文字密集的叶子元素
+                        // 策略2: 智能 fallback（带去重）
                         if (result.length === 0) {
                             const textBlocks = [];
                             document.querySelectorAll('*').forEach(el => {
@@ -162,11 +183,17 @@ class TiebaCollector(BaseCollector):
                             debug.textBlockCounts = groups;
                             const sorted = Object.entries(groups).sort((a,b) => b[1]-a[1]);
                             sorted.slice(0, 10).forEach(([k,c]) => debug.contentTraces.push({keyword: c+'x', path: k}));
-                            // 取出现最多的路径
+                            // 取出现最多的路径，去重
                             if (sorted.length>0 && sorted[0][1]>=3) {
                                 const bestKey = sorted[0][0];
                                 textBlocks.forEach(b => {
-                                    if (b.key === bestKey) result.push({userName:'贴吧用户', content:b.text, time:''});
+                                    if (b.key === bestKey) {
+                                        const dkey = b.text.substring(0, 80);
+                                        if (!seenContents.has(dkey)) {
+                                            seenContents.add(dkey);
+                                            result.push({userName:'贴吧用户', content:b.text, time:''});
+                                        }
+                                    }
                                 });
                             }
                         }
