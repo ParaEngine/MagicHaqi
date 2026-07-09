@@ -1350,6 +1350,28 @@ def main():
     page_config()
     sidebar()
 
+    # 暗色 metric 卡片样式
+    st.markdown("""
+    <style>
+    [data-testid="stMetric"] {
+        background: linear-gradient(135deg, #1e1e2e, #2a2a3e);
+        border: 1px solid #3a3a5e;
+        border-radius: 12px;
+        padding: 12px;
+    }
+    [data-testid="stMetric"] label {
+        color: #a0a0c0 !important;
+    }
+    [data-testid="stMetricValue"] {
+        color: #ffffff !important;
+        font-weight: 700 !important;
+    }
+    [data-testid="stMetricDelta"] {
+        color: #8888bb !important;
+    }
+    </style>
+    """, unsafe_allow_html=True)
+
     # 导航
     page = st.navigation([
         st.Page(page_one_click, title="🚀 一键分析", icon="🚀"),
