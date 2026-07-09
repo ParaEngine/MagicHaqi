@@ -314,7 +314,7 @@ def sidebar():
                 st.text_area(
                     field["label"],
                     value=st.session_state.get(session_key, ""),
-                    height=120,
+                    height=200,
                     key=session_key,
                     label_visibility="visible"
                 )
