@@ -123,10 +123,20 @@ class TiebaCollector(BaseCollector):
                     # 方法3: 按 PageDown 键
                     page.keyboard.press("PageDown")
                     time.sleep(0.5)
-                    # 方法4: 点击"加载更多"或翻页
-                    for btn_text in ["加载更多", "查看更多", "下一页", "下页"]:
+                    # 方法4: 点击翻页按钮
+                    for page_num in range(2, 11):  # 尝试翻到第2-10页
                         try:
-                            btn = page.locator(f"text={btn_text}, [class*='load-more'], [class*='pagination'] a").first
+                            page_btn = page.locator(f'a:has-text("{page_num}"), [class*="pagination"]:has-text("{page_num}")').first
+                            if page_btn.count() > 0 and page_btn.is_visible(timeout=500):
+                                page_btn.click()
+                                print(f"[贴吧] 翻到第 {page_num} 页")
+                                time.sleep(3)
+                        except Exception:
+                            pass
+                    # 方法5: 点击"下一页"
+                    for btn_text in ["加载更多", "查看更多", "下一页", "下页", ">", "»"]:
+                        try:
+                            btn = page.locator(f"text={btn_text}, [class*='load-more'], [class*='pagination-item-next']").first
                             if btn.count() > 0 and btn.is_visible(timeout=500):
                                 btn.click()
                                 time.sleep(2)
@@ -211,7 +221,7 @@ class TiebaCollector(BaseCollector):
                                 userName = nameEl.textContent.trim();
                             } else {
                                 const a = el.querySelector('.head-info a, [class*="head"] a');
-                                if (a) userName = a.textContent.trim().split(/[\s\r\n]+/)[0];  // 只取第一个词
+                                if (a) userName = a.textContent.trim().split(/[ \t\r\n]+/)[0];  // 只取第一个词
                             }
                             // 内容: 取第一个 pb-rich-text（.lzl-wrapper 是它的兄弟节点，不在其内部）
                             let content = '';
