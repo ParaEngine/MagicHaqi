@@ -143,6 +143,15 @@ class TiebaCollector(BaseCollector):
                         self._stale_rounds = 0
                     last_count = current
 
+                # 诊断：dump 第一条评论的 HTML 结构
+                html_sample = page.evaluate("""
+                    () => {
+                        const el = document.querySelector('.pb-comment-item, .virtual-list-item, .thread-container');
+                        return el ? el.outerHTML.substring(0, 1500) : 'NO ELEMENT FOUND';
+                    }
+                """)
+                print(f"[贴吧] 第一条评论HTML: {html_sample}")
+
                 # JS 提取 + 智能 fallback
                 posts_data, debug_info = page.evaluate("""
                     () => {
