@@ -59,7 +59,7 @@ class TiebaCollector(BaseCollector):
 
         t = threading.Thread(target=wrapper, daemon=True)
         t.start()
-        t.join(timeout=120)  # 最多等 2 分钟
+        t.join(timeout=300)  # 最多等 5 分钟
         print(f"[贴吧] 线程结束: result={len(result)}项, error={len(error)}项")
         if error:
             raise error[0]
@@ -100,62 +100,32 @@ class TiebaCollector(BaseCollector):
                     print("[贴吧] 等待内容超时，继续...")
                 time.sleep(2)
 
-                # 先滚动整个页面到底部，触发评论区初始加载
+                # 滚动触发初始加载
                 for _ in range(3):
                     page.evaluate("window.scrollTo(0, document.body.scrollHeight)")
                     time.sleep(2)
-                print(f"[贴吧] 初始加载后可见评论: {len(page.locator('.pb-comment-item, .virtual-list-item').all())} 条")
+                print(f"[贴吧] 初始可见: {len(page.locator('.pb-comment-item, .virtual-list-item').all())} 条")
 
-                # 循环加载更多评论
-                last_count = 0
-                for scroll_i in range(20):
-                    # 方法1: 滚动评论区容器
+                # 翻页加载（贴吧是分页制，只做一次）
+                for page_num in range(2, 11):
                     try:
-                        reply_list = page.locator(".pc-pb-reply-list, .pb-comment-list").first
-                        if reply_list.count() > 0:
-                            reply_list.evaluate("el => { el.scrollTop = el.scrollHeight; }")
-                            time.sleep(1.5)
+                        btn = page.locator(f'a:has-text("{page_num}"), [class*="pagination-item"]:has-text("{page_num}")').first
+                        if btn.count() > 0 and btn.is_visible(timeout=1000):
+                            btn.click()
+                            print(f"[贴吧] 翻到第 {page_num} 页")
+                            time.sleep(3)
                     except Exception:
                         pass
-                    # 方法2: 滚动整个页面
-                    page.evaluate("window.scrollTo(0, document.body.scrollHeight)")
-                    time.sleep(1.5)
-                    # 方法3: 按 PageDown 键
-                    page.keyboard.press("PageDown")
-                    time.sleep(0.5)
-                    # 方法4: 点击翻页按钮
-                    for page_num in range(2, 11):  # 尝试翻到第2-10页
-                        try:
-                            page_btn = page.locator(f'a:has-text("{page_num}"), [class*="pagination"]:has-text("{page_num}")').first
-                            if page_btn.count() > 0 and page_btn.is_visible(timeout=500):
-                                page_btn.click()
-                                print(f"[贴吧] 翻到第 {page_num} 页")
-                                time.sleep(3)
-                        except Exception:
-                            pass
-                    # 方法5: 点击"下一页"
-                    for btn_text in ["加载更多", "查看更多", "下一页", "下页", ">", "»"]:
-                        try:
-                            btn = page.locator(f"text={btn_text}, [class*='load-more'], [class*='pagination-item-next']").first
-                            if btn.count() > 0 and btn.is_visible(timeout=500):
-                                btn.click()
-                                time.sleep(2)
-                        except Exception:
-                            pass
-                    # 统计
-                    current = len(page.locator(".pb-comment-item, .virtual-list-item").all())
-                    if current == last_count and current > 1:
-                        # 连续 3 轮不变就停止
+                # 也试"下一页"
+                for txt in [">", "»", "下一页", "加载更多"]:
+                    try:
+                        btn = page.locator(f"text={txt}, [class*='pagination-next']").first
+                        if btn.count() > 0 and btn.is_visible(timeout=500):
+                            btn.click()
+                            time.sleep(3)
+                    except Exception:
                         pass
-                    print(f"[贴吧] 滚动 {scroll_i+1}: {current} 条 (新增 {current - last_count})")
-                    if current == last_count and current > 0:
-                        stale_rounds = getattr(self, '_stale_rounds', 0) + 1
-                        self._stale_rounds = stale_rounds
-                        if stale_rounds >= 3:
-                            break
-                    else:
-                        self._stale_rounds = 0
-                    last_count = current
+                print(f"[贴吧] 翻页后可见: {len(page.locator('.pb-comment-item, .virtual-list-item').all())} 条")
 
                 # 诊断：dump 第一条评论的完整 HTML 结构
                 html_sample = page.evaluate("""
