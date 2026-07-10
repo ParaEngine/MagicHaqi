@@ -50,13 +50,17 @@ class TiebaCollector(BaseCollector):
 
         def wrapper():
             try:
-                result.append(func(*args))
+                ret = func(*args)
+                print(f"[贴吧] wrapper 完成, 返回: type={type(ret).__name__}, len={len(ret) if isinstance(ret, (list, dict)) else 'N/A'}")
+                result.append(ret)
             except Exception as e:
+                print(f"[贴吧] wrapper 异常: {e}")
                 error.append(e)
 
         t = threading.Thread(target=wrapper, daemon=True)
         t.start()
         t.join(timeout=120)  # 最多等 2 分钟
+        print(f"[贴吧] 线程结束: result={len(result)}项, error={len(error)}项")
         if error:
             raise error[0]
         return result[0] if result else None
@@ -408,9 +412,14 @@ class TiebaCollector(BaseCollector):
 
         try:
             posts_data = self._run_in_thread(self._pw_fetch_comments, tid, max_comments)
+            print(f"[贴吧] _run_in_thread 返回: type={type(posts_data).__name__}, len={len(posts_data) if posts_data else 'None/empty'}")
         except Exception as e:
             self.last_error = f"抓取异常: {e}"
             print(f"[贴吧] 抓取异常: {e}")
+            return []
+
+        if not posts_data:
+            print("[贴吧] posts_data 为空/None，返回空列表")
             return []
 
         result = []
