@@ -634,24 +634,25 @@ def page_fetch():
                 # 显示评论预览
                 st.subheader("📋 评论预览（前 5 条）")
                 for i, comment in enumerate(comments[:5]):
-                    with st.container(border=True):
-                        col1, col2 = st.columns([1, 5])
-                        with col1:
-                            if comment.get("author_avatar"):
-                                st.image(comment["author_avatar"], width=40)
-                            st.write(f"**{comment.get('author_name', '未知')}**")
-                            st.caption(comment.get('created_at', '')[:19] if comment.get('created_at') else '')
-                        with col2:
-                            st.write(comment.get('text', ''))
-                        col1, col2, col3 = st.columns(3)
-                        with col1:
-                            st.write(f"❤️ {comment.get('like_count', 0)}")
-                        with col2:
-                            st.write(f"💬 {comment.get('reply_count', 0)}")
-                        with col3:
-                            if comment.get('ip_location'):
-                                st.caption(f"📍 {comment['ip_location']}")
-            else:
+                    text = comment.get('text', '')
+                    author = comment.get('author_name', '未知')
+                    time_str = comment.get('created_at', '')
+                    if time_str and len(time_str) > 19:
+                        time_str = time_str[:19]
+                    likes = comment.get('like_count', 0)
+                    replies = comment.get('reply_count', 0)
+                    loc = comment.get('ip_location', '')
+
+                    # 评论内容卡片
+                    st.markdown(f"""
+                    <div style="background:#1e1e2e; border:1px solid #333; border-radius:8px; padding:12px 16px; margin:8px 0;">
+                        <div style="color:#e0e0e0; font-size:15px; line-height:1.6; white-space:pre-wrap;">{text}</div>
+                        <div style="margin-top:8px; display:flex; justify-content:space-between; align-items:center;">
+                            <span style="color:#888; font-size:12px;">👤 {author} · {time_str}{' · 📍'+loc if loc else ''}</span>
+                            <span style="color:#666; font-size:12px;">❤️ {likes} &nbsp; 💬 {replies}</span>
+                        </div>
+                    </div>
+                    """, unsafe_allow_html=True)
                 err_msg = "⚠️ 未获取到任何评论"
                 # 显示平台诊断信息
                 if hasattr(collector, 'last_error') and collector.last_error:
