@@ -158,10 +158,12 @@ class TiebaCollector(BaseCollector):
                             let s = '';
                             if (node.nodeType === 1) {  // ELEMENT
                                 const tag = node.tagName.toLowerCase();
-                                const cls = node.className ? '.' + node.className.replace(/\\s+/g, '.') : '';
+                                const clsRaw = node.className || '';
+                                const cls = typeof clsRaw === 'string' ? clsRaw : (clsRaw.baseVal || '');
+                                const clsStr = cls ? '.' + cls.replace(/\\s+/g, '.') : '';
                                 const txt = node.childNodes.length === 1 && node.childNodes[0].nodeType === 3
                                     ? ' ="' + node.textContent.trim().substring(0, 60) + '"' : '';
-                                s += '  '.repeat(depth) + '<' + tag + cls + '>' + txt + '\\n';
+                                s += '  '.repeat(depth) + '<' + tag + clsStr + '>' + txt + '\\n';
                                 node.childNodes.forEach(c => { s += walk(c, depth + 1); });
                             }
                             return s;
