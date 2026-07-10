@@ -204,37 +204,37 @@ class TiebaCollector(BaseCollector):
                         ];
                         itemSelectors.forEach(sel => {
                             document.querySelectorAll(sel).forEach(el => {
-                            // 用户名: 实际是 a.head-name 或 .head-name
+                            // 用户名: 多种 fallback
                             let userName = '匿名';
                             const nameEl = el.querySelector('.head-name, a.head-name');
-                            if (nameEl) userName = nameEl.textContent.trim();
-                            if (userName === '匿名') {
-                                const fb = el.querySelector('.head-info a');
-                                if (fb) userName = fb.textContent.trim().split(' ')[0]; // 只取第一个词
+                            if (nameEl) {
+                                userName = nameEl.textContent.trim();
+                            } else {
+                                const a = el.querySelector('.head-info a, [class*="head"] a');
+                                if (a) userName = a.textContent.trim().split(/[\s\r\n]+/)[0];  // 只取第一个词
                             }
-                            // 内容: 取主内容区（排除 .lzl-wrapper 子回复）
+                            // 内容: 取第一个 pb-rich-text（.lzl-wrapper 是它的兄弟节点，不在其内部）
                             let content = '';
-                            // 主内容在 .comment-content > .pb-rich-text > .pb-content-item
-                            const mainContent = el.querySelector('.comment-content > .pb-rich-text');
-                            if (mainContent) {
-                                // 克隆并移除子回复区域
-                                const clone = mainContent.cloneNode(true);
-                                const lzl = clone.querySelector('.lzl-wrapper');
-                                if (lzl) lzl.remove();
-                                content = clone.textContent.trim();
-                            }
+                            const richEl = el.querySelector('.pb-rich-text');
+                            if (richEl) content = richEl.textContent.trim();
                             if (!content || content.length < 2) {
-                                const ce = el.querySelector('.pb-content-item');
+                                const ce = el.querySelector('.pb-content-item, .richtext-item');
                                 if (ce) content = ce.textContent.trim();
+                            }
+                            // 兜底: 取整个元素文本
+                            if (!content || content.length < 2) {
+                                content = el.textContent.trim();
                             }
                             // 时间
                             const descEl = el.querySelector('.comment-desc-left');
                             const time = descEl ? descEl.textContent.trim() : '';
 
                             // 过滤噪音
-                            if (content.length < 2) return;  // 空内容
-                            if (content === '广告' || content.includes('爆率') || content.includes('攻速')) return;  // 广告
-                            if (userName === '匿名' && content.length < 10) return;  // 疑似侧边栏
+                            if (content.length < 2) { debug.skipped = (debug.skipped||0)+1; return; }
+                            if (content === '广告' || content.includes('爆率') || content.includes('攻速')) { debug.skipped = (debug.skipped||0)+1; return; }
+                            if (userName === '匿名' && content.length < 10) { debug.skipped = (debug.skipped||0)+1; return; }
+
+                            debug.matched = (debug.matched||0)+1;
 
                             const key = content.substring(0, 100);
                             if (!seenContents.has(key)) {
@@ -319,7 +319,7 @@ class TiebaCollector(BaseCollector):
                 traces = debug_info.get('contentTraces',[])
                 for t in traces: print(f"[贴吧] 追踪 {t['keyword']}: {t['path'][:200]}")
                 print(f"[贴吧] body样本: {debug_info.get('bodySample','')[:200]}")
-                print(f"[贴吧] 提取 {len(posts_data)} 条")
+                print(f"[贴吧] 提取 {len(posts_data)} 条 (匹配{debug_info.get('matched','?')} 跳过{debug_info.get('skipped','?')})")
                 # 打印前 3 条内容样本
                 for i, p in enumerate(posts_data[:3]):
                     print(f"[贴吧]   [{i}] user={p.get('userName','?')} content={p.get('content','')[:100]}")
