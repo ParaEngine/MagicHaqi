@@ -204,22 +204,27 @@ class TiebaCollector(BaseCollector):
                         ];
                         itemSelectors.forEach(sel => {
                             document.querySelectorAll(sel).forEach(el => {
-                            // 用户名: 只取 .head-info 下的 <a> 标签文本
+                            // 用户名: 实际是 a.head-name 或 .head-name
                             let userName = '匿名';
-                            const nameA = el.querySelector('.head-info > a, .head-info a');
-                            if (nameA) {
-                                // 只取 a 标签自己的文本，不包括子元素
-                                userName = nameA.childNodes[0] ? nameA.childNodes[0].textContent.trim() : nameA.textContent.trim();
+                            const nameEl = el.querySelector('.head-name, a.head-name');
+                            if (nameEl) userName = nameEl.textContent.trim();
+                            if (userName === '匿名') {
+                                const fb = el.querySelector('.head-info a');
+                                if (fb) userName = fb.textContent.trim().split(' ')[0]; // 只取第一个词
                             }
-                            // 内容: 只取 pb-rich-text（跳过子回复）
+                            // 内容: 取主内容区（排除 .lzl-wrapper 子回复）
                             let content = '';
-                            const richEls = el.querySelectorAll('.pb-rich-text');
-                            if (richEls.length > 0) {
-                                // 只取第一个 pb-rich-text（主回复），不要嵌套的子回复
-                                content = richEls[0].textContent.trim();
+                            // 主内容在 .comment-content > .pb-rich-text > .pb-content-item
+                            const mainContent = el.querySelector('.comment-content > .pb-rich-text');
+                            if (mainContent) {
+                                // 克隆并移除子回复区域
+                                const clone = mainContent.cloneNode(true);
+                                const lzl = clone.querySelector('.lzl-wrapper');
+                                if (lzl) lzl.remove();
+                                content = clone.textContent.trim();
                             }
                             if (!content || content.length < 2) {
-                                const ce = el.querySelector('.richtext-item');
+                                const ce = el.querySelector('.pb-content-item');
                                 if (ce) content = ce.textContent.trim();
                             }
                             // 时间
