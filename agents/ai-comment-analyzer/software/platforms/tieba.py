@@ -221,7 +221,10 @@ class TiebaCollector(BaseCollector):
                                 userName = nameEl.textContent.trim();
                             } else {
                                 const a = el.querySelector('.head-info a, [class*="head"] a');
-                                if (a) userName = a.textContent.trim().split(/\\s+/)[0];  // 只取第一个词
+                                if (a) {
+                                    // 简单拆分取第一个词
+                                    userName = a.textContent.trim().split(/[ \\t\\n\\r]+/)[0] || '匿名';
+                                }
                             }
                             // 内容: 取第一个 pb-rich-text（.lzl-wrapper 是它的兄弟节点，不在其内部）
                             let content = '';
