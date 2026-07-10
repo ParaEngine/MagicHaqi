@@ -96,27 +96,52 @@ class TiebaCollector(BaseCollector):
                     print("[贴吧] 等待内容超时，继续...")
                 time.sleep(2)
 
-                # 滚动评论列表容器加载更多（虚拟列表）
-                for scroll_i in range(15):
-                    # 优先滚动评论区容器
+                # 先滚动整个页面到底部，触发评论区初始加载
+                for _ in range(3):
+                    page.evaluate("window.scrollTo(0, document.body.scrollHeight)")
+                    time.sleep(2)
+                print(f"[贴吧] 初始加载后可见评论: {len(page.locator('.pb-comment-item, .virtual-list-item').all())} 条")
+
+                # 循环加载更多评论
+                last_count = 0
+                for scroll_i in range(20):
+                    # 方法1: 滚动评论区容器
                     try:
-                        reply_list = page.locator(".pc-pb-reply-list, .pb-comment-list, [class*='reply-list']").first
+                        reply_list = page.locator(".pc-pb-reply-list, .pb-comment-list").first
                         if reply_list.count() > 0:
                             reply_list.evaluate("el => { el.scrollTop = el.scrollHeight; }")
-                            time.sleep(2)
-                    except Exception:
-                        page.evaluate("window.scrollTo(0, document.body.scrollHeight)")
-                        time.sleep(2)
-                    # 点击加载更多
-                    try:
-                        load_more = page.locator("text=加载更多, .load-more, [class*='load_more']").first
-                        if load_more.is_visible(timeout=1000):
-                            load_more.click()
-                            time.sleep(2)
+                            time.sleep(1.5)
                     except Exception:
                         pass
-                    count = len(page.locator(".pb-comment-item, .virtual-list-item").all())
-                    print(f"[贴吧] 滚动 {scroll_i+1}: {count} 条可见")
+                    # 方法2: 滚动整个页面
+                    page.evaluate("window.scrollTo(0, document.body.scrollHeight)")
+                    time.sleep(1.5)
+                    # 方法3: 按 PageDown 键
+                    page.keyboard.press("PageDown")
+                    time.sleep(0.5)
+                    # 方法4: 点击"加载更多"或翻页
+                    for btn_text in ["加载更多", "查看更多", "下一页", "下页"]:
+                        try:
+                            btn = page.locator(f"text={btn_text}, [class*='load-more'], [class*='pagination'] a").first
+                            if btn.count() > 0 and btn.is_visible(timeout=500):
+                                btn.click()
+                                time.sleep(2)
+                        except Exception:
+                            pass
+                    # 统计
+                    current = len(page.locator(".pb-comment-item, .virtual-list-item").all())
+                    if current == last_count and current > 1:
+                        # 连续 3 轮不变就停止
+                        pass
+                    print(f"[贴吧] 滚动 {scroll_i+1}: {current} 条 (新增 {current - last_count})")
+                    if current == last_count and current > 0:
+                        stale_rounds = getattr(self, '_stale_rounds', 0) + 1
+                        self._stale_rounds = stale_rounds
+                        if stale_rounds >= 3:
+                            break
+                    else:
+                        self._stale_rounds = 0
+                    last_count = current
 
                 # JS 提取 + 智能 fallback
                 posts_data, debug_info = page.evaluate("""
@@ -144,9 +169,12 @@ class TiebaCollector(BaseCollector):
                         const seenContents = new Set();  // 去重
 
                         // 策略1: 新版选择器（精确元素）
-                        document.querySelectorAll(
-                            '.pb-comment-item, .virtual-list-item'
-                        ).forEach(el => {
+                        const itemSelectors = [
+                            '.pb-comment-item', '.virtual-list-item', '.thread-container',
+                            '[class*="comment-item"]', '[class*="list-item"]'
+                        ];
+                        itemSelectors.forEach(sel => {
+                            document.querySelectorAll(sel).forEach(el => {
                             // 用户名: 只取 name-info-link （A标签），避免取到徽章
                             const nameLink = el.querySelector('.name-info-link');
                             const userName = nameLink ? nameLink.textContent.trim() : '匿名';
@@ -167,6 +195,7 @@ class TiebaCollector(BaseCollector):
                                 seenContents.add(key);
                                 result.push({userName, content, time});
                             }
+                        });
                         });
                         // 策略1b: 旧版选择器（带去重）
                         if (result.length === 0) {
