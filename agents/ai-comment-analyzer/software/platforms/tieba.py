@@ -147,14 +147,29 @@ class TiebaCollector(BaseCollector):
                         self._stale_rounds = 0
                     last_count = current
 
-                # 诊断：dump 第一条评论的 HTML 结构
+                # 诊断：dump 第一条评论的完整 HTML 结构
                 html_sample = page.evaluate("""
                     () => {
-                        const el = document.querySelector('.pb-comment-item, .virtual-list-item, .thread-container');
-                        return el ? el.outerHTML.substring(0, 1500) : 'NO ELEMENT FOUND';
+                        const el = document.querySelector('.pb-comment-item, .virtual-list-item');
+                        if (!el) return 'NO ELEMENT';
+                        // 返回该元素及其所有子元素的 tag+class 结构
+                        function walk(node, depth) {
+                            if (depth > 8) return '';
+                            let s = '';
+                            if (node.nodeType === 1) {  // ELEMENT
+                                const tag = node.tagName.toLowerCase();
+                                const cls = node.className ? '.' + node.className.replace(/\\s+/g, '.') : '';
+                                const txt = node.childNodes.length === 1 && node.childNodes[0].nodeType === 3
+                                    ? ' ="' + node.textContent.trim().substring(0, 60) + '"' : '';
+                                s += '  '.repeat(depth) + '<' + tag + cls + '>' + txt + '\\n';
+                                node.childNodes.forEach(c => { s += walk(c, depth + 1); });
+                            }
+                            return s;
+                        }
+                        return walk(el, 0);
                     }
                 """)
-                print(f"[贴吧] 第一条评论HTML: {html_sample}")
+                print(f"[贴吧] 第一条评论DOM树:\n{html_sample}")
 
                 # JS 提取 + 智能 fallback
                 posts_data, debug_info = page.evaluate("""
@@ -188,20 +203,27 @@ class TiebaCollector(BaseCollector):
                         ];
                         itemSelectors.forEach(sel => {
                             document.querySelectorAll(sel).forEach(el => {
-                            // 用户名: 只取 name-info-link （A标签），避免取到徽章
-                            const nameLink = el.querySelector('.name-info-link');
-                            const userName = nameLink ? nameLink.textContent.trim() : '匿名';
-                            // 内容: 只取 comment-content
-                            const contentEl = el.querySelector('.comment-content');
-                            let content = contentEl ? contentEl.textContent.trim() : '';
-                            // 如果 comment-content 没找到，尝试 pb-rich-text
-                            if (!content) {
-                                const rich = el.querySelector('.pb-rich-text');
-                                content = rich ? rich.textContent.trim() : '';
+                            // 用户名: .head-info a (从实际HTML结构中发现)
+                            let userName = '匿名';
+                            const nameA = el.querySelector('.head-info a');
+                            if (nameA) userName = nameA.textContent.trim();
+                            if (userName === '匿名') {
+                                const fb = el.querySelector('[class*="head"] a, [class*="name"] a, [class*="user"] a');
+                                if (fb) userName = fb.textContent.trim();
                             }
-                            // 时间/楼层: 取左侧描述区域
-                            const descEl = el.querySelector('.comment-desc-left');
+                            // 内容: 尝试多个选择器
+                            let content = '';
+                            const ce = el.querySelector('.pb-rich-text, .richtext-item, [class*="content"]:not([class*="desc"]):not([class*="head"])');
+                            if (ce) content = ce.textContent.trim();
+                            if (!content || content.length < 2) {
+                                content = el.textContent.trim();
+                                if (userName !== '匿名' && content.startsWith(userName))
+                                    content = content.substring(userName.length).trim();
+                            }
+                            // 时间
+                            const descEl = el.querySelector('.comment-desc-left, [class*="desc-left"]');
                             const time = descEl ? descEl.textContent.trim() : '';
+
 
                             const key = content.substring(0, 100);
                             if (content.length >= 1 && !seenContents.has(key)) {
