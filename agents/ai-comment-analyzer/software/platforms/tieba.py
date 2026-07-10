@@ -198,37 +198,41 @@ class TiebaCollector(BaseCollector):
                         const result = [];
                         const seenContents = new Set();  // 去重
 
-                        // 策略1: 新版选择器（精确元素）
+                        // 策略1: 新版选择器
                         const itemSelectors = [
-                            '.pb-comment-item', '.virtual-list-item', '.thread-container',
-                            '[class*="comment-item"]', '[class*="list-item"]'
+                            '.pb-comment-item', '.virtual-list-item', '.thread-container'
                         ];
                         itemSelectors.forEach(sel => {
                             document.querySelectorAll(sel).forEach(el => {
-                            // 用户名: .head-info a (从实际HTML结构中发现)
+                            // 用户名: 只取 .head-info 下的 <a> 标签文本
                             let userName = '匿名';
-                            const nameA = el.querySelector('.head-info a');
-                            if (nameA) userName = nameA.textContent.trim();
-                            if (userName === '匿名') {
-                                const fb = el.querySelector('[class*="head"] a, [class*="name"] a, [class*="user"] a');
-                                if (fb) userName = fb.textContent.trim();
+                            const nameA = el.querySelector('.head-info > a, .head-info a');
+                            if (nameA) {
+                                // 只取 a 标签自己的文本，不包括子元素
+                                userName = nameA.childNodes[0] ? nameA.childNodes[0].textContent.trim() : nameA.textContent.trim();
                             }
-                            // 内容: 尝试多个选择器
+                            // 内容: 只取 pb-rich-text（跳过子回复）
                             let content = '';
-                            const ce = el.querySelector('.pb-rich-text, .richtext-item, [class*="content"]:not([class*="desc"]):not([class*="head"])');
-                            if (ce) content = ce.textContent.trim();
+                            const richEls = el.querySelectorAll('.pb-rich-text');
+                            if (richEls.length > 0) {
+                                // 只取第一个 pb-rich-text（主回复），不要嵌套的子回复
+                                content = richEls[0].textContent.trim();
+                            }
                             if (!content || content.length < 2) {
-                                content = el.textContent.trim();
-                                if (userName !== '匿名' && content.startsWith(userName))
-                                    content = content.substring(userName.length).trim();
+                                const ce = el.querySelector('.richtext-item');
+                                if (ce) content = ce.textContent.trim();
                             }
                             // 时间
-                            const descEl = el.querySelector('.comment-desc-left, [class*="desc-left"]');
+                            const descEl = el.querySelector('.comment-desc-left');
                             const time = descEl ? descEl.textContent.trim() : '';
 
+                            // 过滤噪音
+                            if (content.length < 2) return;  // 空内容
+                            if (content === '广告' || content.includes('爆率') || content.includes('攻速')) return;  // 广告
+                            if (userName === '匿名' && content.length < 10) return;  // 疑似侧边栏
 
                             const key = content.substring(0, 100);
-                            if (content.length >= 1 && !seenContents.has(key)) {
+                            if (!seenContents.has(key)) {
                                 seenContents.add(key);
                                 result.push({userName, content, time});
                             }
