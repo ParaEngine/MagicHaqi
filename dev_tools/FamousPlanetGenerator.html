@@ -69,8 +69,11 @@
       .npc-marker { position: absolute; transform: translate(-50%, -50%); width: 22px; height: 22px; display: grid; place-items: center; font-size: 15px; line-height: 1; filter: drop-shadow(0 1px 3px rgb(15 23 42 / .5)); background-size: contain; background-repeat: no-repeat; background-position: center; pointer-events: none; }
       .npc-marker-active { outline: 3px solid #10b981; box-shadow: 0 2px 10px rgb(16 185 129 / .5); z-index: 2; }
       .modal-window.npc-placer-window { width: min(1300px, 96vw); max-height: 96vh; height: min(92vh, 880px); }
-      .npc-placer-body { display: flex; flex-direction: column; gap: 8px; min-height: 0; }
-      .npc-placer-art { position: relative; flex: 1; min-height: 0; border-radius: 10px; overflow: hidden; background-size: cover; background-position: center; cursor: crosshair; }
+      .npc-placer-body { display: flex; flex-direction: column; align-items: center; gap: 8px; min-height: 0; }
+      /* 与游戏 field 保持同一坐标画布：默认 10m × 3m；图片更宽时由 JS 按图片有效宽高比扩展。
+         field 中背景图按场景高度完整显示，不能在这里用 cover 裁边，否则百分比坐标会发生视觉偏移。 */
+      .npc-placer-art { position: relative; flex: 0 0 auto; width: 100%; aspect-ratio: var(--npc-field-aspect, 10 / 3); border-radius: 10px; overflow: hidden; background-repeat: no-repeat !important; background-position: center !important; cursor: crosshair; }
+      .npc-placer-art.npc-placer-full-image { background-size: contain !important; }
       .npc-placer-toolbar { @apply flex flex-wrap items-center gap-1.5; }
       .npc-placer-scale-label { @apply w-12 text-center text-[12px] font-bold; }
       .npc-section { @apply mt-2 border-t border-slate-200 pt-2; }
@@ -1318,6 +1321,21 @@ ${currentIndent}}`;
 
       const art = overlay.querySelector('#npcPlacerArt');
       const scaleLabel = overlay.querySelector('#npcPlacerScaleLabel');
+      // 游戏场景固定为至少 10m × 3m；若背景（或其裁剪区域）更宽，游戏会按图像宽高比扩展场景宽度。
+      // 摆放器使用完全相同的有效比例，保证这里记录的百分比位置与 field 中的站位一致。
+      const bgIcon = parseIconSource(scene?.background?.imageUrl || scene?.imageUrl || '');
+      if (bgIcon.src) {
+        // 未裁剪的整图与 field 一样按高度 contain；裁剪图保留 sceneBackgroundStyle 生成的裁剪参数。
+        if (!bgIcon.rect) art.classList.add('npc-placer-full-image');
+        const bgImage = new Image();
+        bgImage.onload = () => {
+          const cropWidth = bgImage.naturalWidth * (bgIcon.rect?.w || 100) / 100;
+          const cropHeight = bgImage.naturalHeight * (bgIcon.rect?.h || 100) / 100;
+          const imageAspect = cropHeight > 0 ? cropWidth / cropHeight : 0;
+          art.style.setProperty('--npc-field-aspect', String(Math.max(10 / 3, imageAspect || 0)));
+        };
+        bgImage.src = bgIcon.src;
+      }
       const updateScaleLabel = () => { scaleLabel.textContent = `${Math.round(clampNpcScale(npc.scale) * 100)}%`; };
       const renderMarkers = () => {
         art.querySelectorAll('.npc-marker').forEach(el => el.remove());
@@ -1325,7 +1343,9 @@ ${currentIndent}}`;
           const isActive = idx === npcIndex;
           const marker = document.createElement('span');
           marker.className = 'npc-marker' + (isActive ? ' npc-marker-active' : '');
-          const size = Math.round((isActive ? 38 : 22) * clampNpcScale(n.scale));
+          // 当前 NPC 只用描边标识，不额外放大；所有 NPC 都按 field 的 36px 图像基准展示，
+          // 否则当前项 38px、其它项 22px 会掩盖配置中的真实 scale 比例。
+          const size = Math.round(36 * clampNpcScale(n.scale));
           marker.style.left = `${clampPercent(n.x)}%`;
           marker.style.top = `${clampPercent(n.y)}%`;
           marker.style.width = `${size}px`;
