@@ -1106,6 +1106,97 @@ export async function savePetGame(html, meta = {}) {
     return { path, record, index: nextIndex };
 }
 
+function workBuddyDraftPath(pathOrId) {
+    const raw = String(pathOrId || '').trim().replace(/^\/+/, '');
+    if (!raw) return '';
+    if (/^workbuddy-drafts\/[^/]+\.json$/i.test(raw)) return raw;
+    const id = raw.replace(/\.json$/i, '').replace(/[^a-zA-Z0-9_\-]/g, '').slice(0, 96);
+    return id ? `workbuddy-drafts/${id}.json` : '';
+}
+
+function normalizeWorkBuddyGameDraft(data, source = '') {
+    if (!data || typeof data !== 'object') return null;
+    const html = String(data?.html || data?.code || data?.content || '').trim();
+    if (!html) return null;
+    return {
+        path: source,
+        title: String(data?.title || data?.name || 'WorkBuddy 小游戏').slice(0, 80),
+        icon: String(data?.icon || '🎮').slice(0, 8),
+        desc: String(data?.desc || data?.description || '').slice(0, 200),
+        html,
+    };
+}
+
+function decodeLooseJsonString(text) {
+    return String(text || '')
+        .replace(/\\u([0-9a-fA-F]{4})/g, (_, hex) => String.fromCharCode(parseInt(hex, 16)))
+        .replace(/\\r/g, '\r')
+        .replace(/\\n/g, '\n')
+        .replace(/\\t/g, '\t')
+        .replace(/\\\//g, '/')
+        .replace(/\\"/g, '"')
+        .replace(/\\\\/g, '\\');
+}
+
+function extractLooseJsonField(raw, key) {
+    const pattern = new RegExp(`"${key}"\\s*:\\s*"((?:\\\\.|[^"\\\\])*)"`);
+    const match = String(raw || '').match(pattern);
+    return match ? decodeLooseJsonString(match[1]) : '';
+}
+
+function parseLooseWorkBuddyGameDraft(raw, source = '') {
+    const marker = String(raw || '').match(/"html"\s*:\s*"/);
+    if (!marker) return null;
+    const start = marker.index + marker[0].length;
+    const end = String(raw || '').lastIndexOf('"');
+    if (end <= start) return null;
+    const html = decodeLooseJsonString(String(raw || '').slice(start, end)).trim();
+    if (!html) return null;
+    return normalizeWorkBuddyGameDraft({
+        title: extractLooseJsonField(raw, 'title'),
+        icon: extractLooseJsonField(raw, 'icon'),
+        desc: extractLooseJsonField(raw, 'desc'),
+        html,
+    }, source);
+}
+
+function parseWorkBuddyGameDraftText(text, source = '') {
+    const raw = String(text || '').trim();
+    if (!raw) return null;
+    try {
+        return normalizeWorkBuddyGameDraft(JSON.parse(raw), source);
+    } catch (_) {
+        return parseLooseWorkBuddyGameDraft(raw, source);
+    }
+}
+
+function isRemoteWorkBuddyDraft(value) {
+    try {
+        const url = new URL(String(value || '').trim());
+        return url.protocol === 'https:' || url.protocol === 'http:';
+    } catch (_) {
+        return false;
+    }
+}
+
+async function loadRemoteWorkBuddyGameDraft(urlText) {
+    const url = String(urlText || '').trim();
+    const res = await fetch(url, { cache: 'no-store' });
+    if (!res.ok) throw new Error(`草稿读取失败 HTTP ${res.status}`);
+    return parseWorkBuddyGameDraftText(await res.text(), url);
+}
+
+// WorkBuddy 可以传 CloudStudio 草稿 URL，也可以把草稿 JSON 写到 workbuddy-drafts/<draftId>.json。
+// 蛋蛋星球读取后仍走 savePetGame()，由本应用维护 pet-games/index.json。
+export async function loadWorkBuddyGameDraft(pathOrId) {
+    if (isRemoteWorkBuddyDraft(pathOrId)) return await loadRemoteWorkBuddyGameDraft(pathOrId);
+    const path = workBuddyDraftPath(pathOrId);
+    if (!path) return null;
+    const text = await readFileSafe(path);
+    if (!text.trim()) return null;
+    return parseWorkBuddyGameDraftText(text, path);
+}
+
 // 更新单个游戏的发布状态（发布到 Keepwork 作品广场成功后调用），并持久化到索引。
 export async function setPetGamePublished(pathOrName, isPublished = true) {
     const raw = String(pathOrName || '').trim();

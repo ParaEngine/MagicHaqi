@@ -37,6 +37,63 @@ class DouyinCollector(BaseCollector):
     def validate_config(self) -> bool:
         return bool(self.cookie)
 
+    def search_posts(self, keyword: str, max_posts: int = 10) -> List[Dict]:
+        """
+        按关键词搜索视频（实验性）
+
+        注：抖音 Web 搜索接口自 2021 年起要求 X-Bogus/a_bogus 签名参数，
+        本项目约定不引入浏览器/JS 执行环境来逆向签名算法，因此本方法为尽力而为实现，
+        若抖音风控升级导致失败，会返回空列表并打印提示，不影响其他平台功能
+        """
+        keyword = keyword.strip()
+        posts = []
+        try:
+            resp = self.session.get(
+                f"{self.BASE_URL}/general/search/single/",
+                params={
+                    "keyword": keyword,
+                    "search_channel": "aweme_general",
+                    "sort_type": 0,
+                    "publish_time": 0,
+                    "count": max_posts,
+                    "offset": 0,
+                },
+                timeout=10
+            )
+            data = resp.json()
+
+            items = data.get("data", []) or []
+            for entry in items[:max_posts]:
+                aweme = entry.get("aweme_info") or entry.get("aweme") or {}
+                if not aweme:
+                    continue
+                author = aweme.get("author", {}) or {}
+                stats = aweme.get("statistics", {}) or {}
+                aweme_id = aweme.get("aweme_id", "")
+
+                posts.append({
+                    "id": aweme_id,
+                    "title": aweme.get("desc", ""),
+                    "content": aweme.get("desc", ""),
+                    "author_id": str(author.get("uid", "")),
+                    "author_name": author.get("nickname", ""),
+                    "author_username": author.get("nickname", ""),
+                    "author_avatar": (author.get("avatar_thumb", {}) or {}).get("url_list", [""])[0],
+                    "created_at": "",
+                    "like_count": stats.get("digg_count", 0),
+                    "comment_count": stats.get("comment_count", 0),
+                    "share_count": stats.get("share_count", 0),
+                    "view_count": stats.get("play_count", 0),
+                    "platform": self.platform_name,
+                    "url": f"https://www.douyin.com/video/{aweme_id}",
+                })
+
+        except Exception as e:
+            print(f"[抖音] 搜索「{keyword}」异常（该平台搜索接口需要签名，可能已失效）: {e}")
+
+        print(f"[抖音] 搜索「{keyword}」，找到 {len(posts)} 个视频")
+        return posts
+
     @staticmethod
     def extract_post_id(url_or_id: str) -> str:
         """从 URL 或 ID 中提取视频 ID"""

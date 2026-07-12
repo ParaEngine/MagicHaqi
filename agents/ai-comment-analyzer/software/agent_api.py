@@ -8,7 +8,7 @@ import asyncio
 import json
 from datetime import datetime
 from typing import Optional
-from fastapi import FastAPI, HTTPException, Depends, WebSocket, WebSocketDisconnect, UploadFile, File
+from fastapi import FastAPI, HTTPException, Depends, Header, WebSocket, WebSocketDisconnect, UploadFile, File
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel, Field
 from contextlib import asynccontextmanager
@@ -57,6 +57,15 @@ class AutoReplyRequest(PlatformRequest):
     post_id: str = Field(..., description="帖子 ID")
     auto_mode: bool = Field(False, description="全自动模式（不需确认）")
     like_threshold: float = Field(3.0, description="点赞阈值百分比")
+
+
+class TopicSearchRequest(PlatformRequest):
+    """主题搜索分析请求"""
+    keyword: str = Field(..., description="搜索关键词/主题")
+    max_posts: int = Field(10, description="最多抓取帖子数")
+    max_comments_per_post: int = Field(50, description="每个帖子最多抓取评论数")
+    include_ai_analysis: bool = Field(True, description="是否自动进行 AI 情感/意图分析")
+    config: Optional[dict] = Field(default_factory=dict, description="平台配置（Cookie等）")
 
 
 class WebhookConfig(BaseModel):
@@ -159,8 +168,8 @@ app.add_middleware(
 
 # ============ 认证依赖 ============
 
-async def verify_api_key(x_api_key: str = None):
-    """验证 API Key"""
+async def verify_api_key(x_api_key: Optional[str] = Header(None, alias="X-API-Key")):
+    """验证 API Key（从 HTTP Header `X-API-Key` 读取，而非 query 参数）"""
     if not x_api_key:
         raise HTTPException(status_code=401, detail="Missing X-API-Key header")
     if x_api_key != API_KEY:
@@ -209,6 +218,93 @@ async def broadcast_websocket(message: dict):
             await ws.send_json(message)
         except Exception as e:
             print(f"[WebSocket] 广播失败: {e}")
+
+
+async def run_topic_search_pipeline(
+    platform: str,
+    keyword: str,
+    max_posts: int = 10,
+    max_comments_per_post: int = 50,
+    include_ai_analysis: bool = True,
+    config: Optional[dict] = None,
+) -> dict:
+    """执行「搜索主题 -> 抓取帖子评论 -> AI分析 -> 生成汇总报告」全流程，供 REST 与 MCP 共用"""
+    collector = get_platform_collector(platform, config)
+    if not collector:
+        return {"success": False, "error": f"不支持的平台: {platform}"}
+
+    posts = collector.search_posts(keyword, max_posts=max_posts)
+    if not posts:
+        return {"success": False, "error": "未找到相关帖子，请更换关键词，或检查平台配置/登录 Cookie 是否正确"}
+
+    for post in posts:
+        db.insert_post(post)
+
+    ai = get_ai_analyzer_instance() if include_ai_analysis else None
+
+    total_comments = 0
+    for post in posts:
+        pid = post.get("id", "")
+        comments = collector.fetch_comments(pid, max_comments=max_comments_per_post)
+
+        if comments:
+            for c in comments:
+                c["post_id"] = pid
+                c["platform"] = platform
+            total_comments += db.insert_comments_batch(comments)
+
+        if ai:
+            unanalyzed = db.get_unanalyzed_comments(pid, platform)
+            analyses = []
+            for c in unanalyzed:
+                result = ai.analyze_comment(c.get("text", ""))
+                if result:
+                    analyses.append({
+                        "comment_id": c["id"],
+                        "platform": platform,
+                        "sentiment": result["sentiment"],
+                        "intent": result["intent"],
+                        "summary": result["summary"],
+                        "model": ai.model
+                    })
+            if analyses:
+                db.insert_analyses_batch(analyses)
+
+        await broadcast_websocket({
+            "type": "topic_search_progress",
+            "platform": platform,
+            "keyword": keyword,
+            "post_id": pid,
+            "comments_count": len(comments) if comments else 0
+        })
+
+    report_path = report_generator.generate_topic_report(
+        db=db,
+        keyword=keyword,
+        platform=platform,
+        posts_info=posts,
+        ai_analyzer=ai,
+    )
+
+    with open(report_path, 'r', encoding='utf-8') as f:
+        report_content = f.read()
+
+    await send_webhook_notifications("report_generated", {
+        "platform": platform,
+        "keyword": keyword,
+        "report_path": report_path
+    })
+
+    return {
+        "success": True,
+        "keyword": keyword,
+        "platform": platform,
+        "posts_count": len(posts),
+        "posts": posts,
+        "comments_count": total_comments,
+        "report_path": report_path,
+        "report_content": report_content,
+    }
 
 
 # ============ 健康检查 ============
@@ -294,37 +390,14 @@ async def fetch_comments(request: FetchCommentsRequest, _: bool = Depends(verify
 
         # 保存到数据库
         if post_info:
-            db.insert_post(
-                id=post_info.get("id"),
-                platform=request.platform,
-                title=post_info.get("title"),
-                content=post_info.get("content"),
-                author_id=post_info.get("author_id"),
-                author_name=post_info.get("author_name"),
-                author_avatar=post_info.get("author_avatar"),
-                url=post_info.get("url"),
-                created_at=post_info.get("created_at"),
-                like_count=post_info.get("like_count"),
-                comment_count=post_info.get("comment_count"),
-                share_count=post_info.get("share_count"),
-                view_count=post_info.get("view_count")
-            )
+            post_info["platform"] = request.platform
+            db.insert_post(post_info)
 
         for comment in comments:
-            db.insert_comment(
-                id=comment.get("id"),
-                post_id=post_id,
-                platform=request.platform,
-                author_id=comment.get("author_id"),
-                author_username=comment.get("author_username"),
-                author_name=comment.get("author_name"),
-                author_avatar=comment.get("author_avatar"),
-                text=comment.get("text"),
-                created_at=comment.get("created_at"),
-                like_count=comment.get("like_count"),
-                reply_count=comment.get("reply_count"),
-                ip_location=comment.get("ip_location")
-            )
+            comment["post_id"] = post_id
+            comment["platform"] = request.platform
+        if comments:
+            db.insert_comments_batch(comments)
 
         # 广播 WebSocket
         await broadcast_websocket({
@@ -580,6 +653,42 @@ async def list_reports(_: bool = Depends(verify_api_key)):
         return APIResponse(
             success=False,
             message="获取报告列表失败",
+            error=str(e)
+        )
+
+
+# ============ 主题搜索分析 ============
+
+@app.post("/api/v1/topic/search", response_model=APIResponse, tags=["Topic Search"])
+async def search_topic(request: TopicSearchRequest, _: bool = Depends(verify_api_key)):
+    """按关键词/主题搜索相关帖子，抓取评论并生成汇总分析报告"""
+    try:
+        result = await run_topic_search_pipeline(
+            platform=request.platform,
+            keyword=request.keyword,
+            max_posts=request.max_posts,
+            max_comments_per_post=request.max_comments_per_post,
+            include_ai_analysis=request.include_ai_analysis,
+            config=request.config,
+        )
+
+        if not result.get("success"):
+            return APIResponse(
+                success=False,
+                message="主题搜索失败",
+                error=result.get("error", "未知错误")
+            )
+
+        return APIResponse(
+            success=True,
+            message=f"找到 {result['posts_count']} 个帖子，共拉取 {result['comments_count']} 条评论，报告已生成",
+            data=result
+        )
+
+    except Exception as e:
+        return APIResponse(
+            success=False,
+            message="主题搜索失败",
             error=str(e)
         )
 
@@ -918,6 +1027,20 @@ async def handle_mcp_request(request: dict) -> dict:
                             },
                             "required": ["platform"]
                         }
+                    },
+                    {
+                        "name": "search_topic",
+                        "description": "按关键词/主题搜索多个相关帖子，抓取各帖子评论并生成一份汇总分析报告（不需要先知道具体帖子 ID/链接）",
+                        "inputSchema": {
+                            "type": "object",
+                            "properties": {
+                                "platform": {"type": "string", "enum": ["twitter", "bilibili", "xiaohongshu", "weibo", "douyin"]},
+                                "keyword": {"type": "string", "description": "搜索关键词/主题"},
+                                "max_posts": {"type": "number", "description": "最多抓取帖子数，默认 10"},
+                                "max_comments_per_post": {"type": "number", "description": "每个帖子最多抓取评论数，默认 50"}
+                            },
+                            "required": ["platform", "keyword"]
+                        }
                     }
                 ]
             }
@@ -1183,6 +1306,31 @@ async def call_mcp_tool(tool_name: str, arguments: dict) -> dict:
                 "success": False,
                 "error": str(e)
             }
+
+    elif tool_name == "search_topic":
+        platform = arguments["platform"]
+        keyword = arguments["keyword"]
+        max_posts = int(arguments.get("max_posts", 10))
+        max_comments_per_post = int(arguments.get("max_comments_per_post", 50))
+
+        result = await run_topic_search_pipeline(
+            platform=platform,
+            keyword=keyword,
+            max_posts=max_posts,
+            max_comments_per_post=max_comments_per_post,
+            include_ai_analysis=True,
+        )
+
+        if not result.get("success"):
+            return {"error": result.get("error", "主题搜索失败")}
+
+        content = result["report_content"]
+        return {
+            "posts_count": result["posts_count"],
+            "comments_count": result["comments_count"],
+            "report_path": result["report_path"],
+            "report_content": content[:1000] + "..." if len(content) > 1000 else content
+        }
 
     else:
         raise ValueError(f"未知的工具: {tool_name}")

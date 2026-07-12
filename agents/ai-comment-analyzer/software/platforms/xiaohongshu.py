@@ -37,6 +37,63 @@ class XiaohongshuCollector(BaseCollector):
     def validate_config(self) -> bool:
         return bool(self.cookie)
 
+    def search_posts(self, keyword: str, max_posts: int = 10) -> List[Dict]:
+        """
+        按关键词搜索笔记（实验性）
+
+        注：小红书搜索接口要求 x-s/x-t 签名请求头，本项目约定不引入浏览器/JS 执行环境
+        来逆向签名算法，因此本方法为尽力而为实现，若小红书风控升级导致失败，
+        会返回空列表并打印提示，不影响其他平台功能
+        """
+        keyword = keyword.strip()
+        posts = []
+        try:
+            resp = self.session.post(
+                f"{self.BASE_URL}/search/notes",
+                json={
+                    "keyword": keyword,
+                    "page": 1,
+                    "page_size": max_posts,
+                    "search_id": "",
+                    "sort": "general",
+                    "note_type": 0,
+                },
+                timeout=10
+            )
+            data = resp.json()
+
+            items = data.get("data", {}).get("items", []) or []
+            for item in items[:max_posts]:
+                note = item.get("note_card", {}) or {}
+                if not note:
+                    continue
+                user_info = note.get("user", {}) or {}
+                interact_info = note.get("interact_info", {}) or {}
+                note_id = note.get("note_id", item.get("id", ""))
+
+                posts.append({
+                    "id": note_id,
+                    "title": note.get("display_title", ""),
+                    "content": note.get("desc", ""),
+                    "author_id": user_info.get("user_id", ""),
+                    "author_name": user_info.get("nickname", ""),
+                    "author_username": user_info.get("nickname", ""),
+                    "author_avatar": user_info.get("avatar", ""),
+                    "created_at": "",
+                    "like_count": interact_info.get("liked_count", 0),
+                    "comment_count": interact_info.get("comment_count", 0),
+                    "share_count": interact_info.get("share_count", 0),
+                    "view_count": 0,
+                    "platform": self.platform_name,
+                    "url": f"https://www.xiaohongshu.com/explore/{note_id}",
+                })
+
+        except Exception as e:
+            print(f"[小红书] 搜索「{keyword}」异常（该平台搜索接口需要签名，可能已失效）: {e}")
+
+        print(f"[小红书] 搜索「{keyword}」，找到 {len(posts)} 篇笔记")
+        return posts
+
     @staticmethod
     def extract_post_id(url_or_id: str) -> str:
         """从 URL 或 ID 中提取笔记 ID"""

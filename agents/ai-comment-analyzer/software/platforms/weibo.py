@@ -5,7 +5,9 @@
 
 import re
 import time
+import json
 import requests
+from urllib.parse import quote
 from typing import List, Dict, Optional
 from datetime import datetime
 
@@ -35,6 +37,95 @@ class WeiboCollector(BaseCollector):
 
     def validate_config(self) -> bool:
         return True  # 未登录也能获取部分公开评论
+
+    def _ensure_visitor_cookie(self) -> None:
+        """
+        获取微博访客(visitor) cookie 并写入 session
+        搜索接口对未登录请求会返回 "Sina Visitor System" 拦截页，
+        需要先走一遍访客系统流程拿到 SUB/SUBP cookie 才能正常访问
+        """
+        if self.session.cookies.get("SUB", domain=".weibo.cn"):
+            return
+        try:
+            r = self.session.get(
+                "https://passport.weibo.com/visitor/genvisitor",
+                params={"cb": "gen_callback"},
+                timeout=10
+            )
+            match = re.search(r'gen_callback\((.*)\)', r.text)
+            tid = json.loads(match.group(1))["data"]["tid"]
+
+            r2 = self.session.get(
+                "https://passport.weibo.com/visitor/visitor",
+                params={"a": "incarnate", "t": tid, "w": 2, "c": "095", "gc": "", "cb": "cross_domain", "from": "weibo"},
+                timeout=10
+            )
+            match2 = re.search(r'cross_domain\((.*)\)', r2.text)
+            visitor_data = json.loads(match2.group(1))["data"]
+
+            self.session.cookies.set("SUB", visitor_data["sub"], domain=".weibo.cn")
+            self.session.cookies.set("SUBP", visitor_data["subp"], domain=".weibo.cn")
+        except Exception as e:
+            print(f"[微博] 获取访客 Cookie 失败: {e}")
+
+    def search_posts(self, keyword: str, max_posts: int = 10) -> List[Dict]:
+        """
+        按关键词搜索微博
+
+        注：微博搜索接口对未登录访客限制较严，若未配置 Cookie 且访客流程失效，
+        可能无法返回结果，建议配置登录 Cookie 以提高成功率
+        """
+        keyword = keyword.strip()
+        posts = []
+        try:
+            if not self.cookie:
+                self._ensure_visitor_cookie()
+
+            containerid = "100103type=1&q=" + keyword
+            resp = self.session.get(
+                f"{self.MOBILE_URL}/api/container/getIndex",
+                params={"containerid": containerid},
+                headers={"Referer": f"{self.MOBILE_URL}/search?containerid={quote(containerid)}"},
+                timeout=10
+            )
+            data = resp.json()
+
+            if data.get("ok") != 1:
+                print(f"[微博] 搜索「{keyword}」失败（可能需要登录 Cookie）: ok={data.get('ok')}")
+                return posts
+
+            cards = data.get("data", {}).get("cards", []) or []
+            for card in cards:
+                mblog = card.get("mblog")
+                if not mblog:
+                    continue
+                user = mblog.get("user", {}) or {}
+
+                posts.append({
+                    "id": str(mblog.get("mid", mblog.get("id", ""))),
+                    "title": "",
+                    "content": re.sub(r'<[^>]+>', '', mblog.get("text", "") or ""),
+                    "author_id": str(user.get("id", "")),
+                    "author_name": user.get("screen_name", ""),
+                    "author_username": user.get("screen_name", ""),
+                    "author_avatar": user.get("avatar_hd", ""),
+                    "created_at": mblog.get("created_at", ""),
+                    "like_count": mblog.get("attitudes_count", 0),
+                    "comment_count": mblog.get("comments_count", 0),
+                    "share_count": mblog.get("reposts_count", 0),
+                    "view_count": 0,
+                    "platform": self.platform_name,
+                    "url": f"https://m.weibo.cn/status/{mblog.get('mid', mblog.get('id', ''))}",
+                })
+
+                if len(posts) >= max_posts:
+                    break
+
+        except Exception as e:
+            print(f"[微博] 搜索「{keyword}」异常: {e}")
+
+        print(f"[微博] 搜索「{keyword}」，找到 {len(posts)} 条微博")
+        return posts
 
     @staticmethod
     def extract_post_id(url_or_id: str) -> str:

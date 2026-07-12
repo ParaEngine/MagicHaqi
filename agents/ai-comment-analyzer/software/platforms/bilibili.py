@@ -6,10 +6,20 @@ Bilibili (B站) 评论收集器
 import re
 import time
 import requests
+from hashlib import md5
+from urllib.parse import urlencode
 from typing import List, Dict, Optional
 from datetime import datetime
 
 from .base import BaseCollector
+
+# WBI 签名混淆密钥索引表（B 站搜索 API 需要签名，不签名会被风控拦截）
+MIXIN_KEY_ENC_TAB = [
+    46, 47, 18, 2, 53, 8, 23, 32, 15, 50, 10, 31, 58, 3, 45, 35, 27, 43, 5, 49,
+    33, 9, 42, 19, 29, 28, 14, 39, 12, 38, 41, 13, 37, 48, 7, 16, 24, 55, 40,
+    61, 26, 17, 0, 1, 60, 51, 30, 4, 22, 25, 54, 21, 56, 59, 6, 63, 57, 62, 11,
+    36, 20, 34, 44, 52
+]
 
 
 class BilibiliCollector(BaseCollector):
@@ -115,6 +125,92 @@ class BilibiliCollector(BaseCollector):
         except Exception as e:
             print(f"[B站] BV 转 AV 失败: {e}")
         return None
+
+    def _get_wbi_keys(self) -> Optional[tuple]:
+        """获取当前 img_key/sub_key（未登录也可获取）"""
+        try:
+            resp = self.session.get(f"{self.BASE_URL}/x/web-interface/nav", timeout=10)
+            wbi_img = resp.json().get("data", {}).get("wbi_img", {})
+            img_key = wbi_img["img_url"].rsplit("/", 1)[1].split(".")[0]
+            sub_key = wbi_img["sub_url"].rsplit("/", 1)[1].split(".")[0]
+            return img_key, sub_key
+        except Exception as e:
+            print(f"[B站] 获取 WBI 密钥失败: {e}")
+            return None
+
+    def _sign_wbi_params(self, params: Dict) -> Optional[Dict]:
+        """对请求参数进行 WBI 签名（B 站搜索接口必需）"""
+        keys = self._get_wbi_keys()
+        if not keys:
+            return None
+        img_key, sub_key = keys
+        mixin_key = "".join(
+            (img_key + sub_key)[i] for i in MIXIN_KEY_ENC_TAB
+        )[:32]
+
+        signed = dict(params)
+        signed["wts"] = round(time.time())
+        signed = dict(sorted(signed.items()))
+        signed = {k: "".join(c for c in str(v) if c not in "!'()*") for k, v in signed.items()}
+        query = urlencode(signed)
+        signed["w_rid"] = md5((query + mixin_key).encode()).hexdigest()
+        return signed
+
+    @staticmethod
+    def _strip_tags(text: str) -> str:
+        return re.sub(r'<[^>]+>', '', text or '')
+
+    def search_posts(self, keyword: str, max_posts: int = 10) -> List[Dict]:
+        """按关键词搜索相关视频（使用 WBI 签名接口，未登录也可使用）"""
+        keyword = keyword.strip()
+        posts = []
+        try:
+            signed_params = self._sign_wbi_params({
+                "search_type": "video",
+                "keyword": keyword,
+            })
+            if not signed_params:
+                print(f"[B站] 无法获取 WBI 签名，搜索终止")
+                return posts
+
+            resp = self.session.get(
+                f"{self.BASE_URL}/x/web-interface/wbi/search/type",
+                params=signed_params,
+                timeout=10
+            )
+            data = resp.json()
+
+            if data.get("code") != 0:
+                print(f"[B站] 搜索失败: {data.get('message')}")
+                return posts
+
+            results = data.get("data", {}).get("result", []) or []
+            for item in results[:max_posts]:
+                if item.get("type") != "video":
+                    continue
+                bvid = item.get("bvid", "")
+                posts.append({
+                    "id": bvid,
+                    "title": self._strip_tags(item.get("title", "")),
+                    "content": self._strip_tags(item.get("description", "")),
+                    "author_id": str(item.get("mid", "")),
+                    "author_name": item.get("author", ""),
+                    "author_username": item.get("author", ""),
+                    "author_avatar": item.get("upic", ""),
+                    "created_at": datetime.fromtimestamp(item["pubdate"]).isoformat() if item.get("pubdate") else None,
+                    "like_count": item.get("like", 0),
+                    "comment_count": item.get("review", 0),
+                    "share_count": 0,
+                    "view_count": item.get("play", 0),
+                    "platform": self.platform_name,
+                    "url": f"https://www.bilibili.com/video/{bvid}",
+                })
+
+        except Exception as e:
+            print(f"[B站] 搜索「{keyword}」异常: {e}")
+
+        print(f"[B站] 搜索「{keyword}」，找到 {len(posts)} 个视频")
+        return posts
 
     def get_post_info(self, post_id: str) -> Optional[Dict]:
         """获取视频信息"""

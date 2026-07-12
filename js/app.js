@@ -8,6 +8,7 @@ import {
     saveLayout, addToInventory, removeFromInventory, savePetDebounced,
     getLayout, ensurePetData, savePet, clearStoredData, saveDecorDataNow, saveInventoryDebounced, loadStoryProgress, saveStoryProgress,
     isOnboardingCompleted, saveOnboardingProgress, markOnboardingCompleted,
+    loadWorkBuddyGameDraft, savePetGame,
 } from './storage.js';
 import { applyDecay, applyStage, clampEnergyToMax, defaultPermanentTrauma, defaultStats, eggStats, getActiveSickness, getEffectiveSicknessSeverity, getSicknessDef, markPetCared, maybeRollDailySickness, tickOffline, startTickLoop, stopTickLoop, treatPetSicknessOneLevel } from './petTick.js';
 import { renderLogin } from './view_login.js';
@@ -75,9 +76,13 @@ function importRuntimeModule(src) {
 async function ensureKeepworkSDK() {
     if (window.KeepworkSDK) return;
     // 在 SDK 入口执行前预设默认实例参数：index.ts 会用它构造 window.keepwork，
-    // 使「自动创建的默认实例」也带 autoReloadAfterRedirectLogin:false，
+    // 使「自动创建的默认实例」使用微信静默授权，并带 autoReloadAfterRedirectLogin:false，
     // 避免微信回跳后被迫整页刷新（登录页闪现 → 刷新 → 登录后页面的双跳）。
-    window.KEEPWORK_DEFAULT_OPTIONS = { timeout: 30000, autoReloadAfterRedirectLogin: false };
+    window.KEEPWORK_DEFAULT_OPTIONS = {
+        timeout: 30000,
+        autoReloadAfterRedirectLogin: false,
+        wxAuth: { scope: 'snsapi_base' },
+    };
     const host = window.location.hostname;
     const isLocalHost = host === '127.0.0.1' || host === 'localhost';
     const useLocalIndex = isLocalHost && !window.location.pathname.includes('/dist/');
@@ -126,11 +131,18 @@ function initSdk() {
         if (!window.KeepworkSDK) throw new Error('KeepworkSDK 未定义');
         // autoReloadAfterRedirectLogin:false —— 微信整页授权回跳后不让 SDK 自动整页刷新，
         // 改由 bootstrap() await whenRedirectLoginSettled() 协调登录态并就地路由，避免双跳。
-        sdk = window.keepwork || new window.KeepworkSDK({ timeout: 30000, autoReloadAfterRedirectLogin: false });
+        sdk = window.keepwork || new window.KeepworkSDK({
+            timeout: 30000,
+            autoReloadAfterRedirectLogin: false,
+            wxAuth: { scope: 'snsapi_base' },
+        });
         // 兜底：若 window.keepwork 由旧版 SDK（不认 KEEPWORK_DEFAULT_OPTIONS，如过期 CDN 包）
         // 用默认参数预创建，其 autoReloadAfterRedirectLogin 仍为 true。这里强制关掉——
         // codeToProbe 是网络请求，本行同步代码必在其 resolve 前执行，能赶在 reload 判断前生效。
         if (sdk) sdk._autoReloadAfterRedirectLogin = false;
+        // MagicHaqi 微信登录固定使用 snsapi_base 静默授权。这里再次设置是为了兼容
+        // 页面中已经存在 window.keepwork，或不识别 KEEPWORK_DEFAULT_OPTIONS 的旧版 SDK。
+        sdk?.wxAuth?.setScope?.('snsapi_base');
         // 设置 maisi 项目 API Key
         if (sdk.setUserApiKey && window.KeepworkSDK?.API_KEYS?.maisi) {
             sdk.setUserApiKey(window.KeepworkSDK.API_KEYS.maisi);
@@ -217,6 +229,8 @@ function decodeSharedParam(value) {
 // 仪式而非分享的小游戏。故在检测到分享参数时存入 sessionStorage（同标签页跨跳转保留），
 // URL 不再携带参数时回退读取；真正消费小游戏（cleanupSharedGameUrl）时一并清除。
 const SHARED_GAME_STORAGE_KEY = 'mh_pending_shared_game';
+const WORKBUDDY_IMPORT_STORAGE_KEY = 'mh_pending_workbuddy_game_draft';
+const WORKBUDDY_IMPORTED_PREFIX = 'mh_imported_workbuddy_game_draft:';
 
 function persistSharedGameParams(params) {
     try {
@@ -329,6 +343,98 @@ function cleanupSharedGameUrl() {
         ['gameFrom', 'game', 'msg'].forEach(key => url.searchParams.delete(key));
         window.history.replaceState({}, '', url.toString());
     } catch (_) {}
+}
+
+function parseWorkBuddyImportParamsFromUrl() {
+    try {
+        const url = new URL(window.location.href);
+        const draft = decodeSharedParam(
+            url.searchParams.get('importGameDraft')
+            || url.searchParams.get('workBuddyDraft')
+            || url.searchParams.get('wbDraft')
+            || url.searchParams.get('draftId')
+            || ''
+        ).trim();
+        return { draft };
+    } catch (_) {
+        return { draft: '' };
+    }
+}
+
+function persistWorkBuddyImportParams(params) {
+    try {
+        if (params?.draft) sessionStorage.setItem(WORKBUDDY_IMPORT_STORAGE_KEY, JSON.stringify(params));
+    } catch (_) {}
+}
+
+function loadPersistedWorkBuddyImportParams() {
+    try {
+        const data = JSON.parse(sessionStorage.getItem(WORKBUDDY_IMPORT_STORAGE_KEY) || 'null');
+        const draft = String(data?.draft || '').trim();
+        return draft ? { draft } : null;
+    } catch (_) { return null; }
+}
+
+function clearWorkBuddyImportParams() {
+    try { sessionStorage.removeItem(WORKBUDDY_IMPORT_STORAGE_KEY); } catch (_) {}
+    try {
+        const url = new URL(window.location.href);
+        ['importGameDraft', 'workBuddyDraft', 'wbDraft', 'draftId'].forEach(key => url.searchParams.delete(key));
+        window.history.replaceState({}, '', url.toString());
+    } catch (_) {}
+}
+
+function parseWorkBuddyImportParams() {
+    const fromUrl = parseWorkBuddyImportParamsFromUrl();
+    if (fromUrl.draft) { persistWorkBuddyImportParams(fromUrl); return fromUrl; }
+    return loadPersistedWorkBuddyImportParams() || fromUrl;
+}
+
+function workBuddyImportKey(draft) {
+    return String(draft || '').trim().slice(0, 512);
+}
+
+function wasWorkBuddyDraftImported(draft) {
+    const key = workBuddyImportKey(draft);
+    if (!key) return false;
+    try { return sessionStorage.getItem(WORKBUDDY_IMPORTED_PREFIX + key) === '1'; } catch (_) { return false; }
+}
+
+function markWorkBuddyDraftImported(draft) {
+    const key = workBuddyImportKey(draft);
+    if (!key) return;
+    try { sessionStorage.setItem(WORKBUDDY_IMPORTED_PREFIX + key, '1'); } catch (_) {}
+}
+
+async function maybeImportWorkBuddyGameDraft() {
+    const { draft } = parseWorkBuddyImportParams();
+    if (!draft) return false;
+    if (wasWorkBuddyDraftImported(draft)) {
+        clearWorkBuddyImportParams();
+        return false;
+    }
+    try {
+        const gameDraft = await loadWorkBuddyGameDraft(draft);
+        if (!gameDraft?.html) throw new Error('没有找到 WorkBuddy 游戏草稿');
+        const result = await savePetGame(gameDraft.html, {
+            title: gameDraft.title,
+            icon: gameDraft.icon,
+            desc: gameDraft.desc,
+        });
+        markWorkBuddyDraftImported(draft);
+        clearWorkBuddyImportParams();
+        showToast(`已导入 ${result?.record?.title || gameDraft.title}`, 'success', 2200);
+        if (!hasSelectablePets()) return false;
+        pendingMinigameTab = 'mine';
+        finishBootstrap();
+        setView('minigames');
+        return true;
+    } catch (e) {
+        console.warn('导入 WorkBuddy 小游戏失败', e);
+        clearWorkBuddyImportParams();
+        showToast('导入 WorkBuddy 小游戏失败：' + (e?.message || e), 'error', 3600);
+        return false;
+    }
 }
 
 function loadChatView() {
@@ -1263,6 +1369,7 @@ async function bootstrap() {
     // 尽早持久化分享小游戏意图：登录 / 注册可能整页跳转（KeepWork OAuth 回跳）并丢失 URL 参数，
     // 先存入 sessionStorage，回跳后即便 URL 已无参数也能恢复并优先进入分享的小游戏。
     persistSharedGameParams(parseSharedGameParamsFromUrl());
+    persistWorkBuddyImportParams(parseWorkBuddyImportParamsFromUrl());
 
     // URL token
     try {
@@ -1320,6 +1427,8 @@ async function bootstrap() {
 
     // 进入游戏前必须先给"星球"命名（每位用户只有一个星球）
     await ensurePlanetNamed();
+
+    if (await maybeImportWorkBuddyGameDraft()) return;
 
     // 预计算本星球新手指引是否为领养仪式型（供 planet→field 缩放过渡同步拦截）。
     boardingOnboardingPlanet = await isBoardingOnboardingPlanet();
@@ -1837,7 +1946,10 @@ async function handleLogin() {
         return;
     }
     try {
-        await sdk.showLoginWindow({ title: `${currentAppTitle()} 登录` });
+        await sdk.showLoginWindow({
+            title: `${currentAppTitle()} 登录`,
+            wechatScope: 'snsapi_base',
+        });
     } catch (e) {
         const msg = e?.message || e;
         if (msg && !/cancel/i.test(String(msg))) {

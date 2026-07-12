@@ -66,6 +66,7 @@ from .bilibili import BilibiliCollector
 from .xiaohongshu import XiaohongshuCollector
 from .weibo import WeiboCollector
 from .douyin import DouyinCollector
+from .taptap import TapTapCollector
 
 CollectorFactory.register("twitter", TwitterCollector)
 CollectorFactory.register("x", TwitterCollector)
@@ -78,3 +79,5 @@ CollectorFactory.register("weibo", WeiboCollector)
 CollectorFactory.register("微博", WeiboCollector)
 CollectorFactory.register("douyin", DouyinCollector)
 CollectorFactory.register("抖音", DouyinCollector)
+CollectorFactory.register("taptap", TapTapCollector)
+CollectorFactory.register("TapTap", TapTapCollector)
