@@ -839,7 +839,7 @@ export const zhCN = {
     stResourceReturning: '还有一批星际资源正在自动返航，请稍等片刻。', stNeedFuelPoop: '需要 {fuel} ⛽ 生物燃料，去星球收集便便吧。',
     stShipDepartHaqi: '飞船出发！宠物正在前往哈奇岛拜访。', stHaqiVisitDone: '哈奇岛拜访完成，飞船正在返航。',
     stHaqiVoyageDone: '航程完成！宠物拜访哈奇岛后带回了 {coins} 金币和 1 份随机礼物。',
-    stNeedFuelOfficial: '需要 {fuel} ⛽ 生物燃料才能拜访{name}。', stArrivedOfficial: '已抵达 {name}，可以参观星球场景。',
+    stNeedFuelOfficial: '需要 {fuel} ⛽ 生物燃料才能拜访{name}。', stArrivedOfficial: '已抵达 {name}，可以参观星球场景。', stOfficialGuideName: '{name}向导', stOfficialVisitLog: '{pet}抵达了{planet}',
     stRemoteResource: '资源', stRemoteStock: '元素储量', stRemoteTons: '{stock}/{max} 吨',
     stRemoteDispatchInfo: '派出飞船会自动往返 {name}，每次补充 {haul} 吨{attr}元素。最多可储存 {max} 吨，未来在对应地貌养宠会消耗这些元素。',
     stStockMaxed: '{attr}元素已经储存到上限 {max} 吨。', stNeedFuelShip: '需要 {fuel} ⛽ 生物燃料才能派出飞船。',
