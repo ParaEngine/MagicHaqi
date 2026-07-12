@@ -76,9 +76,13 @@ function importRuntimeModule(src) {
 async function ensureKeepworkSDK() {
     if (window.KeepworkSDK) return;
     // 在 SDK 入口执行前预设默认实例参数：index.ts 会用它构造 window.keepwork，
-    // 使「自动创建的默认实例」也带 autoReloadAfterRedirectLogin:false，
+    // 使「自动创建的默认实例」使用微信静默授权，并带 autoReloadAfterRedirectLogin:false，
     // 避免微信回跳后被迫整页刷新（登录页闪现 → 刷新 → 登录后页面的双跳）。
-    window.KEEPWORK_DEFAULT_OPTIONS = { timeout: 30000, autoReloadAfterRedirectLogin: false };
+    window.KEEPWORK_DEFAULT_OPTIONS = {
+        timeout: 30000,
+        autoReloadAfterRedirectLogin: false,
+        wxAuth: { scope: 'snsapi_base' },
+    };
     const host = window.location.hostname;
     const isLocalHost = host === '127.0.0.1' || host === 'localhost';
     const useLocalIndex = isLocalHost && !window.location.pathname.includes('/dist/');
@@ -127,11 +131,18 @@ function initSdk() {
         if (!window.KeepworkSDK) throw new Error('KeepworkSDK 未定义');
         // autoReloadAfterRedirectLogin:false —— 微信整页授权回跳后不让 SDK 自动整页刷新，
         // 改由 bootstrap() await whenRedirectLoginSettled() 协调登录态并就地路由，避免双跳。
-        sdk = window.keepwork || new window.KeepworkSDK({ timeout: 30000, autoReloadAfterRedirectLogin: false });
+        sdk = window.keepwork || new window.KeepworkSDK({
+            timeout: 30000,
+            autoReloadAfterRedirectLogin: false,
+            wxAuth: { scope: 'snsapi_base' },
+        });
         // 兜底：若 window.keepwork 由旧版 SDK（不认 KEEPWORK_DEFAULT_OPTIONS，如过期 CDN 包）
         // 用默认参数预创建，其 autoReloadAfterRedirectLogin 仍为 true。这里强制关掉——
         // codeToProbe 是网络请求，本行同步代码必在其 resolve 前执行，能赶在 reload 判断前生效。
         if (sdk) sdk._autoReloadAfterRedirectLogin = false;
+        // MagicHaqi 微信登录固定使用 snsapi_base 静默授权。这里再次设置是为了兼容
+        // 页面中已经存在 window.keepwork，或不识别 KEEPWORK_DEFAULT_OPTIONS 的旧版 SDK。
+        sdk?.wxAuth?.setScope?.('snsapi_base');
         // 设置 maisi 项目 API Key
         if (sdk.setUserApiKey && window.KeepworkSDK?.API_KEYS?.maisi) {
             sdk.setUserApiKey(window.KeepworkSDK.API_KEYS.maisi);
@@ -1880,7 +1891,10 @@ async function handleLogin() {
         return;
     }
     try {
-        await sdk.showLoginWindow({ title: `${currentAppTitle()} 登录` });
+        await sdk.showLoginWindow({
+            title: `${currentAppTitle()} 登录`,
+            wechatScope: 'snsapi_base',
+        });
     } catch (e) {
         const msg = e?.message || e;
         if (msg && !/cancel/i.test(String(msg))) {
