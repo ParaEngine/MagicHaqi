@@ -581,6 +581,47 @@ export function normalizeOnboardingConfig(raw = {}, planetId = '') {
     return { mode, storyPath, minigame, progressKey };
 }
 
+// ===== field NPC（星球编辑器摆放的可交互角色）=====
+// 每个 field 可带一个只读的 npcs 数组：{ id, name, icon, x, y, dialog?, minigame? }。
+// 位置在编辑器里配置好后运行时固定，不支持玩家拖动 / 寻路。
+function normalizeFieldNpcDialog(value) {
+    const raw = Array.isArray(value) ? value : [];
+    return raw
+        .map(line => ({
+            speaker: String(line?.speaker || '').trim().slice(0, 24),
+            text: String(line?.text || '').trim().slice(0, 200),
+        }))
+        .filter(line => line.text);
+}
+
+function normalizeFieldNpcScale(value) {
+    const num = Number(value);
+    return Number.isFinite(num) && num > 0 ? Math.max(0.4, Math.min(3, num)) : 1;
+}
+
+export function normalizeFieldNpc(raw = {}, index = 0) {
+    return {
+        id: String(raw?.id || `npc_${index + 1}`).trim() || `npc_${index + 1}`,
+        name: String(raw?.name || '').trim().slice(0, 24) || `NPC${index + 1}`,
+        icon: String(raw?.icon || raw?.emoji || raw?.imageUrl || '🧑').trim().slice(0, 300),
+        x: Math.max(0, Math.min(100, Number(raw?.x) || 0)),
+        y: Math.max(0, Math.min(100, Number(raw?.y) || 0)),
+        scale: normalizeFieldNpcScale(raw?.scale),
+        flip: !!raw?.flip,
+        dropShadow: !!raw?.dropShadow,
+        dialog: normalizeFieldNpcDialog(raw?.dialog),
+        minigame: String(raw?.minigame || raw?.game || '').trim().slice(0, 96),
+    };
+}
+
+/** 规范化一个 field 的 npcs 数组；没有对话也没有小游戏的 NPC 点击后没有任何反应，直接丢弃。 */
+export function normalizeFieldNpcs(value) {
+    const raw = Array.isArray(value) ? value : [];
+    return raw
+        .map((npc, index) => normalizeFieldNpc(npc, index))
+        .filter(npc => npc.dialog.length > 0 || npc.minigame);
+}
+
 /** 取得某个星球的新手指引配置；planetIdOrEntry 可传 id 或已解析的条目对象。 */
 export async function getPlanetOnboardingConfig(planetIdOrEntry = DEFAULT_PLANET_ID) {
     let entry = planetIdOrEntry && typeof planetIdOrEntry === 'object' ? planetIdOrEntry : null;

@@ -12,6 +12,12 @@ The OpenClaw skill installed on every user's computer. Lets a user's own agent a
 - `commands.md` — command cheat sheet + state shape.
 - `integration.md` — protocol reference (auth, nav, command interface, safety).
 
+## game-maker/  (for ALL users)
+A skill users export from the in-app Game Maker (游戏工坊 → 导入/导出) to hand off to an
+external AI coding tool (e.g. Cursor). The tool co-designs a self-contained HTML5 mini-game;
+the user pastes the finished HTML back into the Game Maker's Import tab to save/publish.
+- `SKILL.md` — skill entry (workflow + constraints + rules of good conduct).
+
 ## haqi-operator/  (for DEVELOPERS / owner)
 The 24/7 one-person-company operator agent. Runs marketing, content (BYOC), companionship,
 and analytics autonomously. Not distributed to end users.

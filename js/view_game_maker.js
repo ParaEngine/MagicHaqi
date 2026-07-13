@@ -4,6 +4,7 @@
 import { $, escapeHtml, showToast, confirm as gameConfirm } from './utils.js';
 import { t, getLang } from './i18n.js';
 import { state } from './state.js';
+import { CONFIG } from './config.js';
 import { savePetGame } from './storage.js';
 import { handleMinigamePetMessage, pushActivePetConfigToFrame } from './view_minigames.js';
 import { openGameMakerSettings, closeGameMakerSettings } from './view_game_maker_settings.js';
@@ -12,9 +13,24 @@ import { handleGameHostMessage, loadGameHtmlIntoFrame } from './gameHostFrame.js
 // 游戏创作工坊的 AI 会话共用同一个 modId，chatId 区分不同会话，便于列出历史。
 const GAME_MAKER_MOD_ID = 'magichaqi-game-maker';
 const GAME_MAKER_MODEL_KEY = 'mh_game_maker_model';
-const GAME_MAKER_WORKSPACE_PREFIX = 'magichaqi-game-maker';
+// 单一复用的临时工作区：AI 文件工具（copilotTools）需要一个 workspace 作为 game.html 的落地目录，
+// 该目录会持久化到个人主页存储（edunotes/store/<workspace>/game.html）。以前按 chatId 生成
+// 唯一 workspace（magichaqi-game-maker-<chatId>），导致「每做一个游戏就在个人主页存储里留下一个
+// 无用的临时工作区」。改用固定名称后全局至多一个，且它只是每轮由 currentHtml 重新 seed 的草稿区
+// （真正的游戏代码存活在 currentHtml 变量里），跨会话复用完全安全，离开工坊时再顺手删掉 game.html。
+const GAME_MAKER_WORKSPACE = 'magichaqi-game-maker';
 const GAME_MAKER_FILE_PATH = 'game.html';
 const WORKBUDDY_APP_URL = 'workbuddy://chat';
+
+// 离开游戏工坊时，尽力删除临时工作区里的草稿文件，避免在个人主页存储里留下无用文件。
+async function cleanupGameMakerScratch() {
+    try {
+        const sdk = state.sdk || window.keepwork;
+        const base = sdk?.personalPageStore;
+        const ws = (base && typeof base.withWorkspace === 'function') ? base.withWorkspace(GAME_MAKER_WORKSPACE) : null;
+        if (ws && typeof ws.deleteFile === 'function') await ws.deleteFile(GAME_MAKER_FILE_PATH);
+    } catch (_) {}
+}
 
 // ---------- 本地 IndexedDB 会话历史 ----------
 // 设计：每条记录是一次完整的「对话会话」，含全部对话气泡 + 会话结束时的完整游戏代码。
@@ -314,7 +330,10 @@ function textFromStreamPayload(value, payload) {
 function extractHtml(text) {
     const raw = String(text || '');
     if (!raw.trim()) return '';
-    const fence = raw.match(/```(?:html)?\s*([\s\S]*?)```/i);
+    // 围栏边界要求 ``` 独占一行（真正的 Markdown 代码块写法），避免游戏自身源码里
+    // 内联出现的字面 ```（例如某些小游戏的 stripFence 正则里紧挨着的两个 ```）被
+    // 误判成围栏起止，导致提取结果从源码中间被截断成一小段乱码。
+    const fence = raw.match(/^[ \t]*```[a-zA-Z]*[ \t]*\r?\n([\s\S]*?)^[ \t]*```[ \t]*$/m);
     const candidate = fence ? fence[1] : raw;
     const docMatch = candidate.match(/<!DOCTYPE[\s\S]*<\/html>/i) || candidate.match(/<html[\s\S]*<\/html>/i);
     if (docMatch) return docMatch[0].trim();
@@ -653,6 +672,130 @@ export function disposeGameMaker() {
 }
 
 // 游戏图标的可选 Emoji 列表。
+// 轻量级 HTML(H5) 语法高亮：把源码转成带 <span> 着色的 HTML 字符串，供「代码」标签里
+// 透明 textarea 背后的高亮层渲染。无外部依赖，正则分词：注释 / DOCTYPE / 标签 / 文本。
+// 标签内再细分标签名、属性名、字符串。够用即可（属性值里的 `>` 等极端情形不追求完美）。
+function escapeCodeHtml(s) {
+    return String(s).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+}
+function highlightTagAttrs(attrs) {
+    let out = '';
+    let expectValue = false;
+    // 依次匹配：属性名 | 等号 | 引号字符串 | 空白 | 其它（含未加引号的值 / 自闭合斜杠）。
+    const re = /([a-zA-Z_:][-\w:.]*)|(=)|("[^"]*"|'[^']*')|(\s+)|([^\s]+?)/g;
+    let m;
+    while ((m = re.exec(attrs))) {
+        if (m[1]) {
+            out += expectValue
+                ? `<span class="hl-string">${escapeCodeHtml(m[1])}</span>`
+                : `<span class="hl-attr">${escapeCodeHtml(m[1])}</span>`;
+            expectValue = false;
+        } else if (m[2]) {
+            out += '<span class="hl-punct">=</span>';
+            expectValue = true;
+        } else if (m[3]) {
+            out += `<span class="hl-string">${escapeCodeHtml(m[3])}</span>`;
+            expectValue = false;
+        } else if (m[4]) {
+            out += m[4]; // 空白原样保留（无需转义）。
+        } else {
+            out += expectValue
+                ? `<span class="hl-string">${escapeCodeHtml(m[5])}</span>`
+                : escapeCodeHtml(m[5]);
+            expectValue = false;
+        }
+    }
+    return out;
+}
+function highlightHtmlTag(tag) {
+    const inner = tag.slice(1, -1); // 去掉首尾的 < >
+    const m = inner.match(/^(\/?)([a-zA-Z][a-zA-Z0-9-]*)([\s\S]*)$/);
+    if (!m) return `<span class="hl-punct">${escapeCodeHtml(tag)}</span>`;
+    const [, slash, name, rest] = m;
+    return `<span class="hl-punct">&lt;${slash}</span>`
+        + `<span class="hl-tagname">${escapeCodeHtml(name)}</span>`
+        + highlightTagAttrs(rest)
+        + '<span class="hl-punct">&gt;</span>';
+}
+function highlightHtmlSource(src) {
+    let out = '';
+    let last = 0;
+    // 顶层分词：script/style 整块（内容原样，避免 JS 里的 `a<b` 被当成标签）/ 注释 / DOCTYPE / 尖括号标签。
+    const re = /(<(?:script|style)\b[^>]*>)([\s\S]*?)(<\/(?:script|style)\s*>)|<!--[\s\S]*?-->|<!DOCTYPE[^>]*>|<\/?[a-zA-Z][^>]*>/gi;
+    let m;
+    while ((m = re.exec(src))) {
+        if (m.index > last) out += escapeCodeHtml(src.slice(last, m.index));
+        const tok = m[0];
+        if (m[1]) out += highlightHtmlTag(m[1]) + escapeCodeHtml(m[2]) + highlightHtmlTag(m[3]);
+        else if (tok.startsWith('<!--')) out += `<span class="hl-comment">${escapeCodeHtml(tok)}</span>`;
+        else if (/^<!DOCTYPE/i.test(tok)) out += `<span class="hl-doctype">${escapeCodeHtml(tok)}</span>`;
+        else out += highlightHtmlTag(tok);
+        last = re.lastIndex;
+    }
+    if (last < src.length) out += escapeCodeHtml(src.slice(last));
+    // 末尾补一个换行占位，保证最后一行为空时高亮层高度与 textarea 一致。
+    return out + '\n';
+}
+
+// ---------- CodeMirror 5 按需加载（用于「代码」标签的 H5 高亮编辑器） ----------
+// 参考 dev_tools/ThreeJsModelGenerator.js 的做法：经典 <script>/<link> 全局 window.CodeMirror。
+// core + 主题走 keepwork CDN 镜像（国内稳定）；htmlmixed 依赖的 xml/css/htmlmixed 模式镜像里没有，
+// 从 jsdelivr 取同版本（5.65.16）。加载失败时上层回退到内置 highlightHtmlSource 高亮。
+const CM_CDN = {
+    css: 'https://cdn.keepwork.com/keepwork/cdn/vendor/codemirror/codemirror.min.css',
+    theme: 'https://cdn.keepwork.com/keepwork/cdn/vendor/codemirror/material-darker.min.css',
+    core: 'https://cdn.keepwork.com/keepwork/cdn/vendor/codemirror/codemirror.min.js',
+    // htmlmixed 依赖 xml + javascript + css，必须在 core 之后按此顺序串行加载。
+    modes: [
+        'https://cdn.jsdelivr.net/npm/codemirror@5.65.16/mode/xml/xml.min.js',
+        'https://cdn.keepwork.com/keepwork/cdn/vendor/codemirror/javascript.min.js',
+        'https://cdn.jsdelivr.net/npm/codemirror@5.65.16/mode/css/css.min.js',
+        'https://cdn.jsdelivr.net/npm/codemirror@5.65.16/mode/htmlmixed/htmlmixed.min.js',
+    ],
+};
+function cmLoadStyleOnce(href) {
+    if (!href || document.querySelector(`link[href="${href}"]`)) return Promise.resolve();
+    return new Promise((resolve, reject) => {
+        const link = document.createElement('link');
+        link.rel = 'stylesheet';
+        link.href = href;
+        link.onload = resolve;
+        link.onerror = reject;
+        document.head.appendChild(link);
+    });
+}
+function cmLoadScriptOnce(src) {
+    if (!src) return Promise.resolve();
+    const existing = document.querySelector(`script[src="${src}"]`);
+    if (existing?.dataset.loaded === '1') return Promise.resolve();
+    return new Promise((resolve, reject) => {
+        if (existing) {
+            existing.addEventListener('load', resolve, { once: true });
+            existing.addEventListener('error', reject, { once: true });
+            return;
+        }
+        const s = document.createElement('script');
+        s.src = src;
+        s.onload = () => { s.dataset.loaded = '1'; resolve(); };
+        s.onerror = reject;
+        document.head.appendChild(s);
+    });
+}
+let _cmLoading = null;
+function loadCodeMirrorForGameMaker() {
+    // 已就绪（含 htmlmixed 模式）直接复用；devtools 可能只加载过 javascript 模式，需补齐。
+    if (window.CodeMirror?.modes?.htmlmixed) return Promise.resolve(window.CodeMirror);
+    if (!_cmLoading) {
+        _cmLoading = (async () => {
+            await Promise.all([cmLoadStyleOnce(CM_CDN.css), cmLoadStyleOnce(CM_CDN.theme)]);
+            await cmLoadScriptOnce(CM_CDN.core);
+            for (const m of CM_CDN.modes) await cmLoadScriptOnce(m);
+            return window.CodeMirror || null;
+        })().catch((e) => { _cmLoading = null; throw e; });
+    }
+    return _cmLoading;
+}
+
 const EMOJI_OPTIONS = [
     '🎮', '🕹️', '👾', '🏆', '🎯', '🎲',
     '🧩', '🃏', '🐍', '🧱', '🚀', '🏃',
@@ -718,7 +861,9 @@ export function renderGameMaker(panel, { game = null, mode = 'game', materials =
     // 用它来把这一段时间内新建的多个会话归到同一组，确保“新建会话”后旧会话仍能在历史里找到。
     const makerGroupId = `group-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
 
-    const getSessionWorkspace = () => `${GAME_MAKER_WORKSPACE_PREFIX}-${chatId}`;
+    // 固定复用同一个临时工作区（见 GAME_MAKER_WORKSPACE 说明），不再按 chatId 生成新目录，
+    // 避免每个游戏/每次会话都在个人主页存储里堆积一个无用的临时工作区。
+    const getSessionWorkspace = () => GAME_MAKER_WORKSPACE;
 
     // 同一个游戏的多次会话用 gameKey 归组：优先用游戏记录 id（稳定），其次保存路径，
     // 都没有时退回到本次打开期间稳定的 makerGroupId（而不是按 chatId，否则新建会话会丢历史）。
@@ -938,6 +1083,64 @@ export function renderGameMaker(panel, { game = null, mode = 'game', materials =
             .mh-gm-tool-popup-close { border:0; background:rgba(255,255,255,.08); color:#94a3b8; border-radius:8px; width:30px; height:30px; display:grid; place-items:center; cursor:pointer; font-size:16px; }
             .mh-gm-tool-popup-body { overflow:auto; display:flex; flex-direction:column; gap:10px; -webkit-overflow-scrolling:touch; }
             .mh-gm-tool-popup-section { border:1px solid rgba(99,102,241,.2); border-radius:12px; background:rgba(0,0,0,.2); overflow:hidden; display:flex; flex-direction:column; min-height:0; }
+
+            /* 导入/导出弹窗 */
+            .mh-gm-ie-tabs { display:flex; gap:6px; }
+            .mh-gm-ie-tab { flex:1; border:1px solid rgba(148,163,184,.24); background:rgba(255,255,255,.04); color:#94a3b8; border-radius:9px; padding:7px 10px; font-size:13px; font-weight:800; cursor:pointer; }
+            .mh-gm-ie-tab.active { background:rgba(99,102,241,.22); border-color:#6366f1; color:#e0e7ff; }
+            .mh-gm-ie-pane { display:flex; flex-direction:column; gap:10px; }
+            .mh-gm-ie-hint { color:#94a3b8; font-size:12.5px; line-height:1.5; }
+            .mh-gm-ie-text { margin:0; padding:10px; color:#cbd5e1; font-family:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace; font-size:12px; line-height:1.5; white-space:pre-wrap; word-break:break-word; overflow:auto; max-height:36vh; -webkit-overflow-scrolling:touch; }
+            .mh-gm-ie-import-area { min-height:26vh; resize:vertical; border:1px solid rgba(148,163,184,.24); border-radius:10px; background:rgba(0,0,0,.25); color:#e2e8f0; font-family:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace; font-size:12px; line-height:1.5; padding:10px; outline:none; }
+            .mh-gm-ie-import-area.mh-gm-ie-dragover { border-color:#6366f1; background:rgba(99,102,241,.12); }
+            .mh-gm-ie-import-row { display:flex; gap:8px; align-items:center; }
+            .mh-gm-ie-import-row .mh-gm-ie-drop-hint { color:#64748b; font-size:11.5px; }
+            .mh-gm-ie-url { flex:1; min-width:0; border:1px solid rgba(148,163,184,.24); border-radius:9px; background:rgba(0,0,0,.25); color:#e2e8f0; font-size:12.5px; padding:7px 10px; outline:none; }
+            .mh-gm-ie-copy, .mh-gm-ie-apply, .mh-gm-ie-code-apply { align-self:flex-start; }
+            /* 代码标签：可直接编辑的 HTML(H5) 源码窗口。优先用 CodeMirror（htmlmixed 高亮），
+               加载失败时回退到「透明 textarea 叠在高亮层之上」的轻量高亮。 */
+            .mh-gm-ie-pane[data-mh-gm-ie-pane="code"] { flex:1 1 auto; min-height:0; }
+            .mh-gm-ie-code-host { position:relative; display:flex; flex:1 1 auto; min-height:0; overflow:hidden; border:1px solid rgba(148,163,184,.24); border-radius:10px; background:#070b18; }
+            /* 切到「代码」标签时把弹窗从底部小抽屉撑成整屏高，方便阅读/编辑更多代码。 */
+            .mh-gm-tool-popup-overlay.mh-gm-ie-tall-overlay { align-items:stretch; }
+            .mh-gm-tool-popup.mh-gm-ie-tall { max-height:100%; height:100%; }
+            .mh-gm-tool-popup.mh-gm-ie-tall .mh-gm-tool-popup-body { flex:1 1 auto; min-height:0; }
+            /* CodeMirror 面板：填满宿主、等宽字体、暗色主题。 */
+            .mh-gm-ie-code-host .CodeMirror { height:100%; width:100%; font-size:12.5px; line-height:1.5; background:#070b18; }
+            /* 只用「立即可用」的系统等宽字体，避免用可能异步加载的 webfont（JetBrains Mono / Fira Code 等）——
+               否则 CodeMirror 会先按 fallback 测宽、字体换上后渲染变窄，光标按列累计右移。
+               同时强制「测量元素」与「可见行」用完全一致的字体，杜绝二者字体不一致导致的水平错位。 */
+            .mh-gm-ie-code-host .CodeMirror,
+            .mh-gm-ie-code-host .CodeMirror pre,
+            .mh-gm-ie-code-host .CodeMirror-measure,
+            .mh-gm-ie-code-host .CodeMirror-measure pre { font-family:ui-monospace,SFMono-Regular,Menlo,Consolas,"Liberation Mono","Courier New",monospace; }
+            .mh-gm-ie-code-host .CodeMirror-gutters { background:#070b18; border-right:1px solid rgba(120,150,255,.1); }
+            /* #app 用 zoom:var(--mh-app-scale) 整体缩放（MagicHaqi.html），而 CodeMirror 5 在被 zoom
+               的子树里测量会错位：getBoundingClientRect 返回视觉像素，CM 却按布局像素回写光标 left，
+               被再次 zoom 后光标随列号成比例右移。在代码宿主上施加反向 zoom 让子树有效缩放回到 1:1，
+               再把字号乘回 scale 保持视觉大小不变（旧浏览器的 transform:scale 回退分支不处理）。 */
+            @supports (zoom: calc(1 / 1)) {
+                .mh-gm-ie-code-host { zoom: calc(1 / var(--mh-app-scale, 1)); }
+                .mh-gm-ie-code-host .CodeMirror { font-size: calc(12.5px * var(--mh-app-scale, 1)); }
+                .mh-gm-ie-code-host .mh-gm-ie-code-gutter,
+                .mh-gm-ie-code-host .mh-gm-ie-code-hl,
+                .mh-gm-ie-code-host .mh-gm-ie-code-input { font-size: calc(12px * var(--mh-app-scale, 1)); }
+            }
+            /* 回退高亮编辑器（无 CodeMirror 时）。 */
+            .mh-gm-ie-code-wrap { position:relative; display:flex; flex:1 1 auto; min-width:0; min-height:0; width:100%; height:100%; overflow:hidden; background:rgba(0,0,0,.28); }
+            .mh-gm-ie-code-gutter { flex:0 0 auto; margin:0; padding:10px 8px 10px 4px; box-sizing:border-box; text-align:right; color:#64748b; background:rgba(0,0,0,.18); border-right:1px solid rgba(99,102,241,.16); font-family:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace; font-size:12px; line-height:1.5; white-space:pre; overflow:hidden; user-select:none; -webkit-user-select:none; }
+            .mh-gm-ie-code-edit { position:relative; flex:1 1 auto; min-width:0; }
+            .mh-gm-ie-code-hl, .mh-gm-ie-code-input { margin:0; box-sizing:border-box; padding:10px; border:0; font-family:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace; font-size:12px; line-height:1.5; tab-size:2; -moz-tab-size:2; white-space:pre; word-wrap:normal; word-break:normal; }
+            .mh-gm-ie-code-hl { position:absolute; inset:0; color:#cbd5e1; overflow:hidden; pointer-events:none; }
+            .mh-gm-ie-code-input { position:absolute; inset:0; width:100%; height:100%; resize:none; background:transparent; color:transparent; caret-color:#e2e8f0; outline:none; overflow:auto; -webkit-overflow-scrolling:touch; }
+            .mh-gm-ie-code-input::selection { background:rgba(99,102,241,.4); }
+            /* HTML 语法高亮配色（VS Code 暗色风格）。 */
+            .mh-gm-ie-code-hl .hl-comment { color:#6a9955; font-style:italic; }
+            .mh-gm-ie-code-hl .hl-doctype { color:#808080; }
+            .mh-gm-ie-code-hl .hl-punct { color:#808080; }
+            .mh-gm-ie-code-hl .hl-tagname { color:#569cd6; }
+            .mh-gm-ie-code-hl .hl-attr { color:#9cdcfe; }
+            .mh-gm-ie-code-hl .hl-string { color:#ce9178; }
             .mh-gm-tool-popup-section strong { display:block; padding:8px 10px; color:#a5b4fc; font-size:12px; border-bottom:1px solid rgba(99,102,241,.16); flex:0 0 auto; }
             .mh-gm-tool-popup-section pre { margin:0; padding:10px; color:#cbd5e1; font-family:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace; font-size:12px; line-height:1.45; white-space:pre-wrap; word-break:break-word; overflow:auto; max-height:46vh; -webkit-overflow-scrolling:touch; }
             .mh-gm-file-section { flex:1 1 auto; }
@@ -1064,6 +1267,7 @@ export function renderGameMaker(panel, { game = null, mode = 'game', materials =
                 <button type="button" class="mh-gm-iconbtn" id="mhGmBack" title="${escapeHtml(t('back'))}" aria-label="${escapeHtml(t('back'))}">‹</button>
                 <button type="button" class="mh-gm-iconbtn" id="mhGmIcon" title="${escapeHtml(t('mgGameIconLabel'))}" aria-label="${escapeHtml(t('mgGameIconLabel'))}">${escapeHtml(gameIcon)}</button>
                 <input class="mh-gm-name" id="mhGmName" type="text" maxlength="64" placeholder="${escapeHtml(tt('mgGameNamePlaceholder'))}" value="${escapeHtml(gameName)}">
+                <button type="button" class="mh-gm-iconbtn" id="mhGmImportExport" title="${escapeHtml(t('mgGameImportExport'))}" aria-label="${escapeHtml(t('mgGameImportExport'))}">📝</button>
                 <button type="button" class="mh-gm-save" id="mhGmSave">${escapeHtml(t('mgGameSave'))}</button>
             </div>
             <div class="mh-gm-tabbar">
@@ -3607,9 +3811,324 @@ ${ideaLine}`;
         if (result) showToast(t('mgGameSaved'), 'success', 1400);
     }
 
+    // ---------- 导入 / 导出 ----------
+    // 生成给外部 AI 编程工具（如 Cursor / Claude / ChatGPT）的简短「续写提示」。
+    // 两种形态：已有游戏 → 技能说明 + 当前游戏源码的只读 raw 链接；还没有游戏 → 只给技能说明，
+    // 引导对方先讨论创意（类似「给我灵感」）再动手写。
+    // 不内嵌登录 token：外部 AI 只需要能「读」，改完的 HTML 由用户通过「导入」手动粘贴回来。
+    // 把仓库内相对路径（相对 MagicHaqi/ 根目录）解析成外部 AI 可直接读取的绝对 URL：
+    // 本地开发（local LLM 模式同源）时相对当前页面解析；线上统一走 Keepwork 的 raw API
+    // （与 view_settings.js 的 getDevToolUrl 同源约定）。
+    function buildExportDocUrl(rel) {
+        try {
+            const host = window.location.hostname;
+            const isLocal = window.location.protocol === 'file:' || host === 'localhost' || host === '127.0.0.1';
+            if (isLocal) return new URL(rel, window.location.href).toString();
+        } catch (_) {}
+        return `https://keepwork.com/api/raw/maisi/maisi/webgames/MagicHaqi/${rel}`;
+    }
+
+    function buildExportGameUrl() {
+        // 已保存的游戏存放在 PersonalPageStore：//<username>/edunotes/store/MagicHaqi/pet-games/<file>.html，
+        // 对应的公开只读地址是 keepwork.com/api/raw/<同路径>（与 storage.js loadRemotePetGameHtml 的路径约定一致）。
+        const username = String(state.user?.username || '').trim();
+        const path = String(savedPath || '').trim().replace(/^\/+/, '');
+        if (!username || !path) return '';
+        const encoded = path.split('/').map(encodeURIComponent).join('/');
+        return `https://keepwork.com/api/raw/${encodeURIComponent(username)}/edunotes/store/${CONFIG.workspace}/${encoded}`;
+    }
+
+    async function buildExportText() {
+        // 与工坊内置 AI 的系统提示保持一致：新旧游戏都遵循 minigames/AGENTS.md（平台开发指南），
+        // 伴学模式额外遵循 minigames/STUDY_AGENTS.md（优先级更高）。导出给外部 AI 时同样给出这些文档。
+        // 技能说明用 minigames/ 下的分发副本（agents/game-maker/SKILL.md 是本地开发的源文件，
+        // 但 dist 只随 sideBySideDirs 分发 minigames/，两份内容需保持同步）。
+        const skillUrl = buildExportDocUrl('minigames/agent_game_maker.instructions.md');
+        const guideUrl = buildExportDocUrl('minigames/AGENTS.md');
+        const studyLine = studyMode ? `\n${t('mgGameIeExportStudyLine', { url: buildExportDocUrl('minigames/STUDY_AGENTS.md') })}` : '';
+        if (!currentHtml.trim()) return t('mgGameIeExportBodyNew', { skillUrl, guideUrl }) + studyLine;
+        // 已有游戏但还没保存过 → 先静默保存一次，拿到 pet-games/ 路径再生成只读链接。
+        if (!savedPath) await persistGame({ silent: true });
+        const name = (nameEl?.value || gameName || '').trim() || t('mgDefaultName') || '未命名游戏';
+        const gameUrl = buildExportGameUrl() || t('mgGameIeExportGameUrlFallback');
+        return t('mgGameIeExportBodyEdit', { name, skillUrl, guideUrl, gameUrl }) + studyLine;
+    }
+
+    function showImportExportPopup() {
+        document.getElementById('mhGmIePopup')?.remove();
+        const overlay = document.createElement('div');
+        overlay.id = 'mhGmIePopup';
+        overlay.className = 'mh-gm-tool-popup-overlay';
+        overlay.innerHTML = `
+            <div class="mh-gm-tool-popup" role="dialog" aria-modal="true">
+                <div class="mh-gm-tool-popup-head">
+                    <span>${escapeHtml(t('mgGameImportExport'))}</span>
+                    <button type="button" class="mh-gm-tool-popup-close" aria-label="关闭">×</button>
+                </div>
+                <div class="mh-gm-ie-tabs">
+                    <button type="button" class="mh-gm-ie-tab active" data-mh-gm-ie-tab="export">${escapeHtml(t('mgGameIeTabExport'))}</button>
+                    <button type="button" class="mh-gm-ie-tab" data-mh-gm-ie-tab="import">${escapeHtml(t('mgGameIeTabImport'))}</button>
+                    <button type="button" class="mh-gm-ie-tab" data-mh-gm-ie-tab="code">${escapeHtml(t('mgGameIeTabCode'))}</button>
+                </div>
+                <div class="mh-gm-tool-popup-body">
+                    <div class="mh-gm-ie-pane" data-mh-gm-ie-pane="export">
+                        <div class="mh-gm-ie-hint">${escapeHtml(t('mgGameIeExportHint'))}</div>
+                        <div class="mh-gm-tool-popup-section"><pre class="mh-gm-ie-text"></pre></div>
+                        <button type="button" class="mh-gm-file-edit mh-gm-ie-copy">${escapeHtml(t('mgGameIeExportCopy'))}</button>
+                    </div>
+                    <div class="mh-gm-ie-pane" data-mh-gm-ie-pane="import" style="display:none">
+                        <div class="mh-gm-ie-hint">${escapeHtml(t('mgGameIeImportHint'))}</div>
+                        <textarea class="mh-gm-ie-import-area" placeholder="${escapeHtml(t('mgGameIeImportPlaceholder'))}" spellcheck="false"></textarea>
+                        <div class="mh-gm-ie-import-row">
+                            <button type="button" class="mh-gm-file-edit mh-gm-ie-file">${escapeHtml(t('mgGameIeImportFile'))}</button>
+                            <input type="file" class="mh-gm-ie-file-input" accept=".html,.htm,text/html" style="display:none">
+                            <span class="mh-gm-ie-drop-hint">${escapeHtml(t('mgGameIeImportDropHint'))}</span>
+                        </div>
+                        <div class="mh-gm-ie-import-row">
+                            <input type="url" class="mh-gm-ie-url" placeholder="${escapeHtml(t('mgGameIeImportUrlPlaceholder'))}" spellcheck="false">
+                            <button type="button" class="mh-gm-file-edit mh-gm-ie-url-fetch">${escapeHtml(t('mgGameIeImportUrlFetch'))}</button>
+                        </div>
+                        <button type="button" class="mh-gm-file-edit mh-gm-ie-apply">${escapeHtml(t('mgGameIeImportApply'))}</button>
+                    </div>
+                    <div class="mh-gm-ie-pane" data-mh-gm-ie-pane="code" style="display:none">
+                        <div class="mh-gm-ie-hint">${escapeHtml(t('mgGameIeCodeHint'))}</div>
+                        <div class="mh-gm-ie-code-host"></div>
+                        <button type="button" class="mh-gm-file-edit mh-gm-ie-code-apply">${escapeHtml(t('mgGameIeCodeApply'))}</button>
+                    </div>
+                </div>
+            </div>`;
+        panel.appendChild(overlay);
+
+        let exportText = '';
+        buildExportText().then((text) => {
+            exportText = text;
+            const pre = overlay.querySelector('.mh-gm-ie-text');
+            if (pre) pre.textContent = exportText;
+        });
+
+        // ---- 代码标签：可直接编辑、带 H5 语法高亮的源码窗口 ----
+        // 首选 CodeMirror（htmlmixed 模式，从 CDN 按需加载）；加载失败时回退到
+        // 「透明 textarea 叠在高亮层之上」的轻量高亮编辑器（highlightHtmlSource）。
+        const codeHost = overlay.querySelector('.mh-gm-ie-code-host');
+        const popupEl = overlay.querySelector('.mh-gm-tool-popup');
+        let cm = null;            // CodeMirror 实例（加载成功后）
+        let cmRO = null;          // 监听宿主尺寸变化，及时 refresh（修复隐藏态挂载导致的光标错位）
+        let fallback = null;      // { input, render, sync } 回退编辑器
+        let codeInited = false;   // 是否已初始化过代码窗口
+        // CodeMirror 若在隐藏/零宽状态挂载，字符宽度会被测成 0，光标被钉在最左侧（列 0）。
+        // 只在宿主真正有尺寸时 refresh；用 rAF + 一次延时兜住字体替换 / 布局稳定后的重测。
+        const refreshCM = () => {
+            if (!cm) return;
+            const doRefresh = () => { if (cm && codeHost.clientWidth > 0) cm.refresh(); };
+            requestAnimationFrame(doRefresh);
+            setTimeout(doRefresh, 60);
+        };
+        const codeSource = () => (currentHtml && currentHtml.trim()) ? currentHtml : '';
+        const getCodeValue = () => cm ? cm.getValue() : (fallback ? fallback.input.value : currentHtml);
+        // 用最新 currentHtml 刷新代码窗口（切到「代码」标签时调用，反映导入等外部改动）。
+        const refreshCodeValue = () => {
+            const v = codeSource();
+            if (cm) { if (cm.getValue() !== v) cm.setValue(v); }
+            else if (fallback) { fallback.input.value = v; fallback.render(); fallback.sync(); }
+        };
+
+        // 回退编辑器：透明 textarea + 高亮 <pre> + 行号 gutter。
+        const mountFallbackEditor = () => {
+            codeHost.innerHTML = `
+                <div class="mh-gm-ie-code-wrap">
+                    <pre class="mh-gm-ie-code-gutter" aria-hidden="true"></pre>
+                    <div class="mh-gm-ie-code-edit">
+                        <pre class="mh-gm-ie-code-hl" aria-hidden="true"></pre>
+                        <textarea class="mh-gm-ie-code-input" spellcheck="false" autocapitalize="off" autocorrect="off"></textarea>
+                    </div>
+                </div>`;
+            const input = codeHost.querySelector('.mh-gm-ie-code-input');
+            const hl = codeHost.querySelector('.mh-gm-ie-code-hl');
+            const gutter = codeHost.querySelector('.mh-gm-ie-code-gutter');
+            const render = () => { hl.innerHTML = highlightHtmlSource(input.value); gutter.textContent = buildLineNumbers(input.value); };
+            const sync = () => { hl.scrollTop = input.scrollTop; hl.scrollLeft = input.scrollLeft; gutter.scrollTop = input.scrollTop; };
+            input.addEventListener('input', () => { render(); sync(); });
+            input.addEventListener('scroll', sync);
+            // Tab 键插入两个空格而不是切换焦点。
+            input.addEventListener('keydown', (e) => {
+                if (e.key !== 'Tab') return;
+                e.preventDefault();
+                const s = input.selectionStart, en = input.selectionEnd;
+                input.value = input.value.slice(0, s) + '  ' + input.value.slice(en);
+                input.selectionStart = input.selectionEnd = s + 2;
+                render(); sync();
+            });
+            fallback = { input, render, sync };
+            input.value = codeSource();
+            render(); sync();
+        };
+
+        // 第一次进入「代码」标签时初始化：先挂回退编辑器（立即可用），再尝试升级到 CodeMirror。
+        const initCodeEditor = () => {
+            if (codeInited || !codeHost) return;
+            codeInited = true;
+            mountFallbackEditor();
+            loadCodeMirrorForGameMaker().then((CodeMirror) => {
+                if (!CodeMirror || !codeHost.isConnected || cm) return;
+                // 升级：用回退编辑器里的当前文本（用户可能已输入）作为初始值。
+                const seed = fallback ? fallback.input.value : codeSource();
+                codeHost.innerHTML = '';
+                fallback = null;
+                cm = CodeMirror(codeHost, {
+                    value: seed,
+                    mode: 'htmlmixed',
+                    theme: 'material-darker',
+                    lineNumbers: true,
+                    lineWrapping: false,
+                    indentUnit: 2,
+                    tabSize: 2,
+                    indentWithTabs: false,
+                    viewportMargin: 80,
+                    extraKeys: { Tab: (i) => i.replaceSelection('  ', 'end') },
+                });
+                cm.setSize('100%', '100%');
+                refreshCM();
+                // 字体加载完成后重测（webfont 换字体会改变字符宽度，但不改变容器尺寸，ResizeObserver 抓不到）。
+                try { document.fonts?.ready?.then(refreshCM); } catch (_) {}
+                // 用户聚焦/点进编辑器时再测一次，确保输入时光标一定对齐。
+                cm.on('focus', refreshCM);
+                // 宿主从隐藏变可见 / 尺寸变化时自动重测，彻底修复光标错位。
+                if (window.ResizeObserver) {
+                    cmRO = new ResizeObserver(() => refreshCM());
+                    cmRO.observe(codeHost);
+                }
+            }).catch(() => { /* 保留回退编辑器 */ });
+        };
+
+        overlay.querySelectorAll('[data-mh-gm-ie-tab]').forEach((btn) => {
+            btn.addEventListener('click', () => {
+                const key = btn.dataset.mhGmIeTab;
+                overlay.querySelectorAll('[data-mh-gm-ie-tab]').forEach((b) => b.classList.toggle('active', b === btn));
+                overlay.querySelectorAll('[data-mh-gm-ie-pane]').forEach((p) => { p.style.display = (p.dataset.mhGmIePane === key) ? '' : 'none'; });
+                const isCode = key === 'code';
+                // 「代码」标签把弹窗撑成整屏高，方便看更多代码；离开时恢复底部小抽屉。
+                overlay.classList.toggle('mh-gm-ie-tall-overlay', isCode);
+                popupEl?.classList.toggle('mh-gm-ie-tall', isCode);
+                if (isCode) {
+                    initCodeEditor();
+                    refreshCodeValue();
+                    refreshCM();   // 每次显示代码标签都重测，修复光标错位
+                }
+            });
+        });
+
+        // 「应用代码」：写回 currentHtml、刷新预览、静默持久化，并并入历史（与手动编辑一致）。
+        overlay.querySelector('.mh-gm-ie-code-apply')?.addEventListener('click', async () => {
+            const next = getCodeValue() ?? currentHtml;
+            const prev = currentHtml || '';
+            if (!String(next).trim()) { showToast(t('mgGameIeImportEmpty'), 'info', 1600); return; }
+            currentHtml = next;
+            // 用户没起过名字 → 从代码的 <title> 自动提取；起过名字则保留。
+            if (!(nameEl?.value || gameName || '').trim()) {
+                gameName = extractHtmlTitle(currentHtml);
+                if (nameEl && gameName) nameEl.value = gameName;
+            }
+            setPreview(currentHtml);
+            showToast(t('mgGameIeImportApplied'), 'success', 1800);
+            try {
+                await persistGame({ silent: true });
+                if ((next || '') !== prev) await mergeManualCodeIntoLastSnapshot(prev);
+            } catch (_) {}
+            cmRO?.disconnect();
+            overlay.remove();
+        });
+
+        overlay.querySelector('.mh-gm-ie-copy')?.addEventListener('click', async () => {
+            if (!exportText) return;
+            try {
+                if (navigator.clipboard?.writeText) {
+                    await navigator.clipboard.writeText(exportText);
+                } else {
+                    const tmp = document.createElement('textarea');
+                    tmp.value = exportText;
+                    tmp.style.position = 'fixed';
+                    tmp.style.opacity = '0';
+                    document.body.appendChild(tmp);
+                    tmp.select();
+                    document.execCommand('copy');
+                    document.body.removeChild(tmp);
+                }
+                showToast(t('mgGameFilePopupCopied'), 'success', 1200);
+            } catch (_) {
+                showToast(t('mgGameFilePopupCopyFailed'), 'error', 1600);
+            }
+        });
+
+        // ---- 导入的多种来源：本地文件选择 / 拖拽 / 在线 URL，统一填入文本框后由「应用」生效 ----
+        const importArea = overlay.querySelector('.mh-gm-ie-import-area');
+        const fillImportText = (text) => {
+            const html = String(text || '').trim();
+            if (!html) { showToast(t('mgGameIeImportEmpty'), 'info', 1600); return; }
+            if (importArea) importArea.value = html;
+            showToast(t('mgGameIeImportLoaded'), 'success', 1800);
+        };
+        const readImportFile = (file) => {
+            if (!file) return;
+            const reader = new FileReader();
+            reader.onload = () => fillImportText(reader.result);
+            reader.onerror = () => showToast(t('mgGameIeImportReadFailed', { error: t('mgGameIeImportFile') }), 'error', 2200);
+            reader.readAsText(file);
+        };
+        const fileInput = overlay.querySelector('.mh-gm-ie-file-input');
+        overlay.querySelector('.mh-gm-ie-file')?.addEventListener('click', () => fileInput?.click());
+        fileInput?.addEventListener('change', () => { readImportFile(fileInput.files?.[0]); fileInput.value = ''; });
+        // 拖拽 .html 文件到文本框（或整个弹窗）导入。
+        ['dragover', 'dragenter'].forEach((ev) => overlay.addEventListener(ev, (e) => {
+            e.preventDefault();
+            importArea?.classList.add('mh-gm-ie-dragover');
+        }));
+        ['dragleave', 'drop'].forEach((ev) => overlay.addEventListener(ev, (e) => {
+            if (ev === 'drop') e.preventDefault();
+            importArea?.classList.remove('mh-gm-ie-dragover');
+        }));
+        overlay.addEventListener('drop', (e) => {
+            const file = e.dataTransfer?.files?.[0];
+            if (file) readImportFile(file);
+        });
+        // 从临时在线链接读取（受目标站点 CORS 限制；读取失败时提示改用其他方式）。
+        overlay.querySelector('.mh-gm-ie-url-fetch')?.addEventListener('click', async () => {
+            const urlInput = overlay.querySelector('.mh-gm-ie-url');
+            const url = (urlInput?.value || '').trim();
+            if (!url) { showToast(t('mgGameIeImportEmpty'), 'info', 1600); return; }
+            try {
+                const res = await fetch(url, { cache: 'no-store' });
+                if (!res.ok) throw new Error(`HTTP ${res.status}`);
+                fillImportText(await res.text());
+            } catch (err) {
+                showToast(t('mgGameIeImportReadFailed', { error: err?.message || err }), 'error', 2600);
+            }
+        });
+
+        overlay.querySelector('.mh-gm-ie-apply')?.addEventListener('click', () => {
+            const ta = overlay.querySelector('.mh-gm-ie-import-area');
+            const html = (ta?.value || '').trim();
+            if (!html) { showToast(t('mgGameIeImportEmpty'), 'info', 1600); return; }
+            currentHtml = html;
+            // 用户没起过名字 → 从导入 HTML 的 <title> 自动提取；起过名字则保留，只替换代码。
+            if (!(nameEl?.value || gameName || '').trim()) {
+                gameName = extractHtmlTitle(currentHtml);
+                if (nameEl && gameName) nameEl.value = gameName;
+            }
+            setPreview(currentHtml);
+            showToast(t('mgGameIeImportApplied'), 'success', 1800);
+            cmRO?.disconnect();
+            overlay.remove();
+        });
+
+        overlay.addEventListener('click', (e) => {
+            if (e.target === overlay || e.target.closest('.mh-gm-tool-popup-close')) { cmRO?.disconnect(); overlay.remove(); }
+        });
+    }
+
     // ---------- 事件绑定 ----------
     $('mhGmBack').onclick = () => { abortController?.abort(); onBack?.(); };
     $('mhGmSave').onclick = handleSave;
+    $('mhGmImportExport').onclick = showImportExportPopup;
     
     // Image attachment: button click
     attachBtn.onclick = () => fileInput.click();
@@ -3969,6 +4488,8 @@ ${ideaLine}`;
         try { previewFrame?.removeEventListener('load', onPreviewLoad); } catch (_) {}
         try { hideStreamPopup(true); } catch (_) {}
         try { closeGameMakerSettings(panel); } catch (_) {}
+        // 离开工坊：删掉临时工作区的草稿文件，避免在个人主页存储里留下无用文件。
+        cleanupGameMakerScratch();
         abortController = null;
         activeGameMakerCleanup = null;
     };

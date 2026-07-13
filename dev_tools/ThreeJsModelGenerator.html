@@ -1046,9 +1046,9 @@
 		const sdk = state.sdk || window.keepwork;
 		const s = getSelectedSnippet();
 		if (!s) { setStatus($('runStatus'), '请先选择 snippet。', 'error'); return; }
-		if (!sdk?.aiChat?.chat && !sdk?.aiGenerators?.chat) { setStatus($('runStatus'), '当前 SDK 不支持 Chat 调用。', 'error'); return; }
+		if (!isAIChatEmbedded() && !sdk?.aiChat?.chat && !sdk?.aiGenerators?.chat) { setStatus($('runStatus'), '当前 SDK 不支持 Chat 调用。', 'error'); return; }
 		const model = $('chatModelSelect').value.trim();
-		if (!model) { setStatus($('runStatus'), '请先配置 Chat 模型。', 'error'); return; }
+		if (!isAIChatEmbedded() && !model) { setStatus($('runStatus'), '请先配置 Chat 模型。', 'error'); return; }
 		const instruction = window.prompt('用一句话描述要如何精修（例：把球洞扩大 20%）：', '');
 		if (!instruction) return;
 		const prompt = [
@@ -1059,12 +1059,11 @@
 			'当前源码：',
 			state.widget ? state.widget.getCurrentSource() : s.source,
 		].join('\n\n');
-		setStatus($('runStatus'), `AI 精修中…（model=${model}）`, '');
+		setStatus($('runStatus'), isAIChatEmbedded() ? 'AI 精修中…（由外部 AIChat 调用模型）' : `AI 精修中…（model=${model}）`, '');
 		let streamed = '';
 		const onMessage = (full) => { streamed = String(full || streamed || ''); };
 		try {
-			const options = { model, stream: true, temperature: 0.4, messages: [{ role: 'user', content: prompt }], onMessage };
-			const result = sdk.aiGenerators?.chat ? await sdk.aiGenerators.chat(options) : await sdk.aiChat.chat(options);
+			const result = await callChatModel(prompt, { onMessage });
 			const text = (typeof result === 'string' ? result : result?.result || result?.content || result?.choices?.[0]?.message?.content || streamed || '').trim();
 			const code = text.replace(/^```(?:js|javascript)?\s*/i, '').replace(/```\s*$/i, '').trim();
 			if (!code) throw new Error('AI 未返回有效源码');
@@ -1086,6 +1085,12 @@
 	   对当前 snippet 源码做增量修改，完成后读回并应用到 3D 编辑器。
 	   SDK 不支持 copilotTools 时回退到「整段重写」模式。 */
 	const CHAT_MOD_ID = 'threejs-model-chat';
+	// 单一复用的临时工作区：copilotTools 需要一个 workspace 作为源码文件的落地目录，该目录会持久化到
+	// 个人主页存储（edunotes/store/<workspace>/）。以前按 chatId 生成唯一 workspace
+	// （threejs-model-chat-<chatId>），导致每个 snippet / 每次对话都在个人主页存储里留下一个无用的
+	// 临时工作区。改用固定名称后全局至多一个：它只是每轮由当前源码重新 seed、读回后即删的草稿区
+	// （真正的源码存活在编辑器 / snippet 里），复用完全安全。每轮结束后顺手删掉草稿文件。
+	const CHAT_WORKSPACE = 'threejs-model-chat';
 	// detachedKey：用户用 ✕ 显式移除的那个选区的 key；当前选区 key 与之相同则视为「已分离」（不附加）。
 	// 选中别的部件后 key 变化 → 自动重新附加。
 	const chatState = { messages: [], generating: false, abort: null, chatId: '', snippetId: '', detachedKey: '' };
@@ -1562,12 +1567,12 @@
 			'回复使用简体中文。',
 		].join('\n');
 	}
-	async function sendChatTurn(promptText, attachment = null) {
+	async function sendChatTurn(promptText, attachment = null, hostRequestId = '') {
 		const sdk = state.sdk || window.keepwork;
 		const s = getSelectedSnippet();
 		if (!s) { setStatus($('runStatus'), '请先选择 snippet。', 'error'); return; }
 		const model = $('chatModelSelect').value.trim();
-		if (!sdk?.aiChat && !sdk?.aiGenerators) { setStatus($('runStatus'), '当前 SDK 不支持 Chat 调用。', 'error'); return; }
+		if (!isAIChatEmbedded() && !sdk?.aiChat && !sdk?.aiGenerators) { setStatus($('runStatus'), '当前 SDK 不支持 Chat 调用。', 'error'); return; }
 
 		// 把附加的选区（选中部件对应的源码行）拼到真正发给模型的文本前面；界面气泡仍只显示
 		// 用户输入本身 + 一个只读的选区 chip。sendText 用于多轮历史，确保上下文不丢。
@@ -1594,7 +1599,9 @@
 
 		const curSource = state.widget ? state.widget.getCurrentSource() : (s.source || '');
 		const filePath = s.filename || `${s.id}.three.js`;
-		const workspace = `threejs-model-chat-${chatState.chatId}`;
+		// 固定复用同一个临时工作区（见 CHAT_WORKSPACE 说明），不再按 chatId 生成新目录，
+		// 避免每个 snippet / 每次对话都在个人主页存储里堆积一个无用的临时工作区。
+		const workspace = CHAT_WORKSPACE;
 		const hasTools = !!sdk?.copilotTools?.execute;
 
 		// 流式文本累积。
@@ -1610,12 +1617,26 @@
 		const onToolCall = (tc) => { const args = tc?.function?.arguments || ''; let obj = null; try { obj = JSON.parse(args); } catch (_) {} const ev = findTool(tc) || mkTool(tc, 'running'); if (tc?.id) ev.id = tc.id; if (tc?.function?.name) ev.name = tc.function.name; ev.status = 'running'; ev.args = args; ev.argsObj = (obj && typeof obj === 'object') ? obj : null; renderChatMessages(); };
 		const onToolResult = ({ name, toolCallId, result }) => { const calls = aiMsg.toolCalls; const detail = typeof result === 'string' ? result : JSON.stringify(result); const ev = calls.find(c => c.id === toolCallId) || [...calls].reverse().find(c => c.name === name && (c.status === 'running' || c.status === 'streaming')) || mkTool({ id: toolCallId, function: { name } }, 'done'); ev.status = String(detail).startsWith('Failed:') ? 'error' : 'done'; ev.result = detail; renderChatMessages(); };
 
+		let outcome = { ok: true, aborted: false, error: '' };
 		try {
-			if (!model) throw new Error('请先配置 Chat 模型');
-			const systemPrompt = buildChatSystemPrompt(filePath, hasTools);
+			if (!isAIChatEmbedded() && !model) throw new Error('请先配置 Chat 模型');
+			const systemPrompt = buildChatSystemPrompt(filePath, hasTools && !isAIChatEmbedded());
 			let finalSource = curSource;
 
-			if (hasTools && (sdk.aiChat?.createSession || sdk.aiChat?.chat)) {
+			if (isAIChatEmbedded()) {
+				// The iframe owns the editor state; AIChat owns the model. Send the complete
+				// source because the outer host cannot access this tool's temporary workspace.
+				const fullSystem = `${systemPrompt}\n\n当前完整源码：\n\`\`\`js\n${curSource}\n\`\`\``;
+				const result = await requestAIChatModel({
+					requestId: hostRequestId,
+					displayPrompt: promptText,
+					messages: [{ role: 'system', content: fullSystem }, ...priorHistory, { role: 'user', content: outgoing }],
+					onMessage,
+					onReasoning,
+				});
+				const out = stripCodeFences(result);
+				if (out && out.trim()) finalSource = out;
+			} else if (hasTools && (sdk.aiChat?.createSession || sdk.aiChat?.chat)) {
 				// 用当前源码播种临时 workspace（每轮以编辑器里的最新源码为准）。
 				await sdk.copilotTools.execute('create_file', { filePath, content: curSource }, { workspace });
 				const head = await readChatWorkspaceFile(sdk, workspace, filePath, 200);
@@ -1679,7 +1700,8 @@
 				setStatus($('runStatus'), `AI 对话完成（源码无改动）：${s.id}`, 'ok');
 			}
 		} catch (e) {
-			if (isChatAbort(e)) aiMsg.text = (aiMsg.text || '') + (aiMsg.text ? '\n\n' : '') + '（已停止）';
+			outcome = { ok: false, aborted: isChatAbort(e), error: e?.message || String(e) };
+			if (outcome.aborted) aiMsg.text = (aiMsg.text || '') + (aiMsg.text ? '\n\n' : '') + '（已停止）';
 			else { aiMsg.text = (aiMsg.text || '') + (aiMsg.text ? '\n\n' : '') + `⚠️ 出错：${e.message || e}`; setStatus($('runStatus'), `AI 改模型失败：${e.message || e}`, 'error'); }
 		} finally {
 			aiMsg.streaming = false;
@@ -1688,8 +1710,105 @@
 			chatState.abort = null;
 			updateChatSendBtn();
 			renderChatMessages();
+			// 源码已在上面读回并应用到编辑器；删掉临时工作区里的草稿文件，避免在个人主页存储里留下无用文件。
+			try {
+				const ws = sdk?.personalPageStore?.withWorkspace?.(CHAT_WORKSPACE);
+				if (ws && typeof ws.deleteFile === 'function') await ws.deleteFile(filePath);
+			} catch (_) {}
 		}
+		return outcome;
 	}
+
+	/* ===== AIChat external HTML tool bridge (v1) =====
+	   The generator remains fully standalone. When hosted by AIChat, its common
+	   bottom composer drives the same proven edit pipeline through postMessage. */
+	const AICHAT_TOOL_CHANNEL = 'aichat.external-tool.v1';
+	const aiChatBridge = { host: null, seq: 0, pending: new Map() };
+	function isAIChatEmbedded() { return window.parent !== window; }
+	function notifyAIChat(type, detail = {}) {
+		if (!isAIChatEmbedded()) return;
+		window.parent.postMessage({ channel: AICHAT_TOOL_CHANNEL, type, ...detail }, '*');
+	}
+	function requestAIChatModel({ requestId = '', displayPrompt = '', messages, onMessage, onReasoning } = {}) {
+		if (!isAIChatEmbedded()) return Promise.reject(new Error('AIChat host is unavailable'));
+		const id = requestId || `threejs-llm-${Date.now()}-${++aiChatBridge.seq}`;
+		return new Promise((resolve, reject) => {
+			aiChatBridge.pending.set(id, { resolve, reject, text: '', onMessage, onReasoning });
+			notifyAIChat('tool:llm-request', {
+				requestId: id,
+				displayPrompt,
+				messages,
+				context: { tool: 'threejs-model-generator', projectId: state.project?.project?.id || '' },
+			});
+			setTimeout(() => {
+				const pending = aiChatBridge.pending.get(id);
+				if (pending) { aiChatBridge.pending.delete(id); pending.reject(new Error('外部 AIChat 模型调用超时')); }
+			}, 120000);
+		});
+	}
+	window.addEventListener('message', async (event) => {
+		const msg = event.data;
+		if (event.source !== window.parent || msg?.channel !== AICHAT_TOOL_CHANNEL) return;
+		if (msg.type === 'host:llm-stream') {
+			const pending = aiChatBridge.pending.get(msg.requestId);
+			if (pending) {
+				pending.text = String(msg.text || pending.text || '');
+				pending.onMessage?.(pending.text);
+				if (msg.reasoning) pending.onReasoning?.(String(msg.reasoning));
+			}
+			return;
+		}
+		if (msg.type === 'host:llm-result') {
+			const pending = aiChatBridge.pending.get(msg.requestId);
+			if (pending) {
+				aiChatBridge.pending.delete(msg.requestId);
+				const text = String(msg.text || pending.text || '');
+				pending.onMessage?.(text);
+				pending.resolve(text);
+			}
+			return;
+		}
+		if (msg.type === 'host:llm-error') {
+			const pending = aiChatBridge.pending.get(msg.requestId);
+			if (pending) { aiChatBridge.pending.delete(msg.requestId); pending.reject(new Error(msg.error || '外部 AIChat 模型调用失败')); }
+			return;
+		}
+		if (msg.type === 'host:init') {
+			aiChatBridge.host = msg;
+			window.__AIChatHostContext = msg;
+			notifyAIChat('tool:ready', {
+				toolId: 'threejs-model-generator',
+				capabilities: ['prompt', 'model', 'workspace-context'],
+			});
+			return;
+		}
+		if (msg.type !== 'host:prompt') return;
+		const prompt = String(msg.prompt || '').trim();
+		if (!prompt) return;
+		try {
+			if (chatState.generating) throw new Error('当前模型修改尚未完成，请稍后再发送');
+			const modelSelect = $('chatModelSelect');
+			if (msg.model && modelSelect && [...modelSelect.options].some(o => o.value === msg.model)) {
+				modelSelect.value = msg.model;
+				modelSelect.dispatchEvent(new Event('change', { bubbles: true }));
+			}
+			openSnippetChat();
+			const input = document.getElementById('tmcInput');
+			if (input) {
+				input.value = prompt;
+				input.dispatchEvent(new Event('input', { bubbles: true }));
+			}
+			notifyAIChat('tool:status', { requestId: msg.requestId, status: 'busy', message: '正在修改当前 3D 模型…' });
+			const turn = sendChatTurn(prompt, currentChatAttachment(), msg.requestId);
+			if (input) { input.value = ''; input.dispatchEvent(new Event('input', { bubbles: true })); }
+			const result = await turn;
+			if (!result?.ok) throw new Error(result?.aborted ? '已停止' : (result?.error || 'AI 修改失败'));
+			notifyAIChat('tool:status', { requestId: msg.requestId, status: 'done', message: '3D 模型已更新' });
+		} catch (error) {
+			notifyAIChat('tool:status', { requestId: msg.requestId, status: 'error', message: error?.message || String(error) });
+		}
+	});
+	if (window.parent !== window) notifyAIChat('tool:ready', { toolId: 'threejs-model-generator', capabilities: ['prompt'] });
 
 	/* ===== shared chat helper + AI source generation ===== */
 	function splitList(value) {
@@ -1717,6 +1836,14 @@
 		return String(text || '').replace(/^```(?:js|javascript)?\s*/i, '').replace(/```\s*$/i, '').trim();
 	}
 	async function callChatModel(prompt, { onMessage, onReasoning } = {}) {
+		if (isAIChatEmbedded()) {
+			return requestAIChatModel({
+				displayPrompt: prompt,
+				messages: [{ role: 'user', content: prompt }],
+				onMessage,
+				onReasoning,
+			});
+		}
 		const sdk = state.sdk || window.keepwork;
 		if (!sdk?.aiChat?.chat && !sdk?.aiGenerators?.chat) throw new Error('当前 SDK 不支持 Chat 模型调用');
 		const model = $('chatModelSelect').value.trim();

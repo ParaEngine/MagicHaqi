@@ -674,7 +674,7 @@ let currentRenderGameList = null;
 let activeMinigameTab = 'recommend';
 let hideTopbarActionsForRoute = false;
 
-export function renderMinigames(panel, { pet }, { onBack, onGameFinished, initialGameId = null, initialGameParams = null, allowPlayWhenLowEnergy = false, suppressRewards = false, hideTopbarActions = false, exitGameToBack = false, completionPrompt = null, deferGameFinishedUntilCompletionExit = false, initialTab = null, onCreateGame = null, onEditGame = null, sharedGame = null } = {}) {
+export function renderMinigames(panel, { pet }, { onBack, onGameFinished, initialGameId = null, initialGameParams = null, initialGameLandscape = null, allowPlayWhenLowEnergy = false, suppressRewards = false, hideTopbarActions = false, exitGameToBack = false, completionPrompt = null, deferGameFinishedUntilCompletionExit = false, initialTab = null, onCreateGame = null, onEditGame = null, sharedGame = null, remoteGame = null } = {}) {
     // 守护：玩耍视图订阅了全局 state（subscribe(render)），任何 notify() 都会重跑本路由。
     // 若此时已有一局游戏正在进行（iframe 已挂载），重建整个面板会销毁运行中的 iframe，
     // 表现为"首次点开游戏秒退、第二次正常"——典型触发是小游戏加载即请求宠物图（如台球
@@ -708,6 +708,7 @@ export function renderMinigames(panel, { pet }, { onBack, onGameFinished, initia
         }
     }
     cleanupMessageListener?.();
+    exitForcedLandscape();
     currentGame = null;
     rewardedRounds = new Set();
     currentPet = pet || null;
@@ -1052,6 +1053,19 @@ export function renderMinigames(panel, { pet }, { onBack, onGameFinished, initia
                 pointer-events: none;
             }
             .mh-minigame-loading.show { display: flex; }
+            /* 强制横屏游戏（game.landscape===true）：移动端竖屏时把整个游戏容器旋转 90 度铺满视口。
+               screen.orientation.lock() 多数浏览器需先进入全屏才生效，这里是必然生效的 CSS 兜底方案。 */
+            .mh-minigame-force-landscape {
+                position: fixed !important;
+                inset: auto !important;
+                top: 0 !important;
+                left: 0 !important;
+                width: 100vh !important;
+                height: 100vw !important;
+                transform: rotate(90deg) translateY(-100%) !important;
+                transform-origin: top left !important;
+                z-index: 9999 !important;
+            }
             .mh-minigame-completion {
                 position:absolute;
                 inset:0;
@@ -1339,6 +1353,7 @@ export function renderMinigames(panel, { pet }, { onBack, onGameFinished, initia
         }
         if (currentGame) {
             if (exitGameToBack) {
+                exitForcedLandscape();
                 completeDeferredGame();
                 cleanupMessageListener?.();
                 onBack?.();
@@ -2357,7 +2372,7 @@ export function renderMinigames(panel, { pet }, { onBack, onGameFinished, initia
     const renderToken = cleanupMessageListener;
     if (MINIGAMES.length) {
         renderGameList();
-        if (initialGameId && !currentGame) openGame(initialGameId, initialGameParams, { allowLowEnergy: allowPlayWhenLowEnergy });
+        if (initialGameId && !currentGame) openGame(initialGameId, initialGameParams, { allowLowEnergy: allowPlayWhenLowEnergy, forceLandscape: initialGameLandscape });
     } else {
         loadMinigameIndex().then(() => {
             // 视图在加载期间被销毁/重渲染时丢弃过期回调。
@@ -2365,7 +2380,7 @@ export function renderMinigames(panel, { pet }, { onBack, onGameFinished, initia
             renderGameList();
             // 清单异步加载完成后，若当前停留在"探索"标签则构建信息流。
             if (activeMinigameTab === 'explore') renderExplorePane();
-            if (initialGameId && !currentGame) openGame(initialGameId, initialGameParams, { allowLowEnergy: allowPlayWhenLowEnergy });
+            if (initialGameId && !currentGame) openGame(initialGameId, initialGameParams, { allowLowEnergy: allowPlayWhenLowEnergy, forceLandscape: initialGameLandscape });
         });
     }
     // 收藏列表 + 最近游玩记录异步加载完成后刷新"推荐"，让收藏作品、爱心状态、最近游玩排序与时间标签显示出来。
@@ -2376,6 +2391,10 @@ export function renderMinigames(panel, { pet }, { onBack, onGameFinished, initia
     // 分享链接进入：从别人 workspace 拉取小游戏 HTML 并直接试玩。
     if (sharedGame && !initialGameId && !currentGame) {
         openSharedGame(sharedGame);
+    }
+    // 外部小游戏深链进入：?remoteGame=<url>，不依赖清单，直接把远程 URL 当作 iframe src 打开。
+    if (remoteGame?.url && !initialGameId && !sharedGame && !currentGame) {
+        openRemoteGame(remoteGame);
     }
 
     async function openSharedGame({ fromUsername, game } = {}) {
@@ -3056,11 +3075,75 @@ function animateStatPill(pill, delta) {
     }, STAT_REWARD_ANIMATION_MS);
 }
 
+// ---------- 强制横屏（game.landscape === true） ----------
+// 只对手机 / 触屏设备生效；桌面浏览器窗口宽高比不受设备物理方向约束，不需要旋转。
+function isTouchLikeDevice() {
+    try {
+        return window.matchMedia?.('(pointer: coarse)').matches
+            || /Mobi|Android|iPhone|iPad|iPod/i.test(navigator.userAgent || '');
+    } catch (_) {
+        return false;
+    }
+}
+
+let forcedLandscapeGame = null;
+let forcedLandscapeMediaQuery = null;
+
+function updateForcedLandscapeLayout() {
+    const wrap = $('mhMinigameFrameWrap');
+    if (!wrap) return;
+    let portrait = false;
+    try { portrait = window.matchMedia('(orientation: portrait)').matches; } catch (_) {}
+    const active = !!forcedLandscapeGame && isTouchLikeDevice() && portrait;
+    wrap.classList.toggle('mh-minigame-force-landscape', active);
+}
+
+// 进入游戏时若标记了 landscape：优先尝试原生 screen.orientation.lock()（多数浏览器需先全屏才生效，
+// best-effort，静默失败），并挂 CSS 兜底——竖屏时把容器旋转 90 度铺满视口，跟随 orientation 变化实时开关。
+function enterForcedLandscape(game) {
+    if (!game?.landscape) return;
+    forcedLandscapeGame = game;
+    try { screen.orientation?.lock?.('landscape')?.catch?.(() => {}); } catch (_) {}
+    if (!forcedLandscapeMediaQuery) {
+        try {
+            forcedLandscapeMediaQuery = window.matchMedia('(orientation: portrait)');
+            forcedLandscapeMediaQuery.addEventListener?.('change', updateForcedLandscapeLayout);
+        } catch (_) {}
+    }
+    updateForcedLandscapeLayout();
+}
+
+function exitForcedLandscape() {
+    if (!forcedLandscapeGame) return;
+    forcedLandscapeGame = null;
+    $('mhMinigameFrameWrap')?.classList.remove('mh-minigame-force-landscape');
+    try { screen.orientation?.unlock?.(); } catch (_) {}
+}
+
+// 通过 ?remoteGame=<url> 深链启动的外部小游戏：合成一个 game 对象直接走 openGame，
+// 不依赖 _minigame_index.json 清单（不在"推荐/探索"列表中出现，仅用于本次深链打开）。
+function openRemoteGame({ url, title, icon, landscape, allow } = {}) {
+    const trimmedUrl = String(url || '').trim();
+    if (!trimmedUrl) return;
+    const game = {
+        id: `remote:${trimmedUrl}`,
+        title: title || t('mgDefaultName'),
+        icon: icon || '🎮',
+        src: trimmedUrl,
+        allow: allow || 'autoplay; fullscreen',
+        landscape: !!landscape,
+        hidden: true,
+    };
+    openGame(game.id, null, { allowLowEnergy: true, game });
+}
+
 // html / game：玩家自创小游戏会直接传入 HTML 正文 + 合成 game 对象，通过 srcdoc 加载；
 // 官方游戏走 game.src + minigameUrl。
-function openGame(gameId, params = null, { allowLowEnergy = false, html = null, game: providedGame = null, likeMeta = null } = {}) {
-    const game = providedGame || getPlayItems().find(item => item.id === gameId);
-    if (!game) return;
+function openGame(gameId, params = null, { allowLowEnergy = false, html = null, game: providedGame = null, likeMeta = null, forceLandscape = null } = {}) {
+    const baseGame = providedGame || getPlayItems().find(item => item.id === gameId);
+    if (!baseGame) return;
+    // forceLandscape 非空时覆盖该游戏自身清单里的 landscape 配置（如 NPC 显式指定强制/取消横屏）。
+    const game = forceLandscape != null ? { ...baseGame, landscape: forceLandscape } : baseGame;
     if (!allowLowEnergy && !canPlayGame(currentPet)) {
         refreshPetStats();
         showToast(t('mgLowEnergy'), 'info', 1400);
@@ -3069,6 +3152,7 @@ function openGame(gameId, params = null, { allowLowEnergy = false, html = null, 
     currentGame = game;
     rewardedRounds = new Set();
     currentGameStartedAt = Date.now();
+    enterForcedLandscape(game);
     const hideTopbarActions = shouldHideTopbarActionsForGame(game);
     setTopbarActionsVisible(!hideTopbarActions);
     // 顶栏收藏按钮：优先用调用方传入的 like-meta（作品/收藏项），否则按官方游戏推断。
@@ -3271,6 +3355,7 @@ function showList() {
     const tabs = $('mhMinigameTabs');
     const wrap = $('mhMinigameFrameWrap');
     const done = $('mhMinigameDone');
+    exitForcedLandscape();
     resetMinigameIframe();
     clearMinigameRestPrompt();
     clearRecentPlayTimer();

@@ -246,12 +246,11 @@
     async function ensureLogin(){
       const sdk=state.sdk; if(!sdk) return false;
       if(sdk.token) return true;
-      await new Promise((resolve)=>{
-        let done=false; const fin=()=>{ if(done) return; done=true; resolve(); };
-        if(sdk.loginWindow?.show) sdk.loginWindow.show({ onLogin: fin });
-        else if(sdk.login) sdk.login().finally(fin);
-        setTimeout(fin, 600);
-      });
+      try{
+        if (typeof sdk.showLoginWindow === 'function') await sdk.showLoginWindow({ title: '登录 Keepwork' });
+        else if (sdk.loginWindow?.show) await new Promise(resolve => sdk.loginWindow.show({ onLogin: resolve, onClose: resolve }));
+        else if (sdk.login) await sdk.login();
+      } catch(_) {}
       return !!sdk.token;
     }
 

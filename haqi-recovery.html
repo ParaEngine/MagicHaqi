@@ -1,0 +1,877 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <title>哈奇用户领取 - MagicHaqi</title>
+    <script src="https://cdn.keepwork.com/keepwork/cdn/tailwindcss@3.4.16.js"></script>
+    <style>
+        * { margin: 0; padding: 0; box-sizing: border-box; -webkit-tap-highlight-color: transparent; }
+
+        :root {
+            --bg-base: #071632;
+            --accent: #0ea5e9;
+            --accent-light: #67e8f9;
+            --accent-dark: #2563eb;
+            --arcane: #8b5cf6;
+            --success: #10b981;
+            --danger: #ef4444;
+            --text-primary: #0f2747;
+            --text-secondary: #164e7a;
+            --text-muted: #256c97;
+            --card-bg: rgba(255, 255, 255, 0.92);
+            --input-bg: #effaff;
+            --border: #38bdf8;
+        }
+
+        html, body { height: 100%; }
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'PingFang SC', 'Hiragino Sans GB', 'Microsoft YaHei', sans-serif;
+            background:
+                radial-gradient(circle at 16% 12%, rgba(103, 232, 249, 0.34), transparent 28%),
+                radial-gradient(circle at 86% 18%, rgba(139, 92, 246, 0.34), transparent 30%),
+                radial-gradient(circle at 48% 88%, rgba(14, 165, 233, 0.22), transparent 32%),
+                linear-gradient(180deg, #061126 0%, #111b55 48%, #061d3f 100%);
+            color: var(--text-primary);
+            overflow-x: hidden;
+            overflow-y: auto;
+            min-height: 100vh;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+        }
+
+        @keyframes fadeIn {
+            from { opacity: 0; transform: translateY(12px); }
+            to   { opacity: 1; transform: translateY(0); }
+        }
+        @keyframes float {
+            0%,100% { transform: translateY(0); }
+            50%     { transform: translateY(-6px); }
+        }
+        @keyframes pop {
+            0%   { transform: scale(0.85); opacity: 0; }
+            60%  { transform: scale(1.06); opacity: 1; }
+            100% { transform: scale(1);    opacity: 1; }
+        }
+        @keyframes spin {
+            to { transform: rotate(360deg); }
+        }
+        @keyframes pulse-glow {
+            0%,100% { box-shadow: 0 0 0 0 rgba(14, 165, 233, 0.4); }
+            50%     { box-shadow: 0 0 0 12px rgba(14, 165, 233, 0); }
+        }
+
+        .fade-in { animation: fadeIn 0.4s ease-out; }
+        .pop-in  { animation: pop 0.5s cubic-bezier(0.2, 1.4, 0.6, 1) both; }
+
+        /* ==== Container ==== */
+        .page-container {
+            width: 100%;
+            max-width: 480px;
+            padding: 24px 20px 40px;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            gap: 20px;
+        }
+
+        /* ==== Header ==== */
+        .header {
+            text-align: center;
+            padding-top: 16px;
+        }
+        .header-emoji {
+            font-size: 48px;
+            display: block;
+            animation: float 3s ease-in-out infinite;
+        }
+        .header-title {
+            font-size: 26px;
+            font-weight: 700;
+            color: #e0f2fe;
+            text-shadow: 0 2px 12px rgba(14, 165, 233, 0.5);
+            margin-top: 4px;
+        }
+        .header-subtitle {
+            font-size: 14px;
+            color: #7dd3fc;
+            margin-top: 2px;
+        }
+
+        /* ==== Card ==== */
+        .card {
+            width: 100%;
+            background: var(--card-bg);
+            border-radius: 20px;
+            padding: 24px 20px;
+            box-shadow:
+                0 8px 0 rgba(14, 116, 144, 0.2),
+                0 16px 32px rgba(6, 18, 44, 0.3);
+            border: 2px solid var(--border);
+            animation: fadeIn 0.4s ease-out;
+        }
+
+        /* ==== Login Button ==== */
+        .btn-login {
+            width: 100%;
+            padding: 14px 24px;
+            font-size: 17px;
+            font-weight: 600;
+            color: #fff;
+            background: linear-gradient(135deg, var(--accent-dark), var(--arcane));
+            border: none;
+            border-radius: 14px;
+            cursor: pointer;
+            box-shadow: 0 4px 0 #1d4ed8, 0 8px 20px rgba(37, 99, 235, 0.35);
+            transition: all 0.15s;
+            user-select: none;
+        }
+        .btn-login:active {
+            transform: translateY(2px);
+            box-shadow: 0 2px 0 #1d4ed8, 0 4px 12px rgba(37, 99, 235, 0.25);
+        }
+        .btn-login:disabled {
+            opacity: 0.6;
+            cursor: not-allowed;
+        }
+
+        /* ==== User Info Badge ==== */
+        .user-badge {
+            display: flex;
+            align-items: center;
+            gap: 12px;
+            padding: 12px 16px;
+            background: linear-gradient(135deg, #dbeafe, #e0e7ff);
+            border-radius: 14px;
+            border: 1.5px solid var(--accent-light);
+            margin-bottom: 4px;
+        }
+        .user-avatar {
+            width: 40px;
+            height: 40px;
+            border-radius: 50%;
+            object-fit: cover;
+            border: 2px solid var(--accent);
+            flex-shrink: 0;
+        }
+        .user-avatar-placeholder {
+            width: 40px;
+            height: 40px;
+            border-radius: 50%;
+            background: linear-gradient(135deg, var(--accent), var(--arcane));
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-size: 18px;
+            color: #fff;
+            font-weight: 700;
+            flex-shrink: 0;
+        }
+        .user-name {
+            font-size: 15px;
+            font-weight: 600;
+            color: var(--text-primary);
+        }
+        .user-id {
+            font-size: 12px;
+            color: var(--text-muted);
+        }
+
+        /* ==== Input ==== */
+        .input-group {
+            display: flex;
+            gap: 10px;
+            width: 100%;
+        }
+        .search-input {
+            flex: 1;
+            padding: 12px 16px;
+            font-size: 15px;
+            border: 2px solid var(--border);
+            border-radius: 14px;
+            background: var(--input-bg);
+            color: var(--text-primary);
+            outline: none;
+            transition: border-color 0.2s;
+        }
+        .search-input:focus {
+            border-color: var(--accent);
+            box-shadow: 0 0 0 3px rgba(14, 165, 233, 0.15);
+        }
+        .search-input::placeholder {
+            color: #94a3b8;
+        }
+
+        .btn-search {
+            padding: 12px 20px;
+            font-size: 15px;
+            font-weight: 600;
+            color: #fff;
+            background: linear-gradient(135deg, var(--accent), #0d9488);
+            border: none;
+            border-radius: 14px;
+            cursor: pointer;
+            white-space: nowrap;
+            box-shadow: 0 3px 0 #0284c7, 0 6px 16px rgba(14, 165, 233, 0.3);
+            transition: all 0.15s;
+            flex-shrink: 0;
+        }
+        .btn-search:active {
+            transform: translateY(2px);
+            box-shadow: 0 1px 0 #0284c7, 0 3px 10px rgba(14, 165, 233, 0.2);
+        }
+        .btn-search:disabled {
+            opacity: 0.6;
+            cursor: not-allowed;
+            transform: none;
+        }
+
+        /* ==== Results ==== */
+        .results-title {
+            font-size: 14px;
+            font-weight: 600;
+            color: var(--text-muted);
+            margin-top: 4px;
+        }
+        .result-item {
+            display: flex;
+            align-items: center;
+            gap: 12px;
+            padding: 14px 16px;
+            border-radius: 14px;
+            background: #f8fafc;
+            border: 1.5px solid #e2e8f0;
+            margin-top: 8px;
+            transition: all 0.15s;
+        }
+        .result-item:hover {
+            border-color: var(--accent-light);
+            background: #f0f9ff;
+        }
+        .result-info {
+            flex: 1;
+            min-width: 0;
+        }
+        .result-nickname {
+            font-size: 15px;
+            font-weight: 600;
+            color: var(--text-primary);
+            white-space: nowrap;
+            overflow: hidden;
+            text-overflow: ellipsis;
+        }
+        .result-nid {
+            font-size: 12px;
+            color: var(--text-muted);
+            margin-top: 2px;
+        }
+
+        .btn-claim {
+            padding: 8px 18px;
+            font-size: 14px;
+            font-weight: 600;
+            color: #fff;
+            background: linear-gradient(135deg, #f59e0b, #ef4444);
+            border: none;
+            border-radius: 12px;
+            cursor: pointer;
+            white-space: nowrap;
+            flex-shrink: 0;
+            box-shadow: 0 2px 0 #b45309, 0 4px 12px rgba(245, 158, 11, 0.3);
+            transition: all 0.15s;
+            animation: pulse-glow 2s infinite;
+        }
+        .btn-claim:active {
+            transform: translateY(1px);
+            box-shadow: 0 1px 0 #b45309, 0 2px 8px rgba(245, 158, 11, 0.2);
+        }
+        .btn-claim:disabled {
+            opacity: 0.5;
+            cursor: not-allowed;
+            animation: none;
+        }
+        .btn-claimed {
+            background: linear-gradient(135deg, #94a3b8, #64748b);
+            cursor: default;
+            animation: none;
+            box-shadow: 0 2px 0 #475569, 0 4px 8px rgba(100, 116, 139, 0.2);
+        }
+
+        /* ==== Empty / Error ==== */
+        .empty-state {
+            text-align: center;
+            padding: 32px 16px;
+            color: var(--text-muted);
+        }
+        .empty-emoji {
+            font-size: 40px;
+            display: block;
+            margin-bottom: 8px;
+        }
+        .empty-text {
+            font-size: 14px;
+        }
+
+        /* ==== Loading ==== */
+        .loading-spinner {
+            display: inline-block;
+            width: 24px;
+            height: 24px;
+            border: 3px solid rgba(14, 165, 233, 0.2);
+            border-top-color: var(--accent);
+            border-radius: 50%;
+            animation: spin 0.7s linear infinite;
+        }
+        .loading-row {
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            gap: 10px;
+            padding: 20px 0;
+            color: var(--text-muted);
+            font-size: 14px;
+        }
+
+        /* ==== Toast ==== */
+        .toast-container {
+            position: fixed;
+            top: 20px;
+            left: 50%;
+            transform: translateX(-50%);
+            z-index: 9999;
+            display: flex;
+            flex-direction: column;
+            gap: 8px;
+            pointer-events: none;
+        }
+        .toast {
+            padding: 12px 24px;
+            border-radius: 12px;
+            font-size: 14px;
+            font-weight: 500;
+            color: #fff;
+            animation: pop 0.35s cubic-bezier(0.2, 1.4, 0.6, 1) both;
+            pointer-events: auto;
+            box-shadow: 0 6px 20px rgba(0,0,0,0.25);
+            text-align: center;
+            max-width: 340px;
+        }
+        .toast-success { background: linear-gradient(135deg, #10b981, #059669); }
+        .toast-error   { background: linear-gradient(135deg, #ef4444, #dc2626); }
+        .toast-info    { background: linear-gradient(135deg, #0ea5e9, #0284c7); }
+        .toast-warning { background: linear-gradient(135deg, #f59e0b, #d97706); }
+
+        /* ==== Claimed Modal ==== */
+        .modal-mask {
+            position: fixed;
+            inset: 0;
+            background: rgba(0,0,0,0.55);
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            z-index: 10000;
+            animation: fadeIn 0.25s ease-out;
+            backdrop-filter: blur(4px);
+        }
+        .modal-card {
+            background: #fff;
+            border-radius: 20px;
+            padding: 32px 24px 24px;
+            max-width: 380px;
+            width: calc(100% - 40px);
+            text-align: center;
+            box-shadow: 0 20px 50px rgba(0,0,0,0.35);
+            border: 2px solid var(--success);
+            animation: pop 0.45s cubic-bezier(0.2, 1.4, 0.6, 1) both;
+        }
+        .modal-emoji {
+            font-size: 56px;
+            display: block;
+            margin-bottom: 12px;
+        }
+        .modal-title {
+            font-size: 22px;
+            font-weight: 700;
+            color: var(--text-primary);
+            margin-bottom: 8px;
+        }
+        .modal-desc {
+            font-size: 14px;
+            color: var(--text-muted);
+            margin-bottom: 20px;
+            line-height: 1.6;
+        }
+        .btn-close-modal {
+            padding: 12px 32px;
+            font-size: 15px;
+            font-weight: 600;
+            color: #fff;
+            background: linear-gradient(135deg, var(--accent), var(--arcane));
+            border: none;
+            border-radius: 14px;
+            cursor: pointer;
+            box-shadow: 0 3px 0 #1d4ed8, 0 6px 16px rgba(37, 99, 235, 0.3);
+            transition: all 0.15s;
+        }
+        .btn-close-modal:active {
+            transform: translateY(2px);
+            box-shadow: 0 1px 0 #1d4ed8, 0 3px 10px rgba(37, 99, 235, 0.2);
+        }
+
+        /* ==== Hint tip ==== */
+        .hint-tip {
+            font-size: 13px;
+            color: #7dd3fc;
+            text-align: center;
+            line-height: 1.6;
+            padding: 0 4px;
+        }
+    </style>
+</head>
+<body>
+<div class="toast-container" id="toastContainer"></div>
+<div id="modalRoot"></div>
+
+<div class="page-container fade-in">
+    <!-- Header -->
+    <div class="header">
+        <span class="header-emoji">🐣</span>
+        <h1 class="header-title">哈奇用户领取</h1>
+        <p class="header-subtitle">输入昵称搜索并领取你的哈奇账号</p>
+    </div>
+
+    <!-- Main Card -->
+    <div class="card" id="mainCard">
+        <!-- Login State: not logged in -->
+        <div id="loginSection">
+            <button class="btn-login" id="btnLogin" onclick="handleLogin()">
+                登录 KeepWork 账号
+            </button>
+            <p style="text-align:center; font-size:13px; color:#7dd3fc; margin-top:12px;">
+                需要先登录才能搜索和领取哈奇用户
+            </p>
+        </div>
+
+        <!-- Logged In State: search form -->
+        <div id="searchSection" style="display:none;">
+            <!-- User Badge -->
+            <div class="user-badge" id="userBadge"></div>
+
+            <!-- Search Input -->
+            <div class="input-group" style="margin-top: 16px;">
+                <input
+                    type="text"
+                    class="search-input"
+                    id="searchNickname"
+                    placeholder="输入用户昵称搜索..."
+                    autocomplete="off"
+                    maxlength="64"
+                >
+                <button class="btn-search" id="btnSearch" onclick="handleSearch()">
+                    🔍 搜索
+                </button>
+            </div>
+            <p style="font-size:12px; color:#94a3b8; margin-top:8px; padding-left:4px;">
+                输入哈奇的用户或者昵称进行搜索
+            </p>
+
+            <!-- Results Area -->
+            <div id="resultsContainer" style="margin-top: 16px;"></div>
+        </div>
+    </div>
+
+    <!-- Footer hint -->
+    <p class="hint-tip">
+        💡 如果你在老版本哈奇中有数据，<br>搜索你的昵称即可领取并绑定到当前账号。
+    </p>
+</div>
+
+<script>
+// ============================================================
+// State
+// ============================================================
+const API_BASE = 'https://api.keepwork.com';
+const SDK_CDN = 'https://cdn.keepwork.com/sdk/keepworkSDK.iife.js?v=20260604b';
+
+let sdk = null;
+let currentUser = null;
+let searchResults = [];
+let isSearching = false;
+let isClaiming = {};
+// claimedNids is a Set stored as JSON in sessionStorage so page refresh preserves state
+let claimedNids = new Set();
+
+try {
+    const raw = sessionStorage.getItem('haqi_recovery_claimed');
+    if (raw) claimedNids = new Set(JSON.parse(raw));
+} catch (_) {}
+
+function persistClaimed() {
+    try {
+        sessionStorage.setItem('haqi_recovery_claimed', JSON.stringify([...claimedNids]));
+    } catch (_) {}
+}
+
+// ============================================================
+// Toast
+// ============================================================
+function showToast(msg, type = 'info', duration = 3000) {
+    const container = document.getElementById('toastContainer');
+    const el = document.createElement('div');
+    el.className = 'toast toast-' + type;
+    el.textContent = msg;
+    container.appendChild(el);
+    setTimeout(() => {
+        el.style.opacity = '0';
+        el.style.transform = 'translateY(-10px)';
+        el.style.transition = 'all 0.3s';
+        setTimeout(() => el.remove(), 300);
+    }, duration);
+}
+
+// ============================================================
+// SDK Bootstrap
+// ============================================================
+function loadScript(src) {
+    return new Promise((resolve, reject) => {
+        const script = document.createElement('script');
+        script.src = src;
+        script.onload = resolve;
+        script.onerror = reject;
+        document.head.appendChild(script);
+    });
+}
+
+async function ensureSDK() {
+    if (window.KeepworkSDK) return;
+    await loadScript(SDK_CDN);
+    if (!window.KeepworkSDK) throw new Error('SDK 加载失败');
+}
+
+async function initSDK() {
+    await ensureSDK();
+    sdk = window.keepwork || new window.KeepworkSDK({ timeout: 30000 });
+    if (sdk.setUserApiKey && window.KeepworkSDK?.API_KEYS?.maisi) {
+        sdk.setUserApiKey(window.KeepworkSDK.API_KEYS.maisi);
+    }
+}
+
+// ============================================================
+// Auth
+// ============================================================
+function getToken() {
+    return sdk?.token || '';
+}
+
+function isLoggedIn() {
+    return !!(sdk && sdk.token);
+}
+
+async function handleLogin() {
+    const btn = document.getElementById('btnLogin');
+    btn.disabled = true;
+    btn.textContent = '正在打开登录窗口...';
+
+    try {
+        await sdk.showLoginWindow({ title: '哈奇用户领取 - 登录' });
+        if (sdk.token) {
+            try {
+                const profile = await sdk.getUserProfile();
+                currentUser = profile?.user || profile;
+            } catch (e) {
+                const cu = sdk.getCurrentUser?.();
+                currentUser = cu || { username: '用户', userId: null };
+            }
+            showToast('登录成功', 'success', 2000);
+            renderLoggedInUI();
+        } else {
+            btn.disabled = false;
+            btn.textContent = '登录 KeepWork 账号';
+            showToast('登录未完成，请重试', 'warning', 3000);
+        }
+    } catch (err) {
+        btn.disabled = false;
+        btn.textContent = '登录 KeepWork 账号';
+        showToast('登录失败：' + (err?.message || '请重试'), 'error', 4000);
+    }
+}
+
+function renderLoggedInUI() {
+    document.getElementById('loginSection').style.display = 'none';
+    document.getElementById('searchSection').style.display = 'block';
+
+    const badge = document.getElementById('userBadge');
+    const name = currentUser?.username || currentUser?.nickname || '用户';
+    const initial = (name || '?')[0];
+    const avatarUrl = currentUser?.avatar || currentUser?.headImage || '';
+
+    badge.innerHTML = avatarUrl
+        ? `<img class="user-avatar" src="${escapeHTML(avatarUrl)}" alt="" onerror="this.replaceWith(avatarPlaceholder('${escapeHTML(initial)}'))">`
+        : avatarPlaceholder(initial);
+    badge.innerHTML += `
+        <div style="flex:1;min-width:0;">
+            <div class="user-name" style="overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">${escapeHTML(name)}</div>
+            <div class="user-id">当前登录的Keepwork账号</div>
+        </div>
+    `;
+
+    // Bind enter key
+    const input = document.getElementById('searchNickname');
+    input.addEventListener('keydown', (e) => {
+        if (e.key === 'Enter') handleSearch();
+    });
+}
+
+function avatarPlaceholder(initial) {
+    return `<div class="user-avatar-placeholder">${escapeHTML(initial)}</div>`;
+}
+
+function escapeHTML(str) {
+    const div = document.createElement('div');
+    div.textContent = str;
+    return div.innerHTML;
+}
+
+// ============================================================
+// API calls
+// ============================================================
+async function searchUser(nickname) {
+    const token = getToken();
+    if (!token) throw new Error('未登录');
+
+    const url = `${API_BASE}/core/v0/keepworks/haqi/recovery/search?nickname=${encodeURIComponent(nickname)}`;
+    const resp = await fetch(url, {
+        method: 'POST',
+        headers: {
+            'Accept': '*/*',
+            'Authorization': `Bearer ${token}`,
+            'Content-Type': 'application/json',
+        },
+    });
+
+    if (!resp.ok) {
+        const text = await resp.text().catch(() => '');
+        throw new Error(`搜索失败 (${resp.status}): ${text || resp.statusText}`);
+    }
+
+    const data = await resp.json();
+    return data;
+}
+
+async function claimUser(nid) {
+    const token = getToken();
+    if (!token) throw new Error('未登录');
+
+    const url = `${API_BASE}/core/v0/keepworks/haqi/recovery/bind`;
+    const resp = await fetch(url, {
+        method: 'POST',
+        headers: {
+            'Accept': '*/*',
+            'Authorization': `Bearer ${token}`,
+            'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({ nid }),
+    });
+
+    if (!resp.ok) {
+        const text = await resp.text().catch(() => '');
+        let errMsg = text;
+        try { errMsg = JSON.parse(text)?.message || text; } catch (_) {}
+        throw new Error(errMsg || `领取失败 (${resp.status})`);
+    }
+
+    const data = await resp.json();
+    return data;
+}
+
+// ============================================================
+// Render Results
+// ============================================================
+function renderResults() {
+    const container = document.getElementById('resultsContainer');
+
+    if (!searchResults || searchResults.length === 0) {
+        container.innerHTML = `
+            <div class="empty-state fade-in">
+                <span class="empty-emoji">🔍</span>
+                <p class="empty-text">没有找到匹配的用户</p>
+                <p style="font-size:12px;color:#94a3b8;margin-top:4px;">尝试使用完整的 KeepWork 昵称</p>
+            </div>
+        `;
+        return;
+    }
+
+    const items = searchResults.map((user) => {
+        const nid = String(user.nid || user.id || user.userId || '');
+        const nickname = user.nickname || user.username || user.name || '未知用户';
+        const claimed = claimedNids.has(nid);
+        const claiming = isClaiming[nid];
+
+        return `
+            <div class="result-item fade-in">
+                <div class="result-info">
+                    <div class="result-nickname">${escapeHTML(nickname)}</div>
+                    <div class="result-nid">NID: ${escapeHTML(nid)}</div>
+                </div>
+                <button
+                    class="btn-claim ${claimed ? 'btn-claimed' : ''}"
+                    data-nid="${escapeHTML(nid)}"
+                    data-nickname="${escapeHTML(nickname)}"
+                    ${claimed ? 'disabled' : ''}
+                    ${claiming ? 'disabled' : ''}
+                >
+                    ${claiming ? '<span class="loading-spinner" style="width:16px;height:16px;border-width:2px;"></span>'
+                               : (claimed ? '已领取 ✓' : '🎁 领取')}
+                </button>
+            </div>
+        `;
+    }).join('');
+
+    container.innerHTML = `
+        <div class="results-title">搜索结果（${searchResults.length}）</div>
+        ${items}
+    `;
+
+    // Delegate claim button clicks
+    container.querySelectorAll('.btn-claim').forEach(btn => {
+        btn.addEventListener('click', () => {
+            const nid = btn.dataset.nid;
+            const nickname = btn.dataset.nickname;
+            if (nid && !claimedNids.has(nid)) handleClaim(nid, nickname);
+        });
+    });
+}
+
+// ============================================================
+// Actions
+// ============================================================
+async function handleSearch() {
+    if (isSearching) return;
+    if (!isLoggedIn()) {
+        showToast('请先登录', 'warning', 2000);
+        return;
+    }
+
+    const input = document.getElementById('searchNickname');
+    const nickname = input.value.trim();
+    if (!nickname) {
+        showToast('请输入用户昵称', 'warning', 2000);
+        input.focus();
+        return;
+    }
+
+    isSearching = true;
+    const btn = document.getElementById('btnSearch');
+    btn.disabled = true;
+    btn.textContent = '搜索中...';
+
+    const container = document.getElementById('resultsContainer');
+    container.innerHTML = '<div class="loading-row"><span class="loading-spinner"></span> 正在搜索...</div>';
+
+    try {
+        const result = await searchUser(nickname);
+        // Normalize results: the API might return { data: [...] } or directly an array
+        if (Array.isArray(result)) {
+            searchResults = result;
+        } else if (result?.data && Array.isArray(result.data)) {
+            searchResults = result.data;
+        } else if (result?.list && Array.isArray(result.list)) {
+            searchResults = result.list;
+        } else if (result?.items && Array.isArray(result.items)) {
+            searchResults = result.items;
+        } else {
+            searchResults = [];
+            if (result?.message || result?.msg) {
+                showToast(String(result.message || result.msg), 'info', 3000);
+            }
+        }
+        renderResults();
+    } catch (err) {
+        container.innerHTML = `
+            <div class="empty-state fade-in">
+                <span class="empty-emoji">😞</span>
+                <p class="empty-text">${escapeHTML(err?.message || '搜索失败，请重试')}</p>
+            </div>
+        `;
+        showToast('搜索失败', 'error', 3000);
+    } finally {
+        isSearching = false;
+        btn.disabled = false;
+        btn.textContent = '🔍 搜索';
+    }
+}
+
+async function handleClaim(nid, nickname) {
+    if (!isLoggedIn()) {
+        showToast('请先登录', 'warning', 2000);
+        return;
+    }
+    if (claimedNids.has(nid)) return;
+
+    isClaiming[nid] = true;
+    renderResults();
+
+    try {
+        const result = await claimUser(nid);
+        claimedNids.add(nid);
+        persistClaimed();
+        renderResults();
+        showClaimSuccessModal(nickname, nid, result);
+    } catch (err) {
+        isClaiming[nid] = false;
+        renderResults();
+        showToast('领取失败：' + (err?.message || '请重试'), 'error', 4000);
+    }
+}
+
+function showClaimSuccessModal(nickname, nid, result) {
+    const root = document.getElementById('modalRoot');
+
+    root.innerHTML = `
+        <div class="modal-mask" id="claimModal" onclick="if(event.target===this)closeModal()">
+            <div class="modal-card">
+                <span class="modal-emoji">🎉</span>
+                <h2 class="modal-title">领取成功！</h2>
+                <p class="modal-desc">
+                    已成功将 <strong>${escapeHTML(nickname)}</strong><br>
+                    (NID: ${escapeHTML(nid)})<br>
+                    绑定到你的账号。
+                </p>
+                ${result?.message ? `<p style="font-size:13px;color:#059669;margin-bottom:16px;">${escapeHTML(String(result.message))}</p>` : ''}
+                <button class="btn-close-modal" onclick="closeModal()">太棒了 ✨</button>
+            </div>
+        </div>
+    `;
+}
+
+function closeModal() {
+    document.getElementById('modalRoot').innerHTML = '';
+}
+
+// ============================================================
+// Bootstrap
+// ============================================================
+(async function bootstrap() {
+    try {
+        await initSDK();
+
+        // Check if already logged in (e.g. from other KeepWork pages)
+        if (sdk.token) {
+            try {
+                const profile = await sdk.getUserProfile();
+                currentUser = profile?.user || profile;
+            } catch (e) {
+                const cu = sdk.getCurrentUser?.();
+                currentUser = cu || { username: '用户', userId: null };
+            }
+            renderLoggedInUI();
+        }
+    } catch (err) {
+        console.error('SDK 初始化失败:', err);
+        showToast('SDK 初始化失败：' + (err?.message || '请刷新页面重试'), 'error', 5000);
+    }
+})();
+</script>
+</body>
+</html>

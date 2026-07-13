@@ -921,9 +921,12 @@ async function openLoginOrProfile() {
     const sdk = state.sdk || window.keepwork;
     if (!sdk) return;
     if (!sdk.token) {
-        if (sdk.loginWindow?.show) sdk.loginWindow.show({ onLogin: refreshLoginState });
-        else if (sdk.login) await sdk.login();
-        setTimeout(refreshLoginState, 600);
+        try {
+            if (typeof sdk.showLoginWindow === 'function') await sdk.showLoginWindow({ title: 'Zoo Encyclopedia Maker 登录' });
+            else if (sdk.loginWindow?.show) await new Promise(resolve => sdk.loginWindow.show({ onLogin: resolve, onClose: resolve }));
+            else if (sdk.login) await sdk.login();
+        } catch (_) {}
+        await refreshLoginState();
         return;
     }
     if (typeof sdk.showProfileWindow === 'function') {

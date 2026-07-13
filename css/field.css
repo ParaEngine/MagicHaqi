@@ -289,9 +289,114 @@
 .field-tab-icon-thunder {
     background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 64 64'%3E%3Cellipse cx='32' cy='52' rx='25' ry='7' fill='%23111827' opacity='.45'/%3E%3Cpath d='M12 34c2-12 18-18 28-10 6-10 24-5 24 8 0 10-9 15-22 13H19C7 47 2 39 12 34Z' fill='%234f46e5'/%3E%3Cpath d='M33 14 20 37h11l-7 17 22-27H34Z' fill='%23facc15' stroke='%23fff7ad' stroke-width='3' stroke-linejoin='round'/%3E%3Cpath d='M9 44h46' stroke='%237c3aed' stroke-width='5' stroke-linecap='round' opacity='.65'/%3E%3C/svg%3E");
 }
-.field-items, .field-poops { position:absolute; inset:0; pointer-events:none; }
+.field-items, .field-poops, .field-npcs { position:absolute; inset:0; pointer-events:none; }
 .field-items { z-index: 18; }
 .field-poops { z-index: 35; }
+/* 层级：主宠物 > NPC > 其它宠物。NPC 固定 z-index 29；宠物用 fieldPetZIndex() 算出的行内
+   z-index 直接和它比较（其它宠物 10-20，主宠物 32-42），见 js/level_field.js。 */
+.field-npcs { z-index: 29; }
+.field-npc {
+    position: absolute; transform: translate(-50%, -50%);
+    display: flex; flex-direction: column-reverse; align-items: center; gap: 2px;
+    font-size: 30px; line-height: 1; cursor: pointer; pointer-events: auto;
+    background: none; border: none; padding: 0;
+    filter: drop-shadow(0 3px 4px rgba(0,0,0,0.25));
+}
+/* 装饰模式下 NPC 不可交互，退化为纯背景图：点击穿透到下方（放置家具 / 点击场景），不再弹出对话。 */
+.mh-stage.zoom-field.decor-mode .field-npc { pointer-events: none; cursor: default; }
+.field-npc-icon { position: relative; display: inline-block; line-height: 1; }
+.field-npc-img { display: block; width: 36px; height: 36px; object-fit: contain; }
+/* 静态柔和阴影：纯 CSS 径向渐变，无 filter/blur，不逐帧重绘，随图标一起被父级 transform:scale 缩放。 */
+.field-npc-shadow {
+    position: absolute; left: 50%; bottom: -3px; z-index: -1;
+    width: 70%; height: 30%;
+    transform: translateX(-50%);
+    background: radial-gradient(ellipse, rgba(0,0,0,.38) 0%, rgba(0,0,0,.2) 55%, rgba(0,0,0,0) 78%);
+    pointer-events: none;
+}
+.field-npc-name {
+    position: relative; z-index: 1;
+    font-size: 11px; font-weight: 700; line-height: 1; white-space: nowrap;
+    color: #fde68a;
+    text-shadow: 0 1px 0 #92400e, 0 1px 3px rgba(0,0,0,.5);
+}
+.npc-dialog-overlay {
+    position: fixed; inset: 0; z-index: 900; display: flex; align-items: flex-end; justify-content: center;
+    background: rgba(15,23,42,.35); padding: 0 16px 22px;
+}
+.npc-dialog-box {
+    width: min(560px, 100%); display: flex; align-items: flex-end; gap: 0;
+    filter: drop-shadow(0 10px 22px rgba(0,0,0,.3));
+}
+/* 左侧（窄屏时改为顶部覆盖）：树桩/木牌肖像框，与气泡框重叠而非留白 */
+.npc-dialog-portrait {
+    position: relative; z-index: 2; flex: 0 0 auto; width: 160px; margin-right: -50px;
+    display: flex; flex-direction: column; align-items: center;
+}
+.npc-dialog-portrait-img {
+    position: relative; z-index: 1; width: 148px; height: 148px; border-radius: 50%;
+    background-color: #d8ad6c;
+    background-image:
+        repeating-radial-gradient(circle at 50% 45%, rgba(122,74,36,.18) 0 3px, rgba(216,173,108,0) 3px 9px),
+        radial-gradient(circle at 42% 36%, #ecd3a0 0%, #d8ad6c 45%, #b98a4c 78%, #8a5a2b 100%);
+    border: 6px solid #7a4a24;
+    box-shadow: inset 0 0 0 2px rgba(255,247,224,.35), inset 0 6px 10px rgba(0,0,0,.18), 0 4px 8px rgba(0,0,0,.25);
+    display: flex; align-items: center; justify-content: center; overflow: hidden;
+}
+.npc-dialog-portrait-emoji { font-size: 64px; line-height: 1; background: radial-gradient(circle at 42% 36%, #ecd3a0 0%, #d8ad6c 45%, #b98a4c 78%, #8a5a2b 100%); }
+.npc-dialog-nameplate {
+    position: relative; z-index: 1; margin-top: -8px; padding: 5px 12px 4px; min-width: 56px; max-width: 100%;
+    border-radius: 8px; background: linear-gradient(180deg, #c48a4f, #9a6432);
+    border: 3px solid #6b4423;
+    box-shadow: 0 3px 6px rgba(0,0,0,.25), inset 0 1px 0 rgba(255,255,255,.25);
+    font-size: 12px; font-weight: 800; color: #fff7e6; text-align: center; line-height: 1.3;
+    text-shadow: 0 1px 1px rgba(0,0,0,.4);
+    white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+}
+/* 右侧：木纹对话气泡 */
+.npc-dialog-bubble {
+    position: relative; z-index: 1; flex: 1 1 auto; min-width: 0; padding: 16px 40px 12px 64px;
+    border-radius: 20px; border: 4px solid #7a4a24;
+    background-color: #e6c48f;
+    background-image:
+        repeating-linear-gradient(100deg, rgba(122,74,36,.10) 0 2px, rgba(122,74,36,0) 2px 16px),
+        linear-gradient(180deg, #f2d9a8, #dcb079);
+    box-shadow: inset 0 2px 0 rgba(255,255,255,.35), inset 0 -6px 10px rgba(122,74,36,.18);
+    display: flex; flex-direction: column; gap: 8px;
+}
+/* 嫩芽装饰长在木牌对话框的顶边上（不是头像圆框上），压在边框上像从木牌里长出来一样。 */
+.npc-dialog-sprout {
+    position: absolute; z-index: 2; top: -22px; left: 22px; width: 44px; height: 37px;
+    filter: drop-shadow(0 2px 2px rgba(0,0,0,.2));
+}
+.npc-dialog-close {
+    position: absolute; z-index: 3; top: -16px; right: -14px; width: 40px; height: 40px;
+    border-radius: 50%; border: 3px solid #2f6e17; padding: 0; cursor: pointer;
+    background: radial-gradient(circle at 38% 32%, #a6e779, #6fc23f 55%, #3f9026 100%);
+    box-shadow: 0 3px 8px rgba(0,0,0,.3), inset 0 1px 0 rgba(255,255,255,.4);
+    display: flex; align-items: center; justify-content: center;
+}
+.npc-dialog-close svg {
+    width: 20px; height: 20px; stroke: #fff7e6; stroke-width: 3; stroke-linecap: round;
+    filter: drop-shadow(0 1px 0 rgba(0,0,0,.3));
+}
+.npc-dialog-text { font-size: 15px; font-weight: 600; color: #4a2c12; line-height: 1.55; min-height: 44px; }
+.npc-dialog-next {
+    align-self: flex-end; border: 3px solid #6b4423; border-radius: 999px; padding: 5px 16px;
+    font-size: 13px; font-weight: 800; color: #fff7e6; letter-spacing: .5px;
+    background: linear-gradient(180deg, #c48a4f, #8a5a2b);
+    box-shadow: 0 3px 6px rgba(0,0,0,.25), inset 0 1px 0 rgba(255,255,255,.3);
+    text-shadow: 0 1px 1px rgba(0,0,0,.35);
+    cursor: pointer;
+}
+/* 窄屏：头像从"左侧并排重叠"改为"顶部覆盖重叠"，叠在气泡框左上角，贴合参考图里手机端的样式。 */
+@media (max-width: 480px) {
+    .npc-dialog-box { flex-direction: column; align-items: flex-start; gap: 0; }
+    .npc-dialog-portrait { width: 132px; margin: 0 0 -42px 2px; }
+    .npc-dialog-portrait-img { width: 120px; height: 120px; }
+    .npc-dialog-portrait-emoji { font-size: 58px; }
+    .npc-dialog-bubble { width: 100%; padding-left: 18px; padding-top: 60px; }
+}
 .field-item {
     position:absolute; transform: translate(-50%, -50%);
     font-size: 30px; cursor:pointer; pointer-events:auto;
@@ -776,7 +881,8 @@
     50% { transform: translate(-3px, 1px); }
     75% { transform: translate(2px, 2px); }
 }
-.field-pets { z-index: 28; }
+/* 不设置 z-index：让每只宠物的行内 z-index 直接和 .field-npcs（29）比较，
+   而不是整个 .field-pets 容器作为一层整体盖住/被盖住 NPC。见 fieldPetZIndex()。 */
 .field-pet {
     position:absolute !important;
     transform: translate(-50%, -50%);
@@ -786,7 +892,8 @@
 /* 装扮模式下当前宠物可拖动，与房间内一致 */
 .mh-stage.zoom-field.decor-mode .field-pet-current { cursor: grab; touch-action: none; }
 .mh-stage.zoom-field.decor-mode .field-pet-current.is-dragging { cursor: grabbing; z-index: 940 !important; }
-.field-pet.is-dragging .field-pet-wander { animation: none !important; transform: none !important; }
+/* 拖动时用 JS（Web Animations API）暂停 .field-pet-wander 的晃动动画，而不是强制清零 transform，
+   避免按下/松开瞬间因动画取值被重置到 0 而产生的左右跳动。见 bindFieldPetDrag。 */
 .field-pet-wander {
     position: relative;
     animation: fieldPetWander var(--field-wander-dur, 12s) ease-in-out infinite;

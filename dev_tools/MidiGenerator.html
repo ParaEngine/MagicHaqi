@@ -41,6 +41,8 @@
 			.prompt-tabs { @apply grid grid-cols-2 gap-1 rounded-md border border-slate-300 bg-white p-1; }
 			.prompt-tabs button { @apply min-h-8 border-0 bg-transparent text-xs font-semibold; }
 			.prompt-tabs button.active { @apply bg-sky-600 text-white hover:bg-sky-700; }
+			.account-badge { @apply fixed bottom-3 right-3 z-50 flex items-center gap-2 rounded-full border border-slate-300 bg-white/95 px-3 py-1.5 text-xs text-slate-700 shadow-lg shadow-slate-300/50 backdrop-blur; }
+			.account-badge button { @apply min-h-0 border-0 bg-transparent p-0 text-xs font-semibold text-sky-700 underline underline-offset-2 hover:border-transparent hover:bg-transparent hover:text-sky-800; }
 			.record-toolbar { @apply grid grid-cols-[minmax(0,1fr)_auto] gap-2 border-b border-slate-300 bg-slate-50 p-3; }
 			.record-list { @apply flex min-h-0 flex-1 flex-col gap-1.5 overflow-auto p-2; }
 			.record-item { @apply grid w-full grid-cols-[18px_56px_minmax(0,1fr)_auto] items-center gap-2.5 rounded-md border border-slate-300 bg-white p-2.5 text-left; }
@@ -110,6 +112,7 @@
 					</div>
 				</div>
 				<div id="startSdkState" class="rounded-lg bg-white/10 p-3 text-xs leading-5 text-indigo-50">Loading KeepworkSDK...</div>
+				<div class="toolbar"><button id="btnStartSignIn" class="primary" type="button">Sign in</button></div>
 			</section>
 			<section class="start-body">
 				<div class="flex items-center justify-between gap-2">
@@ -281,6 +284,7 @@
 			</div>
 		</section>
 	</main>
+	<div id="accountBadge" class="account-badge">Loading...</div>
 
 	<script type="module">
 		// === Chunk 1: constants & DOM helpers (more chunks appended below) ===
@@ -1710,14 +1714,32 @@
 				: '<button id="btnProfile" class="status-action" type="button">未登录</button>。可点击登录，或使用 localAPI。';
 			if ($('startSdkState')) $('startSdkState').textContent = sdk.token ? `SDK ready. Logged in as ${username || 'Keepwork user'}.` : 'SDK ready. You can still use local API settings, or log in to sync projects.';
 			$('btnProfile').onclick = openLoginOrProfile;
+			if ($('btnStartSignIn')) {
+				$('btnStartSignIn').textContent = sdk.token ? (username || 'Keepwork 用户') : 'Sign in';
+				$('btnStartSignIn').onclick = openLoginOrProfile;
+			}
+			const accountBadge = $('accountBadge');
+			if (accountBadge) {
+				accountBadge.innerHTML = sdk.token
+					? `<span>👤 ${escapeHtml(username || 'Keepwork 用户')}</span><button id="btnAccountBadge" type="button">Profile</button>`
+					: `<button id="btnAccountBadge" type="button">Sign in</button>`;
+				$('btnAccountBadge').onclick = openLoginOrProfile;
+			}
+		}
+		async function onSignedIn() {
+			await refreshLoginState();
+			if (!$('startScreen').classList.contains('hidden')) await refreshProjects().catch(() => {});
 		}
 		async function openLoginOrProfile() {
 			const sdk = state.sdk || window.keepwork;
 			if (!sdk) return;
 			if (!sdk.token) {
-				if (sdk.loginWindow?.show) sdk.loginWindow.show({ onLogin: refreshLoginState });
-				else if (sdk.login) await sdk.login();
-				setTimeout(refreshLoginState, 600);
+				try {
+					if (typeof sdk.showLoginWindow === 'function') await sdk.showLoginWindow({ title: 'Audio Code Generator 登录' });
+					else if (sdk.loginWindow?.show) await new Promise(resolve => sdk.loginWindow.show({ onLogin: resolve, onClose: resolve }));
+					else if (sdk.login) await sdk.login();
+				} catch (_) {}
+				await onSignedIn();
 				return;
 			}
 			if (typeof sdk.showProfileWindow === 'function') await sdk.showProfileWindow();
