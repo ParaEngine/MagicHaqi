@@ -67,6 +67,7 @@ from .weibo import WeiboCollector
 from .douyin import DouyinCollector
 from .taptap import TapTapCollector
 from .tieba import TiebaCollector
+from .wechat_mp.collector import WechatMPCollector
 
 # Twitter 已移除
 CollectorFactory.register("bilibili", BilibiliCollector)
@@ -82,3 +83,6 @@ CollectorFactory.register("taptap", TapTapCollector)
 CollectorFactory.register("TapTap", TapTapCollector)
 CollectorFactory.register("tieba", TiebaCollector)
 CollectorFactory.register("贴吧", TiebaCollector)
+CollectorFactory.register("wechat_mp", WechatMPCollector)
+CollectorFactory.register("wechat", WechatMPCollector)
+CollectorFactory.register("公众号", WechatMPCollector)
