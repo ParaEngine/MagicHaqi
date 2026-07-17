@@ -1,4 +1,4 @@
-// 轻量 NPC 对话气泡：按顺序播放 npc.dialog 台词，播放完（或没有台词）时调用 onFinished。
+// 轻量 NPC 对话气泡：按顺序播放 npc.dialog 台词，明确确认最后一句（或没有台词）时调用 onConfirmed。
 // 不依赖 view_story_player.js，只做最简单的顺序播放 + 点击下一步。
 import { escapeHtml, isImageIconValue, parseIconSource, loadNaturalImageSize } from './utils.js';
 
@@ -42,10 +42,10 @@ async function applyPortraitCrop(el, icon) {
     el.style.backgroundPosition = `${(-posX).toFixed(2)}px ${(-posY).toFixed(2)}px`;
 }
 
-export function openNpcDialog(npc, { onFinished } = {}) {
+export function openNpcDialog(npc, { onConfirmed } = {}) {
     const lines = Array.isArray(npc?.dialog) ? npc.dialog : [];
     if (!lines.length) {
-        onFinished?.();
+        onConfirmed?.();
         return;
     }
 
@@ -89,19 +89,23 @@ export function openNpcDialog(npc, { onFinished } = {}) {
 
     const closeDialog = () => {
         overlay.remove();
-        onFinished?.();
     };
     closeBtn.onclick = closeDialog;
     const renderLine = () => {
         const line = lines[index] || {};
         nameplateEl.textContent = line.speaker || npc.name || '';
         textEl.textContent = line.text || '';
-        nextBtn.innerHTML = index >= lines.length - 1 ? '好的' : '❯&nbsp;下一步';
+        if (line.buttonText) {
+            nextBtn.textContent = line.buttonText;
+        } else {
+            nextBtn.innerHTML = index >= lines.length - 1 ? '好的' : '❯&nbsp;下一步';
+        }
     };
     nextBtn.onclick = () => {
         index += 1;
         if (index >= lines.length) {
             closeDialog();
+            onConfirmed?.();
             return;
         }
         renderLine();

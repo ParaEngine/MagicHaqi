@@ -27,21 +27,7 @@
         "progressKey": "default"
       },
       "fields": [
-        {
-          "name": "天空",
-          "typeId": "sky",
-          "background": {
-            "type": "image",
-            "color": "#bae6fd",
-            "title": "蓝天彩虹云境",
-            "imageUrl": "https://cdn.keepwork.com/maisi/magichaqi/scenes/blue_sky_rainbow_planet_clouds-1779952934020.webp",
-            "presetId": "blue_sky_rainbow_planet_clouds"
-          },
-          "particles": ["sparkle"],
-          "npcs": [
-            { "id": "npc_2", "name": "罗德镇长", "icon": "https://cdn.keepwork.com/maisi/magichaqi/pet/dragon1_20260525031133.webp#4.21_1.17_17.85_31.73", "x": 50, "y": 50, "minigame": "haqi" }
-          ]
-        },
+        { "name": "天空", "typeId": "sky", "background": { "type": "image", "color": "#bae6fd", "title": "蓝天彩虹云境", "imageUrl": "https://cdn.keepwork.com/maisi/magichaqi/scenes/blue_sky_rainbow_planet_clouds-1779952934020.webp", "presetId": "blue_sky_rainbow_planet_clouds" }, "particles": ["sparkle"] },
         { "name": "陆地", "typeId": "land", "background": { "type": "image", "color": "#bae6fd", "title": "蓝星云草地", "imageUrl": "https://cdn.keepwork.com/maisi/magichaqi/scenes/blue_planet_grassland-1779950916879.webp", "presetId": "blue_planet_grassland" }, "particles": ["sparkle"] },
         { "name": "海洋", "typeId": "water", "background": { "type": "image", "color": "#67e8f9", "title": "珊瑚岩石海底园", "imageUrl": "https://cdn.keepwork.com/maisi/magichaqi/scenes/coral_rock_undersea_garden-1779951499103.webp", "presetId": "coral_rock_undersea_garden" }, "particles": ["bubbles"] },
         { "name": "右耳", "typeId": "land", "background": { "type": "color", "color": "#bae6fd", "title": "右耳" }, "particles": [] },
@@ -70,9 +56,7 @@
         "bodyBackground": "radial-gradient(circle at 30% 20%, rgba(255,255,255,.78) 0%, rgba(255,255,255,.22) 18%, transparent 34%), radial-gradient(circle at 68% 74%, rgba(250,204,21,.32), transparent 32%), radial-gradient(circle at 50% 42%, #bae6fd 0%, #0ea5e9 45%, #1d4ed8 100%)",
         "glowColor": "rgba(14, 165, 233, 0.62)",
         "accentColor": "#facc15",
-        "default_zoom_level": "field",
-        "hide_planet": true,
-        "hide_cell": true
+        "default_zoom_level": "field"
       },
       "onboarding": {
         "mode": "minigames",
@@ -97,25 +81,31 @@
               "id": "npc_1",
               "name": "哈奇岛大使",
               "icon": "https://cdn.keepwork.com/artassets/art_project/hachi_ambassador_20260709083240.webp#7.20_1.21_33.33_94.85",
-              "x": 86.85997870274845,
-              "y": 86.69743686462296,
+              "x": 76.67189092845379,
+              "y": 73.33790411396086,
               "scale": 3,
+              "dropShadow": true,
+              "randomNearMainPet": true,
               "dialog": [
-                { "speaker": "哈奇岛大使", "text": "你好吗小哈奇~" }
+                { "speaker": "哈奇岛大使", "text": "嗨！好久不见！想不想试试看你现在的身手有没有退步？来玩玩这个小游戏吧！", "buttonText": "好的，开始游戏吧！" }
               ],
-              "minigame": "https://cdn.keepwork.com/haqi-swf-games/standalone-classical/crazyspots-svg.html"
+              "minigame": "https://cdn.keepwork.com/haqi-swf-games/standalone-classical/crazyspots-svg.html",
+              "minigameLandscape": true
             },
             {
               "id": "npc_2",
               "name": "罗德镇长",
               "icon": "https://cdn.keepwork.com/artassets/art_project/mayor_rhodes_ceremonial_attire_20260709083127.webp#3.85_3.14_36.05_91.95",
-              "x": 17.345872119676358,
-              "y": 85.0563410912993,
+              "x": 28.082549235663816,
+              "y": 76.47270035220538,
               "scale": 3,
+              "dropShadow": true,
+              "randomNearMainPet": true,
               "dialog": [
-                { "speaker": "罗德镇长", "text": "你好吗？我的朋友" }
+                { "speaker": "罗德镇长", "text": "欢迎回家，可爱的勇士~要不要来玩一把小游戏放松放松？", "buttonText": "好的，开始吧！" }
               ],
-              "minigame": "https://cdn.keepwork.com/haqi-swf-games/standalone-classical/chuanyun-svg.html"
+              "minigame": "https://cdn.keepwork.com/haqi-swf-games/standalone-classical/chuanyun-svg.html",
+              "minigameLandscape": true
             }
           ]
         },
@@ -132,8 +122,36 @@
           "particles": ["bubbles"],
           "bgMusic": "park",
           "npcs": [
-            { "id": "npc_1", "name": "咕噜大叔", "icon": "https://cdn.keepwork.com/artassets/art_project/hatchi_island_guide_20260709091317.webp#37.73_55.13_11.23_44.87", "x": 16.170323530334663, "y": 71.65405894248953, "scale": 3, "minigame": "https://cdn.keepwork.com/haqi-swf-games/standalone-classical/cropdefend-svg.html" },
-            { "id": "npc_2", "name": "冬冬", "icon": "https://cdn.keepwork.com/artassets/art_project/hatchi_island_guide_20260709091317.webp#9.56_4.24_11.50_49.04", "x": 89.28944578738796, "y": 65.63670777363616, "scale": 3, "minigame": "https://cdn.keepwork.com/haqi-swf-games/standalone-classical/farmclip-svg.html" }
+            {
+              "id": "npc_1",
+              "name": "咕噜大叔",
+              "icon": "https://cdn.keepwork.com/artassets/art_project/hatchi_island_guide_20260709091317.webp#37.73_55.13_11.23_44.87",
+              "x": 22.753395630648143,
+              "y": 73.96486336160977,
+              "scale": 3,
+              "dropShadow": true,
+              "randomNearMainPet": true,
+              "dialog": [
+                { "speaker": "咕噜大叔", "text": "唔，今天的海风真舒服呀。小哈奇，要不要坐下来玩一会小游戏呢？", "buttonText": "好呀~" }
+              ],
+              "minigame": "https://cdn.keepwork.com/haqi-swf-games/standalone-classical/cropdefend-svg.html",
+              "minigameLandscape": true
+            },
+            {
+              "id": "npc_2",
+              "name": "冬冬",
+              "icon": "https://cdn.keepwork.com/artassets/art_project/hatchi_island_guide_20260709091317.webp#9.56_4.24_11.50_49.04",
+              "x": 63.89759625760739,
+              "y": 79.60749659044988,
+              "scale": 3,
+              "dropShadow": true,
+              "randomNearMainPet": true,
+              "dialog": [
+                { "speaker": "冬冬", "text": "嘿！在这片沙滩里也可以愉快的玩耍小游戏哦！", "buttonText": "好的，我现在来玩。" }
+              ],
+              "minigame": "https://cdn.keepwork.com/haqi-swf-games/standalone-classical/farmclip-svg.html",
+              "minigameLandscape": true
+            }
           ]
         },
         {
@@ -149,8 +167,36 @@
           "particles": ["sparkle", "petals"],
           "bgMusic": "mountain",
           "npcs": [
-            { "id": "npc_1", "name": "多多", "icon": "https://cdn.keepwork.com/artassets/art_project/hatchi_island_guide_20260709091317.webp#87.64_1.57_12.36_53.76", "x": 9.273771806196732, "y": 84.50930916685809, "scale": 3, "minigame": "https://cdn.keepwork.com/haqi-swf-games/standalone-classical/firemaster-svg.html" },
-            { "id": "npc_2", "name": "多克特博士", "icon": "https://cdn.keepwork.com/artassets/art_project/hatchi_island_guide_20260709091317.webp#24.41_54.72_13.68_45.28", "x": 93.59979061497417, "y": 89.29583850571873, "scale": 3, "minigame": "https://cdn.keepwork.com/haqi-swf-games/standalone-classical/hitshrew-svg.html" }
+            {
+              "id": "npc_1",
+              "name": "多多",
+              "icon": "https://cdn.keepwork.com/artassets/art_project/hatchi_island_guide_20260709091317.webp#87.64_1.57_12.36_53.76",
+              "x": 26.044931680804883,
+              "y": 71.1435467471897,
+              "scale": 3,
+              "dropShadow": true,
+              "randomNearMainPet": true,
+              "dialog": [
+                { "speaker": "多多", "text": "滴滴——侦测到极其熟悉的老朋友信号，逛累了来玩一会，一起寻找回忆吧？", "buttonText": "好的，开始吧！" }
+              ],
+              "minigame": "https://cdn.keepwork.com/haqi-swf-games/standalone-classical/firemaster-svg.html",
+              "minigameLandscape": true
+            },
+            {
+              "id": "npc_2",
+              "name": "多克特博士",
+              "icon": "https://cdn.keepwork.com/artassets/art_project/hatchi_island_guide_20260709091317.webp#24.41_54.72_13.68_45.28",
+              "x": 81.29571537986445,
+              "y": 79.60749659044988,
+              "scale": 3,
+              "dropShadow": true,
+              "randomNearMainPet": true,
+              "dialog": [
+                { "speaker": "多克特博士", "text": "嘘，仔细听风的声音……森林里的魔法萤火虫都藏起来了，你去玩一会，它们或者就出来了。", "buttonText": "让我看看是什么游戏吧！" }
+              ],
+              "minigame": "https://cdn.keepwork.com/haqi-swf-games/standalone-classical/hitshrew-svg.html",
+              "minigameLandscape": true
+            }
           ]
         },
         {
@@ -166,9 +212,51 @@
           "particles": ["mist"],
           "bgMusic": "forest",
           "npcs": [
-            { "id": "npc_1", "name": "香蕉先生", "icon": "https://cdn.keepwork.com/artassets/art_project/hatchi_island_guide_20260709091317.webp#36.91_0.55_13.95_55.00", "x": 14.916405035036858, "y": 84.50930916685809, "scale": 3, "minigame": "https://cdn.keepwork.com/haqi-swf-games/standalone-classical/firefly-svg.html" },
-            { "id": "npc_2", "name": "YY公主", "icon": "https://cdn.keepwork.com/artassets/art_project/hatchi_island_guide_20260709091317.webp#87.27_58.62_12.05_40.63", "x": 50.26123262124376, "y": 63.17506411365069, "scale": 3, "minigame": "https://cdn.keepwork.com/haqi-swf-games/standalone-classical/deliciouscake-svg.html" },
-            { "id": "npc_3", "name": "丹瑟", "icon": "https://cdn.keepwork.com/artassets/art_project/hatchi_island_guide_20260709091317.webp#65.90_0.96_10.96_54.59", "x": 93.75653042688639, "y": 86.69743686462296, "scale": 3, "minigame": "https://cdn.keepwork.com/haqi-swf-games/standalone-classical/superdancer-svg.html" }
+            {
+              "id": "npc_1",
+              "name": "香蕉先生",
+              "icon": "https://cdn.keepwork.com/artassets/art_project/hatchi_island_guide_20260709091317.webp#36.91_0.55_13.95_55.00",
+              "x": 22.361546100867578,
+              "y": 74.59182260925867,
+              "scale": 3,
+              "dropShadow": true,
+              "randomNearMainPet": true,
+              "dialog": [
+                { "speaker": "香蕉先生", "text": "哇哦！欢迎来到游乐场！还是以前熟悉的配方哦！", "buttonText": "好的~" }
+              ],
+              "minigame": "https://cdn.keepwork.com/haqi-swf-games/standalone-classical/firefly-svg.html",
+              "minigameLandscape": true
+            },
+            {
+              "id": "npc_2",
+              "name": "YY公主",
+              "icon": "https://cdn.keepwork.com/artassets/art_project/hatchi_island_guide_20260709091317.webp#87.27_58.62_12.05_40.63",
+              "x": 48.30198497234093,
+              "y": 72.71094486631196,
+              "scale": 3,
+              "dropShadow": true,
+              "randomNearMainPet": true,
+              "dialog": [
+                { "speaker": "YY公主", "text": "除了发白日梦，其实我也是很喜欢玩小游戏的。", "buttonText": "我也来玩一下。" }
+              ],
+              "minigame": "https://cdn.keepwork.com/haqi-swf-games/standalone-classical/deliciouscake-svg.html",
+              "minigameLandscape": true
+            },
+            {
+              "id": "npc_3",
+              "name": "丹瑟",
+              "icon": "https://cdn.keepwork.com/artassets/art_project/hatchi_island_guide_20260709091317.webp#65.90_0.96_10.96_54.59",
+              "x": 82.54963387516226,
+              "y": 67.38179126129629,
+              "scale": 3,
+              "dropShadow": true,
+              "randomNearMainPet": true,
+              "dialog": [
+                { "speaker": "丹瑟", "text": "这个超级舞者的小游戏以前可受欢迎了！丹瑟我也很喜欢玩呢！", "buttonText": "我来玩玩看！" }
+              ],
+              "minigame": "https://cdn.keepwork.com/haqi-swf-games/standalone-classical/superdancer-svg.html",
+              "minigameLandscape": true
+            }
           ]
         },
         {
@@ -183,8 +271,36 @@
           },
           "particles": ["snow"],
           "npcs": [
-            { "id": "npc_1", "name": "尤诺", "icon": "https://cdn.keepwork.com/artassets/art_project/hatchi_island_guide_20260709091317.webp#20.88_3.21_16.12_48.02", "x": 5.90386585008388, "y": 74.5259765458059, "scale": 3, "minigame": "https://cdn.keepwork.com/haqi-swf-games/standalone-classical/jumpfloor-svg.html" },
-            { "id": "npc_2", "name": "古奇", "icon": "https://cdn.keepwork.com/artassets/art_project/hatchi_island_guide_20260709091317.webp#50.68_1.16_14.49_52.74", "x": 72.91013544256036, "y": 81.3638756013211, "scale": 3, "minigame": "https://cdn.keepwork.com/haqi-swf-games/standalone-classical/snowball-svg.html" }
+            {
+              "id": "npc_1",
+              "name": "尤诺",
+              "icon": "https://cdn.keepwork.com/artassets/art_project/hatchi_island_guide_20260709091317.webp#20.88_3.21_16.12_48.02",
+              "x": 30.35527650839109,
+              "y": 78.66705771897654,
+              "scale": 3,
+              "dropShadow": true,
+              "randomNearMainPet": true,
+              "dialog": [
+                { "speaker": "尤诺", "text": "这里的冰雪蕴含着古老的魔力……来试试你的游戏功力如何？", "buttonText": "没问题！" }
+              ],
+              "minigame": "https://cdn.keepwork.com/haqi-swf-games/standalone-classical/jumpfloor-svg.html",
+              "minigameLandscape": true
+            },
+            {
+              "id": "npc_2",
+              "name": "古奇",
+              "icon": "https://cdn.keepwork.com/artassets/art_project/hatchi_island_guide_20260709091317.webp#50.68_1.16_14.49_52.74",
+              "x": 58.803552370460054,
+              "y": 63.933515399227325,
+              "scale": 3,
+              "dropShadow": true,
+              "randomNearMainPet": true,
+              "dialog": [
+                { "speaker": "古奇", "text": "呼，太冷了太冷了！快来和我一起玩小游戏和暖和身子吧！", "buttonText": "呼！马上来！" }
+              ],
+              "minigame": "https://cdn.keepwork.com/haqi-swf-games/standalone-classical/snowball-svg.html",
+              "minigameLandscape": true
+            }
           ]
         },
         {
@@ -200,8 +316,36 @@
           "particles": ["petals"],
           "bgMusic": "park",
           "npcs": [
-            { "id": "npc_1", "name": "白龙导师", "icon": "https://cdn.keepwork.com/artassets/art_project/hachi_daoshi2_20260710071736.webp#39.09_8.45_23.37_84.06", "x": 78.16091914161993, "y": 81.2271176202108, "scale": 3, "minigame": "https://cdn.keepwork.com/haqi-swf-games/standalone-classical/paopaolong-svg.html" },
-            { "id": "npc_2", "name": "青龙导师", "icon": "https://cdn.keepwork.com/artassets/art_project/hachi_daoshi1_20260710071704.webp#2.76_4.91_33.70_81.32", "x": 14.602925411212405, "y": 82.59469743131383, "scale": 3, "minigame": "https://cdn.keepwork.com/haqi-swf-games/standalone-classical/hitshrew-svg.html" }
+            {
+              "id": "npc_1",
+              "name": "白龙导师",
+              "icon": "https://cdn.keepwork.com/artassets/art_project/hachi_daoshi2_20260710071736.webp#39.09_8.45_23.37_84.06",
+              "x": 76.51515111654156,
+              "y": 77.09965959985428,
+              "scale": 3,
+              "dropShadow": true,
+              "randomNearMainPet": true,
+              "dialog": [
+                { "speaker": "白龙导师", "text": "你好啊，小哈奇。这些年，我也变得很喜欢玩小游戏了。", "buttonText": "你好，白龙导师。" }
+              ],
+              "minigame": "https://cdn.keepwork.com/haqi-swf-games/standalone-classical/paopaolong-svg.html",
+              "minigameLandscape": true
+            },
+            {
+              "id": "npc_2",
+              "name": "青龙导师",
+              "icon": "https://cdn.keepwork.com/artassets/art_project/hachi_daoshi1_20260710071704.webp#2.76_4.91_33.70_81.32",
+              "x": 18.286310991149712,
+              "y": 74.59182260925867,
+              "scale": 3,
+              "dropShadow": true,
+              "randomNearMainPet": true,
+              "dialog": [
+                { "speaker": "青龙导师", "text": "小哈奇，看到你能够重返学院真是太好了。要不要来玩耍一番？", "buttonText": "好的，青龙导师。" }
+              ],
+              "minigame": "https://cdn.keepwork.com/haqi-swf-games/standalone-classical/hitshrew-svg.html",
+              "minigameLandscape": true
+            }
           ]
         },
         {
@@ -217,8 +361,36 @@
           "particles": ["embers"],
           "bgMusic": "farm",
           "npcs": [
-            { "id": "npc_1", "name": "咕噜大叔", "icon": "https://cdn.keepwork.com/artassets/art_project/hatchi_island_guide_20260709091317.webp#13.00_56.77_11.50_43.23", "x": 6.138975567952219, "y": 31.447212496060196, "scale": 3, "minigame": "https://cdn.keepwork.com/haqi-swf-games/standalone-classical/watering-svg.html" },
-            { "id": "npc_2", "name": "莫卡", "icon": "https://cdn.keepwork.com/artassets/art_project/hatchi_island_guide_20260709091317.webp#49.41_57.39_11.87_42.61", "x": 94.30511976857917, "y": 81.63739156354171, "scale": 3, "minigame": "https://cdn.keepwork.com/haqi-swf-games/standalone-classical/zuma-svg.html" }
+            {
+              "id": "npc_1",
+              "name": "咕噜大叔",
+              "icon": "https://cdn.keepwork.com/artassets/art_project/hatchi_island_guide_20260709091317.webp#13.00_56.77_11.50_43.23",
+              "x": 68.36468089710583,
+              "y": 48.25953420800475,
+              "scale": 3,
+              "dropShadow": true,
+              "randomNearMainPet": true,
+              "dialog": [
+                { "speaker": "咕噜大叔", "text": "哟！长高了不少嘛！来都来了，来玩耍一番吧？", "buttonText": "好啊！" }
+              ],
+              "minigame": "https://cdn.keepwork.com/haqi-swf-games/standalone-classical/watering-svg.html",
+              "minigameLandscape": true
+            },
+            {
+              "id": "npc_2",
+              "name": "莫卡",
+              "icon": "https://cdn.keepwork.com/artassets/art_project/hatchi_island_guide_20260709091317.webp#49.41_57.39_11.87_42.61",
+              "x": 23.77220440807761,
+              "y": 50.45389157477591,
+              "scale": 3,
+              "dropShadow": true,
+              "randomNearMainPet": true,
+              "dialog": [
+                { "speaker": "莫卡", "text": "嘿嘿！我知道你还是一样的贪玩！来吧，一起做游戏！", "buttonText": "我准备好了！" }
+              ],
+              "minigame": "https://cdn.keepwork.com/haqi-swf-games/standalone-classical/zuma-svg.html",
+              "minigameLandscape": true
+            }
           ]
         }
       ],

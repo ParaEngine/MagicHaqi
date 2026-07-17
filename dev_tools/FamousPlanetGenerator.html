@@ -26,6 +26,9 @@
       .section { @apply flex flex-col gap-2.5 rounded-lg border border-slate-300 bg-slate-50 p-3; }
       .toolbar { @apply flex flex-wrap items-center gap-2; }
       .toolbar button { @apply flex-none; }
+      .model-select-state { @apply hidden; }
+      .model-picker { @apply w-full justify-start overflow-hidden text-left; }
+      .model-picker span { @apply block overflow-hidden text-ellipsis whitespace-nowrap; }
       .primary { @apply border-sky-600 bg-sky-600 text-white hover:border-sky-700 hover:bg-sky-700; }
       .success { @apply border-emerald-600 bg-emerald-600 text-white hover:border-emerald-700 hover:bg-emerald-700; }
       .danger { @apply border-red-200 bg-red-50 text-red-700; }
@@ -389,7 +392,7 @@
       await navigator.clipboard.writeText(text);
     }
 
-    const SDK_CDN_URL = 'https://cdn.keepwork.com/sdk/keepworkSDK.iife.js?v=20260619a';
+    const SDK_CDN_URL = 'https://cdn.keepwork.com/sdk/keepworkSDK.iife.js?v=20260715a';
     const sdkLoadTimeoutMs = 8000;
 
     function withTimeout(promise, ms, label) {
@@ -556,10 +559,11 @@
 
     function getEnabledLocalModels(category) {
       const sdk = state.sdk || window.keepwork;
-      return sdk?.localAPIKeySettings?.listModels ? sdk.localAPIKeySettings.listModels(category).filter(model => model.enabled !== false) : [];
+      const settings = sdk?.apiKeySettings || sdk?.localAPIKeySettings;
+      return settings?.listModels ? settings.listModels(category).filter(model => model.enabled !== false) : [];
     }
 
-    function renderModelOptions(select, category, remembered = '') {
+    function renderModelOptions(select, picker, category, remembered = '') {
       if (!select) return [];
       const models = getEnabledLocalModels(category);
       select.innerHTML = models.length
@@ -571,22 +575,56 @@
         : `<option value="">没有本地${category === 'Chat' ? '聊天' : '图片'}模型</option>`;
       select.disabled = !models.length;
       if (remembered && models.some(model => (model.name || model.modelId || '') === remembered)) select.value = remembered;
+      if (picker) {
+        const sdk = state.sdk || window.keepwork;
+        const settings = sdk?.apiKeySettings || sdk?.localAPIKeySettings;
+        picker.disabled = !models.length && !settings?.showModelPicker;
+        picker.querySelector('span').textContent = select.value || `没有可用${category === 'Chat' ? '聊天' : '图片'}模型`;
+      }
       return models;
     }
 
     async function populateNewPlanetChatModelDropdown() {
       const sdk = state.sdk || window.keepwork;
+      const settings = sdk?.apiKeySettings || sdk?.localAPIKeySettings;
       const select = $('newPlanetChatModel');
+      const picker = $('newPlanetChatModelPicker');
       if (!select) return;
-      if (!sdk?.localAPIKeySettings?.listModels) {
+      if (!settings?.listModels) {
         select.innerHTML = '<option value="">等待 SDK 加载...</option>';
         select.disabled = true;
+        if (picker) {
+          picker.disabled = true;
+          picker.querySelector('span').textContent = '等待 SDK 加载...';
+        }
         return;
       }
-      await sdk.localAPIKeySettings.load?.();
-      renderModelOptions(select, 'Chat', state.lastChatModel || select.value);
+      await settings.load?.();
+      if (!settings.listModels('Chat').some(model => model.enabled !== false)) {
+        try { await settings.refreshModels?.('keepwork'); } catch (_) {}
+      }
+      renderModelOptions(select, picker, 'Chat', state.lastChatModel || select.value);
       state.lastChatModel = select.value || state.lastChatModel;
       saveLocalGenerationSettings();
+    }
+
+    function openModelPicker(selectId, pickerId, category) {
+      const sdk = state.sdk || window.keepwork;
+      const settings = sdk?.apiKeySettings || sdk?.localAPIKeySettings;
+      if (!settings?.showModelPicker) return setStatus($('loginState'), '当前 SDK 不支持模型选择窗口。', 'error');
+      const select = $(selectId);
+      const picker = $(pickerId);
+      settings.showModelPicker({
+        anchor: picker,
+        category,
+        selectedModel: select.value,
+        onSelect: model => {
+          if (![...select.options].some(option => option.value === model)) select.add(new Option(model, model));
+          select.value = model;
+          picker.querySelector('span').textContent = model;
+          select.dispatchEvent(new Event('change'));
+        },
+      });
     }
 
     function extractAssistantText(result) {
@@ -765,10 +803,15 @@
     function normalizeNpcDialog(value) {
       const raw = Array.isArray(value) ? value : [];
       return raw
-        .map(line => ({
-          speaker: String(line?.speaker || '').trim().slice(0, 24),
-          text: String(line?.text || '').trim().slice(0, 200),
-        }))
+        .map(line => {
+          const normalized = {
+            speaker: String(line?.speaker || '').trim().slice(0, 24),
+            text: String(line?.text || '').trim().slice(0, 200),
+          };
+          const buttonText = String(line?.buttonText || '').trim().slice(0, 24);
+          if (buttonText) normalized.buttonText = buttonText;
+          return normalized;
+        })
         .filter(line => line.text);
     }
 
@@ -782,6 +825,7 @@
         scale: clampNpcScale(raw.scale),
         flip: !!raw.flip,
         dropShadow: !!raw.dropShadow,
+        randomNearMainPet: raw.randomNearMainPet !== false,
         dialog: normalizeNpcDialog(raw.dialog),
         // minigame 可填 gameId / html 文件名（本地清单），也可填完整 http(s) 远程小游戏地址。
         minigame: String(raw.minigame || raw.game || '').trim().slice(0, 300),
@@ -804,6 +848,7 @@
           if (npc.scale !== 1) compact.scale = npc.scale;
           if (npc.flip) compact.flip = true;
           if (npc.dropShadow) compact.dropShadow = true;
+          compact.randomNearMainPet = npc.randomNearMainPet;
           if (npc.dialog.length) compact.dialog = npc.dialog;
           if (npc.minigame) compact.minigame = npc.minigame;
           if (npc.minigame && npc.minigameLandscape) compact.minigameLandscape = true;
@@ -1243,7 +1288,7 @@ ${currentIndent}}`;
             <span class="npc-icon">${icon}</span>
             <div class="npc-info">
               <strong>${escapeHtml(npc.name)}</strong>
-              <span class="hint">(${npc.x.toFixed(0)}%, ${npc.y.toFixed(0)}%) · ${Math.round(clampNpcScale(npc.scale) * 100)}%${npc.flip ? ' · 镜像' : ''} · ${escapeHtml(npcSummaryTags(npc))}</span>
+              <span class="hint">${npc.randomNearMainPet ? '主宠物身边随机站位' : `(${npc.x.toFixed(0)}%, ${npc.y.toFixed(0)}%)`} · ${Math.round(clampNpcScale(npc.scale) * 100)}%${npc.flip ? ' · 镜像' : ''} · ${escapeHtml(npcSummaryTags(npc))}</span>
             </div>
             <div class="npc-actions">
               <button type="button" data-place-npc="${key}">摆放</button>
@@ -1424,6 +1469,7 @@ ${currentIndent}}`;
               </label>
             </div>
             <div class="hint">位置 (${npc.x.toFixed(0)}%, ${npc.y.toFixed(0)}%)，缩放 ${Math.round(clampNpcScale(npc.scale) * 100)}%${npc.flip ? '，已左右镜像' : ''}；关闭本窗口后点列表里的"摆放"按钮，可在放大的场景弹窗中点击设置位置、缩放和镜像。</div>
+            <label class="toggle-line"><input type="checkbox" id="npcEditRandomNearMainPet" ${npc.randomNearMainPet ? 'checked' : ''}> 随机出现在主宠物身边（忽略上面的绝对位置，并自动推开以减少重叠）</label>
             <label class="toggle-line"><input type="checkbox" id="npcEditDropShadow" ${npc.dropShadow ? 'checked' : ''}> 投影（脚下叠加一个静态柔和阴影，纯 CSS 渐变、不逐帧重绘，性能开销极低）</label>
             <section class="section">
               <h2>对话（可留空；留空则点击直接开小游戏）</h2>
@@ -1447,18 +1493,20 @@ ${currentIndent}}`;
           <div class="row" data-dialog-line="${lineIndex}">
             <label>说话人 <input class="npc-dialog-speaker" maxlength="24" value="${escapeHtml(line.speaker)}"></label>
             <label class="wide">台词 <input class="npc-dialog-text" maxlength="200" value="${escapeHtml(line.text)}"></label>
+            <label>按钮文字（可留空） <input class="npc-dialog-button-text" maxlength="24" value="${escapeHtml(line.buttonText || '')}" placeholder="默认：下一步 / 好的"></label>
             <button type="button" class="danger npc-dialog-remove w-auto justify-self-start">删</button>
           </div>`).join('') || '<div class="hint">暂无对话行。</div>';
         overlay.querySelectorAll('[data-dialog-line]').forEach(row => {
           const lineIndex = Number(row.dataset.dialogLine);
           row.querySelector('.npc-dialog-speaker').addEventListener('input', (e) => { dialogDraft[lineIndex].speaker = e.target.value; });
           row.querySelector('.npc-dialog-text').addEventListener('input', (e) => { dialogDraft[lineIndex].text = e.target.value; });
+          row.querySelector('.npc-dialog-button-text').addEventListener('input', (e) => { dialogDraft[lineIndex].buttonText = e.target.value; });
           row.querySelector('.npc-dialog-remove').onclick = () => { dialogDraft.splice(lineIndex, 1); renderDialogLines(); };
         });
       };
       renderDialogLines();
       overlay.querySelector('#npcAddDialogLine').onclick = () => {
-        dialogDraft.push({ speaker: npc.name, text: '' });
+        dialogDraft.push({ speaker: npc.name, text: '', buttonText: '' });
         renderDialogLines();
       };
       overlay.querySelector('#npcIconRegionBtn').onclick = async () => {
@@ -1472,6 +1520,7 @@ ${currentIndent}}`;
         npc.minigame = overlay.querySelector('#npcEditMinigame').value.trim().slice(0, 300);
         npc.minigameLandscape = overlay.querySelector('#npcEditMinigameLandscape').checked;
         npc.dropShadow = overlay.querySelector('#npcEditDropShadow').checked;
+        npc.randomNearMainPet = overlay.querySelector('#npcEditRandomNearMainPet').checked;
         npc.dialog = normalizeNpcDialog(dialogDraft);
         overlay.remove();
         refreshNpcList(fieldIndex);
@@ -1936,7 +1985,10 @@ ${currentIndent}}`;
           <div class="modal-body modal-stack">
             <section class="section">
               <div class="row">
-                <label>Chat 模型 <select id="newPlanetChatModel"></select></label>
+                <label>Chat 模型
+                  <select id="newPlanetChatModel" class="model-select-state" aria-hidden="true" tabindex="-1"></select>
+                  <button id="newPlanetChatModelPicker" class="model-picker" type="button"><span>等待 SDK 加载...</span></button>
+                </label>
               </div>
               <label>星球描述
                 <textarea id="newPlanetDescription" class="prompt-box" style="min-height:90px" placeholder="例如：生成一个以哈奇小镇夜空观星为主题的官方星球，7 个区域分别像耳朵、眉毛、胡须上的小地貌，要明亮、梦幻、适合儿童。">${escapeHtml(settings.description || '')}</textarea>
@@ -1965,6 +2017,7 @@ ${currentIndent}}`;
         state.lastChatModel = $('newPlanetChatModel').value;
         saveLocalGenerationSettings();
       });
+      $('newPlanetChatModelPicker').onclick = () => openModelPicker('newPlanetChatModel', 'newPlanetChatModelPicker', 'Chat');
       $('newPlanetDescription').addEventListener('input', () => updateNewPlanetPromptPreview());
       $('newPlanetDescription').addEventListener('change', () => {
         try { localStorage.setItem(SETTINGS_STORAGE_KEY, JSON.stringify({ ...readLocalGenerationSettings(), description: $('newPlanetDescription').value, lastChatModel: state.lastChatModel || $('newPlanetChatModel')?.value || '', updatedAt: new Date().toISOString() })); }
@@ -2134,7 +2187,8 @@ ${currentIndent}}`;
       $('btnReload').onclick = loadRecords;
       $('btnWorkspace').onclick = () => openWorkspaceViewer(INDEX_PATH);
       $('btnLocalApi').onclick = async () => {
-        const settings = (state.sdk || window.keepwork)?.localAPIKeySettings;
+        const sdk = state.sdk || window.keepwork;
+        const settings = sdk?.apiKeySettings || sdk?.localAPIKeySettings;
         if (!settings?.show) return setStatus($('loginState'), '当前 SDK 不支持本地 API Key 设置。', 'error');
         await settings.load?.();
         settings.show({

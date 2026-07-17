@@ -582,15 +582,20 @@ export function normalizeOnboardingConfig(raw = {}, planetId = '') {
 }
 
 // ===== field NPC（星球编辑器摆放的可交互角色）=====
-// 每个 field 可带一个只读的 npcs 数组：{ id, name, icon, x, y, dialog?, minigame? }。
-// 位置在编辑器里配置好后运行时固定，不支持玩家拖动 / 寻路。
+// 每个 field 可带一个只读的 npcs 数组：{ id, name, icon, x, y, randomNearMainPet?, dialog?, minigame? }。
+// 默认在主宠物附近自动站位；仅 randomNearMainPet=false 时使用编辑器绝对位置。
 function normalizeFieldNpcDialog(value) {
     const raw = Array.isArray(value) ? value : [];
     return raw
-        .map(line => ({
-            speaker: String(line?.speaker || '').trim().slice(0, 24),
-            text: String(line?.text || '').trim().slice(0, 200),
-        }))
+        .map(line => {
+            const normalized = {
+                speaker: String(line?.speaker || '').trim().slice(0, 24),
+                text: String(line?.text || '').trim().slice(0, 200),
+            };
+            const buttonText = String(line?.buttonText || '').trim().slice(0, 24);
+            if (buttonText) normalized.buttonText = buttonText;
+            return normalized;
+        })
         .filter(line => line.text);
 }
 
@@ -609,6 +614,7 @@ export function normalizeFieldNpc(raw = {}, index = 0) {
         scale: normalizeFieldNpcScale(raw?.scale),
         flip: !!raw?.flip,
         dropShadow: !!raw?.dropShadow,
+        randomNearMainPet: raw?.randomNearMainPet !== false,
         dialog: normalizeFieldNpcDialog(raw?.dialog),
         minigame: String(raw?.minigame || raw?.game || '').trim().slice(0, 96),
     };

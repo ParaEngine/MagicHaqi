@@ -36,45 +36,23 @@ function actionAreaHtml(mode) {
                 </div>
             </div>`;
     }
-    if (mode === 'landing') {
-        return `
-            <div id="mhLoginLanding" class="flex flex-col items-center" style="width:100%;max-width:420px">
-                ${landingContentHtml()}
-            </div>`;
-    }
     return `
         <button id="mhLoginBtn" class="btn-primary text-base" style="padding:12px 36px">
             🔑 ${escapeHtml(t('login'))}
         </button>`;
 }
 
-function landingContentHtml() {
-    const features = [
-        { emoji: '🐱', title: t('loginFeature1Title'), desc: t('loginFeature1Desc') },
-        { emoji: '🎨', title: t('loginFeature2Title'), desc: t('loginFeature2Desc') },
-        { emoji: '🌍', title: t('loginFeature3Title'), desc: t('loginFeature3Desc') },
-        { emoji: '💬', title: t('loginFeature4Title'), desc: t('loginFeature4Desc') },
-    ];
-    const cards = features.map(f => `
-        <div class="mh-login-feature-card">
-            <div class="text-4xl mb-2">${escapeHtml(f.emoji)}</div>
-            <div class="text-sm font-bold" style="color:#dae8ff;margin-bottom:4px">${escapeHtml(f.title)}</div>
-            <div class="text-xs" style="color:#8899c0">${escapeHtml(f.desc)}</div>
-        </div>`).join('');
-
+// 登录前的隐私政策 / 用户协议同意行（合规：登录会收集账号信息，需先主动勾选；
+// 游客体验不收集个人信息，无需勾选）。
+function privacyRowHtml() {
     return `
-        <div class="mh-login-feature-grid">${cards}</div>
-        <div id="mhLoginPrivacy" class="mh-login-privacy">
+        <div id="mhLoginPrivacy" class="mh-login-privacy" style="margin-top:14px;margin-bottom:0">
             <div id="mhLoginPrivacyCheck" class="mh-login-checkbox"></div>
             <span style="color:#8ca0c4;font-size:13px">${escapeHtml(t('loginPrivacyPrefix'))}</span>
             <span id="mhLoginPrivacyLink1" class="mh-login-privacy-link">${escapeHtml(t('loginPrivacyLink1'))}</span>
             <span style="color:#8ca0c4;font-size:13px">${escapeHtml(t('loginPrivacyAnd'))}</span>
             <span id="mhLoginPrivacyLink2" class="mh-login-privacy-link">${escapeHtml(t('loginPrivacyLink2'))}</span>
-        </div>
-        <button id="mhLoginAgreeBtn" class="mh-login-agree-btn disabled" disabled>
-            ${escapeHtml(t('loginAgreeBtn'))}
-        </button>
-        <div style="font-size:12px;color:#5b6d90;margin-top:12px">${escapeHtml(t('loginFooterTip'))}</div>`;
+        </div>`;
 }
 
 function languageSelectorHtml() {
@@ -120,18 +98,12 @@ function ensureLoginStyle() {
     style.textContent = `
         .mh-login-spinner{width:42px;height:42px;border-radius:50%;border:3px solid rgba(152,239,255,0.25);border-top-color:#7de1ff;box-shadow:0 0 18px rgba(125,225,255,0.45);animation:mhLoginSpin 0.9s linear infinite}
         @keyframes mhLoginSpin{to{transform:rotate(360deg)}}
-        .mh-login-feature-grid{display:grid;grid-template-columns:1fr 1fr;gap:12px;margin-bottom:24px;width:100%}
-        .mh-login-feature-card{background:rgba(20,30,60,0.58);border:1px solid rgba(152,239,255,0.12);border-radius:16px;padding:16px 10px 14px;display:flex;flex-direction:column;align-items:center;backdrop-filter:blur(6px);text-align:center;cursor:default;transition:border-color .25s}
-        .mh-login-feature-card:hover{border-color:rgba(152,239,255,0.28)}
         .mh-login-privacy{display:flex;align-items:center;flex-wrap:wrap;justify-content:center;gap:3px;margin-bottom:20px;cursor:pointer}
         .mh-login-checkbox{width:20px;height:20px;border:2px solid rgba(152,239,255,0.45);border-radius:5px;margin-right:6px;flex-shrink:0;transition:all .2s;display:flex;align-items:center;justify-content:center}
         .mh-login-checkbox.checked{background:linear-gradient(135deg,#2acfff,#1f60ff);border-color:transparent}
         .mh-login-checkbox.checked::after{content:'\\2713';font-size:14px;color:#fff;font-weight:700;line-height:1}
         .mh-login-privacy-link{color:#5ecfff;font-size:13px;text-decoration:underline;cursor:pointer}
         .mh-login-privacy-link:hover{color:#7de1ff}
-        .mh-login-agree-btn{width:100%;max-width:360px;padding:14px 0;border-radius:48px;border:none;background:linear-gradient(135deg,#2acfff,#4f6fff,#a34fff);color:#fff;font-size:17px;font-weight:700;box-shadow:0 10px 30px rgba(42,207,255,0.3);cursor:pointer;touch-action:manipulation;transition:all .25s}
-        .mh-login-agree-btn.disabled{background:rgba(60,80,130,0.45);box-shadow:none;color:#6b80a8;cursor:not-allowed}
-        .mh-login-agree-btn:not(.disabled):hover{opacity:0.9;transform:translateY(-1px);box-shadow:0 14px 36px rgba(42,207,255,0.4)}
         .mh-modal-overlay{position:fixed;inset:0;z-index:9999;display:flex;align-items:center;justify-content:center;background:rgba(0,0,0,0.6);backdrop-filter:blur(4px);padding:24px}
         .mh-modal-card{width:100%;max-width:480px;max-height:70vh;background:linear-gradient(160deg,#0f1a3a,#16213e,#1a2468);border:1px solid rgba(152,239,255,0.2);border-radius:20px;display:flex;flex-direction:column;overflow:hidden;box-shadow:0 20px 60px rgba(0,0,0,0.5)}
         .mh-modal-header{display:flex;align-items:center;justify-content:space-between;padding:16px 20px;border-bottom:1px solid rgba(152,239,255,0.12);flex-shrink:0}
@@ -143,12 +115,6 @@ function ensureLoginStyle() {
         .mh-modal-scroll b{color:#e8f7ff}
     `;
     document.head.appendChild(style);
-}
-
-function isMiniProgram() {
-    if (typeof window !== 'undefined' && window.__wxjs_environment === 'miniprogram') return true;
-    if (typeof navigator !== 'undefined' && /miniProgram/i.test(navigator.userAgent)) return true;
-    return false;
 }
 
 // ─── 从 docs/ 目录加载 Markdown 文档（带缓存） ───
@@ -277,7 +243,7 @@ function showModal(title, bodyHtml) {
 
 // ===== 主入口 =====
 export function renderLogin(panel, _data, { onLogin, onOffline, mode, sharedGame = null } = {}) {
-    if (mode == null) mode = isMiniProgram() ? 'landing' : 'login';
+    if (mode == null) mode = 'login';
     ensureLoginStyle();
     const appTitle = String(state.settings?.starSettlement?.appTitle || '').trim() || t('appName');
     const shareOwner = String(sharedGame?.fromUsername || '').trim();
@@ -297,7 +263,6 @@ export function renderLogin(panel, _data, { onLogin, onOffline, mode, sharedGame
     }).join('');
 
     const planets = DECOR_PLANETS.map(decorPlanetHtml).join('');
-    const isLanding = mode === 'landing';
 
     panel.innerHTML = `
         <div class="mh-stage zoom-space absolute inset-0 overflow-hidden fade-in" style="border-radius:inherit">
@@ -314,13 +279,14 @@ export function renderLogin(panel, _data, { onLogin, onOffline, mode, sharedGame
                 ` : `
                 <div class="text-7xl floaty mb-4" style="filter:drop-shadow(0 0 18px rgba(125,225,255,0.55))">🐾</div>
                 <h1 class="text-3xl font-extrabold mb-2" style="color:#e8f7ff;text-shadow:0 0 18px rgba(84,226,255,0.55),0 2px 8px rgba(6,18,44,0.6)">${escapeHtml(appTitle)}</h1>
-                <p class="text-sm" style="color:#bde6ff;text-shadow:0 0 10px rgba(84,226,255,0.35);margin-bottom:${isLanding ? '6px' : '32px'}">${escapeHtml(t('tagline'))}</p>
-                ${isLanding ? '' : `<p class="text-xs mb-6" style="color:#9fd0eb;text-shadow:0 1px 4px rgba(6,18,44,0.6)">${escapeHtml(t('pleaseLogin'))}</p>`}
+                <p class="text-sm" style="color:#bde6ff;text-shadow:0 0 10px rgba(84,226,255,0.35);margin-bottom:32px">${escapeHtml(t('tagline'))}</p>
+                <p class="text-xs mb-6" style="color:#9fd0eb;text-shadow:0 1px 4px rgba(6,18,44,0.6)">${escapeHtml(t('pleaseLogin'))}</p>
                 `}
                 <div id="mhLoginAction" class="flex items-center justify-center" style="min-height:64px">
                     ${actionAreaHtml(mode)}
                 </div>
-                ${(mode === 'login' && !isShare) ? offlineOptionHtml() : ''}
+                ${mode === 'login' ? offlineOptionHtml() : ''}
+                ${mode === 'login' ? privacyRowHtml() : ''}
                 ${languageSelectorHtml()}
             </div>
         </div>`;
@@ -333,7 +299,7 @@ export function renderLogin(panel, _data, { onLogin, onOffline, mode, sharedGame
     if (langZh) langZh.onclick = () => switchLanguage('zh');
     if (langEn) langEn.onclick = () => switchLanguage('en');
 
-    if (mode === 'login' && !isShare) {
+    if (mode === 'login') {
         const offlineBtn = $('mhOfflineBtn');
         if (offlineBtn) offlineBtn.onclick = () => {
             showToast(t('offlineHint'), 'info', 2800);
@@ -342,27 +308,11 @@ export function renderLogin(panel, _data, { onLogin, onOffline, mode, sharedGame
     }
 
     if (mode === 'login') {
-        const btn = $('mhLoginBtn');
-        if (btn) {
-            btn.onclick = () => {
-                const action = $('mhLoginAction');
-                if (action) action.innerHTML = actionAreaHtml('loggingIn');
-                onLogin?.();
-            };
-        }
-    }
-
-    if (mode === 'landing') {
         let agreed = false;
         const toggleAgreed = (val) => {
             agreed = Boolean(val);
             const check = $('mhLoginPrivacyCheck');
             if (check) check.classList.toggle('checked', agreed);
-            const agreeBtn = $('mhLoginAgreeBtn');
-            if (agreeBtn) {
-                agreeBtn.classList.toggle('disabled', !agreed);
-                agreeBtn.disabled = !agreed;
-            }
         };
 
         const privacyRow = $('mhLoginPrivacy');
@@ -376,13 +326,18 @@ export function renderLogin(panel, _data, { onLogin, onOffline, mode, sharedGame
         const link2 = $('mhLoginPrivacyLink2');
         if (link2) link2.onclick = (e) => { e.stopPropagation(); showLoginLicenseModal(); };
 
-        const agreeBtn = $('mhLoginAgreeBtn');
-        if (agreeBtn) agreeBtn.onclick = () => {
-            if (!agreed) {
-                showToast(t('loginAgreeNotice'), 'none', 2000);
-                return;
-            }
-            renderLogin(panel, _data, { onLogin, onOffline, mode: 'login', sharedGame });
-        };
+        const btn = $('mhLoginBtn');
+        if (btn) {
+            btn.onclick = () => {
+                // 登录会收集账号信息，须先勾选同意隐私政策；游客体验不受此限制。
+                if (!agreed) {
+                    showToast(t('loginAgreeNotice'), 'info', 2000);
+                    return;
+                }
+                const action = $('mhLoginAction');
+                if (action) action.innerHTML = actionAreaHtml('loggingIn');
+                onLogin?.();
+            };
+        }
     }
 }

@@ -51,7 +51,7 @@ import { initAgentBridge } from './agentBridge.js';
 // Side-effect import: 订阅 state 并接管所有 [data-mh-pet] 占位符的渲染 + 动画
 import { canWakePet, daySleepRejectText, eatFood, hatchPetFromBoarding, isPetInteractionBlocked, isPetSleeping, petArtHtml, preloadPetAssets, say, scanAndMount, setAnim, shouldRejectDaySleep, sleepingInteractionText, startPetSleep, wakePet, wakePetForPlay } from './pet.js';
 
-const sdkCdnUrl = 'https://cdn.keepwork.com/sdk/keepworkSDK.iife.js?v=fee34c129297';
+const sdkCdnUrl = 'https://cdn.keepwork.com/sdk/keepworkSDK.iife.js?v=5bfc002b0753';
 
 function loadScript(src) {
     return new Promise((resolve, reject) => {
@@ -986,6 +986,7 @@ function renderSettingsRoute() {
     const options = {
         onBack:      () => navigateToView(state.currentPetId ? 'home' : 'petList'),
         onLogout:    handleLogout,
+        onLogin:     handleGuestLogin,
         onClearData: handleClearData,
     };
     if (settingsViewModule) {
@@ -1355,6 +1356,55 @@ async function enterForcedViewIfAny() {
     return true;
 }
 
+// ==== 微信小程序静默登录 ====
+// 是否运行在微信小程序 web-view 中（UA 含 miniProgram，或微信注入的环境变量）。
+function isWechatMiniProgram() {
+    try {
+        if (window.__wxjs_environment === 'miniprogram') return true;
+        return /miniprogram/i.test(navigator.userAgent || '');
+    } catch (_) { return false; }
+}
+
+const MP_SILENT_LOGIN_FAILED_KEY = 'mhMpSilentLoginFailed';
+
+// 小程序 web-view 中不展示登录页：直接整页跳转 snsapi_base 静默授权（用户无感，
+// 只取 openid，不索取头像昵称），回跳（?code=...&wxauth=1）后由 SDK 的
+// whenRedirectLoginSettled 兜底用 code 换 token 完成登录；未绑定账号时 SDK 在小程序内
+// 静默注册（自动生成用户名 + 密码，见 SDK 的 silentWechatBind），不弹「设置账号」表单，
+// 登录后直接进入主页——小程序内首次进入即索取账号 / 头像昵称属于非必要场景收集用户
+// 信息，微信审核不通过。账号可在应用内的设置里再修改。
+// 每次全新进入（含手动刷新）都会尝试；仅当「刚从授权回跳回来但仍未登录」
+// （探测失败 / 用户放弃绑定）时记录失败并停止自动尝试，本会话内落回登录页，
+// 避免「授权 → 回跳失败 → 再授权」的跳转循环（sessionStorage 在同一 web-view
+// 会话内跨整页跳转保留；重新进入小程序即重置）。
+// 返回 true 表示已发起整页跳转，调用方应维持 Loading 闪屏并中止启动流程。
+function maybeStartMiniProgramSilentLogin({ wxRedirectHandled = false } = {}) {
+    const log = (msg) => console.info('[MP静默登录] ' + msg);
+    if (!isWechatMiniProgram()) return false;
+    if (!sdk?.wxAuth?.authorize) { log('跳过：SDK 无 wxAuth.authorize（SDK 版本过旧？）'); return false; }
+    // 开发环境：微信授权无法回跳本地地址，跳过
+    const host = window.location.hostname;
+    if (host === 'localhost' || host.startsWith('127.') || host.startsWith('192.168.')) {
+        log('跳过：本地开发地址 ' + host + '，微信授权无法回跳');
+        return false;
+    }
+    try {
+        if (wxRedirectHandled) {
+            // 刚处理完一次授权回跳但仍未登录：本会话不再自动尝试
+            sessionStorage.setItem(MP_SILENT_LOGIN_FAILED_KEY, '1');
+            log('跳过：授权回跳后仍未登录（探测失败或放弃绑定），本会话停止自动尝试');
+            return false;
+        }
+        if (sessionStorage.getItem(MP_SILENT_LOGIN_FAILED_KEY)) {
+            log('跳过：本会话此前静默登录已失败');
+            return false;
+        }
+    } catch (_) { return false; } // sessionStorage 不可用时无法防循环，放弃静默登录
+    log('发起 snsapi_base 静默授权跳转');
+    sdk.wxAuth.authorize({ scope: 'snsapi_base' });
+    return true;
+}
+
 // ==== 启动流程 ====
 async function bootstrap() {
     // 等待 SDK 就绪（已在模块加载时并行预热；首屏闪屏此刻已绘制）。
@@ -1381,7 +1431,9 @@ async function bootstrap() {
     // 微信内置浏览器整页授权回跳（?code=...&wxauth=1）：先等 SDK 兜底登录结算，
     // 再决定首屏视图。期间维持 Loading 闪屏，避免「登录页闪现 → 整页刷新 → 登录后页面」
     // 的双跳。无回跳时立即 resolve(false)，正常启动无额外开销。
-    try { await sdk.whenRedirectLoginSettled?.(); } catch (_) {}
+    // 返回 true 表示识别并处理了一次授权回跳（结合登录态可判断静默登录是否失败）。
+    let wxRedirectHandled = false;
+    try { wxRedirectHandled = (await sdk.whenRedirectLoginSettled?.()) === true; } catch (_) {}
 
     // 已有 token 则尝试拉取用户。若 token 失效或取不到用户，仍视为未登录。
     if (sdk.token) {
@@ -1392,6 +1444,8 @@ async function bootstrap() {
 
     if (!sdk.token || !state.user) {
         if (sdk.token && !state.user) clearUnauthenticatedSession();
+        // 微信小程序 web-view：跳过登录页，直接静默授权登录（整页跳转，维持闪屏）。
+        if (maybeStartMiniProgramSilentLogin({ wxRedirectHandled })) return;
         await applyTemporaryHomePlanetFromUrl();
         finishBootstrap();
         setView('login');
@@ -1906,11 +1960,22 @@ async function markStoryCompleted(story, actor) {
     saveStoryProgress().catch(e => console.warn('保存故事进度失败', e));
 }
 
+const RANDOM_PLANET_NAMES = [
+    '奇奇星', '蛋蛋星', '梦幻星', '彩虹星', '糖糖星', '棉花星', '泡泡星',
+    '星语星', '月光星', '云朵星', '布丁星', '柠檬星', '草莓星', '蘑菇星',
+    '萌萌星', '哈奇星', '果冻星', '雪花星', '繁星岛', '银河小镇',
+];
+
 // 强制弹出命名框，直到玩家给出非空名称（不可关闭）。
+// 微信小程序 web-view 中不弹框，直接随机生成一个名字。
 async function ensurePlanetNamed() {
     if (!state.planetCreatedAt) state.planetCreatedAt = Date.now();
     if (state.planetName && state.planetName.trim()) return;
     let name = '';
+
+    if (isWechatMiniProgram()) {
+        name = RANDOM_PLANET_NAMES[Math.floor(Math.random() * RANDOM_PLANET_NAMES.length)];
+    }
     while (!name) {
         name = await prompt('为你的宠物星球起名', {
             hint: '每位玩家只有一个星球，名字会一直伴随你的游戏旅程～',
@@ -1919,11 +1984,7 @@ async function ensurePlanetNamed() {
             randomText: '🎲 随机',
             maxLength: 12,
             dismissable: false,
-            randomValues: [
-                '奇奇星', '蛋蛋星', '梦幻星', '彩虹星', '糖糖星', '棉花星', '泡泡星',
-                '星语星', '月光星', '云朵星', '布丁星', '柠檬星', '草莓星', '蘑菇星',
-                '萌萌星', '哈奇星', '果冻星', '雪花星', '繁星岛', '银河小镇',
-            ],
+            randomValues: RANDOM_PLANET_NAMES,
             validate: (v) => {
                 if (!v) return '请输入星球名字';
                 if (v.length > 12) return '最多 12 个字';
@@ -2014,6 +2075,12 @@ async function handleLogin() {
     }
 }
 
+// 游客模式下从设置页发起登录：跳到登录页（含隐私协议勾选行），由用户主动勾选并
+// 登录，保证登录前完成协议同意；游客也可在登录页再次选择游客体验返回。
+function handleGuestLogin() {
+    setView('login');
+}
+
 async function handleOfflineMode() {
     try {
         state.offlineMode = true;
@@ -2027,6 +2094,9 @@ async function handleOfflineMode() {
             if (maybeRollDailySickness(pet)) savePetDebounced(pet);
         }
         startTickLoop();
+        // 游客经分享链接进入：与登录路径一致，先直接试玩分享的小游戏（合规：分享
+        // 落地不强制登录），命名 / 领养推迟到退出小游戏时。
+        if (!hasAdoptedRealPet() && await maybeEnterSharedGameForNewUser()) return;
         await ensurePlanetNamed();
         if (await enterForcedViewIfAny()) return;
         if (!hasSelectablePets()) {

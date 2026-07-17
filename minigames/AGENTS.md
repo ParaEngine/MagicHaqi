@@ -255,6 +255,63 @@ function makePetSpriteElement(pet) {
 
 If a response has `ok: false`, read `error` and fall back to a local placeholder. For `haqi_pet_images`, `msg.data.errors` may contain per-pet failures while `msg.data.pets` still contains the pets that are ready.
 
+#### Paid Unlock Points (optional — rewarded ads / VIP)
+
+Progress-gated content (later levels, skins, extra hints) can be put behind an unlock
+point. The mini-game sends **one message** and the MagicHaqi host shows a unified
+unlock dialog (VIP passes for free → watch a rewarded ad → buy KeepWork VIP). The
+game must **not** implement any ad or payment UI itself:
+
+```javascript
+window.parent.postMessage({
+  type: 'haqi_request_unlock',
+  requestId: `unlock_${Date.now()}`,
+  scene: 'level_3',        // scene id, used for ad slots & analytics
+  title: '解锁第3关'        // dialog title shown to the player
+}, '*');
+```
+
+Host replies (all echo the original `requestId` — match on it, not on `scene`):
+
+- `haqi_unlock_ack` — the host took over. Ads/VIP purchase can take a while;
+  cancel any local fallback timer and wait.
+- `haqi_unlock_result` — `{ requestId, ok, unlocked, via }` where `via` is
+  `'vip' | 'ad' | 'member' | 'cancel' | 'error'`.
+- `haqi_vip_status` — `{ isVip }`. You can also query it proactively with
+  `{ type: 'haqi_get_vip_status' }`; hide lock badges for VIP users.
+
+Design rules:
+
+- **An unlock point must never brick the game.** When the file is opened standalone
+  (no host), the `postMessage` may throw or nothing answers: if no `haqi_unlock_ack`
+  arrives within ~1500ms, unlock locally (simulated) so the single file stays
+  playable and testable.
+- **Free first, pay later**: the first 1-2 levels and the core mechanic are always
+  free; put unlock points only on progress content (later levels, skins, hints).
+- Declare unlock points in `game_config` (e.g. `unlockLevels: [3, 5]`; an empty
+  array means everything is free) so the host and AI tools can retune them
+  independently of game logic.
+- Keep unlock state in memory only. VIP/membership is global state owned by the
+  host, and ad unlocks are per-use — do **not** persist "purchased" flags to
+  `localStorage`.
+- **Locked content must still be clickable.** Never set `disabled` / `pointer-events:none`
+  on a locked level/skin button. Show a 🔒 badge, but the click handler must call
+  `haqi_request_unlock` (with requestId + 1500ms fallback). A disabled lock button
+  makes the unlock flow unreachable.
+- **Match host replies by `requestId` only** — never `msg.scene === 'level_3'`.
+  `haqi_unlock_ack` only means the host took over (clear the 1500ms timer); unlock
+  only on `haqi_unlock_result` with `ok && unlocked`. Cancel must not freeze the UI.
+- **Do not break core play while adding unlock.** Forbidden regressions:
+  - canvas / main play surface with `pointer-events: none` / `pointer-events-none`
+    (HUD may use `pointer-events: none` with child buttons `pointer-events: auto`)
+  - init via `window.load` or `DOMContentLoaded` (run at end of script instead;
+    `srcdoc` previews often miss `load`)
+  - rewriting the whole game just to add unlock — patch in helpers + lock-click only
+- **60s smoke test after any unlock change:** free level scores on tap → locked level
+  opens host unlock dialog → cancel returns to level select and free level still works.
+
+See `minigames/test_game.html` for a complete reference implementation.
+
 #### Game State Management
 - Track `gameStarted` flag globally to send `gameLoaded` only once
 - Store high scores in `localStorage` (e.g., `bestScore`, `highestScore`)

@@ -134,7 +134,8 @@
         <section class="section">
           <h2>文本模型</h2>
           <label>模型
-            <select id="textModelSelect"></select>
+            <select id="textModelSelect" class="hidden" aria-hidden="true"></select>
+            <button id="textModelPicker" class="flex w-full items-center justify-between gap-2 text-left" type="button"><span class="min-w-0 overflow-hidden text-ellipsis whitespace-nowrap">等待 SDK</span><span aria-hidden="true">⌄</span></button>
           </label>
           <label>温度
             <input id="temperature" type="number" min="0" max="1.5" step="0.05" value="0.82">
@@ -436,21 +437,28 @@
 
     async function populateModelDropdown() {
       const sdk = state.sdk || window.keepwork;
+      const apiKeySettings = sdk?.apiKeySettings || sdk?.localAPIKeySettings;
       const select = $('textModelSelect');
+      const picker = $('textModelPicker');
       if (!select) return;
-      if (!sdk?.localAPIKeySettings) {
+      if (!apiKeySettings?.listModels) {
         const current = select.value;
         select.innerHTML = '<option value="keepwork-pro">keepwork-pro</option><option value="keepwork-flash">keepwork-flash</option>';
         const remembered = state.lastTextModel || readLocalGenerationSettings().lastTextModel || current;
         if ([...select.options].some(option => option.value === remembered)) select.value = remembered;
         else if ([...select.options].some(option => option.value === current)) select.value = current;
         state.lastTextModel = select.value || state.lastTextModel;
+        picker.disabled = true;
+        picker.querySelector('span').textContent = select.value || 'No Chat models';
         saveLocalGenerationSettings();
         return;
       }
-      await sdk.localAPIKeySettings.load?.();
+      await apiKeySettings.load?.();
+      if (!apiKeySettings.listModels('Chat').some(model => model.enabled !== false)) {
+        try { await apiKeySettings.refreshModels?.('keepwork'); } catch (_) {}
+      }
       const current = select.value;
-      const models = sdk.localAPIKeySettings.listModels('Chat').filter(model => model.enabled !== false);
+      const models = apiKeySettings.listModels('Chat').filter(model => model.enabled !== false);
       select.innerHTML = models.length
         ? models.map(model => {
             const value = model.name || model.modelId || '';
@@ -463,10 +471,31 @@
       else if ([...select.options].some(option => option.value === current)) select.value = current;
       else if ([...select.options].some(option => option.value === 'keepwork-pro')) select.value = 'keepwork-pro';
       state.lastTextModel = select.value || remembered || state.lastTextModel;
+      picker.disabled = !models.length && !apiKeySettings.showModelPicker;
+      picker.querySelector('span').textContent = select.value || 'No Chat models';
       saveLocalGenerationSettings();
     }
 
-    const SDK_CDN_URL = 'https://cdn.keepwork.com/sdk/keepworkSDK.iife.js?v=20260619a';
+    function openTextModelPicker() {
+      const sdk = state.sdk || window.keepwork;
+      const apiKeySettings = sdk?.apiKeySettings || sdk?.localAPIKeySettings;
+      if (!apiKeySettings?.showModelPicker) return setStatus($('loginState'), '当前 SDK 不支持模型选择窗口。', 'error');
+      const select = $('textModelSelect');
+      const picker = $('textModelPicker');
+      apiKeySettings.showModelPicker({
+        anchor: picker,
+        category: 'Chat',
+        selectedModel: select.value,
+        onSelect: model => {
+          if (![...select.options].some(option => option.value === model)) select.add(new Option(model, model));
+          select.value = model;
+          picker.querySelector('span').textContent = model;
+          select.dispatchEvent(new Event('change', { bubbles: true }));
+        },
+      });
+    }
+
+    const SDK_CDN_URL = 'https://cdn.keepwork.com/sdk/keepworkSDK.iife.js?v=20260715a';
 
     function loadScript(src) {
       return new Promise((resolve, reject) => {
@@ -506,7 +535,6 @@
           else await loadScript(url);
           if (window.keepwork) {
             state.sdk = window.keepwork;
-            await state.sdk.localAPIKeySettings?.load?.();
             $('sdkState').textContent = 'SDK ready';
             await populateModelDropdown();
             await refreshLoginState();
@@ -1596,7 +1624,8 @@
     function bindEvents() {
       $('btnLocalApi').onclick = async () => {
         const sdk = state.sdk || window.keepwork;
-        if (sdk?.localAPIKeySettings?.show) await sdk.localAPIKeySettings.show({
+        const settings = sdk?.apiKeySettings || sdk?.localAPIKeySettings;
+        if (settings?.show) await settings.show({
           title: '本地 API Key 设置',
           fullscreen: true,
           onSave: async () => { await populateModelDropdown(); await refreshLoginState(); },
@@ -1604,6 +1633,7 @@
         await populateModelDropdown();
         await refreshLoginState();
       };
+      $('textModelPicker').onclick = openTextModelPicker;
       $('textModelSelect').onchange = () => { state.lastTextModel = $('textModelSelect').value; saveLocalGenerationSettings(); };
       $('btnOpenStoryIndex').onclick = () => openWorkspaceViewer(STORY_INDEX_PATH);
       $('btnReloadPets').onclick = async () => { await loadPets(); renderActorList(); };

@@ -55,6 +55,11 @@ const FIELD_PET_REPEL_MIN_GAP = 0.018;
 // 按 NPC 缩放比例开根号微调，避免大缩放 NPC 把宠物推得太远。
 const FIELD_NPC_AVOID_X = 0.02;
 const FIELD_NPC_AVOID_Y = 0.035;
+const FIELD_NPC_PLACEMENT_AVOID_X = 0.052;
+const FIELD_NPC_PLACEMENT_AVOID_Y = 0.12;
+const FIELD_NPC_NEAR_PET_MIN_RADIUS = 0.085;
+const FIELD_NPC_NEAR_PET_RANDOM_RADIUS = 0.075;
+const FIELD_NPC_NEAR_PET_Y_SCALE = 0.82;
 // 宠物在地表层的纵向落点上限（归一化 0=顶 1=底）。
 // 底部预留空间，避免与底部的等级条 UI（level bar）重叠。
 const FIELD_PET_MAX_Y = 0.82;
@@ -1442,26 +1447,64 @@ function getCurrentFieldBackground(fieldId = state.currentField) {
     return { imageUrl: '', gradient: customBg?.color || theme.sky };
 }
 
-// 星球编辑器摆放的静态 NPC：位置固定，不参与玩家的家具布局存档。
+// 星球编辑器摆放的 NPC 不参与玩家的家具布局存档；部分 NPC 可在运行时自动站到主宠物身边。
 function currentFieldNpcs(fieldId = state.currentField) {
     const custom = isVisitingMode() ? visitingFieldSceneConfig(fieldId) : currentFieldSceneConfig(fieldId);
     return Array.isArray(custom.npcs) ? custom.npcs : [];
 }
 
-// 有对话/小游戏的"非摆设" NPC 视为静态障碍点，供宠物走位 / 便便掉落点绕开（哑巴 NPC 已在存档时被过滤掉，见 config.js normalizeFieldNpcs）。
+function positionedFieldNpcs(fieldId = state.currentField, mainPet = getPet(state.currentPetId)) {
+    const npcs = currentFieldNpcs(fieldId);
+    const mainPosition = mainPet?.id ? petFieldPosition(mainPet, fieldId, 0) : null;
+    const placed = npcs
+        .filter(npc => !npc?.randomNearMainPet)
+        .map(npc => fieldNpcPlacementPoint(npc));
+    if (mainPosition) placed.push({ x: mainPosition.x, y: mainPosition.y });
+    return npcs.map((npc, index) => {
+        if (!npc?.randomNearMainPet || !mainPosition) return npc;
+        const rng = makeRng(`${getUserSeedBase()}::${fieldId}::npc-near-main::${npc.id || index}`);
+        const angle = rng() * Math.PI * 2;
+        const radius = FIELD_NPC_NEAR_PET_MIN_RADIUS + rng() * FIELD_NPC_NEAR_PET_RANDOM_RADIUS;
+        const pos = repelFieldPetPosition({
+            id: `npc-${npc.id || index}`,
+            fieldId,
+            pos: {
+                x: clampRange(mainPosition.x + Math.cos(angle) * radius, 0.08, 0.92),
+                y: clampRange(mainPosition.y + Math.sin(angle) * radius * FIELD_NPC_NEAR_PET_Y_SCALE, 0.36, FIELD_PET_MAX_Y),
+            },
+        }, placed, index);
+        const positioned = { ...npc, x: pos.x * 100, y: pos.y * 100 };
+        placed[placed.length - 1] = fieldNpcPlacementPoint(positioned);
+        return positioned;
+    });
+}
+
+function fieldNpcPlacementPoint(npc) {
+    const point = fieldNpcAvoidancePoint(npc);
+    const scaleFactor = Math.sqrt(Number(npc?.scale) > 0 ? Number(npc.scale) : 1);
+    return {
+        ...point,
+        radiusX: FIELD_NPC_PLACEMENT_AVOID_X * scaleFactor,
+        radiusY: FIELD_NPC_PLACEMENT_AVOID_Y * scaleFactor,
+    };
+}
+
+function fieldNpcAvoidancePoint(npc) {
+    const scale = Number(npc?.scale) > 0 ? Number(npc.scale) : 1;
+    const scaleFactor = Math.sqrt(scale);
+    return {
+        x: clamp01((Number(npc?.x) || 0) / 100),
+        y: clamp01((Number(npc?.y) || 0) / 100),
+        radiusX: FIELD_NPC_AVOID_X * scaleFactor,
+        radiusY: FIELD_NPC_AVOID_Y * scaleFactor,
+    };
+}
+
+// 有对话/小游戏的 NPC 视为障碍点，供宠物走位 / 便便掉落点绕开（哑巴 NPC 已在存档时被过滤掉，见 config.js normalizeFieldNpcs）。
 function fieldNpcAvoidancePoints(fieldId = state.currentField) {
-    return currentFieldNpcs(fieldId)
+    return positionedFieldNpcs(fieldId)
         .filter(npc => (npc?.dialog?.length > 0) || npc?.minigame)
-        .map(npc => {
-            const scale = Number(npc?.scale) > 0 ? Number(npc.scale) : 1;
-            const scaleFactor = Math.sqrt(scale);
-            return {
-                x: clamp01((Number(npc?.x) || 0) / 100),
-                y: clamp01((Number(npc?.y) || 0) / 100),
-                radiusX: FIELD_NPC_AVOID_X * scaleFactor,
-                radiusY: FIELD_NPC_AVOID_Y * scaleFactor,
-            };
-        });
+        .map(fieldNpcAvoidancePoint);
 }
 
 // 裁剪局部区域的 NPC 图标：把 .field-npc-img 的宽高改成裁剪区域的真实宽高比，避免拉伸变形。
@@ -2437,7 +2480,7 @@ export const fieldLevel = {
 
 
             <div class="field-npcs">
-                ${currentFieldNpcs(fld.id).map(fieldNpcHtml).join('')}
+                ${positionedFieldNpcs(fld.id, pet).map(fieldNpcHtml).join('')}
             </div>
 
             <div class="field-poops">
@@ -2525,7 +2568,7 @@ export const fieldLevel = {
                 const npc = currentFieldNpcs(fld.id).find(item => item.id === el.dataset.npcId);
                 if (!npc) return;
                 openNpcDialog(npc, {
-                    onFinished: () => {
+                    onConfirmed: () => {
                         if (npc.minigame) ctx.callbacks.onLaunchNpcMinigame?.(npc);
                     },
                 });

@@ -6,7 +6,7 @@ import { t, getLang } from './i18n.js';
 import { state } from './state.js';
 import { CONFIG } from './config.js';
 import { savePetGame } from './storage.js';
-import { handleMinigamePetMessage, pushActivePetConfigToFrame } from './view_minigames.js';
+import { handleMinigamePetMessage, handleMinigameUnlockMessage, pushActivePetConfigToFrame } from './view_minigames.js';
 import { openGameMakerSettings, closeGameMakerSettings } from './view_game_maker_settings.js';
 import { handleGameHostMessage, loadGameHtmlIntoFrame } from './gameHostFrame.js';
 
@@ -1283,7 +1283,6 @@ export function renderGameMaker(panel, { game = null, mode = 'game', materials =
                     <div class="mh-gm-toolbar">
                         <div class="mh-gm-modelwrap">
                             <button type="button" class="mh-gm-model-btn" id="mhGmModelBtn" title="${escapeHtml(t('mgGameModelLabel'))}" aria-label="${escapeHtml(t('mgGameModelLabel'))}"></button>
-                            <div class="mh-gm-model-list" id="mhGmModelList"></div>
                         </div>
                         <button type="button" class="mh-gm-toolbtn" id="mhGmConfig" title="${escapeHtml(t('mgGameConfigLabel'))}" aria-label="${escapeHtml(t('mgGameConfigLabel'))}">
                             <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="4" y1="21" x2="4" y2="14"/><line x1="4" y1="10" x2="4" y2="3"/><line x1="12" y1="21" x2="12" y2="12"/><line x1="12" y1="8" x2="12" y2="3"/><line x1="20" y1="21" x2="20" y2="16"/><line x1="20" y1="12" x2="20" y2="3"/><line x1="1" y1="14" x2="7" y2="14"/><line x1="9" y1="8" x2="15" y2="8"/><line x1="17" y1="16" x2="23" y2="16"/></svg>
@@ -1356,8 +1355,6 @@ export function renderGameMaker(panel, { game = null, mode = 'game', materials =
     const workBuddyBtn = $('mhGmWorkBuddy');
     const pasteWorkBuddyBtn = $('mhGmPasteWorkBuddy');
     const modelBtn = $('mhGmModelBtn');
-    const modelList = $('mhGmModelList');
-    let modelOpen = false;
     
     // Image attachment state
     const attachedImages = []; // Array of { id, dataUrl, file }
@@ -1466,12 +1463,14 @@ export function renderGameMaker(panel, { game = null, mode = 'game', materials =
         const models = listChatModels();
         const match = models.find((m) => modelValue(m) === selectedModel);
         if (match) { modelBtn.textContent = modelLabel(match); return; }
-        modelBtn.textContent = !selectedModel && models.length && !isDefaultModelUsable()
+        // 选中的模型不在 listChatModels() 里（如 SDK 内置的 Free/openrouter-* 共享模型
+        // 只存在于 showModelPicker 的目录中）时，直接显示所选名称，而不是回退成「默认模型」。
+        if (selectedModel) { modelBtn.textContent = selectedModel; return; }
+        modelBtn.textContent = models.length && !isDefaultModelUsable()
             ? (modelLabel(models[0]) || t('mgGameModelDefault'))
             : t('mgGameModelDefault');
     }
     function populateModelSelect() {
-        if (!modelList) return;
         // 本地 API key 关闭时使用 Keepwork 服务端模型列表；未加载完成则异步加载后重新渲染。
         if (!isLocalApiKeyEnabled() && !keepworkModelsCache) {
             loadKeepworkModels().then(() => { populateModelSelect(); });
@@ -1483,21 +1482,35 @@ export function renderGameMaker(panel, { game = null, mode = 'game', materials =
             selectedModel = modelValue(models[0]);
             savePreferredModel(selectedModel);
         }
-        const items = defaultUsable
-            ? [`<button type="button" class="mh-gm-model-item${!selectedModel ? ' active' : ''}" data-mh-gm-model-val="">${escapeHtml(t('mgGameModelDefault'))}</button>`]
-            : [];
-        for (const m of models) {
-            const value = modelValue(m);
-            const active = value === selectedModel ? ' active' : '';
-            items.push(`<button type="button" class="mh-gm-model-item${active}" data-mh-gm-model-val="${escapeHtml(value)}">${escapeHtml(modelLabel(m))}</button>`);
-        }
-        modelList.innerHTML = items.join('');
         updateModelBtnLabel();
     }
-    function closeModelList() { modelOpen = false; if (modelList) modelList.classList.remove('open'); }
-    function toggleModelList() {
-        modelOpen = !modelOpen;
-        if (modelList) modelList.classList.toggle('open', modelOpen);
+
+    async function showChatModelPicker(anchor = modelBtn, onSelect) {
+        const sdk = state.sdk || window.keepwork;
+        const settings = sdk?.apiKeySettings || sdk?.localAPIKeySettings;
+        if (!settings?.showModelPicker) {
+            showToast(t('mgGameAiUnavailable'), 'info', 1600);
+            return;
+        }
+        await settings.load?.();
+        if (!settings.listModels?.('Chat')?.some((model) => model.enabled !== false)) {
+            try { await settings.refreshModels?.('keepwork'); } catch (_) {}
+        }
+        settings.showModelPicker({
+            anchor,
+            category: 'Chat',
+            selectedModel,
+            // 保持短列表：Keepwork 目录里只留 keepwork-* 抽象模型（max/pro/flash），
+            // 隐藏服务端全量托管的 openrouter-* 等条目；Free 共享模型与用户自配的
+            // 第三方 provider 模型不受影响。旧版 SDK 无 filter 参数时会被忽略（全量列表）。
+            filter: (model) => model?.provider !== 'keepwork' || /^keepwork-/i.test(model?.id || ''),
+            onSelect: (model) => {
+                selectedModel = model || '';
+                savePreferredModel(selectedModel);
+                updateModelBtnLabel();
+                onSelect?.(selectedModel);
+            },
+        });
     }
 
     // ---------- 历史会话（仅本地 IndexedDB，永久保存在用户本机） ----------
@@ -2498,6 +2511,8 @@ export function renderGameMaker(panel, { game = null, mode = 'game', materials =
             if (handleGameHostMessage(previewFrame, e.data || {})) return;
             // 宠物形象请求：交由共享处理器回复 haqi_pet_image(s)。
             if (handleMinigamePetMessage(previewFrame, e.data || {})) return;
+            // 混合解锁：看广告 / 开通会员 / 查询 VIP 状态（与正式 minigame 宿主一致）。
+            if (handleMinigameUnlockMessage(previewFrame, e.data || {})) return;
         }
         const d = e?.data;
         if (!d || d.__mhGmError !== true || d.token !== ERR_FRAME_TOKEN) return;
@@ -4340,19 +4355,7 @@ ${ideaLine}`;
     }
 
     // 模型选择：记住选择，供后续生成使用。
-    modelBtn?.addEventListener('click', (e) => { e.stopPropagation(); toggleModelList(); });
-    modelList?.addEventListener('click', (e) => {
-        const item = e.target.closest?.('[data-mh-gm-model-val]');
-        if (!item) return;
-        selectedModel = item.dataset.mhGmModelVal || '';
-        savePreferredModel(selectedModel);
-        updateModelBtnLabel();
-        // 更新 active 样式
-        modelList.querySelectorAll('.mh-gm-model-item').forEach(btn => {
-            btn.classList.toggle('active', btn.dataset.mhGmModelVal === selectedModel);
-        });
-        closeModelList();
-    });
+    modelBtn?.addEventListener('click', (e) => { e.stopPropagation(); showChatModelPicker(modelBtn); });
 
     // 历史会话：切换弹层 + 选择某条历史 / 删除某条 / 清空全部。
     historyBtn.onclick = (e) => { e.stopPropagation(); toggleHistoryPop(); };
@@ -4385,52 +4388,20 @@ ${ideaLine}`;
     pasteWorkBuddyBtn.onclick = importWorkBuddyGameFromClipboard;
 
     // 设置弹窗（全局 / 游戏配置 / 美术资源三个标签页）。
-    // 通过 ctx 把工坊的状态读写、模型列表、emoji 选择器、本地 API 设置、持久化逻辑桥接给设置模块。
+    // 通过 ctx 把工坊的状态读写、emoji 选择器和持久化逻辑桥接给设置模块。
     configBtn.onclick = () => {
         openGameMakerSettings(panel, {
             getName: () => gameName,
             setName: (v) => { gameName = String(v || ''); },
             getIcon: () => gameIcon,
             setIcon: (v) => { gameIcon = String(v || '🎮'); },
-            getModel: () => selectedModel,
-            setModel: (v) => { selectedModel = v || ''; savePreferredModel(selectedModel); },
             getHtml: () => currentHtml,
             setHtml: (v) => { currentHtml = String(v || ''); },
-            listChatModels,
-            modelValue,
-            modelLabel,
-            // 本地 API Key 全局开关（绿色/灰色切换），改动后立即刷新模型下拉。
-            // 关闭本地 key 时需要等 Keepwork 服务端模型列表加载完，调用方可 await 后再刷新自己的 UI。
-            isLocalApiKeyEnabled,
-            setLocalApiKeyEnabled: async (v) => {
-                const sdk = state.sdk || window.keepwork;
-                try { if (sdk?.localAPIKeySettings) sdk.localAPIKeySettings.enabled = !!v; } catch (_) {}
-                if (!v) { try { await loadKeepworkModels(); } catch (_) {} }
-                populateModelSelect();
-            },
             showEmojiDialog,
-            // 设置里改了标题/图标/模型后，同步刷新工坊顶栏与模型下拉。
+            // 设置里改了标题/图标后，同步刷新工坊顶栏。
             onApplyMeta: () => {
                 if (nameEl) nameEl.value = gameName;
                 if (iconBtn) iconBtn.textContent = gameIcon || '🎮';
-                populateModelSelect();
-            },
-            // 打开本地 API Key 设置（与原行为一致），保存/关闭后刷新模型列表。
-            // onChange: 设置窗内有改动（含启用开关）保存/关闭后回调，供调用方刷新自身 UI（如全局页开关）。
-            openLocalApiSettings: async (onChange) => {
-                const sdk = state.sdk || window.keepwork;
-                const refresh = () => { populateModelSelect(); try { onChange?.(); } catch (_) {} };
-                if (sdk?.localAPIKeySettings?.show) {
-                    sdk.localAPIKeySettings.show({
-                        title: t('mgGameConfigTitle'),
-                        fullscreen: true,
-                        onSave: refresh,
-                        onClose: refresh,
-                    });
-                } else {
-                    showToast(t('mgGameAiUnavailable'), 'info', 1600);
-                }
-                populateModelSelect();
             },
             // 游戏配置 / 美术资源写回 game.html 后：刷新预览并静默持久化，
             // 并把这次代码改动并入「上一条」历史项（与文件弹窗手动编辑一致），便于之后回退/还原。
@@ -4448,10 +4419,9 @@ ${ideaLine}`;
         });
     };
 
-    // 点击别处关闭历史弹层、emoji 选择器和模型列表。
+    // 点击别处关闭历史弹层和 emoji 选择器。
     const onDocPointerDown = (e) => {
         if (historyOpen && !historyPop?.contains(e.target) && !historyBtn?.contains(e.target)) closeHistoryPop();
-        if (modelOpen && !modelList?.contains(e.target) && !modelBtn?.contains(e.target)) closeModelList();
         const streamPopup = $('mhGmStreamPopup');
         if (streamPopupState?.pinned && streamPopup && !streamPopup.contains(e.target) && !e.target.closest?.('[data-mh-gm-stream-msg]')) hideStreamPopup(true);
     };

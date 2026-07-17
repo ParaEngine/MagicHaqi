@@ -197,7 +197,7 @@
 		<div class="start-window" role="dialog" aria-modal="true" aria-label="Select Three.js Model Project">
 			<section class="start-hero">
 				<div class="flex flex-col gap-3">
-					<div class="inline-flex w-fit rounded-full bg-white/15 px-3 py-1 text-xs font-semibold ring-1 ring-white/20">Workspace: ThreeJsModels</div>
+					<div class="inline-flex w-fit rounded-full bg-white/15 px-3 py-1 text-xs font-semibold ring-1 ring-white/20">Workspace: <span id="startWorkspaceLabel" class="ml-1">ThreeJsModels</span></div>
 					<div>
 						<h1 class="text-3xl font-black leading-tight">Three.js Model Generator</h1>
 						<p class="mt-3 text-sm leading-6 text-sky-50">点 3D 对象 → 定位代码 → 拖滑块改真实参数。零侵入精修 AI 生成的 Three.js 模型，管理 snippet 并按需导出干净源码。</p>
@@ -257,12 +257,12 @@
 						<button id="btnLocalApi" type="button">本地 API Key</button>
 						<button id="btnRefreshProjects" type="button">刷新</button>
 					</div>
-					<div class="hint">PersonalPageStore workspace: <strong>ThreeJsModels</strong></div>
+					<div class="hint">PersonalPageStore workspace: <strong id="workspaceLabel">ThreeJsModels</strong></div>
 				</section>
 
 				<section class="section">
 					<h2>Models (AI 生成/精修)</h2>
-					<label>Chat model <select id="chatModelSelect"><option value="">等待 SDK</option></select></label>
+					<label>Chat model <select id="chatModelSelect" class="hidden" aria-hidden="true"><option value="">等待 SDK</option></select><button id="chatModelPicker" class="flex w-full items-center justify-between gap-2 text-left" type="button"><span class="min-w-0 overflow-hidden text-ellipsis whitespace-nowrap">等待 SDK</span><span aria-hidden="true">⌄</span></button></label>
 					<div class="hint">选中代码块后可让 Chat 模型局部精修（只改相关行，省 token）。</div>
 				</section>
 
@@ -334,7 +334,8 @@
 		mountThreeModelDevtools,
 	} from './ThreeJsModelGenerator.js';
 
-	const WORKSPACE = 'ThreeJsModels';
+	const DEFAULT_WORKSPACE = 'ThreeJsModels';
+	const EMBEDDED_MOUNT_FOLDER = 'ThreeJsModels';
 	const REMOTE_STORE = 'edunotes/store';   // PersonalPageStore mount under which withWorkspace(WORKSPACE) lives; used to build cross-user absolute read paths //<user>/edunotes/store/ThreeJsModels/...
 	const PROJECT_DIR = 'projects';
 	const MODEL_DIR = 'models';   // per-snippet source files live here, parallel to projects/
@@ -345,6 +346,7 @@
 	const $ = (id) => document.getElementById(id);
 	const state = {
 		sdk: null, widget: null,
+		storageWorkspace: DEFAULT_WORKSPACE, storageMountFolder: '',
 		projects: [], project: null, selectedSnippetId: '',
 		selectedSnippetIds: new Set(), batch: null,
 		lastProjectPath: '', appStarted: false, lastUsername: '',
@@ -426,6 +428,7 @@
 	}
 	function clone(value) { return JSON.parse(JSON.stringify(value ?? null)); }
 	function fileNameFromPath(path = '') { return String(path || '').replace(/\\/g, '/').split('/').pop() || String(path || ''); }
+	function storageLabel() { return [state.storageWorkspace, state.storageMountFolder].filter(Boolean).join('/'); }
 	function projectPath(id = state.project?.project?.id) { return `${PROJECT_DIR}/${safeId(id, 'three_models')}.json`; }
 	/* Per-snippet source file path: models/<name>_<fileStamp>.<ext>.md, parallel to projects/<id>.json.
 	   The snippet.fileStamp (immutable creation timestamp) is injected before the file extension so
@@ -765,7 +768,9 @@
 	function getWorkspaceStore() {
 		const sdk = state.sdk || window.keepwork;
 		if (!sdk?.personalPageStore) throw new Error('PersonalPageStore 不可用');
-		return typeof sdk.personalPageStore.withWorkspace === 'function' ? sdk.personalPageStore.withWorkspace(WORKSPACE) : sdk.personalPageStore;
+		return typeof sdk.personalPageStore.withWorkspace === 'function'
+			? sdk.personalPageStore.withWorkspace(state.storageWorkspace, state.storageMountFolder || null)
+			: sdk.personalPageStore;
 	}
 	// Read from the current user's own workspace, ignoring any active share (relative path only).
 	async function readOwnFile(path) {
@@ -811,9 +816,11 @@
 		updateCurrentFileLabel();
 	}
 	function updateCurrentFileLabel() {
+		if ($('startWorkspaceLabel')) $('startWorkspaceLabel').textContent = storageLabel();
+		if ($('workspaceLabel')) $('workspaceLabel').textContent = storageLabel();
 		const path = state.project?.project?.id ? projectPath(state.project.project.id) : '';
 		if ($('currentFileLabel')) {
-			$('currentFileLabel').textContent = path ? `${WORKSPACE}/${path}` : 'No project file loaded.';
+			$('currentFileLabel').textContent = path ? `${storageLabel()}/${path}` : 'No project file loaded.';
 			$('currentFileLabel').disabled = !path;
 		}
 	}
@@ -853,6 +860,7 @@
 		await writeProjectIndexEntry(state.project.project);
 		state.projectMetaDirty = false;
 		state.lastProjectPath = path;
+		rememberAIChatProject(path);
 		return path;
 	}
 	async function saveProject() {
@@ -878,7 +886,8 @@
 		const parts = [];
 		if (sourceWrites.length) parts.push(`${sourceWrites.length} 个源码 → ${MODEL_DIR}/`);
 		parts.push(writeProjectFile ? `项目文件已更新` : `项目文件无变化（仅源码改动）`);
-		setStatus($('runStatus'), `已保存：${WORKSPACE}/${path}（${parts.join('；')}）`, 'ok');
+		rememberAIChatProject(path);
+		setStatus($('runStatus'), `已保存：${storageLabel()}/${path}（${parts.join('；')}）`, 'ok');
 		saveLocalDraft();
 	}
 	async function loadSelectedProject(pathOverride = '') {
@@ -896,6 +905,7 @@
 		// (see ensureSnippetSource) when a snippet is selected/mounted/exported/generated.
 		applyProjectToForm(data);
 		state.lastProjectPath = path;
+		rememberAIChatProject(path);
 		// A freshly loaded project is fully in sync with the store → clear all dirty marks…
 		state.projectMetaDirty = false;
 		state.dirtySources.clear();
@@ -903,7 +913,7 @@
 		if (hasInlineSource) state.projectMetaDirty = true;
 		const pending = autoSelectUngeneratedSnippets();   // pre-check models that were never generated
 		saveLocalDraft();
-		setStatus($('runStatus'), `已加载项目：${WORKSPACE}/${path}（${data.snippets.length} 个 snippet，${pending} 个未生成已勾选）`, 'ok');
+		setStatus($('runStatus'), `已加载项目：${storageLabel()}/${path}（${data.snippets.length} 个 snippet，${pending} 个未生成已勾选）`, 'ok');
 	}
 	/* Lazy-load a single snippet's source from its models/<file>.js.md file on demand.
 	   A snippet is considered "persisted" when it has a sourcePath (new format) or a fileStamp
@@ -977,7 +987,7 @@
 		project.project.name = $('startNewProjectName').value.trim() || id;
 		applyProjectToForm(project);
 		hideStartScreen();
-		setStatus($('runStatus'), `已创建新项目草稿：${project.project.id}。点击 Save 保存到 ${WORKSPACE}。`, 'ok');
+		setStatus($('runStatus'), `已创建新项目草稿：${project.project.id}。点击 Save 保存到 ${storageLabel()}。`, 'ok');
 	}
 
 	/* ===== workspace viewer (browse the saved project file in PersonalPageStore) ===== */
@@ -992,13 +1002,13 @@
 		overlay.className = 'modal-overlay';
 		overlay.id = 'workspaceOverlay';
 		overlay.innerHTML = `<div class="modal-window" role="dialog" aria-modal="true" aria-label="WorkspaceViewer" style="width:min(1180px,100%);height:min(780px,calc(100vh - 36px))">
-			<div class="modal-titlebar"><strong>WorkspaceViewer · ${WORKSPACE}/${escapeHtml(targetFile)}</strong><button type="button" id="closeWorkspaceViewer">关闭</button></div>
+			<div class="modal-titlebar"><strong>WorkspaceViewer · ${storageLabel()}/${escapeHtml(targetFile)}</strong><button type="button" id="closeWorkspaceViewer">关闭</button></div>
 			<div class="modal-body p-0" id="workspaceHost" style="padding:0"></div>
 		</div>`;
 		document.body.appendChild(overlay);
 		overlay.addEventListener('click', event => { if (event.target === overlay) closeWorkspaceViewer(); });
 		$('closeWorkspaceViewer').onclick = closeWorkspaceViewer;
-		state.workspaceViewer = window.createWorkspaceViewer({ container: $('workspaceHost'), sdk: state.sdk || window.keepwork, workspace: WORKSPACE, mountFolder: '', file: targetFile, compact: true, hideUserInfo: true });
+		state.workspaceViewer = window.createWorkspaceViewer({ container: $('workspaceHost'), sdk: state.sdk || window.keepwork, workspace: state.storageWorkspace, mountFolder: state.storageMountFolder, file: targetFile, compact: true, hideUserInfo: true });
 	}
 	function closeWorkspaceViewer() {
 		try { state.workspaceViewer?.destroy?.(); } catch (_) {}
@@ -1729,6 +1739,37 @@
 		if (!isAIChatEmbedded()) return;
 		window.parent.postMessage({ channel: AICHAT_TOOL_CHANNEL, type, ...detail }, '*');
 	}
+	function rememberAIChatProject(path = state.lastProjectPath) {
+		if (!isAIChatEmbedded() || !path) return;
+		notifyAIChat('tool:cache:set', {
+			requestId: `threejs-project-${Date.now()}-${++aiChatBridge.seq}`,
+			key: 'lastProjectPath',
+			value: String(path),
+		});
+	}
+	async function applyAIChatHostContext(msg) {
+		const workspace = msg?.workspace;
+		if (workspace?.type === 'project' && workspace.workspace) {
+			state.storageWorkspace = workspace.workspace;
+			state.storageMountFolder = [workspace.folderPath, EMBEDDED_MOUNT_FOLDER]
+				.filter(Boolean).join('/').replace(/^\/+|\/+$/g, '');
+		} else {
+			state.storageWorkspace = DEFAULT_WORKSPACE;
+			state.storageMountFolder = '';
+		}
+		updateCurrentFileLabel();
+		if (!state.sdk && !window.keepwork) return;
+		await refreshProjects().catch(() => {});
+		const path = typeof msg?.cache?.lastProjectPath === 'string' ? msg.cache.lastProjectPath : '';
+		if (!path) return;
+		try {
+			setStartStatus(`Opening session project: ${fileNameFromPath(path)}...`, '');
+			await loadSelectedProject(path);
+			hideStartScreen();
+		} catch (error) {
+			setStartStatus(`Could not open session project: ${error.message}`, 'error');
+		}
+	}
 	function requestAIChatModel({ requestId = '', displayPrompt = '', messages, onMessage, onReasoning } = {}) {
 		if (!isAIChatEmbedded()) return Promise.reject(new Error('AIChat host is unavailable'));
 		const id = requestId || `threejs-llm-${Date.now()}-${++aiChatBridge.seq}`;
@@ -1776,9 +1817,10 @@
 		if (msg.type === 'host:init') {
 			aiChatBridge.host = msg;
 			window.__AIChatHostContext = msg;
+			await applyAIChatHostContext(msg);
 			notifyAIChat('tool:ready', {
 				toolId: 'threejs-model-generator',
-				capabilities: ['prompt', 'model', 'workspace-context'],
+				capabilities: ['prompt', 'model', 'workspace-context', 'conversation-cache'],
 			});
 			return;
 		}
@@ -1808,7 +1850,7 @@
 			notifyAIChat('tool:status', { requestId: msg.requestId, status: 'error', message: error?.message || String(error) });
 		}
 	});
-	if (window.parent !== window) notifyAIChat('tool:ready', { toolId: 'threejs-model-generator', capabilities: ['prompt'] });
+	if (window.parent !== window) notifyAIChat('tool:ready', { toolId: 'threejs-model-generator', capabilities: ['prompt', 'workspace-context', 'conversation-cache'] });
 
 	/* ===== shared chat helper + AI source generation ===== */
 	function splitList(value) {
@@ -2373,7 +2415,7 @@
 		// Someone else's models → read from their store (remoteReadBase) in read-only mode. Own link →
 		// read from our own store, fully editable. Either way we read + filter + apply ONCE (a second
 		// applyProjectToForm would race the async mountEditor and stack two 3D windows).
-		if (!isOwn) state.remoteReadBase = `//${owner}/${REMOTE_STORE}/${WORKSPACE}`;
+		if (!isOwn) state.remoteReadBase = `//${owner}/${REMOTE_STORE}/${DEFAULT_WORKSPACE}`;
 		// Mark a shared view either way: readonly for others' models, editable for your own link. Both expose
 		// the "save to another project" action; only others' shares hide the in-place Save.
 		state.shareContext = { owner, readonly: !isOwn };
@@ -2481,7 +2523,7 @@
 	}
 
 	/* ===== SDK loading ===== */
-	const SDK_CDN_URL = 'https://cdn.keepwork.com/sdk/keepworkSDK.iife.js?v=20260619a';
+	const SDK_CDN_URL = 'https://cdn.keepwork.com/sdk/keepworkSDK.iife.js?v=20260715a';
 	function getSdkCandidates() {
 		const params = new URLSearchParams(window.location.search);
 		const explicitSdk = params.get('sdk');
@@ -2512,12 +2554,16 @@
 					$('sdkState').textContent = 'SDK ready';
 					await populateModelDropdowns();
 					await refreshLoginState();
-					await refreshProjects().catch(() => {});
-					// ?username=&profile=&filenames= opens a shared view instead of auto-opening the last project.
-					const sp = new URLSearchParams(window.location.search);
-					const shareUser = sp.get('username'), shareProfile = sp.get('profile');
-					if (shareUser && shareProfile) await openSharedView(shareUser, shareProfile, (sp.get('filenames') || '').split(',').map(s => s.trim()).filter(Boolean));
-					else await autoOpenLastProject();
+					if (aiChatBridge.host) {
+						await applyAIChatHostContext(aiChatBridge.host);
+					} else {
+						await refreshProjects().catch(() => {});
+						// ?username=&profile=&filenames= opens a shared view instead of auto-opening the last project.
+						const sp = new URLSearchParams(window.location.search);
+						const shareUser = sp.get('username'), shareProfile = sp.get('profile');
+						if (shareUser && shareProfile) await openSharedView(shareUser, shareProfile, (sp.get('filenames') || '').split(',').map(s => s.trim()).filter(Boolean));
+						else if (sp.get('autoLoadLastProject') !== '0') await autoOpenLastProject();
+					}
 					if ($('startProjectList')?.textContent.includes('Loading project files')) renderStartProjectList(state.projects);
 					return;
 				}
@@ -2576,12 +2622,16 @@
 	}
 	async function populateModelDropdowns() {
 		const sdk = state.sdk || window.keepwork;
-		if (!sdk?.localAPIKeySettings?.listModels) return;
-		await sdk.localAPIKeySettings.load?.();
+		const apiKeySettings = sdk?.apiKeySettings || sdk?.localAPIKeySettings;
+		if (!apiKeySettings?.listModels) return;
+		await apiKeySettings.load?.();
+		if (!apiKeySettings.listModels('Chat').some(model => model.enabled !== false)) {
+			try { await apiKeySettings.refreshModels?.('keepwork'); } catch (_) {}
+		}
 		const settings = loadSettings();
 		const remembered = state.project?.project?.models?.chat || settings.chatModel;
 		const select = $('chatModelSelect');
-		const models = sdk.localAPIKeySettings.listModels('Chat').filter(m => m.enabled !== false);
+		const models = apiKeySettings.listModels('Chat').filter(m => m.enabled !== false);
 		select.innerHTML = models.length ? models.map(m => {
 			const value = m.name || m.modelId || '';
 			const label = m.modelId && m.modelId !== value ? `${value} (${m.modelId})` : value;
@@ -2589,10 +2639,30 @@
 		}).join('') : '<option value="">No Chat models</option>';
 		select.disabled = !models.length;
 		if (remembered && models.some(m => (m.name || m.modelId || '') === remembered)) select.value = remembered;
+		const picker = $('chatModelPicker');
+		picker.disabled = !models.length && !apiKeySettings.showModelPicker;
+		picker.querySelector('span').textContent = select.value || 'No Chat models';
 		// 持久化「实际生效的默认模型」到 localStorage —— 即便是浏览器自动选中的第一项，
 		// 下次打开也沿用同一模型，而不是再次回退到列表首项。
 		if (select.value) saveSettings();
 		updateRailInfo();
+	}
+	function openModelPicker() {
+		const sdk = state.sdk || window.keepwork;
+		const apiKeySettings = sdk?.apiKeySettings || sdk?.localAPIKeySettings;
+		if (!apiKeySettings?.showModelPicker) return setStatus($('loginState'), '当前 SDK 不支持模型选择窗口。', 'error');
+		const select = $('chatModelSelect');
+		const picker = $('chatModelPicker');
+		apiKeySettings.showModelPicker({
+			anchor: picker,
+			category: 'Chat',
+			selectedModel: select.value,
+			onSelect: model => {
+				if (![...select.options].some(option => option.value === model)) select.add(new Option(model, model));
+				select.value = model;
+				select.dispatchEvent(new Event('change', { bubbles: true }));
+			},
+		});
 	}
 
 	/* ===== events ===== */
@@ -2610,8 +2680,10 @@
 		$('btnFileSave').onclick = () => saveProject().catch(e => setStatus($('runStatus'), `保存失败：${e.message}`, 'error'));
 		$('btnImportShare').onclick = () => openImportDialog().catch(e => setStatus($('runStatus'), `导入失败：${e.message}`, 'error'));
 		$('currentFileLabel').onclick = () => openWorkspaceViewer(projectPath());
+		$('chatModelPicker').onclick = openModelPicker;
 		$('btnLocalApi').onclick = async () => {
-			const settings = (state.sdk || window.keepwork)?.localAPIKeySettings;
+			const sdk = state.sdk || window.keepwork;
+			const settings = sdk?.apiKeySettings || sdk?.localAPIKeySettings;
 			if (!settings?.show) return setStatus($('loginState'), '当前 SDK 不支持本地 API Key 设置。', 'error');
 			await settings.load?.();
 			settings.show({ title: '本地 API Key 设置', fullscreen: true, onSave: populateModelDropdowns });
@@ -2628,14 +2700,19 @@
 		$('btnToggleSnippetMeta').onclick = () => setSnippetMetaExpanded($('snippetMetaGrid').classList.contains('hidden'));
 		$('snippetDescCollapsed').onclick = () => setSnippetMetaExpanded(true);
 		['projectName', 'projectDescription'].forEach(id => $(id).addEventListener('input', () => { updateProjectFromForm(); saveLocalDraft(); }));
-		$('chatModelSelect').addEventListener('change', () => { saveSettings(); updateRailInfo(); });
+		$('chatModelSelect').addEventListener('change', () => {
+			$('chatModelPicker').querySelector('span').textContent = $('chatModelSelect').value || 'No Chat models';
+			saveSettings();
+			updateRailInfo();
+		});
 		window.addEventListener('resize', () => state.widget?.resize());
 	}
 
 	/* ===== init ===== */
 	async function init() {
 		wireEvents();
-		const draft = loadLocalDraft();
+		const autoLoadLastProject = new URLSearchParams(window.location.search).get('autoLoadLastProject') !== '0';
+		const draft = autoLoadLastProject ? loadLocalDraft() : {};
 		state.lastProjectPath = draft.lastProjectPath || '';
 		if (draft.selectedSnippetId) state.selectedSnippetId = draft.selectedSnippetId;
 		$('app').classList.toggle('collapsed', isLeftCollapsed());   // restore last collapse state

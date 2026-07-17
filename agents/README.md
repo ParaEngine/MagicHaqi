@@ -42,6 +42,25 @@ It includes a Streamlit web UI, FastAPI agent API, WebSocket stream, and MCP end
 agent integration. Publishing replies should stay human-approved unless an explicit safe
 auto mode is configured.
 
+## HybridUnlockExpert/  (for DEVELOPERS / game designers)
+Helps games/apps integrate keepwork hybrid unlock: VIP skips free, rewarded ads unlock,
+or buy keepwork membership (¥4 day pass `vip_common_1_day` / full membership) to unlock.
+Payment is a real keepwork VIP purchase via the live site-wide `vipPayOrder` page —
+no new backend. Day-pass uses `amount` in fen; full plans omit `amount`. Never build
+pay URLs with bare `location.origin` off keepwork.
+- `SKILL.md` — skill guide and integration notes (**source of truth**;
+  `tools/AIChat/skills/HybridUnlockExpert/SKILL.md` is the AIChat expert-market copy —
+  sync after edits). Hard rules: locked buttons must not be `disabled`, canvas must not
+  use `pointer-events: none`, match host replies by `requestId` only, and `ack` ≠ unlock
+  success.
+- `examples.js` — code samples (minigame unlock, shop purchase, remove-ads, etc.).
+
+MagicHaqi already ships minigame unlock via the `haqi_request_unlock` message.
+Minigame AI guides (`tools/AIChat/skills/haqi-minigame-dev/SKILL.md` and
+`minigames/AGENTS.md`) include that protocol, so this skill is not required for
+minigames. Both Game Maker preview and the production minigame host handle unlock
+messages (`handleMinigameUnlockMessage`).
+
 ## In-app fallback
 `MagicHaqi.html?view=ops` opens the **Ops Console** — a human dashboard showing agent
 state, care to-dos, the audit log, and a manual command runner.

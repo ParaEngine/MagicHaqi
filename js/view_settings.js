@@ -82,10 +82,11 @@ async function handleLogoTap(panel, data, options) {
     renderSettings(panel, data, options);
 }
 
-export function renderSettings(panel, _data, { onBack, onLogout, onClearData } = {}) {
+export function renderSettings(panel, _data, { onBack, onLogout, onLogin, onClearData } = {}) {
     const canOpenDevPanel = (typeof window !== 'undefined' && ['127.0.0.1', 'localhost'].includes(window.location.hostname)) || isDeveloperMode();
     const developerMode = canOpenDevPanel;
     const username = getDisplayUsername();
+    const isGuest = !!state.offlineMode;
     const autoShowLevelBar = state.settings?.autoShowLevelBar === true;
     const hasLocalAPIKeySettings = !!(state.sdk || window.keepwork)?.localAPIKeySettings;
     const openDevPanel = async (button = null) => {
@@ -227,10 +228,12 @@ export function renderSettings(panel, _data, { onBack, onLogout, onClearData } =
             </div>
             <div class="card-flat" style="display:flex;justify-content:space-between;align-items:center;gap:12px">
                 <div style="min-width:0">
-                    <div id="mhUsernameText" style="font-size:14px;font-weight:700;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">👤 ${escapeHtml(username)}</div>
-                    <div style="font-size:11px;color:var(--text-muted)">${escapeHtml(t('loggedInAccount'))}</div>
+                    <div id="mhUsernameText" style="font-size:14px;font-weight:700;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">👤 ${escapeHtml(isGuest ? t('guestAccountTitle') : username)}</div>
+                    <div style="font-size:11px;color:var(--text-muted)">${escapeHtml(isGuest ? t('guestAccountHint') : t('loggedInAccount'))}</div>
                 </div>
-                <button id="mhLogout" class="btn-secondary">${escapeHtml(t('logout'))}</button>
+                ${isGuest
+                    ? `<button id="mhGuestLogin" class="btn-primary">${escapeHtml(t('login'))}</button>`
+                    : `<button id="mhLogout" class="btn-secondary">${escapeHtml(t('logout'))}</button>`}
             </div>
             <div class="card-flat" style="display:flex;justify-content:space-between;align-items:center;border-color:#fca5a5">
                 <span style="font-size:14px;color:#b91c1c">🗑 ${escapeHtml(t('clearData'))}</span>
@@ -259,7 +262,7 @@ export function renderSettings(panel, _data, { onBack, onLogout, onClearData } =
         state.isPaid = !state.isPaid;
         await saveUserProfile();
         showToast(state.isPaid ? t('switchedToVip') : t('vipClosed'), 'success');
-        renderSettings(panel, _data, { onBack, onLogout, onClearData });
+        renderSettings(panel, _data, { onBack, onLogout, onLogin, onClearData });
     };
     if ($('mhOpenDevPanel')) $('mhOpenDevPanel').onclick = () => openDevPanel($('mhOpenDevPanel'));
     if ($('mhOpenPetGenerator')) $('mhOpenPetGenerator').onclick = () => openDevTool('FamousPetGenerator.html', 'Pet Generator');
@@ -283,7 +286,7 @@ export function renderSettings(panel, _data, { onBack, onLogout, onClearData } =
         await saveUserProfile();
         notify();
         showToast(state.settings.autoShowLevelBar ? t('levelBarAuto') : t('levelBarPinned'), 'success');
-        renderSettings(panel, _data, { onBack, onLogout, onClearData });
+        renderSettings(panel, _data, { onBack, onLogout, onLogin, onClearData });
     };
     if ($('mhSaveMapSeed')) $('mhSaveMapSeed').onclick = async () => {
         const input = $('mhMapSeed');
@@ -294,7 +297,7 @@ export function renderSettings(panel, _data, { onBack, onLogout, onClearData } =
         await saveUserProfile();
         notify();
         showToast(state.settings.fieldMapSeed ? t('mapSeedSaved') : t('mapRestoredUsername'), 'success');
-        renderSettings(panel, _data, { onBack, onLogout, onClearData });
+        renderSettings(panel, _data, { onBack, onLogout, onLogin, onClearData });
     };
     if ($('mhResetMapSeed')) $('mhResetMapSeed').onclick = async () => {
         state.settings = state.settings || {};
@@ -302,19 +305,20 @@ export function renderSettings(panel, _data, { onBack, onLogout, onClearData } =
         await saveUserProfile();
         notify();
         showToast(t('mapRestoredUsername'), 'success');
-        renderSettings(panel, _data, { onBack, onLogout, onClearData });
+        renderSettings(panel, _data, { onBack, onLogout, onLogin, onClearData });
     };
     if ($('mhLogout')) $('mhLogout').onclick = () => onLogout?.();
+    if ($('mhGuestLogin')) $('mhGuestLogin').onclick = () => onLogin?.();
     if ($('mhClear')) $('mhClear').onclick = async () => {
         const ok = await confirmDialog(t('clearConfirm'));
         if (ok) onClearData?.();
     };
     if ($('mhSettingsLogo')) {
-        $('mhSettingsLogo').onclick = () => handleLogoTap(panel, _data, { onBack, onLogout, onClearData });
+        $('mhSettingsLogo').onclick = () => handleLogoTap(panel, _data, { onBack, onLogout, onLogin, onClearData });
         $('mhSettingsLogo').onkeydown = (event) => {
             if (event.key !== 'Enter' && event.key !== ' ') return;
             event.preventDefault();
-            handleLogoTap(panel, _data, { onBack, onLogout, onClearData });
+            handleLogoTap(panel, _data, { onBack, onLogout, onLogin, onClearData });
         };
     }
     refreshSettingsUsername(panel);

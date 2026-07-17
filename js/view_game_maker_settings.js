@@ -2,7 +2,7 @@
 // 由 view_game_maker.js 的设置按钮（⚙ 工具栏按钮）唤起，覆盖在创作面板之上。
 //
 // 三个标签页：
-//   1. 全局：游戏 icon + 标题 + 默认 LLM 模型 + 打开「本地 API Key 设置」。
+//   1. 全局：游戏 icon + 标题。
 //   2. 游戏配置：从游戏代码里解析 `game_config = {...}`，提供「可视化 / 代码」双视图编辑器
 //      （可视化 = 键值行编辑器，代码 = JSON 编辑器）+ 顶部 Save，保存后写回 game.html。
 //   3. 美术资源：从游戏代码里解析 `art_assets = [...]`，以网格列出全部资源；顶部「搜索栏 + 新建」，
@@ -217,12 +217,9 @@ const ART_SOURCE_LOADERS = {
 // 打开设置弹窗。
 // host: 用于挂载覆盖层的容器（创作面板 panel）。
 // ctx: {
-//   getName(), setName(v), getIcon(), setIcon(v),
-//   getModel(), setModel(v), getHtml(), setHtml(v),
-//   listChatModels(), modelValue(m), modelLabel(m),
-//   isLocalApiKeyEnabled(), setLocalApiKeyEnabled(v),  // 本地 API Key 全局开关
-//   showEmojiDialog(), openLocalApiSettings(),
-//   onApplyMeta()  // 标题/图标/模型变更后回调（刷新工坊顶栏与下拉）
+//   getName(), setName(v), getIcon(), setIcon(v), getHtml(), setHtml(v),
+//   showEmojiDialog(),
+//   onApplyMeta()  // 标题/图标变更后回调（刷新工坊顶栏）
 //   persistHtml(html)  // 写回 game.html 并预览/持久化；返回 Promise
 // }
 export function openGameMakerSettings(host, ctx = {}) {
@@ -273,15 +270,6 @@ export function openGameMakerSettings(host, ctx = {}) {
             .mh-gms-btn-secondary { background:rgba(255,255,255,.08); color:#cbd5e1; border:1px solid rgba(148,163,184,.24); }
             .mh-gms-btn-secondary:hover { border-color:#6366f1; color:#a5b4fc; }
             .mh-gms-hint { font-size:12px; color:#64748b; line-height:1.5; }
-            /* 绿色/灰色滑动开关（与本地 API Key 设置窗一致的样式） */
-            .mh-gms-switch-row { display:flex; align-items:center; gap:10px; }
-            .mh-gms-switch-row .mh-gms-btn { flex:1; }
-            .mh-gms-switch { position:relative; display:inline-block; width:44px; height:24px; flex:0 0 44px; cursor:pointer; }
-            .mh-gms-switch input { position:absolute; opacity:0; width:0; height:0; }
-            .mh-gms-switch-slider { position:absolute; inset:0; border-radius:24px; background:#475569; transition:background .18s; }
-            .mh-gms-switch-slider::before { content:''; position:absolute; left:3px; top:3px; width:18px; height:18px; border-radius:50%; background:#fff; transition:transform .18s; }
-            .mh-gms-switch input:checked + .mh-gms-switch-slider { background:#22c55e; }
-            .mh-gms-switch input:checked + .mh-gms-switch-slider::before { transform:translateX(20px); }
             .mh-gms-code { width:100%; min-height:200px; resize:vertical; background:rgba(0,0,0,.25); border:1px solid rgba(148,163,184,.24); border-radius:10px; color:#e2e8f0; font-family:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace; font-size:12.5px; line-height:1.5; padding:11px; outline:none; box-sizing:border-box; white-space:pre; }
             .mh-gms-code:focus { border-color:#6366f1; }
             .mh-gms-actions { display:flex; gap:8px; flex-wrap:wrap; }
@@ -377,14 +365,6 @@ export function openGameMakerSettings(host, ctx = {}) {
 
     // ---------- 全局标签页 ----------
     function renderGlobal() {
-        const models = ctx.listChatModels ? ctx.listChatModels() : [];
-        const selected = ctx.getModel ? ctx.getModel() : '';
-        const options = [`<option value="">${escapeHtml(t('mgGameModelDefault'))}</option>`];
-        for (const m of models) {
-            const value = ctx.modelValue ? ctx.modelValue(m) : (m.name || m.modelId || '');
-            const label = ctx.modelLabel ? ctx.modelLabel(m) : value;
-            options.push(`<option value="${escapeHtml(value)}"${value === selected ? ' selected' : ''}>${escapeHtml(label)}</option>`);
-        }
         paneGlobal.innerHTML = `
             <div class="mh-gms-field">
                 <span class="mh-gms-label">${escapeHtml(t('mgGameSettingsNameLabel'))}</span>
@@ -392,21 +372,6 @@ export function openGameMakerSettings(host, ctx = {}) {
                     <button type="button" class="mh-gms-icon-btn" data-mh-gms-icon title="${escapeHtml(t('mgGameIconLabel'))}">${escapeHtml(ctx.getIcon ? (ctx.getIcon() || '🎮') : '🎮')}</button>
                     <input type="text" class="mh-gms-input" data-mh-gms-name maxlength="64" placeholder="${escapeHtml(t('mgGameNamePlaceholder'))}" value="${escapeHtml(ctx.getName ? (ctx.getName() || '') : '')}">
                 </div>
-            </div>
-            <div class="mh-gms-field">
-                <span class="mh-gms-label">${escapeHtml(t('mgGameSettingsModelLabel'))}</span>
-                <select class="mh-gms-select" data-mh-gms-model>${options.join('')}</select>
-            </div>
-            <div class="mh-gms-field">
-                <span class="mh-gms-label">${escapeHtml(t('mgGameSettingsApiLabel'))}</span>
-                <div class="mh-gms-switch-row">
-                    <label class="mh-gms-switch" title="${escapeHtml(t('mgGameSettingsApiToggle'))}">
-                        <input type="checkbox" data-mh-gms-api-toggle${ctx.isLocalApiKeyEnabled?.() ? ' checked' : ''}>
-                        <span class="mh-gms-switch-slider"></span>
-                    </label>
-                    <button type="button" class="mh-gms-btn mh-gms-btn-secondary" data-mh-gms-api>${escapeHtml(t('mgGameConfigTitle'))}</button>
-                </div>
-                <span class="mh-gms-hint">${escapeHtml(t('mgGameSettingsApiHint'))}</span>
             </div>`;
 
         paneGlobal.querySelector('[data-mh-gms-icon]')?.addEventListener('click', async () => {
@@ -419,22 +384,6 @@ export function openGameMakerSettings(host, ctx = {}) {
         paneGlobal.querySelector('[data-mh-gms-name]')?.addEventListener('input', (e) => {
             if (ctx.setName) ctx.setName(e.target.value);
             if (ctx.onApplyMeta) ctx.onApplyMeta();
-        });
-        paneGlobal.querySelector('[data-mh-gms-model]')?.addEventListener('change', (e) => {
-            if (ctx.setModel) ctx.setModel(e.target.value || '');
-            if (ctx.onApplyMeta) ctx.onApplyMeta();
-        });
-        paneGlobal.querySelector('[data-mh-gms-api]')?.addEventListener('click', async () => {
-            // onChange 在 API Key 设置窗保存/关闭时触发：重新渲染全局页，
-            // 同步启用开关状态与可用模型下拉（窗内可能改了全局开关或模型配置）。
-            const onChange = () => { if (overlay.isConnected && activeTab === 'global') renderGlobal(); };
-            if (ctx.openLocalApiSettings) await ctx.openLocalApiSettings(onChange);
-            onChange();
-        });
-        // 本地 API Key 全局开关：切换后刷新模型下拉（可用模型来源会变化）。
-        paneGlobal.querySelector('[data-mh-gms-api-toggle]')?.addEventListener('change', async (e) => {
-            if (ctx.setLocalApiKeyEnabled) await ctx.setLocalApiKeyEnabled(e.target.checked);
-            if (activeTab === 'global') renderGlobal();
         });
     }
 

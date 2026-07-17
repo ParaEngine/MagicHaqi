@@ -2571,8 +2571,10 @@ async function handleUnlockRequest(frame, msg) {
     try {
         sourceWindow.postMessage({ type: 'haqi_unlock_result', requestId, ok: true, ...res }, '*');
     } catch (_) {}
-    // 若本次因会员而解锁，主动回传会员状态，使后续付费点直接跳过广告。
-    if (res && res.via === 'vip') { postVipStatus(frame, true); }
+    // 若本次因会员而解锁（已是 VIP / 刚开通），主动回传会员状态，使后续付费点直接跳过广告。
+    if (res && (res.via === 'vip' || res.via === 'member') && res.unlocked) {
+        postVipStatus(frame, true);
+    }
 }
 
 // 查询真实会员状态：优先 keepworkSDK 真实会员（含付费会员），无 SDK 时回退到应用内会员开关。
@@ -2593,20 +2595,79 @@ async function postVipStatus(frame, isVipOverride) {
     try { sourceWindow.postMessage({ type: 'haqi_vip_status', isVip }, '*'); } catch (_) {}
 }
 
-// 小游戏内点击「开通会员·永久免广告」：打开 keepwork 个人中心（含会员开通/激活与真实支付），
+// 打开全站会员支付页（vipPayOrder）。ProfileWindow 只有激活码，没有真实下单 UI。
+async function openVipPayFlow() {
+    const sdk = state.sdk;
+    // 优先走 SDK 统一支付入口（AdsService.openVipMembership）。
+    if (sdk?.ads && typeof sdk.ads.openVipMembership === 'function') {
+        return !!(await sdk.ads.openVipMembership({ from: 'magichaqi' }));
+    }
+    // 兼容旧 SDK：宿主自己拼 vipPayOrder URL。
+    let userId = null;
+    try {
+        const profile = await sdk?.getUserProfile?.({ useCache: true });
+        userId = profile?.id;
+    } catch (_) {}
+    if (userId == null) {
+        try { await sdk?.showLoginWindow?.(); } catch (_) {}
+        try {
+            const profile = await sdk?.getUserProfile?.({ forceRefresh: true });
+            userId = profile?.id;
+        } catch (_) {}
+    }
+    if (userId == null) return false;
+
+    const host = (location.hostname || '').toLowerCase();
+    const origin = (/(^|\.)keepwork\.com$/.test(host) || /(^|\.)keepwork\.cn$/.test(host))
+        ? location.origin
+        : 'https://keepwork.com';
+    const params = new URLSearchParams({
+        from: 'magichaqi',
+        userId: String(userId),
+        productCode: 'vip_common_1_day',
+        amount: '400',
+        referralUrl: location.pathname + location.search,
+    });
+    const url = `${origin}/p/vb/vipPayOrder?${params.toString()}`;
+    try {
+        const popup = window.open(url, '_blank', 'width=400,height=600');
+        if (!popup) location.href = url;
+        else {
+            // 等小窗关闭或会员生效（最多 10 分钟）
+            await new Promise((resolve) => {
+                const start = Date.now();
+                const timer = setInterval(async () => {
+                    let closed = false;
+                    try { closed = !!popup.closed; } catch (_) {}
+                    if (closed || Date.now() - start > 10 * 60 * 1000) {
+                        clearInterval(timer);
+                        resolve();
+                        return;
+                    }
+                    try {
+                        if (await isUserVipNow(true)) {
+                            clearInterval(timer);
+                            resolve();
+                        }
+                    } catch (_) {}
+                }, 1500);
+            });
+        }
+    } catch (_) {
+        location.href = url;
+    }
+    return isUserVipNow(true);
+}
+
+// 小游戏内点击「开通会员·永久免广告」：打开全站 vipPayOrder 真实支付，
 // 关闭后重新核对真实会员状态，同步应用内会员开关并回传给小游戏。
 async function handleOpenVipRequest(frame) {
-    const sdk = state.sdk;
     try {
-        if (sdk && typeof sdk.showProfileWindow === 'function') {
-            await sdk.showProfileWindow();
-        } else {
-            // 无 SDK（如本地预览）兜底：沿用应用内会员模拟开关。
-            state.isPaid = true;
-            try { saveUserProfileDebounced(); } catch (_) {}
-        }
-    } catch (_) {}
-    // 强制刷新核对真实会员状态（用户可能刚完成支付/激活）。
+        await openVipPayFlow();
+    } catch (_) {
+        // 无 SDK / 支付失败时不模拟开通，避免误标会员。
+    }
+    // 强制刷新核对真实会员状态（用户可能刚完成支付）。
     const isVip = await isUserVipNow(true);
     if (isVip && !state.isPaid) { state.isPaid = true; try { saveUserProfileDebounced(); } catch (_) {} }
     await postVipStatus(frame, isVip);
@@ -2644,15 +2705,11 @@ async function localUnlockFallback(title) {
     const choice = await chooseUnlockAction(title);
     if (choice === 'ad') return { unlocked: true, via: 'ad' };
     if (choice === 'vip') {
-        // 打开 keepwork 真实开通会员/支付流程，完成后核对会员状态。
-        const sdk = state.sdk;
-        try {
-            if (sdk && typeof sdk.showProfileWindow === 'function') await sdk.showProfileWindow();
-            else { state.isPaid = true; try { saveUserProfileDebounced(); } catch (_) {} }
-        } catch (_) {}
+        // 打开全站 vipPayOrder 真实支付，完成后核对会员状态。
+        try { await openVipPayFlow(); } catch (_) {}
         const isVip = await isUserVipNow(true);
         if (isVip && !state.isPaid) { state.isPaid = true; try { saveUserProfileDebounced(); } catch (_) {} }
-        return isVip ? { unlocked: true, via: 'vip' } : { unlocked: false, via: 'cancel' };
+        return isVip ? { unlocked: true, via: 'member' } : { unlocked: false, via: 'cancel' };
     }
     return { unlocked: false, via: 'cancel' };
 }
@@ -2756,6 +2813,26 @@ export function handleMinigamePetMessage(frame, msg) {
     if (!isPetImageRequest(msg)) return false;
     handlePetImageRequest(frame, msg);
     return true;
+}
+
+// 供创作工坊预览等内嵌 iframe 复用混合解锁协议：
+// haqi_request_unlock / haqi_open_vip / haqi_get_vip_status。
+// 返回 true 表示已处理，调用方可短路。
+export function handleMinigameUnlockMessage(frame, msg) {
+    if (!frame || !msg) return false;
+    if (isUnlockRequest(msg)) {
+        handleUnlockRequest(frame, msg);
+        return true;
+    }
+    if (msg.type === 'haqi_open_vip') {
+        handleOpenVipRequest(frame);
+        return true;
+    }
+    if (msg.type === 'haqi_get_vip_status') {
+        postVipStatus(frame);
+        return true;
+    }
+    return false;
 }
 
 // 主动向某个内嵌游戏 iframe 推送当前宠物配置（setGameConfig + active_pet_config 形象）。

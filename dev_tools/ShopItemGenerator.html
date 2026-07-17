@@ -26,6 +26,9 @@
       .section { @apply flex flex-col gap-2.5 rounded-lg border border-slate-300 bg-slate-50 p-3; }
       .toolbar { @apply flex flex-wrap items-center gap-2; }
       .toolbar button { @apply flex-none; }
+      .model-select-state { @apply hidden; }
+      .model-picker { @apply w-full justify-start overflow-hidden text-left; }
+      .model-picker span { @apply block overflow-hidden text-ellipsis whitespace-nowrap; }
       .primary { @apply border-sky-600 bg-sky-600 text-white hover:border-sky-700 hover:bg-sky-700; }
       .success { @apply border-emerald-600 bg-emerald-600 text-white hover:border-emerald-700 hover:bg-emerald-700; }
       .danger { @apply border-red-200 bg-red-50 text-red-700 hover:border-red-300 hover:bg-red-100; }
@@ -291,10 +294,12 @@
               <h2>DECO_VISUALS 当前项</h2>
               <div class="row">
                 <label>Chat 模型
-                  <select id="chatModelSelect"></select>
+                  <select id="chatModelSelect" class="model-select-state" aria-hidden="true" tabindex="-1"></select>
+                  <button id="chatModelPicker" class="model-picker" type="button"><span>等待 SDK 加载...</span></button>
                 </label>
                 <label>Image 模型
-                  <select id="imageModelSelect"></select>
+                  <select id="imageModelSelect" class="model-select-state" aria-hidden="true" tabindex="-1"></select>
+                  <button id="imageModelPicker" class="model-picker" type="button"><span>等待 SDK 加载...</span></button>
                 </label>
               </div>
               <div class="row-3">
@@ -391,7 +396,7 @@
     const SHOP_WEBP_MAX_BYTES = 10 * 1024;
     const SHOP_WEBP_BG_OPTIONS = { seedThreshold: 60, growThreshold: 78, haloThreshold: 112, borderRatio: 0.02, gridLineWidth: 0, sheetCols: 1, sheetRows: 1 };
     const CONFIG_MODULE_URL = '../js/config.js';
-    const SDK_CDN_URL = 'https://cdn.keepwork.com/sdk/keepworkSDK.iife.js?v=20260619a';
+    const SDK_CDN_URL = 'https://cdn.keepwork.com/sdk/keepworkSDK.iife.js?v=20260715a';
     const $ = (id) => document.getElementById(id);
 
     const state = {
@@ -1253,10 +1258,11 @@
 
     function getEnabledModels(category) {
       const sdk = state.sdk || window.keepwork;
-      return sdk?.localAPIKeySettings?.listModels ? sdk.localAPIKeySettings.listModels(category).filter(model => model.enabled !== false) : [];
+      const settings = sdk?.apiKeySettings || sdk?.localAPIKeySettings;
+      return settings?.listModels ? settings.listModels(category).filter(model => model.enabled !== false) : [];
     }
 
-    function renderModelOptions(select, category, remembered = '') {
+    function renderModelOptions(select, picker, category, remembered = '') {
       const models = getEnabledModels(category);
       select.innerHTML = models.length
         ? models.map(model => {
@@ -1266,7 +1272,32 @@
         : `<option value="">没有本地${category === 'Chat' ? '聊天' : '图片'}模型</option>`;
       select.disabled = !models.length;
       if (remembered && models.some(model => (model.name || model.modelId || '') === remembered)) select.value = remembered;
+      if (picker) {
+        const sdk = state.sdk || window.keepwork;
+        const settings = sdk?.apiKeySettings || sdk?.localAPIKeySettings;
+        picker.disabled = !models.length && !settings?.showModelPicker;
+        picker.querySelector('span').textContent = select.value || `没有可用${category === 'Chat' ? '聊天' : '图片'}模型`;
+      }
       return models;
+    }
+
+    function openModelPicker(selectId, pickerId, category) {
+      const sdk = state.sdk || window.keepwork;
+      const settings = sdk?.apiKeySettings || sdk?.localAPIKeySettings;
+      if (!settings?.showModelPicker) return setStatus($('loginState'), '当前 SDK 不支持模型选择窗口。', 'error');
+      const select = $(selectId);
+      const picker = $(pickerId);
+      settings.showModelPicker({
+        anchor: picker,
+        category,
+        selectedModel: select.value,
+        onSelect: model => {
+          if (![...select.options].some(option => option.value === model)) select.add(new Option(model, model));
+          select.value = model;
+          picker.querySelector('span').textContent = model;
+          select.dispatchEvent(new Event('change'));
+        },
+      });
     }
 
     function readSettings() {
@@ -1287,11 +1318,17 @@
 
     async function populateModelDropdowns() {
       const sdk = state.sdk || window.keepwork;
-      if (!sdk?.localAPIKeySettings?.listModels) return;
-      await sdk.localAPIKeySettings.load?.();
+      const apiKeySettings = sdk?.apiKeySettings || sdk?.localAPIKeySettings;
+      if (!apiKeySettings?.listModels) return;
+      await apiKeySettings.load?.();
+      for (const category of ['Chat', 'Image']) {
+        if (!apiKeySettings.listModels(category).some(model => model.enabled !== false)) {
+          try { await apiKeySettings.refreshModels?.('keepwork'); } catch (_) {}
+        }
+      }
       const settings = readSettings();
-      renderModelOptions($('chatModelSelect'), 'Chat', settings.chatModel || $('chatModelSelect').value);
-      renderModelOptions($('imageModelSelect'), 'Image', settings.imageModel || $('imageModelSelect').value);
+      renderModelOptions($('chatModelSelect'), $('chatModelPicker'), 'Chat', settings.chatModel || $('chatModelSelect').value);
+      renderModelOptions($('imageModelSelect'), $('imageModelPicker'), 'Image', settings.imageModel || $('imageModelSelect').value);
       if (settings.imageSize) $('imageSize').value = settings.imageSize;
       if (settings.visualMode) $('visualMode').value = settings.visualMode;
     }
@@ -2411,7 +2448,7 @@
       }
     }
 
-    function openBatchItemDialog() {
+    async function openBatchItemDialog() {
       closeBatchItemDialog();
       const settings = readBatchSettings();
       const overlay = document.createElement('div');
@@ -2423,7 +2460,10 @@
           <div class="batch-grid">
             <section class="section">
               <h2>批量参数</h2>
-              <label>Chat 模型<select id="batchChatModel"></select></label>
+              <label>Chat 模型
+                <select id="batchChatModel" class="model-select-state" aria-hidden="true" tabindex="-1"></select>
+                <button id="batchChatModelPicker" class="model-picker" type="button"><span>等待 SDK 加载...</span></button>
+              </label>
               <label>类型<select id="batchItemType"><option value="furniture">furniture</option><option value="food">food</option><option value="toy">toy</option><option value="house">house</option></select></label>
               <label>数量<input id="batchItemCount" type="number" min="1" max="30" step="1" value="${escapeHtml(settings.count || 6)}"></label>
               <label>必选 fields<input id="batchRequiredFields" placeholder="可为空，例如 land, water" value="${escapeHtml(settings.requiredFields || '')}"></label>
@@ -2442,7 +2482,13 @@
       document.body.appendChild(overlay);
       overlay.addEventListener('click', event => { if (event.target === overlay && !$('btnRunBatchItems')?.disabled) closeBatchItemDialog(); });
       $('closeBatchItems').onclick = () => closeBatchItemDialog();
-      renderModelOptions($('batchChatModel'), 'Chat', settings.model || $('chatModelSelect').value);
+      const apiKeySettings = (state.sdk || window.keepwork)?.apiKeySettings || (state.sdk || window.keepwork)?.localAPIKeySettings;
+      await apiKeySettings?.load?.();
+      if (apiKeySettings?.listModels && !apiKeySettings.listModels('Chat').some(model => model.enabled !== false)) {
+        try { await apiKeySettings.refreshModels?.('keepwork'); } catch (_) {}
+      }
+      renderModelOptions($('batchChatModel'), $('batchChatModelPicker'), 'Chat', settings.model || $('chatModelSelect').value);
+      $('batchChatModelPicker').onclick = () => openModelPicker('batchChatModel', 'batchChatModelPicker', 'Chat');
       $('batchItemType').value = settings.type || $('itemType')?.value || 'furniture';
       renderBatchFieldButtons();
       ['batchItemType', 'batchItemCount', 'batchRequiredFields', 'batchUserPrompt'].forEach(id => $(id).addEventListener('input', () => {
@@ -2828,10 +2874,15 @@
 
     function wireEvents() {
       $('btnLocalApi').onclick = async () => {
-        const settings = (state.sdk || window.keepwork)?.localAPIKeySettings;
+        const sdk = state.sdk || window.keepwork;
+        const settings = sdk?.apiKeySettings || sdk?.localAPIKeySettings;
         if (!settings?.show) return setStatus($('loginState'), '当前 SDK 不支持本地 API Key 设置', 'error');
         await settings.load?.();
-        settings.show({ title: '本地 API Key 设置', fullscreen: true, onSave: populateModelDropdowns });
+        settings.show({ title: '本地 API Key 设置', fullscreen: true, onSave: async () => {
+          await populateModelDropdowns();
+          const batchSelect = $('batchChatModel');
+          if (batchSelect) renderModelOptions(batchSelect, $('batchChatModelPicker'), 'Chat', batchSelect.value || readBatchSettings().model || $('chatModelSelect').value);
+        } });
       };
       $('btnSaveWorkspace').onclick = () => saveWorkspaceData().catch(error => setStatus($('loadStatus'), `保存失败：${error.message}`, 'error'));
       $('btnCopyAllShopJson').onclick = () => copyAllShopJson().catch(error => setStatus($('runStatus'), `复制失败：${error?.message || error}`, 'error'));
@@ -2874,6 +2925,8 @@
       $('exportDiffOnly').addEventListener('change', () => { state.exportDiffOnly = isDiffExport(); updateOutputs(); });
       $('removeVisualHistoryOnExport').addEventListener('change', updateOutputs);
       ['chatModelSelect', 'imageModelSelect', 'imageSize', 'visualMode'].forEach(id => $(id).addEventListener('change', saveSettings));
+      $('chatModelPicker').onclick = () => openModelPicker('chatModelSelect', 'chatModelPicker', 'Chat');
+      $('imageModelPicker').onclick = () => openModelPicker('imageModelSelect', 'imageModelPicker', 'Image');
       document.querySelectorAll('[data-prompt-tab]').forEach(button => button.onclick = () => setPromptTab(button.dataset.promptTab));
       $('aiPrompt').addEventListener('input', () => { handlePromptInput(); saveDraft(); });
       $('referenceUrl').addEventListener('input', renderReferencePreview);
