@@ -21,16 +21,6 @@ from reply_manager import ReplyManager, BILIBILI_REPLY_INTERVAL
 
 # 平台配置映射
 PLATFORM_CONFIG = {
-    "twitter": {
-        "display_name": "Twitter / X",
-        "icon": "🐦",
-        "color": "#1DA1F2",
-        "config_fields": [
-            {"key": "bearer_token", "label": "Bearer Token", "type": "password", "env": "TWITTER_BEARER_TOKEN"},
-        ],
-        "post_label": "推文 ID 或链接",
-        "post_placeholder": "例如: https://twitter.com/user/status/123456789",
-    },
     "bilibili": {
         "display_name": "哔哩哔哩 (B站)",
         "icon": "📺",
@@ -77,10 +67,21 @@ PLATFORM_CONFIG = {
         "icon": "🎮",
         "color": "#15B5DD",
         "config_fields": [
-            {"key": "cookie", "label": "登录 Cookie (可选)", "type": "text", "env": "TAPTAP_COOKIE"},
+            {"key": "session", "label": "TAPTAP_SESSION（登录令牌）", "type": "text", "env": "TAPTAP_SESSION"},
+            {"key": "xsrf", "label": "XSRF-TOKEN（CSRF 令牌）", "type": "text", "env": "TAPTAP_XSRF_TOKEN"},
         ],
         "post_label": "游戏链接或 App ID",
         "post_placeholder": "例如: https://www.taptap.cn/app/123456 或直接输入 App ID",
+    },
+    "tieba": {
+        "display_name": "百度贴吧",
+        "icon": "📋",
+        "color": "#3385FF",
+        "config_fields": [
+            {"key": "cookie", "label": "登录 Cookie (可选)", "type": "text", "env": "TIEBA_COOKIE"},
+        ],
+        "post_label": "帖子链接或帖子 ID",
+        "post_placeholder": "例如: https://tieba.baidu.com/p/123456789 或直接输入帖子 ID",
     },
 }
 
@@ -321,6 +322,24 @@ def sidebar():
 
             platform_config[key] = st.session_state.get(session_key, "")
 
+        # TapTap 帮助提示
+        if platform == "taptap":
+            st.caption(
+                "💡 获取方法：F12 → Application → Cookies → www.taptap.cn → "
+                "找到 `TAPTAP_SESSION` 和 `XSRF-TOKEN`，双击 Value 复制。"
+                "注意：`TAPTAP_SESSION` 是 HttpOnly 的，`document.cookie` 拿不到！"
+            )
+        elif platform == "xiaohongshu":
+            st.caption(
+                "💡 获取方法：登录 xiaohongshu.com → F12 → Network → 刷新页面 → "
+                "点任意 `edith.xiaohongshu.com` 请求 → Request Headers → 复制 `Cookie:` 后面的全部内容，粘贴到上方输入框。"
+            )
+        elif platform == "tieba":
+            st.caption(
+                "💡 获取方法：登录 tieba.baidu.com → F12 → Network → 点任意请求 → "
+                "Request Headers → 复制 `Cookie:` 整行。关键字段：`BDUSS`（登录令牌）。"
+            )
+
         # 保存并测试平台配置按钮
         col1, col2 = st.columns(2)
         with col1:
@@ -331,16 +350,22 @@ def sidebar():
         if save_platform:
             # 保存平台配置到 .env 文件
             env_prefix = {
-                "twitter": "TWITTER_BEARER_TOKEN",
                 "bilibili": "BILIBILI",
                 "xiaohongshu": "XHS_COOKIE",
                 "weibo": "WEIBO_COOKIE",
                 "douyin": "DOUYIN_COOKIE",
+                "taptap": "TAPTAP",
+                "tieba": "TIEBA_COOKIE",
             }
 
             updates = {}
             for key, value in platform_config.items():
-                if key == "bearer_token":
+                if platform == "taptap":
+                    if key == "session":
+                        updates["TAPTAP_SESSION"] = value
+                    elif key == "xsrf":
+                        updates["TAPTAP_XSRF_TOKEN"] = value
+                elif key == "bearer_token":
                     updates["TWITTER_BEARER_TOKEN"] = value
                 elif key == "sessdata":
                     updates["BILIBILI_SESSDATA"] = value
@@ -352,6 +377,8 @@ def sidebar():
 
             if save_config(updates):
                 st.success("✅ 平台配置已保存到本地 .env 文件！")
+                # 清除缓存的收集器，下次会使用新 Cookie 重新创建
+                st.session_state.pop(f"collector_{platform}", None)
             else:
                 st.error("❌ 保存失败，请检查权限")
 
@@ -607,25 +634,32 @@ def page_fetch():
                 # 显示评论预览
                 st.subheader("📋 评论预览（前 5 条）")
                 for i, comment in enumerate(comments[:5]):
-                    with st.container(border=True):
-                        col1, col2 = st.columns([1, 5])
-                        with col1:
-                            if comment.get("author_avatar"):
-                                st.image(comment["author_avatar"], width=40)
-                            st.write(f"**{comment.get('author_name', '未知')}**")
-                            st.caption(comment.get('created_at', '')[:19] if comment.get('created_at') else '')
-                        with col2:
-                            st.write(comment.get('text', ''))
-                        col1, col2, col3 = st.columns(3)
-                        with col1:
-                            st.write(f"❤️ {comment.get('like_count', 0)}")
-                        with col2:
-                            st.write(f"💬 {comment.get('reply_count', 0)}")
-                        with col3:
-                            if comment.get('ip_location'):
-                                st.caption(f"📍 {comment['ip_location']}")
-            else:
-                st.warning("⚠️ 未获取到任何评论，请检查链接或 Cookie 是否正确")
+                    text = comment.get('text', '')
+                    author = comment.get('author_name', '未知')
+                    time_str = comment.get('created_at', '')
+                    if time_str and len(time_str) > 19:
+                        time_str = time_str[:19]
+                    likes = comment.get('like_count', 0)
+                    replies = comment.get('reply_count', 0)
+                    loc = comment.get('ip_location', '')
+
+                    # 评论内容卡片
+                    st.markdown(f"""
+                    <div style="background:#1e1e2e; border:1px solid #333; border-radius:8px; padding:12px 16px; margin:8px 0;">
+                        <div style="color:#e0e0e0; font-size:15px; line-height:1.6; white-space:pre-wrap;">{text}</div>
+                        <div style="margin-top:8px; display:flex; justify-content:space-between; align-items:center;">
+                            <span style="color:#888; font-size:12px;">👤 {author} · {time_str}{' · 📍'+loc if loc else ''}</span>
+                            <span style="color:#666; font-size:12px;">❤️ {likes} &nbsp; 💬 {replies}</span>
+                        </div>
+                    </div>
+                    """, unsafe_allow_html=True)
+                err_msg = "⚠️ 未获取到任何评论"
+                # 显示平台诊断信息
+                if hasattr(collector, 'last_error') and collector.last_error:
+                    err_msg += f"\n\n**诊断信息**: {collector.last_error}"
+                else:
+                    err_msg += "，请检查链接或 Cookie 是否正确"
+                st.warning(err_msg)
 
 
 def page_analyze():
@@ -935,9 +969,7 @@ def page_report():
 def auto_detect_platform(url: str) -> str:
     """自动检测 URL 所属平台"""
     url_lower = url.lower()
-    if "twitter.com" in url_lower or "x.com" in url_lower:
-        return "twitter"
-    elif "bilibili.com" in url_lower or "bv" in url_lower.lower():
+    if "bilibili.com" in url_lower or "bv" in url_lower.lower():
         return "bilibili"
     elif "xiaohongshu.com" in url_lower or "xhs" in url_lower:
         return "xiaohongshu"
@@ -947,6 +979,8 @@ def auto_detect_platform(url: str) -> str:
         return "douyin"
     elif "taptap" in url_lower:
         return "taptap"
+    elif "tieba.baidu.com" in url_lower:
+        return "tieba"
     return "bilibili"  # 默认
 
 
@@ -959,7 +993,7 @@ def page_one_click():
     # URL 输入
     url_input = st.text_input(
         "🔗 粘贴帖子/视频链接",
-        placeholder="支持: Twitter、B站、小红书、微博、抖音、TapTap链接",
+        placeholder="支持: B站、小红书、微博、抖音、TapTap、贴吧链接",
         help="粘贴任意平台的帖子/视频链接，系统会自动识别平台并分析"
     )
 
@@ -1332,6 +1366,28 @@ def main():
     init_config()
     page_config()
     sidebar()
+
+    # 暗色 metric 卡片样式
+    st.markdown("""
+    <style>
+    [data-testid="stMetric"] {
+        background: linear-gradient(135deg, #1e1e2e, #2a2a3e);
+        border: 1px solid #3a3a5e;
+        border-radius: 12px;
+        padding: 12px;
+    }
+    [data-testid="stMetric"] label {
+        color: #a0a0c0 !important;
+    }
+    [data-testid="stMetricValue"] {
+        color: #ffffff !important;
+        font-weight: 700 !important;
+    }
+    [data-testid="stMetricDelta"] {
+        color: #8888bb !important;
+    }
+    </style>
+    """, unsafe_allow_html=True)
 
     # 导航
     page = st.navigation([

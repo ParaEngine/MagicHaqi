@@ -31,14 +31,40 @@ class TapTapCollector(BaseCollector):
     # TapTap 要求的 X-UA 头（Web 端标识，缺失会返回 404）
     XUA = "V=1&PN=WebApp&LANG=zh_CN&VN_CODE=102&LOC=CN&PLT=PC&DS=Android&OS=Windows&OSV=10&DT=PC"
 
-    def __init__(self, cookie: str = "", **kwargs):
+    def __init__(self, cookie: str = "", session: str = "", xsrf: str = "", **kwargs):
         super().__init__(**kwargs)
-        self.cookie = cookie
+        self.cookie = cookie or session  # 兼容旧参数
         self.session = requests.Session()
         self.session.headers.update(self.HEADERS)
         self.session.headers["X-UA"] = self.XUA
-        if cookie:
-            self.session.headers["Cookie"] = cookie
+
+        # 先访问一次 TapTap，自动获取反爬虫 Cookie（acw_tc 等）
+        try:
+            self.session.get(f"{self.BASE_URL}/", timeout=5)
+        except Exception:
+            pass
+
+        # 设置核心认证 Cookie
+        if session:
+            self.session.cookies.set("TAPTAP_SESSION", session, domain=".taptap.cn")
+        if xsrf:
+            self.session.cookies.set("XSRF-TOKEN", xsrf, domain=".taptap.cn")
+
+        # 兼容旧的全量 Cookie 字符串模式
+        if cookie and not session:
+            TAPTAP_COOKIE_KEYS = {
+                "TAPTAP_SESSION", "XSRF-TOKEN", "user_id", "acw_tc",
+                "web_app_uuid", "web_app_next_redesign_gray_feature",
+                "currentDataSource", "ACCOUNTS_USER_ID", "gid",
+                "acw_sc_v2", "_ga", "_ga_",
+            }
+            for item in cookie.split(";"):
+                item = item.strip()
+                if "=" in item:
+                    key, val = item.split("=", 1)
+                    key = key.strip()
+                    if key in TAPTAP_COOKIE_KEYS or key.startswith("_ga"):
+                        self.session.cookies.set(key, val.strip(), domain=".taptap.cn")
 
     def validate_config(self) -> bool:
         return True  # 无需登录即可获取评论
@@ -282,86 +308,117 @@ class TapTapCollector(BaseCollector):
         """
         回复评价（需要登录 Cookie）
 
-        TapTap 的评价基于 moment 系统，回复即对 moment 添加评论。
+        使用 TapTap 的 review-comment API。
 
         Args:
-            comment_id: 评价/评论 ID
+            comment_id: 评价 ID（review_id）
             reply_text: 回复内容
-            post_id: 游戏的 app_id（可选，用于获取 moment_id）
+            post_id: 游戏的 app_id（可选）
 
         Returns:
             {"success": bool, "message": str}
         """
-        if not self.cookie:
+        # 检查是否配置了认证信息
+        has_session = any(
+            c.name == "TAPTAP_SESSION" and c.value
+            for c in self.session.cookies
+        )
+        if not has_session and not self.cookie:
             return {
                 "success": False,
-                "error": "TapTap 回复需要登录 Cookie",
-                "message": "请在侧边栏配置 TapTap Cookie（从浏览器登录后获取）"
+                "error": "未配置登录凭证",
+                "message": "请在侧边栏填入 TAPTAP_SESSION 和 XSRF-TOKEN\n获取方法：F12 → Application → Cookies → www.taptap.cn → 找到对应值"
             }
 
-        # TapTap 评论 API：尝试多个已知的端点模式
-        endpoints = [
-            # 最常见：对 moment 添加评论
-            {
-                "url": f"{self.API_BASE}/moment/v1/comment",
-                "body": {
-                    "moment_id": comment_id,
-                    "content": reply_text,
+        # TapTap 常见错误码 → 用户友好提示
+        ERROR_TIPS = {
+            "网页已过期": (
+                "Cookie 会话已过期。请重新登录 taptap.cn，"
+                "获取新的 Cookie 后再试。\n"
+                "操作：浏览器打开 taptap.cn → 登录 → F12 → Application → Cookies → 全选复制"
+            ),
+            "请先登录": (
+                "Cookie 无效或未登录。请确认复制的是登录后的完整 Cookie 字符串。"
+            ),
+            "验证": (
+                "触发了 TapTap 验证码。请在浏览器中手动完成验证后，重新获取 Cookie。"
+            ),
+            "频繁": (
+                "操作太频繁，请等待 1-2 分钟后再试。"
+            ),
+            "csrf": (
+                "CSRF 校验失败。Cookie 中可能缺少 csrfToken 字段，请重新获取完整 Cookie。"
+            ),
+            "未认证": (
+                "登录凭证无效或已过期。请：\n"
+                "1. 确认 TapTap 页面上显示已登录（有头像）\n"
+                "2. 在已登录的页面 F12 → Console 输入 document.cookie 重新获取\n"
+                "3. 如果还不行，请退出登录再重新登录"
+            ),
+            "未登录": (
+                "Cookie 中缺少登录凭证。请在 taptap.cn 登录后再获取 Cookie。"
+            ),
+        }
+
+        try:
+            # 从 Cookie 中提取 XSRF-TOKEN，作为请求头发送（TapTap CSRF 校验要求）
+            xsrf_token = ""
+            for c in self.session.cookies:
+                if c.name == "XSRF-TOKEN":
+                    xsrf_token = c.value
+                    break
+
+            headers = {
+                "X-Requested-With": "XMLHttpRequest",
+                "Referer": f"{self.BASE_URL}/app/{post_id}/review" if post_id else self.BASE_URL,
+            }
+            if xsrf_token:
+                headers["X-XSRF-TOKEN"] = xsrf_token
+                headers["X-CSRF-TOKEN"] = xsrf_token
+
+            resp = self.session.post(
+                f"{self.API_BASE}/review-comment/v1/create",
+                data={
+                    "review_id": comment_id,
+                    "contents": reply_text,
                 },
-            },
-            # 备选：review v2 评论
-            {
-                "url": f"{self.API_BASE}/review/v2/comment",
-                "body": {
-                    "review_id": int(comment_id) if comment_id.isdigit() else comment_id,
-                    "content": reply_text,
-                },
-            },
-        ]
+                headers=headers,
+                timeout=15,
+            )
 
-        last_error = "所有端点均失败"
+            ct = resp.headers.get("Content-Type", "")
+            body = resp.text.strip()
 
-        for ep in endpoints:
-            try:
-                resp = self.session.post(
-                    ep["url"],
-                    json=ep["body"],
-                    timeout=15,
-                )
-
-                # TapTap 可能返回空响应或 HTML，先检查 Content-Type
-                ct = resp.headers.get("Content-Type", "")
-                if "json" not in ct:
-                    print(f"[TapTap] 端点 {ep['url']} 返回非 JSON: {ct[:50]}")
-                    last_error = f"端点返回非 JSON ({ct[:30]})"
-                    continue
-
+            if "json" in ct:
                 result = resp.json()
+                data = result.get("data") or {}
 
-                if result.get("success") or result.get("data"):
-                    print(f"[TapTap] 回复成功 via {ep['url']}")
-                    return {
-                        "success": True,
-                        "message": "回复成功",
-                        "data": result.get("data", {}),
-                    }
+                if result.get("success") and not data.get("error"):
+                    print(f"[TapTap] 回复成功: review_id={comment_id}")
+                    return {"success": True, "message": "回复成功"}
 
-                error_msg = result.get("msg", result.get("message", "未知错误"))
-                code = result.get("code", "")
-                print(f"[TapTap] {ep['url']} 返回: code={code} msg={error_msg}")
+                raw_err = data.get("msg", result.get("msg", ""))
+                print(f"[TapTap] 回复失败: {raw_err}")
 
-                # 如果是认证错误（未登录），直接返回
-                if "登录" in error_msg or "auth" in error_msg.lower() or code == -1:
-                    return {
-                        "success": False,
-                        "error": f"需要登录: {error_msg}",
-                        "message": "Cookie 无效或已过期，请重新获取"
-                    }
+                # 匹配已知错误，给出友好提示
+                for keyword, tip in ERROR_TIPS.items():
+                    if keyword in raw_err:
+                        return {"success": False, "error": raw_err, "message": tip}
 
-                last_error = error_msg
+                return {"success": False, "error": raw_err, "message": f"TapTap 返回: {raw_err}"}
 
-            except Exception as e:
-                print(f"[TapTap] 端点 {ep['url']} 异常: {e}")
-                last_error = str(e)
+            # 非 JSON 响应
+            print(f"[TapTap] review-comment/create → {resp.status_code} {ct[:50]}")
+            return {
+                "success": False,
+                "error": f"服务器返回 {resp.status_code} ({ct[:30]})",
+                "message": "Cookie 可能无效。请重新登录 taptap.cn 获取新的 Cookie。"
+            }
 
-        return {"success": False, "error": last_error}
+        except Exception as e:
+            print(f"[TapTap] 回复异常: {e}")
+            return {
+                "success": False,
+                "error": str(e),
+                "message": "网络请求失败，请检查网络后重试"
+            }

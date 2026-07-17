@@ -61,15 +61,15 @@ class CollectorFactory:
 
 
 # 注册所有平台
-from .twitter import TwitterCollector
 from .bilibili import BilibiliCollector
 from .xiaohongshu import XiaohongshuCollector
 from .weibo import WeiboCollector
 from .douyin import DouyinCollector
 from .taptap import TapTapCollector
+from .tieba import TiebaCollector
+from .wechat_mp.collector import WechatMPCollector
 
-CollectorFactory.register("twitter", TwitterCollector)
-CollectorFactory.register("x", TwitterCollector)
+# Twitter 已移除
 CollectorFactory.register("bilibili", BilibiliCollector)
 CollectorFactory.register("b站", BilibiliCollector)
 CollectorFactory.register("xiaohongshu", XiaohongshuCollector)
@@ -81,3 +81,8 @@ CollectorFactory.register("douyin", DouyinCollector)
 CollectorFactory.register("抖音", DouyinCollector)
 CollectorFactory.register("taptap", TapTapCollector)
 CollectorFactory.register("TapTap", TapTapCollector)
+CollectorFactory.register("tieba", TiebaCollector)
+CollectorFactory.register("贴吧", TiebaCollector)
+CollectorFactory.register("wechat_mp", WechatMPCollector)
+CollectorFactory.register("wechat", WechatMPCollector)
+CollectorFactory.register("公众号", WechatMPCollector)

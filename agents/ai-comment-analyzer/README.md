@@ -4,8 +4,9 @@ Multi-platform social media comment analysis and AI-powered reply tool.
 
 ## Features
 
-- Aggregate comments from 5 platforms: Twitter/X, Bilibili, Xiaohongshu, Weibo, Douyin
+- Aggregate comments from 6 platforms: Twitter/X, Bilibili, Xiaohongshu, Weibo, Douyin, **TapTap**
 - AI-powered sentiment analysis, intent classification, and quality scoring
+- Star rating analysis for TapTap game reviews
 - Structured feedback reports: pain points, bug reports, improvement suggestions
 - Intelligent auto-reply with platform-specific style
 - Agent API: REST, WebSocket, and MCP protocol endpoints
@@ -26,6 +27,15 @@ BILIBILI_SESSDATA=...
 BILIBILI_BILI_JCT=...
 # ... other platform credentials
 ```
+
+### TapTap Setup (2 min)
+TapTap uses HttpOnly cookies that require manual extraction:
+1. Open Edge/Chrome → go to [taptap.cn](https://www.taptap.cn) and **log in**
+2. Press `F12` → **Application** tab → **Cookies** → `www.taptap.cn`
+3. Find and copy the **Value** of these two cookies:
+   - `TAPTAP_SESSION` (your login token, HttpOnly ✓)
+   - `XSRF-TOKEN` (CSRF token)
+4. Paste them into the sidebar fields in the Web UI → click Save
 
 ### 3. Run Web UI
 ```
@@ -58,6 +68,7 @@ software/
     weibo.py
     douyin.py
     twitter.py
+    taptap.py
     base.py
     factory.py
 ```
