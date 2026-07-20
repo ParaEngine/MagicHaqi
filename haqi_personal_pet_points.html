@@ -1,0 +1,663 @@
+﻿<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>哈奇个人宠物积分 · 演示版</title>
+  <script src="https://cdn.keepwork.com/keepwork/cdn/tailwindcss@3.4.16.js"></script>
+  <style type="text/tailwindcss">
+    @layer base {
+      body { @apply m-0 min-h-screen bg-orange-50 text-slate-800; }
+      button { @apply min-h-10 rounded-xl border border-orange-200 bg-white px-3 py-2 text-sm font-bold text-slate-700 shadow-sm transition hover:-translate-y-0.5 hover:border-orange-300 hover:bg-orange-50 active:translate-y-0 disabled:cursor-not-allowed disabled:opacity-50; }
+      button.primary { @apply border-orange-500 bg-orange-500 text-white hover:border-orange-600 hover:bg-orange-600; }
+      button.selected { @apply border-orange-500 bg-orange-100 text-orange-800 ring-2 ring-orange-300; }
+      input, select { @apply min-h-10 rounded-xl border border-orange-200 bg-white px-3 text-sm outline-none focus:border-orange-500 focus:ring-2 focus:ring-orange-200; }
+    }
+    @layer components {
+      .card { @apply rounded-3xl border border-orange-100 bg-white p-4 shadow-lg shadow-orange-100/50; }
+      .pet-stage { @apply relative min-h-[315px] overflow-hidden rounded-[2rem] border border-orange-100 bg-gradient-to-b from-sky-100 via-amber-50 to-lime-100; }
+      .pet-sprite { @apply absolute left-1/2 top-[56%] h-44 w-44 -translate-x-1/2 -translate-y-1/2 bg-no-repeat; background-size: 400% 400%; image-rendering: auto; filter: drop-shadow(0 18px 12px rgb(120 53 15 / .22)); }
+      .pet-sprite.growth-2 { filter: drop-shadow(0 18px 14px rgb(120 53 15 / .28)) saturate(1.08); }
+      .pet-sprite.growth-3 { filter: drop-shadow(0 18px 18px rgb(245 158 11 / .48)) saturate(1.18) brightness(1.04); }
+      .pet-sprite.growth-4 { filter: drop-shadow(0 18px 22px rgb(168 85 247 / .58)) saturate(1.28) brightness(1.08); }
+      .pet-sprite.idle { animation: pet-bob 2.2s ease-in-out infinite; }
+      .pet-sprite.happy { animation: pet-happy .48s ease-in-out 4; }
+      .pet-sprite.cry { animation: pet-cry .65s ease-in-out 4; }
+      .pet-sprite.feed { animation: pet-feed .75s ease-in-out 3; }
+      .pet-sprite.play { animation: pet-play .42s ease-in-out 5; }
+      .pet-sprite.pet { animation: pet-pet .55s ease-in-out 4; }
+      .pet-sprite.celebrate { animation: pet-celebrate .52s cubic-bezier(.2,.8,.3,1) 4; }
+      .pet-sprite.cheer { animation: pet-cheer .42s ease-in-out 5; }
+      .pet-sprite.sad { animation: pet-sad .72s ease-in-out 3; }
+      .pet-sprite.dizzy { animation: pet-dizzy .85s ease-in-out 3; }
+      .pet-sprite.sleep { animation: pet-sleep 1.8s ease-in-out infinite; }
+      .pet-effect { @apply pointer-events-none absolute left-1/2 top-[54%] z-10 -translate-x-1/2 -translate-y-1/2 text-3xl; animation: pet-effect 1.7s ease-out both; }
+      .pet-effect.positive { filter: drop-shadow(0 2px 3px rgb(244 63 94 / .35)); }
+      .pet-effect.negative { filter: drop-shadow(0 2px 3px rgb(59 130 246 / .35)); }
+      .speech { @apply absolute left-1/2 top-6 z-20 max-w-[78%] -translate-x-1/2 rounded-2xl bg-white/90 px-3 py-1.5 text-center text-xs font-bold text-orange-900 shadow-md; }
+      .speech::after { content: ''; @apply absolute bottom-[-8px] left-1/2 h-4 w-4 -translate-x-1/2 rotate-45 bg-white/90; }
+      .cloud { @apply absolute rounded-full bg-white/75 blur-[1px]; animation: cloud-drift 14s linear infinite; }
+      .student-card { @apply w-full rounded-2xl border p-3 text-left transition hover:-translate-y-0.5; }
+      .student-card.active { @apply border-orange-400 bg-orange-50 ring-2 ring-orange-200; }
+      .progress { @apply block h-4 w-full overflow-hidden rounded-full bg-orange-100; }
+      .progress > span { @apply block h-full rounded-full bg-gradient-to-r from-orange-400 to-amber-400 transition-all duration-500; }
+      .pet-choice { @apply relative min-h-[110px] overflow-hidden rounded-2xl border border-orange-100 bg-orange-50 p-2 text-left; }
+      .pet-choice.selected { @apply border-orange-500 bg-orange-100 ring-2 ring-orange-300; }
+      .pet-mini { @apply mx-auto h-16 w-16 bg-no-repeat; background-size: 400% 400%; }
+      .pet-mini.growth-3 { filter: drop-shadow(0 4px 4px rgb(245 158 11 / .38)) saturate(1.12); }
+      .pet-mini.growth-4 { filter: drop-shadow(0 4px 6px rgb(168 85 247 / .5)) saturate(1.22) brightness(1.05); }
+    }
+    @keyframes pet-bob { 0%,100% { transform: translate(-50%, -50%) translateY(0) rotate(-1deg); } 50% { transform: translate(-50%, -50%) translateY(-12px) rotate(1deg); } }
+    @keyframes pet-happy { 0%,100% { transform: translate(-50%, -50%) scale(1); } 50% { transform: translate(-50%, -50%) translateY(-22px) scale(1.12) rotate(7deg); } }
+    @keyframes pet-cry { 0%,100% { transform: translate(-50%, -50%) translateX(0) rotate(0); } 25% { transform: translate(-50%, -50%) translateX(-10px) rotate(-5deg); } 75% { transform: translate(-50%, -50%) translateX(10px) rotate(5deg); } }
+    @keyframes pet-feed { 0%,100% { transform: translate(-50%, -50%) scale(1); } 45% { transform: translate(-50%, -50%) scale(.88,1.16); } 75% { transform: translate(-50%, -50%) scale(1.08,.94); } }
+    @keyframes pet-play { 0%,100% { transform: translate(-50%, -50%) translateX(0) rotate(0); } 25% { transform: translate(-50%, -50%) translateX(-34px) rotate(-10deg); } 75% { transform: translate(-50%, -50%) translateX(34px) rotate(10deg); } }
+    @keyframes pet-pet { 0%,100% { transform: translate(-50%, -50%) rotate(0) scale(1); } 35% { transform: translate(-50%, -50%) translateY(-10px) rotate(-9deg) scale(1.08); } 70% { transform: translate(-50%, -50%) rotate(7deg) scale(1.04); } }
+    @keyframes pet-celebrate { 0%,100% { transform: translate(-50%, -50%) scale(1) rotate(0); } 35% { transform: translate(-50%, -50%) translateY(-34px) scale(1.18) rotate(-10deg); } 65% { transform: translate(-50%, -50%) translateY(-12px) scale(1.1) rotate(10deg); } }
+    @keyframes pet-cheer { 0%,100% { transform: translate(-50%, -50%) rotate(0); } 25% { transform: translate(-50%, -50%) translateX(-20px) rotate(-14deg); } 75% { transform: translate(-50%, -50%) translateX(20px) rotate(14deg); } }
+    @keyframes pet-sad { 0%,100% { transform: translate(-50%, -50%) scale(1); } 50% { transform: translate(-50%, -50%) translateY(16px) scale(.9,.82) rotate(-5deg); } }
+    @keyframes pet-dizzy { 0% { transform: translate(-50%, -50%) rotate(0) scale(1); } 50% { transform: translate(-50%, -50%) rotate(360deg) scale(.88); } 100% { transform: translate(-50%, -50%) rotate(720deg) scale(1); } }
+    @keyframes pet-effect { 0% { opacity: 0; transform: translate(-50%, -20%) scale(.45) rotate(-12deg); } 25% { opacity: 1; } 100% { opacity: 0; transform: translate(-50%, -180%) scale(1.35) rotate(12deg); } }
+    @keyframes pet-sleep { 0%,100% { transform: translate(-50%, -50%) translateY(2px); opacity: .83; } 50% { transform: translate(-50%, -50%) translateY(12px); opacity: 1; } }
+    @keyframes cloud-drift { from { transform: translateX(-80px); } to { transform: translateX(520px); } }
+  </style>
+</head>
+<body>
+  <script>
+    game_config = {
+      grade: '三年级',
+      classNumber: '2',
+      className: '三年二班',
+      xpCurve: { base: 50, perLevel: 0 },
+      pointRules: [
+        { id: 'class_answer', label: '课堂回答问题积极', points: 2 },
+        { id: 'active_answer', label: '上课主动回答问题', points: 1 },
+        { id: 'homework_month', label: '连续一个月作业优秀', points: 5 },
+        { id: 'top_200', label: '成绩进步至年级前 200 名', points: 5 },
+        { id: 'score_progress', label: '成绩进步', points: 3 },
+        { id: 'rank_up_10', label: '成绩前进 10 个名次', points: 5 },
+        { id: 'rank_up_5', label: '成绩前进 5 个名次', points: 3 },
+        { id: 'morning_reading', label: '早读认真', points: 2 },
+        { id: 'homework_on_time', label: '作业按时完成', points: 2 },
+        { id: 'recitation_on_time', label: '按时完成背诵任务', points: 2 },
+        { id: 'monthly_exam', label: '月考总分达标', points: 5 }
+      ]
+    };
+  </script>
+  <script>
+    art_assets = [
+      { id: 'dragon1', imageUrl: 'https://cdn.keepwork.com/maisi/magichaqi/pet/dragon1_20260525031133.webp', rows: 4, columns: 4, isTransparent: true, description: '阿凡紫 4x4 动态精灵图', imageWidth: 1024, imageHeight: 1024 },
+      { id: 'milk_moo_bubu', imageUrl: 'https://cdn.keepwork.com/maisi/magichaqi/pet/milk_moo_bubu_20260523165501.webp', rows: 4, columns: 4, isTransparent: true, description: '奶沫哞布布 4x4 动态精灵图', imageWidth: 1024, imageHeight: 1024 },
+      { id: 'star_horse_nuomi', imageUrl: 'https://cdn.keepwork.com/maisi/magichaqi/pet/star_horse_nuomi_20260524120457.webp', rows: 4, columns: 4, isTransparent: true, description: '糯糯星马 4x4 动态精灵图', imageWidth: 1024, imageHeight: 1024 },
+      { id: 'flame_puppy_doudou', imageUrl: 'https://cdn.keepwork.com/maisi/magichaqi/pet/flame_puppy_doudou_20260524132225.webp', rows: 4, columns: 4, isTransparent: true, description: '豆豆火汪 4x4 动态精灵图', imageWidth: 1024, imageHeight: 1024 },
+      { id: 'zodiac_rabbit_ruanruan', imageUrl: 'https://cdn.keepwork.com/maisi/magichaqi/pet/zodiac_rabbit_ruanruan_20260524132501.webp', rows: 4, columns: 4, isTransparent: true, description: '软软月兔 4x4 动态精灵图', imageWidth: 1024, imageHeight: 1024 },
+      { id: 'zodiac_dragon_bobo', imageUrl: 'https://cdn.keepwork.com/maisi/magichaqi/pet/zodiac_dragon_bobo_20260524132332.webp', rows: 4, columns: 4, isTransparent: true, description: '波波小龙 4x4 动态精灵图', imageWidth: 1024, imageHeight: 1024 }
+    ];
+  </script>
+
+  <main id="pageContent" class="mx-auto hidden max-w-7xl p-3 sm:p-6">
+    <header class="mb-4 flex flex-col gap-3 rounded-3xl bg-gradient-to-r from-orange-500 to-amber-400 p-5 text-white shadow-xl shadow-orange-200 sm:flex-row sm:items-center sm:justify-between">
+      <div>
+        <p class="m-0 text-sm font-bold text-orange-100">FamousPet 精灵图互动演示</p>
+        <h1 class="m-0 text-2xl font-black">哈奇个人宠物积分</h1>
+        <p class="m-0 mt-1 text-sm text-orange-50">一人一只宠物：个人积分只升级自己的伙伴</p>
+      </div>
+      <div class="flex flex-wrap items-center justify-end gap-2">
+        <button id="openReadonlyButton" data-action="open-readonly" class="hidden border-white/50 bg-white/15 text-white hover:bg-white/25">⛶ 全屏学生列表</button>
+        <button data-action="open-logout" class="border-white/50 bg-white/15 text-white hover:bg-white/25">退出登录</button>
+        <div id="roleSwitch" class="flex gap-2 rounded-2xl bg-white/20 p-1" aria-label="演示身份">
+          <button data-action="role" data-role="teacher" class="border-0 bg-white text-orange-700 hover:bg-orange-50">教师管理</button>
+          <button data-action="role" data-role="student" class="border-0 bg-transparent text-white hover:bg-white/15">学生访问</button>
+        </div>
+      </div>
+    </header>
+
+    <section id="app" class="grid gap-4 lg:grid-cols-[280px_minmax(0,1fr)_300px]"></section>
+  </main>
+  <div id="toast" class="pointer-events-none fixed bottom-5 left-1/2 z-50 hidden -translate-x-1/2 rounded-2xl bg-slate-800 px-4 py-3 text-sm font-bold text-white shadow-xl"></div>
+  <div id="loginGate" class="fixed inset-0 z-[200] flex items-center justify-center bg-gradient-to-br from-orange-100 via-amber-50 to-sky-100 p-5">
+    <div class="w-full max-w-md rounded-3xl border border-orange-200 bg-white p-7 text-center shadow-2xl shadow-orange-200/70">
+      <div class="text-5xl">🐾</div>
+      <p class="mb-1 mt-4 text-xs font-black tracking-widest text-orange-500">哈奇个人宠物积分</p>
+      <h2 class="m-0 text-2xl font-black text-slate-800">请先登录 KeepWork</h2>
+      <p id="loginGateHint" class="mt-3 text-sm leading-6 text-slate-500">请选择登录身份，再使用 KeepWork 账号登录。</p>
+      <div class="mt-4 grid grid-cols-2 gap-3 text-left" aria-label="登录身份选择">
+        <button type="button" data-login-role="teacher" class="login-role border-orange-500 bg-orange-50 text-orange-700"><span class="block text-base font-black">教师登录</span><span class="mt-1 block text-xs font-medium">管理班级、学生与积分</span></button>
+        <button type="button" data-login-role="student" class="login-role border-slate-200 bg-white text-slate-600"><span class="block text-base font-black">学生登录</span><span class="mt-1 block text-xs font-medium">仅查看名单和个人宠物</span></button>
+      </div>
+      <button id="keepworkLoginButton" class="primary mt-4 w-full">使用 KeepWork 登录 / 注册</button>
+    </div>
+  </div>
+  <div id="readonlyScreen" class="fixed inset-0 z-[100] hidden overflow-hidden bg-slate-50 p-2 sm:p-3"></div>
+  <div id="studentFormScreen" class="fixed inset-0 z-[110] hidden overflow-auto bg-slate-900/45 p-4 sm:p-8"></div>
+  <div id="logoutScreen" class="fixed inset-0 z-[210] hidden items-center justify-center bg-slate-900/55 p-5">
+    <div class="w-full max-w-md rounded-3xl bg-white p-7 text-center shadow-2xl">
+      <div class="text-5xl">👋</div>
+      <p class="mb-1 mt-4 text-xs font-black tracking-widest text-orange-500">KeepWork 账号</p>
+      <h2 class="m-0 text-2xl font-black text-slate-800">确认退出登录？</h2>
+      <p class="mt-3 text-sm leading-6 text-slate-500">退出后将返回登录页。本地保存的班级、学生和宠物演示数据不会被删除。</p>
+      <div class="mt-6 grid grid-cols-2 gap-3"><button data-action="close-logout">暂不退出</button><button data-action="confirm-logout" class="border-rose-500 bg-rose-500 text-white hover:bg-rose-600">确认退出</button></div>
+    </div>
+  </div>
+
+  <script>
+    (() => {
+      const STORAGE_KEY = 'MagicHaqi.personalPetPoints.demo.v1';
+      const CLASS_CONFIG_KEY = 'MagicHaqi.personalPetPoints.classConfig.v1';
+      try { Object.assign(game_config, JSON.parse(localStorage.getItem(CLASS_CONFIG_KEY)) || {}); } catch (_) { /* 使用默认班级配置 */ }
+      function classLabel() {
+        const grade = String(game_config.grade || '').trim();
+        const classNumber = String(game_config.classNumber || '').trim();
+        return grade && classNumber ? `${grade}${classNumber}班` : String(game_config.className || '未设置班级');
+      }
+      game_config.className = classLabel();
+      // 精选自 famous-pets/_pet_index.json；均为 4 × 4 精灵图，外观根据宠物等级变化。
+      const pets = [
+        { id: 'dragon1', name: '阿凡紫', species: '蜜糖蜜蜂', color: '薄荷绿', rarity: 64, url: 'https://cdn.keepwork.com/maisi/magichaqi/pet/dragon1_20260525031133.webp' },
+        { id: 'milk_moo_bubu', name: '奶沫哞布布', species: '奶糖小牛兽', color: '奶白焦糖', rarity: 88, url: 'https://cdn.keepwork.com/maisi/magichaqi/pet/milk_moo_bubu_20260523165501.webp' },
+        { id: 'star_horse_nuomi', name: '糯糯星马', species: '星鬃小马驹', color: '薰衣草紫', rarity: 91, url: 'https://cdn.keepwork.com/maisi/magichaqi/pet/star_horse_nuomi_20260524120457.webp' },
+        { id: 'flame_puppy_doudou', name: '豆豆火汪', species: '棉花糖小狗', color: '橘色奶油白', rarity: 86, url: 'https://cdn.keepwork.com/maisi/magichaqi/pet/flame_puppy_doudou_20260524132225.webp' },
+        { id: 'zodiac_rabbit_ruanruan', name: '软软月兔', species: '月绒兔耳鸟', color: '月光银白', rarity: 91, url: 'https://cdn.keepwork.com/maisi/magichaqi/pet/zodiac_rabbit_ruanruan_20260524132501.webp' },
+        { id: 'zodiac_dragon_bobo', name: '波波小龙', species: '祥云泡泡龙', color: '彩虹渐变', rarity: 98, url: 'https://cdn.keepwork.com/maisi/magichaqi/pet/zodiac_dragon_bobo_20260524132332.webp' },
+        { id: 'zodiac_rat_mimi', name: '米米鼠团', species: '灵穗小鼠', color: '珍珠白', rarity: 88, url: 'https://cdn.keepwork.com/maisi/magichaqi/pet/zodiac_rat_mimi_20260524154201.webp' },
+        { id: 'zodiac_ox_nainai', name: '奶奶哞哞', species: '福角小牛', color: '奶茶棕', rarity: 89, url: 'https://cdn.keepwork.com/maisi/magichaqi/pet/zodiac_ox_nainai_20260524133030.webp' },
+        { id: 'zodiac_tiger_tangtang', name: '糖糖虎爪', species: '焰纹奶虎', color: '橘金色', rarity: 92, url: 'https://cdn.keepwork.com/maisi/magichaqi/pet/zodiac_tiger_tangtang_20260524161411.webp' },
+        { id: 'zodiac_snake_youyou', name: '悠悠团蛇', species: '玉环小蛇', color: '翡翠青绿', rarity: 90, url: 'https://cdn.keepwork.com/maisi/magichaqi/pet/zodiac_snake_youyou_20260524163751.webp' },
+        { id: 'zodiac_horse_dudu', name: '嘟嘟云马', species: '风鬃小马', color: '奶油杏色', rarity: 93, url: 'https://cdn.keepwork.com/maisi/magichaqi/pet/zodiac_horse_dudu_20260524124614.webp' },
+        { id: 'zodiac_goat_mianmian', name: '绵绵咩咩', species: '云绒小羊', color: '棉花糖白', rarity: 87, url: 'https://cdn.keepwork.com/maisi/magichaqi/pet/zodiac_goat_mianmian_20260524124724.webp' },
+        { id: 'zodiac_monkey_qiqi', name: '奇奇桃猴', species: '桃叶灵猴', color: '焦糖金棕', rarity: 91, url: 'https://cdn.keepwork.com/maisi/magichaqi/pet/zodiac_monkey_qiqi_20260528041713.webp' },
+        { id: 'zodiac_rooster_jiji', name: '叽叽彩冠', species: '朝霞小鸡', color: '玫瑰红渐变金黄', rarity: 89, url: 'https://cdn.keepwork.com/maisi/magichaqi/pet/zodiac_rooster_jiji_20260524152704.webp' },
+        { id: 'zodiac_dog_wangwang', name: '汪汪福豆', species: '福豆小犬', color: '芝麻奶黄', rarity: 88, url: 'https://cdn.keepwork.com/maisi/magichaqi/pet/zodiac_dog_wangwang_20260524132956.webp' },
+        { id: 'zodiac_pig_lulu', name: '噜噜元宝', species: '元宝小猪', color: '樱花粉', rarity: 90, url: 'https://cdn.keepwork.com/maisi/magichaqi/pet/zodiac_pig_lulu_20260524161535.webp' },
+        { id: 'lulu_flame_lioncub', name: '噜噜焰团', species: '火鬃狮团', color: '焦糖金色', rarity: 92, url: 'https://cdn.keepwork.com/maisi/magichaqi/pet/lulu_flame_lioncub_20260528041744.webp' },
+        { id: 'mimi_frost_seal', name: '咪咪雪泡', species: '霜泡海豹', color: '冰蓝白色', rarity: 88, url: 'https://cdn.keepwork.com/maisi/magichaqi/pet/mimi_frost_seal_20260524165412.webp' },
+        { id: 'qiqi_star_drake', name: '琪琪星咕', species: '星幕幼龙', color: '深夜紫色', rarity: 96, url: 'https://cdn.keepwork.com/maisi/magichaqi/pet/qiqi_star_drake_20260524165652.webp' },
+        { id: 'nono_leaf_guardian', name: '糯糯芽芽', species: '翠芽守护兽', color: '薄荷绿色', rarity: 84, url: 'https://cdn.keepwork.com/maisi/magichaqi/pet/nono_leaf_guardian_20260524170800.webp' },
+        { id: 'bobo_pearl_manta', name: '啵啵珍珍', species: '珍珠云鳐', color: '奶白珠光色', rarity: 90, url: 'https://cdn.keepwork.com/maisi/magichaqi/pet/bobo_pearl_manta_20260524165135.webp' },
+        { id: 'tangtang_thunder_bee', name: '糖糖嗡嗡', species: '蜜焰战蜂', color: '金黄色', rarity: 87, url: 'https://cdn.keepwork.com/maisi/magichaqi/pet/tangtang_thunder_bee_20260524165728.webp' },
+        { id: 'yoyo_moon_owlcat', name: '悠悠月团', species: '月霜猫头鹰', color: '银灰色', rarity: 94, url: 'https://cdn.keepwork.com/maisi/magichaqi/pet/yoyo_moon_owlcat_20260524165829.webp' },
+        { id: 'doudou_shadow_fox', name: '豆豆影尾', species: '影尾团狐', color: '黑紫渐变色', rarity: 91, url: 'https://cdn.keepwork.com/maisi/magichaqi/pet/doudou_shadow_fox_20260524165232.webp' },
+        { id: 'pipi_life_octopus', name: '皮皮泡爪', species: '灵泡小章鱼', color: '粉蓝渐变色', rarity: 86, url: 'https://cdn.keepwork.com/maisi/magichaqi/pet/pipi_life_octopus_20260524165604.webp' },
+        { id: 'momo_rainbow_phoenix', name: '沫沫彩羽', species: '彩羽灵凰', color: '彩虹色', rarity: 99, url: 'https://cdn.keepwork.com/maisi/magichaqi/pet/momo_rainbow_phoenix_20260524165440.webp' },
+        { id: 'shanhaijing_jiuwei_mimi', name: '玖玖绒绒', species: '九尾狐幼崽', color: '桃粉渐变色', rarity: 98, url: 'https://cdn.keepwork.com/maisi/magichaqi/pet/shanhaijing_jiuwei_mimi_20260524181205.webp' },
+        { id: 'shanhaijing_bifang_doudou', name: '方方啾豆', species: '毕方独脚鸟', color: '朱红金羽色', rarity: 94, url: 'https://cdn.keepwork.com/maisi/magichaqi/pet/shanhaijing_bifang_doudou_20260524182558.webp' },
+        { id: 'shanhaijing_wenyao_bobo', name: '波波鳐糖', species: '文鳐飞鱼', color: '天蓝银斑色', rarity: 92, url: 'https://cdn.keepwork.com/maisi/magichaqi/pet/shanhaijing_wenyao_bobo_20260524182630.webp' },
+        { id: 'shanhaijing_fuzhu_lulu', name: '鹿鹿雪团', species: '夫诸白鹿', color: '雪白色', rarity: 95, url: 'https://cdn.keepwork.com/maisi/magichaqi/pet/shanhaijing_fuzhu_lulu_20260524181348.webp' },
+        { id: 'shanhaijing_xuangui_gugu', name: '龟龟咕噜', species: '旋龟宝宝', color: '墨绿青铜色', rarity: 90, url: 'https://cdn.keepwork.com/maisi/magichaqi/pet/shanhaijing_xuangui_gugu_20260524182511.webp' },
+        { id: 'shanhaijing_lushu_banban', name: '斑斑栗栗', species: '鹿蜀斑兽', color: '焦糖白斑色', rarity: 91, url: 'https://cdn.keepwork.com/maisi/magichaqi/pet/shanhaijing_lushu_banban_20260524181505.webp' },
+        { id: 'shanhaijing_jingwei_weiwei', name: '薇薇衔石', species: '精卫小鸟', color: '青羽橘喙色', rarity: 93, url: 'https://cdn.keepwork.com/maisi/magichaqi/pet/shanhaijing_jingwei_weiwei_20260528042014.webp' },
+        { id: 'shanhaijing_kunpeng_yunyun', name: '云云鲲团', species: '鲲鹏幼灵', color: '深海蓝渐变色', rarity: 99, url: 'https://cdn.keepwork.com/maisi/magichaqi/pet/shanhaijing_kunpeng_yunyun_20260524181612.webp' },
+        { id: 'shanhaijing_qiongqi_qiqi', name: '奇奇绒爪', species: '穷奇小虎', color: '黑金虎纹色', rarity: 97, url: 'https://cdn.keepwork.com/maisi/magichaqi/pet/shanhaijing_qiongqi_qiqi_20260528042045.webp' },
+        { id: 'shanhaijing_zheng_miaomiao', name: '狰狰喵球', species: '狰角豹猫', color: '玫瑰红豹斑色', rarity: 94, url: 'https://cdn.keepwork.com/maisi/magichaqi/pet/shanhaijing_zheng_miaomiao_20260524181754.webp' },
+        { id: 'shanhaijing_tiangou_wangwang', name: '天狗旺团', species: '天狗月影犬', color: '银灰黑影色', rarity: 92, url: 'https://cdn.keepwork.com/maisi/magichaqi/pet/shanhaijing_tiangou_wangwang_20260524181828.webp' },
+        { id: 'shanhaijing_baihuan_huanhuan', name: '欢欢灵耳', species: '讙兽宝宝', color: '奶白橘尾色', rarity: 89, url: 'https://cdn.keepwork.com/maisi/magichaqi/pet/shanhaijing_baihuan_huanhuan_20260524181911.webp' }
+      ];
+      const demoStudentNames = [
+        '王小雨', '李希之', '陈曦', '周雨桐', '张子涵', '刘思远', '赵一诺', '孙嘉乐', '黄梓轩', '吴欣怡',
+        '徐浩然', '胡诗涵', '朱子墨', '高宇航', '林雨菲', '何嘉佑', '郭梦琪', '马晨阳', '罗可心', '梁子骞',
+        '宋欣然', '郑皓轩', '谢语桐', '韩子悦', '唐梓豪', '冯思妍', '于乐天', '董佳宁', '萧子睿', '程安然',
+        '曹雨泽', '袁若曦', '邓宇辰', '许诺言', '傅嘉禾', '沈清欢', '曾子谦', '彭思源', '吕星河', '苏念初',
+        '卢嘉诚', '蒋语嫣', '蔡沐阳', '贾诗琪', '丁浩宇', '魏可欣', '薛晨曦', '叶子轩', '阎雨薇', '余书言'
+      ];
+      const demoStudentGenders = [
+        '女', '男', '女', '女', '女', '男', '女', '男', '男', '女',
+        '男', '女', '男', '男', '女', '男', '女', '男', '女', '男',
+        '女', '男', '女', '女', '男', '女', '男', '女', '男', '女',
+        '男', '女', '男', '女', '男', '女', '男', '男', '男', '女',
+        '男', '女', '男', '女', '男', '女', '女', '男', '女', '男'
+      ];
+      function createDemoStudents() {
+        return demoStudentNames.map((name, index) => ({
+          id: ['stu_xiaoyu', 'stu_xizhi', 'stu_chenxi', 'stu_yutong'][index] || `stu_demo_${index + 1}`,
+          name,
+          gender: demoStudentGenders[index],
+          points: [18, 27, 9, 36][index] ?? 6 + (index * 7) % 55,
+          petId: ['zodiac_rabbit_ruanruan', 'zodiac_dragon_bobo', 'flame_puppy_doudou', 'star_horse_nuomi'][index] || pets[index % pets.length].id,
+          bond: 20 + (index * 9) % 70,
+          mood: 72 + (index * 5) % 28,
+          action: 'idle',
+          lastPointsAt: Date.now(),
+          message: `${name}，今天也一起进步吧！`
+        }));
+      }
+      const defaultState = {
+        role: 'teacher', selectedStudentId: 'stu_xiaoyu', studentSearch: '',
+        students: createDemoStudents(),
+        ledger: [
+          { id: 'p1', studentId: 'stu_xiaoyu', reason: '课堂回答', points: 3, at: '2026-07-15 09:20' },
+          { id: 'p2', studentId: 'stu_xizhi', reason: '作业认真', points: 3, at: '2026-07-15 09:10' },
+          { id: 'p3', studentId: 'stu_yutong', reason: '团队合作', points: 2, at: '2026-07-15 08:50' }
+        ]
+      };
+      const clone = value => JSON.parse(JSON.stringify(value));
+      let state;
+      try { state = JSON.parse(localStorage.getItem(STORAGE_KEY)) || clone(defaultState); } catch (_) { state = clone(defaultState); }
+      if (!Array.isArray(state.students) || !state.students.length) state = clone(defaultState);
+      // 兼容旧演示数据：保留已有记录，并自动补齐为 50 名案例学生。
+      if (state.students.length < demoStudentNames.length) {
+        const existingIds = new Set(state.students.map(student => student.id));
+        state.students.push(...createDemoStudents().filter(student => !existingIds.has(student.id)));
+      }
+      state.students.forEach((student, index) => { student.gender = student.gender === '男' ? '男' : student.gender === '女' ? '女' : (demoStudentGenders[index] || '未填写'); if (!Number.isFinite(Number(student.lastPointsAt)) || Number(student.lastPointsAt) <= 0) student.lastPointsAt = Date.now(); student.action ||= 'idle'; student.message ||= `${student.name}，今天也一起进步吧！`; });
+      state.studentSearch ||= '';
+
+      const app = document.getElementById('app');
+      const toast = document.getElementById('toast');
+      const esc = value => String(value ?? '').replace(/[&<>'"]/g, c => ({ '&':'&amp;', '<':'&lt;', '>':'&gt;', "'":'&#39;', '"':'&quot;' })[c]);
+      const petOf = student => pets.find(pet => pet.id === student.petId) || pets[0];
+      const xpNeed = () => 50;
+      function progression(points) {
+        let level = 1, remaining = Math.max(0, Number(points) || 0);
+        while (remaining >= xpNeed(level)) { remaining -= xpNeed(level); level++; }
+        // 四套建模每两级解锁一套：Lv.1–2、Lv.3–4、Lv.5–6、Lv.7+。
+        const stage = Math.min(4, Math.floor((level - 1) / 2) + 1);
+        return { level, xp: remaining, need: xpNeed(level), percent: Math.round(remaining / xpNeed(level) * 100), stage };
+      }
+      function framePosition(action, level) {
+        // 精灵图的四行是从低到高的建模，每两级切换一次，绝不循环回退。
+        const row = Math.min(3, Math.max(0, Math.floor((level - 1) / 2)));
+        const col = ({ idle: 0, happy: 1, cry: 2, feed: 1, play: 1, sleep: 3 })[action] ?? 0;
+        return `${col * 33.333}% ${row * 33.333}%`;
+      }
+      function petVisualStyle(pet, action, level) {
+        // 同一套建模的第二级只强化体型、亮度和光晕；高等级亦持续强化。
+        const saturation = 1 + Math.min(level - 1, 20) * 0.025;
+        const brightness = 1 + Math.min(level - 1, 20) * 0.012;
+        const glow = Math.min(0.18 + level * 0.025, 0.72).toFixed(2);
+        const scale = (1 + Math.min(level - 1, 16) * 0.018).toFixed(3);
+        return `background-image:url('${pet.url}');background-position:${framePosition(action, level)};scale:${scale};filter:drop-shadow(0 8px ${8 + Math.min(level, 12)}px rgb(245 158 11 / ${glow})) saturate(${saturation}) brightness(${brightness})`;
+      }
+      function sprite(student, sizeClass = 'pet-sprite') {
+        const pet = petOf(student), prog = progression(student.points);
+        return `<div class="${sizeClass} growth-${prog.stage} ${student.action || 'idle'}" style="${petVisualStyle(pet, student.action, prog.level)}" aria-label="${esc(student.name)}的 Lv.${prog.level} 动态宠物${esc(pet.name)}"></div>`;
+      }
+      function actionEffect(action) {
+        const effects = {
+          happy: ['💖 ✨', 'positive'], celebrate: ['🎉 ⭐', 'positive'], cheer: ['🙌 💫', 'positive'],
+          feed: ['🍓 💕', 'positive'], play: ['⚽ ✨', 'positive'], pet: ['💗 🫧', 'positive'],
+          cry: ['💧 💧', 'negative'], sad: ['🌧️ 💧', 'negative'], dizzy: ['💫 😵', 'negative']
+        };
+        const [text, tone] = effects[action] || ['', ''];
+        return text ? `<span class="pet-effect ${tone}">${text}</span>` : '';
+      }
+      function save() { localStorage.setItem(STORAGE_KEY, JSON.stringify(state)); }
+      function showToast(message) {
+        toast.textContent = message; toast.classList.remove('hidden');
+        clearTimeout(showToast.timer); showToast.timer = setTimeout(() => toast.classList.add('hidden'), 2200);
+      }
+      function currentStudent() { return state.students.find(item => item.id === state.selectedStudentId) || state.students[0]; }
+      function setAction(student, action, message) {
+        student.action = action; student.message = message;
+        if (action !== 'sleep') setTimeout(() => { if (student.action === action) { student.action = 'idle'; save(); render(); } }, 1900);
+        save(); render();
+      }
+      function changePoints(student, delta, reason) {
+        const before = Math.max(0, Number(student.points) || 0);
+        const requested = Math.trunc(Number(delta) || 0);
+        const after = Math.max(0, before + requested);
+        const actual = after - before;
+        if (!actual) { showToast('积分已经无法再扣除'); return; }
+        student.points = after;
+        student.lastPointsAt = Date.now();
+        state.ledger.unshift({ id: `p_${Date.now()}`, studentId: student.id, reason, points: actual, at: new Date().toLocaleString('zh-CN', { hour12: false }) });
+        if (actual > 0) {
+          student.mood = Math.min(100, (student.mood || 0) + 8);
+          const action = ['happy', 'celebrate', 'cheer'][Math.floor(Math.random() * 3)];
+          setAction(student, action, `太棒了！我获得了 ${actual} 点个人经验，我们继续努力！`);
+          showToast(`已为 ${student.name} 加 ${actual} 分，${petOf(student).name} 开心极了！`);
+        } else {
+          student.mood = Math.max(0, (student.mood || 0) - 12);
+          setAction(student, 'cry', `呜…这次扣了 ${Math.abs(actual)} 分。我会陪你一起调整，下一次做得更好！`);
+          showToast(`已为 ${student.name} 扣 ${Math.abs(actual)} 分，${petOf(student).name} 正在难过。`);
+        }
+      }
+      function updateRestingPets() {
+        const restAfterMs = 24 * 60 * 60 * 1000;
+        let changed = false;
+        state.students.forEach(student => {
+          if (Date.now() - student.lastPointsAt >= restAfterMs && student.action !== 'sleep') {
+            student.action = 'sleep';
+            student.message = '今天的积分暂时没有变化，我先休息一会儿，等你回来！';
+            changed = true;
+          }
+        });
+        if (changed) { save(); render(); }
+      }
+      function studentList() {
+        const visibleStudents = state.role === 'teacher'
+          ? state.students.filter(student => `${student.name} ${petOf(student).name}`.includes(state.studentSearch.trim()))
+          : state.students.filter(student => student.id === state.selectedStudentId);
+        if (state.role === 'teacher') return `<section class="card lg:col-span-3 overflow-hidden p-0">
+          <div class="flex flex-col gap-3 border-b border-orange-100 bg-gradient-to-r from-amber-50 to-white px-4 py-3 sm:flex-row sm:items-center sm:justify-between">
+            <div class="flex flex-wrap items-center gap-2"><span class="rounded-xl bg-teal-500 px-3 py-2 text-sm font-black text-white">♧ 学生管理</span><span class="rounded-xl bg-white px-3 py-2 text-sm font-bold text-slate-600">${esc(game_config.className)}</span><span class="text-xs text-slate-400">共 ${state.students.length} 位学生</span></div>
+            <div class="flex flex-wrap items-center gap-2"><input id="studentSearch" value="${esc(state.studentSearch)}" placeholder="⌕ 搜索学生或宠物" class="w-full sm:w-52"><button data-action="clear-search" class="min-h-10 px-3 text-xs">清除搜索</button><button data-action="class-settings" class="border-indigo-200 bg-indigo-50 text-indigo-700 hover:bg-indigo-100">⚙ 年级班级</button><button data-action="add-student" class="border-emerald-500 bg-emerald-500 text-white hover:bg-emerald-600">＋ 添加学生</button><button data-action="edit-student">编辑资料</button><button data-action="delete-student" class="border-rose-200 bg-rose-50 text-rose-600 hover:border-rose-300 hover:bg-rose-100">删除学生</button></div>
+          </div>
+          <div class="grid grid-cols-2 gap-2 bg-orange-50 p-3 sm:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5">${visibleStudents.map(student => {
+            const prog = progression(student.points), pet = petOf(student), isCurrent = student.id === state.selectedStudentId;
+            return `<button class="student-card min-h-[236px] overflow-hidden rounded-2xl border-orange-200 bg-orange-50 p-0 ${isCurrent ? 'active' : ''}" data-action="select-student" data-id="${student.id}">
+              <span class="relative flex h-[142px] items-center justify-center overflow-hidden bg-orange-50"><span class="absolute left-2 top-2 flex max-w-[60%] items-center gap-1 rounded-md bg-orange-100 px-2 py-1 text-sm font-black text-slate-700"><span class="truncate">${esc(student.name)}</span><span class="shrink-0 text-base leading-none ${student.gender === '男' ? 'text-sky-800' : 'text-rose-700'}" aria-label="${student.gender}">${student.gender === '男' ? '♂' : '♀'}</span></span><span class="absolute right-2 top-2 rounded-md bg-indigo-100 px-2 py-1 text-sm font-black text-indigo-700">${prog.level}级</span><span class="pet-mini growth-${prog.stage} ${student.action || 'idle'} h-36 w-36" style="${petVisualStyle(pet, student.action, prog.level)}"></span></span>
+              <span class="block bg-orange-50 px-3 pb-3 pt-2 text-left"><span class="mt-2 flex justify-end text-base font-bold text-slate-700">${prog.xp}/${prog.need}</span><span class="mt-1.5 block progress"><span style="width:${prog.percent}%"></span></span></span>
+            </button>`;
+          }).join('') || '<p class="col-span-full py-12 text-center text-sm text-slate-400">没有找到符合条件的学生</p>'}</div>
+        </section>`;
+        return `<section class="card"><p class="mb-1 text-xs font-black tracking-widest text-orange-500">访问身份 · 仅查看自己</p>
+          <h2 class="m-0 mb-4 text-3xl font-black">${esc(game_config.className)}</h2>
+          <div class="space-y-3">${visibleStudents.map(student => {
+            const prog = progression(student.points), pet = petOf(student), isCurrent = student.id === state.selectedStudentId;
+            return `<button class="student-card flex items-center gap-4 rounded-3xl px-5 py-4 ${isCurrent ? 'active' : 'border-orange-100 bg-white'}" data-action="select-student" data-id="${student.id}">
+              <span class="pet-mini growth-${prog.stage} h-20 w-20 shrink-0" style="${petVisualStyle(pet, 'idle', prog.level)}"></span><span class="min-w-0 flex-1 text-left"><span class="block truncate text-2xl font-black">${esc(student.name)} <small class="text-sm ${student.gender === '男' ? 'text-sky-600' : 'text-rose-500'}">${student.gender === '男' ? '♂ 男' : '♀ 女'}</small></span><span class="mt-1 block text-base font-normal text-slate-500">${esc(pet.name)} · Lv.${prog.level}</span><span class="mt-2 block max-w-md"><span class="progress"><span style="width:${prog.percent}%"></span></span></span></span><span class="text-right"><span class="block text-2xl font-black text-orange-600">${student.points}分</span><span class="text-xs font-normal text-slate-400">个人宠物经验</span></span>
+            </button>`;
+          }).join('')}</div>
+          <p class="mt-3 text-xs leading-5 text-slate-500">学生仅可查看班级学生档案，无法修改积分、宠物外观或互动数据。</p>
+        </section>`;
+      }
+      function petPanel(student) {
+        const pet = petOf(student), prog = progression(student.points);
+        return `<section class="card min-w-0"><div class="mb-3 flex items-start justify-between gap-2"><div><p class="m-0 text-xs font-black tracking-widest text-orange-500">${state.role === 'teacher' ? '当前学生的个人伙伴' : '我的个人伙伴'}</p><h2 class="m-0 mt-1 text-2xl font-black">${esc(pet.name)} <span class="text-base text-slate-400">· ${esc(pet.species)}</span></h2><p class="m-0 mt-1 text-xs font-bold text-amber-600">稀有度 ${pet.rarity ?? '--'}</p></div><span class="rounded-full bg-orange-100 px-3 py-1 text-sm font-black text-orange-700">Lv.${prog.level}</span></div>
+          <div class="pet-stage"><span class="cloud left-6 top-14 h-6 w-16"></span><span class="cloud right-12 top-24 h-4 w-10" style="animation-delay:-6s"></span><div class="speech">${esc(student.message)}</div>${actionEffect(student.action)}${sprite(student)}<div class="absolute bottom-4 left-1/2 -translate-x-1/2 text-2xl">${student.action === 'feed' ? '🍓' : student.action === 'play' ? '⚽' : student.action === 'sleep' ? '💤' : '✨'}</div></div>
+          <div class="mt-4 grid gap-3 sm:grid-cols-3"><div class="rounded-2xl bg-orange-50 p-3"><span class="text-xs text-slate-500">个人积分</span><strong class="block text-xl text-orange-600">${student.points} 分</strong></div><div class="rounded-2xl bg-orange-50 p-3"><span class="text-xs text-slate-500">本级经验</span><strong class="block text-xl text-orange-600">${prog.xp} / ${prog.need}</strong></div><div class="rounded-2xl bg-orange-50 p-3"><span class="text-xs text-slate-500">亲密度</span><strong class="block text-xl text-orange-600">${student.bond}</strong></div></div>
+          <div class="mt-3"><div class="mb-1 flex justify-between text-xs font-bold text-slate-500"><span>升级进度 · 达到经验要求即可提升等级</span><span>${prog.percent}%</span></div><div class="progress"><span style="width:${prog.percent}%"></span></div></div>
+          <div class="mt-4 grid grid-cols-2 gap-2 sm:grid-cols-4"><button data-action="interact" data-kind="pet">🤲 摸摸</button><button data-action="interact" data-kind="feed">🍓 喂食</button>${state.role === 'teacher' ? '<button data-action="interact" data-kind="play">⚽ 玩耍</button><button data-action="interact" data-kind="sleep">🌙 休息</button>' : '<span class="col-span-2 rounded-xl bg-slate-50 p-2 text-center text-xs text-slate-500">摸摸和喂食会让宠物开心，不影响课堂积分。</span>'}</div>
+          <p class="mb-0 mt-3 text-center text-xs text-slate-500">互动会改变宠物心情和亲密度，不会获得课堂积分。</p>
+        </section>`;
+      }
+      function teacherPanel(student) {
+        const recent = state.ledger.filter(row => row.studentId === student.id).slice(0, 5);
+        return `<aside class="card h-fit"><p class="mb-1 text-xs font-black tracking-widest text-emerald-600">加分指标</p><h2 class="m-0 text-xl font-black">为 ${esc(student.name)} 记分</h2><p class="mt-1 text-sm text-slate-500">奖励只会增加这位学生自己宠物的经验。</p>
+          <div class="mt-3 grid grid-cols-1 gap-2 sm:grid-cols-2 lg:grid-cols-1">${game_config.pointRules.map(rule => `<button class="border-emerald-200 bg-emerald-50 text-left hover:border-emerald-400 hover:bg-emerald-100" data-action="award" data-reason="${rule.label}" data-points="${rule.points}"><span class="block text-xs text-slate-600">${rule.label}</span><b class="mt-1 block text-emerald-700">+${rule.points}</b></button>`).join('')}</div>
+          <div class="mt-3 border-t border-orange-100 pt-3"><label class="block text-xs font-bold text-slate-500">自定义分数</label><div class="mt-1 flex gap-2"><input id="customPoints" type="number" min="1" max="20" value="1" class="min-w-0 flex-1"><button class="primary" data-action="custom-award">加分</button><button class="border-rose-200 bg-rose-50 text-rose-600 hover:bg-rose-100" data-action="custom-deduct">扣分</button></div><p class="mb-0 mt-2 text-[10px] text-slate-400">加分宠物开心；扣分宠物会哭泣；超过 24 小时未变动积分会进入休息模式。</p></div>
+          <div class="mt-4 border-t border-orange-100 pt-3"><p class="m-0 text-sm font-black">最近积分流水</p><div class="mt-2 space-y-2">${recent.length ? recent.map(row => `<div class="rounded-xl bg-orange-50 px-3 py-2 text-xs"><div class="flex justify-between"><b>${esc(row.reason)}</b><b class="${row.points < 0 ? 'text-rose-600' : 'text-orange-600'}">${row.points > 0 ? '+' : ''}${row.points}</b></div><span class="text-slate-500">${row.at}</span></div>`).join('') : '<p class="text-xs text-slate-400">暂无积分记录</p>'}</div></div>
+        </aside>`;
+      }
+      function studentPanel(student) {
+        const pet = petOf(student), prog = progression(student.points);
+        return `<aside class="card h-fit"><p class="mb-1 text-xs font-black tracking-widest text-orange-500">只读访问</p><h2 class="m-0 text-xl font-black">学生档案展示</h2><p class="mt-1 text-sm text-slate-500">当前页面仅供查看，学生不可修改宠物、积分或互动数据。</p><div class="mt-4 rounded-2xl bg-orange-50 p-4"><span class="text-xs text-slate-500">当前查看</span><strong class="mt-1 block text-lg">${esc(student.name)} <span class="text-sm ${student.gender === '男' ? 'text-sky-600' : 'text-rose-500'}">${student.gender === '男' ? '♂ 男' : '♀ 女'}</span></strong><span class="mt-2 block text-sm text-orange-600">Lv.${prog.level} · ${student.points} 分</span></div><p class="mb-0 mt-4 text-center text-xs text-slate-500">全屏学生列表入口已移至页面顶部。</p></aside>`;
+      }
+      function readonlyScreen() {
+        const screen = document.getElementById('readonlyScreen');
+        const student = currentStudent(), pet = petOf(student), prog = progression(student.points);
+        screen.innerHTML = `<div class="mx-auto max-w-7xl"><header class="mb-5 flex flex-col gap-3 rounded-3xl bg-gradient-to-r from-indigo-600 to-violet-500 p-5 text-white shadow-xl sm:flex-row sm:items-center sm:justify-between"><div><p class="m-0 text-sm text-indigo-100">只读展示 · 学生无操作权限</p><h2 class="m-0 text-3xl font-black">${esc(game_config.className)} · 学生宠物档案</h2></div><button class="border-white/50 bg-white/15 text-white hover:bg-white/25" data-action="close-readonly">× 退出全屏</button></header><div class="grid gap-5 lg:grid-cols-[minmax(0,1fr)_360px]"><section class="grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-4">${state.students.map(item => { const itemPet = petOf(item), itemProg = progression(item.points), active = item.id === state.selectedStudentId; return `<button class="student-card min-h-[240px] overflow-hidden rounded-3xl p-0 ${active ? 'active' : 'border-slate-100 bg-white'}" data-action="readonly-student" data-id="${item.id}"><span class="relative flex h-36 items-center justify-center bg-gradient-to-b from-indigo-50 to-violet-100"><span class="absolute left-3 top-3 rounded-lg bg-white/85 px-2 py-1 text-[10px] font-bold text-slate-500">学生档案</span><span class="absolute right-3 top-3 rounded-lg bg-indigo-600 px-2 py-1 text-[10px] font-black text-white">LV ${itemProg.level}</span><span class="pet-mini h-28 w-28" style="background-image:url('${itemPet.url}');background-position:${framePosition('idle', itemProg.level)}"></span></span><span class="block p-3 text-left"><b class="block text-lg">${esc(item.name)}</b><span class="mt-1 block truncate text-xs font-normal text-slate-500">${esc(itemPet.name)} · ${esc(itemPet.species)}</span><span class="mt-3 flex justify-between text-xs"><span class="text-slate-500">个人积分</span><b class="text-orange-600">${item.points} 分</b></span><span class="mt-2 block progress h-2"><span style="width:${itemProg.percent}%"></span></span></span></button>`; }).join('')}</section><aside class="card h-fit"><p class="mb-1 text-xs font-black tracking-widest text-indigo-600">学生详情 · 只读</p><h3 class="m-0 text-2xl font-black">${esc(student.name)}</h3><div class="mt-4 rounded-3xl bg-gradient-to-b from-sky-50 to-violet-100 p-4"><div class="relative h-52 overflow-hidden rounded-2xl"><div class="speech">${esc(student.message)}</div>${sprite(student)} </div></div><div class="mt-4 grid grid-cols-3 gap-2 text-center"><div class="rounded-xl bg-orange-50 p-2"><span class="block text-[10px] text-slate-500">等级</span><b class="text-orange-600">Lv.${prog.level}</b></div><div class="rounded-xl bg-orange-50 p-2"><span class="block text-[10px] text-slate-500">积分</span><b class="text-orange-600">${student.points}</b></div><div class="rounded-xl bg-orange-50 p-2"><span class="block text-[10px] text-slate-500">经验</span><b class="text-orange-600">${prog.xp}/${prog.need}</b></div></div><p class="mb-0 mt-4 rounded-xl bg-slate-50 p-3 text-xs leading-5 text-slate-500">此页面没有加分、宠物选择或互动入口，仅用于学生查看班级宠物档案。</p></aside></div></div>`;
+        screen.classList.remove('hidden');
+      }
+      // 全屏名单使用紧凑宠物图鉴墙：桌面端 50 名学生可在一屏内查看宠物、等级与经验。
+      function readonlyScreen() {
+        const screen = document.getElementById('readonlyScreen');
+        screen.innerHTML = `<div class="mx-auto flex h-full max-w-[1800px] flex-col"><header class="mb-2 flex shrink-0 items-center justify-between gap-3 rounded-2xl bg-gradient-to-r from-indigo-600 to-violet-500 px-4 py-3 text-white shadow-lg"><div><p class="m-0 text-[11px] font-bold text-indigo-100">只读展示 · 学生无操作权限</p><h2 class="m-0 text-xl font-black sm:text-2xl">${esc(game_config.className)} · 宠物图鉴 <span class="text-sm font-bold text-indigo-100">（${state.students.length} 人）</span></h2></div><button class="min-h-9 shrink-0 border-white/50 bg-white/15 px-3 py-1.5 text-xs text-white hover:bg-white/25" data-action="close-readonly">× 退出全屏</button></header><section class="grid min-h-0 flex-1 grid-cols-2 gap-1.5 overflow-hidden sm:grid-cols-5 sm:grid-rows-10 sm:gap-2 lg:grid-cols-10 lg:grid-rows-5">${state.students.map(item => { const active = item.id === state.selectedStudentId, pet = petOf(item), prog = progression(item.points), genderIcon = item.gender === '男' ? '♂' : '♀'; return `<button class="student-card relative flex min-h-0 flex-col overflow-hidden rounded-xl border p-0 text-left ${active ? 'active' : 'border-slate-200 bg-white'}" data-action="readonly-student" data-id="${item.id}" aria-label="查看 ${esc(item.name)} 的宠物图鉴"><span class="relative flex min-h-0 w-full flex-1 items-center justify-center overflow-hidden bg-gradient-to-b from-amber-50 to-orange-100"><span class="absolute left-1 top-1 flex max-w-[52%] items-center gap-1 rounded bg-white/90 px-1.5 py-0.5 text-[11px] font-black text-slate-700 sm:text-sm"><span class="truncate">${esc(item.name)}</span><span class="shrink-0 text-sm leading-none ${item.gender === '男' ? 'text-sky-600' : 'text-rose-500'}" aria-label="${item.gender}">${genderIcon}</span></span><span class="absolute right-1 top-1 rounded bg-indigo-100 px-1.5 py-0.5 text-[9px] font-black text-indigo-600">Lv.${prog.level}</span><span class="pet-mini growth-${prog.stage} ${item.action || 'idle'} h-16 w-16 sm:h-20 sm:w-20" style="${petVisualStyle(pet, item.action, prog.level)}"></span></span><span class="w-full shrink-0 px-2 py-1"><span class="flex justify-end text-[9px] font-bold text-orange-600">${prog.xp}/${prog.need}</span><span class="mt-0.5 block progress h-1"><span style="width:${prog.percent}%"></span></span></span></button>`; }).join('')}</section><p class="mb-0 mt-2 shrink-0 text-center text-[10px] text-slate-400">每张图鉴卡展示学生姓名、性别图标、宠物与当前等级经验；点击可切换当前学生。</p></div>`;
+        screen.classList.remove('hidden');
+      }
+      let readonlyPage = 0;
+      function readonlyScreen() {
+        const screen = document.getElementById('readonlyScreen');
+        const cardWidth = 150;
+        const cardHeight = 166;
+        const columnCount = Math.max(1, Math.floor((window.innerWidth - 32) / (cardWidth + 10)));
+        const rowCount = Math.max(1, Math.floor((window.innerHeight - 126) / (cardHeight + 10)));
+        const pageSize = columnCount * rowCount;
+        const pageCount = Math.max(1, Math.ceil(state.students.length / pageSize));
+        readonlyPage = Math.min(Math.max(0, readonlyPage), pageCount - 1);
+        const pageStudents = state.students.slice(readonlyPage * pageSize, (readonlyPage + 1) * pageSize);
+        screen.innerHTML = `<div class="mx-auto flex h-full max-w-[1800px] flex-col"><header class="mb-3 flex shrink-0 items-center justify-between gap-3 rounded-2xl bg-gradient-to-r from-indigo-600 to-violet-500 px-4 py-3 text-white shadow-lg"><div><p class="m-0 text-[11px] font-bold text-indigo-100">只读展示 · 学生无操作权限</p><h2 class="m-0 text-xl font-black sm:text-2xl">${esc(game_config.className)} · 宠物图鉴 <span class="text-sm font-bold text-indigo-100">（${state.students.length} 人）</span></h2></div><button class="min-h-9 shrink-0 border-white/50 bg-white/15 px-3 py-1.5 text-xs text-white hover:bg-white/25" data-action="close-readonly">× 退出全屏</button></header><section class="grid content-start gap-2 overflow-hidden" style="grid-template-columns:repeat(${columnCount}, minmax(${cardWidth}px, 1fr));grid-auto-rows:${cardHeight}px">${pageStudents.map(item => { const active = item.id === state.selectedStudentId, pet = petOf(item), prog = progression(item.points), genderIcon = item.gender === '男' ? '♂' : '♀'; return `<button class="student-card relative flex min-h-0 flex-col overflow-hidden rounded-xl border p-0 text-left ${active ? 'active' : 'border-slate-200 bg-white'}" data-action="readonly-student" data-id="${item.id}" aria-label="查看 ${esc(item.name)} 的宠物图鉴"><span class="relative flex min-h-0 w-full flex-1 items-center justify-center overflow-hidden bg-gradient-to-b from-amber-50 to-orange-100"><span class="absolute left-1 top-1 flex max-w-[58%] items-center gap-1 rounded bg-white/90 px-1.5 py-0.5 text-sm font-black text-slate-700"><span class="truncate">${esc(item.name)}</span><span class="shrink-0 text-base leading-none ${item.gender === '男' ? 'text-sky-800' : 'text-rose-700'}">${genderIcon}</span></span><span class="absolute right-1 top-1 rounded bg-indigo-100 px-1.5 py-0.5 text-sm font-black text-indigo-700">${prog.level}级</span><span class="pet-mini growth-${prog.stage} ${item.action || 'idle'} h-24 w-24" style="${petVisualStyle(pet, item.action, prog.level)}"></span></span><span class="block bg-white px-3 py-2"><span class="flex justify-end text-sm font-black text-orange-600">${prog.xp}/${prog.need}</span><span class="mt-1 block progress"><span style="width:${prog.percent}%"></span></span></span></button>`; }).join('')}</section><footer class="mt-auto flex shrink-0 items-center justify-center gap-3 pt-3"><button class="min-h-9 px-4" data-action="readonly-prev" ${readonlyPage === 0 ? 'disabled' : ''}>← 上一页</button><span class="min-w-20 text-center text-sm font-bold text-slate-500">第 ${readonlyPage + 1} / ${pageCount} 页</span><button class="min-h-9 px-4" data-action="readonly-next" ${readonlyPage >= pageCount - 1 ? 'disabled' : ''}>下一页 →</button></footer></div>`;
+        screen.classList.remove('hidden');
+      }
+      function render() {
+        const student = currentStudent();
+        document.getElementById('openReadonlyButton').classList.toggle('hidden', state.role !== 'student');
+        document.getElementById('roleSwitch').classList.toggle('hidden', window.studentLoginOnly === true);
+        document.querySelectorAll('[data-action="role"]').forEach(button => {
+          const active = button.dataset.role === state.role;
+          button.classList.toggle('bg-white', active); button.classList.toggle('text-orange-700', active); button.classList.toggle('bg-transparent', !active); button.classList.toggle('text-white', !active);
+        });
+        app.innerHTML = state.role === 'teacher'
+          ? studentList()
+          : `<div class="grid gap-4 lg:col-span-3 lg:grid-cols-[minmax(290px,.8fr)_minmax(480px,1.7fr)]">${studentPanel(student)}${petPanel(student)}</div>`;
+      }
+      function award(student, points, reason) {
+        const gain = Math.max(1, Math.min(20, Number(points) || 0));
+        changePoints(student, gain, reason);
+      }
+      function openStudentForm(student = null) {
+        const screen = document.getElementById('studentFormScreen');
+        const isEdit = Boolean(student);
+        screen.innerHTML = `<div class="mx-auto mt-8 max-w-lg rounded-3xl bg-white p-5 shadow-2xl sm:mt-16 sm:p-7"><div class="flex items-start justify-between gap-4"><div><p class="m-0 text-xs font-black tracking-widest text-emerald-600">教师管理</p><h2 class="m-0 mt-1 text-2xl font-black">${isEdit ? '编辑学生资料' : '添加学生'}</h2></div><button data-action="close-student-form" aria-label="关闭">×</button></div><form id="studentForm" class="mt-5 space-y-4" data-student-id="${esc(student?.id || '')}"><label class="block text-sm font-bold text-slate-600">学生姓名<input id="studentName" class="mt-1 w-full" maxlength="20" required value="${esc(student?.name || '')}" placeholder="例如：张小明"></label><label class="block text-sm font-bold text-slate-600">性别<select id="studentGender" class="mt-1 w-full"><option value="男" ${student?.gender === '男' ? 'selected' : ''}>男</option><option value="女" ${student?.gender !== '男' ? 'selected' : ''}>女</option></select></label><label class="block text-sm font-bold text-slate-600">个人积分<input id="studentPoints" class="mt-1 w-full" type="number" min="0" step="1" required value="${student?.points ?? 0}"></label><label class="block text-sm font-bold text-slate-600">宠物伙伴（已扩充 ${pets.length} 只）<select id="studentPet" class="mt-1 w-full">${pets.map(pet => `<option value="${pet.id}" ${pet.id === (student?.petId || pets[0].id) ? 'selected' : ''}>${esc(pet.name)} · ${esc(pet.species)} · 稀有度 ${pet.rarity}</option>`).join('')}</select></label><p class="rounded-xl bg-amber-50 px-3 py-2 text-xs leading-5 text-amber-800">宠物会随个人积分获得经验并提升等级；学生账号仅能查看档案，此表单仅供教师维护。</p><div class="flex justify-end gap-2"><button type="button" data-action="close-student-form">取消</button><button class="primary" type="submit">${isEdit ? '保存修改' : '确认添加'}</button></div></form></div>`;
+        screen.classList.remove('hidden');
+        setTimeout(() => document.getElementById('studentName')?.focus(), 0);
+      }
+      function openPointPanel(student) {
+        const screen = document.getElementById('studentFormScreen');
+        const pet = petOf(student), prog = progression(student.points);
+        screen.innerHTML = `<div class="mx-auto mt-5 max-w-2xl rounded-3xl bg-white p-5 shadow-2xl sm:mt-12 sm:p-7"><div class="flex items-start justify-between gap-4"><div><p class="m-0 text-xs font-black tracking-widest text-emerald-600">教师管理 · 加分页面</p><h2 class="m-0 mt-1 text-2xl font-black">为 ${esc(student.name)} 记分</h2><p class="m-0 mt-1 text-sm text-slate-500">${esc(pet.name)} · Lv.${prog.level} · 当前经验 ${prog.xp}/${prog.need}</p></div><button data-action="close-point-panel" aria-label="关闭">×</button></div><div class="mt-5 grid gap-2 sm:grid-cols-2">${game_config.pointRules.map(rule => `<button class="min-h-20 border-emerald-200 bg-emerald-50 p-3 text-left hover:border-emerald-400 hover:bg-emerald-100" data-action="modal-award" data-reason="${esc(rule.label)}" data-points="${rule.points}"><span class="block text-sm text-slate-700">${esc(rule.label)}</span><b class="mt-1 block text-lg text-emerald-700">+${rule.points} 分</b></button>`).join('')}</div><div class="mt-5 border-t border-orange-100 pt-4"><label class="block text-sm font-bold text-slate-600">自定义分数</label><div class="mt-2 flex flex-wrap gap-2"><input id="modalCustomPoints" type="number" min="1" max="20" value="1" class="min-w-0 flex-1"><button class="primary" data-action="modal-custom-award">加分</button><button class="border-rose-200 bg-rose-50 text-rose-600 hover:bg-rose-100" data-action="modal-custom-deduct">扣分</button></div><p class="mb-0 mt-3 text-xs text-slate-500">加分时宠物会开心，扣分时宠物会哭泣。</p></div></div>`;
+        screen.classList.remove('hidden');
+      }
+      function openClassSettings() {
+        const screen = document.getElementById('studentFormScreen');
+        screen.innerHTML = `<div class="mx-auto mt-8 max-w-lg rounded-3xl bg-white p-5 shadow-2xl sm:mt-16 sm:p-7"><div class="flex items-start justify-between gap-4"><div><p class="m-0 text-xs font-black tracking-widest text-indigo-600">教师管理</p><h2 class="m-0 mt-1 text-2xl font-black">年级与班级设置</h2></div><button data-action="close-student-form" aria-label="关闭">×</button></div><form id="classSettingsForm" class="mt-5 space-y-4"><label class="block text-sm font-bold text-slate-600">年级<input id="classGrade" class="mt-1 w-full" maxlength="12" required value="${esc(game_config.grade || '')}" placeholder="例如：三年级"></label><label class="block text-sm font-bold text-slate-600">班级<input id="classNumber" class="mt-1 w-full" maxlength="8" required value="${esc(game_config.classNumber || '')}" placeholder="例如：2"></label><p class="rounded-xl bg-indigo-50 px-3 py-2 text-xs leading-5 text-indigo-800">保存后，教师管理、学生查看和全屏宠物图鉴中的班级名称都会同步更新。</p><div class="flex justify-end gap-2"><button type="button" data-action="close-student-form">取消</button><button class="primary" type="submit">保存设置</button></div></form></div>`;
+        screen.classList.remove('hidden');
+        setTimeout(() => document.getElementById('classGrade')?.focus(), 0);
+      }
+      function saveClassSettings(form) {
+        const grade = document.getElementById('classGrade').value.trim();
+        const classNumber = document.getElementById('classNumber').value.trim().replace(/班$/, '');
+        if (!grade || !classNumber) { showToast('请填写年级和班级'); return; }
+        game_config.grade = grade;
+        game_config.classNumber = classNumber;
+        game_config.className = classLabel();
+        localStorage.setItem(CLASS_CONFIG_KEY, JSON.stringify({ grade, classNumber }));
+        document.getElementById('studentFormScreen').classList.add('hidden');
+        render();
+        showToast(`已更新为 ${game_config.className}`);
+      }
+      function saveStudentForm(form) {
+        const id = form.dataset.studentId;
+        const name = document.getElementById('studentName').value.trim();
+        const gender = document.getElementById('studentGender').value === '男' ? '男' : '女';
+        const points = Number(document.getElementById('studentPoints').value);
+        const petId = document.getElementById('studentPet').value;
+        if (!name) { showToast('请输入学生姓名'); return; }
+        if (!Number.isFinite(points) || points < 0) { showToast('积分需为不小于 0 的数字'); return; }
+        const pet = pets.find(item => item.id === petId) || pets[0];
+        const existing = state.students.find(item => item.id === id);
+        if (existing) {
+          const difference = Math.floor(points) - existing.points;
+          existing.name = name; existing.gender = gender; existing.petId = pet.id;
+          if (difference) changePoints(existing, difference, '教师调整积分');
+          showToast(`已更新 ${existing.name} 的资料`);
+        } else {
+          const student = { id: `stu_${Date.now()}_${Math.random().toString(36).slice(2, 6)}`, name, gender, points: Math.floor(points), petId: pet.id, bond: 0, mood: 80, action: 'idle', lastPointsAt: Date.now(), message: `你好，我是${pet.name}！让我们一起积累成长积分吧。` };
+          state.students.push(student); state.selectedStudentId = student.id;
+          showToast(`已添加学生：${student.name}`);
+        }
+        document.getElementById('studentFormScreen').classList.add('hidden');
+        save(); render();
+      }
+      function deleteStudent(student) {
+        if (state.students.length <= 1) { showToast('至少需要保留一位学生'); return; }
+        if (!confirm(`确定删除 ${student.name} 的学生档案和积分记录吗？`)) return;
+        state.students = state.students.filter(item => item.id !== student.id);
+        state.ledger = state.ledger.filter(row => row.studentId !== student.id);
+        state.selectedStudentId = state.students[0].id;
+        save(); render(); showToast(`已删除学生：${student.name}`);
+      }
+      function logoutToLogin() {
+        localStorage.removeItem(LOGIN_STATE_KEY);
+        document.getElementById('logoutScreen').classList.add('hidden');
+        document.getElementById('logoutScreen').classList.remove('flex');
+        document.getElementById('readonlyScreen').classList.add('hidden');
+        document.getElementById('studentFormScreen').classList.add('hidden');
+        pageContent.classList.add('hidden');
+        loginGate.classList.remove('hidden');
+        window.studentLoginOnly = false;
+        loginRole = 'teacher';
+        loginGateHint.textContent = '请选择登录身份，再使用 KeepWork 账号登录。';
+        updateLoginRoleButtons();
+        keepworkLoginButton.disabled = false;
+      }
+      document.addEventListener('click', event => {
+        const button = event.target.closest('button[data-action]'); if (!button) return;
+        const action = button.dataset.action, student = currentStudent();
+        if (action === 'role' && !window.studentLoginOnly) { state.role = button.dataset.role; save(); render(); return; }
+        if (action === 'select-student') { state.selectedStudentId = button.dataset.id; save(); render(); if (state.role === 'teacher') openPointPanel(currentStudent()); return; }
+        if (action === 'clear-search') { state.studentSearch = ''; save(); render(); return; }
+        if (action === 'open-logout') { document.getElementById('logoutScreen').classList.remove('hidden'); document.getElementById('logoutScreen').classList.add('flex'); return; }
+        if (action === 'close-logout') { document.getElementById('logoutScreen').classList.add('hidden'); document.getElementById('logoutScreen').classList.remove('flex'); return; }
+        if (action === 'confirm-logout') { logoutToLogin(); return; }
+        if (action === 'class-settings' && state.role === 'teacher') { openClassSettings(); return; }
+        if (action === 'add-student' && state.role === 'teacher') { openStudentForm(); return; }
+        if (action === 'edit-student' && state.role === 'teacher') { openStudentForm(student); return; }
+        if (action === 'delete-student' && state.role === 'teacher') { deleteStudent(student); return; }
+        if (action === 'close-student-form') { document.getElementById('studentFormScreen').classList.add('hidden'); return; }
+        if (action === 'close-point-panel') { document.getElementById('studentFormScreen').classList.add('hidden'); return; }
+        if (action === 'open-readonly') { readonlyScreen(); return; }
+        if (action === 'close-readonly') { document.getElementById('readonlyScreen').classList.add('hidden'); return; }
+        if (action === 'readonly-prev') { readonlyPage -= 1; readonlyScreen(); return; }
+        if (action === 'readonly-next') { readonlyPage += 1; readonlyScreen(); return; }
+        if (action === 'readonly-student') { state.selectedStudentId = button.dataset.id; save(); readonlyScreen(); return; }
+        if (action === 'award' && state.role === 'teacher') { award(student, button.dataset.points, button.dataset.reason); return; }
+        if (action === 'modal-award' && state.role === 'teacher') { award(student, button.dataset.points, button.dataset.reason); document.getElementById('studentFormScreen').classList.add('hidden'); return; }
+        if (action === 'custom-award' && state.role === 'teacher') { award(student, document.getElementById('customPoints').value, '课堂鼓励'); return; }
+        if (action === 'modal-custom-award' && state.role === 'teacher') { award(student, document.getElementById('modalCustomPoints').value, '课堂鼓励'); document.getElementById('studentFormScreen').classList.add('hidden'); return; }
+        if (action === 'custom-deduct' && state.role === 'teacher') { changePoints(student, -Math.max(1, Math.min(20, Number(document.getElementById('customPoints').value) || 0)), '课堂扣分'); return; }
+        if (action === 'modal-custom-deduct' && state.role === 'teacher') { changePoints(student, -Math.max(1, Math.min(20, Number(document.getElementById('modalCustomPoints').value) || 0)), '课堂扣分'); document.getElementById('studentFormScreen').classList.add('hidden'); return; }
+        if (action === 'interact' && (state.role === 'teacher' || ['pet', 'feed'].includes(button.dataset.kind))) {
+          const map = { pet: ['pet', '被摸摸真开心！我的尾巴都摇起来啦！', 5, 3], feed: ['feed', '草莓真香！我现在开心又有精神！', 4, 5], play: ['play', '接到球啦！和你玩真快乐！', 2, 4], sleep: ['sleep', '晚安啦，休息好后我们明天再见！', 0, 2] };
+          const [anim, message, mood, bond] = map[button.dataset.kind]; student.mood = Math.min(100, student.mood + mood); student.bond += bond; setAction(student, anim, message); showToast(`亲密度 +${bond}；课堂积分不变`); return;
+        }
+        if (action === 'reset' && state.role === 'teacher') { if (confirm('确定清空本地演示数据并恢复初始状态吗？')) { state = clone(defaultState); save(); render(); showToast('已恢复初始演示数据'); } }
+      });
+      let searchRenderTimer = null;
+      function refreshStudentSearch(input) {
+        state.studentSearch = input.value;
+        save();
+        clearTimeout(searchRenderTimer);
+        searchRenderTimer = setTimeout(() => {
+          render();
+          const searchInput = document.getElementById('studentSearch');
+          if (searchInput) {
+            searchInput.focus();
+            searchInput.setSelectionRange(searchInput.value.length, searchInput.value.length);
+          }
+        }, 180);
+      }
+      document.addEventListener('input', event => {
+        if (event.target.id !== 'studentSearch' || event.isComposing) return;
+        refreshStudentSearch(event.target);
+      });
+      document.addEventListener('compositionend', event => {
+        if (event.target.id === 'studentSearch') refreshStudentSearch(event.target);
+      });
+      window.addEventListener('resize', () => {
+        if (!document.getElementById('readonlyScreen').classList.contains('hidden')) readonlyScreen();
+      });
+      document.addEventListener('submit', event => {
+        if (event.target.id === 'classSettingsForm') {
+          event.preventDefault();
+          if (state.role === 'teacher') saveClassSettings(event.target);
+          return;
+        }
+        if (event.target.id !== 'studentForm') return;
+        event.preventDefault();
+        if (state.role === 'teacher') saveStudentForm(event.target);
+      });
+      window.addEventListener('message', event => {
+        const msg = event.data || {};
+        if (msg.type === 'setGameConfig' && msg.data && typeof msg.data === 'object') { Object.assign(game_config, msg.data); render(); }
+      });
+      const loginGate = document.getElementById('loginGate');
+      const loginGateHint = document.getElementById('loginGateHint');
+      const keepworkLoginButton = document.getElementById('keepworkLoginButton');
+      const pageContent = document.getElementById('pageContent');
+      const LOGIN_STATE_KEY = 'MagicHaqi.personalPetPoints.loginState.v1';
+      let keepworkSdk = null;
+      let loginRole = 'teacher';
+      function updateLoginRoleButtons() {
+        document.querySelectorAll('[data-login-role]').forEach(button => {
+          const selected = button.dataset.loginRole === loginRole;
+          button.classList.toggle('border-orange-500', selected);
+          button.classList.toggle('bg-orange-50', selected);
+          button.classList.toggle('text-orange-700', selected);
+          button.classList.toggle('border-slate-200', !selected);
+          button.classList.toggle('bg-white', !selected);
+          button.classList.toggle('text-slate-600', !selected);
+        });
+      }
+
+      function loadKeepworkSdk() {
+        if (window.KeepworkSDK) return Promise.resolve();
+        return new Promise((resolve, reject) => {
+          const script = document.createElement('script');
+          script.src = 'https://cdn.keepwork.com/sdk/keepworkSDK.iife.js';
+          script.onload = resolve;
+          script.onerror = () => reject(new Error('KeepWork SDK 加载失败，请检查网络'));
+          document.head.appendChild(script);
+        });
+      }
+      async function getKeepworkSdk() {
+        await loadKeepworkSdk();
+        if (!window.KeepworkSDK) throw new Error('未找到 KeepWork 登录服务');
+        keepworkSdk = window.keepwork || new window.KeepworkSDK({ timeout: 30000, autoReloadAfterRedirectLogin: false });
+        return keepworkSdk;
+      }
+      async function getKeepworkUser(sdk) {
+        if (!sdk?.token) return null;
+        if (typeof sdk.getUserProfile === 'function') return sdk.getUserProfile();
+        if (typeof sdk.getCurrentUser === 'function') return sdk.getCurrentUser();
+        return sdk.user || null;
+      }
+      function enterAfterLogin(user) {
+        window.studentLoginOnly = loginRole === 'student';
+        if (window.studentLoginOnly) {
+          state.role = 'student';
+          save();
+        }
+        localStorage.setItem(LOGIN_STATE_KEY, JSON.stringify({
+          active: true,
+          role: loginRole,
+          username: user?.username || user?.name || 'KeepWork 用户'
+        }));
+        loginGate.classList.add('hidden');
+        pageContent.classList.remove('hidden');
+        const username = user?.username || user?.name || 'KeepWork 用户';
+        showToast(`欢迎，${username}${window.studentLoginOnly ? '（学生访问）' : '（教师管理）'}`);
+        render();
+      }
+      async function loginWithKeepwork() {
+        keepworkLoginButton.disabled = true;
+        loginGateHint.textContent = '正在连接 KeepWork 登录服务…';
+        try {
+          const sdk = await getKeepworkSdk();
+          let user = await getKeepworkUser(sdk).catch(() => null);
+          if (!user) {
+            loginGateHint.textContent = '请在 KeepWork 安全窗口中登录或注册。';
+            await sdk.showLoginWindow({ title: '哈奇个人宠物积分 登录 / 注册' });
+            user = await getKeepworkUser(sdk);
+          }
+          if (!user) throw new Error('登录未完成，请重新登录');
+          enterAfterLogin(user);
+        } catch (error) {
+          loginGateHint.textContent = error?.message || '登录失败，请重试。';
+          keepworkLoginButton.disabled = false;
+        }
+      }
+      async function restoreKeepworkSession() {
+        const savedLogin = (() => { try { return JSON.parse(localStorage.getItem(LOGIN_STATE_KEY)); } catch (_) { return null; } })();
+        if (!savedLogin?.active) return;
+        loginRole = savedLogin.role === 'student' ? 'student' : 'teacher';
+        updateLoginRoleButtons();
+        enterAfterLogin({ username: savedLogin.username || 'KeepWork 用户' });
+      }
+      document.querySelectorAll('[data-login-role]').forEach(button => {
+        button.addEventListener('click', () => {
+          loginRole = button.dataset.loginRole === 'student' ? 'student' : 'teacher';
+          loginGateHint.textContent = loginRole === 'student' ? '学生登录后仅可访问学生查看板块。' : '教师登录后可管理班级、学生与积分。';
+          updateLoginRoleButtons();
+        });
+      });
+      keepworkLoginButton.addEventListener('click', loginWithKeepwork);
+      updateLoginRoleButtons();
+      restoreKeepworkSession();
+      updateRestingPets();
+      setInterval(updateRestingPets, 60 * 1000);
+      window.parent?.postMessage({ type: 'gameLoaded', data: { id: 'haqi_personal_pet_points' } }, '*');
+    })();
+  </script>
+</body>
+</html>
