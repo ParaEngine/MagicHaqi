@@ -1,0 +1,954 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover, user-scalable=no">
+  <meta name="theme-color" content="#fff4c7">
+  <title>宠物蛋孵化</title>
+  <style>
+    :root {
+      --pink: #ff769b;
+      --pink-dark: #e84f7c;
+      --yellow: #ffd85a;
+      --cream: #fffaf0;
+      --ink: #5c4762;
+      --mint: #86dec1;
+      --purple: #9c8bea;
+    }
+
+    * { box-sizing: border-box; }
+
+    html, body { width: 100%; height: 100%; margin: 0; }
+
+    body {
+      overflow: hidden;
+      color: var(--ink);
+      font-family: "Microsoft YaHei", "PingFang SC", system-ui, sans-serif;
+      background:
+        radial-gradient(circle at 12% 15%, rgba(255,255,255,.9) 0 4%, transparent 4.2%),
+        radial-gradient(circle at 88% 20%, rgba(255,255,255,.75) 0 3%, transparent 3.2%),
+        linear-gradient(155deg, #fff8cf 0%, #ffe5ec 48%, #ded8ff 100%);
+      user-select: none;
+      touch-action: manipulation;
+    }
+
+    button, input { font: inherit; }
+
+    .game {
+      position: relative;
+      display: grid;
+      place-items: center;
+      overflow: hidden;
+      width: 100%;
+      height: 100%;
+      min-height: 480px;
+      padding: max(20px, env(safe-area-inset-top)) 20px max(20px, env(safe-area-inset-bottom));
+      isolation: isolate;
+    }
+
+    .blob {
+      position: absolute;
+      z-index: -2;
+      border-radius: 50%;
+      filter: blur(1px);
+      opacity: .7;
+      animation: drift 7s ease-in-out infinite alternate;
+    }
+
+    .blob.one { width: 180px; height: 180px; left: -55px; top: 18%; background: #a9ebd7; }
+    .blob.two { width: 240px; height: 240px; right: -95px; bottom: 4%; background: #ffc0d1; animation-delay: -3s; }
+
+    .sparkles { position: absolute; inset: 0; z-index: -1; pointer-events: none; }
+    .spark {
+      position: absolute;
+      color: rgba(255, 178, 39, .8);
+      font-size: clamp(16px, 3vw, 30px);
+      animation: twinkle 2.4s ease-in-out infinite;
+    }
+    .spark:nth-child(1) { left: 9%; top: 12%; }
+    .spark:nth-child(2) { right: 12%; top: 34%; animation-delay: -.8s; }
+    .spark:nth-child(3) { left: 16%; bottom: 14%; animation-delay: -1.6s; }
+    .spark:nth-child(4) { right: 20%; bottom: 10%; animation-delay: -.4s; }
+
+    .panel {
+      width: min(92vw, 430px);
+      padding: clamp(24px, 5vw, 38px);
+      text-align: center;
+      border: 3px solid rgba(255,255,255,.9);
+      border-radius: 34px;
+      background: rgba(255,255,255,.72);
+      box-shadow: 0 20px 55px rgba(119, 75, 110, .18), inset 0 1px 0 #fff;
+      backdrop-filter: blur(12px);
+    }
+
+    .badge {
+      display: inline-flex;
+      align-items: center;
+      gap: 7px;
+      padding: 7px 13px;
+      border-radius: 999px;
+      color: #b54d71;
+      background: #ffe3ec;
+      font-size: 13px;
+      font-weight: 800;
+      letter-spacing: 1px;
+    }
+
+    h1 {
+      margin: 16px 0 8px;
+      color: #624963;
+      font-size: clamp(27px, 7vw, 38px);
+      line-height: 1.16;
+      letter-spacing: 1px;
+    }
+
+    .subtitle { margin: 0 0 26px; color: #90768f; font-size: 15px; line-height: 1.7; }
+
+    .code-wrap {
+      display: flex;
+      gap: 10px;
+      padding: 7px 7px 7px 16px;
+      border: 3px solid #ffd1df;
+      border-radius: 20px;
+      background: #fff;
+      box-shadow: 0 8px 20px rgba(244, 105, 146, .12);
+      transition: border-color .2s, box-shadow .2s, transform .2s;
+    }
+
+    .code-wrap:focus-within {
+      border-color: #ff91b0;
+      box-shadow: 0 0 0 5px rgba(255,118,155,.13), 0 8px 20px rgba(244,105,146,.13);
+      transform: translateY(-2px);
+    }
+
+    #codeInput {
+      min-width: 0;
+      flex: 1;
+      padding: 10px 4px;
+      border: 0;
+      outline: 0;
+      color: #674d68;
+      background: transparent;
+      font-size: 21px;
+      font-weight: 900;
+      text-align: center;
+      letter-spacing: 5px;
+      text-transform: uppercase;
+    }
+
+    #codeInput::placeholder { color: #cdb9ca; font-size: 14px; letter-spacing: 1px; font-weight: 600; }
+
+    .redeem-btn {
+      min-width: 98px;
+      padding: 13px 18px;
+      border: 0;
+      border-radius: 14px;
+      color: white;
+      background: linear-gradient(145deg, #ff8baa, var(--pink-dark));
+      box-shadow: 0 6px 0 #c83d69, 0 10px 20px rgba(232,79,124,.24);
+      font-weight: 900;
+      cursor: pointer;
+      transition: transform .12s, box-shadow .12s;
+    }
+
+    .redeem-btn:hover { transform: translateY(-2px); box-shadow: 0 8px 0 #c83d69, 0 13px 24px rgba(232,79,124,.26); }
+    .redeem-btn:active { transform: translateY(5px); box-shadow: 0 1px 0 #c83d69; }
+    .redeem-btn:focus-visible { outline: 4px solid rgba(156,139,234,.45); outline-offset: 3px; }
+
+    .hint { margin-top: 17px; color: #aa90a6; font-size: 12px; }
+
+    .stage { display: none; width: min(92vw, 460px); text-align: center; }
+    .stage.show { display: block; animation: fadeIn .45s ease both; }
+
+    .stage-title {
+      margin: 0 0 5px;
+      color: #725871;
+      font-size: clamp(22px, 6vw, 31px);
+      font-weight: 900;
+    }
+
+    .stage-copy { margin: 0 0 12px; color: #9a7f96; font-size: 14px; }
+
+    .scene {
+      position: relative;
+      display: grid;
+      place-items: end center;
+      height: 265px;
+    }
+
+    .shadow {
+      position: absolute;
+      bottom: 17px;
+      width: 170px;
+      height: 28px;
+      border-radius: 50%;
+      background: rgba(100,66,105,.14);
+      filter: blur(5px);
+      transition: width .45s;
+    }
+
+    .box {
+      position: relative;
+      width: 180px;
+      height: 155px;
+      margin-bottom: 28px;
+      transform-origin: 50% 100%;
+    }
+
+    .box-body {
+      position: absolute;
+      inset: 40px 8px 0;
+      border: 5px solid #dd5c83;
+      border-radius: 14px 14px 24px 24px;
+      background: linear-gradient(135deg, #ff9ebb 0 24%, #ff789f 25% 49%, #ff9ebb 50% 74%, #ff789f 75%);
+      box-shadow: inset 0 7px 0 rgba(255,255,255,.28), 0 15px 24px rgba(186,66,105,.2);
+    }
+
+    .box-body::before {
+      content: "★";
+      position: absolute;
+      left: 50%; top: 51%;
+      display: grid;
+      place-items: center;
+      width: 55px; height: 55px;
+      border: 5px solid #efb429;
+      border-radius: 50%;
+      color: #f2a900;
+      background: #fff4ad;
+      font-size: 29px;
+      transform: translate(-50%, -50%);
+    }
+
+    .box-lid {
+      position: absolute;
+      z-index: 3;
+      left: 0; top: 25px;
+      width: 180px; height: 48px;
+      border: 5px solid #dd5c83;
+      border-radius: 17px;
+      background: #ff9ab7;
+      box-shadow: inset 0 6px 0 rgba(255,255,255,.3), 0 8px 10px rgba(178,65,99,.16);
+      transform-origin: 12% 100%;
+    }
+
+    .box-lid::after {
+      content: "";
+      position: absolute;
+      left: 50%; top: -24px;
+      width: 40px; height: 34px;
+      border: 9px solid #ffd95b;
+      border-bottom: 0;
+      border-radius: 25px 25px 5px 5px;
+      transform: translateX(-50%);
+    }
+
+    .box.shaking { animation: boxShake .13s ease-in-out 7; }
+    .box.opening .box-lid { animation: lidFly .8s cubic-bezier(.2,.8,.2,1) forwards; }
+    .box.opening .box-body { animation: boxDrop .7s .25s ease-in forwards; }
+
+    .egg-button, .pet {
+      position: absolute;
+      z-index: 2;
+      bottom: 25px;
+      border: 0;
+      background: transparent;
+    }
+
+    .egg-button {
+      display: none;
+      width: 160px;
+      height: 196px;
+      padding: 0;
+      cursor: pointer;
+      filter: drop-shadow(0 14px 12px rgba(114,76,118,.2));
+    }
+
+    .egg-button.show { display: block; animation: eggAppear .8s cubic-bezier(.2,1.25,.35,1) both, eggFloat 2.6s .8s ease-in-out infinite; }
+    .egg-button:focus-visible { outline: 5px solid rgba(255,118,155,.45); outline-offset: 5px; border-radius: 50%; }
+
+    .egg-shell {
+      position: absolute;
+      inset: 7px 13px 4px;
+      overflow: hidden;
+      border: 5px solid #e8b857;
+      border-radius: 52% 48% 48% 52% / 64% 64% 38% 38%;
+      background: linear-gradient(145deg, #fff9c5 5%, #ffe98a 54%, #ffc95d 100%);
+      box-shadow: inset 14px 12px 0 rgba(255,255,255,.5), inset -10px -9px 0 rgba(235,162,54,.15);
+    }
+
+    .egg-shell::before, .egg-shell::after {
+      content: "";
+      position: absolute;
+      border-radius: 50%;
+      background: #ff8baa;
+      box-shadow: 52px 35px 0 #9a8ce9, 12px 83px 0 #75d6b7, 70px 105px 0 #ff9f68;
+    }
+    .egg-shell::before { width: 24px; height: 31px; left: 18px; top: 42px; transform: rotate(-22deg); }
+    .egg-shell::after { width: 13px; height: 17px; left: 64px; top: 15px; background: #75d6b7; box-shadow: 35px 52px 0 #ff8baa, -38px 92px 0 #9a8ce9; }
+
+    .shine { position: absolute; z-index: 1; left: 42px; top: 27px; width: 25px; height: 52px; border-radius: 50%; background: rgba(255,255,255,.7); transform: rotate(30deg); }
+
+    .pet {
+      display: none;
+      position: relative;
+      width: 190px;
+      height: 205px;
+      filter: drop-shadow(0 15px 12px rgba(95,66,108,.18));
+    }
+    .pet.show { display: block; animation: hatchPop .9s cubic-bezier(.15,1.25,.35,1) both, petBreathe 2.4s .9s ease-in-out infinite; }
+    .account-pet-image {
+      display: none;
+      position: absolute;
+      inset: 0;
+      background-repeat: no-repeat;
+      filter: drop-shadow(0 15px 12px rgba(95,66,108,.18));
+    }
+    .pet.has-account-pet .account-pet-image { display: block; }
+    .pet.has-account-pet .fallback-bunny { display: none; }
+
+    .bunny-ear {
+      position: absolute;
+      top: 0;
+      width: 48px; height: 100px;
+      border: 5px solid #8f77d2;
+      border-radius: 55% 55% 35% 35%;
+      background: #c9baff;
+    }
+    .bunny-ear::after { content: ""; position: absolute; inset: 15px 11px 10px; border-radius: inherit; background: #ffabc3; }
+    .bunny-ear.left { left: 42px; transform: rotate(-13deg); }
+    .bunny-ear.right { right: 42px; transform: rotate(13deg); }
+
+    .bunny-face {
+      position: absolute;
+      left: 20px; right: 20px; bottom: 0;
+      height: 145px;
+      border: 5px solid #8f77d2;
+      border-radius: 48% 48% 44% 44%;
+      background: linear-gradient(145deg, #ded5ff, #b6a4f4);
+      box-shadow: inset 12px 10px 0 rgba(255,255,255,.35);
+    }
+    .eye { position: absolute; top: 52px; width: 14px; height: 20px; border-radius: 50%; background: #594665; box-shadow: inset 4px 4px 0 rgba(255,255,255,.65); }
+    .eye.left { left: 39px; } .eye.right { right: 39px; }
+    .cheek { position: absolute; top: 82px; width: 30px; height: 14px; border-radius: 50%; background: rgba(255,122,160,.55); }
+    .cheek.left { left: 17px; } .cheek.right { right: 17px; }
+    .nose { position: absolute; left: 50%; top: 78px; width: 17px; height: 12px; border-radius: 60% 60% 50% 50%; background: #ff729b; transform: translateX(-50%); }
+    .mouth { position: absolute; left: 50%; top: 90px; width: 22px; height: 13px; border-bottom: 3px solid #76566d; border-radius: 50%; transform: translateX(-50%); }
+
+    .timer-card {
+      display: none;
+      width: min(88vw, 350px);
+      margin: 2px auto 0;
+      padding: 15px 20px;
+      border: 3px solid rgba(255,255,255,.9);
+      border-radius: 24px;
+      background: rgba(255,255,255,.78);
+      box-shadow: 0 12px 30px rgba(103,70,112,.14);
+    }
+    .timer-card.show { display: block; animation: riseIn .5s ease both; }
+    .timer-label { color: #9a7e96; font-size: 13px; font-weight: 700; }
+    .timer {
+      margin-top: 2px;
+      color: var(--pink-dark);
+      font-variant-numeric: tabular-nums;
+      font-size: clamp(30px, 9vw, 43px);
+      font-weight: 900;
+      letter-spacing: 3px;
+      text-shadow: 0 3px 0 #ffd8e4;
+    }
+
+    .hatch-progress {
+      overflow: hidden;
+      height: 9px;
+      margin-top: 9px;
+      border-radius: 999px;
+      background: #f2e8f1;
+    }
+    .hatch-progress-bar {
+      width: 0;
+      height: 100%;
+      border-radius: inherit;
+      background: linear-gradient(90deg, #86dec1, #ffd85a, #ff769b);
+      transition: width .5s ease;
+    }
+
+    .care-panel {
+      display: none;
+      width: min(92vw, 410px);
+      margin: 12px auto 0;
+    }
+    .care-panel.show { display: block; animation: riseIn .55s .12s ease both; }
+    .care-title { margin-bottom: 8px; color: #8e748c; font-size: 13px; font-weight: 800; }
+    .care-actions { display: grid; grid-template-columns: repeat(3, 1fr); gap: 8px; }
+    .care-btn {
+      padding: 9px 5px 8px;
+      border: 2px solid rgba(255,255,255,.95);
+      border-radius: 17px;
+      color: #6f5771;
+      background: rgba(255,255,255,.78);
+      box-shadow: 0 6px 14px rgba(101,69,106,.12);
+      font-size: 13px;
+      font-weight: 900;
+      cursor: pointer;
+      transition: transform .15s, opacity .2s, box-shadow .15s;
+    }
+    .care-btn span { display: block; margin-bottom: 2px; font-size: 24px; }
+    .care-btn small { display: block; color: #ae8da7; font-size: 10px; font-weight: 700; }
+    .care-btn:hover:not(:disabled) { transform: translateY(-3px); box-shadow: 0 9px 18px rgba(101,69,106,.16); }
+    .care-btn:active:not(:disabled) { transform: scale(.95); }
+    .care-btn:focus-visible { outline: 4px solid rgba(156,139,234,.4); outline-offset: 2px; }
+    .care-btn:disabled { opacity: .46; cursor: default; filter: grayscale(.3); }
+    .care-summary { min-height: 17px; margin-top: 7px; color: #a47c9b; font-size: 11px; font-weight: 700; }
+
+    .egg-button.cared { animation: careBounce .55s ease !important; }
+    .care-pop {
+      position: absolute;
+      z-index: 6;
+      bottom: 165px;
+      color: #e84f7c;
+      font-size: 20px;
+      font-weight: 900;
+      text-shadow: 0 2px 0 white;
+      pointer-events: none;
+      animation: carePop .9s ease-out forwards;
+    }
+
+    .success {
+      display: none;
+      margin-top: 3px;
+      color: #4faf8c;
+      font-size: 26px;
+      font-weight: 900;
+      text-shadow: 0 2px 0 #d7fff0;
+    }
+    .success.show { display: block; animation: successBounce .7s ease both; }
+    .success-note { display: block; margin-top: 4px; color: #89738b; font-size: 14px; font-weight: 600; }
+    .retest-btn {
+      display: block;
+      margin: 12px auto 0;
+      padding: 10px 20px;
+      border: 0;
+      border-radius: 999px;
+      color: #fff;
+      background: linear-gradient(135deg, #9c8bea, #e84f7c);
+      box-shadow: 0 5px 0 #8b4aa5, 0 9px 18px rgba(126, 75, 146, .22);
+      font: inherit;
+      font-size: 14px;
+      font-weight: 900;
+      cursor: pointer;
+    }
+    .retest-btn:hover { transform: translateY(-2px); }
+    .retest-btn:active { transform: translateY(4px); box-shadow: 0 1px 0 #8b4aa5; }
+    .retest-btn:focus-visible { outline: 4px solid rgba(156,139,234,.4); outline-offset: 3px; }
+
+    .toast {
+      position: fixed;
+      z-index: 20;
+      left: 50%;
+      bottom: max(28px, env(safe-area-inset-bottom));
+      width: min(88vw, 430px);
+      padding: 15px 20px;
+      border: 3px solid #fff;
+      border-radius: 22px;
+      color: #6d536c;
+      background: #fff7ce;
+      box-shadow: 0 15px 35px rgba(91,57,91,.2);
+      font-size: 14px;
+      font-weight: 800;
+      line-height: 1.55;
+      text-align: center;
+      opacity: 0;
+      pointer-events: none;
+      transform: translate(-50%, 25px) scale(.92);
+      transition: opacity .25s, transform .35s cubic-bezier(.2,1.3,.4,1);
+    }
+    .toast.show { opacity: 1; transform: translate(-50%, 0) scale(1); }
+
+    .confetti { position: fixed; inset: 0; z-index: 10; overflow: hidden; pointer-events: none; }
+    .confetti i { position: absolute; top: -20px; width: 10px; height: 18px; border-radius: 4px; animation: confettiFall 2.4s linear forwards; }
+
+    @keyframes drift { to { transform: translate(16px, -18px) scale(1.08); } }
+    @keyframes twinkle { 0%,100% { opacity: .35; transform: scale(.75) rotate(0); } 50% { opacity: 1; transform: scale(1.2) rotate(25deg); } }
+    @keyframes fadeIn { from { opacity: 0; transform: scale(.96); } }
+    @keyframes riseIn { from { opacity: 0; transform: translateY(14px); } }
+    @keyframes boxShake { 0%,100% { transform: rotate(0); } 25% { transform: rotate(-8deg) translateX(-5px); } 75% { transform: rotate(8deg) translateX(5px); } }
+    @keyframes lidFly { to { transform: translate(-30px,-105px) rotate(-28deg); opacity: 0; } }
+    @keyframes boxDrop { to { transform: translateY(60px) scale(.7); opacity: 0; } }
+    @keyframes eggAppear { from { opacity: 0; transform: translateY(65px) scale(.3) rotate(-12deg); } 70% { transform: translateY(-8px) scale(1.06) rotate(4deg); } }
+    @keyframes eggFloat { 0%,100% { transform: translateY(0) rotate(-1.5deg); } 50% { transform: translateY(-9px) rotate(1.5deg); } }
+    @keyframes hatchPop { from { opacity: 0; transform: scale(.3) translateY(50px); } 70% { transform: scale(1.08) translateY(-5px); } }
+    @keyframes petBreathe { 0%,100% { transform: translateY(0) scale(1); } 50% { transform: translateY(-5px) scale(1.025); } }
+    @keyframes successBounce { 0% { opacity: 0; transform: scale(.4); } 70% { transform: scale(1.1); } }
+    @keyframes confettiFall { to { transform: translate(var(--drift), 110vh) rotate(720deg); } }
+    @keyframes inputNudge { 0%,100% { transform: translateX(0); } 25% { transform: translateX(-7px); } 75% { transform: translateX(7px); } }
+    @keyframes careBounce { 0%,100% { transform: scale(1) rotate(0); } 35% { transform: scale(1.12) rotate(-7deg); } 70% { transform: scale(.96) rotate(5deg); } }
+    @keyframes carePop { 0% { opacity: 0; transform: translateY(15px) scale(.6); } 25% { opacity: 1; transform: translateY(0) scale(1.1); } 100% { opacity: 0; transform: translateY(-55px) scale(.9); } }
+
+    .nudge { animation: inputNudge .25s ease 2; }
+    .hidden { display: none !important; }
+
+    @media (max-height: 650px) {
+      .panel { padding: 20px 24px; }
+      .scene { height: 225px; }
+      .box { transform: scale(.85); margin-bottom: 5px; }
+      .egg-button, .pet { transform-origin: bottom center; scale: .83; bottom: 7px; }
+      .egg-button.show { animation-name: eggAppear; }
+      .pet.show { animation-name: hatchPop; }
+      .timer-card { padding: 10px 18px; }
+      .care-panel { margin-top: 7px; }
+      .care-btn { padding: 6px 4px; }
+      .care-btn span { font-size: 20px; }
+    }
+
+    @media (prefers-reduced-motion: reduce) {
+      *, *::before, *::after { animation-duration: .01ms !important; animation-iteration-count: 1 !important; scroll-behavior: auto !important; }
+    }
+  </style>
+</head>
+<body>
+  <main class="game">
+    <div class="blob one"></div>
+    <div class="blob two"></div>
+    <div class="sparkles" aria-hidden="true">
+      <span class="spark">✦</span><span class="spark">★</span><span class="spark">✦</span><span class="spark">★</span>
+    </div>
+
+    <section id="redeemPanel" class="panel" aria-labelledby="gameTitle">
+      <div class="badge"><span>🎁</span> 神秘礼物站</div>
+      <h1 id="gameTitle">宠物蛋孵化</h1>
+      <p class="subtitle">输入激活码，领取一位<br>正在等待与你见面的新伙伴吧！</p>
+      <form id="redeemForm" novalidate>
+        <div id="codeWrap" class="code-wrap">
+          <input id="codeInput" type="text" maxlength="6" inputmode="text" autocomplete="one-time-code" aria-label="请输入6位激活码" placeholder="请输入6位激活码">
+          <button class="redeem-btn" type="submit">兑换</button>
+        </div>
+      </form>
+      <div class="hint">激活码由 6 位字母或数字组成</div>
+    </section>
+
+    <section id="revealStage" class="stage" aria-live="polite">
+      <h2 id="stageTitle" class="stage-title">礼物正在醒来…</h2>
+      <p id="stageCopy" class="stage-copy">猜猜里面藏着谁？</p>
+      <div class="scene">
+        <div id="groundShadow" class="shadow"></div>
+        <div id="blindBox" class="box" aria-hidden="true">
+          <div class="box-body"></div>
+          <div class="box-lid"></div>
+        </div>
+        <button id="eggButton" class="egg-button" type="button" aria-label="宠物蛋，点击查看">
+          <span class="egg-shell"><span class="shine"></span></span>
+        </button>
+        <div id="pet" class="pet" role="img" aria-label="孵化成功的宠物">
+          <div id="accountPetImage" class="account-pet-image"></div>
+          <div class="fallback-bunny" aria-hidden="true">
+            <span class="bunny-ear left"></span><span class="bunny-ear right"></span>
+            <span class="bunny-face">
+              <span class="eye left"></span><span class="eye right"></span>
+              <span class="cheek left"></span><span class="cheek right"></span>
+              <span class="nose"></span><span class="mouth"></span>
+            </span>
+          </div>
+        </div>
+      </div>
+      <div id="timerCard" class="timer-card">
+        <div class="timer-label">🐣 距离宝宝醒来还有</div>
+        <div id="timer" class="timer">02:00:00</div>
+        <div class="hatch-progress" aria-label="孵化进度"><div id="progressBar" class="hatch-progress-bar"></div></div>
+      </div>
+      <div id="carePanel" class="care-panel">
+        <div class="care-title">每一次关爱，都能让宝宝更快醒来 💕</div>
+        <div id="careActions" class="care-actions">
+          <button class="care-btn" type="button" data-action="stroke"><span>🖐️</span>轻轻抚摸<small></small></button>
+          <button class="care-btn" type="button" data-action="sing"><span>🎵</span>唱摇篮曲<small></small></button>
+          <button class="care-btn" type="button" data-action="sun"><span>☀️</span>晒晒太阳<small></small></button>
+        </div>
+        <div id="careSummary" class="care-summary"></div>
+      </div>
+      <div id="success" class="success">
+        ✨ 孵化成功 ✨
+        <span id="successNote" class="success-note">你好呀！以后请多多关照～</span>
+        <button id="retestButton" class="retest-btn" type="button">🔄 重新测试一次</button>
+      </div>
+    </section>
+  </main>
+
+  <div id="toast" class="toast" role="status" aria-live="assertive"></div>
+  <div id="confetti" class="confetti" aria-hidden="true"></div>
+
+  <script>
+  game_config = {
+    difficulty: "normal",
+    activationCodeLength: 6,
+    hatchDurationSeconds: 7200,
+    careActions: {
+      stroke: { seconds: 300, maxUses: 3 },
+      sing: { seconds: 600, maxUses: 3 },
+      sun: { seconds: 900, maxUses: 3 }
+    }
+  };
+  </script>
+  <script>
+  art_assets = [];
+  </script>
+  <script>
+  (() => {
+    "use strict";
+
+    const STORAGE_KEY = "haqi_blind_box_egg_state_v1";
+    const HATCH_MS = Number(game_config.hatchDurationSeconds || 7200) * 1000;
+    const CODE_LENGTH = Number(game_config.activationCodeLength || 6);
+    const redeemPanel = document.getElementById("redeemPanel");
+    const redeemForm = document.getElementById("redeemForm");
+    const codeInput = document.getElementById("codeInput");
+    const codeWrap = document.getElementById("codeWrap");
+    const revealStage = document.getElementById("revealStage");
+    const blindBox = document.getElementById("blindBox");
+    const eggButton = document.getElementById("eggButton");
+    const pet = document.getElementById("pet");
+    const accountPetImage = document.getElementById("accountPetImage");
+    const timerCard = document.getElementById("timerCard");
+    const timer = document.getElementById("timer");
+    const progressBar = document.getElementById("progressBar");
+    const carePanel = document.getElementById("carePanel");
+    const careActions = document.getElementById("careActions");
+    const careSummary = document.getElementById("careSummary");
+    const success = document.getElementById("success");
+    const successNote = document.getElementById("successNote");
+    const retestButton = document.getElementById("retestButton");
+    const stageTitle = document.getElementById("stageTitle");
+    const stageCopy = document.getElementById("stageCopy");
+    const toast = document.getElementById("toast");
+    const confetti = document.getElementById("confetti");
+    let timerId = 0;
+    let toastId = 0;
+    let hatched = false;
+    let activeState = null;
+
+    const AccountPet = {
+      requestId: "",
+      petId: "",
+      petName: "",
+      objectUrl: "",
+      fallbackTimer: 0,
+      request(petId = "") {
+        this.petId = petId || this.petId;
+        this.requestId = `blind_box_pet_${Date.now()}`;
+        window.parent.postMessage({
+          type: "haqi_get_pet_image",
+          requestId: this.requestId,
+          anim: "happy",
+          petId: this.petId || undefined
+        }, "*");
+        clearTimeout(this.fallbackTimer);
+        this.fallbackTimer = window.setTimeout(() => {
+          if (this.objectUrl) return;
+          window.parent.postMessage({ type: "haqi_get_pet_images", requestId: `blind_box_pets_${Date.now()}`, anim: "happy" }, "*");
+        }, 900);
+      },
+      setPet(payload) {
+        if (!payload?.imageBlob) return;
+        try {
+          if (this.objectUrl) URL.revokeObjectURL(this.objectUrl);
+          this.objectUrl = URL.createObjectURL(payload.imageBlob);
+          const uv = payload.uv || {};
+          const cols = Math.max(1, Number(uv.cols) || 1);
+          const rows = Math.max(1, Number(uv.rows) || 1);
+          const col = Math.max(0, Number(uv.col) || 0);
+          const row = Math.max(0, Number(uv.row) || 0);
+          accountPetImage.style.backgroundImage = `url("${this.objectUrl}")`;
+          accountPetImage.style.backgroundSize = cols > 1 || rows > 1 ? `${cols * 100}% ${rows * 100}%` : "contain";
+          accountPetImage.style.backgroundPosition = cols > 1 || rows > 1
+            ? `${cols > 1 ? col * 100 / (cols - 1) : 50}% ${rows > 1 ? row * 100 / (rows - 1) : 50}%`
+            : "center";
+          this.petId = payload.petId || this.petId;
+          this.petName = String(payload.name || this.petName || "新伙伴").trim();
+          pet.classList.add("has-account-pet");
+          pet.setAttribute("aria-label", `孵化成功的宠物：${this.petName}`);
+          if (hatched) renderHatchedPetText();
+        } catch (_) {
+          showToast("账户宠物形象加载失败，已使用默认形象");
+        }
+      },
+      handleMessage(message) {
+        if (message.type === "haqi_pet_image" && message.ok && message.data &&
+            (!this.requestId || !message.requestId || message.requestId === this.requestId || message.requestId === "active_pet_config")) {
+          this.setPet(message.data);
+        }
+        if (message.type === "haqi_pet_images" && message.ok) {
+          const pets = Array.isArray(message.data?.pets) ? message.data.pets : [];
+          const selected = pets.find(item => !this.petId || item.petId === this.petId) || pets[0];
+          if (selected) this.setPet(selected);
+        }
+      },
+      destroy() {
+        clearTimeout(this.fallbackTimer);
+        if (this.objectUrl) URL.revokeObjectURL(this.objectUrl);
+      }
+    };
+
+    const CARE_INFO = {
+      stroke: { label: "轻轻抚摸", effect: "好舒服呀～ 💕" },
+      sing: { label: "唱摇篮曲", effect: "听见你的歌声啦 ♪" },
+      sun: { label: "晒晒太阳", effect: "暖洋洋的 ☀️" }
+    };
+
+    function post(type, data) {
+      window.parent.postMessage(data ? { type, data } : { type }, "*");
+    }
+
+    function loadState() {
+      try {
+        const parsed = JSON.parse(localStorage.getItem(STORAGE_KEY) || "null");
+        if (!parsed || !Number.isFinite(Number(parsed.startedAt))) return null;
+        parsed.acceleratedMs = Math.max(0, Number(parsed.acceleratedMs) || 0);
+        parsed.actionUses = parsed.actionUses && typeof parsed.actionUses === "object" ? parsed.actionUses : {};
+        return parsed;
+      } catch (_) {
+        return null;
+      }
+    }
+
+    function saveState(startedAt, code) {
+      const state = { startedAt, code, acceleratedMs: 0, actionUses: {}, version: 2 };
+      persistState(state);
+      return state;
+    }
+
+    function persistState(state) {
+      try { localStorage.setItem(STORAGE_KEY, JSON.stringify(state)); } catch (_) { /* Storage may be disabled. */ }
+    }
+
+    function showToast(message) {
+      clearTimeout(toastId);
+      toast.textContent = message;
+      toast.classList.add("show");
+      toastId = window.setTimeout(() => toast.classList.remove("show"), 2800);
+    }
+
+    function normalizeCode(value) {
+      return value.toUpperCase().replace(/[^A-Z0-9]/g, "").slice(0, CODE_LENGTH);
+    }
+
+    function formatTime(milliseconds) {
+      const seconds = Math.max(0, Math.ceil(milliseconds / 1000));
+      const hours = Math.floor(seconds / 3600);
+      const minutes = Math.floor((seconds % 3600) / 60);
+      const secs = seconds % 60;
+      return [hours, minutes, secs].map(value => String(value).padStart(2, "0")).join(":");
+    }
+
+    function showEgg() {
+      blindBox.classList.add("hidden");
+      eggButton.classList.add("show");
+      timerCard.classList.add("show");
+      carePanel.classList.add("show");
+      stageTitle.textContent = "宠物蛋领取成功！";
+      stageCopy.textContent = "轻轻守护它，宝宝正在甜甜地睡觉";
+    }
+
+    function getRemaining(state) {
+      return Number(state.startedAt) + HATCH_MS - Number(state.acceleratedMs || 0) - Date.now();
+    }
+
+    function renderCareActions(state) {
+      let totalSeconds = 0;
+      careActions.querySelectorAll(".care-btn").forEach(button => {
+        const action = button.dataset.action;
+        const config = game_config.careActions[action];
+        const used = Number(state.actionUses[action] || 0);
+        const left = Math.max(0, Number(config.maxUses) - used);
+        button.disabled = left === 0 || hatched;
+        button.querySelector("small").textContent = left > 0 ? `-${Math.round(config.seconds / 60)}分钟 · 剩${left}次` : "本轮关爱完成";
+        totalSeconds += used * Number(config.seconds);
+      });
+      careSummary.textContent = totalSeconds > 0 ? `你的关爱已加速 ${Math.floor(totalSeconds / 60)} 分钟 ✨` : "选择一种方式照顾宠物蛋吧";
+    }
+
+    function showCareEffect(text) {
+      eggButton.classList.remove("cared");
+      void eggButton.offsetWidth;
+      eggButton.classList.add("cared");
+      const pop = document.createElement("span");
+      pop.className = "care-pop";
+      pop.textContent = text;
+      document.querySelector(".scene").appendChild(pop);
+      window.setTimeout(() => pop.remove(), 950);
+    }
+
+    function launchConfetti() {
+      const colors = ["#ff769b", "#ffd85a", "#86dec1", "#9c8bea", "#ff9f68"];
+      confetti.replaceChildren();
+      for (let i = 0; i < 42; i += 1) {
+        const piece = document.createElement("i");
+        piece.style.left = `${Math.random() * 100}%`;
+        piece.style.background = colors[i % colors.length];
+        piece.style.animationDelay = `${Math.random() * .8}s`;
+        piece.style.animationDuration = `${1.8 + Math.random() * 1.4}s`;
+        piece.style.setProperty("--drift", `${-70 + Math.random() * 140}px`);
+        confetti.appendChild(piece);
+      }
+      window.setTimeout(() => confetti.replaceChildren(), 3500);
+    }
+
+    function renderHatchedPetText() {
+      const name = AccountPet.petName;
+      stageTitle.textContent = name ? `${name}醒来啦！` : "欢迎来到这个世界！";
+      stageCopy.textContent = name ? `蛋蛋星球的${name}来和你见面了` : "你的小伙伴终于睡醒啦";
+      successNote.textContent = name ? `${name}：你好呀！以后请多多关照～` : "你好呀！以后请多多关照～";
+    }
+
+    function hatch() {
+      if (hatched) return;
+      hatched = true;
+      clearInterval(timerId);
+      eggButton.classList.remove("show");
+      eggButton.classList.add("hidden");
+      timerCard.classList.remove("show");
+      carePanel.classList.remove("show");
+      pet.classList.add("show");
+      success.classList.add("show");
+      renderHatchedPetText();
+      launchConfetti();
+      post("gameFinished", {
+        earnedPoints: 10,
+        score: 100,
+        difficulty: game_config.difficulty,
+        seconds: Math.round(HATCH_MS / 1000),
+        finishedAt: Date.now()
+      });
+    }
+
+    function updateTimer(state) {
+      const remaining = getRemaining(state);
+      timer.textContent = formatTime(remaining);
+      const elapsed = HATCH_MS - Math.max(0, remaining);
+      progressBar.style.width = `${Math.min(100, Math.max(0, elapsed / HATCH_MS * 100))}%`;
+      if (remaining <= 0) hatch();
+    }
+
+    function beginCountdown(state) {
+      activeState = state;
+      showEgg();
+      renderCareActions(state);
+      updateTimer(state);
+      if (!hatched) timerId = window.setInterval(() => updateTimer(state), 250);
+    }
+
+    function playOpening(state) {
+      redeemPanel.classList.add("hidden");
+      revealStage.classList.add("show");
+      blindBox.classList.add("shaking");
+      window.setTimeout(() => {
+        blindBox.classList.remove("shaking");
+        blindBox.classList.add("opening");
+      }, 1050);
+      window.setTimeout(() => beginCountdown(state), 1850);
+    }
+
+    function restore(state) {
+      redeemPanel.classList.add("hidden");
+      revealStage.classList.add("show");
+      beginCountdown(state);
+    }
+
+    function resetForRetest() {
+      clearInterval(timerId);
+      try { localStorage.removeItem(STORAGE_KEY); } catch (_) { /* Storage may be disabled. */ }
+      location.reload();
+    }
+
+    codeInput.addEventListener("input", () => {
+      const clean = normalizeCode(codeInput.value);
+      if (codeInput.value !== clean) codeInput.value = clean;
+    });
+
+    redeemForm.addEventListener("submit", event => {
+      event.preventDefault();
+      const code = normalizeCode(codeInput.value);
+      codeInput.value = code;
+      if (code.length !== CODE_LENGTH) {
+        codeWrap.classList.remove("nudge");
+        void codeWrap.offsetWidth;
+        codeWrap.classList.add("nudge");
+        showToast("激活码要有 6 位哦，再检查一下吧！");
+        codeInput.focus();
+        return;
+      }
+      const state = saveState(Date.now(), code);
+      post("gameStarted", { activationCode: code });
+      playOpening(state);
+    });
+
+    eggButton.addEventListener("click", () => {
+      if (!hatched) showToast("嘘，宝宝正在睡觉，等回家后再来看它哦！");
+    });
+
+    retestButton.addEventListener("click", resetForRetest);
+
+    careActions.addEventListener("click", event => {
+      const button = event.target.closest(".care-btn");
+      if (!button || button.disabled || !activeState || hatched) return;
+      const action = button.dataset.action;
+      const config = game_config.careActions[action];
+      const used = Number(activeState.actionUses[action] || 0);
+      if (used >= Number(config.maxUses)) return;
+      activeState.actionUses[action] = used + 1;
+      activeState.acceleratedMs = Number(activeState.acceleratedMs || 0) + Number(config.seconds) * 1000;
+      persistState(activeState);
+      renderCareActions(activeState);
+      showCareEffect(CARE_INFO[action].effect);
+      showToast(`${CARE_INFO[action].label}成功，孵化时间缩短 ${Math.round(config.seconds / 60)} 分钟！`);
+      updateTimer(activeState);
+    });
+
+    function syncExternalState() {
+      const latest = loadState();
+      if (!latest || !activeState || Number(latest.startedAt) !== Number(activeState.startedAt)) return;
+      activeState = latest;
+      renderCareActions(activeState);
+      updateTimer(activeState);
+    }
+
+    window.addEventListener("storage", event => {
+      if (event.key === STORAGE_KEY) syncExternalState();
+    });
+    document.addEventListener("visibilitychange", () => {
+      if (!document.hidden) syncExternalState();
+    });
+
+    window.addEventListener("message", event => {
+      const message = event.data || {};
+      if (message.type === "setGameConfig" && message.data) {
+        const data = message.data;
+        if (data.gameConfig && typeof data.gameConfig === "object") Object.assign(game_config, data.gameConfig);
+        else Object.assign(game_config, data);
+        if (data.petName) AccountPet.petName = String(data.petName).trim();
+        if (data.petId) AccountPet.request(data.petId);
+      }
+      AccountPet.handleMessage(message);
+    });
+    window.addEventListener("beforeunload", () => AccountPet.destroy(), { once: true });
+
+    const existingState = loadState();
+    if (existingState) restore(existingState);
+    else window.setTimeout(() => codeInput.focus(), 250);
+
+    window.__blindBoxEggDebug = {
+      storageKey: STORAGE_KEY,
+      loadState,
+      formatTime,
+      hatch,
+      reset: resetForRetest,
+      finishNow() {
+        const state = loadState() || saveState(Date.now(), "DEBUG1");
+        state.startedAt = Date.now() - HATCH_MS - 1000;
+        persistState(state);
+        updateTimer(state);
+      }
+    };
+
+    AccountPet.request();
+    post("gameLoaded");
+  })();
+  </script>
+</body>
+</html>

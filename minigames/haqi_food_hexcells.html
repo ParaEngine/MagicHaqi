@@ -206,7 +206,7 @@
       .mh-cell {
         position: absolute; width: var(--hex); height: calc(var(--hex) * 1.16); transform: translate(-50%, -50%);
         border: 0; padding: 0; clip-path: polygon(50% 0%, 94% 25%, 94% 75%, 50% 100%, 6% 75%, 6% 25%);
-        display: grid; place-items: center; cursor: pointer; color: #fff; font-weight: 1000; font-size: calc(var(--hex) * .42);
+        display: grid; place-items: center; cursor: pointer; color: #fff; font-weight: 1000; font-size: calc(var(--hexpx) * .42);
         transition: transform .12s ease, filter .12s ease, opacity .18s ease;
       }
       .mh-cell:active { transform: translate(-50%, -50%) scale(.94); }
@@ -243,8 +243,8 @@
         box-shadow: inset 0 2px 0 rgba(255,255,255,.82), inset 0 -3px 0 rgba(22,163,74,.16), 0 0 0 2px rgba(255,255,255,.72);
       }
       .mh-cell.mark-wrong { filter: grayscale(.1) brightness(.92); }
-      .mh-cell .tiny { font-size: calc(var(--hex) * .3); line-height: 1; }
-      .mh-cell .food-icon { font-size: calc(var(--hex) * .62); line-height: 1; filter: drop-shadow(0 2px 0 rgba(255,255,255,.72)) drop-shadow(0 4px 3px rgba(15,23,42,.2)); }
+      .mh-cell .tiny { font-size: calc(var(--hexpx) * .3); line-height: 1; }
+      .mh-cell .food-icon { font-size: calc(var(--hexpx) * .62); line-height: 1; filter: drop-shadow(0 2px 0 rgba(255,255,255,.72)) drop-shadow(0 4px 3px rgba(15,23,42,.2)); }
       .mh-drag-ghost {
         position: fixed; z-index: 47; width: var(--ghost-w); height: var(--ghost-h); transform: translate(-50%, -50%) scale(1.04);
         clip-path: polygon(50% 0%, 94% 25%, 94% 75%, 50% 100%, 6% 75%, 6% 25%);
@@ -613,6 +613,19 @@
     post('gameStarted', { difficulty: state.difficulty, level: state.level });
   }
 
+  // Derive the cell font size from the board's real pixel width.
+  // font-size percentages resolve against the parent font size (not element
+  // width), so a percentage --hex collapses to a sub-pixel font; desktop Chrome
+  // clamps it up to its 6px minimum, but WeChat's webview renders the true
+  // ~0.7px and the numbers vanish. Compute an actual px value instead.
+  function updateHexFontSize() {
+    if (!boardEl) return;
+    const hexPercent = parseFloat(boardEl.style.getPropertyValue('--hex'));
+    const width = boardEl.clientWidth;
+    if (!hexPercent || !width) return;
+    boardEl.style.setProperty('--hexpx', `${width * hexPercent / 100}px`);
+  }
+
   function renderBoard() {
     const centers = state.cells.map(cell => ({
       cell,
@@ -634,6 +647,7 @@
     );
     const hexPercent = hexCoordWidth * scale * .985;
     boardEl.style.setProperty('--hex', `${hexPercent}%`);
+    updateHexFontSize();
     boardEl.innerHTML = '';
 
     centers.forEach(({ cell, x, y }) => {
@@ -1116,6 +1130,8 @@
   document.getElementById('mhNext').onclick = () => startGame();
   startBtn.onclick = () => startGame();
   window.addEventListener('beforeunload', cleanupObjectUrls);
+  window.addEventListener('resize', updateHexFontSize);
+  window.addEventListener('orientationchange', updateHexFontSize);
 
   buildDifficulties();
   updateHud();

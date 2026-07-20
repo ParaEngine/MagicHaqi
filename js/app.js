@@ -1,5 +1,5 @@
 // 主程序：SDK 启动 + 路由 + 全局事件
-import { $, showToast, confirm, clamp, prompt, escapeHtml } from './utils.js';
+import { $, showToast, confirm, clamp, prompt, escapeHtml, isImageIconValue } from './utils.js';
 import { canPlaceItemInArea, CONFIG, getItemZOrder, getShopItemById, findLargestHouseAcrossLayouts, getStageName, getForcedView, getAgentParams, zoomLevelIdToIndex, DEFAULT_PLANET_ID, getPlanetOnboardingConfig } from './config.js';
 import { state, notify, subscribe, setView, setCurrentPet, getCurrentPet } from './state.js';
 import {
@@ -8,6 +8,7 @@ import {
     saveLayout, addToInventory, removeFromInventory, savePetDebounced,
     getLayout, ensurePetData, savePet, clearStoredData, saveDecorDataNow, saveInventoryDebounced, loadStoryProgress, saveStoryProgress,
     isOnboardingCompleted, saveOnboardingProgress, markOnboardingCompleted,
+    loadWorkBuddyGameDraft, savePetGame,
 } from './storage.js';
 import { applyDecay, applyStage, clampEnergyToMax, defaultPermanentTrauma, defaultStats, eggStats, getActiveSickness, getEffectiveSicknessSeverity, getSicknessDef, markPetCared, maybeRollDailySickness, tickOffline, startTickLoop, stopTickLoop, treatPetSicknessOneLevel } from './petTick.js';
 import { renderLogin } from './view_login.js';
@@ -46,11 +47,12 @@ import {
     selectablePets,
 } from './petLifecycle.js';
 import SoundManager from './soundManager.js';
+import { isMiniProgramWebView } from './wxShare.js';
 import { initAgentBridge } from './agentBridge.js';
 // Side-effect import: 订阅 state 并接管所有 [data-mh-pet] 占位符的渲染 + 动画
 import { canWakePet, daySleepRejectText, eatFood, hatchPetFromBoarding, isPetInteractionBlocked, isPetSleeping, petArtHtml, preloadPetAssets, say, scanAndMount, setAnim, shouldRejectDaySleep, sleepingInteractionText, startPetSleep, wakePet, wakePetForPlay } from './pet.js';
 
-const sdkCdnUrl = 'https://cdn.keepwork.com/sdk/keepworkSDK.iife.js?v=20260612a';
+const sdkCdnUrl = 'https://cdn.keepwork.com/sdk/keepworkSDK.iife.js?v=227df3047a2e';
 
 function loadScript(src) {
     return new Promise((resolve, reject) => {
@@ -74,6 +76,14 @@ function importRuntimeModule(src) {
 
 async function ensureKeepworkSDK() {
     if (window.KeepworkSDK) return;
+    // 在 SDK 入口执行前预设默认实例参数：index.ts 会用它构造 window.keepwork，
+    // 使「自动创建的默认实例」使用微信静默授权，并带 autoReloadAfterRedirectLogin:false，
+    // 避免微信回跳后被迫整页刷新（登录页闪现 → 刷新 → 登录后页面的双跳）。
+    window.KEEPWORK_DEFAULT_OPTIONS = {
+        timeout: 30000,
+        autoReloadAfterRedirectLogin: false,
+        wxAuth: { scope: 'snsapi_base' },
+    };
     const host = window.location.hostname;
     const isLocalHost = host === '127.0.0.1' || host === 'localhost';
     const useLocalIndex = isLocalHost && !window.location.pathname.includes('/dist/');
@@ -120,7 +130,20 @@ function initSdk() {
     sdkReadyPromise = (async () => {
         await ensureKeepworkSDK();
         if (!window.KeepworkSDK) throw new Error('KeepworkSDK 未定义');
-        sdk = window.keepwork || new window.KeepworkSDK({ timeout: 30000 });
+        // autoReloadAfterRedirectLogin:false —— 微信整页授权回跳后不让 SDK 自动整页刷新，
+        // 改由 bootstrap() await whenRedirectLoginSettled() 协调登录态并就地路由，避免双跳。
+        sdk = window.keepwork || new window.KeepworkSDK({
+            timeout: 30000,
+            autoReloadAfterRedirectLogin: false,
+            wxAuth: { scope: 'snsapi_base' },
+        });
+        // 兜底：若 window.keepwork 由旧版 SDK（不认 KEEPWORK_DEFAULT_OPTIONS，如过期 CDN 包）
+        // 用默认参数预创建，其 autoReloadAfterRedirectLogin 仍为 true。这里强制关掉——
+        // codeToProbe 是网络请求，本行同步代码必在其 resolve 前执行，能赶在 reload 判断前生效。
+        if (sdk) sdk._autoReloadAfterRedirectLogin = false;
+        // MagicHaqi 微信登录固定使用 snsapi_base 静默授权。这里再次设置是为了兼容
+        // 页面中已经存在 window.keepwork，或不识别 KEEPWORK_DEFAULT_OPTIONS 的旧版 SDK。
+        sdk?.wxAuth?.setScope?.('snsapi_base');
         // 设置 maisi 项目 API Key
         if (sdk.setUserApiKey && window.KeepworkSDK?.API_KEYS?.maisi) {
             sdk.setUserApiKey(window.KeepworkSDK.API_KEYS.maisi);
@@ -147,6 +170,8 @@ let pendingMinigameLaunch = null;
 let pendingMinigameTab = null;
 // 分享链接进入的小游戏（?gameFrom=&game=），引导进入 minigames 视图并自动试玩。
 let pendingSharedGame = null;
+// 外部小游戏深链进入（?remoteGame=<url>），引导进入 minigames 视图并直接打开该远程 URL。
+let pendingRemoteGame = null;
 // 新用户通过分享小游戏链接进入：先直接试玩，退出（点返回）后才走命名 / 新手领养流程。
 let deferredNewUserSharedGame = false;
 let hatchingViewPromise = null;
@@ -176,23 +201,82 @@ let pendingStoryReturnToList = false;
 let storyMakerOrigin = null;
 let shopReturnPreserveRoomMode = false;
 let pendingOnboardingProgress = null;
+// 当前星球的新手指引是否为"领养仪式"型（boarding 小游戏）。登录时预计算，供 home 视图在
+// 「星球→星球表面」缩放过渡前同步查询（onPlanetToFieldOnboarding），决定是否先弹领养小游戏。
+let boardingOnboardingPlanet = false;
 let lastRenderedView = null;
 let isBootstrapping = true;
 
 const NEW_USER_STORY_PARAM = 'new_user_story';
 
+// 经过中转（如微信小程序原生分享页）的链接，msg 常被二次 encodeURIComponent：
+// searchParams.get 只解一层，残留形如 "%E7%82%B9…" 的百分号编码。这里把残留层补解掉，
+// 直到不再像百分号编码为止（最多 3 层，且解码须真的产生变化，避免误伤含「%」的正常留言）。
+function decodeSharedParam(value) {
+    let out = String(value || '');
+    for (let i = 0; i < 3 && /%[0-9A-Fa-f]{2}/.test(out); i++) {
+        let next;
+        try { next = decodeURIComponent(out); } catch (_) { break; }
+        if (next === out) break;
+        out = next;
+    }
+    return out;
+}
+
 // 分享小游戏链接：?gameFrom=<username>&game=<filename>[&msg=<自定义留言>]
 // msg 是分享者（或程序）附加的一句留言，会显示在分享落地登录页的单独一行。
-function parseSharedGameParams() {
+// 分享小游戏意图持久化：登录 / 注册可能触发整页跳转（KeepWork OAuth 回跳），URL 上的
+// ?game= / ?gameFrom= / ?msg= 会在回跳后丢失，导致"新用户经分享链接登录后"误走新手领养
+// 仪式而非分享的小游戏。故在检测到分享参数时存入 sessionStorage（同标签页跨跳转保留），
+// URL 不再携带参数时回退读取；真正消费小游戏（cleanupSharedGameUrl）时一并清除。
+const SHARED_GAME_STORAGE_KEY = 'mh_pending_shared_game';
+const WORKBUDDY_IMPORT_STORAGE_KEY = 'mh_pending_workbuddy_game_draft';
+const WORKBUDDY_IMPORTED_PREFIX = 'mh_imported_workbuddy_game_draft:';
+
+function persistSharedGameParams(params) {
+    try {
+        if (params && params.game) {
+            sessionStorage.setItem(SHARED_GAME_STORAGE_KEY, JSON.stringify(params));
+        }
+    } catch (_) {}
+}
+
+function loadPersistedSharedGameParams() {
+    try {
+        const data = JSON.parse(sessionStorage.getItem(SHARED_GAME_STORAGE_KEY) || 'null');
+        const game = String(data?.game || '').trim();
+        if (!game) return null;
+        return {
+            fromUsername: String(data?.fromUsername || '').trim(),
+            game,
+            message: String(data?.message || '').trim().slice(0, 200),
+        };
+    } catch (_) { return null; }
+}
+
+function clearPersistedSharedGameParams() {
+    try { sessionStorage.removeItem(SHARED_GAME_STORAGE_KEY); } catch (_) {}
+}
+
+// 仅从当前 URL 解析分享参数（不含 sessionStorage 回退）。
+function parseSharedGameParamsFromUrl() {
     try {
         const url = new URL(window.location.href);
-        const fromUsername = (url.searchParams.get('gameFrom') || '').trim();
-        const game = (url.searchParams.get('game') || '').trim();
-        const message = (url.searchParams.get('msg') || '').trim().slice(0, 200);
+        const fromUsername = decodeSharedParam(url.searchParams.get('gameFrom') || '').trim();
+        const game = decodeSharedParam(url.searchParams.get('game') || '').trim();
+        const message = decodeSharedParam(url.searchParams.get('msg') || '').trim().slice(0, 200);
         return { fromUsername, game, message };
     } catch (_) {
         return { fromUsername: '', game: '', message: '' };
     }
+}
+
+function parseSharedGameParams() {
+    const fromUrl = parseSharedGameParamsFromUrl();
+    // URL 仍带分享参数：以 URL 为准，并刷新持久化的意图（防登录跳转丢失）。
+    if (fromUrl.game) { persistSharedGameParams(fromUrl); return fromUrl; }
+    // URL 不含分享参数（登录回跳后常见）：回退到跳转前持久化的意图。
+    return loadPersistedSharedGameParams() || fromUrl;
 }
 
 function hasSharedGameParams() {
@@ -214,15 +298,144 @@ function resolveLandingView() {
         pendingSharedGame = parseSharedGameParams();
         return 'minigames';
     }
+    if (hasRemoteGameParams()) {
+        pendingRemoteGame = parseRemoteGameParamsFromUrl();
+        return 'minigames';
+    }
     return hasPostcardParams() ? 'postcard' : 'home';
 }
 
+// 外部小游戏深链：?remoteGame=<完整 url>[&remoteGameTitle=&remoteGameIcon=&remoteGameLandscape=0]
+// 用于直接把任意远程 H5 小游戏地址嵌入玩耍视图试玩，不需要出现在 _minigame_index.json 清单里。
+// remoteGameLandscape 默认开启强制横屏（传 0 关闭）。
+function parseRemoteGameParamsFromUrl() {
+    try {
+        const url = new URL(window.location.href);
+        const remoteUrl = decodeSharedParam(url.searchParams.get('remoteGame') || '').trim();
+        if (!remoteUrl) return null;
+        return {
+            url: remoteUrl,
+            title: decodeSharedParam(url.searchParams.get('remoteGameTitle') || '').trim(),
+            icon: decodeSharedParam(url.searchParams.get('remoteGameIcon') || '').trim(),
+            landscape: url.searchParams.get('remoteGameLandscape') !== '0',
+        };
+    } catch (_) {
+        return null;
+    }
+}
+
+function hasRemoteGameParams() {
+    return !!parseRemoteGameParamsFromUrl();
+}
+
+function cleanupRemoteGameUrl() {
+    try {
+        const url = new URL(window.location.href);
+        ['remoteGame', 'remoteGameTitle', 'remoteGameIcon', 'remoteGameLandscape'].forEach(key => url.searchParams.delete(key));
+        window.history.replaceState({}, '', url.toString());
+    } catch (_) {}
+}
+
 function cleanupSharedGameUrl() {
+    // 小游戏已被消费：清掉 URL 参数与登录跳转前持久化的意图，避免下次启动重复进入。
+    clearPersistedSharedGameParams();
     try {
         const url = new URL(window.location.href);
         ['gameFrom', 'game', 'msg'].forEach(key => url.searchParams.delete(key));
         window.history.replaceState({}, '', url.toString());
     } catch (_) {}
+}
+
+function parseWorkBuddyImportParamsFromUrl() {
+    try {
+        const url = new URL(window.location.href);
+        const draft = decodeSharedParam(
+            url.searchParams.get('importGameDraft')
+            || url.searchParams.get('workBuddyDraft')
+            || url.searchParams.get('wbDraft')
+            || url.searchParams.get('draftId')
+            || ''
+        ).trim();
+        return { draft };
+    } catch (_) {
+        return { draft: '' };
+    }
+}
+
+function persistWorkBuddyImportParams(params) {
+    try {
+        if (params?.draft) sessionStorage.setItem(WORKBUDDY_IMPORT_STORAGE_KEY, JSON.stringify(params));
+    } catch (_) {}
+}
+
+function loadPersistedWorkBuddyImportParams() {
+    try {
+        const data = JSON.parse(sessionStorage.getItem(WORKBUDDY_IMPORT_STORAGE_KEY) || 'null');
+        const draft = String(data?.draft || '').trim();
+        return draft ? { draft } : null;
+    } catch (_) { return null; }
+}
+
+function clearWorkBuddyImportParams() {
+    try { sessionStorage.removeItem(WORKBUDDY_IMPORT_STORAGE_KEY); } catch (_) {}
+    try {
+        const url = new URL(window.location.href);
+        ['importGameDraft', 'workBuddyDraft', 'wbDraft', 'draftId'].forEach(key => url.searchParams.delete(key));
+        window.history.replaceState({}, '', url.toString());
+    } catch (_) {}
+}
+
+function parseWorkBuddyImportParams() {
+    const fromUrl = parseWorkBuddyImportParamsFromUrl();
+    if (fromUrl.draft) { persistWorkBuddyImportParams(fromUrl); return fromUrl; }
+    return loadPersistedWorkBuddyImportParams() || fromUrl;
+}
+
+function workBuddyImportKey(draft) {
+    return String(draft || '').trim().slice(0, 512);
+}
+
+function wasWorkBuddyDraftImported(draft) {
+    const key = workBuddyImportKey(draft);
+    if (!key) return false;
+    try { return sessionStorage.getItem(WORKBUDDY_IMPORTED_PREFIX + key) === '1'; } catch (_) { return false; }
+}
+
+function markWorkBuddyDraftImported(draft) {
+    const key = workBuddyImportKey(draft);
+    if (!key) return;
+    try { sessionStorage.setItem(WORKBUDDY_IMPORTED_PREFIX + key, '1'); } catch (_) {}
+}
+
+async function maybeImportWorkBuddyGameDraft() {
+    const { draft } = parseWorkBuddyImportParams();
+    if (!draft) return false;
+    if (wasWorkBuddyDraftImported(draft)) {
+        clearWorkBuddyImportParams();
+        return false;
+    }
+    try {
+        const gameDraft = await loadWorkBuddyGameDraft(draft);
+        if (!gameDraft?.html) throw new Error('没有找到 WorkBuddy 游戏草稿');
+        const result = await savePetGame(gameDraft.html, {
+            title: gameDraft.title,
+            icon: gameDraft.icon,
+            desc: gameDraft.desc,
+        });
+        markWorkBuddyDraftImported(draft);
+        clearWorkBuddyImportParams();
+        showToast(`已导入 ${result?.record?.title || gameDraft.title}`, 'success', 2200);
+        if (!hasSelectablePets()) return false;
+        pendingMinigameTab = 'mine';
+        finishBootstrap();
+        setView('minigames');
+        return true;
+    } catch (e) {
+        console.warn('导入 WorkBuddy 小游戏失败', e);
+        clearWorkBuddyImportParams();
+        showToast('导入 WorkBuddy 小游戏失败：' + (e?.message || e), 'error', 3600);
+        return false;
+    }
 }
 
 function loadChatView() {
@@ -611,6 +824,16 @@ function renderMinigamesRoute() {
         state.lastHomeZoomLevel = 3;
         navigateToView('home');
     };
+    // 领养新手指引退出后落到「星球表面(field)」，让玩家停在自己的星球上（而非宇宙总览）。
+    const returnToFieldLevel = () => {
+        state.lastHomeZoomLevel = zoomLevelIdToIndex('field');
+        navigateToView('home');
+    };
+    // 退出到「星球」(space) 宇宙总览。
+    const returnToPlanetLevel = () => {
+        state.lastHomeZoomLevel = zoomLevelIdToIndex('space');
+        navigateToView('home');
+    };
     const renderOptions = {
         onBack: () => {
             pendingMinigameLaunch = null;
@@ -626,10 +849,21 @@ function renderMinigamesRoute() {
                 returnToCellLevel();
                 return;
             }
+            if (launch?.mode === 'onboarding') {
+                // 从领养新手指引点返回：永远回到「星球」总览（而非 field / 小游戏列表 / 我的）；
+                // 仅当玩家已拥有真实(非蛋)宠物时才落到星球表面 field。
+                if (hasAdoptedRealPet()) returnToFieldLevel();
+                else returnToPlanetLevel();
+                return;
+            }
             if (launch?.mode === 'adopt') {
                 // 玩家中途退出领养仪式：不替换 / 放养当前宠物。
                 // 只有小游戏真正发出 gameFinished 后，才会创建新蛋并处理当前宠物。
                 navigateToView('home');
+                return;
+            }
+            if (launch?.mode === 'npc') {
+                returnToFieldLevel();
                 return;
             }
             navigateToView('home');
@@ -655,10 +889,14 @@ function renderMinigamesRoute() {
         },
         initialGameId: launch?.gameId || null,
         initialGameParams: launch?.params || null,
+        // NPC 小游戏可显式覆盖强制横屏（true/false）；未设置时 null，沿用该游戏自身清单配置。
+        initialGameLandscape: launch?.mode === 'npc' ? (launch.landscapeOverride ?? null) : null,
         allowPlayWhenLowEnergy: !!launch?.allowLowEnergy || deferredNewUser,
         suppressRewards: !!launch?.suppressRewards,
         hideTopbarActions: launch?.mode === 'adopt' || launch?.mode === 'onboarding',
-        exitGameToBack: deferredNewUser || launch?.mode === 'sickness' || launch?.mode === 'story' || launch?.mode === 'adopt',
+        // 分享小游戏(deferredNewUser)退出时返回小游戏列表(view_minigames)，再从列表返回才回到星球总览；
+        // 故这里不让分享小游戏直接 exit-to-back。其余仪式型(onboarding/adopt/...)仍直接退出。
+        exitGameToBack: launch?.mode === 'sickness' || launch?.mode === 'story' || launch?.mode === 'adopt' || launch?.mode === 'onboarding' || launch?.mode === 'npc',
         deferGameFinishedUntilCompletionExit: launch?.mode === 'story',
         completionPrompt: launch?.mode === 'story' ? {
             title: '小游戏完成啦',
@@ -682,6 +920,17 @@ function renderMinigamesRoute() {
             pendingSharedGame = null;
             if (shared) cleanupSharedGameUrl();
             return shared;
+        })(),
+        // 外部小游戏深链：?remoteGame=<url> 进入，自动打开该远程地址；
+        // NPC 的 minigame 字段若填的是完整 http(s) 地址，同样走这条路径打开。
+        remoteGame: (() => {
+            if (launch?.mode === 'npc' && launch.remoteUrl) {
+                return { url: launch.remoteUrl, title: launch.remoteTitle, icon: launch.remoteIcon, landscape: launch.landscape };
+            }
+            const remote = pendingRemoteGame;
+            pendingRemoteGame = null;
+            if (remote) cleanupRemoteGameUrl();
+            return remote;
         })(),
     };
     if (minigamesViewModule) {
@@ -738,6 +987,7 @@ function renderSettingsRoute() {
     const options = {
         onBack:      () => navigateToView(state.currentPetId ? 'home' : 'petList'),
         onLogout:    handleLogout,
+        onLogin:     handleGuestLogin,
         onClearData: handleClearData,
     };
     if (settingsViewModule) {
@@ -817,6 +1067,16 @@ function homeCallbacks() {
         onFeedComplete: render,
         onNav:        handleNav,
         onTreatSickness: handleTreatSickness,
+        onLaunchNpcMinigame: handleNpcMinigameLaunch,
+        // 「星球→星球表面(field)」缩放过渡前的同步拦截：领养仪式型星球且玩家尚无真实宠物时，
+        // 直接弹出领养小游戏并返回 true，view_home 据此取消本次缩放（不进入 field）。
+        onPlanetToFieldOnboarding: () => {
+            if (!boardingOnboardingPlanet) return false;
+            if (boardingOnboardingDisabled()) return false;
+            if (hasAdoptedRealPet()) return false;
+            maybeStartOnboarding();
+            return true;
+        },
     };
 }
 function renderHomeRoute() {
@@ -1097,6 +1357,55 @@ async function enterForcedViewIfAny() {
     return true;
 }
 
+// ==== 微信小程序静默登录 ====
+// 是否运行在微信小程序 web-view 中（UA 含 miniProgram，或微信注入的环境变量）。
+function isWechatMiniProgram() {
+    try {
+        if (window.__wxjs_environment === 'miniprogram') return true;
+        return /miniprogram/i.test(navigator.userAgent || '');
+    } catch (_) { return false; }
+}
+
+const MP_SILENT_LOGIN_FAILED_KEY = 'mhMpSilentLoginFailed';
+
+// 小程序 web-view 中不展示登录页：直接整页跳转 snsapi_base 静默授权（用户无感，
+// 只取 openid，不索取头像昵称），回跳（?code=...&wxauth=1）后由 SDK 的
+// whenRedirectLoginSettled 兜底用 code 换 token 完成登录；未绑定账号时 SDK 在小程序内
+// 静默注册（自动生成用户名 + 密码，见 SDK 的 silentWechatBind），不弹「设置账号」表单，
+// 登录后直接进入主页——小程序内首次进入即索取账号 / 头像昵称属于非必要场景收集用户
+// 信息，微信审核不通过。账号可在应用内的设置里再修改。
+// 每次全新进入（含手动刷新）都会尝试；仅当「刚从授权回跳回来但仍未登录」
+// （探测失败 / 用户放弃绑定）时记录失败并停止自动尝试，本会话内落回登录页，
+// 避免「授权 → 回跳失败 → 再授权」的跳转循环（sessionStorage 在同一 web-view
+// 会话内跨整页跳转保留；重新进入小程序即重置）。
+// 返回 true 表示已发起整页跳转，调用方应维持 Loading 闪屏并中止启动流程。
+function maybeStartMiniProgramSilentLogin({ wxRedirectHandled = false } = {}) {
+    const log = (msg) => console.info('[MP静默登录] ' + msg);
+    if (!isWechatMiniProgram()) return false;
+    if (!sdk?.wxAuth?.authorize) { log('跳过：SDK 无 wxAuth.authorize（SDK 版本过旧？）'); return false; }
+    // 开发环境：微信授权无法回跳本地地址，跳过
+    const host = window.location.hostname;
+    if (host === 'localhost' || host.startsWith('127.') || host.startsWith('192.168.')) {
+        log('跳过：本地开发地址 ' + host + '，微信授权无法回跳');
+        return false;
+    }
+    try {
+        if (wxRedirectHandled) {
+            // 刚处理完一次授权回跳但仍未登录：本会话不再自动尝试
+            sessionStorage.setItem(MP_SILENT_LOGIN_FAILED_KEY, '1');
+            log('跳过：授权回跳后仍未登录（探测失败或放弃绑定），本会话停止自动尝试');
+            return false;
+        }
+        if (sessionStorage.getItem(MP_SILENT_LOGIN_FAILED_KEY)) {
+            log('跳过：本会话此前静默登录已失败');
+            return false;
+        }
+    } catch (_) { return false; } // sessionStorage 不可用时无法防循环，放弃静默登录
+    log('发起 snsapi_base 静默授权跳转');
+    sdk.wxAuth.authorize({ scope: 'snsapi_base' });
+    return true;
+}
+
 // ==== 启动流程 ====
 async function bootstrap() {
     // 等待 SDK 就绪（已在模块加载时并行预热；首屏闪屏此刻已绘制）。
@@ -1108,12 +1417,24 @@ async function bootstrap() {
         throw err;
     }
 
+    // 尽早持久化分享小游戏意图：登录 / 注册可能整页跳转（KeepWork OAuth 回跳）并丢失 URL 参数，
+    // 先存入 sessionStorage，回跳后即便 URL 已无参数也能恢复并优先进入分享的小游戏。
+    persistSharedGameParams(parseSharedGameParamsFromUrl());
+    persistWorkBuddyImportParams(parseWorkBuddyImportParamsFromUrl());
+
     // URL token
     try {
         const url = new URL(window.location.href);
         const tok = url.searchParams.get('token');
         if (tok) sdk.token = tok;
     } catch (_) {}
+
+    // 微信内置浏览器整页授权回跳（?code=...&wxauth=1）：先等 SDK 兜底登录结算，
+    // 再决定首屏视图。期间维持 Loading 闪屏，避免「登录页闪现 → 整页刷新 → 登录后页面」
+    // 的双跳。无回跳时立即 resolve(false)，正常启动无额外开销。
+    // 返回 true 表示识别并处理了一次授权回跳（结合登录态可判断静默登录是否失败）。
+    let wxRedirectHandled = false;
+    try { wxRedirectHandled = (await sdk.whenRedirectLoginSettled?.()) === true; } catch (_) {}
 
     // 已有 token 则尝试拉取用户。若 token 失效或取不到用户，仍视为未登录。
     if (sdk.token) {
@@ -1124,6 +1445,8 @@ async function bootstrap() {
 
     if (!sdk.token || !state.user) {
         if (sdk.token && !state.user) clearUnauthenticatedSession();
+        // 微信小程序 web-view：跳过登录页，直接静默授权登录（整页跳转，维持闪屏）。
+        if (maybeStartMiniProgramSilentLogin({ wxRedirectHandled })) return;
         await applyTemporaryHomePlanetFromUrl();
         finishBootstrap();
         setView('login');
@@ -1154,10 +1477,16 @@ async function bootstrap() {
     startTickLoop();
 
     // 新用户经别人分享的小游戏链接进入：先直接试玩，命名 / 领养推迟到退出小游戏时。
-    if (!hasSelectablePets() && await maybeEnterSharedGameForNewUser()) return;
+    // 以"尚无真实(非蛋)宠物"为准：即便存在历史残留的默认蛋，也应优先展示分享的小游戏，而非领养新手指引。
+    if (!hasAdoptedRealPet() && await maybeEnterSharedGameForNewUser()) return;
 
     // 进入游戏前必须先给"星球"命名（每位用户只有一个星球）
     await ensurePlanetNamed();
+
+    if (await maybeImportWorkBuddyGameDraft()) return;
+
+    // 预计算本星球新手指引是否为领养仪式型（供 planet→field 缩放过渡同步拦截）。
+    boardingOnboardingPlanet = await isBoardingOnboardingPlanet();
 
     // 强制进入指定视图（?view= 参数 / window.__view 全局变量）。优先级高于
     // 新手故事、URL story 路径与默认蛋流程，但仍保证存在可用宠物作为上下文。
@@ -1257,6 +1586,12 @@ function onboardingDisabledByUrl() {
     } catch (_) { return false; }
 }
 
+// 是否跳过"星球诞生"领养引导页：URL 开关之外，微信小程序 web-view 按平台要求
+// 也跳过整个引导页（直接走默认蛋流程），其他环境不变。
+function boardingOnboardingDisabled() {
+    return onboardingDisabledByUrl() || isMiniProgramWebView();
+}
+
 // 解析 onboarding.minigame（可填 gameId 或 html 文件名）为 minigames 视图的 gameId。
 function resolveOnboardingMinigameId(minigame) {
     const raw = String(minigame || '').trim();
@@ -1269,6 +1604,24 @@ function resolveOnboardingMinigameId(minigame) {
 // 进入星球时按其 onboarding 配置触发新手指引；已完成则跳过。
 // 返回 true 表示已接管视图（调用方应直接 return）。
 // 注意：URL 参数 new_user_story 优先级更高，由 maybeStartNewUserStory 单独处理。
+// 是否已拥有"真实宠物"（孵化过、非蛋阶段）。领养仪式（boarding 新手指引）以此为准，
+// 而不是 onboarding "completed" 标记 —— 保证新用户（只有系统默认蛋 / 无宠物）总能看到领养小游戏，
+// 不会因历史残留的 completed 标记而被跳过。
+function hasAdoptedRealPet() {
+    return Object.values(state.pets || {}).some(p => p && p.stage && p.stage !== 'egg');
+}
+
+// 当前星球的新手指引是否为"领养仪式"型（minigames 模式且为 boarding 小游戏）。
+async function isBoardingOnboardingPlanet() {
+    try {
+        if (boardingOnboardingDisabled()) return false;
+        const config = await getPlanetOnboardingConfig(getActivePlanetId());
+        if (!config || config.mode !== 'minigames') return false;
+        const gameId = resolveOnboardingMinigameId(config.minigame);
+        return !!gameId && isBoardingGame({ id: gameId });
+    } catch (_) { return false; }
+}
+
 async function maybeStartOnboarding() {
     if (onboardingDisabledByUrl()) return false;
     const planetId = getActivePlanetId();
@@ -1278,11 +1631,11 @@ async function maybeStartOnboarding() {
     } catch (_) { return false; }
     if (!config || config.mode === 'none') return false;
     const progressKey = config.progressKey || planetId;
-    let completed = false;
-    try { completed = await isOnboardingCompleted(progressKey); } catch (_) { completed = false; }
-    if (completed) return false;
 
     if (config.mode === 'pet-story') {
+        let completed = false;
+        try { completed = await isOnboardingCompleted(progressKey); } catch (_) { completed = false; }
+        if (completed) return false;
         if (!config.storyPath) return false;
         let storyPath = config.storyPath;
         try {
@@ -1302,14 +1655,20 @@ async function maybeStartOnboarding() {
     if (config.mode === 'minigames') {
         const gameId = resolveOnboardingMinigameId(config.minigame);
         if (!gameId) return false;
-        if (!getCurrentPet()) {
-            // boarding 类小游戏本身会完成领养/孵化；没有当前宠物时先创建一颗默认蛋作为 iframe 上下文。
-            if (isBoardingGame({ id: gameId })) {
-                await prepareDefaultEggHome();
-            } else {
-                // 其它 minigame 需要已有宠物才能玩，交回默认流程。
-                return false;
-            }
+        const boarding = isBoardingGame({ id: gameId });
+        if (boarding) {
+            // 微信小程序环境跳过整个领养引导页，落到默认蛋流程。
+            if (boardingOnboardingDisabled()) return false;
+            // 领养仪式：只要还没有真实宠物就触发（不看 completed 标记）。
+            if (hasAdoptedRealPet()) return false;
+            // 没有当前宠物时先创建一颗默认蛋作为 iframe 上下文。
+            if (!getCurrentPet()) await prepareDefaultEggHome();
+        } else {
+            // 其它 minigame 型新手指引：仍以 completed 标记为准，且需要已有宠物。
+            let completed = false;
+            try { completed = await isOnboardingCompleted(progressKey); } catch (_) { completed = false; }
+            if (completed) return false;
+            if (!getCurrentPet()) return false;
         }
         pendingMinigameLaunch = {
             mode: 'onboarding',
@@ -1347,7 +1706,9 @@ async function enterDefaultEggHome() {
 // 真正的命名 / 领养在玩家点"返回"退出小游戏时（runDeferredNewUserFlow）才发生。
 async function maybeEnterSharedGameForNewUser() {
     const shared = parseSharedGameParams();
-    if (!shared.fromUsername || !shared.game) return false; // 仅用户作品分享走此流程
+    // 用户作品分享带 gameFrom+game；官方游戏分享只带 game（按 id 打开）。两者都视为分享进入，
+    // 都应优先于领养新手指引展示分享的小游戏，故这里只需 game 即可。
+    if (!shared.game) return false;
     await prepareDefaultEggHome();
     pendingSharedGame = shared;
     deferredNewUserSharedGame = true;
@@ -1360,7 +1721,17 @@ async function maybeEnterSharedGameForNewUser() {
 async function runDeferredNewUserFlow() {
     deferredNewUserSharedGame = false;
     await ensurePlanetNamed();
+    boardingOnboardingPlanet = await isBoardingOnboardingPlanet();
     if (await maybeStartNewUserStory()) return;
+    // 分享小游戏退出后：领养仪式型星球先回到「星球」(space) 总览，等玩家进入星球表面(field)时再弹
+    // 领养小游戏（见 onPlanetToFieldOnboarding）；非领养型保持原有"立即新手指引 / 默认蛋"流程。
+    if (boardingOnboardingPlanet && !hasAdoptedRealPet()) {
+        await prepareDefaultEggHome();
+        state.lastHomeZoomLevel = zoomLevelIdToIndex('space');
+        finishBootstrap();
+        setView('home');
+        return;
+    }
     if (await maybeStartOnboarding()) return;
     await enterDefaultEggHome();
 }
@@ -1598,11 +1969,22 @@ async function markStoryCompleted(story, actor) {
     saveStoryProgress().catch(e => console.warn('保存故事进度失败', e));
 }
 
+const RANDOM_PLANET_NAMES = [
+    '奇奇星', '蛋蛋星', '梦幻星', '彩虹星', '糖糖星', '棉花星', '泡泡星',
+    '星语星', '月光星', '云朵星', '布丁星', '柠檬星', '草莓星', '蘑菇星',
+    '萌萌星', '哈奇星', '果冻星', '雪花星', '繁星岛', '银河小镇',
+];
+
 // 强制弹出命名框，直到玩家给出非空名称（不可关闭）。
+// 微信小程序 web-view 中不弹框，直接随机生成一个名字。
 async function ensurePlanetNamed() {
     if (!state.planetCreatedAt) state.planetCreatedAt = Date.now();
     if (state.planetName && state.planetName.trim()) return;
     let name = '';
+
+    if (isWechatMiniProgram()) {
+        name = RANDOM_PLANET_NAMES[Math.floor(Math.random() * RANDOM_PLANET_NAMES.length)];
+    }
     while (!name) {
         name = await prompt('为你的宠物星球起名', {
             hint: '每位玩家只有一个星球，名字会一直伴随你的游戏旅程～',
@@ -1611,11 +1993,7 @@ async function ensurePlanetNamed() {
             randomText: '🎲 随机',
             maxLength: 12,
             dismissable: false,
-            randomValues: [
-                '奇奇星', '蛋蛋星', '梦幻星', '彩虹星', '糖糖星', '棉花星', '泡泡星',
-                '星语星', '月光星', '云朵星', '布丁星', '柠檬星', '草莓星', '蘑菇星',
-                '萌萌星', '哈奇星', '果冻星', '雪花星', '繁星岛', '银河小镇',
-            ],
+            randomValues: RANDOM_PLANET_NAMES,
             validate: (v) => {
                 if (!v) return '请输入星球名字';
                 if (v.length > 12) return '最多 12 个字';
@@ -1638,7 +2016,10 @@ async function handleLogin() {
         return;
     }
     try {
-        await sdk.showLoginWindow({ title: `${currentAppTitle()} 登录` });
+        await sdk.showLoginWindow({
+            title: `${currentAppTitle()} 登录`,
+            wechatScope: 'snsapi_base',
+        });
     } catch (e) {
         const msg = e?.message || e;
         if (msg && !/cancel/i.test(String(msg))) {
@@ -1668,11 +2049,16 @@ async function handleLogin() {
         }
         startTickLoop();
         // 新用户经别人分享的小游戏链接登录：先直接试玩，命名 / 领养推迟到退出小游戏时。
-        if (!hasSelectablePets() && await maybeEnterSharedGameForNewUser()) return;
+        // 以"尚无真实(非蛋)宠物"为准，避免历史残留默认蛋导致优先弹领养新手指引而非分享小游戏。
+        if (!hasAdoptedRealPet() && await maybeEnterSharedGameForNewUser()) return;
         await ensurePlanetNamed();
+        // 预计算本星球新手指引是否为领养仪式型（供 planet→field 缩放过渡同步拦截）。
+        boardingOnboardingPlanet = await isBoardingOnboardingPlanet();
         if (await enterForcedViewIfAny()) return;
         if (!hasSelectablePets()) {
             if (await maybeStartNewUserStory()) return;
+            // 新登录无宠物：与刷新(bootstrap)路径一致，触发领养新手指引。
+            if (await maybeStartOnboarding()) return;
             await enterDefaultEggHome();
             return;
         } else if (state.currentPetId && !isPetSelectable(state.pets[state.currentPetId])) {
@@ -1692,8 +2078,16 @@ async function handleLogin() {
             try { await ensurePetData(state.currentPetId); } catch (_) {}
         }
         preloadLoadedPetAssets();
+        // 已有宠物（含仅默认蛋）：与刷新路径一致，按需触发领养新手指引（无真实宠物时）。
+        if (await maybeStartOnboarding()) return;
         setView(resolveLandingView());
     }
+}
+
+// 游客模式下从设置页发起登录：跳到登录页（含隐私协议勾选行），由用户主动勾选并
+// 登录，保证登录前完成协议同意；游客也可在登录页再次选择游客体验返回。
+function handleGuestLogin() {
+    setView('login');
 }
 
 async function handleOfflineMode() {
@@ -1709,6 +2103,9 @@ async function handleOfflineMode() {
             if (maybeRollDailySickness(pet)) savePetDebounced(pet);
         }
         startTickLoop();
+        // 游客经分享链接进入：与登录路径一致，先直接试玩分享的小游戏（合规：分享
+        // 落地不强制登录），命名 / 领养推迟到退出小游戏时。
+        if (!hasAdoptedRealPet() && await maybeEnterSharedGameForNewUser()) return;
         await ensurePlanetNamed();
         if (await enterForcedViewIfAny()) return;
         if (!hasSelectablePets()) {
@@ -1737,6 +2134,19 @@ function handleLogout() {
     sdk.token = null;
     state.user = null;
     state.offlineMode = false;
+    // 清掉地址栏可能残留的第三方登录回跳参数（微信 / Google 的一次性 code 等）。
+    // 否则重新登录时，SDK 会把这个已失效的 code 再次拿去探测，被后端拒绝后
+    // 误报「微信未绑定账号，请先完成注册」。退出不刷新页面，故只需就地清掉 URL。
+    try {
+        const url = new URL(window.location.href);
+        let changed = false;
+        ['code', 'state', 'wxauth', 'googleauth', 'scope', 'authuser', 'prompt', 'error'].forEach((k) => {
+            if (url.searchParams.has(k)) { url.searchParams.delete(k); changed = true; }
+        });
+        if (changed && window.history?.replaceState) {
+            window.history.replaceState({}, '', `${url.pathname}${url.search}${url.hash}`);
+        }
+    } catch (_) {}
     persistPlanetPlaytimeNow();
     stopTickLoop();
     stopPlanetPlaytimePersistence();
@@ -1757,7 +2167,9 @@ async function handleClearData() {
         state.isFeedMode = false;
         showToast('已清除', 'success');
         await ensurePlanetNamed();
+        boardingOnboardingPlanet = await isBoardingOnboardingPlanet();
         if (await maybeStartNewUserStory()) return;
+        if (await maybeStartOnboarding()) return;
         await enterDefaultEggHome();
     } catch (e) {
         showToast('清除失败：' + (e?.message || e), 'error');
@@ -1925,6 +2337,8 @@ async function handleAdoptMinigameResult(_game, data = {}) {
 
 async function handleBoardingOnboardingResult(_game, data = {}) {
     pendingMinigameLaunch = null;
+    // 领养仪式完成：新宠物孵化在自己的星球表面，落到 field 视图查看新伙伴。
+    state.lastHomeZoomLevel = zoomLevelIdToIndex('field');
     await finishBoardingHatch(data || {}, { stage: 'baby' });
     if (pendingOnboardingProgress) {
         try { await markOnboardingCompleted(pendingOnboardingProgress.progressKey, pendingOnboardingProgress.mode || 'minigames'); } catch (_) {}
@@ -2586,6 +3000,41 @@ function handleStoryMinigameLaunch(activity = {}) {
         mode: 'story',
         gameId,
         params: activity.params || null,
+        allowLowEnergy: true,
+        suppressRewards: true,
+    };
+    navigateToView('minigames', { preserveMinigameLaunch: true });
+}
+
+// 星球编辑器摆放的 NPC 对话结束后打开小游戏；minigame 字段可填 gameId / html 文件名（本地清单）
+// 或完整 http(s) 远程地址（不需要出现在 _minigame_index.json 里）。minigameLandscape 显式覆盖
+// 是否强制横屏（未设置时：远程地址默认强制横屏，本地 gameId 沿用其自身清单配置）。
+function handleNpcMinigameLaunch(npc) {
+    const raw = String(npc?.minigame || '').trim();
+    if (!raw || !getCurrentPet()) return;
+    const landscapeOverride = (npc?.minigameLandscape === true || npc?.minigameLandscape === false)
+        ? npc.minigameLandscape
+        : null;
+    if (/^https?:\/\//i.test(raw)) {
+        pendingMinigameLaunch = {
+            mode: 'npc',
+            remoteUrl: raw,
+            remoteTitle: String(npc?.name || '').trim(),
+            remoteIcon: isImageIconValue(npc?.icon) ? '' : String(npc?.icon || '').trim(),
+            // 与本地 gameId NPC 小游戏一致：默认不强制横屏，仅当 minigameLandscape 显式勾选时才开启。
+            landscape: !!landscapeOverride,
+            allowLowEnergy: true,
+            suppressRewards: true,
+        };
+        navigateToView('minigames', { preserveMinigameLaunch: true });
+        return;
+    }
+    const gameId = resolveOnboardingMinigameId(raw);
+    if (!gameId) return;
+    pendingMinigameLaunch = {
+        mode: 'npc',
+        gameId,
+        landscapeOverride,
         allowLowEnergy: true,
         suppressRewards: true,
     };

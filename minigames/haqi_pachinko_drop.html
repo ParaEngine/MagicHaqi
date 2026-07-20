@@ -1,0 +1,860 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+  <title>哈奇弹珠：墩弟大乱斗</title>
+  <style>
+    html, body { margin: 0; height: 100%; background: #0a0814; overflow: hidden;
+      -webkit-tap-highlight-color: transparent; user-select: none;
+      font-family: -apple-system, "PingFang SC", "Microsoft YaHei", system-ui, sans-serif; }
+    * { box-sizing: border-box; }
+    body { display: flex; align-items: center; justify-content: center; }
+
+    /* —— 深井容器：温暖的深夜餐车车厢 / 童话夜空 + 暖色光晕 —— */
+    #well {
+      position: relative; width: 100%; max-width: 450px; height: 86vh;
+      border: 4px solid #5a4632; border-radius: 20px; overflow: hidden;
+      background:
+        radial-gradient(65% 42% at 50% 104%, rgba(251,146,60,.34), transparent 72%),
+        radial-gradient(48% 30% at 18% 8%, rgba(147,197,253,.16), transparent 70%),
+        radial-gradient(40% 26% at 82% 14%, rgba(253,224,71,.12), transparent 70%),
+        linear-gradient(180deg, #1c1746 0%, #2a1c52 38%, #3a2350 70%, #4a2c1c 100%);
+      box-shadow: 0 0 60px rgba(251,146,60,.2), inset 0 0 70px rgba(0,0,0,.45);
+    }
+    #stage { display: block; width: 100%; height: 100%; touch-action: none; }
+
+    #hud { position: absolute; top: 78px; left: 0; right: 0; z-index: 5;
+      display: flex; justify-content: center; gap: 7px; pointer-events: none; }
+    .pill { background: rgba(20,12,30,.55); color: #f1e4d0; font-weight: 800;
+      font-size: 12px; padding: 5px 11px; border-radius: 999px; backdrop-filter: blur(3px);
+      border: 1px solid rgba(251,191,36,.22); }
+    .pill b { color: #fbbf24; }
+    #tip { position: absolute; bottom: 8px; left: 0; right: 0; z-index: 5;
+      text-align: center; color: #b99; font-size: 11px; pointer-events: none; }
+
+    @keyframes wellShake {
+      0%,100% { transform: translate(0,0); } 15% { transform: translate(-5px,3px) rotate(-.4deg); }
+      35% { transform: translate(6px,-2px) rotate(.5deg); } 55% { transform: translate(-4px,-3px) rotate(-.3deg); }
+      75% { transform: translate(3px,4px) rotate(.2deg); }
+    }
+    #well.shake { animation: wellShake .32s ease-out; }
+
+    /* —— Boss 战斗条 —— */
+    #enemyBar { position: absolute; top: 6px; left: 8px; right: 8px; z-index: 6; height: 46px;
+      display: flex; align-items: center; gap: 8px; padding: 5px 8px; border-radius: 12px;
+      background: rgba(20,12,30,.5); border: 1px solid rgba(248,113,113,.3); backdrop-filter: blur(3px); }
+    #enemyBar.hurt { animation: hurtFlash .3s; }
+    @keyframes hurtFlash { 0%,100%{background:rgba(20,12,30,.5)} 40%{background:rgba(248,113,113,.45)} }
+    .ef { font-size: 30px; line-height: 1; filter: drop-shadow(0 2px 4px rgba(0,0,0,.5)); }
+    .einfo { flex: 1; min-width: 0; }
+    .erow { display: flex; justify-content: space-between; align-items: baseline; margin-bottom: 3px; }
+    #enemyName { font-size: 13px; font-weight: 900; color: #fecaca; }
+    #enemyIntent { font-size: 12px; font-weight: 800; color: #fca5a5; }
+    .ehpbg { height: 9px; border-radius: 999px; background: rgba(0,0,0,.4); overflow: hidden; }
+    #enemyHp { height: 100%; width: 100%; border-radius: 999px;
+      background: linear-gradient(90deg,#f87171,#ef4444); transition: width .28s ease; }
+    #floorTag { font-size: 12px; font-weight: 900; color: #fbbf24; padding: 2px 7px;
+      border-radius: 8px; background: rgba(251,191,36,.15); }
+    /* —— 玩家血条 —— */
+    #playerBar { position: absolute; top: 57px; left: 8px; right: 8px; z-index: 6; height: 15px;
+      display: flex; align-items: center; gap: 6px; }
+    #playerBar.hurt { animation: pHurt .35s; }
+    @keyframes pHurt { 0%,100%{transform:translateX(0)} 25%{transform:translateX(-4px)} 75%{transform:translateX(4px)} }
+    .phpbg { flex: 1; height: 9px; border-radius: 999px; background: rgba(0,0,0,.4); overflow: hidden; }
+    #playerHp { height: 100%; width: 100%; border-radius: 999px;
+      background: linear-gradient(90deg,#4ade80,#22c55e); transition: width .28s ease; }
+    #playerHpTxt { font-size: 11px; font-weight: 800; color: #bbf7d0; min-width: 44px; text-align: right; }
+
+    /* —— 通用遮罩（开局礼包 / 续命 / 结算）—— */
+    .veil { position: absolute; top: 0; right: 0; bottom: 0; left: 0; z-index: 9; display: none;
+      flex-direction: column; align-items: center; justify-content: center; gap: 13px; padding: 24px;
+      background: rgba(10,8,20,.82); backdrop-filter: blur(5px); color: #f1e4d0; text-align: center; }
+    .veil.show { display: flex; }
+    .veil h1 { margin: 0; font-size: 23px; }
+    .veil p { margin: 0; color: #cbb89c; font-size: 13px; line-height: 1.5; }
+    .btn { pointer-events: auto; cursor: pointer; border: none; font-weight: 900; font-size: 15px;
+      padding: 11px 24px; border-radius: 999px; }
+    .btn:active { transform: scale(.95); }
+    .btn-gold { background: linear-gradient(180deg,#fbbf24,#f59e0b); color: #3b2406; box-shadow: 0 8px 20px rgba(245,158,11,.4); }
+    .btn-ad { background: linear-gradient(180deg,#34d399,#10b981); color: #053b2c; box-shadow: 0 8px 20px rgba(16,185,129,.36); }
+    .btn-ghost { background: rgba(255,255,255,.1); color: #e2d6c0; border: 1px solid rgba(255,255,255,.18); }
+    .coupon { background: linear-gradient(135deg,#fff7d6,#fde68a); color: #7c2d12; font-weight: 900;
+      border: 2px dashed #b45309; border-radius: 12px; padding: 12px 18px; font-size: 14px; }
+    #enemyShield { font-size: 11px; font-weight: 900; color: #7dd3fc; }
+    /* —— 帮助按钮 —— */
+    #bHelp { position: absolute; top: 78px; right: 10px; z-index: 7; pointer-events: auto; cursor: pointer;
+      width: 26px; height: 26px; border-radius: 50%; border: 1px solid rgba(251,191,36,.4);
+      background: rgba(20,12,30,.6); color: #fbbf24; font-weight: 900; font-size: 14px; line-height: 1; }
+    /* —— 新手引导卡 —— */
+    #tutCard { display: flex; flex-direction: column; align-items: center; gap: 8px; max-width: 320px; }
+    #tutEmoji { font-size: 52px; }
+    #tutTitle { font-size: 19px; font-weight: 900; color: #fbbf24; }
+    #tutText { font-size: 14px; color: #e7d9bf; line-height: 1.6; min-height: 66px; }
+    #tutDots { display: flex; gap: 7px; margin: 2px 0; }
+    #tutDots i { width: 8px; height: 8px; border-radius: 50%; background: rgba(255,255,255,.25); }
+    #tutDots i.on { background: #fbbf24; }
+    /* —— 三选一构筑卡 —— */
+    #relicChoices { display: flex; flex-direction: column; gap: 10px; width: 100%; max-width: 330px; }
+    .relic { pointer-events: auto; cursor: pointer; display: flex; align-items: center; gap: 12px;
+      text-align: left; padding: 12px 14px; border-radius: 14px; color: #fff7e6;
+      background: rgba(40,28,55,.85); border: 1px solid rgba(251,191,36,.35); }
+    .relic:active { transform: scale(.97); }
+    .relic .ri { font-size: 30px; }
+    .relic .rn { font-weight: 900; font-size: 15px; color: #fbbf24; }
+    .relic .rd { font-size: 12px; color: #d6c3a6; margin-top: 2px; }
+  </style>
+</head>
+
+<body>
+  <div id="well">
+    <canvas id="stage"></canvas>
+    <div id="hud">
+      <span class="pill">🐭 <b id="hBalls">0</b></span>
+      <span class="pill">分 <b id="hScore">0</b></span>
+      <span class="pill">连击 <b id="hCombo">0</b></span>
+      <span class="pill">🍗 <b id="hGold">0</b>/3</span>
+    </div>
+    <div id="tip">按住瞄准 · 松手发射 · 每次弹射累积伤害，落底/被接时结算打 Boss</div>
+    <button id="bHelp" type="button">?</button>
+
+    <!-- Boss 战斗条 -->
+    <div id="enemyBar">
+      <div class="ef" id="enemyFace">🟢</div>
+      <div class="einfo">
+        <div class="erow"><span><span id="enemyName">软糖史莱姆</span> <span id="enemyShield"></span></span><span id="enemyIntent"></span></div>
+        <div class="ehpbg"><div id="enemyHp"></div></div>
+      </div>
+      <div id="floorTag">1F</div>
+    </div>
+    <!-- 玩家血条 -->
+    <div id="playerBar">
+      <span style="font-size:13px">❤️</span>
+      <div class="phpbg"><div id="playerHp"></div></div>
+      <span id="playerHpTxt">100/100</span>
+    </div>
+
+    <!-- 开局赞助礼包（IAA） -->
+    <div id="vStart" class="veil show">
+      <h1>🌙 哈奇弹珠：墩弟大乱斗</h1>
+      <p>把毛茸茸的墩弟弹进高热量食物堆<br>撞击越多分越高，连撞触发连锁吞噬清屏</p>
+      <button id="bSponsor" class="btn btn-ad">📺 看广告领「超级膨胀墩弟」</button>
+      <button id="bPlay" class="btn btn-gold">直接开始</button>
+    </div>
+    <!-- 新手引导（多步） -->
+    <div id="vTut" class="veil">
+      <div id="tutCard">
+        <div id="tutEmoji">🎯</div>
+        <div id="tutTitle"></div>
+        <div id="tutText"></div>
+        <div id="tutDots"></div>
+        <button id="bTutNext" class="btn btn-gold">下一步</button>
+      </div>
+    </div>
+    <!-- 击败 Boss → 三选一构筑（肉鸽） -->
+    <div id="vRelic" class="veil">
+      <h1>🎁 击败 Boss！</h1>
+      <p>选择一件构筑神器，本局永久生效</p>
+      <div id="relicChoices"></div>
+    </div>
+    <!-- 续命（IAA） -->
+    <div id="vRevive" class="veil">
+      <h1>墩弟用完啦…</h1>
+      <p id="reviveText"></p>
+      <button id="bReviveAd" class="btn btn-ad">📺 看广告 +3 颗墩弟</button>
+      <button id="bGiveUp" class="btn btn-ghost">放弃结算</button>
+    </div>
+    <!-- 结算 + O2O 核销 -->
+    <div id="vEnd" class="veil">
+      <h1 id="endTitle">本局结束</h1>
+      <p id="endText"></p>
+      <div id="endCoupon" class="coupon" style="display:none"></div>
+      <button id="bAgain" class="btn btn-gold">再来一把</button>
+    </div>
+  </div>
+
+  <!-- ============================================================
+    《哈奇弹珠：墩弟大乱斗》v2.0
+      美术：温暖深夜餐车背景 + emoji 手绘食物钉子 + 果冻形变墩弟
+      玩法：反弹预判线 / 食物联动(爆裂溅射·连锁吞噬) / 餐车极限接球 / 每发刷新棋盘(撞过穿落)
+      Juice：钉子掉落缩小 + 惯性飘分 / 彗星拖尾(随速变色) / 震屏
+      商业：IAA 续命&赞助礼包桩 + O2O 金钉 3 次核销发券桩
+    ============================================================ -->
+  <script>
+  'use strict';
+  function post(type, data = {}) { try { window.parent && window.parent.postMessage({ type, data }, '*'); } catch (_) {} }
+
+  // —— 调参区 ——
+  const CFG = {
+    grav: 0.34, rest: 0.74, ballR: 12, pegR: 16,
+    rows: 11, cols: 6, power: 6.2, maxBalls: 1, startBalls: 8, baseMaxBalls: 1,
+    cartW: 96, cartSpeed: 2.2, cartY: 0.93,
+    perfectSpeed: 11,                      // 极限接球速度阈值 → 返还 2
+    trailLen: 8, goldNeed: 3,              // 金钉核销次数
+    playerHp: 100,                         // 墩弟生命
+    floorBalls: 4,                         // 每层击败 Boss 奖励墩弟
+    floorHeal: 0.2,                        // 每层回血比例
+    hpScale: 0.5, atkScale: 0.22, shieldScale: 0.3   // 逐层成长系数
+  };
+
+  // —— Boss 池（按层 index=min(floor,len-1) 选用，再叠加逐层成长）——
+  // hp 取相近基数（避免和逐层缩放双重叠加导致高层爆炸），靠机制/攻击区分难度
+  // actions: 行动循环（attack 攻击 / shield 加盾 / summon 召唤小怪）；shield: 每次加盾量
+  const ENEMIES = [
+    { name: '软糖史莱姆', emoji: '🟢', hp: 200, atk: 7,  intent: 4, actions: ['attack'] },
+    { name: '巧克力恶魔', emoji: '👹', hp: 220, atk: 10, intent: 3, actions: ['attack', 'shield'], shield: 30 },
+    { name: '奶油暴君',   emoji: '🐲', hp: 250, atk: 13, intent: 3, actions: ['attack', 'summon'] },
+    { name: '焦糖巨像',   emoji: '🗿', hp: 280, atk: 17, intent: 2, actions: ['attack', 'shield', 'summon'], shield: 50 }
+  ];
+
+  // —— 局内构筑神器（击败 Boss 三选一，apply 改写 mods）——
+  const RELICS = [
+    { id: 'crit',    emoji: '💥', name: '暴击核心', desc: '所有食物伤害 +40%', apply: m => m.dmgMul += 0.4 },
+    { id: 'splash',  emoji: '🍞', name: '溅射强化', desc: '爆裂面包多炸 3 颗，且满额伤害', apply: m => { m.splashCount += 3; m.splashMul = 1; } },
+    { id: 'big',     emoji: '🐘', name: '巨型墩弟', desc: '墩弟体积 +30%，更易触发连锁', apply: m => m.ballScale += 0.3 },
+    { id: 'glutton', emoji: '😋', name: '饕餮之口', desc: '连锁吞噬门槛降到 2 颗', apply: m => m.chainNeed = Math.max(2, m.chainNeed - 1) },
+    { id: 'gold',    emoji: '🪙', name: '黄金舌头', desc: '商户招牌金钉伤害 ×3', apply: m => m.merchantMul *= 3 },
+    { id: 'vamp',    emoji: '🩸', name: '吸食回血', desc: '对 Boss 造成伤害时回血 8%', apply: m => m.lifesteal += 0.08 },
+    { id: 'combo',   emoji: '🔗', name: '连击大师', desc: '连击伤害加成翻倍', apply: m => m.comboScale += 0.08 },
+    { id: 'ammo',    emoji: '🎒', name: '弹药扩容', desc: '立即补充 5 颗墩弟', apply: m => { ballsLeft += 5; HUD.balls.textContent = ballsLeft; } }
+  ];
+  function defaultMods() { return { dmgMul: 1, splashCount: 3, splashMul: 0.6, ballScale: 1, chainNeed: 4, merchantMul: 1, lifesteal: 0, comboScale: 0.03 }; }
+
+  // —— 食物钉子配置（emoji 占位，后续可换精灵图）——
+  // 6 种普通食物：稀释「相邻同类」概率，让连锁吞噬成为偶发奖励而非常态
+  const FOODS = {
+    cake:      { emoji: '🍰', score: 3,  kind: 'normal' },
+    croissant: { emoji: '🥐', score: 3,  kind: 'normal' },
+    choco:     { emoji: '🍫', score: 4,  kind: 'normal' },
+    donut:     { emoji: '🍩', score: 4,  kind: 'normal' },
+    cupcake:   { emoji: '🧁', score: 3,  kind: 'normal' },
+    cookie:    { emoji: '🍪', score: 3,  kind: 'normal' },
+    bread:     { emoji: '🍞', score: 5,  kind: 'splash' },  // 爆裂面包：溅射波及周围若干颗
+    ice:       { emoji: '🍬', score: 4,  kind: 'normal' }    // 高分糖果（普通计分）
+  };
+  const NORMALS = ['cake', 'croissant', 'choco', 'donut', 'cupcake', 'cookie'];
+  const MERCHANT = { emoji: '🍗', brand: '老王炸鸡', coupon: '老王炸鸡 8 折实体兑换券' };
+
+  const well = document.getElementById('well');
+  const canvas = document.getElementById('stage');
+  const ctx = canvas.getContext('2d');
+  const HUD = { balls: e('hBalls'), score: e('hScore'), combo: e('hCombo'), gold: e('hGold') };
+  function e(id) { return document.getElementById(id); }
+
+  let W = 0, H = 0, dpr = 1, rowGap = 0, colGap = 0;
+  let pegs = [], balls = [], pops = [];
+  let pegLayer = document.createElement('canvas'), layerDirty = true;
+  let launchX = 0, launchY = 30, aimX = 0, aimY = 0, aiming = false;
+  let ballsLeft = CFG.startBalls, score = 0, goldHits = 0, combo = 0, comboTimer = 0;
+  let shake = 0, frame = 0, running = false, pendingSuper = 0;
+  let floor = 0, enemy = null, reviveMode = 'balls', firstShotDone = false, pendingRebuild = false;
+  let mods = defaultMods();
+  const player = { hp: CFG.playerHp, maxHp: CFG.playerHp };
+
+  const cart = { x: 0, dir: 1, w: CFG.cartW, y: 0, catchT: 0 };
+
+  // ---------- 尺寸 ----------
+  function resize() {
+    dpr = Math.min(window.devicePixelRatio || 1, 2);
+    W = well.clientWidth; H = well.clientHeight;
+    canvas.width = W * dpr; canvas.height = H * dpr;
+    ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+    launchX = W / 2; launchY = 114; aimX = W / 2; aimY = H * 0.5;
+    cart.y = H * CFG.cartY; cart.x = W / 2 - cart.w / 2;
+    buildPegs(); layerDirty = true;
+  }
+
+  function buildPegs() {
+    pegs = [];
+    const top = Math.max(H * 0.23, 132), bottom = H * 0.8;
+    rowGap = (bottom - top) / (CFG.rows - 1);
+    colGap = W / (CFG.cols + 1);
+    for (let r = 0; r < CFG.rows; r++) {
+      const stagger = (r % 2) ? colGap / 2 : 0;
+      const n = (r % 2) ? CFG.cols - 1 : CFG.cols;
+      for (let c = 0; c < n; c++) {
+        const x = colGap * (c + 1) + stagger, y = top + r * rowGap;
+        let type;
+        const rnd = Math.random();
+        if (rnd < 0.12) type = 'bread'; else if (rnd < 0.22) type = 'ice';
+        else type = NORMALS[(Math.random() * NORMALS.length) | 0];
+        pegs.push({ x, y, r: CFG.pegR, type, emoji: FOODS[type].emoji, score: FOODS[type].score,
+          kind: FOODS[type].kind, merchant: false, frozenUntil: 0, spent: false, hitT: 0, gone: false, adj: [] });
+      }
+    }
+    // 商户金钉子：选 2 颗偏下方、较难命中的位置
+    const lowers = pegs.filter(p => p.y > top + rowGap * 5);
+    for (let i = 0; i < 2 && lowers.length; i++) {
+      const p = lowers[(Math.random() * lowers.length) | 0];
+      p.merchant = true; p.emoji = MERCHANT.emoji; p.kind = 'merchant'; p.score = 16;
+    }
+    buildAdjacency();
+  }
+
+  // ---------- 钉子绘制 ----------
+  // 钉子位置整层固定 → 满外观渲进离屏缓存，每层只画一次；「撞过(变灰)/冰冻/闪光」用廉价覆盖层逐帧叠加。
+  function drawPegFull(g, p) {
+    g.save(); g.translate(p.x, p.y);
+    if (p.merchant) { g.fillStyle = 'rgba(251,191,36,.28)'; g.beginPath(); g.arc(0, 0, p.r + 6, 0, Math.PI * 2); g.fill(); }
+    g.font = (p.r * 2.3) + 'px serif'; g.textAlign = 'center'; g.textBaseline = 'middle';
+    g.fillText(p.emoji, 0, 0);
+    if (p.merchant) { g.strokeStyle = 'rgba(251,191,36,.95)'; g.lineWidth = 2.5; g.beginPath(); g.arc(0, 0, p.r + 4, 0, Math.PI * 2); g.stroke(); }
+    g.restore();
+  }
+  function renderPegLayer() {
+    pegLayer.width = W * dpr; pegLayer.height = H * dpr;
+    const g = pegLayer.getContext('2d');
+    g.setTransform(dpr, 0, 0, dpr, 0, 0); g.clearRect(0, 0, W, H);
+    for (const p of pegs) if (!p.gone) drawPegFull(g, p);
+    layerDirty = false;
+  }
+
+  // 椭圆兼容：旧版微信 X5 内核可能没有 ctx.ellipse，用 scale+arc 兜底
+  const HAS_ELLIPSE = typeof ctx.ellipse === 'function';
+  function fillEllipse(g, x, y, rx, ry, color) {
+    g.fillStyle = color;
+    if (HAS_ELLIPSE) { g.beginPath(); g.ellipse(x, y, rx, ry, 0, 0, Math.PI * 2); g.fill(); }
+    else { g.save(); g.translate(x, y); g.scale(rx, ry || rx); g.beginPath(); g.arc(0, 0, 1, 0, Math.PI * 2); g.fill(); g.restore(); }
+  }
+
+  // ---------- 墩弟（果冻挤压拉伸）----------
+  function drawDun(g, b) {
+    const sp = Math.hypot(b.vx, b.vy), ang = Math.atan2(b.vy, b.vx) || 0;
+    const stretch = Math.min(sp * 0.02, 0.34), sq = b.squash || 0;
+    const r = b.r;   // 物理半径即视觉半径（超级墩弟在 launch 时已放大 r）
+    // 身体：沿运动方向拉伸、撞击瞬间垂直挤压
+    g.save(); g.translate(b.x, b.y); g.rotate(ang);
+    const rx = r * (1 + stretch - sq * 0.32), ry = r * (1 - stretch + sq * 0.32);
+    const grad = g.createRadialGradient(-rx * .35, -ry * .4, r * .2, 0, 0, Math.max(rx, ry));
+    grad.addColorStop(0, '#e6ebf2'); grad.addColorStop(.6, '#aab6c8'); grad.addColorStop(1, '#6b7a92');
+    fillEllipse(g, 0, 0, rx, ry, grad);            // 去 shadowBlur（每球每帧太贵）
+    g.restore();
+    // 耳朵 / 脸（屏幕直立，保持可爱）
+    g.save(); g.translate(b.x, b.y);
+    for (const s2 of [-1, 1]) fillEllipse(g, s2 * r * .5, -r * .9, r * .2, r * .42, '#6b7a92');
+    fillEllipse(g, 0, r * .18, r * .48, r * .52, '#f3f6fa');
+    g.fillStyle = '#1f2937';
+    for (const s2 of [-1, 1]) { g.beginPath(); g.arc(s2 * r * .26, -r * .04, r * .11, 0, Math.PI * 2); g.fill(); }
+    g.fillStyle = '#f472b6'; g.beginPath(); g.arc(0, r * .12, r * .08, 0, Math.PI * 2); g.fill();
+    g.restore();
+  }
+
+  // ---------- 物理步进（真实球 & 预测共用）----------
+  function physicsStep(b, real) {
+    b.vy += CFG.grav; b.x += b.vx; b.y += b.vy;
+    if (b.x < b.r) { b.x = b.r; b.vx = -b.vx * CFG.rest; }
+    if (b.x > W - b.r) { b.x = W - b.r; b.vx = -b.vx * CFG.rest; }
+    let hit = false;
+    for (const p of pegs) {
+      // 撞过即穿过（仅真实球）：开路下落，杜绝球卡在钉阵里无限弹（maxBalls=1 会导致死锁）
+      if (p.gone || (real && (p.spent || b.settle))) continue;
+      const dx = b.x - p.x, dy = b.y - p.y, md = b.r + p.r * 0.92, d2 = dx * dx + dy * dy;
+      if (d2 >= md * md) continue;
+      const d = Math.sqrt(d2) || 1e-4, nx = dx / d, ny = dy / d;
+      b.x = p.x + nx * md; b.y = p.y + ny * md;
+      const vn = b.vx * nx + b.vy * ny;
+      if (vn < 0) { const k = 1 + CFG.rest; b.vx -= k * vn * nx; b.vy -= k * vn * ny; }
+      hit = true;
+      if (real) { b.squash = Math.min(1, (b.squash || 0) + 0.5); onHit(p, b); }
+    }
+    return hit;
+  }
+
+  // ---------- 命中 & 联动 ----------
+  // 邻接表：钉子位置固定，开局/召唤后预计算一次，避免每次撞击都遍历全场（性能关键）
+  function buildAdjacency() {
+    const R = Math.max(rowGap, colGap) * 1.35;
+    for (const p of pegs) p.adj = [];
+    for (let i = 0; i < pegs.length; i++)
+      for (let j = i + 1; j < pegs.length; j++) {
+        const a = pegs[i], b = pegs[j];
+        if (Math.abs(a.x - b.x) < R && Math.abs(a.y - b.y) < R && Math.hypot(a.x - b.x, a.y - b.y) < R) { a.adj.push(b); b.adj.push(a); }
+      }
+  }
+  function neighbors(p) { return p.adj ? p.adj.filter(q => !q.gone) : []; }
+  function sameTypeGroup(p) {                       // 连通同类（贪吃连锁），走预计算邻接表
+    const seen = new Set([p]), stack = [p];
+    while (stack.length) {
+      const cur = stack.pop();
+      for (const q of (cur.adj || [])) {
+        if (seen.has(q) || q.gone || q.merchant) continue;
+        if (q.type === p.type) { seen.add(q); stack.push(q); }
+      }
+    }
+    return [...seen];
+  }
+  // 计分：每颗钉子本回合只计一次（spent），但仍作为物理反弹体存在；下一发整张棋盘刷新。
+  // 这同时防止球卡在夹角对同两颗钉子无限刷伤害。
+  function scorePeg(p, mult, ball, noPop) {
+    if (p.gone || p.spent) return;
+    p.spent = true; p.hitT = 1;
+    const pts = Math.round(p.score * (mult || 1) * (1 + combo * mods.comboScale) * mods.dmgMul);
+    addScore(pts); if (!noPop) spawnPop(p.x, p.y, pts);
+    if (ball) ball.dmg = (ball.dmg || 0) + pts;     // 累积到本颗墩弟的伤害
+  }
+
+  function onHit(peg, ball) {
+    if (peg.gone) return;
+    // 金钉：每回合可再计分一次，累计核销（刷新后下一发可再撞）
+    if (peg.merchant) {
+      if (peg.spent) return;
+      peg.spent = true; peg.hitT = 1; goldHits++; HUD.gold.textContent = goldHits;
+      const gd = Math.round(peg.score * (mods.merchantMul || 1));
+      ball.dmg = (ball.dmg || 0) + gd; addScore(gd); spawnPop(peg.x, peg.y, gd);
+      combo++; comboTimer = 42; HUD.combo.textContent = combo;
+      shake = 12; bigShake(); beep(900, 0.12); return;
+    }
+    if (peg.spent) return;                          // 本回合已计分，仅物理反弹
+
+    combo++; comboTimer = 42; HUD.combo.textContent = combo;
+    beep(420 + Math.min(combo, 20) * 26, 0.05);
+    shake = Math.min(shake + 1.1, 7);
+
+    if (peg.kind === 'minion') {                    // 小怪：计分并击杀（清场阻断 Boss 回血）
+      scorePeg(peg, 1.2, ball); peg.gone = true; pendingRebuild = true;
+      shake = 7; bigShake(); beep(560, 0.12); return;
+    }
+    // 贪吃连锁：连通同类 ≥门槛 → 整组计分（平伤害，单条聚合飘字）
+    const group = sameTypeGroup(peg);
+    if (group.length >= mods.chainNeed) {
+      group.forEach(g2 => scorePeg(g2, 1, ball, true));
+      shake = 8; bigShake(); beep(660, 0.16);
+      spawnPop(peg.x, peg.y - 18, group.length * 6, `🌟连锁 ×${group.length}`);
+      return;
+    }
+    if (peg.kind === 'splash') {                    // 爆裂面包：溅射周围若干颗
+      scorePeg(peg, 1, ball);
+      neighbors(peg).slice(0, mods.splashCount).forEach(q => scorePeg(q, mods.splashMul, ball));
+      shake = 8; bigShake(); beep(520, 0.1);
+    } else {
+      scorePeg(peg, 1, ball);
+    }
+  }
+  function bigShake() { well.classList.remove('shake'); void well.offsetWidth; well.classList.add('shake'); }
+  function addScore(n) { score += n; HUD.score.textContent = score; }
+
+  // ---------- 肉鸽战斗 ----------
+  function spawnEnemy() {
+    const base = ENEMIES[Math.min(floor, ENEMIES.length - 1)];
+    const hp = Math.round(base.hp * (1 + floor * CFG.hpScale));   // 逐层成长（无尽层持续放大）
+    const acts = base.actions || ['attack'];
+    enemy = { name: base.name, emoji: base.emoji, atk: Math.round(base.atk * (1 + floor * CFG.atkScale)),
+      maxHp: hp, hp,
+      intentMax: base.intent, intent: base.intent, dead: false,
+      shield: 0, shieldGain: Math.round((base.shield || 0) * (1 + floor * CFG.shieldScale)),
+      actions: acts, actIdx: 0, action: acts[0] };
+    updateEnemyUI();
+  }
+  const ACT_ICON = { attack: a => `🗡️${a.atk}`, shield: a => `🛡️+${a.shieldGain}`, summon: () => '🦠召唤' };
+  function updateEnemyUI() {
+    if (!enemy) return;
+    e('enemyFace').textContent = enemy.emoji;
+    e('enemyName').textContent = enemy.name;
+    e('enemyShield').textContent = enemy.shield > 0 ? `🛡️${enemy.shield}` : '';
+    e('enemyIntent').textContent = `${ACT_ICON[enemy.action](enemy)} · ${enemy.intent}回合`;
+    e('enemyHp').style.width = Math.max(0, enemy.hp / enemy.maxHp * 100) + '%';
+    e('floorTag').textContent = (floor + 1) + 'F';
+  }
+  function updatePlayerUI() {
+    e('playerHp').style.width = Math.max(0, player.hp / player.maxHp * 100) + '%';
+    e('playerHpTxt').textContent = `${Math.max(0, Math.round(player.hp))}/${player.maxHp}`;
+  }
+  function flashEl(id) { const el = e(id); el.classList.remove('hurt'); void el.offsetWidth; el.classList.add('hurt'); }
+
+  // 墩弟离场（落底 / 被接）→ 把累积伤害结算给 Boss（先破盾，后扣血）
+  function deliverDamage(b) {
+    if (!enemy || enemy.dead || !(b.dmg > 0)) return;
+    let dmg = b.dmg;
+    if (enemy.shield > 0) { const a = Math.min(enemy.shield, dmg); enemy.shield -= a; dmg -= a; }
+    if (dmg > 0) {
+      enemy.hp = Math.max(0, enemy.hp - dmg);
+      if (mods.lifesteal > 0) { player.hp = Math.min(player.maxHp, player.hp + Math.round(dmg * mods.lifesteal)); updatePlayerUI(); }
+    }
+    spawnPop(W / 2, 96, b.dmg, '⚔️' + b.dmg);
+    flashEl('enemyBar'); updateEnemyUI();
+    if (enemy.hp <= 0) enemyDefeated();
+  }
+
+  // Boss 回合行动（意图归零时触发）：先让存活小怪给 Boss 回血，再执行当前行动
+  function enemyTurn() {
+    minionHeal();
+    const act = enemy.action;
+    if (act === 'attack') enemyAttack();
+    else if (act === 'shield') {
+      enemy.shield = Math.min(enemy.shieldGain * 2, enemy.shield + enemy.shieldGain);
+      spawnPop(W / 2, 96, 0, `🛡️+${enemy.shieldGain}`); flashEl('enemyBar'); beep(420, 0.14);
+    } else if (act === 'summon') {
+      summonMinions(); spawnPop(W / 2, 96, 0, '🦠 召唤小怪'); beep(360, 0.14);
+    }
+    enemy.actIdx = (enemy.actIdx + 1) % enemy.actions.length;   // 轮转到下个行动（提前公示意图）
+    enemy.action = enemy.actions[enemy.actIdx];
+  }
+  function minionHeal() {
+    const alive = pegs.filter(p => p.kind === 'minion' && !p.gone);
+    if (!alive.length || enemy.hp <= 0) return;
+    const h = alive.length * 8;
+    enemy.hp = Math.min(enemy.maxHp, enemy.hp + h);
+    spawnPop(W / 2, 96, 0, `🦠 Boss 回血 +${h}`); updateEnemyUI();
+  }
+  function summonMinions() {
+    const live = pegs.filter(p => p.kind === 'minion' && !p.gone).length;
+    if (live >= 6) return;                          // 小怪上限，避免刷屏
+    const top = Math.max(H * 0.23, 132), n = Math.min(2 + Math.min(2, floor), 6 - live);
+    for (let i = 0; i < n; i++) {
+      pegs.push({ x: colGap * (1 + ((Math.random() * CFG.cols) | 0)), y: top + (Math.random() * 2 | 0) * rowGap + rowGap * 0.5,
+        r: CFG.pegR, type: 'minion', emoji: '🦠', score: 8, kind: 'minion',
+        merchant: false, frozenUntil: 0, spent: false, hitT: 0, gone: false, adj: [] });
+    }
+    buildAdjacency();                                // 召唤后重建邻接表，小怪并入连锁网络
+    layerDirty = true;
+  }
+
+  function enemyDefeated() {
+    enemy.dead = true; floor++;
+    ballsLeft += CFG.floorBalls;
+    player.hp = Math.min(player.maxHp, player.hp + Math.round(player.maxHp * CFG.floorHeal));
+    HUD.balls.textContent = ballsLeft; updatePlayerUI();
+    spawnPop(W / 2, H * 0.4, 0, '🏆 击败！');
+    beep(740, 0.18); bigShake();
+    offerRelics();                                 // 三选一构筑（暂停，玩家选完再进下一层）
+  }
+  function enemyAttack() {
+    player.hp -= enemy.atk; updatePlayerUI();
+    flashEl('playerBar'); shake = 9; bigShake(); beep(150, 0.18);
+    spawnPop(W / 2, H * 0.42, 0, `💥 -${enemy.atk}`);
+    if (player.hp <= 0) playerDefeated();
+  }
+  function playerDefeated() {
+    running = false; reviveMode = 'hp';
+    e('reviveText').textContent = `墩弟被 ${enemy.name} 击倒了！第 ${floor + 1} 层 · 得分 ${score}`;
+    e('bReviveAd').textContent = '📺 看广告满血复活';
+    e('vRevive').classList.add('show');
+  }
+
+  // ---------- 三选一构筑 ----------
+  function offerRelics() {
+    running = false;
+    const pool = RELICS.slice(), pick = [];
+    for (let i = 0; i < 3 && pool.length; i++) pick.push(pool.splice((Math.random() * pool.length) | 0, 1)[0]);
+    const box = e('relicChoices'); box.innerHTML = '';
+    pick.forEach(rel => {
+      const btn = document.createElement('button');
+      btn.className = 'relic';
+      btn.innerHTML = `<span class="ri">${rel.emoji}</span><span><div class="rn">${rel.name}</div><div class="rd">${rel.desc}</div></span>`;
+      btn.onclick = () => chooseRelic(rel);
+      box.appendChild(btn);
+    });
+    e('vRelic').classList.add('show');
+  }
+  function chooseRelic(rel) {
+    rel.apply(mods);
+    e('vRelic').classList.remove('show');
+    combo = 0; HUD.combo.textContent = 0;
+    buildPegs(); layerDirty = true;                // 新一层：刷新食物棋盘
+    spawnEnemy(); running = true; beep(680, 0.12);
+  }
+
+  // ---------- 惯性飘分 ----------
+  function spawnPop(x, y, n, label) {
+    if (pops.length > 36) pops.shift();             // 限流：连锁爆发时避免飘分堆积拖帧
+    const big = Math.min(n / 40, 1.6);
+    pops.push({ x, y, vx: (Math.random() - .5) * (1 + big * 2), vy: -(1.4 + big * 1.8),
+      text: label || ('+' + n), life: 1, size: 13 + big * 13, hue: label ? 48 : (n >= 20 ? 32 : 140) });
+  }
+
+  // ---------- 发射 / 预判 ----------
+  function aimVelocity() {
+    let dx = aimX - launchX, dy = aimY - launchY; if (dy < 6) dy = 6;
+    const len = Math.hypot(dx, dy) || 1; return { vx: dx / len * CFG.power, vy: dy / len * CFG.power };
+  }
+  function launch() {
+    if (!running || ballsLeft <= 0 || balls.length >= CFG.maxBalls) return;
+    const v = aimVelocity(), big = pendingSuper > 0;
+    const r = CFG.ballR * mods.ballScale * (big ? 1.5 : 1);
+    for (const p of pegs) p.spent = false;          // 新一发：刷新整张棋盘，让每发都饱满
+    balls.push({ x: launchX, y: launchY, vx: v.vx, vy: v.vy, r, big, dmg: 0, trail: [], squash: 0, life: 0, settle: false });
+    if (pendingSuper > 0) pendingSuper--;
+    ballsLeft--; HUD.balls.textContent = ballsLeft; combo = 0; HUD.combo.textContent = 0;
+    firstShotDone = true;
+    beep(300, 0.06);
+    // Boss 意图倒计时：发射一次算一回合，归零则执行当前行动
+    if (enemy && --enemy.intent <= 0) { enemyTurn(); enemy.intent = enemy.intentMax; }
+    updateEnemyUI();
+  }
+  function predictPath() {
+    const v = aimVelocity(), pr = CFG.ballR * mods.ballScale * (pendingSuper > 0 ? 1.5 : 1);
+    const s = { x: launchX, y: launchY, vx: v.vx, vy: v.vy, r: pr };
+    const pts = [{ x: s.x, y: s.y }]; let bounces = 0;
+    for (let i = 0; i < 170 && bounces < 3; i++) {  // 限步数：瞄准时每帧模拟，避免低端机拖拽卡顿
+      if (physicsStep(s, false)) bounces++;
+      pts.push({ x: s.x, y: s.y });
+      if (s.y - s.r > H) break;
+    }
+    return pts;
+  }
+
+  // ---------- 主循环 ----------
+  function update() {
+    frame++;
+    if (comboTimer > 0 && --comboTimer === 0) { combo = 0; HUD.combo.textContent = 0; }
+
+    cart.x += cart.dir * CFG.cartSpeed;
+    if (cart.x < 4) { cart.x = 4; cart.dir = 1; }
+    if (cart.x > W - cart.w - 4) { cart.x = W - cart.w - 4; cart.dir = -1; }
+
+    for (let i = balls.length - 1; i >= 0; i--) {
+      const b = balls[i];
+      if (++b.life > 300) b.settle = true;          // 超时强制穿落，安全网
+      const prevBottom = b.y + b.r;                 // 物理步进前的底沿（用于扫掠检测，防穿透）
+      physicsStep(b, true);
+      b.squash *= 0.85;
+      b.trail.push({ x: b.x, y: b.y, s: Math.hypot(b.vx, b.vy) });
+      if (b.trail.length > CFG.trailLen) b.trail.shift();
+      // 餐车接球：扫掠检测——本帧底沿越过筐口线 + 横向落在筐内（含半径容差）即接住
+      const curBottom = b.y + b.r, pad = b.r * 0.6;
+      if (b.vy > 0 && prevBottom <= cart.y && curBottom >= cart.y &&
+          b.x > cart.x - pad && b.x < cart.x + cart.w + pad) {
+        const perfect = Math.hypot(b.vx, b.vy) >= CFG.perfectSpeed;
+        deliverDamage(b);                            // 接住也结算伤害
+        ballsLeft += perfect ? 2 : 1; HUD.balls.textContent = ballsLeft;
+        spawnPop(cart.x + cart.w / 2, cart.y - 16, perfect ? 2 : 1, perfect ? '🔥完美接球 +2' : '接住 +1');
+        beep(perfect ? 760 : 600, 0.14); cart.catchT = 1; if (perfect) { shake = 11; bigShake(); }
+        balls.splice(i, 1); continue;
+      }
+      if (b.y - b.r > H) { deliverDamage(b); balls.splice(i, 1); }
+    }
+    if (cart.catchT > 0) cart.catchT -= 0.08;        // 接球高亮余辉
+
+    // 命中闪光衰减 + 小怪清除
+    for (const p of pegs) if (p.hitT > 0) p.hitT -= 0.08;
+    if (pendingRebuild) {
+      for (let i = pegs.length - 1; i >= 0; i--) if (pegs[i].gone) pegs.splice(i, 1);
+      buildAdjacency(); layerDirty = true; pendingRebuild = false;
+    }
+
+    // 飘分
+    for (let i = pops.length - 1; i >= 0; i--) {
+      const f = pops[i]; f.x += f.vx; f.y += f.vy; f.vy += 0.06; f.vx *= 0.98; f.life -= 0.018;
+      if (f.life <= 0) pops.splice(i, 1);
+    }
+
+    // 弹珠耗尽且全部落定 → 续命 / 结算
+    if (running && ballsLeft <= 0 && balls.length === 0) outOfBalls();
+  }
+
+  function draw() {
+    if (layerDirty) renderPegLayer();
+    ctx.save();
+    if (shake > 0.2) { ctx.translate((Math.random() - .5) * shake, (Math.random() - .5) * shake); shake *= 0.86; } else shake = 0;
+    ctx.clearRect(-20, -20, W + 40, H + 40);
+
+    ctx.drawImage(pegLayer, 0, 0, W, H);
+    // 动态覆盖（无 shadowBlur，极廉价）：撞过变灰 / 命中闪光环
+    for (const p of pegs) {
+      if (p.gone) continue;
+      if (p.spent) { ctx.fillStyle = 'rgba(10,8,20,.5)'; ctx.beginPath(); ctx.arc(p.x, p.y, p.r + 2, 0, Math.PI * 2); ctx.fill(); }
+      if (p.hitT > 0) { ctx.globalAlpha = Math.max(0, p.hitT); ctx.strokeStyle = '#fff0a0'; ctx.lineWidth = 3; ctx.beginPath(); ctx.arc(p.x, p.y, p.r + 6 - p.hitT * 3, 0, Math.PI * 2); ctx.stroke(); ctx.globalAlpha = 1; }
+    }
+
+    // 反弹预判线（颜色渐变，越远越淡）
+    if (aiming && running && ballsLeft > 0 && balls.length < CFG.maxBalls) {
+      const pts = predictPath();
+      ctx.lineWidth = 3; ctx.lineCap = 'round';
+      for (let i = 1; i < pts.length; i++) {
+        const a = (1 - i / pts.length) * 0.85;
+        ctx.strokeStyle = `rgba(251,191,36,${a})`;
+        ctx.beginPath(); ctx.moveTo(pts[i - 1].x, pts[i - 1].y); ctx.lineTo(pts[i].x, pts[i].y); ctx.stroke();
+      }
+      const end = pts[pts.length - 1];
+      ctx.fillStyle = 'rgba(251,191,36,.9)'; ctx.beginPath(); ctx.arc(end.x, end.y, 5, 0, Math.PI * 2); ctx.fill();
+    }
+
+    // 待发墩弟
+    if (running && ballsLeft > 0 && balls.length < CFG.maxBalls)
+      drawDun(ctx, { x: launchX, y: launchY, vx: 0, vy: 0, r: CFG.ballR * mods.ballScale * (pendingSuper > 0 ? 1.5 : 1), squash: 0 });
+
+    drawCart();
+
+    // 墩弟 + 彗星拖尾（随速变色：快→橙 慢→蓝）
+    for (const b of balls) {
+      for (let i = 0; i < b.trail.length; i++) {
+        const tp = b.trail[i], a = (i + 1) / b.trail.length * 0.42;
+        ctx.fillStyle = trailColor(tp.s, a);
+        ctx.beginPath(); ctx.arc(tp.x, tp.y, b.r * (0.35 + a), 0, Math.PI * 2); ctx.fill();
+      }
+      drawDun(ctx, b);
+      if (b.dmg > 0) {                               // 墩弟头顶累积伤害（描边代替阴影）
+        ctx.font = '900 13px sans-serif'; ctx.textAlign = 'center';
+        ctx.lineWidth = 3; ctx.strokeStyle = '#000'; ctx.strokeText('⚔️' + b.dmg, b.x, b.y - b.r - 8);
+        ctx.fillStyle = '#fde68a'; ctx.fillText('⚔️' + b.dmg, b.x, b.y - b.r - 8);
+      }
+    }
+
+    // 飘分（带惯性 + 缩放；描边代替阴影，省 shadowBlur）
+    ctx.textAlign = 'center'; ctx.lineWidth = 3;
+    for (const f of pops) {
+      ctx.globalAlpha = Math.max(0, f.life);
+      ctx.font = `900 ${f.size}px sans-serif`;
+      ctx.strokeStyle = 'rgba(0,0,0,.85)'; ctx.strokeText(f.text, f.x, f.y);
+      ctx.fillStyle = `hsl(${f.hue} 90% 62%)`; ctx.fillText(f.text, f.x, f.y);
+    }
+    ctx.globalAlpha = 1;
+
+    // 新手首发提示：未发射过且无球在场时，发射口下方跳动小手
+    if (running && !firstShotDone && balls.length === 0) {
+      const bob = Math.sin(frame * 0.12) * 5;
+      ctx.font = '24px serif'; ctx.textAlign = 'center';
+      ctx.fillText('👆', launchX, launchY + 42 + bob);
+      ctx.font = '900 12px sans-serif'; ctx.fillStyle = '#fde68a';
+      ctx.lineWidth = 3; ctx.strokeStyle = '#000';
+      ctx.strokeText('按住瞄准 · 松手发射', launchX, launchY + 70 + bob);
+      ctx.fillText('按住瞄准 · 松手发射', launchX, launchY + 70 + bob);
+    }
+    ctx.restore();
+  }
+  function trailColor(sp, a) {
+    const t = Math.min((sp || 0) / 12, 1);
+    const r = (96 + (251 - 96) * t) | 0, g = (165 + (146 - 165) * t) | 0, b = (250 + (60 - 250) * t) | 0;
+    return `rgba(${r},${g},${b},${a})`;
+  }
+  function drawCart() {
+    const x = cart.x, y = cart.y, w = cart.w, h = 22, wall = 7;
+    // 接球高亮（刚接住时整框泛绿）
+    const hot = cart.catchT > 0;
+    // 筐口判定线（贯穿提示玩家这是接球线）
+    ctx.strokeStyle = hot ? 'rgba(74,222,128,.5)' : 'rgba(251,191,36,.25)';
+    ctx.lineWidth = 2; ctx.setLineDash([4, 6]);
+    ctx.beginPath(); ctx.moveTo(x - 2, y); ctx.lineTo(x + w + 2, y); ctx.stroke(); ctx.setLineDash([]);
+    // 筐体（U 形：底 + 两侧壁，明确是“接球筐”）
+    ctx.fillStyle = hot ? '#4ade80' : '#f59e0b';
+    ctx.beginPath();
+    if (ctx.roundRect) {
+      ctx.roundRect(x, y, w, h, 5);                 // 底
+      ctx.roundRect(x, y - 9, wall, 11, 3);         // 左壁
+      ctx.roundRect(x + w - wall, y - 9, wall, 11, 3); // 右壁
+    } else { ctx.rect(x, y, w, h); ctx.rect(x, y - 9, wall, 11); ctx.rect(x + w - wall, y - 9, wall, 11); }
+    ctx.fill();
+    ctx.font = '15px serif'; ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+    ctx.fillText('🧺', x + w / 2, y + h / 2 + 1);
+    ctx.fillStyle = 'rgba(255,255,255,.3)'; ctx.fillRect(x + wall + 2, y + 3, w - wall * 2 - 4, 3);
+  }
+
+  function loop() { if (running) update(); draw(); requestAnimationFrame(loop); }
+
+  // ---------- 流程：续命 / 结算 / 重开 ----------
+  function outOfBalls() {                            // 弹珠耗尽（Boss 未死）→ 看广告续命
+    running = false; reviveMode = 'balls';
+    e('reviveText').textContent = `墩弟用完了，${enemy.name} 还剩 ${Math.round(enemy.hp / enemy.maxHp * 100)}% 血！`;
+    e('bReviveAd').textContent = '📺 看广告 +3 颗墩弟';
+    e('vRevive').classList.add('show');
+  }
+  function endGame() {
+    running = false;
+    e('endTitle').textContent = `🏔️ 闯到第 ${floor + 1} 层`;
+    e('endText').textContent = `累计伤害 ${score} · 命中招牌 ${goldHits} 次`;
+    const cp = e('endCoupon');
+    if (goldHits >= CFG.goldNeed) {                 // O2O 精准核销
+      cp.style.display = 'block';
+      cp.textContent = `🎁 触发奇遇！送您「${MERCHANT.coupon}」`;
+      // 正式版：post 给宿主写入微信卡包 / 商户核销系统
+      post('merchantCoupon', { brand: MERCHANT.brand, coupon: MERCHANT.coupon, goldHits });
+    } else cp.style.display = 'none';
+    e('vEnd').classList.add('show');
+    post('gameFinished', { completed: true, passed: floor >= 3,
+      earnedPoints: Math.max(10, score + floor * 50), score, floor: floor + 1, goldHits, finishedAt: Date.now() });
+  }
+  function startRun() {
+    ballsLeft = CFG.startBalls; score = 0; goldHits = 0; combo = 0; balls = []; pops = [];
+    floor = 0; player.hp = player.maxHp; mods = defaultMods(); CFG.maxBalls = CFG.baseMaxBalls; firstShotDone = false;
+    HUD.balls.textContent = ballsLeft; HUD.score.textContent = 0; HUD.gold.textContent = 0; HUD.combo.textContent = 0;
+    buildPegs(); layerDirty = true; spawnEnemy(); updatePlayerUI(); running = true;
+  }
+
+  // ---------- IAA 广告桩（接微信流量主 SDK 时替换）----------
+  function playAd(onReward) {
+    // TODO: 接入小程序流量主激励视频；此处直接发奖模拟
+    // wx.createRewardedVideoAd({...}).onClose(res => { if (res.isEnded) onReward(); })
+    setTimeout(onReward, 300);
+  }
+
+  // ---------- 输入（touch + mouse；不用 Pointer Events，兼容旧版微信 X5 内核）----------
+  let lastTouch = 0;
+  function evXY(ev) {
+    const r = canvas.getBoundingClientRect();
+    const t = (ev.touches && ev.touches[0]) || (ev.changedTouches && ev.changedTouches[0]) || ev;
+    return { x: t.clientX - r.left, y: t.clientY - r.top };
+  }
+  function aimDown(ev) {
+    if (!running || ballsLeft <= 0 || balls.length >= CFG.maxBalls) return;  // 上一颗未落定不能再瞄
+    if (ev.cancelable) ev.preventDefault();
+    if (!audio) try { audio = new (window.AudioContext || window.webkitAudioContext)(); } catch (_) {}
+    for (const p of pegs) p.spent = false;          // 开始瞄准即刷新棋盘，灰钉复原、与预判线一致
+    aiming = true; const q = evXY(ev); aimX = q.x; aimY = q.y;
+  }
+  function aimMove(ev) { if (!aiming) return; if (ev.cancelable) ev.preventDefault(); const p = evXY(ev); aimX = p.x; aimY = p.y; }
+  function fire(ev) { if (ev && ev.cancelable) ev.preventDefault(); if (aiming) { aiming = false; launch(); } }
+  // 触摸（主）
+  canvas.addEventListener('touchstart', (ev) => { lastTouch = Date.now(); aimDown(ev); }, { passive: false });
+  canvas.addEventListener('touchmove', (ev) => { lastTouch = Date.now(); aimMove(ev); }, { passive: false });
+  canvas.addEventListener('touchend', (ev) => { lastTouch = Date.now(); fire(ev); }, { passive: false });
+  canvas.addEventListener('touchcancel', fire);
+  // 鼠标（桌面调试）；触摸后 600ms 内忽略，避免合成鼠标事件重复触发
+  canvas.addEventListener('mousedown', (ev) => { if (Date.now() - lastTouch < 600) return; aimDown(ev); });
+  window.addEventListener('mousemove', (ev) => { if (Date.now() - lastTouch < 600) return; aimMove(ev); });
+  window.addEventListener('mouseup', (ev) => { if (Date.now() - lastTouch < 600) return; fire(ev); });
+
+  // ---------- 新手引导 ----------
+  const TUT = [
+    { emoji: '🎯', title: '瞄准发射', text: '按住屏幕拖动，黄色虚线会预测墩弟的反弹路线；松手即发射。规划一条能连撞多颗食物的线路是关键。' },
+    { emoji: '🍰', title: '撞食物·攒伤害', text: '墩弟撞到食物就计分并累积伤害（看头顶 ⚔️ 数字）；撞过的食物本回合变灰、墩弟穿过它继续下落。落底或被接住时一次性砸向 Boss。' },
+    { emoji: '🧺', title: '餐车接球', text: '底部餐车来回移动，接住下落的墩弟可返还 1 颗；高速接住返还 2 颗！每发只有 1 颗，别浪费。' },
+    { emoji: '🍞', title: '联动 & 构筑', text: '🍞爆裂面包溅射周围、相邻同类 ≥4 触发连锁吞噬。下一发整盘食物刷新，所以每发都饱满。击败 Boss 可三选一变强！' },
+    { emoji: '🍗', title: '招牌彩蛋', text: '场上的金色招牌钉很难命中——精准弹射命中 3 次，通关就送你一张真实线下优惠券！' }
+  ];
+  let tutStep = 0, tutAfter = null;
+  function tutSeen(v) { try { if (v === undefined) return localStorage.getItem('haqi_pachinko_tut') === '1'; localStorage.setItem('haqi_pachinko_tut', '1'); } catch (_) { return window.__tutSeen; } }
+  function renderTut() {
+    const s = TUT[tutStep];
+    e('tutEmoji').textContent = s.emoji; e('tutTitle').textContent = s.title; e('tutText').textContent = s.text;
+    e('bTutNext').textContent = tutStep === TUT.length - 1 ? '开始游戏' : '下一步';
+    e('tutDots').innerHTML = TUT.map((_, i) => `<i class="${i === tutStep ? 'on' : ''}"></i>`).join('');
+  }
+  function showTutorial(after) { tutAfter = after || null; tutStep = 0; renderTut(); e('vTut').classList.add('show'); }
+  function maybeTutorial(after) { if (tutSeen()) after(); else showTutorial(after); }
+  e('bTutNext').onclick = () => {
+    if (tutStep < TUT.length - 1) { tutStep++; renderTut(); return; }
+    tutSeen(true); window.__tutSeen = true; e('vTut').classList.remove('show');
+    const cb = tutAfter; tutAfter = null; if (cb) cb();
+  };
+  e('bHelp').onclick = () => { const wasRunning = running; running = false; showTutorial(() => { running = wasRunning; }); };
+
+  e('bPlay').onclick = () => { e('vStart').classList.remove('show'); maybeTutorial(startRun); };
+  e('bSponsor').onclick = () => { playAd(() => { pendingSuper++; e('vStart').classList.remove('show'); maybeTutorial(startRun); }); };
+  e('bReviveAd').onclick = () => { playAd(() => {
+    if (reviveMode === 'hp') { player.hp = player.maxHp; updatePlayerUI(); if (ballsLeft <= 0) { ballsLeft = 3; HUD.balls.textContent = ballsLeft; } }
+    else { ballsLeft += 3; HUD.balls.textContent = ballsLeft; }
+    e('vRevive').classList.remove('show'); running = true;
+  }); };
+  e('bGiveUp').onclick = () => { e('vRevive').classList.remove('show'); endGame(); };
+  e('bAgain').onclick = () => { e('vEnd').classList.remove('show'); startRun(); };
+  window.addEventListener('resize', resize);
+
+  // ---------- 音效 ----------
+  let audio = null;
+  function beep(freq, dur) {
+    try {
+      if (!audio) audio = new (window.AudioContext || window.webkitAudioContext)();
+      const o = audio.createOscillator(), g = audio.createGain(), t = audio.currentTime;
+      o.frequency.value = freq; o.type = 'triangle';
+      g.gain.setValueAtTime(0.16, t); g.gain.exponentialRampToValueAtTime(0.001, t + dur);
+      o.connect(g); g.connect(audio.destination); o.start(t); o.stop(t + dur + 0.02);
+    } catch (_) {}
+  }
+
+  // ---------- 启动 ----------
+  resize(); HUD.balls.textContent = ballsLeft; loop(); post('gameLoaded');
+  </script>
+</body>
+
+</html>

@@ -624,7 +624,12 @@
 
 	function createLasers(difficulty) {
 		const lasers = [];
-		const rows = shuffle([...Array(state.size - 2)].map((_, i) => i + 1));
+		// 排除出生点与餐盘所在行：激光水平发射，若落在这两行会直接扫过出生点/终点，导致开局秒输或无法过关。
+		const startRow = state.start ? state.start.r : -1;
+		const babyRow = state.baby ? state.baby.r : -1;
+		const rows = shuffle(
+			[...Array(state.size - 2)].map((_, i) => i + 1).filter(r => r !== startRow && r !== babyRow)
+		);
 		for (let i = 0; i < difficulty.lasers && i < rows.length; i++) {
 			const r = rows[i];
 			const fromLeft = i % 2 === 0;

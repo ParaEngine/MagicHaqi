@@ -564,6 +564,14 @@ art_assets = [];
     try { window.parent.postMessage({ type, data }, '*'); } catch (_) {}
   }
 
+  // 微信小程序 web-view（userAgent 含 miniProgram，与 js/wxShare.js 的检测一致）：
+  // 按平台要求跳过 scene2 星球命名，scene1 转场后直接进入 scene3 选性格。
+  const IS_MINIPROGRAM = /miniprogram/i.test((typeof navigator !== 'undefined' && navigator.userAgent) || '');
+  // 被跳过的 scene2 进度点一并隐藏，顶部进度条与实际步数保持一致。
+  if (IS_MINIPROGRAM) {
+    try { document.querySelector('#progressBar .progress-dot[data-scene="2"]').style.display = 'none'; } catch (_) {}
+  }
+
   // ======== 宇宙氛围音乐（Web Audio 程序化合成，无需外部文件）========
   // 风格：没有任何持续底噪 —— 只有偶尔、极轻的钟铃音，像从遥远星辰传来的回声。
   // 浏览器要求用户手势后才能播放音频，因此在首次点击（蛋）时启动。
@@ -1360,6 +1368,13 @@ art_assets = [];
           duration: 2000,
         });
         // 镜头停住后【不刷新场景】，直接在持久层里补充"给星球起名字"的 UI。
+        // 微信小程序环境跳过星球命名（scene2）：沿用账号星球名（无则本局随机保底，
+        // 不回写父级），直接进入选性格。scene3 的 clearScene 会清掉本转场持久层。
+        if (IS_MINIPROGRAM) {
+          if (!state.planetName) state.planetName = randomPlanetName();
+          scene3();
+          return;
+        }
         scene2(settled);
       }, 700);
     }, { once: false });

@@ -809,6 +809,29 @@ function bindZoomLevelBar(root = document) {
         if (!bar.classList.contains('is-visible')) return;
         e.preventDefault();
         e.stopPropagation();
+        const stageEl = e.target.closest?.('.mh-zoom-bar-stage, .mh-zoom-bar-emergency');
+        if (stageEl) {
+            let index = Number(stageEl.dataset.zoomIndex);
+            if (!Number.isFinite(index)) {
+                index = ZOOM_BAR_STAGES.findIndex(s => s.id === stageEl.dataset.zoomEmergency);
+            }
+            if (Number.isFinite(index) && index >= 0) {
+                if (index === clampLvl(state.zoomLevel ?? 0)) {
+                    const wasOpen = bar.classList.contains('tip-open');
+                    closeZoomLevelBarTips();
+                    if (!wasOpen) {
+                        bar.classList.add('tip-open');
+                        document.addEventListener('click', closeZoomLevelBarTips, { once: true });
+                    }
+                } else {
+                    closeZoomLevelBarTips();
+                    bar.classList.add('suppress-tip');
+                    setTimeout(() => bar.classList.remove('suppress-tip'), 2000);
+                    requestZoomLevel(index);
+                }
+                return;
+            }
+        }
         const wasOpen = bar.classList.contains('tip-open');
         closeZoomLevelBarTips();
         if (!wasOpen) {
@@ -820,6 +843,7 @@ function bindZoomLevelBar(root = document) {
         if (!bar.classList.contains('is-visible')) return;
         if (e.key === 'Escape') closeZoomLevelBarTips();
     });
+    bar.addEventListener('pointerleave', () => bar.classList.remove('suppress-tip'));
 }
 
 function closeZoomLevelBarTips() {
@@ -1530,6 +1554,12 @@ function getWipeFocusCenter(levelIndex) {
 }
 
 function runZoomTransition(from, to) {
+    // 跳转前拦截：从「星球」(space) 进入「星球表面」(field) 之前，先询问 app 是否需要先弹领养新手指引。
+    // 若需要，直接进入领养小游戏而不缩放进入 field（避免“先进 field 再弹小游戏”的闪烁）。
+    if (CONFIG.zoomLevels[from]?.id === 'space' && CONFIG.zoomLevels[to]?.id === 'field'
+        && !isVisitingMode() && __lastCallbacks?.onPlanetToFieldOnboarding?.()) {
+        return;
+    }
     const direction = to > from ? 'in' : 'out';
     const stage = document.getElementById('mhStage');
     const dock  = document.getElementById('mhDock');
@@ -1889,6 +1919,8 @@ function isStageZoomGestureBlocked(target) {
     if (!target?.closest) return false;
     if (target.closest('.remote-planet, .remote-mini-planet, .space-planet')) return false;
     if (target.closest('.poop-btn')) return false;
+    // 田野层的当前宠物可拖拽：在它身上按下时不启动竖向滑动缩放，避免拖宠物时相机跟着缩放。
+    if (target.closest('.field-pet-current')) return true;
     if (target.closest('button, a, input, textarea, select, [contenteditable="true"], [data-tray-item], .field-tab, .bad-cell')) return true;
     if (state.zoomLevel === 1 && state.isDecorMode && target.closest('.field-item')) return true;
     if (state.zoomLevel === 2 && (state.isDecorMode || state.isFeedMode) && target.closest('.room-cell, .furniture')) return true;

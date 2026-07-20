@@ -1,0 +1,245 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1,user-scalable=no,viewport-fit=cover">
+  <title>哈奇字母碰碰链</title>
+  <script src="https://cdn.keepwork.com/keepwork/cdn/tailwindcss@3.4.16.js"></script>
+  <style>
+    *{box-sizing:border-box}html,body{margin:0;width:100%;height:100%;overflow:hidden;touch-action:none;user-select:none;-webkit-tap-highlight-color:transparent;font-family:ui-rounded,"PingFang SC","Microsoft YaHei",system-ui,sans-serif;background:#271c52;color:#fff}
+    body{display:flex;align-items:center;justify-content:center;background:radial-gradient(circle at 18% 14%,#8768d8 0,transparent 30%),radial-gradient(circle at 82% 80%,#f67db2 0,transparent 34%),linear-gradient(140deg,#392569,#1d184b)}
+    #app{position:relative;width:min(1180px,100vw);height:min(690px,100vh);display:grid;grid-template-columns:250px minmax(360px,560px) 270px;gap:16px;padding:16px;overflow:hidden}
+    .panel{position:relative;border:2px solid rgba(255,255,255,.23);border-radius:26px;background:linear-gradient(145deg,rgba(255,255,255,.17),rgba(255,255,255,.07));box-shadow:0 20px 45px rgba(17,9,50,.28),inset 0 1px rgba(255,255,255,.3);backdrop-filter:blur(12px)}
+    #leftPanel,#rightPanel{padding:18px;display:flex;flex-direction:column;gap:14px;overflow:hidden}
+    #gamePanel{overflow:hidden;background:linear-gradient(#b8efff 0 16%,#d9f8ff 16% 100%);box-shadow:0 25px 60px rgba(12,7,38,.45),inset 0 0 0 4px rgba(255,255,255,.42)}
+    canvas{display:block;width:100%;height:100%;touch-action:none}
+    .logo{font-weight:1000;font-size:24px;line-height:1.05;letter-spacing:-1px;text-shadow:0 3px #633db5}.logo small{display:block;margin-top:6px;font-size:11px;letter-spacing:2px;color:#e6dafe;text-shadow:none}
+    .glass{border:1px solid rgba(255,255,255,.21);border-radius:18px;background:rgba(33,19,82,.22);padding:12px}
+    #petWrap{height:180px;display:flex;align-items:center;justify-content:center;position:relative;background:radial-gradient(circle,#ffe88b 0 12%,rgba(255,232,139,.25) 38%,transparent 66%)}
+    #petSprite{width:148px;height:148px;background-position:center;background-repeat:no-repeat;background-size:contain;filter:drop-shadow(0 10px 8px rgba(26,10,64,.28));animation:float 2.8s ease-in-out infinite}#petFallback{font-size:92px;animation:float 2.8s ease-in-out infinite}
+    @keyframes float{50%{transform:translateY(-9px) rotate(2deg)}}
+    .statRow{display:flex;justify-content:space-between;align-items:center;font-size:13px;color:#dfd6ff}.statRow b{font-size:20px;color:#fff}.progress{height:9px;border-radius:20px;background:rgba(18,10,55,.35);overflow:hidden}.progress i{display:block;height:100%;width:0;border-radius:inherit;background:linear-gradient(90deg,#57e5a5,#ffe873);transition:width .3s}
+    #word{display:flex;flex-wrap:wrap;justify-content:center;gap:7px;padding:8px 2px}.slot{width:38px;height:44px;border-radius:12px;border:2px dashed rgba(255,255,255,.48);display:grid;place-items:center;font-weight:1000;font-size:23px;color:rgba(255,255,255,.42);transition:.25s}.slot.done{border-style:solid;border-color:#fff3a0;color:#3a236e;background:linear-gradient(145deg,#fff8b8,#ffc86b);transform:translateY(-3px) rotate(-2deg);box-shadow:0 6px 0 #c87961,0 10px 18px rgba(30,10,70,.25)}
+    #hint{min-height:44px;text-align:center;font-size:13px;line-height:1.55;color:#e9e2ff}.nextOrb{margin:auto;width:70px;height:70px;border-radius:46% 54% 48% 52%;display:grid;place-items:center;color:#492570;font-size:34px;font-weight:1000;background:linear-gradient(145deg,#fff7a7,#ff9ccf);border:4px solid rgba(255,255,255,.75);box-shadow:0 7px 0 #b5619e,0 12px 20px rgba(30,10,70,.3)}
+    .btn{border:0;border-radius:15px;padding:11px 12px;color:#402065;font-weight:1000;cursor:pointer;background:linear-gradient(#fff6a3,#ffbf64);box-shadow:0 5px 0 #b46f61;transition:.1s}.btn:active{transform:translateY(3px);box-shadow:0 2px 0 #b46f61}.btn.secondary{background:linear-gradient(#c9f8ff,#78d9ef);box-shadow:0 5px 0 #4b91bb}.btn:disabled{filter:grayscale(.8);opacity:.5;cursor:default}.boosts{display:grid;grid-template-columns:1fr 1fr;gap:9px}.boosts .btn{font-size:12px;padding:10px 5px}
+    #topHud{position:absolute;z-index:4;left:10px;right:10px;top:10px;display:flex;justify-content:space-between;pointer-events:none}.hudPill{padding:7px 11px;border-radius:14px;background:rgba(49,28,106,.78);border:1px solid rgba(255,255,255,.5);font-size:12px;font-weight:900;box-shadow:0 4px 12px rgba(49,20,100,.18)}.hudPill b{color:#fff19a;font-size:16px}
+    #message{position:absolute;z-index:5;left:50%;top:22%;transform:translate(-50%,-50%) scale(.8);font-size:32px;font-weight:1000;color:#fff;text-shadow:0 4px #6c3dab,0 7px 16px rgba(40,15,90,.5);pointer-events:none;opacity:0;white-space:nowrap}#message.pop{animation:pop .85s ease}@keyframes pop{25%{opacity:1;transform:translate(-50%,-50%) scale(1.14)}75%{opacity:1;transform:translate(-50%,-50%) scale(1)}100%{opacity:0}}
+    #helpBtn{position:absolute;z-index:10;right:12px;top:12px;width:38px;height:38px;border-radius:50%;border:2px solid rgba(255,255,255,.6);background:#6e4cc1;color:#fff;font-size:20px;font-weight:1000;cursor:pointer}
+    .overlay{position:absolute;z-index:20;inset:0;display:none;align-items:center;justify-content:center;padding:18px;background:rgba(26,15,65,.74);backdrop-filter:blur(9px)}.overlay.show{display:flex}.card{width:min(520px,94vw);border:3px solid rgba(255,255,255,.55);border-radius:28px;padding:25px;text-align:center;background:linear-gradient(145deg,#704bc3,#4a318e);box-shadow:0 24px 70px rgba(10,5,35,.55)}.card h1{font-size:30px;margin:0 0 10px}.card p{margin:8px 0 18px;color:#e7ddff;line-height:1.75;font-size:14px}.rules{display:grid;grid-template-columns:repeat(3,1fr);gap:10px;margin:18px 0}.rule{padding:12px 7px;border-radius:16px;background:rgba(255,255,255,.12);font-size:12px;line-height:1.45}.rule b{display:block;font-size:28px;margin-bottom:5px}.card .btn{min-width:170px;font-size:16px}
+    @media(max-width:850px) and (orientation:landscape){#app{grid-template-columns:150px minmax(320px,1fr) 165px;gap:8px;padding:8px}#leftPanel,#rightPanel{padding:10px;gap:8px}.logo{font-size:17px}#petWrap{height:130px}#petSprite{width:110px;height:110px}#petFallback{font-size:68px}.glass{padding:8px}.slot{width:29px;height:35px;font-size:18px}.rules{gap:5px}.rule{font-size:10px}}
+    /* 竖屏采用“顶部状态 / 等比游戏区 / 底部操作台”三段式布局，避免 Canvas 拉伸。 */
+    @media(orientation:portrait) and (max-width:900px){
+      body{align-items:stretch;justify-content:stretch;background:linear-gradient(180deg,#352268,#21194d)}
+      #app{width:100%;height:100%;height:100dvh;display:grid;grid-template-columns:minmax(0,1fr);grid-template-rows:48px 84px auto minmax(0,1fr) 82px;gap:6px;padding:max(6px,env(safe-area-inset-top)) max(6px,env(safe-area-inset-right)) max(6px,env(safe-area-inset-bottom)) max(6px,env(safe-area-inset-left))}
+      .panel{border-radius:18px}
+      #leftPanel{grid-row:1;position:relative;z-index:7;width:100%;height:48px;padding:5px 48px 5px 9px;display:grid;grid-template-columns:minmax(0,1fr) 112px;align-items:center;gap:7px;background:rgba(75,48,143,.96);overflow:visible;backdrop-filter:none}
+      #leftPanel .logo{font-size:16px;font-weight:900;letter-spacing:-.4px;white-space:nowrap;text-shadow:0 2px #633db5}
+      #leftPanel .logo small,#petWrap,#leftPanel>.glass:last-child{display:none}
+      #leftPanel>.glass{height:36px;padding:4px 7px;border-radius:11px}
+      #leftPanel .statRow{font-size:9px;line-height:15px}#leftPanel .statRow b{font-size:12px}.progress{height:5px}
+      #gamePanel{grid-row:3;position:relative;align-self:start;justify-self:center;width:min(100%,calc((100dvh - 180px)*.8));height:auto;max-height:100%;aspect-ratio:520/650;border-radius:21px}
+      #gamePanel canvas{width:100%;height:100%}
+      #topHud{top:7px;left:7px;right:7px}.hudPill{padding:5px 8px;border-radius:11px;font-size:10px}.hudPill b{font-size:13px}
+      #message{top:19%;font-size:24px}
+      #rightPanel{grid-row:5;position:static;z-index:7;width:100%;height:82px;padding:5px;display:grid;grid-template-columns:56px minmax(0,1fr);grid-template-rows:1fr;align-items:stretch;gap:5px;background:rgba(75,48,143,.96);overflow:visible;backdrop-filter:none}
+      #rightPanel>.glass{min-width:0;height:100%;padding:5px;border-radius:12px;overflow:hidden}
+      #rightPanel>.glass:first-child{position:absolute;z-index:8;left:max(6px,env(safe-area-inset-left));right:max(6px,env(safe-area-inset-right));top:58px;width:auto;height:84px;padding:5px 10px;display:flex;flex-direction:column;justify-content:center;border:2px solid rgba(255,255,255,.25);border-radius:16px;background:rgba(75,48,143,.94);box-shadow:0 8px 22px rgba(18,8,55,.25)}
+      #rightPanel>.glass:nth-child(2){display:flex;flex-direction:column;align-items:center;justify-content:center;gap:1px}
+      #rightPanel>.glass:nth-child(2)::before{content:"NEXT";font-size:7px;line-height:8px;font-weight:1000;letter-spacing:.8px;color:#d9ceff}
+      #rightPanel>.glass:nth-child(2)>.text-xs,#hint{display:none}
+      #word{gap:5px;padding:5px 0}.slot{width:38px;height:42px;border-radius:11px;font-size:23px;border-width:2px;color:rgba(255,255,255,.48);background:rgba(255,255,255,.05)}.slot.done{box-shadow:0 3px 0 #c87961,0 5px 9px rgba(30,10,70,.22);transform:translateY(-1px) rotate(-2deg)}
+      #meaning{font-size:10px;line-height:12px}.nextOrb{width:44px;height:44px;border-width:2px;font-size:24px;box-shadow:0 4px 0 #b5619e,0 6px 10px rgba(30,10,70,.25)}
+      .boosts{height:100%;display:grid;grid-template-columns:1fr 1fr;grid-template-rows:1fr;gap:6px}.boosts .btn{min-width:0;min-height:0;display:flex;align-items:center;justify-content:center;gap:5px;border-radius:12px;padding:5px 7px;font-size:12px;line-height:1;box-shadow:0 3px 0 #b46f61;white-space:nowrap}.boosts .boostIcon{font-size:17px}.boosts .boostName{font-weight:1000}.boosts small{padding:2px 5px;border-radius:999px;background:rgba(76,38,112,.12);font-size:9px;font-weight:900}.boosts .btn.secondary{box-shadow:0 3px 0 #4b91bb}.boosts .btn:active{transform:translateY(2px);box-shadow:0 1px 0 #b46f61}
+      #helpBtn{right:max(11px,env(safe-area-inset-right));top:max(11px,env(safe-area-inset-top));width:34px;height:34px;font-size:17px}
+      .overlay{position:fixed;padding:max(12px,env(safe-area-inset-top)) max(12px,env(safe-area-inset-right)) max(12px,env(safe-area-inset-bottom)) max(12px,env(safe-area-inset-left))}
+      .card{width:min(430px,100%);padding:20px 15px;border-radius:23px}.card h1{font-size:25px}.card p{font-size:13px;line-height:1.6;margin:6px 0 14px}.rules{gap:6px;margin:13px 0}.rule{padding:9px 4px;font-size:10px}.rule b{font-size:23px}.card .btn{min-width:150px;font-size:14px}
+    }
+    @media(orientation:portrait) and (max-height:760px){
+      #app{grid-template-rows:48px 64px minmax(0,1fr) 78px;gap:4px}
+      #gamePanel{grid-row:3;width:min(100%,calc((100dvh - 226px)*.8));border-radius:17px}
+      #rightPanel{grid-row:4;height:78px;padding:4px;grid-template-columns:48px minmax(0,1fr);gap:4px}
+      #rightPanel>.glass:first-child{top:58px;height:56px;padding:3px 8px}
+      #rightPanel>.glass:first-child>div:first-child{font-size:9px;line-height:10px}
+      #word{padding:2px 0;gap:3px}.slot{width:30px;height:32px;font-size:18px}#meaning{line-height:10px}
+      .nextOrb{width:36px;height:36px;font-size:19px}.boosts .btn{padding:3px 4px;font-size:10px;gap:3px}.boosts .boostIcon{font-size:14px}.boosts small{font-size:8px;padding:2px 3px}
+    }
+    @media(orientation:portrait) and (max-height:620px){
+      #app{grid-template-rows:42px 56px minmax(0,1fr) 70px;gap:4px;padding-top:max(4px,env(safe-area-inset-top));padding-bottom:max(4px,env(safe-area-inset-bottom))}
+      #leftPanel{height:42px;padding-top:3px;padding-bottom:3px}#leftPanel>.glass{height:32px}
+      #gamePanel{grid-row:3;width:min(100%,calc((100dvh - 198px)*.8));border-radius:16px}
+      #rightPanel{grid-row:4;height:70px}.slot{width:27px;height:29px;font-size:16px}.nextOrb{width:32px;height:32px;font-size:17px}
+      #rightPanel>.glass:first-child{top:50px;height:48px;padding:2px 7px}
+      .card{padding:12px}.card>div:first-child{font-size:34px}.card h1{font-size:21px;margin-bottom:5px}.card p{font-size:11px;line-height:1.45;margin:4px 0 8px}.rules{margin:8px 0}.rule{padding:6px 3px}.rule b{font-size:19px;margin-bottom:2px}
+    }
+  </style>
+</head>
+<body>
+<main id="app">
+  <section id="leftPanel" class="panel">
+    <div class="logo">哈奇字母碰碰链<small>LETTER BOUNCE</small></div>
+    <div id="petWrap" class="glass"><div id="petFallback">🐣</div><div id="petSprite" hidden></div></div>
+    <div class="glass"><div class="statRow"><span>关卡进度</span><b id="levelText">1 / 5</b></div><div class="progress"><i id="levelProgress"></i></div></div>
+    <div class="glass"><div class="statRow"><span>最高分</span><b id="bestText">0</b></div><div class="statRow"><span>本局连击</span><b id="comboText">×0</b></div></div>
+  </section>
+  <section id="gamePanel" class="panel">
+    <canvas id="game" width="520" height="650" aria-label="字母合成游戏区"></canvas>
+    <div id="topHud"><span class="hudPill">得分 <b id="scoreText">0</b></span><span class="hudPill">剩余发射 <b id="movesText">0</b></span></div>
+    <div id="message"></div>
+  </section>
+  <section id="rightPanel" class="panel">
+    <div class="glass"><div class="text-center text-xs font-black text-purple-100">目标单词</div><div id="word"></div><div id="meaning" class="text-center text-xs text-yellow-100"></div></div>
+    <div class="glass text-center"><div class="text-xs font-black text-purple-100 mb-2">下一颗</div><div id="nextOrb" class="nextOrb">A</div></div>
+    <div id="hint">拖动瞄准线，松手把字母弹出去<br>相同字母碰撞会升级！</div>
+    <div class="boosts"><button id="wildBtn" class="btn"><span class="boostIcon">🌈</span><span class="boostName">万能弹</span><small>1 次</small></button><button id="shakeBtn" class="btn secondary"><span class="boostIcon">🐾</span><span class="boostName">宠物整理</span><small>1 次</small></button></div>
+  </section>
+  <button id="helpBtn" aria-label="玩法帮助">?</button>
+  <div id="rules" class="overlay show"><div class="card"><div class="text-5xl mb-2">🔤✨</div><h1>哈奇字母碰碰链</h1><p>弹射软乎乎的果冻字母，复刻“合成大西瓜 × 单词解谜”的快乐。<br>帮助哈奇收集字母，拼出每一关的英文单词！</p><div class="rules"><div class="rule"><b>🎯</b>拖动瞄准<br>松开发射</div><div class="rule"><b>A+A=B</b>相同碰撞<br>字母升级</div><div class="rule"><b>🧊</b>撞碎冰块<br>别越警戒线</div></div><button id="startBtn" class="btn">开始碰碰！</button></div></div>
+  <div id="result" class="overlay"><div class="card"><div id="resultIcon" class="text-6xl mb-2">🎉</div><h1 id="resultTitle">单词完成！</h1><p id="resultText"></p><button id="resultBtn" class="btn">下一关</button></div></div>
+</main>
+
+<script>
+game_config = {
+  difficulty: "normal",
+  gravity: 0.14,
+  launchPower: 11.5,
+  dangerSeconds: 2.4,
+  levels: [
+    { id: 1, word: "CAB", meaning: "出租车", moves: 16, ice: 2, sources: "AABBC" },
+    { id: 2, word: "BAD", meaning: "坏的", moves: 17, ice: 3, sources: "AABBCD" },
+    { id: 3, word: "CAFE", meaning: "咖啡馆", moves: 20, ice: 4, sources: "AABBCCD" },
+    { id: 4, word: "FEED", meaning: "喂养", moves: 22, ice: 5, sources: "AABBCCDE" },
+    { id: 5, word: "BADGE", meaning: "徽章", moves: 25, ice: 6, sources: "AABBCCDDE" }
+  ]
+};
+</script>
+<script>
+art_assets = [];
+</script>
+<script>
+(() => {
+  'use strict';
+  const $ = id => document.getElementById(id);
+  const canvas = $('game'), ctx = canvas.getContext('2d');
+  const W = 520, H = 650, FLOOR = 612, DANGER = 122, SHOOT_X = W / 2, SHOOT_Y = 592;
+  const palette = ['#ff82ae','#ffd166','#68d5f4','#8be28b','#ad91ff','#ff9f68','#69e3c5','#ef8fff','#82aaff','#f7db70'];
+  let running = false, launched = false, aiming = false, pointer = {x:W/2,y:H/3};
+  let levelIndex = 0, level, moves = 0, score = 0, combo = 0, best = +(localStorage.getItem('haqiLetterChainBest') || 0);
+  let orbs = [], blocks = [], particles = [], collected = [], nextLetter = 'A', wildcard = false, wildUsed = false, shakeUsed = false, finishTimer = 0, dangerTime = 0, lastTime = 0, petId = '', petRequestId = '', petUrl = '';
+
+  function post(type, data = {}) { try { window.parent.postMessage({type, data}, '*'); } catch (_) {} }
+  function rand(a,b){ return a + Math.random() * (b-a); }
+  function pick(s){ return s[(Math.random()*s.length)|0]; }
+  function levelOf(letter){ return Math.max(0, letter.charCodeAt(0)-65); }
+  function radius(letter){ return 25 + Math.min(10, levelOf(letter)*1.55); }
+  function showMessage(text){ const el=$('message'); el.textContent=text; el.classList.remove('pop'); void el.offsetWidth; el.classList.add('pop'); }
+  function updateHud(){
+    $('scoreText').textContent=score; $('movesText').textContent=moves; $('comboText').textContent='×'+combo; $('bestText').textContent=Math.max(best,score);
+    $('levelText').textContent=(levelIndex+1)+' / '+game_config.levels.length;
+    $('levelProgress').style.width=(100*collected.filter(Boolean).length/level.word.length)+'%';
+    $('nextOrb').textContent=wildcard?'★':nextLetter;
+    $('nextOrb').style.background=wildcard?'linear-gradient(145deg,#fff,#7cf6e7,#c59aff)':'linear-gradient(145deg,#fff7a7,#ff9ccf)';
+  }
+  function renderWord(){
+    $('word').innerHTML='';
+    [...level.word].forEach((ch,i)=>{ const el=document.createElement('div'); el.className='slot'+(collected[i]?' done':''); el.textContent=ch; el.setAttribute('aria-label',collected[i]?`${ch} 已收集`:`待收集 ${ch}`); $('word').appendChild(el); });
+    $('meaning').textContent=level.word+' · '+level.meaning;
+  }
+  function makeOrb(x,y,letter,vx=0,vy=0,isWild=false){ return {x,y,vx,vy,letter,r:radius(letter),wild:isWild,age:0,rest:0,mergeLock:0,dead:false,squash:0}; }
+  function setupLevel(){
+    level=game_config.levels[levelIndex]; moves=level.moves; orbs=[]; blocks=[]; particles=[]; collected=Array(level.word.length).fill(false); combo=0; dangerTime=0; launched=false; finishTimer=0;
+    wildUsed=false; shakeUsed=false; wildcard=false; $('wildBtn').disabled=false; $('shakeBtn').disabled=false;
+    for(let i=0;i<level.ice;i++){
+      const cols=Math.min(3,level.ice), row=(i/cols)|0, col=i%cols;
+      blocks.push({x:92+col*168+(row%2)*22,y:205+row*75,w:62,h:48,hp:2,dead:false,flash:0});
+    }
+    nextLetter=pick(level.sources); renderWord(); updateHud();
+  }
+  function startGame(){
+    $('rules').classList.remove('show'); $('result').classList.remove('show'); levelIndex=0; score=0; setupLevel(); running=true; lastTime=performance.now();
+    post('gameStarted',{difficulty:game_config.difficulty}); requestPetImage(petId); requestAnimationFrame(loop);
+  }
+  function canvasPoint(e){ const r=canvas.getBoundingClientRect(), t=e.touches?.[0]||e.changedTouches?.[0]||e; return {x:(t.clientX-r.left)*W/r.width,y:(t.clientY-r.top)*H/r.height}; }
+  function aimStart(e){ if(!running||launched||moves<=0)return; aiming=true; pointer=canvasPoint(e); e.preventDefault(); }
+  function aimMove(e){ if(!aiming)return; pointer=canvasPoint(e); e.preventDefault(); }
+  function aimEnd(e){ if(!aiming)return; aiming=false; pointer=canvasPoint(e); fire(); e.preventDefault(); }
+  function fire(){
+    let dx=pointer.x-SHOOT_X, dy=Math.min(-45,pointer.y-SHOOT_Y), len=Math.hypot(dx,dy)||1;
+    const power=game_config.launchPower||11.5, orb=makeOrb(SHOOT_X,SHOOT_Y,nextLetter,dx/len*power,dy/len*power,wildcard);
+    orbs.push(orb); wildcard=false; moves--; launched=true; nextLetter=pick(level.sources); combo=0; updateHud();
+    setTimeout(()=>{launched=false;},420);
+  }
+  function burst(x,y,color,count=12){ for(let i=0;i<count;i++)particles.push({x,y,vx:rand(-4,4),vy:rand(-5,1),life:rand(.5,1),color,size:rand(3,8)}); }
+  function collectLetter(orb){
+    const idx=[...level.word].findIndex((ch,i)=>ch===orb.letter&&!collected[i]); if(idx<0)return false;
+    collected[idx]=true; orb.dead=true; combo++; const gain=120*combo*(levelOf(orb.letter)+1); score+=gain; burst(orb.x,orb.y,palette[levelOf(orb.letter)%palette.length],20); showMessage(combo>1?'连锁 ×'+combo+'！':'收集 '+orb.letter+'！'); renderWord(); updateHud();
+    if(collected.every(Boolean)) finishTimer=.7;
+    return true;
+  }
+  function merge(a,b){
+    let base=a.wild&&!b.wild?b.letter:b.wild&&!a.wild?a.letter:a.letter;
+    const next=String.fromCharCode(Math.min(90,base.charCodeAt(0)+1)), x=(a.x+b.x)/2, y=(a.y+b.y)/2;
+    a.dead=b.dead=true; const n=makeOrb(x,y,next,(a.vx+b.vx)*.22,(a.vy+b.vy)*.22); n.mergeLock=.25; n.squash=1; orbs.push(n);
+    combo++; score+=50*(levelOf(next)+1)*Math.max(1,combo); burst(x,y,palette[levelOf(next)%palette.length],16); showMessage(base+' + '+base+' = '+next); updateHud();
+    setTimeout(()=>{ if(!n.dead)collectLetter(n); },180);
+  }
+  function hitBlocks(o){
+    for(const b of blocks){ if(b.dead)continue; const nx=Math.max(b.x-b.w/2,Math.min(o.x,b.x+b.w/2)), ny=Math.max(b.y-b.h/2,Math.min(o.y,b.y+b.h/2)); let dx=o.x-nx,dy=o.y-ny,d=Math.hypot(dx,dy); if(d<o.r){
+      if(d<.01){dx=0;dy=-1;d=1} const overlap=o.r-d,nxv=dx/d,nyv=dy/d;o.x+=nxv*overlap;o.y+=nyv*overlap;const dot=o.vx*nxv+o.vy*nyv;if(dot<0){o.vx-=1.75*dot*nxv;o.vy-=1.75*dot*nyv}
+      if(b.flash<=0){b.hp--;b.flash=.18;burst(nx,ny,'#dffaff',8);score+=20;if(b.hp<=0){b.dead=true;score+=80;showMessage('破冰！');burst(b.x,b.y,'#9eefff',22)}updateHud()}
+    }}
+  }
+  function physics(dt){
+    const step=Math.min(.032,dt);
+    for(const o of orbs){ if(o.dead)continue;o.age+=step;o.mergeLock=Math.max(0,o.mergeLock-step);o.squash=Math.max(0,o.squash-step*4);o.vy+=(game_config.gravity||.14)*step*60;o.x+=o.vx*step*60;o.y+=o.vy*step*60;o.vx*=Math.pow(.995,step*60);
+      if(o.x<o.r){o.x=o.r;o.vx=Math.abs(o.vx)*.72}if(o.x>W-o.r){o.x=W-o.r;o.vx=-Math.abs(o.vx)*.72}if(o.y<76+o.r){o.y=76+o.r;o.vy=Math.abs(o.vy)*.75}if(o.y>FLOOR-o.r){o.y=FLOOR-o.r;o.vy=-Math.abs(o.vy)*.58;o.vx*=.91;if(Math.abs(o.vy)<.5)o.vy=0}
+      hitBlocks(o); const speed=Math.hypot(o.vx,o.vy);o.rest=speed<.45?o.rest+step:0;if(o.rest>.72)collectLetter(o);
+    }
+    outer:for(let i=0;i<orbs.length;i++){const a=orbs[i];if(a.dead)continue;for(let j=i+1;j<orbs.length;j++){const b=orbs[j];if(b.dead)continue;let dx=b.x-a.x,dy=b.y-a.y,d=Math.hypot(dx,dy),min=a.r+b.r;if(d>=min)continue;if(d<.01){dx=.01;d=.01}const nx=dx/d,ny=dy/d,over=min-d;a.x-=nx*over*.5;a.y-=ny*over*.5;b.x+=nx*over*.5;b.y+=ny*over*.5;
+      if(a.mergeLock<=0&&b.mergeLock<=0&&(a.letter===b.letter||a.wild||b.wild)){merge(a,b);continue outer}
+      const rv=(b.vx-a.vx)*nx+(b.vy-a.vy)*ny;if(rv<0){const imp=-rv*.78;a.vx-=imp*nx;a.vy-=imp*ny;b.vx+=imp*nx;b.vy+=imp*ny;a.squash=b.squash=.35}
+    }}
+    orbs=orbs.filter(o=>!o.dead);blocks.forEach(b=>b.flash=Math.max(0,b.flash-step));blocks=blocks.filter(b=>!b.dead);
+    for(const p of particles){p.life-=step;p.vy+=.14;p.x+=p.vx;p.y+=p.vy}particles=particles.filter(p=>p.life>0);
+    const dangerous=orbs.some(o=>o.y-o.r<DANGER&&o.age>1.2&&Math.hypot(o.vx,o.vy)<2.2);dangerTime=dangerous?dangerTime+step:Math.max(0,dangerTime-step*1.5);
+    if(finishTimer>0){finishTimer-=step;if(finishTimer<=0)completeLevel();}
+    if(dangerTime>(game_config.dangerSeconds||2.4)||(moves<=0&&!launched&&orbs.every(o=>o.rest>.35)&&!finishTimer))endGame(false);
+  }
+  function roundRect(x,y,w,h,r){ctx.beginPath();ctx.roundRect(x,y,w,h,r);}
+  function drawOrb(o){
+    ctx.save();ctx.translate(o.x,o.y);const sq=o.squash;ctx.scale(1+sq*.13,1-sq*.12);const col=o.wild?'#8ff3df':palette[levelOf(o.letter)%palette.length],g=ctx.createRadialGradient(-o.r*.35,-o.r*.45,2,0,0,o.r*1.25);g.addColorStop(0,'#fff');g.addColorStop(.17,col);g.addColorStop(1,'#7849a5');ctx.fillStyle=g;ctx.shadowColor='rgba(69,38,121,.28)';ctx.shadowBlur=9;ctx.shadowOffsetY=6;ctx.beginPath();ctx.arc(0,0,o.r,0,Math.PI*2);ctx.fill();ctx.shadowColor='transparent';ctx.lineWidth=3;ctx.strokeStyle='rgba(255,255,255,.65)';ctx.stroke();ctx.fillStyle='#482269';ctx.font=`1000 ${o.r*1.15}px ui-rounded,system-ui`;ctx.textAlign='center';ctx.textBaseline='middle';ctx.fillText(o.wild?'★':o.letter,0,1);ctx.fillStyle='rgba(255,255,255,.8)';ctx.beginPath();ctx.ellipse(-o.r*.35,-o.r*.42,o.r*.2,o.r*.11,-.5,0,Math.PI*2);ctx.fill();ctx.restore();
+  }
+  function draw(){
+    ctx.clearRect(0,0,W,H);const bg=ctx.createLinearGradient(0,0,0,H);bg.addColorStop(0,'#89dcf1');bg.addColorStop(.45,'#d8f8ff');bg.addColorStop(1,'#f9e8ff');ctx.fillStyle=bg;ctx.fillRect(0,0,W,H);
+    ctx.globalAlpha=.35;for(let i=0;i<18;i++){ctx.fillStyle=i%2?'#fff':'#82d7ed';ctx.beginPath();ctx.arc((i*83+30)%W,(i*137+80)%H,8+(i%4)*5,0,Math.PI*2);ctx.fill()}ctx.globalAlpha=1;
+    ctx.setLineDash([10,9]);ctx.strokeStyle=dangerTime>0?'#ff6687':'rgba(106,72,171,.38)';ctx.lineWidth=3;ctx.beginPath();ctx.moveTo(0,DANGER);ctx.lineTo(W,DANGER);ctx.stroke();ctx.setLineDash([]);ctx.fillStyle=dangerTime>0?'#d73561':'#7458a5';ctx.font='900 14px system-ui';ctx.fillText('⚠ 警戒线',12,DANGER-8);
+    for(const b of blocks){ctx.save();ctx.translate(b.x,b.y);ctx.fillStyle=b.flash>0?'#fff':'rgba(177,235,255,.9)';ctx.strokeStyle='#71cce9';ctx.lineWidth=3;roundRect(-b.w/2,-b.h/2,b.w,b.h,12);ctx.fill();ctx.stroke();ctx.fillStyle='rgba(255,255,255,.7)';roundRect(-b.w*.28,-b.h*.3,b.w*.3,b.h*.18,5);ctx.fill();ctx.fillStyle='#318dac';ctx.font='900 17px system-ui';ctx.textAlign='center';ctx.fillText('🧊 '+b.hp,0,6);ctx.restore()}
+    for(const o of orbs)drawOrb(o);
+    for(const p of particles){ctx.globalAlpha=Math.max(0,p.life);ctx.fillStyle=p.color;ctx.beginPath();ctx.arc(p.x,p.y,p.size,0,Math.PI*2);ctx.fill()}ctx.globalAlpha=1;
+    ctx.fillStyle='rgba(78,43,134,.2)';ctx.beginPath();ctx.ellipse(SHOOT_X,FLOOR+7,75,20,0,0,Math.PI*2);ctx.fill();ctx.fillStyle='#7550be';roundRect(SHOOT_X-30,SHOOT_Y-4,60,43,20);ctx.fill();ctx.strokeStyle='rgba(255,255,255,.7)';ctx.lineWidth=3;ctx.stroke();
+    if(running&&!launched){const dx=pointer.x-SHOOT_X,dy=Math.min(-35,pointer.y-SHOOT_Y),len=Math.hypot(dx,dy)||1,nx=dx/len,ny=dy/len;ctx.setLineDash([8,9]);ctx.strokeStyle='rgba(88,51,143,.5)';ctx.lineWidth=4;ctx.beginPath();ctx.moveTo(SHOOT_X,SHOOT_Y);ctx.lineTo(SHOOT_X+nx*150,SHOOT_Y+ny*150);ctx.stroke();ctx.setLineDash([]);const preview=makeOrb(SHOOT_X,SHOOT_Y-12,nextLetter,0,0,wildcard);drawOrb(preview)}
+  }
+  function loop(t){if(!running)return;const dt=(t-lastTime)/1000;lastTime=t;physics(dt);draw();requestAnimationFrame(loop)}
+  function completeLevel(){
+    if(levelIndex===game_config.levels.length-1){endGame(true);return}
+    running=false;best=Math.max(best,score);localStorage.setItem('haqiLetterChainBest',best);$('resultIcon').textContent='🎉';$('resultTitle').textContent=level.word+' 完成！';$('resultText').innerHTML='太棒了！“'+level.word+'”意为“'+level.meaning+'”。<br>本局得分 <b>'+score+'</b>，继续挑战更长的单词吧。';$('resultBtn').textContent='下一关';$('result').classList.add('show');
+  }
+  function endGame(won){
+    running=false;best=Math.max(best,score);localStorage.setItem('haqiLetterChainBest',best);$('resultIcon').textContent=won?'🏆':'💫';$('resultTitle').textContent=won?'全部通关！':'字母堆满啦';$('resultText').innerHTML=won?'你和哈奇完成了所有单词！<br>最终得分 <b>'+score+'</b>，最高连击 <b>×'+combo+'</b>。':'别让静止的字母停在警戒线上。<br>本次得分 <b>'+score+'</b>，再试一次一定能过！';$('resultBtn').textContent='再来一局';$('result').classList.add('show');post('gameFinished',{earnedPoints:score,score,level:levelIndex+1,passed:won,difficulty:game_config.difficulty});
+  }
+  function resultAction(){ const restart=$('resultBtn').textContent==='再来一局';$('result').classList.remove('show');if(restart){startGame();return}levelIndex++;setupLevel();running=true;lastTime=performance.now();requestAnimationFrame(loop); }
+  function useWild(){if(!running||wildUsed)return;wildUsed=true;wildcard=true;$('wildBtn').disabled=true;showMessage('下一颗是万能弹！');updateHud()}
+  function useShake(){if(!running||shakeUsed)return;shakeUsed=true;$('shakeBtn').disabled=true;for(const o of orbs){o.vx+=(o.x<W/2?-1:1)*rand(1.5,3.5);o.vy-=rand(3,6);o.rest=0}dangerTime=0;showMessage('哈奇帮你整理！');burst(W/2,H*.7,'#fff1a0',25)}
+  async function setPetImage(pet){
+    if(!pet?.imageBlob)return;try{if(petUrl)URL.revokeObjectURL(petUrl);petUrl=URL.createObjectURL(pet.imageBlob);const el=$('petSprite'),uv=pet.uv||{cols:1,rows:1,col:0,row:0};el.style.backgroundImage=`url("${petUrl}")`;el.style.backgroundSize=uv.cols>1||uv.rows>1?`${uv.cols*100}% ${uv.rows*100}%`:'contain';el.style.backgroundPosition=uv.cols>1||uv.rows>1?`${uv.cols>1?uv.col*100/(uv.cols-1):50}% ${uv.rows>1?uv.row*100/(uv.rows-1):50}%`:'center';el.hidden=false;$('petFallback').hidden=true}catch(_){}
+  }
+  function requestPetImage(id=''){petRequestId=`pet_${Date.now()}`;try{window.parent.postMessage({type:'haqi_get_pet_image',requestId:petRequestId,anim:'happy',petId:id||undefined},'*')}catch(_){}setTimeout(()=>{if(!petUrl){try{window.parent.postMessage({type:'haqi_get_pet_images',requestId:`pets_${Date.now()}`,anim:'happy'},'*')}catch(_){}}},900)}
+  window.addEventListener('message',e=>{const m=e.data||{};if(m.type==='setGameConfig'){const d=m.data||{};petId=d.petId||petId;if(d.gameConfig&&typeof d.gameConfig==='object')game_config=Object.assign({},game_config,d.gameConfig);else if(d.difficulty)game_config.difficulty=d.difficulty;if(d.petId)requestPetImage(d.petId)}if(m.type==='haqi_pet_image'&&m.ok&&m.data&&(!petRequestId||!m.requestId||m.requestId===petRequestId||m.requestId==='active_pet_config'))setPetImage(m.data);if(m.type==='haqi_pet_images'&&m.ok){const p=Array.isArray(m.data?.pets)?m.data.pets[0]:null;if(p)setPetImage(p)}});
+  canvas.addEventListener('pointerdown',aimStart);canvas.addEventListener('pointermove',aimMove);canvas.addEventListener('pointerup',aimEnd);canvas.addEventListener('pointercancel',()=>aiming=false);
+  $('startBtn').onclick=()=>{if($('rules').dataset.resume==='1'){$('rules').classList.remove('show');delete $('rules').dataset.resume;running=true;lastTime=performance.now();requestAnimationFrame(loop)}else startGame()};$('resultBtn').onclick=resultAction;$('wildBtn').onclick=useWild;$('shakeBtn').onclick=useShake;$('helpBtn').onclick=()=>{if(running){running=false;$('rules').dataset.resume='1'}$('rules').classList.add('show');$('startBtn').textContent=$('rules').dataset.resume==='1'?'继续游戏':'开始碰碰！'};
+  $('rules').addEventListener('click',e=>{if(e.target===$('rules')&&running)$('rules').classList.remove('show')});
+  $('bestText').textContent=best;setupLevel();draw();requestPetImage();post('gameLoaded',{game:'haqi_letter_chain'});
+  window.addEventListener('beforeunload',()=>{if(petUrl)URL.revokeObjectURL(petUrl)});
+})();
+</script>
+</body>
+</html>

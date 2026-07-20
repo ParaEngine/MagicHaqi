@@ -120,6 +120,11 @@
       color:var(--ink); font-size:15px; padding:0 12px; outline:none; appearance:none;
       background-image:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='8' viewBox='0 0 12 8'%3E%3Cpath fill='%2394a3b8' d='M6 8 0 0h12z'/%3E%3C/svg%3E");
       background-repeat:no-repeat; background-position:right 14px center; }
+    .model-select-state { display:none; }
+    .model-picker { width:100%; min-height:48px; border-radius:12px; border:1px solid rgba(148,163,184,.24); background:#0f2747;
+      color:var(--ink); font-size:15px; padding:0 12px; cursor:pointer; text-align:left; overflow:hidden; }
+    .model-picker:disabled { opacity:.5; cursor:not-allowed; }
+    .model-picker span { display:block; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
     .set-btn { width:100%; min-height:48px; border-radius:12px; border:1px solid rgba(148,163,184,.24); background:var(--card);
       color:var(--ink); font-size:15px; font-weight:800; cursor:pointer; display:flex; align-items:center; justify-content:space-between; padding:0 14px; gap:10px; }
     .set-btn:active { background:rgba(99,102,241,.14); }
@@ -175,7 +180,8 @@
     <h2>设置</h2>
     <div class="set-row">
       <label>AI 大模型</label>
-      <select class="set-select" id="modelSelect"><option value="">自动（推荐）</option></select>
+      <select class="set-select model-select-state" id="modelSelect" aria-hidden="true" tabindex="-1"><option value="">自动（推荐）</option></select>
+      <button class="model-picker" id="modelPicker" type="button"><span>自动（推荐）</span></button>
       <div class="set-hint">用于看资料、出题与做游戏。不确定就用「自动」。</div>
     </div>
     <div class="set-row">
@@ -210,7 +216,7 @@
     function typing(){ return bubble('ai','<span class="dots"><span></span><span></span><span></span></span>',{cls:'typing'}); }
 
     // -------- KeepworkSDK 加载（本地源码优先，CDN 兜底） --------
-    const SDK_CDN_URL='https://cdn.keepwork.com/sdk/keepworkSDK.iife.js?v=20260620a';
+    const SDK_CDN_URL='https://cdn.keepwork.com/sdk/keepworkSDK.iife.js?v=20260715a';
     const sdkLoadTimeoutMs=8000;
     function withTimeout(p,ms,l){ let t=null; const to=new Promise((_,rej)=>{t=setTimeout(()=>rej(new Error(l+' timed out')),ms);}); return Promise.race([p,to]).finally(()=>clearTimeout(t)); }
     function loadScript(src){ return new Promise((res,rej)=>{ const ex=[...document.scripts].find(s=>s.src===src);
@@ -233,7 +239,7 @@
       const sdk=window.keepwork||new window.KeepworkSDK({timeout:30000});
       window.keepwork=sdk; window.sdk=sdk; state.sdk=sdk;
       if(sdk.setUserApiKey && window.KeepworkSDK?.API_KEYS?.maisi) sdk.setUserApiKey(window.KeepworkSDK.API_KEYS.maisi);
-      try{ await sdk.localAPIKeySettings?.load?.(); }catch(_){}
+      try{ await (sdk.apiKeySettings||sdk.localAPIKeySettings)?.load?.(); }catch(_){}
       [stateMod, storageMod, gameMakerMod] = await Promise.all([
         import('../js/state.js'), import('../js/storage.js'), import('../js/view_game_maker.js'),
       ]);
@@ -246,12 +252,11 @@
     async function ensureLogin(){
       const sdk=state.sdk; if(!sdk) return false;
       if(sdk.token) return true;
-      await new Promise((resolve)=>{
-        let done=false; const fin=()=>{ if(done) return; done=true; resolve(); };
-        if(sdk.loginWindow?.show) sdk.loginWindow.show({ onLogin: fin });
-        else if(sdk.login) sdk.login().finally(fin);
-        setTimeout(fin, 600);
-      });
+      try{
+        if (typeof sdk.showLoginWindow === 'function') await sdk.showLoginWindow({ title: '登录 Keepwork' });
+        else if (sdk.loginWindow?.show) await new Promise(resolve => sdk.loginWindow.show({ onLogin: resolve, onClose: resolve }));
+        else if (sdk.login) await sdk.login();
+      } catch(_) {}
       return !!sdk.token;
     }
 
@@ -463,37 +468,47 @@
     // ---- 设置：大模型 + 本地 API Key（与 view_game_maker 共用同一 localStorage 模型键） ----
     const MODEL_KEY='mh_game_maker_model'; // 与 view_game_maker.js 一致：renderGameMaker 会自动读取
     function getModel(){ try{ return localStorage.getItem(MODEL_KEY)||''; }catch(_){ return ''; } }
-    function setModel(v){ try{ if(v) localStorage.setItem(MODEL_KEY,v); else localStorage.removeItem(MODEL_KEY); }catch(_){} }
-    function isLocalApiKeyEnabled(){ try{ return !!state.sdk?.localAPIKeySettings?.enabled; }catch(_){ return false; } }
+    function setModel(v){
+      try{ if(v) localStorage.setItem(MODEL_KEY,v); else localStorage.removeItem(MODEL_KEY); }catch(_){}
+      const sel=$('modelSelect'), picker=$('modelPicker');
+      if(sel){ if(v&&![...sel.options].some(option=>option.value===v)) sel.add(new Option(v,v)); sel.value=v||''; }
+      if(picker) picker.querySelector('span').textContent=v||'自动（推荐）';
+    }
     function mv(m){ return m?.name||m?.modelId||''; }
     function ml(m){ const v=mv(m); return (m?.displayName && m.displayName!==v) ? `${m.displayName} (${v})` : v; }
-    let kwModels=null;
-    async function loadKwModels(){ if(kwModels) return kwModels; const sdk=state.sdk;
-      if(!sdk?.aiGenerators?.getAllModels){ kwModels=[]; return kwModels; }
-      try{ const list=await sdk.aiGenerators.getAllModels(); kwModels=(Array.isArray(list)?list:[]).filter(m=>m&&m.name).map(m=>({name:m.name,displayName:m.displayName||''})); }catch(_){ kwModels=[]; }
-      return kwModels; }
-    function listChatModels(){ const sdk=state.sdk;
-      try{ const models=isLocalApiKeyEnabled() ? (sdk?.localAPIKeySettings?.listModels?.('Chat')||[]) : (kwModels||[]).slice();
-        return models.sort((a,b)=>mv(a).localeCompare(mv(b))); }catch(_){ return []; } }
     async function populateModelSelect(){
-      const sel=$('modelSelect'); if(!sel) return;
-      if(!isLocalApiKeyEnabled()){ try{ await loadKwModels(); }catch(_){} }
-      const models=listChatModels(); const cur=getModel();
+      const sel=$('modelSelect'), picker=$('modelPicker'), sdk=state.sdk;
+      const settings=sdk?.apiKeySettings||sdk?.localAPIKeySettings;
+      if(!sel||!picker) return;
+      if(!settings?.listModels){ picker.disabled=true; picker.querySelector('span').textContent=getModel()||'自动（推荐）'; return; }
+      await settings.load?.();
+      if(!settings.listModels('Chat').some(m=>m.enabled!==false)){ try{ await settings.refreshModels?.('keepwork'); }catch(_){} }
+      const models=settings.listModels('Chat').filter(m=>m.enabled!==false).sort((a,b)=>mv(a).localeCompare(mv(b))); const cur=getModel();
       let html='<option value="">自动（推荐）</option>';
       for(const m of models){ const v=mv(m); html+=`<option value="${esc(v)}"${v===cur?' selected':''}>${esc(ml(m))}</option>`; }
       if(cur && !models.some(m=>mv(m)===cur)) html+=`<option value="${esc(cur)}" selected>${esc(cur)}</option>`;
       sel.innerHTML=html;
-      const badge=$('localApiBadge'); if(badge) badge.textContent=isLocalApiKeyEnabled()?'已启用':'未启用';
+      picker.disabled=!models.length&&!settings.showModelPicker;
+      picker.querySelector('span').textContent=sel.value||'自动（推荐）';
+      const badge=$('localApiBadge'); if(badge) badge.textContent=settings.enabled?'已启用':'未启用';
     }
     function openSettings(){ $('settingsMask').classList.add('show'); $('settingsSheet').classList.add('show'); populateModelSelect(); }
     function closeSettings(){ $('settingsMask').classList.remove('show'); $('settingsSheet').classList.remove('show'); }
     $('btnSettings').onclick=openSettings;
     $('settingsMask').onclick=closeSettings;
     $('modelSelect').addEventListener('change',(e)=>setModel(e.target.value||''));
+    $('modelPicker').onclick=()=>{
+      const sdk=state.sdk, settings=sdk?.apiKeySettings||sdk?.localAPIKeySettings;
+      if(!settings?.showModelPicker){ alert('当前环境不支持模型选择窗口。'); return; }
+      settings.showModelPicker({ anchor:$('modelPicker'), category:'Chat', selectedModel:$('modelSelect').value, onSelect:model=>{
+        setModel(model); $('modelSelect').dispatchEvent(new Event('change'));
+      }});
+    };
     $('btnLocalApi').onclick=()=>{
       const sdk=state.sdk;
-      if(!sdk?.localAPIKeySettings?.show){ alert('当前环境不支持本地 API Key 设置。'); return; }
-      sdk.localAPIKeySettings.show({ title:'本地 API Key 设置', fullscreen:true, onSave:()=>populateModelSelect(), onClose:()=>populateModelSelect() });
+      const settings=sdk?.apiKeySettings||sdk?.localAPIKeySettings;
+      if(!settings?.show){ alert('当前环境不支持本地 API Key 设置。'); return; }
+      settings.show({ title:'本地 API Key 设置', fullscreen:true, onSave:()=>populateModelSelect(), onClose:()=>populateModelSelect() });
     };
 
     window.MH_StudyGameMaker={ state, openMaker, closeMaker, loadRecords, populateModelSelect };

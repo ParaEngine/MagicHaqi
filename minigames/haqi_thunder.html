@@ -76,11 +76,11 @@
       skillDash: '冲刺',
       skillBomb: '炸弹',
       skillDrone: '僚机',
-      introTip1: '拖动移动，双击/Shift 冲刺',
-      introTip2: '空格脉冲炸弹，E 召唤僚机，靠近敌弹可擦弹加分',
+      introTip1: '拖动移动，双击屏幕或点💨冲刺',
+      introTip2: '点左下技能键放💥炸弹、召唤🛸僚机，靠近敌弹可擦弹加分',
       grazeText: '擦弹 +12',
       helpTitle: '宠物雷电',
-      helpText: '拖动任意位置控制飞碟，或使用 WASD / 方向键移动。双击屏幕或 Shift 冲刺，空格释放主动脉冲，E 召唤僚机。擦过敌弹会加连击，道具包含火力、散射、激光、追踪导弹、星环、磁吸、超载、双倍积分和护盾。',
+      helpText: '拖动任意位置控制飞碟，或使用 WASD / 方向键移动。点击左下角技能按钮使用冲刺、脉冲炸弹和僚机（也可用 Shift / 空格 / E 键，或双击屏幕冲刺）。擦过敌弹会加连击，道具包含火力、散射、激光、追踪导弹、星环、磁吸、超载、双倍积分和护盾。',
       continueGame: '继续游戏',
     },
     enUS: {
@@ -148,11 +148,11 @@
       skillDash: 'Dash',
       skillBomb: 'Bomb',
       skillDrone: 'Wingman',
-      introTip1: 'Drag to move, double-tap/Shift to dash',
-      introTip2: 'Space for pulse bomb, E for wingman, graze bullets for bonus',
+      introTip1: 'Drag to move, double-tap or tap 💨 to dash',
+      introTip2: 'Tap the skill buttons (bottom-left) for 💥 bomb & 🛸 wingman; graze bullets for bonus',
       grazeText: 'Graze +12',
       helpTitle: 'Pet Thunder',
-      helpText: 'Drag anywhere to control the saucer, or use WASD / arrow keys. Double-tap or Shift to dash, Space for pulse bomb, E for wingman. Grazing enemy bullets adds combo. Power-ups include fire, spread, laser, homing missiles, orbit, magnet, overdrive, double score and shield.',
+      helpText: 'Drag anywhere to control the saucer, or use WASD / arrow keys. Tap the skill buttons at the bottom-left for dash, pulse bomb and wingman (or use Shift / Space / E, or double-tap to dash). Grazing enemy bullets adds combo. Power-ups include fire, spread, laser, homing missiles, orbit, magnet, overdrive, double score and shield.',
       continueGame: 'Continue',
     },
   };
@@ -299,8 +299,21 @@
       .ht-pill { height: 29px; min-width: 45px; display: inline-flex; align-items: center; justify-content: center; gap: 3px; padding: 0 8px; border-radius: 999px; background: rgba(15,23,42,.82); border: 1px solid rgba(125,211,252,.32); color: #bae6fd; font-size: 12px; font-weight: 900; white-space: nowrap; }
       .ht-icon-btn, .ht-action, .ht-start, .ht-difficulty { border: 0; cursor: pointer; font-weight: 900; }
       .ht-icon-btn { width: 34px; height: 34px; border-radius: 999px; background: linear-gradient(180deg, #38bdf8, #2563eb); color: white; box-shadow: 0 3px 0 #1e3a8a; font-size: 18px; }
-      .ht-bottom { position: absolute; left: 8px; right: 8px; bottom: 8px; z-index: 3; display: grid; gap: 7px; justify-items: end; pointer-events: none; }
+      .ht-bottom { position: absolute; left: 8px; right: 8px; bottom: 8px; z-index: 3; display: flex; align-items: flex-end; justify-content: space-between; gap: 8px; pointer-events: none; }
       .ht-controls { pointer-events: auto; display: flex; align-items: center; justify-content: flex-end; gap: 6px; flex-wrap: wrap; }
+      .ht-skills { pointer-events: auto; display: flex; align-items: flex-end; gap: 10px; }
+      .ht-skill { position: relative; width: 58px; height: 58px; border-radius: 50%; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 1px; border: 0; cursor: pointer; overflow: hidden; color: #fff; font-weight: 900; background: linear-gradient(180deg, #22d3ee, #2563eb); box-shadow: 0 4px 0 #1e3a8a; transition: filter .12s, transform .06s; }
+      .ht-skill.dash { background: linear-gradient(180deg, #22d3ee, #0e7490); box-shadow: 0 4px 0 #155e75; }
+      .ht-skill.bomb { background: linear-gradient(180deg, #a78bfa, #7c3aed); box-shadow: 0 4px 0 #4c1d95; }
+      .ht-skill.drone { background: linear-gradient(180deg, #34d399, #059669); box-shadow: 0 4px 0 #065f46; }
+      .ht-skill .ht-skill-ic { font-size: 20px; line-height: 1; }
+      .ht-skill .ht-skill-lb { font-size: 10px; line-height: 1; font-weight: 900; }
+      .ht-skill::after { content: ''; position: absolute; inset: 0; border-radius: 50%; pointer-events: none; background: conic-gradient(rgba(2,6,23,.66) calc(var(--cd, 0) * 360deg), rgba(0,0,0,0) 0deg); }
+      .ht-skill.ready { filter: brightness(1.06); }
+      .ht-skill.cooldown { filter: saturate(.45) brightness(.78); }
+      .ht-skill:active { transform: translateY(2px); }
+      @media (max-width: 420px) { .ht-skill { width: 52px; height: 52px; } .ht-skill .ht-skill-ic { font-size: 18px; } .ht-skills { gap: 8px; } }
+      @media (max-height: 520px) { .ht-skill { width: 48px; height: 48px; } }
       .ht-action { height: 34px; border-radius: 999px; padding: 0 12px; background: linear-gradient(180deg, #a78bfa, #7c3aed); color: white; box-shadow: 0 4px 0 #4c1d95; font-size: 14px; }
       .ht-action.help { background: linear-gradient(180deg, #38bdf8, #2563eb); box-shadow-color: #1e3a8a; }
       .ht-difficulties { display: flex; align-items: center; gap: 4px; padding: 4px; border-radius: 999px; background: rgba(15,23,42,.72); border: 1px solid rgba(125,211,252,.25); }
@@ -347,6 +360,11 @@
         </div>
       </header>
       <footer class="ht-bottom">
+        <div class="ht-skills" id="htSkills">
+          <button id="htSkillDash" class="ht-skill dash" type="button" aria-label="${t('skillDash')}"><span class="ht-skill-ic">💨</span><span class="ht-skill-lb">${t('skillDash')}</span></button>
+          <button id="htSkillBomb" class="ht-skill bomb" type="button" aria-label="${t('skillBomb')}"><span class="ht-skill-ic">💥</span><span class="ht-skill-lb">${t('skillBomb')}</span></button>
+          <button id="htSkillDrone" class="ht-skill drone" type="button" aria-label="${t('skillDrone')}"><span class="ht-skill-ic">🛸</span><span class="ht-skill-lb">${t('skillDrone')}</span></button>
+        </div>
         <div class="ht-controls">
           <button id="htRestart" class="ht-action" type="button">${t('restartBtn')}</button>
         </div>
@@ -374,6 +392,12 @@
   const scoreEl = document.getElementById('htScore');
   const comboEl = document.getElementById('htCombo');
   const bestEl = document.getElementById('htBest');
+  const skillsEl = document.getElementById('htSkills');
+  const SKILL_BTNS = [
+    { el: document.getElementById('htSkillDash'), key: 'dashCooldownUntil', cd: SKILLS.dash.cooldown },
+    { el: document.getElementById('htSkillBomb'), key: 'bombCooldownUntil', cd: SKILLS.bomb.cooldown },
+    { el: document.getElementById('htSkillDrone'), key: 'droneCooldownUntil', cd: SKILLS.drone.cooldown },
+  ];
   const diffEls = [document.getElementById('htOverlayDifficulties')];
 
   function post(type, data) {
@@ -510,7 +534,21 @@
     overlayEl.hidden = false;
   }
   function hideOverlay() { overlayEl.hidden = true; }
-  function updateControls() { shellEl.classList.toggle('playing', state.started && !state.gameOver); }
+  function updateControls() { shellEl.classList.toggle('playing', state.started && !state.gameOver); updateSkillButtons(); }
+
+  function updateSkillButtons() {
+    const show = state.started && !state.gameOver;
+    if (skillsEl) skillsEl.style.visibility = show ? 'visible' : 'hidden';
+    if (!show) return;
+    for (const s of SKILL_BTNS) {
+      if (!s.el) continue;
+      const remain = (state[s.key] || 0) - state.elapsed;
+      const ready = remain <= 0;
+      s.el.style.setProperty('--cd', ready ? '0' : clamp(remain / s.cd, 0, 1).toFixed(3));
+      s.el.classList.toggle('ready', ready);
+      s.el.classList.toggle('cooldown', !ready);
+    }
+  }
 
   function updateHud() {
     hpEl.textContent = state.playerHp + (state.shield ? `+${state.shield}` : '');
@@ -526,6 +564,7 @@
     state.lastTime = t;
     if (state.started && !state.paused && !state.gameOver) { update(dt); updateMusic(dt); }
     draw();
+    updateSkillButtons();
     state.rafId = requestAnimationFrame(loop);
   }
 
@@ -1149,7 +1188,6 @@
     drawParticles();
     state.allyDrones.forEach(drawAllyDrone);
     drawPlayer();
-    drawSkillHud(w, h);
     if (state.started && state.elapsed < state.introTipUntil) drawIntroTip(w, h);
     if (state.nearMissTimer > 0) drawGrazeText(w, h);
     if (state.waveTimer > 0) drawWaveBanner(w, h);
@@ -1267,7 +1305,6 @@
   function drawHazard(z) { ctx.save(); ctx.translate(z.x, z.y); ctx.rotate(z.phase); ctx.shadowBlur = 15; ctx.shadowColor = z.type === 'ion' ? '#22d3ee' : '#fb923c'; ctx.fillStyle = z.type === 'ion' ? 'rgba(34,211,238,.34)' : '#92400e'; ctx.strokeStyle = z.type === 'ion' ? '#67e8f9' : '#fed7aa'; ctx.lineWidth = 2; ctx.beginPath(); ctx.arc(0, 0, z.r, 0, Math.PI * 2); ctx.fill(); ctx.stroke(); if (z.type === 'meteor') { ctx.fillStyle = '#fb923c'; ctx.beginPath(); ctx.arc(-z.r*.25, -z.r*.2, z.r*.35, 0, Math.PI*2); ctx.fill(); } ctx.restore(); }
   function drawImpactWarning(mark) { const pct = clamp(mark.timer / mark.maxTimer, 0, 1); ctx.save(); ctx.globalAlpha = .95; ctx.strokeStyle = `rgba(251,113,133,${.35 + .45 * (1 - pct)})`; ctx.fillStyle = `rgba(127,29,29,${.08 + .18 * (1 - pct)})`; ctx.lineWidth = 3; ctx.beginPath(); ctx.arc(mark.x, mark.y, mark.r, 0, Math.PI * 2); ctx.fill(); ctx.stroke(); ctx.strokeStyle = '#fed7aa'; ctx.beginPath(); ctx.arc(mark.x, mark.y, mark.r * (1 - pct), 0, Math.PI * 2); ctx.stroke(); ctx.font = '900 18px sans-serif'; ctx.textAlign = 'center'; ctx.fillStyle = '#fecdd3'; ctx.fillText('☄', mark.x, mark.y + 6); ctx.restore(); }
   function drawAllyDrone(d) { ctx.save(); ctx.translate(d.x, d.y); ctx.fillStyle = '#34d399'; ctx.shadowColor = '#34d399'; ctx.shadowBlur = 12; ctx.beginPath(); ctx.ellipse(0, 0, 15, 9, 0, 0, Math.PI * 2); ctx.fill(); ctx.fillStyle = '#ecfeff'; ctx.beginPath(); ctx.arc(0, -2, 4, 0, Math.PI * 2); ctx.fill(); ctx.restore(); }
-  function drawSkillHud(w, h) { if (!state.started || state.gameOver) return; const items = [[t('skillDash'), state.dashCooldownUntil, SKILLS.dash.cooldown], [t('skillBomb'), state.bombCooldownUntil, SKILLS.bomb.cooldown], [t('skillDrone'), state.droneCooldownUntil, SKILLS.drone.cooldown]]; ctx.save(); ctx.font = '800 11px sans-serif'; ctx.textAlign = 'left'; items.forEach((it, i) => { const x = 12 + i * 68, y = h - 54, ready = state.elapsed >= it[1], pct = ready ? 1 : 1 - (it[1] - state.elapsed) / it[2]; ctx.fillStyle = 'rgba(15,23,42,.68)'; roundRect(x, y, 58, 22, 11); ctx.fill(); ctx.fillStyle = ready ? '#67e8f9' : '#475569'; roundRect(x + 3, y + 16, 52 * clamp(pct, 0, 1), 2.5, 2); ctx.fill(); ctx.fillStyle = ready ? '#e0f2fe' : '#94a3b8'; ctx.fillText(it[0], x + 8, y + 13); }); ctx.restore(); }
   function drawWaveBanner(w, h) { ctx.save(); ctx.globalAlpha = Math.min(1, state.waveTimer); ctx.fillStyle = '#e0f2fe'; ctx.font = '1000 22px sans-serif'; ctx.textAlign = 'center'; ctx.shadowColor = '#38bdf8'; ctx.shadowBlur = 12; ctx.fillText(state.waveName, w / 2, h * .25); ctx.restore(); }
   function drawIntroTip(w, h) { const left = Math.max(0, state.introTipUntil - state.elapsed); ctx.save(); ctx.globalAlpha = Math.min(1, left / .8); ctx.fillStyle = 'rgba(8,13,31,.72)'; ctx.strokeStyle = 'rgba(125,211,252,.45)'; ctx.lineWidth = 1.5; const boxW = Math.min(w - 34, 420), boxH = 74, x = (w - boxW) / 2, y = h * .43 - boxH / 2; roundRect(x, y, boxW, boxH, 18); ctx.fill(); ctx.stroke(); ctx.fillStyle = '#e0f2fe'; ctx.font = `900 ${Math.max(13, Math.min(16, w / 24))}px sans-serif`; ctx.textAlign = 'center'; ctx.fillText(t('introTip1'), w / 2, y + 29); ctx.fillStyle = '#bae6fd'; ctx.font = `800 ${Math.max(11, Math.min(13, w / 29))}px sans-serif`; ctx.fillText(t('introTip2'), w / 2, y + 53); ctx.restore(); }
   function roundRect(x, y, w, h, r) { ctx.beginPath(); ctx.moveTo(x + r, y); ctx.lineTo(x + w - r, y); ctx.quadraticCurveTo(x + w, y, x + w, y + r); ctx.lineTo(x + w, y + h - r); ctx.quadraticCurveTo(x + w, y + h, x + w - r, y + h); ctx.lineTo(x + r, y + h); ctx.quadraticCurveTo(x, y + h, x, y + h - r); ctx.lineTo(x, y + r); ctx.quadraticCurveTo(x, y, x + r, y); }
@@ -1420,6 +1457,14 @@
     };
     document.getElementById('htMenu').onclick = openHelp;
     document.getElementById('htRestart').onclick = () => resetGame(true);
+    const bindSkill = (id, fn) => {
+      const el = document.getElementById(id);
+      if (!el) return;
+      el.addEventListener('pointerdown', e => { e.preventDefault(); e.stopPropagation(); fn(); }, { passive: false });
+    };
+    bindSkill('htSkillDash', activateDash);
+    bindSkill('htSkillBomb', activateSkillBomb);
+    bindSkill('htSkillDrone', activateDrone);
     document.getElementById('htMute').onclick = () => { ensureAudio(); setMuted(!sound.muted); };
     startBtn.onclick = () => {
       if (state.gameOver) { resetGame(false); startGame(); return; }

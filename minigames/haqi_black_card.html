@@ -15,6 +15,8 @@
   -->
   <style>
     :root {
+      /* 微信/移动端 100vh 不可靠（含/不含导航栏会抖动，底部被裁切且无法滚动），用 JS 写入真实视口高度 */
+      --app-h: 100vh;
       --bg-deep: #0b1220;
       --panel: rgba(17, 27, 46, .92);
       --panel-soft: rgba(30, 41, 59, .7);
@@ -31,20 +33,31 @@
     * { box-sizing: border-box; -webkit-tap-highlight-color: transparent; }
     button { font-family: inherit; }
 
-    #haqiBlackCard { min-height: 100vh; display: flex; flex-direction: column; position: relative; }
+    #haqiBlackCard { min-height: var(--app-h, 100vh); display: flex; flex-direction: column; position: relative; }
     #haqiBlackCard::before {
       content: ''; position: absolute; inset: 0; pointer-events: none;
       background:
         radial-gradient(circle at 12% 8%, rgba(59,130,246,.16), transparent 26%),
         radial-gradient(circle at 88% 92%, rgba(245,158,11,.14), transparent 26%);
     }
-    .mh-shell { position: relative; z-index: 1; display: flex; flex-direction: column; min-height: 100vh; padding: 14px 14px 22px; gap: 12px; max-width: 640px; margin: 0 auto; width: 100%; }
+    #haqiBlackCard { max-width: 450px; margin: 0 auto; }
+    .mh-shell { position: relative; z-index: 1; display: flex; flex-direction: column; height: var(--app-h, 100vh); max-height: var(--app-h, 100vh); padding: calc(12px + env(safe-area-inset-top)) 14px calc(14px + env(safe-area-inset-bottom)); gap: 9px; max-width: 450px; margin: 0 auto; width: 100%; overflow: hidden; --mh-w: min(82vw, 380px); }
 
     .mh-top { display: flex; align-items: center; justify-content: space-between; gap: 10px; }
     .mh-title { font-size: 1.14rem; font-weight: 900; letter-spacing: .02em; }
     .mh-subtitle { color: #94a3b8; font-size: .8rem; margin-top: 2px; }
     .mh-help { width: 42px; height: 42px; border-radius: 14px; border: 0; background: linear-gradient(180deg, #fbbf24, #f59e0b); color: #3a2606; font-size: 1.3rem; font-weight: 900; cursor: pointer; box-shadow: 0 6px 0 rgba(180,83,9,.45); flex: none; }
     .mh-help:active { transform: translateY(3px); box-shadow: 0 3px 0 rgba(180,83,9,.45); }
+    .mh-top-btns { display: flex; gap: 8px; flex: none; }
+    .mh-help-alt { background: linear-gradient(180deg, #a78bfa, #7c3aed); color: #fff; font-size: 1.05rem; box-shadow: 0 6px 0 rgba(91,33,182,.5); }
+    .mh-help-alt:active { box-shadow: 0 3px 0 rgba(91,33,182,.5); }
+
+    /* 成就 / 收藏面板 */
+    .mh-ach-h2 { margin: 4px 0 8px; font-size: .98rem; font-weight: 900; color: #fcd34d; }
+    .mh-ach-list { display: flex; flex-direction: column; gap: 8px; margin-bottom: 14px; max-height: 28vh; overflow: auto; }
+    .mh-ach-item { display: flex; align-items: flex-start; gap: 10px; padding: 9px 11px; border-radius: 12px; background: var(--panel-soft); border: 1px solid rgba(148,163,184,.14); font-size: .86rem; line-height: 1.45; color: #94a3b8; }
+    .mh-ach-item.got { color: #e9eefb; border-color: rgba(252,211,77,.4); background: rgba(120,90,20,.22); }
+    .mh-ach-ic { flex: none; font-size: 1.1rem; line-height: 1.2; }
 
     .mh-status { display: flex; gap: 8px; flex-wrap: wrap; align-items: center; }
     .mh-pill { padding: 7px 12px; border-radius: 12px; background: var(--panel); border: 1px solid rgba(148,163,184,.16); font-weight: 700; font-size: .84rem; }
@@ -54,7 +67,8 @@
     .mh-diff-btn.active { background: linear-gradient(180deg, #60a5fa, #2563eb); color: #fff; }
 
     /* 卡牌区 */
-    .mh-card-shell { position: relative; width: min(82vw, 380px); aspect-ratio: .72; margin: 4px auto 0; border-radius: 26px; overflow: hidden; border: 3px solid rgba(255,255,255,.08); background: #060912; box-shadow: 0 24px 60px rgba(8,12,24,.7), inset 0 0 0 2px rgba(255,255,255,.04); transition: transform .25s ease, opacity .25s ease; }
+    .mh-card-area { flex: 1 1 0; min-height: 0; display: flex; align-items: center; justify-content: center; width: 100%; }
+    .mh-card-shell { position: relative; width: auto; height: min(calc(var(--mh-w) / 0.72), 100%); max-height: 100%; aspect-ratio: .72; border-radius: 26px; overflow: hidden; border: 3px solid rgba(255,255,255,.08); background: #060912; box-shadow: 0 24px 60px rgba(8,12,24,.7), inset 0 0 0 2px rgba(255,255,255,.04); transition: transform .25s ease, opacity .25s ease; }
     .mh-card-shell.shatter { animation: mhCardBreak .55s ease-in forwards; }
     @keyframes mhCardBreak {
       0% { transform: scale(1) rotate(0); opacity: 1; }
@@ -72,7 +86,7 @@
     .mh-card-badge span { padding: 6px 14px; border-radius: 999px; font-weight: 900; font-size: .92rem; background: rgba(0,0,0,.6); border: 1px solid rgba(255,255,255,.2); }
 
     /* 进度条 */
-    .mh-progress-wrap { width: min(82vw, 380px); margin: 0 auto; }
+    .mh-progress-wrap { width: var(--mh-w); margin: 0 auto; }
     .mh-progress-top { display: flex; justify-content: space-between; font-size: .78rem; color: #94a3b8; margin-bottom: 5px; }
     .mh-progress-top b { color: #fcd34d; }
     .mh-progress { height: 12px; border-radius: 999px; background: rgba(148,163,184,.18); overflow: hidden; position: relative; }
@@ -80,7 +94,7 @@
     .mh-progress.full .mh-progress-fill { background: linear-gradient(90deg, #f59e0b, #ef4444); }
 
     /* 动态倍率 */
-    .mh-mult-wrap { width: min(82vw, 380px); margin: 0 auto; display: flex; align-items: baseline; justify-content: center; gap: 8px; flex-wrap: wrap; }
+    .mh-mult-wrap { width: var(--mh-w); margin: 0 auto; display: flex; align-items: baseline; justify-content: center; gap: 8px; flex-wrap: wrap; }
     .mh-mult-label { font-size: .8rem; color: #94a3b8; font-weight: 700; }
     .mh-mult { font-size: 1.7rem; font-weight: 900; letter-spacing: .01em; line-height: 1; transition: color .15s ease; text-shadow: 0 0 12px currentColor; }
     .mh-mult.pop { animation: mhMultPop .45s cubic-bezier(.2,1.4,.4,1); }
@@ -108,9 +122,16 @@
     /* 弹层 */
     .mh-overlay { position: fixed; inset: 0; z-index: 30; display: flex; align-items: center; justify-content: center; padding: 18px; background: rgba(3,6,15,.72); backdrop-filter: blur(8px); }
     .mh-overlay.hidden { display: none; }
-    .mh-card { width: min(100%, 430px); border-radius: 24px; padding: 22px; background: linear-gradient(180deg, #1b2540, #131c34); border: 1px solid rgba(148,163,184,.2); box-shadow: 0 24px 60px rgba(0,0,0,.5); }
+    .mh-card { width: min(100%, 430px); max-height: 92vh; overflow-y: auto; border-radius: 24px; padding: 22px; background: linear-gradient(180deg, #1b2540, #131c34); border: 1px solid rgba(148,163,184,.2); box-shadow: 0 24px 60px rgba(0,0,0,.5); }
     .mh-card h1 { margin: 0 0 6px; font-size: 1.5rem; font-weight: 900; text-align: center; }
     .mh-card p { margin: 0 0 14px; color: #cbd5e1; line-height: 1.7; font-size: .94rem; }
+
+    /* 元素选择改为底部弹出条：保留卡面可见，便于对照刮出的元素粒子 */
+    .mh-overlay.mh-sheet { align-items: flex-end; justify-content: center; background: transparent; backdrop-filter: none; padding: 0; }
+    .mh-overlay.mh-sheet .mh-card { width: 100%; max-width: 450px; border-radius: 22px 22px 0 0; box-shadow: 0 -14px 44px rgba(0,0,0,.55); animation: mhSheetUp .26s ease; padding: 14px 18px 18px; }
+    .mh-overlay.mh-sheet .mh-card h1 { font-size: 1.16rem; margin-bottom: 3px; }
+    .mh-overlay.mh-sheet .mh-card p { font-size: .82rem; margin-bottom: 10px; }
+    @keyframes mhSheetUp { from { transform: translateY(100%); } to { transform: translateY(0); } }
 
     /* 墩弟引导 */
     .mh-guide { display: flex; gap: 14px; align-items: center; margin-bottom: 14px; }
@@ -140,6 +161,46 @@
     .mh-toast { position: fixed; left: 50%; top: 18%; transform: translateX(-50%) translateY(-12px); z-index: 50; padding: 10px 18px; border-radius: 999px; background: linear-gradient(180deg, #fcd34d, #f59e0b); color: #3a2606; font-weight: 900; box-shadow: 0 8px 24px rgba(245,158,11,.4); opacity: 0; transition: opacity .3s ease, transform .3s ease; }
     .mh-toast.show { opacity: 1; transform: translateX(-50%) translateY(0); }
 
+    /* 吉祥物头像（首席鉴定师 墩弟） */
+    .mh-mascot { width: 46px; height: 46px; border-radius: 12px; background: linear-gradient(180deg, #243150, #1a2440); border: 1px solid rgba(255,255,255,.1); flex: none; image-rendering: pixelated; transition: transform .2s ease; }
+    .mh-mascot.bounce { animation: mhMascotBounce .5s ease; }
+    @keyframes mhMascotBounce { 0% { transform: scale(1); } 40% { transform: scale(1.25) rotate(-6deg); } 100% { transform: scale(1); } }
+
+    /* 刮卡体素碎屑 */
+    .mh-chip { position: fixed; z-index: 28; pointer-events: none; border-radius: 2px; }
+
+    /* 鉴定中：剧烈震动 + 红蓝警报 */
+    .mh-card-shell.suspense { animation: mhSuspenseShake .12s linear infinite; }
+    @keyframes mhSuspenseShake {
+      0% { transform: translate(0,0) rotate(0); }
+      25% { transform: translate(-4px,2px) rotate(-.6deg); }
+      50% { transform: translate(3px,-3px) rotate(.5deg); }
+      75% { transform: translate(-3px,-2px) rotate(-.4deg); }
+      100% { transform: translate(3px,3px) rotate(.5deg); }
+    }
+    .mh-alarm { position: absolute; inset: 0; pointer-events: none; opacity: 0; border-radius: 24px; box-shadow: inset 0 0 0 4px rgba(239,68,68,.9); }
+    .mh-alarm.show { animation: mhAlarm .5s linear infinite; }
+    @keyframes mhAlarm {
+      0%   { opacity: .9; box-shadow: inset 0 0 30px 6px rgba(239,68,68,.85), 0 0 28px rgba(239,68,68,.7); }
+      50%  { opacity: .9; box-shadow: inset 0 0 30px 6px rgba(59,130,246,.85), 0 0 28px rgba(59,130,246,.7); }
+      100% { opacity: .9; box-shadow: inset 0 0 30px 6px rgba(239,68,68,.85), 0 0 28px rgba(239,68,68,.7); }
+    }
+
+    /* 全屏稀有度光爆 */
+    .mh-burst { position: fixed; inset: 0; z-index: 26; pointer-events: none; opacity: 0; }
+    .mh-burst.show { animation: mhBurst .9s ease-out forwards; }
+    @keyframes mhBurst { 0% { opacity: 0; transform: scale(.4); } 18% { opacity: 1; } 100% { opacity: 0; transform: scale(1.6); } }
+
+    /* 失败血红印章 */
+    .mh-stamp { position: fixed; left: 50%; top: 44%; z-index: 45; pointer-events: none; transform: translate(-50%,-50%) scale(2.6) rotate(-16deg); opacity: 0;
+      padding: 10px 24px; border: 5px solid #ef4444; border-radius: 12px; color: #ef4444; font-size: 2rem; font-weight: 900; letter-spacing: .1em;
+      background: rgba(20,4,4,.35); text-shadow: 0 0 10px rgba(239,68,68,.6); box-shadow: 0 0 24px rgba(239,68,68,.5); }
+    .mh-stamp.show { animation: mhStamp .7s cubic-bezier(.2,1.4,.4,1) forwards; }
+    @keyframes mhStamp { 0% { opacity: 0; transform: translate(-50%,-50%) scale(2.6) rotate(-16deg); } 55% { opacity: 1; transform: translate(-50%,-50%) scale(.92) rotate(-12deg); } 70% { transform: translate(-50%,-50%) scale(1.05) rotate(-12deg); } 100% { opacity: 1; transform: translate(-50%,-50%) scale(1) rotate(-12deg); } }
+
+    /* 金币掉落 */
+    .mh-coin { position: fixed; z-index: 42; pointer-events: none; width: 20px; height: 20px; border-radius: 50%; background: radial-gradient(circle at 35% 30%, #fef08a, #f59e0b 70%, #b45309); border: 2px solid #fbbf24; box-shadow: 0 0 8px rgba(251,191,36,.6); }
+
     /* 元素鉴定（第二层） */
     .mh-elements { display: grid; grid-template-columns: repeat(4, 1fr); gap: 8px; }
     .mh-el { border: 0; border-radius: 14px; padding: 14px 4px; cursor: pointer; color: #fff; font-weight: 900; display: flex; flex-direction: column; align-items: center; gap: 4px; box-shadow: 0 5px 0 rgba(0,0,0,.35); transition: transform .12s ease; }
@@ -155,7 +216,7 @@
 
     @media (max-width: 480px) {
       .mh-title { font-size: 1.02rem; }
-      .mh-card-shell, .mh-progress-wrap { width: min(88vw, 340px); }
+      .mh-shell { --mh-w: min(88vw, 360px); }
     }
   </style>
 </head>
@@ -168,22 +229,29 @@
           <div class="mh-title">极品黑卡鉴定局</div>
           <div class="mh-subtitle">双重鉴定：底色 + 元素，小心变异卡！</div>
         </div>
-        <button id="helpBtn" class="mh-help" aria-label="玩法说明">?</button>
+        <div class="mh-top-btns">
+          <button id="achBtn" class="mh-help mh-help-alt" aria-label="成就与收藏">🏆</button>
+          <button id="helpBtn" class="mh-help" aria-label="玩法说明">?</button>
+        </div>
       </div>
 
       <div class="mh-status">
+        <canvas id="mascotCanvas" class="mh-mascot" width="46" height="46" title="首席鉴定师 墩弟" aria-label="鉴定师墩弟"></canvas>
         <div class="mh-pill">积分 <b id="scoreValue">0</b></div>
         <div class="mh-pill">最高 <b id="bestValue">0</b></div>
         <div class="mh-pill">连对 <b id="streakValue">0</b></div>
         <div id="difficultyButtons" class="mh-diff-group"></div>
       </div>
 
-      <div class="mh-card-shell" id="cardShell">
-        <canvas id="resultCanvas" class="mh-card-canvas" aria-label="卡片正面" role="img"></canvas>
-        <canvas id="scratchCanvas" class="mh-card-canvas" aria-label="银色涂层" role="img"></canvas>
-        <div class="mh-card-grade" id="cardGrade">未鉴定</div>
-        <div class="mh-flash" id="flashLayer"></div>
-        <div class="mh-card-badge" id="cardBadge"><span></span></div>
+      <div class="mh-card-area">
+        <div class="mh-card-shell" id="cardShell">
+          <canvas id="resultCanvas" class="mh-card-canvas" aria-label="卡片正面" role="img"></canvas>
+          <canvas id="scratchCanvas" class="mh-card-canvas" aria-label="银色涂层" role="img"></canvas>
+          <div class="mh-card-grade" id="cardGrade">未鉴定</div>
+          <div class="mh-flash" id="flashLayer"></div>
+          <div class="mh-alarm" id="alarmLayer"></div>
+          <div class="mh-card-badge" id="cardBadge"><span></span></div>
+        </div>
       </div>
 
       <div class="mh-mult-wrap">
@@ -236,16 +304,28 @@
     </div>
 
     <!-- 元素鉴定（第二层选择） -->
-    <div id="elementOverlay" class="mh-overlay hidden" role="dialog" aria-modal="true">
+    <div id="elementOverlay" class="mh-overlay mh-sheet hidden" role="dialog" aria-modal="true">
       <div class="mh-card">
         <h1 id="elementTitle">请选择它的元素属性</h1>
-        <p style="text-align:center;" id="elementSub">猜对隐藏元素，触发「完美鉴定」积分再 ×3！</p>
+        <p style="text-align:center;" id="elementSub">对照卡面边角的元素粒子，猜对触发「完美鉴定」积分再 ×3！</p>
         <div class="mh-elements" id="elementButtons">
           <button class="mh-el" data-el="lightning"><span class="ic">⚡</span><span data-elname>雷</span></button>
           <button class="mh-el" data-el="wind"><span class="ic">🌀</span><span data-elname>风</span></button>
           <button class="mh-el" data-el="fire"><span class="ic">🔥</span><span data-elname>火</span></button>
           <button class="mh-el" data-el="water"><span class="ic">💧</span><span data-elname>水</span></button>
         </div>
+      </div>
+    </div>
+
+    <!-- 成就与收藏 -->
+    <div id="achOverlay" class="mh-overlay hidden" role="dialog" aria-modal="true">
+      <div class="mh-card">
+        <h1 id="achTitle">成就与收藏</h1>
+        <div class="mh-ach-h2" id="achTitlesH2">称号</div>
+        <div id="achTitles" class="mh-ach-list"></div>
+        <div class="mh-ach-h2" id="achDiaryH2">开发者日记</div>
+        <div id="achDiary" class="mh-ach-list"></div>
+        <button id="achClose" class="mh-action" style="width:100%;">关闭</button>
       </div>
     </div>
 
@@ -430,6 +510,8 @@ game_config = {
   const resultCanvas = $('resultCanvas');
   const scratchCanvas = $('scratchCanvas');
   const flashLayer = $('flashLayer');
+  const alarmLayer = $('alarmLayer');
+  const mascotCanvas = $('mascotCanvas');
   const cardGrade = $('cardGrade');
   const cardBadge = $('cardBadge');
   const cardBadgeSpan = cardBadge.querySelector('span');
@@ -466,6 +548,11 @@ game_config = {
   const resultPoints = $('resultPoints');
   const resultStreak = $('resultStreak');
   const dundiCanvas = $('dundiCanvas');
+  const achOverlay = $('achOverlay');
+  const achBtn = $('achBtn');
+  const achClose = $('achClose');
+  const achTitlesEl = $('achTitles');
+  const achDiaryEl = $('achDiary');
 
   const resultCtx = resultCanvas.getContext('2d');
   const scratchCtx = scratchCanvas.getContext('2d', { willReadFrequently: true });
@@ -809,6 +896,10 @@ game_config = {
     scratchCtx.fill();
     scratchCtx.restore();
 
+    // 体素碎屑特效（在轨迹处迸发）
+    const rect = scratchCanvas.getBoundingClientRect();
+    spawnScratchChips(rect.left + x, rect.top + y);
+
     // 陷阱卡：刮到红眼区域立即触发
     if (state.cardType === 'trap' && state.trapEyes) {
       const px = x * dpr, py = y * dpr, minDim = Math.min(state.width, state.height);
@@ -919,6 +1010,7 @@ game_config = {
     cardShell.classList.remove('shatter');
     cardShell.style.opacity = '1';
     cardBadge.classList.remove('show');
+    setMascotMood('normal');    // 新卡重置墩弟表情
     cardGrade.textContent = ZH ? '鉴定中…' : 'Appraising…';
     resizeCanvas(true);
 
@@ -969,6 +1061,7 @@ game_config = {
     if (state.cardType !== 'normal') { discoverSpecial(); return; }
     state.chosenRarity = rarityId;
     state.betMult = currentMultiplier(state.revealProgress); // 锁定下注倍率
+    if (state.revealProgress < 0.05) setMascotMood('nervous'); // 盲猜：墩弟流汗震惊
     state.phase = 'element';
     setBetEnabled(false);
     showElementOverlay();
@@ -988,10 +1081,19 @@ game_config = {
     const rarityCorrect = state.chosenRarity === rarity.id;
     state.lastPerfect = rarityCorrect && state.chosenElement === state.targetElement.id;
 
-    scratchCanvas.style.opacity = '0';
-    cardGrade.textContent = t(rarity.labelKey) + ' · ' + t(state.targetElement.shortKey);
-
-    setTimeout(() => rarityCorrect ? onWin() : onLose(), 620);
+    cardHint.textContent = ZH ? '鉴定中……请稍候' : 'Appraising…';
+    // 1.5 秒悬念：剧烈震动 + 红蓝警报
+    runSuspense(() => {
+      cardGrade.textContent = t(rarity.labelKey) + ' · ' + t(state.targetElement.shortKey);
+      if (rarityCorrect) {
+        glassShatterCoating();      // 涂层玻璃碎裂
+        scratchCanvas.style.opacity = '0';
+        onWin();
+      } else {
+        scratchCanvas.style.opacity = '0';
+        onLose();
+      }
+    });
   }
 
   function onWin() {
@@ -1017,7 +1119,10 @@ game_config = {
 
     flashLayer.classList.add('show');
     setTimeout(() => flashLayer.classList.remove('show'), 500);
+    fullScreenBurst(rarity.id);   // 全屏对应稀有度光爆
     burstConfetti();
+    coinDrop();                   // 金币掉落
+    setMascotMood('happy');       // 墩弟开心 + 金色符号
     showBadge(t(rarity.nameKey), true);
     if (rarity.id === 'hidden' || perfect) {
       cardShell.animate(
@@ -1032,18 +1137,15 @@ game_config = {
 
   function onLose() {
     const rarity = state.targetRarity;
-    const mult = state.betMult || 1;
-    // 惩罚：扣除本次下注的积分（倍率越高扣得越狠），并将连对清零
-    const penalty = Math.round(rarity.score * cfg().scoreFactor * mult);
-    state.score = Math.max(0, state.score - penalty);
+    // 失败更友好：不再扣分，仅清零连对 + 卡牌碎裂（避免高倍盲猜失败被重罚）
     state.streak = 0;
-    state.bestScore = Math.max(state.bestScore, state.score);
-    localStorage.setItem(STORAGE_BEST, String(state.bestScore));
     updateHud();
     showBadge(t(rarity.nameKey), false);
-    shatterCard(rarity.id);
+    setMascotMood('petrified');   // 墩弟石化变灰
+    shatterCard('fail');          // 整张卡牌灰黑碎片散落
+    failStamp();                  // 血红“鉴定失败”印章
     cardHint.textContent = t('hintLose');
-    finishRound(false, -penalty);
+    finishRound(false, 0);
   }
 
   /* ---------- 变异卡结算 ---------- */
@@ -1062,7 +1164,9 @@ game_config = {
     scratchCanvas.style.opacity = '0';
     cardGrade.textContent = t('trapName');
     showBadge(t('trapName'), false);
+    setMascotMood('petrified');  // 墩弟石化
     shatterCard('trap');         // 鉴定刷碎裂
+    failStamp();                 // 血红印章
     cardHint.textContent = t('hintTrapHit');
     finishSpecial('trap');
   }
@@ -1084,7 +1188,9 @@ game_config = {
     scratchCanvas.style.opacity = '0';
     cardGrade.textContent = t('xrayName');
     showBadge(t('xrayName'), true);
+    setMascotMood('happy');
     burstConfetti();
+    coinDrop();
     cardHint.textContent = ZH ? '获得透视道具！下一局可刮 40%。' : 'X-Ray item! Next round 40%.';
     finishSpecial('xray');
   }
@@ -1099,6 +1205,7 @@ game_config = {
     scratchCanvas.style.opacity = '0';
     cardGrade.textContent = t('diaryName');
     showBadge(t('diaryName'), true);
+    setMascotMood('happy');
     cardHint.textContent = ZH ? '挖到一页开发者日记！' : 'You found a developer diary page!';
     checkTitles();
     finishSpecial('diary', page);
@@ -1224,11 +1331,13 @@ game_config = {
     cardShell.classList.add('shatter');
     const colors = typeId === 'trap'
       ? ['#dc2626', '#7f1d1d', '#160a12']
-      : typeId === 'hidden'
-        ? ['#0a0a0a', '#1a1a1a', '#b8860b']
-        : typeId === 'rare'
-          ? ['#f59e0b', '#d97706', '#fbbf24']
-          : ['#3b82f6', '#2563eb', '#60a5fa'];
+      : typeId === 'fail'
+        ? ['#374151', '#1f2937', '#4b5563', '#111827']
+        : typeId === 'hidden'
+          ? ['#0a0a0a', '#1a1a1a', '#b8860b']
+          : typeId === 'rare'
+            ? ['#f59e0b', '#d97706', '#fbbf24']
+            : ['#3b82f6', '#2563eb', '#60a5fa'];
     for (let i = 0; i < 34; i++) {
       const sh = document.createElement('div');
       sh.className = 'mh-shard';
@@ -1258,6 +1367,144 @@ game_config = {
     requestAnimationFrame(() => el.classList.add('show'));
     clearTimeout(toastTimer);
     toastTimer = setTimeout(() => el.classList.remove('show'), 2400);
+  }
+
+  /* ---------- 吉祥物头像：首席鉴定师 墩弟 ---------- */
+  function drawMascot(mood) {
+    const ctx = mascotCanvas.getContext('2d');
+    const W = mascotCanvas.width, H = mascotCanvas.height;
+    ctx.clearRect(0, 0, W, H);
+    const petrified = mood === 'petrified';
+    const gray = petrified ? '#6b7280' : '#b9c2d0';
+    const dark = petrified ? '#4b5563' : '#8a93a3';
+    // 耳朵
+    ctx.fillStyle = dark;
+    ctx.fillRect(W * 0.18, H * 0.06, W * 0.18, H * 0.2);
+    ctx.fillRect(W * 0.64, H * 0.06, W * 0.18, H * 0.2);
+    // 脸
+    ctx.fillStyle = gray;
+    ctx.fillRect(W * 0.14, H * 0.2, W * 0.72, H * 0.66);
+    // 肚白
+    ctx.fillStyle = petrified ? '#9ca3af' : '#eef3f9';
+    ctx.fillRect(W * 0.3, H * 0.52, W * 0.4, H * 0.3);
+    const ey = H * 0.44;
+    if (mood === 'happy') {
+      ctx.strokeStyle = '#1f2937'; ctx.lineWidth = 2.5; ctx.lineCap = 'round';
+      [W * 0.34, W * 0.66].forEach(ex => { ctx.beginPath(); ctx.moveTo(ex - 4, ey + 2); ctx.lineTo(ex, ey - 3); ctx.lineTo(ex + 4, ey + 2); ctx.stroke(); });
+    } else if (petrified) {
+      ctx.strokeStyle = '#1f2937'; ctx.lineWidth = 2;
+      [W * 0.34, W * 0.66].forEach(ex => { ctx.beginPath(); ctx.moveTo(ex - 3, ey - 3); ctx.lineTo(ex + 3, ey + 3); ctx.moveTo(ex + 3, ey - 3); ctx.lineTo(ex - 3, ey + 3); ctx.stroke(); });
+    } else {
+      const r = mood === 'nervous' ? 5 : 3.6;
+      ctx.fillStyle = '#1f2937';
+      [W * 0.34, W * 0.66].forEach(ex => { ctx.beginPath(); ctx.arc(ex, ey, r, 0, 7); ctx.fill(); });
+      ctx.fillStyle = '#fff';
+      [W * 0.34, W * 0.66].forEach(ex => { ctx.beginPath(); ctx.arc(ex - 1, ey - 1, 1.2, 0, 7); ctx.fill(); });
+    }
+    // 鼻 + 嘴
+    ctx.fillStyle = '#f5a8c4'; ctx.fillRect(W * 0.46, H * 0.52, W * 0.08, H * 0.05);
+    ctx.strokeStyle = '#1f2937'; ctx.lineWidth = 1.8; ctx.beginPath();
+    if (mood === 'happy') ctx.arc(W * 0.5, H * 0.58, 5, 0, Math.PI);
+    else if (mood === 'nervous') ctx.arc(W * 0.5, H * 0.64, 3, 0, Math.PI * 2);
+    else { ctx.moveTo(W * 0.44, H * 0.61); ctx.lineTo(W * 0.56, H * 0.61); }
+    ctx.stroke();
+    // 情绪附加
+    if (mood === 'nervous') { ctx.fillStyle = '#38bdf8'; ctx.beginPath(); ctx.arc(W * 0.84, H * 0.4, 3.6, 0, 7); ctx.fill(); }
+    if (mood === 'happy') {
+      ctx.fillStyle = '#fcd34d';
+      [[W * 0.88, H * 0.2], [W * 0.12, H * 0.24]].forEach(([sx, sy]) => { ctx.fillRect(sx - 1, sy - 4, 2, 8); ctx.fillRect(sx - 4, sy - 1, 8, 2); });
+    }
+    if (petrified) { ctx.strokeStyle = '#374151'; ctx.lineWidth = 1.4; ctx.beginPath(); ctx.moveTo(W * 0.52, H * 0.2); ctx.lineTo(W * 0.46, H * 0.4); ctx.lineTo(W * 0.56, H * 0.55); ctx.stroke(); }
+  }
+  function setMascotMood(mood) {
+    state.mascotMood = mood;
+    drawMascot(mood);
+    mascotCanvas.classList.remove('bounce'); void mascotCanvas.offsetWidth;
+    if (mood === 'happy' || mood === 'nervous') mascotCanvas.classList.add('bounce');
+  }
+
+  /* ---------- 揭晓悬念 & 打击感 ---------- */
+  function runSuspense(cb) {
+    cardShell.classList.add('suspense');
+    alarmLayer.classList.add('show');
+    cardHint.textContent = ZH ? '鉴定中……（点击屏幕加速揭晓）' : 'Appraising… (tap to reveal faster)';
+    let done = false;
+    const finish = () => {
+      if (done) return;
+      done = true;
+      clearTimeout(timer);
+      window.removeEventListener('pointerdown', skip, true);
+      cardShell.classList.remove('suspense');
+      alarmLayer.classList.remove('show');
+      cb();
+    };
+    const skip = () => finish();
+    const timer = setTimeout(finish, 1500);
+    // 延迟挂载跳过监听，避免触发本次揭晓的那一下点击被立即吞掉
+    setTimeout(() => { if (!done) window.addEventListener('pointerdown', skip, true); }, 280);
+  }
+
+  function fullScreenBurst(rarityId) {
+    const map = {
+      hidden: ['rgba(255,255,255,.95)', 'rgba(252,211,77,.6)'],
+      rare:   ['rgba(253,224,71,.95)', 'rgba(217,119,6,.5)'],
+      common: ['rgba(96,165,250,.95)', 'rgba(37,99,235,.5)'],
+    };
+    const [c1, c2] = map[rarityId] || map.common;
+    const el = document.createElement('div');
+    el.className = 'mh-burst';
+    el.style.background = `radial-gradient(circle at center, ${c1} 0%, ${c2} 30%, transparent 65%)`;
+    document.body.appendChild(el);
+    requestAnimationFrame(() => el.classList.add('show'));
+    setTimeout(() => el.remove(), 950);
+  }
+
+  function coinDrop() {
+    const cx = window.innerWidth / 2;
+    for (let i = 0; i < 14; i++) {
+      const coin = document.createElement('div');
+      coin.className = 'mh-coin';
+      coin.style.left = `${cx + (Math.random() - 0.5) * window.innerWidth * 0.6}px`;
+      coin.style.top = '-26px';
+      document.body.appendChild(coin);
+      const delay = Math.random() * 260;
+      coin.animate([
+        { transform: 'translateY(0) rotate(0)', opacity: 1 },
+        { transform: `translateY(${window.innerHeight * 0.72}px) rotate(${Math.random() * 720}deg)`, opacity: 1, offset: .85 },
+        { transform: `translateY(${window.innerHeight * 0.82}px)`, opacity: 0 }
+      ], { duration: 1100 + Math.random() * 500, delay, easing: 'cubic-bezier(.3,.4,.6,1)' });
+      setTimeout(() => coin.remove(), 1750 + delay);
+    }
+  }
+
+  function failStamp() {
+    const el = document.createElement('div');
+    el.className = 'mh-stamp';
+    el.textContent = ZH ? '鉴定失败' : 'FAILED';
+    document.body.appendChild(el);
+    requestAnimationFrame(() => el.classList.add('show'));
+    setTimeout(() => el.remove(), 1700);
+  }
+
+  // 涂层像玻璃般碎裂
+  function glassShatterCoating() {
+    const rect = cardShell.getBoundingClientRect();
+    for (let i = 0; i < 26; i++) {
+      const sh = document.createElement('div');
+      sh.className = 'mh-shard';
+      sh.style.left = `${rect.left + Math.random() * rect.width}px`;
+      sh.style.top = `${rect.top + Math.random() * rect.height}px`;
+      sh.style.background = ['#e5e7eb', '#cbd5e1', '#f8fafc'][i % 3];
+      const sz = 8 + Math.random() * 14;
+      sh.style.width = sh.style.height = `${sz}px`;
+      document.body.appendChild(sh);
+      const tx = (Math.random() - 0.5) * 180, ty = (Math.random() - 0.3) * 220;
+      sh.animate([
+        { transform: 'translate(0,0) rotate(0)', opacity: 1 },
+        { transform: `translate(${tx}px, ${ty}px) rotate(${Math.random() * 540}deg)`, opacity: 0 }
+      ], { duration: 600 + Math.random() * 300, easing: 'cubic-bezier(.2,.6,.4,1)' });
+      setTimeout(() => sh.remove(), 950);
+    }
   }
 
   /* ---------- 龙猫墩弟（体素像素画） ---------- */
@@ -1347,36 +1594,88 @@ game_config = {
     }
   }
 
-  /* ---------- 指针事件 ---------- */
-  function localPoint(e) {
+  /* ---------- 输入：同时支持鼠标与触摸 ---------- */
+  function eventClient(e) {
     const touch = e.changedTouches?.[0] || e.touches?.[0];
-    const cx = touch?.clientX ?? e.clientX;
-    const cy = touch?.clientY ?? e.clientY;
+    return { cx: touch?.clientX ?? e.clientX, cy: touch?.clientY ?? e.clientY };
+  }
+  function localPoint(e) {
+    const { cx, cy } = eventClient(e);
     const rect = scratchCanvas.getBoundingClientRect();
     return { x: cx - rect.left, y: cy - rect.top };
   }
   function onDown(e) {
     if (e.target?.closest?.('button')) return;
     if (state.phase !== 'scratching') return;
-    e.preventDefault();
+    if (e.cancelable) e.preventDefault();
     state.pointerDown = true;
-    state.pointerId = e.pointerId ?? null;
     const p = localPoint(e);
     scratchAt(p.x, p.y);
   }
   function onMove(e) {
     if (!state.pointerDown) return;
-    if (state.pointerId != null && e.pointerId != null && e.pointerId !== state.pointerId) return;
-    e.preventDefault();
+    if (e.cancelable) e.preventDefault();
     const p = localPoint(e);
     scratchAt(p.x, p.y);
   }
-  function onUp() { state.pointerDown = false; state.pointerId = null; }
+  function onUp() { state.pointerDown = false; }
+
+  /* ---------- 刮卡体素碎屑 ---------- */
+  function spawnScratchChips(clientX, clientY) {
+    const now = performance.now();
+    if (now - (state.lastChip || 0) < 28) return; // 节流
+    state.lastChip = now;
+    const palette = ['#e5e7eb', '#cbd5e1', '#f8fafc', '#94a3b8'];
+    const n = 2 + Math.floor(Math.random() * 2);
+    for (let i = 0; i < n; i++) {
+      const chip = document.createElement('div');
+      chip.className = 'mh-chip';
+      const sz = 4 + Math.random() * 5;
+      chip.style.width = chip.style.height = `${sz}px`;
+      chip.style.left = `${clientX - sz / 2}px`;
+      chip.style.top = `${clientY - sz / 2}px`;
+      chip.style.background = palette[(Math.random() * palette.length) | 0];
+      document.body.appendChild(chip);
+      const dx = (Math.random() - 0.5) * 70;
+      const dy = -20 - Math.random() * 40;       // 先上抛
+      const fall = 90 + Math.random() * 80;       // 再重力下坠
+      chip.animate([
+        { transform: 'translate(0,0) rotate(0)', opacity: 1 },
+        { transform: `translate(${dx * 0.5}px, ${dy}px) rotate(${Math.random() * 180}deg)`, opacity: 1, offset: 0.4 },
+        { transform: `translate(${dx}px, ${fall}px) rotate(${Math.random() * 540}deg)`, opacity: 0 }
+      ], { duration: 600 + Math.random() * 250, easing: 'cubic-bezier(.3,.5,.6,1)' });
+      setTimeout(() => chip.remove(), 900);
+    }
+  }
 
   /* ---------- 弹层 ---------- */
   function showRules() { rulesOverlay.classList.remove('hidden'); }
   function hideRules() { rulesOverlay.classList.add('hidden'); }
   function hideResult() { resultOverlay.classList.add('hidden'); }
+
+  /* ---------- 成就 / 收藏面板 ---------- */
+  function renderAchievements() {
+    achTitlesEl.innerHTML = '';
+    TITLES.forEach(ttl => {
+      const got = state.titles.has(ttl.id);
+      const item = document.createElement('div');
+      item.className = 'mh-ach-item' + (got ? ' got' : '');
+      item.innerHTML = `<span class="mh-ach-ic">${got ? '🏆' : '🔒'}</span><span>${ttl.name}</span>`;
+      achTitlesEl.appendChild(item);
+    });
+    achDiaryEl.innerHTML = '';
+    DIARY_PAGES.forEach(p => {
+      const got = state.diaryPages.has(p.id);
+      const item = document.createElement('div');
+      item.className = 'mh-ach-item' + (got ? ' got' : '');
+      item.innerHTML = got
+        ? `<span class="mh-ach-ic">📜</span><span>${p.text}</span>`
+        : `<span class="mh-ach-ic">🔒</span><span>${ZH ? '未解锁的日记页' : 'Locked diary page'}</span>`;
+      achDiaryEl.appendChild(item);
+    });
+  }
+  function showAch() { renderAchievements(); achOverlay.classList.remove('hidden'); }
+  function hideAch() { achOverlay.classList.add('hidden'); }
 
   function beginGame() {
     hideRules();
@@ -1388,10 +1687,15 @@ game_config = {
 
   /* ---------- 事件绑定 ---------- */
   function initEvents() {
-    scratchCanvas.addEventListener('pointerdown', onDown, { passive: false });
-    window.addEventListener('pointermove', onMove, { passive: false });
-    window.addEventListener('pointerup', onUp);
-    window.addEventListener('pointercancel', onUp);
+    // 鼠标（PC）
+    scratchCanvas.addEventListener('mousedown', onDown);
+    window.addEventListener('mousemove', onMove);
+    window.addEventListener('mouseup', onUp);
+    // 触摸（移动端）
+    scratchCanvas.addEventListener('touchstart', onDown, { passive: false });
+    window.addEventListener('touchmove', onMove, { passive: false });
+    window.addEventListener('touchend', onUp);
+    window.addEventListener('touchcancel', onUp);
 
     betBtnList.forEach(b => b.addEventListener('click', () => pickRarity(b.dataset.bet)));
     elBtnList.forEach(b => b.addEventListener('click', () => pickElement(b.dataset.el)));
@@ -1402,8 +1706,11 @@ game_config = {
     startBtn.addEventListener('click', beginGame);
     againBtn.addEventListener('click', () => { hideResult(); dealCard(); });
     helpBtn.addEventListener('click', showRules);
+    achBtn.addEventListener('click', showAch);
+    achClose.addEventListener('click', hideAch);
 
-    window.addEventListener('resize', () => resizeCanvas(false));
+    window.addEventListener('resize', () => { setAppH(); resizeCanvas(false); });
+    window.addEventListener('orientationchange', () => { setAppH(); resizeCanvas(false); });
 
     window.addEventListener('message', e => {
       const msg = e.data || {};
@@ -1419,12 +1726,21 @@ game_config = {
     });
   }
 
+  /* ---------- 微信/移动端真实视口高度 ---------- */
+  // 微信小程序 webview 里 100vh 会算进系统导航条，导致底部按钮被裁切且无法滚动；
+  // 用 window.innerHeight 写入 --app-h，得到真正可见的高度。
+  function setAppH() {
+    try { document.documentElement.style.setProperty('--app-h', window.innerHeight + 'px'); } catch (_) {}
+  }
+
   /* ---------- init ---------- */
   function init() {
+    setAppH();
     renderDiffButtons(difficultyButtons);
     renderDiffButtons(overlayDiffButtons);
     refreshDiffButtons();
     drawDundi();
+    drawMascot('normal');
     // 元素按钮文案
     elBtnList.forEach(b => {
       const el = ELEMENT_BY_ID[b.dataset.el];
@@ -1434,21 +1750,36 @@ game_config = {
     if (!ZH) {
       const et = $('elementTitle'), es = $('elementSub');
       if (et) et.textContent = 'Pick its element';
-      if (es) es.textContent = 'Guess the hidden element for a Perfect ×3!';
+      if (es) es.textContent = 'Match the element particles at the card edges for a Perfect ×3!';
+      const aT = $('achTitle'), aH = $('achTitlesH2'), aD = $('achDiaryH2'), aC = $('achClose');
+      if (aT) aT.textContent = 'Achievements & Collection';
+      if (aH) aH.textContent = 'Titles';
+      if (aD) aD.textContent = 'Developer Diary';
+      if (aC) aC.textContent = 'Close';
     }
     updateHud();
     resizeCanvas(true);
+    state.phase = 'idle';                 // 解锁“开始鉴定”按钮
+    primaryBtn.disabled = false;
     primaryBtn.textContent = t('start');
     cardHint.textContent = t('hintStart');
     initEvents();
 
-    // 首次进入展示新手引导
+    // 首次进入展示新手引导（不阻塞主界面的开始按钮）
     if (!localStorage.getItem(STORAGE_TUT)) showRules();
 
     post('gameLoaded');
   }
 
-  init();
+  // 自动初始化：DOM 就绪即启动，无需点击“？”
+  function initGame() {
+    try { init(); } catch (err) { console.error('[BlackCard] init failed:', err); }
+  }
+  if (document.readyState === 'loading') {
+    document.addEventListener('DOMContentLoaded', initGame, { once: true });
+  } else {
+    initGame();
+  }
 })();
 </script>
 </body>

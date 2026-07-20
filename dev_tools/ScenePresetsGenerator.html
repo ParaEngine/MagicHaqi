@@ -26,6 +26,9 @@
 			.section { @apply flex flex-col gap-2.5 rounded-lg border border-slate-300 bg-slate-50 p-3; }
 			.toolbar, .music-controls { @apply flex flex-wrap items-center gap-2; }
 			.toolbar button { @apply flex-none; }
+			.model-select-state { @apply hidden; }
+			.model-picker { @apply w-full justify-start overflow-hidden text-left; }
+			.model-picker span { @apply block overflow-hidden text-ellipsis whitespace-nowrap; }
 			.primary { @apply border-sky-600 bg-sky-600 text-white hover:border-sky-700 hover:bg-sky-700; }
 			.success { @apply border-emerald-600 bg-emerald-600 text-white hover:border-emerald-700 hover:bg-emerald-700; }
 			.danger { @apply border-red-200 bg-red-50 text-red-700; }
@@ -170,8 +173,9 @@
 
 				<section class="section">
 					<h2>图片模型</h2>
-					<label>模型 dropdown
-						<select id="imageModelSelect"></select>
+					<label>模型
+						<select id="imageModelSelect" class="model-select-state" aria-hidden="true" tabindex="-1"></select>
+						<button id="imageModelPicker" class="model-picker" type="button"><span>等待 SDK 加载...</span></button>
 					</label>
 					<label>分辨率
 						<select id="imageSize">
@@ -816,10 +820,11 @@ ${currentIndent}}`;
 
 		function getEnabledLocalModels(category) {
 			const sdk = state.sdk || window.keepwork;
-			return sdk?.localAPIKeySettings?.listModels ? sdk.localAPIKeySettings.listModels(category).filter(model => model.enabled !== false) : [];
+			const settings = sdk?.apiKeySettings || sdk?.localAPIKeySettings;
+			return settings?.listModels ? settings.listModels(category).filter(model => model.enabled !== false) : [];
 		}
 
-		function renderModelOptions(select, category, remembered = '') {
+		function renderModelOptions(select, picker, category, remembered = '') {
 			if (!select) return [];
 			const models = getEnabledLocalModels(category);
 			select.innerHTML = models.length
@@ -831,7 +836,32 @@ ${currentIndent}}`;
 				: `<option value="">没有本地${category === 'Chat' ? '聊天' : '图片'}模型</option>`;
 			select.disabled = !models.length;
 			if (remembered && models.some(model => (model.name || model.modelId || '') === remembered)) select.value = remembered;
+			if (picker) {
+				const sdk = state.sdk || window.keepwork;
+				const settings = sdk?.apiKeySettings || sdk?.localAPIKeySettings;
+				picker.disabled = !models.length && !settings?.showModelPicker;
+				picker.querySelector('span').textContent = select.value || `没有可用${category === 'Chat' ? '聊天' : '图片'}模型`;
+			}
 			return models;
+		}
+
+		function openModelPicker(selectId, pickerId, category) {
+			const sdk = state.sdk || window.keepwork;
+			const settings = sdk?.apiKeySettings || sdk?.localAPIKeySettings;
+			if (!settings?.showModelPicker) return setStatus($('loginState'), '当前 SDK 不支持模型选择窗口。', 'error');
+			const select = $(selectId);
+			const picker = $(pickerId);
+			settings.showModelPicker({
+				anchor: picker,
+				category,
+				selectedModel: select.value,
+				onSelect: model => {
+					if (![...select.options].some(option => option.value === model)) select.add(new Option(model, model));
+					select.value = model;
+					picker.querySelector('span').textContent = model;
+					select.dispatchEvent(new Event('change'));
+				},
+			});
 		}
 
 		function loadSceneCdnUploadSetting() {
@@ -2246,22 +2276,29 @@ ${currentIndent}}`;
 
 		async function populateModelDropdown() {
 			const sdk = state.sdk || window.keepwork;
+			const settings = sdk?.apiKeySettings || sdk?.localAPIKeySettings;
 			const select = $('imageModelSelect');
-			if (!sdk?.localAPIKeySettings?.listModels) {
+			const picker = $('imageModelPicker');
+			if (!settings?.listModels) {
 				select.innerHTML = '<option value="">等待 SDK 加载...</option>';
 				select.disabled = true;
+				picker.disabled = true;
+				picker.querySelector('span').textContent = '等待 SDK 加载...';
 				return;
 			}
-			await sdk.localAPIKeySettings.load?.();
+			await settings.load?.();
+			if (!settings.listModels('Image').some(model => model.enabled !== false)) {
+				try { await settings.refreshModels?.('keepwork'); } catch (_) {}
+			}
 			const current = select.value;
-			const models = renderModelOptions(select, 'Image', state.lastLLMModel || current);
+			const models = renderModelOptions(select, picker, 'Image', state.lastLLMModel || current);
 			const remembered = state.lastLLMModel || current;
 			if (models.some(model => (model.name || model.modelId || '') === remembered)) select.value = remembered;
 			else if (models.some(model => (model.name || model.modelId || '') === current)) select.value = current;
 			rememberGenerationSettings();
 		}
 
-		const SDK_CDN_URL = 'https://cdn.keepwork.com/sdk/keepworkSDK.iife.js?v=20260619a';
+		const SDK_CDN_URL = 'https://cdn.keepwork.com/sdk/keepworkSDK.iife.js?v=20260715a';
 
 		function loadScript(src) {
 			return new Promise((resolve, reject) => {
@@ -2306,7 +2343,7 @@ ${currentIndent}}`;
 					else await loadScript(url);
 					if (window.keepwork) {
 						state.sdk = window.keepwork;
-						await state.sdk.localAPIKeySettings?.load?.();
+						await (state.sdk.apiKeySettings || state.sdk.localAPIKeySettings)?.load?.();
 						$('sdkState').textContent = 'SDK ready';
 						await populateModelDropdown();
 						await refreshLoginState();
@@ -2343,13 +2380,13 @@ ${currentIndent}}`;
 			const sdk = state.sdk || window.keepwork;
 			if (!sdk) return;
 			if (!sdk.token) {
-				const refreshAfterLogin = async () => {
-					await refreshLoginState();
-					await loadRecords();
-				};
-				if (sdk.loginWindow?.show) sdk.loginWindow.show({ onLogin: refreshAfterLogin });
-				else if (sdk.login) await sdk.login();
-				setTimeout(refreshAfterLogin, 600);
+				try {
+					if (typeof sdk.showLoginWindow === 'function') await sdk.showLoginWindow({ title: 'Scene Presets Generator 登录' });
+					else if (sdk.loginWindow?.show) await new Promise(resolve => sdk.loginWindow.show({ onLogin: resolve, onClose: resolve }));
+					else if (sdk.login) await sdk.login();
+				} catch (_) {}
+				await refreshLoginState();
+				await loadRecords();
 				return;
 			}
 			if (typeof sdk.showProfileWindow === 'function') {
@@ -2643,15 +2680,21 @@ ${currentIndent}}`;
 
 		async function populateBatchChatModelDropdown() {
 			const sdk = state.sdk || window.keepwork;
+			const settings = sdk?.apiKeySettings || sdk?.localAPIKeySettings;
 			const select = $('batchChatModel');
+			const picker = $('batchChatModelPicker');
 			if (!select) return;
-			if (!sdk?.localAPIKeySettings?.listModels) {
+			if (!settings?.listModels) {
 				select.innerHTML = '<option value="">等待 SDK 加载...</option>';
 				select.disabled = true;
+				if (picker) picker.disabled = true;
 				return;
 			}
-			await sdk.localAPIKeySettings.load?.();
-			renderModelOptions(select, 'Chat', state.lastChatModel || select.value);
+			await settings.load?.();
+			if (!settings.listModels('Chat').some(model => model.enabled !== false)) {
+				try { await settings.refreshModels?.('keepwork'); } catch (_) {}
+			}
+			renderModelOptions(select, picker, 'Chat', state.lastChatModel || select.value);
 			state.lastChatModel = select.value || state.lastChatModel;
 			saveLocalGenerationSettings();
 		}
@@ -3005,7 +3048,8 @@ ${currentIndent}}`;
 						<section class="section">
 							<div class="row">
 								<label>Chat 模型
-									<select id="batchChatModel"></select>
+									<select id="batchChatModel" class="model-select-state" aria-hidden="true" tabindex="-1"></select>
+									<button id="batchChatModelPicker" class="model-picker" type="button"><span>等待 SDK 加载...</span></button>
 								</label>
 							</div>
 							<label>用户补充要求（生成场景设置前发送给 LLM）
@@ -3039,6 +3083,7 @@ ${currentIndent}}`;
 				saveBatchSettings({ lastChatModel: state.lastChatModel, generateImages: false, userPrompt: $('batchUserPrompt').value, combinations: parseBatchCombinationsFromDialog() });
 				saveLocalGenerationSettings();
 			});
+			$('batchChatModelPicker').onclick = () => openModelPicker('batchChatModel', 'batchChatModelPicker', 'Chat');
 			$('batchFinalPrompt')?.addEventListener('input', () => { state.batchFinalPromptDirty = true; });
 			$('batchUserPrompt')?.addEventListener('input', () => updateBatchFinalPromptPreview());
 			$('batchUserPrompt')?.addEventListener('change', () => {
@@ -3530,10 +3575,11 @@ ${currentIndent}}`;
 
 		function wireEvents() {
 			$('btnLocalApi').onclick = async () => {
-				const settings = (state.sdk || window.keepwork)?.localAPIKeySettings;
+				const sdk = state.sdk || window.keepwork;
+				const settings = sdk?.apiKeySettings || sdk?.localAPIKeySettings;
 				if (!settings?.show) return setStatus($('loginState'), '当前 SDK 不支持本地 API Key 设置。', 'error');
 				await settings.load?.();
-				settings.show({ title: '本地 API Key 设置', fullscreen: true, onSave: async () => { await populateModelDropdown(); setStatus($('saveStatus'), '本地 API Key 设置已保存。', 'ok'); refreshLoginState(); } });
+				settings.show({ title: '本地 API Key 设置', fullscreen: true, onSave: async () => { await populateModelDropdown(); await populateBatchChatModelDropdown(); setStatus($('saveStatus'), '本地 API Key 设置已保存。', 'ok'); refreshLoginState(); } });
 			};
 			$('btnWorkspace').onclick = () => openWorkspaceViewer(SCENE_INDEX_PATH);
 			$('btnOpenIndexPreview').onclick = openIndexPreviewDialog;
@@ -3591,6 +3637,7 @@ ${currentIndent}}`;
 			$('referenceFiles').addEventListener('change', () => handleReferenceFiles().catch(e => setStatus($('runStatus'), e?.message || String(e), 'error')));
 			$('imageSize').addEventListener('change', () => { persistGenerationSettings().catch(e => setStatus($('saveStatus'), `生成设置保存失败：${e?.message || e}`, 'error')); updateOutput(); });
 			$('imageModelSelect').addEventListener('change', () => { persistGenerationSettings().catch(e => setStatus($('saveStatus'), `生成设置保存失败：${e?.message || e}`, 'error')); updateOutput(); });
+			$('imageModelPicker').onclick = () => openModelPicker('imageModelSelect', 'imageModelPicker', 'Image');
 			$('btnSceneCdnConfig').onclick = openSceneCdnConfigPasteDialog;
 			$('uploadCompressedSceneToCdn')?.addEventListener('change', () => {
 				saveSceneCdnUploadSetting();

@@ -1,7 +1,7 @@
 // 星际移民视图
 import { confirm, escapeHtml, showToast } from './utils.js';
 import { planetName, t } from './i18n.js';
-import { getDefaultZoomLevelIndex, loadPlanetIndex, loadPlanetShopItems, normalizePlanetZoomOptions } from './config.js';
+import { getDefaultZoomLevelIndex, loadPlanetIndex, loadPlanetShopItems, normalizeFieldAreaLinks, normalizeFieldNpcs, normalizePlanetZoomOptions } from './config.js';
 import { notify, state } from './state.js';
 import { saveFieldScenesDebounced, saveTerrainFieldsDebounced, saveUserProfileDebounced, setActiveLayoutsPlanet } from './storage.js';
 import { getTerrainFieldSlots, getTerrainFieldType, normalizeTerrainFieldSlotId, TERRAIN_FIELD_SLOT_DEFS, terrainFieldIconHtml } from './view_terrain_fields.js';
@@ -238,6 +238,8 @@ function applyPlanetFields(planet) {
         if (field.background && typeof field.background === 'object') next.background = { ...field.background };
         if (Array.isArray(field.particles)) next.particles = field.particles.slice(0, 6);
         if (typeof field.bgMusic === 'string') next.bgMusic = field.bgMusic;
+        if (Array.isArray(field.npcs)) next.npcs = normalizeFieldNpcs(field.npcs);
+        if (Array.isArray(field.areaLinks)) next.areaLinks = normalizeFieldAreaLinks(field.areaLinks);
         scenes[slotKey] = next;
     });
 }

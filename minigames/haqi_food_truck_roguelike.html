@@ -1,0 +1,1028 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+  <title>哈奇深夜餐车</title>
+  <script src="https://cdn.keepwork.com/keepwork/cdn/tailwindcss@3.4.16.js"></script>
+  <style>
+    .lvlcard { transition: transform .12s, box-shadow .12s; }
+    .lvlcard:hover { transform: translateY(-6px) scale(1.03); box-shadow: 0 10px 30px rgba(249,115,22,.4); }
+    @keyframes pop { 0%{transform:scale(.7);opacity:0} 100%{transform:scale(1);opacity:1} }
+    .pop { animation: pop .25s ease-out both; }
+  </style>
+</head>
+
+<body class="bg-slate-950 overflow-hidden select-none" style="touch-action:none;"></body>
+
+<script>
+// ============================================================================
+//  game_config — 纯数据，无函数 / DOM。《哈奇深夜餐车》2.5D 体素肉鸽幸存者。
+//  对标吸血鬼幸存者：自动战斗 + 升级三选一 Build。
+//  内容量：30 技能 / 20 道具 / 20 增益(buff) / 5 关 Boss（每 10 波兵刷 1 个）。
+// ============================================================================
+game_config = {
+  arena: { tileW: 44, tileH: 22, cubeH: 16, spawnRingR: 520, despawnR: 820 },
+  truck: { maxHp: 100, moveSpeed: 215, regen: 0 },
+
+  // 元素：命中附加状态。fire=灼烧DoT，ice=减速，poison=中毒DoT，shock=麻痹+小范围连锁。
+  elementColors: {
+    none:   { base: "#f1f5f9", light: "#ffffff", dark: "#cbd5e1" },
+    fire:   { base: "#fb923c", light: "#fed7aa", dark: "#c2410c" },
+    ice:    { base: "#67e8f9", light: "#cffafe", dark: "#0891b2" },
+    poison: { base: "#84cc16", light: "#d9f99d", dark: "#4d7c0f" },
+    shock:  { base: "#fde047", light: "#fef9c3", dark: "#ca8a04" }
+  },
+
+  palette: {
+    truck:    { base: "#f97316", light: "#fdba74", dark: "#c2410c" },
+    truckTop: { base: "#fde047", light: "#fef9c3", dark: "#ca8a04" },
+    dundi:    { base: "#9ca3af", light: "#e5e7eb", dark: "#4b5563" },
+    slime:    { base: "#a855f7", light: "#d8b4fe", dark: "#7e22ce" },
+    crab:     { base: "#ef4444", light: "#fca5a5", dark: "#b91c1c" },
+    brute:    { base: "#1e293b", light: "#475569", dark: "#0f172a" },
+    bat:      { base: "#6366f1", light: "#a5b4fc", dark: "#3730a3" },
+    runner:   { base: "#10b981", light: "#6ee7b7", dark: "#047857" },
+    boba:     { base: "#d946ef", light: "#f0abfc", dark: "#a21caf" },
+    bbq:      { base: "#b45309", light: "#f59e0b", dark: "#78350f" },
+    dark:     { base: "#4c1d95", light: "#7c3aed", dark: "#2e1065" }
+  },
+
+  // ---- 38 技能（自动武器）。kind 决定行为原型，参数随等级缩放。----
+  weapons: [
+    { id:"sushi_dart",   name:"寿司飞镖",     emoji:"🍣", kind:"nearest",  el:"none",   dmg:18, cd:0.5,  count:3, speed:540, pierce:3, countGrow:0.34, desc:"向最近的敌人发射高穿透寿司卷" },
+    { id:"fried_chicken",name:"炸鸡手雷",     emoji:"🍗", kind:"lob",      el:"fire",   dmg:34, cd:1.5,  radius:72, desc:"抛物线落地爆炸，留下持续火焰" },
+    { id:"soup_sprayer", name:"老火靓汤喷射", emoji:"🍲", kind:"cone",     el:"ice",    dmg:9,  cd:0.8,  range:185, angle:70, desc:"朝面前喷扇形高温汤汁，减速敌人" },
+    { id:"drumstick",    name:"鸡腿回旋镖",   emoji:"🍖", kind:"boomerang",el:"none",   dmg:26, cd:1.4,  speed:470, radius:16, desc:"飞出再飞回，去程回程都造成伤害" },
+    { id:"skewers",      name:"旋转烤串",     emoji:"🍡", kind:"orbit",    el:"fire",   dmg:14, cd:0,    count:2, radius:74, countGrow:0.4, desc:"围绕餐车旋转的火烤串串" },
+    { id:"hotpot",       name:"麻辣火锅",     emoji:"🌶️", kind:"aura",     el:"fire",   dmg:10, cd:0,    radius:92, interval:0.4, desc:"餐车周身翻滚红汤，灼烧近身怪" },
+    { id:"popcorn",      name:"爆米花霰弹",   emoji:"🍿", kind:"spread",   el:"none",   dmg:10, cd:0.9,  count:5, spread:52, speed:430, pierce:1, countGrow:0.4, desc:"朝面前喷射一片爆米花" },
+    { id:"boba",         name:"珍珠奶茶炮",   emoji:"🧋", kind:"nearest",  el:"none",   dmg:42, cd:1.1,  count:1, speed:360, radius:18, pierce:2, knock:30, desc:"巨型珍珠重炮，击退敌人" },
+    { id:"pizza",        name:"飞天披萨",     emoji:"🍕", kind:"boomerang",el:"none",   dmg:30, cd:1.8,  speed:380, radius:22, desc:"大号披萨贴地横扫" },
+    { id:"pancake",      name:"煎饼震荡",     emoji:"🥞", kind:"nova",     el:"none",   dmg:22, cd:2.2,  radius:150, desc:"砸下大饼，冲击波向外扩散" },
+    { id:"oden",         name:"关东煮长矛",   emoji:"🍢", kind:"beam",     el:"none",   dmg:20, cd:1.0,  range:270, width:34, desc:"竹签长矛贯穿一条直线" },
+    { id:"latiao",       name:"辣条长鞭",     emoji:"🌶️", kind:"whip",     el:"fire",   dmg:16, cd:0.7,  range:155, width:52, desc:"左右抽打的灼热辣条" },
+    { id:"icecream",     name:"冰淇淋冻射",   emoji:"🍦", kind:"nearest",  el:"ice",    dmg:14, cd:0.7,  count:2, speed:460, pierce:2, countGrow:0.34, desc:"冰封弹丸，命中减速" },
+    { id:"sausage",      name:"烤肠连环电",   emoji:"🌭", kind:"chain",    el:"shock",  dmg:18, cd:1.2,  chains:5, speed:520, desc:"带电烤肠在敌群间跳跃" },
+    { id:"tanghulu",     name:"糖葫芦穿串",   emoji:"🍓", kind:"spread",   el:"none",   dmg:12, cd:0.8,  count:3, spread:18, pierce:4, speed:500, desc:"高穿透糖葫芦串" },
+    { id:"meatball",     name:"丸子地雷",     emoji:"🧆", kind:"mine",     el:"none",   dmg:32, cd:1.6,  radius:62, desc:"丢出火锅丸子地雷，触雷爆炸" },
+    { id:"luosifen",     name:"螺蛳粉毒雾",   emoji:"🥬", kind:"aura",     el:"poison", dmg:6,  cd:0,    radius:104, interval:0.5, desc:"散发劝退毒雾，持续中毒" },
+    { id:"fried_egg",    name:"煎蛋飞碟",     emoji:"🍳", kind:"random",   el:"none",   dmg:16, cd:0.7,  count:3, speed:400, pierce:1, countGrow:0.34, desc:"煎蛋飞碟乱射四方" },
+    { id:"mochi",        name:"麻薯弹跳",     emoji:"⚪", kind:"random",   el:"none",   dmg:14, cd:0.9,  count:2, speed:420, pierce:2, bounce:true, countGrow:0.34, desc:"Q弹麻薯到处弹跳" },
+    { id:"espresso",     name:"浓缩冲击",     emoji:"☕", kind:"nova",     el:"shock",  dmg:12, cd:1.4,  radius:130, desc:"咖啡因冲击波，麻痹四周" },
+    { id:"xiaolongbao",  name:"小笼包蒸汽",   emoji:"🥟", kind:"nova",     el:"none",   dmg:16, cd:1.6,  radius:120, desc:"爆汁蒸汽环向外炸开" },
+    { id:"squid",        name:"铁板鱿鱼束",   emoji:"🦑", kind:"beam",     el:"none",   dmg:26, cd:1.3,  range:300, width:28, desc:"铁板鱿鱼激光束" },
+    { id:"cotton_candy", name:"棉花糖云",     emoji:"☁️", kind:"drop",     el:"ice",    dmg:8,  cd:1.4,  radius:80, interval:0.5, life:3, desc:"在敌群上空落下减速糖云" },
+    { id:"durian",       name:"榴莲炸弹",     emoji:"🤢", kind:"lob",      el:"poison", dmg:50, cd:2.4,  radius:100, desc:"超大榴莲砸地，毒气弥漫" },
+    { id:"steak",        name:"战斧牛排",     emoji:"🥩", kind:"orbit",    el:"none",   dmg:30, cd:0,    count:1, radius:62, knock:24, countGrow:0.3, desc:"沉重牛排贴身横扫并击退" },
+    { id:"sukiyaki",     name:"寿喜锅热浪",   emoji:"♨️", kind:"nova",     el:"fire",   dmg:18, cd:2.0,  radius:160, desc:"滚烫寿喜烧热浪扩散灼烧" },
+    { id:"dragon_beard", name:"龙须酥连射",   emoji:"🐉", kind:"nearest",  el:"none",   dmg:8,  cd:0.45, count:6, speed:560, pierce:1, countGrow:0.5, desc:"细密龙须酥糖丝乱舞" },
+    { id:"mapo",         name:"麻婆豆腐溅",   emoji:"🥘", kind:"cone",     el:"fire",   dmg:14, cd:1.0,  range:155, angle:60, desc:"麻辣豆腐扇形溅射灼烧" },
+    { id:"takoyaki",     name:"章鱼烧追踪",   emoji:"🐙", kind:"homing",   el:"none",   dmg:22, cd:1.0,  count:2, speed:300, pierce:1, countGrow:0.34, desc:"自动追踪敌人的章鱼小丸子" },
+    { id:"banquet",      name:"满汉全席",     emoji:"🍱", kind:"nova",     el:"none",   dmg:40, cd:3.0,  radius:230, desc:"墩弟招牌·满汉全席大爆发" },
+    { id:"malatang",     name:"麻辣烫旋锅",   emoji:"🍲", kind:"orbit",    el:"poison", dmg:16, cd:0,    count:2, radius:80, countGrow:0.34, desc:"环绕的麻辣烫锅，持续中毒" },
+    { id:"jiaozi",       name:"煎饺脆射",     emoji:"🥟", kind:"spread",   el:"none",   dmg:11, cd:0.6,  count:4, spread:34, speed:480, pierce:2, countGrow:0.5, desc:"金黄脆饺扇形速射" },
+    { id:"lollipop",     name:"棒棒糖回旋",   emoji:"🍭", kind:"boomerang",el:"ice",    dmg:24, cd:1.3,  speed:460, radius:18, desc:"螺旋棒棒糖回旋冰冻" },
+    { id:"sweet_potato", name:"烤红薯地炮",   emoji:"🍠", kind:"lob",      el:"fire",   dmg:44, cd:1.9,  radius:90, desc:"滚烫烤红薯砸地，余火延绵" },
+    { id:"lemon_tea",    name:"柠檬茶酸雾",   emoji:"🍋", kind:"aura",     el:"ice",    dmg:9,  cd:0,    radius:96, interval:0.45, desc:"酸爽柠檬雾，减速近身怪" },
+    { id:"char_siu",     name:"黯然销魂饭",   emoji:"🍚", kind:"beam",     el:"none",   dmg:30, cd:1.2,  range:320, width:32, desc:"叉烧能量束横扫一线" },
+    { id:"thunder_skew", name:"串串雷暴",     emoji:"⚡", kind:"chain",    el:"shock",  dmg:22, cd:1.1,  chains:7, speed:560, desc:"雷电串串在敌群连环跳" },
+    { id:"lava_bun",     name:"流心爆浆波",   emoji:"🥮", kind:"nova",     el:"fire",   dmg:30, cd:2.4,  radius:185, desc:"爆浆流心冲击波灼烧四周" }
+  ],
+
+  // ---- 25 道具（被动，叠加属性，最多各 5 层）----
+  items: [
+    { id:"pressure_cooker", name:"高压锅",     emoji:"🍲", desc:"范围 +12%",        mod:{area:0.12} },
+    { id:"stove",           name:"老灶猛火",   emoji:"🔥", desc:"伤害 +10%",        mod:{damage:0.10} },
+    { id:"stopwatch",       name:"出餐秒表",   emoji:"⏱️", desc:"攻速 +7%",         mod:{haste:0.07} },
+    { id:"ladle",           name:"大铁勺",     emoji:"🥄", desc:"弹射物 +1",        mod:{projAdd:1} },
+    { id:"sneakers",        name:"外卖跑鞋",   emoji:"👟", desc:"移速 +12%",        mod:{moveSpeed:0.12} },
+    { id:"totoro_charm",    name:"龙猫护符",   emoji:"🪬", desc:"最大生命 +25",     mod:{maxHp:25} },
+    { id:"nutrition",       name:"营养套餐",   emoji:"🥗", desc:"每秒回血 +0.6",    mod:{regen:0.6} },
+    { id:"magnet_apron",    name:"磁铁围裙",   emoji:"🧲", desc:"拾取范围 +30",     mod:{pickup:30} },
+    { id:"chili_sauce",     name:"秘制辣酱",   emoji:"🌶️", desc:"暴击率 +5%",       mod:{crit:0.05} },
+    { id:"gold_chopstick",  name:"黄金筷子",   emoji:"🥢", desc:"暴击伤害 +40%",    mod:{critMult:0.4} },
+    { id:"mitts",           name:"防烫手套",   emoji:"🧤", desc:"护甲 +2",          mod:{armor:2} },
+    { id:"clover",          name:"四叶草",     emoji:"🍀", desc:"幸运 +1",          mod:{luck:1} },
+    { id:"recipe",          name:"祖传菜谱",   emoji:"📖", desc:"经验 +15%",        mod:{xpGain:0.15} },
+    { id:"preservative",    name:"长效保鲜",   emoji:"🧊", desc:"持续时间 +15%",    mod:{duration:0.15} },
+    { id:"turbo_fan",       name:"涡轮排风",   emoji:"💨", desc:"弹速 +15%",        mod:{projSpeed:0.15} },
+    { id:"michelin",        name:"米其林胎",   emoji:"🛞", desc:"移速 +8% 闪避 +5%",mod:{moveSpeed:0.08, dodge:0.05} },
+    { id:"glutton_belt",    name:"大胃王腰带", emoji:"🍔", desc:"生命 +15 回血 +0.4",mod:{maxHp:15, regen:0.4} },
+    { id:"lucky_cat",       name:"招财猫",     emoji:"🐱", desc:"幸运 +1 经验 +10%",mod:{luck:1, xpGain:0.1} },
+    { id:"coffee_bean",     name:"浓缩咖啡豆", emoji:"☕", desc:"攻速 +5% 移速 +6%",mod:{haste:0.05, moveSpeed:0.06} },
+    { id:"signature",       name:"镇店之宝",   emoji:"🏆", desc:"全属性小幅提升",   mod:{damage:0.05, area:0.05, haste:0.03, maxHp:10} },
+    { id:"hot_battery",     name:"暴走电池",   emoji:"🔋", desc:"攻速 +6% 伤害 +6%",mod:{haste:0.06, damage:0.06} },
+    { id:"heat_coat",       name:"隔热涂层",   emoji:"🛡️", desc:"护甲 +2 生命 +12",  mod:{armor:2, maxHp:12} },
+    { id:"searchlight",     name:"探照灯",     emoji:"🔦", desc:"拾取 +22 幸运 +1",  mod:{pickup:22, luck:1} },
+    { id:"supercharger",    name:"涡轮增压",   emoji:"⚙️", desc:"弹速 +12% 攻速 +5%",mod:{projSpeed:0.12, haste:0.05} },
+    { id:"starlight_salt",  name:"满天星盐",   emoji:"✨", desc:"暴击 +4% 暴伤 +30%", mod:{crit:0.04, critMult:0.3} }
+  ],
+
+  // ---- 24 增益 buff（限时，拾取增益球 / Boss 掉落 / 事件触发）----
+  buffs: [
+    { id:"berserk",    name:"狂暴",     emoji:"😤", dur:8,  mod:{damage:0.5} },
+    { id:"haste",      name:"急速",     emoji:"⚡", dur:8,  mod:{haste:0.4} },
+    { id:"giant",      name:"巨人化",   emoji:"🦣", dur:8,  mod:{area:0.6} },
+    { id:"timewarp",   name:"时间缓滞", emoji:"🕰️", dur:5,  flag:"enemySlow" },
+    { id:"invincible", name:"无敌",     emoji:"🛡️", dur:3,  flag:"invincible" },
+    { id:"vampire",    name:"吸血",     emoji:"🩸", dur:8,  flag:"lifesteal" },
+    { id:"crit_frenzy",name:"暴击狂热", emoji:"🎯", dur:8,  mod:{crit:0.4} },
+    { id:"magnet",     name:"磁暴",     emoji:"🧲", dur:6,  flag:"magnet" },
+    { id:"double_xp",  name:"双倍经验", emoji:"📈", dur:12, mod:{xpGain:1.0} },
+    { id:"burn_inf",   name:"烈焰附加", emoji:"🔥", dur:10, flag:"onHitBurn" },
+    { id:"frost_inf",  name:"冰霜附加", emoji:"❄️", dur:10, flag:"onHitSlow" },
+    { id:"thorns",     name:"荆棘反伤", emoji:"🌵", dur:10, flag:"thorns" },
+    { id:"dodge_buff", name:"残影闪避", emoji:"👻", dur:10, mod:{dodge:0.4} },
+    { id:"barrage",    name:"弹幕",     emoji:"🎆", dur:10, mod:{projAdd:2} },
+    { id:"regen_buff", name:"回春",     emoji:"💚", dur:8,  mod:{regen:4} },
+    { id:"gold_rush",  name:"黄金时刻", emoji:"💰", dur:12, flag:"scoreX2" },
+    { id:"chain_buff", name:"连锁电",   emoji:"🔗", dur:10, flag:"onHitChain" },
+    { id:"pierce_buff",name:"穿透",     emoji:"➶",  dur:10, mod:{pierceAdd:3} },
+    { id:"knock_buff", name:"巨力击退", emoji:"💥", dur:10, flag:"knockback" },
+    { id:"full_heal",  name:"满血复活", emoji:"❤️", dur:0,  flag:"fullHeal" },
+    { id:"warlord",    name:"战神",     emoji:"🔱", dur:8,  mod:{damage:0.4, haste:0.3} },
+    { id:"sprint",     name:"风火轮",   emoji:"🛼", dur:8,  mod:{moveSpeed:0.6} },
+    { id:"giant_proj", name:"大炮",     emoji:"🎇", dur:10, mod:{area:0.4, projAdd:1} },
+    { id:"iron_wall",  name:"铁壁",     emoji:"🧱", dur:8,  mod:{armor:6, dodge:0.2} }
+  ],
+
+  // ---- 怪物 ----
+  enemies: {
+    slime:  { color:"slime",  hp:22,  speed:58,  size:0.85, touch:8,  xp:1, kind:"chase" },
+    runner: { color:"runner", hp:16,  speed:108, size:0.7,  touch:7,  xp:1, kind:"chase" },
+    crab:   { color:"crab",   hp:44,  speed:74,  size:0.95, touch:12, xp:2, kind:"chase" },
+    bat:    { color:"bat",    hp:20,  speed:92,  size:0.7,  touch:9,  xp:2, kind:"weave" },
+    brute:  { color:"brute",  hp:130, speed:40,  size:1.35, touch:20, xp:4, kind:"chase" }
+  },
+
+  // ---- 8 关 Boss（每区终点 1 个）。pattern 决定可被躲避的技能组合。----
+  bosses: [
+    { id:"burger", name:"堕落汉堡王",   emoji:"🍔", color:"crab",   hp:1200, speed:34, size:2.3, touch:22,
+      patterns:["slam","summon"], color2:"#fbbf24", desc:"缓慢的肉山，砸地冲击" },
+    { id:"noodle", name:"炸酱缠绕九头", emoji:"🍜", color:"brute",  hp:1700, speed:54, size:2.2, touch:20,
+      patterns:["spray","summon"], color2:"#a16207", desc:"高速吐面，召唤小怪" },
+    { id:"hotpot", name:"麻辣火锅魔王", emoji:"🥘", color:"crab",   hp:2300, speed:30, size:2.5, touch:24,
+      patterns:["rings","slam"], color2:"#dc2626", desc:"喷发火环，需走位躲避" },
+    { id:"sundae", name:"冰封圣代巨像", emoji:"🍨", color:"bat",    hp:3000, speed:42, size:2.5, touch:24,
+      patterns:["frostnova","spray"], color2:"#38bdf8", desc:"冰霜新星，减速全场" },
+    { id:"boba",   name:"暴走珍珠奶茶王",emoji:"🧋", color:"boba",   hp:3900, speed:58, size:2.4, touch:24,
+      patterns:["spray","charge","slam"], color2:"#e879f9", desc:"高速冲撞，珍珠四溅" },
+    { id:"bbq",    name:"炙烤烧烤魔",   emoji:"🍢", color:"bbq",    hp:4900, speed:40, size:2.7, touch:26,
+      patterns:["rings","charge","spray"], color2:"#f97316", desc:"炭火炙烤，烈焰冲锋" },
+    { id:"darkchef",name:"黑暗料理之主",emoji:"👨‍🍳",color:"dark",  hp:6200, speed:46, size:2.8, touch:28,
+      patterns:["frostnova","rings","summon","spray"], color2:"#8b5cf6", desc:"黑暗料理，全场污染" },
+    { id:"banquet",name:"满汉全席·终焉",emoji:"👹", color:"brute",  hp:8200, speed:50, size:3.1, touch:30,
+      patterns:["rings","spray","summon","slam","charge","frostnova"], color2:"#a855f7", desc:"终焉宴席，全技能轮转" }
+  ],
+
+  // ---- 杀戮尖塔式节点地图 + 单局幸存战斗 ----
+  progression: {
+    acts: 8,                 // 8 个区域，每区终点是 1 关 Boss（对应 8 个 Boss）
+    floorsPerAct: 4,         // 每区在起点与 Boss 之间的选择层数
+    surviveBattle: 26,       // 普通战斗：坚持 N 秒即通过
+    surviveElite: 30,        // 精英战斗时长
+    spawnBase: 1.05,         // 初始刷怪间隔（随深度收紧）
+    spawnMin: 0.30,
+    xpBase: 5, xpGrow: 1.28, // 升级所需经验曲线
+    maxWeapons: 6, maxItems: 6, itemCap: 5, weaponMax: 8
+  }
+};
+</script>
+
+<script>
+art_assets = []; // 程序化体素绘制，无外部图片。
+</script>
+
+<script defer>
+(function () {
+  'use strict';
+
+  const CFG = game_config, A = CFG.arena, P = CFG.progression, PAL = CFG.palette, EL = CFG.elementColors;
+  const WEAPONS = CFG.weapons, ITEMS = CFG.items, BUFFS = CFG.buffs, BOSSES = CFG.bosses;
+  const wById = id => WEAPONS.find(w => w.id === id);
+  const iById = id => ITEMS.find(i => i.id === id);
+  const bById = id => BUFFS.find(b => b.id === id);
+  const randBuff = () => BUFFS[(Math.random() * BUFFS.length) | 0].id;
+
+  // ---------- 画布 ----------
+  const canvas = document.createElement('canvas');
+  canvas.style.cssText = 'position:fixed;inset:0;width:100%;height:100%;display:block;';
+  document.body.appendChild(canvas);
+  const ctx = canvas.getContext('2d');
+  let W = 0, H = 0, DPR = 1;
+  function resize() {
+    DPR = Math.min(window.devicePixelRatio || 1, 2);
+    W = innerWidth; H = innerHeight;
+    canvas.width = W * DPR; canvas.height = H * DPR;
+    ctx.setTransform(DPR, 0, 0, DPR, 0, 0);
+  }
+  addEventListener('resize', resize); resize();
+  const cx = () => W / 2, cy = () => H / 2;
+
+  // ---------- 摄像机：始终跟随餐车（吸血鬼幸存者式自由移动 + 世界滚动） ----------
+  const cam = { x: 0, y: 0 };
+  function project(wx, wy, z) {
+    const rx = wx - cam.x, ry = wy - cam.y;
+    return [cx() + (rx - ry) * 0.5, cy() + (rx + ry) * 0.25 - (z || 0)];
+  }
+  function screenToWorldDelta(dsx, dsy) { return [dsx + 2 * dsy, -dsx + 2 * dsy]; }
+  function screenToWorldPoint(sx, sy) { const d = screenToWorldDelta(sx - cx(), sy - cy()); return [cam.x + d[0], cam.y + d[1]]; }
+  function fillPoly(pts, color) {
+    ctx.beginPath(); ctx.moveTo(pts[0][0], pts[0][1]);
+    for (let i = 1; i < pts.length; i++) ctx.lineTo(pts[i][0], pts[i][1]);
+    ctx.closePath(); ctx.fillStyle = color; ctx.fill();
+  }
+  function drawCube(wx, wy, s, h, col, z) {
+    const hs = s / 2, zb = z || 0;
+    const a = project(wx - hs, wy - hs, zb), b = project(wx + hs, wy - hs, zb),
+          c = project(wx + hs, wy + hs, zb), d = project(wx - hs, wy + hs, zb);
+    const up = p => [p[0], p[1] - h];
+    fillPoly([up(d), up(c), c, d], col.dark);
+    fillPoly([up(b), up(c), c, b], col.base);
+    fillPoly([up(a), up(b), up(c), up(d)], col.light);
+    ctx.strokeStyle = 'rgba(0,0,0,.18)'; ctx.lineWidth = 1; ctx.lineJoin = 'round';
+    ctx.beginPath(); ctx.moveTo(up(a)[0], up(a)[1]);
+    [up(b), up(c), up(d)].forEach(p => ctx.lineTo(p[0], p[1]));
+    ctx.closePath(); ctx.stroke();
+  }
+  function shadow(wx, wy, rx) {
+    const p = project(wx, wy, 0);
+    ctx.save(); ctx.globalAlpha = 0.26; ctx.fillStyle = '#000';
+    ctx.beginPath(); ctx.ellipse(p[0], p[1], rx, rx * 0.5, 0, 0, Math.PI * 2); ctx.fill();
+    ctx.restore();
+  }
+  function groundCircle(wx, wy, r, stroke, fill) {
+    const p = project(wx, wy, 0);
+    ctx.beginPath(); ctx.ellipse(p[0], p[1], r, r * 0.5, 0, 0, Math.PI * 2);
+    if (fill) { ctx.fillStyle = fill; ctx.fill(); }
+    if (stroke) { ctx.strokeStyle = stroke; ctx.lineWidth = 2; ctx.stroke(); }
+  }
+
+  // ---------- 运行时状态 ----------
+  const truck = { x: 0, y: 0, hp: CFG.truck.maxHp, maxHp: CFG.truck.maxHp, facing: { x: 0, y: -1 }, bob: 0, hurtFlash: 0 };
+  const enemies = [], shots = [], zones = [], beams = [], pickups = [], floaters = [], enemyShots = [], telegraphs = [], particles = [];
+  const owned = [];           // 装备的武器（整局保留）[{def, level, cd, golden}]
+  const ownedItems = {};      // id -> 层数（整局保留）
+  const activeBuffs = [];     // {def, t}
+  let boss = null, encounter = null, spawnTimer = 0;
+
+  // 打击感：屏幕震动 / 顿帧 / 连击 / 受击泛红
+  const fx = { shake: 0, hitstop: 0, combo: 0, comboT: 0, redFlash: 0 };
+  function addShake(m) { fx.shake = Math.min(30, fx.shake + m); }
+  function hitstop(t) { fx.hitstop = Math.max(fx.hitstop, t); }
+  // 移动端自适应缩放系数（基于较短边）
+  function uiScale() { return Math.max(0.62, Math.min(1, Math.min(W, H) / 760)); }
+  const SS = '"Segoe UI Emoji","Apple Color Emoji",system-ui,sans-serif';
+
+  const game = {
+    phase: 'start',           // start | map | battle | reward | event | win | lose
+    paused: false, over: false, won: false,
+    level: 1, xp: 0, xpNeed: P.xpBase, pendingLevels: 0,
+    kills: 0, score: 0, time: 0,
+    afterReward: null, levelOpts: {}
+  };
+  // 整局元进度（节点地图 / 事件改写）
+  const run = { actIdx: 0, floor: 0, nodeIdx: 0, act: null, pending: null, maxHpMul: 1, enemySpeedMul: 1 };
+
+  // ---------- 属性聚合 ----------
+  let STATS = {};
+  function computeStats() {
+    const s = {
+      damage: 1, area: 1, projSpeed: 1, projAdd: 0, pierceAdd: 0, duration: 1,
+      haste: 0, moveSpeed: 1, maxHp: CFG.truck.maxHp, regen: CFG.truck.regen,
+      pickup: 78, crit: 0.05, critMult: 2, armor: 0, luck: 0, xpGain: 1, dodge: 0,
+      invincible: false, lifesteal: false, magnet: false, onHitBurn: false, onHitSlow: false,
+      thorns: false, scoreX2: false, onHitChain: false, knockback: false, enemySlow: 1
+    };
+    for (const id in ownedItems) { const m = iById(id).mod, n = ownedItems[id]; for (const k in m) s[k] += m[k] * n; }
+    for (const ab of activeBuffs) {
+      const m = ab.def.mod;
+      if (m) for (const k in m) s[k] += m[k];
+      if (ab.def.flag) { if (ab.def.flag === 'enemySlow') s.enemySlow = 0.4; else if (ab.def.flag !== 'fullHeal') s[ab.def.flag] = true; }
+    }
+    s.maxHp *= run.maxHpMul;
+    STATS = s; truck.maxHp = s.maxHp; if (truck.hp > truck.maxHp) truck.hp = truck.maxHp;
+  }
+  function wp(w) {
+    const d = w.def, lv = w.level, s = STATS, g = w.golden ? 2 : 1;
+    return {
+      dmg: d.dmg * (1 + 0.16 * (lv - 1)) * s.damage * g,
+      cd: (d.cd || 1) * (1 - Math.min(0.55, 0.05 * (lv - 1))) * Math.max(0.35, 1 - s.haste),
+      count: (d.count || 1) + Math.floor((lv - 1) * (d.countGrow || 0)) + s.projAdd,
+      speed: (d.speed || 420) * s.projSpeed,
+      pierce: (d.pierce || 0) + s.pierceAdd,
+      radius: (d.radius || 14) * (1 + 0.08 * (lv - 1)) * s.area,
+      range: (d.range || 160) * (1 + 0.07 * (lv - 1)) * s.area,
+      angle: (d.angle || 60), el: d.el || 'none', knock: (d.knock || 0)
+    };
+  }
+
+  // ---------- 输入 ----------
+  const keys = {};
+  addEventListener('keydown', e => { keys[(e.key || '').toLowerCase()] = true; });
+  addEventListener('keyup', e => { keys[(e.key || '').toLowerCase()] = false; });
+  let mouse = null;
+  canvas.addEventListener('pointermove', e => { if (mouse) { mouse.sx = e.clientX; mouse.sy = e.clientY; } });
+  canvas.addEventListener('pointerdown', e => { onPointerDown(e.clientX, e.clientY); mouse = { sx: e.clientX, sy: e.clientY, held: true }; });
+  canvas.addEventListener('pointerup', () => { if (mouse) mouse.held = false; });
+
+  function onPointerDown(sx, sy) {
+    if (game.phase === 'map') { mapClick(sx, sy); }
+    else if (game.phase === 'win' || game.phase === 'lose') { /* 由结算按钮处理 */ }
+  }
+
+  // ---------- 伤害 / 状态 ----------
+  function killEnemy(e, idx) {
+    const def = e.def;
+    game.kills++; game.score += (def.xp || 1) * 10 * (STATS.scoreX2 ? 2 : 1);
+    fx.combo++; fx.comboT = 2.6;
+    pickups.push({ x: e.x, y: e.y, type: 'xp', val: def.xp || 1, t: 0 });
+    const luck = STATS.luck;
+    if (Math.random() < 0.03 + luck * 0.008) pickups.push({ x: e.x, y: e.y, type: 'heal', val: 14, t: 0 });
+    if (Math.random() < 0.018 + luck * 0.006) pickups.push({ x: e.x, y: e.y, type: 'buff', buff: randBuff(), t: 0 });
+    if (Math.random() < 0.5) pickups.push({ x: e.x, y: e.y, type: 'gold', val: 1, t: 0 });
+    const c = PAL[def.color];
+    burst(e.x, e.y, c.light, e.isBoss ? 40 : 8, true);
+    ring(e.x, e.y, e.isBoss ? 200 : 26 * (e.size || def.size), c.light);
+    if (e.isBoss) { boss = null; encounter && (encounter.bossCleared = true); addShake(26); hitstop(0.12); for (let k = 0; k < 5; k++) ring(e.x, e.y, 60 + k * 50, c.light); }
+    else { addShake(e.elite ? 9 : 1.6); if (e.elite) hitstop(0.05); }
+    if (e.elite) { applyBuff(randBuff()); pickups.push({ x: e.x, y: e.y, type: 'heal', val: 16, t: 0 }); }
+    enemies.splice(idx != null && idx >= 0 ? idx : enemies.indexOf(e), 1);
+  }
+  function hitEnemy(e, baseDmg, opt) {
+    opt = opt || {};
+    let dmg = baseDmg, crit = false;
+    if (Math.random() < STATS.crit) { dmg *= STATS.critMult; crit = true; }
+    dmg = Math.round(dmg); e.hp -= dmg;
+    e.flash = 1; // 受击白闪
+    floaters.push({ x: e.x, y: e.y - 6, txt: '' + dmg, crit, life: crit ? 0.85 : 0.55, sc: 0 });
+    burst(e.x, e.y, '#fff', crit ? 5 : 2, true);
+    if (crit) { addShake(3); }
+    let el = opt.el || 'none';
+    if (STATS.onHitBurn && el === 'none') el = 'fire';
+    if (STATS.onHitSlow && el === 'none') el = 'ice';
+    if (el === 'fire') { e.burnT = 3 * STATS.duration; e.burnDps = Math.max(e.burnDps || 0, 8 * STATS.damage); }
+    else if (el === 'ice') { e.slowT = Math.max(e.slowT || 0, 2 * STATS.duration); }
+    else if (el === 'poison') { e.poiT = 3 * STATS.duration; e.poiDps = Math.max(e.poiDps || 0, 5 * STATS.damage); }
+    else if (el === 'shock') { e.stunT = Math.max(e.stunT || 0, 0.4); }
+    const kb = opt.knock || (STATS.knockback ? 18 : 0);
+    if (kb && !e.isBoss) { const dx = e.x - (opt.sx != null ? opt.sx : truck.x), dy = e.y - (opt.sy != null ? opt.sy : truck.y), l = Math.hypot(dx, dy) || 1; e.x += dx / l * kb; e.y += dy / l * kb; }
+    if (STATS.lifesteal) heal(dmg * 0.12);
+    if (STATS.onHitChain && Math.random() < 0.35) {
+      let best = null, bd = 16000; for (const o of enemies) { if (o === e) continue; const dd = (o.x - e.x) ** 2 + (o.y - e.y) ** 2; if (dd < bd) { bd = dd; best = o; } }
+      if (best) { best.hp -= dmg * 0.5; spark(e.x, e.y, best.x, best.y); if (best.hp <= 0) killEnemy(best); }
+    }
+    if (e.hp <= 0) killEnemy(e);
+  }
+  function heal(v) { truck.hp = Math.min(truck.maxHp, truck.hp + v); }
+  function damageTruck(v) {
+    if (STATS.invincible) return;
+    if (Math.random() < STATS.dodge) { floaters.push({ x: truck.x, y: truck.y - 20, txt: '闪避', crit: false, life: 0.5, good: true }); return; }
+    if (v > 3) v = Math.max(1, v - STATS.armor);
+    truck.hp -= v; truck.hurtFlash = 0.2;
+    if (v > 3) { addShake(Math.min(18, 5 + v * 0.4)); fx.redFlash = Math.min(0.7, fx.redFlash + v * 0.03); }
+    if (truck.hp <= 0) { truck.hp = 0; addShake(28); loseRun(); }
+  }
+
+  // ---------- 粒子 / 特效 ----------
+  function burst(x, y, color, n, glow) { for (let i = 0; i < n; i++) { const a = Math.random() * 6.28, sp = 40 + Math.random() * 110; particles.push({ x, y, vx: Math.cos(a) * sp, vy: Math.sin(a) * sp, color, life: 0.35 + Math.random() * 0.35, z: 8, glow: !!glow, sz: 2 + Math.random() * 2 }); } }
+  function spark(x1, y1, x2, y2) { particles.push({ line: [x1, y1, x2, y2], color: '#fde047', life: 0.12, z: 10, glow: true }); }
+  function ring(x, y, r, color) { particles.push({ ring: true, x, y, r0: 6, r, color, life: 0.34, z: 6 }); }
+  function muzzle(x, y, color) { particles.push({ x, y, vx: 0, vy: 0, color, life: 0.12, z: 18, glow: true, sz: 6 }); }
+
+  // ============================================================================
+  //  武器开火（数据驱动原型）
+  // ============================================================================
+  function spawnShot(o) { shots.push(Object.assign({ hitSet: new Set(), spin: 0, life: 3, t: 0 }, o)); }
+  function nearestEnemies(n) { return enemies.map(e => ({ e, d: (e.x - truck.x) ** 2 + (e.y - truck.y) ** 2 })).sort((a, b) => a.d - b.d).slice(0, n).map(o => o.e); }
+  function faceToward(t) { if (!t) return; const dx = t.x - truck.x, dy = t.y - truck.y, l = Math.hypot(dx, dy) || 1; truck.facing = { x: dx / l, y: dy / l }; }
+  function facingAngle() { return Math.atan2(truck.facing.y, truck.facing.x); }
+
+  function fireWeapon(w) {
+    const p = wp(w), k = w.def.kind;
+    if (k !== 'orbit' && k !== 'aura' && k !== 'mine' && k !== 'drop') muzzle(truck.x, truck.y, EL[p.el].light);
+    if (k === 'nearest' || k === 'homing') {
+      const tg = nearestEnemies(p.count);
+      for (let i = 0; i < p.count; i++) {
+        const t = tg[i % Math.max(1, tg.length)]; let vx, vy;
+        if (t) { const dx = t.x - truck.x, dy = t.y - truck.y, l = Math.hypot(dx, dy) || 1; vx = dx / l; vy = dy / l; }
+        else { const a = Math.random() * 6.28; vx = Math.cos(a); vy = Math.sin(a); }
+        spawnShot({ x: truck.x, y: truck.y, vx: vx * p.speed, vy: vy * p.speed, dmg: p.dmg, pierce: p.pierce, radius: p.radius, el: p.el, knock: p.knock, homing: k === 'homing', target: t });
+      }
+      faceToward(tg[0]);
+    } else if (k === 'spread') {
+      const baseA = facingAngle(), spread = (w.def.spread || 40) * Math.PI / 180;
+      for (let i = 0; i < p.count; i++) { const off = p.count > 1 ? (i / (p.count - 1) - 0.5) * spread : 0, a = baseA + off; spawnShot({ x: truck.x, y: truck.y, vx: Math.cos(a) * p.speed, vy: Math.sin(a) * p.speed, dmg: p.dmg, pierce: p.pierce, radius: p.radius, el: p.el }); }
+    } else if (k === 'random') {
+      for (let i = 0; i < p.count; i++) { const a = Math.random() * 6.28; spawnShot({ x: truck.x, y: truck.y, vx: Math.cos(a) * p.speed, vy: Math.sin(a) * p.speed, dmg: p.dmg, pierce: p.pierce, radius: p.radius, el: p.el, bounce: w.def.bounce, life: 2.4 }); }
+    } else if (k === 'boomerang') {
+      const tg = nearestEnemies(1)[0], a = tg ? Math.atan2(tg.y - truck.y, tg.x - truck.x) : facingAngle();
+      spawnShot({ x: truck.x, y: truck.y, vx: Math.cos(a) * p.speed, vy: Math.sin(a) * p.speed, dmg: p.dmg, pierce: 99, radius: p.radius, el: p.el, boomerang: true, phase: 'out', life: 4 });
+    } else if (k === 'chain') {
+      const tg = nearestEnemies(1)[0], a = tg ? Math.atan2(tg.y - truck.y, tg.x - truck.x) : facingAngle();
+      spawnShot({ x: truck.x, y: truck.y, vx: Math.cos(a) * p.speed, vy: Math.sin(a) * p.speed, dmg: p.dmg, pierce: 0, radius: p.radius, el: p.el, homing: true, target: tg, chains: (w.def.chains || 3), life: 2.5 });
+    } else if (k === 'beam' || k === 'whip') {
+      const dirs = k === 'whip' ? [0, Math.PI] : [null];
+      for (const dd of dirs) {
+        const tg = nearestEnemies(1)[0], a = dd != null ? dd : (tg ? Math.atan2(tg.y - truck.y, tg.x - truck.x) : facingAngle());
+        const wid = (w.def.width || 30) * STATS.area, hw = wid / 2, ca = Math.cos(a), sa = Math.sin(a);
+        beams.push({ x: truck.x, y: truck.y, a, len: p.range, w: wid, life: 0.18, color: EL[p.el].base });
+        for (const e of enemies.slice()) { const rx = e.x - truck.x, ry = e.y - truck.y, along = rx * ca + ry * sa, perp = -rx * sa + ry * ca; if (along > 0 && along < p.range && Math.abs(perp) < hw + 14 * e.def.size) hitEnemy(e, p.dmg, { el: p.el, sx: truck.x, sy: truck.y }); }
+      }
+    } else if (k === 'cone') {
+      const baseA = facingAngle(), half = p.angle * Math.PI / 180 / 2;
+      beams.push({ x: truck.x, y: truck.y, a: baseA, len: p.range, w: 0, cone: p.angle, life: 0.16, color: EL[p.el].base });
+      for (const e of enemies.slice()) { const dx = e.x - truck.x, dy = e.y - truck.y, d = Math.hypot(dx, dy); if (d < p.range) { let da = Math.atan2(dy, dx) - baseA; while (da > Math.PI) da -= 6.28; while (da < -Math.PI) da += 6.28; if (Math.abs(da) < half) hitEnemy(e, p.dmg, { el: p.el, sx: truck.x, sy: truck.y }); } }
+    } else if (k === 'nova') {
+      zones.push({ x: truck.x, y: truck.y, mode: 'ring', r: 10, maxR: p.radius, dmg: p.dmg, el: p.el, hitSet: new Set(), life: 1 });
+    } else if (k === 'lob') {
+      const tg = nearestEnemies(1)[0], tx = tg ? tg.x : truck.x + (Math.random() - .5) * 220, ty = tg ? tg.y : truck.y + (Math.random() - .5) * 220;
+      shots.push({ lob: true, x: truck.x, y: truck.y, sx: truck.x, sy: truck.y, tx, ty, t: 0, dur: 0.6, dmg: p.dmg, radius: p.radius, el: p.el, hitSet: new Set() });
+    } else if (k === 'drop') {
+      const tg = nearestEnemies(1)[0], tx = tg ? tg.x : truck.x, ty = tg ? tg.y : truck.y;
+      zones.push({ x: tx, y: ty, mode: 'patch', r: p.radius, dmg: p.dmg, el: p.el, interval: (w.def.interval || 0.5), timer: 0, life: (w.def.life || 3) * STATS.duration });
+    } else if (k === 'mine') {
+      const a = Math.random() * 6.28, dist = 60 + Math.random() * 120;
+      zones.push({ x: truck.x + Math.cos(a) * dist, y: truck.y + Math.sin(a) * dist, mode: 'mine', r: p.radius, dmg: p.dmg, el: p.el, life: 8 });
+    }
+  }
+
+  function syncOrbiters(w) { const c = wp(w).count; w.orbiters = []; for (let i = 0; i < c; i++) w.orbiters.push({ a: i / c * 6.28, cdMap: new Map() }); }
+  function updatePersistent(dt) {
+    for (const w of owned) {
+      const k = w.def.kind, p = wp(w);
+      if (k === 'orbit') {
+        if (!w.orbiters || w.orbiters.length !== p.count) syncOrbiters(w);
+        for (const ob of w.orbiters) {
+          ob.a += dt * 2.4; const ox = truck.x + Math.cos(ob.a) * p.radius, oy = truck.y + Math.sin(ob.a) * p.radius; ob.x = ox; ob.y = oy;
+          for (const e of enemies.slice()) { const cd = ob.cdMap.get(e) || 0; if (cd <= 0 && Math.hypot(e.x - ox, e.y - oy) < 18 + 14 * e.def.size) { hitEnemy(e, p.dmg, { el: p.el, knock: p.knock, sx: ox, sy: oy }); ob.cdMap.set(e, 0.5); } else if (cd > 0) ob.cdMap.set(e, cd - dt); }
+        }
+      } else if (k === 'aura') {
+        w.tick = (w.tick || 0) + dt; const iv = w.def.interval || 0.4;
+        if (w.tick >= iv) { w.tick -= iv; for (const e of enemies.slice()) if (Math.hypot(e.x - truck.x, e.y - truck.y) < p.radius) hitEnemy(e, p.dmg, { el: p.el, sx: truck.x, sy: truck.y }); }
+      }
+    }
+  }
+
+  // ============================================================================
+  //  节点地图（杀戮尖塔式）
+  // ============================================================================
+  const NODE_ICON = { start: '🚚', battle: '⚔️', elite: '💀', event: '❓', treasure: '🎁', rest: '🏕️', boss: '👹' };
+  function nodeType(floor) {
+    const r = Math.random();
+    if (floor === 1) return r < 0.7 ? 'battle' : (r < 0.85 ? 'event' : 'treasure');
+    if (r < 0.42) return 'battle';
+    if (r < 0.60) return 'event';
+    if (r < 0.74) return 'treasure';
+    if (r < 0.86) return 'rest';
+    return 'elite';
+  }
+  function genAct(idx) {
+    run.actIdx = idx; run.floor = 0; run.nodeIdx = 0;
+    const F = P.floorsPerAct, floors = [];
+    const mk = (col, type, floor) => ({ col, type, floor, cleared: false, edges: [], event: Math.random() < 0.5 ? 'ximi' : 'wuxin' });
+    floors.push([mk(1.5, 'start', 0)]);
+    for (let f = 1; f <= F; f++) { const n = 2 + (Math.random() * 2 | 0), row = []; for (let i = 0; i < n; i++) row.push(mk((i + 0.5) * (3 / n), nodeType(f), f)); floors.push(row); }
+    floors.push([mk(1.5, 'boss', F + 1)]);
+    for (let f = 0; f < floors.length - 1; f++) {
+      const cur = floors[f], nxt = floors[f + 1];
+      for (const node of cur) { const sorted = nxt.map((nn, j) => ({ j, d: Math.abs(nn.col - node.col) })).sort((a, b) => a.d - b.d); const k = 1 + (Math.random() < 0.45 ? 1 : 0); for (let m = 0; m < Math.min(k, sorted.length); m++) if (!node.edges.includes(sorted[m].j)) node.edges.push(sorted[m].j); }
+      for (let j = 0; j < nxt.length; j++) { if (!cur.some(nd => nd.edges.includes(j))) { let best = 0, bd = 1e9; cur.forEach((nd, ci) => { const d = Math.abs(nd.col - nxt[j].col); if (d < bd) { bd = d; best = ci; } }); cur[best].edges.push(j); } }
+    }
+    floors[0][0].cleared = true; run.act = { floors }; game.phase = 'map'; game.paused = false;
+  }
+  function reachableNodes() { const f = run.act.floors, cur = f[run.floor][run.nodeIdx]; if (run.floor + 1 >= f.length) return []; return cur.edges.map(j => f[run.floor + 1][j]); }
+  function mapClick(sx, sy) {
+    for (const node of reachableNodes()) { if (node.sx != null && Math.hypot(sx - node.sx, sy - node.sy) < 32) { enterNode(node); return; } }
+  }
+  function enterNode(node) {
+    run.pending = node;
+    if (node.type === 'rest') { heal(truck.maxHp * 0.30); banner('🏕️ 路边小憩', '恢复 30% 生命', '#22c55e'); setTimeout2(() => advanceNode(node)); }
+    else if (node.type === 'treasure') { rewardThen(node, { itemOnly: true, title: '🎁 发现补给箱' }); }
+    else if (node.type === 'event') { openEvent(node); }
+    else startEncounter(node.type, node);
+  }
+  // 用一帧延时把"立即结算型节点"过渡回地图，避免点击同帧重入
+  let _deferred = null;
+  function setTimeout2(fn) { _deferred = fn; }
+  function advanceNode(node) {
+    node.cleared = true; const floors = run.act.floors;
+    run.floor = node.floor; run.nodeIdx = floors[node.floor].indexOf(node);
+    if (node.type === 'boss') nextAct(); else { game.phase = 'map'; game.paused = false; }
+  }
+  function nextAct() {
+    if (run.actIdx + 1 >= P.acts) { game.won = true; game.over = true; game.phase = 'win'; showEnd(); }
+    else { genAct(run.actIdx + 1); banner('🌆 进入第 ' + (run.actIdx + 1) + ' 区', '', '#fb923c'); }
+  }
+
+  // ---------- 战斗遭遇 ----------
+  function depth() { return run.actIdx * (P.floorsPerAct + 1) + run.floor; }
+  function startEncounter(type, node) {
+    [enemies, shots, zones, beams, pickups, floaters, enemyShots, telegraphs, particles].forEach(a => a.length = 0);
+    truck.x = 0; truck.y = 0; cam.x = 0; cam.y = 0; boss = null; spawnTimer = 0;
+    game.phase = 'battle'; game.paused = false;
+    const dur = type === 'elite' ? P.surviveElite : P.surviveBattle;
+    encounter = { type, timer: type === 'boss' ? Infinity : dur, t: 0, bossCleared: false };
+    if (type === 'boss') startBoss(run.actIdx);
+    if (type === 'elite') spawnElite();
+    const names = { battle: '⚔️ 街头遭遇战', elite: '💀 精英来袭', boss: '👹 BOSS 战' };
+    banner(names[type], type === 'boss' ? BOSSES[run.actIdx].name : '坚持 ' + Math.round(dur) + ' 秒！', type === 'boss' ? '#f87171' : '#fde047');
+  }
+  function winEncounter() {
+    if (game.phase !== 'battle') return;
+    const node = run.pending, type = encounter.type;
+    if (type === 'elite') { heal(truck.maxHp * 0.10); }
+    if (type === 'boss') { heal(truck.maxHp * 0.15); game.score += 500; }
+    encounter = null;
+    rewardThen(node, { title: type === 'boss' ? '🏆 击败 Boss！选取战利品' : '✅ 遭遇通过！' });
+  }
+  function loseRun() { game.over = true; game.won = false; game.phase = 'lose'; showEnd(); }
+
+  function rewardThen(node, opts) {
+    game.levelOpts = opts || {}; game.afterReward = () => advanceNode(node);
+    game.pendingLevels++; openLevelUp();
+  }
+
+  function spawnElite() {
+    const def = Object.assign({}, CFG.enemies.brute), hp = def.hp * 6;
+    enemies.push({ x: truck.x, y: truck.y - 400, def, type: 'brute', elite: true, hp, maxHp: hp, size: 1.6, bob: 0, weave: 0 });
+  }
+
+  // ============================================================================
+  //  刷怪（遭遇内，随深度缩放，始终围绕餐车/摄像机）
+  // ============================================================================
+  function pickEnemyType() {
+    const d = depth(), r = Math.random();
+    if (d >= 14 && r < 0.16) return 'brute';
+    if (d >= 9 && r < 0.30) return 'bat';
+    if (d >= 5 && r < 0.46) return 'crab';
+    if (d >= 2 && r < 0.62) return 'runner';
+    return 'slime';
+  }
+  function hpScaleNow() { return 1 + 0.09 * depth() + run.actIdx * 0.46; }      // 怪物血量随深度/区域增长
+  function touchScale() { return 1 + run.actIdx * 0.23; }                      // 接触伤害随区域增长
+  function bossDmgScale() { return 1 + run.actIdx * 0.20; }                    // Boss 技能伤害随区域增长
+  function enemySpeedScale() { return 1 + run.actIdx * 0.09; }                 // 怪物移速随区域增长（越后越难逃）
+  function spawnEnemy(type) {
+    type = type || pickEnemyType();
+    const def = CFG.enemies[type], ang = Math.random() * 6.28, r = A.spawnRingR + Math.random() * 110;
+    const hp = def.hp * hpScaleNow();
+    enemies.push({ x: truck.x + Math.cos(ang) * r, y: truck.y + Math.sin(ang) * r, def, type, hp, maxHp: hp, bob: Math.random() * 6.28, weave: Math.random() * 6.28 });
+  }
+  function startBoss(tier) {
+    const def = BOSSES[tier];
+    boss = { x: truck.x, y: truck.y - 480, def: { color: def.color, size: def.size, touch: def.touch, xp: 60, speed: def.speed }, bossDef: def, isBoss: true, hp: def.hp, maxHp: def.hp, size: def.size, bob: 0, atkTimer: 1.6, patIdx: 0 };
+    enemies.push(boss);
+  }
+  function updateBoss(e, dt) {
+    if (e.dashWind > 0) { e.dashWind -= dt; if (e.dashWind <= 0) { e.dashT = 0.5; addShake(6); } }
+    if (e.dashT > 0) return; // 冲锋中由主循环驱动位移
+    e.atkTimer -= dt;
+    if (e.atkTimer <= 0) {
+      const ds = bossDmgScale(), pats = e.bossDef.patterns, pat = pats[e.patIdx % pats.length]; e.patIdx++; e.atkTimer = Math.max(1.2, 2.5 - run.actIdx * 0.13) + Math.random() * 1.2;
+      if (pat === 'slam') telegraphs.push({ x: truck.x, y: truck.y, r: 100, t: 1.15, dmg: 24 * ds });
+      else if (pat === 'rings') for (let k = 0; k < 3; k++) { const a = Math.random() * 6.28, dist = 90 + k * 78; telegraphs.push({ x: truck.x + Math.cos(a) * dist, y: truck.y + Math.sin(a) * dist, r: 74, t: 0.95 + k * 0.25, dmg: 18 * ds }); }
+      else if (pat === 'frostnova') { telegraphs.push({ x: e.x, y: e.y, r: 250, t: 1.25, dmg: 16 * ds }); for (const o of enemies) if (!o.isBoss) o.slowT = 3; }
+      else if (pat === 'spray') { const n = 14 + run.actIdx * 2, sp = 195 + run.actIdx * 10; for (let k = 0; k < n; k++) { const a = k / n * 6.28 + e.patIdx * 0.3; enemyShots.push({ x: e.x, y: e.y, vx: Math.cos(a) * sp, vy: Math.sin(a) * sp, dmg: 12 * ds, color: e.bossDef.color2, t: 0 }); } }
+      else if (pat === 'summon') { const n = 3 + Math.min(4, run.actIdx); for (let k = 0; k < n; k++) spawnEnemy('runner'); }
+      else if (pat === 'charge') { const dx = truck.x - e.x, dy = truck.y - e.y, l = Math.hypot(dx, dy) || 1; e.dashDir = { x: dx / l, y: dy / l }; e.dashWind = 0.6; e.atkTimer = 1.8; for (let k = 1; k <= 4; k++) telegraphs.push({ x: e.x + dx / l * k * 130, y: e.y + dy / l * k * 130, r: 76, t: 0.6 + 0.05 * k, dmg: 22 * ds }); }
+    }
+  }
+
+  // ============================================================================
+  //  经验 / 升级三选一
+  // ============================================================================
+  function gainXp(v) {
+    game.xp += v * STATS.xpGain;
+    while (game.xp >= game.xpNeed) { game.xp -= game.xpNeed; game.level++; game.xpNeed = Math.round(P.xpBase * Math.pow(P.xpGrow, game.level - 1)); game.pendingLevels++; }
+    if (game.pendingLevels > 0 && !game.paused) openLevelUp();
+  }
+  function buildChoices() {
+    const itemOnly = game.levelOpts && game.levelOpts.itemOnly, pool = [];
+    if (!itemOnly) {
+      for (const w of owned) if (w.level < P.weaponMax) pool.push({ type: 'up', def: w.def, w });
+      if (owned.length < P.maxWeapons) for (const d of WEAPONS) if (!owned.find(o => o.def.id === d.id)) pool.push({ type: 'new', def: d });
+    }
+    for (const it of ITEMS) { const n = ownedItems[it.id] || 0; if (n < P.itemCap && (n > 0 || Object.keys(ownedItems).length < P.maxItems)) pool.push({ type: 'item', def: it, n }); }
+    for (let i = pool.length - 1; i > 0; i--) { const j = (Math.random() * (i + 1)) | 0;[pool[i], pool[j]] = [pool[j], pool[i]]; }
+    const picks = []; const upFirst = !itemOnly && pool.find(c => c.type === 'up');
+    if (upFirst && Math.random() < 0.55) picks.push(upFirst);
+    for (const c of pool) { if (picks.length >= 3) break; if (!picks.includes(c)) picks.push(c); }
+    return picks.slice(0, 3);
+  }
+  function applyChoice(c) {
+    if (c.type === 'new') { const w = { def: c.def, level: 1, cd: 0 }; owned.push(w); if (c.def.kind === 'orbit') syncOrbiters(w); }
+    else if (c.type === 'up') c.w.level++;
+    else if (c.type === 'item') ownedItems[c.def.id] = (ownedItems[c.def.id] || 0) + 1;
+    computeStats();
+    for (const w of owned) if (w.def.kind === 'orbit' && (!w.orbiters || w.orbiters.length !== wp(w).count)) syncOrbiters(w);
+  }
+
+  // ============================================================================
+  //  DOM 覆盖层
+  // ============================================================================
+  const overlay = document.createElement('div');
+  overlay.style.cssText = 'position:fixed;inset:0;display:none;align-items:center;justify-content:center;z-index:10;background:rgba(2,6,23,.82);backdrop-filter:blur(2px);';
+  document.body.appendChild(overlay);
+  function showOverlay(html) { overlay.innerHTML = html; overlay.style.display = 'flex'; }
+  function hideOverlay() { overlay.style.display = 'none'; overlay.innerHTML = ''; }
+
+  function openLevelUp() {
+    if (game.over) return;
+    game.paused = true;
+    const choices = buildChoices();
+    if (!choices.length) { closeLevelUp(); return; }
+    const opts = game.levelOpts || {};
+    const card = (c, i) => {
+      let tag, name, emoji, desc, lvl = '';
+      if (c.type === 'new') { tag = '新技能'; emoji = c.def.emoji; name = c.def.name; desc = c.def.desc; }
+      else if (c.type === 'up') { tag = '升级'; emoji = c.def.emoji; name = c.def.name; desc = c.def.desc; lvl = 'Lv.' + c.w.level + ' → ' + (c.w.level + 1); }
+      else { tag = '道具'; emoji = c.def.emoji; name = c.def.name; desc = c.def.desc; lvl = (c.n ? '已有 ×' + c.n : ''); }
+      const tagColor = c.type === 'new' ? 'bg-orange-500' : c.type === 'up' ? 'bg-emerald-500' : 'bg-sky-500';
+      return `<div class="lvlcard pop cursor-pointer rounded-2xl bg-slate-800 border-2 border-slate-700 p-5 w-56 text-center" data-i="${i}" style="animation-delay:${i * 0.06}s">
+        <div class="text-xs ${tagColor} text-white inline-block px-2 py-0.5 rounded-full mb-2">${tag}</div>
+        <div class="text-5xl mb-2">${emoji}</div>
+        <div class="text-lg font-bold text-white">${name}</div>
+        <div class="text-amber-300 text-sm h-5">${lvl}</div>
+        <div class="text-slate-300 text-sm mt-2 leading-snug">${desc}</div></div>`;
+    };
+    showOverlay(`<div class="text-center">
+      <div class="text-3xl font-extrabold text-amber-400 mb-1 pop">${opts.title || '⬆️ 等级 ' + game.level + '！'}</div>
+      <div class="text-slate-400 mb-6">墩弟翻了翻菜谱，选一样装上餐车</div>
+      <div class="flex gap-4 justify-center flex-wrap">${choices.map(card).join('')}</div></div>`);
+    overlay.querySelectorAll('.lvlcard').forEach(el => el.onclick = () => { applyChoice(choices[+el.dataset.i]); closeLevelUp(); });
+  }
+  function closeLevelUp() {
+    game.pendingLevels = Math.max(0, game.pendingLevels - 1); hideOverlay();
+    if (game.pendingLevels > 0) openLevelUp();
+    else { game.levelOpts = {}; if (game.afterReward) { const cb = game.afterReward; game.afterReward = null; cb(); } else game.paused = false; }
+  }
+
+  function openEvent(node) {
+    game.paused = true;
+    if (node.event === 'ximi') {
+      showOverlay(`<div class="text-center max-w-md px-6 pop">
+        <div class="text-6xl mb-2">🤓</div>
+        <div class="text-2xl font-bold text-sky-400 mb-1">西咪的紧急对齐</div>
+        <div class="text-slate-300 text-sm mb-5">西咪拦下餐车，掏出一摞图纸要求"紧急对齐"修改方案……</div>
+        <div class="flex flex-col gap-3">
+          <button id="evA" class="bg-emerald-600 hover:bg-emerald-500 text-white rounded-xl px-4 py-3 font-bold">配合修改<br><span class="text-xs font-normal opacity-80">最大生命 −20%，但强化一件武器（+2级且黄金，伤害翻倍）</span></button>
+          <button id="evB" class="bg-rose-600 hover:bg-rose-500 text-white rounded-xl px-4 py-3 font-bold">强硬拒绝<br><span class="text-xs font-normal opacity-80">本局接下来怪物移速 +10%</span></button>
+        </div></div>`);
+      overlay.querySelector('#evA').onclick = () => { run.maxHpMul *= 0.8; const best = owned.slice().sort((x, y) => y.level - x.level)[0]; if (best) { best.golden = true; best.level = Math.min(P.weaponMax, best.level + 2); } computeStats(); truck.hp = Math.min(truck.hp, truck.maxHp); resolveEvent(node, '🛠️ 已配合西咪：' + (best ? best.def.name + ' 升阶为黄金' : '获得部件')); };
+      overlay.querySelector('#evB').onclick = () => { run.enemySpeedMul *= 1.1; resolveEvent(node, '😤 拒绝了西咪：怪物变快了'); };
+    } else {
+      const btns = owned.map((w, i) => `<button data-i="${i}" class="evbtn bg-amber-600 hover:bg-amber-500 text-white rounded-xl px-3 py-2 m-1 font-bold">${w.def.emoji} ${w.def.name}${w.golden ? ' ✨' : ''}</button>`).join('');
+      showOverlay(`<div class="text-center max-w-lg px-6 pop">
+        <div class="text-6xl mb-2">🎨</div>
+        <div class="text-2xl font-bold text-amber-400 mb-1">无心的美术大礼包</div>
+        <div class="text-slate-300 text-sm mb-5">无心免费给你的一件武器"升阶"为黄金外观——伤害直接翻倍！选一件：</div>
+        <div class="flex flex-wrap justify-center">${btns || '<div class="text-slate-400">暂无武器</div>'}</div></div>`);
+      overlay.querySelectorAll('.evbtn').forEach(el => el.onclick = () => { const w = owned[+el.dataset.i]; w.golden = true; resolveEvent(node, '✨ ' + w.def.name + ' 升阶为黄金脆皮！伤害翻倍'); });
+      if (!owned.length) resolveEvent(node, '');
+    }
+  }
+  function resolveEvent(node, msg) { hideOverlay(); if (msg) banner(msg, '', '#fde047'); advanceNode(node); }
+
+  function showStart() {
+    showOverlay(`<div class="text-center max-w-lg px-6">
+      <div class="text-6xl mb-3">🚚🐉</div>
+      <div class="text-4xl font-extrabold text-orange-400 mb-2">哈奇深夜餐车</div>
+      <div class="text-slate-300 mb-1">体素龙猫墩弟驾着快餐车冲进被怪物占领的哈奇小镇</div>
+      <div class="text-slate-400 text-sm mb-5">节点地图选路 · 自由驾驶幸存战 · 高热量肉鸽 Build · 8 区 8 Boss</div>
+      <div class="text-slate-400 text-sm mb-6 leading-relaxed"><span class="text-white font-bold">WASD / 方向键 / 按住鼠标</span> 自由驾驶（摄像机跟随）<br>开过去碾过地上的经验与道具，武器自动开火，升级三选一</div>
+      <button id="startBtn" class="bg-orange-500 hover:bg-orange-400 text-white text-xl font-bold px-10 py-3 rounded-full">出摊！</button></div>`);
+    overlay.querySelector('#startBtn').onclick = () => { hideOverlay(); computeStats(); genAct(0); };
+  }
+  function showEnd() {
+    const w = game.won;
+    showOverlay(`<div class="text-center px-6">
+      <div class="text-6xl mb-3">${w ? '🏆🎉' : '🚚💥'}</div>
+      <div class="text-4xl font-extrabold ${w ? 'text-amber-400' : 'text-rose-400'} mb-2">${w ? '通关！满汉全席封王' : '餐车熄火了'}</div>
+      <div class="text-slate-300 mb-1">第 ${run.actIdx + 1} 区 · 击杀 ${game.kills} · 等级 ${game.level} · 分数 ${game.score}</div>
+      <div class="text-slate-400 text-sm my-4">${owned.map(x => x.def.emoji + (x.golden ? '✨' : '') + 'Lv' + x.level).join('  ')}</div>
+      <button id="againBtn" class="bg-orange-500 hover:bg-orange-400 text-white text-xl font-bold px-10 py-3 rounded-full mt-2">再战一局</button></div>`);
+    overlay.querySelector('#againBtn').onclick = () => location.reload();
+  }
+  let bannerObj = null;
+  function banner(title, sub, color) { bannerObj = { title, sub, color: color || '#fde047', t: 2.4 }; }
+
+  function applyBuff(id) {
+    const def = bById(id);
+    if (def.flag === 'fullHeal') { heal(truck.maxHp); banner(def.emoji + ' ' + def.name, '生命全满！', '#22c55e'); return; }
+    const ex = activeBuffs.find(b => b.def.id === id); if (ex) ex.t = def.dur; else activeBuffs.push({ def, t: def.dur });
+    banner(def.emoji + ' ' + def.name, '增益 ' + def.dur + 's', '#a855f7'); computeStats();
+  }
+
+  // ============================================================================
+  //  更新
+  // ============================================================================
+  function update(dt) {
+    if (_deferred) { const fn = _deferred; _deferred = null; fn(); }
+    if (game.phase !== 'battle' || game.paused || game.over) return;
+    computeStats();
+    game.time += dt; truck.bob += dt * 6;
+    if (truck.hurtFlash > 0) truck.hurtFlash -= dt;
+    if (STATS.regen) heal(STATS.regen * dt);
+    for (let i = activeBuffs.length - 1; i >= 0; i--) { activeBuffs[i].t -= dt; if (activeBuffs[i].t <= 0) activeBuffs.splice(i, 1); }
+    if (bannerObj) { bannerObj.t -= dt; if (bannerObj.t <= 0) bannerObj = null; }
+    if (fx.shake > 0) fx.shake = Math.max(0, fx.shake - dt * 60);
+    if (fx.redFlash > 0) fx.redFlash = Math.max(0, fx.redFlash - dt * 1.6);
+    if (fx.comboT > 0) { fx.comboT -= dt; if (fx.comboT <= 0) fx.combo = 0; }
+
+    // --- 自由走位（无边界，摄像机跟随） ---
+    let mx = 0, my = 0;
+    if (keys['w'] || keys['arrowup']) my -= 1;
+    if (keys['s'] || keys['arrowdown']) my += 1;
+    if (keys['a'] || keys['arrowleft']) mx -= 1;
+    if (keys['d'] || keys['arrowright']) mx += 1;
+    const spd = CFG.truck.moveSpeed * STATS.moveSpeed;
+    if (mx || my) { const [wx, wy] = screenToWorldDelta(mx, my), l = Math.hypot(wx, wy) || 1; truck.x += wx / l * spd * dt; truck.y += wy / l * spd * dt; }
+    else if (mouse && mouse.held) { const [wx, wy] = screenToWorldPoint(mouse.sx, mouse.sy); const dx = wx - truck.x, dy = wy - truck.y, d = Math.hypot(dx, dy); if (d > 6) { const st = Math.min(spd * dt, d); truck.x += dx / d * st; truck.y += dy / d * st; } }
+    cam.x = truck.x; cam.y = truck.y; // 摄像机锁定餐车
+
+    // --- 刷怪（Boss 战减量） ---
+    spawnTimer += dt;
+    const interval = Math.max(P.spawnMin - run.actIdx * 0.006, P.spawnBase - depth() * 0.032) * (encounter.type === 'boss' ? 2.0 : 1);
+    if (spawnTimer >= interval && enemies.length < 300) { spawnTimer = 0; const n = 1 + ((Math.random() * Math.min(5, 1.5 + depth() / 3.5)) | 0); for (let i = 0; i < n; i++) spawnEnemy(); }
+
+    // --- 敌人 ---
+    const tScale = touchScale();
+    for (let i = enemies.length - 1; i >= 0; i--) {
+      const e = enemies[i], def = e.def; e.bob += dt * 5;
+      if (e.flash > 0) e.flash = Math.max(0, e.flash - dt * 6);
+      if (e.burnT > 0) { e.burnT -= dt; e.hp -= e.burnDps * dt; if (e.hp <= 0) { killEnemy(e, i); continue; } }
+      if (e.poiT > 0) { e.poiT -= dt; e.hp -= e.poiDps * dt; if (e.hp <= 0) { killEnemy(e, i); continue; } }
+      if (e.slowT > 0) e.slowT -= dt;
+      if (e.stunT > 0) { e.stunT -= dt; continue; }
+      if (!e.isBoss && Math.hypot(e.x - truck.x, e.y - truck.y) > A.despawnR) { enemies.splice(i, 1); continue; }
+      if (e.isBoss) updateBoss(e, dt);
+      // Boss 冲锋：高速沿锁定方向位移
+      if (e.dashT > 0) { e.dashT -= dt; e.x += e.dashDir.x * 560 * dt; e.y += e.dashDir.y * 560 * dt; particles.push({ x: e.x, y: e.y, vx: 0, vy: 0, color: e.bossDef.color2, life: 0.18, z: 6, glow: true, sz: 5 }); }
+      else if (!(e.isBoss && e.dashWind > 0)) {
+        const mul = (e.slowT > 0 ? 0.45 : 1) * STATS.enemySlow * run.enemySpeedMul * (e.isBoss ? 1 : enemySpeedScale());
+        const dx = truck.x - e.x, dy = truck.y - e.y, d = Math.hypot(dx, dy) || 1; let vx = dx / d, vy = dy / d;
+        if (e.type === 'bat') { e.weave += dt * 3; const px = -vy, py = vx; vx += px * Math.sin(e.weave) * 0.6; vy += py * Math.sin(e.weave) * 0.6; }
+        e.x += vx * def.speed * mul * dt; e.y += vy * def.speed * mul * dt;
+      }
+      const dd = Math.hypot(truck.x - e.x, truck.y - e.y);
+      if (dd < (e.isBoss ? 30 * e.size : 24 * (e.size || def.size))) { damageTruck(def.touch * dt * tScale); if (STATS.thorns) { e.hp -= 30 * dt; if (e.hp <= 0) { killEnemy(e, i); continue; } } }
+    }
+
+    // --- 自动开火 ---
+    for (const w of owned) { if (w.def.kind === 'orbit' || w.def.kind === 'aura') continue; w.cd -= dt; if (w.cd <= 0) { w.cd = wp(w).cd; if (enemies.length || w.def.kind === 'nova' || w.def.kind === 'random') fireWeapon(w); } }
+    updatePersistent(dt);
+
+    // --- 飞行物 ---
+    for (let i = shots.length - 1; i >= 0; i--) {
+      const s = shots[i];
+      if (s.lob) { s.t += dt; const k = Math.min(1, s.t / s.dur); s.x = s.sx + (s.tx - s.sx) * k; s.y = s.sy + (s.ty - s.sy) * k; s.z = Math.sin(k * Math.PI) * 90; if (k >= 1) { zones.push({ x: s.tx, y: s.ty, mode: 'ring', r: 8, maxR: s.radius, dmg: s.dmg, el: s.el, hitSet: new Set(), life: 1 }); if (s.el === 'fire' || s.el === 'poison') zones.push({ x: s.tx, y: s.ty, mode: 'patch', r: s.radius * 0.8, dmg: s.dmg * 0.25, el: s.el, interval: 0.4, timer: 0, life: 2.5 * STATS.duration }); burst(s.tx, s.ty, EL[s.el].base, 10); shots.splice(i, 1); } continue; }
+      s.t += dt; s.spin += dt * 16;
+      if (s.homing && s.target && s.target.hp > 0) { const dx = s.target.x - s.x, dy = s.target.y - s.y, l = Math.hypot(dx, dy) || 1, sp = Math.hypot(s.vx, s.vy); s.vx += (dx / l * sp - s.vx) * Math.min(1, dt * 6); s.vy += (dy / l * sp - s.vy) * Math.min(1, dt * 6); }
+      if (s.boomerang) { if (s.phase === 'out' && s.t > 0.55) { s.phase = 'back'; s.hitSet.clear(); } if (s.phase === 'back') { const dx = truck.x - s.x, dy = truck.y - s.y, l = Math.hypot(dx, dy) || 1, sp = Math.hypot(s.vx, s.vy) || 300; s.vx += (dx / l * sp - s.vx) * Math.min(1, dt * 4); s.vy += (dy / l * sp - s.vy) * Math.min(1, dt * 4); if (l < 26) { shots.splice(i, 1); continue; } } }
+      s.x += s.vx * dt; s.y += s.vy * dt;
+      if (s.bounce) { const lim = A.spawnRingR; if (Math.abs(s.x - truck.x) > lim) s.vx *= -1; if (Math.abs(s.y - truck.y) > lim) s.vy *= -1; }
+      for (const e of enemies) {
+        if (s.hitSet.has(e)) continue;
+        if (Math.hypot(e.x - s.x, e.y - s.y) < (s.radius || 10) + 14 * (e.size || e.def.size)) {
+          s.hitSet.add(e); hitEnemy(e, s.dmg, { el: s.el, knock: s.knock, sx: s.x - s.vx * 0.01, sy: s.y - s.vy * 0.01 });
+          if (s.chains != null) { s.chains--; if (s.chains < 0) { shots.splice(i, 1); break; } let best = null, bd = 1e9; for (const o of enemies) { if (s.hitSet.has(o)) continue; const dd = (o.x - s.x) ** 2 + (o.y - s.y) ** 2; if (dd < bd) { bd = dd; best = o; } } s.target = best; if (best) spark(s.x, s.y, best.x, best.y); }
+          else if (!s.boomerang) { s.pierce--; if (s.pierce < 0) { shots.splice(i, 1); break; } }
+        }
+      }
+      if (s.t > (s.life || 3)) shots.splice(i, 1);
+    }
+
+    // --- 区域效果 ---
+    for (let i = zones.length - 1; i >= 0; i--) {
+      const z = zones[i];
+      if (z.mode === 'ring') { z.r += (z.maxR - z.r) * Math.min(1, dt * 8) + dt * 60; if (z.r >= z.maxR) z.r = z.maxR; z.life -= dt * 1.4; for (const e of enemies) { const dd = Math.hypot(e.x - z.x, e.y - z.y); if (!z.hitSet.has(e) && dd < z.r + 12 * (e.size || e.def.size) && dd > z.r - 42) { z.hitSet.add(e); hitEnemy(e, z.dmg, { el: z.el, sx: z.x, sy: z.y, knock: 14 }); } } if (z.life <= 0) zones.splice(i, 1); }
+      else if (z.mode === 'patch') { z.life -= dt; z.timer -= dt; if (z.timer <= 0) { z.timer = z.interval; for (const e of enemies) if (Math.hypot(e.x - z.x, e.y - z.y) < z.r) hitEnemy(e, z.dmg, { el: z.el, sx: z.x, sy: z.y }); } if (z.life <= 0) zones.splice(i, 1); }
+      else if (z.mode === 'mine') { z.life -= dt; let trig = false; for (const e of enemies) if (Math.hypot(e.x - z.x, e.y - z.y) < z.r) { trig = true; break; } if (trig || z.life <= 0) { if (trig) { for (const e of enemies.slice()) if (Math.hypot(e.x - z.x, e.y - z.y) < z.r) hitEnemy(e, z.dmg, { el: z.el, sx: z.x, sy: z.y, knock: 20 }); burst(z.x, z.y, '#fbbf24', 10); } zones.splice(i, 1); } }
+    }
+
+    for (let i = beams.length - 1; i >= 0; i--) { beams[i].life -= dt; if (beams[i].life <= 0) beams.splice(i, 1); }
+    for (let i = particles.length - 1; i >= 0; i--) { const p = particles[i]; p.life -= dt; if (p.vx != null) { p.x += p.vx * dt; p.y += p.vy * dt; p.vx *= 0.92; p.vy *= 0.92; } if (p.life <= 0) particles.splice(i, 1); }
+    for (let i = floaters.length - 1; i >= 0; i--) { const f = floaters[i]; f.life -= dt; f.dy = (f.dy || 0) + dt * 30; if (f.sc != null && f.sc < 1) f.sc = Math.min(1, f.sc + dt * 9); if (f.life <= 0) floaters.splice(i, 1); }
+
+    for (let i = enemyShots.length - 1; i >= 0; i--) { const s = enemyShots[i]; s.x += s.vx * dt; s.y += s.vy * dt; s.t += dt; if (Math.hypot(s.x - truck.x, s.y - truck.y) < 22) { damageTruck(s.dmg); burst(truck.x, truck.y, s.color, 4, true); enemyShots.splice(i, 1); continue; } if (s.t > 4) enemyShots.splice(i, 1); }
+    for (let i = telegraphs.length - 1; i >= 0; i--) { const tg = telegraphs[i]; tg.t -= dt; if (tg.t <= 0) { if (Math.hypot(truck.x - tg.x, truck.y - tg.y) < tg.r) damageTruck(tg.dmg); burst(tg.x, tg.y, '#ef4444', 16, true); ring(tg.x, tg.y, tg.r, '#fca5a5'); addShake(7); telegraphs.splice(i, 1); } }
+
+    // --- 拾取（开过去捡） ---
+    const pr = STATS.pickup;
+    for (let i = pickups.length - 1; i >= 0; i--) {
+      const pk = pickups[i]; pk.t += dt; const dx = truck.x - pk.x, dy = truck.y - pk.y, d = Math.hypot(dx, dy);
+      if (STATS.magnet || d < pr) { const sp = STATS.magnet ? 640 : 340; pk.x += dx / (d || 1) * sp * dt; pk.y += dy / (d || 1) * sp * dt; }
+      if (d < 24) {
+        if (pk.type === 'xp') gainXp(pk.val);
+        else if (pk.type === 'heal') { heal(pk.val); floaters.push({ x: truck.x, y: truck.y - 20, txt: '+' + pk.val, crit: false, life: 0.6, good: true }); }
+        else if (pk.type === 'gold') game.score += 5 * (STATS.scoreX2 ? 2 : 1);
+        else if (pk.type === 'buff') applyBuff(pk.buff);
+        pickups.splice(i, 1);
+      }
+    }
+
+    // --- 遭遇目标判定 ---
+    if (encounter) {
+      if (encounter.type === 'boss') { if (encounter.bossCleared) winEncounter(); }
+      else { encounter.timer -= dt; if (encounter.timer <= 0) winEncounter(); }
+    }
+  }
+
+  // ============================================================================
+  //  渲染（霓虹夜市 + 打击感）
+  // ============================================================================
+  function hx(h) { h = h.replace('#', ''); if (h.length === 3) h = h.split('').map(c => c + c).join(''); return [parseInt(h.slice(0, 2), 16), parseInt(h.slice(2, 4), 16), parseInt(h.slice(4, 6), 16)]; }
+  function mix(a, b, t) { const A = hx(a), B = hx(b); return 'rgb(' + Math.round(A[0] + (B[0] - A[0]) * t) + ',' + Math.round(A[1] + (B[1] - A[1]) * t) + ',' + Math.round(A[2] + (B[2] - A[2]) * t) + ')'; }
+  function whiten(col, t) { return { base: mix(col.base, '#ffffff', t), light: mix(col.light, '#ffffff', t), dark: mix(col.dark, '#ffffff', t) }; }
+  function rgbaHex(h, a) { const c = hx(h); return `rgba(${c[0]},${c[1]},${c[2]},${a})`; }
+  function rr(x, y, w, h, r) { r = Math.min(r, h / 2, w / 2); ctx.beginPath(); ctx.moveTo(x + r, y); ctx.arcTo(x + w, y, x + w, y + h, r); ctx.arcTo(x + w, y + h, x, y + h, r); ctx.arcTo(x, y + h, x, y, r); ctx.arcTo(x, y, x + w, y, r); ctx.closePath(); }
+  function glowDot(sx, sy, r, color, a) { ctx.save(); ctx.globalCompositeOperation = 'lighter'; const gd = ctx.createRadialGradient(sx, sy, 0, sx, sy, r); gd.addColorStop(0, color); gd.addColorStop(1, 'rgba(0,0,0,0)'); ctx.globalAlpha = a == null ? 1 : a; ctx.fillStyle = gd; ctx.beginPath(); ctx.arc(sx, sy, r, 0, 6.28); ctx.fill(); ctx.restore(); }
+
+  function drawGround() {
+    const g = ctx.createLinearGradient(0, 0, 0, H); g.addColorStop(0, '#0b1224'); g.addColorStop(0.55, '#0d1b2e'); g.addColorStop(1, '#1a1130'); ctx.fillStyle = g; ctx.fillRect(-50, -50, W + 100, H + 100);
+    // 远处霓虹小镇灯火（视差滚动）
+    ctx.save();
+    for (let i = 0; i < 34; i++) { const seed = i * 96.7; let px = (seed * 57 - cam.x * 0.12) % (W + 60); if (px < 0) px += W + 60; let py = ((seed * 129) % (H * 0.42)) - cam.y * 0.05 % (H * 0.42); if (py < 0) py += H * 0.42; const tw = 0.4 + 0.3 * Math.sin(game.time * 2 + i); ctx.fillStyle = (i % 3 === 0) ? `rgba(253,224,71,${tw})` : (i % 3 === 1 ? `rgba(125,211,252,${tw})` : `rgba(244,114,182,${tw})`); ctx.fillRect(px - 30, py + 6, 2, 2); }
+    ctx.restore();
+    // 地面霓虹网格
+    const step = 80, span = 1100;
+    const x0 = Math.floor((cam.x - span) / step) * step, x1 = cam.x + span, y0 = Math.floor((cam.y - span) / step) * step, y1 = cam.y + span;
+    ctx.strokeStyle = 'rgba(56,189,248,.08)'; ctx.lineWidth = 1;
+    for (let x = x0; x <= x1; x += step) { const a = project(x, y0, 0), b = project(x, y1, 0); ctx.beginPath(); ctx.moveTo(a[0], a[1]); ctx.lineTo(b[0], b[1]); ctx.stroke(); }
+    for (let y = y0; y <= y1; y += step) { const a = project(x0, y, 0), b = project(x1, y, 0); ctx.beginPath(); ctx.moveTo(a[0], a[1]); ctx.lineTo(b[0], b[1]); ctx.stroke(); }
+    // 餐车暖光池
+    glowDot(cx(), cy() + 12, 340, 'rgba(249,150,50,.16)');
+  }
+  function drawZones() {
+    for (const z of zones) { const col = EL[z.el], p = project(z.x, z.y, 0);
+      if (z.mode === 'ring') { ctx.save(); ctx.globalCompositeOperation = 'lighter'; ctx.globalAlpha = Math.max(0, z.life) * 0.85; ctx.lineWidth = 7; ctx.strokeStyle = col.light; ctx.beginPath(); ctx.ellipse(p[0], p[1], z.r, z.r * 0.5, 0, 0, 6.28); ctx.stroke(); ctx.restore(); }
+      else { ctx.save(); ctx.globalAlpha = 0.3 + 0.16 * Math.sin(game.time * 6); groundCircle(z.x, z.y, z.r, col.light, col.dark + '77'); ctx.restore(); glowDot(p[0], p[1], z.r * 0.9, rgbaHex(col.base, 0.18), 0.6); }
+    }
+  }
+  function drawTelegraphs() { for (const tg of telegraphs) { const k = Math.max(0, Math.min(1, 1 - tg.t / 1.2)); const p = project(tg.x, tg.y, 0); ctx.save(); ctx.globalAlpha = 0.22 + 0.32 * Math.abs(Math.sin(game.time * 11)); groundCircle(tg.x, tg.y, tg.r, '#ef4444', 'rgba(239,68,68,.20)'); ctx.globalAlpha = 0.9; ctx.lineWidth = 4; ctx.strokeStyle = '#fecaca'; ctx.beginPath(); ctx.ellipse(p[0], p[1], tg.r * k, tg.r * k * 0.5, 0, 0, 6.28); ctx.stroke(); ctx.restore(); } }
+  function drawShots() {
+    ctx.save(); ctx.globalCompositeOperation = 'lighter';
+    for (const s of shots) { const col = EL[s.el || 'none'], p = project(s.x, s.y, s.z || 10); ctx.globalAlpha = 0.5; ctx.fillStyle = col.base; ctx.beginPath(); ctx.arc(p[0], p[1], (s.radius || 10) * 1.3, 0, 6.28); ctx.fill(); }
+    ctx.restore();
+    for (const s of shots) { const col = EL[s.el || 'none'], z = s.z || 10; if (s.z) shadow(s.x, s.y, 8); drawCube(s.x, s.y, Math.max(10, (s.radius || 10) * 0.9), 7, col, z); }
+  }
+  function drawBeams() {
+    for (const b of beams) { ctx.save(); ctx.globalCompositeOperation = 'lighter'; ctx.globalAlpha = Math.max(0, b.life / 0.18) * 0.85; const p0 = project(b.x, b.y, 14);
+      if (b.cone) { const half = b.cone * Math.PI / 180 / 2, p1 = project(b.x + Math.cos(b.a - half) * b.len, b.y + Math.sin(b.a - half) * b.len, 14), p2 = project(b.x + Math.cos(b.a + half) * b.len, b.y + Math.sin(b.a + half) * b.len, 14); ctx.fillStyle = b.color; ctx.beginPath(); ctx.moveTo(p0[0], p0[1]); ctx.lineTo(p1[0], p1[1]); ctx.lineTo(p2[0], p2[1]); ctx.closePath(); ctx.fill(); }
+      else { const p1 = project(b.x + Math.cos(b.a) * b.len, b.y + Math.sin(b.a) * b.len, 14); ctx.strokeStyle = b.color; ctx.lineWidth = Math.max(5, b.w * 0.6); ctx.lineCap = 'round'; ctx.beginPath(); ctx.moveTo(p0[0], p0[1]); ctx.lineTo(p1[0], p1[1]); ctx.stroke(); ctx.lineWidth = Math.max(2, b.w * 0.25); ctx.strokeStyle = '#ffffff'; ctx.beginPath(); ctx.moveTo(p0[0], p0[1]); ctx.lineTo(p1[0], p1[1]); ctx.stroke(); }
+      ctx.restore(); }
+  }
+  function drawOrbiters() { for (const w of owned) if (w.def.kind === 'orbit' && w.orbiters) for (const ob of w.orbiters) { if (ob.x == null) continue; const p0 = project(ob.x, ob.y, 12); glowDot(p0[0], p0[1], 22, rgbaHex(EL[w.def.el].base, 0.5), 0.5); shadow(ob.x, ob.y, 9); drawCube(ob.x, ob.y, 16, 10, EL[w.def.el], 12); const p = project(ob.x, ob.y, 26); ctx.font = '15px ' + SS; ctx.textAlign = 'center'; ctx.textBaseline = 'middle'; ctx.fillText(w.def.emoji, p[0], p[1]); } }
+  function drawEnemies() {
+    const sorted = enemies.slice().sort((a, b) => (a.x + a.y) - (b.x + b.y));
+    for (const e of sorted) {
+      const def = e.def, sz = (e.size || def.size), s = (e.isBoss ? 40 * sz : 22 * sz), bz = Math.abs(Math.sin(e.bob)) * 4;
+      shadow(e.x, e.y, s * 0.7);
+      if (e.isBoss || e.elite) { const p0 = project(e.x, e.y, bz + s * 0.4); glowDot(p0[0], p0[1], s * 1.4, rgbaHex(e.isBoss ? e.bossDef.color2 : '#f59e0b', 0.5), 0.5); }
+      let col = e.slowT > 0 ? EL.ice : (e.burnT > 0 ? EL.fire : (e.poiT > 0 ? EL.poison : PAL[def.color]));
+      if (e.flash > 0) col = whiten(col, Math.min(0.9, e.flash * 0.9));
+      if (e.isBoss && e.dashWind > 0) col = whiten(col, 0.3 + 0.3 * Math.sin(game.time * 30));
+      drawCube(e.x, e.y, s, s * 0.8, col, bz);
+      if (e.isBoss || e.elite) { const p = project(e.x, e.y, bz + s + 6); ctx.font = (e.isBoss ? 30 : 24) + 'px ' + SS; ctx.textAlign = 'center'; ctx.textBaseline = 'middle'; ctx.fillText(e.isBoss ? e.bossDef.emoji : '💀', p[0], p[1]); }
+      if (e.hp < e.maxHp && !e.isBoss) { const hb = project(e.x, e.y, bz + s * 0.9 + 10), bw = s * 1.2; ctx.fillStyle = 'rgba(0,0,0,.6)'; ctx.fillRect(hb[0] - bw / 2, hb[1], bw, 4); ctx.fillStyle = e.elite ? '#f59e0b' : '#4ade80'; ctx.fillRect(hb[0] - bw / 2, hb[1], bw * (e.hp / e.maxHp), 4); }
+    }
+  }
+  function drawEnemyShots() { for (const s of enemyShots) { const p = project(s.x, s.y, 10); glowDot(p[0], p[1], 16, rgbaHex(s.color, 0.6), 0.6); shadow(s.x, s.y, 6); drawCube(s.x, s.y, 12, 8, { base: s.color, light: '#fff', dark: '#7f1d1d' }, 10); } }
+  function drawTruck() {
+    const bz = Math.sin(truck.bob) * 1.5; shadow(truck.x, truck.y, 42);
+    // 车头灯：朝向前方的暖光
+    const fa = Math.atan2(truck.facing.y, truck.facing.x); const hp = project(truck.x + Math.cos(fa) * 70, truck.y + Math.sin(fa) * 70, bz + 14); glowDot(hp[0], hp[1], 70, 'rgba(255,236,170,.5)', 0.8);
+    const body = truck.hurtFlash > 0 ? { base: '#fca5a5', light: '#fee2e2', dark: '#ef4444' } : PAL.truck;
+    drawCube(truck.x, truck.y, 50, A.cubeH + 8, body, bz);
+    drawCube(truck.x, truck.y - 4, 30, 10, PAL.truckTop, bz + A.cubeH + 8);
+    drawCube(truck.x - 10, truck.y - 14, 16, 14, PAL.dundi, bz + A.cubeH + 2);
+    // 招牌霓虹光
+    const sp = project(truck.x, truck.y - 4, bz + A.cubeH + 16); glowDot(sp[0], sp[1], 30, 'rgba(253,224,71,.45)', 0.7);
+    const top = project(truck.x, truck.y - 4, bz + A.cubeH + 30); ctx.font = '20px ' + SS; ctx.textAlign = 'center'; ctx.textBaseline = 'middle'; ctx.fillText('🐉', top[0], top[1]);
+  }
+  function drawParticles() {
+    for (const p of particles) {
+      const a = Math.max(0, p.life * 2.4);
+      if (p.ring) { const k = 1 - p.life / 0.34, pr = p.r0 + (p.r - p.r0) * k, pt = project(p.x, p.y, p.z); ctx.save(); ctx.globalCompositeOperation = 'lighter'; ctx.globalAlpha = a * 0.7; ctx.strokeStyle = p.color; ctx.lineWidth = 3; ctx.beginPath(); ctx.ellipse(pt[0], pt[1], pr, pr * 0.5, 0, 0, 6.28); ctx.stroke(); ctx.restore(); continue; }
+      if (p.line) { const A = project(p.line[0], p.line[1], p.z), B = project(p.line[2], p.line[3], p.z); ctx.save(); ctx.globalCompositeOperation = 'lighter'; ctx.globalAlpha = a; ctx.strokeStyle = p.color; ctx.lineWidth = 2.5; ctx.beginPath(); ctx.moveTo(A[0], A[1]); ctx.lineTo(B[0], B[1]); ctx.stroke(); ctx.restore(); continue; }
+      const pt = project(p.x, p.y, p.z); ctx.save(); if (p.glow) ctx.globalCompositeOperation = 'lighter'; ctx.globalAlpha = a; ctx.fillStyle = p.color; const sz = p.sz || 2; ctx.fillRect(pt[0] - sz / 2, pt[1] - sz / 2, sz, sz); ctx.restore();
+    }
+  }
+  function drawPickups() {
+    for (const pk of pickups) { const bob = Math.sin((pk.t + pk.x) * 4) * 3, p = project(pk.x, pk.y, 12 + bob); shadow(pk.x, pk.y, 6);
+      if (pk.type === 'xp') { glowDot(p[0], p[1], 14, 'rgba(253,224,71,.6)', 0.7); drawCube(pk.x, pk.y, 9, 6, EL.shock, 8 + bob); }
+      else if (pk.type === 'gold') { glowDot(p[0], p[1], 12, 'rgba(251,191,36,.6)', 0.7); drawCube(pk.x, pk.y, 8, 5, { base: '#fbbf24', light: '#fde68a', dark: '#b45309' }, 8 + bob); }
+      else { glowDot(p[0], p[1], 20, pk.type === 'heal' ? 'rgba(248,113,113,.6)' : 'rgba(168,85,247,.6)', 0.8); const pe = project(pk.x, pk.y, 16 + bob); ctx.font = '20px ' + SS; ctx.textAlign = 'center'; ctx.textBaseline = 'middle'; ctx.fillText(pk.type === 'heal' ? '❤️' : bById(pk.buff).emoji, pe[0], pe[1]); }
+    }
+  }
+  function drawFloaters() {
+    ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+    for (const f of floaters) { const p = project(f.x, f.y, 40 + (f.dy || 0)), sc = f.sc != null ? (0.6 + 0.4 * f.sc) : 1; ctx.save(); ctx.globalAlpha = Math.max(0, f.life * 1.6); const size = (f.crit ? 22 : 15) * sc; ctx.font = 'bold ' + size + 'px system-ui'; ctx.lineWidth = 3; ctx.strokeStyle = 'rgba(0,0,0,.6)'; ctx.strokeText(f.txt, p[0], p[1]); ctx.fillStyle = f.good ? '#4ade80' : (f.crit ? '#fbbf24' : '#fff'); ctx.fillText(f.txt, p[0], p[1]); ctx.restore(); }
+  }
+
+  function drawBattleHUD() {
+    const u = uiScale(), pad = 14 * u, barW = Math.min(W - 2 * pad, 250 * Math.max(u, 0.82));
+    // HP
+    ctx.fillStyle = 'rgba(0,0,0,.5)'; rr(pad, pad, barW, 20 * u, 6 * u); ctx.fill();
+    const hpFrac = Math.max(0, truck.hp / truck.maxHp), hg = ctx.createLinearGradient(pad, 0, pad + barW, 0); hg.addColorStop(0, '#ef4444'); hg.addColorStop(1, '#f87171'); ctx.fillStyle = hg; rr(pad + 2, pad + 2, (barW - 4) * hpFrac, 16 * u, 5 * u); ctx.fill();
+    ctx.fillStyle = '#fff'; ctx.font = 'bold ' + (12 * u) + 'px system-ui'; ctx.textAlign = 'left'; ctx.textBaseline = 'middle'; ctx.fillText('🐉 ' + Math.ceil(truck.hp) + ' / ' + Math.round(truck.maxHp), pad + 8, pad + 10 * u);
+    // XP
+    const xy = pad + 24 * u; ctx.fillStyle = 'rgba(0,0,0,.5)'; rr(pad, xy, barW, 10 * u, 4 * u); ctx.fill();
+    ctx.fillStyle = '#38bdf8'; rr(pad + 2, xy + 2, (barW - 4) * Math.min(1, game.xp / game.xpNeed), 6 * u, 3 * u); ctx.fill();
+    ctx.fillStyle = '#e2e8f0'; ctx.font = 'bold ' + (9 * u) + 'px system-ui'; ctx.fillText('Lv.' + game.level, pad + 4, xy + 5 * u);
+    // 武器 / 道具 / buff 行
+    let row = pad + 40 * u, ic = 19 * u, sp = 28 * u; ctx.textBaseline = 'alphabetic';
+    let wx = pad; for (const w of owned) { ctx.font = ic + 'px ' + SS; ctx.fillStyle = '#fff'; ctx.fillText(w.def.emoji, wx, row + ic); ctx.fillStyle = w.golden ? '#fbbf24' : '#fde047'; ctx.font = 'bold ' + (9 * u) + 'px system-ui'; ctx.fillText((w.golden ? '✦' : '') + w.level, wx + ic * 0.85, row + ic + 5 * u); wx += sp; }
+    let ix = pad, iy = row + 28 * u; for (const id in ownedItems) { ctx.font = (15 * u) + 'px ' + SS; ctx.fillStyle = '#fff'; ctx.fillText(iById(id).emoji, ix, iy + 13 * u); ctx.fillStyle = '#94a3b8'; ctx.font = (8 * u) + 'px system-ui'; ctx.fillText('×' + ownedItems[id], ix + 13 * u, iy + 16 * u); ix += 24 * u; }
+    let bx = pad, by = iy + 24 * u; for (const ab of activeBuffs) { ctx.font = (15 * u) + 'px ' + SS; ctx.fillStyle = '#fff'; ctx.fillText(ab.def.emoji, bx, by + 13 * u); ctx.fillStyle = '#c4b5fd'; ctx.font = (8 * u) + 'px system-ui'; ctx.fillText(ab.t.toFixed(0), bx + 13 * u, by + 16 * u); bx += 22 * u; }
+
+    // 右上：区/击杀/分数
+    ctx.textAlign = 'right'; ctx.textBaseline = 'alphabetic';
+    ctx.fillStyle = '#fde047'; ctx.font = 'bold ' + (14 * u) + 'px system-ui'; ctx.fillText('第' + (run.actIdx + 1) + '区 ☠' + game.kills, W - pad, pad + 13 * u);
+    ctx.fillStyle = 'rgba(255,255,255,.65)'; ctx.font = (11 * u) + 'px system-ui'; ctx.fillText('分数 ' + game.score, W - pad, pad + 30 * u);
+    // 中上：生存倒计时
+    if (encounter && encounter.type !== 'boss') { ctx.textAlign = 'center'; ctx.fillStyle = '#fff'; ctx.font = 'bold ' + (22 * u) + 'px system-ui'; ctx.lineWidth = 4; ctx.strokeStyle = 'rgba(0,0,0,.5)'; const tt = '⏱ ' + Math.ceil(Math.max(0, encounter.timer)) + 's'; ctx.strokeText(tt, W / 2, pad + 22 * u); ctx.fillText(tt, W / 2, pad + 22 * u); }
+    // 连击
+    if (fx.combo >= 3) { ctx.textAlign = 'center'; const cc = fx.combo >= 30 ? '#f87171' : fx.combo >= 12 ? '#fb923c' : '#fde047', csz = (18 + Math.min(14, fx.combo * 0.3)) * u; ctx.globalAlpha = Math.min(1, fx.comboT); ctx.fillStyle = cc; ctx.font = 'bold ' + csz + 'px system-ui'; ctx.lineWidth = 4; ctx.strokeStyle = 'rgba(0,0,0,.5)'; ctx.strokeText('连击 ×' + fx.combo, W / 2, pad + 48 * u); ctx.fillText('连击 ×' + fx.combo, W / 2, pad + 48 * u); ctx.globalAlpha = 1; }
+    // Boss 血条
+    if (boss) { const bw = Math.min(W - 60, 520 * Math.max(u, 0.8)), bx2 = (W - bw) / 2, byy = H - 50 * u; ctx.fillStyle = 'rgba(0,0,0,.55)'; rr(bx2 - 4, byy - 4, bw + 8, 24 * u, 6 * u); ctx.fill(); ctx.fillStyle = boss.bossDef.color2; rr(bx2, byy, bw * Math.max(0, boss.hp / boss.maxHp), 16 * u, 5 * u); ctx.fill(); ctx.fillStyle = '#fff'; ctx.font = 'bold ' + (12 * u) + 'px system-ui'; ctx.textAlign = 'center'; ctx.fillText(boss.bossDef.emoji + ' ' + boss.bossDef.name, W / 2, byy - 8 * u); }
+    // 底部提示（窄屏精简）
+    ctx.textAlign = 'center'; ctx.fillStyle = 'rgba(255,255,255,.42)'; ctx.font = (11 * u) + 'px system-ui';
+    ctx.fillText(W < 520 ? 'WASD/拖动 走位躲技能 · 自动开火' : 'WASD / 方向键 / 按住鼠标 自由驾驶碾过掉落物 · 武器自动开火', W / 2, H - 12 * u);
+    drawBanner();
+  }
+  function drawBanner() { if (bannerObj) { const u = uiScale(); ctx.save(); ctx.globalAlpha = Math.min(1, bannerObj.t); ctx.textAlign = 'center'; ctx.lineWidth = 5; ctx.strokeStyle = 'rgba(0,0,0,.55)'; ctx.font = 'bold ' + (30 * u) + 'px system-ui'; ctx.strokeText(bannerObj.title, W / 2, H * 0.26); ctx.fillStyle = bannerObj.color; ctx.fillText(bannerObj.title, W / 2, H * 0.26); if (bannerObj.sub) { ctx.fillStyle = '#e2e8f0'; ctx.font = (15 * u) + 'px system-ui'; ctx.fillText(bannerObj.sub, W / 2, H * 0.26 + 28 * u); } ctx.restore(); } }
+  function drawVignette() {
+    const vg = ctx.createRadialGradient(W / 2, H / 2, Math.min(W, H) * 0.35, W / 2, H / 2, Math.max(W, H) * 0.75); vg.addColorStop(0, 'rgba(0,0,0,0)'); vg.addColorStop(1, 'rgba(0,0,0,.45)'); ctx.fillStyle = vg; ctx.fillRect(0, 0, W, H);
+    if (fx.redFlash > 0) { ctx.save(); ctx.globalAlpha = fx.redFlash; const rg = ctx.createRadialGradient(W / 2, H / 2, Math.min(W, H) * 0.2, W / 2, H / 2, Math.max(W, H) * 0.7); rg.addColorStop(0, 'rgba(239,68,68,0)'); rg.addColorStop(1, 'rgba(239,68,68,.6)'); ctx.fillStyle = rg; ctx.fillRect(0, 0, W, H); ctx.restore(); }
+  }
+
+  // ---------- 地图渲染（响应式） ----------
+  function drawMap() {
+    const u = uiScale();
+    const g = ctx.createLinearGradient(0, 0, 0, H); g.addColorStop(0, '#0f1626'); g.addColorStop(1, '#1e1630'); ctx.fillStyle = g; ctx.fillRect(0, 0, W, H);
+    for (let i = 0; i < 30; i++) { const tw = 0.3 + 0.3 * Math.sin(game.time * 2 + i); ctx.fillStyle = i % 2 ? `rgba(125,211,252,${tw})` : `rgba(253,224,71,${tw})`; ctx.fillRect((i * 137) % W, (i * 89) % (H * 0.5), 2, 2); }
+    const narrow = W < 560;
+    const floors = run.act.floors, F = floors.length - 1, topPad = (narrow ? 104 : 92) * Math.max(u, 0.85), margin = 74 * Math.max(u, 0.85), rowH = (H - margin - topPad) / F, leftPad = W * (narrow ? 0.13 : 0.16), nr = Math.max(18, 24 * u);
+    floors.forEach((row, f) => row.forEach((node, ni) => { node.sx = leftPad + node.col / 3 * (W - 2 * leftPad); node.sy = H - margin - f * rowH; node.idx = ni; }));
+    const reach = reachableNodes();
+    // 连线
+    floors.forEach((row, f) => { if (f + 1 >= floors.length) return; row.forEach(node => node.edges.forEach(j => { const nn = floors[f + 1][j]; const lit = node.cleared || (f === run.floor); ctx.lineWidth = lit ? 4 : 2; ctx.strokeStyle = lit ? 'rgba(251,191,36,.45)' : 'rgba(148,163,184,.16)'; ctx.beginPath(); ctx.moveTo(node.sx, node.sy); ctx.lineTo(nn.sx, nn.sy); ctx.stroke(); })); });
+    // 节点
+    floors.forEach(row => row.forEach(node => {
+      const reachable = reach.includes(node), current = (node === floors[run.floor][run.nodeIdx]);
+      if (reachable) glowDot(node.sx, node.sy, nr * 1.6, 'rgba(251,191,36,.5)', 0.8);
+      if (node.type === 'boss') glowDot(node.sx, node.sy, nr * 1.6, 'rgba(248,113,113,.45)', 0.7);
+      ctx.beginPath(); ctx.arc(node.sx, node.sy, nr, 0, 6.28); ctx.fillStyle = node.cleared ? '#3a4a63' : (reachable ? '#243049' : '#18223a'); ctx.fill();
+      if (reachable) { const pulse = nr + 4 * Math.sin(game.time * 6 + node.sx); ctx.strokeStyle = '#fbbf24'; ctx.lineWidth = 3; ctx.beginPath(); ctx.arc(node.sx, node.sy, pulse, 0, 6.28); ctx.stroke(); }
+      else { ctx.strokeStyle = current ? '#4ade80' : 'rgba(148,163,184,.4)'; ctx.lineWidth = current ? 3 : 2; ctx.beginPath(); ctx.arc(node.sx, node.sy, nr, 0, 6.28); ctx.stroke(); }
+      ctx.globalAlpha = (node.cleared || reachable || current) ? 1 : 0.5;
+      ctx.font = (nr * 1.05) + 'px ' + SS; ctx.textAlign = 'center'; ctx.textBaseline = 'middle'; ctx.fillText(NODE_ICON[node.type], node.sx, node.sy); ctx.globalAlpha = 1;
+    }));
+    // 标题 + 图例（窄屏分两行）
+    ctx.textAlign = 'center'; ctx.textBaseline = 'alphabetic';
+    ctx.fillStyle = '#fbbf24'; ctx.font = 'bold ' + (22 * Math.max(u, 0.8)) + 'px system-ui'; ctx.fillText('🗺️ 哈奇小镇 · 第 ' + (run.actIdx + 1) + ' / ' + P.acts + ' 区', W / 2, 36 * Math.max(u, 0.85));
+    ctx.fillStyle = 'rgba(226,232,240,.8)'; ctx.font = (12.5 * Math.max(u, 0.82)) + 'px system-ui';
+    if (narrow) { ctx.fillText('⚔️战斗 💀精英 ❓事件 🎁补给 🏕️休整 👹Boss', W / 2, 60 * Math.max(u, 0.85)); ctx.fillText('点亮的节点可前往，点击选路', W / 2, 80 * Math.max(u, 0.85)); }
+    else ctx.fillText('点亮的节点可前往，点击选路 — ⚔️战斗 💀精英 ❓事件 🎁补给 🏕️休整 👹Boss', W / 2, 66 * Math.max(u, 0.85));
+    // 底部 build
+    ctx.textAlign = 'left'; ctx.font = (14 * Math.max(u, 0.8)) + 'px ' + SS; ctx.fillStyle = '#fff';
+    ctx.fillText('Lv.' + game.level + ' ❤' + Math.ceil(truck.hp) + '/' + Math.round(truck.maxHp) + ' ' + owned.map(w => w.def.emoji + (w.golden ? '✦' : '')).join(''), 14, H - 18);
+    drawBanner();
+  }
+
+  function render() {
+    if (game.phase === 'battle' || game.phase === 'reward') {
+      let ox = 0, oy = 0; if (fx.shake > 0) { ox = (Math.random() * 2 - 1) * fx.shake; oy = (Math.random() * 2 - 1) * fx.shake; }
+      ctx.save(); ctx.translate(ox, oy);
+      drawGround(); drawZones(); drawTelegraphs(); drawPickups();
+      drawShots(); drawEnemyShots(); drawBeams();
+      drawEnemies(); drawOrbiters(); drawTruck();
+      drawParticles(); drawFloaters();
+      ctx.restore();
+      drawVignette(); drawBattleHUD();
+    } else if (game.phase === 'map' && run.act) {
+      drawMap(); drawVignette();
+    } else { ctx.fillStyle = '#0b1224'; ctx.fillRect(0, 0, W, H); }
+  }
+
+  // ============================================================================
+  //  初始化 & 主循环
+  // ============================================================================
+  computeStats();
+  owned.push({ def: wById('sushi_dart'), level: 1, cd: 0 });
+  showStart();
+
+  let last = performance.now();
+  function loop(now) { const dt = Math.min((now - last) / 1000, 0.05); last = now; if (fx.hitstop > 0) { fx.hitstop -= dt; } else { update(dt); } render(); requestAnimationFrame(loop); }
+  requestAnimationFrame(loop);
+
+  window.HaqiFoodTruck = { CFG, truck, game, run, owned, ownedItems, activeBuffs, applyBuff, STATS: () => STATS,
+    _test: { keys, cam: () => cam, enemies: () => enemies, pickups: () => pickups, telegraphs: () => telegraphs, enemyShots: () => enemyShots, startEncounter, winEncounter, genAct, enterNode, reachableNodes, depth, fx } };
+})();
+</script>
+
+</html>

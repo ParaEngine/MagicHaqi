@@ -320,7 +320,7 @@
         .mh-scroll-button::before { top: 13px; }
         .mh-scroll-button::after { display: none; }
         .mh-shell::after { display: none; }
-        .mh-canvas { position: relative; inset: auto; touch-action: pan-y; z-index: 2; }
+        .mh-canvas { position: relative; inset: auto; touch-action: none; z-index: 2; }
         .mh-top { left: 6px; right: 6px; }
         .mh-bottom { left: 6px; right: 6px; }
         .mh-top { grid-template-columns: 36px 1fr; }
@@ -403,6 +403,7 @@
   let lastTime = 0;
   let releaseAcc = 0;
   let scrollAnimId = 0;
+  let scrollDrag = null;
   const boardCache = { canvas: document.createElement('canvas'), ctx: null, width: 0, height: 0, dpr: 0, dirty: true };
   boardCache.ctx = boardCache.canvas.getContext('2d');
 
@@ -1839,7 +1840,13 @@
       return;
     }
     const point = pointerPoint(event);
-    if (isMobileLayout() && (point.x < boardLeft || point.x > boardLeft + boardWidth)) return;
+    if (isMobileLayout() && (point.x < boardLeft || point.x > boardLeft + boardWidth)) {
+      // The board owns vertical gestures (digging), so the side rails are the only
+      // place to scroll the tall cave. Drive that scroll manually here because the
+      // canvas now uses touch-action:none and no longer scrolls natively.
+      beginScrollDrag(event);
+      return;
+    }
     event.preventDefault();
     initSound();
     if (!state.started || state.finished) {
@@ -1851,6 +1858,11 @@
   }
 
   function handlePointerMove(event) {
+    if (scrollDrag) {
+      event.preventDefault();
+      updateScrollDrag(event);
+      return;
+    }
     if (!state.pointerDown) return;
     event.preventDefault();
     const p = pointerPoint(event);
@@ -1858,8 +1870,28 @@
   }
 
   function handlePointerEnd() {
+    scrollDrag = null;
     state.pointerDown = false;
     state.lastCarve = null;
+  }
+
+  function pointerClientY(event) {
+    const touch = event.changedTouches?.[0] || event.touches?.[0];
+    return touch?.clientY ?? event.clientY ?? 0;
+  }
+
+  function beginScrollDrag(event) {
+    if (!isMobileLayout()) return;
+    if (Math.max(0, stage.scrollHeight - stage.clientHeight) <= 0) return;
+    if (scrollAnimId) { cancelAnimationFrame(scrollAnimId); scrollAnimId = 0; }
+    scrollDrag = { startY: pointerClientY(event), startScroll: stage.scrollTop };
+    event.preventDefault();
+  }
+
+  function updateScrollDrag(event) {
+    const maxScroll = Math.max(0, stage.scrollHeight - stage.clientHeight);
+    stage.scrollTop = clamp(scrollDrag.startScroll - (pointerClientY(event) - scrollDrag.startY), 0, maxScroll);
+    updateScrollButtons();
   }
 
   function pointToCell(x, y) {

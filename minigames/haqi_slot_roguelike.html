@@ -68,6 +68,15 @@
   @keyframes coachPop{0%{transform:translateX(-50%) scale(.7);opacity:0;}100%{transform:translateX(-50%) scale(1);opacity:1;}}
   .coach .em{color:#fff;}
 
+  /* ---------- victory / biome banner ---------- */
+  .victory-banner{position:absolute;left:50%;top:30%;transform:translateX(-50%);
+    background:linear-gradient(180deg,rgba(245,158,11,.95),rgba(217,119,6,.95));
+    color:#1a1206;font-size:18px;font-weight:900;padding:12px 24px;border-radius:16px;
+    box-shadow:0 10px 30px rgba(0,0,0,.55);z-index:30;white-space:nowrap;pointer-events:none;
+    animation:bannerPop .4s ease-out both;}
+  @keyframes bannerPop{0%{transform:translateX(-50%) scale(.6) translateY(-10px);opacity:0;}
+    60%{transform:translateX(-50%) scale(1.08);opacity:1;}100%{transform:translateX(-50%) scale(1);opacity:1;}}
+
   /* ---------- modals ---------- */
   .modal-bg{position:fixed;inset:0;background:rgba(2,6,23,.82);backdrop-filter:blur(4px);z-index:50;display:flex;align-items:center;justify-content:center;padding:18px;animation:fadein .2s;}
   @keyframes fadein{from{opacity:0;}to{opacity:1;}}
@@ -100,7 +109,7 @@
 /* ===== game configuration ===== */
 game_config = {
   difficulty: "normal",
-  maxFloor: 10,
+  bossEvery: 5,          // a boss appears on every 5th floor (5,10,15…) — endless run
   startHp: 100,
   baseDamage: 10,
   spinDurationMs: 900,
@@ -122,17 +131,29 @@ game_config = {
     { id: "wild",    type: "modifier",emoji: "⭐", name: "万能", weight: 4 },
     { id: "multi",   type: "modifier",emoji: "✖️", name: "倍率", weight: 3 }
   ],
-  levels: [
-    { id: 1,  name: "第1层 · 哥布林斥候", enemyHp: 20,  count: 1, reward: 10, tutorial: 1 },
-    { id: 2,  name: "第2层 · 烈焰小鬼",   enemyHp: 30,  count: 1, reward: 14, tutorial: 2 },
-    { id: 3,  name: "第3层 · 草丛骚动",   enemyHp: 34,  count: 2, reward: 16 },
-    { id: 4,  name: "第4层 · 寒霜兽群",   enemyHp: 42,  count: 3, reward: 18 },
-    { id: 5,  name: "第5层 · 雷云密布",   enemyHp: 50,  count: 3, reward: 22 },
-    { id: 6,  name: "第6层 · 冰封巨像",   enemyHp: 150, count: 1, reward: 40, boss: true, weak: "thunder" },
-    { id: 7,  name: "第7层 · 暗影潜行",   enemyHp: 62,  count: 4, reward: 26 },
-    { id: 8,  name: "第8层 · 狂暴兽潮",   enemyHp: 78,  count: 4, reward: 30 },
-    { id: 9,  name: "第9层 · 终焉前奏",   enemyHp: 92,  count: 4, reward: 34 },
-    { id: 10, name: "第10层 · 炎魔领主", enemyHp: 280, count: 1, reward: 90, boss: true, weak: "ice" }
+  // tutorial is scripted only on floors 1 & 2; all floors are generated procedurally (see genLevel)
+  tutorialFloors: { 1: 1, 2: 2 },
+  // flavour name pools used by the procedural level generator
+  mobNames: ["哥布林斥候", "烈焰小鬼", "草丛骚动", "寒霜兽群", "暗影潜行", "狂暴兽潮",
+             "腐沼毒虫", "碎石魔像", "夜行蝠群", "焦土蜥怪", "幽光水母", "荆棘游魂"],
+  bossNames: ["冰封巨像", "炎魔领主", "雷霆暴君", "万木之王", "深渊吞噬者", "霜骨龙皇",
+              "熔心巨灵", "虚空主宰"],
+  // background themes — one per "tier"; switches every time a boss is slain
+  themes: [
+    { id: "forest",  name: "翠林", bgTop: "#16243f", bgBot: "#070b16", grass: "#3f6212", grassTop: "#65a30d", hill: "rgba(255,255,255,.045)", mob: ["#22c55e", "#16a34a", "#84cc16", "#65a30d"] },
+    { id: "ice",     name: "霜原", bgTop: "#1c3a5e", bgBot: "#070d18", grass: "#0e7490", grassTop: "#22d3ee", hill: "rgba(200,240,255,.06)",  mob: ["#38bdf8", "#0ea5e9", "#7dd3fc", "#67e8f9"] },
+    { id: "volcano", name: "熔岩", bgTop: "#3a1410", bgBot: "#0a0604", grass: "#7c2d12", grassTop: "#ea580c", hill: "rgba(255,180,120,.05)",  mob: ["#f97316", "#ef4444", "#fb923c", "#dc2626"] },
+    { id: "storm",   name: "雷狱", bgTop: "#2a1840", bgBot: "#0a0612", grass: "#5b21b6", grassTop: "#a855f7", hill: "rgba(220,200,255,.05)",  mob: ["#a855f7", "#8b5cf6", "#c084fc", "#7c3aed"] },
+    { id: "void",    name: "虚空", bgTop: "#0c1830", bgBot: "#02040a", grass: "#27324a", grassTop: "#64748b", hill: "rgba(180,200,255,.045)", mob: ["#94a3b8", "#64748b", "#475569", "#e879f9"] }
+  ],
+  // enemy silhouettes — picked per spawn for visual variety
+  enemyKinds: [
+    { id: "ears",   deco: "ears",   eyes: 2, ratio: 1.0 },
+    { id: "horned", deco: "horns",  eyes: 2, ratio: 1.0 },
+    { id: "spiky",  deco: "spikes", eyes: 1, ratio: 0.95 },
+    { id: "slime",  deco: "none",   eyes: 2, ratio: 0.8 },
+    { id: "brute",  deco: "horns",  eyes: 2, ratio: 1.25 },
+    { id: "antenna",deco: "antenna",eyes: 3, ratio: 0.9 }
   ],
   upgradePool: [
     { id: "dmg_up",     name: "锋锐",   desc: "全部伤害 +25%", icon: "⚔️", apply: s => { s.dmgMul *= 1.25; } },
@@ -183,6 +204,7 @@ game_config = {
     return {
       difficulty: CFG.difficulty || "normal",
       floor: 1,
+      bossesDefeated: 0,      // also drives the active background theme
       hp: CFG.startHp, maxHp: CFG.startHp,
       score: 0,
       best: parseInt(localStorage.getItem("haqi_slot_best") || "0", 10),
@@ -201,7 +223,74 @@ game_config = {
   let S = newState();
 
   function diff()  { return CFG.difficulties[S.difficulty] || CFG.difficulties.normal; }
-  function level() { return CFG.levels[S.floor - 1]; }
+
+  /* ---------- procedural, endless level generator (memoised per floor) ---------- */
+  const _levelCache = {};
+  function genLevel(floor) {
+    if (_levelCache[floor]) return _levelCache[floor];
+    const isBoss = floor % CFG.bossEvery === 0;
+    const tier = Math.floor((floor - 1) / CFG.bossEvery);   // 0,1,2…
+    const elemIds = Object.keys(ELEM);
+    let lv;
+    if (isBoss) {
+      // boss HP grows steadily with depth; weakness cycles through elements
+      const hp = Math.round((90 + floor * 26) * (1 + tier * 0.12));
+      lv = {
+        id: floor,
+        name: `第${floor}层 · ${CFG.bossNames[(floor / CFG.bossEvery - 1) % CFG.bossNames.length]}`,
+        enemyHp: hp, count: 1, reward: 40 + floor * 6, boss: true,
+        weak: elemIds[(floor / CFG.bossEvery - 1) % elemIds.length]
+      };
+    } else {
+      // normal enemies: rising HP, more of them on deeper floors (capped)
+      const hp = Math.round(16 + floor * 6 + floor * floor * 0.55);
+      const count = clamp(1 + Math.floor(floor / 2), 1, 5);
+      lv = {
+        id: floor,
+        name: `第${floor}层 · ${CFG.mobNames[(floor - 1) % CFG.mobNames.length]}`,
+        enemyHp: hp, count, reward: 10 + floor * 2
+      };
+    }
+    lv.tutorial = CFG.tutorialFloors[floor] || 0;
+    _levelCache[floor] = lv;
+    return lv;
+  }
+  function level() { return genLevel(S.floor); }
+  function curTheme() { return CFG.themes[S.bossesDefeated % CFG.themes.length]; }
+
+  /* ---------- progress persistence (localStorage) ---------- */
+  const SAVE_KEY = "haqi_slot_save";
+  function saveProgress() {
+    if (S.finished) return;
+    try {
+      localStorage.setItem(SAVE_KEY, JSON.stringify({
+        v: 1, difficulty: S.difficulty, floor: S.floor, bossesDefeated: S.bossesDefeated,
+        hp: S.hp, maxHp: S.maxHp, score: S.score, best: S.best,
+        dmgMul: S.dmgMul, critRate: S.critRate, critMul: S.critMul, lifesteal: S.lifesteal,
+        rerollBonus: S.rerollBonus, elemMul: S.elemMul, tut: S.tut.on
+      }));
+    } catch (e) {}
+  }
+  function loadProgress() {
+    try {
+      const raw = localStorage.getItem(SAVE_KEY); if (!raw) return null;
+      const s = JSON.parse(raw);
+      return (s && s.floor >= 1) ? s : null;
+    } catch (e) { return null; }
+  }
+  function clearSave() { try { localStorage.removeItem(SAVE_KEY); } catch (e) {} }
+  function applySave(s) {
+    S.difficulty = s.difficulty || S.difficulty;
+    S.floor = s.floor; S.bossesDefeated = s.bossesDefeated || 0;
+    S.maxHp = s.maxHp || S.maxHp; S.hp = clamp(s.hp || S.maxHp, 1, S.maxHp);
+    S.score = s.score || 0;
+    S.dmgMul = s.dmgMul || 1;
+    S.critRate = s.critRate != null ? s.critRate : 0.1;
+    S.critMul = s.critMul || 2; S.lifesteal = s.lifesteal || 0;
+    S.rerollBonus = s.rerollBonus || 0;
+    if (s.elemMul) S.elemMul = Object.assign({ fire: 1, ice: 1, thunder: 1, nature: 1 }, s.elemMul);
+    S.tut.on = !!s.tut;
+  }
 
   /* ---------- messaging (difficulty only) ---------- */
   window.addEventListener("message", (ev) => {
@@ -292,7 +381,7 @@ game_config = {
           <b style="color:#fbbf24;">拉霸肉鸽</b>
         </div>
         <div style="display:flex;gap:12px;">
-          <span class="chip">🗺️ <b id="hFloor" style="color:#fbbf24;">1</b>/${CFG.maxFloor}</span>
+          <span class="chip">🗺️ <b id="hFloor" style="color:#fbbf24;">1</b><span id="hBoss" style="color:#94a3b8;"></span></span>
           <span class="chip">❤️ <b id="hHp" style="color:#fca5a5;">100</b></span>
           <span class="chip">⭐ <b id="hScore" style="color:#6ee7b7;">0</b></span>
           <span class="chip">🏆 <b id="hBest" style="color:#cbd5e1;">0</b></span>
@@ -345,8 +434,14 @@ game_config = {
     set("hFloor", S.floor); set("hHp", Math.max(0, Math.round(S.hp)));
     set("hScore", S.score); set("hBest", S.best);
     set("rerollCount", S.rerollLeft);
-    const fn = $("#floorName"); const lv = level();
-    if (fn) fn.textContent = lv ? lv.name : "";
+    const lv = level();
+    const fn = $("#floorName");
+    if (fn) fn.textContent = lv ? `${lv.name} · ${curTheme().name}` : "";
+    const hb = $("#hBoss");
+    if (hb) {
+      if (lv.boss) hb.textContent = " 👑BOSS";
+      else { const toBoss = CFG.bossEvery - (S.floor % CFG.bossEvery); hb.textContent = ` · BOSS还有${toBoss}层`; }
+    }
   }
 
   /* button visibility per phase + tutorial gating */
@@ -436,6 +531,7 @@ game_config = {
     if (S.tut.on) tutorialOnTurn();
     refreshButtons();
     updateHUD();
+    saveProgress();
   }
 
   async function onSpin() {
@@ -611,7 +707,9 @@ game_config = {
     effects: [], particles: [], floats: [],
     shake: { mag: 0, until: 0 },
     groundY: 0, heroX: 0, enemyX: 0,
-    last: 0, raf: 0, remaining: 0
+    last: 0, raf: 0, remaining: 0,
+    backdrop: null, backdropKey: "",      // cached static background (perf)
+    scroll: 0, walk: null                 // victory-march parallax state
   };
 
   function initScene() {
@@ -631,18 +729,41 @@ game_config = {
     scene.groundY = Math.floor(scene.H * 0.74);
     scene.heroX  = Math.floor(scene.W * 0.24);
     scene.enemyX = Math.floor(scene.W * 0.74);
+    rebuildBackdrop();
+  }
+
+  /* Pre-render the static background + ground once per (size,theme) into an
+     offscreen canvas, so the per-frame loop only blits an image instead of
+     re-drawing hundreds of rects every frame — this is the main lag fix. */
+  function rebuildBackdrop() {
+    if (!scene.W) return;
+    const key = scene.W + "x" + scene.H + ":" + curTheme().id;
+    if (scene.backdropKey === key && scene.backdrop) return;
+    const off = scene.backdrop && scene.backdrop.width === scene.W && scene.backdrop.height === scene.H
+              ? scene.backdrop : document.createElement("canvas");
+    off.width = scene.W; off.height = scene.H;
+    const octx = off.getContext("2d");
+    octx.clearRect(0, 0, scene.W, scene.H);
+    drawBackground(octx, scene.W, scene.H, 0);
+    drawGround(octx, scene.W, scene.H, 0);
+    scene.backdrop = off; scene.backdropKey = key;
   }
 
   function spawnEnemy() {
     const lv = level(), d = diff();
     const hp = Math.round(lv.enemyHp * d.enemyHp);
-    const palette = ["#22c55e", "#16a34a", "#84cc16", "#0ea5e9", "#a855f7", "#f97316"];
+    const theme = curTheme();
+    const kind = lv.boss ? { id: "boss", deco: "horns", eyes: 2, ratio: 1.0 } : pick(CFG.enemyKinds);
+    // deeper floors → visibly larger enemies (caps so they stay on screen)
+    const grow = Math.min(0.5, S.floor * 0.035);
     scene.enemy = {
       hp, maxHp: hp,
       x: scene.W + 80, targetX: scene.enemyX, y: scene.groundY,
       isBoss: !!lv.boss, weak: lv.weak || null,
-      color: lv.boss ? "#7c3aed" : pick(palette),
-      size: lv.boss ? 1.55 : (0.85 + Math.random() * 0.25),
+      kind: kind.id, deco: kind.deco, eyes: kind.eyes,
+      color: lv.boss ? "#7c3aed" : pick(theme.mob),
+      size: lv.boss ? (1.55 + Math.min(0.5, S.bossesDefeated * 0.12))
+                    : (0.78 + Math.random() * 0.3 + grow) * (kind.ratio || 1),
       state: "in", animT: 0, hitFlash: 0, bob: 0, dead: false, squash: 0
     };
   }
@@ -721,6 +842,7 @@ game_config = {
   function floorCleared() {
     const lv = level(), d = diff();
     S.score += Math.round((lv.reward || 10) * d.scoreScale); updateHUD();
+    saveProgress();
 
     // tutorial tooltips
     if (lv.tutorial === 1) {
@@ -732,19 +854,41 @@ game_config = {
       tutorialTip("🔒", "锁定关键符号，重转逆天改命", "看中了好符号？先点它<b>锁定🔒</b>，再点<b>重转</b>，没锁的格子会重摇。像打德州一样凑出你想要的连线！", () => advanceFloor());
       return;
     }
+    // boss floor -> march forward into a brand-new biome, then reward
+    if (lv.boss) {
+      playVictoryWalk(() => showUpgradeChoice(() => advanceFloor()));
+      return;
+    }
     // normal floor -> upgrade choice
-    if (S.floor >= CFG.maxFloor) { finishGame(true); return; }
     showUpgradeChoice(() => advanceFloor());
   }
 
   function advanceFloor() {
-    if (S.floor >= CFG.maxFloor) { finishGame(true); return; }
     S.floor++;
     S.hp = Math.min(S.maxHp, S.hp + 14); // small heal
     updateHUD();
+    saveProgress();
     scene.remaining = level().count;
     spawnEnemy();
     setTimeout(startTurn, 520);
+  }
+
+  /* ---------- "通关" victory march: hero strides forward, biome swaps in ---------- */
+  function playVictoryWalk(done) {
+    showBanner(`👑 通关！踏入新的领域…`);
+    scene.enemy = null;
+    scene.hero.state = "walk"; scene.hero.animT = 0;
+    scene.walk = { active: true, t: 0, switched: false, done: () => {
+      scene.hero.state = "idle"; scene.hero.animT = 0;
+      scene.scroll = 0;
+      done && done();
+    } };
+  }
+
+  function showBanner(text) {
+    const b = el("div", "victory-banner", text);
+    $("#stage").appendChild(b);
+    setTimeout(() => b.remove(), 2200);
   }
 
   /* ---------- effects ---------- */
@@ -785,7 +929,25 @@ game_config = {
     const t = now / 1000;
     if (scene.hero) {
       scene.hero.bob = Math.sin(t * 2.4) * 2;
-      if (scene.hero.state !== "idle") { scene.hero.animT += dt / 320; if (scene.hero.animT >= 1) scene.hero.state = "idle"; }
+      if (scene.hero.state !== "idle" && scene.hero.state !== "walk") {
+        scene.hero.animT += dt / 320; if (scene.hero.animT >= 1) scene.hero.state = "idle";
+      }
+    }
+
+    // victory march: scroll the world by, swap biome at the midpoint
+    if (scene.walk && scene.walk.active) {
+      const w = scene.walk;
+      w.t += dt / 2000;                       // ~2s march
+      scene.scroll += dt * 0.32;              // world slides left
+      if (!w.switched && w.t >= 0.5) {
+        w.switched = true;
+        S.bossesDefeated++;                   // advances curTheme()
+        rebuildBackdrop();
+        updateHUD();
+      }
+      if (w.t >= 1) { w.active = false; const cb = w.done; scene.walk = null; cb && cb(); }
+    } else {
+      scene.scroll = 0;
     }
     const en = scene.enemy;
     if (en) {
@@ -814,8 +976,15 @@ game_config = {
     ctx.clearRect(0, 0, W, H);
     ctx.save();
     ctx.translate(sx, sy);
-    drawBackground(ctx, W, H);
-    drawGround(ctx, W, H);
+    if (scene.walk && scene.walk.active) {
+      // live-render the scrolling world only during the brief victory march
+      drawBackground(ctx, W, H, scene.scroll);
+      drawGround(ctx, W, H, scene.scroll);
+    } else {
+      // normal frames: blit the pre-rendered static backdrop (cheap)
+      if (!scene.backdrop) rebuildBackdrop();
+      if (scene.backdrop) ctx.drawImage(scene.backdrop, 0, 0);
+    }
     // depth order
     if (en && !(en.state === "die" && en.animT >= 1)) drawEnemy(ctx, en);
     drawHero(ctx, scene.heroX, scene.groundY);
@@ -825,35 +994,35 @@ game_config = {
     ctx.restore();
   }
 
-  function drawBackground(ctx, W, H) {
-    const lv = level() || {};
+  function drawBackground(ctx, W, H, scroll) {
+    scroll = scroll || 0;
+    const th = curTheme();
     const g = ctx.createLinearGradient(0, 0, 0, H);
-    if (lv.boss) { g.addColorStop(0, "#2a1030"); g.addColorStop(1, "#0a0610"); }
-    else { g.addColorStop(0, "#16243f"); g.addColorStop(1, "#070b16"); }
+    g.addColorStop(0, th.bgTop); g.addColorStop(1, th.bgBot);
     ctx.fillStyle = g; ctx.fillRect(0, 0, W, H);
-    // distant voxel hills
-    ctx.fillStyle = "rgba(255,255,255,.04)";
+    // distant voxel hills (parallax: slower than foreground)
+    ctx.fillStyle = th.hill;
     const hy = scene.groundY - 46;
-    for (let x = -20; x < W + 40; x += 46) {
-      const hh = 30 + ((x * 7) % 40);
+    const off = (scroll * 0.4) % 46;
+    for (let x = -46 - off; x < W + 46; x += 46) {
+      const hh = 30 + ((Math.round(x + off) * 7) % 40 + 40) % 40;
       ctx.fillRect(x, hy - hh, 44, hh + 60);
     }
   }
 
   /* isometric-ish blocky ground */
-  function drawGround(ctx, W, H) {
+  function drawGround(ctx, W, H, scroll) {
+    scroll = scroll || 0;
+    const th = curTheme();
+    const grass = th.grass, grassTop = th.grassTop, dirt = "#3a2a1a";
     const gy = scene.groundY;
-    const lv = level() || {};
-    const grass = lv.boss ? "#5b21b6" : "#3f6212";
-    const grassTop = lv.boss ? "#7c3aed" : "#65a30d";
-    const dirt = "#3a2a1a";
     // dirt fill
     ctx.fillStyle = dirt; ctx.fillRect(0, gy, W, H - gy);
     // blocky grass row
-    const s = 26, d = 9;
-    for (let x = -s; x < W + s; x += s) {
+    const s = 26, d = 9, off = scroll % s;
+    for (let x = -s - off; x < W + s; x += s) {
       // front face
-      ctx.fillStyle = shade(grass, ((x / s) % 2 ? 4 : -4));
+      ctx.fillStyle = shade(grass, ((Math.round((x + off) / s)) % 2 ? 4 : -4));
       ctx.fillRect(x, gy, s, 16);
       // top face
       ctx.fillStyle = grassTop;
@@ -865,7 +1034,8 @@ game_config = {
     }
     // dirt speckle blocks
     ctx.fillStyle = "rgba(0,0,0,.16)";
-    for (let x = 8; x < W; x += 38) for (let y = gy + 22; y < H; y += 22) ctx.fillRect(x + ((y / 22) % 2 ? 12 : 0), y, 8, 8);
+    const dox = scroll % 38;
+    for (let x = 8 - dox; x < W; x += 38) for (let y = gy + 22; y < H; y += 22) ctx.fillRect(x + ((y / 22) % 2 ? 12 : 0), y, 8, 8);
   }
 
   /* generic voxel cube: front face at (x,y,w,h), 3D toward up-right by depth */
@@ -894,8 +1064,10 @@ game_config = {
     const h = scene.hero;
     const a = h.state === "attack" ? easeOut(h.animT) : 0;
     const hurt = h.state === "hit" ? (1 - h.animT) : 0;
+    const walking = h.state === "walk";
+    const step = walking ? Math.sin(scene.scroll * 0.12) : 0;   // gait cycle
     const lunge = Math.sin(a * Math.PI) * 16;          // forward thrust
-    const bob = h.bob + hurt * 4;
+    const bob = h.bob + hurt * 4 + (walking ? Math.abs(step) * 3 : 0);
     const x = fx + lunge - hurt * 6;
     const sc = 1;
     const arm = "#0f766e", armor = "#0e7490", armorDk = "#155e75";
@@ -906,9 +1078,9 @@ game_config = {
     ctx.fillStyle = "rgba(0,0,0,.32)";
     ctx.beginPath(); ctx.ellipse(fx + 6, fy + 4, 26, 7, 0, 0, Math.PI * 2); ctx.fill();
 
-    // legs
-    cube(ctx, x - 11, fy - 18, 9, 18, "#1e3a8a");
-    cube(ctx, x + 2,  fy - 18, 9, 18, "#1d4ed8");
+    // legs (alternate when marching)
+    cube(ctx, x - 11, fy - 18 - (walking ? step * 4 : 0), 9, 18, "#1e3a8a");
+    cube(ctx, x + 2,  fy - 18 + (walking ? step * 4 : 0), 9, 18, "#1d4ed8");
     // body (teal armor)
     const by = fy - 18 - 22 + bob * 0.3;
     cube(ctx, x - 12, by, 24, 22, armor);
@@ -985,24 +1157,43 @@ game_config = {
 
     const col = e.hitFlash > 0 ? "#ffffff" : e.color;
     const fy = y - bh + bob * 0.4;
+    const dk = shade2(e.color, -34);
+
+    // head decoration (varies by kind)
+    const deco = e.deco || "none";
+    if (e.isBoss) {
+      // golden crown horns
+      cube(ctx, x - w/2 + 2, fy - 9, 7, 10, "#fbbf24");
+      cube(ctx, x + w/2 - 9, fy - 9, 7, 10, "#fbbf24");
+      cube(ctx, x - 3, fy - 12, 6, 12, "#fde047");
+    } else if (deco === "horns") {
+      cube(ctx, x - w/2 + 3, fy - 7, 5, 8, dk);
+      cube(ctx, x + w/2 - 8, fy - 7, 5, 8, dk);
+    } else if (deco === "ears") {
+      cube(ctx, x - w/2 + 1, fy - 9, 7, 11, col);
+      cube(ctx, x + w/2 - 8, fy - 9, 7, 11, col);
+    } else if (deco === "spikes") {
+      for (let i = 0; i < 4; i++) cube(ctx, x - w/2 + 4 + i * (w - 8) / 3.2, fy - 6, 4, 7, dk);
+    } else if (deco === "antenna") {
+      cube(ctx, x - 6, fy - 12, 3, 12, dk); cube(ctx, x + 3, fy - 12, 3, 12, dk);
+      ctx.fillStyle = "#fde047"; ctx.fillRect(x - 7, fy - 14, 5, 4); ctx.fillRect(x + 2, fy - 14, 5, 4);
+    }
     // body
     cube(ctx, x - w/2, fy, w, bh, col);
-    // boss horns / crown
-    if (e.isBoss) {
-      cube(ctx, x - w/2 + 2, fy - 8, 7, 9, "#fbbf24");
-      cube(ctx, x + w/2 - 9, fy - 8, 7, 9, "#fbbf24");
-    } else {
-      // little legs
-      cube(ctx, x - w/2 + 3, e.y - 8, 7, 8, shade2(col, -30));
-      cube(ctx, x + w/2 - 10, e.y - 8, 7, 8, shade2(col, -30));
+    // little legs (non-boss)
+    if (!e.isBoss) {
+      cube(ctx, x - w/2 + 3, e.y - 8, 7, 8, dk);
+      cube(ctx, x + w/2 - 10, e.y - 8, 7, 8, dk);
     }
-    // eyes
-    ctx.fillStyle = "#fff";
-    const ew = w * 0.15, eyY = fy + bh * 0.32;
-    ctx.fillRect(x - w*0.22, eyY, ew, ew); ctx.fillRect(x + w*0.07, eyY, ew, ew);
-    ctx.fillStyle = e.hitFlash > 0 ? "#000" : "#7f1d1d";
-    ctx.fillRect(x - w*0.22 + ew*0.3, eyY + ew*0.3, ew*0.5, ew*0.5);
-    ctx.fillRect(x + w*0.07 + ew*0.3, eyY + ew*0.3, ew*0.5, ew*0.5);
+    // eyes (count varies by kind)
+    const ne = e.eyes || 2, ew = w * 0.15, eyY = fy + bh * 0.30;
+    const span = w * 0.5, x0 = x - span / 2;
+    for (let i = 0; i < ne; i++) {
+      const ex = ne === 1 ? x - ew / 2 : x0 + (span - ew) * (i / (ne - 1));
+      ctx.fillStyle = "#fff"; ctx.fillRect(ex, eyY, ew, ew);
+      ctx.fillStyle = e.hitFlash > 0 ? "#000" : "#7f1d1d";
+      ctx.fillRect(ex + ew * 0.3, eyY + ew * 0.3, ew * 0.5, ew * 0.5);
+    }
     // angry mouth
     ctx.fillStyle = "#1f2937";
     ctx.fillRect(x - w*0.16, fy + bh*0.62, w*0.32, 4);
@@ -1142,6 +1333,7 @@ game_config = {
   function finishGame(won) {
     if (S.finished) return;
     S.finished = true; S.phase = "idle";
+    clearSave();   // run is over — don't offer to resume a dead run
     if (S.score > S.best) { S.best = S.score; localStorage.setItem("haqi_slot_best", String(S.best)); }
     const earnedPoints = clamp(Math.round(S.score / 16) + (won ? 40 : 0), 12, 260);
     postParent("gameFinished", { earnedPoints, score: S.score, level: S.floor, difficulty: S.difficulty, won, roundId: S.roundId, finishedAt: Date.now() });
@@ -1153,14 +1345,32 @@ game_config = {
     const m = el("div", "modal");
     m.innerHTML = `
       <div style="font-size:54px;margin-bottom:6px;">${won ? "🏆" : "💀"}</div>
-      <div style="font-size:22px;font-weight:800;color:${won ? "#fbbf24" : "#f87171"};margin-bottom:10px;">${won ? "通关胜利！" : "你失败了"}</div>
-      <div style="font-size:14px;color:#cbd5e1;margin-bottom:4px;">到达 <b style="color:#fbbf24;">第 ${S.floor} 层</b> / ${CFG.maxFloor}</div>
+      <div style="font-size:22px;font-weight:800;color:${won ? "#fbbf24" : "#f87171"};margin-bottom:10px;">${won ? "通关胜利！" : "你倒下了"}</div>
+      <div style="font-size:14px;color:#cbd5e1;margin-bottom:4px;">深入 <b style="color:#fbbf24;">第 ${S.floor} 层</b> · 击败 <b style="color:#a855f7;">${S.bossesDefeated}</b> 个BOSS</div>
       <div style="font-size:14px;color:#cbd5e1;margin-bottom:4px;">得分 <b style="color:#6ee7b7;">${S.score}</b></div>
       <div style="font-size:12px;color:#94a3b8;margin-bottom:18px;">🏆 最佳 ${S.best}</div>
       <button class="btn btn-spin" id="againBtn">再来一局 🔄</button>`;
     bg.appendChild(m);
     document.body.appendChild(bg);
     $("#againBtn", m).onclick = () => { bg.remove(); restart(); };
+  }
+
+  /* offered at launch when a previous run is saved */
+  function showResumePrompt(saved) {
+    const bg = el("div", "modal-bg");
+    const m = el("div", "modal");
+    m.innerHTML = `
+      <div style="font-size:46px;margin-bottom:6px;">🗺️</div>
+      <div style="font-size:18px;font-weight:800;color:#fbbf24;margin-bottom:8px;">发现冒险存档</div>
+      <div style="font-size:14px;color:#cbd5e1;margin-bottom:18px;line-height:1.5;">上次进度：<b style="color:#fbbf24;">第 ${saved.floor} 层</b>，得分 <b style="color:#6ee7b7;">${saved.score || 0}</b>，已击败 <b style="color:#a855f7;">${saved.bossesDefeated || 0}</b> 个BOSS。</div>
+      <div style="display:flex;gap:10px;justify-content:center;flex-wrap:wrap;">
+        <button class="btn btn-spin" id="resumeBtn">继续冒险 ▶</button>
+        <button class="btn btn-reroll" id="freshBtn">重新开始</button>
+      </div>`;
+    bg.appendChild(m);
+    document.body.appendChild(bg);
+    $("#resumeBtn", m).onclick = () => { bg.remove(); applySave(saved); startGame(); };
+    $("#freshBtn", m).onclick  = () => { bg.remove(); clearSave(); startGame(); };
   }
 
   /* =====================================================================
@@ -1178,14 +1388,18 @@ game_config = {
   function restart() {
     const best = S.best;
     if (scene.raf) { cancelAnimationFrame(scene.raf); scene.raf = 0; }
+    clearSave();
     S = newState(); S.best = best;
-    scene.hero = null; scene.enemy = null; scene.effects = []; scene.particles = []; scene.floats = [];
+    scene.hero = null; scene.enemy = null; scene.effects = []; scene.particles = [];
+    scene.floats = []; scene.walk = null; scene.scroll = 0; scene.backdrop = null; scene.backdropKey = "";
     startGame();
   }
 
   function init() {
-    startGame();
     if (!S.loadedPosted) { S.loadedPosted = true; postParent("gameLoaded"); }
+    const saved = loadProgress();
+    if (saved && saved.floor >= 2) showResumePrompt(saved);   // mid-run save → offer resume
+    else { clearSave(); startGame(); }
   }
   init();
 })();

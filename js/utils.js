@@ -21,6 +21,74 @@ export function coinIconSvg(className = 'hud-coin-icon') {
         </svg>`;
 }
 
+// NPC 等图标支持用 URL 片段裁剪图片局部区域：`src#x_y_w_h`，四个值均为原图宽高的百分比 (0-100)。
+// 用百分比而非像素，是为了让裁剪结果与容器尺寸无关，天然适配任意展示盒子（沿用 background-size:cover 的自适应习惯）。
+export function parseIconSource(icon) {
+    const raw = String(icon || '').trim();
+    const hashIdx = raw.lastIndexOf('#');
+    if (hashIdx === -1) return { src: raw, rect: null };
+    const src = raw.slice(0, hashIdx);
+    const nums = raw.slice(hashIdx + 1).split('_').map(Number);
+    if (nums.length !== 4 || nums.some(n => !Number.isFinite(n))) return { src, rect: null };
+    const [x, y, w, h] = nums;
+    if (w <= 0 || h <= 0 || x < 0 || y < 0 || x + w > 100.001 || y + h > 100.001) return { src, rect: null };
+    return { src, rect: { x, y, w, h } };
+}
+
+export function isImageIconValue(icon) {
+    return /^(https?:|data:)/i.test(parseIconSource(icon).src);
+}
+
+// 返回可直接拼进 style 属性的 background-* 声明；无裁剪区域时退化为整图 contain 展示（保持原始宽高比）。
+export function iconBackgroundStyleAttr(icon) {
+    const { src, rect } = parseIconSource(icon);
+    if (!src) return '';
+    const safeSrc = src.replace(/["\\]/g, '');
+    if (!rect) return `background-image:url("${safeSrc}");background-size:contain;background-position:center;background-repeat:no-repeat;`;
+    const { x, y, w, h } = rect;
+    const sizeX = 10000 / w;
+    const sizeY = 10000 / h;
+    const posX = (100 - w) > 0.001 ? (100 * x / (100 - w)) : 0;
+    const posY = (100 - h) > 0.001 ? (100 * y / (100 - h)) : 0;
+    return `background-image:url("${safeSrc}");background-size:${sizeX.toFixed(3)}% ${sizeY.toFixed(3)}%;background-position:${posX.toFixed(3)}% ${posY.toFixed(3)}%;background-repeat:no-repeat;`;
+}
+
+const NATURAL_IMAGE_SIZE_CACHE = new Map();
+
+// 加载并缓存图片的原始像素宽高（用于按裁剪区域的真实宽高比重新设定展示盒子，避免拉伸变形）。
+export function loadNaturalImageSize(src) {
+    if (!src) return Promise.resolve(null);
+    const cached = NATURAL_IMAGE_SIZE_CACHE.get(src);
+    if (cached) return cached;
+    const promise = new Promise((resolve) => {
+        const img = new Image();
+        img.onload = () => resolve({ width: img.naturalWidth || 0, height: img.naturalHeight || 0 });
+        img.onerror = () => resolve(null);
+        img.src = src;
+    });
+    NATURAL_IMAGE_SIZE_CACHE.set(src, promise);
+    return promise;
+}
+
+// 整图（无裁剪）时 background-size:contain 已能在任意展示盒子内保持宽高比，无需调用本函数。
+// 裁剪局部区域时，percentage 拉伸铺满展示盒子，若盒子宽高比与裁剪区域真实像素宽高比不同就会变形；
+// 本函数异步读取原图真实尺寸，把元素的宽高改成裁剪区域的真实宽高比（在给定的最大边长内），铺满后即不再变形。
+export async function fitIconCropAspectRatio(el, icon, boxSize) {
+    if (!el) return;
+    const { src, rect } = parseIconSource(icon);
+    if (!src || !rect) return;
+    const size = await loadNaturalImageSize(src);
+    if (!size || !size.width || !size.height) return;
+    const cropWidth = size.width * rect.w / 100;
+    const cropHeight = size.height * rect.h / 100;
+    if (cropWidth <= 0 || cropHeight <= 0) return;
+    const ratio = cropWidth / cropHeight;
+    const width = ratio >= 1 ? boxSize : Math.max(1, Math.round(boxSize * ratio));
+    const height = ratio >= 1 ? Math.max(1, Math.round(boxSize / ratio)) : boxSize;
+    el.style.width = `${width}px`;
+    el.style.height = `${height}px`;
+}
+
 export function renderVisualAsset(visual, { className = '', alt = '', draggable = false } = {}) {
     if (!visual || typeof visual !== 'object') return '';
     const imageUrl = String(visual.imageUrl || '').trim();

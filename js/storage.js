@@ -1021,6 +1021,8 @@ function normalizePetGameRecord(record) {
         icon: String(record.icon || '🎮').slice(0, 8),
         desc: String(record.desc || '').slice(0, 200),
         updatedAt: Number.isFinite(record.updatedAt) ? record.updatedAt : 0,
+        // 是否已发布到 Keepwork 作品广场（userWorks）。发布成功后置 true 并持久化。
+        isPublished: !!record.isPublished,
     };
 }
 
@@ -1032,7 +1034,10 @@ function petGameTitleFromPath(path) {
 function normalizePetGameHtml(content) {
     const raw = String(content == null ? '' : content).trim();
     if (!raw) return '';
-    const fence = raw.match(/```(?:html)?\s*([\s\S]*?)```/i);
+    // 围栏边界要求 ``` 独占一行（真正的 Markdown 代码块写法），避免游戏自身源码里
+    // 内联出现的字面 ```（例如某些小游戏的 stripFence 正则里紧挨着的两个 ```）被
+    // 误判成围栏起止，导致保存/读取时把整份代码从中间截断成一小段乱码。
+    const fence = raw.match(/^[ \t]*```[a-zA-Z]*[ \t]*\r?\n([\s\S]*?)^[ \t]*```[ \t]*$/m);
     const candidate = (fence ? fence[1] : raw).trim();
     const docMatch = candidate.match(/<!DOCTYPE[\s\S]*<\/html>/i) || candidate.match(/<html[\s\S]*<\/html>/i);
     if (docMatch) return docMatch[0].trim();
@@ -1085,6 +1090,7 @@ export async function savePetGame(html, meta = {}) {
     }
     const baseName = path.split('/').pop().replace(/\.html?$/i, '');
     await writeFileSafe(path, normalizePetGameHtml(html));
+    const prev = existing.find(item => item.path === path);
     const record = normalizePetGameRecord({
         path,
         id: meta.id || baseName,
@@ -1092,20 +1098,267 @@ export async function savePetGame(html, meta = {}) {
         icon: meta.icon || '🎮',
         desc: meta.desc || '',
         updatedAt: Date.now(),
+        // 重新保存 / 编辑同一个游戏时保留已发布标记（meta 不携带该字段）。
+        isPublished: meta.isPublished != null ? meta.isPublished : prev?.isPublished,
     });
     const nextIndex = [record, ...existing.filter(item => item.path !== path)];
     await savePetGameList(nextIndex);
     return { path, record, index: nextIndex };
 }
 
-export async function deletePetGame(pathOrName) {
+function workBuddyDraftPath(pathOrId) {
+    const raw = String(pathOrId || '').trim().replace(/^\/+/, '');
+    if (!raw) return '';
+    if (/^workbuddy-drafts\/[^/]+\.json$/i.test(raw)) return raw;
+    const id = raw.replace(/\.json$/i, '').replace(/[^a-zA-Z0-9_\-]/g, '').slice(0, 96);
+    return id ? `workbuddy-drafts/${id}.json` : '';
+}
+
+function normalizeWorkBuddyGameDraft(data, source = '') {
+    if (!data || typeof data !== 'object') return null;
+    const html = String(data?.html || data?.code || data?.content || '').trim();
+    if (!html) return null;
+    return {
+        path: source,
+        title: String(data?.title || data?.name || 'WorkBuddy 小游戏').slice(0, 80),
+        icon: String(data?.icon || '🎮').slice(0, 8),
+        desc: String(data?.desc || data?.description || '').slice(0, 200),
+        html,
+    };
+}
+
+function decodeLooseJsonString(text) {
+    return String(text || '')
+        .replace(/\\u([0-9a-fA-F]{4})/g, (_, hex) => String.fromCharCode(parseInt(hex, 16)))
+        .replace(/\\r/g, '\r')
+        .replace(/\\n/g, '\n')
+        .replace(/\\t/g, '\t')
+        .replace(/\\\//g, '/')
+        .replace(/\\"/g, '"')
+        .replace(/\\\\/g, '\\');
+}
+
+function extractLooseJsonField(raw, key) {
+    const pattern = new RegExp(`"${key}"\\s*:\\s*"((?:\\\\.|[^"\\\\])*)"`);
+    const match = String(raw || '').match(pattern);
+    return match ? decodeLooseJsonString(match[1]) : '';
+}
+
+function parseLooseWorkBuddyGameDraft(raw, source = '') {
+    const marker = String(raw || '').match(/"html"\s*:\s*"/);
+    if (!marker) return null;
+    const start = marker.index + marker[0].length;
+    const end = String(raw || '').lastIndexOf('"');
+    if (end <= start) return null;
+    const html = decodeLooseJsonString(String(raw || '').slice(start, end)).trim();
+    if (!html) return null;
+    return normalizeWorkBuddyGameDraft({
+        title: extractLooseJsonField(raw, 'title'),
+        icon: extractLooseJsonField(raw, 'icon'),
+        desc: extractLooseJsonField(raw, 'desc'),
+        html,
+    }, source);
+}
+
+function parseWorkBuddyGameDraftText(text, source = '') {
+    const raw = String(text || '').trim();
+    if (!raw) return null;
+    try {
+        return normalizeWorkBuddyGameDraft(JSON.parse(raw), source);
+    } catch (_) {
+        return parseLooseWorkBuddyGameDraft(raw, source);
+    }
+}
+
+function isRemoteWorkBuddyDraft(value) {
+    try {
+        const url = new URL(String(value || '').trim());
+        return url.protocol === 'https:' || url.protocol === 'http:';
+    } catch (_) {
+        return false;
+    }
+}
+
+async function loadRemoteWorkBuddyGameDraft(urlText) {
+    const url = String(urlText || '').trim();
+    const res = await fetch(url, { cache: 'no-store' });
+    if (!res.ok) throw new Error(`草稿读取失败 HTTP ${res.status}`);
+    return parseWorkBuddyGameDraftText(await res.text(), url);
+}
+
+// WorkBuddy 可以传 CloudStudio 草稿 URL，也可以把草稿 JSON 写到 workbuddy-drafts/<draftId>.json。
+// 蛋蛋星球读取后仍走 savePetGame()，由本应用维护 pet-games/index.json。
+export async function loadWorkBuddyGameDraft(pathOrId) {
+    if (isRemoteWorkBuddyDraft(pathOrId)) return await loadRemoteWorkBuddyGameDraft(pathOrId);
+    const path = workBuddyDraftPath(pathOrId);
+    if (!path) return null;
+    const text = await readFileSafe(path);
+    if (!text.trim()) return null;
+    return parseWorkBuddyGameDraftText(text, path);
+}
+
+// 更新单个游戏的发布状态（发布到 Keepwork 作品广场成功后调用），并持久化到索引。
+export async function setPetGamePublished(pathOrName, isPublished = true) {
+    const raw = String(pathOrName || '').trim();
+    if (!raw) return null;
+    const path = (raw.includes('/') ? raw : petGamePath(raw)).replace(/^\/+/, '');
+    const existing = await loadPetGameList();
+    let updatedRecord = null;
+    const nextIndex = existing.map(item => {
+        if (item.path !== path) return item;
+        updatedRecord = { ...item, isPublished: !!isPublished };
+        return updatedRecord;
+    });
+    if (!updatedRecord) return null;
+    await savePetGameList(nextIndex);
+    return updatedRecord;
+}
+
+// 删除我的小游戏。默认连同 HTML 文件一并删除；keepFile=true 时只从索引（pet-games/index.json）
+// 移除，保留 HTML 文件——用于已发布到作品广场的游戏，删除「我的」列表条目但不破坏线上作品链接。
+export async function deletePetGame(pathOrName, { keepFile = false } = {}) {
     const raw = String(pathOrName || '').trim();
     if (!raw) return false;
     const path = (raw.includes('/') ? raw : petGamePath(raw)).replace(/^\/+/, '');
     const existing = await loadPetGameList();
     await savePetGameList(existing.filter(item => item.path !== path));
-    await deleteFileSafe(path);
+    if (!keepFile) await deleteFileSafe(path);
     return true;
+}
+
+// ========== 探索「已看过」记录（7 天内不再重复推送同一个作品） ==========
+// 双层存储：完整历史放本地 IndexedDB（容量大、不限条数）；个人主页存储只同步最近
+// EXPLORE_SEEN_STORE_MAX 条（体积可控、可跨设备）。读取时合并两者，写入时两边都更新。
+const EXPLORE_SEEN_FILE = 'user/explore_seen.json';
+const EXPLORE_SEEN_TTL_MS = 7 * 24 * 60 * 60 * 1000;
+const EXPLORE_SEEN_STORE_MAX = 300;     // 同步到个人主页存储的上限
+const EXPLORE_SEEN_DB_MAX = 2000;       // 本地 IndexedDB 完整历史的上限（超出按最旧裁剪）
+
+const EXPLORE_SEEN_DB = 'MagicHaqiExploreSeen';
+const EXPLORE_SEEN_STORE = 'seen';
+let _exploreSeenDbPromise = null;
+
+function openExploreSeenDb() {
+    if (_exploreSeenDbPromise) return _exploreSeenDbPromise;
+    _exploreSeenDbPromise = new Promise((resolve, reject) => {
+        if (typeof indexedDB === 'undefined') { reject(new Error('IndexedDB 不可用')); return; }
+        const req = indexedDB.open(EXPLORE_SEEN_DB, 1);
+        req.onupgradeneeded = () => {
+            const db = req.result;
+            if (!db.objectStoreNames.contains(EXPLORE_SEEN_STORE)) {
+                db.createObjectStore(EXPLORE_SEEN_STORE, { keyPath: 'key' });
+            }
+        };
+        req.onsuccess = () => resolve(req.result);
+        req.onerror = () => reject(req.error || new Error('打开 IndexedDB 失败'));
+    }).catch((e) => { _exploreSeenDbPromise = null; throw e; });
+    return _exploreSeenDbPromise;
+}
+
+// 只保留 7 天内的记录，返回 { key: seenAt } 映射。
+function pruneExploreSeen(raw) {
+    const now = Date.now();
+    const out = {};
+    if (raw && typeof raw === 'object') {
+        Object.keys(raw).forEach(key => {
+            const ts = Number(raw[key]) || 0;
+            if (ts && now - ts < EXPLORE_SEEN_TTL_MS) out[String(key).slice(0, 200)] = ts;
+        });
+    }
+    return out;
+}
+
+// 读取 IndexedDB 里的完整已看过历史（剔除 7 天前的，并异步清理过期行）。
+async function loadExploreSeenFromDb() {
+    try {
+        const db = await openExploreSeenDb();
+        const rows = await new Promise((resolve, reject) => {
+            const tx = db.transaction(EXPLORE_SEEN_STORE, 'readonly');
+            const req = tx.objectStore(EXPLORE_SEEN_STORE).getAll();
+            req.onsuccess = () => resolve(Array.isArray(req.result) ? req.result : []);
+            req.onerror = () => reject(req.error);
+        });
+        const now = Date.now();
+        const map = {};
+        const expired = [];
+        const valid = [];
+        rows.forEach(r => {
+            const key = r?.key;
+            const ts = Number(r?.seenAt) || 0;
+            if (!key || !ts) return;
+            if (now - ts < EXPLORE_SEEN_TTL_MS) { map[key] = ts; valid.push({ key, seenAt: ts }); }
+            else expired.push(key);
+        });
+        // 超出条数上限时，连同过期行一起把最旧的裁掉（map 也同步去掉，避免返回被删的 key）。
+        let toDelete = expired;
+        if (valid.length > EXPLORE_SEEN_DB_MAX) {
+            valid.sort((a, b) => a.seenAt - b.seenAt);
+            const overflow = valid.slice(0, valid.length - EXPLORE_SEEN_DB_MAX);
+            overflow.forEach(({ key }) => { delete map[key]; });
+            toDelete = expired.concat(overflow.map(({ key }) => key));
+        }
+        if (toDelete.length) pruneExploreSeenDb(db, toDelete).catch(() => {});
+        return map;
+    } catch (_) { return {}; }
+}
+
+async function pruneExploreSeenDb(db, keys) {
+    await new Promise((resolve) => {
+        const tx = db.transaction(EXPLORE_SEEN_STORE, 'readwrite');
+        const store = tx.objectStore(EXPLORE_SEEN_STORE);
+        keys.forEach(k => { if (k) store.delete(k); });
+        tx.oncomplete = resolve;
+        tx.onerror = resolve;
+    });
+}
+
+// 往 IndexedDB 写若干条已看过记录（完整历史，无 300 上限）。
+async function putExploreSeenToDb(entries) {
+    if (!entries.length) return;
+    try {
+        const db = await openExploreSeenDb();
+        await new Promise((resolve, reject) => {
+            const tx = db.transaction(EXPLORE_SEEN_STORE, 'readwrite');
+            const store = tx.objectStore(EXPLORE_SEEN_STORE);
+            entries.forEach(({ key, seenAt }) => { if (key) store.put({ key, seenAt: Number(seenAt) || Date.now() }); });
+            tx.oncomplete = resolve;
+            tx.onerror = () => reject(tx.error);
+        });
+    } catch (_) { /* IndexedDB 不可用时仅靠个人主页存储 */ }
+}
+
+// 读取探索已看过记录：合并 IndexedDB 完整历史 + 个人主页存储（最近 300，可跨设备），均剔除 7 天前的。
+// 同时把「文件里有、但本地 IndexedDB 没有」的记录回填到 IndexedDB（吸收其它设备同步过来的记录）。
+export async function loadExploreSeen() {
+    const fromFile = pruneExploreSeen(await readJSON(EXPLORE_SEEN_FILE, {}));
+    const fromDb = await loadExploreSeenFromDb();
+    const merged = { ...fromDb };
+    const backfill = [];
+    Object.keys(fromFile).forEach(key => {
+        const ts = fromFile[key];
+        if (!merged[key] || ts > merged[key]) merged[key] = ts;
+        if (!fromDb[key]) backfill.push({ key, seenAt: ts });
+    });
+    if (backfill.length) putExploreSeenToDb(backfill);
+    return merged;
+}
+
+// 记录单个作品为已看过：写入 IndexedDB 完整历史（不限条数）。
+export function recordExploreSeen(key, seenAt = Date.now()) {
+    const k = String(key || '').trim();
+    if (!k) return;
+    putExploreSeenToDb([{ key: k.slice(0, 200), seenAt }]);
+}
+
+// 同步「已看过」到个人主页存储：剔除过期 + 只保留最近 EXPLORE_SEEN_STORE_MAX 条（防抖写盘）。
+export function saveExploreSeen(map) {
+    const pruned = pruneExploreSeen(map);
+    const capped = Object.keys(pruned)
+        .sort((a, b) => pruned[b] - pruned[a])
+        .slice(0, EXPLORE_SEEN_STORE_MAX)
+        .reduce((acc, key) => { acc[key] = pruned[key]; return acc; }, {});
+    saveJSONDebounced(EXPLORE_SEEN_FILE, capped);
+    return capped;
 }
 
 // ========== 伴学游戏（study-games/ 下以 HTML 文件存储） ==========

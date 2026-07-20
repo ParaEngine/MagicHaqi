@@ -47,6 +47,13 @@ All of these are plain read-only URLs — prefer fetching them with `curl`.
      will be embedded via `srcdoc` in a sandboxed iframe.
    - Keep it mobile-friendly (touch input, responsive sizing, no scrollbars) since
      MagicHaqi is a mobile-first game.
+   - Optional host capabilities — current-pet sprite sheets and paid unlock points
+     (`haqi_request_unlock`: rewarded ad / VIP unlock, handled entirely by the host)
+     — are documented in the guide. Use them only as progressive enhancements that
+     degrade gracefully when the file is opened standalone. When adding unlock:
+     never `disabled` lock buttons; never put `pointer-events: none` on the canvas;
+     match host replies by `requestId` only; `haqi_unlock_ack` is not success;
+     keep free levels playable after cancel.
 3. **Test-run it yourself when you can**: save the HTML as a local `.html` file and
    open it in a browser (or your environment's preview) to verify it loads and plays
    before handing it back.

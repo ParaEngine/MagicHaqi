@@ -48,7 +48,7 @@
       signMatch: '连三',
       signCollect: '收集',
       menuTitle: '宠物泡泡龙',
-      menuText: t('menuText'),
+      menuText: '拖住屏幕来瞄准，松手就发射泡泡。点“交换”或点下个泡泡可换一次。三个或更多同色泡泡碰到一起就会爆开，越会连击和打掉大片泡泡，得分越高。',
       continueGame: '继续游戏',
     },
     enUS: {
@@ -132,10 +132,15 @@
   const NEIGHBORS_EVEN = [[-1, -1], [-1, 0], [0, -1], [0, 1], [1, -1], [1, 0]];
   const NEIGHBORS_ODD = [[-1, 0], [-1, 1], [0, -1], [0, 1], [1, 0], [1, 1]];
 
+  // 微信 web-view（尤其小程序内）在受限场景下访问 localStorage 会抛 SecurityError；
+  // 这些读取发生在 DOM 挂载之前，一旦抛错整个脚本中断 → 全屏白/黑。统一兜底。
+  function lsGet(key) { try { return localStorage.getItem(key); } catch (_) { return null; } }
+  function lsSet(key, value) { try { localStorage.setItem(key, value); } catch (_) {} }
+
   const state = {
-    difficulty: localStorage.getItem(STORAGE_DIFFICULTY) || 'normal',
-    bestLevel: Math.max(1, Number(localStorage.getItem(STORAGE_BEST_LEVEL) || 1)),
-    bestScore: Math.max(0, Number(localStorage.getItem(STORAGE_BEST_SCORE) || 0)),
+    difficulty: lsGet(STORAGE_DIFFICULTY) || 'normal',
+    bestLevel: Math.max(1, Number(lsGet(STORAGE_BEST_LEVEL) || 1)),
+    bestScore: Math.max(0, Number(lsGet(STORAGE_BEST_SCORE) || 0)),
     level: 1,
     score: 0,
     foods: 0,
@@ -280,7 +285,9 @@
   document.body.appendChild(root);
 
   const canvas = document.getElementById('mhCanvas');
-  const ctx = canvas.getContext('2d');
+  // 个别 web-view 在首帧 canvas 尚未就绪时 getContext 可能返回 null；用占位避免
+  // 后续 ctx.xxx 抛错导致脚本中断（开始界面是静态 DOM，必须始终可见）。
+  const ctx = canvas.getContext('2d') || { setTransform() {}, save() {}, restore() {}, beginPath() {}, fill() {}, stroke() {}, clearRect() {}, fillRect() {}, fillText() {}, arc() {}, moveTo() {}, lineTo() {}, quadraticCurveTo() {}, bezierCurveTo() {}, ellipse() {}, rect() {}, clip() {}, translate() {}, rotate() {}, scale() {}, drawImage() {}, closePath() {}, createLinearGradient() { return { addColorStop() {} }; }, createRadialGradient() { return { addColorStop() {} }; }, measureText() { return { width: 0 }; }, setLineDash() {} };
   const overlayEl = document.getElementById('mhOverlay');
   const overlayTitleEl = document.getElementById('mhOverlayTitle');
   const overlayTextEl = document.getElementById('mhOverlayText');
@@ -641,8 +648,8 @@
       state.score += bonus;
       state.bestLevel = Math.max(state.bestLevel, state.level);
       state.bestScore = Math.max(state.bestScore, state.score);
-      localStorage.setItem(STORAGE_BEST_LEVEL, String(state.bestLevel));
-      localStorage.setItem(STORAGE_BEST_SCORE, String(state.bestScore));
+      lsSet(STORAGE_BEST_LEVEL, String(state.bestLevel));
+      lsSet(STORAGE_BEST_SCORE, String(state.bestScore));
       updateHud();
       burstConfetti();
       playSound('win');
@@ -1330,7 +1337,7 @@
   function setDifficulty(id) {
     if (!DIFFICULTIES[id]) return;
     state.difficulty = id;
-    localStorage.setItem(STORAGE_DIFFICULTY, id);
+    lsSet(STORAGE_DIFFICULTY, id);
     buildDifficulties();
     playSound('select');
     if (state.started && !state.projectile) startGame();
@@ -1708,10 +1715,18 @@
   startBtn.onclick = () => startGame();
 
   buildDifficulties();
-  resize();
-  updateHud();
-  requestPetImage();
-  draw(performance.now());
+  // 把画布尺寸计算、首帧绘制与宠物形象请求推迟到开始界面（覆盖在棋盘上的 overlay，
+  // 已在 DOM 里）渲染之后。微信 web-view 在初始脚本执行阶段同步分配大画布并整帧绘制时，
+  // 可能出现首帧空白；先让静态开始界面绘出再做重活。整体 try 包裹，确保即便首帧画布
+  // 出错也不会把静态开始界面顶白。startGame() 会重新生成关卡，首帧无需这些。
+  requestAnimationFrame(() => requestAnimationFrame(() => {
+    try {
+      resize();
+      updateHud();
+      requestPetImage();
+      draw(performance.now());
+    } catch (_) {}
+  }));
   post('gameLoaded');
 })();
 </script>

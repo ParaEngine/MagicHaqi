@@ -1,0 +1,409 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover, user-scalable=no">
+  <meta name="theme-color" content="#dff8ed">
+  <title>家庭群点赞充能</title>
+  <style>
+    :root {
+      --ink: #253b38;
+      --muted: #718985;
+      --green: #16b77b;
+      --green-dark: #078558;
+      --lime: #b9ec57;
+      --cream: #fffdf5;
+      --wechat: #ededed;
+    }
+    * { box-sizing: border-box; }
+    html, body { width: 100%; height: 100%; margin: 0; }
+    body {
+      overflow: hidden;
+      color: var(--ink);
+      font-family: "Microsoft YaHei", "PingFang SC", system-ui, sans-serif;
+      background: linear-gradient(160deg, #e9fff5 0%, #fff9da 55%, #d9f3ff 100%);
+      user-select: none;
+      touch-action: manipulation;
+    }
+    button { font: inherit; }
+    .game {
+      position: relative;
+      display: grid;
+      grid-template-rows: minmax(0, 1.35fr) minmax(210px, .65fr);
+      width: 100%; height: 100%; min-height: 560px;
+      overflow: hidden;
+      isolation: isolate;
+    }
+    .orb { position: absolute; z-index: -1; border-radius: 50%; filter: blur(2px); opacity: .72; }
+    .orb.a { width: 250px; height: 250px; top: -100px; right: -70px; background: #b8f0dc; }
+    .orb.b { width: 210px; height: 210px; left: -90px; bottom: 15%; background: #ffe39c; }
+    .hero {
+      display: flex; flex-direction: column; align-items: center; justify-content: center;
+      padding: max(22px, env(safe-area-inset-top)) 22px 10px;
+    }
+    .eyebrow {
+      display: inline-flex; align-items: center; gap: 7px; padding: 7px 13px;
+      border: 1px solid rgba(22,183,123,.18); border-radius: 999px;
+      color: var(--green-dark); background: rgba(255,255,255,.72); font-size: 13px; font-weight: 800;
+      box-shadow: 0 8px 25px rgba(37,89,72,.08);
+    }
+    h1 { margin: 12px 0 2px; font-size: clamp(25px, 5vw, 35px); letter-spacing: -.5px; }
+    .subtitle { margin: 0; color: var(--muted); font-size: 14px; }
+    .pet-stage { position: relative; width: min(76vw, 320px); height: min(33vh, 230px); min-height: 175px; margin-top: 4px; }
+    .halo {
+      position: absolute; width: 178px; height: 178px; left: 50%; top: 50%;
+      transform: translate(-50%, -48%); border-radius: 50%;
+      background: radial-gradient(circle, rgba(185,236,87,.65), rgba(22,183,123,.08) 62%, transparent 63%);
+      animation: breathe 2.6s ease-in-out infinite;
+    }
+    .pet-visual { position: absolute; width: 190px; height: 160px; left: 50%; top: 50%; transform: translate(-50%, -50%); animation: float 2.5s ease-in-out infinite; }
+    .account-pet { display: none; background-repeat: no-repeat; filter: drop-shadow(0 15px 14px rgba(24,112,78,.2)); }
+    .pet-stage.has-account-pet .account-pet { display: block; }
+    .pet-stage.has-account-pet .turtle { display: none; }
+    .pet-loading { position: absolute; left: 50%; top: 20px; transform: translateX(-50%); color: var(--green-dark); font-size: 11px; font-weight: 800; opacity: .72; }
+    .pet-stage.has-account-pet .pet-loading { display: none; }
+    .turtle { height: 145px; }
+    .shell {
+      position: absolute; width: 130px; height: 104px; left: 23px; top: 20px;
+      border: 6px solid #287b58; border-radius: 55% 48% 52% 48%;
+      background: radial-gradient(circle at 36% 35%, #c8f373 0 13%, transparent 14%), radial-gradient(circle at 68% 62%, #83d565 0 15%, transparent 16%), linear-gradient(145deg, #a9e85e, #43b979);
+      box-shadow: inset -10px -10px 0 rgba(10,111,75,.12), 0 15px 25px rgba(24,112,78,.18);
+    }
+    .shell::before, .shell::after { content: ""; position: absolute; background: rgba(255,255,255,.23); border-radius: 50%; }
+    .shell::before { width: 30px; height: 22px; top: 16px; left: 48px; }
+    .shell::after { width: 20px; height: 16px; bottom: 16px; left: 26px; }
+    .head { position: absolute; width: 63px; height: 57px; right: 3px; top: 48px; border-radius: 45% 55% 52% 48%; background: #77d996; border: 5px solid #287b58; }
+    .eye { position: absolute; width: 8px; height: 11px; right: 15px; top: 13px; border-radius: 50%; background: #183f34; box-shadow: inset 2px 2px #fff; }
+    .smile { position: absolute; width: 15px; height: 8px; right: 10px; top: 32px; border-bottom: 3px solid #287b58; border-radius: 50%; transform: rotate(-8deg); }
+    .flipper { position: absolute; width: 49px; height: 29px; border: 5px solid #287b58; background: #77d996; border-radius: 55% 45% 55% 45%; }
+    .flipper.f1 { left: 22px; top: 102px; transform: rotate(25deg); }
+    .flipper.f2 { left: 36px; top: 9px; transform: rotate(-24deg); }
+    .flipper.f3 { left: 124px; top: 106px; transform: rotate(-24deg); }
+    .tail { position: absolute; left: 7px; top: 65px; width: 28px; height: 23px; background: #77d996; border: 5px solid #287b58; transform: rotate(20deg); border-radius: 80% 10% 80% 10%; }
+    .pet-name { position: absolute; left: 50%; bottom: 1px; transform: translateX(-50%); padding: 5px 13px; border-radius: 999px; background: rgba(255,255,255,.86); font-weight: 800; font-size: 14px; box-shadow: 0 8px 20px rgba(35,86,70,.1); }
+    .energy-fx { position: absolute; z-index: 5; left: 50%; top: 42%; transform: translate(-50%, -50%) scale(.5); color: #0b9b66; font-size: 27px; font-weight: 1000; text-shadow: 0 3px 0 #fff, 0 7px 18px rgba(0,119,77,.3); opacity: 0; pointer-events: none; }
+    .energy-fx.play { animation: energyRise 1.5s ease-out; }
+    .meter-card { width: min(90vw, 390px); padding: 14px 16px 15px; border: 2px solid rgba(255,255,255,.88); border-radius: 20px; background: rgba(255,255,255,.72); box-shadow: 0 12px 32px rgba(37,89,72,.1); backdrop-filter: blur(8px); }
+    .meter-head { display: flex; align-items: center; justify-content: space-between; margin-bottom: 8px; font-size: 14px; font-weight: 800; }
+    .meter-value { color: var(--green-dark); font-size: 16px; }
+    .meter { height: 18px; overflow: hidden; padding: 3px; border-radius: 999px; background: #dae9df; box-shadow: inset 0 2px 5px rgba(0,0,0,.1); }
+    .meter-fill { position: relative; width: 0%; height: 100%; border-radius: inherit; background: linear-gradient(90deg, var(--green), var(--lime)); transition: width 1.1s cubic-bezier(.2,.9,.3,1); }
+    .meter-fill::after { content: ""; position: absolute; inset: 1px 6px auto; height: 3px; border-radius: 9px; background: rgba(255,255,255,.65); }
+    .action-panel {
+      display: flex; flex-direction: column; justify-content: center; align-items: center;
+      padding: 18px 22px max(24px, env(safe-area-inset-bottom));
+      border-top: 1px solid rgba(255,255,255,.7); background: rgba(255,255,255,.56); backdrop-filter: blur(12px);
+    }
+    .diary-card { display: flex; align-items: center; gap: 12px; width: min(90vw, 390px); margin-bottom: 14px; text-align: left; }
+    .diary-icon { display: grid; place-items: center; width: 44px; height: 44px; flex: 0 0 auto; border-radius: 14px; font-size: 22px; background: #fff; box-shadow: 0 8px 20px rgba(43,91,76,.1); }
+    .diary-card strong { display: block; font-size: 15px; }
+    .diary-card span { display: block; margin-top: 3px; color: var(--muted); font-size: 12px; }
+    .share-btn { width: min(90vw, 390px); border: 0; border-radius: 18px; padding: 16px 18px; color: #fff; background: linear-gradient(135deg, #10b578, #078c60); box-shadow: 0 12px 0 #05704c, 0 18px 30px rgba(7,140,96,.25); font-size: 17px; font-weight: 900; cursor: pointer; transition: transform .16s, box-shadow .16s; }
+    .share-btn:active { transform: translateY(7px); box-shadow: 0 5px 0 #05704c, 0 10px 20px rgba(7,140,96,.2); }
+    .share-btn:disabled { cursor: wait; opacity: .7; }
+    .tip { margin: 14px 0 0; color: var(--muted); font-size: 12px; }
+
+    .chat-overlay { position: fixed; z-index: 20; inset: 0; display: grid; place-items: center; padding: 18px; background: rgba(18,35,31,.5); backdrop-filter: blur(7px); opacity: 0; visibility: hidden; transition: opacity .3s, visibility .3s; }
+    .chat-overlay.open { opacity: 1; visibility: visible; }
+    .phone { width: min(94vw, 390px); height: min(84vh, 690px); overflow: hidden; border: 7px solid #202523; border-radius: 36px; background: var(--wechat); box-shadow: 0 30px 75px rgba(0,0,0,.35); transform: translateY(45px) scale(.92); transition: transform .42s cubic-bezier(.2,.9,.25,1.15); }
+    .chat-overlay.open .phone { transform: none; }
+    .statusbar { height: 29px; display: flex; justify-content: space-between; padding: 7px 18px 0; background: #f5f5f5; color: #161616; font-size: 11px; font-weight: 800; }
+    .chat-head { height: 52px; display: flex; align-items: center; justify-content: space-between; padding: 0 15px; border-bottom: 1px solid #d4d4d4; background: #f5f5f5; }
+    .chat-head strong { font-size: 16px; }
+    .chat-head span { width: 32px; font-size: 22px; }
+    .chat-head span:last-child { text-align: right; }
+    .chat-body { height: calc(100% - 140px); overflow: hidden; padding: 18px 13px; }
+    .chat-time { margin-bottom: 16px; color: #a3a3a3; text-align: center; font-size: 11px; }
+    .message { display: flex; align-items: flex-start; gap: 9px; margin: 0 0 19px; opacity: 0; transform: translateY(18px); }
+    .message.show { animation: messageIn .42s ease-out forwards; }
+    .message.mine { flex-direction: row-reverse; }
+    .avatar { display: grid; place-items: center; width: 42px; height: 42px; flex: 0 0 auto; overflow: hidden; border-radius: 6px; font-size: 23px; background: #ccefe2; }
+    .grandpa .avatar { background: #f4d7ae; }
+    .bubble { position: relative; max-width: 74%; padding: 11px 13px; border: 1px solid #ddd; border-radius: 5px; background: #fff; color: #222; font-size: 14px; line-height: 1.55; box-shadow: 0 1px 2px rgba(0,0,0,.04); }
+    .mine .bubble { border-color: #8ecf60; background: #95ec69; }
+    .bubble::before { content: ""; position: absolute; left: -7px; top: 13px; width: 12px; height: 12px; border-left: 1px solid #ddd; border-bottom: 1px solid #ddd; background: inherit; transform: rotate(45deg); }
+    .mine .bubble::before { left: auto; right: -7px; border: 0; border-top: 1px solid #8ecf60; border-right: 1px solid #8ecf60; }
+    .article { display: flex; gap: 9px; align-items: center; margin-top: 8px; padding-top: 9px; border-top: 1px solid rgba(0,0,0,.12); font-size: 12px; }
+    .article-thumb { display: grid; place-items: center; width: 52px; height: 44px; flex: 0 0 auto; border-radius: 5px; background-color: #d8f7e1; background-repeat: no-repeat; font-size: 25px; }
+    .article-thumb.has-pet-image { color: transparent; }
+    .like { display: inline-flex; align-items: center; gap: 5px; margin-bottom: 4px; color: #3478dc; font-size: 19px; font-weight: 900; animation: likePulse .8s ease-in-out infinite alternate; }
+    .chat-input { height: 59px; display: flex; align-items: center; gap: 11px; padding: 8px 13px; border-top: 1px solid #d4d4d4; background: #f7f7f7; color: #272727; font-size: 24px; }
+    .fake-input { height: 38px; flex: 1; border-radius: 5px; background: #fff; }
+    .toast { position: fixed; z-index: 40; left: 50%; bottom: max(28px, env(safe-area-inset-bottom)); transform: translate(-50%, 20px); max-width: 84vw; padding: 11px 18px; border-radius: 999px; color: #fff; background: rgba(28,48,43,.9); box-shadow: 0 8px 25px rgba(0,0,0,.2); font-size: 13px; font-weight: 800; opacity: 0; pointer-events: none; transition: .25s; }
+    .toast.show { opacity: 1; transform: translate(-50%, 0); }
+
+    @keyframes float { 50% { transform: translate(-50%, -54%) rotate(2deg); } }
+    @keyframes breathe { 50% { transform: translate(-50%, -48%) scale(1.09); opacity: .74; } }
+    @keyframes messageIn { to { opacity: 1; transform: none; } }
+    @keyframes likePulse { to { transform: scale(1.12) rotate(-5deg); } }
+    @keyframes energyRise { 0% { opacity: 0; transform: translate(-50%, 20px) scale(.5); } 22% { opacity: 1; transform: translate(-50%, 0) scale(1.15); } 75% { opacity: 1; } 100% { opacity: 0; transform: translate(-50%, -95px) scale(.9); } }
+    @media (max-height: 650px) {
+      .game { min-height: 480px; grid-template-rows: minmax(0, 1.2fr) minmax(180px, .8fr); }
+      .hero { padding-top: 12px; }
+      .eyebrow { display: none; }
+      h1 { margin-top: 2px; font-size: 25px; }
+      .pet-stage { min-height: 145px; height: 25vh; }
+      .pet-visual { transform: translate(-50%, -50%) scale(.84); }
+      .halo { transform: translate(-50%, -50%) scale(.84); }
+      .diary-card { margin-bottom: 9px; }
+      .tip { margin-top: 9px; }
+    }
+    @media (prefers-reduced-motion: reduce) { *, *::before, *::after { animation-duration: .01ms !important; transition-duration: .01ms !important; } }
+  </style>
+</head>
+<body>
+  <main class="game">
+    <i class="orb a"></i><i class="orb b"></i>
+    <section class="hero">
+      <div class="eyebrow">✨ AI 宠物成长计划</div>
+      <h1>家人的爱，变成成长能量</h1>
+      <p class="subtitle">分享<span data-pet-name>团团</span>的日记，收集家庭群点赞</p>
+      <div id="petStage" class="pet-stage" aria-label="当前账户的 AI 宠物">
+        <div class="halo"></div>
+        <div id="accountPet" class="pet-visual account-pet" role="img" aria-label="当前账户宠物"></div>
+        <div class="pet-visual turtle" aria-hidden="true">
+          <i class="tail"></i><i class="flipper f1"></i><i class="flipper f2"></i><i class="flipper f3"></i>
+          <div class="shell"></div><div class="head"><i class="eye"></i><i class="smile"></i></div>
+        </div>
+        <span class="pet-loading">正在连接蛋蛋星球宠物…</span>
+        <span class="pet-name">🐾 <span data-pet-name>团团</span></span>
+        <div id="energyFx" class="energy-fx">+50 能量</div>
+      </div>
+      <div class="meter-card">
+        <div class="meter-head"><span>⚡ 家庭点赞能量</span><span id="energyValue" class="meter-value">0 / 100</span></div>
+        <div class="meter" role="progressbar" aria-label="家庭点赞能量" aria-valuemin="0" aria-valuemax="100" aria-valuenow="0"><div id="meterFill" class="meter-fill"></div></div>
+      </div>
+    </section>
+    <section class="action-panel">
+      <div class="diary-card"><div class="diary-icon">📔</div><div><strong>AI 今日已生成一篇成长日记</strong><span>记录<span data-pet-name>团团</span>今天的可爱瞬间</span></div></div>
+      <button id="shareButton" class="share-btn" type="button">生成宠物日记并分享给爷爷奶奶</button>
+      <p id="tip" class="tip">每次收到家人点赞，团团就能获得 50 点能量</p>
+    </section>
+  </main>
+
+  <div id="chatOverlay" class="chat-overlay" aria-hidden="true">
+    <div class="phone" role="dialog" aria-modal="true" aria-label="模拟微信家庭群聊天">
+      <div class="statusbar"><span>09:41</span><span>●●● 5G 🔋</span></div>
+      <header class="chat-head"><span>‹</span><strong>幸福一家人（8）</strong><span>•••</span></header>
+      <div class="chat-body">
+        <div class="chat-time">今天 09:41</div>
+        <div id="playerMessage" class="message mine">
+          <div class="avatar">👧🏻</div>
+          <div class="bubble">我养的 AI 宠物今天真可爱！<div class="article"><div id="articlePet" class="article-thumb">🐾</div><span><span data-pet-name>团团</span>的成长日记<br><small>来自蛋蛋星球</small></span></div></div>
+        </div>
+        <div id="grandpaMessage" class="message grandpa">
+          <div class="avatar">👴🏻</div>
+          <div class="bubble"><div class="like">👍 点赞成功</div><br>孙女真棒！给<span data-pet-name>团团</span>点赞充能！</div>
+        </div>
+      </div>
+      <footer class="chat-input"><span>◉</span><div class="fake-input"></div><span>☺</span><span>⊕</span></footer>
+    </div>
+  </div>
+  <div id="toast" class="toast" role="status"></div>
+
+  <script>
+  game_config = {
+    difficulty: "demo",
+    maxEnergy: 100,
+    energyPerLike: 50,
+    replyDelayMs: 2000,
+    closeDelayMs: 1300,
+    petName: "团团",
+    playerText: "我养的 AI 小海龟今天真可爱！",
+    grandpaText: "孙女真棒！给团团点赞充能！"
+  };
+  </script>
+  <script>
+  art_assets = [];
+  </script>
+  <script>
+  (() => {
+    "use strict";
+
+    const UI = {
+      shareButton: document.getElementById("shareButton"),
+      chatOverlay: document.getElementById("chatOverlay"),
+      playerMessage: document.getElementById("playerMessage"),
+      grandpaMessage: document.getElementById("grandpaMessage"),
+      energyValue: document.getElementById("energyValue"),
+      meterFill: document.getElementById("meterFill"),
+      meter: document.querySelector(".meter"),
+      energyFx: document.getElementById("energyFx"),
+      tip: document.getElementById("tip"),
+      toast: document.getElementById("toast"),
+      petStage: document.getElementById("petStage"),
+      accountPet: document.getElementById("accountPet"),
+      articlePet: document.getElementById("articlePet")
+    };
+
+    const HostBridge = {
+      post(type, data) {
+        window.parent.postMessage(data ? { type, data } : { type }, "*");
+      }
+    };
+
+    const AccountPet = {
+      requestId: "",
+      objectUrl: "",
+      petId: "",
+      fallbackTimer: 0,
+      previewTimer: 0,
+      request(petId = "") {
+        this.petId = petId || this.petId;
+        this.requestId = `family_like_pet_${Date.now()}`;
+        window.parent.postMessage({ type: "haqi_get_pet_image", requestId: this.requestId, anim: "happy", petId: this.petId || undefined }, "*");
+        clearTimeout(this.fallbackTimer);
+        this.fallbackTimer = setTimeout(() => {
+          if (!this.objectUrl) window.parent.postMessage({ type: "haqi_get_pet_images", requestId: `family_like_pets_${Date.now()}`, anim: "happy" }, "*");
+        }, 900);
+        clearTimeout(this.previewTimer);
+        this.previewTimer = setTimeout(() => {
+          const loading = UI.petStage.querySelector(".pet-loading");
+          if (!this.objectUrl && loading) loading.textContent = "进入蛋蛋星球后显示你的账户宠物";
+        }, 1800);
+      },
+      applyBackground(element, url, pet) {
+        const uv = pet.uv || {};
+        const cols = Math.max(1, Number(uv.cols) || 1);
+        const rows = Math.max(1, Number(uv.rows) || 1);
+        const col = Math.max(0, Number(uv.col) || 0);
+        const row = Math.max(0, Number(uv.row) || 0);
+        element.style.backgroundImage = `url("${url}")`;
+        element.style.backgroundSize = cols > 1 || rows > 1 ? `${cols * 100}% ${rows * 100}%` : "contain";
+        element.style.backgroundPosition = cols > 1 || rows > 1
+          ? `${cols > 1 ? col * 100 / (cols - 1) : 50}% ${rows > 1 ? row * 100 / (rows - 1) : 50}%`
+          : "center";
+      },
+      setName(name) {
+        const safeName = String(name || game_config.petName || "我的宠物").trim();
+        game_config.petName = safeName;
+        document.querySelectorAll("[data-pet-name]").forEach(element => { element.textContent = safeName; });
+      },
+      setPet(pet) {
+        if (!pet?.imageBlob) return;
+        try {
+          if (this.objectUrl) URL.revokeObjectURL(this.objectUrl);
+          this.objectUrl = URL.createObjectURL(pet.imageBlob);
+          this.applyBackground(UI.accountPet, this.objectUrl, pet);
+          this.applyBackground(UI.articlePet, this.objectUrl, pet);
+          UI.articlePet.classList.add("has-pet-image");
+          UI.petStage.classList.add("has-account-pet");
+          UI.accountPet.setAttribute("aria-label", pet.name ? `当前账户宠物：${pet.name}` : "当前账户宠物");
+          this.petId = pet.petId || this.petId;
+          this.setName(pet.name);
+        } catch (_) {
+          Effects.showToast("宠物形象加载失败，已使用默认形象");
+        }
+      },
+      handleMessage(message) {
+        if (message.type === "haqi_pet_image" && message.ok && message.data &&
+            (!this.requestId || !message.requestId || message.requestId === this.requestId || message.requestId === "active_pet_config")) {
+          this.setPet(message.data);
+        }
+        if (message.type === "haqi_pet_images" && message.ok) {
+          const pets = Array.isArray(message.data?.pets) ? message.data.pets : [];
+          const selected = pets.find(pet => !this.petId || pet.petId === this.petId) || pets[0];
+          if (selected) this.setPet(selected);
+        }
+      },
+      destroy() {
+        clearTimeout(this.fallbackTimer);
+        clearTimeout(this.previewTimer);
+        if (this.objectUrl) URL.revokeObjectURL(this.objectUrl);
+      }
+    };
+
+    const Effects = {
+      toastTimer: 0,
+      showToast(text) {
+        clearTimeout(this.toastTimer);
+        UI.toast.textContent = text;
+        UI.toast.classList.add("show");
+        this.toastTimer = setTimeout(() => UI.toast.classList.remove("show"), 2200);
+      },
+      showEnergy(amount) {
+        UI.energyFx.textContent = `+${amount} 能量`;
+        UI.energyFx.classList.remove("play");
+        void UI.energyFx.offsetWidth;
+        UI.energyFx.classList.add("play");
+      }
+    };
+
+    const EnergySystem = {
+      value: 0,
+      add(amount) {
+        const previous = this.value;
+        this.value = Math.min(Number(game_config.maxEnergy), this.value + Number(amount));
+        UI.energyValue.textContent = `${this.value} / ${game_config.maxEnergy}`;
+        UI.meterFill.style.width = `${this.value / game_config.maxEnergy * 100}%`;
+        UI.meter.setAttribute("aria-valuenow", String(this.value));
+        Effects.showEnergy(this.value - previous);
+        if (this.value >= game_config.maxEnergy) {
+          UI.tip.textContent = `🎉 能量已满！${game_config.petName}解锁了新的成长阶段`;
+          Effects.showToast(`${game_config.petName}升级啦！感谢家人的爱 💚`);
+          HostBridge.post("gameFinished", { earnedPoints: 10, score: 100, difficulty: game_config.difficulty, energy: this.value });
+        } else {
+          UI.tip.textContent = `再获得 ${game_config.maxEnergy - this.value} 点能量，团团就能升级`;
+        }
+      }
+    };
+
+    const ChatSimulator = {
+      running: false,
+      wait(ms) { return new Promise(resolve => setTimeout(resolve, ms)); },
+      reset() {
+        UI.playerMessage.classList.remove("show");
+        UI.grandpaMessage.classList.remove("show");
+      },
+      async play() {
+        if (this.running) return;
+        this.running = true;
+        this.reset();
+        UI.shareButton.disabled = true;
+        UI.chatOverlay.classList.add("open");
+        UI.chatOverlay.setAttribute("aria-hidden", "false");
+        await this.wait(430);
+        UI.playerMessage.classList.add("show");
+        await this.wait(Number(game_config.replyDelayMs));
+        UI.grandpaMessage.classList.add("show");
+        await this.wait(Number(game_config.closeDelayMs));
+        UI.chatOverlay.classList.remove("open");
+        UI.chatOverlay.setAttribute("aria-hidden", "true");
+        await this.wait(320);
+        EnergySystem.add(game_config.energyPerLike);
+        UI.shareButton.disabled = false;
+        UI.shareButton.textContent = EnergySystem.value >= game_config.maxEnergy ? "再分享一篇宠物日记" : "继续分享，邀请家人点赞";
+        this.running = false;
+      }
+    };
+
+    const Game = {
+      start() {
+        UI.shareButton.addEventListener("click", () => {
+          HostBridge.post("gameStarted", { action: "share_pet_diary" });
+          ChatSimulator.play();
+        });
+        window.addEventListener("message", event => {
+          const message = event.data || {};
+          if (message.type === "setGameConfig" && message.data) {
+            const data = message.data;
+            if (data.gameConfig && typeof data.gameConfig === "object") Object.assign(game_config, data.gameConfig);
+            else Object.assign(game_config, data);
+            if (data.petName) AccountPet.setName(data.petName);
+            if (data.petId) AccountPet.request(data.petId);
+          }
+          AccountPet.handleMessage(message);
+        });
+        window.addEventListener("beforeunload", () => AccountPet.destroy(), { once: true });
+        AccountPet.setName(game_config.petName);
+        AccountPet.request();
+        HostBridge.post("gameLoaded");
+      }
+    };
+
+    Game.start();
+    window.__familyLikeChargeDebug = { EnergySystem, ChatSimulator, AccountPet };
+  })();
+  </script>
+</body>
+</html>

@@ -1,0 +1,142 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover, user-scalable=no">
+  <meta name="theme-color" content="#ff744d">
+  <title>扫码兑换与宠物喂养</title>
+  <script src="https://cdn.keepwork.com/keepwork/cdn/tailwindcss@3.4.16.js"></script>
+  <style>
+    :root { --coral:#ff744d; --dark:#d94c32; --brown:#583b31; --muted:#96766b; --yellow:#ffd45b; }
+    * { box-sizing:border-box; -webkit-tap-highlight-color:transparent; }
+    html,body { width:100%; height:100%; margin:0; }
+    body { overflow:hidden; color:var(--brown); font-family:"Microsoft YaHei","PingFang SC",system-ui,sans-serif; background:linear-gradient(160deg,#fff0bd,#ffd4a2 50%,#ffaf85); user-select:none; touch-action:none; }
+    button,input { font:inherit; }
+    button { color:inherit; }
+    .app { position:relative; isolation:isolate; display:flex; flex-direction:column; width:100%; height:100%; min-height:520px; overflow:hidden; padding:max(14px,env(safe-area-inset-top)) 16px max(14px,env(safe-area-inset-bottom)); }
+    .sun { position:absolute; z-index:-3; top:-85px; right:-65px; width:260px; height:260px; border-radius:50%; background:#fff1a1aa; box-shadow:0 0 80px #fff4a7; }
+    .hill { position:absolute; z-index:-3; left:-15%; right:-15%; bottom:11%; height:34%; border-radius:50% 50% 0 0; background:linear-gradient(#b7e4a3,#75c486); }
+    .hill::after { content:""; position:absolute; left:-8%; right:35%; top:-23%; height:90%; border-radius:50%; background:#d8efb1; transform:rotate(5deg); }
+    .topbar { display:flex; align-items:center; justify-content:space-between; width:min(100%,640px); margin:auto auto 0; gap:10px; }
+    .brand { display:flex; align-items:center; gap:9px; }
+    .brand-icon { display:grid; place-items:center; width:42px; height:42px; border:3px solid white; border-radius:15px; background:var(--coral); box-shadow:0 6px 0 #b44b2f38; font-size:23px; transform:rotate(-5deg); }
+    h1 { margin:0; font-size:clamp(18px,5vw,25px); line-height:1.05; }
+    .brand p { margin:4px 0 0; color:var(--muted); font-size:11px; font-weight:700; }
+    .help { flex:none; width:40px; height:40px; border:2px solid #fff; border-radius:50%; background:#ffffff99; box-shadow:0 6px 15px #633c291f; font-weight:1000; cursor:pointer; }
+    .status { width:min(100%,580px); margin:12px auto 0; padding:10px 13px; border:2px solid #ffffffdf; border-radius:19px; background:#ffffffdc; box-shadow:0 10px 24px #70432820; backdrop-filter:blur(8px); }
+    .status-row { display:flex; justify-content:space-between; font-size:12px; font-weight:900; }
+    .hunger-label { color:var(--dark); }
+    .meter { height:11px; margin-top:7px; overflow:hidden; border-radius:99px; background:#f1ddd1; box-shadow:inset 0 2px 3px #5331261f; }
+    .meter-fill { width:12%; height:100%; border-radius:inherit; background:linear-gradient(90deg,#ff7651,#ffd45b,#79d29b); transition:width .5s cubic-bezier(.2,.9,.3,1); }
+    .scene { position:relative; display:flex; flex:1; min-height:260px; align-items:center; justify-content:center; }
+    .speech { position:absolute; z-index:5; top:9%; left:50%; min-width:190px; max-width:85vw; padding:11px 17px; border:3px solid white; border-radius:22px 22px 22px 6px; background:#fffdf7; box-shadow:0 8px 20px #5b362421; font-size:14px; font-weight:900; text-align:center; transform:translateX(-50%); }
+    .speech::after { content:""; position:absolute; left:25px; bottom:-11px; width:18px; height:18px; border:solid white; border-width:0 0 3px 3px; background:#fffdf7; transform:rotate(-45deg); }
+    .speech.pop { animation:speechPop .45s ease both; }
+    .pet-zone { position:relative; display:grid; place-items:center; width:230px; height:230px; margin-top:38px; border-radius:50%; transition:.2s; }
+    .pet-zone.drop-ready { background:#ffffff80; box-shadow:0 0 0 7px #ffffff3d; transform:scale(1.05); }
+    .pet-shadow { position:absolute; bottom:12px; width:155px; height:27px; border-radius:50%; background:#5134272e; filter:blur(6px); }
+    .pet { position:relative; z-index:2; width:190px; height:195px; filter:drop-shadow(0 12px 9px #58362a2e); transform-origin:50% 90%; }
+    .pet.hungry { animation:hungry 1.15s ease-in-out infinite; }
+    .pet.happy { animation:happy .8s cubic-bezier(.15,1.25,.3,1); }
+    .account-pet { display:none; position:absolute; inset:0; background-repeat:no-repeat; }
+    .pet.has-account-pet .account-pet { display:block; }
+    .pet.has-account-pet .fallback { display:none; }
+    .fallback { position:absolute; inset:0; }
+    .ear { position:absolute; top:12px; width:67px; height:82px; border:5px solid #794d3d; border-radius:54% 54% 42% 42%; background:#f49a57; }
+    .ear.left { left:19px; transform:rotate(-22deg); } .ear.right { right:19px; transform:rotate(22deg); }
+    .face { position:absolute; left:17px; right:17px; bottom:5px; height:154px; border:5px solid #794d3d; border-radius:48% 48% 43% 43%; background:linear-gradient(145deg,#ffd277,#f39a52); box-shadow:inset 13px 10px #ffffff45; }
+    .face::before { content:""; position:absolute; left:50%; top:72px; width:84px; height:62px; border-radius:50%; background:#ffe6b1; transform:translateX(-50%); }
+    .eye { position:absolute; z-index:2; top:60px; width:13px; height:17px; border-radius:50%; background:#563a31; box-shadow:inset 3px 3px white; }
+    .eye.left { left:38px; } .eye.right { right:38px; }
+    .nose { position:absolute; z-index:3; top:88px; left:50%; width:18px; height:13px; border-radius:55%; background:#684437; transform:translateX(-50%); }
+    .mouth { position:absolute; z-index:3; top:101px; left:50%; width:24px; height:15px; border-top:3px solid #75483a; border-radius:50%; transform:translateX(-50%); }
+    .belly { position:absolute; z-index:2; bottom:7px; left:50%; width:78px; height:47px; border-radius:50%; background:#ffe4a8; transform:translateX(-50%); }
+    .mark { position:absolute; z-index:4; right:10px; top:8px; display:grid; place-items:center; width:40px; height:40px; border:3px solid white; border-radius:50%; color:white; background:var(--coral); box-shadow:0 5px 12px #7838252e; font-size:20px; font-weight:1000; animation:pulse 1.3s infinite; }
+    .inventory { position:relative; width:min(100%,640px); min-height:108px; margin:0 auto; padding:12px 118px 12px 13px; border:3px solid #ffffffe6; border-radius:25px; background:#fffbeedf; box-shadow:0 13px 30px #6037252b; backdrop-filter:blur(10px); }
+    .inventory-head { display:flex; gap:8px; margin-bottom:8px; font-size:12px; font-weight:900; }
+    .inventory-head small { color:var(--muted); font-weight:700; }
+    .items { display:flex; min-height:57px; align-items:center; gap:9px; }
+    .empty { color:#b69a8e; font-size:12px; font-weight:800; line-height:1.5; }
+    .meat { display:grid; flex:none; place-items:center; width:57px; height:57px; border:2px solid white; border-radius:17px; background:linear-gradient(145deg,#fff,#ffe8db); box-shadow:0 6px #e8c6b2,0 9px 16px #6539281f; font-size:32px; cursor:grab; touch-action:none; transition:.15s; }
+    .meat.drag-source { opacity:.25; transform:scale(.82); }
+    .meat.added { animation:itemIn .5s cubic-bezier(.15,1.4,.35,1) both; }
+    .scan { position:absolute; right:11px; bottom:11px; display:flex; width:99px; height:80px; align-items:center; justify-content:center; flex-direction:column; gap:3px; border:0; border-radius:20px; color:white; background:linear-gradient(145deg,#ff8b60,var(--dark)); box-shadow:0 7px #a93b29,0 12px 20px #9f3f2847; font-size:12px; font-weight:1000; cursor:pointer; }
+    .scan span { font-size:25px; line-height:1; }
+    .scan:active { transform:translateY(5px); box-shadow:0 2px #a93b29; }
+    .ghost { position:fixed; z-index:100; display:grid; place-items:center; width:64px; height:64px; border:3px solid white; border-radius:19px; background:#fff5e9; box-shadow:0 14px 25px #502a3040; font-size:38px; pointer-events:none; transform:translate(-50%,-50%) rotate(-8deg); }
+    .crumb { position:fixed; z-index:90; pointer-events:none; animation:crumb .8s ease-out forwards; }
+    .overlay { position:fixed; z-index:200; inset:0; display:grid; place-items:center; padding:22px; background:#492b2175; backdrop-filter:blur(7px); opacity:0; pointer-events:none; transition:.22s; }
+    .overlay.show { opacity:1; pointer-events:auto; }
+    .modal { width:min(100%,410px); padding:24px; border:3px solid white; border-radius:30px; background:#fffaf0; box-shadow:0 24px 60px #3b1f184c; transform:translateY(20px) scale(.95); transition:.3s; }
+    .overlay.show .modal { transform:none; }
+    .modal-icon { display:grid; place-items:center; width:68px; height:68px; margin:-57px auto 10px; border:5px solid #fffaf0; border-radius:23px; background:var(--yellow); box-shadow:0 9px 20px #7247232e; font-size:35px; transform:rotate(-5deg); }
+    .modal h2 { margin:8px 0 5px; text-align:center; font-size:23px; }
+    .modal-copy { margin:0 0 15px; color:var(--muted); font-size:13px; line-height:1.6; text-align:center; }
+    .drink { display:flex; align-items:center; gap:11px; margin-bottom:13px; padding:10px 13px; border:2px dashed #f1b46d; border-radius:17px; background:#fff2cd; }
+    .drink b { display:block; font-size:13px; } .drink small { color:#a27655; font-size:11px; }
+    .receipt { width:100%; padding:14px 16px; border:3px solid #f3d2ba; border-radius:16px; outline:0; color:var(--brown); background:white; font-size:16px; font-weight:800; text-align:center; user-select:text; }
+    .receipt:focus { border-color:var(--coral); box-shadow:0 0 0 4px #ff744d21; }
+    .actions { display:grid; grid-template-columns:1fr 1.6fr; gap:9px; margin-top:14px; }
+    .modal-btn { padding:13px 10px; border:0; border-radius:15px; font-weight:900; cursor:pointer; }
+    .cancel { background:#eadfd8; color:#856c62; } .confirm { color:white; background:var(--coral); box-shadow:0 5px var(--dark); }
+    .rules { margin:0; padding-left:22px; color:#7f645a; font-size:13px; line-height:1.85; }
+    .toast { position:fixed; z-index:300; left:50%; top:max(82px,calc(env(safe-area-inset-top) + 65px)); width:min(88vw,430px); padding:13px 18px; border:3px solid white; border-radius:18px; background:#fff4c8; box-shadow:0 13px 30px #49271c38; font-size:13px; font-weight:900; text-align:center; opacity:0; pointer-events:none; transform:translate(-50%,-16px) scale(.94); transition:.25s; }
+    .toast.show { opacity:1; transform:translate(-50%,0) scale(1); }
+    @keyframes hungry { 0%,100%{transform:rotate(-2deg) translateX(-3px)} 50%{transform:rotate(2deg) translateX(3px)} }
+    @keyframes happy { 0%{transform:scale(1)} 30%{transform:scale(1.25) translateY(-12px) rotate(-5deg)} 58%{transform:scale(.9) translateY(3px) rotate(4deg)} 82%{transform:scale(1.08) translateY(-4px)} }
+    @keyframes pulse { 50%{transform:scale(1.12);box-shadow:0 5px 20px #ff5c3873} }
+    @keyframes itemIn { from{opacity:0;transform:translateY(28px) scale(.3) rotate(-20deg)} }
+    @keyframes speechPop { 0%{opacity:0;transform:translateX(-50%) scale(.65)} 70%{transform:translateX(-50%) scale(1.08)} }
+    @keyframes crumb { to{opacity:0;transform:translate(var(--x),var(--y)) rotate(220deg) scale(.3)} }
+    @media (max-height:670px) { .status{margin-top:7px;padding:7px 12px}.scene{min-height:235px}.speech{top:4%;padding:8px 15px}.pet-zone{margin-top:35px;transform:scale(.86)}.pet-zone.drop-ready{transform:scale(.91)}.inventory{min-height:96px;padding-top:8px;padding-bottom:8px}.scan{height:70px} }
+    @media (prefers-reduced-motion:reduce) { *,*::before,*::after{animation-duration:.01ms!important;animation-iteration-count:1!important} }
+  </style>
+</head>
+<body class="bg-slate-950 overflow-hidden select-none" style="touch-action:none;">
+  <main class="app">
+    <div class="sun"></div><div class="hill"></div>
+    <header class="topbar"><div class="brand"><div class="brand-icon">🥚</div><div><h1>扫码兑换与宠物喂养</h1><p>摊位消费 · 小票换粮 · 陪伴成长</p></div></div><button id="helpButton" class="help" type="button" aria-label="游戏说明">?</button></header>
+    <section class="status" aria-label="宠物饱食度"><div class="status-row"><span class="hunger-label">🍽️ 饱食度</span><span id="hungerValue">12 / 100</span></div><div class="meter"><div id="meterFill" class="meter-fill"></div></div></section>
+    <section class="scene"><div id="speech" class="speech" role="status">肚子咕咕叫…好想吃肉肉！</div><div id="petZone" class="pet-zone" aria-label="把肉块拖到宠物身上"><div class="pet-shadow"></div><div id="pet" class="pet hungry" role="img"><div id="accountPet" class="account-pet"></div><div class="fallback" aria-hidden="true"><span class="ear left"></span><span class="ear right"></span><span class="face"><span class="eye left"></span><span class="eye right"></span><span class="nose"></span><span class="mouth"></span><span class="belly"></span></span></div><span id="hungerMark" class="mark">!</span></div></div></section>
+    <section class="inventory" aria-label="饲料物品栏"><div class="inventory-head">🎒 饲料背包 <small>拖到宠物身上喂养</small></div><div id="items" class="items"><div id="emptyHint" class="empty">背包空空的<br>扫码兑换高级肉块吧</div></div><button id="scanButton" class="scan" type="button"><span>▣</span>扫码买水<br>兑换饲料</button></section>
+  </main>
+  <div id="scanOverlay" class="overlay" role="dialog" aria-modal="true" aria-labelledby="scanTitle"><form id="scanForm" class="modal"><div class="modal-icon">🥤</div><h2 id="scanTitle">扫描饮品小票</h2><p class="modal-copy">购买合作摊位饮品，凭小票即可兑换<br><b>3 块高级肉块 🥩</b></p><div class="drink"><span style="font-size:30px">🧋</span><div><b>蛋蛋星球联名饮品</b><small>任意饮品均可参与 · 一票一兑</small></div></div><input id="receiptInput" class="receipt" type="text" autocomplete="off" placeholder="模拟扫码：输入任意字符" aria-label="小票码"><div class="actions"><button id="cancelScan" class="modal-btn cancel" type="button">稍后再说</button><button class="modal-btn confirm" type="submit">确认兑换 ×3</button></div></form></div>
+  <div id="helpOverlay" class="overlay" role="dialog" aria-modal="true" aria-labelledby="helpTitle"><div class="modal"><div class="modal-icon">💡</div><h2 id="helpTitle">喂养指南</h2><ol class="rules"><li>点击右下角按钮，输入任意内容模拟扫描小票。</li><li>每张小票可兑换 3 块高级肉块。</li><li>按住肉块，拖到蛋蛋星球宠物身上松开。</li><li>每块肉可增加 30 点饱食度，并积累进化能量。</li></ol><button id="closeHelp" class="modal-btn confirm" style="width:100%;margin-top:15px" type="button">知道啦</button></div></div>
+  <div id="toast" class="toast" role="status" aria-live="assertive"></div>
+  <script>
+  game_config = { difficulty:"normal", initialFullness:12, feedValue:30, receiptReward:3, evolutionMealsRequired:2 };
+  </script>
+  <script>
+  art_assets = [];
+  </script>
+  <script defer>
+  (() => {
+    "use strict";
+    const $ = id => document.getElementById(id);
+    const pet=$("pet"), zone=$("petZone"), accountPet=$("accountPet"), mark=$("hungerMark"), hungerValue=$("hungerValue"), meter=$("meterFill"), speech=$("speech"), items=$("items"), empty=$("emptyHint"), scanOverlay=$("scanOverlay"), helpOverlay=$("helpOverlay"), receipt=$("receiptInput"), toast=$("toast");
+    const state={ fullness:Number(game_config.initialFullness)||12, inventory:0, fed:0, scans:0, started:false, finished:false, petId:"", petName:"", requestId:"", objectUrl:"", fallbackTimer:0, drag:null, toastTimer:0 };
+    function post(type,data){ window.parent.postMessage(data?{type,data}:{type},"*"); }
+    function showToast(text){ clearTimeout(state.toastTimer);toast.textContent=text;toast.classList.add("show");state.toastTimer=setTimeout(()=>toast.classList.remove("show"),2600); }
+    function say(text){ speech.textContent=text;speech.classList.remove("pop");void speech.offsetWidth;speech.classList.add("pop"); }
+    function renderStatus(){ const n=Math.round(Math.min(100,state.fullness));hungerValue.textContent=`${n} / 100`;meter.style.width=`${n}%`;const hungry=n<70;pet.classList.toggle("hungry",hungry&&!pet.classList.contains("happy"));mark.style.display=hungry?"grid":"none";pet.setAttribute("aria-label",`${state.petName||"蛋蛋星球宠物"}，饱食度 ${n}`); }
+    function createMeat(){ const b=document.createElement("button");b.type="button";b.className="meat added";b.textContent="🥩";b.setAttribute("aria-label","高级肉块，拖到宠物身上");b.addEventListener("pointerdown",beginDrag);items.appendChild(b); }
+    function renderInventory(add=0){ empty.style.display=state.inventory?"none":"block";const all=items.querySelectorAll(".meat");if(all.length>state.inventory)Array.from(all).slice(state.inventory).forEach(el=>el.remove());for(let i=0;i<add;i++)createMeat(); }
+    function open(el){el.classList.add("show")} function close(el){el.classList.remove("show")}
+    function inside(x,y){const r=zone.getBoundingClientRect(),cx=r.left+r.width/2,cy=r.top+r.height/2;return Math.hypot(x-cx,y-cy)<=Math.min(r.width,r.height)*.5;}
+    function beginDrag(e){if(state.drag||e.button>0)return;e.preventDefault();const source=e.currentTarget,ghost=document.createElement("div");ghost.className="ghost";ghost.textContent="🥩";document.body.appendChild(ghost);source.classList.add("drag-source");state.drag={pointerId:e.pointerId,source,ghost};source.setPointerCapture?.(e.pointerId);moveDrag(e);window.addEventListener("pointermove",moveDrag,{passive:false});window.addEventListener("pointerup",endDrag);window.addEventListener("pointercancel",cleanDrag);}
+    function moveDrag(e){if(!state.drag||e.pointerId!==state.drag.pointerId)return;e.preventDefault();state.drag.ghost.style.left=`${e.clientX}px`;state.drag.ghost.style.top=`${e.clientY}px`;zone.classList.toggle("drop-ready",inside(e.clientX,e.clientY));}
+    function cleanDrag(){if(!state.drag)return;state.drag.source.classList.remove("drag-source");state.drag.ghost.remove();zone.classList.remove("drop-ready");state.drag=null;window.removeEventListener("pointermove",moveDrag);window.removeEventListener("pointerup",endDrag);window.removeEventListener("pointercancel",cleanDrag);}
+    function endDrag(e){if(!state.drag||e.pointerId!==state.drag.pointerId)return;const ok=inside(e.clientX,e.clientY),source=state.drag.source;cleanDrag();if(ok)feed(source,e.clientX,e.clientY);}
+    function effects(x,y){for(let i=0;i<8;i++){const c=document.createElement("span");c.className="crumb";c.textContent=i%3?"✨":"💛";c.style.left=`${x}px`;c.style.top=`${y}px`;c.style.setProperty("--x",`${-65+Math.random()*130}px`);c.style.setProperty("--y",`${-85+Math.random()*45}px`);document.body.appendChild(c);setTimeout(()=>c.remove(),850);}}
+    function feed(source,x,y){if(!source.isConnected||state.inventory<1)return;source.remove();state.inventory--;state.fed++;state.fullness=Math.min(100,state.fullness+Number(game_config.feedValue||30));renderInventory();renderStatus();pet.classList.remove("hungry","happy");void pet.offsetWidth;pet.classList.add("happy");setTimeout(()=>{pet.classList.remove("happy");renderStatus()},820);effects(x,y);const left=Math.max(0,Number(game_config.evolutionMealsRequired||2)-state.fed);const text=left===1?"饱食度 +30，距离下一形态进化还差 1 顿大餐！":left>1?`饱食度 +30，距离进化还差 ${left} 顿大餐！`:"饱食度 +30，进化能量已经充满啦！";say(text);showToast(text);post("haqi_pet_fed",{petId:state.petId||undefined,food:"premium_meat",fullness:state.fullness,amount:30});if(!state.finished){state.finished=true;post("gameFinished",{earnedPoints:10,score:state.fullness,difficulty:game_config.difficulty,level:1,seconds:0,finishedAt:Date.now()});}}
+    function redeem(code){const reward=Number(game_config.receiptReward||3);state.inventory+=reward;state.scans++;renderInventory(reward);close(scanOverlay);receipt.value="";say("闻到高级肉块的香味啦！快喂我～");showToast(`兑换成功！高级肉块 ×${reward} 已放入背包`);if(!state.started){state.started=true;post("gameStarted",{receiptCode:code});}post("haqi_receipt_redeemed",{receiptCode:code,reward:"premium_meat",amount:reward});}
+    function requestPet(petId="",anim="sad"){state.petId=petId||state.petId;state.requestId=`blind_box_feed_${Date.now()}`;post("haqi_get_pet_image",{requestId:state.requestId,anim,petId:state.petId||undefined});clearTimeout(state.fallbackTimer);state.fallbackTimer=setTimeout(()=>{if(!state.objectUrl)post("haqi_get_pet_images",{requestId:`blind_box_all_${Date.now()}`,anim})},900);}
+    function setPet(payload){if(!payload?.imageBlob)return;try{if(state.objectUrl)URL.revokeObjectURL(state.objectUrl);state.objectUrl=URL.createObjectURL(payload.imageBlob);const uv=payload.uv||{},cols=Math.max(1,Number(uv.cols)||1),rows=Math.max(1,Number(uv.rows)||1),col=Math.max(0,Number(uv.col)||0),row=Math.max(0,Number(uv.row)||0);accountPet.style.backgroundImage=`url("${state.objectUrl}")`;accountPet.style.backgroundSize=cols>1||rows>1?`${cols*100}% ${rows*100}%`:"contain";accountPet.style.backgroundPosition=cols>1||rows>1?`${cols>1?col*100/(cols-1):50}% ${rows>1?row*100/(rows-1):50}%`:"center";state.petId=payload.petId||state.petId;state.petName=String(payload.name||state.petName||"").trim();pet.classList.add("has-account-pet");say(state.petName?`${state.petName}的肚子咕咕叫…`:"肚子咕咕叫…好想吃肉肉！");renderStatus();}catch(_){showToast("账户宠物加载失败，已使用默认宠物");}}
+    $("scanButton").addEventListener("click",()=>{open(scanOverlay);setTimeout(()=>receipt.focus(),250)});$("cancelScan").addEventListener("click",()=>close(scanOverlay));$("scanForm").addEventListener("submit",e=>{e.preventDefault();const code=receipt.value.trim();if(!code){showToast("请先输入任意字符模拟扫码");receipt.focus();return}redeem(code)});$("helpButton").addEventListener("click",()=>open(helpOverlay));$("closeHelp").addEventListener("click",()=>close(helpOverlay));[scanOverlay,helpOverlay].forEach(o=>o.addEventListener("pointerdown",e=>{if(e.target===o)close(o)}));
+    window.addEventListener("message",e=>{const m=e.data||{};if(m.type==="setGameConfig"&&m.data){const d=m.data;if(d.gameConfig&&typeof d.gameConfig==="object")Object.assign(game_config,d.gameConfig);else Object.assign(game_config,d);if(d.petName)state.petName=String(d.petName).trim();if(d.petId)requestPet(d.petId)}if(m.type==="haqi_pet_image"&&m.ok&&m.data&&(!state.requestId||!m.requestId||m.requestId===state.requestId||m.requestId==="active_pet_config"))setPet(m.data);if(m.type==="haqi_pet_images"&&m.ok){const list=Array.isArray(m.data?.pets)?m.data.pets:[];const selected=list.find(p=>!state.petId||p.petId===state.petId)||list[0];if(selected)setPet(selected)}});
+    window.addEventListener("beforeunload",()=>{clearTimeout(state.fallbackTimer);if(state.objectUrl)URL.revokeObjectURL(state.objectUrl)},{once:true});
+    window.__blindBoxFeedDebug={state,redeem,renderStatus,requestPet};renderStatus();requestPet();post("gameLoaded");
+  })();
+  </script>
+</body>
+</html>

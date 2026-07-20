@@ -1,0 +1,932 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+  <title>哈奇异闻录</title>
+  <script src="https://cdn.keepwork.com/keepwork/cdn/tailwindcss@3.4.16.js"></script>
+  <style>
+    *{box-sizing:border-box;}
+    html,body{margin:0;height:100%;overflow:hidden;
+      background:radial-gradient(120% 120% at 50% -10%,#182542 0%,#0b1120 55%,#06090f 100%);
+      font-family:system-ui,"PingFang SC","Microsoft YaHei",sans-serif;-webkit-font-smoothing:antialiased;}
+    /* —— 居中容器：彻底解决横向拉伸 —— */
+    .panel{max-width:900px;width:100%;margin:0 auto;}
+    /* —— 磨砂玻璃 —— */
+    .glass{background:rgba(17,25,42,.62);backdrop-filter:blur(16px) saturate(140%);
+      -webkit-backdrop-filter:blur(16px) saturate(140%);border:1px solid rgba(255,255,255,.09);}
+    .glass-deep{background:rgba(9,13,24,.78);backdrop-filter:blur(20px);-webkit-backdrop-filter:blur(20px);}
+    /* —— 高级卡片：悬停放大 + 边框发光 —— */
+    .gcard{position:relative;background:rgba(24,33,54,.55);backdrop-filter:blur(12px);
+      -webkit-backdrop-filter:blur(12px);border:1px solid rgba(255,255,255,.10);border-radius:18px;
+      transition:transform .2s cubic-bezier(.2,.85,.25,1),box-shadow .2s,border-color .2s;will-change:transform;}
+    .gcard:hover{transform:translateY(-4px) scale(1.05);border-color:rgba(255,255,255,.30);
+      box-shadow:0 16px 34px -10px rgba(0,0,0,.7),0 0 24px -4px var(--gc,rgba(52,211,153,.55));}
+    .gcard:active{transform:scale(.97);}
+    .gcard[disabled]{opacity:.4;pointer-events:none;filter:grayscale(.4);}
+    .gcard.sel{border-color:#fbbf24;box-shadow:0 0 0 2px #fbbf24,0 0 22px -4px rgba(251,191,36,.7);}
+    /* —— 路线卡片：纯黑底，凸显白字与彩色图标 —— */
+    .routecard{background:#000;border:1px solid rgba(255,255,255,.13);border-radius:24px;
+      transition:transform .22s cubic-bezier(.2,.85,.25,1),box-shadow .22s,border-color .22s;will-change:transform;}
+    .routecard:hover{transform:translateY(-6px) scale(1.06);border-color:rgba(255,255,255,.42);
+      box-shadow:0 24px 54px -14px #000,0 0 32px -4px var(--gc,rgba(251,191,36,.65));}
+    .routecard:active{transform:scale(.97);}
+    .routecard .ic{filter:drop-shadow(0 0 10px var(--gc,rgba(251,191,36,.6)));}
+    /* —— 按钮质感 —— */
+    .gbtn{transition:transform .15s,filter .15s,box-shadow .15s;will-change:transform;
+      box-shadow:0 6px 18px -6px rgba(0,0,0,.6);}
+    .gbtn:hover{transform:scale(1.05);filter:brightness(1.1);}
+    .gbtn:active{transform:scale(.95);}
+    .pill{background:rgba(255,255,255,.06);border:1px solid rgba(255,255,255,.10);}
+    .glow{filter:drop-shadow(0 0 8px currentColor);}
+    .card-pop{animation:pop .28s cubic-bezier(.2,.9,.25,1);}
+    @keyframes pop{from{transform:scale(.9);opacity:0}to{transform:scale(1);opacity:1}}
+    .fadein{animation:fade .35s ease;}@keyframes fade{from{opacity:0}to{opacity:1}}
+    .hbar{height:9px;border-radius:6px;background:#0f172a;overflow:hidden;border:1px solid rgba(0,0,0,.3);}
+    .hbar>i{display:block;height:100%;border-radius:6px;transition:width .35s ease;
+      background:linear-gradient(180deg,rgba(255,255,255,.35),rgba(255,255,255,0) 55%) , var(--hc,#34d399);}
+    ::-webkit-scrollbar{width:7px;height:7px}::-webkit-scrollbar-thumb{background:#334155;border-radius:4px}
+  </style>
+</head>
+
+<body class="overflow-hidden select-none text-slate-100" style="touch-action:manipulation;"></body>
+
+<!-- ============================================================
+  game_config — 纯数据（无函数 / 无 DOM）。
+  《哈奇异闻录》全部底层数据：英雄池、敌人池、元素克制、爬塔地图。
+  形态切换(AS/ES) · 元素克制(水火风雷) · 维克托时空裂缝 都在此定义。
+============================================================ -->
+<script>
+window.game_config = {
+  // —— 元素克制环：水→火→风→雷→水（克制目标 = beats） ——
+  // 维克托严格设定为 thunder（雷·觉醒系），绝非风。献祭后全队获得「闪电链」。
+  elements: {
+    water:   { name: "水", emoji: "💧", color: "#38bdf8", beats: "fire"    },
+    fire:    { name: "火", emoji: "🔥", color: "#fb7185", beats: "wind"    },
+    wind:    { name: "风", emoji: "🍃", color: "#4ade80", beats: "thunder" },
+    thunder: { name: "雷", emoji: "⚡", color: "#facc15", beats: "water", awakened: true }
+  },
+  balance: {
+    elemBonus: 1.6, elemPenalty: 0.6,   // 克制 / 被克 的伤害乘区
+    defAura: 0.80, atkAura: 1.18, healAura: 7, // 光环强度（每个来源叠乘/叠加）
+    chainRatio: 0.45,                    // 闪电链溅射比例
+    postBattleHeal: 0.30,               // 战后全队回复比例
+    lvUpHp: 9, lvUpAtk: 3
+  },
+
+  // —— 英雄池：每个英雄两种形态 AS / ES（hp, atk, spd, aura, target） ——
+  // aura: none|def(全队减伤)|heal(全队回血)|atk(全队增伤)  target: front|back|weak
+  heroes: {
+    dundi:    { name: "墩弟", element: "water", hex: "#34d399",
+      AS: { fn: "守护形态", fe: "🛡️", hp: 140, atk: 16, spd: 4, aura: "def",  target: "front" },
+      ES: { fn: "湮灭形态", fe: "💥", hp: 90,  atk: 44, spd: 6, aura: "none", target: "front" } },
+    yanyan:   { name: "焱焱", element: "fire", hex: "#fb7185",
+      AS: { fn: "烈焰武者", fe: "🔥", hp: 110, atk: 26, spd: 6, aura: "none", target: "front" },
+      ES: { fn: "焚天形态", fe: "🌋", hp: 70,  atk: 50, spd: 7, aura: "atk",  target: "front" } },
+    lingfeng: { name: "翎风", element: "wind", hex: "#4ade80",
+      AS: { fn: "疾风刃", fe: "🍃", hp: 80, atk: 22, spd: 11, aura: "none", target: "back" },
+      ES: { fn: "无影形态", fe: "🌀", hp: 55, atk: 38, spd: 14, aura: "none", target: "weak" } },
+    tingting: { name: "霆霆", element: "thunder", hex: "#facc15",
+      AS: { fn: "雷法师", fe: "⚡", hp: 85, atk: 28, spd: 8, aura: "none", target: "back" },
+      ES: { fn: "过载形态", fe: "🌩️", hp: 60, atk: 46, spd: 9, aura: "atk", target: "back" } },
+    bobo:     { name: "波波", element: "water", hex: "#22d3ee",
+      AS: { fn: "守护之泉", fe: "💧", hp: 95, atk: 14, spd: 5, aura: "heal", target: "front" },
+      ES: { fn: "怒涛形态", fe: "🌊", hp: 70, atk: 40, spd: 6, aura: "none", target: "front" } },
+    yanshou:  { name: "炎兽", element: "fire", hex: "#f97316",
+      AS: { fn: "守阵巨兽", fe: "🐗", hp: 165, atk: 18, spd: 3, aura: "def",  target: "front" },
+      ES: { fn: "狂暴形态", fe: "🔥", hp: 110, atk: 42, spd: 5, aura: "atk",  target: "front" } },
+    sun:      { name: "隼", element: "wind", hex: "#a3e635",
+      AS: { fn: "猎隼", fe: "🦅", hp: 75, atk: 30, spd: 12, aura: "none", target: "weak" },
+      ES: { fn: "斩首形态", fe: "🗡️", hp: 55, atk: 52, spd: 13, aura: "none", target: "weak" } },
+    leilang:  { name: "雷狼", element: "thunder", hex: "#fde047",
+      AS: { fn: "迅雷狼", fe: "🐺", hp: 105, atk: 27, spd: 9, aura: "none", target: "front" },
+      ES: { fn: "雷神形态", fe: "🐉", hp: 75, atk: 48, spd: 10, aura: "atk", target: "front" } }
+  },
+
+  // —— 敌人池（单形态） ——
+  enemies: {
+    slime:  { name: "史莱姆", element: "water", emoji: "🟢", hex: "#4ade80", hp: 70,  atk: 14, spd: 5, aura: "none", target: "front" },
+    bat:    { name: "火蝠",   element: "fire",  emoji: "🦇", hex: "#f87171", hp: 55,  atk: 18, spd: 9, aura: "none", target: "back"  },
+    sprite: { name: "风妖",   element: "wind",  emoji: "🌀", hex: "#34d399", hp: 60,  atk: 16, spd: 11, aura: "none", target: "weak" },
+    beast:  { name: "雷兽",   element: "thunder", emoji: "🐲", hex: "#fbbf24", hp: 90,  atk: 20, spd: 7, aura: "atk", target: "front" },
+    golem:  { name: "石傀儡", element: "wind",  emoji: "🗿", hex: "#94a3b8", hp: 150, atk: 16, spd: 3, aura: "def", target: "front" }
+  },
+  bosses: {
+    guardian: { name: "时空守卫", element: "thunder", emoji: "🛡️", hex: "#a855f7", hp: 420, atk: 34, spd: 6, aura: "atk", target: "front", boss: true }
+  },
+
+  // —— 维克托：时空裂缝事件（雷剑客） ——
+  viktor: { name: "维克托", emoji: "🗡️", element: "thunder",
+    line: "「我是维克托。献祭你队中一人，我便将这狂暴的雷之力注入全队——你们的每一击，都将引动闪电链。」" },
+
+  // —— 爬塔地图：每层提供 1~2 个节点选择 ——
+  map: [
+    { opts: ["battle"] },
+    { opts: ["battle", "shop"] },
+    { opts: ["event", "battle"] },
+    { opts: ["campfire"] },
+    { opts: ["elite", "event"] },
+    { opts: ["battle", "shop"] },
+    { opts: ["event", "battle"] },
+    { opts: ["campfire", "shop"] },
+    { opts: ["elite", "battle"] },
+    { opts: ["boss"] }
+  ],
+
+  combat: { turnMs: 560, strikeMs: 210 }
+};
+</script>
+
+<script>
+(function () {
+  "use strict";
+  const CFG = window.game_config;
+  const B = CFG.balance;
+  const BEATS = {}; for (const k in CFG.elements) BEATS[k] = CFG.elements[k].beats;
+
+  // ============ 宿主桥接（蛋蛋星球 minigame host 协议） ============
+  const postParent = (type, data) => { try { window.parent.postMessage({ type, data }, "*"); } catch (e) {} };
+  let roundId = 0;
+  window.addEventListener("message", ev => {
+    const m = ev.data; if (m && m.type === "setGameConfig") { /* 预留：可由宿主下发难度 */ }
+  });
+  function reportFinished(won) {
+    const score = (run ? run.floor * 100 + run.gold : 0);
+    const earnedPoints = score;
+    postParent("gameFinished", { earnedPoints, score, level: (run ? run.floor + 1 : 1), won, roundId, finishedAt: Date.now() });
+  }
+
+  // ============ 工具 ============
+  let _seed = (Date.now() % 100000);
+  function rnd() { _seed = (_seed * 9301 + 49297) % 233280; return _seed / 233280; }
+  function pick(arr) { return arr[Math.floor(rnd() * arr.length)]; }
+  function clamp(v, a, b) { return Math.max(a, Math.min(b, v)); }
+  function shade(hex, amt) {
+    const m = hex.replace('#', '');
+    let r = parseInt(m.substr(0, 2), 16), g = parseInt(m.substr(2, 2), 16), b = parseInt(m.substr(4, 2), 16);
+    const f = amt < 0 ? 0 : 255, t = Math.abs(amt);
+    r = Math.round(r + (f - r) * t); g = Math.round(g + (f - g) * t); b = Math.round(b + (f - b) * t);
+    return `rgb(${r},${g},${b})`;
+  }
+  function vox(hex) { return { base: hex, light: shade(hex, .34), dark: shade(hex, -.42) }; }
+  function elemMult(a, d) { return BEATS[a] === d ? B.elemBonus : BEATS[d] === a ? B.elemPenalty : 1; }
+  function emo(el) { return CFG.elements[el].emoji; }
+
+  // ============ 全局运行态 ============
+  let run = null;
+  let uidc = 0;
+  function newHero(key, lv) {
+    const h = CFG.heroes[key];
+    const inst = { uid: ++uidc, key, name: h.name, element: h.element, hex: h.hex,
+      activeForm: "AS", level: lv || 1, hp: 0 };
+    inst.hp = maxHpOf(inst);
+    return inst;
+  }
+  function HT(inst) { return CFG.heroes[inst.key]; }
+  function formOf(inst) { return HT(inst)[inst.activeForm]; }
+  function maxHpOf(inst) { return formOf(inst).hp + (inst.level - 1) * B.lvUpHp; }
+  function atkOf(inst) { return formOf(inst).atk + (inst.level - 1) * B.lvUpAtk; }
+
+  function startNewRun() {
+    run = {
+      floor: 0, gold: 60, buffs: { lightningChain: false },
+      roster: [newHero("dundi"), newHero("lingfeng"), newHero("bobo")],
+      board: [[null, null, null], [null, null, null], [null, null, null]],
+      battle: null
+    };
+    // 默认布阵：前排墩弟，后排输出
+    placeUid(run.roster[0].uid, 1, 0);
+    placeUid(run.roster[1].uid, 0, 2);
+    placeUid(run.roster[2].uid, 2, 1);
+  }
+  function boardUids() { const r = []; run.board.forEach(row => row.forEach(u => u && r.push(u))); return r; }
+  function benchRoster() { const on = boardUids(); return run.roster.filter(i => on.indexOf(i.uid) < 0); }
+  function instById(uid) { return run.roster.find(i => i.uid === uid); }
+  function cellOfUid(uid) { for (let r = 0; r < 3; r++) for (let c = 0; c < 3; c++) if (run.board[r][c] === uid) return [r, c]; return null; }
+  function placeUid(uid, r, c) {
+    const cur = cellOfUid(uid); if (cur) run.board[cur[0]][cur[1]] = null;
+    run.board[r][c] = uid;
+  }
+
+  // ============ 画布 / 等距体素渲染 ============
+  const canvas = document.createElement("canvas");
+  canvas.className = "fixed inset-0 z-0";
+  document.body.appendChild(canvas);
+  const ctx = canvas.getContext("2d");
+  let W = 0, H = 0, dpr = 1, tileW, tileH, cubeH, originX, originY;
+  function computeGeom() {
+    tileW = Math.min(W / 6.2, H / 3.6);
+    tileH = tileW * 0.5; cubeH = tileW * 0.5;
+    originX = W / 2 - 0.75 * tileW;
+    // 下移整景：立绘 + 头顶血条/徽记会向上伸出约 1.4 格高，需在顶部留足余量，
+    // 否则后排单位的血条会被屏幕顶边裁掉。底部空间充裕，故整体下移。
+    originY = H * 0.50 - 1.05 * tileH;
+  }
+  function setupCanvas() {
+    dpr = Math.min(window.devicePixelRatio || 1, 2.5);
+    W = window.innerWidth; H = window.innerHeight;
+    canvas.width = Math.round(W * dpr); canvas.height = Math.round(H * dpr);
+    canvas.style.width = W + "px"; canvas.style.height = H + "px";
+    ctx.setTransform(dpr, 0, 0, dpr, 0, 0); computeGeom();
+  }
+  function projP(rr, cc, yoff) { return [originX + (cc - rr) * tileW / 2, originY + (cc + rr) * tileH / 2 + (yoff || 0)]; }
+  function fillPoly(pts, color) { ctx.beginPath(); ctx.moveTo(pts[0][0], pts[0][1]); for (let i = 1; i < pts.length; i++)ctx.lineTo(pts[i][0], pts[i][1]); ctx.closePath(); ctx.fillStyle = color; ctx.fill(); }
+  function strokePoly(pts, color, lw) { ctx.beginPath(); ctx.moveTo(pts[0][0], pts[0][1]); for (let i = 1; i < pts.length; i++)ctx.lineTo(pts[i][0], pts[i][1]); ctx.closePath(); ctx.strokeStyle = color; ctx.lineWidth = lw || 1; ctx.stroke(); }
+  function drawBox(r0, c0, r1, c1, yoff, h, col, opt) {
+    opt = opt || {};
+    const A = projP(r0, c0, yoff), Bp = projP(r0, c1, yoff), C = projP(r1, c1, yoff), D = projP(r1, c0, yoff);
+    const up = p => [p[0] + (opt.dx || 0), p[1] - h + (opt.dy || 0)], lo = p => [p[0] + (opt.dx || 0), p[1] + (opt.dy || 0)];
+    if (opt.alpha != null) ctx.globalAlpha = opt.alpha;
+    fillPoly([up(D), up(C), lo(C), lo(D)], col.dark);
+    fillPoly([up(Bp), up(C), lo(C), lo(Bp)], col.base);
+    fillPoly([up(A), up(Bp), up(C), up(D)], col.light);
+    ctx.lineJoin = "round";
+    strokePoly([up(A), up(Bp), up(C), up(D)], "rgba(0,0,0,.18)", 1);
+    strokePoly([up(A), up(Bp), up(C), up(D)], "rgba(255,255,255,.20)", 0.7);
+    if (opt.flash) { const f = "rgba(255,255,255," + opt.flash + ")"; fillPoly([up(D), up(C), lo(C), lo(D)], f); fillPoly([up(Bp), up(C), lo(C), lo(Bp)], f); fillPoly([up(A), up(Bp), up(C), up(D)], f); }
+    if (opt.alpha != null) ctx.globalAlpha = 1;
+  }
+  function roundRect(x, y, w, h, r) { ctx.beginPath(); ctx.moveTo(x + r, y); ctx.arcTo(x + w, y, x + w, y + h, r); ctx.arcTo(x + w, y + h, x, y + h, r); ctx.arcTo(x, y + h, x, y, r); ctx.arcTo(x, y, x + w, y, r); ctx.closePath(); }
+
+  // 战场单位的世界格：ally 前排靠中(col2)，enemy 前排靠中(col4)
+  function worldCol(side, c) { return side === "ally" ? (2 - c) : (4 + c); }
+
+  const SLAB = () => cubeH * 0.28;
+  function elementColor(el) { return CFG.elements[el].color; }
+
+  // —— 单格地砖（带内缩，露出网格缝）——
+  function drawTile(side, r, c) {
+    const wc = worldCol(side, c), front = c === 0;
+    const hex = front ? (side === "ally" ? "#21406b" : "#412468") : (side === "ally" ? "#172a47" : "#291848");
+    drawBox(r + .04, wc + .04, r + .96, wc + .96, 0, SLAB(), vox(hex));
+  }
+
+  // —— 纯几何元素徽记（无 Emoji）——
+  function drawEmblem(cx, cy, el, s, now, alpha) {
+    ctx.save(); ctx.globalAlpha = alpha; const col = elementColor(el);
+    ctx.shadowColor = col; ctx.shadowBlur = 11;
+    if (el === "water") {
+      ctx.fillStyle = col; ctx.beginPath(); ctx.moveTo(cx, cy - s);
+      ctx.bezierCurveTo(cx + s * .92, cy - s * .1, cx + s * .72, cy + s * .82, cx, cy + s * .82);
+      ctx.bezierCurveTo(cx - s * .72, cy + s * .82, cx - s * .92, cy - s * .1, cx, cy - s); ctx.fill();
+      ctx.globalAlpha = alpha * .85; ctx.fillStyle = "#fff";
+      ctx.beginPath(); ctx.ellipse(cx - s * .26, cy + s * .12, s * .15, s * .27, 0, 0, 7); ctx.fill();
+    } else if (el === "fire") {
+      const fl = 1 + Math.sin(now / 90) * .14;
+      const flame = (w, h, c) => { ctx.fillStyle = c; ctx.beginPath(); ctx.moveTo(cx, cy - h); ctx.quadraticCurveTo(cx + w, cy + h * .1, cx, cy + h * .55); ctx.quadraticCurveTo(cx - w, cy + h * .1, cx, cy - h); ctx.fill(); };
+      flame(s * .9, s * 1.1 * fl, "#ef4444"); flame(s * .58, s * .86 * fl, "#fb923c"); flame(s * .3, s * .55 * fl, "#fde047");
+    } else if (el === "wind") {
+      ctx.strokeStyle = col; ctx.lineWidth = Math.max(2, s * .24); ctx.lineCap = "round";
+      const rot = now / 240;
+      for (let k = 0; k < 2; k++) { const rr = s * (.46 + k * .44); ctx.beginPath(); ctx.arc(cx, cy, rr, rot + k * 2.1, rot + k * 2.1 + Math.PI * 1.3); ctx.stroke(); }
+    } else { // thunder
+      ctx.globalAlpha = alpha * (.7 + Math.abs(Math.sin(now / 120)) * .3);
+      ctx.fillStyle = col; ctx.beginPath();
+      ctx.moveTo(cx + s * .32, cy - s); ctx.lineTo(cx - s * .46, cy + s * .12); ctx.lineTo(cx - s * .02, cy + s * .12);
+      ctx.lineTo(cx - s * .3, cy + s); ctx.lineTo(cx + s * .52, cy - s * .2); ctx.lineTo(cx + s * .06, cy - s * .2); ctx.fill();
+    }
+    ctx.restore();
+  }
+
+  // —— 单位姿态：落点(含突刺位移/死亡上浮)、缩放、透明度。2D 立绘 → 突刺只是整体平移，永不破模。——
+  function creaturePose(u, now) {
+    const a = u.anim, slabH = SLAB(), ground = -slabH, wc = worldCol(u.side, u.c);
+    let dx = 0, dy = 0, strikeK = 0;
+    if (a.strikeTarget && a.strikeStart != null) {
+      const p = (now - a.strikeStart) / CFG.combat.strikeMs * 2;
+      if (p < 2) {
+        strikeK = Math.sin(clamp(p, 0, 2) / 2 * Math.PI);
+        const here = projP(u.r + .5, wc + .5, 0);
+        const t = a.strikeTarget, there = projP(t.r + .5, worldCol(t.side, t.c) + .5, 0);
+        dx = (there[0] - here[0]) * .22 * strikeK; dy = (there[1] - here[1]) * .22 * strikeK;
+      } else a.strikeTarget = null;
+    }
+    let alpha = 1, rise = 0, dieK = 0;
+    if (!u.alive && a.dieStart != null) {
+      dieK = clamp((now - a.dieStart) / 520, 0, 1);
+      alpha = 1 - dieK; rise = -dieK * cubeH * 1.0;
+    }
+    const foot = projP(u.r + .5, wc + .5, ground);
+    const fx = foot[0] + dx, fy = foot[1] + dy + rise;
+    // 圆角胶囊立绘：呼吸缩放 + 突刺前冲挤压 + 死亡缩小
+    const breathe = Math.sin(now / 420 + u.r + u.c) * .04;
+    let sx = 1 + breathe * .5, sy = 1 - breathe;
+    sx *= 1 + .14 * strikeK; sy *= 1 - .11 * strikeK;
+    const shrink = 1 - dieK * .5; sx *= shrink; sy *= shrink;
+    return { fx, fy, alpha, bodyW: tileW * .46 * sx, bodyH: cubeH * 1.18 * sy };
+  }
+
+  // —— 立绘本体（仅身体，UI 在独立的顶层 pass 绘制，确保血条永不被穿透）——
+  function drawCreature(u, now) {
+    const ps = creaturePose(u, now); if (ps.alpha <= 0) return;
+    const { fx, fy, alpha, bodyW, bodyH } = ps;
+    const top = fy - bodyH, left = fx - bodyW / 2, rad = Math.min(bodyW / 2, bodyH / 2);
+    const ecol = elementColor(u.element);
+    // 落地软阴影
+    ctx.save(); ctx.globalAlpha = .30 * alpha; ctx.fillStyle = "#000";
+    ctx.beginPath(); ctx.ellipse(fx, fy, bodyW * .52, bodyW * .22, 0, 0, 7); ctx.fill(); ctx.restore();
+    // ES 形态光环
+    if (u.es) {
+      ctx.save(); ctx.globalAlpha = alpha * (.40 + .24 * Math.sin(now / 200));
+      ctx.strokeStyle = ecol; ctx.lineWidth = 2.5; ctx.shadowColor = ecol; ctx.shadowBlur = 12;
+      ctx.beginPath(); ctx.ellipse(fx, fy, bodyW * .62, bodyW * .28, 0, 0, 7); ctx.stroke(); ctx.restore();
+    }
+    // 身体：竖直渐变胶囊（亮顶→本色→暗底）+ 描边
+    ctx.save(); ctx.globalAlpha = alpha;
+    const g = ctx.createLinearGradient(0, top, 0, fy);
+    g.addColorStop(0, shade(u.hex, .42)); g.addColorStop(.5, u.hex); g.addColorStop(1, shade(u.hex, -.34));
+    if (u.es) { ctx.shadowColor = ecol; ctx.shadowBlur = 14; }
+    roundRect(left, top, bodyW, bodyH, rad); ctx.fillStyle = g; ctx.fill();
+    ctx.shadowBlur = 0;
+    ctx.lineWidth = Math.max(1.5, bodyW * .06); ctx.strokeStyle = "rgba(8,12,22,.55)"; ctx.stroke();
+    // 顶部高光
+    ctx.globalAlpha = alpha * .5; ctx.fillStyle = "rgba(255,255,255,.7)";
+    ctx.beginPath(); ctx.ellipse(fx, top + bodyH * .20, bodyW * .26, bodyH * .12, 0, 0, 7); ctx.fill();
+    ctx.restore();
+    // 眼睛（黑椭圆 + 白色高光点）
+    if (alpha > .2) {
+      const ey = top + bodyH * .40, ew = Math.max(2.2, bodyW * .10), eo = bodyW * .20;
+      ctx.save(); ctx.globalAlpha = alpha; ctx.fillStyle = "#0b1120";
+      [-eo, eo].forEach(o => { ctx.beginPath(); ctx.ellipse(fx + o, ey, ew, ew * 1.3, 0, 0, 7); ctx.fill(); });
+      ctx.fillStyle = "rgba(255,255,255,.92)";
+      [-eo, eo].forEach(o => { ctx.beginPath(); ctx.arc(fx + o - ew * .3, ey - ew * .5, ew * .36, 0, 7); ctx.fill(); });
+      ctx.restore();
+    }
+    // 命中白闪
+    if (u.anim.flashStart != null) {
+      const f = Math.max(0, .7 * (1 - (now - u.anim.flashStart) / 240));
+      if (f > 0) { ctx.save(); ctx.globalAlpha = f * alpha; ctx.fillStyle = "#fff"; roundRect(left, top, bodyW, bodyH, rad); ctx.fill(); ctx.restore(); }
+    }
+  }
+
+  // —— 顶层 pass：元素徽记 + 血条/名字，锚定到立绘头顶，绘制在所有身体之上 ——
+  function drawCreatureUI(u, now) {
+    const ps = creaturePose(u, now); if (ps.alpha <= 0) return;
+    const { fx, fy, alpha, bodyH } = ps; const top = fy - bodyH;
+    const bob = Math.sin(now / 300 + u.r + u.c) * 3;
+    drawEmblem(fx, top - cubeH * .30 + bob, u.element, tileW * .16, now, alpha * .95);
+    if (u.alive) drawHpAt(u, fx, top - cubeH * .66);
+  }
+
+  // —— 血条：锚定到给定的头顶顶点屏幕坐标 ——
+  function drawHpAt(u, cx, cy) {
+    const bw = tileW * .70, bh = 7, bx = cx - bw / 2, by = cy;
+    const ratio = clamp(u.hp / u.maxHp, 0, 1);
+    ctx.save(); ctx.shadowColor = "rgba(0,0,0,.55)"; ctx.shadowBlur = 5;
+    ctx.fillStyle = "rgba(8,12,22,.82)"; roundRect(bx - 3, by - 3, bw + 6, bh + 6, 5); ctx.fill(); ctx.restore();
+    ctx.fillStyle = "#0f172a"; roundRect(bx, by, bw, bh, 3.5); ctx.fill();
+    const col = u.side === "ally" ? (ratio > .4 ? "#34d399" : "#fbbf24") : "#fb7185";
+    ctx.fillStyle = col; roundRect(bx, by, Math.max(0, bw * ratio), bh, 3.5); ctx.fill();
+    ctx.fillStyle = "rgba(255,255,255,.28)"; roundRect(bx, by, Math.max(0, bw * ratio), bh * .45, 3.5); ctx.fill();
+    // 标签：元素色点 + 名字 + 血量（居中）
+    const label = u.name + "  " + Math.ceil(u.hp), cxp = cx;
+    ctx.font = "700 11px system-ui"; ctx.textBaseline = "bottom"; ctx.textAlign = "center";
+    ctx.lineWidth = 3; ctx.strokeStyle = "rgba(0,0,0,.65)"; ctx.strokeText(label, cxp, by - 5);
+    ctx.fillStyle = "#fff"; ctx.fillText(label, cxp, by - 5);
+    const tw = ctx.measureText(label).width;
+    ctx.save(); ctx.fillStyle = elementColor(u.element); ctx.shadowColor = elementColor(u.element); ctx.shadowBlur = 6;
+    ctx.beginPath(); ctx.arc(cxp - tw / 2 - 7, by - 8, 3.4, 0, 7); ctx.fill(); ctx.restore();
+  }
+
+  // VFX：抛物线飘字 + 闪电
+  const floats = [], bolts = [];
+  function addFloat(u, text, color, big) {
+    const wc = worldCol(u.side, u.c), p = projP(u.r + .5, wc + .5, -(cubeH * 2.4));
+    floats.push({ x: p[0], y: p[1], vx: (rnd() - .5) * 46, text, color, big: !!big, start: performance.now(), life: 880 });
+  }
+  function addBolt(a, b) { const pa = projP(a.r + .5, worldCol(a.side, a.c) + .5, -cubeH * 1.6), pb = projP(b.r + .5, worldCol(b.side, b.c) + .5, -cubeH * 1.6); bolts.push({ pa, pb, start: performance.now() }); }
+  function drawFloats(now) {
+    for (let i = floats.length - 1; i >= 0; i--) {
+      const f = floats[i], el = (now - f.start) / 1000, T = (now - f.start) / f.life;
+      if (T >= 1) { floats.splice(i, 1); continue; }
+      const yoff = -(175 * el) + (195 * el * el);          // 先上后下的抛物线
+      const xoff = f.vx * el;
+      const s = T < .16 ? (.55 + .45 * (T / .16)) : 1;      // 弹出放大
+      const alpha = T < .66 ? 1 : (1 - (T - .66) / .34);    // 尾段淡出
+      ctx.save(); ctx.globalAlpha = Math.max(0, alpha);
+      ctx.font = "800 " + (f.big ? 26 : 19) * s + "px system-ui"; ctx.textAlign = "center"; ctx.textBaseline = "middle";
+      ctx.lineWidth = 4; ctx.strokeStyle = "rgba(0,0,0,.65)"; ctx.strokeText(f.text, f.x + xoff, f.y + yoff);
+      ctx.fillStyle = f.color; ctx.fillText(f.text, f.x + xoff, f.y + yoff); ctx.restore();
+    }
+  }
+  function drawBolts(now) {
+    for (let i = bolts.length - 1; i >= 0; i--) {
+      const b = bolts[i], t = (now - b.start) / 260; if (t >= 1) { bolts.splice(i, 1); continue; }
+      ctx.save(); ctx.globalAlpha = 1 - t; ctx.strokeStyle = "#fde047"; ctx.lineWidth = 2.5; ctx.shadowColor = "#facc15"; ctx.shadowBlur = 12;
+      ctx.beginPath(); const seg = 5; ctx.moveTo(b.pa[0], b.pa[1]);
+      for (let s = 1; s < seg; s++) { const k = s / seg; const x = b.pa[0] + (b.pb[0] - b.pa[0]) * k + (rnd() - .5) * 18; const y = b.pa[1] + (b.pb[1] - b.pa[1]) * k + (rnd() - .5) * 18; ctx.lineTo(x, y); }
+      ctx.lineTo(b.pb[0], b.pb[1]); ctx.stroke(); ctx.restore();
+    }
+  }
+
+  // —— 氛围：暗部背景里缓慢上浮的半透明体素方块 ——
+  const ambient = [];
+  function initAmbient() {
+    ambient.length = 0;
+    const hues = ["#22d3ee", "#a855f7", "#34d399", "#60a5fa", "#fb7185"];
+    for (let i = 0; i < 18; i++) ambient.push({ x: rnd(), y: rnd(), s: 12 + rnd() * 26, sp: .12 + rnd() * .26, a: .05 + rnd() * .07, hue: hues[i % hues.length], ph: rnd() * 6.28 });
+  }
+  function drawScreenCube(cx, cy, s, col, a) {
+    const hw = s, vr = s * .5, ch = s * .9;
+    ctx.save(); ctx.globalAlpha = a;
+    ctx.fillStyle = shade(col, -.35); // 左面
+    ctx.beginPath(); ctx.moveTo(cx - hw, cy); ctx.lineTo(cx, cy + vr); ctx.lineTo(cx, cy + vr + ch); ctx.lineTo(cx - hw, cy + ch); ctx.closePath(); ctx.fill();
+    ctx.fillStyle = col;             // 右面
+    ctx.beginPath(); ctx.moveTo(cx + hw, cy); ctx.lineTo(cx, cy + vr); ctx.lineTo(cx, cy + vr + ch); ctx.lineTo(cx + hw, cy + ch); ctx.closePath(); ctx.fill();
+    ctx.fillStyle = shade(col, .30); // 顶面
+    ctx.beginPath(); ctx.moveTo(cx, cy - vr); ctx.lineTo(cx + hw, cy); ctx.lineTo(cx, cy + vr); ctx.lineTo(cx - hw, cy); ctx.closePath(); ctx.fill();
+    ctx.restore();
+  }
+  function drawAmbient(now) {
+    for (const p of ambient) {
+      p.y -= p.sp / Math.max(H, 1) * 16;          // 缓慢上浮
+      if (p.y < -0.12) { p.y = 1.12; p.x = rnd(); }
+      const cx = p.x * W + Math.sin(now / 1600 + p.ph) * 10, cy = p.y * H;
+      drawScreenCube(cx, cy, p.s, p.hue, p.a);
+    }
+  }
+
+  // ============ 战斗系统 ============
+  let combatants = [], battleOver = false, battleSpeed = 1, battleResultCb = null;
+  function mkAllyCombatant(inst, r, c) {
+    const f = formOf(inst);
+    return { side: "ally", inst, r, c, name: inst.name, element: inst.element, es: inst.activeForm === "ES", hex: inst.hex,
+      maxHp: maxHpOf(inst), hp: clamp(inst.hp, 1, maxHpOf(inst)), atk: atkOf(inst), spd: f.spd, aura: f.aura, target: f.target,
+      defMult: 1, atkMult: 1, alive: true, anim: {} };
+  }
+  function mkEnemyCombatant(d, r, c) {
+    return { side: "enemy", r, c, name: d.name, element: d.element, es: false, hex: d.hex,
+      maxHp: d.hp, hp: d.hp, atk: d.atk, spd: d.spd, aura: d.aura, target: d.target,
+      defMult: 1, atkMult: 1, alive: true, anim: {} };
+  }
+  const ENEMY_CELLS = [[1, 0], [0, 0], [2, 0], [1, 1], [0, 1], [2, 1], [1, 2], [0, 2], [2, 2]];
+  function generateEnemies(floor, type) {
+    const out = [];
+    const hpS = 1 + floor * 0.16, atkS = 1 + floor * 0.11;
+    if (type === "boss") {
+      const bd = CFG.bosses.guardian;
+      out.push(mkEnemyCombatant({ ...bd, hp: Math.round(bd.hp * (1 + floor * .05)) }, 1, 0));
+      ["beast", "golem"].forEach((k, i) => { const d = CFG.enemies[k]; out.push(mkEnemyCombatant({ ...d, hp: Math.round(d.hp * hpS), atk: Math.round(d.atk * atkS) }, i === 0 ? 0 : 2, 1)); });
+      return out;
+    }
+    const pool = Object.keys(CFG.enemies);
+    const n = type === "elite" ? clamp(2 + Math.floor(floor / 3), 2, 4) : clamp(1 + Math.floor(floor / 2), 1, 4);
+    const eliteBuff = type === "elite" ? 1.4 : 1;
+    for (let i = 0; i < n; i++) {
+      const d = CFG.enemies[pick(pool)]; const cell = ENEMY_CELLS[i];
+      out.push(mkEnemyCombatant({ ...d, hp: Math.round(d.hp * hpS * eliteBuff), atk: Math.round(d.atk * atkS * eliteBuff) }, cell[0], cell[1]));
+    }
+    return out;
+  }
+
+  function buildCombat() {
+    combatants = [];
+    for (let r = 0; r < 3; r++) for (let c = 0; c < 3; c++) { const uid = run.board[r][c]; if (uid) combatants.push(mkAllyCombatant(instById(uid), r, c)); }
+    run.battle.enemies.forEach(e => combatants.push(e));
+  }
+  function aliveSide(side) { return combatants.filter(u => u.alive && u.side === side); }
+  function applyAuras() {
+    for (const side of ["ally", "enemy"]) {
+      const team = aliveSide(side); let defM = 1, atkM = 1, heal = 0;
+      team.forEach(u => { if (u.aura === "def") defM *= B.defAura; else if (u.aura === "atk") atkM *= B.atkAura; else if (u.aura === "heal") heal += B.healAura; });
+      team.forEach(u => { u.defMult = defM; u.atkMult = atkM; if (heal && u.hp < u.maxHp) { u.hp = Math.min(u.maxHp, u.hp + heal); addFloat(u, "+" + heal, "#86efac"); } });
+    }
+  }
+  function pickTarget(u) {
+    const foes = combatants.filter(x => x.alive && x.side !== u.side);
+    if (!foes.length) return null;
+    if (u.target === "weak") return foes.reduce((a, b) => b.hp < a.hp ? b : a);
+    if (u.target === "back") return foes.reduce((a, b) => b.c !== a.c ? (b.c > a.c ? b : a) : (Math.abs(b.r - u.r) < Math.abs(a.r - u.r) ? b : a));
+    return foes.reduce((a, b) => b.c !== a.c ? (b.c < a.c ? b : a) : (Math.abs(b.r - u.r) < Math.abs(a.r - u.r) ? b : a));
+  }
+  function dealDamage(att, tgt, ratio, chained) {
+    const mult = elemMult(att.element, tgt.element);
+    const dmg = Math.max(1, Math.round(att.atk * att.atkMult * mult * tgt.defMult * (ratio || 1)));
+    tgt.hp -= dmg; tgt.anim.flashStart = performance.now();
+    const col = mult > 1 ? "#fde047" : mult < 1 ? "#cbd5e1" : "#fca5a5";
+    addFloat(tgt, (chained ? "链 " : "") + "-" + dmg + (mult > 1 ? " 克!" : ""), col, mult > 1 || chained);
+    if (tgt.hp <= 0) { tgt.hp = 0; tgt.alive = false; tgt.anim.dieStart = performance.now(); addFloat(tgt, "KO", "#ffffff", true); }
+    return dmg;
+  }
+  function doHit(att, tgt) {
+    if (battleOver || !att.alive || !tgt.alive) return;
+    const dmg = dealDamage(att, tgt, 1, false);
+    if (att.element === "thunder") addBolt(att, tgt);
+    // 闪电链（维克托 buff）：仅我方，溅射另一名敌人
+    if (att.side === "ally" && run.buffs.lightningChain) {
+      const others = combatants.filter(x => x.alive && x.side !== att.side && x !== tgt);
+      if (others.length) { const o = pick(others); addBolt(tgt, o); dealDamage(att, o, B.chainRatio, true); }
+    }
+  }
+
+  function enterBattle() {
+    setScreen("battle"); battleOver = false; buildCombat();
+    barTop(`第 ${run.floor + 1} 层 · ${nodeLabel(run.battle.type)}`);
+    setTimeout(startRound, 500);
+  }
+  let actOrder = [], actIdx = 0;
+  function startRound() {
+    if (checkEnd()) return;
+    applyAuras();
+    actOrder = aliveSide("ally").concat(aliveSide("enemy")).sort((a, b) => b.spd - a.spd || (a.side === "ally" ? -1 : 1));
+    actIdx = 0; nextAct();
+  }
+  function nextAct() {
+    if (battleOver) return;
+    if (checkEnd()) return;
+    if (actIdx >= actOrder.length) { setTimeout(startRound, 220 / battleSpeed); return; }
+    const u = actOrder[actIdx++];
+    if (!u.alive) return nextAct();
+    const tgt = pickTarget(u);
+    if (!tgt) return finishBattle();
+    u.anim.strikeTarget = tgt; u.anim.strikeStart = performance.now();
+    setTimeout(() => doHit(u, tgt), CFG.combat.strikeMs / battleSpeed);
+    setTimeout(nextAct, CFG.combat.turnMs / battleSpeed);
+  }
+  function checkEnd() {
+    if (battleOver) return true;
+    const allies = aliveSide("ally"), foes = aliveSide("enemy");
+    if (allies.length === 0 || foes.length === 0) { finishBattle(); return true; }
+    return false;
+  }
+  function finishBattle() {
+    if (battleOver) return; battleOver = true;
+    const win = aliveSide("ally").length > 0;
+    // 回写我方血量
+    combatants.filter(u => u.side === "ally").forEach(u => { u.inst.hp = u.alive ? u.hp : 0; });
+    setTimeout(() => win ? onBattleWin() : onGameOver(), 900);
+  }
+  function postBattleHeal() {
+    run.roster.forEach(i => { const mx = maxHpOf(i); i.hp = clamp(i.hp + Math.round(mx * B.postBattleHeal), Math.round(mx * B.postBattleHeal), mx); });
+  }
+
+  // ============ 屏幕路由（DOM 覆盖层） ============
+  const overlay = document.createElement("div");
+  overlay.className = "fixed inset-0 z-10";
+  document.body.appendChild(overlay);
+  let screen = "title";
+  function setScreen(name) { screen = name; }
+  function barTop(text) {
+    overlay.innerHTML = `
+      <div class="absolute top-0 inset-x-0 p-3 flex items-center justify-between pointer-events-none panel">
+        <div class="px-3.5 py-1.5 rounded-lg glass text-sm font-bold">${text}</div>
+        <button id="spd" class="gbtn pointer-events-auto px-4 py-1.5 rounded-lg bg-amber-500 text-sm font-bold">⏩ ${battleSpeed}x</button>
+      </div>`;
+    overlay.querySelector("#spd").onclick = () => { battleSpeed = battleSpeed === 1 ? 2 : battleSpeed === 2 ? 3 : 1; barTop(text); };
+  }
+
+  function elBadge(el) { const e = CFG.elements[el]; return `<span style="color:${e.color}">${e.emoji}${e.name}</span>`; }
+  // CSS 伪体素方块头像（替代 emoji 角色）：渐变 + 内阴影做出 3D 倒角，角标为元素色点
+  function voxChip(hex, el, s) {
+    s = s || 36; const lt = shade(hex, .34), dk = shade(hex, -.42), ec = elementColor(el);
+    return `<span style="position:relative;flex:0 0 auto;display:inline-block;width:${s}px;height:${s}px;border-radius:7px;
+      background:linear-gradient(135deg,${lt} 0%,${hex} 48%,${dk} 100%);
+      box-shadow:inset 0 3px 0 rgba(255,255,255,.42),inset 0 -4px 0 rgba(0,0,0,.32),0 5px 12px -4px rgba(0,0,0,.6);">
+      <span style="position:absolute;right:-3px;top:-3px;width:11px;height:11px;border-radius:50%;background:${ec};
+        box-shadow:0 0 7px ${ec};border:1.5px solid rgba(8,12,22,.75)"></span></span>`;
+  }
+  function heroCard(inst, opts) {
+    opts = opts || {};
+    const f = formOf(inst), mx = maxHpOf(inst), hpr = clamp(inst.hp / mx, 0, 1);
+    const auraTxt = { def: '全队减伤', atk: '全队增伤', heal: '全队回血' }[f.aura];
+    return `<div class="gcard card-pop p-2.5 text-xs ${opts.sel ? 'sel' : ''}" style="--gc:${inst.hex}cc">
+      <div class="flex items-center gap-2">
+        ${voxChip(inst.hex, inst.element, 36)}
+        <div class="min-w-0 text-left">
+          <div class="font-bold text-sm truncate">${inst.name} <span class="text-[10px] text-slate-400 font-normal">Lv${inst.level}</span></div>
+          <div class="text-[11px] text-slate-300 truncate">${elBadge(inst.element)} · ${f.fn}</div>
+        </div>
+      </div>
+      <div class="hbar mt-2" style="--hc:${hpr > .4 ? '#34d399' : '#fbbf24'}"><i style="width:${hpr * 100}%"></i></div>
+      <div class="mt-1.5 flex flex-wrap gap-x-2.5 gap-y-0.5 text-[11px]">
+        <span class="text-emerald-300">HP ${Math.ceil(inst.hp)}/${mx}</span>
+        <span class="text-rose-300">ATK ${atkOf(inst)}</span>
+        <span class="text-sky-300">SPD ${f.spd}</span>
+      </div>
+      ${f.aura !== 'none' ? `<div class="text-[10px] text-amber-300 mt-1 inline-block pill rounded px-1.5 py-0.5">光环·${auraTxt}</div>` : ''}
+      ${opts.actions ? `<div class="flex gap-1.5 mt-2">
+        <button data-act="form" data-uid="${inst.uid}" class="gbtn flex-1 py-1.5 rounded-lg bg-violet-600 text-[11px] font-bold">切换 ${inst.activeForm === 'AS' ? '→ ES' : '→ AS'}</button>
+        ${opts.onBoard ? `<button data-act="bench" data-uid="${inst.uid}" class="gbtn px-2.5 py-1.5 rounded-lg bg-slate-600 text-[11px]">下场</button>` : ''}
+      </div>` : ''}
+    </div>`;
+  }
+
+  // ---- 标题 ----
+  function renderTitle() {
+    setScreen("title");
+    overlay.innerHTML = `
+      <div class="absolute inset-0 flex flex-col items-center justify-center text-center px-6">
+        <div class="flex gap-2 mb-5">
+          ${voxChip('#34d399', 'water', 46)}${voxChip('#fb7185', 'fire', 54)}${voxChip('#facc15', 'thunder', 46)}
+        </div>
+        <h1 class="text-5xl font-black tracking-wider glow" style="color:#6ee7b7">哈奇异闻录</h1>
+        <p class="text-slate-300 mt-3 text-sm">3×3 阵型 · 形态切换 · 元素克制 · 体素肉鸽</p>
+        <p class="text-slate-500 mt-1.5 text-xs max-w-xs leading-relaxed">爬塔招募体素英雄，在篝火切换 AS/ES 形态，<br>当心时空裂缝里的雷剑客维克托 ⚡</p>
+        <button id="start" class="gbtn mt-9 px-12 py-4 rounded-2xl bg-emerald-500 text-lg font-black">⚔ 开始冒险</button>
+      </div>`;
+    overlay.querySelector("#start").onclick = () => { startNewRun(); roundId++; postParent("gameStarted", { roundId }); renderMap(); };
+  }
+
+  // ---- 地图 ----
+  function nodeLabel(t) { return ({ battle: "⚔ 战斗", elite: "💀 精英", campfire: "🔥 篝火", event: "❓ 裂缝", shop: "🛒 商店", boss: "👑 首领" })[t]; }
+  function nodeDesc(t) { return ({ battle: "普通敌群", elite: "强敌·厚赏", campfire: "回满血·换形态", event: "神秘事件", shop: "招募·治疗·强化", boss: "时空守卫" })[t]; }
+  function renderMap() {
+    setScreen("map");
+    if (run.floor >= CFG.map.length) return renderVictory();
+    const floorDef = CFG.map[run.floor];
+    const track = CFG.map.map((f, i) =>
+      `<div class="flex-1 text-center text-[10px] ${i < run.floor ? 'text-emerald-400' : i === run.floor ? 'text-amber-300 font-bold' : 'text-slate-600'}">
+        ${nodeLabel(f.opts[0]).split(' ')[0]}${i === run.floor ? '<br>▲' : ''}</div>`).join("");
+    const nodeGlow = { battle: "rgba(248,113,113,.7)", elite: "rgba(168,85,247,.75)", campfire: "rgba(251,146,60,.75)", event: "rgba(250,204,21,.8)", shop: "rgba(56,189,248,.7)", boss: "rgba(244,63,94,.85)" };
+    const cards = floorDef.opts.map(t =>
+      `<button data-node="${t}" class="routecard flex-1 px-5 py-8 flex flex-col items-center justify-center" style="--gc:${nodeGlow[t]};min-height:200px">
+        <div class="ic text-6xl mb-3">${nodeLabel(t).split(' ')[1]}</div>
+        <div class="font-black text-xl text-white">${nodeLabel(t).split(' ')[0]}</div>
+        <div class="text-[12px] text-slate-400 mt-1.5">${nodeDesc(t)}</div>
+      </button>`).join("");
+    overlay.innerHTML = `
+      <div class="absolute inset-0 flex flex-col">
+        <div class="glass-deep px-4 py-3 flex items-center justify-between panel rounded-b-2xl">
+          <div class="text-sm font-bold">🗺️ 第 ${run.floor + 1}/${CFG.map.length} 层</div>
+          <div class="flex gap-2 text-sm items-center">
+            <span class="px-3 py-1 rounded-lg pill text-amber-300 font-bold">💰 ${run.gold}</span>
+            ${run.buffs.lightningChain ? '<span class="px-3 py-1 rounded-lg pill text-yellow-300 font-bold glow">⚡ 闪电链</span>' : ''}
+            <button id="team" class="gbtn px-4 py-1.5 rounded-lg bg-violet-600 font-bold">布阵</button>
+          </div>
+        </div>
+        <div class="panel px-4 mt-2 flex gap-0.5">${track}</div>
+        <div class="flex-1 flex items-center justify-center px-5">
+          <div class="panel max-w-xl"><div class="text-center text-slate-300 text-base mb-6 font-bold tracking-wide">选择前进路线</div>
+          <div class="flex gap-5 justify-center">${cards}</div></div>
+        </div>
+      </div>`;
+    overlay.querySelector("#team").onclick = () => renderFormation("map");
+    overlay.querySelectorAll("[data-node]").forEach(b => b.onclick = () => enterNode(b.dataset.node));
+  }
+  function enterNode(type) {
+    if (type === "battle" || type === "elite" || type === "boss") {
+      run.battle = { type, enemies: generateEnemies(run.floor, type) };
+      renderFormation("battle");
+    } else if (type === "campfire") renderCampfire();
+    else if (type === "event") renderEvent();
+    else if (type === "shop") renderShop();
+  }
+  function advanceFloor() { run.floor++; renderMap(); }
+
+  // ---- 布阵 / 形态（核心策略） ----
+  let selUid = null;
+  function renderFormation(returnTo) {
+    setScreen("formation"); selUid = null;
+    const enemyPreview = (returnTo === "battle" && run.battle) ? run.battle.enemies.map(e =>
+      `<span class="inline-flex items-center gap-1.5 px-2 py-1 rounded-lg pill text-[11px]">${voxChip(e.hex, e.element, 16)}${e.name} ${elBadge(e.element)}</span>`).join(" ") : "";
+    drawFormation(returnTo, enemyPreview);
+  }
+  function drawFormation(returnTo, enemyPreview) {
+    const grid = [0, 1, 2].map(r => [0, 1, 2].map(c => {
+      const uid = run.board[r][c]; const inst = uid ? instById(uid) : null;
+      const front = c === 0;
+      return `<div data-cell="${r},${c}" class="aspect-square rounded-xl flex items-center justify-center text-center p-1
+        ${inst ? '' : 'border-2 border-dashed border-white/15'} ${front ? 'bg-sky-900/20' : 'bg-slate-800/30'}">
+        ${inst ? heroCard(inst, { actions: true, onBoard: true }) : `<span class="text-slate-600 text-[10px]">${front ? '前排' : '后排'}<br>＋</span>`}
+      </div>`;
+    }).join("")).join("");
+    const bench = benchRoster();
+    overlay.innerHTML = `
+      <div class="absolute inset-0 overflow-y-auto">
+        <div class="panel pb-8">
+          <div class="px-4 py-3 flex items-center justify-between sticky top-0 glass-deep z-10 rounded-b-2xl">
+            <div class="font-bold">🧩 布阵 / 形态切换</div>
+            <button id="go" class="gbtn px-6 py-2.5 rounded-xl ${returnTo === 'battle' ? 'bg-emerald-500' : 'bg-sky-600'} font-black">${returnTo === 'battle' ? '⚔ 开始战斗' : '✔ 完成'}</button>
+          </div>
+          ${enemyPreview ? `<div class="px-4 pt-3 pb-1"><div class="text-[11px] text-slate-400 mb-1.5">敌方阵容（按元素克制调整形态！）</div><div class="flex flex-wrap gap-1.5">${enemyPreview}</div></div>` : ''}
+          <div class="px-4 mt-2 text-[11px] text-slate-500 mb-2">前排抗伤 · 后排输出 · 点卡片「切换」改变 AS/ES 形态</div>
+          <div class="px-4 grid grid-cols-3 gap-2.5" style="max-width:620px;margin:0 auto;width:100%">${grid}</div>
+          <div class="px-4 mt-5">
+            <div class="text-[11px] text-slate-400 mb-2">替补席（点英雄 → 点空格上场）</div>
+            <div class="grid grid-cols-2 sm:grid-cols-3 gap-2.5">${bench.length ? bench.map(i => `<div data-pick="${i.uid}" class="cursor-pointer">${heroCard(i, { sel: selUid === i.uid })}</div>`).join("") : '<div class="text-slate-600 text-xs col-span-full text-center py-5">无替补英雄</div>'}</div>
+          </div>
+        </div>
+      </div>`;
+    overlay.querySelector("#go").onclick = () => { if (returnTo === "battle") enterBattle(); else renderMap(); };
+    overlay.querySelectorAll("[data-act]").forEach(b => b.onclick = e => {
+      e.stopPropagation(); const uid = +b.dataset.uid, inst = instById(uid);
+      if (b.dataset.act === "form") { if (HT(inst).ES) { inst.activeForm = inst.activeForm === "AS" ? "ES" : "AS"; inst.hp = clamp(inst.hp, 1, maxHpOf(inst)); } drawFormation(returnTo, enemyPreview); }
+      else if (b.dataset.act === "bench") { const cur = cellOfUid(uid); if (cur) run.board[cur[0]][cur[1]] = null; drawFormation(returnTo, enemyPreview); }
+    });
+    overlay.querySelectorAll("[data-pick]").forEach(d => d.onclick = () => { selUid = +d.dataset.pick; drawFormation(returnTo, enemyPreview); });
+    overlay.querySelectorAll("[data-cell]").forEach(d => d.onclick = () => {
+      const [r, c] = d.dataset.cell.split(",").map(Number);
+      if (selUid != null && boardUids().length < 9 || (selUid != null && run.board[r][c] == null)) {
+        if (run.board[r][c] == null) { placeUid(selUid, r, c); selUid = null; drawFormation(returnTo, enemyPreview); }
+      }
+    });
+  }
+
+  // ---- 战斗胜利 → 战利品 ----
+  function onBattleWin() {
+    postBattleHeal();
+    if (run.battle && run.battle.type === "boss") return renderVictory();
+    const gold = 18 + run.floor * 4 + (run.battle.type === "elite" ? 20 : 0);
+    run.gold += gold;
+    // 三选一：招募 / 升级一名英雄 / 额外金币
+    const ownedKeys = run.roster.map(i => i.key);
+    const recruitable = Object.keys(CFG.heroes).filter(k => ownedKeys.indexOf(k) < 0);
+    const offers = [];
+    if (recruitable.length) offers.push({ type: "recruit", key: pick(recruitable) });
+    if (recruitable.length > 1) { let k2; do { k2 = pick(recruitable); } while (k2 === (offers[0] && offers[0].key)); offers.push({ type: "recruit", key: k2 }); }
+    offers.push({ type: "levelup" });
+    renderReward(gold, offers);
+  }
+  function renderReward(gold, offers) {
+    setScreen("reward");
+    const cards = offers.map((o, idx) => {
+      if (o.type === "recruit") { const h = CFG.heroes[o.key]; return `<button data-pick="${idx}" class="gcard p-4 text-left" style="--gc:${h.hex}cc">
+        <div class="flex items-center gap-2 mb-2">${voxChip(h.hex, h.element, 40)}<div><div class="font-bold">招募 ${h.name}</div><div class="text-[11px]">${elBadge(h.element)}</div></div></div>
+        <div class="text-[11px] text-slate-300">AS ${h.AS.fn} / ES ${h.ES.fn}</div>
+        <div class="text-[11px] text-slate-400 mt-1">HP ${h.AS.hp} · ATK ${h.AS.atk} · SPD ${h.AS.spd}</div></button>`; }
+      return `<button data-pick="${idx}" class="gcard p-4 text-left flex flex-col justify-center" style="--gc:rgba(251,191,36,.55)">
+        <div class="text-3xl">⭐</div><div class="font-bold mt-2">英雄升级</div>
+        <div class="text-[11px] text-slate-400 mt-1">任选一名英雄 Lv+1<br>(HP +${B.lvUpHp} · ATK +${B.lvUpAtk})</div></button>`;
+    }).join("");
+    overlay.innerHTML = `
+      <div class="absolute inset-0 flex flex-col items-center justify-center px-5">
+        <div class="panel text-center">
+          <div class="text-4xl font-black mb-1">🏆 战斗胜利</div>
+          <div class="text-amber-300 font-bold mb-6">获得 💰 ${gold} 金币</div>
+          <div class="text-slate-300 text-sm mb-4 font-bold">选择一项奖励</div>
+          <div class="grid grid-cols-1 sm:grid-cols-3 gap-4 max-w-2xl mx-auto">${cards}</div>
+          <button id="skip" class="gbtn mt-6 text-slate-400 text-sm underline">跳过（+10 💰）</button>
+        </div>
+      </div>`;
+    overlay.querySelectorAll("[data-pick]").forEach(b => b.onclick = () => {
+      const o = offers[+b.dataset.pick];
+      if (o.type === "recruit") { const inst = newHero(o.key); run.roster.push(inst); autoPlace(inst.uid); advanceFloor(); }
+      else renderLevelPick(() => advanceFloor());
+    });
+    overlay.querySelector("#skip").onclick = () => { run.gold += 10; advanceFloor(); };
+  }
+  function autoPlace(uid) { if (boardUids().length >= 9) return; for (let r = 0; r < 3; r++) for (let c = 2; c >= 0; c--) if (run.board[r][c] == null) { run.board[r][c] = uid; return; } }
+  function renderLevelPick(done) {
+    overlay.innerHTML = `<div class="absolute inset-0 flex flex-col items-center justify-center px-5">
+      <div class="panel text-center">
+        <div class="font-bold mb-4 text-lg">⭐ 选择升级的英雄</div>
+        <div class="grid grid-cols-2 sm:grid-cols-3 gap-3 max-w-2xl mx-auto">${run.roster.map(i => `<button data-uid="${i.uid}" class="text-left">${heroCard(i)}</button>`).join("")}</div>
+      </div></div>`;
+    overlay.querySelectorAll("[data-uid]").forEach(b => b.onclick = () => { const i = instById(+b.dataset.uid); i.level++; i.hp += B.lvUpHp; done(); });
+  }
+
+  // ---- 篝火 ----
+  function renderCampfire() {
+    setScreen("campfire");
+    overlay.innerHTML = `<div class="absolute inset-0 flex flex-col items-center justify-center px-5">
+      <div class="glass panel max-w-sm rounded-3xl p-7 text-center">
+        <div class="text-6xl mb-2 glow" style="color:#fb923c">🔥</div><div class="font-bold text-lg">篝火驿站</div>
+        <div class="text-slate-400 text-sm mt-1 mb-6">休整片刻——回满全队血量，<br>或调整阵型与 AS/ES 形态。</div>
+        <div class="flex flex-col gap-3">
+          <button id="heal" class="gbtn py-3 rounded-2xl bg-emerald-500 font-black">💚 全队回满血量</button>
+          <button id="form" class="gbtn py-3 rounded-2xl bg-violet-600 font-bold">🔄 布阵 / 切换形态</button>
+          <button id="leave" class="gbtn py-3 rounded-2xl bg-slate-700 font-bold">🚶 继续前进</button>
+        </div>
+      </div></div>`;
+    overlay.querySelector("#heal").onclick = () => { run.roster.forEach(i => i.hp = maxHpOf(i)); renderCampfire(); };
+    overlay.querySelector("#form").onclick = () => renderFormation("campfire");
+    overlay.querySelector("#leave").onclick = () => advanceFloor();
+  }
+
+  // ---- 商店 ----
+  function renderShop() {
+    setScreen("shop");
+    const ownedKeys = run.roster.map(i => i.key);
+    const stock = Object.keys(CFG.heroes).filter(k => ownedKeys.indexOf(k) < 0).slice(0, 3);
+    const recruitCost = 40;
+    const items = stock.map(k => { const h = CFG.heroes[k]; const can = run.gold >= recruitCost; return `<button data-buy="${k}" ${can ? '' : 'disabled'} class="gcard p-3.5 text-left" style="--gc:${h.hex}cc">
+      <div class="flex items-center gap-2 mb-2">${voxChip(h.hex, h.element, 38)}<div class="min-w-0"><div class="font-bold text-sm truncate">${h.name}</div><div class="text-[11px]">${elBadge(h.element)}</div></div></div>
+      <div class="text-[11px] text-slate-400">HP ${h.AS.hp} · ATK ${h.AS.atk} · SPD ${h.AS.spd}</div>
+      <div class="text-amber-300 text-sm font-bold mt-2 pill inline-block rounded px-2 py-0.5">💰 ${recruitCost}</div></button>`; }).join("");
+    overlay.innerHTML = `<div class="absolute inset-0 overflow-y-auto">
+      <div class="panel pb-8">
+        <div class="px-4 py-3 flex items-center justify-between sticky top-0 glass-deep rounded-b-2xl z-10">
+          <div class="font-bold">🛒 流浪商店</div>
+          <div class="flex gap-2 items-center"><span class="px-3 py-1 rounded-lg pill text-amber-300 font-bold text-sm">💰 ${run.gold}</span>
+          <button id="leave" class="gbtn px-4 py-1.5 rounded-lg bg-sky-600 font-bold">离开</button></div>
+        </div>
+        <div class="px-4 mt-3"><div class="text-[12px] text-slate-300 font-bold mb-2">招募英雄</div>
+          <div class="grid grid-cols-2 sm:grid-cols-3 gap-3">${items || '<div class="text-slate-600 text-xs text-center py-4 col-span-full">已无可招募英雄</div>'}</div></div>
+        <div class="px-4 mt-5"><div class="text-[12px] text-slate-300 font-bold mb-2">补给</div>
+        <div class="grid grid-cols-2 sm:grid-cols-3 gap-3">
+          <button id="heal" ${run.gold < 25 ? 'disabled' : ''} class="gcard p-4 text-center" style="--gc:rgba(52,211,153,.5)">
+            <div class="text-2xl">💚</div><div class="font-bold text-sm mt-1">全队回满</div><div class="text-amber-300 text-sm font-bold mt-1">💰 25</div></button>
+          <button id="up" ${run.gold < 35 ? 'disabled' : ''} class="gcard p-4 text-center" style="--gc:rgba(251,191,36,.5)">
+            <div class="text-2xl">⭐</div><div class="font-bold text-sm mt-1">英雄升级</div><div class="text-amber-300 text-sm font-bold mt-1">💰 35</div></button>
+        </div></div>
+      </div></div>`;
+    overlay.querySelector("#leave").onclick = () => advanceFloor();
+    overlay.querySelectorAll("[data-buy]").forEach(b => b.onclick = () => { if (run.gold < recruitCost) return; run.gold -= recruitCost; const inst = newHero(b.dataset.buy); run.roster.push(inst); autoPlace(inst.uid); renderShop(); });
+    overlay.querySelector("#heal").onclick = () => { if (run.gold < 25) return; run.gold -= 25; run.roster.forEach(i => i.hp = maxHpOf(i)); renderShop(); };
+    overlay.querySelector("#up").onclick = () => { if (run.gold < 35) return; run.gold -= 35; renderLevelPick(() => renderShop()); };
+  }
+
+  // ---- 维克托：时空裂缝事件 ----
+  function renderEvent() {
+    setScreen("event");
+    if (run.buffs.lightningChain) { // 已获得过：裂缝平静
+      overlay.innerHTML = `<div class="absolute inset-0 flex flex-col items-center justify-center px-6 text-center">
+        <div class="glass panel max-w-sm rounded-3xl p-7">
+          <div class="text-6xl mb-2 glow" style="color:#a78bfa">🌀</div><div class="font-bold">时空裂缝渐渐平息</div>
+          <div class="text-slate-400 text-sm mt-2 mb-6">维克托的雷之力仍在你队中流淌。⚡</div>
+          <button id="leave" class="gbtn px-8 py-3 rounded-2xl bg-sky-600 font-bold">继续前进</button></div></div>`;
+      overlay.querySelector("#leave").onclick = () => advanceFloor(); return;
+    }
+    const v = CFG.viktor;
+    overlay.innerHTML = `<div class="absolute inset-0 overflow-y-auto px-5">
+      <div class="panel max-w-2xl">
+        <div class="text-center pt-8"><div class="text-6xl glow" style="color:#facc15">${v.emoji}⚡</div>
+          <div class="font-black text-xl mt-2 text-yellow-300">时空裂缝 · 雷剑客${v.name}</div>
+          <div class="glass text-slate-200 text-sm mt-4 max-w-sm mx-auto leading-relaxed rounded-2xl p-4">${v.line}</div>
+          <div class="text-[11px] text-yellow-400/80 mt-2">（维克托是${elBadge('thunder')}属性·觉醒系——献祭后全队攻击附带闪电链）</div></div>
+        <div class="mt-6 text-[12px] text-slate-300 text-center font-bold">选择一名要献祭的英雄：</div>
+        <div class="grid grid-cols-2 sm:grid-cols-3 gap-3 mt-3 w-full pb-4">
+          ${run.roster.map(i => `<button data-sac="${i.uid}" class="text-left">${heroCard(i)}</button>`).join("")}
+        </div>
+        <div class="text-center"><button id="refuse" class="gbtn mb-8 px-8 py-3 rounded-2xl bg-slate-700 font-bold">🙅 拒绝献祭，离开裂缝</button></div>
+      </div>
+    </div>`;
+    overlay.querySelectorAll("[data-sac]").forEach(b => b.onclick = () => {
+      if (run.roster.length <= 1) return; // 至少保留一人
+      const uid = +b.dataset.sac, cur = cellOfUid(uid); if (cur) run.board[cur[0]][cur[1]] = null;
+      run.roster = run.roster.filter(i => i.uid !== uid);
+      run.buffs.lightningChain = true;
+      renderEventDone();
+    });
+    overlay.querySelector("#refuse").onclick = () => advanceFloor();
+  }
+  function renderEventDone() {
+    overlay.innerHTML = `<div class="absolute inset-0 flex flex-col items-center justify-center px-6 text-center">
+      <div class="glass panel max-w-sm rounded-3xl p-8 fadein">
+        <div class="text-7xl glow" style="color:#facc15">⚡</div>
+        <div class="font-black text-xl mt-3 text-yellow-300">雷之力注入全队！</div>
+        <div class="text-slate-300 text-sm mt-2 mb-6">此后你的每一次攻击都将引动<b class="text-yellow-300">闪电链</b>，溅射相邻敌人。</div>
+        <button id="go" class="gbtn px-8 py-3 rounded-2xl bg-amber-500 font-black">继续前进</button></div></div>`;
+    overlay.querySelector("#go").onclick = () => advanceFloor();
+  }
+
+  // ---- 结局 ----
+  function onGameOver() {
+    setScreen("over");
+    combatants.filter(u => u.side === "ally").forEach(u => u.inst.hp = 0);
+    reportFinished(false);
+    overlay.innerHTML = `<div class="absolute inset-0 flex flex-col items-center justify-center px-6 text-center">
+      <div class="glass panel max-w-sm rounded-3xl p-8 fadein">
+        <div class="text-6xl mb-2">☠</div><div class="font-black text-2xl text-rose-400">全军覆没</div>
+        <div class="text-slate-400 text-sm mt-2 mb-6">你倒在了第 ${run.floor + 1} 层。</div>
+        <button id="again" class="gbtn px-10 py-4 rounded-2xl bg-emerald-500 font-black">↻ 重新冒险</button></div></div>`;
+    overlay.querySelector("#again").onclick = () => renderTitle();
+  }
+  function renderVictory() {
+    setScreen("win");
+    reportFinished(true);
+    overlay.innerHTML = `<div class="absolute inset-0 flex flex-col items-center justify-center px-6 text-center">
+      <div class="glass panel max-w-md rounded-3xl p-8 fadein">
+        <div class="text-7xl mb-2 glow" style="color:#fcd34d">👑</div><div class="font-black text-3xl glow" style="color:#fcd34d">通关！</div>
+        <div class="text-slate-200 text-sm mt-3 mb-4">你击败了时空守卫，走出了哈奇异闻录的高塔。</div>
+        <div class="flex flex-wrap gap-2 justify-center mb-6">${run.roster.map(i => `<span class="inline-flex items-center gap-1.5 pill rounded-lg px-2 py-1 text-xs">${voxChip(i.hex, i.element, 16)}${i.name}</span>`).join("")}${run.buffs.lightningChain ? '<span class="pill rounded-lg px-2 py-1 text-xs text-yellow-300">⚡闪电链</span>' : ''}</div>
+        <button id="again" class="gbtn px-10 py-4 rounded-2xl bg-emerald-500 font-black">🔁 再战一局</button></div></div>`;
+    overlay.querySelector("#again").onclick = () => renderTitle();
+  }
+
+  // ============ 主渲染循环 ============
+  function frame() {
+    const now = performance.now();
+    ctx.clearRect(0, 0, W, H);
+    if (screen === "battle") {
+      // —— 分层绘制，彻底杜绝攻击突刺时的「破模」——
+      // 1) 地砖（等距体素，按深度排序）
+      const tiles = [];
+      for (const side of ["ally", "enemy"]) for (let r = 0; r < 3; r++) for (let c = 0; c < 3; c++)
+        tiles.push({ k: r + worldCol(side, c), fn: () => drawTile(side, r, c) });
+      tiles.sort((a, b) => a.k - b.k); tiles.forEach(x => x.fn());
+      // 2) 单位立绘（2D 公告板，按格深度从后往前；突刺只是平移，重叠也自然）
+      const order = combatants.slice().sort((a, b) =>
+        (a.r + worldCol(a.side, a.c)) - (b.r + worldCol(b.side, b.c)));
+      order.forEach(u => drawCreature(u, now));
+      // 3) 顶层 UI：徽记 + 血条（绘制在所有身体之上，永不被穿透）
+      order.forEach(u => drawCreatureUI(u, now));
+      // 4) VFX 最上层
+      drawBolts(now); drawFloats(now);
+    } else {
+      drawAmbient(now);                  // 菜单背景的漂浮体素粒子
+    }
+    requestAnimationFrame(frame);
+  }
+
+  // ============ 启动 ============
+  window.addEventListener("resize", setupCanvas);
+  setupCanvas();
+  initAmbient();
+  renderTitle();
+  postParent("gameLoaded");
+  requestAnimationFrame(frame);
+})();
+</script>
+</html>

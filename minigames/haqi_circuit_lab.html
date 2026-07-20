@@ -1,430 +1,1140 @@
 <!DOCTYPE html>
 <html lang="zh-CN">
-
 <head>
-	<meta charset="UTF-8">
-	<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-	<title>哈奇电路实验室</title>
-	<script src="https://cdn.keepwork.com/keepwork/cdn/tailwindcss@3.4.16.js"></script>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+<title>电路搭建大师</title>
+<script src="https://cdn.keepwork.com/keepwork/cdn/tailwindcss@3.4.16.js"></script>
+<style>
+  html, body { margin:0; padding:0; width:100%; height:100%; overflow:hidden; touch-action:none; -webkit-user-select:none; user-select:none; }
+  body { font-family: -apple-system, "PingFang SC", "Microsoft YaHei", sans-serif; background:#0f172a; }
+  #gameRoot { position:fixed; inset:0; display:flex; flex-direction:column; }
+  .no-scroll { -webkit-overflow-scrolling:touch; }
+  @keyframes shake { 0%,100%{transform:translate(0,0)} 20%{transform:translate(-6px,3px)} 40%{transform:translate(5px,-4px)} 60%{transform:translate(-4px,2px)} 80%{transform:translate(3px,-3px)} }
+  .shake { animation: shake .4s; }
+  @keyframes popIn { 0%{transform:scale(.6);opacity:0} 60%{transform:scale(1.08)} 100%{transform:scale(1);opacity:1} }
+  .pop-in { animation: popIn .35s ease-out; }
+  @keyframes fadeUp { 0%{transform:translateY(12px);opacity:0} 100%{transform:translateY(0);opacity:1} }
+  .fade-up { animation: fadeUp .3s ease-out; }
+  .star-fill { color:#fbbf24; text-shadow:0 0 8px rgba(251,191,36,.7); }
+  .star-empty { color:#475569; }
+  .btn { transition: transform .1s, filter .1s; }
+  .btn:active { transform: scale(.94); filter:brightness(1.1); }
+  #petHelper { transition: transform .3s; }
+  @keyframes bob { 0%,100%{transform:translateY(0)} 50%{transform:translateY(-6px)} }
+  .bob { animation: bob 2s ease-in-out infinite; }
+  .spark { position:absolute; width:10px; height:10px; border-radius:50%; pointer-events:none; }
+  @keyframes sparkFly { 0%{transform:translate(0,0) scale(1);opacity:1} 100%{opacity:0} }
+</style>
 </head>
+<body>
 
-<body></body>
 <script>
 game_config = {
-	difficulty: "normal",
-	levels: [
-		{
-			id: 1,
-			name: "第一关：点亮第一盏灯",
-			gridCols: 5,
-			gridRows: 4,
-			fixed: [
-				{ type: "battery", row: 1, col: 0, orientation: "h" },
-				{ type: "bulb", row: 1, col: 3, orientation: "h" }
-			],
-			wireBudget: null
-		}
-	]
+  difficulty: "normal",
+  starTimeBonus: [15, 30], // <=15s three stars, <=30s two stars, else one
+  levels: [
+    {
+      id: 1, name: "点亮灯泡", target: "让灯泡发光",
+      hint: "把电池的正负极通过导线连到灯泡上，形成一个闭合回路。",
+      // grid slots (col,row) 0-based, place fixed components
+      components: [
+        { type:"battery", col:0, row:1, fixed:true },
+        { type:"bulb", col:3, row:1, fixed:true }
+      ],
+      inventory: { wire: 6 },
+      goal: { bulbsLit: 1, noShort: true }
+    },
+    {
+      id: 2, name: "开关控制", target: "用开关点亮灯泡",
+      hint: "把开关串进回路里。开关闭合时电流才能通过，灯泡才会亮。",
+      components: [
+        { type:"battery", col:0, row:1, fixed:true },
+        { type:"switch", col:2, row:1, fixed:true },
+        { type:"bulb", col:4, row:1, fixed:true }
+      ],
+      inventory: { wire: 8 },
+      goal: { bulbsLit: 1, noShort: true, requireSwitchOn: true }
+    },
+    {
+      id: 3, name: "串联电路", target: "串联点亮两个灯泡",
+      hint: "把两个灯泡首尾相连串在同一回路里，电流依次流过它们。",
+      components: [
+        { type:"battery", col:0, row:1, fixed:true },
+        { type:"bulb", col:2, row:1, fixed:true },
+        { type:"bulb", col:4, row:1, fixed:true }
+      ],
+      inventory: { wire: 10 },
+      goal: { bulbsLit: 2, noShort: true }
+    },
+    {
+      id: 4, name: "并联电路", target: "并联点亮两个灯泡",
+      hint: "让两个灯泡各自成为一条支路并接在电池两端，它们会一样亮。",
+      components: [
+        { type:"battery", col:0, row:2, fixed:true },
+        { type:"bulb", col:3, row:0, fixed:true },
+        { type:"bulb", col:3, row:3, fixed:true }
+      ],
+      inventory: { wire: 12 },
+      goal: { bulbsLit: 2, noShort: true, requireParallel: true }
+    },
+    {
+      id: 5, name: "避免短路", target: "点亮灯泡且不短路",
+      hint: "电池两极不能只用导线直接相连，否则会短路！必须让电流经过灯泡这个用电器。",
+      components: [
+        { type:"battery", col:0, row:1, fixed:true },
+        { type:"bulb", col:3, row:1, fixed:true }
+      ],
+      inventory: { wire: 8 },
+      goal: { bulbsLit: 1, noShort: true }
+    },
+    {
+      id: 6, name: "电阻调光", target: "用电阻串联并点亮",
+      hint: "把电阻串进回路，电流会减小，灯泡会变暗一些。让灯泡发光即可过关。",
+      components: [
+        { type:"battery", col:0, row:1, fixed:true },
+        { type:"resistor", col:2, row:1, fixed:true },
+        { type:"bulb", col:4, row:1, fixed:true }
+      ],
+      inventory: { wire: 10 },
+      goal: { bulbsLit: 1, noShort: true, requireResistor: true }
+    }
+  ]
 };
 </script>
+
 <script>
 art_assets = [];
 </script>
-<script defer>
-(function () {
-	const I18N = {
-		zhCN: {
-			title: '哈奇电路实验室',
-			helpLabel: '玩法',
-			overlayTitle: '哈奇电路实验室',
-			overlayP1: '拖拽导线把电池和所有灯泡连成通路。灯泡全部点亮且没有短路即可过关。',
-			overlayP2: '开关默认断开，先点击合上；短路会立刻失败并重置本关新放置的导线。',
-			btnStart: '开始搭建',
-			toolWire: '导线',
-			toolSwitch: '开关',
-			toolRotate: '旋转',
-			toolEraser: '橡皮擦',
-			statLevel: '关卡',
-			statMoves: '步数',
-			statStatus: '状态',
-			statBest: '最高',
-			btnRestart: '重开',
-			statusOpen: '断路，请继续搭建',
-			statusShort: '短路！已重置新放置的元件',
-			statusLit: '已点亮 {lit}/{total}',
-			statusWin: '过关！',
-			toastWin: '通关 +{points}',
-			levelPrefix: '哈奇电路实验室 Lv.'
-		},
-		enUS: {
-			title: 'Haqi Circuit Lab',
-			helpLabel: 'Help',
-			overlayTitle: 'Haqi Circuit Lab',
-			overlayP1: 'Drag wires to connect the battery to every bulb. Light all bulbs with no short circuit to clear the level.',
-			overlayP2: 'Switches start open — tap to close them. A short circuit fails instantly and resets wires/switches you placed this level.',
-			btnStart: 'Start Building',
-			toolWire: 'Wire',
-			toolSwitch: 'Switch',
-			toolRotate: 'Rotate',
-			toolEraser: 'Eraser',
-			statLevel: 'Level',
-			statMoves: 'Moves',
-			statStatus: 'Status',
-			statBest: 'Best',
-			btnRestart: 'Restart',
-			statusOpen: 'Open circuit — keep building',
-			statusShort: 'Short circuit! New parts were reset',
-			statusLit: '{lit}/{total} lit',
-			statusWin: 'Level clear!',
-			toastWin: 'Cleared +{points}',
-			levelPrefix: 'Haqi Circuit Lab Lv.'
-		}
-	};
 
-	const state = {
-		lang: (navigator.language || 'zh-CN').toLowerCase().startsWith('zh') ? 'zhCN' : 'enUS',
-		levelIndex: 0,
-		grid: [],
-		gridCols: 0,
-		gridRows: 0,
-		tool: 'wire',
-		moves: 0,
-		gameStarted: false,
-		best: Number(localStorage.getItem('circuitLab.bestScore') || 0)
-	};
+<div id="gameRoot"></div>
 
-	function t(key, vars) {
-		const str = (I18N[state.lang] && I18N[state.lang][key]) || I18N.zhCN[key] || key;
-		if (!vars) return str;
-		return str.replace(/\{(\w+)\}/g, (_, k) => (vars[k] !== undefined ? vars[k] : `{${k}}`));
-	}
+<script>
+/* ============================================================
+   电路搭建大师  —  Circuit Builder
+   Grid-based drag & connect circuit simulator
+   ============================================================ */
 
-	function emptyGrid(rows, cols) {
-		const grid = [];
-		for (let r = 0; r < rows; r++) {
-			grid.push(new Array(cols).fill(null));
-		}
-		return grid;
-	}
+const root = document.getElementById('gameRoot');
 
-	function buildLevel(levelIndex) {
-		const level = game_config.levels[levelIndex];
-		state.levelIndex = levelIndex;
-		state.gridCols = level.gridCols;
-		state.gridRows = level.gridRows;
-		state.grid = emptyGrid(level.gridRows, level.gridCols);
-		state.moves = 0;
-		level.fixed.forEach(item => {
-			state.grid[item.row][item.col] = {
-				type: item.type,
-				orientation: item.orientation,
-				closed: item.type === 'switch' ? true : undefined,
-				fixed: true
-			};
-		});
-		return level;
-	}
+// ---- persistent pet image ----
+let petObjectUrl = '';
+let petRequestId = '';
+let currentPetId = '';
+let petImgUrl = '';
 
-	function findBatteryCell() {
-		for (let r = 0; r < state.gridRows; r++) {
-			for (let c = 0; c < state.gridCols; c++) {
-				const cell = state.grid[r][c];
-				if (cell && cell.type === 'battery') return { row: r, col: c, cell };
-			}
-		}
-		return null;
-	}
+function requestPetImage(petId = '') {
+  const requestId = `pet_${Date.now()}`;
+  petRequestId = requestId;
+  try {
+    window.parent.postMessage({ type:'haqi_get_pet_image', requestId, anim:'happy', petId: petId || undefined }, '*');
+  } catch(e){}
+  setTimeout(() => {
+    if (petObjectUrl) return;
+    try { window.parent.postMessage({ type:'haqi_get_pet_images', requestId:`pets_${Date.now()}`, anim:'happy' }, '*'); } catch(e){}
+  }, 900);
+}
 
-	const DIRS = [
-		{ name: 'up', dr: -1, dc: 0, opposite: 'down' },
-		{ name: 'down', dr: 1, dc: 0, opposite: 'up' },
-		{ name: 'left', dr: 0, dc: -1, opposite: 'right' },
-		{ name: 'right', dr: 0, dc: 1, opposite: 'left' }
-	];
+function setPetImage(pet) {
+  try {
+    if (petObjectUrl) URL.revokeObjectURL(petObjectUrl);
+    const url = URL.createObjectURL(pet.imageBlob);
+    petObjectUrl = url;
+    petImgUrl = url;
+    const uv = pet.uv || {cols:1,rows:1,col:0,row:0};
+    document.querySelectorAll('.pet-sprite').forEach(el => applyPetSprite(el, url, uv));
+  } catch(e){}
+}
 
-	function cellAllowsDirection(cell, dirName) {
-		if (!cell) return false;
-		if (cell.type === 'wire') return true;
-		if (cell.type === 'switch' && !cell.closed) return false;
-		const axis = cell.orientation === 'h' ? ['left', 'right'] : ['up', 'down'];
-		return axis.includes(dirName);
-	}
+function applyPetSprite(el, url, uv) {
+  el.style.backgroundImage = `url("${url}")`;
+  if ((uv.cols||1) > 1 || (uv.rows||1) > 1) {
+    el.style.backgroundSize = `${uv.cols*100}% ${uv.rows*100}%`;
+    el.style.backgroundPosition = `${uv.col*100/Math.max(1,uv.cols-1)}% ${uv.row*100/Math.max(1,uv.rows-1)}%`;
+  } else {
+    el.style.backgroundSize = 'contain';
+    el.style.backgroundPosition = 'center';
+  }
+  el.style.backgroundRepeat = 'no-repeat';
+  el.textContent = '';
+}
 
-	function cellKey(r, c) { return `${r},${c}`; }
+window.addEventListener('message', (event) => {
+  const msg = event.data || {};
+  if (msg.type === 'setGameConfig') {
+    if (msg.data && msg.data.petId) { currentPetId = msg.data.petId; requestPetImage(currentPetId); }
+    if (msg.data && msg.data.config) { try { Object.assign(game_config, msg.data.config); } catch(e){} }
+  }
+  if (msg.type === 'haqi_pet_image' && msg.ok && msg.data &&
+      (!petRequestId || !msg.requestId || msg.requestId === petRequestId || msg.requestId === 'active_pet_config')) {
+    setPetImage(msg.data);
+  }
+  if (msg.type === 'haqi_pet_images' && msg.ok) {
+    const first = Array.isArray(msg.data?.pets) ? msg.data.pets[0] : null;
+    if (first) setPetImage(first);
+  }
+});
 
-	// Builds an undirected adjacency list over all occupied, non-battery cells.
-	function buildGraph(excludeCell) {
-		const graph = new Map();
-		for (let r = 0; r < state.gridRows; r++) {
-			for (let c = 0; c < state.gridCols; c++) {
-				const cell = state.grid[r][c];
-				if (!cell) continue;
-				if (excludeCell && r === excludeCell.row && c === excludeCell.col) continue;
-				const key = cellKey(r, c);
-				if (!graph.has(key)) graph.set(key, []);
-			}
-		}
-		for (let r = 0; r < state.gridRows; r++) {
-			for (let c = 0; c < state.gridCols; c++) {
-				const cell = state.grid[r][c];
-				if (!cell) continue;
-				if (excludeCell && r === excludeCell.row && c === excludeCell.col) continue;
-				DIRS.forEach(dir => {
-					const nr = r + dir.dr, nc = c + dir.dc;
-					if (nr < 0 || nc < 0 || nr >= state.gridRows || nc >= state.gridCols) return;
-					const neighbor = state.grid[nr][nc];
-					if (!neighbor) return;
-					if (excludeCell && nr === excludeCell.row && nc === excludeCell.col) return;
-					if (!cellAllowsDirection(cell, dir.name)) return;
-					if (!cellAllowsDirection(neighbor, dir.opposite)) return;
-					graph.get(cellKey(r, c)).push({ key: cellKey(nr, nc), isBulb: neighbor.type === 'bulb' });
-				});
-			}
-		}
-		return graph;
-	}
+// ---- storage ----
+const STORE_KEY = 'circuitBuilder_progress';
+function loadProgress(){ try { return JSON.parse(localStorage.getItem(STORE_KEY)) || {}; } catch(e){ return {}; } }
+function saveProgress(p){ try { localStorage.setItem(STORE_KEY, JSON.stringify(p)); } catch(e){} }
+let progress = loadProgress(); // { levelId: stars }
 
-	// BFS from `startKey`. If `skipBulbs` is true, traversal will not pass through bulb cells
-	// (used to detect a pure wire/switch shortcut = short circuit).
-	function bfsReachable(graph, startKey, skipBulbs) {
-		const visited = new Set([startKey]);
-		const queue = [startKey];
-		while (queue.length) {
-			const current = queue.shift();
-			const neighbors = graph.get(current) || [];
-			neighbors.forEach(edge => {
-				if (visited.has(edge.key)) return;
-				if (skipBulbs && edge.isBulb) return;
-				visited.add(edge.key);
-				queue.push(edge.key);
-			});
-		}
-		return visited;
-	}
+// ============================================================
+//  GRID & CIRCUIT MODEL
+// ============================================================
+const COLS = 6, ROWS = 4;
+// Each grid cell is a node. Components occupy TWO adjacent horizontal or vertical cells,
+// connecting the two node endpoints. Wires can be drawn in straight horizontal or vertical
+// lines and are internally stored as a chain of adjacent-node segments.
+// We represent connections as edges between node ids: `${col},${row}`.
 
-	function analyzeCircuit() {
-		const battery = findBatteryCell();
-		if (!battery) return { circuitClosed: false, shortCircuit: false, litCells: new Set() };
+  let level = null;          // current level def
+let placed = [];           // components on board: {type,a:[col,row],b:[col,row],id,on(for switch)}
+let wires = [];            // {a:[col,row], b:[col,row]}
+let startTime = 0;
+let selectedNode = null;   // for wire drawing (first tapped node)
+let dragFrom = null;       // nodeId where a drag started
+let dragXY = null;         // current pointer position [x,y] during drag
+let dragMoved = false;     // whether pointer moved enough to count as a drag
+let dragPath = [];         // multi-segment wire path during drag
+let dragComp = null;       // component being dragged
+let dragCompOrigin = null; // original position of dragged component
+let currentLevelId = 1;
+let gameActiveScore = 0;
 
-		const axis = battery.cell.orientation === 'h' ? [{ dr: 0, dc: -1 }, { dr: 0, dc: 1 }] : [{ dr: -1, dc: 0 }, { dr: 1, dc: 0 }];
-		const terminals = axis
-			.map(d => ({ row: battery.row + d.dr, col: battery.col + d.dc }))
-			.filter(p => p.row >= 0 && p.col >= 0 && p.row < state.gridRows && p.col < state.gridCols && state.grid[p.row][p.col]);
+function nodeId(c,r){ return c+','+r; }
+function parseNode(id){ const [c,r]=id.split(',').map(Number); return [c,r]; }
 
-		if (terminals.length < 2) {
-			return { circuitClosed: false, shortCircuit: false, litCells: new Set() };
-		}
+// ============================================================
+//  SCREENS
+// ============================================================
+function showHome(){
+  const total = game_config.levels.length;
+  let done = 0, stars = 0;
+  game_config.levels.forEach(l => { if (progress[l.id]) { done++; stars += progress[l.id]; } });
+  root.innerHTML = `
+    <div class="flex-1 flex flex-col items-center justify-start overflow-y-auto no-scroll px-4 py-6 text-white" style="background:linear-gradient(160deg,#1e293b,#0f172a);">
+      <div class="w-full max-w-md flex flex-col items-center">
+        <div class="flex items-center gap-3 mt-2 mb-1">
+          <div class="pet-sprite bob" style="width:56px;height:56px;font-size:44px;line-height:56px;text-align:center;">🐣</div>
+          <h1 class="text-3xl font-extrabold" style="text-shadow:0 2px 8px rgba(56,189,248,.6);">⚡ 电路搭建大师</h1>
+        </div>
+        <p class="text-slate-300 text-sm mb-4">拖放元件、连接导线，点亮灯泡吧！</p>
+        <div class="w-full bg-slate-800/70 rounded-xl px-4 py-2 mb-4 flex justify-between text-sm">
+          <span>已通关 <b class="text-emerald-400">${done}/${total}</b></span>
+          <span>总星星 <b class="star-fill">★ ${stars}</b></span>
+        </div>
+        <div id="levelGrid" class="grid grid-cols-2 gap-3 w-full"></div>
+        <button id="helpBtn" class="btn mt-5 text-sm text-slate-300 underline">❓ 游戏玩法</button>
+      </div>
+    </div>`;
+  const grid = document.getElementById('levelGrid');
+  game_config.levels.forEach((l, idx) => {
+    const unlocked = idx === 0 || progress[game_config.levels[idx-1].id];
+    const st = progress[l.id] || 0;
+    const card = document.createElement('button');
+    card.className = 'btn rounded-2xl p-3 text-left flex flex-col gap-1 ' + (unlocked ? 'bg-gradient-to-br from-sky-600 to-indigo-700' : 'bg-slate-700/50 opacity-60');
+    card.innerHTML = `
+      <div class="flex justify-between items-center">
+        <span class="text-lg font-bold">关卡 ${l.id}</span>
+        <span class="text-xl">${unlocked ? '' : '🔒'}</span>
+      </div>
+      <div class="text-sm font-semibold">${l.name}</div>
+      <div class="text-xs text-slate-200/80">${l.target}</div>
+      <div class="text-lg mt-1">${[1,2,3].map(i=>`<span class="${i<=st?'star-fill':'star-empty'}">★</span>`).join('')}</div>`;
+    if (unlocked) card.onclick = () => startLevel(l.id);
+    grid.appendChild(card);
+  });
+  document.getElementById('helpBtn').onclick = showRules;
+  if (petImgUrl) document.querySelectorAll('.pet-sprite').forEach(el=>applyPetSprite(el, petImgUrl, {cols:1,rows:1,col:0,row:0}));
+}
 
-		const [termA, termB] = terminals;
-		const graph = buildGraph(battery);
-		const keyA = cellKey(termA.row, termA.col);
-		const keyB = cellKey(termB.row, termB.col);
+function showRules(){
+  const overlay = document.createElement('div');
+  overlay.className = 'fixed inset-0 z-50 flex items-center justify-center bg-black/70 px-5';
+  overlay.innerHTML = `
+    <div class="pop-in bg-slate-800 text-white rounded-2xl max-w-sm w-full p-5 shadow-2xl">
+      <h2 class="text-xl font-bold mb-3">🔧 怎么玩</h2>
+      <ul class="text-sm space-y-2 text-slate-200 list-disc pl-5">
+        <li>从底部元件库<b>拖动</b>元件到网格空位上。</li>
+        <li>从一个接点<b>拖动</b>到同排或同列的接点，即可自动连出多段导线；也可依次<b>点击</b>两个接点。</li>
+        <li>点击已连的导线可以<b>删除</b>并回收它。</li>
+        <li>点击开关可以<b>打开/关闭</b>它。</li>
+        <li>形成闭合回路后灯泡会自动亮起 💡。</li>
+        <li>⚠️ 电池两极别直接短接，否则会<b>短路</b>！</li>
+        <li>用时越短，得到的 ★ 越多。</li>
+      </ul>
+      <button id="closeRules" class="btn w-full mt-4 bg-sky-500 rounded-xl py-2 font-bold">知道啦</button>
+    </div>`;
+  document.body.appendChild(overlay);
+  overlay.querySelector('#closeRules').onclick = () => overlay.remove();
+}
 
-		const reachableFromA = bfsReachable(graph, keyA, false);
-		const circuitClosed = reachableFromA.has(keyB);
+// ============================================================
+//  LEVEL PLAY
+// ============================================================
+function startLevel(id){
+  currentLevelId = id;
+  level = JSON.parse(JSON.stringify(game_config.levels.find(l=>l.id===id)));
+  placed = [];
+  wires = [];
+  selectedNode = null;
+  startTime = Date.now();
 
-		const reachableFromA_noBulb = bfsReachable(graph, keyA, true);
-		const shortCircuit = reachableFromA_noBulb.has(keyB);
+  // place fixed components horizontally/vertically over 2 cells
+  level.components.forEach((c, i) => {
+    // orientation: default horizontal (occupies col,row -> col+1,row) unless near right edge
+    let a=[c.col,c.row], b;
+    if (c.col+1 < COLS) b=[c.col+1,c.row]; else b=[c.col-1,c.row];
+    placed.push({ type:c.type, a, b, fixed:true, id:'c'+i, on:false });
+  });
 
-		const litCells = new Set();
-		if (circuitClosed && !shortCircuit) {
-			const reachableFromB = bfsReachable(graph, keyB, false);
-			for (let r = 0; r < state.gridRows; r++) {
-				for (let c = 0; c < state.gridCols; c++) {
-					const cell = state.grid[r][c];
-					if (cell && cell.type === 'bulb') {
-						const key = cellKey(r, c);
-						if (reachableFromA.has(key) && reachableFromB.has(key)) litCells.add(key);
-					}
-				}
-			}
-		}
+  renderPlay();
+  try { window.parent.postMessage({ type:'gameStarted' }, '*'); } catch(e){}
+}
 
-		return { circuitClosed, shortCircuit, litCells };
-	}
+function renderPlay(){
+  root.innerHTML = `
+    <div class="flex-1 flex flex-col text-white" style="background:linear-gradient(160deg,#0b1220,#0f172a);">
+      <div class="flex items-center justify-between px-3 py-2 bg-slate-800/60">
+        <button id="backBtn" class="btn text-sm bg-slate-700 rounded-lg px-3 py-1">← 返回</button>
+        <div class="text-center">
+          <div class="text-base font-bold">关卡 ${level.id} · ${level.name}</div>
+          <div class="text-xs text-sky-300">目标：${level.target}</div>
+        </div>
+        <div class="text-right text-xs">
+          <div>⏱ <span id="timer">0</span>s</div>
+        </div>
+      </div>
 
-	function placeCell(row, col, cellData) {
-		const existing = state.grid[row][col];
-		if (existing && existing.fixed) return false;
-		state.grid[row][col] = cellData;
-		state.moves++;
-		return true;
-	}
+      <div class="flex-1 flex items-center justify-center p-2">
+        <div id="boardWrap" style="position:relative;">
+          <svg id="board" style="display:block; touch-action:none; background:#0b1220; border-radius:16px;"></svg>
+        </div>
+      </div>
 
-	function eraseCell(row, col) {
-		const existing = state.grid[row][col];
-		if (!existing || existing.fixed) return false;
-		state.grid[row][col] = null;
-		state.moves++;
-		return true;
-	}
+      <div class="px-3 py-2 bg-slate-800/60">
+        <div class="flex items-center gap-2 mb-1">
+          <div class="pet-sprite" style="width:34px;height:34px;font-size:26px;line-height:34px;text-align:center;flex:0 0 auto;">🐣</div>
+          <div id="petMsg" class="text-xs text-slate-300 flex-1">${level.hint}</div>
+        </div>
+        <div id="palette" class="flex gap-2 justify-center items-center"></div>
+      </div>
+    </div>`;
 
-	let isPointerDown = false;
+  document.getElementById('backBtn').onclick = showHome;
+  buildPalette();
+  layoutBoard();
+  setupBoardInput();
+  resimulate();
+  if (petImgUrl) document.querySelectorAll('.pet-sprite').forEach(el=>applyPetSprite(el, petImgUrl, {cols:1,rows:1,col:0,row:0}));
 
-	function handleCellAction(row, col) {
-		const existing = state.grid[row][col];
+  clearInterval(window._timerInt);
+  window._timerInt = setInterval(()=>{
+    const t = Math.floor((Date.now()-startTime)/1000);
+    const el = document.getElementById('timer'); if (el) el.textContent = t; else clearInterval(window._timerInt);
+  }, 500);
+}
 
-		// Tapping an existing switch always toggles open/closed, regardless of tool.
-		if (existing && existing.type === 'switch' && state.tool !== 'eraser' && state.tool !== 'rotate') {
-			existing.closed = !existing.closed;
-			renderGrid();
-			updateStatusBar();
-			return;
-		}
+// palette: wires are placed by tapping nodes, so palette shows a "wire" mode indicator + hint
+const COMP_ICON = { battery:'🔋', bulb:'💡', switch:'🔀', resistor:'▭', wire:'➖' };
+function buildPalette(){
+  const pal = document.getElementById('palette');
+  pal.innerHTML = `
+    <div class="text-xs text-slate-400">拖动或点击同排/同列接点连线 · 点开关切换</div>
+    <button id="checkBtn" class="btn bg-emerald-500 rounded-xl px-4 py-2 font-bold text-sm">✓ 检测电路</button>
+    <button id="resetBtn" class="btn bg-rose-500/80 rounded-lg px-3 py-2 text-sm">↺ 清空</button>`;
+  document.getElementById('checkBtn').onclick = checkCircuit;
+  document.getElementById('resetBtn').onclick = () => {
+    wires = []; selectedNode = null;
+    placed.forEach(p=>{ if(p.type==='switch') p.on=false; });
+    drawBoard();
+  };
+}
 
-		if (state.tool === 'eraser') {
-			eraseCell(row, col);
-		} else if (state.tool === 'wire') {
-			if (!existing) placeCell(row, col, { type: 'wire', orientation: 'h', fixed: false });
-		} else if (state.tool === 'switch') {
-			if (!existing) placeCell(row, col, { type: 'switch', orientation: 'h', closed: false, fixed: false });
-		} else if (state.tool === 'rotate') {
-			if (existing && (existing.type === 'battery' || existing.type === 'bulb' || existing.type === 'switch')) {
-				existing.orientation = existing.orientation === 'h' ? 'v' : 'h';
-			}
-		}
-		renderGrid();
-		updateStatusBar();
-	}
+// board geometry
+let CELL=70, PAD=40, OX=0, OY=0, W=0, H=0;
+function layoutBoard(){
+  const wrap = document.getElementById('boardWrap');
+  const availW = window.innerWidth - 24;
+  const availH = window.innerHeight - 200;
+  CELL = Math.floor(Math.min((availW-2*40)/(COLS-1), (availH-2*40)/(ROWS-1)));
+  CELL = Math.max(46, Math.min(CELL, 92));
+  PAD = 40;
+  W = PAD*2 + (COLS-1)*CELL;
+  H = PAD*2 + (ROWS-1)*CELL;
+  const svg = document.getElementById('board');
+  svg.setAttribute('width', W);
+  svg.setAttribute('height', H);
+  svg.setAttribute('viewBox', `0 0 ${W} ${H}`);
+}
+function nodeXY(c,r){ return [PAD + c*CELL, PAD + r*CELL]; }
 
-	function attachBoardEvents() {
-		const board = document.getElementById('board');
-		board.addEventListener('pointerdown', (e) => {
-			const target = e.target.closest('[data-row]');
-			if (!target) return;
-			isPointerDown = true;
-			handleCellAction(Number(target.dataset.row), Number(target.dataset.col));
-		});
-		board.addEventListener('pointerover', (e) => {
-			if (!isPointerDown) return;
-			const target = e.target.closest('[data-row]');
-			if (!target) return;
-			handleCellAction(Number(target.dataset.row), Number(target.dataset.col));
-		});
-		window.addEventListener('pointerup', () => { isPointerDown = false; });
-	}
+function areAdjacent(c1,r1,c2,r2){
+  const dc=Math.abs(c1-c2), dr=Math.abs(r1-r2);
+  return (dc===1&&dr===0)||(dc===0&&dr===1);
+}
+function nodeOccupiedByComponent(c,r){
+  return placed.some(p=> (p.a[0]===c&&p.a[1]===r) || (p.b[0]===c&&p.b[1]===r) );
+}
+function isValidCompPos(a,b,exclude){
+  if(a[0]<0||a[0]>=COLS||a[1]<0||a[1]>=ROWS||b[0]<0||b[0]>=COLS||b[1]<0||b[1]>=ROWS) return false;
+  if(!areAdjacent(a[0],a[1],b[0],b[1])) return false;
+  for(const p of placed){
+    if(p===exclude) continue;
+    if((p.a[0]===a[0]&&p.a[1]===a[1])||(p.b[0]===a[0]&&p.b[1]===a[1])||
+       (p.a[0]===b[0]&&p.a[1]===b[1])||(p.b[0]===b[0]&&p.b[1]===b[1])) return false;
+  }
+  return true;
+}
+function componentBetween(a,b){
+  return placed.some(p=> (nodeId(...p.a)===nodeId(...a)&&nodeId(...p.b)===nodeId(...b)) || (nodeId(...p.a)===nodeId(...b)&&nodeId(...p.b)===nodeId(...a)) );
+}
 
-	function attachToolbarEvents() {
-		document.querySelectorAll('.tool-btn').forEach(btn => {
-			btn.addEventListener('click', () => {
-				state.tool = btn.dataset.tool;
-				document.querySelectorAll('.tool-btn').forEach(b => b.classList.remove('bg-emerald-600'));
-				btn.classList.add('bg-emerald-600');
-			});
-		});
-		document.getElementById('btnRestart').addEventListener('click', () => {
-			buildLevel(state.levelIndex);
-			renderGrid();
-			updateStatusBar();
-		});
-	}
+// ============================================================
+//  DRAW
+// ============================================================
+let litBulbs = new Set();
+let shortCircuit = false;
 
-	function updateStatusBar() {
-		document.getElementById('statLevel').textContent = `${t('statLevel')}: ${state.levelIndex + 1}`;
-		document.getElementById('statMoves').textContent = `${t('statMoves')}: ${state.moves}`;
-		document.getElementById('statBest').textContent = `${t('statBest')}: ${state.best}`;
-	}
+function drawBoard(){
+  const svg = document.getElementById('board');
+  if(!svg) return;
+  const NS='http://www.w3.org/2000/svg';
+  svg.innerHTML='';
 
-	function buildDom() {
-		document.body.innerHTML = `
-			<div class="w-full h-screen bg-slate-900 text-white flex flex-col items-center justify-between overflow-hidden select-none">
-				<div class="w-full flex items-center justify-between px-3 py-2 text-sm bg-slate-800">
-					<span id="statLevel"></span>
-					<span id="statMoves"></span>
-					<span id="statStatus" class="font-bold"></span>
-					<span id="statBest"></span>
-					<button id="btnHelp" class="text-xl">❓</button>
-				</div>
-				<div id="board" class="grid gap-1 p-2" role="grid" aria-label="circuit board"></div>
-				<div class="w-full flex items-center justify-center gap-2 px-3 py-2 bg-slate-800">
-					<button data-tool="wire" class="tool-btn px-3 py-2 rounded bg-slate-700"></button>
-					<button data-tool="switch" class="tool-btn px-3 py-2 rounded bg-slate-700"></button>
-					<button data-tool="rotate" class="tool-btn px-3 py-2 rounded bg-slate-700"></button>
-					<button data-tool="eraser" class="tool-btn px-3 py-2 rounded bg-slate-700"></button>
-					<button id="btnRestart" class="px-3 py-2 rounded bg-red-700"></button>
-				</div>
-				<div id="rulesOverlay" class="fixed inset-0 bg-black/80 flex items-center justify-center z-50">
-					<div class="bg-slate-800 rounded-lg p-6 max-w-md text-center space-y-3">
-						<h2 id="overlayTitle" class="text-xl font-bold"></h2>
-						<p id="overlayP1" class="text-sm text-slate-300"></p>
-						<p id="overlayP2" class="text-sm text-slate-300"></p>
-						<button id="btnStart" class="px-4 py-2 rounded bg-emerald-600 font-bold"></button>
-					</div>
-				</div>
-			</div>
-		`;
-	}
+  // grid dots (larger invisible hit area + visible dot)
+  for(let c=0;c<COLS;c++) for(let r=0;r<ROWS;r++){
+    const [x,y]=nodeXY(c,r);
+    const hit=document.createElementNS(NS,'circle');
+    hit.setAttribute('cx',x); hit.setAttribute('cy',y); hit.setAttribute('r',Math.min(20,CELL/2));
+    hit.setAttribute('fill','transparent');
+    hit.style.cursor='pointer';
+    hit.dataset.node = nodeId(c,r);
+    svg.appendChild(hit);
+    const dot=document.createElementNS(NS,'circle');
+    dot.setAttribute('cx',x); dot.setAttribute('cy',y); dot.setAttribute('r',6);
+    dot.setAttribute('fill', (selectedNode===nodeId(c,r)||dragFrom===nodeId(c,r)) ? '#38bdf8' : '#334155');
+    dot.setAttribute('stroke','#1e293b'); dot.setAttribute('stroke-width','2');
+    dot.style.pointerEvents='none';
+    svg.appendChild(dot);
+  }
 
-	const CELL_GLYPH = {
-		battery: '🔋',
-		bulb_on: '💡',
-		bulb_off: '🔅',
-		switch_closed: '🔘',
-		switch_open: '⭕'
-	};
+  // wires
+  wires.forEach(w=>{
+    if(componentBetween(w.a, w.b)) return;
+    const [x1,y1]=nodeXY(...w.a), [x2,y2]=nodeXY(...w.b);
+    const line=document.createElementNS(NS,'line');
+    line.setAttribute('x1',x1); line.setAttribute('y1',y1);
+    line.setAttribute('x2',x2); line.setAttribute('y2',y2);
+    line.setAttribute('stroke', shortCircuit ? '#ef4444' : '#f59e0b');
+    line.setAttribute('stroke-width','9'); line.setAttribute('stroke-linecap','round');
+    line.style.cursor='pointer';
+    line.dataset.wireDel = '1';
+    line._wire = w;
+    svg.appendChild(line);
+  });
 
-	function renderGrid() {
-		const board = document.getElementById('board');
-		board.style.gridTemplateColumns = `repeat(${state.gridCols}, minmax(36px, 56px))`;
-		board.innerHTML = '';
-		for (let r = 0; r < state.gridRows; r++) {
-			for (let c = 0; c < state.gridCols; c++) {
-				const cell = state.grid[r][c];
-				const div = document.createElement('div');
-				div.className = 'aspect-square flex items-center justify-center rounded bg-slate-700 text-2xl cursor-pointer';
-				div.dataset.row = r;
-				div.dataset.col = c;
-				if (cell) {
-					div.textContent = cell.type === 'wire' ? '➖'
-						: cell.type === 'battery' ? CELL_GLYPH.battery
-						: cell.type === 'bulb' ? CELL_GLYPH.bulb_off
-						: cell.closed ? CELL_GLYPH.switch_closed : CELL_GLYPH.switch_open;
-					if ((cell.type === 'wire' && false) || cell.orientation === 'v') {
-						div.style.transform = 'rotate(90deg)';
-					}
-				}
-				board.appendChild(div);
-			}
-		}
-	}
+  // components
+  placed.forEach(p=>drawComponent(svg, p));
 
-	function applyI18nText() {
-		document.getElementById('overlayTitle').textContent = t('overlayTitle');
-		document.getElementById('overlayP1').textContent = t('overlayP1');
-		document.getElementById('overlayP2').textContent = t('overlayP2');
-		document.getElementById('btnStart').textContent = t('btnStart');
-		document.getElementById('btnHelp').title = t('helpLabel');
-		document.getElementById('btnRestart').textContent = t('btnRestart');
-		document.querySelector('[data-tool="wire"]').textContent = t('toolWire');
-		document.querySelector('[data-tool="switch"]').textContent = t('toolSwitch');
-		document.querySelector('[data-tool="rotate"]').textContent = t('toolRotate');
-		document.querySelector('[data-tool="eraser"]').textContent = t('toolEraser');
-	}
+  svg.classList.remove('shake');
+}
 
-	buildDom();
-	document.title = t('title');
-	applyI18nText();
-	buildLevel(0);
-	renderGrid();
-	attachBoardEvents();
-	attachToolbarEvents();
-	document.querySelector('[data-tool="wire"]').classList.add('bg-emerald-600');
-	updateStatusBar();
+function drawComponent(svg, p){
+  const NS='http://www.w3.org/2000/svg';
+  const [x1,y1]=nodeXY(...p.a), [x2,y2]=nodeXY(...p.b);
+  const mx=(x1+x2)/2, my=(y1+y2)/2;
+  const horiz = y1===y2;
 
-	document.getElementById('btnStart').addEventListener('click', () => {
-		document.getElementById('rulesOverlay').remove();
-		if (!state.gameStarted) {
-			state.gameStarted = true;
-			window.parent.postMessage({ type: 'gameStarted' }, '*');
-		}
-	});
-	document.getElementById('btnHelp').addEventListener('click', () => {
-		location.reload();
-	});
+  // leads (thin wire from node to body)
+  const lead=(ax,ay,bx,by)=>{ const l=document.createElementNS(NS,'line'); l.setAttribute('x1',ax);l.setAttribute('y1',ay);l.setAttribute('x2',bx);l.setAttribute('y2',by); l.setAttribute('stroke','#94a3b8'); l.setAttribute('stroke-width','5'); l.setAttribute('stroke-linecap','round'); svg.appendChild(l); };
+  lead(x1,y1,mx,my); lead(x2,y2,mx,my);
 
-	window.parent.postMessage({ type: 'gameLoaded' }, '*');
+  const g=document.createElementNS(NS,'g');
+  g.style.cursor = p.type==='switch' ? 'pointer' : 'grab';
+  g.dataset.compType = p.type;
+  g.dataset.compId = p.id;
+  g._comp = p;
 
-	window.__circuitDebug = { state, buildLevel, renderGrid, findBatteryCell, analyzeCircuit, placeCell, eraseCell, handleCellAction };
-})();
+  if(p.type==='battery'){
+    const r=document.createElementNS(NS,'rect');
+    const bw=36, bh=24;
+    r.setAttribute('x',mx-bw/2); r.setAttribute('y',my-bh/2); r.setAttribute('width',bw); r.setAttribute('height',bh);
+    r.setAttribute('rx',5); r.setAttribute('fill','#16a34a'); r.setAttribute('stroke','#052e16'); r.setAttribute('stroke-width','2');
+    g.appendChild(r);
+    const t=document.createElementNS(NS,'text'); t.setAttribute('x',mx); t.setAttribute('y',my+5); t.setAttribute('text-anchor','middle'); t.setAttribute('font-size','16'); t.setAttribute('fill','#fff'); t.textContent='＋−'; g.appendChild(t);
+  } else if(p.type==='bulb'){
+    const lit = litBulbs.has(p.id);
+    const c=document.createElementNS(NS,'circle');
+    c.setAttribute('cx',mx); c.setAttribute('cy',my); c.setAttribute('r',18);
+    c.setAttribute('fill', lit ? '#fde047' : '#475569');
+    c.setAttribute('stroke', lit ? '#f59e0b' : '#334155'); c.setAttribute('stroke-width','3');
+    if(lit){ c.setAttribute('filter','url(#glow)'); }
+    g.appendChild(c);
+    const t=document.createElementNS(NS,'text'); t.setAttribute('x',mx); t.setAttribute('y',my+7); t.setAttribute('text-anchor','middle'); t.setAttribute('font-size','20'); t.textContent = lit ? '💡' : '○'; g.appendChild(t);
+    if(lit){
+      const defs=document.createElementNS(NS,'defs');
+      defs.innerHTML=`<filter id="glow" x="-80%" y="-80%" width="260%" height="260%"><feGaussianBlur stdDeviation="6" result="b"/><feMerge><feMergeNode in="b"/><feMergeNode in="SourceGraphic"/></feMerge></filter>`;
+      svg.insertBefore(defs, svg.firstChild);
+    }
+  } else if(p.type==='switch'){
+    const base1=document.createElementNS(NS,'circle'); base1.setAttribute('cx',mx-16);base1.setAttribute('cy',my);base1.setAttribute('r',5);base1.setAttribute('fill','#cbd5e1'); g.appendChild(base1);
+    const base2=document.createElementNS(NS,'circle'); base2.setAttribute('cx',mx+16);base2.setAttribute('cy',my);base2.setAttribute('r',5);base2.setAttribute('fill','#cbd5e1'); g.appendChild(base2);
+    const arm=document.createElementNS(NS,'line');
+    arm.setAttribute('x1',mx-16); arm.setAttribute('y1',my);
+    if(p.on){ arm.setAttribute('x2',mx+16); arm.setAttribute('y2',my); }
+    else { arm.setAttribute('x2',mx+10); arm.setAttribute('y2',my-16); }
+    arm.setAttribute('stroke', p.on?'#22c55e':'#f87171'); arm.setAttribute('stroke-width','5'); arm.setAttribute('stroke-linecap','round');
+    g.appendChild(arm);
+    g.dataset.switchToggle = '1';
+    g._comp = p;
+  } else if(p.type==='resistor'){
+    const r=document.createElementNS(NS,'rect');
+    r.setAttribute('x',mx-24); r.setAttribute('y',my-9); r.setAttribute('width',48); r.setAttribute('height',18);
+    r.setAttribute('rx',3); r.setAttribute('fill','#a16207'); r.setAttribute('stroke','#422006'); r.setAttribute('stroke-width','2');
+    g.appendChild(r);
+    const t=document.createElementNS(NS,'text'); t.setAttribute('x',mx); t.setAttribute('y',my+5); t.setAttribute('text-anchor','middle'); t.setAttribute('font-size','13'); t.setAttribute('fill','#fff'); t.textContent='Ω'; g.appendChild(t);
+  }
+  svg.appendChild(g);
+}
+
+// ============================================================
+//  WIRE INPUT
+// ============================================================
+function isStraightLine(c1,r1,c2,r2){
+  return (c1===c2 && r1!==r2) || (r1===r2 && c1!==c2);
+}
+function straightLineSegments(c1,r1,c2,r2){
+  const segs=[];
+  if(c1===c2){
+    const step=r2>r1?1:-1;
+    for(let r=r1; r!==r2; r+=step) segs.push([[c1,r],[c1,r+step]]);
+  } else if(r1===r2){
+    const step=c2>c1?1:-1;
+    for(let c=c1; c!==c2; c+=step) segs.push([[c,r1],[c+step,r1]]);
+  }
+  return segs;
+}
+function segmentsMissingInPath(path){
+  return path.filter(seg=>!wireExists(seg[0],seg[1]));
+}
+function wireExists(a,b){
+  return wires.some(w=> (nodeId(...w.a)===nodeId(...a)&&nodeId(...w.b)===nodeId(...b)) || (nodeId(...w.a)===nodeId(...b)&&nodeId(...w.b)===nodeId(...a)) );
+}
+function onNodeTap(c,r){
+  const id=nodeId(c,r);
+  if(selectedNode===null){ selectedNode=id; drawBoard(); return; }
+  if(selectedNode===id){ selectedNode=null; drawBoard(); return; }
+  const [pc,pr]=parseNode(selectedNode);
+  if(isStraightLine(pc,pr,c,r)){
+    const path = straightLineSegments(pc,pr,c,r);
+    const missing = segmentsMissingInPath(path).filter(seg=> !componentBetween(seg[0],seg[1]) );
+    if(missing.length>0){
+      missing.forEach(seg=> wires.push({ a:seg[0], b:seg[1] }));
+      resimulate();
+    }
+    selectedNode=null;
+  } else {
+    selectedNode=id; drawBoard();
+  }
+}
+
+function flashMsg(txt){
+  const el=document.getElementById('petMsg');
+  if(el){ el.textContent=txt; el.classList.remove('fade-up'); void el.offsetWidth; el.classList.add('fade-up'); }
+}
+
+// try to add a straight-line path between two nodes; missing segments are added, never removed
+function tryConnect(fromId, toId){
+  if(!fromId || !toId || fromId===toId) return false;
+  const [pc,pr]=parseNode(fromId);
+  const [c,r]=parseNode(toId);
+  if(!isStraightLine(pc,pr,c,r)) return false;
+  const path = straightLineSegments(pc,pr,c,r);
+  const missing = segmentsMissingInPath(path).filter(seg=> !componentBetween(seg[0],seg[1]) );
+  if(missing.length>0){
+    missing.forEach(seg=> wires.push({ a:seg[0], b:seg[1] }));
+    resimulate();
+  }
+  return true;
+}
+
+// convert a pointer event to SVG coordinates
+function svgPoint(svg, e){
+  const rect = svg.getBoundingClientRect();
+  const sx = W / rect.width, sy = H / rect.height;
+  return [ (e.clientX - rect.left) * sx, (e.clientY - rect.top) * sy ];
+}
+// nearest grid node id to an svg coordinate, within tolerance
+function nearestNode(x, y){
+  let best=null, bd=Infinity;
+  for(let c=0;c<COLS;c++)for(let r=0;r<ROWS;r++){
+    const [nx,ny]=nodeXY(c,r);
+    const d=(nx-x)*(nx-x)+(ny-y)*(ny-y);
+    if(d<bd){ bd=d; best=[c,r]; }
+  }
+  const tol = Math.max(24, CELL*0.55);
+  return bd <= tol*tol ? nodeId(...best) : null;
+}
+
+// lightweight preview update during drag — avoids full innerHTML rebuild that
+// can break pointer capture on some browsers, which prevented wire connection.
+function updatePreview(svg){
+  const NS='http://www.w3.org/2000/svg';
+
+  // Clean up when nothing is being dragged
+  if(!dragComp && !dragFrom){
+    ['#dragPreview','#dragPathPreview','#dragTarget','#compGhost'].forEach(id=>{
+      const el=svg.querySelector(id); if(el) el.remove();
+    });
+    return;
+  }
+
+  // ---------- Component drag ghost ----------
+  if(dragComp && dragXY){
+    let ghost = svg.querySelector('#compGhost');
+    if(!ghost){
+      ghost = document.createElementNS(NS,'g');
+      ghost.setAttribute('id','compGhost');
+      ghost.style.pointerEvents = 'none';
+      svg.appendChild(ghost);
+    }
+    ghost.innerHTML = '';
+
+    const nearest = nearestNode(dragXY[0], dragXY[1]);
+    let show = false, valid = false, ga=null, gb=null;
+    if(nearest){
+      const [nc,nr] = parseNode(nearest);
+      const dc = dragCompOrigin.b[0] - dragCompOrigin.a[0];
+      const dr = dragCompOrigin.b[1] - dragCompOrigin.a[1];
+      ga = [nc, nr];
+      gb = [nc + dc, nr + dr];
+      valid = isValidCompPos(ga, gb, dragComp);
+      show = true;
+    }
+
+    if(show && ga && gb){
+      const [x1,y1] = nodeXY(...ga);
+      const [x2,y2] = nodeXY(...gb);
+      const mx = (x1+x2)/2, my = (y1+y2)/2;
+
+      const c = document.createElementNS(NS,'circle');
+      c.setAttribute('cx', mx); c.setAttribute('cy', my);
+      c.setAttribute('r', 22);
+      c.setAttribute('fill', valid ? 'rgba(34,197,94,0.25)' : 'rgba(239,68,68,0.25)');
+      c.setAttribute('stroke', valid ? '#22c55e' : '#ef4444');
+      c.setAttribute('stroke-width', '3');
+      ghost.appendChild(c);
+
+      const l = document.createElementNS(NS,'line');
+      l.setAttribute('x1',x1); l.setAttribute('y1',y1);
+      l.setAttribute('x2',x2); l.setAttribute('y2',y2);
+      l.setAttribute('stroke', valid ? '#22c55e' : '#ef4444');
+      l.setAttribute('stroke-width', '4');
+      l.setAttribute('stroke-linecap', 'round');
+      ghost.appendChild(l);
+
+      [ [x1,y1], [x2,y2] ].forEach(([px,py])=>{
+        const dot = document.createElementNS(NS,'circle');
+        dot.setAttribute('cx', px); dot.setAttribute('cy', py);
+        dot.setAttribute('r', 6);
+        dot.setAttribute('fill', valid ? '#22c55e' : '#ef4444');
+        ghost.appendChild(dot);
+      });
+    }
+    return;
+  }
+
+  // ---------- Multi-segment wire path preview ----------
+  if(!dragFrom || !dragXY) return;
+
+  let pathG = svg.querySelector('#dragPathPreview');
+  if(!pathG){
+    pathG = document.createElementNS(NS,'g');
+    pathG.setAttribute('id','dragPathPreview');
+    pathG.style.pointerEvents = 'none';
+    svg.appendChild(pathG);
+  }
+  pathG.innerHTML = '';
+
+  let pv = svg.querySelector('#dragPreview');
+  if(!pv){
+    pv = document.createElementNS(NS,'line');
+    pv.setAttribute('id','dragPreview');
+    pv.setAttribute('stroke','#38bdf8');
+    pv.setAttribute('stroke-width','5');
+    pv.setAttribute('stroke-linecap','round');
+    pv.setAttribute('stroke-dasharray','6 6');
+    pv.style.pointerEvents='none';
+    svg.appendChild(pv);
+  }
+
+  // Draw existing path segments
+  if(dragPath.length > 1){
+    for(let i=0; i<dragPath.length-1; i++){
+      const [ax,ay] = nodeXY(...parseNode(dragPath[i]));
+      const [bx,by] = nodeXY(...parseNode(dragPath[i+1]));
+      const line = document.createElementNS(NS,'line');
+      line.setAttribute('x1',ax); line.setAttribute('y1',ay);
+      line.setAttribute('x2',bx); line.setAttribute('y2',by);
+      line.setAttribute('stroke','#38bdf8');
+      line.setAttribute('stroke-width','5');
+      line.setAttribute('stroke-linecap','round');
+      line.setAttribute('stroke-dasharray','6 6');
+      pathG.appendChild(line);
+    }
+  }
+
+  // Draw line from last path node to current pointer
+  if(dragPath.length > 0){
+    const last = dragPath[dragPath.length-1];
+    const [lx,ly] = nodeXY(...parseNode(last));
+    pv.setAttribute('x1',lx); pv.setAttribute('y1',ly);
+    pv.setAttribute('x2',dragXY[0]); pv.setAttribute('y2',dragXY[1]);
+    pv.style.display = '';
+  } else {
+    pv.style.display = 'none';
+  }
+
+  // Highlight valid next node
+  let hl = svg.querySelector('#dragTarget');
+  if(!hl){
+    hl = document.createElementNS(NS,'g');
+    hl.setAttribute('id','dragTarget');
+    hl.style.pointerEvents = 'none';
+    svg.appendChild(hl);
+  }
+  hl.innerHTML = '';
+
+  const lastNode = dragPath.length > 0 ? dragPath[dragPath.length-1] : dragFrom;
+  const target = nearestNode(dragXY[0], dragXY[1]);
+  if(target && target !== lastNode){
+    const [tc,tr] = parseNode(target);
+    const [lc,lr] = parseNode(lastNode);
+    if(areAdjacent(lc,lr,tc,tr)){
+      const [tx,ty] = nodeXY(tc,tr);
+      const c = document.createElementNS(NS,'circle');
+      c.setAttribute('cx',tx); c.setAttribute('cy',ty);
+      c.setAttribute('r',14);
+      c.setAttribute('fill','none');
+      c.setAttribute('stroke','#22c55e');
+      c.setAttribute('stroke-width','3');
+      hl.appendChild(c);
+    }
+  }
+}
+
+// unified pointer input for the board: drag-to-connect (mouse+touch) + tap + switch toggle + wire delete
+function setupBoardInput(){
+  const svg = document.getElementById('board');
+  if(!svg || svg._inputReady) return;
+  svg._inputReady = true;
+  svg.style.touchAction = 'none';
+
+  svg.addEventListener('pointerdown', (e)=>{
+    e.preventDefault();
+    const t = e.target;
+    const [x,y]=svgPoint(svg,e);
+    const nearestNid = nearestNode(x,y);
+    const isWire = t && t.dataset && t.dataset.wireDel && t._wire;
+
+    // If the user clicked on a wire that overlaps a grid node, prefer starting a
+    // node drag over deleting the wire.
+    if(isWire && nearestNid){
+      const [nx, ny]=nodeXY(...parseNode(nearestNid));
+      const dist = Math.hypot(nx-x, ny-y);
+      const nodeTolerance = Math.min(20, CELL/2.5);
+      if(dist <= nodeTolerance){
+        dragFrom = nearestNid;
+        dragXY = [x,y];
+        dragMoved = false;
+        try{ svg.setPointerCapture(e.pointerId); }catch(_){}
+        drawBoard();
+        updatePreview(svg);
+        return;
+      }
+    }
+
+    if(isWire){
+      const w=t._wire;
+      wires = wires.filter(x=>x!==w);
+      selectedNode=null; dragFrom=null; dragXY=null;
+      resimulate();
+      return;
+    }
+    // switch toggle (target may be inside the <g>)
+    let g = t;
+    while(g && g!==svg && !(g.dataset && g.dataset.switchToggle)) g = g.parentNode;
+    if(g && g!==svg && g.dataset && g.dataset.switchToggle && g._comp){
+      g._comp.on = !g._comp.on;
+      selectedNode=null; dragFrom=null; dragXY=null;
+      resimulate();
+      return;
+    }
+    // component drag (target may be inside the <g>)
+    let compEl = t;
+    while(compEl && compEl!==svg && !(compEl.dataset && compEl.dataset.compType)) compEl = compEl.parentNode;
+    if(compEl && compEl!==svg && compEl._comp && compEl.dataset.compType !== 'switch'){
+      const p = compEl._comp;
+      dragComp = p;
+      dragCompOrigin = { a: [...p.a], b: [...p.b] };
+      dragXY = [x,y];
+      dragMoved = false;
+      dragFrom = null; dragPath = [];
+      try{ svg.setPointerCapture(e.pointerId); }catch(_){}
+      updatePreview(svg);
+      return;
+    }
+
+    // start a wire drag from a node
+    const nid = nearestNid;
+    if(nid){
+      dragFrom = nid;
+      dragPath = [nid];
+      dragXY = [x,y];
+      dragMoved = false;
+      dragComp = null;
+      try{ svg.setPointerCapture(e.pointerId); }catch(_){}
+      drawBoard();
+      updatePreview(svg);
+    }
+  });
+
+  svg.addEventListener('pointermove', (e)=>{
+    if(!dragFrom && !dragComp) return;
+    e.preventDefault();
+    const [x,y]=svgPoint(svg,e);
+    dragXY=[x,y];
+
+    if(dragComp){
+      const [fx,fy]=nodeXY(...dragCompOrigin.a);
+      if((fx-x)*(fx-x)+(fy-y)*(fy-y) > 100) dragMoved=true;
+      updatePreview(svg);
+      return;
+    }
+
+    if(!dragFrom) return;
+    const [fx,fy]=nodeXY(...parseNode(dragFrom));
+    if((fx-x)*(fx-x)+(fy-y)*(fy-y) > 100) dragMoved=true;
+
+    // Update multi-segment path
+    const nearest = nearestNode(x,y);
+    if(nearest && dragPath.length > 0){
+      const last = dragPath[dragPath.length-1];
+      if(nearest !== last){
+        const [lc,lr] = parseNode(last);
+        const [nc,nr] = parseNode(nearest);
+        if(areAdjacent(lc,lr,nc,nr)){
+          // Backtracking - remove last node if going back
+          if(dragPath.length > 1 && dragPath[dragPath.length-2] === nearest){
+            dragPath.pop();
+          } else if(!dragPath.includes(nearest)){
+            dragPath.push(nearest);
+          }
+        }
+      }
+    }
+
+    updatePreview(svg);
+  });
+
+  const finish = (e)=>{
+    // Component drag finish
+    if(dragComp){
+      try{ svg.releasePointerCapture(e.pointerId); }catch(_){}
+      const nearest = nearestNode(dragXY[0], dragXY[1]);
+      let moved = false;
+      if(nearest && dragMoved){
+        const [nc,nr] = parseNode(nearest);
+        const dc = dragCompOrigin.b[0] - dragCompOrigin.a[0];
+        const dr = dragCompOrigin.b[1] - dragCompOrigin.a[1];
+        const newA = [nc, nr];
+        const newB = [nc + dc, nr + dr];
+        if(isValidCompPos(newA, newB, dragComp)){
+          dragComp.a = newA;
+          dragComp.b = newB;
+          moved = true;
+        }
+      }
+      dragComp = null;
+      dragCompOrigin = null;
+      dragXY = null;
+      dragMoved = false;
+      drawBoard();
+      if(moved) resimulate();
+      return;
+    }
+
+    if(!dragFrom){ return; }
+    const [x,y]=svgPoint(svg,e);
+    try{ svg.releasePointerCapture(e.pointerId); }catch(_){}
+
+    if(dragPath.length > 1 && dragMoved){
+      // Create wires for all segments in the path
+      let created = false;
+      for(let i=0; i<dragPath.length-1; i++){
+        const a = parseNode(dragPath[i]);
+        const b = parseNode(dragPath[i+1]);
+        if(!wireExists(a,b) && !componentBetween(a,b)){
+          wires.push({ a, b });
+          created = true;
+        }
+      }
+      if(created) resimulate();
+    } else if(dragMoved){
+      // Single segment drag (fallback)
+      const target = nearestNode(x,y);
+      if(target && target!==dragFrom){
+        tryConnect(dragFrom, target);
+      }
+    } else {
+      // treat as a tap
+      const target = nearestNode(x,y);
+      dragFrom=null; dragXY=null; dragPath=[]; dragMoved=false;
+      if(target){ const [c,r]=parseNode(target); onNodeTap(c,r); }
+      else { selectedNode=null; drawBoard(); }
+      return;
+    }
+
+    dragFrom=null; dragXY=null; dragPath=[]; dragMoved=false;
+    drawBoard();
+  };
+  svg.addEventListener('pointerup', finish);
+  svg.addEventListener('pointercancel', ()=>{
+    dragFrom=null; dragXY=null; dragPath=[]; dragMoved=false;
+    dragComp=null; dragCompOrigin=null;
+    drawBoard();
+  });
+}
+
+// ============================================================
+//  CIRCUIT SIMULATION
+//  Build a graph. Battery has two terminals (+/-). A bulb/resistor lights
+//  if current can flow through it in a loop from + to - . Short = direct
+//  path from + to - not passing through any resistive load (bulb/resistor).
+// ============================================================
+function buildGraph(){
+  // adjacency of nodes via wires and via components (components connect their two endpoints when conducting)
+  // We treat: wires = ideal conductor; switch = conductor only if on; battery = source (not a conductor path,
+  // it's the driver); bulb/resistor = "load" edges.
+  const adj = {}; // nodeId -> [{to, kind, comp}]
+  const add=(a,b,kind,comp)=>{ (adj[a]=adj[a]||[]).push({to:b,kind,comp}); (adj[b]=adj[b]||[]).push({to:a,kind,comp}); };
+  for(let c=0;c<COLS;c++)for(let r=0;r<ROWS;r++) adj[nodeId(c,r)]=adj[nodeId(c,r)]||[];
+  wires.forEach(w=> add(nodeId(...w.a), nodeId(...w.b), 'wire', null));
+  let battery=null;
+  placed.forEach(p=>{
+    const a=nodeId(...p.a), b=nodeId(...p.b);
+    if(p.type==='battery'){ battery={pos:a,neg:b}; }
+    else if(p.type==='switch'){ if(p.on) add(a,b,'wire',p); }
+    else if(p.type==='bulb'){ add(a,b,'load',p); }
+    else if(p.type==='resistor'){ add(a,b,'load',p); }
+  });
+  return {adj, battery};
+}
+
+// Find connected component using only 'wire' edges (nodes at same potential)
+function wireCluster(adj, start){
+  const seen=new Set([start]); const stack=[start];
+  while(stack.length){ const n=stack.pop(); (adj[n]||[]).forEach(e=>{ if(e.kind==='wire' && !seen.has(e.to)){ seen.add(e.to); stack.push(e.to);} }); }
+  return seen;
+}
+
+function simulate(){
+  litBulbs = new Set();
+  shortCircuit = false;
+  const {adj, battery} = buildGraph();
+  if(!battery) { return {lit:litBulbs, short:false, hasBattery:false}; }
+
+  const posCluster = wireCluster(adj, battery.pos);
+  const negCluster = wireCluster(adj, battery.neg);
+
+  // short circuit: pos and neg wire-clusters overlap (direct conductor path)
+  if([...posCluster].some(n=>negCluster.has(n)) && battery.pos!==battery.neg){
+    shortCircuit = true;
+  }
+
+  // A load conducts (lights) if one terminal's wire-cluster connects (via loads/wires) back
+  // forming a loop pos ... load ... neg. Simplify: build "potential nodes" = wire clusters,
+  // then check each load edge lies on a path between posCluster and negCluster.
+  // Compute cluster id for every node.
+  const clusterOf={}; let cid=0; const clusters=[];
+  const nodes=Object.keys(adj);
+  nodes.forEach(n=>{
+    if(clusterOf[n]===undefined){
+      const cl=wireCluster(adj,n); const idc=cid++;
+      cl.forEach(x=>clusterOf[x]=idc); clusters.push(cl);
+    }
+  });
+  const posC=clusterOf[battery.pos], negC=clusterOf[battery.neg];
+
+  // Build cluster-level graph via load edges
+  const cadj={}; // cid -> [{to, comp}]
+  const loadEdges=[];
+  placed.forEach(p=>{
+    if(p.type==='bulb'||p.type==='resistor'){
+      const ca=clusterOf[nodeId(...p.a)], cb=clusterOf[nodeId(...p.b)];
+      loadEdges.push({ca,cb,comp:p});
+      (cadj[ca]=cadj[ca]||[]).push({to:cb,comp:p});
+      (cadj[cb]=cadj[cb]||[]).push({to:ca,comp:p});
+    }
+  });
+
+  // For each load edge, it carries current if removing it still... simpler:
+  // it's lit if there's a path from posC to negC that uses this edge.
+  // We check: path from posC to one side without this edge that reaches negC through it.
+  function pathExists(from,to,banEdge){
+    const seen=new Set([from]); const st=[from];
+    while(st.length){ const n=st.pop(); if(n===to) return true;
+      (cadj[n]||[]).forEach(e=>{ if(e.comp===banEdge) return; if(!seen.has(e.to)){ seen.add(e.to); st.push(e.to);} });
+    }
+    return false;
+  }
+  if(posC!==negC){
+    loadEdges.forEach(le=>{
+      // lit if posC connects to one endpoint (without this edge) and negC to the other (without this edge)
+      const p1 = (le.ca===posC) || pathExists(posC, le.ca, le.comp);
+      const n1 = (le.cb===negC) || pathExists(negC, le.cb, le.comp);
+      const p2 = (le.cb===posC) || pathExists(posC, le.cb, le.comp);
+      const n2 = (le.ca===negC) || pathExists(negC, le.ca, le.comp);
+      if((p1&&n1)||(p2&&n2)){ litBulbs.add(le.comp.id); }
+    });
+  }
+  // if short circuit, bulbs on the shorted branch may still be considered off in reality;
+  // keep lit results but flag short.
+  return {lit:litBulbs, short:shortCircuit, hasBattery:true};
+}
+
+function resimulate(){
+  simulate();
+  drawBoard();
+}
+
+// ============================================================
+//  CHECK GOAL
+// ============================================================
+function checkCircuit(){
+  const res = simulate();
+  drawBoard();
+  const g = level.goal;
+  const litCount = [...litBulbs].filter(id=>{ const p=placed.find(x=>x.id===id); return p && p.type==='bulb'; }).length;
+
+  if(res.short){
+    triggerShort();
+    flashMsg('⚠️ 短路了！电池两极被导线直接连通，快去掉多余的导线。');
+    return;
+  }
+
+  // requirement checks
+  if(g.requireSwitchOn && !placed.some(p=>p.type==='switch'&&p.on)){
+    flashMsg('开关是断开的，先点一下开关闭合它吧。'); return;
+  }
+  if(g.requireResistor){
+    const rId = placed.find(p=>p.type==='resistor')?.id;
+    // resistor must be in conducting path -> it should be "lit" (carrying current)
+    if(!rId || !litBulbs.has(rId)){ flashMsg('要让电流经过电阻哦，把电阻串进回路里。'); return; }
+  }
+  if(g.requireParallel){
+    if(!isParallel()){ flashMsg('这看起来不是并联，让两个灯泡各成一条支路并接在电池两端。'); return; }
+  }
+
+  if(litCount >= (g.bulbsLit||1)){
+    winLevel();
+  } else {
+    flashMsg(`还差一点！需要点亮 ${g.bulbsLit} 个灯泡，目前 ${litCount} 个。检查回路是否闭合。`);
+  }
+}
+
+function isParallel(){
+  // parallel: both bulbs lit AND they share both terminal clusters (same two potentials)
+  const bulbs = placed.filter(p=>p.type==='bulb');
+  if(bulbs.length<2) return false;
+  if(![...litBulbs].length) return false;
+  const {adj, battery} = buildGraph();
+  if(!battery) return false;
+  const clusterOf={}; let cid=0;
+  Object.keys(adj).forEach(n=>{ if(clusterOf[n]===undefined){ const cl=wireCluster(adj,n); const idc=cid++; cl.forEach(x=>clusterOf[x]=idc);} });
+  // each bulb's two endpoint clusters
+  const sets = bulbs.map(b=> [clusterOf[nodeId(...b.a)], clusterOf[nodeId(...b.b)]].sort((a,b)=>a-b).join('-'));
+  // parallel if the two bulbs share the same pair of clusters and both lit
+  return sets[0]===sets[1] && litBulbs.has(bulbs[0].id) && litBulbs.has(bulbs[1].id);
+}
+
+function triggerShort(){
+  const svg=document.getElementById('board');
+  if(svg){ svg.classList.add('shake'); setTimeout(()=>svg.classList.remove('shake'),400); }
+  // sparks
+  const wrap=document.getElementById('boardWrap');
+  const bat=placed.find(p=>p.type==='battery');
+  if(wrap&&bat){
+    const [x,y]=nodeXY(...bat.a);
+    for(let i=0;i<10;i++){
+      const s=document.createElement('div');
+      s.className='spark';
+      s.style.left=x+'px'; s.style.top=y+'px';
+      s.style.background = i%2 ? '#fbbf24' : '#ef4444';
+      wrap.appendChild(s);
+      const ang=Math.random()*Math.PI*2, dist=30+Math.random()*40;
+      s.animate([{transform:'translate(0,0) scale(1)',opacity:1},{transform:`translate(${Math.cos(ang)*dist}px,${Math.sin(ang)*dist}px) scale(0)`,opacity:0}],{duration:500+Math.random()*300,easing:'ease-out'});
+      setTimeout(()=>s.remove(),800);
+    }
+  }
+  if(navigator.vibrate) try{ navigator.vibrate([60,40,60]); }catch(e){}
+}
+
+function winLevel(){
+  clearInterval(window._timerInt);
+  const t = Math.floor((Date.now()-startTime)/1000);
+  const [t3,t2]=game_config.starTimeBonus;
+  let stars = t<=t3 ? 3 : (t<=t2 ? 2 : 1);
+  // wire efficiency bonus consideration is implicit
+  if(!progress[level.id] || stars>progress[level.id]){ progress[level.id]=stars; saveProgress(progress); }
+  gameActiveScore += stars;
+
+  const totalStars = game_config.levels.reduce((s,l)=> s+(progress[l.id]||0),0);
+  const allDone = game_config.levels.every(l=>progress[l.id]);
+  const nextLvl = game_config.levels.find(l=> l.id===level.id+1);
+
+  const overlay=document.createElement('div');
+  overlay.className='fixed inset-0 z-50 flex items-center justify-center bg-black/70 px-6';
+  overlay.innerHTML=`
+    <div class="pop-in bg-slate-800 text-white rounded-3xl max-w-sm w-full p-6 text-center shadow-2xl">
+      <div class="pet-sprite bob mx-auto mb-2" style="width:64px;height:64px;font-size:52px;line-height:64px;">🎉</div>
+      <h2 class="text-2xl font-extrabold mb-1">通关啦！</h2>
+      <p class="text-slate-300 text-sm mb-2">用时 ${t}s</p>
+      <div class="text-4xl mb-3">${[1,2,3].map(i=>`<span class="${i<=stars?'star-fill':'star-empty'}">★</span>`).join('')}</div>
+      <div class="flex gap-2 justify-center">
+        <button id="homeBtn" class="btn bg-slate-600 rounded-xl px-4 py-2 text-sm font-bold">关卡列表</button>
+        ${nextLvl ? `<button id="nextBtn" class="btn bg-emerald-500 rounded-xl px-4 py-2 text-sm font-bold">下一关 →</button>` : `<button id="finishBtn" class="btn bg-amber-500 rounded-xl px-4 py-2 text-sm font-bold">完成 🏆</button>`}
+      </div>
+      ${allDone ? '<p class="text-amber-400 text-xs mt-3">🏆 全部关卡通关！你是电路大师！</p>' : ''}
+    </div>`;
+  document.body.appendChild(overlay);
+  if(petImgUrl) overlay.querySelectorAll('.pet-sprite').forEach(el=>applyPetSprite(el, petImgUrl, {cols:1,rows:1,col:0,row:0}));
+  const hb=overlay.querySelector('#homeBtn'); if(hb) hb.onclick=()=>{ overlay.remove(); showHome(); };
+  const nb=overlay.querySelector('#nextBtn'); if(nb) nb.onclick=()=>{ overlay.remove(); startLevel(nextLvl.id); };
+  const fb=overlay.querySelector('#finishBtn'); if(fb) fb.onclick=()=>{ overlay.remove(); finishGame(); };
+}
+
+function finishGame(){
+  const totalStars = game_config.levels.reduce((s,l)=> s+(progress[l.id]||0),0);
+  try { window.parent.postMessage({ type:'gameFinished', data:{ score: totalStars } }, '*'); } catch(e){}
+  showHome();
+}
+
+// resize handling
+let _rz;
+window.addEventListener('resize', ()=>{ clearTimeout(_rz); _rz=setTimeout(()=>{ if(level && document.getElementById('board')){ layoutBoard(); drawBoard(); } }, 150); });
+
+// ============================================================
+//  BOOT
+// ============================================================
+try { window.parent.postMessage({ type:'gameLoaded' }, '*'); } catch(e){}
+requestPetImage();
+showHome();
+showRules();
 </script>
+</body>
 </html>

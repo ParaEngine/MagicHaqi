@@ -1,0 +1,1394 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+  <title>梦境特快·涂鸦星轨</title>
+  <style>
+    html, body { margin: 0; height: 100%; overflow: hidden;
+      -webkit-tap-highlight-color: transparent; user-select: none;
+      font-family: -apple-system, "PingFang SC", "Microsoft YaHei", system-ui, sans-serif;
+      background: #0a0612; }
+    * { box-sizing: border-box; }
+    body { display: flex; align-items: center; justify-content: center; }
+
+    /* —— 梦境绘本容器 —— */
+    #paper {
+      position: relative;
+      width: 100%; max-width: 480px; height: 90vh;
+      border-radius: 22px; overflow: hidden;
+      box-shadow: 0 16px 50px rgba(40,10,60,.55), inset 0 0 0 1px rgba(180,150,255,.12);
+      background: #0c081a;
+    }
+    #stage { display: block; width: 100%; height: 100%; touch-action: none; }
+
+    /* —— HUD —— */
+    #hud { position: absolute; top: 9px; left: 9px; right: 9px; z-index: 5;
+      display: flex; align-items: center; gap: 7px; pointer-events: none; flex-wrap: wrap; }
+    .pill { background: rgba(20,12,40,.55); color: #e7dcff; font-weight: 800;
+      font-size: 11px; padding: 4px 9px; border-radius: 999px; backdrop-filter: blur(4px);
+      border: 1px solid rgba(170,140,255,.28); box-shadow: 0 2px 10px rgba(80,40,140,.25); }
+    .pill b { color: #ffd27a; }
+    #inkWrap { flex: 1; min-width: 84px; height: 13px; border-radius: 999px;
+      background: rgba(120,100,200,.18); overflow: hidden; border: 1px solid rgba(170,140,255,.28); }
+    #inkBar { height: 100%; width: 100%; border-radius: 999px;
+      background: linear-gradient(90deg,#8ec5ff,#5b8def); box-shadow: 0 0 10px rgba(120,180,255,.6); transition: width .06s linear; }
+    #inkWrap.low #inkBar { background: linear-gradient(90deg,#ffb27a,#f4663a); box-shadow: 0 0 10px rgba(255,140,80,.7); }
+    #hpWrap { width: 92px; height: 13px; border-radius: 999px;
+      background: rgba(120,100,200,.18); overflow: hidden; border: 1px solid rgba(170,140,255,.28); }
+    #hpBar { height: 100%; width: 100%; border-radius: 999px;
+      background: linear-gradient(90deg,#ff8da6,#ec4b6b); box-shadow: 0 0 10px rgba(255,90,120,.5); transition: width .12s ease; }
+
+    /* —— 大号连击计数器 —— */
+    #comboBig { position: absolute; left: 0; right: 0; bottom: 16%; z-index: 6;
+      text-align: center; pointer-events: none; opacity: 0;
+      font-weight: 900; font-style: italic; letter-spacing: -1px;
+      color: #fff; text-shadow: 0 0 18px rgba(120,180,255,.8), 0 4px 10px rgba(0,0,0,.4);
+      transition: opacity .2s; will-change: transform; }
+    #comboBig .n { display: block; font-size: 56px; line-height: 1; }
+    #comboBig .x { display: block; font-size: 15px; letter-spacing: 4px; margin-top: 2px; opacity: .9; }
+    #comboBig.gold { color: #ffd86b; text-shadow: 0 0 24px rgba(255,200,80,.9), 0 4px 12px rgba(120,60,0,.5); }
+
+    /* —— 提示条 —— */
+    #banner { position: absolute; top: 46px; left: 0; right: 0; z-index: 6; text-align: center; pointer-events: none; }
+    #banner span { display: inline-block; background: rgba(24,14,46,.82); color: #ffe9c2;
+      font-weight: 800; font-size: 13px; padding: 6px 16px; border-radius: 999px;
+      border: 1px solid rgba(170,140,255,.35); box-shadow: 0 6px 20px rgba(60,20,100,.4);
+      opacity: 0; transform: translateY(-8px); transition: all .35s ease; }
+    #banner.show span { opacity: 1; transform: translateY(0); }
+
+    #tip { position: absolute; bottom: 8px; left: 0; right: 0; z-index: 5;
+      text-align: center; color: #9a86c8; font-size: 11px; pointer-events: none; }
+
+    /* —— 遮罩 —— */
+    .veil { position: absolute; inset: 0; z-index: 9; display: none;
+      flex-direction: column; align-items: center; justify-content: center; gap: 14px;
+      background: radial-gradient(120% 90% at 50% 30%, rgba(40,20,70,.62), rgba(8,5,18,.86));
+      backdrop-filter: blur(5px); color: #fff7e8; padding: 22px; text-align: center; }
+    .veil.show { display: flex; }
+    .veil h1 { margin: 0; font-size: 26px; text-shadow: 0 2px 14px rgba(120,60,200,.6); }
+    .veil h2 { margin: 0; font-size: 17px; color: #ffe6bd; }
+    .veil p { margin: 0; color: #e6d8ff; font-size: 13px; line-height: 1.55; max-width: 320px; }
+    .btn { pointer-events: auto; cursor: pointer; border: none;
+      background: linear-gradient(180deg,#ffd27a,#f5a623); color: #5a3a08;
+      font-weight: 900; font-size: 16px; padding: 12px 30px; border-radius: 999px;
+      box-shadow: 0 8px 24px rgba(245,166,35,.5); }
+    .btn:active { transform: scale(.95); }
+    .btn.ghost { background: rgba(255,255,255,.14); color: #fff7e8;
+      box-shadow: none; border: 1px solid rgba(255,255,255,.3); font-size: 14px; padding: 10px 22px; }
+    .btn.video { background: linear-gradient(180deg,#7ee3a6,#34b46f); color: #06351c;
+      box-shadow: 0 8px 24px rgba(52,180,111,.55); }
+
+    #buffCards { display: flex; flex-direction: column; gap: 11px; width: 100%; max-width: 320px; }
+    .buffCard { pointer-events: auto; cursor: pointer; text-align: left;
+      background: linear-gradient(180deg, rgba(46,30,80,.96), rgba(30,18,56,.96)); color: #f4ecff;
+      border-radius: 16px; padding: 13px 15px; border: 2px solid rgba(150,120,230,.35); display: flex; gap: 12px; align-items: center;
+      box-shadow: 0 8px 24px rgba(20,8,40,.5); transition: transform .12s, border-color .12s; }
+    .buffCard:active { transform: scale(.97); }
+    .buffCard:hover { border-color: #ffd27a; }
+    .buffCard .ic { font-size: 30px; flex: 0 0 auto; filter: drop-shadow(0 0 8px rgba(255,210,120,.6)); }
+    .buffCard .bt { font-weight: 900; font-size: 15px; }
+    .buffCard .bd { font-size: 12px; color: #c9b8f0; margin-top: 2px; line-height: 1.35; }
+
+    #skinRow { display: flex; gap: 8px; flex-wrap: wrap; justify-content: center; max-width: 340px; }
+    .skinChip { pointer-events: auto; cursor: pointer; font-size: 11px; font-weight: 800;
+      padding: 7px 12px; border-radius: 999px; color: #f0e8ff;
+      background: rgba(60,40,100,.6); border: 2px solid transparent; }
+    .skinChip.on { border-color: #ffd27a; background: rgba(90,60,150,.8); }
+    .skinChip.locked { opacity: .6; }
+  </style>
+</head>
+
+<body>
+  <div id="paper">
+    <canvas id="stage"></canvas>
+
+    <div id="hud">
+      <span class="pill">第 <b id="hLevel">1</b> 关</span>
+      <span class="pill">怪 <b id="hEnemies">0</b></span>
+      <div id="inkWrap"><div id="inkBar"></div></div>
+      <div id="hpWrap"><div id="hpBar"></div></div>
+    </div>
+
+    <div id="comboBig"><span class="n">0</span><span class="x">COMBO</span></div>
+    <div id="banner"><span id="bannerText"></span></div>
+    <div id="tip">虚线=墩弟落点 · 横跨虚线画斜坡接住它 · 卡住会自动回起点重来</div>
+
+    <!-- 开局（含动态新手演示）-->
+    <div id="startVeil" class="veil show">
+      <h1>梦境特快 · 涂鸦星轨</h1>
+      <p>墩弟乘着梦境矿车从左侧坡道滑出。你的指尖就是它的物理轨道——<br>在它前方画发光星轨，让它顺坡加速、用动能撞碎梦魇！</p>
+      <p style="font-size:12px;opacity:.85">↑ 上方演示：画一道斜坡，矿车顺坡加速冲刺<br>○ 圈住敌人=黑洞　V 形=三倍弹床　墨水有限会自动恢复<br>第 1 关有逐步图文引导，跟着做就会玩</p>
+      <div id="skinRow"></div>
+      <button id="startBtn" class="btn">出发 🚂</button>
+    </div>
+
+    <div id="levelVeil" class="veil">
+      <h2 id="levelTag">第 1 关</h2>
+      <h1 id="levelName">启程·星月童话镇</h1>
+      <p id="levelDesc"></p>
+      <button id="levelBtn" class="btn">进入梦境</button>
+    </div>
+
+    <div id="buffVeil" class="veil">
+      <h2>梦境祝福 · 三选一</h2>
+      <div id="buffCards"></div>
+    </div>
+
+    <div id="reviveVeil" class="veil">
+      <h1 style="color:#ffd27a">墨水枯竭！</h1>
+      <p id="reviveText">墩弟即将坠入梦魇深渊……</p>
+      <button id="reviveBtn" class="btn video">▶ 看视频 · 15秒无限墨水+锁血</button>
+      <button id="giveupBtn" class="btn ghost">放弃本局</button>
+    </div>
+
+    <div id="overVeil" class="veil">
+      <h1 id="overTitle">本局结束</h1>
+      <p id="overText"></p>
+      <button id="restartBtn" class="btn">再来一局</button>
+    </div>
+  </div>
+
+  <!-- ============================================================
+    《梦境特快·涂鸦星轨》—— 美术 & 爽感大重构版
+    渲染分层：① 深空渐变 ② 双层视差梦境星云 ③ 战斗层
+    手绘质感：程序化水彩生物(呼吸 Idle + 受击惊恐扭曲) / shadowBlur 发光
+    流光星轨：画线粒子尘 + 消失时「水滴蒸发」
+    ImpactManager：屏震(canvas 位移) + 撞击粒子 + 0.2s 子弹时间 + 怪物放大变色 + 清脆撞击音
+    爽感：大号连击计数器(满 5 变金 + 铃铛音) / 顺坡自动加速 / 撞球障碍物
+    新手：开局顶部 U 型槽自动循环演示（以演代教）
+    商业化：皮肤联动轨迹特效(IAP) / 15s 无限墨水(IAA) / 咖啡杯手势优惠券(O2O)
+    宿主握手：gameLoaded / gameFinished / merchantCoupon
+  ============================================================ -->
+  <script>
+  'use strict';
+
+  function post(type, data = {}) {
+    try { window.parent && window.parent.postMessage({ type, data }, '*'); } catch (_) {}
+  }
+
+  const paper = document.getElementById('paper');
+  const canvas = document.getElementById('stage');
+  const ctx = canvas.getContext('2d');
+  const HUD = {
+    level: document.getElementById('hLevel'), enemies: document.getElementById('hEnemies'),
+    inkBar: document.getElementById('inkBar'), inkWrap: document.getElementById('inkWrap'),
+    hpBar: document.getElementById('hpBar')
+  };
+  const comboBig = document.getElementById('comboBig');
+  const comboN = comboBig.querySelector('.n');
+  const bannerEl = document.getElementById('banner'), bannerText = document.getElementById('bannerText');
+
+  let W = 0, H = 0, dpr = 1;
+
+  // ========================== 调参区 ==========================
+  const CFG = {
+    grav: 0.20, cartR: 14, rest: 0.70, railFriction: 0.006,
+    slopeAccel: 0.55,         // 顺坡自动加速（每次贴轨的切向附加）
+    rideBoost: 1.0061,        // 顺陡坡持续加速：≈0.5s 提速 20% 的"嗖"感
+    slingshot: 1.18,          // 高速擦过陡坡的"四两拨千斤"切向弹射系数
+    maxSpeed: 18, inkMax: 130, inkPerPx: 0.085, inkRegen: 18, inkMinSeg: 6,
+    minRailLen: 46,           // 撑住墩弟所需最短线长（不足闪红提示）
+    railLife: 6.0, baseDmg: 1.5, hp: 100,
+    slowmoSpeed: 11,          // 触发子弹时间的撞击速度阈值
+    startVx: 3.2,             // 矿车初速（沿起始坡道向右）
+    coffeeCoupon: { brand: '麦香晨光烘焙', coupon: '到店 8 折实体券' }
+  };
+
+  // —— 星轨画笔皮肤（IAP；皮肤联动轨迹特效）——
+  const SKINS = [
+    { id: 'classic', name: '发光白线', color: '#bfe3ff', glow: '#7fb6ff', trail: 'dot',   locked: false, price: 0 },
+    { id: 'rainbow', name: '彩虹流沙', color: 'rainbow', glow: '#ffd27a', trail: 'rainbow', locked: true,  price: 6 },
+    { id: 'sakura',  name: '樱花飘落', color: '#ffb7d5', glow: '#ff86b8', trail: 'petal',  locked: true,  price: 6 },
+    { id: 'cyber',   name: '赛博故障', color: '#7CFFCB', glow: '#33e0ff', trail: 'spark',  locked: true,  price: 12 }
+  ];
+  let skinId = 'classic';
+  const skin = () => SKINS.find(s => s.id === skinId) || SKINS[0];
+
+  // ========================== 10 关配置 ==========================
+  // count=梦魇数量　ehp=单只血量　er=半径(可选)　难度随关卡递增
+  const LEVELS = [
+    { name: '启程·星月童话镇', accent: '#7fb6ff', desc: '怪物静止又大又脆。顺着起始坡道飞出，在墩弟前方画下坡加速撞击。',
+      count: 3, ehp: 14, er: 26, mech: {} },
+    { name: '跃动·棉花糖云海', accent: '#ff9ad0', desc: '底部是无底洞，掉落扣血。学会画 V 形弹床把矿车弹回高空。',
+      count: 4, ehp: 20, mech: { pit: true, moving: true, obstacles: 1 } },
+    { name: '狂风·呼啸峡谷', accent: '#6fe0c8', desc: '存在向上风场。借风把矿车送上高空撞击核心梦魇。',
+      count: 5, ehp: 26, mech: { wind: -0.12, moving: true, obstacles: 2 } },
+    { name: '雷池·静电反应炉', accent: '#c79bff', desc: '把星轨连到雷暴云上，闪电会沿线导向触线的梦魇。',
+      count: 5, ehp: 30, mech: { lightning: true, moving: true } },
+    { name: '试炼·贪食的影魔', accent: '#b06ad0', desc: 'Boss 战！它会吞噬墨水。用 ○ 黑洞自保，从头顶高空坠击。',
+      count: 0, boss: 'glutton', mech: {} },
+    { name: '错乱·颠倒沙漏', accent: '#ffb86b', desc: '中央光带反转重力。画 S 形在两个重力场穿梭收割。',
+      count: 6, ehp: 34, mech: { gravBand: true, moving: true, obstacles: 2 } },
+    { name: '幻影·镜面水域', accent: '#86c5ff', desc: '触碰棱镜后矿车一分为二，共享血量。一条线兼顾两个实体。',
+      count: 6, ehp: 36, mech: { split: true, moving: true, obstacles: 2 } },
+    { name: '迷宫·荆棘藤蔓', accent: '#9bd86b', desc: '荆棘无法被星轨覆盖，只能从缝隙弹射。考验画短线微调。',
+      count: 6, ehp: 38, mech: { thorns: true, moving: true } },
+    { name: '暴走·星屑游乐场', accent: '#ff86c8', desc: '墨水恢复 +300%！疯狂画弹跳网，看矿车超音速全屏乱撞。',
+      count: 10, ehp: 30, mech: { inkBoost: 4, moving: true, fast: true, obstacles: 4 } },
+    { name: '终焉·梦魇缔造者', accent: '#cf6bff', desc: '最终 Boss 三阶段：重力反转→导电破盾→切断你的画线（线 1.3 秒消失）。',
+      count: 0, boss: 'nightmare', mech: {} }
+  ];
+
+  const BUFFS = [
+    { id: 'thunder', ic: '⚡', name: '雷霆笔触', desc: '星轨自带高压电，触线的梦魇每秒受到真实伤害。' },
+    { id: 'airdrop', ic: '🍟', name: '薯霸空投', desc: '在空中停留超过 2 秒，小薯霸天降坚果轰炸全屏。' },
+    { id: 'tread',   ic: '🛞', name: '极速履带', desc: '星轨摩擦力归零，最高速度上限突破 200%。' },
+    { id: 'heal',    ic: '💗', name: '梦境回响', desc: '立即回复 35 点生命，并提升墨水恢复速度。' },
+    { id: 'magnet',  ic: '🧲', name: '瓜子磁铁', desc: '撞击伤害 +25%，连击衰减更慢。' },
+    { id: 'bigink',  ic: '🫙', name: '巨型墨囊', desc: '墨水容量 +40，开局自带满墨。' }
+  ];
+
+  // ========================== 运行时状态 ==========================
+  let state = 'start';
+  let levelIdx = 0;
+  let frame = 0, lastT = 0;
+  let shakeMag = 0, shakeX = 0, shakeY = 0;     // 屏震
+  let slowmo = 0;                                // 子弹时间剩余(真实秒)
+  let flash = 0;                                 // 撞击白闪
+  let ink = CFG.inkMax, inkMax = CFG.inkMax, hp = CFG.hp;
+  let combo = 0, comboTimer = 0, comboPulse = 0;
+  let totalKills = 0, totalScore = 0, levelsCleared = 0;
+  let buffs = {};
+  let usedRevive = false, invincibleT = 0, infiniteInkT = 0;
+  let bulletTime = false, couponSent = false;
+
+  let carts = [], rails = [], enemies = [], particles = [], pickups = [];
+  let thorns = [], prisms = [], floaties = [], obstacles = [], blackholes = [], bolts = [];
+  let nebula = [], stars = [];
+  let boss = null, airTimer = 0, drawing = null;
+
+  // 开局演示 + 关内分步引导
+  let tutoT = 0;
+  let tut = { on: false, stage: 'draw', killBase: 0, timer: 0 };
+
+  // ========================== 尺寸 ==========================
+  function resize() {
+    dpr = Math.min(window.devicePixelRatio || 1, 2);
+    W = paper.clientWidth; H = paper.clientHeight;
+    canvas.width = W * dpr; canvas.height = H * dpr;
+    ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+    buildBackdrop();
+  }
+  window.addEventListener('resize', resize);
+
+  // ========================== 工具 ==========================
+  const rand = (a, b) => a + Math.random() * (b - a);
+  const clamp = (v, a, b) => v < a ? a : v > b ? b : v;
+  const dist2 = (ax, ay, bx, by) => { const dx = ax - bx, dy = ay - by; return dx * dx + dy * dy; };
+
+  function banner(txt, ms = 1600) {
+    bannerText.textContent = txt; bannerEl.classList.add('show');
+    clearTimeout(banner._t); banner._t = setTimeout(() => bannerEl.classList.remove('show'), ms);
+  }
+
+  // —— 音效 ——
+  let audio = null;
+  function ensureAudio() { if (!audio) try { audio = new (window.AudioContext || window.webkitAudioContext)(); } catch (_) {} }
+  function beep(freq, dur, type = 'triangle', vol = 0.16) {
+    if (!audio) return;
+    try {
+      const o = audio.createOscillator(), g = audio.createGain(), t = audio.currentTime;
+      o.frequency.value = freq; o.type = type;
+      g.gain.setValueAtTime(vol, t); g.gain.exponentialRampToValueAtTime(0.001, t + dur);
+      o.connect(g); g.connect(audio.destination); o.start(t); o.stop(t + dur + 0.02);
+    } catch (_) {}
+  }
+  // 清脆金属撞击：高频三角 + 噪声尾
+  function clink(intensity = 1) {
+    beep(900 + intensity * 60, .06, 'triangle', .14);
+    beep(1500 + intensity * 80, .04, 'sine', .08);
+  }
+  // 铃铛（连击里程碑）
+  function bell() { beep(1320, .18, 'sine', .16); setTimeout(() => beep(1760, .22, 'sine', .12), 60); }
+
+  // ========================== 背景：深空 + 双层视差星云 ==========================
+  function buildBackdrop() {
+    nebula = []; stars = [];
+    for (let i = 0; i < 5; i++)  // 远层（慢、大、淡）
+      nebula.push({ x: rand(0, W), y: rand(0, H), r: rand(80, 160), s: rand(.04, .12), o: rand(.10, .20), layer: 0 });
+    for (let i = 0; i < 4; i++)  // 近层（快、小、浓）
+      nebula.push({ x: rand(0, W), y: rand(0, H), r: rand(40, 90), s: rand(.18, .34), o: rand(.14, .26), layer: 1 });
+    for (let i = 0; i < 46; i++)
+      stars.push({ x: rand(0, W), y: rand(0, H), r: rand(.6, 1.8), tw: rand(0, 6.28), s: rand(.06, .2) });
+  }
+
+  function drawBackdrop(L, rt) {
+    // 深空渐变底
+    const g = ctx.createLinearGradient(0, 0, 0, H);
+    g.addColorStop(0, '#1a0f33'); g.addColorStop(.5, '#120a26'); g.addColorStop(1, '#0a0618');
+    ctx.fillStyle = g; ctx.fillRect(0, 0, W, H);
+
+    // 星空
+    for (const s of stars) {
+      s.tw += s.s; s.y += 0.02;
+      if (s.y > H) s.y = 0;
+      ctx.globalAlpha = .35 + Math.sin(s.tw) * .3;
+      ctx.fillStyle = '#fff';
+      ctx.beginPath(); ctx.arc(s.x, s.y, s.r, 0, 6.28); ctx.fill();
+    }
+    // 双层视差星云（用关卡 accent 着色）
+    const acc = L ? L.accent : '#8a6bff';
+    for (const n of nebula) {
+      n.y -= n.s; if (n.y < -n.r) { n.y = H + n.r; n.x = rand(0, W); }
+      const rg = ctx.createRadialGradient(n.x, n.y, 0, n.x, n.y, n.r);
+      rg.addColorStop(0, hexA(acc, n.o)); rg.addColorStop(1, hexA(acc, 0));
+      ctx.globalAlpha = 1; ctx.fillStyle = rg;
+      ctx.beginPath(); ctx.arc(n.x, n.y, n.r, 0, 6.28); ctx.fill();
+    }
+    ctx.globalAlpha = 1;
+  }
+  function hexA(hex, a) {
+    const h = hex.replace('#', '');
+    const r = parseInt(h.slice(0, 2), 16), g = parseInt(h.slice(2, 4), 16), b = parseInt(h.slice(4, 6), 16);
+    return `rgba(${r},${g},${b},${a})`;
+  }
+
+  // ========================== 粒子 ==========================
+  function burst(x, y, color, n = 10, spd = 3.5, kind = 'dot') {
+    for (let i = 0; i < n; i++) {
+      const a = rand(0, Math.PI * 2), s = rand(.4, 1) * spd;
+      particles.push({ x, y, vx: Math.cos(a) * s, vy: Math.sin(a) * s, life: rand(.4, .9),
+        max: .9, color, r: rand(2, 5), kind, rot: rand(0, 6.28) });
+    }
+  }
+  function splash(x, y, color) {
+    particles.push({ x, y, vx: 0, vy: 0, life: .7, max: .7, color, r: rand(14, 24), kind: 'splash' });
+  }
+  // 星轨流光尘（皮肤联动）
+  function trailDust(x, y) {
+    const sk = skin();
+    if (sk.trail === 'petal')
+      particles.push({ x, y, vx: rand(-.3, .3), vy: rand(.2, .7), life: 1.1, max: 1.1, color: '#ffb7d5', r: rand(3, 5), kind: 'petal', rot: rand(0, 6.28), vr: rand(-.1, .1) });
+    else if (sk.trail === 'spark')
+      particles.push({ x, y, vx: rand(-1, 1), vy: rand(-1, 1), life: .35, max: .35, color: Math.random() < .5 ? '#7CFFCB' : '#33e0ff', r: rand(1.5, 3), kind: 'spark' });
+    else if (sk.trail === 'rainbow')
+      particles.push({ x, y, vx: rand(-.4, .4), vy: rand(-.4, .4), life: .6, max: .6, color: `hsl(${(frame * 8) % 360},90%,68%)`, r: rand(2, 4), kind: 'dot' });
+    else
+      particles.push({ x, y, vx: rand(-.3, .3), vy: rand(-.3, .3), life: .55, max: .55, color: '#cfe6ff', r: rand(1.5, 3.2), kind: 'dot' });
+  }
+  // 星轨消失：水滴蒸发
+  function evaporate(rail) {
+    const pts = rail.pts;
+    for (let i = 0; i < pts.length; i += 2) {
+      particles.push({ x: pts[i].x, y: pts[i].y, vx: rand(-.2, .2), vy: rand(-.9, -.3),
+        life: .8, max: .8, color: skin().glow, r: rand(2, 4), kind: 'droplet' });
+    }
+  }
+
+  // ========================== 关卡构建 ==========================
+  function startLevel(idx) {
+    levelIdx = idx;
+    const L = LEVELS[idx];
+    HUD.level.textContent = idx + 1;
+    carts = []; rails = []; enemies = []; particles = []; pickups = [];
+    thorns = []; prisms = []; floaties = []; obstacles = []; blackholes = []; bolts = [];
+    boss = null; airTimer = 0; combo = 0; comboTimer = 0; setComboDom(0);
+    inkMax = CFG.inkMax + (buffs.bigink ? 40 : 0); ink = inkMax;
+
+    // 永久起始坡道：更长更缓，矿车顺坡滑出后横向飞越更多屏幕 → 给足画线反应时间
+    rails.push({ permanent: true, bounce: false, life: 1, maxLife: 1, pts: [
+      { x: W * 0.03, y: H * 0.16 }, { x: W * 0.24, y: H * 0.24 }, { x: W * 0.46, y: H * 0.30 }
+    ] });
+    carts.push(makeCart(W * 0.07, H * 0.11));
+
+    // 关内分步引导：每次进第 1 关都开启（非阻塞，按动作自动推进）
+    tut = { on: idx === 0, stage: 'draw', killBase: totalKills, timer: 0 };
+
+    if (L.boss) boss = makeBoss(L.boss);
+    else for (let i = 0; i < L.count; i++) spawnEnemy(L);
+
+    if (L.mech.thorns)
+      for (let i = 0; i < 5; i++)
+        thorns.push({ x: rand(W * 0.25, W * 0.8), y: rand(H * 0.25, H * 0.8), w: rand(40, 90), h: rand(16, 30) });
+
+    // 撞球障碍物（漂浮陨石，弹性反弹）
+    const oc = L.mech.obstacles || 0;
+    for (let i = 0; i < oc; i++)
+      obstacles.push({ x: rand(W * 0.3, W * 0.8), y: rand(H * 0.28, H * 0.78), r: rand(18, 28), rot: rand(0, 6.28) });
+
+    if (L.mech.split) prisms.push({ x: W * 0.45, y: H * 0.55, r: 22, used: false });
+
+    const bottles = L.mech.inkBoost ? 4 : 2;
+    for (let i = 0; i < bottles; i++)
+      pickups.push({ x: rand(W * 0.3, W * 0.85), y: rand(H * 0.2, H * 0.8), type: 'ink', r: 13, bob: rand(0, 6) });
+
+    HUD.enemies.textContent = enemyCount();
+    updateBars();
+  }
+
+  function makeCart(x, y) { return { x, y, vx: CFG.startVx, vy: 0, splitGhost: false, trail: [], onRail: false }; }
+
+  function spawnEnemy(L) {
+    const moving = L.mech.moving;
+    const palettes = [['#ff6b9d', '#7a1d52'], ['#7c9bff', '#1d2d7a'], ['#9b6bff', '#3a1d6a'], ['#6bd0c0', '#1d5a52']];
+    const pal = palettes[(Math.random() * palettes.length) | 0];
+    const hp = L.ehp || 30;
+    const er = L.er || rand(16, 22);
+    enemies.push({
+      x: rand(W * 0.42, W * 0.9), y: rand(H * 0.22, H * 0.78),
+      r: er, hp, maxHp: hp,
+      vx: moving ? rand(-.5, .5) : 0, vy: moving ? rand(-.4, .4) : 0,
+      breath: rand(0, 6.28), hitT: 0, wob: rand(0, 6.28),
+      col0: pal[0], col1: pal[1], eyes: 2
+    });
+  }
+
+  function makeBoss(kind) {
+    if (kind === 'glutton')
+      return { kind, x: W * 0.7, y: H * 0.3, r: 54, hp: 420, maxHp: 420, phase: 1, t: 0, eatT: 0, hitT: 0, name: '贪食的影魔' };
+    return { kind, x: W * 0.6, y: H * 0.28, r: 60, hp: 760, maxHp: 760, phase: 1, t: 0, hitT: 0, name: '梦魇缔造者' };
+  }
+  function enemyCount() { return enemies.length + (boss ? 1 : 0); }
+
+  // ========================== 输入：画线 ==========================
+  function pointPos(e) {
+    const rect = canvas.getBoundingClientRect();
+    return { x: e.clientX - rect.left, y: e.clientY - rect.top };
+  }
+  canvas.addEventListener('pointerdown', (e) => {
+    if (state !== 'playing') return;
+    e.preventDefault(); ensureAudio();
+    drawing = { pts: [pointPos(e)] };
+  }, { passive: false });
+
+  canvas.addEventListener('pointermove', (e) => {
+    if (state !== 'playing' || !drawing) return;
+    e.preventDefault();
+    const p = pointPos(e);
+    const last = drawing.pts[drawing.pts.length - 1];
+    const d = Math.hypot(p.x - last.x, p.y - last.y);
+    if (d < CFG.inkMinSeg) return;
+    const cost = d * CFG.inkPerPx;
+    if (!infiniteInkT && ink < cost) { ink = 0; return; }
+    if (!infiniteInkT) ink -= cost;
+    if (LEVELS[levelIdx].mech.thorns && inThorn(p.x, p.y)) return;
+    drawing.pts.push(p);
+    trailDust(p.x, p.y);               // 画线时撒流光尘
+    updateBars();
+  }, { passive: false });
+
+  function finishDraw() {
+    if (!drawing) return;
+    const pts = drawing.pts; drawing = null;
+    if (pts.length < 2) return;
+    const g = detectGesture(pts);
+    if (g === 'circle') { makeBlackHole(pts); return; }
+    if (g === 'coffee') { triggerCoffeeUlt(); return; }
+    const bounce = (g === 'v');
+    // 线长：太短撑不住墩弟 → 闪红提示"画长一点"
+    let len = 0; for (let i = 1; i < pts.length; i++) len += Math.hypot(pts[i].x - pts[i - 1].x, pts[i].y - pts[i - 1].y);
+    const weak = !bounce && len < CFG.minRailLen;
+    let life = CFG.railLife;
+    if (boss && boss.kind === 'nightmare' && boss.phase >= 3) life = 1.3;
+    rails.push({ pts, life, maxLife: life, bounce, warn: weak ? 0.7 : 0 });
+    if (bounce) { beep(660, .12, 'sine'); banner('V 弹床！3 倍弹射 🪀', 900); }
+    else if (weak) { beep(220, .12, 'square', .12); banner('⚠️ 线太短撑不住墩弟，画长一点！', 1100); }
+    else beep(520, .05, 'sine', .08);
+  }
+  canvas.addEventListener('pointerup', (e) => { e.preventDefault(); finishDraw(); }, { passive: false });
+  canvas.addEventListener('pointercancel', finishDraw);
+
+  function inThorn(x, y) {
+    for (const t of thorns) if (x > t.x - 4 && x < t.x + t.w + 4 && y > t.y - 4 && y < t.y + t.h + 4) return true;
+    return false;
+  }
+
+  function detectGesture(pts) {
+    const a = pts[0], b = pts[pts.length - 1];
+    let minx = 1e9, miny = 1e9, maxx = -1e9, maxy = -1e9, len = 0;
+    for (let i = 0; i < pts.length; i++) {
+      minx = Math.min(minx, pts[i].x); miny = Math.min(miny, pts[i].y);
+      maxx = Math.max(maxx, pts[i].x); maxy = Math.max(maxy, pts[i].y);
+      if (i) len += Math.hypot(pts[i].x - pts[i - 1].x, pts[i].y - pts[i - 1].y);
+    }
+    const bw = maxx - minx, bh = maxy - miny, diag = Math.hypot(bw, bh);
+    const closeGap = Math.hypot(a.x - b.x, a.y - b.y);
+    if (closeGap < diag * 0.35 && len > diag * 1.6 && bw > 40 && bh > 40) {
+      if (bh > bw * 1.15 && bw > 38) return 'coffee';
+      return 'circle';
+    }
+    if (pts.length >= 3 && bh > 28) {
+      let lowI = 0; for (let i = 1; i < pts.length; i++) if (pts[i].y > pts[lowI].y) lowI = i;
+      if (lowI > 1 && lowI < pts.length - 2) {
+        const left = pts[0].y, right = pts[pts.length - 1].y, low = pts[lowI].y;
+        if (low - left > bh * 0.4 && low - right > bh * 0.4) return 'v';
+      }
+    }
+    return 'line';
+  }
+
+  function makeBlackHole(pts) {
+    let cx = 0, cy = 0; for (const p of pts) { cx += p.x; cy += p.y; }
+    cx /= pts.length; cy /= pts.length;
+    let r = 0; for (const p of pts) r = Math.max(r, Math.hypot(p.x - cx, p.y - cy));
+    blackholes.push({ x: cx, y: cy, r: Math.min(r, 130), life: 3.2, max: 3.2 });
+    beep(180, .4, 'sawtooth', .14); banner('星空黑洞！绞杀圈内梦魇 🕳️', 1000);
+    splash(cx, cy, 'rgba(120,80,200,.5)');
+  }
+
+  function triggerCoffeeUlt() {
+    beep(440, .5, 'square', .15); addShake(16); flash = .5;
+    banner(`☕ ${CFG.coffeeCoupon.brand} 全屏大招！`, 2200);
+    for (const e of enemies) { e.hp -= 60; e.stun = 1.5; e.hitT = .25; burst(e.x, e.y, '#c8945a', 8); }
+    if (boss) boss.hp -= 120;
+    splash(W / 2, H / 2, 'rgba(180,120,60,.4)');
+    if (!couponSent) {
+      couponSent = true;
+      post('merchantCoupon', { brand: CFG.coffeeCoupon.brand, coupon: CFG.coffeeCoupon.coupon, from: 'dream_track_gesture' });
+      setTimeout(() => banner(`🎟️ 掉落 ${CFG.coffeeCoupon.brand} ${CFG.coffeeCoupon.coupon}`, 2600), 800);
+    }
+  }
+
+  // ========================== ImpactManager（爽感）==========================
+  function addShake(m) { shakeMag = Math.min(22, Math.max(shakeMag, m)); }
+  function impact(x, y, sp, color) {
+    addShake(Math.min(18, 4 + sp));
+    burst(x, y, color, Math.min(22, 8 + (sp | 0)), sp * 0.45);
+    splash(x, y, hexA(color, .35));
+    clink(sp / 4);
+    if (sp >= CFG.slowmoSpeed && slowmo <= 0) { slowmo = 0.2; flash = .4; }   // 子弹时间
+  }
+
+  // ========================== 物理：圆 vs 折线段（含顺坡加速）==========================
+  function collideRail(cart, rail) {
+    const pts = rail.pts; let hit = false;
+    for (let i = 0; i < pts.length - 1; i++) {
+      const ax = pts[i].x, ay = pts[i].y, bx = pts[i + 1].x, by = pts[i + 1].y;
+      const dx = bx - ax, dy = by - ay;
+      const segLen = Math.hypot(dx, dy) || 1, segLen2 = segLen * segLen;
+      let t = ((cart.x - ax) * dx + (cart.y - ay) * dy) / segLen2; t = clamp(t, 0, 1);
+      const px = ax + dx * t, py = ay + dy * t;
+      const ddx = cart.x - px, ddy = cart.y - py, d = Math.hypot(ddx, ddy);
+      if (d < CFG.cartR && d > 0.001) {
+        const nx = ddx / d, ny = ddy / d;
+        cart.x += nx * (CFG.cartR - d); cart.y += ny * (CFG.cartR - d);
+        const vn = cart.vx * nx + cart.vy * ny;
+        if (vn < 0) {
+          let tx = dx / segLen, ty = dy / segLen;
+          // 切向取与速度同向
+          if (cart.vx * tx + cart.vy * ty < 0) { tx = -tx; ty = -ty; }
+          const vt = cart.vx * tx + cart.vy * ty;
+          const fric = buffs.tread ? 0 : CFG.railFriction;
+          let nvt = vt * (1 - fric);
+          // 顺坡自动加速：坡越陡(切向越接近竖直向下)加速越多
+          const downAlign = ty;                     // ty>0 表示切向朝下=下坡
+          nvt += Math.max(0, downAlign) * CFG.slopeAccel;
+          // 四两拨千斤：高速 + 擦角(法向分量小) + 陡坡 → 切向额外弹射
+          const steep = Math.abs(ty) > 0.55, grazing = Math.abs(vn) < Math.abs(vt) * 0.6;
+          if (steep && grazing && Math.abs(vt) > 8) nvt *= CFG.slingshot;
+          let nvn = -vn * CFG.rest;
+          if (rail.bounce) { nvn = Math.abs(vn) * 2.1 + 5; }   // V 弹床更强的高空弹射
+          cart.vx = tx * nvt + nx * nvn; cart.vy = ty * nvt + ny * nvn;
+          // 记录本帧下坡强度（供持续加速 rideBoost 使用）
+          if (downAlign > 0) cart._downhill = Math.max(cart._downhill || 0, downAlign);
+        }
+        hit = true; rail._touched = frame;
+      }
+    }
+    return hit;
+  }
+
+  function stepCart(cart, dt, L) {
+    if (cart.dead) return;
+    let gdir = 1;
+    if (L.mech.gravBand) {
+      const bandY = H * 0.5;
+      if (cart._grav === undefined) cart._grav = 1;
+      if (cart._py !== undefined && (cart._py < bandY) !== (cart.y < bandY)) cart._grav *= -1;
+      gdir = cart._grav;
+    }
+    if (boss && boss.kind === 'nightmare' && boss.phase === 1 && Math.sin(boss.t * 1.2) > 0) gdir = -1;
+    cart._py = cart.y;
+    cart._downhill = 0;            // 每帧重置，collideRail 会填入本帧下坡强度
+
+    cart.vy += CFG.grav * gdir;
+    if (L.mech.wind) cart.vy += L.mech.wind;
+
+    const cap = CFG.maxSpeed * (buffs.tread ? 2 : 1) * (L.mech.fast ? 1.3 : 1);
+    const sp0 = Math.hypot(cart.vx, cart.vy);
+    if (sp0 > cap) { cart.vx *= cap / sp0; cart.vy *= cap / sp0; }
+
+    // —— 子步进 + 扫掠碰撞：把每帧位移拆成 ≤cartR/2 的小步，逐步检测——
+    // 这样高速下落时也一定会被星轨接住，彻底修复"画线没用、直接坠落"
+    const move = Math.hypot(cart.vx, cart.vy);
+    const steps = Math.max(1, Math.ceil(move / (CFG.cartR * 0.5)));
+    let onRail = false;
+    for (let s = 0; s < steps; s++) {
+      cart.x += cart.vx / steps; cart.y += cart.vy / steps;
+      // 左右墙 / 顶墙
+      if (cart.x < CFG.cartR) { cart.x = CFG.cartR; cart.vx = Math.abs(cart.vx) * 0.6; }
+      if (cart.x > W - CFG.cartR) { cart.x = W - CFG.cartR; cart.vx = -Math.abs(cart.vx) * 0.6; }
+      if (cart.y < CFG.cartR) { cart.y = CFG.cartR; cart.vy = Math.abs(cart.vy) * 0.5; }
+      // 星轨
+      for (const r of rails) if (collideRail(cart, r)) onRail = true;
+      // 障碍物弹性反弹（撞球）
+      for (const o of obstacles) {
+        const dd = Math.hypot(cart.x - o.x, cart.y - o.y), rr = o.r + CFG.cartR;
+        if (dd < rr && dd > 0.01) {
+          const nx = (cart.x - o.x) / dd, ny = (cart.y - o.y) / dd;
+          cart.x = o.x + nx * rr; cart.y = o.y + ny * rr;
+          const vn = cart.vx * nx + cart.vy * ny;
+          cart.vx -= 1.7 * vn * nx; cart.vy -= 1.7 * vn * ny;   // 高弹性
+          burst(cart.x, cart.y, '#cdbaff', 5, 2); beep(420, .05, 'square', .08);
+        }
+      }
+      // 荆棘
+      for (const tt of thorns) {
+        if (cart.x > tt.x - CFG.cartR && cart.x < tt.x + tt.w + CFG.cartR &&
+            cart.y > tt.y - CFG.cartR && cart.y < tt.y + tt.h + CFG.cartR) {
+          const cxm = tt.x + tt.w / 2, cym = tt.y + tt.h / 2;
+          const nx = cart.x - cxm, ny = cart.y - cym, nl = Math.hypot(nx, ny) || 1;
+          cart.x += nx / nl * 6; cart.y += ny / nl * 6; cart.vx *= -0.4; cart.vy *= -0.4;
+          damagePlayer(4, '');
+        }
+      }
+    }
+    cart.onRail = onRail;
+
+    // 顺陡坡持续加速："嗖"地飞出去（滑行越久越快，约 0.5s +20%）
+    if (onRail && cart._downhill > 0.25) {
+      const sp = Math.hypot(cart.vx, cart.vy);
+      if (sp > 0.01) { const ns = Math.min(cap, sp * CFG.rideBoost); cart.vx *= ns / sp; cart.vy *= ns / sp; }
+    }
+
+    // 底部：无底洞 / 地面（每帧判定一次）
+    if (cart.y > H - CFG.cartR) {
+      if (L.mech.pit) { damagePlayer(18, '坠入无底洞'); respawnCart(cart); }
+      else { cart.y = H - CFG.cartR; cart.vy = -Math.abs(cart.vy) * 0.5; cart.vx *= 0.92; }
+    }
+
+    // 棱镜分身
+    if (L.mech.split && !cart.splitGhost) {
+      for (const pr of prisms) if (!pr.used && dist2(cart.x, cart.y, pr.x, pr.y) < (pr.r + CFG.cartR) ** 2) {
+        pr.used = true;
+        const ghost = makeCart(cart.x, cart.y); ghost.splitGhost = true;
+        ghost.vx = -cart.vx; ghost.vy = cart.vy; carts.push(ghost);
+        beep(880, .2, 'sine'); banner('棱镜分身！两个墩弟同时收割 🪞', 1200);
+        burst(pr.x, pr.y, '#bfe9ff', 14);
+      }
+    }
+
+    // 黑洞牵引
+    for (const bh of blackholes) {
+      const dd = Math.hypot(cart.x - bh.x, cart.y - bh.y);
+      if (dd < bh.r * 1.4) { cart.vx += (bh.x - cart.x) * 0.002; cart.vy += (bh.y - cart.y) * 0.002; }
+    }
+
+    cart.trail.push({ x: cart.x, y: cart.y });
+    if (cart.trail.length > 10) cart.trail.shift();
+    if (frame % 2 === 0 && Math.hypot(cart.vx, cart.vy) > 5) trailDust(cart.x, cart.y);
+
+    if (cart === carts[0]) {
+      if (!onRail && cart.y < H - CFG.cartR - 4) airTimer += dt; else airTimer = 0;
+    }
+
+    // —— 位移式失速安全网：墩弟「实际位置」几乎不动持续约1秒（任何原因：坠底/卡角/贴墙/卡轨道端点）
+    //    → 自动回起点重发，绝不"没有之后"。比按速度判定更可靠（卡角时速度非零但其实不动）——
+    const moved = Math.hypot(cart.x - (cart._lx == null ? cart.x : cart._lx), cart.y - (cart._ly == null ? cart.y : cart._ly));
+    cart._lx = cart.x; cart._ly = cart.y;
+    cart.stall = moved < 0.8 ? (cart.stall || 0) + dt : 0;
+    if (cart.stall > 1.1) { relaunch(cart, L); if (cart.dead) return; }
+
+    handleHits(cart);
+  }
+
+  function relaunch(cart, L) {
+    if (cart.splitGhost) { cart.dead = true; return; }   // 分身直接消失，主车回起点
+    if (L.mech.pit) damagePlayer(10, '');                 // 无底洞关：回起点仍小扣血
+    respawnCart(cart);
+    banner('🔄 墩弟回到起点 · 跟着虚线在它前方画下坡接住它', 1700);
+    beep(300, .12, 'sine', .1);
+  }
+
+  function respawnCart(cart) { cart.x = W * 0.07; cart.y = H * 0.12; cart.vx = CFG.startVx; cart.vy = 0; cart.trail = []; cart.stall = 0; }
+
+  function comboMul() { return 1 + Math.min(combo, 12) * (buffs.magnet ? 0.18 : 0.12); }
+
+  function handleHits(cart) {
+    const sp = Math.hypot(cart.vx, cart.vy);
+    const dmgBase = sp * CFG.baseDmg * comboMul() * (buffs.magnet ? 1.25 : 1);
+    for (const e of enemies) {
+      if (dist2(cart.x, cart.y, e.x, e.y) < (e.r + CFG.cartR) ** 2 && sp > 3.5) {
+        e.hp -= dmgBase * (1 + sp * 0.06); e.hitT = .22;
+        addCombo();
+        impact(e.x, e.y, sp, '#ffd27a');
+        const nx = cart.x - e.x, ny = cart.y - e.y, nl = Math.hypot(nx, ny) || 1;
+        cart.vx = nx / nl * sp * 0.7; cart.vy = ny / nl * sp * 0.7;
+      }
+    }
+    if (boss && dist2(cart.x, cart.y, boss.x, boss.y) < (boss.r + CFG.cartR) ** 2 && sp > 4) {
+      const shielded = boss.kind === 'nightmare' && boss.phase === 2 && !boss.shieldBroken;
+      let dmg = dmgBase * (1 + sp * 0.05);
+      if (cart.y < boss.y - boss.r * 0.4 && cart.vy > 0) dmg *= 2;
+      if (shielded) dmg *= 0.05;
+      boss.hp -= dmg; boss.hitT = .2; addCombo();
+      impact(cart.x, cart.y, sp, shielded ? '#88aaff' : '#ffd27a');
+      const nx = cart.x - boss.x, ny = cart.y - boss.y, nl = Math.hypot(nx, ny) || 1;
+      cart.vx = nx / nl * sp * 0.6; cart.vy = ny / nl * sp * 0.6;
+    }
+  }
+
+  function addCombo() {
+    combo++; comboTimer = 1.4; comboPulse = 1; setComboDom(combo);
+    if (combo >= 5 && combo % 5 === 0) bell();
+  }
+  function setComboDom(n) {
+    if (n < 2) { comboBig.style.opacity = 0; return; }
+    comboN.textContent = n;
+    comboBig.style.opacity = 1;
+    comboBig.classList.toggle('gold', n >= 5);
+  }
+
+  function damagePlayer(amt, why) {
+    if (invincibleT > 0) return;
+    hp -= amt; updateBars();
+    if (why) banner('💔 ' + why + ' -' + Math.round(amt), 900);
+    addShake(8);
+    if (hp <= 0) { hp = 0; updateBars(); endGame(false); }
+  }
+
+  // ========================== 敌人 / Boss ==========================
+  function stepEnemies(dt, L) {
+    for (const e of enemies) {
+      e.breath += dt * 2.4; e.wob += dt * 3;
+      if (e.hitT > 0) e.hitT -= dt;
+      if (e.stun) { e.stun -= dt; continue; }
+      e.x += e.vx; e.y += e.vy;
+      if (e.x < e.r || e.x > W - e.r) e.vx *= -1;
+      if (e.y < e.r + 40 || e.y > H - e.r) e.vy *= -1;
+      e.x = clamp(e.x, e.r, W - e.r); e.y = clamp(e.y, e.r + 40, H - e.r);
+    }
+    if (buffs.thunder) {
+      for (const r of rails) for (const e of enemies) {
+        for (let i = 0; i < r.pts.length - 1; i++) {
+          const a = r.pts[i], b = r.pts[i + 1];
+          if (pointSegDist(e.x, e.y, a.x, a.y, b.x, b.y) < e.r + 6) {
+            e.hp -= 40 * dt; e.hitT = Math.max(e.hitT, .08);
+            if (frame % 8 === 0) burst(e.x, e.y, '#fff27a', 3, 2); break;
+          }
+        }
+      }
+    }
+    if (L.mech.lightning || (boss && boss.kind === 'nightmare' && boss.phase === 2)) handleLightning(dt, L);
+    for (const bh of blackholes) for (const e of enemies) {
+      if (dist2(e.x, e.y, bh.x, bh.y) < bh.r * bh.r) {
+        e.x += (bh.x - e.x) * 0.04; e.y += (bh.y - e.y) * 0.04; e.hp -= 55 * dt;
+        if (frame % 6 === 0) burst(e.x, e.y, '#c08bff', 2, 1.5);
+      }
+    }
+    if (buffs.airdrop && airTimer > 2) {
+      airTimer = 0; banner('🍟 薯霸空投！坚果轰炸全屏', 1100); addShake(12); beep(150, .3, 'sawtooth');
+      for (const e of enemies) { e.hp -= 45; e.hitT = .2; burst(e.x, e.y, '#ffcf6e', 8); }
+      if (boss) boss.hp -= 80;
+    }
+    for (let i = enemies.length - 1; i >= 0; i--) {
+      if (enemies[i].hp <= 0) {
+        const e = enemies[i];
+        burst(e.x, e.y, e.col0, 18, 4.2); splash(e.x, e.y, hexA(e.col0, .4));
+        beep(520, .12, 'triangle'); clink(3);
+        enemies.splice(i, 1); totalKills++; totalScore += 30;
+        if (Math.random() < .3) pickups.push({ x: e.x, y: e.y, type: 'ink', r: 12, bob: rand(0, 6) });
+      }
+    }
+    HUD.enemies.textContent = enemyCount();
+  }
+
+  function handleLightning(dt, L) {
+    const cloudX = W * 0.5, cloudY = 60;
+    for (const r of rails) {
+      let nearCloud = false;
+      for (const p of r.pts) if (Math.hypot(p.x - cloudX, p.y - cloudY) < 80) { nearCloud = true; break; }
+      if (!nearCloud) continue;
+      for (const e of enemies) for (let i = 0; i < r.pts.length - 1; i++) {
+        const a = r.pts[i], b = r.pts[i + 1];
+        if (pointSegDist(e.x, e.y, a.x, a.y, b.x, b.y) < e.r + 8) {
+          e.hp -= 90 * dt; e.hitT = Math.max(e.hitT, .1);
+          if (frame % 5 === 0) bolts.push({ x1: cloudX, y1: cloudY, x2: e.x, y2: e.y, life: .12 }); break;
+        }
+      }
+      if (boss && boss.kind === 'nightmare' && boss.phase === 2)
+        for (let i = 0; i < r.pts.length - 1; i++) {
+          const a = r.pts[i], b = r.pts[i + 1];
+          if (pointSegDist(boss.x, boss.y, a.x, a.y, b.x, b.y) < boss.r + 8) {
+            boss.shieldHits = (boss.shieldHits || 0) + dt;
+            if (boss.shieldHits > 1.5 && !boss.shieldBroken) { boss.shieldBroken = true; banner('⚡ Boss 护盾被击破！', 1400); addShake(14); }
+            break;
+          }
+        }
+    }
+  }
+
+  function pointSegDist(px, py, ax, ay, bx, by) {
+    const dx = bx - ax, dy = by - ay, l2 = dx * dx + dy * dy || 1;
+    let t = ((px - ax) * dx + (py - ay) * dy) / l2; t = clamp(t, 0, 1);
+    return Math.hypot(px - (ax + dx * t), py - (ay + dy * t));
+  }
+
+  function stepBoss(dt) {
+    if (!boss) return;
+    boss.t += dt; if (boss.hitT > 0) boss.hitT -= dt;
+    const ratio = boss.hp / boss.maxHp;
+    if (boss.kind === 'glutton') {
+      boss.eatT += dt;
+      if (boss.eatT > 2.2) { boss.eatT = 0; ink = Math.max(0, ink - 18); banner('影魔吞噬了你的墨水！', 1000); updateBars(); }
+      boss.x += Math.sin(boss.t * 0.7) * 0.8; boss.y += Math.cos(boss.t * 0.5) * 0.5;
+    } else {
+      if (ratio < 0.66 && boss.phase === 1) { boss.phase = 2; banner('阶段二：用导电星轨破除护盾！', 2000); }
+      if (ratio < 0.33 && boss.phase === 2) { boss.phase = 3; banner('阶段三：它在切断你的画线！极限反应！', 2200); }
+      boss.x = W * 0.5 + Math.sin(boss.t * 0.6) * W * 0.25;
+      boss.y = H * 0.25 + Math.cos(boss.t * 0.4) * 30;
+    }
+    if (boss.hp <= 0) {
+      burst(boss.x, boss.y, '#ffd27a', 44, 6.5); splash(boss.x, boss.y, 'rgba(255,180,90,.5)');
+      addShake(24); flash = .6; beep(220, .5, 'sawtooth'); totalScore += 300; boss = null;
+    }
+  }
+
+  // ========================== 关卡推进 ==========================
+  function checkClear() {
+    if (state !== 'playing') return;
+    if (enemyCount() === 0) {
+      levelsCleared = Math.max(levelsCleared, levelIdx + 1); totalScore += 100;
+      if (levelIdx >= LEVELS.length - 1) { endGame(true); return; }
+      offerBuff();
+    }
+  }
+
+  // —— 关内分步引导（非阻塞，跟随玩家动作推进）——
+  function updateTutorial(dt) {
+    if (tut.stage === 'draw') {
+      if (rails.some(r => !r.permanent)) {
+        tut.stage = 'hit'; tut.killBase = totalKills;
+        banner('🎯 让墩弟顺轨道加速，高速撞向梦魇！', 2400);
+      }
+    } else if (tut.stage === 'hit') {
+      if (totalKills > tut.killBase) {
+        tut.stage = 'shape'; tut.timer = 5.5;
+        banner('✏️ 进阶：圈住敌人画 ○ 黑洞 · 画 V 形生成弹床', 2800);
+      }
+    } else if (tut.stage === 'shape') {
+      tut.timer -= dt; if (tut.timer <= 0) tut.on = false;
+    }
+  }
+
+  function offerBuff() {
+    state = 'buff';
+    const pool = BUFFS.slice().sort(() => Math.random() - .5).slice(0, 3);
+    const wrap = document.getElementById('buffCards'); wrap.innerHTML = '';
+    pool.forEach(b => {
+      const el = document.createElement('div'); el.className = 'buffCard';
+      el.innerHTML = `<div class="ic">${b.ic}</div><div><div class="bt">${b.name}</div><div class="bd">${b.desc}</div></div>`;
+      el.onclick = () => { applyBuff(b.id); document.getElementById('buffVeil').classList.remove('show'); nextLevelCard(); };
+      wrap.appendChild(el);
+    });
+    document.getElementById('buffVeil').classList.add('show');
+  }
+  function applyBuff(id) {
+    buffs[id] = true;
+    if (id === 'heal') hp = Math.min(CFG.hp, hp + 35);
+    if (id === 'bigink') { inkMax += 40; ink = inkMax; }
+    beep(720, .18, 'sine'); updateBars();
+  }
+  function nextLevelCard() { nextLevelCardFor(levelIdx + 1); }
+  function nextLevelCardFor(idx) {
+    const L = LEVELS[idx];
+    document.getElementById('levelTag').textContent = `第 ${idx + 1} 关 / 10`;
+    document.getElementById('levelName').textContent = L.name;
+    document.getElementById('levelDesc').textContent = L.desc;
+    document.getElementById('levelVeil').classList.add('show');
+    state = 'levelcard'; levelIdx = idx;
+  }
+
+  // ========================== 复活（IAA）==========================
+  function checkInk() {
+    if (state !== 'playing' || infiniteInkT > 0 || usedRevive) return;
+    const c = carts[0];
+    if (ink < 2 && rails.length === 0 && c && c.vy > 1 && c.y > H * 0.5) {
+      state = 'revive'; bulletTime = true;
+      document.getElementById('reviveText').textContent = '墨水枯竭，墩弟即将坠入梦魇深渊……逆天改命？';
+      document.getElementById('reviveVeil').classList.add('show');
+    }
+  }
+
+  // ========================== 渲染 ==========================
+  function draw(rt) {
+    const L = LEVELS[levelIdx];
+    ctx.save();
+    // 屏震
+    if (shakeMag > 0.3) { shakeX = rand(-shakeMag, shakeMag); shakeY = rand(-shakeMag, shakeMag); ctx.translate(shakeX, shakeY); }
+
+    drawBackdrop(L, rt);
+
+    if (state === 'start') { drawTutorial(rt); ctx.restore(); return; }
+
+    // 关卡特效层
+    if (L.mech.pit) {                                  // 无底洞危险带（第2关起）
+      const gy = H - 44;
+      const pg = ctx.createLinearGradient(0, gy, 0, H);
+      pg.addColorStop(0, 'rgba(170,30,60,0)'); pg.addColorStop(1, 'rgba(150,16,52,.55)');
+      ctx.fillStyle = pg; ctx.fillRect(0, gy, W, 44);
+      ctx.globalAlpha = .55 + Math.sin(frame * .1) * .2;
+      ctx.fillStyle = '#ff6b8a'; ctx.font = 'bold 11px sans-serif'; ctx.textAlign = 'center';
+      ctx.fillText('⚠ 无底洞 · 掉落扣血 ⚠', W / 2, H - 9); ctx.globalAlpha = 1;
+    }
+    if (L.mech.gravBand) { ctx.fillStyle = 'rgba(255,235,170,.16)'; ctx.fillRect(0, H * 0.5 - 10, W, 20); }
+    if (L.mech.wind) {
+      ctx.strokeStyle = 'rgba(160,255,230,.25)'; ctx.lineWidth = 2;
+      for (let i = 0; i < 5; i++) { const x = (i + .5) * W / 5, yo = (frame * 1.5 + i * 40) % H;
+        ctx.beginPath(); ctx.moveTo(x, H - yo); ctx.lineTo(x, H - yo - 16); ctx.stroke(); }
+    }
+    if (L.mech.lightning || (boss && boss.kind === 'nightmare' && boss.phase === 2)) {
+      ctx.save(); ctx.shadowColor = '#b48cf0'; ctx.shadowBlur = 18;
+      ctx.fillStyle = 'rgba(150,110,210,.55)';
+      ctx.beginPath(); ctx.arc(W * 0.5, 60, 44, 0, 6.28); ctx.fill(); ctx.restore();
+      ctx.font = '32px serif'; ctx.textAlign = 'center'; ctx.fillText('⛈️', W * 0.5, 72);
+    }
+
+    // 障碍物（水彩陨石）
+    for (const o of obstacles) {
+      o.rot += 0.005;
+      ctx.save(); ctx.translate(o.x, o.y); ctx.rotate(o.rot);
+      ctx.shadowColor = 'rgba(180,150,255,.6)'; ctx.shadowBlur = 14;
+      const rg = ctx.createRadialGradient(-o.r * .3, -o.r * .3, 2, 0, 0, o.r);
+      rg.addColorStop(0, '#8a7bc0'); rg.addColorStop(1, '#3a2d5a');
+      ctx.fillStyle = rg; ctx.beginPath();
+      for (let i = 0; i <= 12; i++) { const a = i / 12 * 6.283, rr = o.r * (1 + Math.sin(a * 3) * 0.08); ctx[i ? 'lineTo' : 'moveTo'](Math.cos(a) * rr, Math.sin(a) * rr); }
+      ctx.closePath(); ctx.fill(); ctx.restore();
+    }
+
+    // 荆棘
+    for (const t of thorns) {
+      ctx.fillStyle = '#3f6b2a'; ctx.fillRect(t.x, t.y, t.w, t.h);
+      ctx.fillStyle = '#2a4a1a';
+      for (let x = t.x; x < t.x + t.w; x += 8) { ctx.beginPath(); ctx.moveTo(x, t.y); ctx.lineTo(x + 4, t.y - 6); ctx.lineTo(x + 8, t.y); ctx.fill(); }
+    }
+    // 棱镜
+    for (const pr of prisms) if (!pr.used) {
+      ctx.save(); ctx.translate(pr.x, pr.y); ctx.rotate(frame * 0.02);
+      ctx.shadowColor = '#bfe9ff'; ctx.shadowBlur = 14;
+      ctx.fillStyle = 'rgba(190,233,255,.85)'; ctx.strokeStyle = '#fff'; ctx.lineWidth = 2;
+      ctx.beginPath(); for (let i = 0; i < 3; i++) { const a = i * 2.09 - 1.57; ctx[i ? 'lineTo' : 'moveTo'](Math.cos(a) * pr.r, Math.sin(a) * pr.r); }
+      ctx.closePath(); ctx.fill(); ctx.stroke(); ctx.restore();
+    }
+
+    // 拾取
+    for (const p of pickups) {
+      p.bob += 0.05; const y = p.y + Math.sin(p.bob) * 4;
+      ctx.font = '22px serif'; ctx.textAlign = 'center'; ctx.fillText('🫙', p.x, y + 8);
+    }
+
+    // 黑洞
+    for (const bh of blackholes) {
+      const a = bh.life / bh.max;
+      const rg = ctx.createRadialGradient(bh.x, bh.y, 0, bh.x, bh.y, bh.r);
+      rg.addColorStop(0, `rgba(20,0,40,${.85 * a})`); rg.addColorStop(.7, `rgba(140,80,210,${.4 * a})`); rg.addColorStop(1, 'rgba(140,80,210,0)');
+      ctx.fillStyle = rg; ctx.beginPath(); ctx.arc(bh.x, bh.y, bh.r, 0, 6.28); ctx.fill();
+      ctx.strokeStyle = `rgba(210,160,255,${a})`; ctx.lineWidth = 2;
+      ctx.beginPath(); ctx.arc(bh.x, bh.y, (bh.r * (1 - a)) % bh.r, 0, 6.28); ctx.stroke();
+    }
+
+    // 星轨
+    for (const r of rails) drawRail(r);
+    if (drawing) {
+      let dl = 0; for (let i = 1; i < drawing.pts.length; i++) dl += Math.hypot(drawing.pts[i].x - drawing.pts[i - 1].x, drawing.pts[i].y - drawing.pts[i - 1].y);
+      drawRail({ pts: drawing.pts, life: 1, maxLife: 1, bounce: false, warn: dl < CFG.minRailLen ? 1 : 0 }, true);
+    }
+    for (const b of bolts) drawBoltNow(b);
+
+    // 落点预测虚线：墩弟不在轨道上时，告诉玩家它将飞向哪里、该在哪画轨道
+    if (state === 'playing' && carts[0] && !carts[0].dead && !carts[0].onRail) drawPrediction(carts[0], L);
+
+    // 敌人 / Boss / 矿车
+    for (const e of enemies) drawCreature(e);
+    if (boss) drawBoss();
+    for (const cart of carts) drawCart(cart);
+
+    // 粒子
+    drawParticles();
+
+    // 关内分步引导提示
+    if (tut.on && state === 'playing') drawTutHints();
+
+    // 子弹时间灰幕 + 撞击白闪
+    if (slowmo > 0) { ctx.fillStyle = 'rgba(15,8,28,.4)'; ctx.fillRect(-30, -30, W + 60, H + 60); }
+    if (flash > 0) { ctx.fillStyle = `rgba(255,255,255,${flash})`; ctx.fillRect(-30, -30, W + 60, H + 60); }
+
+    ctx.restore();
+  }
+
+  // —— 关内引导提示渲染：底部说明条 + draw 阶段的手势/虚线示意 ——
+  function drawTutHints() {
+    const c = carts[0]; if (!c) return;
+    let txt = '';
+    if (tut.stage === 'draw') txt = '👇 看那条虚线=墩弟的落点 · 横跨虚线画一条斜坡把它接住';
+    else if (tut.stage === 'hit') txt = '🎯 画下坡让墩弟提速 · 速度越快，撞击伤害越高';
+    else txt = '✏️ 圈住敌人=○黑洞 · 画 V 形=弹床 · 墨水会自动恢复';
+    // 底部说明条
+    ctx.save(); ctx.globalAlpha = 0.95;
+    ctx.fillStyle = 'rgba(20,12,40,.82)';
+    const x = 12, y = H - 48, w = W - 24, h = 32;
+    ctx.beginPath(); ctx.roundRect(x, y, w, h, 12); ctx.fill();
+    ctx.fillStyle = '#ffe9c2'; ctx.font = 'bold 13px sans-serif'; ctx.textAlign = 'center';
+    ctx.fillText(txt, W / 2, y + 21);
+    ctx.restore();
+    // draw 阶段：手 + 建议轨道虚线（在矿车前下方）
+    if (tut.stage === 'draw') {
+      const ph = Math.sin(frame * 0.12) * 6;
+      const sx = c.x + 14, sy = c.y + 16, ex = c.x + 130, ey = c.y + 96;
+      ctx.save();
+      ctx.strokeStyle = 'rgba(180,210,255,.7)'; ctx.lineWidth = 4; ctx.setLineDash([9, 9]);
+      ctx.beginPath(); ctx.moveTo(sx, sy); ctx.quadraticCurveTo((sx + ex) / 2, ey + 14, ex, ey); ctx.stroke();
+      ctx.setLineDash([]);
+      ctx.font = '26px serif'; ctx.textAlign = 'center'; ctx.fillText('🖐️', sx + ph, sy + ph + 6);
+      ctx.restore();
+    }
+  }
+
+  function drawParticles() {
+    for (const p of particles) {
+      const a = clamp(p.life / p.max, 0, 1);
+      ctx.globalAlpha = a;
+      if (p.kind === 'petal') {
+        ctx.save(); ctx.translate(p.x, p.y); ctx.rotate(p.rot);
+        ctx.fillStyle = p.color; ctx.beginPath(); ctx.ellipse(0, 0, p.r, p.r * .55, 0, 0, 6.28); ctx.fill(); ctx.restore();
+      } else if (p.kind === 'spark') {
+        ctx.strokeStyle = p.color; ctx.lineWidth = 1.6;
+        ctx.beginPath(); ctx.moveTo(p.x, p.y); ctx.lineTo(p.x - p.vx * 2, p.y - p.vy * 2); ctx.stroke();
+      } else if (p.kind === 'droplet') {
+        ctx.fillStyle = p.color; ctx.beginPath(); ctx.arc(p.x, p.y, p.r * a, 0, 6.28); ctx.fill();
+      } else if (p.kind === 'splash') {
+        ctx.fillStyle = p.color; ctx.beginPath(); ctx.arc(p.x, p.y, p.r * (1 + (1 - a)), 0, 6.28); ctx.fill();
+      } else {
+        ctx.fillStyle = p.color; ctx.beginPath(); ctx.arc(p.x, p.y, p.r, 0, 6.28); ctx.fill();
+      }
+    }
+    ctx.globalAlpha = 1;
+  }
+
+  // —— 落点预测：前向模拟纯重力路径（忽略新画的线），画虚线 + 落点环 ——
+  function drawPrediction(cart, L) {
+    let x = cart.x, y = cart.y, vx = cart.vx, vy = cart.vy;
+    const pts = [];
+    for (let i = 0; i < 80; i++) {
+      vy += CFG.grav;
+      if (L.mech.wind) vy += L.mech.wind;
+      const sp = Math.hypot(vx, vy);
+      if (sp > CFG.maxSpeed) { vx *= CFG.maxSpeed / sp; vy *= CFG.maxSpeed / sp; }
+      x += vx; y += vy;
+      if (x < CFG.cartR) { x = CFG.cartR; vx = Math.abs(vx) * 0.6; }
+      if (x > W - CFG.cartR) { x = W - CFG.cartR; vx = -Math.abs(vx) * 0.6; }
+      if (y > H - CFG.cartR) break;
+      if (i % 2 === 0) pts.push({ x, y });
+    }
+    if (pts.length < 2) return;
+    ctx.save();
+    ctx.globalAlpha = 0.55; ctx.setLineDash([3, 8]);
+    ctx.strokeStyle = 'rgba(190,212,255,.9)'; ctx.lineWidth = 2.5; ctx.lineCap = 'round';
+    ctx.beginPath(); ctx.moveTo(cart.x, cart.y);
+    for (const p of pts) ctx.lineTo(p.x, p.y);
+    ctx.stroke(); ctx.setLineDash([]);
+    const last = pts[pts.length - 1];
+    ctx.globalAlpha = 0.7; ctx.strokeStyle = 'rgba(190,212,255,.95)'; ctx.lineWidth = 2;
+    ctx.beginPath(); ctx.arc(last.x, last.y, 5, 0, 6.28); ctx.stroke();
+    ctx.restore();
+  }
+
+  function drawRail(r, live) {
+    const pts = r.pts; if (pts.length < 2) return;
+    // 永久起始坡道：木石质感锚点轨道
+    if (r.permanent) {
+      ctx.save(); ctx.lineCap = 'round'; ctx.lineJoin = 'round';
+      ctx.shadowColor = 'rgba(120,90,50,.5)'; ctx.shadowBlur = 8;
+      ctx.strokeStyle = '#6f5230'; ctx.lineWidth = 10; strokePath(pts);
+      ctx.shadowBlur = 0; ctx.strokeStyle = '#c8a572'; ctx.lineWidth = 3; strokePath(pts);
+      ctx.restore();
+      return;
+    }
+    const a = live ? 1 : clamp(r.life / r.maxLife, 0, 1);
+    const sk = skin();
+    // 支撑力不足：画线中=常亮红；已落地=闪烁红，提示"画长一点"
+    const warning = (r.warn || 0) > 0;
+    const redOn = warning && (live || Math.floor(frame / 5) % 2 === 0);
+    ctx.lineCap = 'round'; ctx.lineJoin = 'round';
+    ctx.save();
+    ctx.shadowColor = redOn ? '#ff5a5a' : (r.bounce ? '#ffce5e' : sk.glow); ctx.shadowBlur = 16;
+    ctx.globalAlpha = a * 0.5; ctx.lineWidth = 11;
+    ctx.strokeStyle = redOn ? '#ff5a5a' : (r.bounce ? '#ffce5e' : sk.glow);
+    strokePath(pts);
+    ctx.globalAlpha = a; ctx.lineWidth = 5;
+    if (redOn) ctx.strokeStyle = '#ff8a8a';
+    else if (sk.color === 'rainbow') {
+      const grd = ctx.createLinearGradient(pts[0].x, pts[0].y, pts[pts.length - 1].x, pts[pts.length - 1].y);
+      grd.addColorStop(0, '#ff8da6'); grd.addColorStop(.5, '#ffe27a'); grd.addColorStop(1, '#86c5ff');
+      ctx.strokeStyle = grd;
+    } else ctx.strokeStyle = r.bounce ? '#fff0c0' : sk.color;
+    strokePath(pts);
+    ctx.restore();
+    if (buffs.thunder && !live && frame % 4 === 0) {
+      const p = pts[(frame >> 2) % pts.length];
+      ctx.globalAlpha = a; ctx.fillStyle = '#fff27a'; ctx.beginPath(); ctx.arc(p.x, p.y, 3, 0, 6.28); ctx.fill(); ctx.globalAlpha = 1;
+    }
+  }
+  function strokePath(pts) {
+    ctx.beginPath(); ctx.moveTo(pts[0].x, pts[0].y);
+    for (let i = 1; i < pts.length; i++) ctx.lineTo(pts[i].x, pts[i].y); ctx.stroke();
+  }
+
+  function drawBoltNow(b) {
+    ctx.globalAlpha = clamp(b.life / .12, 0, 1);
+    ctx.save(); ctx.shadowColor = '#fff27a'; ctx.shadowBlur = 12;
+    ctx.strokeStyle = '#fff27a'; ctx.lineWidth = 2.5; ctx.beginPath(); ctx.moveTo(b.x1, b.y1);
+    const seg = 5;
+    for (let i = 1; i <= seg; i++) { const t = i / seg; ctx.lineTo(b.x1 + (b.x2 - b.x1) * t + rand(-10, 10), b.y1 + (b.y2 - b.y1) * t + rand(-10, 10)); }
+    ctx.lineTo(b.x2, b.y2); ctx.stroke(); ctx.restore(); ctx.globalAlpha = 1;
+  }
+
+  // —— 程序化水彩生物：呼吸 Idle + 受击惊恐扭曲 ——
+  function drawCreature(e) {
+    const hit = e.hitT > 0 ? e.hitT / .22 : 0;
+    const breathe = 1 + Math.sin(e.breath) * 0.05;
+    const scale = breathe * (1 + hit * 0.2);          // 受击放大 1.2
+    const squash = 1 - hit * 0.18;                     // 惊恐扭曲：纵向压扁
+    const wobAmp = 0.07 + hit * 0.13;                  // 受击轮廓更扭曲
+    ctx.save(); ctx.translate(e.x, e.y); ctx.scale(scale, scale * squash);
+    ctx.shadowColor = hexA(e.col0, .8); ctx.shadowBlur = 14;
+    // 血条
+    if (e.hp < e.maxHp) {
+      ctx.save(); ctx.shadowBlur = 0; ctx.scale(1 / scale, 1 / (scale * squash));
+      ctx.fillStyle = 'rgba(0,0,0,.3)'; ctx.fillRect(-e.r, -e.r - 11, e.r * 2, 4);
+      ctx.fillStyle = '#ff6b6b'; ctx.fillRect(-e.r, -e.r - 11, e.r * 2 * clamp(e.hp / e.maxHp, 0, 1), 4); ctx.restore();
+    }
+    // 水彩 blob 身体
+    const rg = ctx.createRadialGradient(-e.r * .3, -e.r * .3, 2, 0, 0, e.r);
+    rg.addColorStop(0, hit > 0 ? '#ffffff' : e.col0); rg.addColorStop(1, e.col1);
+    ctx.fillStyle = rg; ctx.beginPath();
+    const seg = 16;
+    for (let i = 0; i <= seg; i++) {
+      const a = i / seg * 6.283;
+      const rr = e.r * (1 + Math.sin(a * 3 + e.wob) * wobAmp + Math.sin(a * 5 - e.breath) * wobAmp * .5);
+      ctx[i ? 'lineTo' : 'moveTo'](Math.cos(a) * rr, Math.sin(a) * rr);
+    }
+    ctx.closePath(); ctx.fill();
+    // 眼睛
+    ctx.shadowBlur = 0;
+    const eo = e.r * 0.32, ey = -e.r * 0.1, er = e.r * (hit > 0 ? 0.26 : 0.2);
+    ctx.fillStyle = '#fff';
+    ctx.beginPath(); ctx.arc(-eo, ey, er, 0, 6.28); ctx.arc(eo, ey, er, 0, 6.28); ctx.fill();
+    ctx.fillStyle = '#1a0a2a';
+    const pk = hit > 0 ? 0 : Math.sin(e.breath * .5) * er * .2;
+    ctx.beginPath(); ctx.arc(-eo + pk, ey, er * .5, 0, 6.28); ctx.arc(eo + pk, ey, er * .5, 0, 6.28); ctx.fill();
+    // 受击惊恐嘴
+    if (hit > 0) { ctx.fillStyle = '#1a0a2a'; ctx.beginPath(); ctx.arc(0, e.r * 0.35, e.r * 0.18, 0, 6.28); ctx.fill(); }
+    ctx.restore();
+  }
+
+  function drawCart(cart) {
+    if (cart.dead) return;
+    const sk = skin();
+    for (let i = 0; i < cart.trail.length; i++) {
+      const tp = cart.trail[i], a = i / cart.trail.length;
+      ctx.globalAlpha = a * 0.4;
+      ctx.fillStyle = cart.splitGhost ? '#bfe9ff' : (sk.color === 'rainbow' ? `hsl(${(frame * 6 + i * 20) % 360},90%,68%)` : sk.glow);
+      ctx.beginPath(); ctx.arc(tp.x, tp.y, CFG.cartR * a * 0.85, 0, 6.28); ctx.fill();
+    }
+    ctx.globalAlpha = cart.splitGhost ? .85 : 1;
+    ctx.save(); ctx.shadowColor = sk.glow; ctx.shadowBlur = 12;
+    // 车厢
+    ctx.fillStyle = cart.splitGhost ? '#7fa8c8' : '#9b6b3a';
+    ctx.beginPath(); ctx.roundRect(cart.x - CFG.cartR, cart.y - 2, CFG.cartR * 2, CFG.cartR + 4, 5); ctx.fill();
+    ctx.restore();
+    ctx.font = `${CFG.cartR * 2}px serif`; ctx.textAlign = 'center'; ctx.fillText('🐹', cart.x, cart.y + 4);
+    if (invincibleT > 0) {
+      ctx.strokeStyle = `rgba(120,230,160,${.5 + Math.sin(frame * .3) * .3})`; ctx.lineWidth = 3;
+      ctx.beginPath(); ctx.arc(cart.x, cart.y, CFG.cartR + 6, 0, 6.28); ctx.stroke();
+    }
+    ctx.globalAlpha = 1;
+  }
+
+  function drawBoss() {
+    const yy = boss.y + Math.sin(boss.t * 2) * 4;
+    const hit = boss.hitT > 0 ? boss.hitT / .2 : 0;
+    const sc = 1 + hit * 0.12;
+    if (boss.kind === 'nightmare' && boss.phase === 2 && !boss.shieldBroken) {
+      ctx.strokeStyle = `rgba(130,160,255,${.5 + Math.sin(frame * .2) * .3})`; ctx.lineWidth = 4;
+      ctx.beginPath(); ctx.arc(boss.x, yy, boss.r + 10, 0, 6.28); ctx.stroke();
+    }
+    ctx.save(); ctx.translate(boss.x, yy); ctx.scale(sc, sc);
+    ctx.shadowColor = '#a050d0'; ctx.shadowBlur = 22;
+    const rg = ctx.createRadialGradient(-10, -10, 5, 0, 0, boss.r);
+    rg.addColorStop(0, hit > 0 ? '#fff' : '#6a2a7a'); rg.addColorStop(1, '#1a0a2a');
+    ctx.fillStyle = rg; ctx.beginPath();
+    const seg = 18;
+    for (let i = 0; i <= seg; i++) { const a = i / seg * 6.283, rr = boss.r * (1 + Math.sin(a * 4 + boss.t * 2) * 0.06); ctx[i ? 'lineTo' : 'moveTo'](Math.cos(a) * rr, Math.sin(a) * rr); }
+    ctx.closePath(); ctx.fill();
+    ctx.shadowBlur = 0; ctx.fillStyle = '#fff';
+    const eo = boss.r * 0.3, er = boss.r * 0.16;
+    ctx.beginPath(); ctx.arc(-eo, -boss.r * .1, er, 0, 6.28); ctx.arc(eo, -boss.r * .1, er, 0, 6.28); ctx.fill();
+    ctx.fillStyle = '#c01030';
+    ctx.beginPath(); ctx.arc(-eo, -boss.r * .1, er * .5, 0, 6.28); ctx.arc(eo, -boss.r * .1, er * .5, 0, 6.28); ctx.fill();
+    ctx.restore();
+    // Boss 血条
+    ctx.fillStyle = 'rgba(0,0,0,.35)'; ctx.fillRect(W * 0.15, 84, W * 0.7, 8);
+    ctx.fillStyle = '#ec4b6b'; ctx.fillRect(W * 0.15, 84, W * 0.7 * clamp(boss.hp / boss.maxHp, 0, 1), 8);
+    ctx.fillStyle = '#fff7e8'; ctx.font = '11px sans-serif'; ctx.textAlign = 'center';
+    ctx.fillText(`${boss.name}　P${boss.phase}`, W * 0.5, 78);
+  }
+
+  // —— 新手演示：U 型槽自动循环 ——
+  function drawTutorial(rt) {
+    const cx = W * 0.5, top = H * 0.30, depth = H * 0.16, halfW = W * 0.30;
+    const loop = (rt % 2.6) / 2.6;                 // 2.6s 循环
+    // U 型槽路径函数
+    const ux = u => cx - halfW + u * halfW * 2;
+    const uy = u => top + Math.sin(u * Math.PI) * 0 + (4 * (u - .5) * (u - .5)) * 0 + (1 - 4 * (u - .5) * (u - .5)) * -0 + depth * (1 - Math.cos((u - .5) * Math.PI)) * 0 + top * 0 + (top + depth * 4 * (u) * (1 - u));
+    // 画槽（发光）
+    ctx.save(); ctx.shadowColor = '#7fb6ff'; ctx.shadowBlur = 16;
+    ctx.strokeStyle = 'rgba(180,210,255,.9)'; ctx.lineWidth = 5; ctx.lineCap = 'round';
+    ctx.beginPath();
+    const drawTo = loop < .45 ? clamp(loop / .45, 0, 1) : 1;   // 前半段：画线动画
+    for (let u = 0; u <= drawTo; u += 0.03) { const x = ux(u), y = uy(u); if (u === 0) ctx.moveTo(x, y); else ctx.lineTo(x, y); }
+    ctx.stroke(); ctx.restore();
+    // 手
+    if (loop < .45) { const u = drawTo; ctx.font = '26px serif'; ctx.textAlign = 'center'; ctx.fillText('🖐️', ux(u) + 6, uy(u) - 10); }
+    // 演示矿车滑下加速
+    if (loop >= .45) {
+      const u = clamp((loop - .45) / .55, 0, 1);
+      // 用缓动模拟加速：u^1.7
+      const uu = Math.pow(u, 1.7);
+      const x = ux(uu), y = uy(uu);
+      ctx.save(); ctx.shadowColor = '#ffd27a'; ctx.shadowBlur = 14;
+      ctx.fillStyle = '#9b6b3a'; ctx.beginPath(); ctx.roundRect(x - 13, y - 2, 26, 17, 5); ctx.fill(); ctx.restore();
+      ctx.font = '24px serif'; ctx.textAlign = 'center'; ctx.fillText('🐹', x, y + 3);
+      if (u > .85) { ctx.font = '13px sans-serif'; ctx.fillStyle = '#ffe9c2'; ctx.fillText('顺坡加速！', x, y - 18); }
+    }
+    ctx.fillStyle = 'rgba(255,233,194,.9)'; ctx.font = 'bold 14px sans-serif'; ctx.textAlign = 'center';
+    ctx.fillText('↓ 画一道 U 型槽，矿车自动加速冲刺', cx, top - depth * 0.6 - 8);
+  }
+
+  // ========================== HUD ==========================
+  function updateBars() {
+    HUD.inkBar.style.width = clamp(ink / inkMax * 100, 0, 100) + '%';
+    HUD.inkWrap.classList.toggle('low', ink < inkMax * 0.25);
+    HUD.hpBar.style.width = clamp(hp / CFG.hp * 100, 0, 100) + '%';
+  }
+
+  // ========================== 主循环 ==========================
+  function loop(t) {
+    requestAnimationFrame(loop);
+    if (!lastT) lastT = t;
+    let realDt = Math.min((t - lastT) / 1000, 0.05); lastT = t;
+    frame++;
+    tutoT += realDt;
+
+    // 子弹时间
+    if (slowmo > 0) slowmo -= realDt;
+    const timeScale = slowmo > 0 ? 0.2 : 1;
+    const dt = realDt * timeScale;
+
+    // 衰减（用真实时间，手感稳定）
+    if (flash > 0) flash = Math.max(0, flash - realDt * 2);
+    if (shakeMag > 0) shakeMag = Math.max(0, shakeMag - realDt * 60);
+    if (comboPulse > 0) { comboPulse = Math.max(0, comboPulse - realDt * 4); comboBig.style.transform = `scale(${1 + comboPulse * 0.5})`; }
+
+    if (state === 'playing') {
+      const L = LEVELS[levelIdx];
+      if (infiniteInkT > 0) { infiniteInkT -= realDt; ink = inkMax; if (infiniteInkT <= 0) bulletTime = false; }
+      else ink = Math.min(inkMax, ink + CFG.inkRegen * (buffs.heal ? 1.4 : 1) * (L.mech.inkBoost || 1) * realDt);
+      if (invincibleT > 0) invincibleT -= realDt;
+      if (comboTimer > 0) { comboTimer -= realDt; if (comboTimer <= 0) { combo = 0; setComboDom(0); } }
+
+      for (const c of carts) stepCart(c, dt, L);
+      stepEnemies(dt, L);
+      stepBoss(dt);
+
+      for (let i = pickups.length - 1; i >= 0; i--) {
+        const p = pickups[i];
+        for (const c of carts) if (dist2(c.x, c.y, p.x, p.y) < (p.r + CFG.cartR) ** 2) {
+          ink = Math.min(inkMax, ink + 35); burst(p.x, p.y, '#8ec5ff', 8); beep(700, .1, 'sine');
+          pickups.splice(i, 1); break;
+        }
+      }
+      if (tut.on) updateTutorial(realDt);
+      updateBars(); checkInk(); checkClear();
+    }
+
+    // 时间相关对象（始终衰减）
+    for (let i = blackholes.length - 1; i >= 0; i--) { blackholes[i].life -= realDt; if (blackholes[i].life <= 0) blackholes.splice(i, 1); }
+    for (let i = rails.length - 1; i >= 0; i--) { if (rails[i].permanent) continue; if (rails[i].warn > 0) rails[i].warn -= realDt; rails[i].life -= realDt; if (rails[i].life <= 0) { evaporate(rails[i]); rails.splice(i, 1); } }
+    for (let i = bolts.length - 1; i >= 0; i--) { bolts[i].life -= realDt; if (bolts[i].life <= 0) bolts.splice(i, 1); }
+    for (let i = particles.length - 1; i >= 0; i--) {
+      const p = particles[i]; p.x += p.vx; p.y += p.vy;
+      if (p.kind !== 'droplet' && p.kind !== 'petal') p.vy += 0.05;
+      if (p.kind === 'petal') p.rot += p.vr || 0;
+      p.vx *= .96; p.life -= realDt; if (p.life <= 0) particles.splice(i, 1);
+    }
+
+    draw(tutoT);
+  }
+
+  // ========================== 结算 ==========================
+  function endGame(won) {
+    state = 'over'; setComboDom(0);
+    const earned = Math.max(10, totalScore + totalKills * 12 + levelsCleared * 40 + (won ? 200 : 0));
+    document.getElementById('overTitle').textContent = won ? '🏆 通关·梦魇缔造者已碎！' : '本局结束';
+    document.getElementById('overText').textContent =
+      `抵达第 ${levelsCleared} 关 · 撞碎梦魇 ${totalKills} 只 · 积分 ${Math.round(earned)}`;
+    document.getElementById('overVeil').classList.add('show');
+    beep(won ? 660 : 200, .4, 'triangle');
+    post('gameFinished', { completed: true, passed: won, earnedPoints: Math.round(earned),
+      level: levelsCleared, kills: totalKills, won, finishedAt: Date.now() });
+  }
+
+  // ========================== 皮肤 ==========================
+  function renderSkins() {
+    const row = document.getElementById('skinRow'); row.innerHTML = '';
+    SKINS.forEach(s => {
+      const el = document.createElement('div');
+      el.className = 'skinChip' + (s.id === skinId ? ' on' : '') + (s.locked ? ' locked' : '');
+      el.textContent = s.locked ? `🔒${s.name} ¥${s.price}` : `🖌️${s.name}`;
+      el.onclick = () => {
+        if (s.locked) { banner(`「${s.name}」需 ¥${s.price} 解锁（演示）`, 1500); return; }
+        skinId = s.id; renderSkins();
+      };
+      row.appendChild(el);
+    });
+  }
+
+  // ========================== 按钮 ==========================
+  document.getElementById('startBtn').onclick = () => {
+    ensureAudio();
+    document.getElementById('startVeil').classList.remove('show');
+    levelIdx = 0; hp = CFG.hp; totalKills = 0; totalScore = 0; levelsCleared = 0;
+    buffs = {}; usedRevive = false; couponSent = false;
+    nextLevelCardFor(0);
+  };
+  document.getElementById('levelBtn').onclick = () => {
+    document.getElementById('levelVeil').classList.remove('show');
+    startLevel(levelIdx); state = 'playing'; banner(LEVELS[levelIdx].name, 1800);
+    // 进入无底洞关：补一条 V 弹床教学（首次接触该机制）
+    if (LEVELS[levelIdx].mech.pit)
+      setTimeout(() => { if (state === 'playing') banner('⚠️ 底部是无底洞！画 V 形当弹床把墩弟弹回高空', 2600); }, 2000);
+  };
+  document.getElementById('reviveBtn').onclick = () => {
+    document.getElementById('reviveVeil').classList.remove('show');
+    usedRevive = true; infiniteInkT = 15; invincibleT = 15; ink = inkMax; bulletTime = false;
+    banner('🎬 15 秒无限墨水 + 锁血！逆天改命', 2000);
+    state = 'playing'; beep(523, .15); setTimeout(() => beep(784, .2), 150);
+  };
+  document.getElementById('giveupBtn').onclick = () => {
+    document.getElementById('reviveVeil').classList.remove('show'); bulletTime = false; endGame(false);
+  };
+  document.getElementById('restartBtn').onclick = () => {
+    document.getElementById('overVeil').classList.remove('show');
+    document.getElementById('startVeil').classList.add('show'); state = 'start';
+  };
+
+  // ========================== 启动 ==========================
+  resize(); renderSkins(); updateBars();
+  requestAnimationFrame(loop);
+  post('gameLoaded');
+  </script>
+</body>
+</html>

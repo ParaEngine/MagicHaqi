@@ -84,7 +84,7 @@ async function copyText(text) {
 }
 
 // ---------- SDK 加载（与 FamousPlanetGenerator 同模式） ----------
-const SDK_CDN_URL = 'https://cdn.keepwork.com/sdk/keepworkSDK.iife.js?v=20260619a';
+const SDK_CDN_URL = 'https://cdn.keepwork.com/sdk/keepworkSDK.iife.js?v=20260715a';
 const sdkLoadTimeoutMs = 8000;
 
 function withTimeout(promise, ms, label) {
@@ -874,18 +874,25 @@ async function runAiPetPrompt() {
 // ---------- 登录 / 模型 / Workspace ----------
 function getEnabledLocalModels(category) {
     const sdk = state.sdk || window.keepwork;
-    return sdk?.localAPIKeySettings?.listModels ? sdk.localAPIKeySettings.listModels(category).filter(model => model.enabled !== false) : [];
+    const apiKeySettings = sdk?.apiKeySettings || sdk?.localAPIKeySettings;
+    return apiKeySettings?.listModels ? apiKeySettings.listModels(category).filter(model => model.enabled !== false) : [];
 }
 
 async function populateChatModelDropdown() {
     const sdk = state.sdk || window.keepwork;
+    const apiKeySettings = sdk?.apiKeySettings || sdk?.localAPIKeySettings;
     const select = $('chatModel');
-    if (!sdk?.localAPIKeySettings?.listModels) {
+    const picker = $('chatModelPicker');
+    if (!apiKeySettings?.listModels) {
         select.innerHTML = '<option value="">等待 SDK 加载...</option>';
         select.disabled = true;
+        picker.disabled = true;
         return;
     }
-    await sdk.localAPIKeySettings.load?.();
+    await apiKeySettings.load?.();
+    if (!apiKeySettings.listModels('Chat').some(model => model.enabled !== false)) {
+        try { await apiKeySettings.refreshModels?.('keepwork'); } catch (_) {}
+    }
     const models = getEnabledLocalModels('Chat');
     select.innerHTML = models.length
         ? models.map(model => {
@@ -895,7 +902,27 @@ async function populateChatModelDropdown() {
         : '<option value="">没有本地聊天模型</option>';
     select.disabled = !models.length;
     if (state.lastChatModel && models.some(model => (model.name || model.modelId || '') === state.lastChatModel)) select.value = state.lastChatModel;
-    select.onchange = () => { state.lastChatModel = select.value; saveLocalSettings(); };
+    picker.disabled = !models.length && !apiKeySettings.showModelPicker;
+    picker.querySelector('span').textContent = select.value || 'No Chat models';
+    select.onchange = () => { state.lastChatModel = select.value; picker.querySelector('span').textContent = select.value || 'No Chat models'; saveLocalSettings(); };
+}
+
+function openChatModelPicker() {
+    const sdk = state.sdk || window.keepwork;
+    const apiKeySettings = sdk?.apiKeySettings || sdk?.localAPIKeySettings;
+    if (!apiKeySettings?.showModelPicker) return setStatus($('loginState'), '当前 SDK 不支持模型选择窗口。', 'error');
+    const select = $('chatModel');
+    const picker = $('chatModelPicker');
+    apiKeySettings.showModelPicker({
+        anchor: picker,
+        category: 'Chat',
+        selectedModel: select.value,
+        onSelect: model => {
+            if (![...select.options].some(option => option.value === model)) select.add(new Option(model, model));
+            select.value = model;
+            select.dispatchEvent(new Event('change', { bubbles: true }));
+        },
+    });
 }
 
 async function refreshLoginState() {
@@ -921,9 +948,12 @@ async function openLoginOrProfile() {
     const sdk = state.sdk || window.keepwork;
     if (!sdk) return;
     if (!sdk.token) {
-        if (sdk.loginWindow?.show) sdk.loginWindow.show({ onLogin: refreshLoginState });
-        else if (sdk.login) await sdk.login();
-        setTimeout(refreshLoginState, 600);
+        try {
+            if (typeof sdk.showLoginWindow === 'function') await sdk.showLoginWindow({ title: 'Zoo Encyclopedia Maker 登录' });
+            else if (sdk.loginWindow?.show) await new Promise(resolve => sdk.loginWindow.show({ onLogin: resolve, onClose: resolve }));
+            else if (sdk.login) await sdk.login();
+        } catch (_) {}
+        await refreshLoginState();
         return;
     }
     if (typeof sdk.showProfileWindow === 'function') {
@@ -988,8 +1018,10 @@ function bindEvents() {
     $('btnCopyPetPrompt').onclick = async () => { await copyText($('petPromptOut').value); setStatus($('runStatus'), '已复制宠物 Prompt。', 'ok'); };
     $('btnCdnConfig').onclick = openCdnConfigDialog;
     $('btnWorkspace').onclick = openWorkspaceViewer;
+    $('chatModelPicker').onclick = openChatModelPicker;
     $('btnLocalApi').onclick = async () => {
-        const settings = (state.sdk || window.keepwork)?.localAPIKeySettings;
+        const sdk = state.sdk || window.keepwork;
+        const settings = sdk?.apiKeySettings || sdk?.localAPIKeySettings;
         if (!settings?.show) return setStatus($('loginState'), '当前 SDK 不支持本地 API Key 设置。', 'error');
         await settings.load?.();
         settings.show({

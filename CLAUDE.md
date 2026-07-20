@@ -6,6 +6,8 @@ MagicHaqi (蛋蛋星球) is a mobile-first H5 virtual-pet game: pure ES Module +
 
 ## Working in this repo
 
+🚫 **NEVER use a git worktree for this repo.** MagicHaqi lives inside — and is managed by — the parent `maisi` repo; its own GitHub repo is **backup only**. Work directly in this checkout; do not create or switch to a worktree.
+
 🚫 **NEVER run `npm run build`, `vite build`, `npm run build 2`, or any bundle/compile command** to develop or to verify a change. The app does **not** need a build step — it runs straight from the browser.
 
 To check your work: open `MagicHaqi.html` in a browser (VS Code Live Preview) or hit the local dev server. Do **not** start a server "to test"; Live Preview / opening the file is enough.
