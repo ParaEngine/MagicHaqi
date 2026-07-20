@@ -71,6 +71,8 @@
       .field-preview-action { @apply min-h-0 w-auto border-0 bg-transparent p-0 text-[11px] font-bold text-sky-700 hover:border-transparent hover:bg-transparent hover:underline; }
       .npc-marker { position: absolute; transform: translate(-50%, -50%); width: 22px; height: 22px; display: grid; place-items: center; font-size: 15px; line-height: 1; filter: drop-shadow(0 1px 3px rgb(15 23 42 / .5)); background-size: contain; background-repeat: no-repeat; background-position: center; pointer-events: none; }
       .npc-marker-active { outline: 3px solid #10b981; box-shadow: 0 2px 10px rgb(16 185 129 / .5); z-index: 2; }
+      .area-link-marker { position: absolute; transform: translate(-50%, -50%); display: flex; align-items: center; min-width: 54px; max-width: 130px; padding: 3px 7px; border: 2px solid rgb(255 255 255 / .92); border-radius: 999px; color: white; background: linear-gradient(180deg,#22c55e,#15803d); box-shadow: 0 2px 7px rgb(20 83 45 / .4); font-size: 10px; font-weight: 900; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; pointer-events: none; z-index: 3; }
+      .area-link-marker-active { outline: 3px solid #f59e0b; outline-offset: 2px; }
       .modal-window.npc-placer-window { width: min(1300px, 96vw); max-height: 96vh; height: min(92vh, 880px); }
       .npc-placer-body { display: flex; flex-direction: column; align-items: center; gap: 8px; min-height: 0; }
       /* 与游戏 field 保持同一坐标画布：默认 10m × 3m；图片更宽时由 JS 按图片有效宽高比扩展。
@@ -87,6 +89,7 @@
       .npc-info strong { @apply overflow-hidden text-ellipsis whitespace-nowrap text-[12px]; }
       .npc-actions { @apply flex shrink-0 flex-wrap gap-1; }
       .npc-actions button { @apply text-[11px]; }
+      .area-link-icon { @apply grid h-8 w-8 shrink-0 place-items-center rounded-full bg-emerald-100 text-base; }
       .npc-icon-row { @apply flex items-center gap-1.5; }
       .npc-icon-row input { @apply flex-1; }
       /* 对话行删除按钮：在 .row（grid-cols-2）里默认会被拉伸铺满整格，这里改回按内容宽度、靠左对齐。 */
@@ -319,6 +322,7 @@
       { slotId: 'terrain_slot_6', label: '左胡子' },
       { slotId: 'land', label: '中胡子' },
       { slotId: 'terrain_slot_7', label: '右胡子' },
+      { slotId: 'terrain_slot_8', label: '额心' },
     ];
     const FIELD_TYPES = [
       { id: 'land', name: '陆地' },
@@ -357,7 +361,7 @@
     };
 
     const $ = (id) => document.getElementById(id);
-    const state = { sdk: null, records: [], indexMeta: { version: 1, planets: [] }, selectedId: '', scenes: [], activeFieldIndex: 0, previewMode: 'planet', fields: FIELD_SLOTS.map(() => ({})), lastChatModel: '', newPlanetPromptDirty: false, workspaceViewer: null, fieldNpcs: FIELD_SLOTS.map(() => []) };
+    const state = { sdk: null, records: [], indexMeta: { version: 1, planets: [] }, selectedId: '', scenes: [], activeFieldIndex: 0, previewMode: 'planet', fields: FIELD_SLOTS.map(() => ({})), lastChatModel: '', newPlanetPromptDirty: false, workspaceViewer: null, fieldNpcs: FIELD_SLOTS.map(() => []), fieldAreaLinks: FIELD_SLOTS.map(() => []) };
 
     function escapeHtml(value) {
       const div = document.createElement('div');
@@ -858,6 +862,28 @@
         });
     }
 
+    function normalizeAreaLink(raw = {}, index = 0) {
+      return {
+        id: safeId(raw.id, `area_link_${index + 1}`),
+        label: String(raw.label || raw.name || '').trim().slice(0, 24) || `跳转点${index + 1}`,
+        icon: String(raw.icon || '🚪').trim().slice(0, 80) || '🚪',
+        targetFieldId: String(raw.targetFieldId || raw.fieldId || '').trim().slice(0, 64),
+        url: String(raw.url || raw.href || '').trim().slice(0, 500),
+        x: clampPercent(raw.x, 50), y: clampPercent(raw.y, 50),
+      };
+    }
+
+    function normalizeFieldAreaLinks(value) {
+      return (Array.isArray(value) ? value : []).map((link, index) => normalizeAreaLink(link, index));
+    }
+
+    function compactFieldAreaLinks(value) {
+      return normalizeFieldAreaLinks(value).filter(link => link.targetFieldId || link.url).map(link => ({
+        id: link.id, label: link.label, ...(link.icon && link.icon !== '🚪' ? { icon: link.icon } : {}),
+        ...(link.targetFieldId ? { targetFieldId: link.targetFieldId } : {}), ...(link.url ? { url: link.url } : {}), x: link.x, y: link.y,
+      }));
+    }
+
     function normalizePlanetPets(value) {
       const raw = Array.isArray(value) ? value : String(value || '').split(/[，,、\s]+/);
       return [...new Set(raw
@@ -971,6 +997,7 @@
             particles: normalizeParticles(field.particles),
             bgMusic: String(field.bgMusic || ''),
             npcs: normalizeFieldNpcs(field.npcs),
+            areaLinks: normalizeFieldAreaLinks(field.areaLinks),
           };
         }),
       };
@@ -1007,6 +1034,8 @@
           if (field.bgMusic) result.bgMusic = field.bgMusic;
           const npcs = compactFieldNpcs(field.npcs);
           if (npcs.length) result.npcs = npcs;
+          const areaLinks = compactFieldAreaLinks(field.areaLinks);
+          if (areaLinks.length) result.areaLinks = areaLinks;
           return result;
         }),
       };
@@ -1138,6 +1167,7 @@ ${currentIndent}}`;
             particles: normalizeParticles(field.particles),
             bgMusic: field.bgMusic || '',
             npcs: state.fieldNpcs[index] || [],
+            areaLinks: state.fieldAreaLinks[index] || [],
           };
         }),
       });
@@ -1169,6 +1199,7 @@ ${currentIndent}}`;
       $('onboardingMinigame').value = onboarding.minigame;
       $('onboardingProgressKey').value = onboarding.progressKey === safePlanet.id ? '' : onboarding.progressKey;
       state.fieldNpcs = safePlanet.fields.map(field => normalizeFieldNpcs(field.npcs));
+      state.fieldAreaLinks = safePlanet.fields.map(field => normalizeFieldAreaLinks(field.areaLinks));
       state.fields = safePlanet.fields.map(field => ({
         name: field.name,
         typeId: field.typeId,
@@ -1249,6 +1280,10 @@ ${currentIndent}}`;
             </div>
             <div class="npc-list" data-npc-list="${index}">${renderNpcListItems(index)}</div>
           </div>
+          <div class="npc-section">
+            <div class="field-head"><strong class="field-title">跳转点（场景 / URL）</strong><button type="button" data-add-area-link="${index}">+ 新增跳转点</button></div>
+            <div class="npc-list" data-area-link-list="${index}">${renderAreaLinkListItems(index)}</div>
+          </div>
         </article>`;
       $('fieldList').querySelectorAll('input, textarea, select').forEach(input => input.addEventListener('input', () => { syncActiveFieldFromDom(); updateOutput(); }));
       $('btnPickScene').onclick = () => openScenePicker(index);
@@ -1312,6 +1347,65 @@ ${currentIndent}}`;
     function refreshNpcList(fieldIndex) {
       const el = $('fieldList').querySelector(`[data-npc-list="${fieldIndex}"]`);
       if (el) { el.innerHTML = renderNpcListItems(fieldIndex); fixNpcIconAspects(el); }
+    }
+
+    function renderAreaLinkListItems(fieldIndex) {
+      const list = state.fieldAreaLinks[fieldIndex] || [];
+      if (!list.length) return '<div class="hint">暂无跳转点。可添加类似特殊 NPC 的入口，链接到场景或 URL。</div>';
+      return list.map((link, linkIndex) => `<div class="npc-item">
+        <span class="area-link-icon">${escapeHtml(link.icon || '🚪')}</span>
+        <div class="npc-info"><strong>${escapeHtml(link.label)}</strong><span class="hint">(${link.x.toFixed(0)}%, ${link.y.toFixed(0)}%) · ${escapeHtml(link.url || (link.targetFieldId ? `场景 ${link.targetFieldId}` : '未设置目标'))}</span></div>
+        <div class="npc-actions"><button type="button" data-place-area-link="${fieldIndex}:${linkIndex}">摆放</button><button type="button" data-edit-area-link="${fieldIndex}:${linkIndex}">编辑</button><button type="button" class="danger" data-delete-area-link="${fieldIndex}:${linkIndex}">删</button></div>
+      </div>`).join('');
+    }
+
+    function refreshAreaLinkList(fieldIndex) {
+      const el = $('fieldList').querySelector(`[data-area-link-list="${fieldIndex}"]`);
+      if (el) el.innerHTML = renderAreaLinkListItems(fieldIndex);
+    }
+
+    function addAreaLink(fieldIndex) {
+      const list = state.fieldAreaLinks[fieldIndex] || (state.fieldAreaLinks[fieldIndex] = []);
+      list.push(normalizeAreaLink({ label: `跳转点${list.length + 1}` }, list.length));
+      refreshAreaLinkList(fieldIndex); updateOutput(); openAreaLinkEditor(`${fieldIndex}:${list.length - 1}`);
+    }
+
+    function deleteAreaLink(key) {
+      const { fieldIndex, npcIndex } = parseNpcKey(key);
+      (state.fieldAreaLinks[fieldIndex] || []).splice(npcIndex, 1); refreshAreaLinkList(fieldIndex); updateOutput();
+    }
+
+    function openAreaLinkEditor(key) {
+      const { fieldIndex, npcIndex } = parseNpcKey(key);
+      const link = (state.fieldAreaLinks[fieldIndex] || [])[npcIndex]; if (!link) return;
+      const overlay = document.createElement('div'); overlay.className = 'modal-overlay';
+      overlay.innerHTML = `<div class="modal-window" role="dialog" aria-modal="true"><div class="modal-titlebar"><strong>编辑跳转点 · ${escapeHtml(FIELD_SLOTS[fieldIndex]?.label || '')}</strong><button id="closeAreaLinkEditor">关闭</button></div><div class="modal-body modal-stack">
+        <div class="row"><label>名称 <input id="areaLinkLabel" maxlength="24" value="${escapeHtml(link.label)}"></label><label>图标（emoji） <input id="areaLinkIcon" maxlength="80" value="${escapeHtml(link.icon || '🚪')}"></label></div>
+        <div class="hint">位置 (${link.x.toFixed(0)}%, ${link.y.toFixed(0)}%)；保存后点“摆放”可在场景大图调整。</div>
+        <label>目标场景 <select id="areaLinkTarget"><option value="">不跳场景</option>${FIELD_SLOTS.map((slot, index) => `<option value="${index + 1}" ${link.targetFieldId === String(index + 1) ? 'selected' : ''}>${index + 1}. ${escapeHtml(state.fields[index]?.name || slot.label)}</option>`).join('')}</select></label>
+        <label>URL（填写后优先于目标场景） <input id="areaLinkUrl" maxlength="500" value="${escapeHtml(link.url)}" placeholder="https://example.com/page"></label>
+        <div class="hint">URL 仅接受 http(s) 地址，将在新窗口打开。</div><div class="toolbar"><button id="saveAreaLink" class="success">保存</button></div>
+      </div></div>`;
+      document.body.appendChild(overlay); overlay.addEventListener('click', e => { if (e.target === overlay) overlay.remove(); });
+      overlay.querySelector('#closeAreaLinkEditor').onclick = () => overlay.remove();
+      overlay.querySelector('#saveAreaLink').onclick = () => {
+        link.label = overlay.querySelector('#areaLinkLabel').value.trim().slice(0, 24) || link.label;
+        link.icon = overlay.querySelector('#areaLinkIcon').value.trim().slice(0, 80) || '🚪';
+        link.targetFieldId = overlay.querySelector('#areaLinkTarget').value; link.url = overlay.querySelector('#areaLinkUrl').value.trim().slice(0, 500);
+        overlay.remove(); refreshAreaLinkList(fieldIndex); updateOutput();
+      };
+    }
+
+    function openAreaLinkPlacer(key) {
+      const { fieldIndex, npcIndex } = parseNpcKey(key);
+      const link = (state.fieldAreaLinks[fieldIndex] || [])[npcIndex]; if (!link) return;
+      const scene = sceneFromField(fieldIndex); const overlay = document.createElement('div'); overlay.className = 'modal-overlay';
+      overlay.innerHTML = `<div class="modal-window npc-placer-window"><div class="modal-titlebar"><strong>摆放「${escapeHtml(link.label)}」</strong><button id="closeAreaLinkPlacer" class="success">完成</button></div><div class="modal-body npc-placer-body"><div class="hint">点击场景设置跳转点位置。</div><div class="npc-placer-art" id="areaLinkPlacerArt" ${fieldPreviewBackgroundAttrs(scene)}>${renderSceneParticles(scene, { density: 'field' })}</div></div></div>`;
+      document.body.appendChild(overlay); setupLazySceneBackgrounds(overlay); const art = overlay.querySelector('#areaLinkPlacerArt');
+      const bgIcon = parseIconSource(scene?.background?.imageUrl || scene?.imageUrl || ''); if (bgIcon.src && !bgIcon.rect) art.classList.add('npc-placer-full-image');
+      const renderMarkers = () => { art.querySelectorAll('.area-link-marker').forEach(el => el.remove()); (state.fieldAreaLinks[fieldIndex] || []).forEach((item, idx) => { const marker = document.createElement('span'); marker.className = `area-link-marker${idx === npcIndex ? ' area-link-marker-active' : ''}`; marker.style.left = `${item.x}%`; marker.style.top = `${item.y}%`; marker.textContent = `${item.icon || '🚪'} ${item.label}`; art.appendChild(marker); }); };
+      renderMarkers(); art.onclick = e => { const rect = art.getBoundingClientRect(); link.x = clampPercent((e.clientX - rect.left) / rect.width * 100); link.y = clampPercent((e.clientY - rect.top) / rect.height * 100); renderMarkers(); };
+      const done = () => { overlay.remove(); refreshAreaLinkList(fieldIndex); updateOutput(); }; overlay.querySelector('#closeAreaLinkPlacer').onclick = done; overlay.addEventListener('click', e => { if (e.target === overlay) done(); });
     }
 
     function addNpc(fieldIndex) {
@@ -1437,6 +1531,14 @@ ${currentIndent}}`;
       $('fieldList').addEventListener('click', (e) => {
         const addBtn = e.target.closest('[data-add-npc]');
         if (addBtn) { addNpc(Number(addBtn.dataset.addNpc) || 0); return; }
+        const addAreaLinkBtn = e.target.closest('[data-add-area-link]');
+        if (addAreaLinkBtn) { addAreaLink(Number(addAreaLinkBtn.dataset.addAreaLink) || 0); return; }
+        const placeAreaLinkBtn = e.target.closest('[data-place-area-link]');
+        if (placeAreaLinkBtn) { openAreaLinkPlacer(placeAreaLinkBtn.dataset.placeAreaLink); return; }
+        const editAreaLinkBtn = e.target.closest('[data-edit-area-link]');
+        if (editAreaLinkBtn) { openAreaLinkEditor(editAreaLinkBtn.dataset.editAreaLink); return; }
+        const deleteAreaLinkBtn = e.target.closest('[data-delete-area-link]');
+        if (deleteAreaLinkBtn) { deleteAreaLink(deleteAreaLinkBtn.dataset.deleteAreaLink); return; }
         const placeBtn = e.target.closest('[data-place-npc]');
         if (placeBtn) { openNpcPlacer(placeBtn.dataset.placeNpc); return; }
         const editBtn = e.target.closest('[data-edit-npc]');
@@ -1820,6 +1922,10 @@ ${currentIndent}}`;
             fitIconCropAspectRatio(marker, npc.icon, size);
           } else marker.textContent = npc.icon || '🧑';
           art.appendChild(marker);
+        });
+        (state.fieldAreaLinks[index] || []).forEach(link => {
+          const marker = document.createElement('span'); marker.className = 'area-link-marker'; marker.style.left = `${link.x}%`; marker.style.top = `${link.y}%`;
+          marker.textContent = `${link.icon || '🚪'} ${link.label}`; marker.title = link.url || `场景 ${link.targetFieldId}`; art.appendChild(marker);
         });
       });
     }

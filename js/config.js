@@ -636,11 +636,13 @@ export function normalizeFieldAreaLinks(value) {
         .map((link, index) => ({
             id: String(link?.id || `area_link_${index + 1}`).trim() || `area_link_${index + 1}`,
             label: String(link?.label || link?.name || '').trim().slice(0, 24),
+            icon: String(link?.icon || '🚪').trim().slice(0, 80) || '🚪',
             targetFieldId: String(link?.targetFieldId || link?.fieldId || '').trim(),
+            url: String(link?.url || link?.href || '').trim().slice(0, 500),
             x: Math.max(0, Math.min(100, Number(link?.x) || 0)),
             y: Math.max(0, Math.min(100, Number(link?.y) || 0)),
         }))
-        .filter(link => link.label && link.targetFieldId);
+        .filter(link => link.label && (link.targetFieldId || /^https?:\/\//i.test(link.url)));
 }
 
 /** 取得某个星球的新手指引配置；planetIdOrEntry 可传 id 或已解析的条目对象。 */

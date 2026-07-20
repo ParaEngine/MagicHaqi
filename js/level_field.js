@@ -1580,7 +1580,7 @@ function recordChongqingNpcTalk(npc, fieldId) {
 }
 
 function fieldAreaLinkHtml(link) {
-    return `<button type="button" class="field-area-link" data-area-target-field="${escapeHtml(link.targetFieldId)}" style="left:${Number(link.x) || 0}%;top:${Number(link.y) || 0}%">${escapeHtml(link.label)}</button>`;
+    return `<button type="button" class="field-area-link" data-area-target-field="${escapeHtml(link.targetFieldId || '')}" data-area-url="${escapeHtml(link.url || '')}" style="left:${Number(link.x) || 0}%;top:${Number(link.y) || 0}%">${link.icon ? `<span aria-hidden="true">${escapeHtml(link.icon)}</span>` : ''}${escapeHtml(link.label)}</button>`;
 }
 
 // NPC 奖励和盲盒小游戏使用同源 localStorage。领取键包含蛋的 startedAt/code，兑换新蛋后可重新领取。
@@ -2750,6 +2750,11 @@ export const fieldLevel = {
             el.onclick = (e) => {
                 e.preventDefault();
                 e.stopPropagation();
+                const url = String(el.dataset.areaUrl || '').trim();
+                if (/^https?:\/\//i.test(url)) {
+                    window.open(url, '_blank', 'noopener,noreferrer');
+                    return;
+                }
                 const targetFieldId = el.dataset.areaTargetField;
                 if (fields.some(field => field.id === targetFieldId)) setCurrentField(targetFieldId);
             };
