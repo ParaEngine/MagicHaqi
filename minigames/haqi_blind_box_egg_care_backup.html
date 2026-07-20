@@ -371,6 +371,33 @@
       transition: width .5s ease;
     }
 
+    .heat-card {
+      display: none;
+      width: min(92vw, 410px);
+      margin: 10px auto 0;
+      padding: 11px 15px 12px;
+      border: 3px solid rgba(255,255,255,.92);
+      border-radius: 22px;
+      background: rgba(255,255,255,.8);
+      box-shadow: 0 9px 24px rgba(103,70,112,.13);
+    }
+    .heat-card.show { display: block; animation: riseIn .5s .06s ease both; }
+    .heat-head { display: flex; align-items: center; justify-content: space-between; gap: 10px; }
+    .heat-label { color: #785e76; font-size: 13px; font-weight: 900; text-align: left; }
+    .heat-label small { display: block; margin-top: 2px; color: #ae8da7; font-size: 10px; }
+    .heat-value { color: #ef5f65; font-size: 20px; font-weight: 1000; font-variant-numeric: tabular-nums; }
+    .thermometer { position: relative; height: 18px; margin-top: 8px; padding: 3px; border: 2px solid #f2b7ae; border-radius: 999px; background: #f9e9e6; }
+    .thermometer::after { content: "🔥"; position: absolute; right: -7px; top: 50%; font-size: 21px; transform: translateY(-52%); filter: drop-shadow(0 2px 2px #fff); }
+    .heat-bar { width: 0; height: 100%; border-radius: inherit; background: linear-gradient(90deg,#ffd85a,#ff9b62,#f04e62); box-shadow: 0 0 9px rgba(255,93,79,.48); transition: width .12s ease-out; }
+    .shake-btn { margin-top: 8px; padding: 6px 13px; border: 0; border-radius: 999px; color: #fff; background: linear-gradient(135deg,#ff9b62,#e84f7c); box-shadow: 0 3px 0 #bd4266; font-size: 11px; font-weight: 900; cursor: pointer; }
+    .shake-btn:disabled { opacity: .55; cursor: default; box-shadow: none; }
+    .heat-card.complete .thermometer { border-color: #ff815f; }
+    .heat-card.complete .heat-value { color: #4faf8c; }
+
+    #particleCanvas { position: fixed; z-index: 8; inset: 0; width: 100%; height: 100%; pointer-events: none; }
+    .flash { position: fixed; z-index: 50; inset: 0; background: #fff; opacity: 0; pointer-events: none; }
+    .flash.fire { animation: screenFlash .75s ease-out; }
+
     .care-panel {
       display: none;
       width: min(92vw, 410px);
@@ -482,6 +509,7 @@
     @keyframes inputNudge { 0%,100% { transform: translateX(0); } 25% { transform: translateX(-7px); } 75% { transform: translateX(7px); } }
     @keyframes careBounce { 0%,100% { transform: scale(1) rotate(0); } 35% { transform: scale(1.12) rotate(-7deg); } 70% { transform: scale(.96) rotate(5deg); } }
     @keyframes carePop { 0% { opacity: 0; transform: translateY(15px) scale(.6); } 25% { opacity: 1; transform: translateY(0) scale(1.1); } 100% { opacity: 0; transform: translateY(-55px) scale(.9); } }
+    @keyframes screenFlash { 0% { opacity: 0; } 18% { opacity: .98; } 38% { opacity: .18; } 56% { opacity: .85; } 100% { opacity: 0; } }
 
     .nudge { animation: inputNudge .25s ease 2; }
     .hidden { display: none !important; }
@@ -554,6 +582,14 @@
         <div id="timer" class="timer">02:00:00</div>
         <div class="hatch-progress" aria-label="孵化进度"><div id="progressBar" class="hatch-progress-bar"></div></div>
       </div>
+      <div id="heatCard" class="heat-card">
+        <div class="heat-head">
+          <div class="heat-label">🌡️ 爱心温度注入<small id="heatHint">疯狂点击屏幕，或摇晃手机！</small></div>
+          <div id="heatValue" class="heat-value">0%</div>
+        </div>
+        <div class="thermometer" role="progressbar" aria-label="爱心温度" aria-valuemin="0" aria-valuemax="100" aria-valuenow="0"><div id="heatBar" class="heat-bar"></div></div>
+        <button id="shakeButton" class="shake-btn" type="button">📱 开启摇一摇</button>
+      </div>
       <div id="carePanel" class="care-panel">
         <div class="care-title">每一次关爱，都能让宝宝更快醒来 💕</div>
         <div id="careActions" class="care-actions">
@@ -573,12 +609,17 @@
 
   <div id="toast" class="toast" role="status" aria-live="assertive"></div>
   <div id="confetti" class="confetti" aria-hidden="true"></div>
+  <canvas id="particleCanvas" aria-hidden="true"></canvas>
+  <div id="flash" class="flash" aria-hidden="true"></div>
 
   <script>
   game_config = {
     difficulty: "normal",
     activationCodeLength: 6,
     hatchDurationSeconds: 7200,
+    heatBoostSeconds: 2700,
+    heatPerTap: 3.5,
+    heatPerShake: 7,
     careActions: {
       stroke: { seconds: 300, maxUses: 3 },
       sing: { seconds: 600, maxUses: 3 },
@@ -608,6 +649,12 @@
     const timerCard = document.getElementById("timerCard");
     const timer = document.getElementById("timer");
     const progressBar = document.getElementById("progressBar");
+    const heatCard = document.getElementById("heatCard");
+    const heatBar = document.getElementById("heatBar");
+    const heatValue = document.getElementById("heatValue");
+    const heatHint = document.getElementById("heatHint");
+    const shakeButton = document.getElementById("shakeButton");
+    const thermometer = heatCard.querySelector(".thermometer");
     const carePanel = document.getElementById("carePanel");
     const careActions = document.getElementById("careActions");
     const careSummary = document.getElementById("careSummary");
@@ -618,10 +665,17 @@
     const stageCopy = document.getElementById("stageCopy");
     const toast = document.getElementById("toast");
     const confetti = document.getElementById("confetti");
+    const particleCanvas = document.getElementById("particleCanvas");
+    const particleContext = particleCanvas.getContext("2d");
+    const flash = document.getElementById("flash");
     let timerId = 0;
     let toastId = 0;
     let hatched = false;
     let activeState = null;
+    let lastShakeAt = 0;
+    let lastOrientation = null;
+    let particleFrame = 0;
+    const particles = [];
 
     const AccountPet = {
       requestId: "",
@@ -701,6 +755,8 @@
         if (!parsed || !Number.isFinite(Number(parsed.startedAt))) return null;
         parsed.acceleratedMs = Math.max(0, Number(parsed.acceleratedMs) || 0);
         parsed.actionUses = parsed.actionUses && typeof parsed.actionUses === "object" ? parsed.actionUses : {};
+        parsed.heat = Math.max(0, Math.min(100, Number(parsed.heat) || 0));
+        parsed.heatInjected = Boolean(parsed.heatInjected);
         return parsed;
       } catch (_) {
         return null;
@@ -708,7 +764,7 @@
     }
 
     function saveState(startedAt, code) {
-      const state = { startedAt, code, acceleratedMs: 0, actionUses: {}, version: 2 };
+      const state = { startedAt, code, acceleratedMs: 0, actionUses: {}, heat: 0, heatInjected: false, version: 3 };
       persistState(state);
       return state;
     }
@@ -740,6 +796,7 @@
       blindBox.classList.add("hidden");
       eggButton.classList.add("show");
       timerCard.classList.add("show");
+      heatCard.classList.add("show");
       carePanel.classList.add("show");
       stageTitle.textContent = "宠物蛋领取成功！";
       stageCopy.textContent = "轻轻守护它，宝宝正在甜甜地睡觉";
@@ -774,6 +831,96 @@
       window.setTimeout(() => pop.remove(), 950);
     }
 
+    function resizeParticleCanvas() {
+      const ratio = Math.min(2, window.devicePixelRatio || 1);
+      particleCanvas.width = Math.round(innerWidth * ratio);
+      particleCanvas.height = Math.round(innerHeight * ratio);
+      particleContext.setTransform(ratio, 0, 0, ratio, 0, 0);
+    }
+
+    function spawnParticles(amount = 5) {
+      const rect = eggButton.getBoundingClientRect();
+      const centerX = rect.left + rect.width / 2;
+      const centerY = rect.top + rect.height * .52;
+      for (let i = 0; i < amount; i += 1) {
+        particles.push({
+          x: centerX + (Math.random() - .5) * rect.width * .7,
+          y: centerY + (Math.random() - .5) * rect.height * .45,
+          vx: (Math.random() - .5) * 1.8,
+          vy: -1.2 - Math.random() * 2.1,
+          life: 1,
+          decay: .018 + Math.random() * .018,
+          size: 8 + Math.random() * 12,
+          glyph: Math.random() < .48 ? "♥" : "✦",
+          color: Math.random() < .5 ? "#ff668f" : "#ffb52e"
+        });
+      }
+      if (!particleFrame) particleFrame = requestAnimationFrame(drawParticles);
+    }
+
+    function drawParticles() {
+      particleContext.clearRect(0, 0, innerWidth, innerHeight);
+      for (let i = particles.length - 1; i >= 0; i -= 1) {
+        const p = particles[i];
+        p.x += p.vx; p.y += p.vy; p.vy -= .015; p.life -= p.decay;
+        if (p.life <= 0) { particles.splice(i, 1); continue; }
+        particleContext.globalAlpha = p.life;
+        particleContext.fillStyle = p.color;
+        particleContext.font = `900 ${p.size}px Arial`;
+        particleContext.fillText(p.glyph, p.x, p.y);
+      }
+      particleContext.globalAlpha = 1;
+      particleFrame = particles.length ? requestAnimationFrame(drawParticles) : 0;
+    }
+
+    function joltEgg(intensity = 1) {
+      const shell = eggButton.querySelector(".egg-shell");
+      const x = (Math.random() - .5) * 15 * intensity;
+      const y = (Math.random() - .5) * 7 * intensity;
+      const rotation = (Math.random() - .5) * 13 * intensity;
+      shell.style.transition = "transform .045s linear";
+      shell.style.transform = `translate(${x}px,${y}px) rotate(${rotation}deg) scale(${1 + Math.random() * .025})`;
+      clearTimeout(joltEgg.resetId);
+      joltEgg.resetId = window.setTimeout(() => { shell.style.transform = ""; }, 75);
+    }
+
+    function renderHeat(state) {
+      const value = state.heatInjected ? 100 : Math.max(0, Math.min(100, Number(state.heat) || 0));
+      heatBar.style.width = `${value}%`;
+      heatValue.textContent = state.heatInjected ? "成功！" : `${Math.round(value)}%`;
+      thermometer.setAttribute("aria-valuenow", String(Math.round(value)));
+      heatCard.classList.toggle("complete", state.heatInjected);
+      heatHint.textContent = state.heatInjected ? `温度已注入，额外加速 ${Math.round(game_config.heatBoostSeconds / 60)} 分钟！` : "疯狂点击屏幕，或摇晃手机！";
+      shakeButton.disabled = state.heatInjected;
+    }
+
+    function completeHeatInjection() {
+      if (!activeState || activeState.heatInjected) return;
+      activeState.heat = 100;
+      activeState.heatInjected = true;
+      activeState.acceleratedMs = Number(activeState.acceleratedMs || 0) + Number(game_config.heatBoostSeconds || 2700) * 1000;
+      persistState(activeState);
+      renderHeat(activeState);
+      renderCareActions(activeState);
+      flash.classList.remove("fire");
+      void flash.offsetWidth;
+      flash.classList.add("fire");
+      spawnParticles(28);
+      showToast(`🔥 温度注入成功！孵化时间大幅缩短 ${Math.round(game_config.heatBoostSeconds / 60)} 分钟！`);
+      updateTimer(activeState);
+    }
+
+    function addHeat(amount, source) {
+      if (!activeState || activeState.heatInjected || hatched || !eggButton.classList.contains("show")) return;
+      activeState.heat = Math.min(100, Number(activeState.heat || 0) + amount);
+      persistState(activeState);
+      renderHeat(activeState);
+      joltEgg(source === "shake" ? 1.35 : 1);
+      spawnParticles(source === "shake" ? 8 : 4);
+      if (navigator.vibrate && source === "shake") navigator.vibrate(18);
+      if (activeState.heat >= 100) completeHeatInjection();
+    }
+
     function launchConfetti() {
       const colors = ["#ff769b", "#ffd85a", "#86dec1", "#9c8bea", "#ff9f68"];
       confetti.replaceChildren();
@@ -803,6 +950,7 @@
       eggButton.classList.remove("show");
       eggButton.classList.add("hidden");
       timerCard.classList.remove("show");
+      heatCard.classList.remove("show");
       carePanel.classList.remove("show");
       pet.classList.add("show");
       success.classList.add("show");
@@ -829,6 +977,7 @@
       activeState = state;
       showEgg();
       renderCareActions(state);
+      renderHeat(state);
       updateTimer(state);
       if (!hatched) timerId = window.setInterval(() => updateTimer(state), 250);
     }
@@ -884,6 +1033,41 @@
 
     retestButton.addEventListener("click", resetForRetest);
 
+    document.querySelector(".game").addEventListener("pointerdown", event => {
+      if (event.target.closest("button, input") && !event.target.closest("#eggButton")) return;
+      addHeat(Number(game_config.heatPerTap || 3.5), "tap");
+    });
+
+    function handleOrientation(event) {
+      if (!activeState || activeState.heatInjected || hatched) return;
+      const current = { a: Number(event.alpha) || 0, b: Number(event.beta) || 0, g: Number(event.gamma) || 0 };
+      if (lastOrientation) {
+        const force = Math.abs(current.a - lastOrientation.a) + Math.abs(current.b - lastOrientation.b) + Math.abs(current.g - lastOrientation.g);
+        if (force > 22 && Date.now() - lastShakeAt > 180) {
+          lastShakeAt = Date.now();
+          addHeat(Number(game_config.heatPerShake || 7), "shake");
+        }
+      }
+      lastOrientation = current;
+    }
+
+    shakeButton.addEventListener("click", async event => {
+      event.stopPropagation();
+      try {
+        if (typeof DeviceOrientationEvent === "undefined") throw new Error("unsupported");
+        if (typeof DeviceOrientationEvent.requestPermission === "function") {
+          const permission = await DeviceOrientationEvent.requestPermission();
+          if (permission !== "granted") throw new Error("denied");
+        }
+        window.addEventListener("deviceorientation", handleOrientation, true);
+        shakeButton.textContent = "✅ 摇一摇已开启";
+        shakeButton.disabled = true;
+        showToast("摇一摇已开启，用力摇晃手机给宠物蛋升温吧！");
+      } catch (_) {
+        showToast("当前设备无法使用摇一摇，请疯狂点击屏幕升温吧！");
+      }
+    });
+
     careActions.addEventListener("click", event => {
       const button = event.target.closest(".care-btn");
       if (!button || button.disabled || !activeState || hatched) return;
@@ -905,6 +1089,7 @@
       if (!latest || !activeState || Number(latest.startedAt) !== Number(activeState.startedAt)) return;
       activeState = latest;
       renderCareActions(activeState);
+      renderHeat(activeState);
       updateTimer(activeState);
     }
 
@@ -927,6 +1112,8 @@
       AccountPet.handleMessage(message);
     });
     window.addEventListener("beforeunload", () => AccountPet.destroy(), { once: true });
+    window.addEventListener("resize", resizeParticleCanvas);
+    resizeParticleCanvas();
 
     const existingState = loadState();
     if (existingState) restore(existingState);

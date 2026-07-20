@@ -21,6 +21,9 @@ import { openNpcDialog } from './npc_dialog.js';
 const soundManager = SoundManager.getInstance();
 
 const BLIND_BOX_EGG_STORAGE_KEY = 'haqi_blind_box_egg_state_v1';
+const CHONGQING_ZOO_PLANET_ID = 'chongqing_zoo';
+const CHONGQING_NPC_TASK_TARGET = 3;
+const CHONGQING_NPC_TASK_BOOST_SECONDS = 30 * 60;
 const ITEM_BY_ID = new Proxy({}, { get: (_, id) => getShopItemById(id) });
 const ITEM_Z_INDEX_BASE = 5;
 const DRAG_PLACE_THRESHOLD = 8;
@@ -1459,6 +1462,123 @@ function currentFieldAreaLinks(fieldId = state.currentField) {
     return Array.isArray(custom.areaLinks) ? custom.areaLinks : [];
 }
 
+function isChongqingZooPlanet() {
+    return String(state.settings?.starSettlement?.planetId || '') === CHONGQING_ZOO_PLANET_ID;
+}
+
+function loadBlindBoxEggState() {
+    try {
+        const eggState = JSON.parse(localStorage.getItem(BLIND_BOX_EGG_STORAGE_KEY) || 'null');
+        return eggState && Number.isFinite(Number(eggState.startedAt)) ? eggState : null;
+    } catch (_) {
+        return null;
+    }
+}
+
+function chongqingNpcTaskState(eggState = loadBlindBoxEggState()) {
+    const task = eggState?.chongqingNpcTalkTask && typeof eggState.chongqingNpcTalkTask === 'object'
+        ? eggState.chongqingNpcTalkTask
+        : null;
+    const talked = task?.talked && typeof task.talked === 'object' ? task.talked : {};
+    return { eggState, task, talked, count: Math.min(CHONGQING_NPC_TASK_TARGET, Object.keys(talked).length), completed: Boolean(task?.completed) };
+}
+
+function chongqingNpcTaskHtml() {
+    if (!isChongqingZooPlanet()) return '';
+    const progress = chongqingNpcTaskState();
+    if (progress.completed) return '';
+    const count = progress.completed ? CHONGQING_NPC_TASK_TARGET : progress.count;
+    const percent = count / CHONGQING_NPC_TASK_TARGET * 100;
+    const status = !progress.eggState
+        ? '先领取宠物蛋，再收集朋友们的祝福'
+        : progress.completed
+            ? '任务完成 · 已加速 30 分钟！'
+            : `再和 ${CHONGQING_NPC_TASK_TARGET - count} 位不同的朋友聊聊`;
+    return `<aside id="mhChongqingNpcTask" class="field-npc-task${progress.completed ? ' is-complete' : ''}" aria-live="polite">
+        <div class="field-npc-task-head"><span>💬 动物园祝福任务</span><b data-npc-task-count>${count}/${CHONGQING_NPC_TASK_TARGET}</b></div>
+        <div class="field-npc-task-track" role="progressbar" aria-label="动物园 NPC 对话任务" aria-valuemin="0" aria-valuemax="${CHONGQING_NPC_TASK_TARGET}" aria-valuenow="${count}"><i data-npc-task-bar style="width:${percent}%"></i></div>
+        <small data-npc-task-status>${escapeHtml(status)}</small>
+        <em>完成奖励：孵化加速 30 分钟</em>
+    </aside>`;
+}
+
+function showChongqingNpcTaskComplete() {
+    const panel = document.getElementById('mhChongqingNpcTask');
+    if (!panel) return;
+    panel.classList.add('is-complete');
+    const notice = document.createElement('div');
+    notice.className = 'field-npc-task-complete';
+    notice.setAttribute('role', 'status');
+    notice.setAttribute('aria-live', 'assertive');
+    notice.innerHTML = '<strong>🎉 任务完成！</strong><span>三份祝福已集齐，宠物蛋孵化加速 30 分钟</span>';
+    panel.insertAdjacentElement('afterend', notice);
+    requestAnimationFrame(() => notice.classList.add('is-visible'));
+    window.setTimeout(() => {
+        panel.classList.add('is-hidden');
+        notice.classList.remove('is-visible');
+        window.setTimeout(() => notice.remove(), 350);
+    }, 3200);
+}
+
+function updateChongqingNpcTaskUi() {
+    const panel = document.getElementById('mhChongqingNpcTask');
+    if (!panel) return;
+    const progress = chongqingNpcTaskState();
+    const count = progress.completed ? CHONGQING_NPC_TASK_TARGET : progress.count;
+    panel.classList.toggle('is-complete', progress.completed);
+    const countEl = panel.querySelector('[data-npc-task-count]');
+    const bar = panel.querySelector('[data-npc-task-bar]');
+    const track = panel.querySelector('[role="progressbar"]');
+    const status = panel.querySelector('[data-npc-task-status]');
+    if (countEl) countEl.textContent = `${count}/${CHONGQING_NPC_TASK_TARGET}`;
+    if (bar) bar.style.width = `${count / CHONGQING_NPC_TASK_TARGET * 100}%`;
+    if (track) track.setAttribute('aria-valuenow', String(count));
+    if (status) status.textContent = !progress.eggState
+        ? '先领取宠物蛋，再收集朋友们的祝福'
+        : progress.completed
+            ? '任务完成 · 已加速 30 分钟！'
+            : `再和 ${CHONGQING_NPC_TASK_TARGET - count} 位不同的朋友聊聊`;
+}
+
+function recordChongqingNpcTalk(npc, fieldId) {
+    if (!isChongqingZooPlanet()) return;
+    const eggState = loadBlindBoxEggState();
+    if (!eggState) {
+        updateChongqingNpcTaskUi();
+        showToast('先领取宠物蛋，和动物园朋友聊天才能收集孵化祝福', 'info', 2600);
+        return;
+    }
+    const task = eggState.chongqingNpcTalkTask && typeof eggState.chongqingNpcTalkTask === 'object'
+        ? eggState.chongqingNpcTalkTask
+        : (eggState.chongqingNpcTalkTask = { talked: {}, completed: false });
+    const talked = task.talked && typeof task.talked === 'object' ? task.talked : (task.talked = {});
+    const npcKey = `${fieldId}:${npc?.id || npc?.name || 'npc'}`;
+    if (talked[npcKey] || task.completed) {
+        updateChongqingNpcTaskUi();
+        return;
+    }
+    talked[npcKey] = { name: String(npc?.name || '动物园朋友'), talkedAt: Date.now() };
+    const count = Object.keys(talked).length;
+    let justCompleted = false;
+    if (count >= CHONGQING_NPC_TASK_TARGET) {
+        task.completed = true;
+        task.completedAt = Date.now();
+        eggState.acceleratedMs = Math.max(0, Number(eggState.acceleratedMs) || 0) + CHONGQING_NPC_TASK_BOOST_SECONDS * 1000;
+        justCompleted = true;
+        showToast('🎉 三份动物园祝福集齐！孵化时间加速 30 分钟！', 'success', 3600);
+    } else {
+        showToast(`💬 收到 ${npc?.name || '动物园朋友'} 的祝福（${count}/${CHONGQING_NPC_TASK_TARGET}）`, 'success', 2400);
+    }
+    eggState.version = Math.max(3, Number(eggState.version) || 0);
+    try {
+        localStorage.setItem(BLIND_BOX_EGG_STORAGE_KEY, JSON.stringify(eggState));
+        updateChongqingNpcTaskUi();
+        if (justCompleted) showChongqingNpcTaskComplete();
+    } catch (_) {
+        showToast('任务进度暂时无法保存，请稍后再试', 'error', 2200);
+    }
+}
+
 function fieldAreaLinkHtml(link) {
     return `<button type="button" class="field-area-link" data-area-target-field="${escapeHtml(link.targetFieldId)}" style="left:${Number(link.x) || 0}%;top:${Number(link.y) || 0}%">${escapeHtml(link.label)}</button>`;
 }
@@ -2526,6 +2646,8 @@ export const fieldLevel = {
                 ${positionedFieldNpcs(fld.id, pet).map(fieldNpcHtml).join('')}
             </div>
 
+            ${chongqingNpcTaskHtml()}
+
             <nav class="field-area-links" aria-label="园区导航">
                 ${currentFieldAreaLinks(fld.id).map(fieldAreaLinkHtml).join('')}
             </nav>
@@ -2616,7 +2738,8 @@ export const fieldLevel = {
                 if (!npc) return;
                 openNpcDialog(npc, {
                     onConfirmed: () => {
-                        applyNpcHatchBoost(npc, fld.id);
+                        recordChongqingNpcTalk(npc, fld.id);
+                        if (!isChongqingZooPlanet()) applyNpcHatchBoost(npc, fld.id);
                         if (npc.minigame) ctx.callbacks.onLaunchNpcMinigame?.(npc);
                     },
                 });

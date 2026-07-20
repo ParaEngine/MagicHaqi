@@ -132,11 +132,48 @@
     .toast { position: fixed; z-index: 40; left: 50%; bottom: max(28px, env(safe-area-inset-bottom)); transform: translate(-50%, 20px); max-width: 84vw; padding: 11px 18px; border-radius: 999px; color: #fff; background: rgba(28,48,43,.9); box-shadow: 0 8px 25px rgba(0,0,0,.2); font-size: 13px; font-weight: 800; opacity: 0; pointer-events: none; transition: .25s; }
     .toast.show { opacity: 1; transform: translate(-50%, 0); }
 
+    .catch-game { position: fixed; z-index: 60; inset: 0; overflow: hidden; color: #fff; background: linear-gradient(180deg, #7357d8 0%, #769ce9 42%, #dff7df 76%, #8ed08b 100%); touch-action: none; }
+    .catch-game.hidden { display: none; }
+    .catch-game.shake { animation: cameraShake .36s linear; }
+    .catch-sky { position: absolute; inset: 0; overflow: hidden; }
+    .catch-sky::before { content: ""; position: absolute; inset: 0; background: radial-gradient(circle at 16% 18%, rgba(255,255,255,.85) 0 3px, transparent 4px), radial-gradient(circle at 82% 13%, rgba(255,255,255,.7) 0 4px, transparent 5px), radial-gradient(circle at 55% 31%, rgba(255,255,255,.55) 0 2px, transparent 3px); background-size: 180px 170px, 250px 220px, 140px 160px; opacity: .65; }
+    .catch-ground { position: absolute; left: -5%; right: -5%; bottom: -8vh; height: 27vh; border-radius: 50% 50% 0 0; background: linear-gradient(#a8e79a, #55b673); box-shadow: inset 0 8px 0 rgba(255,255,255,.2); }
+    .catch-hud { position: absolute; z-index: 4; top: max(14px, env(safe-area-inset-top)); left: 14px; right: 14px; display: grid; grid-template-columns: 1fr auto 1fr; align-items: start; gap: 8px; pointer-events: none; }
+    .hud-pill { justify-self: start; min-width: 94px; padding: 9px 13px; border: 2px solid rgba(255,255,255,.6); border-radius: 16px; background: rgba(38,34,91,.55); box-shadow: 0 7px 20px rgba(31,29,84,.22); backdrop-filter: blur(7px); font-size: 13px; font-weight: 900; text-shadow: 0 2px 3px rgba(0,0,0,.22); }
+    .hud-pill.time { justify-self: end; text-align: right; }
+    .combo-box { min-width: 108px; text-align: center; font-weight: 1000; text-shadow: 0 3px 0 #6d469e, 0 6px 12px rgba(0,0,0,.2); }
+    .combo-label { display: block; color: #fff3a4; font-size: 11px; letter-spacing: 2px; }
+    .combo-number { display: inline-block; font-size: clamp(30px, 8vw, 46px); line-height: .95; }
+    .combo-number.pop { animation: comboPop .3s cubic-bezier(.2,1.8,.4,1); }
+    .fall-item { position: absolute; z-index: 2; display: grid; place-items: center; width: 58px; height: 58px; border: 3px solid rgba(255,255,255,.9); border-radius: 50%; background: radial-gradient(circle at 35% 28%, #fff, #ffdc59 58%, #efa82f); box-shadow: 0 7px 0 rgba(102,71,32,.2), 0 10px 22px rgba(36,33,96,.25); font-size: 31px; will-change: transform; }
+    .fall-item.voice { background: radial-gradient(circle at 35% 28%, #fff, #7cf1e4 58%, #35b9d4); }
+    .fall-item.bomb { border-color: #e4d6ff; background: radial-gradient(circle at 35% 28%, #77628f, #30243e 64%, #17131d); font-size: 35px; }
+    .catcher { position: absolute; z-index: 3; left: 50%; bottom: max(22px, env(safe-area-inset-bottom)); width: 96px; height: 104px; transform: translateX(-50%); will-change: left; filter: drop-shadow(0 10px 7px rgba(29,64,50,.25)); }
+    .catcher-animal { display: grid; place-items: center; width: 88px; height: 79px; margin: 0 auto; border: 4px solid #80553c; border-radius: 45% 45% 38% 38%; background: linear-gradient(145deg, #ffd490, #e89c55); font-size: 53px; box-shadow: inset 0 5px rgba(255,255,255,.35); }
+    .catcher-basket { position: absolute; left: 4px; right: 4px; top: -9px; height: 25px; border: 4px solid #8c5d35; border-radius: 8px 8px 20px 20px; background: #f5bb57; box-shadow: inset 0 5px rgba(255,255,255,.35); }
+    .catcher.hit { animation: catcherHit .28s ease-out; }
+    .catch-tip { position: absolute; z-index: 4; left: 50%; bottom: max(138px, calc(env(safe-area-inset-bottom) + 138px)); transform: translateX(-50%); width: max-content; max-width: 88vw; padding: 8px 14px; border-radius: 999px; color: #493c71; background: rgba(255,255,255,.86); font-size: 12px; font-weight: 900; pointer-events: none; transition: opacity .4s; }
+    .catch-modal { position: absolute; z-index: 8; inset: 0; display: grid; place-items: center; padding: 22px; background: rgba(30,27,73,.48); backdrop-filter: blur(8px); }
+    .catch-modal.hidden { display: none; }
+    .catch-card { width: min(90vw, 390px); padding: 27px 22px 24px; border: 3px solid rgba(255,255,255,.88); border-radius: 28px; color: #354b48; background: linear-gradient(160deg, #fffef5, #e6fff2); box-shadow: 0 22px 65px rgba(25,26,71,.35); text-align: center; animation: resultIn .48s cubic-bezier(.2,1.35,.4,1); }
+    .catch-card-icon { font-size: 64px; line-height: 1; }
+    .catch-card h2 { margin: 12px 0 8px; color: #2c7561; font-size: 25px; }
+    .catch-card p { margin: 7px 0 18px; color: #647d78; font-size: 14px; line-height: 1.65; }
+    .catch-card strong { color: #ea8f25; font-size: 20px; }
+    .catch-start { width: 100%; border: 0; border-radius: 17px; padding: 14px; color: #fff; background: linear-gradient(135deg, #ffb83f, #f07632); box-shadow: 0 8px 0 #bc5724; font-size: 16px; font-weight: 1000; cursor: pointer; }
+    .catch-start:active { transform: translateY(5px); box-shadow: 0 3px 0 #bc5724; }
+    .score-float { position: absolute; z-index: 7; color: #fff569; font-size: 25px; font-weight: 1000; text-shadow: 0 3px 0 #9d6234, 0 5px 9px rgba(0,0,0,.3); pointer-events: none; animation: scoreFloat .7s ease-out forwards; }
+
     @keyframes float { 50% { transform: translate(-50%, -54%) rotate(2deg); } }
     @keyframes breathe { 50% { transform: translate(-50%, -48%) scale(1.09); opacity: .74; } }
     @keyframes messageIn { to { opacity: 1; transform: none; } }
     @keyframes likePulse { to { transform: scale(1.12) rotate(-5deg); } }
     @keyframes energyRise { 0% { opacity: 0; transform: translate(-50%, 20px) scale(.5); } 22% { opacity: 1; transform: translate(-50%, 0) scale(1.15); } 75% { opacity: 1; } 100% { opacity: 0; transform: translate(-50%, -95px) scale(.9); } }
+    @keyframes comboPop { 45% { transform: scale(1.45) rotate(-5deg); color: #fff36a; } }
+    @keyframes cameraShake { 20% { transform: translate(-9px, 4px) rotate(-.5deg); } 40% { transform: translate(8px, -5px) rotate(.5deg); } 60% { transform: translate(-6px, -2px); } 80% { transform: translate(5px, 3px); } }
+    @keyframes catcherHit { 45% { transform: translateX(-50%) scale(1.15) rotate(-4deg); } }
+    @keyframes scoreFloat { to { opacity: 0; transform: translateY(-65px) scale(1.25); } }
+    @keyframes resultIn { from { opacity: 0; transform: translateY(35px) scale(.78); } }
     @media (max-height: 650px) {
       .game { min-height: 480px; grid-template-rows: minmax(0, 1.2fr) minmax(180px, .8fr); }
       .hero { padding-top: 12px; }
@@ -152,6 +189,22 @@
   </style>
 </head>
 <body>
+  <section id="catchGame" class="catch-game" aria-label="家庭点赞能量接取游戏">
+    <div id="catchSky" class="catch-sky"><div class="catch-ground"></div></div>
+    <div class="catch-hud">
+      <div class="hud-pill">⚡ 能量 <span id="catchScore">0</span></div>
+      <div class="combo-box"><span class="combo-label">COMBO</span><span id="comboNumber" class="combo-number">0</span></div>
+      <div class="hud-pill time">⏱ <span id="catchTime">30</span> 秒</div>
+    </div>
+    <div id="catcher" class="catcher" aria-label="接取能量的小狗"><div class="catcher-basket"></div><div class="catcher-animal">🐶</div></div>
+    <div id="catchTip" class="catch-tip">👆 左右拖动小动物，接住家人的爱</div>
+    <div id="catchIntro" class="catch-modal">
+      <div class="catch-card"><div class="catch-card-icon">🐶✨</div><h2>接住家人的爱</h2><p>接住 👍 得 10 能量，接住 💬 得 20 能量<br>小心捣乱的乌鸦炸弹！</p><button id="catchStart" class="catch-start" type="button">开始接能量 · 30 秒</button></div>
+    </div>
+    <div id="catchResult" class="catch-modal hidden">
+      <div class="catch-card"><div class="catch-card-icon">🎉</div><h2>充能完成！</h2><p><strong>点赞让你获得了 300 能量！</strong><br>把今天的可爱瞬间写进宠物日记吧。</p><button id="catchContinue" class="catch-start" type="button">生成宠物日记并分享给爷爷奶奶</button></div>
+    </div>
+  </section>
   <main class="game">
     <i class="orb a"></i><i class="orb b"></i>
     <section class="hero">
@@ -204,6 +257,7 @@
   <script>
   game_config = {
     difficulty: "demo",
+    preludeDurationSec: 30,
     maxEnergy: 100,
     energyPerLike: 50,
     replyDelayMs: 2000,
@@ -234,6 +288,20 @@
       petStage: document.getElementById("petStage"),
       accountPet: document.getElementById("accountPet"),
       articlePet: document.getElementById("articlePet")
+    };
+
+    const CatchUI = {
+      game: document.getElementById("catchGame"),
+      sky: document.getElementById("catchSky"),
+      catcher: document.getElementById("catcher"),
+      tip: document.getElementById("catchTip"),
+      intro: document.getElementById("catchIntro"),
+      result: document.getElementById("catchResult"),
+      start: document.getElementById("catchStart"),
+      continue: document.getElementById("catchContinue"),
+      score: document.getElementById("catchScore"),
+      combo: document.getElementById("comboNumber"),
+      time: document.getElementById("catchTime")
     };
 
     const HostBridge = {
@@ -329,6 +397,161 @@
       }
     };
 
+    const PreludeGame = {
+      running: false,
+      score: 0,
+      combo: 0,
+      catcherX: innerWidth / 2,
+      items: [],
+      animationId: 0,
+      startedAt: 0,
+      lastFrame: 0,
+      lastSpawn: 0,
+      audio: null,
+      durationMs() { return Math.max(1, Number(game_config.preludeDurationSec) || 30) * 1000; },
+      move(clientX) {
+        const half = CatchUI.catcher.offsetWidth / 2;
+        this.catcherX = Math.max(half, Math.min(innerWidth - half, clientX));
+        CatchUI.catcher.style.left = `${this.catcherX}px`;
+      },
+      start() {
+        if (this.running) return;
+        this.running = true;
+        this.score = 0;
+        this.combo = 0;
+        this.items.forEach(item => item.element.remove());
+        this.items = [];
+        this.updateHud();
+        CatchUI.intro.classList.add("hidden");
+        CatchUI.result.classList.add("hidden");
+        CatchUI.tip.style.opacity = "1";
+        setTimeout(() => { CatchUI.tip.style.opacity = "0"; }, 2600);
+        this.startedAt = performance.now();
+        this.lastFrame = this.startedAt;
+        this.lastSpawn = this.startedAt - 700;
+        try { this.audio = this.audio || new (window.AudioContext || window.webkitAudioContext)(); this.audio.resume(); } catch (_) {}
+        HostBridge.post("gameStarted", { action: "catch_family_energy" });
+        this.animationId = requestAnimationFrame(now => this.tick(now));
+      },
+      spawn() {
+        const roll = Math.random();
+        const type = roll < .13 ? "bomb" : roll < .48 ? "voice" : "like";
+        const element = document.createElement("div");
+        element.className = `fall-item ${type === "like" ? "" : type}`;
+        element.textContent = type === "bomb" ? "🐦‍⬛💣" : type === "voice" ? "💬" : "👍";
+        const size = 58;
+        const x = 8 + Math.random() * Math.max(20, innerWidth - size - 16);
+        const speed = 190 + Math.random() * 85;
+        element.style.transform = `translate3d(${x}px, -70px, 0)`;
+        CatchUI.sky.appendChild(element);
+        this.items.push({ element, type, x, y: -70, size, speed });
+      },
+      tick(now) {
+        if (!this.running) return;
+        const elapsed = now - this.startedAt;
+        const remaining = Math.max(0, Math.ceil((this.durationMs() - elapsed) / 1000));
+        CatchUI.time.textContent = String(remaining);
+        if (elapsed >= this.durationMs()) { this.finish(); return; }
+        const dt = Math.min(.035, (now - this.lastFrame) / 1000);
+        this.lastFrame = now;
+        const spawnGap = Math.max(390, 690 - elapsed / this.durationMs() * 170);
+        if (now - this.lastSpawn >= spawnGap) { this.spawn(); this.lastSpawn = now; }
+        const catcherRect = CatchUI.catcher.getBoundingClientRect();
+        for (let index = this.items.length - 1; index >= 0; index--) {
+          const item = this.items[index];
+          item.y += item.speed * dt;
+          item.element.style.transform = `translate3d(${item.x}px, ${item.y}px, 0) rotate(${item.y * .12}deg)`;
+          const hit = item.x + item.size > catcherRect.left + 8 && item.x < catcherRect.right - 8 && item.y + item.size > catcherRect.top + 5 && item.y < catcherRect.bottom;
+          if (hit) { this.collect(item, index); continue; }
+          if (item.y > innerHeight + 65) {
+            if (item.type !== "bomb") this.setCombo(0);
+            item.element.remove();
+            this.items.splice(index, 1);
+          }
+        }
+        this.animationId = requestAnimationFrame(next => this.tick(next));
+      },
+      collect(item, index) {
+        const amount = item.type === "bomb" ? -20 : item.type === "voice" ? 20 : 10;
+        this.score = Math.max(0, this.score + amount);
+        if (item.type === "bomb") {
+          this.setCombo(0);
+          CatchUI.game.classList.remove("shake");
+          void CatchUI.game.offsetWidth;
+          CatchUI.game.classList.add("shake");
+          navigator.vibrate?.(120);
+          this.tone(105, .2, "sawtooth");
+        } else {
+          this.setCombo(this.combo + 1);
+          if (item.type === "voice") this.happySound();
+          else this.tone(520, .08, "sine");
+        }
+        this.floatScore(amount, item.x + item.size / 2, item.y);
+        CatchUI.catcher.classList.remove("hit");
+        void CatchUI.catcher.offsetWidth;
+        CatchUI.catcher.classList.add("hit");
+        item.element.remove();
+        this.items.splice(index, 1);
+        this.updateHud();
+      },
+      setCombo(value) {
+        this.combo = value;
+        CatchUI.combo.textContent = String(value);
+        if (value > 0) {
+          CatchUI.combo.classList.remove("pop");
+          void CatchUI.combo.offsetWidth;
+          CatchUI.combo.classList.add("pop");
+        }
+      },
+      updateHud() { CatchUI.score.textContent = String(this.score); CatchUI.combo.textContent = String(this.combo); },
+      floatScore(amount, x, y) {
+        const label = document.createElement("div");
+        label.className = "score-float";
+        label.textContent = amount > 0 ? `+${amount}` : String(amount);
+        label.style.cssText = `left:${x - 18}px;top:${y}px;color:${amount < 0 ? "#ff8c91" : "#fff569"}`;
+        CatchUI.game.appendChild(label);
+        setTimeout(() => label.remove(), 750);
+      },
+      tone(frequency, duration, type) {
+        if (!this.audio) return;
+        const oscillator = this.audio.createOscillator();
+        const gain = this.audio.createGain();
+        oscillator.type = type;
+        oscillator.frequency.value = frequency;
+        gain.gain.setValueAtTime(.09, this.audio.currentTime);
+        gain.gain.exponentialRampToValueAtTime(.001, this.audio.currentTime + duration);
+        oscillator.connect(gain).connect(this.audio.destination);
+        oscillator.start();
+        oscillator.stop(this.audio.currentTime + duration);
+      },
+      happySound() { this.tone(620, .12, "sine"); setTimeout(() => this.tone(820, .16, "sine"), 90); },
+      finish() {
+        this.running = false;
+        cancelAnimationFrame(this.animationId);
+        this.items.forEach(item => item.element.remove());
+        this.items = [];
+        CatchUI.time.textContent = "0";
+        CatchUI.result.classList.remove("hidden");
+        this.happySound();
+      },
+      continueToDiary() {
+        CatchUI.game.classList.add("hidden");
+        UI.shareButton.click();
+      },
+      init() {
+        CatchUI.start.addEventListener("click", () => this.start());
+        CatchUI.continue.addEventListener("click", () => this.continueToDiary());
+        CatchUI.game.addEventListener("pointerdown", event => { if (!event.target.closest("button")) this.move(event.clientX); });
+        CatchUI.game.addEventListener("pointermove", event => { if (this.running && (event.pointerType === "touch" || event.buttons === 1)) this.move(event.clientX); });
+        window.addEventListener("keydown", event => {
+          if (!this.running || !["ArrowLeft", "ArrowRight"].includes(event.key)) return;
+          this.move(this.catcherX + (event.key === "ArrowLeft" ? -34 : 34));
+        });
+        window.addEventListener("resize", () => this.move(this.catcherX));
+        this.move(innerWidth / 2);
+      }
+    };
+
     const EnergySystem = {
       value: 0,
       add(amount) {
@@ -379,6 +602,7 @@
 
     const Game = {
       start() {
+        PreludeGame.init();
         UI.shareButton.addEventListener("click", () => {
           HostBridge.post("gameStarted", { action: "share_pet_diary" });
           ChatSimulator.play();
@@ -402,7 +626,7 @@
     };
 
     Game.start();
-    window.__familyLikeChargeDebug = { EnergySystem, ChatSimulator, AccountPet };
+    window.__familyLikeChargeDebug = { PreludeGame, EnergySystem, ChatSimulator, AccountPet };
   })();
   </script>
 </body>
