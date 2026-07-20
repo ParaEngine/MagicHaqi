@@ -43,6 +43,9 @@
       .progress > span { @apply block h-full rounded-full bg-gradient-to-r from-orange-400 to-amber-400 transition-all duration-500; }
       .pet-choice { @apply relative min-h-[110px] overflow-hidden rounded-2xl border border-orange-100 bg-orange-50 p-2 text-left; }
       .pet-choice.selected { @apply border-orange-500 bg-orange-100 ring-2 ring-orange-300; }
+      .pet-picker-card { @apply relative flex min-h-[172px] flex-col overflow-hidden rounded-2xl border border-sky-100 bg-white p-0 text-left shadow-sm hover:border-sky-300 hover:shadow-md; }
+      .pet-picker-card.selected { @apply border-orange-500 ring-2 ring-orange-300; }
+      .pet-picker-portrait { @apply relative flex min-h-0 flex-1 items-center justify-center overflow-hidden bg-gradient-to-b from-sky-50 to-amber-50; }
       .pet-mini { @apply mx-auto h-16 w-16 bg-no-repeat; background-size: 400% 400%; }
       .pet-mini.growth-3 { filter: drop-shadow(0 4px 4px rgb(245 158 11 / .38)) saturate(1.12); }
       .pet-mini.growth-4 { filter: drop-shadow(0 4px 6px rgb(168 85 247 / .5)) saturate(1.22) brightness(1.05); }
@@ -130,6 +133,7 @@
   </div>
   <div id="readonlyScreen" class="fixed inset-0 z-[100] hidden overflow-hidden bg-slate-50 p-2 sm:p-3"></div>
   <div id="studentFormScreen" class="fixed inset-0 z-[110] hidden overflow-auto bg-slate-900/45 p-4 sm:p-8"></div>
+  <div id="petPickerScreen" class="fixed inset-0 z-[130] hidden bg-slate-900/65 p-2 backdrop-blur-sm sm:p-4"></div>
   <div id="logoutScreen" class="fixed inset-0 z-[210] hidden items-center justify-center bg-slate-900/55 p-5">
     <div class="w-full max-w-md rounded-3xl bg-white p-7 text-center shadow-2xl">
       <div class="text-5xl">👋</div>
@@ -168,33 +172,11 @@
         { id: 'zodiac_monkey_qiqi', name: '奇奇桃猴', species: '桃叶灵猴', color: '焦糖金棕', rarity: 91, url: 'https://cdn.keepwork.com/maisi/magichaqi/pet/zodiac_monkey_qiqi_20260528041713.webp' },
         { id: 'zodiac_rooster_jiji', name: '叽叽彩冠', species: '朝霞小鸡', color: '玫瑰红渐变金黄', rarity: 89, url: 'https://cdn.keepwork.com/maisi/magichaqi/pet/zodiac_rooster_jiji_20260524152704.webp' },
         { id: 'zodiac_dog_wangwang', name: '汪汪福豆', species: '福豆小犬', color: '芝麻奶黄', rarity: 88, url: 'https://cdn.keepwork.com/maisi/magichaqi/pet/zodiac_dog_wangwang_20260524132956.webp' },
-        { id: 'zodiac_pig_lulu', name: '噜噜元宝', species: '元宝小猪', color: '樱花粉', rarity: 90, url: 'https://cdn.keepwork.com/maisi/magichaqi/pet/zodiac_pig_lulu_20260524161535.webp' },
-        { id: 'lulu_flame_lioncub', name: '噜噜焰团', species: '火鬃狮团', color: '焦糖金色', rarity: 92, url: 'https://cdn.keepwork.com/maisi/magichaqi/pet/lulu_flame_lioncub_20260528041744.webp' },
-        { id: 'mimi_frost_seal', name: '咪咪雪泡', species: '霜泡海豹', color: '冰蓝白色', rarity: 88, url: 'https://cdn.keepwork.com/maisi/magichaqi/pet/mimi_frost_seal_20260524165412.webp' },
-        { id: 'qiqi_star_drake', name: '琪琪星咕', species: '星幕幼龙', color: '深夜紫色', rarity: 96, url: 'https://cdn.keepwork.com/maisi/magichaqi/pet/qiqi_star_drake_20260524165652.webp' },
-        { id: 'nono_leaf_guardian', name: '糯糯芽芽', species: '翠芽守护兽', color: '薄荷绿色', rarity: 84, url: 'https://cdn.keepwork.com/maisi/magichaqi/pet/nono_leaf_guardian_20260524170800.webp' },
-        { id: 'bobo_pearl_manta', name: '啵啵珍珍', species: '珍珠云鳐', color: '奶白珠光色', rarity: 90, url: 'https://cdn.keepwork.com/maisi/magichaqi/pet/bobo_pearl_manta_20260524165135.webp' },
-        { id: 'tangtang_thunder_bee', name: '糖糖嗡嗡', species: '蜜焰战蜂', color: '金黄色', rarity: 87, url: 'https://cdn.keepwork.com/maisi/magichaqi/pet/tangtang_thunder_bee_20260524165728.webp' },
-        { id: 'yoyo_moon_owlcat', name: '悠悠月团', species: '月霜猫头鹰', color: '银灰色', rarity: 94, url: 'https://cdn.keepwork.com/maisi/magichaqi/pet/yoyo_moon_owlcat_20260524165829.webp' },
-        { id: 'doudou_shadow_fox', name: '豆豆影尾', species: '影尾团狐', color: '黑紫渐变色', rarity: 91, url: 'https://cdn.keepwork.com/maisi/magichaqi/pet/doudou_shadow_fox_20260524165232.webp' },
-        { id: 'pipi_life_octopus', name: '皮皮泡爪', species: '灵泡小章鱼', color: '粉蓝渐变色', rarity: 86, url: 'https://cdn.keepwork.com/maisi/magichaqi/pet/pipi_life_octopus_20260524165604.webp' },
-        { id: 'momo_rainbow_phoenix', name: '沫沫彩羽', species: '彩羽灵凰', color: '彩虹色', rarity: 99, url: 'https://cdn.keepwork.com/maisi/magichaqi/pet/momo_rainbow_phoenix_20260524165440.webp' },
-        { id: 'shanhaijing_jiuwei_mimi', name: '玖玖绒绒', species: '九尾狐幼崽', color: '桃粉渐变色', rarity: 98, url: 'https://cdn.keepwork.com/maisi/magichaqi/pet/shanhaijing_jiuwei_mimi_20260524181205.webp' },
-        { id: 'shanhaijing_bifang_doudou', name: '方方啾豆', species: '毕方独脚鸟', color: '朱红金羽色', rarity: 94, url: 'https://cdn.keepwork.com/maisi/magichaqi/pet/shanhaijing_bifang_doudou_20260524182558.webp' },
-        { id: 'shanhaijing_wenyao_bobo', name: '波波鳐糖', species: '文鳐飞鱼', color: '天蓝银斑色', rarity: 92, url: 'https://cdn.keepwork.com/maisi/magichaqi/pet/shanhaijing_wenyao_bobo_20260524182630.webp' },
-        { id: 'shanhaijing_fuzhu_lulu', name: '鹿鹿雪团', species: '夫诸白鹿', color: '雪白色', rarity: 95, url: 'https://cdn.keepwork.com/maisi/magichaqi/pet/shanhaijing_fuzhu_lulu_20260524181348.webp' },
-        { id: 'shanhaijing_xuangui_gugu', name: '龟龟咕噜', species: '旋龟宝宝', color: '墨绿青铜色', rarity: 90, url: 'https://cdn.keepwork.com/maisi/magichaqi/pet/shanhaijing_xuangui_gugu_20260524182511.webp' },
-        { id: 'shanhaijing_lushu_banban', name: '斑斑栗栗', species: '鹿蜀斑兽', color: '焦糖白斑色', rarity: 91, url: 'https://cdn.keepwork.com/maisi/magichaqi/pet/shanhaijing_lushu_banban_20260524181505.webp' },
-        { id: 'shanhaijing_jingwei_weiwei', name: '薇薇衔石', species: '精卫小鸟', color: '青羽橘喙色', rarity: 93, url: 'https://cdn.keepwork.com/maisi/magichaqi/pet/shanhaijing_jingwei_weiwei_20260528042014.webp' },
-        { id: 'shanhaijing_kunpeng_yunyun', name: '云云鲲团', species: '鲲鹏幼灵', color: '深海蓝渐变色', rarity: 99, url: 'https://cdn.keepwork.com/maisi/magichaqi/pet/shanhaijing_kunpeng_yunyun_20260524181612.webp' },
-        { id: 'shanhaijing_qiongqi_qiqi', name: '奇奇绒爪', species: '穷奇小虎', color: '黑金虎纹色', rarity: 97, url: 'https://cdn.keepwork.com/maisi/magichaqi/pet/shanhaijing_qiongqi_qiqi_20260528042045.webp' },
-        { id: 'shanhaijing_zheng_miaomiao', name: '狰狰喵球', species: '狰角豹猫', color: '玫瑰红豹斑色', rarity: 94, url: 'https://cdn.keepwork.com/maisi/magichaqi/pet/shanhaijing_zheng_miaomiao_20260524181754.webp' },
-        { id: 'shanhaijing_tiangou_wangwang', name: '天狗旺团', species: '天狗月影犬', color: '银灰黑影色', rarity: 92, url: 'https://cdn.keepwork.com/maisi/magichaqi/pet/shanhaijing_tiangou_wangwang_20260524181828.webp' },
-        { id: 'shanhaijing_baihuan_huanhuan', name: '欢欢灵耳', species: '讙兽宝宝', color: '奶白橘尾色', rarity: 89, url: 'https://cdn.keepwork.com/maisi/magichaqi/pet/shanhaijing_baihuan_huanhuan_20260524181911.webp' }
+        { id: 'zodiac_pig_lulu', name: '噜噜元宝', species: '元宝小猪', color: '樱花粉', rarity: 90, url: 'https://cdn.keepwork.com/maisi/magichaqi/pet/zodiac_pig_lulu_20260524161535.webp' }
       ];
       let pets = fallbackPets;
       try {
-        const response = await fetch('./famous-pets/_pet_index.json');
+        const response = await fetch('../famous-pets/_pet_index.json');
         if (!response.ok) throw new Error(`HTTP ${response.status}`);
         const petIndex = await response.json();
         const indexedPets = Array.isArray(petIndex) ? petIndex.filter(pet => pet?.id && pet?.name && pet?.imageSheetUrl).map(pet => ({
@@ -202,6 +184,8 @@
           name: pet.name,
           species: pet.traits?.species || '未知精灵',
           color: pet.traits?.color || '未知颜色',
+          element: pet.traits?.element || '',
+          attribute: pet.traits?.elementalAttribute || '',
           rarity: Number.isFinite(Number(pet.rarity)) ? Number(pet.rarity) : 0,
           url: pet.imageSheetUrl
         })) : [];
@@ -433,9 +417,37 @@
       function openStudentForm(student = null) {
         const screen = document.getElementById('studentFormScreen');
         const isEdit = Boolean(student);
-        screen.innerHTML = `<div class="mx-auto mt-8 max-w-lg rounded-3xl bg-white p-5 shadow-2xl sm:mt-16 sm:p-7"><div class="flex items-start justify-between gap-4"><div><p class="m-0 text-xs font-black tracking-widest text-emerald-600">教师管理</p><h2 class="m-0 mt-1 text-2xl font-black">${isEdit ? '编辑学生资料' : '添加学生'}</h2></div><button data-action="close-student-form" aria-label="关闭">×</button></div><form id="studentForm" class="mt-5 space-y-4" data-student-id="${esc(student?.id || '')}"><label class="block text-sm font-bold text-slate-600">学生姓名<input id="studentName" class="mt-1 w-full" maxlength="20" required value="${esc(student?.name || '')}" placeholder="例如：张小明"></label><label class="block text-sm font-bold text-slate-600">性别<select id="studentGender" class="mt-1 w-full"><option value="男" ${student?.gender === '男' ? 'selected' : ''}>男</option><option value="女" ${student?.gender !== '男' ? 'selected' : ''}>女</option></select></label><label class="block text-sm font-bold text-slate-600">个人积分<input id="studentPoints" class="mt-1 w-full" type="number" min="0" step="1" required value="${student?.points ?? 0}"></label><label class="block text-sm font-bold text-slate-600">宠物伙伴（已扩充 ${pets.length} 只）<select id="studentPet" class="mt-1 w-full">${pets.map(pet => `<option value="${pet.id}" ${pet.id === (student?.petId || pets[0].id) ? 'selected' : ''}>${esc(pet.name)} · ${esc(pet.species)} · 稀有度 ${pet.rarity}</option>`).join('')}</select></label><p class="rounded-xl bg-amber-50 px-3 py-2 text-xs leading-5 text-amber-800">宠物会随个人积分获得经验并提升等级；学生账号仅能查看档案，此表单仅供教师维护。</p><div class="flex justify-end gap-2"><button type="button" data-action="close-student-form">取消</button><button class="primary" type="submit">${isEdit ? '保存修改' : '确认添加'}</button></div></form></div>`;
+        const selectedPet = pets.find(pet => pet.id === student?.petId) || pets[0];
+        screen.innerHTML = `<div class="mx-auto mt-8 max-w-lg rounded-3xl bg-white p-5 shadow-2xl sm:mt-16 sm:p-7"><div class="flex items-start justify-between gap-4"><div><p class="m-0 text-xs font-black tracking-widest text-emerald-600">教师管理</p><h2 class="m-0 mt-1 text-2xl font-black">${isEdit ? '编辑学生资料' : '添加学生'}</h2></div><button data-action="close-student-form" aria-label="关闭">×</button></div><form id="studentForm" class="mt-5 space-y-4" data-student-id="${esc(student?.id || '')}"><label class="block text-sm font-bold text-slate-600">学生姓名<input id="studentName" class="mt-1 w-full" maxlength="20" required value="${esc(student?.name || '')}" placeholder="例如：张小明"></label><label class="block text-sm font-bold text-slate-600">性别<select id="studentGender" class="mt-1 w-full"><option value="男" ${student?.gender === '男' ? 'selected' : ''}>男</option><option value="女" ${student?.gender !== '男' ? 'selected' : ''}>女</option></select></label><label class="block text-sm font-bold text-slate-600">个人积分<input id="studentPoints" class="mt-1 w-full" type="number" min="0" step="1" required value="${student?.points ?? 0}"></label><div><span class="block text-sm font-bold text-slate-600">宠物伙伴（共 ${pets.length} 只）</span><input id="studentPet" type="hidden" value="${esc(selectedPet.id)}"><button id="studentPetPreview" type="button" data-action="open-pet-picker" class="mt-1 flex w-full items-center gap-3 border-sky-200 bg-sky-50 p-3 text-left hover:border-sky-400 hover:bg-sky-100">${selectedPetSummaryHtml(selectedPet)}<span class="ml-auto shrink-0 rounded-lg bg-sky-600 px-3 py-2 text-xs font-black text-white">打开图鉴</span></button></div><p class="rounded-xl bg-amber-50 px-3 py-2 text-xs leading-5 text-amber-800">宠物会随个人积分获得经验并提升等级；学生账号仅能查看档案，此表单仅供教师维护。</p><div class="flex justify-end gap-2"><button type="button" data-action="close-student-form">取消</button><button class="primary" type="submit">${isEdit ? '保存修改' : '确认添加'}</button></div></form></div>`;
         screen.classList.remove('hidden');
         setTimeout(() => document.getElementById('studentName')?.focus(), 0);
+      }
+      function selectedPetSummaryHtml(pet) {
+        return `<span class="h-16 w-16 shrink-0 rounded-xl bg-amber-50 bg-no-repeat" style="background-image:url('${pet.url}');background-position:0 0;background-size:400% 400%"></span><span class="min-w-0"><b class="block truncate text-base text-slate-800">${esc(pet.name)}</b><span class="mt-1 block truncate text-xs font-medium text-slate-500">${esc(pet.species)} · ${esc(pet.color)} · 稀有度 ${pet.rarity}</span></span>`;
+      }
+      let petPickerQuery = '';
+      let petPickerFilter = 'all';
+      function petPickerFilters() {
+        const values = [
+          ...new Set(pets.map(pet => pet.element).filter(Boolean)),
+          ...new Set(pets.map(pet => pet.attribute).filter(Boolean))
+        ];
+        return [{ id: 'all', label: '全部' }, ...values.map(value => ({ id: value, label: value === '水系' ? '海洋' : value }))];
+      }
+      function renderPetPicker() {
+        const screen = document.getElementById('petPickerScreen');
+        const selectedId = document.getElementById('studentPet')?.value || pets[0].id;
+        const query = petPickerQuery.trim().toLowerCase();
+        const visiblePets = pets.filter(pet => {
+          if (petPickerFilter !== 'all' && pet.element !== petPickerFilter && pet.attribute !== petPickerFilter) return false;
+          return !query || `${pet.name} ${pet.id} ${pet.species} ${pet.color} ${pet.element || ''} ${pet.attribute || ''}`.toLowerCase().includes(query);
+        });
+        screen.innerHTML = `<div class="mx-auto flex h-full max-w-[1500px] flex-col overflow-hidden rounded-2xl border border-sky-100 bg-slate-50 shadow-2xl"><header class="shrink-0 border-b border-sky-100 bg-white px-4 py-3 sm:px-6"><div class="flex items-start justify-between gap-4"><div><p class="m-0 text-xs font-black tracking-widest text-sky-600">宠物大百科</p><h2 class="m-0 mt-1 text-xl font-black sm:text-2xl">选择宠物伙伴 <span class="text-sm font-bold text-slate-400">${visiblePets.length} / ${pets.length}</span></h2></div><button type="button" data-action="close-pet-picker" class="h-10 w-10 shrink-0 rounded-full px-0 text-xl" aria-label="关闭宠物图鉴">×</button></div><div class="mt-3 flex flex-col gap-2 lg:flex-row"><input id="petPickerSearch" type="search" value="${esc(petPickerQuery)}" placeholder="搜索名字、种类、颜色或属性" class="w-full lg:max-w-sm"><div class="flex gap-2 overflow-x-auto pb-1">${petPickerFilters().map(filter => `<button type="button" data-action="filter-pets" data-filter="${esc(filter.id)}" class="min-h-10 shrink-0 whitespace-nowrap px-4 ${petPickerFilter === filter.id ? 'selected' : ''}">${esc(filter.label)}</button>`).join('')}</div></div></header><section class="min-h-0 flex-1 overflow-y-auto p-3 sm:p-5"><div class="grid grid-cols-2 gap-2 sm:grid-cols-3 sm:gap-3 md:grid-cols-4 lg:grid-cols-6 xl:grid-cols-8">${visiblePets.map(pet => `<button type="button" data-action="choose-pet" data-pet-id="${esc(pet.id)}" class="pet-picker-card ${pet.id === selectedId ? 'selected' : ''}"><span class="pet-picker-portrait"><span class="h-28 w-28 bg-no-repeat" style="background-image:url('${pet.url}');background-position:0 0;background-size:400% 400%"></span><span class="absolute right-2 top-2 rounded-lg bg-white/90 px-2 py-1 text-[10px] font-black text-amber-700">★ ${pet.rarity}</span>${pet.id === selectedId ? '<span class="absolute left-2 top-2 rounded-lg bg-orange-500 px-2 py-1 text-[10px] font-black text-white">当前</span>' : ''}</span><span class="block w-full p-2.5"><b class="block truncate text-sm text-slate-800">${esc(pet.name)}</b><span class="mt-1 block truncate text-[11px] font-medium text-slate-500">${esc(pet.species)}</span><span class="mt-1 block truncate text-[10px] font-medium text-sky-700">${esc([pet.element, pet.attribute, pet.color].filter(Boolean).join(' · '))}</span></span></button>`).join('') || '<p class="col-span-full py-16 text-center text-sm font-bold text-slate-400">没有找到匹配的宠物</p>'}</div></section></div>`;
+        screen.classList.remove('hidden');
+        setTimeout(() => document.getElementById('petPickerSearch')?.focus(), 0);
+      }
+      function closePetPicker() {
+        document.getElementById('petPickerScreen').classList.add('hidden');
       }
       function openPointPanel(student) {
         const screen = document.getElementById('studentFormScreen');
@@ -519,6 +531,17 @@
         if (action === 'add-student' && state.role === 'teacher') { openStudentForm(); return; }
         if (action === 'edit-student' && state.role === 'teacher') { openStudentForm(student); return; }
         if (action === 'delete-student' && state.role === 'teacher') { deleteStudent(student); return; }
+        if (action === 'open-pet-picker') { petPickerQuery = ''; petPickerFilter = 'all'; renderPetPicker(); return; }
+        if (action === 'close-pet-picker') { closePetPicker(); return; }
+        if (action === 'filter-pets') { petPickerFilter = button.dataset.filter || 'all'; renderPetPicker(); return; }
+        if (action === 'choose-pet') {
+          const pet = pets.find(item => item.id === button.dataset.petId);
+          if (!pet) return;
+          document.getElementById('studentPet').value = pet.id;
+          document.getElementById('studentPetPreview').innerHTML = `${selectedPetSummaryHtml(pet)}<span class="ml-auto shrink-0 rounded-lg bg-sky-600 px-3 py-2 text-xs font-black text-white">打开图鉴</span>`;
+          closePetPicker();
+          return;
+        }
         if (action === 'close-student-form') { document.getElementById('studentFormScreen').classList.add('hidden'); return; }
         if (action === 'close-point-panel') { document.getElementById('studentFormScreen').classList.add('hidden'); return; }
         if (action === 'open-readonly') { readonlyScreen(); return; }
@@ -553,6 +576,13 @@
         }, 180);
       }
       document.addEventListener('input', event => {
+        if (event.target.id === 'petPickerSearch') {
+          petPickerQuery = event.target.value;
+          renderPetPicker();
+          const searchInput = document.getElementById('petPickerSearch');
+          searchInput?.setSelectionRange(searchInput.value.length, searchInput.value.length);
+          return;
+        }
         if (event.target.id !== 'studentSearch' || event.isComposing) return;
         refreshStudentSearch(event.target);
       });
