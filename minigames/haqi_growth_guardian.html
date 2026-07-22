@@ -2,7 +2,7 @@
 <html lang="zh-CN">
 <head>
   <meta charset="UTF-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <meta name="theme-color" content="#f8fafc">
   <title>哈奇成长守护</title>
   <script src="https://cdn.keepwork.com/keepwork/cdn/tailwindcss@3.4.16.js"></script>
@@ -105,7 +105,7 @@
     .today-score strong { display: block; font-size: 32px; color: #fbbf24; }
     .focus-panel { position: relative; padding: 20px; border-left: 4px solid var(--sun); }
     .section-title { margin: 0; font-size: 18px; font-weight: 900; }
-    .section-desc { margin: 5px 0 0; color: var(--muted); font-size: 13px; }
+    .section-desc { margin: 5px 0 0; overflow-wrap: anywhere; color: var(--muted); font-size: 13px; }
     .focus-options { display: grid; grid-template-columns: 1fr auto; gap: 12px; margin-top: 16px; }
     .focus-controls { display: flex; gap: 8px; min-width: 0; }
     .select { min-height: 42px; width: 100%; padding: 0 12px; border: 1px solid var(--line); border-radius: 8px; color: var(--ink); background: white; font-weight: 700; outline: none; }
@@ -191,6 +191,7 @@
     .parent-tabs { display: flex; gap: 6px; padding: 8px; margin-bottom: 12px; overflow-x: auto; }
     .parent-tab { height: 38px; border: 0; border-radius: 7px; padding: 0 15px; color: #5b6d7d; background: transparent; font-weight: 900; cursor: pointer; white-space: nowrap; }
     .parent-tab.active { color: var(--aqua-deep); background: #e8fbf6; }
+    .parent-more { flex: 0 0 112px; width: 112px; min-height: 38px; padding-inline: 9px; font-size: 12px; }
     .metrics-toolbar { display: flex; align-items: center; justify-content: space-between; gap: 10px; padding: 14px; margin-bottom: 12px; }
     .search { min-height: 40px; width: min(320px, 100%); padding: 0 12px; border: 1px solid var(--line); border-radius: 8px; outline: none; }
     .metric-columns { display: grid; grid-template-columns: 1fr 1fr; gap: 14px; }
@@ -242,7 +243,7 @@
     .modal-actions { display: flex; justify-content: flex-end; gap: 8px; margin-top: 18px; }
     .toast-stack { position: fixed; z-index: 120; top: 72px; right: 16px; display: grid; gap: 8px; pointer-events: none; }
     .toast { min-width: 240px; max-width: 340px; padding: 12px 14px; border-radius: 8px; color: white; background: #17324d; box-shadow: 0 12px 30px rgba(23,50,77,.25); font-size: 13px; font-weight: 800; animation: toastIn .25s ease both; }
-    .focus-screen { position: fixed; inset: 0; z-index: 100; overflow: hidden; display: grid; place-items: center; padding: 22px; color: #eefbff; background-color: #102c3c; background-image: radial-gradient(circle at 20% 20%, rgba(45,212,191,.22), transparent 30%), radial-gradient(circle at 80% 72%, rgba(251,191,36,.16), transparent 32%); }
+    .focus-screen { position: fixed; inset: 0; z-index: 100; overflow-x: hidden; overflow-y: auto; display: grid; place-items: center; padding: 22px; color: #eefbff; background-color: #102c3c; background-image: radial-gradient(circle at 20% 20%, rgba(45,212,191,.22), transparent 30%), radial-gradient(circle at 80% 72%, rgba(251,191,36,.16), transparent 32%); }
     .focus-screen.focus_starry { background-color: #11183e; background-image: radial-gradient(circle at 14% 21%, #fff 0 1px, transparent 2px), radial-gradient(circle at 78% 17%, #fde68a 0 1.5px, transparent 2.5px), radial-gradient(circle at 67% 74%, #fff 0 1px, transparent 2px), radial-gradient(circle at 31% 82%, #93c5fd 0 1px, transparent 2px), linear-gradient(145deg, #11183e, #3b2468); background-size: 170px 170px, 230px 230px, 190px 190px, 270px 270px, 100% 100%; }
     .focus-screen.focus_forest { background-color: #123c34; background-image: radial-gradient(circle at 50% 110%, rgba(143,188,94,.7) 0 34%, transparent 34.5%), linear-gradient(155deg, #0e312d, #276454 58%, #4d7545); }
     .pet-stage.pet_sunset { background: linear-gradient(180deg, #ffb37d 0%, #ffe1b4 49%, #f7df8d 49.2%, #d4b46d 100%); }
@@ -276,6 +277,9 @@
     }
     @media (max-width: 680px) {
       .topbar { padding: 9px 10px; }
+      .btn, .mode-btn, .duration-btn { min-height: 44px; }
+      .icon-btn { width: 44px; height: 44px; }
+      .brand, .topbar-actions { min-width: 0; }
       .brand-sub { display: none; }
       .brand-title { font-size: 15px; }
       .brand-mark { width: 36px; height: 36px; }
@@ -299,7 +303,7 @@
       .child-main > .bottom-grid:has(> :target) { padding: 0; background: transparent; box-shadow: none; }
       .bottom-grid > * { display: none; }
       .bottom-grid > :target { position: relative; display: block; min-height: 100%; padding-top: 48px; }
-      .mobile-panel-close { position: absolute; z-index: 3; top: 9px; right: 10px; width: 32px; height: 32px; display: grid; place-items: center; border: 1px solid var(--line); border-radius: 8px; color: var(--ink); background: white; box-shadow: 0 5px 12px rgba(26,73,70,.1); font-size: 20px; line-height: 1; text-decoration: none; }
+      .mobile-panel-close { position: absolute; z-index: 3; top: 9px; right: 10px; width: 44px; height: 44px; display: grid; place-items: center; border: 1px solid var(--line); border-radius: 8px; color: var(--ink); background: white; box-shadow: 0 5px 12px rgba(26,73,70,.1); font-size: 20px; line-height: 1; text-decoration: none; }
       .shop-vault .mobile-panel-close { position: sticky; flex: 0 0 auto; align-self: flex-end; margin: -39px 10px 7px 0; }
       .hero-copy { padding: 18px; align-items: flex-start; }
       .today-score { min-width: 88px; padding: 9px; }
@@ -318,15 +322,33 @@
       .metric-card { min-height: 118px; }
       .pet-generator-grid, .pet-choice-grid { grid-template-columns: 1fr; }
       .pet-generator-actions { align-items: stretch; flex-direction: column; }
-      .focus-screen { padding: 14px; }
+      .focus-screen { place-items: start center; padding: max(14px, env(safe-area-inset-top)) 14px max(14px, env(safe-area-inset-bottom)); }
       .focus-pet { width: 160px; height: 160px; }
     }
     @keyframes mobilePanelIn { from { opacity: 0; transform: translateY(18px); } }
     @media (max-width: 430px) {
+      .brand-title { display: none; }
       .mode-btn span { display: none; }
       .currency-display { padding: 0 8px; }
       .metric-grid { grid-template-columns: 1fr; }
       .hero-copy h1 { font-size: 22px; }
+    }
+    @media (max-width: 680px) {
+      .panel, .list-panel, .metric-section, .setting-card { border-radius: 8px; }
+      .section-title { font-size: 19px; }
+      .section-desc, .next-copy { font-size: 12px; line-height: 1.45; }
+      .parent-tabs { position: sticky; top: 56px; z-index: 20; margin-inline: -10px; padding: 7px 10px; background: var(--bg); }
+      .parent-tab { height: 44px; padding: 0 12px; font-size: 12px; }
+      .parent-more { flex-basis: 106px; width: 106px; min-height: 44px; }
+      .redemption-item { grid-template-columns: 1fr; gap: 8px; padding: 10px; }
+      .redemption-actions { display: grid; grid-template-columns: 1fr 1fr; gap: 7px; }
+      .redemption-actions .btn { width: 100%; }
+      .modal-backdrop { align-items: end; padding: 0; }
+      .modal { width: 100%; max-height: 88dvh; padding: 18px; border-radius: 8px 8px 0 0; }
+      .modal-actions { display: grid; grid-template-columns: 1fr 1fr; }
+      .modal-actions .btn { width: 100%; }
+      .toast-stack { top: auto; right: 10px; bottom: 10px; left: 10px; }
+      .toast { min-width: 0; max-width: none; }
     }
     @media (min-width: 681px) and (max-width: 1180px) {
       html, body { width: 100%; height: 100%; overflow: hidden; }
@@ -400,6 +422,7 @@ art_assets = [];
   const AUTH_TOKEN_KEY = 'haqiGrowthGuardianKeepworkTokenV1';
   const CLOUD_STATE_PATH = 'minigames/haqi-growth-guardian/state.json';
   const CLOUD_PIN_PATH = 'minigames/haqi-growth-guardian/pin.txt';
+  const GROWTH_LINK_ROOT = 'minigames/haqi-growth-link/v2';
   const ICONS = { 学习: '📖', 自律: '⏱', 生活: '🏠', 品格: '🤝', 挑战: '🏆', 其他: '✨' };
   const DEFAULT_METRICS = [
     { id: 'p_homework', name: '主动完成作业', category: '学习', delta: 3, active: true },
@@ -488,12 +511,15 @@ art_assets = [];
   ];
   let state = freshState();
   let guardianStore = null;
+  let guardianSdk = null;
+  let guardianUser = null;
   let parentPinHash = '';
   let saveTimer = 0;
   let saveQueue = Promise.resolve();
   let mode = 'child';
   let parentUnlocked = false;
   let parentTab = 'score';
+  let redemptionFilter = 'pending';
   let metricQuery = '';
   let selectedDuration = 25;
   let petRequestId = '';
@@ -507,8 +533,54 @@ art_assets = [];
   let focusTimer = 0;
   let focusSession = null;
   let dailyResetTimer = 0;
+  let schoolInboxRefreshTimer = 0;
+  function refreshVisibleSchoolInbox() {
+    if (document.hidden || mode !== 'parent' || parentTab !== 'school') return;
+    refreshSchoolInbox();
+  }
   let currentPetId = '';
   let loadedSent = false;
+  let schoolInboxCache = [];
+  let schoolInboxLoadError = '';
+  let schoolStudentProfile = null;
+  let schoolReceiptSyncError = '';
+  let publishingSchoolReceipts = false;
+  let lastAwardNotificationId = '';
+
+  async function loadAwardNotifications(link) {
+    if (!link?.sitePath || !link?.studentId || !guardianSdk?.loadPage) return [];
+    try {
+      const result = await guardianSdk.loadPage({ sitePath: link.sitePath, pagePath: `${GROWTH_LINK_ROOT}/notifications/index.json` });
+      const text = typeof result === 'string' ? result : String(result?.content ?? result?.data?.content ?? '');
+      const parsed = JSON.parse(text || '[]');
+      const notifications = Array.isArray(parsed) ? parsed : [];
+      return notifications
+        .filter(item => ['award_submitted', 'award_processed'].includes(item?.type) && item?.studentId === link.studentId)
+        .sort((a, b) => Number(b.notifiedAt || b.processedAt || 0) - Number(a.notifiedAt || a.processedAt || 0));
+    } catch (_) {
+      return [];
+    }
+  }
+
+  function notifyNewAwardNotification(notifications) {
+    if (!notifications.length) return;
+    const latest = notifications[0];
+    const latestEventId = String(latest?.eventId || latest?.id || '');
+    const latestAt = Number(latest?.notifiedAt || latest?.processedAt || 0);
+    const seenEventId = String(state.schoolLink?.lastSeenNotificationEventId || '');
+    const seenAt = Number(state.schoolLink?.lastSeenNotificationAt || 0);
+    if (!latestEventId) return;
+    if (latest.id && latest.id === lastAwardNotificationId) return;
+    if (latestEventId === seenEventId && (!latestAt || latestAt <= seenAt)) return;
+    if (latestAt && seenAt && latestAt <= seenAt) return;
+    lastAwardNotificationId = latest.id || latestEventId;
+    state.schoolLink.lastSeenNotificationEventId = latestEventId;
+    state.schoolLink.lastSeenNotificationAt = latestAt || Date.now();
+    saveState();
+    const reason = latest.reason || '老师发布了新的课堂奖励';
+    const teacher = latest.teacherUsername ? `，来自 ${latest.teacherUsername}` : '';
+    toast(`学校消息：${reason}${teacher}`);
+  }
 
   function freshState() {
     const childId = `child_${Date.now()}`;
@@ -522,6 +594,7 @@ art_assets = [];
       focusSessions: [],
       rewards: DEFAULT_REWARDS.map(item => ({ ...item })),
       redemptions: [],
+      schoolLink: { teacherUsername: '', sitePath: '', classId: '', studentId: '', studentName: '', appliedEventIds: [], ignoredEventIds: [], pendingReceipts: [], lastSeenNotificationEventId: '', lastSeenNotificationAt: 0 },
       generatedPets: [],
       cosmeticPurchases: [],
       equippedCosmetics: { focusBackground: 'focus_default', petBackground: 'pet_default', petFrame: 'frame_none' }
@@ -532,6 +605,17 @@ art_assets = [];
     if (!parsed?.children?.length || !Array.isArray(parsed.metrics) || !Array.isArray(parsed.ledger)) return null;
     if (!Array.isArray(parsed.rewards)) parsed.rewards = DEFAULT_REWARDS.map(item => ({ ...item }));
     if (!Array.isArray(parsed.redemptions)) parsed.redemptions = [];
+    if (!parsed.schoolLink || typeof parsed.schoolLink !== 'object') parsed.schoolLink = {};
+    parsed.schoolLink.teacherUsername = String(parsed.schoolLink.teacherUsername || '');
+    parsed.schoolLink.sitePath = String(parsed.schoolLink.sitePath || '').trim().replace(/^\/+|\/+$/g, '');
+    parsed.schoolLink.classId = String(parsed.schoolLink.classId || '');
+    parsed.schoolLink.studentId = String(parsed.schoolLink.studentId || '');
+    parsed.schoolLink.studentName = String(parsed.schoolLink.studentName || '');
+    if (!Array.isArray(parsed.schoolLink.appliedEventIds)) parsed.schoolLink.appliedEventIds = [];
+    if (!Array.isArray(parsed.schoolLink.ignoredEventIds)) parsed.schoolLink.ignoredEventIds = [];
+    if (!Array.isArray(parsed.schoolLink.pendingReceipts)) parsed.schoolLink.pendingReceipts = [];
+    parsed.schoolLink.lastSeenNotificationEventId = String(parsed.schoolLink.lastSeenNotificationEventId || '');
+    parsed.schoolLink.lastSeenNotificationAt = Number(parsed.schoolLink.lastSeenNotificationAt || 0);
     if (!Array.isArray(parsed.generatedPets)) parsed.generatedPets = [];
     if (!Array.isArray(parsed.cosmeticPurchases)) parsed.cosmeticPurchases = [];
     if (!parsed.equippedCosmetics) parsed.equippedCosmetics = { focusBackground: 'focus_default', petBackground: 'pet_default', petFrame: 'frame_none' };
@@ -570,6 +654,12 @@ art_assets = [];
     saveTimer = setTimeout(() => queueCloudWrite(CLOUD_STATE_PATH, JSON.stringify(state)), 500);
   }
 
+  function persistStateNow() {
+    clearTimeout(saveTimer);
+    saveTimer = 0;
+    return queueCloudWrite(CLOUD_STATE_PATH, JSON.stringify(state));
+  }
+
   function queueCloudWrite(path, content) {
     saveQueue = saveQueue
       .catch(() => undefined)
@@ -588,6 +678,7 @@ art_assets = [];
 
   async function loadCloudData(sdk) {
     if (!sdk.personalPageStore) throw new Error('Keepwork PersonalPageStore 不可用');
+    guardianSdk = sdk;
     guardianStore = typeof sdk.personalPageStore.withWorkspace === 'function'
       ? sdk.personalPageStore.withWorkspace('MagicHaqi')
       : sdk.personalPageStore;
@@ -953,6 +1044,9 @@ art_assets = [];
   function parentView() {
     const child = activeChild();
     const level = levelForEnergy(child.energy);
+    const secondaryTabs = [
+      ['history', '历史记录'], ['metrics', '指标管理'], ['rewards', '奖励管理'], ['pets', '宠物形象'], ['settings', '家庭设置']
+    ];
     return `
       <div class="parent-layout">
         <aside class="panel profile-panel">
@@ -960,10 +1054,205 @@ art_assets = [];
           <div class="profile-info"><div class="eyebrow">当前孩子</div><h2>${escapeHtml(child.name)}</h2><div class="mini-stat"><div><span>成长能量</span><strong>${child.energy}</strong></div><div><span>当前形态</span><strong style="font-size:13px">${level.name}</strong></div><div><span>今日变化</span><strong>${todayScore() > 0 ? '+' : ''}${todayScore()}</strong></div><div><span>终身成长星</span><strong>${child.lifetimeStars}</strong></div></div><button class="btn btn-soft" id="editChildBtn" style="width:100%;margin-top:12px">编辑孩子与宠物</button></div>
         </aside>
         <div class="parent-main">
-          <nav class="panel parent-tabs"><button class="parent-tab ${parentTab === 'score' ? 'active' : ''}" data-parent-tab="score">评价行为</button><button class="parent-tab ${parentTab === 'history' ? 'active' : ''}" data-parent-tab="history">历史记录</button><button class="parent-tab ${parentTab === 'metrics' ? 'active' : ''}" data-parent-tab="metrics">指标管理</button><button class="parent-tab ${parentTab === 'rewards' ? 'active' : ''}" data-parent-tab="rewards">奖励管理</button><button class="parent-tab ${parentTab === 'pets' ? 'active' : ''}" data-parent-tab="pets">宠物形象</button><button class="parent-tab ${parentTab === 'settings' ? 'active' : ''}" data-parent-tab="settings">家庭设置</button></nav>
-          ${parentTab === 'score' ? scoreView() : parentTab === 'history' ? historyView() : parentTab === 'metrics' ? metricsView() : parentTab === 'rewards' ? rewardsView() : parentTab === 'pets' ? petsView() : settingsView()}
+          <nav class="panel parent-tabs" aria-label="家长功能"><button class="parent-tab ${parentTab === 'score' ? 'active' : ''}" data-parent-tab="score">评价行为</button><button class="parent-tab ${parentTab === 'school' ? 'active' : ''}" data-parent-tab="school">学校收件箱${schoolInboxEvents().length ? ` (${schoolInboxEvents().length})` : ''}</button><select class="select parent-more" id="parentMoreTabs" aria-label="更多家长功能"><option value="" ${['score', 'school'].includes(parentTab) ? 'selected' : ''}>更多管理</option>${secondaryTabs.map(([id, label]) => `<option value="${id}" ${parentTab === id ? 'selected' : ''}>${label}</option>`).join('')}</select></nav>
+          ${parentTab === 'score' ? scoreView() : parentTab === 'school' ? schoolInboxView() : parentTab === 'history' ? historyView() : parentTab === 'metrics' ? metricsView() : parentTab === 'rewards' ? rewardsView() : parentTab === 'pets' ? petsView() : settingsView()}
         </div>
       </div>`;
+  }
+
+  function safeCloudPart(value) {
+    return String(value || '').trim().replace(/[^a-zA-Z0-9_-]/g, '_').slice(0, 80);
+  }
+
+  function normalizeSchoolEventSummary(item, link = state.schoolLink) {
+    if (!item?.id || item?.eventType !== 'school_award') return null;
+    if (item.classId !== link.classId || item.studentId !== link.studentId) return null;
+    if (!['submitted', 'published'].includes(item.status)) return null;
+    return {
+      id: item.id,
+      eventType: item.eventType,
+      status: item.status,
+      createdAt: Number(item.createdAt) || 0,
+      submittedAt: Number(item.submittedAt) || 0,
+      classId: item.classId,
+      className: item.className || '',
+      studentId: item.studentId,
+      studentUuid: item.studentUuid || '',
+      studentName: item.studentName || '',
+      delta: Math.max(0, Math.trunc(Number(item.delta) || 0)),
+      reason: item.reason || '',
+      category: item.category || '学习',
+      note: item.note || ''
+    };
+  }
+
+  function schoolEventBasePath(link = state.schoolLink) {
+    return `${GROWTH_LINK_ROOT}/events`;
+  }
+
+  function schoolPolicyPath(link = state.schoolLink) {
+    return `${GROWTH_LINK_ROOT}/access-policy.json`;
+  }
+
+  function schoolStudentProfilePath(link = state.schoolLink) {
+    return `${GROWTH_LINK_ROOT}/student-profile.json`;
+  }
+
+  function schoolReceiptPath(eventId) {
+    return `${GROWTH_LINK_ROOT}/receipts/${safeCloudPart(eventId)}.json`;
+  }
+
+  function validSchoolSitePath(sitePath) {
+    return /^[a-zA-Z0-9_-]+\/[a-zA-Z0-9_-]+(?:\/[a-zA-Z0-9_-]+)*$/.test(String(sitePath || '').trim());
+  }
+
+  function schoolLinkFromUrl() {
+    const params = new URLSearchParams(location.search);
+    const sitePath = String(params.get('guardianSite') || '').trim().replace(/^\/+|\/+$/g, '');
+    const classId = String(params.get('guardianClass') || '').trim();
+    const studentId = String(params.get('guardianStudent') || '').trim();
+    if (!validSchoolSitePath(sitePath) || !classId || !studentId) return null;
+    return {
+      sitePath,
+      classId,
+      studentId,
+      studentName: String(params.get('guardianName') || '').trim(),
+      teacherUsername: String(params.get('guardianTeacher') || '').trim()
+    };
+  }
+
+  function sharedPageContent(result) {
+    if (typeof result === 'string') return result;
+    return String(result?.content ?? result?.data?.content ?? '');
+  }
+
+  async function readSchoolSharedPage(link, pagePath) {
+    if (typeof guardianSdk?.loadPage !== 'function') throw new Error('当前 Keepwork SDK 不支持共享站点读取');
+    if (!validSchoolSitePath(link.sitePath)) throw new Error('请填写教师提供的家庭专用 Keepwork 站点路径');
+    try {
+      return sharedPageContent(await guardianSdk.loadPage({ sitePath: link.sitePath, pagePath }));
+    } catch (error) {
+      throw new Error(`无法读取家庭专用站点。请确认当前家长账号已被加入该站点，且路径正确：${error?.message || error}`);
+    }
+  }
+
+  function guardianUsername() {
+    return safeCloudPart(guardianUser?.username || guardianUser?.name || '');
+  }
+
+  function validateSchoolAccessPolicy(policy, link) {
+    const account = guardianUsername();
+    if (!account) return '未获得当前家长 Keepwork 账号，请重新登录';
+    if (!policy || typeof policy !== 'object' || policy.version !== 2 || policy.privacyScope !== 'family') return '该家庭站点尚未发布家庭隔离授权策略。请让教师在“云端授权”中为该学生配置独立家庭站点并发布';
+    if (safeCloudPart(policy.classId) !== safeCloudPart(link.classId)) return '班级授权策略不匹配';
+    const student = Array.isArray(policy.students) ? policy.students.find(item => item?.id === link.studentId) : null;
+    if (!student || !Array.isArray(student.roles) || !student.roles.includes('student')) return '该家庭站点不包含当前学生的授权记录';
+    const allowlist = Array.isArray(student.guardianAllowlist) ? student.guardianAllowlist.map(safeCloudPart) : [];
+    if (!allowlist.includes(account)) return `当前账号 ${account} 不在该学生的家长白名单中`;
+    return '';
+  }
+
+  async function queueSchoolReceipt(event, decision, growthEntryId = '') {
+    const receipt = { version: 2, privacyScope: 'family', eventId: event.id, classId: state.schoolLink.classId, studentId: state.schoolLink.studentId, decision, decidedAt: Date.now(), guardianUsername: guardianUsername(), growthEntryId };
+    state.schoolLink.pendingReceipts = state.schoolLink.pendingReceipts.filter(item => item.eventId !== event.id);
+    state.schoolLink.pendingReceipts.unshift(receipt);
+    await persistStateNow();
+    await publishPendingSchoolReceipts();
+  }
+
+  async function publishPendingSchoolReceipts() {
+    const link = state.schoolLink;
+    if (publishingSchoolReceipts || !link?.sitePath || !link?.classId || !link?.studentId || !guardianSdk?.savePage || !link.pendingReceipts.length) return;
+    publishingSchoolReceipts = true;
+    schoolReceiptSyncError = '';
+    try {
+      const policy = JSON.parse(await readSchoolSharedPage(link, schoolPolicyPath(link)) || 'null');
+      const accessError = validateSchoolAccessPolicy(policy, link);
+      if (accessError) throw new Error(accessError);
+      for (const receipt of [...link.pendingReceipts]) {
+        await guardianSdk.savePage({ sitePath: link.sitePath, pagePath: schoolReceiptPath(receipt.eventId), content: JSON.stringify(receipt, null, 2), commitMessage: '同步家长学校奖励处理结果' });
+        link.pendingReceipts = link.pendingReceipts.filter(item => item !== receipt);
+        await persistStateNow();
+      }
+    } catch (error) {
+      schoolReceiptSyncError = error?.message || String(error);
+      console.warn('同步学校奖励处理结果失败', error);
+    } finally {
+      publishingSchoolReceipts = false;
+      if (mode === 'parent' && parentTab === 'school') render();
+    }
+  }
+
+  async function refreshSchoolInbox() {
+    const link = state.schoolLink;
+    if (!link?.sitePath || !link?.classId || !link?.studentId || !guardianSdk) return;
+    schoolInboxLoadError = '';
+    schoolStudentProfile = null;
+    try {
+      const policyText = await readSchoolSharedPage(link, schoolPolicyPath(link));
+      let policy = null;
+      try { policy = JSON.parse(policyText || 'null'); } catch (_) {}
+      const accessError = validateSchoolAccessPolicy(policy, link);
+      if (accessError) throw new Error(accessError);
+      publishPendingSchoolReceipts();
+      try {
+        const profileText = await readSchoolSharedPage(link, schoolStudentProfilePath(link));
+        const profile = JSON.parse(profileText || 'null');
+        if (profile?.version === 2 && profile?.privacyScope === 'family' && profile?.classId === link.classId && profile?.student?.id === link.studentId) schoolStudentProfile = profile;
+      } catch (_) {}
+      const basePath = schoolEventBasePath(link);
+      const indexText = await readSchoolSharedPage(link, `${basePath}/index.json`);
+      let index = [];
+      try { index = JSON.parse(indexText || '[]'); } catch (_) {}
+      if (!Array.isArray(index)) index = [];
+      const summarizedEvents = [];
+      const detailLookupItems = [];
+      index.slice(0, 100).forEach(item => {
+        const summaryEvent = normalizeSchoolEventSummary(item, link);
+        if (summaryEvent) summarizedEvents.push(summaryEvent);
+        else if (item?.id) detailLookupItems.push(item);
+      });
+      const detailEvents = await Promise.all(detailLookupItems.map(async item => {
+        try {
+          const text = await readSchoolSharedPage(link, `${basePath}/${safeCloudPart(item.id)}.json`);
+          const event = JSON.parse(text || 'null');
+          return event?.classId === link.classId && event?.studentId === link.studentId ? event : null;
+        } catch (_) { return null; }
+      }));
+      schoolInboxCache = [...summarizedEvents, ...detailEvents.filter(Boolean)]
+        .filter(event => event?.eventType === 'school_award' && event.studentId === link.studentId && ['submitted', 'published'].includes(event.status))
+        .sort((left, right) => Number(right.createdAt || 0) - Number(left.createdAt || 0));
+      const notifications = await loadAwardNotifications(link);
+      notifyNewAwardNotification(notifications);
+    } catch (error) {
+      schoolInboxCache = [];
+      schoolInboxLoadError = error?.message || '无法读取学校云端消息';
+    }
+    if (mode === 'parent' && parentTab === 'school') render();
+  }
+
+  function schoolInboxEvents() {
+    const link = state.schoolLink;
+    if (!link?.studentId) return [];
+    const completed = new Set([...(link.appliedEventIds || []), ...(link.ignoredEventIds || [])]);
+    return schoolInboxCache
+      .filter(event => event?.eventType === 'school_award' && ['submitted', 'published'].includes(event.status) && event.studentId === link.studentId && !completed.has(event.id))
+      .sort((left, right) => Number(right.createdAt) - Number(left.createdAt));
+  }
+
+  function schoolInboxView() {
+    const link = state.schoolLink;
+    const events = schoolInboxEvents();
+    if (!link.sitePath || !link.classId || !link.studentId) return `<section class="panel" style="padding:22px"><h2 class="section-title">连接学校成长消息</h2><p class="section-desc">请向老师索取本家庭专用的 Keepwork 站点路径、班级编号和学生编号。家庭站点只能包含当前孩子的学校奖励，收到后仍须由家长决定是否计入家庭成长能量。</p><form id="schoolLinkForm"><div class="field"><label>家庭专用 Keepwork 站点路径</label><input class="input" id="schoolSitePath" maxlength="160" required placeholder="例如：family_li/xiaoyu"></div><div class="field"><label>教师 Keepwork 账号（选填，用于识别）</label><input class="input" id="schoolTeacherUsername" maxlength="80" placeholder="例如：teacher_zhang"></div><div class="field"><label>班级编号</label><input class="input" id="schoolClassId" maxlength="80" required placeholder="例如：三年级_2"></div><div class="field"><label>学生编号</label><input class="input" id="schoolStudentId" maxlength="80" required placeholder="例如：stu_xiaoyu"></div><div class="field"><label>孩子在学校使用的姓名（选填）</label><input class="input" id="schoolStudentName" maxlength="40" placeholder="用于家长识别"></div><div class="modal-actions"><button class="btn btn-primary" type="submit">保存绑定</button></div></form></section>`;
+    const classroom = schoolStudentProfile?.student;
+    const pendingReceiptCount = link.pendingReceipts.length;
+    const receiptSyncStatus = schoolReceiptSyncError
+      ? `<p class="section-desc" style="color:#be123c">回执同步失败，已保留 ${pendingReceiptCount} 条待同步记录：${escapeHtml(schoolReceiptSyncError)}</p>`
+      : pendingReceiptCount
+        ? `<p class="section-desc" style="color:#b45309">${publishingSchoolReceipts ? '正在同步' : '等待同步'} ${pendingReceiptCount} 条家庭处理回执。</p>`
+        : '<p class="section-desc" style="color:#047857">家庭处理回执已同步。</p>';
+    const classroomSummary = classroom ? `<div class="panel" style="margin:16px 0;padding:16px"><div class="metrics-toolbar" style="padding:0"><div><h3 class="section-title" style="font-size:18px">课堂宠物档案</h3><p class="section-desc">由教师端同步，仅包含当前孩子的课堂状态，不会覆盖家庭成长账本。</p></div><strong class="delta positive">${Math.max(0, Number(classroom.points) || 0)} 课堂积分</strong></div><div style="display:flex;gap:18px;align-items:center;margin-top:12px"><div>${classroom.pet?.url ? `<img src="${escapeHtml(classroom.pet.url)}" alt="${escapeHtml(classroom.pet.name || '课堂宠物')}" style="width:58px;height:58px;object-fit:cover;object-position:0 0;border-radius:12px;background:#fff7ed">` : '✨'}</div><div><strong>${escapeHtml(classroom.name || link.studentName || link.studentId)} · Lv.${Math.max(1, Number(classroom.level) || 1)}</strong><div class="next-copy">${escapeHtml(classroom.pet?.name || '课堂宠物')} · ${escapeHtml(classroom.pet?.species || '成长伙伴')} · 心情 ${Math.max(0, Math.min(100, Number(classroom.mood) || 0))}%</div></div></div></div>` : '<p class="section-desc" style="margin:16px 0">教师尚未同步课堂宠物档案；刷新或请教师保存该学生的家庭云端授权。</p>';
+    return `<section class="panel" style="padding:22px"><div class="metrics-toolbar" style="padding:0"><div><h2 class="section-title">学校成长收件箱</h2><p class="section-desc">已连接家庭专用站点 ${escapeHtml(link.sitePath)} 的 ${escapeHtml(link.classId)} · ${escapeHtml(link.studentName || link.studentId)}。课堂档案与奖励事件仅属于当前孩子；课堂正向表现仍须由家长确认。</p></div><div style="display:flex;gap:8px"><button class="btn btn-soft" id="refreshSchoolInboxBtn">刷新云端</button><button class="btn btn-soft" id="changeSchoolLinkBtn">修改绑定</button></div></div>${schoolInboxLoadError ? `<p class="section-desc" style="color:#be123c">云端读取失败：${escapeHtml(schoolInboxLoadError)}</p>` : ''}${receiptSyncStatus}${classroomSummary}<div class="redemption-list" style="padding:0;margin-top:16px">${events.length ? events.map(event => `<div class="redemption-item"><div><strong>${escapeHtml(event.reason || '课堂成长记录')}</strong><div class="next-copy">${escapeHtml(event.className || '学校')} · ${formatTime(event.createdAt)} · +${Math.max(0, Number(event.delta) || 0)} 家庭成长能量${event.note ? ` · ${escapeHtml(event.note)}` : ''}</div></div><div class="redemption-actions"><button class="btn btn-primary" style="min-height:32px;padding:0 10px" data-approve-school-event="${escapeHtml(event.id)}">计入成长</button><button class="btn btn-soft" style="min-height:32px;padding:0 10px" data-ignore-school-event="${escapeHtml(event.id)}">暂不计入</button></div></div>`).join('') : '<div class="empty">暂无待处理的学校成长消息。</div>'}</div></section>`;
   }
 
   function metricCards(metrics) {
@@ -979,7 +1268,7 @@ art_assets = [];
 
   function historyView() {
     const entries = state.ledger.filter(item => item.childId === activeChild().id && item.petKey === petKeyForChild());
-    return `<section class="panel"><div style="padding:18px"><h2 class="section-title">积分账本</h2><p class="section-desc">撤销不会删除记录，确保每次变化都有依据。</p></div><div class="history-wrap"><table class="history-table"><thead><tr><th>时间</th><th>行为</th><th>来源</th><th>备注</th><th>变化</th><th>操作</th></tr></thead><tbody>${entries.length ? entries.map(entry => `<tr style="${entry.revokedAt ? 'opacity:.45' : ''}"><td>${formatTime(entry.createdAt)}</td><td><strong>${escapeHtml(entry.reason)}</strong><br><span style="color:var(--muted)">${escapeHtml(entry.category)}</span></td><td>${entry.source === 'focus_session' ? '专注守护' : '家长记录'}</td><td>${escapeHtml(entry.note || '—')}</td><td class="delta ${entry.delta >= 0 ? 'positive' : 'negative'}">${entry.delta > 0 ? '+' : ''}${entry.delta}${entry.revokedAt ? '（已撤销）' : ''}</td><td>${!entry.revokedAt ? `<button class="btn btn-soft" style="min-height:32px;padding:0 10px" data-revoke="${entry.id}">撤销</button>` : '—'}</td></tr>`).join('') : '<tr><td colspan="6" class="empty">暂无记录</td></tr>'}</tbody></table></div></section>`;
+    return `<section class="panel"><div style="padding:18px"><h2 class="section-title">积分账本</h2><p class="section-desc">撤销不会删除记录，确保每次变化都有依据。</p></div><div class="history-wrap"><table class="history-table"><thead><tr><th>时间</th><th>行为</th><th>来源</th><th>备注</th><th>变化</th><th>操作</th></tr></thead><tbody>${entries.length ? entries.map(entry => `<tr style="${entry.revokedAt ? 'opacity:.45' : ''}"><td>${formatTime(entry.createdAt)}</td><td><strong>${escapeHtml(entry.reason)}</strong><br><span style="color:var(--muted)">${escapeHtml(entry.category)}</span></td><td>${entry.source === 'focus_session' ? '专注守护' : entry.source === 'school_sync' ? '学校同步' : '家长记录'}</td><td>${escapeHtml(entry.note || '—')}</td><td class="delta ${entry.delta >= 0 ? 'positive' : 'negative'}">${entry.delta > 0 ? '+' : ''}${entry.delta}${entry.revokedAt ? '（已撤销）' : ''}</td><td>${!entry.revokedAt ? `<button class="btn btn-soft" style="min-height:32px;padding:0 10px" data-revoke="${entry.id}">撤销</button>` : '—'}</td></tr>`).join('') : '<tr><td colspan="6" class="empty">暂无记录</td></tr>'}</tbody></table></div></section>`;
   }
 
   function metricsView() {
@@ -990,7 +1279,10 @@ art_assets = [];
     const child = activeChild();
     const coins = coinStats(child.id);
     const pending = state.redemptions.filter(item => item.childId === child.id && !item.cancelledAt && !item.fulfilledAt);
-    return `<div class="panel metrics-toolbar"><div><h2 class="section-title">奖励与金币</h2><p class="section-desc">${coins.positivePoints} 个正向积分已产生 ${coins.earned} 枚金币，当前可用 ${coins.balance} 枚。</p></div><button class="btn btn-primary" id="addRewardBtn">＋ 新建奖励</button></div><div class="settings-grid"><section class="panel setting-card"><h3>可兑换奖励</h3><p>停用后不会影响已有兑换记录。</p><div class="redemption-list" style="padding:0">${state.rewards.map(reward => `<div class="redemption-item"><div><strong>${escapeHtml(reward.icon || '🎁')} ${escapeHtml(reward.name)}</strong><div class="next-copy">${reward.cost} 枚金币 · ${reward.active === false ? '已停用' : '兑换中'}</div></div><button class="btn btn-soft" style="min-height:32px;padding:0 10px" data-toggle-reward="${reward.id}">${reward.active === false ? '启用' : '停用'}</button></div>`).join('')}</div></section><section class="panel setting-card"><h3>待兑现 (${pending.length})</h3><p>孩子兑换后，由家长确认奖励已经兑现。</p><div class="redemption-list" style="padding:0">${pending.length ? pending.map(item => `<div class="redemption-item"><div><strong>${escapeHtml(item.rewardIcon || '🎁')} ${escapeHtml(item.rewardName)}</strong><div class="next-copy">${formatTime(item.createdAt)} · ${item.cost} 枚金币</div></div><div class="redemption-actions"><button class="btn btn-primary" style="min-height:32px;padding:0 10px" data-fulfill-redemption="${item.id}">已兑现</button><button class="btn btn-soft" style="min-height:32px;padding:0 10px" data-cancel-redemption="${item.id}">取消</button></div></div>`).join('') : '<div class="empty">暂无待兑现奖励</div>'}</div></section></div>`;
+    const redemptions = state.redemptions.filter(item => item.childId === child.id).filter(item => redemptionFilter === 'all' || (redemptionFilter === 'pending' && !item.cancelledAt && !item.fulfilledAt) || (redemptionFilter === 'fulfilled' && item.fulfilledAt) || (redemptionFilter === 'cancelled' && item.cancelledAt));
+    const redemptionStatus = item => item.fulfilledAt ? `已兑现 · ${formatTime(item.fulfilledAt)}` : item.cancelledAt ? `已取消 · ${formatTime(item.cancelledAt)}` : '待兑现';
+    const redemptionNote = item => item.fulfillmentNote || item.cancellationNote || '';
+    return `<div class="panel metrics-toolbar"><div><h2 class="section-title">奖励与金币</h2><p class="section-desc">${coins.positivePoints} 个正向积分已产生 ${coins.earned} 枚金币，当前可用 ${coins.balance} 枚。</p></div><button class="btn btn-primary" id="addRewardBtn">＋ 新建奖励</button></div><div class="settings-grid"><section class="panel setting-card"><h3>可兑换奖励</h3><p>停用后不会影响已有兑换记录。</p><div class="redemption-list" style="padding:0">${state.rewards.map(reward => `<div class="redemption-item"><div><strong>${escapeHtml(reward.icon || '🎁')} ${escapeHtml(reward.name)}</strong><div class="next-copy">${reward.cost} 枚金币 · ${reward.active === false ? '已停用' : '兑换中'}</div></div><button class="btn btn-soft" style="min-height:32px;padding:0 10px" data-toggle-reward="${reward.id}">${reward.active === false ? '启用' : '停用'}</button></div>`).join('')}</div></section><section class="panel setting-card"><h3>履约队列 (${pending.length})</h3><p>每一笔兑换都保留申请、处理和结果，方便家庭回顾约定。</p><div class="duration-tabs" style="margin:0 0 12px">${[['pending', '待兑现'], ['fulfilled', '已兑现'], ['cancelled', '已取消'], ['all', '全部']].map(([key, label]) => `<button class="duration-btn ${redemptionFilter === key ? 'active' : ''}" data-redemption-filter="${key}">${label}</button>`).join('')}</div><div class="redemption-list" style="padding:0">${redemptions.length ? redemptions.map(item => `<div class="redemption-item"><div><strong>${escapeHtml(item.rewardIcon || '🎁')} ${escapeHtml(item.rewardName)}</strong><div class="next-copy">${redemptionStatus(item)} · ${item.cost} 枚金币${redemptionNote(item) ? ` · ${escapeHtml(redemptionNote(item))}` : ''}</div></div>${!item.fulfilledAt && !item.cancelledAt ? `<div class="redemption-actions"><button class="btn btn-primary" style="min-height:32px;padding:0 10px" data-fulfill-redemption="${item.id}">登记兑现</button><button class="btn btn-soft" style="min-height:32px;padding:0 10px" data-cancel-redemption="${item.id}">取消</button></div>` : ''}</div>`).join('') : '<div class="empty">这个状态下暂无兑换记录</div>'}</div></section></div>`;
   }
 
   function petHistoryRows() {
@@ -1020,6 +1312,11 @@ art_assets = [];
   async function loadGuardianSdk() {
     if (window.keepwork?.aiGenerators?.genImage && typeof window.keepwork.showLoginWindow === 'function') return window.keepwork;
     sdkLoadPromise ||= (async () => {
+      window.KEEPWORK_DEFAULT_OPTIONS = {
+        timeout: 30000,
+        autoReloadAfterRedirectLogin: false,
+        wxAuth: { scope: 'snsapi_base' }
+      };
       const explicitSdk = new URLSearchParams(location.search).get('sdk');
       const isLocal = !location.hostname || ['localhost', '127.0.0.1', '::1'].includes(location.hostname);
       const localSdk = 'http://127.0.0.1:5001/index.ts';
@@ -1044,6 +1341,8 @@ art_assets = [];
             });
           }
           if (window.keepwork?.aiGenerators?.genImage && typeof window.keepwork.showLoginWindow === 'function') {
+            window.keepwork._autoReloadAfterRedirectLogin = false;
+            window.keepwork?.wxAuth?.setScope?.('snsapi_base');
             await window.keepwork.localAPIKeySettings?.load?.();
             return window.keepwork;
           }
@@ -1071,6 +1370,8 @@ art_assets = [];
       if (!sdk.token && (urlToken || savedToken)) sdk.token = urlToken || savedToken;
       await sdk.whenRedirectLoginSettled?.();
     } catch (_) {}
+    if (sdk) sdk._autoReloadAfterRedirectLogin = false;
+    sdk?.wxAuth?.setScope?.('snsapi_base');
     if (sdk.token) {
       try {
         const user = typeof sdk.getUserProfile === 'function'
@@ -1081,27 +1382,40 @@ art_assets = [];
         if (user) {
           localStorage.setItem(AUTH_TOKEN_KEY, sdk.token);
           clearGuardianAuthParams();
-          return;
+          return user;
         }
       } catch (_) {}
       sdk.token = null;
       localStorage.removeItem(AUTH_TOKEN_KEY);
     }
-    if (typeof sdk.showLoginWindow === 'function') await sdk.showLoginWindow({ title: '登录哈奇成长守护' });
+    if (typeof sdk.showLoginWindow === 'function') await sdk.showLoginWindow({ title: '登录哈奇成长守护', wechatScope: 'snsapi_base' });
     else if (sdk.loginWindow?.show) await new Promise(resolve => sdk.loginWindow.show({ onLogin: resolve, onClose: resolve }));
     else if (sdk.login) await sdk.login();
     if (!sdk.token) throw new Error('需要先登录 Keepwork 才能进入成长守护');
     localStorage.setItem(AUTH_TOKEN_KEY, sdk.token);
     clearGuardianAuthParams();
+    const user = typeof sdk.getUserProfile === 'function'
+      ? await sdk.getUserProfile()
+      : typeof sdk.getCurrentUser === 'function'
+        ? await sdk.getCurrentUser()
+        : sdk.user;
+    if (!user) throw new Error('未获得 Keepwork 用户资料，请重新登录');
+    return user;
   }
 
   async function startGuardian() {
     const app = document.getElementById('app');
+    const incomingSchoolLink = schoolLinkFromUrl();
     app.innerHTML = '<main class="main"><section class="panel" style="max-width:460px;margin:12vh auto;padding:28px;text-align:center"><div style="font-size:42px">🔐</div><h1 class="section-title" style="margin-top:12px">正在连接 Keepwork</h1><p class="section-desc">登录成功后即可进入哈奇成长守护。</p></section></main>';
     try {
       const sdk = await loadGuardianSdk();
-      await ensureGuardianLogin(sdk);
+      guardianUser = await ensureGuardianLogin(sdk);
       await loadCloudData(sdk);
+      if (incomingSchoolLink && !state.schoolLink.sitePath) {
+        Object.assign(state.schoolLink, incomingSchoolLink);
+        parentTab = 'school';
+        saveState();
+      }
       selectedFamousPetId = activeChild().famousPetId || famousPets[0]?.id || '';
       syncChildFromPetProgress();
       syncDailyEnergyBaselines();
@@ -1110,6 +1424,9 @@ art_assets = [];
       syncCurrentPetArt();
       render();
       requestPetImage(activeChild().selectedPetId || '');
+      clearInterval(schoolInboxRefreshTimer);
+      refreshVisibleSchoolInbox();
+      schoolInboxRefreshTimer = window.setInterval(refreshVisibleSchoolInbox, 45 * 1000);
       if (!loadedSent) {
         loadedSent = true;
         post('gameLoaded', { title: '哈奇成长守护' });
@@ -1188,7 +1505,8 @@ art_assets = [];
   }
 
   function bindParent() {
-    document.querySelectorAll('[data-parent-tab]').forEach(button => button.addEventListener('click', () => { parentTab = button.dataset.parentTab; render(); }));
+    document.querySelectorAll('[data-parent-tab]').forEach(button => button.addEventListener('click', () => { parentTab = button.dataset.parentTab; render(); if (parentTab === 'school') refreshSchoolInbox(); }));
+    document.getElementById('parentMoreTabs')?.addEventListener('change', event => { if (!event.target.value) return; parentTab = event.target.value; render(); });
     document.getElementById('metricSearch')?.addEventListener('input', event => { metricQuery = event.target.value; render(); document.getElementById('metricSearch')?.focus(); });
     document.querySelectorAll('[data-score-metric]').forEach(button => button.addEventListener('click', () => showScoreModal(button.dataset.scoreMetric)));
     document.querySelectorAll('[data-revoke]').forEach(button => button.addEventListener('click', () => revokeEntry(button.dataset.revoke)));
@@ -1196,6 +1514,18 @@ art_assets = [];
     document.querySelectorAll('[data-toggle-reward]').forEach(button => button.addEventListener('click', () => toggleReward(button.dataset.toggleReward)));
     document.querySelectorAll('[data-fulfill-redemption]').forEach(button => button.addEventListener('click', () => updateRedemption(button.dataset.fulfillRedemption, 'fulfilledAt')));
     document.querySelectorAll('[data-cancel-redemption]').forEach(button => button.addEventListener('click', () => updateRedemption(button.dataset.cancelRedemption, 'cancelledAt')));
+    document.querySelectorAll('[data-redemption-filter]').forEach(button => button.addEventListener('click', () => { redemptionFilter = button.dataset.redemptionFilter; render(); }));
+    document.querySelectorAll('[data-approve-school-event]').forEach(button => button.addEventListener('click', async () => {
+      button.disabled = true;
+      await approveSchoolEvent(button.dataset.approveSchoolEvent);
+    }));
+    document.querySelectorAll('[data-ignore-school-event]').forEach(button => button.addEventListener('click', async () => {
+      button.disabled = true;
+      await ignoreSchoolEvent(button.dataset.ignoreSchoolEvent);
+    }));
+    document.getElementById('changeSchoolLinkBtn')?.addEventListener('click', showSchoolLinkModal);
+    document.getElementById('refreshSchoolInboxBtn')?.addEventListener('click', refreshSchoolInbox);
+    document.getElementById('schoolLinkForm')?.addEventListener('submit', saveSchoolLink);
     document.getElementById('addMetricBtn')?.addEventListener('click', showAddMetricModal);
     document.getElementById('addRewardBtn')?.addEventListener('click', showAddRewardModal);
     document.getElementById('editChildBtn')?.addEventListener('click', showEditChildModal);
@@ -1308,6 +1638,81 @@ art_assets = [];
     render();
     if (newLevel.index > oldLevel.index) toast(`${child.petName}进化为${newLevel.name}！`);
     else toast(`${record.reason} ${record.delta > 0 ? '+' : ''}${record.delta} 分`);
+    return record;
+  }
+
+  function saveSchoolLink(event) {
+    event.preventDefault();
+    const teacherUsername = document.getElementById('schoolTeacherUsername').value.trim();
+    const sitePath = document.getElementById('schoolSitePath').value.trim().replace(/^\/+|\/+$/g, '');
+    const classId = document.getElementById('schoolClassId').value.trim();
+    const studentId = document.getElementById('schoolStudentId').value.trim();
+    if (!validSchoolSitePath(sitePath) || !classId || !studentId) return toast('请填写有效的共享站点路径、班级编号和学生编号');
+    const targetChanged = state.schoolLink.sitePath !== sitePath
+      || state.schoolLink.classId !== classId
+      || state.schoolLink.studentId !== studentId;
+    state.schoolLink.teacherUsername = teacherUsername;
+    state.schoolLink.sitePath = sitePath;
+    state.schoolLink.classId = classId;
+    state.schoolLink.studentId = studentId;
+    state.schoolLink.studentName = document.getElementById('schoolStudentName').value.trim();
+    if (targetChanged) {
+      state.schoolLink.appliedEventIds = [];
+      state.schoolLink.ignoredEventIds = [];
+      state.schoolLink.pendingReceipts = [];
+      state.schoolLink.lastSeenNotificationEventId = '';
+      state.schoolLink.lastSeenNotificationAt = 0;
+      lastAwardNotificationId = '';
+    }
+    saveState();
+    render();
+    refreshSchoolInbox();
+    toast('学校成长收件箱已绑定，正在读取云端消息');
+  }
+
+  function showSchoolLinkModal() {
+    const link = state.schoolLink;
+    modal(`<h2>修改学校绑定</h2><p>仅修改教师账号或孩子姓名会保留收件箱处理记录；修改家庭站点、班级或学生编号会开始新的收件箱。已入账的学校奖励始终不会重复计入。</p><form id="schoolLinkModalForm"><div class="field"><label>家庭专用 Keepwork 站点路径</label><input class="input" id="schoolSitePath" maxlength="160" required value="${escapeHtml(link.sitePath)}"></div><div class="field"><label>教师 Keepwork 账号（选填，用于识别）</label><input class="input" id="schoolTeacherUsername" maxlength="80" value="${escapeHtml(link.teacherUsername)}"></div><div class="field"><label>班级编号</label><input class="input" id="schoolClassId" maxlength="80" required value="${escapeHtml(link.classId)}"></div><div class="field"><label>学生编号</label><input class="input" id="schoolStudentId" maxlength="80" required value="${escapeHtml(link.studentId)}"></div><div class="field"><label>孩子在学校使用的姓名（选填）</label><input class="input" id="schoolStudentName" maxlength="40" value="${escapeHtml(link.studentName)}"></div><div class="modal-actions"><button type="button" class="btn btn-soft" id="cancelModal">取消</button><button class="btn btn-primary" type="submit">保存绑定</button></div></form>`);
+    document.getElementById('cancelModal').addEventListener('click', closeModal);
+    document.getElementById('schoolLinkModalForm').addEventListener('submit', event => {
+      saveSchoolLink(event);
+      closeModal();
+    });
+  }
+
+  async function approveSchoolEvent(eventId) {
+    const event = schoolInboxEvents().find(item => item.id === eventId);
+    if (!event) return toast('这条学校消息已处理或不存在');
+    try {
+      if (state.ledger.some(entry => String(entry.externalEventId || '') === event.id)) {
+        if (!state.schoolLink.appliedEventIds.includes(event.id)) state.schoolLink.appliedEventIds.unshift(event.id);
+        await queueSchoolReceipt(event, 'approved', state.ledger.find(entry => String(entry.externalEventId || '') === event.id)?.id || '');
+        render();
+        return toast('这条学校奖励已入账，不会重复计入');
+      }
+      state.schoolLink.appliedEventIds.unshift(event.id);
+      const record = addLedgerEntry({ category: event.category || '学习', delta: Math.max(0, Math.trunc(Number(event.delta) || 0)), source: 'school_sync', actorId: event.actor?.userId || 'teacher', reason: `学校同步：${event.reason || '课堂成长记录'}`, note: event.note || `${event.className || '学校'}课堂记录`, externalEventId: event.id });
+      await queueSchoolReceipt(event, 'approved', record.id);
+      toast(state.schoolLink.pendingReceipts.length ? '奖励已入账，回执等待同步' : '奖励已入账并已通知教师');
+    } catch (error) {
+      schoolReceiptSyncError = error?.message || String(error);
+      render();
+      toast(`奖励已保留，云端同步失败：${schoolReceiptSyncError}`);
+    }
+  }
+
+  async function ignoreSchoolEvent(eventId) {
+    const event = schoolInboxEvents().find(item => item.id === eventId);
+    if (!event) return toast('这条学校消息已处理或不存在');
+    try {
+      state.schoolLink.ignoredEventIds.unshift(event.id);
+      await queueSchoolReceipt(event, 'ignored');
+      toast(state.schoolLink.pendingReceipts.length ? '决定已保存，回执等待同步' : '已通知教师暂不计入家庭成长');
+    } catch (error) {
+      schoolReceiptSyncError = error?.message || String(error);
+      render();
+      toast(`决定已保留，云端同步失败：${schoolReceiptSyncError}`);
+    }
   }
 
   function revokeEntry(entryId) {
@@ -1388,12 +1793,18 @@ art_assets = [];
   function updateRedemption(redemptionId, field) {
     const redemption = state.redemptions.find(item => item.id === redemptionId && !item.fulfilledAt && !item.cancelledAt);
     if (!redemption) return;
-    const action = field === 'fulfilledAt' ? '确认已经兑现这个奖励？' : '取消兑换并退还金币？';
-    if (!confirm(action)) return;
-    redemption[field] = Date.now();
-    saveState();
-    render();
-    toast(field === 'fulfilledAt' ? '奖励已兑现' : '兑换已取消，金币已退回');
+    const fulfilled = field === 'fulfilledAt';
+    modal(`<h2>${fulfilled ? '登记奖励兑现' : '取消兑换'}</h2><p>${fulfilled ? `确认“${escapeHtml(redemption.rewardName)}”已交付给孩子？` : `取消“${escapeHtml(redemption.rewardName)}”后，将自动退还 ${redemption.cost} 枚金币。`}</p><form id="redemptionResultForm"><div class="field"><label>${fulfilled ? '兑现说明（选填）' : '取消原因（选填）'}</label><input class="input" id="redemptionResultNote" maxlength="80" placeholder="例如：周六下午已一起去公园"></div><div class="modal-actions"><button type="button" class="btn btn-soft" id="cancelModal">返回</button><button class="btn ${fulfilled ? 'btn-primary' : 'btn-danger'}" type="submit">${fulfilled ? '确认已兑现' : '确认取消'}</button></div></form>`);
+    document.getElementById('cancelModal').addEventListener('click', closeModal);
+    document.getElementById('redemptionResultForm').addEventListener('submit', event => {
+      event.preventDefault();
+      redemption[field] = Date.now();
+      redemption[fulfilled ? 'fulfillmentNote' : 'cancellationNote'] = document.getElementById('redemptionResultNote').value.trim();
+      saveState();
+      closeModal();
+      render();
+      toast(fulfilled ? '奖励已登记兑现' : '兑换已取消，金币已退回');
+    });
   }
 
   function showAddMetricModal() {
@@ -1614,7 +2025,14 @@ art_assets = [];
       if (!focusSession) render();
       scheduleDailyEnergyReset();
     }
+    if (!document.hidden) publishPendingSchoolReceipts();
+    if (!document.hidden) refreshVisibleSchoolInbox();
     if (focusSession) focusSession.lastTick = Date.now();
+  });
+
+  window.addEventListener('online', () => {
+    publishPendingSchoolReceipts();
+    refreshVisibleSchoolInbox();
   });
 
   document.addEventListener('fullscreenchange', () => {
@@ -1627,6 +2045,7 @@ art_assets = [];
 
   window.addEventListener('beforeunload', () => {
     clearTimeout(dailyResetTimer);
+    clearInterval(schoolInboxRefreshTimer);
     petObjectUrls.forEach(url => URL.revokeObjectURL(url));
   });
 
