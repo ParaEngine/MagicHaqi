@@ -1,0 +1,2103 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <meta name="theme-color" content="#f8fafc">
+  <title>哈奇成长守护</title>
+  <script src="https://cdn.keepwork.com/keepwork/cdn/tailwindcss@3.4.16.js"></script>
+  <style>
+    :root {
+      --ink: #163438;
+      --muted: #698085;
+      --line: #d8e7e5;
+      --aqua: #17b89e;
+      --aqua-deep: #08766c;
+      --coral: #f4686f;
+      --sun: #f2ad27;
+      --sky: #49a9cf;
+      --paper: #ffffff;
+      --panel-line: #cfded9;
+      --panel-radius: 8px;
+      --shadow-soft: 0 18px 45px rgba(30, 76, 74, .10), 0 2px 8px rgba(30, 76, 74, .05);
+      --shadow-lift: 0 22px 55px rgba(22, 52, 56, .16), 0 5px 14px rgba(22, 52, 56, .08);
+    }
+    * { box-sizing: border-box; }
+    html, body { margin: 0; min-height: 100%; color: var(--ink); font-family: "Microsoft YaHei", "PingFang SC", sans-serif; }
+    body {
+      background-color: #f4f8f5;
+      background-image: linear-gradient(rgba(16, 99, 90, .035) 1px, transparent 1px), linear-gradient(90deg, rgba(16, 99, 90, .035) 1px, transparent 1px), linear-gradient(145deg, #f8fbf8 0%, #edf7f4 52%, #fff8e9 100%);
+      background-size: 28px 28px, 28px 28px, 100% 100%;
+    }
+    button, input, select { font: inherit; }
+    button { touch-action: manipulation; }
+    .app-shell { min-height: 100vh; display: grid; grid-template-rows: auto 1fr; }
+    .topbar { position: sticky; top: 0; z-index: 30; display: flex; align-items: center; justify-content: space-between; gap: 12px; padding: 11px 20px; border-bottom: 1px solid rgba(8,118,108,.14); background: rgba(250,253,251,.88); box-shadow: 0 8px 30px rgba(22,52,56,.06); backdrop-filter: blur(18px) saturate(1.25); }
+    .brand { display: flex; align-items: center; gap: 10px; min-width: 0; }
+    .brand-mark { width: 40px; height: 40px; display: grid; place-items: center; border-radius: 8px; color: white; font-size: 22px; background: linear-gradient(145deg, #19bba2, #08766c); box-shadow: 0 7px 16px rgba(8,118,108,.26), inset 0 1px rgba(255,255,255,.32); }
+    .brand-title { font-weight: 900; font-size: 18px; letter-spacing: 0; white-space: nowrap; }
+    .brand-sub { font-size: 11px; color: var(--muted); }
+    .topbar-actions { display: flex; align-items: center; gap: 8px; }
+    .currency-display { min-height: 42px; display: flex; align-items: center; gap: 7px; padding: 0 13px; border: 1px solid #e8c653; border-radius: 8px; color: #65410a; background: linear-gradient(145deg, #fff8ce, #ffe47b); box-shadow: 0 7px 16px rgba(166,112,18,.14), inset 0 1px rgba(255,255,255,.72); }
+    .currency-icon { font-size: 21px; filter: drop-shadow(0 2px 2px rgba(140,91,8,.18)); }
+    .currency-value { min-width: 18px; font-size: 19px; font-weight: 900; text-align: center; font-variant-numeric: tabular-nums; }
+    .mode-switch { display: flex; align-items: center; gap: 4px; padding: 4px; border: 1px solid var(--line); border-radius: 8px; background: rgba(235,244,241,.82); }
+    .mode-btn { min-height: 34px; padding: 0 14px; border: 0; border-radius: 6px; background: transparent; color: #526b6c; font-weight: 800; cursor: pointer; transition: color .2s ease, background .2s ease, box-shadow .2s ease; }
+    .mode-btn.active { color: var(--aqua-deep); background: white; box-shadow: 0 3px 10px rgba(26,73,70,.12); }
+    .main { width: min(1440px, 100%); margin: 0 auto; padding: 18px; }
+    .panel { background: rgba(255,255,255,.94); border: 1px solid var(--panel-line); border-radius: var(--panel-radius); box-shadow: var(--shadow-soft); }
+    .btn { min-height: 40px; border: 0; border-radius: 8px; padding: 0 16px; font-weight: 900; cursor: pointer; transition: transform .18s ease, box-shadow .18s ease, filter .18s ease; }
+    .btn:hover { transform: translateY(-1px); }
+    .btn:active { transform: translateY(1px); }
+    .btn-primary { color: white; background: linear-gradient(145deg, #119b8a, #08766c); box-shadow: 0 7px 16px rgba(8,118,108,.22); }
+    .btn-sun { color: #493000; background: linear-gradient(145deg, #ffd45f, #f2ad27); box-shadow: 0 8px 18px rgba(212,139,15,.24); }
+    .btn-primary:hover, .btn-sun:hover { filter: saturate(1.08) brightness(1.02); box-shadow: var(--shadow-lift); }
+    .btn-soft { color: var(--ink); background: #edf5f7; border: 1px solid var(--line); }
+    .btn-danger { color: #be123c; background: #fff1f2; border: 1px solid #fecdd3; }
+    .icon-btn { width: 38px; height: 38px; display: grid; place-items: center; padding: 0; border: 1px solid var(--line); border-radius: 8px; background: white; cursor: pointer; }
+    .child-layout { display: grid; grid-template-columns: minmax(260px, 380px) minmax(0, 1fr); gap: clamp(12px, 1.5vw, 18px); align-items: stretch; }
+    .pet-stage { position: relative; min-height: 610px; overflow: hidden; display: flex; flex-direction: column; align-items: center; padding: 26px 24px 20px; border-color: var(--panel-line); background: linear-gradient(180deg, #d5f3ed 0%, #eaf8f6 49%, #cfe9bf 49.2%, #b9d990 100%); box-shadow: var(--shadow-soft); }
+    .pet-stage::before { content: ""; position: absolute; inset: 0; opacity: .62; background-image: radial-gradient(ellipse at 17% 17%, rgba(255,255,255,.9) 0 22px, transparent 23px), radial-gradient(ellipse at 78% 12%, rgba(255,255,255,.82) 0 31px, transparent 32px), linear-gradient(164deg, transparent 58%, rgba(79,137,67,.14) 58.5% 66%, transparent 66.5%); }
+    .pet-stage::after { content: ""; position: absolute; left: 12%; right: 12%; bottom: 96px; height: 38px; border-radius: 50%; background: rgba(52,93,57,.16); filter: blur(10px); transform: perspective(120px) rotateX(58deg); }
+    .pet-head { position: relative; z-index: 2; width: 100%; display: flex; align-items: flex-start; justify-content: space-between; gap: 10px; }
+    .eyebrow { color: var(--aqua-deep); font-size: 12px; font-weight: 900; }
+    .pet-name { margin-top: 2px; font-size: 27px; font-weight: 900; }
+    .stage-actions { display: grid; justify-items: end; gap: 7px; }
+    .stage-badge { padding: 7px 10px; border-radius: 999px; color: #65410a; background: rgba(255,244,194,.9); border: 1px solid #ebc454; box-shadow: 0 5px 12px rgba(138,91,13,.11); font-weight: 900; font-size: 12px; backdrop-filter: blur(8px); }
+    .today-change-badge { display: none; min-height: 30px; align-items: center; gap: 5px; padding: 0 9px; border: 1px solid rgba(8,118,108,.22); border-radius: 7px; color: var(--aqua-deep); background: rgba(255,255,255,.88); font-size: 10px; font-weight: 800; box-shadow: 0 5px 12px rgba(26,73,70,.1); }
+    .today-change-badge strong { font-size: 13px; }
+    .today-change-badge.positive strong { color: #087a52; }
+    .today-change-badge.negative strong { color: #be3348; }
+    .pet-art-wrap { position: relative; z-index: 2; flex: 1; width: min(310px, 90%); min-height: 300px; display: grid; place-items: center; }
+    .pet-art { width: 260px; height: 260px; background-repeat: no-repeat; background-position: center; background-size: contain; filter: drop-shadow(0 24px 18px rgba(32,79,77,.24)); animation: petFloat 3.6s ease-in-out infinite; }
+    .pet-art.placeholder { display: grid; place-items: center; border-radius: 50%; background: #fff7ed; border: 8px solid #fed7aa; font-size: 112px; }
+    .pet-art.placeholder::after { content: "🥚"; }
+    .stage-spark { position: absolute; inset: 8% 0 auto; text-align: center; font-size: 24px; color: #f59e0b; animation: twinkle 1.8s ease-in-out infinite; }
+    .energy-card { position: relative; z-index: 2; width: 100%; padding: 15px; background: rgba(255,255,255,.84); border: 1px solid rgba(255,255,255,.94); border-radius: 8px; box-shadow: 0 15px 34px rgba(42,92,72,.13); backdrop-filter: blur(14px); }
+    .mobile-pet-actions { position: relative; z-index: 2; width: 100%; display: none; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 7px; margin-bottom: 10px; }
+    .mobile-pet-action { min-width: 0; min-height: 50px; display: grid; place-items: center; align-content: center; gap: 2px; padding: 5px 2px; border: 1px solid rgba(8,118,108,.18); border-radius: 8px; color: #244f52; background: rgba(255,255,255,.88); box-shadow: 0 6px 14px rgba(26,73,70,.1); font-size: 10px; font-weight: 900; text-decoration: none; backdrop-filter: blur(10px); }
+    .mobile-pet-action span { font-size: 19px; line-height: 1; }
+    .mobile-panel-close { display: none; }
+    .energy-row { display: flex; align-items: center; justify-content: space-between; font-weight: 900; }
+    .energy-track { position: relative; height: 14px; margin-top: 10px; border-radius: 999px; overflow: hidden; background: #dbe7ea; box-shadow: inset 0 1px 2px rgba(34,72,78,.12); }
+    .energy-fill { position: absolute; inset: 0 auto 0 0; border-radius: inherit; background: #8faeb1; transition: width .5s ease; }
+    .energy-delta { position: absolute; inset-block: 0; transition: left .5s ease, width .5s ease; }
+    .energy-delta.positive { background: linear-gradient(90deg, #16a66f, #55cf91); box-shadow: 0 0 10px rgba(22,166,111,.28); }
+    .energy-delta.negative { background: linear-gradient(90deg, #ef6b72, #cf3f52); box-shadow: 0 0 10px rgba(207,63,82,.22); }
+    .energy-baseline { position: absolute; z-index: 2; top: -3px; bottom: -3px; width: 2px; margin-left: -1px; border-radius: 2px; background: #244f52; box-shadow: 0 0 0 1px rgba(255,255,255,.78); }
+    .energy-tick { position: absolute; z-index: 3; inset-block: 0; width: 1px; background: rgba(255,255,255,.92); box-shadow: 1px 0 rgba(36,79,82,.42); pointer-events: none; }
+    .energy-scale { position: relative; height: 17px; margin-top: 3px; color: var(--muted); font-size: 9px; font-weight: 800; }
+    .energy-scale span { position: absolute; transform: translateX(-50%); }
+    .energy-scale span:first-child { transform: none; }
+    .energy-scale span:last-child { transform: translateX(-100%); }
+    .energy-daily { display: flex; justify-content: space-between; gap: 10px; margin-top: 7px; color: var(--muted); font-size: 11px; font-weight: 800; }
+    .energy-change.positive { color: #087a52; }
+    .energy-change.negative { color: #be3348; }
+    .next-copy { margin-top: 8px; color: var(--muted); font-size: 12px; }
+    .child-main { min-width: 0; display: grid; grid-template-columns: minmax(0, 1fr); grid-template-rows: auto auto 1fr; gap: 14px; }
+    .child-main > * { min-width: 0; max-width: 100%; }
+    .hero-copy { position: relative; overflow: hidden; padding: 26px; display: flex; align-items: center; justify-content: space-between; gap: 18px; border-color: rgba(255,255,255,.1); background: linear-gradient(120deg, #163e43 0%, #0d6260 68%, #167b70 100%); color: white; box-shadow: 0 22px 48px rgba(16,73,72,.2); }
+    .hero-copy::after { content: "成长日记"; position: absolute; right: 17%; bottom: -11px; color: rgba(255,255,255,.055); font-size: 64px; line-height: 1; font-weight: 900; pointer-events: none; }
+    .hero-copy > * { position: relative; z-index: 1; }
+    .hero-copy h1 { margin: 2px 0 8px; font-size: clamp(23px, 3vw, 38px); line-height: 1.15; font-weight: 900; letter-spacing: 0; }
+    .hero-copy p { margin: 0; color: #c9dce9; font-size: 14px; }
+    .today-score { flex: 0 0 auto; min-width: 118px; text-align: center; padding: 13px; border: 1px solid rgba(255,255,255,.26); border-radius: 8px; background: rgba(255,255,255,.1); box-shadow: inset 0 1px rgba(255,255,255,.1); backdrop-filter: blur(10px); }
+    .today-score strong { display: block; font-size: 32px; color: #fbbf24; }
+    .focus-panel { position: relative; padding: 20px; border-left: 4px solid var(--sun); }
+    .section-title { margin: 0; font-size: 18px; font-weight: 900; }
+    .section-desc { margin: 5px 0 0; overflow-wrap: anywhere; color: var(--muted); font-size: 13px; }
+    .focus-options { display: grid; grid-template-columns: 1fr auto; gap: 12px; margin-top: 16px; }
+    .focus-controls { display: flex; gap: 8px; min-width: 0; }
+    .select { min-height: 42px; width: 100%; padding: 0 12px; border: 1px solid var(--line); border-radius: 8px; color: var(--ink); background: white; font-weight: 700; outline: none; }
+    .duration-tabs { display: flex; gap: 6px; margin-top: 10px; overflow-x: auto; }
+    .duration-btn { min-width: 68px; height: 38px; border-radius: 8px; border: 1px solid var(--line); background: white; font-weight: 900; color: #526579; cursor: pointer; }
+    .duration-btn.active { color: var(--aqua-deep); border-color: var(--aqua); background: #e8fbf6; }
+    .custom-duration { display: flex; align-items: center; gap: 6px; }
+    .custom-duration .input { width: 78px; height: 38px; padding: 0 9px; }
+    .custom-duration .duration-btn { min-width: 58px; }
+    .shop-vault { display: flex; min-height: 0; flex-direction: column; overflow: hidden; border-color: var(--panel-line); background: #f7fbf9; }
+    .reward-vault-head { display: flex; align-items: center; justify-content: space-between; gap: 14px; padding: 17px 18px 14px; }
+    .shop-sections { display: grid; min-height: 0; grid-template-columns: minmax(0, 1fr); overflow-x: hidden; overflow-y: auto; overscroll-behavior: contain; scrollbar-gutter: stable; border-top: 1px solid var(--panel-line); -webkit-overflow-scrolling: touch; }
+    .shop-sections::-webkit-scrollbar { width: 7px; }
+    .shop-sections::-webkit-scrollbar-track { background: transparent; }
+    .shop-sections::-webkit-scrollbar-thumb { border: 2px solid transparent; border-radius: 999px; background: rgba(79, 167, 149, .38); background-clip: padding-box; }
+    .shop-section { min-width: 0; padding-top: 14px; background: #fffdf5; }
+    .shop-section + .shop-section { position: relative; border-top: 0; background: #f2fbf8; }
+    .shop-section + .shop-section::before { content: ""; position: absolute; top: 0; left: 18px; right: 18px; height: 1px; background: linear-gradient(90deg, transparent, rgba(79,167,149,.52) 18%, rgba(79,167,149,.52) 82%, transparent); }
+    .shop-section-head { padding: 0 18px 11px; }
+    .shop-section-head h3 { display: flex; align-items: center; gap: 7px; margin: 0; font-size: 14px; font-weight: 900; }
+    .shop-section-head h3::after { content: ""; flex: 1; height: 1px; background: linear-gradient(90deg, rgba(105,128,133,.18), transparent); }
+    .shop-section-head p { margin: 4px 0 0; color: var(--muted); font-size: 11px; }
+    .coin-balance { flex: 0 0 auto; display: flex; align-items: center; gap: 9px; padding: 8px 12px; border: 1px solid #edcf68; border-radius: 8px; color: #65410a; background: linear-gradient(145deg, #fff7c8, #ffe88a); box-shadow: 0 7px 16px rgba(166,112,18,.12); }
+    .coin-balance span { font-size: 22px; }
+    .coin-balance strong { font-size: 22px; }
+    .coin-progress { height: 7px; margin-top: 7px; overflow: hidden; border-radius: 999px; background: #eee5c8; }
+    .coin-progress > div { height: 100%; border-radius: inherit; background: linear-gradient(90deg, #f2ad27, #f7d154); }
+    .reward-list { width: 100%; max-width: 100%; display: grid; grid-auto-flow: column; grid-auto-columns: minmax(175px, 1fr); gap: 9px; padding: 0 18px 18px; overflow-x: auto; }
+    .reward-card { min-height: 116px; display: grid; grid-template-rows: auto 1fr auto; gap: 7px; padding: 12px; border: 1px solid #eadba8; border-radius: 8px; background: rgba(255,255,255,.82); }
+    .reward-icon { font-size: 24px; }
+    .reward-name { font-size: 13px; line-height: 1.35; font-weight: 900; }
+    .reward-redeem { min-height: 34px; border: 0; border-radius: 7px; color: #5d3b05; background: #ffe795; font-weight: 900; cursor: pointer; }
+    .reward-redeem:disabled { color: #84908d; background: #edf1ef; cursor: not-allowed; }
+    .cosmetic-list { width: 100%; max-width: 100%; display: grid; grid-auto-flow: column; grid-auto-columns: minmax(170px, 1fr); gap: 9px; padding: 0 18px 18px; overflow-x: auto; }
+    .cosmetic-card { min-height: 142px; display: grid; grid-template-rows: 48px auto 1fr auto; gap: 6px; padding: 11px; border: 1px solid #cce5e0; border-radius: 8px; background: rgba(255,255,255,.9); }
+    .cosmetic-preview { overflow: hidden; display: grid; place-items: center; border-radius: 6px; color: white; font-size: 23px; text-shadow: 0 2px 6px rgba(0,0,0,.24); }
+    .cosmetic-type { color: var(--aqua-deep); font-size: 10px; font-weight: 900; }
+    .cosmetic-name { font-size: 13px; font-weight: 900; }
+    .cosmetic-action { min-height: 32px; border: 0; border-radius: 7px; color: white; background: var(--aqua-deep); font-weight: 900; cursor: pointer; }
+    .cosmetic-action.equipped { color: #526579; background: #e6eeec; cursor: default; }
+    .preview-focus_default { background: linear-gradient(135deg, #102c3c, #176e70); }
+    .preview-focus_starry { background: radial-gradient(circle at 25% 28%, #fff 0 1px, transparent 2px), radial-gradient(circle at 75% 63%, #fde68a 0 1px, transparent 2px), linear-gradient(135deg, #141b4b, #3b2468); }
+    .preview-focus_forest { background: linear-gradient(155deg, #103d35 0 55%, #4d7545 56%); }
+    .preview-pet_default { background: linear-gradient(#d5f3ed 0 50%, #b9d990 51%); }
+    .preview-pet_sunset { background: linear-gradient(#ffb37d 0 48%, #f7df8d 49%); }
+    .preview-pet_space { background: linear-gradient(145deg, #12213f, #315b77); }
+    .preview-frame_none { color: #526579; background: #edf3f2; }
+    .preview-frame_stars { color: #b87900; background: #fff8d8; border: 3px solid #f6c94c; }
+    .preview-frame_mint { color: #08766c; background: #e7fbf5; border: 3px double #19bba2; }
+    .redemption-list { display: grid; gap: 8px; padding: 0 18px 18px; }
+    .redemption-item { display: grid; grid-template-columns: 1fr auto; gap: 10px; align-items: center; padding: 11px; border: 1px solid var(--line); border-radius: 8px; background: #f9fcfb; }
+    .redemption-actions { display: flex; gap: 6px; }
+    .bottom-grid { display: grid; grid-template-columns: 1fr; gap: 14px; min-height: 220px; }
+    .list-panel { padding: 18px; min-width: 0; border-color: var(--panel-line); }
+    .timeline { display: grid; gap: 9px; margin-top: 14px; }
+    .timeline-item { display: grid; grid-template-columns: 36px 1fr auto; gap: 10px; align-items: center; padding: 10px; border: 1px solid #e2ece9; border-radius: 8px; background: linear-gradient(120deg, #fbfefd, #f5faf8); transition: transform .18s ease, border-color .18s ease; }
+    .timeline-item:hover { transform: translateX(3px); border-color: #aadacf; }
+    .timeline-icon { width: 36px; height: 36px; display: grid; place-items: center; border-radius: 8px; background: #e8fbf6; }
+    .timeline-title { font-size: 13px; font-weight: 900; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+    .timeline-time { color: var(--muted); font-size: 11px; }
+    .delta { font-size: 16px; font-weight: 900; }
+    .delta.positive { color: #059669; }
+    .delta.negative { color: #e11d48; }
+    .empty { padding: 24px 10px; color: var(--muted); text-align: center; font-size: 13px; }
+    .milestone-list { display: grid; gap: 10px; margin-top: 14px; }
+    .milestone { display: grid; grid-template-columns: 64px 1fr; gap: 12px; align-items: center; padding: 11px; border-radius: 8px; background: linear-gradient(120deg, #fffaf0, #fff5ce); border: 1px solid #efd77c; box-shadow: 0 5px 14px rgba(152,112,24,.06); }
+    .milestone.locked { background: #f6f8fa; border-color: var(--line); }
+    .milestone-art { width: 64px; height: 64px; border-radius: 8px; background-color: rgba(255,255,255,.78); background-repeat: no-repeat; box-shadow: inset 0 0 0 1px rgba(22,52,56,.08); }
+    .milestone-art.locked { display: grid; place-items: center; color: #7b898b; background: #e7ecec; font-size: 30px; font-weight: 900; }
+    .milestone strong { display: block; font-size: 13px; }
+    .milestone span { color: var(--muted); font-size: 11px; }
+    .parent-layout { display: grid; grid-template-columns: 260px minmax(0, 1fr); gap: 16px; }
+    .profile-panel { position: sticky; top: 82px; align-self: start; overflow: hidden; }
+    .profile-pet { min-height: 210px; display: grid; place-items: center; padding: 15px; background: linear-gradient(180deg, #e7f8f5, #fff7e8); }
+    .profile-pet .pet-art { width: 175px; height: 175px; }
+    .profile-info { padding: 16px; }
+    .profile-info h2 { margin: 0; font-size: 21px; font-weight: 900; }
+    .mini-stat { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; margin-top: 12px; }
+    .mini-stat > div { padding: 10px; border: 1px solid var(--line); border-radius: 8px; background: #f8fbfc; }
+    .mini-stat span { display: block; color: var(--muted); font-size: 10px; }
+    .mini-stat strong { font-size: 17px; }
+    .parent-main { min-width: 0; }
+    .parent-tabs { display: flex; gap: 6px; padding: 8px; margin-bottom: 12px; overflow-x: auto; }
+    .parent-tab { height: 38px; border: 0; border-radius: 7px; padding: 0 15px; color: #5b6d7d; background: transparent; font-weight: 900; cursor: pointer; white-space: nowrap; }
+    .parent-tab.active { color: var(--aqua-deep); background: #e8fbf6; }
+    .parent-more { flex: 0 0 112px; width: 112px; min-height: 38px; padding-inline: 9px; font-size: 12px; }
+    .metrics-toolbar { display: flex; align-items: center; justify-content: space-between; gap: 10px; padding: 14px; margin-bottom: 12px; }
+    .search { min-height: 40px; width: min(320px, 100%); padding: 0 12px; border: 1px solid var(--line); border-radius: 8px; outline: none; }
+    .metric-columns { display: grid; grid-template-columns: 1fr 1fr; gap: 14px; }
+    .metric-section { padding: 14px; }
+    .metric-section.positive { border-top: 3px solid #10b981; }
+    .metric-section.negative { border-top: 3px solid #fb7185; }
+    .metric-heading { display: flex; align-items: center; justify-content: space-between; margin-bottom: 12px; }
+    .metric-heading h3 { margin: 0; font-size: 15px; font-weight: 900; }
+    .metric-grid { display: grid; grid-template-columns: repeat(2, minmax(0,1fr)); gap: 9px; }
+    .metric-card { min-height: 112px; display: grid; grid-template-rows: 1fr auto; gap: 8px; padding: 11px; border-radius: 8px; background: linear-gradient(145deg, #fbfffd, #f0faf6); border: 1px solid #b7ead9; box-shadow: 0 7px 18px rgba(28,105,82,.06); transition: transform .18s ease, box-shadow .18s ease; }
+    .metric-card:hover { transform: translateY(-2px); box-shadow: 0 13px 28px rgba(28,105,82,.11); }
+    .metric-card.negative { border-color: #f5c9cd; background: linear-gradient(145deg, #fffdfd, #fff5f5); }
+    .metric-top { display: grid; grid-template-columns: 32px 1fr; gap: 8px; align-items: start; }
+    .metric-icon { width: 32px; height: 32px; display: grid; place-items: center; border-radius: 8px; color: #047857; background: #dff8ed; font-size: 17px; }
+    .metric-card.negative .metric-icon { color: #be123c; background: #fff1f2; }
+    .metric-name { font-size: 13px; line-height: 1.35; font-weight: 900; }
+    .metric-category { margin-top: 3px; color: var(--muted); font-size: 10px; }
+    .score-btn { height: 34px; border: 1px solid #a7e8ce; border-radius: 7px; color: #047857; background: #eafff5; font-weight: 900; cursor: pointer; }
+    .metric-card.negative .score-btn { color: #be123c; border-color: #fecdd3; background: #fff1f2; }
+    .history-table { width: 100%; border-collapse: collapse; }
+    .history-table th, .history-table td { padding: 12px 10px; border-bottom: 1px solid var(--line); text-align: left; font-size: 12px; }
+    .history-table th { color: var(--muted); background: #f7fafb; font-weight: 900; }
+    .history-wrap { overflow-x: auto; }
+    .settings-grid { display: grid; grid-template-columns: repeat(2, minmax(0,1fr)); gap: 12px; }
+    .setting-card { padding: 18px; }
+    .setting-card h3 { margin: 0 0 5px; font-size: 15px; font-weight: 900; }
+    .setting-card p { margin: 0 0 14px; color: var(--muted); font-size: 12px; }
+    .pet-manager { display: grid; gap: 14px; }
+    .pet-generator { padding: 18px; }
+    .pet-generator-grid { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); gap: 12px; }
+    .pet-generator .field:first-child { margin-top: 0; }
+    .pet-generator-actions { display: flex; align-items: center; justify-content: space-between; gap: 12px; margin-top: 14px; }
+    .pet-generate-status { color: var(--muted); font-size: 12px; }
+    .pet-choice-grid { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 10px; padding: 0 18px 18px; }
+    .pet-choice { min-width: 0; display: grid; grid-template-rows: 150px auto auto; gap: 9px; padding: 11px; border: 1px solid var(--line); border-radius: 8px; background: #fbfefd; }
+    .pet-choice.selected { border-color: var(--aqua); box-shadow: 0 0 0 2px rgba(20,184,166,.12); }
+    .pet-choice-preview { overflow: hidden; display: grid; place-items: center; border-radius: 7px; background: linear-gradient(145deg, #eaf8f6, #fff7e8); }
+    .pet-choice-art { width: 138px; height: 138px; background-repeat: no-repeat; background-position: 33.333% 66.666%; background-size: 400% 400%; }
+    .pet-choice-meta strong { display: block; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+    .pet-choice-meta span { color: var(--muted); font-size: 11px; }
+    .modal-backdrop { position: fixed; inset: 0; z-index: 80; display: grid; place-items: center; padding: 18px; background: rgba(15,35,52,.68); backdrop-filter: blur(6px); }
+    .modal { width: min(460px, 100%); max-height: 90vh; overflow: auto; padding: 22px; background: white; border-radius: 8px; box-shadow: 0 25px 80px rgba(0,0,0,.28); }
+    .modal h2 { margin: 0; font-size: 21px; font-weight: 900; }
+    .modal p { margin: 7px 0 16px; color: var(--muted); font-size: 13px; }
+    .field { display: grid; gap: 6px; margin-top: 12px; }
+    .field label { color: #526579; font-size: 12px; font-weight: 900; }
+    .input { width: 100%; min-height: 42px; padding: 0 12px; border: 1px solid var(--line); border-radius: 8px; outline: none; }
+    .input:focus, .search:focus, .select:focus { border-color: var(--aqua); box-shadow: 0 0 0 3px rgba(20,184,166,.12); }
+    .modal-actions { display: flex; justify-content: flex-end; gap: 8px; margin-top: 18px; }
+    .toast-stack { position: fixed; z-index: 120; top: 72px; right: 16px; display: grid; gap: 8px; pointer-events: none; }
+    .toast { min-width: 240px; max-width: 340px; padding: 12px 14px; border-radius: 8px; color: white; background: #17324d; box-shadow: 0 12px 30px rgba(23,50,77,.25); font-size: 13px; font-weight: 800; animation: toastIn .25s ease both; }
+    .focus-screen { position: fixed; inset: 0; z-index: 100; overflow-x: hidden; overflow-y: auto; display: grid; place-items: center; padding: 22px; color: #eefbff; background-color: #102c3c; background-image: radial-gradient(circle at 20% 20%, rgba(45,212,191,.22), transparent 30%), radial-gradient(circle at 80% 72%, rgba(251,191,36,.16), transparent 32%); }
+    .focus-screen.focus_starry { background-color: #11183e; background-image: radial-gradient(circle at 14% 21%, #fff 0 1px, transparent 2px), radial-gradient(circle at 78% 17%, #fde68a 0 1.5px, transparent 2.5px), radial-gradient(circle at 67% 74%, #fff 0 1px, transparent 2px), radial-gradient(circle at 31% 82%, #93c5fd 0 1px, transparent 2px), linear-gradient(145deg, #11183e, #3b2468); background-size: 170px 170px, 230px 230px, 190px 190px, 270px 270px, 100% 100%; }
+    .focus-screen.focus_forest { background-color: #123c34; background-image: radial-gradient(circle at 50% 110%, rgba(143,188,94,.7) 0 34%, transparent 34.5%), linear-gradient(155deg, #0e312d, #276454 58%, #4d7545); }
+    .pet-stage.pet_sunset { background: linear-gradient(180deg, #ffb37d 0%, #ffe1b4 49%, #f7df8d 49.2%, #d4b46d 100%); }
+    .pet-stage.pet_space { color: #eefbff; border-color: #506d92; background: radial-gradient(circle at 18% 20%, rgba(255,255,255,.9) 0 1px, transparent 2px), radial-gradient(circle at 82% 32%, rgba(253,230,138,.9) 0 1.5px, transparent 2.5px), linear-gradient(155deg, #111a36, #24435f 54%, #365e67); background-size: 150px 150px, 210px 210px, 100% 100%; }
+    .pet-stage.pet_space .eyebrow, .pet-stage.pet_space .next-copy { color: #c4e5e1; }
+    .frame_stars { border: 7px solid #f6c94c !important; border-radius: 50% !important; box-shadow: 0 0 0 4px rgba(255,255,255,.76), 0 0 28px rgba(246,201,76,.55); }
+    .frame_mint { border: 8px double #19bba2 !important; border-radius: 50% !important; box-shadow: 0 0 0 4px rgba(255,255,255,.7), 0 12px 30px rgba(8,118,108,.25); }
+    .focus-content { width: min(720px, 100%); text-align: center; }
+    .focus-pet { width: 210px; height: 210px; margin: 0 auto 12px; animation: focusPetFloat 6s ease-in-out infinite; will-change: transform; }
+    .focus-pet.placeholder { border-color: rgba(255,255,255,.4); background: rgba(255,255,255,.12); }
+    .focus-task { color: #99f6e4; font-size: 13px; font-weight: 900; }
+    .focus-time { margin: 8px 0; font: 900 clamp(58px, 12vw, 112px)/1 "Microsoft YaHei", sans-serif; font-variant-numeric: tabular-nums; letter-spacing: 0; }
+    .focus-hint { color: #bdd1dc; font-size: 13px; }
+    .focus-progress { height: 8px; margin: 22px auto; overflow: hidden; border-radius: 999px; background: rgba(255,255,255,.13); }
+    .focus-progress > div { height: 100%; width: 0; background: #2dd4bf; transition: width .5s linear; }
+    .focus-actions { display: flex; justify-content: center; gap: 10px; }
+    .child-layout > *, .parent-layout > * { animation: reveal .45s cubic-bezier(.2,.75,.25,1) both; }
+    .child-layout > :nth-child(2), .parent-layout > :nth-child(2) { animation-delay: .08s; }
+    .hidden { display: none !important; }
+    @keyframes petFloat { 0%,100% { transform: translateY(0) rotate(-1deg); } 50% { transform: translateY(-10px) rotate(1deg); } }
+    @keyframes focusPetFloat { 0%,100% { transform: translateY(5px); } 50% { transform: translateY(-9px); } }
+    @keyframes twinkle { 0%,100% { opacity: .35; transform: scale(.95); } 50% { opacity: 1; transform: scale(1.05); } }
+    @keyframes toastIn { from { opacity: 0; transform: translateY(-8px); } }
+    @keyframes reveal { from { opacity: 0; transform: translateY(10px); } }
+    @media (max-width: 900px) {
+      .child-layout, .parent-layout { grid-template-columns: 1fr; }
+      .pet-stage { min-height: 490px; }
+      .profile-panel { position: static; display: grid; grid-template-columns: 180px 1fr; }
+      .profile-pet { min-height: 180px; }
+      .metric-grid { grid-template-columns: 1fr; }
+    }
+    @media (max-width: 680px) {
+      .topbar { padding: 9px 10px; }
+      .btn, .mode-btn, .duration-btn { min-height: 44px; }
+      .icon-btn { width: 44px; height: 44px; }
+      .brand, .topbar-actions { min-width: 0; }
+      .brand-sub { display: none; }
+      .brand-title { font-size: 15px; }
+      .brand-mark { width: 36px; height: 36px; }
+      .mode-btn { padding: 0 10px; font-size: 12px; }
+      .topbar-actions { gap: 5px; }
+      .currency-display { min-height: 38px; padding: 0 9px; }
+      .currency-icon { font-size: 18px; }
+      .currency-value { font-size: 17px; }
+      .main { padding: 10px; }
+      .child-layout { display: block; }
+      .pet-stage { min-height: calc(100dvh - 76px); padding: 18px 16px 14px; }
+      .pet-art { width: 210px; height: 210px; }
+      .pet-art-wrap { min-height: 210px; }
+      .stage-actions { min-width: 82px; }
+      .today-change-badge { display: flex; }
+      .mobile-pet-actions { display: grid; }
+      .child-main { display: block; animation: none; transform: none; }
+      .child-main > * { display: none; }
+      .child-main > :target, .child-main > .bottom-grid:has(> :target) { position: fixed; z-index: 65; inset: 68px 10px 10px; display: block; overflow-y: auto; max-width: none; padding-top: 48px; box-shadow: 0 24px 70px rgba(15,35,52,.32); animation: mobilePanelIn .22s ease both; }
+      .child-main > .shop-vault:target { display: flex; }
+      .child-main > .bottom-grid:has(> :target) { padding: 0; background: transparent; box-shadow: none; }
+      .bottom-grid > * { display: none; }
+      .bottom-grid > :target { position: relative; display: block; min-height: 100%; padding-top: 48px; }
+      .mobile-panel-close { position: absolute; z-index: 3; top: 9px; right: 10px; width: 44px; height: 44px; display: grid; place-items: center; border: 1px solid var(--line); border-radius: 8px; color: var(--ink); background: white; box-shadow: 0 5px 12px rgba(26,73,70,.1); font-size: 20px; line-height: 1; text-decoration: none; }
+      .shop-vault .mobile-panel-close { position: sticky; flex: 0 0 auto; align-self: flex-end; margin: -39px 10px 7px 0; }
+      .hero-copy { padding: 18px; align-items: flex-start; }
+      .today-score { min-width: 88px; padding: 9px; }
+      .today-score strong { font-size: 26px; }
+      .focus-options { grid-template-columns: 1fr; }
+      .focus-options > *, .focus-controls, .focus-controls .select { min-width: 0; width: 100%; max-width: 100%; }
+      .duration-tabs { width: 100%; max-width: 100%; }
+      .reward-vault-head { align-items: flex-start; }
+      .bottom-grid, .metric-columns, .settings-grid { grid-template-columns: 1fr; }
+      .profile-panel { display: block; }
+      .profile-pet { min-height: 150px; }
+      .profile-pet .pet-art { width: 140px; height: 140px; }
+      .metrics-toolbar { align-items: stretch; flex-direction: column; }
+      .search { width: 100%; }
+      .metric-grid { grid-template-columns: 1fr 1fr; }
+      .metric-card { min-height: 118px; }
+      .pet-generator-grid, .pet-choice-grid { grid-template-columns: 1fr; }
+      .pet-generator-actions { align-items: stretch; flex-direction: column; }
+      .focus-screen { place-items: start center; padding: max(14px, env(safe-area-inset-top)) 14px max(14px, env(safe-area-inset-bottom)); }
+      .focus-pet { width: 160px; height: 160px; }
+    }
+    @keyframes mobilePanelIn { from { opacity: 0; transform: translateY(18px); } }
+    @media (max-width: 430px) {
+      .brand-title { display: none; }
+      .mode-btn span { display: none; }
+      .currency-display { padding: 0 8px; }
+      .metric-grid { grid-template-columns: 1fr; }
+      .hero-copy h1 { font-size: 22px; }
+    }
+    @media (max-width: 680px) {
+      .panel, .list-panel, .metric-section, .setting-card { border-radius: 8px; }
+      .section-title { font-size: 19px; }
+      .section-desc, .next-copy { font-size: 12px; line-height: 1.45; }
+      .parent-tabs { position: sticky; top: 56px; z-index: 20; margin-inline: -10px; padding: 7px 10px; background: var(--bg); }
+      .parent-tab { height: 44px; padding: 0 12px; font-size: 12px; }
+      .parent-more { flex-basis: 106px; width: 106px; min-height: 44px; }
+      .redemption-item { grid-template-columns: 1fr; gap: 8px; padding: 10px; }
+      .redemption-actions { display: grid; grid-template-columns: 1fr 1fr; gap: 7px; }
+      .redemption-actions .btn { width: 100%; }
+      .modal-backdrop { align-items: end; padding: 0; }
+      .modal { width: 100%; max-height: 88dvh; padding: 18px; border-radius: 8px 8px 0 0; }
+      .modal-actions { display: grid; grid-template-columns: 1fr 1fr; }
+      .modal-actions .btn { width: 100%; }
+      .toast-stack { top: auto; right: 10px; bottom: 10px; left: 10px; }
+      .toast { min-width: 0; max-width: none; }
+    }
+    @media (min-width: 681px) and (max-width: 1180px) {
+      html, body { width: 100%; height: 100%; overflow: hidden; }
+      #app { position: fixed; inset: 0; width: 135.136%; height: 135.136%; overflow: hidden; transform: scale(.74); transform-origin: top left; }
+      .app-shell { width: 100%; height: 100%; min-height: 0; }
+      .main { min-height: 0; overflow: hidden; }
+      .child-layout { height: 100%; grid-template-columns: clamp(300px, 28%, 380px) minmax(0, 1fr); gap: clamp(10px, 1.3vw, 18px); }
+      .pet-stage { min-height: 0; }
+      .child-main { grid-template-columns: repeat(2, minmax(0, 1fr)); grid-template-rows: auto auto minmax(0, 1fr); gap: clamp(8px, 1vw, 12px); }
+      .child-main > .hero-copy, .child-main > .focus-panel { grid-column: 1 / -1; }
+      .child-main > .shop-vault { grid-column: 1; grid-row: 3; }
+      .child-main > .bottom-grid { grid-column: 2; grid-row: 3; }
+      .pet-stage, .child-main, .shop-vault, .bottom-grid { min-height: 0; }
+      .shop-vault, .bottom-grid { height: 100%; }
+      .hero-copy { padding: 18px 20px; }
+      .hero-copy h1 { font-size: 28px; }
+      .focus-panel { padding: 14px 16px; }
+      .focus-options { margin-top: 10px; }
+      .reward-vault-head { padding: 12px 13px 10px; }
+      .reward-list, .cosmetic-list { padding: 0 13px 13px; }
+      .reward-card { min-height: 100px; }
+      .cosmetic-card { min-height: 126px; }
+      .bottom-grid { min-height: 0; gap: 10px; }
+      .list-panel { padding: 13px; }
+      .timeline, .milestone-list { gap: 6px; margin-top: 9px; }
+      .milestone-list { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+      .milestone { grid-template-columns: 64px minmax(0, 1fr); gap: 8px; }
+      .milestone > div:last-child { min-width: 0; }
+      .milestone span { overflow-wrap: anywhere; }
+      .milestone-icon { font-size: 22px; }
+      .timeline-item, .milestone { padding: 7px; }
+      .parent-layout { grid-template-columns: 260px minmax(0, 1fr); }
+      .profile-panel { position: sticky; top: 82px; display: block; }
+      .metric-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+    }
+  </style>
+</head>
+<body>
+<div id="app"></div>
+<div id="modalRoot"></div>
+<div id="toastStack" class="toast-stack"></div>
+
+<script>
+game_config = {
+  difficulty: "family",
+  initialEnergy: 0,
+  evolutionThresholds: [0, 50, 100, 150, 200],
+  regressionGraceHours: 24,
+  dailyAutoPointCap: 15,
+  focusDurations: [15, 25, 40, 60],
+  focusRewards: { 15: 1, 25: 3, 40: 5, 60: 7 },
+  maxChildren: 3,
+  levels: [
+    { id: 1, name: "幼年形态", min: 0 },
+    { id: 2, name: "青年形态", min: 50 },
+    { id: 3, name: "成年形态", min: 100 },
+    { id: 4, name: "星辉形态", min: 150 },
+    { id: 5, name: "传奇形态", min: 200 }
+  ]
+};
+</script>
+
+<script>
+art_assets = [];
+</script>
+
+<script>
+(function () {
+  const STORAGE_KEY = 'haqiGrowthGuardianV1';
+  const PIN_KEY = 'haqiGrowthGuardianPinV1';
+  const AUTH_TOKEN_KEY = 'haqiGrowthGuardianKeepworkTokenV1';
+  const CLOUD_STATE_PATH = 'minigames/haqi-growth-guardian/state.json';
+  const CLOUD_PIN_PATH = 'minigames/haqi-growth-guardian/pin.txt';
+  const GROWTH_LINK_ROOT = 'minigames/haqi-growth-link/v3';
+  const ICONS = { 学习: '📖', 自律: '⏱', 生活: '🏠', 品格: '🤝', 挑战: '🏆', 其他: '✨' };
+  const DEFAULT_METRICS = [
+    { id: 'p_homework', name: '主动完成作业', category: '学习', delta: 3, active: true },
+    { id: 'p_answer', name: '课堂或家庭学习主动回答', category: '学习', delta: 2, active: true },
+    { id: 'p_read', name: '认真阅读 20 分钟', category: '学习', delta: 2, active: true },
+    { id: 'p_plan', name: '按时完成今日计划', category: '自律', delta: 3, active: true },
+    { id: 'p_tidy', name: '主动整理自己的物品', category: '生活', delta: 2, active: true },
+    { id: 'p_help', name: '主动帮助家人或同学', category: '品格', delta: 3, active: true },
+    { id: 'p_honest', name: '诚实说明问题并一起解决', category: '品格', delta: 2, active: true },
+    { id: 'p_challenge', name: '完成一项困难挑战', category: '挑战', delta: 5, active: true },
+    { id: 'n_sloppy', name: '任务敷衍，需要重新完成', category: '学习', delta: -2, active: true },
+    { id: 'n_delay', name: '多次提醒后仍未开始', category: '自律', delta: -2, active: true },
+    { id: 'n_break', name: '未按共同约定完成任务', category: '自律', delta: -3, active: true },
+    { id: 'n_mess', name: '拒绝收拾自己的物品', category: '生活', delta: -2, active: true },
+    { id: 'n_hide', name: '故意隐瞒事实', category: '品格', delta: -3, active: true },
+    { id: 'n_rude', name: '用不友善的方式对待他人', category: '品格', delta: -2, active: true }
+  ];
+  const DEFAULT_REWARDS = [
+    { id: 'reward_screen', name: '额外屏幕时间 20 分钟', icon: '🎮', cost: 3, active: true },
+    { id: 'reward_snack', name: '选择一次喜欢的点心', icon: '🍓', cost: 4, active: true },
+    { id: 'reward_activity', name: '决定一次家庭活动', icon: '🎨', cost: 6, active: true },
+    { id: 'reward_wish', name: '实现一个小愿望', icon: '🎁', cost: 10, active: true }
+  ];
+  const COSMETICS = [
+    { id: 'focus_default', type: 'focusBackground', typeName: '专注背景', name: '深海静心', icon: '◐', cost: 0 },
+    { id: 'focus_starry', type: 'focusBackground', typeName: '专注背景', name: '星夜书房', icon: '✦', cost: 1 },
+    { id: 'focus_forest', type: 'focusBackground', typeName: '专注背景', name: '森林呼吸', icon: '♧', cost: 2 },
+    { id: 'pet_default', type: 'petBackground', typeName: '宠物背景', name: '青草晴天', icon: '☀', cost: 0 },
+    { id: 'pet_sunset', type: 'petBackground', typeName: '宠物背景', name: '蜜桃晚霞', icon: '◒', cost: 1 },
+    { id: 'pet_space', type: 'petBackground', typeName: '宠物背景', name: '银河营地', icon: '✧', cost: 2 },
+    { id: 'frame_none', type: 'petFrame', typeName: '宠物边框', name: '清爽无框', icon: '○', cost: 0 },
+    { id: 'frame_stars', type: 'petFrame', typeName: '宠物边框', name: '星星金环', icon: '☆', cost: 1 },
+    { id: 'frame_mint', type: 'petFrame', typeName: '宠物边框', name: '薄荷徽章', icon: '◇', cost: 2 }
+  ];
+  const FAMOUS_PETS = [
+    { id: 'dragon1', name: '阿凡紫', imageSheetUrl: 'https://cdn.keepwork.com/maisi/magichaqi/pet/dragon1_20260525031133.webp' },
+    { id: 'milk_moo_bubu', name: '奶沫 哞布布', imageSheetUrl: 'https://cdn.keepwork.com/maisi/magichaqi/pet/milk_moo_bubu_20260523165501.webp' },
+    { id: 'star_horse_nuomi', name: '糯糯星马', imageSheetUrl: 'https://cdn.keepwork.com/maisi/magichaqi/pet/star_horse_nuomi_20260524120457.webp' },
+    { id: 'flame_puppy_doudou', name: '豆豆火汪', imageSheetUrl: 'https://cdn.keepwork.com/maisi/magichaqi/pet/flame_puppy_doudou_20260524132225.webp' },
+    { id: 'zodiac_rat_mimi', name: '米米鼠团', imageSheetUrl: 'https://cdn.keepwork.com/maisi/magichaqi/pet/zodiac_rat_mimi_20260524154201.webp' },
+    { id: 'zodiac_ox_nainai', name: '奶奶哞哞', imageSheetUrl: 'https://cdn.keepwork.com/maisi/magichaqi/pet/zodiac_ox_nainai_20260524133030.webp' },
+    { id: 'zodiac_tiger_tangtang', name: '糖糖虎爪', imageSheetUrl: 'https://cdn.keepwork.com/maisi/magichaqi/pet/zodiac_tiger_tangtang_20260524161411.webp' },
+    { id: 'zodiac_rabbit_ruanruan', name: '软 软月兔', imageSheetUrl: 'https://cdn.keepwork.com/maisi/magichaqi/pet/zodiac_rabbit_ruanruan_20260524132501.webp' },
+    { id: 'zodiac_dragon_bobo', name: '波波小龙', imageSheetUrl: 'https://cdn.keepwork.com/maisi/magichaqi/pet/zodiac_dragon_bobo_20260524132332.webp' },
+    { id: 'zodiac_snake_youyou', name: '悠悠团蛇', imageSheetUrl: 'https://cdn.keepwork.com/maisi/magichaqi/pet/zodiac_snake_youyou_20260524163751.webp' },
+    { id: 'zodiac_horse_dudu', name: '嘟嘟云马', imageSheetUrl: 'https://cdn.keepwork.com/maisi/magichaqi/pet/zodiac_horse_dudu_20260524124614.webp' },
+    { id: 'zodiac_goat_mianmian', name: '绵绵咩咩', imageSheetUrl: 'https://cdn.keepwork.com/maisi/magichaqi/pet/zodiac_goat_mianmian_20260524124724.webp' },
+    { id: 'zodiac_monkey_qiqi', name: '奇奇桃猴', imageSheetUrl: 'https://cdn.keepwork.com/maisi/magichaqi/pet/zodiac_monkey_qiqi_20260528041713.webp' },
+    { id: 'zodiac_rooster_jiji', name: '叽叽彩冠', imageSheetUrl: 'https://cdn.keepwork.com/maisi/magichaqi/pet/zodiac_rooster_jiji_20260524152704.webp' },
+    { id: 'zodiac_dog_wangwang', name: '汪汪福豆', imageSheetUrl: 'https://cdn.keepwork.com/maisi/magichaqi/pet/zodiac_dog_wangwang_20260524132956.webp' },
+    { id: 'zodiac_pig_lulu', name: '噜噜元宝', imageSheetUrl: 'https://cdn.keepwork.com/maisi/magichaqi/pet/zodiac_pig_lulu_20260524161535.webp' },
+    { id: 'lulu_flame_lioncub', name: '噜噜焰团', imageSheetUrl: 'https://cdn.keepwork.com/maisi/magichaqi/pet/lulu_flame_lioncub_20260528041744.webp' },
+    { id: 'mimi_frost_seal', name: '咪咪雪泡', imageSheetUrl: 'https://cdn.keepwork.com/maisi/magichaqi/pet/mimi_frost_seal_20260524165412.webp' },
+    { id: 'qiqi_star_drake', name: '琪琪星咕', imageSheetUrl: 'https://cdn.keepwork.com/maisi/magichaqi/pet/qiqi_star_drake_20260524165652.webp' },
+    { id: 'nono_leaf_guardian', name: '糯糯芽芽', imageSheetUrl: 'https://cdn.keepwork.com/maisi/magichaqi/pet/nono_leaf_guardian_20260524170800.webp' },
+    { id: 'bobo_pearl_manta', name: '啵啵珍珍', imageSheetUrl: 'https://cdn.keepwork.com/maisi/magichaqi/pet/bobo_pearl_manta_20260524165135.webp' },
+    { id: 'tangtang_thunder_bee', name: '糖糖嗡嗡', imageSheetUrl: 'https://cdn.keepwork.com/maisi/magichaqi/pet/tangtang_thunder_bee_20260524165728.webp' },
+    { id: 'yoyo_moon_owlcat', name: '悠悠月团', imageSheetUrl: 'https://cdn.keepwork.com/maisi/magichaqi/pet/yoyo_moon_owlcat_20260524165829.webp' },
+    { id: 'doudou_shadow_fox', name: '豆豆影尾', imageSheetUrl: 'https://cdn.keepwork.com/maisi/magichaqi/pet/doudou_shadow_fox_20260524165232.webp' },
+    { id: 'pipi_life_octopus', name: '皮皮泡爪', imageSheetUrl: 'https://cdn.keepwork.com/maisi/magichaqi/pet/pipi_life_octopus_20260524165604.webp' },
+    { id: 'momo_rainbow_phoenix', name: '沫沫彩羽', imageSheetUrl: 'https://cdn.keepwork.com/maisi/magichaqi/pet/momo_rainbow_phoenix_20260524165440.webp' },
+    { id: 'shanhaijing_jiuwei_mimi', name: '玖玖绒绒', imageSheetUrl: 'https://cdn.keepwork.com/maisi/magichaqi/pet/shanhaijing_jiuwei_mimi_20260524181205.webp' },
+    { id: 'shanhaijing_bifang_doudou', name: '方方啾豆', imageSheetUrl: 'https://cdn.keepwork.com/maisi/magichaqi/pet/shanhaijing_bifang_doudou_20260524182558.webp' },
+    { id: 'shanhaijing_wenyao_bobo', name: '波波鳐糖', imageSheetUrl: 'https://cdn.keepwork.com/maisi/magichaqi/pet/shanhaijing_wenyao_bobo_20260524182630.webp' },
+    { id: 'shanhaijing_fuzhu_lulu', name: '鹿鹿雪团', imageSheetUrl: 'https://cdn.keepwork.com/maisi/magichaqi/pet/shanhaijing_fuzhu_lulu_20260524181348.webp' },
+    { id: 'shanhaijing_xuangui_gugu', name: '龟龟咕噜', imageSheetUrl: 'https://cdn.keepwork.com/maisi/magichaqi/pet/shanhaijing_xuangui_gugu_20260524182511.webp' },
+    { id: 'shanhaijing_lushu_banban', name: '斑斑栗栗', imageSheetUrl: 'https://cdn.keepwork.com/maisi/magichaqi/pet/shanhaijing_lushu_banban_20260524181505.webp' },
+    { id: 'shanhaijing_jingwei_weiwei', name: '薇薇衔石', imageSheetUrl: 'https://cdn.keepwork.com/maisi/magichaqi/pet/shanhaijing_jingwei_weiwei_20260528042014.webp' },
+    { id: 'shanhaijing_kunpeng_yunyun', name: '云云鲲团', imageSheetUrl: 'https://cdn.keepwork.com/maisi/magichaqi/pet/shanhaijing_kunpeng_yunyun_20260524181612.webp' },
+    { id: 'shanhaijing_qiongqi_qiqi', name: '奇奇绒爪', imageSheetUrl: 'https://cdn.keepwork.com/maisi/magichaqi/pet/shanhaijing_qiongqi_qiqi_20260528042045.webp' },
+    { id: 'shanhaijing_zheng_miaomiao', name: '狰狰喵球', imageSheetUrl: 'https://cdn.keepwork.com/maisi/magichaqi/pet/shanhaijing_zheng_miaomiao_20260524181754.webp' },
+    { id: 'shanhaijing_tiangou_wangwang', name: '天狗旺团', imageSheetUrl: 'https://cdn.keepwork.com/maisi/magichaqi/pet/shanhaijing_tiangou_wangwang_20260524181828.webp' },
+    { id: 'shanhaijing_baihuan_huanhuan', name: '欢欢灵耳', imageSheetUrl: 'https://cdn.keepwork.com/maisi/magichaqi/pet/shanhaijing_baihuan_huanhuan_20260524181911.webp' },
+    { id: 'shanhaijing_biyi_tangtang', name: '翼翼糖双', imageSheetUrl: 'https://cdn.keepwork.com/maisi/magichaqi/pet/shanhaijing_biyi_tangtang_20260524182005.webp' },
+    { id: 'shanhaijing_ershu_rourou', name: '耳耳糯团', imageSheetUrl: 'https://cdn.keepwork.com/maisi/magichaqi/pet/shanhaijing_ershu_rourou_20260524182035.webp' },
+    { id: 'shanhaijing_yinglong_longlong', name: '盈盈龙泡', imageSheetUrl: 'https://cdn.keepwork.com/maisi/magichaqi/pet/shanhaijing_yinglong_longlong_20260524182107.webp' },
+    { id: 'shanhaijing_zhuyu_yuyu', name: '朱朱羽丸', imageSheetUrl: 'https://cdn.keepwork.com/maisi/magichaqi/pet/shanhaijing_zhuyu_yuyu_20260524182147.webp' },
+    { id: 'shanhaijing_huandou_doudou', name: '混混豆芽', imageSheetUrl: 'https://cdn.keepwork.com/maisi/magichaqi/pet/shanhaijing_huandou_doudou_20260524182217.webp' },
+    { id: 'shanhaijing_dangkang_kangkang', name: '康康麦团', imageSheetUrl: 'https://cdn.keepwork.com/maisi/magichaqi/pet/shanhaijing_dangkang_kangkang_20260524182246.webp' },
+    { id: 'shanhaijing_feiyi_sisi', name: '飞飞丝卷', imageSheetUrl: 'https://cdn.keepwork.com/maisi/magichaqi/pet/shanhaijing_feiyi_sisi_20260524182316.webp' },
+    { id: 'shanhaijing_heyu_yaya', name: '河河芽鳞', imageSheetUrl: 'https://cdn.keepwork.com/maisi/magichaqi/pet/shanhaijing_heyu_yaya_20260524182350.webp' },
+    { id: 'phoenix_spark_peep', name: '凤火啾啾', imageSheetUrl: 'https://cdn.keepwork.com/maisi/magichaqi/pet/phoenix_spark_peep_20260528043651.webp' },
+    { id: 'nine_tail_cloud_fox', name: '玖玖云狐', imageSheetUrl: 'https://cdn.keepwork.com/maisi/magichaqi/pet/nine_tail_cloud_fox_20260525030546.webp' },
+    { id: 'baihu_sugar_cub', name: '白虎糖糖', imageSheetUrl: 'https://cdn.keepwork.com/maisi/magichaqi/pet/baihu_sugar_cub_20260525030546.webp' },
+    { id: 'kunpeng_sky_bubble', name: '鲲鹏泡芙', imageSheetUrl: 'https://cdn.keepwork.com/maisi/magichaqi/pet/kunpeng_sky_bubble_20260525030547.webp' }
+  ];
+  let state = freshState();
+  let guardianStore = null;
+  let guardianSdk = null;
+  let guardianUser = null;
+  let parentPinHash = '';
+  let saveTimer = 0;
+  let saveQueue = Promise.resolve();
+  let mode = 'child';
+  let parentUnlocked = false;
+  let parentTab = 'score';
+  let redemptionFilter = 'pending';
+  let metricQuery = '';
+  let selectedDuration = 25;
+  let petRequestId = '';
+  let petObjectUrl = '';
+  let availablePets = [];
+  const famousPets = FAMOUS_PETS;
+  let selectedFamousPetId = '';
+  const famousPetsStatus = `内置 ${FAMOUS_PETS.length} 只宠物，可按名字选择。`;
+  const petObjectUrls = new Map();
+  let sdkLoadPromise = null;
+  let focusTimer = 0;
+  let focusSession = null;
+  let dailyResetTimer = 0;
+  let schoolInboxRefreshTimer = 0;
+  function refreshVisibleSchoolInbox() {
+    if (document.hidden || mode !== 'parent' || parentTab !== 'school') return;
+    refreshSchoolInbox();
+  }
+  let currentPetId = '';
+  let loadedSent = false;
+  let schoolInboxCache = [];
+  let schoolInboxLoadError = '';
+  let schoolStudentProfile = null;
+  let schoolReceiptSyncError = '';
+  let publishingSchoolReceipts = false;
+  let lastAwardNotificationId = '';
+
+  async function loadAwardNotifications(link) {
+    if (!link?.sitePath || !link?.studentId || !guardianSdk?.loadPage) return [];
+    try {
+      const result = await guardianSdk.loadPage({ sitePath: link.sitePath, pagePath: schoolNotificationIndexPath(link) });
+      const text = typeof result === 'string' ? result : String(result?.content ?? result?.data?.content ?? '');
+      const parsed = JSON.parse(text || '[]');
+      const notifications = Array.isArray(parsed) ? parsed : [];
+      return notifications
+        .filter(item => ['award_submitted', 'award_processed'].includes(item?.type) && item?.studentId === link.studentId)
+        .sort((a, b) => Number(b.notifiedAt || b.processedAt || 0) - Number(a.notifiedAt || a.processedAt || 0));
+    } catch (_) {
+      return [];
+    }
+  }
+
+  function notifyNewAwardNotification(notifications) {
+    if (!notifications.length) return;
+    const latest = notifications[0];
+    const latestEventId = String(latest?.eventId || latest?.id || '');
+    const latestAt = Number(latest?.notifiedAt || latest?.processedAt || 0);
+    const seenEventId = String(state.schoolLink?.lastSeenNotificationEventId || '');
+    const seenAt = Number(state.schoolLink?.lastSeenNotificationAt || 0);
+    if (!latestEventId) return;
+    if (latest.id && latest.id === lastAwardNotificationId) return;
+    if (latestEventId === seenEventId && (!latestAt || latestAt <= seenAt)) return;
+    if (latestAt && seenAt && latestAt <= seenAt) return;
+    lastAwardNotificationId = latest.id || latestEventId;
+    state.schoolLink.lastSeenNotificationEventId = latestEventId;
+    state.schoolLink.lastSeenNotificationAt = latestAt || Date.now();
+    saveState();
+    const reason = latest.reason || '老师发布了新的课堂奖励';
+    const teacher = latest.teacherUsername ? `，来自 ${latest.teacherUsername}` : '';
+    toast(`学校消息：${reason}${teacher}`);
+  }
+
+  function freshState() {
+    const childId = `child_${Date.now()}`;
+    return {
+      version: 2,
+      activeChildId: childId,
+      children: [{ id: childId, name: '小小守护者', petName: '哈奇', energy: game_config.initialEnergy, lifetimeStars: 0, createdAt: Date.now(), dailyEnergy: { date: localDateKey(), baseline: game_config.initialEnergy } }],
+      petProgress: {},
+      metrics: DEFAULT_METRICS.map(item => ({ ...item })),
+      ledger: [],
+      focusSessions: [],
+      rewards: DEFAULT_REWARDS.map(item => ({ ...item })),
+      redemptions: [],
+      schoolLink: { teacherUsername: '', sitePath: '', classId: '', studentId: '', studentName: '', appliedEventIds: [], ignoredEventIds: [], pendingReceipts: [], lastSeenNotificationEventId: '', lastSeenNotificationAt: 0 },
+      generatedPets: [],
+      cosmeticPurchases: [],
+      equippedCosmetics: { focusBackground: 'focus_default', petBackground: 'pet_default', petFrame: 'frame_none' }
+    };
+  }
+
+  function normalizeState(parsed) {
+    if (!parsed?.children?.length || !Array.isArray(parsed.metrics) || !Array.isArray(parsed.ledger)) return null;
+    if (!Array.isArray(parsed.rewards)) parsed.rewards = DEFAULT_REWARDS.map(item => ({ ...item }));
+    if (!Array.isArray(parsed.redemptions)) parsed.redemptions = [];
+    if (!parsed.schoolLink || typeof parsed.schoolLink !== 'object') parsed.schoolLink = {};
+    parsed.schoolLink.teacherUsername = String(parsed.schoolLink.teacherUsername || '');
+    parsed.schoolLink.sitePath = String(parsed.schoolLink.sitePath || '').trim().replace(/^\/+|\/+$/g, '');
+    parsed.schoolLink.classId = String(parsed.schoolLink.classId || '');
+    parsed.schoolLink.studentId = String(parsed.schoolLink.studentId || '');
+    parsed.schoolLink.studentName = String(parsed.schoolLink.studentName || '');
+    if (!Array.isArray(parsed.schoolLink.appliedEventIds)) parsed.schoolLink.appliedEventIds = [];
+    if (!Array.isArray(parsed.schoolLink.ignoredEventIds)) parsed.schoolLink.ignoredEventIds = [];
+    if (!Array.isArray(parsed.schoolLink.pendingReceipts)) parsed.schoolLink.pendingReceipts = [];
+    parsed.schoolLink.lastSeenNotificationEventId = String(parsed.schoolLink.lastSeenNotificationEventId || '');
+    parsed.schoolLink.lastSeenNotificationAt = Number(parsed.schoolLink.lastSeenNotificationAt || 0);
+    if (!Array.isArray(parsed.generatedPets)) parsed.generatedPets = [];
+    if (!Array.isArray(parsed.cosmeticPurchases)) parsed.cosmeticPurchases = [];
+    if (!parsed.equippedCosmetics) parsed.equippedCosmetics = { focusBackground: 'focus_default', petBackground: 'pet_default', petFrame: 'frame_none' };
+    if (!parsed.petProgress || typeof parsed.petProgress !== 'object') parsed.petProgress = {};
+    parsed.children.forEach(child => {
+      if (!child.selectedPetId && parsed.selectedPetId) child.selectedPetId = parsed.selectedPetId;
+      const petKey = petKeyForChild(child);
+      if (petKey && !parsed.petProgress[petKey]) {
+        parsed.petProgress[petKey] = createPetProgress(child, petKey, clampEnergy(child.energy));
+        parsed.petProgress[petKey].lifetimeStars = Number(child.lifetimeStars) || 0;
+        parsed.petProgress[petKey].dailyEnergy = child.dailyEnergy || parsed.petProgress[petKey].dailyEnergy;
+      }
+      if (petKey) {
+        const progress = parsed.petProgress[petKey];
+        child.energy = clampEnergy(progress.energy);
+        child.dailyEnergy = progress.dailyEnergy || { date: localDateKey(), baseline: child.energy };
+        parsed.ledger.forEach(entry => {
+          if (entry.childId === child.id && !entry.petKey) entry.petKey = petKey;
+        });
+      }
+    });
+    parsed.version = 2;
+    return parsed;
+  }
+
+  function loadLegacyState() {
+    try {
+      const parsed = JSON.parse(localStorage.getItem(STORAGE_KEY) || 'null');
+      return normalizeState(parsed);
+    } catch (_) {}
+    return null;
+  }
+
+  function saveState() {
+    clearTimeout(saveTimer);
+    saveTimer = setTimeout(() => queueCloudWrite(CLOUD_STATE_PATH, JSON.stringify(state)), 500);
+  }
+
+  function persistStateNow() {
+    clearTimeout(saveTimer);
+    saveTimer = 0;
+    return queueCloudWrite(CLOUD_STATE_PATH, JSON.stringify(state));
+  }
+
+  function queueCloudWrite(path, content) {
+    saveQueue = saveQueue
+      .catch(() => undefined)
+      .then(() => guardianStore.createFile(path, content));
+    saveQueue.catch(error => toast(`Keepwork 保存失败：${error?.message || error}`));
+    return saveQueue;
+  }
+
+  async function readCloudFile(path) {
+    try {
+      return (await guardianStore.readFile(path, 1, 99999)) || '';
+    } catch (_) {
+      try { return (await guardianStore.readFile(path)) || ''; } catch (__) { return ''; }
+    }
+  }
+
+  async function loadCloudData(sdk) {
+    if (!sdk.personalPageStore) throw new Error('Keepwork PersonalPageStore 不可用');
+    guardianSdk = sdk;
+    guardianStore = typeof sdk.personalPageStore.withWorkspace === 'function'
+      ? sdk.personalPageStore.withWorkspace('MagicHaqi')
+      : sdk.personalPageStore;
+    const [cloudStateText, cloudPin] = await Promise.all([
+      readCloudFile(CLOUD_STATE_PATH),
+      readCloudFile(CLOUD_PIN_PATH)
+    ]);
+    let cloudState = null;
+    try { cloudState = normalizeState(JSON.parse(cloudStateText || 'null')); } catch (_) {}
+    const legacyState = cloudState ? null : loadLegacyState();
+    state = cloudState || legacyState || freshState();
+    parentPinHash = cloudPin.trim() || localStorage.getItem(PIN_KEY) || '';
+    if (legacyState || (!cloudPin.trim() && parentPinHash)) {
+      await Promise.all([
+        legacyState ? queueCloudWrite(CLOUD_STATE_PATH, JSON.stringify(state)) : Promise.resolve(),
+        !cloudPin.trim() && parentPinHash ? queueCloudWrite(CLOUD_PIN_PATH, parentPinHash) : Promise.resolve()
+      ]);
+      localStorage.removeItem(STORAGE_KEY);
+      localStorage.removeItem(PIN_KEY);
+    }
+  }
+
+  function activeChild() {
+    return state.children.find(child => child.id === state.activeChildId) || state.children[0];
+  }
+
+  function petKeyForChild(child = activeChild()) {
+    if (child.famousPetId) return `famous:${child.famousPetId}`;
+    if (child.generatedPetId) return `generated:${child.generatedPetId}`;
+    if (child.selectedPetId) return `pet:${child.selectedPetId}`;
+    return `default:${child.id}`;
+  }
+
+  function createPetProgress(child, petKey, energy = 0) {
+    const currentEnergy = clampEnergy(energy);
+    return {
+      petKey,
+      petName: child.petName || '哈奇',
+      energy: currentEnergy,
+      lifetimeStars: 0,
+      dailyEnergy: { date: localDateKey(), baseline: currentEnergy },
+      selectedAt: Date.now(),
+      lastUsedAt: Date.now()
+    };
+  }
+
+  function activePetProgress(create = true) {
+    const child = activeChild();
+    const petKey = petKeyForChild(child);
+    if (!petKey) return null;
+    if (!state.petProgress[petKey] && create) state.petProgress[petKey] = createPetProgress(child, petKey);
+    return state.petProgress[petKey] || null;
+  }
+
+  function syncChildFromPetProgress() {
+    const child = activeChild();
+    const progress = activePetProgress();
+    if (!progress) {
+      child.energy = game_config.initialEnergy;
+      child.lifetimeStars = 0;
+      child.dailyEnergy = { date: localDateKey(), baseline: child.energy };
+      return;
+    }
+    progress.petName = child.petName || progress.petName;
+    progress.lastUsedAt = Date.now();
+    child.energy = clampEnergy(progress.energy);
+    child.lifetimeStars = Number(progress.lifetimeStars) || 0;
+    child.dailyEnergy = progress.dailyEnergy || { date: localDateKey(), baseline: child.energy };
+  }
+
+  function updateActivePetEnergy(energy, lifetimeStars) {
+    const child = activeChild();
+    child.energy = clampEnergy(energy);
+    if (Number.isFinite(lifetimeStars)) child.lifetimeStars = lifetimeStars;
+    const progress = activePetProgress();
+    if (!progress) return;
+    progress.energy = child.energy;
+    progress.lifetimeStars = child.lifetimeStars;
+    progress.petName = child.petName;
+    progress.dailyEnergy = child.dailyEnergy;
+    progress.lastUsedAt = Date.now();
+  }
+
+  function clampEnergy(value) {
+    return Math.max(0, Math.min(200, Math.round(Number(value) || 0)));
+  }
+
+  function localDateKey(date = new Date()) {
+    return `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}-${String(date.getDate()).padStart(2, '0')}`;
+  }
+
+  function syncDailyEnergyBaselines() {
+    const date = localDateKey();
+    let changed = false;
+    state.children.forEach(child => {
+      if (child.dailyEnergy?.date === date && Number.isFinite(Number(child.dailyEnergy.baseline))) return;
+      child.dailyEnergy = { date, baseline: clampEnergy(child.energy) };
+      const progress = child.id === state.activeChildId ? activePetProgress(false) : null;
+      if (progress) progress.dailyEnergy = child.dailyEnergy;
+      changed = true;
+    });
+    return changed;
+  }
+
+  function dailyEnergyStats(child = activeChild()) {
+    const baseline = clampEnergy(child.dailyEnergy?.baseline ?? child.energy);
+    const current = clampEnergy(child.energy);
+    return { baseline, current, change: current - baseline };
+  }
+
+  function scheduleDailyEnergyReset() {
+    clearTimeout(dailyResetTimer);
+    const now = new Date();
+    const nextMidnight = new Date(now);
+    nextMidnight.setHours(24, 0, 0, 0);
+    dailyResetTimer = setTimeout(() => {
+      if (syncDailyEnergyBaselines()) {
+        saveState();
+        if (!focusSession) render();
+      }
+      scheduleDailyEnergyReset();
+    }, nextMidnight.getTime() - now.getTime() + 50);
+  }
+
+  function levelForEnergy(energy) {
+    const levels = game_config.levels;
+    for (let index = levels.length - 1; index >= 0; index -= 1) {
+      if (energy >= levels[index].min) return { ...levels[index], index };
+    }
+    return { ...levels[0], index: 0 };
+  }
+
+  function nextLevel(energy) {
+    return game_config.levels.find(level => level.min > energy) || null;
+  }
+
+  function currentPetArtClass(extra = '') {
+    return `pet-art${petObjectUrl ? '' : ' placeholder'}${extra ? ` ${extra}` : ''}`;
+  }
+
+  function selectedGeneratedPet() {
+    const child = activeChild();
+    return state.generatedPets.find(pet => pet.childId === child.id && pet.id === child.generatedPetId) || null;
+  }
+
+  function syncCurrentPetArt() {
+    const child = activeChild();
+    const generatedPet = selectedGeneratedPet();
+    if (generatedPet?.imageSheetUrl) {
+      petObjectUrl = generatedPet.imageSheetUrl;
+      currentPetId = generatedPet.id;
+      return;
+    }
+    const famousPet = famousPets.find(pet => pet.id === child.famousPetId);
+    if (famousPet) {
+      petObjectUrl = famousPet.imageSheetUrl;
+      currentPetId = famousPet.id;
+      return;
+    }
+    const selectedPetId = child.selectedPetId || state.selectedPetId || currentPetId;
+    petObjectUrl = petObjectUrls.get(String(selectedPetId || '')) || '';
+    currentPetId = selectedPetId || currentPetId;
+  }
+
+  function petArtStyle(energy) {
+    const level = levelForEnergy(energy);
+    return petArtStyleForLevel(level.index);
+  }
+
+  function petArtStyleForLevel(levelIndex) {
+    if (!petObjectUrl) return '';
+    const row = Math.max(0, Math.min(3, levelIndex));
+    const column = levelIndex >= 4 ? 1 : 0;
+    return `background-image:url(&quot;${petObjectUrl}&quot;);background-size:400% 400%;background-position:${column * 100 / 3}% ${row * 100 / 3}%;`;
+  }
+
+  function todayEntries(childId = activeChild().id) {
+    const start = new Date();
+    start.setHours(0, 0, 0, 0);
+    const petKey = childId === activeChild().id ? petKeyForChild() : '';
+    return state.ledger.filter(item => item.childId === childId && (!petKey || item.petKey === petKey) && !item.revokedAt && item.createdAt >= start.getTime());
+  }
+
+  function todayScore() {
+    return dailyEnergyStats().change;
+  }
+
+  function autoPointsToday() {
+    return todayEntries().filter(item => item.source === 'focus_session').reduce((sum, item) => sum + Math.max(0, item.delta), 0);
+  }
+
+  function coinStats(childId = activeChild().id) {
+    const positivePoints = state.ledger
+      .filter(item => item.childId === childId && !item.revokedAt && item.delta > 0)
+      .reduce((sum, item) => sum + item.delta, 0);
+    const earned = Math.floor(positivePoints / 10);
+    const spent = state.redemptions
+      .filter(item => item.childId === childId && !item.cancelledAt)
+      .reduce((sum, item) => sum + item.cost, 0);
+    const cosmeticSpent = state.cosmeticPurchases
+      .filter(item => item.childId === childId)
+      .reduce((sum, item) => sum + item.cost, 0);
+    return { positivePoints, earned, spent: spent + cosmeticSpent, balance: Math.max(0, earned - spent - cosmeticSpent), progress: positivePoints % 10 };
+  }
+
+  function equippedCosmetic(type) {
+    const defaults = { focusBackground: 'focus_default', petBackground: 'pet_default', petFrame: 'frame_none' };
+    return state.equippedCosmetics?.[type] || defaults[type];
+  }
+
+  function ownsCosmetic(cosmetic, childId = activeChild().id) {
+    return cosmetic.cost === 0 || state.cosmeticPurchases.some(item => item.childId === childId && item.cosmeticId === cosmetic.id);
+  }
+
+  function escapeHtml(value) {
+    return String(value ?? '').replace(/[&<>'"]/g, char => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', "'": '&#39;', '"': '&quot;' }[char]));
+  }
+
+  function formatTime(timestamp) {
+    const date = new Date(timestamp);
+    const today = new Date();
+    const sameDay = date.toDateString() === today.toDateString();
+    return `${sameDay ? '今天' : `${date.getMonth() + 1}月${date.getDate()}日`} ${String(date.getHours()).padStart(2, '0')}:${String(date.getMinutes()).padStart(2, '0')}`;
+  }
+
+  function toast(message) {
+    const element = document.createElement('div');
+    element.className = 'toast';
+    element.textContent = message;
+    document.getElementById('toastStack').appendChild(element);
+    setTimeout(() => element.remove(), 2800);
+  }
+
+  function post(type, data = {}) {
+    try { window.parent.postMessage({ type, data }, '*'); } catch (_) {}
+  }
+
+  function render() {
+    const topbarCoins = coinStats(activeChild().id).balance;
+    document.getElementById('app').innerHTML = `
+      <div class="app-shell">
+        <header class="topbar">
+          <div class="brand">
+            <div class="brand-mark">✦</div>
+            <div><div class="brand-title">哈奇成长守护</div><div class="brand-sub">把每一次好习惯，变成伙伴的成长</div></div>
+          </div>
+          <div class="topbar-actions">
+            <div class="currency-display" aria-label="金币余额 ${topbarCoins}"><span class="currency-icon">🪙</span><strong class="currency-value">${topbarCoins}</strong></div>
+            <div class="mode-switch" aria-label="切换使用模式">
+              <button class="mode-btn ${mode === 'child' ? 'active' : ''}" data-mode="child">🐾 <span>孩子模式</span></button>
+              <button class="mode-btn ${mode === 'parent' ? 'active' : ''}" data-mode="parent">🔐 <span>家长模式</span></button>
+              <button class="icon-btn" id="helpBtn" title="查看玩法" aria-label="查看玩法">?</button>
+            </div>
+          </div>
+        </header>
+        <main class="main">${mode === 'child' ? childView() : parentView()}</main>
+      </div>`;
+    bindGlobal();
+    if (mode === 'child') bindChild(); else bindParent();
+  }
+
+  function childView() {
+    const child = activeChild();
+    const dailyEnergy = dailyEnergyStats(child);
+    const level = levelForEnergy(child.energy);
+    const next = nextLevel(child.energy);
+    const maxEnergy = game_config.evolutionThresholds.at(-1);
+    const energyScale = game_config.evolutionThresholds.map(value => ({ value, percent: value / maxEnergy * 100 }));
+    const coins = coinStats(child.id);
+    const rewards = state.rewards.filter(item => item.active !== false);
+    const isCustomDuration = !game_config.focusDurations.includes(selectedDuration);
+    const currentPetKey = petKeyForChild(child);
+    const recent = state.ledger.filter(item => item.childId === child.id && item.petKey === currentPetKey && !item.revokedAt).slice(0, 5);
+    return `
+      <div class="child-layout">
+        <section class="panel pet-stage ${equippedCosmetic('petBackground')}">
+          <div class="pet-head">
+            <div><div class="eyebrow">${escapeHtml(child.name)}的成长伙伴</div><div class="pet-name">${escapeHtml(child.petName)}</div></div>
+            <div class="stage-actions"><div class="stage-badge">${level.name}</div><div class="today-change-badge ${dailyEnergy.change > 0 ? 'positive' : dailyEnergy.change < 0 ? 'negative' : ''}" aria-label="今日变化 ${dailyEnergy.change > 0 ? '+' : ''}${dailyEnergy.change}"><span>今日变化</span><strong>${dailyEnergy.change > 0 ? '+' : ''}${dailyEnergy.change}</strong></div></div>
+          </div>
+          <div class="pet-art-wrap">
+            <div class="stage-spark">✦ · ✧ · ✦</div>
+            <div class="${currentPetArtClass(equippedCosmetic('petFrame'))}" style="${petArtStyle(child.energy)}" role="img" aria-label="${escapeHtml(child.petName)}"></div>
+          </div>
+          <nav class="mobile-pet-actions" aria-label="成长功能">
+            <a class="mobile-pet-action" href="#mobileFocus"><span>⏱</span>专注守护</a>
+            <a class="mobile-pet-action" href="#mobileShop"><span>🛍</span>商店</a>
+            <a class="mobile-pet-action" href="#mobileRecent"><span>📒</span>最近成长</a>
+            <a class="mobile-pet-action" href="#mobileGuide"><span>🏅</span>图鉴</a>
+          </nav>
+          <div class="energy-card">
+            <div class="energy-row"><span>成长能量</span><strong>${child.energy} / ${maxEnergy}</strong></div>
+            <div class="energy-track" aria-label="今日零点基准 ${dailyEnergy.baseline}，当前 ${dailyEnergy.current}，变化 ${dailyEnergy.change > 0 ? '+' : ''}${dailyEnergy.change}">
+              <div class="energy-fill" style="width:${Math.min(dailyEnergy.baseline, dailyEnergy.current) / maxEnergy * 100}%"></div>
+              ${dailyEnergy.change ? `<div class="energy-delta ${dailyEnergy.change > 0 ? 'positive' : 'negative'}" style="left:${Math.min(dailyEnergy.baseline, dailyEnergy.current) / maxEnergy * 100}%;width:${Math.abs(dailyEnergy.change) / maxEnergy * 100}%"></div>` : ''}
+              <div class="energy-baseline" style="left:${dailyEnergy.baseline / maxEnergy * 100}%" title="今日零点基准 ${dailyEnergy.baseline}"></div>
+              ${energyScale.slice(1, -1).map(mark => `<i class="energy-tick" style="left:${mark.percent}%" aria-hidden="true"></i>`).join('')}
+            </div>
+            <div class="energy-scale" aria-hidden="true">${energyScale.map(mark => `<span style="left:${mark.percent}%">${mark.value}</span>`).join('')}</div>
+            <div class="energy-daily"><span>零点基准 ${dailyEnergy.baseline}</span><span class="energy-change ${dailyEnergy.change > 0 ? 'positive' : dailyEnergy.change < 0 ? 'negative' : ''}">今日 ${dailyEnergy.change > 0 ? '+' : ''}${dailyEnergy.change}</span></div>
+            <div class="next-copy">${next ? `再获得 ${next.min - child.energy} 点，解锁${next.name}` : '已到达最高形态，继续保持好习惯吧'}</div>
+          </div>
+        </section>
+        <div class="child-main">
+          <section class="panel hero-copy">
+            <div><div class="eyebrow" style="color:#5eead4">今日成长计划</div><h1>${todayScore() >= 0 ? '今天也在稳稳长大' : '休息一下，再重新出发'}</h1><p>专心完成一件事，哈奇就会陪你一起积累成长能量。</p></div>
+            <div class="today-score"><span>今日变化</span><strong>${todayScore() > 0 ? '+' : ''}${todayScore()}</strong></div>
+          </section>
+          <section class="panel focus-panel" id="mobileFocus">
+            <a class="mobile-panel-close" href="#" aria-label="关闭">×</a>
+            <h2 class="section-title">专注守护</h2><p class="section-desc">进入全屏后，宠物会安静陪伴。提前退出只会暂停，不会扣分。</p>
+            <div class="focus-options">
+              <div>
+                <div class="focus-controls"><select id="focusTask" class="select" aria-label="选择专注任务"><option>完成作业</option><option>认真阅读</option><option>练琴或运动</option><option>整理自己的物品</option><option>自定义成长任务</option></select></div>
+                <div class="duration-tabs">${game_config.focusDurations.map(value => `<button class="duration-btn ${selectedDuration === value ? 'active' : ''}" data-duration="${value}">${value} 分钟</button>`).join('')}<form class="custom-duration" id="customDurationForm"><input class="input" id="customDurationInput" type="number" min="1" max="120" value="${isCustomDuration ? selectedDuration : ''}" placeholder="分钟" aria-label="自定义专注分钟数" required><button class="duration-btn ${isCustomDuration ? 'active' : ''}" type="submit">自定义</button></form></div>
+              </div>
+              <button class="btn btn-sun" id="startFocusBtn">▶ 开始守护 · +${focusReward(selectedDuration)}</button>
+            </div>
+          </section>
+          <section class="panel shop-vault" id="mobileShop">
+            <div class="reward-vault-head">
+              <div><h2 class="section-title">哈奇商店</h2><p class="section-desc">用金币兑换心愿奖励，或解锁伙伴的新装扮。</p><div class="coin-progress"><div style="width:${coins.progress * 10}%"></div></div><div class="next-copy">再获得 ${10 - coins.progress} 个正向积分，收获下一枚金币</div></div>
+            </div>
+            <a class="mobile-panel-close" href="#" aria-label="关闭">×</a>
+            <div class="shop-sections">
+              <div class="shop-section"><div class="shop-section-head"><h3>🎁 心愿奖励</h3><p>兑换后由家长确认兑现。</p></div><div class="reward-list">${rewards.length ? rewards.map(reward => rewardCard(reward, coins.balance)).join('') : '<div class="empty">家长还没有设置可兑换的奖励。</div>'}</div></div>
+              <div class="shop-section"><div class="shop-section-head"><h3>✨ 装扮道具</h3><p>永久解锁，拥有后可以随时切换。</p></div><div class="cosmetic-list">${COSMETICS.map(cosmetic => cosmeticCard(cosmetic, coins.balance)).join('')}</div></div>
+            </div>
+          </section>
+          <div class="bottom-grid">
+            <section class="panel list-panel" id="mobileRecent"><a class="mobile-panel-close" href="#" aria-label="关闭">×</a><h2 class="section-title">最近成长</h2><div class="timeline">${recent.length ? recent.map(entry => timelineItem(entry)).join('') : '<div class="empty">还没有成长记录，完成第一个小目标吧。</div>'}</div></section>
+            <section class="panel list-panel" id="mobileGuide"><a class="mobile-panel-close" href="#" aria-label="关闭">×</a><h2 class="section-title">成长图鉴</h2><div class="milestone-list">${game_config.levels.slice(1).map((item, index) => milestoneItem(item, index + 1, child)).join('')}</div></section>
+          </div>
+        </div>
+      </div>`;
+  }
+
+  function rewardCard(reward, balance) {
+    const canRedeem = balance >= reward.cost;
+    return `<article class="reward-card"><div class="reward-icon">${escapeHtml(reward.icon || '🎁')}</div><div class="reward-name">${escapeHtml(reward.name)}</div><button class="reward-redeem" data-redeem="${reward.id}" ${canRedeem ? '' : 'disabled'}>${reward.cost} 🪙 · ${canRedeem ? '兑换' : '金币不足'}</button></article>`;
+  }
+
+  function cosmeticCard(cosmetic, balance) {
+    const owned = ownsCosmetic(cosmetic);
+    const equipped = equippedCosmetic(cosmetic.type) === cosmetic.id;
+    const canBuy = balance >= cosmetic.cost;
+    const label = equipped ? '使用中' : owned ? '装备' : canBuy ? `${cosmetic.cost} 🪙 · 解锁` : `${cosmetic.cost} 🪙 · 金币不足`;
+    return `<article class="cosmetic-card"><div class="cosmetic-preview preview-${cosmetic.id}">${cosmetic.icon}</div><div class="cosmetic-type">${cosmetic.typeName}</div><div class="cosmetic-name">${cosmetic.name}</div><button class="cosmetic-action ${equipped ? 'equipped' : ''}" data-cosmetic="${cosmetic.id}" ${equipped || (!owned && !canBuy) ? 'disabled' : ''}>${label}</button></article>`;
+  }
+
+  function timelineItem(entry) {
+    return `<div class="timeline-item"><div class="timeline-icon">${entry.source === 'focus_session' ? '⏱' : (ICONS[entry.category] || '✨')}</div><div><div class="timeline-title">${escapeHtml(entry.reason)}</div><div class="timeline-time">${formatTime(entry.createdAt)}${entry.note ? ` · ${escapeHtml(entry.note)}` : ''}</div></div><div class="delta ${entry.delta >= 0 ? 'positive' : 'negative'}">${entry.delta > 0 ? '+' : ''}${entry.delta}</div></div>`;
+  }
+
+  function milestoneItem(level, index, child) {
+    const unlocked = child.energy >= level.min;
+    const art = unlocked
+      ? `<div class="milestone-art" style="${petArtStyleForLevel(index)}" role="img" aria-label="${escapeHtml(child.petName)}的${level.name}"></div>`
+      : '<div class="milestone-art locked" aria-label="尚未解锁">?</div>';
+    return `<div class="milestone ${unlocked ? '' : 'locked'}">${art}<div><strong>${level.name}</strong><span>${unlocked ? `成长能量 ${level.min} 已解锁` : `成长能量达到 ${level.min} 解锁`}</span></div></div>`;
+  }
+
+  function parentView() {
+    const child = activeChild();
+    const level = levelForEnergy(child.energy);
+    const readySchoolEvents = schoolInboxEvents().filter(event => event.childAction);
+    const secondaryTabs = [
+      ['history', '历史记录'], ['metrics', '指标管理'], ['rewards', '奖励管理'], ['pets', '宠物形象'], ['settings', '家庭设置']
+    ];
+    return `
+      <div class="parent-layout">
+        <aside class="panel profile-panel">
+          <div class="profile-pet"><div class="${currentPetArtClass()}" style="${petArtStyle(child.energy)}"></div></div>
+          <div class="profile-info"><div class="eyebrow">当前孩子</div><h2>${escapeHtml(child.name)}</h2><div class="mini-stat"><div><span>成长能量</span><strong>${child.energy}</strong></div><div><span>当前形态</span><strong style="font-size:13px">${level.name}</strong></div><div><span>今日变化</span><strong>${todayScore() > 0 ? '+' : ''}${todayScore()}</strong></div><div><span>终身成长星</span><strong>${child.lifetimeStars}</strong></div></div><button class="btn btn-soft" id="editChildBtn" style="width:100%;margin-top:12px">编辑孩子与宠物</button></div>
+        </aside>
+        <div class="parent-main">
+          <nav class="panel parent-tabs" aria-label="家长功能"><button class="parent-tab ${parentTab === 'score' ? 'active' : ''}" data-parent-tab="score">评价行为</button><button class="parent-tab ${parentTab === 'school' ? 'active' : ''}" data-parent-tab="school">学校收件箱${schoolInboxEvents().length ? ` (${schoolInboxEvents().length})` : ''}</button><select class="select parent-more" id="parentMoreTabs" aria-label="更多家长功能"><option value="" ${['score', 'school'].includes(parentTab) ? 'selected' : ''}>更多管理</option>${secondaryTabs.map(([id, label]) => `<option value="${id}" ${parentTab === id ? 'selected' : ''}>${label}</option>`).join('')}</select></nav>
+          ${readySchoolEvents.length && parentTab !== 'school' ? `<button class="panel" data-open-school-inbox style="display:block;width:100%;margin:14px 0;padding:16px;text-align:left;border:1px solid #86efac;background:#f0fdf4"><strong style="color:#047857">孩子已完成 ${readySchoolEvents.length} 件学校成长任务</strong><span class="next-copy" style="display:block;margin-top:4px">点此一键确认，计入家庭成长</span></button>` : ''}${parentTab === 'score' ? scoreView() : parentTab === 'school' ? schoolInboxView() : parentTab === 'history' ? historyView() : parentTab === 'metrics' ? metricsView() : parentTab === 'rewards' ? rewardsView() : parentTab === 'pets' ? petsView() : settingsView()}
+        </div>
+      </div>`;
+  }
+
+  function safeCloudPart(value) {
+    return String(value || '').trim().replace(/[^a-zA-Z0-9_-]/g, '_').slice(0, 80);
+  }
+
+  function schoolEventExpiresAt(event) {
+    return Number(event?.expiresAt) || (Number(event?.createdAt) + 72 * 60 * 60 * 1000);
+  }
+
+  function isActiveSchoolEvent(event) {
+    return event?.status !== 'cancelled' && schoolEventExpiresAt(event) > Date.now();
+  }
+
+  function normalizeSchoolEventSummary(item, link = state.schoolLink) {
+    if (!item?.id || item?.eventType !== 'school_award') return null;
+    if (item.classId !== link.classId || item.studentId !== link.studentId) return null;
+    if (!['submitted', 'published'].includes(item.status) || !isActiveSchoolEvent(item)) return null;
+    return {
+      id: item.id,
+      eventType: item.eventType,
+      status: item.status,
+      createdAt: Number(item.createdAt) || 0,
+      submittedAt: Number(item.submittedAt) || 0,
+      expiresAt: schoolEventExpiresAt(item),
+      classId: item.classId,
+      className: item.className || '',
+      studentId: item.studentId,
+      studentUuid: item.studentUuid || '',
+      studentName: item.studentName || '',
+      delta: Math.max(0, Math.trunc(Number(item.delta) || 0)),
+      reason: item.reason || '',
+      category: item.category || '学习',
+      note: item.note || ''
+    };
+  }
+
+  function schoolEventBasePath(link = state.schoolLink) {
+    return `${schoolStudentRoot(link)}/events`;
+  }
+
+  function schoolStudentRoot(link = state.schoolLink) {
+    return `${GROWTH_LINK_ROOT}/students/${safeCloudPart(link?.studentId)}`;
+  }
+
+  function schoolPolicyPath(link = state.schoolLink) {
+    return `${schoolStudentRoot(link)}/access-policy.json`;
+  }
+
+  function schoolStudentProfilePath(link = state.schoolLink) {
+    return `${schoolStudentRoot(link)}/student-profile.json`;
+  }
+
+  function schoolReceiptPath(eventId, link = state.schoolLink) {
+    return `${schoolStudentRoot(link)}/receipts/${safeCloudPart(eventId)}.json`;
+  }
+
+  function schoolActionPath(eventId, link = state.schoolLink) {
+    return `${schoolStudentRoot(link)}/actions/${safeCloudPart(eventId)}.json`;
+  }
+
+  function schoolNotificationIndexPath(link = state.schoolLink) {
+    return `${schoolStudentRoot(link)}/notifications/index.json`;
+  }
+
+  function validSchoolSitePath(sitePath) {
+    return /^[a-zA-Z0-9_-]+\/[a-zA-Z0-9_-]+$/.test(String(sitePath || '').trim());
+  }
+
+  function schoolLinkFromUrl() {
+    const params = new URLSearchParams(location.search);
+    const sitePath = String(params.get('guardianSite') || '').trim().replace(/^\/+|\/+$/g, '');
+    const classId = String(params.get('guardianClass') || '').trim();
+    const studentId = String(params.get('guardianStudent') || '').trim();
+    if (!validSchoolSitePath(sitePath) || !classId || !studentId) return null;
+    return {
+      sitePath,
+      classId,
+      studentId,
+      studentName: String(params.get('guardianName') || '').trim(),
+      teacherUsername: String(params.get('guardianTeacher') || '').trim()
+    };
+  }
+
+  function sharedPageContent(result) {
+    if (typeof result === 'string') return result;
+    return String(result?.content ?? result?.data?.content ?? '');
+  }
+
+  async function readSchoolSharedPage(link, pagePath) {
+    if (typeof guardianSdk?.loadPage !== 'function') throw new Error('当前 Keepwork SDK 不支持共享站点读取');
+    if (!validSchoolSitePath(link.sitePath)) throw new Error('请填写教师提供的学校共享 KeepWork 站点路径');
+    try {
+      return sharedPageContent(await guardianSdk.loadPage({ sitePath: link.sitePath, pagePath }));
+    } catch (error) {
+      throw new Error(`无法读取学校共享站点。请确认当前家长账号拥有该站点访问权限，且路径正确：${error?.message || error}`);
+    }
+  }
+
+  function guardianUsername() {
+    return safeCloudPart(guardianUser?.username || guardianUser?.name || '');
+  }
+
+  function validateSchoolAccessPolicy(policy, link) {
+    const account = guardianUsername();
+    if (!account) return '未获得当前家长 Keepwork 账号，请重新登录';
+    if (!policy || typeof policy !== 'object' || policy.version !== 3 || policy.privacyScope !== 'student') return '该学生目录尚未发布授权策略。请让教师在学校共享站点中发布该学生的云端授权';
+    if (safeCloudPart(policy.classId) !== safeCloudPart(link.classId)) return '班级授权策略不匹配';
+    const student = Array.isArray(policy.students) ? policy.students.find(item => item?.id === link.studentId) : null;
+    if (!student || !Array.isArray(student.roles) || !student.roles.includes('student')) return '该学生目录不包含当前学生的授权记录';
+    const allowlist = Array.isArray(student.guardianAllowlist) ? student.guardianAllowlist.map(safeCloudPart) : [];
+    if (!allowlist.includes(account)) return `当前账号 ${account} 不在该学生的家长白名单中`;
+    return '';
+  }
+
+  async function queueSchoolReceipt(event, decision, growthEntryId = '', childAction = null) {
+    const receipt = { version: 3, privacyScope: 'student', eventId: event.id, classId: state.schoolLink.classId, studentId: state.schoolLink.studentId, decision, decidedAt: Date.now(), guardianUsername: guardianUsername(), growthEntryId, childAction };
+    state.schoolLink.pendingReceipts = state.schoolLink.pendingReceipts.filter(item => item.eventId !== event.id);
+    state.schoolLink.pendingReceipts.unshift(receipt);
+    await persistStateNow();
+    await publishPendingSchoolReceipts();
+  }
+
+  async function publishPendingSchoolReceipts() {
+    const link = state.schoolLink;
+    if (publishingSchoolReceipts || !link?.sitePath || !link?.classId || !link?.studentId || !guardianSdk?.savePage || !link.pendingReceipts.length) return;
+    publishingSchoolReceipts = true;
+    schoolReceiptSyncError = '';
+    try {
+      const policy = JSON.parse(await readSchoolSharedPage(link, schoolPolicyPath(link)) || 'null');
+      const accessError = validateSchoolAccessPolicy(policy, link);
+      if (accessError) throw new Error(accessError);
+      for (const receipt of [...link.pendingReceipts]) {
+        try {
+          await guardianSdk.savePage({ sitePath: link.sitePath, pagePath: schoolReceiptPath(receipt.eventId), content: JSON.stringify(receipt, null, 2), commitMessage: '同步家长学校奖励处理结果' });
+        } catch (error) {
+          const message = String(error?.message || error);
+          if (/404|请求不合法|not found/i.test(message)) {
+            throw new Error(`无法写入学校共享站点“${link.sitePath}”。请确认家长账号已拥有该站点的编辑权限。`);
+          }
+          throw error;
+        }
+        link.pendingReceipts = link.pendingReceipts.filter(item => item !== receipt);
+        await persistStateNow();
+      }
+    } catch (error) {
+      schoolReceiptSyncError = error?.message || String(error);
+      console.warn('同步学校奖励处理结果失败', error);
+    } finally {
+      publishingSchoolReceipts = false;
+      if (mode === 'parent' && parentTab === 'school') render();
+    }
+  }
+
+  async function refreshSchoolInbox() {
+    const link = state.schoolLink;
+    if (!link?.sitePath || !link?.classId || !link?.studentId || !guardianSdk) return;
+    schoolInboxLoadError = '';
+    schoolStudentProfile = null;
+    try {
+      const policyText = await readSchoolSharedPage(link, schoolPolicyPath(link));
+      let policy = null;
+      try { policy = JSON.parse(policyText || 'null'); } catch (_) {}
+      const accessError = validateSchoolAccessPolicy(policy, link);
+      if (accessError) throw new Error(accessError);
+      publishPendingSchoolReceipts();
+      try {
+        const profileText = await readSchoolSharedPage(link, schoolStudentProfilePath(link));
+        const profile = JSON.parse(profileText || 'null');
+        if (profile?.version === 3 && profile?.privacyScope === 'student' && profile?.classId === link.classId && profile?.student?.id === link.studentId) schoolStudentProfile = profile;
+      } catch (_) {}
+      const basePath = schoolEventBasePath(link);
+      const indexText = await readSchoolSharedPage(link, `${basePath}/index.json`);
+      let index = [];
+      try { index = JSON.parse(indexText || '[]'); } catch (_) {}
+      if (!Array.isArray(index)) index = [];
+      const summarizedEvents = [];
+      const detailLookupItems = [];
+      index.slice(0, 100).forEach(item => {
+        const summaryEvent = normalizeSchoolEventSummary(item, link);
+        if (summaryEvent) summarizedEvents.push(summaryEvent);
+        else if (item?.id) detailLookupItems.push(item);
+      });
+      const detailEvents = await Promise.all(detailLookupItems.map(async item => {
+        try {
+          const text = await readSchoolSharedPage(link, `${basePath}/${safeCloudPart(item.id)}.json`);
+          const event = JSON.parse(text || 'null');
+          return event?.classId === link.classId && event?.studentId === link.studentId ? event : null;
+        } catch (_) { return null; }
+      }));
+      schoolInboxCache = [...summarizedEvents, ...detailEvents.filter(Boolean)]
+        .filter(event => event?.eventType === 'school_award' && event.studentId === link.studentId && ['submitted', 'published'].includes(event.status) && isActiveSchoolEvent(event))
+        .sort((left, right) => Number(right.createdAt || 0) - Number(left.createdAt || 0));
+      schoolInboxCache = await Promise.all(schoolInboxCache.map(async event => {
+        try {
+          const action = JSON.parse(await readSchoolSharedPage(link, schoolActionPath(event.id)) || 'null');
+          const policyStudent = Array.isArray(policy?.students) ? policy.students.find(item => item?.id === link.studentId) : null;
+          const expectedStudentUsername = safeCloudPart(policyStudent?.keepworkUsername);
+          if (action?.version === 3 && action.privacyScope === 'student' && action.eventId === event.id && action.classId === event.classId && action.studentId === link.studentId && action.status === 'submitted' && expectedStudentUsername && safeCloudPart(action.studentUsername) === expectedStudentUsername) {
+            event.childAction = { actionLabel: String(action.actionLabel || '').slice(0, 120), submittedAt: Number(action.submittedAt) || 0, studentUsername: expectedStudentUsername };
+          }
+        } catch (_) {}
+        return event;
+      }));
+      const notifications = await loadAwardNotifications(link);
+      notifyNewAwardNotification(notifications);
+    } catch (error) {
+      schoolInboxCache = [];
+      schoolInboxLoadError = error?.message || '无法读取学校云端消息';
+    }
+    if (mode === 'parent') {
+      if (parentTab === 'score' && schoolInboxEvents().some(event => event.childAction)) parentTab = 'school';
+      render();
+    }
+  }
+
+  function schoolInboxEvents() {
+    const link = state.schoolLink;
+    if (!link?.studentId) return [];
+    const completed = new Set([...(link.appliedEventIds || []), ...(link.ignoredEventIds || [])]);
+    return schoolInboxCache
+      .filter(event => event?.eventType === 'school_award' && ['submitted', 'published'].includes(event.status) && event.studentId === link.studentId && isActiveSchoolEvent(event) && !completed.has(event.id))
+      .sort((left, right) => Number(right.createdAt) - Number(left.createdAt));
+  }
+
+  function schoolInboxView() {
+    const link = state.schoolLink;
+    const events = schoolInboxEvents();
+    if (!link.sitePath || !link.classId || !link.studentId) return `<section class="panel" style="padding:22px"><h2 class="section-title">连接学校成长消息</h2><p class="section-desc">请使用教师发送的家长链接打开此页，链接会自动完成孩子绑定。下方手动填写仅用于链接丢失时恢复绑定；学校共享站点内的数据仍按孩子独立目录保存。</p><form id="schoolLinkForm"><div class="field"><label>学校共享 KeepWork 站点路径</label><input class="input" id="schoolSitePath" maxlength="160" required placeholder="例如：teacher_zhang/class-growth"></div><div class="field"><label>教师 Keepwork 账号（选填，用于识别）</label><input class="input" id="schoolTeacherUsername" maxlength="80" placeholder="例如：teacher_zhang"></div><div class="field"><label>班级编号</label><input class="input" id="schoolClassId" maxlength="80" required placeholder="例如：三年级_2"></div><div class="field"><label>学生编号（仅手动恢复时需要）</label><input class="input" id="schoolStudentId" maxlength="80" required placeholder="例如：stu_xiaoyu"></div><div class="field"><label>孩子在学校使用的姓名（选填）</label><input class="input" id="schoolStudentName" maxlength="40" placeholder="用于家长识别"></div><div class="modal-actions"><button class="btn btn-primary" type="submit">保存绑定</button></div></form></section>`;
+    const classroom = schoolStudentProfile?.student;
+    const pendingReceiptCount = link.pendingReceipts.length;
+    const receiptSyncStatus = schoolReceiptSyncError
+      ? `<p class="section-desc" style="color:#be123c">回执同步失败，已保留 ${pendingReceiptCount} 条待同步记录：${escapeHtml(schoolReceiptSyncError)}</p>`
+      : pendingReceiptCount
+        ? `<p class="section-desc" style="color:#b45309">${publishingSchoolReceipts ? '正在同步' : '等待同步'} ${pendingReceiptCount} 条家庭处理回执。</p>`
+        : '<p class="section-desc" style="color:#047857">家庭处理回执已同步。</p>';
+    const classroomSummary = classroom ? `<div class="panel" style="margin:16px 0;padding:16px"><div class="metrics-toolbar" style="padding:0"><div><h3 class="section-title" style="font-size:18px">课堂宠物档案</h3><p class="section-desc">由教师端同步，仅包含当前孩子的课堂状态，不会覆盖家庭成长账本。</p></div><strong class="delta positive">${Math.max(0, Number(classroom.points) || 0)} 课堂积分</strong></div><div style="display:flex;gap:18px;align-items:center;margin-top:12px"><div>${classroom.pet?.url ? `<img src="${escapeHtml(classroom.pet.url)}" alt="${escapeHtml(classroom.pet.name || '课堂宠物')}" style="width:58px;height:58px;object-fit:cover;object-position:0 0;border-radius:12px;background:#fff7ed">` : '✨'}</div><div><strong>${escapeHtml(classroom.name || link.studentName || link.studentId)} · Lv.${Math.max(1, Number(classroom.level) || 1)}</strong><div class="next-copy">${escapeHtml(classroom.pet?.name || '课堂宠物')} · ${escapeHtml(classroom.pet?.species || '成长伙伴')} · 心情 ${Math.max(0, Math.min(100, Number(classroom.mood) || 0))}%</div></div></div></div>` : '<p class="section-desc" style="margin:16px 0">教师尚未同步课堂宠物档案；刷新或请教师保存该学生的家庭云端授权。</p>';
+    return `<section class="panel" style="padding:22px"><div class="metrics-toolbar" style="padding:0"><div><h2 class="section-title">学校成长收件箱</h2><p class="section-desc">已连接学校共享站点 ${escapeHtml(link.sitePath)} 的 ${escapeHtml(link.classId)} · ${escapeHtml(link.studentName || link.studentId)}。孩子先在个人宠物页完成家庭小行动，再由家长决定是否计入成长。</p></div><div style="display:flex;gap:8px"><button class="btn btn-soft" id="refreshSchoolInboxBtn">刷新云端</button><button class="btn btn-soft" id="changeSchoolLinkBtn">修改绑定</button></div></div>${schoolInboxLoadError ? `<p class="section-desc" style="color:#be123c">云端读取失败：${escapeHtml(schoolInboxLoadError)}</p>` : ''}${receiptSyncStatus}${classroomSummary}<div class="redemption-list" style="padding:0;margin-top:16px">${events.length ? events.map(event => `<div class="redemption-item"><div><strong>${escapeHtml(event.reason || '课堂成长记录')}</strong><div class="next-copy">${escapeHtml(event.className || '学校')} · ${formatTime(event.createdAt)} · +${Math.max(0, Number(event.delta) || 0)} 家庭成长能量${event.childAction?.actionLabel ? ` · 孩子已完成：${escapeHtml(event.childAction.actionLabel)}（${escapeHtml(event.childAction.studentUsername)}）` : ' · 等待孩子完成家庭小行动'}</div></div><div class="redemption-actions">${event.childAction ? `<button class="btn btn-primary" style="min-height:32px;padding:0 10px" data-approve-school-event="${escapeHtml(event.id)}">计入成长</button>` : '<button class="btn btn-soft" style="min-height:32px;padding:0 10px" disabled>等待孩子行动</button>'}<button class="btn btn-soft" style="min-height:32px;padding:0 10px" data-ignore-school-event="${escapeHtml(event.id)}">暂不计入</button></div></div>`).join('') : '<div class="empty">暂无待处理的学校成长消息。</div>'}</div></section>`;
+  }
+
+  function metricCards(metrics) {
+    if (!metrics.length) return '<div class="empty">没有匹配的指标</div>';
+    return metrics.map(metric => `<article class="metric-card ${metric.delta < 0 ? 'negative' : ''}"><div class="metric-top"><div class="metric-icon">${ICONS[metric.category] || '✨'}</div><div><div class="metric-name">${escapeHtml(metric.name)}</div><div class="metric-category">${escapeHtml(metric.category)}</div></div></div><button class="score-btn" data-score-metric="${metric.id}">${metric.delta > 0 ? '+' : ''}${metric.delta} 分</button></article>`).join('');
+  }
+
+  function scoreView() {
+    const query = metricQuery.trim().toLowerCase();
+    const visible = state.metrics.filter(metric => metric.active !== false && (!query || metric.name.toLowerCase().includes(query) || metric.category.toLowerCase().includes(query)));
+    return `<div class="panel metrics-toolbar"><div><h2 class="section-title">为具体行为评分</h2><p class="section-desc">每次记录都可追溯、备注和撤销。</p></div><input id="metricSearch" class="search" value="${escapeHtml(metricQuery)}" placeholder="搜索指标或分类..."></div><div class="metric-columns"><section class="panel metric-section positive"><div class="metric-heading"><h3>● 加分指标 (${visible.filter(item => item.delta > 0).length})</h3></div><div class="metric-grid">${metricCards(visible.filter(item => item.delta > 0))}</div></section><section class="panel metric-section negative"><div class="metric-heading"><h3>● 改进指标 (${visible.filter(item => item.delta < 0).length})</h3></div><div class="metric-grid">${metricCards(visible.filter(item => item.delta < 0))}</div></section></div>`;
+  }
+
+  function historyView() {
+    const entries = state.ledger.filter(item => item.childId === activeChild().id && item.petKey === petKeyForChild());
+    return `<section class="panel"><div style="padding:18px"><h2 class="section-title">积分账本</h2><p class="section-desc">撤销不会删除记录，确保每次变化都有依据。</p></div><div class="history-wrap"><table class="history-table"><thead><tr><th>时间</th><th>行为</th><th>来源</th><th>备注</th><th>变化</th><th>操作</th></tr></thead><tbody>${entries.length ? entries.map(entry => `<tr style="${entry.revokedAt ? 'opacity:.45' : ''}"><td>${formatTime(entry.createdAt)}</td><td><strong>${escapeHtml(entry.reason)}</strong><br><span style="color:var(--muted)">${escapeHtml(entry.category)}</span></td><td>${entry.source === 'focus_session' ? '专注守护' : entry.source === 'school_sync' ? '学校同步' : '家长记录'}</td><td>${escapeHtml(entry.note || '—')}</td><td class="delta ${entry.delta >= 0 ? 'positive' : 'negative'}">${entry.delta > 0 ? '+' : ''}${entry.delta}${entry.revokedAt ? '（已撤销）' : ''}</td><td>${!entry.revokedAt ? `<button class="btn btn-soft" style="min-height:32px;padding:0 10px" data-revoke="${entry.id}">撤销</button>` : '—'}</td></tr>`).join('') : '<tr><td colspan="6" class="empty">暂无记录</td></tr>'}</tbody></table></div></section>`;
+  }
+
+  function metricsView() {
+    return `<div class="panel metrics-toolbar"><div><h2 class="section-title">指标管理</h2><p class="section-desc">保持规则少而清楚，孩子才能理解怎样做得更好。</p></div><button class="btn btn-primary" id="addMetricBtn">＋ 新建指标</button></div><section class="panel history-wrap"><table class="history-table"><thead><tr><th>指标</th><th>分类</th><th>分值</th><th>状态</th><th>操作</th></tr></thead><tbody>${state.metrics.map(metric => `<tr><td><strong>${escapeHtml(metric.name)}</strong></td><td>${escapeHtml(metric.category)}</td><td class="delta ${metric.delta > 0 ? 'positive' : 'negative'}">${metric.delta > 0 ? '+' : ''}${metric.delta}</td><td>${metric.active === false ? '已停用' : '使用中'}</td><td><button class="btn btn-soft" style="min-height:32px;padding:0 10px" data-toggle-metric="${metric.id}">${metric.active === false ? '启用' : '停用'}</button></td></tr>`).join('')}</tbody></table></section>`;
+  }
+
+  function rewardsView() {
+    const child = activeChild();
+    const coins = coinStats(child.id);
+    const pending = state.redemptions.filter(item => item.childId === child.id && !item.cancelledAt && !item.fulfilledAt);
+    const redemptions = state.redemptions.filter(item => item.childId === child.id).filter(item => redemptionFilter === 'all' || (redemptionFilter === 'pending' && !item.cancelledAt && !item.fulfilledAt) || (redemptionFilter === 'fulfilled' && item.fulfilledAt) || (redemptionFilter === 'cancelled' && item.cancelledAt));
+    const redemptionStatus = item => item.fulfilledAt ? `已兑现 · ${formatTime(item.fulfilledAt)}` : item.cancelledAt ? `已取消 · ${formatTime(item.cancelledAt)}` : '待兑现';
+    const redemptionNote = item => item.fulfillmentNote || item.cancellationNote || '';
+    return `<div class="panel metrics-toolbar"><div><h2 class="section-title">奖励与金币</h2><p class="section-desc">${coins.positivePoints} 个正向积分已产生 ${coins.earned} 枚金币，当前可用 ${coins.balance} 枚。</p></div><button class="btn btn-primary" id="addRewardBtn">＋ 新建奖励</button></div><div class="settings-grid"><section class="panel setting-card"><h3>可兑换奖励</h3><p>停用后不会影响已有兑换记录。</p><div class="redemption-list" style="padding:0">${state.rewards.map(reward => `<div class="redemption-item"><div><strong>${escapeHtml(reward.icon || '🎁')} ${escapeHtml(reward.name)}</strong><div class="next-copy">${reward.cost} 枚金币 · ${reward.active === false ? '已停用' : '兑换中'}</div></div><button class="btn btn-soft" style="min-height:32px;padding:0 10px" data-toggle-reward="${reward.id}">${reward.active === false ? '启用' : '停用'}</button></div>`).join('')}</div></section><section class="panel setting-card"><h3>履约队列 (${pending.length})</h3><p>每一笔兑换都保留申请、处理和结果，方便家庭回顾约定。</p><div class="duration-tabs" style="margin:0 0 12px">${[['pending', '待兑现'], ['fulfilled', '已兑现'], ['cancelled', '已取消'], ['all', '全部']].map(([key, label]) => `<button class="duration-btn ${redemptionFilter === key ? 'active' : ''}" data-redemption-filter="${key}">${label}</button>`).join('')}</div><div class="redemption-list" style="padding:0">${redemptions.length ? redemptions.map(item => `<div class="redemption-item"><div><strong>${escapeHtml(item.rewardIcon || '🎁')} ${escapeHtml(item.rewardName)}</strong><div class="next-copy">${redemptionStatus(item)} · ${item.cost} 枚金币${redemptionNote(item) ? ` · ${escapeHtml(redemptionNote(item))}` : ''}</div></div>${!item.fulfilledAt && !item.cancelledAt ? `<div class="redemption-actions"><button class="btn btn-primary" style="min-height:32px;padding:0 10px" data-fulfill-redemption="${item.id}">登记兑现</button><button class="btn btn-soft" style="min-height:32px;padding:0 10px" data-cancel-redemption="${item.id}">取消</button></div>` : ''}</div>`).join('') : '<div class="empty">这个状态下暂无兑换记录</div>'}</div></section></div>`;
+  }
+
+  function petHistoryRows() {
+    const currentPetKey = petKeyForChild();
+    const history = Object.values(state.petProgress).sort((left, right) => (right.lastUsedAt || 0) - (left.lastUsedAt || 0));
+    if (!history.length) return '<tr><td colspan="5" class="empty">选择第一只宠物后，这里会保存它的成长记录。</td></tr>';
+    return history.map(progress => {
+      const famousPet = famousPets.find(item => `famous:${item.id}` === progress.petKey);
+      const current = progress.petKey === currentPetKey;
+      const action = famousPet
+        ? `<button class="btn ${current ? 'btn-soft' : 'btn-primary'}" style="min-height:32px;padding:0 10px" data-history-pet-id="${escapeHtml(famousPet.id)}" ${current ? 'disabled' : ''}>${current ? '当前宠物' : '切换回来'}</button>`
+        : '历史档案';
+      return `<tr><td><strong>${escapeHtml(famousPet?.name || progress.petName)}</strong></td><td>${clampEnergy(progress.energy)} / 200</td><td>${levelForEnergy(progress.energy).name}</td><td>${formatTime(progress.lastUsedAt || progress.selectedAt)}</td><td>${action}</td></tr>`;
+    }).join('');
+  }
+
+  function petsView() {
+    const child = activeChild();
+    const selectedPet = famousPets.find(pet => pet.id === selectedFamousPetId) || famousPets.find(pet => pet.id === child.famousPetId) || famousPets[0];
+    const isCurrent = selectedPet && child.famousPetId === selectedPet.id;
+    const preview = selectedPet?.imageSheetUrl
+      ? `<div class="pet-choice-art" style="background-image:url(&quot;${escapeHtml(selectedPet.imageSheetUrl)}&quot;)"></div>`
+      : '<div style="font-size:64px">🥚</div>';
+    return `<div class="pet-manager"><section class="panel"><div style="padding:18px"><h2 class="section-title">从宠物图鉴选择</h2><p class="section-desc">每只宠物从 0 能量开始，成长进度独立保存。</p></div><div style="padding:0 18px 18px"><label class="field"><span style="font-weight:900">宠物名字</span><select class="select" id="famousPetSelect" ${famousPets.length ? '' : 'disabled'}>${famousPets.map(pet => `<option value="${escapeHtml(pet.id)}" ${selectedPet?.id === pet.id ? 'selected' : ''}>${escapeHtml(pet.name)}</option>`).join('')}</select></label><p class="section-desc">${escapeHtml(famousPetsStatus)}</p>${selectedPet ? `<article class="pet-choice selected" style="margin-top:14px"><div class="pet-choice-preview">${preview}</div><div class="pet-choice-meta"><strong>${escapeHtml(selectedPet.name)}</strong><span>官方成品 · 4×4 成长图集</span></div><button class="btn ${isCurrent ? 'btn-soft' : 'btn-primary'}" id="useFamousPetBtn" data-parent-pet-source="famous" data-parent-pet-id="${escapeHtml(selectedPet.id)}" ${isCurrent ? 'disabled' : ''}>${isCurrent ? '当前形象' : '设为当前形象'}</button></article>` : '<div class="empty">宠物名单暂未加载。</div>'}</div></section><section class="panel"><div style="padding:18px"><h2 class="section-title">宠物历史记录</h2><p class="section-desc">切换宠物不会转移能量，回来时继续原来的成长进度。</p></div><div class="history-wrap"><table class="history-table"><thead><tr><th>宠物</th><th>成长能量</th><th>当前形态</th><th>最近使用</th><th>操作</th></tr></thead><tbody>${petHistoryRows()}</tbody></table></div></section></div>`;
+  }
+
+  async function loadGuardianSdk() {
+    if (window.keepwork?.aiGenerators?.genImage && typeof window.keepwork.showLoginWindow === 'function') return window.keepwork;
+    sdkLoadPromise ||= (async () => {
+      window.KEEPWORK_DEFAULT_OPTIONS = {
+        timeout: 30000,
+        autoReloadAfterRedirectLogin: false,
+        wxAuth: { scope: 'snsapi_base' }
+      };
+      const explicitSdk = new URLSearchParams(location.search).get('sdk');
+      const isLocal = !location.hostname || ['localhost', '127.0.0.1', '::1'].includes(location.hostname);
+      const localSdk = 'http://127.0.0.1:5001/index.ts';
+      const sdkUrls = [
+        explicitSdk,
+        ...(isLocal || location.protocol === 'file:' ? [localSdk] : []),
+        'https://cdn.keepwork.com/sdk/keepworkSDK.iife.js?v=20260619a',
+        ...(isLocal || location.protocol === 'file:' ? [] : [localSdk])
+      ].filter(Boolean);
+      let lastError;
+      for (const url of sdkUrls) {
+        try {
+          if (/(^|\/)index\.(?:ts|mjs|js)(?:[?#].*)?$/.test(url)) {
+            await new Function('src', 'return import(src)')(url);
+          } else {
+            await new Promise((resolve, reject) => {
+              const script = document.createElement('script');
+              script.src = url;
+              script.onload = resolve;
+              script.onerror = reject;
+              document.head.appendChild(script);
+            });
+          }
+          if (window.keepwork?.aiGenerators?.genImage && typeof window.keepwork.showLoginWindow === 'function') {
+            window.keepwork._autoReloadAfterRedirectLogin = false;
+            window.keepwork?.wxAuth?.setScope?.('snsapi_base');
+            await window.keepwork.localAPIKeySettings?.load?.();
+            return window.keepwork;
+          }
+        } catch (error) {
+          lastError = error;
+        }
+      }
+      throw new Error(`KeepworkSDK 加载失败：${lastError?.message || 'unknown'}`);
+    })();
+    return sdkLoadPromise;
+  }
+
+  function clearGuardianAuthParams() {
+    try {
+      const url = new URL(location.href);
+      ['token', 'code', 'state', 'wxauth', 'googleauth', 'scope', 'authuser', 'prompt', 'error'].forEach(key => url.searchParams.delete(key));
+      history.replaceState({}, '', `${url.pathname}${url.search}${url.hash}`);
+    } catch (_) {}
+  }
+
+  async function ensureGuardianLogin(sdk) {
+    try {
+      const urlToken = new URL(location.href).searchParams.get('token');
+      const savedToken = localStorage.getItem(AUTH_TOKEN_KEY);
+      if (!sdk.token && (urlToken || savedToken)) sdk.token = urlToken || savedToken;
+      await sdk.whenRedirectLoginSettled?.();
+    } catch (_) {}
+    if (sdk) sdk._autoReloadAfterRedirectLogin = false;
+    sdk?.wxAuth?.setScope?.('snsapi_base');
+    if (sdk.token) {
+      try {
+        const profile = typeof sdk.getUserProfile === 'function'
+          ? await sdk.getUserProfile()
+          : typeof sdk.getCurrentUser === 'function'
+            ? await sdk.getCurrentUser()
+            : sdk.user;
+        const user = profile?.user || profile;
+        if (user) {
+          localStorage.setItem(AUTH_TOKEN_KEY, sdk.token);
+          clearGuardianAuthParams();
+          return user;
+        }
+      } catch (_) {}
+      sdk.token = null;
+      localStorage.removeItem(AUTH_TOKEN_KEY);
+    }
+    if (typeof sdk.showLoginWindow === 'function') await sdk.showLoginWindow({ title: '登录哈奇成长守护', wechatScope: 'snsapi_base' });
+    else if (sdk.loginWindow?.show) await new Promise(resolve => sdk.loginWindow.show({ onLogin: resolve, onClose: resolve }));
+    else if (sdk.login) await sdk.login();
+    if (!sdk.token) throw new Error('需要先登录 Keepwork 才能进入成长守护');
+    localStorage.setItem(AUTH_TOKEN_KEY, sdk.token);
+    clearGuardianAuthParams();
+    const profile = typeof sdk.getUserProfile === 'function'
+      ? await sdk.getUserProfile()
+      : typeof sdk.getCurrentUser === 'function'
+        ? await sdk.getCurrentUser()
+        : sdk.user;
+    const user = profile?.user || profile;
+    if (!user) throw new Error('未获得 Keepwork 用户资料，请重新登录');
+    return user;
+  }
+
+  async function startGuardian() {
+    const app = document.getElementById('app');
+    const incomingSchoolLink = schoolLinkFromUrl();
+    app.innerHTML = '<main class="main"><section class="panel" style="max-width:460px;margin:12vh auto;padding:28px;text-align:center"><div style="font-size:42px">🔐</div><h1 class="section-title" style="margin-top:12px">正在连接 Keepwork</h1><p class="section-desc">登录成功后即可进入哈奇成长守护。</p></section></main>';
+    try {
+      const sdk = await loadGuardianSdk();
+      guardianUser = await ensureGuardianLogin(sdk);
+      await loadCloudData(sdk);
+      if (incomingSchoolLink && (state.schoolLink.sitePath !== incomingSchoolLink.sitePath || state.schoolLink.studentId !== incomingSchoolLink.studentId || state.schoolLink.classId !== incomingSchoolLink.classId)) {
+        Object.assign(state.schoolLink, incomingSchoolLink);
+        parentTab = 'school';
+        saveState();
+      }
+      selectedFamousPetId = activeChild().famousPetId || famousPets[0]?.id || '';
+      syncChildFromPetProgress();
+      syncDailyEnergyBaselines();
+      saveState();
+      scheduleDailyEnergyReset();
+      syncCurrentPetArt();
+      render();
+      requestPetImage(activeChild().selectedPetId || '');
+      clearInterval(schoolInboxRefreshTimer);
+      refreshVisibleSchoolInbox();
+      schoolInboxRefreshTimer = window.setInterval(refreshVisibleSchoolInbox, 45 * 1000);
+      if (!loadedSent) {
+        loadedSent = true;
+        post('gameLoaded', { title: '哈奇成长守护' });
+      }
+    } catch (error) {
+      app.innerHTML = `<main class="main"><section class="panel" style="max-width:460px;margin:12vh auto;padding:28px;text-align:center"><div style="font-size:42px">🔐</div><h1 class="section-title" style="margin-top:12px">需要登录 Keepwork</h1><p class="section-desc" style="margin-bottom:18px">${escapeHtml(error?.message || error)}</p><button class="btn btn-primary" id="retryGuardianLogin" type="button">重新登录</button></section></main>`;
+      document.getElementById('retryGuardianLogin')?.addEventListener('click', startGuardian, { once: true });
+    }
+  }
+
+  function selectParentPet(id, source) {
+    const child = activeChild();
+    if (source === 'generated') {
+      const pet = state.generatedPets.find(item => item.childId === child.id && item.id === id);
+      if (!pet) return;
+      child.generatedPetId = pet.id;
+      child.famousPetId = '';
+      child.selectedPetId = '';
+      child.petName = pet.name || child.petName;
+    } else if (source === 'famous') {
+      const pet = famousPets.find(item => item.id === id);
+      if (!pet) return;
+      child.generatedPetId = '';
+      child.famousPetId = pet.id;
+      child.selectedPetId = '';
+      child.petName = pet.name;
+    } else {
+      const pet = availablePets.find(item => String(item.petId) === String(id));
+      if (!pet) return;
+      child.generatedPetId = '';
+      child.famousPetId = '';
+      child.selectedPetId = String(pet.petId);
+      child.petName = pet.name || child.petName;
+    }
+    syncChildFromPetProgress();
+    syncCurrentPetArt();
+    saveState();
+    render();
+    toast('宠物形象已更新');
+  }
+
+  function settingsView() {
+    return `<div class="settings-grid"><section class="panel setting-card"><h3>家长 PIN</h3><p>进入家长模式需要验证，避免孩子直接修改积分。</p><button class="btn btn-soft" id="changePinBtn">修改 PIN</button></section><section class="panel setting-card"><h3>数据导出</h3><p>导出完整积分账本，便于家庭共同回顾。</p><button class="btn btn-soft" id="exportBtn">导出 JSON</button></section><section class="panel setting-card"><h3>自动奖励上限</h3><p>专注守护每天最多自动奖励 ${game_config.dailyAutoPointCap} 分，避免重复刷分。</p><strong>今日已自动获得 ${autoPointsToday()} 分</strong></section><section class="panel setting-card"><h3>账号</h3><p>退出当前 Keepwork 账号。家庭成长数据仍会保存在云端。</p><button class="btn btn-danger" id="logoutBtn">退出登录</button></section><section class="panel setting-card"><h3>重新开始</h3><p>清除本设备上的孩子、指标和账本数据。此操作不可撤销。</p><button class="btn btn-danger" id="resetBtn">清除本地数据</button></section></div>`;
+  }
+
+  function bindGlobal() {
+    document.querySelectorAll('[data-mode]').forEach(button => button.addEventListener('click', () => switchMode(button.dataset.mode)));
+    document.getElementById('helpBtn')?.addEventListener('click', showHelp);
+  }
+
+  async function switchMode(nextMode) {
+    if (mode === 'parent' && nextMode === 'child') {
+      showChildModeConfirm();
+      return;
+    }
+    if (nextMode === 'parent' && !parentUnlocked) {
+      showPinModal();
+      return;
+    }
+    mode = nextMode;
+    render();
+  }
+
+  function bindChild() {
+    document.querySelectorAll('[data-duration]').forEach(button => button.addEventListener('click', () => { selectedDuration = Number(button.dataset.duration); render(); }));
+    document.getElementById('customDurationForm')?.addEventListener('submit', event => {
+      event.preventDefault();
+      const minutes = Math.round(Number(document.getElementById('customDurationInput').value));
+      if (minutes < 1 || minutes > 120) return toast('自定义时间需在 1 到 120 分钟之间');
+      selectedDuration = minutes;
+      render();
+    });
+    document.getElementById('startFocusBtn')?.addEventListener('click', startFocus);
+    document.querySelectorAll('[data-redeem]').forEach(button => button.addEventListener('click', () => redeemReward(button.dataset.redeem)));
+    document.querySelectorAll('[data-cosmetic]').forEach(button => button.addEventListener('click', () => selectCosmetic(button.dataset.cosmetic)));
+  }
+
+  function bindParent() {
+    document.querySelectorAll('[data-parent-tab]').forEach(button => button.addEventListener('click', () => { parentTab = button.dataset.parentTab; render(); if (parentTab === 'school') refreshSchoolInbox(); }));
+    document.querySelectorAll('[data-open-school-inbox]').forEach(button => button.addEventListener('click', () => { parentTab = 'school'; render(); refreshSchoolInbox(); }));
+    document.getElementById('parentMoreTabs')?.addEventListener('change', event => { if (!event.target.value) return; parentTab = event.target.value; render(); });
+    document.getElementById('metricSearch')?.addEventListener('input', event => { metricQuery = event.target.value; render(); document.getElementById('metricSearch')?.focus(); });
+    document.querySelectorAll('[data-score-metric]').forEach(button => button.addEventListener('click', () => showScoreModal(button.dataset.scoreMetric)));
+    document.querySelectorAll('[data-revoke]').forEach(button => button.addEventListener('click', () => revokeEntry(button.dataset.revoke)));
+    document.querySelectorAll('[data-toggle-metric]').forEach(button => button.addEventListener('click', () => toggleMetric(button.dataset.toggleMetric)));
+    document.querySelectorAll('[data-toggle-reward]').forEach(button => button.addEventListener('click', () => toggleReward(button.dataset.toggleReward)));
+    document.querySelectorAll('[data-fulfill-redemption]').forEach(button => button.addEventListener('click', () => updateRedemption(button.dataset.fulfillRedemption, 'fulfilledAt')));
+    document.querySelectorAll('[data-cancel-redemption]').forEach(button => button.addEventListener('click', () => updateRedemption(button.dataset.cancelRedemption, 'cancelledAt')));
+    document.querySelectorAll('[data-redemption-filter]').forEach(button => button.addEventListener('click', () => { redemptionFilter = button.dataset.redemptionFilter; render(); }));
+    document.querySelectorAll('[data-approve-school-event]').forEach(button => button.addEventListener('click', async () => {
+      button.disabled = true;
+      await approveSchoolEvent(button.dataset.approveSchoolEvent);
+    }));
+    document.querySelectorAll('[data-ignore-school-event]').forEach(button => button.addEventListener('click', async () => {
+      button.disabled = true;
+      await ignoreSchoolEvent(button.dataset.ignoreSchoolEvent);
+    }));
+    document.getElementById('changeSchoolLinkBtn')?.addEventListener('click', showSchoolLinkModal);
+    document.getElementById('refreshSchoolInboxBtn')?.addEventListener('click', refreshSchoolInbox);
+    document.getElementById('schoolLinkForm')?.addEventListener('submit', saveSchoolLink);
+    document.getElementById('addMetricBtn')?.addEventListener('click', showAddMetricModal);
+    document.getElementById('addRewardBtn')?.addEventListener('click', showAddRewardModal);
+    document.getElementById('editChildBtn')?.addEventListener('click', showEditChildModal);
+    document.getElementById('famousPetSelect')?.addEventListener('change', event => { selectedFamousPetId = event.target.value; render(); });
+    document.querySelectorAll('[data-parent-pet-id]').forEach(button => button.addEventListener('click', () => selectParentPet(button.dataset.parentPetId, button.dataset.parentPetSource)));
+    document.querySelectorAll('[data-history-pet-id]').forEach(button => button.addEventListener('click', () => selectParentPet(button.dataset.historyPetId, 'famous')));
+    document.getElementById('changePinBtn')?.addEventListener('click', () => showPinModal(true));
+    document.getElementById('exportBtn')?.addEventListener('click', exportData);
+    document.getElementById('logoutBtn')?.addEventListener('click', showLogoutConfirm);
+    document.getElementById('resetBtn')?.addEventListener('click', resetData);
+  }
+
+  function modal(content) {
+    document.getElementById('modalRoot').innerHTML = `<div class="modal-backdrop" id="modalBackdrop"><div class="modal" role="dialog" aria-modal="true">${content}</div></div>`;
+    document.getElementById('modalBackdrop').addEventListener('click', event => { if (event.target.id === 'modalBackdrop') closeModal(); });
+  }
+
+  function closeModal() {
+    document.getElementById('modalRoot').innerHTML = '';
+  }
+
+  function showChildModeConfirm() {
+    modal(`<h2>返回孩子模式？</h2><p>返回后家长模式将立即锁定，下次进入时需要重新输入 PIN。</p><div class="modal-actions"><button type="button" class="btn btn-soft" id="cancelModal">取消</button><button type="button" class="btn btn-primary" id="confirmChildMode">确认返回</button></div>`);
+    document.getElementById('cancelModal').addEventListener('click', closeModal);
+    document.getElementById('confirmChildMode').addEventListener('click', () => {
+      parentUnlocked = false;
+      mode = 'child';
+      closeModal();
+      render();
+    });
+  }
+
+  function showLogoutConfirm() {
+    modal(`<h2>退出当前账号？</h2><p>退出后需要重新登录 Keepwork 才能继续使用。家庭成长数据不会被删除。</p><div class="modal-actions"><button type="button" class="btn btn-soft" id="cancelModal">取消</button><button type="button" class="btn btn-danger" id="confirmLogout">退出登录</button></div>`);
+    document.getElementById('cancelModal').addEventListener('click', closeModal);
+    document.getElementById('confirmLogout').addEventListener('click', logoutGuardian);
+  }
+
+  async function logoutGuardian() {
+    const sdk = window.keepwork;
+    try { await sdk?.logout?.(); } catch (_) {}
+    if (sdk) sdk.token = null;
+    localStorage.removeItem(AUTH_TOKEN_KEY);
+    parentUnlocked = false;
+    mode = 'child';
+    closeModal();
+    clearGuardianAuthParams();
+    document.getElementById('app').innerHTML = '<main class="main"><section class="panel" style="max-width:460px;margin:12vh auto;padding:28px;text-align:center"><div style="font-size:42px">🔐</div><h1 class="section-title" style="margin-top:12px">已退出登录</h1><p class="section-desc" style="margin-bottom:18px">当前 Keepwork 账号已安全退出。</p><button class="btn btn-primary" id="retryGuardianLogin" type="button">重新登录</button></section></main>';
+    document.getElementById('retryGuardianLogin')?.addEventListener('click', startGuardian, { once: true });
+  }
+
+  async function hashPin(pin) {
+    if (crypto?.subtle) {
+      const bytes = new TextEncoder().encode(`haqi-guardian:${pin}`);
+      const digest = await crypto.subtle.digest('SHA-256', bytes);
+      return Array.from(new Uint8Array(digest)).map(value => value.toString(16).padStart(2, '0')).join('');
+    }
+    return btoa(`haqi-guardian:${pin}`);
+  }
+
+  function showPinModal(forceChange = false) {
+    const hasPin = Boolean(parentPinHash);
+    const setup = forceChange || !hasPin;
+    modal(`<h2>${setup ? '设置家长 PIN' : '验证家长身份'}</h2><p>${setup ? '请设置 4–8 位数字。此 PIN 将安全保存到你的 Keepwork 空间。' : '请输入家长 PIN 进入管理台。'}</p><form id="pinForm"><div class="field"><label>PIN</label><input class="input" id="pinInput" inputmode="numeric" type="password" minlength="4" maxlength="8" pattern="[0-9]{4,8}" required autocomplete="off"></div>${setup ? '<div class="field"><label>再次输入</label><input class="input" id="pinConfirm" inputmode="numeric" type="password" minlength="4" maxlength="8" pattern="[0-9]{4,8}" required autocomplete="off"></div>' : ''}<div class="modal-actions"><button type="button" class="btn btn-soft" id="cancelModal">取消</button><button class="btn btn-primary" type="submit">${setup ? '保存 PIN' : '进入管理台'}</button></div></form>`);
+    document.getElementById('cancelModal').addEventListener('click', closeModal);
+    document.getElementById('pinForm').addEventListener('submit', async event => {
+      event.preventDefault();
+      const pin = document.getElementById('pinInput').value;
+      if (setup) {
+        if (pin !== document.getElementById('pinConfirm').value) return toast('两次输入的 PIN 不一致');
+        parentPinHash = await hashPin(pin);
+        await queueCloudWrite(CLOUD_PIN_PATH, parentPinHash);
+        parentUnlocked = true;
+        toast('家长 PIN 已保存');
+      } else if (await hashPin(pin) === parentPinHash) {
+        parentUnlocked = true;
+      } else {
+        return toast('PIN 不正确');
+      }
+      closeModal();
+      mode = 'parent';
+      render();
+    });
+    setTimeout(() => document.getElementById('pinInput')?.focus(), 0);
+  }
+
+  function showScoreModal(metricId) {
+    const metric = state.metrics.find(item => item.id === metricId);
+    if (!metric) return;
+    modal(`<h2>${metric.delta > 0 ? '记录成长表现' : '记录需要改进的行为'}</h2><p><strong>${escapeHtml(metric.name)}</strong> · ${metric.delta > 0 ? '+' : ''}${metric.delta} 分</p><form id="scoreForm"><div class="field"><label>次数</label><select class="input" id="scoreCount"><option value="1">1 次</option><option value="2">2 次</option><option value="3">3 次</option></select></div><div class="field"><label>给孩子的说明（选填）</label><input class="input" id="scoreNote" maxlength="80" placeholder="说清楚具体发生了什么"></div><div class="modal-actions"><button type="button" class="btn btn-soft" id="cancelModal">取消</button><button class="btn ${metric.delta > 0 ? 'btn-primary' : 'btn-danger'}" type="submit">确认 ${metric.delta > 0 ? '加分' : '记录'}</button></div></form>`);
+    document.getElementById('cancelModal').addEventListener('click', closeModal);
+    document.getElementById('scoreForm').addEventListener('submit', event => {
+      event.preventDefault();
+      const count = Number(document.getElementById('scoreCount').value) || 1;
+      addLedgerEntry({ metricId: metric.id, category: metric.category, delta: metric.delta * count, source: 'parent', reason: metric.name, note: document.getElementById('scoreNote').value.trim() });
+      closeModal();
+    });
+  }
+
+  function addLedgerEntry(entry) {
+    if (syncDailyEnergyBaselines()) saveState();
+    const child = activeChild();
+    const oldLevel = levelForEnergy(child.energy);
+    const petKey = petKeyForChild(child);
+    const record = { id: `entry_${Date.now()}_${Math.random().toString(36).slice(2, 7)}`, childId: child.id, petKey, createdAt: Date.now(), actorId: entry.source === 'parent' ? 'parent' : child.id, revokedAt: null, ...entry };
+    state.ledger.unshift(record);
+    updateActivePetEnergy(child.energy + record.delta, child.lifetimeStars + Math.max(0, record.delta));
+    const newLevel = levelForEnergy(child.energy);
+    saveState();
+    render();
+    if (newLevel.index > oldLevel.index) toast(`${child.petName}进化为${newLevel.name}！`);
+    else toast(`${record.reason} ${record.delta > 0 ? '+' : ''}${record.delta} 分`);
+    return record;
+  }
+
+  function saveSchoolLink(event) {
+    event.preventDefault();
+    const teacherUsername = document.getElementById('schoolTeacherUsername').value.trim();
+    const sitePath = document.getElementById('schoolSitePath').value.trim().replace(/^\/+|\/+$/g, '');
+    const classId = document.getElementById('schoolClassId').value.trim();
+    const studentId = document.getElementById('schoolStudentId').value.trim();
+    if (!validSchoolSitePath(sitePath) || !classId || !studentId) return toast('请填写有效的共享站点路径、班级编号和学生编号');
+    const targetChanged = state.schoolLink.sitePath !== sitePath
+      || state.schoolLink.classId !== classId
+      || state.schoolLink.studentId !== studentId;
+    state.schoolLink.teacherUsername = teacherUsername;
+    state.schoolLink.sitePath = sitePath;
+    state.schoolLink.classId = classId;
+    state.schoolLink.studentId = studentId;
+    state.schoolLink.studentName = document.getElementById('schoolStudentName').value.trim();
+    if (targetChanged) {
+      state.schoolLink.appliedEventIds = [];
+      state.schoolLink.ignoredEventIds = [];
+      state.schoolLink.pendingReceipts = [];
+      state.schoolLink.lastSeenNotificationEventId = '';
+      state.schoolLink.lastSeenNotificationAt = 0;
+      lastAwardNotificationId = '';
+    }
+    saveState();
+    render();
+    refreshSchoolInbox();
+    toast('学校成长收件箱已绑定，正在读取云端消息');
+  }
+
+  function showSchoolLinkModal() {
+    const link = state.schoolLink;
+    modal(`<h2>修改学校绑定</h2><p>仅修改教师账号或孩子姓名会保留收件箱处理记录；修改家庭站点、班级或学生编号会开始新的收件箱。已入账的学校奖励始终不会重复计入。</p><form id="schoolLinkModalForm"><div class="field"><label>家庭专用 Keepwork 站点路径</label><input class="input" id="schoolSitePath" maxlength="160" required value="${escapeHtml(link.sitePath)}"></div><div class="field"><label>教师 Keepwork 账号（选填，用于识别）</label><input class="input" id="schoolTeacherUsername" maxlength="80" value="${escapeHtml(link.teacherUsername)}"></div><div class="field"><label>班级编号</label><input class="input" id="schoolClassId" maxlength="80" required value="${escapeHtml(link.classId)}"></div><div class="field"><label>学生编号</label><input class="input" id="schoolStudentId" maxlength="80" required value="${escapeHtml(link.studentId)}"></div><div class="field"><label>孩子在学校使用的姓名（选填）</label><input class="input" id="schoolStudentName" maxlength="40" value="${escapeHtml(link.studentName)}"></div><div class="modal-actions"><button type="button" class="btn btn-soft" id="cancelModal">取消</button><button class="btn btn-primary" type="submit">保存绑定</button></div></form>`);
+    document.getElementById('cancelModal').addEventListener('click', closeModal);
+    document.getElementById('schoolLinkModalForm').addEventListener('submit', event => {
+      saveSchoolLink(event);
+      closeModal();
+    });
+  }
+
+  async function approveSchoolEvent(eventId) {
+    const event = schoolInboxEvents().find(item => item.id === eventId);
+    if (!event) return toast('这条学校消息已处理或不存在');
+    try {
+      if (state.ledger.some(entry => String(entry.externalEventId || '') === event.id)) {
+        if (!state.schoolLink.appliedEventIds.includes(event.id)) state.schoolLink.appliedEventIds.unshift(event.id);
+        await queueSchoolReceipt(event, 'approved', state.ledger.find(entry => String(entry.externalEventId || '') === event.id)?.id || '', event.childAction || null);
+        render();
+        return toast('这条学校奖励已入账，不会重复计入');
+      }
+      state.schoolLink.appliedEventIds.unshift(event.id);
+      const record = addLedgerEntry({ category: event.category || '学习', delta: Math.max(0, Math.trunc(Number(event.delta) || 0)), source: 'school_sync', actorId: event.actor?.userId || 'teacher', reason: `学校同步：${event.reason || '课堂成长记录'}`, note: event.note || `${event.className || '学校'}课堂记录`, externalEventId: event.id });
+      await queueSchoolReceipt(event, 'approved', record.id, event.childAction || null);
+      toast(state.schoolLink.pendingReceipts.length ? '奖励已入账，回执等待同步' : '奖励已入账并已通知教师');
+    } catch (error) {
+      schoolReceiptSyncError = error?.message || String(error);
+      render();
+      toast(`奖励已保留，云端同步失败：${schoolReceiptSyncError}`);
+    }
+  }
+
+  async function ignoreSchoolEvent(eventId) {
+    const event = schoolInboxEvents().find(item => item.id === eventId);
+    if (!event) return toast('这条学校消息已处理或不存在');
+    try {
+      state.schoolLink.ignoredEventIds.unshift(event.id);
+      await queueSchoolReceipt(event, 'ignored');
+      toast(state.schoolLink.pendingReceipts.length ? '决定已保存，回执等待同步' : '已通知教师暂不计入家庭成长');
+    } catch (error) {
+      schoolReceiptSyncError = error?.message || String(error);
+      render();
+      toast(`决定已保留，云端同步失败：${schoolReceiptSyncError}`);
+    }
+  }
+
+  function revokeEntry(entryId) {
+    if (syncDailyEnergyBaselines()) saveState();
+    const entry = state.ledger.find(item => item.id === entryId && !item.revokedAt);
+    if (!entry || !confirm('确认撤销这条记录？账本中仍会保留撤销痕迹。')) return;
+    entry.revokedAt = Date.now();
+    const child = state.children.find(item => item.id === entry.childId);
+    const progress = state.petProgress[entry.petKey];
+    if (progress) {
+      progress.energy = clampEnergy(progress.energy - entry.delta);
+      if (entry.delta > 0) progress.lifetimeStars = Math.max(0, (Number(progress.lifetimeStars) || 0) - entry.delta);
+      if (entry.petKey === petKeyForChild()) syncChildFromPetProgress();
+    } else if (child) {
+      child.energy = clampEnergy(child.energy - entry.delta);
+    }
+    saveState();
+    render();
+    toast('记录已撤销');
+  }
+
+  function toggleMetric(metricId) {
+    const metric = state.metrics.find(item => item.id === metricId);
+    if (!metric) return;
+    metric.active = metric.active === false;
+    saveState();
+    render();
+  }
+
+  function redeemReward(rewardId) {
+    const reward = state.rewards.find(item => item.id === rewardId && item.active !== false);
+    const child = activeChild();
+    if (!reward || coinStats(child.id).balance < reward.cost) return toast('金币还不够，继续积累好习惯吧');
+    modal(`<h2>兑换奖励</h2><p>要用 <strong>${reward.cost} 枚金币</strong>兑换“${escapeHtml(reward.name)}”吗？兑换后请家长来兑现奖励。</p><div class="modal-actions"><button class="btn btn-soft" id="cancelModal">再想想</button><button class="btn btn-sun" id="confirmRedeemBtn">确认兑换</button></div>`);
+    document.getElementById('cancelModal').addEventListener('click', closeModal);
+    document.getElementById('confirmRedeemBtn').addEventListener('click', () => {
+      if (coinStats(child.id).balance < reward.cost) return closeModal();
+      state.redemptions.unshift({ id: `redeem_${Date.now()}_${Math.random().toString(36).slice(2, 7)}`, childId: child.id, rewardId: reward.id, rewardName: reward.name, rewardIcon: reward.icon, cost: reward.cost, createdAt: Date.now(), fulfilledAt: null, cancelledAt: null });
+      saveState();
+      closeModal();
+      render();
+      toast(`已兑换${reward.name}，记得请家长兑现哦`);
+    });
+  }
+
+  function selectCosmetic(cosmeticId) {
+    const cosmetic = COSMETICS.find(item => item.id === cosmeticId);
+    const child = activeChild();
+    if (!cosmetic || equippedCosmetic(cosmetic.type) === cosmetic.id) return;
+    if (ownsCosmetic(cosmetic, child.id)) {
+      state.equippedCosmetics[cosmetic.type] = cosmetic.id;
+      saveState();
+      render();
+      return toast(`已换上${cosmetic.name}`);
+    }
+    if (coinStats(child.id).balance < cosmetic.cost) return toast('金币还不够，继续积累好习惯吧');
+    modal(`<h2>解锁新装扮</h2><p>使用 <strong>${cosmetic.cost} 枚金币</strong>永久解锁“${cosmetic.name}”，并立即装备吗？</p><div class="modal-actions"><button class="btn btn-soft" id="cancelModal">再看看</button><button class="btn btn-sun" id="confirmCosmeticBtn">解锁并装备</button></div>`);
+    document.getElementById('cancelModal').addEventListener('click', closeModal);
+    document.getElementById('confirmCosmeticBtn').addEventListener('click', () => {
+      if (coinStats(child.id).balance < cosmetic.cost) return closeModal();
+      state.cosmeticPurchases.unshift({ id: `cosmetic_${Date.now()}`, childId: child.id, cosmeticId: cosmetic.id, cost: cosmetic.cost, createdAt: Date.now() });
+      state.equippedCosmetics[cosmetic.type] = cosmetic.id;
+      saveState();
+      closeModal();
+      render();
+      toast(`已永久解锁${cosmetic.name}`);
+    });
+  }
+
+  function toggleReward(rewardId) {
+    const reward = state.rewards.find(item => item.id === rewardId);
+    if (!reward) return;
+    reward.active = reward.active === false;
+    saveState();
+    render();
+  }
+
+  function updateRedemption(redemptionId, field) {
+    const redemption = state.redemptions.find(item => item.id === redemptionId && !item.fulfilledAt && !item.cancelledAt);
+    if (!redemption) return;
+    const fulfilled = field === 'fulfilledAt';
+    modal(`<h2>${fulfilled ? '登记奖励兑现' : '取消兑换'}</h2><p>${fulfilled ? `确认“${escapeHtml(redemption.rewardName)}”已交付给孩子？` : `取消“${escapeHtml(redemption.rewardName)}”后，将自动退还 ${redemption.cost} 枚金币。`}</p><form id="redemptionResultForm"><div class="field"><label>${fulfilled ? '兑现说明（选填）' : '取消原因（选填）'}</label><input class="input" id="redemptionResultNote" maxlength="80" placeholder="例如：周六下午已一起去公园"></div><div class="modal-actions"><button type="button" class="btn btn-soft" id="cancelModal">返回</button><button class="btn ${fulfilled ? 'btn-primary' : 'btn-danger'}" type="submit">${fulfilled ? '确认已兑现' : '确认取消'}</button></div></form>`);
+    document.getElementById('cancelModal').addEventListener('click', closeModal);
+    document.getElementById('redemptionResultForm').addEventListener('submit', event => {
+      event.preventDefault();
+      redemption[field] = Date.now();
+      redemption[fulfilled ? 'fulfillmentNote' : 'cancellationNote'] = document.getElementById('redemptionResultNote').value.trim();
+      saveState();
+      closeModal();
+      render();
+      toast(fulfilled ? '奖励已登记兑现' : '兑换已取消，金币已退回');
+    });
+  }
+
+  function showAddMetricModal() {
+    modal(`<h2>新建行为指标</h2><p>指标应描述可以观察到的具体行为，避免使用“表现不好”等模糊标签。</p><form id="metricForm"><div class="field"><label>指标名称</label><input class="input" id="metricName" maxlength="40" required placeholder="例如：主动整理书桌"></div><div class="field"><label>分类</label><select class="input" id="metricCategory">${Object.keys(ICONS).map(key => `<option>${key}</option>`).join('')}</select></div><div class="field"><label>分值（-10 到 +10，不能为 0）</label><input class="input" id="metricDelta" type="number" min="-10" max="10" value="2" required></div><div class="modal-actions"><button type="button" class="btn btn-soft" id="cancelModal">取消</button><button class="btn btn-primary" type="submit">保存指标</button></div></form>`);
+    document.getElementById('cancelModal').addEventListener('click', closeModal);
+    document.getElementById('metricForm').addEventListener('submit', event => {
+      event.preventDefault();
+      const delta = Number(document.getElementById('metricDelta').value);
+      if (!delta || delta < -10 || delta > 10) return toast('分值必须是 -10 到 +10 之间的非零整数');
+      state.metrics.push({ id: `custom_${Date.now()}`, name: document.getElementById('metricName').value.trim(), category: document.getElementById('metricCategory').value, delta: Math.round(delta), active: true });
+      saveState();
+      closeModal();
+      render();
+      toast('新指标已添加');
+    });
+  }
+
+  function showAddRewardModal() {
+    modal(`<h2>新建兑换奖励</h2><p>奖励应具体、可兑现，并提前和孩子约定清楚。</p><form id="rewardForm"><div class="field"><label>奖励名称</label><input class="input" id="rewardName" maxlength="40" required placeholder="例如：周末一起去公园"></div><div class="field"><label>图标</label><select class="input" id="rewardIcon"><option>🎁</option><option>🎮</option><option>🍓</option><option>🎨</option><option>🏕️</option><option>📚</option><option>⚽</option><option>🎬</option></select></div><div class="field"><label>所需金币（1–99）</label><input class="input" id="rewardCost" type="number" min="1" max="99" value="5" required></div><div class="modal-actions"><button type="button" class="btn btn-soft" id="cancelModal">取消</button><button class="btn btn-primary" type="submit">保存奖励</button></div></form>`);
+    document.getElementById('cancelModal').addEventListener('click', closeModal);
+    document.getElementById('rewardForm').addEventListener('submit', event => {
+      event.preventDefault();
+      const cost = Math.round(Number(document.getElementById('rewardCost').value));
+      if (cost < 1 || cost > 99) return toast('金币数量必须是 1 到 99 之间的整数');
+      state.rewards.push({ id: `reward_${Date.now()}`, name: document.getElementById('rewardName').value.trim(), icon: document.getElementById('rewardIcon').value, cost, active: true });
+      saveState();
+      closeModal();
+      render();
+      toast('新奖励已添加');
+    });
+  }
+
+  function showEditChildModal() {
+    const child = activeChild();
+    modal(`<h2>编辑孩子与宠物</h2><p>名称变化不会影响已有成长记录。</p><form id="childForm"><div class="field"><label>孩子昵称</label><input class="input" id="childName" maxlength="16" required value="${escapeHtml(child.name)}"></div><div class="field"><label>宠物昵称</label><input class="input" id="petName" maxlength="16" required value="${escapeHtml(child.petName)}"></div><div class="modal-actions"><button type="button" class="btn btn-soft" id="cancelModal">取消</button><button class="btn btn-primary" type="submit">保存</button></div></form>`);
+    document.getElementById('cancelModal').addEventListener('click', closeModal);
+    document.getElementById('childForm').addEventListener('submit', event => {
+      event.preventDefault();
+      child.name = document.getElementById('childName').value.trim();
+      child.petName = document.getElementById('petName').value.trim();
+      const progress = activePetProgress(false);
+      if (progress) progress.petName = child.petName;
+      saveState(); closeModal(); render(); toast('资料已更新');
+    });
+  }
+
+  function showPetPicker() {
+    if (!availablePets.length) {
+      modal(`<h2>选择成长伙伴</h2><p>在蛋蛋星球中领养宠物后，这里会显示你的宠物列表。当前使用小蛋形象作为离线伙伴。</p><div class="modal-actions"><button class="btn btn-primary" id="cancelModal">知道了</button></div>`);
+      document.getElementById('cancelModal').addEventListener('click', closeModal);
+      return;
+    }
+    modal(`<h2>选择成长伙伴</h2><p>选择一只宠物代表你的成长。以后可以随时更换，积分和图鉴不会丢失。</p><div class="metric-grid">${availablePets.map(pet => `<article class="metric-card"><div class="metric-top"><div class="metric-icon">🐾</div><div><div class="metric-name">${escapeHtml(pet.name || '哈奇宠物')}</div><div class="metric-category">${pet.petId === currentPetId ? '当前伙伴' : '可选择'}</div></div></div><button class="score-btn" data-choose-pet="${escapeHtml(pet.petId || '')}">${pet.petId === currentPetId ? '已选择' : '选择'}</button></article>`).join('')}</div><div class="modal-actions"><button class="btn btn-soft" id="cancelModal">取消</button></div>`);
+    document.getElementById('cancelModal').addEventListener('click', closeModal);
+    document.querySelectorAll('[data-choose-pet]').forEach(button => button.addEventListener('click', () => {
+      const pet = availablePets.find(item => String(item.petId || '') === button.dataset.choosePet);
+      if (!pet) return;
+      closeModal();
+      selectParentPet(String(pet.petId || ''), 'available');
+    }));
+  }
+
+  function showHelp() {
+    modal(`<h2>怎样让哈奇长大？</h2><p>家长记录孩子真实、具体的日常表现，孩子通过专注守护获得自动奖励。</p><div class="milestone-list"><div class="milestone"><div class="milestone-icon">1</div><div><strong>完成一件具体的小事</strong><span>例如主动完成作业、阅读或整理物品。</span></div></div><div class="milestone"><div class="milestone-icon">2</div><div><strong>每 50 能量进化一次</strong><span>每只宠物都有独立能量，切换后不会互相转移。</span></div></div><div class="milestone"><div class="milestone-icon">3</div><div><strong>图鉴跟随当前能量</strong><span>能量低于形态门槛时，对应图鉴会重新锁定。</span></div></div></div><div class="modal-actions"><button class="btn btn-primary" id="cancelModal">知道了</button></div>`);
+    document.getElementById('cancelModal').addEventListener('click', closeModal);
+  }
+
+  async function startFocus() {
+    if (focusSession) return;
+    const task = document.getElementById('focusTask')?.value || '成长任务';
+    const durationMs = selectedDuration * 60 * 1000;
+    focusSession = { id: `focus_${Date.now()}`, task, duration: selectedDuration, durationMs, startedAt: Date.now(), remainingMs: durationMs, lastTick: Date.now(), paused: false, exitedFullscreen: false };
+    renderFocusScreen();
+    post('gameStarted', { task, duration: selectedDuration });
+    try {
+      await document.getElementById('focusScreen')?.requestFullscreen?.();
+    } catch (_) {
+      toast('浏览器未允许全屏，计时仍可继续');
+    }
+    focusSession.lastTick = Date.now();
+    focusTimer = window.setInterval(tickFocus, 250);
+  }
+
+  function focusReward(minutes) {
+    return game_config.focusRewards[minutes] || Math.max(1, Math.floor(minutes / 10));
+  }
+
+  function renderFocusScreen() {
+    const session = focusSession;
+    if (!session) return;
+    const percent = Math.max(0, Math.min(100, 100 * (1 - session.remainingMs / session.durationMs)));
+    const seconds = Math.ceil(session.remainingMs / 1000);
+    const minutesText = String(Math.floor(seconds / 60)).padStart(2, '0');
+    const secondsText = String(seconds % 60).padStart(2, '0');
+    document.getElementById('modalRoot').innerHTML = `<section class="focus-screen ${equippedCosmetic('focusBackground')}" id="focusScreen"><div class="focus-content"><div class="focus-task">${escapeHtml(session.task)} · ${session.duration} 分钟守护</div><div class="${currentPetArtClass(`focus-pet ${equippedCosmetic('petFrame')}`)}" style="${petArtStyle(activeChild().energy)}"></div><div class="focus-time">${minutesText}:${secondsText}</div><div class="focus-hint">${session.paused ? '已暂停，继续后会从这里计时' : '保持页面可见，和哈奇安静完成这一件事'}</div><div class="focus-progress"><div style="width:${percent}%"></div></div><div class="focus-actions"><button class="btn btn-soft" id="pauseFocusBtn">${session.paused ? '继续' : '暂停'}</button><button class="btn btn-danger" id="stopFocusBtn">结束本次守护</button></div></div></section>`;
+    document.getElementById('pauseFocusBtn').addEventListener('click', toggleFocusPause);
+    document.getElementById('stopFocusBtn').addEventListener('click', () => finishFocus(false));
+  }
+
+  function tickFocus() {
+    if (!focusSession) return;
+    const now = Date.now();
+    const elapsed = now - focusSession.lastTick;
+    focusSession.lastTick = now;
+    if (!focusSession.paused && document.visibilityState === 'visible') focusSession.remainingMs -= elapsed;
+    if (focusSession.remainingMs <= 0) finishFocus(true);
+    else {
+      const screen = document.getElementById('focusScreen');
+      if (!screen) {
+        renderFocusScreen();
+        return;
+      }
+      const percent = Math.max(0, Math.min(100, 100 * (1 - focusSession.remainingMs / focusSession.durationMs)));
+      const seconds = Math.ceil(focusSession.remainingMs / 1000);
+      screen.querySelector('.focus-time').textContent = `${String(Math.floor(seconds / 60)).padStart(2, '0')}:${String(seconds % 60).padStart(2, '0')}`;
+      screen.querySelector('.focus-progress > div').style.width = `${percent}%`;
+    }
+  }
+
+  function toggleFocusPause() {
+    if (!focusSession) return;
+    focusSession.paused = !focusSession.paused;
+    focusSession.lastTick = Date.now();
+    renderFocusScreen();
+  }
+
+  async function finishFocus(completed) {
+    if (!focusSession) return;
+    const session = focusSession;
+    focusSession = null;
+    clearInterval(focusTimer);
+    focusTimer = 0;
+    try { if (document.fullscreenElement) await document.exitFullscreen(); } catch (_) {}
+    closeModal();
+    const elapsedMinutes = Math.max(0, Math.round((session.durationMs - Math.max(0, session.remainingMs)) / 60000));
+    const reward = completed ? Math.max(0, Math.min(focusReward(session.duration), game_config.dailyAutoPointCap - autoPointsToday())) : 0;
+    state.focusSessions.unshift({ id: session.id, childId: activeChild().id, task: session.task, plannedMinutes: session.duration, elapsedMinutes, completed, reward, startedAt: session.startedAt, finishedAt: Date.now() });
+    saveState();
+    if (reward > 0) {
+      addLedgerEntry({ metricId: 'focus_guard', category: '自律', delta: reward, source: 'focus_session', reason: `${session.task} · 专注守护 ${session.duration} 分钟`, note: '自动奖励' });
+      post('gameFinished', { completed: true, passed: true, earnedPoints: reward, score: reward, focusMinutes: session.duration, task: session.task, roundId: session.id, finishedAt: Date.now() });
+    } else {
+      render();
+      toast(completed ? '今日自动奖励已达上限，本次专注仍已记录' : '本次守护已结束，不扣分');
+      post('gameFinished', { completed: false, passed: false, earnedPoints: 0, score: 0, focusMinutes: elapsedMinutes, task: session.task, roundId: session.id, finishedAt: Date.now() });
+    }
+  }
+
+  function exportData() {
+    const blob = new Blob([JSON.stringify(state, null, 2)], { type: 'application/json' });
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement('a');
+    link.href = url;
+    link.download = `哈奇成长账本-${new Date().toISOString().slice(0, 10)}.json`;
+    link.click();
+    URL.revokeObjectURL(url);
+  }
+
+  async function resetData() {
+    if (!confirm('确认清除 Keepwork 中的全部成长守护数据？此操作不可撤销。')) return;
+    clearTimeout(saveTimer);
+    await Promise.all([
+      queueCloudWrite(CLOUD_STATE_PATH, ''),
+      queueCloudWrite(CLOUD_PIN_PATH, '')
+    ]);
+    location.reload();
+  }
+
+  function requestPetImage(petId = '') {
+    const requestId = `guardian_pet_${Date.now()}`;
+    petRequestId = requestId;
+    currentPetId = petId || activeChild().selectedPetId || currentPetId;
+    window.parent.postMessage({ type: 'haqi_get_pet_image', requestId, anim: 'happy', petId: currentPetId || undefined }, '*');
+    setTimeout(() => {
+      if (availablePets.length) return;
+      window.parent.postMessage({ type: 'haqi_get_pet_images', requestId: `guardian_pets_${Date.now()}`, anim: 'happy' }, '*');
+    }, 900);
+  }
+
+  function setPetImage(pet) {
+    if (!pet?.imageBlob) return;
+    const key = String(pet.petId || 'active');
+    if (!petObjectUrls.has(key)) petObjectUrls.set(key, URL.createObjectURL(pet.imageBlob));
+    const selectedPetId = activeChild().selectedPetId || state.selectedPetId;
+    if (!activeChild().generatedPetId && !activeChild().famousPetId && (!selectedPetId || key === String(selectedPetId))) {
+      petObjectUrl = petObjectUrls.get(key);
+      currentPetId = pet.petId || currentPetId;
+    }
+    const child = activeChild();
+    if (pet.name && child.petName === '哈奇') child.petName = pet.name;
+    saveState();
+    render();
+  }
+
+  window.addEventListener('message', event => {
+    const message = event.data || {};
+    if (message.type === 'setGameConfig' && message.data && typeof message.data === 'object') {
+      if (message.data.petId) requestPetImage(message.data.petId);
+      if (Array.isArray(message.data.focusDurations)) game_config.focusDurations = message.data.focusDurations.filter(value => Number(value) > 0);
+    }
+    if (message.type === 'haqi_pet_image' && message.ok && message.data && (!petRequestId || !message.requestId || message.requestId === petRequestId || message.requestId === 'active_pet_config')) setPetImage(message.data);
+    if (message.type === 'haqi_pet_images' && message.ok) {
+      availablePets = Array.isArray(message.data?.pets) ? message.data.pets.filter(pet => pet?.imageBlob) : [];
+      availablePets.forEach(pet => {
+        const key = String(pet.petId || '');
+        if (key && !petObjectUrls.has(key)) petObjectUrls.set(key, URL.createObjectURL(pet.imageBlob));
+      });
+      const selectedId = activeChild().selectedPetId || state.selectedPetId;
+      const selectedPet = availablePets.find(pet => pet.petId === selectedId) || availablePets.find(pet => pet.petId === currentPetId) || availablePets[0];
+      if (selectedPet) setPetImage(selectedPet);
+      if (parentTab === 'pets' && mode === 'parent') render();
+    }
+  });
+
+  document.addEventListener('visibilitychange', () => {
+    if (!document.hidden && syncDailyEnergyBaselines()) {
+      saveState();
+      if (!focusSession) render();
+      scheduleDailyEnergyReset();
+    }
+    if (!document.hidden) publishPendingSchoolReceipts();
+    if (!document.hidden) refreshVisibleSchoolInbox();
+    if (focusSession) focusSession.lastTick = Date.now();
+  });
+
+  window.addEventListener('online', () => {
+    publishPendingSchoolReceipts();
+    refreshVisibleSchoolInbox();
+  });
+
+  document.addEventListener('fullscreenchange', () => {
+    if (!focusSession || document.fullscreenElement) return;
+    focusSession.paused = true;
+    focusSession.exitedFullscreen = true;
+    renderFocusScreen();
+    toast('已退出全屏，守护计时暂停，不会扣分');
+  });
+
+  window.addEventListener('beforeunload', () => {
+    clearTimeout(dailyResetTimer);
+    clearInterval(schoolInboxRefreshTimer);
+    petObjectUrls.forEach(url => URL.revokeObjectURL(url));
+  });
+
+  startGuardian();
+})();
+</script>
+</body>
+</html>
