@@ -52,7 +52,7 @@ import { initAgentBridge } from './agentBridge.js';
 // Side-effect import: 订阅 state 并接管所有 [data-mh-pet] 占位符的渲染 + 动画
 import { canWakePet, daySleepRejectText, eatFood, hatchPetFromBoarding, isPetInteractionBlocked, isPetSleeping, petArtHtml, preloadPetAssets, say, scanAndMount, setAnim, shouldRejectDaySleep, sleepingInteractionText, startPetSleep, wakePet, wakePetForPlay } from './pet.js';
 
-const sdkCdnUrl = 'https://cdn.keepwork.com/sdk/keepworkSDK.iife.js?v=227df3047a2e';
+const sdkCdnUrl = 'https://cdn.keepwork.com/sdk/keepworkSDK.iife.js?v=3d6239b17ee3';
 
 function loadScript(src) {
     return new Promise((resolve, reject) => {
