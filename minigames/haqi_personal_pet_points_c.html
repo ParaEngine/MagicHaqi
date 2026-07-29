@@ -242,14 +242,22 @@
         '男', '女', '男', '女', '男', '女', '女', '男', '女', '男'
       ];
       const PENDING_AWARDS_KEY = 'MagicHaqi.personalPetPoints.pendingAwards.v2';
+      const LOCAL_DATA_OWNER_KEY = 'MagicHaqi.personalPetPoints.localDataOwner.v1';
       const GROWTH_LINK_ROOT = 'minigames/haqi-growth-link/v3';
       const MAX_AWARD_ATTEMPTS = 5;
+      const MAX_SCHOOL_AWARD_POINTS = 20;
       const schoolReceiptCache = new Map();
       let studentGrowthTasks = [];
+      let studentGrowthTaskSyncError = '';
       // 云端持久化相关
       let teacherCloudStore = null;
       let teacherCloudSaveQueue = Promise.resolve();
       let teacherCloudSaveTimer = null;
+      let teacherAwardsCloudSaveTimer = null;
+      let authenticatedUsername = '';
+      let activeStateStorageKey = STORAGE_KEY;
+      let activeAwardsStorageKey = PENDING_AWARDS_KEY;
+      let activeClassConfigStorageKey = CLASS_CONFIG_KEY;
       function getTeacherCloudRoot(username) {
         const safeUsername = (username || '').replace(/[^a-z0-9_-]/gi, '_').toLowerCase().slice(0, 50);
         return `teacher/${safeUsername}/personalPetPoints/v1`;
@@ -310,6 +318,37 @@
       let pendingAwards;
       try { pendingAwards = JSON.parse(localStorage.getItem(PENDING_AWARDS_KEY)) || []; } catch (_) { pendingAwards = []; }
       if (!Array.isArray(pendingAwards)) pendingAwards = [];
+
+      function accountStorageKey(baseKey, username) {
+        return `${baseKey}.${normalizeKeepworkUsername(username).replace(/[^a-z0-9_-]/g, '_').slice(0, 50)}`;
+      }
+      function loadTeacherLocalState(username) {
+        activeStateStorageKey = accountStorageKey(STORAGE_KEY, username);
+        activeAwardsStorageKey = accountStorageKey(PENDING_AWARDS_KEY, username);
+        activeClassConfigStorageKey = accountStorageKey(CLASS_CONFIG_KEY, username);
+        const migrationOwner = normalizeKeepworkUsername(localStorage.getItem(LOCAL_DATA_OWNER_KEY));
+        const mayMigrateLegacyData = !migrationOwner;
+        let nextState = null;
+        let nextAwards = null;
+        let nextClassConfig = null;
+        try { nextState = JSON.parse(localStorage.getItem(activeStateStorageKey) || 'null'); } catch (_) {}
+        try { nextAwards = JSON.parse(localStorage.getItem(activeAwardsStorageKey) || 'null'); } catch (_) {}
+        try { nextClassConfig = JSON.parse(localStorage.getItem(activeClassConfigStorageKey) || 'null'); } catch (_) {}
+        if (!nextState && mayMigrateLegacyData) nextState = state;
+        if (!Array.isArray(nextAwards) && mayMigrateLegacyData) nextAwards = pendingAwards;
+        if (!nextClassConfig && mayMigrateLegacyData) {
+          try { nextClassConfig = JSON.parse(localStorage.getItem(CLASS_CONFIG_KEY) || 'null'); } catch (_) {}
+        }
+        state = nextState && Array.isArray(nextState.students) ? nextState : clone(defaultState);
+        pendingAwards = Array.isArray(nextAwards) ? nextAwards : [];
+        const defaultClassConfig = { grade: '', classNumber: '', schoolSitePath: '', className: '未设置班级' };
+        Object.assign(game_config, defaultClassConfig, nextClassConfig || {});
+        game_config.className = classLabel();
+        localStorage.setItem(activeStateStorageKey, JSON.stringify(state));
+        localStorage.setItem(activeAwardsStorageKey, JSON.stringify(pendingAwards));
+        localStorage.setItem(activeClassConfigStorageKey, JSON.stringify({ grade: game_config.grade, classNumber: game_config.classNumber, schoolSitePath: game_config.schoolSitePath }));
+        if (mayMigrateLegacyData) localStorage.setItem(LOCAL_DATA_OWNER_KEY, normalizeKeepworkUsername(username));
+      }
 
       const app = document.getElementById('app');
       const toast = document.getElementById('toast');
@@ -415,29 +454,35 @@
         return teacherCloudSaveQueue;
       }
       async function readTeacherCloudFile(path) {
-        if (!teacherCloudStore) return '';
+        if (!teacherCloudStore) throw new Error('教师云存储尚未初始化');
         try {
           return (await teacherCloudStore.readFile(path, 1, 99999)) || '';
-        } catch (_) {
-          try { return (await teacherCloudStore.readFile(path)) || ''; } catch (__) { return ''; }
+        } catch (rangeError) {
+          try {
+            return (await teacherCloudStore.readFile(path)) || '';
+          } catch (error) {
+            const message = String(error?.message || error || rangeError?.message || rangeError);
+            if (/404|not found|不存在/i.test(message)) return '';
+            throw new Error(`读取教师云端文件失败（${path}）：${message}`);
+          }
         }
       }
       function save() {
-        localStorage.setItem(STORAGE_KEY, JSON.stringify(state));
+        localStorage.setItem(activeStateStorageKey, JSON.stringify(state));
         if (teacherCloudStore && !window.studentLoginOnly) {
           clearTimeout(teacherCloudSaveTimer);
           teacherCloudSaveTimer = setTimeout(() => {
-            const paths = getTeacherCloudPaths(JSON.parse(localStorage.getItem(LOGIN_STATE_KEY) || '{}').username || '');
+            const paths = getTeacherCloudPaths(authenticatedUsername);
             queueTeacherCloudWrite(paths.state, JSON.stringify(state));
           }, 500);
         }
       }
       function savePendingAwards() {
-        localStorage.setItem(PENDING_AWARDS_KEY, JSON.stringify(pendingAwards));
+        localStorage.setItem(activeAwardsStorageKey, JSON.stringify(pendingAwards));
         if (teacherCloudStore && !window.studentLoginOnly) {
-          clearTimeout(teacherCloudSaveTimer);
-          teacherCloudSaveTimer = setTimeout(() => {
-            const paths = getTeacherCloudPaths(JSON.parse(localStorage.getItem(LOGIN_STATE_KEY) || '{}').username || '');
+          clearTimeout(teacherAwardsCloudSaveTimer);
+          teacherAwardsCloudSaveTimer = setTimeout(() => {
+            const paths = getTeacherCloudPaths(authenticatedUsername);
             queueTeacherCloudWrite(paths.awards, JSON.stringify(pendingAwards));
           }, 500);
         }
@@ -480,7 +525,7 @@
       const safeCloudPart = value => String(value || '').trim().replace(/[^a-zA-Z0-9_-]/g, '_').slice(0, 80);
       const validFamilySitePath = sitePath => /^[a-zA-Z0-9_-]+\/[a-zA-Z0-9_-]+$/.test(String(sitePath || '').trim());
       const classId = () => `${String(game_config.grade || '').trim()}_${String(game_config.classNumber || '').trim()}`;
-      const teacherUsername = () => safeCloudPart(JSON.parse(localStorage.getItem(LOGIN_STATE_KEY) || '{}').username || '');
+      const teacherUsername = () => safeCloudPart(authenticatedUsername);
       const defaultSchoolSitePath = () => {
         const username = teacherUsername();
         return username ? `${username}/haqi-growth` : '';
@@ -497,6 +542,15 @@
       const growthNotificationIndexPath = studentId => `${growthStudentRoot(studentId)}/notifications/index.json`;
       const normalizeKeepworkUsername = value => String(value || '').trim().toLowerCase();
       const notificationIdForEvent = eventId => `award_submitted_${safeCloudPart(eventId)}`;
+      const familyPublishFingerprint = student => JSON.stringify({
+        sitePath: schoolSitePath(),
+        classId: classId(),
+        studentId: student?.id || '',
+        studentUsername: normalizeKeepworkUsername(student?.keepworkUsername),
+        teacherUsername: normalizeKeepworkUsername(teacherUsername()),
+        guardianAllowlist: (Array.isArray(student?.guardianAllowlist) ? student.guardianAllowlist : []).map(normalizeKeepworkUsername).filter(Boolean).sort()
+      });
+      const isFamilySetupPublished = student => Boolean(student?.familyPublishedAt && !student?.familyPublishError && student.familyPublishFingerprint === familyPublishFingerprint(student));
       const studentBinding = () => {
         const params = new URLSearchParams(location.search);
         const savedLogin = (() => { try { return JSON.parse(localStorage.getItem(LOGIN_STATE_KEY)); } catch (_) { return null; } })();
@@ -553,11 +607,13 @@
           return null;
         }
         const event = {
+          version: 3, privacyScope: 'student',
           id: `award_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`,
           eventType: 'school_award', status: 'pending', createdAt: Date.now(),
           expiresAt: Date.now() + 72 * 60 * 60 * 1000,
           classId: classId(), className: game_config.className, studentId: student.id,
-          studentUuid: student.uuid, studentName: student.name, delta, reason
+          studentUuid: student.uuid, studentName: student.name,
+          delta: Math.max(1, Math.min(MAX_SCHOOL_AWARD_POINTS, Math.trunc(Number(delta) || 1))), reason
         };
         pendingAwards.unshift({
           event,
@@ -603,6 +659,50 @@
         const text = typeof result === 'string' ? result : String(result?.content ?? result?.data?.content ?? '');
         return JSON.parse(text || 'null');
       }
+      async function readFamilyPageIfExists(sitePath, pagePath) {
+        try {
+          return await readFamilyPage(sitePath, pagePath);
+        } catch (error) {
+          if (/404|not found|不存在/i.test(String(error?.message || error))) return null;
+          throw error;
+        }
+      }
+      async function upsertFamilyIndex(sitePath, pagePath, entry, limit, commitMessage) {
+        for (let attempt = 0; attempt < 2; attempt += 1) {
+          const current = await readFamilyPageIfExists(sitePath, pagePath);
+          if (current !== null && !Array.isArray(current)) throw new Error(`共享索引格式错误（${pagePath}）`);
+          const index = Array.isArray(current) ? current : [];
+          const existing = index.find(item => item?.id === entry.id);
+          if (existing) Object.assign(existing, entry);
+          else index.unshift(entry);
+          await saveFamilyPage(sitePath, pagePath, index.slice(0, limit), commitMessage);
+          const verified = await readFamilyPage(sitePath, pagePath);
+          if (Array.isArray(verified) && verified.some(item => item?.id === entry.id)) return verified;
+        }
+        throw new Error(`共享索引并发更新冲突（${pagePath}），请重试`);
+      }
+      async function assertStudentCloudOwnership(student) {
+        const sitePath = schoolSitePath();
+        const expectedTeacher = normalizeKeepworkUsername(teacherUsername());
+        if (!expectedTeacher) throw new Error('教师登录身份尚未验证，请重新登录');
+        const [policy, profile] = await Promise.all([
+          readFamilyPageIfExists(sitePath, growthPolicyPath(student.id)),
+          readFamilyPageIfExists(sitePath, growthStudentProfilePath(student.id))
+        ]);
+        if (policy) {
+          const policyStudent = Array.isArray(policy.students) ? policy.students.find(item => item?.id === student.id) : null;
+          if (policy.version !== 3 || policy.privacyScope !== 'student'
+            || normalizeKeepworkUsername(policy.teacherUsername) !== expectedTeacher
+            || policy.classId !== classId() || !policyStudent) {
+            throw new Error('该学生云端目录已属于其他教师、班级或不兼容协议，已停止覆盖');
+          }
+        }
+        if (profile && (profile.version !== 3 || profile.privacyScope !== 'student'
+          || normalizeKeepworkUsername(profile.teacherUsername) !== expectedTeacher
+          || profile.classId !== classId() || profile.student?.id !== student.id)) {
+          throw new Error('该学生课堂档案已属于其他教师、班级或不兼容协议，已停止覆盖');
+        }
+      }
       async function loadBoundStudent(user) {
         const binding = studentBinding();
         if (!binding) throw new Error('请使用教师提供的学生登录链接');
@@ -615,13 +715,17 @@
         if (policyStudents.length !== 1) throw new Error('当前 KeepWork 账号未绑定此学生档案');
         const policyStudent = policyStudents[0];
         const profile = await readFamilyPage(binding.sitePath, growthStudentProfilePath(policyStudent.id));
-        const profileStudent = profile?.version === 3 && profile?.privacyScope === 'student' && profile?.student?.id === policyStudent.id ? profile.student : null;
+        const profileStudent = profile?.version === 3 && profile?.privacyScope === 'student'
+          && profile?.classId === policy.classId
+          && normalizeKeepworkUsername(profile?.teacherUsername) === normalizeKeepworkUsername(policy.teacherUsername)
+          && profile?.student?.id === policyStudent.id ? profile.student : null;
         if (!profileStudent) throw new Error('学生课堂档案尚未发布，请联系教师');
         return {
           id: profileStudent.id, name: profileStudent.name, points: Number(profileStudent.points) || 0,
           mood: Number(profileStudent.mood) || 0, lastPointsAt: Number(profileStudent.lastPointsAt) || Date.now(),
           bond: 0, gender: '未填写', action: 'idle', message: `${profileStudent.name}，今天也一起进步吧！`,
-          petId: profileStudent.pet?.id || pets[0].id, schoolSitePath: binding.sitePath, classId: profile.classId, cloudBound: true
+          petId: profileStudent.pet?.id || pets[0].id, schoolSitePath: binding.sitePath, classId: profile.classId,
+          guardianAllowlist: Array.isArray(policyStudent.guardianAllowlist) ? policyStudent.guardianAllowlist.map(normalizeKeepworkUsername).filter(Boolean) : [], cloudBound: true
         };
       }
       function actionSuggestion(reason) {
@@ -635,19 +739,25 @@
         try {
           const events = await readFamilyPage(student.schoolSitePath, `${growthEventBasePath(student.id)}/index.json`);
           const pendingEvents = (Array.isArray(events) ? events : []).filter(event =>
-            event?.eventType === 'school_award' && event.classId === student.classId && event.studentId === student.id && ['submitted', 'published'].includes(event.status) && isAwardActive(event)
+            event?.version === 3 && event?.privacyScope === 'student' && event.eventType === 'school_award'
+              && event.classId === student.classId && event.studentId === student.id
+              && Number.isInteger(Number(event.delta)) && Number(event.delta) >= 1 && Number(event.delta) <= MAX_SCHOOL_AWARD_POINTS
+              && ['submitted', 'published'].includes(event.status) && isAwardActive(event)
           ).slice(0, 20);
           studentGrowthTasks = await Promise.all(pendingEvents.map(async event => {
             let action = null;
             let receipt = null;
             try { action = await readFamilyPage(student.schoolSitePath, growthActionPath(student.id, event.id)); } catch (_) {}
             try { receipt = await readFamilyPage(student.schoolSitePath, growthReceiptPath(student.id, event.id)); } catch (_) {}
-            const validAction = action?.version === 3 && action.privacyScope === 'student' && action.eventId === event.id && action.classId === event.classId && action.studentId === student.id ? action : null;
-            const handled = receipt?.version === 3 && receipt.eventId === event.id && receipt.classId === event.classId && receipt.studentId === student.id && ['approved', 'ignored'].includes(receipt.decision);
+            const studentUsername = authenticatedUsername;
+            const validAction = action?.version === 3 && action.privacyScope === 'student' && action.eventId === event.id && action.classId === event.classId && action.studentId === student.id && action.status === 'submitted' && normalizeKeepworkUsername(action.studentUsername) === studentUsername ? action : null;
+            const handled = validGuardianReceipt(receipt, event.id, student) && ['approved', 'ignored'].includes(receipt.decision);
             return handled ? null : { event, action: validAction };
           })).then(items => items.filter(Boolean));
-        } catch (_) {
-          studentGrowthTasks = [];
+          studentGrowthTaskSyncError = '';
+        } catch (error) {
+          studentGrowthTaskSyncError = error?.message || String(error);
+          showToast(`成长任务同步失败，已保留上次结果：${studentGrowthTaskSyncError}`);
         }
         render();
       }
@@ -661,7 +771,7 @@
           eventId: task.event.id,
           classId: task.event.classId,
           studentId: student.id,
-          studentUsername: normalizeKeepworkUsername(JSON.parse(localStorage.getItem(LOGIN_STATE_KEY) || '{}').username),
+          studentUsername: authenticatedUsername,
           actionId: `action_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`,
           status: 'submitted',
           actionLabel: actionSuggestion(task.event.reason || ''),
@@ -679,10 +789,12 @@
       }
       async function publishFamilyPolicy(student) {
         if (!validFamilySitePath(schoolSitePath()) || !student.guardianAllowlist.length) return;
+        await assertStudentCloudOwnership(student);
         await saveFamilyPage(schoolSitePath(), growthPolicyPath(student.id), buildCloudAccessPolicy(student), '更新学生成长授权策略');
       }
       async function publishStudentProfile(student) {
         if (!validFamilySitePath(schoolSitePath()) || !student.guardianAllowlist.length) return;
+        await assertStudentCloudOwnership(student);
         const pet = petOf(student);
         await saveFamilyPage(schoolSitePath(), growthStudentProfilePath(student.id), {
           version: 3,
@@ -708,6 +820,7 @@
         await verifyFamilySiteForPublishing(schoolSitePath());
         await Promise.all([publishFamilyPolicy(student), publishStudentProfile(student)]);
         student.familyPublishedAt = Date.now();
+        student.familyPublishFingerprint = familyPublishFingerprint(student);
         student.familyPublishError = '';
         save();
       }
@@ -722,7 +835,8 @@
       function buildAwardNotification(student, event) {
         return {
           id: notificationIdForEvent(event.id),
-          version: 2,
+          version: 3,
+          privacyScope: 'student',
           type: 'award_submitted',
           eventId: event.id,
           studentId: student.id,
@@ -737,6 +851,8 @@
       }
       function buildEventIndexEntry(event) {
         return {
+          version: 3,
+          privacyScope: 'student',
           id: event.id,
           eventType: event.eventType,
           status: event.status,
@@ -748,7 +864,7 @@
           studentId: event.studentId,
           studentUuid: event.studentUuid,
           studentName: event.studentName,
-          delta: Math.max(0, Number(event.delta) || 0),
+          delta: Math.max(1, Math.min(MAX_SCHOOL_AWARD_POINTS, Math.trunc(Number(event.delta) || 1))),
           reason: event.reason || '',
           category: event.category || '学习',
           note: event.note || ''
@@ -765,36 +881,22 @@
         }
         await publishFamilyPolicy(student);
         await publishStudentProfile(student);
-        const event = { ...item.event, status: 'submitted', submittedAt: Date.now() };
+        const event = {
+          ...item.event,
+          version: 3,
+          privacyScope: 'student',
+          delta: Math.max(1, Math.min(MAX_SCHOOL_AWARD_POINTS, Math.trunc(Number(item.event.delta) || 1))),
+          status: 'submitted',
+          submittedAt: Date.now()
+        };
         await saveFamilyPage(sitePath, `${growthEventBasePath(student.id)}/${safeCloudPart(event.id)}.json`, event, '发布学校成长奖励');
-        const sdk = await getKeepworkSdk();
-        let index = [];
-        try {
-          const result = await sdk.loadPage({ sitePath, pagePath: `${growthEventBasePath(student.id)}/index.json` });
-          const text = typeof result === 'string' ? result : String(result?.content ?? result?.data?.content ?? '');
-          const parsed = JSON.parse(text || '[]');
-          if (Array.isArray(parsed)) index = parsed;
-        } catch (_) {}
         const eventIndexEntry = buildEventIndexEntry(event);
-        const existingIndex = index.find(entry => entry?.id === event.id);
-        if (!existingIndex) index.unshift(eventIndexEntry);
-        else Object.assign(existingIndex, eventIndexEntry);
-        await saveFamilyPage(sitePath, `${growthEventBasePath(student.id)}/index.json`, index.slice(0, 100), '更新学生成长奖励索引');
+        await upsertFamilyIndex(sitePath, `${growthEventBasePath(student.id)}/index.json`, eventIndexEntry, 100, '更新学生成长奖励索引');
         item.eventPublishedAt ||= event.submittedAt || Date.now();
         const notificationData = buildAwardNotification(student, event);
         try {
           await saveFamilyPage(sitePath, growthNotificationPath(student.id, notificationData.id), notificationData, '记录课堂奖励提交通知');
-          let notifyIndex = [];
-          try {
-            const result = await sdk.loadPage({ sitePath, pagePath: growthNotificationIndexPath(student.id) });
-            const text = typeof result === 'string' ? result : String(result?.content ?? result?.data?.content ?? '');
-            const parsed = JSON.parse(text || '[]');
-            if (Array.isArray(parsed)) notifyIndex = parsed;
-          } catch (_) {}
-          const existingIndex = notifyIndex.find(entry => entry?.id === notificationData.id);
-          if (!existingIndex) notifyIndex.unshift(notificationData);
-          else Object.assign(existingIndex, notificationData);
-          await saveFamilyPage(sitePath, growthNotificationIndexPath(student.id), notifyIndex.slice(0, 50), '更新课堂奖励提交通知索引');
+          await upsertFamilyIndex(sitePath, growthNotificationIndexPath(student.id), notificationData, 50, '更新课堂奖励提交通知索引');
           item.notificationDeliveredAt = notificationData.notifiedAt;
         } catch (error) {
           throw new Error(`奖励已发布，但通知同步失败：${error?.message || error}`);
@@ -837,28 +939,38 @@
             try {
               const result = await sdk.loadPage({ sitePath: schoolSitePath(), pagePath: growthReceiptPath(student.id, eventId) });
               const receipt = JSON.parse(typeof result === 'string' ? result : String(result?.content ?? result?.data?.content ?? 'null'));
-              if (receipt?.version === 3 && receipt?.privacyScope === 'student' && receipt.eventId === eventId && receipt.studentId === student.id && ['approved', 'ignored', 'revoked'].includes(receipt.decision)) schoolReceiptCache.set(eventId, receipt);
+              if (validGuardianReceipt(receipt, eventId, student)) schoolReceiptCache.set(eventId, receipt);
             } catch (_) {}
           }
           render();
         } catch (_) {}
       }
+      function validGuardianReceipt(receipt, eventId, student) {
+        const guardian = normalizeKeepworkUsername(receipt?.guardianUsername);
+        const allowlist = Array.isArray(student?.guardianAllowlist) ? student.guardianAllowlist.map(normalizeKeepworkUsername) : [];
+        return receipt?.version === 3
+          && receipt?.privacyScope === 'student'
+          && receipt.eventId === eventId
+          && receipt.classId === (student?.classId || classId())
+          && receipt.studentId === student?.id
+          && ['approved', 'ignored', 'revoked'].includes(receipt.decision)
+          && guardian
+          && allowlist.includes(guardian);
+      }
       async function cancelPublishedSchoolAward(student, eventId) {
         if (!validFamilySitePath(schoolSitePath()) || !eventId) return;
-        if (['approved', 'ignored'].includes(schoolReceiptCache.get(eventId)?.decision)) { showToast('家长已处理该奖励，不能撤销'); return; }
         try {
+          try {
+            const latestReceipt = await readFamilyPage(schoolSitePath(), growthReceiptPath(student.id, eventId));
+            if (validGuardianReceipt(latestReceipt, eventId, student)) schoolReceiptCache.set(eventId, latestReceipt);
+          } catch (_) {}
+          if (['approved', 'ignored'].includes(schoolReceiptCache.get(eventId)?.decision)) throw new Error('家长已处理该奖励，不能撤销');
           const event = await readFamilyPage(schoolSitePath(), `${growthEventBasePath(student.id)}/${safeCloudPart(eventId)}.json`);
           if (!event || event.eventType !== 'school_award' || event.studentId !== student.id || event.classId !== classId()) throw new Error('奖励记录不匹配');
           if (!['submitted', 'published'].includes(event.status)) throw new Error('该奖励当前无法撤销');
           const cancelledEvent = { ...event, status: 'cancelled', cancelledAt: Date.now(), cancelledBy: teacherUsername() };
           await saveFamilyPage(schoolSitePath(), `${growthEventBasePath(student.id)}/${safeCloudPart(eventId)}.json`, cancelledEvent, '撤销课堂成长奖励');
-          let index = [];
-          try { index = await readFamilyPage(schoolSitePath(), `${growthEventBasePath(student.id)}/index.json`); } catch (_) {}
-          if (Array.isArray(index)) {
-            const indexEvent = index.find(item => item?.id === eventId);
-            if (indexEvent) Object.assign(indexEvent, buildEventIndexEntry(cancelledEvent));
-            await saveFamilyPage(schoolSitePath(), `${growthEventBasePath(student.id)}/index.json`, index.slice(0, 100), '更新已撤销课堂奖励');
-          }
+          await upsertFamilyIndex(schoolSitePath(), `${growthEventBasePath(student.id)}/index.json`, buildEventIndexEntry(cancelledEvent), 100, '更新已撤销课堂奖励');
           const ledgerRecord = state.ledger.find(row => row.schoolEventId === eventId);
           if (ledgerRecord) ledgerRecord.schoolAwardCancelledAt = cancelledEvent.cancelledAt;
           save(); render(); showToast('已撤销家庭成长奖励');
@@ -1038,7 +1150,7 @@
         const parentLink = missingSetup.length ? '' : guardianLink(student);
         return `<aside class="card h-fit"><h2 class="m-0 text-xl font-black">为 ${esc(student.name)} 记分</h2>
           <div class="mt-3 rounded-xl ${missingSetup.length ? 'bg-amber-50 text-amber-800' : 'bg-emerald-50 text-emerald-800'} p-3 text-xs"><b>${missingSetup.length ? `家庭闭环待配置：${esc(missingSetup.join('、'))}` : '家庭闭环已就绪'}</b><div class="mt-2 flex flex-wrap gap-2"><button data-action="edit-student" class="bg-white px-3 py-1.5">编辑配置</button>${loginLink ? '<button data-action="copy-student-link" class="bg-white px-3 py-1.5">学生链接</button>' : ''}${parentLink ? '<button data-action="copy-guardian-link" class="bg-white px-3 py-1.5">家长链接</button>' : ''}</div></div>
-          <div class="mt-3 grid grid-cols-1 gap-2 sm:grid-cols-2 lg:grid-cols-1">${game_config.pointRules.map(rule => `<button class="border-emerald-200 bg-emerald-50 text-left hover:border-emerald-400 hover:bg-emerald-100" data-action="award" data-reason="${rule.label}" data-points="${rule.points}"><span class="block text-xs text-slate-600">${rule.label}</span><b class="mt-1 block text-emerald-700">+${rule.points}</b></button>`).join('')}</div>
+          <div class="mt-3 grid grid-cols-1 gap-2 sm:grid-cols-2 lg:grid-cols-1">${game_config.pointRules.map(rule => `<button class="border-emerald-200 bg-emerald-50 text-left hover:border-emerald-400 hover:bg-emerald-100" data-action="award" data-reason="${esc(rule.label)}" data-points="${rule.points}"><span class="block text-xs text-slate-600">${esc(rule.label)}</span><b class="mt-1 block text-emerald-700">+${rule.points}</b></button>`).join('')}</div>
           <div class="mt-3 border-t border-orange-100 pt-3"><label class="block text-xs font-bold text-slate-500">自定义分数</label><div class="mt-1 flex gap-2"><input id="customPoints" type="number" min="1" max="20" value="1" class="min-w-0 flex-1"><button class="primary" data-action="custom-award">加分</button><button class="border-rose-200 bg-rose-50 text-rose-600 hover:bg-rose-100" data-action="custom-deduct">扣分</button></div></div>
           ${activeAwards.length ? `<div class="mt-3 rounded-xl border ${failedAward ? 'border-rose-200 bg-rose-50' : 'border-amber-200 bg-amber-50'} p-3 text-xs"><b class="${failedAward ? 'text-rose-700' : 'text-amber-700'}">${failedAward ? '家庭奖励同步失败' : `家庭奖励待同步 ${activeAwards.length} 条`}</b>${failedAward ? `<span class="mt-1 block break-words text-rose-600">${esc(failedAward.lastError)}</span>` : ''}<div class="mt-2 flex gap-2"><button data-action="retry-pending-awards" class="px-3 py-1.5">重试</button>${failedAward ? '<button data-action="cancel-stale-awards" class="border-rose-200 bg-white px-3 py-1.5 text-rose-600">取消失效奖励</button>' : ''}</div></div>` : ''}\n          ${abandonedAwards.length ? `<div class="mt-3 rounded-xl border border-slate-300 bg-slate-50 p-3 text-xs"><b class="text-slate-700">已放弃 ${abandonedAwards.length} 条奖励</b><p class="mt-1 break-words text-slate-600">${esc(abandonedAwards[0].lastError || '超过重试次数上限')}</p><div class="mt-2 flex gap-2"><button data-action="clear-abandoned-awards" class="border-slate-300 bg-white px-3 py-1.5 text-slate-600">清空已放弃</button><button data-action="open-ops-console" class="border-indigo-300 bg-indigo-50 px-3 py-1.5 text-indigo-600">查看运营面板</button></div></div>` : ''}\n          ${!activeAwards.length && !abandonedAwards.length ? '<p class="mt-3 text-xs font-bold text-emerald-600">家庭奖励已同步</p>' : ''}
           <div class="mt-4 border-t border-orange-100 pt-3"><div class="flex items-center justify-between"><p class="m-0 text-sm font-black">最近积分流水</p><button class="text-xs text-indigo-600 hover:text-indigo-800" data-action="refresh-school-receipts">刷新家庭处理状态</button></div><div class="mt-2 space-y-2">${recent.length ? recent.map(row => { const receipt = row.schoolEventId ? schoolReceiptCache.get(row.schoolEventId) : null; const status = row.schoolAwardCancelledAt ? '<span class="mt-1 block font-bold text-slate-500">家庭端：奖励已撤销</span>' : receipt ? `<span class="mt-1 block font-bold ${receipt.decision === 'approved' ? 'text-emerald-600' : 'text-slate-500'}">家庭端：${receipt.decision === 'approved' ? `已计入成长${receipt.childAction?.actionLabel ? ` · 孩子完成：${esc(receipt.childAction.actionLabel)}` : ''}` : receipt.decision === 'revoked' ? '已撤销计入' : '暂不计入'}</span>` : row.schoolEventId ? '<span class="mt-1 block text-slate-400">家庭端：等待孩子行动与家长确认</span>' : ''; const cancel = row.schoolEventId && !['approved', 'ignored'].includes(receipt?.decision) && !row.schoolAwardCancelledAt ? `<button class="mt-2 border-rose-200 bg-white px-2 py-1 text-[11px] text-rose-600" data-action="cancel-published-school-award" data-event-id="${esc(row.schoolEventId)}">撤销家庭奖励</button>` : ''; return `<div class="rounded-xl bg-orange-50 px-3 py-2 text-xs"><div class="flex justify-between"><b>${esc(row.reason)}</b><b class="${row.points < 0 ? 'text-rose-600' : 'text-orange-600'}">${row.points > 0 ? '+' : ''}${row.points}</b></div><span class="text-slate-500">${row.at}</span>${status}${cancel}</div>`; }).join('') : '<p class="text-xs text-slate-400">暂无积分记录</p>'}</div></div>
@@ -1174,7 +1286,12 @@
         game_config.classNumber = classNumber;
         game_config.schoolSitePath = sharedSitePath === defaultSchoolSitePath() ? '' : sharedSitePath;
         game_config.className = classLabel();
-        localStorage.setItem(CLASS_CONFIG_KEY, JSON.stringify({ grade, classNumber, schoolSitePath: game_config.schoolSitePath }));
+        state.students.forEach(student => {
+          student.familyPublishedAt = 0;
+          student.familyPublishFingerprint = '';
+        });
+        localStorage.setItem(activeClassConfigStorageKey, JSON.stringify({ grade, classNumber, schoolSitePath: game_config.schoolSitePath }));
+        save();
         document.getElementById('studentFormScreen').classList.add('hidden');
         render();
         showToast(`已更新为 ${game_config.className}`);
@@ -1195,6 +1312,8 @@
         if (existing) {
           const difference = Math.floor(points) - existing.points;
           existing.name = name; existing.gender = gender; existing.petId = pet.id; existing.keepworkUsername = keepworkUsername; existing.guardianAllowlist = guardianAllowlist;
+          existing.familyPublishedAt = 0;
+          existing.familyPublishFingerprint = '';
           if (!existing.uuid) existing.uuid = generateUuid();
           if (difference) changePoints(existing, difference, '教师调整积分');
           savedStudent = existing;
@@ -1255,7 +1374,10 @@
         const readyStudents = state.students.filter(student => !studentCloudSetup(student).length);
         const screen = document.getElementById('studentFormScreen');
         if (!readyStudents.length) { showToast('请先完成至少一名学生的家庭站点、学生账号和家长账号配置'); return; }
-        const publishedStudents = readyStudents.filter(student => student.familyPublishedAt && !student.familyPublishError);
+        readyStudents.forEach(student => {
+          if (!isFamilySetupPublished(student)) student.familyPublishedAt = 0;
+        });
+        const publishedStudents = readyStudents.filter(isFamilySetupPublished);
         screen.innerHTML = `<div class="mx-auto mt-5 max-w-3xl rounded-3xl bg-white p-5 shadow-2xl sm:mt-12 sm:p-7"><div class="flex items-start justify-between gap-4"><div><p class="m-0 text-xs font-black tracking-widest text-violet-600">教师管理</p><h2 class="m-0 mt-1 text-2xl font-black">家庭入口卡</h2><p class="m-0 mt-2 text-sm text-slate-500">发布后点一次“发送”，手机会直接打开分享面板；电脑会自动复制。</p></div><button type="button" data-action="close-student-form" aria-label="关闭">×</button></div>${publishedStudents.length ? `<div class="mt-4 flex justify-end"><button type="button" data-action="copy-all-access-cards" class="border-violet-300 bg-violet-50 text-violet-700">复制全部入口</button></div>` : ''}<div class="mt-4 max-h-[58vh] space-y-3 overflow-y-auto pr-1">${readyStudents.map(student => { const published = student.familyPublishedAt && !student.familyPublishError; return `<article class="rounded-2xl border border-violet-100 bg-violet-50 p-4"><div class="flex items-center justify-between gap-3"><b class="text-slate-800">${esc(student.name)}</b><span class="text-xs ${published ? 'text-emerald-700' : 'text-amber-700'}">${published ? '教师端已发布' : '尚未确认发布'}</span></div>${student.familyPublishError ? `<p class="mt-2 text-xs text-rose-700">上次发布失败：${esc(student.familyPublishError)}</p>` : ''}<div class="mt-3 grid gap-2 sm:grid-cols-2">${published ? `<button type="button" data-action="share-access-card" data-kind="student" data-student-id="${esc(student.id)}" class="bg-white text-violet-700">发送给学生</button><button type="button" data-action="share-access-card" data-kind="guardian" data-student-id="${esc(student.id)}" class="bg-white text-emerald-700">发送给家长</button>` : `<button type="button" data-action="publish-access-card" data-student-id="${esc(student.id)}" class="primary sm:col-span-2">发布并生成入口</button>`}</div></article>`; }).join('')}</div></div>`;
         screen.classList.remove('hidden');
       }
@@ -1341,7 +1463,7 @@
           shareText(`${accessStudent.name}${isGuardian ? '家长' : '学生'}入口`, text); return;
         }
         if (action === 'copy-all-access-cards' && state.role === 'teacher') {
-          copyText(state.students.filter(item => !studentCloudSetup(item).length && item.familyPublishedAt && !item.familyPublishError).map(accessCardText).join('\n\n'), '全部已发布的家庭入口已复制'); return;
+          copyText(state.students.filter(item => !studentCloudSetup(item).length && isFamilySetupPublished(item)).map(accessCardText).join('\n\n'), '全部已发布的家庭入口已复制'); return;
         }
         if (action === 'add-student' && state.role === 'teacher') { openStudentForm(); return; }
         if (action === 'edit-student' && state.role === 'teacher') { openStudentForm(student); return; }
@@ -1488,9 +1610,57 @@
         event.preventDefault();
         if (state.role === 'teacher') saveStudentForm(event.target);
       });
+      function allowedParentOrigin(origin) {
+        if (location.protocol === 'file:') return origin === 'null' || /^https?:\/\/(?:[^.]+\.)*keepwork\.com$/i.test(origin);
+        return origin === location.origin || /^https:\/\/(?:[^.]+\.)*keepwork\.com$/i.test(origin);
+      }
+      function configuredParentOrigin() {
+        const value = new URLSearchParams(location.search).get('parentOrigin');
+        if (value) {
+          try {
+            const origin = new URL(value).origin;
+            if (allowedParentOrigin(origin)) return origin;
+          } catch (_) {}
+        }
+        if (document.referrer) {
+          try {
+            const origin = new URL(document.referrer).origin;
+            if (allowedParentOrigin(origin)) return origin;
+          } catch (_) {}
+        }
+        return '';
+      }
+      function trustedParentMessage(event) {
+        if (window.parent === window || event.source !== window.parent || !allowedParentOrigin(event.origin)) return false;
+        const parentOrigin = configuredParentOrigin();
+        return !parentOrigin || event.origin === parentOrigin;
+      }
+      function applyExternalGameConfig(data) {
+        if (!data || typeof data !== 'object' || Array.isArray(data)) return false;
+        const next = {};
+        if (typeof data.grade === 'string') next.grade = data.grade.trim().slice(0, 12);
+        if (typeof data.classNumber === 'string') next.classNumber = data.classNumber.trim().slice(0, 8);
+        if (data.xpCurve && typeof data.xpCurve === 'object' && !Array.isArray(data.xpCurve)) {
+          next.xpCurve = {
+            base: Math.max(1, Math.min(10000, Math.trunc(Number(data.xpCurve.base) || 50))),
+            perLevel: Math.max(0, Math.min(10000, Math.trunc(Number(data.xpCurve.perLevel) || 0)))
+          };
+        }
+        if (Array.isArray(data.pointRules)) {
+          next.pointRules = data.pointRules.slice(0, 20).map((rule, index) => ({
+            id: String(rule?.id || `rule_${index}`).replace(/[^a-zA-Z0-9_-]/g, '_').slice(0, 40),
+            label: String(rule?.label || '').trim().slice(0, 60),
+            points: Math.max(1, Math.min(20, Math.trunc(Number(rule?.points) || 1)))
+          })).filter(rule => rule.label);
+        }
+        Object.assign(game_config, next);
+        game_config.className = classLabel();
+        return Object.keys(next).length > 0;
+      }
       window.addEventListener('message', event => {
+        if (!trustedParentMessage(event)) return;
         const msg = event.data || {};
-        if (msg.type === 'setGameConfig' && msg.data && typeof msg.data === 'object') { Object.assign(game_config, msg.data); render(); }
+        if (msg.type === 'setGameConfig' && applyExternalGameConfig(msg.data)) render();
       });
       const loginGate = document.getElementById('loginGate');
       const loginGateHint = document.getElementById('loginGateHint');
@@ -1559,16 +1729,12 @@
         });
       }
       function keepworkSdkCandidates() {
-        const params = new URLSearchParams(location.search);
-        const explicitSdk = params.get('sdk');
         const isLocal = !location.hostname || ['localhost', '127.0.0.1', '::1'].includes(location.hostname);
         const isFile = location.protocol === 'file:';
         const localSdk = 'http://127.0.0.1:5001/index.ts';
         return [
-          explicitSdk,
           ...((isLocal || isFile) ? [localSdk] : []),
-          SDK_CDN_URL,
-          ...((isLocal || isFile) ? [] : [localSdk])
+          SDK_CDN_URL
         ].filter(Boolean);
       }
       function clearKeepworkAuthParams() {
@@ -1679,14 +1845,13 @@
           if (!user) throw new Error('未获得 KeepWork 用户资料，请重试');
           const url = new URL(location.href);
           url.searchParams.set('studentSite', sitePath);
-          url.searchParams.delete('studentId');
           history.replaceState({}, '', `${url.pathname}${url.search}${url.hash}`);
           const boundStudent = await loadBoundStudent(user);
           window.studentSessionSnapshot ||= { students: state.students, selectedStudentId: state.selectedStudentId, role: state.role };
           state.students = [boundStudent];
           state.selectedStudentId = boundStudent.id;
           state.role = 'student';
-          enterAfterLogin(user, sdk);
+          await enterAfterLogin(user, sdk);
         } catch (error) {
           loginGateHint.textContent = error?.message || '登录失败，请重试。';
         } finally {
@@ -1695,21 +1860,20 @@
         }
       }
       async function loadTeacherCloudState(sdk) {
-        if (!sdk?.personalPageStore) return;
+        if (!sdk?.personalPageStore) throw new Error('当前 KeepWork SDK 不支持教师云存储，请刷新页面或联系管理员');
         try {
           teacherCloudStore = typeof sdk.personalPageStore.withWorkspace === 'function'
             ? sdk.personalPageStore.withWorkspace('MagicHaqi')
             : sdk.personalPageStore;
-          const username = JSON.parse(localStorage.getItem(LOGIN_STATE_KEY) || '{}').username || '';
-          const paths = getTeacherCloudPaths(username);
+          const paths = getTeacherCloudPaths(authenticatedUsername);
           const [cloudStateText, cloudAwardsText] = await Promise.all([
             readTeacherCloudFile(paths.state),
             readTeacherCloudFile(paths.awards)
           ]);
           let cloudState = null;
           let cloudAwards = null;
-          try { cloudState = cloudStateText ? JSON.parse(cloudStateText) : null; } catch (_) {}
-          try { cloudAwards = cloudAwardsText ? JSON.parse(cloudAwardsText) : null; } catch (_) {}
+          try { cloudState = cloudStateText ? JSON.parse(cloudStateText) : null; } catch (error) { throw new Error(`教师云端班级数据格式损坏：${error?.message || error}`); }
+          try { cloudAwards = cloudAwardsText ? JSON.parse(cloudAwardsText) : null; } catch (error) { throw new Error(`教师云端待发奖励格式损坏：${error?.message || error}`); }
           // 版本迁移：确保所有学生都有 uuid
           if (cloudState && Array.isArray(cloudState.students)) {
             cloudState.students.forEach((student, index) => {
@@ -1719,22 +1883,29 @@
           // 如果云端有数据，使用云端版本；否则使用本地版本
           if (cloudState) {
             state = cloudState;
-            localStorage.setItem(STORAGE_KEY, JSON.stringify(state));
+            localStorage.setItem(activeStateStorageKey, JSON.stringify(state));
           }
           if (Array.isArray(cloudAwards)) {
             pendingAwards = cloudAwards;
-            localStorage.setItem(PENDING_AWARDS_KEY, JSON.stringify(pendingAwards));
+            localStorage.setItem(activeAwardsStorageKey, JSON.stringify(pendingAwards));
           }
           showToast('教师数据已从云端同步');
         } catch (error) {
           console.warn('加载教师云端数据失败:', error);
-          // 继续使用本地数据
+          teacherCloudStore = null;
+          throw error;
         }
       }
-      function enterAfterLogin(user, sdk) {
+      async function enterAfterLogin(user, sdk) {
         window.studentLoginOnly = loginRole === 'student';
+        authenticatedUsername = normalizeKeepworkUsername(user?.username || user?.name);
+        if (!authenticatedUsername) throw new Error('未获得已验证的 KeepWork 用户名');
         if (window.studentLoginOnly) {
           state.role = 'student';
+        } else {
+          loadTeacherLocalState(authenticatedUsername);
+          loginGateHint.textContent = '正在同步当前教师的班级数据…';
+          await loadTeacherCloudState(sdk);
         }
         localStorage.setItem(LOGIN_STATE_KEY, JSON.stringify({
           active: true,
@@ -1756,9 +1927,7 @@
           }, 45 * 1000);
         }
         if (!window.studentLoginOnly) {
-          // 异步加载云端教师数据
-          if (sdk) loadTeacherCloudState(sdk).catch(() => {});
-          publishPendingAwards();
+          await publishPendingAwards();
           clearInterval(pendingAwardRetryTimer);
           pendingAwardRetryTimer = setInterval(publishPendingAwards, 60 * 1000);
           clearInterval(schoolReceiptRefreshTimer);
@@ -1784,7 +1953,7 @@
             state.selectedStudentId = boundStudent.id;
             state.role = 'student';
           }
-          enterAfterLogin(user, sdk);
+          await enterAfterLogin(user, sdk);
           if (loginRole === 'student') refreshStudentGrowthTasks();
         } catch (error) {
           loginGateHint.textContent = error?.message || '登录失败，请重试。';
@@ -1813,7 +1982,7 @@
             state.students = [boundStudent];
             state.selectedStudentId = boundStudent.id;
             state.role = 'student';
-            enterAfterLogin(user, sdk);
+            await enterAfterLogin(user, sdk);
           } catch (_) {
             localStorage.removeItem(LOGIN_STATE_KEY);
             localStorage.removeItem(AUTH_TOKEN_KEY);
@@ -1821,9 +1990,20 @@
           }
           return;
         }
-        loginRole = savedLogin.role === 'student' ? 'student' : 'teacher';
+        loginRole = 'teacher';
         updateLoginRoleButtons();
-        enterAfterLogin({ username: savedLogin.username || 'KeepWork 用户' });
+        try {
+          const sdk = await getKeepworkSdk();
+          const savedToken = localStorage.getItem(AUTH_TOKEN_KEY);
+          if (savedToken && !sdk.token) sdk.token = savedToken;
+          const user = await getKeepworkUser(sdk);
+          if (!user) throw new Error('登录状态已失效');
+          await enterAfterLogin(user, sdk);
+        } catch (_) {
+          localStorage.removeItem(LOGIN_STATE_KEY);
+          localStorage.removeItem(AUTH_TOKEN_KEY);
+          loginGateHint.textContent = '教师登录状态已失效，请重新登录。';
+        }
       }
       async function bootstrapKeepworkSession() {
         await restoreKeepworkSession();
@@ -1845,7 +2025,7 @@
                 state.selectedStudentId = boundStudent.id;
                 state.role = 'student';
               }
-              enterAfterLogin(user, sdk);
+              await enterAfterLogin(user, sdk);
             } catch (error) {
               loginGateHint.textContent = error?.message || '登录失败，请重试。';
               keepworkLoginButton.disabled = false;
@@ -1866,7 +2046,10 @@
       bootstrapKeepworkSession().catch(() => {});
       updateRestingPets();
       setInterval(updateRestingPets, 60 * 1000);
-      window.parent?.postMessage({ type: 'gameLoaded', data: { id: 'haqi_personal_pet_points' } }, '*');
+      if (window.parent !== window) {
+        const parentOrigin = configuredParentOrigin();
+        if (parentOrigin || location.protocol === 'file:') window.parent.postMessage({ type: 'gameLoaded', data: { id: 'haqi_personal_pet_points' } }, parentOrigin || '*');
+      }
     })();
   </script>
 </body>

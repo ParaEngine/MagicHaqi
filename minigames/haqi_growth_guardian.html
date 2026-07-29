@@ -419,10 +419,13 @@ art_assets = [];
 (function () {
   const STORAGE_KEY = 'haqiGrowthGuardianV1';
   const PIN_KEY = 'haqiGrowthGuardianPinV1';
+  const PIN_LOCK_KEY = 'haqiGrowthGuardianPinLockV2';
   const AUTH_TOKEN_KEY = 'haqiGrowthGuardianKeepworkTokenV1';
   const CLOUD_STATE_PATH = 'minigames/haqi-growth-guardian/state.json';
   const CLOUD_PIN_PATH = 'minigames/haqi-growth-guardian/pin.txt';
   const GROWTH_LINK_ROOT = 'minigames/haqi-growth-link/v3';
+  const MAX_SCHOOL_AWARD_POINTS = 20;
+  const PIN_PBKDF2_ITERATIONS = 210000;
   const ICONS = { 学习: '📖', 自律: '⏱', 生活: '🏠', 品格: '🤝', 挑战: '🏆', 其他: '✨' };
   const DEFAULT_METRICS = [
     { id: 'p_homework', name: '主动完成作业', category: '学习', delta: 3, active: true },
@@ -557,7 +560,10 @@ art_assets = [];
       const parsed = JSON.parse(text || '[]');
       const notifications = Array.isArray(parsed) ? parsed : [];
       return notifications
-        .filter(item => ['award_submitted', 'award_processed'].includes(item?.type) && item?.studentId === link.studentId)
+        .filter(item => item?.version === 3 && item?.privacyScope === 'student'
+          && ['award_submitted', 'award_processed'].includes(item.type)
+          && item.studentId === link.studentId && item.classId === link.classId
+          && normalizeSchoolUsername(item.teacherUsername) === normalizeSchoolUsername(link.teacherUsername))
         .sort((a, b) => Number(b.notifiedAt || b.processedAt || 0) - Number(a.notifiedAt || a.processedAt || 0));
     } catch (_) {
       return [];
@@ -714,6 +720,7 @@ art_assets = [];
     const legacyState = cloudState ? null : loadLegacyState();
     state = cloudState || legacyState || freshState();
     parentPinHash = cloudPin.trim() || localStorage.getItem(PIN_KEY) || '';
+    restorePinLockState();
     if (legacyState || (!cloudPin.trim() && parentPinHash)) {
       await Promise.all([
         legacyState ? queueCloudWrite(CLOUD_STATE_PATH, JSON.stringify(state)) : Promise.resolve(),
@@ -1123,6 +1130,10 @@ art_assets = [];
     return String(value || '').trim().replace(/[^a-zA-Z0-9_-]/g, '_').slice(0, 80);
   }
 
+  function normalizeSchoolUsername(value) {
+    return safeCloudPart(value).toLowerCase();
+  }
+
   function schoolEventExpiresAt(event) {
     return Number(event?.expiresAt) || (Number(event?.createdAt) + 72 * 60 * 60 * 1000);
   }
@@ -1132,10 +1143,14 @@ art_assets = [];
   }
 
   function normalizeSchoolEventSummary(item, link = state.schoolLink) {
-    if (!item?.id || item?.eventType !== 'school_award') return null;
+    const delta = Number(item?.delta);
+    if (item?.version !== 3 || item?.privacyScope !== 'student' || !item?.id || item?.eventType !== 'school_award') return null;
     if (item.classId !== link.classId || item.studentId !== link.studentId) return null;
     if (!['submitted', 'published'].includes(item.status) || !isActiveSchoolEvent(item)) return null;
+    if (!Number.isInteger(delta) || delta < 1 || delta > MAX_SCHOOL_AWARD_POINTS) return null;
     return {
+      version: 3,
+      privacyScope: 'student',
       id: item.id,
       eventType: item.eventType,
       status: item.status,
@@ -1147,7 +1162,7 @@ art_assets = [];
       studentId: item.studentId,
       studentUuid: item.studentUuid || '',
       studentName: item.studentName || '',
-      delta: Math.max(0, Math.trunc(Number(item.delta) || 0)),
+      delta,
       reason: item.reason || '',
       category: item.category || '学习',
       note: item.note || ''
@@ -1156,6 +1171,10 @@ art_assets = [];
 
   function schoolEventBasePath(link = state.schoolLink) {
     return `${schoolStudentRoot(link)}/events`;
+  }
+
+  function schoolEventPath(eventId, link = state.schoolLink) {
+    return `${schoolEventBasePath(link)}/${safeCloudPart(eventId)}.json`;
   }
 
   function schoolStudentRoot(link = state.schoolLink) {
@@ -1172,6 +1191,12 @@ art_assets = [];
 
   function schoolReceiptPath(eventId, link = state.schoolLink) {
     return `${schoolStudentRoot(link)}/receipts/${safeCloudPart(eventId)}.json`;
+  }
+
+  function schoolReceiptAuditPath(receipt, link = state.schoolLink) {
+    const guardian = safeCloudPart(receipt?.guardianUsername || 'unknown');
+    const receiptId = safeCloudPart(receipt?.receiptId || `${receipt?.decidedAt || 0}-${guardian}`);
+    return `${schoolStudentRoot(link)}/receipts/audit/${safeCloudPart(receipt?.eventId)}/${guardian}/${receiptId}.json`;
   }
 
   function schoolActionPath(eventId, link = state.schoolLink) {
@@ -1217,17 +1242,20 @@ art_assets = [];
   }
 
   function guardianUsername() {
-    return safeCloudPart(guardianUser?.username || guardianUser?.name || '');
+    return normalizeSchoolUsername(guardianUser?.username || guardianUser?.name || '');
   }
 
   function validateSchoolAccessPolicy(policy, link) {
     const account = guardianUsername();
     if (!account) return '未获得当前家长 Keepwork 账号，请重新登录';
     if (!policy || typeof policy !== 'object' || policy.version !== 3 || policy.privacyScope !== 'student') return '该学生目录尚未发布授权策略。请让教师在学校共享站点中发布该学生的云端授权';
+    const policyTeacher = normalizeSchoolUsername(policy.teacherUsername);
+    if (!policyTeacher) return '学校授权策略缺少教师身份，请让教师重新发布云端授权';
+    if (link.teacherUsername && policyTeacher !== normalizeSchoolUsername(link.teacherUsername)) return '教师身份与学校授权策略不匹配';
     if (safeCloudPart(policy.classId) !== safeCloudPart(link.classId)) return '班级授权策略不匹配';
     const student = Array.isArray(policy.students) ? policy.students.find(item => item?.id === link.studentId) : null;
     if (!student || !Array.isArray(student.roles) || !student.roles.includes('student')) return '该学生目录不包含当前学生的授权记录';
-    const allowlist = Array.isArray(student.guardianAllowlist) ? student.guardianAllowlist.map(safeCloudPart) : [];
+    const allowlist = Array.isArray(student.guardianAllowlist) ? student.guardianAllowlist.map(normalizeSchoolUsername) : [];
     if (!allowlist.includes(account)) return `当前账号 ${account} 不在该学生的家长白名单中`;
     return '';
   }
@@ -1242,6 +1270,7 @@ art_assets = [];
     }
     const accessError = validateSchoolAccessPolicy(policy, link);
     if (accessError) throw new Error(accessError);
+    link.teacherUsername = normalizeSchoolUsername(policy.teacherUsername);
   }
 
   function applySchoolLink(link) {
@@ -1261,7 +1290,8 @@ art_assets = [];
   }
 
   async function queueSchoolReceipt(event, decision, growthEntryId = '', childAction = null) {
-    const receipt = { version: 3, privacyScope: 'student', eventId: event.id, classId: state.schoolLink.classId, studentId: state.schoolLink.studentId, decision, decidedAt: Date.now(), guardianUsername: guardianUsername(), growthEntryId, childAction };
+    const receiptId = typeof crypto.randomUUID === 'function' ? crypto.randomUUID() : `receipt_${Date.now()}_${Math.random().toString(36).slice(2, 9)}`;
+    const receipt = { version: 3, privacyScope: 'student', receiptId, eventId: event.id, classId: state.schoolLink.classId, studentId: state.schoolLink.studentId, decision, decidedAt: Date.now(), guardianUsername: guardianUsername(), growthEntryId, childAction };
     state.schoolLink.pendingReceipts = state.schoolLink.pendingReceipts.filter(item => item.eventId !== event.id);
     state.schoolLink.pendingReceipts.unshift(receipt);
     await persistStateNow();
@@ -1279,6 +1309,7 @@ art_assets = [];
       if (accessError) throw new Error(accessError);
       for (const receipt of [...link.pendingReceipts]) {
         try {
+          await guardianSdk.savePage({ sitePath: link.sitePath, pagePath: schoolReceiptAuditPath(receipt), content: JSON.stringify(receipt, null, 2), commitMessage: '记录家长学校奖励处理审计' });
           await guardianSdk.savePage({ sitePath: link.sitePath, pagePath: schoolReceiptPath(receipt.eventId), content: JSON.stringify(receipt, null, 2), commitMessage: '同步家长学校奖励处理结果' });
         } catch (error) {
           const message = String(error?.message || error);
@@ -1311,43 +1342,41 @@ art_assets = [];
       try { policy = JSON.parse(policyText || 'null'); } catch (error) { throw new Error(`学校授权策略格式错误：${error?.message || error}`); }
       const accessError = validateSchoolAccessPolicy(policy, link);
       if (accessError) throw new Error(accessError);
+      const policyTeacher = normalizeSchoolUsername(policy.teacherUsername);
+      if (link.teacherUsername !== policyTeacher) {
+        link.teacherUsername = policyTeacher;
+        saveState();
+      }
       publishPendingSchoolReceipts();
       try {
         const profileText = await readSchoolSharedPage(link, schoolStudentProfilePath(link));
         const profile = JSON.parse(profileText || 'null');
-        if (profile?.version === 3 && profile?.privacyScope === 'student' && profile?.classId === link.classId && profile?.student?.id === link.studentId) schoolStudentProfile = profile;
+        if (profile?.version === 3 && profile?.privacyScope === 'student' && profile?.classId === link.classId
+          && profile?.student?.id === link.studentId && normalizeSchoolUsername(profile.teacherUsername) === policyTeacher) schoolStudentProfile = profile;
       } catch (error) { partialErrors.push(`课堂档案读取失败：${error?.message || error}`); }
       const basePath = schoolEventBasePath(link);
       const indexText = await readSchoolSharedPage(link, `${basePath}/index.json`);
       let index = [];
       try { index = JSON.parse(indexText || '[]'); } catch (error) { throw new Error(`学校消息索引格式错误：${error?.message || error}`); }
       if (!Array.isArray(index)) throw new Error('学校消息索引格式错误：内容不是列表');
-      const summarizedEvents = [];
-      const detailLookupItems = [];
-      index.slice(0, 100).forEach(item => {
-        const summaryEvent = normalizeSchoolEventSummary(item, link);
-        if (summaryEvent) summarizedEvents.push(summaryEvent);
-        else if (item?.id) detailLookupItems.push(item);
-      });
+      const detailLookupItems = index.slice(0, 100).filter(item => item?.id);
       const detailEvents = await Promise.all(detailLookupItems.map(async item => {
         try {
           const text = await readSchoolSharedPage(link, `${basePath}/${safeCloudPart(item.id)}.json`);
-          const event = JSON.parse(text || 'null');
-          return event?.classId === link.classId && event?.studentId === link.studentId ? event : null;
+          return normalizeSchoolEventSummary(JSON.parse(text || 'null'), link);
         } catch (error) {
           partialErrors.push(`消息 ${item.id} 读取失败`);
           return null;
         }
       }));
-      schoolInboxCache = [...summarizedEvents, ...detailEvents.filter(Boolean)]
-        .filter(event => event?.eventType === 'school_award' && event.studentId === link.studentId && ['submitted', 'published'].includes(event.status) && isActiveSchoolEvent(event))
+      schoolInboxCache = detailEvents.filter(Boolean)
         .sort((left, right) => Number(right.createdAt || 0) - Number(left.createdAt || 0));
       schoolInboxCache = await Promise.all(schoolInboxCache.map(async event => {
         try {
           const action = JSON.parse(await readSchoolSharedPage(link, schoolActionPath(event.id)) || 'null');
           const policyStudent = Array.isArray(policy?.students) ? policy.students.find(item => item?.id === link.studentId) : null;
-          const expectedStudentUsername = safeCloudPart(policyStudent?.keepworkUsername);
-          if (action?.version === 3 && action.privacyScope === 'student' && action.eventId === event.id && action.classId === event.classId && action.studentId === link.studentId && action.status === 'submitted' && expectedStudentUsername && safeCloudPart(action.studentUsername) === expectedStudentUsername) {
+          const expectedStudentUsername = normalizeSchoolUsername(policyStudent?.keepworkUsername);
+          if (action?.version === 3 && action.privacyScope === 'student' && action.eventId === event.id && action.classId === event.classId && action.studentId === link.studentId && action.status === 'submitted' && expectedStudentUsername && normalizeSchoolUsername(action.studentUsername) === expectedStudentUsername) {
             event.childAction = { actionLabel: String(action.actionLabel || '').slice(0, 120), submittedAt: Number(action.submittedAt) || 0, studentUsername: expectedStudentUsername };
           }
         } catch (error) { partialErrors.push(`消息 ${event.id} 的孩子行动读取失败`); }
@@ -1447,7 +1476,7 @@ art_assets = [];
     const preview = selectedPet?.imageSheetUrl
       ? `<div class="pet-choice-art" style="background-image:url(&quot;${escapeHtml(selectedPet.imageSheetUrl)}&quot;)"></div>`
       : '<div style="font-size:64px">🥚</div>';
-    return `<div class="pet-manager"><section class="panel"><div style="padding:18px"><h2 class="section-title">从宠物图鉴选择</h2><p class="section-desc">每只宠物从 0 能量开始，成长进度独立保存。</p></div><div style="padding:0 18px 18px"><label class="field"><span style="font-weight:900">宠物名字</span><select class="select" id="famousPetSelect" ${famousPets.length ? '' : 'disabled'}>${famousPets.map(pet => `<option value="${escapeHtml(pet.id)}" ${selectedPet?.id === pet.id ? 'selected' : ''}>${escapeHtml(pet.name)}</option>`).join('')}</select></label><p class="section-desc">${escapeHtml(famousPetsStatus)}</p>${selectedPet ? `<article class="pet-choice selected" style="margin-top:14px"><div class="pet-choice-preview">${preview}</div><div class="pet-choice-meta"><strong>${escapeHtml(selectedPet.name)}</strong><span>官方成品 · 4×4 成长图集</span></div><button class="btn ${isCurrent ? 'btn-soft' : 'btn-primary'}" id="useFamousPetBtn" data-parent-pet-source="famous" data-parent-pet-id="${escapeHtml(selectedPet.id)}" ${isCurrent ? 'disabled' : ''}>${isCurrent ? '当前形象' : '设为当前形象'}</button></article>` : '<div class="empty">宠物名单暂未加载。</div>'}</div></section><section class="panel"><div style="padding:18px"><h2 class="section-title">宠物历史记录</h2><p class="section-desc">切换宠物不会转移能量，回来时继续原来的成长进度。</p></div><div class="history-wrap"><table class="history-table"><thead><tr><th>宠物</th><th>成长能量</th><th>当前形态</th><th>最近使用</th><th>操作</th></tr></thead><tbody>${petHistoryRows()}</tbody></table></div></section></div>`;
+    return `<div class="pet-manager"><section class="panel"><div style="padding:18px"><h2 class="section-title">从宠物图鉴选择</h2><p class="section-desc">首次选择的宠物从 0 成长能量开始，每只宠物的成长进度独立保存。</p></div><div style="padding:0 18px 18px"><label class="field"><span style="font-weight:900">宠物名字</span><select class="select" id="famousPetSelect" ${famousPets.length ? '' : 'disabled'}>${famousPets.map(pet => `<option value="${escapeHtml(pet.id)}" ${selectedPet?.id === pet.id ? 'selected' : ''}>${escapeHtml(pet.name)}</option>`).join('')}</select></label><p class="section-desc">${escapeHtml(famousPetsStatus)}</p>${selectedPet ? `<article class="pet-choice selected" style="margin-top:14px"><div class="pet-choice-preview">${preview}</div><div class="pet-choice-meta"><strong>${escapeHtml(selectedPet.name)}</strong><span>官方成品 · 4×4 成长图集</span></div><button class="btn ${isCurrent ? 'btn-soft' : 'btn-primary'}" id="useFamousPetBtn" data-parent-pet-source="famous" data-parent-pet-id="${escapeHtml(selectedPet.id)}" ${isCurrent ? 'disabled' : ''}>${isCurrent ? '当前形象' : '设为当前形象'}</button></article>` : '<div class="empty">宠物名单暂未加载。</div>'}</div></section><section class="panel"><div style="padding:18px"><h2 class="section-title">宠物历史记录</h2><p class="section-desc">哈奇币属于孩子，切换宠物后会继续保留；成长能量属于每只宠物，不会相互转移。再次切回时，将继续这只宠物原来的成长进度。</p></div><div class="history-wrap"><table class="history-table"><thead><tr><th>宠物</th><th>成长能量</th><th>当前形态</th><th>最近使用</th><th>操作</th></tr></thead><tbody>${petHistoryRows()}</tbody></table></div></section></div>`;
   }
 
   async function loadGuardianSdk() {
@@ -1458,14 +1487,11 @@ art_assets = [];
         autoReloadAfterRedirectLogin: false,
         wxAuth: { scope: 'snsapi_base' }
       };
-      const explicitSdk = new URLSearchParams(location.search).get('sdk');
       const isLocal = !location.hostname || ['localhost', '127.0.0.1', '::1'].includes(location.hostname);
       const localSdk = 'http://127.0.0.1:5001/index.ts';
       const sdkUrls = [
-        explicitSdk,
         ...(isLocal || location.protocol === 'file:' ? [localSdk] : []),
-        'https://cdn.keepwork.com/sdk/keepworkSDK.iife.js?v=20260619a',
-        ...(isLocal || location.protocol === 'file:' ? [] : [localSdk])
+        'https://cdn.keepwork.com/sdk/keepworkSDK.iife.js?v=20260619a'
       ].filter(Boolean);
       let lastError;
       for (const url of sdkUrls) {
@@ -1746,6 +1772,62 @@ art_assets = [];
     return btoa(`haqi-guardian:${pin}`);
   }
 
+  function bytesToBase64(bytes) {
+    let binary = '';
+    bytes.forEach(value => { binary += String.fromCharCode(value); });
+    return btoa(binary);
+  }
+
+  function base64ToBytes(value) {
+    return Uint8Array.from(atob(value), character => character.charCodeAt(0));
+  }
+
+  async function derivePinHash(pin, salt, iterations = PIN_PBKDF2_ITERATIONS) {
+    if (!globalThis.crypto?.subtle) throw new Error('当前浏览器环境不支持安全 PIN，请使用 HTTPS 或本机预览地址');
+    const key = await crypto.subtle.importKey('raw', new TextEncoder().encode(`haqi-guardian:${pin}`), 'PBKDF2', false, ['deriveBits']);
+    const bits = await crypto.subtle.deriveBits({ name: 'PBKDF2', hash: 'SHA-256', salt, iterations }, key, 256);
+    return bytesToBase64(new Uint8Array(bits));
+  }
+
+  async function createPinCredential(pin) {
+    if (!globalThis.crypto?.getRandomValues) throw new Error('当前浏览器环境不支持安全 PIN，请使用 HTTPS 或本机预览地址');
+    const salt = crypto.getRandomValues(new Uint8Array(16));
+    return JSON.stringify({ version: 2, algorithm: 'PBKDF2-SHA-256', iterations: PIN_PBKDF2_ITERATIONS, salt: bytesToBase64(salt), hash: await derivePinHash(pin, salt) });
+  }
+
+  async function verifyPinCredential(pin) {
+    try {
+      const credential = JSON.parse(parentPinHash);
+      if (credential?.version !== 2 || credential.algorithm !== 'PBKDF2-SHA-256' || !credential.salt || !credential.hash) return { valid: false, legacy: false };
+      const iterations = Number(credential.iterations);
+      if (!Number.isInteger(iterations) || iterations < 100000 || iterations > 1000000) return { valid: false, legacy: false };
+      return { valid: await derivePinHash(pin, base64ToBytes(credential.salt), iterations) === credential.hash, legacy: false };
+    } catch (_) {
+      return { valid: await hashPin(pin) === parentPinHash, legacy: true };
+    }
+  }
+
+  function restorePinLockState() {
+    try {
+      const lock = JSON.parse(localStorage.getItem(PIN_LOCK_KEY) || 'null');
+      pinFailureCount = Math.max(0, Math.min(5, Math.trunc(Number(lock?.failureCount) || 0)));
+      pinLockedUntil = Math.max(0, Number(lock?.lockedUntil) || 0);
+      if (pinLockedUntil <= Date.now()) {
+        pinLockedUntil = 0;
+        if (pinFailureCount >= 5) pinFailureCount = 0;
+      }
+    } catch (_) {
+      pinFailureCount = 0;
+      pinLockedUntil = 0;
+    }
+    persistPinLockState();
+  }
+
+  function persistPinLockState() {
+    if (!pinFailureCount && !pinLockedUntil) localStorage.removeItem(PIN_LOCK_KEY);
+    else localStorage.setItem(PIN_LOCK_KEY, JSON.stringify({ failureCount: pinFailureCount, lockedUntil: pinLockedUntil }));
+  }
+
   function showPinModal(forceChange = false, changeAuthorized = false) {
     const hasPin = Boolean(parentPinHash);
     const setup = !hasPin || changeAuthorized;
@@ -1763,31 +1845,46 @@ art_assets = [];
       if (setup) {
         if (!hasPin && document.getElementById('guardianAccountConfirm').value.trim().toLowerCase() !== accountName.trim().toLowerCase()) return toast('Keepwork 用户名不匹配，无法设置家长 PIN');
         if (pin !== document.getElementById('pinConfirm').value) return toast('两次输入的 PIN 不一致');
-        parentPinHash = await hashPin(pin);
+        try { parentPinHash = await createPinCredential(pin); } catch (error) { return toast(error?.message || String(error)); }
         await queueCloudWrite(CLOUD_PIN_PATH, parentPinHash);
         pinFailureCount = 0;
         pinLockedUntil = 0;
+        persistPinLockState();
         parentUnlocked = true;
         toast('家长 PIN 已保存');
       } else if (Date.now() < pinLockedUntil) {
         return toast(`PIN 已锁定，请在 ${Math.ceil((pinLockedUntil - Date.now()) / 60000)} 分钟后重试`);
-      } else if (await hashPin(pin) === parentPinHash) {
+      } else {
+        const verification = await verifyPinCredential(pin);
+        if (verification.valid) {
         pinFailureCount = 0;
         pinLockedUntil = 0;
+        persistPinLockState();
+        if (verification.legacy) {
+          try {
+            parentPinHash = await createPinCredential(pin);
+            await queueCloudWrite(CLOUD_PIN_PATH, parentPinHash);
+          } catch (error) {
+            return toast(`旧 PIN 验证成功，但安全升级失败：${error?.message || error}`);
+          }
+        }
         if (forceChange && verifyExisting) {
           closeModal();
           showPinModal(true, true);
           return;
         }
         parentUnlocked = true;
-      } else {
+        } else {
         pinFailureCount += 1;
         if (pinFailureCount >= 5) {
-          pinFailureCount = 0;
+          pinFailureCount = 5;
           pinLockedUntil = Date.now() + 5 * 60 * 1000;
+          persistPinLockState();
           return toast('PIN 连续输错 5 次，已锁定 5 分钟');
         }
+        persistPinLockState();
         return toast(`PIN 不正确，还可尝试 ${5 - pinFailureCount} 次`);
+        }
       }
       closeModal();
       mode = 'parent';
@@ -1862,14 +1959,35 @@ art_assets = [];
   }
 
   async function approveSchoolEvent(eventId, options = {}) {
-    const event = schoolInboxEvents().find(item => item.id === eventId);
-    if (!event) return toast('这条学校消息已处理或不存在');
+    const cachedEvent = schoolInboxEvents().find(item => item.id === eventId);
+    if (!cachedEvent) return toast('这条学校消息已处理或不存在');
     try {
-      if (state.ledger.some(entry => String(entry.externalEventId || '') === event.id)) {
+      const eventText = await readSchoolSharedPage(state.schoolLink, schoolEventPath(eventId));
+      const currentEvent = normalizeSchoolEventSummary(JSON.parse(eventText || 'null'));
+      if (!currentEvent || currentEvent.id !== eventId) throw new Error('该学校奖励已撤销、过期或内容不匹配，请刷新后重试');
+      const event = { ...currentEvent, childAction: cachedEvent.childAction || null };
+      const existingEntry = state.ledger.find(entry => String(entry.externalEventId || '') === event.id);
+      if (existingEntry) {
+        const wasRevoked = Boolean(existingEntry.revokedAt);
+        if (wasRevoked) {
+          existingEntry.revokedAt = null;
+          const progress = state.petProgress[existingEntry.petKey];
+          if (progress) {
+            progress.energy = clampEnergy(progress.energy + existingEntry.delta);
+            if (existingEntry.delta > 0) progress.lifetimeStars = Math.max(0, Number(progress.lifetimeStars) || 0) + existingEntry.delta;
+            if (existingEntry.petKey === petKeyForChild()) syncChildFromPetProgress();
+          } else {
+            const child = state.children.find(item => item.id === existingEntry.childId);
+            if (child) {
+              child.energy = clampEnergy(child.energy + existingEntry.delta);
+              if (existingEntry.delta > 0) child.lifetimeStars = Math.max(0, Number(child.lifetimeStars) || 0) + existingEntry.delta;
+            }
+          }
+        }
         if (!state.schoolLink.appliedEventIds.includes(event.id)) state.schoolLink.appliedEventIds.unshift(event.id);
-        await queueSchoolReceipt(event, 'approved', state.ledger.find(entry => String(entry.externalEventId || '') === event.id)?.id || '', event.childAction || null);
+        await queueSchoolReceipt(event, 'approved', existingEntry.id, event.childAction || null);
         if (options.render !== false) render();
-        if (options.toast !== false) toast('这条学校奖励已入账，不会重复计入');
+        if (options.toast !== false) toast(wasRevoked ? '已恢复这条学校奖励及宠物成长进度' : '这条学校奖励已入账，不会重复计入');
         return true;
       }
       state.schoolLink.appliedEventIds.unshift(event.id);
@@ -2215,6 +2333,7 @@ art_assets = [];
       ]);
       localStorage.removeItem(STORAGE_KEY);
       localStorage.removeItem(PIN_KEY);
+      localStorage.removeItem(PIN_LOCK_KEY);
       location.reload();
     } catch (error) {
       toast(`云端数据删除失败，原页面已保留：${error?.message || error}`);
