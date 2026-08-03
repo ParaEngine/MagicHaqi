@@ -1293,13 +1293,16 @@
         readonlyPage = Math.min(Math.max(0, readonlyPage), pageCount - 1);
         const pageStudents = state.students.slice(readonlyPage * pageSize, (readonlyPage + 1) * pageSize);
         screen.innerHTML = `<div class="mx-auto flex h-full max-w-[1800px] flex-col"><header class="mb-3 flex shrink-0 items-center justify-between gap-3 rounded-2xl bg-gradient-to-r from-indigo-600 to-violet-500 px-4 py-3 text-white shadow-lg"><div><p class="m-0 text-[11px] font-bold text-indigo-100">只读展示 · 学生无操作权限</p><h2 class="m-0 text-xl font-black sm:text-2xl">${esc(game_config.className)} · 宠物图鉴 <span class="text-sm font-bold text-indigo-100">（${state.students.length} 人）</span></h2></div><button class="min-h-9 shrink-0 border-white/50 bg-white/15 px-3 py-1.5 text-xs text-white hover:bg-white/25" data-action="close-readonly">× 退出全屏</button></header><section class="grid content-start gap-2 overflow-hidden" style="grid-template-columns:repeat(${columnCount}, minmax(${cardWidth}px, 1fr));grid-auto-rows:${cardHeight}px">${pageStudents.map(item => { const active = item.id === state.selectedStudentId, pet = petOf(item), prog = progression(item.points), genderIcon = item.gender === '男' ? '♂' : '♀'; return `<button class="student-card relative flex min-h-0 flex-col overflow-hidden rounded-xl border p-0 text-left ${active ? 'active' : 'border-slate-200 bg-white'}" data-action="readonly-student" data-id="${item.id}" aria-label="查看 ${esc(item.name)} 的宠物图鉴"><span class="relative flex min-h-0 w-full flex-1 items-center justify-center overflow-hidden bg-gradient-to-b from-amber-50 to-orange-100"><span class="absolute left-1 top-1 flex max-w-[58%] items-center gap-1 rounded bg-white/90 px-1.5 py-0.5 text-sm font-black text-slate-700"><span class="truncate">${esc(item.name)}</span><span class="shrink-0 text-base leading-none ${item.gender === '男' ? 'text-sky-800' : 'text-rose-700'}">${genderIcon}</span></span><span class="absolute right-1 top-1 rounded bg-indigo-100 px-1.5 py-0.5 text-sm font-black text-indigo-700">${prog.level}级</span><span class="pet-mini growth-${prog.stage} ${item.action || 'idle'} h-24 w-24" style="${petVisualStyle(pet, item.action, prog.level)}"></span></span><span class="block bg-white px-3 py-2"><span class="flex justify-end text-sm font-black text-orange-600">${prog.xp}/${prog.need}</span><span class="mt-1 block progress"><span style="width:${prog.percent}%"></span></span></span></button>`; }).join('')}</section><footer class="mt-auto flex shrink-0 items-center justify-center gap-3 pt-3"><button class="min-h-9 px-4" data-action="readonly-prev" ${readonlyPage === 0 ? 'disabled' : ''}>← 上一页</button><span class="min-w-20 text-center text-sm font-bold text-slate-500">第 ${readonlyPage + 1} / ${pageCount} 页</span><button class="min-h-9 px-4" data-action="readonly-next" ${readonlyPage >= pageCount - 1 ? 'disabled' : ''}>下一页 →</button></footer></div>`;
+        screen.querySelectorAll('[data-action="readonly-student"] .text-orange-600').forEach((score, index) => {
+          score.textContent = `积分 ${pageStudents[index].points} 分`;
+        });
         screen.classList.remove('hidden');
       }
       function render() {
         const params = new URLSearchParams(location.search);
         const opsMode = params.get('view') === 'ops';
         const student = currentStudent();
-        document.getElementById('openReadonlyButton').classList.toggle('hidden', state.role !== 'teacher' || window.studentLoginOnly === true || opsMode);
+        document.getElementById('openReadonlyButton').classList.toggle('hidden', window.studentLoginOnly === true || opsMode);
         document.getElementById('roleSwitch').classList.toggle('hidden', window.studentLoginOnly === true || opsMode);
         document.querySelectorAll('[data-action="role"]').forEach(button => {
           const active = button.dataset.role === state.role;
@@ -1672,11 +1675,11 @@
         }
         if (action === 'close-student-form') { document.getElementById('studentFormScreen').classList.add('hidden'); return; }
         if (action === 'close-point-panel') { document.getElementById('studentFormScreen').classList.add('hidden'); return; }
-        if (action === 'open-readonly' && state.role === 'teacher' && !window.studentLoginOnly) { readonlyScreen(); return; }
+        if (action === 'open-readonly' && !window.studentLoginOnly) { readonlyScreen(); return; }
         if (action === 'close-readonly') { document.getElementById('readonlyScreen').classList.add('hidden'); return; }
         if (action === 'readonly-prev') { readonlyPage -= 1; readonlyScreen(); return; }
         if (action === 'readonly-next') { readonlyPage += 1; readonlyScreen(); return; }
-        if (action === 'readonly-student' && state.role === 'teacher' && !window.studentLoginOnly) { state.selectedStudentId = button.dataset.id; save(); readonlyScreen(); return; }
+        if (action === 'readonly-student' && !window.studentLoginOnly) { state.selectedStudentId = button.dataset.id; save(); readonlyScreen(); return; }
         if (action === 'refresh-school-receipts' && state.role === 'teacher') { refreshSchoolReceipts(); return; }
         if (action === 'cancel-published-school-award' && state.role === 'teacher') {
           if (confirm('撤销后，学生和家长将无法再处理这条家庭成长奖励。确定继续吗？')) cancelPublishedSchoolAward(student, button.dataset.eventId);
