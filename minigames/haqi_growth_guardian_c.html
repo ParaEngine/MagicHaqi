@@ -55,6 +55,23 @@
     .btn-soft { color: var(--ink); background: #edf5f7; border: 1px solid var(--line); }
     .btn-danger { color: #be123c; background: #fff1f2; border: 1px solid #fecdd3; }
     .icon-btn { width: 38px; height: 38px; display: grid; place-items: center; padding: 0; border: 1px solid var(--line); border-radius: 8px; background: white; cursor: pointer; }
+    .login-shell { min-height: 100vh; display: grid; place-items: center; padding: 24px; }
+    .login-panel { width: min(460px, 100%); padding: 28px; }
+    .login-heading { margin: 8px 0 0; font-size: 26px; font-weight: 900; text-align: center; }
+    .login-kicker { margin: 0; color: var(--aqua-deep); font-size: 12px; font-weight: 900; text-align: center; }
+    .login-role-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; margin: 22px 0 18px; }
+    .login-role { min-height: 88px; padding: 13px; border: 1px solid var(--line); border-radius: 8px; color: var(--muted); background: #f9fcfb; text-align: left; cursor: pointer; }
+    .login-role strong, .login-role span { display: block; }
+    .login-role strong { color: var(--ink); font-size: 15px; }
+    .login-role span { margin-top: 5px; font-size: 11px; line-height: 1.45; }
+    .login-role.active { border-color: var(--aqua); background: #e8fbf6; box-shadow: 0 0 0 2px rgba(23,184,158,.12); }
+    .login-form { display: grid; gap: 12px; }
+    .login-form label { display: grid; gap: 6px; color: #405e61; font-size: 13px; font-weight: 900; }
+    .login-form .input { min-height: 44px; }
+    .login-separator { display: flex; align-items: center; gap: 10px; margin: 3px 0; color: #91a3a5; font-size: 11px; }
+    .login-separator::before, .login-separator::after { content: ""; flex: 1; height: 1px; background: var(--line); }
+    .login-status { min-height: 20px; margin: 12px 0 0; color: var(--muted); font-size: 12px; line-height: 1.55; text-align: center; }
+    .account-chip { min-height: 38px; display: flex; align-items: center; padding: 0 11px; border: 1px solid var(--line); border-radius: 8px; color: #405e61; background: white; font-size: 12px; font-weight: 800; }
     .child-layout { display: grid; grid-template-columns: minmax(260px, 380px) minmax(0, 1fr); gap: clamp(12px, 1.5vw, 18px); align-items: stretch; }
     .pet-stage { position: relative; min-height: 610px; overflow: hidden; display: flex; flex-direction: column; align-items: center; padding: 26px 24px 20px; border-color: var(--panel-line); background: linear-gradient(180deg, #d5f3ed 0%, #eaf8f6 49%, #cfe9bf 49.2%, #b9d990 100%); box-shadow: var(--shadow-soft); }
     .pet-stage::before { content: ""; position: absolute; inset: 0; opacity: .62; background-image: radial-gradient(ellipse at 17% 17%, rgba(255,255,255,.9) 0 22px, transparent 23px), radial-gradient(ellipse at 78% 12%, rgba(255,255,255,.82) 0 31px, transparent 32px), linear-gradient(164deg, transparent 58%, rgba(79,137,67,.14) 58.5% 66%, transparent 66.5%); }
@@ -419,7 +436,9 @@ art_assets = [];
 (function () {
   const STORAGE_KEY = 'haqiGrowthGuardianV1';
   const PIN_KEY = 'haqiGrowthGuardianPinV1';
+  const LEGACY_OWNER_KEY = 'haqiGrowthGuardianLegacyOwnerV1';
   const AUTH_TOKEN_KEY = 'haqiGrowthGuardianKeepworkTokenV1';
+  const LOGIN_STATE_KEY = 'haqiGrowthGuardianLoginStateV1';
   const CLOUD_STATE_PATH = 'minigames/haqi-growth-guardian/state.json';
   const CLOUD_PIN_PATH = 'minigames/haqi-growth-guardian/pin.txt';
   const GROWTH_LINK_ROOT = 'minigames/haqi-growth-link/v3';
@@ -517,6 +536,7 @@ art_assets = [];
   let saveTimer = 0;
   let saveQueue = Promise.resolve();
   let mode = 'child';
+  let loginRole = null;
   let parentUnlocked = false;
   let parentTab = 'score';
   let redemptionFilter = 'pending';
@@ -642,6 +662,9 @@ art_assets = [];
   }
 
   function loadLegacyState() {
+    const currentUsername = String(guardianUser?.username || guardianUser?.name || '').trim().toLowerCase();
+    const legacyOwner = String(localStorage.getItem(LEGACY_OWNER_KEY) || '').trim().toLowerCase();
+    if (!currentUsername || legacyOwner !== currentUsername) return null;
     try {
       const parsed = JSON.parse(localStorage.getItem(STORAGE_KEY) || 'null');
       return normalizeState(parsed);
@@ -698,6 +721,7 @@ art_assets = [];
       ]);
       localStorage.removeItem(STORAGE_KEY);
       localStorage.removeItem(PIN_KEY);
+      localStorage.removeItem(LEGACY_OWNER_KEY);
     }
   }
 
@@ -918,6 +942,7 @@ art_assets = [];
 
   function render() {
     const topbarCoins = coinStats(activeChild().id).balance;
+    const roleLabel = mode === 'parent' ? '家长端' : '孩子端';
     document.getElementById('app').innerHTML = `
       <div class="app-shell">
         <header class="topbar">
@@ -927,11 +952,9 @@ art_assets = [];
           </div>
           <div class="topbar-actions">
             <div class="currency-display" aria-label="金币余额 ${topbarCoins}"><span class="currency-icon">🪙</span><strong class="currency-value">${topbarCoins}</strong></div>
-            <div class="mode-switch" aria-label="切换使用模式">
-              <button class="mode-btn ${mode === 'child' ? 'active' : ''}" data-mode="child">🐾 <span>孩子模式</span></button>
-              <button class="mode-btn ${mode === 'parent' ? 'active' : ''}" data-mode="parent">🔐 <span>家长模式</span></button>
-              <button class="icon-btn" id="helpBtn" title="查看玩法" aria-label="查看玩法">?</button>
-            </div>
+            <div class="account-chip" title="当前 KeepWork 登录身份">${mode === 'parent' ? '🔐' : '🐾'} ${escapeHtml(roleLabel)} · ${escapeHtml(guardianLoginName() || 'KeepWork 用户')}</div>
+            <button class="icon-btn" id="helpBtn" title="查看玩法" aria-label="查看玩法">?</button>
+            <button class="icon-btn" id="topbarLogoutBtn" title="退出登录" aria-label="退出登录">↪</button>
           </div>
         </header>
         <main class="main">${mode === 'child' ? childView() : parentView()}</main>
@@ -1056,7 +1079,7 @@ art_assets = [];
         </aside>
         <div class="parent-main">
           <nav class="panel parent-tabs" aria-label="家长功能"><button class="parent-tab ${parentTab === 'score' ? 'active' : ''}" data-parent-tab="score">评价行为</button><button class="parent-tab ${parentTab === 'school' ? 'active' : ''}" data-parent-tab="school">学校收件箱${schoolInboxEvents().length ? ` (${schoolInboxEvents().length})` : ''}</button><select class="select parent-more" id="parentMoreTabs" aria-label="更多家长功能"><option value="" ${['score', 'school'].includes(parentTab) ? 'selected' : ''}>更多管理</option>${secondaryTabs.map(([id, label]) => `<option value="${id}" ${parentTab === id ? 'selected' : ''}>${label}</option>`).join('')}</select></nav>
-          ${readySchoolEvents.length && parentTab !== 'school' ? `<button class="panel" data-open-school-inbox style="display:block;width:100%;margin:14px 0;padding:16px;text-align:left;border:1px solid #86efac;background:#f0fdf4"><strong style="color:#047857">孩子已完成 ${readySchoolEvents.length} 件学校成长任务</strong><span class="next-copy" style="display:block;margin-top:4px">点此一键确认，计入家庭成长</span></button>` : ''}${parentTab === 'score' ? scoreView() : parentTab === 'school' ? schoolInboxView() : parentTab === 'history' ? historyView() : parentTab === 'metrics' ? metricsView() : parentTab === 'rewards' ? rewardsView() : parentTab === 'pets' ? petsView() : settingsView()}
+          ${readySchoolEvents.length && parentTab !== 'school' ? `<button class="panel" data-open-school-inbox style="display:block;width:100%;margin:14px 0;padding:16px;text-align:left;border:1px solid #86efac;background:#f0fdf4"><strong style="color:#047857">孩子已完成 ${readySchoolEvents.length} 件学校成长任务</strong><span class="next-copy" style="display:block;margin-top:4px">查看后确认是否计入家庭成长</span></button>` : ''}${parentTab === 'score' ? scoreView() : parentTab === 'school' ? schoolInboxView() : parentTab === 'history' ? historyView() : parentTab === 'metrics' ? metricsView() : parentTab === 'rewards' ? rewardsView() : parentTab === 'pets' ? petsView() : settingsView()}
         </div>
       </div>`;
   }
@@ -1296,7 +1319,9 @@ art_assets = [];
         ? `<p class="section-desc" style="color:#b45309">${publishingSchoolReceipts ? '正在同步' : '等待同步'} ${pendingReceiptCount} 条家庭处理回执。</p>`
         : '<p class="section-desc" style="color:#047857">家庭处理回执已同步。</p>';
     const classroomSummary = classroom ? `<div class="panel" style="margin:16px 0;padding:16px"><div class="metrics-toolbar" style="padding:0"><div><h3 class="section-title" style="font-size:18px">课堂宠物档案</h3><p class="section-desc">由教师端同步，仅包含当前孩子的课堂状态，不会覆盖家庭成长账本。</p></div><strong class="delta positive">${Math.max(0, Number(classroom.points) || 0)} 课堂积分</strong></div><div style="display:flex;gap:18px;align-items:center;margin-top:12px"><div>${classroom.pet?.url ? `<img src="${escapeHtml(classroom.pet.url)}" alt="${escapeHtml(classroom.pet.name || '课堂宠物')}" style="width:58px;height:58px;object-fit:cover;object-position:0 0;border-radius:12px;background:#fff7ed">` : '✨'}</div><div><strong>${escapeHtml(classroom.name || link.studentName || link.studentId)} · Lv.${Math.max(1, Number(classroom.level) || 1)}</strong><div class="next-copy">${escapeHtml(classroom.pet?.name || '课堂宠物')} · ${escapeHtml(classroom.pet?.species || '成长伙伴')} · 心情 ${Math.max(0, Math.min(100, Number(classroom.mood) || 0))}%</div></div></div></div>` : '<p class="section-desc" style="margin:16px 0">教师尚未同步课堂宠物档案；刷新或请教师保存该学生的家庭云端授权。</p>';
-    return `<section class="panel" style="padding:22px"><div class="metrics-toolbar" style="padding:0"><div><h2 class="section-title">学校成长收件箱</h2><p class="section-desc">已连接学校共享站点 ${escapeHtml(link.sitePath)} 的 ${escapeHtml(link.classId)} · ${escapeHtml(link.studentName || link.studentId)}。孩子先在个人宠物页完成家庭小行动，再由家长决定是否计入成长。</p></div><div style="display:flex;gap:8px"><button class="btn btn-soft" id="refreshSchoolInboxBtn">刷新云端</button><button class="btn btn-soft" id="changeSchoolLinkBtn">修改绑定</button></div></div>${schoolInboxLoadError ? `<p class="section-desc" style="color:#be123c">云端读取失败：${escapeHtml(schoolInboxLoadError)}</p>` : ''}${receiptSyncStatus}${classroomSummary}<div class="redemption-list" style="padding:0;margin-top:16px">${events.length ? events.map(event => `<div class="redemption-item"><div><strong>${escapeHtml(event.reason || '课堂成长记录')}</strong><div class="next-copy">${escapeHtml(event.className || '学校')} · ${formatTime(event.createdAt)} · +${Math.max(0, Number(event.delta) || 0)} 家庭成长能量${event.childAction?.actionLabel ? ` · 孩子已完成：${escapeHtml(event.childAction.actionLabel)}（${escapeHtml(event.childAction.studentUsername)}）` : ' · 等待孩子完成家庭小行动'}</div></div><div class="redemption-actions">${event.childAction ? `<button class="btn btn-primary" style="min-height:32px;padding:0 10px" data-approve-school-event="${escapeHtml(event.id)}">计入成长</button>` : '<button class="btn btn-soft" style="min-height:32px;padding:0 10px" disabled>等待孩子行动</button>'}<button class="btn btn-soft" style="min-height:32px;padding:0 10px" data-ignore-school-event="${escapeHtml(event.id)}">暂不计入</button></div></div>`).join('') : '<div class="empty">暂无待处理的学校成长消息。</div>'}</div></section>`;
+    const readyEvents = events.filter(event => event.childAction);
+    const bulkApprove = readyEvents.length > 1 ? `<button class="btn btn-primary" id="approveAllSchoolEventsBtn">全部计入 (${readyEvents.length})</button>` : '';
+    return `<section class="panel" style="padding:22px"><div class="metrics-toolbar" style="padding:0"><div><h2 class="section-title">学校成长收件箱</h2><p class="section-desc">已连接学校共享站点 ${escapeHtml(link.sitePath)} 的 ${escapeHtml(link.classId)} · ${escapeHtml(link.studentName || link.studentId)}。孩子先在个人宠物页完成家庭小行动，再由家长决定是否计入成长。</p></div><div style="display:flex;gap:8px;flex-wrap:wrap;justify-content:flex-end">${bulkApprove}<button class="btn btn-soft" id="refreshSchoolInboxBtn">刷新云端</button><button class="btn btn-soft" id="changeSchoolLinkBtn">修改绑定</button></div></div>${schoolInboxLoadError ? `<p class="section-desc" style="color:#be123c">云端读取失败：${escapeHtml(schoolInboxLoadError)}</p>` : ''}${receiptSyncStatus}${classroomSummary}<div class="redemption-list" style="padding:0;margin-top:16px">${events.length ? events.map(event => `<div class="redemption-item"><div><strong>${escapeHtml(event.reason || '课堂成长记录')}</strong><div class="next-copy">${escapeHtml(event.className || '学校')} · ${formatTime(event.createdAt)} · +${Math.max(0, Number(event.delta) || 0)} 家庭成长能量${event.childAction?.actionLabel ? ` · 孩子已完成：${escapeHtml(event.childAction.actionLabel)}（${escapeHtml(event.childAction.studentUsername)}）` : ' · 等待孩子完成家庭小行动'}</div></div><div class="redemption-actions">${event.childAction ? `<button class="btn btn-primary" style="min-height:32px;padding:0 10px" data-approve-school-event="${escapeHtml(event.id)}">计入成长</button>` : '<button class="btn btn-soft" style="min-height:32px;padding:0 10px" disabled>等待孩子行动</button>'}<button class="btn btn-soft" style="min-height:32px;padding:0 10px" data-ignore-school-event="${escapeHtml(event.id)}">暂不计入</button></div></div>`).join('') : '<div class="empty">暂无待处理的学校成长消息。</div>'}</div></section>`;
   }
 
   function metricCards(metrics) {
@@ -1407,7 +1432,33 @@ art_assets = [];
     } catch (_) {}
   }
 
-  async function ensureGuardianLogin(sdk) {
+  function savedGuardianLogin() {
+    try {
+      const saved = JSON.parse(localStorage.getItem(LOGIN_STATE_KEY) || 'null');
+      return saved?.active && ['child', 'parent'].includes(saved.role) ? saved : null;
+    } catch (_) {
+      return null;
+    }
+  }
+
+  async function getGuardianUser(sdk) {
+    if (!sdk?.token) return null;
+    const profile = typeof sdk.getUserProfile === 'function'
+      ? await sdk.getUserProfile()
+      : typeof sdk.getCurrentUser === 'function'
+        ? await sdk.getCurrentUser()
+        : sdk.user;
+    return profile?.user || profile || null;
+  }
+
+  async function restoreGuardianLogin(sdk) {
+    const savedLogin = savedGuardianLogin();
+    if (!savedLogin) {
+      if (sdk) sdk.token = null;
+      localStorage.removeItem(AUTH_TOKEN_KEY);
+      clearGuardianAuthParams();
+      return null;
+    }
     try {
       const urlToken = new URL(location.href).searchParams.get('token');
       const savedToken = localStorage.getItem(AUTH_TOKEN_KEY);
@@ -1418,68 +1469,134 @@ art_assets = [];
     sdk?.wxAuth?.setScope?.('snsapi_base');
     if (sdk.token) {
       try {
-        const profile = typeof sdk.getUserProfile === 'function'
-          ? await sdk.getUserProfile()
-          : typeof sdk.getCurrentUser === 'function'
-            ? await sdk.getCurrentUser()
-            : sdk.user;
-        const user = profile?.user || profile;
+        const user = await getGuardianUser(sdk);
         if (user) {
           localStorage.setItem(AUTH_TOKEN_KEY, sdk.token);
           clearGuardianAuthParams();
-          return user;
+          return { user, role: savedLogin.role };
         }
       } catch (_) {}
       sdk.token = null;
       localStorage.removeItem(AUTH_TOKEN_KEY);
     }
-    if (typeof sdk.showLoginWindow === 'function') await sdk.showLoginWindow({ title: '登录哈奇成长守护', wechatScope: 'snsapi_base' });
-    else if (sdk.loginWindow?.show) await new Promise(resolve => sdk.loginWindow.show({ onLogin: resolve, onClose: resolve }));
-    else if (sdk.login) await sdk.login();
-    if (!sdk.token) throw new Error('需要先登录 Keepwork 才能进入成长守护');
-    localStorage.setItem(AUTH_TOKEN_KEY, sdk.token);
+    localStorage.removeItem(LOGIN_STATE_KEY);
+    return null;
+  }
+
+  function showGuardianLoginGate(message = '请选择身份，再使用对应的 KeepWork 账号登录。') {
+    const app = document.getElementById('app');
+    guardianUser = null;
+    app.innerHTML = `<main class="login-shell"><section class="panel login-panel"><p class="login-kicker">哈奇成长守护</p><h1 class="login-heading">KeepWork 登录 / 注册</h1><p class="section-desc" style="text-align:center">家长和孩子使用各自账号，进入不同的功能页面。</p><div class="login-role-grid" aria-label="登录身份"><button type="button" class="login-role ${loginRole === 'child' ? 'active' : ''}" data-login-role="child"><strong>🐾 孩子登录</strong><span>专注、养成宠物和兑换奖励</span></button><button type="button" class="login-role ${loginRole === 'parent' ? 'active' : ''}" data-login-role="parent"><strong>🔐 家长登录</strong><span>评分、规则、奖励和成长账本</span></button></div><form id="guardianPasswordLoginForm" class="login-form" autocomplete="on"><label>KeepWork 账号<input class="input" id="guardianLoginUsername" name="username" maxlength="80" autocomplete="username" required placeholder="输入账号"></label><label>密码<input class="input" id="guardianLoginPassword" name="password" type="password" autocomplete="current-password" required placeholder="输入密码"></label><button class="btn btn-primary" id="guardianPasswordLoginBtn" type="submit" ${loginRole ? '' : 'disabled'}>账号密码登录</button><div class="login-separator">或者</div><button class="btn btn-soft" id="guardianOfficialLoginBtn" type="button" ${loginRole ? '' : 'disabled'}>使用 KeepWork 登录 / 注册</button></form><p class="login-status" id="guardianLoginStatus">${escapeHtml(message)}</p><p class="section-desc" style="text-align:center">密码只用于本次 KeepWork 官方验证，不会保存在本页面。</p></section></main>`;
+    document.querySelectorAll('[data-login-role]').forEach(button => button.addEventListener('click', () => {
+      loginRole = button.dataset.loginRole;
+      showGuardianLoginGate(loginRole === 'parent' ? '请使用家长 KeepWork 账号登录。' : '请使用孩子 KeepWork 账号登录。');
+      document.getElementById('guardianLoginUsername')?.focus();
+    }));
+    document.getElementById('guardianPasswordLoginForm')?.addEventListener('submit', event => {
+      event.preventDefault();
+      loginGuardianWithPassword();
+    });
+    document.getElementById('guardianOfficialLoginBtn')?.addEventListener('click', loginGuardianWithOfficialWindow);
+  }
+
+  async function enterGuardian(user, sdk, role) {
+    guardianUser = user;
+    guardianSdk = sdk;
+    loginRole = role;
+    mode = role;
+    parentUnlocked = role === 'parent';
+    localStorage.setItem(AUTH_TOKEN_KEY, sdk.token || '');
+    localStorage.setItem(LOGIN_STATE_KEY, JSON.stringify({ active: true, role, username: user?.username || user?.name || '' }));
     clearGuardianAuthParams();
-    const profile = typeof sdk.getUserProfile === 'function'
-      ? await sdk.getUserProfile()
-      : typeof sdk.getCurrentUser === 'function'
-        ? await sdk.getCurrentUser()
-        : sdk.user;
-    const user = profile?.user || profile;
-    if (!user) throw new Error('未获得 Keepwork 用户资料，请重新登录');
-    return user;
+    await loadCloudData(sdk);
+    const incomingSchoolLink = schoolLinkFromUrl();
+    if (incomingSchoolLink && (state.schoolLink.sitePath !== incomingSchoolLink.sitePath || state.schoolLink.studentId !== incomingSchoolLink.studentId || state.schoolLink.classId !== incomingSchoolLink.classId)) {
+      Object.assign(state.schoolLink, incomingSchoolLink);
+      if (role === 'parent') parentTab = 'school';
+      saveState();
+    }
+    selectedFamousPetId = activeChild().famousPetId || famousPets[0]?.id || '';
+    syncChildFromPetProgress();
+    syncDailyEnergyBaselines();
+    saveState();
+    scheduleDailyEnergyReset();
+    syncCurrentPetArt();
+    render();
+    requestPetImage(activeChild().selectedPetId || '');
+    clearInterval(schoolInboxRefreshTimer);
+    refreshVisibleSchoolInbox();
+    schoolInboxRefreshTimer = window.setInterval(refreshVisibleSchoolInbox, 45 * 1000);
+    if (!loadedSent) {
+      loadedSent = true;
+      post('gameLoaded', { title: '哈奇成长守护' });
+    }
+  }
+
+  async function loginGuardianWithPassword() {
+    if (!loginRole) return showGuardianLoginGate('请先选择孩子或家长身份。');
+    const username = String(document.getElementById('guardianLoginUsername')?.value || '').trim();
+    const passwordInput = document.getElementById('guardianLoginPassword');
+    const password = String(passwordInput?.value || '');
+    const button = document.getElementById('guardianPasswordLoginBtn');
+    const status = document.getElementById('guardianLoginStatus');
+    if (!username || !password) { status.textContent = '请输入完整的 KeepWork 账号和密码。'; return; }
+    button.disabled = true;
+    status.textContent = '正在验证 KeepWork 账号…';
+    try {
+      const response = await fetch('https://api.keepwork.com/core/v0/users/login', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ username, password, platform: 'WEB' })
+      });
+      const payload = await response.json().catch(() => null);
+      const token = payload?.token || payload?.data?.token;
+      if (!response.ok || !token) throw new Error(payload?.message || payload?.error?.message || '账号或密码错误');
+      passwordInput.value = '';
+      const sdk = await loadGuardianSdk();
+      sdk.token = token;
+      const user = await getGuardianUser(sdk);
+      if (!user) throw new Error('未获得 KeepWork 用户资料，请重试');
+      await enterGuardian(user, sdk, loginRole);
+    } catch (error) {
+      status.textContent = error?.message || '登录失败，请重试。';
+      button.disabled = false;
+    } finally {
+      if (passwordInput) passwordInput.value = '';
+    }
+  }
+
+  async function loginGuardianWithOfficialWindow() {
+    if (!loginRole) return showGuardianLoginGate('请先选择孩子或家长身份。');
+    const status = document.getElementById('guardianLoginStatus');
+    const button = document.getElementById('guardianOfficialLoginBtn');
+    button.disabled = true;
+    status.textContent = '正在打开 KeepWork 安全登录 / 注册窗口…';
+    try {
+      const sdk = await loadGuardianSdk();
+      sdk.token = null;
+      if (typeof sdk.showLoginWindow === 'function') await sdk.showLoginWindow({ title: '哈奇成长守护 登录 / 注册', wechatScope: 'snsapi_base' });
+      else if (sdk.loginWindow?.show) await new Promise(resolve => sdk.loginWindow.show({ onLogin: resolve, onClose: resolve }));
+      else if (sdk.login) await sdk.login();
+      if (!sdk.token) throw new Error('登录未完成，请重新登录');
+      const user = await getGuardianUser(sdk);
+      if (!user) throw new Error('未获得 KeepWork 用户资料，请重试');
+      await enterGuardian(user, sdk, loginRole);
+    } catch (error) {
+      status.textContent = error?.message || '登录失败，请重试。';
+      button.disabled = false;
+    }
   }
 
   async function startGuardian() {
     const app = document.getElementById('app');
-    const incomingSchoolLink = schoolLinkFromUrl();
     app.innerHTML = '<main class="main"><section class="panel" style="max-width:460px;margin:12vh auto;padding:28px;text-align:center"><div style="font-size:42px">🔐</div><h1 class="section-title" style="margin-top:12px">正在连接 Keepwork</h1><p class="section-desc">登录成功后即可进入哈奇成长守护。</p></section></main>';
     try {
       const sdk = await loadGuardianSdk();
-      guardianUser = await ensureGuardianLogin(sdk);
-      await loadCloudData(sdk);
-      if (incomingSchoolLink && (state.schoolLink.sitePath !== incomingSchoolLink.sitePath || state.schoolLink.studentId !== incomingSchoolLink.studentId || state.schoolLink.classId !== incomingSchoolLink.classId)) {
-        Object.assign(state.schoolLink, incomingSchoolLink);
-        parentTab = 'school';
-        saveState();
-      }
-      selectedFamousPetId = activeChild().famousPetId || famousPets[0]?.id || '';
-      syncChildFromPetProgress();
-      syncDailyEnergyBaselines();
-      saveState();
-      scheduleDailyEnergyReset();
-      syncCurrentPetArt();
-      render();
-      requestPetImage(activeChild().selectedPetId || '');
-      clearInterval(schoolInboxRefreshTimer);
-      refreshVisibleSchoolInbox();
-      schoolInboxRefreshTimer = window.setInterval(refreshVisibleSchoolInbox, 45 * 1000);
-      if (!loadedSent) {
-        loadedSent = true;
-        post('gameLoaded', { title: '哈奇成长守护' });
-      }
+      const restored = await restoreGuardianLogin(sdk);
+      if (restored) await enterGuardian(restored.user, sdk, restored.role);
+      else showGuardianLoginGate();
     } catch (error) {
-      app.innerHTML = `<main class="main"><section class="panel" style="max-width:460px;margin:12vh auto;padding:28px;text-align:center"><div style="font-size:42px">🔐</div><h1 class="section-title" style="margin-top:12px">需要登录 Keepwork</h1><p class="section-desc" style="margin-bottom:18px">${escapeHtml(error?.message || error)}</p><button class="btn btn-primary" id="retryGuardianLogin" type="button">重新登录</button></section></main>`;
-      document.getElementById('retryGuardianLogin')?.addEventListener('click', startGuardian, { once: true });
+      showGuardianLoginGate(error?.message || '登录服务暂时不可用，请重试。');
     }
   }
 
@@ -1515,12 +1632,12 @@ art_assets = [];
   }
 
   function settingsView() {
-    return `<div class="settings-grid"><section class="panel setting-card"><h3>家长 PIN</h3><p>进入家长模式需要验证，避免孩子直接修改积分。</p><button class="btn btn-soft" id="changePinBtn">修改 PIN</button></section><section class="panel setting-card"><h3>数据导出</h3><p>导出完整积分账本，便于家庭共同回顾。</p><button class="btn btn-soft" id="exportBtn">导出 JSON</button></section><section class="panel setting-card"><h3>自动奖励上限</h3><p>专注守护每天最多自动奖励 ${game_config.dailyAutoPointCap} 分，避免重复刷分。</p><strong>今日已自动获得 ${autoPointsToday()} 分</strong></section><section class="panel setting-card"><h3>账号</h3><p>退出当前 Keepwork 账号。家庭成长数据仍会保存在云端。</p><button class="btn btn-danger" id="logoutBtn">退出登录</button></section><section class="panel setting-card"><h3>重新开始</h3><p>清除本设备上的孩子、指标和账本数据。此操作不可撤销。</p><button class="btn btn-danger" id="resetBtn">清除本地数据</button></section></div>`;
+    return `<div class="settings-grid"><section class="panel setting-card"><h3>当前家长账号</h3><p>${escapeHtml(guardianLoginName() || 'KeepWork 用户')} · 已通过 KeepWork 验证。孩子端需要退出后使用孩子账号登录。</p><button class="btn btn-danger" id="logoutBtn">退出登录</button></section><section class="panel setting-card"><h3>数据导出</h3><p>导出完整积分账本，便于家庭共同回顾。</p><button class="btn btn-soft" id="exportBtn">导出 JSON</button></section><section class="panel setting-card"><h3>自动奖励上限</h3><p>专注守护每天最多自动奖励 ${game_config.dailyAutoPointCap} 分，避免重复刷分。</p><strong>今日已自动获得 ${autoPointsToday()} 分</strong></section><section class="panel setting-card"><h3>重新开始</h3><p>清除本设备上的孩子、指标和账本数据。此操作不可撤销。</p><button class="btn btn-danger" id="resetBtn">清除本地数据</button></section></div>`;
   }
 
   function bindGlobal() {
-    document.querySelectorAll('[data-mode]').forEach(button => button.addEventListener('click', () => switchMode(button.dataset.mode)));
     document.getElementById('helpBtn')?.addEventListener('click', showHelp);
+    document.getElementById('topbarLogoutBtn')?.addEventListener('click', showLogoutConfirm);
   }
 
   async function switchMode(nextMode) {
@@ -1566,6 +1683,7 @@ art_assets = [];
       button.disabled = true;
       await approveSchoolEvent(button.dataset.approveSchoolEvent);
     }));
+    document.getElementById('approveAllSchoolEventsBtn')?.addEventListener('click', showApproveAllSchoolEventsConfirm);
     document.querySelectorAll('[data-ignore-school-event]').forEach(button => button.addEventListener('click', async () => {
       button.disabled = true;
       await ignoreSchoolEvent(button.dataset.ignoreSchoolEvent);
@@ -1579,7 +1697,6 @@ art_assets = [];
     document.getElementById('famousPetSelect')?.addEventListener('change', event => { selectedFamousPetId = event.target.value; render(); });
     document.querySelectorAll('[data-parent-pet-id]').forEach(button => button.addEventListener('click', () => selectParentPet(button.dataset.parentPetId, button.dataset.parentPetSource)));
     document.querySelectorAll('[data-history-pet-id]').forEach(button => button.addEventListener('click', () => selectParentPet(button.dataset.historyPetId, 'famous')));
-    document.getElementById('changePinBtn')?.addEventListener('click', () => showPinModal(true));
     document.getElementById('exportBtn')?.addEventListener('click', exportData);
     document.getElementById('logoutBtn')?.addEventListener('click', showLogoutConfirm);
     document.getElementById('resetBtn')?.addEventListener('click', resetData);
@@ -1606,22 +1723,25 @@ art_assets = [];
   }
 
   function showLogoutConfirm() {
-    modal(`<h2>退出当前账号？</h2><p>退出后需要重新登录 Keepwork 才能继续使用。家庭成长数据不会被删除。</p><div class="modal-actions"><button type="button" class="btn btn-soft" id="cancelModal">取消</button><button type="button" class="btn btn-danger" id="confirmLogout">退出登录</button></div>`);
+    modal(`<h2>退出 ${escapeHtml(mode === 'parent' ? '家长' : '孩子')}账号？</h2><p>退出后将返回账号密码登录页，需要重新输入 KeepWork 账号和密码。家庭成长数据不会被删除。</p><div class="modal-actions"><button type="button" class="btn btn-soft" id="cancelModal">取消</button><button type="button" class="btn btn-danger" id="confirmLogout">退出登录</button></div>`);
     document.getElementById('cancelModal').addEventListener('click', closeModal);
     document.getElementById('confirmLogout').addEventListener('click', logoutGuardian);
   }
 
   async function logoutGuardian() {
-    const sdk = window.keepwork;
+    const sdk = guardianSdk || window.keepwork;
     try { await sdk?.logout?.(); } catch (_) {}
     if (sdk) sdk.token = null;
     localStorage.removeItem(AUTH_TOKEN_KEY);
+    localStorage.removeItem(LOGIN_STATE_KEY);
+    guardianUser = null;
+    guardianSdk = null;
+    loginRole = null;
     parentUnlocked = false;
     mode = 'child';
     closeModal();
     clearGuardianAuthParams();
-    document.getElementById('app').innerHTML = '<main class="main"><section class="panel" style="max-width:460px;margin:12vh auto;padding:28px;text-align:center"><div style="font-size:42px">🔐</div><h1 class="section-title" style="margin-top:12px">已退出登录</h1><p class="section-desc" style="margin-bottom:18px">当前 Keepwork 账号已安全退出。</p><button class="btn btn-primary" id="retryGuardianLogin" type="button">重新登录</button></section></main>';
-    document.getElementById('retryGuardianLogin')?.addEventListener('click', startGuardian, { once: true });
+    showGuardianLoginGate('已安全退出。请选择身份并重新输入账号密码。');
   }
 
   async function hashPin(pin) {
@@ -1633,11 +1753,17 @@ art_assets = [];
     return btoa(`haqi-guardian:${pin}`);
   }
 
+  function guardianLoginName() {
+    return String(guardianUser?.username || guardianUser?.name || '').trim();
+  }
+
   function showPinModal(forceChange = false) {
     const hasPin = Boolean(parentPinHash);
     const setup = forceChange || !hasPin;
-    modal(`<h2>${setup ? '设置家长 PIN' : '验证家长身份'}</h2><p>${setup ? '请设置 4–8 位数字。此 PIN 将安全保存到你的 Keepwork 空间。' : '请输入家长 PIN 进入管理台。'}</p><form id="pinForm"><div class="field"><label>PIN</label><input class="input" id="pinInput" inputmode="numeric" type="password" minlength="4" maxlength="8" pattern="[0-9]{4,8}" required autocomplete="off"></div>${setup ? '<div class="field"><label>再次输入</label><input class="input" id="pinConfirm" inputmode="numeric" type="password" minlength="4" maxlength="8" pattern="[0-9]{4,8}" required autocomplete="off"></div>' : ''}<div class="modal-actions"><button type="button" class="btn btn-soft" id="cancelModal">取消</button><button class="btn btn-primary" type="submit">${setup ? '保存 PIN' : '进入管理台'}</button></div></form>`);
+    const forgotPinButton = setup ? '' : '<button type="button" class="btn btn-soft" id="forgotPinBtn">忘记 PIN</button>';
+    modal(`<h2>${setup ? '设置家长 PIN' : '验证家长身份'}</h2><p>${setup ? '请设置 4–8 位数字。此 PIN 将安全保存到你的 Keepwork 空间。' : '请输入家长 PIN 进入管理台。'}</p><form id="pinForm"><div class="field"><label>PIN</label><input class="input" id="pinInput" inputmode="numeric" type="password" minlength="4" maxlength="8" pattern="[0-9]{4,8}" required autocomplete="off"></div>${setup ? '<div class="field"><label>再次输入</label><input class="input" id="pinConfirm" inputmode="numeric" type="password" minlength="4" maxlength="8" pattern="[0-9]{4,8}" required autocomplete="off"></div>' : ''}<div class="modal-actions">${forgotPinButton}<button type="button" class="btn btn-soft" id="cancelModal">取消</button><button class="btn btn-primary" type="submit">${setup ? '保存 PIN' : '进入管理台'}</button></div></form>`);
     document.getElementById('cancelModal').addEventListener('click', closeModal);
+    document.getElementById('forgotPinBtn')?.addEventListener('click', () => showPinResetModal());
     document.getElementById('pinForm').addEventListener('submit', async event => {
       event.preventDefault();
       const pin = document.getElementById('pinInput').value;
@@ -1659,6 +1785,28 @@ art_assets = [];
     setTimeout(() => document.getElementById('pinInput')?.focus(), 0);
   }
 
+  function showPinResetModal() {
+    const accountName = guardianLoginName();
+    modal(`<h2>重置家长 PIN</h2><p>请输入当前 Keepwork 账号名称确认身份，然后设置新的 4–8 位数字 PIN。</p><form id="pinResetForm"><div class="field"><label>Keepwork 账号</label><input class="input" id="accountConfirm" maxlength="80" required autocomplete="username" placeholder="${escapeHtml(accountName)}"></div><div class="field"><label>新 PIN</label><input class="input" id="pinInput" inputmode="numeric" type="password" minlength="4" maxlength="8" pattern="[0-9]{4,8}" required autocomplete="off"></div><div class="field"><label>再次输入</label><input class="input" id="pinConfirm" inputmode="numeric" type="password" minlength="4" maxlength="8" pattern="[0-9]{4,8}" required autocomplete="off"></div><div class="modal-actions"><button type="button" class="btn btn-soft" id="cancelModal">取消</button><button class="btn btn-primary" type="submit">重置 PIN</button></div></form>`);
+    document.getElementById('cancelModal').addEventListener('click', closeModal);
+    document.getElementById('pinResetForm').addEventListener('submit', async event => {
+      event.preventDefault();
+      if (!accountName) return toast('当前账号信息不可用，无法重置 PIN');
+      const inputAccount = document.getElementById('accountConfirm').value.trim();
+      if (inputAccount.toLowerCase() !== accountName.toLowerCase()) return toast('Keepwork 账号不匹配，无法重置 PIN');
+      const pin = document.getElementById('pinInput').value;
+      if (pin !== document.getElementById('pinConfirm').value) return toast('两次输入的 PIN 不一致');
+      parentPinHash = await hashPin(pin);
+      await queueCloudWrite(CLOUD_PIN_PATH, parentPinHash);
+      parentUnlocked = true;
+      closeModal();
+      mode = 'parent';
+      toast('家长 PIN 已重置');
+      render();
+    });
+    setTimeout(() => document.getElementById('accountConfirm')?.focus(), 0);
+  }
+
   function showScoreModal(metricId) {
     const metric = state.metrics.find(item => item.id === metricId);
     if (!metric) return;
@@ -1672,7 +1820,7 @@ art_assets = [];
     });
   }
 
-  function addLedgerEntry(entry) {
+  function addLedgerEntry(entry, options = {}) {
     if (syncDailyEnergyBaselines()) saveState();
     const child = activeChild();
     const oldLevel = levelForEnergy(child.energy);
@@ -1682,9 +1830,11 @@ art_assets = [];
     updateActivePetEnergy(child.energy + record.delta, child.lifetimeStars + Math.max(0, record.delta));
     const newLevel = levelForEnergy(child.energy);
     saveState();
-    render();
-    if (newLevel.index > oldLevel.index) toast(`${child.petName}进化为${newLevel.name}！`);
-    else toast(`${record.reason} ${record.delta > 0 ? '+' : ''}${record.delta} 分`);
+    if (options.render !== false) render();
+    if (options.toast !== false) {
+      if (newLevel.index > oldLevel.index) toast(`${child.petName}进化为${newLevel.name}！`);
+      else toast(`${record.reason} ${record.delta > 0 ? '+' : ''}${record.delta} 分`);
+    }
     return record;
   }
 
@@ -1727,25 +1877,45 @@ art_assets = [];
     });
   }
 
-  async function approveSchoolEvent(eventId) {
+  async function approveSchoolEvent(eventId, options = {}) {
     const event = schoolInboxEvents().find(item => item.id === eventId);
     if (!event) return toast('这条学校消息已处理或不存在');
     try {
       if (state.ledger.some(entry => String(entry.externalEventId || '') === event.id)) {
         if (!state.schoolLink.appliedEventIds.includes(event.id)) state.schoolLink.appliedEventIds.unshift(event.id);
         await queueSchoolReceipt(event, 'approved', state.ledger.find(entry => String(entry.externalEventId || '') === event.id)?.id || '', event.childAction || null);
-        render();
-        return toast('这条学校奖励已入账，不会重复计入');
+        if (options.render !== false) render();
+        if (options.toast !== false) toast('这条学校奖励已入账，不会重复计入');
+        return true;
       }
       state.schoolLink.appliedEventIds.unshift(event.id);
-      const record = addLedgerEntry({ category: event.category || '学习', delta: Math.max(0, Math.trunc(Number(event.delta) || 0)), source: 'school_sync', actorId: event.actor?.userId || 'teacher', reason: `学校同步：${event.reason || '课堂成长记录'}`, note: event.note || `${event.className || '学校'}课堂记录`, externalEventId: event.id });
+      const record = addLedgerEntry({ category: event.category || '学习', delta: Math.max(0, Math.trunc(Number(event.delta) || 0)), source: 'school_sync', actorId: event.actor?.userId || 'teacher', reason: `学校同步：${event.reason || '课堂成长记录'}`, note: event.note || `${event.className || '学校'}课堂记录`, externalEventId: event.id }, options);
       await queueSchoolReceipt(event, 'approved', record.id, event.childAction || null);
-      toast(state.schoolLink.pendingReceipts.length ? '奖励已入账，回执等待同步' : '奖励已入账并已通知教师');
+      if (options.toast !== false) toast(state.schoolLink.pendingReceipts.length ? '奖励已入账，回执等待同步' : '奖励已入账并已通知教师');
+      return true;
     } catch (error) {
       schoolReceiptSyncError = error?.message || String(error);
-      render();
-      toast(`奖励已保留，云端同步失败：${schoolReceiptSyncError}`);
+      if (options.render !== false) render();
+      if (options.toast !== false) toast(`奖励已保留，云端同步失败：${schoolReceiptSyncError}`);
+      return false;
     }
+  }
+
+  function showApproveAllSchoolEventsConfirm() {
+    const events = schoolInboxEvents().filter(event => event.childAction);
+    if (events.length < 2) return;
+    const total = events.reduce((sum, event) => sum + Math.max(0, Math.trunc(Number(event.delta) || 0)), 0);
+    modal(`<h2>全部计入家庭成长？</h2><p>将把 ${events.length} 条已完成的学校任务计入账本，共增加 <strong>+${total} 成长能量</strong>。每条记录仍会独立保留，并同步处理回执给教师。</p><div class="modal-actions"><button type="button" class="btn btn-soft" id="cancelModal">取消</button><button type="button" class="btn btn-primary" id="confirmApproveAllSchoolEvents">全部计入</button></div>`);
+    document.getElementById('cancelModal').addEventListener('click', closeModal);
+    document.getElementById('confirmApproveAllSchoolEvents').addEventListener('click', async event => {
+      event.currentTarget.disabled = true;
+      const results = [];
+      for (const item of events) results.push(await approveSchoolEvent(item.id, { render: false, toast: false }));
+      closeModal();
+      render();
+      const approved = results.filter(Boolean).length;
+      toast(approved === events.length ? `已计入 ${approved} 条学校成长任务` : `已计入 ${approved} 条，剩余记录请稍后查看`);
+    });
   }
 
   async function ignoreSchoolEvent(eventId) {
