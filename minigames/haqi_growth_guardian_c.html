@@ -1379,7 +1379,8 @@ art_assets = [];
   }
 
   async function loadGuardianSdk() {
-    if (window.keepwork?.aiGenerators?.genImage && typeof window.keepwork.showLoginWindow === 'function') return window.keepwork;
+    if (guardianSdk) return guardianSdk;
+    if (window.keepwork || window.KeepworkSDK) return createGuardianSdk();
     sdkLoadPromise ||= (async () => {
       window.KEEPWORK_DEFAULT_OPTIONS = {
         timeout: 30000,
@@ -1392,8 +1393,7 @@ art_assets = [];
       const sdkUrls = [
         explicitSdk,
         ...(isLocal || location.protocol === 'file:' ? [localSdk] : []),
-        'https://cdn.keepwork.com/sdk/keepworkSDK.iife.js?v=20260619a',
-        ...(isLocal || location.protocol === 'file:' ? [] : [localSdk])
+        'https://cdn.keepwork.com/sdk/keepworkSDK.iife.js?v=20260715a'
       ].filter(Boolean);
       let lastError;
       for (const url of sdkUrls) {
@@ -1409,19 +1409,34 @@ art_assets = [];
               document.head.appendChild(script);
             });
           }
-          if (window.keepwork?.aiGenerators?.genImage && typeof window.keepwork.showLoginWindow === 'function') {
-            window.keepwork._autoReloadAfterRedirectLogin = false;
-            window.keepwork?.wxAuth?.setScope?.('snsapi_base');
-            await window.keepwork.localAPIKeySettings?.load?.();
-            return window.keepwork;
-          }
+          if (window.keepwork || window.KeepworkSDK) return createGuardianSdk();
         } catch (error) {
           lastError = error;
         }
       }
       throw new Error(`KeepworkSDK 加载失败：${lastError?.message || 'unknown'}`);
     })();
-    return sdkLoadPromise;
+    try {
+      return await sdkLoadPromise;
+    } catch (error) {
+      sdkLoadPromise = null;
+      throw error;
+    }
+  }
+
+  async function createGuardianSdk() {
+    const sdk = window.keepwork || (window.KeepworkSDK ? new window.KeepworkSDK({
+      timeout: 30000,
+      autoReloadAfterRedirectLogin: false,
+      wxAuth: { scope: 'snsapi_base' }
+    }) : null);
+    if (!sdk) throw new Error('未找到 KeepWork 登录服务');
+    sdk._autoReloadAfterRedirectLogin = false;
+    sdk.wxAuth?.setScope?.('snsapi_base');
+    if (sdk.setUserApiKey && window.KeepworkSDK?.API_KEYS?.maisi) sdk.setUserApiKey(window.KeepworkSDK.API_KEYS.maisi);
+    await sdk.localAPIKeySettings?.load?.();
+    guardianSdk = sdk;
+    return sdk;
   }
 
   function clearGuardianAuthParams() {
