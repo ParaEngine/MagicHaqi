@@ -1936,10 +1936,12 @@
         await loadKeepworkSdk();
         if (!window.KeepworkSDK && !window.keepwork) throw new Error('未找到 KeepWork 登录服务');
         keepworkSdk = window.keepwork || new window.KeepworkSDK({
+          baseURL: 'https://api.keepwork.com/core/v0',
           timeout: 30000,
           autoReloadAfterRedirectLogin: false,
           wxAuth: { scope: 'snsapi_base' }
         });
+        keepworkSdk.baseURL = 'https://api.keepwork.com/core/v0';
         if (keepworkSdk) keepworkSdk._autoReloadAfterRedirectLogin = false;
         keepworkSdk?.wxAuth?.setScope?.('snsapi_base');
         if (keepworkSdk?.setUserApiKey && window.KeepworkSDK?.API_KEYS?.maisi) {
@@ -2009,7 +2011,8 @@
           if (!response.ok || !token) throw new Error(payload?.message || payload?.error?.message || '账号或密码错误');
           passwordInput.value = '';
           const sdk = await getKeepworkSdk();
-          sdk.token = token;
+          if (typeof sdk.setToken === 'function') sdk.setToken(token);
+          else sdk.token = token;
           const user = await getKeepworkUser(sdk).catch(() => null);
           if (!user) throw new Error('未获得 KeepWork 用户资料，请重试');
           const url = new URL(location.href);
