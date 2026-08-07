@@ -1143,6 +1143,43 @@ art_assets = [];
     return `${schoolStudentRoot(link)}/actions/${safeCloudPart(eventId)}.json`;
   }
 
+  function personalGrowthPath(teacher, studentId, recordType, recordId) {
+    return `growth-link/v3/schools/${safeCloudPart(teacher)}/students/${safeCloudPart(studentId)}/${recordType}/${safeCloudPart(recordId)}.json`;
+  }
+
+  function crossUserPersonalGrowthPath(username, path) {
+    return `//${safeCloudPart(username)}/edunotes/store/MagicHaqi/${path}`;
+  }
+
+  async function readCrossUserPersonalGrowthJson(username, path) {
+    const sdk = guardianSdk;
+    if (typeof sdk?.get !== 'function' || typeof sdk?.getRepoPath !== 'function' || typeof sdk?.safeEncodeURIComponent !== 'function') return null;
+    const sitePath = `${safeCloudPart(username)}/edunotes`;
+    const pagePath = `store/MagicHaqi/${path}`;
+    const repoPath = sdk.getRepoPath(sitePath);
+    const encodedPath = sdk.safeEncodeURIComponent(`${sitePath}/${pagePath}`);
+    const raw = await sdk.get(`/repos/${repoPath}/files/${encodedPath}/raw`, {});
+    return typeof raw === 'string' ? JSON.parse(raw || 'null') : raw;
+  }
+
+  async function readPersonalGrowthRecord(username, path) {
+    const target = crossUserPersonalGrowthPath(username, path);
+    const store = guardianSdk?.personalPageStore;
+    if (!store?.readFile) return readCrossUserPersonalGrowthJson(username, path);
+    try {
+      const text = (await store.readFile(target, 1, 99999)) || '';
+      return JSON.parse(text || 'null') || await readCrossUserPersonalGrowthJson(username, path);
+    } catch (_) {
+      try {
+        const text = (await store.readFile(target)) || '';
+        return JSON.parse(text || 'null') || await readCrossUserPersonalGrowthJson(username, path);
+      } catch (error) {
+        if (/404|not found|不存在/i.test(String(error?.message || error))) return null;
+        throw error;
+      }
+    }
+  }
+
   function schoolNotificationIndexPath(link = state.schoolLink) {
     return `${schoolStudentRoot(link)}/notifications/index.json`;
   }
@@ -1199,6 +1236,8 @@ art_assets = [];
 
   async function queueSchoolReceipt(event, decision, growthEntryId = '', childAction = null) {
     const receipt = { version: 3, privacyScope: 'student', eventId: event.id, classId: state.schoolLink.classId, studentId: state.schoolLink.studentId, decision, decidedAt: Date.now(), guardianUsername: guardianUsername(), growthEntryId, childAction };
+    const receiptPath = personalGrowthPath(state.schoolLink.teacherUsername, state.schoolLink.studentId, 'receipts', event.id);
+    await guardianStore.createFile(receiptPath, JSON.stringify(receipt, null, 2));
     state.schoolLink.pendingReceipts = state.schoolLink.pendingReceipts.filter(item => item.eventId !== event.id);
     state.schoolLink.pendingReceipts.unshift(receipt);
     await persistStateNow();
@@ -1207,22 +1246,21 @@ art_assets = [];
 
   async function publishPendingSchoolReceipts() {
     const link = state.schoolLink;
-    if (publishingSchoolReceipts || !link?.sitePath || !link?.classId || !link?.studentId || !guardianSdk?.savePage || !link.pendingReceipts.length) return;
+    if (publishingSchoolReceipts || !link?.sitePath || !link?.classId || !link?.studentId || !link.pendingReceipts.length) return;
     publishingSchoolReceipts = true;
     schoolReceiptSyncError = '';
     try {
       const policy = JSON.parse(await readSchoolSharedPage(link, schoolPolicyPath(link)) || 'null');
       const accessError = validateSchoolAccessPolicy(policy, link);
       if (accessError) throw new Error(accessError);
+      link.teacherUsername = safeCloudPart(policy.teacherUsername || link.teacherUsername);
       for (const receipt of [...link.pendingReceipts]) {
+        const receiptPath = personalGrowthPath(link.teacherUsername, link.studentId, 'receipts', receipt.eventId);
+        await guardianStore.createFile(receiptPath, JSON.stringify(receipt, null, 2));
         try {
-          await guardianSdk.savePage({ sitePath: link.sitePath, pagePath: schoolReceiptPath(receipt.eventId), content: JSON.stringify(receipt, null, 2), commitMessage: '同步家长学校奖励处理结果' });
+          await guardianSdk?.savePage?.({ sitePath: link.sitePath, pagePath: schoolReceiptPath(receipt.eventId), content: JSON.stringify(receipt, null, 2), commitMessage: '同步家长学校奖励处理结果' });
         } catch (error) {
-          const message = String(error?.message || error);
-          if (/404|请求不合法|not found/i.test(message)) {
-            throw new Error(`无法写入学校共享站点“${link.sitePath}”。请确认家长账号已拥有该站点的编辑权限。`);
-          }
-          throw error;
+          console.warn('共享站点兼容回执写入失败，个人空间回执已保存', error);
         }
         link.pendingReceipts = link.pendingReceipts.filter(item => item !== receipt);
         await persistStateNow();
@@ -1247,6 +1285,11 @@ art_assets = [];
       try { policy = JSON.parse(policyText || 'null'); } catch (_) {}
       const accessError = validateSchoolAccessPolicy(policy, link);
       if (accessError) throw new Error(accessError);
+      const policyTeacherUsername = safeCloudPart(policy.teacherUsername);
+      if (policyTeacherUsername && link.teacherUsername !== policyTeacherUsername) {
+        link.teacherUsername = policyTeacherUsername;
+        saveState();
+      }
       publishPendingSchoolReceipts();
       try {
         const profileText = await readSchoolSharedPage(link, schoolStudentProfilePath(link));
@@ -1277,9 +1320,11 @@ art_assets = [];
         .sort((left, right) => Number(right.createdAt || 0) - Number(left.createdAt || 0));
       schoolInboxCache = await Promise.all(schoolInboxCache.map(async event => {
         try {
-          const action = JSON.parse(await readSchoolSharedPage(link, schoolActionPath(event.id)) || 'null');
           const policyStudent = Array.isArray(policy?.students) ? policy.students.find(item => item?.id === link.studentId) : null;
           const expectedStudentUsername = safeCloudPart(policyStudent?.keepworkUsername);
+          const actionPath = personalGrowthPath(policy?.teacherUsername || link.teacherUsername, link.studentId, 'actions', event.id);
+          let action = expectedStudentUsername ? await readPersonalGrowthRecord(expectedStudentUsername, actionPath) : null;
+          if (!action) action = JSON.parse(await readSchoolSharedPage(link, schoolActionPath(event.id)) || 'null');
           if (action?.version === 3 && action.privacyScope === 'student' && action.eventId === event.id && action.classId === event.classId && action.studentId === link.studentId && action.status === 'submitted' && expectedStudentUsername && safeCloudPart(action.studentUsername) === expectedStudentUsername) {
             event.childAction = { actionLabel: String(action.actionLabel || '').slice(0, 120), submittedAt: Number(action.submittedAt) || 0, studentUsername: expectedStudentUsername };
           }

@@ -830,6 +830,9 @@
                 if (receipt) break;
               } catch (_) {}
             }
+            if (!receipt) {
+              try { receipt = await readFamilyPage(student.schoolSitePath, growthReceiptPath(student.id, event.id)); } catch (_) {}
+            }
             const studentUsername = authenticatedUsername;
             const validAction = action?.version === 3 && action.privacyScope === 'student' && action.eventId === event.id && action.classId === event.classId && action.studentId === student.id && action.status === 'submitted' && normalizeKeepworkUsername(action.studentUsername) === studentUsername ? action : null;
             const handled = validGuardianReceipt(receipt, event.id, student) && ['approved', 'ignored'].includes(receipt.decision);
@@ -1044,6 +1047,12 @@
                   schoolReceiptCache.set(eventId, receipt);
                   break;
                 }
+              } catch (_) {}
+            }
+            if (!schoolReceiptCache.has(eventId)) {
+              try {
+                const receipt = await readFamilyPage(schoolSitePath(), growthReceiptPath(student.id, eventId));
+                if (validGuardianReceipt(receipt, eventId, student)) schoolReceiptCache.set(eventId, receipt);
               } catch (_) {}
             }
           }
